@@ -3481,7 +3481,8 @@ const _BC_MOD3B = [
         ]
     ),
     (   # I_CALLATM with a procedure-module, then the clause's own LCO
-        nothing, _bs("pa9"), _bconj(_bf("@", _bf(":", _bs("m"), _bf("q", _bg(1))), _bs("m2")), _bs("r")),
+        nothing, _bs("pa9"),
+        _bconj(_bf("@", _bf(":", _bs("m"), _bf("q", _bg(1))), _bs("m2")), _bs("r")),
         [
             raw"i_enter",
             raw"b_smallint(i:1)",

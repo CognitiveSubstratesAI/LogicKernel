@@ -404,7 +404,10 @@ end
     @test count(l -> endswith(l, "/1($qm2)"), _AB_PINNED) >= 20
     @test count(l -> occursin("c[114,97,105,115,101,100]", l), _AB_PINNED) >= 16      # raised(…)
     @test count(l -> occursin("c[64]/2(", l), _AB_PINNED) >= 15                        # @/2
-    @test count(l -> occursin("c[91,124,93]/2(i1,c[91,124,93]/2(i2,c[91,124,93]/2(i3,nil)))", l), _AB_PINNED) == 2    # [1,2,3]
+    @test count(
+        l -> occursin("c[91,124,93]/2(i1,c[91,124,93]/2(i2,c[91,124,93]/2(i3,nil)))", l),
+        _AB_PINNED
+    ) == 2    # [1,2,3]
     @test any(l -> startswith(l, "t_a39 ") && endswith(l, "(a[110,111])"), _AB_PINNED)    # the cyclic goal fails in swipl
     # a70-a73: the LCO rows answer `same`, the choice-point rows `grows`
     @test _AB_PINNED[end - 7] == "t_a70 c[116,95,97,55,48]/1(a[115,97,109,101])"
@@ -412,7 +415,9 @@ end
     @test _AB_PINNED[end - 5] == "t_a72 c[116,95,97,55,50]/1(a[103,114,111,119,115])"
     @test _AB_PINNED[end - 4] == "t_a73 c[116,95,97,55,51]/1(a[103,114,111,119,115])"
     # a74, a75: both retried answers have the clause's own context (user) for C0
-    @test count(l -> occursin("c[45]/2(a[117,115,101,114],a[113,109,50])", l), _AB_PINNED) == 2
+    @test count(
+        l -> occursin("c[45]/2(a[117,115,101,114],a[113,109,50])", l), _AB_PINNED
+    ) == 2
 end
 
 @testset "the pins are swipl's (live, when swipl is on PATH)" begin

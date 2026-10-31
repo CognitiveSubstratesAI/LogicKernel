@@ -1,0 +1,16 @@
+0d80ac5 ADDED: MOD3b handoff — part 4 done (mutants file, docs section, anchors verified)
+d742bd7 ADDED: docs/architecture.md — the MOD3b section (Goal@Module in a clause body)
+acd8f94 ADDED: tools/mutants/MOD3b.py — the mutation list of MOD3b (32 mutants, unrun)
+f3724a7 ADDED: test_at_body_swipl.jl rows a76-a77 (nested at restores the outer context) + MOD3b handoff, coder 3 (unrun)
+27b30dc ADDED: test_at_body_swipl.jl rows a74-a75 — a retried frame keeps its own context (MOD3b, unrun)
+950ca8a ADDED: test_at_body_swipl.jl rows a70-a73 — frame reuse of I_DEPARTATM/I_DEPARTATMV (MOD3b, unrun)
+c47089d ADDED: test_at_body_swipl.jl — Goal@Module body rows a01-a69 pinned to swipl 10.1.19 (MOD3b, unrun)
+9f6673a DOC: evidence/MOD3b handoff — coder 2 tests written, what remains for coder 3
+718ffa6 TEST: Goal@Module body code and call/1 of Goal@Module pinned to swipl 10.1.19 (MOD3b WIP 7a)
+2d29397 DOC: MOD3b handoff — coder 2 source groups 1-6 written (edit-only)
+93a2a34 TEST: static-analysis manifest and run-loop label list for MOD3b's Goal@Module, WIP 6/6
+e4a9a06 UPSTREAM: pl-comp.c decompileBody I_CALLATM/I_DEPARTATM/I_CALLATMV/I_DEPARTATMV, MOD3b WIP 5/6 (swipl-devel cbf4e189)
+802e25f UPSTREAM: pl-comp.c compileBody/compileSubClause/callatm/callatmv at_context, MOD3b WIP 4/6 (swipl-devel cbf4e189)
+1f5fd44 UPSTREAM: pl-wam.c checkCallAtContextInstantiation, pl-vmi.c i_metacall_common, MOD3b WIP 2-3/6 (swipl-devel cbf4e189)
+5b2c970 UPSTREAM: pl-vmi.c I_DEPARTATM/I_CALLATM/I_DEPARTATMV/I_CALLATMV, MOD3b WIP 1/6 (swipl-devel cbf4e189)
+a3409e0 DOC: MOD3b handoff (evidence/) — upstream extracts and the edit plan; no code yet

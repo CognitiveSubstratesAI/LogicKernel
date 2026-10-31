@@ -2911,7 +2911,8 @@ function compileBody!(
             push!(                                             # frame.kind = CB_ATSIGN; frame.tmsave = atsave
                 stack,
                 cb_frame{T}(
-                    CB_ATSIGN, call, body, body, 0, 0, 0, nothing, ci.cut, true, true, atsave
+                    CB_ATSIGN, call, body, body, 0, 0, 0, nothing, ci.cut, true, true,
+                    atsave
                 )
             )
             body = child(body, 2)                              # body = argTermP(*body, 0)
@@ -5034,7 +5035,10 @@ function decompileBodyNoShift!(
             if op == I_DEPARTATMV || op == I_CALLATMV
                 _dvar!(di, nested, cm)                          # nested ? unifyVar(ARGP++, …, cm) : makeVarRef(cm)
             else
-                push!(di.argp, _atom_word!(ld, (ld.GD::PL_global_data{T}).modules[Int(cm)].atom))  # *ARGP++ = cm->name
+                push!(
+                    di.argp,
+                    _atom_word!(ld, (ld.GD::PL_global_data{T}).modules[Int(cm)].atom)
+                )  # *ARGP++ = cm->name
             end
             build_term!(di, mk_sym(T, Symbol("@")), 2)          # BUILD_TERM(FUNCTOR_at_sign2)
             pushed += 1

@@ -367,7 +367,7 @@ end
     X, G = _rv(71), _rv(72)
     goals = _R[
         _rf("c", _rf("@", _rf("p", X), _rs("user"))),
-        _rf("c", _rf(",", _rf("=", G, _rf("p", G)), _rf("c", _rf("@", G, _rs("user"))))),
+        _rf("c", _rf(",", _rf("=", G, _rf("p", G)), _rf("c", _rf("@", G, _rs("user")))))
     ]
     db = _rdb(_rmcc_clauses())
     ours = String[]
