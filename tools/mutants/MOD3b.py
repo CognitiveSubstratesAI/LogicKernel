@@ -71,8 +71,8 @@ MUTANTS = [
     # ── pl-vmi.c i_metacall_common's `@` branch ──
     dict(id="MOD3b-M1 the metacall check runs for every 2-ary goal, not only @/2 (KILL a28-a39, bc; TMC wide)",
          file=W, targets=RUN + TMC,
-         old="    if mc_arity == 2 && sym_key(mc_name) == gd.functors_control.at_sign    # fd->functor == FUNCTOR_at_sign2\n",
-         new="    if mc_arity == 2 && true\n"),
+         old="    if mc_arity == 2 && sym_key(mc_name) == gd.functors_control.at_sign &&   # fd->functor == FUNCTOR_at_sign2\n",
+         new="    if mc_arity == 2 && true &&\n"),
     # ── pl-comp.c compileSubClause: call selection, the meta-call branch ──
     dict(id="MOD3b-C1 call/N compiled inline under an at context (KILL a20, bc)", file=C, targets=COMP,
          old="    if is_call && ci.colon_context.type == TM_NONE && ci.at_context.type == TM_NONE\n",
@@ -131,8 +131,8 @@ MUTANTS = [
          old="        ci.at_context = frame.tmsave\n",
          new="        nothing\n"),
     dict(id="MOD3b-C14 the CB_ATSIGN frame saves no context: nested at restores to none (KILL a76)", file=C, targets=COMP,
-         old="CB_ATSIGN, call, body, body, 0, 0, 0, nothing, ci.cut, true, true, atsave",
-         new="CB_ATSIGN, call, body, body, 0, 0, 0, nothing, ci.cut, true, true, TARGET_MODULE_NONE"),
+         old="ci.cut, true, true,\n                    atsave\n",
+         new="ci.cut, true, true,\n                    TARGET_MODULE_NONE\n"),
     # ── pl-comp.c decompileBody: I_CALLATM, I_DEPARTATM, I_CALLATMV, I_DEPARTATMV ──
     dict(id="MOD3b-D1 the decompiler never wraps the goal in the procedure-module (KILL a40, bc)", file=C, targets=DEC,
          old="            if pm != 0                                          # if ( pm )\n",
@@ -144,8 +144,8 @@ MUTANTS = [
          old="            build_term!(di, mk_sym(T, Symbol(\"@\")), 2)          # BUILD_TERM(FUNCTOR_at_sign2)\n",
          new="            build_term!(di, mk_sym(T, :(:)), 2)\n"),
     dict(id="MOD3b-D4 the decompiler names the first module for a module operand (KILL a01, a40, bc)", file=C, targets=DEC,
-         old="modules[Int(cm)].atom))  # *ARGP++ = cm->name",
-         new="modules[1].atom))"),
+         old="modules[Int(cm)].atom)\n                )  # *ARGP++ = cm->name",
+         new="modules[1].atom)\n                )"),
     dict(id="MOD3b-D5 the decompiler skips two operands of an at instruction, not three (KILL a01-a13, bc)", file=C, targets=DEC,
          old="            di.pc += 3\n            build_term!(di, def.name, def.arity)                # BUILD_TERM(proc->definition->functor)\n            if pm != 0",
          new="            di.pc += 2\n            build_term!(di, def.name, def.arity)                # BUILD_TERM(proc->definition->functor)\n            if pm != 0"),
