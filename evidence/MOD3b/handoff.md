@@ -1,5 +1,16 @@
 # MOD3b handoff (coder 1 read; coder 2 wrote the source; coder 3 wrote the new test file, 2026-10-31 UTC): EDIT-ONLY, nothing compiled or run
 
+## Part 4 (Sonnet, 2026-10-31): DONE
+- Part 4: DONE: mutants 32 (tools/mutants/MOD3b.py, commit b1f3681; ids A1-A3, A5, A7-A10, A12, M1, C1, C3a/b, C4, C5a/b, C6-C9,
+  C10a/b, C11a-c, C12, C14, D1-D5; A4/A6/A11/C2/C13 of the plan were not used), docs section (docs/architecture.md line 5342,
+  `## MOD3b`), anchors verified (all 32 `old` strings occur exactly once, a Python text count at 1f75955, no Julia). The
+  loader snippet above passes (`bad 0`). fmt may re-flow some `old`: re-fit at the first battery run.
+- MOD3a-S1 and MOD3a-S2 no longer match the source (their `old` strings are gone after MOD3b); MOD3a is landed, its file
+  is left alone; do not re-run its list as written.
+- Left: the gate (fmt, check, the new/changed test files x3 term types, type discipline, mutants/MOD3b push, branch-gate,
+  crash-term grep, gate push); no daemon was used by this part.
+
+
 ## Coder 3 (Sonnet, hard-stopped by the context cap at ~163k): DONE / NOT DONE (read this first)
 - Text check over `git diff 805446b..HEAD` and the commit messages (file-redirect form, case-insensitive): the only hits were
   two lines in THIS handoff (coder 2's wording of the to-do); no source or message hit. Redo it before any push.
