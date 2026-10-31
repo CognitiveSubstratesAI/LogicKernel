@@ -5427,6 +5427,57 @@ run-time errors, `call/1` of `G@M`, clause/2, assert-time errors, goal clauses, 
 nested restore a76-a77; generator evidence/MOD3b/gen_rows.py); test/compile/test_body_code_swipl.jl's `_BC_MOD3B` rows
 (instruction and operand vs `clause_vm/2`). Mutants: tools/mutants/MOD3b.py.
 
+## MOD5b — `'$declare_module'/6`, `'$destroy_module'/1`, the temporary module class (R2, evidence/r2/design/modules.md §7)
+
+What MOD5b ports (swipl-devel cbf4e1896275; src/pl-modul.jl unless named):
+
+- **`declareModule`** (pl-modul.c:1287-1366) and its predicate **`'$declare_module'/6`** (`pl_declare_module6_va`, :1376-1400:
+  Module, Class, Super and File are atoms, Line an integer, Redefine a stdbool). The order is upstream's: the class is set FIRST (so
+  a refused re-declaration has changed it: row a06), then the `permission_error(redefine, module, M)` for a module loaded from
+  another file unless Redefine, then the file (`addModuleSourceFile`), the line, the source module, the abolish loop over the
+  procedures, the public table cleared and the super module replaced. The file is the source file's INDEX (0: none); the module
+  holds the reference `lookupSourceFile` took until it is destroyed (upstream's leak on the equal-file and refusal paths is mirrored).
+- **The temporary class and the destroy**: `acquireModule` (:195), `acquireModulePtr` (:208), `releaseModule_unlocked` (:217),
+  `releaseModule` (:233), `unallocModule` (:351), `markSourceFilesProcedure` (:389), `unlinkSourceFilesModule` (:402),
+  `destroyModule` (:429) and `pl_destroy_module1_va` (`'$destroy_module'/1`, :1826-1848: a temporary module is destroyed, any other
+  class is `permission_error(destroy, module, M)`, a name of no module succeeds). `unlinkSourceFileModule` (pl-srcfile.c:544,
+  src/pl-srcfile.jl). Only the class `temporary` counts references. The destroy takes the NAME out of `gd.modules.names` and sets
+  `M_DESTROYED`; the last release resets the source and typein modules that were the destroyed one to `user`.
+- **`_text_summary`** (pl-util.c:67-116, `text_summary`/`atom_summary`) for the "Already loaded from …" message.
+- **`abolishProcedure`'s imported-link branch** (pl-proc.c:1517-1530, `_abolishProcedure_pristine`): an auto-imported link of a
+  re-declared module is replaced by a fresh definition of the module (`shared` 0, as upstream's `memset`), the old one unshared. A
+  link to a DYNAMIC predicate survives, because the loop skips a definition with `P_DYNAMIC|P_MULTIFILE|P_FOREIGN` and tests the
+  imported definition (rows b04/b05 against b06, which links a static predicate).
+
+Q7 (modules.md §8, FLAGGED for the audit): re-declaring a module whose own static predicate has clauses (or flags) needs the rest of
+`abolishProcedure` (pl-proc.c:1531-1550: `resetProcedure`, `removeClausesPredicate`, ...), which stays with F5. The kernel refuses by
+name with `NotPortedError{T}(name, "redeclaring a module that has predicates (abolishProcedure)", "R2")`; a predicate with nothing
+to abolish is left alone. The narrowing to "pristine" is the port's own. The refusal comes AFTER class, file and source module are set,
+as in upstream's order. swipl's answers are pinned (`_MB_Q7_SWIPL`: the call succeeds and the old clauses are gone; the
+`declare_module(M, abolish(PIs))` warning goes to stderr); the `abolish(PIs)` warning branch of `declareModule` is written for the day
+F5 lands.
+
+Representation notes (each in a comment too):
+
+- **GC frees a destroyed module**: `unallocModule` resets the source and typein modules and leaves the record in the module table's
+  vector (indices stay valid); the old record keeps `M_DESTROYED`, `references == 0`, `file == 0`, and its definitions name the old
+  index. A later lookup of the name makes a NEW module (a higher index). Rows e02 and the "H3" testset pin both records.
+- The procedures are walked in the order of the module's table (Julia's `Dict`), where upstream's follows its hash table (D-0149 item 1).
+- `class` and `super` are atoms; the source file has no `reload` (reconsult stays with the loader); the invariant print of
+  `destroyModule` and `GD->modules.generation` have no counterpart.
+- **`unlinkSourceFileModule` and `$init_goal/3`**: the second half of upstream's test (the `$init_goal/3` clauses of a file) belongs to
+  the loader (L6); the filter here is the first half, `module has a procedure of this functor`.
+- **The compiler's refusal of a temporary module** (src/pl-comp.jl, `getTargetModule!`) needs NO change: it was reachable through
+  `set_module(M:class(temporary))`; MOD5b adds the producer `'$declare_module'(M, temporary, ...)` and the way out. After a destroy the
+  name has left the table, so a LATER lookup makes a fresh user-class module (row f04) while clauses compiled earlier keep the old
+  index. Rows f01-f05 pin both sides (a temporary module in a clause body is `permission_error(reference, module, M)`; `call(M:G)` is fine).
+
+Tests: test/core_lang/test_declare_destroy_swipl.jl (50 cases a01-f05 against swipl 10.1.19 through a consulted PROGRAM, generated by
+evidence/MOD5b/gen_rows.py with one extractor `_mb_enc`; the pins `_MB_PINNED`/`_MB_Q7_SWIPL`; testsets of non-vacuity, of the destroyed
+module's record, of Q7 and the live swipl compare). **UNVERIFIED on the kernel when written (no Julia run)**: b04, c01-c02, d03, b02,
+b05, b06, e01, e02, f01-f05 and the white-box lines on b06's definitions; the gate decides. Mutants: tools/mutants/MOD5b.py (36
+entries, 3 declared equivalent; TARGETS the rows file, the only caller of the mutated code, D-0238).
+
 ## D1 — clause references as blobs: `assert/2`, `erase/1`, the `Ref` of `'$record_clause'/4` (R2, D-0227 item 6, flags_rest.md §4 D11)
 
 What D1 adds (pl-dbref.c; pl-comp.c `assertz2`, `asserta2`, `mustBeVar`, `record_clause`'s `ref`; pl-rec.c `erase`'s clause branch):
