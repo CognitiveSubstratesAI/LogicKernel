@@ -14,21 +14,30 @@
 
 # PORT: pl-pro.c callProlog
 # DIVERGES: the database `gd` is an argument; `module` is an index into its module table (0 for
-# NULL: the context module, `user` until R2). The functor is its name and arity. NOT PORTED: the
-# `ex` argument — handing the query's exception to the caller, which `sig_atomic/1` does not ask
-# for (it passes NULL) — and `require_c_stack` (no C stack).
+# NULL: the context module, `user` until R2). The functor is its name and arity. `ex` is a reference
+# to a term_t (upstream: `term_t *ex`), `nothing` for NULL. NOT PORTED: `require_c_stack` (no C stack).
 """
-    callProlog(gd, ld, module, goal, flags) -> Bool
+    callProlog(gd, ld, module, goal, flags[, ex]) -> Bool
 
 Call the goal in term reference `goal` once, in a query of its own with `flags`, keeping its
 bindings (pl-pro.c). False when it fails or raises; with `PL_Q_PASS_EXCEPTION` the exception stays
-pending. The caller provides the foreign frame.
+pending. With `ex` (a reference to a term reference) an exception is handed to the caller in `ex[]`
+(0: none) and cleared; the term references from `ex`'s on stay for the caller to reset. The caller
+provides the foreign frame.
 """
 function callProlog(
-    gd::PL_global_data{T}, ld::PL_local_data{T}, module_::Int, goal::term_t, flags::UInt32
+    gd::PL_global_data{T}, ld::PL_local_data{T}, module_::Int, goal::term_t, flags::UInt32,
+    ex::Union{Nothing, Base.RefValue{Int}}
 )::Bool where {T}
     @assert ld.lTop ==
         refFliP(ld.fliframes[ld.fli_context].base, ld.fliframes[ld.fli_context].size)
+
+    reset = 0
+    ex2 = 0
+    if ex !== nothing
+        ex2 = PL_new_term_ref(ld)
+        ex[] = 0
+    end
 
     g = PL_new_term_ref(ld)
     ok, m = PL_strip_module(gd, ld, goal, module_, g)
@@ -36,6 +45,7 @@ function callProlog(
     fd = PL_get_functor(ld, g)
     if fd === nothing                                   # !PL_get_functor(g, &fd)
         PL_error(ld, ERR_TYPE, mk_sym(T, :callable), goal)  # ERR_TYPE: `rewrite_callable` strips `goal`'s qualifiers
+        ex !== nothing && (ex[] = ld.exception_term)
 
         PL_reset_term_refs(ld, g)
         return false
@@ -58,7 +68,13 @@ function callProlog(
         used, rc = call_internal_det_foreign(gd, ld, proc, args)
         if used
             rval = rc != FFALSE && ld.exception_term == 0
-            PL_reset_term_refs(ld, g)                   # reset = (ex2 ? ex2 : g): no `ex` here
+            if !rval && ex !== nothing && ld.exception_term != 0
+                PL_put_term(ld, ex2, ld.exception_term)
+                ex[] = ex2
+                reset = g
+            end
+            reset == 0 && (reset = ex2 != 0 ? ex2 : g)
+            PL_reset_term_refs(ld, reset)
             return rval
         end
     end
@@ -66,14 +82,38 @@ function callProlog(
     qid = PL_open_query(gd, ld, gd.modules[m], flags, proc, args)
     rval = PL_next_solution(gd, ld, qid) != 0
 
+    if !rval && ex !== nothing
+        qex = PL_exception(ld, qid)
+        if qex != 0
+            PL_put_term(ld, ex2, qex)
+            ex[] = ex2
+            reset = g
+        else
+            ex[] = 0
+        end
+    end
+
     PL_cut_query(ld, qid)
     if rval && ld.exception_term != 0
+        if ex !== nothing
+            PL_put_term(ld, ex2, ld.exception_term)
+            PL_clear_exception(ld)
+            ex[] = ex2
+            reset = g
+        end
         rval = false
     end
 
-    PL_reset_term_refs(ld, g)
+    reset == 0 && (reset = ex2 != 0 ? ex2 : g)
+    PL_reset_term_refs(ld, reset)
 
     return rval
+end
+
+function callProlog(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, module_::Int, goal::term_t, flags::UInt32
+)::Bool where {T}
+    return callProlog(gd, ld, module_, goal, flags, nothing)
 end
 
 # PORT: pl-pro.c sig_atomic as pl_sig_atomic1_va
