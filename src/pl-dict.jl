@@ -137,3 +137,299 @@ function pl_is_dict2_va(
 
     return FFALSE
 end
+
+# ── ordering, creation (part 5b) ──────────────────────────────────────────────────────────────────
+
+# PORT: pl-dict.h _PL_dict_status_t
+"What `dict_ordered` and `dict_order` found (pl-dict.h `_PL_dict_status_t`)."
+@enum _PL_dict_status_t::Int8 begin
+    PL_DICT_FALSE = 0
+    PL_DICT_TRUE = 1
+    PL_DICT_KEY_INVALID = -1
+    PL_DICT_KEY_DUPLICATE = -2
+end
+
+# PORT: pl-dict.c DICT_GET_ALL, DICT_GET_PAIRS, DICT_GET_EQUALS, DICT_GET_COLON, DICT_GET_TERM
+"`PL_get_dict_ex`' `flags`: which forms of a key-value pair are read (pl-dict.c)."
+const DICT_GET_ALL = 0xff
+const DICT_GET_PAIRS = 0x01
+const DICT_GET_EQUALS = 0x02
+const DICT_GET_COLON = 0x04
+const DICT_GET_TERM = 0x08
+
+# ORIGINAL: the term reference `ex` raised as `error(duplicate_key(Key), _)`: pl-error.c's `ERR_DUPLICATE_KEY`
+# branch, `PL_unify_term(formal, PL_FUNCTOR, FUNCTOR_duplicate_key1, PL_TERM, key)`.
+# DIVERGES: a function of its own, not a `PL_error` code (no `ERR_DUPLICATE_KEY` in the enum: pl-dict.c is its only
+# caller), as `PL_existence_error3` (src/pl-error.jl).
+"Raise `error(duplicate_key(Key), _)`, `Key` the term reference `key` holds (pl-error.c `ERR_DUPLICATE_KEY`); `false`."
+function PL_duplicate_key_error(ld::PL_local_data{T}, key::term_t)::Bool where {T}
+    h = _PL_error_open(ld)
+    h === nothing && return false
+    caller, fid, except, formal, swi = h
+    PL_cons_functor(ld, formal, _err_functor(ld, :duplicate_key, 1), key)
+    return _PL_error_close!(ld, caller, fid, except, formal, swi, "", 0, "")
+end
+
+# ORIGINAL: pl-inline.h `*dp = linkValI(val)` for a value LOCATION `loc` (a global position or a slot, `_deref_loc`'s):
+# the cell at `dp` holds what `loc` dereferences to — an unbound or attributed variable by reference, a word as it is.
+# A value-table word is shared; a slot's side value gets its own word (`_value_word!`).
+"Store in global cell `dp` what the location `loc` dereferences to (pl-inline.h `linkValI`)."
+function _dict_link!(ld::PL_local_data, dp::Int, loc::Int)::Nothing
+    k, w, q = _deref_loc(ld, loc)
+    if k == DU_CELL || k == DU_ATTVAR
+        ld.gstack[dp] = makeRefG(q)
+    elseif k == DU_VALUE
+        ld.gstack[dp] = _value_word!(ld, w)
+    else
+        ld.gstack[dp] = w
+    end
+
+    return nothing
+end
+
+# PORT: pl-dict.c dict_ordered
+# DIVERGES: `data` is the position of the first VALUE cell, the pairs follow; the result is `(status, dupl)`, `dupl` the
+# duplicate key's word when `want_dupl` (upstream's `dupl` pointer is not NULL) and else the error is raised here.
+"Whether the `count` pairs at `data` have proper keys in order: `(status, duplicate key word)` (pl-dict.c)."
+function dict_ordered(
+    ld::PL_local_data{T}, data::Int, count::Int, want_dupl::Bool
+)::Tuple{_PL_dict_status_t, word} where {T}
+    ordered = PL_DICT_TRUE
+
+    if count > 0
+        data += 1                                   # skip to key
+        _, n1, _ = _deref_loc(ld, data)
+        if !is_dict_key(n1)
+            return (PL_DICT_KEY_INVALID, word(0))
+        end
+
+        while count > 1
+            _, n2, _ = _deref_loc(ld, data + 2)
+            if !is_dict_key(n2)
+                return (PL_DICT_KEY_INVALID, word(0))
+            end
+            if n1 == n2
+                if want_dupl
+                    return (PL_DICT_KEY_DUPLICATE, n1)
+                else
+                    t = PL_new_term_ref(ld)
+                    ld.slots[t + 1] = n1            # *valTermRef(t) = linkValI(n1)
+                    PL_duplicate_key_error(ld, t)
+                    return (PL_DICT_KEY_DUPLICATE, word(0))
+                end
+            elseif n1 > n2
+                ordered = PL_DICT_FALSE
+            end
+            count -= 1
+            data += 2
+            n1 = n2
+        end
+    end
+
+    return (ordered, word(0))
+end
+
+# PORT: pl-dict.c compare_dict_entry, dict_order
+# DIVERGES: the pairs are sorted by their key WORDS (`SCALAR_TO_CMP` on the dereferenced key cells) with Julia's
+# `sortperm` on the keys read out, the cells written back in the new order (upstream: `sort_r` over the cells in
+# place); `dict` is the position of the functor cell; the result is `(status, dupl)` as `dict_ordered`'s.
+"Sort the pairs of the dict at `dict` by key and check them: `(status, duplicate key word)` (pl-dict.c)."
+function dict_order(ld::PL_local_data{T}, dict::Int)::Tuple{_PL_dict_status_t, word} where {T}
+    arity = arityFunctor(ld.functors, ld.gstack[dict])
+    @assert arity % 2 == 1
+    n = arity ÷ 2
+
+    vals = [ld.gstack[dict + 2 + 2 * i] for i in 0:(n - 1)]
+    keys = [ld.gstack[dict + 3 + 2 * i] for i in 0:(n - 1)]
+    kw = word[_deref_loc(ld, dict + 3 + 2 * i)[2] for i in 0:(n - 1)]
+    ord = sortperm(kw)                              # sort_r(…, compare_dict_entry, LD)
+    for (j, i) in enumerate(ord)
+        ld.gstack[dict + 2 * j] = vals[i]
+        ld.gstack[dict + 2 * j + 1] = keys[i]
+    end
+
+    return dict_ordered(ld, dict + 2, n, true)
+end
+
+# PORT: pl-dict.c get_name_ex
+# DIVERGES: the key's word is the result, `nothing` for upstream's false.
+"The dict key (an atom or a small integer word) the term reference `t` holds, else a type error (pl-dict.c)."
+function get_name_ex(ld::PL_local_data{T}, t::term_t)::Union{Nothing, word} where {T}
+    _, p, _ = _deref_loc(ld, -(t + 1))
+    if is_dict_key(p)
+        return p
+    end
+
+    PL_type_error(ld, "dict-key", t)
+    return nothing
+end
+
+# PORT: pl-dict.c get_name_value
+# DIVERGES: the result is `(key word, value location)` — upstream stores `*name` and `*value = linkValI(vp)` through
+# its pointers; the caller links the value location into the dict's cell (`_dict_link!`). `nothing` for upstream's false,
+# after `Undo(*m)` and the type error. `p` is the position of the list's head cell; the word a type error names is
+# that cell, by reference (`pushWordAsTermRef`).
+"The key and the value of the pair at `p` (`K-V`, `K=V`, `K:V` or `K(V)` as `flags` allows) (pl-dict.c)."
+function get_name_value(
+    ld::PL_local_data{T}, p::Int, flags::Int, m::mark
+)::Union{Nothing, Tuple{word, Int}} where {T}
+    k, w, pp = _deref_loc(ld, p)
+
+    if k == DU_WORD && _is_gcompound(w)
+        f = valPtr(w)
+        fdef = ld.gstack[f]
+        minus2 = lookupFunctorDef(ld.functors, _atom_word!(ld, mk_sym(T, :-)), 2)
+        equals2 = lookupFunctorDef(ld.functors, _atom_word!(ld, mk_sym(T, :(=))), 2)
+        colon2 = lookupFunctorDef(ld.functors, _atom_word!(ld, mk_sym(T, :(:))), 2)
+
+        if (fdef == minus2 && (flags & DICT_GET_PAIRS) != 0) ||
+           (fdef == equals2 && (flags & DICT_GET_EQUALS) != 0) ||
+           (fdef == colon2 && (flags & DICT_GET_COLON) != 0)
+            _, np, npos = _deref_loc(ld, f + 1)     # deRef2(&f->arguments[0], np)
+            if is_dict_key(np)
+                return (np, f + 2)                  # *name = *np; *value = linkValI(&f->arguments[1])
+            else
+                Undo!(ld, m)
+                DiscardMark(ld, m)
+                t = PL_new_term_ref(ld)             # pushWordAsTermRef(np)
+                ld.slots[t + 1] = makeRefG(npos)
+                PL_type_error(ld, "dict-key", t)
+                PL_reset_term_refs(ld, t)           # popTermRef()
+
+                return nothing
+            end
+        elseif arityFunctor(ld.functors, fdef) == 1 && (flags & DICT_GET_TERM) != 0   # Name(Value)
+            return (nameFunctor(ld.functors, fdef), f + 1)
+        end
+    end
+
+    type = flags == DICT_GET_PAIRS ? "pair" : "key-value"
+
+    Undo!(ld, m)
+    DiscardMark(ld, m)
+    t = PL_new_term_ref(ld)                         # pushWordAsTermRef(p)
+    ld.slots[t + 1] = makeRefG(pp)
+    PL_type_error(ld, type, t)
+    PL_reset_term_refs(ld, t)
+
+    return nothing                                  # type error
+end
+
+# PORT: pl-dict.c PL_is_dict
+# DIVERGES: the dict of the term reference `t`, ordered (`dict_ordered` TRUE); a Bool as upstream's.
+"Whether the term reference `t` holds a dict with ordered, proper keys (pl-dict.c)."
+function PL_is_dict(ld::PL_local_data{T}, t::term_t)::Bool where {T}
+    k, w, _ = _deref_loc(ld, -(t + 1))
+    if k == DU_WORD && _is_gcompound(w)
+        f = valPtr(w)
+        if is_dict_functor(ld, ld.gstack[f])
+            arity = arityFunctor(ld.functors, ld.gstack[f])
+            return dict_ordered(ld, f + 2, arity ÷ 2, true)[1] == PL_DICT_TRUE   # f->arguments+1
+        end
+    end
+
+    return false
+end
+
+# PORT: pl-dict.c PL_get_dict_ex
+# DIVERGES: `tag` is 0 for upstream's NULL; no trail check (the trail grows on demand); the mark is discarded
+# on success (`DiscardMark`) where upstream leaves `mark_bar` raised. NOT PORTED: `{name:value, …}` (upstream's TBD).
+"`dict` is the dict `data` holds, or the dict made of the list `data` holds; false with the error raised (pl-dict.c)."
+function PL_get_dict_ex(
+    ld::PL_local_data{T}, data::term_t, tag::term_t, dict::term_t, flags::Int
+)::Bool where {T}
+    if PL_is_dict(ld, data)
+        PL_put_term(ld, dict, data)
+        return true
+    end
+
+    if PL_is_list(ld, data)
+        len = lengthList(ld, data, true)
+        len < 0 && return false                     # not a proper list
+
+        ensureGlobalSpace(ld, len * 2 + 2) || return false
+        m = Mark(ld)
+        dp = allocGlobalCells!(ld, len * 2 + 2)
+        ap = dp
+        ld.gstack[ap] = dict_functor(ld, len)       # *ap++ = dict_functor(len)
+        ap += 1
+        if tag != 0
+            k, w, cp = _deref_loc(ld, -(tag + 1))
+            if k == DU_CELL
+                ld.gstack[ap] = word(0)             # setVar(*ap)
+                _bind_const!(ld, cp, makeRefG(ap))  # Trail(cp, makeRefG(ap))
+            elseif k == DU_ATTVAR
+                ld.gstack[ap] = makeRefG(cp)
+            elseif k == DU_VALUE
+                ld.gstack[ap] = _value_word!(ld, w)
+            else
+                ld.gstack[ap] = w
+            end
+        end
+        ap += 1
+
+        k, w, _ = _deref_loc(ld, -(data + 1))
+        while _is_list_word(ld, k, w)
+            head = valPtr(w) + 1                    # HeadList(tail)
+            nv = get_name_value(ld, head, flags, m)
+            nv === nothing && return false
+            name, vloc = nv
+            ld.gstack[ap + 1] = name
+            _dict_link!(ld, ap, vloc)
+            ap += 2
+            k, w, _ = _deref_loc(ld, valPtr(w) + 2) # TailList(tail); deRef
+        end
+
+        rc, dupl = dict_order(ld, dp)
+        if rc == PL_DICT_TRUE
+            DiscardMark(ld, m)
+            ld.slots[dict + 1] = consPtr(dp, TAG_COMPOUND | STG_GLOBAL)
+            return true
+        else
+            @assert rc == PL_DICT_KEY_DUPLICATE
+            Undo!(ld, m)
+            DiscardMark(ld, m)
+            ex = PL_new_term_ref(ld)
+            ld.slots[ex + 1] = dupl                 # PL_unify_atomic(ex, dupl)
+            return PL_duplicate_key_error(ld, ex)
+        end
+    end                                             # TBD: {name:value, ...}
+
+    return PL_type_error(ld, "dict-data", data)
+end
+
+# PORT: pl-dict.c get_create_dict_ex
+# DIVERGES: the result is the dict's compound word, `nothing` for upstream's false (error raised); `dt` is the
+# term reference that receives it, as upstream's.
+"The dict `t` holds, or made of the list it holds, in the term reference `dt`; else a type error (pl-dict.c)."
+function get_create_dict_ex(ld::PL_local_data{T}, t::term_t, dt::term_t)::Bool where {T}
+    k, w, _ = _deref_loc(ld, -(t + 1))
+    if k == DU_WORD && _is_gcompound(w)
+        if is_dict_functor(ld, ld.gstack[valPtr(w)])
+            ld.slots[dt + 1] = w                    # *valTermRef(dt) = *p
+            return true
+        end
+    end
+
+    if PL_get_dict_ex(ld, t, term_t(0), dt, DICT_GET_ALL)
+        return true
+    end
+
+    return PL_type_error(ld, "dict", t)
+end
+
+# PORT: pl-dict.c dict_create as pl_dict_create3_va
+# (PRED_IMPL("dict_create", 3, dict_create, 0))
+"`dict_create(-Dict, +Tag, +Pairs)`: `Dict` is the dict of tag `Tag` made of the list of pairs `Pairs` (pl-dict.c)."
+function pl_dict_create3_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2, A3 = PL__t0, PL__t0 + 1, PL__t0 + 2
+    m = PL_new_term_ref(ld)
+
+    if PL_get_dict_ex(ld, A3, A2, m, DICT_GET_ALL)
+        return PL_unify(ld, A1, m) ? FTRUE : FFALSE
+    end
+
+    return FFALSE
+end
