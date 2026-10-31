@@ -9,9 +9,9 @@
 # the file helpers (LastModifiedFile, SizeFile, AccessFile, ExistsFile, ExistsDirectory, ReadLink, DeRefLink,
 # SameFile, RenameFile, MarkExecutable) and, as the groups land, the predicates of upstream's table.
 #
-# LB2b (in progress): the `PL_get_file_name` flags that need a file system search or a path —
-# `PL_FILE_ABSOLUTE`, `PL_FILE_OSPATH`, `PL_FILE_SEARCH`, `PL_FILE_EXIST`, `PL_FILE_READ`,
-# `PL_FILE_WRITE`, `PL_FILE_EXECUTE` — are refused by name until group G5; `DeleteTemporaryFile`
+# LB2b: `PL_get_file_name` honours `PL_FILE_ABSOLUTE`, `PL_FILE_OSPATH`, `PL_FILE_EXIST`, `PL_FILE_READ`,
+# `PL_FILE_WRITE`, `PL_FILE_EXECUTE` and the `file_name_variables` flag; `PL_FILE_SEARCH`, which calls
+# `system:absolute_file_name/3` of init.pl, is refused by name (left to LB4); `DeleteTemporaryFile`
 # (delete_file/1 first tries the registry of `tmp_file/2`'s names, which is empty until tmp_file/2 lands,
 # so the call fails, as upstream's does with no registry).
 
@@ -216,7 +216,7 @@ _ascii_lower(s::String)::Vector{UInt8} =
 
 # PORT: pl-files.c get_file_name
 # DIVERGES: the name is a `String` (UTF-8, which is `REP_FN` in a UTF-8 locale) or `nothing` where upstream
-# writes `char *` and returns a Bool; the unported flags above raise `NotPortedError`. `OsPath` is the
+# writes `char *` and returns a Bool; `PL_FILE_SEARCH` raises `NotPortedError` (left to LB4). `OsPath` is the
 # identity on Unix.
 """
     get_file_name(ld, n, flags) -> String or nothing
@@ -228,16 +228,10 @@ NUL, or `representation_error(max_path_length)` (pl-files.c).
 function get_file_name(
     ld::PL_local_data{T}, n::term_t, flags::Int
 )::Union{Nothing, String} where {T}
-    unported =
-        flags & (
-            PL_FILE_ABSOLUTE | PL_FILE_OSPATH | PL_FILE_SEARCH | PL_FILE_EXIST |
-            PL_FILE_READ |
-            PL_FILE_WRITE | PL_FILE_EXECUTE
-        )
-    unported == 0 || throw(
+    (flags & PL_FILE_SEARCH) == 0 || throw(
         NotPortedError{T}(
             mk_sym(T, :file_name),
-            "PL_get_file_name flags $(string(unported; base=16))", "R2"
+            "PL_get_file_name flag PL_FILE_SEARCH (system:absolute_file_name/3 of init.pl)", "LB4"
         )
     )
     chflags = CVT_ATOM | CVT_STRING | CVT_LIST                  # CVT_FILENAME
@@ -255,14 +249,44 @@ function get_file_name(
         PL_error(ld, ERR_REPRESENTATION, mk_sym(T, :max_path_length))
         return nothing
     end
+    if truePrologFlag(ld, PLFLAG_FILEVARS)
+        name = expandVars(ld, name)
+        name === nothing && return nothing
+    end
+    if (flags & PL_FILE_NOERRORS) == 0
+        op = nothing
+        if (flags & (PL_FILE_READ | PL_FILE_WRITE | PL_FILE_EXECUTE | PL_FILE_EXIST)) != 0 &&
+            !AccessFile(name, ACCESS_EXIST)
+            PL_error(ld, ERR_EXISTENCE, mk_sym(T, :file), n)
+            return nothing
+        end
+        (flags & PL_FILE_READ) != 0 && !AccessFile(name, ACCESS_READ) && (op = :read)
+        op === nothing && (flags & PL_FILE_WRITE) != 0 && !AccessFile(name, ACCESS_WRITE) &&
+            (op = :write)
+        op === nothing && (flags & PL_FILE_EXECUTE) != 0 &&
+            !AccessFile(name, ACCESS_EXECUTE) && (op = :execute)
+        if op !== nothing
+            PL_error(ld, "", 0, "", ERR_PERMISSION, mk_sym(T, op), mk_sym(T, :file), n)
+            return nothing
+        end
+    end
+    if (flags & PL_FILE_ABSOLUTE) != 0
+        name = AbsoluteFile(ld, name)
+        name === nothing && return nothing
+    end
     return name
 end
 
 # PORT: pl-files.c PL_get_file_name
-# DIVERGES: returns the name, or `nothing` (see `get_file_name`).
+# DIVERGES: returns the name, or `nothing` (see `get_file_name`); `PL_FILE_OSPATH` applies `OsPath`, the
+# identity on Unix.
 "The file name the term reference `n` holds, or `nothing` after raising an error (pl-files.c)."
-PL_get_file_name(ld::PL_local_data{T}, n::term_t, flags::Int) where {T} =
-    get_file_name(ld, n, flags)
+function PL_get_file_name(ld::PL_local_data{T}, n::term_t, flags::Int) where {T}
+    name = get_file_name(ld, n, flags)
+    name === nothing && return nothing
+    (flags & PL_FILE_OSPATH) != 0 && (name = OsPath(name))
+    return name
+end
 
 # PORT: pl-files.c RemoveFile
 # DIVERGES: returns 0 on success and else the `errno` of the failure (upstream: a Bool, `errno` read by
