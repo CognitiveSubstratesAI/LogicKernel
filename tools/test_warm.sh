@@ -479,15 +479,19 @@ _guard_cases() {
     [ "$(systemctl --user show "$unit" -p Slice --value)" = lk-warm2.slice ]
     check "second: …and the daemon is still in lk-warm2.slice" 0 $?
     systemctl --user is-active --quiet "$decoy"; check "second: …the other daemon is NOT stopped" 0 $?
-    # THE MANIFEST CHECK'S LEFTOVER RESTART (`_checks_fresh`) goes through `_restart` as well: a daemon-only
-    # method planted (as _stale_cases), a preflight on the second daemon restarts it once. (The preflight's own
-    # stale-daemon restart sits behind the full static file, which the tooling tests stub: not run here.)
-    sleft="_preflight_probe_second_$$"
-    printf 'Core.eval(LogicKernel, :(%s(x::Int) = x))\nisdefined(LogicKernel, :%s) || error("not planted")\n' \
-        "$sleft" "$sleft" > "$T/sleft.jl"
-    "$W" send "$T/sleft.jl" > "$T/sleftout" 2>&1; check "second: a daemon-only method is planted" 0 $?
+    # THE MANIFEST CHECK'S LEFTOVER RESTART (`_checks_fresh`) goes through `_restart` as well. The construction is
+    # _stale_cases (b)'s: a method loaded FROM SOURCE under a name no syntax tree shows, so the preflight finds a
+    # leftover, restarts the daemon once, and then FAILS fast on the rerun (a REAL failure) — a passing rerun would
+    # go on to the fast static pre-check (~10 min cold), longer than the decoy lives. No structs here: the probe
+    # file of the case above is removed first (a src/ file the manifest has no entry for).
+    rm -f "$sprobe"
+    ti="$ROOT/src/term_interface.jl"
+    cp "$ti" "$T/term_interface.jl.bak"
+    printf '\n@eval $(Symbol("_preflight_probe_second_", %s))(x::Int) = x + 1\n' "$$" >> "$ti"
     sp1=$(spid)
     env -u LOGICKERNEL_WARM_SECOND LOGICKERNEL_PREFLIGHT_POOL=0 "$W" preflight > "$T/pf3" 2>&1
+    check "second: a leftover on the second daemon — the preflight fails after the restart (exit 1)" 1 $?
+    cp "$T/term_interface.jl.bak" "$ti"
     has "second: the manifest check's leftover restart runs" "$T/pf3" "DAEMON LEFTOVERS .*restarting the warm lane once" 1
     [ -f "$ROOT/.warm/ready" ] && [ "$(spid)" != "$sp1" ]
     check "second: …on a RESTARTED daemon, a new pid" 0 $?
@@ -496,7 +500,6 @@ _guard_cases() {
     [ "$(systemctl --user show "$unit" -p Slice --value)" = lk-warm2.slice ]
     check "second: …and the daemon is still in lk-warm2.slice" 0 $?
     "$W" stop > /dev/null 2>&1
-    rm -f "$sprobe"
     [ ! -e "$ROOT/.warm/second" ]; check "second: a deliberate stop forgets it" 0 $?
     : > "$ROOT/.warm/second"                              # a STALE marker (a crashed second daemon's)…
     "$W" start > "$T/g6" 2>&1; check "second: …does not excuse a plain start beside another daemon (exit 6)" 6 $?
