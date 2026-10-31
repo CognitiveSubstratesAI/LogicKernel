@@ -40,10 +40,10 @@ Upstream: swipl-devel cbf4e1896275 src/os/pl-prologflag.c (extract in the writer
        `autoload` are refused by name. FINDING (audit): at the pin, `set_prolog_flag(user_flags, error), set_prolog_flag(newkey, 1)` ends in fatal signal 11
        in swipl 10.1.19 (set_prolog_flag_unlocked :1665 continues after the if chain with f == NULL); the kernel returns at once after the existence_error.
        The source comment is neutral (private register: upstream defect to enter; the term-grep words are not used).
-4. [ ] STRUCT COMMIT (ONE separate commit, src/pl-global.jl struct + constructor + every site that builds it): delete the 5 Bool fields and
+4. [x] DONE (coder 3, cdf1b9e, AFTER group 5 so every commit loads; src/pl-global.jl only) STRUCT COMMIT (ONE separate commit, src/pl-global.jl struct + constructor + every site that builds it): delete the 5 Bool fields and
        `prolog_flag_determinism_error` (no field is appended: F1b needs none). Stack owner hand-merges with G1/O1B at the top.
        Gate: ~30 min cold compile, alloc pins x3.
-5. [ ] Migration of the ~25 sites above to `truePrologFlag(ld, PLFLAG_*)`, `_prolog_flag_bit` deleted, determinism_error and print_write_options read the
+5. [x] DONE (coder 3, dcd07b0, BEFORE group 4): pl-comp.jl 9 sites, pl-wam.jl 4, pl-write.jl 2 now `truePrologFlag(ld, PLFLAG_*)`; `determinism_error_flag(ld)` (pl-prologflag.jl, returns :error/:warning/:silent, :error without ld.GD) in det_goal_error/determinism_error; print/2 reads the table's print_write_options (PL_current_prolog_flag :term) and takes `_print_write_options` where the table has none; `_prolog_flag_bit` and its manifest line deleted; 8 test files migrated (test_det_swipl sets the table entry `.a`). Migration of the ~25 sites above to `truePrologFlag(ld, PLFLAG_*)`, `_prolog_flag_bit` deleted, determinism_error and print_write_options read the
        table; tests that set the fields call `setPrologFlagMask!`/`clearPrologFlagMask!` (helpers, new).
 6. [ ] Rows test/core_lang/test_set_flag_swipl.jl (`_SF`/`_sf_`), evidence/F1B/ generator + .out via swipl 10.1.19.
 7. [ ] tools/mutants/F1B.py (>= 14), bench rows (H3), docs/architecture.md block, static manifest entries (LAST, own commits).
@@ -78,6 +78,12 @@ F2 (pl-prologflag.c 1862-1960) afterwards as its own group: evidence/F2/.
   (two small appends; a conflict with another writer adding them is possible). (3) create_prolog_flag is registered with flags 0 (PRED_DEF), though PRED_IMPL says PL_FA_ISO.
 - UNVERIFIED: everything (nothing compiled). Specific doubts: `PL_record(ld, t)` return value for a term with attributed variables; `PL_scan_options` OPT_TERM value type
   (Int term_t, 0 for none, as pl-read.jl uses it); `ground_cells(ld, -(t+1)) != 0` as `!PL_is_ground`; `put_oneof` is used in `check_oneof_flag` with a fresh term_t.
+
+## State at hand-back (coder 3)
+- Commits: bff248a header fix, dcd07b0 group 5, cdf1b9e group 4. Left: groups 6, 7 (this file is updated after each).
+- tools/mutants/MOD3a.py, SSU1.py, V9f.py have `old` anchors on the deleted field names: they need a re-fit at their next run (the audit decides; those steps are landed).
+- For the audit (not decided): uniform D4 refusal of incomparable; arithmetic/ci_*/tabling flags refused by name (set_arith_flag follow-up suggested: float_overflow etc. are common); PL_get_int64/PL_get_int64_ex appended in pl-fli.jl/pl-error.jl (merge conflict risk); the swipl 10.1.19 case in the private register as Q15 (no public mention).
+- UNVERIFIED (nothing compiled): `ld.GD` Union field access in the new helper (type-stable small union); PL_current_prolog_flag(gd, ld, name, opts) in pl_print2 with a fresh term_t; the test edits.
 
 ## Estimate: 10-13 commits. Nothing compiled, nothing run.
 ## Gate order (end of handoff): fmt via warm.sh send of the committed files, inventory, check, rows x3 term types, test_type_discipline.jl,
