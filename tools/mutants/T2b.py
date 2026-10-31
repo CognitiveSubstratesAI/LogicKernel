@@ -1,5 +1,5 @@
 # ORIGINAL: T2's mutant list — no swipl-devel counterpart.
-# tools/mutants/T2.py — the mutation battery of T2 (the string family: pl-string.c atom_string, string_x
+# tools/mutants/T2b.py — the mutation battery of T2 (the second list: the first, T2.py on mutants/T2, left F3 and F5 alive; see below) (the string family: pl-string.c atom_string, string_x
 # (string_codes, string_chars), text_to_string, string_code, get_string_code, split_string, string_bytes,
 # read_string/5, read_string/3, open_string, text_chr, backSkipPadding, PL_text_recode, utf16_to_text; pl-prims.c
 # sub_text for sub_string/5, string_length, string_concat), run ONCE, in CI (.github/workflows/mutation.yml; locally:
@@ -124,16 +124,33 @@ MUTANTS = [
          file=W, targets=TARGETS,
          old="(chr == EOF || text_chr(sep, chr) != -1) && break",
          new="(chr == EOF || text_chr(sep, chr) == -1) && break"),
-    dict(id="T2-F3 backSkipPadding steps one byte, not one character, back over a multibyte padding character (KILL su091; the battery decides)",
+    dict(id="T2-F3 backSkipPadding steps one byte, not one character, back over a multibyte padding character — EQUIVALENT",
          file=W, targets=TARGETS,
          old="        stop = e\n",
-         new="        stop = stop - 1\n"),
+         new="        stop = stop - 1\n",
+         equivalent="src/pl-string.jl:backSkipPadding with src/pl-read.jl:646-653 backSkipUTF8 — the battery on the first list "
+                    "(run 41249152874) left it alive, and no row can decide it: backSkipUTF8(in, 1, stop) walks back from "
+                    "byte stop-1 over continuation bytes to the character that CONTAINS that byte and decodes it forward, so "
+                    "at stop = e + k (a k-byte character starting at e) the mutant's stop-1 still lies inside that same "
+                    "character until stop = e + 1, where the lead byte itself is decoded: the same character is looked up "
+                    "again (the same text_chr verdict, no side effect) and the loop ends at stop = e exactly as the original "
+                    "does after one step; the result `stop - 1` is the same. The buffer is valid UTF-8 (addUTF8Buffer "
+                    "only), so the walk never meets a stray continuation byte. Checked on 200000 random mixed-width "
+                    "strings and padding sets with a Python model of the loop: original and mutant return the same length."),
     dict(id="T2-F4 read_string/3 reads one character more than asked (KILL su056, su063)",
          file=W, targets=TARGETS,
          old="while count < len",
          new="while count <= len"),
-    dict(id="T2-F5 open_string leaves a wide text as it is: the stream reads its UTF-32 bytes (KILL su064, su065)",
+    dict(id="T2-F5 open_string leaves a wide text as it is (the PL_mb_text call is skipped) — EQUIVALENT",
          file=W, targets=TARGETS,
          old="text.encoding === ENC_ISO_LATIN_1 || PL_mb_text(text, REP_UTF8)",
-         new="true || PL_mb_text(text, REP_UTF8)"),
+         new="true || PL_mb_text(text, REP_UTF8)",
+         equivalent="src/os/pl-text.jl:89,92,121 — PL_get_text (flags CVT_ATOM|CVT_STRING|CVT_LIST|CVT_EXCEPTION, the ones "
+                    "pl_open_string2_va passes) returns an ENC_UTF8 text for an atom, a string and a wide code list, and an "
+                    "ENC_ISO_LATIN_1 text for a Latin-1 code list (117); a text it hands out is never ENC_WCHAR (that "
+                    "arises only in PL_canonicalise_text, which open_string does not call). PL_mb_text (pl-text.jl:459) "
+                    "returns at once for an ENC_UTF8 text, and the `||` short-circuits on ENC_ISO_LATIN_1: the call is "
+                    "never effective, so the mutant and the original open the same stream (a wide text is already UTF-8 "
+                    "before the call; the byte-length fix 76bfe51 reads the same buffer). Kept as upstream's "
+                    "PL_mb_text(text, REP_UTF8) for a future PL_get_text that returns ENC_WCHAR."),
 ]
