@@ -1790,7 +1790,8 @@ const VMI_RUN = (
     :I_FCALLNDET5,
     :I_FCALLNDET6, :I_FCALLNDET7, :I_FCALLNDET8, :I_FCALLNDET9, :I_FCALLNDET10,
     :I_CHP, :I_SSU_CHOICE, :I_SSU_COMMIT, :S_SSU_DET,
-    :I_CONTEXT, :I_CALLM, :I_DEPARTM, :S_MQUAL, :S_LMQUAL
+    :I_CONTEXT, :I_CALLM, :I_DEPARTM, :S_MQUAL, :S_LMQUAL,
+    :I_DEPARTATM, :I_CALLATM, :I_DEPARTATMV, :I_CALLATMV
 )
 
 "Jump to the label named after instruction `x`, one of those `table` names (a balanced tree of compares)."
@@ -3332,6 +3333,15 @@ function PL_next_solution_guarded(
     PC += 1
     @goto I_DEPART                                  # VMI_GOTO(I_DEPART)
 
+    # PORT: pl-vmi.c I_DEPARTATM
+    # (pl-vmi.c:2113-2123 at the pin; MOD3b)
+    #     PC++;                           /* Ignore :-qualifier */
+    #     VMI_GOTO(I_DEPARTM);
+    # The procedure-module operand serves the decompiler only.
+    @label I_DEPARTATM
+    PC += 1                                         # PC++: ignore the :-qualifier
+    @goto I_DEPARTM                                 # VMI_GOTO(I_DEPARTM)
+
     # PORT: pl-vmi.c I_CALL1
     # DIVERGES: the new frame is the record pushed at `lTop`, upstream's cast `NFR = lTop`.
     # NOT PORTED: the debug output.
@@ -3497,6 +3507,97 @@ function PL_next_solution_guarded(
     mc_proc = resolveProcedure(gd, mc_name, mc_arity + mc_callargs, gd.modules[mc_mi])
     DEF = mc_proc.definition
     @goto mcall_cont
+
+    # PORT: pl-vmi.c I_CALLATM
+    # (pl-vmi.c:5331-5341 at the pin; MOD3b) "The procedure-module is provided to support the
+    # decompiler."
+    #     PC++;
+    #     VMI_GOTO(I_CALLM);
+    @label I_CALLATM
+    PC += 1                                         # PC++: the procedure-module
+    @goto I_CALLM                                   # VMI_GOTO(I_CALLM)
+
+    # PORT: pl-vmi.c I_DEPARTATMV
+    # (pl-vmi.c:5343-5370 at the pin; MOD3b)
+    #     if ( (void *)BFR > (void *)FR || !truePrologFlag(PLFLAG_LASTCALL) )
+    #     { VMI_GOTO(I_CALLATMV);
+    #     } else
+    #     { PC++;
+    #       int iv = (int)*PC++;
+    #       Word ap = varFrameP(FR, iv);
+    #       deRef(ap);
+    #       if ( isTextAtom(*ap) )
+    #       { Module m = lookupModule(word2atom(*ap));
+    #         setContextModule(FR, m);
+    #         VMI_GOTO(I_DEPART);
+    #       } else
+    #       { PL_error(NULL, 0, NULL, ERR_TYPE, ATOM_module, pushWordAsTermRef(ap));
+    #         popTermRef();
+    #         THROW_EXCEPTION;
+    #       }
+    #     }
+    # DIVERGES: `BFR > FR` compares positions, as `I_DEPARTM`'s; the variable's slot is dereferenced as a
+    # location (`_deref_loc`); the module is its index. The type error is the helper label
+    # `callatmv_type_error`, shared with `I_CALLATMV`. (H11: `lookupModule` can create a module.)
+    @label I_DEPARTATMV
+    if !(ld.BFR == 0 || ld.choices[ld.BFR].base <= ld.frames[FR].base) ||
+        !ld.prolog_flag_last_call
+        @goto I_CALLATMV                            # VMI_GOTO(I_CALLATMV)
+    end
+    PC += 1                                         # PC++
+    atv_iv = Int(PCc[PC])                           # int iv = (int)*PC++
+    PC += 1
+    atv_k, atv_w, atv_p = _deref_loc(ld, -(varFrameP(ld.frames[FR].base, atv_iv) + 1))  # ap = varFrameP(FR, iv); deRef(ap)
+    if atv_k == DU_WORD && isAtomW(atv_w) && isTextAtom(_atom_value(ld, atv_w))    # isTextAtom(*ap)
+        setContextModule!(ld.frames[FR], lookupModule(gd, _atom_value(ld, atv_w)).index)  # setContextModule(FR, lookupModule(word2atom(*ap)))
+        @goto I_DEPART                              # VMI_GOTO(I_DEPART)
+    end
+    @goto callatmv_type_error
+
+    # PORT: pl-vmi.c I_CALLATMV
+    # (pl-vmi.c:5376-5400 at the pin; MOD3b)
+    #     PC++;
+    #     int iv = (int)*PC++;
+    #     Procedure proc = code2ptr(Procedure, *PC++);
+    #     Word ap = varFrameP(FR, iv);
+    #     deRef(ap);
+    #     if ( isTextAtom(*ap) )
+    #     { Module module = lookupModule(word2atom(*ap));
+    #       DEF = proc->definition;
+    #       NFR = lTop;
+    #       VMH_GOTO(mcall_cont, module);
+    #     } else
+    #     { PL_error(NULL, 0, NULL, ERR_TYPE, ATOM_module, pushWordAsTermRef(ap));
+    #       popTermRef();
+    #       THROW_EXCEPTION;
+    #     }
+    # DIVERGES: as `I_DEPARTATMV`'s; the procedure operand indexes the clause's procedure table (as
+    # `I_CALLM`'s); the new frame is the record pushed at `lTop`. (H11: `lookupModule` can create a module.)
+    @label I_CALLATMV
+    PC += 1                                         # PC++
+    atv_iv = Int(PCc[PC])                           # int iv = (int)*PC++
+    atv_proc = _call_procedure(ld, FR, PCc[PC + 1]) # Procedure proc = code2ptr(Procedure, *PC++)
+    PC += 2
+    atv_k, atv_w, atv_p = _deref_loc(ld, -(varFrameP(ld.frames[FR].base, atv_iv) + 1))  # ap = varFrameP(FR, iv); deRef(ap)
+    if atv_k == DU_WORD && isAtomW(atv_w) && isTextAtom(_atom_value(ld, atv_w))    # isTextAtom(*ap)
+        mc_mi = lookupModule(gd, _atom_value(ld, atv_w)).index  # Module module = lookupModule(word2atom(*ap))
+        DEF = atv_proc.definition                   # DEF = proc->definition
+        NFR = pushFrame!(ld, ld.lTop)               # NFR = lTop
+        @goto mcall_cont                            # VMH_GOTO(mcall_cont, module)
+    end
+    @goto callatmv_type_error
+
+    # PORT: pl-vmi.c I_CALLATMV as callatmv_type_error
+    # (the `else` branch of `I_CALLATMV` and `I_DEPARTATMV`, a helper label as `call_type_error`) An
+    # unbound variable reaches `PL_error`'s ERR_TYPE rule, which raises the instantiation error, as
+    # upstream's.
+    @label callatmv_type_error
+    @SAVE_REGISTERS(QID)
+    atv_t = pushWordAsTermRef(ld, (atv_k, atv_w, atv_p))   # pushWordAsTermRef(ap)
+    PL_error(ld, ERR_TYPE, mk_sym(T, :module), atv_t)
+    popTermRef(ld)                                  # popTermRef()
+    @LOAD_REGISTERS(QID)
+    @goto b_throw                                   # THROW_EXCEPTION
 
     # PORT: pl-vmi.c I_CALLM
     # (pl-vmi.c:5410-5417 at the pin; MOD3a)
