@@ -68,14 +68,41 @@ Commit estimate (first 3 commits): ~20 (G0-G11 about 14, rows 2-3, mutants 1, ma
   it as a fix folded into G11's commit message.
 Commit count so far 10 (plan + G1-G9 = 9 commits + handoff commits); estimate: about 20 in all.
 
-## Left / next (G11 onwards)
-- G11: `PL_predicates_from_glob` appended after `PL_predicates_from_files` in `_PRED_TABLES` and `...` in `_FOREIGN_VA` (src/pl-ext.jl:57-84: sources at 66 and 78),
-  `include("os/pl-glob.jl")` in src/LogicKernel.jl after the pl-files.jl include (line 62); own tiny commit. pl-glob.jl uses PL_option_t/OPT_BOOL/PL_scan_options
-  (pl-option.jl), so the include must come after pl-option.jl (check the include order). Check no other file already defines names pl-glob.jl introduces
-  (`expand`, `un_escape`, `match_pattern`, `compile_pattern`, `M_IGNCASE`, `wildcard_options`): grep named files, not recursive.
-- G12 (all NOT STARTED): rows test/files/test_lb2b_swipl.jl + generator/driver/.out under evidence/LB2B/ (swipl 10.1.19, `timeout 20`), tools/mutants/LB2B.py (>= 20),
-  test/test_type_discipline.jl allowlist: `"os/pl-files.jl ccall"` 1 -> 9 (ccalls now: remove, access, readlink, rename, umask, chmod, rmdir, mkdir, getuid; update the
-  note text), `"os/pl-os.jl ccall"` stays 3; manifest block; docs/architecture.md block (last two commits).
+## Done since (coder 3; nothing compiled or run, swipl only)
+- 1e62c7a FIXED: pl-glob.jl expand drops the two unused meta assignments.
+- ba5e03f G11: PL_predicates_from_glob after _files in _PRED_TABLES and _FOREIGN_VA (src/pl-ext.jl), include("os/pl-glob.jl") after pl-files.jl (src/LogicKernel.jl). No name clashes (named-file greps).
+  NOTE for the manifest block: test/static_analysis_manifest.jl:2604 has the Y1 line `(LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_files)}, false)`; add the same for PL_predicates_from_glob (appended block).
+- 19375cd G12 rows: test/files/test_lb2b_swipl.jl (+ .pl, .out beside it), evidence/LB2B/{gen_lb2b_rows.py, fixtures.sh, run_lb2b_rows.sh, test_lb2b_swipl.out}. 386 rows, swipl 10.1.19, `timeout 20`,
+  two byte-identical runs (run_lb2b_rows.sh <scratch-dir>, from the repo root; it regenerates the .pl and copies the .out to test/files and evidence/LB2B). Refusals (tmp_file, $tmp_file_stream, IRI) are a second
+  testset in the .jl (NotPortedError, step "LB2b audit" / "LB4"). Non-vacuity thresholds are in the .jl (counted on the .out: existence_error 27, type_error 28, instantiation_error 27, false 64, true 75).
+  If a row is added: edit gen_lb2b_rows.py, rerun run_lb2b_rows.sh, `git add` the 4 generated files, thresholds stay valid.
+  Facts from the swipl run worth knowing: stderr of the swipl run holds one line (`$my_file` nowhere); contexts differ per predicate (size_file/rename_file/access_file: `context(Name/Arity, Msg)` without `system:`);
+  `[A-C]x` with case_sensitive(false) does not match `bx` (the set is not lower-cased); `[^a-c]` is no negation; prolog_to_os_filename(_,_) succeeds; expand_file_name('lk_lb2b_d*/sub/*') is [].
+  Rows depend on a non-root user (lk_lb2b_ro write is false).
+
+## Left / next
+1. tools/mutants/LB2B.py (NOT STARTED, >= 20; format of tools/mutants/MOD3b.py; fields id, file, old, new, targets, optional equivalent). Candidate list (anchors read in the source, each `old` must be re-counted with grep -c -F):
+   pl-glob.jl: `push!(out, GLOB_ANY)\n` -> GLOB_STAR (t244-246); `push!(out, GLOB_STAR)\n` -> GLOB_ANY (t238,t247); STAR branch `match_pattern(p, pi, s, si, flags) && return true` -> `false && return true` (t238);
+   ALT `match_pattern(p, pi + 1, s, si, flags) && return true` -> false (needs new row wildcard_match('{a,b}c', ac)); JMP `pi += p[pi]\n        elseif c == GLOB_ALT` -> `pi += 1`; ANYOF range `c2 <= p[pi + 2]` -> `<` and `c2 >= p[pi + 1]` -> `>`
+   (NEW ROWS: '[a-c]x' vs cx and ax); `if _glob_at(p, pos) == Int('-') && ce != Int(']')` -> `if false` (t250); ANY no end check `_glob_at(s, si) == 0 && return false` (NEW ROW wildcard_match('?', '')); char branch IGNCASE line (t278);
+   compile `(mflags & M_IGNCASE) != 0 && (c = _glob_lower(c))` -> nothing (t276); `case_sensitive = vals[1] !== false` -> `= true` (t276); `case_sensitive || (mflags |= M_IGNCASE)` -> nothing; `"Unmatched '{'"` -> `"Unmatched '['"` (t259);
+   `(c == Int('}') || c == Int(',')) && curl == GLOB_CURL` -> `false && curl == GLOB_CURL` (t256); `push!(out, c2 == 0 ? c : c2)` -> `push!(out, c)` (t261); expand `dot = startswith(patbuf, '.')` -> `dot = true` (t308);
+   expand `for name in vcat([".", ".."], names)` -> `for name in names` (t310); directory_files `for e in vcat([".", ".."], names)` -> `for e in names` (t286); sort_expand `return sort(files)` -> `return files` (t298);
+   expand `if last == 1 || utf8_exists_file(path)` -> `if last == 1` (t314); `if ncodeunits(s) > PATH_MAX - 1` -> `> PATH_MAX * 4` (t350).
+   pl-files.jl: SizeFile `return (st.size, 0)` -> `st.size + 1` (t13); access_mode W_OK line removed (t24); ExistsFile `!(st isa Int) && isfile(st)` -> `!(st isa Int)` (t68); ExistsDirectory likewise (t84);
+   DeRefLink `n = 20` -> `n = 1` (t57); `(st1 isa Int || st2 isa Int) && return false` removed (t114); get_file_name `PL_error(ld, ERR_EXISTENCE, mk_sym(T, :file), n)` -> :directory (t5);
+   access_file `_is_atom_named(m, T, :none) && return FTRUE` removed (t28); `|| _is_atom_named(m, T, :search)` dropped (NEW ROW access_file(lk_lb2b_dir, search)); `if md == ACCESS_WRITE && !AccessFile(n, ACCESS_EXIST)` -> `if md == ACCESS_WRITE` (t30);
+   `ExistsDirectory(dir) || return FFALSE` removed (t45); file_name_extension `startswith(e, '.') && (e = e[2:end])` removed (t153); has_extension `truePrologFlag(ld, PLFLAG_FILE_CASE) && return rest == e` -> `return true` (t156);
+   delete_directory `mk_sym(T, :delete), mk_sym(T, :directory), A1` -> :remove (t364); `if SameFile(ld, o, n)` in rename_file -> `if false` (t378); mkdir mode `_mkdir(n, 0o777)` -> 0o000 (NEW MUTATING ROW: make_directory(lk_lb2b_n4), access_file(lk_lb2b_n4, write));
+   file_name_is_iri `s - 1 >= 2 && s + 2 <= n` -> `s - 1 >= 1` (refusal testset: exists_file('a://x'), ACTUALLY check the anchor, 1 occurrence).
+   pl-os.jl: BaseName `stop == e && b[e + 1] == UInt8('/') && return "/"` removed (t122); DirName `e == 0 && return b[1] == UInt8('/') ? "/" : "."` -> `"."` (t139,t142); AbsoluteFile `IsAbsolutePath(file) && return canonicalisePath(ld, file)` removed (t202);
+   PL_cwd `cwd = buf * "/"` -> `cwd = buf` (t215); ChDir `endswith(tmp, '/') || (tmp *= "/")` removed (t219); ChDir `gd === nothing || (gd.paths_CWDdir = tmp)` -> `nothing` (t220, the logical cwd of a symlink).
+   Equivalents: pl-files.jl has_extension line 1 `isempty(ext) && return true` makes `|| isempty(e)` in pl_file_name_extension3_va redundant (remove that `|| isempty(e)`); SameFile `&& st1.device == st2.device` (all fixtures on one device).
+   TARGETS (D-0238): test/files/test_lb2b_swipl.jl first; the mutated code shared with other tests also lists: get_file_name/PL_get_file_name/AbsoluteFile/canonicalise*/file_name_is_iri -> test/core_lang/test_sys_swipl.jl (delete_file),
+   test/files/test_open_close_swipl.jl, test/files/test_load_swipl.jl (the last grep, `grep -n -F` of the callers over named src files, was not run: the cap ended the session; do it first).
+   Validate with a throwaway python3 -I + runpy checker in the private scratchpad (old once, new != old, ids unique, targets exist).
+2. test/test_type_discipline.jl allowlist: `"os/pl-files.jl ccall"` 1 -> 9 (ccalls: remove, access, readlink, rename, umask, chmod, rmdir, mkdir, getuid; count them with grep -c before editing), `"os/pl-os.jl ccall"` stays 3 (verify); own commit.
+3. test/static_analysis_manifest.jl appended block (new functions of pl-files.jl, pl-os.jl, pl-glob.jl incl. PL_predicates_from_glob's `_extension_sigs` line), then docs/architecture.md appended block: the LAST two commits.
 
 ## OLD notes of the G4-G8 decisions (the groups above are written; kept for the record)
 - G4 pl-files.jl helpers (pl-files.c:36-420). DECIDED, not yet written: stat is `Base.stat` wrapped as
@@ -113,10 +140,9 @@ Everything.
 9. (G10) `expand` and `directory_files` put `.` and `..` first then `readdir(sort=false)` (libuv omits them); expand skips unreadable dirs and invalid-UTF-8 names.
 10. UNVERIFIED hot spots for the first compile: `Base.Filesystem.StatStruct` name, `stat` errors (ENOENT/ENOTDIR/EINVAL come as a field, others as IOError), ccall `readlink`
    return type `Int`, `_umask(um)` Cuint, `PL_scan_options(...)[1] !== false`, `PL_error(ld, "", 0, "", ERR_SYNTAX, String)`, `Int(PL_FILE_READ | PL_FILE_OSPATH)`.
+12. (G8, restated) tmp_file needs a PL_global_data field `os_tmp_files` and Sfdopen in the stream layer: a second struct change; the audit's call. Flags 1-11 stay undecided.
 11. Hook notes: the recursive-grep hook blocked one `grep -rn ... src` (no escape used); no allow-* escape used anywhere.
 
 ## GATE ORDER (the gate agent)
-Tier 2 first; fmt via `warm.sh send` (committed files); inventory; `check`; test/files/test_lb2b_swipl.jl on all three term
-types; test/test_type_discipline.jl; `tools/pkgtest_way.sh test/files/test_lb2b_swipl.jl` (one at a time); push
-`mutants/LB2B` at the WIP SHA; branch-gate; term grep (D-0164); alloc pins x3 (pl-global.jl changed: G1); gate push
-`gate/lb2b` and `mutants/LB2B` at the SAME SHA.
+Tier 2 plus a struct change (G1): alloc pins x3. In order: fmt via `warm.sh send` (committed files); inventory; `check`; test/files/test_lb2b_swipl.jl on all three term types; test/test_type_discipline.jl;
+`tools/pkgtest_way.sh test/files/test_lb2b_swipl.jl` (one at a time); push `mutants/LB2B` at the WIP SHA; branch-gate; term grep (D-0164); alloc pins x3; gate push `gate/lb2b` and `mutants/LB2B` at the SAME SHA.
