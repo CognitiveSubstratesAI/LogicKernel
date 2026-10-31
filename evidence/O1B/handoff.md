@@ -54,3 +54,24 @@ drop `redir && pushOutputContext`; swap `PL_CODE_LIST`/`PL_CHAR_LIST` for codes/
 - A's expectations (INTERFACE TO B in evidence/O1A/handoff.md) were not readable (the file did not exist yet): the dispatcher reconciles.
 Gate order: fmt (via send), inventory, check, rows on three term types, type discipline, pkgtest_way, mutants branch, branch-gate, term grep,
 alloc pins x3 (pl-global.jl changed), gate push on a FRESH name.
+
+## RECONCILE with O1-A (coder 2, read-only: ~/code/lk-o1a evidence/O1A/handoff.md 'INTERFACE TO B' vs src/os/pl-redirect.jl)
+AGREE (name, argument order, arity, result type), each checked against the file:
+- `redir_context()` zero-argument constructor (pl-redirect.jl:84), field `.stream`. Its type is `Union{Nothing, IOSTREAM}`, set before any use;
+  A passes `ctx.stream` to `format_impl`: A's parameter must accept it (an `::IOSTREAM` annotation is fine at run time, the value is a stream
+  once `setupOutputRedirect` returned true).
+- `setupOutputRedirect(ld, to::term_t, ctx, redir::Bool)::Bool` (`to == 0`: the current output).
+- `closeOutputRedirect(ld, ctx)::Bool`, `discardOutputRedirect(ld, ctx)::Nothing`.
+- `tellString(ld, bufp::Base.RefValue{Union{Nothing,Vector{UInt8}}}, sizep::Base.RefValue{Int}, enc::IOENC)::Bool`, `toldString(ld)::Bool`.
+- A's `Scurout(ld)` use matches pl-file.jl:125.
+MISMATCH 1 (A's side, for the dispatcher): A's handoff (item 4) says `callProlog` has no `ex` out-argument and plans `PL_Q_PASS_EXCEPTION` for `~@`
+  (a DIVERGES). O1-B's commit 3cb3a13 gives `callProlog(gd, ld, flags_module, goal, flags, ex::Union{Nothing, Base.RefValue{Int}})` (the 6-argument
+  form, pl-pro.c:476), the 5-argument form kept as a forwarder: A can call `callProlog(_query_gd(ld), ld, 0, goal, PL_Q_CATCH_EXCEPTION, ex)` with
+  `ex = Ref(0)` as pl_with_output_to2_va does and drop the DIVERGES. Nothing to change on B's side.
+MISMATCH 2 (include order, for the stack owner): B includes `os/pl-redirect.jl` in src/LogicKernel.jl right after `os/pl-file.jl` (line 64, BEFORE
+  pl-write.jl at line 74); A wants `pl-fmt.jl` AFTER pl-write.jl and pl-file.jl, BEFORE pl-ext.jl. Merged order on the stack:
+  `os/pl-file.jl`, `os/pl-redirect.jl`, ... `pl-write.jl`, `pl-fmt.jl`, `pl-ext.jl`. pl-redirect.jl uses no pl-write.jl name at load time
+  (every use is inside a function body); pl-fmt.jl needs pl-redirect.jl (earlier) and pl-write.jl (earlier): the two lines do not conflict.
+  pl-ext.jl: B appends `PL_predicates_from_redirect` to `_PRED_TABLES`/`_FOREIGN_VA` after `PL_predicates_from_file`; A's table
+  (`PL_predicates_from_format`) is appended by the dispatcher: both lines touch the same two tuples (hand-merge, no semantic clash).
+- The test file of A is named test/core_lang/test_format_swipl.jl in A's handoff (not on disk yet); it is a TARGET of the O1B mutants.
