@@ -1732,6 +1732,16 @@ mutable struct recordRef{T, L}
     record::Union{Nothing, record{T}}                   # the record itself
     flags::UInt32                                       # (record->flags: R_ERASED, R_DBREF)
     serial::Int                                         # (the blob's payload, 0: none)
+    # (allocHeapOrHalt in PL_record_az: `list` is set once the key's list is found, src/pl-rec.jl)
+    function recordRef{T, L}(rec::record{T}) where {T, L}
+        r = new{T, L}()
+        r.next = nothing
+        r.prev = nothing
+        r.record = rec                                  # r->record = copy
+        r.flags = UInt32(0)
+        r.serial = 0
+        return r
+    end
 end
 
 # PORT: pl-incl.h recordList
@@ -1749,6 +1759,18 @@ end
 const RecordList{T} = recordList{T}
 "`RecordRef` (pl-incl.h): a pointer to a `recordRef`."
 const RecordRef{T} = recordRef{T, recordList{T}}
+
+# PORT: pl-rec.c recorded_state
+# DIVERGES: a record of the local data's pool (`ld.recorded_states`, `foreign_state_pool`, design D3 of NF1),
+# from the FIRST call on (upstream: on the C stack, copied to the heap by `save_state`); `e` the next index
+# in `gd.record_lists_order` (upstream: a `TableEnum`), 0 when the key is bound (`e == NULL`).
+"`recorded/3`'s state (pl-rec.c `recorded_state`): the key enumeration, the current record, whether it is saved."
+mutable struct recorded_state{T}
+    e::Int                                              # enumerating over keys
+    r::Union{Nothing, RecordRef{T}}                     # current record
+    saved::Bool
+end
+recorded_state{T}() where {T} = recorded_state{T}(0, nothing, false)
 
 # PORT: pl-bag.c findall_bag
 # DIVERGES: the bags are a vector (the local data's `bags`, upstream's `bag_stack`), so a bag's
