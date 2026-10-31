@@ -76,6 +76,21 @@ functions of the area run :1818-1991 (the helpers above the predicates, the pop 
   (4) push of an absent flag ignores user_flags (as upstream): NO swipl row, the user_flags=error + new key case has no swipl answer to pin (detail in the private register).
 - Hook notes: the absence-claim hook fired on the phrase 'is absent' in a commit body; reworded ('first created by the push').
 
+## State at hand-back (coder 2; NOTHING compiled or run)
+- Commits after 971ffda: 54bbb25 tools/mutants/F2.py (26 mutants: A1-A7, B1-B4, C1-C3, D1-D10, E1, EQ1; checked with a throwaway
+  python3 -I + runpy checker: every `old` once, new != old, ids unique, targets exist; the plan said 27, the list above is what the
+  plan names); 8446f94 docs/architecture.md (an `## F2` section inserted BEFORE `## Still to come`; F1b's block sits at the file end
+  inside the Still-to-come list, so the two do not neighbour); 76bed45 test/static_analysis_manifest.jl (nine entries, inserted
+  directly after F1b's last entry `PL_get_int64_ex`, inside `_manifest_index`).
+- Anchor notes: D8 uses the three-line form (the slot line occurs twice); C1's anchor ends in two spaces (the line carries a
+  trailing comment, so fmt may re-flow it: re-fit); all targets are the one row file (no mutant touches set_flag_value, so
+  test_set_flag_swipl.jl is not listed, said in the header).
+- LEFT: the gate (GATE ORDER below); the audit's findings 1-4 above stay undecided.
+- Merge risk: `PL_put_float` is appended to src/pl-fli.jl (after PL_put_integer) and a manifest entry for it sits in the F2 block;
+  another writer adding the same function or entry makes a duplicate-definition or duplicate-entry at the rebase.
+- UNVERIFIED (nothing compiled): the manifest argument types (Int for term_t, `Tuple{T, prolog_flag{T}}` for `ensure_local_flag`);
+  `PL_put_float` calls `PL_nan()` (src/pl-arith.jl:124, defined; not read in a running image); the mutant anchors after fmt.
+
 ## GATE ORDER (F2; Tier 2, gates ON TOP OF the F1b/D stack: F2 uses F1b's set_flag_value, new_prolog_flag, clean_prolog_flag, check_flag_write_access and the `pushed` field)
 1. Rebase wip/f2 onto the stack after F1b (src/os/pl-prologflag.jl, docs/architecture.md and test/static_analysis_manifest.jl take appended blocks; no pl-global.jl change here).
 2. fmt: `tools/warm.sh send` of the committed files (fmt sees only the HEAD diff): src/os/pl-prologflag.jl, src/pl-fli.jl, test/core_lang/test_push_flag_swipl.jl, test/static_analysis_manifest.jl;
