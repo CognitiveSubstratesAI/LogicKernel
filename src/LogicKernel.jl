@@ -61,6 +61,7 @@ include("os/pl-text.jl")       # swipl-devel src/os/pl-text.c — the text a ter
 include("os/pl-os.jl")         # swipl-devel src/os/pl-os.c — the clocks, the environment, Pause (Y1)
 include("os/pl-files.jl")      # swipl-devel src/os/pl-files.c — the file name a term holds, delete_file/1 (Y1)
 include("os/pl-file.jl")       # swipl-devel src/os/pl-file.c — the file an open stream reads (the loader)
+include("os/pl-redirect.jl")   # swipl-devel src/os/pl-file.c — the output redirect, with_output_to/2 (O1B)
 include("pl-setup.jl")         # swipl-devel src/pl-setup.c — emptying the stacks of a new LD
 include("pl-proc.jl")          # swipl-devel src/pl-proc.c — predicates, assert, retract, clause GC
 include("pl-srcfile.jl")       # swipl-devel src/pl-srcfile.c — source files: consulting a file (first load)

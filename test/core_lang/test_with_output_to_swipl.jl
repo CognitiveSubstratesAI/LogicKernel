@@ -1,0 +1,352 @@
+# ORIGINAL: O1B's gate (lk-channel evidence/r2/design/flags_rest.md §4 O1, H10) — with_output_to/2 and the output redirect (pl-file.c
+# `setupOutputRedirect`, `closeOutputRedirect`, `discardOutputRedirect`, `pushOutputContext`, `popOutputContext`, `with_output_to`),
+# against swipl 10.1.19; the rows are tests/core_lang/test_with_output_to_swipl.jl:
+#   * A PROGRAM consulted by the kernel's loader — a few helper clauses (`wo_*`) — and cases `t_<id>(R)` run IN ORDER in one
+#     database, each wrapped in `catch(Goal, error(SsuE, _), R = raised(SsuE))`; the answers are encoded by `_wo_enc`.
+#   * Every answer line is swipl's, PINNED (swipl 10.1.19-1-gcbf4e189, two runs byte-identical, 2026-10-31, lk-channel
+#     evidence/O1B/wo_rows.out in the O1B branch); with `swipl` on PATH the live answers are compared with the pins too.
+#   * The rows use only write/1, writeq/1, write_canonical/1, write_term/2, nl/0,1 as the writing predicates (format/2,3 is O1A's).
+#   * Rows marked `UNVERIFIED on the kernel: gate decides` depend on a kernel error or builtin the writer could not judge.
+using Test, LogicKernel
+const LK = LogicKernel
+
+# TERM TYPES PER CHUNK: REFERENCE — the redirect (src/os/pl-redirect.jl), built on the stream layer; every type in CI and at milestones
+include(joinpath(@__DIR__, "..", "term_under_test.jl"))
+const _WO = lk_term_type(Union{Int64, Float64, String, BigInt, Rational{BigInt}})
+_wos(x) = lk_sym(_WO, Symbol(x))
+
+_wo_codes(s::String) = "[" * join(Int.(collect(s)), ",") * "]"
+"A term as the driver's `enc/1` writes it: `V<i>` by first occurrence, atoms and functors by their codes."
+function _wo_enc(t::_WO, seen::Vector{UInt64}=UInt64[])::String
+    k = kind(t)
+    if k === VAR
+        i = findfirst(==(var_key(t)), seen)
+        if i === nothing
+            push!(seen, var_key(t))
+            i = length(seen)
+        end
+        return "V$(i - 1)"
+    elseif k === SYM
+        return is_nil(t) ? "nil" : "a" * _wo_codes(sym_text(t))
+    elseif k === GND
+        v = lk_value(t)
+        v isa AbstractString && return "s" * _wo_codes(String(v))
+        v isa Integer && return "i$v"
+        v isa Rational && return "q$(numerator(v))r$(denominator(v))"
+        v isa AbstractFloat && return "f$(v)"
+        return "?$(typeof(v))"
+    end
+    h = child(t, 1)
+    return (is_nil(h) ? "c[]" : "c" * _wo_codes(sym_text(h))) * "/$(nchildren(t) - 1)(" *
+           join([_wo_enc(child(t, i), seen) for i in 2:nchildren(t)], ",") * ")"
+end
+
+# the swipl side: the driver of test_at_body_swipl.jl (consult, then every answer of each t_<id>/1, `enc`oded)
+const _WO_DRIVER = raw"""
+enc(T) :- enc(T, [], _).
+enc(V, S0, S) :- var(V), !, ( vidx(S0, V, 0, I) -> S = S0 ; length(S0, I), append(S0, [V], S) ), format("V~w", [I]).
+enc(T, S, S) :- T == [], !, write(nil).
+enc(T, S, S) :- atom(T), !, atom_codes(T, Cs), format("a~w", [Cs]).
+enc(T, S, S) :- string(T), !, string_codes(T, Cs), format("s~w", [Cs]).
+enc(T, S, S) :- integer(T), !, format("i~w", [T]).
+enc(T, S, S) :- rational(T, N, D), !, format("q~wr~w", [N, D]).
+enc(T, S, S) :- float(T), !, format("f~w", [T]).
+enc(T, S0, S) :- compound_name_arity(T, N, A),
+    ( N == [] -> write('c[]') ; atom_codes(N, Cs), format("c~w", [Cs]) ),
+    format("/~w(", [A]), encargs(1, A, T, S0, S), write(')').
+encargs(I, A, _, S, S) :- I > A, !.
+encargs(I, A, T, S0, S) :- arg(I, T, X), enc(X, S0, S1), ( I < A -> write(',') ; true ),
+    I1 is I+1, encargs(I1, A, T, S1, S).
+vidx([X|_], V, I, I) :- X == V, !.
+vidx([_|Xs], V, I0, I) :- I1 is I0+1, vidx(Xs, V, I1, I).
+fz_pred(N) :-
+    format("~w", [N]), functor(G, N, 1),
+    catch(findnsols(50, G, G, Gs), _, Gs = [exception]),
+    forall(member(S, Gs), ( S == exception -> write(' exception') ; write(' '), enc(S) )), nl.
+fz_run(File, Ns) :-
+    catch(( consult(File), S = ok ), E, S = exc(E)),
+    ( S == ok -> writeln(ok) ; S = exc(B), write('exc '), enc(B), nl ),
+    forall(member(N, Ns), fz_pred(N)).
+"""
+function _wo_swipl_lines(path::String, names::Vector{String})::Vector{String}
+    out = mktempdir() do d
+        f = joinpath(d, "drv.pl")
+        write(
+            f,
+            _WO_DRIVER * ":- initialization((fz_run('$path', [" * join(names, ",") *
+            "]), halt)).\n"
+        )
+        read(pipeline(`swipl -q $f`; stdin=devnull, stderr=devnull), String)
+    end
+    return String.(split(chomp(out), '\n'; keepempty=false))
+end
+
+# the program: helpers the rows call (the writing predicates are the kernel's own)
+const _WO_PROGRAM = raw"""
+wo_rep(0) :- !.
+wo_rep(N) :- write(abcdefghij), N1 is N-1, wo_rep(N1).
+wo_u(U) :- atom_codes(U, [97, 8364, 98]).
+wo_ball :- throw(ball(1, f(x))).
+wo_inner_fail :- write(lost), fail.
+wo_inner_throw :- write(lost), throw(e).
+wo_deep(0) :- !, write(bottom).
+wo_deep(N) :- write(N), N1 is N-1, with_output_to(atom(A), wo_deep(N1)), write(A).
+"""
+
+# (id, goal), run IN ORDER
+const _WO_CASES = [
+    # w01: the five sink kinds, each with text written by write/1: atom, string, codes, chars
+    ("w01", raw"with_output_to(atom(A), write(hello)), R = A"),
+    ("w02", raw"with_output_to(string(S), write(hello)), R = S"),
+    ("w03", raw"with_output_to(codes(C), write(ab)), R = C"),
+    ("w04", raw"with_output_to(chars(C), write(ab)), R = C"),
+    # w05: the difference-list sinks: codes(C, T) and chars(C, T) leave T the unbound tail
+    ("w05", raw"with_output_to(codes(C, T), write(ab)), T = [120], R = C"),
+    ("w06", raw"with_output_to(chars(C, T), write(ab)), T = [z], R = C"),
+    # w07: nothing written: '' / "" / [] and the difference lists with C == T
+    ("w07", raw"with_output_to(atom(A), true), R = A"),
+    ("w08", raw"with_output_to(string(S), true), R = S"),
+    ("w09", raw"with_output_to(codes(C), true), R = C"),
+    ("w10", raw"with_output_to(chars(C), true), R = C"),
+    ("w11", raw"with_output_to(codes(C, T), true), R = C-T"),
+    ("w12", raw"with_output_to(chars(C, T), true), R = C-T"),
+    # w13: several writes, a newline, numbers; quoting follows the writing predicate
+    ("w13", raw"with_output_to(atom(A), (write(a), nl, write(b))), R = A"),
+    ("w14", raw"with_output_to(atom(A), write(42)), R = A"),
+    ("w15", raw"with_output_to(atom(A), write(1.5)), R = A"),
+    ("w16", raw"with_output_to(atom(A), writeq('A b')), R = A"),
+    ("w17", raw"with_output_to(atom(A), write_canonical([x, 'Y z'|c])), R = A"),
+    ("w18", raw"with_output_to(atom(A), write_term('a b', [quoted(true)])), R = A"),
+    # w19: a wide character (above 255): atom, codes, chars
+    ("w19", raw"wo_u(U), with_output_to(atom(A), write(U)), atom_codes(A, Cs), R = Cs"),
+    ("w20", raw"wo_u(U), with_output_to(codes(C), write(U)), R = C"),
+    ("w21", raw"wo_u(U), with_output_to(chars(C), write(U)), atom_length(U, L), R = L-C"),
+    # w22: more than the memory stream's first buffer (3000 characters)
+    ("w22", raw"with_output_to(atom(A), wo_rep(300)), atom_length(A, R)"),
+    ("w23", raw"with_output_to(codes(C), wo_rep(300)), atom_codes(A, C), atom_length(A, R)"),
+    # w24: a bound sink: unified with the text after the goal; a mismatch fails
+    ("w24", raw"with_output_to(atom(abc), write(abc)), R = yes"),
+    ("w25", raw"( with_output_to(atom(abd), write(abc)) -> R = yes ; R = no )"),
+    ("w26", raw"with_output_to(codes([97, 98]), write(ab)), R = yes"),
+    ("w27", raw"( with_output_to(codes([97, 99]), write(ab)) -> R = yes ; R = no )"),
+    ("w28", raw"with_output_to(codes([97|T]), write(abc)), R = T"),
+    ("w29", raw"with_output_to(chars([a|T]), write(abc)), R = T"),
+    # w30: an atom is no integer; a string is no atom
+    ("w30", raw"( with_output_to(atom(42), write(42)) -> R = yes ; R = no )"),
+    ("w31", raw"( with_output_to(string(abc), write(abc)) -> R = yes ; R = no )"),
+    # w32: the goal runs once; its bindings stay
+    ("w32", raw"with_output_to(atom(A), (X = 1, write(X))), R = X-A"),
+    ("w33", raw"findall(X-A, with_output_to(atom(A), (between(1, 3, X), write(X))), R)"),
+    ("w34", raw"findall(A, (between(1, 3, X), with_output_to(atom(A), write(X))), R)"),
+    ("w35", raw"with_output_to(atom(A), ( true -> write(y) ; write(n) )), R = A"),
+    ("w36", raw"with_output_to(atom(A), user:write(q)), R = A"),
+    # w37: failure inside: with_output_to/2 fails, the sink stays unbound, the output is discarded
+    ("w37", raw"( with_output_to(atom(_), (write(x), fail)) -> R = yes ; R = no )"),
+    ("w38", raw"( with_output_to(atom(A), wo_inner_fail) ; true ), R = A"),
+    ("w39", raw"( with_output_to(atom(_), wo_inner_fail) ; true ), with_output_to(atom(B), write(kept)), R = B"),
+    # w40: exceptions inside: the ball passes; the output is discarded and the current output is restored
+    ("w40", raw"catch(with_output_to(atom(_), wo_inner_throw), E, true), R = E"),
+    ("w41", raw"catch(with_output_to(atom(_), wo_inner_throw), _, true), with_output_to(atom(B), write(kept)), R = B"),
+    ("w42", raw"catch(with_output_to(atom(A), wo_ball), ball(N, F), true), R = N-F-A"),
+    ("w43", raw"catch(with_output_to(atom(_), atom_length(_, _)), error(E, _), true), R = E"),  # UNVERIFIED on the kernel: gate decides
+    ("w44", raw"catch(with_output_to(string(_), (write(a), atom_length(1, a))), error(E, _), true), R = E"),  # UNVERIFIED on the kernel: gate decides
+    # w45: nested with_output_to/2: the inner text is the inner sink's, the outer gets the rest
+    ("w45", raw"with_output_to(atom(A), (write(a), with_output_to(atom(B), write(b)), write(B), write(c))), R = A-B"),
+    ("w46", raw"with_output_to(atom(A), (write(a), ( with_output_to(atom(_), wo_inner_fail) -> true ; true ), write(c))), R = A"),
+    ("w47", raw"with_output_to(atom(A), (write(a), catch(with_output_to(atom(_), wo_inner_throw), e, true), write(c))), R = A"),
+    ("w48", raw"catch(with_output_to(atom(A), (write(a), with_output_to(atom(_), throw(e)))), E, true), R = E-A"),
+    ("w49", raw"with_output_to(atom(A), (write(a), with_output_to(codes(C), write(bc)), write(C))), R = A"),
+    ("w50", raw"with_output_to(atom(A), wo_deep(4)), R = A"),
+    ("w51", raw"with_output_to(atom(A), write(1)), with_output_to(atom(B), write(2)), R = A-B"),
+    # w52: an explicit stream written inside is not redirected
+    ("w52", raw"with_output_to(atom(A), (write(user_error, zz), write(in))), R = A"),
+    ("w53", raw"with_output_to(atom(A), (nl(user_error), write(in))), R = A"),
+    # w54: a stream sink: user, user_output (nothing written here), user_error (swipl and the kernel write to stderr)
+    ("w54", raw"with_output_to(user, true), R = ok"),
+    ("w55", raw"with_output_to(user_output, true), R = ok"),
+    ("w56", raw"with_output_to(user_error, nl), R = ok"),
+    ("w57", raw"with_output_to(user_error, write(x)), with_output_to(atom(A), write(y)), R = A"),
+    ("w58", raw"( with_output_to(user_error, fail) -> R = yes ; R = no )"),
+    ("w59", raw"catch(with_output_to(user_error, throw(e)), E, true), with_output_to(atom(A), write(y)), R = E-A"),
+    # w60: sink errors: unbound, not a sink, a number, no such stream, an input stream
+    ("w60", raw"catch(with_output_to(_, true), error(E, _), true), R = E"),
+    ("w61", raw"catch(with_output_to(foo(_), true), error(E, _), true), R = E"),
+    ("w62", raw"catch(with_output_to(1, true), error(E, _), true), R = E"),
+    ("w63", raw"catch(with_output_to(nostream, true), error(E, _), true), R = E"),
+    ("w64", raw"catch(with_output_to(user_input, true), error(E, _), true), R = E"),  # UNVERIFIED on the kernel: gate decides
+    ("w65", raw"catch(with_output_to(atom(a, b), true), error(E, _), true), R = E"),
+    ("w66", raw"catch(with_output_to(codes(a, b, c), true), error(E, _), true), R = E"),
+    ("w67", raw"catch(with_output_to(f(x), true), error(E, _), true), R = E"),
+    # w68: a bad goal: the sink is set up and then discarded
+    ("w68", raw"catch(with_output_to(atom(_), _), error(E, _), true), R = E"),  # UNVERIFIED on the kernel: gate decides
+    ("w69", raw"catch(with_output_to(atom(_), 1), error(E, _), true), R = E"),  # UNVERIFIED on the kernel: gate decides
+    ("w70", raw"catch(with_output_to(atom(_), nosuchpred_wo), error(E, _), true), R = E"),  # UNVERIFIED on the kernel: gate decides
+    ("w71", raw"catch(with_output_to(atom(_), 1), error(_, _), true), with_output_to(atom(B), write(kept)), R = B"),
+    ("w72", raw"catch(with_output_to(foo(_), true), error(_, _), true), with_output_to(atom(B), write(kept)), R = B"),
+]
+
+# swipl 10.1.19-1-gcbf4e189's answers to the program and cases above (the driver's lines; lk-channel evidence/O1B/wo_rows.out)
+const _WO_PINNED = [
+    "ok",
+    "t_w01 c[116,95,119,48,49]/1(a[104,101,108,108,111])",
+    "t_w02 c[116,95,119,48,50]/1(s[104,101,108,108,111])",
+    "t_w03 c[116,95,119,48,51]/1(c[91,124,93]/2(i97,c[91,124,93]/2(i98,nil)))",
+    "t_w04 c[116,95,119,48,52]/1(c[91,124,93]/2(a[97],c[91,124,93]/2(a[98],nil)))",
+    "t_w05 c[116,95,119,48,53]/1(c[91,124,93]/2(i97,c[91,124,93]/2(i98,c[91,124,93]/2(i120,nil))))",
+    "t_w06 c[116,95,119,48,54]/1(c[91,124,93]/2(a[97],c[91,124,93]/2(a[98],c[91,124,93]/2(a[122],nil))))",
+    "t_w07 c[116,95,119,48,55]/1(a[])",
+    "t_w08 c[116,95,119,48,56]/1(s[])",
+    "t_w09 c[116,95,119,48,57]/1(nil)",
+    "t_w10 c[116,95,119,49,48]/1(nil)",
+    "t_w11 c[116,95,119,49,49]/1(c[45]/2(V0,V0))",
+    "t_w12 c[116,95,119,49,50]/1(c[45]/2(V0,V0))",
+    "t_w13 c[116,95,119,49,51]/1(a[97,10,98])",
+    "t_w14 c[116,95,119,49,52]/1(a[52,50])",
+    "t_w15 c[116,95,119,49,53]/1(a[49,46,53])",
+    "t_w16 c[116,95,119,49,54]/1(a[39,65,32,98,39])",
+    "t_w17 c[116,95,119,49,55]/1(a[91,120,44,39,89,32,122,39,124,99,93])",
+    "t_w18 c[116,95,119,49,56]/1(a[39,97,32,98,39])",
+    "t_w19 c[116,95,119,49,57]/1(c[91,124,93]/2(i97,c[91,124,93]/2(i8364,c[91,124,93]/2(i98,nil))))",
+    "t_w20 c[116,95,119,50,48]/1(c[91,124,93]/2(i97,c[91,124,93]/2(i8364,c[91,124,93]/2(i98,nil))))",
+    "t_w21 c[116,95,119,50,49]/1(c[45]/2(i3,c[91,124,93]/2(a[97],c[91,124,93]/2(a[8364],c[91,124,93]/2(a[98],nil)))))",
+    "t_w22 c[116,95,119,50,50]/1(i3000)",
+    "t_w23 c[116,95,119,50,51]/1(i3000)",
+    "t_w24 c[116,95,119,50,52]/1(a[121,101,115])",
+    "t_w25 c[116,95,119,50,53]/1(a[110,111])",
+    "t_w26 c[116,95,119,50,54]/1(a[121,101,115])",
+    "t_w27 c[116,95,119,50,55]/1(a[110,111])",
+    "t_w28 c[116,95,119,50,56]/1(c[91,124,93]/2(i98,c[91,124,93]/2(i99,nil)))",
+    "t_w29 c[116,95,119,50,57]/1(c[91,124,93]/2(a[98],c[91,124,93]/2(a[99],nil)))",
+    "t_w30 c[116,95,119,51,48]/1(a[110,111])",
+    "t_w31 c[116,95,119,51,49]/1(a[110,111])",
+    "t_w32 c[116,95,119,51,50]/1(c[45]/2(i1,a[49]))",
+    "t_w33 c[116,95,119,51,51]/1(c[91,124,93]/2(c[45]/2(i1,a[49]),nil))",
+    "t_w34 c[116,95,119,51,52]/1(c[91,124,93]/2(a[49],c[91,124,93]/2(a[50],c[91,124,93]/2(a[51],nil))))",
+    "t_w35 c[116,95,119,51,53]/1(a[121])",
+    "t_w36 c[116,95,119,51,54]/1(a[113])",
+    "t_w37 c[116,95,119,51,55]/1(a[110,111])",
+    "t_w38 c[116,95,119,51,56]/1(V0)",
+    "t_w39 c[116,95,119,51,57]/1(a[107,101,112,116])",
+    "t_w40 c[116,95,119,52,48]/1(a[101])",
+    "t_w41 c[116,95,119,52,49]/1(a[107,101,112,116])",
+    "t_w42 c[116,95,119,52,50]/1(c[45]/2(c[45]/2(i1,c[102]/1(a[120])),V0))",
+    "t_w43 c[116,95,119,52,51]/1(a[105,110,115,116,97,110,116,105,97,116,105,111,110,95,101,114,114,111,114])",
+    "t_w44 c[116,95,119,52,52]/1(c[116,121,112,101,95,101,114,114,111,114]/2(a[105,110,116,101,103,101,114],a[97]))",
+    "t_w45 c[116,95,119,52,53]/1(c[45]/2(a[97,98,99],a[98]))",
+    "t_w46 c[116,95,119,52,54]/1(a[97,99])",
+    "t_w47 c[116,95,119,52,55]/1(a[97,99])",
+    "t_w48 c[116,95,119,52,56]/1(c[45]/2(a[101],V0))",
+    "t_w49 c[116,95,119,52,57]/1(a[97,91,57,56,44,57,57,93])",
+    "t_w50 c[116,95,119,53,48]/1(a[52,51,50,49,98,111,116,116,111,109])",
+    "t_w51 c[116,95,119,53,49]/1(c[45]/2(a[49],a[50]))",
+    "t_w52 c[116,95,119,53,50]/1(a[105,110])",
+    "t_w53 c[116,95,119,53,51]/1(a[105,110])",
+    "t_w54 c[116,95,119,53,52]/1(a[111,107])",
+    "t_w55 c[116,95,119,53,53]/1(a[111,107])",
+    "t_w56 c[116,95,119,53,54]/1(a[111,107])",
+    "t_w57 c[116,95,119,53,55]/1(a[121])",
+    "t_w58 c[116,95,119,53,56]/1(a[110,111])",
+    "t_w59 c[116,95,119,53,57]/1(c[45]/2(a[101],a[121]))",
+    "t_w60 c[116,95,119,54,48]/1(a[105,110,115,116,97,110,116,105,97,116,105,111,110,95,101,114,114,111,114])",
+    "t_w61 c[116,95,119,54,49]/1(c[116,121,112,101,95,101,114,114,111,114]/2(a[111,117,116,112,117,116],c[102,111,111]/1(V0)))",
+    "t_w62 c[116,95,119,54,50]/1(c[116,121,112,101,95,101,114,114,111,114]/2(a[111,117,116,112,117,116],i1))",
+    "t_w63 c[116,95,119,54,51]/1(c[101,120,105,115,116,101,110,99,101,95,101,114,114,111,114]/2(a[115,116,114,101,97,109],a[110,111,115,116,114,101,97,109]))",
+    "t_w64 c[116,95,119,54,52]/1(c[112,101,114,109,105,115,115,105,111,110,95,101,114,114,111,114]/3(a[119,114,105,116,101],a[115,116,114,101,97,109],a[117,115,101,114,95,105,110,112,117,116]))",
+    "t_w65 c[116,95,119,54,53]/1(c[116,121,112,101,95,101,114,114,111,114]/2(a[111,117,116,112,117,116],c[97,116,111,109]/2(a[97],a[98])))",
+    "t_w66 c[116,95,119,54,54]/1(c[116,121,112,101,95,101,114,114,111,114]/2(a[111,117,116,112,117,116],c[99,111,100,101,115]/3(a[97],a[98],a[99])))",
+    "t_w67 c[116,95,119,54,55]/1(c[116,121,112,101,95,101,114,114,111,114]/2(a[111,117,116,112,117,116],c[102]/1(a[120])))",
+    "t_w68 c[116,95,119,54,56]/1(a[105,110,115,116,97,110,116,105,97,116,105,111,110,95,101,114,114,111,114])",
+    "t_w69 c[116,95,119,54,57]/1(c[116,121,112,101,95,101,114,114,111,114]/2(a[99,97,108,108,97,98,108,101],i1))",
+    "t_w70 c[116,95,119,55,48]/1(c[101,120,105,115,116,101,110,99,101,95,101,114,114,111,114]/2(a[112,114,111,99,101,100,117,114,101],c[47]/2(a[110,111,115,117,99,104,112,114,101,100,95,119,111],i0)))",
+    "t_w71 c[116,95,119,55,49]/1(a[107,101,112,116])",
+    "t_w72 c[116,95,119,55,50]/1(a[107,101,112,116])"
+]
+
+"The program and cases as one file; the case predicates' names."
+function _wo_file()::Tuple{String, Vector{String}}
+    names = ["t_$(id)" for (id, _) in _WO_CASES]
+    text =
+        _WO_PROGRAM * join([
+            "t_$(id)(R) :- catch(($g), error(SsuE, _), R = raised(SsuE)).\n" for
+            (id, g) in _WO_CASES
+        ])
+    f = joinpath(mktempdir(), "wo.pl")
+    write(f, text)
+    return f, names
+end
+
+"The kernel's lines for `names` after consulting `path`, as the driver writes swipl's; the database, for the white-box tests."
+function _wo_kernel(path::String, names::Vector{String})
+    gd = LK.PL_global_data{_WO}()
+    ld = LK.PL_local_data{_WO}(gd)
+    st, ball, _ = LK.load_file!(gd, ld, path)
+    out = [st === :ok ? "ok" : "exc " * _wo_enc(ball::_WO)]
+    for name in names
+        proc = LK.isCurrentProcedure(sym_key(_wos(name)), 1, LK.MODULE_user(gd))
+        if proc === nothing || !LK.isDefinedProcedure(gd, proc)
+            push!(out, "$name undefined")
+            continue
+        end
+        sols = String[]
+        fid = LK.PL_open_foreign_frame(ld)
+        a = LK.PL_new_term_refs(ld, 1)
+        LK.putSlotValue!(ld, a + 1, mk_var(_WO, LK.fresh_var_keys!(1)), LK.PutVarMap())
+        qid = LK.PL_open_query(
+            gd, ld, nothing, LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS, proc, a
+        )
+        n = 0
+        while (n += 1) <= 50
+            rc = LK.PL_next_solution(gd, ld, qid)
+            if rc == LK.PL_S_TRUE || rc == LK.PL_S_LAST
+                push!(
+                    sols,
+                    _wo_enc(mk_expr(_WO, _WO[_wos(name), lk_answers(ld, (a:a)...)...]))
+                )
+                rc == LK.PL_S_LAST && break
+            elseif rc == LK.PL_S_EXCEPTION
+                push!(sols, "exception")
+                break
+            else
+                break
+            end
+        end
+        LK.PL_close_query(ld, qid)
+        LK.PL_close_foreign_frame(ld, fid)
+        push!(out, "$name" * join(" " .* sols))
+    end
+    return out, gd, ld
+end
+
+@testset "with_output_to/2 and the output redirect as swipl's (w01-w72)" begin
+    f, names = _wo_file()
+    kl, _, ld = _wo_kernel(f, names)
+    @test length(kl) == length(_WO_PINNED)
+    for (k, p) in zip(kl, _WO_PINNED)
+        k == p || println(stderr, "  ours  ", k, "\n  swipl ", p)
+        @test k == p
+    end
+    # not vacuous: the sink rows answer text of every kind, the failure and exception rows answer something other than the text
+    # written, and the pins hold both kinds of answer, so the comparison can pass and can fail
+    @test count(l -> occursin("/1(a[", l), _WO_PINNED) >= 25                             # an atom answer
+    @test count(l -> occursin("/1(s[", l), _WO_PINNED) >= 1                              # a string answer
+    @test count(l -> occursin("c[91,124,93]/2(i", l), _WO_PINNED) >= 5                   # a code list
+    @test count(l -> occursin("c[116,121,112,101,95,101,114,114,111,114]/2(", l), _WO_PINNED) >= 5   # type_error(output, _) and kin
+    @test _WO_PINNED[findfirst(startswith("t_w22 "), _WO_PINNED)] == "t_w22 c[116,95,119,50,50]/1(i3000)"
+    @test _WO_PINNED[findfirst(startswith("t_w39 "), _WO_PINNED)] ==
+          "t_w39 c[116,95,119,51,57]/1(a[107,101,112,116])"   # the failed redirect leaves the output where it was
+    # white-box: after every row the current output is user_output again and no redirect is left on the stack
+    @test isempty(ld.IO_output_stack)
+    @test LK.Scurout(ld) === LK.Suser_output(ld)
+end
+
+@testset "the pins are swipl's (live, when swipl is on PATH)" begin
+    swipl = get(ENV, "LOGICKERNEL_NO_SWIPL", "") == "1" ? nothing : Sys.which("swipl")
+    # the pinned table is the driver's whole output (the inert-testset guard: an assertion either way)
+    @test length(_WO_PINNED) == length(_WO_CASES) + 1
+    if swipl === nothing
+        @info "O1B LIVE CHECK NOT RUN: `swipl` is not on PATH here. It runs in tools/run_tests.sh and CI."
+    else
+        f, names = _wo_file()
+        @test _wo_swipl_lines(f, names) == _WO_PINNED
+    end
+end
