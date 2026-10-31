@@ -340,6 +340,9 @@ ld_statistics() = ld_statistics(0, 0, 0, 0, WallTime(), 0.0, 0.0, 0.0, 0.0)
 # Since R2 F1a: `prolog_flag_mask` (`LD->prolog_flag.mask`, a copy of the database's) and `prolog_flag_enums`,
 # the pool of current_prolog_flag/2's states.
 # Since MOD6: `module_enums`, the pool of `'$current_module'/2`'s states.
+# Since R2 G1: `gvar_nb_vars` and `gvar_grefs`, upstream's `LD->gvar.nb_vars` (the
+# global variables: atom word -> value word) and `.grefs` (how many hold a value on the global stack, which
+# `_release_frozen!` then keeps), and `gvar_enums`, the pool of nb_current/2's states (src/pl-gvar.jl).
 """
     PL_local_data{T}(gd)
 
@@ -471,6 +474,9 @@ mutable struct PL_local_data{T}
     statistics::ld_statistics                                   # statistics: inferences, clocks (Y1)
     prolog_flag_access_level::Int                               # prolog_flag.access_level: ACCESS_LEVEL_USER or _SYSTEM (R2 LB2)
     module_enums::foreign_state_pool{module_enum}               # ('\$current_module'/2's REDO_PTR states, MOD6)
+    gvar_nb_vars::Dict{UInt64, UInt64}                          # gvar.nb_vars: atom word -> value word (R2 G1)
+    gvar_grefs::Int                                             # gvar.grefs: the values on the global stack
+    gvar_enums::foreign_state_pool{gvar_enum}                   # (nb_current/2's REDO_PTR states, R2 G1)
 end
 function PL_local_data{T}(gd::PL_global_data{T}) where {T}
     e = mk_expr(T, T[])                         # any term: the idle placeholders' (index context, …)
@@ -551,7 +557,10 @@ function PL_local_data{T}(gd::PL_global_data{T}) where {T}
         foreign_state_pool{prolog_flag_enum}(),  # current_prolog_flag/2's states: none
         ld_statistics(),                        # statistics: no inference yet, started now (Y1)
         ACCESS_LEVEL_USER,                      # access_level: `user` (pl-init.c:1666 sets it after the boot; swipl starts `system`, LB3's path)
-        foreign_state_pool{module_enum}()       # '$current_module'/2's states: none
+        foreign_state_pool{module_enum}(),      # '$current_module'/2's states: none
+        Dict{UInt64, UInt64}(),                 # gvar.nb_vars: no global variable (pl-gvar.c: NULL)
+        0,                                      # gvar.grefs: none
+        foreign_state_pool{gvar_enum}()         # nb_current/2's states: none
     )
     allocStacks!(ld)                            # the initial local stack, its spare reserved
     emptyStacks!(ld)

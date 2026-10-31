@@ -1967,3 +1967,14 @@ mutable struct prolog_flag_enum
     module_::Int                                    # the module of the key (an index)
 end
 prolog_flag_enum() = prolog_flag_enum(1, false, false, 0)
+
+# PORT: pl-gvar.c TableEnum (nb_current/2's `e`)
+# DIVERGES: a record of the local data's pool (`ld.gvar_enums`, a `foreign_state_pool`), its index the `REDO_PTR`
+# context; `keys` are the names the table held when the enumeration began (upstream's `TableEnum` walks the live
+# hash table, which a name added meanwhile may or may not enter), `next` the one to look at.
+"The state of `nb_current/2` between answers: the names to visit and the next one."
+mutable struct gvar_enum
+    keys::Vector{UInt64}                            # the atom words of the table at the first call
+    next::Int                                       # the next name to look at
+end
+gvar_enum() = gvar_enum(UInt64[], 1)
