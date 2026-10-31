@@ -14,12 +14,12 @@ if "--fill" in sys.argv:
     lines = [l for l in pathlib.Path("mb_rows.out").read_text().split("\n") if l]
     assert len(lines) == len(cases) + 1, (len(lines), len(cases))
     block = "const _MB_PINNED = [\n" + ",\n".join('    "%s"' % l for l in lines) + "\n]\n"
-    new, n = re.subn(r"const _MB_PINNED = \[\n(?:.*?\n)?\]\n", lambda m: block, src, count=1, flags=re.S)
+    new, n = re.subn(r"const _MB_PINNED = \[\n(?:    [^\n]*\n)*\]\n", lambda m: block, src, count=1, flags=re.S)
     assert n == 1
     ql = [l for l in pathlib.Path("mb_q7.out").read_text().split("\n") if l]
     assert len(ql) == 3 and ql[0] == "ok", ql
     qblock = "const _MB_Q7_SWIPL = [\n" + ",\n".join('    "%s"' % l for l in ql[1:]) + "\n]\n"
-    new, n = re.subn(r"const _MB_Q7_SWIPL = \[\n(?:.*?\n)?\]\n", lambda m: qblock, new, count=1, flags=re.S)
+    new, n = re.subn(r"const _MB_Q7_SWIPL = \[\n(?:    [^\n]*\n)*\]\n", lambda m: qblock, new, count=1, flags=re.S)
     assert n == 1
     tf.write_text(new)
     print("filled", len(lines), "lines")
