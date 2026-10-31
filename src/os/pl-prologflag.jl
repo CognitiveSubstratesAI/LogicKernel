@@ -15,8 +15,8 @@
 # (`truePrologFlag`), `current_prolog_flag/2` and `'$current_prolog_flag'/5` (`pl_prolog_flag5`, the
 # NON-DETERMINISTIC foreign predicate over `unify_prolog_flag_value`), `PL_current_prolog_flag` and
 # `PL_get_prolog_flag`. Since R2 F1b: the write side — `set_prolog_flag/2`, `create_prolog_flag/3`,
-# `set_flag_value` and the value setters (`push_prolog_flag/2` and `pop_prolog_flag/1` are left to F2; the
-# flags whose side effect lives in a file not yet ported are refused by name, design D4). Left out as well: the flags'
+# `set_flag_value` and the value setters; since R2 F2 `push_prolog_flag/2` and `pop_prolog_flag/1`. The
+# flags whose side effect lives in a file of a later step are refused by name (design D4). Left out as well: the flags'
 # threading (`LD->prolog_flag.table`, `FF_SHARED`'s mutex, `PL_LOCK(L_PLFLAG)`, `unify_shared_prolog_flag`:
 # the kernel is upstream's single-threaded build, design D1: one table, `threads` false and read-only).
 #
@@ -1554,6 +1554,160 @@ function pl_create_prolog_flag3_va(
     return f !== nothing ? FTRUE : FFALSE
 end
 
+# ── push_prolog_flag/2 and pop_prolog_flag/1 (pl-prologflag.c), R2 F2 ───────────────────────────
+# PORT: pl-prologflag.c copy_prolog_flag
+# DIVERGES: the copy's record is `PL_duplicate_record`'s (the record itself, see src/pl-fli.jl); no `allocHeapOrHalt`,
+# `PL_register_atom`.
+"A copy of the flag `f` with no pushed values; it shares the `oneof`, whose count it raises (pl-prologflag.c)."
+function copy_prolog_flag(f::prolog_flag{T})::prolog_flag{T} where {T}
+    copy = prolog_flag{T}(f.flags, f.index, f.a, f.i, f.f, f.t, f.oneof, nothing)   # *copy = *f; copy->pushed = NULL
+    of = f.oneof
+    if of !== nothing
+        of.references += 1
+    end
+    if (f.flags & FT_MASK) == FT_TERM
+        copy.t = PL_duplicate_record(f.t::record{T})
+    end
+    return copy
+end
+
+# PORT: pl-prologflag.c put_saved_flag_value
+# DIVERGES: the local data is an argument; a type upstream's `switch` does not hold (`assert(0)`) raises an error.
+"Put the value of the saved flag `saved` into the term reference `val` (pl-prologflag.c)."
+function put_saved_flag_value(ld::PL_local_data{T}, val::term_t, saved::prolog_flag{T})::Bool where {T}
+    type = saved.flags & FT_MASK
+    if type == FT_BOOL || type == FT_ATOM
+        return PL_put_atom(ld, val, saved.a)
+    elseif type == FT_INTEGER
+        return PL_put_int64(ld, val, Int(saved.i))
+    elseif type == FT_FLOAT
+        return PL_put_float(ld, val, saved.f)
+    elseif type == FT_TERM
+        return PL_recorded(ld, saved.t::record{T}, val)
+    end
+    error("put_saved_flag_value: the saved flag has the type $type")
+end
+
+# PORT: pl-prologflag.c ensure_local_flag
+# DIVERGES: the kernel has one table (design D1: upstream's build without `O_PLMT`, where the body is `return f`): there is
+# no thread-local copy to make.
+"The flag `f`, named `k`, as the table of this thread holds it (pl-prologflag.c)."
+ensure_local_flag(k::T, f::prolog_flag{T}) where {T} = f
+
+# The flag with the key `w` (an atom word) in the table of `gd`, or `nothing`: upstream's `lookupHTableWP` of the
+# table, which marks no flag accessed (`lookupFlag` does).
+function _prolog_flag_table_get(gd::PL_global_data{T}, w::UInt64)::Union{Nothing, prolog_flag{T}} where {T}
+    i = get(gd.prolog_flag.slot, w, 0)
+    i == 0 && return nothing
+    return gd.prolog_flag.entries[i]::prolog_flag{T}
+end
+
+# PORT: pl-prologflag.c push_prolog_flag
+# DIVERGES: the database and the local data are arguments; no thread-local table (`LD->prolog_flag.table`,
+# `register_local_flag`) and no `PL_LOCK(L_PLFLAG)`: a flag that is absent is added to the one table, as
+# `set_prolog_flag_unlocked` adds one; the module is its record.
+"`push_prolog_flag(+Flag, +Value)`: save the value of `Flag`, or that it is absent, and set it to `Value` (pl-prologflag.c)."
+function push_prolog_flag(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, A1::term_t, value::term_t
+)::Bool where {T}
+    key = PL_new_term_ref(ld)
+    ok, mi = PL_strip_module(gd, ld, A1, MODULE_parse(ld), key)
+    ok || return false
+    k = PL_get_atom_ex(ld, key)
+    k === nothing && return false
+    m = gd.modules[mi]
+    w = _atom_word!(gd.atoms, gd.atom_symbols, k)
+
+    f = _prolog_flag_table_get(gd, w)
+    if f !== nothing
+        check_flag_write_access(ld, f, k, UInt32(0)) || return false
+        if (f.flags & FF_SHARED) != 0                   # pushing is per thread
+            key2 = PL_new_term_ref(ld)
+            return PL_put_atom(ld, key2, k) &&
+                   PL_error(
+                ld, "", 0, "the flag is shared", ERR_PERMISSION, mk_sym(T, :push),
+                mk_sym(T, :prolog_flag), key2
+            )
+        end
+        f = ensure_local_flag(k, f)
+        saved = copy_prolog_flag(f)
+        rc = set_flag_value(gd, ld, f, m, k, value)
+        if rc
+            saved.pushed = f.pushed
+            f.pushed = saved
+        else
+            clean_prolog_flag(saved)
+        end
+        return rc
+    end
+
+    nf = new_prolog_flag(ld, value, FT_FROM_VALUE)
+    nf === nothing && return false
+    absent = prolog_flag{T}(FT_INTEGER | FF_PUSH_ABSENT, mk_sym(T, Symbol("false")))
+    nf.pushed = absent
+    tab = gd.prolog_flag                                # addNewHTableWP(GD->prolog_flag.table, k, nf)
+    push!(tab.entries, nf)
+    push!(tab.names, k)
+    tab.slot[w] = length(tab.entries)
+    return true
+end
+
+# PORT: pl-prologflag.c push_prolog_flag as pl_push_prolog_flag2_va
+# (PRED_IMPL("push_prolog_flag", 2, push_prolog_flag, 0))
+"`push_prolog_flag(+Flag, +Value)` (pl-prologflag.c)."
+function pl_push_prolog_flag2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2 = PL__t0, PL__t0 + 1
+    return push_prolog_flag(_query_gd(ld), ld, A1, A2) ? FTRUE : FFALSE
+end
+
+# PORT: pl-prologflag.c pop_prolog_flag
+# DIVERGES: as `push_prolog_flag`; the table's slot of a flag that was absent at its push is emptied (`deletePrologFlag!`).
+"`pop_prolog_flag(+Flag)`: restore the state `push_prolog_flag/2` saved; `existence_error(pushed_flag, Flag)` without a push (pl-prologflag.c)."
+function pop_prolog_flag(gd::PL_global_data{T}, ld::PL_local_data{T}, A1::term_t)::Bool where {T}
+    key = PL_new_term_ref(ld)
+    ok, mi = PL_strip_module(gd, ld, A1, MODULE_parse(ld), key)
+    ok || return false
+    k = PL_get_atom_ex(ld, key)
+    k === nothing && return false
+    m = gd.modules[mi]
+    w = _atom_word!(gd.atoms, gd.atom_symbols, k)
+
+    f = _prolog_flag_table_get(gd, w)
+    if f === nothing || f.pushed === nothing
+        ex = PL_new_term_ref(ld)
+        return PL_put_atom(ld, ex, k) && PL_error(ld, ERR_EXISTENCE, mk_sym(T, :pushed_flag), ex)
+    end
+
+    prev = f.pushed::prolog_flag{T}
+    if (prev.flags & FF_PUSH_ABSENT) != 0
+        f.pushed = nothing
+        deletePrologFlag!(gd, w)
+        clean_prolog_flag(f)
+        return true
+    end
+
+    restore = PL_new_term_ref(ld)
+    rc = put_saved_flag_value(ld, restore, prev)
+    if rc
+        f.pushed = prev.pushed
+        prev.pushed = nothing
+        rc = set_flag_value(gd, ld, f, m, k, restore)
+        clean_prolog_flag(prev)
+    end
+    return rc
+end
+
+# PORT: pl-prologflag.c pop_prolog_flag as pl_pop_prolog_flag1_va
+# (PRED_IMPL("pop_prolog_flag", 1, pop_prolog_flag, 0))
+"`pop_prolog_flag(+Flag)` (pl-prologflag.c)."
+function pl_pop_prolog_flag1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    return pop_prolog_flag(_query_gd(ld), ld, PL__t0) ? FTRUE : FFALSE
+end
+
 # ── the predicates (pl-prologflag.c) ─────────────────────────────────────────────────────────────
 # PORT: pl-prologflag.c dcurrent_prolog_flag as pl_dcurrent_prolog_flag5_va
 # (PRED_IMPL("$current_prolog_flag", 5, dcurrent_prolog_flag, PL_FA_NONDETERMINISTIC))
@@ -1857,5 +2011,7 @@ const PL_predicates_from_prologflag = (
     PL_extension(
         "\$current_prolog_flag", 5, pl_dcurrent_prolog_flag5_va,
         PL_FA_NONDETERMINISTIC | PL_FA_VARARGS
-    )
+    ),
+    PL_extension("push_prolog_flag", 2, pl_push_prolog_flag2_va, PL_FA_VARARGS),
+    PL_extension("pop_prolog_flag", 1, pl_pop_prolog_flag1_va, PL_FA_VARARGS)
 )

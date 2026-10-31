@@ -254,6 +254,16 @@ PL_put_int64(ld::PL_local_data{T}, t::term_t, i::Int) where {T} = PL_put_intptr(
 "Make term reference `t` hold the integer `i` (pl-fli.c)."
 PL_put_integer(ld::PL_local_data{T}, t::term_t, i::Int) where {T} = PL_put_int64(ld, t, i)
 
+# PORT: pl-fli.c PL_put_float
+# DIVERGES: the float's word as `PL_put_intptr` lays an integer (`mk_gnd`); a NaN is the canonical one
+# (`put_double`, as `put_number` does); it cannot fail (no `put_double` allocation to refuse).
+"Make term reference `t` hold the float `f` (pl-fli.c)."
+function PL_put_float(ld::PL_local_data{T}, t::term_t, f::Float64)::Bool where {T}
+    isnan(f) && (f = PL_nan())
+    setSlotValue!(ld, t + 1, mk_gnd(T, f))
+    return true
+end
+
 # PORT: pl-fli.c _PL_put_number
 # DIVERGES: the number is a `number` record; its word as `_slot_store!` lays a number (tagged, or
 # a value-table word), so it cannot fail.
