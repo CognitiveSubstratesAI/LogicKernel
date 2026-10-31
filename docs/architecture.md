@@ -5933,3 +5933,36 @@ What chunk (a) adds (swipl-devel pin `cbf4e1896275`, oracle swipl 10.1.19):
   resets one scratch context in the local data and is gated allocation-free.
 * **The canonical-encoding property** — the kernel's variant key of a term equals MORK's De Bruijn
   bytes for it. It arrives with variant canonicalisation (`unify`) and a PathMap extension.
+
+## LB3 — `src/pl-qlf.jl`, the C boot loop (R2 loader_boot, audit D-0272/D-0273)
+
+What LB3 adds (pl-qlf.c, os/pl-file.c, pl-init.c; written edit-only, nothing compiled when this was written):
+
+- **The loop that compiles a source file as the boot does** (`compileFile`, pl-qlf.c:4691-4780): `pl_see` the file, read terms under
+  `ld.read_source`, run a `:- Goal` directive through `directiveClause` + `callProlog`, assert every other term with `assert_term!` at the
+  END of its predicate (`addClauseWic`), `pl_seen` at the end. A directive that fails is collected as `File:Line: directive failed`,
+  a syntax error is skipped, a file that cannot be opened is `Failed to open <path>` and a false return. `'$:-'` terms are told from clauses
+  by `directiveClause` and run in `user`. `compileFileList` (:4783-4820) compiles each file up to the argument `-c` in system mode with
+  `autoload` off, restores both, then calls `user:'$load_additional_boot_files'/0` with `PL_Q_DEBUG`.
+- **Conditional compilation** (`:- if`, `:- elif`, `:- else`, `:- endif` in a boot file): `condc` holds a stack of `iftrue` levels
+  (`IF_TRUE`, `IF_FALSE`, `IF_ELSE_FALSE`), `MAX_IFDEF_NEST` = 3, `update_conditional_compilation` answers whether the directive was a
+  conditional one. `elif` is NOT a conditional in this loop: it runs as a directive in `user`. A nest past the bound and an `endif` at
+  the file's own level end the boot by a Julia `error` (upstream: `fatalError`).
+- **The boot entry `boot_from_source!`** is an ORIGINAL name: pl-init.c has no function of its own for the `GD->bootsession` branch of
+  `PL_initialise`. System mode, `gd.bootsession` on, `compileFileList`, the flag off, the style checks of every later load, user mode.
+  DIVERGES (representation, LD2): no state file, so `qlfStartFile`, `qlfEndPart` and `addDirectiveWic` are `true` bodies and the clauses
+  are asserted at once; `PL_halt`, `$boot_message` and the resource database (`SopenZIP`) are left out.
+- **`PL_predicates_from_wic`: 22 entries**, registered after `read` and before `file` (pl-ext.c:518-522), in `_PRED_TABLES` and
+  `_FOREIGN_VA`. EIGHT take the no-state branch: `'$qlf_start_module'/1`, `'$qlf_start_sub_module'/1`, `'$qlf_start_file'/1`,
+  `'$qlf_end_part'/0`, `'$add_directive_wic'/1` (transparent), `'$qlf_assert_clause'/2`, `'$import_wic'/3` succeed; `'$qlf_include'/5`
+  checks its five arguments and FAILS. The other 14 are refused by name (`NotPortedError`, step LB4): the readers and writers of the state file.
+  `'$import_wic'/3` is the eighth shell (audit flag Q1): init.pl calls it in boot mode through `'$ifcompiling'`.
+- **The input context** (os/pl-file.c:1584-1619, :4447-4501): `push_input_context` / `pop_input_context` on `ld.input_context_stack`
+  save and restore the source file, the line and the current input stream; `pl_see` / `pl_seen` use them. Two pieces are left out:
+  `findStreamFromFile` and the `IO_SEE` flag (see/1 is not registered, so no stream can carry it).
+- **Seams still to re-point:** `AbsoluteFile` / `LastModifiedFile` are Julia's `abspath` / `stat` (LB2b ports pl-os.c). `fatalError` is a
+  Julia exception. compileFile's syntax-error `continue` and the `eof` `break` leave a foreign frame open, as upstream; an `addClauseWic`
+  failure leaves `assert_term!`'s exception pending, as upstream. LB4 checks the stacks after the boot (H11).
+- **Pinned by** test/files/test_qlf_swipl.jl: the loadable program against swipl 10.1.19's answers (generator and pins in
+  evidence/LB3/ql/), plus white-box rows (prefix `_ql_`); every row that depends on the kernel carries `UNVERIFIED on the kernel: gate decides`.
+  Mutants: tools/mutants/LB3.py (54).
