@@ -580,7 +580,10 @@ function pl_current_module2_va(
 
                     rc = true
                     for sm in sf.modules
-                        if !(PL_unify_list(ld, tail, head, tail) && PL_unify_atom(ld, head, sm.atom))
+                        if !(
+                            PL_unify_list(ld, tail, head, tail) &&
+                            PL_unify_atom(ld, head, sm.atom)
+                        )
                             rc = false                  # goto out
                             break
                         end
@@ -1209,7 +1212,9 @@ end
 # PORT: pl-modul.c freeModuleEnum
 # DIVERGES: the state goes back to the pool of `ld` (`free_foreign_state!`), where upstream frees the table enumeration and `en`.
 "Release the temporary module an enumeration holds and give its state at index `k` back (pl-modul.c)."
-function freeModuleEnum(gd::PL_global_data{T}, ld::PL_local_data{T}, k::Int)::Nothing where {T}
+function freeModuleEnum(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, k::Int
+)::Nothing where {T}
     pool = ld.module_enums
     en = pool.states[k]
     if en.current != 0
@@ -1566,7 +1571,9 @@ end
 # `import_module/2` and `'$current_module'/2`.
 "pl-modul.c's registration table (`BeginPredDefs(module)`): the ported entries."
 const PL_predicates_from_module = (
-    PL_extension("import_module", 2, pl_import_module2_va, PL_FA_NONDETERMINISTIC | PL_FA_VARARGS),
+    PL_extension(
+        "import_module", 2, pl_import_module2_va, PL_FA_NONDETERMINISTIC | PL_FA_VARARGS
+    ),
     PL_extension(
         "\$def_modules", 2, pl_def_modules2_va, PL_FA_TRANSPARENT | PL_FA_VARARGS
     ),
