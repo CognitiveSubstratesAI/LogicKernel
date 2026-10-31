@@ -28,9 +28,9 @@ Recorded DIVERGES (single-thread forms; the upstream line is cited in each comme
 4c. [x] rows bp01-bp26: test/core_lang/test_bootpred_swipl.jl (pinned, swipl 10.1.19, two runs byte-identical), evidence/BOOTPRED/{gen_rows.py,bootpred_driver.pl,bootpred_rows.pl,bootpred_rows.out} -- 8443f09
 4d. [x] tools/mutants/BOOTPRED.py, 9 mutants for groups 2-4 (validated: old once, new != old, ids unique, targets exist) -- see git log
 5. [x] pl-dict.c, NEW src/pl-dict.jl, sub-groups 5a (56cfd0c), include line (67f9cf5), 5b (ebf24af), 5c (ab07fcd), 5d (the commit carrying this handoff: select_dict, get_dict/3, `PL_predicates_from_dict`). Nothing compiled or run.
-6. [ ] (HALF) the `PL_predicates_from_dict` table is in src/pl-dict.jl (6 entries, upstream order). STILL TO DO: add `PL_predicates_from_dict` at the END of `_PRED_TABLES` and `PL_predicates_from_dict...` at the END of `_FOREIGN_VA` in src/pl-ext.jl (pl-ext.c:536-574: `dict` follows attvar; gvar, locale and debug are left out of the kernel), and extend the comment above `_PRED_TABLES` ("... attvar — AV2, Y1; dict — BOOTPRED").
-7. [ ] NOT STARTED: dict rows bp27+ (append cases to test/core_lang/test_bootpred_swipl.jl; regenerate with evidence/BOOTPRED/gen_rows.py; dicts built with dict_create/3 and put_dict/3 only; order-dependent answers compared SORTED, `timeout 20` on every swipl call, two byte-identical runs); dict mutants appended to tools/mutants/BOOTPRED.py (aim >= 6 from the dict code, every `old` once; ideas: dict_lookup_ptr `p < name` flip, put_dict `i_name < n_name` flip, put_dict unmodified-return, select_dict `d < f` return, unify_tags dyndict test, get_dict `i + 2 < arity` retry bound, PL_get_dict_ex Undo on duplicate, assign_in_dict `dp < q`; TARGETS = test_bootpred_swipl.jl and every test file that loads the table).
-8. [ ] NOT STARTED: manifest block test/static_analysis_manifest.jl (APPENDED): entry points pl_garbage_collect, pl_thread_self, pl_with_mutex, pl_is_dict1_va, pl_is_dict2_va, pl_dict_create3_va, pl_put_dict3_va, pl_select_dict3_va, pl_get_dict3_va over T, and the `_enum_hash` entry `(Base.Enums._enum_hash, Tuple{LK._PL_dict_status_t, UInt64}, false)` (the new @enum in pl-dict.jl). 9. [ ] NOT STARTED: docs/architecture.md block (APPENDED, LAST).
+6. [x] DONE (coder 3, 4d651ed): `PL_predicates_from_dict` is at the END of `_PRED_TABLES` and `_FOREIGN_VA` (comment extended). `$get_dict_ex/3` is NOT registered (decision for the audit, see Findings). Old text follows: add `PL_predicates_from_dict` at the END of `_PRED_TABLES` and `PL_predicates_from_dict...` at the END of `_FOREIGN_VA` in src/pl-ext.jl (pl-ext.c:536-574: `dict` follows attvar; gvar, locale and debug are left out of the kernel), and extend the comment above `_PRED_TABLES` ("... attvar — AV2, Y1; dict — BOOTPRED").
+7. [x] DONE (coder 3): rows bp27-bp116 (8acb6e6) + kill rows bp117-bp119 (2ebce23); mutants D1-D19 in tools/mutants/BOOTPRED.py (2dc7da4; 28 mutants in all, validated by text check; D19 declared equivalent). Old text follows: dict rows bp27+ (append cases to test/core_lang/test_bootpred_swipl.jl; regenerate with evidence/BOOTPRED/gen_rows.py; dicts built with dict_create/3 and put_dict/3 only; order-dependent answers compared SORTED, `timeout 20` on every swipl call, two byte-identical runs); dict mutants appended to tools/mutants/BOOTPRED.py (aim >= 6 from the dict code, every `old` once; ideas: dict_lookup_ptr `p < name` flip, put_dict `i_name < n_name` flip, put_dict unmodified-return, select_dict `d < f` return, unify_tags dyndict test, get_dict `i + 2 < arity` retry bound, PL_get_dict_ex Undo on duplicate, assign_in_dict `dp < q`; TARGETS = test_bootpred_swipl.jl and every test file that loads the table).
+8. [x] DONE (coder 3, d3ece84, all entries must_not_allocate=false; 9. docs/architecture.md block: written in the working tree and committed WITH this handoff, because the 150k cap hook allowed only a commit naming evidence/; the block sits before "## Still to come"). Old text follows: manifest block test/static_analysis_manifest.jl (APPENDED): entry points pl_garbage_collect, pl_thread_self, pl_with_mutex, pl_is_dict1_va, pl_is_dict2_va, pl_dict_create3_va, pl_put_dict3_va, pl_select_dict3_va, pl_get_dict3_va over T, and the `_enum_hash` entry `(Base.Enums._enum_hash, Tuple{LK._PL_dict_status_t, UInt64}, false)` (the new @enum in pl-dict.jl). 9. [ ] NOT STARTED: docs/architecture.md block (APPENDED, LAST).
 
 ### Dict sub-groups (upstream src/pl-dict.c at the pin, 2074 lines; `git -C ~/dev-zone/swipl-devel show cbf4e1896275:src/pl-dict.c > $SCRATCH/pl-dict.c.log`)
 The six predicates and the helpers each pulls in (line numbers at the pin):
@@ -62,3 +62,40 @@ Nothing is compiled or run. Branch wip/bootpred, never pushed.
 - Reader/writer: dicts are built only by dict_create/3 and put_dict/3; `print`/`write` show the compound `dict(Tag, V, K, ...)` (finding 3 above).
 - Registered nowhere (outside the six): `$get_dict_ex/3` (pl_get_dict already takes `ex`), dict_pairs/3, put_dict/4, get_dict/5, del_dict/4, :</2, >:</2, b_set_dict etc.
 - Context: coder 2 hit the 150k cap after 5d; the 5d commit carries this handoff because the cap hook allowed only a commit naming evidence/.
+
+## Coder 3 (Sonnet, edit-only; nothing compiled or run; swipl 10.1.19 ran only as the oracle)
+Commits after cd694f9: 4d651ed pl-ext.jl REG_PLIST(dict) (item 6); 8acb6e6 rows bp27-bp116; 2ebce23 kill rows bp117-bp119; 2dc7da4 mutants D1-D19;
+d3ece84 manifest block (item 8); then THIS commit: docs/architecture.md BOOTPRED block (item 9) + this handoff (the cap hook forced the pairing; the
+architecture block was committed together with the handoff, its text is in the diff, before "## Still to come").
+- Rows: bp27-bp51 dict_create/3, bp52-bp60 is_dict/1,2, bp61-bp79 get_dict/3, bp80-bp100 put_dict/3, bp101-bp116 select_dict/3, bp117-bp119 kill rows; helper
+  `dpairs/2` (findall of get_dict/3 + msort) is in `_BP_PROGRAM`; no answer holds a dict. gen_rows.py now reads ids `bp\d{2,3}`. The driver prints a Singleton
+  warning on stderr for one row (harmless; swipl run rc 0). Pins: two byte-identical runs; counts in the "not vacuous" testset (93 dict rows: 23 raised =
+  15 type_error + 5 instantiation_error + 3 duplicate_key, 10 failing rows, 9 rows holding [a-1,b-2]).
+- swipl facts the rows pin (surprises): `dict_create(D,t,foo)` and `put_dict(foo,..)`/`select_dict(foo,..)` raise `type_error(dict-data, foo)`, but `get_dict(a,foo,V)` raises
+  `type_error(dict, foo)`; a bad pair is `type_error(key-value, X)`; a partial list raises `type_error(list, [a-1|_])` (kernel's `lengthList(ld, data, true)` must do the same);
+  the rest of `select_dict/3` has the tag `#` (dyndict), `is_dict(Rest, T)` answers `T = '#'`, and the select with a tag-variable From does NOT alias Rest's tag to From's.
+
+### GATE ORDER (for the dispatcher), nothing has been run
+Tier 2 (no Tier-1 file, no pl-global.jl change: no alloc pins x3). Files touched: src/pl-dict.jl (NEW), src/pl-mutex.jl (NEW), src/pl-gc.jl, src/pl-thread.jl,
+src/pl-ext.jl, src/LogicKernel.jl (two includes), test/static_analysis_manifest.jl, docs/architecture.md, tools/mutants/BOOTPRED.py, test/core_lang/test_bootpred_swipl.jl.
+1. HAND-MERGE src/pl-ext.jl: the `foreigns` tuple edits are in the middle (`$garbage_collect` after context_module) and at the end (thread_self, with_mutex); `_PRED_TABLES` and
+   `_FOREIGN_VA` end with `dict`; other writers touch the same tuples, so merge by hand and keep upstream's order. A new `@enum` (`_PL_dict_status_t`) needs its `_enum_hash` entry (in the manifest block).
+2. fmt: `warm.sh fmt` sees only the HEAD diff; format the committed files through `warm.sh send` (pl-dict.jl, pl-mutex.jl, the test, the manifest). Re-fit the mutant `old`
+   anchors the formatter re-flows (each `old` was a text-count of exactly one).
+3. inventory, then `warm.sh check` (includes the Pkg.test-way run, D-0222/D-0245).
+4. rows x3 term types: `warm.sh file test/core_lang/test_bootpred_swipl.jl` on each of the three types; then test/foreign/test_builtins_swipl.jl (walks `_FOREIGN_VA`).
+5. test/test_type_discipline.jl; `tools/pkgtest_way.sh test/core_lang/test_bootpred_swipl.jl` ONE at a time (~3 GB); the same for test/foreign/test_builtins_swipl.jl.
+6. push `mutants/BOOTPRED` at the WIP SHA (list and TARGETS exist), branch-gate, term grep (`segment|SIGSEGV|crash|abort|invalid term_t|dies of` over diff and message), then
+   push `gate/bootpred` and `mutants/BOOTPRED` at the SAME SHA (fresh name). Dispatcher lands.
+LIKELIEST FIRST-COMPILE FIXES (coder 2's UNVERIFIED APIs, above): the `_PL_error_open`/`_PL_error_close!` 9-arg call in `PL_duplicate_key_error`; `PL_new_term_refs(ld, n)`;
+`PL_open_foreign_frame` returning 0 on failure; `bindConst`/`_bind_const!(ld, q, w)` with a plain key word; `_value_word!(ld, w)`; `Undo!` then `DiscardMark`; `sortperm` on
+`Vector{word}`; `mk_sym(T, :(=))`, `:(:)`, `:-`; `compareStandard_cells(ld, l1, l2, true)`; `lengthList(ld, data, true)` for a partial list (bp43/bp44/bp90 expect type_error(list, _));
+JET on the `Union` uses of `d` and `keep` and the unused `PL__ac`. Coder 3 adds: every manifest entry is `must_not_allocate=false` (no measurement); the arg types of
+`is_dict_term` (UInt8 kind) and `get_name_value` (`LK.mark`) were read from the signatures, not run.
+
+### Findings for the audit (coder 1's findings 1-4 and coder 2's stay undecided above)
+5. `$get_dict_ex/3` (pl-dict.c:1486, `ex = true`) is outside the six and NOT registered: `pl_get_dict` already takes `ex`, so the registration is one table line; the audit decides.
+6. The rest of `select_dict/3` carries the atom `dyndict` (text `#`); `is_dict(Rest, T)` answers `'#'`. The kernel's builtin-atom table holds `dyndict` with text `#` (src/pl-atom.jl:320),
+   so bp107/bp112/bp113 should hold; this is the one row family that observes an internal tag.
+7. Mutant D19 (`dp < q` in `assign_in_dict`) is declared EQUIVALENT with an argument (age order read only by upstream's shifter); the audit may prefer a kill row.
+8. `'$style_check'/2` stays NOT STARTED: it can start after F1b lands (F1b is written on wip/f1b) or in a stack on top of it.

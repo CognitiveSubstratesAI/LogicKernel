@@ -5616,6 +5616,32 @@ What LB2 adds so far (pl-srcfile.c, pl-file.c, pl-incl.h, pl-proc.c; written edi
 
 Tests: test/db/test_source_file_swipl.jl (96 program rows against swipl 10.1.19, the white-box testsets), test/db/test_nth_clause_swipl.jl (compile_predicates/1 rows c01-c28, nth_clause/3 rows n01-n39, '$get_clause_attribute'/3 rows g01-g31); mutants: tools/mutants/LB2c.py.
 
+## BOOTPRED — the boot-needed predicates: `'$garbage_collect'/1`, `thread_self/1`, `with_mutex/2`, the six pl-dict.c predicates (R2, audit D-0281)
+
+What BOOTPRED adds (written edit-only; nothing was compiled or run when this was written; swipl-devel pin `cbf4e1896275`, oracle swipl 10.1.19):
+
+- **Three small ports.** `'$garbage_collect'/1` (pl-gc.c `pl_garbage_collect`; `garbage_collect/0` itself is boot/syspred.pl:1423, Prolog) answers true and
+  looks at nothing (no stack GC in the kernel; upstream reads its argument only under `O_DEBUG`). `thread_self/1` (pl-thread.c `pl_thread_self`) unifies `main`.
+  `with_mutex/2` (pl-mutex.c:758, NEW src/pl-mutex.jl) takes upstream's own non-`O_PLMT` branch, `once(Goal)` through `callProlog` with `PL_Q_PASS_EXCEPTION`;
+  KNOWN DIFFERENCE: swipl 10.1.19 examines the mutex (`with_mutex(_, true)` raises `instantiation_error`), the kernel does not (pinned in
+  test/core_lang/test_bootpred_swipl.jl with swipl's answers in comments).
+- **pl-dict.c, NEW src/pl-dict.jl** (`PL_predicates_from_dict`, six entries in upstream's order, appended to `_PRED_TABLES` and `_FOREIGN_VA` after attvar as pl-ext.c:536-574
+  has it; gvar, locale and debug, between the two, are left out of the kernel): `is_dict/1,2`, `dict_create/3`, `put_dict/3`, `get_dict/3` (non-deterministic, the redo
+  context is the pair index), `select_dict/3`. Representation as upstream: a compound `dict`/(2N+1) whose child 1 after the functor is the tag, then value and key
+  per pair, the pairs ordered by the key WORD (`dict_ordered`, `dict_order`, a binary `dict_lookup_ptr`). `PL_get_dict_ex` reads a list of `Key-Value`, `Key=Value`,
+  `Key:Value` and `Key(Value)`; `duplicate_key(Key)` and `type_error(dict-key | dict-data | key-value | dict, _)` as upstream. The rest of a `select_dict/3` carries the tag `dyndict`
+  (the atom `#`), which `unify_tags` accepts on either side.
+- **DIVERGES, representation only** (each in a comment at its site): the kernel's atom words are not swipl's, so the pair ORDER of a dict (enumeration of `get_dict/3`) differs;
+  rows compare sorted. No `dict_functors` cache; `dict_order` sorts with `sortperm` and writes back; `put_dict` plans the merge and allocates the exact size (upstream trims `gTop`);
+  no `Mark`/`Undo` retry on a stack overflow (`ensureGlobalSpace` raises); `PL_duplicate_key_error` is a function of its own, no `ERR_DUPLICATE_KEY` code.
+- **Left out of the six, by name:** `$get_dict_ex/3` (`pl_get_dict` already takes `ex`; the registration is for the audit), `dict_pairs/3`, `dict_same_keys/2`, `put_dict/4`, `get_dict/5`,
+  `del_dict/4`, `:</2`, `>:</2`, `b_set_dict/3`, `nb_set_dict/3`, `nb_link_dict/3`, `$get_dict_kv/4,6,8`. The reader refuses dicts (pl-read.jl, R1's decision) and the writer has no dict arm:
+  dicts exist through `dict_create/3` and `put_dict/3` only, and `print` of one shows the compound `dict(Tag, V, K, ...)`. `'$style_check'/2` is NOT STARTED (it waits for F1b).
+
+Tests: test/core_lang/test_bootpred_swipl.jl (rows bp01-bp119: thread_self, with_mutex, `'$garbage_collect'`, then the dict predicates with a sorted `dpairs/2` helper; swipl 10.1.19 pins from
+two byte-identical runs, a non-vacuity testset, the live check when `swipl` is on PATH); tools/mutants/BOOTPRED.py (9 mutants for gc/thread/mutex, 19 for pl-dict.jl, one declared equivalent).
+Rows over a dict in an answer do not exist on purpose: nothing prints a dict in swipl's order.
+
 ## Still to come
 
 * 🔜 **THE ORDER FROM HERE (user, 2026-10-14):** V9 is done; next **L1** — SWI's term layout
