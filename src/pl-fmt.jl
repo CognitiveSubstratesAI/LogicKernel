@@ -191,3 +191,199 @@ function outtext(state::format_state, txt::PL_chars_t)::Bool
     end
     return true
 end
+
+# ── format_predicate/2, current_format_predicate/2 (pl-fmt.c :249-325) ──────────────────────────────
+
+# PORT: pl-fmt.c format_predicate as pl_format_predicate2_va
+# (PRED_IMPL("format_predicate", 2, format_predicate, META))
+# DIVERGES (D9): refused by name. The table `GD->format.predicates` would hold the predicate of a directive
+# character; no program the R2 steps run sets one, and `do_format` ignores the table (see the file header).
+"`format_predicate(+Char, :Head)`: refused by name (D9); the call is left to the step that needs user directives."
+function pl_format_predicate2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    throw(
+        NotPortedError{T}(
+            mk_sym(T, :format_predicate), "format_predicate/2 (GD->format.predicates)", "LB5"
+        )
+    )
+end
+
+# PORT: pl-fmt.c current_format_predicate as pl_current_format_predicate2_va
+# (PRED_IMPL("current_format_predicate", 2, current_format_predicate, NDET|META))
+# DIVERGES (D9): the table is empty, so the first call fails (upstream's `if ( !format_predicates ) fail`).
+"`current_format_predicate(?Char, ?Head)`: no user directive is defined (D9), so it fails."
+function pl_current_format_predicate2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    return FFALSE
+end
+
+# ── format/2,3 and their helpers (pl-fmt.c :327-506) ───────────────────────────────────────────────
+
+# PORT: pl-fmt.c format_impl
+# DIVERGES: no `Slock(out)`/`Sunlock(out)` (no threads); the format text is not saved off the stacks (the
+# text is a Julia vector, a call-back cannot move it). `m` is a module index (0: the context module).
+"Format the arguments in the list `Args` through the format text in `format` onto `out` (pl-fmt.c)."
+function format_impl(
+    ld::PL_local_data{T}, out::IOSTREAM, format::term_t, Args::term_t, m::Int
+)::Bool where {T}
+    argc = 0
+    argv = 0
+    args = PL_copy_term_ref(ld, Args)
+
+    fmt = PL_get_text(ld, format, CVT_ATOM | CVT_STRING | CVT_LIST)
+    fmt === nothing && return PL_error(ld, "format", 3, "", ERR_TYPE, mk_sym(T, :text), format)
+
+    len = lengthList(ld, args, false)
+    if len >= 0
+        argc = len
+        if argc > 0
+            head = PL_new_term_ref(ld)
+            argv = PL_new_term_refs(ld, argc)
+            n = 0
+            while PL_get_list(ld, args, head, args)
+                PL_put_term(ld, argv + n, head)
+                n += 1
+            end
+        end
+    elseif !PL_is_pair(ld, args)
+        argc = 1
+        argv = PL_new_term_refs(ld, argc)
+        PL_put_term(ld, argv, args)
+    else
+        return PL_error(ld, ERR_TYPE, mk_sym(T, :list), args)   # PL_type_error("list", args)
+    end
+
+    return do_format(ld, out, fmt, argc, argv, m)
+end
+
+# PORT: pl-fmt.c format
+# DIVERGES: named `format_` (a Julia function `format` is easily shadowed); `m` is an index and the redirect
+# context is B's `redir_context` (O1B: pl-file.c `setupOutputRedirect`, `closeOutputRedirect`,
+# `discardOutputRedirect`).
+"The body of format/2,3: the output redirected to `out` (0: the current output), the arguments in `args` (pl-fmt.c)."
+function format_(
+    ld::PL_local_data{T}, out::term_t, format::term_t, args::term_t
+)::foreign_t where {T}
+    gd = _query_gd(ld)
+    list = PL_new_term_ref(ld)
+    ok, m = PL_strip_module(gd, ld, args, 0, list)
+    ok || return FFALSE
+    ctx = redir_context()
+    rc = setupOutputRedirect(ld, out, ctx, false)
+    if rc
+        rc = format_impl(ld, ctx.stream, format, list, m)
+        if rc
+            rc = closeOutputRedirect(ld, ctx)
+        else
+            discardOutputRedirect(ld, ctx)
+        end
+    end
+    return rc ? FTRUE : FFALSE
+end
+
+# PORT: pl-fmt.c format as pl_format2_va
+# (PRED_IMPL("format", 2, format, META))
+"`format(+Format, :Args)`: formatted output to the current output (pl-fmt.c)."
+function pl_format2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2 = PL__t0, PL__t0 + 1
+    return format_(ld, 0, A1, A2)
+end
+
+# PORT: pl-fmt.c format as pl_format3_va
+# (PRED_IMPL("format", 3, format, META))
+"`format(+Output, +Format, :Args)`: formatted output to a stream, or to `atom(A)`, `string(S)`, `codes(C)` … (pl-fmt.c)."
+function pl_format3_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2, A3 = PL__t0, PL__t0 + 1, PL__t0 + 2
+    return format_(ld, A1, A2, A3)
+end
+
+# PORT: pl-fmt.c get_chr_from_text, text_next_code
+# DIVERGES: the format text is its code point vector, so a surrogate pair is no case; a read past the end is
+# the terminating NUL of upstream's C string (0).
+"The code point at the 0-based index `i` of the format text `fmt`; 0 past its end (pl-fmt.c `get_chr_from_text`)."
+@inline get_chr_from_text(fmt::Vector{Int}, i::Int)::Int =
+    (i >= 0 && i < length(fmt)) ? @inbounds(fmt[i + 1]) : 0
+
+# PORT: pl-fmt.c sub_state
+"The state of a call-back whose output is a sub-format: the buffer it writes to, or the stream to restore (pl-fmt.c)."
+mutable struct sub_state
+    bufp::Base.RefValue{Union{Nothing, Vector{UInt8}}}
+    sizep::Base.RefValue{Int}
+    fstate::format_state
+    old_stream::Union{Nothing, IOSTREAM}
+end
+
+# PORT: pl-fmt.c prepare_sub_format
+# DIVERGES: the state is created here (upstream fills a caller's stack struct).
+"""
+Start the output of a call-back (`~p`, `~w`, `~@` …): when no rubber is pending and the stream's column is the
+format's, the call-back writes to `fd` directly; otherwise to a string (pl-fmt.c).
+"""
+function prepare_sub_format(
+    ld::PL_local_data{T}, fstate::format_state, fd::IOSTREAM
+)::sub_state where {T}
+    state = sub_state(Ref{Union{Nothing, Vector{UInt8}}}(nothing), Ref(0), fstate, nothing)
+    if fstate.pending_rubber == 0 && fd.position !== nothing &&
+       fd.position.linepos == COLUMN(fstate)
+        state.old_stream = Scurout(ld)
+        ld.IO_streams[SNO_CURRENT_OUTPUT + 1] = fd      # Scurout = fd
+    else
+        state.old_stream = nothing
+        tellString(ld, state.bufp, state.sizep, ENC_UTF8)
+        if (fd.flags & SIO_ISATTY) != 0
+            s = Scurout(ld)
+            s.flags |= SIO_ISATTY
+        end
+    end
+    return state
+end
+
+# PORT: pl-fmt.c end_sub_format
+"Close the output of a call-back; `rc` is its result. A string output is written on, and the column moved (pl-fmt.c)."
+function end_sub_format(ld::PL_local_data{T}, state::sub_state, rc::Bool)::Bool where {T}
+    sub = Scurout(ld).position
+    lp = sub.linepos
+    if state.old_stream !== nothing
+        if rc
+            p = state.fstate.pos
+            p.byteno = sub.byteno                       # also takes the escape state
+            p.charno = sub.charno
+            p.lineno = sub.lineno
+            p.linepos = sub.linepos
+            p.esc_state = sub.esc_state
+        end
+        ld.IO_streams[SNO_CURRENT_OUTPUT + 1] = state.old_stream
+    else
+        toldString(ld)
+        if rc
+            c0 = COLUMN(state.fstate)
+            rc = oututf8(state.fstate, state.bufp[]::Vector{UInt8}, 1, state.sizep[] + 1)
+            state.fstate.pos.linepos = c0 + lp
+        end
+    end
+    return rc
+end
+
+# PORT: pl-fmt.c get_int_expression
+# DIVERGES: no `clearNumber` (no GMP handles to free); `isIntegerNumber` is the type test.
+"Read an integer from the term `t`, evaluating it if it is an expression; a bignum that fits is an int64 (pl-fmt.c)."
+function get_int_expression(ld::PL_local_data{T}, t::term_t, i::number)::Bool where {T}
+    PL_get_number(ld, t, i) || valueExpression(ld, t, i) || return false
+    if !(i.type === V_INTEGER || i.type === V_MPZ) && !toIntegerNumber(ld, i, 0)
+        return false
+    end
+    if i.type === V_MPZ
+        ok, v = mpz_to_int64(i.mpz)
+        if ok
+            i.type = V_INTEGER
+            i.i = v
+        end
+    end
+    return true
+end
