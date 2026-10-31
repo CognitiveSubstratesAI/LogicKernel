@@ -166,5 +166,13 @@
 [
 "pf42",
 "current_prolog_flag(back_quotes, A), push_prolog_flag(back_quotes, string), current_prolog_flag(back_quotes, B), pop_prolog_flag(back_quotes), current_prolog_flag(back_quotes, C), R = [A, B, C]"
+],
+[
+"pf43",
+"create_prolog_flag(zz_pf_e, 1, []), push_prolog_flag(zz_pf_e, 2), catch(push_prolog_flag(zz_pf_e, foo), error(E, _), true), pop_prolog_flag(zz_pf_e), current_prolog_flag(zz_pf_e, V), R = E-V"
+],
+[
+"pf44",
+"push_prolog_flag(zz_pf_e, 3), push_prolog_flag(zz_pf_e, 4), pop_prolog_flag(zz_pf_e), current_prolog_flag(zz_pf_e, A), pop_prolog_flag(zz_pf_e), current_prolog_flag(zz_pf_e, B), R = A-B"
 ]
 ]

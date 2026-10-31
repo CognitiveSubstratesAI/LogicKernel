@@ -54,6 +54,9 @@ cases = [
     ("pf41", "current_prolog_flag(optimise, A), push_prolog_flag(optimise, true), current_prolog_flag(optimise, B), pop_prolog_flag(optimise), current_prolog_flag(optimise, C), R = [A, B, C]"),
     # a module flag of the source, restored by the pop through set_flag_value
     ("pf42", "current_prolog_flag(back_quotes, A), push_prolog_flag(back_quotes, string), current_prolog_flag(back_quotes, B), pop_prolog_flag(back_quotes), current_prolog_flag(back_quotes, C), R = [A, B, C]"),
+    # a push that fails leaves the frames below it as they were (copy_prolog_flag's copy has no pushed values: clean_prolog_flag of it must not reach them)
+    ("pf43", "create_prolog_flag(zz_pf_e, 1, []), push_prolog_flag(zz_pf_e, 2), catch(push_prolog_flag(zz_pf_e, foo), error(E, _), true), pop_prolog_flag(zz_pf_e), current_prolog_flag(zz_pf_e, V), R = E-V"),
+    ("pf44", "push_prolog_flag(zz_pf_e, 3), push_prolog_flag(zz_pf_e, 4), pop_prolog_flag(zz_pf_e), current_prolog_flag(zz_pf_e, A), pop_prolog_flag(zz_pf_e), current_prolog_flag(zz_pf_e, B), R = A-B"),
 ]
 ids = [i for i, _ in cases]
 assert len(set(ids)) == len(ids)

@@ -164,7 +164,7 @@ function _pf_kernel(path::String, names::Vector{String})
     return out, gd, ld
 end
 
-@testset "set_prolog_flag/2, create_prolog_flag/3 and the flag side effects as swipl's (pf01-pf42)" begin
+@testset "set_prolog_flag/2, create_prolog_flag/3 and the flag side effects as swipl's (pf01-pf44)" begin
     f, names = _pf_file()
     kl, _, _ = _pf_kernel(f, names)
     @test length(kl) == length(_PF_PINNED)

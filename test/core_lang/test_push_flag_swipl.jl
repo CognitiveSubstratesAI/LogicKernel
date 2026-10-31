@@ -135,7 +135,9 @@ const _PF_CASES = [
     ("pf39", raw"catch(push_prolog_flag(unknown, foo), error(E, _), true), catch(pop_prolog_flag(unknown), error(E2, _), true), R = [E, E2]"),
     ("pf40", raw"catch(push_prolog_flag(double_quotes, nonsense), error(E, _), true), catch(pop_prolog_flag(double_quotes), error(E2, _), true), R = [E, E2]"),
     ("pf41", raw"current_prolog_flag(optimise, A), push_prolog_flag(optimise, true), current_prolog_flag(optimise, B), pop_prolog_flag(optimise), current_prolog_flag(optimise, C), R = [A, B, C]"),
-    ("pf42", raw"current_prolog_flag(back_quotes, A), push_prolog_flag(back_quotes, string), current_prolog_flag(back_quotes, B), pop_prolog_flag(back_quotes), current_prolog_flag(back_quotes, C), R = [A, B, C]")
+    ("pf42", raw"current_prolog_flag(back_quotes, A), push_prolog_flag(back_quotes, string), current_prolog_flag(back_quotes, B), pop_prolog_flag(back_quotes), current_prolog_flag(back_quotes, C), R = [A, B, C]"),
+    ("pf43", raw"create_prolog_flag(zz_pf_e, 1, []), push_prolog_flag(zz_pf_e, 2), catch(push_prolog_flag(zz_pf_e, foo), error(E, _), true), pop_prolog_flag(zz_pf_e), current_prolog_flag(zz_pf_e, V), R = E-V"),
+    ("pf44", raw"push_prolog_flag(zz_pf_e, 3), push_prolog_flag(zz_pf_e, 4), pop_prolog_flag(zz_pf_e), current_prolog_flag(zz_pf_e, A), pop_prolog_flag(zz_pf_e), current_prolog_flag(zz_pf_e, B), R = A-B")
 ]
 
 # swipl 10.1.19-1-gcbf4e189's answers to the program and cases above (the driver's lines; evidence/F2/push_rows.out)
@@ -183,7 +185,9 @@ const _PF_PINNED = [
     "t_pf39 c[116,95,112,102,51,57]/1(c[91,124,93]/2(c[100,111,109,97,105,110,95,101,114,114,111,114]/2(a[117,110,107,110,111,119,110],a[102,111,111]),c[91,124,93]/2(c[101,120,105,115,116,101,110,99,101,95,101,114,114,111,114]/2(a[112,117,115,104,101,100,95,102,108,97,103],a[117,110,107,110,111,119,110]),nil)))",
     "t_pf40 c[116,95,112,102,52,48]/1(c[91,124,93]/2(c[100,111,109,97,105,110,95,101,114,114,111,114]/2(a[100,111,117,98,108,101,95,113,117,111,116,101,115],a[110,111,110,115,101,110,115,101]),c[91,124,93]/2(c[101,120,105,115,116,101,110,99,101,95,101,114,114,111,114]/2(a[112,117,115,104,101,100,95,102,108,97,103],a[100,111,117,98,108,101,95,113,117,111,116,101,115]),nil)))",
     "t_pf41 c[116,95,112,102,52,49]/1(c[91,124,93]/2(a[102,97,108,115,101],c[91,124,93]/2(a[116,114,117,101],c[91,124,93]/2(a[102,97,108,115,101],nil))))",
-    "t_pf42 c[116,95,112,102,52,50]/1(c[91,124,93]/2(a[99,111,100,101,115],c[91,124,93]/2(a[115,116,114,105,110,103],c[91,124,93]/2(a[99,111,100,101,115],nil))))"
+    "t_pf42 c[116,95,112,102,52,50]/1(c[91,124,93]/2(a[99,111,100,101,115],c[91,124,93]/2(a[115,116,114,105,110,103],c[91,124,93]/2(a[99,111,100,101,115],nil))))",
+    "t_pf43 c[116,95,112,102,52,51]/1(c[45]/2(c[116,121,112,101,95,101,114,114,111,114]/2(a[105,110,116,101,103,101,114],a[102,111,111]),i1))",
+    "t_pf44 c[116,95,112,102,52,52]/1(c[45]/2(i3,i1))"
 # PINS-END
 ]
 
@@ -249,7 +253,7 @@ function _pf_kernel(path::String, names::Vector{String})
     return out, gd, ld
 end
 
-@testset "set_prolog_flag/2, create_prolog_flag/3 and the flag side effects as swipl's (pf01-pf42)" begin
+@testset "set_prolog_flag/2, create_prolog_flag/3 and the flag side effects as swipl's (pf01-pf44)" begin
     f, names = _pf_file()
     kl, _, _ = _pf_kernel(f, names)
     @test length(kl) == length(_PF_PINNED)
