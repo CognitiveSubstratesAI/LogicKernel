@@ -52,7 +52,48 @@ branch; with the usual 1-2 fix commits after CI, 10-12. Under D-0272 item 7's ~1
   (`recordRef{T,L}(rec)` inner constructor, `recorded_state{T}`). NEXT AGENT: `git diff --cached --stat`,
   review, then commit with subject `UPSTREAM: pl-rec.c lookupRecordList/remove_record/getKeyEx/current_key/
   record/PL_record_az/recorda/recordz/recorded (swipl-devel cbf4e1896275)`.
-- [ ] group 6: in src/pl-rec.jl `pl_erase1_va` replace `@assert type == DB_REF_CLAUSE` by `if type ==
+## State, second agent (2026-10-31; forced hand-back by the 150k cap hook)
+
+COMMITTED (all UNRUN, nothing compiled): 0b61387 groups 3-5 (pl-rec.jl/pl-incl.jl); 687fb43 groups 6-7 (erase/instance record
+branches, `PL_predicates_from_rec` in upstream's order with `PL_FA_NONDETERMINISTIC | PL_FA_VARARGS`; pl-ext.jl table comment);
+6cdcd1d group 10a EARLY (pl-global.jl GD `record_lists`, `record_lists_order`, `record_refs` at the END of the struct, LD
+`recorded_states` at the end of the LD struct, constructors, pl-fli.jl `live_states`) so the branch loads (a STRUCT CHANGE).
+STAGED, committed with this handoff: group 8, `test/db/test_record_swipl.jl` (98 pinned rows r01-r98 + 3 white-box testsets,
+prefix `_rc_`/`_RC_`) and evidence/D2/{gen_rows.py, d2_rows.pl, d2_driver.pl, d2_rows.out} (pins from two byte-identical swipl 10.1.19 runs).
+Rows r65, r67 kill D1-56; r73, r75 kill D1-119 (D-0252). Rows marked UNVERIFIED on the kernel (gate decides, a mismatch is traced,
+not re-pinned): r21 (string literal in the consulted program), r27/r28 (`[]` and `[a|b]` keys), r40/r41 (a blob inside a recorded
+term), r16-r19 (tagged-int range), the context of r23-r26/r32-r33/r50-r51/r61/r71/r79/r85, r88 (swipl pre-fetches the NEXT record when an
+answer is returned, so a record erased after that is still answered: [1,2,3]), r43/r91 (redo). The white-box testsets use
+`LK.recref_record`, `LK.firstRecordRecordList`, `LK.cleanRecordList`, `LK.remove_record`, `LK.isCurrentRecordList`, `LK.record_blob`,
+`LK.live_states`, `LK._blob_registration`: if one is not reachable as `LK.x` the gate says so. test_blob.jl is NOT touched (it sets
+its three ranks by hand, lines 35-36; `record` is registered FIRST in `initDBRef!`, rank between clause and mutex).
+
+REMAINING, in order:
+- group 9: `tools/mutants/D2.py` (>= 12 mutants, format of tools/mutants/MOD3b.py; TARGETS = test/db/test_record_swipl.jl AND
+  test/db/test_clause_ref_swipl.jl AND test/core_lang/test_blob.jl AND any file calling recorded/findall on records: grep the
+  tests for `recorda\|recordz\|recorded(` first), and `tools/mutants/D1c.py`: D1-56 and D1-119 re-anchored (erase's line is now
+  `if type == DB_REF_CLAUSE                                    # CLAUSE: the erase branch of a clause`; instance's is
+  `if type != DB_REF_CLAUSE                                    # RECORD: the instance branch of a record`, new `if true` / `if false`),
+  `equivalent=` dropped, test_record_swipl.jl in their targets, header lines 13-14 and 21-23 updated. Validate with a throwaway
+  python3 -I + runpy checker (old once, new != old, ids unique, targets exist). Candidate D2 mutants: `a.flags |= R_ERASED` dropped
+  in erase, `l.references != 0` -> `== 0`, recorda/recordz swapped (`az == RECORDA`), `first.prev = r` dropped, lookupRecordList
+  not pushing to `record_lists_order`, `current_key` ignoring `firstRecordRecordList`, getKeyEx accepting a float, `rl.references -= 1`
+  dropped in free_state, `cleanRecordList` condition, `remove_record` unlinking `next.prev`, `isCurrentRecordList(…, true)` -> false,
+  `acquire_record` flag, `PL_get_recref` erased test.
+- group 10b (shared, LAST, separate commits): docs/architecture.md D2 section (appended; the row-file table entry); the manifest
+  block only if a new `@enum` (none: RECORDA/RECORDZ are Int constants).
+- Checks never done: `test/static_analysis_manifest.jl` / port_inventory are the gate's; the register of test files (grep how
+  `test_clause_ref_swipl.jl` is listed in tools/ or test/runtests*.jl: the last command run was this grep and the cap hook ended
+  the turn) must list `test/db/test_record_swipl.jl` the same way.
+- Gate order (WRITER_RULES): fmt (`warm.sh send` for committed files), inventory, check, rows on all three term types
+  (`warm.sh file test/db/test_record_swipl.jl`), type discipline, `tools/pkgtest_way.sh test/db/test_record_swipl.jl`, the
+  mutants branch (`mutants/D2` at the WIP SHA once D2.py exists), branch-gate, term grep, alloc pins x3 (pl-global.jl changed),
+  gate push on a FRESH name.
+- Flags for the audit: F1-F5 above; plus F6: the record branch's `callEventHook` is the no-hook answer (F2); F7: `recorded/3`
+  pre-fetches the next record (upstream's behaviour, row r88); F8: the local name `record` in `firstRecordRecordList`,
+  `isCurrentRecordList`, `pl_current_key1_va` hides the type `record` inside those functions (no type use there; rename to `rec` if JET objects).
+
+- [x] (done by 687fb43) group 6: in src/pl-rec.jl `pl_erase1_va` replace `@assert type == DB_REF_CLAUSE` by `if type ==
   DB_REF_CLAUSE … else` the record branch (pl-rec.c:2464-2480: rc = true (F2); `l.references != 0` → set
   `R_ERASED` on the ref's `flags` and `RL_DIRTY` on the list, else `remove_record`); `clause = ptr::Clause{T}`
   in the clause branch. `pl_instance2_va`: replace the NotPortedError by the record branch (pl-rec.c:2431-2436:
