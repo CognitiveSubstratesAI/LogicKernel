@@ -44,6 +44,12 @@ BLOCKING = ("SURVIVED", "TIMEOUT", "INVALID", "BADMATCH", "EQUIVALENT REFUTED", 
 
 
 def load(path, only):
+    # CISTATUS (audit D-0262): the first argument is the mutant list as a PATH in the repository
+    # (the workflow input `mutants`: tools/mutants/<step>.py), never a bare step name — three
+    # dispatches of 2026-10-30 named `ARGVAR2` and died here with a bare FileNotFoundError.
+    if not os.path.isfile(path):
+        sys.exit("mutate_ci: no mutant list at %r — give the PATH of the step's list in the repository, "
+                 "tools/mutants/<step>.py (e.g. tools/mutants/ARGVAR2.py), not a bare step name" % path)
     mutants = runpy.run_path(path)["MUTANTS"]
     names = [m["id"].split()[0] for m in mutants]
     if len(set(names)) != len(names):
@@ -158,6 +164,10 @@ def one(argv):
 
 
 def collect(argv):
+    # an empty COUNT is a failed Plan step (its output `count` was never written): say so
+    if not argv[1].strip().isdigit():
+        sys.exit("mutate_ci: collect: COUNT is %r — the Plan step gave no mutant count (it failed, "
+                 "see its log: usually a mutants input that is not tools/mutants/<step>.py)" % argv[1])
     path, count, only = argv[0], int(argv[1]), argv[2:]
     mutants = load(path, only)
     if len(mutants) != count:

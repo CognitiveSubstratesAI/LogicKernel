@@ -957,6 +957,142 @@ echo "pkgtest-way: PASS stub"
         end
     end
 
+    # CISTATUS (audit D-0262, cause A-0168): three `Mutation battery` workflow_dispatch runs of
+    # 09c9f07 failed at their Plan step (no mutant ran) and made the commit read RED for good. The
+    # fixture's `jobs` maps a run id to the answer of GET <jobs_url>; the shapes are the real ones
+    # (job names Plan / Baseline (unmutated) / matrix.name / Verdict table, measured 2026-10-31).
+    @testset "tools/ci_status.sh: a dispatch that failed at its Plan step is no verdict (CISTATUS)" begin
+        sha = "09c9f0715768c51265b4a2f459a40bcea9a9fb1e"
+        run_(id, name, event, conclusion; at="2026-10-30T20:38:33Z") =
+            "{\"id\":$id,\"head_sha\":\"$sha\",\"name\":\"$name\",\"event\":\"$event\"," *
+            "\"status\":\"completed\",\"conclusion\":\"$conclusion\",\"head_branch\":\"main\"," *
+            "\"created_at\":\"$at\",\"workflow_id\":\"$name\",\"html_url\":\"https://x/$id\"," *
+            "\"jobs_url\":\"https://x/$id/jobs\"}"
+        job_(name, conclusion) = "{\"name\":\"$name\",\"status\":\"completed\",\"conclusion\":\"$conclusion\"}"
+        jobs_(js...) = "{\"jobs\":[" * join([job_(n, c) for (n, c) in js], ",") * "]}"
+        # what the three real runs showed: Plan failed, Verdict table failed after it, the rest skipped
+        planfail = jobs_(
+            "Plan" => "failure", "Verdict table" => "failure",
+            "Baseline (unmutated)" => "skipped", "matrix.name" => "skipped"
+        )
+        # a REAL battery failure: Plan passed, a mutant job and the table are red
+        realfail = jobs_(
+            "Plan" => "success", "Verdict table" => "failure",
+            "Baseline (unmutated)" => "success", "S1" => "failure"
+        )
+        # Plan failed but something ELSE also ran and failed: not a pure Plan failure
+        mixed = jobs_(
+            "Plan" => "failure", "Verdict table" => "failure",
+            "Baseline (unmutated)" => "failure", "matrix.name" => "skipped"
+        )
+        three = [
+            run_(41124826803, "Mutation battery", "workflow_dispatch", "failure"),
+            run_(41124901359, "Mutation battery", "workflow_dispatch", "failure"),
+            run_(41124983027, "Mutation battery", "workflow_dispatch", "failure")
+        ]
+        threejobs = join(
+            ["\"$id\":$planfail" for id in (41124826803, 41124901359, 41124983027)], ","
+        )
+        green = [
+            run_(41126115441, "Mutation battery", "workflow_dispatch", "success"),
+            run_(41108160669, "CI", "push", "success"),
+            run_(41104264503, "Evidence (three term types)", "push", "success")
+        ]
+        tool = joinpath(_GS_ROOT, "tools", "ci_status.sh")
+        mktempdir() do d
+            status(runs, jobs) = begin
+                f = joinpath(d, "f.json")
+                write(
+                    f,
+                    "{\"workflow_runs\":[" * join(runs, ",") * "],\"jobs\":{" * jobs * "}}"
+                )
+                outp = IOBuffer()
+                p = run(
+                    pipeline(
+                        ignorestatus(addenv(`$tool $sha`, "LOGICKERNEL_CI_FIXTURE" => f));
+                        stdout=outp, stderr=devnull
+                    )
+                )
+                (p.exitcode, String(take!(outp)))
+            end
+            # the three known Plan failures beside the green runs: GREEN, and printed as ignored
+            code, text = status([three; green], threejobs)
+            @test code == 0
+            @test count("dispatch failed at Plan: no verdict", text) == 3
+            # a real battery failure (Plan green) is still RED
+            @test status(
+                [
+                    green;
+                    run_(41200000001, "Mutation battery", "workflow_dispatch", "failure")
+                ],
+                "\"41200000001\":$realfail"
+            )[1] == 1
+            # a Plan failure with another failed job beside it is still RED
+            @test status(
+                [
+                    green;
+                    run_(41200000002, "Mutation battery", "workflow_dispatch", "failure")
+                ],
+                "\"41200000002\":$mixed"
+            )[1] == 1
+            # one real failure among the three ignored ones: RED
+            @test status(
+                [
+                    three;
+                    green;
+                    run_(41200000001, "Mutation battery", "workflow_dispatch", "failure")
+                ],
+                threejobs * ",\"41200000001\":$realfail"
+            )[1] == 1
+            # a failed PUSH-triggered run is RED even with the same job shape (CI, Evidence)
+            @test status(
+                [green; run_(41200000003, "CI", "push", "failure")],
+                "\"41200000003\":$planfail"
+            )[1] == 1
+            @test status(
+                [
+                    green;
+                    run_(41200000004, "Evidence (three term types)", "push", "failure")
+                ],
+                "\"41200000004\":$planfail"
+            )[1] == 1
+            # a dispatch whose jobs cannot be read (no entry in the fixture) stays RED
+            @test status(
+                [
+                    green;
+                    run_(41200000005, "Mutation battery", "workflow_dispatch", "failure")
+                ],
+                ""
+            )[1] == 1
+            # a Plan failure that is only 'cancelled' (not failure) is not excused either
+            @test status(
+                [
+                    green;
+                    run_(41200000006, "Mutation battery", "workflow_dispatch", "cancelled")
+                ],
+                "\"41200000006\":" *
+                jobs_("Plan" => "cancelled", "matrix.name" => "skipped")
+            )[1] == 1
+            # pending stays 3: an ignored Plan failure does not turn an in-progress run into a verdict
+            f = joinpath(d, "p.json")
+            write(
+                f,
+                "{\"workflow_runs\":[" * join(three, ",") * "," *
+                replace(
+                    run_(41200000007, "CI", "push", "x"),
+                    "\"status\":\"completed\",\"conclusion\":\"x\"" => "\"status\":\"in_progress\",\"conclusion\":null"
+                ) *
+                "],\"jobs\":{" * threejobs * "}}"
+            )
+            @test run(
+                pipeline(
+                    ignorestatus(addenv(`$tool $sha`, "LOGICKERNEL_CI_FIXTURE" => f));
+                    stdout=devnull
+                )
+            ).exitcode == 3
+        end
+    end
+
     @testset "the sync's expected-mismatch list exists exactly while a sync lasts" begin
         # (user, 2026-10-11) test/sync_expected_mismatch.jl: there while tools/SWIPL_VERSION has a
         # `sync-from:` line, each entry naming a test file that checks it for staleness and the
@@ -2023,6 +2159,28 @@ MUTANTS = [
             ).exitcode
             out(args...) = read(ignorestatus(Cmd(`python3 $tool $args`; dir=d)), String)
             @test occursin("count=8", out("plan", "m.py"))
+            # CISTATUS: a bare step name is not a list; the error names the expected form (a path)
+            # and the exit is non-zero, no traceback; an empty COUNT (a failed Plan) is said plainly
+            errout(args...) = begin
+                e = IOBuffer()
+                p = run(
+                    pipeline(
+                        ignorestatus(Cmd(`python3 $tool $args`; dir=d));
+                        stdout=devnull,
+                        stderr=e
+                    )
+                )
+                (p.exitcode, String(take!(e)))
+            end
+            code, msg = errout("plan", "m")
+            @test code != 0
+            @test occursin("tools/mutants/<step>.py", msg) &&
+                occursin("not a bare step name", msg)
+            @test !occursin("Traceback", msg)
+            code, msg = errout("collect", "m.py", "")
+            @test code != 0
+            @test occursin("Plan step gave no mutant count", msg) &&
+                !occursin("Traceback", msg)
             # the list's own targets, for a run started by a push: none named → an empty line;
             # named → space-separated; a target with a blank in it is refused
             @test occursin("targets=\n", out("plan", "m.py"))
