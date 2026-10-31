@@ -5960,6 +5960,45 @@ What SETARG adds (src/pl-prims.jl before the predicate table, src/pl-copyterm.jl
 Tests: test/core_lang/test_setarg_swipl.jl (83 rows against swipl 10.1.19, two byte-identical runs; sa43-sa47 freeze, sa56-sa58 sharing,
 sa68-sa83 attributed variables and cycles are the rows to read first if the kernel differs), mutants tools/mutants/SETARG.py (27, two equivalent with reasons).
 
+## O1A — `format/2,3` (R2 O1, pl-fmt.c at swipl-devel cbf4e1896275; `src/pl-fmt.jl`)
+
+What O1A ports (written edit-only, nothing compiled when this was written; writer B's `with_output_to/2` and the redirect live in the O1B block):
+
+- **`format/2` and `format/3`** (`pl_format2_va`, `pl_format3_va` over `format_impl`/`format_`): the output goes to `Scurout` or, for `format/3`, through the redirect of the
+  first argument (`setupOutputRedirect`, `closeOutputRedirect`, `discardOutputRedirect`, all O1B's). A non-list argument is one argument; the text may be any text type. The
+  sub-format helpers `prepare_sub_format`/`end_sub_format` and `get_int_expression` (the `*` argument and `~Nd` expressions) are 1:1.
+- **`do_format`, every directive**: `~a ~c ~s ~i ~k ~p ~q ~w ~W ~@ ~*`; numbers `~d ~D ~r ~R ~I ~e ~f ~g ~h` (with the colon and the radix forms); columns `~t ~| ~+` with
+  `` ~`ct `` fill characters; literals `~n ~N ~~`. The column state (`format_state`, `update_column`, the pending-text buffer) and the rubber (`distribute_rubber`, `emit_rubber`)
+  are upstream's, including the pending-buffer rule for text after `~t`. `~@` is upstream's `callProlog` with O1B's `ex::Ref{Int}`, then `PL_raise_exception`.
+- **`formatInteger`** with `lappend`, `countGroups`, `ths_to_utf8`, `find_decimal_point`, `localizeDecimalPoint`, `groupDigits`.
+- **`formatFloat`**, `~e ~f ~g ~h` over three value kinds: a float through `Base.Ryu` (exact, ties to even: what glibc prints); a bignum (|n| >= 2^63; a small integer goes through
+  the double path as upstream's V_INTEGER does) through `_fmt_print_mpz_f!`/`_fmt_print_mpz_e!` and `mpz_sizeinbase10`; a rational through `_fmt_mpq_e!`/`_fmt_mpq_f!`; the
+  `g` of a bignum or rational through an emulation of GMP's mpf (`_fmt_mpf_set_z`, `_fmt_mpf_set_q`, `_fmt_round_sig`, `_fmt_print_mpf_g!`). A negative argument other than for `~h`
+  raises `domain_error(not_less_than_zero, N)`.
+- **The registration table** `PL_predicates_from_format` (format/2,3 and `format_predicate/2` TRANSPARENT|VARARGS; `current_format_predicate/2` adds NONDETERMINISTIC). It is
+  wired into `_PRED_TABLES` and `_FOREIGN_VA` of src/pl-ext.jl (commit b3171b3); O1B's redirect table is appended to the same tuples, so the stack owner resolves that textual clash.
+  `include("pl-fmt.jl")` sits in src/LogicKernel.jl between pl-read.jl and pl-ext.jl; the merge include order is os/pl-file.jl, os/pl-redirect.jl, pl-write.jl, pl-fmt.jl, pl-ext.jl.
+- **INTERFACE TO B** (what pl-fmt.c needs from pl-file.c, under upstream's names; O1B supplies them): `tellString(ld, bufp, sizep, enc)::Bool` (pl-file.c:2629) and
+  `toldString(ld)::Bool` (:2642), `redir_context` with its `.stream`, `setupOutputRedirect(ld, to, ctx, redir)::Bool` (:1708, `to == 0` is the current output),
+  `closeOutputRedirect(ld, ctx)::Bool` (:1774), `discardOutputRedirect(ld, ctx)::Nothing` (:1826), and the six-argument `callProlog` (wip/o1b 3cb3a13) that `~@` calls.
+  The merge needs O1B's commits first.
+- **Refused by name:** `format_predicate/2` raises `NotPortedError` (step LB5); the table `format_predicates` stays empty, so `current_format_predicate/2` fails and `do_format`
+  never looks up a user directive. The LibBF branch of `formatFloat` and the `__WINDOWS__` exponent fix-up are left out (the pinned swipl is a GMP build).
+- **DIVERGES, kept (the audit decides the behaviour-changing ones; O1A decided none):**
+  `~:d`, `~:D`, `~:f` use the C locale: the stream has no locale field (D9), swipl groups the digits (`~:f` of 10**10 is `10,000,000,000.000000` there); the K rows pin the kernel's answer
+  with swipl's in the row. `format("a~")`: swipl raises `existence_error(format_character, '\0')`; `codeToAtom(T, 0)` is refused in the kernel (handoff flag b). a bignum `formatInteger` with
+  more fraction digits than digits pads `0` where upstream reads before the buffer; `~25d` of 2^64 is therefore left out of the rows. a raw Latin-1 byte in pending rubber is decoded as
+  UTF-8 as upstream does. the mpf of `g` is a truncated exact rational (GMP: `prec+1` limbs of 64 bits, cut by limb); the mpq cut is placed by bit length, so a result differs from GMP only within
+  2^-(64*prec) of a rounding boundary. float `~e ~f ~g` use `Base.Ryu` in place of libc snprintf. `mpz_sizeinbase(z, 10)` is emulated as floor(bits*log10 2)+1, GMP's value (one too big at times),
+  so the exponent guesses behave as upstream's. `PL_format_error`/`PL_format_arg_error` are functions, not `PL_error` codes (no `ERR_FORMAT` in the enum). `format_` is named with
+  a trailing underscore; the state is built in `prepare_sub_format`. a numeric argument that overflows an `Int`: upstream's `int arg2 = arg*10+dw` wraps in C (undefined behaviour); compiled swipl
+  10.1.19 prints `1` for `format("~3000000000d", [1])`, the port raises `argument overflow` (handoff flag k, open for the stack owner and the audit; its row and mutant are NOT STARTED).
+- **UNVERIFIED:** nothing in src/pl-fmt.jl or its test was parsed by Julia; the first gate run is expected to need a fix commit (names `redir_context`, `setupOutputRedirect`, `tellString`,
+  `toldString`, `PL_is_pair`, `PL_put_integer`, `pl_write_term3`; `Base.Ryu.writefixed`/`writeexp` argument positions; the GMP details above were written from memory).
+
+Tests: test/core_lang/test_format_swipl.jl (123 rows against swipl 10.1.19, generated by evidence/O1A/gen_rows.py; rows f13-f15 and f65-f74 observe `tellString`/`toldString` through `~@`,
+columns and `with_output_to`). Mutants: tools/mutants/O1A.py (130 mutants over src/pl-fmt.jl, one declared equivalent).
+
 ## Still to come
 
 * 🔜 **THE ORDER FROM HERE (user, 2026-10-14):** V9 is done; next **L1** — SWI's term layout
