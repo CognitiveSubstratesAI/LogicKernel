@@ -90,3 +90,29 @@ FLAGS (new): (6) the formatter may reflow a few long lines in the new code and t
 (8) pl_def_modules2_va: `PL_resource_error` then FFALSE for >10 targets, as upstream. (9) The manifest signatures are
 from the definitions' annotations (`find_modules_with_defs`: `Vector{Tuple{UInt64,Int,Int}}`, term_t = Int): `check` verifies.
 Daemon: coder 2 started none and did not touch lanes.conf.
+
+## coder 3 (EDIT-ONLY, no Julia, swipl 10.1.19 run freely) — ROWS + MUTANTS written; DOCS + inventory NOT written
+Commits on wip/mod5a after c1a4c89: ebc013b rows (first set), 5f88c15 UNVERIFIED header, 8fb2b57 rows e25/u06/d18-d20 + shared testset,
+then the commit of tools/mutants/MOD5a.py (41 mutants) + this handoff.
+ROWS: test/core_lang/test_export_import_swipl.jl, 77 cases + the F5 pair; generator evidence/MOD5a/gen_rows.py (usage in its header; the
+.out files are two byte-identical swipl runs; mx_rows.err = swipl's stderr warnings, kept as evidence). Prefix `_MX`/`_mx_`, ONE extractor
+(`_mx_enc`), term type `lk_term_type(...)` like test_at_body_swipl.jl. Testsets: rows vs pins; `definition.shared` counts (hand-derived from
+pl-proc.c, mwq:qq/1 == 3, mwq:rr/1 == 2, user:zz/1 == 3, ma:pa/1 == 4: UNVERIFIED on the kernel); non-vacuity; F5 (swipl: `mwf:wq(9).` over a
+weak import answers [9]; the kernel must refuse: NotPortedError or a load status not ok; UNVERIFIED); live swipl comparison.
+UNVERIFIED rows (listed in the test file above _MX_CASES): e09 (`//`), e21-e24, d05, d11/d12, i09/i12, i13, i15, d13. NOT rows (reason in the
+header): the warnings (stderr in swipl, `ld.messages` in the kernel: a white-box on ld.messages is LATER), module/2 (MOD5b).
+swipl facts worth knowing: `import(foo)` answers ok; `'$def_modules'([foo], R)` and `([ma:pa/1], R)` answer [] (no error); export of
+`atom_length/2` is skipped (ISO); `ma:pu/1` becomes defined through `'$undefined_export'`'s autoImport (d18 shows ma-[pu/1]).
+MUTANTS: tools/mutants/MOD5a.py, 41 entries, 4 declared equivalent (F2, D9, R4, G2) with reasons; the anchors were checked by counting in
+a python loop BEFORE the cap hit: I had NOT yet run the final validator (the cap blocked it) — the next agent runs
+`python3 -I -c` on the file (every `old` exactly once in its file, new != old, targets exist). Earlier per-anchor counts all gave 1
+(chk.py list), with `for c in m.supers` extended to the 2-line form and the pl-error anchor to `_err_functor(ld, :permission_error, 3), into,`.
+LEFT: (3) docs/architecture.md MOD5a section after the MOD3b section (what ports what with file:line, PROC_IMPORTED, definition.shared STRUCT
+CHANGE daemon restart ~30 min, public table order D-0149, F5, GC for lingerDefinition, error("OOPS loop") for sysError, open points);
+`warm.sh inventory` for docs/port_inventory.md (+ the `declared` column by hand as MOD3b needed). Gate order for the gate agent: fmt [reflows
+find_modules_with_defs, pl_def_modules2_va, the manifest block, the registration lines: RE-FIT mutant anchors], inventory, check, rows x3 term
+types, test_type_discipline, tools/pkgtest_way.sh on the new file (one at a time), mutants anchors re-check, mutants/MOD5a to CI, branch-gate,
+crash-term grep, gate branch push. Alloc pins not needed. No daemon was started by coder 3; lanes.conf untouched. No hook blocks except: the
+cap hook at 150k, the edit+commit-in-one-call hook, and the untracked-files hook (the .err files had to be added).
+Stale source comment for the gate agent: src/pl-proc.jl:1025-1027 still says "the kernel makes no weak imports ... so it is not reached";
+'$import'(PI, weak) now makes one (F5), so reword it.
