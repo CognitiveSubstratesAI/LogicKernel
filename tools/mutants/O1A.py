@@ -27,8 +27,8 @@
 # file that calls format/2,3 or with_output_to (named by a grep of the test tree for a Prolog-level format( or with_output_to call;
 # code_testlib.jl is a library included by those files and not listed); the column, rubber, float and bignum mutants are reached
 # only by the rows of the own file (no other test file names a column, a float directive or a bignum one: the grep above shows
-# only ~w ~d ~n ~s in them). test/core_lang/test_with_output_to_swipl.jl is O1B's file (wip/o1b): it is NOT on this branch and is
-# not listed; the stack owner adds it to TO once it has landed.
+# only ~w ~d ~n ~s in them). test/core_lang/test_with_output_to_swipl.jl is O1B's file; it is in TO (added in the O1 stack, where both
+# steps are on one branch: it exercises tellString/toldString, the column handling and format/3 into a with_output_to sink).
 TF = ["test/core_lang/test_format_swipl.jl"]
 TO = [
     "test/charset/test_umap_swipl.jl", "test/compile/test_analyse_variables_swipl.jl",
@@ -48,6 +48,7 @@ TO = [
     "test/core_lang/test_ssu_swipl.jl", "test/core_lang/test_stack_overflow_swipl.jl",
     "test/core_lang/test_sys_swipl.jl", "test/core_lang/test_unify_swipl.jl",
     "test/core_lang/test_variant_swipl.jl", "test/core_lang/test_var_identity.jl",
+    "test/core_lang/test_with_output_to_swipl.jl",
     "test/core_text/test_atom_text_swipl.jl", "test/core_text/test_canonical_readatom_swipl.jl",
     "test/core_text/test_io.jl", "test/core_text/test_read_term_swipl.jl",
     "test/core_text/test_roundtrip_swipl.jl", "test/core_text/test_write_family_swipl.jl",
