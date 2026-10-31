@@ -2215,7 +2215,8 @@ _index_entry_points(T) = (
     (LK.unify_index_pattern, Tuple{LK.Definition{T}}, false),
     # T2: the string predicates (src/pl-string.jl; pl-string.c and the string family of pl-prims.c)
     [
-        (f, Tuple{LK.PL_local_data{T}, Int, Int, LK.foreign_context{T}}, false) for f in (
+        (f, Tuple{LK.PL_local_data{T}, Int, Int, LK.foreign_context{T}}, false) for
+        f in (
             LK.pl_atom_string2_va, LK.pl_string_codes2_va, LK.pl_string_chars2_va,
             LK.pl_text_to_string2_va, LK.pl_string_length2_va, LK.pl_string_concat3_va,
             LK.pl_sub_string5_va, LK.pl_string_code3_va, LK.pl_get_string_code3_va,
@@ -2226,7 +2227,11 @@ _index_entry_points(T) = (
     (LK.unify_text, Tuple{LK.PL_local_data{T}, Int, LK.PL_chars_t, Int}, false),
     (LK.string_x, Tuple{LK.PL_local_data{T}, Int, Int, Int}, false),
     (LK.get_positive_integer_or_unbound, Tuple{LK.PL_local_data{T}, Int}, false),
-    (LK.sub_text, Tuple{LK.PL_local_data{T}, Int, Int, Int, Int, Int, LK.control_t{T}, Int}, false),
+    (
+        LK.sub_text,
+        Tuple{LK.PL_local_data{T}, Int, Int, Int, Int, Int, LK.control_t{T}, Int},
+        false
+    ),
     (LK.PL_error_range, Tuple{LK.PL_local_data{T}, Int, Int, Int}, false),
     (LK.PL_get_char, Tuple{LK.PL_local_data{T}, Int}, false),
     (LK.PL_get_int64_ex, Tuple{LK.PL_local_data{T}, Int}, false),
