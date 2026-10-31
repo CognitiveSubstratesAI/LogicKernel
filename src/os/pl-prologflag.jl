@@ -12,9 +12,10 @@
 # with the flags of `initArith`, `initClauseIndexing` and `initTabling`, the mask of the fast Boolean flags
 # (`truePrologFlag`), `current_prolog_flag/2` and `'$current_prolog_flag'/5` (`pl_prolog_flag5`, the
 # NON-DETERMINISTIC foreign predicate over `unify_prolog_flag_value`), `PL_current_prolog_flag` and
-# `PL_get_prolog_flag`. NOT PORTED: the write side — `set_prolog_flag/2`, `create_prolog_flag/3`,
-# `set_flag_value` and its side effects, `push_prolog_flag/2`, `pop_prolog_flag/1` (R2 F1b, F2) — and the
-# flags' threading (`LD->prolog_flag.table`, `FF_SHARED`'s mutex, `PL_LOCK(L_PLFLAG)`, `unify_shared_prolog_flag`:
+# `PL_get_prolog_flag`. Since R2 F1b: the write side — `set_prolog_flag/2`, `create_prolog_flag/3`,
+# `set_flag_value` and the value setters (`push_prolog_flag/2` and `pop_prolog_flag/1` are left to F2; the
+# flags whose side effect lives in a file not yet ported are refused by name, design D4). Left out as well: the flags'
+# threading (`LD->prolog_flag.table`, `FF_SHARED`'s mutex, `PL_LOCK(L_PLFLAG)`, `unify_shared_prolog_flag`:
 # the kernel is upstream's single-threaded build, design D1: one table, `threads` false and read-only).
 #
 # WHICH FLAGS EXIST (design D4, D5). `initPrologFlags!` defines the flags of upstream's `initPrologFlags`
