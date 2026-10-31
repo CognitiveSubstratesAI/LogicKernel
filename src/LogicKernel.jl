@@ -79,6 +79,7 @@ include("pl-sys.jl")           # swipl-devel src/pl-sys.c — getenv/2, setenv/2
 include("pl-read.jl")          # swipl-devel src/pl-read.c — the scanner (R1c) and the parser (R1d): read_term, term_to_atom
 include("pl-qlf.jl")           # swipl-devel src/pl-qlf.c — the boot compilation of a source file (LB3; no state file)
 include("pl-string.jl")        # swipl-devel src/pl-string.c — the string predicates: atom_string/2, split_string/4, sub_string/5 (T2)
+include("pl-fmt.jl")           # swipl-devel src/os/pl-fmt.c — format/2,3, format_predicate/2 (O1A)
 include("pl-ext.jl")           # swipl-devel src/pl-ext.c — registering the built-ins; their dispatch
 include("../boot/init.jl")     # swipl-devel boot/init.pl — the minimal loader (R1f): load_file!
 include("precompile_workload.jl")  # ORIGINAL — the hot paths, compiled at precompile time (LAST)

@@ -72,3 +72,33 @@ prefix `_FM`/`_fm_`; directives ~a ~w ~q ~p ~d ~D ~s ~e ~f ~g ~i ~k ~r ~R ~c ~n 
 `format("~1r",[10])` -> domain_error(radix,1); `format("~s",[a])` prints a) -> mutants `tools/mutants/O1A.py` (>= 25, TARGETS test_format_swipl.jl plus every test file that calls format) -> docs and manifest LAST.
 Estimated commits left: 3 (float) + 1 (table) + 2 (rows) + 1 (mutants) + 1-2 (docs/manifest) = 8-9. Gate order: WRITER_RULES.md.
 Julia was never run on this file: the first gate run will find syntax/name errors; expect a fix commit.
+
+### State after agent 2 (coder 2)
+DONE (all in src/pl-fmt.jl, NOT COMPILED, no Julia run): item 1 of MUST FIX (92b3a45 `where` -> `place`); group 7 formatFloat
+(f876348 7a bignum 'f'/'e'; 0a20912 7b bignum 'g' via an mpf emulation; 3c15680 7c entry + float tail); group 8 table
+`PL_predicates_from_format` (format/2,3, format_predicate/2: TRANSPARENT|VARARGS; current_format_predicate/2 adds NONDETERMINISTIC)
+and `include("pl-fmt.jl")` in src/LogicKernel.jl between pl-read.jl and pl-ext.jl (the brief asked for it; pl-file's redirect
+functions (O1B) must have landed before the first compile).
+FOR THE DISPATCHER: `PL_predicates_from_format` must be added to BOTH tuples in src/pl-ext.jl: `_PRED_TABLES` (:60) and `_FOREIGN_VA` (:73-);
+O1A does not edit pl-ext.jl.
+STILL TO DO: rows (test/core_lang/test_format_swipl.jl + evidence/O1A generator, driver, .out), tools/mutants/O1A.py (>= 25),
+docs (architecture.md block), manifest entries (JET/Aqua manifest, `test/static_analysis_manifest.jl`).
+Facts checked against swipl 10.1.19 (GMP build, `libbf=none`) for the rows: a SMALL integer (V_INTEGER, below 2^63) goes through the
+C double path, so a bignum row needs |n| >= 2^63 (`10**30`, `2**64`): `~2f` of `-1000000000000000000000000000000` is
+'-1000000000000000000000000000000.00'; `~25f` of `2**64` pads: '18446744073709551616.0000000000000000000000000'; `~e` of `10**30`
+'1.000000e+30'; `~0e` of `10**30` '1e+30'; `~3e` of `-12345678901234567890123` '-1.235e+22'; `~g` of `10**30` '1e+30'; `~7g` of
+`10**30+10**24` '1.000001e+30'; `~2g` of `123456789012345678901234567890` '1.2e+29'. Rationals (V_MPQ): `~3g` 1r3 '0.333', `~g` 1r30000000
+'3.33333e-08', `~G` 1r30000000 '3.33333E-08', `~0g` 1r4 '0.3' (exact dyadic tie rises), `~2g` 199r200 '0.99' (0.995: below the tie,
+falls), `~2g` 199r2 '1e+02', `~g` 1r100000 '1e-05', `~g` 1r10000 '0.0001', `~e` 1r3 '3.333333e-01', `~0e` 1r3 '3e-01', `~e` -1r10
+'-1.000000e-01', `~0e` 19r2 '1e+01', `~2f` -1r300 '-0.00', `~2f` -5r3 '-1.67', `~0f` 1r2 '1', `~0f` -1r2 '-1', `~0f` 3r2 '2',
+`~3f` -1r2000 '-0.001', `~1f` 199r2000 '0.1'. `~-1f` of 1 -> error(domain_error(not_less_than_zero,-1),context(system:format/3,_));
+`~-1h` of 1.0 -> '1.0e+00'; `~:f` of 10**10 -> '10,000,000,000.000000' in swipl (the kernel prints no grouping: D9, a documented DIVERGES row).
+AUDIT FLAGS (decide nothing): (a) `~@` uses PL_Q_PASS_EXCEPTION; (b) `format("a~")` existence_error(format_character,'\0')
+blocked by codeToAtom(T,0); (c) no stream locale (D9): `~:d` / `~:f` print the C locale; (d) formatInteger of a bignum with more fraction
+digits than digits pads '0' (upstream reads before the buffer); (e) raw Latin-1 byte in pending rubber decoded as UTF-8 as upstream does;
+(f) NEW: the 'g' of a bignum or rational emulates GMP's mpf (prec limbs, truncation, half-up on the next digit) with exact rationals; the
+mpq cut is placed by bit length, not by limb boundary: differs from GMP only within 2^-(64*prec) of a rounding boundary (comment above
+`_fmt_mpf_set_z`); (g) NEW: float `~e ~f ~g` use Base.Ryu (exact, ties to even) in place of libc snprintf; (h) NEW: the LibBF branch of
+formatFloat and the `__WINDOWS__` exponent fix-up are left out (the pinned swipl is GMP); (i) NEW: `mpz_sizeinbase(z,10)` is emulated as
+floor(bits*log10(2))+1 (GMP's value, one too big at times) so the exponent guesses behave as upstream's; (j) `format_predicate/2` is refused by
+name; the `format_predicates` table is empty.

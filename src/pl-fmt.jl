@@ -1366,3 +1366,21 @@ function formatFloat(
     end
     return true
 end
+
+# ── PUBLISH PREDICATES (pl-fmt.c :1895-end) ────────────────────────────────────────────────────────
+
+# PORT: pl-fmt.c BeginPredDefs as PL_predicates_from_format
+# DIVERGES: `PRED_DEF` ors in `PL_FA_VARARGS`; `META` is `PL_FA_TRANSPARENT`, `NDET` is `PL_FA_NONDETERMINISTIC`.
+# The dispatcher wires the table into `_PRED_TABLES` (src/pl-ext.jl), as for the other `PL_predicates_from_*`.
+"pl-fmt.c's registration table (`BeginPredDefs(format)`): format/2,3, format_predicate/2, current_format_predicate/2."
+const PL_predicates_from_format = (
+    PL_extension("format", 2, pl_format2_va, PL_FA_TRANSPARENT | PL_FA_VARARGS),
+    PL_extension("format", 3, pl_format3_va, PL_FA_TRANSPARENT | PL_FA_VARARGS),
+    PL_extension(
+        "format_predicate", 2, pl_format_predicate2_va, PL_FA_TRANSPARENT | PL_FA_VARARGS
+    ),
+    PL_extension(
+        "current_format_predicate", 2, pl_current_format_predicate2_va,
+        PL_FA_NONDETERMINISTIC | PL_FA_TRANSPARENT | PL_FA_VARARGS
+    )
+)
