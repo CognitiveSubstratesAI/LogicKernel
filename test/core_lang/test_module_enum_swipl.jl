@@ -283,7 +283,7 @@ const _MM_CASES = [
     (
         "d05",
         raw"'$declare_module'(mmx_t3, temporary, user, '/mmx/t3.pl', 1, false), mme_supers(mmx_t3, L1), '$destroy_module'(mmx_t3), mme_supers(mmx_t3, L2), ( '$current_module'(mmx_t3, Fa) -> A = Fa ; A = none ), R = [L1, L2, A]"
-    ),
+    )
 ]
 
 "The program and cases as one file; the case predicates' names."
@@ -409,13 +409,24 @@ end
     # the comparison can pass and can fail: answers, errors, failures and the lists of modules are all pinned
     @test length(_MM_PINNED) == length(_MM_CASES) + 1
     @test _MM_PINNED[1] == "ok"
-    @test any(l -> startswith(l, "t_i13 ") && occursin("a[105,110,115,116,97,110,116,105,97,116,105,111,110,95,101,114,114,111,114]", l), _MM_PINNED)   # instantiation_error
-    @test count(l -> occursin("c[116,121,112,101,95,101,114,114,111,114]", l), _MM_PINNED) >= 2   # type_error
+    @test any(
+        l ->
+            startswith(l, "t_i13 ") && occursin(
+                "a[105,110,115,116,97,110,116,105,97,116,105,111,110,95,101,114,114,111,114]",
+                l
+            ),
+        _MM_PINNED
+    )   # instantiation_error
+    @test count(
+        l -> occursin("c[116,121,112,101,95,101,114,114,111,114]", l), _MM_PINNED
+    ) >= 2   # type_error
     @test count(l -> occursin("c[91,124,93]/2(", l), _MM_PINNED) >= 12                  # lists of modules
     @test count(l -> occursin("c[45]/2(", l), _MM_PINNED) >= 8                         # X-Y answers
     @test count(l -> !occursin(" ", l), _MM_PINNED) == 1                                # only "ok" has no answer; no row fails
     @test count(l -> occursin("a[110,111,110,100,101,116]", l), _MM_PINNED) >= 1        # `nondet` answered: a choice point is pinned
-    @test any(l -> startswith(l, "t_c11 ") && occursin("a[109,109,120,95,102]", l), _MM_PINNED)   # the enumeration lists mmx_f
+    @test any(
+        l -> startswith(l, "t_c11 ") && occursin("a[109,109,120,95,102]", l), _MM_PINNED
+    )   # the enumeration lists mmx_f
 end
 
 @testset "a cut, a closed query and an exhausted enumeration free the state (FRG_CUTTED)" begin
@@ -500,7 +511,7 @@ end
     en2.flags = Int(LK.MENUM_TEMP)
     found = false
     while (m = LK.advanceModuleEnum(gd, ld, en2)) !== nothing
-        m === t4 && (found = true; @test t4.references == r0 + 1 && en2.current == t4.index)
+        m === t4 && (found=true; @test t4.references == r0 + 1 && en2.current == t4.index)
     end
     @test found
     @test t4.references == r0 + 1                 # still held by the enumeration (`current`), which is the last temporary one
