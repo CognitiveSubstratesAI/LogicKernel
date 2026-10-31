@@ -1,5 +1,5 @@
 # ORIGINAL: MOD5b's mutant list — no swipl-devel counterpart.
-# tools/mutants/MOD5b.py — the mutation battery of MOD5b (declaring and destroying modules: pl-modul.c declareModule,
+# tools/mutants/MOD5b2.py — the mutation battery of MOD5b (declaring and destroying modules: pl-modul.c declareModule,
 # declare_module, destroy_module, destroyModule, acquireModule, releaseModule(_unlocked), unallocModule, unlinkSourceFilesModule,
 # markSourceFilesProcedure; pl-srcfile.c unlinkSourceFileModule; pl-proc.c abolishProcedure's imported-link branch), run ONCE, in
 # CI (.github/workflows/mutation.yml; locally: tools/mutate.sh run).
