@@ -363,6 +363,7 @@ function _manifest_index(T)
     CH, CTX = LK.ClauseChoice{T}, LK.index_context{T}
     GD, LD, DDI = LK.PL_global_data{T}, LK.PL_local_data{T}, LK.dirty_def_info{T}
     SNK = typeof(_manifest_sink)
+    FST = LK.format_state                                      # O1A: pl-fmt.jl's state
     CIP = Vector{Union{Nothing, CI}}
     NT4, NT8, NTW = NTuple{4, UInt8}, NTuple{8, UInt8}, NTuple{4, UInt64}
     CInfo, HA, HH = LK.compileInfo{T}, LK.hash_assessment, LK.hash_hints
@@ -2253,6 +2254,88 @@ function _manifest_index(T)
             (f, Tuple{LD, Int, Int, LK.control_t{T}}, false) for f in (
                 LK.pl_setarg3_va, LK.pl_nb_setarg3_va, LK.pl_nb_linkarg3_va
             )
+        ]...,
+        # O1A: src/pl-fmt.jl (pl-fmt.c), format/2,3. All `false`: the text and number paths build strings and vectors.
+        (LK.PL_format_error, Tuple{LD, String}, false),
+        (LK.PL_format_arg_error, Tuple{LD, String, Int}, false),
+        (LK.COLUMN, Tuple{FST}, false),
+        (LK.update_column, Tuple{FST, Int}, false),
+        (LK.outchr, Tuple{FST, Int}, false),
+        (LK.outstring, Tuple{FST, Vector{UInt8}, Int, Int}, false),
+        (LK.oututf8, Tuple{FST, Vector{UInt8}, Int, Int}, false),
+        (LK.oututf80, Tuple{FST, Vector{UInt8}}, false),
+        (LK.outtext, Tuple{FST, LK.PL_chars_t}, false),
+        [
+            (f, Tuple{LD, Int, Int, LK.foreign_context{T}}, false) for f in (
+                LK.pl_format_predicate2_va, LK.pl_current_format_predicate2_va,
+                LK.pl_format2_va, LK.pl_format3_va
+            )
+        ]...,
+        (LK.format_impl, Tuple{LD, LK.IOSTREAM, Int, Int, Int}, false),
+        (LK.format_, Tuple{LD, Int, Int, Int}, false),
+        (LK.prepare_sub_format, Tuple{LD, FST, LK.IOSTREAM}, false),
+        (LK.end_sub_format, Tuple{LD, LK.sub_state, Bool}, false),
+        (LK.get_chr_from_text, Tuple{Vector{Int}, Int}, false),
+        (LK.get_int_expression, Tuple{LD, Int, LK.number}, false),
+        (LK._fmt_need_arg, Tuple{LD, Int}, false),
+        (LK._rub!, Tuple{FST, Int}, false),
+        (LK.do_format, Tuple{LD, LK.IOSTREAM, LK.PL_chars_t, Int, Int, Int}, false),
+        (LK.distribute_rubber, Tuple{Vector{LK.rubber}, Int, Int}, false),
+        (LK.emit_rubber, Tuple{FST}, false),
+        (LK.lappend, Tuple{Nothing, Char, Vector{UInt8}}, false),
+        (LK.lappend, Tuple{String, Char, Vector{UInt8}}, false),
+        (LK.digitName, Tuple{Int, Bool}, false),
+        [
+            (
+                LK.formatInteger,
+                Tuple{L, Int, Int, Bool, LK.number, Vector{UInt8}},
+                false
+            ) for L in (Nothing, LK.PL_locale)
+        ]...,
+        (LK.countGroups, Tuple{Vector{Int}, Int}, false),
+        (LK.ths_to_utf8, Tuple{String, Int}, false),
+        (LK.utf8_dp, Tuple{LK.PL_locale}, false),
+        (LK.find_decimal_point, Tuple{Vector{UInt8}}, false),
+        (LK.localizeDecimalPoint, Tuple{LK.PL_locale, Vector{UInt8}}, false),
+        (LK.groupDigits, Tuple{LK.PL_locale, Vector{UInt8}}, false),
+        (LK.mpz_sizeinbase10, Tuple{BigInt}, false),
+        (LK._fmt_pow10, Tuple{Int}, false),
+        (LK._fmt_pow10q, Tuple{Int}, false),
+        (LK._fmt_print_mpz_f!, Tuple{Vector{UInt8}, BigInt, Bool, Int}, false),
+        [
+            (
+                LK._fmt_print_mpz_e!,
+                Tuple{Vector{UInt8}, L, BigInt, Int, Int, Int, Bool},
+                false
+            ) for L in (Nothing, LK.PL_locale)
+        ]...,
+        [
+            (LK._fmt_mpz_e!, Tuple{Vector{UInt8}, L, Int, Int, BigInt}, false) for
+            L in (Nothing, LK.PL_locale)
+        ]...,
+        [
+            (
+                LK._fmt_mpq_e!,
+                Tuple{Vector{UInt8}, L, Int, Int, Rational{BigInt}},
+                false
+            ) for L in (Nothing, LK.PL_locale)
+        ]...,
+        (LK._fmt_mpq_f!, Tuple{Vector{UInt8}, Rational{BigInt}, Int}, false),
+        (LK._fmt_mpz_f!, Tuple{Vector{UInt8}, BigInt, Int}, false),
+        (LK._fmt_mpf_set_z, Tuple{Int, BigInt}, false),
+        (LK._fmt_mpf_set_q, Tuple{Int, Rational{BigInt}}, false),
+        (LK._fmt_round_sig, Tuple{Rational{BigInt}, Int}, false),
+        (
+            LK._fmt_print_mpf_g!,
+            Tuple{Vector{UInt8}, Rational{BigInt}, Bool, Int, Int},
+            false
+        ),
+        (LK._fmt_mpz_g!, Tuple{Vector{UInt8}, Int, Int, BigInt}, false),
+        (LK._fmt_mpq_g!, Tuple{Vector{UInt8}, Int, Int, Rational{BigInt}}, false),
+        (LK._fmt_c_printf_float, Tuple{Float64, Int, Int}, false),
+        [
+            (LK.formatFloat, Tuple{LD, L, Int, Int, LK.number, Vector{UInt8}}, false) for
+            L in (Nothing, LK.PL_locale)
         ]...
     )
 end
