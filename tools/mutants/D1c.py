@@ -10,18 +10,18 @@
 #   * the name atom of the registration (D1-4): `PL_register_blob_type` looks `type.name` up when the name atom is 0
 #     (pl-atom.jl:2312), and "clause" is the built-in ATOM_clause either way;
 #   * `record_clause`'s assertion that the clause is not erased (D1-37): the clause was added by the call before it;
-#   * erase/1's assertion that the reference names a clause (D1-56): `PL_get_dbref` answers `DB_REF_CLAUSE` only (the record
-#     branch is D2's);
 #   * erase/1 ignoring `retractClauseDefinition!`'s result (D1-54): that result is false only for an already erased clause, which
 #     `PL_get_dbref` has turned away before.
+# D1-56 (erase/1's test of the reference type) is killed since D2: `PL_get_dbref` answers a record reference too, rows r65 and r67 of
+# test/db/test_record_swipl.jl run the record branch of erase/1 (D-0252).
 # D-0230 item 1 adds D1-70…D1-98 (clause/3, '$clause'/4, '$rule'/3: unify_definition's bound branch, decompile_bindings!, clause_ndet's
 # by-reference branch and the loop). Declared EQUIVALENT with their code reasons: D1-95 (protected_predicate in the by-reference
 # branch) and D1-96 (the CLAUSE_TYPE_MASK test; row c37 decided). D1-90/D1-91 (the garbage third/fourth argument of clause/2) may
 # survive in a quiet test: a survivor is then reported, not declared equivalent.
 # D-0230 piece (d) adds D1-100...D1-119 (instance/2 and fixup_ssu, pl-rec.c; rows n01-n20). Declared EQUIVALENT with their code reasons:
-# D1-117 (GOAL_CLAUSE: no goal clause has a reference), D1-118 (visibleClause: CL_ERASED is set with generation_erased) and D1-119 (the
-# reference type: PL_get_dbref answers DB_REF_CLAUSE only until D2). Not run yet: a survivor among D1-105...D1-109 (the reference
-# arithmetic) is reported, not declared equivalent.
+# D1-117 (GOAL_CLAUSE: no goal clause has a reference) and D1-118 (visibleClause: CL_ERASED is set with generation_erased); D1-119
+# (the reference type) is killed since D2 by rows r73/r75 of test/db/test_record_swipl.jl (D-0252).
+# Not run yet: a survivor among D1-105...D1-109 (the reference arithmetic) is reported, not declared equivalent.
 # D-0238 item 4: every test file that exercises the mutated code, not only the step's own file. T: the files that make or erase a
 # clause reference or read a blob (assert/retract/retractall rows, the blob ranks, the loader's message encoder); T8: + the
 # clause/3 family's other readers (clause/2 rows, the module-path rows) for the pl-comp.jl clause/3 mutants (D1-70...).
@@ -29,6 +29,7 @@ T = ["test/db/test_clause_ref_swipl.jl", "test/db/test_assert_swipl.jl", "test/d
      "test/db/test_retractall_swipl.jl", "test/core_lang/test_blob.jl", "test/files/test_load_swipl.jl"]
 T8 = T + ["test/db/test_clause_swipl.jl", "test/core_lang/test_module_path.jl"]
 TARGETS = T8
+TREC = "test/db/test_record_swipl.jl"      # D2: record references reach erase/1 and instance/2 (D1-56, D1-119)
 B = "src/pl-dbref.jl"
 K = "src/pl-comp.jl"
 R = "src/pl-rec.jl"
@@ -78,8 +79,8 @@ MUTANTS = [
          old='''    new && acquire_clause_blob(gd, a)''',
          new='''    acquire_clause_blob(gd, a)'''),
     dict(id="D1-10 the payload is not the table's number", file=B, targets=T,
-         old='''collect(reinterpret(UInt8, Int64[serial]))''',
-         new='''collect(reinterpret(UInt8, Int64[serial + 1]))'''),
+         old='''_clref_bytes(serial::Int)::Vector{UInt8} = collect(reinterpret(UInt8, Int64[serial]))''',
+         new='''_clref_bytes(serial::Int)::Vector{UInt8} = collect(reinterpret(UInt8, Int64[serial + 1]))'''),
     dict(id="D1-11 a clause's number is not remembered", file=B, targets=T,
          old='''        gd.clause_serials[clause] = serial''',
          new='''        nothing'''),
@@ -90,33 +91,37 @@ MUTANTS = [
          old='''    at.type === clause_blob || return nothing                   # type == &clause_blob''',
          new='''    nothing'''),
     dict(id="D1-14 clause_clref does not check that it is given a blob", file=B, targets=T,
-         old='''    is_blob(aref) || return nothing''',
-         new='''    nothing'''),
+         old='''Union{Nothing, Clause{T}} where {T}
+    is_blob(aref) || return nothing''',
+         new='''Union{Nothing, Clause{T}} where {T}
+    nothing'''),
     dict(id="D1-15 a new clause is not entered in the table", file=B, targets=T,
          old='''        push!(gd.clause_refs, clause)''',
          new='''        nothing'''),
     # ---- the readers
     dict(id="D1-16 PL_unify_clref does not unify", file=B, targets=T,
-         old='''    return PL_unify_atomic(ld, t, a)''',
-         new='''    return true'''),
+         old='''    a = lookup_clref(gd, clause)
+    return PL_unify_atomic(ld, t, a)''',
+         new='''    a = lookup_clref(gd, clause)
+    return true'''),
     dict(id="D1-17 PL_put_clref does not put", file=B, targets=T,
          old='''    PL_put_atom(ld, t, a)                                       # _PL_put_atomic(t, a)''',
          new='''    nothing'''),
     dict(id="D1-18 PL_is_dbref is true for every atom", file=B, targets=T,
-         old='''    return clause_clref(gd, a) !== nothing                      # type == &clause_blob || type == &record_blob''',
-         new='''    return true'''),
+         old='''    return clause_clref(gd, a) !== nothing ||''',
+         new='''    return true ||'''),
     dict(id="D1-19 PL_get_dbref names another type in its error", file=B, targets=T,
          old='''        PL_error(ld, ERR_TYPE, mk_sym(T, :db_reference), t)
         return nothing''',
          new='''        PL_error(ld, ERR_TYPE, mk_sym(T, :reference), t)
         return nothing'''),
     dict(id="D1-20 PL_get_dbref answers an erased clause", file=B, targets=T,
-         old='''    if (clause.flags & CL_ERASED) == 0
-        return (DB_REF_CLAUSE, clause)
-    end''',
-         new='''    if true
-        return (DB_REF_CLAUSE, clause)
-    end'''),
+         old='''        if (clause.flags & CL_ERASED) == 0
+            return (DB_REF_CLAUSE, clause)
+        end''',
+         new='''        if true
+            return (DB_REF_CLAUSE, clause)
+        end'''),
     dict(id="D1-21 PL_get_dbref says the reference is a record's", file=B, targets=T,
          old='''        return (DB_REF_CLAUSE, clause)''',
          new='''        return (DB_REF_RECORD, clause)'''),
@@ -212,8 +217,10 @@ MUTANTS = [
     # ---- erase/1
     dict(id="D1-50 erase/1 of an erased clause is not turned away", file=R, targets=T,
          old='''    r === nothing && return FFALSE
-    type, clause = r''',
-         new='''    type, clause = r'''),
+    type, ptr = r
+    if type == DB_REF_CLAUSE                                    # CLAUSE: the erase branch of a clause''',
+         new='''    type, ptr = r
+    if type == DB_REF_CLAUSE                                    # CLAUSE: the erase branch of a clause'''),
     dict(id="D1-51 erase/1 retracts a static clause", file=R, targets=T,
          old='''    if (def.flags & P_DYNAMIC) == 0''',
          new='''    if false'''),
@@ -232,18 +239,14 @@ MUTANTS = [
     dict(id="D1-55 erase/1 does not retract", file=R, targets=T,
          old='''    return retractClauseDefinition!(gd, def, clause, true) ? FTRUE : FFALSE''',
          new='''    return FTRUE'''),
-    dict(id="D1-56 erase/1 does not check that the reference names a clause", file=R, targets=T,
-         old='''    @assert type == DB_REF_CLAUSE                               # else: the record branch (D2)''',
-         new='''    nothing''',
-         equivalent="PL_get_dbref answers DB_REF_CLAUSE only until D2 adds the record branch (src/pl-dbref.jl)"),
+    dict(id="D1-56 erase/1 does not tell a clause reference from a record reference (KILL r65, r67 of test_record_swipl.jl)", file=R,
+         targets=T + [TREC],
+         old='''    if type == DB_REF_CLAUSE                                    # CLAUSE: the erase branch of a clause''',
+         new='''    if true                                                     # CLAUSE: the erase branch of a clause'''),
     dict(id="D1-57 erase/1 is not registered", file=R, targets=T,
-         old='''const PL_predicates_from_rec = (
-    PL_extension("erase", 1, pl_erase1_va, PL_FA_VARARGS),
-    PL_extension("instance", 2, pl_instance2_va, PL_FA_VARARGS)
-)''',
-         new='''const PL_predicates_from_rec = (
-    PL_extension("instance", 2, pl_instance2_va, PL_FA_VARARGS),
-)'''),
+         old='''    PL_extension("erase", 1, pl_erase1_va, PL_FA_VARARGS),
+''',
+         new=''),
     # ---- clause/3, '$clause'/4, '$rule'/3 (D-0230 item 1; rows c01-c38; pl-comp.c unify_definition's bound branch, decompile_bindings!, clause_ndet)
     dict(id="D1-70 the bound head's module is not checked as a super module of the clause's", file=K, targets=T8,
          old='''(mm === nothing || !isSuperModule(gd.modules, m, mm)) && return false''',
@@ -353,14 +356,12 @@ end
 ''',
          new=''''''),
     dict(id="D1-94 '$rule'/3 is not registered", file=K, targets=T8,
-         old=r'''    ),
-    PL_extension(                                   # PRED_SHARE("$rule", 3, rule, META|NDET|PL_FA_CREF) (D1)
+         old=r'''    PL_extension(                                   # PRED_SHARE("$rule", 3, rule, META|NDET|PL_FA_CREF) (D1)
         "\$rule", 3, pl_ruleva_va,
         PL_FA_TRANSPARENT | PL_FA_NONDETERMINISTIC | PL_FA_CREF | PL_FA_VARARGS
-    )
-)''',
-         new=r'''    )
-)'''),
+    ),
+''',
+         new=''),
     dict(id="D1-95 the by-reference branch refuses a protected predicate no more", file=K, targets=T8,
          old='''                protected_predicate(gd, ld, rcl.predicate) && return FFALSE
 ''',
@@ -389,18 +390,14 @@ end
     return clause_ndet(ld, A1, A2, A3, A4, PL__ac, PL__ctx, IS_RULE)'''),
     # ---- instance/2 (D-0230 piece (d); rows n01-n20; pl-rec.c instance, fixup_ssu); T: only test_clause_ref_swipl.jl calls instance/2
     dict(id="D1-100 instance/2 is not registered", file=R, targets=T,
-         old='''const PL_predicates_from_rec = (
-    PL_extension("erase", 1, pl_erase1_va, PL_FA_VARARGS),
-    PL_extension("instance", 2, pl_instance2_va, PL_FA_VARARGS)
-)''',
-         new='''const PL_predicates_from_rec = (
-    PL_extension("erase", 1, pl_erase1_va, PL_FA_VARARGS),
-)'''),
+         old='''    PL_extension("instance", 2, pl_instance2_va, PL_FA_VARARGS),
+''',
+         new=''),
     dict(id="D1-101 instance/2 does not turn an erased or no reference away", file=R, targets=T,
          old='''    r === nothing && return FFALSE                              # if ( !(ptr=PL_get_dbref(ref, &type)) )
-    type, clause = r
+    type, ptr = r
 ''',
-         new='''    type, clause = r
+         new='''    type, ptr = r
 '''),
     dict(id="D1-102 instance/2 does not wrap a fact as Head :- true", file=R, targets=T,
          old='''    if (clause.flags & UNIT_CLAUSE) != 0
@@ -468,9 +465,8 @@ end'''),
          equivalent="PL_get_dbref has turned an erased clause away (src/pl-dbref.jl:161), and retractClauseDefinition! sets CL_ERASED in the "
                     "same step as generation_erased (src/pl-proc.jl:505-516); every referenced clause was created before the foreign frame "
                     "(its reference exists), so created <= generation holds: single thread, no transaction"),
-    dict(id="D1-119 instance/2 does not test the reference's type", file=R, targets=T,
-         old='''    if type != DB_REF_CLAUSE                                    # else: the record branch (D2)''',
-         new='''    if false                                                    # else: the record branch (D2)''',
-         equivalent="PL_get_dbref answers DB_REF_CLAUSE only (src/pl-dbref.jl:152-165) until D2 adds the record branch, so the NotPortedError "
-                    "branch is unreachable"),
+    dict(id="D1-119 instance/2 does not test the reference's type (KILL r73, r75 of test_record_swipl.jl)", file=R,
+         targets=T + [TREC],
+         old='''    if type != DB_REF_CLAUSE                                    # RECORD: the instance branch of a record''',
+         new='''    if false                                                    # RECORD: the instance branch of a record'''),
 ]
