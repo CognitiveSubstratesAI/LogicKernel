@@ -3558,8 +3558,8 @@ end
 
 # PORT: pl-comp.c protected_predicate
 # DIVERGES: the database `gd` is an argument. The `protect_static_code` and `iso` flags are bits of the
-# mask (`truePrologFlag`; since R2 F1a, constants, false, before): nothing sets them yet (R2 F1b), so only a
-# foreign predicate is protected.
+# mask (`truePrologFlag`; set by `set_prolog_flag/2`, R2 F1b): a foreign predicate is always protected, a static one
+# while either flag is true.
 "Whether `def`'s clauses may not be read; if so `permission_error(access, private_procedure, PI)` is raised (pl-comp.c)."
 function protected_predicate(
     gd::PL_global_data{T}, ld::PL_local_data{T}, def::Definition{T}
