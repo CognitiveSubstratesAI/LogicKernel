@@ -1,6 +1,6 @@
 # G1 — global variables (pl-gvar.c whole), coder 1. Branch wip/g1 off origin/main bf41225.
 
-State: PLAN (group 1). Nothing run; no Julia in this lane yet (edit-only coding).
+State: CODED (coder 2 done, 2026-10-31): every file written, NOTHING COMPILED OR RUN (no Julia in this lane). The gates are next; see the last section.
 Design: lk-channel evidence/r2/design/flags_rest.md §4 D7/D8, H6-H9, §6 G1 row. Upstream: pl-gvar.c @ cbf4e1896275.
 
 ## Plan: function -> upstream -> Julia site
@@ -66,3 +66,31 @@ workflows/DEVZONE_INDEX.md head, clears it for 2h), then the edits below. Still 
 rows (test/core_lang/test_gvar_swipl.jl, gen_rows.py, driver, .out; see test_at_body_swipl.jl's first 80 lines), tools/mutants/G1.py (>= 8, aim 15-25,
 TARGETS includes test_gvar_swipl.jl and every file exercising nb_/b_ gvars, `_release_frozen!`, duplicate_term: test_copy_term*, test_unify*, the toplevel/exception tests that
 hit `_release_frozen!`), docs/architecture.md G1 section + test/static_analysis_manifest.jl LAST, gate order as in the brief.
+
+## STATE after coder 2 (all committed on wip/g1; nothing pushed; nothing run)
+Commits, oldest first: 3bdb02a pl-gvar.jl moved into src/ and included; 53362fe `PL_predicates_from_gvar` in `_PRED_TABLES`/`_FOREIGN_VA`;
+168119c `duplicate_term` in pl-copyterm.jl; 8c0e656 D8 (`user:exception/3` dynamic in `setBuiltinPredicateProperties!`);
+109b78d D7 (`_release_frozen!` returns while `gvar_grefs > 0`); 83c27dc test_gvar_swipl.jl (56 rows) + evidence/G1/gen_rows.py,
+gvar_driver.pl, gvar_rows.pl, gvar_rows.out; 9d85b81 the h9 database row (evidence/G1/h9_*); 0dc6a93 row g57; a637ae1
+tools/mutants/G1.py (20 mutants, anchors counted once by a python checker); 3e9edf4 docs/architecture.md G1 section; 22a200f the
+static-analysis manifest block.
+- Rows: g01-g57 + h9, ALL pinned from swipl 10.1.19; the kernel's answers are UNRUN. UNVERIFIED on the kernel (gate decides):
+  g15 (cyclic value), g25 (the full ball, context term), g35 (`string_codes/2` is T1's), g42 (an attributed variable value, needs
+  `put_attr`/`get_attr` as the file's helper `gv_dom:attr_unify_hook/2` clause), g52 (`atom_concat/3` mode (+,+,-)); the hook
+  clauses are `user:exception(...)` clauses in the consulted program (needs the loader to accept `M:Head :- Body`).
+- Item 6 (pl-comp.jl:3157 reading `'$variable_names'` as a global variable) is NOT DONE: not a 3-line edit (the word is a ref or a
+  compound word that must be exported into a cell_export); `ld.variable_names` stays until LB4; comment lines in pl-comp.jl
+  (~3150) and pl-global.jl (~316-320) still say the kernel has no global variables: refresh them with that edit.
+- Flags a-f are in the architecture section. Mutant gaps recorded in tools/mutants/G1.py: `_gvar_on_global`'s `_is_vword` half and
+  nb_delete's `gvar_grefs -= 1` have no row (a white-box `gvar_grefs` check after `nb_setval(k, 1.5), nb_delete(k)` would kill them).
+- docs/port_inventory.md is generated (pl-gvar.c currently lists pl-inline.jl only): regenerate it in the inventory step.
+- The mutant ids' KILL lists are best guesses by row, not run.
+
+## GATE ORDER (next agent, a Julia lane)
+fmt (format the committed files through `warm.sh send`; fmt sees only the HEAD diff, so run it after the last commit and commit the
+result), inventory (port_inventory.md), check (incl. the Pkg.test-way run: `tools/pkgtest_way.sh test/core_lang/test_gvar_swipl.jl`),
+rows x3 term types (`warm.sh file test/core_lang/test_gvar_swipl.jl`, then the two others), `test/test_type_discipline.jl`,
+push `mutants/G1` at the WIP SHA, branch-gate, term grep over diff and messages, alloc pins x3 (STRUCT CHANGE: a ~30 min cold
+compile), then the gate push on a fresh name (`gate/g1` + `mutants/G1` at the SAME SHA). Main takes NO merge commits.
+Likely first-run fixes: the draft was never compiled (type names, `_slot_new_var!`-style helpers, `PL_retry_address`,
+`alloc_foreign_state!`/`free_foreign_state!` signatures, `_deref_loc`, `_value_word!`, `_is_side_word`).
