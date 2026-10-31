@@ -696,7 +696,7 @@ function atomToImportStrength(a::T)::Int where {T}
     return -1
 end
 
-# PORT: pl-modul.c import
+# PORT: pl-modul.c import as import_
 # DIVERGES: the database `gd` is an argument; modules are indices (`strength` 0: upstream's NULL). The definition
 # nothing shares any more is left to the garbage collector (`lingerDefinition`). `sysError` ("Unknown problem
 # importing") is an `error`. `retry` is a loop, as `goto retry` (a lost race for the table entry cannot happen

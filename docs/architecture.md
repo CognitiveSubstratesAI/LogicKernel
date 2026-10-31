@@ -1035,7 +1035,10 @@ graph LR
     pl_modul --> pl_fli
     pl_modul --> pl_error
     pl_modul --> pl_arith
+    pl_modul --> os_pl_prologflag
     pl_modul --> os_pl_text
+    pl_modul --> pl_proc
+    pl_modul --> pl_srcfile
     pl_inline --> term_interface
     pl_inline --> default_term
     pl_inline --> pl_incl
@@ -1410,6 +1413,7 @@ graph LR
     pl_srcfile --> pl_incl
     pl_srcfile --> SWI_Prolog
     pl_srcfile --> pl_global
+    pl_srcfile --> pl_modul
     pl_srcfile --> pl_comp
     pl_srcfile --> pl_wam
     pl_srcfile --> pl_fli

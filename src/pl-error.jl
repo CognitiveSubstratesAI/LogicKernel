@@ -984,7 +984,7 @@ function PL_error(
     return _PL_error_close!(ld, caller, fid, except, formal, swi, pred, arity, msg)
 end
 
-# PORT: pl-error.c PL_error as PL_error_import_proc
+# PORT: pl-error.c PL_error
 # (the `ERR_IMPORT_PROC` branch, pl-error.c:447-470; raised by import/1, MOD5a)
 """
     PL_error(ld, pred, arity, msg, ERR_IMPORT_PROC, proc, dest, old) -> false
