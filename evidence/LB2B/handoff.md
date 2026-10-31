@@ -51,9 +51,33 @@ Commit estimate (first 3 commits): ~20 (G0-G11 about 14, rows 2-3, mutants 1, ma
   `file_name_is_iri` in src/os/pl-files.jl (after PATH_MAX).
 - 0b6896d G3: pl-os.jl: takeWord, expandVars (`~user` refused by name: NotPortedError culprit `user`; HOME read each time), AbsoluteFile(ld, spec),
   PL_changed_cwd, PL_cwd(ld) (cache in gd.paths_CWDdir; no cache when ld.GD === nothing), is_cwd, ChDir(ld, path)::Int (0 or errno; -1 = AbsoluteFile failed).
-Commit count so far 5 (plan + 4); estimate unchanged: about 20 in all.
+- 095bdf3 G4: pl-files.jl ACCESS_* (Int), F_OK/X_OK/W_OK/R_OK, statfunc (StatStruct or negated errno), LastModifiedFile/SizeFile (value, errno),
+  access_mode, AccessFile, AccessDirectory, ExistsFile, ExistsDirectory, ReadLink, DeRefLink1, DeRefLink(ld, link), SameFile(ld,f1,f2), `_ascii_lower`,
+  RenameFile (errno), `_umask`, MarkExecutable(ld, name).
+- 22c0114 G5: get_file_name: FILEVARS (expandVars), EXIST/READ/WRITE/EXECUTE checks, ABSOLUTE (AbsoluteFile); PL_get_file_name applies OSPATH. PL_FILE_SEARCH refused (step LB4).
+- ed87eea G6: time_file, size_file, access_file, read_link, exists_file, exists_directory, is_absolute_file_name, same_file, file_base_name, file_directory_name;
+  `_iri_hook_refused` (IRI args raise NotPortedError, LB4), `_is_atom_named`, `_unify_atom_chars`.
+- 58dcd11 G7: delete_directory, make_directory (`_rmdir`, `_mkdir` ccalls), rename_file, $absolute_file_name, $cwd, $chdir, has_extension, file_name_extension,
+  prolog_to_os_filename, $mark_executable, $my_file (getuid ccall); PL_predicates_from_files now in upstream's order, 23 entries.
+- 449cc17 G8: tmp_file/2 and $tmp_file_stream/4 registered, refused by name (NotPortedError step "LB2b audit"): TemporaryFile's table GD->os.tmp_files has no
+  field in PL_global_data (struct change; proposal `os_tmp_files`), Sfdopen is not in the stream layer.
+- 7e6976c G9: NEW src/os/pl-glob.jl: GLOB_* codes, compile_pattern, compilePattern, match_pattern, matchPattern, wildcard_match, pl_wildcard_match2/3_va.
+- G10 (committed TOGETHER with this handoff text, because the commit hook refuses a partial index; the cap hook ended the session first): the appended block of
+  src/os/pl-glob.jl (un_escape, utf8_exists_file, expand, utf8casecmp, sort_expand, pl_expand_file_name2_va, pl_directory_files2_va, PL_predicates_from_glob).
+  FIRST ACTION of the next agent: in `expand` delete the two unused lines `meta = false` and `meta = true` (python edit asserting count 1 each, own call), then commit
+  it as a fix folded into G11's commit message.
+Commit count so far 10 (plan + G1-G9 = 9 commits + handoff commits); estimate: about 20 in all.
 
-## Left / next (G4 onwards, in order; see the plan above for upstream lines)
+## Left / next (G11 onwards)
+- G11: `PL_predicates_from_glob` appended after `PL_predicates_from_files` in `_PRED_TABLES` and `...` in `_FOREIGN_VA` (src/pl-ext.jl:57-84: sources at 66 and 78),
+  `include("os/pl-glob.jl")` in src/LogicKernel.jl after the pl-files.jl include (line 62); own tiny commit. pl-glob.jl uses PL_option_t/OPT_BOOL/PL_scan_options
+  (pl-option.jl), so the include must come after pl-option.jl (check the include order). Check no other file already defines names pl-glob.jl introduces
+  (`expand`, `un_escape`, `match_pattern`, `compile_pattern`, `M_IGNCASE`, `wildcard_options`): grep named files, not recursive.
+- G12 (all NOT STARTED): rows test/files/test_lb2b_swipl.jl + generator/driver/.out under evidence/LB2B/ (swipl 10.1.19, `timeout 20`), tools/mutants/LB2B.py (>= 20),
+  test/test_type_discipline.jl allowlist: `"os/pl-files.jl ccall"` 1 -> 9 (ccalls now: remove, access, readlink, rename, umask, chmod, rmdir, mkdir, getuid; update the
+  note text), `"os/pl-os.jl ccall"` stays 3; manifest block; docs/architecture.md block (last two commits).
+
+## OLD notes of the G4-G8 decisions (the groups above are written; kept for the record)
 - G4 pl-files.jl helpers (pl-files.c:36-420). DECIDED, not yet written: stat is `Base.stat` wrapped as
   `statfunc(path)::Union{StatStruct,Int}` (Int = -ioerrno on failure, catch `Base.IOError` whose `.code` is the negative errno);
   `LastModifiedFile`/`SizeFile` return `(value, errno)` tuples (errno 0 = ok; mtime is Julia's `sec + nsec*1e-9`, upstream `sec + nsec/1.0e9`: log as
@@ -83,6 +107,13 @@ Everything.
 3. `expandVars`: `~user` refused by name (getpwnam); HOME not cached (upstream caches in GD->os.myhome): representation-only unless HOME changes after the first expansion.
 4. `utf8_path_lwr` uses `lowercase(::Char)` for `PL_tolower` (pl-umap.c): only on a case-insensitive file_name_case_handling (not the Linux default).
 5. PL_cwd with `ld.GD === nothing` has no cache (outside a query).
+6. (G8) tmp_file/2 and `$tmp_file_stream`/4 raise NotPortedError: need a PL_global_data field `os_tmp_files` (struct change, alloc pins) and Sfdopen. Undecided: audit.
+7. (G6) IRI arguments (file_name_is_iri != 0) of time_file, size_file, access_file, exists_file, exists_directory raise NotPortedError (iri_hook calls Prolog, LB4).
+8. (G7) `$chdir`: when ChDir returns -1 (AbsoluteFile failed, error already raised) the predicate fails; upstream raises ERR_FILE_OPERATION over a stale errno.
+9. (G10) `expand` and `directory_files` put `.` and `..` first then `readdir(sort=false)` (libuv omits them); expand skips unreadable dirs and invalid-UTF-8 names.
+10. UNVERIFIED hot spots for the first compile: `Base.Filesystem.StatStruct` name, `stat` errors (ENOENT/ENOTDIR/EINVAL come as a field, others as IOError), ccall `readlink`
+   return type `Int`, `_umask(um)` Cuint, `PL_scan_options(...)[1] !== false`, `PL_error(ld, "", 0, "", ERR_SYNTAX, String)`, `Int(PL_FILE_READ | PL_FILE_OSPATH)`.
+11. Hook notes: the recursive-grep hook blocked one `grep -rn ... src` (no escape used); no allow-* escape used anywhere.
 
 ## GATE ORDER (the gate agent)
 Tier 2 first; fmt via `warm.sh send` (committed files); inventory; `check`; test/files/test_lb2b_swipl.jl on all three term

@@ -269,3 +269,225 @@ function pl_wildcard_match3_va(
 )::foreign_t where {T}
     return wildcard_match(ld, PL__t0, PL__t0 + 1, PL__t0 + 2) ? FTRUE : FFALSE
 end
+
+# PORT: pl-glob.c isspecial
+"Is the byte `c` one of the wildcard characters `[`, `{`, `?`, `*` (pl-glob.c)."
+_glob_isspecial(c::UInt8)::Bool =
+    c == UInt8('[') || c == UInt8('{') || c == UInt8('?') || c == UInt8('*')
+
+# PORT: pl-glob.c un_escape
+# DIVERGES: returns the bytes of `b` from the 1-based `from` up to, not including, `to` as a `String`, a `\`
+# before a wildcard or `\` removed; `from[1]` is read from the whole of `b`, 0 beyond it.
+"The text of `b[from:to-1]` with the `\\` escapes of wildcard characters removed (pl-glob.c)."
+function un_escape(b::Vector{UInt8}, from::Int, to::Int)::String
+    at(i) = (1 <= i <= length(b)) ? b[i] : 0x00
+    out = UInt8[]
+    while from < to
+        if at(from) == UInt8('\\') && (_glob_isspecial(at(from + 1)) || at(from + 1) == UInt8('\\'))
+            from += 1
+        end
+        push!(out, at(from))
+        from += 1
+    end
+    return String(out)
+end
+
+# PORT: pl-glob.c utf8_exists_file
+# DIVERGES: the names are UTF-8 `String`s, which is `REP_FN` in a UTF-8 locale: no conversion.
+"Does the file `name` exist (pl-glob.c)."
+utf8_exists_file(name::String)::Bool = AccessFile(name, ACCESS_EXIST)
+
+# PORT: pl-glob.c expand
+# DIVERGES: returns the list of names found, or `nothing` after raising the syntax error of the pattern; the
+# `glob_info` buffers `files`/`strings` are one vector of `String`s, valid between `start` and `fend` as in
+# upstream; `opendir`/`readdir` is `readdir(dir; sort=false)` with the entries `.` and `..` put in front (libuv
+# leaves them out; the result is sorted after, so only the set matters); a directory that cannot be opened is
+# skipped; a name that is not valid UTF-8 is skipped; `PL_handle_signals` is not called.
+"""
+    expand(ld, pattern) -> Vector{String} or nothing
+
+The files that match the wildcard `pattern`, directory segment by directory segment, unsorted (pl-glob.c).
+"""
+function expand(ld::PL_local_data, pattern::String)::Union{Nothing, Vector{String}}
+    mflags = truePrologFlag(ld, PLFLAG_FILE_CASE) ? 0 : M_IGNCASE
+    pat = Vector{UInt8}(codeunits(pattern))
+    at(i) = (1 <= i <= length(pat)) ? pat[i] : 0x00
+    files = String[""]                                          # utf8_add_path("", info)
+    start = 0
+    fend = 1
+    pos = 1
+    while true
+        s = pos
+        head = pos
+        meta = false
+        while true
+            c = at(s)
+            s += 1
+            if c == 0x00
+                if s > pos                                      # something left and expanded
+                    prefix = un_escape(pat, pos, s - 1)
+                    prefix_len = ncodeunits(prefix)
+                    last = fend
+                    while start < last
+                        entry = files[start + 1]
+                        plen = ncodeunits(entry)
+                        if plen + prefix_len + 2 <= PATH_MAX
+                            path = entry
+                            if !isempty(prefix) && plen > 0 && codeunits(path)[plen] != UInt8('/')
+                                path *= "/"
+                            end
+                            path *= prefix
+                            if last == 1 || utf8_exists_file(path)
+                                push!(files, path)
+                                fend += 1
+                            end
+                        end
+                        start += 1
+                    end
+                end
+                return files[(start + 1):fend]
+            elseif c == UInt8('[') || c == UInt8('{') || c == UInt8('?') || c == UInt8('*')
+                meta = true
+                break                                           # meta characters: expand
+            elseif c == UInt8('\\') && _glob_isspecial(at(s))
+                s += 1
+            elseif c == UInt8('/')
+                head = s
+            end
+        end
+        tail = s
+        while at(tail) != 0x00 && at(tail) != UInt8('/')
+            tail += 1
+        end
+        #  ..../meta*path/....
+        #       ^        ^
+        #     head     tail
+        prefix = un_escape(pat, pos, head)
+        patbuf = un_escape(pat, head, tail)
+        prefix_len = ncodeunits(prefix)
+        cp = compilePattern(ld, _glob_codes(patbuf), mflags)
+        cp === nothing && return nothing                        # syntax error
+        dot = startswith(patbuf, '.')                           # do dots as well
+        last = fend
+        while start < last
+            current = files[start + 1]
+            clen = ncodeunits(current)
+            start += 1
+            clen + prefix_len + 1 > PATH_MAX && continue
+            path = current * prefix
+            names = try
+                readdir(isempty(path) ? "." : OsPath(path); sort=false)
+            catch e
+                e isa Base.IOError || rethrow()
+                continue
+            end
+            if !isempty(path) && codeunits(path)[end] != UInt8('/')
+                path *= "/"
+            end
+            for name in vcat([".", ".."], names)
+                isvalid(name) || continue
+                if (dot || codeunits(name)[1] != UInt8('.')) &&
+                    matchPattern(_glob_codes(name), cp, mflags)
+                    if ncodeunits(path) + ncodeunits(name) + 1 < PATH_MAX
+                        push!(files, path * name)
+                        fend += 1
+                    end
+                end
+            end
+        end
+        pos = tail
+        at(pos) == UInt8('/') && (pos += 1)
+    end
+end
+
+# PORT: pl-glob.c utf8casecmp
+# DIVERGES: compares the code points of two `String`s, `lowercase(::Char)` for `makeLowerW`.
+"Compare two names ignoring case: negative, zero or positive (pl-glob.c)."
+function utf8casecmp(s1::String, s2::String)::Int
+    a = _glob_codes(s1)
+    b = _glob_codes(s2)
+    i = 1
+    while i <= length(a) && i <= length(b)
+        c1 = _glob_lower(a[i])
+        c2 = _glob_lower(b[i])
+        c1 != c2 && return c1 - c2
+        i += 1
+    end
+    return (i <= length(a) && i <= length(b)) ? 0 : (i <= length(a) ? 1 : -1)
+end
+
+# PORT: pl-glob.c compareBagEntries, sort_expand
+# DIVERGES: sorts the vector of names; `strcmp` is the byte order of `isless(::String, ::String)`.
+"Sort the names `expand` found: bytewise when `file_name_case_handling` is case sensitive, else ignoring case (pl-glob.c)."
+function sort_expand(ld::PL_local_data, files::Vector{String})::Vector{String}
+    if truePrologFlag(ld, PLFLAG_FILE_CASE)
+        return sort(files)
+    end
+    return sort(files; lt=(a, b) -> utf8casecmp(a, b) < 0)
+end
+
+# PORT: pl-glob.c expand_file_name as pl_expand_file_name2_va
+# (PRED_IMPL("expand_file_name", 2, expand_file_name, 0))
+"`expand_file_name(+Wildcard, -List)`: the sorted list of files matching the pattern, variables expanded (pl-glob.c)."
+function pl_expand_file_name2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    txt = PL_get_text(ld, PL__t0, CVT_ALL | CVT_EXCEPTION)
+    txt === nothing && return FFALSE
+    s = text_string(txt)
+    if ncodeunits(s) > PATH_MAX - 1
+        PL_error(ld, ERR_REPRESENTATION, mk_sym(T, :max_path_length))
+        return FFALSE
+    end
+    spec = expandVars(ld, s)
+    spec === nothing && return FFALSE
+    found = expand(ld, spec)
+    found === nothing && return FFALSE
+    l = PL_copy_term_ref(ld, PL__t0 + 1)
+    head = PL_new_term_ref(ld)
+    for e in sort_expand(ld, found)
+        PL_unify_list(ld, l, head, l) || return FFALSE
+        _unify_atom_chars(ld, head, e) || return FFALSE
+    end
+    return PL_unify_nil(ld, l) ? FTRUE : FFALSE
+end
+
+# PORT: pl-glob.c directory_files as pl_directory_files2_va
+# (PRED_IMPL("directory_files", 2, directory_files, 0))
+# DIVERGES: the entries `.` and `..` come first, then the entries `readdir(dir; sort=false)` gives (upstream: the
+# order `readdir(3)` gives); `PL_handle_signals` is not called.
+"`directory_files(+Dir, -Files)`: the entries of the directory as a list of atoms (pl-glob.c)."
+function pl_directory_files2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2 = PL__t0, PL__t0 + 1
+    dname = PL_get_file_name(ld, A1, Int(PL_FILE_READ | PL_FILE_OSPATH))
+    dname === nothing && return FFALSE
+    names = try
+        readdir(dname; sort=false)
+    catch e
+        e isa Base.IOError || rethrow()
+        rc = PL_error(
+            ld, "", 0, MSG_ERRNO, ERR_FILE_OPERATION, mk_sym(T, :open), mk_sym(T, :directory),
+            A1, -Int(e.code)
+        )
+        return rc ? FTRUE : FFALSE
+    end
+    tail = PL_copy_term_ref(ld, A2)
+    head = PL_new_term_ref(ld)
+    for e in vcat([".", ".."], names)
+        PL_put_variable(ld, head)
+        PL_unify_list(ld, tail, head, tail) || return FFALSE
+        _unify_atom_chars(ld, head, e) || return FFALSE
+    end
+    return PL_unify_nil(ld, tail) ? FTRUE : FFALSE
+end
+
+# PORT: pl-glob.c BeginPredDefs as PL_predicates_from_glob
+"pl-glob.c's registration table (`BeginPredDefs(glob)`)."
+const PL_predicates_from_glob = (
+    PL_extension("expand_file_name", 2, pl_expand_file_name2_va, PL_FA_VARARGS),
+    PL_extension("wildcard_match", 2, pl_wildcard_match2_va, PL_FA_VARARGS),
+    PL_extension("wildcard_match", 3, pl_wildcard_match3_va, PL_FA_VARARGS),
+    PL_extension("directory_files", 2, pl_directory_files2_va, PL_FA_VARARGS),
+)
