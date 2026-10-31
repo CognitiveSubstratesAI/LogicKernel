@@ -140,3 +140,143 @@ function update_conditional_compilation(
 
     return rc
 end
+
+# ── the state file's write steps, with no state (LD2) ───────────────────────────────────────────────
+
+# ORIGINAL (LB3): upstream's `Sdprintf(fmt, …)` to `Serror` in the boot loop. The text is collected on the
+# local data's `messages` as the atom of the text, severity `:error`, where printMessage collects a message
+# (src/pl-error.jl), so a boot message is never lost (the design's H1).
+"Collect the boot loop's diagnostic `text` (upstream: `Sdprintf` to the error stream)."
+function _qlf_Sdprintf!(ld::PL_local_data{T}, text::String)::Nothing where {T}
+    push!(ld.messages, (:error, mk_sym(T, Symbol(text))))
+    return nothing
+end
+
+# PORT: pl-qlf.c qlfStartFile
+# (swipl-devel cbf4e189, src/pl-qlf.c:4069-4078)
+# DIVERGES: there is no state (LD2: `state` is `nothing`), so `closePredicateWic`, `Sputc('Q', fd)` and
+# `qlfSaveSource` — the state file's writes — write nothing.
+"Start the part of the state file for the source file `f` (pl-qlf.c); with no state, nothing to write."
+qlfStartFile(state::Nothing, f::SourceFile)::Bool = true
+
+# PORT: pl-qlf.c qlfEndPart
+# (swipl-devel cbf4e189, src/pl-qlf.c:4081-4089)
+# DIVERGES: as `qlfStartFile` (`closePredicateWic`, `Sputc('X', fd)`).
+"End the current part of the state file (pl-qlf.c); with no state, nothing to write."
+qlfEndPart(state::Nothing)::Bool = true
+
+# PORT: pl-qlf.c addDirectiveWic
+# (swipl-devel cbf4e189, src/pl-qlf.c:3240-3250)
+# DIVERGES: as `qlfStartFile` (`closePredicateWic`, `Sputc('D', fd)`, the line, `saveQlfTerm`).
+"Record the directive `term` in the state file (pl-qlf.c); with no state, nothing to write."
+addDirectiveWic(state::Nothing, term::term_t)::Bool = true
+
+# PORT: pl-qlf.c addClauseWic
+# (swipl-devel cbf4e189, src/pl-qlf.c:3220-3238)
+# DIVERGES: the clause is asserted as upstream's; with no state (LD2) `openPredicateWic` and `saveWicClause`
+# write nothing. `pl_write(term)` after "Failed to compile: " is the term collected as an `:error` message
+# (`printMessage`), the line end not collected.
+"Assert the clause `term` read from `file` at the end of its predicate, as loading the file does (pl-qlf.c)."
+function addClauseWic(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, state::Nothing, term::term_t, file::T
+)::Bool where {T}
+    loc = sourceloc{T}(file, ld.read_source.position.lineno)   # loc.file = file; loc.line = source_line_no
+
+    clause = assert_term!(gd, ld, term, 0, CL_END, file, loc, 0)
+    if clause !== nothing
+        # openPredicateWic(state, clause->predicate, ATOM_development); saveWicClause(state, clause): no state
+        return true
+    end
+
+    _qlf_Sdprintf!(ld, "Failed to compile: ")
+    printMessage(ld, :error, term)                  # pl_write(term)
+    return false
+end
+
+# ── the boot loop (pl-qlf.c:4691-4820) ─────────────────────────────────────────────────────────────
+
+# ORIGINAL (LB3): `source_file_name` (an atom, NULL_ATOM while no file is read) as the text `%s` prints.
+_qlf_source_file_text(ld::PL_local_data) =
+    ld.read_source.file === nothing ? "" : String(sym_text(ld.read_source.file))
+
+# PORT: pl-qlf.c compileFile
+# (swipl-devel cbf4e189, src/pl-qlf.c:4691-4780)
+# DIVERGES: `AbsoluteFile` and `LastModifiedFile` (os/pl-os.c) are Julia's `abspath` and `stat` (R2 LB2b ports
+# pl-os.c); `PL_unify_chars(f, PL_ATOM|REP_MB, …)` is `PL_put_atom` on a new reference; `Sdprintf` is
+# `_qlf_Sdprintf!` (collected). As upstream: a syntax error's `continue` and the end of file's `break` leave that
+# iteration's foreign frame open (:4738, :4741), `endConsult` is not called, and the source file's reference
+# from `lookupSourceFile` is kept.
+"""
+Compile the file `file` the way the boot compilation does (pl-qlf.c): read it clause by clause from its own
+input context; run each directive `:- D` in `user`, qualified with the source module, unless it is a
+conditional-compilation one or in a part not compiled; run `'\$:-'(D)` without recording it; assert every other
+term. A directive that fails is reported as `File:Line: directive failed` and the loop continues.
+"""
+function compileFile(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, state::Nothing, file::String
+)::Bool where {T}
+    f = PL_new_term_ref(ld)
+    cond = condc()                                  # {.depth = 0, .ctrue[0] = IF_TRUE}
+
+    path = abspath(file)                            # AbsoluteFile(file, tmp, sizeof(tmp))
+
+    nf = mk_sym(T, Symbol(path))
+    PL_put_atom(ld, f, nf)                          # PL_unify_chars(f, PL_ATOM|REP_MB, (size_t)-1, path)
+    if !pl_see(ld, f)
+        _qlf_Sdprintf!(ld, "Failed to open $path\n")
+        return false
+    end
+    sf = lookupSourceFile(gd, nf, true)::SourceFile{T}
+    startConsult(sf)
+    st = stat(path)                                 # LastModifiedFile(path, &sf->mtime)
+    if ispath(st)
+        sf.mtime = st.mtime
+    else
+        _qlf_Sdprintf!(ld, "Failed to get time from $path\n")
+    end
+    qlfStartFile(state, sf)
+
+    while true
+        cid = PL_open_foreign_frame(ld)
+        t = PL_new_term_ref(ld)
+        directive = PL_new_term_ref(ld)
+
+        PL_put_variable(ld, t)
+        if !read_clause(gd, ld, Scurin(ld)::IOSTREAM, t, 0)   # syntax error
+            _qlf_Sdprintf!(
+                ld,
+                "$(_qlf_source_file_text(ld)):$(ld.read_source.position.lineno): Syntax error\n"
+            )
+            continue
+        end
+        eof = PL_get_atom(ld, t)
+        (eof !== nothing && sym_key(eof) == sym_key(mk_sym(T, :end_of_file))) && break
+
+        if directiveClause(gd, ld, directive, t, :(:-))
+            if !update_conditional_compilation(gd, ld, directive, cond)
+                if cond_true(cond)
+                    addDirectiveWic(state, directive)
+                    if !callProlog(gd, ld, MODULE_user(gd).index, directive, PL_Q_NODEBUG)
+                        _qlf_Sdprintf!(
+                            ld,
+                            "$(_qlf_source_file_text(ld)):$(ld.read_source.position.lineno): directive failed\n"
+                        )
+                    end
+                end
+            end
+        elseif cond_true(cond)
+            if directiveClause(gd, ld, directive, t, Symbol("\$:-"))
+                callProlog(gd, ld, MODULE_user(gd).index, directive, PL_Q_NODEBUG)
+            else
+                addClauseWic(gd, ld, state, t, nf)
+            end
+        end
+
+        PL_discard_foreign_frame(ld, cid)
+    end
+
+    qlfEndPart(state)
+    pl_seen(ld)
+
+    return true
+end
