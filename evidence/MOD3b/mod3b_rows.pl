@@ -76,6 +76,8 @@ t_a36(R) :- catch((findall(X, call(@(p(X), user)), R)), error(SsuE, _), R = rais
 t_a37(R) :- catch((findall(X, (m2(Q), @(p(X), Q)), R)), error(SsuE, _), R = raised(SsuE)).
 t_a38(R) :- catch((call(@(user:qm:utp(R), qm2))), error(SsuE, _), R = raised(SsuE)).
 t_a39(R) :- catch((( G = p(G), call(@(G, user)) -> R = yes ; R = no )), error(SsuE, _), R = raised(SsuE)).
+t_a78(R) :- catch((( call((fail, _)) -> R = yes ; R = no )), error(SsuE, _), R = raised(SsuE)).
+t_a79(R) :- catch((( call((true ; _)) -> R = yes ; R = no )), error(SsuE, _), R = raised(SsuE)).
 t_a40(R) :- catch((findall(B, clause(at(_), B), R)), error(SsuE, _), R = raised(SsuE)).
 t_a41(R) :- catch((findall(B, clause(atnl(_), B), R)), error(SsuE, _), R = raised(SsuE)).
 t_a42(R) :- catch((findall(B, clause(atu(_), B), R)), error(SsuE, _), R = raised(SsuE)).

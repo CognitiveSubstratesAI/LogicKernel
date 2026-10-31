@@ -8,7 +8,7 @@
 - MOD3a-S1 and MOD3a-S2 no longer match the source (their `old` strings are gone after MOD3b); MOD3a is landed, its file
   is left alone; do not re-run its list as written.
 - Left: the gate (fmt, check, the new/changed test files x3 term types, type discipline, mutants/MOD3b push, branch-gate,
-  crash-term grep, gate push); no daemon was used by this part.
+  D-0164 term grep, gate push); no daemon was used by this part.
 
 
 ## Coder 3 (Sonnet, hard-stopped by the context cap at ~163k): DONE / NOT DONE (read this first)
@@ -86,10 +86,10 @@
   list. test_metacall_control.jl: the refusal testset became "call/1 of Goal@Module, as swipl (MOD3b)" (swipl: p(1),p(2)
   nondet, p(3) det; the cyclic `G = p(G), c(@(G,user))` FAILS in swipl — pinned as just "end"; watch the kernel here, the
   goal-clause compile of a cyclic goal may raise representation_error instead: if so, trace it before changing the pin).
-- REMAINING for coder 3: (a) the crash-term grep over `git diff 805446b..HEAD` + messages (the cap hook blocked it; no such
+- REMAINING for coder 3: (a) the D-0164 term grep over `git diff 805446b..HEAD` + messages (the cap hook blocked it; no such
   word was written knowingly); (b) NEW test/core_lang/test_at_body_swipl.jl in test_colon_body_swipl.jl's shape (rows listed
   above under "tests"); (c) tools/mutants/MOD3b.py (list above; every `old` exactly once — grep; TARGETS per D-0238 above);
-  (d) docs/architecture.md MOD3b section; then the gate order below. Also re-check the crash-term grep before any push.
+  (d) docs/architecture.md MOD3b section; then the gate order below. Also re-check the D-0164 term grep before any push.
 
 
 Worktree ~/code/lk-mod3b, branch wip/mod3b off origin/main 9952080. Nothing compiled, no Julia, no daemon, no swipl run yet.
@@ -224,7 +224,7 @@ bae881a, so ALWAYS read at the pin: line numbers below are the pin's).
 ## Not done (everything): no source edit, no test row, no swipl run, no mutant file. Flags: none raised yet (no DIVERGES added).
 ## Gate order for the agent after the coder: fmt, check (incl. Pkg.test-way), the new/changed test files x3 term types via the daemon,
 test/test_type_discipline.jl, mutants/MOD3b early at the WIP SHA, branch-gate, JET (the static-analysis file alone), alloc pins x3
-(the run loop gains 4 labels), crash-term grep over diff + messages, gate/mod3b + mutants/MOD3b at the same SHA.
+(the run loop gains 4 labels), D-0164 term grep over diff + messages, gate/mod3b + mutants/MOD3b at the same SHA.
 
 ## Gate agent 1 (Sonnet, 2026-10-31): HANDED BACK at the first kernel failure
 - Branch wip/mod3b-r2 (rebased over origin/main 07a8e01; wip/mod3b-r is the first rebase). Daemon of lk-mod3b is UP (needed a copy of
@@ -256,3 +256,13 @@ test/test_type_discipline.jl, mutants/MOD3b early at the WIP SHA, branch-gate, J
 - NEXT (after the daemon is free): `tools/warm.sh file test/core_lang/test_at_body_swipl.jl`, then test_body_code_swipl.jl,
   test_metacall_control.jl, test/test_type_discipline.jl; per failing row: expectation vs kernel. a39 (cyclic goal) untraced.
   A per-row probe must use a FRESH database per row and STOP at the first raise (never continue after one).
+
+## Gate agent 3 (Sonnet, 2026-10-31): the kernel fix runs green; first battery 31/32
+- Daemon lk-mod3b (first lane), used only through `warm.sh file`/`check`/`branch-gate`, never per-row. At 9a9cbcf + the anchor re-fit
+  (e5878b8): test_at_body_swipl 276/276, test_body_code_swipl 2559/2559, test_metacall_control 351/351, test_type_discipline 33/33
+  (per type 92/853/117 each); a39 (cyclic goal) gives `no` on the kernel, as swipl's pin. `check` PASS, Pkg.test-way run on the three
+  big files PASS (peaks 410/1261/570 MiB), `branch-gate` PASS (1097 s), test_zero_exports 239/239 and test_ball_cells 87/87 with no pin moved.
+- Anchors M1, C14, D4 had been re-flowed by fmt (zero matches): re-fitted in e5878b8. Battery run 41216391511 at e5878b8: 31 of 32 caught,
+  MOD3b-M1 SURVIVED: the check on a non-`@` goal is reached only through the CONTROL_F branch (`,`/2, `;`/2, `->`/2 ...), and no row had a
+  2-ary control goal whose second argument is unbound yet runs. Killed by new rows a78 (`call((fail, _))` fails) and a79 (`call((true ; _))`
+  succeeds), both pinned from swipl 10.1.19 (`no`, `yes`), inserted after a39 so the end-relative pins are unmoved. Not run on the mutant locally.

@@ -4,7 +4,7 @@
 # decompileBody's I_CALLATM/I_DEPARTATM/I_CALLATMV/I_DEPARTATMV; pl-vmi.c I_DEPARTATM, I_CALLATM, I_DEPARTATMV,
 # I_CALLATMV, i_metacall_common's `@` branch), run ONCE, in CI (.github/workflows/mutation.yml; locally:
 # tools/mutate.sh run). Format: tools/mutate_drive.py's (as MOD3a.py): `id`, `file`, `old` (must occur EXACTLY once),
-# `new`, optional `equivalent` and `targets`. Killed by test/core_lang/test_at_body_swipl.jl (rows a01-a77 named in each
+# `new`, optional `equivalent` and `targets`. Killed by test/core_lang/test_at_body_swipl.jl (rows a01-a79 named in each
 # id's KILL) and test/compile/test_body_code_swipl.jl's `_BC_MOD3B` rows ("bc" in a KILL). Verdicts: written by the
 # battery, not yet run.
 # The `old` strings are written in the repo's formatted style BEFORE `tools/warm.sh fmt` ran (the coding agent had no
@@ -69,7 +69,7 @@ MUTANTS = [
          old="    PL_error(ld, ERR_TYPE, mk_sym(T, :module), atv_t)\n",
          new="    PL_error(ld, ERR_TYPE, mk_sym(T, :callable), atv_t)\n"),
     # ── pl-vmi.c i_metacall_common's `@` branch ──
-    dict(id="MOD3b-M1 the metacall check runs for every 2-ary goal, not only @/2 (KILL a28-a39, bc; TMC wide)",
+    dict(id="MOD3b-M1 the metacall check runs for every 2-ary goal, not only @/2 (KILL a78, a79; TMC wide)",
          file=W, targets=RUN + TMC,
          old="    if mc_arity == 2 && sym_key(mc_name) == gd.functors_control.at_sign &&   # fd->functor == FUNCTOR_at_sign2\n",
          new="    if mc_arity == 2 && true &&\n"),

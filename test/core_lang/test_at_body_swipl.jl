@@ -184,6 +184,10 @@ const _AB_CASES = [
     # a39: a cyclic goal: swipl FAILS (p/1 has only 1, 2, 3); the kernel may raise representation_error(cyclic_term) from the goal
     # clause's compile instead — UNVERIFIED on the kernel: gate decides (a mismatch is traced, not re-pinned)
     ("a39", raw"( G = p(G), call(@(G, user)) -> R = yes ; R = no )"),
+    # a78, a79: a 2-ary CONTROL goal with an unbound second argument is no `@/2`: the meta-call must not run the instantiation
+    # check of `@(Goal, Module)` on it (the `,` fails before its variable runs; the `;` takes its first branch)
+    ("a78", raw"( call((fail, _)) -> R = yes ; R = no )"),
+    ("a79", raw"( call((true ; _)) -> R = yes ; R = no )"),
     # a40-a54: clause/2 (the decompiler): `qm:qm(_)@qm2`, `utp(_)@qm2`, with a variable module (ATMV), the TM_VAR meta-calls,
     # the at that vanishes over a control construct, `=/2` and `!`
     ("a40", raw"findall(B, clause(at(_), B), R)"),
@@ -295,6 +299,8 @@ const _AB_PINNED = [
     "t_a37 c[116,95,97,51,55]/1(c[91,124,93]/2(i1,c[91,124,93]/2(i2,c[91,124,93]/2(i3,nil))))",
     "t_a38 c[116,95,97,51,56]/1(a[113,109,50])",
     "t_a39 c[116,95,97,51,57]/1(a[110,111])",
+    "t_a78 c[116,95,97,55,56]/1(a[110,111])",
+    "t_a79 c[116,95,97,55,57]/1(a[121,101,115])",
     "t_a40 c[116,95,97,52,48]/1(c[91,124,93]/2(c[64]/2(c[58]/2(a[113,109],c[113,109]/1(V0)),a[113,109,50]),nil))",
     "t_a41 c[116,95,97,52,49]/1(c[91,124,93]/2(c[44]/2(c[64]/2(c[58]/2(a[113,109],c[113,109]/1(V0)),a[113,109,50]),a[116,114,117,101]),nil))",
     "t_a42 c[116,95,97,52,50]/1(c[91,124,93]/2(c[64]/2(c[117,116,112]/1(V0),a[113,109,50]),nil))",
@@ -390,7 +396,7 @@ function _ab_kernel(path::String, names::Vector{String})
     return out, gd, ld
 end
 
-@testset "Goal@Module in a body and call/1 of it as swipl's (a01-a77)" begin
+@testset "Goal@Module in a body and call/1 of it as swipl's (a01-a79)" begin
     f, names = _ab_file()
     kl, _, _ = _ab_kernel(f, names)
     @test length(kl) == length(_AB_PINNED)
