@@ -2212,7 +2212,29 @@ _index_entry_points(T) = (
         },
         true
     ),
-    (LK.unify_index_pattern, Tuple{LK.Definition{T}}, false)
+    (LK.unify_index_pattern, Tuple{LK.Definition{T}}, false),
+    # T2: the string predicates (src/pl-string.jl; pl-string.c and the string family of pl-prims.c)
+    [
+        (f, Tuple{LD, Int, Int, LK.foreign_context{T}}, false) for f in (
+            LK.pl_atom_string2_va, LK.pl_string_codes2_va, LK.pl_string_chars2_va,
+            LK.pl_text_to_string2_va, LK.pl_string_length2_va, LK.pl_string_concat3_va,
+            LK.pl_sub_string5_va, LK.pl_string_code3_va, LK.pl_get_string_code3_va,
+            LK.pl_split_string4_va, LK.pl_string_bytes3_va, LK.pl_read_string5_va,
+            LK.pl_read_string3_va, LK.pl_open_string2_va
+        )
+    ]...,
+    (LK.unify_text, Tuple{LD, Int, LK.PL_chars_t, Int}, false),
+    (LK.string_x, Tuple{LD, Int, Int, Int}, false),
+    (LK.get_positive_integer_or_unbound, Tuple{LD, Int}, false),
+    (LK.sub_text, Tuple{LD, Int, Int, Int, Int, Int, LK.control_t{T}, Int}, false),
+    (LK.PL_error_range, Tuple{LD, Int, Int, Int}, false),
+    (LK.PL_get_char, Tuple{LD, Int}, false),
+    (LK.PL_get_int64_ex, Tuple{LD, Int}, false),
+    (LK.PL_syntax_error, Tuple{LD, String, Nothing}, false),
+    (LK.string_bytes_text_error, Tuple{LD, Int}, false),
+    (LK.text_representation_error, Tuple{LD, LK.IOENC}, false),
+    (LK.PL_text_recode, Tuple{LD, LK.PL_chars_t, LK.IOENC}, false),
+    (LK.PL_release_stream, Tuple{LD, LK.IOSTREAM}, false)
 )
 
 const _DISPATCH_MANIFEST_TUPLE = (
@@ -2782,7 +2804,16 @@ const _DISPATCH_MANIFEST_TUPLE = (
     (LK.trailValP, Tuple{UInt64}, true), (LK._trail_addr, Tuple{Int, Int}, true),
     (LK._trail_stack, Tuple{UInt64}, true), (LK._trail_pos, Tuple{UInt64}, true),
     # BOOTPRED — the enum of src/pl-dict.jl (pl-dict.h _PL_dict_status_t)
-    (Base.Enums._enum_hash, Tuple{LK._PL_dict_status_t, UInt64}, false)
+    (Base.Enums._enum_hash, Tuple{LK._PL_dict_status_t, UInt64}, false),
+    # T2: the string predicates (src/pl-string.jl), the term-type-independent helpers and the table
+    (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_strings)}, false),
+    (LK._sub_state, Tuple{Int, Int, Int}, true), (LK._sub_state_type, Tuple{Int}, true),
+    (LK._sub_state_n1, Tuple{Int}, true), (LK._sub_state_n2, Tuple{Int}, true),
+    (LK.text_code_at, Tuple{LK.PL_chars_t, Int}, false),
+    (LK.text_chr, Tuple{LK.PL_chars_t, Int}, false),
+    (LK.unit_length, Tuple{LK.IOENC}, false), (LK.encoding_name, Tuple{LK.IOENC}, false),
+    (LK.utf16_encode, Tuple{Int}, false), (LK.utf16_to_text, Tuple{LK.PL_chars_t}, false),
+    (LK.backSkipPadding, Tuple{Vector{UInt8}, Int, LK.PL_chars_t}, false)
 )
 
 """
