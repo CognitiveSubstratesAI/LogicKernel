@@ -936,6 +936,10 @@ function setBuiltinPredicateProperties!(gd::PL_global_data{T})::Nothing where {T
     d.flags |= P_DYNAMIC | P_LOCKED
     gd.procedures_catch3 = lookupProcedure(mk_sym(T, :catch), 3, m)   # LOOKUPPROC(catch3)
     gd.procedures_dwakeup1 = lookupProcedure(mk_sym(T, Symbol("\$wakeup")), 1, m)  # LOOKUPPROC(dwakeup1)
+    # `:- dynamic user:exception/3` (boot/init.pl:945), here before init.pl is loaded: pl-gvar.c's
+    # auto_define_gvar calls the hook through `PL_call_predicate` (G1, design D8; the repeat in init.pl is harmless)
+    exception3 = lookupProcedure(mk_sym(T, :exception), 3, MODULE_user(gd))
+    setDynamicDefinition!(exception3.definition, true)
     # PL_meta_predicate(PL_predicate(Name, Arity, "system"), Spec) (pl-ext.c:391-421 at the pin; the
     # `P_TRANSPARENT` half since MOD2, `P_META` and the masks since MOD4), in upstream's order. DIVERGES:
     # only the predicates the kernel defines — `PL_predicate` would create the others (an entry whose
