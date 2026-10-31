@@ -182,7 +182,7 @@ const _MM_CASES = [
     ),
     (
         "i18",
-        raw"( forall(import_module(mmx_c2, S), atom(S)) -> R = yes ; R = no )"
+        raw"( \+ ( import_module(mmx_c2, S), \+ atom(S) ) -> R = yes ; R = no )"
     ),
     (
         "i19",
@@ -266,7 +266,7 @@ const _MM_CASES = [
     ),
     (
         "c18",
-        raw"\+ \+ '$current_module'(_, _), \+ \+ '$current_module'(_, _), once('$current_module'(_, _)), once('$current_module'(_, _)), R = ok"
+        raw"\+ \+ '$current_module'(_, _), \+ \+ '$current_module'(_, _), ( '$current_module'(_, _) -> true ), ( '$current_module'(_, _) -> true ), R = ok"
     ),
     (
         "c19",
