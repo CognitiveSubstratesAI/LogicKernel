@@ -1,6 +1,6 @@
 # UPSTREAM: pl-gc.c pl_garbage_collect, pl-thread.c pl_thread_self, pl-mutex.c pl_with_mutex (swipl-devel cbf4e189) — BOOTPRED's rows
 # test/core_lang/test_bootpred_swipl.jl — `'$garbage_collect'/1`, thread_self/1 and with_mutex/2 (bp01-bp26) and the pl-dict.c predicates
-# is_dict/1,2, dict_create/3, get_dict/3, put_dict/3, select_dict/3 (bp27-bp116) against swipl 10.1.19:
+# is_dict/1,2, dict_create/3, get_dict/3, put_dict/3, select_dict/3 (bp27-bp119) against swipl 10.1.19:
 #   * A PROGRAM consulted by the kernel's loader and cases `t_<id>(R)` run in order in one database, each wrapped in
 #     `catch(Goal, error(SsuE, _), R = raised(SsuE))`; the driver is test_at_body_swipl.jl's (`enc`oded answers).
 #   * Every answer line is swipl's, PINNED (swipl 10.1.19-1-gcbf4e189, 2026-10-31, lk-channel evidence/BOOTPRED/bootpred_rows.out in the
@@ -93,7 +93,7 @@ dpairs(D, Ps) :- findall(K-V, get_dict(K, D, V), Ps0), msort(Ps0, Ps).
 """
 
 # bp01-bp08 thread_self/1; bp09-bp19 with_mutex/2; bp20-bp26 '$garbage_collect'/1; bp27-bp51 dict_create/3; bp52-bp60 is_dict/1,2;
-# bp61-bp80 get_dict/3; bp81-bp100 put_dict/3; bp101-bp116 select_dict/3
+# bp61-bp79 get_dict/3; bp80-bp100 put_dict/3; bp101-bp116 select_dict/3; bp117-bp119 kill rows of the mutant list
 const _BP_CASES = [
     ("bp01", raw"thread_self(R)"),                                       # main
     ("bp02", raw"thread_self(main), R = yes"),
@@ -216,6 +216,10 @@ const _BP_CASES = [
     ("bp114", raw"select_dict(_, _, R), R = x"),
     ("bp115", raw"dict_create(S, t, [a-1]), dict_create(F, t, [a-1, b-2]), findall(P, (select_dict(S, F, Rest), dpairs(Rest, P)), R)"),
     ("bp116", raw"dict_create(S, t, [a-1]), dict_create(F, t, [a-1, b-2]), dict_create(E, t, [b-2]), select_dict(S, F, E), R = yes"),   # fails: the rest is tagged #, E is t
+    # rows added for the mutant list: the dyndict tag of a rest as the next select's From, a deterministic exit, a tag shared with its variable
+    ("bp117", raw"dict_create(S, t, [a-1]), dict_create(F, t, [a-1, b-2, c-3]), select_dict(S, F, R1), dict_create(S2, t, [b-2]), select_dict(S2, R1, R2), dpairs(R2, R)"),   # [c-3]: unify_tags accepts the dyndict tag
+    ("bp118", raw"dict_create(D, t, [a-1]), call_cleanup(get_dict(K, D, V), Det = true), R = Det-K-V"),   # the last pair leaves no choice point
+    ("bp119", raw"dict_create(D, T, [a-1]), is_dict(D, foo), R = T"),                                    # foo: the tag is the caller's variable
 ]
 
 # swipl 10.1.19-1-gcbf4e189's answers to the program and cases above (the driver's lines; lk-channel evidence/BOOTPRED/bootpred_rows.out)
@@ -336,7 +340,10 @@ const _BP_PINNED = [
     "t_bp113",
     "t_bp114 c[116,95,98,112,49,49,52]/1(c[114,97,105,115,101,100]/1(a[105,110,115,116,97,110,116,105,97,116,105,111,110,95,101,114,114,111,114]))",
     "t_bp115 c[116,95,98,112,49,49,53]/1(c[91,124,93]/2(c[91,124,93]/2(c[45]/2(a[98],i2),nil),nil))",
-    "t_bp116"
+    "t_bp116",
+    "t_bp117 c[116,95,98,112,49,49,55]/1(c[91,124,93]/2(c[45]/2(a[99],i3),nil))",
+    "t_bp118 c[116,95,98,112,49,49,56]/1(c[45]/2(c[45]/2(a[116,114,117,101],a[97]),i1))",
+    "t_bp119 c[116,95,98,112,49,49,57]/1(a[102,111,111])"
 ]
 
 function _bp_file()::Tuple{String, Vector{String}}
@@ -393,7 +400,7 @@ function _bp_kernel(path::String, names::Vector{String})
     return out, gd, ld
 end
 
-@testset "thread_self/1, with_mutex/2, \$garbage_collect/1, the dict predicates as swipl's (bp01-bp116)" begin
+@testset "thread_self/1, with_mutex/2, \$garbage_collect/1, the dict predicates as swipl's (bp01-bp119)" begin
     f, names = _bp_file()
     kl, _, _ = _bp_kernel(f, names)
     @test length(kl) == length(_BP_PINNED)
@@ -412,11 +419,11 @@ end
     )
 end
 
-@testset "the dict rows are not vacuous (bp27-bp116)" begin
+@testset "the dict rows are not vacuous (bp27-bp119)" begin
     dict_rows = _BP_PINNED[(1 + 27):end]                                           # the driver's first line is `ok`
-    @test length(dict_rows) == 90
+    @test length(dict_rows) == 93
     code(t) = "[" * join(Int.(collect(t)), ",") * "]"
-    # raised(…) rows: 15 type errors, 5 instantiation errors, 3 duplicate_key (bp35, bp36, bp89 in bp27-bp116)
+    # raised(…) rows: 15 type errors, 5 instantiation errors, 3 duplicate_key (bp35, bp36, bp89)
     @test count(l -> occursin(code("raised"), l), dict_rows) == 23
     @test count(l -> occursin(code("type_error") * "/2", l), dict_rows) == 15
     @test count(l -> occursin(code("instantiation_error"), l), dict_rows) == 5
@@ -428,6 +435,8 @@ end
         l -> occursin("c[45]/2(a[97],i1),c[91,124,93]/2(c[45]/2(a[98],i2)", l), dict_rows
     ) == 9
     @test !any(l -> occursin(code("dict") * "/", l), _BP_PINNED)
+    # get_dict/3 on a one-pair dict exits deterministically (bp118: Det = true)
+    @test any(l -> startswith(l, "t_bp118 ") && occursin(code("true"), l), _BP_PINNED)
     # select_dict/3's rest carries the tag dyndict, written #
     @test any(l -> startswith(l, "t_bp107 ") && endswith(l, "(a[35])"), _BP_PINNED)
 end

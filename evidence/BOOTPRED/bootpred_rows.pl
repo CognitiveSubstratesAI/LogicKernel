@@ -118,3 +118,6 @@ t_bp113(R) :- catch((dict_create(S, t, [a-1]), dict_create(F, t, [a-1, b-2]), di
 t_bp114(R) :- catch((select_dict(_, _, R), R = x), error(SsuE, _), R = raised(SsuE)).
 t_bp115(R) :- catch((dict_create(S, t, [a-1]), dict_create(F, t, [a-1, b-2]), findall(P, (select_dict(S, F, Rest), dpairs(Rest, P)), R)), error(SsuE, _), R = raised(SsuE)).
 t_bp116(R) :- catch((dict_create(S, t, [a-1]), dict_create(F, t, [a-1, b-2]), dict_create(E, t, [b-2]), select_dict(S, F, E), R = yes), error(SsuE, _), R = raised(SsuE)).
+t_bp117(R) :- catch((dict_create(S, t, [a-1]), dict_create(F, t, [a-1, b-2, c-3]), select_dict(S, F, R1), dict_create(S2, t, [b-2]), select_dict(S2, R1, R2), dpairs(R2, R)), error(SsuE, _), R = raised(SsuE)).
+t_bp118(R) :- catch((dict_create(D, t, [a-1]), call_cleanup(get_dict(K, D, V), Det = true), R = Det-K-V), error(SsuE, _), R = raised(SsuE)).
+t_bp119(R) :- catch((dict_create(D, T, [a-1]), is_dict(D, foo), R = T), error(SsuE, _), R = raised(SsuE)).
