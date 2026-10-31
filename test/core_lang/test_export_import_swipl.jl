@@ -104,6 +104,11 @@ const _MX_PROGRAM = raw"""
 :- assertz(mauto:dummy).
 """
 
+# UNVERIFIED on the kernel: gate decides — nothing here was run on the kernel. The rows that lean on more than MOD5a's own code:
+# e09 (`Name//Arity` in get_functor), e21-e23 (`'$module_property'(M, exports(_))` of a module made by export, an ISO skip, user),
+# e24 (the acyclic check at depth 100), d05 (assertz/1 defined in the module `system`), d11/d12 (a head or qualified element given
+# to get_functor with GP_NOT_QUALIFIED: swipl answers []), i09/i12 (`import(foo)`, a same-module import: swipl answers ok), i13,
+# i15 (a call of an undefined procedure makes the procedure in the module, which fixExport then follows), d13 ('$set_source_module'/1).
 # (id, goal), run IN ORDER
 const _MX_CASES = [
     # e01-e10: export/1 — a qualified PI, a context-qualified one (ma:export), a comma list, the list form (swipl's answer), a
