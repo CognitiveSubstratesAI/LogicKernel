@@ -72,6 +72,7 @@ const _PRED_TABLES = (
     PL_predicates_from_proc,
     PL_predicates_from_srcfile, PL_predicates_from_write,
     PL_predicates_from_redirect,
+    PL_predicates_from_format,
     PL_predicates_from_system, PL_predicates_from_op, PL_predicates_from_rec,
     PL_predicates_from_attvar, PL_predicates_from_gvar, PL_predicates_from_dict,
     PL_predicates_from_strings
@@ -87,6 +88,7 @@ const _FOREIGN_VA = (
     PL_predicates_from_files...,
     PL_predicates_from_proc..., PL_predicates_from_srcfile..., PL_predicates_from_write...,
     PL_predicates_from_redirect...,
+    PL_predicates_from_format...,
     PL_predicates_from_system...,
     PL_predicates_from_op..., PL_predicates_from_rec..., PL_predicates_from_attvar...,
     PL_predicates_from_gvar..., PL_predicates_from_dict..., PL_predicates_from_strings...
