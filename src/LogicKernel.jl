@@ -70,6 +70,7 @@ include("pl-pro.jl")           # swipl-devel src/pl-pro.c — callProlog, sig_at
 include("pl-mutex.jl")         # swipl-devel src/pl-mutex.c — with_mutex/2 (the single-thread form)
 include("pl-bag.jl")           # swipl-devel src/pl-bag.c — the bags of findall/3
 include("pl-list.jl")          # swipl-devel src/pl-list.c — is_list/1, '$length'/2, sort/2, msort/2, keysort/2
+include("pl-dict.jl")          # swipl-devel src/pl-dict.c — is_dict/1,2, dict_create/3, put_dict/3, select_dict/3, get_dict/3
 include("pl-op.jl")            # swipl-devel src/pl-op.c — the operator tables, op/3
 include("pl-write.jl")         # swipl-devel src/pl-write.c — the NaN helpers and the quoting rules the reader needs
 include("pl-sys.jl")           # swipl-devel src/pl-sys.c — getenv/2, setenv/2, unsetenv/1, get_time/1, sleep/1 (Y1)
