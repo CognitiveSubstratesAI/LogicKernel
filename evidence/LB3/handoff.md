@@ -56,6 +56,30 @@ Commit estimate for the gated stack: 15-20 (9 WIP commits from the coder; the ga
   `$open_wic`/2, `$close_wic`/0, `$map_id`/2, `$unmap_id`/1, `$import_wic`/3; table order :4953-4976.
   `NotPortedError{T}(culprit, what, step)` (pl-comp.jl:796).
 
+## UPDATE 2 (coder 2, Sonnet; cap-stopped at 150k; NOTHING COMPILED OR RUN)
+
+COMMITTED on wip/lb3 (~/code/lk-lb3, not pushed): G3 `d477a2f`, G4 `6783d4a` (compileFileList, `boot_from_source!`),
+G5 `22ef8ce` (the 22-entry `PL_predicates_from_wic`: 8 shells incl. `$import_wic`/3, `$qlf_include`/5 fails, 14 refused by
+name; registered after read, before file, in `_PRED_TABLES` and `_FOREIGN_VA`; `include("pl-qlf.jl")` before pl-ext.jl),
+G6 `bc31475` + `c6428a8` + `7b7601b` (test/files/test_qlf_swipl.jl; generator + pins in evidence/LB3/ql/, swipl 10.1.19
+two byte-identical runs). G7 tools/mutants/LB3.py (54 mutants) is COMMITTED (coder 3) and VALIDATED by a throwaway python3 -I + runpy checker
+(every `old` once in its file, new != old, ids unique, targets exist; one anchor, F11, was re-fitted from a comment line to the
+code line). Each id names its KILL testset (all 8 testsets exist in test/files/test_qlf_swipl.jl); two equivalents carry
+file reasons (D4, P3). The anchors still need a re-fit at the first battery run if `warm.sh fmt` rewraps a line.
+LEFT: G8 docs/architecture.md LB3 section (append), G9 `_enum_hash` manifest entry for `iftrue` (test/static_analysis_manifest.jl,
+append, own commit, LAST); this handoff's gate order. Not done: any run; the shared `Union{}` return type of
+`_qlf_refused` and the `ld.read_source.position.lineno` setter are read, not seen compiled.
+Q1 applied: `$import_wic`/3 is the eighth shell (table has 8 shells + 14 refused, not 7 + 15). Q2: `$qlf_include`/5 ported as
+upstream (fails with no state); LB4 must check whether a boot file reaches `include/1` (init.pl `$record_included`).
+New flags: Q7 `boot_from_source!` drops PL_halt/`$boot_message` and the resource DB (comment says so). Q8 `PL_Q_DEBUG` for the
+`$load_additional_boot_files` call as upstream. Q9 compileFile uses `abspath`/`stat` (LB2b re-points). Tests mark every row
+that depends on the kernel's behaviour `UNVERIFIED on the kernel: gate decides`; the likeliest to need a fix: message text
+uses `ld.read_source.file` (empty if read_clause does not set it), the syntax-error and `elif` rows (an exception left
+pending), `_ql_call` on refused predicates (a Julia exception through the VM).
+GATE ORDER (alloc pins x3: the LD struct changed in G1): fmt (`warm.sh send` the committed files), inventory, check, rows on
+all three term types (test/files/test_qlf_swipl.jl), test/test_type_discipline.jl, pkgtest_way on the new file, push
+`mutants/LB3` at the WIP SHA, branch-gate, term grep, alloc pins x3, gate push on a FRESH name. Daemon: none used.
+
 ### FLAGS for the audit
 - **Q1 (behaviour, LB4):** `'$import_wic'/3` has a NULL branch that SUCCEEDS (:4512-4530) and init.pl calls it in wic
   mode through `'$ifcompiling'` (init.pl:3794, `'$import_all2'`). Refusing it (the brief's 15) raises in LB4's boot on the
