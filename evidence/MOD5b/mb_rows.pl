@@ -8,7 +8,7 @@ t_a03(R) :- catch(('$declare_module'(mna, user, user, '/mb/f2.pl', 1, false), R 
 t_a04(R) :- catch(('$declare_module'(mna, library, user, '/mb/f2.pl', 2, true), '$module_property'(mna, class(C)), '$module_property'(mna, file(F)), '$module_property'(mna, line_count(L)), R = [C, F, L]), error(F, _), R = raised(F)), mb_done.
 t_a05(R) :- catch(('$declare_module'(mna, user, user, '/mb/f3.pl', 2, 1), '$module_property'(mna, file(F)), R = F), error(F, _), R = raised(F)), mb_done.
 t_a06(R) :- catch(('$declare_module'(mnb, user, user, '/mb/f1.pl', 1, false), catch('$declare_module'(mnb, system, user, '/mb/f2.pl', 1, false), error(E, _), true), '$module_property'(mnb, class(C)), R = E-C), error(F, _), R = raised(F)), mb_done.
-t_a07(R) :- catch((findall(Cl-C, (member(Cl, [user, system, library, test, development, temporary, weird]), atom_concat(mbc_, Cl, M), '$declare_module'(M, Cl, user, '/mb/cls.pl', 1, false), '$module_property'(M, class(C))), R)), error(F, _), R = raised(F)), mb_done.
+t_a07(R) :- catch((findall(Cl-C, ((Cl = user ; Cl = system ; Cl = library ; Cl = test ; Cl = development ; Cl = temporary ; Cl = weird), atom_concat(mbc_, Cl, M), '$declare_module'(M, Cl, user, '/mb/cls.pl', 1, false), '$module_property'(M, class(C))), R)), error(F, _), R = raised(F)), mb_done.
 t_a08(R) :- catch(('$declare_module'(_, user, user, '/mb/f.pl', 1, false), R = ok), error(F, _), R = raised(F)), mb_done.
 t_a09(R) :- catch(('$declare_module'(1, user, user, '/mb/f.pl', 1, false), R = ok), error(F, _), R = raised(F)), mb_done.
 t_a10(R) :- catch(('$declare_module'(f(x), user, user, '/mb/f.pl', 1, false), R = ok), error(F, _), R = raised(F)), mb_done.

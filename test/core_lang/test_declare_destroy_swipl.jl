@@ -129,7 +129,7 @@ const _MB_CASES = [
     # a07: the classes (swipl does not check the atom)
     (
         "a07",
-        raw"findall(Cl-C, (member(Cl, [user, system, library, test, development, temporary, weird]), atom_concat(mbc_, Cl, M), '$declare_module'(M, Cl, user, '/mb/cls.pl', 1, false), '$module_property'(M, class(C))), R)"
+        raw"findall(Cl-C, ((Cl = user ; Cl = system ; Cl = library ; Cl = test ; Cl = development ; Cl = temporary ; Cl = weird), atom_concat(mbc_, Cl, M), '$declare_module'(M, Cl, user, '/mb/cls.pl', 1, false), '$module_property'(M, class(C))), R)"
     ),
     # a08-a18: the arguments, in order (module, class, super, file, line, redefine)
     ("a08", raw"'$declare_module'(_, user, user, '/mb/f.pl', 1, false), R = ok"),
@@ -412,7 +412,10 @@ end
     @test old.file == 0                       # unlinkSourceFilesModule released the file
     tq = old.procedures[(sym_key(_mbs("tq")), 1)]
     @test tq.definition.module_ == old.index  # the old definitions still name the old record
-    @test !haskey(new.procedures, (sym_key(_mbs("tq")), 1))
+    # the row's call `mtd7:tq(_)` in the NEW module makes an undefined procedure there (lookupProcedure): never the old one
+    newtq = get(new.procedures, (sym_key(_mbs("tq")), 1), nothing)
+    @test newtq === nothing ||
+        (newtq.definition !== tq.definition && newtq.definition.module_ == new.index)
     mna = LK.isCurrentModule(gd.modules, _mbs("mna"))
     @test mna !== nothing && (mna.flags & LK.M_DESTROYED) == 0 && mna.file != 0
     # b06 (abolishProcedure's imported branch): user's sup_s/1 was linked into mns5 by a call, the re-declaration removed the link:
