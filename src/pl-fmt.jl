@@ -724,3 +724,293 @@ function do_format(
     argc != 0 && return PL_format_error(ld, "too many arguments")
     return rc
 end
+
+# ── rubber: distribute_rubber, emit_rubber (pl-fmt.c :1018-1110) ───────────────────────────────────
+
+# PORT: pl-fmt.c distribute_rubber
+"Give the `rn` fill points of `r` a share of `space`: equal sizes, the rest from the last one backwards (pl-fmt.c)."
+function distribute_rubber(r::Vector{rubber}, rn::Int, space::Int)::Nothing
+    if space > 0
+        s = space ÷ rn
+        for n in 1:rn                           # give them equal size
+            r[n].size = s
+        end
+        space -= s * rn                         # distribute from the center
+        n = rn
+        while space != 0
+            r[n].size += 1
+            n -= 1
+            space -= 1
+        end
+    else
+        for n in 1:rn                           # set all rubber to 0
+            r[n].size = 0
+        end
+    end
+    return nothing
+end
+
+# PORT: pl-fmt.c emit_rubber
+"Write the buffered output with the fill points expanded to their pad characters; the state is then empty (pl-fmt.c)."
+function emit_rubber(state::format_state)::Bool
+    buf = state.buffer
+    s = 1
+    e = length(buf) + 1
+    ri = 1
+    rn = state.pending_rubber
+    j = 0
+    while s <= e
+        while rn != 0 && state.rub[ri].where == j
+            r = state.rub[ri]
+            for _ in 1:r.size
+                Sputcode(r.pad, state.out) < 0 && return false
+            end
+            ri += 1
+            rn -= 1
+        end
+        if s < e
+            _, s, chr = _PL__utf8_code_point(buf, s, e)
+            Sputcode(chr, state.out) < 0 && return false
+        else
+            break
+        end
+        j += 1
+    end
+    empty!(state.buffer)
+    state.buffered = 0
+    state.pending_rubber = 0
+    return true
+end
+
+# ── formatInteger and its helpers (pl-fmt.c :1110-1440; the C locale, D9) ──────────────────────────
+
+# PORT: pl-fmt.c lappend
+# DIVERGES: the text is a `String`; reversing all its bytes is upstream's per-character reversal.
+"Append the locale string `l` (or the character `def` when none) to `out` reversed, as `formatInteger` builds its digits backwards (pl-fmt.c)."
+function lappend(l::Union{Nothing, String}, def::Char, out::Vector{UInt8})::Nothing
+    if l !== nothing
+        append!(out, reverse(codeunits(l)))
+    else
+        push!(out, UInt8(def))
+    end
+    return nothing
+end
+
+# ORIGINAL (O1A): pl-ctype.h `digitName`, which pl-fmt.c uses: the character for the digit value `n`.
+"The character of the digit value `n` (0..35), lowercase letters when `smll` (pl-ctype.h `digitName`)."
+digitName(n::Int, smll::Bool)::UInt8 =
+    n <= 9 ? UInt8('0') + UInt8(n) : (UInt8(smll ? 'a' : 'A') + UInt8(n - 10))
+
+# PORT: pl-fmt.c formatInteger
+# DIVERGES: `out` is a byte vector without the terminating NUL, the result is whether it succeeded; a number
+# of more fraction digits than a bignum has (`~25d` of 2^64) pads with '0' where upstream reads before the
+# digits. `divv` is upstream's `div`; the `grouping` pointer is the index `gi`.
+"""
+    formatInteger(locale, divv, radix, smll, i, out) -> Bool
+
+Format the integer `i` into `out`. `divv` is for fixed point numbers (the decimal point goes `divv` digits from
+the end), `radix` is the base, `smll` selects lowercase letters for digit values above 9 (pl-fmt.c).
+"""
+function formatInteger(
+    locale::Union{Nothing, PL_locale}, divv::Int, radix::Int, smll::Bool, i::number,
+    out::Vector{UInt8}
+)::Bool
+    grouping = nothing
+    gi = 1
+    if locale === nothing
+        locale = prolog_locale
+    elseif locale.grouping !== nothing && !isempty(locale.grouping) && locale.grouping[1] != 0 &&
+           locale.thousands_sep !== nothing && !isempty(locale.thousands_sep)
+        grouping = locale.grouping
+    end
+    if i.type === V_INTEGER
+        n = i.i
+        if n == 0 && divv == 0
+            push!(out, UInt8('0'))
+        else
+            before = false                      # before decimal point
+            gsize = 0
+            negative = n < 0
+            while n != 0 || divv >= 0
+                d0 = divv
+                divv -= 1
+                if d0 == 0 && !before
+                    isempty(out) || lappend(locale.decimal_point, '.', out)
+                    before = true
+                    grouping === nothing || (gsize = grouping[gi])
+                end
+                dweight = !negative ? Int(rem(n, radix)) : -Int(rem(n, -radix))
+                push!(out, digitName(dweight, smll))
+                n = div(n, radix)
+                gsize -= 1
+                if gsize == 0 && n != 0
+                    lappend(locale.thousands_sep, ',', out)
+                    if grouping[gi + 1] == 0
+                        gsize = grouping[gi]
+                    elseif grouping[gi + 1] == 127      # CHAR_MAX
+                        gsize = 0
+                    else
+                        gi += 1
+                        gsize = grouping[gi]
+                    end
+                end
+            end
+            negative && push!(out, UInt8('-'))
+        end
+        reverse!(out)                           # revert_string
+        return true
+    elseif i.type === V_MPZ
+        buf = string(i.mpz; base = radix)
+        (!smll && radix > 10) && (buf = uppercase(buf))
+        if grouping !== nothing || divv > 0
+            before = false                      # before decimal point
+            gsize = 0
+            e = length(buf)
+            while e >= 1 || divv >= 0
+                d0 = divv
+                divv -= 1
+                if d0 == 0 && !before
+                    isempty(out) || lappend(locale.decimal_point, '.', out)
+                    before = true
+                    grouping === nothing || (gsize = grouping[gi])
+                end
+                push!(out, e >= 1 ? UInt8(buf[e]) : UInt8('0'))
+                e -= 1
+                gsize -= 1
+                if gsize == 0 && e >= 1 && buf[e] != '-'
+                    lappend(locale.thousands_sep, ',', out)
+                    if grouping[gi + 1] == 0
+                        gsize = grouping[gi]
+                    elseif grouping[gi + 1] == 127      # CHAR_MAX
+                        gsize = 0
+                    else
+                        gi += 1
+                        gsize = grouping[gi]
+                    end
+                end
+            end
+            reverse!(out)
+        else
+            append!(out, codeunits(buf))
+        end
+        return true
+    end
+    return false                                # V_MPQ, V_FLOAT: not integers (assert(0) upstream)
+end
+
+# PORT: pl-fmt.c countGroups
+"How many separators `len` digits take under the `grouping` (pl-fmt.c)."
+function countGroups(grouping::Vector{Int}, len::Int)::Int
+    groups = 0
+    gi = 1
+    gsize = grouping[gi]
+    while len > 0
+        len -= gsize
+        len > 0 && (groups += 1)
+        if grouping[gi + 1] == 0
+            len > 1 && (groups += (len - 1) ÷ grouping[gi])
+            return groups
+        elseif grouping[gi + 1] == 127          # CHAR_MAX
+            return groups
+        else
+            gi += 1
+            gsize = grouping[gi]
+        end
+    end
+    return groups
+end
+
+# PORT: pl-fmt.c ths_to_utf8
+# DIVERGES: the result is the bytes, or `nothing` when `s` does not fit `len` bytes (upstream: a 0/1 result).
+"The UTF-8 bytes of the locale string `s`, or `nothing` if it does not fit in a buffer of `len` bytes (pl-fmt.c)."
+function ths_to_utf8(s::String, len::Int)::Union{Nothing, Vector{UInt8}}
+    u8 = UInt8[]
+    for ch in s
+        length(u8) >= len - 7 && return nothing
+        append!(u8, codeunits(string(ch)))
+    end
+    return u8
+end
+
+# PORT: pl-fmt.c utf8_dp
+"The decimal point of `l` as UTF-8 bytes (`.` when it has none), or `nothing` if it is too long (pl-fmt.c)."
+utf8_dp(l::PL_locale)::Union{Nothing, Vector{UInt8}} =
+    l.decimal_point !== nothing ? ths_to_utf8(l.decimal_point, 20) : UInt8[UInt8('.')]
+
+# PORT: pl-fmt.c find_decimal_point
+# DIVERGES: returns the 1-based start and the length in bytes of the separator in `s`, or `nothing`.
+"Where the decimal separator of the number in `s` is: the non-digit run between its digit sequences, `nothing` if none (pl-fmt.c)."
+function find_decimal_point(s::Vector{UInt8})::Union{Nothing, Tuple{Int, Int}}
+    n = length(s)
+    i = 1
+    if n >= 1 && (s[1] == UInt8('-') || s[1] == UInt8('+'))
+        i += 1
+    end
+    e = i
+    while e <= n && isDigit(Int(s[e]))
+        e += 1
+    end
+    e == i && return nothing                    # inf, nan, ...
+    p = e
+    while p <= n && !isDigit(Int(s[p])) && s[p] != UInt8('e') && s[p] != UInt8('E')
+        p += 1
+    end
+    (p == e || p > n || !isDigit(Int(s[p]))) && return nothing
+    return (e, p - e)
+end
+
+# PORT: pl-fmt.c localizeDecimalPoint
+"Replace the decimal point the number printing code wrote in `b` by the one of `locale` (pl-fmt.c)."
+function localizeDecimalPoint(locale::PL_locale, b::Vector{UInt8})::Bool
+    sep = find_decimal_point(b)
+    sep === nothing && return true
+    dp = utf8_dp(locale)
+    dp === nothing && return false
+    splice!(b, sep[1]:(sep[1] + sep[2] - 1), dp)
+    return true
+end
+
+# PORT: pl-fmt.c groupDigits
+"Put the thousands separator of `locale` into the integer part of the number in `b` (pl-fmt.c)."
+function groupDigits(locale::PL_locale, b::Vector{UInt8})::Bool
+    ts = locale.thousands_sep
+    gr = locale.grouping
+    if ts !== nothing && !isempty(ts) && gr !== nothing && !isempty(gr) && gr[1] != 0
+        n = length(b)
+        s = 1
+        n >= 1 && b[1] == UInt8('-') && (s += 1)
+        e = s
+        while e <= n && isDigit(Int(b[e]))
+            e += 1
+        end
+        groups = countGroups(gr, e - s)
+        if groups > 0
+            gi = 1
+            gsize = gr[gi]
+            ths = ths_to_utf8(ts, 20)
+            ths === nothing && return false
+            rev = UInt8[]
+            k = e - 1
+            while k >= s
+                push!(rev, b[k])
+                k -= 1
+                gsize -= 1
+                if gsize == 0 && k >= s
+                    append!(rev, reverse(ths))
+                    if gr[gi + 1] == 0
+                        gsize = gr[gi]
+                    elseif gr[gi + 1] == 127    # CHAR_MAX
+                        gsize = 0
+                    else
+                        gi += 1
+                        gsize = gr[gi]
+                    end
+                end
+            end
+            nb = vcat(b[1:(s - 1)], reverse(rev), b[e:n])
+            empty!(b)
+            append!(b, nb)
+        end
+    end
+    return true
+end
