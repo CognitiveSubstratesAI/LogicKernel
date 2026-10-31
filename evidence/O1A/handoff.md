@@ -102,3 +102,15 @@ mpq cut is placed by bit length, not by limb boundary: differs from GMP only wit
 formatFloat and the `__WINDOWS__` exponent fix-up are left out (the pinned swipl is GMP); (i) NEW: `mpz_sizeinbase(z,10)` is emulated as
 floor(bits*log10(2))+1 (GMP's value, one too big at times) so the exponent guesses behave as upstream's; (j) `format_predicate/2` is refused by
 name; the `format_predicates` table is empty.
+
+### State after agent 2, part 2 (hand-back at the cap)
+DONE: `~@` as upstream (36ffdb6); rows step (commit after 36ffdb6): evidence/O1A/gen_rows.py (run `python3 -I evidence/O1A/gen_rows.py <worktree>`: writes
+o1a_rows.pl, driver.pl, o1a_rows.out from swipl 10.1.19, two byte-identical runs, and the whole test/core_lang/test_format_swipl.jl; 93 cases f01-f74, e01-e19;
+the K rows `~:d`/`~:f` pin the kernel's C-locale answer with swipl's grouped one in the row). NOTE driver.pl holds the worktree's absolute path; the
+generated test file takes its harness from test/core_lang/test_at_body_swipl.jl (renamed _AB -> _FM). `~25d` of 2^64 left out (swipl reads past
+its buffer: the answer varies between runs). Rows observing tell/toldString: f13-f15, f65-f74 (`~@`, columns, with_output_to).
+UNVERIFIED: nothing compiled or run on the kernel; the test file never parsed by Julia.
+STILL TO DO (next agent): (1) check whether test files are listed anywhere (grep test_at_body_swipl in tools/*.sh, test/*.jl, .github/workflows/*.yml, narrow, no head); add
+test_format_swipl.jl there if so; (2) tools/mutants/O1A.py (>= 25 mutants over src/pl-fmt.jl, format of tools/mutants/MOD3b.py; TARGETS = test/core_lang/test_format_swipl.jl
+plus every test calling format/with_output_to; each `old` exactly once; validate with a python3 -I script; each with a kill row id from the cases above or a file:line
+equivalent); (3) docs/architecture.md block and test/static_analysis_manifest.jl entries (appended blocks, own commits, LAST); (4) gate order of WRITER_RULES.md.
