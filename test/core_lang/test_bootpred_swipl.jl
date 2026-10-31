@@ -1,12 +1,15 @@
 # UPSTREAM: pl-gc.c pl_garbage_collect, pl-thread.c pl_thread_self, pl-mutex.c pl_with_mutex (swipl-devel cbf4e189) — BOOTPRED's rows
-# test/core_lang/test_bootpred_swipl.jl — `'$garbage_collect'/1`, thread_self/1 and with_mutex/2 against swipl 10.1.19 (the pl-dict.c rows
-# are a later block of this file):
+# test/core_lang/test_bootpred_swipl.jl — `'$garbage_collect'/1`, thread_self/1 and with_mutex/2 (bp01-bp26) and the pl-dict.c predicates
+# is_dict/1,2, dict_create/3, get_dict/3, put_dict/3, select_dict/3 (bp27-bp116) against swipl 10.1.19:
 #   * A PROGRAM consulted by the kernel's loader and cases `t_<id>(R)` run in order in one database, each wrapped in
 #     `catch(Goal, error(SsuE, _), R = raised(SsuE))`; the driver is test_at_body_swipl.jl's (`enc`oded answers).
 #   * Every answer line is swipl's, PINNED (swipl 10.1.19-1-gcbf4e189, 2026-10-31, lk-channel evidence/BOOTPRED/bootpred_rows.out in the
 #     BOOTPRED branch); with `swipl` on PATH the live answers are compared with the pins too.
 #   * UNVERIFIED on the kernel (nothing was compiled when these rows were written): every kernel answer; the gate decides.
 #   * KNOWN DIFFERENCES (single-thread forms, pinned separately below): with_mutex/2 does not examine its mutex.
+#   * Dicts are built by dict_create/3 and put_dict/3 only (the reader refuses dicts, the writer has no dict arm) and never appear in an
+#     answer: the kernel orders the pairs by its own key words, swipl by its atom handles, so every order-dependent row observes a dict
+#     through `dpairs/2` (get_dict/3 findall, msort) or a single get_dict/3, is_dict/2 or `==` between two dicts built here.
 using Test, LogicKernel
 const LK = LogicKernel
 
@@ -86,9 +89,11 @@ const _BP_PROGRAM = raw"""
 p(1).
 p(2).
 p(3).
+dpairs(D, Ps) :- findall(K-V, get_dict(K, D, V), Ps0), msort(Ps0, Ps).
 """
 
-# bp01-bp08 thread_self/1; bp09-bp19 with_mutex/2; bp20-bp26 '$garbage_collect'/1
+# bp01-bp08 thread_self/1; bp09-bp19 with_mutex/2; bp20-bp26 '$garbage_collect'/1; bp27-bp51 dict_create/3; bp52-bp60 is_dict/1,2;
+# bp61-bp80 get_dict/3; bp81-bp100 put_dict/3; bp101-bp116 select_dict/3
 const _BP_CASES = [
     ("bp01", raw"thread_self(R)"),                                       # main
     ("bp02", raw"thread_self(main), R = yes"),
@@ -116,6 +121,101 @@ const _BP_CASES = [
     ("bp24", raw"X = f(Y, Z), Y = 1, '$garbage_collect'(0), R = X-Z"),   # bindings survive
     ("bp25", raw"'$garbage_collect'(0), '$garbage_collect'(1), R = twice"),
     ("bp26", raw"length(L, 3), '$garbage_collect'(0), R = L"),
+    # dict_create/3
+    ("bp27", raw"dict_create(D, t, [a-1, b-2]), dpairs(D, R)"),
+    ("bp28", raw"dict_create(D, t, [a=1, b=2, c=3]), dpairs(D, R)"),
+    ("bp29", raw"dict_create(D, t, [a:1, b:2]), dpairs(D, R)"),
+    ("bp30", raw"dict_create(D, t, [a(1), b(2)]), dpairs(D, R)"),
+    ("bp31", raw"dict_create(D, t, [a-1, b=2, c:3, d(4)]), dpairs(D, R)"),
+    ("bp32", raw"dict_create(D, tag, []), is_dict(D, T), R = T"),
+    ("bp33", raw"dict_create(D, _, [a-1]), is_dict(D, T), var(T), R = yes"),
+    ("bp34", raw"dict_create(D, t, [2-b, 1-a, 3-c]), dpairs(D, R)"),
+    ("bp35", raw"dict_create(D, t, [a-1, a-2]), R = D"),
+    ("bp36", raw"dict_create(D, t, [a-1, b-2, a-3]), R = D"),
+    ("bp37", raw"dict_create(D, t, foo), R = D"),
+    ("bp38", raw"dict_create(D, t, [a]), R = D"),
+    ("bp39", raw"dict_create(D, t, [f(1, 2)]), R = D"),
+    ("bp40", raw"dict_create(D, t, [X-1]), R = D-X"),
+    ("bp41", raw"dict_create(D, t, [1.5-a]), R = D"),
+    ("bp42", raw"dict_create(D, t, [f(x)-1]), R = D"),
+    ("bp43", raw"dict_create(D, t, [a-1|_]), R = D"),
+    ("bp44", raw"dict_create(D, t, [a-1|foo]), R = D"),
+    ("bp45", raw"dict_create(foo, t, [a-1]), R = yes"),
+    ("bp46", raw"dict_create(D1, t, [a-1, b-2]), dict_create(D2, t, [b=2, a=1]), D1 == D2, R = same"),
+    ("bp47", raw"dict_create(D1, t, [a-1]), dict_create(D2, u, [a-1]), D1 = D2, R = yes"),
+    ("bp48", raw"dict_create(D1, t, [a-X]), dict_create(D2, t, [a-1]), D1 = D2, R = X"),
+    ("bp49", raw"dict_create(D, T, [a-1]), T = foo, is_dict(D, foo), R = yes"),
+    ("bp50", raw"dict_create(D, t, [a-1, b-2]), dict_create(D, T, L), R = T-L"),
+    ("bp51", raw"findall(x, dict_create(_, t, [a-1]), R)"),
+    # is_dict/1,2
+    ("bp52", raw"findall(x, is_dict(foo), R)"),
+    ("bp53", raw"findall(x, is_dict(_), R)"),
+    ("bp54", raw"dict_create(D, t, []), is_dict(D), R = yes"),
+    ("bp55", raw"findall(x, is_dict(f(a), _), R)"),
+    ("bp56", raw"findall(x, (member(X, [1, 2.5, abc, [], [a], f(a), g(a, b, c)]), is_dict(X)), R)"),
+    ("bp57", raw"dict_create(D, t, [a-1]), is_dict(D, t), R = yes"),
+    ("bp58", raw"dict_create(D, t, [a-1]), is_dict(D, u), R = yes"),
+    ("bp59", raw"findall(x, is_dict(_, _), R)"),
+    ("bp60", raw"dict_create(D, f(x), [a-1]), is_dict(D, T), R = T"),
+    # get_dict/3
+    ("bp61", raw"dict_create(D, t, [a-1, b-2]), get_dict(a, D, V), R = V"),
+    ("bp62", raw"dict_create(D, t, [a-1, b-2]), get_dict(b, D, V), R = V"),
+    ("bp63", raw"dict_create(D, t, [a-1, b-2]), get_dict(c, D, V), R = V"),
+    ("bp64", raw"dict_create(D, t, [a-1, b-2, c-3]), findall(K-V, get_dict(K, D, V), L), length(L, R)"),
+    ("bp65", raw"dict_create(D, t, [a-1, b-2, c-3]), findall(K, get_dict(K, D, 2), R)"),
+    ("bp66", raw"dict_create(D, t, [a-1, b-2]), get_dict(a, D, 2), R = yes"),
+    ("bp67", raw"dict_create(D, t, [a-1, b-2]), get_dict(a, D, 1), R = yes"),
+    ("bp68", raw"get_dict(a, foo, V), R = V"),
+    ("bp69", raw"get_dict(a, _, V), R = V"),
+    ("bp70", raw"dict_create(D, t, [a-1]), get_dict(1.5, D, V), R = V"),
+    ("bp71", raw"dict_create(D, t, [a-1]), get_dict(f(x), D, V), R = V"),
+    ("bp72", raw"dict_create(D, t, [1-one, 2-two]), get_dict(2, D, V), R = V"),
+    ("bp73", raw"dict_create(D, t, [a-1, b-2]), findall(V, get_dict(a, D, V), R)"),
+    ("bp74", raw"dict_create(D, t, []), findall(K-V, get_dict(K, D, V), R)"),
+    ("bp75", raw"dict_create(D, t, [a-1, b-2, c-3]), findall(K, (get_dict(K, D, V), V > 1), L), msort(L, R)"),
+    ("bp76", raw"dict_create(D, t, [a-X, b-Y]), get_dict(a, D, 5), R = X-Y"),
+    ("bp77", raw"dict_create(D, t, [a-f(Z)]), get_dict(a, D, f(7)), R = Z"),
+    ("bp78", raw"dict_create(D, t, [a-1, b-2, c-3, d-4, e-5]), get_dict(e, D, V), R = V"),
+    ("bp79", raw"dict_create(D, t, [a-1, b-2]), get_dict(K, D, V), K == b, R = V"),
+    # put_dict/3
+    ("bp80", raw"dict_create(D, t, [a-1]), put_dict([b-2], D, N), dpairs(N, R)"),
+    ("bp81", raw"dict_create(D, t, [a-1, b-2]), put_dict([a-9], D, N), dpairs(N, R)"),
+    ("bp82", raw"dict_create(D, t, [a-1]), dict_create(E, u, [b-2, c-3]), put_dict(E, D, N), dpairs(N, R)"),
+    ("bp83", raw"dict_create(D, t, [a-1]), dict_create(E, u, [b-2]), put_dict(E, D, N), is_dict(N, T), R = T"),
+    ("bp84", raw"dict_create(D, t, [a-1]), put_dict([], D, N), dpairs(N, R)"),
+    ("bp85", raw"dict_create(D, t, [a-1]), put_dict([b=2, c:3, d(4)], D, N), dpairs(N, R)"),
+    ("bp86", raw"dict_create(D, t, [a-1]), put_dict([a-9], D, _), dpairs(D, R)"),
+    ("bp87", raw"put_dict([a-1], foo, N), R = N"),
+    ("bp88", raw"dict_create(D, t, [a-1]), put_dict(foo, D, N), R = N"),
+    ("bp89", raw"dict_create(D, t, [a-1]), put_dict([b-1, b-2], D, N), R = N"),
+    ("bp90", raw"dict_create(D, t, [a-1]), put_dict([b-1|_], D, N), R = N"),
+    ("bp91", raw"put_dict([x-1], _, N), R = N"),
+    ("bp92", raw"dict_create(D, t, [a-1]), put_dict([b-2], D, N), dict_create(E, t, [a-1, b-2]), N == E, R = same"),
+    ("bp93", raw"dict_create(D, t, []), put_dict([x-1, y-2], D, N), dpairs(N, R)"),
+    ("bp94", raw"dict_create(D0, t, [a-0]), put_dict([a-1], D0, D1), put_dict([b-2], D1, D2), put_dict([a-3, c-4], D2, D3), dpairs(D3, R)"),
+    ("bp95", raw"dict_create(D, t, [1-a, 3-c]), put_dict([2-b, 4-d], D, N), dpairs(N, R)"),
+    ("bp96", raw"dict_create(D, t, [k1-1, k3-3, k5-5, k7-7, k9-9, k11-11]), put_dict([k2-2, k4-4, k6-6, k8-8, k10-10, k3-33], D, N), dpairs(N, R)"),
+    ("bp97", raw"dict_create(D, t, [a-X]), put_dict([b-1], D, N), get_dict(a, N, V), V == X, R = shared"),
+    ("bp98", raw"dict_create(D, t, [a-1, b-2]), put_dict([b-X], D, N), get_dict(b, N, V), V == X, R = replaced"),
+    ("bp99", raw"dict_create(D, t, [a-1]), dict_create(E, t, [a-2]), put_dict(E, D, N), dpairs(N, R)"),
+    ("bp100", raw"dict_create(D, t, [a-1]), put_dict([b-2], D, N), put_dict([b-2], N, M), N == M, R = unchanged"),
+    # select_dict/3
+    ("bp101", raw"dict_create(S, t, [a-X]), dict_create(F, t, [a-1, b-2]), select_dict(S, F, Rest), dpairs(Rest, P), R = X-P"),
+    ("bp102", raw"dict_create(S, t, [a-1, b-2]), dict_create(F, t, [a-1, b-2]), select_dict(S, F, Rest), dpairs(Rest, P), R = P"),
+    ("bp103", raw"dict_create(S, t, [c-1]), dict_create(F, t, [a-1, b-2]), select_dict(S, F, _), R = yes"),
+    ("bp104", raw"dict_create(S, t, [a-9]), dict_create(F, t, [a-1, b-2]), select_dict(S, F, _), R = yes"),
+    ("bp105", raw"dict_create(S, u, [a-1]), dict_create(F, t, [a-1]), select_dict(S, F, _), R = yes"),
+    ("bp106", raw"dict_create(S, T, [a-1]), dict_create(F, foo, [a-1, b-2]), select_dict(S, F, _), R = T"),
+    ("bp107", raw"dict_create(S, t, [a-1]), dict_create(F, T, [a-1, b-2]), select_dict(S, F, Rest), is_dict(Rest, T2), R = T2"),      # the rest has the tag dyndict, written #
+    ("bp108", raw"select_dict(foo, F, R), R = F"),
+    ("bp109", raw"dict_create(S, t, [a-1]), select_dict(S, foo, R)"),
+    ("bp110", raw"dict_create(S, t, []), dict_create(F, t, [a-1, b-2]), select_dict(S, F, Rest), dpairs(Rest, R)"),
+    ("bp111", raw"dict_create(S, t, [b-X, d-Y]), dict_create(F, t, [a-1, b-2, c-3, d-4, e-5]), select_dict(S, F, Rest), dpairs(Rest, P), R = X-Y-P"),
+    ("bp112", raw"dict_create(S, t, [a-1]), dict_create(F, t, [a-1, b-2]), dict_create(E, '#', [b-2]), select_dict(S, F, E), R = yes"),
+    ("bp113", raw"dict_create(S, t, [a-1]), dict_create(F, t, [a-1, b-2]), dict_create(E, '#', [b-3]), select_dict(S, F, E), R = yes"),
+    ("bp114", raw"select_dict(_, _, R), R = x"),
+    ("bp115", raw"dict_create(S, t, [a-1]), dict_create(F, t, [a-1, b-2]), findall(P, (select_dict(S, F, Rest), dpairs(Rest, P)), R)"),
+    ("bp116", raw"dict_create(S, t, [a-1]), dict_create(F, t, [a-1, b-2]), dict_create(E, t, [b-2]), select_dict(S, F, E), R = yes"),   # fails: the rest is tagged #, E is t
 ]
 
 # swipl 10.1.19-1-gcbf4e189's answers to the program and cases above (the driver's lines; lk-channel evidence/BOOTPRED/bootpred_rows.out)
@@ -146,7 +246,97 @@ const _BP_PINNED = [
     "t_bp23 c[116,95,98,112,50,51]/1(c[91,124,93]/2(a[120],nil))",
     "t_bp24 c[116,95,98,112,50,52]/1(c[45]/2(c[102]/2(i1,V0),V0))",
     "t_bp25 c[116,95,98,112,50,53]/1(a[116,119,105,99,101])",
-    "t_bp26 c[116,95,98,112,50,54]/1(c[91,124,93]/2(V0,c[91,124,93]/2(V1,c[91,124,93]/2(V2,nil))))"
+    "t_bp26 c[116,95,98,112,50,54]/1(c[91,124,93]/2(V0,c[91,124,93]/2(V1,c[91,124,93]/2(V2,nil))))",
+    "t_bp27 c[116,95,98,112,50,55]/1(c[91,124,93]/2(c[45]/2(a[97],i1),c[91,124,93]/2(c[45]/2(a[98],i2),nil)))",
+    "t_bp28 c[116,95,98,112,50,56]/1(c[91,124,93]/2(c[45]/2(a[97],i1),c[91,124,93]/2(c[45]/2(a[98],i2),c[91,124,93]/2(c[45]/2(a[99],i3),nil))))",
+    "t_bp29 c[116,95,98,112,50,57]/1(c[91,124,93]/2(c[45]/2(a[97],i1),c[91,124,93]/2(c[45]/2(a[98],i2),nil)))",
+    "t_bp30 c[116,95,98,112,51,48]/1(c[91,124,93]/2(c[45]/2(a[97],i1),c[91,124,93]/2(c[45]/2(a[98],i2),nil)))",
+    "t_bp31 c[116,95,98,112,51,49]/1(c[91,124,93]/2(c[45]/2(a[97],i1),c[91,124,93]/2(c[45]/2(a[98],i2),c[91,124,93]/2(c[45]/2(a[99],i3),c[91,124,93]/2(c[45]/2(a[100],i4),nil)))))",
+    "t_bp32 c[116,95,98,112,51,50]/1(a[116,97,103])",
+    "t_bp33 c[116,95,98,112,51,51]/1(a[121,101,115])",
+    "t_bp34 c[116,95,98,112,51,52]/1(c[91,124,93]/2(c[45]/2(i1,a[97]),c[91,124,93]/2(c[45]/2(i2,a[98]),c[91,124,93]/2(c[45]/2(i3,a[99]),nil))))",
+    "t_bp35 c[116,95,98,112,51,53]/1(c[114,97,105,115,101,100]/1(c[100,117,112,108,105,99,97,116,101,95,107,101,121]/1(a[97])))",
+    "t_bp36 c[116,95,98,112,51,54]/1(c[114,97,105,115,101,100]/1(c[100,117,112,108,105,99,97,116,101,95,107,101,121]/1(a[97])))",
+    "t_bp37 c[116,95,98,112,51,55]/1(c[114,97,105,115,101,100]/1(c[116,121,112,101,95,101,114,114,111,114]/2(a[100,105,99,116,45,100,97,116,97],a[102,111,111])))",
+    "t_bp38 c[116,95,98,112,51,56]/1(c[114,97,105,115,101,100]/1(c[116,121,112,101,95,101,114,114,111,114]/2(a[107,101,121,45,118,97,108,117,101],a[97])))",
+    "t_bp39 c[116,95,98,112,51,57]/1(c[114,97,105,115,101,100]/1(c[116,121,112,101,95,101,114,114,111,114]/2(a[107,101,121,45,118,97,108,117,101],c[102]/2(i1,i2))))",
+    "t_bp40 c[116,95,98,112,52,48]/1(c[114,97,105,115,101,100]/1(a[105,110,115,116,97,110,116,105,97,116,105,111,110,95,101,114,114,111,114]))",
+    "t_bp41 c[116,95,98,112,52,49]/1(c[114,97,105,115,101,100]/1(c[116,121,112,101,95,101,114,114,111,114]/2(a[100,105,99,116,45,107,101,121],f1.5)))",
+    "t_bp42 c[116,95,98,112,52,50]/1(c[114,97,105,115,101,100]/1(c[116,121,112,101,95,101,114,114,111,114]/2(a[100,105,99,116,45,107,101,121],c[102]/1(a[120]))))",
+    "t_bp43 c[116,95,98,112,52,51]/1(c[114,97,105,115,101,100]/1(c[116,121,112,101,95,101,114,114,111,114]/2(a[108,105,115,116],c[91,124,93]/2(c[45]/2(a[97],i1),V0))))",
+    "t_bp44 c[116,95,98,112,52,52]/1(c[114,97,105,115,101,100]/1(c[116,121,112,101,95,101,114,114,111,114]/2(a[108,105,115,116],c[91,124,93]/2(c[45]/2(a[97],i1),a[102,111,111]))))",
+    "t_bp45",
+    "t_bp46 c[116,95,98,112,52,54]/1(a[115,97,109,101])",
+    "t_bp47",
+    "t_bp48 c[116,95,98,112,52,56]/1(i1)",
+    "t_bp49 c[116,95,98,112,52,57]/1(a[121,101,115])",
+    "t_bp50 c[116,95,98,112,53,48]/1(c[114,97,105,115,101,100]/1(a[105,110,115,116,97,110,116,105,97,116,105,111,110,95,101,114,114,111,114]))",
+    "t_bp51 c[116,95,98,112,53,49]/1(c[91,124,93]/2(a[120],nil))",
+    "t_bp52 c[116,95,98,112,53,50]/1(nil)",
+    "t_bp53 c[116,95,98,112,53,51]/1(nil)",
+    "t_bp54 c[116,95,98,112,53,52]/1(a[121,101,115])",
+    "t_bp55 c[116,95,98,112,53,53]/1(nil)",
+    "t_bp56 c[116,95,98,112,53,54]/1(nil)",
+    "t_bp57 c[116,95,98,112,53,55]/1(a[121,101,115])",
+    "t_bp58",
+    "t_bp59 c[116,95,98,112,53,57]/1(nil)",
+    "t_bp60 c[116,95,98,112,54,48]/1(c[102]/1(a[120]))",
+    "t_bp61 c[116,95,98,112,54,49]/1(i1)",
+    "t_bp62 c[116,95,98,112,54,50]/1(i2)",
+    "t_bp63",
+    "t_bp64 c[116,95,98,112,54,52]/1(i3)",
+    "t_bp65 c[116,95,98,112,54,53]/1(c[91,124,93]/2(a[98],nil))",
+    "t_bp66",
+    "t_bp67 c[116,95,98,112,54,55]/1(a[121,101,115])",
+    "t_bp68 c[116,95,98,112,54,56]/1(c[114,97,105,115,101,100]/1(c[116,121,112,101,95,101,114,114,111,114]/2(a[100,105,99,116],a[102,111,111])))",
+    "t_bp69 c[116,95,98,112,54,57]/1(c[114,97,105,115,101,100]/1(a[105,110,115,116,97,110,116,105,97,116,105,111,110,95,101,114,114,111,114]))",
+    "t_bp70 c[116,95,98,112,55,48]/1(c[114,97,105,115,101,100]/1(c[116,121,112,101,95,101,114,114,111,114]/2(a[100,105,99,116,45,107,101,121],f1.5)))",
+    "t_bp71 c[116,95,98,112,55,49]/1(c[114,97,105,115,101,100]/1(c[116,121,112,101,95,101,114,114,111,114]/2(a[100,105,99,116,45,107,101,121],c[102]/1(a[120]))))",
+    "t_bp72 c[116,95,98,112,55,50]/1(a[116,119,111])",
+    "t_bp73 c[116,95,98,112,55,51]/1(c[91,124,93]/2(i1,nil))",
+    "t_bp74 c[116,95,98,112,55,52]/1(nil)",
+    "t_bp75 c[116,95,98,112,55,53]/1(c[91,124,93]/2(a[98],c[91,124,93]/2(a[99],nil)))",
+    "t_bp76 c[116,95,98,112,55,54]/1(c[45]/2(i5,V0))",
+    "t_bp77 c[116,95,98,112,55,55]/1(i7)",
+    "t_bp78 c[116,95,98,112,55,56]/1(i5)",
+    "t_bp79 c[116,95,98,112,55,57]/1(i2)",
+    "t_bp80 c[116,95,98,112,56,48]/1(c[91,124,93]/2(c[45]/2(a[97],i1),c[91,124,93]/2(c[45]/2(a[98],i2),nil)))",
+    "t_bp81 c[116,95,98,112,56,49]/1(c[91,124,93]/2(c[45]/2(a[97],i9),c[91,124,93]/2(c[45]/2(a[98],i2),nil)))",
+    "t_bp82 c[116,95,98,112,56,50]/1(c[91,124,93]/2(c[45]/2(a[97],i1),c[91,124,93]/2(c[45]/2(a[98],i2),c[91,124,93]/2(c[45]/2(a[99],i3),nil))))",
+    "t_bp83 c[116,95,98,112,56,51]/1(a[116])",
+    "t_bp84 c[116,95,98,112,56,52]/1(c[91,124,93]/2(c[45]/2(a[97],i1),nil))",
+    "t_bp85 c[116,95,98,112,56,53]/1(c[91,124,93]/2(c[45]/2(a[97],i1),c[91,124,93]/2(c[45]/2(a[98],i2),c[91,124,93]/2(c[45]/2(a[99],i3),c[91,124,93]/2(c[45]/2(a[100],i4),nil)))))",
+    "t_bp86 c[116,95,98,112,56,54]/1(c[91,124,93]/2(c[45]/2(a[97],i1),nil))",
+    "t_bp87 c[116,95,98,112,56,55]/1(c[114,97,105,115,101,100]/1(c[116,121,112,101,95,101,114,114,111,114]/2(a[100,105,99,116,45,100,97,116,97],a[102,111,111])))",
+    "t_bp88 c[116,95,98,112,56,56]/1(c[114,97,105,115,101,100]/1(c[116,121,112,101,95,101,114,114,111,114]/2(a[100,105,99,116,45,100,97,116,97],a[102,111,111])))",
+    "t_bp89 c[116,95,98,112,56,57]/1(c[114,97,105,115,101,100]/1(c[100,117,112,108,105,99,97,116,101,95,107,101,121]/1(a[98])))",
+    "t_bp90 c[116,95,98,112,57,48]/1(c[114,97,105,115,101,100]/1(c[116,121,112,101,95,101,114,114,111,114]/2(a[108,105,115,116],c[91,124,93]/2(c[45]/2(a[98],i1),V0))))",
+    "t_bp91 c[116,95,98,112,57,49]/1(c[114,97,105,115,101,100]/1(a[105,110,115,116,97,110,116,105,97,116,105,111,110,95,101,114,114,111,114]))",
+    "t_bp92 c[116,95,98,112,57,50]/1(a[115,97,109,101])",
+    "t_bp93 c[116,95,98,112,57,51]/1(c[91,124,93]/2(c[45]/2(a[120],i1),c[91,124,93]/2(c[45]/2(a[121],i2),nil)))",
+    "t_bp94 c[116,95,98,112,57,52]/1(c[91,124,93]/2(c[45]/2(a[97],i3),c[91,124,93]/2(c[45]/2(a[98],i2),c[91,124,93]/2(c[45]/2(a[99],i4),nil))))",
+    "t_bp95 c[116,95,98,112,57,53]/1(c[91,124,93]/2(c[45]/2(i1,a[97]),c[91,124,93]/2(c[45]/2(i2,a[98]),c[91,124,93]/2(c[45]/2(i3,a[99]),c[91,124,93]/2(c[45]/2(i4,a[100]),nil)))))",
+    "t_bp96 c[116,95,98,112,57,54]/1(c[91,124,93]/2(c[45]/2(a[107,49],i1),c[91,124,93]/2(c[45]/2(a[107,49,48],i10),c[91,124,93]/2(c[45]/2(a[107,49,49],i11),c[91,124,93]/2(c[45]/2(a[107,50],i2),c[91,124,93]/2(c[45]/2(a[107,51],i33),c[91,124,93]/2(c[45]/2(a[107,52],i4),c[91,124,93]/2(c[45]/2(a[107,53],i5),c[91,124,93]/2(c[45]/2(a[107,54],i6),c[91,124,93]/2(c[45]/2(a[107,55],i7),c[91,124,93]/2(c[45]/2(a[107,56],i8),c[91,124,93]/2(c[45]/2(a[107,57],i9),nil))))))))))))",
+    "t_bp97 c[116,95,98,112,57,55]/1(a[115,104,97,114,101,100])",
+    "t_bp98 c[116,95,98,112,57,56]/1(a[114,101,112,108,97,99,101,100])",
+    "t_bp99 c[116,95,98,112,57,57]/1(c[91,124,93]/2(c[45]/2(a[97],i2),nil))",
+    "t_bp100 c[116,95,98,112,49,48,48]/1(a[117,110,99,104,97,110,103,101,100])",
+    "t_bp101 c[116,95,98,112,49,48,49]/1(c[45]/2(i1,c[91,124,93]/2(c[45]/2(a[98],i2),nil)))",
+    "t_bp102 c[116,95,98,112,49,48,50]/1(nil)",
+    "t_bp103",
+    "t_bp104",
+    "t_bp105",
+    "t_bp106 c[116,95,98,112,49,48,54]/1(a[102,111,111])",
+    "t_bp107 c[116,95,98,112,49,48,55]/1(a[35])",
+    "t_bp108 c[116,95,98,112,49,48,56]/1(c[114,97,105,115,101,100]/1(c[116,121,112,101,95,101,114,114,111,114]/2(a[100,105,99,116,45,100,97,116,97],a[102,111,111])))",
+    "t_bp109 c[116,95,98,112,49,48,57]/1(c[114,97,105,115,101,100]/1(c[116,121,112,101,95,101,114,114,111,114]/2(a[100,105,99,116,45,100,97,116,97],a[102,111,111])))",
+    "t_bp110 c[116,95,98,112,49,49,48]/1(c[91,124,93]/2(c[45]/2(a[97],i1),c[91,124,93]/2(c[45]/2(a[98],i2),nil)))",
+    "t_bp111 c[116,95,98,112,49,49,49]/1(c[45]/2(c[45]/2(i2,i4),c[91,124,93]/2(c[45]/2(a[97],i1),c[91,124,93]/2(c[45]/2(a[99],i3),c[91,124,93]/2(c[45]/2(a[101],i5),nil)))))",
+    "t_bp112 c[116,95,98,112,49,49,50]/1(a[121,101,115])",
+    "t_bp113",
+    "t_bp114 c[116,95,98,112,49,49,52]/1(c[114,97,105,115,101,100]/1(a[105,110,115,116,97,110,116,105,97,116,105,111,110,95,101,114,114,111,114]))",
+    "t_bp115 c[116,95,98,112,49,49,53]/1(c[91,124,93]/2(c[91,124,93]/2(c[45]/2(a[98],i2),nil),nil))",
+    "t_bp116"
 ]
 
 function _bp_file()::Tuple{String, Vector{String}}
@@ -203,7 +393,7 @@ function _bp_kernel(path::String, names::Vector{String})
     return out, gd, ld
 end
 
-@testset "thread_self/1, with_mutex/2, \$garbage_collect/1 as swipl's (bp01-bp26)" begin
+@testset "thread_self/1, with_mutex/2, \$garbage_collect/1, the dict predicates as swipl's (bp01-bp116)" begin
     f, names = _bp_file()
     kl, _, _ = _bp_kernel(f, names)
     @test length(kl) == length(_BP_PINNED)
@@ -220,6 +410,26 @@ end
     @test any(
         l -> startswith(l, "t_bp10 ") && endswith(l, "c[91,124,93]/2(i1,nil))"), _BP_PINNED
     )
+end
+
+@testset "the dict rows are not vacuous (bp27-bp116)" begin
+    dict_rows = _BP_PINNED[(1 + 27):end]                                           # the driver's first line is `ok`
+    @test length(dict_rows) == 90
+    code(t) = "[" * join(Int.(collect(t)), ",") * "]"
+    # raised(…) rows: 15 type errors, 5 instantiation errors, 3 duplicate_key (bp35, bp36, bp89 in bp27-bp116)
+    @test count(l -> occursin(code("raised"), l), dict_rows) == 23
+    @test count(l -> occursin(code("type_error") * "/2", l), dict_rows) == 15
+    @test count(l -> occursin(code("instantiation_error"), l), dict_rows) == 5
+    @test count(l -> occursin(code("duplicate_key") * "/1", l), dict_rows) == 3
+    # rows that fail have no answer after the name
+    @test count(l -> occursin(r"^t_bp\d+$", l), dict_rows) == 10
+    # the sorted pair list [a-1,b-2] answers 9 rows, and no answer holds a dict
+    @test count(
+        l -> occursin("c[45]/2(a[97],i1),c[91,124,93]/2(c[45]/2(a[98],i2)", l), dict_rows
+    ) == 9
+    @test !any(l -> occursin(code("dict") * "/", l), _BP_PINNED)
+    # select_dict/3's rest carries the tag dyndict, written #
+    @test any(l -> startswith(l, "t_bp107 ") && endswith(l, "(a[35])"), _BP_PINNED)
 end
 
 # KNOWN DIFFERENCE (single-thread form, pl-mutex.c:768-772): swipl 10.1.19 examines the mutex argument (`get_mutex`); the kernel does not.
