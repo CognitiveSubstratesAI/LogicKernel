@@ -410,6 +410,15 @@ end
     @test !haskey(new.procedures, (sym_key(_mbs("tq")), 1))
     mna = LK.isCurrentModule(gd.modules, _mbs("mna"))
     @test mna !== nothing && (mna.flags & LK.M_DESTROYED) == 0 && mna.file != 0
+    # b06 (abolishProcedure's imported branch): user's sup_s/1 was linked into mns5 by a call, the re-declaration removed the link:
+    # a fresh definition of mns5's own, user's shared once again (UNVERIFIED on the kernel: gate decides)
+    us = LK.isCurrentModule(gd.modules, _mbs("user"))
+    ss = us.procedures[(sym_key(_mbs("sup_s")), 1)]
+    @test ss.definition.shared == 1
+    m5 = LK.isCurrentModule(gd.modules, _mbs("mns5"))
+    p5 = m5.procedures[(sym_key(_mbs("sup_s")), 1)]
+    @test p5.definition.module_ == m5.index && p5.definition !== ss.definition
+    @test p5.definition.shared == 0                         # upstream's memset leaves it 0
     mtd8 = LK.isCurrentModule(gd.modules, _mbs("mtd8"))     # f04 destroyed it, f05 declared it again as temporary
     @test mtd8 !== nothing && sym_key(mtd8.class) == sym_key(_mbs("temporary"))
 end
