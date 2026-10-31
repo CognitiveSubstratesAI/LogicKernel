@@ -470,6 +470,417 @@ function copyRecordToGlobal(
     return true
 end
 
+# ── the recorded database (pl-rec.c), since R2's D2 ──────────────────────────────────────────────
+# The records of a key are a `RecordList` (src/pl-incl.jl), found by the key's WORD in `gd.record_lists`
+# (upstream's `GD->recorded_db.record_lists`, a hash table) and enumerated in `gd.record_lists_order`.
+# DIVERGES, representation only: the enumeration is by creation of the key's list, upstream's by the hash
+# table (FLG H1; the rows compare sorted answers for an unbound key). No `PL_LOCK(L_RECORD)` (one thread);
+# no `free_recordlist_symbol`, `cleanupRecords` or `unallocRecordList` (`PL_cleanup`); no atom references
+# for a key (no atom GC: `PL_register_atom`).
+
+# PORT: pl-rec.c lookupRecordList
+# DIVERGES: the database is the argument; a new list is appended to `gd.record_lists_order` too.
+"The record list of `key` (a key word, `getKeyEx`), made if there is none (pl-rec.c)."
+function lookupRecordList(gd::PL_global_data{T}, key::word)::RecordList{T} where {T}
+    l = get(gd.record_lists, key, nothing)                      # lookupHTableWP(…, key)
+    l !== nothing && return l
+    l = RecordList{T}(nothing, nothing, key, UInt32(0), 0)      # memset(l, 0, …); l->key = key
+    gd.record_lists[key] = l                                    # addNewHTableWP(…, key, l)
+    push!(gd.record_lists_order, l)
+    return l
+end
+
+# PORT: pl-rec.c firstRecordRecordList
+"The first record of `rl` that is not erased, or `nothing` (pl-rec.c)."
+function firstRecordRecordList(rl::RecordList{T})::Union{Nothing, RecordRef{T}} where {T}
+    record = rl.firstRecord
+    while record !== nothing
+        (record.flags & R_ERASED) == 0 && return record         # isoff(record->record, R_ERASED)
+        record = record.next
+    end
+    return nothing
+end
+
+# PORT: pl-rec.c isCurrentRecordList
+# DIVERGES: the database is the argument.
+"The record list of `key` if there is one — with a record that is not erased when `must_be_non_empty` — or `nothing` (pl-rec.c)."
+function isCurrentRecordList(
+    gd::PL_global_data{T}, key::word, must_be_non_empty::Bool
+)::Union{Nothing, RecordList{T}} where {T}
+    rl = get(gd.record_lists, key, nothing)
+    rl === nothing && return nothing
+    if must_be_non_empty
+        record = firstRecordRecordList(rl)
+        return record !== nothing ? rl : nothing
+    end
+    return rl
+end
+
+# PORT: pl-rec.c remove_record
+"Unlink the record reference `r` from its list and free it (pl-rec.c)."
+function remove_record(r::RecordRef{T})::Nothing where {T}
+    l = r.list
+    prev = r.prev
+    next = r.next
+    if prev !== nothing
+        prev.next = next                                        # r->prev->next = r->next
+    else
+        l.firstRecord = next
+    end
+    if next !== nothing
+        next.prev = prev                                        # r->next->prev = r->prev
+    else
+        l.lastRecord = prev
+    end
+    freeRecordRef(r)
+    return nothing
+end
+
+# PORT: pl-rec.c cleanRecordList
+"Remove the erased records of `rl` (pl-rec.c): no `recorded/3` runs over it any more."
+function cleanRecordList(rl::RecordList{T})::Nothing where {T}
+    r = rl.firstRecord
+    while r !== nothing
+        next = r.next
+        (r.flags & R_ERASED) != 0 && remove_record(r)           # ison(r->record, R_ERASED)
+        r = next
+    end
+    return nothing
+end
+
+# PORT: pl-rec.c freeRecordRef
+# DIVERGES: `freeRecord` and `freeHeap` are Julia's GC: the record is dropped (`r->record = NULL`, which
+# upstream does when a blob still names the reference, `R_DBREF`); a reference no blob names is reached by
+# nothing after its unlinking, so the two cases answer alike.
+"Free the record of `r` (pl-rec.c): a blob naming `r` answers an erased reference from now on."
+function freeRecordRef(r::RecordRef{T})::Nothing where {T}
+    r.record = nothing                                          # freeRecord(r->record); r->record = NULL
+    return nothing
+end
+
+# PORT: pl-rec.c unifyKey
+# DIVERGES: the local data is the argument; an atom key as its atom (`_atom_value`) and a small integer by
+# its value (`PL_unify_integer`), where upstream unifies the word (`PL_unify_atomic`); a functor key by its
+# name and arity (`PL_unify_functor`).
+"Unify `key` with the key word `val` (pl-rec.c): an atom, a small integer, or a functor's most general term."
+function unifyKey(ld::PL_local_data{T}, key::term_t, val::word)::Bool where {T}
+    if isAtomW(val)                                             # isAtom(val)
+        return PL_unify_atomic(ld, key, _atom_value(ld, val))
+    elseif isTaggedIntW(val)                                    # isTaggedInt(val)
+        return PL_unify_integer(ld, key, Int(valInt(val)))
+    else
+        name = _atom_value(ld, nameFunctor(ld.functors, val))   # PL_unify_functor(key, (functor_t) val)
+        return PL_unify_functor(ld, key, name, arityFunctor(ld.functors, val))
+    end
+end
+
+# PORT: pl-rec.c getKeyEx
+# DIVERGES: returns the key word, or `nothing` after the error, where upstream writes `*w` and returns a
+# Bool; on the WORDS (`_deref_loc`): an atom's or a small integer's word, a compound's functor word.
+"The key word of `key` (pl-rec.c): an atom, a small integer or a compound's functor; else `type_error(key, Key)` and `nothing`."
+function getKeyEx(ld::PL_local_data{T}, key::term_t)::Union{Nothing, word} where {T}
+    k, w, _ = _deref_loc(ld, -(key + 1))                        # Word k = valTermRef(key); deRef(k)
+    if (k == DU_WORD && isAtomW(w)) || (k == DU_VALUE && isTaggedIntW(w))
+        return w                                                # isAtom(*k) || isTaggedInt(*k)
+    elseif k == DU_WORD && _is_gcompound(w)                     # isTerm(*k)
+        return ld.gstack[valPtr(w)]                             # (word)functorTerm(*k)
+    end
+    PL_error(ld, ERR_TYPE, mk_sym(T, :key), key)
+    return nothing
+end
+
+# PORT: pl-rec.c current_key as pl_current_key1_va
+# (PRED_IMPL("current_key", 1, current_key, PL_FA_NONDETERMINISTIC))
+# DIVERGES: the enumeration state is the next index in `gd.record_lists_order`, handed back as an integer
+# (`PL_retry`, upstream: a `TableEnum`, `ForeignRedoPtr`), so a cut has nothing to free.
+"`current_key(?Key)` (pl-rec.c): `Key` is a key with a record that is not erased."
+function pl_current_key1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1 = PL__t0
+    gd = _query_gd(ld)
+    ctl = PL_foreign_control(PL__ctx)
+    if ctl == FRG_FIRST_CALL
+        if PL_is_variable(ld, A1)
+            e = 1                                               # e = newTableEnumWP(…)
+        else
+            k = getKeyEx(ld, A1)
+            (k !== nothing && isCurrentRecordList(gd, k, true) !== nothing) && return FTRUE
+            return FFALSE
+        end
+    elseif ctl == FRG_REDO
+        e = PL_foreign_context(PL__ctx)                         # e = CTX_PTR
+    else                                                        # FRG_CUTTED: freeTableEnum(e)
+        return FTRUE
+    end
+
+    fid = PL_open_foreign_frame(ld)
+    if fid != 0
+        while e <= length(gd.record_lists_order)                # while(advanceTableEnum(e, NULL, &sv))
+            rl = gd.record_lists_order[e]
+            e += 1
+            record = firstRecordRecordList(rl)
+            if record !== nothing && unifyKey(ld, A1, rl.key)
+                PL_close_foreign_frame(ld, fid)
+                return PL_retry(e)                              # ForeignRedoPtr(e)
+            end
+            PL_rewind_foreign_frame(ld, fid)
+        end
+        PL_close_foreign_frame(ld, fid)
+    end
+    return FFALSE                                               # freeTableEnum(e)
+end
+
+# PORT: pl-rec.c record as record_term
+# DIVERGES: named `record_term` (`record` is the type of a recorded term, pl-incl.h `struct record`); the
+# local data is the argument; `ref` 0 is upstream's NULL (no reference wanted).
+"`recorda`/`recordz`'s body (pl-rec.c `record`): record `term` under `key`, `ref` (unbound) its reference."
+function record_term(ld::PL_local_data{T}, key::term_t, term::term_t, ref::term_t, az::Int)::Bool where {T}
+    k = getKeyEx(ld, key)
+    k === nothing && return false
+    if ref != 0 && !PL_is_variable(ld, ref)
+        return PL_error(ld, "", 0, "", ERR_UNINSTANTIATION, 0, ref)   # PL_uninstantiation_error(ref)
+    end
+    return PL_record_az(ld, k, term, ref, az)
+end
+
+# PORT: pl-rec.c PL_record_az
+# DIVERGES: the local data is the argument; no `PL_no_memory` (Julia's allocator); on a failed `ref`
+# unification nothing is freed (Julia's GC: upstream's `PL_erase(copy)`, `freeHeap`).
+"Record `term` under the key word `k` at the front (`RECORDA`) or the end (`RECORDZ`) of its list (pl-rec.c)."
+function PL_record_az(ld::PL_local_data{T}, k::word, term::term_t, ref::term_t, az::Int)::Bool where {T}
+    gd = _query_gd(ld)
+    copy = compileTermToHeap(ld, term)                          # compileTermToHeap(term, 0)
+    r = RecordRef{T}(copy)                                      # r = allocHeapOrHalt(…); r->record = copy
+    if ref != 0 && !PL_unify_recref(gd, ld, ref, r)
+        return false
+    end
+
+    l = lookupRecordList(gd, k)
+    r.list = l
+
+    first = l.firstRecord
+    if first === nothing                                        # if ( !l->firstRecord )
+        r.next = r.prev = nothing
+        l.firstRecord = l.lastRecord = r
+    elseif az == RECORDA
+        r.prev = nothing
+        r.next = first
+        first.prev = r
+        l.firstRecord = r
+    else
+        last = l.lastRecord::RecordRef{T}
+        r.next = nothing
+        r.prev = last
+        last.next = r
+        l.lastRecord = r
+    end
+    return true
+end
+
+# PORT: pl-rec.c recorda as pl_recordava_va
+# (PRED_IMPL("recorda", va, recorda, 0); PRED_SHARE for recorda/2 and recorda/3)
+"`recorda(+Key, +Term)`, `recorda(+Key, +Term, -Ref)` (pl-rec.c): record `Term` first under `Key`."
+function pl_recordava_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    return record_term(ld, PL__t0, PL__t0 + 1, PL__ac == 3 ? PL__t0 + 2 : 0, RECORDA) ? FTRUE : FFALSE
+end
+
+# PORT: pl-rec.c recordz as pl_recordzva_va
+# (PRED_IMPL("recordz", va, recordz, 0); PRED_SHARE for recordz/2 and recordz/3)
+"`recordz(+Key, +Term)`, `recordz(+Key, +Term, -Ref)` (pl-rec.c): record `Term` last under `Key`."
+function pl_recordzva_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    return record_term(ld, PL__t0, PL__t0 + 1, PL__ac == 3 ? PL__t0 + 2 : 0, RECORDZ) ? FTRUE : FFALSE
+end
+
+# PORT: pl-rec.c save_state
+# DIVERGES: the state is a pool record from the first call on (`recorded_state`), so saving it marks it and
+# returns its index.
+"Keep `recorded/3`'s state `k` for the redo (pl-rec.c): its pool index."
+function save_state(ld::PL_local_data{T}, k::Int)::Int where {T}
+    ld.recorded_states.states[k].saved = true                   # newstate->saved = true
+    return k
+end
+
+# PORT: pl-rec.c free_state
+# DIVERGES: the pool record is given back whether or not it was saved (see `save_state`); no `TableEnum`
+# to free.
+"Drop `recorded/3`'s state `k` (pl-rec.c): the list it was in loses a reference, and is cleaned at the last."
+function free_state(ld::PL_local_data{T}, k::Int)::Nothing where {T}
+    state = ld.recorded_states.states[k]
+    r = state.r
+    if r !== nothing
+        rl = r.list
+        rl.references -= 1
+        (rl.references == 0 && (rl.flags & RL_DIRTY) != 0) && cleanRecordList(rl)
+    end
+    state.r = nothing
+    state.e = 0
+    state.saved = false
+    free_foreign_state!(ld.recorded_states, k)                  # freeForeignState(state, …)
+    return nothing
+end
+
+# PORT: pl-rec.c advance_state
+"Set `state` to the next record that is not erased (pl-rec.c); leaving the list drops its reference and cleans it at the last."
+function advance_state(state::recorded_state{T})::Union{Nothing, RecordRef{T}} where {T}
+    r = state.r::RecordRef{T}
+    while true
+        next = r.next
+        if next === nothing                                     # if ( !r->next )
+            rl = r.list
+            rl.references -= 1
+            (rl.references == 0 && (rl.flags & RL_DIRTY) != 0) && cleanRecordList(rl)
+            r = nothing
+            break
+        end
+        r = next
+        (r.flags & R_ERASED) != 0 || break                      # while ( r && ison(r->record, R_ERASED) )
+    end
+    state.r = r
+    return r
+end
+
+# PORT: pl-rec.c recorded as pl_recordedva_va
+# (PRED_IMPL("recorded", va, recorded, PL_FA_NONDETERMINISTIC); PRED_SHARE for recorded/2 and recorded/3)
+# DIVERGES: the state is a pool record (`recorded_state`), allocated where upstream's `memset` clears the
+# stack state; `goto next` (a new key's list found) re-enters the record loop through the outer one, as its
+# condition holds; `goto error` leaves both loops (`err`). No `PL_LOCK(L_RECORD)` (one thread). The
+# local `record` is `rec` (`record` is the type of the recorded term).
+"`recorded(?Key, ?Term)`, `recorded(?Key, ?Term, ?Ref)` (pl-rec.c): `Term` is recorded under `Key`, `Ref` its reference."
+function pl_recordedva_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    gd = _query_gd(ld)
+    key = PL__t0                                                # term_t key  = A1
+    term = PL__t0 + 1                                           # term_t term = A2
+    ref = PL__ac == 3 ? PL__t0 + 2 : 0                          # term_t ref  = (CTX_ARITY == 3 ? A3 : 0)
+
+    ctl = PL_foreign_control(PL__ctx)
+    if ctl == FRG_FIRST_CALL
+        if ref != 0 && !PL_is_variable(ld, ref)                 # recorded(?,?,+)
+            rec = PL_get_recref(gd, ld, ref)
+            rec === nothing && return FFALSE
+            if unifyKey(ld, key, rec.list.key)
+                copy = PL_new_term_ref(ld)
+                rc = copyRecordToGlobal(ld, copy, rec.record::record{T}) && PL_unify(ld, term, copy)
+            else
+                rc = false
+            end
+            return rc ? FTRUE : FFALSE
+        end
+
+        if PL_is_variable(ld, key)
+            k = alloc_foreign_state!(ld.recorded_states)        # memset(state, 0, sizeof(*state))
+            state = ld.recorded_states.states[k]
+            state.r = nothing
+            state.saved = false
+            state.e = 1                                         # state->e = newTableEnumWP(…)
+        else
+            kw = getKeyEx(ld, key)
+            kw === nothing && return FFALSE
+            rl = isCurrentRecordList(gd, kw, true)
+            rl === nothing && return FFALSE
+            k = alloc_foreign_state!(ld.recorded_states)
+            state = ld.recorded_states.states[k]
+            state.e = 0
+            state.saved = false
+            rl.references += 1
+            state.r = rl.firstRecord
+            ((state.r::RecordRef{T}).flags & R_ERASED) != 0 && advance_state(state)
+        end
+    elseif ctl == FRG_REDO
+        k = PL_foreign_context_address(PL__ctx)                 # state = CTX_PTR
+        state = ld.recorded_states.states[k]
+    else                                                        # FRG_CUTTED
+        k = PL_foreign_context_address(PL__ctx)
+        free_state(ld, k)
+        return FTRUE
+    end
+
+    fid = PL_open_foreign_frame(ld)
+    if fid != 0
+        answered = false
+        copy = 0
+        err = false
+
+        while !answered
+            while state.r !== nothing                           # for( ; state->r; advance_state(state) )
+                rec = state.r::RecordRef{T}                     # next: record = state->r
+
+                copy == 0 && (copy = PL_new_term_ref(ld))
+                if !copyRecordToGlobal(ld, copy, rec.record::record{T})
+                    err = true                                  # goto error
+                    break
+                end
+
+                if PL_unify(ld, term, copy) && (ref == 0 || PL_unify_recref(gd, ld, ref, rec))
+                    if state.e != 0 && !unifyKey(ld, key, rec.list.key)
+                        err = true                              # goto error: stack overflow
+                        break
+                    end
+                else
+                    if PL_exception(ld, 0) != 0
+                        err = true                              # goto error
+                        break
+                    end
+                    PL_rewind_foreign_frame(ld, fid)
+                    advance_state(state)
+                    continue
+                end
+
+                answered = true
+
+                next = rec.next
+                if next !== nothing
+                    state.r = next
+                    PL_close_foreign_frame(ld, fid)
+                    return PL_retry_address(save_state(ld, k))  # ForeignRedoPtr(save_state(state))
+                end
+                advance_state(state)
+            end
+            err && break
+
+            if state.e != 0                                     # if ( state->e )
+                found = false
+                while state.e <= length(gd.record_lists_order)  # while(advanceTableEnum(state->e, NULL, &sv))
+                    rl = gd.record_lists_order[state.e]
+                    state.e += 1
+                    r = firstRecordRecordList(rl)
+                    if r !== nothing
+                        rl.references += 1
+                        state.r = r
+                        answered && break
+                        found = true                            # goto next: try next list
+                        break
+                    end
+                end
+                found && continue
+            end
+
+            if answered
+                PL_close_foreign_frame(ld, fid)
+                if state.e != 0
+                    return PL_retry_address(save_state(ld, k))  # ForeignRedoPtr(save_state(state))
+                else
+                    free_state(ld, k)
+                    return FTRUE
+                end
+            end
+
+            break
+        end
+
+        PL_close_foreign_frame(ld, fid)                         # error:
+    end
+
+    free_state(ld, k)
+    return FFALSE
+end
+
 # PORT: pl-rec.c erase as pl_erase1_va
 # (PRED_IMPL("erase", 1, erase, 0))
 # DIVERGES: the CLAUSE branch only (since D1): the record branch — `callEventHook(PLEV_ERASED_RECORD, …)`,
