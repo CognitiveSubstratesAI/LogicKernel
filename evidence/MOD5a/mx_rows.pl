@@ -9,6 +9,7 @@
 :- assertz(mwq:qq(42)).
 :- assertz(mwq:rr(5)).
 :- assertz(mauto:dummy).
+:- ma:export(pdir/0).
 t_e01(R) :- catch((export(ma:pa/1), '$module_property'(ma, exports(L)), msort(L, R)), error(F, _), R = raised(F)).
 t_e02(R) :- catch((ma:export(pb/2), '$module_property'(ma, exports(L)), msort(L, R)), error(F, _), R = raised(F)).
 t_e03(R) :- catch((export(ma:(pa/1, pc/0)), '$module_property'(ma, exports(L)), msort(L, R)), error(F, _), R = raised(F)).
@@ -33,6 +34,7 @@ t_e21(R) :- catch((export(nomx:p/1), '$module_property'(nomx, exports(R))), erro
 t_e22(R) :- catch((export(ma:atom_length/2), '$module_property'(ma, exports(L)), msort(L, R)), error(F, _), R = raised(F)).
 t_e23(R) :- catch((export(user:exuser/0), '$module_property'(user, exports(L)), msort(L, R)), error(F, _), R = raised(F)).
 t_e24(R) :- catch((X = (ma:pa/1, X), catch(export(X), error(type_error(T, _), _), true), R = T), error(F, _), R = raised(F)).
+t_e25(R) :- catch((export(ma:(n1/0, n2/0, n3/0)), '$module_property'(ma, exports(L)), msort(L, R)), error(F, _), R = raised(F)).
 t_u01(R) :- catch(('$undefined_export'(_, R)), error(F, _), R = raised(F)).
 t_u02(R) :- catch(('$undefined_export'(1, R)), error(F, _), R = raised(F)).
 t_u03(R) :- catch(('$undefined_export'(nomodule_zz, R)), error(F, _), R = raised(F)).
@@ -50,6 +52,8 @@ t_d09(R) :- catch(('$def_modules'([pu/1|_], R)), error(F, _), R = raised(F)).
 t_d10(R) :- catch(('$def_modules'(foo, R)), error(F, _), R = raised(F)).
 t_d11(R) :- catch(('$def_modules'([foo], R)), error(F, _), R = raised(F)).
 t_d12(R) :- catch(('$def_modules'([ma:pa/1], R)), error(F, _), R = raised(F)).
+t_d18(R) :- catch(('$def_modules'(ma:[undefp/3, pu/1], R)), error(F, _), R = raised(F)).
+t_d19(R) :- catch(('$def_modules'('$nosuch':[pu/1], R)), error(F, _), R = raised(F)).
 t_d13(R) :- catch(('$current_source_module'(Old), '$set_source_module'(ma), '$def_modules'([pa/1, pu/1], R0), '$set_source_module'(Old), msort(R0, R)), error(F, _), R = raised(F)).
 t_i01(R) :- catch((mi:import(ma:pa/1), findall(X, mi:pa(X), R)), error(F, _), R = raised(F)).
 t_i02(R) :- catch((mi:import(ma:pa/1), findall(X, mi:pa(X), R)), error(F, _), R = raised(F)).
@@ -64,6 +68,7 @@ t_i10(R) :- catch((import(foo/a), R = ok), error(F, _), R = raised(F)).
 t_i11(R) :- catch((import(ma:_), R = ok), error(F, _), R = raised(F)).
 t_i12(R) :- catch((import(selfimp/1), R = ok), error(F, _), R = raised(F)).
 t_i13(R) :- catch((mi:import(ma:undefq/2), mi:undefq(1, 2), R = ok), error(F, _), R = raised(F)).
+t_u06(R) :- catch((export(mi:undefq/2), '$undefined_export'(mi, R)), error(F, _), R = raised(F)).
 t_i14(R) :- catch((export(mx:late/1), mj:import(mx:late/1), assertz(mx:late(7)), findall(X, mj:late(X), R)), error(F, _), R = raised(F)).
 t_i15(R) :- catch((catch(mfx:qq(_), error(_, _), true), mfz:import(mfx:qq/1), mfx:import(mwq:qq/1), mfz:qq(A), mfx:qq(B), R = A-B), error(F, _), R = raised(F)).
 t_i16(R) :- catch((catch(mgx:rr(_), error(_, _), true), mgx:import(mwq:rr/1), mgx:import(mwq:rr/1), mgx:rr(R)), error(F, _), R = raised(F)).
@@ -80,4 +85,5 @@ t_w09(R) :- catch((mw3:'$import'(ma:pa/1, weak), mw3:import(mc:pa/1), R = ok), e
 t_d14(R) :- catch(('$def_modules'(mi:[pa/1], R)), error(F, _), R = raised(F)).
 t_d15(R) :- catch(('$def_modules'([pa/1, pb/2], R0), msort(R0, R)), error(F, _), R = raised(F)).
 t_d16(R) :- catch(('$def_modules'(ma:[pa/1], R)), error(F, _), R = raised(F)).
+t_d20(R) :- catch(('$def_modules'([ma:pa/1], R)), error(F, _), R = raised(F)).
 t_d17(R) :- catch(('$def_modules'([pu/1, a/1, b/1, c/1, d/1, e/1, f/1, g/1, h/1, i/1], R)), error(F, _), R = raised(F)).
