@@ -55,26 +55,35 @@ the way out (`'$destroy_module'/1`). The refusal itself needs NO change. After a
 `lookupModule` in `getTargetModule!` makes a FRESH user-class module (row f04) and clauses compiled earlier keep the OLD index (H3). Rows
 f01-f05 pin both sides; the gate decides the kernel's answer.
 
-## NOT WRITTEN (next agent, in this order)
-1. Fill the pins (`gen_rows.py --fill`); read b05 (OPEN POINT 1); port the imported-link branch of abolish and rename/rewrite
-   `_abolishProcedure_pristine` accordingly (update manifest signature if it changes).
-2. tools/mutants/MOD5b.py in tools/mutants/MOD5a.py's format (20-30 mutants, every `old` exactly once: `grep -c -F`; TARGETS =
-   test/core_lang/test_declare_destroy_swipl.jl, test/core_lang/test_export_import_swipl.jl, the MOD1-MOD4 module rows that call
-   `lookupModule`/`$set_source_module`/`set_module`, D-0238). Candidate mutants: destroyModule (names not deleted; M_DESTROYED not set;
-   releaseModule not called); releaseModule_unlocked (`== 0` -> `== 1`; `!= 0` flag test dropped); unallocModule (source/typein not reset;
-   one of them); releaseModule/acquireModule (class test inverted); declareModule (class set after the refusal; `module_.file != 0`
-   dropped; `sf.index` vs `module_.file` compare inverted; `allow_newfile` negation; line_no not set; modules_source not set; public_ not
-   cleared; public_order not cleared; super not set; flags mask P_DYNAMIC dropped); _text_summary (`maxlen - 6`); the pl_*_va wrappers
-   (argument order/redefine bool); unlinkSourceFilesModule (file not released; MULTISOURCE test); unlinkSourceFileModule (current_procedure).
-3. docs/architecture.md MOD5b section after the MOD5a section (what ports what with file:line; the temporary class; Q7/F5; GC for freeing; the
-   `$init_goal/3` half of unlinkSourceFileModule left to L6; `Sdprintf` invariant line and `GD->modules.generation` not kept).
-4. `warm.sh inventory` (docs/port_inventory.md) after fmt.
-5. Gate order: fmt, inventory, check, rows x3 term types, type discipline, tools/pkgtest_way.sh on the new file (one at a time), re-check
-   mutant anchors after fmt, push mutants/MOD5b, branch-gate, crash-term grep, gate push. Alloc pins not needed (run loop untouched).
-   MOD5a's `definition.shared` STRUCT CHANGE means a cold daemon compile (~30 min).
+## STATE after coder 2 (everything is WRITTEN, NOTHING IS RUN: no Julia, no daemon; swipl 10.1.19 used as the oracle)
+Commits on wip/mod5b after ab5e112: bd12393 (b05 explained, row b06 added, pins regenerated twice byte-identical), 8866374 (pins FILLED:
+`_MB_PINNED` 51 lines, `_MB_Q7_SWIPL` 2; gen_rows.py's --fill pattern fixed), 1ee36ef (abolishProcedure's imported-link branch in
+`_abolishProcedure_pristine`, pl-modul.jl), df4e7cb (tools/mutants/MOD5b.py: 36 mutants, 3 equivalent, validated by a text count;
+plus a white-box on b06's definitions in the H3 testset), 54626b0 (docs/architecture.md `## MOD5b`), this handoff.
+b05 turned out to be WELL POSED: the link of b04 is to a dynamic predicate, declareModule's loop skips it (the imported definition's
+flags are tested), `imported(mnsup4)` before and after in swipl. Row b06 (static `sup_s/1` of `user`, in the program) covers the link
+that IS removed. OPEN POINT 1 is DONE (the branch is ported; the manifest signature of `_abolishProcedure_pristine` is unchanged).
+UNVERIFIED on the kernel (listed in the test file header): b04, c01-c02, d03, b02, b05, b06, e01, e02, f01-f05, the b06 white-box
+(`ss.definition.shared == 1`, `p5.definition.shared == 0`: derived by hand from upstream's memset and lookupProcedure's 1).
+Daemon: coder 2 started none; lanes.conf untouched.
+
+## NEXT (the gate; a new agent)
+1. REBASE onto the landed MOD5a under a NEW branch name (never force); the struct change (`definition.shared`, MOD5a) makes the first
+   daemon compile cold (~30 min).
+2. `warm.sh fmt` (the new long lines; Blue may reflow the long `Definition{T}(...)` call and the registration entries), then
+   `warm.sh inventory` (docs/port_inventory.md) + hand `declared` edits as MOD3b/MOD5a needed, then `warm.sh check`.
+3. The rows on all three term types (`warm.sh file test/core_lang/test_declare_destroy_swipl.jl`, no impl), test/test_type_discipline.jl,
+   `tools/pkgtest_way.sh test/core_lang/test_declare_destroy_swipl.jl` (one at a time, ~3 GB).
+4. Re-check the mutant anchors after fmt (`python3 -I` runpy validator: old exactly once; the long ones: C2, M4, P1), push `mutants/MOD5b`
+   at the WIP SHA, branch-gate, crash-term grep over diff and message, then `gate/mod5b` and `mutants/MOD5b` at the SAME SHA. No alloc
+   pins (the run loop is untouched).
+5. Expected survivors NOT listed (no row loads a procedure from the source file of a temporary module): markSourceFilesProcedure's
+   MULTISOURCE test, unlinkSourceFilesModule's file loop, unlinkSourceFileModule's filter. LATER: a white-box with a consulted file
+   that defines a predicate in the module.
+6. If a row fails on the kernel, the swipl pin is truth: fix the source, not the pin (D-0084); the Q7 testset expects NotPortedError.
 
 ## Flags
-(1) Q7 narrowing (above). (2) OPEN POINT 1 (import-link abolish; b05). (3) DIVERGES logged in comments: GC for freeing (`unallocModule`
+(1) Q7 narrowing (above). (2) OPEN POINT 1 (import-link abolish; b05): DONE, see STATE. (3) DIVERGES logged in comments: GC for freeing (`unallocModule`
 keeps the record), procedure walk order is Julia's Dict order (not upstream's hash order), `class`/`super` typed as atoms, no reload,
 `$init_goal/3` half of the unlink test left to the loader, the destroyModule invariant print and the generation bump not kept.
 (4) References: `'$declare_module'` acquires the source file (lookupSourceFile) and the module's `file` holds that reference until the
