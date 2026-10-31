@@ -387,3 +387,340 @@ function get_int_expression(ld::PL_local_data{T}, t::term_t, i::number)::Bool wh
     end
     return true
 end
+
+# ── do_format (pl-fmt.c :508-1017) ──────────────────────────────────────────────────────────────────
+
+# ORIGINAL (O1A): the `i`-th (0-based) fill point of the state, made when first used (upstream: `rub[MAXRUBBER]`).
+"The fill point `i` (0-based) of `state`, allocated on first use."
+function _rub!(state::format_state, i::Int)::rubber
+    while length(state.rub) <= i
+        push!(state.rub, rubber(0, 0, 0))
+    end
+    return state.rub[i + 1]
+end
+
+# PORT: pl-fmt.c NEED_ARG
+# (a macro in upstream: `return` from do_format with the error)
+@inline _fmt_need_arg(ld::PL_local_data, argc::Int)::Bool =
+    argc > 0 || (PL_format_error(ld, "not enough arguments"); false)
+
+# PORT: pl-fmt.c do_format
+# DIVERGES: the format text is a vector of code points (`_text_code_points`); the user-defined directive lookup
+# of `format_predicates` is left out (empty table, D9); `~@` calls `callProlog` with `PL_Q_PASS_EXCEPTION`, so
+# the exception stays pending where upstream (`PL_Q_CATCH_EXCEPTION`) returns it in `ex` and raises it again
+# after `end_sub_format`; `~:d` and `~:f` take the C locale (no stream locale); no `AR_BEGIN`/`AR_END`.
+"""
+    do_format(ld, fd, fmt, argc, argv, m) -> Bool
+
+Format the `argc` arguments in the term references `argv…` through the text `fmt` onto the stream `fd`; `m` is
+the module `~@` calls in (pl-fmt.c). An error is raised with the exception set and `false` returned.
+"""
+function do_format(
+    ld::PL_local_data{T}, fd::IOSTREAM, fmttxt::PL_chars_t, argc::Int, argv::term_t, m::Int
+)::Bool where {T}
+    gd = _query_gd(ld)
+    fmt = _text_code_points(fmttxt)
+    flen = length(fmt)
+    state = format_state(fd, IOPOS(), 0, UInt8[], 0, 0, rubber[])
+    here = 0
+    rc = true
+    if fd.position !== nothing                  # state.pos = *fd->position: also takes the escape state
+        p = fd.position
+        state.pos = IOPOS(p.byteno, p.charno, p.lineno, p.linepos, p.esc_state)
+    end
+
+    while here < flen
+        c = get_chr_from_text(fmt, here)
+        if c == Int('~')
+            arg = FMT_DEFAULT                   # Numeric argument
+            mod_colon = false                   # Used colon modifier
+            neg = false
+
+            # Get the numeric argument
+            here += 1
+            c = get_chr_from_text(fmt, here)
+            if c == Int('-')
+                neg = true
+                here += 1
+                c = get_chr_from_text(fmt, here)
+                isDigitW(c) || return PL_format_error(ld, "invalid argument")
+            end
+            if isDigitW(c)
+                arg = c - Int('0')
+                here += 1
+                while here < flen
+                    c = get_chr_from_text(fmt, here)
+                    if isDigitW(c)
+                        dw = c - Int('0')
+                        arg2 = arg * 10 + dw
+                        # upstream detects the wrap of an `int` (see mul64() in pl-arith.c)
+                        arg2 > typemax(Int32) && return PL_format_error(ld, "argument overflow")
+                        arg = arg2
+                        here += 1
+                    else
+                        neg && (arg = -arg)
+                        break
+                    end
+                end
+            elseif c == Int('*')
+                _fmt_need_arg(ld, argc) || return false
+                i = number()
+                if !get_int_expression(ld, argv, i) || i.type !== V_INTEGER || i.i < 0 ||
+                   i.i > typemax(Int32)
+                    return PL_format_arg_error(ld, string(Char(c)), argv)
+                end
+                argc -= 1                       # SHIFT
+                argv += 1
+                arg = Int(i.i)
+                here += 1
+                c = get_chr_from_text(fmt, here)
+            elseif c == Int('`') && here < flen
+                here += 1                       # text_next_code: the code point after the quote
+                arg = get_chr_from_text(fmt, here)
+                here += 1
+                c = get_chr_from_text(fmt, here)
+            end
+            if c == Int(':')
+                mod_colon = true
+                here += 1
+                c = get_chr_from_text(fmt, here)
+            end
+
+            # NOT PORTED (D9): the check for a user defined format (`format_predicates`), the table is empty.
+
+            if c == Int('a')                    # atomic
+                _fmt_need_arg(ld, argc) || return false
+                txt = PL_get_text(ld, argv, CVT_ATOM | CVT_STRING)
+                txt === nothing && return PL_format_arg_error(ld, "a", argv)
+                argc -= 1
+                argv += 1
+                outtext(state, txt) || return false
+                here += 1
+            elseif c == Int('c')                # ~c: character code
+                _fmt_need_arg(ld, argc) || return false
+                chr = PL_get_integer(ld, argv)
+                if chr !== nothing && VALID_CODE_POINT(chr)
+                    times = (arg == FMT_DEFAULT ? 1 : arg)
+                    argc -= 1
+                    argv += 1
+                    while times > 0
+                        times -= 1
+                        outchr(state, chr) || return false
+                    end
+                else
+                    return PL_format_arg_error(ld, "c", argv)
+                end
+                here += 1
+            elseif c == Int('e') || c == Int('E') || c == Int('f') || c == Int('F') ||
+                   c == Int('g') || c == Int('G') || c == Int('h') || c == Int('H')
+                _fmt_need_arg(ld, argc) || return false
+                n = number()
+                if !PL_get_number(ld, argv, n)
+                    if !valueExpression(ld, argv, n)
+                        return PL_format_arg_error(ld, string(Char(c)), argv)   # returns error
+                    end
+                end
+                argc -= 1
+                argv += 1
+                # `l = fd->locale` for `~:f`: the stream has no locale, D9
+                l = prolog_locale
+                b = UInt8[]
+                rc = formatFloat(ld, l, c, arg, n, b)
+                rc && (rc = oututf80(state, b))
+                rc || return false
+                here += 1
+            elseif c == Int('d') || c == Int('D') || c == Int('r') || c == Int('R') ||
+                   c == Int('I')
+                _fmt_need_arg(ld, argc) || return false
+                i = number()
+                get_int_expression(ld, argv, i) ||
+                    return PL_format_arg_error(ld, string(Char(c)), argv)   # return with error
+                argc -= 1
+                argv += 1
+                b = UInt8[]
+                si = false
+                if c == Int('d') || c == Int('D')
+                    if c == Int('D')
+                        l = PL_locale(".", mod_colon ? "_" : ",", FMT_GROUPING3)
+                    elseif mod_colon
+                        l = prolog_locale       # fd->locale, D9
+                    else
+                        l = nothing
+                    end
+                    arg == FMT_DEFAULT && (arg = 0)
+                    si = formatInteger(l, arg, 10, true, i, b)
+                elseif c == Int('I')
+                    g = Int(reinterpret(Int8, UInt8((arg == FMT_DEFAULT ? 3 : arg) & 0xff)))
+                    l = PL_locale(nothing, "_", Int[g, 0])
+                    si = formatInteger(l, 0, 10, true, i, b)
+                else                            # r,R
+                    arg == FMT_DEFAULT && (arg = 8)
+                    if arg < 2 || arg > 36
+                        r = PL_new_term_ref(ld)
+                        PL_put_integer(ld, r, arg)
+                        PL_error(ld, "", 0, "", ERR_DOMAIN, mk_sym(T, :radix), r)
+                        si = false
+                    else
+                        si = formatInteger(nothing, 0, arg, c == Int('r'), i, b)
+                    end
+                end
+                rc = si ? oututf80(state, b) : false
+                rc || return false
+                here += 1
+            elseif c == Int('s')                # string
+                _fmt_need_arg(ld, argc) || return false
+                txt = PL_get_text(ld, argv, CVT_ATOM | CVT_LIST | CVT_STRING)
+                txt === nothing && return PL_format_arg_error(ld, "s", argv)
+                if txt.encoding === ENC_ISO_LATIN_1
+                    tlen = txt.length
+                    if arg == FMT_DEFAULT
+                        arg = tlen
+                    elseif arg < 0
+                        arg = 0
+                    elseif arg < tlen
+                        tlen = arg
+                        txt = PL_chars_t(txt.text, tlen, txt.encoding, txt.canonical)
+                    end
+                    rc = outtext(state, txt)
+                else
+                    cps = _text_code_points(txt)
+                    tlen = length(cps)
+                    if arg == FMT_DEFAULT
+                        arg = tlen
+                    elseif arg < 0
+                        arg = 0
+                    elseif arg < tlen
+                        tlen = arg
+                    end
+                    rc = true
+                    for k in 1:tlen
+                        rc = outchr(state, cps[k])
+                        rc || break
+                    end
+                end
+                npad = arg - tlen
+                while rc && npad > 0
+                    rc = outchr(state, Int(' '))
+                    npad -= 1
+                end
+                argc -= 1
+                argv += 1
+                rc || return false
+                here += 1
+            elseif c == Int('i')                # ignore
+                _fmt_need_arg(ld, argc) || return false
+                argc -= 1
+                argv += 1
+                here += 1
+            elseif c == Int('k') || c == Int('p') || c == Int('q') || c == Int('w')
+                _fmt_need_arg(ld, argc) || return false
+                sstate = prepare_sub_format(ld, state, fd)
+                r = if c == Int('k')            # write_canonical
+                    pl_write_canonical(ld, argv)
+                elseif c == Int('p')            # print
+                    pl_print(ld, argv)
+                elseif c == Int('q')            # writeq
+                    pl_writeq(ld, argv)
+                else                            # write
+                    pl_write(ld, argv)
+                end
+                rc = end_sub_format(ld, sstate, r != FFALSE)
+                rc || return false
+                argc -= 1
+                argv += 1
+                here += 1
+            elseif c == Int('W')                # write_term(Value, Options)
+                argc < 2 && return PL_format_error(ld, "not enough arguments")
+                sstate = prepare_sub_format(ld, state, fd)
+                r = pl_write_term3(ld, 0, argv, argv + 1)
+                rc = end_sub_format(ld, sstate, r)
+                rc || return false
+                argc -= 2
+                argv += 2
+                here += 1
+            elseif c == Int('@')
+                argc < 1 && return PL_format_error(ld, "not enough arguments")
+                sstate = prepare_sub_format(ld, state, fd)
+                fid = PL_open_foreign_frame(ld)
+                rc = callProlog(gd, ld, m, argv, PL_Q_PASS_EXCEPTION)
+                rc && PL_rewind_foreign_frame(ld, fid)
+                rc = end_sub_format(ld, sstate, rc)
+                rc || return false
+                argc -= 1
+                argv += 1
+                here += 1
+            elseif c == Int('~')                # ~
+                outchr(state, Int('~')) || return false
+                here += 1
+            elseif c == Int('n')                # \n
+                arg == FMT_DEFAULT && (arg = 1)
+                while arg > 0
+                    arg -= 1
+                    outchr(state, Int('\n')) || return false
+                end
+                here += 1
+            elseif c == Int('N')                # \n if not on newline
+                if COLUMN(state) != 0
+                    outchr(state, Int('\n')) || return false
+                end
+                here += 1
+            elseif c == Int('t')                # insert tab
+                state.pending_rubber >= MAXRUBBER && return PL_format_error(ld, "Too many tab stops")
+                r = _rub!(state, state.pending_rubber)
+                r.where = state.buffered
+                r.pad = (arg == FMT_DEFAULT ? Int(' ') : arg)
+                r.size = 0
+                state.pending_rubber += 1
+                here += 1
+            elseif c == Int('|') || c == Int('+')   # set tab, tab relative
+                if c == Int('|') && arg == FMT_DEFAULT
+                    arg = COLUMN(state)
+                end
+                arg == FMT_DEFAULT && (arg = 8)
+                stop = (c == Int('+') ? state.tab_stop + arg : arg)
+                if stop < COLUMN(state) && mod_colon
+                    nl_and_reindent =
+                        state.pending_rubber != 0 ? state.rub[state.pending_rubber].pad : Int(' ')
+                else
+                    nl_and_reindent = 0
+                end
+                if state.pending_rubber == 0    # nothing to distribute
+                    r = _rub!(state, 0)
+                    r.where = state.buffered
+                    r.pad = Int(' ')
+                    state.pending_rubber += 1
+                end
+                distribute_rubber(state.rub, state.pending_rubber, stop - COLUMN(state))
+                emit_rubber(state) || return false
+                if nl_and_reindent != 0
+                    Sputcode(Int('\n'), state.out) < 0 && return false
+                    update_column(state, Int('\n'))
+                    r = _rub!(state, 0)
+                    r.where = state.buffered
+                    r.pad = nl_and_reindent
+                    state.pending_rubber += 1
+                    distribute_rubber(state.rub, state.pending_rubber, stop - COLUMN(state))
+                    emit_rubber(state) || return false
+                end
+                state.pos.linepos = stop
+                state.tab_stop = stop
+                here += 1
+            else
+                ex = PL_new_term_ref(ld)
+                PL_put_atom(ld, ex, codeToAtom(T, c))
+                return PL_error(
+                    ld, "format", 2, "", ERR_EXISTENCE, mk_sym(T, :format_character), ex
+                )
+            end
+        else
+            outchr(state, c) || return false    # text_next_code: one code point per element here
+            here += 1
+        end
+    end
+
+    if state.pending_rubber != 0                # not closed ~t: flush out
+        emit_rubber(state) || return false
+    end
+    argc != 0 && return PL_format_error(ld, "too many arguments")
+    return rc
+end
