@@ -85,3 +85,14 @@ MISMATCH 2 (include order, for the stack owner): B includes `os/pl-redirect.jl` 
   (pl-text.jl:25); the call is the same shape as pl-text.jl:121 builds. OK by reading. `PL_unify_text(ld, term, tail, text, type::Int)` (pl-text.jl:549) OK.
 - PL_error forms used (permission: pl-file.jl:420 form; type: pl-file.jl:1010 form), `get_stream_handle(ld, a::T, flags::Int)`,
   `Sopenmem(bufp, sizep, mode)` (pl-stream.jl:1202), `callProlog` module 0 = the context module (pl-fli.jl:670) as pl-pro.jl:128: checked by reading.
+
+## MUTANTS (tools/mutants/O1B.py, coder 2): 23 entries (21 with a kill row, 2 EQUIVALENT with file reasons Q1 Q2)
+Validated with a throwaway python3 -I + runpy checker: every `old` occurs once in its file, `new != old`, ids unique; the ONLY missing target is
+test/core_lang/test_format_swipl.jl (O1-A's rows, not on disk yet: its absence is expected; O1-A's handoff names it). Files: src/os/pl-redirect.jl and
+src/pl-pro.jl (E1: callProlog's `ex`). TARGETS = test_with_output_to_swipl.jl + test_format_swipl.jl + the six files that call with_output_to/2 in their
+Prolog text (test_write_swipl.jl:197, test_read_term_swipl.jl:392, test_builtins_swipl.jl:235/240, test_head_code_swipl.jl:144, test_blob.jl:110;
+test_io.jl:17 is a comment) + the sig_atomic/callProlog users (test_cleanup_swipl.jl, test_context_module_swipl.jl, test_query_answers.jl) for E1.
+At the first battery run: prune a target that fails on the unmutated tree (the driver refuses a failing baseline; the Prolog-text users may still need
+format/2 or another predicate not yet landed); re-fit any `old` that `warm.sh fmt` rewraps (multi-line anchors).
+D1/D2 (tellString/toldString) are killed only by O1-A's rows (column stops, ~@): if O1-A's file does not hit them the battery reports a survivor, to be
+killed by a row in test_format_swipl.jl, not here. NOT COVERED by any row (header of the list): popOutputContext's closed-stream branch.
