@@ -19,8 +19,8 @@
 # and `'$def_modules'/2`.
 # Since MOD5b declaring a module (`declareModule`, `'$declare_module'/6`) and destroying a temporary one
 # (`'$destroy_module'/1`, `acquireModule`/`releaseModule`).
-# LATER STEPS (the module system, D-0149): the non-deterministic `import_module/2` and
-# `'$current_module'/2` (MOD6, after NF1).
+# Since MOD6 the enumerations (on NF1's protocol): `import_module/2` and `'$current_module'/2` with the `module_enum` pool
+# (`newModuleEnum`, `advanceModuleEnum`, `freeModuleEnum`).
 
 # PORT: pl-incl.h UNKNOWN_FAIL
 "The `unknown` flag's `fail`: an undefined predicate fails silently (pl-incl.h)."
@@ -440,6 +440,45 @@ function pl_set_module1_va(
     return set_module(gd, ld, m, prop) ? FTRUE : FFALSE
 end
 
+# PORT: pl-modul.c import_module as pl_import_module2_va
+# (PRED_IMPL("import_module", 2, import_module, PL_FA_NONDETERMINISTIC)) — pl-modul.c:876-918; `ForeignRedoInt(i+1)` is
+# `PL_retry(i + 1)`. The supers are walked by position, as upstream's integers, which survive a change of the list.
+# DIVERGES: the list `m->supers` is `m.supers`, a vector of module indices.
+"`import_module(+Module, ?Import)`: the super modules of `Module`, in order; a module never seen is made (pl-modul.c)."
+function pl_import_module2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    gd = _query_gd(ld)
+    A1, A2 = PL__t0, PL__t0 + 1
+
+    ctl = PL_foreign_control(PL__ctx)
+    if ctl == FRG_FIRST_CALL
+        i = 0
+    elseif ctl == FRG_REDO
+        i = PL_foreign_context(PL__ctx)                 # (int)ForeignContextInt(PL__ctx)
+    else
+        return FTRUE                                    # FRG_CUTTED: succeed
+    end
+
+    m = get_module(gd, ld, A1, true)
+    m === nothing && return FFALSE
+
+    supers = m.supers
+    for n in 0:(length(supers) - 1)                     # for(n=0, c=m->supers; c; c=c->next, n++)
+        s = gd.modules.modules[supers[n + 1]]
+        if n == i
+            ndet = n + 1 < length(supers) && PL_is_variable(ld, A2)     # c->next != NULL && PL_is_variable(A2)
+
+            if PL_unify_atom(ld, A2, s.atom)
+                ndet && return PL_retry(i + 1)          # ForeignRedoInt(i+1)
+                return FTRUE
+            end
+        end
+    end
+
+    return FFALSE
+end
+
 # PORT: pl-modul.c add_import_module as pl_add_import_module3_va
 # (PRED_IMPL("add_import_module", 3, add_import_module, 0))
 "`add_import_module(+Module, +Import, +StartOrEnd)`: add `Import` as a super module of `Module` (pl-modul.c)."
@@ -475,6 +514,121 @@ function pl_delete_import_module2_va(
     super === nothing && return FFALSE
 
     return delSuperModule(gd.modules, me, super) ? FTRUE : FFALSE
+end
+
+# PORT: pl-modul.c get_existing_source_file
+# DIVERGES: the file or `nothing` (a file term that is no atom: `*sfp = NULL`, success) comes with `ok`: returns `(ok, sf)`, where
+# upstream writes `*sfp` through a pointer.
+"The source file the atom term reference `file` names, acquired; `(false, nothing)` for a name that is no source file (pl-modul.c)."
+function get_existing_source_file(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, file::term_t
+)::Tuple{Bool, Union{Nothing, SourceFile{T}}} where {T}
+    a = PL_get_atom(ld, file)
+    if a !== nothing
+        sf = lookupSourceFile(gd, a, false)
+        sf === nothing && return (false, nothing)
+        return (true, sf)
+    end
+
+    return (true, nothing)                              # *sfp = NULL
+end
+
+# PORT: pl-modul.c current_module as pl_current_module2_va
+# (PRED_IMPL("$current_module", 2, current_module, PL_FA_NONDETERMINISTIC)) — pl-modul.c:983-1075. The state is a record of
+# `ld.module_enums` (`newModuleEnum`), its index the `REDO_PTR` context (`PL_retry_address`); `FRG_CUTTED` frees it.
+# DIVERGES: hash-table order (pl-table.c); the kernel enumerates in creation order — the class of D-0145, D-0149 item 1, D-0157
+# item 2 with current_op/3 (src/pl-op.jl): a multi-answer enumeration gives upstream's answers as a SET in another order, so
+# rows compare sorted. Re-check trigger: pl-table.c ported with atom handles that match.
+"""
+    pl_current_module2_va(ld, A1, 2, ctx)
+
+`'\$current_module'(?Module, ?File)`: the module of a file or the file of a module (the list of the modules when the file has several),
+or the enumeration of the modules and their files; a temporary module is not listed, and the `system` class modules, other than
+`system`, only in system mode (pl-modul.c).
+"""
+function pl_current_module2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    gd = _query_gd(ld)
+    module_, file = PL__t0, PL__t0 + 1                  # term_t module = A1; term_t file = A2
+    pool = ld.module_enums
+
+    ctl = PL_foreign_control(PL__ctx)
+    if ctl == FRG_FIRST_CALL
+        # deterministic case: module --> file
+        name = PL_get_atom(ld, module_)
+        if name !== nothing
+            cm = isCurrentModule(gd.modules, name)
+            if cm !== nothing
+                f = cm.file == 0 ? mk_nil(T) : gd.files_array[cm.file].name   # !m->file ? ATOM_nil : m->file->name
+                return PL_unify_atom(ld, file, f) ? FTRUE : FFALSE
+            end
+
+            return FFALSE
+        end
+
+        ok, sf = get_existing_source_file(gd, ld, file)
+        ok || return FFALSE                             # given, but non-existing file
+
+        if sf !== nothing
+            rc = false
+
+            if !isempty(sf.modules)
+                if length(sf.modules) > 1
+                    tail = PL_copy_term_ref(ld, module_)
+                    head = PL_new_term_ref(ld)
+
+                    rc = true
+                    for sm in sf.modules
+                        if !(PL_unify_list(ld, tail, head, tail) && PL_unify_atom(ld, head, sm.atom))
+                            rc = false                  # goto out
+                            break
+                        end
+                    end
+                    rc && (rc = PL_unify_nil(ld, tail))
+                else
+                    rc = PL_unify_atom(ld, module_, sf.modules[1].atom)
+                end
+            end
+            releaseSourceFile(sf)
+
+            return rc ? FTRUE : FFALSE                  # source-file has no modules
+        end
+
+        k = newModuleEnum(ld, 0)
+    elseif ctl == FRG_REDO
+        k = PL_foreign_context_address(PL__ctx)         # e = CTX_PTR
+    elseif ctl == FRG_CUTTED
+        k = PL_foreign_context_address(PL__ctx)
+        freeModuleEnum(gd, ld, k)
+        return FTRUE
+    else
+        @assert false "\$current_module/2: control $ctl"
+        return FFALSE
+    end
+
+    # mode (-,-)
+    e = pool.states[k]
+    system = sym_key(mk_sym(T, :system))
+    while true
+        m = advanceModuleEnum(gd, ld, e)
+        m === nothing && break
+        f = m.file == 0 ? mk_nil(T) : gd.files_array[m.file].name
+
+        if sym_key(m.class) == system && m.name != system &&
+            !SYSTEM_MODE(ld) && PL_is_variable(ld, module_)
+            continue
+        end
+
+        if PL_unify_atom(ld, module_, m.atom) && PL_unify_atom(ld, file, f)
+            return PL_retry_address(k)                  # ForeignRedoPtr(e)
+        end
+
+        break                                           # must be an error
+    end
+
+    freeModuleEnum(gd, ld, k)
+    return FFALSE
 end
 
 # PORT: pl-modul.c current_typein_module as pl_current_typein_module1_va
@@ -1005,6 +1159,69 @@ function releaseModule(
     return nothing
 end
 
+# PORT: pl-modul.c newModuleEnum
+# DIVERGES: the state is a record of `ld.module_enums` and the result its index (`alloc_foreign_state!`), where upstream `malloc`s
+# it and returns NULL when it cannot (`PL_no_memory()` in the caller: not reachable here); `tenum` starts at the first place.
+"A state for an enumeration of the module table, `flags` `MENUM_TEMP` or 0: its index in the pool (pl-modul.c)."
+function newModuleEnum(ld::PL_local_data, flags::Int)::Int
+    pool = ld.module_enums
+    k = alloc_foreign_state!(pool)                      # malloc(sizeof(*en)); newTableEnumWP(GD->tables.modules)
+    en = pool.states[k]
+    en.next = 1
+    en.current = 0                                      # en->current = NULL
+    en.flags = flags
+    return k
+end
+
+# PORT: pl-modul.c advanceModuleEnum
+# DIVERGES: the table is the database's `module_table`, walked in creation order (D-0149 item 1); a record whose name is
+# not mapped back to its index is a DESTROYED module (`destroyModule` took the name out) and is not in the table, as upstream's
+# deleted entry is not enumerated. No lock (no threads).
+"The next module of the table, or `nothing`; a temporary one only with `MENUM_TEMP`, then it is referenced (pl-modul.c)."
+function advanceModuleEnum(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, en::module_enum
+)::Union{Nothing, module_t{T}} where {T}
+    table = gd.modules
+    temporary = sym_key(mk_sym(T, :temporary))
+    while true
+        i = 0                                           # advanceTableEnum(en->tenum, NULL, &v)
+        while i == 0 && en.next <= length(table.modules)
+            c = table.modules[en.next]
+            en.next += 1
+            get(table.names, c.name, 0) == c.index && (i = c.index)
+        end
+        i == 0 && return nothing                        # m = NULL
+        m = table.modules[i]
+
+        if sym_key(m.class) == temporary
+            (en.flags & MENUM_TEMP) == 0 && continue
+            m.references += 1
+            if en.current != 0
+                cur = table.modules[en.current]
+                sym_key(cur.class) == temporary && releaseModule_unlocked(gd, ld, cur)
+            end
+            en.current = m.index
+        end
+        return m
+    end
+end
+
+# PORT: pl-modul.c freeModuleEnum
+# DIVERGES: the state goes back to the pool of `ld` (`free_foreign_state!`), where upstream frees the table enumeration and `en`.
+"Release the temporary module an enumeration holds and give its state at index `k` back (pl-modul.c)."
+function freeModuleEnum(gd::PL_global_data{T}, ld::PL_local_data{T}, k::Int)::Nothing where {T}
+    pool = ld.module_enums
+    en = pool.states[k]
+    if en.current != 0
+        cur = gd.modules.modules[en.current]
+        sym_key(cur.class) == sym_key(mk_sym(T, :temporary)) &&
+            releaseModule_unlocked(gd, ld, cur)
+        en.current = 0
+    end
+    free_foreign_state!(pool, k)                        # freeTableEnum(en->tenum); free(en)
+    return nothing
+end
+
 # PORT: pl-modul.c destroyModule
 # DIVERGES: the invariant check that prints "Module %s: class %s; refs %d" (a debugging line on stderr, when a temporary module is
 # destroyed with no reference) and the bump of `GD->modules.generation` (the per-thread lookup cache is not ported, MOD1 Q2) are not
@@ -1345,10 +1562,11 @@ end
 # DIVERGES: the entries of the predicates the kernel has ported, in upstream's order (MOD1: the table, the
 # supers, the source and typein modules, `'$module_property'/2`); `PRED_DEF` ors in `PL_FA_VARARGS`.
 # Since MOD2 `strip_module/3`, since MOD5a `'$def_modules'/2`, `import/1`, `'$import'/2`, `export/1` and
-# `'$undefined_export'/2`, since MOD5b `'$declare_module'/6` and `'$destroy_module'/1`. LATER STEPS: `import_module/2`,
-# `'$current_module'/2` (non-deterministic: MOD6).
+# `'$undefined_export'/2`, since MOD5b `'$declare_module'/6` and `'$destroy_module'/1`, since MOD6 the non-deterministic
+# `import_module/2` and `'$current_module'/2`.
 "pl-modul.c's registration table (`BeginPredDefs(module)`): the ported entries."
 const PL_predicates_from_module = (
+    PL_extension("import_module", 2, pl_import_module2_va, PL_FA_NONDETERMINISTIC | PL_FA_VARARGS),
     PL_extension(
         "\$def_modules", 2, pl_def_modules2_va, PL_FA_TRANSPARENT | PL_FA_VARARGS
     ),
@@ -1356,6 +1574,9 @@ const PL_predicates_from_module = (
     PL_extension("add_import_module", 3, pl_add_import_module3_va, PL_FA_VARARGS),
     PL_extension("delete_import_module", 2, pl_delete_import_module2_va, PL_FA_VARARGS),
     PL_extension("set_module", 1, pl_set_module1_va, PL_FA_TRANSPARENT | PL_FA_VARARGS),
+    PL_extension(
+        "\$current_module", 2, pl_current_module2_va, PL_FA_NONDETERMINISTIC | PL_FA_VARARGS
+    ),
     PL_extension("\$module_property", 2, pl_module_property2_va, PL_FA_VARARGS),
     PL_extension("strip_module", 3, pl_strip_module3_va, PL_FA_TRANSPARENT | PL_FA_VARARGS),
     PL_extension("import", 1, pl_import1_va, PL_FA_TRANSPARENT | PL_FA_VARARGS),
