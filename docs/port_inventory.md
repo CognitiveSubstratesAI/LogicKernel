@@ -98,13 +98,15 @@ how many of the upstream file's functions are ported.
 | swipl-devel `src/pl-data.h` | code | `cbf4e1896275` | `src/pl-inline.jl` | 4 | 1 |
 | swipl-devel `src/pl-dbref.c` | code | `cbf4e1896275` | `src/pl-dbref.jl` | 11 | 11 |
 | swipl-devel `src/pl-dbref.h` | code | `cbf4e1896275` | `src/pl-dbref.jl` | 1 | 1 |
+| swipl-devel `src/pl-dict.c` | code | `cbf4e1896275` | `src/pl-dict.jl` | 29 | 20 |
+| swipl-devel `src/pl-dict.h` | code | `cbf4e1896275` | `src/pl-dict.jl` | 2 | 0 |
 | swipl-devel `src/pl-error.c` | code | `cbf4e1896275` | `src/pl-error.jl` | 23 | 14 |
 | swipl-devel `src/pl-error.h` | code | `cbf4e1896275` | `src/pl-error.jl` | 1 | 1 |
 | swipl-devel `src/pl-ext.c` | code | `cbf4e1896275` | `src/pl-ext.jl` | 5 | 3 |
 | swipl-devel `src/pl-fli.c` | code | `cbf4e1896275` | `src/pl-fli.jl` | 80 | 67 |
 | swipl-devel `src/pl-fli.h` | code | `cbf4e1896275` | `src/pl-fli.jl` | 11 | 9 |
 | swipl-devel `src/pl-funct.c` | code | `cbf4e1896275` | `src/pl-funct.jl` | 12 | 9 |
-| swipl-devel `src/pl-gc.c` | code | `cbf4e1896275` | `src/pl-gc.jl` | 6 | 4 |
+| swipl-devel `src/pl-gc.c` | code | `cbf4e1896275` | `src/pl-gc.jl` | 7 | 5 |
 | swipl-devel `src/pl-gc.c` | code | `cbf4e1896275` | `src/pl-wam.jl` | 1 | 1 |
 | swipl-devel `src/pl-gc.h` | code | `cbf4e1896275` | `src/pl-alloc.jl` | 1 | 0 |
 | swipl-devel `src/pl-gc.h` | code | `cbf4e1896275` | `src/pl-gc.jl` | 1 | 1 |
@@ -136,6 +138,7 @@ how many of the upstream file's functions are ported.
 | swipl-devel `src/pl-inline.h` | code | `cbf4e1896275` | `src/pl-inline.jl` | 18 | 15 |
 | swipl-devel `src/pl-list.c` | code | `cbf4e1896275` | `src/pl-list.jl` | 17 | 9 |
 | swipl-devel `src/pl-modul.c` | code | `cbf4e1896275` | `src/pl-modul.jl` | 47 | 32 |
+| swipl-devel `src/pl-mutex.c` | code | `cbf4e1896275` | `src/pl-mutex.jl` | 1 | 1 |
 | swipl-devel `src/pl-op.c` | code | `cbf4e1896275` | `src/pl-incl.jl` | 1 | 1 |
 | swipl-devel `src/pl-op.c` | code | `cbf4e1896275` | `src/pl-op.jl` | 20 | 16 |
 | swipl-devel `src/pl-prims.c` | code | `cbf4e1896275` | `src/pl-prims.jl` | 130 | 64 |
@@ -153,7 +156,7 @@ how many of the upstream file's functions are ported.
 | swipl-devel `src/pl-termhash.c` | code | `cbf4e1896275` | `src/pl-termhash.jl` | 35 | 7 |
 | swipl-devel `src/pl-termhash.h` | code | `cbf4e1896275` | `src/pl-termhash.jl` | 3 | 1 |
 | swipl-devel `src/pl-termwalk.c` | code | `cbf4e1896275` | `src/pl-termwalk.jl` | 15 | 5 |
-| swipl-devel `src/pl-thread.c` | code | `cbf4e1896275` | `src/pl-thread.jl` | 5 | 3 |
+| swipl-devel `src/pl-thread.c` | code | `cbf4e1896275` | `src/pl-thread.jl` | 6 | 4 |
 | swipl-devel `src/pl-trace.c` | code | `cbf4e1896275` | `src/pl-trace.jl` | 6 | 3 |
 | swipl-devel `src/pl-umap.c` | code | `cbf4e1896275` | `src/pl-umap.jl` | 6 | 3 |
 | swipl-devel `src/pl-variant.c` | code | `cbf4e1896275` | `src/pl-global.jl` | 2 | 2 |
@@ -236,13 +239,15 @@ checkout is pulled.
 | swipl-devel `src/pl-data.h` | `cbf4e1896275` | 2 | 2 | 0 | src/pl-incl.jl, src/pl-inline.jl |
 | swipl-devel `src/pl-dbref.c` | `cbf4e1896275` | 10 | 18 | 10 | src/pl-dbref.jl |
 | swipl-devel `src/pl-dbref.h` | `cbf4e1896275` | 0 | 0 | 0 | src/pl-dbref.jl |
+| swipl-devel `src/pl-dict.c` | `cbf4e1896275` | 21 | 57 | 17 | src/pl-dict.jl |
+| swipl-devel `src/pl-dict.h` | `cbf4e1896275` | 1 | 2 | 0 | src/pl-dict.jl |
 | swipl-devel `src/pl-error.c` | `cbf4e1896275` | 18 | 41 | 11 | src/pl-error.jl |
 | swipl-devel `src/pl-error.h` | `cbf4e1896275` | 0 | 0 | 0 | src/pl-error.jl |
 | swipl-devel `src/pl-ext.c` | `cbf4e1896275` | 4 | 10 | 2 | src/pl-ext.jl |
 | swipl-devel `src/pl-fli.c` | `cbf4e1896275` | 76 | 286 | 65 | src/pl-fli.jl |
 | swipl-devel `src/pl-fli.h` | `cbf4e1896275` | 11 | 15 | 9 | src/pl-fli.jl |
 | swipl-devel `src/pl-funct.c` | `cbf4e1896275` | 10 | 17 | 7 | src/pl-funct.jl |
-| swipl-devel `src/pl-gc.c` | `cbf4e1896275` | 6 | 166 | 5 | src/pl-gc.jl, src/pl-wam.jl |
+| swipl-devel `src/pl-gc.c` | `cbf4e1896275` | 7 | 166 | 6 | src/pl-gc.jl, src/pl-wam.jl |
 | swipl-devel `src/pl-gc.h` | `cbf4e1896275` | 1 | 2 | 1 | src/pl-alloc.jl, src/pl-gc.jl |
 | swipl-devel `src/pl-global.h` | `cbf4e1896275` | 0 | 0 | 0 | src/os/pl-file.jl, src/pl-global.jl, src/pl-incl.jl |
 | swipl-devel `src/pl-gmp.c` | `cbf4e1896275` | 29 | 81 | 8 | src/pl-gmp.jl |
@@ -255,6 +260,7 @@ checkout is pulled.
 | swipl-devel `src/pl-inline.h` | `cbf4e1896275` | 18 | 53 | 13 | src/pl-arith.jl, src/pl-gmp.jl, src/pl-inline.jl |
 | swipl-devel `src/pl-list.c` | `cbf4e1896275` | 11 | 13 | 7 | src/pl-list.jl |
 | swipl-devel `src/pl-modul.c` | `cbf4e1896275` | 36 | 70 | 29 | src/pl-modul.jl |
+| swipl-devel `src/pl-mutex.c` | `cbf4e1896275` | 1 | 33 | 1 | src/pl-mutex.jl |
 | swipl-devel `src/pl-op.c` | `cbf4e1896275` | 16 | 21 | 15 | src/pl-incl.jl, src/pl-op.jl |
 | swipl-devel `src/pl-prims.c` | `cbf4e1896275` | 92 | 188 | 54 | src/pl-prims.jl |
 | swipl-devel `src/pl-pro.c` | `cbf4e1896275` | 3 | 33 | 3 | src/pl-pro.jl |
@@ -270,7 +276,7 @@ checkout is pulled.
 | swipl-devel `src/pl-termhash.c` | `cbf4e1896275` | 11 | 16 | 2 | src/pl-termhash.jl |
 | swipl-devel `src/pl-termhash.h` | `cbf4e1896275` | 0 | 0 | 0 | src/pl-termhash.jl |
 | swipl-devel `src/pl-termwalk.c` | `cbf4e1896275` | 11 | 28 | 3 | src/pl-termwalk.jl |
-| swipl-devel `src/pl-thread.c` | `cbf4e1896275` | 5 | 267 | 3 | src/pl-thread.jl |
+| swipl-devel `src/pl-thread.c` | `cbf4e1896275` | 6 | 267 | 4 | src/pl-thread.jl |
 | swipl-devel `src/pl-trace.c` | `cbf4e1896275` | 6 | 77 | 3 | src/pl-trace.jl |
 | swipl-devel `src/pl-umap.c` | `cbf4e1896275` | 4 | 8 | 3 | src/pl-umap.jl |
 | swipl-devel `src/pl-variant.c` | `cbf4e1896275` | 9 | 17 | 5 | src/pl-global.jl, src/pl-variant.jl |
@@ -292,7 +298,7 @@ checkout is pulled.
 | swipl-devel `tests/db/test_db.pl` | `cbf4e1896275` | 2 | 10 | 0 | test/db/test_db.jl |
 | swipl-devel `tests/db/test_jit.pl` | `cbf4e1896275` | 16 | 21 | 0 | test/db/test_jit.jl |
 | swipl-devel `tests/rational/test_ieee754.pl` | `cbf4e1896275` | 0 | 15 | 0 | test/rational/test_ieee754.jl |
-| **total** | | **1516** | **4549** | **858** | |
+| **total** | | **1541** | **4641** | **878** | |
 <!-- END GENERATED coverage -->
 
 ### Not ported: unreachable upstream

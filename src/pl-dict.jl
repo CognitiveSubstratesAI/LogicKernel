@@ -1,4 +1,5 @@
 # UPSTREAM: swipl-devel src/pl-dict.c @ cbf4e1896275
+# UPSTREAM: swipl-devel src/pl-dict.h @ cbf4e1896275
 # CLASS: code
 # COPYRIGHT: Copyright (c)  2013-2026, VU University Amsterdam
 # COPYRIGHT: SWI-Prolog Solutions b.v.
@@ -20,7 +21,7 @@
 # `dict_same_keys/2`, `is_most_general_dict/1`, `PL_for_dict`, the functional notation's `./3`); the
 # `dict_functors` cache (`lookupFunctorDef` is called each time).
 
-# ORIGINAL: pl-atom.ih `ATOM_dict` (generated from src/ATOMS): the reserved atom `dict` (src/pl-ressymbol.jl retypes it).
+# ORIGINAL (BOOTPRED): pl-atom.ih `ATOM_dict` (generated from src/ATOMS): the reserved atom `dict` (src/pl-ressymbol.jl retypes it).
 "The atom word of the reserved symbol `dict` (pl-atom.ih `ATOM_dict`): the same in every database."
 const ATOM_dict = builtin_atom("dict")
 
@@ -151,15 +152,27 @@ end
     PL_DICT_KEY_DUPLICATE = -2
 end
 
-# PORT: pl-dict.c DICT_GET_ALL, DICT_GET_PAIRS, DICT_GET_EQUALS, DICT_GET_COLON, DICT_GET_TERM
-"`PL_get_dict_ex`' `flags`: which forms of a key-value pair are read (pl-dict.c)."
-const DICT_GET_ALL = 0xff
-const DICT_GET_PAIRS = 0x01
-const DICT_GET_EQUALS = 0x02
-const DICT_GET_COLON = 0x04
-const DICT_GET_TERM = 0x08
+# PORT: pl-dict.c DICT_GET_ALL
+"`PL_get_dict_ex`' `flags`: all forms of a key-value pair are read (pl-dict.c)."
+const DICT_GET_ALL = Int(0xff)
 
-# ORIGINAL: the term reference `ex` raised as `error(duplicate_key(Key), _)`: pl-error.c's `ERR_DUPLICATE_KEY`
+# PORT: pl-dict.c DICT_GET_PAIRS
+"`PL_get_dict_ex`' `flags`: `Key-Value` is read (pl-dict.c)."
+const DICT_GET_PAIRS = Int(0x01)
+
+# PORT: pl-dict.c DICT_GET_EQUALS
+"`PL_get_dict_ex`' `flags`: `Key=Value` is read (pl-dict.c)."
+const DICT_GET_EQUALS = Int(0x02)
+
+# PORT: pl-dict.c DICT_GET_COLON
+"`PL_get_dict_ex`' `flags`: `Key:Value` is read (pl-dict.c)."
+const DICT_GET_COLON = Int(0x04)
+
+# PORT: pl-dict.c DICT_GET_TERM
+"`PL_get_dict_ex`' `flags`: `Key(Value)` is read (pl-dict.c)."
+const DICT_GET_TERM = Int(0x08)
+
+# ORIGINAL (BOOTPRED): the term reference `ex` raised as `error(duplicate_key(Key), _)`: pl-error.c's `ERR_DUPLICATE_KEY`
 # branch, `PL_unify_term(formal, PL_FUNCTOR, FUNCTOR_duplicate_key1, PL_TERM, key)`.
 # DIVERGES: a function of its own, not a `PL_error` code (no `ERR_DUPLICATE_KEY` in the enum: pl-dict.c is its only
 # caller), as `PL_existence_error3` (src/pl-error.jl).
@@ -172,7 +185,7 @@ function PL_duplicate_key_error(ld::PL_local_data{T}, key::term_t)::Bool where {
     return _PL_error_close!(ld, caller, fid, except, formal, swi, "", 0, "")
 end
 
-# ORIGINAL: pl-inline.h `*dp = linkValI(val)` for a value LOCATION `loc` (a global position or a slot, `_deref_loc`'s):
+# ORIGINAL (BOOTPRED): pl-inline.h `*dp = linkValI(val)` for a value LOCATION `loc` (a global position or a slot, `_deref_loc`'s):
 # the cell at `dp` holds what `loc` dereferences to — an unbound or attributed variable by reference, a word as it is.
 # A value-table word is shared; a slot's side value gets its own word (`_value_word!`).
 "Store in global cell `dp` what the location `loc` dereferences to (pl-inline.h `linkValI`)."
@@ -231,7 +244,8 @@ function dict_ordered(
     return (ordered, word(0))
 end
 
-# PORT: pl-dict.c compare_dict_entry, dict_order
+# PORT: pl-dict.c dict_order
+# (`compare_dict_entry`, the comparison `sort_r` is given, is the order `sortperm` has on the key words.)
 # DIVERGES: the pairs are sorted by their key WORDS (`SCALAR_TO_CMP` on the dereferenced key cells) with Julia's
 # `sortperm` on the keys read out, the cells written back in the new order (upstream: `sort_r` over the cells in
 # place); `dict` is the position of the functor cell; the result is `(status, dupl)` as `dict_ordered`'s.
@@ -574,11 +588,11 @@ end
 
 # ── select_dict/3, get_dict/3 (part 5d) ───────────────────────────────────────────────────────────
 
-# ORIGINAL: pl-atom.ih `ATOM_dyndict` (generated from src/ATOMS): the tag of a dict made from others (select_dict/3's rest).
+# ORIGINAL (BOOTPRED): pl-atom.ih `ATOM_dyndict` (generated from src/ATOMS): the tag of a dict made from others (select_dict/3's rest).
 "The atom word of `dyndict` (pl-atom.ih `ATOM_dyndict`): the same in every database."
 const ATOM_dyndict = builtin_atom("dyndict")
 
-# ORIGINAL: pl-dict.c `Word` pointer arguments as LOCATIONS: `_dict_unify_key` is `PL_unify_atomic(t, w)` for a key WORD
+# ORIGINAL (BOOTPRED): pl-dict.c `Word` pointer arguments as LOCATIONS: `_dict_unify_key` is `PL_unify_atomic(t, w)` for a key WORD
 # `w` (an atom or a small integer: `PL_unify_atomic` here takes an atomic term, not a word). A variable is bound to it;
 # anything else is equal to it only as the same word (an atom's word is unique, a small integer is tagged in place).
 "Unify the term reference `t` with the dict key word `w` (pl-fli.c `PL_unify_atomic` on a word)."

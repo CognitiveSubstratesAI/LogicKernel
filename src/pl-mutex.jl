@@ -1,6 +1,6 @@
 # UPSTREAM: swipl-devel src/pl-mutex.c @ cbf4e1896275
 # CLASS: code
-# COPYRIGHT: Copyright (c)  2017-2023, University of Amsterdam,
+# COPYRIGHT: Copyright (c)  2017-2023, University of Amsterdam
 # COPYRIGHT: VU University Amsterdam
 # COPYRIGHT: CWI, Amsterdam
 # COPYRIGHT: SWI-Prolog Solutions b.v.

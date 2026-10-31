@@ -758,6 +758,8 @@ fixed it or a public issue exists.
 | `boot/init.jl` | the MINIMAL LOADER (R1f): `load_file!` — boot/init.pl's consult path in Julia over the C ports: `read_clause`, `'$compile_term'`, `'$store_clause'` (through `'$record_clause'/3`), `'$execute_directive_3'` (a goal or a conjunction, through the query API, backtracking), `'$pattr_directive'`/`'$set_pattr'` (through `'$set_predicate_attribute'/3`), `'$valid_term'`; the messages swipl prints, returned | `boot/init.pl` |
 | `src/pl-attvar.jl` | `saveWakeup`, `restoreWakeup`, `restore_exception` — the pending exception set aside while `findCatcher` unifies the ball with the catchers (since V9f); `varBindConst` (L1c: the VM's `bindConst` of a global cell); `bindConst` (AV1: its attributed-variable branch is refused, a `NotPortedError` naming AV3, until AV3); since AV2 the attribute STORE — `PL_get_attr`, `link_attvar`, `make_new_attvar`, `put_new_attvar`, `find_attr`, `put_att_value`, `put_attr`, `get_attr`, `del_attr` and attvar/1, put_attr/3, get_attr/3, del_attr/2, del_attrs/1, get_attrs/2, put_attrs/2, `$attv_unify/2` (`PL_predicates_from_attvar`; `PL_is_attvar` in src/pl-fli.jl); binding and waking them is AV3's — AV1 ported their word layer (`DU_ATTVAR`/`DREF_ATTVAR`, `linkValI` by `needsRef`, the index key, the chain: `register_attvar` in src/pl-inline.jl, `reclaim_attvars` in src/pl-wam.jl) | `src/pl-attvar.c`, `src/pl-attvar.h` |
 | `src/pl-pro.jl` | `callProlog` — a goal called from foreign code, in a query of its own — and `sig_atomic/1`, through which the cleanup family runs its Setup goal (since V9g); the toplevel, `abort/0` and the metacut are not ported | `src/pl-pro.c` |
+| `src/pl-mutex.jl` | since BOOTPRED, `with_mutex/2` (`pl_with_mutex`) in the form pl-mutex.c has for a build without threads: `once/1` through `callProlog`, the mutex argument not examined (swipl 10.1.19 examines it); the mutex table and the `mutex_*` predicates are not ported | `src/pl-mutex.c` |
+| `src/pl-dict.jl` | since BOOTPRED, dicts as pl-dict.c lays them out (`dict`/(2N+1), tag then value/key pairs sorted by the key word): `is_dict/1,2`, `dict_create/3`, `put_dict/3`, `select_dict/3`, `get_dict/3` (`PL_predicates_from_dict`) with `dict_lookup_ptr`, `dict_order`, `PL_get_dict_ex`, `put_dict`, `select_dict` and their helpers; the reader and writer have no dict syntax, and the other dict predicates are not ported | `src/pl-dict.c`, `src/pl-dict.h` |
 | `src/pl-rec.jl` | recorded terms (since V9g-b): `compileTermToHeap` — a term taken off the stacks, as a copy whose cyclic references are kept beside it instead of in the binding store — and `copyRecordToGlobal`, which puts it back with fresh variables whose standard order is the order of upstream's cells; `erase/1` and `instance/2` (with `fixup_ssu`) of a clause reference (since D1); the recorded database (`recorda/3`, `recorded/3`, `erase/1` and `instance/2` of a record) is not ported | `src/pl-rec.c` |
 | `src/pl-dbref.jl` | since R2 D1, database references: the clause blob type (`clause_blob`, registered by the database, `initDBRef!`), `lookup_clref`, `clause_clref`, `PL_unify_clref`, `PL_put_clref`, `PL_is_dbref`, `PL_get_dbref`, `PL_get_clref`, `acquire_clause_blob`/`release_clause_blob` (the `DBREF_CLAUSE` mark); the payload is the clause's number in `gd.clause_refs` (upstream: the pointer); the record blob is D2's | `src/pl-dbref.c`, `src/pl-dbref.h` |
 | `src/pl-bag.jl` | the bags of findall/3 (since V9g-b): `'$new_findall_bag'/0`, `'$add_findall_bag'/1,2`, `'$collect_findall_bag'/2`, `'$destroy_findall_bag'/0` — the innermost bag of the thread is implicit, the answers are records, and the last answer is put back first; `'$suspend_findall_bag'/0` (findnsols/4,5: a nondeterministic foreign predicate) is not ported | `src/pl-bag.c` |
@@ -928,8 +930,10 @@ graph LR
     pl_supervisor["pl-supervisor.jl"]
     pl_trace["pl-trace.jl"]
     pl_pro["pl-pro.jl"]
+    pl_mutex["pl-mutex.jl"]
     pl_bag["pl-bag.jl"]
     pl_list["pl-list.jl"]
+    pl_dict["pl-dict.jl"]
     pl_op["pl-op.jl"]
     pl_write["pl-write.jl"]
     pl_sys["pl-sys.jl"]
@@ -1159,14 +1163,18 @@ graph LR
     pl_termhash --> pl_incl
     pl_termhash --> pl_termwalk
     pl_termhash --> pl_comp
+    pl_thread --> term_interface
     pl_thread --> default_term
     pl_thread --> pl_incl
+    pl_thread --> SWI_Prolog
     pl_thread --> pl_global
     pl_thread --> pl_inline
+    pl_thread --> pl_fli
     pl_thread --> os_pl_os
     pl_thread --> pl_proc
     pl_gc --> default_term
     pl_gc --> pl_incl
+    pl_gc --> SWI_Prolog
     pl_gc --> pl_vmi
     pl_gc --> pl_global
     pl_gc --> pl_inline
@@ -1455,6 +1463,10 @@ graph LR
     pl_pro --> pl_fli
     pl_pro --> pl_error
     pl_pro --> pl_proc
+    pl_mutex --> SWI_Prolog
+    pl_mutex --> pl_global
+    pl_mutex --> pl_comp
+    pl_mutex --> pl_pro
     pl_bag --> term_interface
     pl_bag --> default_term
     pl_bag --> pl_incl
@@ -1476,6 +1488,21 @@ graph LR
     pl_list --> pl_fli
     pl_list --> pl_error
     pl_list --> pl_read
+    pl_dict --> term_interface
+    pl_dict --> default_term
+    pl_dict --> pl_incl
+    pl_dict --> SWI_Prolog
+    pl_dict --> pl_atom
+    pl_dict --> pl_funct
+    pl_dict --> pl_global
+    pl_dict --> pl_inline
+    pl_dict --> pl_prims
+    pl_dict --> pl_alloc
+    pl_dict --> pl_wam
+    pl_dict --> pl_fli
+    pl_dict --> pl_attvar
+    pl_dict --> pl_error
+    pl_dict --> pl_read
     pl_op --> term_interface
     pl_op --> default_term
     pl_op --> pl_incl
@@ -1564,6 +1591,8 @@ graph LR
     pl_ext --> pl_variant
     pl_ext --> pl_copyterm
     pl_ext --> pl_rec
+    pl_ext --> pl_thread
+    pl_ext --> pl_gc
     pl_ext --> pl_wam
     pl_ext --> pl_fli
     pl_ext --> pl_attvar
@@ -1578,8 +1607,10 @@ graph LR
     pl_ext --> pl_supervisor
     pl_ext --> pl_trace
     pl_ext --> pl_pro
+    pl_ext --> pl_mutex
     pl_ext --> pl_bag
     pl_ext --> pl_list
+    pl_ext --> pl_dict
     pl_ext --> pl_op
     pl_ext --> pl_write
     pl_ext --> pl_sys
