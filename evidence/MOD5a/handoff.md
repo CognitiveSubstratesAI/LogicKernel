@@ -64,3 +64,29 @@ the weak-import NotPortedError at pl-proc.jl:1028 is KEPT and now becomes reacha
 GATE ORDER for the gate agent: fmt, check, rows x3 term types, test_type_discipline, branch-gate, alloc pins only if the run loop
 changed (it did not), mutants/MOD5a to CI, crash-term grep (no hits expected in my text).
 Daemon: coder 1 started none. Hooks: edit-and-commit-in-one-call blocks twice (split), the cap hook at 151k.
+
+## coder 2 (EDIT-ONLY, nothing compiled, no Julia started) — SOURCE COMPLETE
+Commits on wip/mod5a after coder 1's ddc3076: fd63662 group 3 (export/import, ERR_IMPORT_PROC, exportProcedureSource);
+ce500b1 `'$def_modules'/2` (MAX_TARGETS, find_modules_with_defs, pl_def_modules2_va; src/pl-modul.jl, before the
+module_code_size block); 9de843f registration in PL_predicates_from_module (upstream's order and flags: `$def_modules`
+first; `import`, `$import`, `export` (transparent) and `$undefined_export` after strip_module/3) + the two header
+comments reworded (now say what MOD5a ports; the remaining items under "LATER STEPS"); 6f0b418 manifest entries
+(test/static_analysis_manifest.jl, MOD5a block after `pl_context_module`: isPublicModule, exportProcedure,
+exportProcedureSource, export_pi1, export_pi, fixExportModule, fixExport, atomToImportStrength, import_,
+find_modules_with_defs, PL_error ERR_IMPORT_PROC method, 10-arg _PL_error_close!, the five `_va` predicates; all `false`).
+OPEN POINT CLOSED (plist): `PL_put_variable` makes a global cell (a slot holds no unbound word), so `PL_cons_functor`
+with plist as an argument lays in a reference to that cell via `_cell_link!` = upstream's PL_unify_term PL_TERM (linkValG).
+No extra globalisation written. Verify in the rows: the pair `M-[PI|_]` is shared with the list tail that `PL_unify_list`
+binds, and `[]` closes it (`PL_unify_nil(plist)`).
+`PL_error_code` / `_enum_hash`: the manifest keys `_enum_hash` by enum TYPE (lines ~2461-2470, the R1c list); PL_error_code
+has no entry and SSU1 appended a member without one; a new member adds no type, so NO manifest entry is needed - the
+gate agent's `check` confirms. Nothing invented.
+NOT WRITTEN (a later coder): rows (test/modules/ file + evidence/MOD5a gen_rows.py + driver + .out, oracle swipl; ONE
+extractor; both sides non-empty), tools/mutants/MOD5a.py (TARGETS: every test file exercising export/import/def_modules,
+D-0238: the module rows, MOD1..MOD4 rows, the load/consult files that call export/import via the module/2 path),
+docs/architecture.md MOD5a section, `warm.sh inventory` for docs/port_inventory.md.
+FLAGS (new): (6) the formatter may reflow a few long lines in the new code and the manifest block: `warm.sh fmt` first.
+(7) find_modules_with_defs raises `error("OOPS loop in default modules???")` for upstream's sysError (a kernel error).
+(8) pl_def_modules2_va: `PL_resource_error` then FFALSE for >10 targets, as upstream. (9) The manifest signatures are
+from the definitions' annotations (`find_modules_with_defs`: `Vector{Tuple{UInt64,Int,Int}}`, term_t = Int): `check` verifies.
+Daemon: coder 2 started none and did not touch lanes.conf.
