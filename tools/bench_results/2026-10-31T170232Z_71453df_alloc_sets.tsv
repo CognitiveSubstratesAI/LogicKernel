@@ -1,0 +1,359 @@
+# machine: juliaagi; not quiet (another gate's daemon running); allocation counts only (D-0172)
+# commit: 71453df (B = this tree); A = origin/main 07a8e01 (tree ~/code/lk-lb2), both run with this tree's tools/bench.jl --alloc-only
+# date: 2026-10-31 UTC; tools/bench_alloc_sets.sh A B 5; 32 cases, 0 MODE SHIFT
+# summary table (sets of 5 fresh-process counts per side):
+# case                          A                                   B                                   verdict
+# compare ground                {4x5}                               {4x5}                               identical
+# =@= ground                    {7x5}                               {7x5}                               identical
+# =@= vars                      {63x5}                              {63x5}                              identical
+# term_hash ground              {4108x5}                            {4108x5}                            identical
+# variant_sha1 ground           {22x5}                              {22x5}                              identical
+# variant_sha1 vars             {50x5}                              {50x5}                              identical
+# variant_hash ground           {18x5}                              {18x5}                              identical
+# variant_hash vars             {46x5}                              {46x5}                              identical
+# = ground                      {0x5}                               {0x5}                               identical
+# = bind vars                   {0x5}                               {0x5}                               identical
+# = var-var                     {0x5}                               {0x5}                               identical
+# occurs-check bind vars        {0x5}                               {0x5}                               identical
+# clause/2 1000 facts           {1493x5}                            {1493x5}                            identical
+# compileClause fact            {27x5}                              {27x5}                              identical
+# rule head + analysis          {34x5}                              {34x5}                              identical
+# compileClause rule            {40x5}                              {40x5}                              identical
+# query cp(X,Y) 1000            {7x5}                               {7x5}                               identical
+# query cp(500,Y)               {1x5}                               {1x5}                               identical
+# nreverse                      {0x5}                               {0x5}                               identical
+# compare/3 ×1000, body         {1000x5}                            {1000x5}                            identical
+# unify inline ×1000, body      {1489x5}                            {1489x5}                            identical
+# findall/3 ×1000               {8887x5}                            {8887x5}                            identical
+# findall/3 + sort/2 ×1000      {8901x5}                            {8901x5}                            identical
+# bagof/3 ×1000, 3 bags         {11031x5}                           {11031x5}                           identical
+# derive                        {0x5}                               {0x5}                               identical
+# qsort                         {0x5}                               {0x5}                               identical
+# poly_10                       {0x5}                               {0x5}                               identical
+# term_to_atom clause           {232x5}                             {232x5}                             identical
+# term_to_atom write clause     {237x3, 239x2}                      {237x5}                             mode same
+# 1000 frames + choice points   {0x5}                               {0x5}                               identical
+# attempt f(X)=f(a)             {0x5}                               {0x5}                               identical
+# attempt + finally             {0x5}                               {0x5}                               identical
+# 32 case(s), 0 with a MODE SHIFT
+# raw rows: side<TAB>process<TAB>ALLOC row
+A	1	ALLOC	compare ground	4.000	4.000	4.000	256	10
+A	1	ALLOC	=@= ground	7.000	7.000	7.000	256	10
+A	1	ALLOC	=@= vars	63.000	63.000	63.000	64	10
+A	1	ALLOC	term_hash ground	4108.000	4108.000	4108.000	256	10
+A	1	ALLOC	variant_sha1 ground	22.000	22.000	22.000	128	10
+A	1	ALLOC	variant_sha1 vars	50.000	50.000	50.000	128	10
+A	1	ALLOC	variant_hash ground	18.000	18.000	18.000	128	10
+A	1	ALLOC	variant_hash vars	46.000	46.000	46.000	128	10
+A	1	ALLOC	= ground	0.000	0.000	0.000	512	10
+A	1	ALLOC	= bind vars	0.000	0.000	0.000	512	10
+A	1	ALLOC	= var-var	0.000	0.000	0.000	512	10
+A	1	ALLOC	occurs-check bind vars	0.000	0.000	0.000	256	10
+A	1	ALLOC	clause/2 1000 facts	1493.000	1493.000	1493.000	256	10
+A	1	ALLOC	compileClause fact	27.000	27.000	27.000	32768	10
+A	1	ALLOC	rule head + analysis	34.000	34.000	34.000	16384	10
+A	1	ALLOC	compileClause rule	40.000	40.000	40.000	16384	10
+A	1	ALLOC	query cp(X,Y) 1000	7.000	7.000	7.008	256	10
+A	1	ALLOC	query cp(500,Y)	1.000	1.000	1.000	131072	10
+A	1	ALLOC	nreverse	0.000	0.000	0.000	512	10
+A	1	ALLOC	compare/3 ×1000, body	1000.000	1000.000	1000.000	256	10
+A	1	ALLOC	unify inline ×1000, body	1489.000	1489.000	1489.000	128	10
+A	1	ALLOC	findall/3 ×1000	8887.000	8887.000	8887.000	64	10
+A	1	ALLOC	findall/3 + sort/2 ×1000	8901.000	8901.000	8901.000	128	10
+A	1	ALLOC	bagof/3 ×1000, 3 bags	11031.000	11031.000	11031.000	32	10
+A	1	ALLOC	derive	0.000	0.000	0.000	4096	10
+A	1	ALLOC	qsort	0.000	0.000	0.000	512	10
+A	1	ALLOC	poly_10	0.000	0.000	0.000	4	10
+A	1	ALLOC	term_to_atom clause	232.000	232.000	232.001	2048	10
+A	1	ALLOC	term_to_atom write clause	237.000	237.000	285.021	512	10
+A	1	ALLOC	1000 frames + choice points	0.000	0.000	0.000	4096	10
+A	1	ALLOC	attempt f(X)=f(a)	0.000	0.000	0.000	1048576	10
+A	1	ALLOC	attempt + finally	0.000	0.000	0.000	1048576	10
+A	2	ALLOC	compare ground	4.000	4.000	4.000	512	10
+A	2	ALLOC	=@= ground	7.000	7.000	7.000	256	10
+A	2	ALLOC	=@= vars	63.000	63.000	63.000	32	10
+A	2	ALLOC	term_hash ground	4108.000	4108.000	4108.000	512	10
+A	2	ALLOC	variant_sha1 ground	22.000	22.000	22.000	128	10
+A	2	ALLOC	variant_sha1 vars	50.000	50.000	50.000	64	10
+A	2	ALLOC	variant_hash ground	18.000	18.000	18.000	128	10
+A	2	ALLOC	variant_hash vars	46.000	46.000	46.000	128	10
+A	2	ALLOC	= ground	0.000	0.000	0.000	256	10
+A	2	ALLOC	= bind vars	0.000	0.000	0.000	512	10
+A	2	ALLOC	= var-var	0.000	0.000	0.000	256	10
+A	2	ALLOC	occurs-check bind vars	0.000	0.000	0.000	512	10
+A	2	ALLOC	clause/2 1000 facts	1493.000	1493.000	1493.000	256	10
+A	2	ALLOC	compileClause fact	27.000	27.000	27.000	32768	10
+A	2	ALLOC	rule head + analysis	34.000	34.000	34.000	32768	10
+A	2	ALLOC	compileClause rule	40.000	40.000	40.000	32768	10
+A	2	ALLOC	query cp(X,Y) 1000	7.000	7.000	7.004	512	10
+A	2	ALLOC	query cp(500,Y)	1.000	1.000	1.000	131072	10
+A	2	ALLOC	nreverse	0.000	0.000	0.000	512	10
+A	2	ALLOC	compare/3 ×1000, body	1000.000	1000.000	1000.000	256	10
+A	2	ALLOC	unify inline ×1000, body	1489.000	1489.000	1489.000	256	10
+A	2	ALLOC	findall/3 ×1000	8887.000	8887.000	8887.000	128	10
+A	2	ALLOC	findall/3 + sort/2 ×1000	8901.000	8901.000	8901.000	32	10
+A	2	ALLOC	bagof/3 ×1000, 3 bags	11031.000	11031.000	11031.000	32	10
+A	2	ALLOC	derive	0.000	0.000	0.000	4096	10
+A	2	ALLOC	qsort	0.000	0.000	0.000	512	10
+A	2	ALLOC	poly_10	0.000	0.000	0.000	8	10
+A	2	ALLOC	term_to_atom clause	232.000	232.000	232.000	4096	10
+A	2	ALLOC	term_to_atom write clause	239.000	239.000	287.021	512	10
+A	2	ALLOC	1000 frames + choice points	0.000	0.000	0.000	4096	10
+A	2	ALLOC	attempt f(X)=f(a)	0.000	0.000	0.000	1048576	10
+A	2	ALLOC	attempt + finally	0.000	0.000	0.000	1048576	10
+A	3	ALLOC	compare ground	4.000	4.000	4.000	256	10
+A	3	ALLOC	=@= ground	7.000	7.000	7.000	512	10
+A	3	ALLOC	=@= vars	63.000	63.000	63.000	64	10
+A	3	ALLOC	term_hash ground	4108.000	4108.000	4108.000	256	10
+A	3	ALLOC	variant_sha1 ground	22.000	22.000	22.000	128	10
+A	3	ALLOC	variant_sha1 vars	50.000	50.000	50.000	128	10
+A	3	ALLOC	variant_hash ground	18.000	18.000	18.000	64	10
+A	3	ALLOC	variant_hash vars	46.000	46.000	46.000	128	10
+A	3	ALLOC	= ground	0.000	0.000	0.000	512	10
+A	3	ALLOC	= bind vars	0.000	0.000	0.000	512	10
+A	3	ALLOC	= var-var	0.000	0.000	0.000	256	10
+A	3	ALLOC	occurs-check bind vars	0.000	0.000	0.000	512	10
+A	3	ALLOC	clause/2 1000 facts	1493.000	1493.000	1493.000	256	10
+A	3	ALLOC	compileClause fact	27.000	27.000	27.000	32768	10
+A	3	ALLOC	rule head + analysis	34.000	34.000	34.000	16384	10
+A	3	ALLOC	compileClause rule	40.000	40.000	40.000	16384	10
+A	3	ALLOC	query cp(X,Y) 1000	7.000	7.000	7.004	512	10
+A	3	ALLOC	query cp(500,Y)	1.000	1.000	1.000	131072	10
+A	3	ALLOC	nreverse	0.000	0.000	0.000	1024	10
+A	3	ALLOC	compare/3 ×1000, body	1000.000	1000.000	1000.000	256	10
+A	3	ALLOC	unify inline ×1000, body	1489.000	1489.000	1489.000	128	10
+A	3	ALLOC	findall/3 ×1000	8887.000	8887.000	8887.000	128	10
+A	3	ALLOC	findall/3 + sort/2 ×1000	8901.000	8901.000	8901.000	128	10
+A	3	ALLOC	bagof/3 ×1000, 3 bags	11031.000	11031.000	11031.000	32	10
+A	3	ALLOC	derive	0.000	0.000	0.000	4096	10
+A	3	ALLOC	qsort	0.000	0.000	0.000	512	10
+A	3	ALLOC	poly_10	0.000	0.000	0.000	4	10
+A	3	ALLOC	term_to_atom clause	232.000	232.000	232.001	2048	10
+A	3	ALLOC	term_to_atom write clause	237.000	237.000	285.011	1024	10
+A	3	ALLOC	1000 frames + choice points	0.000	0.000	0.000	4096	10
+A	3	ALLOC	attempt f(X)=f(a)	0.000	0.000	0.000	2097152	10
+A	3	ALLOC	attempt + finally	0.000	0.000	0.000	1048576	10
+A	4	ALLOC	compare ground	4.000	4.000	4.000	512	10
+A	4	ALLOC	=@= ground	7.000	7.000	7.000	1024	10
+A	4	ALLOC	=@= vars	63.000	63.000	63.000	64	10
+A	4	ALLOC	term_hash ground	4108.000	4108.000	4108.000	512	10
+A	4	ALLOC	variant_sha1 ground	22.000	22.000	22.000	128	10
+A	4	ALLOC	variant_sha1 vars	50.000	50.000	50.000	128	10
+A	4	ALLOC	variant_hash ground	18.000	18.000	18.000	128	10
+A	4	ALLOC	variant_hash vars	46.000	46.000	46.000	128	10
+A	4	ALLOC	= ground	0.000	0.000	0.000	512	10
+A	4	ALLOC	= bind vars	0.000	0.000	0.000	512	10
+A	4	ALLOC	= var-var	0.000	0.000	0.000	512	10
+A	4	ALLOC	occurs-check bind vars	0.000	0.000	0.000	512	10
+A	4	ALLOC	clause/2 1000 facts	1493.000	1493.000	1493.000	512	10
+A	4	ALLOC	compileClause fact	27.000	27.000	27.000	65536	10
+A	4	ALLOC	rule head + analysis	34.000	34.000	34.000	32768	10
+A	4	ALLOC	compileClause rule	40.000	40.000	40.000	32768	10
+A	4	ALLOC	query cp(X,Y) 1000	7.000	7.000	7.004	512	10
+A	4	ALLOC	query cp(500,Y)	1.000	1.000	1.000	131072	10
+A	4	ALLOC	nreverse	0.000	0.000	0.000	1024	10
+A	4	ALLOC	compare/3 ×1000, body	1000.000	1000.000	1000.000	256	10
+A	4	ALLOC	unify inline ×1000, body	1489.000	1489.000	1489.000	128	10
+A	4	ALLOC	findall/3 ×1000	8887.000	8887.000	8887.000	128	10
+A	4	ALLOC	findall/3 + sort/2 ×1000	8901.000	8901.000	8901.000	32	10
+A	4	ALLOC	bagof/3 ×1000, 3 bags	11031.000	11031.000	11031.000	32	10
+A	4	ALLOC	derive	0.000	0.000	0.000	4096	10
+A	4	ALLOC	qsort	0.000	0.000	0.000	512	10
+A	4	ALLOC	poly_10	0.000	0.000	0.000	4	10
+A	4	ALLOC	term_to_atom clause	232.000	232.000	232.000	4096	10
+A	4	ALLOC	term_to_atom write clause	237.000	237.000	285.011	1024	10
+A	4	ALLOC	1000 frames + choice points	0.000	0.000	0.000	4096	10
+A	4	ALLOC	attempt f(X)=f(a)	0.000	0.000	0.000	2097152	10
+A	4	ALLOC	attempt + finally	0.000	0.000	0.000	1048576	10
+A	5	ALLOC	compare ground	4.000	4.000	4.000	512	10
+A	5	ALLOC	=@= ground	7.000	7.000	7.000	512	10
+A	5	ALLOC	=@= vars	63.000	63.000	63.000	64	10
+A	5	ALLOC	term_hash ground	4108.000	4108.000	4108.000	512	10
+A	5	ALLOC	variant_sha1 ground	22.000	22.000	22.000	128	10
+A	5	ALLOC	variant_sha1 vars	50.000	50.000	50.000	64	10
+A	5	ALLOC	variant_hash ground	18.000	18.000	18.000	128	10
+A	5	ALLOC	variant_hash vars	46.000	46.000	46.000	128	10
+A	5	ALLOC	= ground	0.000	0.000	0.000	512	10
+A	5	ALLOC	= bind vars	0.000	0.000	0.000	512	10
+A	5	ALLOC	= var-var	0.000	0.000	0.000	512	10
+A	5	ALLOC	occurs-check bind vars	0.000	0.000	0.000	512	10
+A	5	ALLOC	clause/2 1000 facts	1493.000	1493.000	1493.000	256	10
+A	5	ALLOC	compileClause fact	27.000	27.000	27.000	32768	10
+A	5	ALLOC	rule head + analysis	34.000	34.000	34.000	16384	10
+A	5	ALLOC	compileClause rule	40.000	40.000	40.000	16384	10
+A	5	ALLOC	query cp(X,Y) 1000	7.000	7.000	7.004	512	10
+A	5	ALLOC	query cp(500,Y)	1.000	1.000	1.000	131072	10
+A	5	ALLOC	nreverse	0.000	0.000	0.000	1024	10
+A	5	ALLOC	compare/3 ×1000, body	1000.000	1000.000	1000.000	256	10
+A	5	ALLOC	unify inline ×1000, body	1489.000	1489.000	1489.000	256	10
+A	5	ALLOC	findall/3 ×1000	8887.000	8887.000	8887.000	128	10
+A	5	ALLOC	findall/3 + sort/2 ×1000	8901.000	8901.000	8901.000	16	10
+A	5	ALLOC	bagof/3 ×1000, 3 bags	11031.000	11031.000	11031.000	32	10
+A	5	ALLOC	derive	0.000	0.000	0.000	4096	10
+A	5	ALLOC	qsort	0.000	0.000	0.000	512	10
+A	5	ALLOC	poly_10	0.000	0.000	0.000	8	10
+A	5	ALLOC	term_to_atom clause	232.000	232.000	232.000	4096	10
+A	5	ALLOC	term_to_atom write clause	239.000	239.000	287.011	1024	10
+A	5	ALLOC	1000 frames + choice points	0.000	0.000	0.000	4096	10
+A	5	ALLOC	attempt f(X)=f(a)	0.000	0.000	0.000	2097152	10
+A	5	ALLOC	attempt + finally	0.000	0.000	0.000	1048576	10
+B	1	ALLOC	compare ground	4.000	4.000	4.000	512	10
+B	1	ALLOC	=@= ground	7.000	7.000	7.000	1024	10
+B	1	ALLOC	=@= vars	63.000	63.000	63.000	64	10
+B	1	ALLOC	term_hash ground	4108.000	4108.000	4108.000	256	10
+B	1	ALLOC	variant_sha1 ground	22.000	22.000	22.000	128	10
+B	1	ALLOC	variant_sha1 vars	50.000	50.000	50.000	128	10
+B	1	ALLOC	variant_hash ground	18.000	18.000	18.000	128	10
+B	1	ALLOC	variant_hash vars	46.000	46.000	46.000	128	10
+B	1	ALLOC	= ground	0.000	0.000	0.000	512	10
+B	1	ALLOC	= bind vars	0.000	0.000	0.000	512	10
+B	1	ALLOC	= var-var	0.000	0.000	0.000	512	10
+B	1	ALLOC	occurs-check bind vars	0.000	0.000	0.000	256	10
+B	1	ALLOC	clause/2 1000 facts	1493.000	1493.000	1493.000	256	10
+B	1	ALLOC	compileClause fact	27.000	27.000	27.000	32768	10
+B	1	ALLOC	rule head + analysis	34.000	34.000	34.000	16384	10
+B	1	ALLOC	compileClause rule	40.000	40.000	40.000	16384	10
+B	1	ALLOC	query cp(X,Y) 1000	7.000	7.000	7.004	512	10
+B	1	ALLOC	query cp(500,Y)	1.000	1.000	1.000	262144	10
+B	1	ALLOC	nreverse	0.000	0.000	0.000	512	10
+B	1	ALLOC	compare/3 ×1000, body	1000.000	1000.000	1000.000	256	10
+B	1	ALLOC	unify inline ×1000, body	1489.000	1489.000	1489.000	128	10
+B	1	ALLOC	findall/3 ×1000	8887.000	8887.000	8887.000	128	10
+B	1	ALLOC	findall/3 + sort/2 ×1000	8901.000	8901.000	8901.000	32	10
+B	1	ALLOC	bagof/3 ×1000, 3 bags	11031.000	11031.000	11031.000	32	10
+B	1	ALLOC	derive	0.000	0.000	0.000	4096	10
+B	1	ALLOC	qsort	0.000	0.000	0.000	512	10
+B	1	ALLOC	poly_10	0.000	0.000	0.000	8	10
+B	1	ALLOC	term_to_atom clause	232.000	232.000	232.000	4096	10
+B	1	ALLOC	term_to_atom write clause	237.000	237.000	285.011	1024	10
+B	1	ALLOC	1000 frames + choice points	0.000	0.000	0.000	4096	10
+B	1	ALLOC	attempt f(X)=f(a)	0.000	0.000	0.000	2097152	10
+B	1	ALLOC	attempt + finally	0.000	0.000	0.000	1048576	10
+B	2	ALLOC	compare ground	4.000	4.000	4.000	512	10
+B	2	ALLOC	=@= ground	7.000	7.000	7.000	512	10
+B	2	ALLOC	=@= vars	63.000	63.000	63.000	64	10
+B	2	ALLOC	term_hash ground	4108.000	4108.000	4108.000	512	10
+B	2	ALLOC	variant_sha1 ground	22.000	22.000	22.000	128	10
+B	2	ALLOC	variant_sha1 vars	50.000	50.000	50.000	128	10
+B	2	ALLOC	variant_hash ground	18.000	18.000	18.000	128	10
+B	2	ALLOC	variant_hash vars	46.000	46.000	46.000	64	10
+B	2	ALLOC	= ground	0.000	0.000	0.000	512	10
+B	2	ALLOC	= bind vars	0.000	0.000	0.000	512	10
+B	2	ALLOC	= var-var	0.000	0.000	0.000	512	10
+B	2	ALLOC	occurs-check bind vars	0.000	0.000	0.000	512	10
+B	2	ALLOC	clause/2 1000 facts	1493.000	1493.000	1493.000	512	10
+B	2	ALLOC	compileClause fact	27.000	27.000	27.000	65536	10
+B	2	ALLOC	rule head + analysis	34.000	34.000	34.000	32768	10
+B	2	ALLOC	compileClause rule	40.000	40.000	40.000	32768	10
+B	2	ALLOC	query cp(X,Y) 1000	7.000	7.000	7.008	256	10
+B	2	ALLOC	query cp(500,Y)	1.000	1.000	1.000	131072	10
+B	2	ALLOC	nreverse	0.000	0.000	0.000	512	10
+B	2	ALLOC	compare/3 ×1000, body	1000.000	1000.000	1000.000	256	10
+B	2	ALLOC	unify inline ×1000, body	1489.000	1489.000	1489.000	128	10
+B	2	ALLOC	findall/3 ×1000	8887.000	8887.000	8887.000	128	10
+B	2	ALLOC	findall/3 + sort/2 ×1000	8901.000	8901.000	8901.000	16	10
+B	2	ALLOC	bagof/3 ×1000, 3 bags	11031.000	11031.000	11031.000	16	10
+B	2	ALLOC	derive	0.000	0.000	0.000	2048	10
+B	2	ALLOC	qsort	0.000	0.000	0.000	256	10
+B	2	ALLOC	poly_10	0.000	0.000	0.000	4	10
+B	2	ALLOC	term_to_atom clause	232.000	232.000	232.001	2048	10
+B	2	ALLOC	term_to_atom write clause	237.000	237.000	285.011	1024	10
+B	2	ALLOC	1000 frames + choice points	0.000	0.000	0.000	4096	10
+B	2	ALLOC	attempt f(X)=f(a)	0.000	0.000	0.000	1048576	10
+B	2	ALLOC	attempt + finally	0.000	0.000	0.000	1048576	10
+B	3	ALLOC	compare ground	4.000	4.000	4.000	512	10
+B	3	ALLOC	=@= ground	7.000	7.000	7.000	512	10
+B	3	ALLOC	=@= vars	63.000	63.000	63.000	64	10
+B	3	ALLOC	term_hash ground	4108.000	4108.000	4108.000	512	10
+B	3	ALLOC	variant_sha1 ground	22.000	22.000	22.000	128	10
+B	3	ALLOC	variant_sha1 vars	50.000	50.000	50.000	64	10
+B	3	ALLOC	variant_hash ground	18.000	18.000	18.000	128	10
+B	3	ALLOC	variant_hash vars	46.000	46.000	46.000	128	10
+B	3	ALLOC	= ground	0.000	0.000	0.000	512	10
+B	3	ALLOC	= bind vars	0.000	0.000	0.000	512	10
+B	3	ALLOC	= var-var	0.000	0.000	0.000	512	10
+B	3	ALLOC	occurs-check bind vars	0.000	0.000	0.000	256	10
+B	3	ALLOC	clause/2 1000 facts	1493.000	1493.000	1493.000	256	10
+B	3	ALLOC	compileClause fact	27.000	27.000	27.000	32768	10
+B	3	ALLOC	rule head + analysis	34.000	34.000	34.000	16384	10
+B	3	ALLOC	compileClause rule	40.000	40.000	40.000	16384	10
+B	3	ALLOC	query cp(X,Y) 1000	7.000	7.000	7.004	512	10
+B	3	ALLOC	query cp(500,Y)	1.000	1.000	1.000	262144	10
+B	3	ALLOC	nreverse	0.000	0.000	0.000	512	10
+B	3	ALLOC	compare/3 ×1000, body	1000.000	1000.000	1000.000	256	10
+B	3	ALLOC	unify inline ×1000, body	1489.000	1489.000	1489.000	256	10
+B	3	ALLOC	findall/3 ×1000	8887.000	8887.000	8887.000	64	10
+B	3	ALLOC	findall/3 + sort/2 ×1000	8901.000	8901.000	8901.000	128	10
+B	3	ALLOC	bagof/3 ×1000, 3 bags	11031.000	11031.000	11031.000	8	10
+B	3	ALLOC	derive	0.000	0.000	0.000	4096	10
+B	3	ALLOC	qsort	0.000	0.000	0.000	512	10
+B	3	ALLOC	poly_10	0.000	0.000	0.000	4	10
+B	3	ALLOC	term_to_atom clause	232.000	232.000	232.000	4096	10
+B	3	ALLOC	term_to_atom write clause	237.000	237.000	285.011	1024	10
+B	3	ALLOC	1000 frames + choice points	0.000	0.000	0.000	4096	10
+B	3	ALLOC	attempt f(X)=f(a)	0.000	0.000	0.000	2097152	10
+B	3	ALLOC	attempt + finally	0.000	0.000	0.000	1048576	10
+B	4	ALLOC	compare ground	4.000	4.000	4.000	512	10
+B	4	ALLOC	=@= ground	7.000	7.000	7.000	512	10
+B	4	ALLOC	=@= vars	63.000	63.000	63.000	64	10
+B	4	ALLOC	term_hash ground	4108.000	4108.000	4108.000	512	10
+B	4	ALLOC	variant_sha1 ground	22.000	22.000	22.000	64	10
+B	4	ALLOC	variant_sha1 vars	50.000	50.000	50.000	64	10
+B	4	ALLOC	variant_hash ground	18.000	18.000	18.000	128	10
+B	4	ALLOC	variant_hash vars	46.000	46.000	46.000	64	10
+B	4	ALLOC	= ground	0.000	0.000	0.000	512	10
+B	4	ALLOC	= bind vars	0.000	0.000	0.000	512	10
+B	4	ALLOC	= var-var	0.000	0.000	0.000	512	10
+B	4	ALLOC	occurs-check bind vars	0.000	0.000	0.000	128	10
+B	4	ALLOC	clause/2 1000 facts	1493.000	1493.000	1493.000	256	10
+B	4	ALLOC	compileClause fact	27.000	27.000	27.000	32768	10
+B	4	ALLOC	rule head + analysis	34.000	34.000	34.000	16384	10
+B	4	ALLOC	compileClause rule	40.000	40.000	40.000	16384	10
+B	4	ALLOC	query cp(X,Y) 1000	7.000	7.000	7.004	512	10
+B	4	ALLOC	query cp(500,Y)	1.000	1.000	1.000	131072	10
+B	4	ALLOC	nreverse	0.000	0.000	0.000	1024	10
+B	4	ALLOC	compare/3 ×1000, body	1000.000	1000.000	1000.000	256	10
+B	4	ALLOC	unify inline ×1000, body	1489.000	1489.000	1489.000	256	10
+B	4	ALLOC	findall/3 ×1000	8887.000	8887.000	8887.000	128	10
+B	4	ALLOC	findall/3 + sort/2 ×1000	8901.000	8901.000	8901.000	16	10
+B	4	ALLOC	bagof/3 ×1000, 3 bags	11031.000	11031.000	11031.000	32	10
+B	4	ALLOC	derive	0.000	0.000	0.000	4096	10
+B	4	ALLOC	qsort	0.000	0.000	0.000	256	10
+B	4	ALLOC	poly_10	0.000	0.000	0.000	4	10
+B	4	ALLOC	term_to_atom clause	232.000	232.000	232.000	4096	10
+B	4	ALLOC	term_to_atom write clause	237.000	237.000	285.011	1024	10
+B	4	ALLOC	1000 frames + choice points	0.000	0.000	0.000	4096	10
+B	4	ALLOC	attempt f(X)=f(a)	0.000	0.000	0.000	2097152	10
+B	4	ALLOC	attempt + finally	0.000	0.000	0.000	1048576	10
+B	5	ALLOC	compare ground	4.000	4.000	4.000	512	10
+B	5	ALLOC	=@= ground	7.000	7.000	7.000	512	10
+B	5	ALLOC	=@= vars	63.000	63.000	63.000	64	10
+B	5	ALLOC	term_hash ground	4108.000	4108.000	4108.000	512	10
+B	5	ALLOC	variant_sha1 ground	22.000	22.000	22.000	128	10
+B	5	ALLOC	variant_sha1 vars	50.000	50.000	50.000	64	10
+B	5	ALLOC	variant_hash ground	18.000	18.000	18.000	128	10
+B	5	ALLOC	variant_hash vars	46.000	46.000	46.000	128	10
+B	5	ALLOC	= ground	0.000	0.000	0.000	512	10
+B	5	ALLOC	= bind vars	0.000	0.000	0.000	512	10
+B	5	ALLOC	= var-var	0.000	0.000	0.000	512	10
+B	5	ALLOC	occurs-check bind vars	0.000	0.000	0.000	512	10
+B	5	ALLOC	clause/2 1000 facts	1493.000	1493.000	1493.000	512	10
+B	5	ALLOC	compileClause fact	27.000	27.000	27.000	65536	10
+B	5	ALLOC	rule head + analysis	34.000	34.000	34.000	32768	10
+B	5	ALLOC	compileClause rule	40.000	40.000	40.000	32768	10
+B	5	ALLOC	query cp(X,Y) 1000	7.000	7.000	7.004	512	10
+B	5	ALLOC	query cp(500,Y)	1.000	1.000	1.000	131072	10
+B	5	ALLOC	nreverse	0.000	0.000	0.000	1024	10
+B	5	ALLOC	compare/3 ×1000, body	1000.000	1000.000	1000.000	256	10
+B	5	ALLOC	unify inline ×1000, body	1489.000	1489.000	1489.000	256	10
+B	5	ALLOC	findall/3 ×1000	8887.000	8887.000	8887.000	128	10
+B	5	ALLOC	findall/3 + sort/2 ×1000	8901.000	8901.000	8901.000	128	10
+B	5	ALLOC	bagof/3 ×1000, 3 bags	11031.000	11031.000	11031.000	32	10
+B	5	ALLOC	derive	0.000	0.000	0.000	4096	10
+B	5	ALLOC	qsort	0.000	0.000	0.000	512	10
+B	5	ALLOC	poly_10	0.000	0.000	0.000	8	10
+B	5	ALLOC	term_to_atom clause	232.000	232.000	232.000	4096	10
+B	5	ALLOC	term_to_atom write clause	237.000	237.000	285.011	1024	10
+B	5	ALLOC	1000 frames + choice points	0.000	0.000	0.000	4096	10
+B	5	ALLOC	attempt f(X)=f(a)	0.000	0.000	0.000	2097152	10
+B	5	ALLOC	attempt + finally	0.000	0.000	0.000	1048576	10

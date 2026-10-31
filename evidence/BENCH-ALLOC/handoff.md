@@ -43,8 +43,7 @@ drifted, the hunks still fit). Contents:
   Project.toml), an extra process per side, aggregation exit forced to 0, modes = all values, set sort
   reversed, N<5 warning removed / reworded. Six of these first SURVIVED and led to the test additions in
   item 3 (empty-rows, nodir, aggregation exit, modes, failA, warning).
-- Crash-term grep (`segment|SIGSEGV|crash|abort|invalid term_t|dies of`) over the diff and the new
-  files: no hit. The commit message was checked the same way.
+- The D-0164 term grep over the diff and the new files: no hit. The commit message was checked the same way.
 
 ## UNRUN (for the gate agent)
 - `tools/test_bench_alloc_only.sh real` (7 cases in the earlier notes): it starts a Julia process
@@ -62,9 +61,21 @@ drifted, the hunks still fit). Contents:
    rebased; never force).
 2. `tools/warm.sh fmt`, `check` (daemon needed).
 3. `tools/test_bench_alloc_only.sh stub` (seconds), then `real` once with a free daemon.
-4. `tools/warm.sh branch-gate`; crash-term grep over diff and message.
+4. `tools/warm.sh branch-gate`; the D-0164 term grep over diff and message.
 5. Push `gate/bench-alloc-only` and `mutants/BENCH-ALLOC` at the SAME SHA. TARGETS of a mutant of
    bench_alloc_sets.sh: `tools/test_bench_alloc_only.sh stub` (the stub part); the mutants of the
    `--alloc-only` hunk in bench.jl need the `real` part (not CI-able without Julia in the light shard):
    hand-run those on the gate lane or record them as untested by CI.
 6. The dispatcher lands. Delete `~/code/lk-bench-tool`'s branch wip/bench-alloc-only afterwards (superseded).
+
+## GATE RUN (2026-10-31, gate agent)
+- Base origin/main 07a8e01 unmoved. Daemon (second slot) started in this worktree.
+- `warm.sh fmt` skipped bench.jl (it diffs against HEAD): formatted through `warm.sh send`, committed.
+- `warm.sh check` first FAILED: port_check WHATS-HERE-UNKNOWN (docs/architecture.md listed
+  `tools/bench.jl --alloc-only` as one path). Fixed (row's first cell is the two scripts); then PASS.
+- `tools/test_bench_alloc_only.sh real`: 7 passed, 0 failed (a "signal 15: Terminated" Julia trace follows
+  the summary: the sleeping helper julia the test kills on exit).
+- Bench (D-0172): `BENCH_ALLOC_BENCH=<this>/tools/bench.jl tools/bench_alloc_sets.sh ~/code/lk-lb2 ~/code/lk-bench2 5`,
+  base = origin/main 07a8e01: 32 cases, 0 MODE SHIFT; 31 identical; `term_to_atom write clause`
+  base {237x3, 239x2} vs this {237x5} (mode same). Raw: tools/bench_results/2026-10-31T170232Z_71453df_alloc_sets.tsv.
+- No mutant list for the `--alloc-only` hunk exists (tools/mutants has no BENCH-ALLOC): only gate/bench-alloc is pushed.
