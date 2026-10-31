@@ -2817,6 +2817,8 @@ const _DISPATCH_MANIFEST_TUPLE = (
     (LK.text_code_at, Tuple{LK.PL_chars_t, Int}, false),
     (LK.text_chr, Tuple{LK.PL_chars_t, Int}, false),
     (LK.unit_length, Tuple{LK.IOENC}, false), (LK.encoding_name, Tuple{LK.IOENC}, false),
+    (LK.IS_UTF16_LEAD, Tuple{Integer}, false), (LK.IS_UTF16_TRAIL, Tuple{Integer}, false),
+    (LK.utf16_decode, Tuple{Integer, Integer}, false),
     (LK.utf16_encode, Tuple{Int}, false), (LK.utf16_to_text, Tuple{LK.PL_chars_t}, false),
     (LK.backSkipPadding, Tuple{Vector{UInt8}, Int, LK.PL_chars_t}, false)
 )
