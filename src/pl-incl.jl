@@ -1698,6 +1698,58 @@ struct record{T}
     values::Vector{T}                                   # (the indirects)
 end
 
+# ── the recorded database (pl-incl.h), since R2's D2 ─────────────────────────────────────────────
+# PORT: pl-incl.h RL_DIRTY
+"A record list has erased records still linked (pl-incl.h `RL_DIRTY`): `cleanRecordList` when no `recorded/3` runs over it."
+const RL_DIRTY = UInt32(0x0001)
+# PORT: pl-incl.h R_ERASED
+"A record is erased (pl-incl.h `R_ERASED`)."
+const R_ERASED = UInt32(0x0001)
+# PORT: pl-incl.h R_DBREF
+"A record has a database reference, a `record` blob (pl-incl.h `R_DBREF`)."
+const R_DBREF = UInt32(0x0010)
+
+# PORT: pl-rec.h record_az as RECORDA
+# DIVERGES: Int constants (the repo's precedent, `DB_REF_CLAUSE`: an `@enum` would need a `_enum_hash` entry
+# in the static-analysis manifest for two values).
+"`PL_record_az`: add the record at the front of its key's list (pl-rec.h `RECORDA`)."
+const RECORDA = 0
+"`PL_record_az`: add the record at the end of its key's list (pl-rec.h `RECORDZ`)."
+const RECORDZ = 1
+
+# PORT: pl-incl.h recordRef
+# DIVERGES: `flags` holds the RECORD's `R_ERASED` and `R_DBREF` (upstream: `record->flags`; the kernel's
+# `record` is immutable and only the recorded database's records carry these two); `record` is `nothing`
+# after `freeRecordRef` (upstream: NULL when a blob still names the reference, else the reference is freed:
+# Julia's GC frees what nothing names); `serial` the reference's number in `gd.record_refs`, the payload of
+# its `record` blob (0: none yet; src/pl-dbref.jl). L is the list's type — `recordList{T}` — a parameter
+# only to break the struct cycle (as `clause`'s D).
+"A recorded term in its key's list (pl-incl.h `struct recordRef`): see src/pl-rec.jl."
+mutable struct recordRef{T, L}
+    list::L                                             # list I belong to
+    next::Union{Nothing, recordRef{T, L}}               # next in list
+    prev::Union{Nothing, recordRef{T, L}}               # previous in list
+    record::Union{Nothing, record{T}}                   # the record itself
+    flags::UInt32                                       # (record->flags: R_ERASED, R_DBREF)
+    serial::Int                                         # (the blob's payload, 0: none)
+end
+
+# PORT: pl-incl.h recordList
+# DIVERGES: no `next` (upstream's list of lists is unused since the hash table, `GD->recorded_db`); the key
+# is the WORD (an atom, a tagged integer or a functor word, `getKeyEx`), as upstream's.
+"The records of one key (pl-incl.h `struct recordList`): a doubly linked list, `references` the `recorded/3` calls running over it."
+mutable struct recordList{T}
+    firstRecord::Union{Nothing, recordRef{T, recordList{T}}}    # first record associated with key
+    lastRecord::Union{Nothing, recordRef{T, recordList{T}}}     # last record associated with key
+    const key::word                                             # key of record
+    flags::UInt32                                               # RL_DIRTY
+    references::Int                                             # choicepoints reference count
+end
+"`RecordList` (pl-incl.h): a pointer to a `recordList`."
+const RecordList{T} = recordList{T}
+"`RecordRef` (pl-incl.h): a pointer to a `recordRef`."
+const RecordRef{T} = recordRef{T, recordList{T}}
+
 # PORT: pl-bag.c findall_bag
 # DIVERGES: the bags are a vector (the local data's `bags`, upstream's `bag_stack`), so a bag's
 # `parent` is the element below it; `answers` is a vector of records (upstream's segmented stack).
