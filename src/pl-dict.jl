@@ -433,3 +433,137 @@ function pl_dict_create3_va(
 
     return FFALSE
 end
+
+# ── put_dict/3 (part 5c) ──────────────────────────────────────────────────────────────────────────
+
+# PORT: pl-dict.c assign_in_dict
+# DIVERGES: `dp` is the position of the destination cell and `val` a value LOCATION; no TRAIL_OVERFLOW (the trail
+# grows on demand), so the result is nothing.
+"Store in the new dict's cell `dp` the value at `val`: a younger variable is bound to the cell (pl-dict.c)."
+function assign_in_dict(ld::PL_local_data, dp::Int, val::Int)::Nothing
+    k, _, q = _deref_loc(ld, val)
+    if k == DU_CELL
+        if dp < q
+            ld.gstack[dp] = word(0)                 # setVar(*dp)
+            _bind_const!(ld, q, makeRefG(dp))       # Trail(val, makeRefG(dp))
+        else
+            ld.gstack[dp] = makeRefG(q)
+        end
+    else                                            # !canBind: *dp = *val; an attributed variable: makeRefG(val)
+        _dict_link!(ld, dp, val)
+    end
+
+    return nothing
+end
+
+# PORT: pl-dict.c put_dict
+# DIVERGES: the merge of the two sorted runs is planned first (`plan`: which pair, from the old dict or from `nv`, comes
+# next), then the cells are laid out at their exact size; upstream lays them out at gTop and sets gTop to the end
+# (`gTop = out`), which the cells' allocation here cannot take back. The same pairs in the same order. The overflow
+# test (`gTop+1+arity+2*size > gMax`) is `ensureGlobalSpace`, which raises the overflow: the result is then `nothing`.
+# `dict` is the old dict's compound word, `nv` the position of the first VALUE cell of the `npairs` new pairs; the result is
+# the new dict's compound word (the old `dict` when nothing is modified).
+"The dict `dict` with the `npairs` pairs at `nv` put into it: replaced or added (pl-dict.c)."
+function put_dict(
+    ld::PL_local_data{T}, dict::word, npairs::Int, nv::Int
+)::Union{Nothing, word} where {T}
+    f = valPtr(dict)
+    arity = arityFunctor(ld.functors, ld.gstack[f])
+    modified = false
+
+    @assert arity % 2 == 1
+
+    if npairs == 0
+        return dict
+    end
+
+    ensureGlobalSpace(ld, 1 + arity + 2 * npairs) || return nothing
+
+    ip = f + 2                                      # data->arguments+1
+    ip_end = ip + arity - 1
+    nv_end = nv + npairs * 2
+    plan = Tuple{Bool, Int, word}[]                 # (from the new pairs, value position, key word)
+
+    while ip < ip_end && nv < nv_end
+        _, i_name, _ = _deref_loc(ld, ip + 1)
+        _, n_name, _ = _deref_loc(ld, nv + 1)
+
+        if i_name == n_name
+            push!(plan, (true, nv, i_name))
+            if !modified && compareStandard_cells(ld, nv, ip, true) != 0
+                modified = true
+            end
+            ip += 2
+            nv += 2
+        elseif i_name < n_name
+            push!(plan, (false, ip, i_name))
+            ip += 2
+        else
+            push!(plan, (true, nv, n_name))
+            nv += 2
+            modified = true
+        end
+    end
+
+    if nv == nv_end
+        if !modified
+            return dict
+        end
+        while ip < ip_end
+            _, i_name, _ = _deref_loc(ld, ip + 1)
+            push!(plan, (false, ip, i_name))
+            ip += 2
+        end
+    else
+        while nv < nv_end
+            _, n_name, _ = _deref_loc(ld, nv + 1)
+            push!(plan, (true, nv, n_name))
+            nv += 2
+        end
+    end
+
+    new = allocGlobalCells!(ld, 2 + 2 * length(plan))
+    out = new + 2                                   # functor, tag
+    for (fresh, vpos, name) in plan
+        if fresh
+            assign_in_dict(ld, out, vpos)
+        else
+            _dict_link!(ld, out, vpos)              # *out++ = linkValI(ip)
+        end
+        ld.gstack[out + 1] = name
+        out += 2
+    end
+
+    _dict_link!(ld, new + 1, f + 1)                 # new[1] = linkValI(&data->arguments[0])
+    ld.gstack[new] = dict_functor(ld, length(plan))
+
+    return consPtr(new, TAG_COMPOUND | STG_GLOBAL)
+end
+
+# PORT: pl-dict.c put_dict as pl_put_dict3_va
+# (PRED_IMPL("put_dict", 3, put_dict, 0))
+# DIVERGES: no `Mark(fli_context->mark)` / retry on `GLOBAL_OVERFLOW`: the overflow is raised by `ensureGlobalSpace`
+# (the stack grows on demand, so only the limit refuses) and the predicate fails with it raised.
+"`put_dict(+New, +DictIn, -DictOut)`: `DictOut` is `DictIn` with the pairs of `New` replacing or extending it (pl-dict.c)."
+function pl_put_dict3_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2, A3 = PL__t0, PL__t0 + 1, PL__t0 + 2
+    dt = PL_new_term_refs(ld, 2)
+
+    if get_create_dict_ex(ld, A2, dt + 0) && get_create_dict_ex(ld, A1, dt + 1)
+        _, d0, _ = _deref_loc(ld, -(dt + 0 + 1))
+        _, d1, _ = _deref_loc(ld, -(dt + 1 + 1))
+        f2 = valPtr(d1)
+        arity = arityFunctor(ld.functors, ld.gstack[f2])
+
+        new = put_dict(ld, d0, arity ÷ 2, f2 + 2)   # &f2->arguments[1]
+        if new !== nothing
+            t = PL_new_term_ref(ld)
+            ld.slots[t + 1] = new
+            return PL_unify(ld, A3, t) ? FTRUE : FFALSE
+        end
+    end
+
+    return FFALSE
+end
