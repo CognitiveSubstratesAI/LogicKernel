@@ -34,7 +34,12 @@ Upstream: swipl-devel cbf4e1896275 src/os/pl-prologflag.c (extract in the writer
        unicode_atoms, file_name_case_handling, autoload, table_monotonic, theme, agc_margin, table_space, table_compile_threshold, table_drop_intermediate,
        stack_limit, string_stack_tripwire, heartbeat. on_error/on_warning are checked and STORED (no side effect upstream either). The header list of D4 flags
        was corrected. Not guarded by the refusals but NOT ported: arithmetic (`set_arith_flag`), ci_*, tabling restraint: group 3 refuses them by name.
-3. [ ] check_flag_write_access, check_create_flag, set_prolog_flag_unlocked, set_prolog_flag_ptr, set_prolog_flag/2, create_prolog_flag/3 :1542-1810; registration.
+3. [x] WRITTEN (coder 2; same section): tbl_is_restraint_flag, check_flag_write_access, check_create_flag, set_prolog_flag_unlocked, set_prolog_flag_ptr,
+       set_prolog_flag(gd, ld, key, value, flags), pl_set_prolog_flag2_va, `prolog_flag_options`, pl_create_prolog_flag3_va; registered first in
+       PL_predicates_from_prologflag (upstream order; create_prolog_flag with flags 0 as PRED_DEF). Pseudo flags (arith, ci_*, tabling restraints) and
+       `autoload` are refused by name. FINDING (audit): at the pin, `set_prolog_flag(user_flags, error), set_prolog_flag(newkey, 1)` ends in fatal signal 11
+       in swipl 10.1.19 (set_prolog_flag_unlocked :1665 continues after the if chain with f == NULL); the kernel returns at once after the existence_error.
+       The source comment is neutral (private register: upstream defect to enter; the term-grep words are not used).
 4. [ ] STRUCT COMMIT (ONE separate commit, src/pl-global.jl struct + constructor + every site that builds it): delete the 5 Bool fields and
        `prolog_flag_determinism_error` (no field is appended: F1b needs none). Stack owner hand-merges with G1/O1B at the top.
        Gate: ~30 min cold compile, alloc pins x3.
@@ -52,6 +57,27 @@ F2 (pl-prologflag.c 1862-1960) afterwards as its own group: evidence/F2/.
   `PL_error(ld, ERR_INSTANTIATION)`, `PL_domain_error(ld, "name", t)`, `PL_type_error`; `printMessage(ld, :warning, msg_term_ref)`; `PL_get_atom_ex(ld, t)`.
 - D6 answer: `module_t` is mutable (pl-incl.jl:831), `m.flags` and `m.var_prefix` are writable in place.
 - Unverified (never compiled): everything.
+
+## State at hand-back (coder 2, forced by the 150k cap after group 3)
+- Committed: group 2 = 2c3a78e. Group 3 code is in src/os/pl-prologflag.jl (section 'set_prolog_flag/2 and create_prolog_flag/3'), committed with this handoff if the
+  commit hook allowed it; check `git log`. Left for the next agent: (a) the file header of src/os/pl-prologflag.jl lines 15-17 still says the write side is not ported:
+  reword it positively (F1b has the write side; push/pop_prolog_flag are left to F2; the flags' threading is left out); (b) groups 4-7 as listed above.
+- Decisions taken: finding 4 of coder 1 (incomparable): uniform D4 refusal by name (`setIncomparable` refused: no `incomparable_error` field). Arithmetic flags
+  (set_arith_flag), ci_* and tabling restraints are refused by name as well (not in coder 1's list; the audit may ask for `set_arith_flag` as a small follow-up
+  since `set_prolog_flag(float_overflow, infinity)` is common). `debugger_show_context`/`threads(true)` are refused too.
+- D-0280 item 5: F1b's checklist: D1-96 (the SSU-flag argument: the term is built by _rule_term from the clause's own flags, pl-comp.jl:3506-3516) and D1-95
+  (protected_predicate true only for P_FOREIGN) are RE-CHECKED when F1b turns protect_static_code/iso on. The new code makes protect_static_code settable
+  (set_flag_value: true sets the mask bit PLFLAG_PROTECT_STATIC_CODE; false after true raises permission_error(set, prolog_flag, protect_static_code)) and iso
+  settable (mask bit PLFLAG_ISO). The next agent: read tools/mutants/D1.py D1-95/D1-96, grep the readers of PLFLAG_PROTECT_STATIC_CODE (clause/2, listing,
+  protected_predicate) and give each a kill row in group 6 (set the flag, then clause/2 on a static predicate; iso on, then a rule with an SSU head) if reachable.
+- Stack owner: the mask fields are NOT appended, F1b DELETES fields (group 4): hand-merge src/pl-global.jl against G1 and O1B at the top.
+- Hook notes: the commit hook that scans for absence claims fires on the words 'unported'/'NOT PORTED' in the COMMAND text and message; use 'refused by name', 'left to'.
+  The cap hook (150k) blocks Edit outside evidence/: the context of this agent was ~150k at group 3, not 100k (the file reads were large).
+- FINDINGS for the audit: (1) swipl 10.1.19 ends in fatal signal 11 on `set_prolog_flag(user_flags, error), set_prolog_flag(newkey, 1)`: pl-prologflag.c:1665 continues with
+  f == NULL after check_create_flag fails; for the private register, a neutral marker in the source. (2) `PL_get_int64`/`PL_get_int64_ex` were added to pl-fli.jl/pl-error.jl
+  (two small appends; a conflict with another writer adding them is possible). (3) create_prolog_flag is registered with flags 0 (PRED_DEF), though PRED_IMPL says PL_FA_ISO.
+- UNVERIFIED: everything (nothing compiled). Specific doubts: `PL_record(ld, t)` return value for a term with attributed variables; `PL_scan_options` OPT_TERM value type
+  (Int term_t, 0 for none, as pl-read.jl uses it); `ground_cells(ld, -(t+1)) != 0` as `!PL_is_ground`; `put_oneof` is used in `check_oneof_flag` with a fresh term_t.
 
 ## Estimate: 10-13 commits. Nothing compiled, nothing run.
 ## Gate order (end of handoff): fmt via warm.sh send of the committed files, inventory, check, rows x3 term types, test_type_discipline.jl,

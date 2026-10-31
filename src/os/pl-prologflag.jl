@@ -1285,6 +1285,239 @@ function set_flag_value(
     return true
 end
 
+# ── set_prolog_flag/2 and create_prolog_flag/3 (pl-prologflag.c), R2 F1b ─────────────────────────
+# PORT: pl-tabling.c tbl_is_restraint_flag
+# DIVERGES: the key is the atom (`sym_text`), where upstream compares atom handles.
+"Whether the atom `k` names a tabling restraint flag (pl-tabling.c)."
+function tbl_is_restraint_flag(k::T)::Bool where {T}
+    name = sym_text(k)
+    return name == "max_table_subgoal_size" ||
+           name == "max_table_answer_size" ||
+           name == "max_answers_for_subgoal" ||
+           name == "max_table_subgoal_size_action" ||
+           name == "max_table_answer_size_action" ||
+           name == "max_answers_for_subgoal_action"
+end
+
+# PORT: pl-prologflag.c check_flag_write_access
+"Whether the flag `f`, named `k`, may be written: not if it is read-only, unless `FF_FORCE`; else `permission_error(modify, flag, K)` (pl-prologflag.c)."
+function check_flag_write_access(
+    ld::PL_local_data{T}, f::prolog_flag{T}, k::T, flags::UInt32
+)::Bool where {T}
+    if (f.flags & FF_READONLY) != 0 && (flags & FF_FORCE) == 0
+        key = PL_new_term_ref(ld)
+        PL_put_atom(ld, key, k)
+        return PL_error(
+            ld, "", 0, "", ERR_PERMISSION, mk_sym(T, :modify), mk_sym(T, :flag), key
+        )
+    end
+
+    return true
+end
+
+# PORT: pl-prologflag.c check_create_flag
+# DIVERGES: the database is an argument.
+"Whether a flag `k` may be created implicitly (`FF_NOCREATE`): by the `user_flags` flag, `silent` yes, `warning` with a message, `error` with `existence_error(prolog_flag, K)` (pl-prologflag.c)."
+function check_create_flag(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, k::T, flags::UInt32
+)::Bool where {T}
+    (flags & FF_NOCREATE) == 0 && return true
+
+    how = PL_current_prolog_flag(gd, mk_sym(T, :user_flags), :atom)
+    if how !== nothing
+        if sym_key(how) == sym_key(mk_sym(T, :error))
+            key = PL_new_term_ref(ld)
+            PL_put_atom(ld, key, k)
+            return PL_error(ld, ERR_EXISTENCE, mk_sym(T, :prolog_flag), key)
+        elseif sym_key(how) == sym_key(mk_sym(T, :warning))
+            msg = _message_term(ld, :implicit_create_flag, _err_atom(ld, k))
+            printMessage(ld, :warning, msg) || return false     # may not ignore printMessage()
+        end
+    end
+
+    return true
+end
+
+# PORT: pl-prologflag.c set_prolog_flag_unlocked
+# DIVERGES: no thread-local table (`FF_LOCAL`, `copy_prolog_flag`, `register_local_flag`): the table is the global
+# one. The module is its record. A flag that lives outside the table is refused by name (design D4): the arithmetic
+# flags (`set_arith_flag`, pl-arith.c), the clause-indexing flags (`ci_set_flag`, pl-index.c) and the tabling
+# restraints (`tbl_set_restraint_flag`, pl-tabling.c). A creation that `check_create_flag` refuses returns at once
+# (upstream's code continues below the `if` chain).
+"Set, or with `FF_ISCREATE`/`FF_NOCREATE` create, the flag `k` to the value of the term `value`; the flag, `PSEUDO_FLAG`, or `nothing` after an error (pl-prologflag.c)."
+function set_prolog_flag_unlocked(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, m::module_t{T}, k::T, value::term_t,
+    flags::UInt32, of::Union{Nothing, oneof_t{T}}
+)::Union{Nothing, prolog_flag{T}, PseudoFlag} where {T}
+    f = lookupFlag(gd, _atom_word!(gd.atoms, gd.atom_symbols, k))
+    if f !== nothing                                    # set existing Prolog flag
+        accessed_prolog_flag(f)
+        check_flag_write_access(ld, f, k, flags) || return nothing
+
+        rc = keep_flag(gd, ld, k, f, flags, of, value)
+        rc == 1 && return f
+        rc == -1 && return nothing
+
+        tbl_is_restraint_flag(k) &&
+            _flag_not_ported(k, "tbl_set_restraint_flag (tabling restraints)")
+        is_arith_flag(k) && _flag_not_ported(k, "set_arith_flag (pl-arith.c)")
+        ci_is_flag(k) && _flag_not_ported(k, "ci_set_flag (pl-index.c)")
+
+        if (flags & FF_ISCREATE) != 0 && (flags & FF_SHARED) != 0 && f.index == 0
+            f.flags |= FF_SHARED
+        end
+    elseif check_create_flag(gd, ld, k, flags)          # define new Prolog flag
+        f = new_prolog_flag(ld, value, flags)
+        f === nothing && return nothing
+
+        tab = gd.prolog_flag                            # addNewHTableWP(GD->prolog_flag.table, k, f)
+        push!(tab.entries, f)
+        push!(tab.names, k)
+        tab.slot[_atom_word!(gd.atoms, gd.atom_symbols, k)] = length(tab.entries)
+
+        return f
+    else
+        return nothing
+    end
+
+    return set_flag_value(gd, ld, f, m, k, value) ? f : nothing
+end
+
+# PORT: pl-prologflag.c set_prolog_flag_ptr
+# DIVERGES: no `PL_LOCK(L_PLFLAG)` (one thread), so the flags `threads`, `unicode_atoms` and `theme`, which upstream
+# sets unlocked, go the same way; no thread-local table, so no second `set_prolog_flag_unlocked` for `FF_GLOBAL`.
+# `autoload` is refused by name (design D4: `propagateAutoload`). The module is the parse module unless the key is
+# qualified.
+"Set the flag the possibly module-qualified key `key` names to the value of `value`; the flag, `PSEUDO_FLAG` or `nothing` after an error (pl-prologflag.c)."
+function set_prolog_flag_ptr(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, key::term_t, value::term_t, flags::UInt32,
+    of::Union{Nothing, oneof_t{T}}
+)::Union{Nothing, prolog_flag{T}, PseudoFlag} where {T}
+    ok, mi = PL_strip_module(gd, ld, key, MODULE_parse(ld), key)
+    ok || return nothing
+    k = PL_get_atom_ex(ld, key)
+    k === nothing && return nothing
+    m = gd.modules[mi]
+
+    sym_key(k) == sym_key(mk_sym(T, :autoload)) &&
+        _flag_not_ported(k, "propagateAutoload")
+
+    f = set_prolog_flag_unlocked(gd, ld, m, k, value, flags, of)
+    set_oneof(f, of, flags)
+
+    return f
+end
+
+# PORT: pl-prologflag.c set_prolog_flag
+# DIVERGES: the database and the local data are arguments.
+"Set the flag `key` to `value` (C-interface; pl-prologflag.c)."
+function set_prolog_flag(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, key::term_t, value::term_t, flags::UInt32
+)::Bool where {T}
+    return set_prolog_flag_ptr(gd, ld, key, value, flags, nothing) !== nothing
+end
+
+# PORT: pl-prologflag.c set_prolog_flag as pl_set_prolog_flag2_va
+# (PRED_IMPL("set_prolog_flag", 2, set_prolog_flag, PL_FA_ISO))
+"`set_prolog_flag(+Key, +Value)` (pl-prologflag.c)."
+function pl_set_prolog_flag2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2 = PL__t0, PL__t0 + 1
+    return set_prolog_flag(_query_gd(ld), ld, A1, A2, FF_NOCREATE | FT_FROM_VALUE) ? FTRUE : FFALSE
+end
+
+# PORT: pl-prologflag.c prolog_flag_options
+const prolog_flag_options = (
+    PL_option_t(:type, OPT_TERM),
+    PL_option_t(:access, OPT_ATOM),
+    PL_option_t(:keep, OPT_BOOL),
+    PL_option_t(:warn_not_accessed, OPT_BOOL),
+    PL_option_t(:local, OPT_BOOL),
+    PL_option_t(:shared, OPT_BOOL)
+)
+
+# PORT: pl-prologflag.c create_prolog_flag as pl_create_prolog_flag3_va
+# (PRED_IMPL("create_prolog_flag", 3, create_prolog_flag, PL_FA_ISO); registered with 0)
+# DIVERGES: `PL_scan_options` answers the option values (`nothing` for one not given, where upstream keeps its
+# defaults); the `oneof`'s reference is dropped by the garbage collector (`free_oneof`).
+"`create_prolog_flag(+Key, +Value, +Options)`: options `type(T)`, `access(A)`, `keep(B)`, `warn_not_accessed(B)`, `local(B)`, `shared(B)` (pl-prologflag.c)."
+function pl_create_prolog_flag3_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2, A3 = PL__t0, PL__t0 + 1, PL__t0 + 2
+    flags = FF_ISCREATE | FF_GLOBAL
+    of = nothing
+
+    vals = PL_scan_options(ld, A3, 0, "prolog_flag_option", prolog_flag_options)
+    vals === nothing && return FFALSE
+    type = something(vals[1], 0)::Int
+    access = vals[2] === nothing ? mk_sym(T, :read_write) : vals[2]::T
+    keep = vals[3] === nothing ? false : vals[3]::Bool
+    warn_not_accessed = vals[4] === nothing ? false : vals[4]::Bool
+    local_ = vals[5] === nothing ? false : vals[5]::Bool
+    shared = vals[6] === nothing ? false : vals[6]::Bool
+
+    if type == 0
+        flags |= FT_FROM_VALUE
+    elseif (a = PL_get_atom(ld, type)) !== nothing
+        k = sym_key(a)
+        if k == sym_key(mk_sym(T, :boolean))
+            flags |= FT_BOOL
+        elseif k == sym_key(mk_sym(T, :integer))
+            flags |= FT_INTEGER
+        elseif k == sym_key(mk_sym(T, :float))
+            flags |= FT_FLOAT
+        elseif k == sym_key(mk_sym(T, :atom))
+            flags |= FT_ATOM
+        elseif k == sym_key(mk_sym(T, :term))
+            flags |= FT_TERM
+        else
+            PL_error(ld, ERR_DOMAIN, mk_sym(T, :prolog_flag_type), type)
+            return FFALSE
+        end
+    elseif PL_is_functor(ld, type, mk_sym(T, :oneof), 1)
+        _PL_get_arg(ld, 1, type, type)
+        of = create_oneof(ld, type)
+        of === nothing && return FFALSE
+        flags |= FT_ATOM
+    else
+        PL_error(ld, ERR_DOMAIN, mk_sym(T, :prolog_flag_type), type)
+        return FFALSE
+    end
+
+    if sym_key(access) == sym_key(mk_sym(T, :read_only))
+        flags |= FF_READONLY
+    elseif sym_key(access) != sym_key(mk_sym(T, :read_write))
+        at = PL_new_term_ref(ld)
+        PL_put_atom(ld, at, access)
+        PL_error(ld, ERR_DOMAIN, mk_sym(T, :prolog_flag_access), at)
+        return FFALSE
+    end
+
+    keep && (flags |= FF_KEEP)
+    warn_not_accessed && (flags |= FF_WARN_NOT_ACCESSED)
+    if local_ && shared
+        PL_error(
+            ld, "", 0, "local(true) conflicts with shared(true)", ERR_DOMAIN,
+            mk_sym(T, :prolog_flag_option), A3
+        )
+        return FFALSE
+    end
+    if local_
+        flags &= ~FF_GLOBAL
+        flags |= FF_LOCAL
+    end
+    shared && (flags |= FF_SHARED)
+
+    f = set_prolog_flag_ptr(_query_gd(ld), ld, A1, A2, flags, of)
+    if of !== nothing
+        of.references -= 1                              # free_oneof() at zero: the garbage collector's
+    end
+
+    return f !== nothing ? FTRUE : FFALSE
+end
+
 # ── the predicates (pl-prologflag.c) ─────────────────────────────────────────────────────────────
 # PORT: pl-prologflag.c dcurrent_prolog_flag as pl_dcurrent_prolog_flag5_va
 # (PRED_IMPL("$current_prolog_flag", 5, dcurrent_prolog_flag, PL_FA_NONDETERMINISTIC))
@@ -1579,6 +1812,8 @@ end
 # `PL_FA_VARARGS`.
 "pl-prologflag.c's registration table (`BeginPredDefs(prologflag)`): the ported entries."
 const PL_predicates_from_prologflag = (
+    PL_extension("set_prolog_flag", 2, pl_set_prolog_flag2_va, PL_FA_ISO | PL_FA_VARARGS),
+    PL_extension("create_prolog_flag", 3, pl_create_prolog_flag3_va, PL_FA_VARARGS),
     PL_extension(
         "current_prolog_flag", 2, pl_current_prolog_flag2_va,
         PL_FA_ISO | PL_FA_NONDETERMINISTIC | PL_FA_VARARGS
