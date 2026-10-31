@@ -514,6 +514,13 @@ function pl_copy_term_nat2_va(
     return PL_unify(ld, copy, A2) ? FTRUE : FFALSE
 end
 
+# PORT: pl-copyterm.c duplicate_term (the C function pl-gvar.c's setval_duplicate and the predicate both call)
+# DIVERGES: no `nshare`/`share` arguments (the terms shared with the old value are not ported): the whole term is copied.
+"`duplicate_term(ld, in, copy)`: `copy` becomes a copy of `in` that shares no compound with it, attributes copied (pl-copyterm.c)."
+function duplicate_term(ld::PL_local_data{T}, in::term_t, copy::term_t)::Bool where {T}
+    return copy_term_refs(ld, in, copy, cp_options(COPY_ATTRS))
+end
+
 # PORT: pl-copyterm.c duplicate_term as pl_duplicate_term2_va
 # (PRED_IMPL("duplicate_term", 2, duplicate_term, 0))
 "`duplicate_term(+In, -Out)`: `Out` is a copy of `In` that shares no compound with it."
@@ -525,7 +532,7 @@ function pl_duplicate_term2_va(
         return PL_unify(ld, A1, A2) ? FTRUE : FFALSE
     end
     copy = PL_new_term_ref(ld)
-    copy_term_refs(ld, A1, copy, cp_options(COPY_ATTRS)) || return FFALSE
+    duplicate_term(ld, A1, copy) || return FFALSE
     return PL_unify(ld, copy, A2) ? FTRUE : FFALSE
 end
 
