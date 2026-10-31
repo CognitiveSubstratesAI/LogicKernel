@@ -74,6 +74,9 @@ mutable struct PL_global_data{T}
     const clause_refs::Vector{Clause{T}}                        # (pl-dbref.c: the clause a clause blob names, by its number in the payload; R2 D1)
     const clause_serials::IdDict{Clause{T}, Int}                # (a clause's number in `clause_refs`; R2 D1)
     bootsession::Bool                                           # bootsession: compiling the boot file (R2 LB2)
+    const record_lists::Dict{word, RecordList{T}}               # recorded_db.record_lists: the key's word -> its record list (R2 D2)
+    const record_lists_order::Vector{RecordList{T}}             # (the lists in the order they were made, the enumeration of recorded/3 and current_key/1; R2 D2)
+    const record_refs::Vector{RecordRef{T}}                     # (pl-dbref.c: the record a record blob names, by its number in the payload; R2 D2)
 end
 # DIVERGES: `atoms` is upstream's `GD->atoms` as a struct of its own (src/pl-atom.jl), one table per
 # database, built first as upstream's `initAtoms` runs first; `functors` likewise `GD->functors` with
@@ -108,6 +111,9 @@ end
 # holds the `Clause` pointer, here its number in `clause_refs`, `clause_serials` its inverse); the clause blob type is
 # registered where pl-setup.c:146 calls `initDBRef`. Since R2's LB2: `bootsession`, `GD->bootsession` (pl-global.h), false
 # unless a boot compilation sets it (`lookupSourceFile` marks a file `system`, `from_state` and `resource` while it is on).
+# Since R2's D2: `record_lists` (`GD->recorded_db.record_lists`, a hash table by the key's word, initRecords in pl-rec.c),
+# `record_lists_order` (its entries in creation order: upstream enumerates the table, we cannot, see src/pl-rec.jl) and
+# `record_refs` (the records a `record` blob names, as `clause_refs`).
 function PL_global_data{T}() where {T}
     cd = initSupervisors()
     modules = module_table{T}()                 # initModules: system, then user
@@ -168,7 +174,10 @@ function PL_global_data{T}() where {T}
         prolog_flag_table{T}(),                 # prolog_flag: none yet (initPrologFlags! defines them)
         Clause{T}[],                            # clause_refs: no clause has a reference yet
         IdDict{Clause{T}, Int}(),               # clause_serials
-        false                                   # bootsession: no boot compilation until LB3's `-b` path sets it
+        false,                                  # bootsession: no boot compilation until LB3's `-b` path sets it
+        Dict{word, RecordList{T}}(),            # record_lists: no key has a record yet
+        RecordList{T}[],                        # record_lists_order
+        RecordRef{T}[]                          # record_refs: no record has a reference yet
     )
     initPrologFlags!(gd)                        # setup:136 (src/os/pl-prologflag.jl): before the built-ins (:158), whose boot clauses read the mask
     initBuildIns!(gd)                           # setup:158 (src/pl-ext.jl)
@@ -342,7 +351,8 @@ ld_statistics() = ld_statistics(0, 0, 0, 0, WallTime(), 0.0, 0.0, 0.0, 0.0)
 # Since MOD6: `module_enums`, the pool of `'$current_module'/2`'s states.
 # Since R2 G1: `gvar_nb_vars` and `gvar_grefs`, upstream's `LD->gvar.nb_vars` (the
 # global variables: atom word -> value word) and `.grefs` (how many hold a value on the global stack, which
-# `_release_frozen!` then keeps), and `gvar_enums`, the pool of nb_current/2's states (src/pl-gvar.jl).
+# `_release_frozen!` then keeps), and `gvar_enums`, the pool of nb_current/2's states (src/pl-gvar.jl). Since R2 D2: `recorded_states`, the pool of recorded/2,3's states
+# (`recorded_state`, pl-incl.jl).
 """
     PL_local_data{T}(gd)
 
@@ -477,6 +487,7 @@ mutable struct PL_local_data{T}
     gvar_nb_vars::Dict{UInt64, UInt64}                          # gvar.nb_vars: atom word -> value word (R2 G1)
     gvar_grefs::Int                                             # gvar.grefs: the values on the global stack
     gvar_enums::foreign_state_pool{gvar_enum}                   # (nb_current/2's REDO_PTR states, R2 G1)
+    recorded_states::foreign_state_pool{recorded_state{T}}      # (recorded/2,3's REDO_PTR states, R2 D2)
 end
 function PL_local_data{T}(gd::PL_global_data{T}) where {T}
     e = mk_expr(T, T[])                         # any term: the idle placeholders' (index context, …)
@@ -560,7 +571,8 @@ function PL_local_data{T}(gd::PL_global_data{T}) where {T}
         foreign_state_pool{module_enum}(),      # '$current_module'/2's states: none
         Dict{UInt64, UInt64}(),                 # gvar.nb_vars: no global variable (pl-gvar.c: NULL)
         0,                                      # gvar.grefs: none
-        foreign_state_pool{gvar_enum}()         # nb_current/2's states: none
+        foreign_state_pool{gvar_enum}(),        # nb_current/2's states: none
+        foreign_state_pool{recorded_state{T}}()  # recorded/2,3's states: none
     )
     allocStacks!(ld)                            # the initial local stack, its spare reserved
     emptyStacks!(ld)
