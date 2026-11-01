@@ -1422,8 +1422,61 @@ function pl_prompt1_1_va(
     return FTRUE
 end
 
+# ── the input context stack: the predicates (pl-file.c, "TEMPORARY I/O"); `push_input_context` and
+# `pop_input_context` are LB3's (above), the stack is `ld.input_context_stack` ─────────────────────────────────
+
+# PORT: pl-file.c push_input_context as pl_push_input_context1_va
+# (PRED_IMPL("$push_input_context", 1, push_input_context, 0)) — pl-file.c:1623-1632
+function pl_push_input_context1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    _initIO(ld)                                     # the standard streams are open from the boot on upstream
+    type = PL_get_atom_ex(ld, PL__t0)
+    type === nothing && return FFALSE
+    return push_input_context(ld, type) ? FTRUE : FFALSE
+end
+
+# PORT: pl-file.c pop_input_context as pl_pop_input_context0_va
+# (PRED_IMPL("$pop_input_context", 0, pop_input_context, 0)) — pl-file.c:1635-1639
+function pl_pop_input_context0_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    _initIO(ld)
+    return pop_input_context(ld) ? FTRUE : FFALSE
+end
+
+# PORT: pl-file.c input_context as pl_input_context1_va
+# (PRED_IMPL("$input_context", 1, input_context, 0)) — pl-file.c:1647-1672
+# DIVERGES: `PL_unify_term(head, PL_FUNCTOR, FUNCTOR_input4, …)` is `PL_unify_functor` then `PL_unify_arg` of each argument.
+"`'\$input_context'(-List)`: the list of `input(Type, File, Line, Stream)` terms of the input context stack, the top first (pl-file.c)."
+function pl_input_context1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1 = PL__t0
+    _initIO(ld)
+    tail = PL_copy_term_ref(ld, A1)
+    head = PL_new_term_ref(ld)
+    stream = PL_new_term_ref(ld)
+    arg = PL_new_term_ref(ld)
+    for c in Iterators.reverse(ld.input_context_stack)
+        file = c.term_file === nothing ? mk_sym(T, :-) : c.term_file::T
+        line = c.term_file === nothing ? 0 : c.term_line
+        PL_put_variable(ld, stream)
+        PL_unify_stream_or_alias(ld, stream, c.stream::IOSTREAM) || return FFALSE   # never NULL: the streams are open at a push
+        PL_unify_list(ld, tail, head, tail) || return FFALSE
+        PL_unify_functor(ld, head, mk_sym(T, :input), 4) || return FFALSE
+        (
+            _PL_get_arg(ld, 1, head, arg) && PL_unify_atom(ld, arg, c.type) &&
+            _PL_get_arg(ld, 2, head, arg) && PL_unify_atom(ld, arg, file) &&
+            _PL_get_arg(ld, 3, head, arg) && PL_unify_integer(ld, arg, line) &&
+            PL_unify_arg(ld, 4, head, stream)
+        ) || return FFALSE
+    end
+    return PL_unify_nil(ld, tail) ? FTRUE : FFALSE
+end
+
 # PORT: pl-file.c BeginPredDefs as PL_predicates_from_file
-# DIVERGES: the entries of the predicates the kernel has ported (S1: open/3,4 and close/1,2; S2a: prompt/2 and prompt1/1; LB2:
+# DIVERGES: the entries of the predicates the kernel has ported (S1: open/3,4 and close/1,2; S2a: prompt/2, prompt1/1 and the input context trio; LB2:
 # source_location/2 and '$set_source_location'/2, upstream's order file:6396-6397); `PRED_DEF` ors in `PL_FA_VARARGS`.
 "pl-file.c's registration table (`BeginPredDefs(file)`): the ported entries."
 const PL_predicates_from_file = (
@@ -1434,7 +1487,10 @@ const PL_predicates_from_file = (
     PL_extension("prompt", 2, pl_prompt2_va, PL_FA_VARARGS),
     PL_extension("prompt1", 1, pl_prompt1_1_va, PL_FA_VARARGS),
     PL_extension("source_location", 2, pl_source_location2_va, PL_FA_VARARGS),
-    PL_extension("\$set_source_location", 2, pl_set_source_location2_va, PL_FA_VARARGS)
+    PL_extension("\$set_source_location", 2, pl_set_source_location2_va, PL_FA_VARARGS),
+    PL_extension("\$push_input_context", 1, pl_push_input_context1_va, PL_FA_VARARGS),
+    PL_extension("\$pop_input_context", 0, pl_pop_input_context0_va, PL_FA_VARARGS),
+    PL_extension("\$input_context", 1, pl_input_context1_va, PL_FA_VARARGS)
 )
 
 #

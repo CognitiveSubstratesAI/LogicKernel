@@ -366,6 +366,7 @@ ld_statistics() = ld_statistics(0, 0, 0, 0, WallTime(), 0.0, 0.0, 0.0, 0.0)
 # (`recorded_state`, pl-incl.jl). Since R2 O1B: `IO_output_stack` (`LD->IO.output_stack`: the output context stack
 # of `with_output_to/2` and `format/3`'s redirect, src/os/pl-file.jl).
 # Since R2 S2a: `prompt_current`, `prompt_first`, `prompt_first_used` (`LD->prompt`: prompt/2, prompt1/1; src/os/pl-file.jl).
+# (the input context stack is LB3's `input_context_stack`, which `'\$push_input_context'/1` shares; src/os/pl-file.jl).
 """
     PL_local_data{T}(gd)
 
