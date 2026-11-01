@@ -106,7 +106,7 @@ end
     @test length(al) == length(LK._reachable_mutables(TMPL))
     c = LK.copy_global_data(TMPL)
     cf = Any[getfield(c, i) for i in 1:n]
-    cf[findfirst(==(:atoms), fieldnames(typeof(TMPL)))] = TMPL.atoms
+    cf[Base.fieldindex(typeof(TMPL), :atoms)] = TMPL.atoms
     half = typeof(TMPL)(cf...)                                      # a copy that shares only the atom table
     al = LK.gd_aliased_objects(TMPL, half)
     @test any(x -> x === TMPL.atoms, al)

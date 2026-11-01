@@ -157,6 +157,7 @@ function _reachable_mutables(root)::IdSet{Any}   # allow-any: the objects of a d
     while !isempty(stack)
         x = pop!(stack)
         _alias_skip(x) && continue
+        x isa Memory && isempty(x) && continue   # the empty Memory of a type is one shared instance: no database owns it
         if ismutable(x)
             x in seen && continue
             push!(seen, x)
