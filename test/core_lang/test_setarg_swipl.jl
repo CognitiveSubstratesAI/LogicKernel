@@ -1,5 +1,5 @@
 # ORIGINAL: a LIVE differential of SETARG's `setarg/3`, `nb_setarg/3` and `nb_linkarg/3` (pl-prims.c:2790-2923) against swipl at
-# the pin — SETARG's rows test/core_lang/test_setarg_swipl.jl (sa01-sa83) against swipl 10.1.19:
+# the pin — SETARG's rows test/core_lang/test_setarg_swipl.jl (sa01-sa94) against swipl 10.1.19:
 #   * A PROGRAM consulted by the kernel's loader and cases `t_<id>(R)` run in order in one database, each wrapped in
 #     `catch(Goal, error(SsuE, _), R = raised(SsuE))`; the driver is test_bootpred_swipl.jl's (`enc`oded answers).
 #   * Every answer line is swipl's, PINNED (swipl 10.1.19-1-gcbf4e189, lk-channel evidence/SETARG/setarg_rows.out on the
@@ -98,6 +98,9 @@ sa_arg(1, T, A) :- T =.. [_, A|_].
 sa_arg(2, T, A) :- T =.. [_, _, A|_].
 sa_inc(T) :- sa_arg(1, T, V0), V is V0+1, nb_setarg(1, T, V).
 sa_binc(T) :- sa_arg(1, T, V0), V is V0+1, setarg(1, T, V).
+:- dynamic sa_hooklog/2.
+% sa_log(Tag): an attribute (module user) whose hook records the value it is bound to
+attr_unify_hook(sa_log(Tag), V) :- ( attvar(V) -> K = attvar ; var(V) -> K = var ; K = V ), assertz(sa_hooklog(Tag, K)).
 """
 
 const _SA_CASES = [
@@ -256,6 +259,53 @@ const _SA_CASES = [
     (
         "sa83",
         raw"T = f(a), ( put_attr(X, sa, 1), nb_setarg(1, T, g(X)), fail ; true ), sa_arg(1, T, G), sa_arg(1, G, A), ( attvar(A) -> get_attr(A, sa, R) ; R = plain )"
+    ),
+    # sa84-sa89 a variable as the value, its place in the standard order: made before the compound (the cell is linked to it),
+    # made after it (it is linked to the cell); unify_vp, the path of nb_setarg, nb_linkarg and of setarg on a bound argument
+    (
+        "sa84",
+        raw"W = _, V = _, T = f(a), setarg(1, T, V), sa_arg(1, T, A), compare(O1, W, A), compare(O2, A, V), R = O1-O2"
+    ),
+    (
+        "sa85",
+        raw"W = _, V = _, T = f(a), nb_setarg(1, T, V), sa_arg(1, T, A), compare(O1, W, A), compare(O2, A, V), R = O1-O2"
+    ),
+    (
+        "sa86",
+        raw"W = _, V = _, T = f(a), nb_linkarg(1, T, V), sa_arg(1, T, A), compare(O1, W, A), compare(O2, A, V), R = O1-O2"
+    ),
+    (
+        "sa87",
+        raw"T = f(a), W = _, X = _, setarg(1, T, X), sa_arg(1, T, A), compare(O1, A, W), compare(O2, A, X), R = O1-O2"
+    ),
+    (
+        "sa88",
+        raw"T = f(a), W = _, X = _, nb_setarg(1, T, X), sa_arg(1, T, A), compare(O1, A, W), compare(O2, A, X), R = O1-O2"
+    ),
+    (
+        "sa89",
+        raw"T = f(a), W = _, X = _, nb_linkarg(1, T, X), sa_arg(1, T, A), compare(O1, A, W), compare(O2, A, X), R = O1-O2"
+    ),
+    # sa90-sa94 an attributed variable as the value: the stored cell IS the attributed variable (get_attr, same variable, the hook woken)
+    (
+        "sa90",
+        raw"put_attr(X, user, sa_log(s90)), T = f(a), setarg(1, T, X), sa_arg(1, T, A), get_attr(A, user, At), ( A == X -> I = same ; I = diff ), R = At-I"
+    ),
+    (
+        "sa91",
+        raw"put_attr(X, user, sa_log(s91)), T = f(a), nb_setarg(1, T, X), sa_arg(1, T, A), get_attr(A, user, At), ( A == X -> I = same ; I = diff ), R = At-I"
+    ),
+    (
+        "sa92",
+        raw"put_attr(X, user, sa_log(s92)), T = f(a), setarg(1, T, X), X = 5, findall(K, sa_hooklog(s92, K), L), R = T-L"
+    ),
+    (
+        "sa93",
+        raw"put_attr(X, user, sa_log(s93)), T = f(a), nb_linkarg(1, T, X), sa_arg(1, T, A), A = 6, findall(K, sa_hooklog(s93, K), L), R = X-L"
+    ),
+    (
+        "sa94",
+        raw"put_attr(X, user, sa_log(s94)), T = f(a), nb_setarg(1, T, X), X = 7, findall(K, sa_hooklog(s94, K), L), R = T-L"
     )
 ]
 
@@ -344,7 +394,18 @@ const _SA_PINNED = [
     "t_sa80 c[116,95,115,97,56,48]/1(c[102]/1(a[113]))",
     "t_sa81 c[116,95,115,97,56,49]/1(a[118,97,114])",
     "t_sa82 c[116,95,115,97,56,50]/1(i1)",
-    "t_sa83 c[116,95,115,97,56,51]/1(i1)"
+    "t_sa83 c[116,95,115,97,56,51]/1(i1)",
+    "t_sa84 c[116,95,115,97,56,52]/1(c[45]/2(a[60],a[61]))",
+    "t_sa85 c[116,95,115,97,56,53]/1(c[45]/2(a[60],a[61]))",
+    "t_sa86 c[116,95,115,97,56,54]/1(c[45]/2(a[60],a[61]))",
+    "t_sa87 c[116,95,115,97,56,55]/1(c[45]/2(a[60],a[61]))",
+    "t_sa88 c[116,95,115,97,56,56]/1(c[45]/2(a[60],a[61]))",
+    "t_sa89 c[116,95,115,97,56,57]/1(c[45]/2(a[60],a[61]))",
+    "t_sa90 c[116,95,115,97,57,48]/1(c[45]/2(c[115,97,95,108,111,103]/1(a[115,57,48]),a[115,97,109,101]))",
+    "t_sa91 c[116,95,115,97,57,49]/1(c[45]/2(c[115,97,95,108,111,103]/1(a[115,57,49]),a[115,97,109,101]))",
+    "t_sa92 c[116,95,115,97,57,50]/1(c[45]/2(c[102]/1(i5),c[91,124,93]/2(i5,nil)))",
+    "t_sa93 c[116,95,115,97,57,51]/1(c[45]/2(i6,c[91,124,93]/2(i6,nil)))",
+    "t_sa94 c[116,95,115,97,57,52]/1(c[45]/2(c[102]/1(i7),c[91,124,93]/2(i7,nil)))"
 ]
 
 function _sa_file()::Tuple{String, Vector{String}}
@@ -401,7 +462,7 @@ function _sa_kernel(path::String, names::Vector{String})
     return out, gd, ld
 end
 
-@testset "setarg/3, nb_setarg/3, nb_linkarg/3 as swipl's (sa01-sa83)" begin
+@testset "setarg/3, nb_setarg/3, nb_linkarg/3 as swipl's (sa01-sa94)" begin
     f, names = _sa_file()
     kl, _, _ = _sa_kernel(f, names)
     @test length(kl) == length(_SA_PINNED)
@@ -411,7 +472,7 @@ end
     end
 end
 
-@testset "the setarg rows are not vacuous (sa01-sa83)" begin
+@testset "the setarg rows are not vacuous (sa01-sa94)" begin
     # the program loaded (`ok`); every row has a line; the failing rows answer `no`, the errors `raised(_)`
     @test _SA_PINNED[1] == "ok"
     @test all(

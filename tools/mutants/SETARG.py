@@ -4,7 +4,7 @@
 # table; pl-copyterm.c duplicate_term's nshare/share: share_for_duplicate, mark_for_duplicate), run ONCE, in CI
 # (.github/workflows/mutation.yml; locally: tools/mutate.sh run). Format: tools/mutate_drive.py's (as MOD3b.py): `id`,
 # `file`, `old` (must occur EXACTLY once), `new`, optional `equivalent` and `targets`. Killed by
-# test/core_lang/test_setarg_swipl.jl (rows sa01-sa83 named in each id's KILL). Verdicts: written by the battery, not
+# test/core_lang/test_setarg_swipl.jl (rows sa01-sa94 named in each id's KILL). Verdicts: written by the battery, not
 # yet run. 27 mutants, 2 EQUIVALENT (A5, E4), each with its file:line reason.
 # The `old` strings are written in the repo's formatted style BEFORE `tools/warm.sh fmt` ran (the coding agent had no
 # daemon): RE-FIT any that fmt rewraps at the first battery run (mutate_drive.py refuses a string that does not occur
@@ -89,11 +89,11 @@ MUTANTS = [
          file=P, targets=TS,
          old="        ld.slots[share + 1] = w ",
          new="        ld.slots[share + 1] = word(0) "),
-    dict(id="SETARG-C1 a variable value binds the other way round: the younger is not linked to the older (KILL sa12, sa79, sa80, sa81)",
+    dict(id="SETARG-C1 a variable value binds the other way round: the younger is not linked to the older (KILL sa84, sa85, sa86, sa87, sa88, sa89)",
          file=P, targets=TS,
          old="        if v < vp\n",
          new="        if v > vp\n"),
-    dict(id="SETARG-C2 an attributed variable value is stored as a plain value word, not as a reference to it (KILL sa68, sa69, sa72, sa82)",
+    dict(id="SETARG-C2 an attributed variable value is stored as a plain value word, not as a reference to it (KILL sa90, sa91, sa92, sa93, sa94)",
          file=P, targets=TS,
          old="    elseif k == DU_ATTVAR                                   # else if ( isAttVar(*val) )\n",
          new="    elseif false\n"),

@@ -98,7 +98,7 @@ how many of the upstream file's functions are ported.
 | swipl-devel `src/pl-codetable.c` | code | `cbf4e1896275` | `src/pl-vmi.jl` | 1 | 1 |
 | swipl-devel `src/pl-comp.c` | code | `cbf4e1896275` | `src/pl-comp.jl` | 160 | 84 |
 | swipl-devel `src/pl-comp.h` | code | `cbf4e1896275` | `src/pl-comp.jl` | 1 | 0 |
-| swipl-devel `src/pl-copyterm.c` | code | `cbf4e1896275` | `src/pl-copyterm.jl` | 20 | 12 |
+| swipl-devel `src/pl-copyterm.c` | code | `cbf4e1896275` | `src/pl-copyterm.jl` | 22 | 13 |
 | swipl-devel `src/pl-data.h` | code | `cbf4e1896275` | `src/pl-incl.jl` | 77 | 8 |
 | swipl-devel `src/pl-data.h` | code | `cbf4e1896275` | `src/pl-inline.jl` | 4 | 1 |
 | swipl-devel `src/pl-dbref.c` | code | `cbf4e1896275` | `src/pl-dbref.jl` | 16 | 15 |
@@ -149,8 +149,9 @@ how many of the upstream file's functions are ported.
 | swipl-devel `src/pl-mutex.c` | code | `cbf4e1896275` | `src/pl-mutex.jl` | 1 | 1 |
 | swipl-devel `src/pl-op.c` | code | `cbf4e1896275` | `src/pl-incl.jl` | 1 | 1 |
 | swipl-devel `src/pl-op.c` | code | `cbf4e1896275` | `src/pl-op.jl` | 20 | 16 |
-| swipl-devel `src/pl-prims.c` | code | `cbf4e1896275` | `src/pl-prims.jl` | 130 | 64 |
+| swipl-devel `src/pl-prims.c` | code | `cbf4e1896275` | `src/pl-prims.jl` | 137 | 67 |
 | swipl-devel `src/pl-prims.c` | code | `cbf4e1896275` | `src/pl-string.jl` | 7 | 4 |
+| swipl-devel `src/pl-prims.h` | code | `cbf4e1896275` | `src/pl-prims.jl` | 2 | 0 |
 | swipl-devel `src/pl-privitf.c` | code | `cbf4e1896275` | `src/pl-string.jl` | 1 | 1 |
 | swipl-devel `src/pl-pro.c` | code | `cbf4e1896275` | `src/pl-pro.jl` | 3 | 3 |
 | swipl-devel `src/pl-proc.c` | code | `cbf4e1896275` | `src/pl-incl.jl` | 1 | 1 |
@@ -249,7 +250,7 @@ checkout is pulled.
 | swipl-devel `src/pl-codetable.c` | `cbf4e1896275` | 0 | 0 | 0 | src/pl-vmi.jl |
 | swipl-devel `src/pl-comp.c` | `cbf4e1896275` | 95 | 167 | 67 | src/pl-comp.jl |
 | swipl-devel `src/pl-comp.h` | `cbf4e1896275` | 1 | 6 | 0 | src/pl-comp.jl |
-| swipl-devel `src/pl-copyterm.c` | `cbf4e1896275` | 14 | 29 | 11 | src/pl-copyterm.jl |
+| swipl-devel `src/pl-copyterm.c` | `cbf4e1896275` | 15 | 29 | 12 | src/pl-copyterm.jl |
 | swipl-devel `src/pl-data.h` | `cbf4e1896275` | 2 | 2 | 0 | src/pl-incl.jl, src/pl-inline.jl |
 | swipl-devel `src/pl-dbref.c` | `cbf4e1896275` | 14 | 18 | 13 | src/pl-dbref.jl |
 | swipl-devel `src/pl-dbref.h` | `cbf4e1896275` | 0 | 0 | 0 | src/pl-dbref.jl |
@@ -276,7 +277,8 @@ checkout is pulled.
 | swipl-devel `src/pl-modul.c` | `cbf4e1896275` | 50 | 70 | 40 | src/pl-modul.jl |
 | swipl-devel `src/pl-mutex.c` | `cbf4e1896275` | 1 | 33 | 1 | src/pl-mutex.jl |
 | swipl-devel `src/pl-op.c` | `cbf4e1896275` | 16 | 21 | 15 | src/pl-incl.jl, src/pl-op.jl |
-| swipl-devel `src/pl-prims.c` | `cbf4e1896275` | 97 | 188 | 56 | src/pl-prims.jl, src/pl-string.jl |
+| swipl-devel `src/pl-prims.c` | `cbf4e1896275` | 103 | 188 | 59 | src/pl-prims.jl, src/pl-string.jl |
+| swipl-devel `src/pl-prims.h` | `cbf4e1896275` | 0 | 0 | 0 | src/pl-prims.jl |
 | swipl-devel `src/pl-privitf.c` | `cbf4e1896275` | 1 | 5 | 1 | src/pl-string.jl |
 | swipl-devel `src/pl-pro.c` | `cbf4e1896275` | 3 | 33 | 3 | src/pl-pro.jl |
 | swipl-devel `src/pl-proc.c` | `cbf4e1896275` | 59 | 126 | 43 | src/pl-incl.jl, src/pl-proc.jl |
@@ -316,7 +318,7 @@ checkout is pulled.
 | swipl-devel `tests/db/test_db.pl` | `cbf4e1896275` | 2 | 10 | 0 | test/db/test_db.jl |
 | swipl-devel `tests/db/test_jit.pl` | `cbf4e1896275` | 16 | 21 | 0 | test/db/test_jit.jl |
 | swipl-devel `tests/rational/test_ieee754.pl` | `cbf4e1896275` | 0 | 15 | 0 | test/rational/test_ieee754.jl |
-| **total** | | **1639** | **4820** | **944** | |
+| **total** | | **1646** | **4820** | **948** | |
 <!-- END GENERATED coverage -->
 
 ### Not ported: unreachable upstream

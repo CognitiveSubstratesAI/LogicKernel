@@ -8,6 +8,9 @@ sa_arg(1, T, A) :- T =.. [_, A|_].
 sa_arg(2, T, A) :- T =.. [_, _, A|_].
 sa_inc(T) :- sa_arg(1, T, V0), V is V0+1, nb_setarg(1, T, V).
 sa_binc(T) :- sa_arg(1, T, V0), V is V0+1, setarg(1, T, V).
+:- dynamic sa_hooklog/2.
+% sa_log(Tag): an attribute (module user) whose hook records the value it is bound to
+attr_unify_hook(sa_log(Tag), V) :- ( attvar(V) -> K = attvar ; var(V) -> K = var ; K = V ), assertz(sa_hooklog(Tag, K)).
 t_sa01(R) :- catch((T = f(a,b), setarg(1, T, x), R = T), error(SsuE, _), R = raised(SsuE)).
 t_sa02(R) :- catch((T = f(a,b), setarg(2, T, x), R = T), error(SsuE, _), R = raised(SsuE)).
 t_sa03(R) :- catch((T = f(a,b,c), ( setarg(2, T, x), fail ; true ), R = T), error(SsuE, _), R = raised(SsuE)).
@@ -91,3 +94,14 @@ t_sa80(R) :- catch((T = f(a), nb_linkarg(1, T, X), X = q, R = T), error(SsuE, _)
 t_sa81(R) :- catch((T = f(a), ( nb_setarg(1, T, X), fail ; true ), sa_arg(1, T, A), ( var(A) -> R = var ; R = nonvar )), error(SsuE, _), R = raised(SsuE)).
 t_sa82(R) :- catch((T = f(a), ( put_attr(X, sa, 1), nb_setarg(1, T, X), fail ; true ), sa_arg(1, T, A), ( attvar(A) -> get_attr(A, sa, R) ; R = plain )), error(SsuE, _), R = raised(SsuE)).
 t_sa83(R) :- catch((T = f(a), ( put_attr(X, sa, 1), nb_setarg(1, T, g(X)), fail ; true ), sa_arg(1, T, G), sa_arg(1, G, A), ( attvar(A) -> get_attr(A, sa, R) ; R = plain )), error(SsuE, _), R = raised(SsuE)).
+t_sa84(R) :- catch((W = _, V = _, T = f(a), setarg(1, T, V), sa_arg(1, T, A), compare(O1, W, A), compare(O2, A, V), R = O1-O2), error(SsuE, _), R = raised(SsuE)).
+t_sa85(R) :- catch((W = _, V = _, T = f(a), nb_setarg(1, T, V), sa_arg(1, T, A), compare(O1, W, A), compare(O2, A, V), R = O1-O2), error(SsuE, _), R = raised(SsuE)).
+t_sa86(R) :- catch((W = _, V = _, T = f(a), nb_linkarg(1, T, V), sa_arg(1, T, A), compare(O1, W, A), compare(O2, A, V), R = O1-O2), error(SsuE, _), R = raised(SsuE)).
+t_sa87(R) :- catch((T = f(a), W = _, X = _, setarg(1, T, X), sa_arg(1, T, A), compare(O1, A, W), compare(O2, A, X), R = O1-O2), error(SsuE, _), R = raised(SsuE)).
+t_sa88(R) :- catch((T = f(a), W = _, X = _, nb_setarg(1, T, X), sa_arg(1, T, A), compare(O1, A, W), compare(O2, A, X), R = O1-O2), error(SsuE, _), R = raised(SsuE)).
+t_sa89(R) :- catch((T = f(a), W = _, X = _, nb_linkarg(1, T, X), sa_arg(1, T, A), compare(O1, A, W), compare(O2, A, X), R = O1-O2), error(SsuE, _), R = raised(SsuE)).
+t_sa90(R) :- catch((put_attr(X, user, sa_log(s90)), T = f(a), setarg(1, T, X), sa_arg(1, T, A), get_attr(A, user, At), ( A == X -> I = same ; I = diff ), R = At-I), error(SsuE, _), R = raised(SsuE)).
+t_sa91(R) :- catch((put_attr(X, user, sa_log(s91)), T = f(a), nb_setarg(1, T, X), sa_arg(1, T, A), get_attr(A, user, At), ( A == X -> I = same ; I = diff ), R = At-I), error(SsuE, _), R = raised(SsuE)).
+t_sa92(R) :- catch((put_attr(X, user, sa_log(s92)), T = f(a), setarg(1, T, X), X = 5, findall(K, sa_hooklog(s92, K), L), R = T-L), error(SsuE, _), R = raised(SsuE)).
+t_sa93(R) :- catch((put_attr(X, user, sa_log(s93)), T = f(a), nb_linkarg(1, T, X), sa_arg(1, T, A), A = 6, findall(K, sa_hooklog(s93, K), L), R = X-L), error(SsuE, _), R = raised(SsuE)).
+t_sa94(R) :- catch((put_attr(X, user, sa_log(s94)), T = f(a), nb_setarg(1, T, X), X = 7, findall(K, sa_hooklog(s94, K), L), R = T-L), error(SsuE, _), R = raised(SsuE)).
