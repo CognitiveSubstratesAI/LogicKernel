@@ -713,6 +713,257 @@ function pl_split_string4_va(
     return PL_unify_nil(ld, tail) ? FTRUE : FFALSE
 end
 
+# ── string_bytes/3 (pl-string.c 194-262) ────────────────────────────────────────────────────────────
+
+# PORT: pl-string.c unit_length
+# DIVERGES: `sizeof(wchar_t)` is 4, as the kernel's `ENC_WCHAR` text (src/os/pl-text.jl).
+"The size in bytes of one unit of text in `enc`, the `length` of a text counting units (pl-string.c)."
+unit_length(enc::IOENC)::Int = enc === ENC_WCHAR ? 4 : 1
+
+# PORT: pl-text.h ERR_TEXT_ILLEGAL_UTF16, ERR_TEXT_INCOMPLETE_MULTIBYTE_SEQUENCE
+# DIVERGES: `PL_canonicalise_text` of src/os/pl-text.jl gives only `ERR_TEXT_INVALID_CODE_POINT`; these two come
+# from the UTF-16 decode below (`utf16_to_text`).
+"`utf16_to_text`'s error: a lead surrogate without its trail (pl-text.h)."
+const ERR_TEXT_ILLEGAL_UTF16 = -2
+"`utf16_to_text`'s error: an odd number of bytes in a UTF-16 text (pl-text.h)."
+const ERR_TEXT_INCOMPLETE_MULTIBYTE_SEQUENCE = -4
+
+# PORT: pl-utf8.h IS_UTF16_LEAD, IS_UTF16_TRAIL, utf16_decode, utf16_encode
+"True for a UTF-16 lead surrogate (pl-utf8.h)."
+IS_UTF16_LEAD(c::Integer)::Bool = c >= 0xD800 && c <= 0xDBFF
+"True for a UTF-16 trail surrogate (pl-utf8.h)."
+IS_UTF16_TRAIL(c::Integer)::Bool = c >= 0xDC00 && c <= 0xDFFF
+"The code point of a UTF-16 surrogate pair (pl-utf8.h)."
+utf16_decode(lead::Integer, trail::Integer)::Int =
+    ((Int(lead) - 0xD800) << 10) + (Int(trail) - 0xDC00) + 0x10000
+"The lead and the trail surrogate of the code point `c` above 0xffff (pl-utf8.h)."
+function utf16_encode(c::Integer)::Tuple{Int, Int}
+    c = Int(c) - 0x10000
+    return ((c >> 10) + 0xD800, (c & 0x3FF) + 0xDC00)
+end
+
+# PORT: pl-text.c PL_canonicalise_text (the ENC_UTF16LE and ENC_UTF16BE case)
+# DIVERGES: src/os/pl-text.jl's `PL_canonicalise_text` refuses the two encodings by name, so the decode is here
+# and returns the text, or the error code; the byte order is read explicitly where upstream flips the bytes
+# (`flip_shorts`) to the native order. The wide branch is upstream's as it stands (pl-text.c, `if ( wide )`): a
+# lead surrogate is replaced by the pair's code point and the loop steps ONE unit, so the trail is copied as a
+# character too, and `length` is the number of units. The result is not canonical: the trail is then refused
+# by `PL_canonicalise_text` (`ERR_TEXT_INVALID_CODE_POINT`), the answer of swipl 10.1.19 for every surrogate pair.
+"""
+    utf16_to_text(text) -> PL_chars_t or ERR_TEXT_*
+
+The text a UTF-16 `text` (`length` in bytes) holds: ISO Latin-1 when every unit is at most 0xff, else
+`ENC_WCHAR`; an error code for an odd length or a lead surrogate without a trail (pl-text.c).
+"""
+function utf16_to_text(text::PL_chars_t)::Union{PL_chars_t, Int}
+    text.length % 2 != 0 && return ERR_TEXT_INCOMPLETE_MULTIBYTE_SEQUENCE
+    len = text.length ÷ 2
+    be = text.encoding === ENC_UTF16BE
+    w = Vector{Int}(undef, len)
+    for i in 1:len
+        b0 = Int(text.text[2i - 1])
+        b1 = Int(text.text[2i])
+        w[i] = be ? (b0 << 8) | b1 : (b1 << 8) | b0
+    end
+
+    wide = false
+    i = 1
+    while i <= len
+        w[i] > 0xff && (wide = true)
+        if IS_UTF16_LEAD(w[i])
+            if i + 1 <= len && IS_UTF16_TRAIL(w[i + 1])
+                i += 1
+            else
+                return ERR_TEXT_ILLEGAL_UTF16
+            end
+        end
+        i += 1
+    end
+
+    if wide
+        to = UInt32[]
+        i = 1
+        while i <= len
+            if IS_UTF16_LEAD(w[i])
+                push!(to, utf16_decode(w[i], w[i + 1]))
+            else
+                push!(to, w[i])
+            end
+            i += 1                                          # upstream: `w++` in both branches
+        end
+        return PL_chars_t(Vector{UInt8}(reinterpret(UInt8, to)), len, ENC_WCHAR, false)
+    else
+        return PL_chars_t(UInt8[c for c in w], len, ENC_ISO_LATIN_1, false)
+    end
+end
+
+# PORT: pl-error.c PL_syntax_error (the form without a stream)
+# DIVERGES: only `in == NULL`: the location is left unbound (no stream table).
+"Raise `error(syntax_error(Msg), _)` (pl-error.c `PL_syntax_error(msg, NULL)`); false."
+function PL_syntax_error(ld::PL_local_data{T}, msg::String, ::Nothing)::Bool where {T}
+    ex = PL_new_term_ref(ld)
+    formal = PL_new_term_ref(ld)
+    loc = PL_new_term_ref(ld)
+    PL_cons_functor(
+        ld, formal, _err_functor(ld, :syntax_error, 1), _err_atom(ld, mk_sym(T, Symbol(msg)))
+    )
+    PL_cons_functor(ld, ex, _err_functor(ld, :error, 2), formal, loc)
+    return PL_raise_exception(ld, ex)
+end
+
+# PORT: pl-text.c text_error (the two UTF-16 codes)
+"Raise the error for the code `rc` of `utf16_to_text` or of `PL_canonicalise_text`; false (pl-text.c)."
+function string_bytes_text_error(ld::PL_local_data{T}, rc::Int)::Bool where {T}
+    rc == ERR_TEXT_ILLEGAL_UTF16 && return PL_syntax_error(ld, "illegal_utf16_sequence", nothing)
+    rc == ERR_TEXT_INCOMPLETE_MULTIBYTE_SEQUENCE &&
+        return PL_syntax_error(ld, "incomplete_multibyte_sequence", nothing)
+    return text_error(ld, rc)
+end
+
+# ORIGINAL (T2): upstream's `PL_encoding_to_atom` (NOT PORTED in src/os/pl-file.jl) as the first name of
+# `encoding_names` that has `enc`.
+"The name of the encoding `enc` (pl-file.c `PL_encoding_to_atom`'s atom text)."
+function encoding_name(enc::IOENC)::String
+    for (n, e) in encoding_names
+        e === enc && return String(n)
+    end
+    error("encoding_name: no name for $enc")
+end
+
+# PORT: pl-text.c text_representation_error
+"Raise `representation_error(encoding)` with the message `cannot represent text using encoding Name`; false (pl-text.c)."
+function text_representation_error(ld::PL_local_data{T}, enc::IOENC)::Bool where {T}
+    msg = "cannot represent text using encoding " * encoding_name(enc)
+    return PL_error(ld, "", 0, msg, ERR_REPRESENTATION, mk_sym(T, :encoding))
+end
+
+# PORT: pl-text.c PL_text_recode
+# DIVERGES: the encodings `string_bytes/3` reaches: the target is `ENC_UTF8`, `ENC_ISO_LATIN_1`, `ENC_OCTET`,
+# `ENC_ASCII`, `ENC_UTF16LE` or `ENC_UTF16BE` and `text` is canonical (the caller canonicalises it; upstream's
+# `PL_get_text` gives canonical texts, the kernel's does not, see `PL_chars_t`). The bytes go into `text.text`
+# (a Julia vector: no buffers), the `length` is in bytes for UTF-8 and UTF-16, in characters for the others.
+# NOT PORTED: the `ENC_ANSI` source and target (the locale; `string_bytes/3` refuses it by name first).
+"Recode the canonical `text` to `encoding` in place; false after the error (pl-text.c)."
+function PL_text_recode(ld::PL_local_data{T}, text::PL_chars_t, encoding::IOENC)::Bool where {T}
+    text.encoding === encoding && return true
+    if encoding === ENC_UTF8
+        if text.encoding === ENC_ISO_LATIN_1
+            if !any(c -> c & 0x80 != 0, text.text)           # ASCII; nothing to do
+                text.encoding = ENC_UTF8
+                text.canonical = false
+                return true
+            end
+        end
+        b = UInt8[]
+        for c in _text_code_points(text)
+            utf8_put_char(b, c)
+        end
+        text.text = b
+        text.length = length(b)
+        text.encoding = ENC_UTF8
+        text.canonical = false
+        return true
+    elseif encoding === ENC_ISO_LATIN_1 || encoding === ENC_OCTET || encoding === ENC_ASCII
+        @assert text.canonical "PL_text_recode: a text that is not canonical"
+        text.encoding === ENC_WCHAR && return text_representation_error(ld, encoding)
+        if encoding === ENC_ASCII
+            for c in text.text
+                c >= 128 && return text_representation_error(ld, encoding)
+            end
+        end
+        text.canonical = false
+        text.encoding = encoding
+        return true
+    elseif encoding === ENC_UTF16LE || encoding === ENC_UTF16BE
+        @assert text.canonical "PL_text_recode: a text that is not canonical"
+        b = UInt8[]
+        for c in _text_code_points(text)
+            units = c > 0xffff ? utf16_encode(c) : (c,)
+            for u in units                                  # addUTF16Buffer_unit
+                if encoding === ENC_UTF16LE
+                    push!(b, UInt8(u & 0xff), UInt8(u >> 8))
+                else
+                    push!(b, UInt8(u >> 8), UInt8(u & 0xff))
+                end
+            end
+        end
+        text.text = b
+        text.length = length(b)
+        text.encoding = encoding
+        text.canonical = false
+        return true
+    end
+    throw(
+        NotPortedError{Nothing}(
+            nothing, "PL_text_recode to $encoding", "the locale (ENC_ANSI) is refused by name"
+        )
+    )
+end
+
+# PORT: pl-string.c string_bytes as pl_string_bytes3_va
+# (PRED_IMPL("string_bytes", 3, string_bytes, 0))
+# DIVERGES: `PL_get_nchars(A2, …, CVT_LIST|REP_ISO_LATIN_1|CVT_EXCEPTION)` is `PL_get_text` plus the refusal
+# of a wide text, `representation_error(encoding)` for ISO Latin-1 as upstream's `PL_mb_text`; the byte list is
+# a canonical ISO Latin-1 text. `PL_unify_chars(A2, PL_CODE_LIST|REP_ISO_LATIN_1, …)` is `PL_unify_text` of
+# that text. NOT PORTED: the encoding `text` (`ENC_ANSI`, the locale) is refused by name, `NotPortedError`.
+# Decoding with `ascii` ends in `PL_canonicalise_text` of `ENC_ASCII`, refused by name there (swipl 10.1.19
+# fails an assertion at that line).
+"""
+`string_bytes/3` (pl-string.c): `A2` is the list of bytes of the text `A1` in the encoding `A3`, or `A1` the
+string the bytes `A2` hold in that encoding.
+"""
+function pl_string_bytes3_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2, A3 = PL__t0, PL__t0 + 1, PL__t0 + 2
+
+    ename = PL_get_atom_ex(ld, A3)
+    ename === nothing && return FFALSE
+    enc = PL_atom_to_encoding(ename)
+    if enc === ENC_UNKNOWN || enc === ENC_WCHAR
+        return PL_domain_error(ld, "encoding", A3) ? FTRUE : FFALSE
+    end
+    enc === ENC_ANSI && throw(
+        NotPortedError{T}(
+            ename, "string_bytes/3 with the encoding text", "ENC_ANSI is the locale"
+        )
+    )
+
+    t = PL_get_text(
+        ld, A1, CVT_ATOM | CVT_STRING | CVT_LIST | CVT_EXCEPTION | CVT_VARNOFAIL
+    )
+    st = get_text_status(t)
+    if st == GT_TRUE
+        txt = t::PL_chars_t
+        PL_canonicalise_text_ex(ld, txt) || return FFALSE
+        PL_text_recode(ld, txt, enc) || return FFALSE
+        n = txt.length * unit_length(txt.encoding)
+        out = PL_chars_t(txt.text[1:n], n, ENC_ISO_LATIN_1, true)
+        return PL_unify_text(ld, A2, 0, out, PL_CODE_LIST) ? FTRUE : FFALSE
+    elseif st == GT_FALSE
+        return FFALSE
+    end                                                     # GT_ISVAR: can unify
+
+    bytes = PL_get_text(ld, A2, CVT_LIST | CVT_EXCEPTION)
+    bytes === nothing && return FFALSE
+    PL_canonicalise_text_ex(ld, bytes) || return FFALSE
+    bytes.encoding === ENC_WCHAR &&
+        return text_representation_error(ld, ENC_ISO_LATIN_1) ? FTRUE : FFALSE
+    len = bytes.length
+    if len % unit_length(enc) != 0
+        return PL_syntax_error(ld, "incomplete_multibyte_sequence", nothing) ? FTRUE :
+               FFALSE
+    end
+
+    txt = PL_chars_t(bytes.text[1:len], len ÷ unit_length(enc), enc, false)
+    if enc === ENC_UTF16LE || enc === ENC_UTF16BE
+        r = utf16_to_text(txt)
+        r isa Int && return string_bytes_text_error(ld, r) ? FTRUE : FFALSE
+        txt = r
+    end
+    return PL_unify_text(ld, A1, 0, txt, PL_STRING) ? FTRUE : FFALSE
+end
+
 # ── the registration table (pl-string.c BeginPredDefs(strings)) ─────────────────────────────────────
 # DIVERGES: upstream registers `strings` after `prims`, before `variant` (pl-ext.c:512); T2's table is
 # appended after `attvar` in `_PRED_TABLES` (src/pl-ext.jl), as the dispatch indices of the earlier
@@ -721,6 +972,7 @@ const PL_predicates_from_strings = (
     PL_extension("atom_string", 2, pl_atom_string2_va, PL_FA_VARARGS),
     PL_extension("string_codes", 2, pl_string_codes2_va, PL_FA_VARARGS),
     PL_extension("string_chars", 2, pl_string_chars2_va, PL_FA_VARARGS),
+    PL_extension("string_bytes", 3, pl_string_bytes3_va, PL_FA_VARARGS),
     PL_extension("text_to_string", 2, pl_text_to_string2_va, PL_FA_VARARGS),
     PL_extension("string_length", 2, pl_string_length2_va, PL_FA_VARARGS),     # (pl-prims.c)
     PL_extension(
