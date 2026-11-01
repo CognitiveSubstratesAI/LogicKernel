@@ -5618,8 +5618,8 @@ What BOOTPRED adds (written edit-only; nothing was compiled or run when this was
   `del_dict/4`, `:</2`, `>:</2`, `b_set_dict/3`, `nb_set_dict/3`, `nb_link_dict/3`, `$get_dict_kv/4,6,8`. The reader refuses dicts (pl-read.jl, R1's decision) and the writer has no dict arm:
   dicts exist through `dict_create/3` and `put_dict/3` only, and `print` of one shows the compound `dict(Tag, V, K, ...)`. `'$style_check'/2` is NOT STARTED (it waits for F1b).
 
-Tests: test/core_lang/test_bootpred_swipl.jl (rows bp01-bp119: thread_self, with_mutex, `'$garbage_collect'`, then the dict predicates with a sorted `dpairs/2` helper; swipl 10.1.19 pins from
-two byte-identical runs, a non-vacuity testset, the live check when `swipl` is on PATH); tools/mutants/BOOTPRED.py (9 mutants for gc/thread/mutex, 19 for pl-dict.jl, one declared equivalent).
+Tests: test/core_lang/test_bootpred_swipl.jl (rows bp01-bp128: thread_self, with_mutex, `'$garbage_collect'`, then the dict predicates with a sorted `dpairs/2` helper; swipl 10.1.19 pins from
+two byte-identical runs, a non-vacuity testset, the live check when `swipl` is on PATH); tools/mutants/BOOTPRED2.py (9 mutants for gc/thread/mutex, 19 for pl-dict.jl, none declared equivalent; M4 mutates the meta spec of with_mutex/2, since the registration flag alone is overridden by it).
 Rows over a dict in an answer do not exist on purpose: nothing prints a dict in swipl's order.
 
 ## Still to come

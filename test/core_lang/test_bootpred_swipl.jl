@@ -1,6 +1,6 @@
 # ORIGINAL: a LIVE differential of BOOTPRED against swipl at the pin (pl-gc.c, pl-thread.c, pl-mutex.c, pl-dict.c) — BOOTPRED's rows
 # test/core_lang/test_bootpred_swipl.jl — `'$garbage_collect'/1`, thread_self/1 and with_mutex/2 (bp01-bp26) and the pl-dict.c predicates
-# is_dict/1,2, dict_create/3, get_dict/3, put_dict/3, select_dict/3 (bp27-bp119) against swipl 10.1.19:
+# is_dict/1,2, dict_create/3, get_dict/3, put_dict/3, select_dict/3 (bp27-bp126) against swipl 10.1.19:
 #   * A PROGRAM consulted by the kernel's loader and cases `t_<id>(R)` run in order in one database, each wrapped in
 #     `catch(Goal, error(SsuE, _), R = raised(SsuE))`; the driver is test_at_body_swipl.jl's (`enc`oded answers).
 #   * Every answer line is swipl's, PINNED (swipl 10.1.19-1-gcbf4e189, 2026-10-31, lk-channel evidence/BOOTPRED/bootpred_rows.out in the
@@ -100,7 +100,7 @@ bp_mem(X, [_|T]) :- bp_mem(X, T).
 """
 
 # bp01-bp08 thread_self/1; bp09-bp19 with_mutex/2; bp20-bp26 '$garbage_collect'/1; bp27-bp51 dict_create/3; bp52-bp60 is_dict/1,2;
-# bp61-bp79 get_dict/3; bp80-bp100 put_dict/3; bp101-bp116 select_dict/3; bp117-bp119 kill rows of the mutant list
+# bp61-bp79 get_dict/3; bp80-bp100 put_dict/3; bp101-bp116 select_dict/3; bp117-bp119 and bp120-bp126 kill rows of the mutant list; bp127-bp128 with_mutex/2's module
 const _BP_CASES = [
     ("bp01", raw"thread_self(R)"),                                       # main
     ("bp02", raw"thread_self(main), R = yes"),
@@ -310,7 +310,40 @@ const _BP_CASES = [
         "bp118",
         raw"dict_create(D, t, [a-1]), call_cleanup(get_dict(K, D, V), Det = true), R = Det-K-V"
     ),   # the last pair leaves no choice point
-    ("bp119", raw"dict_create(D, T, [a-1]), is_dict(D, foo), R = T")                                    # foo: the tag is the caller's variable
+    ("bp119", raw"dict_create(D, T, [a-1]), is_dict(D, foo), R = T"),                                   # foo: the tag is the caller's variable
+    # bp120-bp126 kill rows for assign_in_dict's direction (D19; audit D-0283): the new cell is the YOUNGEST cell, so the value
+    # variable V stays the representative and keeps its place in the standard order between the older P and the newer M.
+    (
+        "bp120",
+        raw"dict_create(E, t, []), T = f(V, M), dict_create(N, t, [k-V]), put_dict(N, E, _), compare(R, V, M)"
+    ),   # <
+    (
+        "bp121",
+        raw"dict_create(E, t, []), T = f(V, M), put_dict([k=V], E, D), get_dict(k, D, X), compare(R, X, M)"
+    ),   # <
+    (
+        "bp122",
+        raw"dict_create(E, t, []), T = f(V, M), put_dict([k=V], E, _), compare(R, M, V)"
+    ),   # >
+    (
+        "bp123",
+        raw"dict_create(E, t, []), T = f(V, M), put_dict([k=V], E, D), get_dict(k, D, X), compare(R, M, X)"
+    ),   # >
+    (
+        "bp124",
+        raw"dict_create(E, t, [k-1]), T = f(V, M), dict_create(N, t, [k-V]), put_dict(N, E, _), compare(R, V, M)"
+    ),   # <: the key is replaced
+    (
+        "bp125",
+        raw"dict_create(E, t, []), T = f(V, M), put_dict([k=V], E, D), get_dict(k, D, X), X == V, compare(R, X, M)"
+    ),   # <
+    (
+        "bp126",
+        raw"dict_create(E, t, [a-1]), T = f(V, M), put_dict([k=V], E, _), compare(R, V, M)"
+    ),   # <: a pair beside the new one
+    # bp127-bp128 kill rows for with_mutex/2's transparency (M4; its meta spec `+0`, pl-ext.jl, gives it P_TRANSPARENT): the goal runs in the caller's module
+    ("bp127", raw"lists:with_mutex(m, context_module(R))"),   # lists
+    ("bp128", raw"foo:with_mutex(m, context_module(R))")   # foo
 ]
 
 # swipl 10.1.19-1-gcbf4e189's answers to the program and cases above (the driver's lines; lk-channel evidence/BOOTPRED/bootpred_rows.out)
@@ -434,7 +467,16 @@ const _BP_PINNED = [
     "t_bp116",
     "t_bp117 c[116,95,98,112,49,49,55]/1(c[91,124,93]/2(c[45]/2(a[99],i3),nil))",
     "t_bp118 c[116,95,98,112,49,49,56]/1(c[45]/2(c[45]/2(a[116,114,117,101],a[97]),i1))",
-    "t_bp119 c[116,95,98,112,49,49,57]/1(a[102,111,111])"
+    "t_bp119 c[116,95,98,112,49,49,57]/1(a[102,111,111])",
+    "t_bp120 c[116,95,98,112,49,50,48]/1(a[60])",
+    "t_bp121 c[116,95,98,112,49,50,49]/1(a[60])",
+    "t_bp122 c[116,95,98,112,49,50,50]/1(a[62])",
+    "t_bp123 c[116,95,98,112,49,50,51]/1(a[62])",
+    "t_bp124 c[116,95,98,112,49,50,52]/1(a[60])",
+    "t_bp125 c[116,95,98,112,49,50,53]/1(a[60])",
+    "t_bp126 c[116,95,98,112,49,50,54]/1(a[60])",
+    "t_bp127 c[116,95,98,112,49,50,55]/1(a[108,105,115,116,115])",
+    "t_bp128 c[116,95,98,112,49,50,56]/1(a[102,111,111])"
 ]
 
 function _bp_file()::Tuple{String, Vector{String}}
@@ -491,7 +533,7 @@ function _bp_kernel(path::String, names::Vector{String})
     return out, gd, ld
 end
 
-@testset "thread_self/1, with_mutex/2, \$garbage_collect/1, the dict predicates as swipl's (bp01-bp119)" begin
+@testset "thread_self/1, with_mutex/2, \$garbage_collect/1, the dict predicates as swipl's (bp01-bp128)" begin
     f, names = _bp_file()
     kl, _, _ = _bp_kernel(f, names)
     @test length(kl) == length(_BP_PINNED)
@@ -515,9 +557,9 @@ end
     )
 end
 
-@testset "the dict rows are not vacuous (bp27-bp119)" begin
-    dict_rows = _BP_PINNED[(1 + 27):end]                                           # the driver's first line is `ok`
-    @test length(dict_rows) == 93
+@testset "the dict rows are not vacuous (bp27-bp126)" begin
+    dict_rows = _BP_PINNED[(1 + 27):(1 + 126)]                                     # the driver's first line is `ok`
+    @test length(dict_rows) == 100
     code(t) = "[" * join(Int.(collect(t)), ",") * "]"
     # raised(…) rows: 15 type errors, 5 instantiation errors, 3 duplicate_key (bp35, bp36, bp89)
     @test count(l -> occursin(code("raised"), l), dict_rows) == 23

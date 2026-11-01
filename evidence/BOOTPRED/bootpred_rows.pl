@@ -125,3 +125,12 @@ t_bp116(R) :- catch((dict_create(S, t, [a-1]), dict_create(F, t, [a-1, b-2]), di
 t_bp117(R) :- catch((dict_create(S, t, [a-1]), dict_create(F, t, [a-1, b-2, c-3]), select_dict(S, F, R1), dict_create(S2, t, [b-2]), select_dict(S2, R1, R2), dpairs(R2, R)), error(SsuE, _), R = raised(SsuE)).
 t_bp118(R) :- catch((dict_create(D, t, [a-1]), call_cleanup(get_dict(K, D, V), Det = true), R = Det-K-V), error(SsuE, _), R = raised(SsuE)).
 t_bp119(R) :- catch((dict_create(D, T, [a-1]), is_dict(D, foo), R = T), error(SsuE, _), R = raised(SsuE)).
+t_bp120(R) :- catch((dict_create(E, t, []), T = f(V, M), dict_create(N, t, [k-V]), put_dict(N, E, _), compare(R, V, M)), error(SsuE, _), R = raised(SsuE)).
+t_bp121(R) :- catch((dict_create(E, t, []), T = f(V, M), put_dict([k=V], E, D), get_dict(k, D, X), compare(R, X, M)), error(SsuE, _), R = raised(SsuE)).
+t_bp122(R) :- catch((dict_create(E, t, []), T = f(V, M), put_dict([k=V], E, _), compare(R, M, V)), error(SsuE, _), R = raised(SsuE)).
+t_bp123(R) :- catch((dict_create(E, t, []), T = f(V, M), put_dict([k=V], E, D), get_dict(k, D, X), compare(R, M, X)), error(SsuE, _), R = raised(SsuE)).
+t_bp124(R) :- catch((dict_create(E, t, [k-1]), T = f(V, M), dict_create(N, t, [k-V]), put_dict(N, E, _), compare(R, V, M)), error(SsuE, _), R = raised(SsuE)).
+t_bp125(R) :- catch((dict_create(E, t, []), T = f(V, M), put_dict([k=V], E, D), get_dict(k, D, X), X == V, compare(R, X, M)), error(SsuE, _), R = raised(SsuE)).
+t_bp126(R) :- catch((dict_create(E, t, [a-1]), T = f(V, M), put_dict([k=V], E, _), compare(R, V, M)), error(SsuE, _), R = raised(SsuE)).
+t_bp127(R) :- catch((lists:with_mutex(m, context_module(R))), error(SsuE, _), R = raised(SsuE)).
+t_bp128(R) :- catch((foo:with_mutex(m, context_module(R))), error(SsuE, _), R = raised(SsuE)).

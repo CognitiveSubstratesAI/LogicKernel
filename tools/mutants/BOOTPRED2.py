@@ -1,15 +1,15 @@
 # ORIGINAL: BOOTPRED's mutant list — no swipl-devel counterpart.
-# tools/mutants/BOOTPRED.py — the mutation battery of BOOTPRED (audit D-0281): `'$garbage_collect'/1` (pl-gc.c
+# tools/mutants/BOOTPRED2.py — the mutation battery of BOOTPRED (audit D-0281): `'$garbage_collect'/1` (pl-gc.c
 # pl_garbage_collect), thread_self/1 (pl-thread.c pl_thread_self), with_mutex/2 (pl-mutex.c pl_with_mutex) and, in the
 # groups written later, the six pl-dict.c predicates. Run ONCE, in CI (.github/workflows/mutation.yml; locally:
 # tools/mutate.sh run). Format: tools/mutate_drive.py's (as MOD3b.py): `id`, `file`, `old` (must occur EXACTLY once),
-# `new`, optional `equivalent` and `targets`. Killed by test/core_lang/test_bootpred_swipl.jl (rows bp01-bp26 named in
+# `new`, optional `equivalent` and `targets`. Killed by test/core_lang/test_bootpred_swipl.jl (rows bp01-bp128 named in
 # each id's KILL). Verdicts: written by the battery, not yet run.
 # The `old` strings are written in the repo's formatted style BEFORE `tools/warm.sh fmt` ran (the coding agent had no
 # daemon): RE-FIT any that fmt rewraps (mutate_drive.py refuses a string that does not occur exactly once). Every `old`
 # was checked to occur exactly once in its file at the commit that adds this list (a text count, no Julia).
 # TARGETS (audit D-0238): test_bootpred_swipl.jl is the only test file that names these predicates (no other test file
-# calls thread_self, with_mutex or '$garbage_collect'), so it is the whole list. The dict mutants (pl-dict.c, rows bp27-bp119)
+# calls thread_self, with_mutex or '$garbage_collect'), so it is the whole list. The dict mutants (pl-dict.c, rows bp27-bp126)
 # are killed by the same file; the two registration mutants also list test/foreign/test_builtins_swipl.jl, the one other test
 # file that walks the dispatch tables (_FOREIGN_VA). The pl-dict.jl `old` strings were checked to occur once (text count).
 TB = ["test/core_lang/test_bootpred_swipl.jl"]
@@ -49,10 +49,13 @@ MUTANTS = [
     dict(id="BOOTPRED-M3 with_mutex/2 always succeeds (KILL bp11, bp15)", file=MX, targets=TB,
          old="    return rval ? FTRUE : FFALSE\n",
          new="    return FTRUE\n"),
-    dict(id="BOOTPRED-M4 with_mutex/2 is not transparent: the goal runs in the context of system (KILL bp17; UNVERIFIED on the kernel)",
+    # The registration flag alone is not the mutation: PL_meta_predicate(with_mutex/2, "+0") (pl-ext.jl, the meta table; pl-proc.jl
+    # isTransparentMetamask) sets P_TRANSPARENT from the mask, so dropping PL_FA_TRANSPARENT at PL_extension changes nothing (probe, audit D-0283).
+    # The mask `0` -> `+` makes with_mutex/2 non-transparent: the goal runs in `system` (probe: bp17 user -> system, bp127 lists -> system).
+    dict(id="BOOTPRED-M4 with_mutex/2 is not transparent: its meta spec has no 0 argument, the goal runs in the context of system (KILL bp17, bp127, bp128)",
          file=EXT, targets=TB,
-         old='    PL_extension("with_mutex", 2, pl_with_mutex, PL_FA_TRANSPARENT | PL_FA_ISO)',
-         new='    PL_extension("with_mutex", 2, pl_with_mutex, PL_FA_ISO)'),
+         old='("with_mutex", 2, "+0")',
+         new='("with_mutex", 2, "++")'),
     # ── pl-dict.c (src/pl-dict.jl) ──
     dict(id="BOOTPRED-D1 dict_lookup_ptr's binary search goes the wrong way: a key past the middle is not found (KILL bp62, bp72, bp78, bp97, bp98)",
          file=DI, targets=TB,
@@ -123,13 +126,11 @@ MUTANTS = [
     dict(id="BOOTPRED-D18 put_dict/3 is registered with is_dict/2's function (KILL bp80-bp100)", file=DI, targets=TX,
          old='    PL_extension("put_dict", 3, pl_put_dict3_va, PL_FA_VARARGS),',
          new='    PL_extension("put_dict", 3, pl_select_dict3_va, PL_FA_VARARGS),'),
-    # EQUIVALENT: assign_in_dict binds the other way round when the value variable is older than the new cell. Either
-    # direction makes the cell and the variable ONE variable (upstream's direction rule keeps the younger cell pointing to
-    # the older one for the stack shifter; the kernel's stacks have no shifter reading it, src/pl-dict.jl:446), and a
-    # backtrack past the put_dict/3 undoes the trailed binding either way: no row can tell them apart.
-    dict(id="BOOTPRED-D19 assign_in_dict links the older variable to the new cell (EQUIVALENT: one variable either way)",
+    # assign_in_dict links the OLDER of the cell and the value variable as the representative (upstream's direction rule): the standard order
+    # of the variable against others follows its address (D-0260). Audit D-0283: not equivalent; bp120-bp126 compare/3 the value
+    # variable against one created between it and the new cell.
+    dict(id="BOOTPRED-D19 assign_in_dict links the older variable to the new cell: the value variable takes the standard-order place of the new cell (KILL bp120-bp126)",
          file=DI, targets=TB,
-         equivalent="both branches make the dict cell and the value variable one variable; the age order is read only by upstream's stack shifter (pl-dict.jl:446, pl-dict.c assign_in_dict)",
          old="        if dp < q\n",
          new="        if dp > q\n"),
 ]
