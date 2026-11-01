@@ -250,7 +250,11 @@ _manifest_per_type(T) = (
         Tuple{LK.PL_local_data{T}, LK.cell_agenda, Int, Int, Set{Int}},
         false
     ),
-    (LK.term_variables_to_termv_first_cells, Tuple{LK.PL_local_data{T}, Int, Int, Int}, false),
+    (
+        LK.term_variables_to_termv_first_cells,
+        Tuple{LK.PL_local_data{T}, Int, Int, Int},
+        false
+    ),
     (LK.free_variables_loop_cells, Tuple{LK.PL_local_data{T}, Int, Int}, false),
     # copy_term on cells (L1d step 6): the side vector, the stacks and the copy's cells grow
     (LK._cp_vm, Tuple{LK.PL_local_data{T}, Int}, true),

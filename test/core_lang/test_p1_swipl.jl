@@ -119,7 +119,10 @@ const _P1_CASES = [
     ("p012", raw"""findall(N-A, arg(N, f(a,b,c), A), R)"""),
     ("p013", raw"""findall(N, arg(N, f(a,b,a), a), R)"""),
     ("p014", raw"""call_cleanup(arg(N, f(a,b,c), c), Det = true), R = N-Det"""),
-    ("p015", raw"""call_cleanup(arg(N, f(a,b,c), a), Det = true), ( Det == true -> R = N-det ; R = N-nondet )"""),
+    (
+        "p015",
+        raw"""call_cleanup(arg(N, f(a,b,c), a), Det = true), ( Det == true -> R = N-det ; R = N-nondet )"""
+    ),
     ("p016", raw"""arg(2, f(a,B), X), R = B-X"""),
     ("p017", raw"""arg(1, f(X), Y), X = 1, R = Y"""),
     ("p018", raw"""findall(N-X-Y, arg(N, f(X,Y), 1), R)"""),
@@ -137,7 +140,10 @@ const _P1_CASES = [
     ("p029", raw"""compound_name_arity(f(a,b), N, A), R = N/A"""),
     ("p030", raw"""compound_name_arity(T, foo, 3), R = T"""),
     ("p031", raw"""p_zero(T), compound_name_arity(T, N, A), R = N/A"""),
-    ("p032", raw"""compound_name_arity(T, foo, 0), compound_name_arity(T, N, A), R = T-N/A"""),
+    (
+        "p032",
+        raw"""compound_name_arity(T, foo, 0), compound_name_arity(T, N, A), R = T-N/A"""
+    ),
     ("p033", raw"""compound_name_arity(a, N, A), R = N/A"""),
     ("p034", raw"""compound_name_arity(_, _, _)"""),
     ("p035", raw"""compound_name_arity(T, 1, 2), R = T"""),
@@ -174,7 +180,10 @@ const _P1_CASES = [
     ("p065", raw"""compound_name_arguments(f(a,b), N, [a|T]), R = N-T"""),
     ("p066", raw"""compound_name_arguments(f(a,b), N, [x,y,z]), R = N"""),
     ("p067", raw"""compound_name_arguments(T, foo, [a,b|c]), R = T"""),
-    ("p068", raw"""compound_name_arguments(T, foo, [a,b]), compound_name_arity(T, N, A), R = N/A"""),
+    (
+        "p068",
+        raw"""compound_name_arguments(T, foo, [a,b]), compound_name_arity(T, N, A), R = N/A"""
+    ),
     ("p069", raw"""compound_name_arguments("s", N, As), R = N-As"""),
     ("p070", raw"""compound_name_arguments(T, [], [a]), R = T"""),
     # subsumes_term/2
@@ -206,7 +215,10 @@ const _P1_CASES = [
     ("p095", raw"""p_cyc(C), '$factorize_term'(C, T, S), R = T-S"""),
     ("p096", raw"""'$factorize_term'(X, T, S), R = X-T-S"""),
     ("p097", raw"""G = g(X), '$factorize_term'(f(G,G,X), T, S), R = T-S"""),
-    ("p098", raw"""G = g(a), H = h(G), '$factorize_term'(f(H,H,G), T, S), length(S, N), R = N"""),
+    (
+        "p098",
+        raw"""G = g(a), H = h(G), '$factorize_term'(f(H,H,G), T, S), length(S, N), R = N"""
+    ),
     ("p099", raw"""'$factorize_term'(a, T, S), R = T-S"""),
     ("p100", raw"""'$factorize_term'(f(X,Y,X), T, S), R = T-S-X-Y"""),
     # '$term_size'/3
@@ -255,8 +267,14 @@ const _P1_CASES = [
     ("p142", raw"""( is_most_general_term(f(X,Y,Z)) -> R = yes ; R = no )"""),
     ("p143", raw"""( is_most_general_term(f(X,Y,X)) -> R = yes ; R = no )"""),
     ("p144", raw"""X = 1, ( is_most_general_term(f(X,Y)) -> R = yes ; R = no )"""),
-    ("p145", raw"""( is_most_general_term(f(X,Y)) -> true ; true ), term_variables(f(X,Y), L), length(L, N), R = N"""),
-    ("p146", raw"""( is_most_general_term(f(X,X)) -> true ; true ), term_variables(f(X,X), L), length(L, N), R = N"""),
+    (
+        "p145",
+        raw"""( is_most_general_term(f(X,Y)) -> true ; true ), term_variables(f(X,Y), L), length(L, N), R = N"""
+    ),
+    (
+        "p146",
+        raw"""( is_most_general_term(f(X,X)) -> true ; true ), term_variables(f(X,X), L), length(L, N), R = N"""
+    ),
     ("p147", raw"""( is_most_general_term([X,Y]) -> true ; true ), X = Y, R = X-Y"""),
     # term_singletons/2
     ("p148", raw"""term_singletons(f(X,Y,X), L), R = L-Y"""),
@@ -289,8 +307,11 @@ const _P1_CASES = [
     # rows that kill mutants of tools/mutants/P1.py: arg/3 undoes a failed argument's bindings; the marks of is_most_general_term
     # on a list are cleared; term_singletons/2 against a proper list is not cut by that list's length
     ("p174", raw"""arg(N, f(g(X,b), g(c,X)), g(A,d)), R = N-A-X"""),
-    ("p175", raw"""( is_most_general_term([X,Y]) -> true ; true ), term_variables([X,Y], L), length(L, N), R = N"""),
-    ("p176", raw"""term_singletons(f(X,Y,X), [A]), R = A-Y"""),
+    (
+        "p175",
+        raw"""( is_most_general_term([X,Y]) -> true ; true ), term_variables([X,Y], L), length(L, N), R = N"""
+    ),
+    ("p176", raw"""term_singletons(f(X,Y,X), [A]), R = A-Y""")
 ]
 
 # the driver's whole output, one line per case after `ok`, filled by evidence/P1/gen_rows.py --fill from swipl 10.1.19
@@ -547,7 +568,18 @@ end
     @test answered >= 100
     @test failed >= 15                                                          # rows that failed: no answer line
     @test count(l -> occursin(_p1_codes("raised"), l), _P1_PINNED) >= 25   # the error rows
-    for pre in ("t_p001 ", "t_p012 ", "t_p029 ", "t_p052 ", "t_p071 ", "t_p093 ", "t_p101 ", "t_p127 ", "t_p148 ", "t_p162 ")
+    for pre in (
+        "t_p001 ",
+        "t_p012 ",
+        "t_p029 ",
+        "t_p052 ",
+        "t_p071 ",
+        "t_p093 ",
+        "t_p101 ",
+        "t_p127 ",
+        "t_p148 ",
+        "t_p162 "
+    )
         @test any(l -> startswith(l, pre), _P1_PINNED)                           # each predicate's first row answers
     end
     @test any(l -> startswith(l, "t_p012 ") && occursin("i3", l), _P1_PINNED)    # the enumeration reached the last argument
@@ -593,7 +625,11 @@ t_ex_args(E, R) :- compound_name_arguments(E, N, As), R = N-As.
             gd, ld, nothing, LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS, proc, a
         )
         rc = LK.PL_next_solution(gd, ld, qid)
-        r = (rc == LK.PL_S_TRUE || rc == LK.PL_S_LAST) ? _p1_enc(lk_answers(ld, a + 1)[1]) : "no"
+        r = if (rc == LK.PL_S_TRUE || rc == LK.PL_S_LAST)
+            _p1_enc(lk_answers(ld, a + 1)[1])
+        else
+            "no"
+        end
         LK.PL_close_query(ld, qid)
         LK.PL_close_foreign_frame(ld, fid)
         return r
@@ -604,7 +640,7 @@ t_ex_args(E, R) :- compound_name_arguments(E, N, As), R = N-As.
     @test answer("t_ex_arity", vh) == "c[47]/2(a$expr_codes,i2)"
     @test answer("t_ex_arity", gh) == "c[47]/2(a$expr_codes,i3)"
     @test answer("t_ex_args", vh) ==
-          "c[45]/2(a$expr_codes," * cons("V0", cons("a[97]", "nil")) * ")"
+        "c[45]/2(a$expr_codes," * cons("V0", cons("a[97]", "nil")) * ")"
     @test answer("t_ex_args", gh) ==
-          "c[45]/2(a$expr_codes," * cons("i5", cons("a[97]", cons("a[98]", "nil"))) * ")"
+        "c[45]/2(a$expr_codes," * cons("i5", cons("a[97]", cons("a[98]", "nil"))) * ")"
 end

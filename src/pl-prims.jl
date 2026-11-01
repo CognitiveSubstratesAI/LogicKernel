@@ -1392,7 +1392,7 @@ function _indirect_cells(ld::PL_local_data{T}, w::word)::Int where {T}
 end
 
 "The number of 64-bit limbs of the integer `n` (GMP's `mpz_size`)."
-_limbs64(n::Integer)::Int = (ndigits(abs(n); base = 2) + 63) ÷ 64
+_limbs64(n::Integer)::Int = (ndigits(abs(n); base=2) + 63) ÷ 64
 
 # PORT: pl-prims.c term_size as pl_term_size3_va
 # (PRED_IMPL("$term_size", 3, term_size, 0))
@@ -1872,7 +1872,7 @@ function pl_unify_with_occurs_check2_va(
 end
 
 # ── type checking (pl-prims.c), registered since V6b ─────────────────────────────────────────────
-# PORT: pl-prims.c subsumes
+# PORT: pl-prims.c subsumes as subsumes_cells
 # DIVERGES: on the cells: the variables of `specific` are `term_variables_to_termv_cells`' term references
 # (maxcount `~0` is `typemax(Int)`; no `TV_NOSPACE` / `TV_NOMEM` retry), and the visited marks are
 # `visitedWord_cells` / `unvisit_cells`. A pending wakeup runs (`foreignWakeup`, since AV4).
@@ -3305,7 +3305,7 @@ function pl_term_multitons2_va(
     return PL_error(ld, ERR_REPRESENTATION, mk_sym(T, :acyclic_term)) ? FTRUE : FFALSE
 end
 
-# PORT: pl-prims.c is_most_general_term
+# PORT: pl-prims.c is_most_general_term as is_most_general_term_cells
 # DIVERGES: on a location. `set_marked` / `is_marked` on a variable cell is its entry in `ld.tv_seen` (see
 # `visitedWord_cells`), and `isVar` of a marked cell is then false: an unbound cell that is not marked.
 "Whether the term at location `l` is an atom, a proper list of distinct variables, or a compound of distinct variables (pl-prims.c)."
@@ -3366,7 +3366,8 @@ function is_most_general_term_cells(ld::PL_local_data{T}, l::Int)::Bool where {T
 end
 
 "Whether the variable cell at global position `p` is marked (`ld.tv_seen`)."
-@inline _tv_marked(ld::PL_local_data, p::Int)::Bool = p <= length(ld.tv_seen) && ld.tv_seen[p]
+@inline _tv_marked(ld::PL_local_data, p::Int)::Bool =
+    p <= length(ld.tv_seen) && ld.tv_seen[p]
 
 "Set or clear the mark of the variable cell at global position `p` (`ld.tv_seen`)."
 @inline function _tv_mark!(ld::PL_local_data, p::Int, v::Bool)::Nothing
@@ -3665,7 +3666,8 @@ function term_variables_to_termv_first_cells(
         o = 0
         for i in 0:(count - 1)
             isfirst = unRef(ld.slots[v0 + i + 1]) in firsts   # p = unRef(*valTermRef(v0+i)); *p & FIRST_MASK
-            if (!isfirst && (flags & TV_SINGLETON) != 0) || (isfirst && (flags & TV_SHARED) != 0)
+            if (!isfirst && (flags & TV_SINGLETON) != 0) ||
+                (isfirst && (flags & TV_SHARED) != 0)
                 o != i && (ld.slots[v0 + o + 1] = ld.slots[v0 + i + 1])
                 o += 1
             end
