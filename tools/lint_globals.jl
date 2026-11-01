@@ -39,10 +39,11 @@ const LINT_ALLOWLIST = (
         "deep index position inside an H_LIST_FF reads (src/pl-index.jl). Read-only — no function " *
         "writes it — so it carries no state between callers. 2026-10-04.",
     "LogicKernel._GD_TEMPLATES" =>
-        "the process's template databases (src/gd_template.jl, LB4 b1, loader_boot design LD4): a booted " *
-        "PL_global_data{T} per term type, built once under a lock and only COPIED (copy_global_data) into " *
-        "the databases callers own, so no caller reaches another through it; upstream boots once per process. " *
-        "DORMANT until LB4 b2 enables the boot. Audit decision pending (LB4 b1 handoff)."
+        "the process's template databases (src/gd_template.jl, LB4 b1, loader_boot design LD4): a const registry " *
+        "whose entry for a term type is written ONCE, at that type's first request, under a lock, and is never " *
+        "replaced or mutated afterwards (databases are COPIES of an entry, so no caller reaches another through " *
+        "it); upstream boots once per process. test/db/test_gd_template.jl fails if an entry changes after its " *
+        "build. Dormant until LB4 b2 enables the boot. Audit D-0291 item 4."
 )
 
 """

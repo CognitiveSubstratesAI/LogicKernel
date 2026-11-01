@@ -204,3 +204,24 @@ end
     @test LK.gd_template(_P, b1) isa LK.PL_global_data{_P}          # and left the lock free
     LK.reset_gd_templates!()
 end
+
+# tools/lint_globals.jl allowlists `_GD_TEMPLATES` as written once per term type and read-only afterwards (audit D-0291 item 4):
+# this row fails if an entry is replaced or mutated after its build.
+@testset "the registry is not mutated after init" begin
+    LK.reset_gd_templates!()
+    reg = LK._GD_TEMPLATES
+    t = LK.gd_template(_P, () -> LK.PL_global_data{_P}())
+    d0 = gd_digest(t)
+    @test length(d0) > 100                                          # non-vacuous
+    keys0 = collect(keys(reg.templates))
+    @test keys0 == [_P]
+    for (_, mutate!) in lb4b1_mutations()                           # every way a database changes, applied to copies
+        mutate!(LK.PL_global_data_from_template(_P))
+    end
+    @test LK.gd_template(_P) === t                                  # the entry is never replaced by a request
+    @test reg.templates[_P] === t && collect(keys(reg.templates)) == keys0
+    @test gd_digest(t) == d0                                        # nor mutated through the databases made from it
+    @test LK.gd_template(_P, () -> error("the entry exists: this build must not run")) === t
+    @test !islocked(reg.lock)
+    LK.reset_gd_templates!()
+end
