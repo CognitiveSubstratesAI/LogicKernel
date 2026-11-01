@@ -6095,6 +6095,24 @@ Tests: test/core_lang/test_s2a_swipl.jl (rows s001-s137; pins from swipl 10.1.19
 evidence/S2A/gen_rows.py; rows marked `UNVERIFIED on the kernel` were judged by the gate). Mutants: tools/mutants/S2A.py (not run:
 tier 3).
 
+## Q10 — the unowned stubs of the loader/boot design (LDB 3.3), `'$style_check'/2` (R2, audit D-0290)
+
+What Q10 adds (written edit-only; nothing was compiled or run when this was written; swipl-devel pin `cbf4e1896275`, oracle swipl 10.1.19):
+
+- **Checked against main first:** pl-dict.c's six predicates, `thread_self/1`, `with_mutex/2` and `'$garbage_collect'/1` landed with BOOTPRED
+  (the BOOTPRED block above); `garbage_collect/0` itself is Prolog (boot/syspred.pl:1423-1424) and arrives with the boot load (LB4).
+  `'$style_check'/2` was the one predicate left.
+- **`'$style_check'(-Old, +New)`** (`pl_style_check2_va`, src/pl-prims.jl, pl-prims.c:6523-6537; table `PL_predicates_from_prims`, after
+  `statistics/2` as upstream's table has it): unifies `Old` with `debugstatus.styleCheck`, then stores the C `int` `New`; fails, without an
+  error, when `Old` does not unify or `New` is no `int` (a float, an atom, an unbound variable, a value outside `-2^31 .. 2^31-1`).
+- **Representation:** `debugstatus.styleCheck` is the local data's `debugstatus_styleCheck` (src/pl-global.jl; default 202 =
+  `SINGLETON_CHECK | SEMSINGLETON_CHECK | DISCONTIGUOUS_STYLE | NOEFFECT_CHECK`, pl-init.c:1663), the field the reader (pl-read.jl), the
+  compiler (pl-comp.jl `ci.styleCheck`) and the clause-adding code (pl-proc.jl) already read; `style_check/1` (boot/syspred.pl) builds on it.
+
+Tests: test/core_lang/test_style_check_swipl.jl (20 rows against swipl 10.1.19, two byte-identical runs; a live check when `swipl` is on
+PATH), mutants tools/mutants/Q10.py (8). Left to others: the dict predicates outside the six that boot/dicts.pl calls (`dict_pairs/3`,
+`get_dict/5`, `put_dict/4`, `del_dict/4`, `:<`/2, `>:<`/2, `'$get_dict_ex'/3`, `dict_same_keys/2`), SSU compilation, os/pl-files.c (LB2b).
+
 ## Still to come
 
 * 🔜 **THE ORDER FROM HERE (user, 2026-10-14):** V9 is done; next **L1** — SWI's term layout
