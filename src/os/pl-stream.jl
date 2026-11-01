@@ -339,6 +339,28 @@ function S__setbuf(s::IOSTREAM, buffer::Union{Nothing, Vector{UInt8}}, size::Int
     return size
 end
 
+# PORT: pl-stream.c Ssetbuffer
+"Give `s` a buffer of `size` bytes; a user buffer loses its `SIO_USERBUF` mark (pl-stream.c)."
+function Ssetbuffer(s::IOSTREAM, buffer::Union{Nothing, Vector{UInt8}}, size::Int)::Nothing
+    S__setbuf(s, buffer, size) != -1 && (s.flags &= ~SIO_USERBUF)
+    return nothing
+end
+
+# PORT: pl-stream.c Ssetenc
+# DIVERGES: the stream functions have no `control` function (upstream's SIO_SETENCODING call is
+# absent) and the old encoding is not returned (`old` is NULL at the one caller).
+"Set the encoding of `s`; ENC_OCTET clears SIO_TEXT, any other sets it; 0 (pl-stream.c)."
+function Ssetenc(s::IOSTREAM, enc::IOENC)::Int
+    enc == s.encoding && return 0
+    s.encoding = enc
+    if enc == ENC_OCTET
+        s.flags &= ~SIO_TEXT
+    else
+        s.flags |= SIO_TEXT
+    end
+    return 0
+end
+
 # PORT: pl-stream.c S__removebuf
 "Drop `s`'s buffer, flushing an output stream's first (pl-stream.c)."
 function S__removebuf(s::IOSTREAM)::Int
