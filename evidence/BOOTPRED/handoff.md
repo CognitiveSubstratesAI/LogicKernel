@@ -99,3 +99,16 @@ JET on the `Union` uses of `d` and `keep` and the unused `PL__ac`. Coder 3 adds:
    so bp107/bp112/bp113 should hold; this is the one row family that observes an internal tag.
 7. Mutant D19 (`dp < q` in `assign_in_dict`) is declared EQUIVALENT with an argument (age order read only by upstream's shifter); the audit may prefer a kill row.
 8. `'$style_check'/2` stays NOT STARTED: it can start after F1b lands (F1b is written on wip/f1b) or in a stack on top of it.
+
+## GATE AGENT (Sonnet, 2026-10-31/11-01): compile and gate log
+- Daemon: LOGICKERNEL_WARM_SECOND=1 tools/warm.sh start in ~/code/lk-bootpred (beside lk-dstack's). The worktree had no Manifest.toml
+  (gitignored): copied lk-dstack's (same Project.toml, cmp equal) so PrecompileTools resolves. Everything precompiled at the first try.
+- fmt via `warm.sh send` of the changed .jl files: pl-dict.jl and the test re-flowed (f35d58e); the 28 mutant anchors still occur once
+  (text check). `warm.sh inventory` found port_check violations (group PORT markers, ORIGINAL in a port file, pl-dict.h UPSTREAM line, pl-mutex
+  copyright line, test header, architecture table rows): fixed in d58e3ba, with `DICT_GET_*` now `Int` (PL_get_dict_ex takes `flags::Int`).
+- First rows run: the dict functor's name atom (builtin `dict`) and the `dyndict` tag had no recorded interface symbol
+  (`_atom_value` raised in the compiler's argvar placeholder): pl-dict.jl now records them through `_atom_word!` (checked: same words as
+  `ATOM_dict` / `ATOM_dyndict`).
+- The Pkg.test-way run has no swipl on PATH (the live check prints "NOT RUN"); the pins are swipl's from the generator.
+- D-0282 (dispatcher): before gate/bootpred run `warm.sh file test/test_static_analysis.jl reference` (JET + Aqua + AllocCheck) and fix dispatch
+  findings in the new code by concrete types.

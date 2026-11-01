@@ -2,6 +2,10 @@ p(1).
 p(2).
 p(3).
 dpairs(D, Ps) :- findall(K-V, get_dict(K, D, V), Ps0), msort(Ps0, Ps).
+bp_p2(X) :- p(X), X > 1.
+bp_bind(X) :- X = f(Y), Y = 1.
+bp_mem(X, [X|_]).
+bp_mem(X, [_|T]) :- bp_mem(X, T).
 t_bp01(R) :- catch((thread_self(R)), error(SsuE, _), R = raised(SsuE)).
 t_bp02(R) :- catch((thread_self(main), R = yes), error(SsuE, _), R = raised(SsuE)).
 t_bp03(R) :- catch((thread_self(other), R = yes), error(SsuE, _), R = raised(SsuE)).
@@ -14,10 +18,10 @@ t_bp09(R) :- catch((with_mutex(m, R = 1)), error(SsuE, _), R = raised(SsuE)).
 t_bp10(R) :- catch((findall(X, with_mutex(m, p(X)), R)), error(SsuE, _), R = raised(SsuE)).
 t_bp11(R) :- catch((with_mutex(m, fail), R = x), error(SsuE, _), R = raised(SsuE)).
 t_bp12(R) :- catch((catch(with_mutex(m, throw(oops)), E, R = caught(E))), error(SsuE, _), R = raised(SsuE)).
-t_bp13(R) :- catch((with_mutex(m, (p(X), X > 1)), R = X), error(SsuE, _), R = raised(SsuE)).
+t_bp13(R) :- catch((with_mutex(m, bp_p2(X)), R = X), error(SsuE, _), R = raised(SsuE)).
 t_bp14(R) :- catch((with_mutex(m, with_mutex(m, R = n))), error(SsuE, _), R = raised(SsuE)).
 t_bp15(R) :- catch((with_mutex(m, p(X)), X > 1, R = X), error(SsuE, _), R = raised(SsuE)).
-t_bp16(R) :- catch((with_mutex(m, (X = f(Y), Y = 1)), R = X), error(SsuE, _), R = raised(SsuE)).
+t_bp16(R) :- catch((with_mutex(m, bp_bind(X)), R = X), error(SsuE, _), R = raised(SsuE)).
 t_bp17(R) :- catch((with_mutex(m, context_module(R))), error(SsuE, _), R = raised(SsuE)).
 t_bp18(R) :- catch((with_mutex(m, nosuchpred_bp(R))), error(SsuE, _), R = raised(SsuE)).
 t_bp19(R) :- catch((with_mutex(m, true), with_mutex(n, R = two)), error(SsuE, _), R = raised(SsuE)).
@@ -57,7 +61,7 @@ t_bp52(R) :- catch((findall(x, is_dict(foo), R)), error(SsuE, _), R = raised(Ssu
 t_bp53(R) :- catch((findall(x, is_dict(_), R)), error(SsuE, _), R = raised(SsuE)).
 t_bp54(R) :- catch((dict_create(D, t, []), is_dict(D), R = yes), error(SsuE, _), R = raised(SsuE)).
 t_bp55(R) :- catch((findall(x, is_dict(f(a), _), R)), error(SsuE, _), R = raised(SsuE)).
-t_bp56(R) :- catch((findall(x, (member(X, [1, 2.5, abc, [], [a], f(a), g(a, b, c)]), is_dict(X)), R)), error(SsuE, _), R = raised(SsuE)).
+t_bp56(R) :- catch((findall(x, (bp_mem(X, [1, 2.5, abc, [], [a], f(a), g(a, b, c)]), is_dict(X)), R)), error(SsuE, _), R = raised(SsuE)).
 t_bp57(R) :- catch((dict_create(D, t, [a-1]), is_dict(D, t), R = yes), error(SsuE, _), R = raised(SsuE)).
 t_bp58(R) :- catch((dict_create(D, t, [a-1]), is_dict(D, u), R = yes), error(SsuE, _), R = raised(SsuE)).
 t_bp59(R) :- catch((findall(x, is_dict(_, _), R)), error(SsuE, _), R = raised(SsuE)).
