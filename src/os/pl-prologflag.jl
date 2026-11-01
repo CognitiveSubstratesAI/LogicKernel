@@ -670,8 +670,7 @@ end
 # `stack_limit` (set_stack_limit), `table_space`, `table_compile_threshold`, `table_drop_intermediate`,
 # `table_monotonic`, `agc_margin`, `string_stack_tripwire`, `heartbeat`, `encoding`, `unicode_atoms`,
 # `autoload` (propagateAutoload), `theme`, `incomparable` (`LD->prolog_flag.incomparable_error`), `var_tag`
-# (the VARTAG_* bits of `m->flags`, which the kernel's `module_t` has not), `debugger_show_context`, `threads`
-# (set true), the ci_* and tabling restraint flags (pseudo-flags of pl-index.c and pl-tabling.c, whose state is
+# (the VARTAG_* bits of `m->flags`, which the kernel's `module_t` has not), `debugger_show_context`, the ci_* and tabling restraint flags (pseudo-flags of pl-index.c and pl-tabling.c, whose state is
 # constants here), the arithmetic flags (`set_arith_flag`, pl-arith.c) and `file_name_case_handling`.
 # `on_error`/`on_warning` are checked and stored (the `halt`/`status` actions belong to the toplevel).
 "Refuse setting the flag `key`: its upstream side effect `effect` is not ported (design D4; R2 F1b)."
@@ -709,8 +708,9 @@ function setRationalSyntax(
 end
 
 # PORT: pl-read.c var_prefix_code
+# DIVERGES: the local data `ld` is an argument that binds the term type `T` (`a` may be a subtype of it).
 "The code of the character `var_prefix` names — `false` 0, `true` `_`, a one-character atom that is `_` or an ASCII symbol character other than `.` and `` ` `` — or -1 (pl-read.c)."
-function var_prefix_code(a::T)::Int where {T}
+function var_prefix_code(::PL_local_data{T}, a::T)::Int where {T}
     k = sym_key(a)
     k == sym_key(mk_sym(T, Symbol("false"))) && return 0
     k == sym_key(mk_sym(T, Symbol("true"))) && return Int('_')
@@ -730,7 +730,7 @@ end
 function get_var_prefix_ex(ld::PL_local_data{T}, t::term_t)::Union{Nothing, Int} where {T}
     a = PL_get_atom_ex(ld, t)
     a === nothing && return nothing
-    c = var_prefix_code(a)
+    c = var_prefix_code(ld, a)
     if c < 0
         PL_domain_error(ld, "var_prefix", t)
         return nothing
@@ -844,8 +844,11 @@ function setAccessLevelFromAtom(ld::PL_local_data{T}, a::T)::Bool where {T}
 end
 
 # PORT: pl-prologflag.c getOccursCheckMask
+# DIVERGES: the local data `ld` is an argument that binds the term type `T` (`a` may be a subtype of it).
 "The `occurs_check_t` the atom `a` names (`false`, `true`, `error`), or `nothing` (pl-prologflag.c)."
-function getOccursCheckMask(a::T)::Union{Nothing, occurs_check_t} where {T}
+function getOccursCheckMask(
+    ::PL_local_data{T}, a::T
+)::Union{Nothing, occurs_check_t} where {T}
     k = sym_key(a)
     k == sym_key(mk_sym(T, Symbol("false"))) && return OCCURS_CHECK_FALSE
     k == sym_key(mk_sym(T, Symbol("true"))) && return OCCURS_CHECK_TRUE
@@ -857,7 +860,7 @@ end
 # DIVERGES: no `updateAlerted`: the kernel's unify reads the field directly.
 "Set the `occurs_check` flag from the atom `a` (pl-prologflag.c)."
 function setOccursCheck(ld::PL_local_data{T}, a::T)::Bool where {T}
-    v = getOccursCheckMask(a)
+    v = getOccursCheckMask(ld, a)
     if v !== nothing
         ld.prolog_flag_occurs_check = v
         return true
@@ -1142,9 +1145,12 @@ end
 # PORT: pl-prologflag.c set_flag_value
 # DIVERGES: the database and the local data are arguments, the module is its record, and the key an atom. The side
 # effects the kernel has not are refused by name (`_flag_not_ported`, design D4): `debug`, `debugger_show_context`,
-# `threads` (set true), `tty_control` (changed), `debug_on_interrupt`, `var_tag`, `incomparable`, `encoding`,
+# `tty_control` (changed), `debug_on_interrupt`, `var_tag`, `incomparable`, `encoding`,
 # `unicode_atoms`, `file_name_case_handling`, `autoload`, `table_monotonic`, `theme`, `agc_margin`, `table_space`,
 # `table_compile_threshold`, `table_drop_intermediate`, `stack_limit`, `string_stack_tripwire` and `heartbeat`.
+# `threads` has no branch: it is read-only in the kernel's no-threads build (design D1; upstream's `O_PLMT` branch is not
+# built), so `check_flag_write_access` answers permission_error first. `string_stack_tripwire` is no flag of swipl's
+# boot (swipl 10.1.19 creates it on the first `set_prolog_flag`); its branch is reached when it is set a second time.
 # `setVarPrefix` answers the atom the flag then holds (`true` is `_`) in place of writing it through `a`. The mask
 # bit is the LOCAL data's (`setPrologFlagMask`). `on_error` and `on_warning` are checked and stored (their action
 # belongs to the toplevel). `win_file_access_check` is `O_XOS`'s.
@@ -1171,8 +1177,6 @@ function set_flag_value(
             _flag_not_ported(k, "debugmode and tracemode (the debugger)")
         elseif name == "debugger_show_context"
             _flag_not_ported(k, "debugstatus.showContext (the debugger)")
-        elseif name == "threads"
-            val && _flag_not_ported(k, "enableThreads (threads)")
         elseif name == "tty_control"
             val != (sym_key(f.a) == sym_key(mk_sym(T, Symbol("true")))) &&
                 _flag_not_ported(k, "PushTty and PopTty (the terminal)")

@@ -2286,7 +2286,7 @@ function init_read_data(
     rd = read_data{T}(
         0, 0, 0, 0, token{T}(), false, RD_MAGIC,
         source_location{T}(nothing, IOPOS()), 0, 0,
-        m.index, m.flags, 0, ld.debugstatus_styleCheck,    # module, syntax flags, var_prefix, style
+        m.index, m.flags, m.var_prefix, ld.debugstatus_styleCheck,    # module, syntax flags, var_prefix, style
         :error, false, PL_new_term_ref(ld),         # on_error, has_exception, exception
         0, 0, 0, 0, 0,                              # variables, varnames, singles, subtpos, comments
         false, false, inp.unicode_atoms, 0,          # cycles, dotlists, unicode_atoms, strictness
@@ -4033,13 +4033,12 @@ function reportReadError(rd::read_data{T})::Bool where {T}
 end
 
 # PORT: pl-read.c set_module_read_data
-# DIVERGES: the module is an index into the database's table; no `var_prefix` (the module flag is
-# not ported: 0).
-"Read in module `m`: its syntax flags (pl-read.c)."
+# DIVERGES: the module is an index into the database's table.
+"Read in module `m`: its syntax flags and its `var_prefix` (pl-read.c)."
 function set_module_read_data(rd::read_data{T}, m::Int)::Nothing where {T}
     rd.module_ = m
     rd.flags = rd.gd.modules[m].flags
-    rd.var_prefix = 0                               # _PL_rd->module->var_prefix
+    rd.var_prefix = rd.gd.modules[m].var_prefix     # _PL_rd->module->var_prefix
     return nothing
 end
 

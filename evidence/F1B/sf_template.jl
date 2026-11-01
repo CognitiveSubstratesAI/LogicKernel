@@ -202,13 +202,13 @@ end
 # value outside the flag's domain would end in a different error. `file_name_case_handling` is READ-ONLY (swipl and the
 # kernel answer permission_error(modify, flag, file_name_case_handling)): it has no row here.
 const _SF_REFUSED = [
-    ("debug", "true"), ("debugger_show_context", "true"), ("threads", "true"),
-    ("tty_control", "false"), ("debug_on_interrupt", "true"), ("var_tag", "dict"),
+    ("debug", "true"), ("debugger_show_context", "true"),
+    ("tty_control", "true"), ("debug_on_interrupt", "true"), ("var_tag", "dict"),
     ("incomparable", "error"), ("encoding", "utf8"), ("unicode_atoms", "error"),
     ("autoload", "false"), ("table_monotonic", "lazy"),
     ("theme", "dark"), ("agc_margin", "100"), ("table_space", "1000000"),
     ("table_compile_threshold", "5"), ("table_drop_intermediate", "5"), ("stack_limit", "1000000000"),
-    ("string_stack_tripwire", "100"), ("heartbeat", "0"),
+    ("heartbeat", "0"),
     ("float_overflow", "infinity"), ("max_answers_for_subgoal", "5"), ("max_table_subgoal_size", "5")
 ]
 

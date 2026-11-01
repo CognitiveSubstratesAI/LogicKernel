@@ -5,7 +5,9 @@
 # (`setDoubleQuotes`, `setBackQuotes`, `setRationalSyntax`, `setVarPrefix`, `setUnknown`), `setOccursCheck`, `setWriteAttributes`,
 # `setStreamTypeCheck`, `setAccessLevelFromAtom`, `checkOnError`, the mask writes (`setPrologFlagMask!`) that the compiler, the VM and
 # the arithmetic read (D3), and the rows of D-0280 item 5: `protected_predicate` once `iso` and `protect_static_code` are settable
-# (rows sf80-sf89 are the kill rows of D1-95 and D1-96 of tools/mutants/D1c.py, and of F1B.py).
+# (rows sf80-sf89 are the kill rows of D1-95 and D1-96 of tools/mutants/D1c.py, and of F1B.py). sf37 is the `unknown=fail` row of pl-vmi.c's S_UNDEF and sf90
+# its `unknown=warning` row: the answer is the same as the fail branch's (swipl prints the message to stderr, the kernel appends it to `ld.messages`),
+# so the first testset also reads the kernel's messages (white-box: print_message/2 and `message_hook` are R2's, boot/messages.pl).
 #   * A PROGRAM consulted by the kernel's loader, and cases `t_<id>(R)` run IN ORDER in one database, each wrapped in
 #     `catch(Goal, error(E, _), R = raised(E))`; a case restores the flags it changes, but sf85-sf89 end with `protect_static_code`
 #     true: it cannot be set false again (swipl's answer), so they come last.
@@ -107,7 +109,10 @@ const _SF_CASES = [
     ("sf06", raw"set_prolog_flag(double_quotes, foo)"),
     ("sf07", raw"set_prolog_flag(double_quotes, 1)"),
     ("sf08", raw"set_prolog_flag(last_call_optimisation, maybe)"),
-    ("sf09", raw"set_prolog_flag(last_call_optimisation, 1), current_prolog_flag(last_call_optimisation, R)"),
+    (
+        "sf09",
+        raw"set_prolog_flag(last_call_optimisation, 1), current_prolog_flag(last_call_optimisation, R)"
+    ),
     ("sf10", raw"set_prolog_flag(occurs_check, bad)"),
     ("sf11", raw"set_prolog_flag(unknown, bad)"),
     ("sf12", raw"set_prolog_flag(on_error, foo)"),
@@ -119,39 +124,123 @@ const _SF_CASES = [
     ("sf18", raw"set_prolog_flag(var_prefix, foo)"),
     ("sf19", raw"set_prolog_flag(back_quotes, foo)"),
     ("sf20", raw"set_prolog_flag(unknown_option, foo)"),
-    ("sf30", raw"set_prolog_flag(last_call_optimisation, false), current_prolog_flag(last_call_optimisation, A), set_prolog_flag(last_call_optimisation, true), current_prolog_flag(last_call_optimisation, B), R = A-B"),
-    ("sf31", raw"set_prolog_flag(optimise, true), current_prolog_flag(optimise, A), set_prolog_flag(optimise, false), current_prolog_flag(optimise, B), R = A-B"),
-    ("sf32", raw"set_prolog_flag(character_escapes, false), term_to_atom(T, '\'a\\nb\''), atom_length(T, L), set_prolog_flag(character_escapes, true), R = L"),
-    ("sf33", raw"set_prolog_flag(double_quotes, codes), term_to_atom(T, '\"ab\"'), set_prolog_flag(double_quotes, string), term_to_atom(T2, '\"ab\"'), R = T-T2"),
-    ("sf34", raw"set_prolog_flag(double_quotes, chars), term_to_atom(T, '\"ab\"'), set_prolog_flag(double_quotes, atom), term_to_atom(T2, '\"ab\"'), set_prolog_flag(double_quotes, string), R = T-T2"),
-    ("sf35", raw"set_prolog_flag(back_quotes, string), term_to_atom(T, '`ab`'), set_prolog_flag(back_quotes, codes), term_to_atom(T2, '`ab`'), R = T-T2"),
-    ("sf36", raw"set_prolog_flag(var_prefix, true), term_to_atom(T, 'f(_a, A)'), set_prolog_flag(var_prefix, false), R = T"),
-    ("sf37", raw"set_prolog_flag(unknown, fail), current_prolog_flag(unknown, A), ( catch(zz_nopred_xx, _, fail) -> B = yes ; B = no ), set_prolog_flag(unknown, error), R = A-B"),
+    (
+        "sf30",
+        raw"set_prolog_flag(last_call_optimisation, false), current_prolog_flag(last_call_optimisation, A), set_prolog_flag(last_call_optimisation, true), current_prolog_flag(last_call_optimisation, B), R = A-B"
+    ),
+    (
+        "sf31",
+        raw"set_prolog_flag(optimise, true), current_prolog_flag(optimise, A), set_prolog_flag(optimise, false), current_prolog_flag(optimise, B), R = A-B"
+    ),
+    (
+        "sf32",
+        raw"set_prolog_flag(character_escapes, false), term_to_atom(T, '\'a\\nb\''), atom_length(T, L), set_prolog_flag(character_escapes, true), R = L"
+    ),
+    (
+        "sf33",
+        raw"set_prolog_flag(double_quotes, codes), term_to_atom(T, '\"ab\"'), set_prolog_flag(double_quotes, string), term_to_atom(T2, '\"ab\"'), R = T-T2"
+    ),
+    (
+        "sf34",
+        raw"set_prolog_flag(double_quotes, chars), term_to_atom(T, '\"ab\"'), set_prolog_flag(double_quotes, atom), term_to_atom(T2, '\"ab\"'), set_prolog_flag(double_quotes, string), R = T-T2"
+    ),
+    (
+        "sf35",
+        raw"set_prolog_flag(back_quotes, string), term_to_atom(T, '`ab`'), set_prolog_flag(back_quotes, codes), term_to_atom(T2, '`ab`'), R = T-T2"
+    ),
+    (
+        "sf36",
+        raw"set_prolog_flag(var_prefix, true), term_to_atom(T, 'f(_a, A)'), set_prolog_flag(var_prefix, false), R = T"
+    ),
+    (
+        "sf37",
+        raw"set_prolog_flag(unknown, fail), current_prolog_flag(unknown, A), ( catch(zz_nopred_xx, _, fail) -> B = yes ; B = no ), set_prolog_flag(unknown, error), R = A-B"
+    ),
     ("sf38", raw"catch(zz_nopred_xx, error(E, _), true), R = E"),
-    ("sf39", raw"set_prolog_flag(occurs_check, error), catch(X = f(X), error(E, _), true), set_prolog_flag(occurs_check, false), R = E"),
-    ("sf40", raw"set_prolog_flag(occurs_check, true), ( X = f(X) -> A = yes ; A = no ), set_prolog_flag(occurs_check, false), R = A"),
-    ("sf41", raw"findall(W, ( member(V, [dots, write, portray, ignore]), set_prolog_flag(write_attributes, V), current_prolog_flag(write_attributes, W) ), R), set_prolog_flag(write_attributes, ignore)"),
-    ("sf42", raw"findall(W, ( member(V, [true, false, loose]), set_prolog_flag(stream_type_check, V), current_prolog_flag(stream_type_check, W) ), R), set_prolog_flag(stream_type_check, loose)"),
-    ("sf43", raw"current_prolog_flag(on_error, Old), set_prolog_flag(on_error, status), current_prolog_flag(on_error, New), set_prolog_flag(on_error, Old), R = New"),
-    ("sf44", raw"current_prolog_flag(on_warning, Old), set_prolog_flag(on_warning, status), current_prolog_flag(on_warning, New), set_prolog_flag(on_warning, Old), R = New"),
-    ("sf45", raw"set_prolog_flag(access_level, system), current_prolog_flag(access_level, A), set_prolog_flag(access_level, user), R = A"),
-    ("sf46", raw"set_prolog_flag(iso, true), current_prolog_flag(iso, A), X is 4/2, set_prolog_flag(iso, false), Y is 4/2, R = A-X-Y"),
-    ("sf47", raw"set_prolog_flag(prefer_rationals, true), X is 1/3, set_prolog_flag(prefer_rationals, false), Y is 1/3, R = X-Y"),
-    ("sf48", raw"set_prolog_flag(rational_syntax, natural), term_to_atom(T, '1/3'), set_prolog_flag(rational_syntax, compatibility), R = T"),
+    (
+        "sf39",
+        raw"set_prolog_flag(occurs_check, error), catch(X = f(X), error(E, _), true), set_prolog_flag(occurs_check, false), R = E"
+    ),
+    (
+        "sf40",
+        raw"set_prolog_flag(occurs_check, true), ( X = f(X) -> A = yes ; A = no ), set_prolog_flag(occurs_check, false), R = A"
+    ),
+    (
+        "sf41",
+        raw"findall(W, ( ( V = dots ; V = write ; V = portray ; V = ignore ), set_prolog_flag(write_attributes, V), current_prolog_flag(write_attributes, W) ), R), set_prolog_flag(write_attributes, ignore)"
+    ),
+    (
+        "sf42",
+        raw"findall(W, ( ( V = true ; V = false ; V = loose ), set_prolog_flag(stream_type_check, V), current_prolog_flag(stream_type_check, W) ), R), set_prolog_flag(stream_type_check, loose)"
+    ),
+    (
+        "sf43",
+        raw"current_prolog_flag(on_error, Old), set_prolog_flag(on_error, status), current_prolog_flag(on_error, New), set_prolog_flag(on_error, Old), R = New"
+    ),
+    (
+        "sf44",
+        raw"current_prolog_flag(on_warning, Old), set_prolog_flag(on_warning, status), current_prolog_flag(on_warning, New), set_prolog_flag(on_warning, Old), R = New"
+    ),
+    (
+        "sf45",
+        raw"set_prolog_flag(access_level, system), current_prolog_flag(access_level, A), set_prolog_flag(access_level, user), R = A"
+    ),
+    (
+        "sf46",
+        raw"set_prolog_flag(iso, true), current_prolog_flag(iso, A), X is 4/2, set_prolog_flag(iso, false), Y is 4/2, R = A-X-Y"
+    ),
+    (
+        "sf47",
+        raw"set_prolog_flag(prefer_rationals, true), X is 1/3, set_prolog_flag(prefer_rationals, false), Y is 1/3, R = X-Y"
+    ),
+    (
+        "sf48",
+        raw"set_prolog_flag(rational_syntax, natural), term_to_atom(T, '1/3'), set_prolog_flag(rational_syntax, compatibility), R = T"
+    ),
     ("sf50", raw"create_prolog_flag(zz_c1, 5, []), current_prolog_flag(zz_c1, R)"),
-    ("sf51", raw"create_prolog_flag(zz_c2, v, [access(read_only)]), set_prolog_flag(zz_c2, w)"),
+    (
+        "sf51",
+        raw"create_prolog_flag(zz_c2, v, [access(read_only)]), set_prolog_flag(zz_c2, w)"
+    ),
     ("sf52", raw"create_prolog_flag(zz_c3, 1, [type(integer)]), set_prolog_flag(zz_c3, a)"),
     ("sf53", raw"create_prolog_flag(zz_c4, a, [type(atom)]), set_prolog_flag(zz_c4, 3)"),
-    ("sf54", raw"create_prolog_flag(zz_c5, a, [type(oneof([a, b, c]))]), set_prolog_flag(zz_c5, b), current_prolog_flag(zz_c5, A), catch(set_prolog_flag(zz_c5, d), error(E, _), true), current_prolog_flag(zz_c5, B), R = A-B-E"),
-    ("sf55", raw"create_prolog_flag(zz_c6, 1.5, [type(float)]), current_prolog_flag(zz_c6, A), set_prolog_flag(zz_c6, 2.5), current_prolog_flag(zz_c6, B), R = A-B"),
-    ("sf56", raw"create_prolog_flag(zz_c7, true, [type(boolean)]), set_prolog_flag(zz_c7, off), current_prolog_flag(zz_c7, A), set_prolog_flag(zz_c7, on), current_prolog_flag(zz_c7, B), R = A-B"),
-    ("sf57", raw"create_prolog_flag(zz_c8, true, []), set_prolog_flag(zz_c8, 1), current_prolog_flag(zz_c8, R)"),
-    ("sf58", raw"create_prolog_flag(zz_k1, 1, []), create_prolog_flag(zz_k1, 2, [keep(true)]), current_prolog_flag(zz_k1, A), create_prolog_flag(zz_k1, 3, []), current_prolog_flag(zz_k1, B), R = A-B"),
-    ("sf59", raw"create_prolog_flag(zz_t1, f(a, b), [type(term)]), current_prolog_flag(zz_t1, A), set_prolog_flag(zz_t1, g(1)), current_prolog_flag(zz_t1, B), R = A-B"),
+    (
+        "sf54",
+        raw"create_prolog_flag(zz_c5, a, [type(oneof([a, b, c]))]), set_prolog_flag(zz_c5, b), current_prolog_flag(zz_c5, A), catch(set_prolog_flag(zz_c5, d), error(E, _), true), current_prolog_flag(zz_c5, B), R = A-B-E"
+    ),
+    (
+        "sf55",
+        raw"create_prolog_flag(zz_c6, 1.5, [type(float)]), current_prolog_flag(zz_c6, A), set_prolog_flag(zz_c6, 2.5), current_prolog_flag(zz_c6, B), R = A-B"
+    ),
+    (
+        "sf56",
+        raw"create_prolog_flag(zz_c7, true, [type(boolean)]), set_prolog_flag(zz_c7, off), current_prolog_flag(zz_c7, A), set_prolog_flag(zz_c7, on), current_prolog_flag(zz_c7, B), R = A-B"
+    ),
+    (
+        "sf57",
+        raw"create_prolog_flag(zz_c8, true, []), set_prolog_flag(zz_c8, 1), current_prolog_flag(zz_c8, R)"
+    ),
+    (
+        "sf58",
+        raw"create_prolog_flag(zz_k1, 1, []), create_prolog_flag(zz_k1, 2, [keep(true)]), current_prolog_flag(zz_k1, A), create_prolog_flag(zz_k1, 3, []), current_prolog_flag(zz_k1, B), R = A-B"
+    ),
+    (
+        "sf59",
+        raw"create_prolog_flag(zz_t1, f(a, b), [type(term)]), current_prolog_flag(zz_t1, A), set_prolog_flag(zz_t1, g(1)), current_prolog_flag(zz_t1, B), R = A-B"
+    ),
     ("sf60", raw"create_prolog_flag(zz_i1, 3, []), set_prolog_flag(zz_i1, 4.5)"),
-    ("sf61", raw"create_prolog_flag(zz_i2, 3, []), set_prolog_flag(zz_i2, 1000000000000000000000), current_prolog_flag(zz_i2, R)"),
-    ("sf62", raw"create_prolog_flag(zz_i3, 3, []), set_prolog_flag(zz_i3, -7), current_prolog_flag(zz_i3, R)"),
-    ("sf63", raw"create_prolog_flag(zz_a1, abc, []), set_prolog_flag(zz_a1, def), current_prolog_flag(zz_a1, R)"),
+    (
+        "sf61",
+        raw"create_prolog_flag(zz_i2, 3, []), set_prolog_flag(zz_i2, 1000000000000000000000), current_prolog_flag(zz_i2, R)"
+    ),
+    (
+        "sf62",
+        raw"create_prolog_flag(zz_i3, 3, []), set_prolog_flag(zz_i3, -7), current_prolog_flag(zz_i3, R)"
+    ),
+    (
+        "sf63",
+        raw"create_prolog_flag(zz_a1, abc, []), set_prolog_flag(zz_a1, def), current_prolog_flag(zz_a1, R)"
+    ),
     ("sf64", raw"create_prolog_flag(zz_x1, 1, [access(foo)])"),
     ("sf65", raw"create_prolog_flag(zz_x2, 1, [type(foo)])"),
     ("sf66", raw"create_prolog_flag(zz_x3, a, [type(integer)])"),
@@ -161,27 +250,67 @@ const _SF_CASES = [
     ("sf70", raw"create_prolog_flag(zz_x5, _, [])"),
     ("sf71", raw"create_prolog_flag(zz_x6, 1, [bad(1)]), current_prolog_flag(zz_x6, R)"),
     ("sf72", raw"create_prolog_flag(bounded, true, [])"),
-    ("sf73", raw"create_prolog_flag(zz_x7, 1, [access(read_only)]), create_prolog_flag(zz_x7, 2, []), current_prolog_flag(zz_x7, R)"),
-    ("sf74", raw"set_prolog_flag(zz_u1, 7), current_prolog_flag(zz_u1, A), set_prolog_flag(zz_u1, a), R = A"),
-    ("sf75", raw"set_prolog_flag(user_flags, warning), set_prolog_flag(zz_u2, 8), set_prolog_flag(user_flags, silent), current_prolog_flag(zz_u2, R)"),
-    ("sf76", raw"set_prolog_flag(user_flags, foo), current_prolog_flag(user_flags, A), set_prolog_flag(user_flags, silent), R = A"),
-    ("sf77", raw"set_prolog_flag(user_flags, error), set_prolog_flag(double_quotes, string), set_prolog_flag(user_flags, silent), R = ok"),
+    (
+        "sf73",
+        raw"create_prolog_flag(zz_x7, 1, [access(read_only)]), create_prolog_flag(zz_x7, 2, []), current_prolog_flag(zz_x7, R)"
+    ),
+    (
+        "sf74",
+        raw"set_prolog_flag(zz_u1, 7), current_prolog_flag(zz_u1, A), set_prolog_flag(zz_u1, a), R = A"
+    ),
+    (
+        "sf75",
+        raw"set_prolog_flag(user_flags, warning), set_prolog_flag(zz_u2, 8), set_prolog_flag(user_flags, silent), current_prolog_flag(zz_u2, R)"
+    ),
+    (
+        "sf76",
+        raw"set_prolog_flag(user_flags, foo), current_prolog_flag(user_flags, A), set_prolog_flag(user_flags, silent), R = A"
+    ),
+    (
+        "sf77",
+        raw"set_prolog_flag(user_flags, error), set_prolog_flag(double_quotes, string), set_prolog_flag(user_flags, silent), R = ok"
+    ),
     ("sf78", raw"create_prolog_flag(zz_t2, f(X, Y, X), [type(term)])"),
-    ("sf80", raw"clause(sp(1), true, Ref), set_prolog_flag(iso, true), catch(clause(_, _, Ref), error(E, _), true), set_prolog_flag(iso, false), R = E"),
-    ("sf81", raw"set_prolog_flag(iso, true), catch(clause(sp(1), _), error(E, _), true), set_prolog_flag(iso, false), R = E"),
-    ("sf82", raw"set_prolog_flag(iso, true), clause(sd(1), B), set_prolog_flag(iso, false), R = B"),
-    ("sf83", raw"assertz((ssd(1) => true), Ref), set_prolog_flag(iso, true), clause(H, B, Ref), set_prolog_flag(iso, false), R = H-B"),
-    ("sf84", raw"clause(sp(1), true, Ref), set_prolog_flag(iso, true), set_prolog_flag(iso, false), clause(H, B, Ref), R = H-B"),
-    ("sf85", raw"set_prolog_flag(protect_static_code, true), current_prolog_flag(protect_static_code, R)"),
+    (
+        "sf80",
+        raw"clause(sp(1), true, Ref), set_prolog_flag(iso, true), catch(clause(_, _, Ref), error(E, _), true), set_prolog_flag(iso, false), R = E"
+    ),
+    (
+        "sf81",
+        raw"set_prolog_flag(iso, true), catch(clause(sp(1), _), error(E, _), true), set_prolog_flag(iso, false), R = E"
+    ),
+    (
+        "sf82",
+        raw"set_prolog_flag(iso, true), clause(sd(1), B), set_prolog_flag(iso, false), R = B"
+    ),
+    (
+        "sf83",
+        raw"assertz((ssd(1) => true), Ref), set_prolog_flag(iso, true), clause(H, B, Ref), set_prolog_flag(iso, false), R = H-B"
+    ),
+    (
+        "sf84",
+        raw"clause(sp(1), true, Ref), set_prolog_flag(iso, true), set_prolog_flag(iso, false), clause(H, B, Ref), R = H-B"
+    ),
+    (
+        "sf85",
+        raw"set_prolog_flag(protect_static_code, true), current_prolog_flag(protect_static_code, R)"
+    ),
     ("sf86", raw"catch(clause(sp(1), _), error(E, _), true), R = E"),
     ("sf87", raw"clause(sd(1), B), R = B"),
     ("sf88", raw"set_prolog_flag(protect_static_code, false)"),
-    ("sf89", raw"set_prolog_flag(protect_static_code, true), current_prolog_flag(protect_static_code, R)")
+    (
+        "sf89",
+        raw"set_prolog_flag(protect_static_code, true), current_prolog_flag(protect_static_code, R)"
+    ),
+    (
+        "sf90",
+        raw"set_prolog_flag(unknown, warning), ( catch(zz_nopred_xx, _, fail) -> B = yes ; B = no ), set_prolog_flag(unknown, error), R = B"
+    )
 ]
 
 # swipl 10.1.19-1-gcbf4e189's answers to the program and cases above (the driver's lines; evidence/F1B/sf_rows.out)
 const _SF_PINNED = [
-# PINS-BEGIN
+    # PINS-BEGIN
     "ok",
     "t_sf01 c[116,95,115,102,48,49]/1(c[114,97,105,115,101,100]/1(c[112,101,114,109,105,115,115,105,111,110,95,101,114,114,111,114]/3(a[109,111,100,105,102,121],a[102,108,97,103],a[98,111,117,110,100,101,100])))",
     "t_sf02 c[116,95,115,102,48,50]/1(c[114,97,105,115,101,100]/1(c[112,101,114,109,105,115,115,105,111,110,95,101,114,114,111,114]/3(a[109,111,100,105,102,121],a[102,108,97,103],a[112,105,100])))",
@@ -260,8 +389,9 @@ const _SF_PINNED = [
     "t_sf86 c[116,95,115,102,56,54]/1(c[112,101,114,109,105,115,115,105,111,110,95,101,114,114,111,114]/3(a[97,99,99,101,115,115],a[112,114,105,118,97,116,101,95,112,114,111,99,101,100,117,114,101],c[47]/2(a[115,112],i1)))",
     "t_sf87 c[116,95,115,102,56,55]/1(a[116,114,117,101])",
     "t_sf88 c[116,95,115,102,56,56]/1(c[114,97,105,115,101,100]/1(c[112,101,114,109,105,115,115,105,111,110,95,101,114,114,111,114]/3(a[115,101,116],a[112,114,111,108,111,103,95,102,108,97,103],a[112,114,111,116,101,99,116,95,115,116,97,116,105,99,95,99,111,100,101])))",
-    "t_sf89 c[116,95,115,102,56,57]/1(a[116,114,117,101])"
-# PINS-END
+    "t_sf89 c[116,95,115,102,56,57]/1(a[116,114,117,101])",
+    "t_sf90 c[116,95,115,102,57,48]/1(a[110,111])"
+    # PINS-END
 ]
 
 "The program and cases as one file; the case predicates' names."
@@ -326,7 +456,7 @@ function _sf_kernel(path::String, names::Vector{String})
     return out, gd, ld
 end
 
-@testset "set_prolog_flag/2, create_prolog_flag/3 and the flag side effects as swipl's (sf01-sf89)" begin
+@testset "set_prolog_flag/2, create_prolog_flag/3 and the flag side effects as swipl's (sf01-sf90)" begin
     f, names = _sf_file()
     kl, _, _ = _sf_kernel(f, names)
     @test length(kl) == length(_SF_PINNED)
@@ -338,7 +468,31 @@ end
     raised = "c[114,97,105,115,101,100]"                 # raised(…)
     @test count(l -> occursin(raised, l), _SF_PINNED) >= 30
     @test count(l -> !occursin(raised, l) && startswith(l, "t_"), _SF_PINNED) >= 30
-    @test any(l -> startswith(l, "t_sf01 ") && occursin("c[112,101,114,109,105,115,115,105,111,110,95,101,114,114,111,114]/3(", l), _SF_PINNED)
+    @test any(
+        l ->
+            startswith(l, "t_sf01 ") && occursin(
+                "c[112,101,114,109,105,115,115,105,111,110,95,101,114,114,111,114]/3(", l
+            ),
+        _SF_PINNED
+    )
+end
+
+@testset "unknown=warning prints the existence_error as a warning, once, and the call fails (pl-vmi.c S_UNDEF)" begin
+    f, names = _sf_file()
+    _, _, ld = _sf_kernel(f, names)
+    # the program's own load prints singleton warnings; only sf90 sets unknown=warning, so its call is the only existence_error message
+    # (sf37's unknown=fail prints nothing, sf38's error is thrown)
+    code(s) = join(Int.(codeunits(s)), ",")
+    hits = filter(
+        m -> occursin("c[" * code("existence_error") * "]", _sf_enc(m[2])), ld.messages
+    )
+    @test length(hits) == 1
+    sev, msg = hits[1]
+    @test sev === :warning
+    @test _sf_enc(msg) ==
+        "c[" * code("error") * "]/2(c[" * code("existence_error") * "]/2(a[" *
+          code("procedure") *
+          "],c[47]/2(a[" * code("zz_nopred_xx") * "],i0)),V0)"
 end
 
 @testset "the pins are swipl's (live, when swipl is on PATH)" begin
@@ -359,18 +513,22 @@ end
 # value outside the flag's domain would end in a different error. `file_name_case_handling` is READ-ONLY (swipl and the
 # kernel answer permission_error(modify, flag, file_name_case_handling)): it has no row here.
 const _SF_REFUSED = [
-    ("debug", "true"), ("debugger_show_context", "true"), ("threads", "true"),
-    ("tty_control", "false"), ("debug_on_interrupt", "true"), ("var_tag", "dict"),
+    ("debug", "true"), ("debugger_show_context", "true"),
+    ("tty_control", "true"), ("debug_on_interrupt", "true"), ("var_tag", "dict"),
     ("incomparable", "error"), ("encoding", "utf8"), ("unicode_atoms", "error"),
     ("autoload", "false"), ("table_monotonic", "lazy"),
     ("theme", "dark"), ("agc_margin", "100"), ("table_space", "1000000"),
-    ("table_compile_threshold", "5"), ("table_drop_intermediate", "5"), ("stack_limit", "1000000000"),
-    ("string_stack_tripwire", "100"), ("heartbeat", "0"),
-    ("float_overflow", "infinity"), ("max_answers_for_subgoal", "5"), ("max_table_subgoal_size", "5")
+    ("table_compile_threshold", "5"), ("table_drop_intermediate", "5"),
+    ("stack_limit", "1000000000"),
+    ("heartbeat", "0"),
+    ("float_overflow", "infinity"), ("max_answers_for_subgoal", "5"),
+    ("max_table_subgoal_size", "5")
 ]
 
 @testset "the flags refused by name raise NotPortedError (design D4)" begin
-    text = join(["r_$(f)(R) :- set_prolog_flag($f, $v), R = ok.\n" for (f, v) in _SF_REFUSED])
+    text = join([
+        "r_$(f)(R) :- set_prolog_flag($f, $v), R = ok.\n" for (f, v) in _SF_REFUSED
+    ])
     path = joinpath(mktempdir(), "refused.pl")
     write(path, text)
     for (f, _) in _SF_REFUSED
@@ -382,6 +540,29 @@ const _SF_REFUSED = [
         @test_throws LK.NotPortedError _sf_query(gd, ld, "r_$(f)")
     end
     @test length(_SF_REFUSED) >= 20
+end
+
+# KNOWN DIFFERENCE BY DESIGN (D1, the no-threads build; checklist: R2's threads): `threads` is read-only in the kernel (upstream's `#else` of
+# `O_PLMT`: `FT_BOOL|FF_READONLY, false`), so setting it answers permission_error(modify, flag, threads); swipl 10.1.19 (a threaded
+# build) accepts `set_prolog_flag(threads, true)`, its current value. `string_stack_tripwire` is no flag of swipl's boot: the first set
+# creates a user flag, as swipl 10.1.19 does (probed), and the second reaches the refusal.
+@testset "threads is read-only in the no-threads build (design D1)" begin
+    path = joinpath(mktempdir(), "threads.pl")
+    write(
+        path,
+        "t_th(R) :- catch(set_prolog_flag(threads, true), error(E, _), true), R = E.\n" *
+        "t_sst(R) :- set_prolog_flag(string_stack_tripwire, 100), set_prolog_flag(string_stack_tripwire, 100), R = ok.\n"
+    )
+    gd = LK.PL_global_data{_SF}()
+    ld = LK.PL_local_data{_SF}(gd)
+    LK.load_file!(gd, ld, path)
+    line = _sf_query(gd, ld, "t_th")
+    @test occursin(
+        "c" * _sf_codes("permission_error") * "/3(a" * _sf_codes("modify") * ",a" *
+        _sf_codes("flag") * ",a" * _sf_codes("threads") * ")",
+        line
+    )
+    @test_throws LK.NotPortedError _sf_query(gd, ld, "t_sst")
 end
 
 # the kernel's answer where swipl 10.1.19 does not answer: `set_prolog_flag(user_flags, error)`, then a new key — the
@@ -397,5 +578,8 @@ end
     LK.load_file!(gd, ld, path)
     line = _sf_query(gd, ld, "t_uf")
     ek = _sf_codes("existence_error")
-    @test occursin("c" * ek * "/2(a" * _sf_codes("prolog_flag") * ",a" * _sf_codes("zz_uf_new") * ")", line)
+    @test occursin(
+        "c" * ek * "/2(a" * _sf_codes("prolog_flag") * ",a" * _sf_codes("zz_uf_new") * ")",
+        line
+    )
 end

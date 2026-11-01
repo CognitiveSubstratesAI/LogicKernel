@@ -57,9 +57,6 @@ MUTANTS = [
     dict(id="F1B-A5 the debugger flag `debug` is not refused by name (KILL refused)", file=P, targets=TF,
          old="            _flag_not_ported(k, \"debugmode and tracemode (the debugger)\")\n",
          new="            nothing\n"),
-    dict(id="F1B-A6 `threads` set true is not refused, set false is (KILL refused)", file=P, targets=TF,
-         old="            val && _flag_not_ported(k, \"enableThreads (threads)\")\n",
-         new="            !val && _flag_not_ported(k, \"enableThreads (threads)\")\n"),
     # ── set_flag_value: FT_ATOM, FT_INTEGER; the validators ──
     dict(id="F1B-B1 an atom flag with a oneof takes any atom (KILL sf54)", file=P, targets=TF,
          old="        check_oneof_flag(ld, f.oneof, a, true) || return false\n",
