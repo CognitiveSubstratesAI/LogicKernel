@@ -67,7 +67,9 @@ _recref_bytes(serial::Int)::Vector{UInt8} = collect(reinterpret(UInt8, Int64[ser
 # ORIGINAL: upstream's `((recref*)PL_blob_data(aref, NULL, NULL))->record` with the type test of its
 # callers (`type == &record_blob`), as `clause_clref` for the clause blob.
 "The record reference the blob `aref` names, or `nothing` when `aref` is no record blob."
-function recref_record(gd::PL_global_data{T}, aref::T)::Union{Nothing, RecordRef{T}} where {T}
+function recref_record(
+    gd::PL_global_data{T}, aref::T
+)::Union{Nothing, RecordRef{T}} where {T}
     is_blob(aref) || return nothing
     at = atomValue(gd.atoms, blob_handle(aref))
     at.type === record_blob || return nothing                   # type == &record_blob

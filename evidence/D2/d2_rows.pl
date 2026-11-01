@@ -68,7 +68,7 @@ t_r58(R) :- rset, catch((recordz(ka, 1, Ref), erase(Ref), ( current_key(ka) -> R
 t_r59(R) :- rset, catch((recordz(f(a), 1), ( current_key(f(_)) -> R = yes ; R = no )), error(RcE, _), R = raised(RcE)).
 t_r60(R) :- rset, catch((recordz(f(a), 1), current_key(K), functor(K, N, A), R = N/A), error(RcE, _), R = raised(RcE)).
 t_r61(R) :- rset, catch((exc(current_key(1.5), R)), error(RcE, _), R = raised(RcE)).
-t_r62(R) :- rset, catch((recordz(a, 1), recordz(b, 2), once(current_key(_)), R = ok), error(RcE, _), R = raised(RcE)).
+t_r62(R) :- rset, catch((recordz(a, 1), recordz(b, 2), ( current_key(_) -> true ), R = ok), error(RcE, _), R = raised(RcE)).
 t_r63(R) :- rset, catch((recordz(a, 1), recordz(b, 2), recordz(c, 3), findall(K, current_key(K), L), msort(L, R)), error(RcE, _), R = raised(RcE)).
 t_r64(R) :- rset, catch((recordz(k, 1), recordz(j, 2), recorded(K, 2), R = K), error(RcE, _), R = raised(RcE)).
 t_r65(R) :- rset, catch((recordz(k, a, Ref), erase(Ref), ( recorded(k, a) -> R = yes ; R = no )), error(RcE, _), R = raised(RcE)).
@@ -98,12 +98,12 @@ t_r88(R) :- rset, catch((recordz(k, 1), recordz(k, 2), recordz(k, 3), findall(X,
 t_r89(R) :- rset, catch((recordz(k, 1), recordz(k, 2), ( recorded(k, _, Ref), erase(Ref), fail ; true ), recordz(k, 3), findall(X, recorded(k, X), R)), error(RcE, _), R = raised(RcE)).
 t_r90(R) :- rset, catch((recordz(k, 1), recordz(k, 2), ( recorded(k, _, Ref), erase(Ref), fail ; true ), ( current_key(k) -> R = alive ; R = gone )), error(RcE, _), R = raised(RcE)).
 t_r91(R) :- rset, catch((recordz(k, 1), recordz(k, 2), recordz(k, 3), recorded(k, R, Ref), erase(Ref)), error(RcE, _), R = raised(RcE)).
-t_r92(R) :- rset, catch((recordz(k, 1), recordz(k, 2), once(recorded(k, _, Ref)), erase(Ref), findall(X, recorded(k, X), R)), error(RcE, _), R = raised(RcE)).
+t_r92(R) :- rset, catch((recordz(k, 1), recordz(k, 2), ( recorded(k, _, Ref) -> true ), erase(Ref), findall(X, recorded(k, X), R)), error(RcE, _), R = raised(RcE)).
 t_r93(R) :- rset, catch((recordz(k, 1), recorded(k, 1, Ref), recorda(k, 0), erase(Ref), findall(X, recorded(k, X), R)), error(RcE, _), R = raised(RcE)).
 t_r94(R) :- rset, catch((recordz(k, 1), recordz(k, 2), recorded(k, X, Ref), erase(Ref), recorded(k, Y), R = X-Y), error(RcE, _), R = raised(RcE)).
 t_r95(R) :- rset, catch((recordz(k, 1), recordz(k, 2), recordz(k, 3), recorded(k, X), X >= 2, !, R = X), error(RcE, _), R = raised(RcE)).
 t_r96(R) :- rset, catch((( between(1, 300, N), recordz(k, N), fail ; true ), findall(X, recorded(k, X), L), length(L, R)), error(RcE, _), R = raised(RcE)).
-t_r97(R) :- rset, catch((( between(1, 300, N), recorda(k, N), fail ; true ), once(recorded(k, R))), error(RcE, _), R = raised(RcE)).
+t_r97(R) :- rset, catch((( between(1, 300, N), recorda(k, N), fail ; true ), ( recorded(k, R) -> true )), error(RcE, _), R = raised(RcE)).
 t_r98(R) :- rset, catch((recordz(k, 1), recordz(k, 2), ( recorded(k, X, Ref), erase(Ref), recorded(k, Y), R = X-Y ; R = none )), error(RcE, _), R = raised(RcE)).
 t_r99(R) :- rset, catch((recordz(k, f(1)), recordz(k, g(2)), recordz(k, g(3)), recorded(k, f(_)), recorded(k, g(2), Rg), erase(Rg), findall(X, recorded(k, g(X)), R)), error(RcE, _), R = raised(RcE)).
 t_r100(R) :- rset, catch((recordz(ka, 1, Ref), recordz(kb, 2), erase(Ref), findall(K, current_key(K), R)), error(RcE, _), R = raised(RcE)).

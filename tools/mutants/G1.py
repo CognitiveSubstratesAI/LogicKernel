@@ -93,8 +93,8 @@ MUTANTS = [
          old="PL_extension(\"nb_linkval\", 2, pl_nb_linkval2_va, PL_FA_VARARGS)",
          new="PL_extension(\"nb_linkval\", 2, pl_nb_setval2_va, PL_FA_VARARGS)"),
     dict(id="G1-T2 nb_current is registered deterministic (KILL g19, g21, g52, g53)", file="src/pl-gvar.jl", targets=TG,
-         old="PL_FA_NONDETERMINISTIC | PL_FA_VARARGS)",
-         new="PL_FA_VARARGS)"),
+         old="pl_nb_current2_va, PL_FA_NONDETERMINISTIC | PL_FA_VARARGS",
+         new="pl_nb_current2_va, PL_FA_VARARGS"),
     # ── D7, D8, duplicate_term ──
     dict(id="G1-R1 _release_frozen! frees the frozen region while global variables hold values (KILL g04, g06)",
          file="src/pl-inline.jl", targets=TF,

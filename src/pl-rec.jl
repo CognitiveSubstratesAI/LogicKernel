@@ -636,7 +636,9 @@ end
 # DIVERGES: named `record_term` (`record` is the type of a recorded term, pl-incl.h `struct record`); the
 # local data is the argument; `ref` 0 is upstream's NULL (no reference wanted).
 "`recorda`/`recordz`'s body (pl-rec.c `record`): record `term` under `key`, `ref` (unbound) its reference."
-function record_term(ld::PL_local_data{T}, key::term_t, term::term_t, ref::term_t, az::Int)::Bool where {T}
+function record_term(
+    ld::PL_local_data{T}, key::term_t, term::term_t, ref::term_t, az::Int
+)::Bool where {T}
     k = getKeyEx(ld, key)
     k === nothing && return false
     if ref != 0 && !PL_is_variable(ld, ref)
@@ -649,7 +651,9 @@ end
 # DIVERGES: the local data is the argument; no `PL_no_memory` (Julia's allocator); on a failed `ref`
 # unification nothing is freed (Julia's GC: upstream's `PL_erase(copy)`, `freeHeap`).
 "Record `term` under the key word `k` at the front (`RECORDA`) or the end (`RECORDZ`) of its list (pl-rec.c)."
-function PL_record_az(ld::PL_local_data{T}, k::word, term::term_t, ref::term_t, az::Int)::Bool where {T}
+function PL_record_az(
+    ld::PL_local_data{T}, k::word, term::term_t, ref::term_t, az::Int
+)::Bool where {T}
     gd = _query_gd(ld)
     copy = compileTermToHeap(ld, term)                          # compileTermToHeap(term, 0)
     r = RecordRef{T}(copy)                                      # r = allocHeapOrHalt(…); r->record = copy
@@ -685,7 +689,11 @@ end
 function pl_recordava_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
 )::foreign_t where {T}
-    return record_term(ld, PL__t0, PL__t0 + 1, PL__ac == 3 ? PL__t0 + 2 : 0, RECORDA) ? FTRUE : FFALSE
+    return if record_term(ld, PL__t0, PL__t0 + 1, PL__ac == 3 ? PL__t0 + 2 : 0, RECORDA)
+        FTRUE
+    else
+        FFALSE
+    end
 end
 
 # PORT: pl-rec.c recordz as pl_recordzva_va
@@ -694,7 +702,11 @@ end
 function pl_recordzva_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
 )::foreign_t where {T}
-    return record_term(ld, PL__t0, PL__t0 + 1, PL__ac == 3 ? PL__t0 + 2 : 0, RECORDZ) ? FTRUE : FFALSE
+    return if record_term(ld, PL__t0, PL__t0 + 1, PL__ac == 3 ? PL__t0 + 2 : 0, RECORDZ)
+        FTRUE
+    else
+        FFALSE
+    end
 end
 
 # PORT: pl-rec.c save_state
@@ -767,7 +779,9 @@ function pl_recordedva_va(
             rec === nothing && return FFALSE
             if unifyKey(ld, key, rec.list.key)
                 copy = PL_new_term_ref(ld)
-                rc = copyRecordToGlobal(ld, copy, rec.record::record{T}) && PL_unify(ld, term, copy)
+                rc =
+                    copyRecordToGlobal(ld, copy, rec.record::record{T}) &&
+                    PL_unify(ld, term, copy)
             else
                 rc = false
             end
@@ -818,7 +832,8 @@ function pl_recordedva_va(
                     break
                 end
 
-                if PL_unify(ld, term, copy) && (ref == 0 || PL_unify_recref(gd, ld, ref, rec))
+                if PL_unify(ld, term, copy) &&
+                    (ref == 0 || PL_unify_recref(gd, ld, ref, rec))
                     if state.e != 0 && !unifyKey(ld, key, rec.list.key)
                         err = true                              # goto error: stack overflow
                         break
@@ -905,7 +920,8 @@ function pl_erase1_va(
         def = clause.predicate
         if (def.flags & P_DYNAMIC) == 0
             PL_error(
-                ld, "erase", 1, "", ERR_PERMISSION, mk_sym(T, :clause), mk_sym(T, :erase), ref
+                ld, "erase", 1, "", ERR_PERMISSION, mk_sym(T, :clause), mk_sym(T, :erase),
+                ref
             )
             return FFALSE
         end
@@ -1031,5 +1047,7 @@ const PL_predicates_from_rec = (
     PL_extension("recorda", 3, pl_recordava_va, PL_FA_VARARGS),
     PL_extension("erase", 1, pl_erase1_va, PL_FA_VARARGS),
     PL_extension("instance", 2, pl_instance2_va, PL_FA_VARARGS),
-    PL_extension("current_key", 1, pl_current_key1_va, PL_FA_NONDETERMINISTIC | PL_FA_VARARGS)
+    PL_extension(
+        "current_key", 1, pl_current_key1_va, PL_FA_NONDETERMINISTIC | PL_FA_VARARGS
+    )
 )

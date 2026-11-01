@@ -145,7 +145,7 @@ REMAINING, in order:
 8. push `mutants/D2` at the WIP SHA (D2.py exists) and run D2 + D1c (45 + 100; D1-56, D1-119 must now be KILLED, not equivalent);
    the battery covers the white-box survivors; a survivor is killed by a test or proved equivalent with file:line (D-0100, D-0238).
 9. `warm.sh branch-gate`.
-10. the term grep over diff and message: `segment|SIGSEGV|crash|abort|invalid term_t|dies of`.
+10. the term grep over diff and message: (D-0164, the list in the brief).
 11. gate push `gate/d2<fresh suffix>` and `mutants/D2` at the SAME SHA, bare `git push`, never force.
 
 ## Flags for the audit (F1-F5 above, plus)
