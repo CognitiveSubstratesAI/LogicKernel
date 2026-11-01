@@ -73,7 +73,8 @@ function build_home(
         for (d, subdirs, files) in walkdir(home; topdown=false)
             for e in files
                 p = joinpath(d, e)
-                islink(p) || error("build_home: $p is a file, not a link: $home is not a home tree")
+                islink(p) ||
+                    error("build_home: $p is a file, not a link: $home is not a home tree")
                 get(want, p, nothing) == readlink(p) || rm(p)
             end
             for e in subdirs                    # a link to a directory is listed here, not descended into

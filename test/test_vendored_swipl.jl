@@ -14,7 +14,9 @@ using Test
 const _VS_ROOT = joinpath(@__DIR__, "..")
 const _VS_DIR = joinpath(_VS_ROOT, "vendor", "swipl-devel")
 # src/CMakeLists.txt:120-121 SWIPL_DATA_INDEXED_DIRS — the directories upstream's build gives an INDEX.pl
-const _VS_INDEXED = ["library", "library/clp", "library/dcg", "library/unicode", "library/lynx"]
+const _VS_INDEXED = [
+    "library", "library/clp", "library/dcg", "library/unicode", "library/lynx"
+]
 
 "A pin-file line `key: value` of `path`, or `\"\"`."
 function _vs_key(path::String, key::String)::String
@@ -70,7 +72,8 @@ end
     # NON-VACUITY: both sides of every comparison below are the real thing — boot is 26 files, library is 210, the LICENSE is kept
     @test count(startswith("boot/"), keys(upstream)) == 26
     @test count(startswith("library/"), keys(upstream)) == 210
-    @test haskey(upstream, "boot/init.pl") && haskey(upstream, "boot/load.pl") && haskey(upstream, "library/lists.pl")
+    @test haskey(upstream, "boot/init.pl") && haskey(upstream, "boot/load.pl") &&
+        haskey(upstream, "library/lists.pl")
     @test haskey(upstream, "LICENSE")
     @test sort!(collect(keys(generated))) == sort!([d * "/INDEX.pl" for d in _VS_INDEXED])
     @test isempty(intersect(keys(upstream), keys(generated)))
@@ -126,7 +129,8 @@ if _VS_CI || isdir(joinpath(_VS_UP, ".git"))
             _, upstream, generated = _vs_manifest()
             listed = readlines(`git -C $_VS_UP ls-tree -r $pin boot library LICENSE`)
             @test !isempty(listed)
-            @test sort!(listed) == sort!(["100644 blob $id\t$rel" for (rel, id) in upstream])
+            @test sort!(listed) ==
+                sort!(["100644 blob $id\t$rel" for (rel, id) in upstream])
             # the generated indexes are NOT upstream's files
             for rel in keys(generated)
                 @test isempty(readlines(`git -C $_VS_UP ls-tree $pin $rel`))
