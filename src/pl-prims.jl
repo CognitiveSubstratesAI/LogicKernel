@@ -3194,8 +3194,8 @@ end
 
 
 # PORT: pl-prims.c term_variables
-# DIVERGES: `tail` 0 is "no tail", as upstream's. `flags`: TV_ATTVAR, TV_ATTS only (AV6; TV_SINGLETON,
-# TV_SHARED: NOT PORTED). NOT PORTED: the retries after `TV_NOSPACE`, `TV_EINTR`, `TV_NOMEM`.
+# DIVERGES: `tail` 0 is "no tail", as upstream's. `flags`: TV_ATTVAR, TV_ATTS (AV6), TV_SINGLETON, TV_SHARED
+# (P1: `term_variables_to_termv_first_cells`). NOT PORTED: the retries after `TV_NOSPACE`, `TV_EINTR`, `TV_NOMEM`.
 "Unify `vars` with the list of the unbound variables of `t`, ending in `tail` (0: in `[]`) (pl-prims.c)."
 function term_variables(
     ld::PL_local_data{T}, t::term_t, vars::term_t, tail::term_t, flags::Int
@@ -3208,8 +3208,13 @@ function term_variables(
         type, len = PL_skip_list(ld, vars)
         type == PL_LIST && (maxcount = len)
     end
+    (flags & TV_SINGLETON) != 0 && (maxcount = typemax(Int))   # || (flags&TV_SINGLETON): maxcount = ~0
 
-    count, v0 = term_variables_to_termv_cells(ld, t, maxcount, flags)  # on the cells (L1d step 5)
+    count, v0 = if (flags & (TV_SINGLETON | TV_SHARED)) != 0
+        term_variables_to_termv_first_cells(ld, t, maxcount, flags)
+    else
+        term_variables_to_termv_cells(ld, t, maxcount, flags)  # on the cells (L1d step 5)
+    end
     if count > maxcount
         return false
     end
@@ -3270,6 +3275,34 @@ function pl_term_attvars2_va(
     A1, A2 = PL__t0, PL__t0 + 1
 
     return term_variables(ld, A1, A2, 0, TV_ATTVAR | TV_ATTS) ? FTRUE : FFALSE
+end
+
+# PORT: pl-prims.c term_singletons as pl_term_singletons2_va
+# (PRED_IMPL("term_singletons", 2, term_singletons, 0))
+"`term_singletons(+Term, -Vars)`: the variables that occur once in `Term`; a cyclic term is a `representation_error(acyclic_term)` (pl-prims.c)."
+function pl_term_singletons2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2 = PL__t0, PL__t0 + 1
+
+    if is_acyclic_cells(ld, -(A1 + 1))                      # PL_is_acyclic(A1)
+        return term_variables(ld, A1, A2, 0, TV_SINGLETON) ? FTRUE : FFALSE
+    end
+    return PL_error(ld, ERR_REPRESENTATION, mk_sym(T, :acyclic_term)) ? FTRUE : FFALSE
+end
+
+# PORT: pl-prims.c term_multitons as pl_term_multitons2_va
+# (PRED_IMPL("$term_multitons", 2, term_multitons, 0))
+"`'\$term_multitons'(+Term, -Vars)`: the variables that occur more than once in `Term`; a cyclic term is a `representation_error(acyclic_term)` (pl-prims.c)."
+function pl_term_multitons2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2 = PL__t0, PL__t0 + 1
+
+    if is_acyclic_cells(ld, -(A1 + 1))                      # PL_is_acyclic(A1)
+        return term_variables(ld, A1, A2, 0, TV_SHARED) ? FTRUE : FFALSE
+    end
+    return PL_error(ld, ERR_REPRESENTATION, mk_sym(T, :acyclic_term)) ? FTRUE : FFALSE
 end
 
 # PORT: pl-prims.c is_most_general_term
@@ -3520,8 +3553,8 @@ const TV_ATTS = 8                                          # 0x8
 
 # PORT: pl-prims.c term_variables_loop as term_variables_loop_cells
 # DIVERGES: on locations; each variable's term reference holds `makeRefG(p)` as upstream's (no
-# export); `goto again` is the inner loop. NOT PORTED: the flags TV_SINGLETON / TV_SHARED (FIRST_MASK),
-# signals, `TV_NOSPACE`.
+# export); `goto again` is the inner loop. NOT PORTED: signals, `TV_NOSPACE`. The flags TV_SINGLETON /
+# TV_SHARED (FIRST_MASK) are `term_variables_loop_first_cells`.
 "The unbound variables the agenda `a` walks, each once, depth-first, as new term references; their count, `maxcount + 1` as soon as there are more (pl-prims.c)."
 function term_variables_loop_cells(
     ld::PL_local_data{T}, a::cell_agenda, maxcount::Int, flags::Int
@@ -3564,6 +3597,82 @@ function term_variables_to_termv_cells(
     initCellAgenda!(a, 1, -(t + 1))                         # initTermAgenda(&agenda, 1, valTermRef(t))
     count = term_variables_loop_cells(ld, a, maxcount, flags)
     clearCellAgenda!(a)
+    unvisit_cells(ld)                                       # unvisit_and_unfirst()
+    return (count, v0)
+end
+
+"term_variables_loop's flags (pl-prims.c, upstream's values): the singleton variables; the variables occurring more than once."
+const TV_SINGLETON = 2                                     # 0x2
+const TV_SHARED = 4                                        # 0x4
+
+# PORT: pl-prims.c term_variables_loop as term_variables_loop_first_cells
+# DIVERGES: the branches of `term_variables_loop_cells` that `flags&(TV_SINGLETON|TV_SHARED)` selects, kept as
+# a function of their own so the loop of term_variables/2 is unchanged. A variable seen again gets upstream's
+# `FIRST_MASK` as an entry of `firsts` (a variable cell has no room for the bit, see `visitedWord_cells`); a
+# compound seen again is walked again (upstream's `visited(f) && !(flags&…)`), so its variables count as seen
+# twice. No signals, no `TV_NOSPACE`.
+"As `term_variables_loop_cells` for `TV_SINGLETON` / `TV_SHARED`: the variables, each once, and in `firsts` those met again (pl-prims.c)."
+function term_variables_loop_first_cells(
+    ld::PL_local_data{T}, a::cell_agenda, maxcount::Int, flags::Int, firsts::Set{Int}
+)::Int where {T}
+    count = 0
+    while true
+        q = nextCellAgendaNoDeRef!(a)
+        q == 0 && break
+        k, w, p = _deref_loc(ld, q)                         # nextTermAgenda: deRef(p)
+        while true                                          # again:
+            if k == DU_CELL || k == DU_ATTVAR               # canBind(w)
+                if visitedWord_cells(ld, p)
+                    push!(firsts, p)                        # (*p) |= FIRST_MASK
+                    break
+                end
+                ((flags & TV_ATTVAR) != 0 && k != DU_ATTVAR) && break
+                count += 1
+                count > maxcount && return count
+                _new_term_ref_word!(ld, makeRefG(p))
+                if (flags & TV_ATTS) != 0 && k == DU_ATTVAR
+                    k, w, p = _deref_loc(ld, valPtr(w))
+                    continue                                # goto again
+                end
+            elseif k == DU_WORD && _is_gcompound(w)         # isTerm(w)
+                c = valPtr(w)
+                visitedWord_cells(ld, c)                    # visited(f): the result is not used
+                pushWorkCellAgenda!(a, arityFunctor(ld.functors, ld.gstack[c]), c + 1)
+            end
+            break
+        end
+    end
+    return count
+end
+
+# PORT: pl-prims.c term_variables_to_termv as term_variables_to_termv_first_cells
+# DIVERGES: the part of `term_variables_to_termv_cells` for `TV_SINGLETON` / `TV_SHARED`: the term references
+# of the variables that are not (singleton) or are (shared) in `firsts` are kept, in order. Upstream
+# filters `count` references also when `count > maxcount` (it has not made the last one then); here the
+# count is returned as is, so the caller fails on it (flagged for the audit: only a `$term_multitons/2` whose
+# second argument is a proper list shorter than the variables reaches it).
+"The singleton (`TV_SINGLETON`) or repeated (`TV_SHARED`) variables of the term `t` references, as term references from `v0`: `(count, v0)` (pl-prims.c)."
+function term_variables_to_termv_first_cells(
+    ld::PL_local_data{T}, t::term_t, maxcount::Int, flags::Int
+)::Tuple{Int, Int} where {T}
+    v0 = PL_new_term_refs(ld, 0)
+    a = ld.walk_agenda
+    initCellAgenda!(a, 1, -(t + 1))                         # initTermAgenda(&agenda, 1, valTermRef(t))
+    firsts = Set{Int}()
+    count = term_variables_loop_first_cells(ld, a, maxcount, flags, firsts)
+    clearCellAgenda!(a)
+    if count <= maxcount
+        o = 0
+        for i in 0:(count - 1)
+            isfirst = unRef(ld.slots[v0 + i + 1]) in firsts   # p = unRef(*valTermRef(v0+i)); *p & FIRST_MASK
+            if (!isfirst && (flags & TV_SINGLETON) != 0) || (isfirst && (flags & TV_SHARED) != 0)
+                o != i && (ld.slots[v0 + o + 1] = ld.slots[v0 + i + 1])
+                o += 1
+            end
+        end
+        o < count && PL_reset_term_refs(ld, v0 + o)
+        count = o
+    end
     unvisit_cells(ld)                                       # unvisit_and_unfirst()
     return (count, v0)
 end
@@ -4179,6 +4288,8 @@ const PL_predicates_from_prims = (
     PL_extension("term_variables", 2, pl_term_variables2_va, PL_FA_ISO | PL_FA_VARARGS),
     PL_extension("term_variables", 3, pl_term_variables3_va, PL_FA_VARARGS),
     PL_extension("\$term_attvar_variables", 2, pl_term_attvar_variables2_va, PL_FA_VARARGS),   # (AV6)
+    PL_extension("term_singletons", 2, pl_term_singletons2_va, PL_FA_VARARGS),
+    PL_extension("\$term_multitons", 2, pl_term_multitons2_va, PL_FA_VARARGS),
     PL_extension("term_attvars", 2, pl_term_attvars2_va, PL_FA_VARARGS),
     PL_extension("is_most_general_term", 1, pl_is_most_general_term1_va, PL_FA_VARARGS),
     PL_extension("deterministic", 1, pl_deterministic1_va, PL_FA_VARARGS),   # (AV9)
