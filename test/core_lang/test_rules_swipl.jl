@@ -1546,25 +1546,16 @@ end
     if _R_SWIPL
         @test _rswipl(clauses, goals) == ours
     end
-    # arg/3's fall-back is a call, as upstream's; arg/3 itself is nondeterministic
-    # (PL_FA_NONDETERMINISTIC), a foreign predicate V9 brings: until then the call raises
-    # existence_error(procedure, arg/3), where swipl answers `Y = a` (the interim, pinned)
-    db2 = _rdb([(_rf("ag", Y), _rf("arg", _rg(1), fa, Y))])
-    gd, ld = db2.gd, db2.ld
-    fid = LK.PL_open_foreign_frame(ld)
-    a = LK.PL_new_term_refs(ld, 1)
-    LK.putSlotValue!(ld, a + 1, _rv(100))
-    qid = LK.PL_open_query(gd, ld, nothing, LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS,
-        _rproc(db2, _rf("ag", _rv(100))), a)
-    @test LK.PL_next_solution(gd, ld, qid) == LK.PL_S_EXCEPTION
-    ball = lk_answer(ld, LK.PL_exception(ld, qid))
-    formal = child(ball, 2)
-    @test lk_name(child(formal, 1)) === :existence_error
-    @test lk_name(child(formal, 2)) === :procedure
-    @test lk_name(child(child(formal, 3), 2)) === :arg &&
-        lk_value(child(child(formal, 3), 3)) == 3
-    LK.PL_close_query(ld, qid)
-    LK.PL_close_foreign_frame(ld, fid)
+    # arg/3's fall-back is a call, as upstream's; arg/3 itself is a foreign predicate (P1, pl-prims.jl):
+    # with a bound index it answers `Y = a` and is deterministic, as swipl does
+    clauses_arg = [(_rf("ag", Y), _rf("arg", _rg(1), fa, Y))]
+    db2 = _rdb(clauses_arg)
+    goals_arg = [_rf("ag", _rv(100))]
+    ours_arg = _rlines(db2, goals_arg)
+    @test ours_arg == ["ag(a) det", "end"]
+    if _R_SWIPL
+        @test _rswipl(clauses_arg, goals_arg) == ours_arg
+    end
 end
 
 @testset "a call failing before its frame is filled: dropped where it is left (S_LIST)" begin
