@@ -777,9 +777,12 @@ function initPrologFlags!(gd::PL_global_data{T})::Nothing where {T}
     setPrologFlag(gd, "path_max", FT_INTEGER | FF_READONLY, 4096)
     setPrologFlag(gd, "version", FT_INTEGER | FF_READONLY, PLVERSION)
     setPrologFlag(gd, "dialect", FT_ATOM | FF_READONLY, "swi")
-    # pl-prologflag.c:2548-2549 defines `home` where `systemDefaults.home` is known; the kernel's own is its
-    # package directory (design D5, audit D-0151 item 6), pointed at the home tree of R2 LB4 when that lands
-    setPrologFlag(gd, "home", FT_ATOM | FF_READONLY, dirname(dirname(@__DIR__)))
+    # pl-prologflag.c:2548-2549 defines `home` where `systemDefaults.home` is known; the kernel's own is the HOME TREE of R2 LB4
+    # (design D5, audit D-0151 item 6; loader_boot.md LD6): `home` in the package directory, a tree of links over vendor/swipl-devel
+    # and packages/plunit that tools/build_home.jl builds (swipl's build home, cmake/InstallSource.cmake:8-25)
+    setPrologFlag(
+        gd, "home", FT_ATOM | FF_READONLY, joinpath(dirname(dirname(@__DIR__)), "home")
+    )
     setPrologFlag(
         gd, "executable", FT_ATOM | FF_READONLY, joinpath(Sys.BINDIR, Base.julia_exename())
     )

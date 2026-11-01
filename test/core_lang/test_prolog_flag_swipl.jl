@@ -822,6 +822,28 @@ end
     LK.PL_close_foreign_frame(ld, fid)
 end
 
+# `home` (pl-prologflag.c:2548-2549, R2 LB4 chunk a, design D5 + loader_boot.md LD6): the kernel's home is the TREE of links
+# tools/build_home.jl builds, `home` in the package directory — the machine flag of the program, so swipl's own value (its install)
+# is no expectation. Hand-written, each with its reason: the value is the kernel's own path; the files init.pl finds through the home
+# (boot/init.pl, library/lists.pl, library/ext/plunit/plunit.pl) are the point of the flag and exist in the tree the builder makes.
+include(joinpath(@__DIR__, "..", "..", "tools", "build_home.jl"))
+@testset "home: the flag names the home tree of links, where boot/, library/ and library/ext/plunit are" begin
+    gd = LK.PL_global_data{_TL}()
+    h = sym_text(LK.PL_current_prolog_flag(gd, _tls("home"), :atom))
+    @test h == home_dir()                                       # the builder's default place
+    @test h == normpath(joinpath(@__DIR__, "..", "..", "home"))
+    @test h != normpath(joinpath(@__DIR__, "..", ".."))        # no longer the package directory
+    @test basename(h) == "home"
+    build_home(h)
+    @test isfile(joinpath(h, "boot", "init.pl"))
+    @test isfile(joinpath(h, "boot", "load.pl"))
+    @test isfile(joinpath(h, "library", "lists.pl"))
+    @test isfile(joinpath(h, "library", "INDEX.pl"))
+    @test isfile(joinpath(h, "library", "ext", "plunit", "plunit.pl"))
+    # the flag is read-only: set_prolog_flag/2 cannot move it (F1b); here the table's own bit
+    @test (LK.current_prolog_flag(gd, "home").flags & LK.FF_READONLY) != 0
+end
+
 # PL_record/PL_recorded/PL_erase/PL_duplicate_record (pl-fli.c): hand-written expectations — they are a C interface no Prolog
 # predicate reaches (recorda/3 and erase/1 are R2 D2)
 @testset "PL_record, PL_recorded, PL_erase, PL_duplicate_record" begin
