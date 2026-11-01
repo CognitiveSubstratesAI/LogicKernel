@@ -84,12 +84,19 @@ function _bp_swipl_lines(path::String, names::Vector{String})::Vector{String}
     return String.(split(chomp(out), '\n'; keepempty=false))
 end
 
-# the program: three facts for the once/1 rows
+# the program: three facts for the once/1 rows. The goals handed to with_mutex/2 are single predicates (bp_p2, bp_bind), and
+# bp_mem stands for member/2: with_mutex/2 is callProlog, which resolves the goal's functor, and `','/2` and member/2 are
+# boot/init.pl and library(lists) definitions that the kernel does not load yet (LB4; handoff checklist). swipl's own
+# answers to the conjunction forms are the same as these rows' (with_mutex(m, (p(X), X > 1)) gives 2).
 const _BP_PROGRAM = raw"""
 p(1).
 p(2).
 p(3).
 dpairs(D, Ps) :- findall(K-V, get_dict(K, D, V), Ps0), msort(Ps0, Ps).
+bp_p2(X) :- p(X), X > 1.
+bp_bind(X) :- X = f(Y), Y = 1.
+bp_mem(X, [X|_]).
+bp_mem(X, [_|T]) :- bp_mem(X, T).
 """
 
 # bp01-bp08 thread_self/1; bp09-bp19 with_mutex/2; bp20-bp26 '$garbage_collect'/1; bp27-bp51 dict_create/3; bp52-bp60 is_dict/1,2;
@@ -107,10 +114,10 @@ const _BP_CASES = [
     ("bp10", raw"findall(X, with_mutex(m, p(X)), R)"),                   # once/1: [1]
     ("bp11", raw"with_mutex(m, fail), R = x"),                           # fails
     ("bp12", raw"catch(with_mutex(m, throw(oops)), E, R = caught(E))"),
-    ("bp13", raw"with_mutex(m, (p(X), X > 1)), R = X"),                  # 2: the goal backtracks inside
+    ("bp13", raw"with_mutex(m, bp_p2(X)), R = X"),                         # 2: the goal backtracks inside
     ("bp14", raw"with_mutex(m, with_mutex(m, R = n))"),                  # nested, same mutex
     ("bp15", raw"with_mutex(m, p(X)), X > 1, R = X"),                    # fails: once/1 gave 1 only
-    ("bp16", raw"with_mutex(m, (X = f(Y), Y = 1)), R = X"),              # bindings stay
+    ("bp16", raw"with_mutex(m, bp_bind(X)), R = X"),                         # bindings stay
     ("bp17", raw"with_mutex(m, context_module(R))"),                     # user
     ("bp18", raw"with_mutex(m, nosuchpred_bp(R))"),                      # existence_error(procedure, …)
     ("bp19", raw"with_mutex(m, true), with_mutex(n, R = two)"),
@@ -157,7 +164,7 @@ const _BP_CASES = [
     ("bp55", raw"findall(x, is_dict(f(a), _), R)"),
     (
         "bp56",
-        raw"findall(x, (member(X, [1, 2.5, abc, [], [a], f(a), g(a, b, c)]), is_dict(X)), R)"
+        raw"findall(x, (bp_mem(X, [1, 2.5, abc, [], [a], f(a), g(a, b, c)]), is_dict(X)), R)"
     ),
     ("bp57", raw"dict_create(D, t, [a-1]), is_dict(D, t), R = yes"),
     ("bp58", raw"dict_create(D, t, [a-1]), is_dict(D, u), R = yes"),

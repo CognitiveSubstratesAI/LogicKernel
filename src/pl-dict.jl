@@ -26,9 +26,12 @@
 const ATOM_dict = builtin_atom("dict")
 
 # PORT: pl-dict.c dict_functor
-# DIVERGES: no `GD->dict.dict_functors` cache for the small arities: the table is asked every time.
+# DIVERGES: no `GD->dict.dict_functors` cache for the small arities: the table is asked every time. The reserved
+# symbol `dict` is recorded in the database's symbol store (`_atom_word!`) so a reader of the functor's name
+# (the compiler's argvar placeholder, `_atom_value`) finds its interface symbol; the word is `ATOM_dict` either way.
 "The functor word of a dict with `pairs` key-value pairs: `dict`/(2*pairs+1) (pl-dict.c)."
-function dict_functor(ld::PL_local_data, pairs::Int)::word
+function dict_functor(ld::PL_local_data{T}, pairs::Int)::word where {T}
+    _atom_word!(ld, mk_reserved_symbol(T, :dict))
     return lookupFunctorDef(ld.functors, ATOM_dict, pairs * 2 + 1)
 end
 
@@ -668,6 +671,7 @@ function select_dict(ld::PL_local_data{T}, del::word, from::word)::word where {T
         out = allocGlobalCells!(ld, nsize * 2 + 2)
         new_dict = consPtr(out, TAG_COMPOUND | STG_GLOBAL)
         ld.gstack[out] = dict_functor(ld, nsize)
+        _atom_word!(ld, mk_sym(T, Symbol("#")))                # records the symbol of `dyndict` (text `#`) for readers
         ld.gstack[out + 1] = ATOM_dyndict
         out += 2
 
