@@ -123,3 +123,16 @@ JET on the `Union` uses of `d` and `keep` and the unused `PL__ac`. Coder 3 adds:
   `refs/heads/mutants/BOOTPRED` (check first: `git ls-remote --heads origin mutants/BOOTPRED gate/bootpred`); (3) `tools/warm.sh branch-gate`; (4) crash-term grep over
   `git diff faee65f HEAD` and the commit messages; (5) local branch gate/bootpred at the SHA, push it and mutants/BOOTPRED at the SAME SHA; (6) tools/ci_status.sh once per
   >= 5 min. Daemon: lk-bootpred, LOGICKERNEL_WARM_SECOND=1 (no manual restart; one automatic struct-change restart after the DICT_GET_* const edit).
+
+## RE-STACK onto main a753dc0 (Sonnet, 2026-11-01; context cap hit, a fresh agent continues)
+- Branch wip/bootpred-r (local, linear, 25 commits) = `git cherry-pick faee65f..b741f39` onto origin/main a753dc0: ONE conflict only (docs/port_inventory.md,
+  generated: took main's side; REGENERATE with `warm.sh inventory`). Auto-merged cleanly: src/pl-ext.jl (foreigns and _PRED_TABLES/_FOREIGN_VA entries all present, checked by diff),
+  docs/architecture.md, test/static_analysis_manifest.jl. Tip = 09ccdbe (the bp120-bp128 commit). Handoff-only commits ecb9029 805dc20 34fe438 133fc37 are NOT in it.
+- NOT DONE (in this order): (1) `git mv tools/mutants/BOOTPRED2.py tools/mutants/BOOTPRED3.py`, replace the name in its header line 2 and in docs/architecture.md (the BOOTPRED block);
+  validate (every `old` occurs once in its file after the rebase, new != old, ids unique, targets exist; the 28-mutant checker is a 12-line python3 -I snippet over MUTANTS);
+  (2) gates one at a time on the lk-bootpred daemon: `warm.sh send` fmt of the committed files, `warm.sh inventory`, `warm.sh check`, rows x3 types, test_type_discipline,
+  `tools/pkgtest_way.sh test/core_lang/test_bootpred_swipl.jl`, the FULL static file `warm.sh file test/test_static_analysis.jl reference` (JET; the tuples/manifest moved),
+  branch-gate, crash-term grep; (3) read lk-channel for D-entries after D-0283 (none at 02:58 UTC); (4) push gate/bootpred3 and mutants/BOOTPRED3 at the SAME SHA, poll CI once per >= 5 min.
+- THE D19 FINDING TO RUN (dispatcher item 4, not run yet): probe `T = f(M, V), compare(O, M, V)` WITHOUT put_dict (and with `V = _` copies) on the kernel and swipl 10.1.19. Seen with
+  put_dict([k=V], E, D) in between: swipl `>`, kernel `<`. If the plain case also differs it is the D-0260 variable-order class; if only the put_dict form differs it is a PORT BUG
+  in pl-dict.jl (report to the dispatcher before fixing). The probe harness is a small test file that includes test_bootpred_swipl.jl and uses `_bp_kernel` / `_bp_swipl_lines` (see GATE 3 above).
