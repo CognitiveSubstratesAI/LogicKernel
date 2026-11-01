@@ -6425,6 +6425,36 @@ What LB2b adds (swipl-devel cbf4e1896275; written edit-only, nothing compiled wh
 
 Tests: test/files/test_lb2b_swipl.jl (the .pl and .out beside it), the mutant list tools/mutants/LB2B.py (47, two declared equivalent).
 
+## LB4 b1 — the template database and the boot-image readers (R2 loader_boot LD4 / H3, audit D-0286)
+
+What LB4 b1 adds (new files src/gd_template.jl and src/boot_image.jl, included after src/pl-ext.jl; written edit-only, nothing compiled when this was written):
+
+- **The template database.** Upstream boots once per process and every thread shares the one `GD`. The kernel's `GD` is a value,
+  one per database, so a database made after the boot gets a COPY of a booted one: the boot (b2) is paid once per process and
+  term type. `copy_global_data(gd)` is `@generated` from the fields of `PL_global_data`, so a field a sibling stack appends
+  is copied with no edit. `GD_COPY_POLICY` lists the exceptions (`:streams`: `stream_filenames`, `stream_aliases`,
+  `stream_table` get empty tables of the same shape, and a template holding a live `IOSTREAM` REFUSES the copy); every other
+  field is deep-copied through ONE `IdDict` for the whole GD, so the identities inside the database hold in its copy
+  (`modules_user` is an entry of `modules`, the `procedures_*` of the system module's table, every definition holds the one
+  `code_data`). `gd_aliased_objects(a, b)` returns the mutable objects reachable from both; the H3 rows assert it is empty for a
+  template and its copy, and has negative controls.
+- **The registry.** `gd_template(T, build)` builds the template of term type `T` ONCE per process, under a lock;
+  `PL_global_data_from_template(T)` is a copy of it; `reset_gd_templates!()` and `gd_template_built(T)` are for tests. DORMANT:
+  no constructor calls any of it (the default `build` is the UNBOOTED `PL_global_data{T}()`); b2 swaps the default for the booted
+  constructor. The registry is the one module-level state of the kernel: `LogicKernel._GD_TEMPLATES`, allowlisted in
+  tools/lint_globals.jl (audit D-0291 item 4: an entry is written once per term type and never replaced or mutated; a row in
+  test/db/test_gd_template.jl fails if it is).
+- **The readers of a booted database.** `boot_image_predicates(gd)` (T1: a row per predicate DEFINED in a module, the columns of
+  `'$get_predicate_attribute'/3`, `number_of_clauses` as pl-proc.c:3648-3658, sorted by module, name, arity) and
+  `boot_image_source_files(gd)` (T3: the loaded files in the order of `'$time_source_file'/3`, the columns of
+  `'$source_file_property'/3`). Both read the definition and file tables; neither depends on boot/syspred.pl (loader_boot.md:380).
+- **Not here:** the boot itself, the stand-ins' removal and `load_file!` (b2); the `bare` constructor (after the first boot
+  measurement, D-0286 item 3). When O1B lands, `IO_output_stack` joins `GD_COPY_POLICY` as `:streams`.
+
+Tests: test/db/test_gd_template.jl (the H3 rows), test/db/test_boot_image_readers.jl (hand-built rows and a swipl 10.1.19
+`predicate_property/2` oracle block, evidence/LB4B1/); mutants: tools/mutants/LB4B1.py (41); the boot-time bench is described in
+evidence/LB4B1/bench_note.md and NOT RUN.
+
 ## Still to come
 
 * 🔜 **THE ORDER FROM HERE (user, 2026-10-14):** V9 is done; next **L1** — SWI's term layout
