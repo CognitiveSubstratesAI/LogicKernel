@@ -1,12 +1,35 @@
-# DRAFT of tools/mutants/SETARG.py (the writer hit the context cap before it could write under tools/). The next agent:
-# `git mv`-free copy to tools/mutants/SETARG.py, drop the ".draft" header lines, run the checker (old once, new != old, ids
-# unique, targets exist), commit. Header comment as MOD3b.py. Rows: sa01-sa83 of test/core_lang/test_setarg_swipl.jl.
+# PORT: pl-prims.c setarg, setarg_t (the mutant list of SETARG; swipl-devel cbf4e1896275).
+# tools/mutants/SETARG.py — the mutation battery of SETARG (setarg/3, nb_setarg/3, nb_linkarg/3: pl-prims.c setarg's
+# trail/duplicate/link/freeze branches, unify_vp, may_share_in_duplicate, setarg_t's argument checks, the predicate
+# table; pl-copyterm.c duplicate_term's nshare/share: share_for_duplicate, mark_for_duplicate), run ONCE, in CI
+# (.github/workflows/mutation.yml; locally: tools/mutate.sh run). Format: tools/mutate_drive.py's (as MOD3b.py): `id`,
+# `file`, `old` (must occur EXACTLY once), `new`, optional `equivalent` and `targets`. Killed by
+# test/core_lang/test_setarg_swipl.jl (rows sa01-sa83 named in each id's KILL). Verdicts: written by the battery, not
+# yet run. 27 mutants, 2 EQUIVALENT (A5, E4), each with its file:line reason.
+# The `old` strings are written in the repo's formatted style BEFORE `tools/warm.sh fmt` ran (the coding agent had no
+# daemon): RE-FIT any that fmt rewraps at the first battery run (mutate_drive.py refuses a string that does not occur
+# exactly once). Every `old` was checked to occur exactly once in the source at wip/setarg (a text count, no Julia).
+# NOT LISTED (each with its reason):
+#   * `ensureGlobalSpace(ld, 1)` before the trailed assignment: the call changes behaviour only at the global-stack
+#     limit, a state no row reaches.
+#   * `_value_word!` in `unify_vp`: a slot's side value never occurs as a Prolog goal's argument, so the branch is read
+#     by no row.
+#   * the three identical `A1, A2, A3 = ...` argument lines of the three predicates: one mutant per line would repeat
+#     D2-D4's kill rows.
+# TARGETS (audit D-0238): the step's own file first (a run stops at the first target that decides). The pl-prims.jl
+# mutants run test_setarg_swipl.jl only (the only file naming setarg/3, nb_setarg/3 or nb_linkarg/3); the pl-copyterm.jl
+# mutants (duplicate_term, the cp_options struct, mark_for_duplicate_cells) also run the files that exercise
+# duplicate_term/2 and the copy: test_copyterm_swipl.jl, test_copyterm_cells.jl, test_catch_swipl.jl (the ball is
+# copied through copy_term_refs), test_exception.jl, test_same_term_swipl.jl (s_dup) and
+# test_attvar_wakeup.jl (duplicate_term/2 on an attributed variable).
 TS = ["test/core_lang/test_setarg_swipl.jl"]
 TCOPY = TS + [
     "test/core_lang/test_copyterm_swipl.jl",
     "test/core_lang/test_copyterm_cells.jl",
     "test/core_lang/test_catch_swipl.jl",
     "test/core_lang/test_exception.jl",
+    "test/core_lang/test_same_term_swipl.jl",       # duplicate_term/2 shares nothing (s_dup)
+    "test/core_lang/test_attvar_wakeup.jl",         # duplicate_term/2 copies an attributed variable
 ]
 TARGETS = TCOPY      # the baseline's (mutate_ci.py plan reads TARGETS)
 P = "src/pl-prims.jl"
