@@ -89,3 +89,8 @@ a `tail --pid=PID -f /dev/null` wait is moved to the background after 180 s (no 
 - The job log prints at most 60 matching rows of 100, so SURVIVED was grepped separately: only D1-19; 7 declared equivalents seen (D1-4, 37, 54, 95, 96, 117, 118).
 - Lists renamed for the final SHA: G1b -> G1c, D2b -> D2c, D1d -> D1e (validated 20 / 45 / 101, 0 bad). tools/mutants/G1.py, D2.py, D1c.py stay in the tree (older names).
 - warm.sh check --summary PASS (911 s) on 815b3e2 (only python lists changed since the green code).
+- 8edf02b went RED in CI (runs 41311427818 CI, 41311427823 Evidence): three tests assumed an empty user module and saw G1's boot-declared user:exception/3
+  (test/db/test_procedures.jl:35, test/compile/test_call_operands.jl:52, test/foreign/test_builtins_swipl.jl:272; all three term types; no other failing test in any shard).
+  The local branch-gate runs only the changed files, so these three were not run: a test too broad, not an engine defect. Fixed (counts from the boot's set; builtins row pins
+  exception/3 as the only user procedure). Rows x3: 132, 102, 189 pass; pkgtest_way x3 pass (654, 221, 247 MiB); check PASS (377 s).
+  The three batteries at 8edf02b (G1c, D2c, D1e; runs 41311427703, 41311427848, 41311428067) are SUPERSEDED, ghg cannot cancel them. Final lists: G1d, D2d, D1f.
