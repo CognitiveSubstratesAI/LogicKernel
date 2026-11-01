@@ -114,7 +114,7 @@ F2 (pl-prologflag.c 1862-1960) afterwards as its own group: evidence/F2/.
 - FINDINGS for the audit: (1) new engines start from the DATABASE's mask (`gd.prolog_flag.mask`), while set_flag_value writes the engine's mask only; upstream copies the creating
   thread's mask: a second engine created after `set_prolog_flag(last_call_optimisation, false)` sees the default (design H5): decide whether set_flag_value also writes gd's mask.
   (2) `print/2` reads the table's print_write_options where present, else the default. (3) the refused-by-name list (D4) now also holds float_overflow, tabling restraints, ci_*.
-  (4) uniform D4 refusal of incomparable; PL_get_int64/PL_get_int64_ex appended in pl-fli.jl/pl-error.jl (merge-conflict risk); swipl crash case: private register Q15 only.
+  (4) uniform D4 refusal of incomparable; PL_get_int64/PL_get_int64_ex appended in pl-fli.jl/pl-error.jl (merge-conflict risk); swipl case that kills the process: private register Q15 only.
 - UNVERIFIED (nothing compiled or run): the whole test file (generated Julia; `_sf_query` runs a query and lets NotPortedError propagate), the migrated tests, `ld.GD` in
   determinism_error_flag.
 

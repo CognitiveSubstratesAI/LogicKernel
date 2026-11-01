@@ -21,7 +21,7 @@
 # arithmetic stack, no threads.
 
 # PORT: pl-fmt.c MAXRUBBER
-"The most fill points (`~t`) one column segment holds (pl-fmt.c)."
+"The most fill points (`~t`) one column section holds (pl-fmt.c)."
 const MAXRUBBER = 100
 
 # PORT: pl-fmt.c BUFSIZE
@@ -308,7 +308,7 @@ end
 # the terminating NUL of upstream's C string (0).
 "The code point at the 0-based index `i` of the format text `fmt`; 0 past its end (pl-fmt.c `get_chr_from_text`)."
 @inline get_chr_from_text(fmt::Vector{Int}, i::Int)::Int =
-    (i >= 0 && i < length(fmt)) ? @inbounds(fmt[i + 1]) : 0
+    (i >= 0 && i < length(fmt)) ? fmt[i + 1] : 0
 
 # PORT: pl-fmt.c sub_state
 "The state of a call-back whose output is a sub-format: the buffer it writes to, or the stream to restore (pl-fmt.c)."

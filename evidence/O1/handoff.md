@@ -37,7 +37,7 @@ src/os/pl-redirect.jl, callProlog's `ex`), evidence/O1A/handoff.md (format/2,3, 
 8. Push `mutants/O1B` (23 mutants) at the WIP SHA, then `mutants/O1A` (130 mutants; large, may be split into two branches, e.g. K1-K65 / K66-end, if CI
    time asks; the list is TARGETS-complete only if every part keeps `TO`). If one branch name is used the plan reads the single MUTANTS file named by the
    branch: the two lists need two branch names or a combined file; the integrator did NOT combine them.
-9. branch-gate.  10. crash-term grep over diff and message (D-0164).  11. gate push on a FRESH name, `mutants/*` at the SAME SHA.
+9. branch-gate.  10. term grep over diff and message (D-0164).  11. gate push on a FRESH name, `mutants/*` at the SAME SHA.
 FIRST-RUN EXPECTATIONS: nothing in src/os/pl-redirect.jl, src/pl-fmt.jl or the two row files was ever parsed by Julia. A FIX COMMIT is expected (syntax, names:
 `redir_context`, `setupOutputRedirect`, `tellString`, `toldString`, `PL_is_pair`, `PL_put_integer`, `pl_write_term3`; O1-A's `_FM` harness renamed from
 test_at_body_swipl.jl's `_AB`; both pl-redirect.jl and pl-fmt.jl use each other: `~@` and the column code call tellString/toldString/callProlog(6-arg)).

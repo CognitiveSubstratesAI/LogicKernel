@@ -24,7 +24,7 @@
 #   * truePrologFlag(ld, PLFLAG_OPTIMISE) at pl-comp.jl:2409 (the refusal of compileArith under optimise): the kill rows
 #     are in test_body_code_swipl.jl but not read here by id; not listed until a first battery run names one.
 #   * set_flag_value's `if f.index != 0` guard: with the guard `true` the mask shift of index 0 is out of range (an error
-#     at the first flag without a bit), a crash, not a verdict.
+#     at the first flag without a bit), an error, not a verdict.
 #   * setStreamTypeCheck's and setWriteAttributes's field writes: rows sf41/sf42 read the table value back, not the field
 #     (`ld.IO_stream_type_check`, `ld.prolog_flag_write_attributes` have no reader in a test of this step).
 # TARGETS (audit D-0238): each mutant lists every test file that exercises its mutated code.
