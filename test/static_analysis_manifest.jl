@@ -2952,6 +2952,27 @@ const _MANIFEST_LB2B_FREE = (
     (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_glob)}, false)
 )
 
+# LB4 b1: the template database (src/gd_template.jl) and the boot-image readers (src/boot_image.jl), over term type T.
+# `copy_global_data` is @generated from the fields of PL_global_data, so it is analysed per T; `gd_template`'s build
+# argument is the constructor `PL_global_data{T}` (its singleton type, as the registry's default and b2's caller pass it).
+_manifest_gd_template(::Type{T}) where {T} = (
+    (LK.copy_global_data, Tuple{LK.PL_global_data{T}}, false),
+    (LK._copy_stream_free, Tuple{Vector{Union{Nothing, LK.IOSTREAM}}}, false),
+    (LK._copy_stream_free, Tuple{IdDict{LK.IOSTREAM, T}}, false),
+    (LK._copy_stream_free, Tuple{Dict{UInt64, LK.IOSTREAM}}, false),
+    (LK.gd_template, Tuple{Type{T}}, false),
+    (LK.gd_template, Tuple{Type{T}, Type{LK.PL_global_data{T}}}, false),
+    (LK.gd_template_built, Tuple{Type{T}}, false),
+    (LK.PL_global_data_from_template, Tuple{Type{T}}, false),
+    (LK.PL_global_data_from_template, Tuple{Type{T}, Type{LK.PL_global_data{T}}}, false),
+    (LK._reachable_mutables, Tuple{LK.PL_global_data{T}}, false),
+    (LK.gd_aliased_objects, Tuple{LK.PL_global_data{T}, LK.PL_global_data{T}}, false),
+    (LK.boot_image_predicates, Tuple{LK.PL_global_data{T}}, false),
+    (LK.boot_image_source_files, Tuple{LK.PL_global_data{T}}, false),
+    (LK._num_visible_clauses, Tuple{LK.PL_global_data{T}, LK.Definition{T}}, false),
+    (LK._predicate_number_of_clauses, Tuple{LK.PL_global_data{T}, LK.Definition{T}}, false)
+)
+
 const _DISPATCH_MANIFEST_TUPLE = (
     _manifest_per_type(_M1)...,
     _manifest_per_type(_M2)...,
@@ -3563,7 +3584,24 @@ const _DISPATCH_MANIFEST_TUPLE = (
     (LK.isCallWrapper, Tuple{LK.code}, false),
     (LK.skipWrapperPrefix, Tuple{Vector{LK.code}}, false),
     (LK.skipWrapperPrefix, Tuple{Vector{LK.code}, Int}, false),
-    (LK.unregisterWrappedSupervisor, Tuple{Vector{LK.code}}, false)
+    (LK.unregisterWrappedSupervisor, Tuple{Vector{LK.code}}, false),
+    # the template database and the boot-image readers (LB4 b1)
+    _manifest_gd_template(_M1)...,
+    _manifest_gd_template(_M2)...,
+    _manifest_gd_template(_M3)...,
+    (LK.reset_gd_templates!, Tuple{}, false),
+    (LK._alias_skip, Tuple{Int}, false),
+    (LK.gd_template_registry, Tuple{ReentrantLock, Dict{DataType, LK.PL_global_data}}, false),
+    (
+        LK.BootImagePredicate,
+        Tuple{String, String, Int, Bool, Bool, Bool, Bool, Bool, Bool, Bool, Bool, Bool, Union{Nothing, Int}},
+        false
+    ),
+    (
+        LK.BootImageSourceFile,
+        Tuple{Int, String, Symbol, Float64, Int, Int, Bool, Bool, Union{Nothing, Float64}, Bool, Vector{String}},
+        false
+    )
 )
 
 """
