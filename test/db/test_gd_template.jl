@@ -200,6 +200,7 @@ end
     LK.reset_gd_templates!()
     @test_throws ErrorException LK.gd_template(_P, () -> error("boot failed"))
     @test !LK.gd_template_built(_P)                                 # a build that raised registered nothing
+    @test !islocked(LK._GD_TEMPLATES.lock)                          # the lock is released (a ReentrantLock re-locks in the same task, so test it)
     @test LK.gd_template(_P, b1) isa LK.PL_global_data{_P}          # and left the lock free
     LK.reset_gd_templates!()
 end

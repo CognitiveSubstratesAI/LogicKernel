@@ -52,6 +52,9 @@ function lb4b1_hand_db()
     ix_pred(_P, :b1_dyn0, 0; dynamic=true, db=db)
     foreign = LK.lookupProcedure(_ps(:b1_for), 1, user)
     foreign.definition.flags |= LK.P_FOREIGN
+    forcl = ix_pred(_P, :b1_forcl, 1; db=db)                        # foreign AND a clause: the attribute still fails
+    ix_assertz!(forcl, _pe(:b1_forcl, _pg(1)))
+    forcl.def.flags |= LK.P_FOREIGN
     flagged = LK.lookupProcedure(_ps(:b1_flags), 2, user)
     flagged.definition.flags |= LK.P_ISO | LK.P_TRANSPARENT | LK.P_META | LK.P_LOCKED | LK.P_PUBLIC
     key = (sym_key(_ps(:b1_flags)), 2)
@@ -73,6 +76,7 @@ function lb4b1_hand_db()
     fs[1].number_of_clauses = UInt32(4)
     push!(fs[1].modules, user)
     fs[3].system = true
+    fs[3].mtime = 99.0                                              # not a file: the time is 0 (unify_src_file_time)
     fs[3].resource = true
     fs[3].from_state = true
     foreach(LK.releaseSourceFile, fs)
@@ -95,6 +99,8 @@ const HGD = HAND.gd
     @test dyn0 !== nothing && dyn0.defined && dyn0.dynamic && dyn0.number_of_clauses == 0
     fr = _row(rows, "user", "b1_for", 1)
     @test fr !== nothing && fr.foreign && fr.number_of_clauses === nothing
+    fc = _row(rows, "user", "b1_forcl", 1)
+    @test fc !== nothing && fc.foreign && fc.number_of_clauses === nothing   # pl-proc.c:3648-3649
     fl = _row(rows, "user", "b1_flags", 2)
     @test fl !== nothing
     @test fl.iso && fl.transparent && fl.meta && fl.locked && fl.public && fl.exported
