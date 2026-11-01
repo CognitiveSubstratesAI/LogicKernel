@@ -1781,6 +1781,57 @@ function pl_unify_with_occurs_check2_va(
 end
 
 # ── type checking (pl-prims.c), registered since V6b ─────────────────────────────────────────────
+# PORT: pl-prims.c subsumes
+# DIVERGES: on the cells: the variables of `specific` are `term_variables_to_termv_cells`' term references
+# (maxcount `~0` is `typemax(Int)`; no `TV_NOSPACE` / `TV_NOMEM` retry), and the visited marks are
+# `visitedWord_cells` / `unvisit_cells`. A pending wakeup runs (`foreignWakeup`, since AV4).
+"Whether `general` subsumes `specific`: unifying them binds no variable of `specific` (pl-prims.c `subsumes`)."
+function subsumes_cells(
+    ld::PL_local_data{T}, general::term_t, specific::term_t
+)::Bool where {T}
+    n, v0 = term_variables_to_termv_cells(ld, specific, typemax(Int), 0)
+
+    omode = ld.prolog_flag_occurs_check
+    ld.prolog_flag_occurs_check = OCCURS_CHECK_FALSE
+    rc = PL_unify(ld, general, specific)
+    ld.prolog_flag_occurs_check = omode
+
+    ex = 0
+    if rc
+        ex = PL_new_term_ref(ld)
+        if foreignWakeup(ld, ex)
+            ok = true
+            for i in 0:(n - 1)
+                k, _, p = _deref_loc(ld, -(v0 + i + 1))     # Word p = valTermRef(v0+i); deRef(p)
+                if !(k == DU_CELL || k == DU_ATTVAR) || visitedWord_cells(ld, p)
+                    ok = false
+                    break
+                end
+            end
+            unvisit_cells(ld)                               # unvisit()
+            return ok
+        end
+    end
+
+    if ex != 0 && !PL_is_variable(ld, ex)
+        return PL_raise_exception(ld, ex)
+    end
+    return false
+end
+
+# PORT: pl-prims.c subsumes_term as pl_subsumes_term2_va
+# (PRED_IMPL("subsumes_term", 2, subsumes_term, PL_FA_ISO))
+"`subsumes_term(@General, @Specific)`: `General` is more general than `Specific`, with no binding left behind (pl-prims.c)."
+function pl_subsumes_term2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    fid = PL_open_foreign_frame(ld)
+    rc = subsumes_cells(ld, PL__t0, PL__t0 + 1)
+    PL_discard_foreign_frame(ld, fid)
+
+    return rc ? FTRUE : FFALSE
+end
+
 # PORT: pl-prims.c nonvar as pl_nonvar1_va
 # (PRED_IMPL("nonvar", 1, nonvar, 0))
 "`nonvar/1` (pl-prims.c): the argument is not an unbound variable."
@@ -3919,6 +3970,7 @@ const PL_predicates_from_prims = (
         "unify_with_occurs_check", 2, pl_unify_with_occurs_check2_va,
         PL_FA_ISO | PL_FA_VARARGS
     ),
+    PL_extension("subsumes_term", 2, pl_subsumes_term2_va, PL_FA_ISO | PL_FA_VARARGS),
     PL_extension("nonvar", 1, pl_nonvar1_va, PL_FA_ISO | PL_FA_VARARGS),
     PL_extension("var", 1, pl_var1_va, PL_FA_ISO | PL_FA_VARARGS),
     PL_extension("integer", 1, pl_integer1_va, PL_FA_ISO | PL_FA_VARARGS),
