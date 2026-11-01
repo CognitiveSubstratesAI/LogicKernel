@@ -1475,8 +1475,72 @@ function pl_input_context1_va(
     return PL_unify_nil(ld, tail) ? FTRUE : FFALSE
 end
 
+# ── flush, is_stream, $alias_stream (pl-file.c) ─────────────────────────────────────────────────
+
+# PORT: pl-file.c ttyflush as pl_ttyflush0_va
+# (PRED_IMPL("ttyflush", 0, ttyflush, 0)) — pl-file.c:3690-3702
+# DIVERGES: the standard streams are opened first (`_initIO`).
+"`ttyflush`: flush `user_output` (pl-file.c)."
+function pl_ttyflush0_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    _initIO(ld)
+    s = Suser_output(ld)
+    if s !== nothing && s.magic == SIO_MAGIC                    # getStream(Suser_output)
+        Sflush(s)
+        return streamStatus(ld, s) ? FTRUE : FFALSE
+    end
+    return symbol_no_stream(ld, mk_sym(T, :user_output)) ? FTRUE : FFALSE
+end
+
+# PORT: pl-file.c is_stream as pl_is_stream1_va
+# (PRED_IMPL("is_stream", 1, is_stream, 0)) — pl-file.c:5476-5487
+"`is_stream(@Term)`: true if `Term` is a stream handle or the alias of an open stream (pl-file.c)."
+function pl_is_stream1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    a = PL_get_atom(ld, PL__t0)
+    a === nothing && return FFALSE
+    return get_stream_handle(ld, a, SH_UNLOCKED) === nothing ? FFALSE : FTRUE
+end
+
+# PORT: pl-file.c dalias_stream as pl_dalias_stream2_va
+# (PRED_IMPL("\$alias_stream", 2, dalias_stream, 0)) — pl-file.c:5457-5473
+"`'\$alias_stream'(+Alias, -Stream)`: the stream blob the alias names (pl-file.c)."
+function pl_dalias_stream2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2 = PL__t0, PL__t0 + 1
+    a = PL_get_atom_ex(ld, A1)
+    a === nothing && return FFALSE
+    s = get_stream_handle(ld, a, SH_UNLOCKED)
+    s === nothing && return FFALSE
+    s.context != 0 || return FFALSE
+    return unify_stream_ref(ld, A2, s) ? FTRUE : FFALSE
+end
+
+# PORT: pl-file.c flush_output (the C function)
+"Flush the output stream term reference `out` names (0: the current output) (pl-file.c)."
+function flush_output(ld::PL_local_data, out::term_t)::Bool
+    s = getOutputStream(ld, out, S_DONTCARE)
+    if s !== nothing
+        Sflush(s)
+        return streamStatus(ld, s)
+    end
+    return false
+end
+
+# PORT: pl-file.c flush_output1 as pl_flush_output1_va
+# (PRED_IMPL("flush_output", 1, flush_output1, PL_FA_ISO)) — pl-file.c:5516-5521
+"`flush_output(+Stream)` (pl-file.c)."
+function pl_flush_output1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    return flush_output(ld, PL__t0) ? FTRUE : FFALSE
+end
+
 # PORT: pl-file.c BeginPredDefs as PL_predicates_from_file
-# DIVERGES: the entries of the predicates the kernel has ported (S1: open/3,4 and close/1,2; S2a: prompt/2, prompt1/1 and the input context trio; LB2:
+# DIVERGES: the entries of the predicates the kernel has ported (S1: open/3,4 and close/1,2; S2a: prompt/2, prompt1/1, flush_output/1, ttyflush/0, is_stream/1, '\$alias_stream'/2 and the input context trio; LB2:
 # source_location/2 and '$set_source_location'/2, upstream's order file:6396-6397); `PRED_DEF` ors in `PL_FA_VARARGS`.
 "pl-file.c's registration table (`BeginPredDefs(file)`): the ported entries."
 const PL_predicates_from_file = (
@@ -1484,10 +1548,14 @@ const PL_predicates_from_file = (
     PL_extension("open", 3, pl_open3_va, PL_FA_ISO | PL_FA_VARARGS),
     PL_extension("close", 1, pl_close1_va, PL_FA_ISO | PL_FA_VARARGS),
     PL_extension("close", 2, pl_close2_va, PL_FA_ISO | PL_FA_VARARGS),
+    PL_extension("flush_output", 1, pl_flush_output1_va, PL_FA_ISO | PL_FA_VARARGS),
+    PL_extension("ttyflush", 0, pl_ttyflush0_va, PL_FA_VARARGS),
     PL_extension("prompt", 2, pl_prompt2_va, PL_FA_VARARGS),
+    PL_extension("is_stream", 1, pl_is_stream1_va, PL_FA_VARARGS),
     PL_extension("prompt1", 1, pl_prompt1_1_va, PL_FA_VARARGS),
     PL_extension("source_location", 2, pl_source_location2_va, PL_FA_VARARGS),
     PL_extension("\$set_source_location", 2, pl_set_source_location2_va, PL_FA_VARARGS),
+    PL_extension("\$alias_stream", 2, pl_dalias_stream2_va, PL_FA_VARARGS),
     PL_extension("\$push_input_context", 1, pl_push_input_context1_va, PL_FA_VARARGS),
     PL_extension("\$pop_input_context", 0, pl_pop_input_context0_va, PL_FA_VARARGS),
     PL_extension("\$input_context", 1, pl_input_context1_va, PL_FA_VARARGS)
