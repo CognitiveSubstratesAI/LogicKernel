@@ -1,5 +1,5 @@
 # ORIGINAL: LB4A's mutant list — no swipl-devel counterpart.
-# tools/mutants/LB4A.py — the mutation battery of LB4 chunk (a), the vendored boot/ and library/ (audit D-0286 item 1): the manifest
+# tools/mutants/LB4A2.py — the mutation battery of LB4 chunk (a), the vendored boot/ and library/ (audit D-0286 item 1): the manifest
 # tools/swipl_vendor_blobs.txt, vendor/swipl-devel/{PIN,boot,library}, the five generated INDEX.pl files, the home-tree builder
 # tools/build_home.jl and the `home` flag (src/os/pl-prologflag.jl). Run ONCE, in CI (.github/workflows/mutation.yml; locally:
 # tools/mutate.sh run). Format: tools/mutate_drive.py's: `id`, `file`, `old` (must occur EXACTLY once), `new`, optional

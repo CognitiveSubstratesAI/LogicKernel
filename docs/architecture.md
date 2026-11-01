@@ -5882,7 +5882,7 @@ What chunk (a) adds (swipl-devel pin `cbf4e1896275`, oracle swipl 10.1.19):
   to the set wanted, a second build changes nothing, a stale tree is repaired, nothing is written into `vendor/`.
 - **The `home` Prolog flag** (`pl-prologflag.c:2548-2549`, defined where `systemDefaults.home` is known) names that tree, `<package>/home`: a read-only machine flag whose value is the
   kernel's own, so swipl's install path is no expectation (a testset in `test/core_lang/test_prolog_flag_swipl.jl` pins the shape and builds the tree).
-- **Mutants**: tools/mutants/LB4A.py, 15 (vendored byte changes, a manifest line dropped and added, `PIN` and header mismatches, a stale index entry, six of `build_home.jl`, the flag); none
+- **Mutants**: tools/mutants/LB4A2.py, 15 (vendored byte changes, a manifest line dropped and added, `PIN` and header mismatches, a stale index entry, six of `build_home.jl`, the flag); none
   declared equivalent. Its TARGETS name `test_vendored_*`, so `mutation.yml` checks the pin out for them.
 - **Left for LB4 (b)**: the template, the readers and the copy rows read this tree; where the tree lives for a Pkg-INSTALLED (read-only) package is audit question 3 of the handoff.
   `docs/port_inventory.md` is regenerated at the gate, not here.
