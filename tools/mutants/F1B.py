@@ -10,13 +10,14 @@
 # `tools/warm.sh fmt` ran (the coding agent had no daemon): RE-FIT any that fmt rewraps (mutate_drive.py refuses a string
 # that does not occur exactly once). Every `old` was checked to occur exactly once in the source at wip/f1b (a text count,
 # no Julia).
-# The older lists D1.py (D1-95, D1-96), D1c.py, MOD3a.py, SSU1.py, V9f.py also run against the migrated sites: their
-# batteries run with this one at the gate.
-# D-0280 item 5 (finding 3): D1-96 STAYS EQUIVALENT. PLFLAG_ISO is read in src/pl-comp.jl only at the line inside
-# `protected_predicate` (~:3571), so the clause-type argument of D1c.py (the clause type comes from the clause's own flags,
-# pl-comp.jl:3506-3516) does not depend on the iso or protect_static_code flags that F1b made settable; row sf83 pins the
+# The older lists D1f.py (D1-95, D1-96; D1g.py carries those two for this gate), MOD3a.py, SSU1.py, V9f.py also run against the
+# migrated sites: their batteries run with this one at the gate (their stale anchors were re-fitted in the same stack).
+# D-0280 item 5 (finding 3): D1-96 STAYS EQUIVALENT. PLFLAG_ISO is read in src/pl-comp.jl only inside `protected_predicate`
+# (pl-comp.jl:3564-3572), so the clause-type argument of D1f.py (the clause type comes from the clause's own flags,
+# pl-comp.jl:3786-3790 and :3981) does not depend on the iso or protect_static_code flags that F1b made settable; row sf83 pins the
 # unchanged answer (a by-reference SSU clause under iso). D1-95 (protected_predicate true only for P_FOREIGN) is KILLED by
-# sf80-sf86 (iso on and protect_static_code on, a static clause is protected; dynamic is not; the control sf84 answers).
+# sf80 (iso on: clause/3 by reference on a static clause is refused), sf81-sf86 (the by-value forms and the controls); its
+# `equivalent` is dropped in D1f.py (D-0291 item 2c).
 # NOT LISTED (each with its reason):
 #   * truePrologFlag(ld, PLFLAG_CHARESCAPE_UNICODE) at pl-write.jl:2223 and :2292: no test row clears the mask bit (the
 #     tests of character_escapes_unicode(false) pass the write OPTION), so a mutant there has no kill row. Left to the

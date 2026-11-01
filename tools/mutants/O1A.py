@@ -5,14 +5,15 @@
 # bignum and rational paths, prepare_sub_format/end_sub_format, the registration table), run ONCE, in CI
 # (.github/workflows/mutation.yml; locally: tools/mutate.sh run). Format: tools/mutate_drive.py's (as MOD3b.py): `id`, `file`,
 # `old` (must occur EXACTLY once), `new`, optional `equivalent` and `targets`. Killed by test/core_lang/test_format_swipl.jl (rows
-# f01-f99, e01-e24, k01-k02 named in each id's KILL; evidence/O1A/gen_rows.py). Verdicts: written by the battery, not yet run.
+# f01-f99, e01-e24, k01-k03 named in each id's KILL; evidence/O1A/gen_rows.py). Verdicts: written by the battery, not yet run.
 # The `old` strings are written in the repo's formatted style BEFORE `tools/warm.sh fmt` ran (the coding agent had no daemon):
 # RE-FIT any that fmt rewraps (mutate_drive.py refuses a string that does not occur exactly once). Every `old` was checked to
 # occur exactly once in src/os/pl-fmt.jl at wip/o1a (a text count, no Julia; tools/mutants/ is not read by the test files).
 # The rows were generated from swipl 10.1.19, so a survivor means the kernel's format cannot be told from swipl's on that path.
 # NOT LISTED (each with its reason):
-#   * do_format's `argument overflow` (pl-fmt.c:555): upstream's `int arg2 = arg*10+dw` wraps (undefined in C) and the compiled
-#     swipl 10.1.19 does not raise (`~3000000000d` of [1] prints 1); the Julia port raises as the source says: no row can pin it.
+#   * (nothing is NOT LISTED for do_format's `argument overflow` any more: pl-fmt.c:553-556's `int arg2 = arg*10+dw` wraps, the
+#     compiled swipl 10.1.19 does not raise (`~3000000000d` of [1] prints 1), the port raises: the KNOWN DIFFERENCE row k03 pins
+#     the kernel's answer with swipl's beside it, and O1A-C8 is its mutant.)
 #   * formatInteger's fraction padding of a bignum with fewer digits than `div` (`UInt8('0')`): upstream reads before its buffer,
 #     swipl's answer varies between runs (`~25d` of 2^64), so no row.
 #   * outtext's Latin-1 branch (`outstring`) with rubber pending and a byte above 0x7f: upstream stores the raw byte and emit_rubber
@@ -175,7 +176,12 @@ end
     m("O1A-C6 the guard `here < flen` of the backquote argument (c is the character at `here`, so it holds whenever c is a backquote)",
       r'''            elseif c == Int('`') && here < flen
 ''', r'''            elseif c == Int('`')
-''', equivalent="src/os/pl-fmt.jl do_format (`c = get_chr_from_text(fmt, here)` returns 0 past the end, so c == '`' implies here < flen) — read, not run; upstream's `here < fmt->length` is the same guard on a NUL-terminated text"),
+''', equivalent="src/os/pl-fmt.jl:485 (do_format's `elseif c == Int('`') && here < flen`) — read, not run: c is `get_chr_from_text(fmt, here)` (the line before the numeric-argument branch), which returns 0 for `here >= length(fmt)` (pl-fmt.jl:316-317), and 0 is no backquote, so c == '`' already implies here < flen; upstream's `here < fmt.length` is the same guard on a NUL-terminated text (pl-fmt.c)"),
+    m("O1A-C8 a numeric argument past `int` is not refused: the kernel's raise of format('argument overflow') is gone (KILL k03; swipl 10.1.19 prints 1, flag k)",
+      r'''                        arg2 > typemax(Int32) &&
+                            return PL_format_error(ld, "argument overflow")
+''', r'''                        nothing
+'''),
     m("O1A-C7 the colon modifier is not recorded (KILL f77, f78, k01)",
       r'''                mod_colon = true
 ''', r'''                mod_colon = false

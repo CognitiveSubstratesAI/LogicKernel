@@ -383,7 +383,7 @@ const _FM_PINNED = [
     "t_e24 c[116,95,101,50,52]/1(c[114,97,105,115,101,100]/1(c[102,111,114,109,97,116]/1(a[110,111,116,32,101,110,111,117,103,104,32,97,114,103,117,109,101,110,116,115])))"
 ]
 
-# rows whose swipl answer is locale grouped: (id, goal, kernel's answer, swipl's answer); the kernel prints the C locale (D9)
+# rows whose swipl answer differs and the kernel's is pinned: (id, goal, kernel's answer, swipl's answer); k01-k02: the kernel prints the C locale (D9); k03: flag (k), the numeric-argument overflow
 const _FM_KNOWN = [
     (
         "k01",
@@ -396,6 +396,15 @@ const _FM_KNOWN = [
         raw"""format(atom(R), "~:f|~2:e", [1234567.5, 1234567.5])""",
         "1234567.500000|1.23e+06",
         "1,234,567.500000|1.23e+06"
+    ),
+    # flag (k): a numeric argument past `int` (pl-fmt.c:553-556). swipl 10.1.19's `int arg2 = arg*10 + dw` wraps and its
+    # overflow test `(arg2 - dw)/10 != arg` is undefined behaviour the compiler removes, so swipl prints `1` (the wrapped
+    # column argument is no column at all); the port raises format('argument overflow') as the source's test says (D-0283 item 4).
+    (
+        "k03",
+        raw"""catch(format(atom(R), "~3000000000d", [1]), error(format(R), _), true)""",
+        "argument overflow",
+        "1"
     )
 ]
 
@@ -491,7 +500,7 @@ _fm_not_e18(l) = !startswith(l, _FM_E18 * " ")
     )  # caught(boom)
 end
 
-@testset "~:d and ~:f on the kernel: the C locale (D9), swipl's grouping noted per row" begin
+@testset "known differences on the kernel: the C locale (D9, k01-k02) and the numeric-argument overflow (flag k, k03), swipl's answer noted per row" begin
     f, names = _fm_file([(id, g) for (id, g, _, _) in _FM_KNOWN])
     kl, _, _ = _fm_kernel(f, names)
     @test length(kl) == length(_FM_KNOWN) + 1

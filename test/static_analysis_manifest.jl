@@ -1197,6 +1197,7 @@ function _manifest_index(T)
         ),
         (LK.PL_get_prolog_flag, Tuple{GD, LD, T, Int64}, false),
         (LK.PL_current_prolog_flag, Tuple{GD, T, Symbol}, false),
+        (LK.current_prolog_flag_atom, Tuple{GD, T}, false),
         (LK.PL_current_prolog_flag, Tuple{GD, LD, T, Int64}, false),
         (
             LK.pl_dcurrent_prolog_flag5_va,

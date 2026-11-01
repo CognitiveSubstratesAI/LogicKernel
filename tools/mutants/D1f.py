@@ -15,8 +15,9 @@
 # D1-56 (erase/1's test of the reference type) is killed since D2: `PL_get_dbref` answers a record reference too, rows r65 and r67 of
 # test/db/test_record_swipl.jl run the record branch of erase/1 (D-0252).
 # D-0230 item 1 adds D1-70…D1-98 (clause/3, '$clause'/4, '$rule'/3: unify_definition's bound branch, decompile_bindings!, clause_ndet's
-# by-reference branch and the loop). Declared EQUIVALENT with their code reasons: D1-95 (protected_predicate in the by-reference
-# branch) and D1-96 (the CLAUSE_TYPE_MASK test; row c37 decided). D1-90/D1-91 (the garbage third/fourth argument of clause/2) may
+# by-reference branch and the loop). Declared EQUIVALENT with their code reasons: D1-96 (the CLAUSE_TYPE_MASK test; row c37 decided). D1-95
+# (protected_predicate in the by-reference branch) was declared equivalent while protect_static_code and iso were constant false; since R2 F1b they
+# are settable and row sf80 of test/core_lang/test_set_flag_swipl.jl kills it (D-0291 item 2c). D1-90/D1-91 (the garbage third/fourth argument of clause/2) may
 # survive in a quiet test: a survivor is then reported, not declared equivalent.
 # D-0230 piece (d) adds D1-100...D1-119 (instance/2 and fixup_ssu, pl-rec.c; rows n01-n20). Declared EQUIVALENT with their code reasons:
 # D1-117 (GOAL_CLAUSE: no goal clause has a reference) and D1-118 (visibleClause: CL_ERASED is set with generation_erased); D1-119
@@ -360,22 +361,20 @@ end
     ),
 ''',
          new=''),
-    dict(id="D1-95 the by-reference branch refuses a protected predicate no more", file=K, targets=T8,
+    dict(id="D1-95 the by-reference branch refuses a protected predicate no more (KILL sf80 of test_set_flag_swipl.jl, since F1b)", file=K, targets=T8 + ["test/core_lang/test_set_flag_swipl.jl"],
          old='''                protected_predicate(gd, ld, rcl.predicate) && return FFALSE
 ''',
-         new='''''',
-         equivalent="protected_predicate is true only for a P_FOREIGN definition here (the protect_static_code and iso flags are constants "
-                    "false until R2 F1b: src/pl-comp.jl:3285-3287 and :3293-3297), and a foreign predicate holds no clause, so no "
-                    "reference PL_get_clref answers names one (clauses enter by assert_term!/record_clause only, which refuse a "
-                    "foreign predicate)"),
+         new=''''''),
     dict(id="D1-96 the by-reference clause type is not compared with the term's", file=K, targets=T8,
          old='''                (rcl.flags & CLAUSE_TYPE_MASK) != hflags && return FFALSE
 ''',
          new='''''',
-         equivalent="the term is built by _rule_term from the clause's own flags (src/pl-comp.jl:3506-3516): UNIT_CLAUSE gives the bare "
-                    "head (get_head_and_body_clause answers UNIT_CLAUSE, :3590), otherwise the neck of clause_functor, whose flags are "
-                    "the clause's own SSU bits (:3581); the compiler sets UNIT_CLAUSE only for a clause without an SSU neck "
-                    "(:2929-2934, row c37: `e(1) => true` is SSU_COMMIT without UNIT_CLAUSE), so hflags == (flags & CLAUSE_TYPE_MASK) always"),
+         equivalent="the term is built by _rule_term from the clause's own flags (src/pl-comp.jl:3786-3790): UNIT_CLAUSE gives the bare "
+                    "head (get_head_and_body_clause answers UNIT_CLAUSE for a non-neck, :3981), otherwise the neck of clause_functor "
+                    "(:3770-3777), whose SSU bits is_neck reads back (:3948-3952); the compiler sets UNIT_CLAUSE only for a clause without "
+                    "an SSU neck (:3205-3209, row c37: `e(1) => true` is SSU_COMMIT without UNIT_CLAUSE), so hflags == (flags & CLAUSE_TYPE_MASK) "
+                    "always. No flag F1b made settable (iso, protect_static_code) enters this path: they decide protected_predicate "
+                    "(:3564-3572), the line before"),
     dict(id="D1-97 clause/3's reference is its body argument", file=K, targets=T8,
          old='''    A1, A2, A3, A4 = PL__t0, PL__t0 + 1, PL__t0 + 2, PL__t0 + 3
     return clause_ndet(ld, A1, A2, A3, A4, PL__ac, PL__ctx, IS_CLAUSE)''',

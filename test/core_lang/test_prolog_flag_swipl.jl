@@ -804,6 +804,10 @@ end
     @test LK.PL_current_prolog_flag(gd, _tls("halt_grace_time"), :float) == 1.0
     @test sym_text(LK.PL_current_prolog_flag(gd, _tls("unknown_option"), :atom)) == "ignore"
     @test LK.PL_current_prolog_flag(gd, _tls("nosuchflag"), :bool) === nothing
+    # current_prolog_flag_atom: the typed `:atom` form (D-0282: no Symbol-selected return type for the kernel's callers)
+    @test sym_text(LK.current_prolog_flag_atom(gd, _tls("unknown_option"))) == "ignore"
+    @test LK.current_prolog_flag_atom(gd, _tls("iso")) === nothing           # a bool flag
+    @test LK.current_prolog_flag_atom(gd, _tls("nosuchflag")) === nothing
     # a term flag: the record put back (`version_data`)
     fid = LK.PL_open_foreign_frame(ld)
     t = LK.PL_new_term_ref(ld)

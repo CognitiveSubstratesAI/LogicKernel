@@ -641,13 +641,23 @@ function PL_current_prolog_flag(
     return nothing
 end
 
+# ORIGINAL: `PL_current_prolog_flag(name, type)` above returns `Union{Nothing,T,Bool,Int64,Float64}` by the Symbol
+# `type`; the `:atom` form the kernel's own callers use is this method, typed, so no caller dispatches at run time (D-0282).
+"The atom value of the flag `name`, or `nothing` if there is no such flag or it is not an atom flag (`PL_current_prolog_flag(..., PL_ATOM, &a)`)."
+function current_prolog_flag_atom(gd::PL_global_data{T}, name::T)::Union{Nothing, T} where {T}
+    f = lookupFlag(gd, _atom_word!(gd.atoms, gd.atom_symbols, name))
+    f === nothing && return nothing
+    (f.flags & FT_MASK) == FT_ATOM && return f.a
+    return nothing
+end
+
 # ORIGINAL: the callers of upstream (`det_goal_error`, `determinism_error`) start from `atom_t a = ATOM_error`
 # and call `PL_current_prolog_flag(ATOM_determinism_error, PL_ATOM, &a)`; the kernel's callers compare symbols.
 "The flag `determinism_error` as `:error`, `:warning` or `:silent`; `:error` if the flag has no atom value (pl-comp.c, pl-wam.c)."
 function determinism_error_flag(ld::PL_local_data{T})::Symbol where {T}
     gd = ld.GD
     gd === nothing && return :error                    # (no database: upstream's `a = ATOM_error`)
-    a = PL_current_prolog_flag(gd, mk_sym(T, :determinism_error), :atom)
+    a = current_prolog_flag_atom(gd, mk_sym(T, :determinism_error))
     a === nothing && return :error
     k = sym_key(a)
     k == sym_key(mk_sym(T, :silent)) && return :silent
@@ -1343,7 +1353,7 @@ function check_create_flag(
 )::Bool where {T}
     (flags & FF_NOCREATE) == 0 && return true
 
-    how = PL_current_prolog_flag(gd, mk_sym(T, :user_flags), :atom)
+    how = current_prolog_flag_atom(gd, mk_sym(T, :user_flags))
     if how !== nothing
         if sym_key(how) == sym_key(mk_sym(T, :error))
             key = PL_new_term_ref(ld)

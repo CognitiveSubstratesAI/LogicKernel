@@ -335,15 +335,15 @@ function prepare_sub_format(
     ld::PL_local_data{T}, fstate::format_state, fd::IOSTREAM
 )::sub_state where {T}
     state = sub_state(Ref{Union{Nothing, Vector{UInt8}}}(nothing), Ref(0), fstate, nothing)
-    if fstate.pending_rubber == 0 && fd.position !== nothing &&
-        fd.position.linepos == COLUMN(fstate)
+    fdp = fd.position                                  # (a local: Julia does not narrow a field expression)
+    if fstate.pending_rubber == 0 && fdp !== nothing && fdp.linepos == COLUMN(fstate)
         state.old_stream = Scurout(ld)
         ld.IO_streams[SNO_CURRENT_OUTPUT + 1] = fd      # Scurout = fd
     else
         state.old_stream = nothing
         tellString(ld, state.bufp, state.sizep, ENC_UTF8)
         if (fd.flags & SIO_ISATTY) != 0
-            s = Scurout(ld)
+            s = Scurout(ld)::IOSTREAM                   # (tellString just made it)
             s.flags |= SIO_ISATTY
         end
     end
@@ -353,7 +353,7 @@ end
 # PORT: pl-fmt.c end_sub_format
 "Close the output of a call-back; `rc` is its result. A string output is written on, and the column moved (pl-fmt.c)."
 function end_sub_format(ld::PL_local_data{T}, state::sub_state, rc::Bool)::Bool where {T}
-    sub = Scurout(ld).position
+    sub = (Scurout(ld)::IOSTREAM).position::IOPOS
     lp = sub.linepos
     if state.old_stream !== nothing
         if rc
@@ -458,7 +458,9 @@ function do_format(
                     if isDigitW(c)
                         dw = c - Int('0')
                         arg2 = arg * 10 + dw
-                        # upstream detects the wrap of an `int` (see mul64() in pl-arith.c)
+                        # DIVERGES (flag k, D-0283 item 4): upstream (pl-fmt.c:553-556) computes `int arg2 = arg*10 + dw` and tests
+                        # `(arg2 - dw)/10 != arg`; the signed wrap is undefined and the compiled swipl 10.1.19 never raises (it
+                        # prints `1` for `~3000000000d`). The port raises as the source's test says; pinned by row k03.
                         arg2 > typemax(Int32) &&
                             return PL_format_error(ld, "argument overflow")
                         arg = arg2
