@@ -5856,6 +5856,37 @@ Tests: test/db/test_record_swipl.jl (rows r01-r101 against swipl 10.1.19 with tw
 record-reference rows of `erase/1` and `instance/2` of D-0252: r65, r67 and r73, r75; white-box testsets of the blob, the lists, the key words and the references of a list);
 test/core_lang/test_blob.jl pins the ranks; mutants: tools/mutants/D2.py (45) and tools/mutants/D1c.py (D1-56 and D1-119 re-anchored, no longer equivalent).
 
+## LB4 chunk a — the vendored boot/ and library/ (R2 loader_boot, audit D-0286 items 1-2)
+
+What chunk (a) adds (written edit-only; nothing was compiled or run when this was written; swipl-devel pin `cbf4e1896275`, oracle swipl 10.1.19):
+
+- **`vendor/swipl-devel/{boot,library}`**: swipl-devel's own files at the commit `tools/SWIPL_VERSION` pins (26 boot files, 210 library files, the upstream `LICENSE`, and
+  `PIN` naming the commit), copied BYTE FOR BYTE by `tools/vendor_swipl.sh` (`git show <pin>:<path>`, never the upstream working tree) and NEVER edited: a fix goes in the port,
+  or in an audit entry naming the upstream change. `.gitattributes` marks `vendor/**` `-text -whitespace linguist-vendored`, so git changes no byte; the formatter
+  (`.JuliaFormatter.toml`), Codecov (`codecov.yml`) and the port check leave it alone.
+- **The manifest** `tools/swipl_vendor_blobs.txt` is `git ls-tree -r <pin> boot library LICENSE` (mode, blob id, upstream's own path), plus the five generated lines below
+  its `# GENERATED` marker. `test/test_vendored_swipl.jl` holds every vendored file to its blob id (`git hash-object --no-filters`), requires that nothing is added or
+  missing (the present set equals the manifest plus `PIN`), that `PIN` and the manifest header name the commit of `tools/SWIPL_VERSION`, and, with an upstream checkout
+  (in CI always: the workflows check swipl-devel out at the pin and the testset FAILS without it), that the manifest equals `git ls-tree` of the pin. Same shape as
+  `test/test_vendored_plunit.jl`.
+- **The five `INDEX.pl`** (library, clp, dcg, unicode, lynx: `src/CMakeLists.txt:120-121` `SWIPL_DATA_INDEXED_DIRS`) are not upstream's files: swipl's build writes them
+  (`cmake/LibIndex.cmake`, `make_library_index/1`). `tools/gen_library_index.sh` has the oracle at the pin write them from the VENDORED files only (1269 entries, a second run
+  byte-identical); they are vendored with their own manifest lines, and a test row checks that each entry names a vendored file. They list 58 entries that the Linux install's
+  own `INDEX.pl` lacks (dom.pl, help.pl, wasm.pl and win_dde's dde.pl are not installed by upstream's build here): the autoloader of LB5 will find e.g. `apropos/1` where the oracle
+  does not (audit question 1 of evidence/LB4A/handoff.md).
+- **The home tree** `home` (gitignored), built by `tools/build_home.jl` (ORIGINAL; the shape is `cmake/InstallSource.cmake:8-25`): a tree of RELATIVE symbolic links, directories
+  real and files links, `home/boot/<f>.pl` and `home/library/<path>` over `vendor/swipl-devel`, and `home/library/ext/plunit` over `packages/plunit`
+  (so `library(plunit)` resolves through boot/init.pl's `'$ext_library_directory'`, no search-path clause of ours). `build_home(dest)` brings any state to the wanted one
+  (makes a missing link, replaces a link with another text, removes a link nothing wants and the directory it leaves empty) and refuses to delete a real file.
+  `test/test_home_tree.jl` builds into a temporary directory: 26 + 210 + 5 + 1 = 242 links, each relative and resolving, the set found by an extractor of the test's own equal
+  to the set wanted, a second build changes nothing, a stale tree is repaired, nothing is written into `vendor/`.
+- **The `home` Prolog flag** (`pl-prologflag.c:2548-2549`, defined where `systemDefaults.home` is known) names that tree, `<package>/home`: a read-only machine flag whose value is the
+  kernel's own, so swipl's install path is no expectation (a testset in `test/core_lang/test_prolog_flag_swipl.jl` pins the shape and builds the tree).
+- **Mutants**: tools/mutants/LB4A.py, 15 (vendored byte changes, a manifest line dropped and added, `PIN` and header mismatches, a stale index entry, six of `build_home.jl`, the flag); none
+  declared equivalent. Its TARGETS name `test_vendored_*`, so `mutation.yml` checks the pin out for them.
+- **Left for LB4 (b)**: the template, the readers and the copy rows read this tree; where the tree lives for a Pkg-INSTALLED (read-only) package is audit question 3 of the handoff.
+  `docs/port_inventory.md` is regenerated at the gate, not here.
+
 ## Still to come
 
 * 🔜 **THE ORDER FROM HERE (user, 2026-10-14):** V9 is done; next **L1** — SWI's term layout
