@@ -1,10 +1,10 @@
 # ORIGINAL: a LIVE differential of P2's pl-prims.c text predicates — atomic_list_concat/2,3, atomics_to_string/2,3 and
-# sub_atom/5 (pl-prims.c 4903-5092, pl_sub_atom 5487) — against swipl at the pin: rows p01-p68, ids prefixed `p`:
+# sub_atom/5 (pl-prims.c 4903-5092, pl_sub_atom 5487) — against swipl at the pin: rows p01-p70, ids prefixed `p`:
 #   * A PROGRAM consulted by the kernel's loader and cases `t_<id>(R)` run in order in one database, each wrapped in
 #     `catch(Goal, error(E, _), R = raised(E))`; the driver is test_style_check_swipl.jl's (`enc`oded answers).
 #   * Every answer line is swipl's, PINNED (swipl 10.1.19, two runs byte-identical, evidence/P2/gen_rows.py --fill);
 #     with `swipl` on PATH the live answers are compared with the pins too.
-#   * p01-p39 atomic_list_concat/2,3 (join, the (-,+,+) split, the errors); p40-p46 atomics_to_string/2,3; p50-p68 sub_atom/5.
+#   * p01-p39 atomic_list_concat/2,3 (join, the (-,+,+) split, the errors); p40-p46 atomics_to_string/2,3; p50-p70 sub_atom/5.
 #   * UNVERIFIED on the kernel: gate decides (nothing was compiled when these rows were written): every kernel answer.
 using Test, LogicKernel
 const LK = LogicKernel
@@ -164,6 +164,8 @@ const _P2_CASES = [
     ("p66", raw"findall(x, sub_atom(abc, 3, 0, 0, _), R)"),
     ("p67", raw"sub_atom(abc, 4, _, _, _), R = yes"),
     ("p68", raw"findall(B-A, sub_atom(aXa, B, 1, A, a), R)"),
+    ("p69", raw"catch(assertz(sub_atom(a, b, c, d, e)), error(E, _), true), R = E"),
+    ("p70", raw"catch(assertz(atomic_list_concat(a, b, c)), error(E, _), true), R = E"),
 ]
 
 # the driver's whole output, one line per case after `ok`, filled by evidence/P2/gen_rows.py --fill from swipl 10.1.19
@@ -236,7 +238,9 @@ const _P2_PINNED = [
     "t_p65 c[116,95,112,54,53]/1(c[91,124,93]/2(c[45]/2(i0,i3),c[91,124,93]/2(c[45]/2(i1,i2),c[91,124,93]/2(c[45]/2(i2,i1),c[91,124,93]/2(c[45]/2(i3,i0),nil)))))",
     "t_p66 c[116,95,112,54,54]/1(c[91,124,93]/2(a[120],nil))",
     "t_p67",
-    "t_p68 c[116,95,112,54,56]/1(c[91,124,93]/2(c[45]/2(i0,i2),c[91,124,93]/2(c[45]/2(i2,i0),nil)))"
+    "t_p68 c[116,95,112,54,56]/1(c[91,124,93]/2(c[45]/2(i0,i2),c[91,124,93]/2(c[45]/2(i2,i0),nil)))",
+    "t_p69 c[116,95,112,54,57]/1(c[112,101,114,109,105,115,115,105,111,110,95,101,114,114,111,114]/3(a[109,111,100,105,102,121],a[115,116,97,116,105,99,95,112,114,111,99,101,100,117,114,101],c[47]/2(a[115,117,98,95,97,116,111,109],i5)))",
+    "t_p70 c[116,95,112,55,48]/1(c[112,101,114,109,105,115,115,105,111,110,95,101,114,114,111,114]/3(a[109,111,100,105,102,121],a[115,116,97,116,105,99,95,112,114,111,99,101,100,117,114,101],c[47]/2(a[97,116,111,109,105,99,95,108,105,115,116,95,99,111,110,99,97,116],i3)))"
 ]
 
 function _p2_file()::Tuple{String, Vector{String}}
@@ -294,7 +298,7 @@ function _p2_kernel(path::String, names::Vector{String})
 end
 
 
-@testset "P2 text predicates as swipl's (p01-p68)" begin
+@testset "P2 text predicates as swipl's (p01-p70)" begin
     f, names = _p2_file()
     kl, _, _ = _p2_kernel(f, names)
     @test length(kl) == length(_P2_PINNED)
