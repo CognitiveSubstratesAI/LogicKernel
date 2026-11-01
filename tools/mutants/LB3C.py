@@ -1,12 +1,12 @@
 # ORIGINAL: LB3's mutant list — no swipl-devel counterpart.
-# tools/mutants/LB3.py — the mutation battery of LB3 (src/pl-qlf.jl: pl-qlf.c directiveClause, iftrue, MAX_IFDEF_NEST, condc,
+# tools/mutants/LB3C.py — the mutation battery of LB3 (src/pl-qlf.jl: pl-qlf.c directiveClause, iftrue, MAX_IFDEF_NEST, condc,
 # cond_true, update_conditional_compilation, compileFile, compileFileList, the write-side predicates; the boot entry
 # `boot_from_source!`; src/os/pl-file.jl push_input_context, pop_input_context, pl_see, pl_seen), run ONCE, in CI
 # (.github/workflows/mutation.yml; locally: tools/mutate.sh run). Format: tools/mutate_drive.py's (as MOD3b.py): `id`, `file`,
 # `old` (must occur EXACTLY once), `new`, optional `equivalent` and `targets`. Killed by test/files/test_qlf_swipl.jl: the
 # testsets are named in each id's KILL (loadable = the program against swipl's pins; seen = the state after a file; dollar =
 # '$:-'; nest = the bound and endif; elif = elif, failing directive, syntax error, a file that cannot be opened; boot = compileFileList and the
-# boot entry; tbl = the 22-entry table; fail = Failed to compile). Verdicts: written by the battery at its first run.
+# boot entry; tbl = the 22-entry table; fail = Failed to compile; autoload and stream = the D-0299 rows). Verdicts: written by the battery at its first run.
 # The `old` strings are written in the repo's formatted style BEFORE `tools/warm.sh fmt` ran (the coding agent had no
 # daemon): RE-FIT any that fmt rewraps (mutate_drive.py refuses a string that does not occur exactly once). Every `old` was
 # checked to occur exactly once in the source at wip/lb3 (a text count, no Julia).
@@ -99,8 +99,9 @@ MUTANTS = [
          old="    startConsult(sf)\n", new="    nothing\n"),
     dict(id="LB3-F9 the missing-file message omits the path (KILL elif)", file=Q, targets=TQ,
          old='"Failed to open $path\\n"', new='"Failed to open\\n"'),
-    dict(id="LB3-F10 clauses are asserted at the start of the predicate (KILL loadable)", file=Q, targets=TQ,
-         old="assert_term!(gd, ld, term, 0, CL_END, file, loc, 0)", new="assert_term!(gd, ld, term, 0, CL_START, file, loc, 0)"),
+    dict(id="LB3-F10 clauses are asserted at the start of the predicate", file=Q, targets=TQ,
+         old="assert_term!(gd, ld, term, 0, CL_END, file, loc, 0)", new="assert_term!(gd, ld, term, 0, CL_START, file, loc, 0)",
+         equivalent="src/pl-comp.jl:4026 assert_term! with the loc branch returning at :4119 BEFORE `assertProcedure!(..., where_)` (:4131), and src/pl-srcfile.jl:127 assertProcedureSource, which appends at CL_END itself: with a `loc` (addClauseWic always passes one) the `where_` argument is never read. Upstream is the same (pl-comp.c cbf4e189 assert_term: `where` is read at :4927 only under O_PROLOG_HOOK, not ported, and at :5067 after the `if (loc)` block's `return clause` at :5054). Run by hand 2026-11-01: the mutant leaves test_qlf_swipl.jl green (D-0299 item 4 read F10 as a survivor; it is the dead argument of the call, not a missing row)"),
     dict(id="LB3-F11 the failure of addClauseWic is not reported (KILL fail)", file=Q, targets=TQ,
          old='_qlf_Sdprintf!(ld, "Failed to compile: ")', new='_qlf_Sdprintf!(ld, "Failed: ")'),
     # ── compileFileList (pl-qlf.c:4783-4820) and the boot entry ──
@@ -108,7 +109,7 @@ MUTANTS = [
          old='file == "-c" && break', new='file == "-c" && continue'),
     dict(id="LB3-L2 a file that does not compile does not end the list (KILL boot)", file=Q, targets=TQ,
          old="compileFile(gd, ld, state, file) || return false", new="compileFile(gd, ld, state, file)"),
-    dict(id="LB3-L3 autoload stays on while compiling (KILL boot: autoload_off)", file=Q, targets=TQ,
+    dict(id="LB3-L3 autoload stays on while compiling (KILL autoload: the if(current_prolog_flag(autoload,false)) program through compileFileList)", file=Q, targets=TQ,
          old='setPrologFlag(gd, "autoload", FT_ATOM, "false")', new='setPrologFlag(gd, "autoload", FT_ATOM, "true")'),
     dict(id="LB3-L4 autoload stays off after the list (KILL boot)", file=Q, targets=TQ,
          old='setPrologFlag(gd, "autoload", FT_ATOM, "true")\n    setAccessLevel!', new='setPrologFlag(gd, "autoload", FT_ATOM, "false")\n    setAccessLevel!'),
@@ -153,7 +154,7 @@ MUTANTS = [
          old="        ld.read_source.file = c.term_file                   # source_file_name = c->term_file\n", new="        nothing\n"),
     dict(id="LB3-S3 pop_input_context does not restore the line (KILL loadable)", file=F, targets=TQ,
          old="        ld.read_source.position.lineno = c.term_line        # source_line_no   = c->term_line\n", new="        nothing\n"),
-    dict(id="LB3-S4 pop_input_context does not restore the input stream (KILL loadable)", file=F, targets=TQ,
+    dict(id="LB3-S4 pop_input_context does not restore the input stream (KILL stream: user_error current before the file)", file=F, targets=TQ,
          old="        ld.IO_streams[SNO_CURRENT_INPUT + 1] = c.stream    # Scurin           = c->stream\n", new="        nothing\n"),
     dict(id="LB3-S5 pop_input_context leaves the context on the stack (KILL loadable)", file=F, targets=TQ,
          old="        c = pop!(ld.input_context_stack)\n", new="        c = last(ld.input_context_stack)\n"),

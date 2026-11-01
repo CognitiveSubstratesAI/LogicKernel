@@ -71,12 +71,15 @@ fz_run(File, Ns) :-
     ( S == ok -> writeln(ok) ; S = exc(B), write('exc '), enc(B), nl ),
     forall(member(N, Ns), fz_pred(N)).
 """
-function _ql_swipl_lines(path::String, names::Vector{String})::Vector{String}
+function _ql_swipl_lines(
+    path::String, names::Vector{String}; pre::String=""
+)::Vector{String}
     out = mktempdir() do d
         f = joinpath(d, "drv.pl")
         write(
             f,
-            _QL_DRIVER * ":- initialization((fz_run('$path', [" * join(names, ",") *
+            _QL_DRIVER * ":- initialization(($pre" * "fz_run('$path', [" *
+            join(names, ",") *
             "]), halt)).\n"
         )
         read(pipeline(`swipl -q $f`; stdin=devnull, stderr=devnull), String)
@@ -130,6 +133,25 @@ const _QL_PINNED = [
     "t_q01 c[116,95,113,48,49]/1(c[91,124,93]/2(a[116,111,112],c[91,124,93]/2(a[105,102,95,116,114,117,101],c[91,124,93]/2(a[105,110,110,101,114,95,101,108,115,101],c[91,124,93]/2(a[102,95,101,108,115,101],c[91,124,93]/2(a[103,111,97,108,95,105,102],c[91,124,93]/2(a[101,110,100],nil)))))))",
     "t_q02 c[116,95,113,48,50]/1(c[91,124,93]/2(a[115,116,97,114,116],c[91,124,93]/2(a[105,102,95,103,111,97,108],c[91,124,93]/2(a[113,117,97,108,105,102,105,101,100],c[91,124,93]/2(a[97,102,116,101,114,95,102,97,105,108],nil)))))",
     "t_q03 c[116,95,113,48,51]/1(c[91,124,93]/2(a[105,102,95,116,114,117,101],c[91,124,93]/2(a[105,110,110,101,114,95,101,108,115,101],c[91,124,93]/2(a[102,95,101,108,115,101],c[91,124,93]/2(a[103,111,97,108,95,105,102],c[91,124,93]/2(a[101,110,100],nil))))))"
+]
+
+# LB3-L3 (D-0299): the boot compile runs with `autoload` OFF. The program is read with the flag false (swipl: the flag set before consult;
+# library(lists) loaded first because the driver's member/2 would need the autoloader); `if` carries ONE goal, so the row does not meet
+# the conjunction-directive KNOWN DIFFERENCE of the boot testset. swipl 10.1.19-1-gcbf4e189, 2026-11-01, two runs byte-identical.
+const _QL_AUTOLOAD_PROGRAM = raw"""
+:- if(current_prolog_flag(autoload, false)).
+r(autoload_off).
+:- endif.
+:- if(current_prolog_flag(autoload, true)).
+r(autoload_on).
+:- endif.
+'$load_additional_boot_files'.
+t_q01(L) :- findall(X, r(X), L).
+"""
+const _QL_AUTOLOAD_PRE = "use_module(library(lists)), set_prolog_flag(autoload,false), "
+const _QL_AUTOLOAD_PINNED = [
+    "ok",
+    "t_q01 c[116,95,113,48,49]/1(c[91,124,93]/2(a[97,117,116,111,108,111,97,100,95,111,102,102],nil))"
 ]
 
 "A fresh database and the file `text` written to a temporary directory."
@@ -239,6 +261,36 @@ end
     sf = LK.lookupSourceFile_unlocked(gd, mk_sym(_QL, Symbol(abspath(f))), false)
     @test sf !== nothing && sf.count == 1 && sf.mtime == mtime(f) && !sf.system
     @test isempty(ld.input_context_stack) && LK.Scurin(ld) === LK.Suser_input(ld)
+    @test LK.Scurin(ld) !== nothing          # not vacuous: `nothing === nothing` before the IO is initialised
+end
+
+@testset "the input stream before a file is the one restored after it (LB3-S4; swipl pin: restored)" begin
+    # the stream current before the load is NOT user_input: closing the file's stream resets a current input that still is the file's to
+    # user_input, so only a current input restored by pop_input_context stays what it was. Kernel side of the live row below.
+    gd, ld, f = _ql_db("r(a).\n")
+    LK._initIO(ld)                         # the standard streams exist only once the IO is initialised (until then each is `nothing`)
+    @test LK.Suser_input(ld) !== nothing && LK.Suser_error(ld) !== nothing
+    ld.IO_streams[LK.SNO_CURRENT_INPUT + 1] = LK.Suser_error(ld)
+    @test LK.Scurin(ld) !== LK.Suser_input(ld)
+    @test LK.compileFile(gd, ld, nothing, f)
+    @test LK.Scurin(ld) === LK.Suser_error(ld)
+    @test isempty(ld.input_context_stack)
+end
+
+@testset "the boot compile runs with autoload off (LB3-L3; swipl pin: autoload set false before consult)" begin
+    dir = mktempdir()
+    g = joinpath(dir, "autoload.pl")
+    write(g, _QL_AUTOLOAD_PROGRAM)
+    gd = LK.PL_global_data{_QL}()
+    ld = LK.PL_local_data{_QL}(gd)
+    @test LK.compileFileList(gd, ld, nothing, [g])
+    kl = _ql_query_lines(gd, ld, ["t_q01"])
+    @test _ql_list_atoms(kl[1]) == _ql_list_atoms(_QL_AUTOLOAD_PINNED[2]) ==
+        ["autoload_off"]
+    @test kl[1] == _QL_AUTOLOAD_PINNED[2]
+    @test String(sym_text(LK.PL_current_prolog_flag(gd, mk_sym(_QL, :autoload), :atom))) ==
+        "true"                                            # restored after the list
+    @test isempty(_ql_messages(ld))
 end
 
 @testset "the pins are swipl's (live, when swipl is on PATH)" begin
@@ -251,6 +303,19 @@ end
             f = joinpath(dir, "prog.pl")
             write(f, _QL_PROGRAM)
             @test _ql_swipl_lines(f, _QL_NAMES) == _QL_PINNED
+            g = joinpath(dir, "autoload.pl")
+            write(g, _QL_AUTOLOAD_PROGRAM)
+            @test _ql_swipl_lines(g, ["t_q01"]; pre=_QL_AUTOLOAD_PRE) == _QL_AUTOLOAD_PINNED
+            # the input stream a consult restores (S4): swipl's current_input is the stream it was before the load
+            h = joinpath(dir, "in.pl")
+            write(h, "r(a).\n")
+            src = "open('$h', read, S), set_input(S), consult('$h'), current_input(S2), (S2 == S -> writeln(restored) ; writeln(other)), halt"
+            @test split(
+                read(
+                    pipeline(`swipl -q -g $src`; stdin=devnull, stderr=devnull), String
+                ),
+                '\n'; keepempty=false
+            ) == ["restored"]
         end
     end
 end

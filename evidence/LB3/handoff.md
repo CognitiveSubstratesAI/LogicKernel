@@ -119,3 +119,14 @@ written; the stack is G1..G9 plus this handoff. NOTHING compiled, no daemon used
   it. In the kernel `:- true, true.` / `:- atom(a), atom(b).` print "directive failed". Row test/files/test_qlf_swipl.jl (boot row,
   `t_q02`) pins the kernel answer `["additional"]`; swipl's is `["autoload_off", "additional"]`. LB4 (init.pl loaded) must flip the
   row to swipl's answer and delete the KNOWN DIFFERENCE comment.
+
+## PUSH STEP (agent lb3-t, Sonnet, 2026-11-01): D-0299 + checklist for later steps
+- Rebased wip/lb3-s onto main b9de14d as wip/lb3-t (no conflict, test-only delta). Kill rows added (14835b9): L3 (`if(current_prolog_flag(autoload,
+  false))` program through compileFileList; swipl pin = flag false before consult) and S4 (user_error current before compileFile; swipl: restored).
+  Each shown failing by hand against its mutant (L3: `["autoload_on"]`, S4: `Scurin === Suser_error`). Cause of S4's survival: the loadable row's
+  `Scurin === Suser_input` was `nothing === nothing` (the standard streams are `nothing` before `_initIO`).
+- **F10 is a dead argument, not a missing row** (declared equivalent in tools/mutants/LB3C.py with file:line, shown surviving by hand):
+  assert_term!'s `where_` is read only on the non-`loc` path (src/pl-comp.jl:4131); addClauseWic always passes a `loc`; upstream is identical.
+- CHECKLIST (accepted TEMPORARY equivalents, D-0297, D-0299): **LB3-D4** re-anchored with a kill row at the QLF-writer step (the step that gives
+  addDirectiveWic state); **LB3-P3** when `$qlf_include/5` gets a body; **LB3-F5** at the first stream/read step that can make a read fail
+  (injectable read error / resource error).

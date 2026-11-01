@@ -5988,4 +5988,4 @@ What LB3 adds (pl-qlf.c, os/pl-file.c, pl-init.c; written edit-only, nothing com
   failure leaves `assert_term!`'s exception pending, as upstream. LB4 checks the stacks after the boot (H11).
 - **Pinned by** test/files/test_qlf_swipl.jl: the loadable program against swipl 10.1.19's answers (generator and pins in
   evidence/LB3/ql/), plus white-box rows (prefix `_ql_`); every row that depends on the kernel carries `UNVERIFIED on the kernel: gate decides`.
-  Mutants: tools/mutants/LB3.py (54).
+  Mutants: tools/mutants/LB3C.py (54).
