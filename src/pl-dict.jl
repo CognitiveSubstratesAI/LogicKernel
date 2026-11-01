@@ -997,6 +997,73 @@ function pl_dict_pairs3_va(
     return FFALSE
 end
 
+# PORT: pl-dict.c del_dict
+# DIVERGES: the result is the new dict's compound word, `nothing` for upstream's `GLOBAL_OVERFLOW` (the overflow raised by
+# `ensureGlobalSpace`); the pairs kept are planned first and laid out at their exact size (as `put_dict`). `dict` is the dict's
+# compound word, `key` a key word.
+"The dict `dict` without the pair of key `key`, tag and the other pairs kept (pl-dict.c)."
+function del_dict(ld::PL_local_data{T}, dict::word, key::word)::Union{Nothing, word} where {T}
+    f = valPtr(dict)
+    arity = arityFunctor(ld.functors, ld.gstack[f])
+
+    @assert arity % 2 == 1
+
+    ensureGlobalSpace(ld, 1 + arity - 2) || return nothing
+
+    keep = Tuple{Int, word}[]                       # (value position, key word)
+    in_ = f + 2                                     # data->arguments+1
+    in_end = in_ + arity - 1
+    while in_ < in_end
+        _, i_name, _ = _deref_loc(ld, in_ + 1)
+        if i_name != key
+            push!(keep, (in_, i_name))
+        end
+        in_ += 2
+    end
+
+    new = allocGlobalCells!(ld, 2 + 2 * length(keep))
+    out = new + 2                                   # functor, tag
+    for (vpos, name) in keep
+        _dict_link!(ld, out, vpos)                  # *out++ = linkValI(in)
+        ld.gstack[out + 1] = name
+        out += 2
+    end
+
+    _dict_link!(ld, new + 1, f + 1)                 # new[1] = linkValI(&data->arguments[0])  tag
+    ld.gstack[new] = dict_functor(ld, length(keep)) # arity
+
+    return consPtr(new, TAG_COMPOUND | STG_GLOBAL)
+end
+
+# PORT: pl-dict.c del_dict as pl_del_dict4_va
+# (PRED_IMPL("del_dict", 4, del_dict, 0))
+# DIVERGES: no foreign frame to rewind and no retry after a global overflow (raised by `ensureGlobalSpace`).
+"`del_dict(+Key, +DictIn, ?Value, -DictOut)`: `Key-Value` is in `DictIn`, `DictOut` has all its keys but `Key` (pl-dict.c)."
+function pl_del_dict4_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2, A3, A4 = PL__t0, PL__t0 + 1, PL__t0 + 2, PL__t0 + 3
+    mt = PL_new_term_ref(ld)
+
+    if get_create_dict_ex(ld, A2, mt)
+        key = get_name_ex(ld, A1)
+        key === nothing && return FFALSE
+        _, d, _ = _deref_loc(ld, -(mt + 1))
+        r = dict_lookup_ptr(ld, d, key)
+        if r !== nothing && unify_ptrs_cells(ld, r[1], -(A3 + 1))
+            _, d, _ = _deref_loc(ld, -(mt + 1))
+            new = del_dict(ld, d, key)
+            if new !== nothing
+                t = PL_new_term_ref(ld)
+                ld.slots[t + 1] = new
+                return PL_unify(ld, A4, t) ? FTRUE : FFALSE
+            end
+        end
+    end
+
+    return FFALSE
+end
+
 # PORT: pl-dict.c BeginPredDefs as PL_predicates_from_dict
 # DIVERGES: the ported entries, in upstream's order (upstream's table also has `dict_pairs/3`, `dict_same_keys/2`,
 # `put_dict/4`, `b_set_dict/3`, `nb_set_dict/3`, `nb_link_dict/3`, `$get_dict_ex/3`, `del_dict/4`, `get_dict/5`, `:</2`,
@@ -1012,5 +1079,6 @@ const PL_predicates_from_dict = (
     PL_extension("\$get_dict_ex", 3, pl_get_dict_ex3_va, PL_FA_NONDETERMINISTIC | PL_FA_VARARGS),
     PL_extension("get_dict", 5, pl_get_dict5_va, PL_FA_VARARGS),
     PL_extension("put_dict", 4, pl_put_dict4_va, PL_FA_VARARGS),
-    PL_extension("dict_pairs", 3, pl_dict_pairs3_va, PL_FA_VARARGS)
+    PL_extension("dict_pairs", 3, pl_dict_pairs3_va, PL_FA_VARARGS),
+    PL_extension("del_dict", 4, pl_del_dict4_va, PL_FA_VARARGS)
 )
