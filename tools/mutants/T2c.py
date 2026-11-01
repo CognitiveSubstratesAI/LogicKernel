@@ -1,5 +1,5 @@
 # ORIGINAL: T2's mutant list — no swipl-devel counterpart.
-# tools/mutants/T2b.py — the mutation battery of T2 (the second list: the first, T2.py on mutants/T2, left F3 and F5 alive; see below) (the string family: pl-string.c atom_string, string_x
+# tools/mutants/T2c.py — the mutation battery of T2 (the third list: the first, T2.py on mutants/T2, left F3 and F5 alive; T2b.py on mutants/T2b is superseded by the JET fix; see below) (the string family: pl-string.c atom_string, string_x
 # (string_codes, string_chars), text_to_string, string_code, get_string_code, split_string, string_bytes,
 # read_string/5, read_string/3, open_string, text_chr, backSkipPadding, PL_text_recode, utf16_to_text; pl-prims.c
 # sub_text for sub_string/5, string_length, string_concat), run ONCE, in CI (.github/workflows/mutation.yml; locally:

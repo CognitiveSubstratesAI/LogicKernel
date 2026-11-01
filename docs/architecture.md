@@ -5762,7 +5762,7 @@ What T2 adds (new file src/pl-string.jl, included before pl-ext.jl; written edit
 - **Flags for the audit** (evidence/T2/handoff.md): the packed state; the `ERR_RANGE` member; `PL_get_char`'s `eof` argument.
 
 Tests: test/core_lang/test_string_swipl.jl (214 + 91 program rows against swipl 10.1.19, two byte-identical runs; a live check when
-`swipl` is on PATH), mutants tools/mutants/T2b.py (24, four equivalent with reasons). The `su` rows (`string_bytes/3` UTF-16 and the
+`swipl` is on PATH), mutants tools/mutants/T2c.py (24, four equivalent with reasons). The `su` rows (`string_bytes/3` UTF-16 and the
 streams of `open_string/2`, `read_string/3,5`) are marked for the gate to decide on the kernel.
 
 ## Still to come
