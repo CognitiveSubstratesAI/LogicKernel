@@ -5926,8 +5926,8 @@ What SETARG adds (src/pl-prims.jl before the predicate table, src/pl-copyterm.jl
   `ensureGlobalSpace`; `freezeGlobal!` runs AFTER `unify_vp` (assigning a side value allocates its value-table entry, which the frozen
   region holds); `storage(*v) == STG_GLOBAL` is: a compound, an attributed variable, a value-table word or a side word; a value-table
   word is stored as `_value_word!` makes it (upstream copies the word).
-- **Order with G1:** G1 (wip/g1) adds the 3-argument `duplicate_term(ld, in, copy)` in the same place and `pl_duplicate_term2_va` calls it;
-  SETARG's 5-argument method is the same function. Land G1 first, then SETARG (evidence/SETARG/handoff.md, "Overlap with G1").
+- **With G1 (landed):** G1 added the 3-argument `duplicate_term(ld, in, copy)` in the same place and `pl_duplicate_term2_va` calls it;
+  SETARG's 5-argument method is the same function (a second method); G1's DIVERGES comment names it (evidence/SETARG/handoff.md, "Overlap with G1").
 - **Next:** `b_set_dict/3`, `nb_set_dict/3`, `nb_link_dict/3` (pl-dict.c `setdict`) call `setarg(ld, argn, term, value, SETARG_BACKTRACKABLE or SETARG_LINK)`
   and follow in the dict branch.
 

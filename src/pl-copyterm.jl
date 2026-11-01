@@ -541,7 +541,8 @@ end
 
 # PORT: pl-copyterm.c duplicate_term
 # (the C function pl-gvar.c's setval_duplicate and the predicate both call)
-# DIVERGES: no `nshare`/`share` arguments (the terms shared with the old value are not ported): the whole term is copied.
+# The 3-argument form is `duplicate_term/2`'s and `setval_duplicate`'s (`nshare` 0: the whole term is copied); the
+# 5-argument form with `nshare`/`share` follows (SETARG, `nb_setarg/3`).
 "`duplicate_term(ld, in, copy)`: `copy` becomes a copy of `in` that shares no compound with it, attributes copied (pl-copyterm.c)."
 function duplicate_term(ld::PL_local_data{T}, in::term_t, copy::term_t)::Bool where {T}
     return copy_term_refs(ld, in, copy, cp_options(COPY_ATTRS))
