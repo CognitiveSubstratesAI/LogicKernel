@@ -1360,6 +1360,7 @@ graph LR
     os_pl_prologflag --> os_pl_file
     os_pl_prologflag --> pl_write
     os_pl_prologflag --> pl_read
+    os_pl_prologflag --> pl_string
     os_pl_text --> term_interface
     os_pl_text --> default_term
     os_pl_text --> os_pl_utf8

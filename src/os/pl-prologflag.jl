@@ -644,7 +644,9 @@ end
 # ORIGINAL: `PL_current_prolog_flag(name, type)` above returns `Union{Nothing,T,Bool,Int64,Float64}` by the Symbol
 # `type`; the `:atom` form the kernel's own callers use is this method, typed, so no caller dispatches at run time (D-0282).
 "The atom value of the flag `name`, or `nothing` if there is no such flag or it is not an atom flag (`PL_current_prolog_flag(..., PL_ATOM, &a)`)."
-function current_prolog_flag_atom(gd::PL_global_data{T}, name::T)::Union{Nothing, T} where {T}
+function current_prolog_flag_atom(
+    gd::PL_global_data{T}, name::T
+)::Union{Nothing, T} where {T}
     f = lookupFlag(gd, _atom_word!(gd.atoms, gd.atom_symbols, name))
     f === nothing && return nothing
     (f.flags & FT_MASK) == FT_ATOM && return f.a
