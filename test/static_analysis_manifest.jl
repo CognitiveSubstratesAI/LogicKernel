@@ -2386,7 +2386,9 @@ function _manifest_index(T)
         [
             (LK.formatFloat, Tuple{LD, L, Int, Int, LK.number, Vector{UInt8}}, false) for
             L in (Nothing, LK.PL_locale)
-        ]...
+        ]...,
+        # Q10 — '$style_check'/2 (src/pl-prims.jl)
+        (LK.pl_style_check2_va, Tuple{LD, Int, Int, LK.foreign_context{T}}, false)
     )
 end
 
