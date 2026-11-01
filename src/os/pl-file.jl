@@ -1539,8 +1539,170 @@ function pl_flush_output1_va(
     return flush_output(ld, PL__t0) ? FTRUE : FFALSE
 end
 
+# ── character input (pl-file.c): get_char/2, peek_char/2, skip/2, get_single_char/1 ──────────────
+
+# PORT: pl-privitf.c PL_unify_char
+# DIVERGES: `how` is `:char`, `:code` or `:byte` (upstream: `PL_CHAR`, `PL_CODE`, `PL_BYTE`); `PL_get_char(chr, &c2, true)`
+# is written out, as the kernel's `PL_get_char` does not take `eof` (it answers `nothing` for -1 and `end_of_file`).
+# Kept in os/pl-file.jl, its only caller.
+"Unify the term reference `chr` with the character `c` as `how` asks; a bound `chr` is compared (pl-privitf.c)."
+function PL_unify_char(ld::PL_local_data{T}, chr::term_t, c::Int, how::Symbol)::Bool where {T}
+    if PL_is_variable(ld, chr)
+        how === :char && return PL_unify_atom(ld, chr, codeToAtom(T, c))
+        return PL_unify_integer(ld, chr, c)
+    end
+    i = PL_get_integer(ld, chr)
+    a = PL_get_atom(ld, chr)
+    c2 = if i == -1 || (a !== nothing && sym_key(a) == sym_key(mk_sym(T, :end_of_file)))
+        -1                                              # eof == true
+    else
+        PL_get_char(ld, chr)
+    end
+    c2 === nothing && return false
+    return c == c2
+end
+
+# PORT: pl-file.c get_char2 (the C function)
+function get_char2(ld::PL_local_data{T}, in::term_t, chr::term_t)::Bool where {T}
+    s = getTextInputStream(ld, in)
+    if s !== nothing
+        c = Sgetcode(s)
+
+        streamStatus(ld, s) || return false         # I/O error
+
+        PL_unify_atom(ld, chr, codeToAtom(T, c)) && return true     # (c == -1: ATOM_end_of_file)
+
+        PL_get_char(ld, chr)                        # set type-error
+    end
+    return false
+end
+
+# PORT: pl-file.c get_char2 as pl_get_char2_va
+# (PRED_IMPL("get_char", 2, get_char2, 0); the table entry has PL_FA_ISO) — pl-file.c:3676-3680
+"`get_char(+Stream, -Char)`: read the next character of `Stream`; `end_of_file` at its end (pl-file.c)."
+function pl_get_char2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    return get_char2(ld, PL__t0, PL__t0 + 1) ? FTRUE : FFALSE
+end
+
+# PORT: pl-file.c peek (the C function), for PL_CHAR
+# DIVERGES: only the `:char` and `:code` forms (`how == PL_BYTE`'s `Sgetc`/`Sungetc` branch is S2b's with the byte
+# predicates); no locks (`releaseStream`).
+"Peek the next character of the input stream `stream` names and unify it with `chr` as `how` asks (pl-file.c)."
+function peek(ld::PL_local_data{T}, stream::term_t, chr::term_t, how::Symbol)::Bool where {T}
+    s = getInputStream(ld, stream, S_TEXT)
+    s === nothing && return false
+    if (s.flags & SIO_NBUF) != 0 || (s.bufsize != 0 && s.bufsize < UNDO_SIZE)   # PL_MB_LEN_MAX
+        PL_error(
+            ld, "", 0, "stream is unbuffered", ERR_PERMISSION,
+            mk_sym(T, :peek), mk_sym(T, :stream), stream
+        )
+        return false
+    end
+    c = Speekcode(s)
+    Sferror(s) != 0 && return streamStatus(ld, s)
+    return PL_unify_char(ld, chr, c, how)
+end
+
+# PORT: pl-file.c peek_char2 as pl_peek_char2_va
+# (PRED_IMPL("peek_char", 2, peek_char2, 0); the table entry has PL_FA_ISO) — pl-file.c:5954-5958
+"`peek_char(+Stream, -Char)`: the next character of `Stream` without reading it (pl-file.c)."
+function pl_peek_char2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    return peek(ld, PL__t0, PL__t0 + 1, :char) ? FTRUE : FFALSE
+end
+
+# PORT: pl-file.c skip (the C function)
+function skip(ld::PL_local_data, in::term_t, chr::term_t)::Bool
+    c = PL_get_char(ld, chr)                        # PL_get_char(chr, &c, false)
+    c === nothing && return false
+    s = getTextInputStream(ld, in)
+    s === nothing && return false
+
+    while true
+        r = Sgetcode(s)
+        (r == c || r == EOF) && break
+    end
+
+    return streamStatus(ld, s)
+end
+
+# PORT: pl-file.c skip2 as pl_skip2_va
+# (PRED_IMPL("skip", 2, skip2, 0)) — pl-file.c:3549-3553
+"`skip(+Stream, +Code)`: read `Stream` up to and including `Code` (pl-file.c)."
+function pl_skip2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    return skip(ld, PL__t0, PL__t0 + 1) ? FTRUE : FFALSE
+end
+
+# PORT: pl-file.c Sgetcode_intr
+# DIVERGES: no `EINTR` loop (a Julia read is not interrupted by a signal): one `Sgetcode`, then `Sclearerr`.
+function Sgetcode_intr(s::IOSTREAM)::Int
+    c = Sgetcode(s)
+    Sclearerr(s)
+    return c
+end
+
+# PORT: pl-file.c getSingleChar
+# DIVERGES: no terminal modes (`PushTty`/`PopTty` with `TTY_RAW`: no ttys, see pl-read.jl's `PushTty` note), no
+# `suspendTrace`, no `Slock`/`Sunlock`; `signals` is accepted for the signature and unused (no signal handling
+# in the loop). Read from a terminal this gives a line-buffered answer, not a raw key.
+"Read one character from `stream` without echo (pl-file.c): -1 at the end of the file or for ^D and ^Z."
+function getSingleChar(ld::PL_local_data, stream::IOSTREAM, signals::Bool)::Int
+    Sflush(stream)
+
+    if !truePrologFlag(ld, PLFLAG_TTY_CONTROL)
+        c2 = Sgetcode_intr(stream)
+        while c2 == Int(' ') || c2 == Int('\t')     # skip blanks
+            c2 = Sgetcode_intr(stream)
+        end
+        c = c2
+        while c2 != EOF && c2 != Int('\n')          # read upto newline
+            c2 = Sgetcode_intr(stream)
+        end
+    else
+        if stream.position !== nothing
+            p = stream.position
+            oldpos = IOPOS(p.byteno, p.charno, p.lineno, p.linepos, p.esc_state)   # IOPOS oldpos = *stream->position
+            c = Sgetcode_intr(stream)
+            p.byteno, p.charno, p.lineno, p.linepos, p.esc_state =
+                oldpos.byteno, oldpos.charno, oldpos.lineno, oldpos.linepos, oldpos.esc_state
+        else
+            c = Sgetcode_intr(stream)
+        end
+    end
+
+    (c == 4 || c == 26) && (c = -1)                 # should ask the terminal!
+
+    return c
+end
+
+# PORT: pl-file.c get_single_char as pl_get_single_char1_va
+# (PRED_IMPL("get_single_char", 1, get_single_char, 0)) — pl-file.c:3557-3580
+"`get_single_char(-Code)`: one character from `user_input` without waiting for a newline; -1 at the end (pl-file.c)."
+function pl_get_single_char1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    _initIO(ld)
+    s = Suser_input(ld)
+    (s === nothing || s.magic != SIO_MAGIC) &&
+        return symbol_no_stream(ld, mk_sym(T, :user_input)) ? FTRUE : FFALSE
+
+    c = getSingleChar(ld, s, true)
+    if c == EOF
+        PL_exception(ld, 0) != 0 && return FFALSE
+        PL_unify_integer(ld, PL__t0, -1)
+        return streamStatus(ld, s) ? FTRUE : FFALSE
+    end
+
+    return PL_unify_integer(ld, PL__t0, c) ? FTRUE : FFALSE
+end
+
 # PORT: pl-file.c BeginPredDefs as PL_predicates_from_file
-# DIVERGES: the entries of the predicates the kernel has ported (S1: open/3,4 and close/1,2; S2a: prompt/2, prompt1/1, flush_output/1, ttyflush/0, is_stream/1, '\$alias_stream'/2 and the input context trio; LB2:
+# DIVERGES: the entries of the predicates the kernel has ported (S1: open/3,4 and close/1,2; S2a: prompt/2, prompt1/1, get_char/2, peek_char/2, flush_output/1, skip/2, ttyflush/0, is_stream/1, get_single_char/1, '\$alias_stream'/2 and the input context trio; LB2:
 # source_location/2 and '$set_source_location'/2, upstream's order file:6396-6397); `PRED_DEF` ors in `PL_FA_VARARGS`.
 "pl-file.c's registration table (`BeginPredDefs(file)`): the ported entries."
 const PL_predicates_from_file = (
@@ -1548,11 +1710,15 @@ const PL_predicates_from_file = (
     PL_extension("open", 3, pl_open3_va, PL_FA_ISO | PL_FA_VARARGS),
     PL_extension("close", 1, pl_close1_va, PL_FA_ISO | PL_FA_VARARGS),
     PL_extension("close", 2, pl_close2_va, PL_FA_ISO | PL_FA_VARARGS),
+    PL_extension("get_char", 2, pl_get_char2_va, PL_FA_ISO | PL_FA_VARARGS),
+    PL_extension("peek_char", 2, pl_peek_char2_va, PL_FA_ISO | PL_FA_VARARGS),
     PL_extension("flush_output", 1, pl_flush_output1_va, PL_FA_ISO | PL_FA_VARARGS),
+    PL_extension("skip", 2, pl_skip2_va, PL_FA_VARARGS),
     PL_extension("ttyflush", 0, pl_ttyflush0_va, PL_FA_VARARGS),
     PL_extension("prompt", 2, pl_prompt2_va, PL_FA_VARARGS),
     PL_extension("is_stream", 1, pl_is_stream1_va, PL_FA_VARARGS),
     PL_extension("prompt1", 1, pl_prompt1_1_va, PL_FA_VARARGS),
+    PL_extension("get_single_char", 1, pl_get_single_char1_va, PL_FA_VARARGS),
     PL_extension("source_location", 2, pl_source_location2_va, PL_FA_VARARGS),
     PL_extension("\$set_source_location", 2, pl_set_source_location2_va, PL_FA_VARARGS),
     PL_extension("\$alias_stream", 2, pl_dalias_stream2_va, PL_FA_VARARGS),
