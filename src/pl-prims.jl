@@ -3272,6 +3272,85 @@ function pl_term_attvars2_va(
     return term_variables(ld, A1, A2, 0, TV_ATTVAR | TV_ATTS) ? FTRUE : FFALSE
 end
 
+# PORT: pl-prims.c is_most_general_term
+# DIVERGES: on a location. `set_marked` / `is_marked` on a variable cell is its entry in `ld.tv_seen` (see
+# `visitedWord_cells`), and `isVar` of a marked cell is then false: an unbound cell that is not marked.
+"Whether the term at location `l` is an atom, a proper list of distinct variables, or a compound of distinct variables (pl-prims.c)."
+function is_most_general_term_cells(ld::PL_local_data{T}, l::Int)::Bool where {T}
+    k, w, _ = _deref_loc(ld, l)                             # deRef(p)
+    (k == DU_WORD && isAtomW(w)) && return true             # isAtom(*p)
+    (k == DU_WORD && _is_gcompound(w)) || return false      # isTerm(*p)
+
+    c = valPtr(w)
+    if ld.gstack[c] == ld.functor_dot2                      # t->definition == FUNCTOR_dot2
+        _, tk, tw, _ = skip_list_cells(ld, l)
+        (tk == DU_WORD && tw == ld.atom_nil_w) || return false   # isNil(*tail)
+
+        rc = true
+        lk, lw = k, w
+        while _is_list_word(ld, lk, lw)                     # while( isList(*l) )
+            hk, _, hp = _deref_loc(ld, valPtr(lw) + 1)      # Word h = HeadList(l); deRef(h)
+            if !(hk == DU_CELL && !_tv_marked(ld, hp))      # !isVar(*h)
+                rc = false
+                break
+            end
+            _tv_mark!(ld, hp, true)                         # set_marked(h)
+            lk, lw, _ = _deref_loc(ld, valPtr(lw) + 2)      # l = TailList(l); deRef(l)
+        end
+
+        lk, lw = k, w
+        while _is_list_word(ld, lk, lw)
+            hk, _, hp = _deref_loc(ld, valPtr(lw) + 1)
+            if _tv_marked(ld, hp)                           # is_marked(h)
+                _tv_mark!(ld, hp, false)                    # clear_marked(h)
+                lk, lw, _ = _deref_loc(ld, valPtr(lw) + 2)
+            else
+                break
+            end
+        end
+
+        return rc
+    end
+
+    arity = arityFunctor(ld.functors, ld.gstack[c])
+    rc = true
+    i = 0
+    while i < arity
+        ak, _, ap = _deref_loc(ld, c + 1 + i)               # Word a = &t->arguments[i]; deRef(a)
+        if !(ak == DU_CELL && !_tv_marked(ld, ap))          # !isVar(*a)
+            rc = false
+            break
+        end
+        _tv_mark!(ld, ap, true)                             # set_marked(a)
+        i += 1
+    end
+    for j in 0:(i - 1)
+        _, _, ap = _deref_loc(ld, c + 1 + j)
+        _tv_mark!(ld, ap, false)                            # clear_marked(a)
+    end
+
+    return rc
+end
+
+"Whether the variable cell at global position `p` is marked (`ld.tv_seen`)."
+@inline _tv_marked(ld::PL_local_data, p::Int)::Bool = p <= length(ld.tv_seen) && ld.tv_seen[p]
+
+"Set or clear the mark of the variable cell at global position `p` (`ld.tv_seen`)."
+@inline function _tv_mark!(ld::PL_local_data, p::Int, v::Bool)::Nothing
+    p > length(ld.tv_seen) && _grow_tv_seen!(ld, p)
+    ld.tv_seen[p] = v
+    return nothing
+end
+
+# PORT: pl-prims.c is_most_general_term as pl_is_most_general_term1_va
+# (PRED_IMPL("is_most_general_term", 1, is_most_general_term, 0))
+"`is_most_general_term(@Term)`: `Term` is an atom, a proper list of distinct variables or a compound whose arguments are distinct variables (pl-prims.c)."
+function pl_is_most_general_term1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    return is_most_general_term_cells(ld, -(PL__t0 + 1)) ? FTRUE : FFALSE
+end
+
 # PORT: pl-prims.c deterministic as pl_deterministic1_va
 # (PRED_IMPL("deterministic", 1, deterministic, 0)) (AV9; boot/attvar.pl's run_crv/4 calls it)
 # DIVERGES: positions — `(void *)BFR > (void *)FR` compares the records' `base` (the local-stack
@@ -4101,6 +4180,7 @@ const PL_predicates_from_prims = (
     PL_extension("term_variables", 3, pl_term_variables3_va, PL_FA_VARARGS),
     PL_extension("\$term_attvar_variables", 2, pl_term_attvar_variables2_va, PL_FA_VARARGS),   # (AV6)
     PL_extension("term_attvars", 2, pl_term_attvars2_va, PL_FA_VARARGS),
+    PL_extension("is_most_general_term", 1, pl_is_most_general_term1_va, PL_FA_VARARGS),
     PL_extension("deterministic", 1, pl_deterministic1_va, PL_FA_VARARGS),   # (AV9)
     PL_extension("\$free_variable_set", 3, pl_free_variable_set3_va, PL_FA_VARARGS),
     PL_extension("unifiable", 3, pl_unifiable3_va, PL_FA_VARARGS),
