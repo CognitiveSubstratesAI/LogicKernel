@@ -237,6 +237,20 @@ _manifest_per_type(T) = (
         false
     ),   # AV6: flags
     (LK.term_variables_to_termv_cells, Tuple{LK.PL_local_data{T}, Int, Int, Int}, false),
+    # P1: the term inspection predicates (src/pl-prims.jl)
+    (LK.get_arg_integer_ex, Tuple{LK.PL_local_data{T}, Int}, false),
+    (LK.subsumes_cells, Tuple{LK.PL_local_data{T}, Int, Int}, false),
+    (LK.term_size_cells, Tuple{LK.PL_local_data{T}, Int, Int}, false),
+    (LK._indirect_cells, Tuple{LK.PL_local_data{T}, UInt64}, false),
+    (LK.is_most_general_term_cells, Tuple{LK.PL_local_data{T}, Int}, false),
+    (LK._tv_marked, Tuple{LK.PL_local_data{T}, Int}, false),
+    (LK._tv_mark!, Tuple{LK.PL_local_data{T}, Int, Bool}, false),
+    (
+        LK.term_variables_loop_first_cells,
+        Tuple{LK.PL_local_data{T}, LK.cell_agenda, Int, Int, Set{Int}},
+        false
+    ),
+    (LK.term_variables_to_termv_first_cells, Tuple{LK.PL_local_data{T}, Int, Int, Int}, false),
     (LK.free_variables_loop_cells, Tuple{LK.PL_local_data{T}, Int, Int}, false),
     # copy_term on cells (L1d step 6): the side vector, the stacks and the copy's cells grow
     (LK._cp_vm, Tuple{LK.PL_local_data{T}, Int}, true),
@@ -1606,7 +1620,11 @@ function _manifest_index(T)
                 LK.pl_term_variables3_va, LK.pl_term_attvar_variables2_va,
                 LK.pl_term_attvars2_va,
                 LK.pl_deterministic1_va,
-                LK.pl_free_variable_set3_va, LK.pl_skip_list3_va, LK.pl_univ2_va
+                LK.pl_free_variable_set3_va, LK.pl_skip_list3_va, LK.pl_univ2_va,
+                LK.pl_arg3_va, LK.pl_compound_name_arity3_va,                       # P1
+                LK.pl_compound_name_arguments3_va, LK.pl_subsumes_term2_va,
+                LK.pl_factorize_term3_va, LK.pl_term_size3_va, LK.pl_term_singletons2_va,
+                LK.pl_term_multitons2_va, LK.pl_is_most_general_term1_va
             )
         ]...,
         (LK._boot_term, Tuple{Symbol, Vector{T}}, false),
@@ -2369,6 +2387,8 @@ const _DISPATCH_MANIFEST_TUPLE = (
     (LK.condc, Tuple{}, false),
     (LK.qlfEndPart, Tuple{Nothing}, false),
     (LK.addDirectiveWic, Tuple{Nothing, Int}, false),
+    # P1: the limb count of a big integer (type-independent)
+    (LK._limbs64, Tuple{BigInt}, false),
     # term-type-independent parts of the index and its head compiler
     (LK._le_byte, Tuple{NTuple{4, UInt64}, Int}, true),
     (LK._le_byte, Tuple{Vector{UInt8}, Int}, true),

@@ -6014,3 +6014,39 @@ What LB3 adds (pl-qlf.c, os/pl-file.c, pl-init.c; written edit-only, nothing com
 - **Pinned by** test/files/test_qlf_swipl.jl: the loadable program against swipl 10.1.19's answers (generator and pins in
   evidence/LB3/ql/), plus white-box rows (prefix `_ql_`); every row that depends on the kernel carries `UNVERIFIED on the kernel: gate decides`.
   Mutants: tools/mutants/LB3C.py (54).
+
+## P1 — term inspection: `arg/3`, `compound_name_arity/3`, `compound_name_arguments/3`, `subsumes_term/2`, `'$factorize_term'/3`, `'$term_size'/3`, `term_singletons/2`, `'$term_multitons'/2`, `is_most_general_term/1` (R2 boot C predicates, audit D-0306 items 2-3)
+
+Pin: swipl-devel cbf4e1896275, `src/pl-prims.c`. Nine `PRED_IMPL`s, all in `src/pl-prims.jl` and registered in `PL_predicates_from_prims`
+(`_PRED_TABLES`, `_FOREIGN_VA`). The boot calls every one of them (13 boot files call `arg/3`, 9 each `compound_name_arity/3` and
+`compound_name_arguments/3`; the others dwim, init, syspred, expand, toplevel, topvars, tabling).
+
+| predicate | upstream (pl-prims.c) | Julia |
+|---|---|---|
+| `arg/3` (nondeterministic, ISO) | :2704 + `get_arg_integer_ex` :2655 | `pl_arg3_va`, `get_arg_integer_ex` |
+| `compound_name_arity/3` | :2508 | `pl_compound_name_arity3_va` |
+| `compound_name_arguments/3` | :3161 | `pl_compound_name_arguments3_va` |
+| `subsumes_term/2` (ISO) | :3954 `subsumes` | `pl_subsumes_term2_va`, `subsumes_cells` |
+| `'$factorize_term'/3` | :1485 | `pl_factorize_term3_va` over `PL_factorize_term` |
+| `'$term_size'/3` | :993 | `pl_term_size3_va`, `term_size_cells`, `_indirect_cells`, `_limbs64` |
+| `term_singletons/2`, `'$term_multitons'/2` | :3741, :3752 | `pl_term_singletons2_va`, `pl_term_multitons2_va` |
+| `is_most_general_term/1` | :3850 | `pl_is_most_general_term1_va`, `is_most_general_term_cells`, `_tv_marked`, `_tv_mark!` |
+
+- **`term_variables()` gained a dispatch line.** `TV_SINGLETON` and `TV_SHARED` select `term_variables_loop_first_cells` and
+  `term_variables_to_termv_first_cells` (the FIRST marks of upstream's `term_variables_loop` are a local `Set{Int}` of cell positions; no
+  field of `PL_local_data` changed). Every caller of `term_variables/2,3` and `term_attvars/2` passes through the dispatch; their tests are
+  the mutants' targets (tools/mutants/P1.py).
+- **`arg/3` in a clause body** compiles to the inline `B_ARG_*` forms (src/pl-comp.jl:2268, refused there: V9); the predicate here is the
+  callable form (`call(arg, ...)`, `maplist(arg(N), ...)`), as upstream's pl-prims.c is next to pl-comp.c's.
+- **DIVERGES (1, representation):** `'$term_size'/3` computes the cells of a number or a string from the value-table entry
+  (`_indirect_cells`; GMP limbs by `_limbs64`), calibrated on swipl 10.1.19; the kernel keeps no indirect on the global stack.
+- **DIVERGES (2):** `term_variables_to_termv_first_cells` FAILS when the count exceeds `maxcount`, where upstream filters a reference it
+  never made. Reached only by `'$term_multitons'/2` with a proper list shorter than the variables as second argument (no row reaches it).
+- **DIVERGES (3):** `compound_name_arity/3` and `compound_name_arguments/3` on a `$expr/n` compound answer the name `$expr` and all
+  children, as `PL_get_name_arity` does here (a kernel-only testset in the rows file).
+- **DIVERGES (4):** `arg/3` sets no GC or shift flags (the kernel has no stack shift on this path).
+- **Left out, as in the existing walks:** the retries after `TV_NOSPACE`, `TV_EINTR`, `TV_NOMEM`, and signals in the walks.
+- **Moved to R3** (no call in boot/*.pl at the pin): `nonground/2`, `functor/4`, `$filled_array/4`, `term_factorized/3,4`. The setarg family
+  is the SETARG step.
+- **Pinned by** test/core_lang/test_p1_swipl.jl: rows p001-p176 against swipl 10.1.19 (generator and pins in evidence/P1/), plus a
+  kernel-only `$expr/n` testset. Mutants: tools/mutants/P1.py.
