@@ -4418,6 +4418,34 @@ function pl_nb_linkarg3_va(
     return setarg_t(ld, A1, A2, A3, SETARG_LINK) ? FTRUE : FFALSE
 end
 
+# ── '$style_check'/2 (pl-prims.c "STYLE CHECK"): what boot/syspred.pl's style_check/1 reads and writes ───
+# PORT: pl-prims.c style_check as pl_style_check2_va
+# (PRED_IMPL("$style_check", 2, style_check, 0), pl-prims.c:6523-6537 at the pin)
+# DIVERGES: `debugstatus.styleCheck` is the local data's `debugstatus_styleCheck` (src/pl-global.jl: one thread,
+# the field the reader, the compiler and the clause-adding code read). `PL_get_integer` is the C `int` of
+# pl-fli.c (a value out of `int`'s range, or no integer, fails; no error is raised).
+"""
+    '\$style_check'(-Old, +New)
+
+Unify `Old` with the style-check bit set, then set it to the integer `New` (pl-prims.c). Fails, leaving the set as it
+was, when `Old` does not unify or `New` is not an `int`.
+"""
+function pl_style_check2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    old = PL__t0
+    new = PL__t0 + 1
+
+    if PL_unify_integer(ld, old, ld.debugstatus_styleCheck)
+        n = PL_get_integer(ld, new)
+        if n !== nothing
+            ld.debugstatus_styleCheck = n
+            return FTRUE
+        end
+    end
+    return FFALSE
+end
+
 # PORT: pl-prims.c BeginPredDefs as PL_predicates_from_prims
 # DIVERGES: the entries of the predicates the kernel has ported, in upstream's order (prims:6570-6677);
 # `PRED_DEF` ors in `PL_FA_VARARGS`. The others of upstream's table arrive with their ports.
@@ -4493,6 +4521,7 @@ const PL_predicates_from_prims = (
     PL_extension("setarg", 3, pl_setarg3_va, PL_FA_VARARGS),
     PL_extension("nb_setarg", 3, pl_nb_setarg3_va, PL_FA_VARARGS),
     PL_extension("nb_linkarg", 3, pl_nb_linkarg3_va, PL_FA_VARARGS),
+    PL_extension("\$style_check", 2, pl_style_check2_va, PL_FA_VARARGS),     # (Q10)
     PL_extension("\$skip_list", 3, pl_skip_list3_va, PL_FA_VARARGS),
     PL_extension("throw", 1, pl_throw1_va, PL_FA_ISO | PL_FA_VARARGS)
 )
