@@ -2782,6 +2782,132 @@ function pl_functor3_va(
     return FFALSE
 end
 
+# PORT: pl-prims.c compound_name_arity as pl_compound_name_arity3_va
+# (PRED_IMPL("compound_name_arity", 3, compound_name_arity, 0)).
+# DIVERGES: as `functor/3` above: a compound whose head is no symbol is named `$expr`, its arity the number of
+# its children (`PL_get_name_arity`); a name and arity that do not fit the global stack give a failure
+# (`ensureGlobalSpace`), no resource error.
+"`compound_name_arity(?Compound, ?Name, ?Arity)` (pl-prims.c): the name and arity of a compound, zero arity included."
+function pl_compound_name_arity3_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2, A3 = PL__t0, PL__t0 + 1, PL__t0 + 2
+    k, w, _ = _deref_loc(ld, -(A1 + 1))                 # p = valTermRef(A1); deRef(p)
+
+    if k == DU_WORD && _is_gcompound(w)                 # isTerm(*p)
+        na = PL_get_name_arity(ld, A1)::Tuple{T, Int}   # fd = valueFunctor(functorTerm(*p))
+
+        return if (PL_unify_atom(ld, A2, na[1]) && PL_unify_integer(ld, A3, na[2]))
+            FTRUE
+        else
+            FFALSE
+        end
+    end
+    if !(k == DU_CELL || k == DU_ATTVAR)                # !canBind(*p)
+        return PL_error(ld, ERR_TYPE, mk_sym(T, :compound), A1) ? FTRUE : FFALSE
+    end
+
+    name = PL_get_atom_ex(ld, A2)
+    name === nothing && return FFALSE
+    arity = PL_get_size_ex(ld, A3)
+    arity === nothing && return FFALSE
+
+    ensureGlobalSpace(ld, 1 + arity) || return FFALSE
+    f = lookupFunctorDef(ld.functors, _atom_word!(ld, name), arity)   # PL_new_functor(name, arity)
+    return PL_unify_compound(ld, A1, f) ? FTRUE : FFALSE
+end
+
+# PORT: pl-prims.c get_arg_integer_ex
+# DIVERGES: returns `(rc, n)`: `rc` is 1 for a small positive integer `n` (upstream `true`), -1 for an unbound
+# argument, 0 otherwise (upstream `false`: 0, a large positive integer, or an exception left by `PL_error`). No
+# `INT_MAX` bound (`SIZEOF_VOIDP == SIZEOF_WORD`). On the words: a value-table integer is read as its value.
+"The argument position `t` holds: `(1, n)` for an integer above zero, `(-1, 0)` for a variable, else `(0, 0)` and maybe an error (pl-prims.c)."
+function get_arg_integer_ex(ld::PL_local_data{T}, t::term_t)::Tuple{Int, Int} where {T}
+    k, x, _ = _deref_loc(ld, -(t + 1))                  # Word p = valTermRef(t); deRef(p)
+    if k == DU_VALUE
+        if isTaggedIntW(x)                              # isTaggedInt(*p)
+            v = valInt(x)
+            v > 0 && return (1, Int(v))
+            v == 0 && return (0, 0)
+            PL_error(ld, ERR_DOMAIN, mk_sym(T, :not_less_than_zero), t)   # isInteger(*p), sign < 0
+            return (0, 0)
+        end
+        p = _value_term(ld, x)
+        if isInteger(p)                                 # isInteger(*p): get_integer(*p, &n)
+            neg = integer_is_int64(p) ? int64_value(p) < 0 : bigint_value(p) < 0
+            neg && PL_error(ld, ERR_DOMAIN, mk_sym(T, :not_less_than_zero), t)
+            return (0, 0)
+        end
+    end
+    (k == DU_CELL || k == DU_ATTVAR) && return (-1, 0)  # canBind(*p)
+    PL_error(ld, ERR_TYPE, mk_sym(T, :integer), t)
+    return (0, 0)
+end
+
+# PORT: pl-prims.c arg as pl_arg3_va
+# (PRED_IMPL("arg", 3, arg, PL_FA_NONDETERMINISTIC)); the table's flags add `PL_FA_ISO`. The inline forms of a
+# clause body are pl-comp.c's `B_ARG_*`; this is the predicate `call(arg, …)` and a non-inline `arg/3` reach.
+# `ForeignRedoInt(argn)` is `PL_retry(argn)` after closing the frame. No `ALLOW_GC|ALLOW_SHIFT` (no stack shift).
+"`arg(?N, +Compound, ?Arg)` (pl-prims.c): `Arg` is argument `N` of `Compound`; with `N` unbound it enumerates the arguments."
+function pl_arg3_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    n, term, arg = PL__t0, PL__t0 + 1, PL__t0 + 2
+    ctl = PL_foreign_control(PL__ctx)
+    arity = 0
+    argn = 0
+
+    if ctl == FRG_FIRST_CALL
+        k, w, _ = _deref_loc(ld, -(term + 1))           # Word p = valTermRef(term); deRef(p)
+        if k == DU_WORD && _is_gcompound(w)             # isTerm(*p)
+            arity = arityFunctor(ld.functors, ld.gstack[valPtr(w)])   # arityTerm(*p)
+        else
+            return if PL_error(ld, "arg", 3, "", ERR_TYPE, mk_sym(T, :compound), term)
+                FTRUE
+            else
+                FFALSE
+            end
+        end
+
+        rc, idx = get_arg_integer_ex(ld, n)
+        if rc == 1
+            idx <= arity || return FFALSE
+            return unify_ptrs_cells(ld, valPtr(w) + idx, -(arg + 1)) ? FTRUE : FFALSE   # argTermP(*p, idx-1)
+        end
+        rc == -1 || return FFALSE                       # bigint, negative or type error
+        argn = 1
+    elseif ctl == FRG_REDO
+        _, w, _ = _deref_loc(ld, -(term + 1))
+        arity = arityFunctor(ld.functors, ld.gstack[valPtr(w)])
+        argn = PL_foreign_context(PL__ctx) + 1          # (unsigned)CTX_INT + 1
+    else
+        return FTRUE
+    end
+
+    rc = false                                          # genarg:
+    fid = PL_open_foreign_frame(ld)
+    fid == 0 && return FFALSE
+    a = PL_new_term_ref(ld)
+    while argn <= arity
+        _PL_get_arg(ld, argn, term, a)
+        if PL_unify(ld, arg, a)
+            PL_unify_integer(ld, n, argn) || break
+            if argn == arity
+                rc = true
+                break
+            end
+            PL_close_foreign_frame(ld, fid)
+            return PL_retry(argn)                       # ForeignRedoInt(argn)
+        end
+        PL_exception(ld, 0) != 0 && break               # exception_term
+        PL_rewind_foreign_frame(ld, fid)
+        argn += 1
+    end
+
+    PL_close_foreign_frame(ld, fid)
+    return rc ? FTRUE : FFALSE
+end
+
 # PORT: pl-prims.c univ as pl_univ2_va
 # (PRED_IMPL("=..", 2, univ, PL_FA_ISO)) — on the CELLS from the start (L1e e4, audit D-0020): the compound
 # laid out at gTop from the list's words (`needsRef(*h) ? makeRefG(h) : *h`), the other direction through the
@@ -3742,6 +3868,9 @@ const PL_predicates_from_prims = (
     PL_extension("float", 1, pl_float1_va, PL_FA_ISO | PL_FA_VARARGS),
     PL_extension("rational", 1, pl_rational1_va, PL_FA_VARARGS),
     PL_extension("number", 1, pl_number1_va, PL_FA_ISO | PL_FA_VARARGS),
+    PL_extension(
+        "arg", 3, pl_arg3_va, PL_FA_NONDETERMINISTIC | PL_FA_ISO | PL_FA_VARARGS
+    ),
     PL_extension("atomic", 1, pl_atomic1_va, PL_FA_ISO | PL_FA_VARARGS),
     PL_extension("atom", 1, pl_atom1_va, PL_FA_ISO | PL_FA_VARARGS),
     PL_extension("string", 1, pl_string1_va, PL_FA_VARARGS),
@@ -3761,6 +3890,7 @@ const PL_predicates_from_prims = (
     PL_extension("@>=", 2, pl_std_geq2_va, PL_FA_ISO | PL_FA_VARARGS),
     PL_extension("functor", 3, pl_functor3_va, PL_FA_ISO | PL_FA_VARARGS),
     PL_extension("=..", 2, pl_univ2_va, PL_FA_ISO | PL_FA_VARARGS),
+    PL_extension("compound_name_arity", 3, pl_compound_name_arity3_va, PL_FA_VARARGS),
     PL_extension("numbervars", 4, pl_numbervars4_va, PL_FA_VARARGS),     # (L1d step 7a, D-0016)
     PL_extension("term_variables", 2, pl_term_variables2_va, PL_FA_ISO | PL_FA_VARARGS),
     PL_extension("term_variables", 3, pl_term_variables3_va, PL_FA_VARARGS),
