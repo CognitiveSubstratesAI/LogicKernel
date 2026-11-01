@@ -1167,6 +1167,192 @@ function pl_punify_dict2_va(
     return FFALSE
 end
 
+# PORT: pl-dict.c copy_keys_dict
+# DIVERGES: the result is the new dict's compound word, `nothing` for upstream's `GLOBAL_OVERFLOW` (raised by
+# `ensureGlobalSpace`); `dict` is the dict's compound word.
+"A new dict with the keys of `dict`, its tag and all values fresh variables (pl-dict.c)."
+function copy_keys_dict(ld::PL_local_data, dict::word)::Union{Nothing, word}
+    f = valPtr(dict)
+    arity = arityFunctor(ld.functors, ld.gstack[f])
+
+    ensureGlobalSpace(ld, 1 + arity) || return nothing
+
+    new = allocGlobalCells!(ld, 1 + arity)
+    out = new
+    ld.gstack[out] = ld.gstack[f]                   # copy C'dict functor
+    out += 1
+    ld.gstack[out] = word(0)                        # set tag to var
+    out += 1
+    in_ = f + 2                                     # data->arguments+1
+    in_end = in_ + arity - 1
+
+    while in_ < in_end
+        _, i_name, _ = _deref_loc(ld, in_ + 1)
+        ld.gstack[out] = word(0)                    # setVar(*out++)
+        ld.gstack[out + 1] = i_name
+        out += 2
+        in_ += 2
+    end
+
+    return consPtr(new, TAG_COMPOUND | STG_GLOBAL)
+end
+
+# PORT: pl-dict.c same_keys_dict
+"Whether the dicts `dict1` and `dict2` have the same functor and the same keys (pl-dict.c)."
+function same_keys_dict(ld::PL_local_data, dict1::word, dict2::word)::Bool
+    f1 = valPtr(dict1)
+    f2 = valPtr(dict2)
+    arity = arityFunctor(ld.functors, ld.gstack[f1])
+
+    if ld.gstack[f1] != ld.gstack[f2]
+        return false
+    end
+
+    d1 = f1 + 2                                     # data1->arguments+1
+    d2 = f2 + 2
+    dend = d1 + arity - 1
+
+    while d1 < dend
+        _, k1, _ = _deref_loc(ld, d1 + 1)
+        _, k2, _ = _deref_loc(ld, d2 + 1)
+        if k1 != k2
+            return false
+        end
+        d1 += 2
+        d2 += 2
+    end
+
+    return true
+end
+
+# PORT: pl-dict.c unify_dict_copy
+# DIVERGES: no overflow retry loop (`ensureGlobalSpace` raises); `dict` is the compound word, `dt` unused for the reload
+# upstream does after a stack shift (the positions here do not move).
+"Unify `t` with a copy of the keys of `dict` (fresh tag and values); `dt` is the term reference of `dict` (pl-dict.c)."
+function unify_dict_copy(ld::PL_local_data{T}, t::term_t, dt::term_t, dict::word)::Bool where {T}
+    tmp = PL_new_term_ref(ld)
+    copy = copy_keys_dict(ld, dict)
+    copy === nothing && return false
+    ld.slots[tmp + 1] = copy
+    return PL_unify(ld, tmp, t)
+end
+
+# PORT: pl-dict.c dict_same_keys as pl_dict_same_keys2_va
+# (PRED_IMPL("dict_same_keys", 2, dict_same_keys, 0))
+"`dict_same_keys(?Dict1, ?Dict2)`: both dicts have the same keys; an unbound one is made a copy of the other's keys (pl-dict.c)."
+function pl_dict_same_keys2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2 = PL__t0, PL__t0 + 1
+    k1, d1, _ = _deref_loc(ld, -(A1 + 1))
+    k2, d2, _ = _deref_loc(ld, -(A2 + 1))
+
+    if is_dict_term(ld, k1, d1)
+        if is_dict_term(ld, k2, d2)
+            return same_keys_dict(ld, d1, d2) ? FTRUE : FFALSE
+        elseif k2 == DU_CELL || k2 == DU_ATTVAR     # canBind(*d2)
+            return unify_dict_copy(ld, A2, A1, d1) ? FTRUE : FFALSE
+        else
+            return PL_type_error(ld, "dict", A2) ? FTRUE : FFALSE
+        end
+    elseif is_dict_term(ld, k2, d2)
+        if k1 == DU_CELL || k1 == DU_ATTVAR         # canBind(*d1)
+            return unify_dict_copy(ld, A1, A2, d2) ? FTRUE : FFALSE
+        else
+            return PL_type_error(ld, "dict", A1) ? FTRUE : FFALSE
+        end
+    end
+
+    return PL_type_error(ld, "dict", A1) ? FTRUE : FFALSE
+end
+
+# PORT: pl-dict.c get_dict_kv
+# DIVERGES: `PL_is_functor(dict, f->definition)` (a functor WORD) is the dereferenced compound word's functor cell compared.
+"The `Index`-th key and the values of the dicts at `t0+1…` for `\$get_dict_kv` of `arity` (pl-dict.c)."
+function get_dict_kv(ld::PL_local_data{T}, t0::term_t, arity::Int)::Bool where {T}
+    i = PL_get_size_ex(ld, t0)
+    (i === nothing || i == 0) && return false
+
+    k, w, _ = _deref_loc(ld, -(t0 + 1 + 1))
+    if k == DU_WORD && _is_gcompound(w)
+        fw = ld.gstack[valPtr(w)]
+        darity = arityFunctor(ld.functors, fw)
+
+        if !is_dict_functor(ld, fw)
+            return PL_type_error(ld, "dict", t0 + 1)
+        end
+
+        if i > darity ÷ 2
+            return false
+        end
+        i -= 1
+
+        dict_count = (arity - 2) ÷ 2
+        key_arg = t0 + 1 + dict_count
+        value = PL_new_term_ref(ld)
+        key = PL_new_term_ref(ld)
+
+        for di in 0:(dict_count - 1)
+            dict = t0 + 1 + di
+
+            if di > 0
+                dk, dw, _ = _deref_loc(ld, -(dict + 1))
+                if !(dk == DU_WORD && _is_gcompound(dw) && ld.gstack[valPtr(dw)] == fw)    # !PL_is_functor(dict, f->definition)
+                    if !PL_is_dict(ld, dict)
+                        return PL_type_error(ld, "dict", dict)
+                    else
+                        return PL_domain_error(ld, "compatible_dict", dict)
+                    end
+                end
+            end
+            _PL_get_arg(ld, 2 + i * 2, dict, value)
+            _PL_get_arg(ld, 3 + i * 2, dict, key)
+
+            if !PL_unify(ld, key_arg, key)
+                if di == 0
+                    return false
+                end
+                return PL_domain_error(ld, "compatible_dict", dict)
+            end
+
+            if !PL_unify(ld, key_arg + 1 + di, value)
+                return false
+            end
+        end
+
+        return true
+    end
+
+    return PL_type_error(ld, "dict", t0 + 1)
+end
+
+# PORT: pl-dict.c get_dict_kv as pl_get_dict_kv4_va
+# (PRED_IMPL("$get_dict_kv", 4, get_dict_kv, 0))
+"`\$get_dict_kv(+Index, +Dict, -K, -V)`: the `Index`-th key and value of `Dict` (pl-dict.c)."
+function pl_get_dict_kv4_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    return get_dict_kv(ld, PL__t0, 4) ? FTRUE : FFALSE
+end
+
+# PORT: pl-dict.c get_dict_kv as pl_get_dict_kv6_va
+# (PRED_IMPL("$get_dict_kv", 6, get_dict_kv, 0))
+"`\$get_dict_kv(+Index, +Dict1, +Dict2, -K, -V1, -V2)`: the `Index`-th key and the values in two dicts (pl-dict.c)."
+function pl_get_dict_kv6_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    return get_dict_kv(ld, PL__t0, 6) ? FTRUE : FFALSE
+end
+
+# PORT: pl-dict.c get_dict_kv as pl_get_dict_kv8_va
+# (PRED_IMPL("$get_dict_kv", 8, get_dict_kv, 0))
+"`\$get_dict_kv(+Index, +Dict1, +Dict2, +Dict3, -K, -V1, -V2, -V3)`: the `Index`-th key and the values in three dicts (pl-dict.c)."
+function pl_get_dict_kv8_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    return get_dict_kv(ld, PL__t0, 8) ? FTRUE : FFALSE
+end
+
 # PORT: pl-dict.c BeginPredDefs as PL_predicates_from_dict
 # DIVERGES: the ported entries, in upstream's order (upstream's table also has `dict_pairs/3`, `dict_same_keys/2`,
 # `put_dict/4`, `b_set_dict/3`, `nb_set_dict/3`, `nb_link_dict/3`, `$get_dict_ex/3`, `del_dict/4`, `get_dict/5`, `:</2`,
@@ -1185,5 +1371,9 @@ const PL_predicates_from_dict = (
     PL_extension("dict_pairs", 3, pl_dict_pairs3_va, PL_FA_VARARGS),
     PL_extension("del_dict", 4, pl_del_dict4_va, PL_FA_VARARGS),
     PL_extension(":<", 2, pl_unify_left_dict2_va, PL_FA_VARARGS),
-    PL_extension(">:<", 2, pl_punify_dict2_va, PL_FA_VARARGS)
+    PL_extension(">:<", 2, pl_punify_dict2_va, PL_FA_VARARGS),
+    PL_extension("dict_same_keys", 2, pl_dict_same_keys2_va, PL_FA_VARARGS),
+    PL_extension("\$get_dict_kv", 4, pl_get_dict_kv4_va, PL_FA_VARARGS),
+    PL_extension("\$get_dict_kv", 6, pl_get_dict_kv6_va, PL_FA_VARARGS),
+    PL_extension("\$get_dict_kv", 8, pl_get_dict_kv8_va, PL_FA_VARARGS)
 )
