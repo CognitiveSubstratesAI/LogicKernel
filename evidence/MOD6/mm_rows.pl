@@ -46,6 +46,7 @@ t_c17(R) :- catch(('$current_module'(M, _), !, ( atom(M) -> R = ok ; R = no )), 
 t_c18(R) :- catch((\+ \+ '$current_module'(_, _), \+ \+ '$current_module'(_, _), ( '$current_module'(_, _) -> true ), ( '$current_module'(_, _) -> true ), R = ok), error(F, _), R = raised(F)), mme_done.
 t_c19(R) :- catch((findall(M, ('$current_module'(M, _), ( M == mmx_u ; M == mmx_f ; M == mmx_c2 )), L0), msort(L0, L), R = L), error(F, _), R = raised(F)), mme_done.
 t_c20(R) :- catch((( '$current_module'([], '/mmx/g.pl') -> A = yes ; A = no ), R = A), error(F, _), R = raised(F)), mme_done.
+t_c21(R) :- catch((( '$current_module'([mmx_g1], '/mmx/g.pl') -> A = yes ; A = no ), R = A), error(F, _), R = raised(F)), mme_done.
 t_d01(R) :- catch(('$destroy_module'(mmx_t), ( '$current_module'(mmx_t, Fa) -> R = yes(Fa) ; R = no )), error(F, _), R = raised(F)), mme_done.
 t_d03(R) :- catch((findall(M, ('$current_module'(M, _), M == mmx_t), L), R = L), error(F, _), R = raised(F)), mme_done.
 t_d04(R) :- catch((assertz(mmx_t:q(1)), findall(M, ('$current_module'(M, _), M == mmx_t), L), '$module_property'(mmx_t, class(C)), R = L-C), error(F, _), R = raised(F)), mme_done.
