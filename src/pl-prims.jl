@@ -3011,12 +3011,12 @@ function pl_arg3_va(
             end
         end
 
-        rc, idx = get_arg_integer_ex(ld, n)
-        if rc == 1
+        got, idx = get_arg_integer_ex(ld, n)
+        if got == 1
             idx <= arity || return FFALSE
             return unify_ptrs_cells(ld, valPtr(w) + idx, -(arg + 1)) ? FTRUE : FFALSE   # argTermP(*p, idx-1)
         end
-        rc == -1 || return FFALSE                       # bigint, negative or type error
+        got == -1 || return FFALSE                      # bigint, negative or type error
         argn = 1
     elseif ctl == FRG_REDO
         _, w, _ = _deref_loc(ld, -(term + 1))

@@ -39,21 +39,19 @@ setarg/3, nb_setarg/3, nb_linkarg/3, duplicate_term/5: the SETARG step (wip/seta
 7. [x] is_most_general_term/1 (is_most_general_term_cells, _tv_marked/_tv_mark!) + registration -- f19deef
 8. [x] term_singletons/2, $term_multitons/2: TV_SINGLETON/TV_SHARED constants, term_variables_loop_first_cells,
    term_variables_to_termv_first_cells, term_variables() dispatch, 2 registrations -- the commit carrying this handoff
-9. [ ] NOT STARTED: rows p01.. : test/core_lang/test_p1_swipl.jl, evidence/P1/{gen_rows.py,driver,rows,.out}
-   (swipl 10.1.19 oracle; cases: arg/3 N bound/unbound/0/negative/bigint/non-integer/non-compound, enumeration order and
-   determinism on the last arg; compound_name_arity/arguments both directions, zero arity `foo()` built in a helper clause
-   (sa_zero style), type/instantiation errors; subsumes_term incl. shared vars, attvar-free cases; $factorize_term on a
-   shared and a cyclic term; $term_size on atoms, f(a), strings, floats, bigints, rationals, shared subterms, Max below/above
-   and errors (calibration data: evidence in the scratch files of this session: a=0, 1.5=3, "abc"=3, "abcdefgh"=4, 2^64=5,
-   1r3=6, f(X,X)=3, wide string "aĀ"=4); is_most_general_term on atom, [X,Y], [X,X], f(X,Y), f(X,X), f(a), [a|T], 1;
-   term_singletons/$term_multitons on f(X,Y,X), shared compound, cyclic -> representation_error)
-10. [ ] NOT STARTED: tools/mutants/P1.py (~2.5 per commit; TARGETS = test_p1_swipl.jl plus every test file that exercises
-    term_variables/2 (term_variables_to_termv dispatch changed), subsumes/univ users)
-11. [ ] NOT STARTED: docs/architecture.md block
-12. [ ] NOT STARTED: test/static_analysis_manifest.jl entries (pl_arg3_va, pl_compound_name_arity3_va,
-    pl_compound_name_arguments3_va, pl_subsumes_term2_va, pl_factorize_term3_va, pl_term_size3_va, pl_term_singletons2_va,
-    pl_term_multitons2_va, pl_is_most_general_term1_va over T; helper entries as the neighbours list theirs). LAST.
-This is 12 commits in all with the plan; a fold of 11 into 10's neighbour is the dispatcher's call if the cap binds.
+9. [x] rows test/core_lang/test_p1_swipl.jl p001-p176 + evidence/P1/{gen_rows.py,p1_driver.pl,p1_rows.pl,p1_rows.out} -- 8f0c9d6
+   (swipl 10.1.19, two byte-identical runs; p174-p176 are the mutant-killing rows added in 4295937; the kernel-only
+   `$expr/n` testset is the last testset of the file; the pins were regenerated with `python3 -I gen_rows.py <file> [--fill]`)
+10. [x] tools/mutants/P1.py (39 mutants, validated: old once, new != old, targets exist; not run) -- 4295937
+11. [x] this commit: FIXED: arg/3 variable rename (`rc` -> `got` in pl_arg3_va, src/pl-prims.jl) + this handoff
+12. [ ] NOT STARTED, ONE commit (the cap binds: fold the two): docs/architecture.md block (append, a P1 block: the nine
+    predicates, upstream lines, the 4 DIVERGES below) AND test/static_analysis_manifest.jl entries (append): pl_arg3_va,
+    pl_compound_name_arity3_va, pl_compound_name_arguments3_va, pl_subsumes_term2_va, pl_factorize_term3_va,
+    pl_term_size3_va, pl_term_singletons2_va, pl_term_multitons2_va, pl_is_most_general_term1_va (each over T as the
+    neighbours list theirs) plus the helpers get_arg_integer_ex, subsumes_cells, term_size_cells, _indirect_cells,
+    _limbs64, is_most_general_term_cells, _tv_marked, _tv_mark!, term_variables_loop_first_cells,
+    term_variables_to_termv_first_cells (read how the neighbouring entries are written first).
+    AFTER that commit the series is 12 commits (the cap): the dispatcher folds nothing further.
 
 ## Gate order (for the dispatcher)
 fmt (committed files through `warm.sh send`), inventory, check, rows on all three term types, type discipline,
@@ -76,3 +74,25 @@ No Tier-1 file is touched so far (pl-prims.jl only); alloc pins x3 are not neede
 - Moved to R3 on evidence (boot/*.pl at the pin has no call): nonground/2, functor/4, $filled_array/4, term_factorized/3,4.
 - SETARG dependency: none (nothing here needs duplicate_term/5 or a SETARG helper).
 - Known kernel fact: `catch((T = foo(), R = T), ...)` engine defect: build `foo()` in a helper clause in rows.
+
+## State at the hand-back (coder 2)
+- Compile re-read done (by reading the neighbouring code, nothing run): number_kind/NUM_*/string_value/rational_value/
+  bigint_value/integer_is_int64/int64_value are in src/default_term.jl and used module-wide; `unRef(w::word)` is
+  `valPtr(w)` (pl-inline.jl:39) so `unRef(ld.slots[..]) in firsts` reads the position of a `makeRefG` word; the
+  `PL_error(ld, ERR_REPRESENTATION, atom)` form exists (pl-error.jl); `ld.walk_agenda`, `skip_list_cells` (4-tuple),
+  `PL_get_name_arity`, `_PL_get_arg`, `PL_retry`, `PL_foreign_context` match their definitions. No fix was needed
+  except the cosmetic `rc` -> `got` in pl_arg3_va (type stability), committed in commit 11.
+- The rows file lists its own UNVERIFIED rows in a comment above the case list (cyclic terms, call_cleanup, rdiv, a
+  wide string, the size_t representation error of a huge arity, `[]` as a compound name, `foo()` from a clause head).
+- A swipl 10.1.19 build dependence: a bare variable as the first argument of `$term_multitons/2`, and that predicate
+  with a proper list SHORTER than the variables as second argument, cannot be answered by the oracle here: neither has
+  a row (the mutant list names the second as the DIVERGES case that no row reaches).
+- Flags for the audit (unchanged): (1) `$term_size/3` sizes of numbers and strings come from the value-table entry
+  (`_indirect_cells`), representation-only; (2) term_variables_to_termv_first_cells fails when count > maxcount
+  (upstream filters a reference it never made); (3) compound_name_arity/arguments on `$expr/n` answer the name `$expr`
+  and all children (kernel-only testset in the rows file); (4) arg/3 does no GC/shift flags.
+- Gate order for the dispatcher: fmt (committed files through `warm.sh send`), inventory, check, rows on all three term
+  types (`warm.sh file test/core_lang/test_p1_swipl.jl`), test/test_type_discipline.jl,
+  `tools/pkgtest_way.sh test/core_lang/test_p1_swipl.jl`, push mutants/P1 at the WIP SHA, branch-gate, term grep, then
+  gate/p1 and mutants/P1 at the SAME SHA. The mutant TARGETS name every term_variables test file (T6/T7 mutants).
+  No Tier-1 file touched (pl-prims.jl only); alloc pins not needed.
