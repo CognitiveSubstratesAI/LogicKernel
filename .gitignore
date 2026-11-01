@@ -48,3 +48,5 @@ LocalPreferences.toml
 junit.xml
 __pycache__/
 *.pyc
+# the kernel's home tree: a tree of relative links over vendor/ and packages/ (tools/build_home.jl, test/test_home_tree.jl)
+/home/
