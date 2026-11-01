@@ -37,7 +37,12 @@ const LINT_ALLOWLIST = (
     "LogicKernel.H_LIST_FF_VOIDS" =>
         "upstream's own `static code var[2]` in pl-index.c `skipToTerm`: the two-void dummy code a " *
         "deep index position inside an H_LIST_FF reads (src/pl-index.jl). Read-only — no function " *
-        "writes it — so it carries no state between callers. 2026-10-04."
+        "writes it — so it carries no state between callers. 2026-10-04.",
+    "LogicKernel._GD_TEMPLATES" =>
+        "the process's template databases (src/gd_template.jl, LB4 b1, loader_boot design LD4): a booted " *
+        "PL_global_data{T} per term type, built once under a lock and only COPIED (copy_global_data) into " *
+        "the databases callers own, so no caller reaches another through it; upstream boots once per process. " *
+        "DORMANT until LB4 b2 enables the boot. Audit decision pending (LB4 b1 handoff)."
 )
 
 """
