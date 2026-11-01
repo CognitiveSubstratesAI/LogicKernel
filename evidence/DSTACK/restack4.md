@@ -41,7 +41,7 @@ A. Apply the anchor re-fits (the python edit that would do it was blocked by the
 B. D-0291 (f): read against swipl: the pl-fmt.jl bodies and the redirect bodies in pl-file.jl:1300-1600 vs ~/code/swipl-devel-pin/src/os/pl-fmt.c and pl-file.c (pin 8609e216; the oracle is
    10.1.19 cbf4e189/e032366), the sf01-sf89 row-to-mutant map of F1B.py (each KILL id exists in test_set_flag_swipl.jl; a file-level check by python), D1c/D1f line numbers (done above).
 C. Text fixes: docs/architecture.md:3231 (determinism_error is read from the flag table by `determinism_error_flag`; the F1b block "written, not yet gated" -> final state),
-   phrase wording: evidence/O1/handoff.md:121 (done in the re-stack), evidence/DSTACK/handoff.md and split.md (same phrase), the MAXRUBBER docstring "one column segment" in pl-fmt.jl
+   phrase wording: evidence/O1/handoff.md:121 (done in the re-stack), evidence/DSTACK/handoff.md and split.md (same phrase), the MAXRUBBER docstring in pl-fmt.jl (the word for one column)
    -> "span"; architecture.md:5950 (flag k now pinned by k03: reword "row and mutant are NOT ..."). Optional (review 2.3): F1B mutants for S_UNDEF unknown=fail/warning,
    setVarPrefix read in pl-read.jl, print_write_options flag-table branch; at least list them in the NOT LISTED header with reasons.
 D. Gates (daemon logickernel-warm-b4dc834e in ~/code/lk-dstack is NOT RUNNING; `tools/warm.sh status` says "not running". lk-lb3 and lk-lb4a hold two daemons; mine is the third:
