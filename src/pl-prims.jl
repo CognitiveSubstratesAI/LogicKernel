@@ -1333,6 +1333,88 @@ function pl_factorize_term3_va(
     return PL_factorize_term(ld, PL__t0, PL__t0 + 1, PL__t0 + 2) ? FTRUE : FFALSE
 end
 
+# PORT: pl-prims.c term_size as term_size_cells
+# DIVERGES: on a location. The kernel keeps a number or a string in its value table, so no indirect is on the
+# stacks to measure: the cells such a value takes in swipl are computed from it (`_indirect_cells`).
+# The term is walked as in `term_variables_loop_cells`; no `initvisited` (the mark stack is empty here).
+"The size, in cells, of the term at location `l`, as soon as it is above `max` (pl-prims.c `term_size`)."
+function term_size_cells(ld::PL_local_data{T}, l::Int, max::Int)::Int where {T}
+    count = 0
+    a = ld.walk_agenda
+    initCellAgenda!(a, 1, l)                                # initTermAgenda(&agenda, 1, p)
+    while true
+        q = nextCellAgendaNoDeRef!(a)
+        q == 0 && break
+        k, w, _ = _deref_loc(ld, q)                         # nextTermAgenda: deRef(t)
+        if k == DU_ATTVAR                                   # isAttVar(*t)
+            count += 1
+            count > max && break
+            pushWorkCellAgenda!(a, 1, valPtr(w))            # pushWorkAgenda(&agenda, 1, valPAttVar(*t))
+        elseif k == DU_VALUE                                # isIndirect(*t)
+            count += _indirect_cells(ld, w)                 # wsizeofInd(*p)+2
+            count > max && break
+        elseif k == DU_WORD && _is_gcompound(w)             # isTerm(*t)
+            c = valPtr(w)
+            visitedWord_cells(ld, c) && continue            # visited(f)
+            arity = arityFunctor(ld.functors, ld.gstack[c])
+            count += arity + 1
+            count > max && break
+            pushWorkCellAgenda!(a, arity, c + 1)            # pushWorkAgenda(&agenda, arity, f->arguments)
+        end
+    end
+
+    clearCellAgenda!(a)
+    unvisit_cells(ld)                                       # unvisit()
+    return count
+end
+
+# ORIGINAL: the cells a value-table word takes as swipl 10.1.19 lays it out, measured with `$term_size/3`:
+# a tagged integer none, a float 3, an integer 3 + its limbs, a rational 4 + the limbs of numerator and
+# denominator, a string (n+9)/8 words (a wide string (12+4n)/8: its marker takes one wchar) + 2.
+"The cells `wsizeofInd+2` of an indirect: 0 for a tagged integer; a float 3; an integer 3 + its 64-bit limbs; a rational 4 + the limbs of both; a string its words + 2."
+function _indirect_cells(ld::PL_local_data{T}, w::word)::Int where {T}
+    isTaggedIntW(w) && return 0                             # not indirect
+    p = _value_term(ld, w)
+    nk = number_kind(p)
+    nk === NUM_FLOAT && return 3
+    nk === NUM_INTEGER && return 3 + _limbs64(bigint_value(p))
+    if nk === NUM_RATIONAL
+        r = rational_value(p)
+        return 4 + _limbs64(numerator(r)) + _limbs64(denominator(r))
+    end
+    n = 0
+    wide = false
+    for c in string_value(p)                                # allocString: the marker byte, padded
+        n += 1
+        wide |= c > '\u00ff'
+    end
+    return (wide ? (12 + 4 * n) : (n + 9)) ÷ 8 + 2
+end
+
+"The number of 64-bit limbs of the integer `n` (GMP's `mpz_size`)."
+_limbs64(n::Integer)::Int = (ndigits(abs(n); base = 2) + 63) ÷ 64
+
+# PORT: pl-prims.c term_size as pl_term_size3_va
+# (PRED_IMPL("$term_size", 3, term_size, 0))
+"`'\$term_size'(+Term, +Max, -Size)`: `Size` is the size of `Term` on the stacks in cells; fails when it is above `Max` (pl-prims.c)."
+function pl_term_size3_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    t, mx, count = PL__t0, PL__t0 + 1, PL__t0 + 2
+
+    if PL_is_variable(ld, mx)
+        m = typemax(Int)                                    # (size_t)-1
+    else
+        m = PL_get_size_ex(ld, mx)
+        m === nothing && return FFALSE
+    end
+
+    c = term_size_cells(ld, -(t + 1), m)
+    c > m && return FFALSE
+
+    return PL_unify_integer(ld, count, c) ? FTRUE : FFALSE
+end
+
 # ── the standard order on CELLS (L1d step 1; the workspace's L1_plan/stageL1d_design.md §3) ──────
 # Locations as `do_unify_cells`'s (a global position, or `-i` for slot `i`). The order is the term
 # compare's, so a sort or a `==` gives the same answer on either path: variables by POSITION
@@ -3993,6 +4075,7 @@ const PL_predicates_from_prims = (
     PL_extension("atom", 1, pl_atom1_va, PL_FA_ISO | PL_FA_VARARGS),
     PL_extension("string", 1, pl_string1_va, PL_FA_VARARGS),
     PL_extension("ground", 1, pl_ground1_va, PL_FA_ISO | PL_FA_VARARGS),
+    PL_extension("\$term_size", 3, pl_term_size3_va, PL_FA_VARARGS),
     PL_extension("acyclic_term", 1, pl_acyclic_term1_va, PL_FA_ISO | PL_FA_VARARGS),
     PL_extension("cyclic_term", 1, pl_cyclic_term1_va, PL_FA_VARARGS),
     PL_extension("\$factorize_term", 3, pl_factorize_term3_va, PL_FA_VARARGS),
