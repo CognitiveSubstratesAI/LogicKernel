@@ -22,8 +22,8 @@
 # (`alloc_attvar`), without it (`copy_term_nat/2`) an attvar is copied as a plain variable.
 # NOT PORTED: `copy_term/4`, `copy_term_nat/4` (`COPY_MARKED`, `mark_vars`, so `COPYING_ATTVAR` and
 # `MC_WALK_COPY`: their only readers are `COPY_MARKED` tests), `size_abstract_term/3`
-# (`COPY_ABSTRACT`), `duplicate_term`'s `nshare`/`share` (the shared subterms of `duplicate_term/2`
-# are none: `nshare` is 0) and the fast heap terms (`$fast_record`, `term_to_fastheap`).
+# (`COPY_ABSTRACT`) and the fast heap terms (`$fast_record`, `term_to_fastheap`). `duplicate_term`'s
+# `nshare`/`share` (the compounds kept shared) are `nb_setarg/3`'s (src/pl-prims.jl).
 
 # PORT: pl-copyterm.c COPY_SHARE
 "Share ground terms (pl-copyterm.c `COPY_SHARE`)."
@@ -33,12 +33,15 @@ const COPY_SHARE = 0x01
 const COPY_ATTRS = 0x02
 
 # PORT: pl-copyterm.c cp_options
-# DIVERGES: `flags` only (no `abstract`, `nshare`, `share`: `size_abstract_term/3` and duplicate_term's
-# shared subterms are not ported).
-"The options of a copy (pl-copyterm.c `cp_options`): its `flags`, `COPY_SHARE` and `COPY_ATTRS`."
+# DIVERGES: `flags`, `nshare` and `share` only (no `abstract`: `size_abstract_term/3` is not ported). `share`
+# is the first of `nshare` consecutive term references whose compounds `duplicate_term` keeps shared.
+"The options of a copy (pl-copyterm.c `cp_options`): its `flags`, `COPY_SHARE` and `COPY_ATTRS`, and the `nshare` terms at `share`."
 struct cp_options
     flags::Int
+    nshare::Int
+    share::Int
 end
+cp_options(flags::Integer) = cp_options(Int(flags), 0, 0)
 
 # ── copying on the CELLS (L1d step 6; the workspace's L1_plan/stageL1d_design.md §3f) ───────────
 # Upstream's three passes on locations: mark (`mark_for_copy`, `mark_for_duplicate`), copy
@@ -213,11 +216,29 @@ function mark_for_copy_cells(ld::PL_local_data{T}, start::Int, flags::Int)::Int 
     end
 end
 
+# PORT: pl-copyterm.c share_for_duplicate as share_for_duplicate_cells
+# DIVERGES: `c` is the position of the compound's functor cell; the shared terms are compound words in
+# term references (`may_share_in_duplicate`), read from the slots.
+"Whether the compound at functor position `c` is one of the `options.nshare` terms to keep shared (pl-copyterm.c)."
+function share_for_duplicate_cells(ld::PL_local_data, c::Int, options::cp_options)::Bool
+    for i in 0:(options.nshare - 1)
+        w = ld.slots[options.share + i + 1]                 # Word p = valTermRef(options->share+i)
+        _is_gcompound(w) && valPtr(w) == c && return true   # t == valueTerm(*p)
+    end
+    return false
+end
+
 # PORT: pl-copyterm.c mark_for_duplicate as mark_for_duplicate_cells
-# DIVERGES: on locations, the one-sided cell agenda; no `nshare` (duplicate_term/2 shares nothing).
-# An attributed variable's marks are in its word, as upstream.
+# DIVERGES: on locations, the one-sided cell agenda; the 3-argument form is `duplicate_term/2`'s
+# (`nshare` 0). An attributed variable's marks are in its word, as upstream.
 "Mark the term at location `l` for `duplicate_term` (pl-copyterm.c `mark_for_duplicate`): 1."
-function mark_for_duplicate_cells(ld::PL_local_data{T}, l::Int, flags::Int)::Int where {T}
+mark_for_duplicate_cells(ld::PL_local_data{T}, l::Int, flags::Int) where {T} =
+    mark_for_duplicate_cells(ld, l, flags, cp_options(flags))
+
+"`mark_for_duplicate_cells` with the `options` of the copy: a term of `options.share` is marked ground, so it is shared (pl-copyterm.c)."
+function mark_for_duplicate_cells(
+    ld::PL_local_data{T}, l::Int, flags::Int, options::cp_options
+)::Int where {T}
     a = ld.walk_agenda
     initCellAgenda!(a, 1, l)
     while true
@@ -251,7 +272,11 @@ function mark_for_duplicate_cells(ld::PL_local_data{T}, l::Int, flags::Int)::Int
         elseif k == DU_WORD && _is_gcompound(w)             # TAG_COMPOUND
             c = valPtr(w)
             f = ld.gstack[c]
-            if (f & BOTH_MASK) == 0
+            if (f & BOTH_MASK) == 0                         # virgin(t->definition)
+                if options.nshare != 0 && share_for_duplicate_cells(ld, c, options)
+                    ld.gstack[c] = f | FIRST_MASK           # set_ground(t->definition)
+                    continue
+                end
                 ld.gstack[c] = f | MARK_MASK
                 pushWorkCellAgenda!(a, arityFunctor(ld.functors, f), c + 1)
             elseif (f & BOTH_MASK) == MARK_MASK
@@ -449,7 +474,7 @@ function do_copy_term_cells(
     rc = if (fl & COPY_SHARE) != 0
         mark_for_copy_cells(ld, src, fl)
     else
-        mark_for_duplicate_cells(ld, src, fl)
+        mark_for_duplicate_cells(ld, src, fl, options)
     end
     if rc != 1
         cp_unmark_cells(ld, src, fl)
@@ -535,6 +560,15 @@ function pl_duplicate_term2_va(
     copy = PL_new_term_ref(ld)
     duplicate_term(ld, A1, copy) || return FFALSE
     return PL_unify(ld, copy, A2) ? FTRUE : FFALSE
+end
+
+# PORT: pl-copyterm.c duplicate_term
+# DIVERGES: none beyond `copy_term_refs`'s; `share` is the first of `nshare` consecutive term references.
+"Make `copy` a duplicate of `in` that shares no compound with it, except the `nshare` compounds at `share` (pl-copyterm.c)."
+function duplicate_term(
+    ld::PL_local_data{T}, in::term_t, copy::term_t, nshare::Int, share::term_t
+)::Bool where {T}
+    return copy_term_refs(ld, in, copy, cp_options(COPY_ATTRS, nshare, share))
 end
 
 # PORT: pl-copyterm.c BeginPredDefs as PL_predicates_from_copyterm
