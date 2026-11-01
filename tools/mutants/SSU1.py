@@ -89,8 +89,8 @@ MUTANTS = [
          old="        \"\\$rule\", 2, pl_ruleva_va,\n",
          new="        \"\\$rule_x\", 2, pl_ruleva_va,\n"),
     dict(id="SSU1-R4 `'$rule'/2` splits the clause as clause/2 does (KILL c15)", file=C, targets=TA,
-         old="    return clause_ndet(ld, A1, A2, PL__ac, PL__ctx, IS_RULE)\n",
-         new="    return clause_ndet(ld, A1, A2, PL__ac, PL__ctx, IS_CLAUSE)\n"),
+         old="    return clause_ndet(ld, A1, A2, A3, A4, PL__ac, PL__ctx, IS_RULE)\n",
+         new="    return clause_ndet(ld, A1, A2, A3, A4, PL__ac, PL__ctx, IS_CLAUSE)\n"),
     # ── pl-proc.c add_ssu_clause / retract ──
     dict(id="SSU1-A1 an SSU clause is added to a normal predicate (KILL a03, a15)", file=P, targets=TA,
          old="                def.flags |= P_SSU_DET\n            else\n                return PL_error(ld, ERR_PERMISSION_SSU_DEF, def)\n",
@@ -111,8 +111,8 @@ MUTANTS = [
     # flags, so the neck test is implied by the flags equality above it (tools/mutants/BP2r.py, BP2-Q9c/Q9d).
     # ── pl-supervisor.c chainPredicateSupervisor ──
     dict(id="SSU1-S1 `S_SSU_DET` not prepended (KILL the v-rows' supervisors, the call's refusal)", file=S, targets=TA + TB,
-         old="    if (def.flags & P_SSU_DET) != 0                 # ison(def, P_SSU_DET|P_DET) (P_DET: see above)\n",
-         new="    if false\n"),
+         old="    if meta || (def.flags & P_SSU_DET) != 0         # ison(def, P_SSU_DET|P_DET) (P_DET: see above)\n",
+         new="    if meta\n"),
     # ── boot/init.pl's guard rewrite (the consult stand-in, D7) ──
     dict(id="SSU1-D1 the guard form is not rewritten (KILL c02, c15, v04)", file=B, targets=TA,
          old="        if _init_is(ld, pre, Symbol(\",\"), 2)            # nonvar(Pre), Pre = (Head,Cond), !\n",

@@ -4,7 +4,7 @@
 # format is tools/mutate_drive.py's: `id`, `file`, `old` (must occur EXACTLY once), `new`, optional
 # `equivalent` (a mutant that must SURVIVE, with the code reason) and `targets`.
 #
-# V9f-a, catch/3 (MK1–MK18, MK21, MK22): the new path only. V9f-b, `$/1` and `$/0` (MD1–MD22).
+# V9f-a, catch/3 (MK1–MK18, MK21; MK22 dropped, see below): the new path only. V9f-b, `$/1` and `$/0` (MD1–MD22).
 # Carried from V9e-1 (the meta-call): MC17 and MC19.
 # THE BATTERY OF 2026-10-13 (run 38441762084, 44 mutants): 37 caught; MK6 and MK11 survived for want
 # of a test (now killed: test_query.jl among the targets; t30); MK2, MK13, MD22 and MC19 survived and
@@ -41,9 +41,11 @@ MUTANTS = [
          new='''                PL_put_term(ld, ld.exception_term, ex)
                 return fr'''),                      # kill: t22
     dict(id="MK4 findCatcher runs with the exception pending (no saveWakeup)", file=A,
-         old='''            ld.slots[s + 1] = ld.slots[ld.exception_term + 1]
-            ld.exception_term = 0''',
-         new='''            ld.slots[s + 1] = ld.slots[ld.exception_term + 1]'''),   # kill: the occurs_check testset (t24)
+         old='''            _slot_copy!(ld, s + 1, ld.exception_term + 1)   # *valTermRef(s) = *valTermRef(exception_term)
+            ld.exception_term = 0
+''',
+         new='''            _slot_copy!(ld, s + 1, ld.exception_term + 1)   # *valTermRef(s) = *valTermRef(exception_term)
+'''),   # kill: the occurs_check testset (t24)
     dict(id="MK5 an exception from the catcher's unification does not become the ball", file=W,
          old='''            elseif ld.exception_term != 0               # Exception from PL_unify()
                 PL_put_term(ld, ex, ld.exception_term)
@@ -98,8 +100,10 @@ MUTANTS = [
             Output_0!(ci, I_EXITCATCH)''',
          new='''            Output_0!(ci, I_CATCH)'''),
     dict(id="MK16 I_CATCH decompiles to `true`", file=C,
-         old='''            push!(di.argp, mk_sym(T, Symbol("\\$catch")))''',
-         new='''            push!(di.argp, mk_sym(T, :true))'''),
+         old='''            push!(di.argp, _atom_word!(ld, mk_sym(T, Symbol("\\$catch"))))
+''',
+         new='''            push!(di.argp, _atom_word!(ld, mk_sym(T, :true)))
+'''),
     dict(id="MK17 true/0 the predicate fails", file=P,
          old='''pl_true(ld::PL_local_data{T}) where {T} = FTRUE''',
          new='''pl_true(ld::PL_local_data{T}) where {T} = FFALSE'''),
@@ -108,9 +112,8 @@ MUTANTS = [
          new='''pl_fail(ld::PL_local_data{T}) where {T} = FTRUE'''),
     # (MK19, MK20 — the ball's variable renaming — went with V9f-a's own copy routine: since the
     # copy_term merge the ball copy IS `copy_term` without sharing, whose mutants are V9g's)
-    dict(id="MK22 copy_exception keeps the copy's trail entries (a cyclic ball loses its cycle at the unwind)", file=F,
-         old='''    resize!(ld.trail, tt)                       # frozen: the copy's own bindings keep no trail entry''',
-         new='''    nothing'''),                         # kill: t29
+    # (MK22 — copy_exception keeps the copy's trail entries — is dropped at the landing-B re-stack: the
+    # copy lost its trail copy in L1e e5, `resize!(ld.trail, tt)` is gone, there is no line to mutate)
     dict(id="MK21 catch/3 is not locked", file=E,
          old='''    def.flags |= P_ISO | P_LOCKED''',
          new='''    def.flags |= P_ISO'''),                  # kill: t23 (assertz into catch/3)
@@ -135,8 +138,10 @@ MUTANTS = [
          old='''    det_goal_error(ld, FR, PC - 1, :fail)''',
          new='''    det_goal_error(ld, FR, PC - 1, :nondet)'''),
     dict(id="MD7 a nondeterministic exit of a guarded frame is not checked", file=W,
-         old='''            determinism_error(ld, FR, ld.BFR, :nondet)''',
-         new='''            nothing'''),
+         old='''    determinism_error(ld, FR, ld.BFR, :nondet)
+''',
+         new='''    nothing
+'''),
     dict(id="MD8 a guarded frame left by failure is not reported", file=W,
          old='''            frameFailed(ld, FR)''',
          new='''            nothing'''),
@@ -193,12 +198,10 @@ MUTANTS = [
          old='''Symbol("<meta-call>")''',
          new='''Symbol("\\$call")'''),               # kill: d32's context
     dict(id="MD21 ERR_DET_GOAL declares `guard`", file=R,
-         old='''            found,
-            mk_sym(T, :goal)
-        ]''',
-         new='''            found,
-            mk_sym(T, :guard)
-        ]'''),
+         old='''_err_atom(ld, found), _err_atom(ld, mk_sym(T, :goal))
+''',
+         new='''_err_atom(ld, found), _err_atom(ld, mk_sym(T, :guard))
+'''),
     dict(id="MD22 frameFailed does not move lTop over the failed frame's arguments", file=W,
          old='''    setLTop!(ld, argFrameP(f.base, (f.predicate::Definition{T}).arity))
 

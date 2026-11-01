@@ -566,7 +566,7 @@ end
       r'''    P = max(arg, 1)                                         # %g: precision 0 is 1''', r'''    P = arg'''),
     # ── prepare_sub_format, end_sub_format ──
     m("O1A-K1 a call-back writes straight to the stream while fill points are pending (KILL f75, f97)",
-      r'''    if fstate.pending_rubber == 0 && fd.position !== nothing &&''', r'''    if true && fd.position !== nothing &&'''),
+      r'''    if fstate.pending_rubber == 0 && fdp !== nothing && fdp.linepos == COLUMN(fstate)''', r'''    if true && fdp !== nothing && fdp.linepos == COLUMN(fstate)'''),
     m("O1A-K2 a call-back's string output moves the column by its length only (KILL f97)",
       r'''            state.fstate.pos.linepos = c0 + lp''', r'''            state.fstate.pos.linepos = lp'''),
     m("O1A-K3 a call-back that wrote straight to the stream does not hand its column back (KILL f67, f74)",
