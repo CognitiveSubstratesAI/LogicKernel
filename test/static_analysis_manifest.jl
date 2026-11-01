@@ -2536,7 +2536,28 @@ function _manifest_index(T)
         (LK._assertDefinition!, Tuple{GD, LD, D, C, CR}, false),
         (LK.retractClauseDefinition!, Tuple{GD, LD, D, C, Bool}, false),
         (LK.announceErasedClause, Tuple{GD, LD, C}, false),
-        (LK.cleanDefinition!, Tuple{GD, LD, D, DDI, UInt64, Base.RefValue{Bool}}, false)
+        (LK.cleanDefinition!, Tuple{GD, LD, D, DDI, UInt64, Base.RefValue{Bool}}, false),
+        # BOOTPRED-dict — the remaining pl-dict.c predicates (src/pl-dict.jl)
+        (LK.put_dict4, Tuple{LD, Int, Int, Int, Int}, false),
+        (LK.pl_dict_pairs, Tuple{LD, Int}, false),
+        (LK.pl_dict_sort_indexes, Tuple{LD, Int, Int}, false),
+        (LK.pl_dict_pair, Tuple{LD, Int, Union{Nothing, Vector{Int}}, Int, Int}, false),
+        (LK.put_pair, Tuple{LD, Int, Int, Int, Int, Int}, false),
+        (LK.del_dict, Tuple{LD, UInt64, UInt64}, false),
+        (LK.partial_unify_dict, Tuple{LD, UInt64, UInt64}, false),
+        (LK.unify_left_dict, Tuple{LD, UInt64, UInt64}, false),
+        (LK.copy_keys_dict, Tuple{LD, UInt64}, false),
+        (LK.same_keys_dict, Tuple{LD, UInt64, UInt64}, false),
+        (LK.unify_dict_copy, Tuple{LD, Int, Int, UInt64}, false),
+        (LK.get_dict_kv, Tuple{LD, Int, Int}, false),
+        [
+            (f, Tuple{LD, Int, Int, LK.foreign_context{T}}, false) for f in (
+                LK.pl_get_dict_ex3_va, LK.pl_get_dict5_va, LK.pl_put_dict4_va,
+                LK.pl_dict_pairs3_va, LK.pl_del_dict4_va, LK.pl_unify_left_dict2_va,
+                LK.pl_punify_dict2_va, LK.pl_dict_same_keys2_va, LK.pl_get_dict_kv4_va,
+                LK.pl_get_dict_kv6_va, LK.pl_get_dict_kv8_va
+            )
+        ]...
     )
 end
 
