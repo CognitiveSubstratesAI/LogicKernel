@@ -112,3 +112,10 @@ JET on the `Union` uses of `d` and `keep` and the unused `PL__ac`. Coder 3 adds:
 - The Pkg.test-way run has no swipl on PATH (the live check prints "NOT RUN"); the pins are swipl's from the generator.
 - D-0282 (dispatcher): before gate/bootpred run `warm.sh file test/test_static_analysis.jl reference` (JET + Aqua + AllocCheck) and fix dispatch
   findings in the new code by concrete types.
+- Rows: bp13/bp16/bp56 failed once (kernel: existence_error(procedure, ','/2) and member/2): callProlog resolves the goal's functor (pl-pro.c, as
+  upstream's pl_with_mutex), and `','/2` (boot/init.pl) and member/2 (library(lists)) are not loaded. Inputs changed (bp_p2, bp_bind, bp_mem in
+  `_BP_PROGRAM`), expected values untouched: swipl 10.1.19 re-run twice, byte-identical, `diff` against the old pins empty.
+  CHECKLIST (LB4, when boot/init.pl loads): add rows `with_mutex(m, (p(X), X > 1))` -> 2 and `with_mutex(m, (X = f(Y), Y = 1))` -> f(1) (swipl's answers).
+- Gate run so far (all on the lk-bootpred daemon, SHA a3d353d + this handoff): rows 423/423 on the three term types; test_type_discipline 33/33;
+  test/foreign/test_builtins_swipl.jl 186/186; test/test_static_analysis.jl reference (JET + Aqua + AllocCheck, D-0282) 3746/3746, 53 min, no SKIP/Warning;
+  `tools/pkgtest_way.sh` on test_bootpred_swipl.jl and test_builtins_swipl.jl passed (1627 / 248 MiB); `warm.sh check` PASS (340 s).
