@@ -485,9 +485,14 @@ end
         write(path, "[].\n")
         gd = LK.PL_global_data{_TL}()
         ld = LK.PL_local_data{_TL}(gd)
+        # user:exception/3 is declared dynamic at the boot (G1, as swipl's init.pl), so the test compares with the set before the load
+        defined(gd) = Set(
+            k for (k, p) in LK.MODULE_user(gd).procedures if LK.isDefinedProcedure(gd, p)
+        )
+        before = defined(gd)
         st, _, msgs = LK.load_file!(gd, ld, path)
         @test st === :ok && isempty(msgs)
-        @test !any(p -> LK.isDefinedProcedure(gd, p), values(LK.MODULE_user(gd).procedures))
+        @test defined(gd) == before
         if _TL_SWIPL !== nothing
             g = "consult('$path'), findall(N/A, (current_predicate(user:N/A), N == []), L), print(L), nl"
             @test chomp(
