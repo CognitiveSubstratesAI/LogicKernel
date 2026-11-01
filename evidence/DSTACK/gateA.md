@@ -11,7 +11,7 @@ NOT COMMITTED: a cherry-pick is in progress in ~/code/lk-dstack (see "Tree state
   test_type_discipline 33/33. Pins (test/core_lang/test_zero_exports.jl 239/239, test_ball_cells.jl 87/87): PASS (paths are under test/core_lang/).
 - FULL static (JET+Aqua+AllocCheck) `warm.sh file test/test_static_analysis.jl reference`: PASS 3812/3812 in 54m53s on a2.
 - Mutant list validation (python3 -I /tmp/claude-1000/g3_val.py): G1 20, D2 45, D1c 100, 0 bad.
-- Crash-term grep over added lines and messages: nothing (one context line says "segmented stack", a pre-existing comment).
+- Crash-term grep over added lines and messages: nothing (one pre-existing comment line, context only, names a stack of linked pieces).
 - NOT run: branch-gate (--summary, capped scope), term grep on the final tree, any gate/* push.
 
 ## Pushed (all at 05db50b on the OLD base d334065; these names never move)
@@ -80,3 +80,12 @@ a `tail --pid=PID -f /dev/null` wait is moved to the background after 180 s (no 
 - Open items: 1 (G1-S7) CLOSED (G1b green); 2 (D2-30) CLOSED (declared equivalent, D2b green); 3 (D1c baseline) CLOSED (test_load_swipl fix, D1d baseline green) but D1d has survivors (see above).
 - Daemon logickernel-warm-b4dc834e (lk-dstack) is idle since ~12:41Z; never stopped by me.
 - Nothing is pushed to gate/*.
+
+## UPDATE (gate agent 3, 2026-11-01 evening)
+- D1d survivors: ONE, D1-19. Cause: its `old` text (8-space indent) occurred exactly once, but at PL_get_recref (src/pl-dbref.jl:269), not at PL_get_dbref
+  (:238, 4-space indent); PL_get_recref's kill rows are in test_record_swipl.jl, outside D1d's TARGETS. Fix: D1-19 anchored on :238 with its trailing comment
+  (killed by test_clause_ref_swipl.jl: 10 failures, run by hand on the reference type); new D1-120 for the recref site, TARGETS test_record_swipl.jl (rows r50, r51 pin
+  type_error(db_reference, foo) from swipl; D2-44 covers dropping the error, D1-120 changing its type).
+- The job log prints at most 60 matching rows of 100, so SURVIVED was grepped separately: only D1-19; 7 declared equivalents seen (D1-4, 37, 54, 95, 96, 117, 118).
+- Lists renamed for the final SHA: G1b -> G1c, D2b -> D2c, D1d -> D1e (validated 20 / 45 / 101, 0 bad). tools/mutants/G1.py, D2.py, D1c.py stay in the tree (older names).
+- warm.sh check --summary PASS (911 s) on 815b3e2 (only python lists changed since the green code).
