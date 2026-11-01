@@ -1274,7 +1274,7 @@ function _manifest_index(T)
         (LK.setOccursCheck, Tuple{LD, T}, false),
         (LK.setStreamTypeCheck, Tuple{LD, T}, false),
         (LK.create_oneof, Tuple{LD, Int64}, false),
-        (LK.set_oneof, Tuple{LK.prolog_flag{T}, LK.oneof_t{T}, UInt32}, false),
+        (LK.set_oneof, Tuple{LD, LK.prolog_flag{T}, LK.oneof_t{T}, UInt32}, false),
         (LK.check_oneof_flag, Tuple{LD, LK.oneof_t{T}, T, Bool}, false),
         (LK.set_flag_type, Tuple{LK.prolog_flag{T}, UInt32}, false),
         (LK.set_flag_atom, Tuple{LK.prolog_flag{T}, T}, false),
@@ -1598,7 +1598,7 @@ function _manifest_index(T)
         (LK.frameFinished, Tuple{LD, Int, LK.finished}, false),
         (LK.mustBeCallable, Tuple{LD, Int}, false),
         (LK.callProlog, Tuple{GD, LD, Int, Int, UInt32}, false),
-        # O1B — the output redirect and with_output_to/2 (pl-file.c; src/os/pl-redirect.jl), callProlog's `ex` (pl-pro.c)
+        # O1B — the output redirect and with_output_to/2 (pl-file.c; src/os/pl-file.jl), callProlog's `ex` (pl-pro.c)
         (LK.callProlog, Tuple{GD, LD, Int, Int, UInt32, Base.RefValue{Int}}, false),
         (LK.redir_context, Tuple{}, false),
         (LK.setStandardStream, Tuple{LD, Int, LK.IOSTREAM}, false),
@@ -1611,7 +1611,12 @@ function _manifest_index(T)
         (LK.pl_with_output_to2_va, Tuple{LD, Int, Int, LK.control_t{T}}, false),
         (
             LK.tellString,
-            Tuple{LD, Base.RefValue{Union{Nothing, Vector{UInt8}}}, Base.RefValue{Int}, LK.IOENC},
+            Tuple{
+                LD,
+                Base.RefValue{Union{Nothing, Vector{UInt8}}},
+                Base.RefValue{Int},
+                LK.IOENC
+            },
             false
         ),
         (LK.toldString, Tuple{LD}, false),
@@ -1619,6 +1624,7 @@ function _manifest_index(T)
         (LK.PL_call_predicate, Tuple{GD, LD, Nothing, UInt32, LK.Procedure{T}, Int}, false),
         (LK.pl_sig_atomic1_va, Tuple{LD, Int, Int, LK.control_t{T}}, false),
         (LK._boot_cleanup!, Tuple{GD}, false),
+        (LK._boot_control!, Tuple{GD}, false),
         (LK._boot_clause!, Tuple{GD, LD, Symbol, Vector{T}, T, UInt64}, false),
         (LK._boot_clause!, Tuple{GD, LD, Symbol, Vector{T}, Nothing, UInt64}, false),
         # V9g-b — the bags: recorded terms (src/pl-rec.jl), findall/3's bag (src/pl-bag.jl), the
@@ -2299,7 +2305,7 @@ function _manifest_index(T)
                 LK.pl_setarg3_va, LK.pl_nb_setarg3_va, LK.pl_nb_linkarg3_va
             )
         ]...,
-        # O1A: src/pl-fmt.jl (pl-fmt.c), format/2,3. All `false`: the text and number paths build strings and vectors.
+        # O1A: src/os/pl-fmt.jl (pl-fmt.c), format/2,3. All `false`: the text and number paths build strings and vectors.
         (LK.PL_format_error, Tuple{LD, String}, false),
         (LK.PL_format_arg_error, Tuple{LD, String, Int}, false),
         (LK.COLUMN, Tuple{FST}, false),
