@@ -1,18 +1,18 @@
 # D stack split A/B (D-0284 item 4) — EDIT-ONLY, nothing compiled or run
 
-Base: origin/main e863f77 (fetched 2026-11-01, unmoved). Source of truth for the B tree: local wip/dstack-r3 (code SHA 31034e9; evidence 9b90480, 76e53d3).
+Base: origin/main d334065 (MOD6 landed; fetched 2026-11-01). RE-STACKED (restack3, see evidence/DSTACK/restack3.md): the SHAs and branch names below are the NEW ones, wip/dstack-a2 and wip/dstack-b2; the commit lists further down give the OLD SHAs of wip/dstack-a / wip/dstack-b (e863f77 base), the subjects are the same, `git log d334065..wip/dstack-a2` gives the new SHAs. Source of truth for the B tree before the re-stack: local wip/dstack-r3 (code SHA 31034e9; evidence 9b90480, 76e53d3).
 
 ## The two landings
 | landing | local branch | tip (code, before the gate's own fmt/inventory commits) | gate branch | mutants branch |
 |---|---|---|---|---|
-| A = G1 + D2 | wip/dstack-a | 3b8f8aa029d459b00bd1d4a66be46c7460f04bbb | gate/dstack-a2 | mutants/G1, mutants/D2 (D1c rides on mutants/D2) |
-| B = O1B + O1A + F1b, stacked on A | wip/dstack-b | the commit carrying this file (see `git log -1 wip/dstack-b`); its parent chain: A tip then 62 commits | gate/dstack-b2 | mutants/O1B, mutants/O1A, mutants/F1B |
+| A = G1 + D2 | wip/dstack-a2 | 568fa9b899341a9adadffbb345bdc4d7d698d0d3 (old wip/dstack-a: 3b8f8aa) | gate/dstack-a2 | mutants/G1, mutants/D2 (D1c rides on mutants/D2) |
+| B = O1B + O1A + F1b, stacked on A | wip/dstack-b2 | code SHA cc78b9af53a7481513d05b4f0b9d650caf40ee56 (old wip/dstack-b: 7f0b41e); the tip is the commit carrying this file (see `git log -1 wip/dstack-b2`); its parent chain: A tip then 62 commits | gate/dstack-b2 | mutants/O1B, mutants/O1A, mutants/F1B |
 
 `git ls-remote --heads origin` (2026-11-01): none of gate/dstack-a2, gate/dstack-b2, mutants/G1, mutants/D2, mutants/O1B, mutants/O1A, mutants/F1B, mutants/D1c exists. Re-check before pushing.
 RULE: B is built on A's tip SHA. If the A gate adds commits (fmt, inventory, fixes) the B branch is re-stacked onto the new A tip by cherry-pick under a NEW name (gate/dstack-b3, no force); B then gates after A is green, or at the same time on the first A SHA only if A needs no change.
 
 ## Tree checks done (git only)
-- `git diff wip/dstack-r3 wip/dstack-b` is EMPTY over the whole tree (src, test, tools, docs, evidence), generated blocks included (r3's inventory and graph are the regenerated ones: 31034e9).
+- After the re-stack: `git diff wip/dstack-b wip/dstack-b2 -- src test tools` shows only the MOD6 delta and the pl-global.jl/pl-fli.jl merge of it (restack3.md). Before it: `git diff wip/dstack-r3 wip/dstack-b` was EMPTY over the whole tree (src, test, tools, docs, evidence), generated blocks included (r3's inventory and graph are the regenerated ones: 31034e9).
 - A: `test/static_analysis_manifest.jl` brackets balance (python scan, strings and comments skipped); the G1 block and the D2 block each end `]...,`; `src/pl-ext.jl` _PRED_TABLES order ... rec, attvar, gvar, dict (as pl-ext.c) in the table AND in _FOREIGN_VA AND in the comment.
 - A mutant lists (python, earlier agent): G1 20, D2 45, D1c 100: 0 bad. B (on r3 == B tip): 6 lists 0 bad.
 - docs/port_inventory.md and the generated blocks of docs/architecture.md on A are STALE: the A gate runs `warm.sh inventory`. On B they equal r3's.
