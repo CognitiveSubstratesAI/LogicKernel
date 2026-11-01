@@ -846,6 +846,43 @@ function pl_get_dict5_va(
     return PL_unify(ld, A4, t) ? FTRUE : FFALSE
 end
 
+# PORT: pl-dict.c put_dict4
+# DIVERGES: as `pl_get_dict5_va`: the pair (`av`, `av+1` upstream) is two global cells, the value cell links `value`; no
+# `Mark`/`Undo` retry (the overflow is raised by `ensureGlobalSpace`).
+"`put_dict(+Key, +Dict0, +Value, -Dict)`: `Dict` is `Dict0` with `Key` added or replaced by `Value` (pl-dict.c)."
+function put_dict4(
+    ld::PL_local_data{T}, key::term_t, dict::term_t, value::term_t, newdict::term_t
+)::foreign_t where {T}
+    dt = PL_new_term_refs(ld, 1)
+
+    if get_create_dict_ex(ld, dict, dt)
+        k = get_name_ex(ld, key)
+        k === nothing && return FFALSE
+        av = allocGlobalCells!(ld, 2)
+        _dict_link!(ld, av, -(value + 1))           # PL_put_term(av, value)
+        ld.gstack[av + 1] = k
+
+        _, d0, _ = _deref_loc(ld, -(dt + 1))
+        new = put_dict(ld, d0, 1, av)
+        if new !== nothing
+            t = PL_new_term_ref(ld)
+            ld.slots[t + 1] = new
+            return PL_unify(ld, newdict, t) ? FTRUE : FFALSE
+        end
+    end
+
+    return FFALSE
+end
+
+# PORT: pl-dict.c put_dict as pl_put_dict4_va
+# (PRED_IMPL("put_dict", 4, put_dict, 0))
+"`put_dict(+Key, +DictIn, +Value, -DictOut)`: `DictOut` is `DictIn` with `Key` set to `Value` (pl-dict.c)."
+function pl_put_dict4_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    return put_dict4(ld, PL__t0, PL__t0 + 1, PL__t0 + 2, PL__t0 + 3)
+end
+
 # PORT: pl-dict.c BeginPredDefs as PL_predicates_from_dict
 # DIVERGES: the ported entries, in upstream's order (upstream's table also has `dict_pairs/3`, `dict_same_keys/2`,
 # `put_dict/4`, `b_set_dict/3`, `nb_set_dict/3`, `nb_link_dict/3`, `$get_dict_ex/3`, `del_dict/4`, `get_dict/5`, `:</2`,
@@ -859,5 +896,6 @@ const PL_predicates_from_dict = (
     PL_extension("get_dict", 3, pl_get_dict3_va, PL_FA_NONDETERMINISTIC | PL_FA_VARARGS),
     PL_extension("select_dict", 3, pl_select_dict3_va, PL_FA_VARARGS),
     PL_extension("\$get_dict_ex", 3, pl_get_dict_ex3_va, PL_FA_NONDETERMINISTIC | PL_FA_VARARGS),
-    PL_extension("get_dict", 5, pl_get_dict5_va, PL_FA_VARARGS)
+    PL_extension("get_dict", 5, pl_get_dict5_va, PL_FA_VARARGS),
+    PL_extension("put_dict", 4, pl_put_dict4_va, PL_FA_VARARGS)
 )
