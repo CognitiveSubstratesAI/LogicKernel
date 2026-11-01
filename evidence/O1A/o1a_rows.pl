@@ -6,7 +6,7 @@ nl_out :- write(a), nl, write(b).
 thrower :- throw(boom).
 failer :- fail.
 tabs(0, S, S) :- !.
-tabs(N, S0, S) :- string_concat(S0, "~t", S1), N1 is N-1, tabs(N1, S1, S).
+tabs(N, S0, S) :- atom_concat(S0, '~t', S1), N1 is N-1, tabs(N1, S1, S).
 t_f01(R) :- catch((format(atom(R), "hello", [])), error(SsuE, _), R = raised(SsuE)).
 t_f02(R) :- catch((format(atom(R), "~a|~w|~q", ['a b', 'c d', 'e f'])), error(SsuE, _), R = raised(SsuE)).
 t_f03(R) :- catch((format(atom(R), "~p", ['a b'])), error(SsuE, _), R = raised(SsuE)).

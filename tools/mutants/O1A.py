@@ -1,4 +1,4 @@
-# ORIGINAL: O1A's mutant list — the swipl-devel counterpart is src/os/pl-fmt.c, the Julia port is src/pl-fmt.jl.
+# ORIGINAL: O1A's mutant list — the swipl-devel counterpart is src/os/pl-fmt.c, the Julia port is src/os/pl-fmt.jl.
 # tools/mutants/O1A.py — the mutation battery of O1A (format/2,3: pl-fmt.c format, format_impl, do_format's directives
 # ~a ~c ~e ~f ~g ~h ~d ~D ~r ~R ~I ~s ~i ~k ~p ~q ~w ~W ~@ ~~ ~n ~N ~t ~| ~+, the numeric and `*` and backquote arguments, the
 # column machinery (distribute_rubber, emit_rubber, update_column, outchr, outstring, oututf8), formatInteger, formatFloat and its
@@ -8,7 +8,7 @@
 # f01-f99, e01-e24, k01-k02 named in each id's KILL; evidence/O1A/gen_rows.py). Verdicts: written by the battery, not yet run.
 # The `old` strings are written in the repo's formatted style BEFORE `tools/warm.sh fmt` ran (the coding agent had no daemon):
 # RE-FIT any that fmt rewraps (mutate_drive.py refuses a string that does not occur exactly once). Every `old` was checked to
-# occur exactly once in src/pl-fmt.jl at wip/o1a (a text count, no Julia; tools/mutants/ is not read by the test files).
+# occur exactly once in src/os/pl-fmt.jl at wip/o1a (a text count, no Julia; tools/mutants/ is not read by the test files).
 # The rows were generated from swipl 10.1.19, so a survivor means the kernel's format cannot be told from swipl's on that path.
 # NOT LISTED (each with its reason):
 #   * do_format's `argument overflow` (pl-fmt.c:555): upstream's `int arg2 = arg*10+dw` wraps (undefined in C) and the compiled
@@ -19,7 +19,7 @@
 #     decodes it as UTF-8 (audit flag (e)); no row pins the answer.
 #   * groupDigits, countGroups, ths_to_utf8: reached only with a stream locale that has grouping (`~:f`); the kernel has none (D9),
 #     the K rows pin the C-locale answer; the functions are dead for every row.
-#   * formatFloat's final `if locale !== nothing` (src/pl-fmt.jl, the tail of formatFloat): the locale is always prolog_locale on
+#   * formatFloat's final `if locale !== nothing` (src/os/pl-fmt.jl, the tail of formatFloat): the locale is always prolog_locale on
 #     the kernel, so localizeDecimalPoint rewrites "." to "." (EQUIVALENT, read not run).
 #   * format_predicate/2 and current_format_predicate/2: refused by name / failing (D9); not exercised by the rows.
 # TARGETS (audit D-0238): the step's own file first (a run stops at the first target that decides). Mutants of the paths every
@@ -62,7 +62,7 @@ TO = [
 ]
 TA = TF + TO
 TARGETS = TA   # the baseline's (mutate_ci.py plan reads TARGETS)
-W = "src/pl-fmt.jl"
+W = "src/os/pl-fmt.jl"
 
 
 def m(id, old, new, targets=TF, equivalent=None):
@@ -175,7 +175,7 @@ end
     m("O1A-C6 the guard `here < flen` of the backquote argument (c is the character at `here`, so it holds whenever c is a backquote)",
       r'''            elseif c == Int('`') && here < flen
 ''', r'''            elseif c == Int('`')
-''', equivalent="src/pl-fmt.jl do_format (`c = get_chr_from_text(fmt, here)` returns 0 past the end, so c == '`' implies here < flen) — read, not run; upstream's `here < fmt->length` is the same guard on a NUL-terminated text"),
+''', equivalent="src/os/pl-fmt.jl do_format (`c = get_chr_from_text(fmt, here)` returns 0 past the end, so c == '`' implies here < flen) — read, not run; upstream's `here < fmt->length` is the same guard on a NUL-terminated text"),
     m("O1A-C7 the colon modifier is not recorded (KILL f77, f78, k01)",
       r'''                mod_colon = true
 ''', r'''                mod_colon = false
@@ -251,8 +251,8 @@ end
 ''', r'''                nothing
 '''),
     m("O1A-D20 ~@ raises no call-back exception: format fails (KILL f70)",
-      r'''ex[] != 0 && PL_exception(ld, 0) == 0 && (rc = PL_raise_exception(ld, ex[]))''',
-      r'''false && (rc = PL_raise_exception(ld, ex[]))'''),
+      r'''ex[] != 0 && PL_exception(ld, 0) == 0 &&''',
+      r'''false &&'''),
     m("O1A-D21 ~~ prints nothing (KILL f16)",
       r'''                outchr(state, Int('~')) || return false
 ''', r'''                nothing
@@ -316,7 +316,7 @@ end
     m("O1A-F7 a stop left of the column starts a new line without the colon modifier (KILL f59)",
       r'''if stop < COLUMN(state) && mod_colon''', r'''if stop < COLUMN(state)'''),
     m("O1A-F8 the re-indent after ~N:| pads with a space, not the fill character (KILL f78)",
-      r'''state.rub[state.pending_rubber].pad : Int(' ')''', r'''Int(' ') : Int(' ')'''),
+      r'''state.rub[state.pending_rubber].pad''', r'''Int(' ')'''),
     m("O1A-F9 the re-indent line does not reset the column (KILL f77, f78)",
       r'''                    update_column(state, Int('\n'))
 ''', r'''                    nothing

@@ -42,8 +42,8 @@ if _PSWIPL !== nothing
         @test parse(Int64, hi) == PLMAXTAGGEDINT
         @test pv == "true" &&
             truePrologFlag(
-                PL_local_data{DefaultTerm}(PL_global_data{DefaultTerm}()), PLFLAG_PORTABLE_VMI
-            )
+            PL_local_data{DefaultTerm}(PL_global_data{DefaultTerm}()), PLFLAG_PORTABLE_VMI
+        )
     end
 elseif _PSWIPL_REQUIRED
     error(

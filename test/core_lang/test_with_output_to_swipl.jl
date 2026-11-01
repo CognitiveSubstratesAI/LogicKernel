@@ -10,7 +10,7 @@
 using Test, LogicKernel
 const LK = LogicKernel
 
-# TERM TYPES PER CHUNK: REFERENCE — the redirect (src/os/pl-redirect.jl), built on the stream layer; every type in CI and at milestones
+# TERM TYPES PER CHUNK: REFERENCE — the redirect (src/os/pl-file.jl), built on the stream layer; every type in CI and at milestones
 include(joinpath(@__DIR__, "..", "term_under_test.jl"))
 const _WO = lk_term_type(Union{Int64, Float64, String, BigInt, Rational{BigInt}})
 _wos(x) = lk_sym(_WO, Symbol(x))
@@ -123,7 +123,10 @@ const _WO_CASES = [
     ("w21", raw"wo_u(U), with_output_to(chars(C), write(U)), atom_length(U, L), R = L-C"),
     # w22: more than the memory stream's first buffer (3000 characters)
     ("w22", raw"with_output_to(atom(A), wo_rep(300)), atom_length(A, R)"),
-    ("w23", raw"with_output_to(codes(C), wo_rep(300)), atom_codes(A, C), atom_length(A, R)"),
+    (
+        "w23",
+        raw"with_output_to(codes(C), wo_rep(300)), atom_codes(A, C), atom_length(A, R)"
+    ),
     # w24: a bound sink: unified with the text after the goal; a mismatch fails
     ("w24", raw"with_output_to(atom(abc), write(abc)), R = yes"),
     ("w25", raw"( with_output_to(atom(abd), write(abc)) -> R = yes ; R = no )"),
@@ -143,21 +146,51 @@ const _WO_CASES = [
     # w37: failure inside: with_output_to/2 fails, the sink stays unbound, the output is discarded
     ("w37", raw"( with_output_to(atom(_), (write(x), fail)) -> R = yes ; R = no )"),
     ("w38", raw"( with_output_to(atom(A), wo_inner_fail) ; true ), R = A"),
-    ("w39", raw"( with_output_to(atom(_), wo_inner_fail) ; true ), with_output_to(atom(B), write(kept)), R = B"),
+    (
+        "w39",
+        raw"( with_output_to(atom(_), wo_inner_fail) ; true ), with_output_to(atom(B), write(kept)), R = B"
+    ),
     # w40: exceptions inside: the ball passes; the output is discarded and the current output is restored
     ("w40", raw"catch(with_output_to(atom(_), wo_inner_throw), E, true), R = E"),
-    ("w41", raw"catch(with_output_to(atom(_), wo_inner_throw), _, true), with_output_to(atom(B), write(kept)), R = B"),
+    (
+        "w41",
+        raw"catch(with_output_to(atom(_), wo_inner_throw), _, true), with_output_to(atom(B), write(kept)), R = B"
+    ),
     ("w42", raw"catch(with_output_to(atom(A), wo_ball), ball(N, F), true), R = N-F-A"),
-    ("w43", raw"catch(with_output_to(atom(_), atom_length(_, _)), error(E, _), true), R = E"),  # UNVERIFIED on the kernel: gate decides
-    ("w44", raw"catch(with_output_to(string(_), (write(a), atom_length(1, a))), error(E, _), true), R = E"),  # UNVERIFIED on the kernel: gate decides
+    (
+        "w43",
+        raw"catch(with_output_to(atom(_), atom_length(_, _)), error(E, _), true), R = E"
+    ),  # UNVERIFIED on the kernel: gate decides
+    (
+        "w44",
+        raw"catch(with_output_to(string(_), (write(a), atom_length(1, a))), error(E, _), true), R = E"
+    ),  # UNVERIFIED on the kernel: gate decides
     # w45: nested with_output_to/2: the inner text is the inner sink's, the outer gets the rest
-    ("w45", raw"with_output_to(atom(A), (write(a), with_output_to(atom(B), write(b)), write(B), write(c))), R = A-B"),
-    ("w46", raw"with_output_to(atom(A), (write(a), ( with_output_to(atom(_), wo_inner_fail) -> true ; true ), write(c))), R = A"),
-    ("w47", raw"with_output_to(atom(A), (write(a), catch(with_output_to(atom(_), wo_inner_throw), e, true), write(c))), R = A"),
-    ("w48", raw"catch(with_output_to(atom(A), (write(a), with_output_to(atom(_), throw(e)))), E, true), R = E-A"),
-    ("w49", raw"with_output_to(atom(A), (write(a), with_output_to(codes(C), write(bc)), write(C))), R = A"),
+    (
+        "w45",
+        raw"with_output_to(atom(A), (write(a), with_output_to(atom(B), write(b)), write(B), write(c))), R = A-B"
+    ),
+    (
+        "w46",
+        raw"with_output_to(atom(A), (write(a), ( with_output_to(atom(_), wo_inner_fail) -> true ; true ), write(c))), R = A"
+    ),
+    (
+        "w47",
+        raw"with_output_to(atom(A), (write(a), catch(with_output_to(atom(_), wo_inner_throw), e, true), write(c))), R = A"
+    ),
+    (
+        "w48",
+        raw"catch(with_output_to(atom(A), (write(a), with_output_to(atom(_), throw(e)))), E, true), R = E-A"
+    ),
+    (
+        "w49",
+        raw"with_output_to(atom(A), (write(a), with_output_to(codes(C), write(bc)), write(C))), R = A"
+    ),
     ("w50", raw"with_output_to(atom(A), wo_deep(4)), R = A"),
-    ("w51", raw"with_output_to(atom(A), write(1)), with_output_to(atom(B), write(2)), R = A-B"),
+    (
+        "w51",
+        raw"with_output_to(atom(A), write(1)), with_output_to(atom(B), write(2)), R = A-B"
+    ),
     # w52: an explicit stream written inside is not redirected
     ("w52", raw"with_output_to(atom(A), (write(user_error, zz), write(in))), R = A"),
     ("w53", raw"with_output_to(atom(A), (nl(user_error), write(in))), R = A"),
@@ -165,9 +198,15 @@ const _WO_CASES = [
     ("w54", raw"with_output_to(user, true), R = ok"),
     ("w55", raw"with_output_to(user_output, true), R = ok"),
     ("w56", raw"with_output_to(user_error, nl), R = ok"),
-    ("w57", raw"with_output_to(user_error, write(x)), with_output_to(atom(A), write(y)), R = A"),
+    (
+        "w57",
+        raw"with_output_to(user_error, write(x)), with_output_to(atom(A), write(y)), R = A"
+    ),
     ("w58", raw"( with_output_to(user_error, fail) -> R = yes ; R = no )"),
-    ("w59", raw"catch(with_output_to(user_error, throw(e)), E, true), with_output_to(atom(A), write(y)), R = E-A"),
+    (
+        "w59",
+        raw"catch(with_output_to(user_error, throw(e)), E, true), with_output_to(atom(A), write(y)), R = E-A"
+    ),
     # w60: sink errors: unbound, not a sink, a number, no such stream, an input stream
     ("w60", raw"catch(with_output_to(_, true), error(E, _), true), R = E"),
     ("w61", raw"catch(with_output_to(foo(_), true), error(E, _), true), R = E"),
@@ -181,8 +220,14 @@ const _WO_CASES = [
     ("w68", raw"catch(with_output_to(atom(_), _), error(E, _), true), R = E"),  # UNVERIFIED on the kernel: gate decides
     ("w69", raw"catch(with_output_to(atom(_), 1), error(E, _), true), R = E"),  # UNVERIFIED on the kernel: gate decides
     ("w70", raw"catch(with_output_to(atom(_), nosuchpred_wo), error(E, _), true), R = E"),  # UNVERIFIED on the kernel: gate decides
-    ("w71", raw"catch(with_output_to(atom(_), 1), error(_, _), true), with_output_to(atom(B), write(kept)), R = B"),
-    ("w72", raw"catch(with_output_to(foo(_), true), error(_, _), true), with_output_to(atom(B), write(kept)), R = B"),
+    (
+        "w71",
+        raw"catch(with_output_to(atom(_), 1), error(_, _), true), with_output_to(atom(B), write(kept)), R = B"
+    ),
+    (
+        "w72",
+        raw"catch(with_output_to(foo(_), true), error(_, _), true), with_output_to(atom(B), write(kept)), R = B"
+    )
 ]
 
 # swipl 10.1.19-1-gcbf4e189's answers to the program and cases above (the driver's lines; lk-channel evidence/O1B/wo_rows.out)
@@ -330,10 +375,13 @@ end
     @test count(l -> occursin("/1(a[", l), _WO_PINNED) >= 25                             # an atom answer
     @test count(l -> occursin("/1(s[", l), _WO_PINNED) >= 1                              # a string answer
     @test count(l -> occursin("c[91,124,93]/2(i", l), _WO_PINNED) >= 5                   # a code list
-    @test count(l -> occursin("c[116,121,112,101,95,101,114,114,111,114]/2(", l), _WO_PINNED) >= 5   # type_error(output, _) and kin
-    @test _WO_PINNED[findfirst(startswith("t_w22 "), _WO_PINNED)] == "t_w22 c[116,95,119,50,50]/1(i3000)"
+    @test count(
+        l -> occursin("c[116,121,112,101,95,101,114,114,111,114]/2(", l), _WO_PINNED
+    ) >= 5   # type_error(output, _) and kin
+    @test _WO_PINNED[findfirst(startswith("t_w22 "), _WO_PINNED)] ==
+        "t_w22 c[116,95,119,50,50]/1(i3000)"
     @test _WO_PINNED[findfirst(startswith("t_w39 "), _WO_PINNED)] ==
-          "t_w39 c[116,95,119,51,57]/1(a[107,101,112,116])"   # the failed redirect leaves the output where it was
+        "t_w39 c[116,95,119,51,57]/1(a[107,101,112,116])"   # the failed redirect leaves the output where it was
     # white-box: after every row the current output is user_output again and no redirect is left on the stack
     @test isempty(ld.IO_output_stack)
     @test LK.Scurout(ld) === LK.Suser_output(ld)

@@ -1,7 +1,7 @@
 # ORIGINAL: O1B's mutant list — no swipl-devel counterpart.
 # tools/mutants/O1B.py — the mutation battery of O1B (the output redirect of pl-file.c: setStandardStream,
 # pushOutputContext, popOutputContext, redir_context, setupOutputRedirect, closeOutputRedirect, discardOutputRedirect,
-# with_output_to/2, tellString, toldString in src/os/pl-redirect.jl; pl-pro.c callProlog's `ex` out-argument), run ONCE,
+# with_output_to/2, tellString, toldString in src/os/pl-file.jl; pl-pro.c callProlog's `ex` out-argument), run ONCE,
 # in CI (.github/workflows/mutation.yml; locally: tools/mutate.sh run). Format: tools/mutate_drive.py's (as MOD3b.py):
 # `id`, `file`, `old` (must occur EXACTLY once), `new`, optional `equivalent` and `targets`. Killed by
 # test/core_lang/test_with_output_to_swipl.jl (rows w01-w72, named in each id's KILL); a row marked UNVERIFIED in that
@@ -32,7 +32,7 @@ TU = [                                                            # users of wit
 TSA = ["test/core_lang/test_cleanup_swipl.jl", "test/core_lang/test_context_module_swipl.jl", "test/foreign/test_query_answers.jl"]
 REDIR = TS + TF + TU
 TARGETS = TS + TF + TU + TSA        # the baseline's (mutate_ci.py plan reads TARGETS)
-R = "src/os/pl-redirect.jl"
+R = "src/os/pl-file.jl"
 P = "src/pl-pro.jl"
 
 # The two functions share their opening lines: the anchors run on to the line that differs.
@@ -91,8 +91,8 @@ MUTANTS = [
          old="PL_error(ld, ERR_TYPE, mk_sym(T, :output), to)",
          new="PL_error(ld, ERR_TYPE, mk_sym(T, :stream), to)"),
     dict(id="O1B-B5 the alias `user` is not recognised: it is looked up as a stream name and raises (KILL w54)", file=R, targets=TS + TF,
-         old="sym_key(a) == sym_key(mk_sym(T, :user))",
-         new="sym_key(a) == sym_key(mk_sym(T, :usr))"),
+         old="    elseif a !== nothing\n        if isTextAtom(a) && sym_key(a) == sym_key(mk_sym(T, :user))\n            uo = Suser_output(ld)",
+         new="    elseif a !== nothing\n        if isTextAtom(a) && sym_key(a) == sym_key(mk_sym(T, :usr))\n            uo = Suser_output(ld)"),
     dict(id="O1B-B6 an output stream is refused as no output stream: the permission test inverted (KILL w55, w56)", file=R, targets=TS + TF,
          old="            if (s.flags & SIO_OUTPUT) == 0\n",
          new="            if (s.flags & SIO_OUTPUT) != 0\n"),
@@ -128,10 +128,10 @@ MUTANTS = [
          file=R, targets=TS,
          old="    ctx.magic != REDIR_MAGIC && return rval             # already done\n",
          new="    nothing\n",
-         equivalent="src/os/pl-redirect.jl:pl_with_output_to2_va — read, not run: the only caller here calls EITHER closeOutputRedirect OR discardOutputRedirect, once, on a context whose magic setupOutputRedirect just set; the guard is reached only by a second call. O1-A's format/3 calls one of the two once, as upstream (pl-fmt.c)."),
+         equivalent="src/os/pl-file.jl:pl_with_output_to2_va — read, not run: the only caller here calls EITHER closeOutputRedirect OR discardOutputRedirect, once, on a context whose magic setupOutputRedirect just set; the guard is reached only by a second call. O1-A's format/3 calls one of the two once, as upstream (pl-fmt.c)."),
     dict(id="O1B-Q2 setStandardStream without the `old !== s` guard (EQUIVALENT)",
          file=R, targets=TS,
          old="    if old !== s\n",
          new="    if true\n",
-         equivalent="src/os/pl-redirect.jl:setStandardStream — read, not run: for old === s the body takes a reference to s (Sacquire), stores s again and releases the old one (the same s): the count is unchanged, and no row reads it (the stream layer counts only, header NOT PORTED)."),
+         equivalent="src/os/pl-file.jl:setStandardStream — read, not run: for old === s the body takes a reference to s (Sacquire), stores s again and releases the old one (the same s): the count is unchanged, and no row reads it (the stream layer counts only, header NOT PORTED)."),
 ]

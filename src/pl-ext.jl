@@ -160,6 +160,7 @@ function initBuildIns!(gd::PL_global_data{T})::Nothing where {T}
     setBuiltinPredicateProperties!(gd)
     _boot_catch3!(gd)
     _boot_cleanup!(gd)
+    _boot_control!(gd)
     _boot_lists!(gd)
     _boot_bags!(gd)
     _boot_syspred!(gd)
@@ -225,6 +226,61 @@ function _boot_cleanup!(gd::PL_global_data{T})::Nothing where {T}
     return nothing
 end
 
+# DIVERGES (no upstream function; as `_boot_cleanup!`): the control constructs as predicates, as
+# boot/init.pl defines them (init.pl:398-402 and 530 at the pin):
+#     (Mx:If ; Mx:Then) :- !, call(Mx:(If ; Then)).      (Ma:If ; Mb:Then) :- call(Ma:(If ; Mb:Then)).
+#     (G1, G2) :- call((G1, G2)).      (If -> Then) :- call((If -> Then)).
+#     (If *-> Then) :- call((If *-> Then)).      \+ Goal :- \+ Goal.
+# The compiler inlines them in a clause body; a goal reaching `callProlog` (pl-pro.c, which resolves the
+# goal's functor and calls it: with_output_to/2, `format`'s `~@`) is called through these procedures. The
+# declarations `meta_predicate ';'(0,0), ','(0,0), \+(0), '->'(0,0), '*->'(0,0)` (init.pl:360-376) are
+# `_boot_meta!`'s; `'$iso'` (init.pl:388) marks all but `*->`. NOT PORTED: `@/2`, `not/1`, `once/1`,
+# `ignore/1`. R2 loads boot/init.pl, which defines them the same way.
+"Define the control constructs as predicates in the `system` module of `gd` as boot/init.pl defines them."
+function _boot_control!(gd::PL_global_data{T})::Nothing where {T}
+    ld = PL_local_data{T}(gd)
+    v = _boot_vars(T, 5)
+    Mx, If, Then, Ma, Mb = v[1], v[2], v[3], v[4], v[5]
+    colon = Symbol(":")
+    semicolon = Symbol(";")
+    MxIf = _boot_term(colon, T[Mx, If])
+    MxThen = _boot_term(colon, T[Mx, Then])
+    MaIf = _boot_term(colon, T[Ma, If])
+    MbThen = _boot_term(colon, T[Mb, Then])
+    _boot_clause!(                                      # (Mx:If ; Mx:Then) :- !, call(Mx:(If ; Then)).
+        gd, ld, semicolon, T[MxIf, MxThen],
+        _boot_conj(
+            T[
+                mk_sym(T, :!),
+                _boot_term(
+                    :call, T[_boot_term(colon, T[Mx, _boot_term(semicolon, T[If, Then])])]
+                )
+            ]
+        ),
+        P_ISO | P_LOCKED
+    )
+    _boot_clause!(                                      # (Ma:If ; Mb:Then) :- call(Ma:(If ; Mb:Then)).
+        gd, ld, semicolon, T[MaIf, MbThen],
+        _boot_term(
+            :call, T[_boot_term(colon, T[Ma, _boot_term(semicolon, T[If, MbThen])])]
+        ),
+        P_ISO | P_LOCKED
+    )
+    for (name, flags) in (
+        (Symbol(","), P_ISO | P_LOCKED), (Symbol("->"), P_ISO | P_LOCKED),
+        (Symbol("*->"), P_LOCKED)
+    )
+        _boot_clause!(
+            gd, ld, name, T[If, Then], _boot_term(:call, T[_boot_term(name, T[If, Then])]),
+            flags
+        )
+    end
+    _boot_clause!(
+        gd, ld, Symbol("\\+"), T[If], _boot_term(Symbol("\\+"), T[If]), P_ISO | P_LOCKED
+    )
+    return nothing
+end
+
 "Compile `name(args…) :- body` (`body` nothing: a fact) into the `system` module of `gd`, and set the predicate's `flags`."
 function _boot_clause!(
     gd::PL_global_data{T}, ld::PL_local_data{T}, name::Symbol, args::Vector{T},
@@ -268,7 +324,7 @@ end
 # (pl-proc.c:2173-2231), which give the same masks (`+` `-` `?` `:` `^` `//` `0..9`). Set after the
 # clauses are added (`createSupervisor` chains `S_MQUAL`/`S_LMQUAL` on the first call). R2 loads the boot
 # files, which declare them the same way. The declarations, at the pin:
-#   boot/init.pl:360-386   call(0), call(1,?) … call(7,?,?,?,?,?,?,?), catch(0,?,0),
+#   boot/init.pl:360-386   ','(0,0), ';'(0,0), '->'(0,0), '*->'(0,0), \+(0), call(0), call(1,?) … call(7,?,?,?,?,?,?,?), catch(0,?,0),
 #                          setup_call_cleanup(0,0,0), setup_call_catcher_cleanup(0,0,?,0), call_cleanup(0,0)
 #   boot/bags.pl:57-64     findall(?,0,-), findall(?,0,-,?), bagof(?,^,-), setof(?,^,-), cleanup_bag(0,0)
 #   boot/attvar.pl:109-110 freeze(?,0);  boot/attvar.pl:250-251 call_residue_vars(0,-)
@@ -279,7 +335,9 @@ function _boot_meta!(gd::PL_global_data{T})::Nothing where {T}
     for (name, arity, spec) in (
         ("call", 1, "0"), ("call", 2, "1?"), ("call", 3, "2??"), ("call", 4, "3???"),
         ("call", 5, "4????"), ("call", 6, "5?????"), ("call", 7, "6??????"),
-        ("call", 8, "7???????"), ("catch", 3, "0?0"), ("setup_call_cleanup", 3, "000"),
+        ("call", 8, "7???????"), (",", 2, "00"), (";", 2, "00"), ("->", 2, "00"),
+        ("*->", 2, "00"), ("\\+", 1, "0"), ("catch", 3, "0?0"),
+        ("setup_call_cleanup", 3, "000"),
         ("setup_call_catcher_cleanup", 4, "00?0"), ("call_cleanup", 2, "00"),
         ("findall", 3, "?0-"), ("findall", 4, "?0-?"), ("bagof", 3, "?^-"),
         ("setof", 3, "?^-"),

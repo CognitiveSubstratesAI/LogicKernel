@@ -89,7 +89,7 @@ nl_out :- write(a), nl, write(b).
 thrower :- throw(boom).
 failer :- fail.
 tabs(0, S, S) :- !.
-tabs(N, S0, S) :- string_concat(S0, "~t", S1), N1 is N-1, tabs(N1, S1, S).
+tabs(N, S0, S) :- atom_concat(S0, '~t', S1), N1 is N-1, tabs(N1, S1, S).
 """
 
 # (id, goal), run IN ORDER
@@ -120,8 +120,14 @@ const _FM_CASES = [
     ("f24", raw"""format(atom(R), "~8r|~16r|~16R|~2r", [64, 255, 255, 5])"""),  # radix
     ("f25", raw"""format(atom(R), "~I|~3I|~I", [1234567, 1234567, 12])"""),  # I
     ("f26", raw"""format(atom(R), "~*d", [2, 1234])"""),  # star argument
-    ("f27", raw"""format(atom(R), "~d|~D|~2d", [123456789012345678901234567890, 123456789012345678901234567890, 123456789012345678901234567890])"""),  # bignum d
-    ("f28", raw"""format(atom(R), "~19d|~2d", [18446744073709551616, 18446744073709551616])"""),  # fraction digits just below and at the digit count (more digits than that reads past the buffer in swipl: its answer varies, no row)
+    (
+        "f27",
+        raw"""format(atom(R), "~d|~D|~2d", [123456789012345678901234567890, 123456789012345678901234567890, 123456789012345678901234567890])"""
+    ),  # bignum d
+    (
+        "f28",
+        raw"""format(atom(R), "~19d|~2d", [18446744073709551616, 18446744073709551616])"""
+    ),  # fraction digits just below and at the digit count (more digits than that reads past the buffer in swipl: its answer varies, no row)
     ("f29", raw"""format(atom(R), "~36r|~16r", [1295, -255])"""),  # radix limits and a negative
     ("f30", raw"""format(atom(R), "~e|~3e|~0e", [1.5, 1.5, 1.5])"""),  # e
     ("f31", raw"""format(atom(R), "~f|~2f|~0f|~0f", [2.5, 3.14159, 2.5, 0.5])"""),  # f, ties to even
@@ -133,14 +139,32 @@ const _FM_CASES = [
     ("f37", raw"""format(atom(R), "~3g|~g|~G|~0g", [1r3, 1r30000000, 1r30000000, 1r4])"""),  # rational g
     ("f38", raw"""format(atom(R), "~2g|~2g|~g|~g", [199r200, 199r2, 1r100000, 1r10000])"""),  # rational g ties and exponent bounds
     ("f39", raw"""format(atom(R), "~e|~0e|~2E|~e", [1r3, 1r3, 1r300, -1r10])"""),  # rational e
-    ("f40", raw"""format(atom(R), "~0e|~2e|~e|~3e", [19r2, -999r1000, 1r1000000000000000000000000000000, 9999r1000])"""),  # rational e rounding
+    (
+        "f40",
+        raw"""format(atom(R), "~0e|~2e|~e|~3e", [19r2, -999r1000, 1r1000000000000000000000000000000, 9999r1000])"""
+    ),  # rational e rounding
     ("f41", raw"""format(atom(R), "~2f|~2f|~2f|~0f", [1r3, -1r300, -5r3, -4r3])"""),  # rational f
-    ("f42", raw"""format(atom(R), "~0f|~0f|~0f|~3f|~1f", [1r2, -1r2, 3r2, -1r2000, 199r2000])"""),  # rational f ties away from zero
-    ("f43", raw"""format(atom(R), "~2f|~0f", [1000000000000000000000000000000, -1000000000000000000000000000000])"""),  # bignum f
-    ("f44", raw"""format(atom(R), "~25f|~30f|~3f", [18446744073709551616, 18446744073709551616, 18446744073709551616])"""),  # bignum f padding
+    (
+        "f42",
+        raw"""format(atom(R), "~0f|~0f|~0f|~3f|~1f", [1r2, -1r2, 3r2, -1r2000, 199r2000])"""
+    ),  # rational f ties away from zero
+    (
+        "f43",
+        raw"""format(atom(R), "~2f|~0f", [1000000000000000000000000000000, -1000000000000000000000000000000])"""
+    ),  # bignum f
+    (
+        "f44",
+        raw"""format(atom(R), "~25f|~30f|~3f", [18446744073709551616, 18446744073709551616, 18446744073709551616])"""
+    ),  # bignum f padding
     ("f45", raw"""X is 10**30, format(atom(R), "~e|~0e|~g|~3G|~h", [X, X, X, X, X])"""),  # bignum e g h
-    ("f46", raw"""X is -12345678901234567890123, format(atom(R), "~3e|~2g|~f", [X, X, X])"""),  # negative bignum
-    ("f47", raw"""X is 10**30+10**24, format(atom(R), "~7g|~g|~2g", [X, X, 123456789012345678901234567890])"""),  # bignum g digits
+    (
+        "f46",
+        raw"""X is -12345678901234567890123, format(atom(R), "~3e|~2g|~f", [X, X, X])"""
+    ),  # negative bignum
+    (
+        "f47",
+        raw"""X is 10**30+10**24, format(atom(R), "~7g|~g|~2g", [X, X, 123456789012345678901234567890])"""
+    ),  # bignum g digits
     ("f48", raw"""format(atom(R), "~h|~h|~h", [1r3, 100, 1.0Inf])"""),  # h of a rational and an integer
     ("f49", raw"""format(atom(R), "~f", [1.5NaN])"""),  # NaN
     ("f50", raw"""format(atom(R), "~a~t~10|~a", [ab, cd])"""),  # pad right
@@ -166,7 +190,10 @@ const _FM_CASES = [
     ("f70", raw"""catch(format(atom(R0), "~a~@~a", [x, thrower, y]), B, R = caught(B))"""),  # throwing call-back
     ("f71", raw"""format(atom(R), "~@", [col_out])"""),  # call-back with its own column
     ("f72", raw"""with_output_to(atom(R), format("a~tb~10|c~@", [hello_out]))"""),  # format/2 inside with_output_to
-    ("f73", raw"""with_output_to(string(R), (write(x), format("~t~w~6|", [y]), write(z)))"""),  # column continues the stream's position
+    (
+        "f73",
+        raw"""with_output_to(string(R), (write(x), format("~t~w~6|", [y]), write(z)))"""
+    ),  # column continues the stream's position
     ("f74", raw"""format(atom(R), "~a~@~t~a~12|", [xx, hello_out, end])"""),  # call-back and a rubber
     ("e01", raw"""format(atom(R), "~a", [])"""),  # not enough arguments
     ("e02", raw"""format(atom(R), "~a", [x, y])"""),  # too many arguments
@@ -193,14 +220,20 @@ const _FM_CASES = [
     ("f78", raw"""format(atom(R), "abcdef~`-t~3:|x", [])"""),  # colon column stop with a fill character: re-indent with it
     ("f79", raw"""format(atom(R), "~2s|~5s|~s", ["hello", "hi", [104,105]])"""),  # s with a count: cut and padded
     ("f80", raw"""format(atom(R), "~2s|~4s", [[0'x, 256, 0'y], [0'x, 256]])"""),  # s of wide text with a count
-    ("f81", raw"""format(atom(R), "~W|~W", [f(1,'a b'), [quoted(true)], 'c d', [quoted(true)]])"""),  # W: write_term options
+    (
+        "f81",
+        raw"""format(atom(R), "~W|~W", [f(1,'a b'), [quoted(true)], 'c d', [quoted(true)]])"""
+    ),  # W: write_term options
     ("f82", raw"""format(atom(R), "~-1h", [1.0])"""),  # minus sign before the digits of h
     ("f83", raw"""X is 2**70+255, format(atom(R), "~16r|~16R|~8r|~2d", [X, X, X, X])"""),  # bignum radix (letters) and fraction digits
     ("f84", raw"""X is -(2**70), format(atom(R), "~d|~D|~2D", [X, X, X])"""),  # negative bignum d and D
     ("f85", raw"""format(atom(R), "a~t~+b~t~+c", [])"""),  # relative column default 8
     ("e20", raw"""tabs(101, "", F), format(atom(R), F, [])"""),  # more fill points than MAXRUBBER
     ("e21", raw"""format(atom(R), "~-d", [1])"""),  # minus sign without digits
-    ("f86", raw"""format(atom(R0), "x~@y", [Z = 1]), ( var(Z) -> R = [R0, unbound] ; R = [R0, bound] )"""),  # call-back bindings are undone
+    (
+        "f86",
+        raw"""format(atom(R0), "x~@y", [Z = 1]), ( var(Z) -> R = [R0, unbound] ; R = [R0, bound] )"""
+    ),  # call-back bindings are undone
     ("f87", raw"""format(atom(R), "abc~|def~t~|g", [])"""),  # column stop without an argument is the current column
     ("f88", raw"""format(atom(R), "abcdef~t~3|y~t~6|z", [])"""),  # the column after an overflowing stop is the stop
     ("f89", raw"""format(atom(R), "ab~tcd", [])"""),  # fill point never closed by a column stop
@@ -210,13 +243,16 @@ const _FM_CASES = [
     ("f93", raw"""format(atom(R), "~d|~2d|~D", [0, 0, 0])"""),  # zero with and without fraction digits
     ("f94", raw"""X is 10**30-1, format(atom(R), "~e|~3e|~29e|~30e", [X, X, X, X])"""),  # bignum e: exponent guess one too big, digits equal to the exponent
     ("f95", raw"""format(atom(R), "~e|~e|~2e", [1r9, 1r8, 1r1000])"""),  # rational e: exponent guess corrections
-    ("f96", raw"""format(atom(R), "~F|~E|~G|~f|~0g", [1.5NaN, 1.5NaN, 1.5NaN, 1.0Inf, 123.456])"""),  # capital NaN, infinity, g with 0 digits
+    (
+        "f96",
+        raw"""format(atom(R), "~F|~E|~G|~f|~0g", [1.5NaN, 1.5NaN, 1.5NaN, 1.0Inf, 123.456])"""
+    ),  # capital NaN, infinity, g with 0 digits
     ("f97", raw"""format(atom(R), "ab~t~@~t~12|x", [hello_out])"""),  # call-back through a string at column 2
     ("f98", raw"""format(atom(R), "~d~t~8|~e~t~20|x", [12, 1.5])"""),  # numbers advance the column when no fill point is pending
     ("f99", raw"""format(atom(R), "~tab~tcd~10|", [])"""),  # literal text between two fill points
     ("e22", raw"""format(atom(R), f(x), [])"""),  # format text of the wrong type
     ("e23", raw"""format(atom(R), "~W", [x])"""),  # W with one argument
-    ("e24", raw"""format(atom(R), "~@", [])"""),  # @ without an argument
+    ("e24", raw"""format(atom(R), "~@", [])""")  # @ without an argument
 ]
 
 # swipl 10.1.19's answer to each case, in order (the driver's whole output)
@@ -344,13 +380,23 @@ const _FM_PINNED = [
     "t_f99 c[116,95,102,57,57]/1(a[32,32,32,97,98,32,32,32,99,100])",
     "t_e22 c[116,95,101,50,50]/1(c[114,97,105,115,101,100]/1(c[116,121,112,101,95,101,114,114,111,114]/2(a[116,101,120,116],c[102]/1(a[120]))))",
     "t_e23 c[116,95,101,50,51]/1(c[114,97,105,115,101,100]/1(c[102,111,114,109,97,116]/1(a[110,111,116,32,101,110,111,117,103,104,32,97,114,103,117,109,101,110,116,115])))",
-    "t_e24 c[116,95,101,50,52]/1(c[114,97,105,115,101,100]/1(c[102,111,114,109,97,116]/1(a[110,111,116,32,101,110,111,117,103,104,32,97,114,103,117,109,101,110,116,115])))",
+    "t_e24 c[116,95,101,50,52]/1(c[114,97,105,115,101,100]/1(c[102,111,114,109,97,116]/1(a[110,111,116,32,101,110,111,117,103,104,32,97,114,103,117,109,101,110,116,115])))"
 ]
 
 # rows whose swipl answer is locale grouped: (id, goal, kernel's answer, swipl's answer); the kernel prints the C locale (D9)
 const _FM_KNOWN = [
-    ("k01", raw"""format(atom(R), "~:d|~2:d|~:D", [1234567, 1234567, 1234567])""", "1234567|12345.67|1_234_567", "1,234,567|12,345.67|1_234_567"),
-    ("k02", raw"""format(atom(R), "~:f|~2:e", [1234567.5, 1234567.5])""", "1234567.500000|1.23e+06", "1,234,567.500000|1.23e+06"),
+    (
+        "k01",
+        raw"""format(atom(R), "~:d|~2:d|~:D", [1234567, 1234567, 1234567])""",
+        "1234567|12345.67|1_234_567",
+        "1,234,567|12,345.67|1_234_567"
+    ),
+    (
+        "k02",
+        raw"""format(atom(R), "~:f|~2:e", [1234567.5, 1234567.5])""",
+        "1234567.500000|1.23e+06",
+        "1,234,567.500000|1.23e+06"
+    )
 ]
 
 "The program and cases as one file; the case predicates' names."
@@ -409,13 +455,24 @@ function _fm_kernel(path::String, names::Vector{String})
 end
 
 "The driver's line for the case `id` answering the atom `s`."
-_fm_atomline(id::String, s::String)::String = "t_$id c" * _fm_codes("t_$id") * "/1(a" * _fm_codes(s) * ")"
+_fm_atomline(id::String, s::String)::String =
+    "t_$id c" * _fm_codes("t_$id") * "/1(a" * _fm_codes(s) * ")"
+
+# KNOWN DIFFERENCE (e18, "~`" with no fill character): swipl raises
+# existence_error(format_character, '\0') (its atom holds the character 0, pinned above as a[0]); the
+# kernel's atoms cannot (`_atom_from_text`, settled: keep refusing), so `codeToAtom` throws a
+# NotPortedError before any answer. The row leaves the comparison below and is pinned by its own testset.
+# Checklist: revisit with phase 2's atom table.
+const _FM_E18 = "t_e18"
+_fm_not_e18(l) = !startswith(l, _FM_E18 * " ")
 
 @testset "format/2,3 as swipl's (f01-f74, e01-e19)" begin
-    f, names = _fm_file(_FM_CASES)
+    f, names = _fm_file(filter(c -> c[1] != "e18", _FM_CASES))
     kl, _, _ = _fm_kernel(f, names)
-    @test length(kl) == length(_FM_PINNED)
-    for (k, p) in zip(kl, _FM_PINNED)
+    pinned = filter(_fm_not_e18, _FM_PINNED)
+    @test length(pinned) == length(_FM_PINNED) - 1
+    @test length(kl) == length(pinned)
+    for (k, p) in zip(kl, pinned)
         k == p || println(stderr, "  ours  ", k, "\n  swipl ", p)
         @test k == p
     end
@@ -426,7 +483,12 @@ _fm_atomline(id::String, s::String)::String = "t_$id c" * _fm_codes("t_$id") * "
     @test count(l -> occursin("32,32,32", l), _FM_PINNED) >= 12                              # column padding
     @test count(l -> occursin("104,101,108,108,111", l), _FM_PINNED) >= 6                   # hello_out through ~@
     @test _FM_PINNED[findfirst(l -> startswith(l, "t_f69"), _FM_PINNED)] == "t_f69"        # the failing call-back
-    @test any(l -> startswith(l, "t_f70 ") && occursin("c[99,97,117,103,104,116]/1(a[98,111,111,109])", l), _FM_PINNED)  # caught(boom)
+    @test any(
+        l ->
+            startswith(l, "t_f70 ") &&
+            occursin("c[99,97,117,103,104,116]/1(a[98,111,111,109])", l),
+        _FM_PINNED
+    )  # caught(boom)
 end
 
 @testset "~:d and ~:f on the kernel: the C locale (D9), swipl's grouping noted per row" begin
@@ -441,8 +503,22 @@ end
     swipl = get(ENV, "LOGICKERNEL_NO_SWIPL", "") == "1" ? nothing : Sys.which("swipl")
     if swipl !== nothing
         f, names = _fm_file([(id, g) for (id, g, _, _) in _FM_KNOWN])
-        @test _fm_swipl_lines(f, names)[2:end] == [_fm_atomline(id, sw) for (id, _, _, sw) in _FM_KNOWN]
+        @test _fm_swipl_lines(f, names)[2:end] ==
+            [_fm_atomline(id, sw) for (id, _, _, sw) in _FM_KNOWN]
     end
+end
+
+@testset "e18 on the kernel: swipl's format_character '\\0' cannot be an atom here (known difference)" begin
+    @test any(l -> startswith(l, _FM_E18 * " ") && endswith(l, "a[0])))"), _FM_PINNED)  # swipl's answer
+    f, names = _fm_file(filter(c -> c[1] == "e18", _FM_CASES))
+    err = try
+        _fm_kernel(f, names)
+        nothing
+    catch e
+        e
+    end
+    @test err isa LK.NotPortedError                                                     # ours: refused, not misread
+    @test occursin("character 0", err.what)
 end
 
 @testset "the pins are swipl's (live, when swipl is on PATH)" begin

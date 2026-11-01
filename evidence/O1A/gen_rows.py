@@ -15,7 +15,7 @@ nl_out :- write(a), nl, write(b).
 thrower :- throw(boom).
 failer :- fail.
 tabs(0, S, S) :- !.
-tabs(N, S0, S) :- string_concat(S0, "~t", S1), N1 is N-1, tabs(N1, S1, S).
+tabs(N, S0, S) :- atom_concat(S0, '~t', S1), N1 is N-1, tabs(N1, S1, S).
 """
 
 # (id, goal, comment); the goal binds R. A goal that fails has no answer line; an error E is R = raised(E).

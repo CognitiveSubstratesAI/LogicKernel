@@ -60,8 +60,7 @@ include("os/pl-prologflag.jl") # swipl-devel src/os/pl-prologflag.c — setBackQ
 include("os/pl-text.jl")       # swipl-devel src/os/pl-text.c — the text a term holds; a stream on it
 include("os/pl-os.jl")         # swipl-devel src/os/pl-os.c — the clocks, the environment, Pause (Y1)
 include("os/pl-files.jl")      # swipl-devel src/os/pl-files.c — the file name a term holds, delete_file/1 (Y1)
-include("os/pl-file.jl")       # swipl-devel src/os/pl-file.c — the file an open stream reads (the loader)
-include("os/pl-redirect.jl")   # swipl-devel src/os/pl-file.c — the output redirect, with_output_to/2 (O1B)
+include("os/pl-file.jl")       # swipl-devel src/os/pl-file.c — the file an open stream reads (the loader); the output redirect, with_output_to/2 (O1B)
 include("pl-setup.jl")         # swipl-devel src/pl-setup.c — emptying the stacks of a new LD
 include("pl-proc.jl")          # swipl-devel src/pl-proc.c — predicates, assert, retract, clause GC
 include("pl-srcfile.jl")       # swipl-devel src/pl-srcfile.c — source files: consulting a file (first load)
@@ -79,7 +78,7 @@ include("pl-sys.jl")           # swipl-devel src/pl-sys.c — getenv/2, setenv/2
 include("pl-read.jl")          # swipl-devel src/pl-read.c — the scanner (R1c) and the parser (R1d): read_term, term_to_atom
 include("pl-qlf.jl")           # swipl-devel src/pl-qlf.c — the boot compilation of a source file (LB3; no state file)
 include("pl-string.jl")        # swipl-devel src/pl-string.c — the string predicates: atom_string/2, split_string/4, sub_string/5 (T2)
-include("pl-fmt.jl")           # swipl-devel src/os/pl-fmt.c — format/2,3, format_predicate/2 (O1A)
+include("os/pl-fmt.jl")        # swipl-devel src/os/pl-fmt.c — format/2,3, format_predicate/2 (O1A)
 include("pl-ext.jl")           # swipl-devel src/pl-ext.c — registering the built-ins; their dispatch
 include("../boot/init.jl")     # swipl-devel boot/init.pl — the minimal loader (R1f): load_file!
 include("precompile_workload.jl")  # ORIGINAL — the hot paths, compiled at precompile time (LAST)

@@ -329,7 +329,7 @@ const _WC_ATT_GOALS = ["at$(lpad(i, 2, '0'))" for i in 1:14]
     db = _wc_load(_WC_ATT_PROGRAM)
     ours = [_wc_norm(_wc_run(db, g)) for g in _WC_ATT_GOALS]
     @test !any(o -> occursin("NOTPORTED", o), ours)
-    @test !any(o -> occursin("existence_error(procedure", o), ours[[1:10; 12:14]])   # at11: below
+    @test !any(o -> occursin("existence_error(procedure", o), ours)
     # the kernel's side alone: wr01-wr04, wr06, wr07 (rows.tsv; the variable's name renamed `_V1`)
     @test ours[1] == "_V1{a:1}\n\n---\n"                                    # wr01
     @test ours[2] == "_V1{…}\n\n---\n"                                      # wr02
@@ -342,11 +342,9 @@ const _WC_ATT_GOALS = ["at$(lpad(i, 2, '0'))" for i in 1:14]
     @test ours[10] == "_V1{a:(p:-q,r)}\n_V2{a: - 1}\n\n---\n"
     @test ours[13] == "_V1{a:f(_V1)}\n\n---\n"                             # upstream ace539d7: the cycle is the name
     @test ours[14] == "h(_V1{a:f(_V2{b:g(_V1)})},_V2{b:g(_V1{a:f(_V2)})})\n\n---\n"
-    # KNOWN DIFFERENCE (at11): set_prolog_flag/2 is not a kernel predicate yet (R2 F1b ports it). The
-    # kernel's exact answer is pinned; swipl 10.1.19 writes
-    # "_V1{a:1}\n_V1{a:1}\nf(_V1{a:1})\n_V1\n_V1\n_V1{…}\n\n---\n" (compared live below, through at11w/at11d
-    # with the flag set on the local data). Un-pin when set_prolog_flag/2 lands.
-    @test ours[11] == "EX existence_error(procedure,/(set_prolog_flag,2))\n---\n"
+    # at11: set_prolog_flag/2 (F1b) now answers as swipl 10.1.19 does (the pin of the missing predicate is gone);
+    # `ours11` below drives the same flag through the local data, a second route to the same text.
+    @test ours[11] == "_V1{a:1}\n_V1{a:1}\nf(_V1{a:1})\n_V1\n_V1\n_V1{…}\n\n---\n"
     ld = db.ld
     flag0 = ld.prolog_flag_write_attributes
     ours11 = try

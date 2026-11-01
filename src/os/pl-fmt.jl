@@ -1,9 +1,8 @@
 # UPSTREAM: swipl-devel src/os/pl-fmt.c @ cbf4e1896275
 # UPSTREAM: swipl-devel src/os/pl-fmt.h @ cbf4e1896275
 # CLASS: code
-# COPYRIGHT: Copyright (c)  1985-2025, University of Amsterdam
+# COPYRIGHT: Copyright (c)  2011-2026, University of Amsterdam
 # COPYRIGHT: VU University Amsterdam
-# COPYRIGHT: CWI, Amsterdam
 # COPYRIGHT: SWI-Prolog Solutions b.v.
 #
 # FORMATTED OUTPUT (pl-fmt.c), since O1 (writer A): format/1,2,3 and format_predicate/2,
@@ -28,11 +27,11 @@ const MAXRUBBER = 100
 "The size of the buffer a sub-format starts with (pl-fmt.c)."
 const BUFSIZE = 1024
 
-# PORT: pl-fmt.c DEFAULT
+# PORT: pl-fmt.c DEFAULT as FMT_DEFAULT
 "The numeric argument of a directive when none is given: `INT_MIN` (pl-fmt.c)."
 const FMT_DEFAULT = Int(typemin(Int32))
 
-# PORT: pl-fmt.c struct rubber
+# PORT: pl-fmt.c rubber
 "A fill point in the pending output: where, how big, and the pad character (pl-fmt.c `struct rubber`)."
 mutable struct rubber
     place::Int      # where is rubber in output
@@ -53,7 +52,8 @@ mutable struct format_state
     rub::Vector{rubber}
 end
 
-# PORT: pl-fmt.c prolog_locale, PL_locale (pl-locale.h)
+# PORT: pl-fmt.c PL_locale
+# (`prolog_locale` and `PL_locale` of pl-locale.h)
 # DIVERGES: a locale is its three strings (upstream's has more fields and a reference count). `grouping` is
 # upstream's `char*`: the group sizes, ended by 0 (`CHAR_MAX`: no more groups), `nothing` for NULL.
 "The part of a `PL_locale` that format/2 reads: decimal point, thousands separator, grouping (pl-locale.h)."
@@ -66,11 +66,13 @@ end
 "The locale of format/2 when no stream locale is asked for: `.` and no grouping (pl-fmt.c `prolog_locale`)."
 const prolog_locale = PL_locale(".", nothing, nothing)
 
-# PORT: pl-fmt.c `static char grouping[] = {3,0}` in do_format
+# PORT: pl-fmt.c grouping as FMT_GROUPING3
+# (the `static char grouping[] = {3,0}` in do_format)
 "The grouping of `~D`: groups of three (pl-fmt.c)."
 const FMT_GROUPING3 = Int[3, 0]
 
-# PORT: pl-fmt.c FMT_ERROR, FMT_ARG, FMT_ARGC (pl-error.c ERR_FORMAT, ERR_FORMAT_ARG)
+# PORT: pl-fmt.c FMT_ERROR as PL_format_error
+# (FMT_ERROR, FMT_ARG, FMT_ARGC; pl-error.c ERR_FORMAT, ERR_FORMAT_ARG)
 # DIVERGES: functions of their own, not `PL_error` codes (no `ERR_FORMAT`, `ERR_FORMAT_ARG` in the enum:
 # pl-fmt.c is their only caller) — the branches' `PL_unify_term(formal, format(Msg))` and
 # `format_argument_type(Spec, Arg)`; the context names the running predicate, as with `NULL` as `pred`.
@@ -176,7 +178,8 @@ end
 
 # PORT: pl-fmt.c oututf80
 "Emit the UTF-8 bytes of `s`, a buffer a `formatInteger` or `formatFloat` filled (pl-fmt.c)."
-oututf80(state::format_state, s::AbstractVector{UInt8})::Bool = oututf8(state, s, 1, length(s) + 1)
+oututf80(state::format_state, s::AbstractVector{UInt8})::Bool =
+    oututf8(state, s, 1, length(s) + 1)
 
 # PORT: pl-fmt.c outtext
 # DIVERGES: a UTF-8 text (never canonical here) goes through its code points; `ENC_ISO_LATIN_1` is the
@@ -204,7 +207,8 @@ function pl_format_predicate2_va(
 )::foreign_t where {T}
     throw(
         NotPortedError{T}(
-            mk_sym(T, :format_predicate), "format_predicate/2 (GD->format.predicates)", "LB5"
+            mk_sym(T, :format_predicate), "format_predicate/2 (GD->format.predicates)",
+            "LB5"
         )
     )
 end
@@ -233,7 +237,8 @@ function format_impl(
     args = PL_copy_term_ref(ld, Args)
 
     fmt = PL_get_text(ld, format, CVT_ATOM | CVT_STRING | CVT_LIST)
-    fmt === nothing && return PL_error(ld, "format", 3, "", ERR_TYPE, mk_sym(T, :text), format)
+    fmt === nothing &&
+        return PL_error(ld, "format", 3, "", ERR_TYPE, mk_sym(T, :text), format)
 
     len = lengthList(ld, args, false)
     if len >= 0
@@ -258,7 +263,7 @@ function format_impl(
     return do_format(ld, out, fmt, argc, argv, m)
 end
 
-# PORT: pl-fmt.c format
+# PORT: pl-fmt.c format as format_
 # DIVERGES: named `format_` (a Julia function `format` is easily shadowed); `m` is an index and the redirect
 # context is B's `redir_context` (O1B: pl-file.c `setupOutputRedirect`, `closeOutputRedirect`,
 # `discardOutputRedirect`).
@@ -303,7 +308,8 @@ function pl_format3_va(
     return format_(ld, A1, A2, A3)
 end
 
-# PORT: pl-fmt.c get_chr_from_text, text_next_code
+# PORT: pl-fmt.c get_chr_from_text
+# (and `text_next_code`)
 # DIVERGES: the format text is its code point vector, so a surrogate pair is no case; a read past the end is
 # the terminating NUL of upstream's C string (0).
 "The code point at the 0-based index `i` of the format text `fmt`; 0 past its end (pl-fmt.c `get_chr_from_text`)."
@@ -330,7 +336,7 @@ function prepare_sub_format(
 )::sub_state where {T}
     state = sub_state(Ref{Union{Nothing, Vector{UInt8}}}(nothing), Ref(0), fstate, nothing)
     if fstate.pending_rubber == 0 && fd.position !== nothing &&
-       fd.position.linepos == COLUMN(fstate)
+        fd.position.linepos == COLUMN(fstate)
         state.old_stream = Scurout(ld)
         ld.IO_streams[SNO_CURRENT_OUTPUT + 1] = fd      # Scurout = fd
     else
@@ -399,7 +405,7 @@ function _rub!(state::format_state, i::Int)::rubber
     return state.rub[i + 1]
 end
 
-# PORT: pl-fmt.c NEED_ARG
+# PORT: pl-fmt.c NEED_ARG as _fmt_need_arg
 # (a macro in upstream: `return` from do_format with the error)
 @inline _fmt_need_arg(ld::PL_local_data, argc::Int)::Bool =
     argc > 0 || (PL_format_error(ld, "not enough arguments"); false)
@@ -453,7 +459,8 @@ function do_format(
                         dw = c - Int('0')
                         arg2 = arg * 10 + dw
                         # upstream detects the wrap of an `int` (see mul64() in pl-arith.c)
-                        arg2 > typemax(Int32) && return PL_format_error(ld, "argument overflow")
+                        arg2 > typemax(Int32) &&
+                            return PL_format_error(ld, "argument overflow")
                         arg = arg2
                         here += 1
                     else
@@ -465,7 +472,7 @@ function do_format(
                 _fmt_need_arg(ld, argc) || return false
                 i = number()
                 if !get_int_expression(ld, argv, i) || i.type !== V_INTEGER || i.i < 0 ||
-                   i.i > typemax(Int32)
+                    i.i > typemax(Int32)
                     return PL_format_arg_error(ld, string(Char(c)), argv)
                 end
                 argc -= 1                       # SHIFT
@@ -511,7 +518,7 @@ function do_format(
                 end
                 here += 1
             elseif c == Int('e') || c == Int('E') || c == Int('f') || c == Int('F') ||
-                   c == Int('g') || c == Int('G') || c == Int('h') || c == Int('H')
+                c == Int('g') || c == Int('G') || c == Int('h') || c == Int('H')
                 _fmt_need_arg(ld, argc) || return false
                 n = number()
                 if !PL_get_number(ld, argv, n)
@@ -529,7 +536,7 @@ function do_format(
                 rc || return false
                 here += 1
             elseif c == Int('d') || c == Int('D') || c == Int('r') || c == Int('R') ||
-                   c == Int('I')
+                c == Int('I')
                 _fmt_need_arg(ld, argc) || return false
                 i = number()
                 get_int_expression(ld, argv, i) ||
@@ -646,7 +653,8 @@ function do_format(
                 rc && PL_rewind_foreign_frame(ld, fid)
                 rc = end_sub_format(ld, sstate, rc)
                 if !rc
-                    ex[] != 0 && PL_exception(ld, 0) == 0 && (rc = PL_raise_exception(ld, ex[]))
+                    ex[] != 0 && PL_exception(ld, 0) == 0 &&
+                        (rc = PL_raise_exception(ld, ex[]))
                     return rc
                 end
                 argc -= 1
@@ -668,7 +676,8 @@ function do_format(
                 end
                 here += 1
             elseif c == Int('t')                # insert tab
-                state.pending_rubber >= MAXRUBBER && return PL_format_error(ld, "Too many tab stops")
+                state.pending_rubber >= MAXRUBBER &&
+                    return PL_format_error(ld, "Too many tab stops")
                 r = _rub!(state, state.pending_rubber)
                 r.place = state.buffered
                 r.pad = (arg == FMT_DEFAULT ? Int(' ') : arg)
@@ -683,7 +692,11 @@ function do_format(
                 stop = (c == Int('+') ? state.tab_stop + arg : arg)
                 if stop < COLUMN(state) && mod_colon
                     nl_and_reindent =
-                        state.pending_rubber != 0 ? state.rub[state.pending_rubber].pad : Int(' ')
+                        if state.pending_rubber != 0
+                            state.rub[state.pending_rubber].pad
+                        else
+                            Int(' ')
+                        end
                 else
                     nl_and_reindent = 0
                 end
@@ -822,8 +835,9 @@ function formatInteger(
     gi = 1
     if locale === nothing
         locale = prolog_locale
-    elseif locale.grouping !== nothing && !isempty(locale.grouping) && locale.grouping[1] != 0 &&
-           locale.thousands_sep !== nothing && !isempty(locale.thousands_sep)
+    elseif locale.grouping !== nothing && !isempty(locale.grouping) &&
+        locale.grouping[1] != 0 &&
+        locale.thousands_sep !== nothing && !isempty(locale.thousands_sep)
         grouping = locale.grouping
     end
     if i.type === V_INTEGER
@@ -863,7 +877,7 @@ function formatInteger(
         reverse!(out)                           # revert_string
         return true
     elseif i.type === V_MPZ
-        buf = string(i.mpz; base = radix)
+        buf = string(i.mpz; base=radix)
         (!smll && radix > 10) && (buf = uppercase(buf))
         if grouping !== nothing || divv > 0
             before = false                      # before decimal point
@@ -1018,19 +1032,20 @@ function groupDigits(locale::PL_locale, b::Vector{UInt8})::Bool
     return true
 end
 
-# PORT: gmp mpz_sizeinbase(z, 10)
+# Port of gmp's mpz_sizeinbase(z, 10):
 # GMP answers `floor(bits * log10(2)) + 1` for the number of bits `z` has: exact or one too big (8 gives 2);
 # the exponent guesses of formatFloat below correct for it, as upstream's do.
 "The size of the magnitude of `z` in decimal digits as GMP's `mpz_sizeinbase(z, 10)` counts it (an upper bound by one)."
 function mpz_sizeinbase10(z::BigInt)::Int
     z == 0 && return 1
-    return floor(Int, ndigits(z; base = 2) * 0.30102999566398119521373889472449) + 1
+    return floor(Int, ndigits(z; base=2) * 0.30102999566398119521373889472449) + 1
 end
 
 "`10^e` for `e >= 0` (`mpz_ui_pow_ui(r, 10, e)`)."
 _fmt_pow10(e::Int)::BigInt = BigInt(10)^e
 
-# PORT: pl-fmt.c formatFloat, label print_mpz_f (V_MPZ and V_MPQ `~Nf`)
+# PORT: pl-fmt.c formatFloat as _fmt_print_mpz_f
+# (label print_mpz_f, V_MPZ and V_MPQ `~Nf`)
 # DIVERGES: the string is built whole; upstream grows the buffer and moves the digits with memmove/memset.
 """
     _fmt_print_mpz_f!(out, t1, neg, arg)
@@ -1053,7 +1068,8 @@ function _fmt_print_mpz_f!(out::Vector{UInt8}, t1::BigInt, neg::Bool, arg::Int):
     return nothing
 end
 
-# PORT: pl-fmt.c formatFloat, label print_mpz_e (V_MPZ and V_MPQ `~Ne`)
+# PORT: pl-fmt.c formatFloat as _fmt_print_mpz_e
+# (label print_mpz_e, V_MPZ and V_MPQ `~Ne`)
 # DIVERGES: as `_fmt_print_mpz_f!`. Upstream returns from here: no localizeDecimalPoint, no groupDigits; the
 # decimal point is the first BYTE of the locale's (`decimal_point[0]`).
 """
@@ -1068,7 +1084,8 @@ function _fmt_print_mpz_e!(
     digits = string(t1)                                     # "%Zd"
     t1 == 0 && (digits = "0"^arg * digits)
     dpb = UInt8('.')
-    if locale !== nothing && locale.decimal_point !== nothing && !isempty(locale.decimal_point)
+    if locale !== nothing && locale.decimal_point !== nothing &&
+        !isempty(locale.decimal_point)
         dpb = codeunit(locale.decimal_point, 1)
     end
     neg && push!(out, UInt8('-'))
@@ -1084,7 +1101,8 @@ function _fmt_print_mpz_e!(
     return nothing
 end
 
-# PORT: pl-fmt.c formatFloat, case V_MPZ, `e` and `E`
+# PORT: pl-fmt.c formatFloat as _fmt_mpz_e
+# (case V_MPZ, `e` and `E`)
 "The `~Ne` of a big integer (pl-fmt.c): round to `arg+1` significant digits, then `_fmt_print_mpz_e!`."
 function _fmt_mpz_e!(
     out::Vector{UInt8}, locale::Union{Nothing, PL_locale}, how::Int, arg::Int, z::BigInt
@@ -1108,10 +1126,12 @@ function _fmt_mpz_e!(
     return nothing
 end
 
-# PORT: pl-fmt.c formatFloat, case V_MPQ, `e` and `E`
+# PORT: pl-fmt.c formatFloat as _fmt_mpq_e
+# (case V_MPQ, `e` and `E`)
 "The `~Ne` of a rational (pl-fmt.c): the exponent guess with its corrections, round, then `_fmt_print_mpz_e!`."
 function _fmt_mpq_e!(
-    out::Vector{UInt8}, locale::Union{Nothing, PL_locale}, how::Int, arg::Int, q::Rational{BigInt}
+    out::Vector{UInt8}, locale::Union{Nothing, PL_locale}, how::Int, arg::Int,
+    q::Rational{BigInt}
 )::Nothing
     n = numerator(q)
     d = denominator(q)
@@ -1146,7 +1166,8 @@ function _fmt_mpq_e!(
     return nothing
 end
 
-# PORT: pl-fmt.c formatFloat, cases V_MPZ and V_MPQ, `f` and `F`
+# PORT: pl-fmt.c formatFloat as _fmt_mpq_f
+# (cases V_MPZ and V_MPQ, `f` and `F`)
 """
     _fmt_mpq_f!(out, q, arg)
     _fmt_mpz_f!(out, z, arg)
@@ -1171,7 +1192,7 @@ function _fmt_mpz_f!(out::Vector{UInt8}, z::BigInt, arg::Int)::Nothing
     return nothing
 end
 
-# PORT: gmp mpf_init2 + mpf_set_z / mpf_set_q, for formatFloat's `g` paths
+# Port of gmp's mpf_init2 + mpf_set_z / mpf_set_q, for formatFloat's `g` paths:
 # DIVERGES: the mpf is a truncated exact rational. GMP keeps `prec+1` limbs of 64 bits, `prec` being
 # `(max(53, bits)+127) div 64`: an integer loses its low limbs, a rational is divided to that many limbs. The
 # rational's cut is placed by bit lengths, not by limb boundaries; it differs from GMP's only for a value within
@@ -1179,7 +1200,7 @@ end
 "The value of `mpf_init2(bits)` followed by `mpf_set_z(z)`, `z > 0`, as an exact rational."
 function _fmt_mpf_set_z(bits::Int, z::BigInt)::Rational{BigInt}
     keep = (max(53, bits) + 127) ÷ 64 + 1
-    nl = cld(ndigits(z; base = 2), 64)
+    nl = cld(ndigits(z; base=2), 64)
     if nl > keep
         sh = 64 * (nl - keep)
         z = (z >> sh) << sh
@@ -1192,7 +1213,7 @@ function _fmt_mpf_set_q(bits::Int, q::Rational{BigInt})::Rational{BigInt}
     keep = (max(53, bits) + 127) ÷ 64 + 1
     n = numerator(q)
     d = denominator(q)
-    s = 64 * keep - (ndigits(n; base = 2) - ndigits(d; base = 2))
+    s = 64 * keep - (ndigits(n; base=2) - ndigits(d; base=2))
     m = s >= 0 ? div(n << s, d) : div(n, d << (-s))
     return s >= 0 ? m // (BigInt(1) << s) : (m << (-s)) // BigInt(1)
 end
@@ -1208,7 +1229,11 @@ The `P` significant digits of `v > 0` rounded half up (GMP's `mpf_get_str` looks
 decimal exponent `X` of the first of them: `v` is about `d.ddd * 10^X`.
 """
 function _fmt_round_sig(v::Rational{BigInt}, P::Int)::Tuple{String, Int}
-    X = v >= 1 ? ndigits(div(numerator(v), denominator(v))) - 1 : -ndigits(div(denominator(v), numerator(v)))
+    X = if v >= 1
+        ndigits(div(numerator(v), denominator(v))) - 1
+    else
+        -ndigits(div(denominator(v), numerator(v)))
+    end
     while _fmt_pow10q(X) > v
         X -= 1
     end
@@ -1224,14 +1249,16 @@ function _fmt_round_sig(v::Rational{BigInt}, P::Int)::Tuple{String, Int}
     return (string(r), X)
 end
 
-# PORT: gmp gmp_snprintf "%.<P>F{g,G}" of an mpf (doprnt.c: the C `%g` rules)
+# Port of gmp's gmp_snprintf "%.<P>F{g,G}" of an mpf (doprnt.c: the C `%g` rules):
 """
     _fmt_print_mpf_g!(out, v, neg, how, arg)
 
 Write `v >= 0` as `%.<arg>g` does, `arg` 0 meaning 1: `P` significant digits, the exponent form when the
 exponent is below -4 or at least `P`, trailing zeros and a bare point removed.
 """
-function _fmt_print_mpf_g!(out::Vector{UInt8}, v::Rational{BigInt}, neg::Bool, how::Int, arg::Int)::Nothing
+function _fmt_print_mpf_g!(
+    out::Vector{UInt8}, v::Rational{BigInt}, neg::Bool, how::Int, arg::Int
+)::Nothing
     P = max(arg, 1)
     neg && push!(out, UInt8('-'))
     if v == 0
@@ -1241,8 +1268,11 @@ function _fmt_print_mpf_g!(out::Vector{UInt8}, v::Rational{BigInt}, neg::Bool, h
     digits, X = _fmt_round_sig(v, P)
     if X < -4 || X >= P
         frac = rstrip(SubString(digits, 2), '0')
-        isempty(frac) ? push!(out, UInt8(digits[1])) :
+        if isempty(frac)
+            push!(out, UInt8(digits[1]))
+        else
             append!(out, codeunits(string(digits[1], '.', frac)))
+        end
         push!(out, UInt8(how == Int('G') ? 'E' : 'e'))
         push!(out, X < 0 ? UInt8('-') : UInt8('+'))
         append!(out, codeunits(lpad(string(abs(X)), 2, '0')))
@@ -1260,8 +1290,9 @@ function _fmt_print_mpf_g!(out::Vector{UInt8}, v::Rational{BigInt}, neg::Bool, h
     return nothing
 end
 
-# PORT: pl-fmt.c formatFloat, case V_MPZ `g`/`G` (mpf_init2(arg*4), mpf_set_z) and case V_MPQ `g`/`G`
-# (mpf_init2(bits of the integer part + 4*arg), mpf_set_q)
+# PORT: pl-fmt.c formatFloat as _fmt_mpz_g
+# (case V_MPZ `g`/`G`: mpf_init2(arg*4), mpf_set_z; case V_MPQ `g`/`G`:
+# mpf_init2(bits of the integer part + 4*arg), mpf_set_q)
 "The `~Ng` of a big integer (pl-fmt.c): `%.<arg>g` of an mpf holding it."
 function _fmt_mpz_g!(out::Vector{UInt8}, how::Int, arg::Int, z::BigInt)::Nothing
     _fmt_print_mpf_g!(out, _fmt_mpf_set_z(arg * 4, abs(z)), z < 0, how, arg)
@@ -1271,12 +1302,12 @@ end
 "The `~Ng` of a rational (pl-fmt.c)."
 function _fmt_mpq_g!(out::Vector{UInt8}, how::Int, arg::Int, q::Rational{BigInt})::Nothing
     iv = div(numerator(q), denominator(q))                  # mpz_set_q: truncates
-    fbits = ndigits(abs(iv); base = 2) + 4 * arg            # mpz_sizeinbase(iv, 2)
+    fbits = ndigits(abs(iv); base=2) + 4 * arg            # mpz_sizeinbase(iv, 2)
     _fmt_print_mpf_g!(out, _fmt_mpf_set_q(fbits, abs(q)), q < 0, how, arg)
     return nothing
 end
 
-# PORT: C snprintf("%.<arg>{e,E,f,F,g,G}", f), the V_FLOAT tail of pl-fmt.c formatFloat
+# Port of C's snprintf("%.<arg>{e,E,f,F,g,G}", f), the V_FLOAT tail of pl-fmt.c formatFloat:
 # DIVERGES: Julia's `Base.Ryu` (exact, ties to even: what glibc prints) in place of the C library; the
 # infinities and NaN are spelled as C does (`inf`, `-nan`, `INF` for the capitals).
 "The text `snprintf(\"%.<arg>{how}\", f)` gives, `how` one of `eEfFgG`."

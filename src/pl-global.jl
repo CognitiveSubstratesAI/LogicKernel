@@ -364,7 +364,7 @@ ld_statistics() = ld_statistics(0, 0, 0, 0, WallTime(), 0.0, 0.0, 0.0, 0.0)
 # global variables: atom word -> value word) and `.grefs` (how many hold a value on the global stack, which
 # `_release_frozen!` then keeps), and `gvar_enums`, the pool of nb_current/2's states (src/pl-gvar.jl). Since R2 D2: `recorded_states`, the pool of recorded/2,3's states
 # (`recorded_state`, pl-incl.jl). Since R2 O1B: `IO_output_stack` (`LD->IO.output_stack`: the output context stack
-# of `with_output_to/2` and `format/3`'s redirect, src/os/pl-redirect.jl).
+# of `with_output_to/2` and `format/3`'s redirect, src/os/pl-file.jl).
 """
     PL_local_data{T}(gd)
 

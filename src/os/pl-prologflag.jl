@@ -1,6 +1,8 @@
 # UPSTREAM: swipl-devel src/os/pl-prologflag.c @ cbf4e1896275
 # UPSTREAM: swipl-devel src/os/pl-prologflag.h @ cbf4e1896275
 # UPSTREAM: swipl-devel src/pl-incl.h @ cbf4e1896275
+# UPSTREAM: swipl-devel src/pl-read.c @ cbf4e1896275
+# UPSTREAM: swipl-devel src/pl-tabling.c @ cbf4e1896275
 # CLASS: code
 # COPYRIGHT: Copyright (c)  2011-2026, University of Amsterdam
 # COPYRIGHT: VU University Amsterdam
@@ -770,7 +772,7 @@ function setUnknown(
     end
 
     if (flags & UNKNOWN_ERROR) == 0 &&
-       (m.index == MODULE_user(gd).index || m.index == MODULE_system(gd).index)
+        (m.index == MODULE_user(gd).index || m.index == MODULE_system(gd).index)
         if m.index == MODULE_system(gd).index && !SYSTEM_MODE(ld)
             key = _flag_atom_ref(ld, mk_sym(T, :unknown))
             return PL_error(
@@ -810,8 +812,8 @@ end
 function checkOnError(ld::PL_local_data{T}, value::term_t, a::T, key::T)::Bool where {T}
     k = sym_key(a)
     if k == sym_key(mk_sym(T, :print)) ||
-       k == sym_key(mk_sym(T, :halt)) ||
-       k == sym_key(mk_sym(T, :status))
+        k == sym_key(mk_sym(T, :halt)) ||
+        k == sym_key(mk_sym(T, :status))
         return true
     end
     return PL_error(ld, ERR_DOMAIN, key, value)
@@ -902,7 +904,9 @@ const FF_COPY_FLAGS = FF_READONLY | FF_WARN_NOT_ACCESSED | FF_SHARED
 # DIVERGES: no `PL_register_atom`; a list that is no proper list of atoms answers `nothing`, as upstream's NULL
 # (the `type_error(atom, X)` of an element is raised, a tail that is no `[]` raises nothing).
 "The `oneof_t` of the list of atoms `atoms` (one reference), or `nothing` (pl-prologflag.c)."
-function create_oneof(ld::PL_local_data{T}, atoms::term_t)::Union{Nothing, oneof_t{T}} where {T}
+function create_oneof(
+    ld::PL_local_data{T}, atoms::term_t
+)::Union{Nothing, oneof_t{T}} where {T}
     tail = PL_copy_term_ref(ld, atoms)
     head = PL_new_term_ref(ld)
     values = T[]
@@ -917,13 +921,15 @@ function create_oneof(ld::PL_local_data{T}, atoms::term_t)::Union{Nothing, oneof
 end
 
 # PORT: pl-prologflag.c set_oneof
-# DIVERGES: `free_oneof` is the garbage collector's.
+# DIVERGES: `free_oneof` is the garbage collector's; the local data `ld` is an argument that binds the term type `T`
+# (with `f` and `of` both `nothing`, `T` is otherwise unbound: UndefVarError).
 "Make `of` the `oneof` of the flag `f` on creation (`FF_ISCREATE`), dropping the reference to its old one (pl-prologflag.c)."
 function set_oneof(
-    f::Union{Nothing, prolog_flag{T}, PseudoFlag}, of::Union{Nothing, oneof_t{T}},
-    flags::UInt32
+    ::PL_local_data{T}, f::Union{Nothing, prolog_flag{T}, PseudoFlag},
+    of::Union{Nothing, oneof_t{T}}, flags::UInt32
 )::Nothing where {T}
-    if f isa prolog_flag{T} && of !== nothing && (flags & FF_ISCREATE) != 0 && f.oneof !== of
+    if f isa prolog_flag{T} && of !== nothing && (flags & FF_ISCREATE) != 0 &&
+        f.oneof !== of
         old = f.oneof
         if old !== nothing
             old.references -= 1
@@ -1039,8 +1045,14 @@ function keep_flag(
                 bv = atom_to_bool(ld, f.a)
                 if bv !== nothing
                     set_flag_type(f, flags)
-                    rc = set_flag_atom(f, mk_sym(T, bv ? Symbol("true") : Symbol("false"))) ?
-                         1 : 0
+                    rc =
+                        if set_flag_atom(
+                            f, mk_sym(T, bv ? Symbol("true") : Symbol("false"))
+                        )
+                            1
+                        else
+                            0
+                        end
                 end
             end
         elseif target == FT_FLOAT
@@ -1065,12 +1077,14 @@ function keep_flag(
     preset = PL_new_term_ref(ld)
     unify_prolog_flag_type(ld, f2, type) || return -1
     unify_prolog_flag_value(gd, ld, MODULE_user(gd).index, k, f, preset) || return -1
-    msg = _message_term(ld, :prolog_flag_invalid_preset, _err_atom(ld, k), preset, type, value)
+    msg = _message_term(
+        ld, :prolog_flag_invalid_preset, _err_atom(ld, k), preset, type, value
+    )
     printMessage(ld, :warning, msg) || return -1
 
     clean_prolog_flag(f)
     set_flag_type(f, flags)
-    set_oneof(f, of, flags)
+    set_oneof(ld, f, of, flags)
 
     return 0
 end
@@ -1409,7 +1423,7 @@ function set_prolog_flag_ptr(
         _flag_not_ported(k, "propagateAutoload")
 
     f = set_prolog_flag_unlocked(gd, ld, m, k, value, flags, of)
-    set_oneof(f, of, flags)
+    set_oneof(ld, f, of, flags)
 
     return f
 end
@@ -1430,7 +1444,11 @@ function pl_set_prolog_flag2_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
 )::foreign_t where {T}
     A1, A2 = PL__t0, PL__t0 + 1
-    return set_prolog_flag(_query_gd(ld), ld, A1, A2, FF_NOCREATE | FT_FROM_VALUE) ? FTRUE : FFALSE
+    return if set_prolog_flag(_query_gd(ld), ld, A1, A2, FF_NOCREATE | FT_FROM_VALUE)
+        FTRUE
+    else
+        FFALSE
+    end
 end
 
 # PORT: pl-prologflag.c prolog_flag_options

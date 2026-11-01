@@ -782,9 +782,10 @@ fixed it or a public issue exists.
 | `src/os/pl-string.jl` | `digitValue` (since R1c), a digit's value in a base | `src/os/pl-string.c` |
 | `src/os/pl-stream.jl` | the IOSTREAM subset (since R1c; user, 2026-10-07): a stream with upstream's buffer discipline (the undo area, `S__fillbuf`, `S__flushbuf`), characters in its encoding (`Sgetcode`, `Speekcode`, `Sputcode`, `Sungetc`), the position record (`IOPOS`, `Supdatepos` with ANSI escapes and wide characters), the error flags, memory streams (`Sopenmem`), string streams (`Sopen_string`) and a Julia IO (`Sopen_julia_io`: a file or a buffer, since R1e's write/1 family a terminal or a pipe; a failing IO is a write error) | `src/os/pl-stream.c`, `src/os/SWI-Stream.h` |
 | `src/os/pl-text.jl` | the text a term holds (since R1d): `PL_get_text` — an atom, a string, an integer or a rational, a code or character list, since R1e's floats a float (`format_float`) — with its errors, and a stream reading it (`Sopen_text`); `PL_chars_t`; since T1 unify with a text, compare, concatenate (`PL_unify_text`, `PL_unify_text_range`, `PL_cmp_text`, `PL_concat_text`, `PL_mb_text`), `CVT_VARNOFAIL`; DIVERGES, pl-text.c: a text from an atom or a string is UTF-8 and canonicalised by its consumer | `src/os/pl-text.c`, `src/os/pl-text.h` |
-| `src/os/pl-file.jl` | the file an open stream reads (R1f): `fileNameStream`, `setFileNameStream` — pl-file.c's stream context, the part the loader needs; since R1e's write/1 family THE STANDARD STREAMS — `initIO` over stdin/stdout/stderr (decision 2a), the host's `set_standard_stream!`, an output stream by alias (`getOutputStream`, `get_stream_handle`, `check_stream_mode`, `checkStreamType`) with upstream's errors, `streamStatus` and `reportStreamError`; since MOD2 a standard stream over the OS file descriptor when Julia's stdX is none the stream layer holds (`_std_io`, pl-stream.c `S__iob0`) | `src/os/pl-file.c`, `src/os/pl-file.h`, `src/pl-global.h`, `src/os/pl-stream.c` |
+| `src/os/pl-file.jl` | the file an open stream reads (R1f): `fileNameStream`, `setFileNameStream` — pl-file.c's stream context, the part the loader needs; since R1e's write/1 family THE STANDARD STREAMS — `initIO` over stdin/stdout/stderr (decision 2a), the host's `set_standard_stream!`, an output stream by alias (`getOutputStream`, `get_stream_handle`, `check_stream_mode`, `checkStreamType`) with upstream's errors, `streamStatus` and `reportStreamError`; since MOD2 a standard stream over the OS file descriptor when Julia's stdX is none the stream layer holds (`_std_io`, pl-stream.c `S__iob0`) | `src/os/pl-file.c`, `src/os/pl-file.h`, `src/pl-global.h`, `src/os/pl-stream.c`, `src/pl-incl.h` |
+| `src/os/pl-fmt.jl` | formatted output (since R2 O1A): `format/1,2,3`, `format_predicate/2`, `current_format_predicate/2` — `do_format` and the column machinery (`format_state`, the pending fill points), `formatInteger` and `formatFloat` (section O1A below) | `src/os/pl-fmt.c`, `src/os/pl-fmt.h` |
 | `src/os/pl-option.jl` | option lists (since R1e's write/1 family): `PL_scan_options` over `PL_option_t` tables — `Name(V)`, `Name = V`, a bare Boolean `Name`; unknown options ignored, warned about or an error, as the `unknown_option` flag says; `get_optval` | `src/os/pl-option.c`, `src/os/pl-option.h` |
-| `src/os/pl-prologflag.jl` | Prolog flags: `setBackQuotes`, `setDoubleQuotes`; since R2 F1a the flag table (`setPrologFlag`, `initPrologFlags!` with the flags of `initArith`, `initClauseIndexing` and tabling), the mask of the fast Boolean flags (`truePrologFlag`), `current_prolog_flag/2` and `'$current_prolog_flag'/5`, `PL_current_prolog_flag`, `PL_get_prolog_flag` | `src/os/pl-prologflag.c`, `src/os/pl-prologflag.h`, `src/pl-incl.h` |
+| `src/os/pl-prologflag.jl` | Prolog flags: `setBackQuotes`, `setDoubleQuotes`; since R2 F1a the flag table (`setPrologFlag`, `initPrologFlags!` with the flags of `initArith`, `initClauseIndexing` and tabling), the mask of the fast Boolean flags (`truePrologFlag`), `current_prolog_flag/2` and `'$current_prolog_flag'/5`, `PL_current_prolog_flag`, `PL_get_prolog_flag` | `src/os/pl-prologflag.c`, `src/os/pl-prologflag.h`, `src/pl-incl.h`, `src/pl-read.c`, `src/pl-tabling.c` |
 | `src/os/pl-codelist.jl` | the text of a code list or a character list (since R1d): `codes_or_chars_to_buffer`, with its partial, wide and non-code results | `src/os/pl-codelist.c` |
 | `src/os/pl-os.jl` | the operating-system layer (Y1): `CpuTime` (moved from src/pl-arith.jl), `WallTime`, `getenv3`, `Setenv`, `Unsetenv`, `Pause`, `CPU_USER`/`CPU_SYSTEM`, the Linux `CLOCK_*` ids; the C library by `ccall` (`clock_gettime`, `setenv`, `unsetenv`) | `src/os/pl-os.c`, `src/os/pl-os.h` |
 | `src/os/pl-files.jl` | file names and deleting a file (Y1): `get_file_name`, `PL_get_file_name`, `RemoveFile` (`remove(3)` by `ccall`), delete_file/1 (`PL_predicates_from_files`) | `src/os/pl-files.c` |
@@ -947,6 +948,7 @@ graph LR
     pl_read["pl-read.jl"]
     pl_qlf["pl-qlf.jl"]
     pl_string["pl-string.jl"]
+    os_pl_fmt["os/pl-fmt.jl"]
     pl_ext["pl-ext.jl"]
     ___boot_init["../boot/init.jl"]
     precompile_workload["precompile_workload.jl"]
@@ -1225,6 +1227,7 @@ graph LR
     pl_wam --> pl_error
     pl_wam --> pl_gmp
     pl_wam --> pl_arith
+    pl_wam --> os_pl_prologflag
     pl_wam --> os_pl_text
     pl_wam --> pl_setup
     pl_wam --> pl_proc
@@ -1345,13 +1348,18 @@ graph LR
     os_pl_prologflag --> pl_global
     os_pl_prologflag --> pl_modul
     os_pl_prologflag --> pl_inline
+    os_pl_prologflag --> pl_prims
     os_pl_prologflag --> pl_comp
     os_pl_prologflag --> pl_wam
     os_pl_prologflag --> pl_fli
     os_pl_prologflag --> pl_error
     os_pl_prologflag --> pl_gmp
     os_pl_prologflag --> pl_arith
+    os_pl_prologflag --> os_pl_option
     os_pl_prologflag --> os_pl_text
+    os_pl_prologflag --> os_pl_file
+    os_pl_prologflag --> pl_write
+    os_pl_prologflag --> pl_read
     os_pl_text --> term_interface
     os_pl_text --> default_term
     os_pl_text --> os_pl_utf8
@@ -1399,6 +1407,8 @@ graph LR
     os_pl_file --> os_pl_option
     os_pl_file --> os_pl_text
     os_pl_file --> os_pl_files
+    os_pl_file --> pl_pro
+    os_pl_file --> pl_read
     pl_setup --> default_term
     pl_setup --> pl_incl
     pl_setup --> pl_global
@@ -1644,6 +1654,26 @@ graph LR
     pl_string --> os_pl_text
     pl_string --> os_pl_file
     pl_string --> pl_read
+    os_pl_fmt --> term_interface
+    os_pl_fmt --> default_term
+    os_pl_fmt --> os_pl_utf8
+    os_pl_fmt --> os_pl_ctype
+    os_pl_fmt --> os_pl_stream
+    os_pl_fmt --> pl_incl
+    os_pl_fmt --> SWI_Prolog
+    os_pl_fmt --> pl_global
+    os_pl_fmt --> pl_prims
+    os_pl_fmt --> pl_comp
+    os_pl_fmt --> pl_wam
+    os_pl_fmt --> pl_fli
+    os_pl_fmt --> pl_error
+    os_pl_fmt --> pl_gmp
+    os_pl_fmt --> pl_arith
+    os_pl_fmt --> os_pl_text
+    os_pl_fmt --> os_pl_file
+    os_pl_fmt --> pl_pro
+    os_pl_fmt --> pl_write
+    os_pl_fmt --> pl_read
     pl_ext --> term_interface
     pl_ext --> default_term
     pl_ext --> pl_incl
@@ -1682,6 +1712,7 @@ graph LR
     pl_ext --> pl_read
     pl_ext --> pl_qlf
     pl_ext --> pl_string
+    pl_ext --> os_pl_fmt
     ___boot_init --> term_interface
     ___boot_init --> default_term
     ___boot_init --> os_pl_stream
@@ -1695,6 +1726,7 @@ graph LR
     ___boot_init --> pl_fli
     ___boot_init --> pl_error
     ___boot_init --> pl_arith
+    ___boot_init --> os_pl_prologflag
     ___boot_init --> os_pl_text
     ___boot_init --> os_pl_file
     ___boot_init --> pl_proc
@@ -3381,7 +3413,9 @@ pl-wam.c, pl-comp.c and pl-pro.c at the pin `8609e216`, upstream names.
   the nested query's records lie above `lTop` and go when it is cut.
 * **The boot clauses** (src/pl-ext.jl `_boot_cleanup!`, as catch/3's): boot/init.pl's three
   clauses of the family and `call(Goal) :- Goal.`, compiled when the database is created; R2 loads
-  boot/init.pl instead.
+  boot/init.pl instead. `_boot_control!` (D stack, O1A) adds `','/2`, `;/2` (two clauses), `->/2`, `*->/2` and `\+/1` as
+  init.pl:398-402 and 530 define them, with their meta-predicate masks: a goal that reaches `callProlog` (pl-pro.c resolves the
+  goal's functor: with_output_to/2, `~@`) is a control construct there.
 * **DIVERGES:** `mustBeCallable` — upstream accepts only `Module:Goal`, which the family's
   meta-predicate declarations supply; with no module transparency before R2 an unqualified term
   is checked as the goal itself, so the culprit of `type_error(callable, _)` is the plain term
@@ -5913,7 +5947,7 @@ What chunk (a) adds (swipl-devel pin `cbf4e1896275`, oracle swipl 10.1.19):
   `docs/port_inventory.md` is regenerated at the gate, not here.
 ## O1B — the output redirect and `with_output_to/2` (R2 O1, pl-file.c at the pin)
 
-What O1B ports (src/os/pl-redirect.jl NEW, included after os/pl-file.jl; src/pl-global.jl, src/pl-pro.jl; edit-only, nothing compiled or run):
+What O1B ports (appended to src/os/pl-file.jl; src/pl-global.jl, src/pl-pro.jl; edit-only, nothing compiled or run):
 
 - **The output context stack** (pl-file.c `pushOutputContext`, `popOutputContext`, `setStandardStream`): the current output waits on
   `LD->IO.output_stack` (the one appended LD field `IO_output_stack`, a struct change: alloc pins x3 at the gate) while a redirect is in force.
@@ -5960,7 +5994,7 @@ What SETARG adds (src/pl-prims.jl before the predicate table, src/pl-copyterm.jl
 Tests: test/core_lang/test_setarg_swipl.jl (83 rows against swipl 10.1.19, two byte-identical runs; sa43-sa47 freeze, sa56-sa58 sharing,
 sa68-sa83 attributed variables and cycles are the rows to read first if the kernel differs), mutants tools/mutants/SETARG.py (27, two equivalent with reasons).
 
-## O1A — `format/2,3` (R2 O1, pl-fmt.c at swipl-devel cbf4e1896275; `src/pl-fmt.jl`)
+## O1A — `format/2,3` (R2 O1, pl-fmt.c at swipl-devel cbf4e1896275; `src/os/pl-fmt.jl`)
 
 What O1A ports (written edit-only, nothing compiled when this was written; writer B's `with_output_to/2` and the redirect live in the O1B block):
 
@@ -5977,7 +6011,7 @@ What O1A ports (written edit-only, nothing compiled when this was written; write
   raises `domain_error(not_less_than_zero, N)`.
 - **The registration table** `PL_predicates_from_format` (format/2,3 and `format_predicate/2` TRANSPARENT|VARARGS; `current_format_predicate/2` adds NONDETERMINISTIC). It is
   wired into `_PRED_TABLES` and `_FOREIGN_VA` of src/pl-ext.jl (commit b3171b3); O1B's redirect table is appended to the same tuples, so the stack owner resolves that textual clash.
-  `include("pl-fmt.jl")` sits in src/LogicKernel.jl between pl-read.jl and pl-ext.jl; the merge include order is os/pl-file.jl, os/pl-redirect.jl, pl-write.jl, pl-fmt.jl, pl-ext.jl.
+  `include("os/pl-fmt.jl")` sits in src/LogicKernel.jl between pl-read.jl and pl-ext.jl; the merge include order is os/pl-file.jl (the redirect is its tail), pl-write.jl, os/pl-fmt.jl, pl-ext.jl.
 - **INTERFACE TO B** (what pl-fmt.c needs from pl-file.c, under upstream's names; O1B supplies them): `tellString(ld, bufp, sizep, enc)::Bool` (pl-file.c:2629) and
   `toldString(ld)::Bool` (:2642), `redir_context` with its `.stream`, `setupOutputRedirect(ld, to, ctx, redir)::Bool` (:1708, `to == 0` is the current output),
   `closeOutputRedirect(ld, ctx)::Bool` (:1774), `discardOutputRedirect(ld, ctx)::Nothing` (:1826), and the six-argument `callProlog` (wip/o1b 3cb3a13) that `~@` calls.
@@ -5993,11 +6027,11 @@ What O1A ports (written edit-only, nothing compiled when this was written; write
   so the exponent guesses behave as upstream's. `PL_format_error`/`PL_format_arg_error` are functions, not `PL_error` codes (no `ERR_FORMAT` in the enum). `format_` is named with
   a trailing underscore; the state is built in `prepare_sub_format`. a numeric argument that overflows an `Int`: upstream's `int arg2 = arg*10+dw` wraps in C (undefined behaviour); compiled swipl
   10.1.19 prints `1` for `format("~3000000000d", [1])`, the port raises `argument overflow` (handoff flag k, open for the stack owner and the audit; its row and mutant are NOT STARTED).
-- **UNVERIFIED:** nothing in src/pl-fmt.jl or its test was parsed by Julia; the first gate run is expected to need a fix commit (names `redir_context`, `setupOutputRedirect`, `tellString`,
+- **UNVERIFIED:** nothing in src/os/pl-fmt.jl or its test was parsed by Julia; the first gate run is expected to need a fix commit (names `redir_context`, `setupOutputRedirect`, `tellString`,
   `toldString`, `PL_is_pair`, `PL_put_integer`, `pl_write_term3`; `Base.Ryu.writefixed`/`writeexp` argument positions; the GMP details above were written from memory).
 
 Tests: test/core_lang/test_format_swipl.jl (123 rows against swipl 10.1.19, generated by evidence/O1A/gen_rows.py; rows f13-f15 and f65-f74 observe `tellString`/`toldString` through `~@`,
-columns and `with_output_to`). Mutants: tools/mutants/O1A.py (130 mutants over src/pl-fmt.jl, one declared equivalent).
+columns and `with_output_to`). Mutants: tools/mutants/O1A.py (130 mutants over src/os/pl-fmt.jl, one declared equivalent).
 
 ## Still to come
 

@@ -2402,7 +2402,8 @@ function pl_print2(ld::PL_local_data{T}, stream::term_t, term::term_t)::foreign_
     opts = PL_new_term_ref(ld)
 
     gd = ld.GD
-    if gd === nothing || !PL_current_prolog_flag(gd, ld, mk_sym(T, :print_write_options), opts)
+    if gd === nothing ||
+        !PL_current_prolog_flag(gd, ld, mk_sym(T, :print_write_options), opts)
         setSlotValue!(ld, opts + 1, _print_write_options(T))    # (the flag's default)
     end
     rc = pl_write_term3(ld, stream, term, opts)

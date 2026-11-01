@@ -729,7 +729,8 @@ let (X, T) = (_v(), _v())
     _nr_add!(
         _nrf(:dv, _nrcons(X, T)),
         _nrf(
-            Symbol(","), _nrf(:is, _v(), _nrf(Symbol("/"), X, gnd_term(BT, 2))), _nrf(:dv, T)
+            Symbol(","), _nrf(:is, _v(), _nrf(Symbol("/"), X, gnd_term(BT, 2))),
+            _nrf(:dv, T)
         )
     )
     _nr_add!(
