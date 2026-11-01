@@ -6050,3 +6050,25 @@ Pin: swipl-devel cbf4e1896275, `src/pl-prims.c`. Nine `PRED_IMPL`s, all in `src/
   is the SETARG step.
 - **Pinned by** test/core_lang/test_p1_swipl.jl: rows p001-p176 against swipl 10.1.19 (generator and pins in evidence/P1/), plus a
   kernel-only `$expr/n` testset. Mutants: tools/mutants/P1.py.
+
+## P2 — pl-prims.c text predicates: `atomic_list_concat/2,3`, `atomics_to_string/2,3`, `sub_atom/5` (R2, audit D-0306 item 2)
+
+What P2 adds (edit-only: nothing was compiled when this was written; the gate decides). The predicates boot/init.pl builds its
+paths with (`atomic_list_concat/2,3`, `sub_atom/5`) and boot/messages.pl its message prefixes with (`atomics_to_string/2`):
+
+- **`atomic_list_concat/2,3` and `atomics_to_string/2,3`** (src/pl-prims.jl `atomic_list_concat`, `split_atom`; four `pl_*_va`
+  wrappers): one body, `ret_type` `PL_ATOM` or `PL_STRING`. The join takes each element's `PL_get_text` (`CVT_ATOMIC`) and puts
+  the separator between them; upstream's `tmp_buffer` with its encoding promotion is a vector of canonical texts joined by
+  `PL_concat_text` (representation only). The atom version keeps the historical mode (-,+,+): an unbound element with a
+  separator turns the call into a split of the atom at the (non-empty) separator (`split_atom`, pieces made atoms). Errors as
+  upstream: `type_error(text, Elem)`, `type_error(text, Sep)`, `type_error(list, Tail)`, `domain_error(non_empty_atom, Sep)`,
+  and `lengthList(l, true)` at the 100th element (a long partial list is refused where a short one is split).
+- **`sub_atom/5`** (`pl_sub_atom5_va`): pl-ext.c's `FRG("sub_atom", 5, pl_sub_atom, NDET|ISO)`; the body is T2's `sub_text`
+  with `PL_ATOM`, the one `sub_string/5` shares.
+- **Registration**: the five entries sit in `PL_predicates_from_strings` beside `sub_string/5` (as T2 placed `string_length/2`),
+  so the dispatch indices of the earlier tables stay as they were.
+- **Left to R3** (the boot never calls them): `$filled_array/4`, `$is_char/1`, `$is_char_code/1`, `$is_char_list/2`,
+  `$is_code_list/2`, `$seek_list/4`, `$unbind_template/1`, `collation_key/2`, `sub_atom_icasechk/3`.
+
+Tests: test/core_lang/test_p2_swipl.jl (rows p01-p70; pins from swipl 10.1.19, two byte-identical runs; generator
+evidence/P2/gen_rows.py). Mutants: tools/mutants/P2.py.
