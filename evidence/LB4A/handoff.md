@@ -67,3 +67,9 @@ B3 and B5 depend on the test_home_tree.jl stale row (B5 only since g7). Survivor
 4. Push `mutants/LB4A` at the WIP SHA (LB4A.py exists; its TARGETS name test_vendored_*, so mutation.yml checks the pin out).
 5. branch-gate; term scan EXCLUDING vendor/ (question 4); then the gate push on a FRESH name and `mutants/LB4A` at the SAME SHA.
 No struct change, no Tier-1 file touched (pl-global.jl untouched). Never edit a vendored file: a mutant edits one only through the harness's text replace, restored after the run.
+
+## GATE AGENT STATE (2026-11-01 ~13:30Z)
+wip/lb4a2 = rebased onto main 1286e62 (T2 section kept beside LB4 a), review findings 1-4 applied (660eaa7), fmt pass 768753f.
+Done: vendor verify clean, fmt, inventory (no change), check PASS (239s), test_vendored_swipl.jl (1543) and test_home_tree.jl (755) pass.
+mutants/LB4A pushed at 768753f (from local gate/lb4a, same SHA). Daemon logickernel-warm-2e3734af in lk-warm2.slice (6G cap kept, D-0287 permanent rule).
+Running: warm.sh file test/core_lang/test_prolog_flag_swipl.jl (3 term types). Left: type discipline, pkgtest_way x3, branch-gate, term scan excl vendor/, gate/lb4a push.
