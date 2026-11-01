@@ -6,7 +6,7 @@
 # shard is missing, ran nothing, failed, or the passes do not sum to it. MEASURED 2026-10-20: 211 passed,
 # 0 failed (the whole run, locally, on a branch); the same run on main passed 212 (one case ran only there —
 # fixed 2026-10-21: every ref now runs 212); 215 after the three sibling-mutant guard cases (2026-10-21). A case
-# added or removed changes `total`: update it in the same commit (228 after the seven second-daemon-restart cases, 2026-10-24; 231 after the three declarations-check cases of `fast`, 237 after the CI-parity cases (three of `bgfiles`, three of `fast`), 239 with the two Pkg.test-way cases of `fast`, TOOL-TS 2026-10-29 — UNVERIFIED until the gather reports it; 255 with the sixteen struct-gate and leftover-restart cases of `guard` in second mode, WARM2T),
+# added or removed changes `total`: update it in the same commit (228 after the seven second-daemon-restart cases, 2026-10-24; 231 after the three declarations-check cases of `fast`, 237 after the CI-parity cases (three of `bgfiles`, three of `fast`), 239 with the two Pkg.test-way cases of `fast`, TOOL-TS 2026-10-29 — UNVERIFIED until the gather reports it; 255 with the sixteen struct-gate and leftover-restart cases of `guard` in second mode, WARM2T; 301 with the forty-six no-daemon cases of the new `lanes` mode, WARM3 2026-11-01 — UNVERIFIED until the gather reports it),
 # from the gather's own report.
 # BALANCE (re-measured 2026-10-22 on main-push run 39802795515, the `tools/test_warm.sh shard` step alone): main 324 s,
 # stale 334, fast 330, state 180, light 176 (+ 14 for tools/test_evidence.sh) — the job times (509-644 s) differ by the
@@ -14,10 +14,10 @@
 # and `light` were merged into `light` (~370 s: one runner and its ~190 s setup fewer, under the 644 s of `main`). The
 # gather's ::notice lists the passes per shard; a shard's seconds are in the job's step list (the jobs API).
 #   shard<TAB>NAME<TAB>MODES (space-separated: main, rss, structs, fast, stale, refuse, inventory, noswipl,
-#                             guard, cap, bgfiles, gatebase, srcmap, bgbudget)
+#                             guard, lanes, cap, bgfiles, gatebase, srcmap, bgbudget)
 #   The CI matrix of .github/workflows/CI.yml names exactly these shards (test/test_gate_split.jl).
 shard	main	main
 shard	stale	stale
 shard	fast	fast
-shard	light	noswipl guard cap refuse inventory bgfiles gatebase srcmap bgbudget rss structs
-total	255
+shard	light	noswipl guard lanes cap refuse inventory bgfiles gatebase srcmap bgbudget rss structs
+total	301

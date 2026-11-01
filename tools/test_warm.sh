@@ -8,6 +8,7 @@
 #   tools/test_warm.sh structs  # the struct gate's cases alone
 #   tools/test_warm.sh fast     # the fast static pre-check's planted-defect cases alone (and the declarations check's)
 #   tools/test_warm.sh cap      # the task-ceiling cases alone (no daemon)
+#   tools/test_warm.sh lanes    # the daemon lanes alone (second/third lane plan, the Manifest.toml copy; no daemon)
 #   tools/test_warm.sh guard    # the daemon guard alone: one daemon at a time, the idle exit, the budget
 #   tools/test_warm.sh bgfiles  # the branch-gate's file selection alone (no daemon)
 #   tools/test_warm.sh gatebase # the gate base: committed changes selected (no daemon)
@@ -557,6 +558,98 @@ SH
     unset LOGICKERNEL_SHARED_BUDGET
 }
 
+# THE DAEMON LANES, no daemon (WARM3, D-0283 item 6, D-0276 item 4): `warm.sh lane-plan` prints the lane a start
+# would take beside FAKE other daemons (LOGICKERNEL_WARM_OTHERS_FAKE, one line each as `_other_daemons` prints them)
+# and a faked MemAvailable (LOGICKERNEL_WARM_MEMAVAIL_KB), starting nothing; the Manifest.toml copy runs on planted
+# git repositories. A THIRD daemon runs beside TWO others, only with LOGICKERNEL_WARM_THIRD_MIN_GB (12) available,
+# in lk-warm3.slice, never a fourth, never on a tree that already has a daemon; a fresh worktree gets a sibling's
+# Manifest.toml when the Project.toml files are byte-identical, and never overwrites one.
+_lanes_cases() {
+    local o1="unit logickernel-warm-aaaa0001.service, pid 11, worktree /nonexistent/lane_a, age 1:00, rss 1.0 GB"
+    local o2="unit logickernel-warm-bbbb0002.service, pid 22, worktree /nonexistent/lane_b, age 2:00, rss 2.0 GB"
+    local o3="unit logickernel-warm-cccc0003.service, pid 33, worktree /nonexistent/lane_c, age 3:00, rss 3.0 GB"
+    local own="unit logickernel-warm-dddd0004.service, pid 44, worktree $ROOT, age 4:00, rss 4.0 GB"
+    local gb=1048576 two plan
+    two="$o1"$'\n'"$o2"
+    plan() {   # plan OTHERS MEM_GB [VAR=VALUE…] — lane-plan's output on stdout+stderr in $T/lp, its exit code returned
+        local others="$1" mem="$2"; shift 2
+        env -u LOGICKERNEL_WARM_SECOND -u LOGICKERNEL_WARM_THIRD -u LOGICKERNEL_WARM_SECOND_MIN_GB \
+            -u LOGICKERNEL_WARM_THIRD_MIN_GB -u LOGICKERNEL_WARM_THIRD_MEM_MAX "$@" \
+            LOGICKERNEL_WARM_OTHERS_FAKE="$others" LOGICKERNEL_WARM_MEMAVAIL_KB=$((mem * gb)) \
+            "$W" lane-plan > "$T/lp" 2>&1
+    }
+    plan "" 1; check "lanes: no other daemon — the first lane, no opt-in needed" 0 $?
+    has "…in lk-warm.slice" "$T/lp" "^lane: first slice lk-warm.slice" 1
+    plan "$o1" 20 LOGICKERNEL_WARM_SECOND=1; check "lanes: SECOND beside one other, 20 GB — allowed" 0 $?
+    has "…the second lane, lk-warm2.slice, 6G" "$T/lp" "^lane: second slice lk-warm2.slice mem 6G" 1
+    plan "$o1" 7 LOGICKERNEL_WARM_SECOND=1; check "lanes: SECOND with 7 GB available — refused (exit 6, 8 GB line)" 6 $?
+    has "…saying how much it needs" "$T/lp" "second daemon needs 8 GB available, 7 GB are" 1
+    plan "$o1" 40; check "lanes: one other and no opt-in — nothing (the one-at-a-time refusal is _start's)" 0 $?
+    has "…the lane is 'refused'" "$T/lp" "^lane: refused" 1
+    plan "$two" 40 LOGICKERNEL_WARM_SECOND=1; check "lanes: SECOND beside TWO others — refused, never the third by that name (exit 6)" 6 $?
+    has "…saying ONE other is the limit" "$T/lp" "allows ONE other daemon, 2 are running" 1
+    # the THIRD lane
+    plan "$two" 12 LOGICKERNEL_WARM_THIRD=1; check "lanes: THIRD beside two others with 12 GB available — allowed" 0 $?
+    has "…the third lane, in its own lk-warm3.slice, 6G" "$T/lp" "^lane: third slice lk-warm3.slice mem 6G" 1
+    plan "$two" 11 LOGICKERNEL_WARM_THIRD=1; check "lanes: THIRD with 11 GB available — refused below the 12 GB line (exit 6)" 6 $?
+    has "…saying how much it needs" "$T/lp" "third daemon needs 12 GB available, 11 GB are" 1
+    plan "$two" 15 LOGICKERNEL_WARM_THIRD=1 LOGICKERNEL_WARM_THIRD_MIN_GB=16; check "lanes: …LOGICKERNEL_WARM_THIRD_MIN_GB moves the line (16 GB, 15 available: refused)" 6 $?
+    plan "$two" 20 LOGICKERNEL_WARM_THIRD=1 LOGICKERNEL_WARM_THIRD_MEM_MAX=4G; check "lanes: …LOGICKERNEL_WARM_THIRD_MEM_MAX sets the slice's MemoryMax" 0 $?
+    has "…4G" "$T/lp" "^lane: third slice lk-warm3.slice mem 4G" 1
+    plan "$two"$'\n'"$o3" 64 LOGICKERNEL_WARM_THIRD=1; check "lanes: THIRD beside THREE others — refused, never a fourth (exit 6)" 6 $?
+    has "…naming the fourth" "$T/lp" "never a fourth, 3 are running" 1
+    plan "$two" 64; check "lanes: two others and no opt-in — no lane (the third needs LOGICKERNEL_WARM_THIRD)" 0 $?
+    has "…the lane is 'refused'" "$T/lp" "^lane: refused" 1
+    plan "$o1" 64 LOGICKERNEL_WARM_THIRD=1; check "lanes: THIRD beside only ONE other — refused (exit 6), the second lane comes first" 6 $?
+    has "…saying so" "$T/lp" "beside TWO other daemons; 1 run" 1
+    plan "$o1" 64 LOGICKERNEL_WARM_THIRD=1 LOGICKERNEL_WARM_SECOND=1; check "lanes: both opt-ins beside one other — the SECOND lane" 0 $?
+    has "…lk-warm2.slice" "$T/lp" "^lane: second slice lk-warm2.slice" 1
+    plan "$two" 64 LOGICKERNEL_WARM_THIRD=1 LOGICKERNEL_WARM_SECOND=1; check "lanes: both opt-ins beside two others — the THIRD lane" 0 $?
+    has "…lk-warm3.slice" "$T/lp" "^lane: third slice lk-warm3.slice" 1
+    plan "$o1"$'\n'"$own" 64 LOGICKERNEL_WARM_THIRD=1; check "lanes: THIRD with a daemon already on THIS tree — refused (exit 6)" 6 $?
+    has "…naming the checkout" "$T/lp" "a daemon already runs in this checkout ($ROOT)" 1
+    plan "$own" 64 LOGICKERNEL_WARM_SECOND=1; check "lanes: SECOND with a daemon already on this tree — refused too (exit 6)" 6 $?
+    # a restart of the SECOND lane beside the first and a running THIRD (two others, one of them a third)
+    mkdir -p "$T/wt_third/.warm"; : > "$T/wt_third/.warm/third"
+    local o3t="unit logickernel-warm-eeee0005.service, pid 55, worktree $T/wt_third, age 5:00, rss 5.0 GB"
+    plan "$o1"$'\n'"$o3t" 20 LOGICKERNEL_WARM_SECOND=1; check "lanes: SECOND beside the first and a running THIRD — allowed (its restart is not stranded)" 0 $?
+    has "…the second lane" "$T/lp" "^lane: second slice lk-warm2.slice" 1
+    rm -f "$T/wt_third/.warm/third"
+    plan "$o1"$'\n'"$o3t" 20 LOGICKERNEL_WARM_SECOND=1; check "lanes: …but beside two others with no THIRD among them — refused (exit 6)" 6 $?
+    # the lane is remembered across a restart: warm.sh's own source names the marker and the slice it maps to
+    has "lanes: a restart keeps the THIRD lane (.warm/third) and its slice (lk-warm3.slice)" "$ROOT/tools/warm.sh" 'elif \[ -f "\$DIR/third" \]; then _lane_slice_name third' 1
+    # the Manifest.toml copy (a fresh worktree has none; gitignored). Real git repositories in $T, no commit hooks
+    # involved: the commit is made with plumbing. GITHUB_ACTIONS is unset (a runner resolves its own manifest).
+    local R="$T/mrepo" c idt=(GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@t GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@t)
+    mkdir -p "$R/main"
+    git -C "$R/main" init -q
+    c=$(env "${idt[@]}" git -C "$R/main" commit-tree "$(git -C "$R/main" mktree < /dev/null)" -m base)
+    git -C "$R/main" update-ref refs/heads/base "$c"
+    printf 'name = "X"\nversion = "1"\n' > "$R/main/Project.toml"
+    printf 'MANIFEST-OF-MAIN\n' > "$R/main/Manifest.toml"
+    git -C "$R/main" worktree add -q --detach "$R/wt" base 2> /dev/null
+    cp "$R/main/Project.toml" "$R/wt/Project.toml"
+    seed() { env -u GITHUB_ACTIONS "$W" manifest-seed "$1" > "$T/ms" 2>&1; }
+    seed "$R/wt"; check "manifest: a fresh worktree gets the sibling's Manifest.toml (exit 0)" 0 $?
+    cmp -s "$R/main/Manifest.toml" "$R/wt/Manifest.toml"; check "manifest: …byte for byte" 0 $?
+    has "…naming the sibling" "$T/ms" "copied from the sibling worktree $R/main" 1
+    printf 'MY-OWN-MANIFEST\n' > "$R/wt/Manifest.toml"
+    seed "$R/wt"; check "manifest: an existing Manifest.toml — nothing to do (exit 0)" 0 $?
+    [ "$(cat "$R/wt/Manifest.toml")" = MY-OWN-MANIFEST ]; check "manifest: …and never overwritten" 0 $?
+    rm -f "$R/wt/Manifest.toml"
+    printf 'name = "X"\nversion = "2"\n' > "$R/wt/Project.toml"
+    seed "$R/wt"; check "manifest: a sibling with a DIFFERENT Project.toml — refused (exit 1)" 1 $?
+    has "…saying why" "$T/ms" "byte-identical Project.toml" 1
+    [ ! -e "$R/wt/Manifest.toml" ]; check "manifest: …and nothing copied" 0 $?
+    cp "$R/main/Project.toml" "$R/wt/Project.toml"; mv "$R/main/Manifest.toml" "$R/main/Manifest.toml.off"
+    seed "$R/wt"; check "manifest: a matching sibling that has NO Manifest.toml — refused (exit 1)" 1 $?
+    mv "$R/main/Manifest.toml.off" "$R/main/Manifest.toml"
+    mkdir -p "$R/plain"; cp "$R/main/Project.toml" "$R/plain/Project.toml"
+    seed "$R/plain"; check "manifest: a directory that is no worktree of the repository — refused (exit 1)" 1 $?
+    env GITHUB_ACTIONS=true "$W" manifest-seed "$R/wt" > "$T/ms" 2>&1; check "manifest: on a GitHub runner — nothing done (exit 0)" 0 $?
+    [ ! -e "$R/wt/Manifest.toml" ]; check "manifest: …no file written there" 0 $?
+}
+
 _cap_cases() {
     systemd-run --user --scope true > /dev/null 2>&1 || { echo "  (cap: no user systemd here — skipped)"; return 0; }
     _pids='cat /sys/fs/cgroup$(cut -d: -f3 /proc/self/cgroup)/pids.max'
@@ -800,6 +893,13 @@ fi
 if [ "${1:-}" = guard ]; then                        # the daemon guard alone: one daemon, idle exit, budget
     _guard_cases
     echo "test_warm (guard): $pass passed, $fail failed"
+    [ "$fail" -eq 0 ]
+    exit
+fi
+if [ "${1:-}" = lanes ]; then                        # the daemon lanes alone (no daemon: fakes and planted repositories)
+    trap 'rm -rf "$T"' EXIT                            # nothing to stop: these never start the lane
+    _lanes_cases
+    echo "test_warm (lanes): $pass passed, $fail failed"
     [ "$fail" -eq 0 ]
     exit
 fi
@@ -1058,6 +1158,7 @@ has "…and rewrites nothing" "$T/fmt2" "fmt: 0 file(s) rewritten" 1
 rm -f "$_fm_probe"
 
 _unless_main _guard_cases
+_unless_main _lanes_cases
 _unless_main _cap_cases
 _unless_main _bgfiles_cases
 _unless_main _gatebase_cases

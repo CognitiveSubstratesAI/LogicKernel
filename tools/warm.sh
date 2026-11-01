@@ -7,6 +7,8 @@
 #                                                          # daemon runs, naming it (user, 2026-10-14);
 #                                                          # LOGICKERNEL_WARM_SECOND=1: a SECOND daemon
 #                                                          # beside one other (audit D-0114, below);
+#                                                          # LOGICKERNEL_WARM_THIRD=1: a THIRD beside two
+#                                                          # others, 12 GB free (D-0276 item 4, below);
 #                                                          # a daemon exits after LOGICKERNEL_WARM_IDLE_S
 #                                                          # (3600) with no request; all of them share
 #                                                          # lk-warm.slice (tools/lib_evidence.sh)
@@ -106,39 +108,151 @@ _other_daemons() {
     done
 }
 
-# A SECOND DAEMON (audit D-0114, 2026-10-23): with LOGICKERNEL_WARM_SECOND=1, `start` may run this
-# checkout's daemon beside ONE other checkout's — never a third, never two on one tree (the unit is
-# per checkout) — and only while MemAvailable is at least LOGICKERNEL_WARM_SECOND_MIN_GB (8). The
-# second daemon gets a slice of its own beside `lk-warm.slice` (lk-warm2.slice, MemoryMax
-# LOGICKERNEL_WARM_SECOND_MEM_MAX, 6G), so when memory runs short the SECOND lane is the one the
-# kernel kills, never the first (D-0114 item 1: the landing closest to main keeps its daemon). A
-# timeout while both run is rerun once alone before it counts (D-0114 item 3).
+# THE DAEMON LANES (audit D-0114, D-0276 item 4): at most THREE daemons, one per checkout (the unit is per
+# checkout, so never two on one tree), each in a slice of its own, so that when memory runs short the kernel
+# kills the THIRD lane, then the second, never the first (D-0114 item 1: the landing closest to main keeps
+# its daemon):
+#   first   no other daemon runs                       lk-warm.slice   (10G, tools/lib_evidence.sh)
+#   second  LOGICKERNEL_WARM_SECOND=1, ONE other       lk-warm2.slice  (LOGICKERNEL_WARM_SECOND_MEM_MAX, 6G),
+#           only while MemAvailable >= LOGICKERNEL_WARM_SECOND_MIN_GB (8)
+#   third   LOGICKERNEL_WARM_THIRD=1, TWO others       lk-warm3.slice  (LOGICKERNEL_WARM_THIRD_MEM_MAX, 6G),
+#           only while MemAvailable >= LOGICKERNEL_WARM_THIRD_MIN_GB (12: D-0276 item 4, both others loaded)
+# Never a fourth. A timeout while several run is rerun once alone before it counts (D-0114 item 3). The
+# lane is remembered in `.warm/second` / `.warm/third`, so an automatic restart keeps it (A-0079 item 5);
+# only a deliberate `stop` forgets it. A restart of the SECOND lane beside the first and a running third
+# is allowed (two others, one of them a third), so a struct change under the second does not strand it.
+# `warm.sh lane-plan` prints the lane a start would take, starting nothing (the tests' seam).
+# _mem_avail_kb — MemAvailable; LOGICKERNEL_WARM_MEMAVAIL_KB replaces it: a TEST SEAM (tools/test_warm.sh)
+_mem_avail_kb() {
+    if [ -n "${LOGICKERNEL_WARM_MEMAVAIL_KB:-}" ]; then echo "$LOGICKERNEL_WARM_MEMAVAIL_KB"; return; fi
+    awk '/^MemAvailable:/ {print $2}' /proc/meminfo
+}
+# _same_tree OTHERS — whether one of the other daemons already runs in THIS checkout (never two on one tree)
+_same_tree() { printf '%s\n' "$1" | grep -qF "worktree $ROOT,"; }
+# _has_third OTHERS — whether one of the other daemons is a THIRD lane (its worktree carries `.warm/third`)
+_has_third() {
+    local wd
+    for wd in $(printf '%s\n' "$1" | sed -n 's/.*worktree \([^,]*\),.*/\1/p'); do
+        [ -f "$wd/.warm/third" ] && return 0
+    done
+    return 1
+}
 # _second_ok OTHERS — whether a second daemon may start beside OTHERS (one line each); says why not
 _second_ok() {
     local n avail_kb min_gb="${LOGICKERNEL_WARM_SECOND_MIN_GB:-8}"
     n=$(printf '%s\n' "$1" | grep -c .)
-    if [ "$n" -gt 1 ]; then
+    if [ "$n" -gt 1 ] && { [ "$n" -gt 2 ] || ! _has_third "$1"; }; then
         echo "warm lane: REFUSED — LOGICKERNEL_WARM_SECOND allows ONE other daemon, $n are running" >&2
         return 1
     fi
-    avail_kb=$(awk '/^MemAvailable:/ {print $2}' /proc/meminfo)
+    if _same_tree "$1"; then
+        echo "warm lane: REFUSED — a daemon already runs in this checkout ($ROOT)" >&2
+        return 1
+    fi
+    avail_kb=$(_mem_avail_kb)
     if [ "${avail_kb:-0}" -lt $((min_gb * 1048576)) ]; then
         echo "warm lane: REFUSED — a second daemon needs ${min_gb} GB available, $((${avail_kb:-0} / 1048576)) GB are (D-0114)" >&2
         return 1
     fi
     return 0
 }
+# _third_ok OTHERS — whether a THIRD daemon may start beside OTHERS: exactly two others, none of them in this
+# checkout, MemAvailable >= LOGICKERNEL_WARM_THIRD_MIN_GB (12); says why not
+_third_ok() {
+    local n avail_kb min_gb="${LOGICKERNEL_WARM_THIRD_MIN_GB:-12}"
+    n=$(printf '%s\n' "$1" | grep -c .)
+    if [ "$n" -gt 2 ]; then
+        echo "warm lane: REFUSED — LOGICKERNEL_WARM_THIRD allows TWO other daemons and never a fourth, $n are running" >&2
+        return 1
+    fi
+    if [ "$n" -lt 2 ]; then
+        echo "warm lane: REFUSED — LOGICKERNEL_WARM_THIRD is the THIRD lane, beside TWO other daemons; $n run (LOGICKERNEL_WARM_SECOND starts the second)" >&2
+        return 1
+    fi
+    if _same_tree "$1"; then
+        echo "warm lane: REFUSED — a daemon already runs in this checkout ($ROOT)" >&2
+        return 1
+    fi
+    avail_kb=$(_mem_avail_kb)
+    if [ "${avail_kb:-0}" -lt $((min_gb * 1048576)) ]; then
+        echo "warm lane: REFUSED — a third daemon needs ${min_gb} GB available, $((${avail_kb:-0} / 1048576)) GB are (D-0276 item 4)" >&2
+        return 1
+    fi
+    return 0
+}
+# _lane_slice_name LANE / _lane_mem_max LANE — the slice a lane runs in and its MemoryMax (first: lib_evidence's own)
+_lane_slice_name() { case "$1" in second) echo lk-warm2.slice ;; third) echo lk-warm3.slice ;; *) echo lk-warm.slice ;; esac; }
+_lane_mem_max() {
+    case "$1" in
+        second) echo "${LOGICKERNEL_WARM_SECOND_MEM_MAX:-6G}" ;;
+        third) echo "${LOGICKERNEL_WARM_THIRD_MEM_MAX:-6G}" ;;
+        *) echo "${LOGICKERNEL_SLICE_MEM_MAX:-10G}" ;;
+    esac
+}
+# _lane_plan OTHERS — sets LANE (first | second | third | refused) for a daemon starting beside OTHERS; returns 6
+# with the reason on stderr when an opted-in lane is not allowed. `refused` (returns 0) = no opt-in: `_start`
+# prints the one-at-a-time message.
+_lane_plan() {
+    local n
+    n=$(printf '%s\n' "$1" | grep -c .)
+    LANE=first
+    [ "$n" -eq 0 ] && return 0
+    if [ "${LOGICKERNEL_WARM_THIRD:-}" = 1 ] && { [ "$n" -ge 2 ] || [ "${LOGICKERNEL_WARM_SECOND:-}" != 1 ]; }; then
+        _third_ok "$1" || return 6
+        LANE=third
+    elif [ "${LOGICKERNEL_WARM_SECOND:-}" = 1 ]; then
+        _second_ok "$1" || return 6
+        LANE=second
+    else
+        LANE=refused
+    fi
+    return 0
+}
+
+# A FRESH WORKTREE HAS NO Manifest.toml (gitignored), and `using LogicKernel` then fails on PrecompileTools
+# (WARM3, D-0283 item 6). _manifest_seed ROOT copies the Manifest.toml of a SIBLING worktree of the same
+# repository when ROOT has none and that sibling's Project.toml is byte-identical (`cmp`); it never
+# overwrites a Manifest.toml, and refuses, with the reason, when no sibling matches. On a GitHub runner
+# (GITHUB_ACTIONS) the job resolves its own manifest: nothing is done there.
+_manifest_seed() {
+    local root="$1" wt sib
+    [ -f "$root/Manifest.toml" ] && return 0
+    [ -n "${GITHUB_ACTIONS:-}" ] && return 0
+    [ -f "$root/Project.toml" ] || { echo "warm lane: REFUSED — no Project.toml in $root" >&2; return 1; }
+    while IFS= read -r wt; do
+        sib="${wt#worktree }"
+        [ "$sib" = "$root" ] && continue
+        [ -f "$sib/Manifest.toml" ] && [ -f "$sib/Project.toml" ] || continue
+        cmp -s "$root/Project.toml" "$sib/Project.toml" || continue
+        cp -n "$sib/Manifest.toml" "$root/Manifest.toml" &&
+            { echo "warm lane: Manifest.toml copied from the sibling worktree $sib (identical Project.toml)"; return 0; }
+    done < <(git -C "$root" worktree list --porcelain 2> /dev/null | grep '^worktree ')
+    echo "warm lane: REFUSED — $root has no Manifest.toml and no sibling worktree of this repository has one beside a byte-identical Project.toml; copy a Manifest.toml by hand (it is gitignored)" >&2
+    return 1
+}
 
 _start() {
     if _running; then echo "warm lane: running (unit $UNIT, pid $(cat "$DIR/ready"))"; return 0; fi
-    local others second=0
+    local others second=0 third=0
     others="$(_other_daemons)"
-    if [ -n "$others" ] && [ "${LOGICKERNEL_WARM_SECOND:-}" = 1 ]; then
-        _second_ok "$others" || return 6
-        second=1
-        export LOGICKERNEL_SLICE=lk-warm2.slice
-        export LOGICKERNEL_SLICE_MEM_MAX="${LOGICKERNEL_WARM_SECOND_MEM_MAX:-6G}"
-        echo "warm lane: SECOND daemon (D-0114) beside:"
+    _lane_plan "$others" || return 6
+    case "$LANE" in
+        second)
+            second=1
+            LOGICKERNEL_SLICE="$(_lane_slice_name second)"
+            LOGICKERNEL_SLICE_MEM_MAX="$(_lane_mem_max second)"
+            export LOGICKERNEL_SLICE LOGICKERNEL_SLICE_MEM_MAX
+            echo "warm lane: SECOND daemon (D-0114) beside:"
+            ;;
+        third)
+            third=1
+            LOGICKERNEL_SLICE="$(_lane_slice_name third)"
+            LOGICKERNEL_SLICE_MEM_MAX="$(_lane_mem_max third)"
+            export LOGICKERNEL_SLICE LOGICKERNEL_SLICE_MEM_MAX
+            echo "warm lane: THIRD daemon (D-0276 item 4) beside:"
+            ;;
+    esac
+    if [ "$LANE" = second ] || [ "$LANE" = third ]; then
         printf '%s\n' "$others" | sed 's/^/  /'
         others=""
     fi
@@ -150,11 +264,13 @@ _start() {
         } >&2
         return 6
     fi
+    _manifest_seed "$ROOT" || return 1
     mkdir -p "$DIR"
     rm -f "$DIR/ready" "$DIR/done" "$DIR/status" "$DIR/in.jl"
     # remembered for `_restart`: an automatic restart (the struct gate, the rss gate, the manifest check's
     # leftover restart) must not drop the second-daemon opt-in the start was made with (A-0079 item 5)
     if [ "$second" = 1 ]; then : > "$DIR/second"; else rm -f "$DIR/second"; fi
+    if [ "$third" = 1 ]; then : > "$DIR/third"; else rm -f "$DIR/third"; fi
     local julia slice
     julia="$(command -v julia)" || { echo "warm lane: no julia on PATH" >&2; return 1; }
     slice="$(_lk_slice)" || return 1                    # the shared budget (tools/lib_evidence.sh)
@@ -217,10 +333,12 @@ _stop() {
 # lane died at its first changed struct. `.warm/second` (written by `_start`) is the memory; only a deliberate
 # `stop` forgets it, and a plain `start` after a crash never reads it (the guard stays: one at a time).
 _restart() {
-    local second="${LOGICKERNEL_WARM_SECOND:-}"
-    [ -f "$DIR/second" ] && second=1
+    local second="${LOGICKERNEL_WARM_SECOND:-}" third="${LOGICKERNEL_WARM_THIRD:-}"
+    if [ -f "$DIR/third" ]; then second=""; third=1       # the remembered lane wins over the caller's opt-ins
+    elif [ -f "$DIR/second" ]; then second=1; third=""
+    fi
     _stop
-    LOGICKERNEL_WARM_SECOND="$second" _start
+    LOGICKERNEL_WARM_SECOND="$second" LOGICKERNEL_WARM_THIRD="$third" _start
 }
 
 # THE DAEMON'S MEMORY (user, 2026-10-11). MEASURED that day: after eight runs of the static-analysis
@@ -595,13 +713,14 @@ _meta_check() {
 # (these steps are sequential in one warm.sh process, which holds or respects the lane); a runaway test process is
 # killed and named, not the daemon. Each run's PEAK memory goes to the log (stdout, so into the branch-gate's).
 WARM_INERT_SKIP="test/test_static_analysis.jl test/test_gate_split.jl test/test_port_check.jl"
-# _lane_slice — the slice this checkout's daemon runs in (the second daemon's is lk-warm2.slice, `_start`); nothing
+# _lane_slice — the slice this checkout's daemon runs in (the second daemon's is lk-warm2.slice, the third's lk-warm3.slice, `_start`); nothing
 # where the shared budget is off (CI) or user systemd is missing
 _lane_slice() {
     _lk_budget_on || return 0
     systemctl --user show-environment > /dev/null 2>&1 || return 0
     if [ -n "${LOGICKERNEL_SLICE:-}" ]; then echo "$LOGICKERNEL_SLICE"
-    elif [ -f "$DIR/second" ]; then echo lk-warm2.slice
+    elif [ -f "$DIR/third" ]; then _lane_slice_name third
+    elif [ -f "$DIR/second" ]; then _lane_slice_name second
     else echo lk-warm.slice; fi
 }
 _inert_check() {
@@ -1156,7 +1275,7 @@ esac
 
 cmd="${1:-status}"; shift || true
 case "$cmd" in
-    status) ;;
+    status | lane-plan | manifest-seed) ;;
     preflight | evidence | locked | branch-gate)
         if [ "$cmd" = branch-gate ]; then
             _bg_br="$(git -C "$ROOT" symbolic-ref --quiet --short HEAD 2> /dev/null)"
@@ -1181,7 +1300,15 @@ case "$cmd" in
 esac
 case "$cmd" in
     start) _start ;;
-    stop) _stop; rm -f "$DIR/second" ;;                   # a deliberate stop forgets the second-daemon opt-in
+    stop) _stop; rm -f "$DIR/second" "$DIR/third" ;;     # a deliberate stop forgets the second/third-daemon opt-in
+    lane-plan)                                         # the lane a start would take, starting nothing (a TEST SEAM:
+        # LOGICKERNEL_WARM_OTHERS_FAKE replaces the other daemons, one line each as `_other_daemons` prints them)
+        if [ -n "${LOGICKERNEL_WARM_OTHERS_FAKE+x}" ]; then _lp_others="$LOGICKERNEL_WARM_OTHERS_FAKE"; else _lp_others="$(_other_daemons)"; fi
+        _lane_plan "$_lp_others"; _lp_rc=$?
+        [ "$_lp_rc" -eq 0 ] && echo "lane: $LANE slice $(_lane_slice_name "$LANE") mem $(_lane_mem_max "$LANE")"
+        exit "$_lp_rc"
+        ;;
+    manifest-seed) _manifest_seed "${1:-$ROOT}"; exit $? ;;   # copy a sibling worktree's Manifest.toml (tests pass a root)
     restart) _restart ;;
     status) if _running; then echo "warm lane: running (unit $UNIT, pid $(cat "$DIR/ready"), rss $(_gb "$(_daemon_rss_kb)") GB)"; else echo "warm lane: not running"; exit 3; fi ;;
     send) _send "${1:-}" ;;
