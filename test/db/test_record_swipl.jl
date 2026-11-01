@@ -8,7 +8,7 @@
 #   * Every answer line is swipl's, PINNED (swipl 10.1.19-1-gcbf4e189, this program and this driver, two runs byte-identical, 2026-10-31,
 #     evidence/D2/d2_rows.out); with `swipl` on PATH the live answers are compared with the pins too.
 #   * D-0252 item 2: rows r65, r67, r73, r75 give `erase/1` and `instance/2` a RECORD reference, which kills D1-56 and D1-119 of
-#     tools/mutants/D1c.py (a branch on the reference's type the clause-only code did not have).
+#     tools/mutants/D1f.py (a branch on the reference's type the clause-only code did not have).
 #   * WHITE-BOX: the `record` blob type of the database (its rank above `clause`), the payload and the table of references, the lists
 #     and their links, `erase/1` with and without a running `recorded/3` (R_ERASED, RL_DIRTY, `cleanRecordList`), the key words, and the
 #     state pool (`live_states` returns to 0 after the rows).

@@ -1,9 +1,9 @@
 # ORIGINAL: D2's mutant list — no swipl-devel counterpart.
 # tools/mutants/D2d.py — the mutation battery of D2 (R2: the recorded database, pl-rec.c recorda/recordz/recorded/erase/instance/
 # current_key and the record blob of pl-dbref.c; FLG §7 row D2, §4 D11; audit D-0230 item 2, D-0252 item 2), run ONCE, in CI
-# (.github/workflows/mutation.yml; locally: tools/mutate.sh run). The format is tools/mutate_drive.py's (as D1c.py): `id`, `file`,
+# (.github/workflows/mutation.yml; locally: tools/mutate.sh run). The format is tools/mutate_drive.py's (as D1f.py): `id`, `file`,
 # `old` (must occur EXACTLY once), `new`, optional `equivalent` and `targets`. One mutant per decision of the step: the lists and their
-# links and the freed record (D2-1…D2-12), the erase/1 and instance/2 record branches (D2-13…D2-17; the branch tests are D1c.py's D1-56 and D1-119), the state of recorded/2,3 and its references
+# links and the freed record (D2-1…D2-12), the erase/1 and instance/2 record branches (D2-13…D2-17; the branch tests are D1f.py's D1-56 and D1-119), the state of recorded/2,3 and its references
 # (D2-18…D2-27), current_key/1 (D2-28, D2-29), the keys (D2-30…D2-35), the arguments (D2-36…D2-39), the blob and its readers
 # (D2-40…D2-45).
 # NOT RUN YET (written edit-only, 2026-10-31): the KILL rows named in each id are what the rows are DESIGNED to kill (r01-r101 of

@@ -5665,7 +5665,7 @@ What D1 adds (pl-dbref.c; pl-comp.c `assertz2`, `asserta2`, `mustBeVar`, `record
   the QLF hooks `save_clause_ref`/`load_clause_ref` (LB3).
 
 Tests: test/db/test_clause_ref_swipl.jl (the program rows against swipl 10.1.19 incl. the assert2 unit of tests/db/test_dbref.pl, rows
-c01-c38 for clause/3, `'$clause'/4`, `'$rule'/3`, rows n01-n20 for instance/2 and fixup_ssu, and the white-box testsets); test/core_lang/test_blob.jl pins its three ranks (the database now registers `clause`); mutants: tools/mutants/D1c.py.
+c01-c38 for clause/3, `'$clause'/4`, `'$rule'/3`, rows n01-n20 for instance/2 and fixup_ssu, and the white-box testsets); test/core_lang/test_blob.jl pins its three ranks (the database now registers `clause`); mutants: tools/mutants/D1f.py.
 
 ## MOD4 — meta-predicate declarations and argument qualification (R2, evidence/r2/design/modules.md §7)
 
@@ -5809,7 +5809,7 @@ What G1 ports (pl-gvar.c at the pin cbf4e189; edit-only so far, nothing compiled
   g42 (an attributed variable value) and every other row until the first run.
 
 Tests: test/core_lang/test_gvar_swipl.jl (rows g01-g59 and the h9 database, pins from swipl 10.1.19; generator
-evidence/G1/gen_rows.py). Mutants: tools/mutants/G1.py.
+evidence/G1/gen_rows.py). Mutants: tools/mutants/G1d.py.
 
 ## T2 — the string predicates (R2, pl-string.c and the string family of pl-prims.c)
 
@@ -5877,7 +5877,7 @@ D1 section where it says the record branch of `erase/1`, `instance/2` and `PL_ge
 
 Tests: test/db/test_record_swipl.jl (rows r01-r101 against swipl 10.1.19 with two byte-identical pins, evidence/D2/{gen_rows.py,d2_rows.pl,d2_driver.pl,d2_rows.out}; the
 record-reference rows of `erase/1` and `instance/2` of D-0252: r65, r67 and r73, r75; white-box testsets of the blob, the lists, the key words and the references of a list);
-test/core_lang/test_blob.jl pins the ranks; mutants: tools/mutants/D2.py (45) and tools/mutants/D1c.py (D1-56 and D1-119 re-anchored, no longer equivalent).
+test/core_lang/test_blob.jl pins the ranks; mutants: tools/mutants/D2d.py (45) and tools/mutants/D1f.py (D1-56 and D1-119 re-anchored, no longer equivalent).
 
 ## LB4 chunk a — the vendored boot/ and library/ (R2 loader_boot, audit D-0286 items 1-2)
 
