@@ -16,10 +16,12 @@
 # nothing here depends on it except the order `get_dict/3` enumerates in (upstream: undefined).
 #
 # NOT PORTED: the reader's dict syntax `Tag{…}` (src/pl-read.jl refuses it) and the writer's dict arm — a dict
-# exists only through `dict_create/3` and `put_dict/3`; the dict predicates outside the six (`dict_pairs/3`,
-# `put_dict/4`, `del_dict/4`, `get_dict/5`, `:</2`, `>:</2`, `$get_dict_ex/3`,
-# `dict_same_keys/2`, `is_most_general_dict/1`, `PL_for_dict`, the functional notation's `./3`); the
-# `dict_functors` cache (`lookupFunctorDef` is called each time).
+# exists only through `dict_create/3` and `put_dict/3`; `is_most_general_dict/1`, the public `PL_for_dict` (its core
+# `pl_for_dict` is here), the functional notation's `./3` (boot/dicts.pl defines it); `b_set_dict/3`, `nb_set_dict/3`
+# and `nb_link_dict/3` wait for `setarg` (pl-prims.c: NOT STARTED); the `dict_functors` cache (`lookupFunctorDef` is
+# called each time).
+# The rest of the predicates in pl-dict.c's table (`dict_pairs/3`, `put_dict/4`, `del_dict/4`, `get_dict/5`, `:</2`,
+# `>:</2`, `$get_dict_ex/3`, `dict_same_keys/2`, `$get_dict_kv/4,6,8`) are written for R2b (boot/dicts.pl, library/dicts.pl).
 
 # ORIGINAL (BOOTPRED): pl-atom.ih `ATOM_dict` (generated from src/ATOMS): the reserved atom `dict` (src/pl-ressymbol.jl retypes it).
 "The atom word of the reserved symbol `dict` (pl-atom.ih `ATOM_dict`): the same in every database."
@@ -1354,9 +1356,8 @@ function pl_get_dict_kv8_va(
 end
 
 # PORT: pl-dict.c BeginPredDefs as PL_predicates_from_dict
-# DIVERGES: the ported entries, in upstream's order (upstream's table also has `dict_pairs/3`, `dict_same_keys/2`,
-# `put_dict/4`, `b_set_dict/3`, `nb_set_dict/3`, `nb_link_dict/3`, `$get_dict_ex/3`, `del_dict/4`, `get_dict/5`, `:</2`,
-# `>:</2` and `$get_dict_kv/4,6,8`).
+# DIVERGES: the entries in the order they were written (upstream's table is `is_dict`, `dict_create`, `dict_pairs`,
+# `dict_same_keys`, `put_dict`, …); `b_set_dict/3`, `nb_set_dict/3` and `nb_link_dict/3` follow `setarg`.
 "pl-dict.c's registration table (`BeginPredDefs(dict)`): the ported entries."
 const PL_predicates_from_dict = (
     PL_extension("is_dict", 1, pl_is_dict1_va, PL_FA_VARARGS),
