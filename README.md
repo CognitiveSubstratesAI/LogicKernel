@@ -131,10 +131,20 @@ subsystem grouping are in [`docs/architecture.md`](docs/architecture.md); every 
 |---|---|
 | `src/` | ports at swipl-devel's paths, plus ORIGINAL code (the term interface, `Term{G}`) |
 | `boot/` | ports of swipl-devel `boot/*.pl` |
+| `vendor/swipl-devel/` | swipl-devel's `boot/` and `library/` at the pinned commit, BYTE FOR BYTE (see below) |
 | `bench/programs/` | the standalone consumer: swipl-devel's benchmark programs (its `bench` submodule) written on the public API, beside the verbatim `.pl` |
 | `test/<area>/` | tests in swipl-devel's `tests/` areas — ported upstream tests keep their names |
 | `test/` root | package infrastructure: lint, port check, type discipline, static analysis |
+| `packages/plunit/` | SWI-Prolog's plunit at the commit the pin names, vendored read-only (`test/test_vendored_plunit.jl`) |
 | `tools/` | `run_tests.sh`, `warm.sh` (the warm lane), `mutate.sh` (mutants in a separate worktree), `build_oracle.sh` (swipl at the pinned commit), `port_check.jl`, `upstream_drift.jl`, `lint_globals.jl`, `repl.jl`, `jet_report.jl`, `bench.jl` |
+
+**Vendored upstream files.** `vendor/swipl-devel/boot/`, `vendor/swipl-devel/library/` and the upstream `LICENSE` are swipl-devel's own
+files at the commit `tools/SWIPL_VERSION` pins (`vendor/swipl-devel/PIN` names it), copied unchanged and NEVER edited: a fix goes in the
+port, or in an audit entry naming the upstream change. `test/test_vendored_swipl.jl` holds every file to the blob id git gives it
+upstream (`tools/swipl_vendor_blobs.txt`), so a hand edit, an added file or a missing one fails it. `tools/vendor_swipl.sh` writes and
+verifies the tree, `tools/gen_library_index.sh` generates the five `INDEX.pl` files (the only vendored files that are not upstream's
+own: swipl's build writes them), and `tools/build_home.jl` builds the home tree of relative links over `vendor/` and `packages/plunit`
+(`home`, gitignored) that the `home` Prolog flag names. The formatter, Codecov and the port check leave `vendor/` alone.
 
 ## Testing
 

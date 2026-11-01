@@ -58,10 +58,12 @@ env:
   # below when the battery's targets name that file; a mutant's own `targets` naming it without them
   # fails closed (NO VERDICT).
   LOGICKERNEL_REQUIRE_TOOLS: '1'
-  # A WHOLE-SUITE target (tools/mutate_suite.sh) runs test/test_vendored_plunit.jl, which in CI FAILS
-  # without swipl-devel checked out at the pin (CI.yml's analysis job) — every mutant's verdict would
-  # then stand on a red baseline (MEASURED 2026-10-20: the FullSuite battery, refused by `collect`). The
-  # checkout below is made when the battery's targets name that script.
+  # A WHOLE-SUITE target (tools/mutate_suite.sh) runs test/test_vendored_plunit.jl and
+  # test/test_vendored_swipl.jl, which in CI FAIL without swipl-devel checked out at the pin (CI.yml's
+  # analysis job) — every mutant's verdict would then stand on a red baseline (MEASURED 2026-10-20: the
+  # FullSuite battery, refused by `collect`). The checkout below is made when the battery's targets name
+  # that script, or either of those test files (LB4A: its mutants target them directly; the manifest-vs-
+  # `git ls-tree` testset of test_vendored_swipl.jl is what kills a manifest line added or dropped).
   LOGICKERNEL_UPSTREAM_SWIPL_DEVEL: ${{ github.workspace }}/.upstream/swipl-devel
   # a push to mutants/<step> has no inputs: the list is tools/mutants/<step>.py, the targets the
   # list's own (the `plan` job's output), the limit the default
@@ -99,9 +101,9 @@ jobs:
         with:
           version: '1.13'
       - uses: julia-actions/cache@9353db09a0f2bbbdec6f41791918c75d37391b36  # v3.5.0
-      - name: The pinned swipl-devel commit (a whole-suite target — test/test_vendored_plunit.jl)
+      - name: The pinned swipl-devel commit (a whole-suite target, or test/test_vendored_*.jl)
         id: pin
-        if: ${{ contains(format('{0} {1}', inputs.targets, needs.plan.outputs.targets), 'mutate_suite') }}
+        if: ${{ contains(format('{0} {1}', inputs.targets, needs.plan.outputs.targets), 'mutate_suite') || contains(format('{0} {1}', inputs.targets, needs.plan.outputs.targets), 'test_vendored') }}
         run: echo "commit=$(sed -n 's/^commit:[[:space:]]*//p' tools/SWIPL_VERSION | tr -d '[:space:]')" >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         if: ${{ steps.pin.outputs.commit != '' }}
@@ -143,9 +145,9 @@ jobs:
         with:
           version: '1.13'
       - uses: julia-actions/cache@9353db09a0f2bbbdec6f41791918c75d37391b36  # v3.5.0
-      - name: The pinned swipl-devel commit (a whole-suite target — test/test_vendored_plunit.jl)
+      - name: The pinned swipl-devel commit (a whole-suite target, or test/test_vendored_*.jl)
         id: pin
-        if: ${{ contains(format('{0} {1}', inputs.targets, needs.plan.outputs.targets), 'mutate_suite') }}
+        if: ${{ contains(format('{0} {1}', inputs.targets, needs.plan.outputs.targets), 'mutate_suite') || contains(format('{0} {1}', inputs.targets, needs.plan.outputs.targets), 'test_vendored') }}
         run: echo "commit=$(sed -n 's/^commit:[[:space:]]*//p' tools/SWIPL_VERSION | tr -d '[:space:]')" >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         if: ${{ steps.pin.outputs.commit != '' }}

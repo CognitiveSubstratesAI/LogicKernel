@@ -25,4 +25,5 @@ ignore = [
     ".warm",       # the warm lane's scratch snippets (tools/warm.sh), gitignored
     ".evidence",   # the sharded runs' logs (tools/run_tests.sh), gitignored
     ".upstream",   # CI's checkout of swipl-devel at the pin (.github/workflows), gitignored
+    "vendor",      # swipl-devel's boot/ and library/ at the pin, byte for byte (tools/vendor_swipl.sh); no edit, ever
 ]

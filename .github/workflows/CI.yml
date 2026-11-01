@@ -78,8 +78,9 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       # THE UPSTREAM CHECKOUT (user, 2026-10-14): swipl-devel at the pinned commit, its submodules
-      # with it, so test/test_vendored_plunit.jl checks the vendored plunit against the gitlink
-      # HERE — that testset FAILS in CI without it, never inert. Outside git and the formatter
+      # with it, so test/test_vendored_plunit.jl checks the vendored plunit against the gitlink, and
+      # test/test_vendored_swipl.jl the vendored boot/ and library/ manifest against `git ls-tree`,
+      # HERE — those testsets FAIL in CI without it, never inert. Outside git and the formatter
       # (.gitignore, .JuliaFormatter.toml: `.upstream`).
       - name: The pinned swipl-devel commit
         id: pin
@@ -247,8 +248,9 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       # THE UPSTREAM CHECKOUT (user, 2026-10-14): swipl-devel at the pinned commit, its submodules
-      # with it, so test/test_vendored_plunit.jl checks the vendored plunit against the gitlink
-      # HERE — that testset FAILS in CI without it, never inert. Outside git and the formatter
+      # with it, so test/test_vendored_plunit.jl checks the vendored plunit against the gitlink, and
+      # test/test_vendored_swipl.jl the vendored boot/ and library/ manifest against `git ls-tree`,
+      # HERE — those testsets FAIL in CI without it, never inert. Outside git and the formatter
       # (.gitignore, .JuliaFormatter.toml: `.upstream`).
       - name: The pinned swipl-devel commit
         id: pin

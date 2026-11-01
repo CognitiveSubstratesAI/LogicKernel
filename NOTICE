@@ -94,6 +94,19 @@ The benchmark programs under bench/programs/*.pl are copied unchanged from SWI-P
 set (https://github.com/SWI-Prolog/bench); each keeps its own header.
 
 =====================================================================================================
+swipl-devel boot/ and library/ — vendored unchanged
+https://github.com/SWI-Prolog/swipl-devel
+=====================================================================================================
+
+vendor/swipl-devel/boot/ and vendor/swipl-devel/library/ are SWI-Prolog's own Prolog files at the
+swipl-devel commit tools/SWIPL_VERSION pins (vendor/swipl-devel/PIN) — copied READ-ONLY: every file
+is upstream's, byte for byte (test/test_vendored_swipl.jl holds each to upstream's blob id,
+tools/swipl_vendor_blobs.txt). Each file keeps its own header and copyright lines. The five INDEX.pl
+files are generated from those files by tools/gen_library_index.sh, as swipl's own build generates
+them. SWI-Prolog's licence, the Simplified BSD license reproduced above, is kept next to them as
+vendor/swipl-devel/LICENSE, upstream's blob.
+
+=====================================================================================================
 plunit — vendored unchanged
 https://github.com/SWI-Prolog/packages-plunit
 =====================================================================================================

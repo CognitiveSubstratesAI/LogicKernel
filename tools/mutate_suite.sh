@@ -4,7 +4,7 @@
 # (`sh:tools/mutate_suite.sh`: a target holds no blank). A mutant it catches is caught by SOME test
 # file, and the driver keeps the first failing test line, which names the file; one it does not catch
 # is caught by none. In CI, .github/workflows/mutation.yml checks swipl-devel out at the pin for it
-# (test/test_vendored_plunit.jl needs it).
+# (test/test_vendored_plunit.jl and test/test_vendored_swipl.jl need it).
 # SLICED (D-0059, 2026-10-20; test/ci_slices.jl): the slices Evidence uses — the reference type's file
 # groups (MUTATE_SUITE_GROUPS, 2) and the static analysis's shards (MUTATE_SUITE_SA, 2) — as parallel
 # processes, MUTATE_SUITE_PROCS (3) at a time: one mutant's job on a 4-core runner, instead of one

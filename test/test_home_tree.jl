@@ -3,7 +3,7 @@
 # home/library/<path> link each vendored file (vendor/swipl-devel), home/library/ext/plunit links packages/plunit. Rows: every link
 # is relative and resolves to its vendored file; the set of links is EXACTLY the vendored files plus ext/plunit (one extractor for the
 # wanted set and the found set, both non-empty); a stale tree is repaired (a link with another target, a link nothing wants, a
-# missing link, a missing ext/plunit link, an empty directory left behind) and a second build changes nothing; a real file in
+# missing link, an ext/plunit link with another target, an empty directory left behind) and a second build changes nothing; a real file in
 # the tree is an error and is not deleted.
 using Test
 
@@ -103,11 +103,12 @@ mktempdir() do tmp
         symlink(joinpath("..", "..", "..", "boot", "init.pl"),
             joinpath(home, "library", "stale", "deeper", "x.pl"))
         symlink(joinpath("..", "library", "lists.pl"), joinpath(home, "boot", "extra.pl"))
-        # a missing link, a missing ext/plunit link
+        # a missing link, and an ext/plunit link with another target (a link to a directory: its own removal branch)
         rm(init)
         rm(plunit)
+        symlink(joinpath("..", "..", "boot"), plunit)
         @test !ispath(init) && !islink(init)
-        @test !islink(plunit)
+        @test readlink(plunit) != good[joinpath("library", "ext", "plunit")]
         @test _ht_links(home) != good
         @test build_home(home) == home
         @test _ht_links(home) == good

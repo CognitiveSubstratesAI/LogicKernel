@@ -13,6 +13,7 @@ ignore:
   - "test/**"
   - "tools/**"
   - "bench/**"
+  - "vendor/**"      # swipl-devel's boot/ and library/, byte for byte (tools/vendor_swipl.sh): upstream's Prolog, no Julia of ours
 comment:
   layout: "condensed_header, diff, condensed_files, condensed_footer"
   require_changes: false
