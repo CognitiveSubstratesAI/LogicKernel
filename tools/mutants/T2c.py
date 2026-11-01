@@ -80,8 +80,8 @@ MUTANTS = [
     dict(id="T2-D2 split_string: `sep_at == en` is `>=` — EQUIVALENT", file=W, targets=TARGETS,
          old="sep_at == en && break",
          new="sep_at >= en && break",
-         equivalent="src/pl-string.jl:pl_split_string4_va — read, not run: `sep_at` is `i` after the `while i < en` search "
-                    "loop, which only increments `i` while it is below `en`, and `i <= en` on entry (set by the padding skip "
+         equivalent="src/pl-string.jl:718 (`sep_at == en && break`), pl_split_string4_va — read, not run: `sep_at` is `i` after the `while i < en` search "
+                    "loop (:702-705), which only increments `i` while it is below `en`, and `i <= en` on entry (set by the padding skip "
                     "or `i = sep_at + 1` with `sep_at < en`), so `sep_at > en` cannot happen and `>=` is `==`."),
     dict(id="T2-D3 split_string treats a separator that follows a separator as padding to skip (KILL st213)",
          file=W, targets=TARGETS,
@@ -99,7 +99,7 @@ MUTANTS = [
     dict(id="T2-E2 string_bytes: the byte count multiplies by unit_length — EQUIVALENT", file=W, targets=TARGETS,
          old="n = txt.length * unit_length(txt.encoding)",
          new="n = txt.length",
-         equivalent="src/pl-string.jl:pl_string_bytes3_va with PL_text_recode — read, not run: PL_text_recode leaves the text in "
+         equivalent="src/pl-string.jl:969 (`n = txt.length * unit_length(txt.encoding)`), pl_string_bytes3_va with PL_text_recode (:873) — read, not run: PL_text_recode leaves the text in "
                     "ENC_UTF8, ENC_ISO_LATIN_1, ENC_OCTET, ENC_ASCII, ENC_UTF16LE or ENC_UTF16BE (and returns early when the "
                     "encoding already matches), and unit_length is 1 for each of them (it is 4 only for ENC_WCHAR, refused "
                     "at the top of the predicate), so the product is the length."),
