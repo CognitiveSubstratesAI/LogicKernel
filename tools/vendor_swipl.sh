@@ -6,7 +6,7 @@
 #                                       (the generated INDEX.pl lines, below its GENERATED marker, are kept)
 #   tools/vendor_swipl.sh boot          vendor/swipl-devel/boot/*.pl, LICENSE and PIN
 #   tools/vendor_swipl.sh library       vendor/swipl-devel/library/**
-#   tools/vendor_swipl.sh verify        every vendored file's `git hash-object --no-filters` against `git ls-tree`
+#   tools/vendor_swipl.sh verify [PATH…]  every vendored file's (or those under the PATHs) `git hash-object --no-filters` against `git ls-tree`
 #
 # THE PIN is `commit:` of tools/SWIPL_VERSION; the upstream checkout is ~/dev-zone/swipl-devel or
 # LOGICKERNEL_UPSTREAM_SWIPL_DEVEL (its HEAD is NOT the pin: every file is read with `git show <pin>:<path>`, never from the working tree).
@@ -72,7 +72,7 @@ verify)
         id="$(awk '{print $3}' <<< "$meta")"
         got="$(git hash-object --no-filters "$dest/$path" 2>/dev/null || echo missing)"
         [[ "$got" == "$id" ]] || { echo "DIFFERS: $path ($got, upstream $id)"; bad=1; }
-    done < <(tree boot library LICENSE)
+    done < <(shift; if (($# )); then tree "$@"; else tree boot library LICENSE; fi)
     exit $bad
     ;;
 *)

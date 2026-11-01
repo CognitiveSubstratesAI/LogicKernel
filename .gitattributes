@@ -1,0 +1,2 @@
+# vendored upstream files are byte-identical copies (test/test_vendored_swipl.jl): no EOL or other conversion, no whitespace check
+vendor/** -text -whitespace linguist-vendored
