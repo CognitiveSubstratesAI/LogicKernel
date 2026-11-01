@@ -1,10 +1,10 @@
 # ORIGINAL: MOD6's mutant list — no swipl-devel counterpart.
-# tools/mutants/MOD6b.py — the mutation battery of MOD6 (the module enumerations: pl-modul.c import_module (876-918),
+# tools/mutants/MOD6c.py — the mutation battery of MOD6 (the module enumerations: pl-modul.c import_module (876-918),
 # current_module = '$current_module'/2 (983-1075), get_existing_source_file (952), newModuleEnum (242), advanceModuleEnum (260),
 # freeModuleEnum (289); the registration of both predicates; `live_states`' module_enums term), run ONCE, in CI
 # (.github/workflows/mutation.yml; locally: tools/mutate.sh run).
 # Format: tools/mutate_drive.py's (as MOD5b.py): `id`, `file`, `old` (must occur EXACTLY once), `new`, optional `equivalent`
-# and `targets`. Killed by test/core_lang/test_module_enum_swipl.jl (rows s01, i01-i21, c01-c20, d01, d03-d05 and the testsets
+# and `targets`. Killed by test/core_lang/test_module_enum_swipl.jl (rows s01, i01-i21, c01-c21, d01, d03-d05 and the testsets
 # "non-vacuity", "FRG_CUTTED", "H3" named in each id's KILL). Verdicts: written by the battery, not yet run.
 # The `old` strings are written in the repo's formatted style BEFORE `tools/warm.sh fmt` ran (the coding agent had no daemon):
 # the anchors need a RE-FIT at the first battery run for any that fmt re-flows (a long registration line and a trailing comment
@@ -17,9 +17,13 @@
 # the dropped `ok || return` (an unknown file name then reaches the enumeration, whose first unify of an unknown file fails and
 # ends it by the `break`: the same FFALSE); `break` -> `continue` (a failed unify of a non-atom module or file fails on every
 # module: the same FFALSE); the `en.current = 0` of freeModuleEnum (the next newModuleEnum sets it again).
-# SURVIVORS TO EXPECT (no row; the gate agent adds one): MOD6-I5 (a BOUND second argument with several supers: rows i11, i12 read the
-# answer only, none the determinism: a row `mme_det(import_module(mmx_c2, mmx_u), D)` kills it) and MOD6-C6 (a module argument
-# that is the empty list `[]` with a multi-module file: a row `'$current_module'([], '/mmx/g.pl')` kills it).
+# SURVIVORS OF THE FIRST BATTERY (run 41249584187 on 2aa53ae; five blocking, none equivalent) and what closes each: MOD6-C6 (row c21,
+# `'$current_module'([mmx_g1], '/mmx/g.pl')`: swipl answers no; c20's `[]` is an atom and never reaches the list branch), MOD6-A1
+# (H3: every module of the MENUM_TEMP walk is not destroyed and the destroyed record is not among them), MOD6-A4 (H3: a second
+# temporary module t5; t4 is released when the walk moves on), MOD6-F1 (H3: the walked state is the pooled one and
+# freeModuleEnum gives t5's reference back), MOD6-I1 (a timeout: `if true` restarts every REDO at the first super and returns
+# PL_retry forever, so the entry says expect="hang" and the verdict is "caught (hang)"). MOD6-I5 is killed by row i21 (mme_det of a
+# bound second argument).
 # NOT LISTED: the registration ORDER (upstream's: import_module first, $current_module after set_module): the order of the
 # predicate table is read by no row; SYSTEM_MODE(ld) flipped: the access level cannot be set to `system` yet (no row).
 M = "src/pl-modul.jl"
@@ -39,10 +43,11 @@ TS_LIVE = [
 TARGETS = TS_C + ["test/core_lang/test_module_swipl.jl"]          # the baseline's (mutate_ci.py plan reads TARGETS)
 MUTANTS = [
     # ── import_module/2 (pl-modul.c:876-918) ──
-    dict(id="MOD6-I1 import_module answers with every super at once: `n == i` always true (KILL i01, i05, i09: the first answer is the last super)",
+    dict(id="MOD6-I1 import_module answers with every super at once: `n == i` always true (HANG: every REDO restarts at the first super and retries forever)",
          file=M, targets=TS,
          old="        if n == i\n",
-         new="        if true\n"),
+         new="        if true\n",
+         expect="hang"),
     dict(id="MOD6-I3 import_module leaves a choice point after the last super: `n + 1 <= length` (KILL i10: mme_det says nondet for one super)",
          file=M, targets=TS,
          old="ndet = n + 1 < length(supers) && PL_is_variable(ld, A2)",
@@ -51,7 +56,7 @@ MUTANTS = [
          file=M, targets=TS,
          old="ndet = n + 1 < length(supers) && PL_is_variable(ld, A2)",
          new="ndet = false"),
-    dict(id="MOD6-I5 import_module leaves the choice point also for a bound second argument (KILL none yet: needs a determinism row; see header)",
+    dict(id="MOD6-I5 import_module leaves the choice point also for a bound second argument (KILL i21: mme_det of a bound second argument)",
          file=M, targets=TS,
          old="ndet = n + 1 < length(supers) && PL_is_variable(ld, A2)",
          new="ndet = n + 1 < length(supers)"),
@@ -90,7 +95,7 @@ MUTANTS = [
          file=M, targets=TS_C,
          old="if length(sf.modules) > 1",
          new="if length(sf.modules) >= 1"),
-    dict(id="MOD6-C6 a list that does not unify with the file's modules is not failed (KILL none yet: needs a `[]` module row; see header)",
+    dict(id="MOD6-C6 a list that does not unify with the file's modules is not failed (KILL c21: `[mmx_g1]` against a two-module file, swipl says no)",
          file=M, targets=TS_C,
          old="rc = false                  # goto out",
          new="nothing                     # goto out"),
@@ -142,7 +147,7 @@ MUTANTS = [
          file=M, targets=TS_C,
          old="    en.next = 1\n",
          new="    nothing\n"),
-    dict(id="MOD6-A1 the walk lists a destroyed module's record (KILL d03, d04, d05, H3)",
+    dict(id="MOD6-A1 the walk lists a destroyed module's record (KILL H3: with MENUM_TEMP the destroyed temporary record is returned; the name check is redundant otherwise)",
          file=M, targets=TS_C,
          old="get(table.names, c.name, 0) == c.index && (i = c.index)",
          new="(i = c.index)"),
@@ -154,11 +159,11 @@ MUTANTS = [
          file=M, targets=TS_C,
          old="            m.references += 1\n            if en.current != 0",
          new="            if en.current != 0"),
-    dict(id="MOD6-A4 the walk keeps the previous temporary module's reference (KILL H3: the reference is released when it moves on)",
+    dict(id="MOD6-A4 the walk keeps the previous temporary module's reference (KILL H3: t4.references == r0 when the walk has moved on to the second temporary module t5)",
          file=M, targets=TS_C,
          old="                sym_key(cur.class) == temporary && releaseModule_unlocked(gd, ld, cur)",
          new="                nothing"),
-    dict(id="MOD6-F1 freeModuleEnum keeps the held temporary module's reference (KILL H3: t4.references)",
+    dict(id="MOD6-F1 freeModuleEnum keeps the held temporary module's reference (KILL H3: t5.references == r5 after freeModuleEnum of the walked pooled state)",
          file=M, targets=TS_C,
          old="        sym_key(cur.class) == sym_key(mk_sym(T, :temporary)) &&\n            releaseModule_unlocked(gd, ld, cur)\n",
          new="        nothing\n"),
