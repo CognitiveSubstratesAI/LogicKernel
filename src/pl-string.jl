@@ -964,6 +964,150 @@ function pl_string_bytes3_va(
     return PL_unify_text(ld, A1, 0, txt, PL_STRING) ? FTRUE : FFALSE
 end
 
+# ── read_string/5, read_string/3 and open_string/2 (pl-string.c 478-620) ───────────────────────────────
+
+# PORT: pl-file.c PL_release_stream
+# DIVERGES: no locks (`releaseStream`, as `streamStatus`, src/os/pl-file.jl): the verdict is the stream's error
+# state, raised if it holds one.
+"Whether the stream `s` is free of errors after the predicate's use; an error recorded on it is raised (pl-file.c)."
+PL_release_stream(ld::PL_local_data, s::IOSTREAM)::Bool = streamStatus(ld, s)
+
+# PORT: pl-string.c backSkipPadding
+# DIVERGES: the buffer is a vector, `len` its used bytes; the result is the new used length (upstream: the end
+# pointer). `backSkipUTF8` is T1-era pl-read.jl's, 1-based; `pad` is canonical (the caller canonicalises it).
+"The length of the UTF-8 bytes `in[1:len]` without the characters of `pad` at their end (pl-string.c)."
+function backSkipPadding(in::Vector{UInt8}, len::Int, pad::PL_chars_t)::Int
+    stop = len + 1
+    while stop > 1
+        e, chr = backSkipUTF8(in, 1, stop)
+        text_chr(pad, chr) == -1 && break
+        stop = e
+    end
+    return stop - 1
+end
+
+# PORT: pl-string.c read_string as pl_read_string5_va
+# (PRED_IMPL("read_string", 5, read_string, 0))
+# DIVERGES: the separator and the padding texts are canonicalised after `PL_get_text` (`text_chr` needs canonical
+# texts; upstream's are); `PL_release_stream` is `streamStatus` (no locks); the buffer is a byte vector
+# (`addUTF8Buffer`), the string made from it with `PL_unify_text` (`PL_unify_chars(…, PL_STRING|REP_UTF8, …)`).
+# `text_chr` keeps the C string semantics (a NUL read is a separator and a padding character).
+"""
+`read_string(+Stream, +Delimiters, +Padding, -Delimiter, -String)` (pl-string.c): skip the padding, read up to a
+delimiter or the end of the file, strip the padding from the end; `Delimiter` is the code read, -1 at the end.
+"""
+function pl_read_string5_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2, A3, A4, A5 = PL__t0, PL__t0 + 1, PL__t0 + 2, PL__t0 + 3, PL__t0 + 4
+    flags = CVT_ATOM | CVT_STRING | CVT_LIST | CVT_EXCEPTION
+    rc = false
+
+    s = getTextInputStream(ld, A1)
+    s === nothing && return FFALSE
+    sep = PL_get_text(ld, A2, flags)
+    pad = sep === nothing ? nothing : PL_get_text(ld, A3, flags)
+    if sep !== nothing && pad !== nothing &&
+       PL_canonicalise_text_ex(ld, sep) && PL_canonicalise_text_ex(ld, pad)
+        tmpbuf = UInt8[]
+        chr = Sgetcode(s)
+        while chr != EOF && text_chr(pad, chr) != -1
+            chr = Sgetcode(s)
+        end
+
+        failed = false
+        while true
+            if chr == EOF && Sferror(s) != 0
+                failed = true                               # goto out
+                break
+            end
+            (chr == EOF || text_chr(sep, chr) != -1) && break
+            addUTF8Buffer(tmpbuf, chr)
+            chr = Sgetcode(s)
+        end
+
+        if !failed
+            n = backSkipPadding(tmpbuf, length(tmpbuf), pad)
+            str = PL_chars_t(tmpbuf[1:n], length(String(tmpbuf[1:n])), ENC_UTF8, false)
+            rc = PL_unify_text(ld, A5, 0, str, PL_STRING) && PL_unify_integer(ld, A4, chr)
+        end
+    end
+
+    released = PL_release_stream(ld, s)                     # out:
+    return (rc && released) ? FTRUE : FFALSE
+end
+
+# PORT: pl-string.c read_string as pl_read_string3_va
+# (PRED_IMPL("read_string", 3, read_string, 0))
+# DIVERGES: as `read_string/5` for the stream release and the string; `len` unset (`(size_t)-1`) is `typemax(Int)`.
+"""
+`read_string(+Stream, ?Length, -String)` (pl-string.c): read `Length` characters, or up to the end of the file if
+`Length` is unbound, which is then unified with the count.
+"""
+function pl_read_string3_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2, A3 = PL__t0, PL__t0 + 1, PL__t0 + 2
+    len = typemax(Int)                                      # (size_t)-1
+    rc = false
+
+    s = getTextInputStream(ld, A1)
+    s === nothing && return FFALSE
+    vlen = PL_is_variable(ld, A2)
+    ok = true
+    if !vlen
+        l = PL_get_size_ex(ld, A2)
+        l === nothing ? (ok = false) : (len = l)
+    end
+    if ok
+        tmpbuf = UInt8[]
+        count = 0
+        failed = false
+        while count < len
+            chr = Sgetcode(s)
+            if chr == EOF
+                Sferror(s) != 0 && (failed = true)          # goto out
+                break
+            end
+            addUTF8Buffer(tmpbuf, chr)
+            count += 1
+        end
+
+        if !failed
+            str = PL_chars_t(tmpbuf, length(String(copy(tmpbuf))), ENC_UTF8, false)
+            rc = PL_unify_text(ld, A3, 0, str, PL_STRING) &&
+                 (!vlen || PL_unify_int64(ld, A2, count))
+        end
+    end
+
+    released = PL_release_stream(ld, s)                     # out:
+    return (rc && released) ? FTRUE : FFALSE
+end
+
+# PORT: pl-string.c open_string as pl_open_string2_va
+# (PRED_IMPL("open_string", 2, open_string, 0))
+# DIVERGES: `PL_save_text(BUF_MALLOC)` is a copy of the bytes (Julia's GC owns them); `Sopenmem`'s buffer and
+# size are references. A text that is not ISO Latin-1 is made UTF-8 (`PL_mb_text`) and the stream reads UTF-8.
+"`open_string(+String, -Stream)` (pl-string.c): a stream that reads the text of `A1`."
+function pl_open_string2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2 = PL__t0, PL__t0 + 1
+    flags = CVT_ATOM | CVT_STRING | CVT_LIST | CVT_EXCEPTION
+
+    text = PL_get_text(ld, A1, flags)
+    text === nothing && return FFALSE
+    text.encoding === ENC_ISO_LATIN_1 || PL_mb_text(text, REP_UTF8)
+
+    bufp = Ref{Union{Nothing, Vector{UInt8}}}(copy(text.text))
+    s = Sopenmem(bufp, Ref(text.length), "rF")
+    s === nothing && return FFALSE
+    s.encoding = text.encoding
+    PL_unify_stream(ld, A2, s) && return FTRUE
+    Sclose(s)
+    return FFALSE
+end
+
 # ── the registration table (pl-string.c BeginPredDefs(strings)) ─────────────────────────────────────
 # DIVERGES: upstream registers `strings` after `prims`, before `variant` (pl-ext.c:512); T2's table is
 # appended after `attvar` in `_PRED_TABLES` (src/pl-ext.jl), as the dispatch indices of the earlier
@@ -985,5 +1129,8 @@ const PL_predicates_from_strings = (
         "string_code", 3, pl_string_code3_va, PL_FA_NONDETERMINISTIC | PL_FA_VARARGS
     ),
     PL_extension("get_string_code", 3, pl_get_string_code3_va, PL_FA_VARARGS),
-    PL_extension("split_string", 4, pl_split_string4_va, PL_FA_VARARGS)
+    PL_extension("split_string", 4, pl_split_string4_va, PL_FA_VARARGS),
+    PL_extension("read_string", 5, pl_read_string5_va, PL_FA_VARARGS),
+    PL_extension("read_string", 3, pl_read_string3_va, PL_FA_VARARGS),
+    PL_extension("open_string", 2, pl_open_string2_va, PL_FA_VARARGS)
 )
