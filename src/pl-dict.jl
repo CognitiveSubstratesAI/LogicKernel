@@ -883,6 +883,120 @@ function pl_put_dict4_va(
     return put_dict4(ld, PL__t0, PL__t0 + 1, PL__t0 + 2, PL__t0 + 3)
 end
 
+# PORT: SWI-Prolog.h PL_FOR_DICT_SORTED
+"`PL_for_dict`' flag: the pairs are visited in the standard order of terms of their keys (SWI-Prolog.h)."
+const PL_FOR_DICT_SORTED = Int(0x1)
+
+# PORT: pl-dict.c pl_dict_pairs
+"The number of key-value pairs of the dict the term reference `dict` holds (pl-dict.c)."
+function pl_dict_pairs(ld::PL_local_data, dict::term_t)::Int
+    _, w, _ = _deref_loc(ld, -(dict + 1))
+    return arityFunctor(ld.functors, ld.gstack[valPtr(w)]) ÷ 2
+end
+
+# PORT: pl-dict.c pl_dict_sort_indexes
+# DIVERGES: the result is the vector of the pair indexes (0-based) in the standard order of their keys, where upstream
+# fills a caller buffer through `sort_r(…, cmp_dict_index, …)`; the keys are atoms or small integers and the standard
+# order (numbers before atoms, integers by value, atoms by `compareAtoms`) is `cmp_dict_index`'s, so the comparison is
+# `compareStandard_cells` on the key cells.
+"The pair indexes of the dict `dict` holds, in the standard order of terms of the keys (pl-dict.c)."
+function pl_dict_sort_indexes(ld::PL_local_data, dict::term_t, pairs::Int)::Vector{Int}
+    _, w, _ = _deref_loc(ld, -(dict + 1))
+    f = valPtr(w)
+    indexes = collect(0:(pairs - 1))
+    sort!(indexes; lt = (a, b) -> compareStandard_cells(ld, f + 3 + 2 * a, f + 3 + 2 * b, false) < 0)
+
+    return indexes
+end
+
+# PORT: pl-dict.c pl_dict_pair
+# DIVERGES: `indexes` is `nothing` for upstream's NULL. The key is put in `av+0`, the value in `av+1` as `linkValI`
+# reads the cells (`_slot_from_cell!`).
+"Put the key and the value of the `i`-th pair (0-based, in the order `indexes` gives) of `dict` in `av+0`, `av+1` (pl-dict.c)."
+function pl_dict_pair(
+    ld::PL_local_data, dict::term_t, indexes::Union{Nothing, Vector{Int}}, i::Int, av::term_t
+)::Nothing
+    _, w, _ = _deref_loc(ld, -(dict + 1))
+    f = valPtr(w)
+    in_ = (indexes === nothing ? i : indexes[i + 1]) * 2 + 1
+    _slot_from_cell!(ld, av + 0 + 1, f + 1 + in_ + 1)       # *valTermRef(av+0) = linkValI(&f->arguments[in+1])
+    _slot_from_cell!(ld, av + 1 + 1, f + 1 + in_)           # *valTermRef(av+1) = linkValI(&f->arguments[in])
+
+    return nothing
+end
+
+# PORT: pl-dict.c pl_for_dict
+# DIVERGES: `func(key, value, last)` is a Julia function returning 0 to go on (upstream's `func` with its `closure`; the
+# closure is what `func` captures). `PL_for_dict`'s `func(key, value, closure)` is `pl_for_dict` with a `func` of two
+# arguments: `(k, v, last) -> func(k, v)`.
+"Run `func(key, value, last)` on each pair of `dict` until it returns non-zero, that value (pl-dict.c)."
+function pl_for_dict(ld::PL_local_data, dict::term_t, func, flags::Int)::Int
+    av = PL_new_term_refs(ld, 2)
+    pairs = pl_dict_pairs(ld, dict)
+    indexes = (flags & PL_FOR_DICT_SORTED) != 0 ? pl_dict_sort_indexes(ld, dict, pairs) : nothing
+    rc = 0
+
+    i = 0
+    while i < pairs
+        pl_dict_pair(ld, dict, indexes, i, av)
+        i += 1
+        rc = func(av + 0, av + 1, i == pairs)
+        rc != 0 && break
+    end
+
+    return rc
+end
+
+# PORT: pl-dict.c put_pair
+# DIVERGES: the closure's `head`, `tail`, `tmp` term references are captured by `pl_dict_pairs3_va`'s function.
+"Append `key-value` to the list under construction: `tmp` the pair, `tail` the open tail, `head` its new head (pl-dict.c)."
+function put_pair(
+    ld::PL_local_data{T}, key::term_t, value::term_t, head::term_t, tail::term_t, tmp::term_t
+)::Int where {T}
+    if PL_cons_functor(ld, tmp, _err_functor(ld, :-, 2), key, value) &&
+       PL_unify_list_ex(ld, tail, head, tail) &&
+       PL_unify(ld, head, tmp)
+        return 0
+    end
+
+    return -1
+end
+
+# PORT: pl-dict.c dict_pairs as pl_dict_pairs3_va
+# (PRED_IMPL("dict_pairs", 3, dict_pairs, 0))
+"`dict_pairs(?Dict, ?Tag, ?Pairs)`: `Pairs` are the `Key-Value` pairs of `Dict` in standard order of the keys; also creates (pl-dict.c)."
+function pl_dict_pairs3_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2, A3 = PL__t0, PL__t0 + 1, PL__t0 + 2
+
+    if !PL_is_variable(ld, A1)
+        dict = PL_new_term_ref(ld)
+
+        if get_create_dict_ex(ld, A1, dict)
+            tail = PL_copy_term_ref(ld, A3)
+            head = PL_new_term_refs(ld, 2)
+            tmp = head + 1
+
+            if _PL_get_arg(ld, 1, dict, tmp) &&
+               PL_unify(ld, tmp, A2) &&
+               pl_for_dict(ld, dict, (k, v, last) -> put_pair(ld, k, v, head, tail, tmp), PL_FOR_DICT_SORTED) == 0
+                return PL_unify_nil_ex(ld, tail) ? FTRUE : FFALSE
+            end
+
+            return FFALSE
+        end
+    else
+        m = PL_new_term_ref(ld)
+
+        if PL_get_dict_ex(ld, A3, A2, m, DICT_GET_PAIRS)
+            return PL_unify(ld, A1, m) ? FTRUE : FFALSE
+        end
+    end
+
+    return FFALSE
+end
+
 # PORT: pl-dict.c BeginPredDefs as PL_predicates_from_dict
 # DIVERGES: the ported entries, in upstream's order (upstream's table also has `dict_pairs/3`, `dict_same_keys/2`,
 # `put_dict/4`, `b_set_dict/3`, `nb_set_dict/3`, `nb_link_dict/3`, `$get_dict_ex/3`, `del_dict/4`, `get_dict/5`, `:</2`,
@@ -897,5 +1011,6 @@ const PL_predicates_from_dict = (
     PL_extension("select_dict", 3, pl_select_dict3_va, PL_FA_VARARGS),
     PL_extension("\$get_dict_ex", 3, pl_get_dict_ex3_va, PL_FA_NONDETERMINISTIC | PL_FA_VARARGS),
     PL_extension("get_dict", 5, pl_get_dict5_va, PL_FA_VARARGS),
-    PL_extension("put_dict", 4, pl_put_dict4_va, PL_FA_VARARGS)
+    PL_extension("put_dict", 4, pl_put_dict4_va, PL_FA_VARARGS),
+    PL_extension("dict_pairs", 3, pl_dict_pairs3_va, PL_FA_VARARGS)
 )
