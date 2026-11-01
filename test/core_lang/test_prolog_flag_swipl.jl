@@ -834,12 +834,16 @@ include(joinpath(@__DIR__, "..", "..", "tools", "build_home.jl"))
     @test h == normpath(joinpath(@__DIR__, "..", "..", "home"))
     @test h != normpath(joinpath(@__DIR__, "..", ".."))        # no longer the package directory
     @test basename(h) == "home"
-    build_home(h)
-    @test isfile(joinpath(h, "boot", "init.pl"))
-    @test isfile(joinpath(h, "boot", "load.pl"))
-    @test isfile(joinpath(h, "library", "lists.pl"))
-    @test isfile(joinpath(h, "library", "INDEX.pl"))
-    @test isfile(joinpath(h, "library", "ext", "plunit", "plunit.pl"))
+    # the tree itself is built into a scratch directory (test_home_tree.jl proves it): the package directory may be read-only
+    # and parallel term-type runs in one tree must not race on it
+    mktempdir() do t
+        b = build_home(joinpath(t, "home"))
+        @test isfile(joinpath(b, "boot", "init.pl"))
+        @test isfile(joinpath(b, "boot", "load.pl"))
+        @test isfile(joinpath(b, "library", "lists.pl"))
+        @test isfile(joinpath(b, "library", "INDEX.pl"))
+        @test isfile(joinpath(b, "library", "ext", "plunit", "plunit.pl"))
+    end
     # the flag is read-only: set_prolog_flag/2 cannot move it (F1b); here the table's own bit
     @test (LK.current_prolog_flag(gd, "home").flags & LK.FF_READONLY) != 0
 end

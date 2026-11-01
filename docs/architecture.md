@@ -5858,7 +5858,7 @@ test/core_lang/test_blob.jl pins the ranks; mutants: tools/mutants/D2.py (45) an
 
 ## LB4 chunk a — the vendored boot/ and library/ (R2 loader_boot, audit D-0286 items 1-2)
 
-What chunk (a) adds (written edit-only; nothing was compiled or run when this was written; swipl-devel pin `cbf4e1896275`, oracle swipl 10.1.19):
+What chunk (a) adds (swipl-devel pin `cbf4e1896275`, oracle swipl 10.1.19):
 
 - **`vendor/swipl-devel/{boot,library}`**: swipl-devel's own files at the commit `tools/SWIPL_VERSION` pins (26 boot files, 210 library files, the upstream `LICENSE`, and
   `PIN` naming the commit), copied BYTE FOR BYTE by `tools/vendor_swipl.sh` (`git show <pin>:<path>`, never the upstream working tree) and NEVER edited: a fix goes in the port,

@@ -24,9 +24,9 @@ TARGETS = [
     "test/test_home_tree.jl",
     "test/core_lang/test_prolog_flag_swipl.jl",
 ]
-VS = [TARGETS[0], TARGETS[1]]
-HT = [TARGETS[2], TARGETS[3], TARGETS[0], TARGETS[1]]
-FLAG = [TARGETS[3], TARGETS[2], TARGETS[0], TARGETS[1]]
+VS = [TARGETS[0], TARGETS[2]]
+HT = [TARGETS[2], TARGETS[3]]
+FLAG = [TARGETS[3], TARGETS[2]]
 M = "tools/swipl_vendor_blobs.txt"
 PIN = "vendor/swipl-devel/PIN"
 H = "tools/build_home.jl"
@@ -34,32 +34,32 @@ LISTS_LINE = "100644 blob 8bdaeec875c31df6cd6d542f79a6520a81ff6787\tlibrary/list
 MUTANTS = [
     # ── the vendored files: one byte, a file added, a file missing ──
     dict(id="LB4A-A1 one byte of vendor/swipl-devel/boot/init.pl changed: its blob id is no longer the manifest's (KILL test_vendored_swipl.jl, the per-file blob rows)",
-         file="vendor/swipl-devel/boot/init.pl", targets=VS + HT,
+         file="vendor/swipl-devel/boot/init.pl", targets=VS,
          old="Author:        Jan Wielemaker", new="Author:        Jbn Wielemaker"),
     dict(id="LB4A-A2 one byte of vendor/swipl-devel/library/lists.pl changed (KILL test_vendored_swipl.jl, the per-file blob rows)",
-         file="vendor/swipl-devel/library/lists.pl", targets=VS + HT,
+         file="vendor/swipl-devel/library/lists.pl", targets=VS,
          old="append([], L, L).", new="append([], L, M)."),
     dict(id="LB4A-A3 the manifest drops the line of library/lists.pl: the file is ADDED to the tree (KILL test_vendored_swipl.jl: the 210-file count, the nothing-added row, and in CI the ls-tree comparison)",
-         file=M, targets=VS + HT,
+         file=M, targets=VS,
          old=LISTS_LINE, new=""),
     dict(id="LB4A-A4 the manifest gains a line for library/zz_missing.pl: a file MISSING from the tree (KILL test_vendored_swipl.jl: the count, the blob row of a missing file, the nothing-missing row)",
-         file=M, targets=VS + HT,
+         file=M, targets=VS,
          old=LISTS_LINE,
          new=LISTS_LINE + "100644 blob 0123456789abcdef0123456789abcdef01234567\tlibrary/zz_missing.pl\n"),
     dict(id="LB4A-A5 vendor/swipl-devel/PIN names another commit than tools/SWIPL_VERSION (KILL test_vendored_swipl.jl, the PIN row)",
-         file=PIN, targets=VS + HT,
+         file=PIN, targets=VS,
          old="commit: cbf4e1896275a07794332fd98ad0dcb11bf51919",
          new="commit: cbf4e1896275a07794332fd98ad0dcb11bf51918"),
     dict(id="LB4A-A6 the manifest's header names another commit than the pin (KILL test_vendored_swipl.jl: header commit == pin)",
-         file=M, targets=VS + HT,
+         file=M, targets=VS,
          old="SWI-Prolog/swipl-devel cbf4e1896275a07794332fd98ad0dcb11bf51919",
          new="SWI-Prolog/swipl-devel cbf4e1896275a07794332fd98ad0dcb11bf51918"),
     dict(id="LB4A-A7 an entry of library/clp/INDEX.pl names a file that is not there: a stale entry (KILL test_vendored_swipl.jl, the INDEX testset; its blob id changed too)",
-         file="vendor/swipl-devel/library/clp/INDEX.pl", targets=VS + HT,
+         file="vendor/swipl-devel/library/clp/INDEX.pl", targets=VS,
          old="index(:(op,op(760,yfx,#<=>)), bounds, bounds).",
          new="index(:(op,op(760,yfx,#<=>)), bounds, zz_missing)."),
     dict(id="LB4A-A8 vendor/swipl-devel/PIN names another version than tools/SWIPL_VERSION (KILL test_vendored_swipl.jl, the PIN version row)",
-         file=PIN, targets=VS + HT,
+         file=PIN, targets=VS,
          old="version: 10.1.19", new="version: 10.1.18"),
     # ── the home tree (tools/build_home.jl) ──
     dict(id="LB4A-B1 the ext/plunit link points at vendor/, not packages/plunit (KILL test_home_tree.jl: the link resolves to packages/plunit)",

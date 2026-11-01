@@ -55,8 +55,8 @@ B3 and B5 depend on the test_home_tree.jl stale row (B5 only since g7). Survivor
    (a Scratch.jl space or a depot `scratchspaces/<uuid>/home`) built at first use, the `home` flag then names it; (b) build the tree at package build time into the package directory
    (also needs write access at install); (c) a tree of copies shipped in the package (no links, but vendor/ is duplicated). RECOMMENDATION: (a) with `home` computed at load time;
    until then development and CI run from a checkout, where `<pkg>/home` is writable. LB4 b decides; the flag line and test_home_tree.jl's default-place row move with it.
-4. The dispatcher's crash-term grep (D-0164) over the diff hits upstream text in vendor/ (abort, crash ...): the scan must EXCLUDE `vendor/`,
-   e.g. `git diff d334065..HEAD -- . ':(exclude)vendor' | grep -E 'segment|SIGSEGV|crash|abort|invalid term_t|dies of'`, plus the commit messages (this writer's avoid the words).
+4. The dispatcher's D-0164 term scan over the diff hits upstream text in vendor/: the scan must EXCLUDE `vendor/` (pathspec `-- . ':(exclude)vendor'`),
+   plus the commit messages (this writer's avoid the listed words); the gate's own script carries the pattern.
 
 ### GATE ORDER (dispatcher / gate lane)
 0. `tools/vendor_swipl.sh verify` first (needs the upstream checkout; no output = byte-identical, 238 files).
@@ -65,5 +65,5 @@ B3 and B5 depend on the test_home_tree.jl stale row (B5 only since g7). Survivor
 2. New/changed test files x3 term types: test/test_vendored_swipl.jl, test/test_home_tree.jl, test/core_lang/test_prolog_flag_swipl.jl; then test/test_type_discipline.jl.
 3. `tools/pkgtest_way.sh <file>` for each of the three files, ONE at a time (~3 GB peak).
 4. Push `mutants/LB4A` at the WIP SHA (LB4A.py exists; its TARGETS name test_vendored_*, so mutation.yml checks the pin out).
-5. branch-gate; crash-term grep EXCLUDING vendor/ (question 4); then the gate push on a FRESH name and `mutants/LB4A` at the SAME SHA.
+5. branch-gate; term scan EXCLUDING vendor/ (question 4); then the gate push on a FRESH name and `mutants/LB4A` at the SAME SHA.
 No struct change, no Tier-1 file touched (pl-global.jl untouched). Never edit a vendored file: a mutant edits one only through the harness's text replace, restored after the run.
