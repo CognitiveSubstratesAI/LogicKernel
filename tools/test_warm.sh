@@ -616,6 +616,43 @@ _lanes_cases() {
     has "…the second lane" "$T/lp" "^lane: second slice lk-warm2.slice" 1
     rm -f "$T/wt_third/.warm/third"
     plan "$o1"$'\n'"$o3t" 20 LOGICKERNEL_WARM_SECOND=1; check "lanes: …but beside two others with no THIRD among them — refused (exit 6)" 6 $?
+    # EACH DAEMON GETS A SLICE OF ITS OWN (A-0211 incident: the lane was chosen by the COUNT of others, so a daemon
+    # started "second" after the first lane ended shared lk-warm2.slice's 6 GB cap and lk-warm.slice stood empty)
+    local ln
+    for ln in first second third; do
+        mkdir -p "$T/wt_$ln/.warm"
+        [ "$ln" = first ] || : > "$T/wt_$ln/.warm/$ln"
+        eval "local oL_$ln=\"unit logickernel-warm-$ln.service, pid 66, worktree $T/wt_$ln, age 6:00, rss 6.0 GB\""
+    done
+    plan "$oL_second" 20 LOGICKERNEL_WARM_SECOND=1; check "lanes: SECOND beside a running second lane (the first ended) — allowed" 0 $?
+    has "…takes the FREE first slice, not lk-warm2.slice again" "$T/lp" "^lane: first slice lk-warm.slice mem 10G" 1
+    plan "$oL_second"$'\n'"$oL_third" 20 LOGICKERNEL_WARM_SECOND=1; check "lanes: SECOND beside a second and a third lane — allowed" 0 $?
+    has "…the free first slice" "$T/lp" "^lane: first slice lk-warm.slice" 1
+    plan "$oL_second"$'\n'"$oL_third" 20 LOGICKERNEL_WARM_THIRD=1; check "lanes: THIRD beside a second and a third lane — allowed" 0 $?
+    has "…the free first slice, not lk-warm3.slice again" "$T/lp" "^lane: first slice lk-warm.slice" 1
+    plan "$oL_first"$'\n'"$oL_second" 20 LOGICKERNEL_WARM_THIRD=1; check "lanes: THIRD beside a first and a second lane — allowed" 0 $?
+    has "…lk-warm3.slice, the free one" "$T/lp" "^lane: third slice lk-warm3.slice" 1
+    plan "$oL_third" 20 LOGICKERNEL_WARM_SECOND=1; check "lanes: SECOND beside a running third lane — allowed" 0 $?
+    has "…lk-warm2.slice, the nominal lane, free" "$T/lp" "^lane: second slice lk-warm2.slice" 1
+    # the property over every pair of occupied lanes and every opt-in: a lane that is allowed never shares a slice
+    local a b optin n_ok=0 n_shared=0 out
+    for a in first second third; do
+        for b in none first second third; do
+            for optin in LOGICKERNEL_WARM_SECOND=1 LOGICKERNEL_WARM_THIRD=1 "LOGICKERNEL_WARM_SECOND=1 LOGICKERNEL_WARM_THIRD=1"; do
+                eval "out=\"\$oL_$a\""
+                if [ "$b" != none ]; then eval "out=\"\$out\"\$'\\n'\"\$oL_$b\""; fi
+                [ "$a" = "$b" ] && continue
+                # shellcheck disable=SC2086
+                plan "$out" 64 $optin || continue
+                [ -s "$T/lp" ] || continue
+                n_ok=$((n_ok + 1))
+                case "$(sed -n 's/^lane: \([a-z]*\) .*/\1/p' "$T/lp")" in "$a" | "$b") n_shared=$((n_shared + 1)) ;; esac
+            done
+        done
+    done
+    check "lanes: every allowed plan beside lanes in use ($n_ok plans) takes a slice no other daemon holds" 0 "$n_shared"
+    [ "$n_ok" -ge 12 ]; check "lanes: …and that property was run on >= 12 plans (a guard that compares nothing proves nothing)" 0 $?
+    has "lanes: a restart beside others keeps the opt-in whatever lane it held (the plan names the lane again)" "$ROOT/tools/warm.sh" '\[ -f "\$DIR/first" \]; then second=1; third=1' 1
     # the lane is remembered across a restart: warm.sh's own source names the marker and the slice it maps to
     has "lanes: a restart keeps the THIRD lane (.warm/third) and its slice (lk-warm3.slice)" "$ROOT/tools/warm.sh" 'elif \[ -f "\$DIR/third" \]; then _lane_slice_name third' 1
     # the Manifest.toml copy (a fresh worktree has none; gitignored). Real git repositories in $T, no commit hooks

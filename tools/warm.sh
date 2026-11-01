@@ -205,8 +205,33 @@ _lane_plan() {
         LANE=second
     else
         LANE=refused
+        return 0
     fi
-    return 0
+    _lane_pick "$1"
+}
+# _other_lanes OTHERS — the lane (first | second | third) each other daemon occupies, one word per line: its
+# worktree's marker `.warm/third` / `.warm/second`, else the first slice (a lone first daemon, or `.warm/first`)
+_other_lanes() {
+    local wd
+    for wd in $(printf '%s\n' "$1" | sed -n 's/.*worktree \([^,]*\),.*/\1/p'); do
+        if [ -f "$wd/.warm/third" ]; then echo third
+        elif [ -f "$wd/.warm/second" ]; then echo second
+        else echo first; fi
+    done
+}
+# _lane_pick OTHERS — each daemon gets a slice of ITS OWN (A-0211 incident: a daemon that starts as "second"
+# once the first lane ended shared lk-warm2.slice's cap with the old second one, and lk-warm.slice stood empty).
+# LANE (the lane the count of others and the opt-in name) is kept while its slice is free; else the first free of
+# first, second, third; none free -> exit 6. The opt-in's memory line (8 / 12 GB) was checked by the caller.
+_lane_pick() {
+    local taken c
+    taken=" $(_other_lanes "$1" | tr '\n' ' ') "
+    case "$taken" in *" $LANE "*) ;; *) return 0 ;; esac
+    for c in first second third; do
+        case "$taken" in *" $c "*) ;; *) LANE=$c; return 0 ;; esac
+    done
+    echo "warm lane: REFUSED — every lane's slice (lk-warm, lk-warm2, lk-warm3) is occupied" >&2
+    return 6
 }
 
 # A FRESH WORKTREE HAS NO Manifest.toml (gitignored), and `using LogicKernel` then fails on PrecompileTools
@@ -233,7 +258,7 @@ _manifest_seed() {
 
 _start() {
     if _running; then echo "warm lane: running (unit $UNIT, pid $(cat "$DIR/ready"))"; return 0; fi
-    local others second=0 third=0
+    local others second=0 third=0 first=0
     others="$(_other_daemons)"
     _lane_plan "$others" || return 6
     case "$LANE" in
@@ -251,8 +276,14 @@ _start() {
             export LOGICKERNEL_SLICE LOGICKERNEL_SLICE_MEM_MAX
             echo "warm lane: THIRD daemon (D-0276 item 4) beside:"
             ;;
+        first)                                         # beside others, in the (free) first slice: lib_evidence's own
+            if [ -n "$others" ]; then
+                first=1
+                echo "warm lane: FIRST-slice daemon (its slice is free; A-0211) beside:"
+            fi
+            ;;
     esac
-    if [ "$LANE" = second ] || [ "$LANE" = third ]; then
+    if [ -n "$others" ] && [ "$LANE" != refused ]; then
         printf '%s\n' "$others" | sed 's/^/  /'
         others=""
     fi
@@ -271,6 +302,7 @@ _start() {
     # leftover restart) must not drop the second-daemon opt-in the start was made with (A-0079 item 5)
     if [ "$second" = 1 ]; then : > "$DIR/second"; else rm -f "$DIR/second"; fi
     if [ "$third" = 1 ]; then : > "$DIR/third"; else rm -f "$DIR/third"; fi
+    if [ "$first" = 1 ]; then : > "$DIR/first"; else rm -f "$DIR/first"; fi
     local julia slice
     julia="$(command -v julia)" || { echo "warm lane: no julia on PATH" >&2; return 1; }
     slice="$(_lk_slice)" || return 1                    # the shared budget (tools/lib_evidence.sh)
@@ -334,9 +366,9 @@ _stop() {
 # `stop` forgets it, and a plain `start` after a crash never reads it (the guard stays: one at a time).
 _restart() {
     local second="${LOGICKERNEL_WARM_SECOND:-}" third="${LOGICKERNEL_WARM_THIRD:-}"
-    if [ -f "$DIR/third" ]; then second=""; third=1       # the remembered lane wins over the caller's opt-ins
-    elif [ -f "$DIR/second" ]; then second=1; third=""
-    fi
+    # a daemon that was started beside others keeps that opt-in whatever lane it held (both opt-ins: the plan
+    # takes the lane the count of others and the free slices name, `_lane_plan`/`_lane_pick`)
+    if [ -f "$DIR/third" ] || [ -f "$DIR/second" ] || [ -f "$DIR/first" ]; then second=1; third=1; fi
     _stop
     LOGICKERNEL_WARM_SECOND="$second" LOGICKERNEL_WARM_THIRD="$third" _start
 }
@@ -1300,7 +1332,7 @@ case "$cmd" in
 esac
 case "$cmd" in
     start) _start ;;
-    stop) _stop; rm -f "$DIR/second" "$DIR/third" ;;     # a deliberate stop forgets the second/third-daemon opt-in
+    stop) _stop; rm -f "$DIR/second" "$DIR/third" "$DIR/first" ;;     # a deliberate stop forgets the second/third-daemon opt-in
     lane-plan)                                         # the lane a start would take, starting nothing (a TEST SEAM:
         # LOGICKERNEL_WARM_OTHERS_FAKE replaces the other daemons, one line each as `_other_daemons` prints them)
         if [ -n "${LOGICKERNEL_WARM_OTHERS_FAKE+x}" ]; then _lp_others="$LOGICKERNEL_WARM_OTHERS_FAKE"; else _lp_others="$(_other_daemons)"; fi
