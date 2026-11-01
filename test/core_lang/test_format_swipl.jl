@@ -252,7 +252,8 @@ const _FM_CASES = [
     ("f99", raw"""format(atom(R), "~tab~tcd~10|", [])"""),  # literal text between two fill points
     ("e22", raw"""format(atom(R), f(x), [])"""),  # format text of the wrong type
     ("e23", raw"""format(atom(R), "~W", [x])"""),  # W with one argument
-    ("e24", raw"""format(atom(R), "~@", [])""")  # @ without an argument
+    ("e24", raw"""format(atom(R), "~@", [])"""),  # @ without an argument
+    ("e25", raw"""format(atom(R), "abc~", [])""")  # a text ending in the tilde: the NUL terminator is read as the directive
 ]
 
 # swipl 10.1.19's answer to each case, in order (the driver's whole output)
@@ -380,7 +381,8 @@ const _FM_PINNED = [
     "t_f99 c[116,95,102,57,57]/1(a[32,32,32,97,98,32,32,32,99,100])",
     "t_e22 c[116,95,101,50,50]/1(c[114,97,105,115,101,100]/1(c[116,121,112,101,95,101,114,114,111,114]/2(a[116,101,120,116],c[102]/1(a[120]))))",
     "t_e23 c[116,95,101,50,51]/1(c[114,97,105,115,101,100]/1(c[102,111,114,109,97,116]/1(a[110,111,116,32,101,110,111,117,103,104,32,97,114,103,117,109,101,110,116,115])))",
-    "t_e24 c[116,95,101,50,52]/1(c[114,97,105,115,101,100]/1(c[102,111,114,109,97,116]/1(a[110,111,116,32,101,110,111,117,103,104,32,97,114,103,117,109,101,110,116,115])))"
+    "t_e24 c[116,95,101,50,52]/1(c[114,97,105,115,101,100]/1(c[102,111,114,109,97,116]/1(a[110,111,116,32,101,110,111,117,103,104,32,97,114,103,117,109,101,110,116,115])))",
+    "t_e25 c[116,95,101,50,53]/1(c[114,97,105,115,101,100]/1(c[101,120,105,115,116,101,110,99,101,95,101,114,114,111,114]/2(a[102,111,114,109,97,116,95,99,104,97,114,97,99,116,101,114],a[0])))"
 ]
 
 # rows whose swipl answer differs and the kernel's is pinned: (id, goal, kernel's answer, swipl's answer); k01-k02: the kernel prints the C locale (D9); k03: flag (k), the numeric-argument overflow
@@ -472,14 +474,21 @@ _fm_atomline(id::String, s::String)::String =
 # kernel's atoms cannot (`_atom_from_text`, settled: keep refusing), so `codeToAtom` throws a
 # NotPortedError before any answer. The row leaves the comparison below and is pinned by its own testset.
 # Checklist: revisit with phase 2's atom table.
+# e25 ("abc~", the text ends right after the tilde) is the same cause and a STABLE pin: swipl reads the NUL terminator as the
+# directive character and raises existence_error(format_character, '\0') (two byte-identical swipl runs; the live check below
+# compares it). e18's pin is NOT stable: after "~`" swipl reads PAST the text (`fmt->text.t[length+1]`, undefined), and one
+# binary answered `not enough arguments`, another existence_error(format_character, ' ') for the same text; the pinned a[0] is
+# what one build read. e18 therefore stays out of the live comparison (`_fm_not_unstable`), as its kernel answer is a refusal.
 const _FM_E18 = "t_e18"
-_fm_not_e18(l) = !startswith(l, _FM_E18 * " ")
+const _FM_E25 = "t_e25"
+_fm_not_e18(l) = !startswith(l, _FM_E18 * " ") && !startswith(l, _FM_E25 * " ")
+_fm_not_unstable(l) = !startswith(l, _FM_E18 * " ")
 
 @testset "format/2,3 as swipl's (f01-f74, e01-e19)" begin
-    f, names = _fm_file(filter(c -> c[1] != "e18", _FM_CASES))
+    f, names = _fm_file(filter(c -> c[1] != "e18" && c[1] != "e25", _FM_CASES))
     kl, _, _ = _fm_kernel(f, names)
     pinned = filter(_fm_not_e18, _FM_PINNED)
-    @test length(pinned) == length(_FM_PINNED) - 1
+    @test length(pinned) == length(_FM_PINNED) - 2
     @test length(kl) == length(pinned)
     for (k, p) in zip(kl, pinned)
         k == p || println(stderr, "  ours  ", k, "\n  swipl ", p)
@@ -517,17 +526,61 @@ end
     end
 end
 
-@testset "e18 on the kernel: swipl's format_character '\\0' cannot be an atom here (known difference)" begin
-    @test any(l -> startswith(l, _FM_E18 * " ") && endswith(l, "a[0])))"), _FM_PINNED)  # swipl's answer
-    f, names = _fm_file(filter(c -> c[1] == "e18", _FM_CASES))
+@testset "e18, e25 on the kernel: swipl's format_character '\\0' cannot be an atom here (known difference)" begin
+    for id in ("e18", "e25")
+        @test any(l -> startswith(l, "t_$id ") && endswith(l, "a[0])))"), _FM_PINNED)  # swipl's answer
+        f, names = _fm_file(filter(c -> c[1] == id, _FM_CASES))
+        err = try
+            _fm_kernel(f, names)
+            nothing
+        catch e
+            e
+        end
+        @test err isa LK.NotPortedError                                                 # ours: refused, not misread
+        @test occursin("character 0", err.what)
+    end
+end
+
+# KNOWN DIFFERENCE: C undefined behaviour (size_t underflow / reads past the buffer). Rows whose swipl answer is not reproducible,
+# so no live comparison: (id, goal, the kernel's answer, what swipl 10.1.19 does, observed by the reader of FMT-READ.md in the audit channel).
+#   u01 `~-1s`: pl-fmt.c:784-806 sets `arg = 0` for a negative count but leaves `txt.length` whole, then pads
+#       `for (size_t i = arg - txt.length; ...)`, an unsigned underflow: swipl prints `abc` and then spaces without end (no `|`).
+#   u02 `~25d` of 2**64 (20 digits): formatInteger's V_MPZ branch reads before the digit buffer when the fraction-digit count
+#       exceeds the digit count: swipl prints stack garbage, different bytes on every run (3 runs, 3 answers); the kernel pads zeros.
+const _FM_UB = [
+    ("u01", raw"""format(atom(R), "~-1s|", [abc])""", "abc|"),
+    (
+        "u02",
+        raw"""format(atom(R), "~25d", [18446744073709551616])""",
+        "0.0000018446744073709551616"
+    )
+]
+
+@testset "C undefined behaviour on the kernel (u01 ~-1s, u02 ~Nd past a bignum's digits): the kernel's exact answer, swipl's not reproducible" begin
+    f, names = _fm_file([(id, g) for (id, g, _) in _FM_UB])
+    kl, _, _ = _fm_kernel(f, names)
+    @test length(kl) == length(_FM_UB) + 1
+    for ((id, g, ours), k) in zip(_FM_UB, kl[2:end])
+        @test k == _fm_atomline(id, ours)
+    end
+end
+
+# D9: format_predicate/2 is refused by name (pl-fmt.c :249-325 would add the directive to GD->format.predicates; swipl succeeds).
+@testset "d09 format_predicate/2 on the kernel: refused by name, swipl succeeds (known difference)" begin
+    goal = raw"""format_predicate(x, fp_x(_, _)), R = done"""
+    f, names = _fm_file([("d09", goal)])
     err = try
         _fm_kernel(f, names)
         nothing
     catch e
         e
     end
-    @test err isa LK.NotPortedError                                                     # ours: refused, not misread
-    @test occursin("character 0", err.what)
+    @test err isa LK.NotPortedError
+    @test occursin("format_predicate", err.what)
+    swipl = get(ENV, "LOGICKERNEL_NO_SWIPL", "") == "1" ? nothing : Sys.which("swipl")
+    if swipl !== nothing
+        @test _fm_swipl_lines(f, names)[2:end] == [_fm_atomline("d09", "done")]
+    end
 end
 
 @testset "the pins are swipl's (live, when swipl is on PATH)" begin
@@ -537,6 +590,7 @@ end
         @info "O1A LIVE CHECK NOT RUN: `swipl` is not on PATH here. It runs in tools/run_tests.sh and CI."
     else
         f, names = _fm_file(_FM_CASES)
-        @test _fm_swipl_lines(f, names) == _FM_PINNED
+        @test filter(_fm_not_unstable, _fm_swipl_lines(f, names)) ==
+            filter(_fm_not_unstable, _FM_PINNED)
     end
 end

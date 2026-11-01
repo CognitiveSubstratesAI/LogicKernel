@@ -28,6 +28,9 @@
 #     at the first flag without a bit), an error, not a verdict.
 #   * setStreamTypeCheck's and setWriteAttributes's field writes: rows sf41/sf42 read the table value back, not the field
 #     (`ld.IO_stream_type_check`, `ld.prolog_flag_write_attributes` have no reader in a test of this step).
+#   * S_UNDEF with `unknown` = fail / warning (the undefined-procedure branch of the flag), `var_prefix` read in pl-read.jl
+#     (`rd.var_prefix`) and the `print_write_options` flag-table branch: no cheap anchor (each needs a row that sets the flag and
+#     then reads the effect through the loader or the writer, which the sf rows do not do); not added in the landing-B gate.
 # TARGETS (audit D-0238): each mutant lists every test file that exercises its mutated code.
 TF = ["test/core_lang/test_set_flag_swipl.jl"]
 TP = ["test/core_lang/test_prolog_flag_swipl.jl"]
@@ -41,6 +44,7 @@ P = "src/os/pl-prologflag.jl"
 C = "src/pl-comp.jl"
 W = "src/pl-wam.jl"
 E = "src/pl-error.jl"
+S = "src/pl-string.jl"   # PL_get_int64_ex lives here (main's string step); the F1b copy in pl-error.jl was dropped in the re-stack
 MUTANTS = [
     # ── pl-prologflag.c set_flag_value: FT_BOOL ──
     dict(id="F1B-A1 a Boolean flag set true does not set its mask bit (KILL sf30, sf31, sf46, sf47, sf85)", file=P, targets=TF + TLCO + TOPT,
@@ -68,7 +72,7 @@ MUTANTS = [
     dict(id="F1B-B3 `status` is not an accepted value of on_error and on_warning (KILL sf43, sf44)", file=P, targets=TF,
          old="       k == sym_key(mk_sym(T, :status))\n",
          new="       false\n"),
-    dict(id="F1B-B4 an integer flag out of int64 range raises a type_error, not the representation_error (KILL sf61)", file=E, targets=TF,
+    dict(id="F1B-B4 an integer flag out of int64 range raises a type_error, not the representation_error (KILL sf61)", file=S, targets=TF,
          old="        PL_error(ld, ERR_REPRESENTATION, mk_sym(T, :int64_t))\n",
          new="        PL_error(ld, ERR_TYPE, mk_sym(T, :integer), t)\n"),
     dict(id="F1B-B5 occurs_check is not stored in the local data (KILL sf39, sf40)", file=P, targets=TF,
