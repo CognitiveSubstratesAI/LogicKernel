@@ -2993,6 +2993,63 @@ function pl_univ2_va(
 end
 
 
+# PORT: pl-prims.c compound_name_arguments as pl_compound_name_arguments3_va
+# (PRED_IMPL("compound_name_arguments", 3, compound_name_arguments, 0)).
+# DIVERGES: as `compound_name_arity/3`: a compound whose head is no symbol is named `$expr`, its arguments all its
+# children (`PL_get_name_arity`); `PL_get_compound_name_arity` is the compound test of `PL_get_name_arity`
+# (a text atom is no compound). A list too long for the global stack gives a failure (`ensureGlobalSpace`).
+"`compound_name_arguments(?Compound, ?Name, ?Arguments)` (pl-prims.c): a compound and the list of its arguments, zero arity included."
+function pl_compound_name_arguments3_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    t, list = PL__t0, PL__t0 + 2
+
+    if PL_is_variable(ld, t)
+        tail = PL_copy_term_ref(ld, list)
+        head = PL_new_term_ref(ld)
+
+        name = PL_get_atom_ex(ld, PL__t0 + 1)
+        name === nothing && return FFALSE
+
+        len = lengthList(ld, tail, false)
+        if len < 0
+            len == -1 &&
+                return PL_error(ld, ERR_TYPE, mk_sym(T, :list), list) ? FTRUE : FFALSE
+            return PL_error(ld, ERR_INSTANTIATION) ? FTRUE : FFALSE
+        end
+
+        ensureGlobalSpace(ld, 1 + len) || return FFALSE
+        f = lookupFunctorDef(ld.functors, _atom_word!(ld, name), len)   # PL_new_functor(name, len)
+        PL_unify_compound(ld, t, f) || return FFALSE
+
+        n = 1
+        while PL_get_list(ld, tail, head, tail)
+            PL_unify_arg(ld, n, t, head) || return FFALSE
+            n += 1
+        end
+        return FTRUE
+    end
+
+    k, w, _ = _deref_loc(ld, -(t + 1))                  # 1st arg is term
+    if k == DU_WORD && _is_gcompound(w)                 # PL_get_compound_name_arity(t, &name, &arity)
+        na = PL_get_name_arity(ld, t)::Tuple{T, Int}
+        head = PL_new_term_ref(ld)
+        l = PL_copy_term_ref(ld, list)
+
+        PL_unify_atom(ld, PL__t0 + 1, na[1]) || return FFALSE
+
+        for n in 1:na[2]
+            (PL_unify_list_ex(ld, l, head, l) && PL_unify_arg(ld, n, t, head)) ||
+                return FFALSE
+        end
+
+        return PL_unify_nil_ex(ld, l) ? FTRUE : FFALSE
+    end
+
+    return PL_error(ld, ERR_TYPE, mk_sym(T, :compound), t) ? FTRUE : FFALSE
+end
+
+
 
 # PORT: pl-prims.c term_variables
 # DIVERGES: `tail` 0 is "no tail", as upstream's. `flags`: TV_ATTVAR, TV_ATTS only (AV6; TV_SINGLETON,
@@ -3891,6 +3948,9 @@ const PL_predicates_from_prims = (
     PL_extension("functor", 3, pl_functor3_va, PL_FA_ISO | PL_FA_VARARGS),
     PL_extension("=..", 2, pl_univ2_va, PL_FA_ISO | PL_FA_VARARGS),
     PL_extension("compound_name_arity", 3, pl_compound_name_arity3_va, PL_FA_VARARGS),
+    PL_extension(
+        "compound_name_arguments", 3, pl_compound_name_arguments3_va, PL_FA_VARARGS
+    ),
     PL_extension("numbervars", 4, pl_numbervars4_va, PL_FA_VARARGS),     # (L1d step 7a, D-0016)
     PL_extension("term_variables", 2, pl_term_variables2_va, PL_FA_ISO | PL_FA_VARARGS),
     PL_extension("term_variables", 3, pl_term_variables3_va, PL_FA_VARARGS),
