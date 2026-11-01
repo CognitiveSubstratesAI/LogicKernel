@@ -41,5 +41,70 @@ alloc pins x3 only if a Tier-1 file changes in the final diff (none planned). BU
 `copy_global_data` is generated from: when G1/D2/F1b/O1B land the generated copy changes with it (no edit), and the H3 alias
 row is the guard that a new mutable field is not shared.
 
-## State
-(updated after each commit below)
+## State (forced hand-back at the 150k cap, 2026-11-01)
+COMMITTED on wip/lb4b1: 89822c9 (this plan), ea0ab88 (b1-1: src/gd_template.jl, the include line in src/LogicKernel.jl, the
+`LogicKernel._GD_TEMPLATES` allowlist entry in tools/lint_globals.jl).
+
+UNCOMMITTED in the worktree (a fresh agent: finish these two edits, then `git add` + commit as b1-2):
+- `test/db/test_gd_template.jl` is WRITTEN (untracked): the H3 rows (copy == template by digest, alias check with two negative
+  controls, identities in the copy, six mutations each leaving template and sibling unchanged, stream tables, registry).
+  PENDING EDIT 1 in it: the line `cf[findfirst(==(:atoms), fieldnames(typeof(TMPL)))] = TMPL.atoms` must become
+  `cf[Base.fieldindex(typeof(TMPL), :atoms)] = TMPL.atoms` (findfirst on a tuple of names is not defined).
+- PENDING EDIT 2 in `src/gd_template.jl` `_reachable_mutables`: after the `_alias_skip(x) && continue` line add
+  `x isa Memory && isempty(x) && continue` (the empty Memory of a type is one shared instance: a false alias between any
+  two empty vectors). Fold this edit into the b1-2 commit (the unlanded b1-1 is on a wip branch; message line).
+
+NOT STARTED (in plan order): the bench note `evidence/LB4B1/bench_note.md` (30 interleaved runs of the template build vs a
+copy: what to time = `gd_template` first request, `copy_global_data`, an unbooted `PL_global_data{T}()`, per term type; method
+= memory "bench method", quiet machine, allocations decide; NOT RUN); b1-3 `src/boot_image.jl` + `test/db/test_boot_image_readers.jl`;
+`tools/mutants/LB4B1.py`; docs/architecture.md block; manifest entries. Design notes for b1-3 (read already, so not re-read):
+- T1 row per procedure of every module in `gd.modules` (`m.procedures`, key `(sym_key(name), arity)`; `proc.definition`):
+  module/name (`sym_text`)/arity, defined = `isDefinedProcedure(gd, proc)`, dynamic = `P_DYNAMIC`, foreign = `P_FOREIGN`,
+  locked = `P_LOCKED`, iso = `P_ISO`, transparent = `P_TRANSPARENT`, meta = `P_META`, public = `P_PUBLIC`, exported =
+  `haskey(m.public_, key)`; number_of_clauses as pl-proc.c:3648-3658: absent (nothing) for a foreign predicate, absent when 0 and
+  not dynamic, else the VISIBLE clause count (`visibleClauseCNT(cl, global_generation(gd))` over `def.impl_clauses.first_clause`
+  chain for a dynamic one, `number_of_clauses` for a static one). Sorted by (module, name, arity).
+- T3 row per source file: `for index in 0:highSourceFileIndex(gd)-1`, `f = indexToSourceFile(gd, index)`, skip nothing / `count == 0`
+  (pl-srcfile.jl:296-330): index, name text, type (`f.system` -> system/user), load_count = `f.count`, number_of_clauses,
+  resource, from_state, loaded = `f.ltime != 0.0`, reloading = false, module names `f.modules`.
+- The swipl oracle block for the readers: C predicates both sides define (atom_length/2, functor/3, =/2, ...) with
+  `predicate_property` (defined, foreign, iso, number_of_clauses absent for foreign); generator + driver + .out via swipl 10.1.19
+  (see evidence/MOD5b/ and evidence/MOD6/ of the channel).
+- Mutants (LB4B1.py, anchors to verify with `grep -c -F`): gd_template.jl — the `:streams` policy removed (stream refusal),
+  `stay` made per field (identities broken), `GD_COPY_POLICY` field copied shallow (a table shared: replace one `deepcopy_internal`
+  by a plain `getfield`), the `t === nothing` registry test removed (builds twice), the registry key made constant (not per
+  type), `reset_gd_templates!` not clearing, `unlock` dropped (lock held after a raising build), the empty-Memory skip removed
+  (equivalent? no: the alias rows would flag a false alias — a kill), `_copy_stream_free` accepting a live stream. TARGETS:
+  test/db/test_gd_template.jl (the new file) + test/db/test_procedures.jl + test/test_lint_globals.jl + test/test_static_analysis.jl
+  (only what exercises gd_template.jl; D-0238).
+
+## Flags for the audit
+1. Tier-1 contact: NONE so far. src/pl-global.jl is not edited; no struct changed. Alloc pins x3 not triggered by this chunk.
+2. NEW MODULE-LEVEL STATE: `LogicKernel._GD_TEMPLATES` (a lock and a dict of templates) with an allowlist entry in
+   tools/lint_globals.jl whose text says "Audit decision pending". The process-level registry is what D-0286's sizing named; the
+   kernel lint forbids mutable module state otherwise. Alternative if refused: a caller-held registry value (b2's constructor
+   then needs one passed or held in a database). Recommend: accept.
+3. The template build function is a POSITIONAL argument (`gd_template(T, build)`), the one-argument form builds with the unbooted
+   constructor; b2 swaps the default. `PL_global_data{T}()` and every existing constructor are unchanged.
+4. Hook note: creating src/gd_template.jl was blocked by `require-reference-for-new-artifact.sh` until a corpus index was read
+   (I read workflows/DEVZONE_INDEX.md). `discourage-vector-any.sh` wants `# allow-any:` on the `Any[]`/`IdSet{Any}` of the alias walk
+   (done, reason given: a heterogeneous object-graph walk used by tests only).
+5. FIELD TABLE of `copy_global_data` (policy at 89822c9..ea0ab88; the 37 fields of `PL_global_data` on e0dfb4a): `:streams` (empty
+   same-shape copy, a live IOSTREAM refused) = `stream_filenames`, `stream_aliases`, `stream_table`; every other field is `:deep`
+   (one shared IdDict, identities kept): `_generation procedures_dirty clauses_cgc_active functors_control modules modules_user
+   modules_system subclause_names code_data procedures_dc_call_prolog0 procedures_equals2 procedures_dcall1 procedures_catch3
+   procedures_dwakeup1 clauses_top_clause clauses_top_cref atom_nil atom_dot no_literals files_table files_array files_no_hole_before
+   stream_alias_names atoms atom_symbols functors atom_dexpr functor_dot2 atom_nil_w prolog_flag clause_refs clause_serials bootsession`.
+   Sibling fields (`record_lists record_lists_order record_refs gvar_nb_vars gvar_grefs gvar_enums recorded_states` from the D stack,
+   `IO_output_stack` from O1B: an `Vector{IOSTREAM}` that is EMPTY after a boot, but would be deep-copied with IOSTREAMs if not: add
+   it to `GD_COPY_POLICY` as `:streams` when O1B lands — a one-line edit, and the H3 alias row would otherwise not see it because
+   the template's vector is empty) are `:deep` by default.
+6. Risks for the first run (nothing was run): (a) `deepcopy_internal` of a closure that captured the template would keep a
+   reference to it (the alias row would show a shared object only if the closure is mutable-reachable); (b) JET on the `@generated`
+   body and the `Dict{DataType, PL_global_data}` registry; manifest entries needed (see the manifest group); (c) deepcopy time of a
+   BOOTED database (millions of objects) is unmeasured: that is H3's bench; (d) `Term{Int64}` is used as the second term type in the
+   registry row: if `PL_global_data{Term{Int64}}()` does not construct, use another `Term{G}`.
+7. Gate order for this chunk (from WRITER_RULES): fmt (format committed files through `warm.sh send`), inventory, check, rows on
+   all three term types (test/db/test_gd_template.jl, test/db/test_boot_image_readers.jl), type discipline, `tools/pkgtest_way.sh`
+   per changed test file, the mutants branch, branch-gate, term grep, gate push on a FRESH name. Tier-1 alloc pins: not needed.
+Hook blocks seen: the two above (both cleared); and the 150k context cap that ended this agent.
