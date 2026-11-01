@@ -389,8 +389,8 @@ end
     m("O1A-H4 formatInteger prints zero with no fraction digits as nothing (KILL f93)",
       r'''if n == 0 && divv == 0''', r'''if n == 0'''),
     m("O1A-H5 formatInteger puts a separator before the first digit of a multiple-of-3 number (KILL f91)",
-      r'''                if gsize == 0 && n != 0
-''', r'''                if gsize == 0
+      r'''                if grouping !== nothing && gsize == 0 && n != 0   # gsize reaches 0 only with a grouping
+''', r'''                if grouping !== nothing && gsize == 0   # gsize reaches 0 only with a grouping
 '''),
     m("O1A-H6 formatInteger groups only once (KILL f21, f91)",
       r'''                    if grouping[gi + 1] == 0
@@ -419,8 +419,8 @@ end
     m("O1A-H8 formatInteger ignores the fraction digits of a bignum (KILL f27, f83)",
       r'''if grouping !== nothing || divv > 0''', r'''if grouping !== nothing'''),
     m("O1A-H9 formatInteger puts a separator after the minus of a negative bignum (KILL f92)",
-      r'''gsize == 0 && e >= 1 && buf[e] != '-'
-''', r'''gsize == 0 && e >= 1
+      r'''gsize == 0 && e >= 1 && buf[e] != '-'   # as above
+''', r'''gsize == 0 && e >= 1   # as above
 '''),
     # ── formatFloat: arguments, bignum and rational paths ──
     m("O1A-I1 formatFloat's default for e/f/g is 3 digits (KILL f30, f31)",
