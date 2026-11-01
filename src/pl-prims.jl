@@ -2823,6 +2823,181 @@ function pl_atomic_concat3_va(
     return concat(ld, PL__t0, PL__t0 + 1, PL__t0 + 2, false, PL__ctx, CVT_ATOMIC, PL_ATOM)
 end
 
+# ── atomic_list_concat/2,3, atomics_to_string/2,3, sub_atom/5 (pl-prims.c), since P2 (R2): what boot/init.pl
+# builds its paths with, and boot/messages.pl its message prefixes with ────────────────────────────────
+
+# PORT: pl-prims.c split_atom
+# DIVERGES: the separator `st` and the atom's text are canonical (`PL_canonicalise_text` after `PL_get_text`, as
+# `concat` above), where upstream's are canonical as they are got; `PL_cmp_text` of a separator longer than the
+# atom is not reached (the loop bound is negative).
+"""
+The mode (-,+,+) of `atomic_list_concat/3` (pl-prims.c): `list` is unified with the pieces of the text of `atom`
+between the occurrences of the non-empty separator text `st`, each made an atom.
+"""
+function split_atom(
+    ld::PL_local_data{T}, list::term_t, st::PL_chars_t, atom::term_t
+)::Bool where {T}
+    at = PL_get_text(ld, atom, CVT_ATOMIC | CVT_EXCEPTION)
+    at === nothing && return false
+    PL_canonicalise_text_ex(ld, at) || return false
+    tail = PL_copy_term_ref(ld, list)
+    head = PL_new_term_ref(ld)
+    sep_len = st.length
+
+    last = 0
+    i = 0
+    while i <= at.length - sep_len
+        if PL_cmp_text(st, 0, at, i, sep_len) == 0
+            (
+                PL_unify_list(ld, tail, head, tail) &&
+                PL_unify_text_range(ld, head, at, last, i - last, PL_ATOM)
+            ) || return false
+            i += sep_len
+            last = i
+        else
+            i += 1
+        end
+    end
+
+    (
+        PL_unify_list(ld, tail, head, tail) &&
+        PL_unify_text_range(ld, head, at, last, at.length - last, PL_ATOM)
+    ) || return false
+
+    return PL_unify_nil(ld, tail)
+end
+
+# PORT: pl-prims.c atomic_list_concat
+# DIVERGES: upstream's `tmp_buffer` with its `IOENC` promotion (`append_text_to_buffer`) is the vector `parts` of
+# canonical texts joined by `PL_concat_text` (the same text, the narrowest encoding that holds it);
+# `PL_STRINGS_MARK`/`PL_STRINGS_RELEASE` and `PL_free_text` are not needed (Julia's GC owns the bytes); the separator
+# `sep` is the term reference 0 where upstream passes NULL; `ok` is upstream's 1 (continue), 0 (fail), -1 (split).
+"""
+The body of `atomic_list_concat/2,3` and `atomics_to_string/2,3` (pl-prims.c): `atom` is the text of the atomic
+elements of `list` with the text of `sep` (0: none) between them, made a `ret_type` (`PL_ATOM`, `PL_STRING`); with an
+unbound element, a separator and `PL_ATOM` the mode (-,+,+) splits the text of `atom` at `sep`.
+"""
+function atomic_list_concat(
+    ld::PL_local_data{T}, list::term_t, sep::term_t, atom::term_t, ret_type::Int
+)::foreign_t where {T}
+    l = PL_copy_term_ref(ld, list)
+    head = PL_new_term_ref(ld)
+    st = PL_init_text()                     # separator text
+    ntxt = 0
+
+    if sep != 0
+        s = PL_get_text(ld, sep, CVT_ATOMIC)
+        if s === nothing || PL_canonicalise_text(s) != 1
+            PL_error(ld, ERR_TYPE, mk_sym(T, :text), sep)
+            return FFALSE
+        end
+        st = s
+    end
+
+    parts = PL_chars_t[]
+    split = false
+    while PL_get_list(ld, l, head, l)
+        ok = 1
+
+        txt = PL_get_text(ld, head, CVT_ATOMIC)
+        if txt !== nothing && PL_canonicalise_text(txt) == 1
+            if ntxt > 0 && sep != 0
+                push!(parts, st)
+            end
+            push!(parts, txt)
+        else
+            if PL_is_variable(ld, head) && sep != 0 && ret_type == PL_ATOM     # see (*)
+                ok = -1
+            else
+                PL_error(ld, ERR_TYPE, mk_sym(T, :text), head)
+                ok = 0
+            end
+        end
+
+        if ok == 1
+            ntxt += 1
+            if ntxt == 100 && lengthList(ld, l, true) < 0
+                ok = 0
+            end
+        end
+
+        if ok != 1
+            if ok == -1
+                split = true
+                break
+            end
+            return FFALSE
+        end
+    end
+
+    if !split
+        if PL_get_nil(ld, l)
+            sum = PL_concat_text(parts)
+            return PL_unify_text(ld, atom, 0, sum, ret_type) ? FTRUE : FFALSE
+        elseif !PL_is_variable(ld, l)
+            PL_type_error(ld, "list", l)
+            return FFALSE
+        end
+    end
+
+    if sep == 0 || st.length == 0           # split:
+        if sep == 0
+            return PL_error(ld, ERR_TYPE, mk_sym(T, :text), l) ? FTRUE : FFALSE
+        end
+
+        return PL_domain_error(ld, "non_empty_atom", sep) ? FTRUE : FFALSE
+    end
+
+    return split_atom(ld, list, st, atom) ? FTRUE : FFALSE
+end
+
+# PORT: pl-prims.c atomic_list_concat as pl_atomic_list_concat3_va
+# (PRED_IMPL("atomic_list_concat", 3, atomic_list_concat, 0))
+"`atomic_list_concat/3` (pl-prims.c): `A3` is the atom of the elements of `A1` with the text of `A2` between them."
+function pl_atomic_list_concat3_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    return atomic_list_concat(ld, PL__t0, PL__t0 + 1, PL__t0 + 2, PL_ATOM)
+end
+
+# PORT: pl-prims.c atomic_list_concat as pl_atomic_list_concat2_va
+# (PRED_IMPL("atomic_list_concat", 2, atomic_list_concat, 0))
+"`atomic_list_concat/2` (pl-prims.c): `A2` is the atom of the elements of `A1`."
+function pl_atomic_list_concat2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    return atomic_list_concat(ld, PL__t0, 0, PL__t0 + 1, PL_ATOM)
+end
+
+# PORT: pl-prims.c atomics_to_string as pl_atomics_to_string3_va
+# (PRED_IMPL("atomics_to_string", 3, atomics_to_string, 0))
+"`atomics_to_string/3` (pl-prims.c): `A3` is the string of the elements of `A1` with the text of `A2` between them."
+function pl_atomics_to_string3_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    return atomic_list_concat(ld, PL__t0, PL__t0 + 1, PL__t0 + 2, PL_STRING)
+end
+
+# PORT: pl-prims.c atomics_to_string as pl_atomics_to_string2_va
+# (PRED_IMPL("atomics_to_string", 2, atomics_to_string, 0))
+"`atomics_to_string/2` (pl-prims.c): `A2` is the string of the elements of `A1`."
+function pl_atomics_to_string2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    return atomic_list_concat(ld, PL__t0, 0, PL__t0 + 1, PL_STRING)
+end
+
+# PORT: pl-prims.c pl_sub_atom as pl_sub_atom5_va
+# (pl-ext.c: FRG("sub_atom", 5, pl_sub_atom, NDET|ISO)) — the body is `sub_text` (src/pl-string.jl, T2), `sub_string/5`'s.
+"`sub_atom/5` (pl-prims.c): `A5` is the sub-atom of `A1` of length `A3`, after `A2` characters and before `A4`."
+function pl_sub_atom5_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    return sub_text(
+        ld, PL__t0, PL__t0 + 1, PL__t0 + 2, PL__t0 + 3, PL__t0 + 4, PL__ctx, PL_ATOM
+    )
+end
+
 # PORT: pl-prims.c throw as pl_throw1_va
 # (PRED_IMPL("throw", 1, throw, 0))
 "`throw/1` (pl-prims.c): raise the ball; a variable raises `instantiation_error`."
