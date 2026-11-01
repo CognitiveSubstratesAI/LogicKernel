@@ -771,7 +771,9 @@ echo "pkgtest-way: PASS stub"
         @test occursin("grep -h '^pkgtest_way: .* peak ' \"\$log\"", ie)
         @test !occursin(r"(?m)&\s*$", ie) && !occursin(r"(?m)^\s*wait\b", ie)
         ls = match(r"(?s)\n_lane_slice\(\) \{\n(.*?)\n\}\n", warm)[1]
-        @test occursin("elif [ -f \"\$DIR/second\" ]; then echo lk-warm2.slice", ls)
+        @test occursin("elif [ -f \"\$DIR/third\" ]; then _lane_slice_name third", ls)
+        @test occursin("elif [ -f \"\$DIR/second\" ]; then _lane_slice_name second", ls)
+        @test occursin("lk-warm2.slice", warm) && occursin("lk-warm3.slice", warm)   # the names `_lane_slice_name` maps to
         @test occursin("else echo lk-warm.slice; fi", ls)
         bg = match(r"(?s)\n_branch_gate\(\) \{\n(.*?)\n\}\n", warm)[1]
         @test findfirst("_checks_fresh ||", bg).start <
