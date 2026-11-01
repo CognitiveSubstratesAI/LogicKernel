@@ -723,8 +723,8 @@ end
 # PORT: pl-dict.c pl_get_dict
 # DIVERGES: `i` is the 0-based index into the ARGUMENTS as upstream's (`f->arguments[i]` is position `f + 1 + i`);
 # `exception_term` is `PL_exception(ld, 0) != 0`. `ex` as upstream's: `get_dict/3` is `ex = false`, which raises
-# `type_error(dict, …)` for a non-dict (`get_dict_ex(A2, &dict, !ex)`); `$get_dict_ex/3` (`ex = true`) is outside the
-# six and is not registered. With a key bound the lookup is one binary search (`dict_lookup_ptr`); with it unbound the
+# `type_error(dict, …)` for a non-dict (`get_dict_ex(A2, &dict, !ex)`); `$get_dict_ex/3` (`ex = true`) is `pl_get_dict_ex3_va`.
+# With a key bound the lookup is one binary search (`dict_lookup_ptr`); with it unbound the
 # pairs are enumerated in the dict's (kernel-word) order, `ForeignRedoInt(i)` carrying the index.
 "The body of `get_dict/3` (and `$get_dict_ex/3`): `Value` is the value of `Key` in the dict, or on backtracking every pair (pl-dict.c)."
 function pl_get_dict(
@@ -805,6 +805,47 @@ function pl_get_dict3_va(
     return pl_get_dict(ld, PL__t0, PL__ac, false, PL__ctx)
 end
 
+# PORT: pl-dict.c get_dict_ex as pl_get_dict_ex3_va
+# (PRED_IMPL("get_dict_ex", 3, get_dict_ex, PL_FA_NONDETERMINISTIC); registered as `$get_dict_ex`, pl-dict.c's table)
+# DIVERGES: the predicate's name in the registration table is `$get_dict_ex`; the PRED_IMPL name is `get_dict_ex`.
+"`\$get_dict_ex(?Key, +Dict, ?Value)`: `get_dict/3` that fails for a missing key and raises for a non-dict (pl-dict.c)."
+function pl_get_dict_ex3_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    return pl_get_dict(ld, PL__t0, PL__ac, true, PL__ctx)
+end
+
+# PORT: pl-dict.c get_dict as pl_get_dict5_va
+# (PRED_IMPL("get_dict", 5, get_dict, 0))
+# DIVERGES: `av` of upstream (two term references, the new value and the key, handed to `put_dict` as cells in a row) is
+# two global cells here (`put_dict` reads global positions): the value cell links `A5` (`linkValI`), the key cell holds the
+# key word. No `makeMoreStackSpace` retry loop: the overflow is raised by `ensureGlobalSpace` and the predicate fails.
+"`get_dict(+Key, +Dict, -Val, -NewVal, -NewDict)`: `Val` is `Key`'s value in `Dict` and `NewDict` has `NewVal` there (pl-dict.c)."
+function pl_get_dict5_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2, A3, A4, A5 = PL__t0, PL__t0 + 1, PL__t0 + 2, PL__t0 + 3, PL__t0 + 4
+    dt = PL_new_term_refs(ld, 1)
+
+    key = get_name_ex(ld, A1)
+    key === nothing && return FFALSE
+    get_create_dict_ex(ld, A2, dt) || return FFALSE
+    _, dict, _ = _deref_loc(ld, -(dt + 1))
+    r = dict_lookup_ptr(ld, dict, key)
+    r === nothing && return FFALSE
+    unify_ptrs_cells(ld, r[1], -(A3 + 1)) || return FFALSE
+
+    av = allocGlobalCells!(ld, 2)
+    _dict_link!(ld, av, -(A5 + 1))                  # PL_put_term(av+0, A5)
+    ld.gstack[av + 1] = key                         # *valTermRef(av+1) = key
+
+    new = put_dict(ld, dict, 1, av)
+    new === nothing && return FFALSE
+    t = PL_new_term_ref(ld)
+    ld.slots[t + 1] = new
+    return PL_unify(ld, A4, t) ? FTRUE : FFALSE
+end
+
 # PORT: pl-dict.c BeginPredDefs as PL_predicates_from_dict
 # DIVERGES: the ported entries, in upstream's order (upstream's table also has `dict_pairs/3`, `dict_same_keys/2`,
 # `put_dict/4`, `b_set_dict/3`, `nb_set_dict/3`, `nb_link_dict/3`, `$get_dict_ex/3`, `del_dict/4`, `get_dict/5`, `:</2`,
@@ -816,5 +857,7 @@ const PL_predicates_from_dict = (
     PL_extension("dict_create", 3, pl_dict_create3_va, PL_FA_VARARGS),
     PL_extension("put_dict", 3, pl_put_dict3_va, PL_FA_VARARGS),
     PL_extension("get_dict", 3, pl_get_dict3_va, PL_FA_NONDETERMINISTIC | PL_FA_VARARGS),
-    PL_extension("select_dict", 3, pl_select_dict3_va, PL_FA_VARARGS)
+    PL_extension("select_dict", 3, pl_select_dict3_va, PL_FA_VARARGS),
+    PL_extension("\$get_dict_ex", 3, pl_get_dict_ex3_va, PL_FA_NONDETERMINISTIC | PL_FA_VARARGS),
+    PL_extension("get_dict", 5, pl_get_dict5_va, PL_FA_VARARGS)
 )
