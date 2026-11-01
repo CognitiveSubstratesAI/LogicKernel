@@ -3,8 +3,8 @@
 #   * the entry encoding: an address entry at global positions 1, 2^27 and the last has bit 0 clear
 #     and decodes to its (stack, position); a value entry has bit 0 set and names the saved value's
 #     position (until L1f f3 also a keyed variable's entry, naming its `trail_keys` slot);
-#   * a value entry PLANTED by hand above its address entry (nothing pushes one yet: no setarg/3,
-#     no attributed variables): `Undo!` restores the old value from the global stack, resets the
+#   * a value entry PLANTED by hand above its address entry (setarg/3 and the attributed variables push
+#     them in their own tests, test_setarg_swipl.jl among them): `Undo!` restores the old value from the global stack, resets the
 #     address entries below it, and leaves the trail and `gTop` at the mark (`gTop = m.globaltop`:
 #     upstream's `max(frozen_bar, …)` waits for `frozen_bar`, L1e);
 #   * a bound cell's entry names its position (`_bind_const!`); the keyed variables' entries and

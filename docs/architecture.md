@@ -5910,6 +5910,30 @@ What chunk (a) adds (swipl-devel pin `cbf4e1896275`, oracle swipl 10.1.19):
 - **Left for LB4 (b)**: the template, the readers and the copy rows read this tree; where the tree lives for a Pkg-INSTALLED (read-only) package is audit question 3 of the handoff.
   `docs/port_inventory.md` is regenerated at the gate, not here.
 
+## SETARG — `setarg/3`, `nb_setarg/3`, `nb_linkarg/3`, `duplicate_term`'s `nshare` (R2, pl-prims.c setarg, pl-copyterm.c; boot/bags.pl needs `nb_setarg/3`)
+
+What SETARG adds (src/pl-prims.jl before the predicate table, src/pl-copyterm.jl; written edit-only, nothing compiled when this was written):
+
+- **The three predicates** share `setarg(ld, argn, term, value, flags)` (pl-prims.c `setarg`) and `setarg_t` (the argument number in a term
+  reference): `SETARG_BACKTRACKABLE` trails the old cell (`TrailAssignment!`, one global cell, `ensureGlobalSpace(ld, 1)` first) and a
+  variable cell takes the value by unification; `nb_setarg/3` (no flag) duplicates a compound value and freezes the global stack
+  (`freezeGlobal!`), so no undo frees what the cell holds; `nb_linkarg/3` (`SETARG_LINK`) stores the value as it is. `unify_vp` is the
+  untrailed unification of the cell and `may_share_in_duplicate` the term reference upstream passes as `share`. The table entries sit before `$skip_list`.
+- **`duplicate_term(ld, in, copy, nshare, share)`** (pl-copyterm.c): `cp_options` carries `flags`, `nshare`, `share`;
+  `mark_for_duplicate_cells` has a 4-argument form (the 3-argument one forwards with `nshare` 0) and marks the `nshare` compounds at
+  `share` ground (`share_for_duplicate_cells`), so the copy keeps them shared. `nb_setarg/3` keeps the OLD argument's compound shared.
+- **DIVERGES (representation, logged in the comments):** positions stay put, so `term`'s compound is not re-read after `duplicate_term` or
+  `ensureGlobalSpace`; `freezeGlobal!` runs AFTER `unify_vp` (assigning a side value allocates its value-table entry, which the frozen
+  region holds); `storage(*v) == STG_GLOBAL` is: a compound, an attributed variable, a value-table word or a side word; a value-table
+  word is stored as `_value_word!` makes it (upstream copies the word).
+- **Order with G1:** G1 (wip/g1) adds the 3-argument `duplicate_term(ld, in, copy)` in the same place and `pl_duplicate_term2_va` calls it;
+  SETARG's 5-argument method is the same function. Land G1 first, then SETARG (evidence/SETARG/handoff.md, "Overlap with G1").
+- **Next:** `b_set_dict/3`, `nb_set_dict/3`, `nb_link_dict/3` (pl-dict.c `setdict`) call `setarg(ld, argn, term, value, SETARG_BACKTRACKABLE or SETARG_LINK)`
+  and follow in the dict branch.
+
+Tests: test/core_lang/test_setarg_swipl.jl (83 rows against swipl 10.1.19, two byte-identical runs; sa43-sa47 freeze, sa56-sa58 sharing,
+sa68-sa83 attributed variables and cycles are the rows to read first if the kernel differs), mutants tools/mutants/SETARG.py (27, two equivalent with reasons).
+
 ## Still to come
 
 * 🔜 **THE ORDER FROM HERE (user, 2026-10-14):** V9 is done; next **L1** — SWI's term layout
