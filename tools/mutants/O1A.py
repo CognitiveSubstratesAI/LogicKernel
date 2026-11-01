@@ -279,7 +279,7 @@ end
 ''', r'''                    arg == FMT_DEFAULT && (arg = 1)
 ''', TA),
     m("O1A-E2 ~D with the colon modifier groups with a comma (KILL k01)",
-      r'''PL_locale(".", mod_colon ? "_" : ",", FMT_GROUPING3)''', r'''PL_locale(".", ",", FMT_GROUPING3)'''),
+      r'''PL_locale(".", mod_colon ? "_" : ",", Int[3, 0])''', r'''PL_locale(".", ",", Int[3, 0])'''),
     m("O1A-E3 ~I groups by 4 by default (KILL f25)",
       r'''(arg == FMT_DEFAULT ? 3 : arg) & 0xff''', r'''(arg == FMT_DEFAULT ? 4 : arg) & 0xff'''),
     m("O1A-E4 ~r defaults to radix 10 (KILL e07)",

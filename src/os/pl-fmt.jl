@@ -66,11 +66,6 @@ end
 "The locale of format/2 when no stream locale is asked for: `.` and no grouping (pl-fmt.c `prolog_locale`)."
 const prolog_locale = PL_locale(".", nothing, nothing)
 
-# PORT: pl-fmt.c grouping as FMT_GROUPING3
-# (the `static char grouping[] = {3,0}` in do_format)
-"The grouping of `~D`: groups of three (pl-fmt.c)."
-const FMT_GROUPING3 = Int[3, 0]
-
 # PORT: pl-fmt.c FMT_ERROR as PL_format_error
 # (FMT_ERROR, FMT_ARG, FMT_ARGC; pl-error.c ERR_FORMAT, ERR_FORMAT_ARG)
 # DIVERGES: functions of their own, not `PL_error` codes (no `ERR_FORMAT`, `ERR_FORMAT_ARG` in the enum:
@@ -549,7 +544,8 @@ function do_format(
                 si = false
                 if c == Int('d') || c == Int('D')
                     if c == Int('D')
-                        l = PL_locale(".", mod_colon ? "_" : ",", FMT_GROUPING3)
+                        # pl-fmt.c do_format: `static char grouping[] = {3,0}`, a local per call, so a fresh vector here
+                        l = PL_locale(".", mod_colon ? "_" : ",", Int[3, 0])
                     elseif mod_colon
                         l = prolog_locale       # fd->locale, D9
                     else
