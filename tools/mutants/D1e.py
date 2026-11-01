@@ -1,5 +1,5 @@
 # ORIGINAL: D1's mutant list — no swipl-devel counterpart.
-# tools/mutants/D1d.py — the mutation battery of D1 (R2: clause references as blobs, pl-dbref.c; assert/2, asserta/2, assertz/2 and
+# tools/mutants/D1e.py — the mutation battery of D1 (R2: clause references as blobs, pl-dbref.c; assert/2, asserta/2, assertz/2 and
 # the Ref of '$record_clause'/4 in pl-comp.c; erase/1's clause branch in pl-rec.c; D-0227 item 6, design evidence/r2/design/flags_rest.md
 # §4 D11), run ONCE, in CI (.github/workflows/mutation.yml; locally: tools/mutate.sh run). The format is tools/mutate_drive.py's: `id`,
 # `file`, `old` (must occur EXACTLY once), `new`, optional `equivalent` and `targets`. One mutant per decision of the step: the blob type
@@ -111,10 +111,8 @@ MUTANTS = [
          old='''    return clause_clref(gd, a) !== nothing ||''',
          new='''    return true ||'''),
     dict(id="D1-19 PL_get_dbref names another type in its error", file=B, targets=T,
-         old='''        PL_error(ld, ERR_TYPE, mk_sym(T, :db_reference), t)
-        return nothing''',
-         new='''        PL_error(ld, ERR_TYPE, mk_sym(T, :reference), t)
-        return nothing'''),
+         old='''    PL_error(ld, ERR_TYPE, mk_sym(T, :db_reference), t)         # no blob, or one of another type: goto error''',
+         new='''    PL_error(ld, ERR_TYPE, mk_sym(T, :reference), t)         # no blob, or one of another type: goto error'''),
     dict(id="D1-20 PL_get_dbref answers an erased clause", file=B, targets=T,
          old='''        if (clause.flags & CL_ERASED) == 0
             return (DB_REF_CLAUSE, clause)
@@ -469,4 +467,10 @@ end'''),
          targets=T + [TREC],
          old='''    if type != DB_REF_CLAUSE                                    # RECORD: the instance branch of a record''',
          new='''    if false                                                    # RECORD: the instance branch of a record'''),
+    dict(id="D1-120 PL_get_recref names another type in its error (KILL r50, r51 of test_record_swipl.jl; the same slip in D1-19 hit this site, not PL_get_dbref's)",
+         file=B, targets=[TREC],
+         old='''    if ref === nothing                                          # !PL_get_blob(…) || type != &record_blob
+        PL_error(ld, ERR_TYPE, mk_sym(T, :db_reference), t)''',
+         new='''    if ref === nothing                                          # !PL_get_blob(…) || type != &record_blob
+        PL_error(ld, ERR_TYPE, mk_sym(T, :reference), t)'''),
 ]
