@@ -1,0 +1,46 @@
+
+@testset "dict-predicate rows: the kernel's answers are swipl's (dp01-dp164)" begin
+    f, names = _dp_file()
+    kl, _, _ = _dp_kernel(f, names)
+    @test length(kl) == length(_DP_PINNED)
+    for (k, p) in zip(kl, _DP_PINNED)
+        k == p || println(stderr, "  ours  ", k, "\n  swipl ", p)
+        @test k == p
+    end
+end
+
+@testset "the dict-predicate rows are not vacuous (dp01-dp164)" begin
+    rows = _DP_PINNED[2:end]                                                       # the driver's first line is `ok`
+    @test _DP_PINNED[1] == "ok"
+    @test length(rows) == length(_DP_CASES) == 164
+    code(t) = "[" * join(Int.(collect(t)), ",") * "]"
+    # raised(…) rows: 27 type errors, 12 instantiation errors, 1 duplicate_key, 1 domain_error
+    @test count(l -> occursin(code("raised"), l), rows) == 41
+    @test count(l -> occursin(code("type_error") * "/2", l), rows) == 27
+    @test count(l -> occursin(code("instantiation_error"), l), rows) == 12
+    @test count(l -> occursin(code("duplicate_key") * "/1", l), rows) == 1
+    @test count(l -> occursin(code("not_less_than_zero"), l), rows) == 1
+    # rows that fail have no answer after the name; rows that answer `yes`
+    @test count(l -> occursin(r"^t_dp\d+$", l), rows) == 31
+    @test count(l -> endswith(l, "(a" * code("yes") * "))"), rows) == 12
+    # '$get_dict_kv'/6,8 on dicts with other keys raise domain_error(compatible_dict, _), caught inside the row as d(compatible_dict)
+    @test count(l -> occursin(code("compatible_dict"), l), rows) == 3
+    # no answer holds a dict (a dict is a compound named `dict`)
+    @test !any(l -> occursin(code("dict") * "/", l), _DP_PINNED)
+    # '$get_dict_ex'/3 raises existence_error(key, c) (dp03)
+    @test any(l -> startswith(l, "t_dp03 ") && occursin(code("key"), l) && endswith(l, "a" * code("c") * "))"), rows)
+    # get_dict/5 hands back V and the new dict's pairs (dp13: 1 with [a-9, b-2])
+    @test any(l -> startswith(l, "t_dp13 ") && occursin("c[45]/2(i1,c[91,124,93]/2(c[45]/2(a[97],i9)", l), rows)
+end
+
+@testset "the pins are swipl's (live, when swipl is on PATH)" begin
+    swipl = get(ENV, "LOGICKERNEL_NO_SWIPL", "") == "1" ? nothing : Sys.which("swipl")
+    # the pinned table is the driver's whole output (the inert-testset guard: an assertion either way)
+    @test length(_DP_PINNED) == length(_DP_CASES) + 1
+    if swipl === nothing
+        @info "DICT LIVE CHECK NOT RUN: `swipl` is not on PATH here. It runs in tools/run_tests.sh and CI."
+    else
+        f, names = _dp_file()
+        @test _dp_swipl_lines(f, names) == _DP_PINNED
+    end
+end
