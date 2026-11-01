@@ -2201,6 +2201,19 @@ function _manifest_index(T)
                 LK.pl_is_dict1_va, LK.pl_is_dict2_va, LK.pl_dict_create3_va,
                 LK.pl_put_dict3_va, LK.pl_select_dict3_va, LK.pl_get_dict3_va
             )
+        ]...,
+        # SETARG — pl-prims.c setarg/3, nb_setarg/3, nb_linkarg/3; pl-copyterm.c duplicate_term's nshare/share
+        (LK.unify_vp, Tuple{LD, Int, Int}, false),
+        (LK.may_share_in_duplicate, Tuple{LD, Int}, false),
+        (LK.setarg, Tuple{LD, Int, Int, Int, UInt32}, false),
+        (LK.setarg_t, Tuple{LD, Int, Int, Int, UInt32}, false),
+        (LK.share_for_duplicate_cells, Tuple{LD, Int, LK.cp_options}, false),
+        (LK.mark_for_duplicate_cells, Tuple{LD, Int, Int, LK.cp_options}, false),
+        (LK.duplicate_term, Tuple{LD, Int, Int, Int, Int}, false),
+        [
+            (f, Tuple{LD, Int, Int, LK.control_t{T}}, false) for f in (
+                LK.pl_setarg3_va, LK.pl_nb_setarg3_va, LK.pl_nb_linkarg3_va
+            )
         ]...
     )
 end

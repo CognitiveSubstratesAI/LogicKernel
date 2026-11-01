@@ -13,22 +13,35 @@ setdict -> `setarg(ld, argn, term, value, SETARG_BACKTRACKABLE/SETARG_LINK)`; th
    `setarg(ld, argn, term, value, flags)`, `setarg_t`, `pl_setarg3_va`/`pl_nb_setarg3_va`/`pl_nb_linkarg3_va`, three table
    entries before `$skip_list`.
 4. 4e0581d rows test/core_lang/test_setarg_swipl.jl (sa01-sa81) + evidence/SETARG/{gen_rows.py,setarg_rows.pl,setarg_driver.pl,setarg_rows.out}.
-5. (the next commit, from the cap-hit state) rows sa82-sa83 added, pins refilled from two byte-identical swipl 10.1.19 runs,
-   plus evidence/SETARG/SETARG.py.draft and this handoff.
+5. 8d29951 rows sa82-sa83 added, pins refilled from two byte-identical swipl 10.1.19 runs, the mutant draft and the first handoff.
 
-## LEFT (in order; a fresh agent)
-a. `cp evidence/SETARG/SETARG.py.draft tools/mutants/SETARG.py`; replace the first lines by a header as tools/mutants/MOD3b.py
-   (format note, anchors need a re-fit after fmt, TARGETS reason; NOT LISTED: `ensureGlobalSpace(ld, 1)` before the trailed
-   assignment (only at the stack limit), `_value_word!` in `unify_vp` (a slot's side value never occurs for a Prolog goal's
-   argument), the three identical `A1, A2, A3 = ...` lines); delete `evidence/SETARG/SETARG.py.draft`; validate with a
-   throwaway python3 -I + runpy checker (old occurs once via count, new != old, ids unique, targets exist). 27 mutants, 2 equivalent
-   (A5, E4). The anchors were NOT yet counted: expect some to fail (C2's anchor has aligned spaces; B7's trailing space).
-b. docs/architecture.md: an appended block (setarg group, nshare in duplicate_term, the frozen-after-assign DIVERGES).
-c. test/static_analysis_manifest.jl: entries LAST, appended: `LK.pl_setarg3_va`, `LK.pl_nb_setarg3_va`, `LK.pl_nb_linkarg3_va`
-   (shape of the neighbouring `pl_*_va` entries, over T), `LK.setarg`, `LK.unify_vp`, `LK.may_share_in_duplicate`,
-   `LK.duplicate_term`, `LK.share_for_duplicate_cells`, the 4-arg `LK.mark_for_duplicate_cells` (Tuple{PL_local_data{T}, Int, Int, cp_options}).
-d. Stale comment: test/core_lang/test_trail_words.jl:6 says "no setarg/3" (a comment); re-word it positively in the docs commit.
-Commit estimate: 3 more (mutants, docs, manifest).
+## DONE since the cap-hit (all committed on wip/setarg, nothing pushed, nothing run)
+6. b764052 tools/mutants/SETARG.py (27 mutants, 2 equivalent A5/E4, header as MOD3b.py; the draft file removed). TCOPY targets now also
+   include test_same_term_swipl.jl (s_dup) and test_attvar_wakeup.jl (duplicate_term/2 on an attvar). Checked with a python3 -I + runpy
+   checker: every `old` occurs once in the wip/setarg worktree, new != old, ids unique, targets exist. Anchors need a re-fit after fmt.
+7. 233573e docs/architecture.md SETARG section (before "Still to come") + test_trail_words.jl:6 comment re-worded.
+8. efd797f manifest block appended at the end of `_manifest_index` (test/static_analysis_manifest.jl): unify_vp, may_share_in_duplicate,
+   setarg, setarg_t, share_for_duplicate_cells, 4-arg mark_for_duplicate_cells, 5-arg duplicate_term, the three `pl_*3_va`.
+9. this handoff.
+Nothing is left to write for SETARG. The rest is the gate (order below).
+
+## Overlap with G1 (checked with `git diff`/`git show` on refs wip/g1 1c13c79 and wip/dstack-a3 eb6c6fc, nothing checked out)
+- G1 (commit "duplicate_term" in src/pl-copyterm.jl, +8 -1) adds `duplicate_term(ld, in, copy)` (3-argument, `copy_term_refs(ld, in, copy,
+  cp_options(COPY_ATTRS))`) BEFORE `pl_duplicate_term2_va`, and changes that predicate's line to call it. wip/dstack-a3 carries the same diff.
+- It is NOT an equivalent of nshare/share: G1's DIVERGES comment says "no nshare/share arguments". Nothing to drop. My 5-argument
+  `duplicate_term(ld, in, copy, nshare, share)` (after `pl_duplicate_term2_va`) is a second method of the same function: no name or method
+  collision (different arity), and G1's `cp_options(COPY_ATTRS)` / `cp_options(0x00)` (G1-P1 mutant) use my kept 1-argument constructor.
+- TEXT collision: yes, one hunk. G1's edit of `pl_duplicate_term2_va` (the `copy_term_refs(...) || return FFALSE` line, its insertion just above)
+  is within 3 context lines of where 4f0c4ba inserts the 5-argument method (after the same function), so a cherry-pick / rebase of one onto the
+  other conflicts in that area of src/pl-copyterm.jl. Resolution: keep both methods; G1's comment line "DIVERGES: no `nshare`/`share`" becomes stale
+  and should read "the 3-argument form is duplicate_term/2's and setval_duplicate's (nshare 0)". Optional: G1's 3-argument body may forward
+  to `duplicate_term(ld, in, copy, 0, 0)`; not needed.
+- Stacking order: G1 FIRST (it is the older and already has CI-side batteries), then SETARG rebased on it; resolve the one hunk, and update G1's
+  DIVERGES comment in the SETARG rebase (4f0c4ba). Manifest: G1 has `(LK.duplicate_term, Tuple{LD, Int, Int}, false)`; mine is
+  `Tuple{LD, Int, Int, Int, Int}`: two entries, both kept. G1.py's G1-P1 `old` (`cp_options(COPY_ATTRS))`) still occurs once with my 5-argument
+  method present (its call reads `cp_options(COPY_ATTRS, nshare, share))`); SETARG.py E6/E7 do not match G1's text either.
+- docs/architecture.md and the manifest are shared appended files: expect textual (not semantic) conflicts at the end of `_manifest_index`
+  and before "## Still to come".
 
 ## Flags for the audit
 1. TIER-1 CONTACT: none in the sense of the trail itself (TrailAssignment!, Undo!, freezeGlobal! are called, not edited), BUT
@@ -45,7 +58,12 @@ Commit estimate: 3 more (mutants, docs, manifest).
    3-field struct (callers in pl-fli.jl:789,801 use the 1-arg constructor, kept); table entries `PL_extension("setarg", ...)`.
 5. Rows to read first if the kernel differs: sa56-sa58 (nshare sharing), sa43-sa47 (freeze), sa68-sa77 and sa82-sa83 (attvar, cycles).
    sa51 of the first draft (nb_linkarg accumulating [X|L]) was DROPPED: it depends on bindings that backtracking undoes (undefined).
-6. Not done (not on this step): b_set_dict/nb_set_dict/nb_link_dict.
+6. Not done (not on this step): b_set_dict/nb_set_dict/nb_link_dict. They follow in wip/dict (pl-dict.c setdict): call
+   `setarg(ld, argn, term, value, SETARG_BACKTRACKABLE)` for b_set_dict and `SETARG_BACKTRACKABLE`/`SETARG_LINK` as the C code passes
+   (nb_set_dict: 0, nb_link_dict: SETARG_LINK) once SETARG is under them in the stack.
 
 ## Gate order (the rules): fmt (warm.sh send for committed files), inventory, check, rows on all three term types,
 type discipline, `tools/pkgtest_way.sh test/core_lang/test_setarg_swipl.jl`, the mutants branch, branch-gate, term grep, gate push on a FRESH name.
+
+## UNRUN (everything): no Julia ran. Not compiled: src/pl-copyterm.jl, src/pl-prims.jl, the manifest block, the rows (81+2) on any term type,
+the 27 mutants (text-count checked only), fmt, inventory. No daemon is held by this branch. Gate: SETARG after G1 in the stack (see Overlap).
