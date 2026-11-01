@@ -88,6 +88,9 @@ const SIO_STATIC = UInt32(1) << 10
 # PORT: SWI-Stream.h SIO_RECORDPOS
 "Maintain the position (SWI-Stream.h)."
 const SIO_RECORDPOS = UInt32(1) << 11
+# PORT: SWI-Stream.h SIO_NOERROR
+"Ignore write errors (SWI-Stream.h): the stream property `write_errors(ignore)`."
+const SIO_NOERROR = UInt32(1) << 13
 # PORT: SWI-Stream.h SIO_NOFEOF
 "Do not set `SIO_FEOF` (SWI-Stream.h)."
 const SIO_NOFEOF = UInt32(1) << 14
