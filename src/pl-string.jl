@@ -1160,6 +1160,14 @@ const PL_predicates_from_strings = (
         "sub_string", 5, pl_sub_string5_va, PL_FA_NONDETERMINISTIC | PL_FA_VARARGS
     ),
     PL_extension(
+        "sub_atom", 5, pl_sub_atom5_va,
+        PL_FA_NONDETERMINISTIC | PL_FA_ISO | PL_FA_VARARGS
+    ),                                                                         # (P2, pl-prims.c)
+    PL_extension("atomic_list_concat", 3, pl_atomic_list_concat3_va, PL_FA_VARARGS),   # (P2, pl-prims.c)
+    PL_extension("atomic_list_concat", 2, pl_atomic_list_concat2_va, PL_FA_VARARGS),
+    PL_extension("atomics_to_string", 3, pl_atomics_to_string3_va, PL_FA_VARARGS),
+    PL_extension("atomics_to_string", 2, pl_atomics_to_string2_va, PL_FA_VARARGS),
+    PL_extension(
         "string_code", 3, pl_string_code3_va, PL_FA_NONDETERMINISTIC | PL_FA_VARARGS
     ),
     PL_extension("get_string_code", 3, pl_get_string_code3_va, PL_FA_VARARGS),
