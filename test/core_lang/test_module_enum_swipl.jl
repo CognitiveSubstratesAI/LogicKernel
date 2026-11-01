@@ -522,18 +522,35 @@ end
     t4 = LK.lookupModule(gd, _mms("mmx_tt"))
     t4.class = _mms("temporary")
     r0 = t4.references
-    en2 = LK.module_enum()
-    en2.flags = Int(LK.MENUM_TEMP)
-    found = false
-    while (m = LK.advanceModuleEnum(gd, ld, en2)) !== nothing
-        m === t4 && (found=true; @test t4.references == r0 + 1 && en2.current == t4.index)
-    end
-    @test found
-    @test t4.references == r0 + 1                 # still held by the enumeration (`current`), which is the last temporary one
+    t5 = LK.lookupModule(gd, _mms("mmx_tt5"))     # created after t4: the walk moves from t4 to t5 and must release t4 there
+    t5.class = _mms("temporary")
+    r5 = t5.references
+    # the pooled state of newModuleEnum is the one walked and then freed (freeModuleEnum releases what it holds)
     k = LK.newModuleEnum(ld, Int(LK.MENUM_TEMP))
     @test ld.module_enums.live == 1 && ld.module_enums.states[k].flags == Int(LK.MENUM_TEMP)
+    en2 = ld.module_enums.states[k]
+    found = false
+    found5 = false
+    seen2 = Int[]
+    while (m = LK.advanceModuleEnum(gd, ld, en2)) !== nothing
+        push!(seen2, m.index)
+        @test (m.flags & LK.M_DESTROYED) == 0                     # a destroyed record is never returned, temporary or not
+        if m === t4
+            found = true
+            @test t4.references == r0 + 1 && en2.current == t4.index
+        elseif m === t5
+            found5 = true
+            @test t5.references == r5 + 1 && t4.references == r0 && en2.current == t5.index
+        end
+    end
+    @test found && found5
+    @test old.index ∉ seen2 && allunique(seen2)
+    @test t5.references == r5 + 1                 # still held by the enumeration (`current`), which is the last temporary one
+    @test t4.references == r0                     # released when the walk moved on to t5
     LK.freeModuleEnum(gd, ld, k)
+    @test t5.references == r5                     # freeModuleEnum releases the temporary module the state holds
     @test ld.module_enums.live == 0
+    @test sym_key(t5.class) == sym_key(_mms("temporary"))
     @test sym_key(t4.class) == sym_key(_mms("temporary"))
 end
 
