@@ -151,9 +151,10 @@ end
          new='''            if unifyKey(ld, A1, rl.key)'''),
 
     # ---- the keys: getKeyEx, unifyKey
-    dict(id="D2-30 getKeyEx takes any non-atom, non-integer word as a compound (KILL r20, r21, r23, r25)", file=R, targets=TR,
+    dict(id="D2-30 getKeyEx takes any non-atom, non-integer word as a compound", file=R, targets=TR,
          old='''    elseif k == DU_WORD && _is_gcompound(w)''',
-         new='''    elseif k == DU_WORD'''),
+         new='''    elseif k == DU_WORD''',
+         equivalent="_deref_loc answers DU_WORD only for an atom or a compound (src/pl-prims.jl:697, :713) and getKeyEx's first branch (src/pl-rec.jl:584) takes every atom, so the elseif sees a compound only"),
     dict(id="D2-31 getKeyEx refuses a small integer (KILL r14, r15, r53)", file=R, targets=TR,
          old='''(k == DU_VALUE && isTaggedIntW(w))''',
          new='''false'''),

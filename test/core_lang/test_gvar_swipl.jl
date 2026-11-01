@@ -253,6 +253,16 @@ const _GV_CASES = [
     (
         "g57",
         raw"nb_setval(gv_nv, 1), nb_delete(gv_nv), findall(K, ( nb_current(K, _), K == gv_nv ), R)"
+    ),
+    # nb_setval copies an attributed variable: a later put_attr on the original does not show in the stored copy (kills G1-S7)
+    (
+        "g58",
+        raw"put_attr(X, gv_dom, 1), nb_setval(gv_av2, X), put_attr(X, gv_dom, 2), nb_getval(gv_av2, Y), get_attr(Y, gv_dom, R)"
+    ),
+    # the stored copy is not the original variable
+    (
+        "g59",
+        raw"put_attr(X, gv_dom, 1), nb_setval(gv_av3, X), nb_getval(gv_av3, Y), ( Y == X -> R = same ; R = diff )"
     )
 ]
 
@@ -315,7 +325,9 @@ const _GV_PINNED = [
     "t_g54 c[116,95,103,53,52]/1(i2)",
     "t_g55 c[116,95,103,53,53]/1(a[97])",
     "t_g56 c[116,95,103,53,54]/1(a[115,97,109,101])",
-    "t_g57 c[116,95,103,53,55]/1(nil)"
+    "t_g57 c[116,95,103,53,55]/1(nil)",
+    "t_g58 c[116,95,103,53,56]/1(i1)",
+    "t_g59 c[116,95,103,53,57]/1(a[100,105,102,102])"
 ]
 
 "The kernel's lines for `names` after consulting `path`, as the driver writes swipl's; the database, for the white-box tests."
@@ -374,7 +386,7 @@ function _gv_file()::Tuple{String, Vector{String}}
     return f, names
 end
 
-@testset "global variables as swipl's (g01-g57)" begin
+@testset "global variables as swipl's (g01-g59)" begin
     f, names = _gv_file()
     kl, gd, ld = _gv_kernel(f, names)
     @test length(kl) == length(_GV_PINNED)

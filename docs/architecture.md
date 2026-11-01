@@ -5785,7 +5785,7 @@ What G1 ports (pl-gvar.c at the pin cbf4e189; edit-only so far, nothing compiled
 - **Unverified on the kernel:** rows g15 (a cyclic value), g25 (the full ball with its context term), g35 (`string_codes/2`),
   g42 (an attributed variable value) and every other row until the first run.
 
-Tests: test/core_lang/test_gvar_swipl.jl (rows g01-g57 and the h9 database, pins from swipl 10.1.19; generator
+Tests: test/core_lang/test_gvar_swipl.jl (rows g01-g59 and the h9 database, pins from swipl 10.1.19; generator
 evidence/G1/gen_rows.py). Mutants: tools/mutants/G1.py.
 
 ## T2 — the string predicates (R2, pl-string.c and the string family of pl-prims.c)

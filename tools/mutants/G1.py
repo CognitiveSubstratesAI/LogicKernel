@@ -3,7 +3,7 @@
 # auto_define_gvar, is_gval, nb_delete/1, nb_current/2; the table entries; D7 `_release_frozen!` honouring `gvar_grefs`;
 # D8 `user:exception/3` dynamic from the start; pl-copyterm.c duplicate_term), run ONCE, in CI (.github/workflows/mutation.yml;
 # locally: tools/mutate.sh run). Format: tools/mutate_drive.py's (as MOD3b.py): `id`, `file`, `old` (must occur EXACTLY once),
-# `new`, optional `equivalent` and `targets`. Killed by test/core_lang/test_gvar_swipl.jl (rows g01-g57 and the h9 database named
+# `new`, optional `equivalent` and `targets`. Killed by test/core_lang/test_gvar_swipl.jl (rows g01-g59 and the h9 database named
 # in each id's KILL). Verdicts: written by the battery, not yet run.
 # The `old` strings are single-line anchors written in the repo's formatted style BEFORE `tools/warm.sh fmt` ran (the coding
 # agent had no daemon): RE-FIT any that fmt re-flows at the first battery run (mutate_drive.py refuses a string that does not
@@ -56,7 +56,7 @@ MUTANTS = [
          file=G, targets=TG,
          old="if k == DU_CELL || k == DU_ATTVAR               # canBind(w)",
          new="if false"),
-    dict(id="G1-S7 setval_duplicate copies a compound but not an attributed variable (KILL g42)",
+    dict(id="G1-S7 setval_duplicate copies a compound but not an attributed variable (KILL g58, g59)",
          file=G, targets=TG,
          old="if _is_gcompound(new) || word_is_attvar(ld, new)",
          new="if _is_gcompound(new)"),

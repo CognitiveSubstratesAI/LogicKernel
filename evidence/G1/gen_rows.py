@@ -8,6 +8,7 @@ tf = pathlib.Path(sys.argv[1])
 src = tf.read_text()
 prog = re.search(r'const _GV_PROGRAM = raw"""\n(.*?)"""', src, re.S).group(1)
 cases = re.findall(r'\(\s*"(g\d\d)",\s*raw"(.*?)"\s*\)', src, re.S)
+cases = [(i, g.replace('\\"', '"')) for i, g in cases]   # a Julia raw string holds `\"` for a quote
 drv = re.search(r'const _GV_DRIVER = raw"""\n(.*?)"""', src, re.S).group(1)
 if "--fill" in sys.argv:
     lines = pathlib.Path("gvar_rows.out").read_text().split("\n")
