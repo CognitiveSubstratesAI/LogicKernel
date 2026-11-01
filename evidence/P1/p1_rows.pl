@@ -173,3 +173,6 @@ t_p170(R) :- catch(('$term_multitons'(f(X,X,Y,Y), [A,B,C]), R = A), error(SsuE, 
 t_p171(R) :- catch((G = g(X), '$term_multitons'(f(G,G), L), R = L-X), error(SsuE, _), R = raised(SsuE)).
 t_p172(R) :- catch(('$term_multitons'(f(X,X,X), L), R = L-X), error(SsuE, _), R = raised(SsuE)).
 t_p173(R) :- catch(('$term_multitons'(f(X,Y,Y,X,Z), L), R = L-X-Y-Z), error(SsuE, _), R = raised(SsuE)).
+t_p174(R) :- catch((arg(N, f(g(X,b), g(c,X)), g(A,d)), R = N-A-X), error(SsuE, _), R = raised(SsuE)).
+t_p175(R) :- catch((( is_most_general_term([X,Y]) -> true ; true ), term_variables([X,Y], L), length(L, N), R = N), error(SsuE, _), R = raised(SsuE)).
+t_p176(R) :- catch((term_singletons(f(X,Y,X), [A]), R = A-Y), error(SsuE, _), R = raised(SsuE)).

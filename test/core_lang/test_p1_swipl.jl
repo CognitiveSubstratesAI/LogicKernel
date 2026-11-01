@@ -1,7 +1,7 @@
 # ORIGINAL: a LIVE differential of P1's term inspection predicates against swipl at the pin (pl-prims.c, swipl-devel cbf4e189):
 # test/core_lang/test_p1_swipl.jl — arg/3 (nondeterministic, pl-prims.c:2704), compound_name_arity/3 (:2508),
 # compound_name_arguments/3 (:3161), subsumes_term/2 (:3954), '$factorize_term'/3 (:1485), '$term_size'/3 (:993),
-# is_most_general_term/1 (:3850), term_singletons/2 (:3741) and '$term_multitons'/2 (:3752): rows p001-p173 against swipl 10.1.19.
+# is_most_general_term/1 (:3850), term_singletons/2 (:3741) and '$term_multitons'/2 (:3752): rows p001-p176 against swipl 10.1.19.
 #   * A PROGRAM consulted by the kernel's loader and cases `t_<id>(R)` run in order in one database, each wrapped in
 #     `catch(Goal, error(SsuE, _), R = raised(SsuE))`; the driver is test_style_check_swipl.jl's (`enc`oded answers; an
 #     answer's variables are numbered by first occurrence).
@@ -99,7 +99,7 @@ p_cyc(X) :- X = f(X).
 # variables), call/N; p029-p051 compound_name_arity/3, p052-p070 compound_name_arguments/3: both directions, zero arity,
 # the type, instantiation and domain errors; p071-p092 subsumes_term/2; p093-p100 '$factorize_term'/3; p101-p126
 # '$term_size'/3 (calibration: atom 0, float 3, "abc" 3, "abcdefgh" 4, 2^64 5, 1r3 6, f(X,X) 3, a wide string 4);
-# p127-p147 is_most_general_term/1; p148-p161 term_singletons/2; p162-p173 '$term_multitons'/2
+# p127-p147 is_most_general_term/1; p148-p161 term_singletons/2; p162-p173 '$term_multitons'/2; p174-p176 the rows of the mutants
 # UNVERIFIED on the kernel: gate decides — p014/p015 (call_cleanup/2 for the determinism), p028/p095/p117/p153/p166 (the cyclic
 # term), p106 (rdiv), p108 (a wide string's size), p049 (the size_t representation error of a huge arity), p044/p070 (the
 # reserved `[]` as a compound name), p031/p054/p122 (a zero-argument compound from a clause head)
@@ -286,6 +286,11 @@ const _P1_CASES = [
     ("p171", raw"""G = g(X), '$term_multitons'(f(G,G), L), R = L-X"""),
     ("p172", raw"""'$term_multitons'(f(X,X,X), L), R = L-X"""),
     ("p173", raw"""'$term_multitons'(f(X,Y,Y,X,Z), L), R = L-X-Y-Z"""),
+    # rows that kill mutants of tools/mutants/P1.py: arg/3 undoes a failed argument's bindings; the marks of is_most_general_term
+    # on a list are cleared; term_singletons/2 against a proper list is not cut by that list's length
+    ("p174", raw"""arg(N, f(g(X,b), g(c,X)), g(A,d)), R = N-A-X"""),
+    ("p175", raw"""( is_most_general_term([X,Y]) -> true ; true ), term_variables([X,Y], L), length(L, N), R = N"""),
+    ("p176", raw"""term_singletons(f(X,Y,X), [A]), R = A-Y"""),
 ]
 
 # the driver's whole output, one line per case after `ok`, filled by evidence/P1/gen_rows.py --fill from swipl 10.1.19
@@ -463,7 +468,10 @@ const _P1_PINNED = [
     "t_p170",
     "t_p171 c[116,95,112,49,55,49]/1(c[45]/2(c[91,124,93]/2(V0,nil),V0))",
     "t_p172 c[116,95,112,49,55,50]/1(c[45]/2(c[91,124,93]/2(V0,nil),V0))",
-    "t_p173 c[116,95,112,49,55,51]/1(c[45]/2(c[45]/2(c[45]/2(c[91,124,93]/2(V0,c[91,124,93]/2(V1,nil)),V0),V1),V2))"
+    "t_p173 c[116,95,112,49,55,51]/1(c[45]/2(c[45]/2(c[45]/2(c[91,124,93]/2(V0,c[91,124,93]/2(V1,nil)),V0),V1),V2))",
+    "t_p174 c[116,95,112,49,55,52]/1(c[45]/2(c[45]/2(i2,a[99]),a[100]))",
+    "t_p175 c[116,95,112,49,55,53]/1(i2)",
+    "t_p176 c[116,95,112,49,55,54]/1(c[45]/2(V0,V0))"
 ]
 
 function _p1_file()::Tuple{String, Vector{String}}
@@ -520,7 +528,7 @@ function _p1_kernel(path::String, names::Vector{String})
     return out, gd, ld
 end
 
-@testset "P1 term inspection as swipl's (p001-p173)" begin
+@testset "P1 term inspection as swipl's (p001-p176)" begin
     f, names = _p1_file()
     kl, _, _ = _p1_kernel(f, names)
     @test length(kl) == length(_P1_PINNED)
@@ -530,7 +538,7 @@ end
     end
 end
 
-@testset "the P1 rows are not vacuous (p001-p173)" begin
+@testset "the P1 rows are not vacuous (p001-p176)" begin
     # the program loaded (`ok`); each predicate's group answers; the failing and the raising rows are told apart
     @test _P1_PINNED[1] == "ok"
     @test length(_P1_PINNED) == length(_P1_CASES) + 1
@@ -543,6 +551,9 @@ end
         @test any(l -> startswith(l, pre), _P1_PINNED)                           # each predicate's first row answers
     end
     @test any(l -> startswith(l, "t_p012 ") && occursin("i3", l), _P1_PINNED)    # the enumeration reached the last argument
+    for pre in ("t_p174 ", "t_p175 ", "t_p176 ")
+        @test any(l -> startswith(l, pre), _P1_PINNED)                           # the mutant-killing rows answer
+    end
 end
 
 @testset "the P1 pins are swipl's (live, when swipl is on PATH)" begin
