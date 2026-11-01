@@ -3588,6 +3588,142 @@ function pl_statistics2_va(
     return pl_statistics_ld(ld, A1, A2) ? FTRUE : FFALSE
 end
 
+# ── setarg/3, nb_setarg/3, nb_linkarg/3 (pl-prims.c:2790-2923) ──────────────────────────────────
+# The argument cell of a compound is assigned in place: `setarg/3` TRAILS the old value (`TrailAssignment!`) so
+# backtracking restores it; `nb_setarg/3` does not, and so duplicates a compound value (`duplicate_term`, the old
+# argument's compound kept shared) and freezes the global stack, so no undo frees what the cell now holds;
+# `nb_linkarg/3` links the value as it is. A location is `_deref_loc`'s (a global position, `-i` for slot `i`).
+
+# PORT: pl-prims.h SETARG_BACKTRACKABLE
+"`setarg` flag: trail the assignment (pl-prims.h `SETARG_BACKTRACKABLE`)."
+const SETARG_BACKTRACKABLE = UInt32(0x1)
+# PORT: pl-prims.h SETARG_LINK
+"`setarg` flag: link the value without duplicating it (pl-prims.h `SETARG_LINK`)."
+const SETARG_LINK = UInt32(0x2)
+
+# PORT: pl-prims.c unify_vp
+# DIVERGES: `vp` is a global position and `val` a location; a value-table word is stored as `_value_word!`
+# makes it (a slot's side value its own entry, f3-1), where upstream copies the word `*val`.
+"Assign the term at location `val` to the global cell `vp` as a unification would, but untrailed (pl-prims.c)."
+function unify_vp(ld::PL_local_data{T}, vp::Int, val::Int)::Nothing where {T}
+    k, w, v = _deref_loc(ld, val)                           # deRef(val)
+    if k == DU_CELL                                         # if ( isVar(*val) )
+        if v < vp
+            ld.gstack[vp] = makeRefG(v)                     # *vp = makeRefG(val)
+        elseif vp < v
+            ld.gstack[vp] = word(0)                         # setVar(*vp)
+            ld.gstack[v] = makeRefG(vp)                     # *val = makeRefG(vp)
+        else
+            ld.gstack[vp] = word(0)                         # setVar(*vp)
+        end
+    elseif k == DU_ATTVAR                                   # else if ( isAttVar(*val) )
+        ld.gstack[vp] = makeRefG(v)                         # *vp = makeRefG(val)
+    else
+        ld.gstack[vp] = _value_word!(ld, w)                 # *vp = *val
+    end
+    return nothing
+end
+
+# PORT: pl-prims.c may_share_in_duplicate
+# DIVERGES: the global position `p` of the cell; the new reference holds the compound's word.
+"A new term reference holding the compound the cell at global position `p` holds, or 0 (pl-prims.c)."
+function may_share_in_duplicate(ld::PL_local_data{T}, p::Int)::term_t where {T}
+    k, w, _ = _deref_loc(ld, p)                             # deRef(p)
+    if k == DU_WORD && _is_gcompound(w)                     # if ( isTerm(*p) )
+        share = PL_new_term_ref(ld)
+        ld.slots[share + 1] = w                             # *valTermRef(share) = *p
+        return share
+    end
+    return 0
+end
+
+# PORT: pl-prims.c setarg
+# DIVERGES: positions stay put (no stack shift, so `term`'s compound is not re-read after `duplicate_term`
+# or `ensureGlobalSpace`); `TrailAssignment!` saves the old value in one global cell (`ensureGlobalSpace(1)`).
+# The global stack is frozen AFTER the value is assigned, not before: assigning a side value allocates its
+# entry, which the frozen region must hold too. `storage(*v) == STG_GLOBAL` is: a compound, an attributed
+# variable, a value-table word or a side word.
+"Set argument `argn` (from 1) of the compound in term reference `term` to `value`, as `flags` say (pl-prims.c)."
+function setarg(
+    ld::PL_local_data{T}, argn::Int, term::term_t, value::term_t, flags::UInt32
+)::Bool where {T}
+    k, w, _ = _deref_loc(ld, -(term + 1))                   # a = valTermRef(term); deRef(a)
+    if !(k == DU_WORD && _is_gcompound(w))                  # if ( !isTerm(*a) )
+        return PL_error(ld, ERR_TYPE, mk_sym(T, :compound), term)
+    end
+    arity = arityFunctor(ld.functors, ld.gstack[valPtr(w)])  # arity = arityTerm(*a)
+
+    (argn == 0 || argn > arity) && return false
+
+    apos = valPtr(w) + argn                                 # a = argTermP(*a, argn-1)
+    freeze = false
+    if (flags & SETARG_BACKTRACKABLE) != 0
+        ka, _, _ = _deref_loc(ld, apos)                     # deRef2(a, a2)
+        if ka == DU_CELL                                    # if ( isVar(*a2) )
+            return unify_ptrs_cells(ld, -(value + 1), apos)
+        end
+        ensureGlobalSpace(ld, 1) || return false            # if ( !hasGlobalSpace(0) ) ensureGlobalSpace
+        TrailAssignment!(ld, apos)
+    else
+        kv, wv, _ = _deref_loc(ld, -(value + 1))            # v = valTermRef(value); deRef(v)
+        if kv == DU_WORD && _is_gcompound(wv) || kv == DU_ATTVAR ||
+            (kv == DU_VALUE && (_is_vword(wv) || _is_side_word(wv)))   # if ( storage(*v) == STG_GLOBAL )
+            if kv == DU_WORD && (flags & SETARG_LINK) == 0  # if ( isTerm(*v) && !(flags & SETARG_LINK) )
+                copy = PL_new_term_ref(ld)
+                keep = may_share_in_duplicate(ld, apos)
+                nshare = keep != 0 ? 1 : 0
+                duplicate_term(ld, value, copy, nshare, keep) || return false
+                value = copy
+            end
+            freeze = true                                   # freezeGlobal(), below
+        end
+    end
+                                                            # this is unify(), but the assignment must *not* be trailed
+    unify_vp(ld, apos, -(value + 1))
+    freeze && freezeGlobal!(ld)
+    return true
+end
+
+# PORT: pl-prims.c setarg_t
+"`setarg` with the argument number in term reference `arg` (pl-prims.c)."
+function setarg_t(
+    ld::PL_local_data{T}, arg::term_t, term::term_t, value::term_t, flags::UInt32
+)::Bool where {T}
+    argn = PL_get_size_ex(ld, arg)
+    (argn === nothing || argn == 0) && return false         # if ( !PL_get_size_ex(arg, &argn) || argn == 0 )
+    return setarg(ld, argn, term, value, flags)
+end
+
+# PORT: pl-prims.c setarg as pl_setarg3_va
+# (PRED_IMPL("setarg", 3, setarg, 0))
+"`setarg(+Arg, +Term, +Value)`: destructively assign argument `Arg` of `Term`; undone on backtracking."
+function pl_setarg3_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2, A3 = PL__t0, PL__t0 + 1, PL__t0 + 2
+    return setarg_t(ld, A1, A2, A3, SETARG_BACKTRACKABLE) ? FTRUE : FFALSE
+end
+
+# PORT: pl-prims.c nb_setarg as pl_nb_setarg3_va
+# (PRED_IMPL("nb_setarg", 3, nb_setarg, 0))
+"`nb_setarg(+Arg, +Term, +Value)`: destructively assign a duplicate of `Value`; NOT undone on backtracking."
+function pl_nb_setarg3_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2, A3 = PL__t0, PL__t0 + 1, PL__t0 + 2
+    return setarg_t(ld, A1, A2, A3, UInt32(0)) ? FTRUE : FFALSE
+end
+
+# PORT: pl-prims.c nb_linkarg as pl_nb_linkarg3_va
+# (PRED_IMPL("nb_linkarg", 3, nb_linkarg, 0))
+"`nb_linkarg(+Arg, +Term, +Value)`: as `nb_setarg/3` without duplicating `Value`."
+function pl_nb_linkarg3_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2, A3 = PL__t0, PL__t0 + 1, PL__t0 + 2
+    return setarg_t(ld, A1, A2, A3, SETARG_LINK) ? FTRUE : FFALSE
+end
+
 # PORT: pl-prims.c BeginPredDefs as PL_predicates_from_prims
 # DIVERGES: the entries of the predicates the kernel has ported, in upstream's order (prims:6570-6677);
 # `PRED_DEF` ors in `PL_FA_VARARGS`. The others of upstream's table arrive with their ports.
@@ -3647,6 +3783,9 @@ const PL_predicates_from_prims = (
     PL_extension("char_code", 2, pl_char_code2_va, PL_FA_ISO | PL_FA_VARARGS),
     PL_extension("atom_number", 2, pl_atom_number2_va, PL_FA_VARARGS),
     PL_extension("statistics", 2, pl_statistics2_va, PL_FA_VARARGS),
+    PL_extension("setarg", 3, pl_setarg3_va, PL_FA_VARARGS),
+    PL_extension("nb_setarg", 3, pl_nb_setarg3_va, PL_FA_VARARGS),
+    PL_extension("nb_linkarg", 3, pl_nb_linkarg3_va, PL_FA_VARARGS),
     PL_extension("\$skip_list", 3, pl_skip_list3_va, PL_FA_VARARGS),
     PL_extension("throw", 1, pl_throw1_va, PL_FA_ISO | PL_FA_VARARGS)
 )
