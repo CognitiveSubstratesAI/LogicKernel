@@ -10,6 +10,9 @@
 # UPSTREAM: swipl-devel src/pl-op.c @ cbf4e1896275
 # UPSTREAM: swipl-devel src/os/pl-prologflag.h @ cbf4e1896275
 # UPSTREAM: swipl-devel src/os/pl-prologflag.c @ cbf4e1896275
+# UPSTREAM: swipl-devel src/pl-rec.h @ cbf4e1896275
+# UPSTREAM: swipl-devel src/pl-rec.c @ cbf4e1896275
+# UPSTREAM: swipl-devel src/pl-gvar.c @ cbf4e1896275
 # CLASS: code
 # COPYRIGHT: Copyright (c)  1985-2026, University of Amsterdam,
 # COPYRIGHT: VU University Amsterdam
@@ -2042,7 +2045,8 @@ mutable struct prolog_flag_enum
 end
 prolog_flag_enum() = prolog_flag_enum(1, false, false, 0)
 
-# PORT: pl-gvar.c TableEnum (nb_current/2's `e`)
+# PORT: pl-gvar.c TableEnum as gvar_enum
+# (nb_current/2's `e`)
 # DIVERGES: a record of the local data's pool (`ld.gvar_enums`, a `foreign_state_pool`), its index the `REDO_PTR`
 # context; `keys` are the names the table held when the enumeration began (upstream's `TableEnum` walks the live
 # hash table, which a name added meanwhile may or may not enter), `next` the one to look at.

@@ -44,7 +44,7 @@ t_g31(R) :- catch((b_getval(_, _)), error(SsuE, _), R = raised(SsuE)).
 t_g32(R) :- catch((nb_delete(f(x))), error(SsuE, _), R = raised(SsuE)).
 t_g33(R) :- catch((nb_delete(_)), error(SsuE, _), R = raised(SsuE)).
 t_g34(R) :- catch((( nb_current(f(x), _) -> R = yes ; R = no )), error(SsuE, _), R = raised(SsuE)).
-t_g35(R) :- catch((string_codes(S, [115, 116, 114]), nb_setval(gv_s, S), nb_getval(gv_s, R)), error(SsuE, _), R = raised(SsuE)).
+t_g35(R) :- catch((S = "str", nb_setval(gv_s, S), nb_getval(gv_s, R)), error(SsuE, _), R = raised(SsuE)).
 t_g36(R) :- catch((nb_setval(gv_fl2, 1.5), nb_getval(gv_fl2, R)), error(SsuE, _), R = raised(SsuE)).
 t_g37(R) :- catch((nb_setval(gv_bi, 100000000000000000000), nb_getval(gv_bi, R)), error(SsuE, _), R = raised(SsuE)).
 t_g38(R) :- catch((nb_setval(gv_ow, a), nb_setval(gv_ow, b), nb_getval(gv_ow, R)), error(SsuE, _), R = raised(SsuE)).

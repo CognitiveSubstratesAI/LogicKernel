@@ -36,8 +36,13 @@ function _rc_enc(t::_RC, seen::Vector{UInt64}=UInt64[])::String
         return "V$(i - 1)"
     elseif k === SYM
         is_blob(t) &&
-            return blob_type(t) === :record ? "recref" :
-                   blob_type(t) === :clause ? "clref" : "blob"
+            return if blob_type(t) === :record
+                "recref"
+            elseif blob_type(t) === :clause
+                "clref"
+            else
+                "blob"
+            end
         return is_nil(t) ? "nil" : "a" * _rc_codes(sym_text(t))
     elseif k === GND
         v = lk_value(t)
@@ -112,14 +117,20 @@ const _RC_CASES = [
     # r01-r10: recorda/2,3 and recordz/2,3 — the order of a key's list (pl-rec.c PL_record_az), the reference as a `record` blob (pl-dbref.c record_blob, PL_unify_recref)
     ("r01", raw"recordz(k, 1), recordz(k, 2), findall(X, recorded(k, X), R)"),
     ("r02", raw"recorda(k, 1), recorda(k, 2), findall(X, recorded(k, X), R)"),
-    ("r03", raw"recordz(k, b), recorda(k, a), recordz(k, c), findall(X, recorded(k, X), R)"),
+    (
+        "r03",
+        raw"recordz(k, b), recorda(k, a), recordz(k, c), findall(X, recorded(k, X), R)"
+    ),
     ("r04", raw"recorda(k, x, R)"),
     ("r05", raw"recordz(k, x, Ref), blob(Ref, T), R = T"),
     ("r06", raw"recordz(k, x, Ref), btype(Ref, B), R = B"),
     ("r07", raw"recorda(k, x, Ref), refshape(Ref, R)"),
     ("r08", raw"recordz(k, x, R1), recordz(k, x, R2), ( R1 == R2 -> R = same ; R = diff )"),
     ("r09", raw"recordz(k, x, R1), copy_term(R1, R3), ( R1 == R3 -> R = same ; R = diff )"),
-    ("r10", raw"recordz(k, x, R1), recordz(k, y, R2), ( R1 = R2 -> R = unified ; R = apart )"),
+    (
+        "r10",
+        raw"recordz(k, x, R1), recordz(k, y, R2), ( R1 = R2 -> R = unified ; R = apart )"
+    ),
     # r11-r31: the key (getKeyEx): an atom, a small integer (swipl's tagged range ends at 2^55: r16-r19), a compound by name and arity, `[]`, and what is no key (type_error(key, _), the context)
     ("r11", raw"recordz(f(a, b), x), recorded(f(_, _), R)"),
     ("r12", raw"recordz(f(a, b), x), recorded(f(c, d), R)"),
@@ -140,7 +151,10 @@ const _RC_CASES = [
     ("r27", raw"recordz([], x), recorded([], R)"),
     ("r28", raw"recordz([a|b], x), recorded([_|_], R)"),
     ("r29", raw"recordz(m:k, x), recorded(n:j, R)"),
-    ("r30", raw"recordz(k, x), recordz(f, y), recordz(f(a), z), recordz(f(a, b), w), findall(X, recorded(f, X), R)"),
+    (
+        "r30",
+        raw"recordz(k, x), recordz(f, y), recordz(f(a), z), recordz(f(a, b), w), findall(X, recorded(f, X), R)"
+    ),
     ("r31", raw"recordz(5, x), recordz('5', y), findall(X, recorded(5, X), R)"),
     # r32-r34: the reference argument must be unbound (PL_uninstantiation_error)
     ("r32", raw"exc(recorda(k, x, foo), R)"),
@@ -148,12 +162,27 @@ const _RC_CASES = [
     ("r34", raw"recorda(k, x, R1), ex(recordz(k, y, R1), R)"),
     # r35-r41: the recorded term (compileTermToHeap / copyRecordToGlobal): fresh variables shared inside the term, numbers and strings, a blob inside a term (UNVERIFIED on the kernel: r40, r41 — gate decides)
     ("r35", raw"recordz(k, f(X, Y, X)), recorded(k, R)"),
-    ("r36", raw"recordz(k, f(X, g(Y), Y)), recorded(k, T), T = f(A, g(B), C), ( A \== B, B == C -> R = ok ; R = bad )"),
-    ("r37", raw"strv(S), Big is 2^100, recordz(k, S), recordz(k, 1.5), recordz(k, Big), findall(X, recorded(k, X), R)"),
+    (
+        "r36",
+        raw"recordz(k, f(X, g(Y), Y)), recorded(k, T), T = f(A, g(B), C), ( A \== B, B == C -> R = ok ; R = bad )"
+    ),
+    (
+        "r37",
+        raw"strv(S), Big is 2^100, recordz(k, S), recordz(k, 1.5), recordz(k, Big), findall(X, recorded(k, X), R)"
+    ),
     ("r38", raw"recordz(k, _), recorded(k, R)"),
-    ("r39", raw"recordz(k, f(A)), recorded(k, T), T = f(B), ( A == B -> R = shared ; R = fresh )"),
-    ("r40", raw"recordz(k, x, Ref), recordz(j, ref(Ref)), recorded(j, ref(R2)), ( R2 == Ref -> R = same ; R = diff )"),
-    ("r41", raw"assertz(d(1), C), recordz(k, c(C)), recorded(k, c(C2)), ( C2 == C -> R = same ; R = diff )"),
+    (
+        "r39",
+        raw"recordz(k, f(A)), recorded(k, T), T = f(B), ( A == B -> R = shared ; R = fresh )"
+    ),
+    (
+        "r40",
+        raw"recordz(k, x, Ref), recordz(j, ref(Ref)), recorded(j, ref(R2)), ( R2 == Ref -> R = same ; R = diff )"
+    ),
+    (
+        "r41",
+        raw"assertz(d(1), C), recordz(k, c(C)), recorded(k, c(C2)), ( C2 == C -> R = same ; R = diff )"
+    ),
     # r42-r52: recorded/2,3 — the term filters, the reference bound (PL_get_recref: a wrong key fails, an erased record fails, a non-record reference is type_error(db_reference, _))
     ("r42", raw"recordz(k, a), recordz(k, b), recorded(k, a), R = ok"),
     ("r43", raw"recordz(k, f(1)), recordz(k, f(2)), recorded(k, f(R))"),
@@ -161,33 +190,54 @@ const _RC_CASES = [
     ("r45", raw"( recorded(nokey, _) -> R = yes ; R = no )"),
     ("r46", raw"recordz(k, a, _), recordz(k, b, R2), recorded(k, T, R2), R = T"),
     ("r47", raw"recordz(k, a, _), recordz(k, b, R2), recorded(K, T, R2), R = K-T"),
-    ("r48", raw"recordz(k, a, R1), recordz(j, b, _), ( recorded(j, _, R1) -> R = yes ; R = no )"),
+    (
+        "r48",
+        raw"recordz(k, a, R1), recordz(j, b, _), ( recorded(j, _, R1) -> R = yes ; R = no )"
+    ),
     ("r49", raw"recordz(k, a, R1), erase(R1), ( recorded(k, _, R1) -> R = yes ; R = no )"),
     ("r50", raw"exc(recorded(k, _, foo), R)"),
     ("r51", raw"assertz(d(1), C), exc(recorded(k, _, C), R)"),
     ("r52", raw"recordz(k, a, R1), recordz(k, b, _), findall(T, recorded(k, T, R1), R)"),
     # r53-r64: the unbound key (compared SORTED: swipl enumerates its hash table, the kernel the creation of the lists; FLG H1) and current_key/1
-    ("r53", raw"recordz(ka, 1), recordz(kb, 2), recordz(ka, 3), recordz(f(x), 4), recordz(9, 5), findall(D-T, ( recorded(K, T), kd(K, D) ), L), msort(L, R)"),
-    ("r54", raw"recordz(ka, 1), recordz(kb, 2), recordz(ka, 3), recordz(f(x), 4), recordz(9, 5), findall(D-T, ( recorded(K, T, _), kd(K, D) ), L), msort(L, R)"),
-    ("r55", raw"recordz(ka, 1), recordz(kb, 2), recordz(f(x), 4), recordz(9, 5), findall(D, ( current_key(K), kd(K, D) ), L), msort(L, R)"),
+    (
+        "r53",
+        raw"recordz(ka, 1), recordz(kb, 2), recordz(ka, 3), recordz(f(x), 4), recordz(9, 5), findall(D-T, ( recorded(K, T), kd(K, D) ), L), msort(L, R)"
+    ),
+    (
+        "r54",
+        raw"recordz(ka, 1), recordz(kb, 2), recordz(ka, 3), recordz(f(x), 4), recordz(9, 5), findall(D-T, ( recorded(K, T, _), kd(K, D) ), L), msort(L, R)"
+    ),
+    (
+        "r55",
+        raw"recordz(ka, 1), recordz(kb, 2), recordz(f(x), 4), recordz(9, 5), findall(D, ( current_key(K), kd(K, D) ), L), msort(L, R)"
+    ),
     ("r56", raw"recordz(ka, 1), ( current_key(ka) -> R = yes ; R = no )"),
     ("r57", raw"( current_key(nokey) -> R = yes ; R = no )"),
     ("r58", raw"recordz(ka, 1, Ref), erase(Ref), ( current_key(ka) -> R = yes ; R = no )"),
     ("r59", raw"recordz(f(a), 1), ( current_key(f(_)) -> R = yes ; R = no )"),
     ("r60", raw"recordz(f(a), 1), current_key(K), functor(K, N, A), R = N/A"),
     ("r61", raw"exc(current_key(1.5), R)"),
-    ("r62", raw"recordz(a, 1), recordz(b, 2), once(current_key(_)), R = ok"),
-    ("r63", raw"recordz(a, 1), recordz(b, 2), recordz(c, 3), findall(K, current_key(K), L), msort(L, R)"),
+    ("r62", raw"recordz(a, 1), recordz(b, 2), ( current_key(_) -> true ), R = ok"),
+    (
+        "r63",
+        raw"recordz(a, 1), recordz(b, 2), recordz(c, 3), findall(K, current_key(K), L), msort(L, R)"
+    ),
     ("r64", raw"recordz(k, 1), recordz(j, 2), recorded(K, 2), R = K"),
     # r65-r72: erase/1 of a record reference — D-0252 item 2: r65 and r67 kill D1-56 (erase/1 did not check the reference names a clause)
     ("r65", raw"recordz(k, a, Ref), erase(Ref), ( recorded(k, a) -> R = yes ; R = no )"),
     ("r66", raw"recordz(k, a, Ref), erase(Ref), ( erase(Ref) -> R = again ; R = failed )"),
     ("r67", raw"recordz(k, a, Ref), erase(Ref), R = ok"),
-    ("r68", raw"recordz(k, a, Ref), recordz(k, b, _), erase(Ref), findall(X, recorded(k, X), R)"),
+    (
+        "r68",
+        raw"recordz(k, a, Ref), recordz(k, b, _), erase(Ref), findall(X, recorded(k, X), R)"
+    ),
     ("r69", raw"ex(erase(foo), R)"),
     ("r70", raw"ex(erase(_), R)"),
     ("r71", raw"exc(erase(foo), R)"),
-    ("r72", raw"recordz(k, a), recorded(k, a, Ref), erase(Ref), ( recorded(k, _) -> R = yes ; R = no )"),
+    (
+        "r72",
+        raw"recordz(k, a), recorded(k, a, Ref), erase(Ref), ( recorded(k, _) -> R = yes ; R = no )"
+    ),
     # r73-r80: instance/2 of a record reference — D-0252 item 2: r73 and r75 kill D1-119 (instance/2 did not test the reference's type)
     ("r73", raw"recordz(k, f(X, Y, X), Ref), instance(Ref, R)"),
     ("r74", raw"recordz(k, g(1), Ref), ( instance(Ref, g(2)) -> R = yes ; R = no )"),
@@ -196,31 +246,91 @@ const _RC_CASES = [
     ("r77", raw"ex(instance(foo, _), R)"),
     ("r78", raw"ex(instance(_, _), R)"),
     ("r79", raw"exc(instance(foo, _), R)"),
-    ("r80", raw"recordz(k, f(Z), Ref), instance(Ref, T), T = f(Q), ( Z == Q -> R = shared ; R = fresh )"),
+    (
+        "r80",
+        raw"recordz(k, f(Z), Ref), instance(Ref, T), T = f(Q), ( Z == Q -> R = shared ; R = fresh )"
+    ),
     # r81-r85: a clause reference and a record reference side by side (D1's branch stays)
     ("r81", raw"assertz(d(1), C), instance(C, R)"),
     ("r82", raw"assertz(d(1), C), erase(C), ( d(_) -> R = yes ; R = no )"),
-    ("r83", raw"assertz(d(1), C), recordz(k, x, Rf), erase(Rf), ( instance(C, _) -> R = clause_alive ; R = clause_gone )"),
-    ("r84", raw"recordz(k, x, Rf), assertz(d(1), C), erase(C), ( instance(Rf, I) -> R = I ; R = gone )"),
-    ("r85", raw"recordz(k, x, Rf), assertz(d(1), C), exc(recorded(k, _, C), R0), R = R0-Rf"),
+    (
+        "r83",
+        raw"assertz(d(1), C), recordz(k, x, Rf), erase(Rf), ( instance(C, _) -> R = clause_alive ; R = clause_gone )"
+    ),
+    (
+        "r84",
+        raw"recordz(k, x, Rf), assertz(d(1), C), erase(C), ( instance(Rf, I) -> R = I ; R = gone )"
+    ),
+    (
+        "r85",
+        raw"recordz(k, x, Rf), assertz(d(1), C), exc(recorded(k, _, C), R0), R = R0-Rf"
+    ),
     # r86-r98: the list while recorded/2,3 runs over it (RL_DIRTY, R_ERASED, the references count, FRG_CUTTED): a record added at the end is seen, an erased one is skipped
-    ("r86", raw"recordz(k, 1), recordz(k, 2), recordz(k, 3), findall(X, ( recorded(k, X), ( X == 1 -> recordz(k, 4) ; true ) ), R)"),
-    ("r87", raw"recordz(k, 1), recordz(k, 2), recordz(k, 3), findall(X, ( recorded(k, X, Ref), erase(Ref) ), R)"),
-    ("r88", raw"recordz(k, 1), recordz(k, 2), recordz(k, 3), findall(X, ( recorded(k, X), ( X == 1 -> recorded(k, 2, R2), erase(R2) ; true ) ), R)"),
-    ("r89", raw"recordz(k, 1), recordz(k, 2), ( recorded(k, _, Ref), erase(Ref), fail ; true ), recordz(k, 3), findall(X, recorded(k, X), R)"),
-    ("r90", raw"recordz(k, 1), recordz(k, 2), ( recorded(k, _, Ref), erase(Ref), fail ; true ), ( current_key(k) -> R = alive ; R = gone )"),
-    ("r91", raw"recordz(k, 1), recordz(k, 2), recordz(k, 3), recorded(k, R, Ref), erase(Ref)"),
-    ("r92", raw"recordz(k, 1), recordz(k, 2), once(recorded(k, _, Ref)), erase(Ref), findall(X, recorded(k, X), R)"),
-    ("r93", raw"recordz(k, 1), recorded(k, 1, Ref), recorda(k, 0), erase(Ref), findall(X, recorded(k, X), R)"),
-    ("r94", raw"recordz(k, 1), recordz(k, 2), recorded(k, X, Ref), erase(Ref), recorded(k, Y), R = X-Y"),
-    ("r95", raw"recordz(k, 1), recordz(k, 2), recordz(k, 3), recorded(k, X), X >= 2, !, R = X"),
-    ("r96", raw"( between(1, 300, N), recordz(k, N), fail ; true ), findall(X, recorded(k, X), L), length(L, R)"),
-    ("r97", raw"( between(1, 300, N), recorda(k, N), fail ; true ), once(recorded(k, R))"),
-    ("r98", raw"recordz(k, 1), recordz(k, 2), ( recorded(k, X, Ref), erase(Ref), recorded(k, Y), R = X-Y ; R = none )"),
+    (
+        "r86",
+        raw"recordz(k, 1), recordz(k, 2), recordz(k, 3), findall(X, ( recorded(k, X), ( X == 1 -> recordz(k, 4) ; true ) ), R)"
+    ),
+    (
+        "r87",
+        raw"recordz(k, 1), recordz(k, 2), recordz(k, 3), findall(X, ( recorded(k, X, Ref), erase(Ref) ), R)"
+    ),
+    (
+        "r88",
+        raw"recordz(k, 1), recordz(k, 2), recordz(k, 3), findall(X, ( recorded(k, X), ( X == 1 -> recorded(k, 2, R2), erase(R2) ; true ) ), R)"
+    ),
+    (
+        "r89",
+        raw"recordz(k, 1), recordz(k, 2), ( recorded(k, _, Ref), erase(Ref), fail ; true ), recordz(k, 3), findall(X, recorded(k, X), R)"
+    ),
+    (
+        "r90",
+        raw"recordz(k, 1), recordz(k, 2), ( recorded(k, _, Ref), erase(Ref), fail ; true ), ( current_key(k) -> R = alive ; R = gone )"
+    ),
+    (
+        "r91",
+        raw"recordz(k, 1), recordz(k, 2), recordz(k, 3), recorded(k, R, Ref), erase(Ref)"
+    ),
+    (
+        "r92",
+        raw"recordz(k, 1), recordz(k, 2), ( recorded(k, _, Ref) -> true ), erase(Ref), findall(X, recorded(k, X), R)"
+    ),
+    (
+        "r93",
+        raw"recordz(k, 1), recorded(k, 1, Ref), recorda(k, 0), erase(Ref), findall(X, recorded(k, X), R)"
+    ),
+    (
+        "r94",
+        raw"recordz(k, 1), recordz(k, 2), recorded(k, X, Ref), erase(Ref), recorded(k, Y), R = X-Y"
+    ),
+    (
+        "r95",
+        raw"recordz(k, 1), recordz(k, 2), recordz(k, 3), recorded(k, X), X >= 2, !, R = X"
+    ),
+    (
+        "r96",
+        raw"( between(1, 300, N), recordz(k, N), fail ; true ), findall(X, recorded(k, X), L), length(L, R)"
+    ),
+    (
+        "r97",
+        raw"( between(1, 300, N), recorda(k, N), fail ; true ), ( recorded(k, R) -> true )"
+    ),
+    (
+        "r98",
+        raw"recordz(k, 1), recordz(k, 2), ( recorded(k, X, Ref), erase(Ref), recorded(k, Y), R = X-Y ; R = none )"
+    ),
     # r99-r101: advance_state skips a record erased while recorded/3 runs; an emptied key is no key (unbound-key enumeration)
-    ("r99", raw"recordz(k, f(1)), recordz(k, g(2)), recordz(k, g(3)), recorded(k, f(_)), recorded(k, g(2), Rg), erase(Rg), findall(X, recorded(k, g(X)), R)"),
-    ("r100", raw"recordz(ka, 1, Ref), recordz(kb, 2), erase(Ref), findall(K, current_key(K), R)"),
-    ("r101", raw"recordz(ka, 1, Ref), recordz(kb, 2), erase(Ref), findall(K-T, recorded(K, T), R)")
+    (
+        "r99",
+        raw"recordz(k, f(1)), recordz(k, g(2)), recordz(k, g(3)), recorded(k, f(_)), recorded(k, g(2), Rg), erase(Rg), findall(X, recorded(k, g(X)), R)"
+    ),
+    (
+        "r100",
+        raw"recordz(ka, 1, Ref), recordz(kb, 2), erase(Ref), findall(K, current_key(K), R)"
+    ),
+    (
+        "r101",
+        raw"recordz(ka, 1, Ref), recordz(kb, 2), erase(Ref), findall(K-T, recorded(K, T), R)"
+    )
 ]
 
 # swipl 10.1.19-1-gcbf4e189's answers to the program and cases above (the driver's lines; evidence/D2/d2_rows.out)
@@ -398,7 +508,7 @@ end
     @test length(_RC_PINNED) == length(_RC_CASES) + 1 && length(kl) == length(_RC_PINNED)
     @test _RC_PINNED[1] == "ok"
     @test count(l -> occursin("recref", l), _RC_PINNED) >= 2                           # a reference in an answer: r04, r33
-    @test count(l -> occursin("c[114,97,105,115,101,100]", l), _RC_PINNED) >= 1        # raised(…)
+    @test count(l -> occursin("c[114,97,105,115,101,100]", l), _RC_PINNED) == 0        # no row raises out of ex/2: errors are the err(…) rows below
     @test count(l -> occursin("c[101,114,114]/", l), _RC_PINNED) >= 12                 # err(Formal[, Context]) of ex/2, exc/2
     @test count(l -> occursin("(a[121,101,115])", l), _RC_PINNED) >= 3                 # yes
     @test count(l -> occursin("(a[110,111])", l), _RC_PINNED) >= 5                     # no
@@ -538,7 +648,8 @@ end
     ld = LK.PL_local_data{_RC}(gd)
     f(args...) = mk_expr(_RC, _RC[_rcs("f"), args...])
     x = _rcs("x")
-    for key in (_rcs("f"), lk_gnd(_RC, 5), _rcs("5"), f(x), f(x, x), f(_rcs("c"), _rcs("d")))
+    for key in
+        (_rcs("f"), lk_gnd(_RC, 5), _rcs("5"), f(x), f(x, x), f(_rcs("c"), _rcs("d")))
         @test _rc_kcall(gd, ld, "recordz", _RC[key, x])[1] === :true
     end
     # f(a,b) and f(c,d) share the list of the functor f/2: five lists for six records
@@ -547,9 +658,18 @@ end
     @test Set(l.key for l in gd.record_lists_order) == Set(keys(gd.record_lists))
     # what is no key: a float, a string, an unbound variable: type_error(key, _) / instantiation_error
     for (bad, formal) in (
-        (lk_gnd(_RC, 1.5), "c[116,121,112,101,95,101,114,114,111,114]/2(a[107,101,121],f1.5)"),
-        (lk_gnd(_RC, "s"), "c[116,121,112,101,95,101,114,114,111,114]/2(a[107,101,121],s[115])"),
-        (mk_var(_RC, LK.fresh_var_keys!(1)), "a[105,110,115,116,97,110,116,105,97,116,105,111,110,95,101,114,114,111,114]")
+        (
+            lk_gnd(_RC, 1.5),
+            "c[116,121,112,101,95,101,114,114,111,114]/2(a[107,101,121],f1.5)"
+        ),
+        (
+            lk_gnd(_RC, "s"),
+            "c[116,121,112,101,95,101,114,114,111,114]/2(a[107,101,121],s[115])"
+        ),
+        (
+            mk_var(_RC, LK.fresh_var_keys!(1)),
+            "a[105,110,115,116,97,110,116,105,97,116,105,111,110,95,101,114,114,111,114]"
+        )
     )
         st, ans = _rc_kcall(gd, ld, "recordz", _RC[bad, x])
         @test st === :exception

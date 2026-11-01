@@ -107,7 +107,10 @@ const _GV_CASES = [
     # H6, query 2: the value outlives query 1 (D7: _release_frozen! keeps the region while gvar_grefs > 0)
     ("g04", raw"nb_getval(gv_h6, R)"),
     # H6: a compound held by nb_setval across 10^4 throw/catch
-    ("g05", raw"nb_setval(gv_h6b, g(_, _)), gv_forall(between(1, 10000, _), catch(throw(ball(_, _)), _, true)), nb_getval(gv_h6b, R)"),
+    (
+        "g05",
+        raw"nb_setval(gv_h6b, g(_, _)), gv_forall(between(1, 10000, _), catch(throw(ball(_, _)), _, true)), nb_getval(gv_h6b, R)"
+    ),
     # H6: the same value read by a later query
     ("g06", raw"nb_getval(gv_h6b, R)"),
     # an unbound variable is SHARED by nb_setval: binding X binds the stored value
@@ -123,25 +126,40 @@ const _GV_CASES = [
     # H7: two b_setval, the last wins
     ("g12", raw"b_setval(gv_w, 1), b_setval(gv_w, 2), b_getval(gv_w, R)"),
     # H7: b_setval under backtracking, each answer its own value
-    ("g13", raw"findall(V, ( gv_member(X, [1, 2, 3]), b_setval(gv_x, X), b_getval(gv_x, V) ), R)"),
+    (
+        "g13",
+        raw"findall(V, ( gv_member(X, [1, 2, 3]), b_setval(gv_x, X), b_getval(gv_x, V) ), R)"
+    ),
     # H7: the trailed assignment is undone
     ("g14", raw"b_setval(gv_y, 1), ( b_setval(gv_y, 2), fail ; b_getval(gv_y, R) )"),
     # H8: a cyclic value; UNVERIFIED on the kernel: gate decides (nshare/share are not ported, flag a)
     ("g15", raw"X = f(X), nb_setval(gv_cy, X), nb_getval(gv_cy, Y), Y = f(Y), R = yes"),
     # nb_linkval stores the term itself
-    ("g16", raw"nb_linkval(gv_l, f(X)), nb_getval(gv_l, f(Y)), ( Y == X -> R = same ; R = diff )"),
+    (
+        "g16",
+        raw"nb_linkval(gv_l, f(X)), nb_getval(gv_l, f(Y)), ( Y == X -> R = same ; R = diff )"
+    ),
     # nb_setval stores a copy
-    ("g17", raw"nb_setval(gv_l2, f(X)), nb_getval(gv_l2, f(Y)), ( Y == X -> R = same ; R = diff )"),
+    (
+        "g17",
+        raw"nb_setval(gv_l2, f(X)), nb_getval(gv_l2, f(Y)), ( Y == X -> R = same ; R = diff )"
+    ),
     # nb_linkval aliasing: a later binding shows in the stored term
     ("g18", raw"nb_linkval(gv_l3, f(X)), X = 1, nb_getval(gv_l3, R)"),
     # nb_current enumeration, SORTED (flag c: the table order differs)
-    ("g19", raw"nb_setval(gv_n1, a), nb_setval(gv_n2, b), nb_setval(gv_n3, c), findall(K, ( nb_current(K, _), gv_member(K, [gv_n1, gv_n2, gv_n3]) ), L), msort(L, R)"),
+    (
+        "g19",
+        raw"nb_setval(gv_n1, a), nb_setval(gv_n2, b), nb_setval(gv_n3, c), findall(K, ( nb_current(K, _), gv_member(K, [gv_n1, gv_n2, gv_n3]) ), L), msort(L, R)"
+    ),
     # nb_current with a bound key
     ("g20", raw"nb_current(gv_n2, R)"),
     # nb_current with a bound value
     ("g21", raw"findall(K, ( nb_current(K, b), gv_member(K, [gv_n1, gv_n2, gv_n3]) ), R)"),
     # nb_delete then nb_current fails
-    ("g22", raw"nb_setval(gv_dd, 1), nb_delete(gv_dd), ( nb_current(gv_dd, _) -> R = still ; R = gone )"),
+    (
+        "g22",
+        raw"nb_setval(gv_dd, 1), nb_delete(gv_dd), ( nb_current(gv_dd, _) -> R = still ; R = gone )"
+    ),
     # nb_delete of an unknown key
     ("g23", raw"( nb_delete(gv_never) -> R = yes ; R = no )"),
     # H9: no hook answer: existence_error(variable, gv_nokey)
@@ -166,8 +184,8 @@ const _GV_CASES = [
     ("g33", raw"nb_delete(_)"),
     # nb_current, a compound key
     ("g34", raw"( nb_current(f(x), _) -> R = yes ; R = no )"),
-    # a string value (UNVERIFIED on the kernel: gate decides, string_codes/2 is T1's)
-    ("g35", raw"string_codes(S, [115, 116, 114]), nb_setval(gv_s, S), nb_getval(gv_s, R)"),
+    # a string value (program is S = "str": string_codes/2 is T2's, not in this tree)
+    ("g35", raw"S = \"str\", nb_setval(gv_s, S), nb_getval(gv_s, R)"),
     # a float value (flag b: counts as on the global stack)
     ("g36", raw"nb_setval(gv_fl2, 1.5), nb_getval(gv_fl2, R)"),
     # a big integer value
@@ -181,9 +199,15 @@ const _GV_CASES = [
     # nb_setval survives backtracking
     ("g41", raw"( gv_member(X, [1, 2]), nb_setval(gv_t, X), fail ; nb_getval(gv_t, R) )"),
     # an attributed variable value; UNVERIFIED on the kernel: gate decides
-    ("g42", raw"put_attr(X, gv_dom, 1), nb_setval(gv_av, X), nb_getval(gv_av, Y), get_attr(Y, gv_dom, R)"),
+    (
+        "g42",
+        raw"put_attr(X, gv_dom, 1), nb_setval(gv_av, X), nb_getval(gv_av, Y), get_attr(Y, gv_dom, R)"
+    ),
     # b_setval inside \+ \+ is undone
-    ("g43", raw"b_setval(gv_nest, a), ( \+ \+ ( b_setval(gv_nest, b), b_getval(gv_nest, I), I == b ) -> b_getval(gv_nest, R) ; R = bad )"),
+    (
+        "g43",
+        raw"b_setval(gv_nest, a), ( \+ \+ ( b_setval(gv_nest, b), b_getval(gv_nest, I), I == b ) -> b_getval(gv_nest, R) ; R = bad )"
+    ),
     # the hook user:exception/3 answers retry after defining the variable (D8)
     ("g44", raw"nb_getval(gv_auto, R)"),
     # the hook answers fail
@@ -193,7 +217,10 @@ const _GV_CASES = [
     # the hook answers an unknown action
     ("g47", raw"nb_getval(gv_bad, _)"),
     # flag d: a hook answering retry without defining runs twice, then existence_error
-    ("g48", raw"nb_setval(gv_cnt_calls, 0), catch(nb_getval(gv_cnt, _), _, true), nb_getval(gv_cnt_calls, R)"),
+    (
+        "g48",
+        raw"nb_setval(gv_cnt_calls, 0), catch(nb_getval(gv_cnt, _), _, true), nb_getval(gv_cnt_calls, R)"
+    ),
     # b_setval of an unbound variable: a later binding shows
     ("g49", raw"b_setval(gv_u, X), X = 1, b_getval(gv_u, R)"),
     # an unbound value
@@ -201,17 +228,32 @@ const _GV_CASES = [
     # [] as key
     ("g51", raw"nb_setval([], 1)"),
     # 300 keys, all enumerated
-    ("g52", raw"gv_forall(between(1, 300, I), ( atom_concat(gv_k_, I, K), nb_setval(K, I) )), findall(K-V, nb_current(K, V), All), findall(I, ( between(1, 300, I), atom_concat(gv_k_, I, K), gv_member(K-I, All) ), Is), gv_len(Is, R)"),
+    (
+        "g52",
+        raw"gv_forall(between(1, 300, I), ( atom_concat(gv_k_, I, K), nb_setval(K, I) )), findall(K-V, nb_current(K, V), All), findall(I, ( between(1, 300, I), atom_concat(gv_k_, I, K), gv_member(K-I, All) ), Is), gv_len(Is, R)"
+    ),
     # H2-like: a key created during an enumeration; sorted
-    ("g53", raw"nb_setval(gv_m1, x), nb_setval(gv_m2, x), findall(K, ( nb_current(K, x), gv_member(K, [gv_m1, gv_m2]), nb_setval(gv_new_during, 1) ), L), msort(L, S), nb_current(gv_new_during, N), R = S-N"),
+    (
+        "g53",
+        raw"nb_setval(gv_m1, x), nb_setval(gv_m2, x), findall(K, ( nb_current(K, x), gv_member(K, [gv_m1, gv_m2]), nb_setval(gv_new_during, 1) ), L), msort(L, S), nb_current(gv_new_during, N), R = S-N"
+    ),
     # nb_setval after b_setval
     ("g54", raw"b_setval(gv_mix, 1), nb_setval(gv_mix, 2), nb_getval(gv_mix, R)"),
     # b_setval over an nb_setval value, undone
-    ("g55", raw"nb_setval(gv_mix2, a), ( b_setval(gv_mix2, b), fail ; nb_getval(gv_mix2, R) )"),
+    (
+        "g55",
+        raw"nb_setval(gv_mix2, a), ( b_setval(gv_mix2, b), fail ; nb_getval(gv_mix2, R) )"
+    ),
     # nb_getval returns the stored term itself
-    ("g56", raw"nb_setval(gv_k1, f(_)), nb_getval(gv_k1, A), nb_getval(gv_k1, B), ( A == B -> R = same ; R = diff )"),
+    (
+        "g56",
+        raw"nb_setval(gv_k1, f(_)), nb_getval(gv_k1, A), nb_getval(gv_k1, B), ( A == B -> R = same ; R = diff )"
+    ),
     # nb_delete leaves a key with no value: nb_current does not enumerate it (an unfiltered enumeration)
-    ("g57", raw"nb_setval(gv_nv, 1), nb_delete(gv_nv), findall(K, ( nb_current(K, _), K == gv_nv ), R)")
+    (
+        "g57",
+        raw"nb_setval(gv_nv, 1), nb_delete(gv_nv), findall(K, ( nb_current(K, _), K == gv_nv ), R)"
+    )
 ]
 
 # the pins: swipl's output for the driver over `_GV_PROGRAM` and `_GV_CASES` (evidence/G1/gvar_rows.out)
@@ -378,11 +420,15 @@ const _GV_H9_PINNED = [
 
 @testset "the hook before a program: a plain existence_error (H9, D8)" begin
     f = joinpath(mktempdir(), "h9.pl")
-    write(f, "t_h9(R) :- catch(nb_getval(gv_nokey3, _), error(SsuE, _), R = raised(SsuE)).\n")
+    write(
+        f, "t_h9(R) :- catch(nb_getval(gv_nokey3, _), error(SsuE, _), R = raised(SsuE)).\n"
+    )
     kl, _, _ = _gv_kernel(f, ["t_h9"])
     @test kl == _GV_H9_PINNED
     swipl = get(ENV, "LOGICKERNEL_NO_SWIPL", "") == "1" ? nothing : Sys.which("swipl")
     swipl === nothing || @test _gv_swipl_lines(f, ["t_h9"]) == _GV_H9_PINNED
     # not vacuous: the pin holds the existence_error with the variable's name
-    @test occursin("c[101,120,105,115,116,101,110,99,101,95,101,114,114,111,114]/2", _GV_H9_PINNED[2])
+    @test occursin(
+        "c[101,120,105,115,116,101,110,99,101,95,101,114,114,111,114]/2", _GV_H9_PINNED[2]
+    )
 end

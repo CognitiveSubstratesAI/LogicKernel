@@ -23,7 +23,7 @@ const SETVAL_BACKTRACKABLE = UInt32(0x1)
 "`setval`'s flag: the value is shared, not copied (`nb_linkval/2`)."
 const SETVAL_LINK = UInt32(0x2)
 
-# PORT: pl-gvar.c gvar_action
+# PORT: pl-gvar.c gvar_action as gvar_fail
 # DIVERGES: typed constants, not an `enum` (the manifest of enum hashes stays as it is).
 "`auto_define_gvar`'s answer: the hook says fail (pl-gvar.c `gvar_action`)."
 const gvar_fail = Int8(0)
@@ -58,7 +58,9 @@ lookup_gvar(ld::PL_local_data, name::word)::word = get(ld.gvar_nb_vars, name, wo
 # PORT: pl-gvar.c PL_getval
 # DIVERGES: the name is an atom word.
 "Make term reference `val` hold the value of global variable `name`; false when there is none (pl-gvar.c)."
-function PL_getval(ld::PL_local_data, name::word, val::term_t, flags::UInt32=UInt32(0))::Bool
+function PL_getval(
+    ld::PL_local_data, name::word, val::term_t, flags::UInt32=UInt32(0)
+)::Bool
     w = lookup_gvar(ld, name)
     if w != 0
         ld.slots[val + 1] = w                       # *valTermRef(val) = w
@@ -95,7 +97,7 @@ function setval_duplicate(ld::PL_local_data, new::word, old::word)::word
     end
 end
 
-# PORT: pl-gvar.c setval
+# PORT: pl-gvar.c setval as gvar_setval
 # DIVERGES: a term reference is never an unbound cell of the local stack, so `canBind`'s
 # `onStackArea(local, p)` branch (a fresh global cell for the local variable) has no case: a variable is
 # the reference to its global cell. A side value (D-0024) gets a value-table word first. An atom is not
@@ -216,7 +218,7 @@ function is_gval(ld::PL_local_data, w::word)::Bool
     return w != _gvar_no_value(ld)
 end
 
-# PORT: pl-gvar.c getval
+# PORT: pl-gvar.c getval as gvar_getval
 # DIVERGES: the value word is put in a term reference (a slot holds any value word), unified with
 # `value`; `PL_error` returns false.
 "Unify `value` with the value of global variable `var`, asking the hook for a name nobody set (pl-gvar.c)."
@@ -409,6 +411,8 @@ const PL_predicates_from_gvar = (
     PL_extension("nb_setval", 2, pl_nb_setval2_va, PL_FA_VARARGS),
     PL_extension("nb_linkval", 2, pl_nb_linkval2_va, PL_FA_VARARGS),
     PL_extension("nb_getval", 2, pl_nb_getval2_va, PL_FA_VARARGS),
-    PL_extension("nb_current", 2, pl_nb_current2_va, PL_FA_NONDETERMINISTIC | PL_FA_VARARGS),
+    PL_extension(
+        "nb_current", 2, pl_nb_current2_va, PL_FA_NONDETERMINISTIC | PL_FA_VARARGS
+    ),
     PL_extension("nb_delete", 1, pl_nb_delete1_va, PL_FA_VARARGS)
 )

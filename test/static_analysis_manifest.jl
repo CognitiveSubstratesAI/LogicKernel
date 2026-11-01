@@ -1470,6 +1470,32 @@ function _manifest_index(T)
                 LK.pl_nb_current2_va
             )
         ]...,
+        # D2 — the recorded database (src/pl-rec.jl, src/pl-dbref.jl): the lists and their keys, the records and the `recorded/3` state
+        (LK.lookupRecordList, Tuple{GD, UInt64}, false),
+        (LK.isCurrentRecordList, Tuple{GD, UInt64, Bool}, false),
+        (LK.firstRecordRecordList, Tuple{LK.recordList{T}}, false),
+        (LK.cleanRecordList, Tuple{LK.recordList{T}}, false),
+        (LK.remove_record, Tuple{LK.recordRef{T, LK.recordList{T}}}, false),
+        (LK.freeRecordRef, Tuple{LK.recordRef{T, LK.recordList{T}}}, false),
+        (LK.acquire_record, Tuple{LK.recordRef{T, LK.recordList{T}}}, false),
+        (LK.release_record, Tuple{LK.recordRef{T, LK.recordList{T}}}, false),
+        (LK.recref_record, Tuple{GD, T}, false),
+        (LK._recref_bytes, Tuple{Int}, false),
+        (LK.PL_get_recref, Tuple{GD, LD, Int}, false),
+        (LK.PL_unify_recref, Tuple{GD, LD, Int, LK.recordRef{T, LK.recordList{T}}}, false),
+        (LK.getKeyEx, Tuple{LD, Int}, false),
+        (LK.unifyKey, Tuple{LD, Int, UInt64}, false),
+        (LK.record_term, Tuple{LD, Int, Int, Int, Int}, false),
+        (LK.PL_record_az, Tuple{LD, UInt64, Int, Int, Int}, false),
+        (LK.save_state, Tuple{LD, Int}, false),
+        (LK.free_state, Tuple{LD, Int}, false),
+        (LK.advance_state, Tuple{LK.recorded_state{T}}, false),
+        [
+            (f, Tuple{LD, Int, Int, LK.foreign_context{T}}, false) for f in (
+                LK.pl_recordava_va, LK.pl_recordzva_va, LK.pl_recordedva_va,
+                LK.pl_current_key1_va
+            )
+        ]...,
         # AV9 — call_residue_vars/2's C half (src/pl-attvar.jl, src/pl-wam.jl)
         (LK.trail_new_attvar, Tuple{LD, Int}, false),
         (LK.get_value, Tuple{LD, Int}, false),
