@@ -365,6 +365,7 @@ ld_statistics() = ld_statistics(0, 0, 0, 0, WallTime(), 0.0, 0.0, 0.0, 0.0)
 # `_release_frozen!` then keeps), and `gvar_enums`, the pool of nb_current/2's states (src/pl-gvar.jl). Since R2 D2: `recorded_states`, the pool of recorded/2,3's states
 # (`recorded_state`, pl-incl.jl). Since R2 O1B: `IO_output_stack` (`LD->IO.output_stack`: the output context stack
 # of `with_output_to/2` and `format/3`'s redirect, src/os/pl-file.jl).
+# Since R2 S2a: `prompt_current`, `prompt_first`, `prompt_first_used` (`LD->prompt`: prompt/2, prompt1/1; src/os/pl-file.jl).
 """
     PL_local_data{T}(gd)
 
@@ -497,6 +498,9 @@ mutable struct PL_local_data{T}
     input_context_stack::Vector{input_context{T}}               # input_context_stack: see/seen's (R2 LB3)
     qlf_write_state::Nothing                                    # qlf.write_state: always NULL, no state file (R2 LB3, LD2)
     IO_output_stack::Vector{IOSTREAM}                           # IO.output_stack: the streams current_output was before each redirect (R2 O1B)
+    prompt_current::T                                           # prompt.current: prompt/2's atom (R2 S2a)
+    prompt_first::Union{Nothing, T}                             # prompt.first: prompt1/1's atom (R2 S2a)
+    prompt_first_used::Bool                                     # prompt.first_used
 end
 function PL_local_data{T}(gd::PL_global_data{T}) where {T}
     e = mk_expr(T, T[])                         # any term: the idle placeholders' (index context, …)
@@ -579,7 +583,10 @@ function PL_local_data{T}(gd::PL_global_data{T}) where {T}
         foreign_state_pool{recorded_state{T}}(), # recorded/2,3's states: none
         input_context{T}[],                     # input_context_stack: empty (NULL)
         nothing,                                # qlf.write_state: NULL (LD2: the state is never written)
-        IOSTREAM[]                              # output_stack: no redirect (R2 O1B)
+        IOSTREAM[],                             # output_stack: no redirect (R2 O1B)
+        mk_sym(T, Symbol("|: ")),               # prompt.current: ATOM_prompt (pl-file.c:536, initIO)
+        nothing,                                # prompt.first: NULL_ATOM
+        false                                   # prompt.first_used
     )
     allocStacks!(ld)                            # the initial local stack, its spare reserved
     emptyStacks!(ld)

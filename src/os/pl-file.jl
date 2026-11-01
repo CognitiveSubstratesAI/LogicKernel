@@ -1369,8 +1369,61 @@ function pl_seen(ld::PL_local_data{T})::Bool where {T}
     return symbol_no_stream(ld, mk_sym(T, :current_input))
 end
 
+# ── prompts (pl-file.c) ─────────────────────────────────────────────────────────────────────────
+
+# PORT: pl-file.c prompt as pl_prompt2_va
+# (PRED_IMPL("prompt", 2, prompt, 0)) — swipl-devel cbf4e189, src/os/pl-file.c:3735-3763
+# DIVERGES: atoms are not registered (`PL_register_atom`: no atom garbage collection); `LD->prompt.current` is
+# `ld.prompt_current`, set in the local data's constructor where upstream's `initIO` sets it (pl-file.c:536).
+"`prompt(-Old, +New)`: unify `Old` with the prompt of the terminal read and set it to `New` (pl-file.c)."
+function pl_prompt2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2 = PL__t0, PL__t0 + 1
+    PL_unify_atom(ld, A1, ld.prompt_current) || return FFALSE
+    rc = PL_compare(ld, A1, A2)
+    rc == 0 && return FTRUE                                 # CMP_EQUAL
+    a = PL_get_atom_ex(ld, A2)
+    a === nothing && return FFALSE
+    ld.prompt_current = a
+    return FTRUE
+end
+
+# PORT: pl-file.c prompt1 (the C function)
+# DIVERGES: atoms are not registered (see `pl_prompt2_va`).
+"Set the prompt for the first line of the next read to `prompt` (pl-file.c `prompt1(atom_t)`)."
+function prompt1(ld::PL_local_data{T}, prompt::T)::Nothing where {T}
+    if ld.prompt_first === nothing || sym_key(ld.prompt_first::T) != sym_key(prompt)
+        ld.prompt_first = prompt
+    end
+    ld.prompt_first_used = false
+    return nothing
+end
+
+# PORT: pl-file.c prompt1 as pl_prompt1_1_va
+# (PRED_IMPL("prompt1", 1, prompt1, 0)) — pl-file.c:3778-3794
+"`prompt1(+Prompt)`: the prompt of the first line of the next read; unbound `Prompt` unifies with the current one (pl-file.c)."
+function pl_prompt1_1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1 = PL__t0
+    a = PL_get_atom(ld, A1)
+    if a !== nothing
+        prompt1(ld, a)
+    elseif PL_is_variable(ld, A1)
+        ld.prompt_first === nothing && return FFALSE
+        return PL_unify_atom(ld, A1, ld.prompt_first::T) ? FTRUE : FFALSE
+    else
+        txt = PL_get_text(ld, A1, CVT_ALL | CVT_EXCEPTION)
+        txt === nothing && return FFALSE
+        PL_canonicalise_text(txt) == 1 || return FFALSE      # textToAtom(): 0
+        prompt1(ld, _atom_from_text(T, _text_string(txt)))
+    end
+    return FTRUE
+end
+
 # PORT: pl-file.c BeginPredDefs as PL_predicates_from_file
-# DIVERGES: the entries of the predicates the kernel has ported (S1: open/3,4 and close/1,2; LB2:
+# DIVERGES: the entries of the predicates the kernel has ported (S1: open/3,4 and close/1,2; S2a: prompt/2 and prompt1/1; LB2:
 # source_location/2 and '$set_source_location'/2, upstream's order file:6396-6397); `PRED_DEF` ors in `PL_FA_VARARGS`.
 "pl-file.c's registration table (`BeginPredDefs(file)`): the ported entries."
 const PL_predicates_from_file = (
@@ -1378,6 +1431,8 @@ const PL_predicates_from_file = (
     PL_extension("open", 3, pl_open3_va, PL_FA_ISO | PL_FA_VARARGS),
     PL_extension("close", 1, pl_close1_va, PL_FA_ISO | PL_FA_VARARGS),
     PL_extension("close", 2, pl_close2_va, PL_FA_ISO | PL_FA_VARARGS),
+    PL_extension("prompt", 2, pl_prompt2_va, PL_FA_VARARGS),
+    PL_extension("prompt1", 1, pl_prompt1_1_va, PL_FA_VARARGS),
     PL_extension("source_location", 2, pl_source_location2_va, PL_FA_VARARGS),
     PL_extension("\$set_source_location", 2, pl_set_source_location2_va, PL_FA_VARARGS)
 )
