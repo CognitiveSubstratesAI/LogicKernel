@@ -89,3 +89,29 @@ FOUND by it: the live-pin testset ("the pins are swipl's") asserted nothing with
 `@test length(_MM_PINNED) == length(_MM_CASES) + 1` as in MOD5b. After it: rows 318/318, pkgtest_way passed.
 OWED: branch-gate, then `gate/mod6` + `mutants/MOD6` at the SAME SHA. mutants/MOD6 on the remote is still d64aa17 (ff to the new SHA).
 Note: MOD5b (3fc3fda) is not yet in origin/main at the time of writing.
+
+## MOD6c writer (Sonnet, edit-only; nothing compiled; wip/mod6-c = origin/main a753dc0 + the 14 MOD6 commits of gate/mod6b (2aa53ae) + 3 fix commits)
+Battery 41249584187 on 2aa53ae had five blocking survivors (C6, A1, A4, F1 real test gaps; I1 a timeout). Closed:
+- ff58d26 row c21 `( '$current_module'([mmx_g1], '/mmx/g.pl') -> A = yes ; A = no ), R = A`, pinned `no` by swipl 10.1.19 (two byte-identical
+  runs of gen_rows.py; the .out differs from the old one by that line only); appended after c20 in _MM_CASES and _MM_PINNED; mm_rows.* regenerated.
+- 158fa81 H3 testset (test/core_lang/test_module_enum_swipl.jl, one commit for items A1/A4/F1): the MENUM_TEMP walk uses the POOLED state
+  (`k = newModuleEnum`, `en2 = ld.module_enums.states[k]`; deviation from the brief's wording: a separate stand-alone en2 would hold t5 as well and
+  make t5.references r5 + 2), checks `(m.flags & M_DESTROYED) == 0` for every module returned and `old.index ∉ seen2`, a second temporary module
+  t5 (created after t4): at t5 `t5.references == r5 + 1 && t4.references == r0 && en2.current == t5.index`; after the walk the 'still held' checks
+  on t5 / t4; `freeModuleEnum(gd, ld, k)` then `t5.references == r5` and `live == 0`. UNVERIFIED on the kernel: the assertion that `live == 0`
+  before `newModuleEnum` (the old code asserted `live == 1` after it, so 0 before is implied) and that no OTHER temporary module follows t5 in the
+  table (t5 is created last in the testset; nothing later creates modules).
+- bc20c98 tools/mutants/MOD6b.py -> MOD6c.py (git mv); MOD6-I1 gets `expect="hang"` (mutate_ci.py:154 form); KILL texts of C6, A1, A4, F1, I5
+  corrected; header names the five survivors and their closers; docs/architecture.md names MOD6c.py and 47 cases. Checker: 34 mutants, 0 problems.
+
+## GATE ORDER for MOD6c (a gate agent on a daemon lane, about 1 h 20 min; fresh names, NEVER force)
+1. `warm.sh fmt` via `warm.sh send` of the committed files (src/test files of this branch; `fmt` sees only the HEAD diff); re-check that every
+   `old` of tools/mutants/MOD6c.py still occurs once (a python3 -I runpy checker: fmt may re-flow the H3 testset, not the mutant anchors in src).
+2. `warm.sh check`; it leaves the changed rows file's Pkg.test-way run over budget: run `tools/pkgtest_way.sh test/core_lang/test_module_enum_swipl.jl` by hand.
+3. Rows on all three term types (`warm.sh file test/core_lang/test_module_enum_swipl.jl`): before the fixes 318 passes per type; expect 318 plus the
+   new `@test`s: one per-row comparison for c21 (the rows testsets loop over _MM_PINNED) and the H3 additions (the in-loop `M_DESTROYED` assertion runs
+   once per module returned, the t4/t5 ones once each); the brief estimated +3 per type, the exact total is the gate's to read, not a failure. test/test_type_discipline.jl, test_zero_exports and test_ball_cells x3.
+4. Push `mutants/MOD6c` at the WIP SHA once the list passes step 1 (the battery is the proof of C6/A1/A4/F1/I1: expect 34 mutants, 4 equivalent,
+   I1 "caught (hang)"; a hang takes the 1530 s timeout).
+5. branch-gate; term grep (`segment|SIGSEGV|crash|abort|invalid term_t|dies of`) over diff and messages; then `gate/mod6c` and `mutants/MOD6c` at the SAME SHA.
+Daemon lane: the dispatcher assigns it; this writer started and stopped none.
