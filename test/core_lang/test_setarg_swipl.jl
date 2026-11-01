@@ -91,8 +91,13 @@ const _SA_PROGRAM = raw"""
 sa_same(A, B, R) :- ( same_term(A, B) -> R = same ; R = distinct ).
 sa_mem(X, [X|_]).
 sa_mem(X, [_|T]) :- sa_mem(X, T).
-sa_inc(T) :- arg(1, T, V0), V is V0+1, nb_setarg(1, T, V).
-sa_binc(T) :- arg(1, T, V0), V is V0+1, setarg(1, T, V).
+% sa_arg: the two argument numbers the rows use, through =../2 (arg/3 itself is a later step of the port)
+% sa_zero: a zero-argument compound built outside catch/3's goal
+sa_zero(T) :- T = foo().
+sa_arg(1, T, A) :- T =.. [_, A|_].
+sa_arg(2, T, A) :- T =.. [_, _, A|_].
+sa_inc(T) :- sa_arg(1, T, V0), V is V0+1, nb_setarg(1, T, V).
+sa_binc(T) :- sa_arg(1, T, V0), V is V0+1, setarg(1, T, V).
 """
 
 const _SA_CASES = [
@@ -123,7 +128,7 @@ const _SA_CASES = [
     ("sa23", raw"setarg(1, a, x), R = yes"),
     ("sa24", raw"setarg(1, _, x), R = yes"),
     ("sa25", raw"setarg(1, 3, x), R = yes"),
-    ("sa26", raw"string_to_atom(S, abc), setarg(1, S, x), R = yes"),
+    ("sa26", raw"atom_string(abc, S), setarg(1, S, x), R = yes"),
     ("sa27", raw"setarg(1, [], x), R = yes"),
     ("sa28", raw"( nb_setarg(0, f(a), x) -> R = yes ; R = no )"),
     ("sa29", raw"( nb_setarg(3, f(a), x) -> R = yes ; R = no )"),
@@ -144,48 +149,114 @@ const _SA_CASES = [
     ("sa43", raw"T = f(a), ( nb_setarg(1, T, g(1)), fail ; true ), R = T"),
     ("sa44", raw"T = f(a), ( X is 1.5*2, nb_setarg(1, T, X), fail ; true ), R = T"),
     ("sa45", raw"T = f(a), ( X is 1<<70, nb_setarg(1, T, X), fail ; true ), R = T"),
-    ("sa46", raw"T = f(a), ( string_to_atom(S, abc), nb_setarg(1, T, S), fail ; true ), R = T"),
+    (
+        "sa46",
+        raw"T = f(a), ( atom_string(abc, S), nb_setarg(1, T, S), fail ; true ), R = T"
+    ),
     ("sa47", raw"T = f(a), ( nb_setarg(1, T, [x,y,z]), fail ; true ), R = T"),
     ("sa48", raw"T = c(0), ( sa_mem(_, [1,2,3]), sa_inc(T), fail ; true ), R = T"),
     ("sa49", raw"T = c(0), ( sa_mem(_, [1,2,3]), sa_binc(T), fail ; true ), R = T"),
-    ("sa50", raw"T = acc([]), ( sa_mem(X, [a,b,c]), arg(1, T, L), nb_setarg(1, T, [X|L]), fail ; true ), arg(1, T, R)"),
+    (
+        "sa50",
+        raw"T = acc([]), ( sa_mem(X, [a,b,c]), sa_arg(1, T, L), nb_setarg(1, T, [X|L]), fail ; true ), sa_arg(1, T, R)"
+    ),
     ("sa51", raw"T = f(a), ( nb_linkarg(1, T, g(1)), fail ; true ), R = T"),
     # sa52-sa67 sharing: setarg and nb_linkarg link the value, nb_setarg copies it but keeps the old argument's compound
-    ("sa52", raw"T = f(a), V = g(1), setarg(1, T, V), arg(1, T, A), sa_same(A, V, R)"),
-    ("sa53", raw"T = f(a), V = g(1), nb_setarg(1, T, V), arg(1, T, A), sa_same(A, V, R)"),
-    ("sa54", raw"T = f(a), V = g(1), nb_linkarg(1, T, V), arg(1, T, A), sa_same(A, V, R)"),
-    ("sa55", raw"T = f(g(1)), arg(1, T, Old), nb_setarg(1, T, h(Old)), arg(1, T, H), arg(1, H, O2), sa_same(O2, Old, R)"),
-    ("sa56", raw"T = f(g(1)), arg(1, T, Old), nb_setarg(1, T, h(i(Old))), arg(1, T, H), arg(1, H, I), arg(1, I, O2), sa_same(O2, Old, R)"),
-    ("sa57", raw"T = f(g(1)), arg(1, T, Old), nb_setarg(1, T, Old), arg(1, T, A), sa_same(A, Old, R)"),
-    ("sa58", raw"T = f(g(1)), arg(1, T, Old), nb_setarg(1, T, h(g(1))), arg(1, T, H), arg(1, H, O2), sa_same(O2, Old, R)"),
-    ("sa59", raw"T = f(g(1), k), arg(1, T, Old), nb_setarg(2, T, h(Old)), arg(2, T, H), arg(1, H, O2), sa_same(O2, Old, R)"),
-    ("sa60", raw"T = f(g(a)), arg(1, T, G), setarg(1, G, b), R = T"),
-    ("sa61", raw"T = f(g(a)), arg(1, T, G), ( nb_setarg(1, G, b), fail ; true ), R = T"),
+    ("sa52", raw"T = f(a), V = g(1), setarg(1, T, V), sa_arg(1, T, A), sa_same(A, V, R)"),
+    (
+        "sa53",
+        raw"T = f(a), V = g(1), nb_setarg(1, T, V), sa_arg(1, T, A), sa_same(A, V, R)"
+    ),
+    (
+        "sa54",
+        raw"T = f(a), V = g(1), nb_linkarg(1, T, V), sa_arg(1, T, A), sa_same(A, V, R)"
+    ),
+    (
+        "sa55",
+        raw"T = f(g(1)), sa_arg(1, T, Old), nb_setarg(1, T, h(Old)), sa_arg(1, T, H), sa_arg(1, H, O2), sa_same(O2, Old, R)"
+    ),
+    (
+        "sa56",
+        raw"T = f(g(1)), sa_arg(1, T, Old), nb_setarg(1, T, h(i(Old))), sa_arg(1, T, H), sa_arg(1, H, I), sa_arg(1, I, O2), sa_same(O2, Old, R)"
+    ),
+    (
+        "sa57",
+        raw"T = f(g(1)), sa_arg(1, T, Old), nb_setarg(1, T, Old), sa_arg(1, T, A), sa_same(A, Old, R)"
+    ),
+    (
+        "sa58",
+        raw"T = f(g(1)), sa_arg(1, T, Old), nb_setarg(1, T, h(g(1))), sa_arg(1, T, H), sa_arg(1, H, O2), sa_same(O2, Old, R)"
+    ),
+    (
+        "sa59",
+        raw"T = f(g(1), k), sa_arg(1, T, Old), nb_setarg(2, T, h(Old)), sa_arg(2, T, H), sa_arg(1, H, O2), sa_same(O2, Old, R)"
+    ),
+    ("sa60", raw"T = f(g(a)), sa_arg(1, T, G), setarg(1, G, b), R = T"),
+    ("sa61", raw"T = f(g(a)), sa_arg(1, T, G), ( nb_setarg(1, G, b), fail ; true ), R = T"),
     ("sa62", raw"X = f(a), Y = g(X), setarg(1, X, b), R = Y"),
     ("sa63", raw"L = [a,b], setarg(1, L, x), setarg(2, L, [z]), R = L"),
-    ("sa64", raw"compound_name_arguments(T, foo, []), ( setarg(1, T, a) -> R = yes ; R = no )"),
+    (
+        "sa64",
+        raw"sa_zero(T), ( setarg(1, T, a) -> R = yes ; R = no )"
+    ),
     ("sa65", raw"findall(x, setarg(1, f(a), b), R)"),
     ("sa66", raw"findall(x, nb_setarg(1, f(a), b), R)"),
     ("sa67", raw"findall(x, nb_linkarg(1, f(a), b), R)"),
     # sa68-sa77 attributed variables and cycles (UNVERIFIED on the kernel: gate decides)
-    ("sa68", raw"put_attr(X, sa, 1), T = f(a), setarg(1, T, X), arg(1, T, A), get_attr(A, sa, R)"),
+    (
+        "sa68",
+        raw"put_attr(X, sa, 1), T = f(a), setarg(1, T, X), sa_arg(1, T, A), get_attr(A, sa, R)"
+    ),
     ("sa69", raw"put_attr(X, sa, 1), T = f(a), ( setarg(1, T, X), fail ; true ), R = T"),
-    ("sa70", raw"put_attr(X, sa, 1), T = f(a), ( nb_setarg(1, T, X), fail ; true ), arg(1, T, A), ( attvar(A) -> R = att ; R = plain )"),
-    ("sa71", raw"put_attr(X, sa, 1), T = f(a), nb_setarg(1, T, g(X)), arg(1, T, G), arg(1, G, A), ( attvar(A) -> get_attr(A, sa, R) ; R = plain )"),
-    ("sa72", raw"put_attr(X, sa, 1), T = f(X), setarg(1, T, b), get_attr(X, sa, V), R = T-V"),
-    ("sa73", raw"X = g(X), T = f(a), setarg(1, T, X), arg(1, T, A), ( cyclic_term(A) -> R = cyc ; R = acyc )"),
-    ("sa74", raw"X = g(X), T = f(a), nb_setarg(1, T, X), arg(1, T, A), ( cyclic_term(A) -> R = cyc ; R = acyc )"),
-    ("sa75", raw"X = g(X), T = f(a), nb_setarg(1, T, X), arg(1, T, A), sa_same(A, X, R)"),
+    (
+        "sa70",
+        raw"put_attr(X, sa, 1), T = f(a), ( nb_setarg(1, T, X), fail ; true ), sa_arg(1, T, A), ( attvar(A) -> R = att ; R = plain )"
+    ),
+    (
+        "sa71",
+        raw"put_attr(X, sa, 1), T = f(a), nb_setarg(1, T, g(X)), sa_arg(1, T, G), sa_arg(1, G, A), ( attvar(A) -> get_attr(A, sa, R) ; R = plain )"
+    ),
+    (
+        "sa72",
+        raw"put_attr(X, sa, 1), T = f(X), setarg(1, T, b), get_attr(X, sa, V), R = T-V"
+    ),
+    (
+        "sa73",
+        raw"X = g(X), T = f(a), setarg(1, T, X), sa_arg(1, T, A), ( cyclic_term(A) -> R = cyc ; R = acyc )"
+    ),
+    (
+        "sa74",
+        raw"X = g(X), T = f(a), nb_setarg(1, T, X), sa_arg(1, T, A), ( cyclic_term(A) -> R = cyc ; R = acyc )"
+    ),
+    (
+        "sa75",
+        raw"X = g(X), T = f(a), nb_setarg(1, T, X), sa_arg(1, T, A), sa_same(A, X, R)"
+    ),
     ("sa76", raw"T = f(T), setarg(1, T, b), R = T"),
-    ("sa77", raw"T = f(T), ( setarg(1, T, b), fail ; true ), arg(1, T, A), sa_same(A, T, R)"),
+    (
+        "sa77",
+        raw"T = f(T), ( setarg(1, T, b), fail ; true ), sa_arg(1, T, A), sa_same(A, T, R)"
+    ),
     # sa78-sa81 a variable as the value
     ("sa78", raw"T = f(a), nb_setarg(1, T, X), X = q, R = T"),
-    ("sa79", raw"T = f(a), nb_setarg(1, T, X), arg(1, T, A), ( A == X -> R = same ; R = diff )"),
+    (
+        "sa79",
+        raw"T = f(a), nb_setarg(1, T, X), sa_arg(1, T, A), ( A == X -> R = same ; R = diff )"
+    ),
     ("sa80", raw"T = f(a), nb_linkarg(1, T, X), X = q, R = T"),
-    ("sa81", raw"T = f(a), ( nb_setarg(1, T, X), fail ; true ), arg(1, T, A), ( var(A) -> R = var ; R = nonvar )"),
+    (
+        "sa81",
+        raw"T = f(a), ( nb_setarg(1, T, X), fail ; true ), sa_arg(1, T, A), ( var(A) -> R = var ; R = nonvar )"
+    ),
     # sa82-sa83 an attributed variable created INSIDE the failing branch (UNVERIFIED on the kernel: gate decides)
-    ("sa82", raw"T = f(a), ( put_attr(X, sa, 1), nb_setarg(1, T, X), fail ; true ), arg(1, T, A), ( attvar(A) -> get_attr(A, sa, R) ; R = plain )"),
-    ("sa83", raw"T = f(a), ( put_attr(X, sa, 1), nb_setarg(1, T, g(X)), fail ; true ), arg(1, T, G), arg(1, G, A), ( attvar(A) -> get_attr(A, sa, R) ; R = plain )")
+    (
+        "sa82",
+        raw"T = f(a), ( put_attr(X, sa, 1), nb_setarg(1, T, X), fail ; true ), sa_arg(1, T, A), ( attvar(A) -> get_attr(A, sa, R) ; R = plain )"
+    ),
+    (
+        "sa83",
+        raw"T = f(a), ( put_attr(X, sa, 1), nb_setarg(1, T, g(X)), fail ; true ), sa_arg(1, T, G), sa_arg(1, G, A), ( attvar(A) -> get_attr(A, sa, R) ; R = plain )"
+    )
 ]
 
 # the driver's whole output, one line per case after `ok`, filled by evidence/SETARG/gen_rows.py --fill from swipl 10.1.19
@@ -343,7 +414,10 @@ end
 @testset "the setarg rows are not vacuous (sa01-sa83)" begin
     # the program loaded (`ok`); every row has a line; the failing rows answer `no`, the errors `raised(_)`
     @test _SA_PINNED[1] == "ok"
-    @test all(id -> any(l -> l == "t_$id" || startswith(l, "t_$id "), _SA_PINNED), first.(_SA_CASES))
+    @test all(
+        id -> any(l -> l == "t_$id" || startswith(l, "t_$id "), _SA_PINNED),
+        first.(_SA_CASES)
+    )
     @test count(l -> occursin("c[114,97,105,115,101,100]", l), _SA_PINNED) >= 10   # the errors
     @test any(l -> occursin("a[100,105,115,116,105,110,99,116]", l), _SA_PINNED)    # `distinct`: nb_setarg copied
     @test any(l -> occursin("a[115,97,109,101]", l), _SA_PINNED)                    # `same`: linked or kept shared

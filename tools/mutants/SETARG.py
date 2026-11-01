@@ -21,7 +21,7 @@
 # mutants (duplicate_term, the cp_options struct, mark_for_duplicate_cells) also run the files that exercise
 # duplicate_term/2 and the copy: test_copyterm_swipl.jl, test_copyterm_cells.jl, test_catch_swipl.jl (the ball is
 # copied through copy_term_refs), test_exception.jl, test_same_term_swipl.jl (s_dup) and
-# test_attvar_wakeup.jl (duplicate_term/2 on an attributed variable).
+# test_attvar_wakeup.jl (duplicate_term/2 on an attributed variable), test_gvar_swipl.jl (setval_duplicate).
 TS = ["test/core_lang/test_setarg_swipl.jl"]
 TCOPY = TS + [
     "test/core_lang/test_copyterm_swipl.jl",
@@ -30,6 +30,7 @@ TCOPY = TS + [
     "test/core_lang/test_exception.jl",
     "test/core_lang/test_same_term_swipl.jl",       # duplicate_term/2 shares nothing (s_dup)
     "test/core_lang/test_attvar_wakeup.jl",         # duplicate_term/2 copies an attributed variable
+    "test/core_lang/test_gvar_swipl.jl",            # nb_setval/b_setval copy through duplicate_term/3 (setval_duplicate)
 ]
 TARGETS = TCOPY      # the baseline's (mutate_ci.py plan reads TARGETS)
 P = "src/pl-prims.jl"
