@@ -1064,6 +1064,109 @@ function pl_del_dict4_va(
     return FFALSE
 end
 
+# PORT: pl-dict.c partial_unify_dict
+# DIVERGES: `dict1`, `dict2` are the dicts' compound words; the result is a Bool (upstream's `boolex_t` also carries the
+# overflows, which `unify_ptrs_cells` raises).
+"Unify all common elements of the two dicts, tags included (pl-dict.c)."
+function partial_unify_dict(ld::PL_local_data, dict1::word, dict2::word)::Bool
+    d1 = valPtr(dict1)
+    d2 = valPtr(dict2)
+    in1 = d1 + 1                                    # d1->arguments
+    in2 = d2 + 1
+    end1 = in1 + arityFunctor(ld.functors, ld.gstack[d1])
+    end2 = in2 + arityFunctor(ld.functors, ld.gstack[d2])
+
+    unify_tags(ld, in1, in2) || return false        # unify the tags
+
+    in1 += 1                                        # advance to first v+k entry
+    in2 += 1
+
+    while in1 < end1 && in2 < end2
+        _, n1, _ = _deref_loc(ld, in1 + 1)
+        _, n2, _ = _deref_loc(ld, in2 + 1)
+        if n1 == n2
+            unify_ptrs_cells(ld, in1, in2) || return false
+            in1 += 2
+            in2 += 2
+        elseif n1 < n2
+            in1 += 2
+        else
+            in2 += 2
+        end
+    end
+
+    return true
+end
+
+# PORT: pl-dict.c unify_left_dict
+# DIVERGES: as `partial_unify_dict`.
+"Demand `del` to be a sub-dict of `from`, unifying the values of the keys they share (pl-dict.c)."
+function unify_left_dict(ld::PL_local_data, del::word, from::word)::Bool
+    dd = valPtr(del)
+    fd = valPtr(from)
+    din = dd + 1                                    # dd->arguments
+    fin = fd + 1
+    dend = din + arityFunctor(ld.functors, ld.gstack[dd])
+    fend = fin + arityFunctor(ld.functors, ld.gstack[fd])
+
+    unify_tags(ld, din, fin) || return false        # unify the tags
+
+    din += 1                                        # advance to first v+k entry
+    fin += 1
+
+    while din < dend && fin < fend
+        _, d, _ = _deref_loc(ld, din + 1)
+        _, f, _ = _deref_loc(ld, fin + 1)
+
+        if d == f                                   # same keys
+            unify_ptrs_cells(ld, din, fin) || return false
+            din += 2
+            fin += 2
+        elseif d < f
+            return false
+        else
+            fin += 2
+        end
+    end
+
+    return din == dend
+end
+
+# PORT: pl-dict.c unify_left_dict as pl_unify_left_dict2_va
+# (PRED_IMPL(":<", 2, unify_left_dict, 0))
+# DIVERGES: no `Mark`/`Undo` retry after an overflow (raised by `ensureGlobalSpace`, failing the predicate).
+"`Select :< From`: every key of `Select` is in `From` and the values unify (pl-dict.c)."
+function pl_unify_left_dict2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    dt = PL_new_term_refs(ld, 2)
+
+    if get_create_dict_ex(ld, PL__t0, dt + 0) && get_create_dict_ex(ld, PL__t0 + 1, dt + 1)
+        _, d0, _ = _deref_loc(ld, -(dt + 0 + 1))
+        _, d1, _ = _deref_loc(ld, -(dt + 1 + 1))
+        return unify_left_dict(ld, d0, d1) ? FTRUE : FFALSE
+    end
+
+    return FFALSE
+end
+
+# PORT: pl-dict.c punify_dict as pl_punify_dict2_va
+# (PRED_IMPL(">:<", 2, punify_dict, 0))
+"`Dict1 >:< Dict2`: the values of the keys the two dicts share unify (pl-dict.c)."
+function pl_punify_dict2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    dt = PL_new_term_refs(ld, 2)
+
+    if get_create_dict_ex(ld, PL__t0, dt + 0) && get_create_dict_ex(ld, PL__t0 + 1, dt + 1)
+        _, d0, _ = _deref_loc(ld, -(dt + 0 + 1))
+        _, d1, _ = _deref_loc(ld, -(dt + 1 + 1))
+        return partial_unify_dict(ld, d0, d1) ? FTRUE : FFALSE
+    end
+
+    return FFALSE
+end
+
 # PORT: pl-dict.c BeginPredDefs as PL_predicates_from_dict
 # DIVERGES: the ported entries, in upstream's order (upstream's table also has `dict_pairs/3`, `dict_same_keys/2`,
 # `put_dict/4`, `b_set_dict/3`, `nb_set_dict/3`, `nb_link_dict/3`, `$get_dict_ex/3`, `del_dict/4`, `get_dict/5`, `:</2`,
@@ -1080,5 +1183,7 @@ const PL_predicates_from_dict = (
     PL_extension("get_dict", 5, pl_get_dict5_va, PL_FA_VARARGS),
     PL_extension("put_dict", 4, pl_put_dict4_va, PL_FA_VARARGS),
     PL_extension("dict_pairs", 3, pl_dict_pairs3_va, PL_FA_VARARGS),
-    PL_extension("del_dict", 4, pl_del_dict4_va, PL_FA_VARARGS)
+    PL_extension("del_dict", 4, pl_del_dict4_va, PL_FA_VARARGS),
+    PL_extension(":<", 2, pl_unify_left_dict2_va, PL_FA_VARARGS),
+    PL_extension(">:<", 2, pl_punify_dict2_va, PL_FA_VARARGS)
 )
