@@ -5670,7 +5670,7 @@ What BOOTPRED adds (written edit-only; nothing was compiled or run when this was
   dicts exist through `dict_create/3` and `put_dict/3` only, and `print` of one shows the compound `dict(Tag, V, K, ...)`. `'$style_check'/2` is NOT STARTED (it waits for F1b).
 
 Tests: test/core_lang/test_bootpred_swipl.jl (rows bp01-bp128: thread_self, with_mutex, `'$garbage_collect'`, then the dict predicates with a sorted `dpairs/2` helper; swipl 10.1.19 pins from
-two byte-identical runs, a non-vacuity testset, the live check when `swipl` is on PATH); tools/mutants/BOOTPRED2.py (9 mutants for gc/thread/mutex, 19 for pl-dict.jl, none declared equivalent; M4 mutates the meta spec of with_mutex/2, since the registration flag alone is overridden by it).
+two byte-identical runs, a non-vacuity testset, the live check when `swipl` is on PATH); tools/mutants/BOOTPRED3.py (9 mutants for gc/thread/mutex, 19 for pl-dict.jl, none declared equivalent; M4 mutates the meta spec of with_mutex/2, since the registration flag alone is overridden by it).
 Rows over a dict in an answer do not exist on purpose: nothing prints a dict in swipl's order.
 
 ## Still to come

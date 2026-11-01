@@ -1,5 +1,5 @@
 # ORIGINAL: BOOTPRED's mutant list — no swipl-devel counterpart.
-# tools/mutants/BOOTPRED2.py — the mutation battery of BOOTPRED (audit D-0281): `'$garbage_collect'/1` (pl-gc.c
+# tools/mutants/BOOTPRED3.py — the mutation battery of BOOTPRED (audit D-0281): `'$garbage_collect'/1` (pl-gc.c
 # pl_garbage_collect), thread_self/1 (pl-thread.c pl_thread_self), with_mutex/2 (pl-mutex.c pl_with_mutex) and, in the
 # groups written later, the six pl-dict.c predicates. Run ONCE, in CI (.github/workflows/mutation.yml; locally:
 # tools/mutate.sh run). Format: tools/mutate_drive.py's (as MOD3b.py): `id`, `file`, `old` (must occur EXACTLY once),
