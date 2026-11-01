@@ -1,0 +1,99 @@
+# S_UNDEF unknown=fail / unknown=warning (D-0283 item 1).  Diff of the engine-core hunk in src/pl-wam.jl.
+# Code SHA on this stack: 25e9b29 (old branch: a9015c5).  Rows: sf37 (unknown=fail, an undefined call fails)
+# and sf90 (unknown=warning, the existence_error warning is printed) in test/core_lang/test_set_flag_swipl.jl;
+# sf90's call reads the printed message through a white-box read (ad26fbd).
+# (c) the @goto deep_backtrack target against pl-vmi.c S_UNDEF, swipl-devel cbf4e1896275:
+#   src/pl-vmi.c:3369  VMI(S_UNDEF ...)       switch( getUnknownModule(DEF->module) )
+#   src/pl-vmi.c:3418-3422  case UNKNOWN_FAIL: default: [debugging newChoice] FRAME_FAILED;
+#   src/pl-wam.c:2528  #define FRAME_FAILED  GO(deep_backtrack, PL_TRACE_ACTION_NONE)
+# so the fail path is deep_backtrack, as `@goto deep_backtrack` (src/pl-wam.jl, same label every FRAME_FAILED
+# in this file uses, e.g. pl-wam.jl:4465, 4538).  UNKNOWN_WARNING prints, takes `if (exception_term) THROW_EXCEPTION`
+# (vmi:3414-3415), and FALLS THROUGH to the fail path (pl-vmi.c has no break): the Julia `elseif` branch does the same.
+# The line numbers in the source comment (3335-3339, 2465) are those of the older bae881a2 checkout.
+commit 25e9b2902f69a7e0575af0cbfb1ac57f8f05297b
+Author: Shivaji Gadde <11524260+sivaji1012@users.noreply.github.com>
+Date:   Sun Nov 1 01:14:45 2026 +0000
+
+    FIXED: pl-wam.jl S_UNDEF unknown=fail/warning branches (pl-vmi.c S_UNDEF)
+    
+    S_UNDEF asserted the module's unknown flag was UNKNOWN_ERROR; set_prolog_flag(unknown, ...)
+    (F1b) makes the other two reachable. Ported as pl-vmi.c: the error branch as it was; the
+    warning branch prints error(existence_error(procedure, PI), _) as a warning through
+    printMessage, throws if that raised, and falls through; the fail branch (and default) is
+    FRAME_FAILED. The debugger's CHP_DEBUG choice point of the fail branch is left out (no debugger).
+    ENGINE CORE (Tier 1) edit by a Sonnet agent: flagged for the audit's review.
+    
+    Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>
+
+diff --git a/src/pl-wam.jl b/src/pl-wam.jl
+index 5dd44eb..f9dd999 100644
+--- a/src/pl-wam.jl
++++ b/src/pl-wam.jl
+@@ -4468,24 +4468,51 @@ function PL_next_solution_guarded(
+     # PORT: pl-vmi.c S_UNDEF
+     # DIVERGES: the `CHP_DEBUG` choice point is pushed as upstream pushes it; only the debugger's
+     # retry reads it upstream (not ported), and `b_throw` discards it. (The context is qualified as
+-    # upstream's since V5c: src/pl-error.jl.)
++    # upstream's since V5c: src/pl-error.jl.) `UNKNOWN_FAIL`'s `debugstatus.debugging` choice point
++    # is the debugger's (no debugger).
+     @label S_UNDEF
+-    # getUnknownModule(DEF->module): nothing sets a module's `unknown` flag, so it is `system`'s,
+-    # UNKNOWN_ERROR (src/pl-modul.jl); the warning and fail branches are not reachable, not ported.
+-    @assert getUnknownModule(gd, gd.modules[DEF.module_]) == UNKNOWN_ERROR
+-    su_caller =
+-        ld.frames[FR].parent != 0 ? ld.frames[ld.frames[FR].parent].predicate : nothing
+-    setLTop!(ld, argFrameP(ld.frames[FR].base, DEF.arity))
+-    newChoice(ld, CHP_DEBUG, FR)
+-    @SAVE_REGISTERS(QID)
+-    su_fid = PL_open_foreign_frame(ld)
+-    if su_fid != 0
+-        PL_error(ld, ERR_UNDEFINED_PROC, DEF, su_caller)
+-        PL_close_foreign_frame(ld, su_fid)
++    su_unknown = getUnknownModule(gd, gd.modules[DEF.module_])   # getUnknownModule(DEF->module)
++    if su_unknown == UNKNOWN_ERROR
++        su_caller =
++            ld.frames[FR].parent != 0 ? ld.frames[ld.frames[FR].parent].predicate : nothing
++        setLTop!(ld, argFrameP(ld.frames[FR].base, DEF.arity))
++        newChoice(ld, CHP_DEBUG, FR)
++        @SAVE_REGISTERS(QID)
++        su_fid = PL_open_foreign_frame(ld)
++        if su_fid != 0
++            PL_error(ld, ERR_UNDEFINED_PROC, DEF, su_caller)
++            PL_close_foreign_frame(ld, su_fid)
++        end
++        @LOAD_REGISTERS(QID)
++        # enterDefinition(DEF): (void)0 upstream (pl-incl.h:1347) — "will be left in exception code"
++        @goto b_throw                               # THROW_EXCEPTION
++    elseif su_unknown == UNKNOWN_WARNING
++        setLTop!(ld, argFrameP(ld.frames[FR].base, DEF.arity))
++        @SAVE_REGISTERS(QID)
++        su_fid = PL_open_foreign_frame(ld)
++        if su_fid != 0
++            su_pred = PL_new_term_ref(ld)
++            if unify_definition(gd, ld, MODULE_user(gd), su_pred, DEF, 0, GP_NAMEARITY)
++                printMessage(                       # PL_FUNCTOR, FUNCTOR_error2,
++                    ld, :warning,                   #   PL_FUNCTOR, FUNCTOR_existence_error2,
++                    _message_term(                  #     PL_ATOM, ATOM_procedure, PL_TERM, pred,
++                        ld, :error,                 #   PL_VARIABLE
++                        _message_term(
++                            ld, :existence_error, _err_atom(ld, mk_sym(T, :procedure)),
++                            su_pred
++                        ),
++                        new_term_ref(ld)
++                    )
++                )
++            end
++            PL_close_foreign_frame(ld, su_fid)
++        end
++        @LOAD_REGISTERS(QID)
++        if ld.exception_term != 0
++            @goto b_throw                           # THROW_EXCEPTION
++        end
+     end
+-    @LOAD_REGISTERS(QID)
+-    # enterDefinition(DEF): (void)0 upstream (pl-incl.h:1347) — "will be left in exception code"
+-    @goto b_throw                                   # THROW_EXCEPTION
++    @goto deep_backtrack                            # UNKNOWN_FAIL, default: FRAME_FAILED
+ 
+     # PORT: pl-vmi.c S_STATIC
+     # QUIRK, as upstream (vmi:3441): `(LocalFrame)ARGP+DEF->functor->arity` casts first, so it adds
