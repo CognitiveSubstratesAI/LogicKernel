@@ -38,15 +38,23 @@ UNRUN: everything (no Julia). Compile risks to look at first: `_err_functor(ld, 
 `PL_unify_list_ex`, `_PL_get_arg`, `_slot_from_cell!` use; `sort!` lt on compareStandard_cells; the 2-cell `av` global block in
 get_dict/5 and put_dict/4 (a value unbound variable is linked by `_dict_link!`, put_dict then reads it through assign_in_dict).
 
-## Left (in order)
-9. Oracle rows: evidence/DICT/cases.py (written, 7 groups, ~140 goals incl. kill rows for each predicate) -> mk_rows.py (not
-   written: model it on evidence/BOOTPRED/gen_rows.py; id prefix `dp`, template = test/core_lang/test_bootpred_swipl.jl: driver,
-   _bp_kernel, non-vacuity testset, live-pin testset; helpers dpairs/2 and dp_mem/2 in the program) -> test/core_lang/test_dict_preds_swipl.jl;
-   pins from two byte-identical swipl 10.1.19 runs. Rows mark UNVERIFIED on the kernel.
-10. tools/mutants/DICT.py (format of MOD3b.py; ~2.5 per code commit = ~15-18; TARGETS: test_dict_preds_swipl.jl AND test_bootpred_swipl.jl
-    AND test_type_discipline.jl as D-0238 requires for pl-dict.jl).
-11. docs/architecture.md appended block, then the manifest (test/static_analysis_manifest.jl) entries, each its own LAST commits.
-12. (BLOCKED group) b_set_dict/3, nb_set_dict/3, nb_link_dict/3 after setarg (pl-prims.c) exists.
+## Written by the continuation writer (coder 2), all on wip/dict, linear, not pushed
+9. 4440cc3 rows: evidence/DICT/mk_rows.py (cases.py -> dict_rows.pl, dict_driver.pl, test/core_lang/test_dict_preds_swipl.jl; pins = dict_rows.out,
+   two byte-identical swipl 10.1.19 runs; rerun `python3 mk_rows.py` in evidence/DICT after a change to cases.py or nonvac.jl.txt). 164 rows dp01-dp164, no answer holds a dict.
+10. bf70fdf tools/mutants/DICT.py: 25 mutants (23 killable, 2 equivalent with file:line 1093 and 1127), `old` anchors counted once (text), TARGETS = new rows file +
+    test_bootpred_swipl.jl + test_type_discipline.jl. Anchors need a re-fit after `warm.sh fmt`.
+11. 140f53c docs/architecture.md block "BOOTPRED-dict" appended; 7e8f730 manifest entries (23 functions; pl_for_dict not listed: untyped closure argument).
+Compile-risk re-read (no Julia): `_err_functor(ld, :-, 2)` (Symbol "-"; pl-modul.jl:1000 uses `:-` the same way; _err_functor is pl-error.jl:147), the 2-cell `av`
+blocks (allocGlobalCells! pl-alloc.jl:188, `_dict_link!`, value then key = put_dict's pair layout as pl_put_dict3_va passes `f2 + 2`) and `sort!` with `lt` over
+compareStandard_cells (pl-prims.jl:1525 takes cell positions, as pl-dict.jl:516 uses it) all match their neighbours; nothing changed.
+
+## Left
+12. (after SETARG lands, wip/setarg, ~/code/lk-setarg) b_set_dict/3, nb_set_dict/3, nb_link_dict/3: pl-dict.c :1785-1799 (`setdict` calls pl-prims.c
+    `setarg(arg*2, dict, value, flags)`, SETARG_BACKTRACKABLE / SETARG_LINK). Three registrations appended to PL_predicates_from_dict, rows dp165.. in cases.py
+    (a b_set_dict undone by backtracking, nb_set_dict kept, nb_link_dict, type/instantiation/existence errors), 3-4 mutants in DICT.py, a line in the architecture
+    block (delete the "Left to the SETARG follow-up" bullet), manifest entries. One small commit each: code, rows+mutants, docs, manifest.
+13. The gate (below). The docs/architecture.md row for src/pl-dict.jl (line 763, which still lists only the six predicates of BOOTPRED) is out of date: the dispatcher or the gate corrects it
+    (a MODIFIED in a shared file, not an append).
 
 ## Flags for the audit
 1. DESIGN QUESTION: b_set_dict/nb_set_dict/nb_link_dict (referenced by library/statistics, sandbox, prolog_pack) need pl-prims.c setarg
