@@ -4468,24 +4468,51 @@ function PL_next_solution_guarded(
     # PORT: pl-vmi.c S_UNDEF
     # DIVERGES: the `CHP_DEBUG` choice point is pushed as upstream pushes it; only the debugger's
     # retry reads it upstream (not ported), and `b_throw` discards it. (The context is qualified as
-    # upstream's since V5c: src/pl-error.jl.)
+    # upstream's since V5c: src/pl-error.jl.) `UNKNOWN_FAIL`'s `debugstatus.debugging` choice point
+    # is the debugger's (no debugger).
     @label S_UNDEF
-    # getUnknownModule(DEF->module): nothing sets a module's `unknown` flag, so it is `system`'s,
-    # UNKNOWN_ERROR (src/pl-modul.jl); the warning and fail branches are not reachable, not ported.
-    @assert getUnknownModule(gd, gd.modules[DEF.module_]) == UNKNOWN_ERROR
-    su_caller =
-        ld.frames[FR].parent != 0 ? ld.frames[ld.frames[FR].parent].predicate : nothing
-    setLTop!(ld, argFrameP(ld.frames[FR].base, DEF.arity))
-    newChoice(ld, CHP_DEBUG, FR)
-    @SAVE_REGISTERS(QID)
-    su_fid = PL_open_foreign_frame(ld)
-    if su_fid != 0
-        PL_error(ld, ERR_UNDEFINED_PROC, DEF, su_caller)
-        PL_close_foreign_frame(ld, su_fid)
+    su_unknown = getUnknownModule(gd, gd.modules[DEF.module_])   # getUnknownModule(DEF->module)
+    if su_unknown == UNKNOWN_ERROR
+        su_caller =
+            ld.frames[FR].parent != 0 ? ld.frames[ld.frames[FR].parent].predicate : nothing
+        setLTop!(ld, argFrameP(ld.frames[FR].base, DEF.arity))
+        newChoice(ld, CHP_DEBUG, FR)
+        @SAVE_REGISTERS(QID)
+        su_fid = PL_open_foreign_frame(ld)
+        if su_fid != 0
+            PL_error(ld, ERR_UNDEFINED_PROC, DEF, su_caller)
+            PL_close_foreign_frame(ld, su_fid)
+        end
+        @LOAD_REGISTERS(QID)
+        # enterDefinition(DEF): (void)0 upstream (pl-incl.h:1347) — "will be left in exception code"
+        @goto b_throw                               # THROW_EXCEPTION
+    elseif su_unknown == UNKNOWN_WARNING
+        setLTop!(ld, argFrameP(ld.frames[FR].base, DEF.arity))
+        @SAVE_REGISTERS(QID)
+        su_fid = PL_open_foreign_frame(ld)
+        if su_fid != 0
+            su_pred = PL_new_term_ref(ld)
+            if unify_definition(gd, ld, MODULE_user(gd), su_pred, DEF, 0, GP_NAMEARITY)
+                printMessage(                       # PL_FUNCTOR, FUNCTOR_error2,
+                    ld, :warning,                   #   PL_FUNCTOR, FUNCTOR_existence_error2,
+                    _message_term(                  #     PL_ATOM, ATOM_procedure, PL_TERM, pred,
+                        ld, :error,                 #   PL_VARIABLE
+                        _message_term(
+                            ld, :existence_error, _err_atom(ld, mk_sym(T, :procedure)),
+                            su_pred
+                        ),
+                        new_term_ref(ld)
+                    )
+                )
+            end
+            PL_close_foreign_frame(ld, su_fid)
+        end
+        @LOAD_REGISTERS(QID)
+        if ld.exception_term != 0
+            @goto b_throw                           # THROW_EXCEPTION
+        end
     end
-    @LOAD_REGISTERS(QID)
-    # enterDefinition(DEF): (void)0 upstream (pl-incl.h:1347) — "will be left in exception code"
-    @goto b_throw                                   # THROW_EXCEPTION
+    @goto deep_backtrack                            # UNKNOWN_FAIL, default: FRAME_FAILED
 
     # PORT: pl-vmi.c S_STATIC
     # QUIRK, as upstream (vmi:3441): `(LocalFrame)ARGP+DEF->functor->arity` casts first, so it adds
