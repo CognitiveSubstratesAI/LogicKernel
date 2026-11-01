@@ -239,3 +239,8 @@
 100644 blob b320906935e234ae64c51ed8de0dff0063f29e66	library/yall.pl
 100644 blob 1d6b26bdb29c5ce06f576de94ff3b58a8ef60470	library/zip.pl
 # GENERATED — not in upstream's tree: the five INDEX.pl files (tools/gen_library_index.sh)
+100644 blob fbea906d7d8f218ee8bdb9ac91abf922261f62c4	library/INDEX.pl
+100644 blob 6fc175f6bdcb3d8136a5cc379f1af4b01859d221	library/clp/INDEX.pl
+100644 blob e0f17131ff700b6f230ffe2ab6fecbbdbe1df92d	library/dcg/INDEX.pl
+100644 blob d882fcb3ce5101b9bb0010bb7bf60489b51c142d	library/unicode/INDEX.pl
+100644 blob 711ef2583d0ec10ea241cc59de43d3ce3d821c7e	library/lynx/INDEX.pl
