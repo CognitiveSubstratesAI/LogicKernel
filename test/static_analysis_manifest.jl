@@ -2376,7 +2376,21 @@ _index_entry_points(T) = (
     (LK.string_bytes_text_error, Tuple{LK.PL_local_data{T}, Int}, false),
     (LK.text_representation_error, Tuple{LK.PL_local_data{T}, LK.IOENC}, false),
     (LK.PL_text_recode, Tuple{LK.PL_local_data{T}, LK.PL_chars_t, LK.IOENC}, false),
-    (LK.PL_release_stream, Tuple{LK.PL_local_data{T}, LK.IOSTREAM}, false)
+    (LK.PL_release_stream, Tuple{LK.PL_local_data{T}, LK.IOSTREAM}, false),
+    # P2: atomic_list_concat/2,3, atomics_to_string/2,3, sub_atom/5 (src/pl-prims.jl; pl-prims.c)
+    [
+        (f, Tuple{LK.PL_local_data{T}, Int, Int, LK.foreign_context{T}}, false) for
+        f in (
+            LK.pl_atomic_list_concat3_va, LK.pl_atomic_list_concat2_va,
+            LK.pl_atomics_to_string3_va, LK.pl_atomics_to_string2_va, LK.pl_sub_atom5_va
+        )
+    ]...,
+    (
+        LK.atomic_list_concat,
+        Tuple{LK.PL_local_data{T}, Int, Int, Int, Int},
+        false
+    ),
+    (LK.split_atom, Tuple{LK.PL_local_data{T}, Int, LK.PL_chars_t, Int}, false)
 )
 
 const _DISPATCH_MANIFEST_TUPLE = (
