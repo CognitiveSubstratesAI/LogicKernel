@@ -785,20 +785,6 @@ end
 "The C `intptr_t` term reference `t` holds, or `nothing` with the error raised (pl-error.c)."
 PL_get_intptr_ex(ld::PL_local_data{T}, t::term_t) where {T} = PL_get_long_ex(ld, t)
 
-# PORT: pl-error.c PL_get_int64_ex
-# DIVERGES: returns the value, or `nothing` with the error raised (see `PL_get_int64`).
-"The `int64_t` term reference `t` holds, or `nothing` after raising `representation_error(int64_t)` (an integer out of range) or `type_error(integer, T)` (pl-error.c)."
-function PL_get_int64_ex(ld::PL_local_data{T}, t::term_t)::Union{Nothing, Int} where {T}
-    i = PL_get_int64(ld, t)
-    i === nothing || return i
-    if PL_is_integer(ld, t)
-        PL_error(ld, ERR_REPRESENTATION, mk_sym(T, :int64_t))
-        return nothing
-    end
-    PL_error(ld, ERR_TYPE, mk_sym(T, :integer), t)
-    return nothing
-end
-
 # PORT: pl-error.c PL_get_size_ex
 # DIVERGES: returns the value, or `nothing` with the error raised (or none: upstream's plain
 # `false`). An integer beyond `Int64` is beyond `size_t` or negative. On the WORDS (f3b-5a): a

@@ -1300,7 +1300,6 @@ function _manifest_index(T)
         (LK.pl_set_prolog_flag2_va, Tuple{LD, Int, Int, LK.control_t{T}}, false),
         (LK.pl_create_prolog_flag3_va, Tuple{LD, Int, Int, LK.control_t{T}}, false),
         (LK.PL_get_int64, Tuple{LD, Int64}, false),
-        (LK.PL_get_int64_ex, Tuple{LD, Int64}, false),
         # R2 S1 — stream blobs, aliases, open/3,4, close/1,2 (pl-file.c)
         (LK._sym_is, Tuple{T, Symbol}, false),
         (LK._stream_blob_term, Tuple{LD, LK.stream_ref}, false),
