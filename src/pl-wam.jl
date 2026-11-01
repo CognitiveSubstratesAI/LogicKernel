@@ -4512,7 +4512,8 @@ function PL_next_solution_guarded(
             @goto b_throw                           # THROW_EXCEPTION
         end
     end
-    @goto deep_backtrack                            # UNKNOWN_FAIL, default: FRAME_FAILED
+    # UNKNOWN_FAIL, default (pl-vmi.c:3335-3339): FRAME_FAILED = GO(deep_backtrack, PL_TRACE_ACTION_NONE) (pl-wam.c:2465)
+    @goto deep_backtrack
 
     # PORT: pl-vmi.c S_STATIC
     # QUIRK, as upstream (vmi:3441): `(LocalFrame)ARGP+DEF->functor->arity` casts first, so it adds

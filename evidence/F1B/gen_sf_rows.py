@@ -9,7 +9,7 @@ def raw(name):
     m = re.search(r"const %s = raw\"\"\"\n(.*?)\"\"\"" % name, s, re.S)
     return m.group(1)
 program, driver = raw("_SF_PROGRAM"), raw("_SF_DRIVER")
-cases = re.findall(r'^    \("(sf\d+)", raw"(.*)"\),?$', s, re.M)
+cases = re.findall(r'^    \(\s*"(sf\d+)",\s*raw"(.*?)"\s*\),?$', s, re.M)   # JuliaFormatter splits a long entry over lines
 cases = [(i, g.replace('\\"', '"')) for i, g in cases]    # a Julia raw string: \" is a quote
 assert len(cases) > 50, len(cases)
 text = program + "".join("t_%s(R) :- catch((%s), error(SfE, _), R = raised(SfE)).\n" % (i, g) for i, g in cases)
