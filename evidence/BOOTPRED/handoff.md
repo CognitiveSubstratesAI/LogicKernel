@@ -119,3 +119,7 @@ JET on the `Union` uses of `d` and `keep` and the unused `PL__ac`. Coder 3 adds:
 - Gate run so far (all on the lk-bootpred daemon, SHA a3d353d + this handoff): rows 423/423 on the three term types; test_type_discipline 33/33;
   test/foreign/test_builtins_swipl.jl 186/186; test/test_static_analysis.jl reference (JET + Aqua + AllocCheck, D-0282) 3746/3746, 53 min, no SKIP/Warning;
   `tools/pkgtest_way.sh` on test_bootpred_swipl.jl and test_builtins_swipl.jl passed (1627 / 248 MiB); `warm.sh check` PASS (340 s).
+- LEFT (next agent; the context cap hit before the pushes): (1) `git pull` in ~/code/lk-channel, read D-entries after D-0282; (2) push the final SHA to
+  `refs/heads/mutants/BOOTPRED` (check first: `git ls-remote --heads origin mutants/BOOTPRED gate/bootpred`); (3) `tools/warm.sh branch-gate`; (4) crash-term grep over
+  `git diff faee65f HEAD` and the commit messages; (5) local branch gate/bootpred at the SHA, push it and mutants/BOOTPRED at the SAME SHA; (6) tools/ci_status.sh once per
+  >= 5 min. Daemon: lk-bootpred, LOGICKERNEL_WARM_SECOND=1 (no manual restart; one automatic struct-change restart after the DICT_GET_* const edit).
