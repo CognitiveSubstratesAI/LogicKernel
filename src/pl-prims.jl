@@ -1324,6 +1324,15 @@ function PL_factorize_term(
     return PL_unify(ld, template, wrapped) && PL_unify(ld, factors, vars)
 end
 
+# PORT: pl-prims.c factorize_term as pl_factorize_term3_va
+# (PRED_IMPL("$factorize_term", 3, factorize_term, 0))
+"`'\$factorize_term'(+Term, -Template, -Factors)`: `Term` with its shared subterms replaced by variables, and `Var = Subterm` for those (pl-prims.c)."
+function pl_factorize_term3_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    return PL_factorize_term(ld, PL__t0, PL__t0 + 1, PL__t0 + 2) ? FTRUE : FFALSE
+end
+
 # ── the standard order on CELLS (L1d step 1; the workspace's L1_plan/stageL1d_design.md §3) ──────
 # Locations as `do_unify_cells`'s (a global position, or `-i` for slot `i`). The order is the term
 # compare's, so a sort or a `==` gives the same answer on either path: variables by POSITION
@@ -3986,6 +3995,7 @@ const PL_predicates_from_prims = (
     PL_extension("ground", 1, pl_ground1_va, PL_FA_ISO | PL_FA_VARARGS),
     PL_extension("acyclic_term", 1, pl_acyclic_term1_va, PL_FA_ISO | PL_FA_VARARGS),
     PL_extension("cyclic_term", 1, pl_cyclic_term1_va, PL_FA_VARARGS),
+    PL_extension("\$factorize_term", 3, pl_factorize_term3_va, PL_FA_VARARGS),
     PL_extension("compound", 1, pl_compound1_va, PL_FA_ISO | PL_FA_VARARGS),
     PL_extension("callable", 1, pl_callable1_va, PL_FA_ISO | PL_FA_VARARGS),
     PL_extension("==", 2, pl_equal2_va, PL_FA_ISO | PL_FA_VARARGS),
