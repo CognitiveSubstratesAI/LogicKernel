@@ -163,7 +163,7 @@ file) — so evidence is a process that started clean. The daemon follows Revise
     checkout's cache is refused and the run repeats in a fresh process that builds its own);
     audit D-0242: the runs go one at a time (a lock, `.warm/pkgtest_way.lock`), each in its own `systemd-run --user --scope` with
     `MemoryMax=3G` (`LOGICKERNEL_INERT_MEM_MAX`), no swap and `OOMPolicy=continue`, nested in the lane's
-    slice (`_lane_slice`: lk-warm.slice, lk-warm2.slice for the second daemon, lk-warm3.slice for the third: `LOGICKERNEL_WARM_THIRD=1`, beside two others, 12 GB available, D-0276 item 4), so a runaway test process
+    slice (`_lane_slice`: lk-warm.slice, lk-warm2.slice for the second daemon, lk-warm3.slice for the third: `LOGICKERNEL_WARM_THIRD=1`, beside two others, 12 GB available, D-0276 item 4; ONE slice per daemon, 6 GB MemoryMax each, 18 GB in all, and a start in a slice another daemon holds is refused: the other daemons' slices are read from systemd, D-0287), so a runaway test process
     is killed and named `KILLED` while the daemon, a sibling in the slice, survives; the scope's peak
     memory is printed in the log and appended to `.warm/pkgtest_way/peaks.tsv`), the daemon's
     JuliaFormatter version against CI's pin, and every unit's closing assertion that the shared empty

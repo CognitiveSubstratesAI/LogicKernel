@@ -184,8 +184,8 @@ _host_probe_s() {
 # ONE SHARED MEMORY BUDGET (user, 2026-10-14). MEASURED that evening: the machine stalled and was
 # reset with FOUR warm daemons up — three of them idle for hours in other worktrees — each under its
 # own 8 GB cap, but nothing capped their SUM (4 × 8 GB on a 23 GB machine). So every warm daemon,
-# evidence worker and capped test run starts inside ONE user slice, `lk-warm.slice` (MemoryMax 10G,
-# no swap): past the budget the kernel kills inside the slice, and the machine stays up. Each job's
+# evidence worker and capped test run starts inside ONE user slice, `lk-warm.slice` (MemoryMax 6G,
+# no swap; D-0287: ONE slice per daemon, 6 GB each, three at most = 18 GB): past the budget the kernel kills inside the slice, and the machine stays up. Each job's
 # own cap stays. LOGICKERNEL_SLICE / LOGICKERNEL_SLICE_MEM_MAX name another slice and budget (the
 # lane's own tests use a small nested one: `lk-warm-<x>.slice` sits INSIDE `lk-warm.slice`).
 # LOCAL ONLY (user, 2026-10-14): a GitHub runner has no shared budget, so there it is OFF and every
@@ -201,7 +201,7 @@ _lk_budget_on() {
 # _lk_slice — make sure the slice's unit file holds its budget (rewritten and reloaded when it
 # differs), then print the `systemd-run` option that puts a unit in it; nothing without user systemd.
 _lk_slice() {
-    local s="${LOGICKERNEL_SLICE:-lk-warm.slice}" mem="${LOGICKERNEL_SLICE_MEM_MAX:-10G}"
+    local s="${LOGICKERNEL_SLICE:-lk-warm.slice}" mem="${LOGICKERNEL_SLICE_MEM_MAX:-6G}"
     local d="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user" want
     _lk_budget_on || return 0
     systemctl --user show-environment > /dev/null 2>&1 || return 0
@@ -221,7 +221,7 @@ _slice_headroom_gb() {
     local s="${LOGICKERNEL_SLICE:-lk-warm.slice}" cg max cur
     _lk_budget_on || { echo 1000; return; }
     systemctl --user show-environment > /dev/null 2>&1 || { echo 1000; return; }
-    max=$(numfmt --from=iec "${LOGICKERNEL_SLICE_MEM_MAX:-10G}" 2>/dev/null || echo 10737418240)
+    max=$(numfmt --from=iec "${LOGICKERNEL_SLICE_MEM_MAX:-6G}" 2>/dev/null || echo 6442450944)
     cg=$(systemctl --user show "$s" -p ControlGroup --value 2>/dev/null)
     cur=0
     [ -n "$cg" ] && cur=$(cat "/sys/fs/cgroup$cg/memory.current" 2>/dev/null || echo 0)

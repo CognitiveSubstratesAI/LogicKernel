@@ -395,7 +395,7 @@ _bgbudget_cases() {
 # THE DAEMON GUARD (user, 2026-10-14, after the machine stalled with four daemons up, three idle for
 # hours in other worktrees): `start` REFUSES while another checkout's daemon runs and names it; a
 # daemon EXITS after LOGICKERNEL_WARM_IDLE_S with no request; every daemon and capped run sits in ONE
-# slice, lk-warm.slice (10G, no swap), where the kernel kills past the budget and the rest survives.
+# slice, lk-warm.slice (6G, no swap; D-0287), where the kernel kills past the budget and the rest survives.
 # Another checkout's daemon is a DECOY: a unit by the daemons' name, run in $T.
 _guard_cases() {
     systemctl --user show-environment > /dev/null 2>&1 || { echo "  (guard: no user systemd here — skipped)"; return 0; }
@@ -521,8 +521,8 @@ _guard_cases() {
     [ "$(systemctl --user show "$unit" -p Slice --value)" = lk-warm.slice ]
     check "budget: the daemon runs in lk-warm.slice" 0 $?
     cg=$(systemctl --user show lk-warm.slice -p ControlGroup --value)
-    [ -n "$cg" ] && [ "$(cat "/sys/fs/cgroup$cg/memory.max")" = 10737418240 ]
-    check "budget: …whose memory.max is 10G" 0 $?
+    [ -n "$cg" ] && [ "$(cat "/sys/fs/cgroup$cg/memory.max")" = 6442450944 ]
+    check "budget: …whose memory.max is 6G" 0 $?
     [ -n "$cg" ] && [ "$(cat "/sys/fs/cgroup$cg/memory.swap.max")" = 0 ]
     check "budget: …with no swap" 0 $?
     # past a slice's budget the kernel kills INSIDE it, and the shell that started the job survives.
@@ -574,7 +574,8 @@ _lanes_cases() {
     plan() {   # plan OTHERS MEM_GB [VAR=VALUE…] — lane-plan's output on stdout+stderr in $T/lp, its exit code returned
         local others="$1" mem="$2"; shift 2
         env -u LOGICKERNEL_WARM_SECOND -u LOGICKERNEL_WARM_THIRD -u LOGICKERNEL_WARM_SECOND_MIN_GB \
-            -u LOGICKERNEL_WARM_THIRD_MIN_GB -u LOGICKERNEL_WARM_THIRD_MEM_MAX "$@" \
+            -u LOGICKERNEL_WARM_THIRD_MIN_GB -u LOGICKERNEL_WARM_THIRD_MEM_MAX -u LOGICKERNEL_WARM_SLICES_FAKE -u LOGICKERNEL_SLICE_MEM_MAX \
+            -u LOGICKERNEL_WARM_SECOND_MEM_MAX "$@" \
             LOGICKERNEL_WARM_OTHERS_FAKE="$others" LOGICKERNEL_WARM_MEMAVAIL_KB=$((mem * gb)) \
             "$W" lane-plan > "$T/lp" 2>&1
     }
@@ -625,7 +626,7 @@ _lanes_cases() {
         eval "local oL_$ln=\"unit logickernel-warm-$ln.service, pid 66, worktree $T/wt_$ln, age 6:00, rss 6.0 GB\""
     done
     plan "$oL_second" 20 LOGICKERNEL_WARM_SECOND=1; check "lanes: SECOND beside a running second lane (the first ended) — allowed" 0 $?
-    has "…takes the FREE first slice, not lk-warm2.slice again" "$T/lp" "^lane: first slice lk-warm.slice mem 10G" 1
+    has "…takes the FREE first slice, not lk-warm2.slice again" "$T/lp" "^lane: first slice lk-warm.slice mem 6G" 1
     plan "$oL_second"$'\n'"$oL_third" 20 LOGICKERNEL_WARM_SECOND=1; check "lanes: SECOND beside a second and a third lane — allowed" 0 $?
     has "…the free first slice" "$T/lp" "^lane: first slice lk-warm.slice" 1
     plan "$oL_second"$'\n'"$oL_third" 20 LOGICKERNEL_WARM_THIRD=1; check "lanes: THIRD beside a second and a third lane — allowed" 0 $?
@@ -635,7 +636,8 @@ _lanes_cases() {
     plan "$oL_third" 20 LOGICKERNEL_WARM_SECOND=1; check "lanes: SECOND beside a running third lane — allowed" 0 $?
     has "…lk-warm2.slice, the nominal lane, free" "$T/lp" "^lane: second slice lk-warm2.slice" 1
     # the property over every pair of occupied lanes and every opt-in: a lane that is allowed never shares a slice
-    local a b optin n_ok=0 n_shared=0 out
+    local a b optin n_ok=0 n_shared=0 out got
+    _slice_of_lane() { case $1 in first) echo lk-warm.slice ;; second) echo lk-warm2.slice ;; *) echo lk-warm3.slice ;; esac; }
     for a in first second third; do
         for b in none first second third; do
             for optin in LOGICKERNEL_WARM_SECOND=1 LOGICKERNEL_WARM_THIRD=1 "LOGICKERNEL_WARM_SECOND=1 LOGICKERNEL_WARM_THIRD=1"; do
@@ -652,9 +654,51 @@ _lanes_cases() {
     done
     check "lanes: every allowed plan beside lanes in use ($n_ok plans) takes a slice no other daemon holds" 0 "$n_shared"
     [ "$n_ok" -ge 12 ]; check "lanes: …and that property was run on >= 12 plans (a guard that compares nothing proves nothing)" 0 $?
+    # D-0287: ONE slice per daemon, 6 GB MemoryMax EACH. The slice a daemon is IN (systemd's answer) is the truth: a
+    # lost `.warm/` marker (A-0211: the lk-warm3 daemon after a restart) must not let a second daemon share its slice.
+    local sl_a="logickernel-warm-aaaa0001.service" sl_b="logickernel-warm-bbbb0002.service"
+    plan "$o1" 20 LOGICKERNEL_WARM_SECOND=1 "LOGICKERNEL_WARM_SLICES_FAKE=$sl_a lk-warm2.slice"
+    check "lanes: the other daemon is IN lk-warm2.slice with NO marker (lost) — SECOND start allowed" 0 $?
+    has "…but not in that slice: the free first slice" "$T/lp" "^lane: first slice lk-warm.slice mem 6G" 1
+    plan "$o1" 64 LOGICKERNEL_WARM_SECOND=1 "LOGICKERNEL_WARM_SLICES_FAKE=$sl_a lk-warm3.slice"
+    check "lanes: the other daemon is IN lk-warm3.slice with NO marker — a SECOND start (one other)" 0 $?
+    has "…takes lk-warm2.slice" "$T/lp" "^lane: second slice lk-warm2.slice mem 6G" 1
+    plan "$two" 64 LOGICKERNEL_WARM_THIRD=1 "LOGICKERNEL_WARM_SLICES_FAKE=$sl_a lk-warm.slice"$'\n'"$sl_b lk-warm3.slice"
+    check "lanes: two others in lk-warm.slice and lk-warm3.slice, no markers — THIRD start allowed" 0 $?
+    has "…the free lk-warm2.slice, not the third's again" "$T/lp" "^lane: second slice lk-warm2.slice mem 6G" 1
+    plan "$two" 64 LOGICKERNEL_WARM_THIRD=1 "LOGICKERNEL_WARM_SLICES_FAKE=$sl_a lk-warm2.slice"$'\n'"$sl_b lk-warm2.slice"
+    check "lanes: two others BOTH in lk-warm2.slice (the 05:36Z state) — a THIRD start takes a slice nobody holds" 0 $?
+    has "…not lk-warm2.slice, which both hold" "$T/lp" "^lane: second" 0
+    plan "$o1" 64 "LOGICKERNEL_WARM_SLICES_FAKE=$sl_a lk-warm2.slice"
+    check "lanes: no opt-in beside a daemon with a lost marker (a restart whose marker is gone) — refused, never shared" 0 $?
+    has "…the lane is 'refused'" "$T/lp" "^lane: refused" 1
+    plan "" 64 LOGICKERNEL_SLICE_MEM_MAX=7G; has "lanes: …LOGICKERNEL_SLICE_MEM_MAX moves the first lane's cap" "$T/lp" "mem 7G" 1
+    for ln in first second third; do
+        case $ln in first) plan "" 64 ;; second) plan "$o1" 64 LOGICKERNEL_WARM_SECOND=1 ;; third) plan "$two" 64 LOGICKERNEL_WARM_THIRD=1 ;; esac
+        has "lanes: the $ln lane's default MemoryMax is 6G (D-0287: 6 GB each, 18 GB in all)" "$T/lp" "^lane: $ln slice [a-z0-9.-]* mem 6G\$" 1
+    done
+    # the property again with the markers LOST (systemd's slices alone name the lanes): no allowed plan shares a slice
+    n_ok=0; n_shared=0
+    for a in first second third; do
+        for b in none first second third; do
+            for optin in LOGICKERNEL_WARM_SECOND=1 LOGICKERNEL_WARM_THIRD=1 "LOGICKERNEL_WARM_SECOND=1 LOGICKERNEL_WARM_THIRD=1"; do
+                [ "$a" = "$b" ] && continue
+                local fk="$sl_a $(_slice_of_lane $a)" ol="$o1"
+                if [ "$b" != none ]; then fk="$fk"$'\n'"$sl_b $(_slice_of_lane $b)"; ol="$o1"$'\n'"$o2"; fi
+                # shellcheck disable=SC2086
+                plan "$ol" 64 $optin "LOGICKERNEL_WARM_SLICES_FAKE=$fk" || continue
+                [ -s "$T/lp" ] || continue
+                n_ok=$((n_ok + 1))
+                got=$(sed -n 's/^lane: [a-z]* slice \([a-z0-9.-]*\) .*/\1/p' "$T/lp")
+                case "$fk" in *" $got"*) n_shared=$((n_shared + 1)) ;; esac
+            done
+        done
+    done
+    check "lanes: with every marker lost, every allowed plan ($n_ok) takes a slice no other daemon holds" 0 "$n_shared"
+    [ "$n_ok" -ge 12 ]; check "lanes: …and that property was run on >= 12 plans" 0 $?
     has "lanes: a restart beside others keeps the opt-in whatever lane it held (the plan names the lane again)" "$ROOT/tools/warm.sh" '\[ -f "\$DIR/first" \]; then second=1; third=1' 1
     # the lane is remembered across a restart: warm.sh's own source names the marker and the slice it maps to
-    has "lanes: a restart keeps the THIRD lane (.warm/third) and its slice (lk-warm3.slice)" "$ROOT/tools/warm.sh" 'elif \[ -f "\$DIR/third" \]; then _lane_slice_name third' 1
+    has "lanes: a restart keeps the THIRD lane (.warm/third) and its slice (lk-warm3.slice)" "$ROOT/tools/warm.sh" 'if \[ -f "\$DIR/third" \]; then _lane_slice_name third' 1
     # the Manifest.toml copy (a fresh worktree has none; gitignored). Real git repositories in $T, no commit hooks
     # involved: the commit is made with plumbing. GITHUB_ACTIONS is unset (a runner resolves its own manifest).
     local R="$T/mrepo" c idt=(GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@t GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@t)

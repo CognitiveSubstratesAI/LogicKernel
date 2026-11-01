@@ -112,11 +112,14 @@ _other_daemons() {
 # checkout, so never two on one tree), each in a slice of its own, so that when memory runs short the kernel
 # kills the THIRD lane, then the second, never the first (D-0114 item 1: the landing closest to main keeps
 # its daemon):
-#   first   no other daemon runs                       lk-warm.slice   (10G, tools/lib_evidence.sh)
+#   first   no other daemon runs                       lk-warm.slice   (LOGICKERNEL_SLICE_MEM_MAX, 6G, tools/lib_evidence.sh)
 #   second  LOGICKERNEL_WARM_SECOND=1, ONE other       lk-warm2.slice  (LOGICKERNEL_WARM_SECOND_MEM_MAX, 6G),
 #           only while MemAvailable >= LOGICKERNEL_WARM_SECOND_MIN_GB (8)
 #   third   LOGICKERNEL_WARM_THIRD=1, TWO others       lk-warm3.slice  (LOGICKERNEL_WARM_THIRD_MEM_MAX, 6G),
 #           only while MemAvailable >= LOGICKERNEL_WARM_THIRD_MIN_GB (12: D-0276 item 4, both others loaded)
+# D-0287: ONE slice per daemon, 6 GB MemoryMax EACH (a single daemon peaked ~5 GB; 18 GB in all keeps the free floor), and a start
+# in a slice another daemon holds is REFUSED: `_lane_pick` reads the slices the other daemons are IN from systemd (`_unit_slice`), so a lost
+# `.warm/` marker cannot make two daemons share one. A gate that nears its cap is a finding, not a reason to raise it.
 # Never a fourth. A timeout while several run is rerun once alone before it counts (D-0114 item 3). The
 # lane is remembered in `.warm/second` / `.warm/third`, so an automatic restart keeps it (A-0079 item 5);
 # only a deliberate `stop` forgets it. A restart of the SECOND lane beside the first and a running third
@@ -129,14 +132,8 @@ _mem_avail_kb() {
 }
 # _same_tree OTHERS — whether one of the other daemons already runs in THIS checkout (never two on one tree)
 _same_tree() { printf '%s\n' "$1" | grep -qF "worktree $ROOT,"; }
-# _has_third OTHERS — whether one of the other daemons is a THIRD lane (its worktree carries `.warm/third`)
-_has_third() {
-    local wd
-    for wd in $(printf '%s\n' "$1" | sed -n 's/.*worktree \([^,]*\),.*/\1/p'); do
-        [ -f "$wd/.warm/third" ] && return 0
-    done
-    return 1
-}
+# _has_third OTHERS — whether one of the other daemons is a THIRD lane (`_other_lanes`: its slice, else its marker)
+_has_third() { _other_lanes "$1" | grep -qx third; }
 # _second_ok OTHERS — whether a second daemon may start beside OTHERS (one line each); says why not
 _second_ok() {
     local n avail_kb min_gb="${LOGICKERNEL_WARM_SECOND_MIN_GB:-8}"
@@ -186,7 +183,7 @@ _lane_mem_max() {
     case "$1" in
         second) echo "${LOGICKERNEL_WARM_SECOND_MEM_MAX:-6G}" ;;
         third) echo "${LOGICKERNEL_WARM_THIRD_MEM_MAX:-6G}" ;;
-        *) echo "${LOGICKERNEL_SLICE_MEM_MAX:-10G}" ;;
+        *) echo "${LOGICKERNEL_SLICE_MEM_MAX:-6G}" ;;
     esac
 }
 # _lane_plan OTHERS — sets LANE (first | second | third | refused) for a daemon starting beside OTHERS; returns 6
@@ -209,15 +206,37 @@ _lane_plan() {
     fi
     _lane_pick "$1"
 }
-# _other_lanes OTHERS — the lane (first | second | third) each other daemon occupies, one word per line: its
-# worktree's marker `.warm/third` / `.warm/second`, else the first slice (a lone first daemon, or `.warm/first`)
+# _unit_slice UNIT — the slice a running daemon unit is IN (systemd's own answer, which a lost `.warm/` marker cannot
+# change); LOGICKERNEL_WARM_SLICES_FAKE ("<unit> <slice>" per line) replaces it: a TEST SEAM (tools/test_warm.sh)
+_unit_slice() {
+    if [ -n "${LOGICKERNEL_WARM_SLICES_FAKE+x}" ]; then
+        printf '%s\n' "$LOGICKERNEL_WARM_SLICES_FAKE" | awk -v u="$1" '$1 == u {print $2}'
+        return 0
+    fi
+    systemctl --user show "$1" -p Slice --value 2> /dev/null
+}
+# _other_lanes OTHERS — the lane (first | second | third) each other daemon occupies, one word per line: the slice its
+# unit is in (D-0287: a start in a slice another daemon uses is REFUSED, so the slice is the truth); where systemd
+# names none of the three, its worktree's marker `.warm/third` / `.warm/second`, else the first slice
 _other_lanes() {
-    local wd
-    for wd in $(printf '%s\n' "$1" | sed -n 's/.*worktree \([^,]*\),.*/\1/p'); do
-        if [ -f "$wd/.warm/third" ]; then echo third
-        elif [ -f "$wd/.warm/second" ]; then echo second
-        else echo first; fi
-    done
+    local line u wd sl
+    while IFS= read -r line; do
+        [ -n "$line" ] || continue
+        u=$(printf '%s\n' "$line" | sed -n 's/^unit \([^,]*\),.*/\1/p')
+        wd=$(printf '%s\n' "$line" | sed -n 's/.*worktree \([^,]*\),.*/\1/p')
+        sl=""
+        [ -n "$u" ] && sl=$(_unit_slice "$u")
+        case "$sl" in
+            lk-warm3.slice) echo third ;;
+            lk-warm2.slice) echo second ;;
+            lk-warm.slice) echo first ;;
+            *)
+                if [ -f "$wd/.warm/third" ]; then echo third
+                elif [ -f "$wd/.warm/second" ]; then echo second
+                else echo first; fi
+                ;;
+        esac
+    done <<< "$1"
 }
 # _lane_pick OTHERS — each daemon gets a slice of ITS OWN (A-0211 incident: a daemon that starts as "second"
 # once the first lane ended shared lk-warm2.slice's cap with the old second one, and lk-warm.slice stood empty).
@@ -750,8 +769,11 @@ WARM_INERT_SKIP="test/test_static_analysis.jl test/test_gate_split.jl test/test_
 _lane_slice() {
     _lk_budget_on || return 0
     systemctl --user show-environment > /dev/null 2>&1 || return 0
-    if [ -n "${LOGICKERNEL_SLICE:-}" ]; then echo "$LOGICKERNEL_SLICE"
-    elif [ -f "$DIR/third" ]; then _lane_slice_name third
+    local own
+    if [ -n "${LOGICKERNEL_SLICE:-}" ]; then echo "$LOGICKERNEL_SLICE"; return 0; fi
+    own=$(_unit_slice "$UNIT.service")                  # the slice the running daemon IS in, whatever its markers say (D-0287)
+    case "$own" in lk-warm.slice | lk-warm2.slice | lk-warm3.slice) echo "$own"; return 0 ;; esac
+    if [ -f "$DIR/third" ]; then _lane_slice_name third
     elif [ -f "$DIR/second" ]; then _lane_slice_name second
     else echo lk-warm.slice; fi
 }
