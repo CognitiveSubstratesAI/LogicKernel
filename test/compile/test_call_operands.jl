@@ -49,7 +49,12 @@ end
     LK.setDynamicDefinition!(pq.definition, true)                       # defined: the current one
     @test LK.isDefinedProcedure(gd, pq)
     @test LK.lookupBodyProcedure(gd, _of(:q, _ov(1), _ov(2)), user) === pq
-    @test length(user.procedures) == 3
+    # q/2, q/1, go/0 and user:exception/3, which G1 declares dynamic at the boot (design D8)
+    @test length(user.procedures) == 4
+    @test Set(keys(user.procedures)) ==
+        Set([
+        (q, 2), (sym_key(_os(:q)), 1), (sym_key(_os(:go)), 0), (sym_key(_os(:exception)), 3)
+    ])
 end
 
 @testset "lookupBodyProcedure: callable as compileSubClause decides" begin

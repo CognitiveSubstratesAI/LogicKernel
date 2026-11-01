@@ -1,5 +1,5 @@
 # ORIGINAL: G1's mutant list — no swipl-devel counterpart.
-# tools/mutants/G1c.py — the mutation battery of G1 (global variables: pl-gvar.c setval, setval_duplicate, getval,
+# tools/mutants/G1d.py — the mutation battery of G1 (global variables: pl-gvar.c setval, setval_duplicate, getval,
 # auto_define_gvar, is_gval, nb_delete/1, nb_current/2; the table entries; D7 `_release_frozen!` honouring `gvar_grefs`;
 # D8 `user:exception/3` dynamic from the start; pl-copyterm.c duplicate_term), run ONCE, in CI (.github/workflows/mutation.yml;
 # locally: tools/mutate.sh run). Format: tools/mutate_drive.py's (as MOD3b.py): `id`, `file`, `old` (must occur EXACTLY once),

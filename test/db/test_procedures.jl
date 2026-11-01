@@ -20,6 +20,16 @@ _ps(n) = lk_sym(_P, Symbol(n))
 _pe(f, xs::_P...) = mk_expr(_P, _P[_ps(f), xs...])
 _pg(v) = lk_gnd(_P, v)
 
+@testset "user:exception/3 exists and is dynamic from the start (G1, design D8: `:- dynamic user:exception/3`, boot/init.pl)" begin
+    gd = LK.PL_global_data{_P}()
+    user = LK.MODULE_user(gd)
+    @test collect(keys(user.procedures)) == [(sym_key(_ps(:exception)), 3)]    # the only procedure of a fresh `user`
+    ex = LK.isCurrentProcedure(sym_key(_ps(:exception)), 3, user)
+    @test ex !== nothing && ex.definition.arity == 3
+    @test (ex.definition.flags & LK.P_DYNAMIC) != 0
+    @test LK.isDefinedProcedure(gd, ex)                                         # dynamic, so defined with no clause
+end
+
 @testset "one procedure per functor and database" begin
     gd = LK.PL_global_data{_P}()
     user = LK.MODULE_user(gd)
@@ -32,7 +42,9 @@ _pg(v) = lk_gnd(_P, v)
     @test LK.lookupProcedure(_ps(:p), 1, user) === p1           # found, not created again
     p2 = LK.lookupProcedure(_ps(:p), 2, user)
     @test p2 !== p1 && p2.definition !== p1.definition          # the arity is part of the functor
-    @test length(user.procedures) == 2
+    # `user` holds the two procedures made here and user:exception/3, which G1 declares dynamic at the boot (design D8)
+    @test length(user.procedures) == 3
+    @test Set(keys(user.procedures)) == Set([(p, 1), (p, 2), (sym_key(_ps(:exception)), 3)])
     d = p2.definition                                           # a new predicate
     @test d.functor_name == p && d.arity == 2 && d.flags == 0 && p2.flags == 0
     @test lk_eq(d.name, _ps(:p))                                # the name itself, for error terms

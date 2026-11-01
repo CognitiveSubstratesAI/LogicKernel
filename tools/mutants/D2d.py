@@ -1,5 +1,5 @@
 # ORIGINAL: D2's mutant list — no swipl-devel counterpart.
-# tools/mutants/D2c.py — the mutation battery of D2 (R2: the recorded database, pl-rec.c recorda/recordz/recorded/erase/instance/
+# tools/mutants/D2d.py — the mutation battery of D2 (R2: the recorded database, pl-rec.c recorda/recordz/recorded/erase/instance/
 # current_key and the record blob of pl-dbref.c; FLG §7 row D2, §4 D11; audit D-0230 item 2, D-0252 item 2), run ONCE, in CI
 # (.github/workflows/mutation.yml; locally: tools/mutate.sh run). The format is tools/mutate_drive.py's (as D1c.py): `id`, `file`,
 # `old` (must occur EXACTLY once), `new`, optional `equivalent` and `targets`. One mutant per decision of the step: the lists and their
