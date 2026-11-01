@@ -77,11 +77,11 @@ function build_home(
                     error("build_home: $p is a file, not a link: $home is not a home tree")
                 get(want, p, nothing) == readlink(p) || rm(p)
             end
-            for e in subdirs                    # a link to a directory is listed here, not descended into
+            # walkdir (follow_symlinks=false) lists EVERY symlink in `files`, a link to a directory included: `subdirs`
+            # holds real directories only
+            for e in subdirs
                 p = joinpath(d, e)
-                if islink(p)
-                    get(want, p, nothing) == readlink(p) || rm(p)
-                elseif !(p in dirs) && isempty(readdir(p))
+                if !(p in dirs) && isempty(readdir(p))
                     rm(p)
                 end
             end

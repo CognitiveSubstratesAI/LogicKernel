@@ -103,7 +103,7 @@ mktempdir() do tmp
         symlink(joinpath("..", "..", "..", "boot", "init.pl"),
             joinpath(home, "library", "stale", "deeper", "x.pl"))
         symlink(joinpath("..", "library", "lists.pl"), joinpath(home, "boot", "extra.pl"))
-        # a missing link, and an ext/plunit link with another target (a link to a directory: its own removal branch)
+        # a missing link, and an ext/plunit link with another target (a link to a directory: walkdir lists it in `files`, so the same removal row as any link)
         rm(init)
         rm(plunit)
         symlink(joinpath("..", "..", "boot"), plunit)
