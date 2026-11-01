@@ -273,7 +273,7 @@ function format_(
     ctx = redir_context()
     rc = setupOutputRedirect(ld, out, ctx, false)
     if rc
-        rc = format_impl(ld, ctx.stream, format, list, m)
+        rc = format_impl(ld, ctx.stream::IOSTREAM, format, list, m)   # set whenever setupOutputRedirect succeeded
         if rc
             rc = closeOutputRedirect(ld, ctx)
         else
@@ -846,7 +846,7 @@ function formatInteger(
                 push!(out, digitName(dweight, smll))
                 n = div(n, radix)
                 gsize -= 1
-                if gsize == 0 && n != 0
+                if grouping !== nothing && gsize == 0 && n != 0   # gsize reaches 0 only with a grouping
                     lappend(locale.thousands_sep, ',', out)
                     if grouping[gi + 1] == 0
                         gsize = grouping[gi]
@@ -880,7 +880,7 @@ function formatInteger(
                 push!(out, e >= 1 ? UInt8(buf[e]) : UInt8('0'))
                 e -= 1
                 gsize -= 1
-                if gsize == 0 && e >= 1 && buf[e] != '-'
+                if grouping !== nothing && gsize == 0 && e >= 1 && buf[e] != '-'   # as above
                     lappend(locale.thousands_sep, ',', out)
                     if grouping[gi + 1] == 0
                         gsize = grouping[gi]

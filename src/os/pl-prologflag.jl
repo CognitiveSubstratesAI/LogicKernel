@@ -998,11 +998,12 @@ function clean_prolog_flag(f::prolog_flag{T})::Nothing where {T}
         end
     end
 
-    while f.pushed !== nothing
-        p = f.pushed
+    p = f.pushed
+    while p !== nothing
         f.pushed = p.pushed
         p.pushed = nothing
         clean_prolog_flag(p)
+        p = f.pushed
     end
     return nothing
 end
