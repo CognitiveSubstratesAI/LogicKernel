@@ -26,8 +26,8 @@
 # kernel's own values. NOT DEFINED, each a family the kernel does not have (the pinned list in
 # test/core_lang/test_prolog_flag_swipl.jl names every flag swipl has and the kernel has not, with its
 # family): the C toolchain and shared objects (`c_cc`, `c_cxx`, `c_libs`, `c_libplso`, `c_ldflags`,
-# `c_cflags`, `open_shared_object`, `shared_object_extension`, `shared_object_search_path`,
-# `executable_format`, `libswipl`, `build_type`, `version_git`, `cmake_build_type`), pipes (`pipe`),
+# `c_cflags`, `open_shared_object`, `shared_object_search_path`,
+# `executable_format`, `build_type`, `cmake_build_type`), pipes (`pipe`),
 # threads and engines (`engines`, `system_thread_id`, `shared_table_space`), and every flag that Prolog code of
 # boot/ and library/ creates (`create_prolog_flag/3`, R2 F1b).
 #
@@ -37,7 +37,10 @@
 # `#ifdef HAVE_POPEN` (:2608-2610, no `#else`); `shared_table_space` (:2589-2591), `system_thread_id` and
 # the threaded `threads`/`gc_thread` (:2611-2619) inside `#ifdef O_PLMT`, whose `#else` (:2620-2622) defines
 # `threads` and `gc_thread` read-only false; `engines` in that `#else` only `#ifdef O_ENGINES` (:2623-2625).
-# All are therefore undefined, except those two. `home` is DEFINED (the kernel's own value, :2548-2549).
+# All are therefore undefined, except those two. Since R2 F1c (audit D-0370 item 5) `shared_object_extension`, `libswipl` and `version_git`
+# are DEFINED, as upstream sets them (the boot reads them: boot/init.pl:1406, boot/messages.pl:1275): the rest of the `O_DYNAMIC_EXTENSIONS`
+# block waits for F8. Upstream's C leaves `xref` to the loader: `$set_no_xref` (boot/init.pl:3062-3067) creates it by
+# `set_prolog_flag(xref, false)` (`user_flags` silent), and the kernel does the same: the flag appears when the loader first runs it. `home` is DEFINED (the kernel's own value, :2548-2549).
 # The kernel is the cmake build MULTI_THREADED=OFF, ENGINES=OFF (CMakeLists.txt:91-97, ENGINES default ON): `O_ENGINES`
 # is set by the ENGINES option alone (cmake/Config.cmake:441-443; pl-incl.h:92 only adds it with O_PLMT), and a build with
 # ENGINES=ON but no threads would define `engines` true (:2623-2625). The kernel has no engines, so it is the OFF build.
@@ -1227,7 +1230,9 @@ function set_flag_value(
             if val
                 rval = debugmode(ld, true, nothing, DBG_ALL)
             else
-                rval = tracemode(ld, false, nothing) && debugmode(ld, false, nothing, UInt32(0))
+                rval =
+                    tracemode(ld, false, nothing) &&
+                    debugmode(ld, false, nothing, UInt32(0))
             end
         elseif name == "debugger_show_context"
             ld.debugstatus_showContext = val
@@ -1838,6 +1843,14 @@ function _set_argv_prolog_flag!(
     return nothing
 end
 
+# Not a port of C code: the cmake variable SO_EXT (src/CMakeLists.txt:40).
+"The shared-object extension, `SO_EXT` (src/CMakeLists.txt:40: `CMAKE_SHARED_MODULE_SUFFIX` without its dot)."
+const SO_EXT = Sys.iswindows() ? "dll" : "so"
+
+# Not a port of C code: the value of cmake/GitVersion.cmake's GIT_VERSION, which pl-version.c setGITVersion reads.
+"The `version_git` flag: `git describe --match \"V*\"` of the pin cbf4e1896275 with the `V` cut (cmake/GitVersion.cmake)."
+const GIT_VERSION = "10.1.19-1-gcbf4e189"
+
 # PORT: pl-prologflag.c initPrologFlags as initPrologFlags!
 # DIVERGES: the database is the argument and the flags go to its table, in upstream's order. The order of the
 # calls of pl-setup.c (`initClauseIndexing`, `initPrologFlags`, `initTabling`, `initArith`) is kept inside
@@ -1845,7 +1858,7 @@ end
 # comes before :158). The command-line options are their defaults, with `-q` absent (`verbose` is `normal`),
 # and `GD->options.traditional` false. NOT DEFINED, as the file header says: the build's configuration flags,
 # `pipe`, `engines`, `system_thread_id`, `shared_table_space`; the Windows, macOS, Android, conda, WASM
-# and runtime-only flags; `xpce` (no `--xpce`); `asan`; `version_git`; `abi_version`. `PL_set_prolog_flag`'s
+# and runtime-only flags; `xpce` (no `--xpce`); `asan`; `abi_version`; `cmake_build_type`. `PL_set_prolog_flag`'s
 # `cpu_count` (setOSPrologFlags, pl-os.c) is a plain definition here. Records are made in a local data of its
 # own, which this function drops.
 "Define the Prolog flags of the database `gd` at their defaults (pl-prologflag.c `initPrologFlags`, and the flags of the files it calls)."
@@ -1879,6 +1892,15 @@ function initPrologFlags!(gd::PL_global_data{T})::Nothing where {T}
     setPrologFlag(
         gd, "home", FT_ATOM | FF_READONLY, joinpath(dirname(dirname(@__DIR__)), "home")
     )
+    # Port of pl-prologflag.c set_libswipl (:2470-2493). DIVERGES: no libswipl is loaded, so `dladdr` (:2483-2488) has no object to find and
+    # the `#ifdef LIBPL_PATH` fallback (:2491-2493, `FT_ATOM`, writable) answers: `<prefix>/lib/libswipl.so` as cmake/Params.cmake:60-63 builds
+    # it (`LIBSWIPL_DIR` = `lib`, src/CMakeLists.txt:421-422; `SO_EXT`, :40), the prefix being the package directory `home` lies in. The file is none.
+    setPrologFlag(
+        gd,
+        "libswipl",
+        FT_ATOM,
+        joinpath(dirname(dirname(@__DIR__)), "lib", "libswipl." * SO_EXT)
+    )
     setPrologFlag(
         gd, "executable", FT_ATOM | FF_READONLY, joinpath(Sys.BINDIR, Base.julia_exename())
     )
@@ -1906,6 +1928,9 @@ function initPrologFlags!(gd::PL_global_data{T})::Nothing where {T}
     setPrologFlag(gd, "table_compile_threshold", FT_INTEGER, 32)
     setPrologFlag(gd, "table_drop_intermediate", FT_INTEGER, 0)
     setPrologFlag(gd, "stack_limit", FT_INTEGER, STACK_LIMIT_DEFAULT * 8)
+    # Port of pl-prologflag.c initPrologFlags :2595. DIVERGES: the first flag of the `O_DYNAMIC_EXTENSIONS` block only (:2593-2606; `open_shared_object`,
+    # `shared_object_search_path` and the `c_*` flags wait for F8): boot/init.pl:1406 reads this one for `prolog_file_type(Ext, executable)`.
+    setPrologFlag(gd, "shared_object_extension", FT_ATOM | FF_READONLY, SO_EXT)
     setPrologFlag(gd, "address_bits", FT_INTEGER | FF_READONLY, 64)
     setPrologFlag(gd, "threads", FT_BOOL | FF_READONLY, false, 0)
     setPrologFlag(gd, "gc_thread", FT_BOOL | FF_READONLY, false, PLFLAG_GCTHREAD)
@@ -2023,6 +2048,10 @@ function initPrologFlags!(gd::PL_global_data{T})::Nothing where {T}
         )
         setPrologFlag(gd, ld, "version_data", FT_TERM | FF_READONLY, t)
     end
+    # Port of pl-version.c setGITVersion (:41-48), called at the end of the version flags (pl-prologflag.c:2930). DIVERGES: `GIT_VERSION` is
+    # cmake/GitVersion.cmake's `git describe --match "V*"` of the pin with the `V` cut, as a build of the pin gets it: `V10.1.19-1-gcbf4e189`.
+    # `cmake_build_type` (:46) is the build's own and stays deferred.
+    setPrologFlag(gd, "version_git", FT_ATOM | FF_READONLY, GIT_VERSION)
     _set_argv_prolog_flag!(gd, ld, "os_argv", ["swipl"])
     _set_argv_prolog_flag!(gd, ld, "argv", ["swipl"])
 
