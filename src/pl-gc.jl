@@ -232,8 +232,7 @@ end
 # PORT: pl-gc.c clearUninitialisedVarsFrame
 # DIVERGES: `PC` is the clause's code and an index into it; a cell is set to a FRESH variable, where
 # upstream's `setVar` makes the cell itself the variable (decision 2). The instructions walked are
-# the ones the kernel declares — not `I_EXITRESET`, `I_FEXITNDET`, `I_FREDO`, `A_FIRSTVAR_IS`,
-# `B_ARG_CF`, `B_ARG_VF`.
+# the ones the kernel declares — not `I_EXITRESET`, `I_FEXITNDET`, `I_FREDO`, `A_FIRSTVAR_IS`.
 """
     clearUninitialisedVarsFrame(ld, fr, codes, pc)
 
@@ -267,8 +266,10 @@ function clearUninitialisedVarsFrame(
             _setVar!(ld, base, Int(codes[pc + 2]))
         elseif c == B_UNIFY_FV || c == B_UNIFY_VF || c == B_UNIFY_FC || c == A_ADD_FC
             _setVar!(ld, base, Int(codes[pc + 1]))
+        elseif c == B_ARG_CF || c == B_ARG_VF                   # the first variable is the third operand
+            _setVar!(ld, base, Int(codes[pc + 3]))
         end
-        pc += 1 + codeTable(c).arguments                        # stepPC(PC)
+        pc += 1 + codeTable(c).arguments                       # stepPC(PC)
     end
 end
 
