@@ -34,7 +34,9 @@
 #   occurs in it · every swipl-devel header cites THE PIN (tools/SWIPL_VERSION `commit:`; during a
 #   sync the previous pin too, `sync-from:`) · no ORIGINAL file shadows an upstream file · docs/port_inventory.md's generated
 #   table equals the headers · its VM inventory's `declared` column equals the `# PORT: pl-vmi.c`
-#   markers.
+#   markers · (the kernel's own tree) the generated R2 status of docs/architecture.md (tools/r2_status.jl): the committed
+#   snapshot docs/r2_upstream.tsv against tools/SWIPL_VERSION and, where a checkout has the pin, against its src/*.c; the
+#   hand-edited docs/r2_owners.tsv (no stale/duplicate/bad line); the block against its generator.
 # Markers are read from COMMENT TOKENS (Base.JuliaSyntax), so `# PORT:` inside a string — this
 # tool's own test fixtures — is never mistaken for one.
 #
