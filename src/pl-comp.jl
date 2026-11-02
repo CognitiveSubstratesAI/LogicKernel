@@ -2038,7 +2038,7 @@ end
 # ── the other goals compiled inline (pl-comp.c, O_COMPILE_IS), V6b2 ─────────────────────────────
 # Upstream's own decision, compiler by compiler (the memo's Q-1, (a)). Since V9a the unification
 # family is emitted and executed — `I_TRUE`, `I_FAIL`, `C_VAR`, `B_UNIFY_*`, `B_EQ_*`, `B_NEQ_*`;
-# every other emission (`B_ARG_*`, `I_CALLCONT`, `I_SHIFT`, `I_SHIFTCP`) throws `NotPortedError`
+# every other emission (`I_CALLCONT`, `I_SHIFT`, `I_SHIFTCP`) throws `NotPortedError`
 # where upstream emits it, before anything is emitted (V9); each `false` is upstream's, and
 # compiles as a call. A void variable is
 # upstream's `isVar(*a)`: a variable the analysis gave no slot.
@@ -2266,8 +2266,9 @@ end
 # DIVERGES: see the section header.
 """
 `arg/3` in a body (pl-comp.c): inline — `B_ARG_CF` for `arg(Int, Var, FirstVar)` (a tagged integer),
-`B_ARG_VF` for `arg(Var, Var, FirstVar)` (both variables already seen) — refused (V9);
-`BOOLEX_FALSE`, a call, for any other shape.
+`B_ARG_VF` for `arg(Var, Var, FirstVar)` (both variables already seen); `BOOLEX_FALSE`, a call, for
+any other shape. The integer operand of `B_ARG_CF` is the integer itself as a signed code (`scode`),
+as `A_ADD_FC`'s: upstream's TBD (negative, overflow) is the run loop's slow route, a call of `arg/3`.
 """
 function compileBodyArg3(ci::compileInfo{T}, arg::T)::boolex_t where {T}
     a1, a2, a3 = child(arg, 2), child(arg, 3), child(arg, 4)  # av[0..2], deRef2
@@ -2275,11 +2276,17 @@ function compileBodyArg3(ci::compileInfo{T}, arg::T)::boolex_t where {T}
     if v3 >= 0 && isFirstVar(ci.used_var, v3)
         v2 = _comp_ivar(ci, a2)
         if v2 >= 0 && !isFirstVar(ci.used_var, v2)
-            isTaggedInt(a1) &&
-                throw(NotPortedError{T}(arg, "B_ARG_CF (compileBodyArg3)", "V9"))
+            if isTaggedInt(a1)
+                i = int64_value(a1)                            # scode i = (scode)valInt(*a1)
+                isFirstVarSet!(ci.used_var, v3)
+                Output_3!(ci, B_ARG_CF, reinterpret(code, i), VAROFFSET(v2), VAROFFSET(v3))
+                return BOOLEX_TRUE
+            end
             v1 = _comp_ivar(ci, a1)
             if v1 >= 0 && !isFirstVar(ci.used_var, v1)
-                throw(NotPortedError{T}(arg, "B_ARG_VF (compileBodyArg3)", "V9"))
+                isFirstVarSet!(ci.used_var, v3)
+                Output_3!(ci, B_ARG_VF, VAROFFSET(v1), VAROFFSET(v2), VAROFFSET(v3))
+                return BOOLEX_TRUE
             end
         end
     end
