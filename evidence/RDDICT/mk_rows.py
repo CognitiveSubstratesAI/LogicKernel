@@ -144,6 +144,14 @@ if all(model.values()) and mainl:
     @test count(l -> occursin("a[35]", l), _RDD_MODE_DYNDICT) == {cnt(model["#"], lambda l: "a[35]" in l)}
     @test count(l -> occursin("a[35]", l), _RDD_MODE_WARNING) == {cnt(model["warning"], lambda l: "a[35]" in l)}
     @test count(l -> occursin("a[35]", l), _RDD_MODE_DICT) == 0
+    # build_attvar and build_labeled_subterm: their syntax errors, one row each in `attvar` mode (the other modes read the same texts as dicts)
+    for (id, n) in (("duplicate_attribute", {cnt(model["attvar"], lambda l: code("duplicate_attribute") in l)}), ("label_on_attvar", {cnt(model["attvar"], lambda l: code("label_on_attvar") in l)}),
+                    ("duplicate_label_value", {cnt(model["attvar"], lambda l: code("duplicate_label_value") in l)}), ("attvar_on_label", {cnt(model["attvar"], lambda l: code("attvar_on_label") in l)}))
+        @test count(l -> occursin(code(id), l), _RDD_MODE_ATTVAR) == n
+        @test count(l -> occursin(code(id), l), _RDD_MODE_DICT) == 0
+    end
+    # attributes read as att(Name, Value, Rest) chains: the attvar rows' answers
+    @test count(l -> occursin(code("att") * "/3(", l), _RDD_MODE_ATTVAR) == {cnt(model["attvar"], lambda l: code("att") + "/3(" in l)}
 end
 """
 

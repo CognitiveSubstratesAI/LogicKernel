@@ -7,7 +7,7 @@
 #     A row reads a TEXT with term_to_atom/2 and observes the term through helpers that hold no dict syntax (rdd, rdv, rdw, rda, rdx, rds; rdp reads with subterm_positions).
 #   * Every answer line is swipl's, PINNED (swipl 10.1.19-1-gcbf4e189, evidence/RDDICT/rdd_rows.out in the wip/rddict branch, two
 #     byte-identical runs); with `swipl` on PATH the live answers are compared with the pins too.
-#   * The var_tag modes (error, warning, attvar, `#`, dict): the same nine cases per mode; swipl sets the flag by a directive atop the
+#   * The var_tag modes (error, warning, attvar, `#`, dict): the same cases per mode (rm10-rm23: attributes and labels of `attvar`); swipl sets the flag by a directive atop the
 #     program, the kernel on the module's flags before the load (the `set_prolog_flag/2` arm is F1b's): pins rdd_mode_rows_<mode>.out.
 #   * The program's own clauses hold dict syntax (the boot lines of init.pl:1297, autoload.pl:889): the loader reads them with this parser.
 #   * UNVERIFIED on the kernel (nothing was compiled when these rows were written): every kernel answer; the gate decides.

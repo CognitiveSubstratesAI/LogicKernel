@@ -80,6 +80,12 @@ MODE_CASES = [
     "rdd(%s, R)" % T("_{a:1}"), "rdd(%s, R)" % T("Tag{a:1,b:2}"), "rdd(%s, R)" % T("t{a:1}"), "rdd(%s, R)" % T("_{}"),
     "rda(%s, 1, R)" % T("f(_{a:1},_)"), "rda(%s, 2, R)" % T("f(t{a:1},_{b:2})"),
     "rds(%s, R)" % T("_{a:1,a:2}"), "rds(%s, R)" % T("_{a}"), "rds(%s, R)" % T("t{a:1,a:2}"),
+    # build_attvar / build_labeled_subterm (var_tag attvar): attributes, labels (`X{= : Value}`) and their errors
+    "rdav(%s, R)" % T("X{a:1,b:2}"), "rdav(%s, R)" % T("X{a:1,a:1}"), "rdav(%s, R)" % T("_{a:g(1)}"), "rdd(%s, R)" % T("X{}"),
+    "rda(%s, 1, R)" % T("f(X{= : g(1)}, X)"), "rda(%s, 2, R)" % T("f(X{= : g(1)}, X)"), "rda(%s, 1, R)" % T("f(_{= : g(1)}, X)"),
+    "rds(%s, R)" % T("X{a:1,a:2}"), "rds(%s, R)" % T("X{= : 1, a:2}"), "rds(%s, R)" % T("f(X{= : 1}, X{= : 2})"),
+    "rds(%s, R)" % T("f(X{a:1}, X{= : 2})"), "rds(%s, R)" % T("f(X{= : 1}, X{a:2})"), "rds(%s, R)" % T("f(X{a:1}, X{b:2})"),
+    "rdav(%s, R)" % T("f(X{a:1}, X{b:2})"),
 ]
 
 PROGRAM = """rdt(G, G1) :- ( var(G) -> G1 = var ; G1 = G ).
@@ -90,6 +96,7 @@ rdw(Txt, K1, K2, R) :- term_to_atom(T, Txt), get_dict(K1, T, V1), get_dict(K2, V
 rda(Txt, N, R) :- term_to_atom(T, Txt), arg(N, T, A), rdo(A, R).
 rdx(Txt, R) :- term_to_atom(T, Txt), ( compound(T), T =.. [F, A, B] -> rdo(A, A1), rdo(B, B1), R = F-A1-B1 ; R = other(T) ).
 rdp(Txt, R) :- read_term_from_atom(Txt, _, [subterm_positions(R)]).
+rdav(Txt, R) :- term_to_atom(T, Txt), ( attvar(T) -> get_attrs(T, A), R = attrs(A) ; arg(1, T, X), attvar(X) -> get_attrs(X, A), R = attrs(A) ; R = nodict ).
 rds(Txt, R) :- catch(( term_to_atom(_, Txt), R = read ), error(syntax_error(I), string(_, P)), R = syn(I, P)).
 """
 # clauses whose own text holds dict syntax (the loader reads them); the pl-boot lines: init.pl:1297 `_{file_type:regular}`, autoload.pl:889 `:<`
