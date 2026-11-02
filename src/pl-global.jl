@@ -168,6 +168,7 @@ function setupProlog(::Type{T})::PL_global_data{T} where {T}
     system.procedures[(sym_key(dc), 0)] = dc_proc
     atoms = do_init_atoms!(atoms_t())          # initAtoms (setup: before everything here)
     syms = atom_symbols{T}()                   # (the atoms' symbols: filled as words are made)
+    registerBuiltinAtomSymbols!(atoms, syms)   # (the built-in atoms' symbols: upstream's a->name, pl-atom.c:1977)
     functors = initFunctors!(functors_t())     # initFunctors (after the atoms, as upstream's)
     initDBRef!(atoms)                          # initDBRef (setup:146): the clause blob type (D1)
     initWrap!(atoms)                           # initWrap (setup:152): the closure blob type (TAB1-min)

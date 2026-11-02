@@ -2287,6 +2287,23 @@ function setAtomSymbol!(s::atom_symbols{T}, index::Int, v::T)::Nothing where {T}
     return nothing
 end
 
+# ORIGINAL (R2 LB4 b2 G9, first-boot finding 2): the symbols of the BUILT-IN atoms, recorded when the database is set
+# up. Upstream's `registerBuiltinAtoms` (swipl-devel cbf4e189, src/pl-atom.c:1947-1993) sets each built-in atom's
+# `a->name`, so every reader of a built-in handle (`ATOM_colon`, the name of `FUNCTOR_colon2`, ...) has its name from
+# the start; the kernel's symbol store (`atom_symbols`) is filled by `_atom_word!`, which a built-in handle used as a
+# constant never passes (a fresh boot's first `:- Directive` met `:`/2 with no symbol). An atom `initReservedSymbols!`
+# retyped gets its reserved symbol (`[]` is `mk_nil`), every other one its text symbol.
+"Record in `syms` the interface symbol of every built-in atom of `atoms` (after `do_init_atoms!`)."
+function registerBuiltinAtomSymbols!(atoms::atoms_t, syms::atom_symbols{T})::Nothing where {T}
+    for index in 1:length(_BUILTIN_ATOMS)
+        a = fetchAtomArray(atoms, index)
+        name = Symbol(String(a.name[1:(a.length)]))
+        v = a.type === reserved_symbol ? mk_reserved_symbol(T, name) : mk_sym(T, name)
+        atomSymbol(syms, index) === nothing && setAtomSymbol!(syms, index, v)
+    end
+    return nothing
+end
+
 # ORIGINAL: `type->registered` of upstream, read off the database's registrations.
 "The registration of blob type `type` in `atoms`, or `nothing`."
 function _blob_registration(

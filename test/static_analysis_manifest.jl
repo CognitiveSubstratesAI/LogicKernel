@@ -2930,7 +2930,9 @@ _manifest_gd_template(::Type{T}) where {T} = (
     (LK.boot_global_data, Tuple{Type{T}}, false),
     (LK._qlf_pl_write!, Tuple{LK.PL_local_data{T}, Int}, false),
     # LB4 b2 first boot (G9): meta_declaration's ReadingSource branch (pl-srcfile.c setMetapredicateSource)
-    (LK.setMetapredicateSource, Tuple{LK.PL_local_data{T}, LK.SourceFile{T}, LK.Procedure{T}, Vector{LK.arg_info}}, false)
+    (LK.setMetapredicateSource, Tuple{LK.PL_local_data{T}, LK.SourceFile{T}, LK.Procedure{T}, Vector{LK.arg_info}}, false),
+    # LB4 b2 first boot (G9): the built-in atoms' symbols at database setup (pl-atom.c registerBuiltinAtoms' a->name)
+    (LK.registerBuiltinAtomSymbols!, Tuple{LK.atoms_t, LK.atom_symbols{T}}, false)
 )
 
 const _DISPATCH_MANIFEST_TUPLE = (
