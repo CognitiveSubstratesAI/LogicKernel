@@ -1086,8 +1086,125 @@ function r2_owner_violations(rows::Vector{R2Row}, text::AbstractString)::Vector{
     return v
 end
 
+# ── the rendering (slice 4) ──────────────────────────────────────────────────────────────────────────
+
+const R2_BEGIN = "<!-- BEGIN GENERATED R2 status by tools/port_check.jl --write-inventory — do not hand-edit -->"
+const R2_END = "<!-- END GENERATED R2 status -->"
+
+const R2_CATS = (
+    ("pred", "predicates (C-defined, reached by the boot)"), ("refusal", "refusal sites"),
+    ("flag", "Prolog flags"), ("vmi", "VM instructions")
+)
+
+"A cell of a Markdown table: one line, `|` escaped."
+_r2_cell(x::AbstractString) = replace(strip(replace(String(x), r"\s+" => " ")), "|" => "\\|")
+
+"A row as a short code span for the by-owner list (the owner key without its category prefix for predicates and VM instructions)."
+function _r2_short(r::R2Row)::String
+    t = r.cat == "flag" ? "flag " * r.label : r.cat == "refusal" ? "refusal " * first(r.label, 40) * (length(r.label) > 40 ? "…" : "") : r.label
+    return "`" * _r2_cell(replace(t, "`" => "'")) * "`"
+end
+
+"""
+The block between `R2_BEGIN` and `R2_END`: counts per category, per boot file, the remaining rows by owner, the Mermaid chart.
+`pin` and `nup` (the snapshot's pin and its number of definitions) are in the first line, so a snapshot change shows.
+"""
+function r2_render_rows(rows::Vector{R2Row}, files::Vector{R2File}, preds::Vector{R2Row}, owners, pin::AbstractString, nup::Int)::String
+    io = IOBuffer()
+    println(io, "Generated from `docs/r2_upstream.tsv` (swipl-devel `", first(pin, 8), "`: ", nup, " definitions), `docs/r2_owners.tsv` and the kernel's `src/`.")
+    println(io, "A row is **done** (registered, defined or marked in the kernel), **refused** (the kernel raises the refusal on purpose), **missing**,")
+    println(io, "or **platform** (a Windows or macOS definition: out of the count). **NO OWNER** counts missing and refused rows no step owns yet.")
+    println(io)
+    println(io, "| category | done | refused | missing | platform | NO OWNER |")
+    println(io, "|---|---:|---:|---:|---:|---:|")
+    tot = [0, 0, 0, 0, 0]
+    perc = Dict{String, NamedTuple}()
+    for (cat, name) in R2_CATS
+        rs = [r for r in rows if r.cat == cat]
+        c = r2_counts(rs)
+        no = length(r2_no_owner(rs, owners))
+        perc[cat] = (; c..., no)
+        println(io, "| ", name, " | ", c.done, " | ", c.refused, " | ", c.nmissing, " | ", c.platform, " | ", no, " |")
+        tot .+= [c.done, c.refused, c.nmissing, c.platform, no]
+    end
+    println(io, "| **total** | ", join(tot, " | "), " |")
+    println(io)
+    println(io, "#### The boot and library files")
+    println(io)
+    println(io, "Predicate rows each file's calls reach (a predicate several files call counts in each, so the columns do not add up to the table above).")
+    println(io)
+    println(io, "| file | state | done | missing | platform |")
+    println(io, "|---|---|---:|---:|---:|")
+    for t in r2_file_table(files, preds)
+        t.exists || continue
+        state = t.loaded ? "loaded" : "skipped (conditional)"
+        println(io, "| `", t.rel, "` | ", state, " | ", t.done, " | ", t.nmissing, " | ", t.platform, " |")
+    end
+    println(io)
+    println(io, "#### What is left, by owner")
+    println(io)
+    byowner = Dict{String, Vector{R2Row}}()
+    for r in rows
+        r2_owes(r) || continue
+        o = r2_owner_of(r, owners)
+        push!(get!(byowner, isempty(o) ? "NO OWNER" : o, R2Row[]), r)
+    end
+    order = sort!(collect(keys(byowner)); by=o -> (o == "NO OWNER", -length(byowner[o]), o))
+    println(io, "| owner | rows | missing | refused | which (first 8) |")
+    println(io, "|---|---:|---:|---:|---|")
+    catrank = Dict("pred" => 1, "vmi" => 2, "flag" => 3, "refusal" => 4)
+    for o in order
+        rs = sort(byowner[o]; by=r -> (catrank[r.cat], r.key))
+        which = join(_r2_short.(first(rs, 8)), ", ") * (length(rs) > 8 ? ", … +" * string(length(rs) - 8) : "")
+        println(io, "| ", o, " | ", length(rs), " | ", count(r -> r.status == "missing", rs), " | ", count(r -> r.status == "refused", rs), " | ", which, " |")
+    end
+    println(io)
+    println(io, "#### Missing and refused per category")
+    println(io)
+    top = maximum(max(perc[c].nmissing, perc[c].refused) for (c, _) in R2_CATS)
+    ymax = max(10, cld(top, 50) * 50)
+    println(io, "```mermaid")
+    println(io, "xychart-beta")
+    println(io, "    title \"R2: missing (bars) and refused (line) rows\"")
+    println(io, "    x-axis [\"predicates\", \"refusal sites\", \"flags\", \"VM instructions\"]")
+    println(io, "    y-axis \"rows\" 0 --> ", ymax)
+    println(io, "    bar [", join((perc[c].nmissing for (c, _) in R2_CATS), ", "), "]")
+    println(io, "    line [", join((perc[c].refused for (c, _) in R2_CATS), ", "), "]")
+    println(io, "```")
+    return String(take!(io))
+end
+
+"""
+Everything the status is computed from, for the tree at `root`: the committed snapshot (`up`, `pin`, `nup`), the owners file
+(`owners`, `otext`, `nothing` when the file is missing) and the rows. The snapshot must exist.
+"""
+function r2_state(root::AbstractString)
+    snap = joinpath(root, R2_SNAPSHOT)
+    isfile(snap) || error("r2_status: no $R2_SNAPSHOT")
+    stext = read(snap, String)
+    up = r2_read_snapshot(stext)
+    owf = joinpath(root, R2_OWNERS)
+    otext = isfile(owf) ? read(owf, String) : nothing
+    owners = otext === nothing ? Dict{String, Tuple{String, String}}() : r2_owners_parse(otext).owners
+    res = r2_collect(root, up)
+    return (;
+        res..., owners, otext, pin=something(r2_snapshot_pin(stext), "0"^40),
+        nup=length(unique((u.kind, u.key) for u in up))
+    )
+end
+
+"The block for the tree at `root`, computed from the committed snapshot and owners file (so CI, with no checkout, checks it)."
+function r2_render(root::AbstractString)::String
+    st = r2_state(root)
+    return r2_render_rows(st.rows, st.files, st.preds, st.owners, st.pin, st.nup)
+end
+
 if abspath(PROGRAM_FILE) == @__FILE__
     root = abspath(joinpath(@__DIR__, ".."))
+    if "--render" in ARGS
+        print(r2_render(root))
+        exit(0)
+    end
     res = r2_collect(root, r2_upstream(root))
     for cat in ("pred", "refusal", "flag", "vmi")
         println(rpad(cat, 8), r2_counts([r for r in res.rows if r.cat == cat]))
