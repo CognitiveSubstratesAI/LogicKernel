@@ -1363,7 +1363,6 @@ function _manifest_index(T)
         (LK.PL_get_intptr_ex, Tuple{LD, Int64}, false),
         (LK.unify_int64_ex, Tuple{LD, Int64, Int64, Bool}, false),
         (LK.PL_unify_int64, Tuple{LD, Int64, Int64}, false),
-        (LK._boot_syspred!, Tuple{GD}, false),
         (LK.pl_write_canonical2, Tuple{LD, Int64, Int64}, false),
         (LK.pl_write_canonical, Tuple{LD, Int64}, false),
         (LK.setDoubleQuotes, Tuple{LD, T, UInt32}, false),
@@ -1714,13 +1713,11 @@ function _manifest_index(T)
         (LK._boot_ite, Tuple{Type{T}, T, T, T}, false),
         (LK._boot_cons, Tuple{Type{T}, T, T}, false),
         (LK._boot_vars, Tuple{Type{T}, Int}, false),
-        (LK._boot_bags!, Tuple{GD}, false),
         (LK._boot_attvar!, Tuple{GD}, false),                    # boot/attvar.pl's wakeup clauses (AV3)
         (LK._boot_freeze_uhook!, Tuple{GD, LD}, false),          # boot/attvar.pl's uhook(freeze, …), unfreeze/1 (AV7)
         (LK._boot_freeze!, Tuple{GD, LD}, false),                # boot/attvar.pl's freeze/2 (AV7)
         (LK._boot_when!, Tuple{GD, LD}, false),                  # library/when.pl's when/2, trigger_first/2 (AV8)
         (LK._boot_call_residue_vars!, Tuple{GD, LD}, false),     # boot/attvar.pl's call_residue_vars/2, run_crv/4 (AV9)
-        (LK._boot_bagof!, Tuple{GD, LD}, false),
         (LK.initVM, Tuple{PR}, false),
         (LK.PL_open_query, Tuple{GD, LD, Nothing, UInt32, PR, Int}, false),
         (LK.PL_open_query, Tuple{GD, LD, MOD, UInt32, PR, Int}, false),
