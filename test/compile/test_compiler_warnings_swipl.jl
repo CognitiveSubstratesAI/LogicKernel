@@ -302,7 +302,11 @@ function _cwkernel(gd, ld, c::_CwClause, style::Int)::String
             enames[var_key(child(nv, 3))] = sym_text(child(nv, 2))
             b = child(b, 3)
         end
-        ld.variable_names = vn
+        # b_setval('$variable_names', Bindings), as boot/init.pl:1949 does before the clause is
+        # compiled (the frame's discard below undoes it)
+        vnk = LK.PL_new_term_ref(ld)
+        LK.PL_put_atom(ld, vnk, LK.mk_sym(_CW, Symbol("\$variable_names")))
+        LK.gvar_setval(ld, vnk, vn, LK.SETVAL_BACKTRACKABLE) || error("b_setval failed")
         ld.debugstatus_styleCheck = style
         try
             cl = LK.compileClause(gd, ld, h, bd, proc, user, warnings; ex=ex)
@@ -314,7 +318,6 @@ function _cwkernel(gd, ld, c::_CwClause, style::Int)::String
             end
             is_nil(l) || error("the warnings are not a list")
         finally
-            ld.variable_names = 0
             ld.debugstatus_styleCheck = old
             LK.PL_discard_foreign_frame(ld, fid)
         end

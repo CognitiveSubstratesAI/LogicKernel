@@ -611,8 +611,8 @@ function push_compiler_warnings(ld::PL_local_data{T}, ci::compileInfo{T})::Bool 
 end
 
 # PORT: pl-comp.c get_variable_names
-# DIVERGES: `$variable_names` is not a global variable here (see `PL_local_data`'s
-# `variable_names`): `compileClause` resolves its value into `ci.variable_names` (`nothing`:
+# DIVERGES: `compileClause` reads the global variable `$variable_names` (`gvar_value`, src/pl-gvar.jl;
+# boot/init.pl:1949 sets it with `b_setval`) and resolves its value into `ci.variable_names` (`nothing`:
 # `gvar_value` fails), a term without bindings as the clause is; a variable's record is found by its
 # key, upstream's `isVarInfo(*v)`.
 "Name the variable records that `\$variable_names` names (`[Name = Var, …]`); how many (pl-comp.c)."
@@ -3161,11 +3161,18 @@ function compileClause(
     ci.warning_list = warnings
     ci.warnings = nothing
     ci.cell_export = ex
-    if warnings != 0 && ld.variable_names != 0                 # (gvar_value(ATOM_dvariable_names))
-        ci.variable_names = export_cells(                       # (L1f f3a: the clause's export; a
-            ld, ex === nothing ? cell_export{T}() : ex,         # caller with terms: one of its own)
-            -(ld.variable_names + 1)
-        )
+    if warnings != 0                                            # (ci->warning_list: get_variable_names)
+        # gvar_value(ATOM_dvariable_names, &w)
+        w = gvar_value(ld, _atom_word!(ld, mk_sym(T, Symbol("\$variable_names"))))
+        if w !== nothing
+            tmp = PL_new_term_ref(ld)
+            ld.slots[tmp + 1] = w                               # Word p = &w
+            ci.variable_names = export_cells(                   # (L1f f3a: the clause's export; a
+                ld, ex === nothing ? cell_export{T}() : ex,     # caller with terms: one of its own)
+                -(tmp + 1)
+            )
+            PL_reset_term_refs(ld, tmp)
+        end
     end
     # ci->head_unify (pl-comp.c:2022-2027): `?=>` always moves, `=>` never; else static code under
     # `optimise_unify`

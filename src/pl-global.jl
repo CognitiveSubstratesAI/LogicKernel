@@ -422,10 +422,8 @@ ld_statistics() = ld_statistics(0, 0, 0, 0, WallTime(), 0.0, 0.0, 0.0, 0.0)
 # (`_debugstatus.styleCheck`, pl-init.c's default), `modules.source` (a module index: `user`), and
 # `messages` — no upstream field: what upstream's `Sdprintf` writes to `Serror` is collected there as
 # `(kind, message)` (src/pl-qlf.jl; printMessage calls print_message/2 since LB4 b2). Since R1e's write/1 family:
-# `variable_names` (since R1g) — upstream's GLOBAL VARIABLE `$variable_names`, which boot/init.pl
-# sets to the bindings of the clause being loaded (`b_setval`) and the compiler reads for its
-# warnings (`get_variable_names`); the kernel has no global variables (pl-gvar.c), so it is a term
-# reference here, 0 while there is no such variable. `IO_streams` — upstream's `IO.streams`, the standard streams indexed by `SNO_*` (+1), opened over
+# (R1g's `variable_names` term reference went in LB4 b2: `$variable_names` is the global variable
+# boot/init.pl:1949 sets, src/pl-gvar.jl, which the compiler reads, `get_variable_names`.) `IO_streams` — upstream's `IO.streams`, the standard streams indexed by `SNO_*` (+1), opened over
 # the process's stdin, stdout and stderr when first asked for (`initIO`, src/os/pl-file.jl), or set
 # by the host (`set_standard_stream!`; decision 2a), `IO_initialised` once they are; `IO_stream_type_check` (the `stream_type_check`
 # flag), `IO_portray_nesting` (since group F, D-0123: the depth of nested `callPortray` calls, src/pl-write.jl), `var_names_numbervars_frame` (the foreign frame `BEGIN_NUMBERVARS` opens, 0: none) and two
@@ -580,7 +578,6 @@ mutable struct PL_local_data{T}
     var_names_numbervars_frame::Int                             # var_names.numbervars_frame
     prolog_flag_unknown_option::Int                             # prolog_flag.unknown_option
     prolog_flag_write_attributes::Int                           # prolog_flag.write_attributes
-    variable_names::Int                                         # (gvar `$variable_names`: a term_t)
     bags::Vector{findall_bag{T}}                                # bags: findall/3's (pl-bag.c)
     between_states::foreign_state_pool{between_state}           # (between/3's REDO_PTR states, NF1)
     retract_contexts::foreign_state_pool{retract_context{T}}    # (retract/1's REDO_PTR states, NF2)
@@ -681,7 +678,6 @@ function PL_local_data{T}(gd::PL_global_data{T}) where {T}
         0,                                      # no numbervars frame
         0x2,                                    # unknown_option: ignore (OPT_UNKNOWN_IGNORE)
         0x040,                                  # write_attributes: ignore (PL_WRT_ATTVAR_IGNORE)
-        0,                                      # $variable_names: no such global variable
         findall_bag{T}[],                       # bags: none (pl-bag.c: `LD->bags` is NULL)
         foreign_state_pool{between_state}(),    # between/3's states: none
         foreign_state_pool{retract_context{T}}(),   # retract/1's states: none
