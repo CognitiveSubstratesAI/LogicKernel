@@ -367,7 +367,7 @@ const _MM_PINNED = [
 function _mm_kernel(path::String, names::Vector{String})
     gd = LK.PL_global_data{_MM}()
     ld = LK.PL_local_data{_MM}(gd)
-    st, ball, _ = LK.load_file!(gd, ld, path)
+    st, ball = LK.load_file!(gd, ld, path)
     out = [st === :ok ? "ok" : "exc " * _mm_enc(ball::_MM)]
     lives = Int[]
     for name in names
@@ -456,7 +456,7 @@ end
     )
     gd = LK.PL_global_data{_MM}()
     ld = LK.PL_local_data{_MM}(gd)
-    st, _, _ = LK.load_file!(gd, ld, f)
+    st, _ = LK.load_file!(gd, ld, f)
     @test st === :ok
     @test LK.live_states(ld) == 0
     proc = LK.isCurrentProcedure(sym_key(_mms("mm_enum")), 2, LK.MODULE_user(gd))

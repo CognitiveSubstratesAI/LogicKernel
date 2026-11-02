@@ -324,7 +324,7 @@ end
 function _wo_kernel(path::String, names::Vector{String})
     gd = LK.PL_global_data{_WO}()
     ld = LK.PL_local_data{_WO}(gd)
-    st, ball, _ = LK.load_file!(gd, ld, path)
+    st, ball = LK.load_file!(gd, ld, path)
     out = [st === :ok ? "ok" : "exc " * _wo_enc(ball::_WO)]
     for name in names
         proc = LK.isCurrentProcedure(sym_key(_wos(name)), 1, LK.MODULE_user(gd))

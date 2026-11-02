@@ -89,7 +89,7 @@ end
 function _tl_kernel(path::String, preds::Vector{Tuple{String, Int}})::Vector{String}
     gd = LK.PL_global_data{_TL}()
     ld = LK.PL_local_data{_TL}(gd)
-    st, ball, msgs = LK.load_file!(gd, ld, path)
+    st, ball, msgs = lk_load_file_messages!(gd, ld, path)
     out = [st === :ok ? "ok" : "exc " * _tl_enc(_tl_normalise(ball::_TL))]
     for (k, m) in msgs
         push!(out, string(k) * " " * _tl_enc(_tl_normalise(m)))
@@ -335,7 +335,7 @@ if _TL_SWIPL !== nothing
         for (p, _, goal) in goals
             gd = LK.PL_global_data{_TL}()
             ld = LK.PL_local_data{_TL}(gd)
-            st, _, msgs = LK.load_file!(gd, ld, prog(p))
+            st, _, msgs = lk_load_file_messages!(gd, ld, prog(p))
             @test st === :ok && isempty(msgs)
             # the goal, read by the kernel and run through the query API
             t2a = LK.isCurrentProcedure(
@@ -455,7 +455,7 @@ end
         write(path, "a(1).\n\na(2) :-\n    true.\nb.\n")
         gd = LK.PL_global_data{_TL}()
         ld = LK.PL_local_data{_TL}(gd)
-        st, _, msgs = LK.load_file!(gd, ld, path)
+        st, _, msgs = lk_load_file_messages!(gd, ld, path)
         @test st === :ok && isempty(msgs)
         sf = gd.files_array[1]
         @test sym_text(sf.name) == abspath(path) && sf.index == 1 && sf.count == 1
@@ -490,7 +490,7 @@ end
             k for (k, p) in LK.MODULE_user(gd).procedures if LK.isDefinedProcedure(gd, p)
         )
         before = defined(gd)
-        st, _, msgs = LK.load_file!(gd, ld, path)
+        st, _, msgs = lk_load_file_messages!(gd, ld, path)
         @test st === :ok && isempty(msgs)
         @test defined(gd) == before
         if _TL_SWIPL !== nothing
@@ -504,52 +504,64 @@ end
     end
 end
 
-@testset "the refusals: explicit, never a silent misload" begin
-    notported(text) = mktempdir() do d
-        path = joinpath(d, "r.pl")
-        write(path, text)
-        gd = LK.PL_global_data{_TL}()
-        ld = LK.PL_local_data{_TL}(gd)
-        try
-            LK.load_file!(gd, ld, path)
-            false
-        catch e
-            e isa LK.NotPortedError || rethrow()
-            true
+# The former refusals (R1f-LB2: the minimal loader raised NotPortedError on each). Since LB4 b2 the file is
+# loaded by boot/init.pl's load_files/2, so each now loads as swipl loads it: compared, line for line, with
+# the swipl driver (messages, status), as the cases above. UNVERIFIED on the kernel: gate decides (a row that
+# differs is a first-boot item or a recorded DIVERGES with the upstream line, never a skip).
+const _TL_FORMER_REFUSALS = [
+    ("dcg", "a --> b.\n"),                                      # DCG (boot/dcg.pl)
+    ("module", ":- module(m, []).\n"),
+    ("use_module", ":- use_module(library(lists)).\n"),
+    ("ensure_loaded", ":- ensure_loaded(x).\n"),
+    ("include", ":- include(x).\n"),
+    ("initialization", ":- initialization(main).\n"),
+    ("if", ":- if(true).\na.\n:- endif.\n"),                    # conditional compilation
+    ("else", ":- else.\n"),
+    ("disjunction", ":- (a ; b).\n"),
+    ("if-then", ":- (a -> b).\n"),
+    ("negation", ":- \\+ a.\n"),
+    ("true", ":- true.\n"),
+    ("call/2", ":- call(atom, a).\n"),
+    ("term_expansion", "term_expansion(a, b).\nx.\n"),          # expand_term
+    ("incremental", ":- dynamic(p/1 as incremental).\n"),
+    ("thread_local", ":- thread_local p/1.\n"),
+    ("encoding", ":- encoding(utf8).\n"),
+    ("asserted-then-file", ":- assertz(q(1)).\nq(2).\n"),       # swipl warns and abolishes
+]
+
+if _TL_SWIPL !== nothing
+    @testset "the former refusals load as swipl loads them (LB4 b2)" begin
+        mktempdir() do d
+            for (i, (name, text)) in enumerate(_TL_FORMER_REFUSALS)
+                path = joinpath(d, "former$i.pl")
+                write(path, text)
+                ours = _tl_kernel(path, Tuple{String, Int}[])
+                theirs = _tl_swipl(path, Tuple{String, Int}[])
+                @test !isempty(ours) && !isempty(theirs)         # both sides non-empty: the status line
+                ours == theirs || println(stderr, "  DIVERGES (", name, "): ", ours, " vs ", theirs)
+                @test ours == theirs
+            end
         end
     end
-    @test notported("a --> b.\n")                               # DCG (boot/dcg.pl)
-    @test notported(":- module(m, []).\n")
-    @test notported(":- use_module(library(lists)).\n")
-    @test notported(":- ensure_loaded(x).\n")
-    @test notported(":- include(x).\n")
-    @test notported(":- initialization(main).\n")
-    @test notported(":- if(true).\na.\n:- endif.\n")             # conditional compilation
-    @test notported(":- else.\n")
-    @test notported(":- (a ; b).\n")                            # the meta-call: V9
-    @test notported(":- (a -> b).\n")
-    @test notported(":- \\+ a.\n")
-    @test notported(":- true.\n")
-    @test notported(":- call(atom, a).\n")
-    @test notported("term_expansion(a, b).\nx.\n")              # expand_term (R2)
-    @test notported(":- dynamic(p/1 as incremental).\n")
-    @test !notported(":- thread_local p/1.\n")                # ported in LB2: init.pl's $set_pattr reaches $set_predicate_attribute(thread_local)
-    mktempdir() do d
-        path = joinpath(d, "tl.pl")
-        write(path, ":- thread_local p/1.\n")
-        gd = LK.PL_global_data{_TL}()
-        ld = LK.PL_local_data{_TL}(gd)
-        @test LK.load_file!(gd, ld, path)[1] === :ok
-    end
-    @test notported(":- encoding(utf8).\n")
-    # a reconsult: the same file twice
+end
+
+@testset "a reconsult and a second file: load_file! returns (status, ball) (LB4 b2)" begin
+    # a reconsult: the same file twice; a second file defining a predicate the first defined (swipl
+    # warns, redefined_procedure, and abolishes). UNVERIFIED on the kernel: gate decides
     mktempdir() do d
         path = joinpath(d, "twice.pl")
         write(path, "a.\n")
         gd = LK.PL_global_data{_TL}()
         ld = LK.PL_local_data{_TL}(gd)
-        @test LK.load_file!(gd, ld, path)[1] === :ok
-        @test_throws LK.NotPortedError LK.load_file!(gd, ld, path)
+        @test LK.load_file!(gd, ld, path) === (:ok, nothing)
+        @test LK.load_file!(gd, ld, path) === (:ok, nothing)
+        p1, p2 = joinpath(d, "one.pl"), joinpath(d, "two.pl")
+        write(p1, "s(1).\n")
+        write(p2, "s(2).\n")
+        @test LK.load_file!(gd, ld, p1) === (:ok, nothing)
+        st, _, msgs = lk_load_file_messages!(gd, ld, p2)
+        @test st === :ok && length(msgs) == 1 && msgs[1][1] === :warning &&
+            sym_text(child(msgs[1][2], 1)) == "redefined_procedure"
     end
     # a file clause for a predicate asserted before (no file): swipl warns and abolishes; the kernel does too since PR1b
     # (redefineProcedure -> abolishProcedure!; the answers are rows t_rd1-t_rd7 of test_pr1_swipl.jl)
@@ -559,17 +571,5 @@ end
         gd = LK.PL_global_data{_TL}()
         ld = LK.PL_local_data{_TL}(gd)
         @test LK.load_file!(gd, ld, path)[1] === :ok
-    end
-    # a second file defining a predicate the first defined: swipl warns and abolishes (PR1b: the kernel too)
-    mktempdir() do d
-        p1, p2 = joinpath(d, "one.pl"), joinpath(d, "two.pl")
-        write(p1, "s(1).\n")
-        write(p2, "s(2).\n")
-        gd = LK.PL_global_data{_TL}()
-        ld = LK.PL_local_data{_TL}(gd)
-        @test LK.load_file!(gd, ld, p1)[1] === :ok
-        @test LK.load_file!(gd, ld, p2)[1] === :ok
-        @test ld.messages[end][1] === :warning &&
-            sym_text(child(ld.messages[end][2], 1)) == "redefined_procedure"
     end
 end

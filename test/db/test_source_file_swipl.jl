@@ -258,7 +258,7 @@ const _CASES = [
 function kernel_lines(path::String, names::Vector{String})::Vector{String}
     gd = LK.PL_global_data{_TL}()
     ld = LK.PL_local_data{_TL}(gd)
-    st, ball, _ = LK.load_file!(gd, ld, path)
+    st, ball = LK.load_file!(gd, ld, path)
     out = [st === :ok ? "ok" : "exc " * enc(ball::_TL)]
     for name in names
         proc = LK.isCurrentProcedure(sym_key(_tls(name)), 1, LK.MODULE_user(gd))
@@ -432,7 +432,7 @@ function _loaded(src::String)
     ld = LK.PL_local_data{_TL}(gd)
     f = joinpath(realpath(mktempdir()), "w.pl")
     write(f, src)
-    st, ball, _ = LK.load_file!(gd, ld, f)
+    st, ball = LK.load_file!(gd, ld, f)
     @assert st === :ok
     return gd, ld, f
 end
@@ -440,7 +440,7 @@ end
 function _load_more!(gd, ld, src::String)
     f = joinpath(realpath(mktempdir()), "x.pl")
     write(f, src)
-    st, _, _ = LK.load_file!(gd, ld, f)
+    st, _ = LK.load_file!(gd, ld, f)
     @assert st === :ok
     return f
 end

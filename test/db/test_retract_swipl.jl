@@ -52,7 +52,7 @@ function kernel_lines(
 )::Tuple{Vector{String}, Vector{Int}, Vector{Int}, Int}
     gd = LK.PL_global_data{_TL}()
     ld = LK.PL_local_data{_TL}(gd)
-    st, ball, _ = LK.load_file!(gd, ld, path)
+    st, ball = LK.load_file!(gd, ld, path)
     out = [st === :ok ? "ok" : "exc " * enc(ball::_TL)]
     occurs_error && (ld.prolog_flag_occurs_check = LK.OCCURS_CHECK_ERROR)
     refs0 = length(ld.predicate_references)
@@ -306,7 +306,7 @@ function _rt_open()
     ld = LK.PL_local_data{_TL}(gd)
     f = joinpath(mktempdir(), "p.pl")
     write(f, ":- dynamic q/1.\nq(1).\nq(2).\nq(3).\n")
-    st, _, _ = LK.load_file!(gd, ld, f)
+    st, _ = LK.load_file!(gd, ld, f)
     @test st === :ok
     return gd, ld
 end

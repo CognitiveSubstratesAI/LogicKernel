@@ -124,7 +124,7 @@ end
     ld = LK.PL_local_data{_R}(gd)
     f = joinpath(mktempdir(), "bl.pl")
     write(f, _BL_LOOP)
-    st, _, _ = LK.load_file!(gd, ld, f)
+    st, _ = LK.load_file!(gd, ld, f)
     @test st === :ok
     for (goal, n, want_during) in
         ((:bl_rec, 100, 4000), (:bl_rec, 1000, 40000), (:bl_bt, 100, nothing),

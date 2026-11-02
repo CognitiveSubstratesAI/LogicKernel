@@ -448,7 +448,7 @@ end
 function _sf_kernel(path::String, names::Vector{String})
     gd = LK.PL_global_data{_SF}()
     ld = LK.PL_local_data{_SF}(gd)
-    st, ball, _ = LK.load_file!(gd, ld, path)
+    st, ball = LK.load_file!(gd, ld, path)
     out = [st === :ok ? "ok" : "exc " * _sf_enc(ball::_SF)]
     for name in names
         push!(out, _sf_query(gd, ld, name))
@@ -533,7 +533,7 @@ const _SF_REFUSED = [
     for (f, _) in _SF_REFUSED
         gd = LK.PL_global_data{_SF}()
         ld = LK.PL_local_data{_SF}(gd)
-        st, _, _ = LK.load_file!(gd, ld, path)
+        st, _ = LK.load_file!(gd, ld, path)
         @test st === :ok
         # UNVERIFIED on the kernel: gate decides (the refusal's class for `threads`, `tty_control`: the value that changes the flag)
         @test_throws LK.NotPortedError _sf_query(gd, ld, "r_$(f)")

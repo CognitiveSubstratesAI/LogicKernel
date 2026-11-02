@@ -218,7 +218,7 @@ function _nv_load(text::String)::_RDB
     db = _RDB()
     f = joinpath(mktempdir(), "nv.pl")
     write(f, text)
-    st, ball, msgs = LK.load_file!(db.gd, db.ld, f)
+    st, ball, msgs = lk_load_file_messages!(db.gd, db.ld, f)
     @test st === :ok && all(m -> m[1] === :warning, msgs)     # (the singleton warnings)
     return db
 end

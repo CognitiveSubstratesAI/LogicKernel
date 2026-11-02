@@ -60,7 +60,7 @@ _st_line(row::String, ans::String) = "$row $(_st_c(row, 1))$ans)"
 function _st_kernel_lines(path::String, names::Vector{String})::Vector{String}
     gd = LK.PL_global_data{_ST}()
     ld = LK.PL_local_data{_ST}(gd)
-    st, ball, _ = LK.load_file!(gd, ld, path)
+    st, ball = LK.load_file!(gd, ld, path)
     out = [st === :ok ? "ok" : "exc " * _st_enc(ball::_ST)]
     for name in names
         proc = LK.isCurrentProcedure(sym_key(_st_sym(name)), 1, LK.MODULE_user(gd))

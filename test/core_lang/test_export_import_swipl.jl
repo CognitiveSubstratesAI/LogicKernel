@@ -356,7 +356,7 @@ end
 function _mx_kernel(path::String, names::Vector{String})
     gd = LK.PL_global_data{_MX}()
     ld = LK.PL_local_data{_MX}(gd)
-    st, ball, _ = LK.load_file!(gd, ld, path)
+    st, ball = LK.load_file!(gd, ld, path)
     out = [st === :ok ? "ok" : "exc " * _mx_enc(ball::_MX)]
     for name in names
         proc = LK.isCurrentProcedure(sym_key(_mxs(name)), 1, LK.MODULE_user(gd))

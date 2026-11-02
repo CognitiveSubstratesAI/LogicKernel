@@ -98,6 +98,38 @@ NEXT AGENT, in order:
    free (ps/free -m first: at most three daemons, MemAvailable >= 12 GB), home tree built first (F2).
 5. test/db/test_gd_template.jl: rows meant to be cheap pass `() -> setupProlog(T)` (writer 1's item 3, still open).
 
+## State (writer 3, 2026-11-02; forced hand-back by the 150k cap hook)
+COMMITTED (edit-only, NOTHING RUN, no daemon slot taken):
+- 36b3d7f G3b `UPSTREAM: pl-error.c printMessage printMessagev`: printMessage calls print_message/2 (pin pl-error.c:990-1063),
+  OK_RECURSIVE, saveWakeup(true)/restoreWakeup + KEEP_URGENT, PL_Q_NODEBUG|PL_Q_PASS_EXCEPTION. NEW FIELDS at the END of each
+  struct: `PL_global_data.procedures_print_message2` (LOOKUPPROC in setBuiltinPredicateProperties!, src/pl-ext.jl:184),
+  `PL_local_data.in_print_message::Int`. Fallback Sdprintf branches + addClauseWic's pl_write collected on ld.messages
+  (`_qlf_Sdprintf!`, NEW `_qlf_pl_write!` in src/pl-qlf.jl). The 20 callers checked: their rc handling already mirrors upstream.
+- 2a23a11 G4: compileClause reads `$variable_names` with gvar_value (src/pl-comp.jl ~3157); field `variable_names` removed from
+  PL_local_data (struct change); test_compiler_warnings_swipl.jl sets it with gvar_setval(SETVAL_BACKTRACKABLE).
+UNCOMMITTED in the worktree (G5, written, NOT staged; the next agent reviews `git diff`, then stages + commits as G5):
+- 55 destructurings `st, ball, _ =` / `st, _, _ =` -> two values, over the test files (mechanical regex).
+- NEW helper `lk_load_file_messages!(gd, ld, path)` appended to test/term_under_test.jl: loads a `user:message_hook/3` collector
+  file once per database (error/warning kinds -> `user:'$lk_message'/2`), loads `path`, returns `(st, ball, msgs)`. The 18 msgs
+  sites (test_zero_exports x9, test_numbervars_cells, test_slot_indirects, test_write_cells, test_clause_ref_swipl,
+  test_nth_clause_swipl, test_load_swipl x4) call it.
+- test/files/test_load_swipl.jl: the "refusals" testset replaced by `_TL_FORMER_REFUSALS` (18 texts compared with the swipl
+  driver, `_tl_kernel` vs `_tl_swipl`, non-vacuity) + a reconsult/second-file testset (UNVERIFIED on the kernel: gate decides).
+  NOT YET DONE there: the header comment lines 13-15 still say "THE REFUSALS ... NotPortedError" (reword to "THE FORMER
+  REFUSALS ... since LB4 b2 each loads through boot/init.pl, compared with swipl"); the header's `boot/init.jl execute_directive!`
+  normalisation note and `1 <= _TL_NORMALISED[] <= 4` are stale-pin candidates (G9 decides).
+LEFT for G5: `grep -n 'ld\.messages' test/*/*.jl` (6 files read ld.messages after a load: test_set_flag_swipl, test_det_swipl,
+  test_canonical_readatom_swipl, test_qlf_swipl, test_exceptions_swipl, test_load_swipl): re-point to the collector where the
+  message is now print_message/2's; test_stack_limit.jl:150 and test_set_flag_swipl.jl:558/578 already fit the two-value shape.
+  Then the stale-pin hunt (GATE-PLAYBOOK: KNOWN DIFFERENCE|interim|until R2 over test/).
+G8 items found: manifest entry `(LK._qlf_pl_write!, Tuple{LK.PL_local_data{T}, Int}, false)` after `_qlf_Sdprintf!`
+  (test/static_analysis_manifest.jl ~2426); OK_RECURSIVE is a plain const (no enum).
+G9 items found: gd.procedures_print_message2 is system:print_message/2 created undefined at setup; boot/messages.pl's export must
+  reach it (upstream import fills an undefined procedure's definition) — same question as dwakeup1. Before messages.pl is
+  loaded every printMessage goes to the collected fallback ("print_message/2: recursive call: " + term), as upstream prints it.
+Alloc pins x3 at the gate cover THREE struct changes (G3b two fields, G4 one removal).
+NEXT AGENT: finish G5 (above), commit; then G6-G8, G9 as in writer 2's list.
+
 ## Answers for D-0354 item 7 (read-only)
 - UPSTREAM markers: not settled per row. Commit subjects `^UPSTREAM:` on origin/main: 95 (`git log --grep`); a per-predicate
   check against the recount's 60 rows was not done (it needs the 60 names mapped to commits). Source files carry `# PORT:` lines.

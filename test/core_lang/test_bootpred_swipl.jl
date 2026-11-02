@@ -495,7 +495,7 @@ end
 function _bp_kernel(path::String, names::Vector{String})
     gd = LK.PL_global_data{_BP}()
     ld = LK.PL_local_data{_BP}(gd)
-    st, ball, _ = LK.load_file!(gd, ld, path)
+    st, ball = LK.load_file!(gd, ld, path)
     out = [st === :ok ? "ok" : "exc " * _bp_enc(ball::_BP)]
     for name in names
         proc = LK.isCurrentProcedure(sym_key(_bps(name)), 1, LK.MODULE_user(gd))

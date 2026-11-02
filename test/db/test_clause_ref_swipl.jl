@@ -297,7 +297,7 @@ const _CASES = [
 function kernel_lines(path::String, names::Vector{String})::Vector{String}
     gd = LK.PL_global_data{_TL}()
     ld = LK.PL_local_data{_TL}(gd)
-    st, ball, _ = LK.load_file!(gd, ld, path)
+    st, ball = LK.load_file!(gd, ld, path)
     out = [st === :ok ? "ok" : "exc " * enc(ball::_TL)]
     for name in names
         proc = LK.isCurrentProcedure(sym_key(_tls(name)), 1, LK.MODULE_user(gd))
@@ -675,7 +675,7 @@ end
     ld = LK.PL_local_data{_TL}(gd)
     path = joinpath(mktempdir(), "w.pl")
     write(path, "p(_X, _X).\n")                                      # a singleton-marked variable twice: the `multiton` warning
-    st, ball, msgs = LK.load_file!(gd, ld, path)
+    st, ball, msgs = lk_load_file_messages!(gd, ld, path)
     @test st === :ok
     ws = [
         m for (k, m) in msgs if kind(m) === EXPR && kind(child(m, 1)) === SYM &&

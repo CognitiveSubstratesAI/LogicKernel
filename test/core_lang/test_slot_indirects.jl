@@ -108,7 +108,7 @@ sw_top :- sw_loop(40).
     ld = LK.PL_local_data{_R}(gd)
     f = joinpath(mktempdir(), "sw_loop.pl")
     write(f, _SW_AR)
-    st, _, msgs = LK.load_file!(gd, ld, f)
+    st, _, msgs = lk_load_file_messages!(gd, ld, f)
     @test st === :ok && isempty(msgs)
     function q()
         proc = LK.lookupProcedure(lk_sym(_R, :sw_top), 0, LK.MODULE_user(gd))

@@ -345,7 +345,7 @@ const _CASES = [
 function kernel_lines(path::String, names::Vector{String})::Vector{String}
     gd = LK.PL_global_data{_TL}()
     ld = LK.PL_local_data{_TL}(gd)
-    st, ball, _ = LK.load_file!(gd, ld, path)
+    st, ball = LK.load_file!(gd, ld, path)
     out = [st === :ok ? "ok" : "exc " * enc(ball::_TL)]
     for name in names
         proc = LK.isCurrentProcedure(sym_key(_tls(name)), 1, LK.MODULE_user(gd))
@@ -578,7 +578,7 @@ function _loaded(src::String)
     ld = LK.PL_local_data{_TL}(gd)
     f = joinpath(realpath(mktempdir()), "w.pl")
     write(f, src)
-    st, ball, _ = LK.load_file!(gd, ld, f)
+    st, ball = LK.load_file!(gd, ld, f)
     @assert st === :ok
     return gd, ld, f
 end
@@ -739,7 +739,7 @@ end
         f,
         ":- '\$set_predicate_attribute'(tlw(_), thread_local, true), assertz(tlw(1)).\ntlw(2).\n"
     )
-    st, ball, msgs = LK.load_file!(gd, ld, f)
+    st, ball, msgs = lk_load_file_messages!(gd, ld, f)
     @test st === :ok
     errs = [enc(m) for (sev, m) in msgs if sev === :error]
     @test length(errs) == 1

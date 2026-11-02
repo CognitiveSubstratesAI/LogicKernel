@@ -237,7 +237,7 @@ end
 function _su_kernel(path::String, names::Vector{String})
     gd = LK.PL_global_data{_SU}()
     ld = LK.PL_local_data{_SU}(gd)
-    st, ball, _ = LK.load_file!(gd, ld, path)
+    st, ball = LK.load_file!(gd, ld, path)
     out = [st === :ok ? "ok" : "exc " * _su_enc(ball::_SU)]
     for name in names
         proc = LK.isCurrentProcedure(sym_key(_sus(name)), 1, LK.MODULE_user(gd))

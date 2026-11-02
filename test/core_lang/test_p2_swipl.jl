@@ -271,7 +271,7 @@ end
 function _p2_kernel(path::String, names::Vector{String})
     gd = LK.PL_global_data{_P2}()
     ld = LK.PL_local_data{_P2}(gd)
-    st, ball, _ = LK.load_file!(gd, ld, path)
+    st, ball = LK.load_file!(gd, ld, path)
     out = [st === :ok ? "ok" : "exc " * _p2_enc(ball::_P2)]
     for name in names
         proc = LK.isCurrentProcedure(sym_key(_p2s(name)), 1, LK.MODULE_user(gd))

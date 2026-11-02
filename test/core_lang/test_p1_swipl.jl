@@ -511,7 +511,7 @@ end
 function _p1_kernel(path::String, names::Vector{String})
     gd = LK.PL_global_data{_P1}()
     ld = LK.PL_local_data{_P1}(gd)
-    st, ball, _ = LK.load_file!(gd, ld, path)
+    st, ball = LK.load_file!(gd, ld, path)
     out = [st === :ok ? "ok" : "exc " * _p1_enc(ball::_P1)]
     for name in names
         proc = LK.isCurrentProcedure(sym_key(_p1s(name)), 1, LK.MODULE_user(gd))
@@ -614,7 +614,7 @@ t_ex_args(E, R) :- compound_name_arguments(E, N, As), R = N-As.
     function answer(name::String, e::_P1)::String
         gd = LK.PL_global_data{_P1}()
         ld = LK.PL_local_data{_P1}(gd)
-        st, _, _ = LK.load_file!(gd, ld, f)
+        st, _ = LK.load_file!(gd, ld, f)
         @test st === :ok
         proc = LK.isCurrentProcedure(sym_key(_p1s(name)), 2, LK.MODULE_user(gd))
         fid = LK.PL_open_foreign_frame(ld)

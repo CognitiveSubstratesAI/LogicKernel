@@ -125,3 +125,39 @@ function lk_side_value!(ld, s::Int, v)
 end
 lk_eq(a::AbstractVector, b::AbstractVector)::Bool =
     length(a) == length(b) && all(((x, y),) -> lk_eq(x, y), zip(a, b))
+
+# THE LOAD'S MESSAGES, as a test reads them (LB4 b2, D-0286 LQ7): `load_file!` returns `(status, ball)` and the
+# messages are print_message/2's, so a test collects them with a `user:message_hook/3` clause, loaded from a
+# file of its own before the file under test: every `error` and `warning` message is recorded (the hook
+# succeeds, so it is not printed) as `user:'$lk_message'(Kind, Term)`, then read back in order and retracted.
+# The other kinds (`silent`, `informational`, …) go to print_message/2's own printing, as in swipl.
+const LK_MESSAGE_COLLECTOR = """
+:- dynamic('\$lk_message'/2).
+message_hook(Term, Kind, _Lines) :-
+    ( Kind == error ; Kind == warning ),
+    assertz('\$lk_message'(Kind, Term)).
+"""
+"""
+Load `path` with `load_file!` and collect its `error` and `warning` messages through a `user:message_hook/3`
+collector: `(status, ball, msgs)`, `msgs` the `(kind, term)` pairs in the order they were printed.
+"""
+function lk_load_file_messages!(
+    gd::LogicKernel.PL_global_data{T}, ld::LogicKernel.PL_local_data{T}, path::AbstractString
+) where {T}
+    m = LogicKernel.mk_sym(T, Symbol("\$lk_message"))
+    if LogicKernel.isCurrentProcedure(LogicKernel.sym_key(m), 2, LogicKernel.MODULE_user(gd)) === nothing
+        hook = tempname() * "_lk_message_collector.pl"     # once per database
+        write(hook, LK_MESSAGE_COLLECTOR)
+        hst, hball = LogicKernel.load_file!(gd, ld, hook)
+        rm(hook; force=true)
+        hst === :ok || error("lk_load_file_messages!: the collector did not load: $hst $hball")
+    end
+    st, ball = LogicKernel.load_file!(gd, ld, path)
+    q = LogicKernel.mk_expr(T, T[m, lk_var(T, UInt64(1)), lk_var(T, UInt64(2))])
+    qual(g) = LogicKernel.mk_expr(T, T[LogicKernel.mk_sym(T, :(:)), LogicKernel.mk_sym(T, :user), g])
+    msgs = Tuple{Symbol, T}[(lk_name(LogicKernel.child(a, 2)), LogicKernel.child(a, 3)) for a in
+        (LogicKernel.child(r, 3) for r in LogicKernel.query_answers(ld, qual(q)))]
+    retract = LogicKernel.mk_expr(T, T[LogicKernel.mk_sym(T, :retractall), q])
+    LogicKernel.query_answers(ld, qual(retract); limit=1)
+    return (st, ball, msgs)
+end

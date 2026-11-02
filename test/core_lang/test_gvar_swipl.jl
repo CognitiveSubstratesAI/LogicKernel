@@ -334,7 +334,7 @@ const _GV_PINNED = [
 function _gv_kernel(path::String, names::Vector{String})
     gd = LK.PL_global_data{_GV}()
     ld = LK.PL_local_data{_GV}(gd)
-    st, ball, _ = LK.load_file!(gd, ld, path)
+    st, ball = LK.load_file!(gd, ld, path)
     out = [st === :ok ? "ok" : "exc " * _gv_enc(ball::_GV)]
     for name in names
         proc = LK.isCurrentProcedure(sym_key(_gvs(name)), 1, LK.MODULE_user(gd))

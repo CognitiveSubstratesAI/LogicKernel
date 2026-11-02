@@ -358,7 +358,7 @@ end
 function _ab_kernel(path::String, names::Vector{String})
     gd = LK.PL_global_data{_AB}()
     ld = LK.PL_local_data{_AB}(gd)
-    st, ball, _ = LK.load_file!(gd, ld, path)
+    st, ball = LK.load_file!(gd, ld, path)
     out = [st === :ok ? "ok" : "exc " * _ab_enc(ball::_AB)]
     for name in names
         proc = LK.isCurrentProcedure(sym_key(_abs(name)), 1, LK.MODULE_user(gd))

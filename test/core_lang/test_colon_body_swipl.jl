@@ -271,7 +271,7 @@ end
 function _cb_kernel(path::String, names::Vector{String})
     gd = LK.PL_global_data{_CB}()
     ld = LK.PL_local_data{_CB}(gd)
-    st, ball, _ = LK.load_file!(gd, ld, path)
+    st, ball = LK.load_file!(gd, ld, path)
     out = [st === :ok ? "ok" : "exc " * _cb_enc(ball::_CB)]
     for name in names
         proc = LK.isCurrentProcedure(sym_key(_cbs(name)), 1, LK.MODULE_user(gd))

@@ -403,7 +403,7 @@ end
 function _ss_kernel(path::String, names::Vector{String})
     gd = LK.PL_global_data{_SS}()
     ld = LK.PL_local_data{_SS}(gd)
-    st, ball, _ = LK.load_file!(gd, ld, path)
+    st, ball = LK.load_file!(gd, ld, path)
     out = [st === :ok ? "ok" : "exc " * _ss_enc(ball::_SS)]
     for name in names
         proc = LK.isCurrentProcedure(sym_key(_sss(name)), 1, LK.MODULE_user(gd))

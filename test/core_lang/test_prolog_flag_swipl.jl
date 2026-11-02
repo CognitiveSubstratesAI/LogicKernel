@@ -94,7 +94,7 @@ function kernel_run(
 )::Tuple{Vector{String}, Vector{Int}}
     gd = LK.PL_global_data{_TL}()
     ld = LK.PL_local_data{_TL}(gd)
-    st, ball, _ = LK.load_file!(gd, ld, path)
+    st, ball = LK.load_file!(gd, ld, path)
     out = [st === :ok ? "ok" : "exc " * enc(ball::_TL)]
     post(gd, ld)
     lives = Int[]
@@ -486,7 +486,7 @@ end
         gd = LK.PL_global_data{_TL}()
         ld = LK.PL_local_data{_TL}(gd)
         on || (ld.prolog_flag_mask &= ~LK.prologFlagMask(LK.PLFLAG_DEBUGINFO))
-        st, _, _ = LK.load_file!(gd, ld, f)
+        st, _ = LK.load_file!(gd, ld, f)
         @test st === :ok
         proc = LK.isCurrentProcedure(sym_key(_tls("h6")), 1, LK.MODULE_user(gd))
         @test proc !== nothing

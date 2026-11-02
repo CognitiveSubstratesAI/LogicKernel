@@ -69,7 +69,7 @@ function _sl_db()::_RDB
     db = _RDB()
     f = joinpath(mktempdir(), "sl.pl")
     write(f, _SL_PROG)
-    st, _, _ = LK.load_file!(db.gd, db.ld, f)
+    st, _ = LK.load_file!(db.gd, db.ld, f)
     @assert st === :ok "test_stack_limit: the program did not load: $st"
     db.ld.stacks_limit = _SL_LIMIT
     return db
@@ -420,7 +420,7 @@ tlv(R) :- catch(lv(200000, _), error(E, _), true), ( var(E) -> R = ok ; R = E ).
     db = _RDB()
     f = joinpath(mktempdir(), "lv.pl")
     write(f, _SL_LV)
-    st, _, _ = LK.load_file!(db.gd, db.ld, f)
+    st, _ = LK.load_file!(db.gd, db.ld, f)
     @assert st === :ok
     db.ld.stacks_limit = _SL_LIMIT
     @test _rlines(db, _R[_rf("tlv", _rv(60))]) == ["tlv(resource_error(stack)) det", "end"]

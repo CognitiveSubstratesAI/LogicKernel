@@ -341,7 +341,7 @@ const _MB_Q7_SWIPL = [
 function _mb_kernel(path::String, names::Vector{String})
     gd = LK.PL_global_data{_MB}()
     ld = LK.PL_local_data{_MB}(gd)
-    st, ball, _ = LK.load_file!(gd, ld, path)
+    st, ball = LK.load_file!(gd, ld, path)
     out = [st === :ok ? "ok" : "exc " * _mb_enc(ball::_MB)]
     for name in names
         proc = LK.isCurrentProcedure(sym_key(_mbs(name)), 1, LK.MODULE_user(gd))

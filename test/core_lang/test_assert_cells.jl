@@ -32,7 +32,7 @@ function _ac_db()::_RDB
     db = _RDB()
     f = joinpath(mktempdir(), "ac.pl")
     write(f, _AC_PROG)
-    st, _, _ = LK.load_file!(db.gd, db.ld, f)
+    st, _ = LK.load_file!(db.gd, db.ld, f)
     @assert st === :ok "test_assert_cells: the program did not load: $st"
     return db
 end

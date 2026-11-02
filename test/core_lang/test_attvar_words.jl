@@ -389,7 +389,7 @@ end
     ld = LK.PL_local_data{_R}(gd)
     f = joinpath(mktempdir(), "v.pl")
     write(f, "v(X) :- var(X).\nnv(X) :- nonvar(X).\n")
-    st, _, _ = LK.load_file!(gd, ld, f)
+    st, _ = LK.load_file!(gd, ld, f)
     @test st === :ok
     function call_on_attvar(name::String)
         proc = LK.isCurrentProcedure(sym_key(_rs(name)), 1, LK.MODULE_user(gd))
@@ -437,7 +437,7 @@ end
 function kernel_lines(path::String, names::Vector{String})::Vector{String}
     gd = LK.PL_global_data{_R}()
     ld = LK.PL_local_data{_R}(gd)
-    st, ball, _ = LK.load_file!(gd, ld, path)
+    st, ball = LK.load_file!(gd, ld, path)
     out = [st === :ok ? "ok" : "exc " * enc(ball::_R)]
     for name in names
         proc = LK.isCurrentProcedure(sym_key(_rs(name)), 1, LK.MODULE_user(gd))

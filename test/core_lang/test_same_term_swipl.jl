@@ -50,7 +50,7 @@ function _st_db()::_RDB
     db = _RDB()
     f = joinpath(mktempdir(), "st.pl")
     write(f, _ST_PROG)
-    st, _, _ = LK.load_file!(db.gd, db.ld, f)
+    st, _ = LK.load_file!(db.gd, db.ld, f)
     @assert st === :ok "test_same_term_swipl: the program did not load: $st"
     return db
 end
@@ -125,7 +125,7 @@ s_big70(R) :- X is 2**70, Y is 2**70, st(same_term(X, Y), R).
     ld = LK.PL_local_data{_STB}(gd)
     f = joinpath(mktempdir(), "stb.pl")
     write(f, _ST_BIG_PROG)
-    st, _, _ = LK.load_file!(gd, ld, f)
+    st, _ = LK.load_file!(gd, ld, f)
     @test st === :ok
     ans = LK.query_answers(
         ld, mk_expr(_STB, _STB[lk_sym(_STB, :s_big70), mk_var(_STB, UInt64(1))])

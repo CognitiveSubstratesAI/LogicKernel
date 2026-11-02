@@ -309,7 +309,7 @@ end
 function _cm_kernel(path::String, names::Vector{String})
     gd = LK.PL_global_data{_CM}()
     ld = LK.PL_local_data{_CM}(gd)
-    st, ball, _ = LK.load_file!(gd, ld, path)
+    st, ball = LK.load_file!(gd, ld, path)
     out = [st === :ok ? "ok" : "exc " * _cm_enc(ball::_CM)]
     for name in names
         proc = LK.isCurrentProcedure(sym_key(_cms(name)), 1, LK.MODULE_user(gd))
