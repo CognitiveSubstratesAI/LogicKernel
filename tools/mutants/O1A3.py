@@ -1,5 +1,6 @@
 # O1A3 (audit D-0322): O1A2's list reduced to the ten mutants that had no verdict or survived, run at the final SHA with the rows
-# f100-f106 (evidence/O1A/gen_rows3.py, expected values from swipl 10.1.19): C8 and E5 (NO VERDICT in O1A2: the runner was shut down),
+# f100-f106 (evidence/O1A/gen_rows3.py, expected values from swipl 10.1.19): C8 and E5 (runaway mutants: the CI runner is killed before a verdict
+# can be written; verified locally under a 4G cap and listed here only by name, NOT in MUTANTS: evidence/O1A/runaway.md, audit D-0324 item 4),
 # A1 A5 A6 D7 I2 J6 K4 (survivors of O1A2, each now killed by a named row), I21 and C6 (declared equivalent, file:line below; neither runs).
 # Everything below is O1A2's header; the NOT LISTED reasons and the TARGETS note are unchanged.
 # ORIGINAL: O1A's mutant list — the swipl-devel counterpart is src/os/pl-fmt.c, the Julia port is src/os/pl-fmt.jl.
@@ -78,14 +79,6 @@ def m(id, old, new, targets=TF, equivalent=None):
 
 
 MUTANTS = [
-    # ── NO VERDICT in O1A2 ──
-    m("O1A-C8 a numeric argument past `int` is not refused: the kernel's raise of format('argument overflow') is gone (KILL k03; swipl 10.1.19 prints 1, flag k)",
-      r'''                        arg2 > typemax(Int32) &&
-                            return PL_format_error(ld, "argument overflow")
-''', r'''                        nothing
-'''),
-    m("O1A-E5 ~1r is a valid radix (KILL e06)",
-      r'''if arg < 2 || arg > 36''', r'''if arg < 1 || arg > 36'''),
     # ── survivors of O1A2: kill rows f100-f106 ──
     m("O1A-A1 outchr stores a code point above 0x7f as one byte when rubber is pending: emit_rubber decodes garbage (KILL f100)",
       r'''        if chr > 0x7f
