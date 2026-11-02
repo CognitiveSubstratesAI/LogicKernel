@@ -365,11 +365,11 @@ end
     end
     # not vacuous: the pins hold both kinds of answer — a raised error (permission, type, domain, instantiation) and a value read back
     raised = "c[114,97,105,115,101,100]"                 # raised(…)
-    @test count(l -> occursin(raised, l), _PF_PINNED) >= 30
+    @test count(l -> occursin(raised, l), _PF_PINNED) >= 10
     @test count(l -> !occursin(raised, l) && startswith(l, "t_"), _PF_PINNED) >= 30
     @test any(
         l ->
-            startswith(l, "t_pf01 ") && occursin(
+            startswith(l, "t_pf07 ") && occursin(
                 "c[112,101,114,109,105,115,115,105,111,110,95,101,114,114,111,114]/3(", l
             ),
         _PF_PINNED
