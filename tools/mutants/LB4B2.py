@@ -192,6 +192,12 @@ TP = _first([
 TW = _first(["test/compile/test_compiler_warnings_swipl.jl"])
 TL = _first(["test/files/test_load_swipl.jl"])
 TC = _first(["test/core_lang/test_catch_swipl.jl"])
+# the continuation opcodes (writers 11-12, audit D-0363 item 2): the rows file first, then the body-code pins, then the boot
+TK = _first(["test/core_lang/test_cont_boot_swipl.jl", "test/compile/test_body_code_swipl.jl",
+             "test/foreign/test_query.jl"])
+TKB = _first(["test/compile/test_body_code_swipl.jl", "test/core_lang/test_cont_boot_swipl.jl",
+              "test/foreign/test_query.jl"])
+GC = "src/pl-gc.jl"
 TARGETS = TBOOT                                      # the baseline's targets (mutate_ci.py plan reads TARGETS)
 QL = "src/pl-qlf.jl"
 GL = "src/pl-global.jl"
@@ -263,4 +269,54 @@ MUTANTS = [
     dict(id="LB4B2-B4 the wrapper is built but not stored as the goal to call: the frame's old word runs (KILL test_catch_swipl.jl 'an unwind(_) ball reaching a catcher')", file=WA, targets=TC,
          old="            ld.slots[argFrameP(ld.lTop, 0) + 1] = consPtr(br_p, TAG_COMPOUND | STG_GLOBAL)  # argFrame(lTop, 0) = consPtr(p, …)\n",
          new="            nothing\n"),
+    # ── the continuation opcodes (writers 11-12): I_CUTCHP's run, the compile branches, the decompiler ──
+    dict(id="LB4B2-K1 I_CUTCHP skips the existence test (KILL test_cont_boot_swipl.jl 'g_cut_neg', 'g_cut_far', 'g_cut_stale')", file=WA, targets=TK,
+         old='        if cch_ch == 0                              # if ( !existingChoice(och) )\n',
+         new='        if false\n'),
+    dict(id="LB4B2-K2 I_CUTCHP takes any value word as a choice (KILL test_cont_boot_swipl.jl 'g_cut_float', 'g_cut_big')", file=WA, targets=TK,
+         old='    if cch_k == DU_VALUE && isTaggedIntW(cch_w)     # isTaggedInt(*a)\n',
+         new='    if cch_k == DU_VALUE     # isTaggedInt(*a)\n'),
+    dict(id="LB4B2-K3 a non-integer raises existence_error, not type_error (KILL test_cont_boot_swipl.jl 'g_cut_atom', 'g_cut_cmp')", file=WA, targets=TK,
+         old='    PL_error(ld, ERR_TYPE, mk_sym(T, :choice), cch_t)   # PL_error(…, ERR_TYPE, ATOM_choice, consTermRef(a))\n',
+         new='    PL_error(ld, ERR_EXISTENCE, mk_sym(T, :choice), cch_t)   # PL_error(…, ERR_TYPE, ATOM_choice, consTermRef(a))\n'),
+    dict(id="LB4B2-K4 I_CUTCHP cuts to the newest choice, not the one named (KILL test_cont_boot_swipl.jl 'g_cut_live', 'g_cut_mid')", file=WA, targets=TK,
+         old='        cc_och = ld.choices[cch_ch].base            # VMH_GOTO(c_cut, och)\n',
+         new='        cc_och = ld.choices[ld.BFR].base            # VMH_GOTO(c_cut, och)\n'),
+    dict(id="LB4B2-K5 $cut compiles to I_TRUE (KILL test_cont_boot_swipl.jl 'g_cut_live'; test_body_code_swipl.jl pt9)", file=CO, targets=TK,
+         old='                Output_0!(ci, I_CUTCHP)\n',
+         new='                Output_0!(ci, I_TRUE)\n'),
+    dict(id='LB4B2-K6 $reset compiles without I_EXITRESET (KILL test_body_code_swipl.jl pt7, the live swipl compare)', file=CO, targets=TKB,
+         old='                Output_0!(ci, I_EXITRESET)\n',
+         new='                nothing\n'),
+    dict(id="LB4B2-K7 $call_continuation emits I_SHIFT (KILL test_body_code_swipl.jl the cc cells; test_cont_boot_swipl.jl 'rb_cc')", file=CO, targets=TKB,
+         old='        Output_1!(ci, I_CALLCONT, VAROFFSET(i1))\n',
+         new='        Output_1!(ci, I_SHIFT, VAROFFSET(i1))\n'),
+    dict(id="LB4B2-K8 $shift_for_copy emits I_SHIFT (KILL test_body_code_swipl.jl sh3; test_cont_boot_swipl.jl 'rb_shiftcp')", file=CO, targets=TKB,
+         old='        Output_1!(ci, for_copy ? I_SHIFTCP : I_SHIFT, VAROFFSET(i1))\n',
+         new='        Output_1!(ci, I_SHIFT, VAROFFSET(i1))\n'),
+    dict(id="LB4B2-K9 I_CUTCHP decompiles to ! (KILL test_cont_boot_swipl.jl 'rb_cut')", file=CO, targets=TK,
+         old='            push!(di.argp, _atom_word!(ld, mk_sym(T, Symbol("\\$cut"))))\n',
+         new='            push!(di.argp, _atom_word!(ld, mk_sym(T, Symbol("!"))))\n'),
+    dict(id="LB4B2-K10 I_RESET decompiles to $catch (KILL test_cont_boot_swipl.jl 'rb_reset', 'rb_tbl_reset')", file=CO, targets=TK,
+         old='            push!(di.argp, _atom_word!(ld, mk_sym(T, Symbol("\\$reset"))))\n',
+         new='            push!(di.argp, _atom_word!(ld, mk_sym(T, Symbol("\\$catch"))))\n'),
+    dict(id="LB4B2-K11 I_YIELD decompiles to $reset (KILL test_cont_boot_swipl.jl 'rb_yield')", file=CO, targets=TK,
+         old='            push!(di.argp, _atom_word!(ld, mk_sym(T, Symbol("\\$yield"))))\n',
+         new='            push!(di.argp, _atom_word!(ld, mk_sym(T, Symbol("\\$reset"))))\n'),
+    dict(id="LB4B2-K12 I_SHIFT decompiles to $shift_for_copy (KILL test_cont_boot_swipl.jl 'rb_shift')", file=CO, targets=TK,
+         old='    op == I_SHIFT && return Symbol("\\$shift")                  # FUNCTOR_dshift1\n',
+         new='    op == I_SHIFT && return Symbol("\\$shift_for_copy")                  # FUNCTOR_dshift1\n'),
+    dict(id="LB4B2-K13 I_CALLCONT decompiles to $shift (KILL test_cont_boot_swipl.jl 'rb_cc')", file=CO, targets=TK,
+         old='    op == I_CALLCONT && return Symbol("\\$call_continuation")  # FUNCTOR_dcall_continuation1 (LB4 b2)\n',
+         new='    op == I_CALLCONT && return Symbol("\\$shift")  # FUNCTOR_dcall_continuation1 (LB4 b2)\n'),
+    dict(id="LB4B2-K14 the decompiler stops reading I_EXITRESET as nothing (KILL test_cont_boot_swipl.jl 'rb_reset')", file=CO, targets=TK,
+         old='        elseif op == I_EXIT || op == I_EXITCATCH || op == I_EXITRESET  # (I_EXITRESET: LB4 b2)\n',
+         new='        elseif op == I_EXIT || op == I_EXITCATCH  # (I_EXITRESET: LB4 b2)\n'),
+    dict(id="LB4B2-K15 the I_RESET refusal names another line (KILL test_cont_boot_swipl.jl 'c_reset': the CONT1 pin)", file=WA, targets=TK,
+         old='        NotPortedError{T}(DEF.name, "the VM instruction I_RESET (pl-vmi.c:5754)", "CONT1")\n',
+         new='        NotPortedError{T}(DEF.name, "the VM instruction I_RESET (pl-vmi.c:5801)", "CONT1")\n'),
+    dict(id='LB4B2-K16 clearUninitialisedVarsFrame reads past I_EXITRESET (EQUIVALENT until CONT1)', file=GC, targets=TK,
+         old='        if c == I_EXIT || c == I_EXITFACT || c == I_EXITCATCH || c == I_EXITRESET ||\n',
+         new='        if c == I_EXIT || c == I_EXITFACT || c == I_EXITCATCH ||\n',
+         equivalent='src/pl-wam.jl I_RESET: every clause holding I_EXITRESET runs I_RESET before it, and I_RESET raises the named error until CONT1, so no frame scanned by clearUninitialisedVarsFrame (src/pl-gc.jl:253) has its PC before an I_EXITRESET; CONT1 re-runs it'),
 ]

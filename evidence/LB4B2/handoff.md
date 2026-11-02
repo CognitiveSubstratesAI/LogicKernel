@@ -449,3 +449,29 @@ TESTS STILL TO EDIT (next agent; read in slices):
     test_boot_*): I_CUTCHP's existence test, its tagged-int test, the I_EXITRESET in clearUninitialisedVarsFrame,
     argKey/arg1Key I_EXITRESET, the decompile atoms.
 OWED AT THE GATE (unchanged + this): alloc pins x3, battery on a fresh name after Evidence.
+
+## State (writer 12, D-0363 item 2 + D-0365 item 4a; FORCED hand-back by the 150k cap hook, 2026-11-03)
+COMMITS on wip/lb4b2c (not pushed): f123565 UPSTREAM writer 11's opcodes (DIVERGES owner CONT1 in the message);
+  83fbd72 ADDED rows (test/core_lang/test_cont_boot_swipl.jl NEW + test_body_code_swipl.jl edits + evidence
+  gen_cb_rows.py / cb_rows.out / cb_vm_list.out); 1975d25 MODIFIED formatter (pl-comp/pl-gc/pl-wam, rows file);
+  the commit carrying this block: tools/mutants/LB4B2.py += K1-K16 (UNVALIDATED: the python3 -I checker was blocked
+  by the cap hook; run it first: old once, new != old, ids unique, targets exist).
+REVIEW (by reading, pin cbf4e189): pl-vmi.c:2930-2959 I_CUTCHP, pl-comp.c:3543-3556, 4703-4735, 5520, 5600, 6153,
+  6758-6783, 6950, pl-gc.c:1354, the VMI() flags/argtypes: the port matches; no fix needed. Upstream's other
+  I_EXITRESET sites (pl-comp.c:7863 vm_list, 8658/8688 $clause_term_position) have no kernel counterpart.
+TESTS: test_body_code_swipl.jl `_BC_IS_REFUSED = ()`, `@test isempty(refusals)`, family list += i_callcont( i_shift(
+  i_shiftcp(; the `$reset` refusal loop replaced by tf rows pt7-pt10 (code pinned from swipl vm_list, two identical
+  runs). Rows file: 20 one-database rows (g_cut_* I_CUTCHP run, rb_* clause/2 of all seven bodies) + 6 c_* rows,
+  each in a fresh database, kernel pin `refused <what> CONT1` (CONT1 flips to swipl's line, pinned beside).
+  NOTHING RUN on the kernel yet (UNVERIFIED: gate decides). Applied to the run tree (patch, clean).
+CHECK (run tree, 316s): FAIL on format only, and only of OTHER branches' files merged into the run tree
+  (boot_image.jl, gd_template.jl, pl-atom/event/ext/list/qlf/read.jl, os/*, manifest, several test/db + test/files
+  files): none of LB4 b2's seven. port_check/manifest did not run (format stops first). No new src function: no
+  manifest entry owed by this work.
+DAEMON: b2 (logickernel-warm-17790d9d) RUNNING since ~20:10 local (cold compile ended), idle at hand-back.
+NEXT AGENT (in order): (1) validate tools/mutants/LB4B2.py (checker as in WRITER_RULES); (2) the rows file and
+  test_body_code_swipl.jl on the three term types (`warm.sh file <f>` in lk-lb4b2-run, one at a time, load < 8);
+  trace any mismatch to the pin before fixing; (3) then the boot-files agent: probe 2 (evidence/LB4B2/
+  g9_boot_probe2.jl, its temporary addClauseWic catch), the five files ALONE in order (test_boot_messages,
+  test_boot_image, test_boot_clauses, test_load, test_qlf); dict-syntax lines wait for RDDICT; flags F2,F4-F8 are
+  the audit's. Owed at the gate: alloc pins x3, pkgtest_way for the two changed test files, battery on a fresh name.
