@@ -90,12 +90,15 @@ function _db_swipl_lines(path::String, names::Vector{String})::Vector{String}
     return String.(split(chomp(out), '\n'; keepempty=false))
 end
 
-# the program: the recursion db24 runs in debug mode (the cases t_dbNN/1 follow)
+# the program: the recursion db24 runs in debug mode, and the list helpers the kernel has no library(lists) for (the cases t_dbNN/1 follow)
 const _DB_PROGRAM = raw"""
 cnt(0) :- !.
 cnt(N) :- N1 is N-1, cnt(N1).
 dbl(0, 0) :- !.
 dbl(N, M) :- N1 is N-1, dbl(N1, M1), M is M1+2.
+member(X, [X|_]).
+member(X, [_|T]) :- member(X, T).
+memberchk(X, L) :- member(X, L), !.
 """
 
 # (id, goal), run IN ORDER
@@ -170,7 +173,7 @@ const _DB_CASES = [
     ),
     (
         "db24",
-        raw"set_prolog_flag(debug, true), cnt(1000), dbl(300, M), findall(X, member(X, [1, 2, 3]), L), catch(throw(x), x, C = caught), ( \+ fail -> Z = ok ; Z = no ), once(member(Y, [a, b])), forall(member(W, [1, 2]), W > 0), set_prolog_flag(debug, false), R = [M, L, C, Z, Y]"
+        raw"set_prolog_flag(debug, true), cnt(1000), dbl(300, M), findall(X, member(X, [1, 2, 3]), L), catch(throw(x), x, C = caught), ( \+ fail -> Z = ok ; Z = no ), ( member(Y, [a, b]) -> true ; fail ), \+ ( member(W, [1, 2]), \+ W > 0 ), set_prolog_flag(debug, false), R = [M, L, C, Z, Y]"
     ),
     (
         "db25",
@@ -251,7 +254,7 @@ const _DB_PINNED = [
     "t_db33 c[116,95,100,98,51,51]/1(c[91,124,93]/2(a[115,104,97,114,101,100,95,111,98,106,101,99,116,95,101,120,116,101,110,115,105,111,110],c[91,124,93]/2(a[118,101,114,115,105,111,110,95,103,105,116],c[91,124,93]/2(a[108,105,98,115,119,105,112,108],c[91,124,93]/2(a[100,101,98,117,103],c[91,124,93]/2(a[100,101,98,117,103,103,101,114,95,115,104,111,119,95,99,111,110,116,101,120,116],nil))))))",
     "t_db34 c[116,95,100,98,51,52]/1(c[91,124,93]/2(a[100,101,98,117,103],c[91,124,93]/2(a[100,101,98,117,103,103,101,114,95,115,104,111,119,95,99,111,110,116,101,120,116],c[91,124,93]/2(a[108,105,98,115,119,105,112,108],c[91,124,93]/2(a[115,104,97,114,101,100,95,111,98,106,101,99,116,95,101,120,116,101,110,115,105,111,110],c[91,124,93]/2(a[118,101,114,115,105,111,110,95,103,105,116],nil))))))",
     "t_db35 c[116,95,100,98,51,53]/1(c[91,124,93]/2(a[116,114,117,101],c[91,124,93]/2(a[102,97,108,115,101],nil)))"
-# PINS-END
+    # PINS-END
 ]
 
 "The program and cases as one file; the case predicates' names."
@@ -259,7 +262,8 @@ function _db_file()::Tuple{String, Vector{String}}
     names = ["t_$(id)" for (id, _) in _DB_CASES]
     text =
         _DB_PROGRAM * join([
-            "t_$(id)(R) :- catch(($g), error(SfE, _), R = raised(SfE)), set_prolog_flag(debug, false), set_prolog_flag(debugger_show_context, false).\n" for
+            "t_$(id)(R) :- catch(($g), error(SfE, _), R = raised(SfE)), set_prolog_flag(debug, false), set_prolog_flag(debugger_show_context, false).\n"
+            for
             (id, g) in _DB_CASES
         ])
     f = joinpath(mktempdir(), "debugflag.pl")
@@ -348,8 +352,11 @@ end
 
 "The encoding (`_db_enc`) of a list of atoms, as the driver writes it."
 _db_atom_list_enc(xs::Vector{String})::String =
-    isempty(xs) ? "nil" :
-    "c[91,124,93]/2(a" * _db_codes(first(xs)) * "," * _db_atom_list_enc(xs[2:end]) * ")"
+    if isempty(xs)
+        "nil"
+    else
+        "c[91,124,93]/2(a" * _db_codes(first(xs)) * "," * _db_atom_list_enc(xs[2:end]) * ")"
+    end
 
 # THE KERNEL'S OWN ANSWERS (white-box; swipl cannot be asked for its engine's fields, and its libswipl is a different file):
 #   * the local data's debugger status and the mask bits (`debugmode`, pl-trace.c:2223-2275): while `debug` is on `debugstatus.debugging` is set,
@@ -380,7 +387,8 @@ _db_atom_list_enc(xs::Vector{String})::String =
     st, _, _ = LK.load_file!(gd, ld, path)
     @test st === :ok
     msg_text(m) = _db_enc(m[2])
-    debug_msgs() = [m for m in ld.messages if occursin(_db_codes("debug_mode"), msg_text(m))]
+    debug_msgs() =
+        [m for m in ld.messages if occursin(_db_codes("debug_mode"), msg_text(m))]
     @test !ld.debugstatus_debugging
     @test LK.truePrologFlag(ld, LK.PLFLAG_LASTCALL)
     @test LK.truePrologFlag(ld, LK.PLFLAG_VMI_BUILTIN)
@@ -414,7 +422,7 @@ _db_atom_list_enc(xs::Vector{String})::String =
     # the build flags: the access of libswipl (swipl: read) and the exact version_git
     @test occursin(_db_atom_list_enc(["write", "atom"]), _db_query(gd, ld, "r_lib"))
     @test _db_query(gd, ld, "r_git") ==
-          "r_git c" * _db_codes("r_git") * "/1(a" * _db_codes("10.1.19-1-gcbf4e189") * ")"
+        "r_git c" * _db_codes("r_git") * "/1(a" * _db_codes("10.1.19-1-gcbf4e189") * ")"
     # `debug` false while the debug mode is already off still sets the run-mode bits (pl-trace.c:2253 `else if (!doit) setPrologRunMode`; pl-incl.h
     # sets them whatever the table's `last_call_optimisation` says): clear LASTCALL by the flag, then `debug` false puts it back
     @test LK.truePrologFlag(ld, LK.PLFLAG_LASTCALL)
@@ -428,7 +436,8 @@ _db_atom_list_enc(xs::Vector{String})::String =
     @test LK.truePrologFlag(ld, LK.PLFLAG_LASTCALL)
     @test length(debug_msgs()) == n0 + 2                # none of this changed the mode
     # `tracemode(true)` is reached by no flag path (the flag `debug` only turns tracing off): the direct calls. It switches the debug mode on too.
-    trace_msgs() = [m for m in ld.messages if occursin(_db_codes("trace_mode"), msg_text(m))]
+    trace_msgs() =
+        [m for m in ld.messages if occursin(_db_codes("trace_mode"), msg_text(m))]
     t0 = length(trace_msgs())
     old = Ref(true)
     @test LK.tracemode(ld, true, old)
@@ -469,6 +478,15 @@ _db_atom_list_enc(xs::Vector{String})::String =
     @test length(trace_msgs()) == t0 + 2
     @test occursin("a" * _db_codes("false"), msg_text(last(trace_msgs())))
     @test ld.debugstatus_skiplevel == typemax(UInt)     # nothing lowers it
+    # switching the debug mode on resets a lowered skip level (pl-trace.c:2243 `debugstatus.skiplevel = SKIP_VERY_DEEP`), and off puts the run mode back
+    ld.debugstatus_skiplevel = UInt(0)
+    @test LK.debugmode(ld, true, nothing, UInt32(0))
+    @test ld.debugstatus_debugging
+    @test ld.debugstatus_skiplevel == typemax(UInt)
+    @test !LK.truePrologFlag(ld, LK.PLFLAG_LASTCALL)
+    @test LK.debugmode(ld, false, nothing, UInt32(0))
+    @test !ld.debugstatus_debugging
+    @test LK.truePrologFlag(ld, LK.PLFLAG_LASTCALL)
     # not vacuous: every check above could fail (the encodings are non-empty and the messages were counted)
     @test !isempty(_db_atom_list_enc(["write", "atom"]))
     @test length(debug_msgs()) >= 2
