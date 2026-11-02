@@ -182,3 +182,59 @@ function emptyStacks!(ld::PL_local_data{T})::Nothing where {T}
     ld.tmp_cells = unRef(ld.slots[ld.tmp_h + 1])               # (PERMANENT, as the exception's: popTermRef)
     return nothing
 end
+
+# PORT: pl-setup.c signames as SIGNAMES
+# DIVERGES (HALT1, for the audit): the signal numbers are Linux's (x86_64): upstream reads them from the host's
+# `<signal.h>`; the kernel is Linux-only here. The `#ifdef`s of signals Linux lacks are left out (`emt`, `info`);
+# the flags (`PLSIG_THROW`, `PLSIG_IGNORE`) and the Prolog interrupts from 32 up (`prolog:gc`, …) are left to the
+# signal step. A comment, not a docstring, as for every module-level constant the global-state lint reads.
+const SIGNAMES = (
+    ("hup", 1), ("int", 2), ("quit", 3), ("ill", 4), ("abrt", 6), ("fpe", 8), ("kill", 9),
+    ("segv", 11), ("pipe", 13), ("alrm", 14), ("term", 15), ("usr1", 10), ("usr2", 12),
+    ("chld", 17), ("cont", 18), ("stop", 19), ("tstp", 20), ("ttin", 21), ("ttou", 22),
+    ("trap", 5), ("bus", 7), ("stkflt", 16), ("urg", 23), ("io", 29), ("poll", 29),
+    ("xcpu", 24), ("xfsz", 25), ("vtalrm", 26), ("prof", 27), ("pwr", 30), ("sys", 31),
+    ("winch", 28)
+)
+
+# PORT: pl-setup.c signal_index
+# DIVERGES: `name` is a Julia string; the bound `strlen(name) < 12` is on its UTF-8 bytes, as upstream's.
+"The number of the signal `name` names — `term`, or `SIGTERM` (an uppercase `SIG` prefix, then any case) — or -1 (pl-setup.c)."
+function signal_index(name::AbstractString)::Int
+    if startswith(name, "SIG") && ncodeunits(name) < 12
+        name = lowercase(SubString(name, 4))            # strcpy(tmp, name+3); strlwr(tmp)
+    end
+
+    for (n, sig) in SIGNAMES
+        n == name && return sig
+    end
+
+    return -1
+end
+
+# PORT: pl-setup.c PL_get_signum_ex
+# DIVERGES: returns the number, or `nothing` with the error raised (see `PL_get_integer_ex`). `PL_get_chars(sig, &s,
+# CVT_ATOM)` is a text atom: not `[]` (a reserved symbol), not a blob.
+"""
+The signal number term reference `sig` holds — an integer, or a signal name (`term`, `SIGTERM`) — in 1..31, or `nothing`
+after raising `type_error(signal, Sig)` (neither) or `domain_error(signal, Sig)` (out of range, or no such name) (pl-setup.c).
+"""
+function PL_get_signum_ex(ld::PL_local_data{T}, sig::term_t)::Union{Nothing, Int} where {T}
+    i = PL_get_integer(ld, sig)
+    if i === nothing
+        a = PL_get_atom(ld, sig)
+        if a !== nothing && !is_reserved_symbol(a) && !is_blob(a)
+            i = signal_index(sym_text(a))
+        else
+            PL_error(ld, ERR_TYPE, mk_sym(T, :signal), sig)
+            return nothing
+        end
+    end
+
+    if i > 0 && i < 32                                  # where to get these?
+        return i
+    end
+
+    PL_error(ld, ERR_DOMAIN, mk_sym(T, :signal), sig)
+    return nothing
+end

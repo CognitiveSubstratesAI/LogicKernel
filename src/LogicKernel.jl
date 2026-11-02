@@ -66,7 +66,8 @@ include("pl-proc.jl")          # swipl-devel src/pl-proc.c — predicates, asser
 include("pl-srcfile.jl")       # swipl-devel src/pl-srcfile.c — source files: consulting a file (first load)
 include("pl-supervisor.jl")    # swipl-devel src/pl-supervisor.c — the code a call enters first
 include("pl-trace.jl")         # swipl-devel src/pl-trace.c — prolog_current_frame/1, prolog_current_choice/1
-include("pl-pro.jl")           # swipl-devel src/pl-pro.c — callProlog, sig_atomic/1
+include("pl-pro.jl")           # swipl-devel src/pl-pro.c — callProlog, sig_atomic/1, abort/0
+include("pl-init.jl")          # swipl-devel src/pl-init.c — PL_cleanup, the clean-up halt/1 ends with (HALT1)
 include("pl-mutex.jl")         # swipl-devel src/pl-mutex.c — with_mutex/2 (the single-thread form)
 include("pl-bag.jl")           # swipl-devel src/pl-bag.c — the bags of findall/3
 include("pl-gvar.jl")          # swipl-devel src/pl-gvar.c — global variables: b_setval, nb_setval, nb_current …

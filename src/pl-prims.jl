@@ -4446,6 +4446,42 @@ function pl_style_check2_va(
     return FFALSE
 end
 
+# PORT: pl-prims.c halt as pl_halt1_va
+# (PRED_IMPL("halt", 1, halt, 0), pl-prims.c:5554-5574 at the pin)
+# DIVERGES: `PL_abort_process` returns here (with the seam `gd.halt_exit` off, src/pl-global.jl), so the call is followed by
+# upstream's own `return false` ("not reached"). A returning seam makes `PL_halt` return false (src/pl-fli.jl).
+"""
+    halt(+Status)
+
+Halt the system: an integer is the exit status; the atom `abort` aborts the process; any other atom is a signal name
+(`term`, `SIGTERM`), the status `128+Signal` with no cancel. Raises `unwind(halt(Status))` (pl-prims.c). Succeeds
+where a hook cancelled the halt (`cancel_halt/1`).
+"""
+function pl_halt1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    code = PL__t0
+    gd = _query_gd(ld)
+
+    a = PL_get_atom(ld, code)
+    if a !== nothing
+        if sym_key(a) == sym_key(mk_sym(T, :abort))     # a == ATOM_abort
+            PL_abort_process(gd, ld)
+            return FFALSE                               # not reached
+        end
+        signum = PL_get_signum_ex(ld, code)
+        signum === nothing && return FFALSE
+        status = signum + 128
+        status |= PL_CLEANUP_NO_CANCEL
+    else
+        i = PL_get_integer_ex(ld, code)
+        i === nothing && return FFALSE
+        status = i
+    end
+
+    return PL_halt(gd, ld, status | PL_HALT_WITH_EXCEPTION) ? FTRUE : FFALSE
+end
+
 # PORT: pl-prims.c BeginPredDefs as PL_predicates_from_prims
 # DIVERGES: the entries of the predicates the kernel has ported, in upstream's order (prims:6570-6677);
 # `PRED_DEF` ors in `PL_FA_VARARGS`. The others of upstream's table arrive with their ports.
@@ -4523,7 +4559,8 @@ const PL_predicates_from_prims = (
     PL_extension("nb_linkarg", 3, pl_nb_linkarg3_va, PL_FA_VARARGS),
     PL_extension("\$style_check", 2, pl_style_check2_va, PL_FA_VARARGS),     # (Q10)
     PL_extension("\$skip_list", 3, pl_skip_list3_va, PL_FA_VARARGS),
-    PL_extension("throw", 1, pl_throw1_va, PL_FA_ISO | PL_FA_VARARGS)
+    PL_extension("throw", 1, pl_throw1_va, PL_FA_ISO | PL_FA_VARARGS),
+    PL_extension("halt", 1, pl_halt1_va, PL_FA_VARARGS)       # (HALT1: the last entry, as upstream's table)
 )
 
 # ── repeat/0 (NF4: the first non-deterministic built-in of the `a1, a2, …` convention) ─────────────

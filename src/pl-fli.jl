@@ -1341,3 +1341,70 @@ function lookupUCSAtom(
     bytes = Vector{UInt8}(reinterpret(UInt8, Vector{UInt32}(view(s, 1:len))))
     return first(lookupBlob(atoms, bytes, len * sizeof(UInt32), ucs_atom))
 end
+
+# ── halting (HALT1): PL_halt, haltProlog, PL_abort_process (pl-fli.c) ───────────────────────────
+# PORT: pl-fli.c haltProlog
+# DIVERGES: left out: the `GC_DEBUG`/`O_DEBUG`/ASAN line that keeps the memory reclaim (a build option) and the
+# `run_on_halt(&GD->os.exit_hooks, status)` (the kernel has no exit hook list). The database and the local
+# data are arguments (the clean-up is `PL_cleanup`, src/pl-init.jl).
+"Clean up for a halt: true where the halt goes ahead, false where a hook cancelled it or a clean-up runs already (pl-fli.c)."
+function haltProlog(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, status::Int
+)::Bool where {T}
+    status |= PL_CLEANUP_NO_RECLAIM_MEMORY
+    status &= ~PL_HALT_WITH_EXCEPTION
+
+    rc = PL_cleanup(gd, ld, status)
+    if rc == PL_CLEANUP_CANCELED || rc == PL_CLEANUP_RECURSIVE
+        return false
+    end
+    gd.halt_cleaning = CLN_ATEXIT                       # (run_on_halt(&GD->os.exit_hooks, status): none)
+    return true
+end
+
+# PORT: pl-fli.c PL_halt
+# DIVERGES (HALT1, for the audit): (a) upstream's `exit(status)` is `_halt_exit!(gd, status)`, the seam
+# `gd.halt_exit` (src/pl-global.jl; true, the real `exit`); where the seam is off — a test that embeds the kernel —
+# the halt state is reset (`CLN_NORMAL`, as after a cancel) and `PL_halt` returns false, where upstream never
+# returns. (b) One thread: the `O_PLMT` branch that forwards the halt to the main thread (`GD->halt.thread != 1`,
+# `PL_thread_raise`, `Pause(halt_grace_time())`) is never taken; `halt_thread` is 1. The database and local data
+# are arguments. Returns true where the halt was cancelled (`halt/1` then succeeds), false otherwise.
+"""
+    PL_halt(gd, ld, status) -> Bool
+
+Halt the system with `status` (its low 16 bits the exit status; `PL_HALT_WITH_EXCEPTION` and `PL_CLEANUP_NO_CANCEL`
+are flags): raise `unwind(halt(Status))` where the running query handles it (and return false, the exception
+pending); else clean up and end the process through `gd.halt_exit`. True where a hook cancelled the halt (pl-fli.c).
+"""
+function PL_halt(gd::PL_global_data{T}, ld::PL_local_data{T}, status::Int)::Bool where {T}
+    gd.halt_status = status
+    gd.halt_thread = 1                                  # PL_thread_self(): the one thread
+
+    if (status & PL_HALT_WITH_EXCEPTION) != 0 && raise_halt_exception(ld, status, false)
+        return false
+    end
+
+    if haltProlog(gd, ld, status)
+        _halt_exit!(gd, status)                         # exit(status)
+        gd.halt_cleaning = CLN_NORMAL                   # the seam returned (DIVERGES (a))
+        gd.halt_status = 0
+        gd.halt_thread = 0
+        return false
+    end
+
+    gd.halt_status = 0                                  # cancelled
+    gd.halt_thread = 0
+
+    return true
+end
+
+# PORT: pl-fli.c PL_abort_process
+# DIVERGES: upstream's `abort()` (SIGABRT, exit 134 under a shell) is the call of the seam with 134 (`128+SIGABRT`);
+# `PL_abort_process` returns where the seam does. `SIGABRT` is Linux's, 6.
+"Clean up with status `128+SIGABRT` and no cancel, then end the process as `abort()` does (pl-fli.c)."
+function PL_abort_process(gd::PL_global_data{T}, ld::PL_local_data{T})::Nothing where {T}
+    haltProlog(gd, ld, (128 + 6) | PL_CLEANUP_NO_CANCEL)
+    _halt_exit!(gd, 128 + 6)                            # abort()
+    gd.halt_cleaning = CLN_NORMAL                       # the seam returned
+    return nothing
+end

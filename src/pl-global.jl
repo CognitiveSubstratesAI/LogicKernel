@@ -83,7 +83,8 @@ mutable struct PL_global_data{T}
     halt_thread::Int                                            # halt.thread: the initiating thread (HALT1)
     halt_cleaning::Int                                          # halt.cleaning: `CLN_*` (HALT1)
     halt_cancelled::Int                                         # halt.cancelled: times a halt was cancelled (HALT1)
-    halt_exit::Function                                         # (HALT1: the seam where upstream calls `exit(status)`)
+    halt_exit::Bool                                             # (HALT1: the seam where upstream calls `exit(status)`: true, the real exit)
+    const halt_exited::Vector{Int}                              # (HALT1: with the seam off, the statuses `exit` was called with)
 end
 # DIVERGES: `atoms` is upstream's `GD->atoms` as a struct of its own (src/pl-atom.jl), one table per
 # database, built first as upstream's `initAtoms` runs first; `functors` likewise `GD->functors` with
@@ -190,7 +191,8 @@ function PL_global_data{T}() where {T}
         0,                                      # halt_thread
         CLN_NORMAL,                             # halt_cleaning
         0,                                      # halt_cancelled
-        _halt_process_exit                      # halt_exit: the process exit
+        true,                                   # halt_exit: the process exit
+        Int[]                                   # halt_exited
     )
     initPrologFlags!(gd)                        # setup:136 (src/os/pl-prologflag.jl): before the built-ins (:158), whose boot clauses read the mask
     initBuildIns!(gd)                           # setup:158 (src/pl-ext.jl)
@@ -198,7 +200,7 @@ function PL_global_data{T}() where {T}
     return gd
 end
 
-# PORT: pl-incl.h cleanup_status
+# PORT: pl-incl.h cleanup_status as CLN_NORMAL
 # DIVERGES: the enum's values as `Int` constants (`halt_cleaning` is an `Int`), pl-incl.h:1054-1060.
 "`GD->halt.cleaning`: normal mode (pl-incl.h)."
 const CLN_NORMAL = 0
@@ -216,11 +218,18 @@ const CLN_DATA = 5
 const CLN_ATEXIT = 6
 
 # ORIGINAL (HALT1): upstream calls `exit(status)` in `PL_halt` and in `PL_abort_process`; a library cannot
-# end its host's process unasked, so the global data holds the call (`halt_exit`), set to this function —
-# the real `exit` — when the database is made. A caller that embeds the kernel (a test) sets `gd.halt_exit`;
-# when it returns, `PL_halt` returns false where upstream never returns.
-"The process exit `PL_halt` ends with (upstream's `exit(status)`): ends the Julia process with `status`."
-_halt_process_exit(status::Int)::Nothing = exit(status)
+# end its host's process unasked, so the global data holds the call as a seam, `halt_exit`: true (the default),
+# `_halt_exit!` ends the process with `status`; false, it records `status` in `halt_exited` and returns, and
+# `PL_halt` then returns false where upstream never returns. A caller that embeds the kernel (a test) sets
+# `gd.halt_exit = false`. (A Boolean and a vector, not a function field: no abstractly typed field.)
+"The process exit `PL_halt` ends with (upstream's `exit(status)`): ends the Julia process with `status`, or records it (`gd.halt_exit` false)."
+function _halt_exit!(gd::PL_global_data, status::Int)::Nothing
+    if gd.halt_exit
+        exit(status)
+    end
+    push!(gd.halt_exited, status)
+    return nothing
+end
 
 # (swipl-devel cbf4e189 pl-incl.h:2969-2970)
 # PORT: pl-incl.h ACCESS_LEVEL_USER
