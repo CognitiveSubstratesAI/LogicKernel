@@ -2435,7 +2435,15 @@ function _manifest_index(T)
             L in (Nothing, LK.PL_locale)
         ]...,
         # Q10 — '$style_check'/2 (src/pl-prims.jl)
-        (LK.pl_style_check2_va, Tuple{LD, Int, Int, LK.foreign_context{T}}, false)
+        (LK.pl_style_check2_va, Tuple{LD, Int, Int, LK.foreign_context{T}}, false),
+        # RD1: pl-read.c's stream readers (read_term/2,3, $is_named_var/1, read/1,2, $raw_read/1,2)
+        (LK.pl_read_term3_va, Tuple{LD, Int64, Int64, LK.foreign_context{T}}, false),
+        (LK.pl_read_term2_va, Tuple{LD, Int64, Int64, LK.foreign_context{T}}, false),
+        (LK.pl_is_named_var1_va, Tuple{LD, Int64, Int64, LK.foreign_context{T}}, false),
+        (LK.pl_raw_read2, Tuple{LD, Int64, Int64}, false),
+        (LK.pl_raw_read, Tuple{LD, Int64}, false),
+        (LK.pl_read2, Tuple{LD, Int64, Int64}, false),
+        (LK.pl_read, Tuple{LD, Int64}, false)
     )
 end
 
