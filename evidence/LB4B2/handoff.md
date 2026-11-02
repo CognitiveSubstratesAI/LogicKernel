@@ -49,8 +49,40 @@ G7 tools/mutants/LB4B2.py (>= 28; TARGETS = every test file that boots: all that
 G8 docs/architecture.md block, manifest entries (LAST, own commits) (2).
 G9 b2-7 boot-discovery fixes from the smoke run on the local merge (3-4, unknown).
 
-## State
-(written as groups land; see the commit list below)
+## State (writer 1, 2026-11-02; handed back at ~95k context at a clean commit boundary)
+COMMITTED on wip/lb4b2: 12 cherry-picked b1 commits (89822c9..c9e65f0 of wip/lb4b1 -> ..87d0db0 here); 612914e G0 plan;
+18eb1c3 G1 (b2-1): `setupProlog(T)` (old constructor body, src/pl-global.jl:118-196), `PL_global_data{T}() =
+PL_global_data_from_template(T)` (:199), `boot_global_data(T)` (src/pl-qlf.jl after `boot_from_source!`: home flag ->
+HOME/boot/init.pl, raises if missing, H11 check on lTop/trail/fli_context/nfliframes), gd_template(T)'s default build =
+boot_global_data (src/gd_template.jl:109, was the constructor: would recurse), precompile_workload.jl uses setupProlog.
+NOTHING RUN. No daemon started. The tree does NOT boot yet: the stand-ins are still registered (H2: init.pl's catch/3 over
+a P_LOCKED stand-in raises permission_error) -> G2 is next and must land before any run.
+
+NEXT AGENT, in order:
+1. G2 family 1: src/pl-ext.jl initBuildIns! calls (:161-168) `_boot_catch3!` `_boot_cleanup!` `_boot_control!` `_boot_lists!`
+   `_boot_meta!`; bodies :171-482 (`_boot_control!` is the control constructs ;/,/->/*->/\+ of init.pl:360-388: same family,
+   the plan's list missed it). Then family 2 `_boot_syspred!` :506, `_boot_bags!` :575, `_boot_bagof!` :847; family 3
+   `_boot_attvar!` :642 and its callees (:697-846). Helpers `_boot_clause!` :285, `_boot_term`, `_boot_conj`, `_boot_ite`,
+   `_boot_cons`, `_boot_vars`, `_boot_length_error` go with the last family that uses them. Grep test/ and
+   test/static_analysis_manifest.jl for each name (name-scoped greps; the recursive-grep hook wants named dirs).
+2. G3 load_file! (boot/init.jl:21-100 today; the include at src/LogicKernel.jl:85), then G4-G8 as planned.
+3. test/db/test_gd_template.jl builds with the one-argument `gd_template(T)` in places: with the boot on that boots;
+   rows meant to be cheap should pass `() -> setupProlog(T)` explicitly. Check each at the edit.
+4. Smoke run tree: a LOCAL merge (run only) of wip/lb2bw, wip/pr1, wip/q10b ($style_check), wip/bootpred3, wip/dict
+   (expand.pl:470-486 merge_states uses put_dict/>:< during goal expansion once expand.pl is loaded mid-boot: likely
+   reached), wip/f2 not needed. Build the home tree first (`julia tools/build_home.jl`), see F2.
+
+## Answers for D-0354 item 7 (read-only)
+- UPSTREAM markers: not settled per row. Commit subjects `^UPSTREAM:` on origin/main: 95 (`git log --grep`); a per-predicate
+  check against the recount's 60 rows was not done (it needs the 60 names mapped to commits). Source files carry `# PORT:` lines.
+- init.pl:4554 `[Opt] :< Options` sits in `'$option'/2`'s first clause behind `is_dict(Options), !` (:4552-4553): at first
+  boot every caller passes a list, so the second clause (`memberchk`) runs and `:<` is only compiled as a call.
+  expand.pl:486 (`Left >:< Right`, `put_dict/3`, `get_dict/3` at :480-487) is in `merge_states/3` of the `'$var_info'`
+  variable-state merge of goal expansion (:474-490): reached when a clause body's branches give a variable different
+  states, plausibly during the boot once load.pl has swapped expand.pl in. The first boot run decides; include wip/dict.
+- halt/1: defined at init.pl:4655-4661; no boot directive calls it. Upstream's boot ends in `PL_halt` from C
+  (pl-init.c:1625, :1643), which LB3's `boot_from_source!` leaves out (no state file). Prolog `halt/1` is first reached at
+  run time from toplevel.pl (:403, :417, :491 initialisation errors; :1140-1168 `-c` compile), never on the boot load path.
 
 ## Flags for the audit
 F1 Base of wip/lb4b2 = main + cherry-picked wip/lb4b1 (b2-1 edits b1's file). The gate rebase drops the copies.
