@@ -2,7 +2,7 @@
 # test/test_r2_status.jl — the R2 generator on a small fixture tree, and both sides of each comparison non-empty on the real tree.
 #
 # Text only: no kernel term type is involved, so this file runs once (it is no `term_under_test` file).
-using Test, LogicKernel
+using Test
 
 include(joinpath(@__DIR__, "..", "tools", "r2_status.jl"))
 
@@ -72,6 +72,10 @@ VMI(A_ADD, 0, 0, ())
     @test r2_heads(cls) == Set(["foo/3", "next/1"])
     @test r2_heads(r2_clauses(r2_tokenize("x:y(1,2) :- true.\nd --> e.\nh.\n:- dynamic q/1.\n"))) == Set(["y/2", "d/2", "h/0"])
     @test r2_arity(r2_tokenize("f((a,b), c)"), 2) == (2, 10)
+    # operators are calls too (:<, \=@=, is, a prefix directive operator), a clause neck is none
+    oc = r2_calls(only(r2_clauses(r2_tokenize("p(X, Y) :- X :< Y, X \\=@= Y, Z is X + 1, =(X, Z), dynamic foo/1, q.\n"))))
+    @test ":<" in first.(oc) && "\\=@=" in first.(oc) && ("is", 2, 1) in oc && ("=", 2, 1) in oc && ("dynamic", 1, 1) in oc
+    @test !(":-" in first.(oc)) && ("q", 0, 1) in oc
 end
 
 @testset "r2_status: load.pl's consult lists, conditions and the library closure" begin
@@ -96,10 +100,10 @@ end
 
 @testset "r2_status: the upstream C scan, the registered scan, the predicate rows" begin
     up = r2_scan_c(_R2_FIXTURE_C, "src/pl-fixture.c")
-    keys = Set(u.key for u in up if u.kind == "pred")
-    @test "exists_file/1" in keys && "time_file/2" in keys && "\$memberchk/3" in keys     # the multi-line one too
-    @test !("in_comment/1" in keys)
-    @test "frg_fixture/0" in keys                                                       # FRG
+    ukeys = Set(u.key for u in up if u.kind == "pred")
+    @test "exists_file/1" in ukeys && "time_file/2" in ukeys && "\$memberchk/3" in ukeys   # the multi-line one too
+    @test !("in_comment/1" in ukeys)
+    @test "frg_fixture/0" in ukeys                                                       # FRG
     cls = Dict(u.key => u.cls for u in up if u.kind == "pred")
     @test cls["thread_self/1"] == "threads" && cls["win_only/1"] == "windows"
     @test cls["not_win/1"] == "" && cls["tab/1"] == ""                                     # `#else` and `#endif` close the class
@@ -115,10 +119,13 @@ end
                 "\\\$memberchk", 3, g, 0
             ),
             # PL_extension("commented", 1, h, 0),
+            PL_extension(     # PRED_SHARE("clause", 2, clause, META|NDET)
+                "trailing_comment", 2, i, 0
+            ),
         )
         """,
     ])
-    @test reg == Set(["exists_file/1", "\$memberchk/3"])
+    @test reg == Set(["exists_file/1", "\$memberchk/3", "trailing_comment/2"])
 
     mktempdir() do base
         _r2_fixture(base)
@@ -199,8 +206,8 @@ end
     @test "refusal:src/fix.jl::pl_dup::same #2" in ks
     # MUTATION: one site fewer, one row fewer
     @test length(r2_refusal_rows(Dict("src/fix.jl" => _r2_fixture_jl(; beta=false)))) == length(rows) - 1
-    @test r2_strip_jl("x = 1 # c\ny = 'a'  # d\nz = \"s # not a comment\"") == "x = 1    \ny = 'a'    \nz = \"s # not a comment\""
-    @test r2_call_args("f(a, g(b, c), \"x,y\")", 2) == (["a", "g(b, c)", "\"x,y\""], 21)
+    @test r2_strip_jl("x = 1 # c\ny = 'a'  # d\nz = \"s # not a comment\"") == "x = 1    \ny = 'a'     \nz = \"s # not a comment\""
+    @test r2_call_args("f(a, g(b, c), \"x,y\")", 2) == (["a", "g(b, c)", "\"x,y\""], 20)
 end
 
 @testset "r2_status: the real tree, both sides non-empty" begin
