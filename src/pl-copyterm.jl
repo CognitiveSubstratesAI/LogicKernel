@@ -22,7 +22,8 @@
 # (`alloc_attvar`), without it (`copy_term_nat/2`) an attvar is copied as a plain variable.
 # NOT PORTED: `copy_term/4`, `copy_term_nat/4` (`COPY_MARKED`, `mark_vars`, so `COPYING_ATTVAR` and
 # `MC_WALK_COPY`: their only readers are `COPY_MARKED` tests), `size_abstract_term/3`
-# (`COPY_ABSTRACT`) and the fast heap terms (`$fast_record`, `term_to_fastheap`). `duplicate_term`'s
+# (`COPY_ABSTRACT`) and `$fast_record/2`, `$fast_recorded/2` (testing bindings). The fast heap terms (`term_to_fastheap`,
+# R2 EV1) are the term's record. `duplicate_term`'s
 # `nshare`/`share` (the compounds kept shared) are `nb_setarg/3`'s (src/pl-prims.jl).
 
 # PORT: pl-copyterm.c COPY_SHARE
@@ -570,6 +571,29 @@ function duplicate_term(
     ld::PL_local_data{T}, in::term_t, copy::term_t, nshare::Int, share::term_t
 )::Bool where {T}
     return copy_term_refs(ld, in, copy, cp_options(COPY_ATTRS, nshare, share))
+end
+
+# ── fast heap terms (pl-copyterm.c; EV1's event closures) ───────────────────────────────────────────────
+# PORT: pl-copyterm.c term_to_fastheap
+# DIVERGES: the copy is the term's `record` (src/pl-rec.jl `compileTermToHeap`: the variables become fresh at each
+# `put_fastheap`), where upstream copies the duplicate's cells and registers its atoms; `nothing` for upstream's NULL
+# (the record's building raised). Representation only: see `fastheap_term`.
+"Copy the term `t` off the stacks (pl-copyterm.c): a `fastheap_term` that `put_fastheap` copies back, or `nothing`."
+function term_to_fastheap(ld::PL_local_data{T}, t::term_t)::Union{Nothing, fastheap_term{T}} where {T}
+    r = compileTermToHeap(ld, t)
+    return fastheap_term{T}(r.gsize, r.nvars, r.code, r.values)
+end
+
+# PORT: pl-copyterm.c free_fastheap
+# DIVERGES: nothing to free (Julia's garbage collector; upstream unregisters the atoms of the cells).
+"Free a `fastheap_term` (pl-copyterm.c)."
+free_fastheap(::fastheap_term)::Nothing = nothing
+
+# PORT: pl-copyterm.c put_fastheap
+# DIVERGES: `copyRecordToGlobal` of the term's record into `t`, where upstream copies the cells to `gTop`.
+"Make term reference `t` hold a fresh copy of the fast heap term `fht` (pl-copyterm.c); false when it does not fit."
+function put_fastheap(ld::PL_local_data{T}, fht::fastheap_term{T}, t::term_t)::Bool where {T}
+    return copyRecordToGlobal(ld, t, record{T}(fht.gsize, fht.nvars, fht.code, fht.values))
 end
 
 # PORT: pl-copyterm.c BeginPredDefs as PL_predicates_from_copyterm

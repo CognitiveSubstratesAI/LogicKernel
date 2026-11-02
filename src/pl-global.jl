@@ -27,6 +27,22 @@ mutable struct source_location{T}
     position::IOPOS             # Line, line pos, char and byte
 end
 
+# PORT: pl-global.h event.hook as event_hooks
+# DIVERGES: GD's `event.hook` struct as a mutable struct of its own (a list is created at its first listener, as
+# `get_event_list` does); the thread events' lists exist in every build (O_ENGINES). The LD's `onthreadexit` is a field
+# of the local data (`event_hook_onthreadexit`).
+"The event lists of the database (pl-global.h `GD->event.hook`): `nothing` until a first listener (NULL)."
+mutable struct event_hooks{T}
+    onabort::Union{Nothing, event_list{T, definition{T}}}           # the `abort` event's listeners
+    onerase::Union{Nothing, event_list{T, definition{T}}}           # erased clause or dbref
+    onbreak::Union{Nothing, event_list{T, definition{T}}}           # breakpoint change
+    onframefinish::Union{Nothing, event_list{T, definition{T}}}     # Debugged frame finished
+    onthreadstart::Union{Nothing, event_list{T, definition{T}}}     # thread start hook
+    onthreadexit::Union{Nothing, event_list{T, definition{T}}}      # thread exit hook
+    onuntable::Union{Nothing, event_list{T, definition{T}}}         # Untable after reload
+end
+event_hooks{T}() where {T} = event_hooks{T}(nothing, nothing, nothing, nothing, nothing, nothing, nothing)
+
 # PORT: pl-global.h PL_global_data
 """
     PL_global_data{T}()
@@ -85,6 +101,8 @@ mutable struct PL_global_data{T}
     halt_cancelled::Int                                         # halt.cancelled: times a halt was cancelled (HALT1)
     halt_exit::Bool                                             # (HALT1: the seam where upstream calls `exit(status)`: true, the real exit)
     const halt_exited::Vector{Int}                              # (HALT1: with the seam off, the statuses `exit` was called with)
+
+    const event_hook::event_hooks{T}                            # event.hook: the event lists (R2 EV1)
 end
 # DIVERGES: `atoms` is upstream's `GD->atoms` as a struct of its own (src/pl-atom.jl), one table per
 # database, built first as upstream's `initAtoms` runs first; `functors` likewise `GD->functors` with
@@ -192,7 +210,8 @@ function PL_global_data{T}() where {T}
         CLN_NORMAL,                             # halt_cleaning
         0,                                      # halt_cancelled
         true,                                   # halt_exit: the process exit
-        Int[]                                   # halt_exited
+        Int[]                                   # halt_exited,
+        event_hooks{T}()                        # event.hook: no listener yet (R2 EV1)
     )
     initPrologFlags!(gd)                        # setup:136 (src/os/pl-prologflag.jl): before the built-ins (:158), whose boot clauses read the mask
     initBuildIns!(gd)                           # setup:158 (src/pl-ext.jl)
@@ -557,6 +576,10 @@ mutable struct PL_local_data{T}
     debugstatus_tracing::Bool                                   # _debugstatus.tracing
     debugstatus_debugging::Bool                                 # _debugstatus.debugging
     debugstatus_showContext::Bool                               # _debugstatus.showContext
+
+    event_buffered::Union{Nothing, Vector{delayed_event{T}}}    # event.buffered: the delayed events (R2 EV1; nothing: NULL)
+    event_delay_nesting::Int                                    # event.delay_nesting: how deeply is delay nested?
+    event_hook_onthreadexit::Union{Nothing, event_list{T, definition{T}}}  # event.hook.onthreadexit: this thread's exit hook
 end
 function PL_local_data{T}(gd::PL_global_data{T}) where {T}
     e = mk_expr(T, T[])                         # any term: the idle placeholders' (index context, …)
@@ -648,7 +671,10 @@ function PL_local_data{T}(gd::PL_global_data{T}) where {T}
         UInt(0),                                # debugstatus.skiplevel: resetTracer (pl-trace.c:1888)
         false,                                  # debugstatus.tracing
         false,                                  # debugstatus.debugging
-        false                                   # debugstatus.showContext: zero (static LD)
+        false                                   # debugstatus.showContext: zero (static LD),
+        nothing,                                # event.buffered: NULL
+        0,                                      # event.delay_nesting
+        nothing                                 # event.hook.onthreadexit: no listener yet (R2 EV1)
     )
     allocStacks!(ld)                            # the initial local stack, its spare reserved
     emptyStacks!(ld)

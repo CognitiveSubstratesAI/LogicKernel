@@ -775,6 +775,81 @@ struct PL_code_data
     staticp::Vector{code}       # S_STATIC
 end
 
+# ── event lists (pl-event.h, pl-copyterm.h), since R2's EV1 ─────────────────────────────────────────
+# PORT: pl-event.h pl_event_type
+# DIVERGES: Int constants in upstream's order (the repo's precedent, `RECORDA`: an `@enum` would need a `_enum_hash` entry).
+"`PLEV_ABORT`: the `abort` event, raised when execution is cut short (pl-event.h `pl_event_type`)."
+const PLEV_ABORT = 0
+"`PLEV_ERASED_CLAUSE`: a clause was erased (pl-event.h)."
+const PLEV_ERASED_CLAUSE = 1
+"`PLEV_ERASED_RECORD`: a record was erased (pl-event.h)."
+const PLEV_ERASED_RECORD = 2
+"`PLEV_BREAK`: a break-point was set (pl-event.h)."
+const PLEV_BREAK = 3
+"`PLEV_BREAK_EXISTS`: an existing break-point (pl-event.h)."
+const PLEV_BREAK_EXISTS = 4
+"`PLEV_NOBREAK`: a break-point was cleared (pl-event.h)."
+const PLEV_NOBREAK = 5
+"`PLEV_RETRACTNOBREAK`: a break-point was cleared by clause GC (pl-event.h)."
+const PLEV_RETRACTNOBREAK = 6
+"`PLEV_FRAMEFINISHED`: a watched frame was discarded (pl-event.h)."
+const PLEV_FRAMEFINISHED = 7
+"`PLEV_UNTABLE`: stop tabling some predicate (pl-event.h)."
+const PLEV_UNTABLE = 8
+"`PLEV_THREAD_START`: a thread started (pl-event.h)."
+const PLEV_THREAD_START = 9
+"`PLEV_THREAD_EXIT`: a thread has finished (pl-event.h)."
+const PLEV_THREAD_EXIT = 10
+"`PLEV_THIS_THREAD_EXIT`: this thread has finished (pl-event.h)."
+const PLEV_THIS_THREAD_EXIT = 11
+
+# PORT: pl-event.h EV_CALLBACK_BOOL
+"`event_callback.flags`: the C function returns a bool (pl-event.h)."
+const EV_CALLBACK_BOOL = UInt32(0x0)
+# PORT: pl-event.h EV_CALLBACK_VOID
+"`event_callback.flags`: the C function returns void (pl-event.h)."
+const EV_CALLBACK_VOID = UInt32(0x1)
+# PORT: pl-event.h P_EVENT_ROLLBACK
+"`predicate_update_event` flag: the update is rolled back (pl-event.h)."
+const P_EVENT_ROLLBACK = UInt32(0x0001)
+
+# PORT: pl-copyterm.h fastheap_term
+# DIVERGES: the fields of the term's `record` (src/pl-rec.jl `compileTermToHeap`), where upstream keeps the relocatable
+# cells of a stack copy (`data_len`, `term_len`, `flags`, `data`): the kernel has no word stacks to copy back from.
+# Representation only: a fast heap term puts a fresh copy of the term on the stacks.
+"A term copied off the stacks for quick copying back (pl-copyterm.h `fastheap_term`): see `term_to_fastheap`."
+struct fastheap_term{T}
+    gsize::Int                                          # (the record's global stack size)
+    nvars::Int                                          # (the record's number of variables)
+    code::Vector{UInt8}                                 # (the record's code)
+    values::Vector{T}                                   # (the record's indirects)
+end
+
+# PORT: pl-event.h event_callback
+# DIVERGES: D is the predicate's type, `definition{T}` (a parameter only to break the struct cycle, as `procedure`'s);
+# `name` is `nothing` for NULL_ATOM; `module_` is the module's INDEX (0: NULL), `procedure` is `nothing` for NULL;
+# `function_` (a C function, `PL_thread_at_exit`'s) is an index (0: none: the C pointer is TH1's) and `closure.pointer` is
+# not kept; `closure` is `closure.term`; `next` is the position in the list's vector.
+"A listener of an event (pl-event.h `struct event_callback`)."
+mutable struct event_callback{T, D}
+    name::Union{Nothing, T}                             # Name of the callback
+    module_::Int                                        # context module
+    procedure::Union{Nothing, procedure{D}}             # procedure to use
+    function_::Int                                      # C-function (0: none)
+    closure::Union{Nothing, fastheap_term{T}}           # closure
+    argc::Int                                           # #context args
+    flags::UInt32                                       # EV_CALLBACK_*
+end
+
+# PORT: pl-event.h event_list
+# DIVERGES: a vector of the callbacks, the first handler first (upstream's `head` ... `tail` chain); no `lock`
+# (no threads).
+"The listeners of one event (pl-event.h `struct event_list`), in the order they are called."
+mutable struct event_list{T, D}
+    callbacks::Vector{event_callback{T, D}}             # head, … , tail
+end
+event_list{T, D}() where {T, D} = event_list{T, D}(event_callback{T, D}[])
+
 # PORT: pl-incl.h definition
 # DIVERGES: `functor` (a pointer into SWI's functor table) is its parts here — the name's `sym_key`,
 # the arity, and the name itself (`name`, the symbol: an error term names the predicate) — as there
@@ -805,7 +880,17 @@ mutable struct definition{T}
     impl_foreign_function::Int                              # impl.foreign.function (0: none)
     module_::Int                                            # module (an index: see below)
     shared::Int                                             # #procedures sharing this def
+    events::Union{Nothing, event_list{T, definition{T}}}    # Forward update events (EV1; nothing: NULL)
 end
+# DIVERGES (no upstream function): `events` is NULL in a new definition, as upstream's memset: the constructors of the
+# definition's other fields do not name it.
+definition{T}(
+    functor_name, arity, impl_clauses, flags, name, codes, codes_crefs, code_data, impl_foreign_function,
+    module_, shared
+) where {T} = definition{T}(
+    functor_name, arity, impl_clauses, flags, name, codes, codes_crefs, code_data, impl_foreign_function,
+    module_, shared, nothing
+)
 
 # PORT: pl-incl.h module as module_t
 # DIVERGES: a MUTABLE struct with upstream's fields (MOD1; audit D-0149, MQ1: `set_module/1`,
@@ -1019,6 +1104,18 @@ const ClauseChoice{T} = clause_choice{ClauseRef{T}}
 # PORT: pl-incl.h Procedure
 "A procedure of terms `T` (pl-incl.h `Procedure`)."
 const Procedure{T} = procedure{definition{T}}
+
+# PORT: pl-event.c delayed_event
+# DIVERGES: one record for the three shapes of upstream's union (`value.pc`, `value.clause`, `value.proc`): `clause` and
+# `offset` for the break and erase events, `proc` for `PLEV_UNTABLE`; the unused ones are `nothing` or 0. No
+# `acquire_clause` (a clause is kept alive by the reference here).
+"An event raised while events are delayed, kept until `sendDelayedEvents` (pl-event.c `struct delayed_event`)."
+struct delayed_event{T}
+    type::Int                                           # PLEV_*
+    clause::Union{Nothing, Clause{T}}                   # value.pc.clause / value.clause.clause
+    offset::Int                                         # value.pc.offset
+    proc::Union{Nothing, Procedure{T}}                  # value.proc.proc
+end
 
 # ── source files (pl-incl.h), since R1f ─────────────────────────────────────────────────────────
 
