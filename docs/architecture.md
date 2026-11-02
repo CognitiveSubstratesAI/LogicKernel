@@ -7135,3 +7135,39 @@ a TTY stdin, pl-os.c:2171-2185; the test reads the committed evidence/TOP1/top1_
 test/core_lang/test_top1_pro.jl (LK-only white-box rows of every function above, `# UNVERIFIED on the kernel: gate decides`; none was run).
 Mutants: tools/mutants/TOP1.py (28; the abort branch's `Sclearerr` has no kill row and is under NOT LISTED). Manifest: eleven rows. Tier 1: src/pl-fli.jl gains
 `PL_prompt_next` (no struct or existing body changed): the alloc pins x3 at the gate, expected unchanged.
+
+## LB4 b2 — the atomic boot: every database is a copy of one booted from boot/init.pl (R2 loader_boot, audit D-0286, D-0354)
+
+What LB4 b2 changes (edit-only: nothing was compiled when this was written; the first boot run and the gate decide). Upstream
+files, swipl-devel cbf4e189:
+
+- **pl-setup.c** `setupProlog`: the old body of `PL_global_data{T}()` (flag table, built-ins, operators) is now
+  `setupProlog(T)` (src/pl-global.jl), the UNBOOTED database. `boot_global_data(T)` (src/pl-qlf.jl) is the boot over it: a
+  fresh engine runs LB3's `boot_from_source!` over `[HOME/boot/init.pl]` (pl-init.c's boot branch, as src/CMakeLists.txt
+  builds boot.prc), then checks that the engine's stacks are empty again. `PL_global_data{T}()` is
+  `PL_global_data_from_template(T)`, and the registry's default build (`gd_template(T)`) is `() -> boot_global_data(T)`: the
+  boot is paid once per process and term type, every later database is a copy (LB4 b1's template). The precompile workload
+  uses `setupProlog(T)`, so precompiling neither boots nor fills the registry.
+- **The stand-ins go.** boot/init.jl and the `_boot_*!` clause builders of src/pl-ext.jl (init.pl, syspred.pl, bags.pl,
+  attvar.pl, when.pl sets) are deleted: those predicates are defined by the boot files themselves.
+- **pl-qlf.c** `addClauseWic`: a clause the boot cannot compile prints `Failed to compile: ` followed by the clause
+  (`pl_write(term)`, pl-qlf.c:3220-3238; `_qlf_pl_write!`).
+- **pl-error.c** `printMessage` / `printMessagev` (pl-error.c:992-1063): a message calls `print_message/2` of
+  boot/messages.pl in a foreign frame, nesting bounded by `OK_RECURSIVE` (10), the wakeup state saved and restored, the
+  fallback branches' `Sdprintf`/`PL_write_term(Serror, …)` collected on `ld.messages` as the boot loop's diagnostics are
+  (a representation difference). A message print_message/2 handles reaches a test through a `user:message_hook/3`
+  collector.
+- **The compiler's variable names** come from the global variable `$variable_names` (init.pl:1948-1949 `b_setval`);
+  the field `ld.variable_names` is removed (a struct change of `PL_local_data`).
+- **pl-vmi.c** `b_throw_resume`, the `unwind(_)` branch (pl-vmi.c:5266-5278): a catcher's recover goal does not stop an
+  `unwind(_)` ball; the goal is wrapped as `'$recover_and_rethrow'(Recover, Ball)` (`FUNCTOR_drecover_and_rethrow2`).
+- **`load_file!(gd, ld, path)`** is `load_files(Path, [])` in `user` through the query API and returns `(status, ball)`:
+  `:ok`, `:failed`, or `:exception` with the uncaught ball (the old shape is gone; docs/release-notes/unreleased.md).
+- **Recorded DIVERGES** (D-0354 ruling 1): the kernel boots with `threads` false, upstream's single-thread build; the oracle
+  rows on the thread paths (`$mt_load_file`, with_mutex, message queues) are pinned as DIVERGES with the upstream line.
+  Open for the audit: `-O` at the boot (the oracle rows are generated without it), `open_shared_object` (syspred.pl's
+  foreign-library branches).
+
+Tests: test/db/test_boot_image_swipl.jl (T1 predicates, T3 source files, H12), test/db/test_boot_clauses_swipl.jl (T2: a
+hash per static predicate, 1389 rows), test/db/test_boot_messages_swipl.jl (T4: the boot messages); oracle swipl 10.1.19, two
+byte-identical runs. Mutants: tools/mutants/LB4B2.py (19). Handoff: evidence/LB4B2/handoff.md.
