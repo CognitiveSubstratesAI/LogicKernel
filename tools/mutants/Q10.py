@@ -13,7 +13,7 @@
 #     mutant of the shared line would need every one of those files in TARGETS (audit D-0238) and belongs to the battery of
 #     the step that ported PL_get_integer.
 #   * the `PL_FA_VARARGS` flag of the table entry: the entry is called through the variadic convention only; a mutant that
-#     drops the flag is a crash of the call path (the row driver reports "exception" or dies), not a verdict about the port.
+#     drops the flag is a broken call path (the row driver reports "exception" or dies), not a verdict about the port.
 # TARGETS (audit D-0238): the only test file that calls `'$style_check'/2`. The readers of the set (pl-comp.jl, pl-proc.jl,
 # pl-read.jl) are not mutated here.
 TARGETS = ["test/core_lang/test_style_check_swipl.jl"]

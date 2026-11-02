@@ -110,11 +110,26 @@ const _SC_CASES = [
     ("sc13", raw"'$style_check'(_, -2147483648), '$style_check'(P, 202), R = P"),
     ("sc14", raw"'$style_check'(_, 202), '$style_check'(P, P), R = P"),
     ("sc15", raw"findall(X, '$style_check'(X, 202), R)"),                # [202]: one answer, no choice point
-    ("sc16", raw"'$style_check'(_, 7), ( '$style_check'(_, b) -> R = yes ; '$style_check'(P, 202), R = no(P) )"),   # no(7)
-    ("sc17", raw"'$style_check'(_, 7), ( '$style_check'(9, 3) -> R = yes ; '$style_check'(P, 202), R = no(P) )"),   # no(7)
-    ("sc18", raw"'$style_check'(_, 7), ( '$style_check'(_, 4.5) -> R = yes ; '$style_check'(P, 202), R = no(P) )"),   # no(7)
-    ("sc19", raw"'$style_check'(O, 2), '$style_check'(P, 202), '$style_check'(Q, Q), R = O-P-Q"),   # 202-2-202
-    ("sc20", raw"'$style_check'(_, 8), '$style_check'(P, P), '$style_check'(_, 202), R = P"),       # 8
+    (
+        "sc16",
+        raw"'$style_check'(_, 7), ( '$style_check'(_, b) -> R = yes ; '$style_check'(P, 202), R = no(P) )"
+    ),   # no(7)
+    (
+        "sc17",
+        raw"'$style_check'(_, 7), ( '$style_check'(9, 3) -> R = yes ; '$style_check'(P, 202), R = no(P) )"
+    ),   # no(7)
+    (
+        "sc18",
+        raw"'$style_check'(_, 7), ( '$style_check'(_, 4.5) -> R = yes ; '$style_check'(P, 202), R = no(P) )"
+    ),   # no(7)
+    (
+        "sc19",
+        raw"'$style_check'(O, 2), '$style_check'(P, 202), '$style_check'(Q, Q), R = O-P-Q"
+    ),   # 202-2-202
+    (
+        "sc20",
+        raw"'$style_check'(_, 8), '$style_check'(P, P), '$style_check'(_, 202), R = P"
+    )       # 8
 ]
 
 # the driver's whole output, one line per case after `ok`, filled by evidence/Q10/gen_rows.py --fill from swipl 10.1.19
@@ -213,7 +228,22 @@ end
     for id in ("sc05", "sc06", "sc07", "sc08", "sc09", "sc10")
         @test any(l -> l == "t_$id", _SC_PINNED)                               # no answer: the row failed
     end
-    for id in ("sc01", "sc02", "sc03", "sc04", "sc11", "sc12", "sc13", "sc14", "sc15", "sc16", "sc17", "sc18", "sc19", "sc20")
+    for id in (
+        "sc01",
+        "sc02",
+        "sc03",
+        "sc04",
+        "sc11",
+        "sc12",
+        "sc13",
+        "sc14",
+        "sc15",
+        "sc16",
+        "sc17",
+        "sc18",
+        "sc19",
+        "sc20"
+    )
         @test any(l -> startswith(l, "t_$id "), _SC_PINNED)                    # an answer
     end
     @test any(l -> startswith(l, "t_sc04 ") && endswith(l, "(i0)"), _SC_PINNED)      # the new value is read back
