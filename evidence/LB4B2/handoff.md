@@ -49,28 +49,54 @@ G7 tools/mutants/LB4B2.py (>= 28; TARGETS = every test file that boots: all that
 G8 docs/architecture.md block, manifest entries (LAST, own commits) (2).
 G9 b2-7 boot-discovery fixes from the smoke run on the local merge (3-4, unknown).
 
-## State (writer 1, 2026-11-02; handed back at ~95k context at a clean commit boundary)
-COMMITTED on wip/lb4b2: 12 cherry-picked b1 commits (89822c9..c9e65f0 of wip/lb4b1 -> ..87d0db0 here); 612914e G0 plan;
-18eb1c3 G1 (b2-1): `setupProlog(T)` (old constructor body, src/pl-global.jl:118-196), `PL_global_data{T}() =
-PL_global_data_from_template(T)` (:199), `boot_global_data(T)` (src/pl-qlf.jl after `boot_from_source!`: home flag ->
-HOME/boot/init.pl, raises if missing, H11 check on lTop/trail/fli_context/nfliframes), gd_template(T)'s default build =
-boot_global_data (src/gd_template.jl:109, was the constructor: would recurse), precompile_workload.jl uses setupProlog.
-NOTHING RUN. No daemon started. The tree does NOT boot yet: the stand-ins are still registered (H2: init.pl's catch/3 over
-a P_LOCKED stand-in raises permission_error) -> G2 is next and must land before any run.
+## State (writer 2, 2026-11-02 15:50Z; handed back at ~90k context at a clean commit boundary)
+COMMITTED on wip/lb4b2 (writer 1): 12 cherry-picked b1 commits (..87d0db0); 612914e G0 plan; 18eb1c3 G1 (b2-1: setupProlog,
+boot_global_data, gd_template's default build); 62133f4 handoff.
+COMMITTED (writer 2), all EDIT-ONLY, NOTHING RUN (no daemon slot: three warm daemons up, 13.5 GB available at 15:48Z):
+- b43f705 G2 family 1: `_boot_catch3!` `_boot_cleanup!` `_boot_control!` `_boot_lists!` `_boot_meta!` `_boot_length_error`
+  deleted with their initBuildIns! calls; 6 manifest entries; comments naming them in 7 test files + pl-wam.jl/pl-attvar.jl reworded.
+- b852d54 G2 family 2: `_boot_syspred!` `_boot_bags!` `_boot_bagof!`; 3 manifest entries.
+- 061b906 G2 family 3: `_boot_attvar!` `_boot_freeze_uhook!` `_boot_freeze!` `_boot_when!` `_boot_call_residue_vars!` and the
+  helpers (`_boot_clause!` `_boot_term` `_boot_conj` `_boot_ite` `_boot_cons` `_boot_vars`); 12 manifest entries. initBuildIns!
+  is pl-ext.c's again. Two pinned KNOWN DIFFERENCES flipped to swipl's answer, marked `UNVERIFIED on the kernel: gate decides`:
+  cr11 in test/core_lang/test_attvar_wakeup.jl ('$attvar':run_crv/4) and the uhook/3 context in test_attvar_store.jl.
+- ab7e998 G3: boot/init.jl and its include deleted; `load_file!(gd, ld, path)::Tuple{Symbol, Union{Nothing,T}}` in src/pl-wam.jl
+  after query_answers = `user:load_files(AbsPath, [])` via query_answers: `:ok` / `:failed` / `(:exception, ball)`. README block +
+  test/foreign/test_readme_example.jl, docs/release-notes/unreleased.md (NEW file: the D-0286 item 4 entry), tools/bench.jl,
+  tools/fuzz.jl re-pointed; manifest drops init.jl's 24 entries (load_file! entry kept, same signature).
+The tree does not pass its tests at this SHA: about 50 test files still destructure `load_file!`'s old three values (G5).
+
+FINDINGS for the next agent (read-only, from the edits):
+- G3b (NEW, before G5): src/pl-error.jl:1021 `printMessage` still appends to `ld.messages` (an R1f DIVERGES) instead of calling
+  print_message/2, so C-side messages (singleton warnings, pl-read.c; the flag warnings, os/pl-prologflag.jl:769) never reach a
+  `user:message_hook/3` collector (LQ7). Port pl-error.c printMessagev AS IS (pin src/pl-error.c:990-1063): `LD->in_print_message`
+  (OK_RECURSIVE 10; new PL_local_data field, pl-global.h:525), saveWakeup/restoreWakeup (src/pl-attvar.jl:44/103, the
+  WAKEUP_KEEP_URGENT_EXCEPTION pattern at src/pl-wam.jl:1050), `PROCEDURE_print_message2` (LOOKUPPROC, pl-ext.c:372 ->
+  `gd.procedures_print_message2` in setBuiltinPredicateProperties!, src/pl-ext.jl:182 style; new PL_global_data field),
+  PL_call_predicate(NULL, PL_Q_NODEBUG|PL_Q_PASS_EXCEPTION), `Sferror(Suser_error(ld))` (src/os/pl-file.jl:122). The Sdprintf
+  fallback branches: Sdprintf is left to port (src/pl-qlf.jl:152 `_qlf_Sdprintf!` collects into ld.messages: reuse or port Sdprintf). 20
+  callers of printMessage: check each against its upstream caller's rc handling. Struct change in BOTH structs: combine with G4's
+  alloc pins. Then `ld.messages` has only `_qlf_Sdprintf!` left (decide with G9).
+- when/2 now comes from library/when.pl by autoload (as upstream); `'$wakeup'/1`, freeze/2 from boot/attvar.pl in '$attvar':
+  `gd.procedures_dwakeup1` is LOOKUPPROC(system:'$wakeup'/1) (src/pl-ext.jl:183): whether system sees '$attvar's export at
+  wakeup is a first-boot item (G9).
+- The removed `_boot_lists!` carried a DIVERGES: a term type that cannot hold an Int64 got `'$append'/3` only. init.pl's
+  length/2 has integers: booting init.pl on such a term type is a first-boot item (G9); check which of the three term types.
+- Mutant lists of LANDED steps whose anchors sat in the deleted code (tools/mutants/AV7.py, AV8.py, AV9.py, V9g.py, MOD4.py):
+  left unchanged (historical); a re-run of those batteries would report missing anchors. LB4B2.py (G7) carries one mutant per
+  stand-in KEPT (sizing: T1 must fail), not these.
+- docs/architecture.md still describes the stand-ins (lines ~2656, 3390-3446, 3528, 5215-5269, 5331, 5446, 5752): G8 appends a
+  block saying they are deleted; old blocks stay (append-only rule).
 
 NEXT AGENT, in order:
-1. G2 family 1: src/pl-ext.jl initBuildIns! calls (:161-168) `_boot_catch3!` `_boot_cleanup!` `_boot_control!` `_boot_lists!`
-   `_boot_meta!`; bodies :171-482 (`_boot_control!` is the control constructs ;/,/->/*->/\+ of init.pl:360-388: same family,
-   the plan's list missed it). Then family 2 `_boot_syspred!` :506, `_boot_bags!` :575, `_boot_bagof!` :847; family 3
-   `_boot_attvar!` :642 and its callees (:697-846). Helpers `_boot_clause!` :285, `_boot_term`, `_boot_conj`, `_boot_ite`,
-   `_boot_cons`, `_boot_vars`, `_boot_length_error` go with the last family that uses them. Grep test/ and
-   test/static_analysis_manifest.jl for each name (name-scoped greps; the recursive-grep hook wants named dirs).
-2. G3 load_file! (boot/init.jl:21-100 today; the include at src/LogicKernel.jl:85), then G4-G8 as planned.
-3. test/db/test_gd_template.jl builds with the one-argument `gd_template(T)` in places: with the boot on that boots;
-   rows meant to be cheap should pass `() -> setupProlog(T)` explicitly. Check each at the edit.
-4. Smoke run tree: a LOCAL merge (run only) of wip/lb2bw, wip/pr1, wip/q10b ($style_check), wip/bootpred3, wip/dict
-   (expand.pl:470-486 merge_states uses put_dict/>:< during goal expansion once expand.pl is loaded mid-boot: likely
-   reached), wip/f2 not needed. Build the home tree first (`julia tools/build_home.jl`), see F2.
+1. G3b printMessagev (above), one commit (UPSTREAM: subject form, pin cite).
+2. G4 `ld.variable_names` (plan G4; the old init.jl set it at :69, now init.pl:1948-1949's b_setval does): recount sites.
+3. G5 the ~50 test files with `load_file!` (`grep -l 'load_file!' test/*.jl test/*/*.jl`): two values; message rows through a
+   `user:message_hook/3` collector (needs G3b); test_load_swipl.jl's refusal rows now load (against swipl); stale-pin hunt
+   (GATE-PLAYBOOK: KNOWN DIFFERENCE|interim|until R2 over test/) for everything the boot now defines in its own module.
+4. G6-G8 as planned; then G9 on the local merge (wip/lb2bw, wip/pr1, wip/q10b, wip/bootpred3, wip/dict) when a daemon slot is
+   free (ps/free -m first: at most three daemons, MemAvailable >= 12 GB), home tree built first (F2).
+5. test/db/test_gd_template.jl: rows meant to be cheap pass `() -> setupProlog(T)` (writer 1's item 3, still open).
 
 ## Answers for D-0354 item 7 (read-only)
 - UPSTREAM markers: not settled per row. Commit subjects `^UPSTREAM:` on origin/main: 95 (`git log --grep`); a per-predicate
@@ -93,5 +119,7 @@ F2 HOME TREE at boot: the home flag names `<pkg>/home` (src/os/pl-prologflag.jl:
    Recommendation: (a) for the repo + (c) later for installs. This writer does (b)-style raise now; decision needed before gating.
 F3 `-O` in upstream's boot command (src/CMakeLists.txt:360) sets `optimise` true for the boot compilation; the kernel's flag is
    false (src/os/pl-prologflag.jl:1698). Whether the kernel boots with -O is a flag value that differs: the audit's call.
+F5 docs/release-notes/unreleased.md is a NEW file (the release-notes entry D-0286 item 4 asks for; only v0.1.0-pre.1.md
+   existed). The audit may prefer another name.
 F4 precompile_workload.jl constructs databases: with the boot on, precompilation would boot (minutes). Needs a decision
    (skip the boot in the workload, or accept the cost).
