@@ -179,8 +179,8 @@ const _MP_CASES = [
     # a25: mustBeCallable's `_:_` test (pl-wam.c:920-947): a user clause running '$call_cleanup' (I_CALLCLEANUP) has no
     # meta declaration, so its cleanup argument arrives unqualified
     ("a25", raw"catch(pcc(true, true), error(type_error(E, C), _), true), R = E-C"),
-    # b01, b02: call/1 and call/2 called AS PREDICATES (I_USERCALL0 of `call(...)`): the stand-in's S_LMQUAL qualifies
-    # the goal with m2 and runs the clause in system
+    # b01, b02: call/1 and call/2 called AS PREDICATES (I_USERCALL0 of `call(...)`): boot/init.pl's clauses (:501-504,
+    # `meta_predicate call(0), call(1,?)` at :364-365) get the goal qualified with m2 (S_LMQUAL) and run in system
     ("b01", raw"call(m2:cn1(R))"),
     ("b02", raw"call(m2:cn2(R))"),
     # b03-b05: bagof/setof's `^` argument arrives as `m2:(Y^G)` ('$free_variable_set''s `:` branch)

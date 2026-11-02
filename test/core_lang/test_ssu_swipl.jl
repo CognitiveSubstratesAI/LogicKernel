@@ -2,8 +2,8 @@
 # test/core_lang/test_ssu_swipl.jl — the run loop's `I_CHP`, `I_SSU_CHOICE`, `I_SSU_COMMIT`, `S_SSU_DET` and the matching-rule error
 # (`ssu_or_det_failed`'s SSU branch, `put_frame_goal`):
 #   * A PROGRAM of SSU predicates (the channel's evidence/r2/design/ssu_rows.pl, plus `lco/1` and the list helper `su_member/2`:
-#     member/2 is library(lists), R2) consulted by the kernel's loader — the guard form goes through the consult stand-in's rewrite
-#     (D7) — and cases `t_<id>(R)` run IN ORDER in one database: the s-rows (the match, the commit, `?=>`, guards, the errors'
+#     member/2 is library(lists), R2) consulted by the kernel's loader — since LB4 b2 boot/init.pl's load_files/2, the guard form
+#     through boot/expand.pl (`head_guard/4`, :248-269) as in swipl — and cases `t_<id>(R)` run IN ORDER in one database: the s-rows (the match, the commit, `?=>`, guards, the errors'
 #     goal and context; s54/s55 need library(lists), so s58/s59 ask the same of a module `ssu_m` asserted here), the d-rows
 #     (determinism after `=>`: call_cleanup/2 sees no choice point) and a01/a04/a09 (an asserted SSU predicate runs). Each case
 #     is wrapped in `catch(Goal, error(SsuE, _), R = raised(SsuE))`, so an error is an answer (after the answers before it).
@@ -171,7 +171,7 @@ const _SS_CASES = [
     ("s14", raw"findall(X, nd(X), R)"),
     # s15: a body that fails after the commit: plain failure
     ("s15", raw"( bodyfail(x) -> R = yes ; R = no )"),
-    # s16: the guard form (the consult stand-in's rewrite, D7)
+    # s16: the guard form (boot/expand.pl `head_guard/4`, :248-269; was the consult stand-in's rewrite, D7, before LB4 b2)
     ("s16", raw"sign(5, R)"),
     ("s17", raw"sign(-5, R)"),
     ("s18", raw"sign(0, R)"),
