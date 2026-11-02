@@ -11,7 +11,7 @@
 #   * Every answer line is swipl's, PINNED (swipl 10.1.19-1-gcbf4e189, evidence/F2/gen_push_rows.py, two runs byte-identical); with `swipl` on PATH
 #     the live answers are compared with the pins too.
 #   * A flag whose side effect is REFUSED BY NAME (F1b, design D4) stays refused on a push: the last testset (the kernel's answer alone: a swipl
-#     push of `debug` would change the debugger).
+#     push of one of them would carry its side effect out; `debug` is accepted since R2 F1c: test_debug_flag_swipl.jl).
 # UNVERIFIED on the kernel: gate decides (every pin is swipl's; the rows were not run on the kernel).
 using Test, LogicKernel
 const LK = LogicKernel
@@ -393,7 +393,7 @@ end
 # stack is as it was: the flag has no pushed value, a pop raises existence_error (the kernel's answer, upstream's code: the new frame is only linked after
 # `set_flag_value` succeeds).
 const _PF_REFUSED = [
-    ("debug", "true"), ("encoding", "utf8"), ("stack_limit", "1000000000"),
+    ("encoding", "utf8"), ("stack_limit", "1000000000"),
     ("autoload", "false"),
     ("agc_margin", "100"), ("var_tag", "dict"), ("heartbeat", "0")
 ]
@@ -423,5 +423,5 @@ const _PF_REFUSED = [
             line
         )
     end
-    @test length(_PF_REFUSED) >= 7
+    @test length(_PF_REFUSED) >= 6
 end

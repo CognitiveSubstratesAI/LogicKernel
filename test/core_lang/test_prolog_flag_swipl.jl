@@ -205,7 +205,7 @@ end
 # THE PINNED DIFFERENCE (design §6 F1): every flag swipl 10.1.19 has that the kernel has not, with the family it belongs to — and
 # the entry that goes when the family is ported (a re-check trigger, not a list to extend). A build-feature flag is absent
 # because the kernel answers as upstream's build WITHOUT the feature (audit D-0151 item 6; the `#ifdef`s, pl-prologflag.c
-# :2589-2625, are cited in src/os/pl-prologflag.jl). `home` is defined (the kernel's own value, a machine flag of the program).
+# :2589-2625, are cited in src/os/pl-prologflag.jl). `shared_object_extension`, `libswipl` and `version_git` are defined since R2 F1c (the boot reads them). `home` is defined (the kernel's own value, a machine flag of the program).
 const _BOOT_PL = "boot/*.pl creates it (create_prolog_flag/3: R2 F1b, loaded by R2 LB4/LB5)"
 const _TOOLCHAIN = "the C toolchain and shared objects (pl-prologflag.c O_DYNAMIC_EXTENSIONS): the kernel loads no foreign library"
 const _BUILD = "the build's identity (a CMake build: pl-prologflag.c #ifdef BUILD_TYPE / EXEC_FORMAT / HAVE_DLADDR, pl-version.c #ifdef GIT_VERSION / CMAKE_BUILD_TYPE): the kernel is not one"
@@ -232,7 +232,6 @@ const PINNED_ONLY_SWIPL = Dict{String, String}(
     "engines" => _THREADS,
     "executable_format" => _BUILD,
     "file_search_cache_time" => _BOOT_PL,
-    "libswipl" => _BUILD,
     "malloc" => _OTHER_FILE * " (the allocator found: the kernel uses Julia's)",
     "message_context" => _BOOT_PL,
     "message_language" => _BOOT_PL,
@@ -243,7 +242,6 @@ const PINNED_ONLY_SWIPL = Dict{String, String}(
     "qcompile" => _BOOT_PL,
     "query_debug_settings" => _BOOT_PL,
     "resource_database" => _OTHER_FILE,
-    "shared_object_extension" => _TOOLCHAIN,
     "shared_object_search_path" => _TOOLCHAIN,
     "shared_table_space" => _THREADS,
     "system_thread_id" => _THREADS,
@@ -254,7 +252,6 @@ const PINNED_ONLY_SWIPL = Dict{String, String}(
     "toplevel_print_factorized" => _BOOT_PL,
     "toplevel_residue_vars" => _BOOT_PL,
     "toplevel_thread" => _BOOT_PL,
-    "version_git" => _BUILD,
     "warn_autoload" => _BOOT_PL,
     "xref" => _BOOT_PL
 )
