@@ -1,0 +1,204 @@
+{
+ "_fixture": "run 41357787404: P1 red (stale arg/3 pin), gate/p1b; GitHub jobs answer page 1, fields trimmed",
+ "total_count": 18,
+ "jobs": [
+  {
+   "id": 125001478888,
+   "name": "alt_interned · files 1/2",
+   "status": "completed",
+   "conclusion": "failure",
+   "workflow_name": "Evidence (three term types)",
+   "head_branch": "gate/p1b",
+   "head_sha": "374cddf29fcf20bfc80d4c6566361b5d1860a49d",
+   "run_id": 41357787404,
+   "html_url": "https://github.com/CognitiveSubstratesAI/LogicKernel/actions/runs/41357787404/job/125001478888"
+  },
+  {
+   "id": 125001478996,
+   "name": "static analysis 6/8",
+   "status": "completed",
+   "conclusion": "success",
+   "workflow_name": "Evidence (three term types)",
+   "head_branch": "gate/p1b",
+   "head_sha": "374cddf29fcf20bfc80d4c6566361b5d1860a49d",
+   "run_id": 41357787404,
+   "html_url": "https://github.com/CognitiveSubstratesAI/LogicKernel/actions/runs/41357787404/job/125001478996"
+  },
+  {
+   "id": 125001479007,
+   "name": "alt · files 1/2",
+   "status": "completed",
+   "conclusion": "failure",
+   "workflow_name": "Evidence (three term types)",
+   "head_branch": "gate/p1b",
+   "head_sha": "374cddf29fcf20bfc80d4c6566361b5d1860a49d",
+   "run_id": 41357787404,
+   "html_url": "https://github.com/CognitiveSubstratesAI/LogicKernel/actions/runs/41357787404/job/125001479007"
+  },
+  {
+   "id": 125001479013,
+   "name": "alt · files 2/2",
+   "status": "completed",
+   "conclusion": "success",
+   "workflow_name": "Evidence (three term types)",
+   "head_branch": "gate/p1b",
+   "head_sha": "374cddf29fcf20bfc80d4c6566361b5d1860a49d",
+   "run_id": 41357787404,
+   "html_url": "https://github.com/CognitiveSubstratesAI/LogicKernel/actions/runs/41357787404/job/125001479013"
+  },
+  {
+   "id": 125001479021,
+   "name": "alt_interned · files 2/2",
+   "status": "completed",
+   "conclusion": "success",
+   "workflow_name": "Evidence (three term types)",
+   "head_branch": "gate/p1b",
+   "head_sha": "374cddf29fcf20bfc80d4c6566361b5d1860a49d",
+   "run_id": 41357787404,
+   "html_url": "https://github.com/CognitiveSubstratesAI/LogicKernel/actions/runs/41357787404/job/125001479021"
+  },
+  {
+   "id": 125001479025,
+   "name": "static analysis 8/8",
+   "status": "completed",
+   "conclusion": "success",
+   "workflow_name": "Evidence (three term types)",
+   "head_branch": "gate/p1b",
+   "head_sha": "374cddf29fcf20bfc80d4c6566361b5d1860a49d",
+   "run_id": 41357787404,
+   "html_url": "https://github.com/CognitiveSubstratesAI/LogicKernel/actions/runs/41357787404/job/125001479025"
+  },
+  {
+   "id": 125001479058,
+   "name": "static analysis 5/8",
+   "status": "completed",
+   "conclusion": "success",
+   "workflow_name": "Evidence (three term types)",
+   "head_branch": "gate/p1b",
+   "head_sha": "374cddf29fcf20bfc80d4c6566361b5d1860a49d",
+   "run_id": 41357787404,
+   "html_url": "https://github.com/CognitiveSubstratesAI/LogicKernel/actions/runs/41357787404/job/125001479058"
+  },
+  {
+   "id": 125001479060,
+   "name": "reference · files 1/2",
+   "status": "completed",
+   "conclusion": "failure",
+   "workflow_name": "Evidence (three term types)",
+   "head_branch": "gate/p1b",
+   "head_sha": "374cddf29fcf20bfc80d4c6566361b5d1860a49d",
+   "run_id": 41357787404,
+   "html_url": "https://github.com/CognitiveSubstratesAI/LogicKernel/actions/runs/41357787404/job/125001479060"
+  },
+  {
+   "id": 125001479195,
+   "name": "static analysis 7/8",
+   "status": "completed",
+   "conclusion": "success",
+   "workflow_name": "Evidence (three term types)",
+   "head_branch": "gate/p1b",
+   "head_sha": "374cddf29fcf20bfc80d4c6566361b5d1860a49d",
+   "run_id": 41357787404,
+   "html_url": "https://github.com/CognitiveSubstratesAI/LogicKernel/actions/runs/41357787404/job/125001479195"
+  },
+  {
+   "id": 125001479207,
+   "name": "static analysis 1/8",
+   "status": "completed",
+   "conclusion": "success",
+   "workflow_name": "Evidence (three term types)",
+   "head_branch": "gate/p1b",
+   "head_sha": "374cddf29fcf20bfc80d4c6566361b5d1860a49d",
+   "run_id": 41357787404,
+   "html_url": "https://github.com/CognitiveSubstratesAI/LogicKernel/actions/runs/41357787404/job/125001479207"
+  },
+  {
+   "id": 125001479208,
+   "name": "reference · files 2/2",
+   "status": "completed",
+   "conclusion": "success",
+   "workflow_name": "Evidence (three term types)",
+   "head_branch": "gate/p1b",
+   "head_sha": "374cddf29fcf20bfc80d4c6566361b5d1860a49d",
+   "run_id": 41357787404,
+   "html_url": "https://github.com/CognitiveSubstratesAI/LogicKernel/actions/runs/41357787404/job/125001479208"
+  },
+  {
+   "id": 125001479217,
+   "name": "static analysis 2/8",
+   "status": "completed",
+   "conclusion": "success",
+   "workflow_name": "Evidence (three term types)",
+   "head_branch": "gate/p1b",
+   "head_sha": "374cddf29fcf20bfc80d4c6566361b5d1860a49d",
+   "run_id": 41357787404,
+   "html_url": "https://github.com/CognitiveSubstratesAI/LogicKernel/actions/runs/41357787404/job/125001479217"
+  },
+  {
+   "id": 125001479361,
+   "name": "static analysis 4/8",
+   "status": "completed",
+   "conclusion": "success",
+   "workflow_name": "Evidence (three term types)",
+   "head_branch": "gate/p1b",
+   "head_sha": "374cddf29fcf20bfc80d4c6566361b5d1860a49d",
+   "run_id": 41357787404,
+   "html_url": "https://github.com/CognitiveSubstratesAI/LogicKernel/actions/runs/41357787404/job/125001479361"
+  },
+  {
+   "id": 125001479419,
+   "name": "static analysis 3/8",
+   "status": "completed",
+   "conclusion": "success",
+   "workflow_name": "Evidence (three term types)",
+   "head_branch": "gate/p1b",
+   "head_sha": "374cddf29fcf20bfc80d4c6566361b5d1860a49d",
+   "run_id": 41357787404,
+   "html_url": "https://github.com/CognitiveSubstratesAI/LogicKernel/actions/runs/41357787404/job/125001479419"
+  },
+  {
+   "id": 125004767385,
+   "name": "alt_interned",
+   "status": "completed",
+   "conclusion": "failure",
+   "workflow_name": "Evidence (three term types)",
+   "head_branch": "gate/p1b",
+   "head_sha": "374cddf29fcf20bfc80d4c6566361b5d1860a49d",
+   "run_id": 41357787404,
+   "html_url": "https://github.com/CognitiveSubstratesAI/LogicKernel/actions/runs/41357787404/job/125004767385"
+  },
+  {
+   "id": 125004767397,
+   "name": "reference",
+   "status": "completed",
+   "conclusion": "failure",
+   "workflow_name": "Evidence (three term types)",
+   "head_branch": "gate/p1b",
+   "head_sha": "374cddf29fcf20bfc80d4c6566361b5d1860a49d",
+   "run_id": 41357787404,
+   "html_url": "https://github.com/CognitiveSubstratesAI/LogicKernel/actions/runs/41357787404/job/125004767397"
+  },
+  {
+   "id": 125004767453,
+   "name": "alt",
+   "status": "completed",
+   "conclusion": "failure",
+   "workflow_name": "Evidence (three term types)",
+   "head_branch": "gate/p1b",
+   "head_sha": "374cddf29fcf20bfc80d4c6566361b5d1860a49d",
+   "run_id": 41357787404,
+   "html_url": "https://github.com/CognitiveSubstratesAI/LogicKernel/actions/runs/41357787404/job/125004767453"
+  },
+  {
+   "id": 125005786852,
+   "name": "Verdict table",
+   "status": "completed",
+   "conclusion": "failure",
+   "workflow_name": "Evidence (three term types)",
+   "head_branch": "gate/p1b",
+   "head_sha": "374cddf29fcf20bfc80d4c6566361b5d1860a49d",
+   "run_id": 41357787404,
+   "html_url": "https://github.com/CognitiveSubstratesAI/LogicKernel/actions/runs/41357787404/job/125005786852"
+  }
+ ]
+}

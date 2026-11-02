@@ -203,6 +203,16 @@ file) — so evidence is a process that started clean. The daemon follows Revise
     limit (60 an hour, used up by a CI poll every 30 s) made every later preflight stop at
     "unreadable" (fail closed, but blind to what it was run to check); and the gate's own poll
     waits 150 s between reads (`LOGICKERNEL_CI_POLL_S`; it was 30);
+  * **reading a red run, a battery and the pre-push bundle are tools** (TOOLS1, audit D-0327):
+    `tools/ci_triage.sh <run>` lists the distinct failing tests of a CI or Evidence run (eight shards
+    of one JET failure are one entry) in at most 40 lines; `tools/battery_table.sh <run>` prints a
+    mutation battery's table and says VOID (exit 2) when its Baseline job failed; `tools/prepush.sh
+    <STEP>` runs inventory, fmt, check, the fast static run, the stale-pin grep and the D-0164 term
+    grep, and stops at the first failure. Both read the API through `tools/ci_api.sh` (GET only; the
+    stored token is read at call time, handed to curl on stdin, never printed, stored or put in
+    argv). `tools/test_ci_tools.sh` (CI Tooling job, light shard) runs them on saved real answers in
+    `tools/fixtures/ci/`, with no network; every guard in it was hand-proved to fail with its check
+    removed.
   * **it RECOVERS from a stale daemon** (user, 2026-10-04: "make the gate recover, not just
     detect"). Revise can leave a deleted method alive in the daemon: Julia's method table keeps it,
     and the manifest gate's live-method filter (`which(m.sig) === m`) cannot tell it from a live one,

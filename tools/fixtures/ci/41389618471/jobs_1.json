@@ -1,0 +1,171 @@
+{
+ "_fixture": "run 41389618471: S2a red (Tooling), gate/s2a2; GitHub jobs answer page 1, fields trimmed",
+ "total_count": 15,
+ "jobs": [
+  {
+   "id": 125098009882,
+   "name": "Tooling · light",
+   "status": "completed",
+   "conclusion": "success",
+   "workflow_name": "CI",
+   "head_branch": "gate/s2a2",
+   "head_sha": "b36a947486cd78727bed206f091273df90404258",
+   "run_id": 41389618471,
+   "html_url": "https://github.com/CognitiveSubstratesAI/LogicKernel/actions/runs/41389618471/job/125098009882"
+  },
+  {
+   "id": 125098010088,
+   "name": "Tooling · stale",
+   "status": "completed",
+   "conclusion": "failure",
+   "workflow_name": "CI",
+   "head_branch": "gate/s2a2",
+   "head_sha": "b36a947486cd78727bed206f091273df90404258",
+   "run_id": 41389618471,
+   "html_url": "https://github.com/CognitiveSubstratesAI/LogicKernel/actions/runs/41389618471/job/125098010088"
+  },
+  {
+   "id": 125098010096,
+   "name": "Tooling · fast",
+   "status": "completed",
+   "conclusion": "failure",
+   "workflow_name": "CI",
+   "head_branch": "gate/s2a2",
+   "head_sha": "b36a947486cd78727bed206f091273df90404258",
+   "run_id": 41389618471,
+   "html_url": "https://github.com/CognitiveSubstratesAI/LogicKernel/actions/runs/41389618471/job/125098010096"
+  },
+  {
+   "id": 125098010099,
+   "name": "Tooling · main",
+   "status": "completed",
+   "conclusion": "failure",
+   "workflow_name": "CI",
+   "head_branch": "gate/s2a2",
+   "head_sha": "b36a947486cd78727bed206f091273df90404258",
+   "run_id": 41389618471,
+   "html_url": "https://github.com/CognitiveSubstratesAI/LogicKernel/actions/runs/41389618471/job/125098010099"
+  },
+  {
+   "id": 125098010165,
+   "name": "Julia min · files 1/3",
+   "status": "completed",
+   "conclusion": "success",
+   "workflow_name": "CI",
+   "head_branch": "gate/s2a2",
+   "head_sha": "b36a947486cd78727bed206f091273df90404258",
+   "run_id": 41389618471,
+   "html_url": "https://github.com/CognitiveSubstratesAI/LogicKernel/actions/runs/41389618471/job/125098010165"
+  },
+  {
+   "id": 125098010171,
+   "name": "Julia 1 · files 3/3",
+   "status": "completed",
+   "conclusion": "success",
+   "workflow_name": "CI",
+   "head_branch": "gate/s2a2",
+   "head_sha": "b36a947486cd78727bed206f091273df90404258",
+   "run_id": 41389618471,
+   "html_url": "https://github.com/CognitiveSubstratesAI/LogicKernel/actions/runs/41389618471/job/125098010171"
+  },
+  {
+   "id": 125098010183,
+   "name": "Format (Blue)",
+   "status": "completed",
+   "conclusion": "success",
+   "workflow_name": "CI",
+   "head_branch": "gate/s2a2",
+   "head_sha": "b36a947486cd78727bed206f091273df90404258",
+   "run_id": 41389618471,
+   "html_url": "https://github.com/CognitiveSubstratesAI/LogicKernel/actions/runs/41389618471/job/125098010183"
+  },
+  {
+   "id": 125098010191,
+   "name": "Julia min · files 3/3",
+   "status": "completed",
+   "conclusion": "success",
+   "workflow_name": "CI",
+   "head_branch": "gate/s2a2",
+   "head_sha": "b36a947486cd78727bed206f091273df90404258",
+   "run_id": 41389618471,
+   "html_url": "https://github.com/CognitiveSubstratesAI/LogicKernel/actions/runs/41389618471/job/125098010191"
+  },
+  {
+   "id": 125098010209,
+   "name": "Julia 1 · files 2/3",
+   "status": "completed",
+   "conclusion": "success",
+   "workflow_name": "CI",
+   "head_branch": "gate/s2a2",
+   "head_sha": "b36a947486cd78727bed206f091273df90404258",
+   "run_id": 41389618471,
+   "html_url": "https://github.com/CognitiveSubstratesAI/LogicKernel/actions/runs/41389618471/job/125098010209"
+  },
+  {
+   "id": 125098010279,
+   "name": "Julia min · files 2/3",
+   "status": "completed",
+   "conclusion": "success",
+   "workflow_name": "CI",
+   "head_branch": "gate/s2a2",
+   "head_sha": "b36a947486cd78727bed206f091273df90404258",
+   "run_id": 41389618471,
+   "html_url": "https://github.com/CognitiveSubstratesAI/LogicKernel/actions/runs/41389618471/job/125098010279"
+  },
+  {
+   "id": 125098010399,
+   "name": "Julia 1 · files 1/3",
+   "status": "completed",
+   "conclusion": "success",
+   "workflow_name": "CI",
+   "head_branch": "gate/s2a2",
+   "head_sha": "b36a947486cd78727bed206f091273df90404258",
+   "run_id": 41389618471,
+   "html_url": "https://github.com/CognitiveSubstratesAI/LogicKernel/actions/runs/41389618471/job/125098010399"
+  },
+  {
+   "id": 125098011124,
+   "name": "Static analysis + live swipl differential",
+   "status": "completed",
+   "conclusion": "skipped",
+   "workflow_name": "CI",
+   "head_branch": "gate/s2a2",
+   "head_sha": "b36a947486cd78727bed206f091273df90404258",
+   "run_id": 41389618471,
+   "html_url": "https://github.com/CognitiveSubstratesAI/LogicKernel/actions/runs/41389618471/job/125098011124"
+  },
+  {
+   "id": 125103420691,
+   "name": "Tooling suites (warm lane, evidence, oracle cache)",
+   "status": "completed",
+   "conclusion": "failure",
+   "workflow_name": "CI",
+   "head_branch": "gate/s2a2",
+   "head_sha": "b36a947486cd78727bed206f091273df90404258",
+   "run_id": 41389618471,
+   "html_url": "https://github.com/CognitiveSubstratesAI/LogicKernel/actions/runs/41389618471/job/125103420691"
+  },
+  {
+   "id": 125103700400,
+   "name": "Julia min - ubuntu-24.04",
+   "status": "completed",
+   "conclusion": "success",
+   "workflow_name": "CI",
+   "head_branch": "gate/s2a2",
+   "head_sha": "b36a947486cd78727bed206f091273df90404258",
+   "run_id": 41389618471,
+   "html_url": "https://github.com/CognitiveSubstratesAI/LogicKernel/actions/runs/41389618471/job/125103700400"
+  },
+  {
+   "id": 125103700531,
+   "name": "Julia 1 - ubuntu-24.04",
+   "status": "completed",
+   "conclusion": "success",
+   "workflow_name": "CI",
+   "head_branch": "gate/s2a2",
+   "head_sha": "b36a947486cd78727bed206f091273df90404258",
+   "run_id": 41389618471,
+   "html_url": "https://github.com/CognitiveSubstratesAI/LogicKernel/actions/runs/41389618471/job/125103700531"
+  }
+ ]
+}

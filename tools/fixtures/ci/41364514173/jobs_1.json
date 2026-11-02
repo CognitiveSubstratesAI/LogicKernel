@@ -1,0 +1,237 @@
+{
+ "_fixture": "run 41364514173: MOD3a battery, void (baseline failed); GitHub jobs answer page 1, fields trimmed",
+ "total_count": 21,
+ "jobs": [
+  {
+   "id": 125021720575,
+   "name": "Plan",
+   "status": "completed",
+   "conclusion": "success",
+   "workflow_name": "Mutation battery",
+   "head_branch": "mutants/MOD3a",
+   "head_sha": "7408ccc2f8e7c6cd13a57614643feb30f9b62f27",
+   "run_id": 41364514173,
+   "html_url": "https://github.com/CognitiveSubstratesAI/LogicKernel/actions/runs/41364514173/job/125021720575"
+  },
+  {
+   "id": 125021793389,
+   "name": "Baseline (unmutated)",
+   "status": "completed",
+   "conclusion": "failure",
+   "workflow_name": "Mutation battery",
+   "head_branch": "mutants/MOD3a",
+   "head_sha": "7408ccc2f8e7c6cd13a57614643feb30f9b62f27",
+   "run_id": 41364514173,
+   "html_url": "https://github.com/CognitiveSubstratesAI/LogicKernel/actions/runs/41364514173/job/125021793389"
+  },
+  {
+   "id": 125021793576,
+   "name": "MOD3a-M2",
+   "status": "completed",
+   "conclusion": "success",
+   "workflow_name": "Mutation battery",
+   "head_branch": "mutants/MOD3a",
+   "head_sha": "7408ccc2f8e7c6cd13a57614643feb30f9b62f27",
+   "run_id": 41364514173,
+   "html_url": "https://github.com/CognitiveSubstratesAI/LogicKernel/actions/runs/41364514173/job/125021793576"
+  },
+  {
+   "id": 125021793594,
+   "name": "MOD3a-D2",
+   "status": "completed",
+   "conclusion": "success",
+   "workflow_name": "Mutation battery",
+   "head_branch": "mutants/MOD3a",
+   "head_sha": "7408ccc2f8e7c6cd13a57614643feb30f9b62f27",
+   "run_id": 41364514173,
+   "html_url": "https://github.com/CognitiveSubstratesAI/LogicKernel/actions/runs/41364514173/job/125021793594"
+  },
+  {
+   "id": 125021793602,
+   "name": "MOD3a-T1",
+   "status": "completed",
+   "conclusion": "success",
+   "workflow_name": "Mutation battery",
+   "head_branch": "mutants/MOD3a",
+   "head_sha": "7408ccc2f8e7c6cd13a57614643feb30f9b62f27",
+   "run_id": 41364514173,
+   "html_url": "https://github.com/CognitiveSubstratesAI/LogicKernel/actions/runs/41364514173/job/125021793602"
+  },
+  {
+   "id": 125021793607,
+   "name": "MOD3a-S3",
+   "status": "completed",
+   "conclusion": "success",
+   "workflow_name": "Mutation battery",
+   "head_branch": "mutants/MOD3a",
+   "head_sha": "7408ccc2f8e7c6cd13a57614643feb30f9b62f27",
+   "run_id": 41364514173,
+   "html_url": "https://github.com/CognitiveSubstratesAI/LogicKernel/actions/runs/41364514173/job/125021793607"
+  },
+  {
+   "id": 125021793612,
+   "name": "MOD3a-S4",
+   "status": "completed",
+   "conclusion": "success",
+   "workflow_name": "Mutation battery",
+   "head_branch": "mutants/MOD3a",
+   "head_sha": "7408ccc2f8e7c6cd13a57614643feb30f9b62f27",
+   "run_id": 41364514173,
+   "html_url": "https://github.com/CognitiveSubstratesAI/LogicKernel/actions/runs/41364514173/job/125021793612"
+  },
+  {
+   "id": 125021793613,
+   "name": "MOD3a-K2",
+   "status": "completed",
+   "conclusion": "success",
+   "workflow_name": "Mutation battery",
+   "head_branch": "mutants/MOD3a",
+   "head_sha": "7408ccc2f8e7c6cd13a57614643feb30f9b62f27",
+   "run_id": 41364514173,
+   "html_url": "https://github.com/CognitiveSubstratesAI/LogicKernel/actions/runs/41364514173/job/125021793613"
+  },
+  {
+   "id": 125021793615,
+   "name": "MOD3a-D1",
+   "status": "completed",
+   "conclusion": "success",
+   "workflow_name": "Mutation battery",
+   "head_branch": "mutants/MOD3a",
+   "head_sha": "7408ccc2f8e7c6cd13a57614643feb30f9b62f27",
+   "run_id": 41364514173,
+   "html_url": "https://github.com/CognitiveSubstratesAI/LogicKernel/actions/runs/41364514173/job/125021793615"
+  },
+  {
+   "id": 125021793616,
+   "name": "MOD3a-B1",
+   "status": "completed",
+   "conclusion": "success",
+   "workflow_name": "Mutation battery",
+   "head_branch": "mutants/MOD3a",
+   "head_sha": "7408ccc2f8e7c6cd13a57614643feb30f9b62f27",
+   "run_id": 41364514173,
+   "html_url": "https://github.com/CognitiveSubstratesAI/LogicKernel/actions/runs/41364514173/job/125021793616"
+  },
+  {
+   "id": 125021793627,
+   "name": "MOD3a-S2",
+   "status": "completed",
+   "conclusion": "success",
+   "workflow_name": "Mutation battery",
+   "head_branch": "mutants/MOD3a",
+   "head_sha": "7408ccc2f8e7c6cd13a57614643feb30f9b62f27",
+   "run_id": 41364514173,
+   "html_url": "https://github.com/CognitiveSubstratesAI/LogicKernel/actions/runs/41364514173/job/125021793627"
+  },
+  {
+   "id": 125021793632,
+   "name": "MOD3a-S1",
+   "status": "completed",
+   "conclusion": "success",
+   "workflow_name": "Mutation battery",
+   "head_branch": "mutants/MOD3a",
+   "head_sha": "7408ccc2f8e7c6cd13a57614643feb30f9b62f27",
+   "run_id": 41364514173,
+   "html_url": "https://github.com/CognitiveSubstratesAI/LogicKernel/actions/runs/41364514173/job/125021793632"
+  },
+  {
+   "id": 125021793634,
+   "name": "MOD3a-K1",
+   "status": "completed",
+   "conclusion": "success",
+   "workflow_name": "Mutation battery",
+   "head_branch": "mutants/MOD3a",
+   "head_sha": "7408ccc2f8e7c6cd13a57614643feb30f9b62f27",
+   "run_id": 41364514173,
+   "html_url": "https://github.com/CognitiveSubstratesAI/LogicKernel/actions/runs/41364514173/job/125021793634"
+  },
+  {
+   "id": 125021793638,
+   "name": "MOD3a-X1",
+   "status": "completed",
+   "conclusion": "success",
+   "workflow_name": "Mutation battery",
+   "head_branch": "mutants/MOD3a",
+   "head_sha": "7408ccc2f8e7c6cd13a57614643feb30f9b62f27",
+   "run_id": 41364514173,
+   "html_url": "https://github.com/CognitiveSubstratesAI/LogicKernel/actions/runs/41364514173/job/125021793638"
+  },
+  {
+   "id": 125021793641,
+   "name": "MOD3a-P1",
+   "status": "completed",
+   "conclusion": "success",
+   "workflow_name": "Mutation battery",
+   "head_branch": "mutants/MOD3a",
+   "head_sha": "7408ccc2f8e7c6cd13a57614643feb30f9b62f27",
+   "run_id": 41364514173,
+   "html_url": "https://github.com/CognitiveSubstratesAI/LogicKernel/actions/runs/41364514173/job/125021793641"
+  },
+  {
+   "id": 125021793648,
+   "name": "MOD3a-T3",
+   "status": "completed",
+   "conclusion": "success",
+   "workflow_name": "Mutation battery",
+   "head_branch": "mutants/MOD3a",
+   "head_sha": "7408ccc2f8e7c6cd13a57614643feb30f9b62f27",
+   "run_id": 41364514173,
+   "html_url": "https://github.com/CognitiveSubstratesAI/LogicKernel/actions/runs/41364514173/job/125021793648"
+  },
+  {
+   "id": 125021793651,
+   "name": "MOD3a-X2",
+   "status": "completed",
+   "conclusion": "success",
+   "workflow_name": "Mutation battery",
+   "head_branch": "mutants/MOD3a",
+   "head_sha": "7408ccc2f8e7c6cd13a57614643feb30f9b62f27",
+   "run_id": 41364514173,
+   "html_url": "https://github.com/CognitiveSubstratesAI/LogicKernel/actions/runs/41364514173/job/125021793651"
+  },
+  {
+   "id": 125021793664,
+   "name": "MOD3a-P2",
+   "status": "completed",
+   "conclusion": "success",
+   "workflow_name": "Mutation battery",
+   "head_branch": "mutants/MOD3a",
+   "head_sha": "7408ccc2f8e7c6cd13a57614643feb30f9b62f27",
+   "run_id": 41364514173,
+   "html_url": "https://github.com/CognitiveSubstratesAI/LogicKernel/actions/runs/41364514173/job/125021793664"
+  },
+  {
+   "id": 125021793671,
+   "name": "MOD3a-M1",
+   "status": "completed",
+   "conclusion": "success",
+   "workflow_name": "Mutation battery",
+   "head_branch": "mutants/MOD3a",
+   "head_sha": "7408ccc2f8e7c6cd13a57614643feb30f9b62f27",
+   "run_id": 41364514173,
+   "html_url": "https://github.com/CognitiveSubstratesAI/LogicKernel/actions/runs/41364514173/job/125021793671"
+  },
+  {
+   "id": 125021793852,
+   "name": "MOD3a-T2",
+   "status": "completed",
+   "conclusion": "success",
+   "workflow_name": "Mutation battery",
+   "head_branch": "mutants/MOD3a",
+   "head_sha": "7408ccc2f8e7c6cd13a57614643feb30f9b62f27",
+   "run_id": 41364514173,
+   "html_url": "https://github.com/CognitiveSubstratesAI/LogicKernel/actions/runs/41364514173/job/125021793852"
+  },
+  {
+   "id": 125035130930,
+   "name": "Verdict table",
+   "status": "completed",
+   "conclusion": "failure",
+   "workflow_name": "Mutation battery",
+   "head_branch": "mutants/MOD3a",
+   "head_sha": "7408ccc2f8e7c6cd13a57614643feb30f9b62f27",
+   "run_id": 41364514173,
+   "html_url": "https://github.com/CognitiveSubstratesAI/LogicKernel/actions/runs/41364514173/job/125035130930"
+  }
+ ]
+}
