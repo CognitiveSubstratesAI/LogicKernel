@@ -295,3 +295,40 @@ NEXT AGENT: (1) T2 as above; (2) G7 tools/mutants/LB4B2.py; (3) G8 manifest + do
   PL_global_data{T}() is the template's copy (as a build it would recurse): reword at G8.
 - GATE NOTE (D-0164 grep): src/pl-wam.jl b_throw_resume (writer 4, 86027f8) carries upstream's fatalError text
   (pl-vmi.c:5270, verbatim): the term grep over the diff hits one word of it; the audit/dispatcher decides (upstream text).
+
+## State (writer 8, 2026-11-02; handed back at G9: no daemon slot, local merge blocked by a hook)
+BRANCH NOW: wip/lb4b2c = the whole stack rebased onto origin/main 2416adb (40 commits, `git rebase --onto origin/main
+eb700e8`; one conflict, docs/architecture.md LB4 b1 block vs Q10 block, both kept; identical-tree check: `git diff --stat
+wip/lb4b2b wip/lb4b2c` == `git diff --stat eb700e8 origin/main`). wip/lb4b2b is left as it was (old base). Tip 1fd1afa
+before this block's commit. Generated docs (docs/port_inventory.md) NOT regenerated: the gate does.
+COMMITTED (SHAs on wip/lb4b2b before the rebase -> the same subjects on wip/lb4b2c):
+- 3a38eb7 tools/mutants/LB4B2.py (19 mutants) + the W1/W2 and L3 kill rows + writer 7's block (re-checked: every `old`
+  once, ids unique, targets exist; python3 -I). FLAG: the plan's G7 said >= 28 mutants; 19 written.
+- 63f8e9b evidence/LB4B2/anchor_split.txt: 47 stale anchors of LANDED lists, counted at HEAD / origin/main / eb700e8.
+  Already off on origin/main (31): V9g MG7 MG20 MG21 MG23 MG24, MB1-MB6, MB17-MB19, MB23 MB24 MB26-MB28, CT1-CT10; AV7 Q1;
+  AV8 B2. Off by THIS stack (16, all src/pl-ext.jl, the b2-2 stand-in deletion): V9g MB29-MB31, AV7 U1-U5, AV8 B1,
+  AV9 B1-B4, MOD4 B1 B2. Lists NOT edited (audit's).
+- 8777550 manifest (G8): setupProlog, boot_global_data, _qlf_pl_write! (Int = term_t), appended to the LB4 b1 block (a
+  block of this stack, so no conflict with main); the closure `() -> boot_global_data(T)` needs no entry
+  (test/static_analysis_gates.jl:159 owned_methods skips `#` methods); comment at the old :2564-2566 reworded.
+- 6390467 docs/architecture.md LB4 b2 block at the end (pl-setup.c, pl-qlf.c, pl-error.c, pl-vmi.c named).
+G9 NOT STARTED. At the check (load 6.1, 9.8 GB free) THREE daemons ran: lk-pr1 (pid 628444), lk-dstack (711418,
+3 min old), lk-f2 (609828): the D-0357 maximum, so no daemon was started.
+LOCAL MERGE (prep, not committed): branch wip/lb4b2-bootmerge was made at wip/lb4b2c (no commits on it; list for the
+dispatcher, not deleted). `git merge wip/lb2bw` conflicts and the resolution used (all "keep both"):
+  src/LogicKernel.jl include pl-glob.jl before pl-file.jl (our pl-file comment); src/pl-ext.jl the table comment (+ "glob
+  (LB2b)"), `_PRED_TABLES` wic, file, files, glob; the splice list read, wic, file, files, glob, proc, srcfile, write,
+  redirect, format; src/pl-global.jl the struct: our four fields then `paths_CWDdir::String`; the comment line "Since
+  R2's LB2b" before `# PORT: pl-setup.c setupProlog`; setupProlog's constructor call: `dc_proc,` then `""`; manifest and
+  docs both sides. SEMANTIC CONFLICT: test/files/test_lb2b_swipl.jl (wip/lb2bw) destructures THREE values from
+  load_file! (`st, ball, _ =` and `st, _, _ =`): with b2's (status, ball) it must be `st, ball =` / `st, _ =` (whichever
+  lands second fixes it). The merge COMMIT was refused by require-verified-absence-before-commit.sh: the merge diff
+  carries wip/lb2bw's own scope comments (the hook's absence words; lines that branch added, not new text); no allow-*
+  escape was used; the merge was rolled back (tree clean). Trial merges (git merge-tree) against wip/lb4b2c: wip/bootpred3b clean;
+  wip/pr1b, wip/f2t docs only; wip/dict, wip/rd1 docs + manifest.
+FOR THE DISPATCHER/AUDIT: (a) how the local merge may be committed (the hook reads the whole merge diff), or run the boot
+  on an uncommitted merged tree; (b) F2-F8 as before (F3: T2's oracle is without -O).
+NEXT AGENT: when a daemon slot is free (load < 8, <= 3 daemons): the local merge as above (per (a)), then
+  `LOGICKERNEL_WARM_THIRD=1 tools/warm.sh start` in this worktree (cold compile ~30 min: three struct changes), the
+  first boot, fixes on wip/lb4b2c. Gate files to run first: test/db/test_boot_image_swipl.jl, test_boot_clauses_swipl.jl,
+  test_boot_messages_swipl.jl, test/files/test_load_swipl.jl, test/files/test_qlf_swipl.jl.
