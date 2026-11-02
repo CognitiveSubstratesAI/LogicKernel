@@ -290,11 +290,29 @@ const _RT_CASES = [
     ("rt216", raw"""'$is_named_var'('_Z'), R = yes"""),
     ("rt217", raw"""char_code(A, 233), '$is_named_var'(A), R = yes"""),
     ("rt218", raw"""char_code(C, 201), atom_concat(C, a, A), '$is_named_var'(A), R = yes"""),
-    ("rt219", raw"""'$is_named_var'('1X'), R = yes""")
+    ("rt219", raw"""'$is_named_var'('1X'), R = yes"""),
+    # the read option blob(Mode) (pl-read.c atom_to_blob_mode_ex, blob_syntax_available, scan_blob_name): the modes error, dead,
+    # resolve, a domain error for another atom; `<type>(` is claimed only with dead/resolve and when `<` is not a prefix operator
+    ("rt303", raw"""rt_str('f(X).', S), read_term(S,T,[blob(error)]), R = T"""),
+    ("rt305", raw"""rt_str('f(X).', S), read_term(S,T,[blob(dead)]), R = T"""),
+    ("rt306", raw"""rt_str('f(X).', S), read_term(S,T,[blob(resolve)]), R = T"""),
+    ("rt307", raw"""rt_str('f.', S), read_term(S,T,[blob(foo)]), R = T"""),
+    ("rt308", raw"""rt_str('f.', S), read_term(S,T,[blob(1)]), R = T"""),
+    ("rt309", raw"""rt_str('f.', S), read_term(S,T,[blob(_)]), R = T"""),
+    ("rt310", raw"""rt_str('<>(1).', S), read_term(S,T,[blob(dead)]), R = T"""),
+    ("rt311", raw"""op(200, fy, rtm:(<)), rt_str('<a>(f).', S), read_term(S,T,[blob(dead),module(rtm)]), R = T"""),
+    ("rt312", raw"""rt_str('a < b.', S), read_term(S,T,[blob(dead)]), R = T"""),
+    ("rt313", raw"""rt_str('<(1).', S), read_term(S,T,[blob(resolve)]), R = T"""),
+    ("rt314", raw"""rt_file('<a>(1).', S), rt_serr_formal(read_term(S,T,[blob(error)]), R)"""),
+    ("rt315", raw"""op(200, xfy, rtm:(>)), rt_str('a <b>(c).', S), read_term(S,T,[blob(dead),module(rtm)]), R = T"""),
+    ("rt316", raw"""rt_file('X = <a>.', S), rt_serr_formal(read_term(S,T,[blob(dead)]), R)"""),
+    ("rt317", raw"""rt_file('<a>(1).', S), rt_serr_formal(read_term(S,T,[]), R)"""),
+    ("rt318", raw"""rt_str('f.', S), read_clause(S,T,[blob(foo)]), R = T"""),
+    ("rt319", raw"""rt_str('f(X).', S), read_clause(S,T,[blob(dead)]), R = T""")
 ]
 
 # KNOWN DIFFERENCE rows: (id, goal, the kernel's exact answer). swipl's answer is in `_RT_PINNED` (the rows after the cases), compared live too.
-#   rt300-rt304: read_term/3 options the kernel REFUSES with a `NotPortedError` (src/pl-read.jl `read_term_from_stream`, R1's decision);
+#   rt300-rt302, rt304: read_term/3 options the kernel REFUSES with a `NotPortedError` (src/pl-read.jl `read_term_from_stream`, R1's decision);
 #   swipl answers the term (and for comments/quasi_quotations the collected lists).
 #   the rest: a syntax error read from an `open_string/2` stream: swipl's ball carries `stream(S, Line, LinePos, CharNo)`; the kernel's
 #   `unify_location` (src/pl-read.jl) throws `NotPortedError` for a stream that is neither a file nor a string stream (the stream
@@ -313,8 +331,11 @@ const _RT_KNOWN = [
     ("rt300", raw"""rt_str('f(X).', S), read_term(S,T,[comments(C)]), R = T-C""", "t_rt300 jlerr NotPortedError read_term's comments option"),
     ("rt301", raw"""rt_str('f(X).', S), read_term(S,T,[var_prefix(true)]), R = T""", "t_rt301 jlerr NotPortedError read_term's var_prefix option"),
     ("rt302", raw"""rt_str('f(X).', S), read_term(S,T,[quasi_quotations(Q)]), R = T-Q""", "t_rt302 jlerr NotPortedError read_term's quasi_quotations option"),
-    ("rt303", raw"""rt_str('f(X).', S), read_term(S,T,[blob(error)]), R = T""", "t_rt303 jlerr NotPortedError read_term's blob option"),
-    ("rt304", raw"""rt_str('f(X).', S), read_term(S,T,[unicode_atoms(accept)]), R = T""", "t_rt304 jlerr NotPortedError read_term's unicode_atoms option")
+    ("rt304", raw"""rt_str('f(X).', S), read_term(S,T,[unicode_atoms(accept)]), R = T""", "t_rt304 jlerr NotPortedError read_term's unicode_atoms option"),
+    # blob(dead|resolve) on `<type>(…)`: swipl reads a dead blob (its type is the answer); the kernel has no blob object: refused when read
+    # (DIVERGES in src/pl-read.jl `atom_to_blob_mode_ex`; owner: the blob step). UNVERIFIED on the kernel: gate decides.
+    ("rt320", raw"""rt_str('<a-b>(x, "y").', S), read_term(S,T,[blob(dead)]), blob(T, Ty), R = Ty""", "t_rt320 jlerr NotPortedError read: a blob <type>(…)"),
+    ("rt321", raw"""rt_str('<a-b>(x).', S), read_term(S,T,[blob(resolve)]), blob(T, Ty), R = Ty""", "t_rt321 jlerr NotPortedError read: a blob <type>(…)")
 ]
 
 const _RT_PINNED = [
@@ -494,6 +515,22 @@ const _RT_PINNED = [
     "t_rt217 c[116,95,114,116,50,49,55]/1(a[121,101,115])",
     "t_rt218 c[116,95,114,116,50,49,56]/1(a[121,101,115])",
     "t_rt219 c[116,95,114,116,50,49,57]/1(a[121,101,115])",
+    "t_rt303 c[116,95,114,116,51,48,51]/1(c[102]/1(V0))",
+    "t_rt305 c[116,95,114,116,51,48,53]/1(c[102]/1(V0))",
+    "t_rt306 c[116,95,114,116,51,48,54]/1(c[102]/1(V0))",
+    "t_rt307 c[116,95,114,116,51,48,55]/1(c[114,97,105,115,101,100]/1(c[100,111,109,97,105,110,95,101,114,114,111,114]/2(a[98,108,111,98],a[102,111,111])))",
+    "t_rt308 c[116,95,114,116,51,48,56]/1(c[114,97,105,115,101,100]/1(c[116,121,112,101,95,101,114,114,111,114]/2(a[97,116,111,109],i1)))",
+    "t_rt309 c[116,95,114,116,51,48,57]/1(c[114,97,105,115,101,100]/1(a[105,110,115,116,97,110,116,105,97,116,105,111,110,95,101,114,114,111,114]))",
+    "t_rt310 c[116,95,114,116,51,49,48]/1(c[60,62]/1(i1))",
+    "t_rt311 c[116,95,114,116,51,49,49]/1(c[62]/2(c[60]/1(a[97]),a[102]))",
+    "t_rt312 c[116,95,114,116,51,49,50]/1(c[60]/2(a[97],a[98]))",
+    "t_rt313 c[116,95,114,116,51,49,51]/1(c[60]/1(i1))",
+    "t_rt314 c[116,95,114,116,51,49,52]/1(c[114,97,105,115,101,100]/1(c[115,121,110,116,97,120,95,101,114,114,111,114]/1(a[111,112,101,114,97,116,111,114,95,101,120,112,101,99,116,101,100])))",
+    "t_rt315 c[116,95,114,116,51,49,53]/1(c[60]/2(a[97],c[62]/2(a[98],a[99])))",
+    "t_rt316 c[116,95,114,116,51,49,54]/1(c[114,97,105,115,101,100]/1(c[115,121,110,116,97,120,95,101,114,114,111,114]/1(a[101,110,100,95,111,102,95,102,105,108,101])))",
+    "t_rt317 c[116,95,114,116,51,49,55]/1(c[114,97,105,115,101,100]/1(c[115,121,110,116,97,120,95,101,114,114,111,114]/1(a[111,112,101,114,97,116,111,114,95,101,120,112,101,99,116,101,100])))",
+    "t_rt318 c[116,95,114,116,51,49,56]/1(c[114,97,105,115,101,100]/1(c[100,111,109,97,105,110,95,101,114,114,111,114]/2(a[98,108,111,98],a[102,111,111])))",
+    "t_rt319 c[116,95,114,116,51,49,57]/1(c[102]/1(V0))",
     "t_rt87",
     "t_rt88",
     "t_rt89 c[116,95,114,116,56,57]/1(a[99])",
@@ -507,8 +544,9 @@ const _RT_PINNED = [
     "t_rt300 c[116,95,114,116,51,48,48]/1(c[45]/2(c[102]/1(V0),nil))",
     "t_rt301 c[116,95,114,116,51,48,49]/1(c[102]/1(a[88]))",
     "t_rt302 c[116,95,114,116,51,48,50]/1(c[45]/2(c[102]/1(V0),nil))",
-    "t_rt303 c[116,95,114,116,51,48,51]/1(c[102]/1(V0))",
-    "t_rt304 c[116,95,114,116,51,48,52]/1(c[102]/1(V0))"
+    "t_rt304 c[116,95,114,116,51,48,52]/1(c[102]/1(V0))",
+    "t_rt320 c[116,95,114,116,51,50,48]/1(a[97,45,98])",
+    "t_rt321 c[116,95,114,116,51,50,49]/1(a[97,45,98])"
 ]
 
 "The program and cases as one file (in `dir`); the case predicates' names."
@@ -573,7 +611,7 @@ function _rt_kernel(path::String, names::Vector{String})
     return out
 end
 
-@testset "read/1,2, read_term/2,3, \$raw_read/1,2, \$is_named_var/1 as swipl's (rt01-rt219, rt300-rt304)" begin
+@testset "read/1,2, read_term/2,3, \$raw_read/1,2, \$is_named_var/1 as swipl's (rt01-rt219, rt300-rt321)" begin
     mktempdir() do dir
         f, names = _rt_file(dir)
         kl = _rt_kernel(f, names)

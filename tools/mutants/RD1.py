@@ -3,7 +3,7 @@
 # `pl_read_term2_va`, `$is_named_var/1` `pl_is_named_var1_va`, `pl_raw_read2`, `pl_raw_read`, `pl_read2`, `pl_read`, as registered in
 # src/pl-read.jl and src/pl-ext.jl), run ONCE, in CI (.github/workflows/mutation.yml; locally: tools/mutate.sh run). Format:
 # tools/mutate_drive.py's (as MOD3b.py): `id`, `file`, `old` (must occur EXACTLY once), `new`, optional `equivalent` and `targets`.
-# Killed by test/core_text/test_read_stream_swipl.jl (rows rt01-rt219, rt300-rt304 named in each id's KILL). Verdicts: written by the
+# Killed by test/core_text/test_read_stream_swipl.jl (rows rt01-rt219, rt300-rt321 named in each id's KILL). Verdicts: written by the
 # battery, not yet run. RD1 is Tier 3 (registration, argument checks, error terms; no engine/reader/writer code): the battery is
 # advisory, the root suite is the gate.
 # The `old` strings are written in the repo's formatted style BEFORE `tools/warm.sh fmt` ran (the coding agent had no daemon):
@@ -23,6 +23,7 @@ TS = ["test/core_text/test_read_stream_swipl.jl"]
 TARGETS = TS   # the baseline's (mutate_ci.py plan reads TARGETS)
 W = "src/pl-read.jl"
 X = "src/pl-ext.jl"
+TB = TS + ["test/core_text/test_read.jl", "test/core_text/test_read_term_swipl.jl"]
 
 
 def m(id, old, new, targets=TS, equivalent=None, file=W):
@@ -87,4 +88,49 @@ MUTANTS = [
     m("RD1-E2 read/1 is registered without PL_FA_ISO",
       'PL_extension("read", 1, pl_read, PL_FA_ISO),', 'PL_extension("read", 1, pl_read, 0x00),', file=X,
       equivalent="read, not run: the same as RD1-E1"),
+    # ── pl-read.c blob(Type): atom_to_blob_mode_ex, blob_syntax_available, blob_name_char, scan_blob_name, the tokeniser's `<` ──
+    # (the tokeniser is shared reader code: TARGETS also hold the other reader test files, audit D-0238)
+    m("RD1-F1 the tokeniser claims `<type>(` in every mode, blob(error) included (KILL rt314, rt317)",
+      "c == Int('<') && !must_be_op && rd.blobs !== :error && blob_syntax_available(rd)",
+      "c == Int('<') && !must_be_op && blob_syntax_available(rd)",
+      targets=TB),
+    m("RD1-F2 the tokeniser claims `<type>(` where an operator is expected (KILL rt315)",
+      "c == Int('<') && !must_be_op && rd.blobs !== :error",
+      "c == Int('<') && rd.blobs !== :error",
+      targets=TB),
+    m("RD1-F3 `<type>(` is claimed in a module where `<` is a prefix operator (KILL rt311)",
+      "    ok, _, _ = currentOperator(gd, gd.modules[rd.module_], mk_sym(T, :<), OP_PREFIX)    # ATOM_smaller\n    return !ok",
+      "    ok, _, _ = currentOperator(gd, gd.modules[rd.module_], mk_sym(T, :<), OP_PREFIX)    # ATOM_smaller\n    return ok || true",
+      targets=TB),
+    m("RD1-F4 the type name does not take `-` (KILL rt320, rt321)",
+      "PlIdContW(c) || c == Int('-') || c == Int('.')",
+      "PlIdContW(c) || c == Int('.')",
+      targets=TB),
+    m("RD1-F5 an empty type name `<>(` is a blob (KILL rt310)",
+      "(e == in || _byte(b, e + 1) != Int('(')) && return nothing",
+      "_byte(b, e + 1) != Int('(') && return nothing",
+      targets=TB),
+    m("RD1-F6 `<type>` not followed by `(` is a blob (KILL rt316)",
+      "(e == in || _byte(b, e + 1) != Int('(')) && return nothing",
+      "e == in && return nothing",
+      targets=TB),
+    m("RD1-F7 blob(dead) is read as blob(error) (KILL rt320)",
+      "        rd.blobs = :dead\n",
+      "        rd.blobs = :error\n"),
+    m("RD1-F8 blob(resolve) is read as blob(error) (KILL rt321)",
+      "        rd.blobs = :resolve\n",
+      "        rd.blobs = :error\n"),
+    m("RD1-F9 another atom as the blob mode is accepted (KILL rt307, rt318)",
+      "        return PL_put_atom(ld, v, a) && PL_error(ld, ERR_DOMAIN, mk_sym(T, :blob), v)\n",
+      "        return true\n"),
+    m("RD1-F10 read_term's blob option is never applied (KILL rt307, rt320, rt321)",
+      "    opt_blobs !== nothing && !atom_to_blob_mode_ex(ld, rd, opt_blobs::T) && return false\n",
+      "    opt_blobs !== nothing && false && return false\n"),
+    m("RD1-F11 read_clause's blob option is never applied (KILL rt318)",
+      "            if opt_blobs !== nothing && !atom_to_blob_mode_ex(ld, rd, opt_blobs::T)\n",
+      "            if false && !atom_to_blob_mode_ex(ld, rd, opt_blobs::T)\n"),
+    m("RD1-F12 the read data starts in blob(dead) mode (KILL rt317)",
+      "        :error,                                     # blobs (RD_BLOB_ERROR)\n",
+      "        :dead,                                      # blobs (RD_BLOB_ERROR)\n",
+      targets=TB),
 ]

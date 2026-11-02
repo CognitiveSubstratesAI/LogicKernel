@@ -2443,7 +2443,12 @@ function _manifest_index(T)
         (LK.pl_raw_read2, Tuple{LD, Int64, Int64}, false),
         (LK.pl_raw_read, Tuple{LD, Int64}, false),
         (LK.pl_read2, Tuple{LD, Int64, Int64}, false),
-        (LK.pl_read, Tuple{LD, Int64}, false)
+        (LK.pl_read, Tuple{LD, Int64}, false),
+        # RD1b: pl-read.c's blob(Type) read option and the tokeniser's `<type>(` claim
+        (LK.blob_syntax_available, Tuple{LK.read_data{T}}, false),
+        (LK.blob_name_char, Tuple{Int}, false),
+        (LK.scan_blob_name, Tuple{Type{T}, Vector{UInt8}, Int}, false),
+        (LK.atom_to_blob_mode_ex, Tuple{LD, LK.read_data{T}, T}, false)
     )
 end
 

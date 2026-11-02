@@ -183,6 +183,22 @@ t_rt216(R) :- catch(('$is_named_var'('_Z'), R = yes), error(SsuE, _), R = raised
 t_rt217(R) :- catch((char_code(A, 233), '$is_named_var'(A), R = yes), error(SsuE, _), R = raised(SsuE)).
 t_rt218(R) :- catch((char_code(C, 201), atom_concat(C, a, A), '$is_named_var'(A), R = yes), error(SsuE, _), R = raised(SsuE)).
 t_rt219(R) :- catch(('$is_named_var'('1X'), R = yes), error(SsuE, _), R = raised(SsuE)).
+t_rt303(R) :- catch((rt_str('f(X).', S), read_term(S,T,[blob(error)]), R = T), error(SsuE, _), R = raised(SsuE)).
+t_rt305(R) :- catch((rt_str('f(X).', S), read_term(S,T,[blob(dead)]), R = T), error(SsuE, _), R = raised(SsuE)).
+t_rt306(R) :- catch((rt_str('f(X).', S), read_term(S,T,[blob(resolve)]), R = T), error(SsuE, _), R = raised(SsuE)).
+t_rt307(R) :- catch((rt_str('f.', S), read_term(S,T,[blob(foo)]), R = T), error(SsuE, _), R = raised(SsuE)).
+t_rt308(R) :- catch((rt_str('f.', S), read_term(S,T,[blob(1)]), R = T), error(SsuE, _), R = raised(SsuE)).
+t_rt309(R) :- catch((rt_str('f.', S), read_term(S,T,[blob(_)]), R = T), error(SsuE, _), R = raised(SsuE)).
+t_rt310(R) :- catch((rt_str('<>(1).', S), read_term(S,T,[blob(dead)]), R = T), error(SsuE, _), R = raised(SsuE)).
+t_rt311(R) :- catch((op(200, fy, rtm:(<)), rt_str('<a>(f).', S), read_term(S,T,[blob(dead),module(rtm)]), R = T), error(SsuE, _), R = raised(SsuE)).
+t_rt312(R) :- catch((rt_str('a < b.', S), read_term(S,T,[blob(dead)]), R = T), error(SsuE, _), R = raised(SsuE)).
+t_rt313(R) :- catch((rt_str('<(1).', S), read_term(S,T,[blob(resolve)]), R = T), error(SsuE, _), R = raised(SsuE)).
+t_rt314(R) :- catch((rt_file('<a>(1).', S), rt_serr_formal(read_term(S,T,[blob(error)]), R)), error(SsuE, _), R = raised(SsuE)).
+t_rt315(R) :- catch((op(200, xfy, rtm:(>)), rt_str('a <b>(c).', S), read_term(S,T,[blob(dead),module(rtm)]), R = T), error(SsuE, _), R = raised(SsuE)).
+t_rt316(R) :- catch((rt_file('X = <a>.', S), rt_serr_formal(read_term(S,T,[blob(dead)]), R)), error(SsuE, _), R = raised(SsuE)).
+t_rt317(R) :- catch((rt_file('<a>(1).', S), rt_serr_formal(read_term(S,T,[]), R)), error(SsuE, _), R = raised(SsuE)).
+t_rt318(R) :- catch((rt_str('f.', S), read_clause(S,T,[blob(foo)]), R = T), error(SsuE, _), R = raised(SsuE)).
+t_rt319(R) :- catch((rt_str('f(X).', S), read_clause(S,T,[blob(dead)]), R = T), error(SsuE, _), R = raised(SsuE)).
 t_rt87(R) :- catch((rt_str('a b. c.', S), read_term(S,T,[syntax_errors(fail)]), R = T), error(SsuE, _), R = raised(SsuE)).
 t_rt88(R) :- catch((rt_str('a b. c.', S), read_term(S,T,[syntax_errors(quiet)]), R = T), error(SsuE, _), R = raised(SsuE)).
 t_rt89(R) :- catch((rt_str('a b. c.', S), read_term(S,T,[syntax_errors(dec10)]), R = T), error(SsuE, _), R = raised(SsuE)).
@@ -196,5 +212,6 @@ t_rt184(R) :- catch((rt_str('\'abc', S), '$raw_read'(S, T), R = T), error(SsuE, 
 t_rt300(R) :- catch((rt_str('f(X).', S), read_term(S,T,[comments(C)]), R = T-C), error(SsuE, _), R = raised(SsuE)).
 t_rt301(R) :- catch((rt_str('f(X).', S), read_term(S,T,[var_prefix(true)]), R = T), error(SsuE, _), R = raised(SsuE)).
 t_rt302(R) :- catch((rt_str('f(X).', S), read_term(S,T,[quasi_quotations(Q)]), R = T-Q), error(SsuE, _), R = raised(SsuE)).
-t_rt303(R) :- catch((rt_str('f(X).', S), read_term(S,T,[blob(error)]), R = T), error(SsuE, _), R = raised(SsuE)).
 t_rt304(R) :- catch((rt_str('f(X).', S), read_term(S,T,[unicode_atoms(accept)]), R = T), error(SsuE, _), R = raised(SsuE)).
+t_rt320(R) :- catch((rt_str('<a-b>(x, "y").', S), read_term(S,T,[blob(dead)]), blob(T, Ty), R = Ty), error(SsuE, _), R = raised(SsuE)).
+t_rt321(R) :- catch((rt_str('<a-b>(x).', S), read_term(S,T,[blob(resolve)]), blob(T, Ty), R = Ty), error(SsuE, _), R = raised(SsuE)).

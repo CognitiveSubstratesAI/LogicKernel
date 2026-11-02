@@ -342,6 +342,7 @@ mutable struct read_data{T}
     dotlists::Bool                  # read .(a,b) as a list
     unicode_atoms::Sunicode_atoms_t # per-stream/per-call atom-content policy
     strictness::Int                 # Strictness level
+    blobs::Symbol                   # How to read <type>(...): :error, :dead or :resolve (blob_mode)
     _rb::read_buffer                # keep read characters here
     vt::var_table                   # Data about variables
     term_stack::term_stack{T}       # Stack for creating output term
@@ -2053,6 +2054,42 @@ function backskip_utf8(b::AbstractVector{UInt8}, s::Int)::Int
     return s
 end
 
+# PORT: pl-read.c blob_syntax_available
+"Is `<type>(…)` claimable as a blob in the read module (pl-read.c)? Not when `<` is a prefix operator there: `<a>(f)` is then `>(<(a),f)`."
+function blob_syntax_available(rd::read_data{T})::Bool where {T}
+    gd = rd.gd
+    ok, _, _ = currentOperator(gd, gd.modules[rd.module_], mk_sym(T, :<), OP_PREFIX)    # ATOM_smaller
+    return !ok
+end
+
+# PORT: pl-read.c blob_name_char
+"May `c` be part of the type name between the brackets of `<type>(…)` (pl-read.c)?"
+blob_name_char(c::Int)::Bool =
+    PlIdContW(c) || c == Int('-') || c == Int('.') || c == Int(':') || c == Int('$')
+
+# PORT: pl-read.c scan_blob_name
+# DIVERGES: returns `(position of the "(", the type name atom)` or `nothing`, where upstream returns
+# the pointer and fills `name`; no atom lock (`PL_new_atom_mbchars`, `rd->locked`), and `rd->blob_start`
+# is not recorded (read_blob_end, which builds the dead blob, is deferred to the blob step).
+"""
+`in` is just after the `<`: when the text is `<name>(` return the position of `(` and the atom
+`name`, else `nothing` (pl-read.c).
+"""
+function scan_blob_name(
+    ::Type{T}, b::Vector{UInt8}, in::Int
+)::Union{Nothing, Tuple{Int, T}} where {T}
+    e = in
+    while true
+        next, c = utf8_get_char(b, e)
+        c == Int('>') && break
+        blob_name_char(c) || return nothing         # (also catches the end of the text)
+        e = next
+    end
+    (e == in || _byte(b, e + 1) != Int('(')) && return nothing   # `<>`, or `>` not followed by `(`
+    return (e + 1, _atom_from_text(T, String(b[in:(e - 1)])))
+end
+
+
 # PORT: pl-read.c get_token
 # DIVERGES: a string token's value is the term (`term_value`), where upstream holds a term
 # reference; a variable token's is the variable's index. NOT PORTED: blobs (`<type>(…)`, SWI-7
@@ -2162,7 +2199,15 @@ function get_token(must_be_op::Bool, rd::read_data{T})::Union{Nothing, token{T}}
             _, c2 = utf8_get_char(b, rd.here)
             PlIdContW(c2) && @goto variable
         end
-        # (no blobs: `<type>(…)` is read only with the blobs option)
+        if c == Int('<') && !must_be_op && rd.blobs !== :error && blob_syntax_available(rd)
+            blob = scan_blob_name(T, b, rd.here)      # <type>(...): a blob
+            if blob !== nothing
+                rd.here = blob[1]                   # points at the `(`
+                tok.atom = blob[2]
+                tok.type = TK_BLOB
+                @goto out
+            end
+        end
         rd.here = SkipSymbol(b, rd.here, rd)
         check_no_bidi_override(start, rd.here, rd) || return nothing
         if rd.here == start + 1
@@ -2290,6 +2335,7 @@ function init_read_data(
         :error, false, PL_new_term_ref(ld),         # on_error, has_exception, exception
         0, 0, 0, 0, 0,                              # variables, varnames, singles, subtpos, comments
         false, false, inp.unicode_atoms, 0,          # cycles, dotlists, unicode_atoms, strictness
+        :error,                                     # blobs (RD_BLOB_ERROR)
         read_buffer(0, UInt8[], 0, 0, inp), var_table(), term_stack{T}(), op_queues{T}(),
         gd, ld
     )
@@ -3630,7 +3676,8 @@ function simple_term(
 end
 
 # PORT: pl-read.c start_pframe
-# DIVERGES: a blob (`<type>(…)`, read only with the blob option), a dict (`Tag{…}`) or a
+# DIVERGES: a blob (`<type>(…)`, read only with blob(dead) or blob(resolve): the dead blob needs an
+# atom object the kernel has not got, `read_blob_start`/`read_blob_end`: the blob step), a dict (`Tag{…}`) or a
 # quasi-quotation (`{|Syntax||Quotation|}`) raises `NotPortedError`: refused, R1's decision (user,
 # 2026-10-07: an explicit error, never a misread). Where swipl raises a SYNTAX error inside one of
 # them (`-{a}`, a dict: `colon_expected`), the kernel's refusal comes first.
@@ -3648,7 +3695,7 @@ function start_pframe(
     elseif k == PF_BLOB
         throw(
             NotPortedError{Nothing}(
-                nothing, "read: a blob <type>(…)", "the blob read option"
+                nothing, "read: a blob <type>(…)", "the blob step"
             )
         )
     elseif k == PF_DICT
@@ -4079,8 +4126,8 @@ const read_clause_options = (
 # honoured (since R1g), `term_position` and `subterm_positions` since LB1; the others the kernel
 # cannot honour are REFUSED (`NotPortedError`), as `read_term_from_stream`'s: `comments`,
 # `process_comment(true)` (the comment hook: R2 — `prolog:comment_hook/4` is not defined, so
-# `process_comment` is false), `var_prefix` (the module flag, R2), `unicode_atoms` (the NFC hook),
-# `blob` (no blobs); a stream whose unquoted atoms must be NFC is refused
+# `process_comment` is false), `var_prefix` (the module flag, R2), `unicode_atoms` (the NFC hook);
+# `blob(Mode)` is accepted as read_term's (`atom_to_blob_mode_ex`); a stream whose unquoted atoms must be NFC is refused
 # (`ensure_unicode_normalize_hook`: no normalizer). The foreign frame is closed before returning,
 # where upstream leaves it to its caller's.
 """
@@ -4126,15 +4173,19 @@ function read_clause(
                     )
                 end
             end
-            if process_comment || opt_blobs !== nothing || opt_unicode_atoms !== nothing
+            if process_comment || opt_unicode_atoms !== nothing
                 PL_close_foreign_frame(ld, fid)
                 throw(
                     NotPortedError{T}(
                         mk_sym(T, :read_clause),
-                        "read_clause's process_comment(true), blob or unicode_atoms option",
-                        "R2 (the comment hook, the NFC hook); no blobs"
+                        "read_clause's process_comment(true) or unicode_atoms option",
+                        "R2 (the comment hook, the NFC hook)"
                     )
                 )
+            end
+            if opt_blobs !== nothing && !atom_to_blob_mode_ex(ld, rd, opt_blobs::T)
+                PL_close_foreign_frame(ld, fid)
+                return false
             end
         end
 
@@ -4292,10 +4343,37 @@ const read_term_options = (
     PL_option_t(:blob, OPT_ATOM)
 )
 
+# PORT: pl-read.c atom_to_blob_mode_ex
+# DIVERGES: stores the mode in `rd.blobs` (a Symbol), where upstream writes the enum through a pointer.
+# `dead` and `resolve` make the tokeniser claim `<type>(…)`, which is then REFUSED (`start_pframe`):
+# the kernel has no blob object to build (upstream `read_blob_end`: `newDeadBlob`, `lookupLiveBlob`).
+# Owner: the blob step.
+"""
+Validate the atom `a` as `blob(Mode)` and store the mode in `rd` (pl-read.c); `domain_error(blob, a)`
+and `false` for another atom.
+"""
+function atom_to_blob_mode_ex(
+    ld::PL_local_data{T}, rd::read_data{T}, a::T
+)::Bool where {T}
+    k = sym_key(a)
+    if k == sym_key(mk_sym(T, :error))              # ATOM_error
+        rd.blobs = :error
+    elseif k == sym_key(mk_sym(T, :dead))           # ATOM_dead
+        rd.blobs = :dead
+    elseif k == sym_key(mk_sym(T, :resolve))        # ATOM_resolve
+        rd.blobs = :resolve
+    else
+        v = PL_new_term_ref(ld)
+        return PL_put_atom(ld, v, a) && PL_error(ld, ERR_DOMAIN, mk_sym(T, :blob), v)
+    end
+    return true
+end
+
 # PORT: pl-read.c read_term_from_stream
 # DIVERGES: the options the kernel cannot honour are REFUSED (`NotPortedError`) where upstream
 # honours them: `comments` (the comments collector, R2), `var_prefix` (the module flag, R2),
-# `unicode_atoms` (the NFC hook), `blob` (no blobs), `quasi_quotations` (none are read);
+# `unicode_atoms` (the NFC hook), `quasi_quotations` (none are read); `blob(dead|resolve)` is
+# accepted but `<type>(…)` is then refused when read (`atom_to_blob_mode_ex`; owner: the blob step);
 # `term_position` and `subterm_positions` are honoured since LB1. The module is the kernel's
 # table's; a syntax error is reported through `printMessage` (`reportReadError`); the retry on a
 # `dec10` error re-reads from the same stream, as upstream. No `free_read_data` (Julia's GC).
@@ -4340,9 +4418,7 @@ function read_term_from_stream(
             )
         )
     end
-    opt_blobs === nothing || throw(
-        NotPortedError{T}(opt_blobs::T, "read_term's blob option", "never (no blobs)")
-    )
+    opt_blobs !== nothing && !atom_to_blob_mode_ex(ld, rd, opt_blobs::T) && return false
     opt_unicode_atoms === nothing || throw(
         NotPortedError{T}(
             opt_unicode_atoms::T, "read_term's unicode_atoms option",

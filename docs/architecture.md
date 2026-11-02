@@ -6350,9 +6350,9 @@ stream, over the reader R1 built (`read_term_from_stream`); the pin tree is swip
 * **DIVERGES:** no stream locks (`Slock`/`Sunlock`) and no `free_read_data`; `$raw_read` makes its atom from the buffer's bytes as
   `_text_term` does (UTF-8 text), and the buffer is not written (`*top = EOS`): the text is the slice up to `top`; the stream argument
   of a syntax error on an `open_string/2` stream keeps `unify_location`'s refusal (below), as the reader had it since R1.
-* **Rows:** test/core_text/test_read_stream_swipl.jl, 190 rows over string and file streams (pins from swipl 10.1.19, two
-  byte-identical runs; generator and pins in evidence/RD1/), 15 of them KNOWN (the kernel's answer read from the source, to be
-  settled by the gate's first run). Mutants: tools/mutants/RD1.py, 21 mutants over the wrappers, 2 declared equivalent (the two
+* **Rows:** test/core_text/test_read_stream_swipl.jl, 207 rows over string and file streams (pins from swipl 10.1.19, two
+  byte-identical runs; generator and pins in evidence/RD1/), 16 of them KNOWN (the kernel's answer read from the source, to be
+  settled by the gate's first run). Mutants: tools/mutants/RD1.py, 33 mutants (21 over the wrappers, 12 over the blob option), 2 declared equivalent (the two
   `PL_FA_ISO` flag mutants; read, not run). test/core_text/test_io.jl carries the upstream `no_protocol_in` unit
   (`read_term/3` on the `protocol` alias: `existence_error(stream, protocol)`).
 * **DEFERRED, each with its reason (none dropped):**
@@ -6368,8 +6368,17 @@ stream, over the reader R1 built (`read_term_from_stream`); the pin tree is swip
     error on a stream with no file name that is no string stream. The stream table exists since S1, so the branch can be written;
     it is the reader's internals, so it waits for a step of its own (question to the audit, flag 4 of evidence/RD1/handoff.md).
     Rows over `open_string/2` streams that end in a syntax error hit it and are the KNOWN ones.
-  * The read_term options the reader refuses: `comments`, `var_prefix`, `quasi_quotations`, `blob` and `unicode_atoms`
-    (the refusal exception in `read_term_from_stream`, existing since R1; rows rt300-rt304 pin the refusal). Each waits for the
-    reader feature behind it (comment collection, the variable-prefix flag, quasi-quotations, blobs, Unicode atoms).
-* **Tier 3:** no Tier-1 file and no struct changed, so no `_enum_hash` entry and no allocation pins; the manifest gets seven entries
-  (test/static_analysis_manifest.jl). No battery.
+  * The read_term options the reader refuses: `comments`, `var_prefix`, `quasi_quotations` and `unicode_atoms`
+    (the refusal exception in `read_term_from_stream`, existing since R1; rows rt300-rt302 and rt304 pin the refusal). Each waits for the
+    reader feature behind it (comment collection, the variable-prefix flag, quasi-quotations, Unicode atoms).
+* **RD1b, the `blob(Mode)` read option (pl-read.c:669-677, 3605-3670, 3905-3921, 5940-6010, 6771-6790, 6801, 6988; the
+  option the toplevel passes, toplevel.pl:1327 and history.pl:80):** ported as upstream has it in `read_term/2,3` and `read_clause/3`:
+  `atom_to_blob_mode_ex` takes `error`, `dead` and `resolve` (`rd.blobs`, one new field of `read_data`) and raises
+  `domain_error(blob, Atom)` for another atom; the tokeniser claims `<type>(` (`blob_syntax_available`, `blob_name_char`,
+  `scan_blob_name`) only in `dead` and `resolve` mode, where an operator is not expected and `<` is no prefix operator of the module.
+  **DIVERGES (owner: the blob step):** a claimed `<type>(` is refused when read (`start_pframe`, the refusal exception), where upstream
+  builds a dead blob (`read_blob_start`, `read_blob_end`, `newDeadBlob`, `lookupLiveBlob`): the kernel has no blob object without a
+  foreign object behind it, and no `rd->blob_start`/atom lock is kept. Text with no `<type>(` reads as upstream's in every mode (the
+  toplevel's `blob(resolve)` reads), rows rt303 and rt305-rt319 pin this; rt320 and rt321 are the KNOWN rows of the refusal.
+* **Tier 3:** no Tier-1 file changed and no enum, so no `_enum_hash` entry and no allocation pins (RD1b adds the field `blobs` to
+  `read_data`); the manifest gets eleven entries (test/static_analysis_manifest.jl). No battery.
