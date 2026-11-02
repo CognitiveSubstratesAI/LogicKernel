@@ -461,19 +461,28 @@ end
         ld = LK.PL_local_data{_TL}(gd)
         st, _, msgs = lk_load_file_messages!(gd, ld, path)
         @test st === :ok && isempty(msgs)
-        sf = gd.files_array[1]
-        @test sym_text(sf.name) == abspath(path) && sf.index == 1 && sf.count == 1
+        # the file by its name, not by index 1: since the G9 boot the database holds the boot's own files first
+        # (from_state, as swipl's state does) and the test's message collector before it; the loaded file takes
+        # the first free index, the last one (pl-srcfile.c registerSourceFile @ cbf4e189). Disclosed: the old
+        # `files_array[1]` pinned an internal identity the boot changed.
+        i = findfirst(f -> sym_text(f.name) == abspath(path), gd.files_array)
+        @test i !== nothing
+        sf = gd.files_array[something(i, 1)]
+        n = length(gd.files_array)
+        @test n > 20 && sf.index == n && sf.count == 1
         @test sf.number_of_clauses == 3 && sf.current_procedure === nothing
         pa = LK.isCurrentProcedure(sym_key(_tls("a")), 1, LK.MODULE_user(gd))
         @test (pa.definition.flags & LK.P_DYNAMIC) == 0
-        @test (pa.definition.flags & LK.FILE_ASSIGNED) != 0 && pa.source_no == 1
-        @test pa in sf.procedures
+        @test (pa.definition.flags & LK.FILE_ASSIGNED) != 0 && pa.source_no == n
+        # `any(===)`, not `pa in sf.procedures`: a failing `in` makes Test print both sides, the whole procedure
+        # graph; a daemon spent over an hour in that `show` (2026-11-02, LB4 b2)
+        @test any(p -> p === pa, sf.procedures)
         lines = Int[]
         c = pa.definition.impl_clauses.first_clause
         while c !== nothing
             cl = c.clause
             push!(lines, Int(cl.line_no))
-            @test cl.source_no == 1 && cl.owner_no == 1
+            @test cl.source_no == n && cl.owner_no == n
             c = c.next
         end
         @test lines == [1, 3]
@@ -493,6 +502,9 @@ end
         defined(gd) = Set(
             k for (k, p) in LK.MODULE_user(gd).procedures if LK.isDefinedProcedure(gd, p)
         )
+        # the message collector first: its own file defines user:'$lk_message'/2 and user:message_hook/3, which
+        # are not the `[]` file's (the harness, not the load under test)
+        lk_install_message_collector!(gd, ld)
         before = defined(gd)
         st, _, msgs = lk_load_file_messages!(gd, ld, path)
         @test st === :ok && isempty(msgs)

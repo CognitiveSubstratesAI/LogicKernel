@@ -522,3 +522,60 @@ NEW FINDINGS (not H11, not the stream fix: the first-boot differential rows, UNV
 BLOCK: the b2 daemon is busy in that loop; agents may not stop/restart a daemon, so alt/alt_interned, test_qlf and the
   H11/S mutants are NOT run. Dispatcher: restart b2 (or wait), then run test_load_swipl.jl's testsets one by one to
   find the looping case. NEXT: test_qlf + test_load on reference, then the five on alt, alt_interned; H11a/b/c, Q1, S1-S3.
+
+## State (boot-files agent part 3, 2026-11-02 ~23:50Z; the test_load hang diagnosed and cleared; a DESIGN STOP on what the boot exposes)
+THE HANG (evidence/LB4B2/boot_files_ref_run4.txt): the old daemon's SIGUSR1 dump had gone to .warm/out.txt (not
+  "nothing"): the main task was in Test.eval_test_comparison (Test.jl:387, the failure string `sprint(print, quoted)`)
+  -> recursive show_default/make_typealias at test/files/test_load_swipl.jl:470 `@test pa in sf.procedures`. Cause
+  (probe, value + typeof): a fresh PL_global_data{T}() holds 23 boot files since the G9 boot (files_array[1] = boot/init.pl,
+  index 1, 764 clauses, 370 procedures, from_state); the test's message collector takes index 24, src.pl 25 (sf.index 25,
+  pa.source_no 25, both clauses source_no/owner_no 25; `pa in files_array[1].procedures` false). The test pinned
+  `files_array[1]`, an internal identity the boot changed; the failing `in` then printed init.pl's whole procedure graph
+  (>1 h). Neither the stream fix (edebeae) nor a merge interaction: the b2 boot itself, first seen now (a37ec53 erred at
+  the copy before this file's rows ran). Daemon stopped (`# allow-restart`), restarted in the free first slice.
+FIX (test only, disclosed; wip/lb4b2c): the loaded file found by its name, `sf.index == n == length(files_array)`,
+  source_no/owner_no == n; `any(p -> p === pa, …)` instead of `in` (a failure prints `false`, not the graph). And the `[]`
+  row: lk_install_message_collector! BEFORE `before` (the collector's own user:'$lk_message'/2 and message_hook/3 made
+  `defined(gd) == before` fail; the harness, not the load).
+RUN (reference, after the files_array fix; boot_files_ref_run4.txt): test_load_swipl.jl finishes, 81 pass / 11 fail / 3
+  error, 0 SKIP/Warning. The `[]` fix is verified only after the commit run below. Every other failure is the boot
+  exposing work no step has done yet (the pre-boot kernel answered these rows from its Julia side; the booted Prolog now
+  runs and reaches it):
+  L1 `'$dwim':'$dwim_predicate'/2` undefined (pl-ext.c:156 FRG -> pl-dwim.c; reached via dwim_pred/2 when an undefined
+     predicate is reported): rows "directives", "disjunction", "if-then", "negation". REAL GAP, one of the 410 missing foreign.
+  L2 `'$syspreds':'$foreign_predicate_source'/2` undefined (pl-proc.c:4146/4381; via '$foreign_source_location'/3 when a
+     message carries a location): rows "dynamic", "builtins", "an ISO built-in called, then defined", "a built-in called,
+     then defined". REAL GAP, one of the 410.
+  L3 `system:'$set_table_wrappers'/1` undefined (boot/tabling.pl:1647, a Prolog row of tabling.pl the kernel lacks:
+     T1's 19 missing_prolog rows; LD12 / pl-wrap.c deferred, D-0353 item 1): row "incremental". GAP owned by tabling.
+  L4 initialization(main): kernel existence_error main/0 in '$run_init_goal'/1; swipl main/1 in catch/3 (swipl AUTOLOADS
+     library(main)'s main/0, which calls main/1): row "initialization". GAP owned by the autoloader/library step.
+  L5 NotPortedError "redefining a predicate another file defined (abolishProcedure)", owner R2 (pl-proc.jl:1231): rows
+     "asserted-then-file" (q) and the reconsult set's second file (s). L6 NotPortedError "consulting a file again
+     (reconsult)", owner LB6 (pl-srcfile.jl:181): the reconsult set. Both are rows b2 wrote UNVERIFIED expecting
+     swipl's answer where the kernel raises NotPortedError (the two messages above).
+T1 `locked` COLUMN (traced): the driver test_boot_image_swipl_rows.pl:24 asks predicate_property(M:H, system), which
+  syspred.pl @cbf4e189 does not define ('$predicate_property'/2 clauses 822-907 have no `system`/`locked`): swipl 10.1.19
+  `predicate_property(system:write(_), system)` fails, `'$get_predicate_attribute'(system:write(_), system, V)` gives 1;
+  the .out has locked=1 in 0 of 2187 t1 rows. The kernel's row reads P_LOCKED. A GUARD THAT COMPARES THE WRONG THING:
+  fix the driver (read the attribute, pl-proc.c:3473 `system` -> P_LOCKED) and regenerate the .out (two runs
+  byte-identical), then pin what is left. Not done here.
+test_qlf_swipl.jl (reference): HUNG THE SAME WAY. A SIGUSR1 peek at ~17 min: Test.eval_test_function (Test.jl:421)
+  sprinting a FAILING top-level `@test f(args…)`; in this file the only such calls taking gd/ld are
+  `@test LK.compileFile(gd, ld, …)` / `compileFileList` / `boot_from_source!` (lines 278, 319, 450, 496, 524, 529, 535),
+  so one of the boot-entry rows returns false and Test prints the whole database graph. Daemon STOPPED at 23:55Z
+  (`# allow-restart`), NOT restarted: the b2 first slice is FREE since 23:55Z.
+DESIGN STOP (dispatcher): (1) a compact `Base.show` for PL_global_data / PL_local_data (and Procedure, Definition,
+  SourceFile) in src, ORIGINAL, so a failing @test prints a summary in ms, not the graph for hours [RECOMMENDED: two
+  hangs in one night, and every future failure in a boot test risks a third]; (2) rewrite each such @test in the boot
+  files to a Bool-only form (local, but every new row repeats the trap); (3) nothing, cut by the 1800 s limit (the
+  daemon stays busy until stopped). Then rerun test_qlf to find the failing boot-entry row.
+DESIGN STOP 2: L1-L6 above. (a) port '$dwim_predicate'/2 and '$foreign_predicate_source'/2 in b2 (the boot makes them
+  reachable from every consult that reports an error) and pin L3/L4/L5/L6 rows as known differences (exact current
+  answer + swipl's in a comment + checklist item, owners tabling/autoload/R2/LB6) [RECOMMENDED]; (b) pin all six as
+  known differences; (c) take the six rows out until their owners land.
+NOT RUN: alt/alt_interned (reference not green; boot rows hang), the H11/S/Q1 mutants (no green baseline; D-0220 no
+  local mutant list), branch-gate. NEW FINDINGS to classify after the driver fix: T1 (19 missing_prolog = tabling.pl +
+  topvars.pl rows: GAP; T3: topvars.pl, load.pl:75 `user:topvars`, the 24th file, not loaded: GAP owned by b2, trace
+  whether tabling.pl's raise ends the consult list or the module-qualified spec is refused), 410 missing foreign (pin the
+  count, the list only shrinks: PIN), the 4 _BC_REWRITTEN `nothing` hashes (PIN from the run's values).
