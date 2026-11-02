@@ -830,23 +830,153 @@ function r2_refusal_rows(texts::AbstractDict{String, String})::Vector{R2Row}
     return rows
 end
 
-if abspath(PROGRAM_FILE) == @__FILE__
-    root = abspath(joinpath(@__DIR__, ".."))
+# ── the flags (slice 3) ──────────────────────────────────────────────────────────────────────────────
+
+const R2_FLAG_PREDS = ("current_prolog_flag", "set_prolog_flag", "create_prolog_flag", "push_prolog_flag")
+
+"""
+`(refs, created)` over the loaded boot and library files: `refs` maps a flag name (the first argument of
+`current_/set_/create_/push_prolog_flag`, when it is an atom) to the files `rel` that name it, `created` is the set of
+flags a boot or library `create_prolog_flag` defines itself (those are no kernel gap).
+"""
+function r2_flag_scan(root::AbstractString, files::Vector{R2File})
+    vend = joinpath(root, "vendor", "swipl-devel")
+    refs = Dict{String, Vector{String}}()
+    created = Set{String}()
+    for f in files
+        (f.loaded && f.exists) || continue
+        for cl in r2_clauses(r2_tokenize(read(joinpath(vend, f.rel), String)))
+            for k in 1:(length(cl) - 2)
+                cl[k].kind == :atom && cl[k].text in R2_FLAG_PREDS || continue
+                cl[k + 1].kind == :punct && cl[k + 1].text == "(" && cl[k + 1].adj || continue
+                flag = r2_atom_name(cl[k + 2])
+                flag === nothing && continue
+                v = get!(refs, flag, String[])
+                f.rel in v || push!(v, f.rel)
+                cl[k].text == "create_prolog_flag" && push!(created, flag)
+            end
+        end
+    end
+    return (; refs, created)
+end
+
+"The flags the kernel defines: `setPrologFlag(gd, [ld,] \"name\", …)` in src/**/*.jl (comments blanked, multi-line calls read)."
+function r2_flags_defined(texts)::Set{String}
+    out = Set{String}()
+    rx = Regex("\\bsetPrologFlag\\(\\s*gd\\s*,\\s*(?:ld\\s*,\\s*)?$(_R2_RX_NAME)")
+    for t in texts, m in eachmatch(rx, r2_strip_jl(t))
+        push!(out, _r2_unescape(m[1]))
+    end
+    return out
+end
+
+"""
+The flag-setter refusals: one `(flag, effect, file, line)` per call of the flag refusal helper. `flag` is the `name == "X"` (or
+`sym_key(k) == sym_key(mk_sym(T, :X))`) of the three lines before the call, or `nothing` (a refusal by predicate, e.g.
+`ci_is_flag(k) && …`): such a row is keyed by its effect text.
+"""
+function r2_flag_refusals(texts::AbstractDict{String, String})
+    out = Tuple{Union{String, Nothing}, String, String, Int}[]
+    call = Regex("(?<!function )\\b" * R2_FLAG_REFUSAL_HELPER * "\\(")
+    byname = r"name\s*==\s*\"([^\"]*)\"|sym_key\(k\)\s*==\s*sym_key\(mk_sym\(T,\s*:(\w+)\)\)"
+    for file in sort!(collect(keys(texts)))
+        s = r2_strip_jl(texts[file])
+        lines = split(s, '\n')
+        for m in eachmatch(call, s)
+            args, _ = r2_call_args(s, m.offset + ncodeunits(m.match) - 1)
+            effect = length(args) >= 2 ? _r2_lit(args[2]) : "?"
+            ln = _r2_line(s, m.offset)
+            ctx = join(lines[max(1, ln - 3):ln], '\n')
+            hits = collect(eachmatch(byname, ctx))
+            flag = isempty(hits) ? nothing : String(something(last(hits)[1], last(hits)[2]))
+            push!(out, (flag, effect, file, ln))
+        end
+    end
+    return out
+end
+
+"""
+The flag rows (category `flag`, key `flag:NAME`): every flag the boot reaches plus every flag a setter refuses. refused (the
+setter refuses it; the row's detail names the effect) | done (the kernel or the boot defines it) | missing.
+"""
+function r2_flag_rows(refs, created::Set{String}, defined::Set{String}, refusals)::Vector{R2Row}
+    refused = Dict{String, Tuple{String, String, Int}}()
+    rows = R2Row[]
+    for (flag, effect, file, ln) in refusals
+        if flag === nothing
+            push!(rows, R2Row("flag", "flag:(" * effect * ")", effect, "refused", file, "", String[], "line $ln; setter refusal by predicate"))
+        elseif !haskey(refused, flag)
+            refused[flag] = (effect, file, ln)
+        end
+    end
+    for k in sort!(collect(union(keys(refs), keys(refused))))
+        rs = sort(get(refs, k, String[]))
+        if haskey(refused, k)
+            e, file, ln = refused[k]
+            push!(rows, R2Row("flag", "flag:" * k, k, "refused", file, "", rs, "line $ln; $e"))
+        else
+            push!(rows, R2Row("flag", "flag:" * k, k, (k in defined || k in created) ? "done" : "missing", "", "", rs, ""))
+        end
+    end
+    return rows
+end
+
+# ── the VM instructions (slice 3) ────────────────────────────────────────────────────────────────────
+
+"The `# PORT: pl-vmi.c NAME` markers of the kernel texts (RAW text: they are comment lines)."
+function r2_vmi_markers(texts)::Set{String}
+    out = Set{String}()
+    for t in texts, m in eachmatch(r"^[ \t]*#[ \t]*PORT:[ \t]*pl-vmi\.c[ \t]+(\w+)"m, t)
+        push!(out, String(m[1]))
+    end
+    return out
+end
+
+"One row per VM instruction of pl-vmi.c at the pin: done when a marker names it, else missing."
+function r2_vmi_rows(up::Vector{R2Up}, markers::Set{String})::Vector{R2Row}
+    rows = R2Row[]
+    for k in sort!(unique!([u.key for u in up if u.kind == "vmi"]))
+        u = first(u for u in up if u.kind == "vmi" && u.key == k)
+        push!(rows, R2Row("vmi", "vmi:" * k, k, k in markers ? "done" : "missing", u.file, u.cls, String[], u.cond))
+    end
+    return rows
+end
+
+# ── everything ────────────────────────────────────────────────────────────────────────────────────────
+
+"The upstream definitions: the committed snapshot `docs/r2_upstream.tsv` when it exists, else the pin's checkout."
+function r2_upstream(root::AbstractString)::Vector{R2Up}
+    snap = joinpath(root, "docs", "r2_upstream.tsv")
+    isfile(snap) && return r2_read_snapshot(read(snap, String))
     pin = r2_pin(root)
     pin === nothing && error("r2_status: no commit: line in tools/SWIPL_VERSION")
-    snap = joinpath(root, "docs", "r2_upstream.tsv")
-    up = if isfile(snap)
-        r2_read_snapshot(read(snap, String))
-    else
-        co = r2_pin_checkout(pin)
-        co === nothing && error("r2_status: no docs/r2_upstream.tsv and no swipl-devel checkout with $pin")
-        r2_pin_c_rows(co, pin)
-    end
+    co = r2_pin_checkout(pin)
+    co === nothing && error("r2_status: no docs/r2_upstream.tsv and no swipl-devel checkout with $pin")
+    return r2_pin_c_rows(co, pin)
+end
+
+"All rows (predicates, refusal sites, flags, VM instructions) and the files of the boot, for the tree at `root`."
+function r2_collect(root::AbstractString, up::Vector{R2Up})
+    texts = r2_kernel_texts(root)
     files = r2_boot_files(root)
     scan = r2_boot_scan(root, files)
-    rows = r2_pred_rows(scan.refs, up, r2_registered(values(r2_kernel_texts(root))), scan.defined)
-    println("R2 predicates (C-defined at the pin, reached by the boot): ", r2_counts(rows))
-    for t in r2_file_table(files, rows)
+    fscan = r2_flag_scan(root, files)
+    rows = R2Row[]
+    preds = r2_pred_rows(scan.refs, up, r2_registered(values(texts)), scan.defined)
+    append!(rows, preds)
+    append!(rows, r2_refusal_rows(texts))
+    append!(rows, r2_flag_rows(fscan.refs, fscan.created, r2_flags_defined(values(texts)), r2_flag_refusals(texts)))
+    append!(rows, r2_vmi_rows(up, r2_vmi_markers(values(texts))))
+    return (; rows, files, preds)
+end
+
+if abspath(PROGRAM_FILE) == @__FILE__
+    root = abspath(joinpath(@__DIR__, ".."))
+    res = r2_collect(root, r2_upstream(root))
+    for cat in ("pred", "refusal", "flag", "vmi")
+        println(rpad(cat, 8), r2_counts([r for r in res.rows if r.cat == cat]))
+    end
+    for t in r2_file_table(res.files, res.preds)
         println(rpad(t.rel, 28), " loaded=", t.loaded, " done=", t.done, " missing=", t.nmissing, " platform=", t.platform)
     end
 end
