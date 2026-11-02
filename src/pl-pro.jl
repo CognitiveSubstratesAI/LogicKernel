@@ -6,14 +6,16 @@
 #
 # PORTED FROM pl-pro.c, exactly these: `callProlog` — calling a goal from foreign code, in a query
 # of its own — and `sig_atomic/1`, its first caller: boot/init.pl's `setup_call_cleanup/3` and
-# `setup_call_catcher_cleanup/4` run their Setup goal through it, as once/1.
+# `setup_call_catcher_cleanup/4` run their Setup goal through it, as once/1; and (BOOTPRED3)
+# `'$notrace'/2` and `'$restore_trace'/2`, which boot/init.pl's notrace/1 and print_message/2 use to
+# switch the debugger off around a goal. The kernel has no debugger state, see their DIVERGES.
 #
 # Since HALT1: `abortProlog` and `abort/0` (the `unwind(abort)` ball), `raise_halt_exception` (the
 # `unwind(halt(Status))` ball `halt/1` raises). `halt_from_exception` and `restore_after_exception` are
 # left to the toplevel step with `query_loop`.
 #
-# NOT PORTED: the rest of pl-pro.c — the toplevel (`pl_break`, `query_loop`, `prologToplevel`),
-# `'$notrace'/1,2`, `'$restore_trace'/2`, `'$call_no_catch'/1`, `'$can_yield'/0`,
+# LEFT OUT: the rest of pl-pro.c — the toplevel (`pl_break`, `query_loop`, `prologToplevel`),
+# `'$notrace'/1`, `'$call_no_catch'/1`, `'$can_yield'/0`, the other entries of the table (pl-pro.c:1060-1069),
 # `'$trap_gdb'/0`, the metacut `!/0` (`pl_metacut`), `checkStacks` and the C-stack queries.
 
 # PORT: pl-pro.c callProlog
@@ -193,13 +195,100 @@ function raise_halt_exception(
     return false
 end
 
+# PORT: pl-pro.c NOTRACE_TRACE, NOTRACE_DEBUG, NOTRACE_LCO, NOTRACE_VMI
+"The bits of `'\$notrace'/2`'s saved flags (pl-pro.c): tracing, debugging, last-call optimisation, VMI built-ins."
+const NOTRACE_TRACE = 0x1
+const NOTRACE_DEBUG = 0x2
+const NOTRACE_LCO = 0x4
+const NOTRACE_VMI = 0x8
+
+# PORT: pl-pro.c notrace as pl_notrace2_va
+# (PRED_IMPL("$notrace", 2, notrace, PL_FA_NOTRACE), pl-pro.c:317-348 at the pin)
+# DIVERGES: `debugstatus.tracing`, `.debugging` and `.skiplevel` are not state here (the kernel has no debugger: the
+# VM never sets them, src/pl-wam.jl): they read false, false and `SKIP_VERY_DEEP` (-1), swipl's values with the
+# debugger off, and nothing is stored; the flag bits NOTRACE_TRACE and NOTRACE_DEBUG are always 0. The two prolog-flag
+# bits are the kernel's `prolog_flag_mask`. `setPrologFlagMask`/`setPrologRunMode(RUN_MODE_NORMAL)`: no run mode.
+"""
+    '\$notrace'(-Flags, -SkipLevel)
+
+Unify `Flags` with the debugger's saved state (pl-pro.c: `NOTRACE_*` bits) and `SkipLevel` with its skip level
+(-1: `SKIP_VERY_DEEP`, -2: `SKIP_REDO_IN_SKIP`), then switch tracing and debugging off. Used by boot/init.pl's
+notrace/1 and print_message/2 with `'\$restore_trace'/2`.
+"""
+function pl_notrace2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2 = PL__t0, PL__t0 + 1
+    flags = 0
+
+    # debugstatus.tracing / debugstatus.debugging: false here
+    truePrologFlag(ld, PLFLAG_LASTCALL) && (flags |= NOTRACE_LCO)
+    truePrologFlag(ld, PLFLAG_VMI_BUILTIN) && (flags |= NOTRACE_VMI)
+
+    sl = -1                                             # debugstatus.skiplevel == SKIP_VERY_DEEP
+
+    if PL_unify_integer(ld, A1, flags) && PL_unify_int64(ld, A2, sl)
+        updateAlerted(ld)
+
+        return FTRUE
+    end
+
+    return FFALSE
+end
+
+# PORT: pl-pro.c restoretrace as pl_restore_trace2_va
+# (PRED_IMPL("$restore_trace", 2, restoretrace, PL_FA_NOTRACE), pl-pro.c:350-390 at the pin)
+# DIVERGES: as `pl_notrace2_va`: the tracing and debugging bits and the depth are checked and dropped (no debugger
+# state to set; a later `'$notrace'/2` answers -1 whatever depth was restored). `SKIP_VERY_DEEP` is -1 and
+# `SKIP_REDO_IN_SKIP` -2 (`depthi == -1`, `-2` are upstream's tests); a depth beyond `SIZE_MAX` cannot occur in an `Int`.
+"""
+    '\$restore_trace'(+Flags, +SkipLevel)
+
+Restore what `'\$notrace'/2` saved: the last-call optimisation and VMI built-in flag bits (pl-pro.c); `Flags` must be
+an `int` and `SkipLevel` an `int64` (`representation_error(size_t)` for a negative depth other than -1 and -2).
+"""
+function pl_restore_trace2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2 = PL__t0, PL__t0 + 1
+
+    flags = PL_get_integer_ex(ld, A1)
+    flags === nothing && return FFALSE
+    depthi = PL_get_int64_ex(ld, A2)
+    depthi === nothing && return FFALSE
+
+    if depthi != -1 && depthi != -2 && depthi < 0
+        return PL_error(ld, ERR_REPRESENTATION, mk_sym(T, :size_t)) ? FTRUE : FFALSE   # PL_representation_error("size_t")
+    end
+
+    # debugstatus.tracing / .debugging / .skiplevel: no state (above)
+
+    if (flags & NOTRACE_LCO) != 0
+        setPrologFlagMask!(ld, PLFLAG_LASTCALL)
+    else
+        clearPrologFlagMask!(ld, PLFLAG_LASTCALL)
+    end
+
+    if (flags & NOTRACE_VMI) != 0
+        setPrologFlagMask!(ld, PLFLAG_VMI_BUILTIN)
+    else
+        clearPrologFlagMask!(ld, PLFLAG_VMI_BUILTIN)
+    end
+
+    updateAlerted(ld)
+
+    return FTRUE
+end
+
 # PORT: pl-pro.c BeginPredDefs as PL_predicates_from_pro
-# DIVERGES: the ported entries only (upstream's table has eight, pl-pro.c:1060-1069), in upstream's order.
-"pl-pro.c's registration table (`BeginPredDefs(pro)`): the ported entries."
+# DIVERGES: the registered entries only (upstream's table has eight, pl-pro.c:1060-1069).
+"pl-pro.c's registration table (`BeginPredDefs(pro)`): the registered entries."
 const PL_predicates_from_pro = (
     PL_extension("abort", 0, pl_abort0_va, PL_FA_VARARGS),
     PL_extension(
         "sig_atomic", 1, pl_sig_atomic1_va,
         PL_FA_VARARGS | PL_FA_TRANSPARENT | PL_FA_SIG_ATOMIC
-    )
+    ),
+    PL_extension("\$notrace", 2, pl_notrace2_va, PL_FA_VARARGS | PL_FA_NOTRACE),
+    PL_extension("\$restore_trace", 2, pl_restore_trace2_va, PL_FA_VARARGS | PL_FA_NOTRACE)
 )
