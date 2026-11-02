@@ -3992,7 +3992,8 @@ plan: the workspace's `docs/research/v9-inline-unification/`.
     code is identical to swipl's: 15 instructions each reached by a cell, `[]` written as swipl writes
     it (`?:[]`). Under `optimise`, all 121 type-test cells and the `==`/`\==` cells are identical to
     swipl's under the flag. The moved cells are identical to swipl's under `optimise_unify` false, as
-    the kernel compiles until V9b. Still refused: `B_ARG_*`, `I_CALLCONT`, `I_SHIFT`, `I_SHIFTCP`.
+    the kernel compiles until V9b. Still refused at that step: `B_ARG_*`, `I_CALLCONT`, `I_SHIFT`, `I_SHIFTCP`
+    (`B_ARG_CF` and `B_ARG_VF` compile since ARGINL, the block after P1's `arg/3` bullet below).
   * test/core_lang/test_head_unify_swipl.jl, a new testset: 22 cases of body unification, compared
     with swipl consulting the same clauses (`optimise_unify` false until V9b) in every
     `occurs_check` mode, the context's `system:` stripped until V5c; every instruction of the
@@ -4075,6 +4076,7 @@ every O_COMPILE_IS functor now gets upstream's own decision.
     brings (`I_TRUE`, `I_FAIL`, `C_VAR`, `B_UNIFY_*`, `B_EQ_*`, `B_NEQ_*`, `B_ARG_*`, `I_CALLCONT`,
     `I_SHIFT`, `I_SHIFTCP`), and throws `NotPortedError` naming it. Each `false` is upstream's, and
     compiles as a call.
+    (Since ARGINL `compileBodyArg3` emits `B_ARG_CF` and `B_ARG_VF` and no longer throws.)
   * `is_portable_constant` (c:269-290), over the tagged-word rule. Under `portable_vmi` an integer
     is portable within ±2^24, because its WORD must survive int32.
   * pl-data.h's `isAtom` (a symbol, or a kernel-only value, which is a non-text blob) and
@@ -6205,8 +6207,9 @@ Pin: swipl-devel cbf4e1896275, `src/pl-prims.c`. Nine `PRED_IMPL`s, all in `src/
   `term_variables_to_termv_first_cells` (the FIRST marks of upstream's `term_variables_loop` are a local `Set{Int}` of cell positions; no
   field of `PL_local_data` changed). Every caller of `term_variables/2,3` and `term_attvars/2` passes through the dispatch; their tests are
   the mutants' targets (tools/mutants/P1.py).
-- **`arg/3` in a clause body** compiles to the inline `B_ARG_*` forms (src/pl-comp.jl:2268, refused there: V9); the predicate here is the
-  callable form (`call(arg, ...)`, `maplist(arg(N), ...)`), as upstream's pl-prims.c is next to pl-comp.c's.
+- **`arg/3` in a clause body** compiles to the inline `B_ARG_CF`/`B_ARG_VF` forms since ARGINL (`compileBodyArg3`, src/pl-comp.jl; the
+  block below); the predicate here is the callable form (`call(arg, ...)`, `maplist(arg(N), ...)`), as upstream's pl-prims.c is next to
+  pl-comp.c's, and the slow route of the inline form calls it.
 - **DIVERGES (1, representation):** `'$term_size'/3` computes the cells of a number or a string from the value-table entry
   (`_indirect_cells`; GMP limbs by `_limbs64`), calibrated on swipl 10.1.19; the kernel keeps no indirect on the global stack.
 - **DIVERGES (2):** `term_variables_to_termv_first_cells` FAILS when the count exceeds `maxcount`, where upstream filters a reference it
@@ -6219,6 +6222,28 @@ Pin: swipl-devel cbf4e1896275, `src/pl-prims.c`. Nine `PRED_IMPL`s, all in `src/
   is the SETARG step.
 - **Pinned by** test/core_lang/test_p1_swipl.jl: rows p001-p176 against swipl 10.1.19 (generator and pins in evidence/P1/), plus a
   kernel-only `$expr/n` testset. Mutants: tools/mutants/P1.py.
+
+## ARGINL — `arg/3` inline in a clause body: `B_ARG_CF`, `B_ARG_VF` (R2, edit-only: nothing was compiled when this was written; the gate decides)
+
+Pin: swipl-devel cbf4e1896275. Files: `src/pl-comp.jl` (pl-comp.c `compileBodyArg3`, `decompileBodyNoShift`'s `B_ARG_CF`/`B_ARG_VF` case),
+`src/pl-wam.jl` (pl-vmi.c:1537-1598 `B_ARG_CF`, `arg3_fast`, `arg3_slow`, `B_ARG_VF`), `src/pl-gc.jl` (pl-gc.c
+`clearUninitialisedVarsFrame`'s case), `src/pl-global.jl` and `src/pl-ext.jl` (`GD->procedures.arg3`, the field `procedures_arg3`).
+
+- **Ported:** `arg(Int, Var, FirstVar)` compiles to `B_ARG_CF` and `arg(Var, Var, FirstVar)` to `B_ARG_VF` (compound and index already
+  seen, result a first occurrence; a different shape compiles as a call). The run loop links the argument into the first variable's slot
+  when the compound is a compound, the flag `vmi_builtin` is true and the index is in `1..arity`; every other case calls `arg/3` through
+  `procedures_arg3` with the three slots as its arguments. The decompiler reads both back as `arg/3`; the garbage-collection walk clears
+  the third operand as a first variable. The code of ten cells (ab1-ab10 of test/compile/test_body_code_swipl.jl) is compared whole with
+  swipl's.
+- **DIVERGES (1, representation):** the integer operand of `B_ARG_CF` is the integer itself as a signed code (`(scode)PC[-3]`, as
+  `A_ADD_FC`'s); a negative index, zero or one past the arity fails the range test and takes the slow route, a call of `arg/3`.
+- **DIVERGES (2, representation):** upstream's `isVar(*aterm)` followed by `globaliseVar` has no counterpart: a slot is never an unbound
+  variable (decision 2), a variable dereferences to a cell that is no compound, and the slow route raises the instantiation error as
+  upstream's. `B_ARG_VF` hands on the index slot whether or not it holds a tagged integer (upstream hands its dereferenced cell: the same
+  word). `arg3_fast` and `arg3_slow` are helper labels of the run loop.
+- **Pinned by** test/core_lang/test_arg_body_swipl.jl (177 rows against swipl 10.1.19: `g_*` run the clauses, `o_*` the same goals with
+  `vmi_builtin` false, `rb_*` read the clauses back, `inf_*` count the inference the inline form saves, `g_dg*` run `arg/3` as the goal
+  of `$/1`; generator and pins in evidence/ARGINL/). Mutants: tools/mutants/ARGINL.py (27).
 
 ## P2 — pl-prims.c text predicates: `atomic_list_concat/2,3`, `atomics_to_string/2,3`, `sub_atom/5` (R2, audit D-0306 item 2)
 

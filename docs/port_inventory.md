@@ -183,8 +183,8 @@ how many of the upstream file's functions are ported.
 | swipl-devel `src/pl-umap.c` | code | `cbf4e1896275` | `src/pl-umap.jl` | 6 | 3 |
 | swipl-devel `src/pl-variant.c` | code | `cbf4e1896275` | `src/pl-global.jl` | 2 | 2 |
 | swipl-devel `src/pl-variant.c` | code | `cbf4e1896275` | `src/pl-variant.jl` | 16 | 6 |
-| swipl-devel `src/pl-vmi.c` | code | `cbf4e1896275` | `src/pl-vmi.jl` | 157 | 0 |
-| swipl-devel `src/pl-vmi.c` | code | `cbf4e1896275` | `src/pl-wam.jl` | 179 | 116 |
+| swipl-devel `src/pl-vmi.c` | code | `cbf4e1896275` | `src/pl-vmi.jl` | 159 | 0 |
+| swipl-devel `src/pl-vmi.c` | code | `cbf4e1896275` | `src/pl-wam.jl` | 183 | 120 |
 | swipl-devel `src/pl-wam.c` | code | `cbf4e1896275` | `src/pl-wam.jl` | 53 | 43 |
 | swipl-devel `src/pl-write.c` | code | `cbf4e1896275` | `src/pl-write.jl` | 118 | 47 |
 | swipl-devel `tests/core_lang/test_bips.pl` | code | `cbf4e1896275` | `test/core_lang/test_bips.jl` | 10 | 1 |
@@ -310,7 +310,7 @@ checkout is pulled.
 | swipl-devel `src/pl-trace.c` | `cbf4e1896275` | 6 | 77 | 3 | src/pl-trace.jl |
 | swipl-devel `src/pl-umap.c` | `cbf4e1896275` | 4 | 8 | 3 | src/pl-umap.jl |
 | swipl-devel `src/pl-variant.c` | `cbf4e1896275` | 9 | 17 | 5 | src/pl-global.jl, src/pl-variant.jl |
-| swipl-devel `src/pl-vmi.c` | `cbf4e1896275` | 157 | 243 | 81 | src/pl-vmi.jl, src/pl-wam.jl |
+| swipl-devel `src/pl-vmi.c` | `cbf4e1896275` | 159 | 243 | 83 | src/pl-vmi.jl, src/pl-wam.jl |
 | swipl-devel `src/pl-wam.c` | `cbf4e1896275` | 49 | 98 | 41 | src/pl-wam.jl |
 | swipl-devel `src/pl-write.c` | `cbf4e1896275` | 87 | 111 | 44 | src/pl-write.jl |
 | swipl-devel `tests/core_lang/test_bips.pl` | `cbf4e1896275` | 0 | 7 | 0 | test/core_lang/test_bips.jl |
@@ -328,7 +328,7 @@ checkout is pulled.
 | swipl-devel `tests/db/test_db.pl` | `cbf4e1896275` | 2 | 10 | 0 | test/db/test_db.jl |
 | swipl-devel `tests/db/test_jit.pl` | `cbf4e1896275` | 16 | 21 | 0 | test/db/test_jit.jl |
 | swipl-devel `tests/rational/test_ieee754.pl` | `cbf4e1896275` | 0 | 15 | 0 | test/rational/test_ieee754.jl |
-| **total** | | **1773** | **5252** | **1013** | |
+| **total** | | **1775** | **5252** | **1015** | |
 <!-- END GENERATED coverage -->
 
 ### Not ported: unreachable upstream
@@ -461,8 +461,8 @@ marker exists in `src/pl-vmi.jl` (declaration only — no instruction executes y
 | `B_EQ_VC` | 1429 | CA1_VAR,CA1_DATA |  | declared |
 | `B_NEQ_VV` | 1460 | CA1_VAR,CA1_VAR |  | declared |
 | `B_NEQ_VC` | 1505 | CA1_VAR,CA1_DATA |  | declared |
-| `B_ARG_CF` | 1537 | CA1_INTEGER,CA1_VAR,CA1_FVAR |  |  |
-| `B_ARG_VF` | 1580 | CA1_VAR,CA1_VAR,CA1_FVAR |  |  |
+| `B_ARG_CF` | 1537 | CA1_INTEGER,CA1_VAR,CA1_FVAR |  | declared |
+| `B_ARG_VF` | 1580 | CA1_VAR,CA1_VAR,CA1_FVAR |  | declared |
 | `B_ARGFIRSTVAR` | 1612 | CA1_FVAR |  | declared |
 | `B_FIRSTVAR` | 1627 | CA1_FVAR | NQP | declared |
 | `B_VOID` | 1648 | — | NDQP | declared |
