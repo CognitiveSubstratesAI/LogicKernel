@@ -120,3 +120,26 @@ if a KNOWN pin is wrong fix it from the kernel's jlerr line; Tier 3, no battery.
 The manifest entry types (`Tuple{LD, Int64, Int64, LK.foreign_context{T}}` for the three `_va` wrappers, `Tuple{LD, Int64[, Int64]}` for the
 FRG ones) are copied from neighbours, not checked against `control_t{T}`: if `check` reports a missing method, adjust from the signature
 (`control_t{T}` at src/pl-read.jl:4436).
+
+## WRITER 4 (RD1b, edit-only, nothing compiled or run; swipl 10.1.19 was run for the pins)
+Commit 65e3540 on wip/rd1 (one code commit). Pin lines read and ported (pl-read.c at cbf4e189): 669-677 (blob_mode), 3605-3670 (blob_syntax_available,
+blob_name_char, scan_blob_name), 3905-3921 (the tokeniser's `<` claim), 6771-6790 (atom_to_blob_mode_ex), the option tables 6801 and 6988 (read_term AND
+read_clause take `blob`). Upstream: modes error/dead/resolve, domain_error(blob, A) otherwise; `<type>(` is claimed only when mode != error, !must_be_op and `<`
+is no prefix operator of the module; read_blob_end builds a dead blob (newDeadBlob, pl-atom.c:564) from the SOURCE TEXT.
+Written (src/pl-read.jl): `read_data.blobs::Symbol` (new field after strictness, constructor `:error`), `blob_syntax_available`, `blob_name_char`,
+`scan_blob_name` (before get_token), the claim in get_token's case_symbol (sets TK_BLOB, which start_pframe already maps to PF_BLOB), `atom_to_blob_mode_ex`
+(before read_term_from_stream), the refusal of `blob` removed from read_term_from_stream and read_clause (read_clause's remaining refusal: process_comment(true),
+unicode_atoms). READ vs written: all of it is written, none run; the Julia is unchecked (a struct field changed: the daemon restarts by itself).
+DIVERGES (owner: the blob step): a claimed `<type>(` hits the existing PF_BLOB refusal in start_pframe (the refusal exception, "read: a blob <type>(...)", what
+text changed to "the blob step"): the kernel has no object for a dead blob; rd->blob_start and the atom lock are not kept. Everything else is upstream's, so the
+toplevel's `blob(resolve)` reads of ordinary terms work.
+Rows: _RT_CASES gained rt303 (moved out of KNOWN, now an agreeing row) and rt305-rt319 (modes, domain/type/instantiation errors, `<>(1)`, `<(1)`, `a < b`,
+`<` as module prefix op, must_be_op, `<a>.`, read_clause/3); _RT_KNOWN gained rt320, rt321 (blob(dead|resolve) on `<a-b>(x...)`: swipl a dead blob whose
+type is the answer, kernel "jlerr NotPortedError read: a blob <type>(...)": UNVERIFIED on the kernel: gate decides). 207 rows, 16 KNOWN; regenerated with
+evidence/RD1/gen_rows.py (swipl, LC_ALL=C, two byte-identical runs, only the new/moved rows differ from the earlier pins; _RT_PINNED filled).
+Risky spots for the gate: `op(200, fy, rtm:(<))` in rt311/rt315 (module-qualified op/3 in the kernel); `PL_put_atom(ld, v, a)` + `PL_error(ld, ERR_DOMAIN, atom, v)`
+signatures (copied from neighbours); `currentOperator(gd, module, mk_sym(T, :<), OP_PREFIX)` as isOp calls it; rt308/rt309 depend on PL_scan_options' OPT_ATOM errors.
+Mutants: tools/mutants/RD1.py now 33 (RD1-F1..F12 over the blob code; F1-F6, F12 TARGETS also test_read.jl and test_read_term_swipl.jl, D-0238); anchors checked once,
+python3 -I. Manifest: four entries appended at the end (blob_syntax_available, blob_name_char, scan_blob_name, atom_to_blob_mode_ex). docs/architecture.md: RD1b paragraph.
+Gate agent: fmt first (long lines), check, the rows file x3 types, test_type_discipline, pkgtest_way on test_read_stream_swipl.jl, push mutants/RD1 + gate/rd1 at one SHA.
+No branch deleted. Daemon: none used by me.
