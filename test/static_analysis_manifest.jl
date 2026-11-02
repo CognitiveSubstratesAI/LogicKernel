@@ -2470,7 +2470,20 @@ function _manifest_index(T)
         (LK.tracemode, Tuple{LD, Bool, Nothing}, false),
         (LK.tracemode, Tuple{LD, Bool, Base.RefValue{Bool}}, false),
         (LK.setPrologRunMode!, Tuple{LD, UInt64}, false),
-        (LK.clearPrologRunMode!, Tuple{LD, UInt64}, false)
+        (LK.clearPrologRunMode!, Tuple{LD, UInt64}, false),
+        # BOOTPRED3 — '$memberchk'/3 (src/pl-list.jl), '$inc_message_count'/1 (src/pl-error.jl), '$notrace'/2 and
+        # '$restore_trace'/2 (src/pl-pro.jl), prolog_listen/2,3 (src/pl-event.jl), variant_sha1/2 (src/pl-termhash.jl)
+        [
+            (f, Tuple{LD, Int, Int, LK.control_t{T}}, false) for f in (
+                LK.pl_memberchk3_va, LK.pl_inc_message_count1_va, LK.pl_notrace2_va,
+                LK.pl_restore_trace2_va, LK.pl_prolog_listen2_va, LK.pl_prolog_listen3_va,
+                LK.pl_variant_sha1_2_va
+            )
+        ]...,
+        (LK.prolog_listen, Tuple{GD, LD, Int, Int, Int}, false),
+        (LK.add_event_hook, Tuple{GD, LD, Union{Nothing, T}, Bool, Int, Int}, false),
+        (LK.get_event_listp, Tuple{LD, Int}, false),
+        (LK.get_callback, Tuple{GD, LD, Int, Int}, false)
     )
 end
 
@@ -3282,7 +3295,11 @@ const _DISPATCH_MANIFEST_TUPLE = (
     (LK.IS_UTF16_LEAD, Tuple{Int}, false), (LK.IS_UTF16_TRAIL, Tuple{Int}, false),
     (LK.utf16_decode, Tuple{Int, Int}, false),
     (LK.utf16_encode, Tuple{Int}, false), (LK.utf16_to_text, Tuple{LK.PL_chars_t}, false),
-    (LK.backSkipPadding, Tuple{Vector{UInt8}, Int, LK.PL_chars_t}, false)
+    (LK.backSkipPadding, Tuple{Vector{UInt8}, Int, LK.PL_chars_t}, false),
+    # BOOTPRED3: the registration tables of src/pl-error.jl, src/pl-event.jl and src/pl-termhash.jl
+    (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_error)}, false),
+    (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_event)}, false),
+    (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_termhash)}, false)
 )
 
 """

@@ -900,6 +900,7 @@ fixed it or a public issue exists.
 | `tools/evidence_ci.py` | the gather of a run spread over jobs: Evidence's Verdict table and per-type gathers, the static analysis's shards (their counts summing to the manifest's, each non-zero, every one-off gate run once), CI.yml's Pkg.test groups; every unit run exactly once by a job of its type — planted cases in test/test_gate_split.jl | — |
 | `tools/mutate_suite.sh` | the whole suite as ONE mutation target (`sh:tools/mutate_suite.sh`), on the reference type, as Evidence's slices run in parallel processes (2 file groups + 2 static-analysis shards, 3 at a time); exit 1 when a slice failed a test | — |
 | `docs/release-notes/v0.1.0-pre.1.md` | the release notes of v0.1.0-pre.1, byte for byte the annotated tag's message (SHA-256 b50689ee…0f4bd) | — |
+| `src/pl-event.jl` | since BOOTPRED3 (R2), the registration side of `prolog_listen/2,3`: the options `as(first|last)` and `name(Name)`, the event name (the O_ENGINES build's eight) and the closure are checked as pl-event.c checks them; the listener is not kept (the event lists and the calling side are EV1's); table `PL_predicates_from_event` (src/pl-ext.jl) | `src/pl-event.c` |
 
 ## Code graph — src/, generated (M1)
 
@@ -6482,3 +6483,26 @@ Tests: test/core_lang/test_debug_flag_swipl.jl (rows db01-db35 from swipl 10.1.1
 a white-box testset for the debugger fields, the messages, the run-mode bits, `libswipl`'s access and the exact `version_git`);
 test_set_flag_swipl.jl, test_push_flag_swipl.jl and test_prolog_flag_swipl.jl lost their refusal rows and pinned-only entries for the five
 names. Mutants: tools/mutants/HF1.py (the F1c part: 35, four declared equivalent).
+
+## BOOTPRED3 — five boot-load-path predicates no step owned (R2, audit D-0354 ruling 2)
+
+What BOOTPRED3 adds (swipl-devel pin `cbf4e1896275`, oracle swipl 10.1.19; written edit-only, the rows run on the kernel at the gate):
+
+- **`'$memberchk'(?Elem, ?List, -Tail)`** (`pl_memberchk3_va`, src/pl-list.jl, pl-list.c:109-152; table `PL_predicates_from_list`): memberchk/2's C
+  part (boot/init.pl). `Tail` is `[]` when `Elem` was found, else the open tail of a partial `List`; a non-list is `type_error(list, Tail)`.
+  The signal check at every 10000th cell is left out (no signal queue); the stack-use check beside it is kept (row bp3m16, 12000 cells).
+- **`'$inc_message_count'(+Level)`** (`pl_inc_message_count1_va`, src/pl-error.jl, pl-error.c:1457-1474; new table `PL_predicates_from_error`):
+  checks that `Level` is an atom, counts nothing. KNOWN DIFFERENCE: the kernel keeps no error/warning counters (`ld_statistics` has no
+  field, a struct change), so `statistics(errors, _)` stays 0 where swipl's counts (rows bp3i11, bp3i12).
+- **`'$notrace'(-Flags, -SkipLevel)`, `'$restore_trace'(+Flags, +SkipLevel)`** (src/pl-pro.jl, pl-pro.c:317-390, not pl-trace.c): the saved
+  state is the last-call and VMI built-in flag bits; the debugger bits (tracing, debugging) read 0 and the skip level reads -1 because the
+  kernel has no debugger state (a field in the local data is a struct change). KNOWN DIFFERENCE where swipl's initial level is 0 and a
+  restored level -2 is read back (rows bp3n01, bp3n07, bp3n18).
+- **`prolog_listen/2,3`** (src/pl-event.jl, new, pl-event.c:241-290; table `PL_predicates_from_event`): options, event name and closure are
+  checked; the hook is NOT kept (row bp3l33 pins the difference) and a listener on a predicate is refused by name; EV1 completes both.
+- **`variant_sha1/2`** (`pl_variant_sha1_2_va`, src/pl-termhash.jl, pl-termhash.c:659-681; table `PL_predicates_from_termhash`): the 40 hex digits
+  as an atom. KNOWN DIFFERENCE: the digest VALUES are not swipl's (src/pl-termhash.jl DIVERGES 1-2; row bp3v15 pins both).
+
+Tests: test/core_lang/test_bootpred3_swipl.jl (rows bp3m, bp3i, bp3n, bp3l, bp3v; pins from swipl 10.1.19, two byte-identical runs; generator
+evidence/BOOTPRED3/gen_rows.py). Mutants: tools/mutants/BOOTPREDSUB.py. Left to others: `'$notrace'/1`, the rest of pl-pro.c, `variant_hash/2`,
+`term_hash/2` on the cells, the event lists and the calling side (EV1).

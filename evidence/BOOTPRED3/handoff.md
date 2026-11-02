@@ -1,47 +1,44 @@
-# BOOTPRED3: five boot-load-path predicates no step owns (audit D-0354 ruling 2) -- handoff
+# BOOTPRED3: five boot-load-path predicates no step owns (audit D-0354 ruling 2) -- handoff (writer 2)
 
-Worktree ~/code/lk-dstack, branch wip/bootpred3 (off main 9e0a983). Writer: Sonnet, paused at D-0355. Pin: swipl-devel cbf4e1896275
-(pin tree ~/dev-zone/swipl-devel-cbf4e189). Oracle: swipl 10.1.19. NOTHING was compiled or run (no smoke run yet).
+Worktree ~/code/lk-dstack, branch wip/bootpred3b = wip/bootpred3 rebased onto origin/main 2416adb (`git rebase --onto origin/main 9e0a983`,
+no conflicts; wip/bootpred3 e7a0dc2 untouched for the EV1 stack). Pin cbf4e1896275, oracle swipl 10.1.19. Branches deleted: none.
 
-## Source groups (all committed)
-| # | predicate | upstream (pin) | Julia | commit |
-|---|---|---|---|---|
-| 1 | `$memberchk`/3 | pl-list.c:109-152 | src/pl-list.jl `pl_memberchk3_va`, in PL_predicates_from_list | 072e40a |
-| 2 | `$inc_message_count`/1 | pl-error.c:1457-1474 | src/pl-error.jl `pl_inc_message_count1_va`, new PL_predicates_from_error | c55811c |
-| 3 | `$notrace`/2, `$restore_trace`/2 | pl-pro.c:317-390 (NOT pl-trace.c) | src/pl-pro.jl | ebb7498 |
-| 4 | prolog_listen/2,3 | pl-event.c:241-290 + add_event_hook, get_event_listp, get_callback | new src/pl-event.jl (+ include in LogicKernel.jl) | 33c6bcf |
-| 5 | variant_sha1/2 registration | pl-termhash.c:659-681 | src/pl-termhash.jl `pl_variant_sha1_2_va`, PL_predicates_from_termhash | b8a4075 |
-Tables PL_predicates_from_error/event/termhash are appended to `_PRED_TABLES` and `_FOREIGN_VA` in src/pl-ext.jl (after strings).
+## Commits on wip/bootpred3b (over 2416adb)
+a447a3f $memberchk, 39517f2 $inc_message_count, ae0d9ef $notrace/$restore_trace, 14ed6ae prolog_listen, 69c5dd7 variant_sha1 (writer 1, rebased),
+d0f0ec2 WIP rows, 7ff833e rows pinned (98 driver lines: 'ok' + 97 cases, two byte-identical swipl runs; gen_rows.py in evidence/BOOTPRED3/).
+LAST COMMIT (this handoff's) carries the still-uncommitted work listed below, all in ONE commit because the commit hook wants the whole
+tree staged (the hold-aside trick for separate commits needs a second pass): test/core_lang/test_bootpred3_swipl.jl (_B3_KNOWN filled),
+tools/mutants/BOOTPREDSUB.py, test/static_analysis_manifest.jl, docs/architecture.md. The fresh agent may leave it as one commit.
 
-## Rows (WIP commit): test/core_lang/test_bootpred3_swipl.jl
-Cases bp3m01-18 ($memberchk), bp3i01-10, bp3n01-19, bp3l01-32, bp3v01-14 are written. `_B3_PINNED` is EMPTY: still to do,
-copy evidence/Q10/gen_rows.py (in ~/code/lk-q10) to evidence/BOOTPRED3/ with regex ids `bp3[a-z]\d{2}`, `_SC`->`_B3`, files
-bp3_rows.pl / bp3_driver.pl / bp3_rows.out; run swipl twice (byte-identical), then `--fill`. Check the case list for rows swipl
-refuses to parse. The test file will fail until filled.
+## Smoke run (reference term type, warm daemon logickernel-warm-b4dc834e in lk-dstack, started 17:4x UTC, LEFT RUNNING)
+Before _B3_KNOWN: 111 pass, 7 fail, exactly the predicted known differences, nothing else (bp3m16, the 12000-cell list, passes):
+bp3i11, bp3i12 (counters 0 vs 1), bp3n01 and bp3n18 (skip level -1 vs swipl's 0), bp3n07 (-1 vs -2), bp3l33 (listener not kept, 0 vs 1),
+bp3v15 (digest value). _B3_KNOWN now pins the kernel's exact lines with swipl's answer in a comment, and a new testset checks each known
+line differs from the pin. NOT RE-RUN since: a three-type run was started (`tools/warm.sh file test/core_lang/test_bootpred3_swipl.jl`,
+log in the old agent's scratchpad smoke_all.log, may be lost): the gate agent re-runs the file on all three types. The test file's
+TERM TYPES line says REFERENCE, so the run may cover one type only.
 
-## Left
-1. rows pins (above); 2. tools/mutants/BOOTPRED3.py (anchors once; TARGETS = test/core_lang/test_bootpred3_swipl.jl plus any
-test exercising list/pro/termhash/error code, D-0238); 3. test/static_analysis_manifest.jl entries (append at the end);
-4. docs/architecture.md block (append at the end; src/pl-event.jl row with UPSTREAM header pl-event.c for the inventory);
-5. the smoke run `tools/warm.sh file test/core_lang/test_bootpred3_swipl.jl` on the three term types (daemon logickernel-warm-b4dc834e);
-6. stale-pin hunt over test/ for prolog_listen / variant_sha1 / memberchk existence_error pins; hook-wording check (no absence claims).
+## Rows: 97 cases = bp3m01-18, bp3i01-12, bp3n01-19, bp3l01-33, bp3v01-15
+## Mutants: tools/mutants/BOOTPREDSUB.py (33 mutants, anchors checked once each by a throwaway python3 -I checker; TARGETS = the rows file only).
+NAME CLASH: tools/mutants/BOOTPRED3.py already exists on main (the landed BOOTPRED group's list, ids BOOTPRED-*): mine is BOOTPREDSUB.py,
+ids BP3-*. The dispatcher's mutants/BOOTPRED3 branch must run BOOTPREDSUB.py (or rename it). Anchors need a re-fit after fmt.
+
+## Done / left
+Done: rebase, pins, known-difference mechanism, mutants, manifest (per-T list end after Q10's entry + three `_extension_sigs` table entries at the
+end of _DISPATCH_MANIFEST_TUPLE), docs (a src/pl-event.jl row at the end of "What is here now", a BOOTPRED3 block at the end of the file),
+stale-pin hunt (only test/core_lang/test_hash.jl:19-23 named variant_sha1/2 as no Prolog predicate: reworded; no existence_error pins found).
+Left: gate order (see below); regenerate docs (code graph in docs/architecture.md, docs/port_inventory.md) at the gate.
+Unverified: manifest tuple types (GD/LD/Union{Nothing,T}) are written by reading, the static check decides; mutant anchors after fmt.
 
 ## Flags for the audit
-- Crash-term grep hit (false positive): `abort` is the event name in src/pl-event.jl and the table comment; no crash detail.
-- `$notrace/2`, `$restore_trace/2`: the kernel has no debugstatus tracing/debugging/skiplevel in LD (a new field = struct change, Tier-1 alarm).
-  Implemented without state: bits 1,2 read 0, skip level -1, restore keeps only the LASTCALL and VMI_BUILTIN flag bits, depth checked and dropped.
-  Recommendation: leave until DBG1 adds the fields.
-- `$inc_message_count/1`: errors/warnings counters not kept (ld_statistics has no field; statistics(errors,_) is 0 already). Argument check as upstream.
-- prolog_listen: no event lists exist (GD/LD fields = struct change; a module-level registry would trip the global-state lint). The registration is
-  checked (options, event name, closure) and accepted, the hook is NOT kept; a listener on a predicate throws NotPortedError naming EV1. Event table is the
-  O_ENGINES build's (thread events included, as the threads=true oracle). Recommendation: EV1 adds the lists with the calling side.
-- variant_sha1/2: unifies an ATOM (upstream PL_ATOM, not a string); the digest VALUES differ from swipl's (pl-termhash.jl DIVERGES 1-2), so rows compare properties only.
-- The recount names pl-trace.c for `$notrace`/`$restore_trace`; they are in pl-pro.c.
-- `$memberchk`: upstream's PL_handle_signals at every 10000th cell is left out (no signal queue); a long-list row (bp3m16, 12000 cells) exercises the
-  usedStack check: if the kernel's gTop accounting differs it shows as a false type_error at the gate.
-- The commit hook wants the whole tree staged: the plan file rode in the first commit.
-- Shared files touched: src/pl-ext.jl (table tuples, appended last), src/LogicKernel.jl (one include).
+- `abort` is an event NAME (rows bp3l20, src/pl-event.jl): the term grep hits it, no crash detail anywhere.
+- swipl's FIRST `'$notrace'` skip level is 0, not -1 (writer 1 assumed -1): the kernel's -1 is a recorded known difference (rows bp3n01, bp3n07, bp3n18).
+- `'$inc_message_count'` counters and `prolog_listen` hooks: known differences (rows bp3i11, bp3i12, bp3l33); a prolog_listen on a predicate (`foo/1`) throws
+  NotPortedError naming EV1 (swipl accepts it): NO row, a Julia throw may escape the query.
+- pl-termhash.jl registers variant_sha1/2 only: variant_hash/2 and term_hash/2 on the cells stay deferred.
+- Machine: the load stayed above 8 for an hour (two other daemons); the daemon was started at 7.1 and the load rose to 18 during the cold compile.
 
 ## Gate order afterwards
-warm.sh fmt (committed files via warm.sh send), inventory, check, rows x3, test/test_type_discipline.jl, pkgtest_way on the rows file, mutants/BOOTPRED3 push,
-branch-gate, term grep, gate push on a fresh name. Tier 3 if no Tier-1 file changes (none touched). Branches deleted: none.
+warm.sh fmt (committed files via warm.sh send), inventory, check, rows x3, test/test_type_discipline.jl, pkgtest_way on the rows file,
+push mutants/BOOTPRED3 at the WIP SHA (running BOOTPREDSUB.py), branch-gate, term grep, gate push on a fresh name. Tier 3 (no Tier-1 file touched).
+Daemon lk-dstack: free to stop (dispatcher).
