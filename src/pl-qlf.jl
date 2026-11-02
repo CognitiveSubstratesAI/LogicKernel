@@ -388,13 +388,40 @@ function boot_global_data(::Type{T})::PL_global_data{T} where {T}
     ld = PL_local_data{T}(gd)
     argv = [initpl]
     empty_at = boot_stacks(ld)                                    # H11: as emptyStacks! left them
-    boot_from_source!(gd, ld, argv) || error("boot_global_data: the boot compilation of $initpl failed")
+    boot_from_source!(gd, ld, argv) ||
+        error("boot_global_data: the boot compilation of $initpl failed")
     after = boot_stacks(ld)
     # H11: compileFile's leftovers per file, then the one entry the '$load_additional_boot_files' call keeps (measured)
     left = compileFile_leaves(empty_at, length(argv)) .+ (0, 1, 0, 0)
     (left != empty_at && after == left) ||
-        error("boot_global_data: the boot left its stacks at $after, not $left (from $empty_at, H11)")
+        error(
+            "boot_global_data: the boot left its stacks at $after, not $left (from $empty_at, H11)"
+        )
+    drop_boot_std_streams!(gd, ld)                                # the template keeps no stream of the dropped ld
     return gd
+end
+
+# ORIGINAL (loader_boot.md H11): the boot ld's standard streams leave the database with it. Upstream's initIO registers
+# the process's Sinput, Soutput and Serror for enumeration (swipl-devel cbf4e189 src/os/pl-file.c:547-549, run by
+# setupProlog, src/pl-setup.c:173) in every process, the boot session's included; the boot session then halts
+# (pl-init.c:1620-1646), and the state it writes carries no stream table: the process that loads it registers its own
+# three at its own initIO. The kernel's boot ld (`initIO` the first time the boot writes, src/os/pl-file.jl) is dropped,
+# so the entries of its three user streams are cleared as a close clears one (`freeStream`: the slot becomes
+# `nothing`), after a flush of the output ones (upstream's halt flushes them). Only those three: any other stream the
+# boot left open stays, and the template's copy refuses it (src/gd_template.jl `_copy_stream_free`).
+"Clear the stream-table entries of `ld`'s three user standard streams (flushed first) from `gd`: the boot's dropped ld."
+function drop_boot_std_streams!(
+    gd::PL_global_data{T}, ld::PL_local_data{T}
+)::Nothing where {T}
+    for i in (SNO_USER_INPUT, SNO_USER_OUTPUT, SNO_USER_ERROR)
+        s = ld.IO_streams[i + 1]
+        s === nothing && continue
+        (s.flags & SIO_OUTPUT) == 0 || Sflush(s)
+        if 1 <= s.context <= length(gd.stream_table) && gd.stream_table[s.context] === s
+            gd.stream_table[s.context] = nothing                  # deleteHTablePP(streamContext, s), as freeStream
+        end
+    end
+    return nothing
 end
 
 # ORIGINAL (loader_boot.md H11): the one reader of the four positions H11 compares, used on both sides.
@@ -418,7 +445,12 @@ failure: per file 2 references and an open foreign frame of `SIZEOF_FLIFRAME` + 
 function compileFile_leaves(at::NTuple{4, Int}, nfiles::Int)::NTuple{4, Int}
     nfiles >= 1 || error("compileFile_leaves: nfiles = $nfiles, at least one file")
     ltop, trail, _, nframes = at
-    return (ltop + nfiles * (2 + SIZEOF_FLIFRAME + 2), trail + nfiles, nframes + nfiles, nframes + nfiles)
+    return (
+        ltop + nfiles * (2 + SIZEOF_FLIFRAME + 2),
+        trail + nfiles,
+        nframes + nfiles,
+        nframes + nfiles
+    )
 end
 
 # ── the predicates of pl-qlf.c (BeginPredDefs(wic), pl-qlf.c:4953-4976) ───────────────────────────────

@@ -280,6 +280,36 @@ end
     @test isempty(ld.input_context_stack)
 end
 
+@testset "the boot ld's standard streams leave the template; another open stream still refuses the copy (pl-file.c initIO)" begin
+    # upstream's state file carries no stream table (initIO registers each process's own, cbf4e189 os/pl-file.c:547-549);
+    # the kernel's template is a booted database, so `drop_boot_std_streams!` clears the dropped boot ld's three entries
+    tm = LK.gd_template(_QL)
+    @test !isempty(tm.stream_table) && all(isnothing, tm.stream_table)    # the boot wrote (initIO ran), nothing is live
+    gd = LK.PL_global_data{_QL}()
+    ld = LK.PL_local_data{_QL}(gd)
+    n0 = length(gd.stream_table)
+    LK._initIO(ld)                                                         # the three user streams, registered
+    std = [LK.Suser_input(ld), LK.Suser_output(ld), LK.Suser_error(ld)]
+    @test length(gd.stream_table) == n0 + 3 &&
+        all(s -> gd.stream_table[s.context] === s, std)
+    @test_throws ErrorException LK.copy_global_data(gd)                    # not vacuous: live standard streams refuse it
+    s = LK.Sopen_string(Vector{UInt8}("abc"), 3, "r")
+    @test s !== nothing && LK.getStreamContext(gd, s) == n0 + 4
+    LK.drop_boot_std_streams!(gd, ld)
+    @test all(i -> gd.stream_table[i] === nothing, (n0 + 1):(n0 + 3))      # the standard slots, cleared
+    @test gd.stream_table[n0 + 4] === s                                    # a stream the boot left open stays
+    e = try
+        LK.copy_global_data(gd)
+        nothing
+    catch err
+        err
+    end
+    @test e isa ErrorException && occursin("the template holds an open stream", e.msg)
+    gd.stream_table[n0 + 4] = nothing                                      # closed: the copy goes through
+    c = LK.copy_global_data(gd)
+    @test length(c.stream_table) == n0 + 4 && all(isnothing, c.stream_table)
+end
+
 @testset "the boot compile runs with autoload off (LB3-L3; swipl pin: autoload set false before consult)" begin
     dir = mktempdir()
     g = joinpath(dir, "autoload.pl")
@@ -434,7 +464,9 @@ end
     @test any(m -> startswith(m, "Failed to compile: "), _ql_messages(ld))
     # the term after the text is the clause itself (`_qlf_pl_write!`: pl_write(term), pl-qlf.c:3220-3238; LB4 b2)
     i = findfirst(
-        ((k, m),) -> k === :error && kind(m) === SYM && startswith(String(sym_text(m)), "Failed to compile: "),
+        ((k, m),) ->
+            k === :error && kind(m) === SYM &&
+            startswith(String(sym_text(m)), "Failed to compile: "),
         ld.messages
     )
     @test i !== nothing && i < length(ld.messages)

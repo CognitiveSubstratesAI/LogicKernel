@@ -208,8 +208,8 @@ WA = "src/pl-wam.jl"
 MUTANTS = [
     # ── the boot: the booted constructor, the template's copy, the registry's default build ──
     dict(id="LB4B2-Q1 the boot compiles nothing: the database is setupProlog's alone (KILL T1's common-rows count, every boot test)", file=QL, targets=TBOOT,
-         old="    boot_from_source!(gd, ld, argv) || error(\"boot_global_data: the boot compilation of $initpl failed\")\n",
-         new="    true || error(\"boot_global_data: the boot compilation of $initpl failed\")\n"),
+         old="    boot_from_source!(gd, ld, argv) ||\n        error(\"boot_global_data: the boot compilation of $initpl failed\")\n",
+         new="    true ||\n        error(\"boot_global_data: the boot compilation of $initpl failed\")\n"),
     dict(id="LB4B2-G1 PL_global_data{T}() is the unbooted setupProlog database, not the template's copy (KILL T1, T2, T3)", file=GL, targets=TBOOT,
          old="PL_global_data{T}() where {T} = PL_global_data_from_template(T)\n",
          new="PL_global_data{T}() where {T} = setupProlog(T)\n"),
@@ -233,6 +233,16 @@ MUTANTS = [
     dict(id="LB4B2-H11c the leftover frame counted one reference short (KILL H11 at the boot, every boot test; test_qlf_swipl.jl's leftover rows)", file=QL, targets=TQ,
          old="nfiles * (2 + SIZEOF_FLIFRAME + 2)",
          new="nfiles * (2 + SIZEOF_FLIFRAME + 1)"),
+    # ── src/pl-qlf.jl + src/gd_template.jl: the boot ld's standard streams leave the template; another stream refuses it ──
+    dict(id="LB4B2-S1 the boot ld's standard streams are not cleared (KILL the template's copy at every boot test: copy_global_data refuses)", file=QL, targets=TQ,
+         old="    drop_boot_std_streams!(gd, ld)                                # the template keeps no stream of the dropped ld\n",
+         new=""),
+    dict(id="LB4B2-S2 every slot of the stream table is cleared, not the three standard ones (KILL test_qlf_swipl.jl 'another open stream still refuses the copy')", file=QL, targets=TQ,
+         old="    for i in (SNO_USER_INPUT, SNO_USER_OUTPUT, SNO_USER_ERROR)\n        s = ld.IO_streams[i + 1]\n        s === nothing && continue\n        (s.flags & SIO_OUTPUT)",
+         new="    fill!(gd.stream_table, nothing)\n    for i in (SNO_USER_INPUT, SNO_USER_OUTPUT, SNO_USER_ERROR)\n        s = ld.IO_streams[i + 1]\n        s === nothing && continue\n        (s.flags & SIO_OUTPUT)"),
+    dict(id="LB4B2-S3 the copy takes a template holding a live stream (KILL test_qlf_swipl.jl's open-stream row, test_gd_template.jl's stream-table row)", file=GT, targets=_first(["test/files/test_qlf_swipl.jl", "test/db/test_gd_template.jl"]),
+         old="        s === nothing || error(\"copy_global_data: the template holds an open stream\")\n",
+         new="        nothing\n"),
     # ── src/pl-error.jl: printMessage calls print_message/2 ──
     dict(id="LB4B2-E1 printMessage never calls print_message/2, the fallback branch always (KILL test_load_swipl.jl's message_hook rows, T4)", file=ER, targets=TP,
          old="            if isDefinedProcedure(gd, pred) && ld.in_print_message <= OK_RECURSIVE\n",

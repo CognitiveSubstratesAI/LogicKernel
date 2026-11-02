@@ -18,7 +18,8 @@
 
 # The fields of `PL_global_data` the copy does not deep-copy, and what it does instead:
 #   :streams — the stream tables (`stream_filenames`, `stream_aliases`, `stream_table`). A booted template holds no open
-#              stream (the boot closes every file it opens); the copy gets EMPTY tables of the same shape (a closed
+#              stream (the boot closes every file it opens; `boot_global_data` clears its dropped ld's three standard
+#              streams, `drop_boot_std_streams!` in src/pl-qlf.jl); the copy gets EMPTY tables of the same shape (a closed
 #              stream's slot in `stream_table` stays `nothing`, so a stream context keeps its index) and REFUSES a template
 #              that holds a live IOSTREAM: an open file must not be shared by two databases, and an IOSTREAM wraps a Julia IO.
 # Any field not named here is :deep.

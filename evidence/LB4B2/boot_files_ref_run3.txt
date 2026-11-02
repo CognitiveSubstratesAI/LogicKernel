@@ -1,0 +1,34 @@
+# boot-files agent part 2, 2026-11-02 22:14-23:18Z, run tree lk-lb4b2-run (staged merge + wip/lb4b2c a37ec53 + this fix unstaged), reference type, b2 daemon pid 898228
+file: PASS in 189s — warm: test_boot_messages_swipl.jl         |   12     12  3m07.2s
+1 file run(s): pass 12, fail 0, error 0, total 12
+== test_boot_image_swipl
+4:T1: the boot image's predicates == swipl's boot (config rows applied): Test Failed at /home/shivaji1012/code/lk-lb4b2-run/test/db/test_boot_image_swipl.jl:188
+5:  Expression: length(omods) > 20 && kmods ⊇ omods
+16:T1: the boot image's predicates == swipl's boot (config rows applied): Test Failed at /home/shivaji1012/code/lk-lb4b2-run/test/db/test_boot_image_swipl.jl:202
+17:  Expression: missing_prolog == _BI_KERNEL_MISSING_PROLOG
+18:   Evaluated: ["\$tabling:\$table_mode/3", "\$tabling:\$tabled/2", "\$tabling:eval_subgoal_in_residual/2", "\$tabling:tripwire/3", "\$tabling:tripwire_action/2", "system:\$table_mode/3", "system:\$tabled/2", "system:answer_count_restraint/0", "system:radial
+29:T1: the boot image's predicates == swipl's boot (config rows applied): Test Failed at /home/shivaji1012/code/lk-lb4b2-run/test/db/test_boot_image_swipl.jl:203
+30:  Expression: cols == _BI_KERNEL_COLUMNS
+31:   Evaluated: ["\$apply:apply/2 00001101 3 00101101 3", "\$apply:forall/2 00001101 1 00101101 1", "\$attvar:\$wakeup/1 00000001 2 00100001 2", "\$attvar:attvar_residuals/4 00000000 2 00100000 2", "\$attvar:attvars_residuals/3 00000000 2 00100000 2", "\$attv
+42:T1: the boot image's predicates == swipl's boot (config rows applied): Test Failed at /home/shivaji1012/code/lk-lb4b2-run/test/db/test_boot_image_swipl.jl:204
+43:  Expression: missing_foreign == _BI_KERNEL_MISSING_FOREIGN
+44:   Evaluated: 410 == -1
+55:T3: the boot image's source files == swipl's boot (config rows applied): Test Failed at /home/shivaji1012/code/lk-lb4b2-run/test/db/test_boot_image_swipl.jl:213
+56:  Expression: [r[1] for r = k3] == [r[1] for r = o3]
+57:   Evaluated: ["init.pl", "load.pl", "gc.pl", "expand.pl", "dcg.pl", "license.pl", "syspred.pl", "messages.pl", "toplevel.pl", "attvar.pl"  …  "dwim.pl", "autoload.pl", "iri.pl", "qlf.pl", "rc.pl", "predopts.pl", "packs.pl", "dicts.pl", "engines.pl", "tab
+68:T3: the boot image's source files == swipl's boot (config rows applied): Test Failed at /home/shivaji1012/code/lk-lb4b2-run/test/db/test_boot_image_swipl.jl:214
+69:  Expression: k3 == o3
+70:   Evaluated: [("init.pl", "system", 1, 764, "false", "true", String[]), ("load.pl", "system", 1, 21, "false", "true", String[]), ("gc.pl", "system", 1, 4, "false", "true", ["\$gc"]), ("expand.pl", "system", 1, 266, "false", "true", ["\$expand"]), ("dcg.pl"
+87:LoadError: Some tests did not pass: 92 passed, 6 failed, 0 errored, 0 broken.
+== test_boot_clauses_swipl
+2:T2: the booted clauses =@= swipl's boot, per static predicate (config rows applied): Test Failed at /home/shivaji1012/code/lk-lb4b2-run/test/db/test_boot_clauses_swipl.jl:151
+3:  Expression: h !== nothing && (k[c])[2] == h
+14:T2: the booted clauses =@= swipl's boot, per static predicate (config rows applied): Test Failed at /home/shivaji1012/code/lk-lb4b2-run/test/db/test_boot_clauses_swipl.jl:151
+15:  Expression: h !== nothing && (k[c])[2] == h
+26:T2: the booted clauses =@= swipl's boot, per static predicate (config rows applied): Test Failed at /home/shivaji1012/code/lk-lb4b2-run/test/db/test_boot_clauses_swipl.jl:151
+27:  Expression: h !== nothing && (k[c])[2] == h
+38:T2: the booted clauses =@= swipl's boot, per static predicate (config rows applied): Test Failed at /home/shivaji1012/code/lk-lb4b2-run/test/db/test_boot_clauses_swipl.jl:151
+39:  Expression: h !== nothing && (k[c])[2] == h
+54:LoadError: Some tests did not pass: 11065 passed, 4 failed, 0 errored, 0 broken.
+== test_load_swipl: TIMEOUT 1800s (seq 46), daemon still at ~98% CPU at 23:18Z, RSS flat ~1.2 GB, no child process
+== test_qlf_swipl: not run (seq 47 queued behind seq 46)

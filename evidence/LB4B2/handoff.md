@@ -492,3 +492,33 @@ RUN (run tree, the fix applied UNSTAGED by `git apply`; the PROBE2-TEMP catch in
   slots of gd.stream_table after H11 (ORIGINAL, like a close: the slot becomes `nothing`); (2) the copy policy leaves
   SIO_STDIO streams out (copies `nothing` there); (3) the boot ld gets no initIO registration. Recommendation (1).
   The H11 mutants are NOT run: a boot test errors at the copy either way until this is fixed.
+
+## State (boot-files agent part 2, 2026-11-02 ~23:20Z; the stream fix as ruled, option 1, provisional and pending audit)
+STREAM FIX (this commit, wip/lb4b2c, local): src/pl-qlf.jl `drop_boot_std_streams!(gd, ld)`, called by boot_global_data
+  after H11: the boot ld's three user standard streams are flushed (outputs) and their stream_table slots set to
+  `nothing`, as freeStream clears one; any other stream stays. gd_template.jl:35's refusal unchanged (comment only).
+  UPSTREAM CHECKED (cbf4e189): initIO registers Sinput/Soutput/Serror in streamContext in every process
+  (os/pl-file.c:547-549, called by setupProlog pl-setup.c:173), the boot session's too; the boot session then halts
+  (pl-init.c:1620-1646) and the state it writes has no stream table; the loading process registers its own. So
+  upstream ALSO leaves them registered in the boot session; it simply never copies that session. Row: test_qlf_swipl.jl
+  "the boot ld's standard streams leave the template; another open stream still refuses the copy" (booted template
+  all-`nothing`; 3 live std slots refuse the copy; after the clear a 4th, non-standard open stream still refuses it;
+  closed, the copy goes through). Mutants LB4B2-S1 (call dropped), S2 (every slot cleared), S3 (refusal dropped);
+  Q1 re-fit (the formatter wrapped its line); checker 41 mutants, 0 bad. Manifest += 1. Formatter run over the four
+  .jl files (it also rewrapped older lines of gd_template.jl, pl-qlf.jl, the manifest, test_qlf_swipl.jl).
+RUN TREE: the fix carried UNSTAGED (git apply; the manifest hunk from the unformatted patch: the merged manifest's
+  context differs at :3198). The staged merge untouched. Daemon b2 auto-restarted by its struct gate (const
+  GD_COPY_POLICY reformatted) -> pid 898228; templates reset.
+RUN (reference, evidence/LB4B2/boot_files_ref_run3.txt): boot_messages 12/12 PASS; boot_image 92 pass / 6 FAIL;
+  boot_clauses 11065 pass / 4 FAIL (no SKIP/Warning in either); test_load TIMEOUT (1800s) and the daemon STILL at ~98%
+  CPU, RSS flat 1.2 GB, no child process, at 23:18Z (>60 min): a tight loop somewhere in test_load_swipl.jl, place
+  unknown (SIGUSR1 peek printed nothing; no gdb; SIGINT would end the daemon). test_qlf NOT run (seq 47 queued).
+  The copy error is GONE: no file errors at gd_template.jl:35 any more.
+NEW FINDINGS (not H11, not the stream fix: the first-boot differential rows, UNVERIFIED pins):
+  boot_image T1: kmods ⊇ omods false; missing_prolog = 19 rows ($tabling:*, system:$table_mode/3, toplevel_variables:*);
+    cols = 19 rows, each the `locked` flag: swipl 0, kernel 1 (e.g. $apply:apply/2 00001101 vs 00101101);
+    missing_foreign 410 (pin -1 = unpinned). T3: the file lists differ (k3 vs o3, 24 in swipl; topvars.pl at the end).
+  boot_clauses T2: the 4 _BC_REWRITTEN rows' hash pins are `nothing` (to pin at G9: h !== nothing fails).
+BLOCK: the b2 daemon is busy in that loop; agents may not stop/restart a daemon, so alt/alt_interned, test_qlf and the
+  H11/S mutants are NOT run. Dispatcher: restart b2 (or wait), then run test_load_swipl.jl's testsets one by one to
+  find the looping case. NEXT: test_qlf + test_load on reference, then the five on alt, alt_interned; H11a/b/c, Q1, S1-S3.
