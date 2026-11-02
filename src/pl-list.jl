@@ -9,7 +9,7 @@
 # merge sort (`nat_sort`), ported line for line: it takes the runs the list already has, so a
 # sorted list costs one pass, and it is stable, which keysort/2 requires.
 #
-# NOT PORTED: `'$memberchk'/3`; dicts (`extract_key`'s `dict_lookup_ptr`: a compound is never a dict, so an
+# LEFT OUT: dicts (`extract_key`'s `dict_lookup_ptr`: a compound is never a dict, so an
 # atom key on one is `type_error(dict, …)`); `CMP_ERROR` and `CMP_INCOMPARABLE` from a comparison (the kernel's
 # standard order raises neither: src/pl-prims.jl `compare_std_cells`).
 
@@ -511,8 +511,65 @@ function pl_sort4_va(
     return FFALSE
 end
 
+# PORT: pl-list.c memberchk as pl_memberchk3_va
+# (PRED_IMPL("$memberchk", 3, memberchk, 0), pl-list.c:109-152 at the pin)
+# DIVERGES: no signals to handle: upstream's `PL_handle_signals()` at every 10000th cell is left out (the kernel has
+# no signal queue); the cyclic-list check beside it is kept, `usedStack(global)` read through `_used_stack`.
+# `!isVar(*valTermRef(ex))` is `!PL_is_variable`, which dereferences: the exception ball is never a bare reference.
+"""
+`'\$memberchk'(?Elem, ?List, -Tail)` (pl-list.c): memberchk/2's C part, init.pl's `memberchk/2` calls it. `Tail` is
+unified with `[]` when `Elem` was found, else with the tail left open (`List` a partial list) so the caller can
+extend it; a non-list is `type_error(list, List)`.
+"""
+function pl_memberchk3_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2, A3 = PL__t0, PL__t0 + 1, PL__t0 + 2
+    ex = PL_new_term_ref(ld)
+    h = PL_new_term_ref(ld)
+    l = PL_copy_term_ref(ld, A2)
+    done = 0
+
+    fid = PL_open_foreign_frame(ld)
+    fid == 0 && return FFALSE
+
+    while true
+        done += 1
+        if done % 10000 == 0
+            if done > _used_stack(ld, :global) ÷ 16            # usedStack(global)/(sizeof(word)*2)
+                return PL_error(ld, "", 0, "", ERR_TYPE, mk_sym(T, :list), A2) ? FTRUE : FFALSE
+            end
+        end
+
+        if PL_is_variable(ld, l)
+            PL_close_foreign_frame(ld, fid)
+            return PL_unify(ld, A3, l) ? FTRUE : FFALSE
+        end
+
+        if !PL_unify_list(ld, l, h, l)
+            PL_close_foreign_frame(ld, fid)
+            PL_unify_nil_ex(ld, l)
+            return FFALSE
+        end
+
+        if PL_unify(ld, A1, h)
+            if foreignWakeup(ld, ex)
+                PL_close_foreign_frame(ld, fid)
+                return PL_unify_nil(ld, A3) ? FTRUE : FFALSE
+            else
+                if !PL_is_variable(ld, ex)
+                    return PL_raise_exception(ld, ex) ? FTRUE : FFALSE
+                end
+                PL_rewind_foreign_frame(ld, fid)
+            end
+        else
+            PL_rewind_foreign_frame(ld, fid)
+        end
+    end
+end
+
 # PORT: pl-list.c BeginPredDefs as PL_predicates_from_list
-# DIVERGES: the ported entries (upstream's table also has `'$memberchk'/3`).
+# DIVERGES: the registered entries are these.
 "pl-list.c's registration table (`BeginPredDefs(list)`): the ported entries."
 const PL_predicates_from_list = (
     PL_extension("is_list", 1, pl_is_list1_va, PL_FA_VARARGS),
@@ -520,5 +577,6 @@ const PL_predicates_from_list = (
     PL_extension("sort", 2, pl_sort2_va, PL_FA_VARARGS | PL_FA_ISO),
     PL_extension("msort", 2, pl_msort2_va, PL_FA_VARARGS),
     PL_extension("keysort", 2, pl_keysort2_va, PL_FA_VARARGS | PL_FA_ISO),
-    PL_extension("sort", 4, pl_sort4_va, PL_FA_VARARGS)
+    PL_extension("sort", 4, pl_sort4_va, PL_FA_VARARGS),
+    PL_extension("\$memberchk", 3, pl_memberchk3_va, PL_FA_VARARGS)
 )
