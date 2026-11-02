@@ -900,7 +900,7 @@ fixed it or a public issue exists.
 | `tools/evidence_ci.py` | the gather of a run spread over jobs: Evidence's Verdict table and per-type gathers, the static analysis's shards (their counts summing to the manifest's, each non-zero, every one-off gate run once), CI.yml's Pkg.test groups; every unit run exactly once by a job of its type — planted cases in test/test_gate_split.jl | — |
 | `tools/mutate_suite.sh` | the whole suite as ONE mutation target (`sh:tools/mutate_suite.sh`), on the reference type, as Evidence's slices run in parallel processes (2 file groups + 2 static-analysis shards, 3 at a time); exit 1 when a slice failed a test | — |
 | `docs/release-notes/v0.1.0-pre.1.md` | the release notes of v0.1.0-pre.1, byte for byte the annotated tag's message (SHA-256 b50689ee…0f4bd) | — |
-| `src/pl-event.jl` | since BOOTPRED3 (R2), the registration side of `prolog_listen/2,3`: the options `as(first|last)` and `name(Name)`, the event name (the O_ENGINES build's eight) and the closure are checked as pl-event.c checks them; the listener is not kept (the event lists and the calling side are EV1's); table `PL_predicates_from_event` (src/pl-ext.jl) | `src/pl-event.c` |
+| `src/pl-event.jl` | EV1 (R2): the event lists of pl-event.c over the 12-row `PL_events` table (`event_type`, `event_location`; a list is a vector, the `fastheap_term` of a closure is its record): registration (`prolog_listen/2,3`: `as(first|last)`, `name(Name)`, an event name or a predicate indicator, module-qualified callable closures), `prolog_unlisten/2`, `destroy_event_list!`, and the calling side (`callEventHook`, `PL_call_event_hook(_va)`, `call_event_list`, `predicate_update_event`, `retractall_event`, `table_answer_event`, `delayEvent(s)`, `sendDelayedEvents`); table `PL_predicates_from_event` (src/pl-ext.jl). Wired raise sites: assert, retract, retractall `start`/`end`, the erase of a record, the clause GC's erase, the destroy of a pristine abolish; the rest is deferred (section EV1) | `src/pl-event.c` |
 
 ## Code graph — src/, generated (M1)
 
@@ -5965,7 +5965,7 @@ D1 section where it says the record branch of `erase/1`, `instance/2` and `PL_ge
 - **Registration** (`PL_predicates_from_rec`) in upstream's order: `recorded/2,3` (NDET), `recordz/2,3`, `recorda/2,3`, `erase/1`, `instance/2`, `current_key/1` (NDET);
   recorda, recordz and recorded share ONE function over both arities (`PRED_SHARE`; `PL__ac` is the arity).
 - **State:** `gd.record_lists`, `gd.record_lists_order`, `gd.record_refs` (src/pl-global.jl, the end of the struct) and `ld.recorded_states` (the end of the local data;
-  `src/pl-fli.jl`'s `live_states` counts it). **Not here:** the prolog event hooks (pl-event.c), `PL_cleanup`'s `cleanupRecords`, atom references of a record (no atom GC), the
+  `src/pl-fli.jl`'s `live_states` counts it). **Not here:** the `erase` event of a record is raised through src/pl-event.jl (EV1), `PL_cleanup`'s `cleanupRecords`, atom references of a record (no atom GC), the
   QLF save of records.
 
 Tests: test/db/test_record_swipl.jl (rows r01-r101 against swipl 10.1.19 with two byte-identical pins, evidence/D2/{gen_rows.py,d2_rows.pl,d2_driver.pl,d2_rows.out}; the
@@ -6498,11 +6498,42 @@ What BOOTPRED3 adds (swipl-devel pin `cbf4e1896275`, oracle swipl 10.1.19; writt
   state is the last-call and VMI built-in flag bits; the debugger bits (tracing, debugging) read 0 and the skip level reads -1 because the
   kernel has no debugger state (a field in the local data is a struct change). KNOWN DIFFERENCE where swipl's initial level is 0 and a
   restored level -2 is read back (rows bp3n01, bp3n07, bp3n18).
-- **`prolog_listen/2,3`** (src/pl-event.jl, new, pl-event.c:241-290; table `PL_predicates_from_event`): options, event name and closure are
-  checked; the hook is NOT kept (row bp3l33 pins the difference) and a listener on a predicate is refused by name; EV1 completes both.
+- **`prolog_listen/2,3`** (src/pl-event.jl, pl-event.c:241-290; table `PL_predicates_from_event`): options, event name and closure are
+  checked here; EV1 (section EV1 below) keeps the hook and raises the events, so row bp3l33 is swipl's answer now.
 - **`variant_sha1/2`** (`pl_variant_sha1_2_va`, src/pl-termhash.jl, pl-termhash.c:659-681; table `PL_predicates_from_termhash`): the 40 hex digits
   as an atom. KNOWN DIFFERENCE: the digest VALUES are not swipl's (src/pl-termhash.jl DIVERGES 1-2; row bp3v15 pins both).
 
 Tests: test/core_lang/test_bootpred3_swipl.jl (rows bp3m, bp3i, bp3n, bp3l, bp3v; pins from swipl 10.1.19, two byte-identical runs; generator
 evidence/BOOTPRED3/gen_rows.py). Mutants: tools/mutants/BOOTPREDSUB.py. Left to others: `'$notrace'/1`, the rest of pl-pro.c, `variant_hash/2`,
-`term_hash/2` on the cells, the event lists and the calling side (EV1).
+`term_hash/2` on the cells (the event lists and the calling side are EV1's, the section below).
+
+## EV1 — the event lists of pl-event.c: `prolog_listen/2,3`, `prolog_unlisten/2` and the raise sites that have a function (R2, swipl-devel cbf4e189)
+
+What EV1 adds (pin `cbf4e1896275`, oracle swipl 10.1.19; written edit-only over six writers, the rows run on the kernel at the gate):
+- **src/pl-event.jl** is the real port of pl-event.c: the 12-row `PL_events` table (the O_ENGINES build; `erase` and `break` resolve to their FIRST row),
+  `event_location` (a list's place), `link_event`, `get_callback`, `add_event_hook` (the `name(N)` replacement swaps the closure and keeps the
+  position), `get_event_list!`, `register_event_hook`, `get_event_listp` (an event NAME, or a predicate indicator resolved by
+  `get_procedure_resolve_namearity`, src/pl-proc.jl), `prolog_listen`, `prolog_unlisten` (deletes EVERY matching listener; a variable closure
+  matches the first, because the unification binds it), `destroy_event_list!`, `cleanupEvents`, `call_event_list`, `callEventHook`,
+  `PL_call_event_hook(_va)`, `predicate_update_event`, `retractall_event`, `table_answer_event`, `delayEvent`/`delayEvents`/`sendDelayedEvents`.
+  `PL_put_frame` is in src/pl-trace.jl.
+- **Structures** (src/pl-incl.jl, src/pl-global.jl, src/pl-copyterm.jl): `fastheap_term{T}`, `event_callback{T,D}`, `event_list{T,D}`, `delayed_event{T}`, the
+  `PLEV_*` constants; ONE field `events` appended to `definition` (an outer 11-argument constructor keeps the four positional sites textual), `event_hook`
+  appended to the global data, `event_buffered`, `event_delay_nesting`, `event_hook_onthreadexit` appended to the local data. No `@enum` was added.
+- **Raise sites WIRED:** `_assertDefinition!` (pl-proc.c:1472-1478: a listener that fails VETOES the assert, the clause is retracted again),
+  `retractClauseDefinition!` (:1706-1712: a failing listener vetoes the retract), `pl_retractall!` (:3308 `start` before, :3397 `end` after; no `end` on upstream's early
+  returns: no clause, or a clause choice that ends), the erase of a record (pl-rec.c:2468; a failing listener does NOT stop it), `announceErasedClause` in the
+  clause GC pass (`cleanDefinition!`, pl-proc.c:1773, 1850), `frameFinished` (pl-wam.c:959), and `destroy_event_list!` at the abolish of an own pristine procedure
+  (pl-proc.c:269, 409). A listener's exception breaks the loop and propagates (`WAKEUP_KEEP_URGENT_EXCEPTION`).
+- **Raise sites DEFERRED** (no Julia function yet; each step that ports the function raises the event): break events and `$break_at` (pl-comp.c:9084-9173, DBG1; `frameFinished`'s raise is
+  wired but unreachable until DBG1, nothing sets `FR_NOTIFY`), `abort` (pl-pro.c:105, DBG1), `untable` (pl-tabling.c:11317) and `table_answer_event`'s caller (pl-tabling.c:10156, TAB1; boot/tabling.pl's
+  `prolog_listen(untable, untable_reconsult)` registers), thread start/exit and `PL_thread_at_exit` (pl-thread.c, TH1; the thread events throw `NotPortedError`, a C-function listener counts as a failure),
+  `delayEvents` in `unloadFile`/`endReconsult` and `reconsultFinalizePredicate` (pl-srcfile.c, pl-proc.c:1937: the reload step), transactions (pl-transaction.c), `cleanupEvents` (`PL_cleanup`, pl-init.c:2037),
+  `freePrologLocalData` (pl-setup.c:1796), and the full abolish/`resetProcedure` (PR1/abolish step).
+- **DIVERGES (representation only, each needs the audit's D-entry):** a list is a Vector (no head/tail chain, no lock; `call_event_list` walks a SNAPSHOT); a closure is the term's record
+  (`fastheap_term`: upstream's relocatable cells need the word stacks); attributed variables in a closure are unchecked; the foreign frame of `prolog_unlisten/2` is closed at the return;
+  `definition.events` is typed `event_list{T, definition{T}}` (the struct cycle).
+- **KNOWN DIFFERENCE, no row:** a listener that unlistens itself while the list is walked (upstream walks the live chain; the snapshot cannot see it).
+
+Tests: test/core_lang/test_event_swipl.jl (80 rows ev1p, ev1o, ev1u, ev1v, ev1e, ev1r, ev1g; pins from swipl 10.1.19, two byte-identical runs; generator evidence/EV1/gen_rows.py; ev1g01 is white-box:
+`garbage_collect_clauses/0` is not registered yet, the row calls `pl_garbage_collect_clauses!`). Mutants: tools/mutants/EV1.py (48; three declared EQUIVALENT with file:line) and the event ones of tools/mutants/BOOTPREDSUB.py.
