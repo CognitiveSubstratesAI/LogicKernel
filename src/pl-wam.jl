@@ -2197,6 +2197,20 @@ function PL_current_query(ld::PL_local_data{T})::Int where {T}
     return 0
 end
 
+# PORT: pl-wam.c handles_unwind
+# DIVERGES: `qid` 0 stands for upstream's null handle (the running query: `LD->query->qid`); `HAS_LD` is always true here,
+# and a database with no open query handles none (upstream reads `LD->query->qid` of a running query only).
+"Whether the query `qid` (0: the running one) or one of its parents was opened with a flag in `flags`, e.g. `PL_Q_EXCEPT_HALT` (pl-wam.c)."
+function handles_unwind(ld::PL_local_data{T}, qid::Int, flags::UInt32)::Bool where {T}
+    qf = qid == 0 ? ld.query : QueryFromQid(ld, qid)    # if ( !qid ) qid = LD->query->qid
+    while qf != 0                                       # for(qf = QueryFromQid(qid); qf; qf = qf->parent)
+        q = ld.queries[qf]
+        (q.flags & flags) != 0 && return true           # ison(qf, flags)
+        qf = q.parent
+    end
+    return false
+end
+
 # PORT: pl-wam.c PL_next_solution
 # DIVERGES: Julia's `try`/`catch` stands for upstream's `setjmp` (decision 1). `@goto` cannot cross a
 # `try`, so the whole run loop is `PL_next_solution_guarded`, inside one `try`; the handler is

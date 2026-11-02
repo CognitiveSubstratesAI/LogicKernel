@@ -79,6 +79,11 @@ mutable struct PL_global_data{T}
     const record_lists::Dict{word, RecordList{T}}               # recorded_db.record_lists: the key's word -> its record list (R2 D2)
     const record_lists_order::Vector{RecordList{T}}             # (the lists in the order they were made, the enumeration of recorded/3 and current_key/1; R2 D2)
     const record_refs::Vector{RecordRef{T}}                     # (pl-dbref.c: the record a record blob names, by its number in the payload; R2 D2)
+    halt_status::Int                                            # halt.status: code and flags of the halt in progress (HALT1)
+    halt_thread::Int                                            # halt.thread: the initiating thread (HALT1)
+    halt_cleaning::Int                                          # halt.cleaning: `CLN_*` (HALT1)
+    halt_cancelled::Int                                         # halt.cancelled: times a halt was cancelled (HALT1)
+    halt_exit::Function                                         # (HALT1: the seam where upstream calls `exit(status)`)
 end
 # DIVERGES: `atoms` is upstream's `GD->atoms` as a struct of its own (src/pl-atom.jl), one table per
 # database, built first as upstream's `initAtoms` runs first; `functors` likewise `GD->functors` with
@@ -180,13 +185,42 @@ function PL_global_data{T}() where {T}
         false,                                  # bootsession: no boot compilation until LB3's `-b` path sets it
         Dict{word, RecordList{T}}(),            # record_lists: no key has a record yet
         RecordList{T}[],                        # record_lists_order
-        RecordRef{T}[]                          # record_refs: no record has a reference yet
+        RecordRef{T}[],                         # record_refs: no record has a reference yet
+        0,                                      # halt_status: no halt in progress
+        0,                                      # halt_thread
+        CLN_NORMAL,                             # halt_cleaning
+        0,                                      # halt_cancelled
+        _halt_process_exit                      # halt_exit: the process exit
     )
     initPrologFlags!(gd)                        # setup:136 (src/os/pl-prologflag.jl): before the built-ins (:158), whose boot clauses read the mask
     initBuildIns!(gd)                           # setup:158 (src/pl-ext.jl)
     initOperators!(gd)                          # setup:164 (src/pl-op.jl)
     return gd
 end
+
+# PORT: pl-incl.h cleanup_status
+# DIVERGES: the enum's values as `Int` constants (`halt_cleaning` is an `Int`), pl-incl.h:1054-1060.
+"`GD->halt.cleaning`: normal mode (pl-incl.h)."
+const CLN_NORMAL = 0
+"`GD->halt.cleaning`: the Prolog hooks (`at_halt/1`) run (pl-incl.h)."
+const CLN_PROLOG = 1
+"`GD->halt.cleaning`: the foreign hooks run (pl-incl.h)."
+const CLN_FOREIGN = 2
+"`GD->halt.cleaning`: cleaning the I/O (pl-incl.h)."
+const CLN_IO = 3
+"`GD->halt.cleaning`: unloading the shared objects (pl-incl.h)."
+const CLN_SHARED = 4
+"`GD->halt.cleaning`: the remaining data (pl-incl.h)."
+const CLN_DATA = 5
+"`GD->halt.cleaning`: the final cleanup handlers (pl-incl.h)."
+const CLN_ATEXIT = 6
+
+# ORIGINAL (HALT1): upstream calls `exit(status)` in `PL_halt` and in `PL_abort_process`; a library cannot
+# end its host's process unasked, so the global data holds the call (`halt_exit`), set to this function —
+# the real `exit` — when the database is made. A caller that embeds the kernel (a test) sets `gd.halt_exit`;
+# when it returns, `PL_halt` returns false where upstream never returns.
+"The process exit `PL_halt` ends with (upstream's `exit(status)`): ends the Julia process with `status`."
+_halt_process_exit(status::Int)::Nothing = exit(status)
 
 # (swipl-devel cbf4e189 pl-incl.h:2969-2970)
 # PORT: pl-incl.h ACCESS_LEVEL_USER

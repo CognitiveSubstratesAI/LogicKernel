@@ -7,9 +7,9 @@
 # What the kernel takes from SWI-Prolog's public C interface header (SWI-Prolog.h): the flags a
 # query is opened with and the codes `PL_next_solution` returns (decision 1); since V5a2 the types
 # and the registration record of the foreign interface (decision 5). Not ported: the flags
-# of the parts decision 1 leaves out — `PL_Q_ALLOW_YIELD`, `PL_Q_EXCEPT_HALT`,
+# of the parts decision 1 leaves out — `PL_Q_ALLOW_YIELD`,
 # `PL_Q_TRACE_WITH_YIELD`, `PL_Q_EXCEPT_THREAD_EXIT` — and the yield codes `PL_S_YIELD_DEBUG`,
-# `PL_S_YIELD`.
+# `PL_S_YIELD`. Since HALT1: `PL_Q_EXCEPT_HALT` and the halt flags `PL_CLEANUP_*`, `PL_HALT_WITH_EXCEPTION`.
 
 # PORT: SWI-Prolog.h PL_Q_DEBUG
 "Query flag: `true`, for backward compatibility; opened as `PL_Q_NORMAL` (SWI-Prolog.h)."
@@ -29,9 +29,34 @@ const PL_Q_PASS_EXCEPTION = UInt32(0x0010)
 # PORT: SWI-Prolog.h PL_Q_EXT_STATUS
 "Query flag: return the extended status, `PL_S_*` (SWI-Prolog.h)."
 const PL_Q_EXT_STATUS = UInt32(0x0040)
+# PORT: SWI-Prolog.h PL_Q_EXCEPT_HALT
+"Query flag: the query handles `unwind(halt(Status))` (SWI-Prolog.h; HALT1)."
+const PL_Q_EXCEPT_HALT = UInt32(0x0080)
 # PORT: SWI-Prolog.h PL_Q_DETERMINISTIC
 "Query flag, the engine's own: the call was deterministic (SWI-Prolog.h)."
 const PL_Q_DETERMINISTIC = UInt32(0x1000)
+
+# PORT: SWI-Prolog.h PL_CLEANUP_STATUS_MASK
+"The bits of a halt status that hold the exit status (SWI-Prolog.h; HALT1)."
+const PL_CLEANUP_STATUS_MASK = 0x0ffff
+# PORT: SWI-Prolog.h PL_CLEANUP_NO_RECLAIM_MEMORY
+"Halt flag: do not reclaim memory (SWI-Prolog.h; HALT1)."
+const PL_CLEANUP_NO_RECLAIM_MEMORY = 0x10000
+# PORT: SWI-Prolog.h PL_CLEANUP_NO_CANCEL
+"Halt flag: the halt cannot be cancelled by an `at_halt/1` hook (SWI-Prolog.h; HALT1)."
+const PL_CLEANUP_NO_CANCEL = 0x20000
+# PORT: SWI-Prolog.h PL_HALT_WITH_EXCEPTION
+"Halt flag: halt by raising `unwind(halt(Status))` where the query can handle it (SWI-Prolog.h; HALT1)."
+const PL_HALT_WITH_EXCEPTION = 0x40000
+# PORT: SWI-Prolog.h PL_CLEANUP_CANCELED
+"`PL_cleanup` result: an `at_halt/1` hook cancelled the halt (SWI-Prolog.h; HALT1)."
+const PL_CLEANUP_CANCELED = 0
+# PORT: SWI-Prolog.h PL_CLEANUP_SUCCESS
+"`PL_cleanup` result: the cleanup is done (SWI-Prolog.h; HALT1)."
+const PL_CLEANUP_SUCCESS = 1
+# PORT: SWI-Prolog.h PL_CLEANUP_RECURSIVE
+"`PL_cleanup` result: a cleanup is already running (SWI-Prolog.h; HALT1)."
+const PL_CLEANUP_RECURSIVE = -2
 
 # PORT: SWI-Prolog.h PL_S_NOT_INNER
 "`PL_next_solution`, cut or close of a query that is not the innermost (SWI-Prolog.h)."

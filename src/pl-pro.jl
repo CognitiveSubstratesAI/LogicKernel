@@ -8,8 +8,12 @@
 # of its own — and `sig_atomic/1`, its first caller: boot/init.pl's `setup_call_cleanup/3` and
 # `setup_call_catcher_cleanup/4` run their Setup goal through it, as once/1.
 #
+# Since HALT1: `abortProlog` and `abort/0` (the `unwind(abort)` ball), `raise_halt_exception` (the
+# `unwind(halt(Status))` ball `halt/1` raises). `halt_from_exception` and `restore_after_exception` are
+# left to the toplevel step with `query_loop`.
+#
 # NOT PORTED: the rest of pl-pro.c — the toplevel (`pl_break`, `query_loop`, `prologToplevel`),
-# `abort/0`, `'$notrace'/1,2`, `'$restore_trace'/2`, `'$call_no_catch'/1`, `'$can_yield'/0`,
+# `'$notrace'/1,2`, `'$restore_trace'/2`, `'$call_no_catch'/1`, `'$can_yield'/0`,
 # `'$trap_gdb'/0`, the metacut `!/0` (`pl_metacut`), `checkStacks` and the C-stack queries.
 
 # PORT: pl-pro.c callProlog
@@ -130,12 +134,72 @@ function pl_sig_atomic1_va(
     return rval ? FTRUE : FFALSE
 end
 
+# PORT: pl-pro.c abortProlog
+# DIVERGES: left out: the trace and debug mode switches (the kernel keeps no debugger state), the discard of pending
+# input and the O_MAINTENANCE backtrace. The cycle stacks (`LD->cycle.lstack`,
+# `LD->cycle.vstack`) are the kernel's `cycle_cells` with its saved words and `cycle_vstack`, cleared as upstream
+# clears them. The ball is built from term references, as `PL_unify_term(ex, PL_FUNCTOR, FUNCTOR_unwind1,
+# PL_ATOM, ATOM_abort)` (see src/pl-error.jl); a foreign frame brackets it, as upstream.
+"Raise `unwind(abort)`: false, the exception pending (pl-pro.c)."
+function abortProlog(ld::PL_local_data{T})::Bool where {T}
+    rc = false
+
+    ld.exception_processing = true                      # allow using spare stack
+    fid = PL_open_foreign_frame(ld)
+    ex = _message_term(ld, :unwind, _err_atom(ld, mk_sym(T, :abort)))   # PL_unify_term(ex, …unwind1, PL_ATOM, ATOM_abort)
+    empty!(ld.cycle_cells)                              # clearSegStack(&LD->cycle.lstack) (with its saved words)
+    empty!(ld.cycle_saved)
+    empty!(ld.cycle_vstack)                             # clearSegStack(&LD->cycle.vstack)
+    rc = PL_raise_exception(ld, ex)
+    PL_close_foreign_frame(ld, fid)
+
+    return rc
+end
+
+# PORT: pl-pro.c abort as pl_abort0_va
+# (PRED_IMPL("abort", 0, abort, 0))
+"`abort/0`: raise `unwind(abort)` (pl-pro.c); `catch/3` sees the ball."
+function pl_abort0_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    return abortProlog(ld) ? FTRUE : FFALSE
+end
+
+# PORT: pl-pro.c raise_halt_exception
+# DIVERGES: the trace switch is left out (the kernel keeps no debugger state); the running-query form of
+# `handles_unwind` is `handles_unwind(ld, 0, …)` (src/pl-wam.jl). The ball is built as `abortProlog`'s. Upstream's allocation-failure paths (the frame, the
+# reference or the unification failing: the ball is not raised) cannot happen here, as in src/pl-error.jl.
+"""
+    raise_halt_exception(ld, status, force) -> Bool
+
+Raise `unwind(halt(Code))`, `Code = status & PL_CLEANUP_STATUS_MASK`, where the running query can handle it
+(`PL_Q_EXCEPT_HALT`) or `force` is set, and return true; false, nothing raised, where it cannot (pl-pro.c).
+"""
+function raise_halt_exception(
+    ld::PL_local_data{T}, status::Int, force::Bool
+)::Bool where {T}
+    code = status & PL_CLEANUP_STATUS_MASK
+
+    ld.exception_processing = true                      # allow using spare stack
+
+    if force || handles_unwind(ld, 0, PL_Q_EXCEPT_HALT)
+        fid = PL_open_foreign_frame(ld)
+        ex = _message_term(ld, :unwind, _message_term(ld, :halt, _err_int(ld, code)))   # PL_unify_term(ex, …unwind1, …halt1, PL_INT, code)
+        PL_raise_exception(ld, ex)
+        PL_close_foreign_frame(ld, fid)
+        return true
+    end
+
+    return false
+end
+
 # PORT: pl-pro.c BeginPredDefs as PL_predicates_from_pro
-# DIVERGES: the ported entry only (upstream's table has eight, pl-pro.c:1060-1069).
-"pl-pro.c's registration table (`BeginPredDefs(pro)`): the ported entry."
+# DIVERGES: the ported entries only (upstream's table has eight, pl-pro.c:1060-1069), in upstream's order.
+"pl-pro.c's registration table (`BeginPredDefs(pro)`): the ported entries."
 const PL_predicates_from_pro = (
+    PL_extension("abort", 0, pl_abort0_va, PL_FA_VARARGS),
     PL_extension(
         "sig_atomic", 1, pl_sig_atomic1_va,
         PL_FA_VARARGS | PL_FA_TRANSPARENT | PL_FA_SIG_ATOMIC
-    ),
+    )
 )
