@@ -101,3 +101,8 @@ functions of the area run :1818-1991 (the helpers above the predicates, the pop 
 6. `tools/pkgtest_way.sh test/core_lang/test_push_flag_swipl.jl` (one at a time, ~3 GB).
 7. push `mutants/F2` at the WIP SHA once the list exists; branch-gate; term grep (D-0164, over diff and message); then `gate/<fresh name>` and `mutants/F2` at the SAME SHA.
 8. No alloc pins (no Tier-1 file, no pl-global.jl change).
+
+## Gate agent 1 state (2026-11-02 ~15:00 UTC)
+- Rebased ONCE onto origin/main 8ba3fae as wip/f2s (wip/f2r = same without the secrecy rewording, wip/f2r-bak = alias; wip/f2 = old stack, untouched). Conflicts: docs/architecture.md (kept BOOTPRED block then F2 block), static_analysis_manifest.jl (dropped the F1b line PL_get_int64_ex, already on main at the second table).
+- Light work done: stale-pin hunt (no hit names push/pop_prolog_flag outside the F2 row file), term grep over the full history (one evidence line reworded in the history), authors checked.
+- LEFT: daemon (three were up), fmt, inventory, check, Aqua+JET, rows x3, type discipline, pkgtest_way, push.
