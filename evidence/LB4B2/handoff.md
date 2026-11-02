@@ -260,3 +260,12 @@ T2 DESIGN (measured, not committed): evidence/LB4B2/t2_encoder_prototype.pl is t
   boot sets -O, so a kernel boot without -O gives other bodies. Suggest: also generate the oracle WITHOUT -O and count
   the differing predicates for the audit's F3 call.
 NEXT AGENT: (1) T2 as above; (2) G7 tools/mutants/LB4B2.py; (3) G8 manifest + docs block; (4) G9 needs a daemon.
+
+## State (writer 7, 2026-11-02; in progress)
+- 90925a4 T2: test/db/test_boot_clauses_swipl.jl + _rows.pl (driver, prototype fixed: `[]` as [0'n] since the boot's
+  double_quotes made "n" fail and dropped every clause with a `[]`; a non-atom functor name or a reserved symbol
+  such as C'trienode' in $tabling:'$table_mode'/3 as ~w text, tag r) + _rows.out (1389 rows, 3240 clauses = H12's sum,
+  two runs byte-identical, stderr empty, NO -O: the kernel's current configuration, src/pl-qlf.jl:368). F3 measure:
+  with -O 33 rows differ, all in $tabling (evidence/LB4B2/t2_optimise_diff.txt; pinned in the oracle testset). No
+  machine path and no blob address in any clause (checked over a writeq dump). Kernel pins `_BC_KERNEL_DIFFER` empty,
+  the 4 rewritten rows' hashes `nothing`: G9 fills them. UNVERIFIED on the kernel: gate decides.
