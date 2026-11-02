@@ -124,11 +124,20 @@ const _P2_CASES = [
     ("p26", raw"atomic_list_concat([a,b], abc), R = yes"),
     ("p27", raw"atomic_list_concat([a,b], '-', 'a-b'), R = yes"),
     ("p28", raw"atomic_list_concat([a,b], '-', 'a_b'), R = yes"),
-    ("p29", raw"p2_wide(W), atom_codes(E, [233]), atomic_list_concat([E,W], '-', A), atom_codes(A, R)"),
-    ("p30", raw"p2_wide(W), atom_codes(S, [45]), atomic_list_concat([a,W], S, A), atomic_list_concat(L, S, A), R = L-A"),
+    (
+        "p29",
+        raw"p2_wide(W), atom_codes(E, [233]), atomic_list_concat([E,W], '-', A), atom_codes(A, R)"
+    ),
+    (
+        "p30",
+        raw"p2_wide(W), atom_codes(S, [45]), atomic_list_concat([a,W], S, A), atomic_list_concat(L, S, A), R = L-A"
+    ),
     ("p31", raw"atomic_list_concat(L, 'aa', 'aaaa'), R = L"),
     ("p32", raw"atomic_list_concat(L, 'aa', 'aaa'), R = L"),
-    ("p33", raw"p2_as(100, Ns), p2_open(Ns, L), atomic_list_concat(Ns, '-', A0), atom_concat(A0, '-z', A), atomic_list_concat(L, '-', A), R = ok"),
+    (
+        "p33",
+        raw"p2_as(100, Ns), p2_open(Ns, L), atomic_list_concat(Ns, '-', A0), atom_concat(A0, '-z', A), atomic_list_concat(L, '-', A), R = ok"
+    ),
     ("p34", raw"p2_nl(150, Ns), atomic_list_concat(Ns, '-', A), atom_length(A, R)"),
     ("p35", raw"atomic_list_concat([a|b], '-', R)"),
     ("p36", raw"atomic_list_concat([a,b], 1, R)"),
@@ -144,7 +153,10 @@ const _P2_CASES = [
     ("p46", raw"atomics_to_string([a,b], '-', A), p2_ty(A, R)"),
     ("p47", raw"atomics_to_string([a|b], '-', R)"),
     ("p48", raw"p2_wide(W), atomics_to_string([W,a], '', A), string_codes(A, R)"),
-    ("p49", raw"p2_as(99, Ns), p2_open(Ns, L), atomic_list_concat(Ns, '-', A0), atom_concat(A0, '-z', A), atomic_list_concat(L, '-', A), R = L"),
+    (
+        "p49",
+        raw"p2_as(99, Ns), p2_open(Ns, L), atomic_list_concat(Ns, '-', A0), atom_concat(A0, '-z', A), atomic_list_concat(L, '-', A), R = L"
+    ),
     ("p50", raw"findall(B-L-A-S, sub_atom(abc, B, L, A, S), R)"),
     ("p51", raw"sub_atom(hello, 1, 3, A, S), R = A-S"),
     ("p52", raw"sub_atom(hello, B, 2, 0, S), R = B-S"),
@@ -165,7 +177,7 @@ const _P2_CASES = [
     ("p67", raw"sub_atom(abc, 4, _, _, _), R = yes"),
     ("p68", raw"findall(B-A, sub_atom(aXa, B, 1, A, a), R)"),
     ("p69", raw"catch(assertz(sub_atom(a, b, c, d, e)), error(E, _), true), R = E"),
-    ("p70", raw"catch(assertz(atomic_list_concat(a, b, c)), error(E, _), true), R = E"),
+    ("p70", raw"catch(assertz(atomic_list_concat(a, b, c)), error(E, _), true), R = E")
 ]
 
 # the driver's whole output, one line per case after `ok`, filled by evidence/P2/gen_rows.py --fill from swipl 10.1.19
@@ -312,7 +324,9 @@ end
     # the program loaded; every case has a line; the answering rows answer, the failing rows have none, the raising rows raise
     @test _P2_PINNED[1] == "ok"
     @test length(_P2_PINNED) == length(_P2_CASES) + 1
-    answered = count(l -> occursin(" c[", l) || occursin(" a[", l) || occursin(" i", l), _P2_PINNED)
+    answered = count(
+        l -> occursin(" c[", l) || occursin(" a[", l) || occursin(" i", l), _P2_PINNED
+    )
     @test answered >= 40
     @test any(l -> !occursin(" ", l) && startswith(l, "t_p"), _P2_PINNED)           # a row without an answer: it failed
     @test count(l -> occursin("[114,97,105,115,101,100]", l), _P2_PINNED) >= 8   # the error rows

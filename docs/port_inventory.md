@@ -149,7 +149,7 @@ how many of the upstream file's functions are ported.
 | swipl-devel `src/pl-mutex.c` | code | `cbf4e1896275` | `src/pl-mutex.jl` | 1 | 1 |
 | swipl-devel `src/pl-op.c` | code | `cbf4e1896275` | `src/pl-incl.jl` | 1 | 1 |
 | swipl-devel `src/pl-op.c` | code | `cbf4e1896275` | `src/pl-op.jl` | 20 | 16 |
-| swipl-devel `src/pl-prims.c` | code | `cbf4e1896275` | `src/pl-prims.jl` | 152 | 75 |
+| swipl-devel `src/pl-prims.c` | code | `cbf4e1896275` | `src/pl-prims.jl` | 159 | 77 |
 | swipl-devel `src/pl-prims.c` | code | `cbf4e1896275` | `src/pl-string.jl` | 7 | 4 |
 | swipl-devel `src/pl-prims.h` | code | `cbf4e1896275` | `src/pl-prims.jl` | 2 | 0 |
 | swipl-devel `src/pl-privitf.c` | code | `cbf4e1896275` | `src/pl-string.jl` | 1 | 1 |
@@ -277,7 +277,7 @@ checkout is pulled.
 | swipl-devel `src/pl-modul.c` | `cbf4e1896275` | 50 | 70 | 40 | src/pl-modul.jl |
 | swipl-devel `src/pl-mutex.c` | `cbf4e1896275` | 1 | 33 | 1 | src/pl-mutex.jl |
 | swipl-devel `src/pl-op.c` | `cbf4e1896275` | 16 | 21 | 15 | src/pl-incl.jl, src/pl-op.jl |
-| swipl-devel `src/pl-prims.c` | `cbf4e1896275` | 112 | 188 | 65 | src/pl-prims.jl, src/pl-string.jl |
+| swipl-devel `src/pl-prims.c` | `cbf4e1896275` | 116 | 188 | 67 | src/pl-prims.jl, src/pl-string.jl |
 | swipl-devel `src/pl-prims.h` | `cbf4e1896275` | 0 | 0 | 0 | src/pl-prims.jl |
 | swipl-devel `src/pl-privitf.c` | `cbf4e1896275` | 1 | 5 | 1 | src/pl-string.jl |
 | swipl-devel `src/pl-pro.c` | `cbf4e1896275` | 3 | 33 | 3 | src/pl-pro.jl |
@@ -318,7 +318,7 @@ checkout is pulled.
 | swipl-devel `tests/db/test_db.pl` | `cbf4e1896275` | 2 | 10 | 0 | test/db/test_db.jl |
 | swipl-devel `tests/db/test_jit.pl` | `cbf4e1896275` | 16 | 21 | 0 | test/db/test_jit.jl |
 | swipl-devel `tests/rational/test_ieee754.pl` | `cbf4e1896275` | 0 | 15 | 0 | test/rational/test_ieee754.jl |
-| **total** | | **1655** | **4820** | **954** | |
+| **total** | | **1659** | **4820** | **956** | |
 <!-- END GENERATED coverage -->
 
 ### Not ported: unreachable upstream

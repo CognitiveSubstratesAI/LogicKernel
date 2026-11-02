@@ -2830,13 +2830,16 @@ end
 # DIVERGES: the separator `st` and the atom's text are canonical (`PL_canonicalise_text` after `PL_get_text`, as
 # `concat` above), where upstream's are canonical as they are got; `PL_cmp_text` of a separator longer than the
 # atom is not reached (the loop bound is negative).
+# DIVERGES: `st` carries no `::PL_chars_t` annotation: src/os/pl-text.jl, which defines the type, is included after
+# this file (src/LogicKernel.jl), and a method signature is evaluated when the method is defined; the body asserts it.
 """
 The mode (-,+,+) of `atomic_list_concat/3` (pl-prims.c): `list` is unified with the pieces of the text of `atom`
 between the occurrences of the non-empty separator text `st`, each made an atom.
 """
 function split_atom(
-    ld::PL_local_data{T}, list::term_t, st::PL_chars_t, atom::term_t
+    ld::PL_local_data{T}, list::term_t, st, atom::term_t
 )::Bool where {T}
+    st = st::PL_chars_t
     at = PL_get_text(ld, atom, CVT_ATOMIC | CVT_EXCEPTION)
     at === nothing && return false
     PL_canonicalise_text_ex(ld, at) || return false

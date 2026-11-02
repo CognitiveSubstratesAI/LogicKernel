@@ -1095,6 +1095,7 @@ graph LR
     pl_prims --> os_pl_text
     pl_prims --> os_pl_os
     pl_prims --> pl_read
+    pl_prims --> pl_string
     pl_ressymbol --> term_interface
     pl_ressymbol --> default_term
     pl_ressymbol --> pl_incl
