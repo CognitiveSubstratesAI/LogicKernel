@@ -89,7 +89,7 @@ const _PRED_TABLES = (
     PL_predicates_from_system, PL_predicates_from_op, PL_predicates_from_rec,
     PL_predicates_from_attvar, PL_predicates_from_gvar, PL_predicates_from_dict,
     PL_predicates_from_strings,
-    PL_predicates_from_error
+    PL_predicates_from_error, PL_predicates_from_event
 )
 const _FOREIGN_VA = (
     PL_predicates_from_atom..., PL_predicates_from_arith..., PL_predicates_from_bag...,
@@ -106,7 +106,7 @@ const _FOREIGN_VA = (
     PL_predicates_from_system...,
     PL_predicates_from_op..., PL_predicates_from_rec..., PL_predicates_from_attvar...,
     PL_predicates_from_gvar..., PL_predicates_from_dict..., PL_predicates_from_strings...,
-    PL_predicates_from_error...
+    PL_predicates_from_error..., PL_predicates_from_event...
 )
 const _FOREIGN_DET = foreigns
 
