@@ -226,3 +226,63 @@ end
     @test length(rr) > 40 && count(r -> r.cfile == "src/pl-qlf.jl", rr) >= 14       # the throw sites and the 14 QLF names
     @test length(unique(r.key for r in rr)) == length(rr)
 end
+
+@testset "r2_status: flags (referenced, defined, created, refused) and VM instructions" begin
+    mktempdir() do base
+        _r2_fixture(base)
+        open(joinpath(base, "vendor", "swipl-devel", "boot", "a.pl"), "a") do io
+            write(io, ":- create_prolog_flag(made_here, 1, []).\n:- set_prolog_flag(verbose, silent).\n" *
+                      "q :- current_prolog_flag(bounded, B), current_prolog_flag(Var, _), B == Var.\n")
+        end
+        fs = r2_flag_scan(base, r2_boot_files(base))
+        @test Set(keys(fs.refs)) == Set(["made_here", "verbose", "bounded", "threads"])    # threads: load.pl's own `:- if` && fs.created == Set(["made_here"])
+        @test fs.refs["bounded"] == ["boot/a.pl"]
+    end
+    defd = r2_flags_defined([
+        "setPrologFlag(gd, \"verbose\", FT_ATOM, 1)\nsetPrologFlag(\n    gd, ld, \"bounded\", FT_BOOL, x)\n# setPrologFlag(gd, \"commented\", FT_BOOL, x)\n",
+    ])
+    @test defd == Set(["verbose", "bounded"])
+    jl = """
+    function $(R2_FLAG_REFUSAL_HELPER)(key::T, effect::String) where {T}
+        throw($(R2_REFUSAL_EXCEPTION){T}(key, effect, "R2 F1b"))
+    end
+    function setter()
+        if name == "debug"
+            $(R2_FLAG_REFUSAL_HELPER)(k, "debugmode")
+        elseif name == "tty_control"
+            val != x &&
+                $(R2_FLAG_REFUSAL_HELPER)(k, "PushTty")
+        end
+
+        ci_is_flag(k) && $(R2_FLAG_REFUSAL_HELPER)(k, "ci_set_flag (pl-index.c)")
+        sym_key(k) == sym_key(mk_sym(T, :autoload)) &&
+            $(R2_FLAG_REFUSAL_HELPER)(k, "propagateAutoload")
+    end
+    """
+    refusals = r2_flag_refusals(Dict("src/os/fix.jl" => jl))
+    @test [(f, e) for (f, e, _, _) in refusals] ==
+          [("debug", "debugmode"), ("tty_control", "PushTty"), (nothing, "ci_set_flag (pl-index.c)"), ("autoload", "propagateAutoload")]
+    rows = r2_flag_rows(Dict("verbose" => ["boot/a.pl"], "ghost" => ["boot/a.pl"], "debug" => ["boot/a.pl"], "made_here" => ["boot/b.pl"]),
+        Set(["made_here"]), Set(["verbose", "debug"]), refusals)
+    st = Dict(r.key => r.status for r in rows)
+    @test st["flag:verbose"] == "done" && st["flag:made_here"] == "done" && st["flag:ghost"] == "missing"
+    @test st["flag:debug"] == "refused" && st["flag:autoload"] == "refused" && st["flag:(ci_set_flag (pl-index.c))"] == "refused"
+    # MUTATION: dropping the refusal sites turns `debug` back into done (the refusal is what makes it refused)
+    @test Dict(r.key => r.status for r in r2_flag_rows(Dict("debug" => ["x"]), Set{String}(), Set(["debug"]), []))["flag:debug"] == "done"
+
+    markers = r2_vmi_markers(["# PORT: pl-vmi.c I_ENTER\n    # PORT: pl-vmi.c A_ADD as helper\nx = 1  # PORT: pl-vmi.c NOT_ON_ITS_OWN_LINE\n"])
+    @test markers == Set(["I_ENTER", "A_ADD"])
+    up = r2_scan_c(_R2_FIXTURE_C, "src/pl-vmi.c")
+    vr = Dict(r.label => r.status for r in r2_vmi_rows(up, Set(["I_ENTER"])))
+    @test vr == Dict("I_ENTER" => "done", "A_ADD" => "missing")
+    @test all(==("missing"), values(Dict(r.label => r.status for r in r2_vmi_rows(up, Set{String}()))))      # MUTATION: no marker, no row done
+
+    root = abspath(joinpath(@__DIR__, ".."))
+    res = r2_collect(root, r2_upstream(root))
+    fl = [r for r in res.rows if r.cat == "flag"]
+    @test length(fl) > 50 && any(r -> r.status == "refused", fl) && any(r -> r.status == "done", fl) && any(r -> r.status == "missing", fl)
+    @test count(r -> r.status == "refused", fl) == length(unique(r.key for r in fl if r.status == "refused"))
+    vm = [r for r in res.rows if r.cat == "vmi"]
+    @test length(vm) > 100 && any(r -> r.status == "done", vm) && any(r -> r.status == "missing", vm)
+    @test Dict(r.label => r.status for r in vm)["I_NOP"] == "done"
+end
