@@ -1635,8 +1635,6 @@ function _manifest_index(T)
         # group F (D-0123): callPortray calls Prolog (src/pl-fli.jl)
         (LK.PL_call_predicate, Tuple{GD, LD, Nothing, UInt32, LK.Procedure{T}, Int}, false),
         (LK.pl_sig_atomic1_va, Tuple{LD, Int, Int, LK.control_t{T}}, false),
-        (LK._boot_cleanup!, Tuple{GD}, false),
-        (LK._boot_control!, Tuple{GD}, false),
         (LK._boot_clause!, Tuple{GD, LD, Symbol, Vector{T}, T, UInt64}, false),
         (LK._boot_clause!, Tuple{GD, LD, Symbol, Vector{T}, Nothing, UInt64}, false),
         # V9g-b — the bags: recorded terms (src/pl-rec.jl), findall/3's bag (src/pl-bag.jl), the
@@ -1714,11 +1712,8 @@ function _manifest_index(T)
         (LK._boot_term, Tuple{Symbol, Vector{T}}, false),
         (LK._boot_conj, Tuple{Vector{T}}, false),
         (LK._boot_ite, Tuple{Type{T}, T, T, T}, false),
-        (LK._boot_meta!, Tuple{GD}, false),                         # MOD4
         (LK._boot_cons, Tuple{Type{T}, T, T}, false),
         (LK._boot_vars, Tuple{Type{T}, Int}, false),
-        (LK._boot_length_error, Tuple{Type{T}, T, T}, false),
-        (LK._boot_lists!, Tuple{GD}, false),
         (LK._boot_bags!, Tuple{GD}, false),
         (LK._boot_attvar!, Tuple{GD}, false),                    # boot/attvar.pl's wakeup clauses (AV3)
         (LK._boot_freeze_uhook!, Tuple{GD, LD}, false),          # boot/attvar.pl's uhook(freeze, …), unfreeze/1 (AV7)
@@ -1808,7 +1803,6 @@ function _manifest_index(T)
         (LK._register_tables!, Tuple{GD, Int, typeof(LK._PRED_TABLES)}, false),
         (LK.initBuildIns!, Tuple{GD}, false),
         (LK.setBuiltinPredicateProperties!, Tuple{GD}, false),
-        (LK._boot_catch3!, Tuple{GD}, false),                   # V9f: boot/init.pl's catch/3
         (LK.pl_true, Tuple{LD}, true), (LK.pl_fail, Tuple{LD}, true),   # V9f: true/0, fail/0, $fail/0
         (LK._fcall_va, Tuple{Int, LD, Int, Int, LK.foreign_context{T}}, false),
         (LK._fcall_det, Tuple{Int, LD, Int}, false),

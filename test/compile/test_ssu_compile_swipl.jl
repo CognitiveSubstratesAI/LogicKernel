@@ -15,8 +15,8 @@
 #     counts after a refused assert (a14, a15), and the clause flags.
 #   * Calling an SSU predicate is SSU2's (test/core_lang/test_ssu_swipl.jl); until SSU2 it was refused by name here.
 #   * A clause for a control construct (the last testset): ssu_rows.out a05 (`assertz((d5(X), X > 0 => true))`) and k01
-#     (`assertz((a, b))`) raise swipl's `permission_error(modify, static_procedure, (',')/2)` — parity rows, since the D stack's
-#     `_boot_control!` (src/pl-ext.jl:240, commit 43f1b95) defines `system:','/2` as boot/init.pl does.
+#     (`assertz((a, b))`) raise swipl's `permission_error(modify, static_procedure, (',')/2)` — parity rows, since the D stack
+#     (commit 43f1b95) and, from LB4 b2, the booted boot/init.pl define `system:','/2`.
 using Test, LogicKernel
 const LK = LogicKernel
 
@@ -557,8 +557,8 @@ _su_vm_name(l::String)::String =
 end
 
 # ---- a clause whose head is a control construct (a05, k01): swipl raises permission_error(modify, static_procedure, (',')/2) —
-# `','/2` is a system procedure there. The kernel answers the same since the D stack's `_boot_control!` defines `system:','/2`
-# (`isStaticSystemProcedure` finds it), so the assert path raises it too (src/pl-ext.jl:240, commit 43f1b95). Each row runs in a
+# `','/2` is a system procedure there. The kernel answers the same since boot/init.pl defines `system:','/2` (the D stack's
+# stand-in, commit 43f1b95, until LB4 b2 boots init.pl; `isStaticSystemProcedure` finds it), so the assert path raises it too. Each row runs in a
 # database of its own (k01 first would make `','/2` a normal predicate and a05's SSU clause a permission_error(assert, …)).
 const _SU_PARITY = [
     # (id, goal, swipl 10.1.19's line (ssu_rows.out a05; k01 the same ball))

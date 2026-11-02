@@ -695,7 +695,7 @@ end
 # PORT: pl-attvar.c freeze as pl_dfreeze2_va
 # DIVERGES: positions; the cells from `allocGlobalCells!` (upstream's `gTop += 3` / `+= 4`), allocated
 # before they are written. Upstream's `*goal` (the goal's dereferenced word) is `_link_val_loc!(goal)`:
-# the same word for every goal freeze/2 passes (a `:`-qualified compound, `_boot_attvar!`), a slot's
+# the same word for every goal freeze/2 passes (a `:`-qualified compound, boot/attvar.pl:109-116), a slot's
 # side word its value's own word; an unbound goal (a direct call of the private `'$freeze'/2`) stores
 # a fresh variable (word 0) as upstream's `*goal`; an attributed-variable goal its REFERENCE, where
 # upstream copies the attvar word (a second attvar cell over one list, design §2.3). `gc[1] =

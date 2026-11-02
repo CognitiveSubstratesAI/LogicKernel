@@ -240,7 +240,7 @@ end
     # since V9e-2 the control constructs and call/9 run in a goal clause (test_metacall_control.jl);
     # call/8 is no control: it resolves the PROCEDURE `call/8`, which boot/init.pl defines. Since
     # group F (D-0123: write_term's portray_goal calls call/3) the kernel defines call/2..8 as
-    # init.pl does (src/pl-ext.jl `_boot_cleanup!`), so the R2 checklist's flip is done here: until
+    # init.pl does (a stand-in until LB4 b2 boots init.pl), so the R2 checklist's flip is done here: until
     # then a KNOWN DIFFERENCE pinned exactly (user, 2026-10-13) —
     #   kernel: existence_error(procedure, call/8)        (the old expectation)
     #   swipl 10.1.17: existence_error(procedure, nop/7) — its call/8 runs nop/7 (probed)

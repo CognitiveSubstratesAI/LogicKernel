@@ -2,7 +2,7 @@
 # test/core_lang/test_meta_predicate_swipl.jl — the meta-argument supervisors (pl-supervisor.c `chainPredicateSupervisor`;
 # pl-vmi.c `S_MQUAL`, `S_LMQUAL`), the qualification of an argument (pl-wam.c `m_qualify_argument`), the declarations
 # (pl-proc.c `meta_predicate`, `meta_declaration`, `setMetapredicateMask`, `isTransparentMetamask`, `PL_meta_predicate`) and
-# the stand-ins' declarations (`_boot_meta!`: call/1..8, bagof/setof's `^`):
+# the boot files' declarations (init.pl, bags.pl: call/1..8, bagof/setof's `^`):
 #   * A PROGRAM consulted by the kernel's loader: user's predicates `k*` (one per mask kind), `up/3`, upstream's `m/2`, `m/3`,
 #     `m2/3` (here `mm2/3`), `mq/1`, `kt/2` (two `0` arguments), `pcc/2` (a clause running `'$call_cleanup'`); module `m2`'s callers through directives (assertz/1). Row d00 DECLARES the masks with
 #     meta_predicate/1 at query time, before the first call of any of them (a built supervisor is not reset by a later

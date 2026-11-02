@@ -415,7 +415,7 @@ end
 # PORT: pl-wam.c foreignWakeup
 # DIVERGES: the database is the running query's (`_query_gd`); `*valTermRef(LD->attvar.head)` is the
 # head's PERMANENT cell (`_attvar_head_cell`, see `registerWakeup`), `setVar` writes 0 there and in the
-# tail's; `PROCEDURE_dwakeup1` is `gd.procedures_dwakeup1` (`_boot_attvar!`). Since AV4; until then its
+# tail's; `PROCEDURE_dwakeup1` is `gd.procedures_dwakeup1` (boot/attvar.pl's, loaded at the boot). Since AV4; until then its
 # callers refused a pending wakeup (a `NotPortedError` naming AV4, AV3's stand-in).
 """
     foreignWakeup(ld, ex) -> Bool
@@ -1096,7 +1096,7 @@ end
 
 # PORT: pl-wam.c mustBeCallable
 # (pl-wam.c:920-947 at the pin.) Only `Module:Goal`, as upstream's: since MOD4 the cleanup family's goals
-# reach it qualified by their meta-predicate declarations (boot/init.pl:381-383, `_boot_meta!`; `S_MQUAL`),
+# reach it qualified by their meta-predicate declarations (boot/init.pl:381-383, loaded at the boot; `S_MQUAL`),
 # so MOD2's acceptance of an unqualified goal is gone (test_meta_predicate_swipl.jl a25: a user clause running
 # `'$call_cleanup'` with an unqualified cleanup goal).
 # On the WORDS (f3b-5b): `deRef(p)` and the tests on `*p`, `*ap` are `_deref_loc` and word tests.
