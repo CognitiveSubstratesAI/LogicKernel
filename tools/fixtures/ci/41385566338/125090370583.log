@@ -1,0 +1,88 @@
+# fixture: run 41385566338 (S2a red (static analysis JET, reference), gate/s2a2), job 125090370583 "Verdict table"; failed-step lines only (setup groups, passing [unit] lines, cleanup dropped; ANSI removed)
+2026-11-02T04:14:54.4984818Z Current runner version: '2.338.2'
+2026-11-02T04:14:54.5042765Z Secret source: Actions
+2026-11-02T04:14:54.5043863Z Cache mode: write
+2026-11-02T04:14:54.5044720Z Prepare workflow directory
+2026-11-02T04:14:54.5411654Z Prepare all required actions
+2026-11-02T04:14:54.5458634Z Getting action download info
+2026-11-02T04:14:55.4782878Z Complete job name: Verdict table
+2026-11-02T04:14:55.8223266Z Syncing repository: CognitiveSubstratesAI/LogicKernel
+2026-11-02T04:14:55.8333242Z Temporarily overriding HOME='/home/runner/work/_temp/54921b64-961d-4df4-bd49-7025190c55c7' before making global git config changes
+2026-11-02T04:14:55.8337608Z Adding repository directory to the temporary git global config as a safe directory
+2026-11-02T04:14:55.8385545Z Deleting the contents of '/home/runner/work/LogicKernel/LogicKernel'
+2026-11-02T04:14:56.9455216Z 5aaf169c37b6cd74c86ab268b7fefdd9695aa81f
+2026-11-02T04:14:57.2713226Z Found 14 artifact(s)
+2026-11-02T04:14:57.2714981Z Filtering artifacts by pattern 'evidence-*'
+2026-11-02T04:14:57.2734183Z Preparing to download the following artifacts:
+2026-11-02T04:14:57.2736028Z - evidence-sa-6 (ID: 13115750356, Size: 2649, Expected Digest: sha256:f490c542464221dcc358d0038466baa76308dae6d54a934e752c68343a07869f)
+2026-11-02T04:14:57.2738101Z - evidence-sa-7 (ID: 13115745569, Size: 2650, Expected Digest: sha256:09c888431e6c2b474245725c68a824f2cdb51e9e035e86bd96e361c547abb9b7)
+2026-11-02T04:14:57.2740076Z - evidence-reference-g2 (ID: 13115741266, Size: 3138, Expected Digest: sha256:cbddb4339e52c6453bc63ba517258375cb5f32d3b5047709b21ffca4ecc667b8)
+2026-11-02T04:14:57.2741827Z - evidence-sa-2 (ID: 13115656838, Size: 2649, Expected Digest: sha256:f2d730d8980fc45063e33b5422cc2d74c6beeaea419958b6e27c9860b722bc4f)
+2026-11-02T04:14:57.2743118Z - evidence-alt-g1 (ID: 13115556208, Size: 2990, Expected Digest: sha256:ee5f2711e0e1df8da7eeef3499d76862134719f5cac7e8762cfc149c48507570)
+2026-11-02T04:14:57.2744258Z - evidence-sa-5 (ID: 13115541960, Size: 2650, Expected Digest: sha256:ff7d92fa6bebcfb187e327a2f304f40386f9b57d586c3efa9d749b0b51751530)
+2026-11-02T04:14:57.2745440Z - evidence-reference-g1 (ID: 13115353242, Size: 3125, Expected Digest: sha256:ca74c25608e588bbff958558be66882ab011508d9fddcf5ebcf4ce513235b68d)
+2026-11-02T04:14:57.2746667Z - evidence-sa-8 (ID: 13115344337, Size: 2650, Expected Digest: sha256:273f03cbfe90d1482b22574638489867714d7854925f23a994eecd62d71d41a6)
+2026-11-02T04:14:57.2748124Z - evidence-alt_interned-g2 (ID: 13115322636, Size: 3110, Expected Digest: sha256:7a0e309484510e424a35a2987a021326d895116e1e62ef4ad95dc1b98e20d6c1)
+2026-11-02T04:14:57.2749678Z - evidence-alt-g2 (ID: 13115128842, Size: 3074, Expected Digest: sha256:74f987c9caf56476a6dc4c58f96754da0c785af8581ab3ab9fcf79f281e6a65c)
+2026-11-02T04:14:57.2750850Z - evidence-sa-4 (ID: 13115114400, Size: 2648, Expected Digest: sha256:130504392fc2804e8ad244281735c80629131adfb64ae04fa507eab472a4f481)
+2026-11-02T04:14:57.2752006Z - evidence-alt_interned-g1 (ID: 13115047313, Size: 3052, Expected Digest: sha256:3fdf7c15bb309141a6145a0743dc102ee7e4bce229abfdd1d49fc7af7fc64346)
+2026-11-02T04:14:57.2753248Z - evidence-sa-3 (ID: 13114983013, Size: 2652, Expected Digest: sha256:536ba709d1fc4afa35ad9c4d981e59f428f934bbc45bb72ccdca7b90c1bfcb04)
+2026-11-02T04:14:57.2754363Z - evidence-sa-1 (ID: 13114544367, Size: 2647, Expected Digest: sha256:8e303e567724429ed9047e67d48077b47c336f84c10247cda7a6f9304aa3483d)
+2026-11-02T04:14:57.5667331Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/evidence-out
+2026-11-02T04:14:57.5808991Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/evidence-out
+2026-11-02T04:14:57.5962673Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/evidence-out
+2026-11-02T04:14:57.6023691Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/evidence-out
+2026-11-02T04:14:57.6162617Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/evidence-out
+2026-11-02T04:14:57.6172425Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/evidence-out
+2026-11-02T04:14:57.6199346Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/evidence-out
+2026-11-02T04:14:57.6211056Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/evidence-out
+2026-11-02T04:14:57.6224653Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/evidence-out
+2026-11-02T04:14:57.6253033Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/evidence-out
+2026-11-02T04:14:57.6262510Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/evidence-out
+2026-11-02T04:14:57.6359555Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/evidence-out
+2026-11-02T04:14:57.6406382Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/evidence-out
+2026-11-02T04:14:57.6740743Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/evidence-out
+2026-11-02T04:14:57.7189947Z (node:2095) [DEP0005] DeprecationWarning: Buffer() is deprecated due to security and usability issues. Please use the Buffer.alloc(), Buffer.allocUnsafe(), or Buffer.from() methods instead.
+2026-11-02T04:14:57.7191962Z (Use `node --trace-deprecation ...` to show where the warning was created)
+2026-11-02T04:14:57.8223409Z Total of 14 artifact(s) downloaded
+2026-11-02T04:14:57.8227498Z Download artifact has finished successfully
+2026-11-02T04:14:57.8716578Z ##[notice]charset/test_umap_swipl.jl=4.5;compile/test_analyse_variables_swipl.jl=75.9;compile/test_body_code_swipl.jl=104.6;compile/test_call_operands.jl=51.8;compile/test_compiler_warnings_swipl.jl=11.7;compile/test_decompile.jl=44.9;compile/test_head_code_swipl.jl=10.5;compile/test_portable_smallint_swipl.jl=0.2;compile/test_ssu_compile_swipl.jl=126.7;core_lang/test_acyclic_cells.jl=3.1;core_lang/test_argvar_order_swipl.jl=38.2;core_lang/test_arith_cells.jl=6.0;core_lang/test_arith_swipl.jl=332.1;core_lang/test_assert_cells.jl=7.0;core_lang/test_at_body_swipl.jl=3.5;core_lang/test_atom_table.jl=1.6;core_lang/test_atom_words.jl=0.9;core_lang/test_attvar_store.jl
+2026-11-02T04:14:57.8735219Z ## Evidence — 3 term types × 2 file groups, static analysis × 8
+2026-11-02T04:14:57.8735590Z 
+2026-11-02T04:14:57.8735861Z | job | verdict | time |
+2026-11-02T04:14:57.8736289Z |---|---|---|
+2026-11-02T04:14:57.8736732Z | reference_g1 | **FAILED** | — |
+2026-11-02T04:14:57.8737403Z | reference_g2 | passed | 613 s |
+2026-11-02T04:14:57.8737898Z | alt_g1 | passed | 251 s |
+2026-11-02T04:14:57.8738307Z | alt_g2 | passed | 452 s |
+2026-11-02T04:14:57.8738718Z | alt_interned_g1 | passed | 259 s |
+2026-11-02T04:14:57.8739156Z | alt_interned_g2 | passed | 300 s |
+2026-11-02T04:14:57.8739601Z | sa_1 | **FAILED** | — |
+2026-11-02T04:14:57.8740018Z | sa_2 | **FAILED** | — |
+2026-11-02T04:14:57.8740475Z | sa_3 | **FAILED** | — |
+2026-11-02T04:14:57.8740875Z | sa_4 | **FAILED** | — |
+2026-11-02T04:14:57.8741292Z | sa_5 | **FAILED** | — |
+2026-11-02T04:14:57.8741717Z | sa_6 | **FAILED** | — |
+2026-11-02T04:14:57.8742086Z | sa_7 | **FAILED** | — |
+2026-11-02T04:14:57.8742501Z | sa_8 | **FAILED** | — |
+2026-11-02T04:14:57.8742720Z 
+2026-11-02T04:14:57.8743316Z static analysis: 8 shards; dispatch 3247 of 3247, AllocCheck 760 of 760 entries; 8 parts
+2026-11-02T04:14:57.8743675Z 
+2026-11-02T04:14:57.8744065Z 437 units in the suite: 436 run by the file groups, the static analysis by its 8 shards; 98240 assertions passed (unit_counts.tsv)
+2026-11-02T04:14:57.8744523Z 
+2026-11-02T04:14:57.8745205Z **FAIL: reference_g1: the job did not pass; sa_1: the job did not pass; sa_2: the job did not pass; sa_3: the job did not pass; sa_4: the job did not pass; sa_5: the job did not pass; sa_6: the job did not pass; sa_7: the job did not pass; sa_8: the job did not pass**
+2026-11-02T04:14:57.8749486Z ##[error]FAIL: reference_g1: the job did not pass; sa_1: the job did not pass; sa_2: the job did not pass; sa_3: the job did not pass; sa_4: the job did not pass; sa_5: the job did not pass; sa_6: the job did not pass; sa_7: the job did not pass; sa_8: the job did not pass
+2026-11-02T04:14:57.8754138Z ##[notice]static analysis: 8 shards; dispatch 3247 of 3247, AllocCheck 760 of 760 entries; 8 parts 437 units in the suite: 436 run by the file groups, the static analysis by its 8 shards; 98240 assertions passed (unit_counts.tsv)
+2026-11-02T04:14:57.8761705Z ##[error]Process completed with exit code 1.
+2026-11-02T04:14:58.0057450Z Multiple search paths detected. Calculating the least common ancestor of all paths
+2026-11-02T04:14:58.0059777Z The least common ancestor is /home/runner/work/LogicKernel/LogicKernel/evidence-out. This will be the root directory of the artifact
+2026-11-02T04:14:58.0061343Z With the provided path, there will be 2 files uploaded
+2026-11-02T04:14:58.0064454Z Artifact name is valid!
+2026-11-02T04:14:58.0065690Z Root directory input is valid!
+2026-11-02T04:14:58.2774533Z Uploading artifact: unit-costs.zip
+2026-11-02T04:14:58.2807055Z Beginning upload of artifact content to blob storage
+2026-11-02T04:14:58.4571174Z Uploaded bytes 6241
+2026-11-02T04:14:58.4992548Z Finished uploading artifact content to blob storage!
+2026-11-02T04:14:58.4994956Z Finalizing artifact upload
+2026-11-02T04:14:59.0734088Z Artifact unit-costs successfully finalized. Artifact ID 13115911175
+2026-11-02T04:14:59.0735063Z Artifact unit-costs has been successfully uploaded! Final size is 6241 bytes. Artifact ID is 13115911175

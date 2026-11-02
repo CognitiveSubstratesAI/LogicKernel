@@ -1,0 +1,43 @@
+# fixture: run 41389618471 (S2a red (Tooling), gate/s2a2), job 125103420691 "Tooling suites (warm lane, evidence, oracle cache)"; failed-step lines only (setup groups, passing [unit] lines, cleanup dropped; ANSI removed)
+2026-11-02T04:59:26.9115558Z Current runner version: '2.338.2'
+2026-11-02T04:59:26.9161472Z Secret source: Actions
+2026-11-02T04:59:26.9162401Z Cache mode: write
+2026-11-02T04:59:26.9163121Z Prepare workflow directory
+2026-11-02T04:59:26.9541540Z Prepare all required actions
+2026-11-02T04:59:26.9590302Z Getting action download info
+2026-11-02T04:59:28.0917064Z Complete job name: Tooling suites (warm lane, evidence, oracle cache)
+2026-11-02T04:59:28.4322182Z Syncing repository: CognitiveSubstratesAI/LogicKernel
+2026-11-02T04:59:28.4453693Z Temporarily overriding HOME='/home/runner/work/_temp/24486f40-e9c2-40f0-9d6a-6c7b101ca7f5' before making global git config changes
+2026-11-02T04:59:28.4456800Z Adding repository directory to the temporary git global config as a safe directory
+2026-11-02T04:59:28.4508595Z Deleting the contents of '/home/runner/work/LogicKernel/LogicKernel'
+2026-11-02T04:59:29.7739941Z b36a947486cd78727bed206f091273df90404258
+2026-11-02T04:59:30.1798133Z Found 9 artifact(s)
+2026-11-02T04:59:30.1801919Z Filtering artifacts by pattern 'warm-*'
+2026-11-02T04:59:30.1820554Z Preparing to download the following artifacts:
+2026-11-02T04:59:30.1825442Z - warm-stale (ID: 13117481271, Size: 646, Expected Digest: sha256:0713b9d6b8d9e18da35537915b475c665564c90b65eb784a0cbea262bba456de)
+2026-11-02T04:59:30.1832536Z - warm-fast (ID: 13117420633, Size: 861, Expected Digest: sha256:84e983a046f1976c436f3725461e233ee84bb13288da7d5853c88c1a9eafbee9)
+2026-11-02T04:59:30.1838885Z - warm-light (ID: 13117007505, Size: 3901, Expected Digest: sha256:2e5617fead25eaa4dc744b08c5712b5f05b44e22eaac78b851547a2a867d79fa)
+2026-11-02T04:59:30.1845211Z - warm-main (ID: 13116844000, Size: 1973, Expected Digest: sha256:6887f64eb0c624b9751440df443aa04f03607a4dacc0ce48a8368d1d3273182f)
+2026-11-02T04:59:30.6357317Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/warm-out
+2026-11-02T04:59:30.6365959Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/warm-out
+2026-11-02T04:59:30.6412994Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/warm-out
+2026-11-02T04:59:30.6605767Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/warm-out
+2026-11-02T04:59:30.8338203Z (node:2107) [DEP0005] DeprecationWarning: Buffer() is deprecated due to security and usability issues. Please use the Buffer.alloc(), Buffer.allocUnsafe(), or Buffer.from() methods instead.
+2026-11-02T04:59:30.8340241Z (Use `node --trace-deprecation ...` to show where the warning was created)
+2026-11-02T04:59:30.9369975Z Total of 4 artifact(s) downloaded
+2026-11-02T04:59:30.9376131Z Download artifact has finished successfully
+2026-11-02T04:59:30.9773448Z ## Tooling suites — 4 shards of tools/test_warm.sh
+2026-11-02T04:59:30.9773988Z 
+2026-11-02T04:59:30.9774179Z | job | verdict | time |
+2026-11-02T04:59:30.9774877Z |---|---|---|
+2026-11-02T04:59:30.9775257Z | main | **FAILED** | 64 passed |
+2026-11-02T04:59:30.9775781Z | stale | **FAILED** | 12 passed |
+2026-11-02T04:59:30.9776290Z | fast | **FAILED** | 27 passed |
+2026-11-02T04:59:30.9776796Z | light | passed | 220 passed |
+2026-11-02T04:59:30.9777115Z 
+2026-11-02T04:59:30.9777529Z 4 shards, 323 cases passed (main=64, stale=12, fast=27, light=220; the whole run: 330)
+2026-11-02T04:59:30.9778122Z 
+2026-11-02T04:59:30.9779192Z **FAIL: shard main: 3 case(s) failed; shard stale: 2 case(s) failed; shard fast: 2 case(s) failed; the shards passed 323 cases, the whole run passes 330 (tools/test_warm_shards.tsv `total`)**
+2026-11-02T04:59:30.9809543Z ##[error]FAIL: shard main: 3 case(s) failed; shard stale: 2 case(s) failed; shard fast: 2 case(s) failed; the shards passed 323 cases, the whole run passes 330 (tools/test_warm_shards.tsv `total`)
+2026-11-02T04:59:30.9821975Z ##[notice]4 shards, 323 cases passed (main=64, stale=12, fast=27, light=220; the whole run: 330)
+2026-11-02T04:59:30.9826782Z ##[error]Process completed with exit code 1.

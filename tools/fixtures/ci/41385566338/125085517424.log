@@ -1,0 +1,237 @@
+# fixture: run 41385566338 (S2a red (static analysis JET, reference), gate/s2a2), job 125085517424 "static analysis 7/8"; failed-step lines only (setup groups, passing [unit] lines, cleanup dropped; ANSI removed)
+2026-11-02T03:54:39.6412397Z Current runner version: '2.338.2'
+2026-11-02T03:54:39.6461455Z Secret source: Actions
+2026-11-02T03:54:39.6462519Z Cache mode: write
+2026-11-02T03:54:39.6463486Z Prepare workflow directory
+2026-11-02T03:54:39.7030016Z Prepare all required actions
+2026-11-02T03:54:39.7080162Z Getting action download info
+2026-11-02T03:54:41.1467667Z Complete job name: static analysis 7/8
+2026-11-02T03:54:41.5607011Z Syncing repository: CognitiveSubstratesAI/LogicKernel
+2026-11-02T03:54:41.5743400Z Temporarily overriding HOME='/home/runner/work/_temp/6c9361d4-1be7-4ba6-a834-22358436dd0a' before making global git config changes
+2026-11-02T03:54:41.5745447Z Adding repository directory to the temporary git global config as a safe directory
+2026-11-02T03:54:41.5813847Z Deleting the contents of '/home/runner/work/LogicKernel/LogicKernel'
+2026-11-02T03:54:42.8111427Z 5aaf169c37b6cd74c86ab268b7fefdd9695aa81f
+2026-11-02T03:54:51.4631517Z julia version 1.13.3
+2026-11-02T03:54:51.6500874Z Using depot path: /home/runner/.julia
+2026-11-02T03:54:51.6511882Z Cache key: julia-cache;workflow=Evidence (three term types);job=static_analysis;os=Linux;shard=7;run_id=41385566338;run_attempt=1
+2026-11-02T03:54:51.6513656Z Restore key: julia-cache;workflow=Evidence (three term types);job=static_analysis;os=Linux;shard=7;
+2026-11-02T03:54:51.6547079Z (node:2358) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+2026-11-02T03:54:51.6548476Z (Use `node --trace-deprecation ...` to show where the warning was created)
+2026-11-02T03:54:51.9173019Z Cache hit for restore-key: julia-cache;workflow=Evidence (three term types);job=static_analysis;os=Linux;shard=7;run_id=41292399723;run_attempt=1
+2026-11-02T03:54:53.1951920Z Received 29360128 of 81787081 (35.9%), 28.0 MBs/sec
+2026-11-02T03:54:53.6257713Z Received 81787081 of 81787081 (100.0%), 54.5 MBs/sec
+2026-11-02T03:54:53.6260624Z Cache Size: ~78 MB (81787081 B)
+2026-11-02T03:54:54.2575725Z Cache restored successfully
+2026-11-02T03:54:54.2616622Z Cache restored from key: julia-cache;workflow=Evidence (three term types);job=static_analysis;os=Linux;shard=7;run_id=41292399723;run_attempt=1
+2026-11-02T03:54:54.2804481Z 22M	/home/runner/.julia/artifacts
+2026-11-02T03:54:54.2811329Z 277M	/home/runner/.julia/compiled
+2026-11-02T03:54:54.2812113Z 12K	/home/runner/.julia/logs
+2026-11-02T03:54:54.2927969Z 27M	/home/runner/.julia/packages
+2026-11-02T03:54:54.2929343Z 7.5M	/home/runner/.julia/registries
+2026-11-02T03:54:54.2930539Z 16K	/home/runner/.julia/scratchspaces
+2026-11-02T03:54:54.2931765Z 333M	total
+2026-11-02T03:54:54.2938261Z Registries directory exists and is non-empty. Updating any registries
+2026-11-02T03:54:55.5720990Z     Updating registry at `~/.julia/registries/General.toml`
+2026-11-02T03:54:56.8819226Z      Cloning git-repo `https://github.com/JuliaDebug/LoweredCodeUtils.jl`
+2026-11-02T03:54:57.5651539Z     Updating git-repo `https://github.com/JuliaDebug/LoweredCodeUtils.jl`
+2026-11-02T03:54:57.9341687Z      Cloning git-repo `https://github.com/aviatesk/JET.jl`
+2026-11-02T03:55:01.4843485Z     Updating git-repo `https://github.com/aviatesk/JET.jl`
+2026-11-02T03:55:02.3352397Z      Cloning git-repo `https://github.com/JuliaTesting/Aqua.jl`
+2026-11-02T03:55:02.9435199Z     Updating git-repo `https://github.com/JuliaTesting/Aqua.jl`
+2026-11-02T03:55:03.6767210Z    Resolving package versions...
+2026-11-02T03:55:06.2883014Z     Updating `~/.julia/environments/v1.13/Project.toml`
+2026-11-02T03:55:06.2896787Z   [9b6a8646] + AllocCheck v0.2.7
+2026-11-02T03:55:06.2897929Z   [4c88cf16] + Aqua v1.0.0-DEV `https://github.com/JuliaTesting/Aqua.jl#master`
+2026-11-02T03:55:06.2899154Z   [c3a54625] + JET v0.13.1 `https://github.com/aviatesk/JET.jl#master`
+2026-11-02T03:55:06.2900155Z   [6f1432cf] + LoweredCodeUtils v3.10.2 `https://github.com/JuliaDebug/LoweredCodeUtils.jl#master`
+2026-11-02T03:55:06.2901008Z     Updating `~/.julia/environments/v1.13/Manifest.toml`
+2026-11-02T03:55:06.5456749Z   [9b6a8646] + AllocCheck v0.2.7
+2026-11-02T03:55:06.5457785Z   [4c88cf16] + Aqua v1.0.0-DEV `https://github.com/JuliaTesting/Aqua.jl#master`
+2026-11-02T03:55:06.5459379Z ⌅ [fa961155] + CEnum v0.5.0
+2026-11-02T03:55:06.5459993Z   [da1fd8a2] + CodeTracking v3.0.2
+2026-11-02T03:55:06.5460688Z   [807dbc54] + Compiler v0.1.1
+2026-11-02T03:55:06.5461269Z   [9db33cc3] + CompilerCaching v0.5.1
+2026-11-02T03:55:06.5461664Z   [e2ba6199] + ExprTools v0.1.11
+2026-11-02T03:55:06.5462111Z ⌃ [61eb1bfa] + GPUCompiler v2.10.0
+2026-11-02T03:55:06.5462552Z   [076d061b] + HashArrayMappedTries v0.2.0
+2026-11-02T03:55:06.5463109Z   [c3a54625] + JET v0.13.1 `https://github.com/aviatesk/JET.jl#master`
+2026-11-02T03:55:06.5463651Z   [692b3bcd] + JLLWrappers v1.8.0
+2026-11-02T03:55:06.5464054Z   [aa1ae85d] + JuliaInterpreter v0.12.2
+2026-11-02T03:55:06.5464444Z   [70703baa] + JuliaSyntax v1.0.2
+2026-11-02T03:55:06.5464850Z ⌅ [929cbde3] + LLVM v9.13.2
+2026-11-02T03:55:06.5465194Z   [11f193de] + LMDB v3.0.1
+2026-11-02T03:55:06.5465809Z   [6f1432cf] + LoweredCodeUtils v3.10.2 `https://github.com/JuliaDebug/LoweredCodeUtils.jl#master`
+2026-11-02T03:55:06.5466493Z   [1914dd2f] + MacroTools v0.5.16
+2026-11-02T03:55:06.5466875Z   [bac558e1] + OrderedCollections v2.0.3
+2026-11-02T03:55:06.5467296Z   [aea7be01] + PrecompileTools v1.3.4
+2026-11-02T03:55:06.5467989Z   [21216c6a] + Preferences v1.6.1
+2026-11-02T03:55:06.5468634Z   [295af30f] + Revise v3.18.0
+2026-11-02T03:55:06.5469432Z   [7e506255] + ScopedValues v1.6.2
+2026-11-02T03:55:06.5470049Z   [6c6a2e73] + Scratch v1.3.0
+2026-11-02T03:55:06.5471156Z   [e689c965] + Tracy v0.1.6
+2026-11-02T03:55:06.5471632Z ⌅ [dad2f222] + LLVMExtra_jll v0.0.47+0
+2026-11-02T03:55:06.5472036Z   [6206cf0b] + LMDB_jll v1.0.3+0
+2026-11-02T03:55:06.5472818Z   [ad6e5548] + LibTracyClient_jll v0.13.1+0
+2026-11-02T03:55:06.5473254Z   [8b5cbfcf] + tree_sitter_gcn_jll v0.1.0+0
+2026-11-02T03:55:06.5473685Z   [44208993] + tree_sitter_llvm_jll v1.1.0+0
+2026-11-02T03:55:06.5474094Z   [71e3f6e6] + tree_sitter_ptx_jll v0.1.0+0
+2026-11-02T03:55:06.5474406Z   [f0e86581] + tree_sitter_spirv_jll v0.1.0+0
+2026-11-02T03:55:06.5474706Z   [0dad84c5] + ArgTools v1.1.2
+2026-11-02T03:55:06.5475197Z   [56f22d72] + Artifacts v1.11.0
+2026-11-02T03:55:06.5475746Z   [2a0f44e3] + Base64 v1.11.0
+2026-11-02T03:55:06.5476237Z   [8bf52ea8] + CRC32c v1.11.0
+2026-11-02T03:55:06.5476888Z   [ade2ca70] + Dates v1.11.0
+2026-11-02T03:55:06.5479607Z   [f43a241f] + Downloads v1.7.0
+2026-11-02T03:55:06.5481493Z   [7b1f6079] + FileWatching v1.11.0
+2026-11-02T03:55:06.5482112Z   [b77e0a4c] + InteractiveUtils v1.11.0
+2026-11-02T03:55:06.5483726Z   [ac6e5ff7] + JuliaSyntaxHighlighting v1.12.0
+2026-11-02T03:55:06.5484325Z   [4af54fe1] + LazyArtifacts v1.11.0
+2026-11-02T03:55:06.5485763Z   [b27032c2] + LibCURL v1.0.0
+2026-11-02T03:55:06.5488266Z   [76f85450] + LibGit2 v1.11.0
+2026-11-02T03:55:06.5490280Z   [8f399da3] + Libdl v1.11.0
+2026-11-02T03:55:06.5492405Z   [56ddb016] + Logging v1.11.0
+2026-11-02T03:55:06.5494432Z   [d6f4376e] + Markdown v1.11.0
+2026-11-02T03:55:06.5496513Z   [ca575930] + NetworkOptions v1.3.0
+2026-11-02T03:55:06.5498515Z   [44cfe95a] + Pkg v1.13.0
+2026-11-02T03:55:06.5500824Z   [de0858da] + Printf v1.11.0
+2026-11-02T03:55:06.5501410Z   [3fa0cd96] + REPL v1.11.0
+2026-11-02T03:55:06.5502723Z   [9a3f8284] + Random v1.11.0
+2026-11-02T03:55:06.5504136Z   [ea8e919c] + SHA v1.0.0
+2026-11-02T03:55:06.5504670Z   [9e88b42a] + Serialization v1.11.0
+2026-11-02T03:55:06.5505627Z   [6462fe0b] + Sockets v1.11.0
+2026-11-02T03:55:06.5506894Z   [f489334b] + StyledStrings v1.11.0
+2026-11-02T03:55:06.5509172Z   [fa267f1f] + TOML v1.0.3
+2026-11-02T03:55:06.5511039Z   [a4e569a6] + Tar v1.10.0
+2026-11-02T03:55:06.5511500Z   [8dfed614] + Test v1.11.0
+2026-11-02T03:55:06.5512896Z   [cf7118a7] + UUIDs v1.11.0
+2026-11-02T03:55:06.5513357Z   [4ec0a83e] + Unicode v1.11.0
+2026-11-02T03:55:06.5513903Z   [e66e0078] + CompilerSupportLibraries_jll v1.5.5+2
+2026-11-02T03:55:06.5515209Z   [deac9b47] + LibCURL_jll v8.22.0+0
+2026-11-02T03:55:06.5517332Z   [e37daf67] + LibGit2_jll v1.9.7+0
+2026-11-02T03:55:06.5519392Z   [29816b5a] + LibSSH2_jll v1.11.104+0
+2026-11-02T03:55:06.5521368Z   [14a3606d] + MozillaCACerts_jll v2026.10.20
+2026-11-02T03:55:06.5522994Z   [458c3c95] + OpenSSL_jll v3.5.8+0
+2026-11-02T03:55:06.5525163Z   [efcefdf7] + PCRE2_jll v10.47.0+0
+2026-11-02T03:55:06.5526941Z   [83775a58] + Zlib_jll v1.3.2+0
+2026-11-02T03:55:06.5528791Z   [3161d3a3] + Zstd_jll v1.5.7+1
+2026-11-02T03:55:06.5531046Z   [8e850ede] + nghttp2_jll v1.70.0+0
+2026-11-02T03:55:06.5532664Z   [3f19e933] + p7zip_jll v17.8.3+0
+2026-11-02T03:55:06.5557985Z         Info Packages marked with ⌃ and ⌅ have new versions available. Those with ⌃ may be upgradable, but those with ⌅ are restricted by compatibility constraints from upgrading. To see why use `status --outdated -m`
+2026-11-02T03:55:06.8681277Z Precompiling packages...
+2026-11-02T03:55:07.4610679Z    0.6 s  ✓ HashArrayMappedTries
+2026-11-02T03:55:07.5830507Z    0.7 s  ✓ CEnum
+2026-11-02T03:55:08.1680312Z    0.7 s  ✓ ExprTools
+2026-11-02T03:55:08.3390792Z    1.5 s  ✓ OrderedCollections
+2026-11-02T03:55:08.9070843Z    1.3 s  ✓ Compiler
+2026-11-02T03:55:09.0610454Z    0.8 s  ✓ Scratch
+2026-11-02T03:55:09.6440589Z    0.6 s  ✓ ScopedValues
+2026-11-02T03:55:09.8390402Z    1.5 s  ✓ Preferences
+2026-11-02T03:55:10.4299940Z    1.5 s  ✓ CodeTracking
+2026-11-02T03:55:10.6570903Z    3.8 s  ✓ MacroTools
+2026-11-02T03:55:10.9171034Z    1.1 s  ✓ PrecompileTools
+2026-11-02T03:55:11.1108742Z    1.3 s  ✓ JLLWrappers
+2026-11-02T03:55:12.3140593Z    1.2 s  ✓ LibTracyClient_jll
+2026-11-02T03:55:13.4500888Z    1.1 s  ✓ tree_sitter_ptx_jll
+2026-11-02T03:55:13.4680562Z    2.3 s  ✓ LLVMExtra_jll
+2026-11-02T03:55:15.0290674Z    1.6 s  ✓ tree_sitter_gcn_jll
+2026-11-02T03:55:15.0480389Z    1.6 s  ✓ tree_sitter_llvm_jll
+2026-11-02T03:55:16.3130431Z    1.3 s  ✓ tree_sitter_spirv_jll
+2026-11-02T03:55:16.9530558Z    1.9 s  ✓ LMDB_jll
+2026-11-02T03:55:17.7320538Z    1.4 s  ✓ Tracy
+2026-11-02T03:55:20.1420425Z    2.4 s  ✓ LMDB
+2026-11-02T03:55:22.2560317Z    2.1 s  ✓ CompilerCaching
+2026-11-02T03:55:30.7490857Z   19.8 s  ✓ Aqua
+2026-11-02T03:55:32.3454774Z   21.9 s  ✓ JuliaInterpreter
+2026-11-02T03:55:34.2944338Z   17.3 s  ✓ LLVM
+2026-11-02T03:55:39.0062501Z   32.1 s  ✓ JuliaSyntax
+2026-11-02T03:55:45.7483373Z   13.4 s  ✓ LoweredCodeUtils
+2026-11-02T03:56:02.0914172Z   16.3 s  ✓ Revise
+2026-11-02T03:56:30.3738777Z   56.1 s  ✓ GPUCompiler
+2026-11-02T03:56:32.1685071Z    1.8 s  ✓ AllocCheck
+2026-11-02T03:57:00.0789078Z   58.0 s  ✓ JET
+2026-11-02T03:57:00.0789900Z   31 dependencies successfully precompiled in 113 seconds. 35 already precompiled.
+2026-11-02T03:57:01.6013301Z     Updating registry at `~/.julia/registries/General.toml`
+2026-11-02T03:57:01.6780338Z     Updating `~/work/LogicKernel/LogicKernel/Project.toml`
+2026-11-02T03:57:01.6781735Z   [aea7be01] + PrecompileTools v1.3.4
+2026-11-02T03:57:01.6782766Z     Updating `~/work/LogicKernel/LogicKernel/Manifest.toml`
+2026-11-02T03:57:01.6787718Z   [aea7be01] + PrecompileTools v1.3.4
+2026-11-02T03:57:01.6788579Z   [21216c6a] + Preferences v1.6.1
+2026-11-02T03:57:01.6790871Z   [ade2ca70] + Dates v1.11.0
+2026-11-02T03:57:01.6792349Z   [de0858da] + Printf v1.11.0
+2026-11-02T03:57:01.6794006Z   [fa267f1f] + TOML v1.0.3
+2026-11-02T03:57:01.6794710Z   [4ec0a83e] + Unicode v1.11.0
+2026-11-02T03:57:01.7290891Z Precompiling packages...
+2026-11-02T03:58:21.3076270Z   79.6 s  ✓ LogicKernel
+2026-11-02T03:58:21.3077439Z   1 dependency successfully precompiled in 80 seconds. 6 already precompiled.
+2026-11-02T03:58:24.1705254Z   term types: all — every term-generic file on every implementation
+2026-11-02T03:58:24.2097621Z   CI slice: static analysis shard 7/8 — 1 of 437 units
+2026-11-02T03:58:24.2587066Z   test/charset: 1 file(s)
+2026-11-02T03:58:24.2587653Z   test/compile: 8 file(s)
+2026-11-02T03:58:24.2588632Z   test/core_lang: 97 file(s)
+2026-11-02T03:58:24.2589301Z   test/core_text: 13 file(s)
+2026-11-02T03:58:24.2589761Z   test/db: 16 file(s)
+2026-11-02T03:58:24.2599990Z   test/files: 4 file(s)
+2026-11-02T03:58:24.2600702Z   test/foreign: 6 file(s)
+2026-11-02T03:58:24.2601326Z   test/rational: 1 file(s)
+2026-11-02T04:01:31.6782298Z JET: zero runtime dispatch on every manifest entry (this shard's): JET-test failed at /home/runner/.julia/packages/JET/3S6te/src/JETBase.jl:1382
+2026-11-02T04:01:33.7665243Z   Expression: (JET.report_opt)(Core.kwcall, Tuple{@NamedTuple{limit::Int64}, typeof(query_answers), LogicKernel.PL_local_data{DefaultTerm}, DefaultTerm}; target_modules = (LogicKernel,))
+2026-11-02T04:01:34.2756940Z   ═════ 2 possible errors found ═════
+2026-11-02T04:01:34.2759874Z   ┌ kwcall(::@NamedTuple{…}, ::typeof(query_answers), db::LogicKernel.PL_local_data{…}, goal::DefaultTerm) @ LogicKernel /home/runner/work/LogicKernel/LogicKernel/src/pl-wam.jl:919
+2026-11-02T04:01:34.2762380Z   │┌ query_answers(db::LogicKernel.PL_local_data{DefaultTerm}, goal::DefaultTerm; limit::Int64) @ LogicKernel /home/runner/work/LogicKernel/LogicKernel/src/pl-wam.jl:951
+2026-11-02T04:01:34.2764973Z   ││┌ _fcall_va(i::Int64, ld::LogicKernel.PL_local_data{…}, h0::Int64, ac::Int64, ctx::LogicKernel.foreign_context{…}) @ LogicKernel /home/runner/work/LogicKernel/LogicKernel/src/pl-ext.jl:977
+2026-11-02T04:01:34.2767797Z   │││┌ pl_dstream_property2_va(ld::LogicKernel.PL_local_data{…}, PL__t0::Int64, PL__ac::Int64, PL__ctx::LogicKernel.foreign_context{…}) @ LogicKernel /home/runner/work/LogicKernel/LogicKernel/src/os/pl-file.jl:2107
+2026-11-02T04:01:34.2770932Z   ││││┌ _call_stream_property(ld::LogicKernel.PL_local_data{…}, s::LogicKernel.IOSTREAM, p::LogicKernel.sprop, a1::Int64) @ LogicKernel /home/runner/work/LogicKernel/LogicKernel/src/os/pl-file.jl:2089
+2026-11-02T04:01:34.2772692Z   │││││ runtime dispatch detected: %4::Function(ld::LogicKernel.PL_local_data{DefaultTerm}, s::LogicKernel.IOSTREAM)::Any
+2026-11-02T04:01:34.2774281Z   ││││└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+2026-11-02T04:01:34.2775921Z   ││││┌ _call_stream_property(ld::LogicKernel.PL_local_data{…}, s::LogicKernel.IOSTREAM, p::LogicKernel.sprop, a1::Int64) @ LogicKernel /home/runner/work/LogicKernel/LogicKernel/src/os/pl-file.jl:2090
+2026-11-02T04:01:34.2777717Z   │││││ runtime dispatch detected: %10::Function(ld::LogicKernel.PL_local_data{DefaultTerm}, s::LogicKernel.IOSTREAM, a1::Int64)::Any
+2026-11-02T04:01:34.2779620Z   └┴┴┴┴──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+2026-11-02T04:01:34.2780284Z   
+2026-11-02T04:01:35.7015056Z JET: zero runtime dispatch on every manifest entry (this shard's): JET-test failed at /home/runner/.julia/packages/JET/3S6te/src/JETBase.jl:1382
+2026-11-02T04:01:35.7026472Z   Expression: (JET.report_opt)(LogicKernel._fcall_va, Tuple{Int64, LogicKernel.PL_local_data{DefaultTerm}, Int64, Int64, LogicKernel.foreign_context{DefaultTerm}}; target_modules = (LogicKernel,))
+2026-11-02T04:01:35.7048607Z   ═════ 2 possible errors found ═════
+2026-11-02T04:01:35.7050679Z   ┌ _fcall_va(i::Int64, ld::LogicKernel.PL_local_data{…}, h0::Int64, ac::Int64, ctx::LogicKernel.foreign_context{…}) @ LogicKernel /home/runner/work/LogicKernel/LogicKernel/src/pl-ext.jl:977
+2026-11-02T04:01:35.7053214Z   │┌ pl_dstream_property2_va(ld::LogicKernel.PL_local_data{…}, PL__t0::Int64, PL__ac::Int64, PL__ctx::LogicKernel.foreign_context{…}) @ LogicKernel /home/runner/work/LogicKernel/LogicKernel/src/os/pl-file.jl:2107
+2026-11-02T04:01:35.7055754Z   ││┌ _call_stream_property(ld::LogicKernel.PL_local_data{…}, s::LogicKernel.IOSTREAM, p::LogicKernel.sprop, a1::Int64) @ LogicKernel /home/runner/work/LogicKernel/LogicKernel/src/os/pl-file.jl:2089
+2026-11-02T04:01:35.7057944Z   │││ runtime dispatch detected: %4::Function(ld::LogicKernel.PL_local_data{DefaultTerm}, s::LogicKernel.IOSTREAM)::Any
+2026-11-02T04:01:35.7060113Z   ││└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+2026-11-02T04:01:35.7062153Z   ││┌ _call_stream_property(ld::LogicKernel.PL_local_data{…}, s::LogicKernel.IOSTREAM, p::LogicKernel.sprop, a1::Int64) @ LogicKernel /home/runner/work/LogicKernel/LogicKernel/src/os/pl-file.jl:2090
+2026-11-02T04:01:35.7064407Z   │││ runtime dispatch detected: %10::Function(ld::LogicKernel.PL_local_data{DefaultTerm}, s::LogicKernel.IOSTREAM, a1::Int64)::Any
+2026-11-02T04:01:35.7066046Z   └┴┴──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+2026-11-02T04:01:35.7066841Z   
+2026-11-02T04:01:36.2334634Z JET: zero runtime dispatch on every manifest entry (this shard's): JET-test failed at /home/runner/.julia/packages/JET/3S6te/src/JETBase.jl:1382
+2026-11-02T04:01:36.2347024Z   Expression: (JET.report_opt)(LogicKernel.pl_dstream_property2_va, Tuple{LogicKernel.PL_local_data{Term{Float64}}, Int64, Int64, LogicKernel.foreign_context{Term{Float64}}}; target_modules = (LogicKernel,))
+2026-11-02T04:01:36.2819912Z   ═════ 2 possible errors found ═════
+2026-11-02T04:01:36.2823020Z   ┌ pl_dstream_property2_va(ld::LogicKernel.PL_local_data{…}, PL__t0::Int64, PL__ac::Int64, PL__ctx::LogicKernel.foreign_context{…}) @ LogicKernel /home/runner/work/LogicKernel/LogicKernel/src/os/pl-file.jl:2107
+2026-11-02T04:01:36.2826460Z   │┌ _call_stream_property(ld::LogicKernel.PL_local_data{Term{…}}, s::LogicKernel.IOSTREAM, p::LogicKernel.sprop, a1::Int64) @ LogicKernel /home/runner/work/LogicKernel/LogicKernel/src/os/pl-file.jl:2089
+2026-11-02T04:01:36.2828783Z   ││ runtime dispatch detected: %4::Function(ld::LogicKernel.PL_local_data{Term{Float64}}, s::LogicKernel.IOSTREAM)::Any
+2026-11-02T04:01:36.2830504Z   │└────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+2026-11-02T04:01:36.2832546Z   │┌ _call_stream_property(ld::LogicKernel.PL_local_data{Term{…}}, s::LogicKernel.IOSTREAM, p::LogicKernel.sprop, a1::Int64) @ LogicKernel /home/runner/work/LogicKernel/LogicKernel/src/os/pl-file.jl:2090
+2026-11-02T04:01:36.2834821Z   ││ runtime dispatch detected: %10::Function(ld::LogicKernel.PL_local_data{Term{Float64}}, s::LogicKernel.IOSTREAM, a1::Int64)::Any
+2026-11-02T04:01:36.2836461Z   └┴────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+2026-11-02T04:01:36.2837258Z   
+2026-11-02T04:03:05.3796279Z ##[notice]RAN — JET 0.13.1, Aqua 1.0.0-DEV, AllocCheck 0.2.7
+2026-11-02T04:03:05.5799978Z   AltTerm: (compounds_plain = 0, compounds_interned = 0, shared = 0)
+2026-11-02T04:03:05.8402609Z Test Summary:                                                                    | Pass  Fail  Total     Time
+2026-11-02T04:03:05.8404144Z LogicKernel                                                                      |  604     3    607  4m41.4s
+2026-11-02T04:03:05.8405703Z   discovery found the package-level files                                        |    2            2     0.0s
+2026-11-02T04:03:05.8406856Z   discovery found the term-generic files                                         |    4            4     0.1s
+2026-11-02T04:03:05.8407899Z   test_static_analysis.jl                                                        |  595     3    598  4m40.7s
+2026-11-02T04:03:05.8409116Z     static analysis                                                              |  594     3    597  3m54.2s
+2026-11-02T04:03:05.8410297Z       JET: zero runtime dispatch on every manifest entry (this shard's)          |  405     3    408  2m27.2s
+2026-11-02T04:03:05.8411567Z       AllocCheck: entries marked allocation-free allocate nothing (this shard's) |   97           97    12.3s
+2026-11-02T04:03:05.8412810Z       AllocCheck: the call path's labels allocate nothing                        |   92           92  1m14.7s
+2026-11-02T04:03:05.8414010Z   the second implementation was exercised, plain and sharing                     |    3            3     0.0s
+2026-11-02T04:03:06.2442217Z ERROR: LoadError: Some tests did not pass: 604 passed, 3 failed, 0 errored, 0 broken.
+2026-11-02T04:03:06.2443666Z in expression starting at /home/runner/work/LogicKernel/LogicKernel/test/runtests.jl:318
+2026-11-02T04:03:06.4013970Z ##[error]Process completed with exit code 1.
+2026-11-02T04:03:06.5881389Z With the provided path, there will be 3 files uploaded
+2026-11-02T04:03:06.5889677Z Artifact name is valid!
+2026-11-02T04:03:06.5898213Z Root directory input is valid!
+2026-11-02T04:03:06.9747086Z Uploading artifact: evidence-sa-7.zip
+2026-11-02T04:03:06.9788716Z Beginning upload of artifact content to blob storage
+2026-11-02T04:03:07.2849699Z Uploaded bytes 2650
+2026-11-02T04:03:07.3561456Z Finished uploading artifact content to blob storage!
+2026-11-02T04:03:07.3564675Z Finalizing artifact upload
+2026-11-02T04:03:07.9980097Z Artifact evidence-sa-7 successfully finalized. Artifact ID 13115745569
+2026-11-02T04:03:07.9982444Z Artifact evidence-sa-7 has been successfully uploaded! Final size is 2650 bytes. Artifact ID is 13115745569

@@ -23,6 +23,8 @@ docs/build/
 # Benchmark outputs
 bench/results/
 *.log
+# the saved CI answers the tools tests read offline (tools/fixtures/ci/<run>/<job>.log)
+!/tools/fixtures/ci/**/*.log
 
 # Editors / OS
 .vscode/

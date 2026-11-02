@@ -1,0 +1,319 @@
+# fixture: run 41389662396 (O1A2 battery (runaway C8/E5)), job 125121266261 "Verdict table"; failed-step lines only (setup groups, passing [unit] lines, cleanup dropped; ANSI removed)
+2026-11-02T06:00:44.5873296Z Current runner version: '2.338.2'
+2026-11-02T06:00:44.5916092Z Secret source: Actions
+2026-11-02T06:00:44.5916978Z Cache mode: write
+2026-11-02T06:00:44.5917609Z Prepare workflow directory
+2026-11-02T06:00:44.6393693Z Prepare all required actions
+2026-11-02T06:00:44.6434935Z Getting action download info
+2026-11-02T06:00:45.8328044Z Complete job name: Verdict table
+2026-11-02T06:00:46.2964350Z Syncing repository: CognitiveSubstratesAI/LogicKernel
+2026-11-02T06:00:46.3158105Z Temporarily overriding HOME='/home/runner/work/_temp/c6dc98b4-d89c-436b-b062-a24ff1ca9bd0' before making global git config changes
+2026-11-02T06:00:46.3161725Z Adding repository directory to the temporary git global config as a safe directory
+2026-11-02T06:00:46.3230068Z Deleting the contents of '/home/runner/work/LogicKernel/LogicKernel'
+2026-11-02T06:00:47.7219702Z e03602857cf528bc7843e1b7f2a861b4997a6180
+2026-11-02T06:00:48.2312041Z Found 130 artifact(s)
+2026-11-02T06:00:48.2331231Z Preparing to download the following artifacts:
+2026-11-02T06:00:48.9540906Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T06:00:48.9557427Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T06:00:48.9565900Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T06:00:48.9576179Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T06:00:48.9586956Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T06:00:48.9596645Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T06:00:48.9606580Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T06:00:48.9612135Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T06:00:48.9618879Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T06:00:48.9626334Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T06:00:48.9739857Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T06:00:48.9751125Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T06:00:48.9862175Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T06:00:48.9910616Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T06:00:48.9920006Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T06:00:48.9931226Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T06:00:48.9936191Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T06:00:48.9945948Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T06:00:48.9966674Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T06:00:48.9971052Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T06:00:48.9987275Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T06:00:48.9992055Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T06:00:48.9996998Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T06:00:49.0002146Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T06:00:49.0007271Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T06:00:49.0035804Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T06:00:49.0084323Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T06:00:49.0191977Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T06:00:49.0271631Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T06:00:49.0293825Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T06:00:49.0307518Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T06:00:49.0336591Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T06:00:49.0343564Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T06:00:49.0368399Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T06:00:49.0375434Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T06:00:49.0383013Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T06:00:49.0394343Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T06:00:49.0408118Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T06:00:49.0413024Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T06:00:49.0419362Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T06:00:49.0463460Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T06:00:49.0469861Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T06:00:49.0476348Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T06:00:49.0486859Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T06:00:49.0494967Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T06:00:49.0515262Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T06:00:49.0522949Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T06:00:49.0530477Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T06:00:49.0538550Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T06:00:49.0545976Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T06:00:49.0553763Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T06:00:49.0560243Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T06:00:49.0566825Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T06:00:49.0597672Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T06:00:49.0605317Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T06:00:49.0618335Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T06:00:49.0649840Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T06:00:49.0661565Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T06:00:49.0671266Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T06:00:49.0681475Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T06:00:49.0691402Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T06:00:49.0704859Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T06:00:49.0714952Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T06:00:49.0724610Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T06:00:49.0734331Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T06:00:49.0743971Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T06:00:49.0754051Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T06:00:49.0764624Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T06:00:49.0774144Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T06:00:49.0785474Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T06:00:49.0795969Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T06:00:49.0807153Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T06:00:49.0814476Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T06:00:49.0820328Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T06:00:49.0837680Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T06:00:49.0845175Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T06:00:49.0864732Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T06:00:49.0873749Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T06:00:49.0882419Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T06:00:49.0891606Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T06:00:49.0900073Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T06:00:49.0907043Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T06:00:49.0915118Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T06:00:49.0924209Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T06:00:49.0930727Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T06:00:49.0937918Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T06:00:49.0948763Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T06:00:49.0955913Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T06:00:49.0999798Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T06:00:49.1012050Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T06:00:49.1033962Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T06:00:49.1044526Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T06:00:49.1051527Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T06:00:49.1070093Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T06:00:49.1080114Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T06:00:49.1091005Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T06:00:49.1100869Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T06:00:49.1110934Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T06:00:49.1121564Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T06:00:49.1231668Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T06:00:49.1243652Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T06:00:49.1322956Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T06:00:49.1334633Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T06:00:49.1346963Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T06:00:49.1359150Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T06:00:49.1370094Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T06:00:49.1378008Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T06:00:49.1386807Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T06:00:49.1399030Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T06:00:49.1406052Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T06:00:49.1413101Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T06:00:49.1503767Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T06:00:49.1512626Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T06:00:49.1523762Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T06:00:49.1545840Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T06:00:49.1844333Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T06:00:49.1949327Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T06:00:49.1984382Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T06:00:49.2021712Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T06:00:49.2194679Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T06:00:49.2267885Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T06:00:49.2385996Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T06:00:49.2463854Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T06:00:49.3235775Z (node:2122) [DEP0005] DeprecationWarning: Buffer() is deprecated due to security and usability issues. Please use the Buffer.alloc(), Buffer.allocUnsafe(), or Buffer.from() methods instead.
+2026-11-02T06:00:49.3238474Z (Use `node --trace-deprecation ...` to show where the warning was created)
+2026-11-02T06:00:49.3409632Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T06:00:49.3420580Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T06:00:49.3457481Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T06:00:49.3508769Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T06:00:49.3559938Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T06:00:49.3577589Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T06:00:49.3670253Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T06:00:49.7982133Z Total of 130 artifact(s) downloaded
+2026-11-02T06:00:49.7983274Z Download artifact has finished successfully
+2026-11-02T06:00:49.8741083Z ## Mutation battery — tools/mutants/O1A2.py
+2026-11-02T06:00:49.8742097Z 
+2026-11-02T06:00:49.8742850Z Baseline (unmutated targets): **green**, 2475 s
+2026-11-02T06:00:49.8743677Z 
+2026-11-02T06:00:49.8744421Z | mutant | verdict | time | what it breaks | first failing test line |
+2026-11-02T06:00:49.8745771Z |---|---|---|---|---|
+2026-11-02T06:00:49.8747424Z | O1A-A1 | SURVIVED | 152 s | outchr stores a code point above 0x7f as one byte when rubber is pending: emit_rubber decodes garbage (KILL f60) |  |
+2026-11-02T06:00:49.8750059Z | O1A-A2 | caught | 111 s | outchr counts no buffered character: a later fill point is placed one too early (KILL f99) | format/2,3 as swipl's (f01-f74, e01-e19): Test Failed at test/core_lang/test_format_swipl.jl:497 |
+2026-11-02T06:00:49.8753151Z | O1A-A3 | caught | 95 s | outchr does not advance the column (KILL f58) | format/2,3 as swipl's (f01-f74, e01-e19): Error During Test at test/core_lang/test_format_swipl.jl:489 |
+2026-11-02T06:00:49.8755953Z | O1A-A4 | caught | 133 s | update_column leaves the tab stop after a newline (KILL f76) | format/2,3 as swipl's (f01-f74, e01-e19): Test Failed at test/core_lang/test_format_swipl.jl:497 |
+2026-11-02T06:00:49.8758472Z | O1A-A5 | SURVIVED | 152 s | outstring buffers `len` characters as one: a later fill point is placed wrongly (KILL f52, f61) |  |
+2026-11-02T06:00:49.8760762Z | O1A-A6 | SURVIVED | 80 s | outstring does not advance the column over the bytes (KILL f50, f54) |  |
+2026-11-02T06:00:49.8763506Z | O1A-A7 | caught | 109 s | oututf8 does not advance the column when no fill point is pending (KILL f98) | format/2,3 as swipl's (f01-f74, e01-e19): Test Failed at test/core_lang/test_format_swipl.jl:497 |
+2026-11-02T06:00:49.8766496Z | O1A-A8 | caught | 86 s | oututf8 drops the code points when fill points are pending (KILL f55, f98) | format/2,3 as swipl's (f01-f74, e01-e19): Test Failed at test/core_lang/test_format_swipl.jl:497 |
+2026-11-02T06:00:49.8769410Z | O1A-B1 | caught | 130 s | format/3 does not close the redirect: the sink is never unified (KILL f01, f13) | format/2,3 as swipl's (f01-f74, e01-e19): Test Failed at test/core_lang/test_format_swipl.jl:497 |
+2026-11-02T06:00:49.8772277Z | O1A-B2 | caught | 108 s | format_impl takes no code list as the format text (KILL f12) | format/2,3 as swipl's (f01-f74, e01-e19): Test Failed at test/core_lang/test_format_swipl.jl:497 |
+2026-11-02T06:00:49.8775167Z | O1A-B3 | caught | 94 s | format_impl takes no string as the format text (KILL f01) | format/2,3 as swipl's (f01-f74, e01-e19): Test Failed at test/core_lang/test_format_swipl.jl:497 |
+2026-11-02T06:00:49.8778334Z | O1A-B4 | caught | 85 s | format_impl raises type_error(atom, …) for a text of the wrong type (KILL e22) | format/2,3 as swipl's (f01-f74, e01-e19): Test Failed at test/core_lang/test_format_swipl.jl:497 |
+2026-11-02T06:00:49.8781451Z | O1A-B5 | caught | 89 s | format_impl never takes a non-list argument as the one argument (KILL f09, f10) | format/2,3 as swipl's (f01-f74, e01-e19): Test Failed at test/core_lang/test_format_swipl.jl:497 |
+2026-11-02T06:00:49.8784899Z | O1A-B6 | caught | 88 s | format_impl collects no argument of a proper list (KILL f02, f11) | format/2,3 as swipl's (f01-f74, e01-e19): Error During Test at test/core_lang/test_format_swipl.jl:489 |
+2026-11-02T06:00:49.8788055Z | O1A-B7 | caught | 140 s | format_impl names the wrong type for a partial list (KILL e15) | format/2,3 as swipl's (f01-f74, e01-e19): Test Failed at test/core_lang/test_format_swipl.jl:497 |
+2026-11-02T06:00:49.8790822Z | O1A-B8 | caught | 105 s | format/3 is registered with format/2's body (KILL f13, f72) | format/2,3 as swipl's (f01-f74, e01-e19): Test Failed at test/core_lang/test_format_swipl.jl:497 |
+2026-11-02T06:00:49.8793710Z | O1A-B9 | caught | 133 s | format/2 is registered with format/3's body (KILL f72, f73) | format/2,3 as swipl's (f01-f74, e01-e19): Error During Test at test/core_lang/test_format_swipl.jl:489 |
+2026-11-02T06:00:49.8796387Z | O1A-B10 | caught | 138 s | a missing argument is not an error (KILL e01) | format/2,3 as swipl's (f01-f74, e01-e19): Error During Test at test/core_lang/test_format_swipl.jl:489 |
+2026-11-02T06:00:49.8798858Z | O1A-B11 | caught | 158 s | leftover arguments are not an error (KILL e02) | format/2,3 as swipl's (f01-f74, e01-e19): Test Failed at test/core_lang/test_format_swipl.jl:497 |
+2026-11-02T06:00:49.8801357Z | O1A-C1 | caught | 140 s | a minus sign without digits is not an error (KILL e21) | format/2,3 as swipl's (f01-f74, e01-e19): Test Failed at test/core_lang/test_format_swipl.jl:497 |
+2026-11-02T06:00:49.8804209Z | O1A-C2 | caught | 118 s | a negative numeric argument keeps its sign off (KILL e10) | format/2,3 as swipl's (f01-f74, e01-e19): Test Failed at test/core_lang/test_format_swipl.jl:497 |
+2026-11-02T06:00:49.8806991Z | O1A-C3 | caught | 96 s | the digits of a numeric argument are not shifted (KILL f28, f56) | format/2,3 as swipl's (f01-f74, e01-e19): Test Failed at test/core_lang/test_format_swipl.jl:497 |
+2026-11-02T06:00:49.8809757Z | O1A-C4 | caught | 135 s | `*` leaves the argument it consumed on the list (KILL f26, f08) | format/2,3 as swipl's (f01-f74, e01-e19): Test Failed at test/core_lang/test_format_swipl.jl:497 |
+2026-11-02T06:00:49.8812416Z | O1A-C5 | caught | 150 s | a backquote argument is not read (KILL f53, f57, e18) | format/2,3 as swipl's (f01-f74, e01-e19): Test Failed at test/core_lang/test_format_swipl.jl:497 |
+2026-11-02T06:00:49.8817020Z | O1A-C6 | EQUIVALENT (declared) | 82 s | the guard `here < flen` of the backquote argument (c is the character at `here`, so it holds whenever c is a backquote) — declared equivalent, pending audit: src/os/pl-fmt.jl:485 (do_format's `elseif c == Int('`') && here < flen`) — read, not run: c is `get_chr_from_text(fmt, here)` (the line before the numeric-argument branch), which returns 0 for `here >= length(fmt)` (pl-fmt.jl:316-317), and 0 is no backquote, so c == '`' already implies here < flen; upstream's `here < fmt.length` is the same guard on a NUL-terminated text (pl-fmt.c) |  |
+2026-11-02T06:00:49.8820821Z | O1A-C8 | NO VERDICT | 0 s | a numeric argument past `int` is not refused: the kernel's raise of format('argument overflow') is gone (KILL k03; swipl 10.1.19 prints 1, flag k) |  |
+2026-11-02T06:00:49.8822839Z | O1A-C7 | caught | 132 s | the colon modifier is not recorded (KILL f77, f78, k01) | format/2,3 as swipl's (f01-f74, e01-e19): Test Failed at test/core_lang/test_format_swipl.jl:497 |
+2026-11-02T06:00:49.8824670Z | O1A-D1 | caught | 109 s | ~a names the wrong directive in format_argument_type (KILL e12) | format/2,3 as swipl's (f01-f74, e01-e19): Test Failed at test/core_lang/test_format_swipl.jl:497 |
+2026-11-02T06:00:49.8826488Z | O1A-D2 | caught | 107 s | ~Nc prints the character once (KILL f08) | format/2,3 as swipl's (f01-f74, e01-e19): Test Failed at test/core_lang/test_format_swipl.jl:497 |
+2026-11-02T06:00:49.8828201Z | O1A-D3 | caught | 145 s | ~c accepts a code point outside the range (KILL e05) | format/2,3 as swipl's (f01-f74, e01-e19): Test Failed at test/core_lang/test_format_swipl.jl:497 |
+2026-11-02T06:00:49.8830087Z | O1A-D4 | caught | 100 s | ~s takes no code list (KILL f04) | format/2,3 as swipl's (f01-f74, e01-e19): Test Failed at test/core_lang/test_format_swipl.jl:497 |
+2026-11-02T06:00:49.8831916Z | O1A-D5 | caught | 132 s | ~s takes no string (KILL f05) | format/2,3 as swipl's (f01-f74, e01-e19): Test Failed at test/core_lang/test_format_swipl.jl:497 |
+2026-11-02T06:00:49.8833701Z | O1A-D6 | caught | 132 s | ~s takes no atom (KILL e09) | format/2,3 as swipl's (f01-f74, e01-e19): Test Failed at test/core_lang/test_format_swipl.jl:497 |
+2026-11-02T06:00:49.8835125Z | O1A-D7 | SURVIVED | 118 s | ~Ns does not cut a Latin-1 text to N characters (KILL f79) |  |
+2026-11-02T06:00:49.8836604Z | O1A-D8 | caught | 96 s | ~Ns does not cut a wide text to N characters (KILL f80) | format/2,3 as swipl's (f01-f74, e01-e19): Test Failed at test/core_lang/test_format_swipl.jl:497 |
+2026-11-02T06:00:49.8838348Z | O1A-D9 | caught | 137 s | ~Ns does not pad a short text (KILL f79, f80) | format/2,3 as swipl's (f01-f74, e01-e19): Test Failed at test/core_lang/test_format_swipl.jl:497 |
+2026-11-02T06:00:49.8840068Z | O1A-D10 | caught | 134 s | ~i does not consume its argument (KILL f06) | format/2,3 as swipl's (f01-f74, e01-e19): Test Failed at test/core_lang/test_format_swipl.jl:497 |
+2026-11-02T06:00:49.8841747Z | O1A-D11 | caught | 140 s | ~k writes with write/1 (KILL f07) | format/2,3 as swipl's (f01-f74, e01-e19): Test Failed at test/core_lang/test_format_swipl.jl:497 |
+2026-11-02T06:00:49.8843507Z | O1A-D12 | caught | 144 s | ~p writes with write/1 (KILL f03) | format/2,3 as swipl's (f01-f74, e01-e19): Test Failed at test/core_lang/test_format_swipl.jl:497 |
+2026-11-02T06:00:49.8845207Z | O1A-D13 | caught | 107 s | ~q writes with write/1 (KILL f02) | format/2,3 as swipl's (f01-f74, e01-e19): Test Failed at test/core_lang/test_format_swipl.jl:497 |
+2026-11-02T06:00:49.8846848Z | O1A-D14 | caught | 132 s | ~w writes with writeq/1 (KILL f02, f11) | format/2,3 as swipl's (f01-f74, e01-e19): Test Failed at test/core_lang/test_format_swipl.jl:497 |
+2026-11-02T06:00:49.8848524Z | O1A-D15 | caught | 138 s | ~W passes the term as its own options (KILL f81) | format/2,3 as swipl's (f01-f74, e01-e19): Test Failed at test/core_lang/test_format_swipl.jl:497 |
+2026-11-02T06:00:49.8850199Z | O1A-D16 | caught | 85 s | ~W consumes one argument (KILL f81) | format/2,3 as swipl's (f01-f74, e01-e19): Test Failed at test/core_lang/test_format_swipl.jl:497 |
+2026-11-02T06:00:49.8851902Z | O1A-D17 | caught | 135 s | ~W accepts a single argument (KILL e23) | format/2,3 as swipl's (f01-f74, e01-e19): Error During Test at test/core_lang/test_format_swipl.jl:489 |
+2026-11-02T06:00:49.8853788Z | O1A-D18 | caught | 132 s | ~@ accepts no argument (KILL e24) | format/2,3 as swipl's (f01-f74, e01-e19): Error During Test at test/core_lang/test_format_swipl.jl:489 |
+2026-11-02T06:00:49.8866500Z | O1A-D19 | caught | 139 s | ~@ keeps the call-back's bindings: no foreign-frame rewind (KILL f86) | format/2,3 as swipl's (f01-f74, e01-e19): Test Failed at test/core_lang/test_format_swipl.jl:497 |
+2026-11-02T06:00:49.8868526Z | O1A-D20 | caught | 140 s | ~@ raises no call-back exception: format fails (KILL f70) | format/2,3 as swipl's (f01-f74, e01-e19): Test Failed at test/core_lang/test_format_swipl.jl:497 |
+2026-11-02T06:00:49.8870274Z | O1A-D21 | caught | 134 s | ~~ prints nothing (KILL f16) | format/2,3 as swipl's (f01-f74, e01-e19): Test Failed at test/core_lang/test_format_swipl.jl:497 |
+2026-11-02T06:00:49.8871927Z | O1A-D22 | caught | 136 s | ~n prints two newlines by default (KILL f16) | format/2,3 as swipl's (f01-f74, e01-e19): Test Failed at test/core_lang/test_format_swipl.jl:497 |
+2026-11-02T06:00:49.8873837Z | O1A-D23 | caught | 133 s | ~N prints a newline at column 0 too (KILL f17) | format/2,3 as swipl's (f01-f74, e01-e19): Test Failed at test/core_lang/test_format_swipl.jl:497 |
+2026-11-02T06:00:49.8875940Z | O1A-D24 | caught | 141 s | an unknown directive names the wrong existence_error type (KILL e08, e18) | format/2,3 as swipl's (f01-f74, e01-e19): Test Failed at test/core_lang/test_format_swipl.jl:497 |
+2026-11-02T06:00:49.8877754Z | O1A-E1 | caught | 143 s | ~d defaults to one fraction digit (KILL f20) | format/2,3 as swipl's (f01-f74, e01-e19): Test Failed at test/core_lang/test_format_swipl.jl:497 |
+2026-11-02T06:00:49.8880201Z | O1A-E2 | caught | 89 s | ~D with the colon modifier groups with a comma (KILL k01) | known differences on the kernel: the C locale (D9, k01-k02) and the numeric-argument overflow (flag k, k03), swipl's answer noted per row: Test Failed at test/core_lang/test_format_swipl.jl:519 |
+2026-11-02T06:00:49.8882393Z | O1A-E3 | caught | 142 s | ~I groups by 4 by default (KILL f25) | format/2,3 as swipl's (f01-f74, e01-e19): Test Failed at test/core_lang/test_format_swipl.jl:497 |
+2026-11-02T06:00:49.8884140Z | O1A-E4 | caught | 131 s | ~r defaults to radix 10 (KILL e07) | format/2,3 as swipl's (f01-f74, e01-e19): Test Failed at test/core_lang/test_format_swipl.jl:497 |
+2026-11-02T06:00:49.8885536Z | O1A-E5 | NO VERDICT | 0 s | ~1r is a valid radix (KILL e06) |  |
+2026-11-02T06:00:49.8887022Z | O1A-E6 | caught | 145 s | ~37r is a valid radix (KILL e17) | format/2,3 as swipl's (f01-f74, e01-e19): Test Failed at test/core_lang/test_format_swipl.jl:497 |
+2026-11-02T06:00:49.8888718Z | O1A-E7 | caught | 142 s | the radix error names domain `base` (KILL e06, e17) | format/2,3 as swipl's (f01-f74, e01-e19): Test Failed at test/core_lang/test_format_swipl.jl:497 |
+2026-11-02T06:00:49.8890455Z | O1A-E8 | caught | 103 s | ~R prints lowercase letters (KILL f24, f83) | format/2,3 as swipl's (f01-f74, e01-e19): Test Failed at test/core_lang/test_format_swipl.jl:497 |
+2026-11-02T06:00:49.8892123Z | O1A-E9 | caught | 114 s | ~e prints through the f format (KILL f30) | format/2,3 as swipl's (f01-f74, e01-e19): Test Failed at test/core_lang/test_format_swipl.jl:497 |
+2026-11-02T06:00:49.8894677Z | O1A-F1 | caught | 127 s | ~`ct ignores its fill character (KILL f53, f57) | format/2,3 as swipl's (f01-f74, e01-e19): Test Failed at test/core_lang/test_format_swipl.jl:497 |
+2026-11-02T06:00:49.8896495Z | O1A-F2 | caught | 134 s | the 101st fill point is accepted (KILL e20) | format/2,3 as swipl's (f01-f74, e01-e19): Test Failed at test/core_lang/test_format_swipl.jl:497 |
+2026-11-02T06:00:49.8898263Z | O1A-F3 | caught | 136 s | a fill point is placed at the start of the buffer (KILL f52, f54, f61) | format/2,3 as swipl's (f01-f74, e01-e19): Test Failed at test/core_lang/test_format_swipl.jl:497 |
+2026-11-02T06:00:49.8900169Z | O1A-F4 | caught | 91 s | a bare ~\| stops at column 8 (KILL f87) | format/2,3 as swipl's (f01-f74, e01-e19): Test Failed at test/core_lang/test_format_swipl.jl:497 |
+2026-11-02T06:00:49.8901935Z | O1A-F5 | caught | 136 s | ~N+ is relative to nothing: the stop is the argument (KILL f56, f62, f76, f85) | format/2,3 as swipl's (f01-f74, e01-e19): Test Failed at test/core_lang/test_format_swipl.jl:497 |
+2026-11-02T06:00:49.8903924Z | O1A-F6 | caught | 117 s | a bare ~+ stops 4 columns on (KILL f85) | format/2,3 as swipl's (f01-f74, e01-e19): Test Failed at test/core_lang/test_format_swipl.jl:497 |
+2026-11-02T06:00:49.8905715Z | O1A-F7 | caught | 144 s | a stop left of the column starts a new line without the colon modifier (KILL f59) | format/2,3 as swipl's (f01-f74, e01-e19): Test Failed at test/core_lang/test_format_swipl.jl:497 |
+2026-11-02T06:00:49.8907627Z | O1A-F8 | caught | 105 s | the re-indent after ~N:\| pads with a space, not the fill character (KILL f78) | format/2,3 as swipl's (f01-f74, e01-e19): Test Failed at test/core_lang/test_format_swipl.jl:497 |
+2026-11-02T06:00:49.8909488Z | O1A-F9 | caught | 139 s | the re-indent line does not reset the column (KILL f77, f78) | format/2,3 as swipl's (f01-f74, e01-e19): Test Failed at test/core_lang/test_format_swipl.jl:497 |
+2026-11-02T06:00:49.8911373Z | O1A-F10 | caught | 90 s | a column stop does not set the column when the text overflowed it (KILL f88) | format/2,3 as swipl's (f01-f74, e01-e19): Test Failed at test/core_lang/test_format_swipl.jl:497 |
+2026-11-02T06:00:49.8913516Z | O1A-F11 | caught | 127 s | a column stop does not record the tab stop (KILL f56, f62) | format/2,3 as swipl's (f01-f74, e01-e19): Test Failed at test/core_lang/test_format_swipl.jl:497 |
+2026-11-02T06:00:49.8915467Z | O1A-F12 | caught | 143 s | pending fill points are not flushed at the end of the text (KILL f89) | format/2,3 as swipl's (f01-f74, e01-e19): Test Failed at test/core_lang/test_format_swipl.jl:497 |
+2026-11-02T06:00:49.8917426Z | O1A-G1 | caught | 136 s | the space is divided by one fill point more than there are (KILL f52, f57, f61) | format/2,3 as swipl's (f01-f74, e01-e19): Error During Test at test/core_lang/test_format_swipl.jl:489 |
+2026-11-02T06:00:49.8919318Z | O1A-G2 | caught | 109 s | the remainder is taken off once per fill point (KILL f57) | format/2,3 as swipl's (f01-f74, e01-e19): Error During Test at test/core_lang/test_format_swipl.jl:489 |
+2026-11-02T06:00:49.8921112Z | O1A-G3 | caught | 145 s | the remainder goes two characters at a time (KILL f57) | format/2,3 as swipl's (f01-f74, e01-e19): Test Failed at test/core_lang/test_format_swipl.jl:497 |
+2026-11-02T06:00:49.8923022Z | O1A-G4 | caught | 135 s | a space of one character is no padding (KILL f90) | format/2,3 as swipl's (f01-f74, e01-e19): Test Failed at test/core_lang/test_format_swipl.jl:497 |
+2026-11-02T06:00:49.8924798Z | O1A-G5 | caught | 117 s | emit_rubber writes one pad character too few (KILL f50) | format/2,3 as swipl's (f01-f74, e01-e19): Test Failed at test/core_lang/test_format_swipl.jl:497 |
+2026-11-02T06:00:49.8926596Z | O1A-G6 | caught | 116 s | emit_rubber advances the character count by two (KILL f52, f99) | format/2,3 as swipl's (f01-f74, e01-e19): Test Failed at test/core_lang/test_format_swipl.jl:497 |
+2026-11-02T06:00:49.8928444Z | O1A-G7 | caught | 140 s | emit_rubber writes a space for every pad character (KILL f53, f57) | format/2,3 as swipl's (f01-f74, e01-e19): Test Failed at test/core_lang/test_format_swipl.jl:497 |
+2026-11-02T06:00:49.8930332Z | O1A-G8 | caught | 139 s | emit_rubber leaves the fill points pending (KILL f55, f62) | format/2,3 as swipl's (f01-f74, e01-e19): Error During Test at test/core_lang/test_format_swipl.jl:489 |
+2026-11-02T06:00:49.8932155Z | O1A-G9 | caught | 131 s | emit_rubber leaves the buffer in place (KILL f55, f62) | format/2,3 as swipl's (f01-f74, e01-e19): Test Failed at test/core_lang/test_format_swipl.jl:497 |
+2026-11-02T06:00:49.8934080Z | O1A-H1 | caught | 125 s | formatInteger does not see a negative small integer (KILL f22, f23) | format/2,3 as swipl's (f01-f74, e01-e19): Error During Test at test/core_lang/test_format_swipl.jl:489 |
+2026-11-02T06:00:49.8935990Z | O1A-H2 | caught | 134 s | formatInteger's digit of a negative small integer keeps its sign (KILL f22) | format/2,3 as swipl's (f01-f74, e01-e19): Error During Test at test/core_lang/test_format_swipl.jl:489 |
+2026-11-02T06:00:49.8937938Z | O1A-H3 | caught | 165 s | formatInteger writes the decimal point first when there are no fraction digits (KILL f20) | format/2,3 as swipl's (f01-f74, e01-e19): Test Failed at test/core_lang/test_format_swipl.jl:497 |
+2026-11-02T06:00:49.8939861Z | O1A-H4 | caught | 126 s | formatInteger prints zero with no fraction digits as nothing (KILL f93) | format/2,3 as swipl's (f01-f74, e01-e19): Test Failed at test/core_lang/test_format_swipl.jl:497 |
+2026-11-02T06:00:49.8941765Z | O1A-H5 | caught | 90 s | formatInteger puts a separator before the first digit of a multiple-of-3 number (KILL f91) | format/2,3 as swipl's (f01-f74, e01-e19): Test Failed at test/core_lang/test_format_swipl.jl:497 |
+2026-11-02T06:00:49.8943800Z | O1A-H6 | caught | 133 s | formatInteger groups only once (KILL f21, f91) | format/2,3 as swipl's (f01-f74, e01-e19): Test Failed at test/core_lang/test_format_swipl.jl:497 |
+2026-11-02T06:00:49.8945597Z | O1A-H7 | caught | 88 s | formatInteger prints a bignum's letters in lowercase for ~R (KILL f83) | format/2,3 as swipl's (f01-f74, e01-e19): Test Failed at test/core_lang/test_format_swipl.jl:497 |
+2026-11-02T06:00:49.8947600Z | O1A-H8 | caught | 135 s | formatInteger ignores the fraction digits of a bignum (KILL f27, f83) | format/2,3 as swipl's (f01-f74, e01-e19): Test Failed at test/core_lang/test_format_swipl.jl:497 |
+2026-11-02T06:00:49.8949578Z | O1A-H9 | caught | 147 s | formatInteger puts a separator after the minus of a negative bignum (KILL f92) | format/2,3 as swipl's (f01-f74, e01-e19): Test Failed at test/core_lang/test_format_swipl.jl:497 |
+2026-11-02T06:00:49.8951447Z | O1A-I1 | caught | 101 s | formatFloat's default for e/f/g is 3 digits (KILL f30, f31) | format/2,3 as swipl's (f01-f74, e01-e19): Test Failed at test/core_lang/test_format_swipl.jl:497 |
+2026-11-02T06:00:49.8953116Z | O1A-I2 | SURVIVED | 171 s | formatFloat's default for h is 6 digits (KILL f33) |  |
+2026-11-02T06:00:49.8954623Z | O1A-I3 | caught | 141 s | formatFloat raises for a negative digit count of h (KILL f82) | format/2,3 as swipl's (f01-f74, e01-e19): Test Failed at test/core_lang/test_format_swipl.jl:497 |
+2026-11-02T06:00:49.8956485Z | O1A-I4 | caught | 113 s | formatFloat's negative digit count error names the wrong domain (KILL e10) | format/2,3 as swipl's (f01-f74, e01-e19): Test Failed at test/core_lang/test_format_swipl.jl:497 |
+2026-11-02T06:00:49.8958372Z | O1A-I5 | caught | 138 s | ~h of a rational or an integer is not converted to a float first (KILL f48) | format/2,3 as swipl's (f01-f74, e01-e19): Test Failed at test/core_lang/test_format_swipl.jl:497 |
+2026-11-02T06:00:49.8960221Z | O1A-I6 | caught | 110 s | formatFloat does not convert a small integer to a float (KILL f35) | format/2,3 as swipl's (f01-f74, e01-e19): Test Failed at test/core_lang/test_format_swipl.jl:497 |
+2026-11-02T06:00:49.8961973Z | O1A-I7 | caught | 145 s | ~H prints a lowercase exponent (KILL f33) | format/2,3 as swipl's (f01-f74, e01-e19): Test Failed at test/core_lang/test_format_swipl.jl:497 |
+2026-11-02T06:00:49.8963867Z | O1A-I8 | caught | 143 s | a bignum ~Nf scales by one power of ten too many (KILL f43, f44) | format/2,3 as swipl's (f01-f74, e01-e19): Test Failed at test/core_lang/test_format_swipl.jl:497 |
+2026-11-02T06:00:49.8965821Z | O1A-I9 | caught | 91 s | print_mpz_f pads with zeros one digit short when the digits equal the fraction digits (KILL f41) | format/2,3 as swipl's (f01-f74, e01-e19): Test Failed at test/core_lang/test_format_swipl.jl:497 |
+2026-11-02T06:00:49.8967817Z | O1A-I10 | caught | 148 s | print_mpz_f drops the minus of a negative number that rounded to 0 (KILL f41) | format/2,3 as swipl's (f01-f74, e01-e19): Test Failed at test/core_lang/test_format_swipl.jl:497 |
+2026-11-02T06:00:49.8969644Z | O1A-I11 | caught | 143 s | print_mpz_f writes a point after ~0f (KILL f42, f43) | format/2,3 as swipl's (f01-f74, e01-e19): Test Failed at test/core_lang/test_format_swipl.jl:497 |
+2026-11-02T06:00:49.8971434Z | O1A-I12 | caught | 136 s | a rational ~Nf rounds with a third of the denominator (KILL f42) | format/2,3 as swipl's (f01-f74, e01-e19): Test Failed at test/core_lang/test_format_swipl.jl:497 |
+2026-11-02T06:00:49.8973326Z | O1A-I13 | caught | 141 s | a negative rational ~Nf rounds toward zero (KILL f42) | format/2,3 as swipl's (f01-f74, e01-e19): Test Failed at test/core_lang/test_format_swipl.jl:497 |
+2026-11-02T06:00:49.8975066Z | O1A-I14 | caught | 139 s | print_mpz_e writes a point after ~0e (KILL f45) | format/2,3 as swipl's (f01-f74, e01-e19): Test Failed at test/core_lang/test_format_swipl.jl:497 |
+2026-11-02T06:00:49.8976834Z | O1A-I15 | caught | 142 s | print_mpz_e gives a negative exponent the plus sign (KILL f39, f95) | format/2,3 as swipl's (f01-f74, e01-e19): Test Failed at test/core_lang/test_format_swipl.jl:497 |
+2026-11-02T06:00:49.8978628Z | O1A-I16 | caught | 140 s | print_mpz_e does not zero-pad the exponent (KILL f39) | format/2,3 as swipl's (f01-f74, e01-e19): Test Failed at test/core_lang/test_format_swipl.jl:497 |
+2026-11-02T06:00:49.8980398Z | O1A-I17 | caught | 142 s | a bignum ~Ne takes the exponent guess as exact (KILL f94) | format/2,3 as swipl's (f01-f74, e01-e19): Test Failed at test/core_lang/test_format_swipl.jl:497 |
+2026-11-02T06:00:49.8982315Z | O1A-I18 | caught | 99 s | a bignum ~Ne rounds with +4, not +5 (KILL f46) | format/2,3 as swipl's (f01-f74, e01-e19): Test Failed at test/core_lang/test_format_swipl.jl:497 |
+2026-11-02T06:00:49.8984420Z | O1A-I19 | caught | 92 s | a bignum ~Ne treats a digit count equal to the exponent as fewer (KILL f94) | format/2,3 as swipl's (f01-f74, e01-e19): Error During Test at test/core_lang/test_format_swipl.jl:489 |
+2026-11-02T06:00:49.8986370Z | O1A-I20 | caught | 100 s | a rational ~Ne does not correct an exponent guess that is one too small (KILL f95) | format/2,3 as swipl's (f01-f74, e01-e19): Test Failed at test/core_lang/test_format_swipl.jl:497 |
+2026-11-02T06:00:49.8988020Z | O1A-I21 | SURVIVED | 140 s | a rational ~Ne does not correct the exponent of an exact power of ten (KILL f39, f95) |  |
+2026-11-02T06:00:49.8989679Z | O1A-I22 | caught | 127 s | a rational ~Ne above 1 divides when the exponent is within the digits (KILL f40) | format/2,3 as swipl's (f01-f74, e01-e19): Test Failed at test/core_lang/test_format_swipl.jl:497 |
+2026-11-02T06:00:49.8991536Z | O1A-I23 | caught | 137 s | a rational ~Ne rounds with a third of the denominator (KILL f40) | format/2,3 as swipl's (f01-f74, e01-e19): Test Failed at test/core_lang/test_format_swipl.jl:497 |
+2026-11-02T06:00:49.8993566Z | O1A-I24 | caught | 108 s | a rational ~Ne does not renormalise a rounded-up mantissa (KILL f40) | format/2,3 as swipl's (f01-f74, e01-e19): Test Failed at test/core_lang/test_format_swipl.jl:497 |
+2026-11-02T06:00:49.8995343Z | O1A-I25 | caught | 102 s | the ~Ng digits are cut, not rounded (KILL f37) | format/2,3 as swipl's (f01-f74, e01-e19): Test Failed at test/core_lang/test_format_swipl.jl:497 |
+2026-11-02T06:00:49.8997074Z | O1A-I26 | caught | 101 s | the ~Ng digits keep the carry's extra digit (KILL f38) | format/2,3 as swipl's (f01-f74, e01-e19): Test Failed at test/core_lang/test_format_swipl.jl:497 |
+2026-11-02T06:00:49.8998898Z | O1A-I27 | caught | 86 s | ~Ng uses the exponent form from exponent -5 down only (KILL f38) | format/2,3 as swipl's (f01-f74, e01-e19): Test Failed at test/core_lang/test_format_swipl.jl:497 |
+2026-11-02T06:00:49.9000672Z | O1A-I28 | caught | 114 s | ~Ng prints a lowercase exponent for ~G (KILL f37, f45) | format/2,3 as swipl's (f01-f74, e01-e19): Test Failed at test/core_lang/test_format_swipl.jl:497 |
+2026-11-02T06:00:49.9002396Z | O1A-I29 | caught | 90 s | ~0g counts as 0 significant digits (KILL f37) | format/2,3 as swipl's (f01-f74, e01-e19): Test Failed at test/core_lang/test_format_swipl.jl:497 |
+2026-11-02T06:00:49.9004204Z | O1A-J1 | caught | 140 s | the double path prints NaN as inf (KILL f49, f96) | format/2,3 as swipl's (f01-f74, e01-e19): Test Failed at test/core_lang/test_format_swipl.jl:497 |
+2026-11-02T06:00:49.9006001Z | O1A-J2 | caught | 153 s | the double path prints a capital directive's NaN in lowercase (KILL f96) | format/2,3 as swipl's (f01-f74, e01-e19): Test Failed at test/core_lang/test_format_swipl.jl:497 |
+2026-11-02T06:00:49.9007892Z | O1A-J3 | caught | 133 s | the double path gives ~E a lowercase exponent for finite numbers (KILL f34) | format/2,3 as swipl's (f01-f74, e01-e19): Test Failed at test/core_lang/test_format_swipl.jl:497 |
+2026-11-02T06:00:49.9009783Z | O1A-J4 | caught | 91 s | the double path's ~g keeps trailing zeros of the exponent form (KILL f32) | format/2,3 as swipl's (f01-f74, e01-e19): Test Failed at test/core_lang/test_format_swipl.jl:497 |
+2026-11-02T06:00:49.9011685Z | O1A-J5 | caught | 82 s | the double path's ~g switches to the exponent form from exponent -5 down only (KILL f32) | format/2,3 as swipl's (f01-f74, e01-e19): Test Failed at test/core_lang/test_format_swipl.jl:497 |
+2026-11-02T06:00:49.9013411Z | O1A-J6 | SURVIVED | 103 s | the double path's ~g prints the fixed form with a digit too many (KILL f32) |  |
+2026-11-02T06:00:49.9014999Z | O1A-J7 | caught | 149 s | the double path's ~0g counts as 0 significant digits (KILL f96) | format/2,3 as swipl's (f01-f74, e01-e19): Test Failed at test/core_lang/test_format_swipl.jl:497 |
+2026-11-02T06:00:49.9017098Z | O1A-K1 | caught | 101 s | a call-back writes straight to the stream while fill points are pending (KILL f75, f97) | format/2,3 as swipl's (f01-f74, e01-e19): Test Failed at test/core_lang/test_format_swipl.jl:497 |
+2026-11-02T06:00:49.9019176Z | O1A-K2 | caught | 88 s | a call-back's string output moves the column by its length only (KILL f97) | format/2,3 as swipl's (f01-f74, e01-e19): Test Failed at test/core_lang/test_format_swipl.jl:497 |
+2026-11-02T06:00:49.9021121Z | O1A-K3 | caught | 151 s | a call-back that wrote straight to the stream does not hand its column back (KILL f67, f74) | format/2,3 as swipl's (f01-f74, e01-e19): Test Failed at test/core_lang/test_format_swipl.jl:497 |
+2026-11-02T06:00:49.9023071Z | O1A-K4 | SURVIVED | 115 s | a call-back that wrote straight to the stream leaves the current output on the format stream (KILL f65, f66) |  |
+2026-11-02T06:00:49.9024741Z | O1A-K5 | caught | 90 s | a call-back's string output is dropped (KILL f97) | format/2,3 as swipl's (f01-f74, e01-e19): Test Failed at test/core_lang/test_format_swipl.jl:497 |
+2026-11-02T06:00:49.9025654Z 
+2026-11-02T06:00:49.9026306Z **121 of 131 decided; blocking: O1A-A1, O1A-A5, O1A-A6, O1A-C8, O1A-D7, O1A-E5, O1A-I2, O1A-I21, O1A-J6, O1A-K4**
+2026-11-02T06:00:49.9039658Z ##[error]Process completed with exit code 1.
+2026-11-02T06:00:49.9679967Z ##[notice]## Mutation battery — tools/mutants/O1A2.py
+Baseline (unmutated targets): **green**, 2475 s
+| mutant | verdict | time | what it breaks | first failing test line |
+|---|---|---|---|---|
+| O1A-A1 | SURVIVED | 152 s | outchr stores a code point above 0x7f as one byte when rubber is pending: emit_rubber decodes garbage (KILL f60) |  |
+| O1A-A2 | caught | 111 s | outchr counts no buffered character: a later fill point is placed one too early (KILL f99) | format/2,3 as swipl's (f01-f74, e01-e19): Test Failed at test/core_lang/test_format_swipl.jl:497 |
+| O1A-A3 | caught | 95 s | outchr does not advance the column (KILL f58) | format/2,3 as swipl's (f01-f74, e01-e19): Error During Test at test/core_lang/test_format_swipl.jl:489 |
+| O1A-A4 | caught | 133 s | update_column leaves the tab stop after a newline (KILL f76) | format/2,3 as swipl's (f01-f74, e01-e19): Test Failed at test/core_lang/test_format_swipl.jl:497 |
+| O1A-A5 | SURVIVED | 152 s | outstring buffers `len` characters as one: a later fill point is placed wrongly (KILL f52, f61) |  |
+| O1A-A6 | SURVIVED | 80 s | outstring does not advance the column over the bytes (KILL f50, f54) |  |
+| O1A-A7 | caught | 109 s | oututf8 does not advance the column when no fill point is pending (KILL f98) | format/2,3 as swipl's (f01-f74, e01-e19): Test Failed at test/core_lang/test_format_swipl.jl:497 |
+| O1A-A8 | caught | 86 s | oututf8 drops the code points when fill points are pending (KILL f55, f98) | format/2,3 as swipl's (f01-f74, e01-e19): Test Failed at test/core_lang/test_format_swipl.jl:497 |
+| O1A-B1 | caught | 130 s | format/3 does not close the redirect: the sink is never unified (KILL f01, f13) | format/2,3 as swipl's (f01-f74, e01-e19): Test Failed at test/core_lang/test_format_swipl.jl:497 |
+| O1A-B2 | caught | 108 s | format_impl takes no code list as the format text (KILL f12) | format/2,3 as swipl's (f01-f74, e01-e19): Test Failed at test/core_lang/test_format_swipl.jl:497 |
+| O1A-B3 | caught | 94 s | format_impl takes no string as the format text (KILL f01) | format/2,3 as swipl's (f01-f74, e01-e19): Test Failed at test/core_lang/test_format_swipl.jl:497 |
+| O1A-B4 | caught | 85 s | format_impl raises type_error(atom, …) for a text of the wrong type (KILL e22) | format/2,3 as swipl's (f01-f74, e01-e19): Test Failed at test/core_lang/test_format_swipl.jl:497 |
+| O1A-B5 | caught | 89 s | format_impl never takes a non-list argument as the one argument (KILL f09, f10) | format/2,3 as swipl's (f01-f74, e01-e19): Test Failed at test/core_lang/test_format_swipl.jl:497 |
+| O1A-B6 | caught | 88 s | format_impl collects no argument of a proper list (KILL f02, f11) | format/2,3 as swipl's (f01-f74, e01-e19): Error During Test at test/core_lang/test_format_swipl.jl:489 |
+| O1A-B7 | caught | 140 s | format_impl names the wrong type for a partial list (KILL e15) | format/2,3 as swipl's (f01-f74, e01-e19): Test Failed at test/core_lang/test_format_swipl.jl:497 |
+| O1A-B8 | caught | 105 s | format/3 is registered with format/2's body (KILL f13, f72) | format/2,3 as swipl's (f01-f74, e01-e19): Test Failed at test/core_lang/test_format_swipl.jl:497 |
+| O1A-B9 | caught | 133 s | format/2 is registered with format/3's body (KILL f72, f73) | format/2,3 as swipl's (f01-f74, e01-e19): Error During Test at test/core_lang/test_format_swipl.jl:489 |
+| O1A-B10 | caught | 138 s | a missing argument is not an error (KILL e01) | format/2,3 as swipl's (f01-f74, e01-e19): Error During Test at test/core_lang/test_format_swipl.jl:489 |
+| O1A-B11 | caught | 158 s | leftover arguments are not an error (KILL e02) | format/2,3 as swipl's (f01-f74, e01-e19): Test Failed at test/core_lang/test_format_swipl.jl:497 |
+| O1A-C1 | caught | 140 s | a minus sign without digits is not an error (KILL e21) | format/2,3 as swipl's (f01-f74, e01-e19): Test Failed at test/core_lang/test_format_swipl.jl:497 |
+2026-11-02T06:00:49.9723040Z ##[notice]| O1A-C2 | caught | 118 s | a negative numeric argument keeps its sign off (KILL e10) | format/2,3 as swipl's (f01-f74, e01-e19): Test Failed at test/core_lang/test_format_swipl.jl:497 |
+| O1A-C3 | caught | 96 s | the digits of a numeric argument are not shifted (KILL f28, f56) | format/2,3 as swipl's (f01-f74, e01-e19): Test Failed at test/core_lang/test_format_swipl.jl:497 |
+| O1A-C4 | caught | 135 s | `*` leaves the argument it consumed on the list (KILL f26, f08) | format/2,3 as swipl's (f01-f74, e01-e19): Test Failed at test/core_lang/test_format_swipl.jl:497 |
+| O1A-C5 | caught | 150 s | a backquote argument is not read (KILL f53, f57, e18) | format/2,3 as swipl's (f01-f74, e01-e19): Test Failed at test/core_lang/test_format_swipl.jl:497 |
+| O1A-C6 | EQUIVALENT (declared) | 82 s | the guard `here < flen` of the backquote argument (c is the character at `here`, so it holds whenever c is a backquote) — declared equivalent, pending audit: src/os/pl-fmt.jl:485 (do_format's `elseif c == Int('`') && here < flen`) — read, not run: c is `get_chr_from_text(fmt, here)` (the line before the numeric-argument branch), which returns 0 for `here >= length(fmt)` (pl-fmt.jl:316-317), and 0 is no backquote, so c == '`' already implies here < flen; upstream's `here < fmt.length` is the same guard on a NUL-terminated text (pl-fmt.c) |  |
+| O1A-C8 | NO VERDICT | 0 s | a numeric argument past `int` is not refused: the kernel's raise of format('argument overflow') is gone (KILL k03; swipl 10.1.19 prints 1, flag k) |  |

@@ -1,0 +1,62 @@
+# fixture: run 41389662396 (O1A2 battery (runaway C8/E5)), job 125098067443 "O1A-C8"; failed-step lines only (setup groups, passing [unit] lines, cleanup dropped; ANSI removed)
+2026-11-02T05:33:00.9123234Z Current runner version: '2.338.2'
+2026-11-02T05:33:00.9175159Z Secret source: Actions
+2026-11-02T05:33:00.9176160Z Cache mode: write
+2026-11-02T05:33:00.9177216Z Prepare workflow directory
+2026-11-02T05:33:00.9784522Z Prepare all required actions
+2026-11-02T05:33:00.9837862Z Getting action download info
+2026-11-02T05:33:04.2155447Z Complete job name: O1A-C8
+2026-11-02T05:33:04.6170298Z Syncing repository: CognitiveSubstratesAI/LogicKernel
+2026-11-02T05:33:04.6287726Z Temporarily overriding HOME='/home/runner/work/_temp/ab4a8c7b-dc7d-477c-8cfb-39a17e551a8b' before making global git config changes
+2026-11-02T05:33:04.6292921Z Adding repository directory to the temporary git global config as a safe directory
+2026-11-02T05:33:04.6345001Z Deleting the contents of '/home/runner/work/LogicKernel/LogicKernel'
+2026-11-02T05:33:06.4865278Z e03602857cf528bc7843e1b7f2a861b4997a6180
+2026-11-02T05:33:06.5208827Z Prepare all required actions
+2026-11-02T05:33:06.5209488Z Getting action download info
+2026-11-02T05:33:06.8253609Z ##[start-action display=The oracle's cache key (runner image + pinned commit + build flags);id=__self.oracle]
+2026-11-02T05:33:06.8746769Z ##[end-action id=__self.oracle;outcome=success;conclusion=success;duration_ms=49]
+2026-11-02T05:33:06.8752905Z ##[start-action display=Restore the oracle;id=__self.oracle_cache]
+2026-11-02T05:33:07.4384101Z Cache hit for: Linux-ubuntu24-swipl-e032366462b3-8794806cb107
+2026-11-02T05:33:09.0180664Z Received 0 of 3188008 (0.0%), 0.0 MBs/sec
+2026-11-02T05:33:10.0140911Z Received 3188008 of 3188008 (100.0%), 1.5 MBs/sec
+2026-11-02T05:33:10.0141538Z Cache Size: ~3 MB (3188008 B)
+2026-11-02T05:33:10.0636877Z Cache restored successfully
+2026-11-02T05:33:10.0804699Z Cache restored from key: Linux-ubuntu24-swipl-e032366462b3-8794806cb107
+2026-11-02T05:33:10.0892966Z ##[end-action id=__self.oracle_cache;outcome=success;conclusion=success;duration_ms=3213]
+2026-11-02T05:33:10.0895988Z ##[start-action display=Build the oracle from the pinned commit;id=__self.__run]
+2026-11-02T05:33:10.0917156Z ##[end-action id=__self.__run;outcome=skipped;conclusion=skipped;duration_ms=0]
+2026-11-02T05:33:10.0919644Z ##[start-action display=Put the oracle on PATH;id=__self.__run_2]
+2026-11-02T05:33:10.1052729Z ##[end-action id=__self.__run_2;outcome=success;conclusion=success;duration_ms=13]
+2026-11-02T05:33:10.1055262Z ##[start-action display=Refuse any swipl but the oracle;id=__self.__run_3]
+2026-11-02T05:33:10.1199977Z SWI-Prolog version 10.1.19 for x86_64-linux
+2026-11-02T05:33:10.1667697Z ##[end-action id=__self.__run_3;outcome=success;conclusion=success;duration_ms=61]
+2026-11-02T05:33:19.9762002Z julia version 1.13.3
+2026-11-02T05:33:20.1691992Z Using depot path: /home/runner/.julia
+2026-11-02T05:33:20.1702780Z Cache key: julia-cache;workflow=Mutation battery;job=mutant;os=Linux;name=O1A-C8;run_id=41389662396;run_attempt=1
+2026-11-02T05:33:20.1704101Z Restore key: julia-cache;workflow=Mutation battery;job=mutant;os=Linux;name=O1A-C8;
+2026-11-02T05:33:20.1737876Z (node:2329) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+2026-11-02T05:33:20.1739201Z (Use `node --trace-deprecation ...` to show where the warning was created)
+2026-11-02T05:33:20.5867977Z No cache found
+2026-11-02T05:33:20.5870671Z Created depot directory: /home/runner/.julia
+2026-11-02T05:33:20.5971893Z 0	total
+2026-11-02T05:33:21.2701566Z   Installing known registries into `~/.julia`
+2026-11-02T05:33:23.5610775Z        Added `General` registry to ~/.julia/registries
+2026-11-02T05:33:24.9879023Z    Installed Preferences ───── v1.6.1
+2026-11-02T05:33:25.1931217Z    Installed PrecompileTools ─ v1.3.4
+2026-11-02T05:33:25.2530039Z     Updating `~/work/LogicKernel/LogicKernel/Project.toml`
+2026-11-02T05:33:25.2531202Z   [aea7be01] + PrecompileTools v1.3.4
+2026-11-02T05:33:25.2532877Z     Updating `~/work/LogicKernel/LogicKernel/Manifest.toml`
+2026-11-02T05:33:25.2537806Z   [aea7be01] + PrecompileTools v1.3.4
+2026-11-02T05:33:25.2538331Z   [21216c6a] + Preferences v1.6.1
+2026-11-02T05:33:25.2540691Z   [ade2ca70] + Dates v1.11.0
+2026-11-02T05:33:25.2542829Z   [de0858da] + Printf v1.11.0
+2026-11-02T05:33:25.2544853Z   [fa267f1f] + TOML v1.0.3
+2026-11-02T05:33:25.2545268Z   [4ec0a83e] + Unicode v1.11.0
+2026-11-02T05:33:25.3062530Z Precompiling packages...
+2026-11-02T05:33:25.9500167Z    0.6 s  ✓ Preferences
+2026-11-02T05:33:26.3763229Z    0.4 s  ✓ PrecompileTools
+2026-11-02T05:34:54.1133637Z   87.7 s  ✓ LogicKernel
+2026-11-02T05:34:54.1134612Z   3 dependencies successfully precompiled in 89 seconds. 4 already precompiled.
+2026-11-02T05:39:15.7873038Z ##[error]The runner has received a shutdown signal. This can happen when the runner service is stopped, or a manually started runner is canceled.
+2026-11-02T05:39:15.7881661Z ##[error]Process completed with exit code 143.
+2026-11-02T05:39:15.9263436Z Cleaning up orphan processes

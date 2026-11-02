@@ -1,0 +1,501 @@
+# fixture: run 41364513951 (gate/dstack-b7 red), job 125021720135 "Julia 1 · files 3/3"; failed-step lines only (setup groups, passing [unit] lines, cleanup dropped; ANSI removed)
+2026-11-01T23:56:23.3211038Z Current runner version: '2.338.2'
+2026-11-01T23:56:23.3261618Z Secret source: Actions
+2026-11-01T23:56:23.3263080Z Cache mode: write
+2026-11-01T23:56:23.3263843Z Prepare workflow directory
+2026-11-01T23:56:23.3835054Z Prepare all required actions
+2026-11-01T23:56:23.3886846Z Getting action download info
+2026-11-01T23:56:25.6507458Z Getting action download info
+2026-11-01T23:56:26.1565778Z Getting action download info
+2026-11-01T23:56:26.3361337Z Complete job name: Julia 1 · files 3/3
+2026-11-01T23:56:26.7282764Z Syncing repository: CognitiveSubstratesAI/LogicKernel
+2026-11-01T23:56:26.7425276Z Temporarily overriding HOME='/home/runner/work/_temp/b71a22ab-b5c6-439c-a2fd-17cde98382f3' before making global git config changes
+2026-11-01T23:56:26.7426835Z Adding repository directory to the temporary git global config as a safe directory
+2026-11-01T23:56:26.7494182Z Deleting the contents of '/home/runner/work/LogicKernel/LogicKernel'
+2026-11-01T23:56:28.0130090Z 7408ccc2f8e7c6cd13a57614643feb30f9b62f27
+2026-11-01T23:56:28.1478137Z Syncing repository: SWI-Prolog/swipl-devel
+2026-11-01T23:56:28.1596793Z Temporarily overriding HOME='/home/runner/work/_temp/e3d8a583-73c9-4566-95dc-0189298a17f3' before making global git config changes
+2026-11-01T23:56:28.1598279Z Adding repository directory to the temporary git global config as a safe directory
+2026-11-01T23:57:10.6890901Z cbf4e1896275a07794332fd98ad0dcb11bf51919
+2026-11-01T23:57:19.0444134Z julia version 1.13.3
+2026-11-01T23:57:19.2209910Z Using depot path: /home/runner/.julia
+2026-11-01T23:57:19.2219869Z Cache key: julia-cache;workflow=CI;job=test;os=Linux;version=1;os=ubuntu-24.04;arch=x64;group=3;run_id=41364513951;run_attempt=1
+2026-11-01T23:57:19.2221330Z Restore key: julia-cache;workflow=CI;job=test;os=Linux;version=1;os=ubuntu-24.04;arch=x64;group=3;
+2026-11-01T23:57:19.2252676Z (node:4050) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+2026-11-01T23:57:19.2253954Z (Use `node --trace-deprecation ...` to show where the warning was created)
+2026-11-01T23:57:19.4779134Z Cache hit for restore-key: julia-cache;workflow=CI;job=test;os=Linux;version=1;os=ubuntu-24.04;arch=x64;group=3;run_id=41352143070;run_attempt=1
+2026-11-01T23:57:20.7984985Z Received 0 of 60095783 (0.0%), 0.0 MBs/sec
+2026-11-01T23:57:21.2993733Z Received 60095783 of 60095783 (100.0%), 38.2 MBs/sec
+2026-11-01T23:57:21.2996998Z Cache Size: ~57 MB (60095783 B)
+2026-11-01T23:57:21.7316636Z Cache restored successfully
+2026-11-01T23:57:21.9240548Z Cache restored from key: julia-cache;workflow=CI;job=test;os=Linux;version=1;os=ubuntu-24.04;arch=x64;group=3;run_id=41352143070;run_attempt=1
+2026-11-01T23:57:21.9368359Z 219M	/home/runner/.julia/compiled
+2026-11-01T23:57:21.9370054Z 8.0K	/home/runner/.julia/logs
+2026-11-01T23:57:21.9379839Z 1.7M	/home/runner/.julia/packages
+2026-11-01T23:57:21.9380434Z 7.5M	/home/runner/.julia/registries
+2026-11-01T23:57:21.9381045Z 16K	/home/runner/.julia/scratchspaces
+2026-11-01T23:57:21.9381569Z 228M	total
+2026-11-01T23:57:21.9388605Z Registries directory exists and is non-empty. Updating any registries
+2026-11-01T23:57:23.2728341Z     Updating registry at `~/.julia/registries/General.toml`
+2026-11-01T23:57:24.0033704Z ##[start-action display=Set and export registry flavor preference;id=__julia-actions_julia-buildpkg.__run]
+2026-11-01T23:57:24.0145260Z ##[end-action id=__julia-actions_julia-buildpkg.__run;outcome=success;conclusion=success;duration_ms=11]
+2026-11-01T23:57:24.0158383Z ##[start-action display=Run if "false" == "false" && !isdir(DEPOT_PATH[1%5D);id=__julia-actions_julia-buildpkg.__run_2]
+2026-11-01T23:57:24.5902964Z   Installing known registries into `~/.julia`
+2026-11-01T23:57:25.7136928Z     Updating registry at `~/.julia/registries/General.toml`
+2026-11-01T23:57:25.8326014Z     Updating `~/work/LogicKernel/LogicKernel/Project.toml`
+2026-11-01T23:57:25.8326949Z   [aea7be01] + PrecompileTools v1.3.4
+2026-11-01T23:57:25.8328242Z     Updating `~/work/LogicKernel/LogicKernel/Manifest.toml`
+2026-11-01T23:57:25.8333673Z   [aea7be01] + PrecompileTools v1.3.4
+2026-11-01T23:57:25.8334281Z   [21216c6a] + Preferences v1.6.1
+2026-11-01T23:57:25.8336275Z   [ade2ca70] + Dates v1.11.0
+2026-11-01T23:57:25.8338151Z   [de0858da] + Printf v1.11.0
+2026-11-01T23:57:25.8339945Z   [fa267f1f] + TOML v1.0.3
+2026-11-01T23:57:25.8340487Z   [4ec0a83e] + Unicode v1.11.0
+2026-11-01T23:57:25.8939546Z ##[end-action id=__julia-actions_julia-buildpkg.__run_2;outcome=success;conclusion=success;duration_ms=1878]
+2026-11-01T23:57:25.9170529Z ##[start-action display=Set and export registry flavor preference;id=runtest.__run]
+2026-11-01T23:57:25.9256479Z ##[end-action id=runtest.__run;outcome=success;conclusion=success;duration_ms=8]
+2026-11-01T23:57:25.9258535Z ##[start-action display=Install dependencies in their own (shared) environment;id=runtest.__run_2]
+2026-11-01T23:57:25.9276445Z ##[end-action id=runtest.__run_2;outcome=skipped;conclusion=skipped;duration_ms=0]
+2026-11-01T23:57:25.9279554Z ##[start-action display=Run the package tests;id=runtest.__run_3]
+2026-11-01T23:57:26.9513343Z │
+2026-11-01T23:57:26.9514069Z │ To reproduce this CI run locally run the following from the same repository state on julia version 1.13.3:
+2026-11-01T23:57:26.9514713Z │
+2026-11-01T23:57:26.9515655Z │ `import Pkg; Pkg.test(;coverage=true, julia_args=["--check-bounds=yes", "--compiled-modules=yes", "--depwarn=yes"], force_latest_compatible_version=false, allow_reresolve=true)`
+2026-11-01T23:57:26.9516587Z │
+2026-11-01T23:57:28.6416503Z      Testing LogicKernel
+2026-11-01T23:57:29.2876500Z       Status `/tmp/jl_zROgk4/Project.toml`
+2026-11-01T23:57:29.2881011Z   [3a0d8e50] LogicKernel v0.1.0 `~/work/LogicKernel/LogicKernel`
+2026-11-01T23:57:29.2881886Z   [aea7be01] PrecompileTools v1.3.4
+2026-11-01T23:57:29.2884118Z   [9a3f8284] Random v1.11.0
+2026-11-01T23:57:29.2886078Z   [ea8e919c] SHA v1.0.0
+2026-11-01T23:57:29.2886687Z   [8dfed614] Test v1.11.0
+2026-11-01T23:57:29.2887386Z       Status `/tmp/jl_zROgk4/Manifest.toml`
+2026-11-01T23:57:29.2937917Z   [3a0d8e50] LogicKernel v0.1.0 `~/work/LogicKernel/LogicKernel`
+2026-11-01T23:57:29.2938939Z   [aea7be01] PrecompileTools v1.3.4
+2026-11-01T23:57:29.2939683Z   [21216c6a] Preferences v1.6.1
+2026-11-01T23:57:29.2940403Z   [2a0f44e3] Base64 v1.11.0
+2026-11-01T23:57:29.2941050Z   [ade2ca70] Dates v1.11.0
+2026-11-01T23:57:29.2941768Z   [b77e0a4c] InteractiveUtils v1.11.0
+2026-11-01T23:57:29.2942876Z   [ac6e5ff7] JuliaSyntaxHighlighting v1.12.0
+2026-11-01T23:57:29.2943913Z   [56ddb016] Logging v1.11.0
+2026-11-01T23:57:29.2945370Z   [d6f4376e] Markdown v1.11.0
+2026-11-01T23:57:29.2947036Z   [de0858da] Printf v1.11.0
+2026-11-01T23:57:29.2948271Z   [9a3f8284] Random v1.11.0
+2026-11-01T23:57:29.2949611Z   [ea8e919c] SHA v1.0.0
+2026-11-01T23:57:29.2950650Z   [9e88b42a] Serialization v1.11.0
+2026-11-01T23:57:29.2951303Z   [f489334b] StyledStrings v1.11.0
+2026-11-01T23:57:29.2953255Z   [fa267f1f] TOML v1.0.3
+2026-11-01T23:57:29.2953792Z   [8dfed614] Test v1.11.0
+2026-11-01T23:57:29.2954319Z   [4ec0a83e] Unicode v1.11.0
+2026-11-01T23:57:29.6547850Z Precompiling for configuration --code-coverage=@/home/runner/work/LogicKernel/LogicKernel --color=yes --warn-overwrite=yes --depwarn=yes --inline=yes --startup-file=no --track-allocation=none --check-bounds=yes --compiled-modules=yes --depwarn=yes
+2026-11-01T23:57:30.3624678Z    0.7 s  ✓ Preferences
+2026-11-01T23:57:30.7768972Z    0.4 s  ✓ PrecompileTools
+2026-11-01T23:58:52.8749768Z   82.1 s  ✓ LogicKernel
+2026-11-01T23:58:52.8750563Z   3 dependencies successfully precompiled in 83 seconds. 12 already precompiled.
+2026-11-01T23:58:52.8751351Z      Testing Running tests...
+2026-11-01T23:58:55.6229372Z   term types: all — every term-generic file on every implementation
+2026-11-01T23:58:55.6630740Z   CI slice: file group 3/3 — 147 of 437 units
+2026-11-01T23:58:55.7129067Z   test/charset: 1 file(s)
+2026-11-01T23:58:55.7129552Z   test/compile: 8 file(s)
+2026-11-01T23:58:55.7129949Z   test/core_lang: 97 file(s)
+2026-11-01T23:58:55.7130356Z   test/core_text: 13 file(s)
+2026-11-01T23:58:55.7131274Z   test/db: 16 file(s)
+2026-11-01T23:58:55.7131642Z   test/files: 4 file(s)
+2026-11-01T23:58:55.7132000Z   test/foreign: 6 file(s)
+2026-11-01T23:58:55.7132652Z   test/rational: 1 file(s)
+2026-11-02T00:03:10.6070541Z 
+2026-11-02T00:03:11.0910282Z KNOWN DIFFERENCE: a clause for ','/2 (a05, k01) — the kernel's answer pinned, swipl's beside it: Test Failed at /home/runner/work/LogicKernel/LogicKernel/test/compile/test_ssu_compile_swipl.jl:585
+2026-11-02T00:03:11.0911562Z   Expression: kl == ["ok", kernel_line]
+2026-11-02T00:03:12.4129966Z    Evaluated: ["ok", "t_a05 c[116,95,97,48,53]/1(c[112,101,114,109,105,115,115,105,111,110,95,101,114,114,111,114]/3(a[109,111,100,105,102,121],a[115,116,97,116,105,99,95,112,114,111,99,101,100,117,114,101],c[47]/2(a[44],i2)))"] == ["ok", "t_a05 c[116,95,97,48,53]/1(V0)"]
+2026-11-02T00:03:12.4131301Z   Stacktrace:
+2026-11-02T00:03:12.4131862Z    [1] macro expansion
+2026-11-02T00:03:12.4133224Z      @ /opt/hostedtoolcache/julia/1.13.3/x64/share/julia/stdlib/v1.13/Test/src/Test.jl:758 [inlined]
+2026-11-02T00:03:12.4134078Z    [2] macro expansion
+2026-11-02T00:03:12.4134948Z      @ ~/work/LogicKernel/LogicKernel/test/compile/test_ssu_compile_swipl.jl:585 [inlined]
+2026-11-02T00:03:12.4135661Z    [3] macro expansion
+2026-11-02T00:03:12.4136446Z      @ /opt/hostedtoolcache/julia/1.13.3/x64/share/julia/stdlib/v1.13/Test/src/Test.jl:1967 [inlined]
+2026-11-02T00:03:12.4137131Z    [4] top-level scope
+2026-11-02T00:03:12.4137752Z      @ ~/work/LogicKernel/LogicKernel/test/compile/test_ssu_compile_swipl.jl:581
+2026-11-02T00:03:12.4160391Z 
+2026-11-02T00:03:12.4161964Z KNOWN DIFFERENCE: a clause for ','/2 (a05, k01) — the kernel's answer pinned, swipl's beside it: Test Failed at /home/runner/work/LogicKernel/LogicKernel/test/compile/test_ssu_compile_swipl.jl:585
+2026-11-02T00:03:12.4163139Z   Expression: kl == ["ok", kernel_line]
+2026-11-02T00:03:12.4184360Z    Evaluated: ["ok", "t_k01 c[116,95,107,48,49]/1(c[112,101,114,109,105,115,115,105,111,110,95,101,114,114,111,114]/3(a[109,111,100,105,102,121],a[115,116,97,116,105,99,95,112,114,111,99,101,100,117,114,101],c[47]/2(a[44],i2)))"] == ["ok", "t_k01 c[116,95,107,48,49]/1(V0)"]
+2026-11-02T00:03:12.4185979Z   Stacktrace:
+2026-11-02T00:03:12.4186434Z    [1] macro expansion
+2026-11-02T00:03:12.4187169Z      @ /opt/hostedtoolcache/julia/1.13.3/x64/share/julia/stdlib/v1.13/Test/src/Test.jl:758 [inlined]
+2026-11-02T00:03:12.4188107Z    [2] macro expansion
+2026-11-02T00:03:12.4189071Z      @ ~/work/LogicKernel/LogicKernel/test/compile/test_ssu_compile_swipl.jl:585 [inlined]
+2026-11-02T00:03:12.4189716Z    [3] macro expansion
+2026-11-02T00:03:12.4190403Z      @ /opt/hostedtoolcache/julia/1.13.3/x64/share/julia/stdlib/v1.13/Test/src/Test.jl:1967 [inlined]
+2026-11-02T00:03:12.4191007Z    [4] top-level scope
+2026-11-02T00:03:12.4191569Z      @ ~/work/LogicKernel/LogicKernel/test/compile/test_ssu_compile_swipl.jl:581
+2026-11-02T00:03:58.4207927Z 
+2026-11-02T00:03:58.4210375Z KNOWN DIFFERENCE: a clause for ','/2 (a05, k01) — the kernel's answer pinned, swipl's beside it: Test Failed at /home/runner/work/LogicKernel/LogicKernel/test/compile/test_ssu_compile_swipl.jl:585
+2026-11-02T00:03:58.4212041Z   Expression: kl == ["ok", kernel_line]
+2026-11-02T00:03:58.4244885Z    Evaluated: ["ok", "t_a05 c[116,95,97,48,53]/1(c[112,101,114,109,105,115,115,105,111,110,95,101,114,114,111,114]/3(a[109,111,100,105,102,121],a[115,116,97,116,105,99,95,112,114,111,99,101,100,117,114,101],c[47]/2(a[44],i2)))"] == ["ok", "t_a05 c[116,95,97,48,53]/1(V0)"]
+2026-11-02T00:03:58.4246847Z   Stacktrace:
+2026-11-02T00:03:58.4247413Z    [1] macro expansion
+2026-11-02T00:03:58.4248672Z      @ /opt/hostedtoolcache/julia/1.13.3/x64/share/julia/stdlib/v1.13/Test/src/Test.jl:758 [inlined]
+2026-11-02T00:03:58.4249862Z    [2] macro expansion
+2026-11-02T00:03:58.4251214Z      @ ~/work/LogicKernel/LogicKernel/test/compile/test_ssu_compile_swipl.jl:585 [inlined]
+2026-11-02T00:03:58.4252760Z    [3] macro expansion
+2026-11-02T00:03:58.4254121Z      @ /opt/hostedtoolcache/julia/1.13.3/x64/share/julia/stdlib/v1.13/Test/src/Test.jl:1967 [inlined]
+2026-11-02T00:03:58.4255215Z    [4] top-level scope
+2026-11-02T00:03:58.4256184Z      @ ~/work/LogicKernel/LogicKernel/test/compile/test_ssu_compile_swipl.jl:581
+2026-11-02T00:03:58.4296848Z 
+2026-11-02T00:03:58.4298686Z KNOWN DIFFERENCE: a clause for ','/2 (a05, k01) — the kernel's answer pinned, swipl's beside it: Test Failed at /home/runner/work/LogicKernel/LogicKernel/test/compile/test_ssu_compile_swipl.jl:585
+2026-11-02T00:03:58.4300143Z   Expression: kl == ["ok", kernel_line]
+2026-11-02T00:03:58.4318677Z    Evaluated: ["ok", "t_k01 c[116,95,107,48,49]/1(c[112,101,114,109,105,115,115,105,111,110,95,101,114,114,111,114]/3(a[109,111,100,105,102,121],a[115,116,97,116,105,99,95,112,114,111,99,101,100,117,114,101],c[47]/2(a[44],i2)))"] == ["ok", "t_k01 c[116,95,107,48,49]/1(V0)"]
+2026-11-02T00:03:58.4320242Z   Stacktrace:
+2026-11-02T00:03:58.4320767Z    [1] macro expansion
+2026-11-02T00:03:58.4322005Z      @ /opt/hostedtoolcache/julia/1.13.3/x64/share/julia/stdlib/v1.13/Test/src/Test.jl:758 [inlined]
+2026-11-02T00:03:58.4323383Z    [2] macro expansion
+2026-11-02T00:03:58.4324554Z      @ ~/work/LogicKernel/LogicKernel/test/compile/test_ssu_compile_swipl.jl:585 [inlined]
+2026-11-02T00:03:58.4325610Z    [3] macro expansion
+2026-11-02T00:03:58.4326856Z      @ /opt/hostedtoolcache/julia/1.13.3/x64/share/julia/stdlib/v1.13/Test/src/Test.jl:1967 [inlined]
+2026-11-02T00:03:58.4327881Z    [4] top-level scope
+2026-11-02T00:03:58.4329283Z      @ ~/work/LogicKernel/LogicKernel/test/compile/test_ssu_compile_swipl.jl:581
+2026-11-02T00:04:45.9464212Z 
+2026-11-02T00:04:45.9466322Z KNOWN DIFFERENCE: a clause for ','/2 (a05, k01) — the kernel's answer pinned, swipl's beside it: Test Failed at /home/runner/work/LogicKernel/LogicKernel/test/compile/test_ssu_compile_swipl.jl:585
+2026-11-02T00:04:45.9467942Z   Expression: kl == ["ok", kernel_line]
+2026-11-02T00:04:45.9501237Z    Evaluated: ["ok", "t_a05 c[116,95,97,48,53]/1(c[112,101,114,109,105,115,115,105,111,110,95,101,114,114,111,114]/3(a[109,111,100,105,102,121],a[115,116,97,116,105,99,95,112,114,111,99,101,100,117,114,101],c[47]/2(a[44],i2)))"] == ["ok", "t_a05 c[116,95,97,48,53]/1(V0)"]
+2026-11-02T00:04:45.9502998Z   Stacktrace:
+2026-11-02T00:04:45.9503530Z    [1] macro expansion
+2026-11-02T00:04:45.9504801Z      @ /opt/hostedtoolcache/julia/1.13.3/x64/share/julia/stdlib/v1.13/Test/src/Test.jl:758 [inlined]
+2026-11-02T00:04:45.9506003Z    [2] macro expansion
+2026-11-02T00:04:45.9507659Z      @ ~/work/LogicKernel/LogicKernel/test/compile/test_ssu_compile_swipl.jl:585 [inlined]
+2026-11-02T00:04:45.9508979Z    [3] macro expansion
+2026-11-02T00:04:45.9510218Z      @ /opt/hostedtoolcache/julia/1.13.3/x64/share/julia/stdlib/v1.13/Test/src/Test.jl:1967 [inlined]
+2026-11-02T00:04:45.9511307Z    [4] top-level scope
+2026-11-02T00:04:45.9512542Z      @ ~/work/LogicKernel/LogicKernel/test/compile/test_ssu_compile_swipl.jl:581
+2026-11-02T00:04:45.9653386Z 
+2026-11-02T00:04:45.9655780Z KNOWN DIFFERENCE: a clause for ','/2 (a05, k01) — the kernel's answer pinned, swipl's beside it: Test Failed at /home/runner/work/LogicKernel/LogicKernel/test/compile/test_ssu_compile_swipl.jl:585
+2026-11-02T00:04:45.9657075Z   Expression: kl == ["ok", kernel_line]
+2026-11-02T00:04:45.9687803Z    Evaluated: ["ok", "t_k01 c[116,95,107,48,49]/1(c[112,101,114,109,105,115,115,105,111,110,95,101,114,114,111,114]/3(a[109,111,100,105,102,121],a[115,116,97,116,105,99,95,112,114,111,99,101,100,117,114,101],c[47]/2(a[44],i2)))"] == ["ok", "t_k01 c[116,95,107,48,49]/1(V0)"]
+2026-11-02T00:04:45.9689531Z   Stacktrace:
+2026-11-02T00:04:45.9690094Z    [1] macro expansion
+2026-11-02T00:04:45.9691062Z      @ /opt/hostedtoolcache/julia/1.13.3/x64/share/julia/stdlib/v1.13/Test/src/Test.jl:758 [inlined]
+2026-11-02T00:04:45.9691918Z    [2] macro expansion
+2026-11-02T00:04:45.9693249Z      @ ~/work/LogicKernel/LogicKernel/test/compile/test_ssu_compile_swipl.jl:585 [inlined]
+2026-11-02T00:04:45.9694104Z    [3] macro expansion
+2026-11-02T00:04:45.9694960Z      @ /opt/hostedtoolcache/julia/1.13.3/x64/share/julia/stdlib/v1.13/Test/src/Test.jl:1967 [inlined]
+2026-11-02T00:04:45.9695735Z    [4] top-level scope
+2026-11-02T00:04:45.9696412Z      @ ~/work/LogicKernel/LogicKernel/test/compile/test_ssu_compile_swipl.jl:581
+2026-11-02T00:13:03.8858948Z 
+2026-11-02T00:13:03.8860693Z compileFileList and the boot entry (up to -c; the state after): Test Failed at /home/runner/work/LogicKernel/LogicKernel/test/files/test_qlf_swipl.jl:448
+2026-11-02T00:13:03.8861817Z   Expression: _ql_list_atoms(kl[2]) == ["additional"]
+2026-11-02T00:13:03.9021625Z    Evaluated: ["autoload_off", "additional"] == ["additional"]
+2026-11-02T00:13:03.9022506Z   Stacktrace:
+2026-11-02T00:13:03.9022888Z    [1] top-level scope
+2026-11-02T00:13:03.9023742Z      @ ~/work/LogicKernel/LogicKernel/test/files/test_qlf_swipl.jl:423
+2026-11-02T00:13:03.9024406Z    [2] macro expansion
+2026-11-02T00:13:03.9033964Z      @ /opt/hostedtoolcache/julia/1.13.3/x64/share/julia/stdlib/v1.13/Test/src/Test.jl:1967 [inlined]
+2026-11-02T00:13:03.9035213Z    [3] macro expansion
+2026-11-02T00:13:03.9036327Z      @ ~/work/LogicKernel/LogicKernel/test/files/test_qlf_swipl.jl:448 [inlined]
+2026-11-02T00:13:03.9037294Z    [4] macro expansion
+2026-11-02T00:13:03.9038075Z      @ /opt/hostedtoolcache/julia/1.13.3/x64/share/julia/stdlib/v1.13/Test/src/Test.jl:758 [inlined]
+2026-11-02T00:13:06.9936715Z 
+2026-11-02T00:13:06.9938499Z compileFileList and the boot entry (up to -c; the state after): Test Failed at /home/runner/work/LogicKernel/LogicKernel/test/files/test_qlf_swipl.jl:448
+2026-11-02T00:13:06.9939904Z   Expression: _ql_list_atoms(kl[2]) == ["additional"]
+2026-11-02T00:13:07.0013167Z    Evaluated: ["autoload_off", "additional"] == ["additional"]
+2026-11-02T00:13:07.0014034Z   Stacktrace:
+2026-11-02T00:13:07.0014547Z    [1] top-level scope
+2026-11-02T00:13:07.0015891Z      @ ~/work/LogicKernel/LogicKernel/test/files/test_qlf_swipl.jl:423
+2026-11-02T00:13:07.0016731Z    [2] macro expansion
+2026-11-02T00:13:07.0018069Z      @ /opt/hostedtoolcache/julia/1.13.3/x64/share/julia/stdlib/v1.13/Test/src/Test.jl:1967 [inlined]
+2026-11-02T00:13:07.0018966Z    [3] macro expansion
+2026-11-02T00:13:07.0019786Z      @ ~/work/LogicKernel/LogicKernel/test/files/test_qlf_swipl.jl:448 [inlined]
+2026-11-02T00:13:07.0020737Z    [4] macro expansion
+2026-11-02T00:13:07.0039259Z      @ /opt/hostedtoolcache/julia/1.13.3/x64/share/julia/stdlib/v1.13/Test/src/Test.jl:758 [inlined]
+2026-11-02T00:13:09.0794683Z 
+2026-11-02T00:13:09.0796934Z compileFileList and the boot entry (up to -c; the state after): Test Failed at /home/runner/work/LogicKernel/LogicKernel/test/files/test_qlf_swipl.jl:448
+2026-11-02T00:13:09.0798050Z   Expression: _ql_list_atoms(kl[2]) == ["additional"]
+2026-11-02T00:13:09.0880101Z    Evaluated: ["autoload_off", "additional"] == ["additional"]
+2026-11-02T00:13:09.0880844Z   Stacktrace:
+2026-11-02T00:13:09.0881683Z    [1] top-level scope
+2026-11-02T00:13:09.0883169Z      @ ~/work/LogicKernel/LogicKernel/test/files/test_qlf_swipl.jl:423
+2026-11-02T00:13:09.0884283Z    [2] macro expansion
+2026-11-02T00:13:09.0885322Z      @ /opt/hostedtoolcache/julia/1.13.3/x64/share/julia/stdlib/v1.13/Test/src/Test.jl:1967 [inlined]
+2026-11-02T00:13:09.0886187Z    [3] macro expansion
+2026-11-02T00:13:09.0887006Z      @ ~/work/LogicKernel/LogicKernel/test/files/test_qlf_swipl.jl:448 [inlined]
+2026-11-02T00:13:09.0887791Z    [4] macro expansion
+2026-11-02T00:13:09.0888717Z      @ /opt/hostedtoolcache/julia/1.13.3/x64/share/julia/stdlib/v1.13/Test/src/Test.jl:758 [inlined]
+2026-11-02T00:17:11.7810426Z   AltTerm: (compounds_plain = 291732, compounds_interned = 234416, shared = 57310)
+2026-11-02T00:17:12.7763340Z   JUnit report: /home/runner/work/LogicKernel/LogicKernel/junit.xml
+2026-11-02T00:17:13.2043018Z Test Summary:                                                                                           |  Pass  Fail  Total      Time
+2026-11-02T00:17:13.2051202Z LogicKernel                                                                                             | 34891     9  34900  18m17.1s
+2026-11-02T00:17:13.2053448Z   discovery found the package-level files                                                               |     2            2      0.0s
+2026-11-02T00:17:13.2055387Z   discovery found the term-generic files                                                                |     4            4      0.1s
+2026-11-02T00:17:13.2057763Z   charset/test_umap_swipl.jl                                                                            |     6            6      1.7s
+2026-11-02T00:17:13.2059596Z   compile/test_body_code_swipl.jl                                                                       |   596          596     39.3s
+2026-11-02T00:17:13.2061459Z   compile/test_body_code_swipl.jl [alt]                                                                 |   596          596   1m07.2s
+2026-11-02T00:17:13.2063554Z   compile/test_body_code_swipl.jl [alt_interned]                                                        |   596          596   1m08.3s
+2026-11-02T00:17:13.2065180Z   compile/test_call_operands.jl                                                                         |    34           34     11.7s
+2026-11-02T00:17:13.2066677Z   compile/test_call_operands.jl [alt]                                                                   |    34           34      0.8s
+2026-11-02T00:17:13.2068221Z   compile/test_call_operands.jl [alt_interned]                                                          |    34           34      0.8s
+2026-11-02T00:17:13.2070082Z   compile/test_compiler_warnings_swipl.jl                                                               |     2            2      0.2s
+2026-11-02T00:17:13.2071683Z   compile/test_compiler_warnings_swipl.jl [alt]                                                         |     2            2      0.2s
+2026-11-02T00:17:13.2073532Z   compile/test_compiler_warnings_swipl.jl [alt_interned]                                                |     2            2      0.2s
+2026-11-02T00:17:13.2075130Z   compile/test_head_code_swipl.jl                                                                       |    24           24      1.3s
+2026-11-02T00:17:13.2076628Z   compile/test_head_code_swipl.jl [alt]                                                                 |    24           24      5.3s
+2026-11-02T00:17:13.2078177Z   compile/test_head_code_swipl.jl [alt_interned]                                                        |    24           24      5.2s
+2026-11-02T00:17:13.2079786Z   compile/test_portable_smallint_swipl.jl                                                               |    15           15      0.2s
+2026-11-02T00:17:13.2081333Z   compile/test_ssu_compile_swipl.jl                                                                     |    56     2     58     54.0s
+2026-11-02T00:17:13.2083161Z     SSU clauses compile, assert, decompile and are listed by '$rule'/2 == swipl 10.1.19                 |    20           20     51.3s
+2026-11-02T00:17:13.2084807Z     the pinned answers are live swipl's                                                                 |     1            1      0.0s
+2026-11-02T00:17:13.2086486Z     the compiled code of SSU clauses == swipl's vm_list (v01-v10), by instruction name                  |    32           32      0.3s
+2026-11-02T00:17:13.2088369Z     KNOWN DIFFERENCE: a clause for ','/2 (a05, k01) — the kernel's answer pinned, swipl's beside it     |     2     2      4      1.9s
+2026-11-02T00:17:13.2090095Z   compile/test_ssu_compile_swipl.jl [alt]                                                               |    56     2     58     46.0s
+2026-11-02T00:17:13.2091946Z     SSU clauses compile, assert, decompile and are listed by '$rule'/2 == swipl 10.1.19                 |    20           20     45.4s
+2026-11-02T00:17:13.2093782Z     the pinned answers are live swipl's                                                                 |     1            1      0.0s
+2026-11-02T00:17:13.2095438Z     the compiled code of SSU clauses == swipl's vm_list (v01-v10), by instruction name                  |    32           32      0.2s
+2026-11-02T00:17:13.2097275Z     KNOWN DIFFERENCE: a clause for ','/2 (a05, k01) — the kernel's answer pinned, swipl's beside it     |     2     2      4      0.0s
+2026-11-02T00:17:13.2099019Z   compile/test_ssu_compile_swipl.jl [alt_interned]                                                      |    56     2     58     47.5s
+2026-11-02T00:17:13.2100742Z     SSU clauses compile, assert, decompile and are listed by '$rule'/2 == swipl 10.1.19                 |    20           20     46.9s
+2026-11-02T00:17:13.2102569Z     the pinned answers are live swipl's                                                                 |     1            1      0.0s
+2026-11-02T00:17:13.2104238Z     the compiled code of SSU clauses == swipl's vm_list (v01-v10), by instruction name                  |    32           32      0.2s
+2026-11-02T00:17:13.2106262Z     KNOWN DIFFERENCE: a clause for ','/2 (a05, k01) — the kernel's answer pinned, swipl's beside it     |     2     2      4      0.0s
+2026-11-02T00:17:13.2107953Z   core_lang/test_argvar_order_swipl.jl                                                                  |     3            3     49.7s
+2026-11-02T00:17:13.2109496Z   core_lang/test_argvar_order_swipl.jl [alt]                                                            |     3            3      1.7s
+2026-11-02T00:17:13.2111092Z   core_lang/test_argvar_order_swipl.jl [alt_interned]                                                   |     3            3      1.7s
+2026-11-02T00:17:13.2112816Z   core_lang/test_arith_cells.jl                                                                         |    32           32      1.4s
+2026-11-02T00:17:13.2114313Z   core_lang/test_arith_cells.jl [alt]                                                                   |    32           32      3.1s
+2026-11-02T00:17:13.2115840Z   core_lang/test_arith_cells.jl [alt_interned]                                                          |    32           32      3.1s
+2026-11-02T00:17:13.2117377Z   core_lang/test_attvar_wakeup.jl                                                                       |   382          382   1m05.0s
+2026-11-02T00:17:13.2118898Z   core_lang/test_attvar_wakeup.jl [alt]                                                                 |   382          382      3.1s
+2026-11-02T00:17:13.2120457Z   core_lang/test_attvar_wakeup.jl [alt_interned]                                                        |   382          382      3.1s
+2026-11-02T00:17:13.2121962Z   core_lang/test_blob.jl                                                                                |   107          107      2.9s
+2026-11-02T00:17:13.2123567Z   core_lang/test_blob.jl [alt]                                                                          |   107          107      3.6s
+2026-11-02T00:17:13.2125044Z   core_lang/test_blob.jl [alt_interned]                                                                 |   107          107      3.8s
+2026-11-02T00:17:13.2126701Z   core_lang/test_catch_swipl.jl                                                                         |    49           49      1.7s
+2026-11-02T00:17:13.2128199Z   core_lang/test_catch_swipl.jl [alt]                                                                   |    49           49      4.2s
+2026-11-02T00:17:13.2129723Z   core_lang/test_catch_swipl.jl [alt_interned]                                                          |    49           49      4.2s
+2026-11-02T00:17:13.2131269Z   core_lang/test_colon_body_swipl.jl                                                                    |    56           56      0.6s
+2026-11-02T00:17:13.2133028Z   core_lang/test_colon_body_swipl.jl [alt]                                                              |    56           56      0.7s
+2026-11-02T00:17:13.2134612Z   core_lang/test_colon_body_swipl.jl [alt_interned]                                                     |    56           56      0.7s
+2026-11-02T00:17:13.2136166Z   core_lang/test_copyterm_cells.jl                                                                      |    13           13      1.1s
+2026-11-02T00:17:13.2137800Z   core_lang/test_copyterm_cells.jl [alt]                                                                |    13           13      2.0s
+2026-11-02T00:17:13.2139524Z   core_lang/test_copyterm_cells.jl [alt_interned]                                                       |    13           13      2.0s
+2026-11-02T00:17:13.2141078Z   core_lang/test_cyclic_term_swipl.jl                                                                   |     2            2      0.1s
+2026-11-02T00:17:13.2143096Z   core_lang/test_cyclic_term_swipl.jl [alt]                                                             |     2            2      0.1s
+2026-11-02T00:17:13.2144697Z   core_lang/test_cyclic_term_swipl.jl [alt_interned]                                                    |     2            2      0.1s
+2026-11-02T00:17:13.2146233Z   core_lang/test_det_swipl.jl                                                                           |   259          259      2.0s
+2026-11-02T00:17:13.2147712Z   core_lang/test_det_swipl.jl [alt]                                                                     |   259          259      3.8s
+2026-11-02T00:17:13.2148981Z   core_lang/test_det_swipl.jl [alt_interned]                                                            |   259          259      3.9s
+2026-11-02T00:17:13.2149847Z   core_lang/test_firstvar_swipl.jl                                                                      |    35           35      1.2s
+2026-11-02T00:17:13.2150696Z   core_lang/test_firstvar_swipl.jl [alt]                                                                |    35           35      1.8s
+2026-11-02T00:17:13.2151547Z   core_lang/test_firstvar_swipl.jl [alt_interned]                                                       |    35           35      1.8s
+2026-11-02T00:17:13.2152977Z   core_lang/test_fli_unify_cells.jl                                                                     |    22           22      0.9s
+2026-11-02T00:17:13.2154130Z   core_lang/test_fli_unify_cells.jl [alt]                                                               |    22           22      2.3s
+2026-11-02T00:17:13.2154980Z   core_lang/test_fli_unify_cells.jl [alt_interned]                                                      |    22           22      2.4s
+2026-11-02T00:17:13.2156055Z   core_lang/test_format_swipl.jl                                                                        |   151          151      0.9s
+2026-11-02T00:17:13.2156891Z   core_lang/test_format_swipl.jl [alt]                                                                  |   151          151      1.0s
+2026-11-02T00:17:13.2157738Z   core_lang/test_format_swipl.jl [alt_interned]                                                         |   151          151      1.0s
+2026-11-02T00:17:13.2158586Z   core_lang/test_head_unify_swipl.jl                                                                    |    30           30      2.5s
+2026-11-02T00:17:13.2159409Z   core_lang/test_head_unify_swipl.jl [alt]                                                              |    30           30     11.2s
+2026-11-02T00:17:13.2160272Z   core_lang/test_head_unify_swipl.jl [alt_interned]                                                     |    30           30     11.8s
+2026-11-02T00:17:13.2161135Z   core_lang/test_module_enum_swipl.jl                                                                   |   126          126      1.3s
+2026-11-02T00:17:13.2161973Z   core_lang/test_module_enum_swipl.jl [alt]                                                             |   126          126      1.5s
+2026-11-02T00:17:13.2163400Z   core_lang/test_module_enum_swipl.jl [alt_interned]                                                    |   126          126      1.6s
+2026-11-02T00:17:13.2164281Z   core_lang/test_module_path.jl                                                                         |    62           62      0.8s
+2026-11-02T00:17:13.2165106Z   core_lang/test_module_path.jl [alt]                                                                   |    62           62      0.6s
+2026-11-02T00:17:13.2165945Z   core_lang/test_module_path.jl [alt_interned]                                                          |    62           62      0.6s
+2026-11-02T00:17:13.2166801Z   core_lang/test_numbervars_cells.jl                                                                    |    60           60      1.5s
+2026-11-02T00:17:13.2167646Z   core_lang/test_numbervars_cells.jl [alt]                                                              |    60           60      3.1s
+2026-11-02T00:17:13.2168550Z   core_lang/test_numbervars_cells.jl [alt_interned]                                                     |    60           60      3.2s
+2026-11-02T00:17:13.2169399Z   core_lang/test_op_swipl.jl                                                                            |    30           30      0.6s
+2026-11-02T00:17:13.2170200Z   core_lang/test_op_swipl.jl [alt]                                                                      |    30           30      1.5s
+2026-11-02T00:17:13.2171024Z   core_lang/test_op_swipl.jl [alt_interned]                                                             |    30           30      1.6s
+2026-11-02T00:17:13.2171859Z   core_lang/test_repeat_swipl.jl                                                                        |    12           12      0.2s
+2026-11-02T00:17:13.2172919Z   core_lang/test_repeat_swipl.jl [alt]                                                                  |    12           12      0.2s
+2026-11-02T00:17:13.2173761Z   core_lang/test_repeat_swipl.jl [alt_interned]                                                         |    12           12      0.2s
+2026-11-02T00:17:13.2174746Z   core_lang/test_resource_error.jl                                                                      |     3            3      0.2s
+2026-11-02T00:17:13.2175572Z   core_lang/test_resource_error.jl [alt]                                                                |     3            3      0.2s
+2026-11-02T00:17:13.2176427Z   core_lang/test_resource_error.jl [alt_interned]                                                       |     3            3      0.1s
+2026-11-02T00:17:13.2177266Z   core_lang/test_sort_cells.jl                                                                          |     8            8      1.1s
+2026-11-02T00:17:13.2178067Z   core_lang/test_sort_cells.jl [alt]                                                                    |     8            8      2.3s
+2026-11-02T00:17:13.2178918Z   core_lang/test_sort_cells.jl [alt_interned]                                                           |     8            8      2.3s
+2026-11-02T00:17:13.2179765Z   core_lang/test_sys_swipl.jl                                                                           |   104          104      1.1s
+2026-11-02T00:17:13.2180712Z   core_lang/test_sys_swipl.jl [alt]                                                                     |   104          104      1.0s
+2026-11-02T00:17:13.2181549Z   core_lang/test_sys_swipl.jl [alt_interned]                                                            |   104          104      1.0s
+2026-11-02T00:17:13.2182523Z   core_lang/test_term.jl                                                                                |    27           27      1.0s
+2026-11-02T00:17:13.2183310Z   core_lang/test_term.jl [alt]                                                                          |    27           27      1.2s
+2026-11-02T00:17:13.2184120Z   core_lang/test_term.jl [alt_interned]                                                                 |    27           27      1.2s
+2026-11-02T00:17:13.2184943Z   core_lang/test_trail_words.jl                                                                         |    15           15      0.2s
+2026-11-02T00:17:13.2185745Z   core_lang/test_trail_words.jl [alt]                                                                   |    15           15      0.2s
+2026-11-02T00:17:13.2186590Z   core_lang/test_trail_words.jl [alt_interned]                                                          |    15           15      0.2s
+2026-11-02T00:17:13.2187436Z   core_lang/test_unifiable_cells.jl                                                                     |    12           12      0.8s
+2026-11-02T00:17:13.2188261Z   core_lang/test_unifiable_cells.jl [alt]                                                               |    12           12      1.6s
+2026-11-02T00:17:13.2189112Z   core_lang/test_unifiable_cells.jl [alt_interned]                                                      |    12           12      1.5s
+2026-11-02T00:17:13.2189961Z   core_lang/test_unify_cells.jl                                                                         |    51           51      1.7s
+2026-11-02T00:17:13.2190769Z   core_lang/test_unify_cells.jl [alt]                                                                   |    51           51      2.4s
+2026-11-02T00:17:13.2191719Z   core_lang/test_unify_cells.jl [alt_interned]                                                          |    51           51      2.3s
+2026-11-02T00:17:13.2192887Z   core_lang/test_unify_swipl.jl                                                                         |    20           20   1m06.2s
+2026-11-02T00:17:13.2193718Z   core_lang/test_unify_swipl.jl [alt]                                                                   |    20           20      0.5s
+2026-11-02T00:17:13.2194574Z   core_lang/test_unify_swipl.jl [alt_interned]                                                          |    20           20      0.5s
+2026-11-02T00:17:13.2195419Z   core_lang/test_var_identity.jl                                                                        |    20           20      0.4s
+2026-11-02T00:17:13.2196345Z   core_lang/test_var_identity.jl [alt]                                                                  |    20           20      0.4s
+2026-11-02T00:17:13.2197190Z   core_lang/test_var_identity.jl [alt_interned]                                                         |    20           20      0.4s
+2026-11-02T00:17:13.2198028Z   core_lang/test_walks_cells.jl                                                                         |    49           49      1.4s
+2026-11-02T00:17:13.2198977Z   core_lang/test_walks_cells.jl [alt]                                                                   |    49           49      6.7s
+2026-11-02T00:17:13.2199810Z   core_lang/test_walks_cells.jl [alt_interned]                                                          |    49           49      6.7s
+2026-11-02T00:17:13.2200639Z   core_lang/test_write_cells.jl                                                                         |    47           47      1.2s
+2026-11-02T00:17:13.2201453Z   core_lang/test_write_cells.jl [alt]                                                                   |    47           47      2.2s
+2026-11-02T00:17:13.2202640Z   core_lang/test_write_cells.jl [alt_interned]                                                          |    47           47      2.3s
+2026-11-02T00:17:13.2203552Z   core_text/test_canonical_readatom_swipl.jl                                                            |    11           11      0.9s
+2026-11-02T00:17:13.2204425Z   core_text/test_canonical_readatom_swipl.jl [alt]                                                      |    11           11      0.7s
+2026-11-02T00:17:13.2205320Z   core_text/test_canonical_readatom_swipl.jl [alt_interned]                                             |    11           11      0.7s
+2026-11-02T00:17:13.2206170Z   core_text/test_io.jl                                                                                  |     4            4      0.2s
+2026-11-02T00:17:13.2206936Z   core_text/test_io.jl [alt]                                                                            |     4            4      0.1s
+2026-11-02T00:17:13.2207729Z   core_text/test_io.jl [alt_interned]                                                                   |     4            4      0.1s
+2026-11-02T00:17:13.2208559Z   core_text/test_read_positions_swipl.jl                                                                |     8            8      0.9s
+2026-11-02T00:17:13.2209406Z   core_text/test_read_positions_swipl.jl [alt]                                                          |     8            8      0.9s
+2026-11-02T00:17:13.2210438Z   core_text/test_read_positions_swipl.jl [alt_interned]                                                 |     8            8      0.9s
+2026-11-02T00:17:13.2211336Z   core_text/test_reader_cells.jl                                                                        |     8            8      0.3s
+2026-11-02T00:17:13.2212429Z   core_text/test_reader_cells.jl [alt]                                                                  |     8            8      0.3s
+2026-11-02T00:17:13.2213286Z   core_text/test_reader_cells.jl [alt_interned]                                                         |     8            8      0.3s
+2026-11-02T00:17:13.2214135Z   core_text/test_write_family_swipl.jl                                                                  |    28           28      0.9s
+2026-11-02T00:17:13.2214990Z   core_text/test_write_family_swipl.jl [alt]                                                            |    28           28      0.8s
+2026-11-02T00:17:13.2215859Z   core_text/test_write_family_swipl.jl [alt_interned]                                                   |    28           28      0.8s
+2026-11-02T00:17:13.2216686Z   db/test_index_argv.jl                                                                                 |    25           25      0.8s
+2026-11-02T00:17:13.2217610Z   db/test_index_argv.jl [alt]                                                                           |    25           25      1.0s
+2026-11-02T00:17:13.2218413Z   db/test_index_argv.jl [alt_interned]                                                                  |    25           25      0.9s
+2026-11-02T00:17:13.2219223Z   db/test_index_context.jl                                                                              |     7            7      0.4s
+2026-11-02T00:17:13.2220020Z   db/test_index_context.jl [alt]                                                                        |     7            7      0.4s
+2026-11-02T00:17:13.2220831Z   db/test_index_context.jl [alt_interned]                                                               |     7            7      0.4s
+2026-11-02T00:17:13.2221671Z   db/test_index_swipl.jl                                                                                |    23           23      5.0s
+2026-11-02T00:17:13.2222631Z   db/test_index_swipl.jl [alt]                                                                          |    23           23     12.2s
+2026-11-02T00:17:13.2223450Z   db/test_index_swipl.jl [alt_interned]                                                                 |    23           23     12.4s
+2026-11-02T00:17:13.2224239Z   db/test_jit.jl                                                                                        |  8043         8043     18.8s
+2026-11-02T00:17:13.2224993Z   db/test_jit.jl [alt]                                                                                  |  8043         8043      3.5s
+2026-11-02T00:17:13.2225773Z   db/test_jit.jl [alt_interned]                                                                         |  8043         8043      3.6s
+2026-11-02T00:17:13.2226569Z   db/test_nth_clause_swipl.jl                                                                           |    51           51   1m08.4s
+2026-11-02T00:17:13.2227378Z   db/test_nth_clause_swipl.jl [alt]                                                                     |    51           51      1.3s
+2026-11-02T00:17:13.2228346Z   db/test_nth_clause_swipl.jl [alt_interned]                                                            |    51           51      1.3s
+2026-11-02T00:17:13.2229173Z   db/test_procedures.jl                                                                                 |    49           49     16.3s
+2026-11-02T00:17:13.2229967Z   db/test_procedures.jl [alt]                                                                           |    49           49      0.7s
+2026-11-02T00:17:13.2230784Z   db/test_procedures.jl [alt_interned]                                                                  |    49           49      0.8s
+2026-11-02T00:17:13.2231623Z   db/test_retractall_swipl.jl                                                                           |     2            2      0.1s
+2026-11-02T00:17:13.2232618Z   db/test_retractall_swipl.jl [alt]                                                                     |     2            2      0.1s
+2026-11-02T00:17:13.2233455Z   db/test_retractall_swipl.jl [alt_interned]                                                            |     2            2      0.1s
+2026-11-02T00:17:13.2234559Z   files/test_qlf_swipl.jl                                                                               |   101     1    102      3.1s
+2026-11-02T00:17:13.2235454Z     compileFile as swipl's consult for the loadable program (q01-q03)                                   |    17           17      0.9s
+2026-11-02T00:17:13.2236464Z     the input stream before a file is the one restored after it (LB3-S4; swipl pin: restored)           |     5            5      0.0s
+2026-11-02T00:17:13.2237537Z     the boot compile runs with autoload off (LB3-L3; swipl pin: autoload set false before consult)      |     5            5      0.1s
+2026-11-02T00:17:13.2238506Z     the pins are swipl's (live, when swipl is on PATH)                                                  |     1            1      0.0s
+2026-11-02T00:17:13.2239474Z     '$:-' runs a directive without a clause; a false part runs nothing (C: directiveClause with "$:-")  |     4            4      0.0s
+2026-11-02T00:17:13.2240489Z     the nesting bound and the unmatched endif (MAX_IFDEF_NEST = 3; fatalError)                          |     6            6      0.1s
+2026-11-02T00:17:13.2241537Z     elif is no conditional; a failing directive is collected; a syntax error is skipped; a missing file |    10           10      0.1s
+2026-11-02T00:17:13.2242940Z     a term that cannot be asserted is reported as Failed to compile and the loop goes on                |     3            3      0.0s
+2026-11-02T00:17:13.2244323Z     compileFileList and the boot entry (up to -c; the state after)                                      |    18     1     19      0.2s
+2026-11-02T00:17:13.2245350Z     the eight write-side predicates take the no-state branch; the 14 others are refused by name         |    31           31      1.4s
+2026-11-02T00:17:13.2246551Z   files/test_qlf_swipl.jl [alt]                                                                         |   101     1    102      2.0s
+2026-11-02T00:17:13.2247664Z     compileFile as swipl's consult for the loadable program (q01-q03)                                   |    17           17      1.0s
+2026-11-02T00:17:13.2249006Z     the input stream before a file is the one restored after it (LB3-S4; swipl pin: restored)           |     5            5      0.0s
+2026-11-02T00:17:13.2250272Z     the boot compile runs with autoload off (LB3-L3; swipl pin: autoload set false before consult)      |     5            5      0.1s
+2026-11-02T00:17:13.2251405Z     the pins are swipl's (live, when swipl is on PATH)                                                  |     1            1      0.0s
+2026-11-02T00:17:13.2252670Z     '$:-' runs a directive without a clause; a false part runs nothing (C: directiveClause with "$:-")  |     4            4      0.0s
+2026-11-02T00:17:13.2253897Z     the nesting bound and the unmatched endif (MAX_IFDEF_NEST = 3; fatalError)                          |     6            6      0.0s
+2026-11-02T00:17:13.2255129Z     elif is no conditional; a failing directive is collected; a syntax error is skipped; a missing file |    10           10      0.1s
+2026-11-02T00:17:13.2256523Z     a term that cannot be asserted is reported as Failed to compile and the loop goes on                |     3            3      0.0s
+2026-11-02T00:17:13.2257729Z     compileFileList and the boot entry (up to -c; the state after)                                      |    18     1     19      0.0s
+2026-11-02T00:17:13.2259131Z     the eight write-side predicates take the no-state branch; the 14 others are refused by name         |    31           31      0.5s
+2026-11-02T00:17:13.2260278Z   files/test_qlf_swipl.jl [alt_interned]                                                                |   101     1    102      2.1s
+2026-11-02T00:17:13.2261352Z     compileFile as swipl's consult for the loadable program (q01-q03)                                   |    17           17      1.0s
+2026-11-02T00:17:13.2262687Z     the input stream before a file is the one restored after it (LB3-S4; swipl pin: restored)           |     5            5      0.0s
+2026-11-02T00:17:13.2263928Z     the boot compile runs with autoload off (LB3-L3; swipl pin: autoload set false before consult)      |     5            5      0.1s
+2026-11-02T00:17:13.2265087Z     the pins are swipl's (live, when swipl is on PATH)                                                  |     1            1      0.0s
+2026-11-02T00:17:13.2266218Z     '$:-' runs a directive without a clause; a false part runs nothing (C: directiveClause with "$:-")  |     4            4      0.0s
+2026-11-02T00:17:13.2267413Z     the nesting bound and the unmatched endif (MAX_IFDEF_NEST = 3; fatalError)                          |     6            6      0.1s
+2026-11-02T00:17:13.2268622Z     elif is no conditional; a failing directive is collected; a syntax error is skipped; a missing file |    10           10      0.1s
+2026-11-02T00:17:13.2269867Z     a term that cannot be asserted is reported as Failed to compile and the loop goes on                |     3            3      0.0s
+2026-11-02T00:17:13.2271034Z     compileFileList and the boot entry (up to -c; the state after)                                      |    18     1     19      0.0s
+2026-11-02T00:17:13.2272310Z     the eight write-side predicates take the no-state branch; the 14 others are refused by name         |    31           31      0.5s
+2026-11-02T00:17:13.2273443Z   test_gate_split.jl                                                                                    |   696          696   3m53.7s
+2026-11-02T00:17:13.2274551Z   test_standalone_consumer.jl                                                                           |    15           15      2.3s
+2026-11-02T00:17:13.2275536Z   test_type_discipline.jl                                                                               |    33           33      4.7s
+2026-11-02T00:17:13.2276359Z   test_vendored_swipl.jl                                                                                |  1543         1543      1.2s
+2026-11-02T00:17:13.6324810Z ERROR: LoadError: Some tests did not pass: 34891 passed, 9 failed, 0 errored, 0 broken.
+2026-11-02T00:17:13.6326308Z in expression starting at /home/runner/work/LogicKernel/LogicKernel/test/runtests.jl:318
+2026-11-02T00:17:14.0891357Z Package LogicKernel errored during testing
+2026-11-02T00:17:14.0903854Z ##[error]Process completed with exit code 1.
+2026-11-02T00:17:14.1027531Z ##[end-action id=runtest.__run_3;outcome=failure;conclusion=failure;duration_ms=1188174]
+2026-11-02T00:17:14.1264065Z cp: cannot stat 'lcov.info': No such file or directory
+2026-11-02T00:17:14.1269639Z ##[error]Process completed with exit code 1.
+2026-11-02T00:17:14.2884264Z With the provided path, there will be 2 files uploaded
+2026-11-02T00:17:14.2890015Z Artifact name is valid!
+2026-11-02T00:17:14.2890809Z Root directory input is valid!
+2026-11-02T00:17:14.6617620Z Uploading artifact: pkgtest-1-g3.zip
+2026-11-02T00:17:14.6660473Z Beginning upload of artifact content to blob storage
+2026-11-02T00:17:14.9860083Z Uploaded bytes 3503
+2026-11-02T00:17:15.0643786Z Finished uploading artifact content to blob storage!
+2026-11-02T00:17:15.0646328Z Finalizing artifact upload
+2026-11-02T00:17:15.6483626Z Artifact pkgtest-1-g3 successfully finalized. Artifact ID 13106568653
+2026-11-02T00:17:15.6484900Z Artifact pkgtest-1-g3 has been successfully uploaded! Final size is 3503 bytes. Artifact ID is 13106568653
+2026-11-02T00:17:15.6928128Z ##[start-action display=Check system dependencies;id=upload_results.__run]
+2026-11-02T00:17:15.7159192Z All required system dependencies are available.
+2026-11-02T00:17:15.7166227Z ##[end-action id=upload_results.__run;outcome=success;conclusion=success;duration_ms=23]
+2026-11-02T00:17:15.7168331Z ##[start-action display=Action version;id=upload_results.__run_2]
+2026-11-02T00:17:15.7265178Z ==> Running Action version 7.1.1
+2026-11-02T00:17:15.7271812Z ##[end-action id=upload_results.__run_2;outcome=success;conclusion=success;duration_ms=10]
+2026-11-02T00:17:15.7274402Z ##[start-action display=Set safe directory;id=upload_results.__run_3]
+2026-11-02T00:17:15.7405931Z ##[end-action id=upload_results.__run_3;outcome=success;conclusion=success;duration_ms=13]
+2026-11-02T00:17:15.7409066Z ##[start-action display=Set fork;id=upload_results.__run_4]
+2026-11-02T00:17:15.7499053Z ##[end-action id=upload_results.__run_4;outcome=success;conclusion=success;duration_ms=8]
+2026-11-02T00:17:15.7501961Z ##[start-action display=Get OIDC token;id=upload_results.oidc]
+2026-11-02T00:17:16.1351979Z ##[end-action id=upload_results.oidc;outcome=success;conclusion=success;duration_ms=384]
+2026-11-02T00:17:16.1360416Z ##[start-action display=Get and set token;id=upload_results.__run_5]
+2026-11-02T00:17:16.1520396Z ##[end-action id=upload_results.__run_5;outcome=success;conclusion=success;duration_ms=15]
+2026-11-02T00:17:16.1524226Z ##[start-action display=Override branch for forks;id=upload_results.__run_6]
+2026-11-02T00:17:16.1650756Z ##[end-action id=upload_results.__run_6;outcome=success;conclusion=success;duration_ms=12]
+2026-11-02T00:17:16.1654315Z ##[start-action display=Override commits and pr for pull requests;id=upload_results.__run_7]
+2026-11-02T00:17:16.1778652Z ##[end-action id=upload_results.__run_7;outcome=success;conclusion=success;duration_ms=12]
+2026-11-02T00:17:16.1785038Z ##[start-action display=Upload coverage to Codecov;id=upload_results.__run_8]
+2026-11-02T00:17:16.1934803Z      _____          _
+2026-11-02T00:17:16.1935230Z     / ____|        | |
+2026-11-02T00:17:16.1935644Z    | |     ___   __| | ___  ___ _____   __
+2026-11-02T00:17:16.1936148Z    | |    / _ \ / _` |/ _ \/ __/ _ \ \ / /
+2026-11-02T00:17:16.1936673Z    | |___| (_) | (_| |  __/ (_| (_) \ V /
+2026-11-02T00:17:16.1937146Z     \_____\___/ \__,_|\___|\___\___/ \_/
+2026-11-02T00:17:16.1937944Z                             Wrapper-0.3.1
+2026-11-02T00:17:16.1938491Z                            
+2026-11-02T00:17:16.1998805Z ==> Detected linux
+2026-11-02T00:17:16.1999901Z  -> Downloading https://cli.codecov.io/latest/linux/codecov
+2026-11-02T00:17:16.2075576Z   % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+2026-11-02T00:17:16.2076227Z                                  Dload  Upload   Total   Spent    Left  Speed
+2026-11-02T00:17:16.2076732Z 
+2026-11-02T00:17:16.3317600Z   0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0
+2026-11-02T00:17:16.3318362Z 100 17.6M  100 17.6M    0     0   141M      0 --:--:-- --:--:-- --:--:--  142M
+2026-11-02T00:17:16.3343744Z ==> Finishing downloading linux:latest
+2026-11-02T00:17:16.4076593Z       Version: v11.3.2
+2026-11-02T00:17:16.4077210Z  
+2026-11-02T00:17:16.4148827Z gpg: directory '/home/runner/.gnupg' created
+2026-11-02T00:17:16.4151590Z gpg: keybox '/home/runner/.gnupg/pubring.kbx' created
+2026-11-02T00:17:16.6540968Z gpg: /home/runner/.gnupg/trustdb.gpg: trustdb created
+2026-11-02T00:17:16.6541695Z gpg: key 806BB28AED779869: public key "Codecov Uploader (Codecov Uploader Verification Key) <security@codecov.io>" imported
+2026-11-02T00:17:16.6637601Z gpg: Total number processed: 1
+2026-11-02T00:17:16.6638127Z gpg:               imported: 1
+2026-11-02T00:17:16.6644076Z ==> Verifying GPG signature integrity
+2026-11-02T00:17:16.6644746Z  -> Downloading https://cli.codecov.io/latest/linux/codecov.SHA256SUM
+2026-11-02T00:17:16.6645546Z  -> Downloading https://cli.codecov.io/latest/linux/codecov.SHA256SUM.sig
+2026-11-02T00:17:16.6646104Z  
+2026-11-02T00:17:16.7639651Z gpg: Signature made Wed Oct 28 17:39:34 2026 UTC
+2026-11-02T00:17:16.7640531Z gpg:                using RSA key 27034E7FDB850E0BBC2C62FF806BB28AED779869
+2026-11-02T00:17:16.7642437Z gpg: Good signature from "Codecov Uploader (Codecov Uploader Verification Key) <security@codecov.io>" [unknown]
+2026-11-02T00:17:16.7643614Z gpg: WARNING: This key is not certified with a trusted signature!
+2026-11-02T00:17:16.7644478Z gpg:          There is no indication that the signature belongs to the owner.
+2026-11-02T00:17:16.7645412Z Primary key fingerprint: 2703 4E7F DB85 0E0B BC2C  62FF 806B B28A ED77 9869
+2026-11-02T00:17:16.8590615Z codecov: OK
+2026-11-02T00:17:16.8604670Z ==> CLI integrity verified
+2026-11-02T00:17:16.8604924Z 
+2026-11-02T00:17:16.9331838Z  -> Token length: 2023
+2026-11-02T00:17:16.9332675Z ==> Running upload-coverage
+2026-11-02T00:17:16.9344752Z       ./codecov  upload-coverage -t <redacted> --fail-on-error --git-service github --file junit.xml --flag julia-1 --gcov-executable gcov --report-type test_results
+2026-11-02T00:17:17.3800814Z info - 2026-11-02 00:17:17,379 -- ci service found: github-actions
+2026-11-02T00:17:17.4145722Z info - 2026-11-02 00:17:17,414 -- Using token to create a commit for protected branch `gate/dstack-b7`
+2026-11-02T00:17:18.2734695Z info - 2026-11-02 00:17:18,273 -- Commit creating complete
+2026-11-02T00:17:18.4650632Z info - 2026-11-02 00:17:18,464 -- Found 1 test_results files to report
+2026-11-02T00:17:18.4651585Z info - 2026-11-02 00:17:18,464 -- > /home/runner/work/LogicKernel/LogicKernel/junit.xml
+2026-11-02T00:17:19.1967979Z info - 2026-11-02 00:17:19,196 -- Sending upload (25010 bytes) to storage
+2026-11-02T00:17:19.4224217Z info - 2026-11-02 00:17:19,422 -- Upload queued for processing complete
+2026-11-02T00:17:19.5487038Z ##[end-action id=upload_results.__run_8;outcome=success;conclusion=success;duration_ms=3370]

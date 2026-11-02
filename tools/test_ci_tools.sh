@@ -68,6 +68,10 @@ for run in 41357787404 41364513951 41389618471 41385566338 41389662396 413896629
     hdrs="$(for f in "$LOGICKERNEL_CI_FIXTURE_DIR/$run"/*.log; do sed -n 1p "$f"; done | grep -c "^# fixture: run $run ")"
     ok "fixture $run: every log carries the run id in its header" "$n" "$hdrs"
 done
+# a fixture log that .gitignore swallows is missing from a fresh checkout (CI found it): none may be ignored
+nlog="$(find "$LOGICKERNEL_CI_FIXTURE_DIR" -name '*.log' | wc -l)"
+nign="$(find "$LOGICKERNEL_CI_FIXTURE_DIR" -name '*.log' | git -C "$ROOT" check-ignore --stdin 2> /dev/null | wc -l)"
+[ "$nlog" -gt 0 ] && ok "fixture logs: none is git-ignored ($nlog logs)" 0 "$nign" || ok "fixture logs exist" ">0" "$nlog"
 secret="$(grep -rIlE 'gh[pousr]_[A-Za-z0-9]{20,}|github_pat_|Bearer [A-Za-z0-9._-]{20,}' "$LOGICKERNEL_CI_FIXTURE_DIR" | wc -l)"
 ok "fixtures hold no token-looking text" 0 "$secret"
 # the token guard can fail: a token-shaped string generated NOW (never stored) is caught by the same pattern,

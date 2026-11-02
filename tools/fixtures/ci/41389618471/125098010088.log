@@ -1,0 +1,188 @@
+# fixture: run 41389618471 (S2a red (Tooling), gate/s2a2), job 125098010088 "Tooling · stale"; failed-step lines only (setup groups, passing [unit] lines, cleanup dropped; ANSI removed)
+2026-11-02T04:39:12.9952179Z Current runner version: '2.338.2'
+2026-11-02T04:39:13.0030883Z Secret source: Actions
+2026-11-02T04:39:13.0032904Z Cache mode: write
+2026-11-02T04:39:13.0035205Z Prepare workflow directory
+2026-11-02T04:39:13.0871719Z Prepare all required actions
+2026-11-02T04:39:13.0950229Z Getting action download info
+2026-11-02T04:39:14.2116268Z Complete job name: Tooling · stale
+2026-11-02T04:39:15.1077691Z Syncing repository: CognitiveSubstratesAI/LogicKernel
+2026-11-02T04:39:15.1232054Z Temporarily overriding HOME='/home/runner/work/_temp/90c01b7b-e025-409f-9034-884a222cac1c' before making global git config changes
+2026-11-02T04:39:15.1234211Z Adding repository directory to the temporary git global config as a safe directory
+2026-11-02T04:39:15.1460856Z Deleting the contents of '/home/runner/work/LogicKernel/LogicKernel'
+2026-11-02T04:39:16.6105408Z b36a947486cd78727bed206f091273df90404258
+2026-11-02T04:39:16.6496202Z tooling files changed since 7b50913:
+2026-11-02T04:39:16.6504704Z tools/mutants/S2A.py
+2026-11-02T04:39:16.7740911Z Syncing repository: SWI-Prolog/swipl-devel
+2026-11-02T04:39:16.7846690Z Temporarily overriding HOME='/home/runner/work/_temp/2718e479-fde2-4912-95cf-e6ba487c827e' before making global git config changes
+2026-11-02T04:39:16.7848039Z Adding repository directory to the temporary git global config as a safe directory
+2026-11-02T04:39:36.2455238Z cbf4e1896275a07794332fd98ad0dcb11bf51919
+2026-11-02T04:39:36.2716471Z Prepare all required actions
+2026-11-02T04:39:36.2717058Z Getting action download info
+2026-11-02T04:39:36.4701943Z ##[start-action display=The oracle's cache key (runner image + pinned commit + build flags);id=__self.oracle]
+2026-11-02T04:39:36.5119126Z ##[end-action id=__self.oracle;outcome=success;conclusion=success;duration_ms=41]
+2026-11-02T04:39:36.5121695Z ##[start-action display=Restore the oracle;id=__self.oracle_cache]
+2026-11-02T04:39:36.7260763Z Cache hit for: Linux-ubuntu24-swipl-e032366462b3-8794806cb107
+2026-11-02T04:39:36.8398582Z Received 3188008 of 3188008 (100.0%), 49.8 MBs/sec
+2026-11-02T04:39:36.8399724Z Cache Size: ~3 MB (3188008 B)
+2026-11-02T04:39:36.8919138Z Cache restored successfully
+2026-11-02T04:39:36.9126638Z Cache restored from key: Linux-ubuntu24-swipl-e032366462b3-8794806cb107
+2026-11-02T04:39:36.9234730Z ##[end-action id=__self.oracle_cache;outcome=success;conclusion=success;duration_ms=411]
+2026-11-02T04:39:36.9237653Z ##[start-action display=Build the oracle from the pinned commit;id=__self.__run]
+2026-11-02T04:39:36.9244641Z ##[end-action id=__self.__run;outcome=skipped;conclusion=skipped;duration_ms=0]
+2026-11-02T04:39:36.9246578Z ##[start-action display=Put the oracle on PATH;id=__self.__run_2]
+2026-11-02T04:39:36.9335187Z ##[end-action id=__self.__run_2;outcome=success;conclusion=success;duration_ms=8]
+2026-11-02T04:39:36.9354496Z ##[start-action display=Refuse any swipl but the oracle;id=__self.__run_3]
+2026-11-02T04:39:36.9454966Z SWI-Prolog version 10.1.19 for x86_64-linux
+2026-11-02T04:39:36.9887738Z ##[end-action id=__self.__run_3;outcome=success;conclusion=success;duration_ms=53]
+2026-11-02T04:39:45.1023823Z julia version 1.13.3
+2026-11-02T04:39:45.2921027Z Using depot path: /home/runner/.julia
+2026-11-02T04:39:45.2930513Z Cache key: julia-cache;workflow=CI;job=tooling;os=Linux;shard=stale;run_id=41389618471;run_attempt=1
+2026-11-02T04:39:45.2931593Z Restore key: julia-cache;workflow=CI;job=tooling;os=Linux;shard=stale;
+2026-11-02T04:39:45.2969364Z (node:4096) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+2026-11-02T04:39:45.2970647Z (Use `node --trace-deprecation ...` to show where the warning was created)
+2026-11-02T04:39:45.4000743Z Cache hit for restore-key: julia-cache;workflow=CI;job=tooling;os=Linux;shard=stale;run_id=41387674165;run_attempt=1
+2026-11-02T04:39:45.8729305Z Received 53826442 of 53826442 (100.0%), 145.4 MBs/sec
+2026-11-02T04:39:45.8729932Z Cache Size: ~51 MB (53826442 B)
+2026-11-02T04:39:46.3295941Z Cache restored successfully
+2026-11-02T04:39:46.3326449Z Cache restored from key: julia-cache;workflow=CI;job=tooling;os=Linux;shard=stale;run_id=41387674165;run_attempt=1
+2026-11-02T04:39:46.3545973Z 19M	/home/runner/.julia/artifacts
+2026-11-02T04:39:46.3551766Z 166M	/home/runner/.julia/compiled
+2026-11-02T04:39:46.3552702Z 12K	/home/runner/.julia/logs
+2026-11-02T04:39:46.3659164Z 23M	/home/runner/.julia/packages
+2026-11-02T04:39:46.3659730Z 7.5M	/home/runner/.julia/registries
+2026-11-02T04:39:46.3660138Z 16K	/home/runner/.julia/scratchspaces
+2026-11-02T04:39:46.3660453Z 215M	total
+2026-11-02T04:39:46.3668603Z Registries directory exists and is non-empty. Updating any registries
+2026-11-02T04:39:47.6539669Z     Updating registry at `~/.julia/registries/General.toml`
+2026-11-02T04:39:48.9040099Z      Cloning git-repo `https://github.com/JuliaDebug/LoweredCodeUtils.jl`
+2026-11-02T04:39:49.3538053Z     Updating git-repo `https://github.com/JuliaDebug/LoweredCodeUtils.jl`
+2026-11-02T04:39:49.4846685Z      Cloning git-repo `https://github.com/aviatesk/JET.jl`
+2026-11-02T04:39:52.8047965Z     Updating git-repo `https://github.com/aviatesk/JET.jl`
+2026-11-02T04:39:53.0111055Z      Cloning git-repo `https://github.com/JuliaTesting/Aqua.jl`
+2026-11-02T04:39:53.3719735Z     Updating git-repo `https://github.com/JuliaTesting/Aqua.jl`
+2026-11-02T04:39:53.7928874Z    Resolving package versions...
+2026-11-02T04:39:56.3343276Z     Updating `~/.julia/environments/v1.13/Project.toml`
+2026-11-02T04:39:56.3362857Z   [9b6a8646] + AllocCheck v0.2.7
+2026-11-02T04:39:56.3363919Z   [4c88cf16] + Aqua v1.0.0-DEV `https://github.com/JuliaTesting/Aqua.jl#master`
+2026-11-02T04:39:56.3364763Z   [c3a54625] + JET v0.13.1 `https://github.com/aviatesk/JET.jl#master`
+2026-11-02T04:39:56.3365594Z ⌃ [98e50ef6] + JuliaFormatter v2.14.0
+2026-11-02T04:39:56.3366350Z   [6f1432cf] + LoweredCodeUtils v3.10.2 `https://github.com/JuliaDebug/LoweredCodeUtils.jl#master`
+2026-11-02T04:39:56.3366985Z   [295af30f] + Revise v3.18.0
+2026-11-02T04:39:56.3367593Z     Updating `~/.julia/environments/v1.13/Manifest.toml`
+2026-11-02T04:39:56.5960074Z   [9b6a8646] + AllocCheck v0.2.7
+2026-11-02T04:39:56.5960886Z   [4c88cf16] + Aqua v1.0.0-DEV `https://github.com/JuliaTesting/Aqua.jl#master`
+2026-11-02T04:39:56.5961885Z ⌅ [fa961155] + CEnum v0.5.0
+2026-11-02T04:39:56.5962544Z   [da1fd8a2] + CodeTracking v3.0.2
+2026-11-02T04:39:56.5963030Z   [a80b9123] + CommonMark v1.0.4
+2026-11-02T04:39:56.5963496Z   [807dbc54] + Compiler v0.1.1
+2026-11-02T04:39:56.5963948Z   [9db33cc3] + CompilerCaching v0.5.1
+2026-11-02T04:39:56.5964421Z   [e2ba6199] + ExprTools v0.1.11
+2026-11-02T04:39:56.5964979Z ⌃ [61eb1bfa] + GPUCompiler v2.10.0
+2026-11-02T04:39:56.5965424Z   [c27321d9] + Glob v1.5.0
+2026-11-02T04:39:56.5965917Z   [076d061b] + HashArrayMappedTries v0.2.0
+2026-11-02T04:39:56.5966548Z   [c3a54625] + JET v0.13.1 `https://github.com/aviatesk/JET.jl#master`
+2026-11-02T04:39:56.5967818Z   [692b3bcd] + JLLWrappers v1.8.0
+2026-11-02T04:39:56.5968398Z ⌃ [98e50ef6] + JuliaFormatter v2.14.0
+2026-11-02T04:39:56.5968888Z   [aa1ae85d] + JuliaInterpreter v0.12.2
+2026-11-02T04:39:56.5969366Z   [70703baa] + JuliaSyntax v1.0.2
+2026-11-02T04:39:56.5969875Z ⌅ [929cbde3] + LLVM v9.13.2
+2026-11-02T04:39:56.5970304Z   [11f193de] + LMDB v3.0.1
+2026-11-02T04:39:56.5971029Z   [6f1432cf] + LoweredCodeUtils v3.10.2 `https://github.com/JuliaDebug/LoweredCodeUtils.jl#master`
+2026-11-02T04:39:56.5971809Z   [1914dd2f] + MacroTools v0.5.16
+2026-11-02T04:39:56.5972547Z   [bac558e1] + OrderedCollections v2.0.3
+2026-11-02T04:39:56.5973090Z   [aea7be01] + PrecompileTools v1.3.4
+2026-11-02T04:39:56.5973578Z   [21216c6a] + Preferences v1.6.1
+2026-11-02T04:39:56.5974026Z   [295af30f] + Revise v3.18.0
+2026-11-02T04:39:56.5974834Z   [7e506255] + ScopedValues v1.6.2
+2026-11-02T04:39:56.5975333Z   [6c6a2e73] + Scratch v1.3.0
+2026-11-02T04:39:56.5975754Z   [e689c965] + Tracy v0.1.6
+2026-11-02T04:39:56.5976301Z ⌅ [dad2f222] + LLVMExtra_jll v0.0.47+0
+2026-11-02T04:39:56.5976810Z   [6206cf0b] + LMDB_jll v1.0.3+0
+2026-11-02T04:39:56.5977275Z   [ad6e5548] + LibTracyClient_jll v0.13.1+0
+2026-11-02T04:39:56.5977791Z   [8b5cbfcf] + tree_sitter_gcn_jll v0.1.0+0
+2026-11-02T04:39:56.5978289Z   [44208993] + tree_sitter_llvm_jll v1.1.0+0
+2026-11-02T04:39:56.5978812Z   [71e3f6e6] + tree_sitter_ptx_jll v0.1.0+0
+2026-11-02T04:39:56.5979332Z   [f0e86581] + tree_sitter_spirv_jll v0.1.0+0
+2026-11-02T04:39:56.5980225Z   [0dad84c5] + ArgTools v1.1.2
+2026-11-02T04:39:56.5980849Z   [56f22d72] + Artifacts v1.11.0
+2026-11-02T04:39:56.5981583Z   [2a0f44e3] + Base64 v1.11.0
+2026-11-02T04:39:56.5982201Z   [8bf52ea8] + CRC32c v1.11.0
+2026-11-02T04:39:56.5983119Z   [ade2ca70] + Dates v1.11.0
+2026-11-02T04:39:56.5983913Z   [f43a241f] + Downloads v1.7.0
+2026-11-02T04:39:56.5984532Z   [7b1f6079] + FileWatching v1.11.0
+2026-11-02T04:39:56.5985329Z   [b77e0a4c] + InteractiveUtils v1.11.0
+2026-11-02T04:39:56.5986098Z   [ac6e5ff7] + JuliaSyntaxHighlighting v1.12.0
+2026-11-02T04:39:56.5986768Z   [4af54fe1] + LazyArtifacts v1.11.0
+2026-11-02T04:39:56.6008733Z   [b27032c2] + LibCURL v1.0.0
+2026-11-02T04:39:56.6009203Z   [76f85450] + LibGit2 v1.11.0
+2026-11-02T04:39:56.6009655Z   [8f399da3] + Libdl v1.11.0
+2026-11-02T04:39:56.6010091Z   [56ddb016] + Logging v1.11.0
+2026-11-02T04:39:56.6010525Z   [d6f4376e] + Markdown v1.11.0
+2026-11-02T04:39:56.6010978Z   [ca575930] + NetworkOptions v1.3.0
+2026-11-02T04:39:56.6011443Z   [44cfe95a] + Pkg v1.13.0
+2026-11-02T04:39:56.6011867Z   [de0858da] + Printf v1.11.0
+2026-11-02T04:39:56.6012611Z   [3fa0cd96] + REPL v1.11.0
+2026-11-02T04:39:56.6013061Z   [9a3f8284] + Random v1.11.0
+2026-11-02T04:39:56.6013497Z   [ea8e919c] + SHA v1.0.0
+2026-11-02T04:39:56.6013909Z   [9e88b42a] + Serialization v1.11.0
+2026-11-02T04:39:56.6014377Z   [6462fe0b] + Sockets v1.11.0
+2026-11-02T04:39:56.6014845Z   [f489334b] + StyledStrings v1.11.0
+2026-11-02T04:39:56.6015318Z   [fa267f1f] + TOML v1.0.3
+2026-11-02T04:39:56.6015719Z   [a4e569a6] + Tar v1.10.0
+2026-11-02T04:39:56.6016139Z   [8dfed614] + Test v1.11.0
+2026-11-02T04:39:56.6016549Z   [cf7118a7] + UUIDs v1.11.0
+2026-11-02T04:39:56.6016973Z   [4ec0a83e] + Unicode v1.11.0
+2026-11-02T04:39:56.6017470Z   [e66e0078] + CompilerSupportLibraries_jll v1.5.5+2
+2026-11-02T04:39:56.6018253Z   [deac9b47] + LibCURL_jll v8.22.0+0
+2026-11-02T04:39:56.6020362Z   [e37daf67] + LibGit2_jll v1.9.7+0
+2026-11-02T04:39:56.6021691Z   [29816b5a] + LibSSH2_jll v1.11.104+0
+2026-11-02T04:39:56.6023463Z   [14a3606d] + MozillaCACerts_jll v2026.10.20
+2026-11-02T04:39:56.6024946Z   [458c3c95] + OpenSSL_jll v3.5.8+0
+2026-11-02T04:39:56.6026430Z   [efcefdf7] + PCRE2_jll v10.47.0+0
+2026-11-02T04:39:56.6027907Z   [83775a58] + Zlib_jll v1.3.2+0
+2026-11-02T04:39:56.6029435Z   [3161d3a3] + Zstd_jll v1.5.7+1
+2026-11-02T04:39:56.6030881Z   [8e850ede] + nghttp2_jll v1.70.0+0
+2026-11-02T04:39:56.6032776Z   [3f19e933] + p7zip_jll v17.8.3+0
+2026-11-02T04:39:56.6034789Z         Info Packages marked with ⌃ and ⌅ have new versions available. Those with ⌃ may be upgradable, but those with ⌅ are restricted by compatibility constraints from upgrading. To see why use `status --outdated -m`
+2026-11-02T04:39:58.2925909Z     Updating registry at `~/.julia/registries/General.toml`
+2026-11-02T04:39:58.3647055Z     Updating `~/work/LogicKernel/LogicKernel/Project.toml`
+2026-11-02T04:39:58.3648044Z   [aea7be01] + PrecompileTools v1.3.4
+2026-11-02T04:39:58.3649224Z     Updating `~/work/LogicKernel/LogicKernel/Manifest.toml`
+2026-11-02T04:39:58.3654874Z   [aea7be01] + PrecompileTools v1.3.4
+2026-11-02T04:39:58.3655437Z   [21216c6a] + Preferences v1.6.1
+2026-11-02T04:39:58.3657699Z   [ade2ca70] + Dates v1.11.0
+2026-11-02T04:39:58.3659167Z   [de0858da] + Printf v1.11.0
+2026-11-02T04:39:58.3661122Z   [fa267f1f] + TOML v1.0.3
+2026-11-02T04:39:58.3661530Z   [4ec0a83e] + Unicode v1.11.0
+2026-11-02T04:39:58.4136674Z Precompiling packages...
+2026-11-02T04:41:15.2257908Z   76.8 s  ✓ LogicKernel
+2026-11-02T04:41:15.2258853Z   1 dependency successfully precompiled in 77 seconds. 6 already precompiled.
+2026-11-02T04:41:15.3267467Z running
+2026-11-02T04:50:21.5424102Z   ok   stale: a daemon-only method is planted
+2026-11-02T04:50:21.5426125Z   FAIL stale: a daemon-only method restarts the daemon, and the rerun PASSES: exit 1, want 0
+2026-11-02T04:50:21.5427799Z   ok   …classified a leftover
+2026-11-02T04:50:21.5428615Z   ok   …restarting the daemon once
+2026-11-02T04:50:21.5429763Z   FAIL …and the rerun passed: exit 0, want 1
+2026-11-02T04:50:21.5430672Z   ok   …the restart cleared it
+2026-11-02T04:50:21.5431631Z   ok   real: a source method no syntax tree shows still FAILS after the restart
+2026-11-02T04:50:21.5432898Z   ok   …the daemon was restarted once
+2026-11-02T04:50:21.5433824Z   ok   …and the failure reported REAL after it
+2026-11-02T04:50:21.5434594Z   ok   …naming the method
+2026-11-02T04:50:21.5435409Z   ok   real: a method defined in source by name FAILS at once
+2026-11-02T04:50:21.5436319Z   ok   …classified REAL (not in the manifest, no leftover)
+2026-11-02T04:50:21.5437126Z   ok   …with NO restart
+2026-11-02T04:50:21.5437765Z   ok   src/term_interface.jl is restored
+2026-11-02T04:50:21.5438435Z test_warm (stale): 12 passed, 2 failed
+2026-11-02T04:50:21.5505076Z test_warm (shard stale): 12 passed, 2 failed
+2026-11-02T04:50:21.5523421Z ##[error]Process completed with exit code 1.
+2026-11-02T04:50:21.7329313Z With the provided path, there will be 2 files uploaded
+2026-11-02T04:50:21.7333839Z Artifact name is valid!
+2026-11-02T04:50:21.7334556Z Root directory input is valid!
+2026-11-02T04:50:21.9229196Z Uploading artifact: warm-stale.zip
+2026-11-02T04:50:21.9272226Z Beginning upload of artifact content to blob storage
+2026-11-02T04:50:22.0105074Z Uploaded bytes 646
+2026-11-02T04:50:22.0263023Z Finished uploading artifact content to blob storage!
+2026-11-02T04:50:22.0264701Z Finalizing artifact upload
+2026-11-02T04:50:22.4724459Z Artifact warm-stale successfully finalized. Artifact ID 13117481271
+2026-11-02T04:50:22.4725660Z Artifact warm-stale has been successfully uploaded! Final size is 646 bytes. Artifact ID is 13117481271

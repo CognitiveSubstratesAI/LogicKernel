@@ -1,0 +1,37 @@
+# fixture: run 41357787404 (P1 red (stale arg/3 pin), gate/p1b), job 125004767397 "reference"; failed-step lines only (setup groups, passing [unit] lines, cleanup dropped; ANSI removed)
+2026-11-01T22:47:31.4372423Z Current runner version: '2.338.2'
+2026-11-01T22:47:31.4412094Z Secret source: Actions
+2026-11-01T22:47:31.4412917Z Cache mode: write
+2026-11-01T22:47:31.4413827Z Prepare workflow directory
+2026-11-01T22:47:31.4732775Z Prepare all required actions
+2026-11-01T22:47:31.4771946Z Getting action download info
+2026-11-01T22:47:32.7748365Z Complete job name: reference
+2026-11-01T22:47:33.1339012Z Syncing repository: CognitiveSubstratesAI/LogicKernel
+2026-11-01T22:47:33.1465450Z Temporarily overriding HOME='/home/runner/work/_temp/8483b46a-7dcd-4cd5-a654-97af292a7b88' before making global git config changes
+2026-11-01T22:47:33.1466712Z Adding repository directory to the temporary git global config as a safe directory
+2026-11-01T22:47:33.1528873Z Deleting the contents of '/home/runner/work/LogicKernel/LogicKernel'
+2026-11-01T22:47:34.5147559Z 374cddf29fcf20bfc80d4c6566361b5d1860a49d
+2026-11-01T22:47:34.9597520Z Found 12 artifact(s)
+2026-11-01T22:47:34.9599710Z Filtering artifacts by pattern 'evidence-reference-g*'
+2026-11-01T22:47:34.9615218Z Preparing to download the following artifacts:
+2026-11-01T22:47:34.9618804Z - evidence-reference-g2 (ID: 13104721125, Size: 3112, Expected Digest: sha256:907ca67d0f2b5128fd219ed847cbde9627e602bd9cfc12a3997ffc33842c38a6)
+2026-11-01T22:47:34.9623011Z - evidence-reference-g1 (ID: 13104656556, Size: 3105, Expected Digest: sha256:95e2249ea7152eef6ae116a8f6dff73cfa0ccfa00a30d024cd8476b3b597414f)
+2026-11-01T22:47:35.3999629Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/evidence-out
+2026-11-01T22:47:35.4218129Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/evidence-out
+2026-11-01T22:47:35.6327981Z (node:2112) [DEP0005] DeprecationWarning: Buffer() is deprecated due to security and usability issues. Please use the Buffer.alloc(), Buffer.allocUnsafe(), or Buffer.from() methods instead.
+2026-11-01T22:47:35.6328799Z (Use `node --trace-deprecation ...` to show where the warning was created)
+2026-11-01T22:47:35.6423184Z Total of 2 artifact(s) downloaded
+2026-11-01T22:47:35.6426473Z Download artifact has finished successfully
+2026-11-01T22:47:35.6805427Z ## reference — 2 file groups
+2026-11-01T22:47:35.6805693Z 
+2026-11-01T22:47:35.6805820Z | job | verdict | time |
+2026-11-01T22:47:35.6806177Z |---|---|---|
+2026-11-01T22:47:35.6806510Z | reference_g1 | **FAILED** | — |
+2026-11-01T22:47:35.6806856Z | reference_g2 | passed | 623 s |
+2026-11-01T22:47:35.6807070Z 
+2026-11-01T22:47:35.6807208Z reference: 158 units over 2 file groups
+2026-11-01T22:47:35.6807450Z 
+2026-11-01T22:47:35.6807609Z **FAIL: reference_g1: the job did not pass**
+2026-11-01T22:47:35.6822365Z ##[error]FAIL: reference_g1: the job did not pass
+2026-11-01T22:47:35.6829441Z ##[notice]reference: 158 units over 2 file groups
+2026-11-01T22:47:35.6838779Z ##[error]Process completed with exit code 1.

@@ -1,0 +1,95 @@
+# fixture: run 41364514173 (MOD3a battery, void (baseline failed)), job 125035130930 "Verdict table"; failed-step lines only (setup groups, passing [unit] lines, cleanup dropped; ANSI removed)
+2026-11-02T00:46:55.1319148Z Current runner version: '2.338.2'
+2026-11-02T00:46:55.1359065Z Secret source: Actions
+2026-11-02T00:46:55.1359927Z Cache mode: write
+2026-11-02T00:46:55.1360520Z Prepare workflow directory
+2026-11-02T00:46:55.1820083Z Prepare all required actions
+2026-11-02T00:46:55.1859912Z Getting action download info
+2026-11-02T00:46:56.0194520Z Complete job name: Verdict table
+2026-11-02T00:46:56.2996643Z Syncing repository: CognitiveSubstratesAI/LogicKernel
+2026-11-02T00:46:56.3082452Z Temporarily overriding HOME='/home/runner/work/_temp/9e398cc7-d1da-499d-88be-52e8e9be2812' before making global git config changes
+2026-11-02T00:46:56.3084438Z Adding repository directory to the temporary git global config as a safe directory
+2026-11-02T00:46:56.3129132Z Deleting the contents of '/home/runner/work/LogicKernel/LogicKernel'
+2026-11-02T00:46:57.3460051Z 7408ccc2f8e7c6cd13a57614643feb30f9b62f27
+2026-11-02T00:46:57.7692631Z Found 19 artifact(s)
+2026-11-02T00:46:57.7709320Z Preparing to download the following artifacts:
+2026-11-02T00:46:58.2821819Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T00:46:58.2875239Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T00:46:58.2902282Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T00:46:58.2911449Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T00:46:58.2922232Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T00:46:58.2963674Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T00:46:58.2993753Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T00:46:58.3025294Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T00:46:58.3029716Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T00:46:58.3054601Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T00:46:58.3080478Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T00:46:58.3086731Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T00:46:58.3097396Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T00:46:58.3112712Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T00:46:58.3151174Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T00:46:58.3162264Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T00:46:58.3213139Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T00:46:58.3235599Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T00:46:58.3327893Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/mutation-out
+2026-11-02T00:46:58.5749470Z (node:2351) [DEP0005] DeprecationWarning: Buffer() is deprecated due to security and usability issues. Please use the Buffer.alloc(), Buffer.allocUnsafe(), or Buffer.from() methods instead.
+2026-11-02T00:46:58.5750370Z (Use `node --trace-deprecation ...` to show where the warning was created)
+2026-11-02T00:46:58.6196901Z Total of 19 artifact(s) downloaded
+2026-11-02T00:46:58.6200195Z Download artifact has finished successfully
+2026-11-02T00:46:58.6842015Z ## Mutation battery — tools/mutants/MOD3a.py
+2026-11-02T00:46:58.6842489Z 
+2026-11-02T00:46:58.6842951Z Baseline (unmutated targets): **NOT GREEN — no verdict below counts**, 307 s
+2026-11-02T00:46:58.6843452Z 
+2026-11-02T00:46:58.6843785Z | mutant | verdict | time | what it breaks | first failing test line |
+2026-11-02T00:46:58.6844450Z |---|---|---|---|---|
+2026-11-02T00:46:58.6845320Z | MOD3a-X1 | caught | 133 s | I_CONTEXT sets no context: `qm:H :- B` runs in qm (KILL b17, b20, b42) | M:Goal in a body as swipl's (b01-b46): Test Failed at test/core_lang/test_colon_body_swipl.jl:318 |
+2026-11-02T00:46:58.6846554Z | MOD3a-X2 | caught | 138 s | I_CONTEXT ignores P_TRANSPARENT: a transparent clause runs in its body module (KILL b18) | M:Goal in a body as swipl's (b01-b46): Test Failed at test/core_lang/test_colon_body_swipl.jl:318 |
+2026-11-02T00:46:58.6848007Z | MOD3a-D1 | caught | 137 s | I_DEPARTM's last call sets no context: the transparent callee takes the caller's (KILL b01) | M:Goal in a body as swipl's (b01-b46): Test Failed at test/core_lang/test_colon_body_swipl.jl:318 |
+2026-11-02T00:46:58.6849296Z | MOD3a-D2 | caught | 117 s | I_DEPARTM always takes I_CALLM's path: no frame reuse, lTop grows with the depth (KILL b45; audit D-0229) | M:Goal in a body as swipl's (b01-b46): Test Failed at test/core_lang/test_colon_body_swipl.jl:318 |
+2026-11-02T00:46:58.6850949Z | MOD3a-M1 | caught | 86 s | I_CALLM passes user, not its module, to mcall_cont (KILL b02, b05, b08) | M:Goal in a body as swipl's (b01-b46): Test Failed at test/core_lang/test_colon_body_swipl.jl:318 |
+2026-11-02T00:46:58.6852250Z | MOD3a-M2 | caught | 93 s | mcall_cont tests the transparency of the UNRESOLVED definition (KILL b08) | M:Goal in a body as swipl's (b01-b46): Test Failed at test/core_lang/test_colon_body_swipl.jl:318 |
+2026-11-02T00:46:58.6853391Z | MOD3a-T1 | caught | 97 s | getTargetModule accepts a variable met first (KILL b31, bc) | M:Goal in a body as swipl's (b01-b46): Test Failed at test/core_lang/test_colon_body_swipl.jl:318 |
+2026-11-02T00:46:58.6854516Z | MOD3a-T2 | caught | 132 s | getTargetModule does not link a goal clause's module variable (KILL b35, b36, b37, b38) | M:Goal in a body as swipl's (b01-b46): Test Failed at test/core_lang/test_colon_body_swipl.jl:318 |
+2026-11-02T00:46:58.6855691Z | MOD3a-T3 | caught | 133 s | getTargetModule's type error does not fail the compilation (KILL b32, b33, b41, bc) | M:Goal in a body as swipl's (b01-b46): Test Failed at test/core_lang/test_colon_body_swipl.jl:318 |
+2026-11-02T00:46:58.6856880Z | MOD3a-B1 | caught | 137 s | CB_COLON does not restore the context: the goals after `m:G` are m's (KILL bc p2, p5) | M:Goal in a body compiles as swipl's (MOD3a): Test Failed at test/compile/test_body_code_swipl.jl:3348 |
+2026-11-02T00:46:58.6858044Z | MOD3a-S1 | caught | 138 s | a goal of another module compiled as I_CALL/I_DEPART (KILL b01, b02, b21, bc) | M:Goal in a body as swipl's (b01-b46): Test Failed at test/core_lang/test_colon_body_swipl.jl:318 |
+2026-11-02T00:46:58.6859314Z | MOD3a-S2 | caught | 98 s | call/N compiled inline under a colon context (KILL b10, b26, bc p7) | M:Goal in a body as swipl's (b01-b46): Test Failed at test/core_lang/test_colon_body_swipl.jl:318 |
+2026-11-02T00:46:58.6860433Z | MOD3a-S3 | caught | 145 s | a goal under a variable module is not meta-called (KILL b03, b04, b23, b34, bc p3) | M:Goal in a body as swipl's (b01-b46): Test Failed at test/core_lang/test_colon_body_swipl.jl:318 |
+2026-11-02T00:46:58.6861822Z | MOD3a-S4 | caught | 167 s | the meta-call under a colon context drops the `Module:` wrapper (KILL b11, b12, b28, bc p11, p12) | M:Goal in a body as swipl's (b01-b46): Test Failed at test/core_lang/test_colon_body_swipl.jl:318 |
+2026-11-02T00:46:58.6863096Z | MOD3a-P1 | caught | 105 s | P_MFCONTEXT only for multifile: `qm:H :- B` from user gets no I_CONTEXT (KILL b17, b24, b42, b44, bc p4, p5) | M:Goal in a body as swipl's (b01-b46): Test Failed at test/core_lang/test_colon_body_swipl.jl:318 |
+2026-11-02T00:46:58.6864534Z | MOD3a-P2 | caught | 101 s | P_MFCONTEXT not for a multifile predicate (KILL b25, bc multifile pin) | what is still refused (V2's interim; V6b, V6b2, V9a: the inline compilers decide), and swipl's type_error(callable, Body): Test Failed at test/compile/test_body_code_swipl.jl:3085 |
+2026-11-02T00:46:58.6865852Z | MOD3a-K1 | caught | 106 s | decompile skips I_CONTEXT handling (KILL b24, b25, b44) | M:Goal in a body as swipl's (b01-b46): Error During Test at test/core_lang/test_colon_body_swipl.jl:312 |
+2026-11-02T00:46:58.6866931Z | MOD3a-K2 | caught | 131 s | I_CALLM/I_DEPARTM decompile without `Module:` (KILL b21, b22, b26, b29) | M:Goal in a body as swipl's (b01-b46): Test Failed at test/core_lang/test_colon_body_swipl.jl:318 |
+2026-11-02T00:46:58.6867643Z 
+2026-11-02T00:46:58.6868206Z **0 of 18 decided; blocking: MOD3a-X1, MOD3a-X2, MOD3a-D1, MOD3a-D2, MOD3a-M1, MOD3a-M2, MOD3a-T1, MOD3a-T2, MOD3a-T3, MOD3a-B1, MOD3a-S1, MOD3a-S2, MOD3a-S3, MOD3a-S4, MOD3a-P1, MOD3a-P2, MOD3a-K1, MOD3a-K2**
+2026-11-02T00:46:58.6899366Z ##[error]Process completed with exit code 1.
+2026-11-02T00:46:58.7366564Z ##[notice]## Mutation battery — tools/mutants/MOD3a.py
+Baseline (unmutated targets): **NOT GREEN — no verdict below counts**, 307 s
+| mutant | verdict | time | what it breaks | first failing test line |
+|---|---|---|---|---|
+| MOD3a-X1 | caught | 133 s | I_CONTEXT sets no context: `qm:H :- B` runs in qm (KILL b17, b20, b42) | M:Goal in a body as swipl's (b01-b46): Test Failed at test/core_lang/test_colon_body_swipl.jl:318 |
+| MOD3a-X2 | caught | 138 s | I_CONTEXT ignores P_TRANSPARENT: a transparent clause runs in its body module (KILL b18) | M:Goal in a body as swipl's (b01-b46): Test Failed at test/core_lang/test_colon_body_swipl.jl:318 |
+| MOD3a-D1 | caught | 137 s | I_DEPARTM's last call sets no context: the transparent callee takes the caller's (KILL b01) | M:Goal in a body as swipl's (b01-b46): Test Failed at test/core_lang/test_colon_body_swipl.jl:318 |
+| MOD3a-D2 | caught | 117 s | I_DEPARTM always takes I_CALLM's path: no frame reuse, lTop grows with the depth (KILL b45; audit D-0229) | M:Goal in a body as swipl's (b01-b46): Test Failed at test/core_lang/test_colon_body_swipl.jl:318 |
+| MOD3a-M1 | caught | 86 s | I_CALLM passes user, not its module, to mcall_cont (KILL b02, b05, b08) | M:Goal in a body as swipl's (b01-b46): Test Failed at test/core_lang/test_colon_body_swipl.jl:318 |
+| MOD3a-M2 | caught | 93 s | mcall_cont tests the transparency of the UNRESOLVED definition (KILL b08) | M:Goal in a body as swipl's (b01-b46): Test Failed at test/core_lang/test_colon_body_swipl.jl:318 |
+| MOD3a-T1 | caught | 97 s | getTargetModule accepts a variable met first (KILL b31, bc) | M:Goal in a body as swipl's (b01-b46): Test Failed at test/core_lang/test_colon_body_swipl.jl:318 |
+| MOD3a-T2 | caught | 132 s | getTargetModule does not link a goal clause's module variable (KILL b35, b36, b37, b38) | M:Goal in a body as swipl's (b01-b46): Test Failed at test/core_lang/test_colon_body_swipl.jl:318 |
+| MOD3a-T3 | caught | 133 s | getTargetModule's type error does not fail the compilation (KILL b32, b33, b41, bc) | M:Goal in a body as swipl's (b01-b46): Test Failed at test/core_lang/test_colon_body_swipl.jl:318 |
+| MOD3a-B1 | caught | 137 s | CB_COLON does not restore the context: the goals after `m:G` are m's (KILL bc p2, p5) | M:Goal in a body compiles as swipl's (MOD3a): Test Failed at test/compile/test_body_code_swipl.jl:3348 |
+| MOD3a-S1 | caught | 138 s | a goal of another module compiled as I_CALL/I_DEPART (KILL b01, b02, b21, bc) | M:Goal in a body as swipl's (b01-b46): Test Failed at test/core_lang/test_colon_body_swipl.jl:318 |
+| MOD3a-S2 | caught | 98 s | call/N compiled inline under a colon context (KILL b10, b26, bc p7) | M:Goal in a body as swipl's (b01-b46): Test Failed at test/core_lang/test_colon_body_swipl.jl:318 |
+| MOD3a-S3 | caught | 145 s | a goal under a variable module is not meta-called (KILL b03, b04, b23, b34, bc p3) | M:Goal in a body as swipl's (b01-b46): Test Failed at test/core_lang/test_colon_body_swipl.jl:318 |
+| MOD3a-S4 | caught | 167 s | the meta-call under a colon context drops the `Module:` wrapper (KILL b11, b12, b28, bc p11, p12) | M:Goal in a body as swipl's (b01-b46): Test Failed at test/core_lang/test_colon_body_swipl.jl:318 |
+| MOD3a-P1 | caught | 105 s | P_MFCONTEXT only for multifile: `qm:H :- B` from user gets no I_CONTEXT (KILL b17, b24, b42, b44, bc p4, p5) | M:Goal in a body as swipl's (b01-b46): Test Failed at test/core_lang/test_colon_body_swipl.jl:318 |
+| MOD3a-P2 | caught | 101 s | P_MFCONTEXT not for a multifile predicate (KILL b25, bc multifile pin) | what is still refused (V2's interim; V6b, V6b2, V9a: the inline compilers decide), and swipl's type_error(callable, Body): Test Failed at test/compile/test_body_code_swipl.jl:3085 |
+| MOD3a-K1 | caught | 106 s | decompile skips I_CONTEXT handling (KILL b24, b25, b44) | M:Goal in a body as swipl's (b01-b46): Error During Test at test/core_lang/test_colon_body_swipl.jl:312 |
+2026-11-02T00:46:58.7383519Z ##[notice]| MOD3a-K2 | caught | 131 s | I_CALLM/I_DEPARTM decompile without `Module:` (KILL b21, b22, b26, b29) | M:Goal in a body as swipl's (b01-b46): Test Failed at test/core_lang/test_colon_body_swipl.jl:318 |
+**0 of 18 decided; blocking: MOD3a-X1, MOD3a-X2, MOD3a-D1, MOD3a-D2, MOD3a-M1, MOD3a-M2, MOD3a-T1, MOD3a-T2, MOD3a-T3, MOD3a-B1, MOD3a-S1, MOD3a-S2, MOD3a-S3, MOD3a-S4, MOD3a-P1, MOD3a-P2, MOD3a-K1, MOD3a-K2**
+2026-11-02T00:46:58.8596923Z With the provided path, there will be 1 file uploaded
+2026-11-02T00:46:58.8606259Z Artifact name is valid!
+2026-11-02T00:46:58.8606865Z Root directory input is valid!
+2026-11-02T00:46:59.2264507Z Uploading artifact: verdicts.zip
+2026-11-02T00:46:59.2295923Z Beginning upload of artifact content to blob storage
+2026-11-02T00:46:59.5435801Z Uploaded bytes 1366
+2026-11-02T00:46:59.6191627Z Finished uploading artifact content to blob storage!

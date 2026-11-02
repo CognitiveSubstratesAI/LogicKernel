@@ -1,0 +1,41 @@
+# fixture: run 41364513951 (gate/dstack-b7 red), job 125029549954 "Julia 1 - ubuntu-24.04"; failed-step lines only (setup groups, passing [unit] lines, cleanup dropped; ANSI removed)
+2026-11-02T00:31:11.7766358Z Current runner version: '2.338.2'
+2026-11-02T00:31:11.7800354Z Secret source: Actions
+2026-11-02T00:31:11.7800991Z Cache mode: write
+2026-11-02T00:31:11.7801607Z Prepare workflow directory
+2026-11-02T00:31:11.8010316Z Prepare all required actions
+2026-11-02T00:31:11.8041507Z Getting action download info
+2026-11-02T00:31:12.6034817Z Complete job name: Julia 1 - ubuntu-24.04
+2026-11-02T00:31:12.8905578Z Syncing repository: CognitiveSubstratesAI/LogicKernel
+2026-11-02T00:31:12.9020739Z Temporarily overriding HOME='/home/runner/work/_temp/72a52cb7-c79a-491b-86a3-7b26126d53bf' before making global git config changes
+2026-11-02T00:31:12.9021857Z Adding repository directory to the temporary git global config as a safe directory
+2026-11-02T00:31:12.9079384Z Deleting the contents of '/home/runner/work/LogicKernel/LogicKernel'
+2026-11-02T00:31:14.0601853Z 7408ccc2f8e7c6cd13a57614643feb30f9b62f27
+2026-11-02T00:31:14.3424074Z Found 10 artifact(s)
+2026-11-02T00:31:14.3425407Z Filtering artifacts by pattern 'pkgtest-1-g*'
+2026-11-02T00:31:14.3437194Z Preparing to download the following artifacts:
+2026-11-02T00:31:14.3437923Z - pkgtest-1-g1 (ID: 13106897441, Size: 85176, Expected Digest: sha256:da5c8e2da83822884bf0aa7292e5c510d7ee75c514d57b142c744666020ff53b)
+2026-11-02T00:31:14.3438653Z - pkgtest-1-g2 (ID: 13106858465, Size: 87127, Expected Digest: sha256:e9098d80b82c67d1d51b4fa3cf7ca9a0965d793313d7da88720ba3ec6c661226)
+2026-11-02T00:31:14.3439252Z - pkgtest-1-g3 (ID: 13106568653, Size: 3503, Expected Digest: sha256:42ab815e617fd2a7f47f9c03177b14a8a6e9456318847b295458ff8d5fe7cc0e)
+2026-11-02T00:31:14.6519012Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/pkgtest-out
+2026-11-02T00:31:14.6594846Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/pkgtest-out
+2026-11-02T00:31:14.6909613Z Starting download of artifact to: /home/runner/work/LogicKernel/LogicKernel/pkgtest-out
+2026-11-02T00:31:14.8410453Z (node:2101) [DEP0005] DeprecationWarning: Buffer() is deprecated due to security and usability issues. Please use the Buffer.alloc(), Buffer.allocUnsafe(), or Buffer.from() methods instead.
+2026-11-02T00:31:14.8412095Z (Use `node --trace-deprecation ...` to show where the warning was created)
+2026-11-02T00:31:14.9061657Z Total of 3 artifact(s) downloaded
+2026-11-02T00:31:14.9065043Z Download artifact has finished successfully
+2026-11-02T00:31:14.9456833Z ##[notice]charset/test_umap_swipl.jl=1.7;compile/test_analyse_variables_swipl.jl=74.1;compile/test_body_code_swipl.jl=174.8;compile/test_call_operands.jl=13.3;compile/test_compiler_warnings_swipl.jl=0.6;compile/test_decompile.jl=121.2;compile/test_head_code_swipl.jl=11.8;compile/test_portable_smallint_swipl.jl=0.2;compile/test_ssu_compile_swipl.jl=147.5;core_lang/test_acyclic_cells.jl=15.1;core_lang/test_argvar_order_swipl.jl=53.1;core_lang/test_arith_cells.jl=7.6;core_lang/test_arith_swipl.jl=264.7;core_lang/test_assert_cells.jl=143.3;core_lang/test_at_body_swipl.jl=7.3;core_lang/test_atom_table.jl=4.8;core_lang/test_atom_words.jl=0.9;core_lang/test_attvar_store
+2026-11-02T00:31:14.9468444Z ## Julia 1 — Pkg.test, 3 file groups
+2026-11-02T00:31:14.9468615Z 
+2026-11-02T00:31:14.9468700Z | job | verdict | time |
+2026-11-02T00:31:14.9468913Z |---|---|---|
+2026-11-02T00:31:14.9469099Z | julia-1_g1 | passed | — |
+2026-11-02T00:31:14.9469299Z | julia-1_g2 | passed | — |
+2026-11-02T00:31:14.9469499Z | julia-1_g3 | **FAILED** | — |
+2026-11-02T00:31:14.9469612Z 
+2026-11-02T00:31:14.9469848Z Julia 1: 436 units over 3 file groups (the static analysis runs in Evidence's shards: Pkg.test has no JET/Aqua/AllocCheck)
+2026-11-02T00:31:14.9470096Z 
+2026-11-02T00:31:14.9470227Z **FAIL: julia-1_g3: the job did not pass**
+2026-11-02T00:31:14.9471492Z ##[error]FAIL: julia-1_g3: the job did not pass
+2026-11-02T00:31:14.9472668Z ##[notice]Julia 1: 436 units over 3 file groups (the static analysis runs in Evidence's shards: Pkg.test has no JET/Aqua/AllocCheck)
+2026-11-02T00:31:14.9475922Z ##[error]Process completed with exit code 1.

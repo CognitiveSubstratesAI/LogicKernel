@@ -1,0 +1,345 @@
+# fixture: run 41357787404 (P1 red (stale arg/3 pin), gate/p1b), job 125001479060 "reference · files 1/2"; failed-step lines only (setup groups, passing [unit] lines, cleanup dropped; ANSI removed)
+2026-11-01T22:34:14.9325080Z Current runner version: '2.338.2'
+2026-11-01T22:34:14.9406759Z Secret source: Actions
+2026-11-01T22:34:14.9408366Z Cache mode: write
+2026-11-01T22:34:14.9410241Z Prepare workflow directory
+2026-11-01T22:34:15.0277977Z Prepare all required actions
+2026-11-01T22:34:15.0355909Z Getting action download info
+2026-11-01T22:34:16.0999157Z Getting action download info
+2026-11-01T22:34:16.4099319Z Complete job name: reference · files 1/2
+2026-11-01T22:34:16.8014123Z Syncing repository: CognitiveSubstratesAI/LogicKernel
+2026-11-01T22:34:16.8150188Z Temporarily overriding HOME='/home/runner/work/_temp/40f77198-4cba-4e4b-a422-218593ee1094' before making global git config changes
+2026-11-01T22:34:16.8154975Z Adding repository directory to the temporary git global config as a safe directory
+2026-11-01T22:34:16.8220366Z Deleting the contents of '/home/runner/work/LogicKernel/LogicKernel'
+2026-11-01T22:34:17.8517339Z 374cddf29fcf20bfc80d4c6566361b5d1860a49d
+2026-11-01T22:34:18.0186756Z Syncing repository: SWI-Prolog/swipl-devel
+2026-11-01T22:34:18.0330408Z Temporarily overriding HOME='/home/runner/work/_temp/1d29faf9-cfd2-44b5-967d-893ffd2c2302' before making global git config changes
+2026-11-01T22:34:18.0334194Z Adding repository directory to the temporary git global config as a safe directory
+2026-11-01T22:34:38.2140529Z cbf4e1896275a07794332fd98ad0dcb11bf51919
+2026-11-01T22:34:38.2339483Z Prepare all required actions
+2026-11-01T22:34:38.2340110Z Getting action download info
+2026-11-01T22:34:38.5010258Z ##[start-action display=The oracle's cache key (runner image + pinned commit + build flags);id=__self.oracle]
+2026-11-01T22:34:38.5447532Z ##[end-action id=__self.oracle;outcome=success;conclusion=success;duration_ms=43]
+2026-11-01T22:34:38.5450349Z ##[start-action display=Restore the oracle;id=__self.oracle_cache]
+2026-11-01T22:34:38.7463392Z Cache hit for: Linux-ubuntu24-swipl-e032366462b3-8794806cb107
+2026-11-01T22:34:38.9824594Z Received 3188008 of 3188008 (100.0%), 16.9 MBs/sec
+2026-11-01T22:34:38.9826133Z Cache Size: ~3 MB (3188008 B)
+2026-11-01T22:34:39.0389024Z Cache restored successfully
+2026-11-01T22:34:39.1416701Z Cache restored from key: Linux-ubuntu24-swipl-e032366462b3-8794806cb107
+2026-11-01T22:34:39.1502579Z ##[end-action id=__self.oracle_cache;outcome=success;conclusion=success;duration_ms=605]
+2026-11-01T22:34:39.1505927Z ##[start-action display=Build the oracle from the pinned commit;id=__self.__run]
+2026-11-01T22:34:39.1525290Z ##[end-action id=__self.__run;outcome=skipped;conclusion=skipped;duration_ms=0]
+2026-11-01T22:34:39.1527284Z ##[start-action display=Put the oracle on PATH;id=__self.__run_2]
+2026-11-01T22:34:39.1617366Z ##[end-action id=__self.__run_2;outcome=success;conclusion=success;duration_ms=8]
+2026-11-01T22:34:39.1619376Z ##[start-action display=Refuse any swipl but the oracle;id=__self.__run_3]
+2026-11-01T22:34:39.1725311Z SWI-Prolog version 10.1.19 for x86_64-linux
+2026-11-01T22:34:39.2165501Z ##[end-action id=__self.__run_3;outcome=success;conclusion=success;duration_ms=54]
+2026-11-01T22:34:47.4041139Z julia version 1.13.3
+2026-11-01T22:34:47.5792852Z Using depot path: /home/runner/.julia
+2026-11-01T22:34:47.5802532Z Cache key: julia-cache;workflow=Evidence (three term types);job=evidence;os=Linux;term=reference;group=1;run_id=41357787404;run_attempt=1
+2026-11-01T22:34:47.5804214Z Restore key: julia-cache;workflow=Evidence (three term types);job=evidence;os=Linux;term=reference;group=1;
+2026-11-01T22:34:47.5839631Z (node:4136) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+2026-11-01T22:34:47.5840634Z (Use `node --trace-deprecation ...` to show where the warning was created)
+2026-11-01T22:34:47.6874243Z Cache hit for restore-key: julia-cache;workflow=Evidence (three term types);job=evidence;os=Linux;term=reference;group=1;run_id=41292399723;run_attempt=1
+2026-11-01T22:34:47.9603972Z Received 28865516 of 28865516 (100.0%), 118.7 MBs/sec
+2026-11-01T22:34:47.9604605Z Cache Size: ~28 MB (28865516 B)
+2026-11-01T22:34:48.1566327Z Cache restored successfully
+2026-11-01T22:34:48.1582160Z Cache restored from key: julia-cache;workflow=Evidence (three term types);job=evidence;os=Linux;term=reference;group=1;run_id=41292399723;run_attempt=1
+2026-11-01T22:34:48.2207813Z 88M	/home/runner/.julia/compiled
+2026-11-01T22:34:48.2208695Z 8.0K	/home/runner/.julia/logs
+2026-11-01T22:34:48.2220622Z 2.7M	/home/runner/.julia/packages
+2026-11-01T22:34:48.2221163Z 7.5M	/home/runner/.julia/registries
+2026-11-01T22:34:48.2221643Z 16K	/home/runner/.julia/scratchspaces
+2026-11-01T22:34:48.2222044Z 98M	total
+2026-11-01T22:34:48.2232475Z Registries directory exists and is non-empty. Updating any registries
+2026-11-01T22:34:49.4015850Z     Updating registry at `~/.julia/registries/General.toml`
+2026-11-01T22:34:51.2726248Z     Updating registry at `~/.julia/registries/General.toml`
+2026-11-01T22:34:51.3446632Z     Updating `~/work/LogicKernel/LogicKernel/Project.toml`
+2026-11-01T22:34:51.3447814Z   [aea7be01] + PrecompileTools v1.3.4
+2026-11-01T22:34:51.3448859Z     Updating `~/work/LogicKernel/LogicKernel/Manifest.toml`
+2026-11-01T22:34:51.3453756Z   [aea7be01] + PrecompileTools v1.3.4
+2026-11-01T22:34:51.3454383Z   [21216c6a] + Preferences v1.6.1
+2026-11-01T22:34:51.3456281Z   [ade2ca70] + Dates v1.11.0
+2026-11-01T22:34:51.3457876Z   [de0858da] + Printf v1.11.0
+2026-11-01T22:34:51.3459553Z   [fa267f1f] + TOML v1.0.3
+2026-11-01T22:34:51.3459974Z   [4ec0a83e] + Unicode v1.11.0
+2026-11-01T22:34:51.3969699Z Precompiling packages...
+2026-11-01T22:36:09.1385929Z   77.7 s  ✓ LogicKernel
+2026-11-01T22:36:09.1386904Z   1 dependency successfully precompiled in 78 seconds. 6 already precompiled.
+2026-11-01T22:36:12.1321466Z   term types: all — every term-generic file on every implementation
+2026-11-01T22:36:12.1722519Z   CI slice: file group 1/2 — 79 of 431 units
+2026-11-01T22:36:12.2228996Z   test/charset: 1 file(s)
+2026-11-01T22:36:12.2229682Z   test/compile: 8 file(s)
+2026-11-01T22:36:12.2230264Z   test/core_lang: 95 file(s)
+2026-11-01T22:36:12.2230632Z   test/core_text: 13 file(s)
+2026-11-01T22:36:12.2230926Z   test/db: 16 file(s)
+2026-11-01T22:36:12.2231199Z   test/files: 4 file(s)
+2026-11-01T22:36:12.2231490Z   test/foreign: 6 file(s)
+2026-11-01T22:36:12.2231783Z   test/rational: 1 file(s)
+2026-11-01T22:39:47.3131453Z 
+2026-11-01T22:39:47.4160309Z the inline compilers' fall-back calls answer as swipl does (V6b2): Test Failed at /home/runner/work/LogicKernel/LogicKernel/test/core_lang/test_rules_swipl.jl:1559
+2026-11-01T22:39:47.4162202Z   Expression: LK.PL_next_solution(gd, ld, qid) == LK.PL_S_EXCEPTION
+2026-11-01T22:39:48.8106683Z    Evaluated: 2 == -1
+2026-11-01T22:39:48.8107323Z   Stacktrace:
+2026-11-01T22:39:48.8107763Z    [1] top-level scope
+2026-11-01T22:39:48.8108421Z      @ ~/work/LogicKernel/LogicKernel/test/core_lang/test_rules_swipl.jl:1520
+2026-11-01T22:39:48.8109173Z    [2] macro expansion
+2026-11-01T22:39:48.8109906Z      @ /opt/hostedtoolcache/julia/1.13.3/x64/share/julia/stdlib/v1.13/Test/src/Test.jl:1967 [inlined]
+2026-11-01T22:39:48.8110841Z    [3] macro expansion
+2026-11-01T22:39:48.8111492Z      @ ~/work/LogicKernel/LogicKernel/test/core_lang/test_rules_swipl.jl:1559 [inlined]
+2026-11-01T22:39:48.8112284Z    [4] macro expansion
+2026-11-01T22:39:48.8113265Z      @ /opt/hostedtoolcache/julia/1.13.3/x64/share/julia/stdlib/v1.13/Test/src/Test.jl:758 [inlined]
+2026-11-01T22:39:49.5841118Z 
+2026-11-01T22:39:49.6253832Z the inline compilers' fall-back calls answer as swipl does (V6b2): Error During Test at /home/runner/work/LogicKernel/LogicKernel/test/core_lang/test_rules_swipl.jl:1519
+2026-11-01T22:39:49.6291963Z   Got exception outside of a @test
+2026-11-01T22:39:49.6445115Z   slot word 0x0000000000000000: a slot read before it was written, or a word that is no slot word
+2026-11-01T22:39:49.6445912Z   Stacktrace:
+2026-11-01T22:39:49.6446249Z     [1] _deref_loc
+2026-11-01T22:39:49.6446732Z       @ ~/work/LogicKernel/LogicKernel/src/pl-prims.jl:703 [inlined]
+2026-11-01T22:39:49.6456119Z     [2] export_cells(ld::LogicKernel.PL_local_data{DefaultTerm}, ex::LogicKernel.cell_export{DefaultTerm}, loc::Int64)
+2026-11-01T22:39:49.6457263Z       @ LogicKernel ~/work/LogicKernel/LogicKernel/src/pl-comp.jl:509
+2026-11-01T22:39:49.6458113Z     [3] lk_answer(ld::LogicKernel.PL_local_data{DefaultTerm}, t::Int64)
+2026-11-01T22:39:49.6459154Z       @ Main.LKTest_core_lang_test_rules_swipl_jl ~/work/LogicKernel/LogicKernel/test/term_under_test.jl:109
+2026-11-01T22:39:49.6460019Z     [4] top-level scope
+2026-11-01T22:39:49.6460626Z       @ ~/work/LogicKernel/LogicKernel/test/core_lang/test_rules_swipl.jl:1520
+2026-11-01T22:39:49.6461699Z     [5] macro expansion
+2026-11-01T22:39:49.6462447Z       @ /opt/hostedtoolcache/julia/1.13.3/x64/share/julia/stdlib/v1.13/Test/src/Test.jl:1967 [inlined]
+2026-11-01T22:39:49.6463493Z     [6] macro expansion
+2026-11-01T22:39:49.6464153Z       @ ~/work/LogicKernel/LogicKernel/test/core_lang/test_rules_swipl.jl:1560 [inlined]
+2026-11-01T22:39:49.6464950Z     [7] include(mod::Module, _path::String)
+2026-11-01T22:39:49.6465441Z       @ Base ./Base.jl:309
+2026-11-01T22:39:49.6465834Z     [8] #64
+2026-11-01T22:39:49.6466328Z       @ ~/work/LogicKernel/LogicKernel/test/runtests.jl:227 [inlined]
+2026-11-01T22:39:49.6467144Z     [9] withenv(f::var"#64#65"{String, Module}, keyvals::Pair{String, String})
+2026-11-01T22:39:49.6467802Z       @ Base ./env.jl:273
+2026-11-01T22:39:49.6468203Z    [10] top-level scope
+2026-11-01T22:39:49.6468720Z       @ ~/work/LogicKernel/LogicKernel/test/runtests.jl:2135
+2026-11-01T22:39:49.6469282Z    [11] macro expansion
+2026-11-01T22:39:49.6470024Z       @ /opt/hostedtoolcache/julia/1.13.3/x64/share/julia/stdlib/v1.13/Test/src/Test.jl:2136 [inlined]
+2026-11-01T22:39:49.6470838Z    [12] macro expansion
+2026-11-01T22:39:49.6471378Z       @ ~/work/LogicKernel/LogicKernel/test/runtests.jl:222 [inlined]
+2026-11-01T22:39:49.6471981Z    [13] macro expansion
+2026-11-01T22:39:49.6472654Z       @ /opt/hostedtoolcache/julia/1.13.3/x64/share/julia/stdlib/v1.13/Test/src/Test.jl:1967 [inlined]
+2026-11-01T22:39:49.6473651Z    [14] macro expansion
+2026-11-01T22:39:49.6474192Z       @ ~/work/LogicKernel/LogicKernel/test/runtests.jl:227 [inlined]
+2026-11-01T22:39:49.6474843Z    [15] include(mod::Module, _path::String)
+2026-11-01T22:39:49.6475332Z       @ Base ./Base.jl:309
+2026-11-01T22:39:49.6475890Z    [16] exec_options(opts::Base.JLOptions)
+2026-11-01T22:39:49.6476402Z       @ Base ./client.jl:344
+2026-11-01T22:39:49.6476817Z    [17] _start()
+2026-11-01T22:39:49.6477173Z       @ Base ./client.jl:577
+2026-11-01T22:40:18.3924048Z   excluded by name (a string holding the character 0): 22
+2026-11-01T22:40:24.3286049Z   hand corpora: 393 round-tripped; excluded: Dict(:nul => 2, :unreadable => 86)
+2026-11-01T22:40:24.3938121Z   hand corpora: 5 items hold a float
+2026-11-01T22:40:25.2186405Z   bench clauses: 31 round-tripped; excluded: Dict{Symbol, Int64}()
+2026-11-01T22:40:26.0256553Z   random terms: 2000 round-tripped; excluded: Dict{Symbol, Int64}()
+2026-11-01T22:40:30.2337836Z   hand corpus: 250 terms × 40 calls; 0 unreadable here (the character 0)
+2026-11-01T22:47:15.4114469Z   AltTerm: (compounds_plain = 0, compounds_interned = 0, shared = 0)
+2026-11-01T22:47:15.7099692Z Test Summary:                                                                                   |  Pass  Fail  Error  Total      Time
+2026-11-01T22:47:15.7106144Z LogicKernel                                                                                     | 12696     1      1  12698  11m03.2s
+2026-11-01T22:47:15.7107284Z   discovery found the package-level files                                                       |     2                   2      0.7s
+2026-11-01T22:47:15.7108446Z   discovery found the term-generic files                                                        |     4                   4      0.1s
+2026-11-01T22:47:15.7109539Z   charset/test_umap_swipl.jl                                                                    |     8                   8      5.4s
+2026-11-01T22:47:15.7110663Z   compile/test_call_operands.jl                                                                 |    34                  34     11.9s
+2026-11-01T22:47:15.7111768Z   compile/test_decompile.jl                                                                     |  1772                1772     15.6s
+2026-11-01T22:47:15.7113138Z   compile/test_portable_smallint_swipl.jl                                                       |    17                  17      0.3s
+2026-11-01T22:47:15.7114311Z   compile/test_ssu_compile_swipl.jl                                                             |    60                  60   1m08.0s
+2026-11-01T22:47:15.7115421Z   core_lang/test_acyclic_cells.jl                                                               |    35                  35      1.6s
+2026-11-01T22:47:15.7116525Z   core_lang/test_argvar_order_swipl.jl                                                          |     5                   5     48.7s
+2026-11-01T22:47:15.7117630Z   core_lang/test_arith_cells.jl                                                                 |    33                  33      1.4s
+2026-11-01T22:47:15.7118706Z   core_lang/test_atom_words.jl                                                                  |    26                  26      0.4s
+2026-11-01T22:47:15.7119795Z   core_lang/test_attvar_store.jl                                                                |   133                 133      2.5s
+2026-11-01T22:47:15.7120857Z   core_lang/test_attvar_words.jl                                                                |    86                  86      1.8s
+2026-11-01T22:47:15.7121914Z   core_lang/test_ball_cells.jl                                                                  |    29                  29      1.6s
+2026-11-01T22:47:15.7123200Z   core_lang/test_bindings.jl                                                                    |    12                  12      0.2s
+2026-11-01T22:47:15.7124258Z   core_lang/test_bips.jl                                                                        |    34                  34      1.0s
+2026-11-01T22:47:15.7125609Z   core_lang/test_blob.jl                                                                        |   183                 183      2.7s
+2026-11-01T22:47:15.7126713Z   core_lang/test_colon_body_swipl.jl                                                            |    57                  57      0.6s
+2026-11-01T22:47:15.7127829Z   core_lang/test_compound_cells.jl                                                              |     9                   9      0.4s
+2026-11-01T22:47:15.7128913Z   core_lang/test_constant_words.jl                                                              |    62                  62     12.2s
+2026-11-01T22:47:15.7129998Z   core_lang/test_copyterm_cells.jl                                                              |    14                  14      1.3s
+2026-11-01T22:47:15.7131114Z   core_lang/test_copyterm_swipl.jl                                                              |    62                  62      1.9s
+2026-11-01T22:47:15.7132267Z   core_lang/test_current_op_swipl.jl                                                            |   166                 166      1.5s
+2026-11-01T22:47:15.7133663Z   core_lang/test_declare_destroy_swipl.jl                                                       |    79                  79      0.9s
+2026-11-01T22:47:15.7135083Z   core_lang/test_default_term.jl                                                                |    46                  46      2.1s
+2026-11-01T22:47:15.7136202Z   core_lang/test_exception.jl                                                                   |    15                  15      0.2s
+2026-11-01T22:47:15.7137296Z   core_lang/test_expr_functor.jl                                                                |    99                  99      2.4s
+2026-11-01T22:47:15.7138377Z   core_lang/test_fli_words.jl                                                                   |    44                  44      1.4s
+2026-11-01T22:47:15.7139458Z   core_lang/test_functor_table.jl                                                               |  2128                2128      1.6s
+2026-11-01T22:47:15.7140513Z   core_lang/test_gvar_swipl.jl                                                                  |    78                  78      0.9s
+2026-11-01T22:47:15.7141561Z   core_lang/test_hash.jl                                                                        |    22                  22      0.4s
+2026-11-01T22:47:15.7142607Z   core_lang/test_head_unify_swipl.jl                                                            |    35                  35      3.2s
+2026-11-01T22:47:15.7143938Z   core_lang/test_index_words.jl                                                                 |    69                  69      1.5s
+2026-11-01T22:47:15.7145025Z   core_lang/test_metacall_control.jl                                                            |   117                 117      2.5s
+2026-11-01T22:47:15.7146138Z   core_lang/test_module_enum_swipl.jl                                                           |   127                 127      1.3s
+2026-11-01T22:47:15.7147215Z   core_lang/test_module_path.jl                                                                 |    62                  62      0.8s
+2026-11-01T22:47:15.7148302Z   core_lang/test_numbervars_cells.jl                                                            |    62                  62      1.7s
+2026-11-01T22:47:15.7149365Z   core_lang/test_p1_swipl.jl                                                                    |   208                 208      0.8s
+2026-11-01T22:47:15.7150394Z   core_lang/test_read_swipl.jl                                                                  |    45                  45      1.6s
+2026-11-01T22:47:15.7151451Z   core_lang/test_repeat_swipl.jl                                                                |    15                  15      0.6s
+2026-11-01T22:47:15.7152533Z   core_lang/test_resource_error.jl                                                              |     3                   3      0.1s
+2026-11-01T22:47:15.7154012Z   core_lang/test_rules_swipl.jl                                                                 |   143     1      1    145     19.3s
+2026-11-01T22:47:15.7155198Z     nreverse: the answer and its determinism are swipl's                                        |     3                   3      1.2s
+2026-11-01T22:47:15.7156478Z     poly_10: every answer and its determinism are swipl's (the V8 milestone)                    |     4                   4      0.9s
+2026-11-01T22:47:15.7157583Z     qsort: the answer and its determinism are swipl's (the V7 milestone)                        |     3                   3      0.2s
+2026-11-01T22:47:15.7158743Z     derive: every answer and its determinism are swipl's (the V6 milestone)                     |     4                   4      0.4s
+2026-11-01T22:47:15.7159927Z     rules: every answer and its determinism are swipl's (random programs)                       |     4                   4      1.2s
+2026-11-01T22:47:15.7161210Z     disjunctions: every answer and its determinism are swipl's (V9d)                            |    11                  11      0.9s
+2026-11-01T22:47:15.7162448Z     conditionals: every answer and its determinism are swipl's (V9d)                            |    15                  15      0.8s
+2026-11-01T22:47:15.7164093Z     negation: every answer and its determinism are swipl's (V9d)                                |    15                  15      0.5s
+2026-11-01T22:47:15.7165379Z     a cut in a condition or a negation: every answer and its determinism are swipl's (V9d)      |    13                  13      0.6s
+2026-11-01T22:47:15.7166700Z     after a local cut the next frame lands where swipl's does (C_LCUT, C_LCUTIFTHEN)            |     3                   3      0.3s
+2026-11-01T22:47:15.7168003Z     around a disjunction the next frame lands where swipl's does (C_OR, CHP_JUMP)               |    16                  16      0.3s
+2026-11-01T22:47:15.7169293Z     the inline compilers' fall-back calls answer as swipl does (V6b2)                           |     4     1      1      6      2.5s
+2026-11-01T22:47:15.7170582Z     a call failing before its frame is filled: dropped where it is left (S_LIST)                |     4                   4      0.1s
+2026-11-01T22:47:15.7171946Z     positions after deterministic exits are swipl's (MQ6), and the pools hold only live records |    13                  13      0.8s
+2026-11-01T22:47:15.7173536Z     after a cut the next frame lands at the clause's variables (I_CUT), as in swipl             |     8                   8      0.2s
+2026-11-01T22:47:15.7174794Z     a tail call sets lTop (I_LCALL), and every call sees the current generation                 |     7                   7      0.2s
+2026-11-01T22:47:15.7176001Z     flatness: the _rhighwater tripwire fires on a growing local stack                           |     2                   2      0.3s
+2026-11-01T22:47:15.7177211Z     flatness: concatenate on 10^3..10^5 elements reaches one high-water mark                    |     9                   9      0.8s
+2026-11-01T22:47:15.7178401Z     flatness: qsort's partition on 10^3..10^5 elements reaches one high-water mark (V7)         |     2                   2      0.9s
+2026-11-01T22:47:15.7179659Z     10^4 open/next/close cycles of nreverse leave everything at its baseline                    |     1                   1      5.2s
+2026-11-01T22:47:15.7180862Z     warm, a query of calls and exits allocates nothing (reference type)                         |     1                   1      0.0s
+2026-11-01T22:47:15.7181964Z   core_lang/test_slot_indirects.jl                                                              |    60                  60      1.4s
+2026-11-01T22:47:15.7183148Z   core_lang/test_slot_words.jl                                                                  |    26                  26      1.3s
+2026-11-01T22:47:15.7184155Z   core_lang/test_ssu_swipl.jl                                                                   |   118                 118      1.4s
+2026-11-01T22:47:15.7185299Z   core_lang/test_sys_swipl.jl                                                                   |   105                 105      1.4s
+2026-11-01T22:47:15.7186214Z   core_lang/test_term.jl                                                                        |    27                  27      0.8s
+2026-11-01T22:47:15.7187124Z   core_lang/test_trail_words.jl                                                                 |    15                  15      0.2s
+2026-11-01T22:47:15.7188071Z   core_lang/test_unifiable_cells.jl                                                             |    15                  15      0.9s
+2026-11-01T22:47:15.7188993Z   core_lang/test_unify_cells.jl                                                                 |    52                  52      1.6s
+2026-11-01T22:47:15.7189870Z   core_lang/test_walks_cells.jl                                                                 |    50                  50      1.4s
+2026-11-01T22:47:15.7190929Z   core_lang/test_words.jl                                                                       |   525                 525      0.9s
+2026-11-01T22:47:15.7191795Z   core_lang/test_write_cells.jl                                                                 |    94                  94      1.5s
+2026-11-01T22:47:15.7193084Z   core_text/test_atom_text_swipl.jl                                                             |   257                 257      0.7s
+2026-11-01T22:47:15.7194046Z   core_text/test_canonical_readatom_swipl.jl                                                    |   440                 440      6.9s
+2026-11-01T22:47:15.7194974Z   core_text/test_io.jl                                                                          |     4                   4      0.1s
+2026-11-01T22:47:15.7195834Z   core_text/test_read_term_swipl.jl                                                             |    66                  66      3.5s
+2026-11-01T22:47:15.7196739Z   core_text/test_reader_cells.jl                                                                |     8                   8      0.3s
+2026-11-01T22:47:15.7197663Z   core_text/test_roundtrip_swipl.jl                                                             |    20                  20      3.1s
+2026-11-01T22:47:15.7198609Z   core_text/test_write_family_swipl.jl                                                          |   105                 105     18.8s
+2026-11-01T22:47:15.7199505Z   db/test_assert_swipl.jl                                                                       |    38                  38      1.6s
+2026-11-01T22:47:15.7200471Z   db/test_clause_ref_swipl.jl                                                                   |   215                 215   1m03.4s
+2026-11-01T22:47:15.7201461Z   db/test_clause_variables.jl                                                                   |  1537                1537      1.3s
+2026-11-01T22:47:15.7202409Z   db/test_db.jl                                                                                 |    17                  17      1.4s
+2026-11-01T22:47:15.7203634Z   db/test_index_argv.jl                                                                         |    25                  25      0.8s
+2026-11-01T22:47:15.7204594Z   db/test_index_context.jl                                                                      |     7                   7      0.4s
+2026-11-01T22:47:15.7205511Z   db/test_index_swipl.jl                                                                        |    33                  33      6.1s
+2026-11-01T22:47:15.7206380Z   db/test_nth_clause_swipl.jl                                                                   |   198                 198      1.8s
+2026-11-01T22:47:15.7207247Z   db/test_procedures.jl                                                                         |    49                  49     14.3s
+2026-11-01T22:47:15.7208117Z   db/test_retract_swipl.jl                                                                      |    94                  94      0.9s
+2026-11-01T22:47:15.7209215Z   db/test_source_file_swipl.jl                                                                  |   167                 167      1.4s
+2026-11-01T22:47:15.7210183Z   files/test_load_swipl.jl                                                                      |    77                  77      5.5s
+2026-11-01T22:47:15.7211051Z   files/test_qlf_swipl.jl                                                                       |   105                 105      2.8s
+2026-11-01T22:47:15.7211966Z   foreign/test_builtins_swipl.jl                                                                |    63                  63      2.9s
+2026-11-01T22:47:15.7213114Z   foreign/test_typetests_swipl.jl                                                               |   245                 245     48.9s
+2026-11-01T22:47:15.7214125Z   rational/test_ieee754.jl                                                                      |     9                   9      0.7s
+2026-11-01T22:47:15.7215129Z   test_gate_split.jl                                                                            |   697                 697   3m18.1s
+2026-11-01T22:47:15.7215954Z   test_home_tree.jl                                                                             |   755                 755      1.5s
+2026-11-01T22:47:15.7217028Z   test_junit_report.jl                                                                          |     9                   9      1.5s
+2026-11-01T22:47:15.7217880Z   test_manifest_entries.jl                                                                      |     9                   9     11.6s
+2026-11-01T22:47:15.7218729Z   test_port_check.jl                                                                            |   117                 117     23.1s
+2026-11-01T22:47:15.7219686Z   the second implementation was exercised, plain and sharing                                    |     3                   3      0.0s
+2026-11-01T22:47:15.9966180Z ERROR: LoadError: Some tests did not pass: 12696 passed, 1 failed, 1 errored, 0 broken.
+2026-11-01T22:47:15.9967252Z in expression starting at /home/runner/work/LogicKernel/LogicKernel/test/runtests.jl:318
+2026-11-01T22:47:16.3108332Z ##[error]Process completed with exit code 1.
+2026-11-01T22:47:16.3414895Z ##[start-action display=Run julia --color=yes "$GITHUB_ACTION_PATH"/main.jl;id=__julia-actions_julia-processcoverage.__run]
+2026-11-01T22:47:16.9387315Z   Activating new project at `~/.julia/environments/coveragetempenv`
+2026-11-01T22:47:17.3030544Z    Resolving package versions...
+2026-11-01T22:47:17.7164735Z     Updating `~/.julia/environments/coveragetempenv/Project.toml`
+2026-11-01T22:47:17.7166263Z   [c36e975a] + CoverageTools v1.4.2
+2026-11-01T22:47:17.7166870Z     Updating `~/.julia/environments/coveragetempenv/Manifest.toml`
+2026-11-01T22:47:17.7171925Z   [c36e975a] + CoverageTools v1.4.2
+2026-11-01T22:47:17.7172471Z   [70703baa] + JuliaSyntax v1.0.2
+2026-11-01T22:47:17.7175768Z   [ade2ca70] + Dates v1.11.0
+2026-11-01T22:47:17.7177989Z   [de0858da] + Printf v1.11.0
+2026-11-01T22:47:17.7180217Z   [fa267f1f] + TOML v1.0.3
+2026-11-01T22:47:17.7181058Z   [4ec0a83e] + Unicode v1.11.0
+2026-11-01T22:47:18.6616119Z ┌ Info: CoverageTools.process_cov: Coverage file(s) for src/LogicKernel.jl do not exist.
+2026-11-01T22:47:18.6616961Z └ Assuming file has no coverage.
+2026-11-01T22:47:19.1656278Z ┌ Info: CoverageTools.process_cov: Coverage file(s) for src/precompile_workload.jl do not exist.
+2026-11-01T22:47:19.1657079Z └ Assuming file has no coverage.
+2026-11-01T22:47:19.2999717Z ##[end-action id=__julia-actions_julia-processcoverage.__run;outcome=success;conclusion=success;duration_ms=2958]
+2026-11-01T22:47:19.3270848Z ##[start-action display=Check system dependencies;id=__codecov_codecov-action.__run]
+2026-11-01T22:47:19.3737626Z All required system dependencies are available.
+2026-11-01T22:47:19.3744639Z ##[end-action id=__codecov_codecov-action.__run;outcome=success;conclusion=success;duration_ms=47]
+2026-11-01T22:47:19.3746904Z ##[start-action display=Action version;id=__codecov_codecov-action.__run_2]
+2026-11-01T22:47:19.3844223Z ==> Running Action version 7.1.1
+2026-11-01T22:47:19.3850644Z ##[end-action id=__codecov_codecov-action.__run_2;outcome=success;conclusion=success;duration_ms=10]
+2026-11-01T22:47:19.3853024Z ##[start-action display=Set safe directory;id=__codecov_codecov-action.__run_3]
+2026-11-01T22:47:19.3975196Z ##[end-action id=__codecov_codecov-action.__run_3;outcome=success;conclusion=success;duration_ms=12]
+2026-11-01T22:47:19.3978243Z ##[start-action display=Set fork;id=__codecov_codecov-action.__run_4]
+2026-11-01T22:47:19.4071960Z ##[end-action id=__codecov_codecov-action.__run_4;outcome=success;conclusion=success;duration_ms=9]
+2026-11-01T22:47:19.4081391Z ##[start-action display=Get OIDC token;id=__codecov_codecov-action.oidc]
+2026-11-01T22:47:19.5873883Z ##[end-action id=__codecov_codecov-action.oidc;outcome=success;conclusion=success;duration_ms=179]
+2026-11-01T22:47:19.5882347Z ##[start-action display=Get and set token;id=__codecov_codecov-action.__run_5]
+2026-11-01T22:47:19.6066896Z ##[end-action id=__codecov_codecov-action.__run_5;outcome=success;conclusion=success;duration_ms=18]
+2026-11-01T22:47:19.6070665Z ##[start-action display=Override branch for forks;id=__codecov_codecov-action.__run_6]
+2026-11-01T22:47:19.6226565Z ##[end-action id=__codecov_codecov-action.__run_6;outcome=success;conclusion=success;duration_ms=15]
+2026-11-01T22:47:19.6230619Z ##[start-action display=Override commits and pr for pull requests;id=__codecov_codecov-action.__run_7]
+2026-11-01T22:47:19.6364355Z ##[end-action id=__codecov_codecov-action.__run_7;outcome=success;conclusion=success;duration_ms=13]
+2026-11-01T22:47:19.6371052Z ##[start-action display=Upload coverage to Codecov;id=__codecov_codecov-action.__run_8]
+2026-11-01T22:47:19.6525689Z      _____          _
+2026-11-01T22:47:19.6526106Z     / ____|        | |
+2026-11-01T22:47:19.6526508Z    | |     ___   __| | ___  ___ _____   __
+2026-11-01T22:47:19.6526837Z    | |    / _ \ / _` |/ _ \/ __/ _ \ \ / /
+2026-11-01T22:47:19.6527129Z    | |___| (_) | (_| |  __/ (_| (_) \ V /
+2026-11-01T22:47:19.6527409Z     \_____\___/ \__,_|\___|\___\___/ \_/
+2026-11-01T22:47:19.6527937Z                             Wrapper-0.3.1
+2026-11-01T22:47:19.6528233Z                            
+2026-11-01T22:47:19.6591781Z ==> Detected linux
+2026-11-01T22:47:19.6593080Z  -> Downloading https://cli.codecov.io/latest/linux/codecov
+2026-11-01T22:47:19.6671851Z   % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+2026-11-01T22:47:19.6672672Z                                  Dload  Upload   Total   Spent    Left  Speed
+2026-11-01T22:47:19.6673383Z 
+2026-11-01T22:47:19.7266215Z   0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0
+2026-11-01T22:47:19.8407536Z   0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0
+2026-11-01T22:47:19.8408376Z 100 17.6M  100 17.6M    0     0   101M      0 --:--:-- --:--:-- --:--:--  101M
+2026-11-01T22:47:19.8455981Z ==> Finishing downloading linux:latest
+2026-11-01T22:47:19.8898783Z       Version: v11.3.2
+2026-11-01T22:47:19.8899218Z  
+2026-11-01T22:47:19.9321725Z gpg: directory '/home/runner/.gnupg' created
+2026-11-01T22:47:19.9324080Z gpg: keybox '/home/runner/.gnupg/pubring.kbx' created
+2026-11-01T22:47:19.9677880Z gpg: /home/runner/.gnupg/trustdb.gpg: trustdb created
+2026-11-01T22:47:19.9678694Z gpg: key 806BB28AED779869: public key "Codecov Uploader (Codecov Uploader Verification Key) <security@codecov.io>" imported
+2026-11-01T22:47:19.9978054Z gpg: Total number processed: 1
+2026-11-01T22:47:19.9978564Z gpg:               imported: 1
+2026-11-01T22:47:19.9985460Z ==> Verifying GPG signature integrity
+2026-11-01T22:47:19.9986456Z  -> Downloading https://cli.codecov.io/latest/linux/codecov.SHA256SUM
+2026-11-01T22:47:19.9988088Z  -> Downloading https://cli.codecov.io/latest/linux/codecov.SHA256SUM.sig
+2026-11-01T22:47:19.9988808Z  
+2026-11-01T22:47:20.0830719Z gpg: Signature made Wed Oct 28 17:39:34 2026 UTC
+2026-11-01T22:47:20.0831246Z gpg:                using RSA key 27034E7FDB850E0BBC2C62FF806BB28AED779869
+2026-11-01T22:47:20.0833860Z gpg: Good signature from "Codecov Uploader (Codecov Uploader Verification Key) <security@codecov.io>" [unknown]
+2026-11-01T22:47:20.0834958Z gpg: WARNING: This key is not certified with a trusted signature!
+2026-11-01T22:47:20.0835795Z gpg:          There is no indication that the signature belongs to the owner.
+2026-11-01T22:47:20.0836402Z Primary key fingerprint: 2703 4E7F DB85 0E0B BC2C  62FF 806B B28A ED77 9869
+2026-11-01T22:47:20.1863765Z codecov: OK
+2026-11-01T22:47:20.1876868Z ==> CLI integrity verified
+2026-11-01T22:47:20.1877244Z 
+2026-11-01T22:47:20.2565955Z  -> Token length: 2040
+2026-11-01T22:47:20.2567056Z ==> Running upload-coverage
+2026-11-01T22:47:20.2579762Z       ./codecov  upload-coverage -t <redacted> --fail-on-error --git-service github --file lcov.info --flag reference --gcov-executable gcov
+2026-11-01T22:47:20.7059471Z info - 2026-11-01 22:47:20,705 -- ci service found: github-actions
+2026-11-01T22:47:20.7401431Z warning - 2026-11-01 22:47:20,739 -- xcrun is not installed or can't be found.
+2026-11-01T22:47:20.8317275Z warning - 2026-11-01 22:47:20,831 -- No gcov data found.
+2026-11-01T22:47:20.8320772Z warning - 2026-11-01 22:47:20,831 -- coverage.py is not installed or can't be found.
+2026-11-01T22:47:21.0123577Z info - 2026-11-01 22:47:21,011 -- Found 4 coverage files to report
+2026-11-01T22:47:21.0125137Z info - 2026-11-01 22:47:21,012 -- > /home/runner/work/LogicKernel/LogicKernel/lcov.info
+2026-11-01T22:47:21.0126409Z info - 2026-11-01 22:47:21,012 -- > /home/runner/work/LogicKernel/LogicKernel/.upstream/swipl-devel/library/prolog_coverage.pl
+2026-11-01T22:47:21.0127724Z info - 2026-11-01 22:47:21,012 -- > /home/runner/work/LogicKernel/LogicKernel/tools/coverage_zero_known.txt
+2026-11-01T22:47:21.0128958Z info - 2026-11-01 22:47:21,012 -- > /home/runner/work/LogicKernel/LogicKernel/.upstream/swipl-devel/src/pl-coverage.c
+2026-11-01T22:47:21.4609947Z info - 2026-11-01 22:47:21,460 -- Your upload is now queued for processing. When finished, results will be available at: https://app.codecov.io/github/cognitivesubstratesai/logickernel/commit/374cddf29fcf20bfc80d4c6566361b5d1860a49d
+2026-11-01T22:47:21.4611921Z info - 2026-11-01 22:47:21,460 -- Sending upload (161705 bytes) to storage
+2026-11-01T22:47:21.5534600Z info - 2026-11-01 22:47:21,553 -- Upload queued for processing complete
+2026-11-01T22:47:21.6253106Z ##[end-action id=__codecov_codecov-action.__run_8;outcome=success;conclusion=success;duration_ms=1988]
+2026-11-01T22:47:21.7897220Z With the provided path, there will be 2 files uploaded
+2026-11-01T22:47:21.7903852Z Artifact name is valid!
+2026-11-01T22:47:21.7909833Z Root directory input is valid!
+2026-11-01T22:47:22.0190006Z Uploading artifact: evidence-reference-g1.zip
+2026-11-01T22:47:22.0231929Z Beginning upload of artifact content to blob storage
+2026-11-01T22:47:22.0904409Z Uploaded bytes 3105
+2026-11-01T22:47:22.1020239Z Finished uploading artifact content to blob storage!
+2026-11-01T22:47:22.1022721Z Finalizing artifact upload
+2026-11-01T22:47:22.5181516Z Artifact evidence-reference-g1 successfully finalized. Artifact ID 13104656556
+2026-11-01T22:47:22.5183121Z Artifact evidence-reference-g1 has been successfully uploaded! Final size is 3105 bytes. Artifact ID is 13104656556
