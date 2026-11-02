@@ -2471,6 +2471,179 @@ function build_term(atom::T, arity::Int, rd::read_data{T})::Bool where {T}
     return true
 end
 
+# PORT: pl-read.c build_labeled_subterm
+# DIVERGES: the value of the pair is a term-stack entry, not a term reference: it is placed in a cell
+# (`_ts_link_word!`), and `PL_unify` is given a reference to that cell; the result is `-1` (no label), `0`
+# (false: the error is in the read data, as every syntax error here) or `1`.
+"Build a term from `X{= : Value}` (pl-read.c): the variable `X` labels `Value`; -1 when the pairs are no label."
+function build_labeled_subterm(pairs::Int, rd::read_data{T})::Int where {T}
+    ld = rd.ld
+    ts = rd.term_stack
+    if pairs == 1
+        argv = term_av(-3, rd)
+
+        if ts.vars[argv + 1] == TS_VALUE &&
+           ts.words[argv + 1] == _atom_word!(ld, mk_sym(T, Symbol("=")))    # ATOM_equals
+            tv = ts.vars[argv]
+            var = tv >= 0 ? var_from_index(tv, rd) : nothing    # varInfo(w)
+
+            if var === nothing                      # `_`
+                _setHandle_w!(argv, _ts_link_word!(argv + 2, rd), rd)   # readValHandle(argv[2], valTermRef(argv[0]))
+            else
+                if var.variable != 0
+                    if PL_is_attvar(ld, var.variable)
+                        return Int(errorWarning("label_on_attvar", nothing, rd))
+                    end
+                    if var.labeled
+                        return Int(errorWarning("duplicate_label_value", nothing, rd))
+                    end
+                    t = PL_new_term_ref(ld)
+                    ld.slots[t + 1] = _ts_link_word!(argv + 2, rd)
+                    PL_unify(ld, var.variable, t) || return 0
+                else
+                    var.variable = PL_new_term_ref(ld)
+                    gvar = allocGlobalCells!(ld, 1)
+                    readValHandle!(argv + 2, gvar, rd)
+                    ld.slots[var.variable + 1] = makeRefG(gvar)     # setHandle(var->variable, makeRefG(gvar))
+                end
+                var.labeled = true
+                _setHandle_w!(argv, ld.slots[var.variable + 1], rd)     # *valTermRef(var->variable)
+            end
+
+            truncate_term_stack(argv + 1, rd)
+            return 1
+        end
+    end
+
+    return -1
+end
+
+# PORT: pl-read.c build_attvar
+# DIVERGES: positions and term-stack entries for upstream's words and term references; the errors go through the
+# read data (`errorWarning`), as every syntax error here. UNVERIFIED: reached only when the module's var_tag flag is
+# `attvar`, and the flag's setter (`setVarTagFlag`, os/pl-prologflag.c) is deferred.
+"Build an attributed variable from the data collected for a dict whose tag is a variable (pl-read.c)."
+function build_attvar(pairs::Int, rd::read_data{T})::Bool where {T}
+    ld = rd.ld
+    ts = rd.term_stack
+    rc = build_labeled_subterm(pairs, rd)
+    rc >= 0 && return rc != 0                       # X{= : Value} or error
+
+    pairs == 0 && return true                       # X{}: The variable is already at argv[0]
+
+    arity = pairs * 2 + 1
+    argv = term_av(-arity, rd)
+    tv = ts.vars[argv]
+    var = tv >= 0 ? var_from_index(tv, rd) : nothing    # varInfo(w)
+
+    if var !== nothing
+        if var.variable != 0
+            if var.labeled
+                return errorWarning("attvar_on_label", nothing, rd)
+            end
+            attvar_term = var.variable
+        else
+            attvar_term = PL_new_term_ref(ld)
+            attvar = alloc_attvar(ld)
+            ld.slots[attvar_term + 1] = makeRefG(attvar)
+            var.variable = attvar_term
+        end
+    else                                            # `_`
+        attvar_term = PL_new_term_ref(ld)
+        attvar = alloc_attvar(ld)
+        ld.slots[attvar_term + 1] = makeRefG(attvar)
+    end
+
+    atom_equals = _atom_word!(ld, mk_sym(T, Symbol("=")))
+    for i in 0:(pairs - 1)
+        name = ts.words[argv + 1 + 2 * i]           # readValHandleConst(argv[i*2+1], &name)
+        value = allocGlobalCells!(ld, 1)
+        readValHandle!(argv + 2 + 2 * i, value, rd)
+
+        if name == atom_equals
+            return errorWarning("label_on_attvar", nothing, rd)
+        else
+            _, _, av = _deref_loc(ld, -(attvar_term + 1))
+            found, vp = find_attr(ld, av, name)
+            if found
+                if compareStandard_cells(ld, value, vp, true) != CMP_EQUAL
+                    rd.has_exception && return false
+                    return errorWarning("duplicate_attribute", nothing, rd)
+                end
+            end
+
+            ok = put_attr(ld, av, name, _deref_loc(ld, value))
+            @assert ok
+        end
+    end
+
+    _setHandle_w!(argv, ld.slots[attvar_term + 1], rd)
+    truncate_term_stack(argv + 1, rd)
+    return true
+end
+
+# PORT: pl-read.c build_dict
+# DIVERGES: the data is the term stack: `tag, key1, value1, ...` from `term_av(-arity)`; the errors go through the read
+# data (`errorWarning`), as every syntax error here; no global stack to run out of (`ensureGlobalSpace`); `indexes` is a
+# vector (no `index_buf`), holding pair indexes from 0.
+"Build a dict from the `pairs` pairs and the tag on the term stack, and push it back (pl-read.c)."
+function build_dict(pairs::Int, rd::read_data{T})::Bool where {T}
+    ld = rd.ld
+    ts = rd.term_stack
+    arity = pairs * 2 + 1
+    argv = term_av(-arity, rd)
+    tag = word(0)
+
+    vartag = rd.flags & VARTAG_MASK
+    if vartag != 0
+        tv = ts.vars[argv]
+        if tv == TS_UNBOUND || tv >= 0              # isVar(w) (anonymous `_`) || varInfo(w)
+            if vartag == VARTAG_ERROR
+                return errorWarning("var_tag", nothing, rd)
+            elseif vartag == VARTAG_ATTVAR
+                return build_attvar(pairs, rd)
+            end
+            if vartag == VARTAG_WARNING
+                ex = makeErrorTerm("warning_var_tag", nothing, nothing, rd)
+                t = PL_new_term_ref(ld)
+                setSlotValue!(ld, t + 1, ex)
+                printMessage(ld, :warning, t) || return false
+            end
+            # VARTAG_WARNING falls through to VARTAG_DYNDICT
+            _atom_word!(ld, mk_sym(T, Symbol("#")))     # records the symbol of `dyndict` (text `#`) for readers
+            tag = ATOM_dyndict
+        end
+    end
+
+    indexes = collect(0:(pairs - 1))
+    dupl = dict_order_term_refs(ts.words, argv + 1, indexes, pairs)
+    if dupl != 0
+        kw = ts.words[argv + 1 + indexes[dupl + 1] * 2]
+        key = isAtomW(kw) ? _atom_value(ld, kw) : _value_term(ld, kw)
+        return errorWarningA1(
+            "duplicate_key", nothing, mk_expr(T, T[mk_sym(T, :duplicate_key), key]), rd
+        )
+    end
+
+    argp = _alloc_compound!(ld, dict_functor(ld, pairs), arity)    # argp = gTop; *argp++ = dict_functor(pairs)
+    w = consPtr(argp, TAG_COMPOUND | STG_GLOBAL)
+    if tag != 0
+        ld.gstack[argp + 1] = tag
+    else
+        readValHandle!(argv, argp + 1, rd)          # the tag
+    end
+
+    for i in 0:(pairs - 1)
+        p = indexes[i + 1]
+        readValHandle!(argv + p * 2 + 2, argp + 2 + 2 * i, rd)  # value
+        readValHandle!(argv + p * 2 + 1, argp + 3 + 2 * i, rd)  # key
+    end
+
+    _setHandle_w!(argv, w, rd)
+    truncate_term_stack(argv + 1, rd)
+    return true
+end
+
 # ── the operator queues (pl-read.c) ─────────────────────────────────────────────────────────────
 
 # PORT: pl-read.c queue_side_op
