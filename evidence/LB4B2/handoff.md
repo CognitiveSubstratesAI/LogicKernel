@@ -378,3 +378,28 @@ NEXT AGENT (fresh, Opus): commit (1)-(3) on wip/lb4b2c; fix finding 2 in the cle
   run tree; re-run the probe $S/boot.jl (copy in evidence: the snippet is setupProlog + boot_from_source! printing the
   exception and ld.messages) then the five files in order (boot_messages, boot_image, boot_clauses, load, qlf), each
   ALONE (a messages run took ~15 min: compile + boot, 3 types). Pins only after each difference is traced.
+
+## State (writer 10, G9 first boot, 2026-11-02/03; handed back at a DESIGN STOP, ~85k context)
+COMMITS on wip/lb4b2c (not pushed: wip/): ad7e5a1 UPSTREAM: pl-srcfile.c setMetapredicateSource (writer 9's five fixes +
+  handoff 9 + g9_boot_probe.jl); 547ba6b FIXED: the built-in atoms' symbols at database setup (finding 2); this handoff.
+  Both re-applied to the run tree (patch p2: src/pl-atom.jl, src/pl-global.jl, manifest; Revise took them, no restart).
+FINDING 2, FIXED + VERIFIED (probe: the boot passes the first directive): new ORIGINAL `registerBuiltinAtomSymbols!`
+  (src/pl-atom.jl, after setAtomSymbol!; upstream registerBuiltinAtoms pl-atom.c:1947-1993 sets `a->name`), called in
+  PL_global_data's setup right after `atom_symbols{T}()` (src/pl-global.jl): every built-in atom's symbol, a retyped
+  reserved symbol (`[]`, dict, ...) as `mk_reserved_symbol`. Manifest entry added. OWED AT THE GATE: alloc pins x3
+  (setupProlog allocates ~1056 more symbols).
+FINDING 3, OPEN (traced; DESIGN QUESTION Q1 for the audit): six boot clauses refuse to COMPILE (NotPortedError "V9",
+  raised through addClauseWic, so the boot stops; upstream's addClauseWic pl-qlf.c:3222-3238 prints "Failed to compile"
+  and goes on, but upstream never fails here): init.pl:572 prolog_cut_to/1 `'$cut'` (pl-comp.c:3551 -> I_CUTCHP,
+  pl-vmi.c:2935; kernel refusal src/pl-comp.jl:2474), init.pl:604 reset/3 and :617 '$tbl_reset'/6 `'$reset'`
+  (pl-comp.c:3543 -> I_RESET/I_EXITRESET, pl-vmi.c:5754/5801), init.pl:626 shift/1, :629 shift_for_copy/1
+  (compileBodyShift, src/pl-comp.jl:2313 -> I_SHIFT/I_SHIFTCP), init.pl:645 call_continuation/1 (I_CALLCONT). Later:
+  boot/engines.pl:152 `'$yield'` (I_YIELD, pl-vmi.c:2410). Enumerated with probe 2 (evidence g9_boot_probe2.jl +
+  g9_probe2_out.txt: a TEMPORARY catch in the run tree's addClauseWic, REVERTED, daemon re-revised, verified).
+FINDING 4, OPEN (traced; DESIGN QUESTION Q2): the reader refuses dicts (src/pl-read.jl:3654-3659, PF_DICT, "R1's
+  decision"); init.pl:1297 `'$merge_options'(_{file_type:regular}, ...)` stops the boot (read_clause, compileFile);
+  ~6 dict-literal lines in boot/ (autoload 1, init 1, messages 3, syspred 1). wip/dict ports pl-dict.c PREDICATES only
+  (src/pl-dict.jl), not the reader's dict branch, so merging it does not clear this.
+NONE of the five files was run (the boot stops at finding 3/4 first; every file needs a booted database).
+NEXT AGENT: wait for the audit's answers to Q1/Q2 (handoff10.md in lk-channel), then port as ruled, re-run probe 2's
+  enumeration, then the five files alone in order. Daemon 17790d9d (pid 95631) left UP and warm in the run tree.

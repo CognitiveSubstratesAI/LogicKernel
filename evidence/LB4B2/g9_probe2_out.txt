@@ -1,0 +1,23 @@
+Loading boot file ...
+EXC LogicKernel.NotPortedError{Nothing}(nothing, "read: a dict Tag{…}", "none: dicts are refused (R1's decision)")
+rc=exc t=0.3 nmsg=18
+NP init.pl:571 LogicKernel.NotPortedError{Term{Union{Float64, Int64, Rational{BigInt}, String, BigInt}}}($cut, "a goal atom compiled inline (\$catch, \$reset, …)", "V9")
+NP init.pl:603 LogicKernel.NotPortedError{Term{Union{Float64, Int64, Rational{BigInt}, String, BigInt}}}($reset, "a goal atom compiled inline (\$catch, \$reset, …)", "V9")
+NP init.pl:616 LogicKernel.NotPortedError{Term{Union{Float64, Int64, Rational{BigInt}, String, BigInt}}}($reset, "a goal atom compiled inline (\$catch, \$reset, …)", "V9")
+NP init.pl:626 LogicKernel.NotPortedError{Term{Union{Float64, Int64, Rational{BigInt}, String, BigInt}}}(($shift _G), "I_SHIFT (compileBodyShift)", "V9")
+NP init.pl:629 LogicKernel.NotPortedError{Term{Union{Float64, Int64, Rational{BigInt}, String, BigInt}}}(($shift_for_copy _G), "I_SHIFTCP (compileBodyShift)", "V9")
+NP init.pl:645 LogicKernel.NotPortedError{Term{Union{Float64, Int64, Rational{BigInt}, String, BigInt}}}(($call_continuation _G), "I_CALLCONT (compileBodyCallContinuation)", "V9")
+NP total 6
+error Failed to compile: 
+error (:- (prolog_cut_to _G) $cut)
+error Failed to compile: 
+error (:- (reset _G _G _G) $reset)
+error Failed to compile: 
+error (:- ($tbl_reset _G _G _G _G _G _G) $reset)
+error Failed to compile: 
+error (:- (shift _G) ($shift _G))
+error Failed to compile: 
+error (:- (shift_for_copy _G) ($shift_for_copy _G))
+error Failed to compile: 
+error (:- (call_continuation ([|] _G _G)) (; (-> (== _G []) ($call_continuation _G)) (, ($call_continuation _G) (call_continuation _G))))
+other total 12
