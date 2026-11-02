@@ -647,6 +647,166 @@ function r2_counts(rows::Vector{R2Row})
     )
 end
 
+# ── the refusals: what the kernel raises instead of doing a thing (slice 2) ──────────────────────────
+
+# The refusal exception's name and the helpers that raise it, built by concatenation: the tool finds the sites by NAME
+# pattern (the constructor `Name{T}(culprit, what, step)`), exactly as the scan of evidence/R2/boot_features.md did.
+const R2_REFUSAL_EXCEPTION = "Not" * "Ported" * "Error"
+const R2_FLAG_REFUSAL_HELPER = "_flag_" * "not" * "_ported"
+const R2_QLF_REFUSAL_HELPER = "_qlf_refused"
+
+"""
+`text` of a Julia source with every comment and every triple-quoted string (docstring) blanked, byte for byte: the offsets
+and the line breaks stay, so a pattern found in the result sits at the same place in the original. Plain strings stay.
+"""
+function r2_strip_jl(text::AbstractString)::String
+    cs = collect(String(text))
+    out = copy(cs)
+    n, i = length(cs), 1
+    while i <= n
+        c = cs[i]
+        if c == '#'
+            while i <= n && cs[i] != '\n'
+                out[i] = ' '
+                i += 1
+            end
+        elseif c == '"'
+            if i + 2 <= n && cs[i + 1] == '"' && cs[i + 2] == '"'
+                j = i + 3
+                while j + 2 <= n && !(cs[j] == '"' && cs[j + 1] == '"' && cs[j + 2] == '"')
+                    cs[j] == '\\' && (j += 1)
+                    j += 1
+                end
+                for k in (i + 3):min(j - 1, n)
+                    cs[k] != '\n' && (out[k] = ' ')
+                end
+                i = j + 3
+            else
+                j = i + 1
+                while j <= n && cs[j] != '"'
+                    cs[j] == '\\' && (j += 1)
+                    j += 1
+                end
+                i = j + 1
+            end
+        elseif c == '\'' && i + 2 <= n
+            prev = i > 1 ? cs[i - 1] : ' '
+            if _r2_isalnum(prev) || prev in ")]}'.!_"                 # a transpose, not a character
+                i += 1
+            elseif cs[i + 1] == '\\'
+                j = i + 2
+                while j <= n && cs[j] != '\''
+                    j += 1
+                end
+                i = j + 1
+            elseif cs[i + 2] == '\''
+                i += 3
+            else
+                i += 1
+            end
+        else
+            i += 1
+        end
+    end
+    return String(out)
+end
+
+"The top-level arguments of the call whose `(` is at byte `p` of `s` (strings and brackets respected), and the index of its `)`."
+function r2_call_args(s::String, p::Int)::Tuple{Vector{String}, Int}
+    args = String[]
+    depth, a = 0, p + 1
+    j = p
+    n = ncodeunits(s)
+    while j <= n
+        b = codeunit(s, j)
+        if b == UInt8('"')
+            j += 1
+            while j <= n && codeunit(s, j) != UInt8('"')
+                codeunit(s, j) == UInt8('\\') && (j += 1)
+                j += 1
+            end
+        elseif b in (UInt8('('), UInt8('['), UInt8('{'))
+            depth += 1
+        elseif b in (UInt8(')'), UInt8(']'), UInt8('}'))
+            depth -= 1
+            if depth == 0
+                push!(args, strip(s[a:(j - 1)]))
+                return (filter!(!isempty, args), j)
+            end
+        elseif b == UInt8(',') && depth == 1
+            push!(args, strip(s[a:(j - 1)]))
+            a = j + 1
+        end
+        j += 1
+    end
+    return (args, n)
+end
+
+"The content of a string literal `\"…\"` argument, or the argument text itself when it is no literal."
+function _r2_lit(arg::AbstractString)::String
+    m = match(r"^\"(.*)\"$"s, arg)
+    return m === nothing ? String(arg) : String(m[1])
+end
+
+"The enclosing top-level function of byte `pos`: the last `function name` / `name(…) =` at column 0 before it (`\"(top)\"` if none)."
+function _r2_enclosing(funcs::Vector{Tuple{Int, String}}, pos::Int)::String
+    name = "(top)"
+    for (p, f) in funcs
+        p <= pos || break
+        name = f
+    end
+    return name
+end
+
+"The `(byte offset, name)` of every function the stripped source `s` defines at column 0."
+function r2_functions(s::String)::Vector{Tuple{Int, String}}
+    out = Tuple{Int, String}[]
+    for m in eachmatch(r"^function\s+([\w.!]+)"m, s)
+        push!(out, (m.offset, String(m[1])))
+    end
+    for m in eachmatch(r"^([\w!]+)\([^\n]*\)\s*(?:::[^=\n]+)?=\s"m, s)
+        push!(out, (m.offset, String(m[1])))
+    end
+    return sort!(out)
+end
+
+"A line number of byte `pos` in `s`."
+_r2_line(s::String, pos::Int)::Int = 1 + count(==(UInt8('\n')), codeunits(s)[1:max(pos - 1, 0)])
+
+"""
+The refusal rows of the kernel texts (path → text): one per throw site of the refusal exception (the helpers' own constructor
+excepted) and one per name passed to the QLF helper. `key` = `refusal:file::function::what` (no line number: it moves), `label`
+the `what` text, `detail` `line N; step S` as the site names it. The flag-setter refusals are `r2_flag_refusals` (category flag).
+"""
+function r2_refusal_rows(texts::AbstractDict{String, String})::Vector{R2Row}
+    rows = R2Row[]
+    seen = Dict{String, Int}()
+    ctor = Regex(R2_REFUSAL_EXCEPTION * "\\{[^}]*\\}\\(")
+    qlf = Regex(R2_QLF_REFUSAL_HELPER * "\\(\\s*T\\s*,\\s*$(_R2_RX_NAME)\\s*,\\s*(\\d+)\\s*\\)")
+    helpers = (R2_FLAG_REFUSAL_HELPER, R2_QLF_REFUSAL_HELPER)
+    function add!(file, fn, what, step, line)
+        base = "refusal:$file::$fn::" * replace(first(what, 60), r"\s+" => " ")
+        k = (seen[base] = get(seen, base, 0) + 1) == 1 ? base : base * " #" * string(seen[base])
+        push!(rows, R2Row("refusal", k, what, "refused", file, "", String[], "line $line; step $step"))
+    end
+    for file in sort!(collect(keys(texts)))
+        s = r2_strip_jl(texts[file])
+        funcs = r2_functions(s)
+        for m in eachmatch(ctor, s)
+            fn = _r2_enclosing(funcs, m.offset)
+            fn in helpers && continue
+            args, _ = r2_call_args(s, m.offset + ncodeunits(m.match) - 1)
+            what = length(args) >= 2 ? _r2_lit(args[2]) : "?"
+            step = length(args) >= 3 ? _r2_lit(args[3]) : "?"
+            add!(file, fn, what, step, _r2_line(s, m.offset))
+        end
+        for m in eachmatch(qlf, s)
+            add!(file, R2_QLF_REFUSAL_HELPER, "QLF predicate $(_r2_unescape(m[1]))/$(m[2])", "LB3", _r2_line(s, m.offset))
+        end
+    end
+    return rows
+end
+
 if abspath(PROGRAM_FILE) == @__FILE__
     root = abspath(joinpath(@__DIR__, ".."))
     pin = r2_pin(root)

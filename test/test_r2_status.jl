@@ -157,6 +157,52 @@ end
     @test startswith(text, "# swipl-devel 0123456789")
 end
 
+_r2_fixture_jl(; beta=true) = """
+# $(R2_REFUSAL_EXCEPTION){T}(a, "in a comment", "X")
+\"\"\"
+doc mentioning $(R2_REFUSAL_EXCEPTION){T}(a, "in a docstring", "Y")
+\"\"\"
+function alpha(x::T) where {T}
+    x > 0 || throw(
+        $(R2_REFUSAL_EXCEPTION){T}(
+            x,
+            "a feature, \$(x)",
+            "V9"
+        )
+    )
+end
+$(beta ? "beta(y) = throw($(R2_REFUSAL_EXCEPTION){Nothing}(y, \"other (with, comma)\", \"LB6\"))" : "")
+function $(R2_QLF_REFUSAL_HELPER)(::Type{T}, name::String, arity::Int)::Union{} where {T}
+    throw($(R2_REFUSAL_EXCEPTION){T}(mk_sym(T, Symbol(name)), "the QLF predicate \$name/\$arity", "LB3"))
+end
+function $(R2_FLAG_REFUSAL_HELPER)(key::T, effect::String) where {T}
+    throw($(R2_REFUSAL_EXCEPTION){T}(key, effect, "R2 F1b"))
+end
+function pl_q1(ld)
+    $(R2_QLF_REFUSAL_HELPER)(T, "\\\$qlf_versions", 6)
+end
+function pl_dup(x)
+    throw($(R2_REFUSAL_EXCEPTION){T}(x, "same", "S1")); throw($(R2_REFUSAL_EXCEPTION){T}(x, "same", "S2"))
+end
+"""
+
+@testset "r2_status: the refusal sites (constructor by name, the QLF helper, comments and docstrings blanked)" begin
+    rows = r2_refusal_rows(Dict("src/fix.jl" => _r2_fixture_jl()))
+    @test !isempty(rows)
+    labels = [r.label for r in rows]
+    @test sort(labels) == sort(["a feature, \$(x)", "other (with, comma)", "QLF predicate \$qlf_versions/6", "same", "same"])
+    @test all(r -> r.status == "refused" && r.cat == "refusal" && r.cfile == "src/fix.jl", rows)
+    ks = [r.key for r in rows]
+    @test length(unique(ks)) == length(ks)                                           # a second identical site gets a suffix
+    @test "refusal:src/fix.jl::alpha::a feature, \$(x)" in ks && any(k -> startswith(k, "refusal:src/fix.jl::beta::"), ks)
+    @test any(r -> r.label == "a feature, \$(x)" && occursin("step V9", r.detail), rows)
+    @test "refusal:src/fix.jl::pl_dup::same #2" in ks
+    # MUTATION: one site fewer, one row fewer
+    @test length(r2_refusal_rows(Dict("src/fix.jl" => _r2_fixture_jl(; beta=false)))) == length(rows) - 1
+    @test r2_strip_jl("x = 1 # c\ny = 'a'  # d\nz = \"s # not a comment\"") == "x = 1    \ny = 'a'    \nz = \"s # not a comment\""
+    @test r2_call_args("f(a, g(b, c), \"x,y\")", 2) == (["a", "g(b, c)", "\"x,y\""], 21)
+end
+
 @testset "r2_status: the real tree, both sides non-empty" begin
     root = abspath(joinpath(@__DIR__, ".."))
     files = r2_boot_files(root)
@@ -169,4 +215,7 @@ end
     @test length(scan.refs) > 500 && !isempty(scan.defined)
     @test length(reg) > 100 && "op/3" in reg && "between/3" in reg
     @test r2_pin(root) !== nothing
+    rr = r2_refusal_rows(r2_kernel_texts(root))
+    @test length(rr) > 40 && count(r -> r.cfile == "src/pl-qlf.jl", rr) >= 14       # the throw sites and the 14 QLF names
+    @test length(unique(r.key for r in rr)) == length(rr)
 end
