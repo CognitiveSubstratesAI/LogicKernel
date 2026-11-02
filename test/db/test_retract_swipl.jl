@@ -45,8 +45,8 @@ end
 
 # the kernel's lines; after EACH case the live states of the non-deterministic built-ins (`live_states`) and the predicate
 # access references (`ld.predicate_references`: pushed by retract's first call, popped by its last answer or its FRG_CUTTED).
-# `occurs_error`: the `occurs_check` flag is `error` from the first query on (set_prolog_flag/2 is not ported: the flag is
-# the local data's field, as test_clause_variables.jl sets it); the driver sets swipl's the same way.
+# `occurs_error`: the `occurs_check` flag is `error` from the first query on (set before the first query through the local data's
+# field, as test_clause_variables.jl sets it; set_prolog_flag/2 is ported since F1b); the driver sets swipl's the same way.
 function kernel_lines(
     path::String, names::Vector{String}; occurs_error::Bool=false
 )::Tuple{Vector{String}, Vector{Int}, Vector{Int}, Int}

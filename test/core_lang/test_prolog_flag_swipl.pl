@@ -258,7 +258,7 @@ t_cut6(R) :- \+ ( current_prolog_flag(K, _), K == nosuchflag ), R = ok.
 t_cut7(R) :- catch(( current_prolog_flag(K, _), K == iso, throw(done(K)) ), done(X), R = X).
 
 % ---- the flags the arithmetic reads (`iso`, `prefer_rationals`: bits of the mask): the same rows run by the .jl after the flag is
-% set (swipl: set_prolog_flag/2; the kernel: the mask bit, until R2 F1b ports set_prolog_flag/2)
+% set (swipl: set_prolog_flag/2; the kernel: the mask bit, set directly; set_prolog_flag/2 is ported since F1b)
 cat_is(X, R) :- catch(R is X, E, R = ex(E)).
 t_h3a(R) :- cat_is(4/2, R).
 t_h3b(R) :- cat_is(7/2, R).

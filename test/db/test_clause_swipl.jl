@@ -43,7 +43,7 @@ end
 
 # the kernel's lines; after EACH case the live states (`live_states`) and the predicate access references
 # (`ld.predicate_references`: pushed by clause's first call, popped by its last answer or its FRG_CUTTED).
-# `occurs_error`: the `occurs_check` flag is `error` from the first query on (set_prolog_flag/2 is not ported).
+# `occurs_error`: the `occurs_check` flag is `error` from the first query on (set through the local data's field; set_prolog_flag/2 is ported since F1b).
 function kernel_lines(
     path::String, names::Vector{String}; occurs_error::Bool=false
 )::Tuple{Vector{String}, Vector{Int}, Vector{Int}, Int}
