@@ -14,7 +14,7 @@
 # resolution, `complex_term`'s state machine (its suspended levels on a vector of frames), the
 # list, bracket and compound readers, `read_term`; and `atom_to_term/3`, `term_to_atom/2`,
 # `term_string/2` — since R1e's core, in both directions (the write: src/pl-write.jl
-# `PL_write_term`). read_term/2,3 take a stream (the stream table, R2).
+# `PL_write_term`). Since RD1 read_term/2,3, read/1,2 and `$raw_read/1,2` read from a stream (the stream table).
 
 # ── the Unicode classifiers (pl-read.c) ─────────────────────────────────────────────────────────
 
@@ -4425,18 +4425,138 @@ function pl_read_term_from_atom3_va(
     return rc ? FTRUE : FFALSE
 end
 
+# ── read_term/2,3, read/1,2, $raw_read/1,2, $is_named_var/1 (pl-read.c; RD1) ─────────────────────
+
+# PORT: pl-read.c read_term as pl_read_term3_va
+# (PRED_IMPL("read_term", 3, read_term, PL_FA_ISO)) — pl-read.c:7108-7124
+# DIVERGES: no stream locks (`PL_release_stream`): the stream's error state decides, as upstream's `Sferror` test.
+# The options the kernel refuses are those of `read_term_from_stream`.
+"`read_term(+Stream, -Term, +Options)` (pl-read.c): read a term from `Stream` with the read options."
+function pl_read_term3_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2, A3 = PL__t0, PL__t0 + 1, PL__t0 + 2
+    gd = _query_gd(ld)
+
+    s = getTextInputStream(ld, A1)
+    s === nothing && return FFALSE
+    read_term_from_stream(gd, ld, s, A2, A3) && return FTRUE      # PL_release_stream(s)
+    Sferror(s) != 0 && return streamStatus(ld, s) ? FTRUE : FFALSE
+    return FFALSE                                   # PL_release_stream(s)
+end
+
+# PORT: pl-read.c read_term as pl_read_term2_va
+# (PRED_IMPL("read_term", 2, read_term, PL_FA_ISO)) — pl-read.c:7129-7145
+"`read_term(-Term, +Options)` (pl-read.c): `read_term/3` on the current input."
+function pl_read_term2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2 = PL__t0, PL__t0 + 1
+    gd = _query_gd(ld)
+
+    s = getTextInputStream(ld, 0)
+    s === nothing && return FFALSE
+    read_term_from_stream(gd, ld, s, A1, A2) && return FTRUE      # PL_release_stream(s)
+    Sferror(s) != 0 && return streamStatus(ld, s) ? FTRUE : FFALSE
+    return FFALSE                                   # PL_release_stream(s)
+end
+
+# PORT: pl-read.c is_named_var as pl_is_named_var1_va
+# (PRED_IMPL("$is_named_var", 1, is_named_var, 0)) — pl-read.c:537-545
+"`\$is_named_var(+Name)` (pl-read.c): `Name` is an atom that names a variable the style checks treat as a named one."
+function pl_is_named_var1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    name = PL_get_atom_ex(ld, PL__t0)
+    name === nothing && return FFALSE
+    return atom_is_named_var(codeunits(sym_text(name))) == 1 ? FTRUE : FFALSE
+end
+
+# PORT: pl-read.c pl_raw_read2
+# (pl-ext.c:118, `FRG("$raw_read", 2, pl_raw_read2, 0)`; the `a1, a2` convention, pl-read.c:6652-6706)
+# DIVERGES: no stream locks and no `free_read_data`; the atom is made from the buffer's bytes as `_text_term` makes
+# it (`PL_unify_text(term, 0, &txt, PL_ATOM)` on UTF-8 text); the buffer is not written (`*top = EOS`): the text is
+# the slice up to `top`.
+"`\$raw_read(+Stream, -Raw)` (pl-read.c): the text of the next term, as an atom, without the full stop and its layout."
+function pl_raw_read2(ld::PL_local_data{T}, from::term_t, term::term_t)::foreign_t where {T}
+    gd = _query_gd(ld)
+
+    in = getTextInputStream(ld, from)
+    in === nothing && return FFALSE
+
+    rd = init_read_data(gd, ld, in)
+    ok, e = raw_read(rd)
+    if !ok
+        if Sferror(in) != 0
+            return streamStatus(ld, in) ? FTRUE : FFALSE
+        else
+            return PL_raise_exception(ld, rd.exception) ? FTRUE : FFALSE   # PL_release_stream(in)
+        end
+    end                                             # else PL_release_stream(in)
+
+    b = rd._rb.base                                 # strip the input from blanks
+    s = rd.base
+    top = backSkipBlanks(b, s, e - 1)
+    t2, chr = backSkipUTF8(b, s, top)
+    if chr == Int('.')
+        top = backSkipBlanks(b, s, t2)
+    end
+                                                    # watch for "0' ."
+    if top < e && top - 2 >= s && _byte(b, top - 1) == Int('\'') && _byte(b, top - 2) == Int('0')
+        top += 1
+    end
+    s = skipSpaces(b, s)
+
+    return PL_unify_atomic(ld, term, _text_term(T, b[s:(top - 1)], :atom)) ? FTRUE : FFALSE
+end
+
+# PORT: pl-read.c pl_raw_read
+# (pl-ext.c:117, `FRG("$raw_read", 1, pl_raw_read, 0)`; pl-read.c:6708-6710)
+"`\$raw_read(-Raw)` (pl-read.c): `\$raw_read/2` on the current input."
+pl_raw_read(ld::PL_local_data{T}, term::term_t) where {T} = pl_raw_read2(ld, 0, term)
+
+# PORT: pl-read.c pl_read2
+# (pl-ext.c:175, `FRG("read", 2, pl_read2, ISO)`; the `a1, a2` convention, pl-read.c:6713-6736)
+# DIVERGES: no stream locks and no `free_read_data`; the options the kernel refuses are `read_term_from_stream`'s
+# (read/2 takes none).
+"`read(+Stream, -Term)` (pl-read.c): read a term from `Stream`."
+function pl_read2(ld::PL_local_data{T}, from::term_t, term::term_t)::foreign_t where {T}
+    gd = _query_gd(ld)
+
+    s = getTextInputStream(ld, from)
+    s === nothing && return FFALSE
+
+    rd = init_read_data(gd, ld, s)
+    rval = read_term(term, rd)
+    if rd.has_exception
+        rval = PL_raise_exception(ld, rd.exception)
+    end
+
+    Sferror(s) != 0 && return streamStatus(ld, s) ? FTRUE : FFALSE      # else PL_release_stream(s)
+
+    return rval ? FTRUE : FFALSE
+end
+
+# PORT: pl-read.c pl_read
+# (pl-ext.c:116, `FRG("read", 1, pl_read, ISO)`; pl-read.c:6738-6741)
+"`read(-Term)` (pl-read.c): `read/2` on the current input."
+pl_read(ld::PL_local_data{T}, term::term_t) where {T} = pl_read2(ld, 0, term)
+
 # PORT: pl-read.c BeginPredDefs as PL_predicates_from_read
 # DIVERGES: the entries of the predicates the kernel has ported, in upstream's order
-# (read:7443-7456 at cbf4e189); read_clause/3 since LB1.
-# NOT PORTED: read_term/2,3, R2's stream table (their stream argument); `$code_class/2` and
-# `$is_named_var/1`, no boot file calls them (grep at cbf4e189: library/prolog_colour.pl calls
-# the second);
-# `$qq_open/2`, no quasi-quotations.
+# (read:7443-7456 at cbf4e189); read_clause/3 since LB1; read_term/3,2 and `$is_named_var/1` since RD1.
+# `read/1,2` and `$raw_read/1,2` are pl-ext.c's FRG entries (`foreigns`, src/pl-ext.jl; pl-ext.c:116-118, 175).
+# LEFT TO A LATER STEP, in the audit's hands (RD1 handoff): `$code_class/2` (no boot file calls it; grep at
+# cbf4e189: library/prolog_colour.pl does), `$qq_open/2` (the kernel's reader refuses quasi-quotations),
+# char_conversion/2 and current_char_conversion/2 (pl-read.c:552-620; the table is state).
 "pl-read.c's registration table (`BeginPredDefs(read)`): the ported entries."
 const PL_predicates_from_read = (
+    PL_extension("read_term", 3, pl_read_term3_va, PL_FA_ISO | PL_FA_VARARGS),
+    PL_extension("read_term", 2, pl_read_term2_va, PL_FA_ISO | PL_FA_VARARGS),
     PL_extension("read_clause", 3, pl_read_clause3_va, PL_FA_VARARGS),
     PL_extension("read_term_from_atom", 3, pl_read_term_from_atom3_va, PL_FA_VARARGS),
     PL_extension("atom_to_term", 3, pl_atom_to_term3_va, PL_FA_VARARGS),
     PL_extension("term_to_atom", 2, pl_term_to_atom2_va, PL_FA_VARARGS),
-    PL_extension("term_string", 2, pl_term_string2_va, PL_FA_VARARGS)
+    PL_extension("term_string", 2, pl_term_string2_va, PL_FA_VARARGS),
+    PL_extension("\$is_named_var", 1, pl_is_named_var1_va, PL_FA_VARARGS)
 )
