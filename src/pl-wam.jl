@@ -1831,7 +1831,8 @@ const VMI_RUN = (
     :I_CHP, :I_SSU_CHOICE, :I_SSU_COMMIT, :S_SSU_DET,
     :I_CONTEXT, :I_CALLM, :I_DEPARTM, :S_MQUAL, :S_LMQUAL,
     :I_DEPARTATM, :I_CALLATM, :I_DEPARTATMV, :I_CALLATMV, :B_ARG_CF, :B_ARG_VF,
-    :S_WRAP, :S_CALLWRAPPER, :S_TABLED
+    :S_WRAP, :S_CALLWRAPPER, :S_TABLED,
+    :I_YIELD, :I_CUTCHP, :I_RESET, :I_EXITRESET, :I_CALLCONT, :I_SHIFT, :I_SHIFTCP
 )
 
 "Jump to the label named after instruction `x`, one of those `table` names (a balanced tree of compares)."
@@ -3277,6 +3278,42 @@ function PL_next_solution_guarded(
     a3_ai = Int64(0)
     @goto arg3_slow
 
+    # ── continuations and engines (pl-vmi.c), compiled since LB4 b2 ───────────────────────────────
+    # DIVERGES (audit D-0363 item 2; a recorded deferral, owner the step CONT1: pl-cont.c, the
+    # continuations, and the engines): the clauses of reset/3, '$tbl_reset'/6, shift/1,
+    # shift_for_copy/1, call_continuation/1 and '$engine_yield'/2 compile to these instructions as
+    # upstream's, so listing, decompile and clause shape are swipl's; their RUN raises
+    # `NotPortedError` naming the instruction and its upstream line until CONT1 ports them.
+    # PORT: pl-vmi.c I_YIELD
+    # DIVERGES: refused by name until CONT1 (above).
+    @label I_YIELD
+    throw(NotPortedError{T}(DEF.name, "the VM instruction I_YIELD (pl-vmi.c:2410)", "CONT1"))
+
+    # PORT: pl-vmi.c I_RESET
+    # DIVERGES: refused by name until CONT1 (above).
+    @label I_RESET
+    throw(NotPortedError{T}(DEF.name, "the VM instruction I_RESET (pl-vmi.c:5754)", "CONT1"))
+
+    # PORT: pl-vmi.c I_EXITRESET
+    # DIVERGES: refused by name until CONT1 (above).
+    @label I_EXITRESET
+    throw(NotPortedError{T}(DEF.name, "the VM instruction I_EXITRESET (pl-vmi.c:5801)", "CONT1"))
+
+    # PORT: pl-vmi.c I_CALLCONT
+    # DIVERGES: refused by name until CONT1 (above).
+    @label I_CALLCONT
+    throw(NotPortedError{T}(DEF.name, "the VM instruction I_CALLCONT (pl-vmi.c:5839)", "CONT1"))
+
+    # PORT: pl-vmi.c I_SHIFT
+    # DIVERGES: refused by name until CONT1 (above).
+    @label I_SHIFT
+    throw(NotPortedError{T}(DEF.name, "the VM instruction I_SHIFT (pl-vmi.c:5874)", "CONT1"))
+
+    # PORT: pl-vmi.c I_SHIFTCP
+    # DIVERGES: refused by name until CONT1 (above).
+    @label I_SHIFTCP
+    throw(NotPortedError{T}(DEF.name, "the VM instruction I_SHIFTCP (pl-vmi.c:5908)", "CONT1"))
+
     # ── single sided unification (pl-vmi.c), SSU2 ─────────────────────────────────────────────────
     # An SSU clause (`Head => Body`, `Head ?=> Body`) starts with `I_CHP`, so a choice point of its
     # frame is marked before the head runs; the head unifies as any head does, and `I_SSU_*` after it
@@ -4253,6 +4290,35 @@ function PL_next_solution_guarded(
     PC += 1
     ld.fast_condition = 0
     @goto next_instruction
+
+    # PORT: pl-vmi.c I_CUTCHP
+    # (pl-vmi.c:2930-2959 at the pin; LB4 b2, audit D-0363 item 2: `'$cut'`, prolog_cut_to/1's body)
+    # DIVERGES: the argument holds the choice point's local-stack POSITION (`PL_unify_choice`,
+    # src/pl-trace.jl), so `och = (Choice)((Word)lBase + i)` and `existingChoice(och)` are
+    # `existingChoice(ld, i)`, the record or 0, and `c_cut` takes the position, as `C_CUT`'s;
+    # `consTermRef(a)` is `pushWordAsTermRef` of the dereferenced argument, popped after the error (a
+    # term reference is a slot here), as `callatmv_type_error`'s. No `DEBUG(MSG_CUT)`.
+    @label I_CUTCHP
+    cch_k, cch_w, cch_p = _deref_loc(ld, -(argFrameP(ld.frames[FR].base, 0) + 1))  # a = argFrameP(FR, 0); deRef(a)
+    if cch_k == DU_VALUE && isTaggedIntW(cch_w)     # isTaggedInt(*a)
+        cch_ch = existingChoice(ld, Int(valInt(cch_w)))     # och = (Choice)((Word)lBase + valInt(*a))
+        if cch_ch == 0                              # if ( !existingChoice(och) )
+            @SAVE_REGISTERS(QID)
+            cch_t = pushWordAsTermRef(ld, (cch_k, cch_w, cch_p))
+            PL_error(ld, ERR_EXISTENCE, mk_sym(T, :choice), cch_t)
+            popTermRef(ld)
+            @LOAD_REGISTERS(QID)
+            @goto b_throw                           # THROW_EXCEPTION
+        end
+        cc_och = ld.choices[cch_ch].base            # VMH_GOTO(c_cut, och)
+        @goto c_cut
+    end
+    @SAVE_REGISTERS(QID)
+    cch_t = pushWordAsTermRef(ld, (cch_k, cch_w, cch_p))
+    PL_error(ld, ERR_TYPE, mk_sym(T, :choice), cch_t)   # PL_error(…, ERR_TYPE, ATOM_choice, consTermRef(a))
+    popTermRef(ld)
+    @LOAD_REGISTERS(QID)
+    @goto b_throw                                   # THROW_EXCEPTION
 
     # PORT: pl-vmi.c C_CUT
     # DIVERGES: the slot holds the choice point's position (above).

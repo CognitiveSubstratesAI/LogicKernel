@@ -403,3 +403,49 @@ FINDING 4, OPEN (traced; DESIGN QUESTION Q2): the reader refuses dicts (src/pl-r
 NONE of the five files was run (the boot stops at finding 3/4 first; every file needs a booted database).
 NEXT AGENT: wait for the audit's answers to Q1/Q2 (handoff10.md in lk-channel), then port as ruled, re-run probe 2's
   enumeration, then the five files alone in order. Daemon 17790d9d (pid 95631) left UP and warm in the run tree.
+
+## State (writer 11, D-0363 item 2; FORCED hand-back by the 150k cap hook, 2026-11-03)
+CODE WRITTEN, UNCOMMITTED in ~/code/lk-lb4b2 (wip/lb4b2c, HEAD still fcfe9e6; the cap hook fired before the commit).
+  The whole diff is saved as evidence/LB4B2/w11_p3.patch (413 lines) and is ALREADY APPLIED to the run tree
+  (`git apply --3way`, clean). Contents (all cites from the pin cbf4e189):
+  - src/pl-vmi.jl: seven new opcodes in pl-vmi.c order, code(159..165): I_YIELD (VIF_BREAK, 2410), I_CUTCHP (2935),
+    I_RESET (5754), I_EXITRESET (5801), I_CALLCONT/I_SHIFT/I_SHIFTCP (CA1_VAR; 5839/5874/5908); `_CODE_TABLE` rows;
+    header note (the "not declared" line for I_RESET/I_CUTCHP/I_YIELD removed).
+  - src/pl-comp.jl: compileSubClause's atom branch emits I_RESET+I_EXITRESET / I_CUTCHP / I_YIELD (pl-comp.c:3543-3556)
+    inside `sym_key(arg) in names.reserved_atoms`, keys via `_name_key(T, "$reset")` etc. (NO SubClauseNames field
+    added: a struct change); the old reserved-atom NotPortedError is gone. compileBodyCallContinuation/compileBodyShift
+    emit `Output_1!(ci, I_CALLCONT|I_SHIFT|I_SHIFTCP, VAROFFSET(i1))` + BOOLEX_TRUE (pl-comp.c:4703-4735). Decompiler:
+    I_CUTCHP -> '$cut', I_RESET -> '$reset', I_YIELD -> '$yield' (pl-comp.c:6772-6783); I_CALLCONT/I_SHIFT/I_SHIFTCP
+    via common_type_test (`_type_test_name` extended, pl-comp.c:6758-6763); I_EXITRESET beside I_EXITCATCH in
+    decompile_head (6153), decompileBodyNoShift (6950, kernel's "nothing" as for I_EXITCATCH), argKey (5520), arg1Key
+    (5600). src/pl-funct.jl: SubClauseNames docstring.
+  - src/pl-gc.jl clearUninitialisedVarsFrame: I_EXITRESET terminates (pl-gc.c:1354). (mark_local_variables, with
+    upstream's I_CUTCHP/I_CALLCONT marks pl-gc.c:2141-2193, has no kernel counterpart.)
+  - src/pl-wam.jl: VMI_RUN += the seven; I_CUTCHP FULL port before C_CUT (pl-vmi.c:2930-2959: `_deref_loc` of
+    argFrameP(FR,0), tagged int -> existingChoice(ld, i) -> `cc_och = base; @goto c_cut`; else ERR_EXISTENCE /
+    ERR_TYPE `choice` via pushWordAsTermRef/popTermRef, `@goto b_throw`). The other six: labels that throw
+    NotPortedError{T}(DEF.name, "the VM instruction I_RESET (pl-vmi.c:5754)", "CONT1") etc. — the DIVERGES block
+    (owner CONT1, D-0363 item 2) sits above them. test/foreign/test_query.jl still finds I_NOP outside VMI_RUN.
+  - docs/port_inventory.md VM inventory: the seven rows `declared`.
+DAEMON: the probe send made the daemon RESTART ITSELF ("struct changed: const:VMI_RUN,const:_CODE_TABLE": a
+  changed const also restarts it; unavoidable for new opcodes). Its output so far: evidence/LB4B2/w11_boot1.out. Unit
+  logickernel-warm-17790d9d in lk-lb4b2-run; the cold compile was in progress at hand-back. NOTHING RUN on the new code.
+TESTS STILL TO EDIT (next agent; read in slices):
+  - test/compile/test_body_code_swipl.jl:1114-1117 `_BC_IS_REFUSED = (...)` -> `()` with a dated comment; drop the
+    loop at :1140-1142 ("every emission ... names a refusal") and add "i_callcont", "i_shift(", "i_shiftcp" to the
+    "every instruction of the family is emitted" list (:1144-1150; check `_bc_op`'s rendering at :67 first);
+    :3026-3030 the `$reset` refusal loop -> move to the `tf` list (:3033) with pinned code
+    `["i_enter","i_reset","i_exitreset","i_exit"]` (and `$cut` -> i_cutchp, `$yield` -> i_yield, `'$tbl_reset'/6`
+    shape), compared live with swipl by `_bc_swipl` as pt3's.
+  - NEW rows file for the six init.pl clauses (init.pl:572,604,617,626,629,645; engines.pl:152 — read them in the
+    pin tree): swipl 10.1.19 LC_ALL=C, two byte-identical runs, clause/2 read-back + compiled code; plus the PIN rows of
+    the named errors (reset/3, shift/1, call_continuation/1 raise NotPortedError naming the instruction; swipl's answer
+    in a comment, marked "CONT1 flips"), and I_CUTCHP run rows (prolog_cut_to/1 with prolog_current_choice/1:
+    a live choice, a stale one -> existence_error(choice, _), a non-integer -> type_error(choice, _), unbound ->
+    instantiation_error), shaped as test/core_lang/test_arg_body_swipl.jl.
+  - Then: fmt, check, the files on 3 types, commit as `UPSTREAM: pl-comp.c ... (swipl-devel cbf4e189)` with the
+    DIVERGES (owner CONT1) in the message; re-run probe 2 (needs its temporary addClauseWic catch) and the five boot
+    files alone in order. Mutants (TARGETS: test_body_code_swipl.jl, the new rows file, test_query.jl,
+    test_boot_*): I_CUTCHP's existence test, its tagged-int test, the I_EXITRESET in clearUninitialisedVarsFrame,
+    argKey/arg1Key I_EXITRESET, the decompile atoms.
+OWED AT THE GATE (unchanged + this): alloc pins x3, battery on a fresh name after Evidence.

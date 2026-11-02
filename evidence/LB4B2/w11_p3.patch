@@ -1,0 +1,413 @@
+diff --git a/docs/port_inventory.md b/docs/port_inventory.md
+index a9621f2..a28f853 100644
+--- a/docs/port_inventory.md
++++ b/docs/port_inventory.md
+@@ -488,7 +488,7 @@ marker exists in `src/pl-vmi.jl` (declaration only — no instruction executes y
+ | `I_EXIT` | 2177 | — | NDQP | declared |
+ | `I_EXITFACT` | 2294 | — | NDQP | declared |
+ | `I_EXITQUERY` | 2360 | — |  | declared |
+-| `I_YIELD` | 2410 | — |  |  |
++| `I_YIELD` | 2410 | — |  | declared |
+ | `L_NOLCO` | 2467 | CA1_JUMP | NDQP | declared |
+ | `L_VAR` | 2487 | CA1_FVAR,CA1_VAR | NDQP | declared |
+ | `L_VOID` | 2504 | CA1_FVAR |  | declared |
+@@ -533,7 +533,7 @@ marker exists in `src/pl-vmi.jl` (declaration only — no instruction executes y
+ | `C_VAR_N` | 2864 | CA1_FVAR,CA1_INTEGER |  | declared |
+ | `C_LSCUT` | 2899 | CA1_CHP |  | declared |
+ | `C_LCUT` | 2911 | CA1_CHP |  | declared |
+-| `I_CUTCHP` | 2935 | — |  |  |
++| `I_CUTCHP` | 2935 | — |  | declared |
+ | `C_SCUT` | 2962 | — |  | declared |
+ | `C_LCUTIFTHEN` | 2967 | CA1_CHP |  | declared |
+ | `C_CUT` | 2992 | CA1_CHP |  | declared |
+@@ -670,11 +670,11 @@ marker exists in `src/pl-vmi.jl` (declaration only — no instruction executes y
+ 
+ | instruction | pl-vmi.c | operands | needed by | kernel |
+ |---|---|---|---|---|
+-| `I_RESET` | 5754 | — |  |  |
+-| `I_EXITRESET` | 5801 | — |  |  |
+-| `I_CALLCONT` | 5839 | CA1_VAR |  |  |
+-| `I_SHIFT` | 5874 | CA1_VAR |  |  |
+-| `I_SHIFTCP` | 5908 | CA1_VAR |  |  |
++| `I_RESET` | 5754 | — |  | declared |
++| `I_EXITRESET` | 5801 | — |  | declared |
++| `I_CALLCONT` | 5839 | CA1_VAR |  | declared |
++| `I_SHIFT` | 5874 | CA1_VAR |  | declared |
++| `I_SHIFTCP` | 5908 | CA1_VAR |  | declared |
+ 
+ </details>
+ 
+diff --git a/src/pl-comp.jl b/src/pl-comp.jl
+index b09f58e..6a58251 100644
+--- a/src/pl-comp.jl
++++ b/src/pl-comp.jl
+@@ -2038,8 +2038,8 @@ end
+ # ── the other goals compiled inline (pl-comp.c, O_COMPILE_IS), V6b2 ─────────────────────────────
+ # Upstream's own decision, compiler by compiler (the memo's Q-1, (a)). Since V9a the unification
+ # family is emitted and executed — `I_TRUE`, `I_FAIL`, `C_VAR`, `B_UNIFY_*`, `B_EQ_*`, `B_NEQ_*`;
+-# every other emission (`I_CALLCONT`, `I_SHIFT`, `I_SHIFTCP`) throws `NotPortedError`
+-# where upstream emits it, before anything is emitted (V9); each `false` is upstream's, and
++# since LB4 b2 `I_CALLCONT`, `I_SHIFT` and `I_SHIFTCP` are emitted where upstream emits them (their
++# run is the step CONT1's, refused by name in the run loop); each `false` is upstream's, and
+ # compiles as a call. A void variable is
+ # upstream's `isVar(*a)`: a variable the analysis gave no slot.
+ 
+@@ -2294,27 +2294,28 @@ function compileBodyArg3(ci::compileInfo{T}, arg::T)::boolex_t where {T}
+ end
+ 
+ # PORT: pl-comp.c compileBodyCallContinuation
+-# DIVERGES: see the section header.
+-"`\$call_continuation/1` in a body (pl-comp.c): `I_CALLCONT` on a variable already seen — refused (V9)."
++# (pl-comp.c:4703-4718 at the pin; since LB4 b2 the instruction is emitted, its run is CONT1's)
++"`\$call_continuation/1` in a body (pl-comp.c): `I_CALLCONT` on a variable already seen."
+ function compileBodyCallContinuation(ci::compileInfo{T}, arg::T)::boolex_t where {T}
+-    i1 = _comp_ivar(ci, child(arg, 2))
++    i1 = _comp_ivar(ci, child(arg, 2))                         # a1 = argTermP(*arg, 0); deRef(a1)
+     if i1 >= 0 && !isFirstVar(ci.used_var, i1)
+-        throw(NotPortedError{T}(arg, "I_CALLCONT (compileBodyCallContinuation)", "V9"))
++        Output_1!(ci, I_CALLCONT, VAROFFSET(i1))
++        return BOOLEX_TRUE
+     end
+     return BOOLEX_FALSE
+ end
+ 
+ # PORT: pl-comp.c compileBodyShift
+-# DIVERGES: see the section header.
++# (pl-comp.c:4720-4735 at the pin; since LB4 b2 the instruction is emitted, its run is CONT1's)
+ """
+ `\$shift/1` (`for_copy` false) or `\$shift_for_copy/1` (true) in a body (pl-comp.c): `I_SHIFT` or
+-`I_SHIFTCP` on a variable already seen — refused (V9).
++`I_SHIFTCP` on a variable already seen.
+ """
+ function compileBodyShift(ci::compileInfo{T}, arg::T, for_copy::Bool)::boolex_t where {T}
+-    i1 = _comp_ivar(ci, child(arg, 2))
++    i1 = _comp_ivar(ci, child(arg, 2))                         # a1 = argTermP(*arg, 0); deRef(a1)
+     if i1 >= 0 && !isFirstVar(ci.used_var, i1)
+-        what = (for_copy ? "I_SHIFTCP" : "I_SHIFT") * " (compileBodyShift)"
+-        throw(NotPortedError{T}(arg, what, "V9"))
++        Output_1!(ci, for_copy ? I_SHIFTCP : I_SHIFT, VAROFFSET(i1))
++        return BOOLEX_TRUE
+     end
+     return BOOLEX_FALSE
+ end
+@@ -2365,12 +2366,12 @@ end
+ # DIVERGES: plain goals and `!` (`I_CUT`, or a local cut's instruction once V9 sets `ci.cut`; user,
+ # 2026-10-05: the cut's COMPILE side with the body compiler, its execution since V6a). The meta-call (a
+ # variable goal → `I_CALL1`, `call/N` → `I_CALL1`/`I_CALLN`) as upstream compiles it, since V9e-1. The
+-# reserved atoms compiled inline but `true` and `fail` (`$catch`, `$reset`, …) throw `NotPortedError`
+-# BEFORE any code is emitted (V9): upstream always compiles them inline. `true` and `fail` compile to `I_TRUE` and `I_FAIL` (since V9a). O_COMPILE_IS's
++# reserved atoms are compiled inline as upstream compiles them: `true` and `fail` (since V9a), `$catch`
++# and `$` (V9f), `$call_cleanup` (V9g), `$reset`, `$cut` and `$yield` (LB4 b2, audit D-0363 item 2;
++# their keys are looked up in the branch, as `SubClauseNames` has no field for them). O_COMPILE_IS's
+ # functors (since V6b2) and is/2 (since V8) are compiled as upstream decides, by upstream's own
+-# compilers in upstream's order: inline where upstream emits an instruction — each emission of an
+-# instruction the kernel does not execute yet throws `NotPortedError` (V9, the memo's Q-1) — and a
+-# call wherever upstream falls back to one. The names are the global data's (`subclause_names`). The
++# compilers in upstream's order: inline where upstream emits an instruction, and a call wherever
++# upstream falls back to one. The names are the global data's (`subclause_names`). The
+ # call operand indexes the clause's procedure table (since V1). Since MOD3a the COLON CONTEXT
+ # (pl-comp.c:3443-3465, 3568-3575, 3594-3632 at the pin): a variable goal, and any goal under a
+ # variable module (`TM_VAR`), is meta-called as `Module:Goal` (`B_FUNCTOR :/2`, the module pushed, the
+@@ -2470,13 +2471,18 @@ function compileSubClause!(
+             Output_0!(ci, I_CALLCLEANUP)
+             Output_0!(ci, I_EXITCLEANUP)
+             return BOOLEX_TRUE
++        elseif sym_key(arg) in names.reserved_atoms            # $reset, $cut, $yield (LB4 b2)
++            if sym_key(arg) == _name_key(T, "\$reset")         # ATOM_dreset: $reset
++                Output_0!(ci, I_RESET)
++                Output_0!(ci, I_EXITRESET)
++            elseif sym_key(arg) == _name_key(T, "\$cut")       # ATOM_dcut: $cut
++                Output_0!(ci, I_CUTCHP)
++            else                                               # ATOM_dyield: $yield
++                @assert sym_key(arg) == _name_key(T, "\$yield")
++                Output_0!(ci, I_YIELD)
++            end
++            return BOOLEX_TRUE
+         end
+-        sym_key(arg) in names.reserved_atoms &&
+-            throw(
+-                NotPortedError{T}(
+-                    arg, "a goal atom compiled inline (\$catch, \$reset, …)", "V9"
+-                )
+-            )
+     else
+         return NOT_CALLABLE
+     end
+@@ -4659,8 +4665,8 @@ function decompile_head!(
+             p == 0 && return false                              # p = argTermP(*p, 0)
+             unifyVarGC(ld, p + 1, variables, PC.codes[PC.pc + 1]) || return false
+             unifyVarGC(ld, p + 2, variables, PC.codes[PC.pc + 2]) || return false
+-        elseif c == I_EXITCATCH || c == I_EXITFACT || c == I_EXIT || c == I_ENTER ||   # fact; H_VOID, H_VOID, I_ENTER
+-            c == I_SSU_COMMIT || c == I_SSU_CHOICE                                   # (SSU1, pl-comp.c:6157-6158)
++        elseif c == I_EXITCATCH || c == I_EXITRESET || c == I_EXITFACT || c == I_EXIT ||   # fact
++            c == I_ENTER || c == I_SSU_COMMIT || c == I_SSU_CHOICE      # H_VOID, H_VOID, I_ENTER; (SSU1, pl-comp.c:6157-6158)
+             @assert argn <= arity
+             @assert pushed == 0
+             while argn < arity
+@@ -5016,7 +5022,8 @@ function decompileBodyNoShift!(
+             pushed += 1
+         elseif op == I_VAR || op == I_NONVAR || op == I_INTEGER || op == I_RATIONAL ||
+             op == I_FLOAT || op == I_NUMBER || op == I_ATOMIC || op == I_ATOM ||
+-            op == I_STRING || op == I_COMPOUND || op == I_CALLABLE
++            op == I_STRING || op == I_COMPOUND || op == I_CALLABLE ||
++            op == I_CALLCONT || op == I_SHIFT || op == I_SHIFTCP    # (LB4 b2, pl-comp.c:6758-6763)
+             push!(di.argp, makeVarRef(codes[di.pc]))            # common_type_test
+             di.pc += 1
+             build_term!(di, mk_sym(T, _type_test_name(op)), 1)
+@@ -5024,6 +5031,9 @@ function decompileBodyNoShift!(
+         elseif op == I_CUT
+             push!(di.argp, _atom_word!(ld, mk_sym(T, Symbol("!"))))
+             pushed += 1
++        elseif op == I_CUTCHP                                   # (LB4 b2, pl-comp.c:6772-6774)
++            push!(di.argp, _atom_word!(ld, mk_sym(T, Symbol("\$cut"))))
++            pushed += 1
+         elseif op == I_CALL1 || op == I_CALLN
+             n = op == I_CALLN ? Int(codes[di.pc]) : 0           # BUILD_TERM(FUNCTOR_call1) / callN
+             op == I_CALLN && (di.pc += 1)
+@@ -5142,6 +5152,12 @@ function decompileBodyNoShift!(
+         elseif op == I_CATCH                                    # (since V9f)
+             push!(di.argp, _atom_word!(ld, mk_sym(T, Symbol("\$catch"))))
+             pushed += 1
++        elseif op == I_RESET                                    # (LB4 b2, pl-comp.c:6778-6780)
++            push!(di.argp, _atom_word!(ld, mk_sym(T, Symbol("\$reset"))))
++            pushed += 1
++        elseif op == I_YIELD                                    # (LB4 b2, pl-comp.c:6781-6783)
++            push!(di.argp, _atom_word!(ld, mk_sym(T, Symbol("\$yield"))))
++            pushed += 1
+         elseif op == I_DET                                      # (since V9f)
+             push!(di.argp, _atom_word!(ld, mk_sym(T, Symbol("\$"))))
+             pushed += 1
+@@ -5151,7 +5167,7 @@ function decompileBodyNoShift!(
+             if codes[di.pc] == I_EXITCLEANUP
+                 di.pc += 1
+             end
+-        elseif op == I_EXIT || op == I_EXITCATCH
++        elseif op == I_EXIT || op == I_EXITCATCH || op == I_EXITRESET  # (I_EXITRESET: LB4 b2)
+             # break (out of upstream's switch): nothing
+         else
+             error(
+@@ -5171,6 +5187,9 @@ end
+ function _type_test_name(op::code)::Symbol
+     op == I_VAR && return :var
+     op == I_NONVAR && return :nonvar
++    op == I_CALLCONT && return Symbol("\$call_continuation")  # FUNCTOR_dcall_continuation1 (LB4 b2)
++    op == I_SHIFT && return Symbol("\$shift")                  # FUNCTOR_dshift1
++    op == I_SHIFTCP && return Symbol("\$shift_for_copy")       # FUNCTOR_dshift_for_copy1
+     for (instruction, name) in type_tests
+         op == instruction && return Symbol(name)
+     end
+@@ -5636,6 +5655,7 @@ function argKey(PC::Code{T}, skip::Int)::word where {T}
+             return FUNCTOR_dot2                                 # *key = FUNCTOR_dot2
+         elseif c == H_FIRSTVAR || c == H_VAR || c == H_VOID || c == H_VOID_N ||
+             c == H_POP || c == I_EXITFACT || c == I_ENTER || c == I_EXITCATCH ||
++            c == I_EXITRESET ||                                     # (LB4 b2, pl-comp.c:5520)
+             c == I_SSU_COMMIT || c == I_SSU_CHOICE                  # (SSU1, pl-comp.c:5526-5527)
+             return word(0)
+         elseif c == I_NOP || c == I_CHP
+@@ -5677,7 +5697,8 @@ function arg1Key(PC::Code{T})::Tuple{Bool, word} where {T}
+         elseif c == H_FLOAT || c == H_STRING || c == H_MPZ || c == H_MPQ ||
+             c == H_FIRSTVAR ||
+             c == H_VAR || c == H_VOID || c == H_VOID_N || c == I_EXITFACT || c == I_EXIT ||
+-            c == I_ENTER || c == I_EXITCATCH || c == I_SSU_CHOICE || c == I_SSU_COMMIT   # (SSU1, pl-comp.c:5604-5605)
++            c == I_ENTER || c == I_EXITCATCH || c == I_EXITRESET ||    # (I_EXITRESET: LB4 b2, pl-comp.c:5600)
++            c == I_SSU_CHOICE || c == I_SSU_COMMIT                  # (SSU1, pl-comp.c:5604-5605)
+             return (false, word(0))
+         elseif c == I_NOP || c == I_CHP
+             # continue
+diff --git a/src/pl-funct.jl b/src/pl-funct.jl
+index 625f844..1ae24c3 100644
+--- a/src/pl-funct.jl
++++ b/src/pl-funct.jl
+@@ -435,8 +435,8 @@ cut, compiled to `I_CUT`, c:3521), the other goal ATOMS it compiles inline (`tru
+ (c:3475) and, under O_COMPILE_IS, `=/2`, `==/2`, `\\==/2`, `var/1`, `nonvar/1`, the nine type tests
+ (c:4649-4660), `\$call_continuation/1`, `\$shift/1`, `\$shift_for_copy/1` and `arg/3` (c:3488-3517).
+ Since V6b2 each of these functors is compiled as upstream decides, by its own compiler (`atom_var` …
+-`atom_arg`): inline where upstream emits an instruction — refused where the kernel does not execute
+-it yet (V9) — and a call where upstream falls back to one.
++`atom_arg`): inline where upstream emits an instruction and a call where upstream falls back to one
++(since LB4 b2 every emission is upstream's; the run of the continuation instructions is CONT1's).
+ """
+ struct SubClauseNames
+     atom_true::UInt64                           # ATOM_true
+diff --git a/src/pl-gc.jl b/src/pl-gc.jl
+index a314bf3..6a3c275 100644
+--- a/src/pl-gc.jl
++++ b/src/pl-gc.jl
+@@ -232,7 +232,7 @@ end
+ # PORT: pl-gc.c clearUninitialisedVarsFrame
+ # DIVERGES: `PC` is the clause's code and an index into it; a cell is set to a FRESH variable, where
+ # upstream's `setVar` makes the cell itself the variable (decision 2). The instructions walked are
+-# the ones the kernel declares — not `I_EXITRESET`, `I_FEXITNDET`, `I_FREDO`, `A_FIRSTVAR_IS`.
++# the ones the kernel declares — not `I_FEXITNDET`, `I_FREDO`, `A_FIRSTVAR_IS` (`I_EXITRESET` since LB4 b2).
+ """
+     clearUninitialisedVarsFrame(ld, fr, codes, pc)
+ 
+@@ -250,7 +250,7 @@ function clearUninitialisedVarsFrame(
+             pc += Int(codes[pc + 1]) + 2
+             c = codes[pc]
+         end
+-        if c == I_EXIT || c == I_EXITFACT || c == I_EXITCATCH || c == I_EXITQUERY ||
++        if c == I_EXIT || c == I_EXITFACT || c == I_EXITCATCH || c == I_EXITRESET || c == I_EXITQUERY ||
+             c == I_FEXITDET || c == I_FCALLDETVA || c == S_TRUSTME || c == S_LIST
+             return nothing                                      # terminate code list
+         elseif c == H_FIRSTVAR || c == B_FIRSTVAR || c == B_ARGFIRSTVAR ||
+diff --git a/src/pl-vmi.jl b/src/pl-vmi.jl
+index 29a9376..f352c45 100644
+--- a/src/pl-vmi.jl
++++ b/src/pl-vmi.jl
+@@ -29,13 +29,15 @@
+ # pl-vmi.c's order), then MOD4's meta-argument supervisors (`S_MQUAL`, `S_LMQUAL`: the module
+ # qualification of a `meta_predicate` argument, in pl-vmi.c's order), then MOD3b's `Goal@Module`
+ # calls (`I_DEPARTATM`, `I_CALLATM`, `I_DEPARTATMV`, `I_CALLATMV`, in pl-vmi.c's order), then ARGINL's
+-# inline `arg/3` (`B_ARG_CF`, `B_ARG_VF`, in pl-vmi.c's order).
++# inline `arg/3` (`B_ARG_CF`, `B_ARG_VF`, in pl-vmi.c's order), then LB4 b2's continuation and engine
++# instructions the boot's clauses compile to (`I_YIELD`, `I_CUTCHP`, `I_RESET`, `I_EXITRESET`,
++# `I_CALLCONT`, `I_SHIFT`, `I_SHIFTCP`, in pl-vmi.c's order; audit D-0363 item 2): `I_CUTCHP` runs,
++# the other six are compiled as upstream and refused by name when run, until the step CONT1.
+ #
+ # NOT EMITTED, so not declared: H_SMALLINTW/B_SMALLINTW/L_SMALLINTW (only where a code word is
+ # narrower than a word, `CODES_PER_WORD > 1`: on 64-bit swipl every tagged integer is a SMALLINT,
+ # probed in 10.1.16); `I_USERCALL0` (its work is `I_CALL1`'s
+-# here), `I_RESET`, `I_CUTCHP`,
+-# `I_YIELD` (after V9). `I_CUT` is declared and compiled (a clause-level `!`, user
++# here). `I_CUT` is declared and compiled (a clause-level `!`, user
+ # 2026-10-05) and, since V6a, executed.
+ #
+ # OPERANDS: every literal operand (`*_ATOM`, `*_FLOAT`, `*_MPZ`, `*_MPQ`, `*_STRING`)
+@@ -598,6 +600,27 @@ const B_ARG_CF = code(157)
+ # PORT: pl-vmi.c B_ARG_VF
+ "`arg(Var, Var, FirstVar)` inline in a body: operands the index variable, the compound's variable, the first variable (pl-vmi.c)."
+ const B_ARG_VF = code(158)
++# PORT: pl-vmi.c I_YIELD
++"`'\$yield'`: yield control from this engine (pl-vmi.c; `'\$engine_yield'/2`'s body). Compiled since LB4 b2; run: CONT1."
++const I_YIELD = code(159)
++# PORT: pl-vmi.c I_CUTCHP
++"`'\$cut'`: cut every choice point after the one in the frame's first argument (pl-vmi.c; `prolog_cut_to/1`'s body)."
++const I_CUTCHP = code(160)
++# PORT: pl-vmi.c I_RESET
++"`'\$reset'`, first half: start the goal of `reset/3` (or `'\$tbl_reset'/6`) under a reset marker (pl-vmi.c). Compiled since LB4 b2; run: CONT1."
++const I_RESET = code(161)
++# PORT: pl-vmi.c I_EXITRESET
++"`'\$reset'`, second half: the goal of `reset/3` exited, the continuation is 0 (pl-vmi.c). Compiled since LB4 b2; run: CONT1."
++const I_EXITRESET = code(162)
++# PORT: pl-vmi.c I_CALLCONT
++"`'\$call_continuation'(Cont)` on a variable already seen: call a continuation (pl-vmi.c). Compiled since LB4 b2; run: CONT1."
++const I_CALLCONT = code(163)
++# PORT: pl-vmi.c I_SHIFT
++"`'\$shift'(Ball)` on a variable already seen: shift to the nearest reset (pl-vmi.c). Compiled since LB4 b2; run: CONT1."
++const I_SHIFT = code(164)
++# PORT: pl-vmi.c I_SHIFTCP
++"`'\$shift_for_copy'(Ball)` on a variable already seen: `I_SHIFT` for a copied continuation (pl-vmi.c). Compiled since LB4 b2; run: CONT1."
++const I_SHIFTCP = code(165)
+ 
+ # PORT: pl-incl.h code_info
+ # DIVERGES: `arguments` counts the kernel's operand WORDS — a literal is one (see above), where
+@@ -773,7 +796,14 @@ const _CODE_TABLE = (
+     code_info(:I_DEPARTATMV, VIF_BREAK, 3, (CA1_MODULE, CA1_VAR, CA1_PROC, 0x00)),
+     code_info(:I_CALLATMV, VIF_BREAK, 3, (CA1_MODULE, CA1_VAR, CA1_PROC, 0x00)),
+     code_info(:B_ARG_CF, VIF_BREAK, 3, (CA1_INTEGER, CA1_VAR, CA1_FVAR, 0x00)),
+-    code_info(:B_ARG_VF, VIF_BREAK, 3, (CA1_VAR, CA1_VAR, CA1_FVAR, 0x00))
++    code_info(:B_ARG_VF, VIF_BREAK, 3, (CA1_VAR, CA1_VAR, CA1_FVAR, 0x00)),
++    code_info(:I_YIELD, VIF_BREAK, 0, (0x00, 0x00, 0x00, 0x00)),
++    code_info(:I_CUTCHP, 0x00, 0, (0x00, 0x00, 0x00, 0x00)),
++    code_info(:I_RESET, 0x00, 0, (0x00, 0x00, 0x00, 0x00)),
++    code_info(:I_EXITRESET, 0x00, 0, (0x00, 0x00, 0x00, 0x00)),
++    code_info(:I_CALLCONT, 0x00, 1, (CA1_VAR, 0x00, 0x00, 0x00)),
++    code_info(:I_SHIFT, 0x00, 1, (CA1_VAR, 0x00, 0x00, 0x00)),
++    code_info(:I_SHIFTCP, 0x00, 1, (CA1_VAR, 0x00, 0x00, 0x00))
+ )
+ 
+ # PORT: pl-codetable.c codeTable
+diff --git a/src/pl-wam.jl b/src/pl-wam.jl
+index 30ee06b..5ea2f14 100644
+--- a/src/pl-wam.jl
++++ b/src/pl-wam.jl
+@@ -1825,7 +1825,8 @@ const VMI_RUN = (
+     :I_FCALLNDET6, :I_FCALLNDET7, :I_FCALLNDET8, :I_FCALLNDET9, :I_FCALLNDET10,
+     :I_CHP, :I_SSU_CHOICE, :I_SSU_COMMIT, :S_SSU_DET,
+     :I_CONTEXT, :I_CALLM, :I_DEPARTM, :S_MQUAL, :S_LMQUAL,
+-    :I_DEPARTATM, :I_CALLATM, :I_DEPARTATMV, :I_CALLATMV, :B_ARG_CF, :B_ARG_VF
++    :I_DEPARTATM, :I_CALLATM, :I_DEPARTATMV, :I_CALLATMV, :B_ARG_CF, :B_ARG_VF,
++    :I_YIELD, :I_CUTCHP, :I_RESET, :I_EXITRESET, :I_CALLCONT, :I_SHIFT, :I_SHIFTCP
+ )
+ 
+ "Jump to the label named after instruction `x`, one of those `table` names (a balanced tree of compares)."
+@@ -3256,6 +3257,42 @@ function PL_next_solution_guarded(
+     a3_ai = Int64(0)
+     @goto arg3_slow
+ 
++    # ── continuations and engines (pl-vmi.c), compiled since LB4 b2 ───────────────────────────────
++    # DIVERGES (audit D-0363 item 2; a recorded deferral, owner the step CONT1: pl-cont.c, the
++    # continuations, and the engines): the clauses of reset/3, '$tbl_reset'/6, shift/1,
++    # shift_for_copy/1, call_continuation/1 and '$engine_yield'/2 compile to these instructions as
++    # upstream's, so listing, decompile and clause shape are swipl's; their RUN raises
++    # `NotPortedError` naming the instruction and its upstream line until CONT1 ports them.
++    # PORT: pl-vmi.c I_YIELD
++    # DIVERGES: refused by name until CONT1 (above).
++    @label I_YIELD
++    throw(NotPortedError{T}(DEF.name, "the VM instruction I_YIELD (pl-vmi.c:2410)", "CONT1"))
++
++    # PORT: pl-vmi.c I_RESET
++    # DIVERGES: refused by name until CONT1 (above).
++    @label I_RESET
++    throw(NotPortedError{T}(DEF.name, "the VM instruction I_RESET (pl-vmi.c:5754)", "CONT1"))
++
++    # PORT: pl-vmi.c I_EXITRESET
++    # DIVERGES: refused by name until CONT1 (above).
++    @label I_EXITRESET
++    throw(NotPortedError{T}(DEF.name, "the VM instruction I_EXITRESET (pl-vmi.c:5801)", "CONT1"))
++
++    # PORT: pl-vmi.c I_CALLCONT
++    # DIVERGES: refused by name until CONT1 (above).
++    @label I_CALLCONT
++    throw(NotPortedError{T}(DEF.name, "the VM instruction I_CALLCONT (pl-vmi.c:5839)", "CONT1"))
++
++    # PORT: pl-vmi.c I_SHIFT
++    # DIVERGES: refused by name until CONT1 (above).
++    @label I_SHIFT
++    throw(NotPortedError{T}(DEF.name, "the VM instruction I_SHIFT (pl-vmi.c:5874)", "CONT1"))
++
++    # PORT: pl-vmi.c I_SHIFTCP
++    # DIVERGES: refused by name until CONT1 (above).
++    @label I_SHIFTCP
++    throw(NotPortedError{T}(DEF.name, "the VM instruction I_SHIFTCP (pl-vmi.c:5908)", "CONT1"))
++
+     # ── single sided unification (pl-vmi.c), SSU2 ─────────────────────────────────────────────────
+     # An SSU clause (`Head => Body`, `Head ?=> Body`) starts with `I_CHP`, so a choice point of its
+     # frame is marked before the head runs; the head unifies as any head does, and `I_SSU_*` after it
+@@ -4221,6 +4258,35 @@ function PL_next_solution_guarded(
+     ld.fast_condition = 0
+     @goto next_instruction
+ 
++    # PORT: pl-vmi.c I_CUTCHP
++    # (pl-vmi.c:2930-2959 at the pin; LB4 b2, audit D-0363 item 2: `'$cut'`, prolog_cut_to/1's body)
++    # DIVERGES: the argument holds the choice point's local-stack POSITION (`PL_unify_choice`,
++    # src/pl-trace.jl), so `och = (Choice)((Word)lBase + i)` and `existingChoice(och)` are
++    # `existingChoice(ld, i)`, the record or 0, and `c_cut` takes the position, as `C_CUT`'s;
++    # `consTermRef(a)` is `pushWordAsTermRef` of the dereferenced argument, popped after the error (a
++    # term reference is a slot here), as `callatmv_type_error`'s. No `DEBUG(MSG_CUT)`.
++    @label I_CUTCHP
++    cch_k, cch_w, cch_p = _deref_loc(ld, -(argFrameP(ld.frames[FR].base, 0) + 1))  # a = argFrameP(FR, 0); deRef(a)
++    if cch_k == DU_VALUE && isTaggedIntW(cch_w)     # isTaggedInt(*a)
++        cch_ch = existingChoice(ld, Int(valInt(cch_w)))     # och = (Choice)((Word)lBase + valInt(*a))
++        if cch_ch == 0                              # if ( !existingChoice(och) )
++            @SAVE_REGISTERS(QID)
++            cch_t = pushWordAsTermRef(ld, (cch_k, cch_w, cch_p))
++            PL_error(ld, ERR_EXISTENCE, mk_sym(T, :choice), cch_t)
++            popTermRef(ld)
++            @LOAD_REGISTERS(QID)
++            @goto b_throw                           # THROW_EXCEPTION
++        end
++        cc_och = ld.choices[cch_ch].base            # VMH_GOTO(c_cut, och)
++        @goto c_cut
++    end
++    @SAVE_REGISTERS(QID)
++    cch_t = pushWordAsTermRef(ld, (cch_k, cch_w, cch_p))
++    PL_error(ld, ERR_TYPE, mk_sym(T, :choice), cch_t)   # PL_error(…, ERR_TYPE, ATOM_choice, consTermRef(a))
++    popTermRef(ld)
++    @LOAD_REGISTERS(QID)
++    @goto b_throw                                   # THROW_EXCEPTION
++
+     # PORT: pl-vmi.c C_CUT
+     # DIVERGES: the slot holds the choice point's position (above).
+     @label C_CUT

@@ -515,7 +515,7 @@ marker exists in `src/pl-vmi.jl` (declaration only — no instruction executes y
 | `I_EXIT` | 2177 | — | NDQP | declared |
 | `I_EXITFACT` | 2294 | — | NDQP | declared |
 | `I_EXITQUERY` | 2360 | — |  | declared |
-| `I_YIELD` | 2410 | — |  |  |
+| `I_YIELD` | 2410 | — |  | declared |
 | `L_NOLCO` | 2467 | CA1_JUMP | NDQP | declared |
 | `L_VAR` | 2487 | CA1_FVAR,CA1_VAR | NDQP | declared |
 | `L_VOID` | 2504 | CA1_FVAR |  | declared |
@@ -560,7 +560,7 @@ marker exists in `src/pl-vmi.jl` (declaration only — no instruction executes y
 | `C_VAR_N` | 2864 | CA1_FVAR,CA1_INTEGER |  | declared |
 | `C_LSCUT` | 2899 | CA1_CHP |  | declared |
 | `C_LCUT` | 2911 | CA1_CHP |  | declared |
-| `I_CUTCHP` | 2935 | — |  |  |
+| `I_CUTCHP` | 2935 | — |  | declared |
 | `C_SCUT` | 2962 | — |  | declared |
 | `C_LCUTIFTHEN` | 2967 | CA1_CHP |  | declared |
 | `C_CUT` | 2992 | CA1_CHP |  | declared |
@@ -697,11 +697,11 @@ marker exists in `src/pl-vmi.jl` (declaration only — no instruction executes y
 
 | instruction | pl-vmi.c | operands | needed by | kernel |
 |---|---|---|---|---|
-| `I_RESET` | 5754 | — |  |  |
-| `I_EXITRESET` | 5801 | — |  |  |
-| `I_CALLCONT` | 5839 | CA1_VAR |  |  |
-| `I_SHIFT` | 5874 | CA1_VAR |  |  |
-| `I_SHIFTCP` | 5908 | CA1_VAR |  |  |
+| `I_RESET` | 5754 | — |  | declared |
+| `I_EXITRESET` | 5801 | — |  | declared |
+| `I_CALLCONT` | 5839 | CA1_VAR |  | declared |
+| `I_SHIFT` | 5874 | CA1_VAR |  | declared |
+| `I_SHIFTCP` | 5908 | CA1_VAR |  | declared |
 
 </details>
 

@@ -2038,8 +2038,8 @@ end
 # ── the other goals compiled inline (pl-comp.c, O_COMPILE_IS), V6b2 ─────────────────────────────
 # Upstream's own decision, compiler by compiler (the memo's Q-1, (a)). Since V9a the unification
 # family is emitted and executed — `I_TRUE`, `I_FAIL`, `C_VAR`, `B_UNIFY_*`, `B_EQ_*`, `B_NEQ_*`;
-# every other emission (`I_CALLCONT`, `I_SHIFT`, `I_SHIFTCP`) throws `NotPortedError`
-# where upstream emits it, before anything is emitted (V9); each `false` is upstream's, and
+# since LB4 b2 `I_CALLCONT`, `I_SHIFT` and `I_SHIFTCP` are emitted where upstream emits them (their
+# run is the step CONT1's, refused by name in the run loop); each `false` is upstream's, and
 # compiles as a call. A void variable is
 # upstream's `isVar(*a)`: a variable the analysis gave no slot.
 
@@ -2294,27 +2294,28 @@ function compileBodyArg3(ci::compileInfo{T}, arg::T)::boolex_t where {T}
 end
 
 # PORT: pl-comp.c compileBodyCallContinuation
-# DIVERGES: see the section header.
-"`\$call_continuation/1` in a body (pl-comp.c): `I_CALLCONT` on a variable already seen — refused (V9)."
+# (pl-comp.c:4703-4718 at the pin; since LB4 b2 the instruction is emitted, its run is CONT1's)
+"`\$call_continuation/1` in a body (pl-comp.c): `I_CALLCONT` on a variable already seen."
 function compileBodyCallContinuation(ci::compileInfo{T}, arg::T)::boolex_t where {T}
-    i1 = _comp_ivar(ci, child(arg, 2))
+    i1 = _comp_ivar(ci, child(arg, 2))                         # a1 = argTermP(*arg, 0); deRef(a1)
     if i1 >= 0 && !isFirstVar(ci.used_var, i1)
-        throw(NotPortedError{T}(arg, "I_CALLCONT (compileBodyCallContinuation)", "V9"))
+        Output_1!(ci, I_CALLCONT, VAROFFSET(i1))
+        return BOOLEX_TRUE
     end
     return BOOLEX_FALSE
 end
 
 # PORT: pl-comp.c compileBodyShift
-# DIVERGES: see the section header.
+# (pl-comp.c:4720-4735 at the pin; since LB4 b2 the instruction is emitted, its run is CONT1's)
 """
 `\$shift/1` (`for_copy` false) or `\$shift_for_copy/1` (true) in a body (pl-comp.c): `I_SHIFT` or
-`I_SHIFTCP` on a variable already seen — refused (V9).
+`I_SHIFTCP` on a variable already seen.
 """
 function compileBodyShift(ci::compileInfo{T}, arg::T, for_copy::Bool)::boolex_t where {T}
-    i1 = _comp_ivar(ci, child(arg, 2))
+    i1 = _comp_ivar(ci, child(arg, 2))                         # a1 = argTermP(*arg, 0); deRef(a1)
     if i1 >= 0 && !isFirstVar(ci.used_var, i1)
-        what = (for_copy ? "I_SHIFTCP" : "I_SHIFT") * " (compileBodyShift)"
-        throw(NotPortedError{T}(arg, what, "V9"))
+        Output_1!(ci, for_copy ? I_SHIFTCP : I_SHIFT, VAROFFSET(i1))
+        return BOOLEX_TRUE
     end
     return BOOLEX_FALSE
 end
@@ -2365,12 +2366,12 @@ end
 # DIVERGES: plain goals and `!` (`I_CUT`, or a local cut's instruction once V9 sets `ci.cut`; user,
 # 2026-10-05: the cut's COMPILE side with the body compiler, its execution since V6a). The meta-call (a
 # variable goal → `I_CALL1`, `call/N` → `I_CALL1`/`I_CALLN`) as upstream compiles it, since V9e-1. The
-# reserved atoms compiled inline but `true` and `fail` (`$catch`, `$reset`, …) throw `NotPortedError`
-# BEFORE any code is emitted (V9): upstream always compiles them inline. `true` and `fail` compile to `I_TRUE` and `I_FAIL` (since V9a). O_COMPILE_IS's
+# reserved atoms are compiled inline as upstream compiles them: `true` and `fail` (since V9a), `$catch`
+# and `$` (V9f), `$call_cleanup` (V9g), `$reset`, `$cut` and `$yield` (LB4 b2, audit D-0363 item 2;
+# their keys are looked up in the branch, as `SubClauseNames` has no field for them). O_COMPILE_IS's
 # functors (since V6b2) and is/2 (since V8) are compiled as upstream decides, by upstream's own
-# compilers in upstream's order: inline where upstream emits an instruction — each emission of an
-# instruction the kernel does not execute yet throws `NotPortedError` (V9, the memo's Q-1) — and a
-# call wherever upstream falls back to one. The names are the global data's (`subclause_names`). The
+# compilers in upstream's order: inline where upstream emits an instruction, and a call wherever
+# upstream falls back to one. The names are the global data's (`subclause_names`). The
 # call operand indexes the clause's procedure table (since V1). Since MOD3a the COLON CONTEXT
 # (pl-comp.c:3443-3465, 3568-3575, 3594-3632 at the pin): a variable goal, and any goal under a
 # variable module (`TM_VAR`), is meta-called as `Module:Goal` (`B_FUNCTOR :/2`, the module pushed, the
@@ -2470,13 +2471,18 @@ function compileSubClause!(
             Output_0!(ci, I_CALLCLEANUP)
             Output_0!(ci, I_EXITCLEANUP)
             return BOOLEX_TRUE
+        elseif sym_key(arg) in names.reserved_atoms            # $reset, $cut, $yield (LB4 b2)
+            if sym_key(arg) == _name_key(T, "\$reset")         # ATOM_dreset: $reset
+                Output_0!(ci, I_RESET)
+                Output_0!(ci, I_EXITRESET)
+            elseif sym_key(arg) == _name_key(T, "\$cut")       # ATOM_dcut: $cut
+                Output_0!(ci, I_CUTCHP)
+            else                                               # ATOM_dyield: $yield
+                @assert sym_key(arg) == _name_key(T, "\$yield")
+                Output_0!(ci, I_YIELD)
+            end
+            return BOOLEX_TRUE
         end
-        sym_key(arg) in names.reserved_atoms &&
-            throw(
-                NotPortedError{T}(
-                    arg, "a goal atom compiled inline (\$catch, \$reset, …)", "V9"
-                )
-            )
     else
         return NOT_CALLABLE
     end
@@ -4659,8 +4665,8 @@ function decompile_head!(
             p == 0 && return false                              # p = argTermP(*p, 0)
             unifyVarGC(ld, p + 1, variables, PC.codes[PC.pc + 1]) || return false
             unifyVarGC(ld, p + 2, variables, PC.codes[PC.pc + 2]) || return false
-        elseif c == I_EXITCATCH || c == I_EXITFACT || c == I_EXIT || c == I_ENTER ||   # fact; H_VOID, H_VOID, I_ENTER
-            c == I_SSU_COMMIT || c == I_SSU_CHOICE                                   # (SSU1, pl-comp.c:6157-6158)
+        elseif c == I_EXITCATCH || c == I_EXITRESET || c == I_EXITFACT || c == I_EXIT ||   # fact
+            c == I_ENTER || c == I_SSU_COMMIT || c == I_SSU_CHOICE      # H_VOID, H_VOID, I_ENTER; (SSU1, pl-comp.c:6157-6158)
             @assert argn <= arity
             @assert pushed == 0
             while argn < arity
@@ -5016,13 +5022,17 @@ function decompileBodyNoShift!(
             pushed += 1
         elseif op == I_VAR || op == I_NONVAR || op == I_INTEGER || op == I_RATIONAL ||
             op == I_FLOAT || op == I_NUMBER || op == I_ATOMIC || op == I_ATOM ||
-            op == I_STRING || op == I_COMPOUND || op == I_CALLABLE
+            op == I_STRING || op == I_COMPOUND || op == I_CALLABLE ||
+            op == I_CALLCONT || op == I_SHIFT || op == I_SHIFTCP    # (LB4 b2, pl-comp.c:6758-6763)
             push!(di.argp, makeVarRef(codes[di.pc]))            # common_type_test
             di.pc += 1
             build_term!(di, mk_sym(T, _type_test_name(op)), 1)
             pushed += 1
         elseif op == I_CUT
             push!(di.argp, _atom_word!(ld, mk_sym(T, Symbol("!"))))
+            pushed += 1
+        elseif op == I_CUTCHP                                   # (LB4 b2, pl-comp.c:6772-6774)
+            push!(di.argp, _atom_word!(ld, mk_sym(T, Symbol("\$cut"))))
             pushed += 1
         elseif op == I_CALL1 || op == I_CALLN
             n = op == I_CALLN ? Int(codes[di.pc]) : 0           # BUILD_TERM(FUNCTOR_call1) / callN
@@ -5142,6 +5152,12 @@ function decompileBodyNoShift!(
         elseif op == I_CATCH                                    # (since V9f)
             push!(di.argp, _atom_word!(ld, mk_sym(T, Symbol("\$catch"))))
             pushed += 1
+        elseif op == I_RESET                                    # (LB4 b2, pl-comp.c:6778-6780)
+            push!(di.argp, _atom_word!(ld, mk_sym(T, Symbol("\$reset"))))
+            pushed += 1
+        elseif op == I_YIELD                                    # (LB4 b2, pl-comp.c:6781-6783)
+            push!(di.argp, _atom_word!(ld, mk_sym(T, Symbol("\$yield"))))
+            pushed += 1
         elseif op == I_DET                                      # (since V9f)
             push!(di.argp, _atom_word!(ld, mk_sym(T, Symbol("\$"))))
             pushed += 1
@@ -5151,7 +5167,7 @@ function decompileBodyNoShift!(
             if codes[di.pc] == I_EXITCLEANUP
                 di.pc += 1
             end
-        elseif op == I_EXIT || op == I_EXITCATCH
+        elseif op == I_EXIT || op == I_EXITCATCH || op == I_EXITRESET  # (I_EXITRESET: LB4 b2)
             # break (out of upstream's switch): nothing
         else
             error(
@@ -5171,6 +5187,9 @@ end
 function _type_test_name(op::code)::Symbol
     op == I_VAR && return :var
     op == I_NONVAR && return :nonvar
+    op == I_CALLCONT && return Symbol("\$call_continuation")  # FUNCTOR_dcall_continuation1 (LB4 b2)
+    op == I_SHIFT && return Symbol("\$shift")                  # FUNCTOR_dshift1
+    op == I_SHIFTCP && return Symbol("\$shift_for_copy")       # FUNCTOR_dshift_for_copy1
     for (instruction, name) in type_tests
         op == instruction && return Symbol(name)
     end
@@ -5636,6 +5655,7 @@ function argKey(PC::Code{T}, skip::Int)::word where {T}
             return FUNCTOR_dot2                                 # *key = FUNCTOR_dot2
         elseif c == H_FIRSTVAR || c == H_VAR || c == H_VOID || c == H_VOID_N ||
             c == H_POP || c == I_EXITFACT || c == I_ENTER || c == I_EXITCATCH ||
+            c == I_EXITRESET ||                                     # (LB4 b2, pl-comp.c:5520)
             c == I_SSU_COMMIT || c == I_SSU_CHOICE                  # (SSU1, pl-comp.c:5526-5527)
             return word(0)
         elseif c == I_NOP || c == I_CHP
@@ -5677,7 +5697,8 @@ function arg1Key(PC::Code{T})::Tuple{Bool, word} where {T}
         elseif c == H_FLOAT || c == H_STRING || c == H_MPZ || c == H_MPQ ||
             c == H_FIRSTVAR ||
             c == H_VAR || c == H_VOID || c == H_VOID_N || c == I_EXITFACT || c == I_EXIT ||
-            c == I_ENTER || c == I_EXITCATCH || c == I_SSU_CHOICE || c == I_SSU_COMMIT   # (SSU1, pl-comp.c:5604-5605)
+            c == I_ENTER || c == I_EXITCATCH || c == I_EXITRESET ||    # (I_EXITRESET: LB4 b2, pl-comp.c:5600)
+            c == I_SSU_CHOICE || c == I_SSU_COMMIT                  # (SSU1, pl-comp.c:5604-5605)
             return (false, word(0))
         elseif c == I_NOP || c == I_CHP
             # continue

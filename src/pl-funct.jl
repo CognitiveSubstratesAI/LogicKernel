@@ -435,8 +435,8 @@ cut, compiled to `I_CUT`, c:3521), the other goal ATOMS it compiles inline (`tru
 (c:3475) and, under O_COMPILE_IS, `=/2`, `==/2`, `\\==/2`, `var/1`, `nonvar/1`, the nine type tests
 (c:4649-4660), `\$call_continuation/1`, `\$shift/1`, `\$shift_for_copy/1` and `arg/3` (c:3488-3517).
 Since V6b2 each of these functors is compiled as upstream decides, by its own compiler (`atom_var` …
-`atom_arg`): inline where upstream emits an instruction — refused where the kernel does not execute
-it yet (V9) — and a call where upstream falls back to one.
+`atom_arg`): inline where upstream emits an instruction and a call where upstream falls back to one
+(since LB4 b2 every emission is upstream's; the run of the continuation instructions is CONT1's).
 """
 struct SubClauseNames
     atom_true::UInt64                           # ATOM_true
