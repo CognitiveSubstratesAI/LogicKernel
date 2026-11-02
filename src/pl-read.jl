@@ -2912,7 +2912,7 @@ end
 # DIVERGES: the union's members are fields (since LB1 the positions' too: `compound_pv`,
 # `list_pv`). A LIST is extended cell by cell as upstream (L1e e6), its tail kept as
 # `list_term` (the term-stack entry, until the first element) and then `list_tail` (the global cell of
-# the tail) — upstream's `tail` references the entry first, which no global cell may do here. Blobs, dicts
+# the tail) — upstream's `tail` references the entry first, which no global cell may do here. Blobs
 # and quasi-quotations are refused (R1's decision): their members are absent.
 "A suspended level of `complex_term` (pl-read.c): its arguments, queue state and construct."
 mutable struct pframe{T}
@@ -2936,6 +2936,8 @@ mutable struct pframe{T}
     bracket_open::Int                       # paired: open and close
     bracket_close::Int
     bracket_stop::String                    # UTF-8 of close; see ct_request
+    dict_pv::term_t                         # u.dict.pv: positions: P_HEAD, P_ARG and P_VALUE
+    dict_pairs::Int                         # u.dict.pairs: the key-value pairs read
 end
 
 # PORT: pl-read.c CTR_SUB
@@ -3245,7 +3247,7 @@ end
 # PORT: pl-read.c complex_term
 # DIVERGES: the segstack is a vector of frames; returns upstream's codes as an Int — 1 (true) or
 # 0 (false): no stack-overflow codes (no global stack);
-# no atom locks to release (`discard_pframe`). A blob, a dict or a quasi-quotation raises
+# no atom locks to release (`discard_pframe`). A blob or a quasi-quotation raises
 # `NotPortedError` (`start_pframe`): refused, R1's decision.
 """
 Read a term up to a character of `stop` (`nothing`: up to the full stop) with priority at most
@@ -3406,7 +3408,7 @@ function complex_term(
         stack,
         pframe{T}(
             stop, positions, pin, copy_cterm_state(cstate), copy_op_entry(in_op), maxpri,
-            red_op, kind, after, red_side, 0, nothing, 0, 0, 0, 0, nothing, 0, 0, ""
+            red_op, kind, after, red_side, 0, nothing, 0, 0, 0, 0, nothing, 0, 0, "", 0, 0
         )
     )
     rc = start_pframe(stack[end], token, req, rd)
@@ -3526,8 +3528,10 @@ function set_range_position(
     return nothing
 end
 
-# NOT PORTED: pl-read.c end_range, its one caller reads a dict's key-value pair (dicts are
-# refused, R1's decision).
+# PORT: pl-read.c end_range
+# DIVERGES: the local data is an argument (upstream: `DECL_LD`).
+"The end position `positions` holds, the second argument of its position term (pl-read.c)."
+end_range(ld::PL_local_data, positions::term_t)::Int = get_int_arg(ld, positions, 2)   # valInt(argTerm(*p,1))
 
 # ── the constructs: lists, brackets, compounds (pl-read.c) ──────────────────────────────────────
 
@@ -3783,6 +3787,190 @@ function read_compound_resume(
     return read_compound_arg(f, req, rd)
 end
 
+# PORT: pl-read.c is_key_token
+# DIVERGES: a token's atom is a field (`atom`), where upstream reads the value union; see `_key_atom`.
+"Can `token` be a dict key, or the `:` after it (pl-read.c): a name, a quoted name, a functor or dict name, or a punctuation character other than the paired brackets, `|` and `,`."
+function is_key_token(token::token, rd::read_data)::Bool
+    t = token.type
+    if t == TK_NAME || t == TK_QNAME || t == TK_FUNCTOR || t == TK_DICT
+        return true
+    elseif t == TK_PUNCTUATION
+        c = token.character
+        return !(
+            c == Int('[') || c == Int('{') || c == Int('(') || c == Int(')') ||
+            c == Int('}') || c == Int(']') || c == Int('|') || c == Int(',')
+        )
+    end
+    return false
+end
+
+# ORIGINAL: `token->value.atom` of a token `is_key_token` accepts. A punctuation token has no atom
+# field here (upstream reads its character through the union): its atom is the character's, the
+# atom upstream's `codeToAtom` makes.
+function _key_atom(token::token{T})::T where {T}
+    token.type == TK_PUNCTUATION && return mk_sym(T, Symbol(Char(token.character)))
+    return _token_atom(token)
+end
+
+# read_dict_*() reads <class>{key:value, ...} into a dict as defined in pl-dict.c
+# (pl-read.c; P_HEAD, P_ARG and P_VALUE are `pv`, `pv + 1` and `pv + 2`)
+
+# PORT: pl-read.c read_dict_end
+# DIVERGES: the errors of `build_dict` go through the read data (`errorWarning`), a representation-only
+# difference accepted by D-0365 item 3. UNVERIFIED on the kernel: gate decides.
+"End the dict at its `}`: close its key-value positions and build it (pl-read.c)."
+function read_dict_end(f::pframe{T}, token::token{T}, rd::read_data{T})::Int where {T}
+    pv = f.dict_pv
+
+    if pv != 0
+        set_range_position(rd.ld, f.pin, -1, token.end_)
+        PL_unify_nil(rd.ld, pv + 1) || return 0     # P_ARG
+    end
+
+    return build_dict(f.dict_pairs, rd) ? 1 : 0
+end
+
+# PORT: pl-read.c read_dict_key
+# DIVERGES: `get_token` returns the one shared token here as upstream does, so `key` and `sep` are the same
+# object: its fields are read before `sep` is fetched (`kstart`, `kend`, as upstream); the key is a term-stack
+# entry (`key_term`) holding the key's word, so `key_value_position`'s key cell takes that word; no atom
+# locks. UNVERIFIED on the kernel: gate decides.
+"""
+Read `Key:` and request the value (pl-read.c). With positions, `key_value_position(From, _, SepFrom,
+SepTo, Key, KStart-KEnd, ValuePos)` is the next element of `P_ARG`.
+"""
+function read_dict_key(f::pframe{T}, req::ct_request, rd::read_data{T})::Int where {T}
+    ld = rd.ld
+    pv = f.dict_pv
+
+    if pv != 0 && !PL_unify_list(ld, pv + 1, pv, pv + 1)    # P_ARG, P_HEAD, P_ARG
+        return 0
+    end
+
+    key = get_token(false, rd)
+    key === nothing && return 0
+
+    local key_term::Int
+    if is_key_token(key, rd)
+        key_term = alloc_term(rd)
+        _setHandle!(key_term, _key_atom(key), rd)   # PL_put_atom(key_term, key->value.atom)
+    elseif key.type == TK_NUMBER
+        n = key.number
+        if n.type == V_INTEGER && valInt(consInt(n.i)) == n.i
+            key_term = alloc_term(rd)
+            _setHandle_w!(key_term, consInt(n.i), rd)   # PL_put_int64(key_term, n->value.i)
+        else
+            return Int(syntaxError("key_domain", rd))   # representation error?
+        end
+    else
+        return Int(syntaxError("key_expected", rd))
+    end
+
+    kstart = key.start
+    kend = key.end_
+    sep = get_token(false, rd)
+    sep === nothing && return 0
+
+    if !is_key_token(sep, rd) || sym_key(_key_atom(sep)) != sym_key(mk_sym(T, :(:)))
+        return Int(syntaxError("colon_expected", rd))
+    end
+
+    if pv != 0
+        PL_put_variable(ld, pv + 2)                 # P_VALUE
+
+        # key_value_position(start, end, sep-start, sep-end, key, key-pos, value-pos)
+        # (laid out on the cells as `_unify_position!` does, for `PL_unify_term`)
+        p = _alloc_compound!(ld, _err_functor(ld, :key_value_position, 7), 7)
+        ld.gstack[p + 1] = _gnd_word!(ld, mk_gnd(T, kstart))        # PL_INT64, kstart: whole term
+        # p + 2 stays unbound                                       # PL_VARIABLE
+        ld.gstack[p + 3] = _gnd_word!(ld, mk_gnd(T, sep.start))     # PL_INT64, sep->start: `:` start
+        ld.gstack[p + 4] = _gnd_word!(ld, mk_gnd(T, sep.end_))      # PL_INT64, sep->end: `:` end
+        ld.gstack[p + 5] = rd.term_stack.words[key_term]            # PL_TERM, key_term
+        q = _alloc_compound!(ld, _err_functor(ld, :-, 2), 2)        # PL_FUNCTOR, FUNCTOR_minus2
+        ld.gstack[q + 1] = _gnd_word!(ld, mk_gnd(T, kstart))        # PL_INT64, kstart
+        ld.gstack[q + 2] = _gnd_word!(ld, mk_gnd(T, kend))          # PL_INT64, kend
+        ld.gstack[p + 6] = consPtr(q, TAG_COMPOUND | STG_GLOBAL)
+        _cell_link!(ld, p + 7, pv + 2 + 1)                          # PL_TERM, P_VALUE
+        r = new_term_ref(ld)
+        ld.slots[r + 1] = consPtr(p, TAG_COMPOUND | STG_GLOBAL)
+        PL_unify(ld, pv, r) || return 0             # P_HEAD
+    end
+
+    req.stop = ",}"
+    req.maxpri = 999
+    req.positions = pv != 0 ? pv + 2 : 0            # P_VALUE
+    return CTR_SUB
+end
+
+# PORT: pl-read.c read_dict_start
+# DIVERGES: no atom locks; a variable class (`TK_VCLASS_DICT`) is the variable's term-stack entry, as a
+# variable token's. UNVERIFIED on the kernel: gate decides.
+"""
+Start reading `Tag{…}` at its class token (pl-read.c): push the class, skip the `{`; `{}` ends at once.
+With positions, `dict_position(From, _, ClassFrom, ClassTo, KeyValuePositions)`.
+"""
+function read_dict_start(
+    f::pframe{T}, token::token{T}, req::ct_request, rd::read_data{T}
+)::Int where {T}
+    ld = rd.ld
+    if f.pin != 0
+        pv = PL_new_term_refs(ld, 3)
+        (
+            pv != 0 &&
+            _unify_position!(                       # PL_FUNCTOR, FUNCTOR_dict_position5,
+                ld, f.pin, :dict_position,          #   PL_INT64, token->start, PL_VARIABLE,
+                (token.start, _POS_VARIABLE, token.start, token.end_),  # PL_INT64 ×2,
+                (pv + 1,)                           #   PL_TERM, P_ARG
+            )
+        ) || return 0
+    else
+        pv = 0
+    end
+
+    # Push the class
+    t = token.type
+    if t == TK_DICT
+        term = alloc_term(rd)
+        _setHandle!(term, _token_atom(token), rd)   # PL_put_atom(term, token->value.atom)
+    elseif t == TK_VCLASS_DICT
+        term = alloc_term(rd)
+        rd.term_stack.vars[term] = token.variable   # setHandle(term, token->value.variable->signature)
+    elseif t == TK_VOID_DICT
+        alloc_term(rd)
+    end
+
+    f.dict_pv = pv
+    f.dict_pairs = 0
+
+    tstart = get_token(false, rd)                   # Skip '{'
+    tstart === nothing && return 0
+
+    # process the key-values
+    if tstart.type == TK_NAME && sym_key(_token_atom(tstart)) == sym_key(mk_sym(T, Symbol("{}")))
+        return read_dict_end(f, tstart, rd)
+    end
+
+    return read_dict_key(f, req, rd)
+end
+
+# PORT: pl-read.c read_dict_resume
+"Count the pair just read; with positions, close its end; then `,` requests another key, `}` ends the dict (pl-read.c)."
+function read_dict_resume(f::pframe{T}, req::ct_request, rd::read_data{T})::Int where {T}
+    pv = f.dict_pv
+
+    if pv != 0
+        vend = end_range(rd.ld, pv + 2)             # P_VALUE
+        set_range_position(rd.ld, pv, -1, vend)     # P_HEAD
+    end
+
+    f.dict_pairs += 1
+    tk = get_token(false, rd)                       # `,' or `}'
+    tk === nothing && return 0
+    tk.character == Int(',') && return read_dict_key(f, req, rd)
+
+    return read_dict_end(f, tk, rd)
+end
+
 # PORT: pl-read.c simple_term
 # DIVERGES: returns the result and the construct to read (`*kind`); no atom locks.
 """
@@ -3850,10 +4038,10 @@ end
 
 # PORT: pl-read.c start_pframe
 # DIVERGES: a blob (`<type>(…)`, read only with blob(dead) or blob(resolve): the dead blob needs an
-# atom object the kernel has not got, `read_blob_start`/`read_blob_end`: the blob step), a dict (`Tag{…}`) or a
+# atom object the kernel has not got, `read_blob_start`/`read_blob_end`: the blob step) or a
 # quasi-quotation (`{|Syntax||Quotation|}`) raises `NotPortedError`: refused, R1's decision (user,
 # 2026-10-07: an explicit error, never a misread). Where swipl raises a SYNTAX error inside one of
-# them (`-{a}`, a dict: `colon_expected`), the kernel's refusal comes first.
+# them, the kernel's refusal comes first. A dict (`Tag{…}`) is read as upstream reads it (`read_dict_start`).
 "Start reading the construct `f.kind` (pl-read.c): `CTR_SUB` for a subterm, 1 if complete, 0 on an error."
 function start_pframe(
     f::pframe{T}, token::token{T}, req::ct_request, rd::read_data{T}
@@ -3872,11 +4060,7 @@ function start_pframe(
             )
         )
     elseif k == PF_DICT
-        throw(
-            NotPortedError{Nothing}(
-                nothing, "read: a dict Tag{…}", "none: dicts are refused (R1's decision)"
-            )
-        )
+        return read_dict_start(f, token, req, rd)
     elseif k == PF_QQ
         throw(
             NotPortedError{Nothing}(
@@ -3901,6 +4085,8 @@ function resume_pframe(f::pframe{T}, req::ct_request, rd::read_data{T})::Int whe
         return read_list_resume_tail(f, rd)
     elseif k == PF_BRACKET
         return read_bracket_resume(f, rd)
+    elseif k == PF_DICT
+        return read_dict_resume(f, req, rd)
     end
     @assert false "resume_pframe: a construct that was refused at its start"
     return 0
