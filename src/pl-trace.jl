@@ -1,4 +1,5 @@
 # UPSTREAM: swipl-devel src/pl-trace.c @ cbf4e1896275
+# UPSTREAM: swipl-devel src/pl-trace.h @ cbf4e1896275
 # CLASS: code
 # COPYRIGHT: Copyright (c)  1985-2025, University of Amsterdam
 # COPYRIGHT: VU University Amsterdam
@@ -10,7 +11,8 @@
 # called with the `a1` convention, `I_FCALLDET1`) and `prolog_current_choice/1` (a `PRED_DEF`,
 # `I_FCALLDETVA`). Their differences are V3's oracle for frame and choice-point placement: a
 # position is a word offset from `lBase`, so the kernel's equals swipl's (src/pl-incl.jl § the local
-# stack). The debugger itself is not ported.
+# stack). The debugger itself is deferred (DBG1). Since R2 F1c: `debugmode` and `tracemode`, the two functions the flag `debug` calls
+# (pl-prologflag.c set_flag_value), over the debugger-status fields of the local data (`ld.debugstatus_*`, src/pl-global.jl).
 
 # PORT: pl-trace.c PL_unify_frame
 "Unify `t` with frame `fr`'s position, or `none` for no frame (pl-trace.c)."
@@ -119,3 +121,84 @@ end
 const PL_predicates_from_trace = (
     PL_extension("prolog_current_choice", 1, pl_prolog_current_choice1_va, PL_FA_VARARGS),
 )
+
+# PORT: pl-trace.h DBG_ALL
+"`debugmode`'s flag: switch debugging on in all queries (pl-trace.h)."
+const DBG_ALL = UInt32(0x1)
+
+# Not in pl-trace.c: pl-incl.h's SKIP_VERY_DEEP.
+"The skip level of no skipping, `(size_t)-1` (pl-incl.h)."
+const SKIP_VERY_DEEP = typemax(UInt)
+
+# PORT: pl-trace.c debugmode
+# DIVERGES: one engine, so the local data is its argument (never NULL) and the message is always sent by the calling engine
+# (`set && ld == LD`); `old` is a `Ref{Bool}` or `nothing`. The messages go through the kernel's `printMessage`
+# (a `silent` `debug_mode(Bool)`, kept in `ld.messages` until boot/messages.pl runs). DBG1 (the tracer) owns what follows, each
+# a deferred part of the same function: `have_space_for_debugging` and `enlargeMinFreeStacks` (pl-trace.c:2163-2204, :2236-2241:
+# they only enlarge `min_free` of the stacks and the kernel's stacks grow by doubling, src/pl-gc.jl), `qf->debugSave = true` of
+# every query for `DBG_ALL` (:2246-2249: the kernel's query frame has no `debugSave` slot; `PL_Q_NODEBUG` is deferred as well,
+# src/pl-wam.jl PL_open_query), and `validUserStreams` (:2269; the kernel's standard streams are always open).
+"Set the debug mode of the engine `ld` to `doit`, writing the old mode to `old`; the run mode and `debugstatus.skiplevel` follow (pl-trace.c)."
+function debugmode(
+    ld::PL_local_data{T}, doit::Bool, old::Union{Nothing, Base.RefValue{Bool}},
+    flags::UInt32
+)::Bool where {T}
+    set = false
+    old === nothing || (old[] = ld.debugstatus_debugging)
+
+    if ld.debugstatus_debugging != doit
+        if doit
+            ld.debugstatus_skiplevel = SKIP_VERY_DEEP       # debugstatus.skiplevel = SKIP_VERY_DEEP
+            clearPrologRunMode!(ld, RUN_MODE_NORMAL)        # clearPrologRunMode(RUN_MODE_NORMAL)
+        else
+            setPrologRunMode!(ld, RUN_MODE_NORMAL)          # setPrologRunMode(RUN_MODE_NORMAL)
+        end
+        ld.debugstatus_debugging = doit                     # debugstatus.debugging = doit
+        updateAlerted(ld)
+        set = true
+    elseif !doit
+        setPrologRunMode!(ld, RUN_MODE_NORMAL)
+    end
+
+    if set
+        return printMessage(                                # PL_FUNCTOR_CHARS, "debug_mode", 1, PL_BOOL, doit
+            ld, :silent,
+            _message_term(
+                ld, :debug_mode,
+                _err_atom(ld, mk_sym(T, doit ? Symbol("true") : Symbol("false")))
+            )
+        )
+    end
+    return true
+end
+
+# PORT: pl-trace.c tracemode
+# DIVERGES: as `debugmode`; `LD->trace.find->searching = false` (the tracer's find state) is deferred (DBG1: the kernel has no `LD->trace`).
+"Set the trace mode of the engine `ld` to `doit` (which also sets the debug mode), writing the old mode to `old` (pl-trace.c)."
+function tracemode(
+    ld::PL_local_data{T}, doit::Bool, old::Union{Nothing, Base.RefValue{Bool}}
+)::Bool where {T}
+    if doit
+        debugmode(ld, true, nothing, UInt32(0))             # (the answer is not used upstream either)
+        doit = true
+    end
+
+    old === nothing || (old[] = ld.debugstatus_tracing)
+
+    if ld.debugstatus_tracing != doit
+        ld.debugstatus_tracing = doit
+        return printMessage(                                # PL_FUNCTOR_CHARS, "trace_mode", 1, PL_BOOL, doit
+            ld, :silent,
+            _message_term(
+                ld,
+                :trace_mode,
+                _err_atom(ld, mk_sym(T, doit ? Symbol("true") : Symbol("false")))
+            )
+        )
+    end
+    if doit                                                 # make sure trace works inside skip
+        ld.debugstatus_skiplevel = SKIP_VERY_DEEP
+    end
+
+    return true
+end

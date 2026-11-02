@@ -54,7 +54,8 @@
 # the VARTAG_* bits of `m->flags`, which the kernel does not have), so `var_tag` reads the table's value (its
 # default, `dict`), until the modules area gives the record those bits.
 # The flags whose value upstream reads from the debugger (`debug`, `debugger_show_context`), the toplevel
-# (`break_level`) or the local data (`access_level`) read what the kernel has: no debugger and no toplevel,
+# (`break_level`) or the local data (`access_level`) read what the kernel has: the debugger's status fields of the local data
+# (since R2 F1c; the tracer itself is DBG1's) and no toplevel,
 # `access_level` the local data's (since R2 LB2: `user` unless `setAccessLevel!` set `system`).
 # Since R2 F1b the compiler, the VM and write read the Boolean flags from the mask (`truePrologFlag`), as upstream:
 # the five stand-in fields of the local data and `_prolog_flag_bit` are deleted; the flag `determinism_error` is read
@@ -137,6 +138,26 @@ end
 "Clear the bit `flag` (a `PLFLAG_*`) of the local data's mask (pl-incl.h)."
 function clearPrologFlagMask!(ld::PL_local_data, flag::Integer)::Nothing
     ld.prolog_flag_mask &= ~prologFlagMask(flag)
+    return nothing
+end
+
+# PORT: pl-incl.h RUN_MODE_NORMAL
+"The mask bits of the normal run mode: `PLFLAG_LASTCALL` and `PLFLAG_VMI_BUILTIN` (pl-incl.h); debug mode clears them."
+const RUN_MODE_NORMAL = prologFlagMask(PLFLAG_LASTCALL) | prologFlagMask(PLFLAG_VMI_BUILTIN)
+
+# PORT: pl-incl.h setPrologRunMode
+# DIVERGES: the local data is an argument (upstream's `LD`); the mask is one word, so the run-mode bits are in it, not in the word of `PLFLAG_LASTCALL`.
+"Set the run-mode bits `mask` of the local data's mask (pl-incl.h)."
+function setPrologRunMode!(ld::PL_local_data, mask::UInt64)::Nothing
+    ld.prolog_flag_mask |= mask
+    return nothing
+end
+
+# PORT: pl-incl.h clearPrologRunMode
+# DIVERGES: as `setPrologRunMode!`.
+"Clear the run-mode bits `mask` of the local data's mask (pl-incl.h)."
+function clearPrologRunMode!(ld::PL_local_data, mask::UInt64)::Nothing
+    ld.prolog_flag_mask &= ~mask
     return nothing
 end
 
@@ -351,7 +372,7 @@ end
 # DIVERGES: the database and the module (an index into its table) are arguments; the key is compared by its
 # text, where upstream compares atom handles. The per-module flags are the module record's (see the file
 # header for `var_tag`, which reads the table); `debug` and `debugger_show_context` answer
-# `false` (no debugger), `break_level` fails (no toplevel: `currentBreakLevel() < 0`), `access_level` is
+# the local data's debugger status (`debugstatus.debugging`, `.showContext`, pl-prologflag.c:2113-2116; since R2 F1c), `break_level` fails (no toplevel: `currentBreakLevel() < 0`), `access_level` is
 # the local data's (`user` by default); `stack_limit` is the local stack's limit in bytes (the kernel counts words). The shared-flag
 # copy (`unify_shared_prolog_flag`) is not needed without threads.
 "Unify `val` with the value of the flag `f`, named `key`, as module `m` sees it (pl-prologflag.c)."
@@ -399,9 +420,9 @@ function unify_prolog_flag_value(
         u == UNKNOWN_FAIL && return PL_unify_atom(ld, val, mk_sym(T, :fail))
         return false
     elseif name == "debug"
-        return PL_unify_bool_ex(ld, val, false)
+        return PL_unify_bool_ex(ld, val, ld.debugstatus_debugging)
     elseif name == "debugger_show_context"
-        return PL_unify_bool_ex(ld, val, false)
+        return PL_unify_bool_ex(ld, val, ld.debugstatus_showContext)
     elseif name == "break_level"
         return false
     elseif name == "access_level"
@@ -680,11 +701,11 @@ end
 # ── setting a flag: the value setters (pl-prologflag.c), R2 F1b ──────────────────────────────────
 # ORIGINAL (design D4): a flag whose upstream side effect the kernel has not is DEFINED at upstream's default
 # (`initPrologFlags!`) and SETTING it raises `NotPortedError` naming the side effect: loud and grep-able, and
-# no answer swipl gives is changed. The flags: `debug` (debugmode), `tty_control`, `debug_on_interrupt`,
+# no answer swipl gives is changed. The flags (`debug` and `debugger_show_context` are accepted since R2 F1c): `tty_control`, `debug_on_interrupt`,
 # `stack_limit` (set_stack_limit), `table_space`, `table_compile_threshold`, `table_drop_intermediate`,
 # `table_monotonic`, `agc_margin`, `string_stack_tripwire`, `heartbeat`, `encoding`, `unicode_atoms`,
 # `autoload` (propagateAutoload), `theme`, `incomparable` (`LD->prolog_flag.incomparable_error`), `var_tag`
-# (the VARTAG_* bits of `m->flags`, which the kernel's `module_t` has not), `debugger_show_context`, the ci_* and tabling restraint flags (pseudo-flags of pl-index.c and pl-tabling.c, whose state is
+# (the VARTAG_* bits of `m->flags`, which the kernel's `module_t` has not), the ci_* and tabling restraint flags (pseudo-flags of pl-index.c and pl-tabling.c, whose state is
 # constants here), the arithmetic flags (`set_arith_flag`, pl-arith.c) and `file_name_case_handling`.
 # `on_error`/`on_warning` are checked and stored (the `halt`/`status` actions belong to the toplevel).
 "Refuse setting the flag `key`: its upstream side effect `effect` is not ported (design D4; R2 F1b)."
@@ -1171,10 +1192,11 @@ end
 
 # PORT: pl-prologflag.c set_flag_value
 # DIVERGES: the database and the local data are arguments, the module is its record, and the key an atom. The side
-# effects the kernel has not are refused by name (`_flag_not_ported`, design D4): `debug`, `debugger_show_context`,
-# `tty_control` (changed), `debug_on_interrupt`, `var_tag`, `incomparable`, `encoding`,
+# effects the kernel has none for are refused by name (design D4): `tty_control` (changed), `debug_on_interrupt`, `var_tag`, `incomparable`, `encoding`,
 # `unicode_atoms`, `file_name_case_handling`, `autoload`, `table_monotonic`, `theme`, `agc_margin`, `table_space`,
 # `table_compile_threshold`, `table_drop_intermediate`, `stack_limit`, `string_stack_tripwire` and `heartbeat`.
+# Since R2 F1c `debug` and `debugger_show_context` are accepted: `debug` calls `debugmode` and `tracemode` (src/pl-trace.jl) and
+# `rval` is their answer, as upstream's (pl-prologflag.c:1317-1326); the value goes to the table as upstream does, the mask bit only if `rval`.
 # `threads` has no branch: it is read-only in the kernel's no-threads build (design D1; upstream's `O_PLMT` branch is not
 # built), so `check_flag_write_access` answers permission_error first. `string_stack_tripwire` is no flag of swipl's
 # boot (swipl 10.1.19 creates it on the first `set_prolog_flag`); its branch is reached when it is set a second time.
@@ -1188,6 +1210,7 @@ function set_flag_value(
 )::Bool where {T}
     name = sym_text(k)
     type = f.flags & FT_MASK
+    rval = true
 
     if type == FT_BOOL
         val = PL_get_stdbool_ex(ld, value)
@@ -1201,9 +1224,13 @@ function set_flag_value(
                 m.flags &= ~M_CHARESCAPE
             end
         elseif name == "debug"
-            _flag_not_ported(k, "debugmode and tracemode (the debugger)")
+            if val
+                rval = debugmode(ld, true, nothing, DBG_ALL)
+            else
+                rval = tracemode(ld, false, nothing) && debugmode(ld, false, nothing, UInt32(0))
+            end
         elseif name == "debugger_show_context"
-            _flag_not_ported(k, "debugstatus.showContext (the debugger)")
+            ld.debugstatus_showContext = val
         elseif name == "tty_control"
             val != (sym_key(f.a) == sym_key(mk_sym(T, Symbol("true")))) &&
                 _flag_not_ported(k, "PushTty and PopTty (the terminal)")
@@ -1220,7 +1247,7 @@ function set_flag_value(
             end
         end
         # set the flag value
-        if f.index != 0
+        if f.index != 0 && rval
             if val
                 setPrologFlagMask!(ld, f.index)
             else
@@ -1314,7 +1341,7 @@ function set_flag_value(
         error("set_flag_value: the flag $name has the type $type")
     end
 
-    return true
+    return rval
 end
 
 # ── set_prolog_flag/2 and create_prolog_flag/3 (pl-prologflag.c), R2 F1b ─────────────────────────

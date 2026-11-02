@@ -413,6 +413,8 @@ ld_statistics() = ld_statistics(0, 0, 0, 0, WallTime(), 0.0, 0.0, 0.0, 0.0)
 # (`cur_pred_enum`, `cur_enum`, pl-incl.jl). Since R2 O1B: `IO_output_stack` (`LD->IO.output_stack`: the output context stack
 # of `with_output_to/2` and `format/3`'s redirect, src/os/pl-file.jl).
 # Since R2 S2a: `prompt_current`, `prompt_first`, `prompt_first_used` (`LD->prompt`: prompt/2, prompt1/1; src/os/pl-file.jl).
+# Since R2 F1c: `debugstatus_skiplevel`, `debugstatus_tracing`, `debugstatus_debugging`, `debugstatus_showContext` (`LD->_debugstatus`, pl-incl.h
+# `pl_debugstatus_t`; the flags `debug`, `debugger_show_context`: src/os/pl-prologflag.jl, `debugmode`, `tracemode`: src/pl-trace.jl).
 # (the input context stack is LB3's `input_context_stack`, which `'\$push_input_context'/1` shares; src/os/pl-file.jl).
 """
     PL_local_data{T}(gd)
@@ -551,6 +553,10 @@ mutable struct PL_local_data{T}
     prompt_current::T                                           # prompt.current: prompt/2's atom (R2 S2a)
     prompt_first::Union{Nothing, T}                             # prompt.first: prompt1/1's atom (R2 S2a)
     prompt_first_used::Bool                                     # prompt.first_used
+    debugstatus_skiplevel::UInt                                 # _debugstatus.skiplevel (SKIP_VERY_DEEP: typemax(UInt); R2 F1c)
+    debugstatus_tracing::Bool                                   # _debugstatus.tracing
+    debugstatus_debugging::Bool                                 # _debugstatus.debugging
+    debugstatus_showContext::Bool                               # _debugstatus.showContext
 end
 function PL_local_data{T}(gd::PL_global_data{T}) where {T}
     e = mk_expr(T, T[])                         # any term: the idle placeholders' (index context, …)
@@ -638,7 +644,11 @@ function PL_local_data{T}(gd::PL_global_data{T}) where {T}
         IOSTREAM[],                             # output_stack: no redirect (R2 O1B)
         mk_sym(T, Symbol("|: ")),               # prompt.current: ATOM_prompt (pl-file.c:536, initIO)
         nothing,                                # prompt.first: NULL_ATOM
-        false                                   # prompt.first_used
+        false,                                  # prompt.first_used
+        UInt(0),                                # debugstatus.skiplevel: resetTracer (pl-trace.c:1888)
+        false,                                  # debugstatus.tracing
+        false,                                  # debugstatus.debugging
+        false                                   # debugstatus.showContext: zero (static LD)
     )
     allocStacks!(ld)                            # the initial local stack, its spare reserved
     emptyStacks!(ld)
