@@ -85,3 +85,16 @@ LEFT, in order:
  TIER-1 ALARM FOR THE GATE: four fields appended at the END of `PL_local_data` (`debugstatus_skiplevel::UInt`, `debugstatus_tracing`, `debugstatus_debugging`, `debugstatus_showContext`::Bool; src/pl-global.jl) -> a struct change: alloc pins x3, test/test_type_discipline.jl,
  cold compile of the warm daemon (~30 min, D-0228). Append-vs-append with other writers' LD blocks (S2a prompt_*, O1B IO_output_stack): merge by position at the stack top.
  CHANGES STILL OWED to the lk-channel copy: `cp evidence/F1C/handoff.md ~/code/lk-channel/evidence/F1C/handoff.md` (pull first; an earlier copy is committed locally in lk-channel, UNPUSHED: push it with bare `git push`).
+
+## WRITER 3 STATE (Sonnet, edit-only) — groups 4b, 4c, 5 DONE and committed; NOTHING LEFT TO WRITE, the gate agent is next
+COMMITTED on wip/f1c after 091f3b4: 3a19bca (4b: white-box rows in the last testset of test_debug_flag_swipl.jl: the `elseif !doit` row via r_lco_off/r_off_again/r_lco_on, direct
+LK.tracemode / LK.debugmode calls with Refs, message counts by name, the skip-level reset), fcaa3ee (4c: tools/mutants/F1C.py, 35 mutants, 4 declared equivalent; plus one more white-box
+row: skiplevel lowered to 0 before debugmode(true), which kills F1C-B1), 87e617b (5: docs/architecture.md block appended at the end; manifest entries after pl_style_check2_va).
+ANCHOR CHECK: a throwaway `python3 -I` script execs tools/mutants/F1C.py and counts every `old` in its file: 35 mutants, every `old` occurs EXACTLY once, ids unique, old != new, targets exist.
+TARGETS (re-grepped over test/): test_debug_flag_swipl.jl, test_set_flag_swipl.jl, test_prolog_flag_swipl.jl (+ its .pl). Not listed, with reasons in the F1C.py header:
+test_push_flag_swipl.jl (names debug in a comment only now), test_gate_split.jl (fake swipl), test_compiler_warnings_swipl.jl / test_qlf_swipl.jl (debugstatus_styleCheck), libswipl comments elsewhere.
+NOT RUN (edit-only, no Julia): the gate agent's first `warm.sh file test/core_lang/test_debug_flag_swipl.jl` will show a typo or a wrong kernel expectation (all white-box expectations are UNVERIFIED on the kernel;
+if one is wrong decide per upstream pl-trace.c:2223-2275 / 2133-2158, not by the row). The `old` strings were written in the repo's formatted style: RE-FIT any that `warm.sh fmt` rewraps
+(mutate_drive.py refuses a string not occurring once). Open for the gate: tools/warm.sh fmt, check, the 4 test files x 3 term types, test_type_discipline.jl (LD struct: 4 fields at the END),
+pkgtest_way.sh per changed test file (one at a time), alloc pins x3, push mutants/F1C early, branch-gate, crash-term grep, gate/f1c + mutants/F1C at the SAME SHA.
+Commit shape: the branch holds the plan/evidence commits d6c63a2, 091f3b4 and this one besides the code commits; fold with GIT_SEQUENCE_EDITOR=true autosquash if the dispatcher wants fewer.
