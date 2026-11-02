@@ -792,7 +792,7 @@ fixed it or a public issue exists.
 | `src/pl-bag.jl` | the bags of findall/3 (since V9g-b): `'$new_findall_bag'/0`, `'$add_findall_bag'/1,2`, `'$collect_findall_bag'/2`, `'$destroy_findall_bag'/0` — the innermost bag of the thread is implicit, the answers are records, and the last answer is put back first; `'$suspend_findall_bag'/0` (findnsols/4,5: a nondeterministic foreign predicate) is not ported | `src/pl-bag.c` |
 | `src/pl-gvar.jl` | global variables (since R2 G1): `b_setval/2`, `b_getval/2`, `nb_setval/2`, `nb_linkval/2`, `nb_getval/2`, `nb_current/2`, `nb_delete/1`, `auto_define_gvar` over `user:exception/3` (section G1 below) | `src/pl-gvar.c` |
 | `src/pl-list.jl` | lists (since V9g-b): `is_list/1`, `'$length'/2`, and `sort/2`, `msort/2`, `keysort/2` over `nat_sort` — Richard O'Keefe's bottom-up natural merge sort, ported line for line over records that are indices into three vectors; `sort/4` and `'$memberchk'/3` are not ported | `src/pl-list.c` |
-| `src/pl-trace.jl` | `prolog_current_frame/1` and `prolog_current_choice/1` (`PL_unify_frame`, `PL_unify_choice`) — the positions V3's oracle compares | `src/pl-trace.c` |
+| `src/pl-trace.jl` | `prolog_current_frame/1` and `prolog_current_choice/1` (`PL_unify_frame`, `PL_unify_choice`) — the positions V3's oracle compares; since R2 F1c `debugmode`, `tracemode` (the debug flag) | `src/pl-trace.c`, `src/pl-trace.h` |
 | `src/pl-gmp.jl` | the number core of arithmetic (V6c1): a term read as a `number` and written back (`get_rational`, `put_number`, `PL_unify_number`), the promotions, `cmpNumbers`, the doubles of a big integer or a rational (`mpz_to_double`, `mpz_fdiv`); since V8 the largest big integer (`maxBigIntSize`, `MPZ_MAX_BYTES`); since R1c `clearNumber`, and a stored NaN is the canonical `1.5NaN` (upstream's `put_double`) | `src/pl-gmp.c`, `src/pl-gmp.h`, `src/pl-inline.h` |
 | `src/pl-arith.jl` | evaluation (`valueExpression`, `evalExpression`), the functions ported (`+`, `-`, `*`, unary `-`/`+`), `check_float`, `compareNumbers`, and the built-ins `is/2`, `</2`, `>/2`, `=</2`, `>=/2`, `=\=/2`, `=:=/2` (V6c1); since V8 `>>` and `<<` (`ar_shift`), `A_ADD_FC`'s `ar_add_si`, and the integer size checks (`int_bits_ok`, `check_int_bits`); since R1a `[Atom]` (`arithChar` through `charCode`); since R1c `ar_rdiv_mpz` (a rational read) and `PL_nan`; since arith-a and arith-b the functions of arith_funcs_design.md §2 (`ar_pow`, the libm functions, `pi`/`e`/`cputime`/`random`) | `src/pl-arith.c`, `src/pl-arith.h`, `src/pl-incl.h`, `src/pl-inline.h`, `src/os/pl-os.c` |
 | `src/pl-modul.jl` | the module table (`module_table`, a vector with a name index) and any module of it, created on its first name — `system`, `user`, `$`-modules, classes, flags, the super modules (`_lookupModule!`, `lookupModule`, `isCurrentModule`, `setSuperModule` and its helpers; since V5c, MOD1) — stripping `Module:` (`stripModuleName`, `stripModule`), and what a call of an undefined predicate reads: the `unknown` flag, inherited through the supers (`getUnknownModule`, `inheritUnknown`); since R1c the syntax flags a module is created with (SWI-7's); since MOD1 `set_module/1`, `'$module_property'/2`, `'$current_source_module'/1`, `'$current_typein_module'/1` and their setters, `add_import_module/3`, `delete_import_module/2`, `ReadingSource`, `MODULE_parse` | `src/pl-modul.c`, `src/pl-incl.h` |
@@ -1387,6 +1387,7 @@ graph LR
     os_pl_prologflag --> os_pl_option
     os_pl_prologflag --> os_pl_text
     os_pl_prologflag --> os_pl_file
+    os_pl_prologflag --> pl_trace
     os_pl_prologflag --> pl_write
     os_pl_prologflag --> pl_read
     os_pl_prologflag --> pl_string
@@ -1515,6 +1516,8 @@ graph LR
     pl_trace --> pl_comp
     pl_trace --> pl_wam
     pl_trace --> pl_fli
+    pl_trace --> pl_error
+    pl_trace --> os_pl_prologflag
     pl_pro --> term_interface
     pl_pro --> default_term
     pl_pro --> pl_incl
@@ -6439,3 +6442,43 @@ Tier 1 files touched: src/pl-wam.jl (`handles_unwind`) and src/pl-global.jl (the
 
 Tests: test/core_lang/test_halt_swipl.jl (eight testsets against swipl 10.1.19, one process per live row; the catch/cleanup rows and the
 `at_halt` rows are gated and print a SKIP note where the loader is absent). Mutants: tools/mutants/HALT1.py (39, F9 declared equivalent).
+
+## F1c — the `debug` flag setter and the build flags `shared_object_extension`, `version_git`, `libswipl` (R2, audit D-0370 item 5, edit-only: nothing was compiled when this was written; the gate decides)
+
+UPSTREAM: swipl-devel cbf4e1896275 — os/pl-prologflag.c (`set_flag_value`, `unify_prolog_flag_value`, `initPrologFlags`, `set_libswipl`),
+pl-trace.c (`debugmode`, `tracemode`), pl-incl.h (`setPrologRunMode`, `clearPrologRunMode`, `RUN_MODE_NORMAL`), pl-version.c (`setGITVersion`).
+F1b refused `debug` and `debugger_show_context` by name (design D4); F1c follows upstream (D-0370 item 5).
+
+- **The setter** (src/os/pl-prologflag.jl `set_flag_value`, pl-prologflag.c:1317-1326): `debug` true calls `debugmode(ld, true, nothing, DBG_ALL)`;
+  false calls `tracemode(ld, false, nothing) && debugmode(ld, false, nothing, 0)`; `rval` is their answer. `debugger_show_context` stores
+  `ld.debugstatus_showContext`. The read side (`unify_prolog_flag_value`, :2113-2116) answers the engine's field, not the table's value,
+  as upstream. `1`/`0` and `on`/`off` are accepted (the bool reader's).
+- **`debugmode` and `tracemode`** (src/pl-trace.jl, pl-trace.c:2223-2275, :2133-2158): the debugger status of the engine is four fields
+  appended at the END of `PL_local_data` (`debugstatus_skiplevel`, `debugstatus_tracing`, `debugstatus_debugging`,
+  `debugstatus_showContext`; initial values as `resetTracer`, pl-trace.c:1882-1892): a struct change, so a Tier 1 gate (alloc pins x3, type
+  discipline, a cold daemon compile). While the debug mode is on `RUN_MODE_NORMAL` (the `PLFLAG_LASTCALL` and `PLFLAG_VMI_BUILTIN` bits of
+  `ld.prolog_flag_mask`) is cleared and `skiplevel` is `SKIP_VERY_DEEP`; off, or `debug` false while already off (pl-trace.c:2253
+  `else if (!doit)`), sets the bits again whatever the table's `last_call_optimisation` says. A change sends the `silent` message
+  `debug_mode(Bool)` (`trace_mode(Bool)` for the trace mode) through `printMessage`: the kernel keeps them in `ld.messages` until boot/messages.pl
+  runs, so a toplevel that sets `debug` on every query grows that list.
+- **The build flags** (`initPrologFlags!`): `shared_object_extension` = `so` (read-only, pl-prologflag.c:2595), `version_git` =
+  `10.1.19-1-gcbf4e189` (read-only; `git describe --match V*` of the pin, the V cut, pl-version.c:44), `libswipl` (pl-prologflag.c:2470-2493).
+  `xref` has no definition in upstream's C (boot/init.pl creates it): left to the loader.
+- **DIVERGES (owner DBG1, each in a comment at its site)**: `have_space_for_debugging` and `enlargeMinFreeStacks` (pl-trace.c:2163-2204,
+  :2236-2241: the kernel's stacks grow by doubling); `qf->debugSave = true` for `DBG_ALL` (:2246-2249: the query frame has no slot;
+  `PL_Q_NODEBUG` is deferred as well); `validUserStreams` (:2269); `LD->trace.find->searching = false` in `tracemode` (no `LD->trace`).
+  The run loop still treats `debugstatus.debugging` as never set where it would push a `CHP_DEBUG` choice point at `UNKNOWN_FAIL` and at the
+  frame's entry: src/pl-wam.jl:3252, :3763, :4545, :4610. With `debug` true the kernel therefore differs from upstream there (a missing
+  `CHP_DEBUG` record: the choice-point walks that step over it have nothing to step over). DBG1 closes it.
+- **Not touched**: `tty_control` and `debug_on_interrupt` stay refused by name (the terminal, signals).
+- **Known-difference checklist item (F1c, pending F8): `libswipl`**. swipl 10.1.19's flag is read-only and holds the path of the loaded library
+  (`dladdr`, pl-prologflag.c:2483-2488, `FF_READONLY`); the kernel loads no library, so the `LIBPL_PATH` fallback (:2491-2493, `FT_ATOM`,
+  WRITABLE) answers `<pkgdir>/lib/libswipl.so`. The access differs (`read` there, `write` here) and the value is machine-dependent: the rows
+  compare only the suffix, the last testset of test/core_lang/test_debug_flag_swipl.jl pins the access with swipl's answer in a comment.
+  `version_git` rows compare the prefix `10.1.19` only (the installed oracle was built from 10.1.19-9-ge0323664, the pin is 10.1.19-1-gcbf4e189);
+  the kernel's exact value is pinned white-box.
+
+Tests: test/core_lang/test_debug_flag_swipl.jl (rows db01-db35 from swipl 10.1.19, two byte-identical runs, generator evidence/F1C/gen_rows.py;
+a white-box testset for the debugger fields, the messages, the run-mode bits, `libswipl`'s access and the exact `version_git`);
+test_set_flag_swipl.jl, test_push_flag_swipl.jl and test_prolog_flag_swipl.jl lost their refusal rows and pinned-only entries for the five
+names. Mutants: tools/mutants/F1C.py (35, four declared equivalent).

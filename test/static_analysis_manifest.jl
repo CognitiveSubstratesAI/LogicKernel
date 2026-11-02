@@ -2463,7 +2463,14 @@ function _manifest_index(T)
         (LK.pl_abort0_va, Tuple{LD, Int, Int, LK.control_t{T}}, false),
         (LK.raise_halt_exception, Tuple{LD, Int, Bool}, false),
         (LK.handles_unwind, Tuple{LD, Int, UInt32}, false),
-        (LK._halt_exit!, Tuple{GD, Int}, false)
+        (LK._halt_exit!, Tuple{GD, Int}, false),
+        # R2 F1c — the debug flag (pl-trace.c debugmode, tracemode; pl-incl.h run mode)
+        (LK.debugmode, Tuple{LD, Bool, Nothing, UInt32}, false),
+        (LK.debugmode, Tuple{LD, Bool, Base.RefValue{Bool}, UInt32}, false),
+        (LK.tracemode, Tuple{LD, Bool, Nothing}, false),
+        (LK.tracemode, Tuple{LD, Bool, Base.RefValue{Bool}}, false),
+        (LK.setPrologRunMode!, Tuple{LD, UInt64}, false),
+        (LK.clearPrologRunMode!, Tuple{LD, UInt64}, false)
     )
 end
 
