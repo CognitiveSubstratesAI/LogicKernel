@@ -1574,7 +1574,9 @@ end
 # PORT: pl-prologflag.c put_saved_flag_value
 # DIVERGES: the local data is an argument; a type upstream's `switch` does not hold (`assert(0)`) raises an error.
 "Put the value of the saved flag `saved` into the term reference `val` (pl-prologflag.c)."
-function put_saved_flag_value(ld::PL_local_data{T}, val::term_t, saved::prolog_flag{T})::Bool where {T}
+function put_saved_flag_value(
+    ld::PL_local_data{T}, val::term_t, saved::prolog_flag{T}
+)::Bool where {T}
     type = saved.flags & FT_MASK
     if type == FT_BOOL || type == FT_ATOM
         return PL_put_atom(ld, val, saved.a)
@@ -1596,7 +1598,9 @@ ensure_local_flag(k::T, f::prolog_flag{T}) where {T} = f
 
 # The flag with the key `w` (an atom word) in the table of `gd`, or `nothing`: upstream's `lookupHTableWP` of the
 # table, which marks no flag accessed (`lookupFlag` does).
-function _prolog_flag_table_get(gd::PL_global_data{T}, w::UInt64)::Union{Nothing, prolog_flag{T}} where {T}
+function _prolog_flag_table_get(
+    gd::PL_global_data{T}, w::UInt64
+)::Union{Nothing, prolog_flag{T}} where {T}
     i = get(gd.prolog_flag.slot, w, 0)
     i == 0 && return nothing
     return gd.prolog_flag.entries[i]::prolog_flag{T}
@@ -1665,7 +1669,9 @@ end
 # PORT: pl-prologflag.c pop_prolog_flag
 # DIVERGES: as `push_prolog_flag`; the table's slot of a flag that was absent at its push is emptied (`deletePrologFlag!`).
 "`pop_prolog_flag(+Flag)`: restore the state `push_prolog_flag/2` saved; `existence_error(pushed_flag, Flag)` without a push (pl-prologflag.c)."
-function pop_prolog_flag(gd::PL_global_data{T}, ld::PL_local_data{T}, A1::term_t)::Bool where {T}
+function pop_prolog_flag(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, A1::term_t
+)::Bool where {T}
     key = PL_new_term_ref(ld)
     ok, mi = PL_strip_module(gd, ld, A1, MODULE_parse(ld), key)
     ok || return false
@@ -1677,7 +1683,8 @@ function pop_prolog_flag(gd::PL_global_data{T}, ld::PL_local_data{T}, A1::term_t
     f = _prolog_flag_table_get(gd, w)
     if f === nothing || f.pushed === nothing
         ex = PL_new_term_ref(ld)
-        return PL_put_atom(ld, ex, k) && PL_error(ld, ERR_EXISTENCE, mk_sym(T, :pushed_flag), ex)
+        return PL_put_atom(ld, ex, k) &&
+               PL_error(ld, ERR_EXISTENCE, mk_sym(T, :pushed_flag), ex)
     end
 
     prev = f.pushed::prolog_flag{T}
