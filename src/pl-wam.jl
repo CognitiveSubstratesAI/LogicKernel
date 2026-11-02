@@ -1791,7 +1791,7 @@ const VMI_RUN = (
     :I_FCALLNDET6, :I_FCALLNDET7, :I_FCALLNDET8, :I_FCALLNDET9, :I_FCALLNDET10,
     :I_CHP, :I_SSU_CHOICE, :I_SSU_COMMIT, :S_SSU_DET,
     :I_CONTEXT, :I_CALLM, :I_DEPARTM, :S_MQUAL, :S_LMQUAL,
-    :I_DEPARTATM, :I_CALLATM, :I_DEPARTATMV, :I_CALLATMV
+    :I_DEPARTATM, :I_CALLATM, :I_DEPARTATMV, :I_CALLATMV, :B_ARG_CF, :B_ARG_VF
 )
 
 "Jump to the label named after instruction `x`, one of those `table` names (a balanced tree of compares)."
@@ -3147,6 +3147,80 @@ function PL_next_solution_guarded(
         @goto next_instruction
     end
     @FASTCOND_FAILED
+
+    # ── arg/3 special cases (pl-vmi.c), ARGINL ────────────────────────────────────────────────────
+    # `arg(Int, Var, FirstVar)` and `arg(Var, Var, FirstVar)`: the argument is linked into the first
+    # variable's slot when the compound is there and the index is in range; every other case calls
+    # `arg/3` (`GD->procedures.arg3`) with the three slots as its arguments. The operands are the
+    # slots (`varFrameP`); the registers of `arg3_fast`/`arg3_slow` are `a3_idx` (the slot of the index
+    # variable, 0 for upstream's `NULL`), `a3_ai` (the integer), `a3_term` and `a3_arg` (slots, 1-based).
+    # PORT: pl-vmi.c B_ARG_CF
+    # DIVERGES: the operand is the integer itself as a signed code (`(scode)PC[-3]`).
+    @label B_ARG_CF
+    @ENSURE_GLOBAL_SPACE(2)                         # (L1f f2)
+    a3_idx = 0                                      # aidx = NULL
+    a3_ai = reinterpret(Int64, PCc[PC])             # (scode)PC[-3]
+    a3_term = varFrameP(ld.frames[FR].base, Int(PCc[PC + 1])) + 1
+    a3_arg = varFrameP(ld.frames[FR].base, Int(PCc[PC + 2])) + 1
+    PC += 3
+    @goto arg3_fast
+
+    # PORT: pl-vmi.c arg3_fast
+    # DIVERGES: a helper label. No `globaliseVar(aterm)`: a slot is never an unbound variable (decision
+    # 2), and a variable dereferences to a cell, which is no compound, so the slow route raises the
+    # instantiation error as upstream's. The argument is `linkValI` of the compound's cell, into the
+    # first variable's slot (`_slot_link_loc!`).
+    @label arg3_fast
+    a3_k, a3_w, _ = _deref_loc(ld, -a3_term)        # deRef(aterm)
+    if a3_k == DU_WORD && _is_gcompound(a3_w) && truePrologFlag(ld, PLFLAG_VMI_BUILTIN)   # isTerm(*aterm)
+        a3_q = valPtr(a3_w)
+        a3_arity = arityFunctor(ld.functors, ld.gstack[a3_q])        # arityTerm(*aterm)
+        if a3_ai > 0 && a3_ai <= a3_arity
+            _slot_link_loc!(ld, a3_arg, _deref_loc(ld, a3_q + a3_ai))   # *aarg = linkValI(argTermP(*aterm, ai-1))
+            @goto next_instruction
+        end
+    end
+    @goto arg3_slow
+
+    # PORT: pl-vmi.c arg3_slow
+    # DIVERGES: a helper label; the new frame is the record pushed at `lTop`, as `debug_equals2`'s. The
+    # index is the slot's word (`*aidx`) when there is a variable, else `consInt(ai)`;
+    # `globaliseFirstVar(aarg)` is a fresh cell variable referenced from the slot (`_slot_new_var!`).
+    @label arg3_slow
+    _slot_new_var!(ld, a3_arg)                      # globaliseFirstVar(aarg)
+    ARGP = argp_t{T}(ARGP_SLOT, argFrameP(ld.lTop, 0), ph)
+    if a3_idx != 0
+        _slot_copy!(ld, ARGP.pos + 1, a3_idx)       # *ARGP++ = *aidx
+    else
+        ld.slots[ARGP.pos + 1] = consInt(a3_ai)     # *ARGP++ = consInt(ai)
+    end
+    ARGP = _argp_add(ARGP, 1)
+    _slot_copy!(ld, ARGP.pos + 1, a3_term)          # *ARGP++ = *aterm
+    ARGP = _argp_add(ARGP, 1)
+    _slot_copy!(ld, ARGP.pos + 1, a3_arg)           # *ARGP++ = *aarg
+    ARGP = _argp_add(ARGP, 1)
+    NFR = pushFrame!(ld, ld.lTop)                   # NFR = lTop
+    DEF = gd.procedures_arg3.definition             # DEF = GD->procedures.arg3->definition
+    setNextFrameFlags(ld.frames[NFR], ld.frames[FR])
+    @goto normal_call
+
+    # PORT: pl-vmi.c B_ARG_VF
+    # DIVERGES: no `globaliseVar` of the index and the compound (decision 2); the slot of the index
+    # variable is handed on whether or not it holds a tagged integer (upstream hands its dereferenced
+    # cell: the same word).
+    @label B_ARG_VF
+    @ENSURE_GLOBAL_SPACE(3)                         # (L1f f2)
+    a3_idx = varFrameP(ld.frames[FR].base, Int(PCc[PC])) + 1        # aidx0
+    a3_term = varFrameP(ld.frames[FR].base, Int(PCc[PC + 1])) + 1   # aterm
+    a3_arg = varFrameP(ld.frames[FR].base, Int(PCc[PC + 2])) + 1    # aarg
+    PC += 3
+    a3_ik, a3_iw, _ = _deref_loc(ld, -a3_idx)       # deRef2(aidx0, aidx)
+    if a3_ik == DU_VALUE && isTaggedIntW(a3_iw)     # isTaggedInt(*aidx)
+        a3_ai = Int64(valInt(a3_iw))
+        @goto arg3_fast
+    end
+    a3_ai = Int64(0)
+    @goto arg3_slow
 
     # ── single sided unification (pl-vmi.c), SSU2 ─────────────────────────────────────────────────
     # An SSU clause (`Head => Body`, `Head ?=> Body`) starts with `I_CHP`, so a choice point of its

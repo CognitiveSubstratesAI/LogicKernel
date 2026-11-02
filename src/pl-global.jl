@@ -53,6 +53,7 @@ mutable struct PL_global_data{T}
     procedures_dcall1::Procedure{T}                             # procedures.dcall1: '<meta-call>'/1
     procedures_catch3::Procedure{T}                             # procedures.catch3: catch/3
     procedures_dwakeup1::Procedure{T}                           # procedures.dwakeup1: '$wakeup'/1 (AV3)
+    procedures_arg3::Procedure{T}                               # procedures.arg3: arg/3 (ARGINL)
     const clauses_top_clause::Clause{T}                         # clauses.top_clause
     const clauses_top_cref::ClauseRef{T}                        # clauses.top_cref
     const atom_nil::T                                           # ATOM_nil, the `[]` term
@@ -96,7 +97,7 @@ end
 # frame's predicate, is created as `setBuiltinPredicateProperties` creates it (no clauses, flags 0,
 # `SUPERVISOR(virgin)`), in the `system` module's table. `initVM` builds the top clause, and then
 # the built-ins are registered — upstream registers them first (setup:158, then 160); neither reads
-# the other. `procedures_equals2`, `procedures_dcall1` (since V9e-2), `procedures_catch3` (since V9f) and `procedures_dwakeup1` (since AV3) are set where upstream sets them, by `setBuiltinPredicateProperties!`
+# the other. `procedures_equals2`, `procedures_dcall1` (since V9e-2), `procedures_catch3` (since V9f), `procedures_dwakeup1` (since AV3) and `procedures_arg3` (since ARGINL) are set where upstream sets them, by `setBuiltinPredicateProperties!`
 # at the end of `initBuildIns!`, once `=/2` is registered (until then it holds `$c_call_prolog/0`,
 # which nothing reads it as). `atom_nil` and
 # `atom_dot` are the terms the VM writes for `[]` and a list cell's head, built once — upstream's are
@@ -154,6 +155,7 @@ function PL_global_data{T}() where {T}
         dc_proc,                                # procedures_dcall1: set by initBuildIns!
         dc_proc,                                # procedures_catch3: set by initBuildIns!
         dc_proc,                                # procedures_dwakeup1: set by initBuildIns!
+        dc_proc,                                # procedures_arg3: set by initBuildIns!
         top_clause,
         top_cref,
         mk_nil(T),

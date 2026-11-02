@@ -982,9 +982,9 @@ end
 
 # PORT: pl-ext.c setBuiltinPredicateProperties as setBuiltinPredicateProperties!
 # NOT PORTED: every `LOOKUPPROC` but `equals2`, `dcall1` (the goal clauses' predicate, since
-# V9e-2; `HIDE_CHILDS|TRACE_ME` cleared, `P_DYNAMIC|P_LOCKED` set), `catch3` (since V9f) and
-# `dwakeup1` (the VM's wakeup call, since AV3) — the
-# procedures nothing reads yet (`true/0`, `fail/0`, `is/2`, `==/2`, `\==/2`, `arg/3`, …; since
+# V9e-2; `HIDE_CHILDS|TRACE_ME` cleared, `P_DYNAMIC|P_LOCKED` set), `catch3` (since V9f),
+# `dwakeup1` (the VM's wakeup call, since AV3) and `arg3` (the slow route of the inline `arg/3`, since ARGINL) — the
+# procedures nothing reads yet (`true/0`, `fail/0`, `is/2`, `==/2`, `\==/2`, …; since
 # 10.1.19 `'$tbl_reset'/6` and `call_continuation/1`: tabling and continuations), each when
 # its first reader is ported;
 # `$c_call_prolog/0` is created with the global data (src/pl-global.jl); `heartbeat/0`; `call/1`'s
@@ -1000,6 +1000,7 @@ function setBuiltinPredicateProperties!(gd::PL_global_data{T})::Nothing where {T
     d.flags |= P_DYNAMIC | P_LOCKED
     gd.procedures_catch3 = lookupProcedure(mk_sym(T, :catch), 3, m)   # LOOKUPPROC(catch3)
     gd.procedures_dwakeup1 = lookupProcedure(mk_sym(T, Symbol("\$wakeup")), 1, m)  # LOOKUPPROC(dwakeup1)
+    gd.procedures_arg3 = lookupProcedure(mk_sym(T, :arg), 3, m)   # LOOKUPPROC(arg3): the slow route of B_ARG_CF/B_ARG_VF
     # `:- dynamic user:exception/3` (boot/init.pl:945), here before init.pl is loaded: pl-gvar.c's
     # auto_define_gvar calls the hook through `PL_call_predicate` (G1, design D8; the repeat in init.pl is harmless)
     exception3 = lookupProcedure(mk_sym(T, :exception), 3, MODULE_user(gd))
