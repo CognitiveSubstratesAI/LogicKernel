@@ -225,8 +225,8 @@ end
     # `_rdb`'s), which — like a bare swipl toplevel — defines no attr_unify_hook/2: the hook call raises and
     # \=/2 fails with it pending (pl-prims.c not_unify: `PL_raise_exception(ex)`). swipl 10.1.19, bare:
     # `put_attr(X,a,1), catch(X \= 2, E, true)` → E = error(existence_error(procedure,a:attr_unify_hook/2),
-    # context('$attvar':uhook/3,_)). KNOWN DIFFERENCE, pinned: the context names `system:uhook/3` — the boot
-    # clauses live in `system` until R2 loads boot/attvar.pl in `'$attvar'` (`_boot_attvar!`'s DIVERGES).
+    # context('$attvar':uhook/3,_)). Until LB4 b2 a KNOWN DIFFERENCE (the boot stand-in's clauses lived in `system`);
+    # since LB4 b2 the booted database loads boot/attvar.pl in `'$attvar'`. UNVERIFIED on the kernel: gate decides.
     # (fw_nohook in test_attvar_wakeup.jl is the same goal under its driver, whose user:attr_unify_hook/2 fails.)
     @test rc == LK.FFALSE && ld.exception_term != 0
     ball = lk_answer(ld, ld.exception_term)
@@ -238,8 +238,8 @@ end
     @test lk_name(child(q, 1)) == :(:) && lk_name(child(q, 2)) == :a
     pi = child(q, 3)
     @test lk_name(child(pi, 2)) == :attr_unify_hook && lk_value(child(pi, 3)) == 2
-    cq = child(ctx, 2)                                      # system:uhook/3 (swipl: '$attvar':uhook/3)
-    @test lk_name(child(ctx, 1)) == :context && lk_name(child(cq, 2)) == :system
+    cq = child(ctx, 2)                                      # '$attvar':uhook/3, as swipl's
+    @test lk_name(child(ctx, 1)) == :context && lk_name(child(cq, 2)) == Symbol("\$attvar")
     @test lk_name(child(child(cq, 3), 2)) == :uhook && lk_value(child(child(cq, 3), 3)) == 3
     LK.PL_clear_exception(ld)
 end

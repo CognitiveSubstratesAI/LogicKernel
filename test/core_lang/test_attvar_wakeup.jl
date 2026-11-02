@@ -1320,8 +1320,8 @@ const _WK_AV7 = [
     _wk_check_rows(_WK_AV7, "AV7 rows")
 end
 
-# AV8 — when/2's C half (pl-attvar.c `'$eval_when_condition'/2`, `'$suspend'/3`; when/2 the boot stand-in
-# `_boot_when!`). Rows wh05, wh06, wh07, wh10 of evidence/av/rows.tsv (goals verbatim) and the probe rows
+# AV8 — when/2's C half (pl-attvar.c `'$eval_when_condition'/2`, `'$suspend'/3`; when/2 library/when.pl's,
+# autoloaded since LB4 b2; a boot stand-in before). Rows wh05, wh06, wh07, wh10 of evidence/av/rows.tsv (goals verbatim) and the probe rows
 # we01-we20, su01-su08 of lk-channel evidence/AV8/swipl_probe_rows.pl (swipl 10.1.19; we21 probed separately); answers re-checked live by
 # `_wk_check_rows`. The other wh rows suspend a goal (trigger/2, library/when.pl) and wait for R2.
 _wk_ugoal(g::String) = _ec(":", _ea("user"), _ea(g))
@@ -1490,7 +1490,7 @@ const _WK_AV8 = [
 end
 
 # AV9 — deterministic/1 (pl-prims.c) and call_residue_vars/2 (pl-attvar.c O_CALL_RESIDUE's C half; the
-# predicate itself the boot stand-in `_boot_call_residue_vars!`). Rows dt01-dt10, cr01-cr07, cr09-cr15 of
+# predicate itself boot/attvar.pl's, booted since LB4 b2; a boot stand-in before). Rows dt01-dt10, cr01-cr07, cr09-cr15 of
 # lk-channel evidence/AV9/swipl_probe_rows.pl (swipl 10.1.19; cr08 dropped: module `a` has no hook; cr11 a known
 # difference, below), the probe's t1..t10/nd as `av9_t1..av9_t10`/`av9_nd`; dt11-dt14, cr07b, cr16-cr27,
 # cr29-cr35, cr38, cr39 added for AV9's mutants (each line's branch), re-probed on swipl 10.1.19 under this harness
@@ -1717,27 +1717,22 @@ end
     LK.Undo!(ld, m)
 end
 
-# cr11 (evidence/AV9/swipl_probe_rows.pl): call_residue_vars(_, _). KNOWN DIFFERENCE (pending R2): swipl 10.1.19
-# raises error(instantiation_error, context('$attvar':run_crv/4, _)) — run_crv/4 is boot/attvar.pl's, in module
-# '$attvar'; the kernel's stand-in (`_boot_call_residue_vars!`, src/pl-ext.jl) defines it in `system`, so the
-# context names system:run_crv/4 (docs/architecture.md §AV9, checklist). `_CR11_SWIPL` is swipl's answer, re-run
-# live below; `_CR11_KERNEL` the kernel's. NOT YET RUN on the kernel (AV9 part 3, 2026-10-28: no warm lane was
-# available): `_CR11_KERNEL` is the expected answer from the stand-in's module; the first run confirms or replaces it.
+# cr11 (evidence/AV9/swipl_probe_rows.pl): call_residue_vars(_, _). swipl 10.1.19 raises
+# error(instantiation_error, context('$attvar':run_crv/4, _)) — run_crv/4 is boot/attvar.pl's, in module '$attvar'.
+# Until LB4 b2 a KNOWN DIFFERENCE (the kernel's boot stand-in defined it in `system`, so the context named
+# system:run_crv/4); since LB4 b2 the booted database loads boot/attvar.pl itself and the kernel answers swipl's.
+# UNVERIFIED on the kernel: gate decides. `_CR11_SWIPL` is swipl's answer, re-run live below.
 const _CR11_GOAL = "catch(call_residue_vars(_,_),R,true)"
 const _CR11_SWIPL = _ec(
     "error", _ea("instantiation_error"),
     _ctx(_ec(":", _ea("\$attvar"), _pi("run_crv", 4)), "V0")
 )
-const _CR11_KERNEL = _ec(
-    "error", _ea("instantiation_error"),
-    _ctx(_sys(_pi("run_crv", 4)), "V0")
-)
 
-@testset "cr11: call_residue_vars(_, _) — a known difference pending R2's '\$attvar' module" begin
+@testset "cr11: call_residue_vars(_, _) — run_crv/4 in boot/attvar.pl's '\$attvar' module" begin
     f, names = _wk_program([_CR11_GOAL])
     got = kernel_lines(f, names)
     @test length(got) == 2 && got[1] == "ok"
-    @test get(got, 2, "missing") == _wk_line(names[1], _CR11_KERNEL)
+    @test get(got, 2, "missing") == _wk_line(names[1], _CR11_SWIPL)
     swipl = get(ENV, "LOGICKERNEL_NO_SWIPL", "") == "1" ? nothing : Sys.which("swipl")
     if swipl === nothing
         @info "AV9 cr11: swipl's answer not re-checked — `swipl` is not on PATH here."
