@@ -250,7 +250,8 @@ function clearUninitialisedVarsFrame(
             pc += Int(codes[pc + 1]) + 2
             c = codes[pc]
         end
-        if c == I_EXIT || c == I_EXITFACT || c == I_EXITCATCH || c == I_EXITRESET || c == I_EXITQUERY ||
+        if c == I_EXIT || c == I_EXITFACT || c == I_EXITCATCH || c == I_EXITRESET ||
+            c == I_EXITQUERY ||
             c == I_FEXITDET || c == I_FCALLDETVA || c == S_TRUSTME || c == S_LIST
             return nothing                                      # terminate code list
         elseif c == H_FIRSTVAR || c == B_FIRSTVAR || c == B_ARGFIRSTVAR ||

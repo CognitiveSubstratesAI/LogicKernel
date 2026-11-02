@@ -990,7 +990,9 @@ function load_file!(
         T,
         T[
             mk_sym(T, :(:)), mk_sym(T, :user),
-            mk_expr(T, T[mk_sym(T, :load_files), mk_sym(T, Symbol(abspath(path))), mk_nil(T)]),
+            mk_expr(
+                T, T[mk_sym(T, :load_files), mk_sym(T, Symbol(abspath(path))), mk_nil(T)]
+            )
         ]
     )
     answers = try
@@ -3287,32 +3289,48 @@ function PL_next_solution_guarded(
     # PORT: pl-vmi.c I_YIELD
     # DIVERGES: refused by name until CONT1 (above).
     @label I_YIELD
-    throw(NotPortedError{T}(DEF.name, "the VM instruction I_YIELD (pl-vmi.c:2410)", "CONT1"))
+    throw(
+        NotPortedError{T}(DEF.name, "the VM instruction I_YIELD (pl-vmi.c:2410)", "CONT1")
+    )
 
     # PORT: pl-vmi.c I_RESET
     # DIVERGES: refused by name until CONT1 (above).
     @label I_RESET
-    throw(NotPortedError{T}(DEF.name, "the VM instruction I_RESET (pl-vmi.c:5754)", "CONT1"))
+    throw(
+        NotPortedError{T}(DEF.name, "the VM instruction I_RESET (pl-vmi.c:5754)", "CONT1")
+    )
 
     # PORT: pl-vmi.c I_EXITRESET
     # DIVERGES: refused by name until CONT1 (above).
     @label I_EXITRESET
-    throw(NotPortedError{T}(DEF.name, "the VM instruction I_EXITRESET (pl-vmi.c:5801)", "CONT1"))
+    throw(
+        NotPortedError{T}(
+            DEF.name, "the VM instruction I_EXITRESET (pl-vmi.c:5801)", "CONT1"
+        )
+    )
 
     # PORT: pl-vmi.c I_CALLCONT
     # DIVERGES: refused by name until CONT1 (above).
     @label I_CALLCONT
-    throw(NotPortedError{T}(DEF.name, "the VM instruction I_CALLCONT (pl-vmi.c:5839)", "CONT1"))
+    throw(
+        NotPortedError{T}(
+            DEF.name, "the VM instruction I_CALLCONT (pl-vmi.c:5839)", "CONT1"
+        )
+    )
 
     # PORT: pl-vmi.c I_SHIFT
     # DIVERGES: refused by name until CONT1 (above).
     @label I_SHIFT
-    throw(NotPortedError{T}(DEF.name, "the VM instruction I_SHIFT (pl-vmi.c:5874)", "CONT1"))
+    throw(
+        NotPortedError{T}(DEF.name, "the VM instruction I_SHIFT (pl-vmi.c:5874)", "CONT1")
+    )
 
     # PORT: pl-vmi.c I_SHIFTCP
     # DIVERGES: refused by name until CONT1 (above).
     @label I_SHIFTCP
-    throw(NotPortedError{T}(DEF.name, "the VM instruction I_SHIFTCP (pl-vmi.c:5908)", "CONT1"))
+    throw(
+        NotPortedError{T}(DEF.name, "the VM instruction I_SHIFTCP (pl-vmi.c:5908)", "CONT1")
+    )
 
     # ── single sided unification (pl-vmi.c), SSU2 ─────────────────────────────────────────────────
     # An SSU clause (`Head => Body`, `Head ?=> Body`) starts with `I_CHP`, so a choice point of its

@@ -120,10 +120,16 @@ const _CB_CASES = [
         "g_cut_stale",
         raw"( cb_mem(_), prolog_current_choice(Ch) -> true ), catch(cb_cut(Ch), error(existence_error(choice, C), _), ( integer(C) -> R = stale_int ; R = stale(C) ))"
     ),
-    ("g_cut_after", raw"findall(X, (cb_mem(X), prolog_current_choice(Ch), cb_cut(Ch), X \== a), R)"),
+    (
+        "g_cut_after",
+        raw"findall(X, (cb_mem(X), prolog_current_choice(Ch), cb_cut(Ch), X \== a), R)"
+    ),
     ("rb_cut", raw"clause(cb_cut(A), B), R = A-B"),
     ("rb_reset", raw"clause(cb_reset(A, B, C), D), R = f(A, B, C, D)"),
-    ("rb_tbl_reset", raw"clause(cb_tbl_reset(A, B, C, D, E, F), G), R = f(A, B, C, D, E, F, G)"),
+    (
+        "rb_tbl_reset",
+        raw"clause(cb_tbl_reset(A, B, C, D, E, F), G), R = f(A, B, C, D, E, F, G)"
+    ),
     ("rb_shift", raw"clause(cb_shift(A), B), R = A-B"),
     ("rb_shiftcp", raw"clause(cb_shiftcp(A), B), R = A-B"),
     ("rb_cc", raw"clause(cb_cc(A), B), R = A-B"),
@@ -132,7 +138,11 @@ const _CB_CASES = [
 
 # (id, goal, the kernel's refusal until CONT1): each in a database of its own (the refusal leaves the run loop)
 const _CB_CONT1 = [
-    ("c_reset", raw"cb_reset(true, B, C), R = B-C", "the VM instruction I_RESET (pl-vmi.c:5754)"),
+    (
+        "c_reset",
+        raw"cb_reset(true, B, C), R = B-C",
+        "the VM instruction I_RESET (pl-vmi.c:5754)"
+    ),
     (
         "c_reset_shift", raw"cb_reset(cb_shift(x), B, C), R = B-C",
         "the VM instruction I_RESET (pl-vmi.c:5754)"

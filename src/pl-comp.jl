@@ -5168,7 +5168,7 @@ function decompileBodyNoShift!(
                 di.pc += 1
             end
         elseif op == I_EXIT || op == I_EXITCATCH || op == I_EXITRESET  # (I_EXITRESET: LB4 b2)
-            # break (out of upstream's switch): nothing
+        # break (out of upstream's switch): nothing
         else
             error(
                 "Decompiler: unknown instruction in clause body: $(codeTable(op).name)"
