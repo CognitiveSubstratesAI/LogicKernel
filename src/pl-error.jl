@@ -1026,3 +1026,34 @@ function printMessage(ld::PL_local_data{T}, severity::Symbol, msg::term_t)::Bool
     push!(ld.messages, (severity, export_cells(ld, cell_export{T}(), -(msg + 1))))
     return true
 end
+
+# PORT: pl-error.c inc_message_count as pl_inc_message_count1_va
+# (PRED_IMPL("$inc_message_count", 1, inc_message_count, 0), pl-error.c:1457-1474 at the pin)
+# DIVERGES: `GD->statistics.errors|warnings` and `LD->statistics.errors|warnings` are not kept (`ld_statistics` has no
+# such field and statistics/2 answers 0 for `errors` and `warnings`, src/pl-prims.jl `swi_statistics`): the argument is
+# checked and every level answers true, as upstream's, but nothing is counted. A new field is a struct change.
+"""
+    '\$inc_message_count'(+Level)
+
+Count a printed message of severity `Level` (`error` or `warning`; other levels are ignored) (pl-error.c). The
+argument must be an atom (`type_error(atom, Level)`); boot/messages.pl's print_message/2 calls it.
+"""
+function pl_inc_message_count1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1 = PL__t0
+    a = PL_get_atom_ex(ld, A1)
+
+    if a !== nothing
+        # `error` and `warning` bump the counters (kept nowhere here, see DIVERGES); other levels are ignored
+        return FTRUE
+    end
+
+    return FFALSE
+end
+
+# PORT: pl-error.c BeginPredDefs as PL_predicates_from_error
+"pl-error.c's registration table (`BeginPredDefs(error)`)."
+const PL_predicates_from_error = (
+    PL_extension("\$inc_message_count", 1, pl_inc_message_count1_va, PL_FA_VARARGS),
+)
