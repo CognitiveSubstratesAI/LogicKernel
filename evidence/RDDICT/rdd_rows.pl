@@ -5,6 +5,7 @@ rdv(Txt, K, R) :- term_to_atom(T, Txt), get_dict(K, T, V), rdo(V, R).
 rdw(Txt, K1, K2, R) :- term_to_atom(T, Txt), get_dict(K1, T, V1), get_dict(K2, V1, V2), rdo(V2, R).
 rda(Txt, N, R) :- term_to_atom(T, Txt), arg(N, T, A), rdo(A, R).
 rdx(Txt, R) :- term_to_atom(T, Txt), ( compound(T), T =.. [F, A, B] -> rdo(A, A1), rdo(B, B1), R = F-A1-B1 ; R = other(T) ).
+rdp(Txt, R) :- read_term_from_atom(Txt, _, [subterm_positions(R)]).
 rds(Txt, R) :- catch(( term_to_atom(_, Txt), R = read ), error(syntax_error(I), string(_, P)), R = syn(I, P)).
 rdb1(R) :- D = _{a:1,b:2}, dict_pairs(D, _, R).
 rdb2(R) :- X = _{file_type:regular}, dict_pairs(X, _, R).
@@ -127,3 +128,15 @@ t_rd111(R) :- catch((rdh(_{a:1}, R)), error(SsuE, _), R = raised(SsuE)).
 t_rd112(R) :- catch((rdh(_{a:2}, R)), error(SsuE, _), R = raised(SsuE)).
 t_rd113(R) :- catch((rdh(t{a:1}, R)), error(SsuE, _), R = raised(SsuE)).
 t_rd114(R) :- catch((rdh(X, R), X = _{a:1}), error(SsuE, _), R = raised(SsuE)).
+t_rd115(R) :- catch((rdp('_{a:1}', R)), error(SsuE, _), R = raised(SsuE)).
+t_rd116(R) :- catch((rdp('t{a:1,b:f(x)}', R)), error(SsuE, _), R = raised(SsuE)).
+t_rd117(R) :- catch((rdp('_{}', R)), error(SsuE, _), R = raised(SsuE)).
+t_rd118(R) :- catch((rdp('X{k:v}', R)), error(SsuE, _), R = raised(SsuE)).
+t_rd119(R) :- catch((rdp('f(_{a:1})', R)), error(SsuE, _), R = raised(SsuE)).
+t_rd120(R) :- catch((rdp('_{1:a}', R)), error(SsuE, _), R = raised(SsuE)).
+t_rd121(R) :- catch((rdp('_{a:_{b:1}}', R)), error(SsuE, _), R = raised(SsuE)).
+t_rd122(R) :- catch((rdp(' _{ a : 1 , b : 2 } ', R)), error(SsuE, _), R = raised(SsuE)).
+t_rd123(R) :- catch((rdp('t{a:1,b:2,c:3}', R)), error(SsuE, _), R = raised(SsuE)).
+t_rd124(R) :- catch((rdp('[_{a:1},t{}]', R)), error(SsuE, _), R = raised(SsuE)).
+t_rd125(R) :- catch((rdp('_{\'x y\':"s"}', R)), error(SsuE, _), R = raised(SsuE)).
+t_rd126(R) :- catch((rdp('a- _{}', R)), error(SsuE, _), R = raised(SsuE)).

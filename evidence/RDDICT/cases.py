@@ -65,6 +65,15 @@ g("clause bodies and heads read by the loader (the program's own dict syntax)", 
     "rdh(_{a:1}, R)", "rdh(_{a:2}, R)", "rdh(t{a:1}, R)", "rdh(X, R), X = _{a:1}",
 ])
 
+def rdp(*texts):
+    return ["rdp(%s, R)" % T(t) for t in texts]
+
+
+g("subterm_positions of dicts (dict_position/5, key_value_position/7), read_term_from_atom/3", rdp(
+    "_{a:1}", "t{a:1,b:f(x)}", "_{}", "X{k:v}", "f(_{a:1})", "_{1:a}", "_{a:_{b:1}}", " _{ a : 1 , b : 2 } ", "t{a:1,b:2,c:3}",
+    "[_{a:1},t{}]", "_{'x y':\"s\"}", "a- _{}",
+))
+
 # per var_tag mode: the cases run once per mode (module flags set from Julia in the kernel, `:- set_prolog_flag(var_tag, Mode).` for swipl)
 MODES = ["dict", "error", "warning", "attvar", "#"]
 MODE_CASES = [
@@ -80,6 +89,7 @@ rdv(Txt, K, R) :- term_to_atom(T, Txt), get_dict(K, T, V), rdo(V, R).
 rdw(Txt, K1, K2, R) :- term_to_atom(T, Txt), get_dict(K1, T, V1), get_dict(K2, V1, V2), rdo(V2, R).
 rda(Txt, N, R) :- term_to_atom(T, Txt), arg(N, T, A), rdo(A, R).
 rdx(Txt, R) :- term_to_atom(T, Txt), ( compound(T), T =.. [F, A, B] -> rdo(A, A1), rdo(B, B1), R = F-A1-B1 ; R = other(T) ).
+rdp(Txt, R) :- read_term_from_atom(Txt, _, [subterm_positions(R)]).
 rds(Txt, R) :- catch(( term_to_atom(_, Txt), R = read ), error(syntax_error(I), string(_, P)), R = syn(I, P)).
 """
 # clauses whose own text holds dict syntax (the loader reads them); the pl-boot lines: init.pl:1297 `_{file_type:regular}`, autoload.pl:889 `:<`

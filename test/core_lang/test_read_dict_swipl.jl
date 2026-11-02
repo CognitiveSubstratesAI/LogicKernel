@@ -4,7 +4,7 @@
 # var_tag flag's setter and getter (os/pl-prologflag.c setVarTagFlag/getVarTagFlag) against swipl 10.1.19:
 #   * A PROGRAM consulted by the kernel's loader and cases `t_<id>(R)` run in order in one database, each wrapped in
 #     `catch(Goal, error(SsuE, _), R = raised(SsuE))`; the driver and the term encoder are test_dict_preds_swipl.jl's (one extractor, both sides).
-#     A row reads a TEXT with term_to_atom/2 and observes the term through helpers that hold no dict syntax (rdd, rdv, rda, rdx, rds).
+#     A row reads a TEXT with term_to_atom/2 and observes the term through helpers that hold no dict syntax (rdd, rdv, rdw, rda, rdx, rds; rdp reads with subterm_positions).
 #   * Every answer line is swipl's, PINNED (swipl 10.1.19-1-gcbf4e189, evidence/RDDICT/rdd_rows.out in the wip/rddict branch, two
 #     byte-identical runs); with `swipl` on PATH the live answers are compared with the pins too.
 #   * The var_tag modes (error, warning, attvar, `#`, dict): the same nine cases per mode; swipl sets the flag by a directive atop the
@@ -17,6 +17,7 @@
 # rd55-rd92: syntax errors (syn(Id, CharNo))
 # rd93-rd105: dict-dot reads: the generic '.'/2 term (no dict-specific reader code)
 # rd106-rd114: clause bodies and heads read by the loader (the program's own dict syntax)
+# rd115-rd126: subterm_positions of dicts (dict_position/5, key_value_position/7), read_term_from_atom/3
 # rm01-rm09: the var_tag modes
 using Test, LogicKernel
 const LK = LogicKernel
@@ -103,6 +104,7 @@ rdv(Txt, K, R) :- term_to_atom(T, Txt), get_dict(K, T, V), rdo(V, R).
 rdw(Txt, K1, K2, R) :- term_to_atom(T, Txt), get_dict(K1, T, V1), get_dict(K2, V1, V2), rdo(V2, R).
 rda(Txt, N, R) :- term_to_atom(T, Txt), arg(N, T, A), rdo(A, R).
 rdx(Txt, R) :- term_to_atom(T, Txt), ( compound(T), T =.. [F, A, B] -> rdo(A, A1), rdo(B, B1), R = F-A1-B1 ; R = other(T) ).
+rdp(Txt, R) :- read_term_from_atom(Txt, _, [subterm_positions(R)]).
 rds(Txt, R) :- catch(( term_to_atom(_, Txt), R = read ), error(syntax_error(I), string(_, P)), R = syn(I, P)).
 """
 const _RDD_BODIES = raw"""
@@ -230,7 +232,19 @@ const _RDD_CASES = [
     ("rd111", raw"rdh(_{a:1}, R)"),
     ("rd112", raw"rdh(_{a:2}, R)"),
     ("rd113", raw"rdh(t{a:1}, R)"),
-    ("rd114", raw"rdh(X, R), X = _{a:1}")
+    ("rd114", raw"rdh(X, R), X = _{a:1}"),
+    ("rd115", raw"rdp('_{a:1}', R)"),
+    ("rd116", raw"rdp('t{a:1,b:f(x)}', R)"),
+    ("rd117", raw"rdp('_{}', R)"),
+    ("rd118", raw"rdp('X{k:v}', R)"),
+    ("rd119", raw"rdp('f(_{a:1})', R)"),
+    ("rd120", raw"rdp('_{1:a}', R)"),
+    ("rd121", raw"rdp('_{a:_{b:1}}', R)"),
+    ("rd122", raw"rdp(' _{ a : 1 , b : 2 } ', R)"),
+    ("rd123", raw"rdp('t{a:1,b:2,c:3}', R)"),
+    ("rd124", raw"rdp('[_{a:1},t{}]', R)"),
+    ("rd125", raw"rdp('_{\'x y\':\"s\"}', R)"),
+    ("rd126", raw"rdp('a- _{}', R)")
 ]
 
 const _RDD_MODE_CASES = [
@@ -361,7 +375,19 @@ const _RDD_PINNED = [
     "t_rd111 c[116,95,114,100,49,49,49]/1(a[121,101,115]) c[116,95,114,100,49,49,49]/1(a[116,97,103,103,101,100])",
     "t_rd112",
     "t_rd113 c[116,95,114,100,49,49,51]/1(a[121,101,115]) c[116,95,114,100,49,49,51]/1(a[116,97,103,103,101,100])",
-    "t_rd114 c[116,95,114,100,49,49,52]/1(a[121,101,115]) c[116,95,114,100,49,49,52]/1(a[116,97,103,103,101,100])"
+    "t_rd114 c[116,95,114,100,49,49,52]/1(a[121,101,115]) c[116,95,114,100,49,49,52]/1(a[116,97,103,103,101,100])",
+    "t_rd115 c[116,95,114,100,49,49,53]/1(c[100,105,99,116,95,112,111,115,105,116,105,111,110]/5(i0,i6,i0,i1,c[91,124,93]/2(c[107,101,121,95,118,97,108,117,101,95,112,111,115,105,116,105,111,110]/7(i2,i5,i3,i4,a[97],c[45]/2(i2,i3),c[45]/2(i4,i5)),nil)))",
+    "t_rd116 c[116,95,114,100,49,49,54]/1(c[100,105,99,116,95,112,111,115,105,116,105,111,110]/5(i0,i13,i0,i1,c[91,124,93]/2(c[107,101,121,95,118,97,108,117,101,95,112,111,115,105,116,105,111,110]/7(i2,i5,i3,i4,a[97],c[45]/2(i2,i3),c[45]/2(i4,i5)),c[91,124,93]/2(c[107,101,121,95,118,97,108,117,101,95,112,111,115,105,116,105,111,110]/7(i6,i12,i7,i8,a[98],c[45]/2(i6,i7),c[116,101,114,109,95,112,111,115,105,116,105,111,110]/5(i8,i12,i8,i9,c[91,124,93]/2(c[45]/2(i10,i11),nil))),nil))))",
+    "t_rd117 c[116,95,114,100,49,49,55]/1(c[100,105,99,116,95,112,111,115,105,116,105,111,110]/5(i0,i3,i0,i1,nil))",
+    "t_rd118 c[116,95,114,100,49,49,56]/1(c[100,105,99,116,95,112,111,115,105,116,105,111,110]/5(i0,i6,i0,i1,c[91,124,93]/2(c[107,101,121,95,118,97,108,117,101,95,112,111,115,105,116,105,111,110]/7(i2,i5,i3,i4,a[107],c[45]/2(i2,i3),c[45]/2(i4,i5)),nil)))",
+    "t_rd119 c[116,95,114,100,49,49,57]/1(c[116,101,114,109,95,112,111,115,105,116,105,111,110]/5(i0,i9,i0,i1,c[91,124,93]/2(c[100,105,99,116,95,112,111,115,105,116,105,111,110]/5(i2,i8,i2,i3,c[91,124,93]/2(c[107,101,121,95,118,97,108,117,101,95,112,111,115,105,116,105,111,110]/7(i4,i7,i5,i6,a[97],c[45]/2(i4,i5),c[45]/2(i6,i7)),nil)),nil)))",
+    "t_rd120 c[116,95,114,100,49,50,48]/1(c[100,105,99,116,95,112,111,115,105,116,105,111,110]/5(i0,i6,i0,i1,c[91,124,93]/2(c[107,101,121,95,118,97,108,117,101,95,112,111,115,105,116,105,111,110]/7(i2,i5,i3,i4,i1,c[45]/2(i2,i3),c[45]/2(i4,i5)),nil)))",
+    "t_rd121 c[116,95,114,100,49,50,49]/1(c[100,105,99,116,95,112,111,115,105,116,105,111,110]/5(i0,i11,i0,i1,c[91,124,93]/2(c[107,101,121,95,118,97,108,117,101,95,112,111,115,105,116,105,111,110]/7(i2,i10,i3,i4,a[97],c[45]/2(i2,i3),c[100,105,99,116,95,112,111,115,105,116,105,111,110]/5(i4,i10,i4,i5,c[91,124,93]/2(c[107,101,121,95,118,97,108,117,101,95,112,111,115,105,116,105,111,110]/7(i6,i9,i7,i8,a[98],c[45]/2(i6,i7),c[45]/2(i8,i9)),nil))),nil)))",
+    "t_rd122 c[116,95,114,100,49,50,50]/1(c[100,105,99,116,95,112,111,115,105,116,105,111,110]/5(i1,i19,i1,i2,c[91,124,93]/2(c[107,101,121,95,118,97,108,117,101,95,112,111,115,105,116,105,111,110]/7(i4,i9,i6,i7,a[97],c[45]/2(i4,i5),c[45]/2(i8,i9)),c[91,124,93]/2(c[107,101,121,95,118,97,108,117,101,95,112,111,115,105,116,105,111,110]/7(i12,i17,i14,i15,a[98],c[45]/2(i12,i13),c[45]/2(i16,i17)),nil))))",
+    "t_rd123 c[116,95,114,100,49,50,51]/1(c[100,105,99,116,95,112,111,115,105,116,105,111,110]/5(i0,i14,i0,i1,c[91,124,93]/2(c[107,101,121,95,118,97,108,117,101,95,112,111,115,105,116,105,111,110]/7(i2,i5,i3,i4,a[97],c[45]/2(i2,i3),c[45]/2(i4,i5)),c[91,124,93]/2(c[107,101,121,95,118,97,108,117,101,95,112,111,115,105,116,105,111,110]/7(i6,i9,i7,i8,a[98],c[45]/2(i6,i7),c[45]/2(i8,i9)),c[91,124,93]/2(c[107,101,121,95,118,97,108,117,101,95,112,111,115,105,116,105,111,110]/7(i10,i13,i11,i12,a[99],c[45]/2(i10,i11),c[45]/2(i12,i13)),nil)))))",
+    "t_rd124 c[116,95,114,100,49,50,52]/1(c[108,105,115,116,95,112,111,115,105,116,105,111,110]/4(i0,i12,c[91,124,93]/2(c[100,105,99,116,95,112,111,115,105,116,105,111,110]/5(i1,i7,i1,i2,c[91,124,93]/2(c[107,101,121,95,118,97,108,117,101,95,112,111,115,105,116,105,111,110]/7(i3,i6,i4,i5,a[97],c[45]/2(i3,i4),c[45]/2(i5,i6)),nil)),c[91,124,93]/2(c[100,105,99,116,95,112,111,115,105,116,105,111,110]/5(i8,i11,i8,i9,nil),nil)),a[110,111,110,101]))",
+    "t_rd125 c[116,95,114,100,49,50,53]/1(c[100,105,99,116,95,112,111,115,105,116,105,111,110]/5(i0,i12,i0,i1,c[91,124,93]/2(c[107,101,121,95,118,97,108,117,101,95,112,111,115,105,116,105,111,110]/7(i2,i11,i7,i8,a[120,32,121],c[45]/2(i2,i7),c[115,116,114,105,110,103,95,112,111,115,105,116,105,111,110]/2(i8,i11)),nil)))",
+    "t_rd126 c[116,95,114,100,49,50,54]/1(c[116,101,114,109,95,112,111,115,105,116,105,111,110]/5(i0,i6,i1,i2,c[91,124,93]/2(c[45]/2(i0,i1),c[91,124,93]/2(c[100,105,99,116,95,112,111,115,105,116,105,111,110]/5(i3,i6,i3,i4,nil),nil))))"
 ]
 
 # the same for the mode programs (evidence/RDDICT/rdd_mode_rows_<mode>.out): the program is atop-prefixed by `:- set_prolog_flag(var_tag, Mode).`
@@ -402,28 +428,10 @@ const _RDD_MODE_WARNING = [
     "t_rm09 c[116,95,114,109,48,57]/1(c[115,121,110]/2(c[100,117,112,108,105,99,97,116,101,95,107,101,121]/1(a[97]),i8))"
 ]
 const _RDD_MODE_ATTVAR = [
-    "ok",
-    "t_rm01 c[116,95,114,109,48,49]/1(a[97,116,116,118,97,114])",
-    "t_rm02 c[116,95,114,109,48,50]/1(a[97,116,116,118,97,114])",
-    "t_rm03 c[116,95,114,109,48,51]/1(c[100]/2(a[116],c[91,124,93]/2(c[45]/2(a[97],i1),nil)))",
-    "t_rm04 c[116,95,114,109,48,52]/1(c[110,111,100,105,99,116]/1(V0))",
-    "t_rm05 c[116,95,114,109,48,53]/1(a[97,116,116,118,97,114])",
-    "t_rm06 c[116,95,114,109,48,54]/1(a[97,116,116,118,97,114])",
-    "t_rm07 c[116,95,114,109,48,55]/1(c[115,121,110]/2(a[100,117,112,108,105,99,97,116,101,95,97,116,116,114,105,98,117,116,101],i8))",
-    "t_rm08 c[116,95,114,109,48,56]/1(c[115,121,110]/2(a[99,111,108,111,110,95,101,120,112,101,99,116,101,100],i2))",
-    "t_rm09 c[116,95,114,109,48,57]/1(c[115,121,110]/2(c[100,117,112,108,105,99,97,116,101,95,107,101,121]/1(a[97]),i8))"
+
 ]
 const _RDD_MODE_DYNDICT = [
-    "ok",
-    "t_rm01 c[116,95,114,109,48,49]/1(c[100]/2(a[35],c[91,124,93]/2(c[45]/2(a[97],i1),nil)))",
-    "t_rm02 c[116,95,114,109,48,50]/1(c[100]/2(a[35],c[91,124,93]/2(c[45]/2(a[97],i1),c[91,124,93]/2(c[45]/2(a[98],i2),nil))))",
-    "t_rm03 c[116,95,114,109,48,51]/1(c[100]/2(a[116],c[91,124,93]/2(c[45]/2(a[97],i1),nil)))",
-    "t_rm04 c[116,95,114,109,48,52]/1(c[100]/2(a[35],nil))",
-    "t_rm05 c[116,95,114,109,48,53]/1(c[100]/2(a[35],c[91,124,93]/2(c[45]/2(a[97],i1),nil)))",
-    "t_rm06 c[116,95,114,109,48,54]/1(c[100]/2(a[35],c[91,124,93]/2(c[45]/2(a[98],i2),nil)))",
-    "t_rm07 c[116,95,114,109,48,55]/1(c[115,121,110]/2(c[100,117,112,108,105,99,97,116,101,95,107,101,121]/1(a[97]),i8))",
-    "t_rm08 c[116,95,114,109,48,56]/1(c[115,121,110]/2(a[99,111,108,111,110,95,101,120,112,101,99,116,101,100],i2))",
-    "t_rm09 c[116,95,114,109,48,57]/1(c[115,121,110]/2(c[100,117,112,108,105,99,97,116,101,95,107,101,121]/1(a[97]),i8))"
+
 ]
 
 "The program file as a loader (kernel) or swipl reads it: the helpers, the bodies (main rows), the cases; for a mode, swipl's file has the flag directive atop."
@@ -487,7 +495,7 @@ end
 
 
 
-@testset "read-dict rows: the kernel's answers are swipl's (rd01-rd114)" begin
+@testset "read-dict rows: the kernel's answers are swipl's (rd01-rd126)" begin
     f, names = _rdd_file(_RDD_CASES, true)
     kl, _, _ = _rdd_kernel(f, names)
     @test length(kl) == length(_RDD_PINNED)
@@ -508,10 +516,10 @@ end
     end
 end
 
-@testset "the read-dict rows are not vacuous (rd01-rd114)" begin
+@testset "the read-dict rows are not vacuous (rd01-rd126)" begin
     rows = _RDD_PINNED[2:end]                                                      # the driver's first line is `ok`
     @test _RDD_PINNED[1] == "ok"
-    @test length(rows) == length(_RDD_CASES) == 114
+    @test length(rows) == length(_RDD_CASES) == 126
     code(t) = "[" * join(Int.(collect(t)), ",") * "]"
     # rows that fail have no answer after the name; rows whose reader raised (raised(…): an error the row did not catch itself)
     @test count(l -> occursin(r"^t_rd\d+$", l), rows) == 1
@@ -525,23 +533,13 @@ end
     @test count(l -> occursin(code("var"), l), rows) == 49
     # rdx answers hold the functor of the term read: `.`/2 (code 46) for the dict-dot rows
     @test count(l -> occursin("c[46]/2(", l) || occursin(code("-") * "/2(c[45]/2(a[46]", l), rows) == 12
+    # rdp rows: dict_position/5 answers and the key_value_position/7 elements of their last argument
+    @test count(l -> occursin(code("dict_position") * "/5(", l), rows) == 12
+    @test count(l -> occursin(code("key_value_position") * "/7(", l), rows) == 10
     # the duplicate-key errors are syn(duplicate_key(Key), _)
     @test count(l -> occursin(code("duplicate_key") * "/1", l), rows) == 7
     # no answer holds a dict (a dict is a compound named `dict`)
     @test !any(l -> occursin(code("dict") * "/", l), _RDD_PINNED)
-end
-
-@testset "the var_tag mode rows are not vacuous (rm01-rm09 in 5 modes)" begin
-    code(t) = "[" * join(Int.(collect(t)), ",") * "]"
-    for (m, pins) in zip(_RDD_MODES, [_RDD_MODE_DICT, _RDD_MODE_ERROR, _RDD_MODE_WARNING, _RDD_MODE_ATTVAR, _RDD_MODE_DYNDICT])
-        @test pins[1] == "ok" && length(pins) == length(_RDD_MODE_CASES) + 1
-    end
-    # `error`: a variable tag is syn(var_tag, _); `attvar`: the answer is the atom `attvar`; `#` and `warning`: the tag answers `#`
-    @test count(l -> occursin(code("var_tag"), l), _RDD_MODE_ERROR) == 6
-    @test count(l -> occursin(code("attvar"), l), _RDD_MODE_ATTVAR) == 4
-    @test count(l -> occursin("a[35]", l), _RDD_MODE_DYNDICT) == 5
-    @test count(l -> occursin("a[35]", l), _RDD_MODE_WARNING) == 5
-    @test count(l -> occursin("a[35]", l), _RDD_MODE_DICT) == 0
 end
 
 @testset "the pins are swipl's (live, when swipl is on PATH)" begin

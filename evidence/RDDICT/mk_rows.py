@@ -121,6 +121,9 @@ if mainl:
     @test count(l -> occursin(code("var"), l), rows) == {cnt(rows, lambda l: code("var") in l)}
     # rdx answers hold the functor of the term read: `.`/2 (code 46) for the dict-dot rows
     @test count(l -> occursin("c[46]/2(", l) || occursin(code("-") * "/2(c[45]/2(a[46]", l), rows) == {cnt(rows, lambda l: "c[46]/2(" in l or code("-") + "/2(c[45]/2(a[46]" in l)}
+    # rdp rows: dict_position/5 answers and the key_value_position/7 elements of their last argument
+    @test count(l -> occursin(code("dict_position") * "/5(", l), rows) == {cnt(rows, lambda l: code("dict_position") + "/5(" in l)}
+    @test count(l -> occursin(code("key_value_position") * "/7(", l), rows) == {cnt(rows, lambda l: code("key_value_position") + "/7(" in l)}
     # the duplicate-key errors are syn(duplicate_key(Key), _)
     @test count(l -> occursin(code("duplicate_key") * "/1", l), rows) == {cnt(rows, lambda l: code("duplicate_key") + "/1" in l)}
     # no answer holds a dict (a dict is a compound named `dict`)

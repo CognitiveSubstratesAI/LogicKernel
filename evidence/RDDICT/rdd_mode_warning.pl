@@ -6,6 +6,7 @@ rdv(Txt, K, R) :- term_to_atom(T, Txt), get_dict(K, T, V), rdo(V, R).
 rdw(Txt, K1, K2, R) :- term_to_atom(T, Txt), get_dict(K1, T, V1), get_dict(K2, V1, V2), rdo(V2, R).
 rda(Txt, N, R) :- term_to_atom(T, Txt), arg(N, T, A), rdo(A, R).
 rdx(Txt, R) :- term_to_atom(T, Txt), ( compound(T), T =.. [F, A, B] -> rdo(A, A1), rdo(B, B1), R = F-A1-B1 ; R = other(T) ).
+rdp(Txt, R) :- read_term_from_atom(Txt, _, [subterm_positions(R)]).
 rds(Txt, R) :- catch(( term_to_atom(_, Txt), R = read ), error(syntax_error(I), string(_, P)), R = syn(I, P)).
 t_rm01(R) :- catch((rdd('_{a:1}', R)), error(SsuE, _), R = raised(SsuE)).
 t_rm02(R) :- catch((rdd('Tag{a:1,b:2}', R)), error(SsuE, _), R = raised(SsuE)).

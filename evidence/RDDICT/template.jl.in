@@ -4,7 +4,7 @@
 # var_tag flag's setter and getter (os/pl-prologflag.c setVarTagFlag/getVarTagFlag) against swipl 10.1.19:
 #   * A PROGRAM consulted by the kernel's loader and cases `t_<id>(R)` run in order in one database, each wrapped in
 #     `catch(Goal, error(SsuE, _), R = raised(SsuE))`; the driver and the term encoder are test_dict_preds_swipl.jl's (one extractor, both sides).
-#     A row reads a TEXT with term_to_atom/2 and observes the term through helpers that hold no dict syntax (rdd, rdv, rda, rdx, rds).
+#     A row reads a TEXT with term_to_atom/2 and observes the term through helpers that hold no dict syntax (rdd, rdv, rdw, rda, rdx, rds; rdp reads with subterm_positions).
 #   * Every answer line is swipl's, PINNED (swipl 10.1.19-1-gcbf4e189, evidence/RDDICT/rdd_rows.out in the wip/rddict branch, two
 #     byte-identical runs); with `swipl` on PATH the live answers are compared with the pins too.
 #   * The var_tag modes (error, warning, attvar, `#`, dict): the same nine cases per mode; swipl sets the flag by a directive atop the
