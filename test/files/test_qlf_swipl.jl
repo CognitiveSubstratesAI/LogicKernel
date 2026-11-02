@@ -136,8 +136,8 @@ const _QL_PINNED = [
 ]
 
 # LB3-L3 (D-0299): the boot compile runs with `autoload` OFF. The program is read with the flag false (swipl: the flag set before consult;
-# library(lists) loaded first because the driver's member/2 would need the autoloader); `if` carries ONE goal, so the row does not meet
-# the conjunction-directive KNOWN DIFFERENCE of the boot testset. swipl 10.1.19-1-gcbf4e189, 2026-11-01, two runs byte-identical.
+# library(lists) loaded first because the driver's member/2 would need the autoloader); `if` carries ONE goal (the boot testset's
+# conjunction directive needs ','/2, which the D stack's `_boot_control!` defines). swipl 10.1.19-1-gcbf4e189, 2026-11-01, two runs byte-identical.
 const _QL_AUTOLOAD_PROGRAM = raw"""
 :- if(current_prolog_flag(autoload, false)).
 r(autoload_off).
@@ -441,11 +441,13 @@ end
     @test LK.boot_from_source!(gd, ld, [f1, f2, "-c", f3])
     kl = _ql_query_lines(gd, ld, ["t_q01", "t_q02"])
     @test _ql_list_atoms(kl[1]) == ["one", "two"]                # f3 follows -c: not compiled
-    # KNOWN DIFFERENCE until LB4 (init.pl defines ','/2; pl-pro.c:476-540 resolveProcedure(fd, module) is called without call/1):
-    # the conjunction directive of b2.pl fails in the kernel ("directive failed"), so d(autoload_off) is never asserted.
-    # swipl answers ["autoload_off", "additional"] (autoload was off while compiling; '$load_additional_boot_files'/0 ran once, after).
-    # Pinned: the exact current answer of the kernel.
-    @test _ql_list_atoms(kl[2]) == ["additional"]
+    # swipl answers ["autoload_off", "additional"]: compileFileList sets `autoload` false before compiling the files (pl-qlf.c:4798, swipl-devel
+    # cbf4e189, PL_set_prolog_flag("autoload", PL_BOOL, false)) and true again after them (:4808), then runs
+    # '$load_additional_boot_files'/0 once. The kernel's port does the same (src/pl-qlf.jl compileFileList). The conjunction directive of
+    # b2.pl (`current_prolog_flag(autoload, false), assertz(d(autoload_off))`) needs ','/2 as a procedure (pl-pro.c:476-540 resolves
+    # the directive's functor and calls it): the D stack's `_boot_control!` defines it. Before it the directive failed ("directive failed"),
+    # d(autoload_off) was never asserted, and this row pinned ["additional"] (a KNOWN DIFFERENCE until LB4): no regression, a closed difference.
+    @test _ql_list_atoms(kl[2]) == ["autoload_off", "additional"]
     @test String(sym_text(LK.PL_current_prolog_flag(gd, mk_sym(_QL, :autoload), :atom))) ==
         "true"
     sf = LK.lookupSourceFile_unlocked(gd, mk_sym(_QL, Symbol(abspath(f1))), false)

@@ -67,13 +67,15 @@ fz_run(File, Ns) :-
     ( S == ok -> writeln(ok) ; S = exc(B), write('exc '), enc(B), nl ),
     forall(member(N, Ns), fz_pred(N)).
 """
-function _fm_swipl_lines(path::String, names::Vector{String})::Vector{String}
+function _fm_swipl_lines(
+    path::String, names::Vector{String}; prelude::String=""
+)::Vector{String}
     out = mktempdir() do d
         f = joinpath(d, "drv.pl")
         write(
             f,
-            _FM_DRIVER * ":- initialization((fz_run('$path', [" * join(names, ",") *
-            "]), halt)).\n"
+            _FM_DRIVER * prelude * ":- initialization((fz_run('$path', [" *
+            join(names, ",") * "]), halt)).\n"
         )
         read(pipeline(`swipl -q $f`; stdin=devnull, stderr=devnull), String)
     end
@@ -521,7 +523,10 @@ end
     swipl = get(ENV, "LOGICKERNEL_NO_SWIPL", "") == "1" ? nothing : Sys.which("swipl")
     if swipl !== nothing
         f, names = _fm_file([(id, g) for (id, g, _, _) in _FM_KNOWN])
-        @test _fm_swipl_lines(f, names)[2:end] ==
+        # the locale is set in the driver (the machine's LANG decides otherwise: CI's C locale groups nothing, a developer's
+        # en_US groups with ","; the rows' swipl answers are the grouped ones, measured on swipl 10.1.19)
+        loc = ":- locale_create(L, 'C', [thousands_sep(','), decimal_point('.'), grouping([repeat(3)])]), set_locale(L).\n"
+        @test _fm_swipl_lines(f, names; prelude=loc)[2:end] ==
             [_fm_atomline(id, sw) for (id, _, _, sw) in _FM_KNOWN]
     end
 end

@@ -14,10 +14,9 @@
 #     swipl's answer from ssu_rows.out: the `ssu` attribute (a06-a08, c19), `number_of_rules` of an SSU "fact" (c21), the clause
 #     counts after a refused assert (a14, a15), and the clause flags.
 #   * Calling an SSU predicate is SSU2's (test/core_lang/test_ssu_swipl.jl); until SSU2 it was refused by name here.
-#   * A KNOWN DIFFERENCE, pinned (the last testset): ssu_rows.out a05 (`assertz((d5(X), X > 0 => true))`, swipl
-#     `permission_error(modify, static_procedure, (',')/2)`) — the kernel defines no `','/2` procedure in `system`, so its assert
-#     path creates `user:','/2` and succeeds; a gap of the control constructs, not of SSU (`assertz((a, b))`, k01, differs the
-#     same way). Checklist item: docs/architecture.md § "SSU1".
+#   * A clause for a control construct (the last testset): ssu_rows.out a05 (`assertz((d5(X), X > 0 => true))`) and k01
+#     (`assertz((a, b))`) raise swipl's `permission_error(modify, static_procedure, (',')/2)` — parity rows, since the D stack's
+#     `_boot_control!` (src/pl-ext.jl:240, commit 43f1b95) defines `system:','/2` as boot/init.pl does.
 using Test, LogicKernel
 const LK = LogicKernel
 
@@ -557,33 +556,28 @@ _su_vm_name(l::String)::String =
     @test count(l -> endswith(l, "i_ssu_choice"), reduce(vcat, [x[3] for x in _SU_VM])) >= 6
 end
 
-# ---- KNOWN DIFFERENCE (checklist item: docs/architecture.md § "SSU1", pending the control-construct procedures): asserting a
-# clause whose head is a control construct. swipl raises permission_error(modify, static_procedure, (',')/2) — `','/2` is a
-# system procedure there; the kernel defines no `system:','/2` procedure (`isStaticSystemProcedure` finds none), so its assert
-# path creates `user:','/2` and the assert succeeds: R stays unbound. Not an SSU gap: the plain `assertz((a, b))` (k01) differs
-# the same way. Each row runs in a database of its own (k01 first would make `','/2` a normal predicate and a05's SSU clause a
-# permission_error(assert, …)).
-const _SU_KD = [
-    # (id, goal, the kernel's line (PINNED, current), swipl 10.1.19's line (ssu_rows.out a05; k01 the same ball))
+# ---- a clause whose head is a control construct (a05, k01): swipl raises permission_error(modify, static_procedure, (',')/2) —
+# `','/2` is a system procedure there. The kernel answers the same since the D stack's `_boot_control!` defines `system:','/2`
+# (`isStaticSystemProcedure` finds it), so the assert path raises it too (src/pl-ext.jl:240, commit 43f1b95). Each row runs in a
+# database of its own (k01 first would make `','/2` a normal predicate and a05's SSU clause a permission_error(assert, …)).
+const _SU_PARITY = [
+    # (id, goal, swipl 10.1.19's line (ssu_rows.out a05; k01 the same ball))
     (
         "a05", raw"catch(assertz((d5(X), X > 0 => true)), error(E, _), true), R = E",
-        "t_a05 c[116,95,97,48,53]/1(V0)",
         "t_a05 c[116,95,97,48,53]/1(c[112,101,114,109,105,115,115,105,111,110,95,101,114,114,111,114]/3(a[109,111,100,105,102,121],a[115,116,97,116,105,99,95,112,114,111,99,101,100,117,114,101],c[47]/2(a[44],i2)))"
     ),
     (
         "k01", raw"catch(assertz((a, b)), error(E, _), true), R = E",
-        "t_k01 c[116,95,107,48,49]/1(V0)",
         "t_k01 c[116,95,107,48,49]/1(c[112,101,114,109,105,115,115,105,111,110,95,101,114,114,111,114]/3(a[109,111,100,105,102,121],a[115,116,97,116,105,99,95,112,114,111,99,101,100,117,114,101],c[47]/2(a[44],i2)))"
     )
 ]
 
-@testset "KNOWN DIFFERENCE: a clause for ','/2 (a05, k01) — the kernel's answer pinned, swipl's beside it" begin
-    for (id, goal, kernel_line, swipl_line) in _SU_KD
+@testset "a clause for ','/2 (a05, k01) raises swipl's permission_error" begin
+    for (id, goal, swipl_line) in _SU_PARITY
         f = joinpath(mktempdir(), "kd.pl")
         write(f, "t_$(id)(R) :- ($goal).\n")
         kl, _, _ = _su_kernel(f, ["t_$(id)"])
-        @test kl == ["ok", kernel_line]
-        @test kernel_line != swipl_line                  # still a difference: the day it closes, this row moves to _SU_CASES
+        @test kl == ["ok", swipl_line]
         swipl = get(ENV, "LOGICKERNEL_NO_SWIPL", "") == "1" ? nothing : Sys.which("swipl")
         if swipl !== nothing
             @test _su_swipl_lines(f, ["t_$(id)"]) == ["ok", swipl_line]

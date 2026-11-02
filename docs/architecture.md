@@ -5299,12 +5299,10 @@ What SSU1 ports (pl-comp.c, pl-proc.c, pl-supervisor.c, pl-error.c, boot/init.pl
 - **Not here:** `'$rule'/3`, clause/3's `CLAUSE_TYPE_MASK` test and `fixup_ssu` (instance/2's clause branch) came with D1; rule/2,3 and
   expand.pl's guard expansion (LB4); listing (LB5); `fix_ssu`/`check_ssu` (reconsult: LB6); QLF flags (no QLF).
 
-Known-difference checklist item (SSU1, pending the control-construct procedures): **a05** `assertz((d5(X), X > 0 => true))`
-and **k01** `assertz((a, b))` succeed in the kernel, where swipl 10.1.19 raises
-`permission_error(modify, static_procedure, (',')/2)`: the kernel defines no `system:','/2` procedure
-(`isStaticSystemProcedure` finds none), so `assert_term!` creates `user:','/2`. Not an SSU gap (k01 has no SSU neck). Pinned
-in test/compile/test_ssu_compile_swipl.jl (`_SU_KD`: the kernel's line, swipl's beside it, re-run live); it closes when the
-control constructs are system procedures.
+Closed difference (SSU1 checklist, closed by the D stack): **a05** `assertz((d5(X), X > 0 => true))` and **k01** `assertz((a, b))`
+raise swipl 10.1.19's `permission_error(modify, static_procedure, (',')/2)` since `_boot_control!` (src/pl-ext.jl:240) defines
+`system:','/2`, so `isStaticSystemProcedure` finds it. Not an SSU gap (k01 has no SSU neck). Parity rows in
+test/compile/test_ssu_compile_swipl.jl (`_SU_PARITY`, swipl's line re-run live).
 
 Tests: test/compile/test_ssu_compile_swipl.jl (the v-, c- and a-rows of evidence/r2/design/ssu_rows.out, swipl 10.1.19;
 test/db/test_assert_swipl.jl's SSU refusal flipped to the assert's answer and the call's refusal); mutants: tools/mutants/SSU1.py.
