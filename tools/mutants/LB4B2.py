@@ -12,10 +12,10 @@
 # The deletions of b2 (boot/init.jl, the `_boot_*!` stand-ins of src/pl-ext.jl, `ld.variable_names`) remove code: no
 # mutant mutates code that is gone; the boot that replaces them is mutated at its entry (Q1, G1, G2).
 # NOT LISTED (each with its reason):
-#   * boot_global_data's H11 check (`after == empty_at || error(...)`) and the check of boot_from_source!'s result
-#     (Q1 mutates the call itself): guards on invariants a correct boot keeps; a mutant that drops one changes nothing a
-#     test sees unless the boot is broken, which no row can make it be without another mutant. A guard proved by the
-#     boot run (G9), recorded here instead of as two certain survivors.
+#   * boot_global_data's H11 check itself (`(left != empty_at && after == left) || error(...)`) and the check of
+#     boot_from_source!'s result (Q1 mutates the call itself): guards on invariants a correct boot keeps; a mutant that
+#     drops one changes nothing a test sees unless the boot is broken. H11 is proved able to FAIL by H11a-H11c instead
+#     (a boot leaving one frame fewer, one more, a wrong leftover count: each trips H11 at the boot).
 #   * printMessage's `in_print_message >= OK_RECURSIVE * 3` fatal error and the `saveWakeup` failure exit: reached
 #     only by 30 nested print_message/2 calls or a failing foreign-frame open; no row reaches either.
 #   * b_throw_resume's emergency-space check before the wrap (`has_emergency_space_global(ld, 3) || error(...)`): the
@@ -208,7 +208,7 @@ WA = "src/pl-wam.jl"
 MUTANTS = [
     # ── the boot: the booted constructor, the template's copy, the registry's default build ──
     dict(id="LB4B2-Q1 the boot compiles nothing: the database is setupProlog's alone (KILL T1's common-rows count, every boot test)", file=QL, targets=TBOOT,
-         old="    boot_from_source!(gd, ld, [initpl]) || error(\"boot_global_data: the boot compilation of $initpl failed\")\n",
+         old="    boot_from_source!(gd, ld, argv) || error(\"boot_global_data: the boot compilation of $initpl failed\")\n",
          new="    true || error(\"boot_global_data: the boot compilation of $initpl failed\")\n"),
     dict(id="LB4B2-G1 PL_global_data{T}() is the unbooted setupProlog database, not the template's copy (KILL T1, T2, T3)", file=GL, targets=TBOOT,
          old="PL_global_data{T}() where {T} = PL_global_data_from_template(T)\n",
@@ -223,6 +223,16 @@ MUTANTS = [
     dict(id="LB4B2-W2 addClauseWic's pl_write(term) dropped (KILL test_qlf_swipl.jl 'Failed to compile': the term after the text)", file=QL, targets=TQ,
          old="    _qlf_pl_write!(ld, term)                        # pl_write(term)\n",
          new=""),
+    # ── src/pl-qlf.jl: H11, the boot's leftover as upstream's compileFile leaves it (pl-qlf.c:4726-4741) ──
+    dict(id="LB4B2-H11a the end_of_file frame is discarded before the break: one frame fewer (KILL H11 at the boot, every boot test; test_qlf_swipl.jl's leftover rows)", file=QL, targets=TQ,
+         old="        (eof !== nothing && sym_key(eof) == sym_key(mk_sym(T, :end_of_file))) && break\n",
+         new="        (eof !== nothing && sym_key(eof) == sym_key(mk_sym(T, :end_of_file))) && (PL_discard_foreign_frame(ld, cid); break)\n"),
+    dict(id="LB4B2-H11b compileFile opens one frame more before its loop (KILL H11 at the boot, every boot test; test_qlf_swipl.jl's leftover rows)", file=QL, targets=TQ,
+         old="    qlfStartFile(state, sf)\n",
+         new="    qlfStartFile(state, sf)\n    PL_open_foreign_frame(ld)\n"),
+    dict(id="LB4B2-H11c the leftover frame counted one reference short (KILL H11 at the boot, every boot test; test_qlf_swipl.jl's leftover rows)", file=QL, targets=TQ,
+         old="nfiles * (2 + SIZEOF_FLIFRAME + 2)",
+         new="nfiles * (2 + SIZEOF_FLIFRAME + 1)"),
     # ── src/pl-error.jl: printMessage calls print_message/2 ──
     dict(id="LB4B2-E1 printMessage never calls print_message/2, the fallback branch always (KILL test_load_swipl.jl's message_hook rows, T4)", file=ER, targets=TP,
          old="            if isDefinedProcedure(gd, pred) && ld.in_print_message <= OK_RECURSIVE\n",

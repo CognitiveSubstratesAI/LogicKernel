@@ -2929,6 +2929,9 @@ _manifest_gd_template(::Type{T}) where {T} = (
     (LK.setupProlog, Tuple{Type{T}}, false),
     (LK.boot_global_data, Tuple{Type{T}}, false),
     (LK._qlf_pl_write!, Tuple{LK.PL_local_data{T}, Int}, false),
+    # LB4 b2 first boot (G9): H11's reader and compileFile's leftover (loader_boot.md H11, pl-qlf.c:4726-4741)
+    (LK.boot_stacks, Tuple{LK.PL_local_data{T}}, false),
+    (LK.compileFile_leaves, Tuple{NTuple{4, Int}, Int}, false),
     # LB4 b2 first boot (G9): meta_declaration's ReadingSource branch (pl-srcfile.c setMetapredicateSource)
     (LK.setMetapredicateSource, Tuple{LK.PL_local_data{T}, LK.SourceFile{T}, LK.Procedure{T}, Vector{LK.arg_info}}, false),
     # LB4 b2 first boot (G9): the built-in atoms' symbols at database setup (pl-atom.c registerBuiltinAtoms' a->name)

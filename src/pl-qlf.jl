@@ -360,8 +360,9 @@ end
 # template registry (src/gd_template.jl). `PL_initialise`'s order (pl-init.c:1603-1666): `setupProlog`, then the boot
 # session over the files the build passes, `-b HOME/boot/init.pl` (src/CMakeLists.txt:357-361), whose `'$:-'` loads
 # HOME/boot/load.pl and the files it lists (init.pl:4797-4806). It runs on a LOCAL DATA OF ITS OWN, which is dropped:
-# the template keeps nothing of it, and H11 asserts the boot left its stacks as it found them (no frame or term reference
-# made by the boot survives it), so the copies made from the template carry none.
+# the template keeps nothing of it. H11 asserts the boot left the stacks exactly as upstream's boot leaves them
+# (`compileFile_leaves`, plus the one trail entry the call of `'$load_additional_boot_files'` keeps): no other frame or
+# term reference made by the boot survives it.
 # DIVERGES: `threads` is false (src/os/pl-prologflag.jl, read-only), upstream's own single-thread build
 # (`MULTI_THREADED=OFF`: os/pl-prologflag.c:2620-2622, CMakeLists.txt:92), where the oracle is a threaded build: the
 # `:- if(current_prolog_flag(threads, true))` sections of the boot (init.pl:2557, 2720, 2735, 2754-2785, 982,
@@ -385,11 +386,39 @@ function boot_global_data(::Type{T})::PL_global_data{T} where {T}
         "boot_global_data: $initpl is missing: build the home tree first (julia tools/build_home.jl)"
     )
     ld = PL_local_data{T}(gd)
-    empty_at = (ld.lTop, length(ld.trail), ld.fli_context, ld.nfliframes)   # H11: as emptyStacks! left them
-    boot_from_source!(gd, ld, [initpl]) || error("boot_global_data: the boot compilation of $initpl failed")
-    after = (ld.lTop, length(ld.trail), ld.fli_context, ld.nfliframes)
-    after == empty_at || error("boot_global_data: the boot left its stacks at $after, not $empty_at (H11)")
+    argv = [initpl]
+    empty_at = boot_stacks(ld)                                    # H11: as emptyStacks! left them
+    boot_from_source!(gd, ld, argv) || error("boot_global_data: the boot compilation of $initpl failed")
+    after = boot_stacks(ld)
+    # H11: compileFile's leftovers per file, then the one entry the '$load_additional_boot_files' call keeps (measured)
+    left = compileFile_leaves(empty_at, length(argv)) .+ (0, 1, 0, 0)
+    (left != empty_at && after == left) ||
+        error("boot_global_data: the boot left its stacks at $after, not $left (from $empty_at, H11)")
     return gd
+end
+
+# ORIGINAL (loader_boot.md H11): the one reader of the four positions H11 compares, used on both sides.
+"The stack positions H11 compares (`ld.lTop`, the trail's length, `ld.fli_context`, `ld.nfliframes`)."
+boot_stacks(ld::PL_local_data{T}) where {T} =
+    (ld.lTop, length(ld.trail), ld.fli_context, ld.nfliframes)::NTuple{4, Int}
+
+# ORIGINAL (loader_boot.md H11): what `compileFile` leaves on the stacks, as upstream's does (swipl-devel cbf4e189,
+# src/pl-qlf.c:4700 `f`, os/pl-file.c:4446-4485 pl_see's `mode`, pl-qlf.c:4726-4741 the per-clause frame `cid`
+# with `t` and `directive`, left open by the `break` at end_of_file, before `PL_discard_foreign_frame(cid)`): per
+# file, two references, then that frame (its header and two references) with the one trail entry the read of
+# end_of_file makes in it (measured). Upstream's boot session halts after `compileFileList`, so the leftover is
+# never freed there. A `read_clause` that fails takes the loop's `continue` and leaves one frame more (pl-qlf.c:
+# 4734-4739); a syntax error under the default `syntax_errors` is reported and read past, so it takes no `continue`.
+"""
+    compileFile_leaves(at, nfiles) -> NTuple{4,Int}
+
+The `boot_stacks` reading after `compileFile` ran over `nfiles` files from the reading `at`, with no `read_clause`
+failure: per file 2 references and an open foreign frame of `SIZEOF_FLIFRAME` + 2, one trail entry in it.
+"""
+function compileFile_leaves(at::NTuple{4, Int}, nfiles::Int)::NTuple{4, Int}
+    nfiles >= 1 || error("compileFile_leaves: nfiles = $nfiles, at least one file")
+    ltop, trail, _, nframes = at
+    return (ltop + nfiles * (2 + SIZEOF_FLIFRAME + 2), trail + nfiles, nframes + nfiles, nframes + nfiles)
 end
 
 # ── the predicates of pl-qlf.c (BeginPredDefs(wic), pl-qlf.c:4953-4976) ───────────────────────────────

@@ -475,3 +475,20 @@ NEXT AGENT (in order): (1) validate tools/mutants/LB4B2.py (checker as in WRITER
   g9_boot_probe2.jl, its temporary addClauseWic catch), the five files ALONE in order (test_boot_messages,
   test_boot_image, test_boot_clauses, test_load, test_qlf); dict-syntax lines wait for RDDICT; flags F2,F4-F8 are
   the audit's. Owed at the gate: alloc pins x3, pkgtest_way for the two changed test files, battery on a fresh name.
+
+## State (boot-files agent, 2026-11-02 ~22:10Z; H11 option 2 as ruled, provisional and pending audit)
+H11 FIX: src/pl-qlf.jl `boot_stacks` (one reader for both sides) + `compileFile_leaves(at, nfiles)` (upstream's
+  leftover: pl-qlf.c:4726-4741 end_of_file `break`; 2 refs + frame of SIZEOF_FLIFRAME+2 + 1 trail entry per file) and
+  boot_global_data asserts `left != empty_at && after == left` (left = leaves + the 1 entry '$load_additional_boot_files'
+  keeps). Rows: test_qlf_swipl.jl q01 and the syntax-error row check the leftover (a syntax error takes no `continue`;
+  NO row reaches the `continue` itself). Manifest += 2. Mutants LB4B2-H11a/b/c (frame fewer / more / miscounted),
+  Q1's `old` re-fit; checker: 38 mutants, 0 bad. loader_boot.md H11 restated: lk-channel-gate dabef79 (pushed).
+RUN (run tree, the fix applied UNSTAGED by `git apply`; the PROBE2-TEMP catch in addClauseWic REVERTED with `git restore`
+  after a probe showed it caught 0 clauses): the five files x 3 types: boot_messages 12/12 on each (0 SKIP/Warning);
+  the other four the same 21 errors on each type, now ONE NEW cause past H11: "copy_global_data: the template holds an
+  open stream" (src/gd_template.jl:35). Probe: after the boot gd.stream_table holds 3 live IOSTREAMs = the boot ld's
+  IO_streams 1-3, registered by initIO (os/pl-file.jl:203-205, pl-file.c initIO "add for enumeration", S2a) when the
+  boot first writes. DESIGN STOP (dispatcher): (1) boot_global_data clears the dropped boot ld's three standard-stream
+  slots of gd.stream_table after H11 (ORIGINAL, like a close: the slot becomes `nothing`); (2) the copy policy leaves
+  SIO_STDIO streams out (copies `nothing` there); (3) the boot ld gets no initIO registration. Recommendation (1).
+  The H11 mutants are NOT run: a boot test errors at the copy either way until this is fixed.

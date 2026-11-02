@@ -225,8 +225,11 @@ end
     gd, ld, f = _ql_db(_QL_PROGRAM)
     ld.read_source.file = _qls("outer")                  # the source location pl_see saves and pl_seen restores
     ld.read_source.position.lineno = 7
+    at = LK.boot_stacks(ld)
     rc = LK.compileFile(gd, ld, nothing, f)
     @test rc
+    # H11 (loader_boot.md): the leftover of upstream's compileFile (pl-qlf.c:4726-4741), one file
+    @test LK.boot_stacks(ld) != at && LK.boot_stacks(ld) == LK.compileFile_leaves(at, 1)
     @test sym_key(ld.read_source.file) == sym_key(_qls("outer")) &&
         ld.read_source.position.lineno == 7
     kernel = vcat(["ok"], _ql_query_lines(gd, ld, _QL_NAMES))
@@ -400,8 +403,14 @@ end
     gd, ld, f = _ql_db("r(a).\nfoo(.\nr(b).\nt_q01(L) :- findall(X, r(X), L).\n")
     lk_install_message_collector!(gd, ld)       # the report is print_message/2's since LB4 b2
     lk_take_messages!(ld)
+    at = LK.boot_stacks(ld)
     rc = LK.compileFile(gd, ld, nothing, f)
+    left = LK.boot_stacks(ld)
     @test rc
+    # H11 (loader_boot.md): compileFile leaves what upstream's leaves (pl-qlf.c:4726-4741, the end_of_file `break`);
+    # the syntax error is read past, so no `continue` frame is added: one frame, as for a file without one
+    @test left != at && left == LK.compileFile_leaves(at, 1)
+    @test left[4] == at[4] + 1
     @test _ql_list_atoms(_ql_query_lines(gd, ld, ["t_q01"])[1]) == ["a", "b"]
     # read_clause/3 reports the error itself (syntax_errors dec10, src/pl-read.jl:4099, reportReadError) and reads on, so
     # the loop's own "Syntax error" branch is not reached; the report is a message TERM, not text
