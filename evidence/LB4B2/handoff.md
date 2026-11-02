@@ -244,3 +244,19 @@ FLAG F8 (audit): `open_shared_object` is undefined in the kernel (D-0151 item 6,
   ensure_shlib/0 undefined, unload_file_/1 one clause (T1/T3 pin these as DIVERGES). D-0151 ruled the flag, not this
   boot-file consequence: needs the audit's nod. Every other `:- if` of boot/*.pl reads a flag both sides agree on
   (windows/apple/emscripten/prolog_debug undefined in both; threads; open_shared_object).
+- Writer 6 FORCED HAND-BACK by the 150k cap hook before T2 was committed.
+T2 DESIGN (measured, not committed): evidence/LB4B2/t2_encoder_prototype.pl is the encoder prototype (run in swipl's boot
+  as a 2nd file + a 1-line `:- ...` file; boot mode: autoload false, an undefined predicate is FATAL, so boot/C preds only).
+  Found: a full text fixture is ~1.3 MB (3432 clauses, ~380 B/line) -> instead ONE Prolog driver for BOTH sides printing
+  `t2 MODcodes NAMEcodes ARITY NCLAUSES HASH` per STATIC Prolog predicate (dynamic = boot state with this machine's paths:
+  T1 covers their counts), HASH = fold H=(H*257+C) mod 2147483647 over each clause's encoding (vars numbered by first
+  occurrence => equal text == =@=), 10 between clauses. The kernel loads the same driver (load_file!) and enumerates
+  lb4b2c_line/1 via query_answers. FIX NEEDED in the prototype: compound_name_arity of a dict gives C'dict' (a reserved
+  symbol, atom_codes raises; init.pl:4552-4554 '$option'/2 uses `:<`): encode a non-atom functor name with
+  format(codes(NC), "~w", [N]) and tag `r`. Planned files: test/db/test_boot_clauses_swipl_rows.pl/.out +
+  test/db/test_boot_clauses_swipl.jl; config rows pinned DIVERGES (kernel hash pinned by G9): '$error_count'/2,
+  '$mt_load_file'/4, '$toplevel':main_thread_init/0 (threads), '$syspreds':unload_file_/1 (F8).
+  F3 MATTERS FOR T2: expand.pl:1368-1370 simplify/4 is skipped when optimise is false, and init.pl:4118 `=>` guards; the
+  boot sets -O, so a kernel boot without -O gives other bodies. Suggest: also generate the oracle WITHOUT -O and count
+  the differing predicates for the audit's F3 call.
+NEXT AGENT: (1) T2 as above; (2) G7 tools/mutants/LB4B2.py; (3) G8 manifest + docs block; (4) G9 needs a daemon.
