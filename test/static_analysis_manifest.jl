@@ -2099,8 +2099,8 @@ function _manifest_index(T)
         (LK.assert_term!, Tuple{GD, LD, Int, Int}, false),
         # R1f — the minimal loader: the consult path of assert_term (src/pl-comp.jl), the source
         # files (pl-srcfile.jl), the stream's file name (os/pl-file.jl), the predicate attributes
-        # (pl-proc.jl), read_clause and the singletons (pl-read.jl), the messages (pl-error.jl), and
-        # boot/init.jl's driver
+        # (pl-proc.jl), read_clause and the singletons (pl-read.jl), the messages (pl-error.jl); since
+        # LB4 b2 `load_file!` is `user:load_files/2` through query_answers (src/pl-wam.jl)
         (LK.assert_term!, Tuple{GD, LD, Int, Int, Int, Nothing, Nothing, Int}, false),
         (LK.assert_term!, Tuple{GD, LD, Int, Int, Int, T, LK.sourceloc{T}, Int}, false),
         (LK.record_clause, Tuple{LD, Int, Int, Int, Int}, false),
@@ -2248,30 +2248,6 @@ function _manifest_index(T)
         (LK.set_module_read_data, Tuple{LK.read_data{T}, Int}, false),
         (LK.read_clause, Tuple{GD, LD, LK.IOSTREAM, Int, Int}, false),
         (LK.load_file!, Tuple{GD, LD, String}, false),
-        (LK._init_is, Tuple{LD, Int, Symbol, Int}, false),
-        (LK._init_is_true, Tuple{LD, Int}, false),                   # SSU1: the guard rewrite
-        (LK.valid_term, Tuple{LD, Int}, false),
-        (LK.compile_term!, Tuple{GD, LD, Int, T}, false),
-        (LK._init_error, Tuple{LD, Int}, false),
-        (LK._init_error, Tuple{LD, Symbol}, false),
-        (LK._init_error, Tuple{LD, Symbol, Int}, false),
-        (LK._init_error, Tuple{LD, Symbol, Int, Int}, false),
-        (LK._init_export, Tuple{LD, Int}, false),
-        (LK._init_catch, Tuple{LD, Int, Nothing}, false),
-        (LK._init_catch, Tuple{LD, Int, T}, false),
-        (LK._init_refuse, Tuple{LD, Int, Int, String, String}, false),
-        (LK._init_functor_goal, Tuple{Type{T}, T, Int}, false),
-        (LK.store_clause!, Tuple{GD, LD, Int, T}, false),
-        (LK._is_error_term, Tuple{LD, Int}, false),
-        (LK._init_call, Tuple{GD, LD, PR, Int, Nothing}, false),
-        (LK._init_call, Tuple{GD, LD, PR, Int, T}, false),
-        (LK.execute_directive!, Tuple{GD, LD, Int}, false),
-        (LK._init_conjuncts!, Tuple{Vector{Int}, LD, Int}, false),
-        (LK._init_solve, Tuple{GD, LD, Vector{Int}, Int, MOD}, false),
-        (LK.pattr_directive!, Tuple{GD, LD, Int, MOD}, false),
-        (LK.set_pattr!, Tuple{GD, LD, Int, MOD, T}, false),
-        (LK._pattr_error, Tuple{LD, Int, T}, false),
-        (LK._pi_head, Tuple{LD, Int, Int}, false),
         (LK._redefine_indicator, Tuple{GD, LD, D}, false),
         (LK.get_head_and_body_clause, Tuple{GD, LD, Int, Int, Int, Int}, false),
         (LK.is_neck, Tuple{LD, Int}, false),

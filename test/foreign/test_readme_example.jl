@@ -28,7 +28,7 @@ end
     @test occursin("query_answers(ld,", code) && occursin("load_file!(gd, ld, path)", code)
     m = Module(:ReadmeExample)
     Base.include_string(m, code, "README.md")
-    @test (m.status, m.ball, m.messages) == (:ok, nothing, Tuple{Symbol, DefaultTerm}[])
+    @test (m.status, m.ball) == (:ok, nothing)
     @test m.answers isa Vector{DefaultTerm} && length(m.answers) == 2
     @test [sym_text(child(a, 3)) for a in m.answers] == ["ann", "pat"]
     @test length(m.first) == 1 && sym_text(child(m.first[1], 2)) == "tom"

@@ -283,11 +283,10 @@ end
 function _load_program(name::String)
     gd = PL_global_data{BT}()
     ld = PL_local_data{BT}(gd)
-    st, ball, msgs = LogicKernel.load_file!(
+    st, ball = LogicKernel.load_file!(   # (since LB4 b2 its messages go to print_message/2: user_error)
         gd, ld, joinpath(@__DIR__, "..", "bench", "programs", name * ".pl")
     )
-    (st === :ok && isempty(msgs)) ||
-        error("tools/bench.jl: loading $name.pl: $st $ball $msgs")
+    st === :ok || error("tools/bench.jl: loading $name.pl: $st $ball")
     return (gd, ld)
 end
 "The clauses of `def`, in order."

@@ -968,6 +968,40 @@ function query_answers(
     return answers
 end
 
+# ORIGINAL (R2 LB4 b2-3; loader_boot.md LD7, audit D-0286 item 4): the Julia entry point of the loader. Since the boot
+# (b2-1) the database carries boot/init.pl's own loader, so this is the goal `user:load_files(Path, [])`
+# (init.pl load_files/2) run through `query_answers`: no loader of its own. The messages of the load go where
+# swipl's go, through print_message/2 (boot/messages.pl): a caller that wants them defines `user:message_hook/3`
+# (LQ7), as a swipl program does. Replaces R1f's minimal loader (boot/init.jl), whose third result, the messages,
+# is gone with it (no shim, D-0286 item 4; docs/release-notes/unreleased.md).
+"""
+    load_file!(gd, ld, path) -> (status, ball)
+
+Load the Prolog file `path` into the `user` module of the database `gd` on its engine `ld`, as
+`load_files(Path, [])` (boot/init.pl). `status` is `:ok` when the goal succeeds, `:failed` when it
+fails, or `:exception` with `ball`, the uncaught exception that ended the load; `ball` is `nothing`
+otherwise. The load's messages are print_message/2's (define `user:message_hook/3` to collect them).
+"""
+function load_file!(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, path::AbstractString
+)::Tuple{Symbol, Union{Nothing, T}} where {T}
+    ld.GD === gd || throw(ArgumentError("load_file!: the engine `ld` is not one of `gd`"))
+    goal = mk_expr(
+        T,
+        T[
+            mk_sym(T, :(:)), mk_sym(T, :user),
+            mk_expr(T, T[mk_sym(T, :load_files), mk_sym(T, Symbol(abspath(path))), mk_nil(T)]),
+        ]
+    )
+    answers = try
+        query_answers(ld, goal; limit=1)
+    catch e
+        e isa PrologException || rethrow()
+        return (:exception, e.ball::T)
+    end
+    return (isempty(answers) ? :failed : :ok, nothing)
+end
+
 # PORT: pl-wam.c callCleanupHandler
 # DIVERGES: the frame is an index (it cannot move); the arguments are positions. NOT PORTED:
 # `startCritical`/`endCritical` around the handler (no signals); the arity-5 case

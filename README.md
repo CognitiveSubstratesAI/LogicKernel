@@ -94,7 +94,7 @@ write(path, """
     """)
 gd = LogicKernel.PL_global_data{T}()           # a database
 ld = LogicKernel.PL_local_data{T}(gd)          # an engine for it: the object a host holds
-status, ball, messages = load_file!(gd, ld, path)   # (:ok, nothing, []) — consult/1's messages, not printed
+status, ball = load_file!(gd, ld, path)   # (:ok, nothing): load_files/2; its messages go to print_message/2
 
 answers = query_answers(ld, f(:grandparent, s(:tom), v(1)))
 [sym_text(child(a, 3)) for a in answers]      # ["ann", "pat"]: an answer is the goal, solved
@@ -114,9 +114,9 @@ its ball as a term). The goal is a term (an atom or a compound with an atom head
 module-qualified `M:G` — taken as SWI-Prolog's `PL_call` takes it: the qualifiers stripped, the
 predicate resolved in `M`; anything else is an `ArgumentError`); goals as text, bindings by variable
 name and a lazy iterator come with R2 and add to this call, they do not change it. `PL_global_data{T}()`, `PL_local_data{T}(gd)` and
-`load_file!(gd, ld, path)` are the CURRENT entry points: the loader is the minimal one (boot/init.pl's
-consult loop, `user` only) and becomes `consult` in R2 — the call stays, its semantics are not
-promised. One engine is not thread-safe: one task at a time. This block runs as a test
+`load_file!(gd, ld, path)` are the CURRENT entry points: a database is booted from SWI-Prolog's own boot
+files, and `load_file!` runs their `load_files(Path, [])` in `user`, returning `(status, ball)`; the
+load's messages go through print_message/2 (define `user:message_hook/3` to collect them). One engine is not thread-safe: one task at a time. This block runs as a test
 (`test/foreign/test_readme_example.jl`).
 
 ## Layout — a mirror of swipl-devel

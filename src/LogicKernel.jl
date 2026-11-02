@@ -87,7 +87,6 @@ include("os/pl-fmt.jl")        # swipl-devel src/os/pl-fmt.c — format/2,3, for
 include("pl-ext.jl")           # swipl-devel src/pl-ext.c — registering the built-ins; their dispatch
 include("gd_template.jl")       # ORIGINAL — the template database: a copy of a booted PL_global_data{T} per new database (LB4 b1, dormant)
 include("boot_image.jl")       # ORIGINAL — the readers of a booted database: T1 predicates, T3 source files (LB4 b1-3)
-include("../boot/init.jl")     # swipl-devel boot/init.pl — the minimal loader (R1f): load_file!
 include("precompile_workload.jl")  # ORIGINAL — the hot paths, compiled at precompile time (LAST)
 
 # ── exports ─────────────────────────────────────────────────────────────────────────────────────
@@ -113,7 +112,7 @@ export compareReservedSymbol
 # the default term type (src/default_term.jl)
 export Term, DefaultTerm, sym_term, gnd_term, var_term, gnd_value_key, sym_name, gnd_value
 # running Prolog from Julia (README "Using it from Julia"): the query, stable from v0.1.0-pre.1
-# (src/pl-wam.jl), and the current loader (boot/init.jl; it becomes consult in R2, the call stays)
+# (src/pl-wam.jl), and the loader (`load_file!`: boot/init.pl's load_files/2 since LB4 b2, src/pl-wam.jl)
 export query_answers, PrologException, load_file!
 
 end # module LogicKernel
