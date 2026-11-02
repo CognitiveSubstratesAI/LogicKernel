@@ -28,11 +28,12 @@
 # calls (`I_CONTEXT`, `I_CALLM`, `I_DEPARTM`: `M:Goal` in a clause body and `M:Head :- Body`, in
 # pl-vmi.c's order), then MOD4's meta-argument supervisors (`S_MQUAL`, `S_LMQUAL`: the module
 # qualification of a `meta_predicate` argument, in pl-vmi.c's order), then MOD3b's `Goal@Module`
-# calls (`I_DEPARTATM`, `I_CALLATM`, `I_DEPARTATMV`, `I_CALLATMV`, in pl-vmi.c's order).
+# calls (`I_DEPARTATM`, `I_CALLATM`, `I_DEPARTATMV`, `I_CALLATMV`, in pl-vmi.c's order), then ARGINL's
+# inline `arg/3` (`B_ARG_CF`, `B_ARG_VF`, in pl-vmi.c's order).
 #
 # NOT EMITTED, so not declared: H_SMALLINTW/B_SMALLINTW/L_SMALLINTW (only where a code word is
 # narrower than a word, `CODES_PER_WORD > 1`: on 64-bit swipl every tagged integer is a SMALLINT,
-# probed in 10.1.16); `B_ARG_*`, `I_USERCALL0` (its work is `I_CALL1`'s
+# probed in 10.1.16); `I_USERCALL0` (its work is `I_CALL1`'s
 # here), `I_RESET`, `I_CUTCHP`,
 # `I_YIELD` (after V9). `I_CUT` is declared and compiled (a clause-level `!`, user
 # 2026-10-05) and, since V6a, executed.
@@ -49,7 +50,8 @@
 # procedure in the clause's procedure table; the procedure-module operand (the first) of
 # `I_CALLATM`/`I_DEPARTATM`/`I_CALLATMV`/`I_DEPARTATMV` (MOD3b) is the module's index or 0 for "the
 # clause's module" (upstream: NULL), their procedure operand keeps `CA1_PROC` as `I_CALLM`'s; a
-# `*_SMALLINT` operand is the tagged word itself, as upstream's (L1d step 4). The
+# `*_SMALLINT` operand is the tagged word itself, as upstream's (L1d step 4), and `B_ARG_CF`'s
+# `CA1_INTEGER` operand the integer itself as a signed code (`scode`; as `A_ADD_FC`'s). The
 # `argtype` column keeps upstream's kinds, so a
 # reader decodes each operand by its kind as upstream does — a literal kind through the table.
 
@@ -590,6 +592,12 @@ const I_DEPARTATMV = code(155)
 # PORT: pl-vmi.c I_CALLATMV
 "Call a procedure with the context module in a variable (`Goal@M` in a body); operands: the procedure-module, the variable, the procedure (pl-vmi.c; MOD3b)."
 const I_CALLATMV = code(156)
+# PORT: pl-vmi.c B_ARG_CF
+"`arg(Int, Var, FirstVar)` inline in a body: operands the integer, the compound's variable, the first variable (pl-vmi.c)."
+const B_ARG_CF = code(157)
+# PORT: pl-vmi.c B_ARG_VF
+"`arg(Var, Var, FirstVar)` inline in a body: operands the index variable, the compound's variable, the first variable (pl-vmi.c)."
+const B_ARG_VF = code(158)
 
 # PORT: pl-incl.h code_info
 # DIVERGES: `arguments` counts the kernel's operand WORDS — a literal is one (see above), where
@@ -763,7 +771,9 @@ const _CODE_TABLE = (
     code_info(:I_DEPARTATM, VIF_BREAK, 3, (CA1_MODULE, CA1_MODULE, CA1_PROC, 0x00)),
     code_info(:I_CALLATM, VIF_BREAK, 3, (CA1_MODULE, CA1_MODULE, CA1_PROC, 0x00)),
     code_info(:I_DEPARTATMV, VIF_BREAK, 3, (CA1_MODULE, CA1_VAR, CA1_PROC, 0x00)),
-    code_info(:I_CALLATMV, VIF_BREAK, 3, (CA1_MODULE, CA1_VAR, CA1_PROC, 0x00))
+    code_info(:I_CALLATMV, VIF_BREAK, 3, (CA1_MODULE, CA1_VAR, CA1_PROC, 0x00)),
+    code_info(:B_ARG_CF, VIF_BREAK, 3, (CA1_INTEGER, CA1_VAR, CA1_FVAR, 0x00)),
+    code_info(:B_ARG_VF, VIF_BREAK, 3, (CA1_VAR, CA1_VAR, CA1_FVAR, 0x00))
 )
 
 # PORT: pl-codetable.c codeTable
