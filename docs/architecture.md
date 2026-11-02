@@ -6334,3 +6334,42 @@ paths with (`atomic_list_concat/2,3`, `sub_atom/5`) and boot/messages.pl its mes
 
 Tests: test/core_lang/test_p2_swipl.jl (rows p01-p70; pins from swipl 10.1.19, two byte-identical runs; generator
 evidence/P2/gen_rows.py). Mutants: tools/mutants/P2.py.
+
+## RD1 — pl-read.c's stream readers: `read_term/2,3`, `read/1,2`, `$raw_read/1,2`, `$is_named_var/1` (R2)
+
+What RD1 registers (edit-only when written: nothing was compiled; the gate decides). The predicates that read a term from a
+stream, over the reader R1 built (`read_term_from_stream`); the pin tree is swipl-devel cbf4e189 (10.1.19):
+
+* **Ported (C)**, pl-read.c @ cbf4e189: `read_term` as `read_term/3` (`pl_read_term3_va`, `PRED_IMPL` with `PL_FA_ISO`, pl-read.c:7108-7124,
+  table entry 7444) and `read_term/2` (`pl_read_term2_va`, input from `getTextInputStream(ld, 0)`, pl-read.c:7129-7145, table 7445);
+  `is_named_var` as `$is_named_var/1` (`pl_is_named_var1_va` over `atom_is_named_var`, pl-read.c:537-545, table 7451);
+  `pl_read` and `pl_read2` as `read/1,2` (pl-read.c:6738-6741 and 6713-6736; pl-ext.c:116 and 175, `ISO`); `pl_raw_read` and
+  `pl_raw_read2` as `$raw_read/1,2` (pl-read.c:6708-6710 and 6652-6706; pl-ext.c:117-118). The four `FRG` entries sit in
+  `foreigns` of src/pl-ext.jl in pl-ext.c's order; `PL_predicates_from_read` holds `read_term/3`, `read_term/2` and `$is_named_var/1`
+  beside the entries R1 registered, in pl-read.c's table order (7443-7456).
+* **DIVERGES:** no stream locks (`Slock`/`Sunlock`) and no `free_read_data`; `$raw_read` makes its atom from the buffer's bytes as
+  `_text_term` does (UTF-8 text), and the buffer is not written (`*top = EOS`): the text is the slice up to `top`; the stream argument
+  of a syntax error on an `open_string/2` stream keeps `unify_location`'s refusal (below), as the reader had it since R1.
+* **Rows:** test/core_text/test_read_stream_swipl.jl, 190 rows over string and file streams (pins from swipl 10.1.19, two
+  byte-identical runs; generator and pins in evidence/RD1/), 15 of them KNOWN (the kernel's answer read from the source, to be
+  settled by the gate's first run). Mutants: tools/mutants/RD1.py, 21 mutants over the wrappers, 2 declared equivalent (the two
+  `PL_FA_ISO` flag mutants; read, not run). test/core_text/test_io.jl carries the upstream `no_protocol_in` unit
+  (`read_term/3` on the `protocol` alias: `existence_error(stream, protocol)`).
+* **DEFERRED, each with its reason (none dropped):**
+  * `char_conversion/2` and `current_char_conversion/2` (pl-read.c:552-620, `FRG` at pl-ext.c:120-121): upstream keeps a static
+    257-entry table that `init_read_data` hands to the reader when the flag `char_conversion` is true (pl-read.c:851-854, 1430-1433).
+    The kernel has no home for it short of a `PL_global_data` field (a Tier-1 file), and the reader does no conversion (`read_data`
+    has no table). Left to a step that owns the field together with the conversion in `getchr__`; a half port is not made.
+  * `$qq_open/2` (pl-read.c:2425-2468, `O_QUASIQUOTATIONS`): its argument is built by the parser's quasi-quotation reader, which
+    the kernel's reader refuses (R1's decision), so no term of that shape exists. Deferred with the quasi-quotation step.
+  * `$code_class/2` (pl-read.c:7402, in the table at 7451): not in the sizing's RD1 list; library/prolog_colour.pl is its one
+    caller. Deferred to the library step.
+  * The `unify_location` refusal (src/pl-read.jl:1087, the reader's refusal exception, "a stream's location, `stream(S, L, LP, C)`"): a syntax
+    error on a stream with no file name that is no string stream. The stream table exists since S1, so the branch can be written;
+    it is the reader's internals, so it waits for a step of its own (question to the audit, flag 4 of evidence/RD1/handoff.md).
+    Rows over `open_string/2` streams that end in a syntax error hit it and are the KNOWN ones.
+  * The read_term options the reader refuses: `comments`, `var_prefix`, `quasi_quotations`, `blob` and `unicode_atoms`
+    (the refusal exception in `read_term_from_stream`, existing since R1; rows rt300-rt304 pin the refusal). Each waits for the
+    reader feature behind it (comment collection, the variable-prefix flag, quasi-quotations, blobs, Unicode atoms).
+* **Tier 3:** no Tier-1 file and no struct changed, so no `_enum_hash` entry and no allocation pins; the manifest gets seven entries
+  (test/static_analysis_manifest.jl). No battery.
