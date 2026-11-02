@@ -25,6 +25,17 @@ function PL_unify_frame(ld::PL_local_data{T}, t::term_t, fr::Int)::Bool where {T
     return PL_unify_atom(ld, t, mk_sym(T, :none))
 end
 
+# PORT: pl-trace.c PL_put_frame
+"Make `t` hold frame `fr`'s position, or `none` for no frame (pl-trace.c): the `frame_finished` event's argument."
+function PL_put_frame(ld::PL_local_data{T}, t::term_t, fr::Int)::Bool where {T}
+    if fr != 0
+        b = ld.frames[fr].base
+        @assert 0 <= b < ld.lTop                        # fr >= lBase && fr < lTop
+        return PL_put_intptr(ld, t, b)                  # (Word)fr - (Word)lBase
+    end
+    return PL_put_atom(ld, t, mk_sym(T, :none))
+end
+
 # PORT: pl-trace.c PL_unify_choice
 "Unify `t` with choice point `ch`'s position, or `none` for none (pl-trace.c)."
 function PL_unify_choice(ld::PL_local_data{T}, t::term_t, ch::Int)::Bool where {T}

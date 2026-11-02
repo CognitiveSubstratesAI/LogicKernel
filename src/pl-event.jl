@@ -5,24 +5,101 @@
 # COPYRIGHT: CWI, Amsterdam
 # COPYRIGHT: SWI-Prolog Solutions b.v.
 #
-# EVENTS (pl-event.c), the registration side of `prolog_listen/2,3`: the options (`as(first|last)`, `name(Name)`),
-# the event type (an event NAME: `abort`, `erase`, `break`, `frame_finished`, `untable`, `thread_start`, `thread_exit`,
-# `this_thread_exit`) and the closure (`callable`, module-qualified) are checked as upstream checks them; boot/tabling.pl
-# runs `prolog_listen(untable, …)` when it loads (BOOTPRED3).
+# EVENTS (pl-event.c): the event lists (`GD->event.hook`, the local data's `event.hook.onthreadexit`, a predicate's
+# `definition.events`), their registration (`prolog_listen/2,3`, `prolog_unlisten/2`: the options `as(first|last)` and
+# `name(Name)`, the event type: an event NAME or a predicate indicator, the closure: `callable`, module-qualified) and the
+# calling side (`callEventHook`, `PL_call_event_hook`, `predicate_update_event`, `table_answer_event`, `retractall_event`,
+# `delayEvents`/`sendDelayedEvents`). boot/tabling.pl runs `prolog_listen(untable, …)` when it loads.
 #
-# LEFT TO EV1: the event lists themselves (`GD->event.hook`, `LD->event.hook`, `event_callback`), the calling side
-# (`callEventHook`), `prolog_unlisten/2`, and a listener on a PREDICATE (`proc->definition->events`): each is a new
-# field of the global or local data or of the definition, a struct change. Until EV1 a registration is checked and
-# accepted, and no hook is kept or run.
+# The sites that raise an event and have a function here (R2 EV1): assertDefinition, retractClauseDefinition, retractall/1,
+# erase/1 of a record, frameFinished. Each raise site whose function is not written yet is listed in
+# evidence/EV1/handoff.md with the step that owns it (breakpoints DBG1, threads TH1, tabling TAB1, source reload, transactions).
+#
+# DIVERGES (representation only, flagged to the audit): an event list is a vector in the order the handlers are called
+# (upstream's head/tail chain and its lock: one thread); a closure is kept as the term's record (`fastheap_term`);
+# `event_type.location` names the field of `GD->event.hook` (upstream: a pointer, or an offset into the local data).
+
+# PORT: pl-event.c event_type
+# DIVERGES: `local_` for upstream's `local`; `location` is the NAME of the field of `GD->event.hook` that holds the list
+# (for a local event, of `LD`: `event_hook_onthreadexit`), where upstream keeps a pointer or an offset; `name` is the event's atom.
+"One row of the event table (pl-event.c `struct event_type`): the id, the event's name, its argument count, the list's place."
+struct event_type
+    id::Int                                     # PLEV_*
+    name::Symbol                                # the event's atom
+    argc::Int                                   # the event's arguments
+    local_::Bool                                # the list is in the local data
+    location::Symbol                            # the field of the list's holder
+end
 
 # PORT: pl-event.c PL_events
-# DIVERGES: `(name, argc)` of each distinct name: upstream's table repeats `erase` and `break` per event id and keeps a
-# list location, EV1's.
-"The events `prolog_listen/2,3` accepts, as `(name, argument count)` (pl-event.c `PL_events`: the O_ENGINES build's)."
+# DIVERGES: the twelve rows of the O_ENGINES build in upstream's order (`erase` and `break` repeat per event id: a name
+# resolves to its FIRST row); the sentinel `{0}` is not kept.
+"The events `prolog_listen/2,3` accepts (pl-event.c `PL_events`): the index in the table is the event's id plus one."
 const PL_events = (
-    (:abort, 0), (:erase, 1), (:break, 3), (:frame_finished, 1), (:untable, 1),
-    (:thread_start, 1), (:thread_exit, 1), (:this_thread_exit, 0)
+    event_type(PLEV_ABORT, :abort, 0, false, :onabort),
+    event_type(PLEV_ERASED_CLAUSE, :erase, 1, false, :onerase),
+    event_type(PLEV_ERASED_RECORD, :erase, 1, false, :onerase),
+    event_type(PLEV_BREAK, :break, 3, false, :onbreak),
+    event_type(PLEV_BREAK_EXISTS, :break, 3, false, :onbreak),
+    event_type(PLEV_NOBREAK, :break, 3, false, :onbreak),
+    event_type(PLEV_RETRACTNOBREAK, :break, 3, false, :onbreak),
+    event_type(PLEV_FRAMEFINISHED, :frame_finished, 1, false, :onframefinish),
+    event_type(PLEV_UNTABLE, :untable, 1, false, :onuntable),
+    event_type(PLEV_THREAD_START, :thread_start, 1, false, :onthreadstart),
+    event_type(PLEV_THREAD_EXIT, :thread_exit, 1, false, :onthreadexit),
+    event_type(PLEV_THIS_THREAD_EXIT, :this_thread_exit, 0, true, :event_hook_onthreadexit)
 )
+
+# PORT: pl-event.c event_list_location (pl-event.h)
+# DIVERGES: the place of a list as a value: `ev` the event id (-1: a predicate's list), `def` that predicate's definition.
+# Upstream's `event_list **`: read it with `event_list_at`, write it with `event_list_set!`.
+"Where an event list is kept (pl-event.h `event_list **`): the table of the event `ev`, or the `events` of `def` (`ev` = -1)."
+struct event_location{T}
+    ev::Int
+    def::Union{Nothing, definition{T}}
+end
+
+"The event list at `loc` (the pointer `*listp` of pl-event.h), or `nothing` (NULL)."
+function event_list_at(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, loc::event_location{T}
+)::Union{Nothing, event_list{T, definition{T}}} where {T}
+    loc.def === nothing || return loc.def.events
+    et = PL_events[loc.ev + 1]
+    et.local_ && return ld.event_hook_onthreadexit
+    return getfield(gd.event_hook, et.location)
+end
+
+"Make the event list at `loc` `list` (`nothing`: NULL), as `*listp = list` does (pl-event.c)."
+function event_list_set!(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, loc::event_location{T},
+    list::Union{Nothing, event_list{T, definition{T}}}
+)::Nothing where {T}
+    if loc.def !== nothing
+        loc.def.events = list
+        return nothing
+    end
+    et = PL_events[loc.ev + 1]
+    if et.local_
+        ld.event_hook_onthreadexit = list
+    else
+        setfield!(gd.event_hook, et.location, list)
+    end
+    return nothing
+end
+
+# PORT: pl-event.c link_event
+# DIVERGES: the list is a vector (no lock): the first handler is the first element.
+"Add the callback `cb` at the end (`last`) or the start of `list` (pl-event.c)."
+function link_event(
+    list::event_list{T, D}, cb::event_callback{T, D}, last::Bool
+)::Bool where {T, D}
+    if last
+        push!(list.callbacks, cb)
+    else
+        pushfirst!(list.callbacks, cb)
+    end
+    return true
+end
 
 # PORT: pl-event.c prolog_listen_options
 const prolog_listen_options = (
@@ -46,44 +123,87 @@ function get_callback(
 end
 
 # PORT: pl-event.c add_event_hook
-# DIVERGES: the closure is checked (`get_callback`) and the hook is not kept, see the file header (EV1).
-"Register the closure `closure` as a listener of an event of `argc` arguments (pl-event.c)."
+# DIVERGES: the list is a vector (`link_event`); upstream's loop over the named callbacks leaves the list locked after a
+# replacement (no lock here); a predicate listener's procedure is `PL_predicate("call", argc+1, "system")` as `lookupProcedure`.
+"Register the closure `closure` as a listener of an event of `argc` arguments in `list`, replacing the one of the same `name` (pl-event.c)."
 function add_event_hook(
-    gd::PL_global_data{T}, ld::PL_local_data{T}, name::Union{Nothing, T}, last::Bool,
-    closure::term_t, argc::Int
+    gd::PL_global_data{T}, ld::PL_local_data{T}, list::event_list{T, definition{T}},
+    name::Union{Nothing, T}, last::Bool, closure::term_t, argc::Int
 )::Bool where {T}
     t = PL_new_term_ref(ld)
-    ok, _ = get_callback(gd, ld, closure, t)
+    ok, m = get_callback(gd, ld, closure, t)
     ok || return false
 
-    return true
+    if name !== nothing
+        for ev in list.callbacks
+            if ev.name == name && ev.function_ == 0
+                r = ev.closure
+                ev.closure = term_to_fastheap(ld, closure)
+                r === nothing || free_fastheap(r)
+                return true
+            end
+        end
+    end
+
+    cb = event_callback{T, definition{T}}(name, m, nothing, 0, nothing, argc, UInt32(0))
+    pname = PL_get_atom(ld, t)
+    if pname !== nothing
+        cb.procedure = resolveProcedure(gd, pname, argc, gd.modules[m])
+    else
+        cb.procedure = lookupProcedure(mk_sym(T, :call), argc + 1, MODULE_system(gd))
+        cb.closure = term_to_fastheap(ld, closure)
+    end
+
+    return link_event(list, cb, last)
+end
+
+# PORT: pl-event.c get_event_list
+# DIVERGES: the list's place is an `event_location`; no `L_EVHOOK` lock (no threads).
+"The event list at `loc`, made empty when it is NULL (pl-event.c)."
+function get_event_list!(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, loc::event_location{T}
+)::event_list{T, definition{T}} where {T}
+    l = event_list_at(gd, ld, loc)
+    l === nothing || return l
+    l = event_list{T, definition{T}}()
+    event_list_set!(gd, ld, loc, l)
+    return l
+end
+
+# PORT: pl-event.c register_event_hook
+"Register `closure` as a listener at `loc`: `get_event_list!` and `add_event_hook` (pl-event.c)."
+function register_event_hook(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, loc::event_location{T},
+    name::Union{Nothing, T}, last::Bool, closure::term_t, argc::Int
+)::Bool where {T}
+    return add_event_hook(gd, ld, get_event_list!(gd, ld, loc), name, last, closure, argc)
 end
 
 # PORT: pl-event.c get_event_listp
-# DIVERGES: returns `(ok, argc)` where upstream writes the list's location through `listpp`; the event lists are
-# EV1's. A listener on a predicate (`arity != 0`) is refused by name (EV1: `Definition.events`).
-"Check the event type `type` (pl-event.c): the argument count of the event, or `nothing` after raising the error."
+# DIVERGES: returns `(location, argc)` where upstream writes the list's location through `listpp` and `argc`, or `nothing`
+# after raising the error. A predicate indicator (`arity != 0` after `PL_get_name_arity`) resolves the procedure
+# (`get_procedure_resolve_namearity`: `GP_RESOLVE|GP_NAMEARITY`, src/pl-proc.jl); when that fails upstream raises the domain error on top.
+"Check the event type `type` (pl-event.c): the place of its list and the argument count of the event, or `nothing` after raising the error."
 function get_event_listp(
-    ld::PL_local_data{T}, type::term_t
-)::Union{Nothing, Int} where {T}
+    gd::PL_global_data{T}, ld::PL_local_data{T}, type::term_t
+)::Union{Nothing, Tuple{event_location{T}, Int}} where {T}
     na = PL_get_name_arity(ld, type)
 
     if na !== nothing
         name, arity = na
 
         if arity == 0
-            for (ename, eargc) in PL_events
-                if name == mk_sym(T, ename)
-                    return eargc
+            for (i, et) in enumerate(PL_events)
+                if name == mk_sym(T, et.name)
+                    @assert et.id + 1 == i              # assert(et->id == et-PL_events)
+                    return (event_location{T}(et.id, nothing), et.argc)
                 end
             end
         else
-            throw(
-                NotPortedError{T}(
-                    mk_sym(T, :prolog_listen), "prolog_listen/2,3 on a predicate (get_procedure GP_NAMEARITY)",
-                    "EV1"
-                )
-            )
+            proc = get_procedure_resolve_namearity(gd, ld, type)
+            if proc !== nothing
+                return (event_location{T}(-1, proc.definition), 2)   # action, cref
+            end
         end
 
         PL_domain_error(ld, "event", type)
@@ -96,7 +216,7 @@ end
 
 # PORT: pl-event.c prolog_listen
 # DIVERGES: `options` is 0 for NULL (upstream: a null `term_t`).
-"The body of `prolog_listen/2,3`: check the options, the event type and the closure (pl-event.c)."
+"The body of `prolog_listen/2,3`: check the options, the event type and the closure, register the listener (pl-event.c)."
 function prolog_listen(
     gd::PL_global_data{T}, ld::PL_local_data{T}, type::term_t, closure::term_t,
     options::term_t
@@ -116,10 +236,11 @@ function prolog_listen(
         return PL_put_atom(ld, ex, as) && PL_domain_error(ld, "as", ex)
     end
 
-    argc = get_event_listp(ld, type)
-    argc === nothing && return false
+    r = get_event_listp(gd, ld, type)
+    r === nothing && return false
+    loc, argc = r
 
-    return add_event_hook(gd, ld, name, as == mk_sym(T, :last), closure, argc)
+    return register_event_hook(gd, ld, loc, name, as == mk_sym(T, :last), closure, argc)
 end
 
 # PORT: pl-event.c prolog_listen as pl_prolog_listen2_va
@@ -144,10 +265,404 @@ function pl_prolog_listen3_va(
     return prolog_listen(_query_gd(ld), ld, A1, A2, A3) ? FTRUE : FFALSE
 end
 
+# PORT: pl-event.c free_event_callback
+# DIVERGES: nothing to free (Julia's garbage collector; upstream frees the closure's cells and unregisters the name atom).
+"Free the callback `cb` (pl-event.c)."
+function free_event_callback(cb::event_callback)::Nothing
+    if cb.function_ == 0 && cb.closure !== nothing
+        free_fastheap(cb.closure)
+    end
+    return nothing
+end
+
+# PORT: pl-event.c prolog_unlisten
+# DIVERGES: the list is a vector, a deletion is `deleteat!`; the foreign frame `fid` is closed at the return (upstream
+# leaves it to the end of the call, the leaked frames of its early returns included). Representation only.
+"The body of `prolog_unlisten/2`: delete the listeners of the event `A1` that match the closure `A2` (pl-event.c)."
+function prolog_unlisten(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, A1::term_t, A2::term_t
+)::Bool where {T}
+    r = get_event_listp(gd, ld, A1)
+    r === nothing && return false
+    loc, argc = r
+
+    list = event_list_at(gd, ld, loc)
+    list === nothing && return true
+
+    t = PL_new_term_ref(ld)
+    fid = PL_open_foreign_frame(ld)
+    tmp = PL_new_term_ref(ld)
+    proc = nothing
+    ok, m = get_callback(gd, ld, A2, t)
+    if !ok
+        PL_close_foreign_frame(ld, fid)
+        return false
+    end
+    name = PL_get_atom(ld, t)
+    if name !== nothing
+        proc = resolveProcedure(gd, name, argc, gd.modules[m])
+    end
+
+    cbs = list.callbacks
+    i = 1
+    while i <= length(cbs)
+        ev = cbs[i]
+        delete = false
+        if ev.function_ == 0
+            if proc !== nothing
+                if (ev.procedure::Procedure{T}).definition === proc.definition
+                    delete = true
+                end
+            elseif ev.closure !== nothing
+                if put_fastheap(ld, ev.closure, tmp) && PL_unify(ld, A2, tmp)
+                    delete = true
+                elseif PL_exception(ld, 0) != 0
+                    PL_close_foreign_frame(ld, fid)
+                    return false
+                else
+                    PL_rewind_foreign_frame(ld, fid)
+                end
+            end
+        end
+        if delete
+            deleteat!(cbs, i)
+            free_event_callback(ev)
+        else
+            i += 1
+        end
+    end
+
+    PL_close_foreign_frame(ld, fid)
+    return true
+end
+
+# PORT: pl-event.c prolog_unlisten as pl_prolog_unlisten2_va
+# (PRED_IMPL("prolog_unlisten", 2, prolog_unlisten, 0), pl-event.c:288-345 at the pin; the table's flag is META, :808)
+"`prolog_unlisten(+Channel, :Closure)`: remove the listeners of `Channel` that match `Closure` (pl-event.c)."
+function pl_prolog_unlisten2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2 = PL__t0, PL__t0 + 1
+
+    return prolog_unlisten(_query_gd(ld), ld, A1, A2) ? FTRUE : FFALSE
+end
+
+# PORT: pl-event.c destroy_event_list
+# DIVERGES: the list's place is an `event_location` (`*listp = NULL`), no lock to delete.
+"Remove the event list at `loc` with its callbacks (pl-event.c)."
+function destroy_event_list!(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, loc::event_location{T}
+)::Nothing where {T}
+    list = event_list_at(gd, ld, loc)
+    if list !== nothing
+        event_list_set!(gd, ld, loc, nothing)
+        for cb in list.callbacks
+            free_event_callback(cb)
+        end
+    end
+    return nothing
+end
+
+# PORT: pl-event.c destroy_event_list as destroy_event_list! on a predicate's list
+"Remove the event list of the definition `def` (`unallocDefinition`, `resetProcedure`: pl-proc.c)."
+function destroy_event_list!(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, def::definition{T}
+)::Nothing where {T}
+    return destroy_event_list!(gd, ld, event_location{T}(-1, def))
+end
+
+# PORT: pl-event.c cleanupEvents
+# DIVERGES: the database's lists only (the local data's `this_thread_exit` list is `freePrologLocalData`'s: TH1).
+"Remove the database's event lists (pl-event.c): `PL_cleanup`'s."
+function cleanupEvents(gd::PL_global_data{T}, ld::PL_local_data{T})::Nothing where {T}
+    for et in PL_events
+        et.local_ || destroy_event_list!(gd, ld, event_location{T}(et.id, nothing))
+    end
+    return nothing
+end
+
+# PORT: pl-event.c call_event_list
+# DIVERGES: the callbacks are a SNAPSHOT of the vector (a listener may call `prolog_unlisten/2`); the C-function branch
+# (`function_ != 0`, registered by `register_event_function` for `PL_thread_at_exit`: TH1) has no function pointer to call
+# and counts as a failure; a callback's module is its index.
+"Call the listeners of `list` with the event's arguments `argv+1…`, `argv` the closure's slot (pl-event.c)."
+function call_event_list(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, list::Union{Nothing, event_list{T, definition{T}}},
+    argc::Int, argv::term_t
+)::Bool where {T}
+    rc = true
+
+    if list !== nothing
+        for ev in copy(list.callbacks)
+            if ev.function_ != 0
+                rc = false                                  # a C function: TH1's
+            elseif ev.closure !== nothing
+                rc = rc && (
+                    put_fastheap(ld, ev.closure, argv) &&
+                        PL_call_predicate(
+                            gd, ld, gd.modules[ev.module_], PL_Q_NODEBUG | PL_Q_PASS_EXCEPTION,
+                            ev.procedure::Procedure{T}, argv
+                        )
+                )
+            else
+                @assert ev.argc == argc
+                rc = rc && PL_call_predicate(
+                    gd, ld, nothing, PL_Q_NODEBUG | PL_Q_PASS_EXCEPTION, ev.procedure::Procedure{T},
+                    argv + 1
+                )
+            end
+            if !rc && PL_exception(ld, 0) != 0
+                break
+            end
+        end
+    end
+
+    return rc
+end
+
+# PORT: pl-event.c delayEvent
+# DIVERGES: the arguments are the event's values (`clause`, `offset` for the break events, `clause` for an erase, the procedure
+# for `PLEV_UNTABLE`), `va_arg`'s; no `acquire_clause` (the reference keeps the clause); upstream's `assert(0)` is `@assert`.
+"Keep the event `ev` until `sendDelayedEvents` (pl-event.c): only the break, erase and untable events are delayed."
+function delayEvent(ld::PL_local_data{T}, ev::Int, args...)::Bool where {T}
+    if ld.event_buffered !== nothing
+        if ev == PLEV_BREAK_EXISTS || ev == PLEV_BREAK || ev == PLEV_NOBREAK || ev == PLEV_RETRACTNOBREAK
+            dev = delayed_event{T}(ev, args[1]::Clause{T}, args[2]::Int, nothing)
+        elseif ev == PLEV_ERASED_CLAUSE
+            dev = delayed_event{T}(ev, args[1]::Clause{T}, 0, nothing)
+        elseif ev == PLEV_UNTABLE
+            dev = delayed_event{T}(ev, nothing, 0, args[1]::Procedure{T})
+        else
+            @assert false "delayEvent(): the event $ev cannot be delayed"
+        end
+        push!(ld.event_buffered, dev)
+    end
+
+    return true
+end
+
+# PORT: pl-event.c delayEvents
+# DIVERGES: no allocation to fail (`malloc` of the buffer).
+"Start delaying events, nested (pl-event.c): true for the outermost call only."
+function delayEvents(ld::PL_local_data{T})::Bool where {T}
+    nesting = ld.event_delay_nesting
+    ld.event_delay_nesting = nesting + 1
+    if nesting == 0
+        @assert ld.event_buffered === nothing
+        ld.event_buffered = delayed_event{T}[]
+        return true
+    end
+
+    return false
+end
+
+# PORT: pl-event.c sendDelayedEvents
+# DIVERGES: as upstream, the events after a failed one are dropped and not released (no `release_clause` here).
+"""
+    sendDelayedEvents(gd, ld, noerror) -> Int
+
+Leave one level of delaying; at the outermost, send the events kept (pl-event.c): -1 when a listener
+raised, else the number sent.
+"""
+function sendDelayedEvents(gd::PL_global_data{T}, ld::PL_local_data{T}, noerror::Bool)::Int where {T}
+    sent = 0
+
+    ld.event_delay_nesting -= 1
+    if ld.event_delay_nesting == 0
+        b = ld.event_buffered::Vector{delayed_event{T}}
+        ld.event_buffered = nothing
+
+        for dev in b
+            if noerror
+                ev = dev.type
+                if ev == PLEV_BREAK_EXISTS || ev == PLEV_BREAK || ev == PLEV_NOBREAK || ev == PLEV_RETRACTNOBREAK
+                    noerror = callEventHook(gd, ld, ev, dev.clause::Clause{T}, dev.offset)
+                    sent += 1
+                elseif ev == PLEV_ERASED_CLAUSE
+                    noerror = callEventHook(gd, ld, ev, dev.clause::Clause{T})
+                    sent += 1
+                elseif ev == PLEV_UNTABLE
+                    noerror = callEventHook(gd, ld, ev, dev.proc::Procedure{T})
+                    sent += 1
+                else
+                    @assert false "sendDelayedEvents(): the event $ev was not delayed"
+                end
+            end
+        end
+    end
+
+    return noerror ? sent : -1
+end
+
+# PORT: pl-event.h callEventHook
+# DIVERGES: the database and the local data are arguments; `args` are the event's values (`va_arg`'s).
+"Raise the event `ev` with its values: true when no listener, else `PL_call_event_hook_va`; false iff a listener raised (pl-event.h)."
+function callEventHook(gd::PL_global_data{T}, ld::PL_local_data{T}, ev::Int, args...)::Bool where {T}
+    if event_list_at(gd, ld, event_location{T}(ev, nothing)) !== nothing
+        return PL_call_event_hook_va(gd, ld, ev, args...)
+    end
+
+    return true
+end
+
+# PORT: pl-event.c PL_call_event_hook
+# DIVERGES: NOT STARTED: the `GD->halt.cleaning != CLN_DATA` test (`PL_cleanup` is a later step); the kernel's callers use `callEventHook`.
+"Raise the event `ev` as `callEventHook` does, for the C interface (pl-event.c)."
+function PL_call_event_hook(gd::PL_global_data{T}, ld::PL_local_data{T}, ev::Int, args...)::Bool where {T}
+    return callEventHook(gd, ld, ev, args...)
+end
+
+# PORT: pl-event.c PL_call_event_hook_va
+# DIVERGES: `args` are the event's values; the thread events raise a `NotPortedError` naming TH1 (`unify_thread_id`: no
+# thread table); an unknown event is `false` (upstream warns).
+"Raise the event `ev`: put its arguments and call its listeners; false iff there is an exception in a hook (pl-event.c)."
+function PL_call_event_hook_va(gd::PL_global_data{T}, ld::PL_local_data{T}, ev::Int, args...)::Bool where {T}
+    rc = true
+    list = event_list_at(gd, ld, event_location{T}(ev, nothing))
+    event_decl = PL_events[ev + 1]
+
+    if ld.event_delay_nesting != 0
+        delayEvent(ld, ev, args...)
+        return true
+    end
+
+    wstate = saveWakeup(ld, true)
+    wstate === nothing && return false
+    av = PL_new_term_refs(ld, event_decl.argc + 1)
+
+    if ev == PLEV_ABORT
+        # nothing to put
+    elseif ev == PLEV_ERASED_CLAUSE
+        rc = PL_put_clref(gd, ld, av + 1, args[1]::Clause{T})           # object erased
+    elseif ev == PLEV_ERASED_RECORD
+        rc = PL_unify_recref(gd, ld, av + 1, args[1]::RecordRef{T})     # object erased
+    elseif ev == PLEV_BREAK || ev == PLEV_BREAK_EXISTS || ev == PLEV_NOBREAK || ev == PLEV_RETRACTNOBREAK
+        cl = args[1]::Clause{T}
+        offset = args[2]::Int
+        rc = (
+            PL_put_atom(
+                ld, av + 1,
+                mk_sym(
+                    T,
+                    ev == PLEV_BREAK ? :true :
+                        ev == PLEV_NOBREAK ? :false :
+                        ev == PLEV_RETRACTNOBREAK ? :retract : :exist
+                )
+            ) &&
+                PL_put_clref(gd, ld, av + 2, cl) &&
+                PL_put_intptr(ld, av + 3, offset)
+        )
+    elseif ev == PLEV_FRAMEFINISHED
+        rc = PL_put_frame(ld, av + 1, args[1]::Int)
+    elseif ev == PLEV_THREAD_START || ev == PLEV_THREAD_EXIT
+        throw(NotPortedError{T}(mk_sym(T, :prolog_listen), "the thread events (`unify_thread_id`)", "TH1"))
+    elseif ev == PLEV_THIS_THREAD_EXIT
+        # nothing to put
+    elseif ev == PLEV_UNTABLE
+        proc = args[1]::Procedure{T}
+        rc = unify_definition(gd, ld, MODULE_user(gd), av + 1, proc.definition, 0, GP_QUALIFY | GP_NAMEARITY)
+    else
+        rc = false                                              # callEventHook(): unknown event
+        restoreWakeup(ld, wstate)
+        return rc
+    end
+
+    if rc
+        rc = call_event_list(gd, ld, list, event_decl.argc, av)
+
+        if !rc && PL_exception(ld, 0) != 0
+            wstate = wakeup_state(wstate.fid, wstate.outofstack, wstate.flags | WAKEUP_KEEP_URGENT_EXCEPTION)
+        else
+            rc = true                                           # only false on error
+        end
+    end
+
+    restoreWakeup(ld, wstate)
+
+    return rc
+end
+
+# PORT: pl-event.c predicate_update_event
+# DIVERGES: the database is an argument; `action` is the atom's term; the `rollback/1` functor is looked up by name.
+"Tell the listeners of the predicate `def` that the clause `cl` was added or removed by `action` (pl-event.c)."
+function predicate_update_event(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, def::definition{T}, action::T, cl::Clause{T}, flags::UInt32
+)::Bool where {T}
+    wstate = saveWakeup(ld, true)
+    wstate === nothing && return false
+    av = PL_new_term_refs(ld, 3)                                # closure, action, clause
+    rc = av != 0 && PL_put_atom(ld, av + 1, action) && PL_put_clref(gd, ld, av + 2, cl)
+
+    if rc && (flags & P_EVENT_ROLLBACK) != 0
+        rollback1 = lookupFunctorDef(ld.functors, _atom_word!(ld, mk_sym(T, :rollback)), 1)
+        rc = PL_cons_functor(ld, av + 1, rollback1, av + 1)
+    end
+
+    if rc
+        rc = call_event_list(gd, ld, def.events, 2, av)
+    end
+
+    restoreWakeup(ld, wstate)
+
+    return rc
+end
+
+# PORT: pl-event.c table_answer_event
+# DIVERGES: NOT STARTED: `save_tabling_status`/`restore_tabling_status` around the call (the tabling status is TAB1's);
+# nothing calls this function yet.
+"Tell the listeners of the tabled predicate `def` about the `answer` added or removed by `action` (pl-event.c)."
+function table_answer_event(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, def::definition{T}, action::T, answer::term_t
+)::Bool where {T}
+    wstate = saveWakeup(ld, true)
+    wstate === nothing && return false
+    av = PL_new_term_refs(ld, 3)                                # closure, action, answer
+    rc = av != 0 && PL_put_atom(ld, av + 1, action) && PL_put_term(ld, av + 2, answer)
+
+    if rc
+        rc = call_event_list(gd, ld, def.events, 2, av)
+    end
+
+    restoreWakeup(ld, wstate)
+
+    return rc
+end
+
+# PORT: pl-event.c retractall_event
+# DIVERGES: `start` is the NAME of the functor (`:start`, `:end`: `FUNCTOR_start1`, `FUNCTOR_end1`), looked up in the
+# database's functor table; the database is an argument. As upstream, a failure to build the arguments returns false with the
+# wakeup state not restored.
+"Tell the listeners of `def` that `retractall/1` is about to start (`:start`) or has ended (`:end`) on `head` (pl-event.c)."
+function retractall_event(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, def::definition{T}, head::term_t, start::Symbol
+)::Bool where {T}
+    wstate = saveWakeup(ld, true)
+    wstate === nothing && return false
+    av = PL_new_term_refs(ld, 4)                                # closure, action, start/end, head
+    start1 = lookupFunctorDef(ld.functors, _atom_word!(ld, mk_sym(T, start)), 1)
+
+    if !(
+            PL_put_atom(ld, av + 1, gd.modules[def.module_].atom) &&
+                PL_put_term(ld, av + 2, head) &&
+                PL_cons_functor(ld, av + 2, FUNCTOR_colon2, av + 1, av + 2) &&
+                PL_cons_functor(ld, av + 2, start1, av + 2) &&
+                PL_put_atom(ld, av + 1, mk_sym(T, :retractall))
+        )
+        return false
+    end
+
+    rc = call_event_list(gd, ld, def.events, 2, av)
+
+    restoreWakeup(ld, wstate)
+
+    return rc
+end
+
 # PORT: pl-event.c BeginPredDefs as PL_predicates_from_event
-# DIVERGES: the two prolog_listen entries only (upstream's table: pl-event.c:805-810); `META` is PL_FA_TRANSPARENT.
-"pl-event.c's registration table (`BeginPredDefs(event)`): prolog_listen/2,3."
+# `META` is PL_FA_TRANSPARENT (pl-event.c:805-810 at the pin).
+"pl-event.c's registration table (`BeginPredDefs(event)`): prolog_listen/2,3 and prolog_unlisten/2."
 const PL_predicates_from_event = (
     PL_extension("prolog_listen", 2, pl_prolog_listen2_va, PL_FA_VARARGS | PL_FA_TRANSPARENT),
-    PL_extension("prolog_listen", 3, pl_prolog_listen3_va, PL_FA_VARARGS | PL_FA_TRANSPARENT)
+    PL_extension("prolog_listen", 3, pl_prolog_listen3_va, PL_FA_VARARGS | PL_FA_TRANSPARENT),
+    PL_extension("prolog_unlisten", 2, pl_prolog_unlisten2_va, PL_FA_VARARGS | PL_FA_TRANSPARENT)
 )

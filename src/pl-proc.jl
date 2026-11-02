@@ -1814,6 +1814,20 @@ get_procedure_find_namearity(
     gd::PL_global_data{T}, ld::PL_local_data{T}, descr::term_t, context::module_t{T}
 ) where {T} = get_procedure_namearity(gd, ld, descr, context, GP_FIND | GP_NAMEARITY)
 
+# PORT: pl-proc.c get_procedure as get_procedure_resolve_namearity
+# (`get_procedure(type, &proc, 0, GP_RESOLVE|GP_NAMEARITY)`, as `get_event_listp` asks it; pl-proc.c:733-790)
+# DIVERGES: the procedure is returned, or `nothing` (a failure or an error raised in `ld`); `h` is 0; `get_functor`'s module
+# rule is `PL_strip_module`'s (an unqualified term gets the context module, `user` outside a frame). An undefined procedure is
+# CREATED in the module (`resolveProcedure`), as upstream: a listener may be registered before the predicate exists.
+"The procedure a dynamic call to the `M:Name/Arity` (or head) in `descr` runs, created undefined when none is visible, or `nothing` (pl-proc.c)."
+function get_procedure_resolve_namearity(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, descr::term_t
+)::Union{Nothing, Procedure{T}} where {T}
+    name, arity, mi = get_functor(gd, ld, descr, 0, 0, GF_PROCEDURE)    # get_functor(descr, &fdef, &m, h, GF_PROCEDURE)
+    arity < 0 && return nothing
+    return resolveProcedure(gd, name, arity, gd.modules[mi])            # case GP_RESOLVE
+end
+
 # ── retract/1, a non-deterministic foreign predicate (pl-proc.c; NF2, docs/architecture.md) ─────────────
 # PORT: pl-proc.c alloc_retract_context as alloc_retract_context!
 # DIVERGES: the heap copy is a record of the local data's pool (`ld.retract_contexts`, design D3) and the
