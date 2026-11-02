@@ -185,3 +185,48 @@ NEXT AGENT: (1) finish the hunt above (one commit); (2) G6 gate files, G7 tools/
   whether FUNCTOR_drecover_and_rethrow2 needs one: FUNCTOR_colon2's treatment decides) + docs block; (3) G9 on the local merge.
 Daemons at 2026-11-02 hand-back: one warm daemon (pid 84292, up ~1 h) plus a cold compile started ~90 s before by
   another lane; MemAvailable 18.4 GB. No slot taken by this writer (a second cold compile is refused).
+
+## State (writer 5, 2026-11-02 17:00Z; handed back at ~100k context at a clean commit boundary)
+BRANCH NOW wip/lb4b2b (wip/lb4b2 left as it was, 81bcfe0; not deleted). wip/lb4b2b = wip/lb4b2's 25 commits rebased onto
+origin/main eb700e8 (ARGINL; `git rebase --onto origin/main 9e0a983`, non-interactive). One conflict, src/pl-ext.jl
+setBuiltinPredicateProperties!: LOOKUPPROC(arg3) and LOOKUPPROC(print_message2) both kept, upstream order (pin
+pl-ext.c:371-372). pl-global.jl auto-merged: procedures_arg3 (main) in upstream place, our fields at the end; the
+constructor's positional args line up (fields :56/:82 vs args :165/:191). File list vs base identical to the old range
+(89 files; +1 comment line in pl-ext.jl). The 12 wip/lb4b1 commits are still in the stack (b1 not on main).
+COMMITTED (edit-only; NO Julia run; swipl run as the oracle only):
+- 4e94b3d test_arg_body_swipl.jl (ARGINL's new file) takes load_file!'s two values.
+- a1df75a stale-pin hunt DONE: test_meta_predicate_swipl b01/b02 and test_ssu_swipl header/s16 re-cite boot/init.pl
+  (:501-504, :364-365) and boot/expand.pl head_guard/4 (:248-269). The rest of the hits are refusals still in src or other
+  owners' (body_code V2 refusals, arith interim, prolog_flag pipe, rules' local stand-in facts, write*/read_term dict and
+  qq refusals, source_file LB6, open_close set_output/stream_property: unregistered in src).
+- c3cc2a3 G6 T4 test/db/test_boot_messages_swipl.jl: boot as boot_global_data does (setupProlog, own ld, collector
+  asserted BEFORE boot_from_source!), lines = ld.messages (Sdprintf) + hook-recorded error/warning; must == `_BM_KNOWN`
+  (EMPTY; G9 fills it with the LD12 rows, each with its cause). Oracle: swipl's own boot command (src/CMakeLists.txt:357-361)
+  over its home prints NOTHING, exit 0, two runs identical; re-run live when swipl on PATH. PLBASE boot/*.pl ==
+  vendor/swipl-devel/boot/ (diff -rq; only build_home.pl extra in vendor).
+- 6502080 T1/T3 oracle fixtures test/db/test_boot_image_swipl_rows.pl/.out (precedent test/core_lang/test_module_swipl_rows.*):
+  `t1 <module codes> <name codes> <arity> <dynamic foreign system iso transparent meta public exported> <nclauses|none>`,
+  2187 rows over 23 modules (753 foreign, all in system); `t3 <file rel. to boot/> <type> <load_count> <nclauses> <reloading>
+  <modules>`, 25 files. Modules found via module_property(M, file(F)) over the boot files (current_module/1 skips
+  system-class modules). Oracle facts seen: `system` (P_LOCKED) property is 0 on the boot's Prolog predicates;
+  load_count 2 and from_state are the restored state's (not comparable to a from-source boot: expected kernel load_count 1,
+  from_state false by upstream's from-source path, read not run).
+NEXT AGENT (in order):
+1. G6 T1+T3 test/db/test_boot_image_swipl.jl reading the .out (ONE parser for both sides; kernel rows from
+   LK.boot_image_predicates / boot_image_source_files on `PL_global_data{T}()`): (a) foreign=0 rows: EXACT set and columns
+   vs the oracle, minus the DIVERGES rows below; (b) foreign=1 rows: only those the kernel defines, columns equal; kernel
+   foreign rows swipl lacks = pinned list; (c) T3 order + type + nclauses + reloading + modules, minus threads.pl;
+   load_count == 1 and from_state == false by reasoning (comment). Non-vacuity: both sides > 1000 rows. Live re-run of
+   the driver when swipl on PATH (cmp with the .out). THREADS DIVERGES rows (verified in the .out): system '$error_count'/2
+   swipl 2 clauses -> kernel 1 (init.pl:2557-2564); system '$mt_load_file'/4 3 -> 2 (init.pl:2720-2741);
+   system '$mt_start_load'/3, '$mt_do_load'/5, '$mt_end_load'/1 (3 clauses each) -> undefined (init.pl:2754-2785);
+   '$toplevel':main_thread_init/0 2 -> 1 (toplevel.pl:560-582); T3: boot/threads.pl (module '$threads', 0 clauses) not
+   loaded: load.pl:78-80 `:- if(current_prolog_flag(threads, true)). :- consult(threads).` (FLAG F6 below).
+   Then H12 (no attvar in any booted clause) in the same file or T2's.
+2. G6 T2 test/db/test_boot_clauses_swipl.jl: clause/2 bodies =@= swipl's (oracle needs access_level system); suggestion:
+   per-predicate text of the numbervar'd clause list as a fixture .out like T1's.
+3. G7, G8 as in writer 4's list; G9 on the local merge (needs a daemon; at 17:00Z two warm daemons up, pids 84292 and 486658,
+   load 6.6, 16.4 GB available: a THIRD slot is free by the rule, no cold compile seen).
+FLAG F6 (audit): ruling 1 (D-0354 item 3) lists init.pl and toplevel.pl lines; load.pl:78-80 (threads.pl consulted only
+   when threads is true) is the same DIVERGES; T3's 24-vs-25 file row cites it. Needs the audit's nod.
+FLAG F7 (audit): T1/T3 pins live in a .out fixture beside the test (2187 rows, 214 KB), not inline.
