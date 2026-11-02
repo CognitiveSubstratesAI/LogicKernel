@@ -294,3 +294,85 @@ end
     @test length(vm) > 100 && any(r -> r.status == "done", vm) && any(r -> r.status == "missing", vm)
     @test Dict(r.label => r.status for r in vm)["I_NOP"] == "done"
 end
+
+# ── slice 4: the snapshot guards and the owners ──────────────────────────────────────────────────────
+
+"A one-file swipl-devel stand-in as a git repo under `base`; returns its HEAD (the fixture's pin)."
+function _r2_fixture_upstream(base::AbstractString; extra::AbstractString="")
+    mkpath(joinpath(base, "src"))
+    write(joinpath(base, "src", "pl-x.c"), "PRED_IMPL(\"alpha\", 1, alpha, 0)\nPRED_IMPL(\"beta\", 2, beta, 0)\n$extra")
+    id = ("GIT_AUTHOR_NAME" => "t", "GIT_AUTHOR_EMAIL" => "t@t", "GIT_COMMITTER_NAME" => "t", "GIT_COMMITTER_EMAIL" => "t@t")
+    withenv(id...) do
+        run(pipeline(`git -C $base init -q`; stdout=devnull, stderr=devnull))
+        run(pipeline(`git -C $base add src`; stdout=devnull, stderr=devnull))
+        run(pipeline(`git -C $base commit -q -m x`; stdout=devnull, stderr=devnull))
+    end
+    return strip(read(`git -C $base rev-parse HEAD`, String))
+end
+
+@testset "r2_status: the upstream snapshot's guards (missing, empty, pin, drift) can pass and fail" begin
+    mktempdir() do d
+        co = joinpath(d, "up")
+        pin = _r2_fixture_upstream(co)
+        root = joinpath(d, "root")
+        mkpath(joinpath(root, "tools"))
+        mkpath(joinpath(root, "docs"))
+        write(joinpath(root, "tools", "SWIPL_VERSION"), "commit: $pin\n")
+        withenv("LOGICKERNEL_UPSTREAM_SWIPL_DEVEL" => co) do
+            @test startswith(only(r2_upstream_violations(root)), "R2-UPSTREAM-MISSING")             # no file
+            @test basename(r2_write_snapshot(root)) == "r2_upstream.tsv"
+            @test length(r2_read_snapshot(read(joinpath(root, "docs", "r2_upstream.tsv"), String))) == 2   # non-empty side
+            @test r2_upstream_violations(root) == String[]                                           # PASS: snapshot equals the pin's C
+            snap = joinpath(root, "docs", "r2_upstream.tsv")
+            good = read(snap, String)
+            write(snap, replace(good, "beta/2" => "gamma/2"))                                        # MUTATION: one key edited
+            @test startswith(only(r2_upstream_violations(root)), "R2-UPSTREAM-DRIFT")
+            write(snap, "# swipl-devel $pin: header only\n")                                         # MUTATION: nothing in it
+            @test any(startswith("R2-UPSTREAM-EMPTY"), r2_upstream_violations(root))
+            write(snap, replace(good, pin => "0"^40))                                                # MUTATION: another pin
+            @test startswith(only(r2_upstream_violations(root)), "R2-UPSTREAM-PIN")
+            write(snap, good)
+            @test r2_upstream_violations(root) == String[]
+        end
+        # without a checkout (CI) the drift check is skipped: the snapshot is the source (one-sided by design, the block is checked)
+        withenv("LOGICKERNEL_UPSTREAM_SWIPL_DEVEL" => joinpath(d, "nowhere"), "HOME" => d) do
+            snap = joinpath(root, "docs", "r2_upstream.tsv")
+            write(snap, replace(read(snap, String), "beta/2" => "gamma/2"))
+            @test r2_upstream_violations(root) == String[]
+        end
+    end
+end
+
+@testset "r2_status: owners (exact beats file keys; BAD, DUP, STALE can fire; NO OWNER counts on both sides)" begin
+    row(cat, key, st, cfile="") = R2Row(cat, key, key, st, cfile, "", String[], "")
+    rows = [
+        row("pred", "pred:a/1", "missing", "src/pl-x.c"), row("pred", "pred:b/1", "missing", "src/pl-x.c"),
+        row("pred", "pred:c/1", "done", "src/pl-x.c"), row("pred", "pred:w/1", "platform", "src/pl-w.c"),
+        row("refusal", "refusal:src/pl-q.jl::f::m", "refused", "src/pl-q.jl"), row("flag", "flag:f", "missing"),
+        row("vmi", "vmi:I_X", "missing", "src/pl-vmi.c"),
+    ]
+    text = "# comment\n\npred:b/1\tB1\tx\ncfile:pl-x.c\tX1\n\nkfile:pl-q.jl\tQ1\nflag:f\tF1\ncfile:pl-vmi.c\tV1\n"
+    (; owners, bad) = r2_owners_parse(text)
+    @test isempty(bad) && length(owners) == 5
+    @test r2_owner_of(rows[1], owners) == "X1" && r2_owner_of(rows[2], owners) == "B1"        # exact beats the file key
+    @test r2_owner_of(rows[5], owners) == "Q1" && r2_owner_of(rows[6], owners) == "F1" && r2_owner_of(rows[7], owners) == "V1"
+    @test r2_owner_violations(rows, text) == String[]                                          # PASS
+    @test isempty(r2_no_owner(rows, owners))                                                   # every row owned: 0 (the fixture side)
+    @test [r.key for r in r2_no_owner(rows, r2_owners_parse("pred:b/1\tB1\n").owners)] ==     # a partial file: the rest print NO OWNER
+          ["pred:a/1", "refusal:src/pl-q.jl::f::m", "flag:f", "vmi:I_X"]
+    @test r2_owner_of(rows[3], owners) == "X1" && !r2_owes(rows[3]) && !r2_owes(rows[4])       # done and platform owe nothing
+    # MUTATIONS: each violation fires, each on its own line
+    @test only(r2_owner_violations(rows, text * "pred:c/1\tZ\n")) == "R2-OWNER-STALE $R2_OWNERS: key pred:c/1 names no missing or refused row"
+    @test startswith(only(r2_owner_violations(rows, text * "pred:ghost/9\tZ\n")), "R2-OWNER-STALE")
+    @test startswith(only(r2_owner_violations(rows, text * "cfile:pl-w.c\tZ\n")), "R2-OWNER-STALE")   # a platform-only file
+    @test startswith(only(r2_owner_violations(rows, text * "pred:b/1\tZ\n")), "R2-OWNER-DUP")
+    @test startswith(only(r2_owner_violations(rows, text * "pred:a/1\n")), "R2-OWNER-BAD")
+    @test startswith(only(r2_owner_violations(rows, text * "\tZ\n")), "R2-OWNER-BAD")
+    # the real tree: the seed file is clean, and NO OWNER is non-empty on the real rows (the fixture's 0 is the other side)
+    root = abspath(joinpath(@__DIR__, ".."))
+    res = r2_collect(root, r2_upstream(root))
+    otext = read(joinpath(root, R2_OWNERS), String)
+    @test r2_owner_violations(res.rows, otext) == String[]
+    ow = r2_owners_parse(otext).owners
+    @test !isempty(r2_no_owner(res.rows, ow)) && count(r -> r2_owes(r) && !isempty(r2_owner_of(r, ow)), res.rows) > 200
+end
