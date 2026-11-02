@@ -18,7 +18,8 @@
 # rd93-rd105: dict-dot reads: the generic '.'/2 term (no dict-specific reader code)
 # rd106-rd114: clause bodies and heads read by the loader (the program's own dict syntax)
 # rd115-rd126: subterm_positions of dicts (dict_position/5, key_value_position/7), read_term_from_atom/3
-# rm01-rm23: the var_tag modes
+# rd127-rd152: key and tag edge cases (the mutants' anchors: key tokens, small-int keys, duplicate positions, a tag shared with a value)
+# rm01-rm24: the var_tag modes
 using Test, LogicKernel
 const LK = LogicKernel
 
@@ -106,6 +107,7 @@ rda(Txt, N, R) :- term_to_atom(T, Txt), arg(N, T, A), rdo(A, R).
 rdx(Txt, R) :- term_to_atom(T, Txt), ( compound(T), T =.. [F, A, B] -> rdo(A, A1), rdo(B, B1), R = F-A1-B1 ; R = other(T) ).
 rdp(Txt, R) :- read_term_from_atom(Txt, _, [subterm_positions(R)]).
 rdav(Txt, R) :- term_to_atom(T, Txt), ( attvar(T) -> get_attrs(T, A), R = attrs(A) ; arg(1, T, X), attvar(X) -> get_attrs(X, A), R = attrs(A) ; R = nodict ).
+rdsame(Txt, R) :- term_to_atom(T, Txt), dict_pairs(T, G, [_-V]), ( G == V -> R = same ; R = differ ).
 rds(Txt, R) :- catch(( term_to_atom(_, Txt), R = read ), error(syntax_error(I), string(_, P)), R = syn(I, P)).
 """
 const _RDD_BODIES = raw"""
@@ -245,7 +247,33 @@ const _RDD_CASES = [
     ("rd123", raw"rdp('t{a:1,b:2,c:3}', R)"),
     ("rd124", raw"rdp('[_{a:1},t{}]', R)"),
     ("rd125", raw"rdp('_{\'x y\':\"s\"}', R)"),
-    ("rd126", raw"rdp('a- _{}', R)")
+    ("rd126", raw"rdp('a- _{}', R)"),
+    ("rd127", raw"rds('_{a{}:1}', R)"),
+    ("rd128", raw"rds('_{a{b:1}:2}', R)"),
+    ("rd129", raw"rds('_{|:1}', R)"),
+    ("rd130", raw"rds('_{]:1}', R)"),
+    ("rd131", raw"rds('_{):1}', R)"),
+    ("rd132", raw"rds('_{{a}:1}', R)"),
+    ("rd133", raw"rds('_{a:1,b:2,b:3}', R)"),
+    ("rd134", raw"rds('_{z:1,y:2,z:3,x:4}', R)"),
+    ("rd135", raw"rds('_{72057594037927936:1}', R)"),
+    ("rd136", raw"rds('_{72057594037927935:1}', R)"),
+    ("rd137", raw"rds('_{-72057594037927936:1}', R)"),
+    ("rd138", raw"rds('_{-72057594037927937:1}', R)"),
+    ("rd139", raw"rds('_{1152921504606846975:1}', R)"),
+    ("rd140", raw"rdd('_{72057594037927935:1}', R)"),
+    ("rd141", raw"rdd('_{-72057594037927936:1}', R)"),
+    ("rd142", raw"rdd('_{a{}:1}', R)"),
+    ("rd143", raw"rdd('_{a{b:1}:2}', R)"),
+    ("rd144", raw"rdd('_{a:x:-y}', R)"),
+    ("rd145", raw"rdd('_{a:b;c}', R)"),
+    ("rd146", raw"rdd('_{a:b->c}', R)"),
+    ("rd147", raw"rdd('_{a:x:-y,b:2}', R)"),
+    ("rd148", raw"rdd('_{a:b;c,d:e}', R)"),
+    ("rd149", raw"rdd('_{a:p:-q:-r}', R)"),
+    ("rd150", raw"rdsame('X{a:X}', R)"),
+    ("rd151", raw"rdsame('X{a:Y}', R)"),
+    ("rd152", raw"rdsame('t{a:X}', R)")
 ]
 
 const _RDD_MODE_CASES = [
@@ -271,7 +299,8 @@ const _RDD_MODE_CASES = [
     ("rm20", raw"rds('f(X{a:1}, X{= : 2})', R)"),
     ("rm21", raw"rds('f(X{= : 1}, X{a:2})', R)"),
     ("rm22", raw"rds('f(X{a:1}, X{b:2})', R)"),
-    ("rm23", raw"rdav('f(X{a:1}, X{b:2})', R)")
+    ("rm23", raw"rdav('f(X{a:1}, X{b:2})', R)"),
+    ("rm24", raw"current_prolog_flag(var_tag, R)")
 ]
 
 # swipl 10.1.19-1-gcbf4e189's answers to the program and cases above (the driver's lines; evidence/RDDICT/rdd_rows.out in the wip/rddict branch)
@@ -402,7 +431,33 @@ const _RDD_PINNED = [
     "t_rd123 c[116,95,114,100,49,50,51]/1(c[100,105,99,116,95,112,111,115,105,116,105,111,110]/5(i0,i14,i0,i1,c[91,124,93]/2(c[107,101,121,95,118,97,108,117,101,95,112,111,115,105,116,105,111,110]/7(i2,i5,i3,i4,a[97],c[45]/2(i2,i3),c[45]/2(i4,i5)),c[91,124,93]/2(c[107,101,121,95,118,97,108,117,101,95,112,111,115,105,116,105,111,110]/7(i6,i9,i7,i8,a[98],c[45]/2(i6,i7),c[45]/2(i8,i9)),c[91,124,93]/2(c[107,101,121,95,118,97,108,117,101,95,112,111,115,105,116,105,111,110]/7(i10,i13,i11,i12,a[99],c[45]/2(i10,i11),c[45]/2(i12,i13)),nil)))))",
     "t_rd124 c[116,95,114,100,49,50,52]/1(c[108,105,115,116,95,112,111,115,105,116,105,111,110]/4(i0,i12,c[91,124,93]/2(c[100,105,99,116,95,112,111,115,105,116,105,111,110]/5(i1,i7,i1,i2,c[91,124,93]/2(c[107,101,121,95,118,97,108,117,101,95,112,111,115,105,116,105,111,110]/7(i3,i6,i4,i5,a[97],c[45]/2(i3,i4),c[45]/2(i5,i6)),nil)),c[91,124,93]/2(c[100,105,99,116,95,112,111,115,105,116,105,111,110]/5(i8,i11,i8,i9,nil),nil)),a[110,111,110,101]))",
     "t_rd125 c[116,95,114,100,49,50,53]/1(c[100,105,99,116,95,112,111,115,105,116,105,111,110]/5(i0,i12,i0,i1,c[91,124,93]/2(c[107,101,121,95,118,97,108,117,101,95,112,111,115,105,116,105,111,110]/7(i2,i11,i7,i8,a[120,32,121],c[45]/2(i2,i7),c[115,116,114,105,110,103,95,112,111,115,105,116,105,111,110]/2(i8,i11)),nil)))",
-    "t_rd126 c[116,95,114,100,49,50,54]/1(c[116,101,114,109,95,112,111,115,105,116,105,111,110]/5(i0,i6,i1,i2,c[91,124,93]/2(c[45]/2(i0,i1),c[91,124,93]/2(c[100,105,99,116,95,112,111,115,105,116,105,111,110]/5(i3,i6,i3,i4,nil),nil))))"
+    "t_rd126 c[116,95,114,100,49,50,54]/1(c[116,101,114,109,95,112,111,115,105,116,105,111,110]/5(i0,i6,i1,i2,c[91,124,93]/2(c[45]/2(i0,i1),c[91,124,93]/2(c[100,105,99,116,95,112,111,115,105,116,105,111,110]/5(i3,i6,i3,i4,nil),nil))))",
+    "t_rd127 c[116,95,114,100,49,50,55]/1(c[115,121,110]/2(a[99,111,108,111,110,95,101,120,112,101,99,116,101,100],i2))",
+    "t_rd128 c[116,95,114,100,49,50,56]/1(c[115,121,110]/2(a[99,111,108,111,110,95,101,120,112,101,99,116,101,100],i2))",
+    "t_rd129 c[116,95,114,100,49,50,57]/1(c[115,121,110]/2(a[99,111,108,111,110,95,101,120,112,101,99,116,101,100],i3))",
+    "t_rd130 c[116,95,114,100,49,51,48]/1(c[115,121,110]/2(a[107,101,121,95,101,120,112,101,99,116,101,100],i1))",
+    "t_rd131 c[116,95,114,100,49,51,49]/1(c[115,121,110]/2(a[107,101,121,95,101,120,112,101,99,116,101,100],i1))",
+    "t_rd132 c[116,95,114,100,49,51,50]/1(c[115,121,110]/2(a[107,101,121,95,101,120,112,101,99,116,101,100],i1))",
+    "t_rd133 c[116,95,114,100,49,51,51]/1(c[115,121,110]/2(c[100,117,112,108,105,99,97,116,101,95,107,101,121]/1(a[98]),i12))",
+    "t_rd134 c[116,95,114,100,49,51,52]/1(c[115,121,110]/2(c[100,117,112,108,105,99,97,116,101,95,107,101,121]/1(a[122]),i16))",
+    "t_rd135 c[116,95,114,100,49,51,53]/1(c[115,121,110]/2(a[107,101,121,95,100,111,109,97,105,110],i1))",
+    "t_rd136 c[116,95,114,100,49,51,54]/1(a[114,101,97,100])",
+    "t_rd137 c[116,95,114,100,49,51,55]/1(a[114,101,97,100])",
+    "t_rd138 c[116,95,114,100,49,51,56]/1(c[115,121,110]/2(a[107,101,121,95,100,111,109,97,105,110],i1))",
+    "t_rd139 c[116,95,114,100,49,51,57]/1(c[115,121,110]/2(a[107,101,121,95,100,111,109,97,105,110],i1))",
+    "t_rd140 c[116,95,114,100,49,52,48]/1(c[100]/2(a[118,97,114],c[91,124,93]/2(c[45]/2(i72057594037927935,i1),nil)))",
+    "t_rd141 c[116,95,114,100,49,52,49]/1(c[100]/2(a[118,97,114],c[91,124,93]/2(c[45]/2(i-72057594037927936,i1),nil)))",
+    "t_rd142 c[116,95,114,100,49,52,50]/1(c[114,97,105,115,101,100]/1(c[115,121,110,116,97,120,95,101,114,114,111,114]/1(a[99,111,108,111,110,95,101,120,112,101,99,116,101,100])))",
+    "t_rd143 c[116,95,114,100,49,52,51]/1(c[114,97,105,115,101,100]/1(c[115,121,110,116,97,120,95,101,114,114,111,114]/1(a[99,111,108,111,110,95,101,120,112,101,99,116,101,100])))",
+    "t_rd144 c[116,95,114,100,49,52,52]/1(c[100]/2(a[118,97,114],c[91,124,93]/2(c[45]/2(a[97],c[58,45]/2(a[120],a[121])),nil)))",
+    "t_rd145 c[116,95,114,100,49,52,53]/1(c[100]/2(a[118,97,114],c[91,124,93]/2(c[45]/2(a[97],c[59]/2(a[98],a[99])),nil)))",
+    "t_rd146 c[116,95,114,100,49,52,54]/1(c[100]/2(a[118,97,114],c[91,124,93]/2(c[45]/2(a[97],c[45,62]/2(a[98],a[99])),nil)))",
+    "t_rd147 c[116,95,114,100,49,52,55]/1(c[100]/2(a[118,97,114],c[91,124,93]/2(c[45]/2(a[97],c[58,45]/2(a[120],a[121])),c[91,124,93]/2(c[45]/2(a[98],i2),nil))))",
+    "t_rd148 c[116,95,114,100,49,52,56]/1(c[100]/2(a[118,97,114],c[91,124,93]/2(c[45]/2(a[97],c[59]/2(a[98],a[99])),c[91,124,93]/2(c[45]/2(a[100],a[101]),nil))))",
+    "t_rd149 c[116,95,114,100,49,52,57]/1(c[114,97,105,115,101,100]/1(c[115,121,110,116,97,120,95,101,114,114,111,114]/1(a[111,112,101,114,97,116,111,114,95,99,108,97,115,104])))",
+    "t_rd150 c[116,95,114,100,49,53,48]/1(a[115,97,109,101])",
+    "t_rd151 c[116,95,114,100,49,53,49]/1(a[100,105,102,102,101,114])",
+    "t_rd152 c[116,95,114,100,49,53,50]/1(a[100,105,102,102,101,114])"
 ]
 
 # the same for the mode programs (evidence/RDDICT/rdd_mode_rows_<mode>.out): the program is atop-prefixed by `:- set_prolog_flag(var_tag, Mode).`
@@ -430,7 +485,8 @@ const _RDD_MODE_DICT = [
     "t_rm20 c[116,95,114,109,50,48]/1(a[114,101,97,100])",
     "t_rm21 c[116,95,114,109,50,49]/1(a[114,101,97,100])",
     "t_rm22 c[116,95,114,109,50,50]/1(a[114,101,97,100])",
-    "t_rm23 c[116,95,114,109,50,51]/1(a[110,111,100,105,99,116])"
+    "t_rm23 c[116,95,114,109,50,51]/1(a[110,111,100,105,99,116])",
+    "t_rm24 c[116,95,114,109,50,52]/1(a[100,105,99,116])"
 ]
 const _RDD_MODE_ERROR = [
     "ok",
@@ -456,7 +512,8 @@ const _RDD_MODE_ERROR = [
     "t_rm20 c[116,95,114,109,50,48]/1(c[115,121,110]/2(a[118,97,114,95,116,97,103],i6))",
     "t_rm21 c[116,95,114,109,50,49]/1(c[115,121,110]/2(a[118,97,114,95,116,97,103],i8))",
     "t_rm22 c[116,95,114,109,50,50]/1(c[115,121,110]/2(a[118,97,114,95,116,97,103],i6))",
-    "t_rm23 c[116,95,114,109,50,51]/1(c[114,97,105,115,101,100]/1(c[115,121,110,116,97,120,95,101,114,114,111,114]/1(a[118,97,114,95,116,97,103])))"
+    "t_rm23 c[116,95,114,109,50,51]/1(c[114,97,105,115,101,100]/1(c[115,121,110,116,97,120,95,101,114,114,111,114]/1(a[118,97,114,95,116,97,103])))",
+    "t_rm24 c[116,95,114,109,50,52]/1(a[101,114,114,111,114])"
 ]
 const _RDD_MODE_WARNING = [
     "ok",
@@ -482,7 +539,8 @@ const _RDD_MODE_WARNING = [
     "t_rm20 c[116,95,114,109,50,48]/1(a[114,101,97,100])",
     "t_rm21 c[116,95,114,109,50,49]/1(a[114,101,97,100])",
     "t_rm22 c[116,95,114,109,50,50]/1(a[114,101,97,100])",
-    "t_rm23 c[116,95,114,109,50,51]/1(a[110,111,100,105,99,116])"
+    "t_rm23 c[116,95,114,109,50,51]/1(a[110,111,100,105,99,116])",
+    "t_rm24 c[116,95,114,109,50,52]/1(a[119,97,114,110,105,110,103])"
 ]
 const _RDD_MODE_ATTVAR = [
     "ok",
@@ -508,7 +566,8 @@ const _RDD_MODE_ATTVAR = [
     "t_rm20 c[116,95,114,109,50,48]/1(c[115,121,110]/2(a[108,97,98,101,108,95,111,110,95,97,116,116,118,97,114],i16))",
     "t_rm21 c[116,95,114,109,50,49]/1(c[115,121,110]/2(a[97,116,116,118,97,114,95,111,110,95,108,97,98,101,108],i16))",
     "t_rm22 c[116,95,114,109,50,50]/1(a[114,101,97,100])",
-    "t_rm23 c[116,95,114,109,50,51]/1(c[97,116,116,114,115]/1(c[97,116,116]/3(a[97],i1,c[97,116,116]/3(a[98],i2,nil))))"
+    "t_rm23 c[116,95,114,109,50,51]/1(c[97,116,116,114,115]/1(c[97,116,116]/3(a[97],i1,c[97,116,116]/3(a[98],i2,nil))))",
+    "t_rm24 c[116,95,114,109,50,52]/1(a[97,116,116,118,97,114])"
 ]
 const _RDD_MODE_DYNDICT = [
     "ok",
@@ -534,7 +593,8 @@ const _RDD_MODE_DYNDICT = [
     "t_rm20 c[116,95,114,109,50,48]/1(a[114,101,97,100])",
     "t_rm21 c[116,95,114,109,50,49]/1(a[114,101,97,100])",
     "t_rm22 c[116,95,114,109,50,50]/1(a[114,101,97,100])",
-    "t_rm23 c[116,95,114,109,50,51]/1(a[110,111,100,105,99,116])"
+    "t_rm23 c[116,95,114,109,50,51]/1(a[110,111,100,105,99,116])",
+    "t_rm24 c[116,95,114,109,50,52]/1(a[35])"
 ]
 
 "The program file as a loader (kernel) or swipl reads it: the helpers, the bodies (main rows), the cases; for a mode, swipl's file has the flag directive atop."
@@ -598,7 +658,7 @@ end
 
 
 
-@testset "read-dict rows: the kernel's answers are swipl's (rd01-rd126)" begin
+@testset "read-dict rows: the kernel's answers are swipl's (rd01-rd152)" begin
     f, names = _rdd_file(_RDD_CASES, true)
     kl, _, _ = _rdd_kernel(f, names)
     @test length(kl) == length(_RDD_PINNED)
@@ -608,7 +668,7 @@ end
     end
 end
 
-@testset "var_tag mode rows: the kernel's answers are swipl's, mode $(m) (rm01-rm23)" for (m, pins) in
+@testset "var_tag mode rows: the kernel's answers are swipl's, mode $(m) (rm01-rm24)" for (m, pins) in
                                                                                              Dict("dict" => _RDD_MODE_DICT, "error" => _RDD_MODE_ERROR, "warning" => _RDD_MODE_WARNING, "attvar" => _RDD_MODE_ATTVAR, "#" => _RDD_MODE_DYNDICT)
     f, names = _rdd_file(_RDD_MODE_CASES, false)
     kl, _, _ = _rdd_kernel(f, names; mode=m)
@@ -619,41 +679,41 @@ end
     end
 end
 
-@testset "the read-dict rows are not vacuous (rd01-rd126)" begin
+@testset "the read-dict rows are not vacuous (rd01-rd152)" begin
     rows = _RDD_PINNED[2:end]                                                      # the driver's first line is `ok`
     @test _RDD_PINNED[1] == "ok"
-    @test length(rows) == length(_RDD_CASES) == 126
+    @test length(rows) == length(_RDD_CASES) == 152
     code(t) = "[" * join(Int.(collect(t)), ",") * "]"
     # rows that fail have no answer after the name; rows whose reader raised (raised(…): an error the row did not catch itself)
     @test count(l -> occursin(r"^t_rd\d+$", l), rows) == 1
-    @test count(l -> occursin(code("raised"), l), rows) == 1
+    @test count(l -> occursin(code("raised"), l), rows) == 4
     # rds rows: syn(Id, CharNo) answers, read answers (the text read without an error)
-    @test count(l -> occursin(code("syn") * "/2", l), rows) == 36
-    @test count(l -> endswith(l, "(a" * code("read") * ")"), rows) == 2
+    @test count(l -> occursin(code("syn") * "/2", l), rows) == 47
+    @test count(l -> endswith(l, "(a" * code("read") * ")"), rows) == 4
     # rdd/rdv/rda observations: d(Tag, Pairs) answers (var tags answer `var`), and rdd's nodict(T)
-    @test count(l -> occursin(code("d") * "/2(", l), rows) == 54
+    @test count(l -> occursin(code("d") * "/2(", l), rows) == 61
     @test count(l -> occursin(code("nodict") * "/1(", l), rows) == 2
-    @test count(l -> occursin(code("var"), l), rows) == 49
+    @test count(l -> occursin(code("var"), l), rows) == 56
     # rdx answers hold the functor of the term read: `.`/2 (code 46) for the dict-dot rows
     @test count(l -> occursin("c[46]/2(", l) || occursin(code("-") * "/2(c[45]/2(a[46]", l), rows) == 12
     # rdp rows: dict_position/5 answers and the key_value_position/7 elements of their last argument
     @test count(l -> occursin(code("dict_position") * "/5(", l), rows) == 12
     @test count(l -> occursin(code("key_value_position") * "/7(", l), rows) == 10
     # the duplicate-key errors are syn(duplicate_key(Key), _)
-    @test count(l -> occursin(code("duplicate_key") * "/1", l), rows) == 7
+    @test count(l -> occursin(code("duplicate_key") * "/1", l), rows) == 9
     # no answer holds a dict (a dict is a compound named `dict`)
     @test !any(l -> occursin(code("dict") * "/", l), _RDD_PINNED)
 end
 
-@testset "the var_tag mode rows are not vacuous (rm01-rm23 in 5 modes)" begin
+@testset "the var_tag mode rows are not vacuous (rm01-rm24 in 5 modes)" begin
     code(t) = "[" * join(Int.(collect(t)), ",") * "]"
     for (m, pins) in zip(_RDD_MODES, [_RDD_MODE_DICT, _RDD_MODE_ERROR, _RDD_MODE_WARNING, _RDD_MODE_ATTVAR, _RDD_MODE_DYNDICT])
         @test pins[1] == "ok" && length(pins) == length(_RDD_MODE_CASES) + 1
     end
     # `error`: a variable tag is syn(var_tag, _); `attvar`: the answer is the atom `attvar`; `#` and `warning`: the tag answers `#`
     @test count(l -> occursin(code("var_tag"), l), _RDD_MODE_ERROR) == 20
-    @test count(l -> occursin(code("attvar"), l), _RDD_MODE_ATTVAR) == 4
-    @test count(l -> occursin("a[35]", l), _RDD_MODE_DYNDICT) == 8
+    @test count(l -> occursin(code("attvar"), l), _RDD_MODE_ATTVAR) == 5
+    @test count(l -> occursin("a[35]", l), _RDD_MODE_DYNDICT) == 9
     @test count(l -> occursin("a[35]", l), _RDD_MODE_WARNING) == 8
     @test count(l -> occursin("a[35]", l), _RDD_MODE_DICT) == 0
     # build_attvar and build_labeled_subterm: their syntax errors, one row each in `attvar` mode (the other modes read the same texts as dicts)

@@ -74,6 +74,13 @@ g("subterm_positions of dicts (dict_position/5, key_value_position/7), read_term
     "[_{a:1},t{}]", "_{'x y':\"s\"}", "a- _{}",
 ))
 
+g("key and tag edge cases (the mutants' anchors: key tokens, small-int keys, duplicate positions, a tag shared with a value)", rds(
+    "_{a{}:1}", "_{a{b:1}:2}", "_{|:1}", "_{]:1}", "_{):1}", "_{{a}:1}", "_{a:1,b:2,b:3}", "_{z:1,y:2,z:3,x:4}",
+    "_{72057594037927936:1}", "_{72057594037927935:1}", "_{-72057594037927936:1}", "_{-72057594037927937:1}", "_{1152921504606846975:1}",
+) + rdd(
+    "_{72057594037927935:1}", "_{-72057594037927936:1}", "_{a{}:1}", "_{a{b:1}:2}",
+) + rdd("_{a:x:-y}", "_{a:b;c}", "_{a:b->c}", "_{a:x:-y,b:2}", "_{a:b;c,d:e}", "_{a:p:-q:-r}") + ["rdsame(%s, R)" % T("X{a:X}"), "rdsame(%s, R)" % T("X{a:Y}"), "rdsame(%s, R)" % T("t{a:X}")])
+
 # per var_tag mode: the cases run once per mode (module flags set from Julia in the kernel, `:- set_prolog_flag(var_tag, Mode).` for swipl)
 MODES = ["dict", "error", "warning", "attvar", "#"]
 MODE_CASES = [
@@ -86,6 +93,7 @@ MODE_CASES = [
     "rds(%s, R)" % T("X{a:1,a:2}"), "rds(%s, R)" % T("X{= : 1, a:2}"), "rds(%s, R)" % T("f(X{= : 1}, X{= : 2})"),
     "rds(%s, R)" % T("f(X{a:1}, X{= : 2})"), "rds(%s, R)" % T("f(X{= : 1}, X{a:2})"), "rds(%s, R)" % T("f(X{a:1}, X{b:2})"),
     "rdav(%s, R)" % T("f(X{a:1}, X{b:2})"),
+    "current_prolog_flag(var_tag, R)",
 ]
 
 PROGRAM = """rdt(G, G1) :- ( var(G) -> G1 = var ; G1 = G ).
@@ -97,6 +105,7 @@ rda(Txt, N, R) :- term_to_atom(T, Txt), arg(N, T, A), rdo(A, R).
 rdx(Txt, R) :- term_to_atom(T, Txt), ( compound(T), T =.. [F, A, B] -> rdo(A, A1), rdo(B, B1), R = F-A1-B1 ; R = other(T) ).
 rdp(Txt, R) :- read_term_from_atom(Txt, _, [subterm_positions(R)]).
 rdav(Txt, R) :- term_to_atom(T, Txt), ( attvar(T) -> get_attrs(T, A), R = attrs(A) ; arg(1, T, X), attvar(X) -> get_attrs(X, A), R = attrs(A) ; R = nodict ).
+rdsame(Txt, R) :- term_to_atom(T, Txt), dict_pairs(T, G, [_-V]), ( G == V -> R = same ; R = differ ).
 rds(Txt, R) :- catch(( term_to_atom(_, Txt), R = read ), error(syntax_error(I), string(_, P)), R = syn(I, P)).
 """
 # clauses whose own text holds dict syntax (the loader reads them); the pl-boot lines: init.pl:1297 `_{file_type:regular}`, autoload.pl:889 `:<`

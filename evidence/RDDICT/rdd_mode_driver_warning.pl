@@ -22,4 +22,4 @@ fz_run(File, Ns) :-
     catch(( consult(File), S = ok ), E, S = exc(E)),
     ( S == ok -> writeln(ok) ; S = exc(B), write('exc '), enc(B), nl ),
     forall(member(N, Ns), fz_pred(N)).
-:- initialization((fz_run('/home/shivaji1012/code/lk-dict/evidence/RDDICT/rdd_mode_warning.pl', [t_rm01,t_rm02,t_rm03,t_rm04,t_rm05,t_rm06,t_rm07,t_rm08,t_rm09,t_rm10,t_rm11,t_rm12,t_rm13,t_rm14,t_rm15,t_rm16,t_rm17,t_rm18,t_rm19,t_rm20,t_rm21,t_rm22,t_rm23]), halt)).
+:- initialization((fz_run('/home/shivaji1012/code/lk-dict/evidence/RDDICT/rdd_mode_warning.pl', [t_rm01,t_rm02,t_rm03,t_rm04,t_rm05,t_rm06,t_rm07,t_rm08,t_rm09,t_rm10,t_rm11,t_rm12,t_rm13,t_rm14,t_rm15,t_rm16,t_rm17,t_rm18,t_rm19,t_rm20,t_rm21,t_rm22,t_rm23,t_rm24]), halt)).

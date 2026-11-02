@@ -7,6 +7,7 @@ rda(Txt, N, R) :- term_to_atom(T, Txt), arg(N, T, A), rdo(A, R).
 rdx(Txt, R) :- term_to_atom(T, Txt), ( compound(T), T =.. [F, A, B] -> rdo(A, A1), rdo(B, B1), R = F-A1-B1 ; R = other(T) ).
 rdp(Txt, R) :- read_term_from_atom(Txt, _, [subterm_positions(R)]).
 rdav(Txt, R) :- term_to_atom(T, Txt), ( attvar(T) -> get_attrs(T, A), R = attrs(A) ; arg(1, T, X), attvar(X) -> get_attrs(X, A), R = attrs(A) ; R = nodict ).
+rdsame(Txt, R) :- term_to_atom(T, Txt), dict_pairs(T, G, [_-V]), ( G == V -> R = same ; R = differ ).
 rds(Txt, R) :- catch(( term_to_atom(_, Txt), R = read ), error(syntax_error(I), string(_, P)), R = syn(I, P)).
 rdb1(R) :- D = _{a:1,b:2}, dict_pairs(D, _, R).
 rdb2(R) :- X = _{file_type:regular}, dict_pairs(X, _, R).
@@ -141,3 +142,29 @@ t_rd123(R) :- catch((rdp('t{a:1,b:2,c:3}', R)), error(SsuE, _), R = raised(SsuE)
 t_rd124(R) :- catch((rdp('[_{a:1},t{}]', R)), error(SsuE, _), R = raised(SsuE)).
 t_rd125(R) :- catch((rdp('_{\'x y\':"s"}', R)), error(SsuE, _), R = raised(SsuE)).
 t_rd126(R) :- catch((rdp('a- _{}', R)), error(SsuE, _), R = raised(SsuE)).
+t_rd127(R) :- catch((rds('_{a{}:1}', R)), error(SsuE, _), R = raised(SsuE)).
+t_rd128(R) :- catch((rds('_{a{b:1}:2}', R)), error(SsuE, _), R = raised(SsuE)).
+t_rd129(R) :- catch((rds('_{|:1}', R)), error(SsuE, _), R = raised(SsuE)).
+t_rd130(R) :- catch((rds('_{]:1}', R)), error(SsuE, _), R = raised(SsuE)).
+t_rd131(R) :- catch((rds('_{):1}', R)), error(SsuE, _), R = raised(SsuE)).
+t_rd132(R) :- catch((rds('_{{a}:1}', R)), error(SsuE, _), R = raised(SsuE)).
+t_rd133(R) :- catch((rds('_{a:1,b:2,b:3}', R)), error(SsuE, _), R = raised(SsuE)).
+t_rd134(R) :- catch((rds('_{z:1,y:2,z:3,x:4}', R)), error(SsuE, _), R = raised(SsuE)).
+t_rd135(R) :- catch((rds('_{72057594037927936:1}', R)), error(SsuE, _), R = raised(SsuE)).
+t_rd136(R) :- catch((rds('_{72057594037927935:1}', R)), error(SsuE, _), R = raised(SsuE)).
+t_rd137(R) :- catch((rds('_{-72057594037927936:1}', R)), error(SsuE, _), R = raised(SsuE)).
+t_rd138(R) :- catch((rds('_{-72057594037927937:1}', R)), error(SsuE, _), R = raised(SsuE)).
+t_rd139(R) :- catch((rds('_{1152921504606846975:1}', R)), error(SsuE, _), R = raised(SsuE)).
+t_rd140(R) :- catch((rdd('_{72057594037927935:1}', R)), error(SsuE, _), R = raised(SsuE)).
+t_rd141(R) :- catch((rdd('_{-72057594037927936:1}', R)), error(SsuE, _), R = raised(SsuE)).
+t_rd142(R) :- catch((rdd('_{a{}:1}', R)), error(SsuE, _), R = raised(SsuE)).
+t_rd143(R) :- catch((rdd('_{a{b:1}:2}', R)), error(SsuE, _), R = raised(SsuE)).
+t_rd144(R) :- catch((rdd('_{a:x:-y}', R)), error(SsuE, _), R = raised(SsuE)).
+t_rd145(R) :- catch((rdd('_{a:b;c}', R)), error(SsuE, _), R = raised(SsuE)).
+t_rd146(R) :- catch((rdd('_{a:b->c}', R)), error(SsuE, _), R = raised(SsuE)).
+t_rd147(R) :- catch((rdd('_{a:x:-y,b:2}', R)), error(SsuE, _), R = raised(SsuE)).
+t_rd148(R) :- catch((rdd('_{a:b;c,d:e}', R)), error(SsuE, _), R = raised(SsuE)).
+t_rd149(R) :- catch((rdd('_{a:p:-q:-r}', R)), error(SsuE, _), R = raised(SsuE)).
+t_rd150(R) :- catch((rdsame('X{a:X}', R)), error(SsuE, _), R = raised(SsuE)).
+t_rd151(R) :- catch((rdsame('X{a:Y}', R)), error(SsuE, _), R = raised(SsuE)).
+t_rd152(R) :- catch((rdsame('t{a:X}', R)), error(SsuE, _), R = raised(SsuE)).
