@@ -767,6 +767,7 @@ end
 
 "The content of a string literal `\"…\"` argument, or the argument text itself when it is no literal."
 function _r2_lit(arg::AbstractString)::String
+    arg = replace(arg, r"\"\s*\*\s*\"" => "")            # `"a; " * newline "b"`: a literal split over lines is one literal
     m = match(r"^\"(.*)\"$"s, arg)
     return m === nothing ? String(arg) : String(m[1])
 end
@@ -807,8 +808,10 @@ function r2_refusal_rows(texts::AbstractDict{String, String})::Vector{R2Row}
     ctor = Regex(R2_REFUSAL_EXCEPTION * "\\{[^}]*\\}\\(")
     qlf = Regex(R2_QLF_REFUSAL_HELPER * "\\(\\s*T\\s*,\\s*$(_R2_RX_NAME)\\s*,\\s*(\\d+)\\s*\\)")
     helpers = (R2_FLAG_REFUSAL_HELPER, R2_QLF_REFUSAL_HELPER)
+    squeeze(x) = strip(replace(x, r"\s+" => " "))
     function add!(file, fn, what, step, line)
-        base = "refusal:$file::$fn::" * replace(first(what, 60), r"\s+" => " ")
+        what, step = squeeze(what), squeeze(step)          # a literal split over two lines would break a TSV or Markdown row
+        base = "refusal:$file::$fn::" * first(what, 60)
         k = (seen[base] = get(seen, base, 0) + 1) == 1 ? base : base * " #" * string(seen[base])
         push!(rows, R2Row("refusal", k, what, "refused", file, "", String[], "line $line; step $step"))
     end
