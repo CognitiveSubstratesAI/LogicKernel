@@ -30,7 +30,7 @@ function _precompile_workload()::Nothing
     t2 = mk_expr(T, T[f, y, b, l, half])
     compareStandard(t1, t2)
     compareStandard(t1, t2, true)
-    gd = PL_global_data{T}()
+    gd = setupProlog(T)                         # unbooted (LB4 b2-1): the workload neither boots nor fills the template registry
     ld = PL_local_data{T}(gd)
     u = PL_new_term_refs(ld, 2)                 # unification on the cells: `=`, then under the
     vm = PutVarMap()                            # `occurs_check` flag (unify_with_occurs_check/2)

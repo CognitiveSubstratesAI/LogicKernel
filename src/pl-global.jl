@@ -146,7 +146,13 @@ end
 # Since TAB1-min: `closure_refs` (the closures a `closure` blob names, as `clause_refs`; pl-wrap.c keeps the `struct closure`
 # in the blob's payload, src/pl-wrap.jl).
 # Since R2's LB2b: `paths_CWDdir`, `GD->paths.CWDdir` (pl-global.h), the working directory `PL_cwd` caches and `ChDir` sets (src/os/pl-os.jl).
-function PL_global_data{T}() where {T}
+# PORT: pl-setup.c setupProlog
+# (swipl-devel cbf4e189, src/pl-setup.c:101-186; the steps it runs are cited at each line below)
+# DIVERGES: upstream fills the process's one `GD`; this makes a NEW database state and returns it (one per
+# `PL_global_data{T}`). It is the unbooted half of `PL_initialise` (pl-init.c:1603): `boot_global_data` (src/pl-qlf.jl)
+# runs the boot over it, and `PL_global_data{T}()` below is a copy of that booted database (R2 LB4 b2-1).
+"The database state before the boot: modules, supervisors, atoms, functors, flags, built-ins, operators (pl-setup.c)."
+function setupProlog(::Type{T})::PL_global_data{T} where {T}
     cd = initSupervisors()
     modules = module_table{T}()                 # initModules: system, then user
     system = _lookupModule!(modules, cd, mk_sym(T, :system))
@@ -258,6 +264,12 @@ function _halt_exit!(gd::PL_global_data, status::Int)::Nothing
     push!(gd.halt_exited, status)
     return nothing
 end
+
+# ORIGINAL (R2 LB4 b2-1; loader_boot.md LD4, audit LQ2 (a)): a new database is a COPY of the database booted once per
+# process and term type (`PL_global_data_from_template`, src/gd_template.jl; the build is `boot_global_data`), where
+# upstream loads its saved state into the one `GD` of the process (pl-init.c:1648-1660, `loadWicFromStream`).
+"A new database of term type `T`: the booted template's copy (boot/init.pl and the files of boot/load.pl loaded)."
+PL_global_data{T}() where {T} = PL_global_data_from_template(T)
 
 # (swipl-devel cbf4e189 pl-incl.h:2969-2970)
 # PORT: pl-incl.h ACCESS_LEVEL_USER

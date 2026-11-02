@@ -347,6 +347,42 @@ function boot_from_source!(
     return true
 end
 
+# ORIGINAL (R2 LB4 b2-1; loader_boot.md LD4, H11): the database the process boots once per term type, the build of the
+# template registry (src/gd_template.jl). `PL_initialise`'s order (pl-init.c:1603-1666): `setupProlog`, then the boot
+# session over the files the build passes, `-b HOME/boot/init.pl` (src/CMakeLists.txt:357-361), whose `'$:-'` loads
+# HOME/boot/load.pl and the files it lists (init.pl:4797-4806). It runs on a LOCAL DATA OF ITS OWN, which is dropped:
+# the template keeps nothing of it, and H11 asserts the boot left its stacks as it found them (no frame or term reference
+# made by the boot survives it), so the copies made from the template carry none.
+# DIVERGES: `threads` is false (src/os/pl-prologflag.jl, read-only), upstream's own single-thread build
+# (`MULTI_THREADED=OFF`: os/pl-prologflag.c:2620-2622, CMakeLists.txt:92), where the oracle is a threaded build: the
+# `:- if(current_prolog_flag(threads, true))` sections of the boot (init.pl:2557, 2720, 2735, 2754-2785, 982,
+# toplevel.pl:560: `$mt_load_file`, with_mutex, message queues, thread_statistics) compile their single-thread
+# branches. A scope decision about the build configuration, audit D-0354 item 3; the rows about those paths are pinned
+# as DIVERGES. The build's `-O` (pl-init.c:1280, `GD->cmdline.optimise`) is not applied: `optimise` stays false during
+# the boot (handoff flag F3). The `HOME` the boot reads is the `home` flag's tree (tools/build_home.jl builds it).
+"""
+    boot_global_data(T) -> PL_global_data{T}
+
+A new database of term type `T` booted from the vendored boot files (`setupProlog`, then `boot_from_source!` over
+`HOME/boot/init.pl`). Raises if the home tree is missing or the boot fails. Called once per process and type, by
+the template registry (`gd_template`); a database is made with `PL_global_data{T}()`, the template's copy.
+"""
+function boot_global_data(::Type{T})::PL_global_data{T} where {T}
+    gd = setupProlog(T)
+    home = current_prolog_flag_atom(gd, mk_sym(T, :home))
+    home === nothing && error("boot_global_data: the `home` flag has no atom value")
+    initpl = joinpath(sym_text(home), "boot", "init.pl")
+    isfile(initpl) || error(
+        "boot_global_data: $initpl is missing: build the home tree first (julia tools/build_home.jl)"
+    )
+    ld = PL_local_data{T}(gd)
+    empty_at = (ld.lTop, length(ld.trail), ld.fli_context, ld.nfliframes)   # H11: as emptyStacks! left them
+    boot_from_source!(gd, ld, [initpl]) || error("boot_global_data: the boot compilation of $initpl failed")
+    after = (ld.lTop, length(ld.trail), ld.fli_context, ld.nfliframes)
+    after == empty_at || error("boot_global_data: the boot left its stacks at $after, not $empty_at (H11)")
+    return gd
+end
+
 # ── the predicates of pl-qlf.c (BeginPredDefs(wic), pl-qlf.c:4953-4976) ───────────────────────────────
 
 # The eight write-side predicates take upstream's NULL-state branch (`LD->qlf.write_state` is NULL: LD2). Each is

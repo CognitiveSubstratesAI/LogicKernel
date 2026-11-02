@@ -5,9 +5,9 @@
 # after the boot gets a COPY of a booted one: the boot (the 21.6k lines of boot/*.pl, LB4 b2) is paid once per process
 # and term type, not once per `PL_global_data{T}()` (139 call sites in test/, three term types: H3).
 #
-# THIS FILE IS DORMANT. b1 builds the copy and the registry; b2 turns them on (the booted constructor becomes the
-# registry's `build`, and `PL_global_data{T}()` the copy). Until then no constructor calls any of it, and the template
-# the registry builds by default is the UNBOOTED database `PL_global_data{T}()` makes.
+# THE BOOT IS ON (LB4 b2-1). The registry's default `build` is `boot_global_data` (src/pl-qlf.jl: `setupProlog` and the
+# boot over boot/init.pl), and `PL_global_data{T}()` (src/pl-global.jl) is `PL_global_data_from_template(T)`: every new
+# database is a copy of the one booted per process and term type.
 #
 # THE COPY IS GENERIC. `copy_global_data` is generated from the fields of `PL_global_data`: a field a later step appends
 # (G1, D2, F1b, O1B) is copied with no edit here. `GD_COPY_POLICY` lists the exceptions; every other field is DEEP-copied,
@@ -90,7 +90,7 @@ const _GD_TEMPLATES = gd_template_registry(
 
 The template database of term type `T`: `build()` is called ONCE per process and type, under a lock, and the result is
 kept. `build` makes a booted `PL_global_data{T}`; the one-argument form builds with the constructor
-`PL_global_data{T}` (UNBOOTED until b2 enables the boot). The caller must not change the template: databases are
+`boot_global_data(T)` (the booted database, src/pl-qlf.jl). The caller must not change the template: databases are
 made by `PL_global_data_from_template`.
 """
 function gd_template(::Type{T}, build::F)::PL_global_data{T} where {T, F}
@@ -108,7 +108,7 @@ function gd_template(::Type{T}, build::F)::PL_global_data{T} where {T, F}
     end
 end
 
-gd_template(::Type{T}) where {T} = gd_template(T, PL_global_data{T})
+gd_template(::Type{T}) where {T} = gd_template(T, () -> boot_global_data(T))
 
 """
     PL_global_data_from_template(T, build) -> PL_global_data{T}
