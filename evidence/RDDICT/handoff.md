@@ -61,3 +61,35 @@ NOT STARTED: groups 4 (read_dict_*), 5 (rows + mutants), 6 (docs), 7 (manifest).
 2. DIVERGES (representation only, in comments): build_* errors go through the read data (`errorWarning`), as every syntax error in this reader.
 3. Functional notation on dicts (`X.key` in clause bodies) is boot/expand.pl + pl-read.c dot handling: not in this step; list for the audit if boot/dicts.pl needs it at read time.
 ## Gate (after the writer): fmt (warm.sh send), inventory, check, rows on three term types, type discipline, pkgtest_way, mutants branch, branch-gate, term grep, FRESH gate name; first compile of all of wip/dict + rddict.
+
+## State after the READER agent (Sonnet, audit D-0368 item 2) — wip/rddict, linear, NOT pushed, NOTHING compiled or run
+Commits: 0bcfe25 (build_*), 3665757 slice 1 (dict branch), 5920f01 slice 4 (var_tag setter/getter); this handoff is the next commit.
+- Slice 1 (3665757, src/pl-read.jl): `is_key_token` (pin pl-read.c 6043-6065), `read_dict_end/key/start/resume` (6072-6239),
+  `end_range` (5567-5575, stub comment replaced), pframe members `dict_pv`, `dict_pairs` appended at the END of pframe (4797-4800;
+  the one positional constructor call in complex_term got two zeros), start_pframe PF_DICT -> read_dict_start and resume_pframe
+  PF_DICT -> read_dict_resume (6466/6492); the refusal is removed; the comments that said dicts are refused are fixed. Helper
+  `_key_atom` (ORIGINAL): a punctuation key token has no `.atom` field, its atom is the character's. CHECKED: `get_token` returns the
+  SHARED `rd.token`, so kstart/kend are read before `sep` is fetched. key_value_position/7 and dict_position/5 are laid out on the cells.
+- Slice 2 (dict-DOT): NO CODE TO PORT. The pin's pl-read.c has no dict-specific dot handling (grep over functional/ATOM_dict/$dot/dict_ finds only
+  build_dict and read_dict_*). The whole mechanism is generic and ALREADY in the kernel: (a) the `.` operator `op(100, yfx, .)` in the system module
+  (pin pl-op.c:748; src/pl-op.jl:529); (b) the tokenizer: `.` followed by a non-blank is a symbol-char name token (pin pl-read.c:3931-3938;
+  src/pl-read.jl:2172-2178) and the raw reader ends a clause only at `.<blank>|%|EOF` (pin :1916-1925; src/pl-read.jl:896); (c) build_op_term/
+  build_term make `'.'(A,B)` (dotlists false; pin 5851-5856 = src/pl-read.jl read_compound_end). swipl 10.1.19 `term_string` + `write_canonical`:
+  `Ctx.get(stack)` -> `'.'(_,get(stack))`; `_{a:1}.put(b,2)` -> `'.'(_{a:1},put(b,2))`; `X.y.z` -> `'.'('.'(_,y),z)`. The functional-notation
+  EXPANSION is boot/expand.pl + boot/dicts.pl (Prolog, runs unchanged on wip/dict's `./3`, put_dict, get_dict_ex). Rows for these three reads belong
+  to the rows agent.
+- Slice 3 (module VARTAG read default): NO STRUCT CHANGE needed. Upstream keeps var_tag in the VARTAG_* bits of `module->flags`; `module_t.flags::UInt32`
+  already exists and 0xe00 collides with no M_* flag (src/pl-incl.jl:927-990); `set_module_read_data` copies `module.flags` into `rd.flags`; a module
+  starts with VARTAG_DICT = 0 (src/pl-modul.jl:220 sets only M_CHARESCAPE), so `_{..}` reads as a dict with a variable tag in every boot module,
+  exactly as upstream's default. build_dict's arms read `rd.flags & VARTAG_MASK` (0bcfe25). Scan row 5 is closed by this reading (no field to add).
+- Slice 4 (5920f01, src/os/pl-prologflag.jl): `setVarTagFlag` (pin os/pl-prologflag.c 526-560, domain_error(var_tag, A)), `getVarTagFlag` (562-573) wired into
+  `unify_prolog_flag_value` (pin :2088); header comment fixed. NOT written: the `set_prolog_flag/2` arm (pin :1383) — the write side of the flag table is F1b's
+  (no `set_prolog_flag` function exists in the kernel yet); the rows agent can test the setter/getter as functions. The two errors messages.pl:255-257 uses
+  (syntax_error(var_tag), syntax_error(warning_var_tag)) are raised by build_dict.
+- Struct change flag: pframe (a mutable struct in pl-read.jl) got 2 fields (dict_pv, dict_pairs) at the END: pframe is read-internal, not an alloc-pinned
+  engine struct; no module_t change.
+- UNVERIFIED on the kernel: gate decides, for everything above. DIVERGES (representation only, D-0365 item 3): the build_* errors go through the read data.
+- NEXT agent: rows (evidence/RDDICT/mk_rows.py -> test/core_lang/test_read_dict_swipl.jl) using the probe results above plus the dot reads, the
+  var_tag getter/setter rows; tools/mutants/RDDICT.py; docs/architecture.md block; static_analysis_manifest entries (new functions: is_key_token, _key_atom,
+  read_dict_end, read_dict_key, read_dict_start, read_dict_resume, end_range, setVarTagFlag, getVarTagFlag, dict_order_term_refs, build_*); then the gate
+  (fmt: the long `tstart.type == TK_NAME && ...` line in read_dict_start and the one-line end_range will be re-flowed by warm.sh fmt).
