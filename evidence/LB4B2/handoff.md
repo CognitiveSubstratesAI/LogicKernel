@@ -269,3 +269,29 @@ NEXT AGENT: (1) T2 as above; (2) G7 tools/mutants/LB4B2.py; (3) G8 manifest + do
   with -O 33 rows differ, all in $tabling (evidence/LB4B2/t2_optimise_diff.txt; pinned in the oracle testset). No
   machine path and no blob address in any clause (checked over a writeq dump). Kernel pins `_BC_KERNEL_DIFFER` empty,
   the 4 rewritten rows' hashes `nothing`: G9 fills them. UNVERIFIED on the kernel: gate decides.
+- FORCED HAND-BACK (150k cap hook) with THREE FILES UNCOMMITTED in the worktree (written, not committed; the next
+  agent checks `git status --short`, reviews, then stages and commits them as ONE commit "ADDED: tools/mutants/LB4B2.py"):
+  * tools/mutants/LB4B2.py: 19 mutants (Q1 G1 G2 boot; W1 W2 _qlf_pl_write!; E1-E6 printMessage; C1 $variable_names;
+    L1-L3 load_file!; B1-B4 b_throw_resume's unwind branch), every `old` counted exactly once (python3 -I runpy check),
+    ids unique, TARGETS = TBOOT (146 files: every test file constructing a database directly or via rules_common.jl /
+    index_testlib.jl, or booting, + test_readme_example.jl); each mutant's deciding files first (`_first`). NOT LISTED
+    with reasons in its header (H11 / boot result guards, OK_RECURSIVE*3 fatal, emergency-space check). Survivor
+    candidates flagged in ids: E4, E6, L2.
+  * test/files/test_qlf_swipl.jl 'Failed to compile' testset: a kill row for W1/W2 (the message after the text is the
+    term atom_length(a, b)).
+  * test/files/test_load_swipl.jl: a new testset at the end, kill row for L3 (load_file! refuses an engine of another
+    database). Both UNVERIFIED on the kernel: gate decides.
+- G7 part 2, anchors of LANDED lists that no longer occur once at HEAD (DO NOT edit those lists): AV7 U1-U5, Q1
+  (src/pl-ext.jl); AV8 B1, B2 (pl-ext.jl); AV9 B1-B4 (pl-ext.jl); MOD4 B1, B2 (pl-ext.jl): all in the deleted stand-ins
+  (b2-2). V9g: 32 (MG7 MG20 MG23 MG24 pl-wam.jl, MG21 pl-pro.jl, MB1-MB6 pl-rec.jl, MB17-MB19 pl-list.jl, MB23 MB24
+  MB26-MB28 pl-prims.jl, MB29-MB31 pl-ext.jl, CT1-CT10 pl-copyterm.jl): NOT yet split into "broken by this stack" vs
+  "already broken on origin/main" (the check was cut by the cap hook; likely most V9g ones predate b2: next agent runs
+  the same count against `git show origin/main:<file>`).
+- G8 found (not written): manifest needs entries for `_qlf_pl_write!` (Tuple{PL_local_data{T}, Int}), and also
+  `boot_global_data` (Tuple{Type{T}}) and `setupProlog` (Tuple{Type{T}}), none present; FUNCTOR_drecover_and_rethrow2
+  is a const (no method, no entry; its ATOMS row 276 / F row 1168 exist). The anonymous `() -> boot_global_data(T)` of
+  gd_template.jl:110 may need an entry if the coverage check counts closures (gate decides). The LB4 b1 manifest
+  comment at test/static_analysis_manifest.jl:2564-2566 ("b2's caller pass it" PL_global_data{T}) is stale since
+  PL_global_data{T}() is the template's copy (as a build it would recurse): reword at G8.
+- GATE NOTE (D-0164 grep): src/pl-wam.jl b_throw_resume (writer 4, 86027f8) carries upstream's fatalError text
+  (pl-vmi.c:5270, verbatim): the term grep over the diff hits one word of it; the audit/dispatcher decides (upstream text).

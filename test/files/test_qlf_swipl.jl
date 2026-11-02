@@ -423,6 +423,16 @@ end
     )
     @test rc
     @test any(m -> startswith(m, "Failed to compile: "), _ql_messages(ld))
+    # the term after the text is the clause itself (`_qlf_pl_write!`: pl_write(term), pl-qlf.c:3220-3238; LB4 b2)
+    i = findfirst(
+        ((k, m),) -> k === :error && kind(m) === SYM && startswith(String(sym_text(m)), "Failed to compile: "),
+        ld.messages
+    )
+    @test i !== nothing && i < length(ld.messages)
+    if i !== nothing && i < length(ld.messages)
+        k2, m2 = ld.messages[i + 1]
+        @test k2 === :error && kind(m2) !== SYM && sym_text(child(m2, 1)) == "atom_length"
+    end
     @test _ql_list_atoms(_ql_query_lines(gd, ld, ["t_q01"])[1]) == ["after"]
 end
 

@@ -577,3 +577,15 @@ end
         @test LK.load_file!(gd, ld, path)[1] === :ok
     end
 end
+
+@testset "load_file! refuses an engine made for another database (LB4 b2)" begin
+    # src/pl-wam.jl load_file!: `ld.GD === gd` (no upstream counterpart: the host API's check). UNVERIFIED on the
+    # kernel: gate decides
+    gd = LK.PL_global_data{_TL}()
+    other = LK.PL_local_data{_TL}(LK.PL_global_data{_TL}())
+    f = joinpath(mktempdir(), "lf_engine.pl")
+    write(f, "lf_engine(a).\n")
+    @test_throws ArgumentError LK.load_file!(gd, other, f)
+    ld = LK.PL_local_data{_TL}(gd)
+    @test LK.load_file!(gd, ld, f) == (:ok, nothing)
+end
