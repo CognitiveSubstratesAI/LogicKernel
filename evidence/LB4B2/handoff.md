@@ -155,3 +155,33 @@ F5 docs/release-notes/unreleased.md is a NEW file (the release-notes entry D-028
    existed). The audit may prefer another name.
 F4 precompile_workload.jl constructs databases: with the boot on, precompilation would boot (minutes). Needs a decision
    (skip the boot in the workload, or accept the cost).
+
+## State (writer 4, 2026-11-02; handed back at ~95k context at a clean commit boundary)
+COMMITTED (edit-only, NOTHING RUN, no daemon slot taken):
+- 43e60be G5 part 1 = writer 3's uncommitted edits, reviewed (diff stat = 48 test files + this file, as described).
+- da14a14 `UPSTREAM: pl-vmi.c b_throw_resume`: the unwind(_) ball's recover goal is wrapped as
+  `'$recover_and_rethrow'(Goal, Ball)` (pin pl-vmi.c:5266-5278; `uncachableException` pl-wam.c:2253-2263), the old
+  refusal by name removed; `FUNCTOR_drecover_and_rethrow2` in src/pl-prims.jl beside FUNCTOR_colon2. Folded into it, G5's rest:
+  term_under_test.jl now has `lk_install_message_collector!(gd, ld; printing=false)`, `lk_take_messages!(ld)` and
+  `lk_load_file_messages!` on top of them (`printing=true`: the hook records then fails, so print_message/2 still prints,
+  as the swipl drivers' hooks ending in `fail`). Re-pointed from ld.messages: test_det_swipl (`_rdt_ours` returns msgs),
+  test_canonical_readatom_swipl (printing collector; `_cr_strip_printed` dropped: both sides' user_error compared),
+  test_set_flag_swipl (`_sf_kernel` returns msgs 4th), test_exceptions_swipl (reportStreamError row), test_qlf_swipl
+  (the syntax-error report row; `_ql_messages` stays on ld.messages = the boot loop's `_qlf_Sdprintf!` texts).
+  Pins flipped to swipl 10.1.19, each `UNVERIFIED on the kernel: gate decides`: test_findall_swipl (context
+  `'$bags':findall_loop/4`, probed twice), test_catch_swipl (unwind row: recover goal runs, ball goes on; probed incl.
+  side effects via threads), test_load_swipl (`_TL_NORMALISED[] == 0`; header lines 9-15 reworded). test_module_swipl
+  "the table" testset and test_module_path.jl use `LK.setupProlog(T)` (the unbooted table: 2 modules, no clause).
+TERM GREP: one expected hit in da14a14's diff: upstream's own fatalError text "Cannot wrap abort exception" (pl-vmi.c:5270),
+  copied as is into a Julia `error`; not a crash description. The audit may ask for a reword.
+LEFT for G5 (stale-pin hunt, 166 hits of KNOWN DIFFERENCE|interim|until R2|stand-in|NotPortedError|printMessage over test/,
+  scratch list rebuilt by that grep): checked and left (expectation already swipl's or a refusal still in src):
+  test_ssu_compile_swipl:561 (','/2 stand-in comment), test_metacall:243, test_attvar_wakeup header, test_declare_destroy /
+  test_export_import (abolishProcedure: PR1's), test_format, test_module_swipl:589 (program_space). NOT yet read:
+  test_meta_predicate_swipl:182 (the stand-in's S_LMQUAL), test_ssu_swipl:5/174 (consult stand-in rewrite), test_body_code,
+  test_read_term/write/positions, test_prolog_flag, test_source_file, test_open_close, test_arith, test_rules hits.
+NEXT AGENT: (1) finish the hunt above (one commit); (2) G6 gate files, G7 tools/mutants/LB4B2.py (add a mutant on the new
+  b_throw_resume branch: TARGETS test_catch_swipl.jl + every booting file), G8 manifest (`_qlf_pl_write!` entry; check
+  whether FUNCTOR_drecover_and_rethrow2 needs one: FUNCTOR_colon2's treatment decides) + docs block; (3) G9 on the local merge.
+Daemons at 2026-11-02 hand-back: one warm daemon (pid 84292, up ~1 h) plus a cold compile started ~90 s before by
+  another lane; MemAvailable 18.4 GB. No slot taken by this writer (a second cold compile is refused).
