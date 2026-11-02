@@ -2908,8 +2908,11 @@ const _MANIFEST_LB2B_FREE = (
 )
 
 # LB4 b1: the template database (src/gd_template.jl) and the boot-image readers (src/boot_image.jl), over term type T.
-# `copy_global_data` is @generated from the fields of PL_global_data, so it is analysed per T; `gd_template`'s build
-# argument is the constructor `PL_global_data{T}` (its singleton type, as the registry's default and b2's caller pass it).
+# `copy_global_data` is @generated from the fields of PL_global_data, so it is analysed per T. `gd_template`'s build
+# argument is any callable: the registry's default since LB4 b2 is the closure `() -> boot_global_data(T)` (a `#…`
+# method, which the coverage walk leaves out, owned_methods), and the entries with the singleton type
+# `Type{PL_global_data{T}}` keep that signature analysed (as a build it would recurse since b2: PL_global_data{T}() is
+# the template's copy). LB4 b2 adds the boot's builders at the end: setupProlog, boot_global_data, _qlf_pl_write!.
 _manifest_gd_template(::Type{T}) where {T} = (
     (LK.copy_global_data, Tuple{LK.PL_global_data{T}}, false),
     (LK._copy_stream_free, Tuple{IdDict{LK.IOSTREAM, T}}, false),
@@ -2920,7 +2923,12 @@ _manifest_gd_template(::Type{T}) where {T} = (
     (LK.PL_global_data_from_template, Tuple{Type{T}, Type{LK.PL_global_data{T}}}, false),
     (LK.boot_image_predicates, Tuple{LK.PL_global_data{T}}, false),
     (LK.boot_image_source_files, Tuple{LK.PL_global_data{T}}, false),
-    (LK._predicate_number_of_clauses, Tuple{LK.PL_global_data{T}, LK.Definition{T}}, false)
+    (LK._predicate_number_of_clauses, Tuple{LK.PL_global_data{T}, LK.Definition{T}}, false),
+    # LB4 b2: the unbooted database (src/pl-global.jl, pl-setup.c setupProlog), the boot over it (src/pl-qlf.jl,
+    # pl-qlf.c compileFileList) and addClauseWic's pl_write(term) (pl-qlf.c:3220-3238)
+    (LK.setupProlog, Tuple{Type{T}}, false),
+    (LK.boot_global_data, Tuple{Type{T}}, false),
+    (LK._qlf_pl_write!, Tuple{LK.PL_local_data{T}, Int}, false)
 )
 
 const _DISPATCH_MANIFEST_TUPLE = (
