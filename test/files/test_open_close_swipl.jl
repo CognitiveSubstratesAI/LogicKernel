@@ -754,7 +754,16 @@ end
     try
         f(n) = _tls(joinpath(dir, n))
         v() = mk_var(_TL, LK.fresh_var_keys!(1))
-        live() = count(!isnothing, gd.stream_table)
+        # the table also holds the three standard streams once initIO has run (upstream: "add for
+        # enumeration"); `live()` counts the streams opened here
+        live() = count(
+            s ->
+                s !== nothing &&
+                !any(
+                    x -> x === s,
+                    ld.IO_streams[(LK.SNO_USER_INPUT + 1):(LK.SNO_USER_ERROR + 1)]
+                ), gd.stream_table
+        )
         @test live() == 0
         st, a1 = kcall(gd, ld, "open", _TL[f("a"), _tls(:write), v()])
         st2, a2 = kcall(gd, ld, "open", _TL[f("a"), _tls(:write), v()])

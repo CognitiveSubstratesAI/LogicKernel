@@ -2540,7 +2540,70 @@ _index_entry_points(T) = (
         Tuple{LK.PL_local_data{T}, Int, Int, Int, Int},
         false
     ),
-    (LK.split_atom, Tuple{LK.PL_local_data{T}, Int, LK.PL_chars_t, Int}, false)
+    (LK.split_atom, Tuple{LK.PL_local_data{T}, Int, LK.PL_chars_t, Int}, false),
+    # S2a: the boot-referenced stream predicates (src/os/pl-file.jl, src/os/pl-stream.jl; pl-file.c)
+    [
+        (f, Tuple{LK.PL_local_data{T}, Int, Int, LK.foreign_context{T}}, false) for
+        f in (
+            LK.pl_prompt2_va, LK.pl_prompt1_1_va, LK.pl_push_input_context1_va,
+            LK.pl_pop_input_context0_va, LK.pl_input_context1_va, LK.pl_ttyflush0_va,
+            LK.pl_is_stream1_va, LK.pl_dalias_stream2_va, LK.pl_flush_output1_va,
+            LK.pl_get_char2_va, LK.pl_peek_char2_va, LK.pl_skip2_va,
+            LK.pl_get_single_char1_va, LK.pl_dstream_property2_va,
+            LK.pl_dstream_properties2_va, LK.pl_dstreams_properties2_va,
+            LK.pl_set_stream2_va
+        )
+    ]...,
+    (LK.prompt1, Tuple{LK.PL_local_data{T}, T}, false),
+    (LK.flush_output, Tuple{LK.PL_local_data{T}, Int}, false),
+    (LK.PL_unify_char, Tuple{LK.PL_local_data{T}, Int, Int, Symbol}, false),
+    (LK.get_char2, Tuple{LK.PL_local_data{T}, Int, Int}, false),
+    (LK.peek, Tuple{LK.PL_local_data{T}, Int, Int, Symbol}, false),
+    (LK.skip, Tuple{LK.PL_local_data{T}, Int, Int}, false),
+    (LK.getSingleChar, Tuple{LK.PL_local_data{T}, LK.IOSTREAM, Bool}, false),
+    (LK.PL_encoding_to_atom, Tuple{Type{T}, LK.IOENC}, false),
+    (LK.unicode_atoms_to_atom, Tuple{Type{T}, LK.Sunicode_atoms_t}, false),
+    (LK.term_stream_handle, Tuple{LK.PL_local_data{T}, Int, Int}, false),
+    (LK._put_functor, Tuple{LK.PL_local_data{T}, Int, Symbol, Int}, false),
+    [
+        (f, Tuple{LK.PL_local_data{T}, LK.IOSTREAM, Int}, false) for
+        f in (
+            LK.stream_file_name_propery, LK.stream_mode_property, LK.stream_alias_prop,
+            LK.stream_position_prop, LK.stream_end_of_stream_prop, LK.stream_error_prop,
+            LK.stream_eof_action_prop, LK.stream_reposition_prop, LK.stream_tty_prop,
+            LK.stream_bom_prop, LK.stream_newline_prop, LK.stream_encoding_prop,
+            LK.stream_unicode_atoms_prop, LK.stream_reperror_prop,
+            LK.stream_buffer_prop, LK.stream_buffer_size_prop,
+            LK.stream_close_on_abort_prop,
+            LK.stream_close_on_exec_prop, LK.stream_file_no_prop, LK.stream_locale_prop,
+            LK.stream_nlink_prop, LK.stream_timeout_prop, LK.stream_type_prop,
+            LK.stream_writeerror_prop
+        )
+    ]...,
+    (LK.stream_input_prop, Tuple{LK.PL_local_data{T}, LK.IOSTREAM}, false),
+    (LK.stream_output_prop, Tuple{LK.PL_local_data{T}, LK.IOSTREAM}, false),
+    (LK._unify_sym, Tuple{LK.PL_local_data{T}, Int, Symbol}, false),
+    (LK.get_stream_property_def, Tuple{LK.PL_local_data{T}, Int}, false),
+    (
+        LK._call_stream_property,
+        Tuple{LK.PL_local_data{T}, LK.IOSTREAM, LK.sprop, Int},
+        false
+    ),
+    (LK.unify_stream_property_list, Tuple{LK.PL_local_data{T}, LK.IOSTREAM, Int}, false),
+    (
+        LK.unify_stream_property,
+        Tuple{LK.PL_local_data{T}, LK.IOSTREAM, LK.sprop, Int},
+        false
+    ),
+    (LK._PL_permission_error, Tuple{LK.PL_local_data{T}, Symbol, Symbol, Int}, false),
+    (LK._atom_to_unicode_atoms, Tuple{LK.PL_local_data{T}, T}, false),
+    (LK.set_stream, Tuple{LK.PL_local_data{T}, LK.IOSTREAM, Int, Symbol, Int}, false),
+    (
+        LK.prop_get_stream,
+        Tuple{LK.PL_local_data{T}, T, Union{Nothing, LK.IOSTREAM}, Bool},
+        false
+    ),
+    (LK.symbol_stream_pair_not_allowed, Tuple{LK.PL_local_data{T}, T}, false)
 )
 
 const _DISPATCH_MANIFEST_TUPLE = (
@@ -2555,6 +2618,10 @@ const _DISPATCH_MANIFEST_TUPLE = (
     (LK.condc, Tuple{}, false),
     (LK.qlfEndPart, Tuple{Nothing}, false),
     (LK.addDirectiveWic, Tuple{Nothing, Int}, false),
+    # S2a: the stream-layer entries that name no term type (listed once, not once per type)
+    (LK.Sgetcode_intr, Tuple{LK.IOSTREAM}, false),
+    (LK.Ssetbuffer, Tuple{LK.IOSTREAM, Union{Nothing, Vector{UInt8}}, Int}, false),
+    (LK.Ssetenc, Tuple{LK.IOSTREAM, LK.IOENC}, false),
     # P1: the limb count of a big integer (type-independent)
     (LK._limbs64, Tuple{BigInt}, false),
     # term-type-independent parts of the index and its head compiler

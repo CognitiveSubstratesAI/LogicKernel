@@ -3,6 +3,8 @@
 # UPSTREAM: swipl-devel src/pl-global.h @ cbf4e1896275
 # UPSTREAM: swipl-devel src/pl-incl.h @ cbf4e1896275
 # UPSTREAM: swipl-devel src/os/pl-stream.c @ cbf4e1896275
+# UPSTREAM: swipl-devel src/pl-privitf.c @ cbf4e1896275
+# UPSTREAM: swipl-devel src/os/pl-prologflag.c @ cbf4e1896275
 # CLASS: code
 # COPYRIGHT: Copyright (c)  2011-2024, University of Amsterdam
 # COPYRIGHT: VU University Amsterdam
@@ -175,8 +177,9 @@ end
 # stream; the host may replace them, `set_standard_stream!`), where upstream opens them at start-up:
 # `Sinput`, `Soutput` and `Serror` (pl-stream.c `S__iob0`'s flags: line-buffered input and output,
 # an unbuffered error stream) over Julia's stdin, stdout and stderr (`_std_io`); the three share `Sinput`'s
-# position record, as upstream. No tty modes, no protocol stream (`Sprotocol` stays NULL), no stream
-# contexts or alias table (the aliases are `standardStreams`).
+# position record, as upstream. No tty modes, no protocol stream (`Sprotocol` stays NULL), no alias
+# table (the aliases are `standardStreams`); the three streams are made known to Prolog
+# (`getStreamContext`, pl-file.c initIO "add for enumeration").
 "Open the standard streams of `ld` over the process's stdin, stdout and stderr (pl-file.c)."
 function initIO(ld::PL_local_data)::Nothing
     sin = _std_stream(_std_io(Base.stdin, 0), SIO_STDIO | SIO_LBUF | SIO_INPUT | SIO_NOFEOF)
@@ -196,6 +199,10 @@ function initIO(ld::PL_local_data)::Nothing
     ld.IO_streams[SNO_CURRENT_INPUT + 1] = sin      # Scurin       = Sinput
     ld.IO_streams[SNO_CURRENT_OUTPUT + 1] = sout    # Scurout      = Soutput
     ld.IO_streams[SNO_PROTOCOL + 1] = nothing       # Sprotocol    = NULL
+    gd = _query_gd(ld)
+    getStreamContext(gd, sin)                       # add for enumeration
+    getStreamContext(gd, sout)
+    getStreamContext(gd, serr)
     ld.IO_initialised = true
     return nothing
 end
@@ -1389,7 +1396,7 @@ function pl_prompt2_va(
     return FTRUE
 end
 
-# PORT: pl-file.c prompt1 (the C function)
+# PORT: pl-file.c prompt1
 # DIVERGES: atoms are not registered (see `pl_prompt2_va`).
 "Set the prompt for the first line of the next read to `prompt` (pl-file.c `prompt1(atom_t)`)."
 function prompt1(ld::PL_local_data{T}, prompt::T)::Nothing where {T}
@@ -1519,7 +1526,7 @@ function pl_dalias_stream2_va(
     return unify_stream_ref(ld, A2, s) ? FTRUE : FFALSE
 end
 
-# PORT: pl-file.c flush_output (the C function)
+# PORT: pl-file.c flush_output
 "Flush the output stream term reference `out` names (0: the current output) (pl-file.c)."
 function flush_output(ld::PL_local_data, out::term_t)::Bool
     s = getOutputStream(ld, out, S_DONTCARE)
@@ -1546,7 +1553,9 @@ end
 # is written out, as the kernel's `PL_get_char` does not take `eof` (it answers `nothing` for -1 and `end_of_file`).
 # Kept in os/pl-file.jl, its only caller.
 "Unify the term reference `chr` with the character `c` as `how` asks; a bound `chr` is compared (pl-privitf.c)."
-function PL_unify_char(ld::PL_local_data{T}, chr::term_t, c::Int, how::Symbol)::Bool where {T}
+function PL_unify_char(
+    ld::PL_local_data{T}, chr::term_t, c::Int, how::Symbol
+)::Bool where {T}
     if PL_is_variable(ld, chr)
         how === :char && return PL_unify_atom(ld, chr, codeToAtom(T, c))
         return PL_unify_integer(ld, chr, c)
@@ -1562,7 +1571,7 @@ function PL_unify_char(ld::PL_local_data{T}, chr::term_t, c::Int, how::Symbol)::
     return c == c2
 end
 
-# PORT: pl-file.c get_char2 (the C function)
+# PORT: pl-file.c get_char2
 function get_char2(ld::PL_local_data{T}, in::term_t, chr::term_t)::Bool where {T}
     s = getTextInputStream(ld, in)
     if s !== nothing
@@ -1586,11 +1595,13 @@ function pl_get_char2_va(
     return get_char2(ld, PL__t0, PL__t0 + 1) ? FTRUE : FFALSE
 end
 
-# PORT: pl-file.c peek (the C function), for PL_CHAR
+# PORT: pl-file.c peek
 # DIVERGES: only the `:char` and `:code` forms (`how == PL_BYTE`'s `Sgetc`/`Sungetc` branch is S2b's with the byte
 # predicates); no locks (`releaseStream`).
 "Peek the next character of the input stream `stream` names and unify it with `chr` as `how` asks (pl-file.c)."
-function peek(ld::PL_local_data{T}, stream::term_t, chr::term_t, how::Symbol)::Bool where {T}
+function peek(
+    ld::PL_local_data{T}, stream::term_t, chr::term_t, how::Symbol
+)::Bool where {T}
     s = getInputStream(ld, stream, S_TEXT)
     s === nothing && return false
     if (s.flags & SIO_NBUF) != 0 || (s.bufsize != 0 && s.bufsize < UNDO_SIZE)   # PL_MB_LEN_MAX
@@ -1614,7 +1625,7 @@ function pl_peek_char2_va(
     return peek(ld, PL__t0, PL__t0 + 1, :char) ? FTRUE : FFALSE
 end
 
-# PORT: pl-file.c skip (the C function)
+# PORT: pl-file.c skip
 function skip(ld::PL_local_data, in::term_t, chr::term_t)::Bool
     c = PL_get_char(ld, chr)                        # PL_get_char(chr, &c, false)
     c === nothing && return false
@@ -1668,8 +1679,9 @@ function getSingleChar(ld::PL_local_data, stream::IOSTREAM, signals::Bool)::Int
             p = stream.position
             oldpos = IOPOS(p.byteno, p.charno, p.lineno, p.linepos, p.esc_state)   # IOPOS oldpos = *stream->position
             c = Sgetcode_intr(stream)
-            p.byteno, p.charno, p.lineno, p.linepos, p.esc_state =
-                oldpos.byteno, oldpos.charno, oldpos.lineno, oldpos.linepos, oldpos.esc_state
+            p.byteno, p.charno, p.lineno, p.linepos, p.esc_state = oldpos.byteno,
+            oldpos.charno, oldpos.lineno, oldpos.linepos,
+            oldpos.esc_state
         else
             c = Sgetcode_intr(stream)
         end
@@ -1740,14 +1752,17 @@ end
 
 # ORIGINAL: pl-fli.c `PL_put_functor`, which the Julia FLI has not: a fresh variable, then `PL_unify_functor`.
 "Put the compound `name/arity` of fresh arguments into the term reference `t` (pl-fli.c `PL_put_functor`)."
-function _put_functor(ld::PL_local_data{T}, t::term_t, name::Symbol, arity::Int)::Bool where {T}
+function _put_functor(
+    ld::PL_local_data{T}, t::term_t, name::Symbol, arity::Int
+)::Bool where {T}
     PL_put_variable(ld, t)
     return PL_unify_functor(ld, t, mk_sym(T, name), arity)
 end
 
 # ORIGINAL: unify the term `t` with the atom whose text is `name`.
-_unify_sym(ld::PL_local_data{T}, t::term_t, name::Symbol)::Bool where {T} =
-    PL_unify_atom(ld, t, mk_sym(T, name))
+function _unify_sym(ld::PL_local_data{T}, t::term_t, name::Symbol)::Bool where {T}
+    return PL_unify_atom(ld, t, mk_sym(T, name))
+end
 
 # PORT: pl-file.c stream_file_name_propery
 # DIVERGES: no `downstream` chain (the kernel has no filter or pair streams): only `s`; the name is the
@@ -1815,11 +1830,14 @@ end
 # DIVERGES: `PL_unify_term(prop, PL_FUNCTOR, FUNCTOR_dstream_position4, …)` is `PL_unify_functor` then
 # `PL_unify_int64` of each argument.
 "`position(Pos)` of `s`: `'\$stream_position'(Char, Line, LinePos, Byte)` (pl-file.c)."
-function stream_position_prop(ld::PL_local_data{T}, s::IOSTREAM, prop::term_t)::Bool where {T}
+function stream_position_prop(
+    ld::PL_local_data{T}, s::IOSTREAM, prop::term_t
+)::Bool where {T}
     if s.magic == SIO_MAGIC && s.position !== nothing
         pos = s.position::IOPOS
         a = PL_new_term_ref(ld)
-        PL_unify_functor(ld, prop, mk_sym(T, Symbol("\$stream_position")), 4) || return false
+        PL_unify_functor(ld, prop, mk_sym(T, Symbol("\$stream_position")), 4) ||
+            return false
         rc = (
             _PL_get_arg(ld, 1, prop, a) && PL_unify_int64(ld, a, pos.charno) &&
             _PL_get_arg(ld, 2, prop, a) && PL_unify_int64(ld, a, pos.lineno) &&
@@ -1923,7 +1941,9 @@ end
 
 # PORT: pl-file.c stream_encoding_prop
 "`encoding(Enc)` of `s` (pl-file.c)."
-function stream_encoding_prop(ld::PL_local_data{T}, s::IOSTREAM, prop::term_t)::Bool where {T}
+function stream_encoding_prop(
+    ld::PL_local_data{T}, s::IOSTREAM, prop::term_t
+)::Bool where {T}
     ename = PL_encoding_to_atom(T, s.encoding)
     ename === nothing || return PL_unify_atom(ld, prop, ename)
     return false
@@ -2008,44 +2028,44 @@ stream_nlink_prop(ld::PL_local_data, s::IOSTREAM, prop::term_t)::Bool = false
 stream_close_on_exec_prop(ld::PL_local_data, s::IOSTREAM, prop::term_t)::Bool = false
 
 # PORT: pl-file.c sprop
-# DIVERGES: upstream's `functor` is the name and arity, and `function`/`function0` the arity-1 and arity-0
-# function pointers: one `fn`, called by the arity (`fn(ld, s, arg)` or `fn(ld, s)`).
-"A stream property: its name, arity and the function that generates it (pl-file.c `sprop`)."
+# DIVERGES: upstream's `functor` is the name and arity; its `function`/`function0` pointers are not held (a
+# field of an abstract function type is no concrete field): `_call_stream_property` picks the function by the
+# name, in the order of `sprop_list`.
+"A stream property: its name and arity (pl-file.c `sprop`)."
 struct sprop
     name::Symbol
     arity::Int
-    fn::Function
 end
 
 # PORT: pl-file.c sprop_list
 "The stream properties, in upstream's order (pl-file.c)."
 const sprop_list = (
-    sprop(:file_name, 1, stream_file_name_propery),
-    sprop(:mode, 1, stream_mode_property),
-    sprop(:input, 0, stream_input_prop),
-    sprop(:output, 0, stream_output_prop),
-    sprop(:alias, 1, stream_alias_prop),
-    sprop(:position, 1, stream_position_prop),
-    sprop(:end_of_stream, 1, stream_end_of_stream_prop),
-    sprop(:error, 1, stream_error_prop),
-    sprop(:eof_action, 1, stream_eof_action_prop),
-    sprop(:reposition, 1, stream_reposition_prop),
-    sprop(:type, 1, stream_type_prop),
-    sprop(:file_no, 1, stream_file_no_prop),
-    sprop(:buffer, 1, stream_buffer_prop),
-    sprop(:buffer_size, 1, stream_buffer_size_prop),
-    sprop(:close_on_abort, 1, stream_close_on_abort_prop),
-    sprop(:tty, 1, stream_tty_prop),
-    sprop(:encoding, 1, stream_encoding_prop),
-    sprop(:unicode_atoms, 1, stream_unicode_atoms_prop),
-    sprop(:locale, 1, stream_locale_prop),
-    sprop(:bom, 1, stream_bom_prop),
-    sprop(:newline, 1, stream_newline_prop),
-    sprop(:representation_errors, 1, stream_reperror_prop),
-    sprop(:write_errors, 1, stream_writeerror_prop),
-    sprop(:timeout, 1, stream_timeout_prop),
-    sprop(:nlink, 1, stream_nlink_prop),
-    sprop(:close_on_exec, 1, stream_close_on_exec_prop)
+    sprop(:file_name, 1),
+    sprop(:mode, 1),
+    sprop(:input, 0),
+    sprop(:output, 0),
+    sprop(:alias, 1),
+    sprop(:position, 1),
+    sprop(:end_of_stream, 1),
+    sprop(:error, 1),
+    sprop(:eof_action, 1),
+    sprop(:reposition, 1),
+    sprop(:type, 1),
+    sprop(:file_no, 1),
+    sprop(:buffer, 1),
+    sprop(:buffer_size, 1),
+    sprop(:close_on_abort, 1),
+    sprop(:tty, 1),
+    sprop(:encoding, 1),
+    sprop(:unicode_atoms, 1),
+    sprop(:locale, 1),
+    sprop(:bom, 1),
+    sprop(:newline, 1),
+    sprop(:representation_errors, 1),
+    sprop(:write_errors, 1),
+    sprop(:timeout, 1),
+    sprop(:nlink, 1),
+    sprop(:close_on_exec, 1)
 )
 
 # PORT: pl-file.c get_stream_property_def
@@ -2067,8 +2087,34 @@ end
 function _call_stream_property(
     ld::PL_local_data, s::IOSTREAM, p::sprop, a1::term_t
 )::Bool
-    p.arity == 0 && return p.fn(ld, s)::Bool
-    return p.fn(ld, s, a1)::Bool
+    n = p.name
+    n === :file_name && return stream_file_name_propery(ld, s, a1)::Bool
+    n === :mode && return stream_mode_property(ld, s, a1)::Bool
+    n === :input && return stream_input_prop(ld, s)::Bool
+    n === :output && return stream_output_prop(ld, s)::Bool
+    n === :alias && return stream_alias_prop(ld, s, a1)::Bool
+    n === :position && return stream_position_prop(ld, s, a1)::Bool
+    n === :end_of_stream && return stream_end_of_stream_prop(ld, s, a1)::Bool
+    n === :error && return stream_error_prop(ld, s, a1)::Bool
+    n === :eof_action && return stream_eof_action_prop(ld, s, a1)::Bool
+    n === :reposition && return stream_reposition_prop(ld, s, a1)::Bool
+    n === :type && return stream_type_prop(ld, s, a1)::Bool
+    n === :file_no && return stream_file_no_prop(ld, s, a1)::Bool
+    n === :buffer && return stream_buffer_prop(ld, s, a1)::Bool
+    n === :buffer_size && return stream_buffer_size_prop(ld, s, a1)::Bool
+    n === :close_on_abort && return stream_close_on_abort_prop(ld, s, a1)::Bool
+    n === :tty && return stream_tty_prop(ld, s, a1)::Bool
+    n === :encoding && return stream_encoding_prop(ld, s, a1)::Bool
+    n === :unicode_atoms && return stream_unicode_atoms_prop(ld, s, a1)::Bool
+    n === :locale && return stream_locale_prop(ld, s, a1)::Bool
+    n === :bom && return stream_bom_prop(ld, s, a1)::Bool
+    n === :newline && return stream_newline_prop(ld, s, a1)::Bool
+    n === :representation_errors && return stream_reperror_prop(ld, s, a1)::Bool
+    n === :write_errors && return stream_writeerror_prop(ld, s, a1)::Bool
+    n === :timeout && return stream_timeout_prop(ld, s, a1)::Bool
+    n === :nlink && return stream_nlink_prop(ld, s, a1)::Bool
+    n === :close_on_exec && return stream_close_on_exec_prop(ld, s, a1)::Bool
+    return false
 end
 
 # PORT: pl-file.c dstream_property as pl_dstream_property2_va
@@ -2169,7 +2215,9 @@ function pl_dstreams_properties2_va(
 
         for s in streams
             Sacquire(s)
-            rc = s.magic == SIO_MAGIC && s.context != 0 && unify_stream_property(ld, s, p, pt)
+            rc =
+                s.magic == SIO_MAGIC && s.context != 0 &&
+                unify_stream_property(ld, s, p, pt)
             Srelease(s) && (rc = false)
             rc = (
                 rc &&
@@ -2267,7 +2315,8 @@ function set_stream(
         if standardStreamIndexFromName(ld, alias) >= 0
             throw(
                 NotPortedError{T}(
-                    alias, "set_stream/2's alias(Std) of a standard stream", "setStandardStream (landing B)"
+                    alias, "set_stream/2's alias(Std) of a standard stream",
+                    "setStandardStream (landing B)"
                 )
             )
         end
@@ -2328,9 +2377,10 @@ function set_stream(
     elseif aname === :line_position
         lpos = PL_get_integer_ex(ld, a)
         lpos === nothing && return false
-        if s.position !== nothing
-            s.position.linepos = lpos
-            Sresetesc(s.position)
+        pos = s.position
+        if pos !== nothing
+            pos.linepos = lpos
+            Sresetesc(pos)
         else
             return _PL_permission_error(ld, :line_position, :stream, stream)
         end
@@ -2384,7 +2434,11 @@ function set_stream(
         s.unicode_atoms = mode
         return true
     elseif aname === :locale                        # locale(Locale)
-        throw(NotPortedError{T}(mk_sym(T, :locale), "set_stream/2's locale(Locale)", "PL_locale"))
+        throw(
+            NotPortedError{T}(
+                mk_sym(T, :locale), "set_stream/2's locale(Locale)", "PL_locale"
+            )
+        )
     elseif aname === :representation_errors
         val = PL_get_atom_ex(ld, a)
         val === nothing && return false
@@ -2511,7 +2565,8 @@ function pl_set_stream2_va(
             return PL_domain_error(ld, "stream_attribute", attr) ? FTRUE : FFALSE
         name = Symbol(sym_text(nm))
         i = findfirst(info -> info[1] === name, ss_info)
-        i === nothing && return PL_domain_error(ld, "stream_attribute", attr) ? FTRUE : FFALSE
+        i === nothing &&
+            return PL_domain_error(ld, "stream_attribute", attr) ? FTRUE : FFALSE
         aname, flags = ss_info[i]
     else
         return PL_type_error(ld, "stream_attribute", attr) ? FTRUE : FFALSE
@@ -2555,7 +2610,8 @@ function symbol_stream_pair_not_allowed(ld::PL_local_data{T}, symbol::T)::Bool w
     t = PL_new_term_ref(ld)
     setSlotValue!(ld, t + 1, symbol)                        # PL_put_atom(t, symbol)
     return PL_error(
-        ld, "", 0, "operation is ambiguous on a stream pair", ERR_TYPE, mk_sym(T, :stream), t
+        ld, "", 0, "operation is ambiguous on a stream pair", ERR_TYPE, mk_sym(T, :stream),
+        t
     )
 end
 

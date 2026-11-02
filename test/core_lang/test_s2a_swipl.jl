@@ -55,7 +55,7 @@ enc(T, S0, S) :- compound_name_arity(T, N, A),
     ( N == [] -> write('c[]') ; atom_codes(N, Cs), format("c~w", [Cs]) ),
     format("/~w(", [A]), encargs(1, A, T, S0, S), write(')').
 encargs(I, A, _, S, S) :- I > A, !.
-encargs(I, A, T, S0, S) :- arg(I, T, X), enc(X, S0, S1), ( I < A -> write(',') ; true ),
+encargs(I, A, T, S0, S) :- call(arg, I, T, X), enc(X, S0, S1), ( I < A -> write(',') ; true ),
     I1 is I+1, encargs(I1, A, T, S1, S).
 vidx([X|_], V, I, I) :- X == V, !.
 vidx([_|Xs], V, I0, I) :- I1 is I0+1, vidx(Xs, V, I1, I).
@@ -111,10 +111,10 @@ ctxd(D1, D2) :-
     '$pop_input_context', '$input_context'(L2), cnt(L2, N2), D1 is N1-N0, D2 is N2-N0.
 ctxe(R) :-
     '$push_input_context'(ctx2), '$input_context'([E|_]), '$pop_input_context',
-    functor(E, Nm, A), arg(1, E, T), R = Nm/A/T.
+    functor(E, Nm, A), call(arg, 1, E, T), R = Nm/A/T.
 ctxo(T1, T2) :-
     '$push_input_context'(ca), '$push_input_context'(cb), '$input_context'([E1, E2|_]),
-    '$pop_input_context', '$pop_input_context', arg(1, E1, T1), arg(1, E2, T2).
+    '$pop_input_context', '$pop_input_context', call(arg, 1, E1, T1), call(arg, 1, E2, T2).
 aliasbl(S, R) :- '$alias_stream'(zz1, S2), ( S2 == S -> R = same ; R = other ).
 spairs(S, R) :-
     '$streams_properties'(alias(zz4), L), cnt(L, N), L = [S0-V|_], '$alias_stream'(zz4, SB),
@@ -157,7 +157,10 @@ const _S2_CASES = [
     ("s027", raw"( is_stream(nosuch) -> R = yes ; R = no )"),
     ("s028", raw"( is_stream(_) -> R = yes ; R = no )"),
     ("s029", raw"( is_stream(f(x)) -> R = yes ; R = no )"),
-    ("s030", raw"ro(S), ( is_stream(S) -> A = yes ; A = no ), close(S), ( is_stream(S) -> B = yes ; B = no ), R = A-B"),
+    (
+        "s030",
+        raw"ro(S), ( is_stream(S) -> A = yes ; A = no ), close(S), ( is_stream(S) -> B = yes ; B = no ), R = A-B"
+    ),
     ("s031", raw"( is_stream(user_error) -> R = yes ; R = no )"),
     # s032-s037: $alias_stream/2 (pl-file.c:5457)
     ("s032", raw"'$alias_stream'(user_output, S), ( is_stream(S) -> R = yes ; R = no )"),
@@ -165,16 +168,34 @@ const _S2_CASES = [
     ("s034", raw"'$alias_stream'(1, _)"),
     ("s035", raw"'$alias_stream'(_, _)"),
     ("s036", raw"ro(S), set_stream(S, alias(zz1)), aliasbl(S, R0), close(S), R = R0"),
-    ("s037", raw"ro(S), set_stream(S, alias(zz2)), close(S), cerr('$alias_stream'(zz2, _), R)"),
+    (
+        "s037",
+        raw"ro(S), set_stream(S, alias(zz2)), close(S), cerr('$alias_stream'(zz2, _), R)"
+    ),
     # s038-s060: get_char/2 (3676), peek_char/2 (5954), skip/2 (3549) over a file stream
-    ("s038", raw"ro(S), get_char(S, A), get_char(S, B), peek_char(S, P), get_char(S, C), close(S), R = [A, B, P, C]"),
-    ("s039", raw"ro(S), get_char(S, _), get_char(S, _), get_char(S, _), get_char(S, N), close(S), R = N"),
+    (
+        "s038",
+        raw"ro(S), get_char(S, A), get_char(S, B), peek_char(S, P), get_char(S, C), close(S), R = [A, B, P, C]"
+    ),
+    (
+        "s039",
+        raw"ro(S), get_char(S, _), get_char(S, _), get_char(S, _), get_char(S, N), close(S), R = N"
+    ),
     ("s040", raw"ro(S), skip(S, 120), get_char(S, C), close(S), R = C"),
     ("s041", raw"ro(S), skip(S, y), get_char(S, C), close(S), R = C"),
-    ("s042", raw"ro(S), skip(S, 33), get_char(S, C1), get_char(S, C2), close(S), R = C1-C2"),
+    (
+        "s042",
+        raw"ro(S), skip(S, 33), get_char(S, C1), get_char(S, C2), close(S), R = C1-C2"
+    ),
     ("s043", raw"ro(S), skip(S, 33), peek_char(S, C), close(S), R = C"),
-    ("s044", raw"ro(S), set_stream(S, eof_action(error)), skip(S, 33), get_char(S, C1), cerr(get_char(S, _), R0), close(S), R = C1-R0"),
-    ("s045", raw"ro(S), set_stream(S, eof_action(reset)), skip(S, 33), get_char(S, C1), get_char(S, C2), close(S), R = C1-C2"),
+    (
+        "s044",
+        raw"ro(S), set_stream(S, eof_action(error)), skip(S, 33), get_char(S, C1), cerr(get_char(S, _), R0), close(S), R = C1-R0"
+    ),
+    (
+        "s045",
+        raw"ro(S), set_stream(S, eof_action(reset)), skip(S, 33), get_char(S, C1), get_char(S, C2), close(S), R = C1-C2"
+    ),
     ("s046", raw"ro(S), cerr(get_char(S, 1), R0), close(S), R = R0"),
     ("s047", raw"ro(S), cerr(get_char(S, ab), R0), close(S), R = R0"),
     ("s048", raw"ro(S), cerr(peek_char(S, 1), R0), close(S), R = R0"),
@@ -186,15 +207,30 @@ const _S2_CASES = [
     ("s054", raw"peek_char(nosuch, _)"),
     ("s055", raw"skip(nosuch, 97)"),
     # UNVERIFIED on the kernel: gate decides — a binary stream under get_char/2 (the SIO_TEXT test)
-    ("s056", raw"ro(S), set_stream(S, type(binary)), cerr(get_char(S, _), R0), close(S), R = R0"),
+    (
+        "s056",
+        raw"ro(S), set_stream(S, type(binary)), cerr(get_char(S, _), R0), close(S), R = R0"
+    ),
     ("s057", raw"rb(S), cerr(get_char(S, _), R0), close(S), R = R0"),
-    ("s058", raw"ro(S), get_char(S, _), get_char(S, _), get_char(S, _), get_char(S, _), '$stream_property'(S, position(P)), close(S), R = P"),
-    ("s059", raw"ro(S), peek_char(S, _), '$stream_property'(S, position(P)), close(S), R = P"),
-    ("s060", raw"ro(S), sp(S, end_of_stream(E0), _), skip(S, 33), sp(S, end_of_stream(E1), _), get_char(S, _), sp(S, end_of_stream(E2), _), close(S), R = [E0, E1, E2]"),
+    (
+        "s058",
+        raw"ro(S), get_char(S, _), get_char(S, _), get_char(S, _), get_char(S, _), '$stream_property'(S, position(P)), close(S), R = P"
+    ),
+    (
+        "s059",
+        raw"ro(S), peek_char(S, _), '$stream_property'(S, position(P)), close(S), R = P"
+    ),
+    (
+        "s060",
+        raw"ro(S), sp(S, end_of_stream(E0), _), skip(S, 33), sp(S, end_of_stream(E1), _), get_char(S, _), sp(S, end_of_stream(E2), _), close(S), R = [E0, E1, E2]"
+    ),
     # s061-s083: $stream_property/2 (5265), $stream_properties/2 (5344), $streams_properties/2 (5387), property by property
     ("s061", raw"ro(S), sp(S, mode(_), R0), close(S), R = R0"),
     ("s062", raw"ro(S), has(S, input, A), has(S, output, B), close(S), R = A-B"),
-    ("s063", raw"wo(S), has(S, input, A), has(S, output, B), sp(S, mode(_), M), close(S), R = A-B-M"),
+    (
+        "s063",
+        raw"wo(S), has(S, input, A), has(S, output, B), sp(S, mode(_), M), close(S), R = A-B-M"
+    ),
     ("s064", raw"ro(S), sp(S, eof_action(_), R0), close(S), R = R0"),
     ("s065", raw"ro(S), sp(S, type(_), R0), close(S), R = R0"),
     ("s066", raw"ro(S), sp(S, buffer(_), R0), close(S), R = R0"),
@@ -212,10 +248,16 @@ const _S2_CASES = [
     ("s077", raw"ro(S), sp(S, buffer_size(_), R0), close(S), R = R0"),
     ("s078", raw"ro(S), sp(S, reposition(_), R0), close(S), R = R0"),
     ("s079", raw"ro(S), sp(S, timeout(_), R0), close(S), R = R0"),
-    ("s080", raw"ro(S), '$stream_properties'(S, L), keep(L, [mode, input, eof_action, type, buffer, close_on_abort, newline, representation_errors, write_errors, unicode_atoms, end_of_stream, error], K), close(S), R = K"),
+    (
+        "s080",
+        raw"ro(S), '$stream_properties'(S, L), keep(L, [mode, input, eof_action, type, buffer, close_on_abort, newline, representation_errors, write_errors, unicode_atoms, end_of_stream, error], K), close(S), R = K"
+    ),
     ("s081", raw"ra(S, zz4), spairs(S0, R0), close(S0), R = R0"),
     ("s082", raw"'$streams_properties'(alias(nosuch), L), R = L"),
-    ("s083", raw"ro(S), '$streams_properties'(mode(read), L), ( hasp(L, S) -> A = yes ; A = no ), '$streams_properties'(mode(write), L2), ( hasp(L2, S) -> B = yes ; B = no ), close(S), R = A-B"),
+    (
+        "s083",
+        raw"ro(S), '$streams_properties'(mode(read), L), ( hasp(L, S) -> A = yes ; A = no ), '$streams_properties'(mode(write), L2), ( hasp(L2, S) -> B = yes ; B = no ), close(S), R = A-B"
+    ),
     # s084-s088: $stream_property/2 on the wrong argument
     ("s084", raw"ro(S), cerr('$stream_property'(S, bogus(_)), R0), close(S), R = R0"),
     ("s085", raw"cerr('$stream_property'(nosuch, mode(_)), R)"),
@@ -226,43 +268,100 @@ const _S2_CASES = [
     ("s089", raw"ro(S), set_stream(S, alias(zz5)), has(S, alias(zz5), A), close(S), R = A"),
     ("s090", raw"ro(S), cerr(set_stream(S, alias(_)), R0), close(S), R = R0"),
     ("s091", raw"ro(S), cerr(set_stream(S, alias(1)), R0), close(S), R = R0"),
-    ("s092", raw"ro(S), set_stream(S, buffer(line)), sp(S, buffer(_), R0), close(S), R = R0"),
-    ("s093", raw"ro(S), set_stream(S, buffer(false)), sp(S, buffer(_), R0), close(S), R = R0"),
-    ("s094", raw"ro(S), set_stream(S, buffer(full)), sp(S, buffer(_), R0), close(S), R = R0"),
+    (
+        "s092",
+        raw"ro(S), set_stream(S, buffer(line)), sp(S, buffer(_), R0), close(S), R = R0"
+    ),
+    (
+        "s093",
+        raw"ro(S), set_stream(S, buffer(false)), sp(S, buffer(_), R0), close(S), R = R0"
+    ),
+    (
+        "s094",
+        raw"ro(S), set_stream(S, buffer(full)), sp(S, buffer(_), R0), close(S), R = R0"
+    ),
     ("s095", raw"ro(S), cerr(set_stream(S, buffer(bad)), R0), close(S), R = R0"),
-    ("s096", raw"wo(S), set_stream(S, buffer_size(100)), sp(S, buffer_size(_), R0), close(S), R = R0"),
+    (
+        "s096",
+        raw"wo(S), set_stream(S, buffer_size(100)), sp(S, buffer_size(_), R0), close(S), R = R0"
+    ),
     ("s097", raw"wo(S), cerr(set_stream(S, buffer_size(0)), R0), close(S), R = R0"),
     ("s098", raw"wo(S), cerr(set_stream(S, buffer_size(a)), R0), close(S), R = R0"),
-    ("s099", raw"ro(S), set_stream(S, eof_action(reset)), sp(S, eof_action(_), R0), close(S), R = R0"),
+    (
+        "s099",
+        raw"ro(S), set_stream(S, eof_action(reset)), sp(S, eof_action(_), R0), close(S), R = R0"
+    ),
     ("s100", raw"ro(S), cerr(set_stream(S, eof_action(bad)), R0), close(S), R = R0"),
     ("s101", raw"wo(S), cerr(set_stream(S, eof_action(reset)), R0), close(S), R = R0"),
     ("s102", raw"ro(S), set_stream(S, type(binary)), sp(S, type(_), R0), close(S), R = R0"),
     ("s103", raw"rb(S), set_stream(S, type(text)), sp(S, type(_), R0), close(S), R = R0"),
     ("s104", raw"ro(S), cerr(set_stream(S, type(foo)), R0), close(S), R = R0"),
-    ("s105", raw"ro(S), set_stream(S, close_on_abort(false)), sp(S, close_on_abort(_), R0), close(S), R = R0"),
+    (
+        "s105",
+        raw"ro(S), set_stream(S, close_on_abort(false)), sp(S, close_on_abort(_), R0), close(S), R = R0"
+    ),
     ("s106", raw"ro(S), cerr(set_stream(S, close_on_abort(foo)), R0), close(S), R = R0"),
-    ("s107", raw"ro(S), set_stream(S, record_position(false)), sp(S, position(_), R0), close(S), R = R0"),
-    ("s108", raw"ro(S), set_stream(S, record_position(false)), cerr(set_stream(S, line_position(3)), R0), close(S), R = R0"),
-    ("s109", raw"wo(S), set_stream(S, line_position(3)), sp(S, position(_), R0), close(S), R = R0"),
+    (
+        "s107",
+        raw"ro(S), set_stream(S, record_position(false)), sp(S, position(_), R0), close(S), R = R0"
+    ),
+    (
+        "s108",
+        raw"ro(S), set_stream(S, record_position(false)), cerr(set_stream(S, line_position(3)), R0), close(S), R = R0"
+    ),
+    (
+        "s109",
+        raw"wo(S), set_stream(S, line_position(3)), sp(S, position(_), R0), close(S), R = R0"
+    ),
     ("s110", raw"wo(S), cerr(set_stream(S, line_position(a)), R0), close(S), R = R0"),
-    ("s111", raw"ro(S), set_stream(S, record_position(false)), set_stream(S, record_position(true)), sp(S, position(_), R0), close(S), R = R0"),
-    ("s112", raw"ro(S), set_stream(S, file_name(abc)), sp(S, file_name(_), R0), close(S), R = R0"),
+    (
+        "s111",
+        raw"ro(S), set_stream(S, record_position(false)), set_stream(S, record_position(true)), sp(S, position(_), R0), close(S), R = R0"
+    ),
+    (
+        "s112",
+        raw"ro(S), set_stream(S, file_name(abc)), sp(S, file_name(_), R0), close(S), R = R0"
+    ),
     ("s113", raw"ro(S), fnstr(S), sp(S, file_name(_), R0), close(S), R = R0"),
     ("s114", raw"ro(S), cerr(set_stream(S, tty(true)), R0), close(S), R = R0"),
     ("s115", raw"ro(S), cerr(set_stream(S, tty(foo)), R0), close(S), R = R0"),
-    ("s116", raw"ro(S), set_stream(S, encoding(octet)), sp(S, encoding(_), E), sp(S, type(_), T), close(S), R = E-T"),
-    ("s117", raw"rb(S), set_stream(S, encoding(utf8)), sp(S, encoding(_), E), sp(S, type(_), T), close(S), R = E-T"),
+    (
+        "s116",
+        raw"ro(S), set_stream(S, encoding(octet)), sp(S, encoding(_), E), sp(S, type(_), T), close(S), R = E-T"
+    ),
+    (
+        "s117",
+        raw"rb(S), set_stream(S, encoding(utf8)), sp(S, encoding(_), E), sp(S, type(_), T), close(S), R = E-T"
+    ),
     ("s118", raw"ro(S), cerr(set_stream(S, encoding(bogus)), R0), close(S), R = R0"),
     # UNVERIFIED on the kernel: gate decides — encoding(bom) on a file without a BOM (ScheckBOM)
     ("s119", raw"ro(S), cerr(set_stream(S, encoding(bom)), R0), close(S), R = R0"),
-    ("s120", raw"ro(S), set_stream(S, unicode_atoms(error)), sp(S, unicode_atoms(_), R0), close(S), R = R0"),
+    (
+        "s120",
+        raw"ro(S), set_stream(S, unicode_atoms(error)), sp(S, unicode_atoms(_), R0), close(S), R = R0"
+    ),
     ("s121", raw"ro(S), cerr(set_stream(S, unicode_atoms(bogus)), R0), close(S), R = R0"),
-    ("s122", raw"wo(S), set_stream(S, representation_errors(xml)), sp(S, representation_errors(_), R0), close(S), R = R0"),
-    ("s123", raw"wo(S), set_stream(S, representation_errors(prolog)), sp(S, representation_errors(_), R0), close(S), R = R0"),
-    ("s124", raw"wo(S), cerr(set_stream(S, representation_errors(bogus)), R0), close(S), R = R0"),
-    ("s125", raw"wo(S), set_stream(S, write_errors(ignore)), sp(S, write_errors(_), R0), close(S), R = R0"),
+    (
+        "s122",
+        raw"wo(S), set_stream(S, representation_errors(xml)), sp(S, representation_errors(_), R0), close(S), R = R0"
+    ),
+    (
+        "s123",
+        raw"wo(S), set_stream(S, representation_errors(prolog)), sp(S, representation_errors(_), R0), close(S), R = R0"
+    ),
+    (
+        "s124",
+        raw"wo(S), cerr(set_stream(S, representation_errors(bogus)), R0), close(S), R = R0"
+    ),
+    (
+        "s125",
+        raw"wo(S), set_stream(S, write_errors(ignore)), sp(S, write_errors(_), R0), close(S), R = R0"
+    ),
     ("s126", raw"wo(S), cerr(set_stream(S, write_errors(bogus)), R0), close(S), R = R0"),
-    ("s127", raw"wo(S), set_stream(S, newline(dos)), sp(S, newline(_), R0), close(S), R = R0"),
+    (
+        "s127",
+        raw"wo(S), set_stream(S, newline(dos)), sp(S, newline(_), R0), close(S), R = R0"
+    ),
     ("s128", raw"wo(S), cerr(set_stream(S, newline(bad)), R0), close(S), R = R0"),
     ("s129", raw"ro(S), cerr(set_stream(S, foo(x)), R0), close(S), R = R0"),
     ("s130", raw"ro(S), cerr(set_stream(S, foo), R0), close(S), R = R0"),
@@ -271,8 +370,11 @@ const _S2_CASES = [
     ("s133", raw"cerr(set_stream(_, tty(true)), R)"),
     ("s134", raw"cerr(set_stream(nosuch, tty(true)), R)"),
     ("s135", raw"ro(S), close(S), cerr(set_stream(S, tty(true)), R)"),
-    ("s136", raw"ro(S), set_stream(S, timeout(infinite)), sp(S, timeout(_), R0), close(S), R = R0"),
-    ("s137", raw"ro(S), cerr(set_stream(S, timeout(foo)), R0), close(S), R = R0"),
+    (
+        "s136",
+        raw"ro(S), set_stream(S, timeout(infinite)), sp(S, timeout(_), R0), close(S), R = R0"
+    ),
+    ("s137", raw"ro(S), cerr(set_stream(S, timeout(foo)), R0), close(S), R = R0")
 ]
 
 # swipl 10.1.19-1-gcbf4e189's answers to the program and cases above (the driver's lines; evidence/S2A/s2a_rows.out)
@@ -423,11 +525,14 @@ const _S2_DATA = "abc\nxyz\nlast line\n"
 function _s2_file(dir::String)::Tuple{String, Vector{String}}
     data = joinpath(dir, "data.txt")
     write(data, _S2_DATA)
-    prog = replace(replace(_S2_PROGRAM, "@DATA@" => data), "@OUT@" => joinpath(dir, "out.txt"))
+    prog = replace(
+        replace(_S2_PROGRAM, "@DATA@" => data), "@OUT@" => joinpath(dir, "out.txt")
+    )
     names = ["t_$(id)" for (id, _) in _S2_CASES]
     text =
         prog * join([
-            "t_$(id)(R) :- catch(($g), error(SsuE, _), ( nb(SsuE, SsuF), R = raised(SsuF) )).\n" for
+            "t_$(id)(R) :- catch(($g), error(SsuE, _), ( nb(SsuE, SsuF), R = raised(SsuF) )).\n"
+            for
             (id, g) in _S2_CASES
         ])
     f = joinpath(dir, "s2a.pl")
