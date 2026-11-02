@@ -187,3 +187,31 @@ E. docs/architecture.md: the "What is here now" table has NO row for `src/pl-eve
 7. Pristine-abolish wiring (task 2) is the only abolish-side wiring; the full abolish stays with its owner.
 8. frameFinished's event raise and delayEvents have no way to fire today (FR_NOTIFY unset; no delaying caller).
 Branches created by this writer: none (wip/ev1 only; no deletes).
+
+## WRITER 4 STATE (re-stacked, A + B + C done; the next writer starts at "REMAINING W4": D and E)
+Branch wip/ev1b (in ~/code/lk-ev1), re-stacked onto wip/bootpred3b fa7e1ed (one conflict, test_bootpred3_swipl.jl header comments:
+kept bootpred3b's side, then edited in commit C); `git diff --stat wip/bootpred3b wip/ev1b` touched only EV1's files. wip/ev1 is the OLD stack (do not use).
+Commits on wip/ev1b after the re-stack (EV1's 7 commits rebased: afb1338 plan, e1dee91 structures, f714095, 19ed265 pl-event.c port, 9ea7dc6 wired sites,
+9b1489c destroy_event_list!, 01582b3 handoff), then:
+- A+B (one commit, subject "ADDED: test/core_lang/test_event_swipl.jl — 80 swipl-10.1.19 rows ..."): test/core_lang/test_event_swipl.jl (80 rows ev1p/ev1o/ev1u/ev1v/ev1e/ev1r/ev1g,
+  pins from swipl 10.1.19 LC_ALL=C, two byte-identical runs, evidence/EV1/ev1_rows.out; generator evidence/EV1/gen_rows.py, ev1_rows.pl, ev1_driver.pl) AND the white-box clause-GC row
+  (testset "the clause GC announces an erased clause": fresh kernel, `ev1_gc_a`, `LK.pl_garbage_collect_clauses!(gd, ld)`, `ev1_gc_b`, compared with swipl's t_ev1g01 pin; item B is DONE in this commit).
+- C (ae1b44a): bp3l33 removed from _B3_KNOWN (kernel line was the partial port's), header comments reworded; tools/mutants/BOOTPREDSUB.py BP3-L7..L9 re-fit to the 12-row PL_events
+  (L9 split into L9 erase, L10 break, L11 frame_finished; 35 mutants, all anchors once, checked with a throwaway python3 -I), event mutants target test_event_swipl.jl too.
+NOTHING compiled or run (no daemon). Rows read from swipl and checked by reading only; the Julia file test_event_swipl.jl was not parsed (no Julia process): the gate agent's first check is a parse.
+Findings in the rows (swipl's behaviour, all pinned; the port copies pl-event.c so they should hold): a variable closure of prolog_unlisten/2 deletes only the FIRST match (the unify binds it);
+a named replacement (`name(N)`) swaps only `closure.term`, the procedure stays; after a failing listener later listeners are skipped (`rc = rc && ...`) and the assert/retract is vetoed;
+an exception in a listener breaks the loop and propagates; the erase of a RECORD ignores a failing listener (row ev1r04: record gone, erase succeeds); retractall on an undefined predicate raises no event;
+`erase` listeners hear clause GC and record erase (one list `onerase`).
+### REMAINING W4
+D. tools/mutants/EV1.py (format of tools/mutants/BOOTPREDSUB.py / MOD3b.py: `id`, `file`, `old` once, `new`, `targets`, `equivalent`; TARGETS_EV = test_event_swipl.jl + test_bootpred3_swipl.jl; add the db/record test
+   files that call assert/retract/retractall/erase with a listener present: none do (a listener is only registered by these two files), so TARGETS stay these two; D-0238). Sites: see REMAINING W3 C above;
+   EQUIVALENT: the frameFinished raise (src/pl-wam.jl, nothing sets FR_NOTIFY until DBG1) declared with the file:line reason. Validate with a throwaway `python3 -I` runpy checker (anchors once, new != old, ids unique, targets exist).
+E. test/static_analysis_manifest.jl entries APPENDED at the END (5-arg `_assertDefinition!`, `retractClauseDefinition!` with ld, `cleanDefinition!` 6-arg, `destroy_event_list!(def)`, the event functions of src/pl-event.jl; the existing
+   `(LK.prolog_listen, Tuple{GD, LD, Int, Int, Int}, false)` entry at :2401 and `pl_prolog_listen2_va/3_va` entries stay valid by signature), and docs/architecture.md: a src/pl-event.jl row (UPSTREAM pl-event.c) at the END of "What is here now",
+   a `## EV1` block at the END, reword :5939 ("Not here: the prolog event hooks"). Check boot/tabling.pl:300-301 `prolog_listen(untable, untable_reconsult)` registers (read in W3: it does).
+### FLAGS added by writer 4 (the audit's)
+9. A white-box row (ev1g01) because `garbage_collect_clauses/0` is PR1's registration; on the gate, if PR1 has landed, the row may call the predicate instead (the white-box call stays valid).
+10. bp3l33 left _B3_KNOWN (an internal-identity expectation change, disclosed in commit ae1b44a).
+11. No row for: the untable raise (TAB1), thread events (TH1), break/abort (DBG1), a self-removing listener, a kernel-side `untable_reconsult` boot check (LB4).
+### Gate agent runs (when D and E are done): see "Gate agent runs" above; FIRST a Julia parse of test/core_lang/test_event_swipl.jl.
