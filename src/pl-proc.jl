@@ -900,8 +900,8 @@ function pl_garbage_collect_clauses!(
 end
 
 # PORT: pl-proc.c resetProcedure
-# DIVERGES: no statistics (`GD->clauses.dirty`), update events or tabling attributes (`def->events`, `def->tabling`: not
-# in the kernel); the debugger's `TRACE_ME` is not set for a user predicate (no debugger, as in `lookupProcedure`). Upstream's
+# DIVERGES: no statistics (`GD->clauses.dirty`) or tabling attributes (`def->tabling`: not
+# in the kernel); the update listeners are destroyed (EV1); the debugger's `TRACE_ME` is not set for a user predicate (no debugger, as in `lookupProcedure`). Upstream's
 # `def->impl.any.defined` (the union member overlaying the first clause or the foreign function) is the first clause or
 # the foreign function index.
 "Reset `proc`'s definition to a pristine one but for `SPY_ME` and `P_DIRTYREG`; `isnew`: drop the indexes at once (pl-proc.c)."
@@ -913,6 +913,7 @@ function resetProcedure!(proc::Procedure{T}, isnew::Bool)::Nothing where {T}
     end
     def.flags &= (SPY_ME | P_DIRTYREG)                  # flags0 ^ (flags0 & ~(SPY_ME|P_DIRTYREG))
     def.impl_clauses.number_of_clauses = 0x00000000
+    destroy_event_list!(def)                            # if ( def->events ) destroy_event_list(&def->events) (EV1)
     deleteIndexes!(def, def.impl_clauses, isnew)
     freeCodesDefinition!(def, !isnew)
     return nothing

@@ -108,7 +108,7 @@ const prolog_listen_options = (
 )
 
 # PORT: pl-event.c get_callback
-# DIVERGES: returns `(ok, module index)`; the module is `PL_strip_module`'s (0: the context module).
+# DIVERGES: returns `(ok, module index)`; the module is `PL_strip_module`'s (the context module when `closure` is unqualified).
 "Strip the module of `closure` into `cb` and check that it is callable (pl-event.c)."
 function get_callback(
     gd::PL_global_data{T}, ld::PL_local_data{T}, closure::term_t, cb::term_t
@@ -337,7 +337,7 @@ function prolog_unlisten(
 end
 
 # PORT: pl-event.c prolog_unlisten as pl_prolog_unlisten2_va
-# (PRED_IMPL("prolog_unlisten", 2, prolog_unlisten, 0), pl-event.c:288-345 at the pin; the table's flag is META, :808)
+# (PRED_IMPL("prolog_unlisten", 2, prolog_unlisten, META), pl-event.c:288-345 at the pin)
 "`prolog_unlisten(+Channel, :Closure)`: remove the listeners of `Channel` that match `Closure` (pl-event.c)."
 function pl_prolog_unlisten2_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
@@ -365,10 +365,23 @@ end
 
 # PORT: pl-event.c destroy_event_list as destroy_event_list! on a predicate's list
 "Remove the event list of the definition `def` (`unallocDefinition`, `resetProcedure`: pl-proc.c)."
+function destroy_event_list!(def::definition{T})::Nothing where {T}
+    list = def.events
+    if list !== nothing
+        def.events = nothing                            # *listp = NULL
+        for cb in list.callbacks
+            free_event_callback(cb)
+        end
+    end
+    return nothing
+end
+
+# PORT: pl-event.c destroy_event_list as destroy_event_list! on a predicate's list, with the database and local data
+"The method of `destroy_event_list!` that takes the database and the local data; the predicate's list needs neither."
 function destroy_event_list!(
     gd::PL_global_data{T}, ld::PL_local_data{T}, def::definition{T}
 )::Nothing where {T}
-    return destroy_event_list!(gd, ld, event_location{T}(-1, def))
+    return destroy_event_list!(def)
 end
 
 # PORT: pl-event.c cleanupEvents
