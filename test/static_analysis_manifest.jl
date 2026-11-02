@@ -2448,7 +2448,22 @@ function _manifest_index(T)
         (LK.blob_syntax_available, Tuple{LK.read_data{T}}, false),
         (LK.blob_name_char, Tuple{Int}, false),
         (LK.scan_blob_name, Tuple{Type{T}, Vector{UInt8}, Int}, false),
-        (LK.atom_to_blob_mode_ex, Tuple{LD, LK.read_data{T}, T}, false)
+        (LK.atom_to_blob_mode_ex, Tuple{LD, LK.read_data{T}, T}, false),
+        # HALT1 — halt/1, abort/0 (pl-fli.c haltProlog/PL_halt/PL_abort_process, pl-init.c PL_cleanup,
+        # pl-setup.c signal_index/PL_get_signum_ex, pl-pro.c abortProlog/raise_halt_exception, pl-wam.c handles_unwind)
+        (LK.haltProlog, Tuple{GD, LD, Int}, false),
+        (LK.PL_halt, Tuple{GD, LD, Int}, false),
+        (LK.PL_abort_process, Tuple{GD, LD}, false),
+        (LK.PL_cleanup, Tuple{GD, LD, Int}, false),
+        (LK._query_run_at_halt, Tuple{GD, LD}, false),
+        (LK.signal_index, Tuple{String}, false),
+        (LK.PL_get_signum_ex, Tuple{LD, Int}, false),
+        (LK.pl_halt1_va, Tuple{LD, Int, Int, LK.control_t{T}}, false),
+        (LK.abortProlog, Tuple{LD}, false),
+        (LK.pl_abort0_va, Tuple{LD, Int, Int, LK.control_t{T}}, false),
+        (LK.raise_halt_exception, Tuple{LD, Int, Bool}, false),
+        (LK.handles_unwind, Tuple{LD, Int, UInt32}, false),
+        (LK._halt_exit!, Tuple{GD, Int}, false)
     )
 end
 

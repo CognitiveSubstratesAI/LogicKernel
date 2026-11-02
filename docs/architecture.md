@@ -780,8 +780,9 @@ fixed it or a public issue exists.
 | `boot/init.jl` | the MINIMAL LOADER (R1f): `load_file!` — boot/init.pl's consult path in Julia over the C ports: `read_clause`, `'$compile_term'`, `'$store_clause'` (through `'$record_clause'/3`), `'$execute_directive_3'` (a goal or a conjunction, through the query API, backtracking), `'$pattr_directive'`/`'$set_pattr'` (through `'$set_predicate_attribute'/3`), `'$valid_term'`; the messages swipl prints, returned | `boot/init.pl` |
 | `src/pl-attvar.jl` | `saveWakeup`, `restoreWakeup`, `restore_exception` — the pending exception set aside while `findCatcher` unifies the ball with the catchers (since V9f); `varBindConst` (L1c: the VM's `bindConst` of a global cell); `bindConst` (AV1: its attributed-variable branch is refused, a `NotPortedError` naming AV3, until AV3); since AV2 the attribute STORE — `PL_get_attr`, `link_attvar`, `make_new_attvar`, `put_new_attvar`, `find_attr`, `put_att_value`, `put_attr`, `get_attr`, `del_attr` and attvar/1, put_attr/3, get_attr/3, del_attr/2, del_attrs/1, get_attrs/2, put_attrs/2, `$attv_unify/2` (`PL_predicates_from_attvar`; `PL_is_attvar` in src/pl-fli.jl); binding and waking them is AV3's — AV1 ported their word layer (`DU_ATTVAR`/`DREF_ATTVAR`, `linkValI` by `needsRef`, the index key, the chain: `register_attvar` in src/pl-inline.jl, `reclaim_attvars` in src/pl-wam.jl) | `src/pl-attvar.c`, `src/pl-attvar.h` |
 | `src/pl-string.jl` | the string predicates (since T2, R2): atom_string/2, string_codes/2, string_chars/2, text_to_string/2, string_length/2, string_concat/3, sub_string/5 (`sub_text`, shared with sub_atom/5), string_code/3, get_string_code/3, split_string/4, string_bytes/3, read_string/3,5, open_string/2 (`PL_predicates_from_strings`, src/pl-ext.jl); the UTF-16 decode and `PL_text_recode` of string_bytes/3 are local to this file | `src/pl-string.c`, `src/pl-prims.c`, `src/pl-privitf.c`, `src/pl-error.c`, `src/os/pl-text.c`, `src/os/pl-text.h`, `src/os/pl-utf8.h`, `src/os/pl-file.c` |
-| `src/pl-pro.jl` | `callProlog` — a goal called from foreign code, in a query of its own — and `sig_atomic/1`, through which the cleanup family runs its Setup goal (since V9g); the toplevel, `abort/0` and the metacut are not ported | `src/pl-pro.c` |
+| `src/pl-pro.jl` | `callProlog` — a goal called from foreign code, in a query of its own — and `sig_atomic/1`, through which the cleanup family runs its Setup goal (since V9g); since HALT1 also `abortProlog`, `abort/0` (`pl_abort0_va`) and `raise_halt_exception` (the `unwind(halt(Status))` ball); the toplevel (`query_loop`) and the metacut are left out | `src/pl-pro.c` |
 | `src/pl-mutex.jl` | since BOOTPRED, `with_mutex/2` (`pl_with_mutex`) in the form pl-mutex.c has for a build without threads: `once/1` through `callProlog`, the mutex argument not examined (swipl 10.1.19 examines it); the mutex table and the `mutex_*` predicates are not ported | `src/pl-mutex.c` |
+| `src/pl-init.jl` | since HALT1, `PL_cleanup`, the clean-up `halt/1` ends with, in a reduced form (`exit_status` flag, `'$run_at_halt'/0` as one query, flush of the standard streams; the command line, the saved states and the foreign hook lists are left out), `_query_run_at_halt`, `MAX_HALT_CANCELLED`; `PL_halt`, `haltProlog` and `PL_abort_process` stay in `src/pl-fli.jl` (pl-fli.c), `signal_index` and `PL_get_signum_ex` in `src/pl-setup.jl`, `halt/1` in `src/pl-prims.jl`; see the HALT1 block | `src/pl-init.c` |
 | `src/pl-qlf.jl` | since LB3 (R2), the boot loop of pl-qlf.c with no state file (LD2): `compileFile` (see the file, read terms, `:- if`/`else`/`endif`, directives, clauses), `compileFileList`, `boot_from_source!` (pl-init.c's `bootsession` branch), `directiveClause`, `update_conditional_compilation`, the 8 write-side shells and the 14 predicates refused by name (`PL_predicates_from_wic`, src/pl-ext.jl) | `src/pl-qlf.c` |
 | `src/pl-dict.jl` | since BOOTPRED, dicts as pl-dict.c lays them out (`dict`/(2N+1), tag then value/key pairs sorted by the key word): `is_dict/1,2`, `dict_create/3`, `put_dict/3`, `select_dict/3`, `get_dict/3` (`PL_predicates_from_dict`) with `dict_lookup_ptr`, `dict_order`, `PL_get_dict_ex`, `put_dict`, `select_dict` and their helpers; the reader and writer have no dict syntax, and the other dict predicates are not ported | `src/pl-dict.c`, `src/pl-dict.h` |
 | `src/pl-rec.jl` | recorded terms (since V9g-b): `compileTermToHeap` — a term taken off the stacks, as a copy whose cyclic references are kept beside it instead of in the binding store — and `copyRecordToGlobal`, which puts it back with fresh variables whose standard order is the order of upstream's cells; `erase/1` and `instance/2` (with `fixup_ssu`) of a clause reference (since D1); the recorded database (`recorda/3`, `recorded/3`, `erase/1` and `instance/2` of a record) is not ported | `src/pl-rec.c` |
@@ -959,6 +960,7 @@ graph LR
     pl_supervisor["pl-supervisor.jl"]
     pl_trace["pl-trace.jl"]
     pl_pro["pl-pro.jl"]
+    pl_init["pl-init.jl"]
     pl_mutex["pl-mutex.jl"]
     pl_bag["pl-bag.jl"]
     pl_gvar["pl-gvar.jl"]
@@ -1119,6 +1121,7 @@ graph LR
     pl_prims --> os_pl_text
     pl_prims --> os_pl_os
     pl_prims --> os_pl_file
+    pl_prims --> pl_setup
     pl_prims --> pl_read
     pl_prims --> pl_string
     pl_ressymbol --> term_interface
@@ -1279,6 +1282,8 @@ graph LR
     pl_fli --> pl_gmp
     pl_fli --> pl_arith
     pl_fli --> os_pl_text
+    pl_fli --> pl_pro
+    pl_fli --> pl_init
     pl_fli --> pl_write
     pl_fli --> pl_read
     pl_attvar --> term_interface
@@ -1438,14 +1443,17 @@ graph LR
     os_pl_file --> pl_pro
     os_pl_file --> pl_read
     os_pl_file --> pl_string
+    pl_setup --> term_interface
     pl_setup --> default_term
     pl_setup --> pl_incl
+    pl_setup --> SWI_Prolog
     pl_setup --> pl_global
     pl_setup --> pl_inline
     pl_setup --> pl_gc
     pl_setup --> pl_alloc
     pl_setup --> pl_wam
     pl_setup --> pl_fli
+    pl_setup --> pl_error
     pl_proc --> term_interface
     pl_proc --> default_term
     pl_proc --> pl_incl
@@ -1517,6 +1525,18 @@ graph LR
     pl_pro --> pl_fli
     pl_pro --> pl_error
     pl_pro --> pl_proc
+    pl_pro --> pl_write
+    pl_init --> term_interface
+    pl_init --> default_term
+    pl_init --> os_pl_stream
+    pl_init --> pl_incl
+    pl_init --> SWI_Prolog
+    pl_init --> pl_global
+    pl_init --> pl_wam
+    pl_init --> pl_fli
+    pl_init --> os_pl_prologflag
+    pl_init --> os_pl_file
+    pl_init --> pl_proc
     pl_mutex --> SWI_Prolog
     pl_mutex --> pl_global
     pl_mutex --> pl_comp
@@ -6382,3 +6402,40 @@ stream, over the reader R1 built (`read_term_from_stream`); the pin tree is swip
   toplevel's `blob(resolve)` reads), rows rt303 and rt305-rt319 pin this; rt320 and rt321 are the KNOWN rows of the refusal.
 * **Tier 3:** no Tier-1 file changed and no enum, so no `_enum_hash` entry and no allocation pins (RD1b adds the field `blobs` to
   `read_data`); the manifest gets eleven entries (test/static_analysis_manifest.jl). No battery.
+
+## HALT1 — `halt/1`, `abort/0`, `PL_halt`, `PL_cleanup` (R2, pl-fli.c, pl-init.c, pl-setup.c, pl-pro.c, pl-wam.c at swipl-devel cbf4e189; edit-only: nothing was compiled when this was written, the gate decides)
+
+### pl-init.c (NEW src/pl-init.jl, `# allow-new-artifact: pl-init.c mirror`)
+
+What HALT1 adds, in upstream's files: `halt/1` (pl-prims.c, `pl_halt1_va`, the last entry of the table); `abort/0` (pl-pro.c, `pl_abort0_va`,
+`abortProlog`, `raise_halt_exception`; the first 0-arity `PL_FA_VARARGS` entry); `handles_unwind` (pl-wam.c: the query chain tested for
+`PL_Q_EXCEPT_HALT`); `haltProlog`, `PL_halt`, `PL_abort_process` (pl-fli.c); `signal_index`, `PL_get_signum_ex` (pl-setup.c, the signal
+names `halt/1` accepts: `halt(term)`, `halt('SIGusr1')`, status `128 + signal`); `PL_cleanup` and `MAX_HALT_CANCELLED` (pl-init.c, new file).
+`halt(Status)` raises `unwind(halt(Status))` where the query handles it (`PL_Q_EXCEPT_HALT`), else it runs `PL_halt`: the clean-up, which
+`cancel_halt/1` may veto up to 10 times, then the process exit.
+
+### DIVERGES (HALT1; each needs a D-entry before it is relied on)
+
+- **The exit seam (a).** Upstream's `exit(status)` and the C process-abort call are `_halt_exit!(gd, status)` (src/pl-global.jl): `gd.halt_exit::Bool` (true:
+  the real `exit(status)`) and `gd.halt_exited::Vector{Int}` (false: the raw status, flags included, is recorded). With the seam off `PL_halt`
+  RETURNS false, where upstream never returns; a test that embeds the kernel sets `gd.halt_exit = false` and can halt again (`PL_halt` returns
+  `halt_cleaning` to `CLN_NORMAL`). A `Bool` and a vector, not a function field: an abstractly typed field fails test_type_discipline.jl.
+- **`PL_cleanup` is reduced (b).** No foreign hook lists (`run_on_halt`: the kernel has none), no `exitPrologThreads`, no `qlfCleanup`,
+  no `unload_all_foreign_libraries`, no `RemoveTemporaryFiles`, no `cleanupSignals`, no memory reclaim, no debug-mode switch, no `emptyStacks`;
+  `dieIO` is the flush of `user_output` and `user_error`. `query_loop(ATOM_dollar_run_at_halt, false)` is the query
+  `system:'$run_at_halt'/0` (`PL_Q_NORMAL|PL_Q_EXCEPT_HALT`), once, run only where the loader defined it; an exception from it counts as
+  "did not cancel". The `CLN_*` stages are `Int` constants (d), passed in upstream's order; the state stays `CLN_DATA` on return, as upstream.
+- **One thread (c).** The `O_PLMT` forwarding branch of `PL_halt` (a halt from another thread) is never taken; `halt_thread` is 1.
+- **A Linux-only signal table (e).** `SIGNAMES` holds the Linux numbers (32 entries, plus `sys` and `winch`, which swipl 10.1.19 on Linux has);
+  no `emt` or `info` (swipl: `domain_error(signal, ...)`), no `PLSIG_*` flags, no `prolog:gc` entries. `halt(31)` and `halt(32)` as integers
+  are plain statuses; only an atom is range-checked.
+- **Left to the toplevel step (f).** `query_loop`, `halt_from_exception` and `restore_after_exception` are left out: until the toplevel step
+  an uncaught `unwind(halt(N))` is not turned into the process exit status for a query opened by `PL_open_query` with `PL_Q_EXCEPT_HALT`; only
+  the seam path (a query without that flag) exits.
+- **`abortProlog` (g)** has no trace/debug switches, no discard of pending input and no `O_MAINTENANCE` backtrace; it raises
+  `unwind(abort)`. **`PL_abort_process` (h)** ends through the seam with status `128 + 6`, not through a signal.
+
+Tier 1 files touched: src/pl-wam.jl (`handles_unwind`) and src/pl-global.jl (the struct): the alloc pins x3 at the gate.
+
+Tests: test/core_lang/test_halt_swipl.jl (eight testsets against swipl 10.1.19, one process per live row; the catch/cleanup rows and the
+`at_halt` rows are gated and print a SKIP note where the loader is absent). Mutants: tools/mutants/HALT1.py (39, F9 declared equivalent).
