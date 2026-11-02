@@ -376,3 +376,43 @@ end
     ow = r2_owners_parse(otext).owners
     @test !isempty(r2_no_owner(res.rows, ow)) && count(r -> r2_owes(r) && !isempty(r2_owner_of(r, ow)), res.rows) > 200
 end
+
+@testset "r2_status: the rendering (counts, per-file table, by-owner list, chart) from hand-built rows" begin
+    row(cat, key, st, cfile="", refs=String[]) = R2Row(cat, key, replace(split(key, ':'; limit=2)[2], r"^.*::" => ""), st, cfile, "", refs, "")
+    rows = [
+        row("pred", "pred:a/1", "missing", "src/pl-x.c", ["boot/a.pl"]), row("pred", "pred:b|c/1", "done", "src/pl-x.c", ["boot/a.pl"]),
+        row("pred", "pred:w/1", "platform", "src/pl-w.c", ["boot/a.pl", "boot/t.pl"]),
+        row("refusal", "refusal:src/pl-q.jl::f::" * "a long message " ^ 4, "refused", "src/pl-q.jl"),
+        row("flag", "flag:f", "missing"), row("flag", "flag:g", "done"), row("vmi", "vmi:I_X", "missing", "src/pl-vmi.c"),
+    ]
+    files = [R2File("boot/a.pl", "boot", true, "", true), R2File("boot/t.pl", "boot", false, "threads", true), R2File("boot/gone.pl", "boot", true, "", false)]
+    preds = [r for r in rows if r.cat == "pred"]
+    owners = r2_owners_parse("pred:a/1\tA1\nkfile:pl-q.jl\tQ1\n").owners
+    out = r2_render_rows(rows, files, preds, owners, "0123456789abcdef", 12)
+    @test occursin("(swipl-devel `01234567`: 12 definitions)", out)
+    @test occursin("| predicates (C-defined, reached by the boot) | 1 | 0 | 1 | 1 | 0 |", out)
+    @test occursin("| refusal sites | 0 | 1 | 0 | 0 | 0 |", out) && occursin("| Prolog flags | 1 | 0 | 1 | 0 | 1 |", out)
+    @test occursin("| VM instructions | 0 | 0 | 1 | 0 | 1 |", out) && occursin("| **total** | 2 | 1 | 3 | 1 | 2 |", out)
+    @test occursin("| `boot/a.pl` | loaded | 1 | 1 | 1 |", out) && occursin("| `boot/t.pl` | skipped (conditional) | 0 | 0 | 1 |", out)
+    @test !occursin("gone.pl", out)                                                         # a file that does not exist is not listed
+    @test occursin("| A1 | 1 | 1 | 0 | `a/1` |", out) && occursin("| Q1 | 1 | 0 | 1 | `refusal a long message a long message a long mes…` |", out)
+    @test occursin("| NO OWNER | 2 | 2 | 0 | `I_X`, `flag f` |", out)                         # the last line of the owner table, NO OWNER last
+    @test occursin("    bar [1, 0, 1, 1]", out) && occursin("    line [0, 1, 0, 0]", out) && occursin("y-axis \"rows\" 0 --> 50", out)
+    @test !any(l -> occursin('\t', l), split(out, '\n'))
+    # the pipe of a name is escaped, so a row stays one table row
+    @test occursin("\\|", r2_render_rows([row("pred", "pred:b|c/1", "missing", "src/pl-x.c")], files, preds, owners, "0"^40, 1))
+    # MUTATION: giving a.pl's missing predicate no owner moves one row to NO OWNER and drops the A1 line
+    out2 = r2_render_rows(rows, files, preds, Dict{String, Tuple{String, String}}(), "0123456789abcdef", 12)
+    @test occursin("| **total** | 2 | 1 | 3 | 1 | 4 |", out2) && !occursin("| A1 |", out2)
+end
+
+@testset "r2_status: the committed block in docs/architecture.md is the generator's output (both sides non-empty)" begin
+    root = abspath(joinpath(@__DIR__, ".."))
+    text = read(joinpath(root, "docs", "architecture.md"), String)
+    i = findfirst(R2_BEGIN, text)
+    j = findfirst(R2_END, text)
+    @test i !== nothing && j !== nothing && last(i) < first(j)
+    have = strip(text[(last(i) + 1):(first(j) - 1)])
+    @test !isempty(have) && occursin("| **total** |", have) && occursin("xychart-beta", have)
+    @test have == strip(r2_render(root))
+end
