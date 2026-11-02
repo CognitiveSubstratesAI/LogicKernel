@@ -1120,7 +1120,7 @@ const _WK_AV6_ROWS = [
     # ct06d: cp_unmark clears the copy marks in X's word — del_attrs/1 trails X's cell, and TrailAssignment
     # asserts it carries no MARK/FIRST (src/pl-wam.jl:172, upstream's assert); ct06x: the copy's variable A
     # keeps no VAR_MARK after copy_term_nat (exitCyclicCopy), so a later copy through a reference to A's
-    # cell gives a fresh variable (term_variables/2 leaves A in the copy's cell, unlike ct06v's head unification; arg/3 with unbound args is not ported yet: B_ARG_CF)
+    # cell gives a fresh variable (term_variables/2 leaves A in the copy's cell, unlike ct06v's head unification)
     (
         "ct06d",
         "put_attr(X,a,1), copy_term_nat(X, _), del_attrs(X), (attvar(X) -> R = attvar ; R = plain)",

@@ -74,7 +74,7 @@ function _bc_op(op, k::UInt8, w::UInt64, lits, procs, jump)::String
             "i:" * string(Int(w))
         elseif op == LK.H_SMALLINT || op == LK.B_SMALLINT || op == LK.L_SMALLINT
             _hlit(lk_gnd(_B, LK.valInt(w)))                             # the tagged word itself (L1d step 4)
-        elseif op == LK.A_ADD_FC
+        elseif op == LK.A_ADD_FC || op == LK.B_ARG_CF
             _hlit(lk_gnd(_B, reinterpret(Int64, w)))                    # the integer itself (L1d step 4)
         else
             _hlit(lits[w])
@@ -977,8 +977,8 @@ end
 # ── the other goals compiled inline (V6b2): upstream's decision, cell by cell ────────────────────
 # compileSubClause's O_COMPILE_IS chain (c:3488-3517) for `=/2`, `==/2`, `\\==/2`, `arg/3`,
 # `\$call_continuation/1`, `\$shift/1` and `\$shift_for_copy/1`: each cell is (shape, head, body, the
-# instruction upstream emits — or "" for a call). The kernel REFUSES exactly the inline cells (their
-# instructions are V9's) and compiles every other cell. The verdict is tied to swipl: an inline cell's
+# instruction upstream emits — or "" for a call). The kernel REFUSES exactly the cells of the
+# instructions left to V9 (`I_CALLCONT`, `I_SHIFT`, `I_SHIFTCP`) and compiles every other cell. The verdict is tied to swipl: an inline cell's
 # code has its instruction, and a call cell's code is identical to the kernel's.
 _bcq(xs...) = _bf("q", xs...)
 const _BC_IS_CELLS = [
@@ -1111,9 +1111,10 @@ const _BC_IS_CELLS = [
         _bconj(_bf("\$shift_for_copy", _bv(1)), _bcq(_bv(1))), "")
 ]
 
-# the cells still refused: their instructions are V9's (`B_ARG_*`, `I_CALLCONT`, `I_SHIFT`,
-# `I_SHIFTCP`). Since V9a every =, == and \== cell compiles, and its code is swipl's.
-const _BC_IS_REFUSED = ("b_arg_cf", "b_arg_vf", "i_callcont", "i_shift", "i_shiftcp")
+# the cells still refused: their instructions are V9's (`I_CALLCONT`, `I_SHIFT`, `I_SHIFTCP`).
+# Since V9a every =, == and \== cell compiles, and its code is swipl's; since ARGINL the arg/3
+# cells compile too (`B_ARG_CF`, `B_ARG_VF`).
+const _BC_IS_REFUSED = ("i_callcont", "i_shift", "i_shiftcp")
 
 @testset "=, ==, \\==, arg/3, \$call_continuation, \$shift compile as upstream decides (V6b2, V9a)" begin
     ours = Union{Nothing, Vector{String}}[]
@@ -1136,7 +1137,7 @@ const _BC_IS_REFUSED = ("b_arg_cf", "b_arg_vf", "i_callcont", "i_shift", "i_shif
         end
     end
     # every emission of the compilers still refusing is reached: each names a refusal
-    for i in ("B_ARG_CF", "B_ARG_VF", "I_CALLCONT", "I_SHIFT ", "I_SHIFTCP")
+    for i in ("I_CALLCONT", "I_SHIFT ", "I_SHIFTCP")
         @test any(r -> occursin(i, r), refusals)
     end
     # every instruction of the family is emitted by some cell (C_VAR: eb3; B_UNIFY_EXIT: ub9-ub11)
@@ -1144,7 +1145,7 @@ const _BC_IS_REFUSED = ("b_arg_cf", "b_arg_vf", "i_callcont", "i_shift", "i_shif
         "i_true", "b_unify_ff", "b_unify_fv", "b_unify_vf", "b_unify_vv", "b_unify_fc",
         "b_unify_vc", "b_unify_firstvar", "b_unify_var(", "b_unify_exit", "b_eq_vv",
         "b_eq_vc",
-        "b_neq_vv", "b_neq_vc", "c_var"
+        "b_neq_vv", "b_neq_vc", "c_var", "b_arg_cf", "b_arg_vf"
     )
         @test any(c -> c !== nothing && any(startswith(i), c), ours)
     end

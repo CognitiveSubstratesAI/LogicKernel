@@ -91,7 +91,7 @@ const _SA_PROGRAM = raw"""
 sa_same(A, B, R) :- ( same_term(A, B) -> R = same ; R = distinct ).
 sa_mem(X, [X|_]).
 sa_mem(X, [_|T]) :- sa_mem(X, T).
-% sa_arg: the two argument numbers the rows use, through =../2 (arg/3 itself is a later step of the port)
+% sa_arg: the two argument numbers the rows use, through =../2
 % sa_zero: a zero-argument compound built outside catch/3's goal
 sa_zero(T) :- T = foo().
 sa_arg(1, T, A) :- T =.. [_, A|_].
