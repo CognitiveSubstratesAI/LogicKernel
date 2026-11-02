@@ -630,3 +630,26 @@ end
 for `=@=` terms (pl-termhash.c).
 """
 pl_variant_hash(t)::Int = Int(variant_hash(t, HASH_MURMUR).murmur & PLMAXTAGGEDINT32)
+
+# PORT: pl-termhash.c variant_sha1 as pl_variant_sha1_2_va
+# (PRED_IMPL("variant_sha1", 2, variant_sha1, 0), pl-termhash.c:659-681 at the pin)
+# DIVERGES: the registration wraps `pl_variant_sha1` (BOOTPRED3): the term is exported from its cells first
+# (`export_cells`), and the digest's 40 hex digits are unified as an ATOM (upstream: `PL_unify_chars(A2,
+# PL_ATOM|REP_ISO_LATIN_1, …)`, whatever its documentation says). The walk's own DIVERGES (no cyclic terms, no
+# attributed variables) stands.
+"`variant_sha1(@Term, -SHA1)`: the SHA-1 digest of `Term`'s variant class as an atom of 40 hex digits (pl-termhash.c)."
+function pl_variant_sha1_2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2 = PL__t0, PL__t0 + 1
+    t = export_cells(ld, cell_export{T}(), -(A1 + 1))
+
+    return PL_unify_atom(ld, A2, mk_sym(T, Symbol(pl_variant_sha1(t)))) ? FTRUE : FFALSE
+end
+
+# PORT: pl-termhash.c BeginPredDefs as PL_predicates_from_termhash
+# DIVERGES: variant_sha1/2 only (upstream's table: pl-termhash.c:698-701 also has variant_hash/2 and term_hash/2).
+"pl-termhash.c's registration table (`BeginPredDefs(termhash)`): variant_sha1/2."
+const PL_predicates_from_termhash = (
+    PL_extension("variant_sha1", 2, pl_variant_sha1_2_va, PL_FA_VARARGS),
+)
