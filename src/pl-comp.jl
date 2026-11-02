@@ -4940,6 +4940,17 @@ function decompileBodyNoShift!(
             di.pc += 2
             build_term!(di, mk_sym(T, op == B_EQ_VV ? Symbol("==") : Symbol("\\==")), 2)
             pushed += 1
+        elseif op == B_ARG_CF || op == B_ARG_VF                 # arg_vf_cont
+            if op == B_ARG_VF
+                push!(di.argp, makeVarRef(codes[di.pc]))
+            else
+                push!(di.argp, _word_of!(ld, mk_gnd(T, reinterpret(Int64, codes[di.pc]))))  # consInt(i)
+            end
+            push!(di.argp, makeVarRef(codes[di.pc + 1]))
+            push!(di.argp, makeVarRef(codes[di.pc + 2]))
+            di.pc += 3
+            build_term!(di, mk_sym(T, :arg), 3)
+            pushed += 1
         elseif op == B_VOID || op == H_VOID
             _dpush!(di, word(0))                                # setVar(*ARGP++)
         elseif op == H_VOID_N
