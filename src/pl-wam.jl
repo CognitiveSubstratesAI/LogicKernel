@@ -1075,7 +1075,7 @@ function m_qualify_argument(
 end
 
 # PORT: pl-wam.c frameFinished
-# DIVERGES: NOT PORTED: the event hook of an `FR_NOTIFY` frame (`callEventHook`: the debugger's).
+# DIVERGES: the database is the running query's (`_query_gd`) for the `frame_finished` event of an `FR_NOTIFY` frame (EV1).
 """
 Frame `fr` is finished for `reason`: run the cleanup handler of a cleanup frame (pl-wam.c). False
 when an exception is pending after it.
@@ -1084,6 +1084,10 @@ function frameFinished(ld::PL_local_data{T}, fr::Int, reason::finished)::Bool wh
     if (ld.frames[fr].flags & FR_CLEANUP) != 0
         callCleanupHandler(ld, fr, reason)
         ld.exception_term != 0 && return false
+    end
+
+    if (ld.frames[fr].flags & FR_NOTIFY) != 0
+        return callEventHook(_query_gd(ld), ld, PLEV_FRAMEFINISHED, fr)
     end
 
     return true
@@ -1118,7 +1122,7 @@ function mustBeCallable(ld::PL_local_data{T}, call::term_t)::Bool where {T}
 end
 
 # PORT: pl-wam.c frameFailed
-# DIVERGES: NOT PORTED: the event hook (`frameFinished`'s `FR_NOTIFY` branch).
+# (the event hook of an `FR_NOTIFY` frame is `frameFinished`'s)
 "Frame `fr` failed: report a frame that must not, and run a cleanup frame's handler (pl-wam.c). False when that raised an exception."
 function frameFailed(ld::PL_local_data{T}, fr::Int)::Bool where {T}
     ld.environment_frame = fr

@@ -901,8 +901,7 @@ end
 # (PRED_IMPL("erase", 1, erase, 0))
 # DIVERGES: the database is the running query's (`_query_gd`). The RECORD branch (since D2): the flags
 # `R_ERASED` and `RL_DIRTY` of a list a `recorded/3` still runs over, else `remove_record`; the event hook
-# (`callEventHook(PLEV_ERASED_RECORD, r)`) is upstream's no-hook answer, true (the kernel has no prolog event
-# hooks, pl-event.c), and `L_RECORD` is not taken (one thread). A static predicate's clause is `permission_error(clause,
+# (`callEventHook(PLEV_ERASED_RECORD, r)`, pl-rec.c:2468) is src/pl-event.jl's (EV1; true with no listener), and `L_RECORD` is not taken (one thread). A static predicate's clause is `permission_error(clause,
 # erase, Ref)` with `erase/1` as the context's predicate (`PL_error("erase", 1, NULL, …)`: not
 # `system:erase/1`, which the other errors of this predicate show); the answer for an erased clause is
 # false, no error (`PL_get_dbref` returns NULL).
@@ -925,10 +924,10 @@ function pl_erase1_va(
             )
             return FFALSE
         end
-        return retractClauseDefinition!(gd, def, clause, true) ? FTRUE : FFALSE
+        return retractClauseDefinition!(gd, ld, def, clause, true) ? FTRUE : FFALSE
     else
         rref = ptr::RecordRef{T}
-        rc = true                                               # rc = callEventHook(PLEV_ERASED_RECORD, r)
+        rc = callEventHook(gd, ld, PLEV_ERASED_RECORD, rref)    # rc = callEventHook(PLEV_ERASED_RECORD, r)
         l = rref.list                                           # l = r->list
         if l.references != 0                                    # a recorded has choicepoints
             rref.flags |= R_ERASED                              # set(r->record, R_ERASED)

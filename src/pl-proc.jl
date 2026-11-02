@@ -427,9 +427,9 @@ function add_ssu_clause(
 end
 
 # PORT: pl-proc.c assertDefinition
-# DIVERGES: no events or transactions; `nothing` is upstream's NULL (since SSU1: `add_ssu_clause`
-# refused the clause, its error raised; the clause is left to Julia's garbage collector, upstream's
-# `freeClause`), and `ld` is an argument, where upstream's `PL_error` reaches LD. A caller that
+# DIVERGES: no transactions; the predicate's update event is raised (EV1); `nothing` is upstream's NULL (since SSU1: `add_ssu_clause`
+# refused the clause, its error raised, or, since EV1, a listener of the predicate raised: the clause is left to Julia's
+# garbage collector, upstream's `freeClause`), and `ld` is an argument, where upstream's `PL_error` reaches LD. A caller that
 # selects clauses outside the VM (clause/2, retract/1, the index tests) runs `reconsiderIndexes!` and
 # `update_primary_index!` itself before the next call of a static predicate, as the VM's `S_VIRGIN`
 # does through `setDefaultSupervisor`.
@@ -447,7 +447,7 @@ function assertDefinition!(
     where_::Union{Int, ClauseRef{T}}
 )::Union{Nothing, ClauseRef{T}} where {T}
     add_ssu_clause(ld, def, clause) || return nothing         # freeClause(clause); return NULL
-    return _assertDefinition!(gd, def, clause, where_)
+    return _assertDefinition!(gd, ld, def, clause, where_)
 end
 
 # DIVERGES (no upstream function): a caller without local data — the tests' database builders —
@@ -467,12 +467,19 @@ function assertDefinition!(
     return _assertDefinition!(gd, def, clause, where_)
 end
 
+# DIVERGES (no upstream function): without local data no listener of the predicate is called (the tests' database builders).
+_assertDefinition!(
+    gd::PL_global_data{T}, def::Definition{T}, clause::Clause{T}, where_::Union{Int, ClauseRef{T}}
+)::ClauseRef{T} where {T} = _assertDefinition!(gd, nothing, def, clause, where_)::ClauseRef{T}
+
 # From pl-proc.c assertDefinition (pl-proc.c:1409-1489): everything after `add_ssu_clause`.
+# The update event (pl-proc.c:1472-1478) is raised when `ld` is given and `def` has listeners: a veto (a listener that
+# raised) takes the clause out again and returns `nothing`.
 "`assertDefinition`'s body after `add_ssu_clause`: link `clause` into `def` at `where_` (pl-proc.c)."
 function _assertDefinition!(
-    gd::PL_global_data{T}, def::Definition{T}, clause::Clause{T},
+    gd::PL_global_data{T}, ld::Union{Nothing, PL_local_data{T}}, def::Definition{T}, clause::Clause{T},
     where_::Union{Int, ClauseRef{T}}
-)::ClauseRef{T} where {T}
+)::Union{Nothing, ClauseRef{T}} where {T}
     key = argKey(Code(clause, 1), Int(def.impl_clauses.primary_index))
     cref = newClauseRef(clause, key)
     clause.generation_created = max_generation(def)    # invisible while it is linked in
@@ -510,6 +517,11 @@ function _assertDefinition!(
     gd._generation += 1                                 # PL_LOCK(L_GENERATION)
     clause.generation_created = gd._generation
     clause.generation_erased = max_generation(def)
+    if def.events !== nothing && ld !== nothing &&                    # def->events && !(LD->transaction.flags&TR_BULK) (no transactions)
+        !predicate_update_event(gd, ld, def, mk_sym(T, where_ === CL_START ? :asserta : :assertz), clause, UInt32(0))
+        retractClauseDefinition!(gd, def, clause, false)              # error: retractClauseDefinition(def, clause, false)
+        return nothing
+    end
     setLastModifiedPredicate!(gd, def, clause.generation_created)     # setLastModifiedPredicate(def, …created, TWF_ASSERT)
     return cref
 end
@@ -563,11 +575,26 @@ function retract_clause!(
 end
 
 # PORT: pl-proc.c retractClauseDefinition
-# DIVERGES: no update events (`notify` is kept for the signature) and no transactions.
-"Retract `clause` of `def` (pl-proc.c): erase/1, retract/1 and retractall/1 come through here."
+# DIVERGES: no transactions or breakpoints; the database and the local data are arguments. The method without `ld` raises no
+# update event (`notify` is kept for the signature: the tests' database builders, which have no local data).
+"Retract `clause` of `def` (pl-proc.c) without telling the listeners of `def`."
 retractClauseDefinition!(
     gd::PL_global_data{T}, def::Definition{T}, clause::Clause{T}, notify::Bool
 ) where {T} = retract_clause!(gd, clause, gen_t(0))
+
+# PORT: pl-proc.c retractClauseDefinition
+# DIVERGES: as above; the update event (pl-proc.c:1706-1712) is raised, with `ld` to run the listeners in.
+"Retract `clause` of `def` (pl-proc.c): erase/1, retract/1 and retractall/1 come through here; false when a listener raised."
+function retractClauseDefinition!(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, def::Definition{T}, clause::Clause{T}, notify::Bool
+)::Bool where {T}
+    if def.events !== nothing && notify &&                      # def->events && notify && !(LD->transaction.flags&TR_BULK)
+        !predicate_update_event(gd, ld, def, mk_sym(T, :retract), clause, UInt32(0))
+        return false
+    end
+
+    return retract_clause!(gd, clause, gen_t(0))
+end
 
 # PORT: pl-proc.c find_prev
 "The clause reference before `cref` in `def`'s clause list; `prev` is the likely one (pl-proc.c)."
@@ -589,8 +616,14 @@ function find_prev(
     return nothing
 end
 
+# PORT: pl-proc.c announceErasedClause
+"Tell the listeners of the `erase` event that `clause` is going (pl-proc.c): false when a listener raised."
+announceErasedClause(gd::PL_global_data{T}, ld::PL_local_data{T}, clause::Clause{T})::Bool where {T} =
+    callEventHook(gd, ld, PLEV_ERASED_CLAUSE, clause)
+
 # PORT: pl-proc.c cleanDefinition
-# DIVERGES: no transactions (`tr_starts`), no debugger call-back (`announceErasedClause`), and the
+# DIVERGES: no transactions (`tr_starts`); the `erase` event (`announceErasedClause`) is raised when `gd` and `ld` are
+# given (EV1), `rcp` (upstream's `bool *`) a `Ref`; the method without them is the tests' (no listeners), and the
 # unlinked references are left to the garbage collector (upstream lingers them and frees what no
 # one uses, `free_lingering`) — an unlinked reference keeps its `next`, so an enumeration standing on
 # it continues. No `LOCKDEF` (no threads) and no `rcp` result; the caller sets `cgc_active`, which
@@ -600,7 +633,8 @@ Unlink from `def`'s clause list every erased clause no generation in use can see
 indexes; the number removed (pl-proc.c).
 """
 function cleanDefinition!(
-    def::Definition{T}, ddi::dirty_def_info{T}, start::gen_t
+    gd::Union{Nothing, PL_global_data{T}}, ld::Union{Nothing, PL_local_data{T}}, def::Definition{T},
+    ddi::dirty_def_info{T}, start::gen_t, rcp::Base.RefValue{Bool}
 )::Int where {T}
     removed = 0
     if mustCleanDefinition(def) && (ddi.flags & DDI_MARKING) != 0
@@ -609,6 +643,9 @@ function cleanDefinition!(
         while cref !== nothing && def.impl_clauses.erased_clauses != 0
             cl = cref.clause::Clause{T}
             if (cl.flags & CL_ERASED) != 0 && ddi_is_garbage(ddi, start, cl)
+                if gd !== nothing && ld !== nothing && !announceErasedClause(gd, ld, cl)
+                    rcp[] = false                       # *rcp = false
+                end
                 prev = find_prev(def, prev, cref)
                 if prev === nothing
                     def.impl_clauses.first_clause = cref.next
@@ -634,6 +671,11 @@ function cleanDefinition!(
     end
     return removed
 end
+
+# DIVERGES (no upstream function): the tests' call: no `erase` event and no result.
+cleanDefinition!(
+    def::Definition{T}, ddi::dirty_def_info{T}, start::gen_t
+)::Int where {T} = cleanDefinition!(nothing, nothing, def, ddi, start, Ref(true))
 
 # PORT: pl-proc.c mustCleanDefinition
 "True when `def` has erased clauses to collect (pl-proc.c)."
@@ -825,7 +867,7 @@ function maybeUnregisterDirtyDefinition!(
 end
 
 # PORT: pl-proc.c pl_garbage_collect_clauses
-# DIVERGES: no messages, statistics, transactions or lingering references; the predicates a
+# DIVERGES: false when a listener of the `erase` event raised (`cleanDefinition`'s `rcp`); no messages, statistics, transactions or lingering references; the predicates a
 # running enumeration accesses are those it registered with `pushPredicateAccessObj!`.
 """
     pl_garbage_collect_clauses!(gd, ld) -> Bool
@@ -844,12 +886,14 @@ function pl_garbage_collect_clauses!(
             ddi_reset!(ddi)                             # see (*)
         end
         markPredicatesInEnvironments!(ld, gd)
+        rcp = Ref(true)                                 # `&rc` of cleanDefinition()
         for (def, ddi) in collect(gd.procedures_dirty)  # maybeUnregister… deletes entries
             if (def.flags & P_FOREIGN) == 0 && def.impl_clauses.erased_clauses > 0
-                cleanDefinition!(def, ddi, start_gen)
+                cleanDefinition!(gd, ld, def, ddi, start_gen, rcp)
             end
             maybeUnregisterDirtyDefinition!(gd, def)
         end
+        rc = rcp[]
         gd.clauses_cgc_active = false
     end
     return rc
@@ -991,7 +1035,7 @@ function pl_retract!(
             try
                 # retract(Head) is retract((Head :- true)): a rule's body is not `true`
                 if (clause.flags & UNIT_CLAUSE) != 0 && decompileHead!(ld, clause, head)
-                    if retractClauseDefinition!(gd, def, clause, true) || !first_call
+                    if retractClauseDefinition!(gd, ld, def, clause, true) || !first_call
                         if chp.cref === nothing         # deterministic last one
                             popPredicateAccess!(ld, def)
                             popped = true
@@ -1037,7 +1081,8 @@ function allVars(ld::PL_local_data{T}, head::term_t)::Bool where {T}
 end
 
 # PORT: pl-proc.c retractall as pl_retractall
-# DIVERGES: the predicate is given (no module lookup); no update events. A clause is unified by its
+# DIVERGES: the predicate is given (no module lookup). The update events are upstream's (pl-proc.c:3308, :3397): `start` before,
+# `end` after unless the call returned early (no first clause, or the last of the clause choice). A clause is unified by its
 # head (`decompileHead!`) and the bindings are undone before the next (`PL_rewind_foreign_frame`).
 """
     pl_retractall!(gd, ld, def, head) -> Bool
@@ -1060,8 +1105,12 @@ function pl_retractall!(
         def.flags |= P_DYNAMIC                          # setDynamicDefinition(def, true)
         return true                                     # nothing to retract
     end
+    if def.events !== nothing && !retractall_event(gd, ld, def, head, :start)   # retractall_event(def, thehead, FUNCTOR_start1)
+        return false
+    end
     allvars = allVars(ld, head)
     rc = true
+    send = true                                         # false at upstream's `return true` exits: no `end` event
     dref = pushPredicateAccessObj!(ld, gd, def)
     try
         gen = dref.generation
@@ -1070,7 +1119,7 @@ function pl_retractall!(
             while cref !== nothing
                 cl = cref.clause::Clause{T}
                 if visibleClauseCNT(cl, gen)
-                    if !retractClauseDefinition!(gd, def, cl, true)
+                    if !retractClauseDefinition!(gd, ld, def, cl, true)
                         ld.exception_term != 0 && break    # if ( PL_exception(0) ) break
                     end
                 end
@@ -1080,14 +1129,16 @@ function pl_retractall!(
         else
             chp = ClauseChoice{T}(nothing, word(0))
             cref = firstClause!(ld, _head_argv(ld, def, head), gen, def, chp)
+            cref === nothing && (send = false)          # return true
             while cref !== nothing
                 cl = cref.clause::Clause{T}
                 m = Mark(ld)
                 stop = false
                 try
                     if decompileHead!(ld, cl, head)
-                        if !retractClauseDefinition!(gd, def, cl, true)
+                        if !retractClauseDefinition!(gd, ld, def, cl, true)
                             stop = ld.exception_term != 0   # if ( PL_exception(0) ) break
+                            stop && (rc = false)            # rc = retractClauseDefinition(...)
                         end
                     elseif ld.exception_term != 0
                         rc = false                      # rc = false; break
@@ -1097,12 +1148,18 @@ function pl_retractall!(
                     Undo!(ld, m)                        # PL_rewind_foreign_frame(fid)
                 end
                 stop && break
-                chp.cref === nothing && break
+                if chp.cref === nothing
+                    send = false                        # return true
+                    break
+                end
                 cref = nextClause!(ld, chp, _head_argv(ld, def, head), gen, def)
             end
         end
     finally
         popPredicateAccess!(ld, def)
+    end
+    if rc && send && def.events !== nothing
+        rc = retractall_event(gd, ld, def, head, :end)  # rc = retractall_event(def, thehead, FUNCTOR_end1)
     end
     return rc
 end
@@ -1994,7 +2051,7 @@ function pl_retract1_va(
                 neck_ok && decompile!(ld, clause, head, body)
             end
         if matched
-            if retractClauseDefinition!(gd, def, clause, true) ||
+            if retractClauseDefinition!(gd, ld, def, clause, true) ||
                 PL_foreign_control(PL__ctx) != FRG_FIRST_CALL
                 if ctx.chp.cref === nothing             # deterministic last one
                     free_retract_context!(ld, ctx, k)
@@ -2032,7 +2089,7 @@ end
 # (PRED_IMPL("retractall", 1, retractall, PL_FA_NONDETERMINISTIC|PL_FA_ISO))
 # DIVERGES: registered as a deterministic variadic built-in (the body never leaves a choice point; upstream's
 # NONDETERMINISTIC flag only gives it a foreign frame); the work is `pl_retractall!` below (its permission checks are
-# the ones here, done first with the Prolog error); no update events (`retractall_event`). Kept deterministic after
+# the ones here, done first with the Prolog error); the update events are `pl_retractall!`'s. Kept deterministic after
 # NF1 (audit D-0136 Q6: representation only). RE-CHECK: a `prolog_current_frame/1` or `prolog_current_choice/1` row
 # around retractall/1 that differs from swipl ports the NONDETERMINISTIC flag.
 "`retractall(+Head)`: retract every clause whose head unifies with `Head`, creating the predicate dynamic if it is new (pl-proc.c)."

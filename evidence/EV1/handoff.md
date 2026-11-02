@@ -121,3 +121,35 @@ DEFERRED (no Julia function yet), each owned by the step that ports the function
 ### Gate agent runs (when groups 3-7 are done)
 fmt (committed files via `warm.sh send`), `warm.sh inventory`, check, rows x3, test_type_discipline, tools/pkgtest_way.sh test/core_lang/test_event_swipl.jl, push mutants/EV1 then gate/ev1 at the same SHA,
 alloc pins x3 (GD/LD/definition struct change: Tier 1), full CI + battery. Branches created by this writer: wip/ev1 only (no deletes).
+
+## WRITER 2 STATE (hit the context cap during group 4; the next writer starts at "REMAINING" below)
+Commits on wip/ev1: group 3 = the commit after 731b2ba, subject "UPSTREAM: pl-event.c event lists, prolog_listen, prolog_unlisten, call side": src/pl-event.jl REWRITTEN as the
+real port (event_type, PL_events 12 rows, event_location, event_list_at/event_list_set!, link_event, get_callback, add_event_hook, get_event_list!, register_event_hook, get_event_listp(gd,ld,type)
+-> (loc,argc), prolog_listen/2,3, prolog_unlisten/2 (3rd entry of PL_predicates_from_event, TRANSPARENT), free_event_callback, destroy_event_list!(gd,ld,loc|def), cleanupEvents(gd,ld),
+call_event_list (snapshot), delayEvent/delayEvents/sendDelayedEvents, callEventHook, PL_call_event_hook(_va), predicate_update_event, table_answer_event, retractall_event(gd,ld,def,head,:start|:end));
+PL_put_frame in src/pl-trace.jl; get_procedure_resolve_namearity in src/pl-proc.jl; LogicKernel.jl include comment. NOTHING compiled or run (read-only verified against neighbours).
+
+### GROUP 4 (committed TOGETHER with this handoff, because the commit hook refuses a partial index; subject "MODIFIED: wire the event raise sites ..."; REMAINING item 1 is done)
+- src/pl-proc.jl: `_assertDefinition!(gd, ld::Union{Nothing,PL_local_data}, def, clause, where_)` (5-arg; the 4-arg method delegates with `nothing`, so test/static_analysis_manifest.jl:1378-1379 stay valid)
+  raising predicate_update_event (asserta|assertz) and, on a veto, `retractClauseDefinition!(gd, def, clause, false)` + `nothing` (pl-proc.c:1472-1478); `assertDefinition!` passes `ld`.
+  NEW method `retractClauseDefinition!(gd, ld, def, clause, notify)` (pl-proc.c:1706-1712; the 4-arg without events stays); callers switched to it: pl_retract! (2 sites), pl_retractall! (2 sites), pl_retract1_va, pl-rec.jl erase.
+  `pl_retractall!`: start event after the dynamic check (pl-proc.c:3308), `end` event after the pop only when rc && `send` (upstream returns early, no `end`, when there is no first clause or the clause choice ends: faithful flag `send`);
+  `rc = false` when a retract fails with a pending exception (upstream `rc = retractClauseDefinition(...)`; before EV1 that could not happen). `announceErasedClause(gd,ld,clause)`; `cleanDefinition!(gd, ld, def, ddi, start, rcp::Ref{Bool})`
+  (6-arg; the 3-arg method for the tests delegates), `pl_garbage_collect_clauses!` passes `rcp` and sets `rc = rcp[]` (pl-proc.c:2729).
+- src/pl-rec.jl: erase of a record `rc = callEventHook(gd, ld, PLEV_ERASED_RECORD, rref)` (pl-rec.c:2468) + header comment.
+- src/pl-wam.jl: frameFinished raises PLEV_FRAMEFINISHED for an FR_NOTIFY frame (pl-wam.c:959), comments of frameFinished/frameFailed updated.
+Signature changes to list for the audit (flag 5): `_assertDefinition!` gains a 5-arg method, `retractClauseDefinition!` an `ld` method, `cleanDefinition!` a 6-arg method; the old methods are KEPT (no textual conflict, manifest entries valid).
+
+### REMAINING
+1. Commit the uncommitted group 4 above (check `git diff` first; `warm.sh` nothing run yet).
+2. `resetProcedure`/`unallocDefinition` destroy_event_list (pl-proc.c:268, 408): `grep -n "resetProcedure\|unallocDefinition\|abolish" src/pl-proc.jl` found nothing checked yet; if Julia has no such function, list as DEFERRED (abolish step) and say so in the final list.
+3. Group 5: oracle rows (swipl 10.1.19, LC_ALL=C, two identical runs; precedent ~/code/lk-q10/evidence/Q10/gen_rows.py): test/core_lang/test_event_swipl.jl (registration/removal, `as(first|last)`, `name(N)` replacement, unlisten of an atom and of a closure,
+   predicate events asserta/assertz/retract/retractall(start/end: NOTE the `end` event is skipped on the early returns)/erase, record erase, bad options: as(middle) domain_error(as,middle), unknown event domain_error(event,..), non-callable closure type_error(callable,..), `foo/a` PI),
+   and the `untable` event only through boot (boot/tabling.pl:300-301 must keep working: prolog_listen(untable, untable_reconsult) with an atom closure).
+4. Stale-pin hunt: test/core_lang/test_bootpred3_swipl.jl is the ONLY test file naming prolog_listen/prolog_unlisten: rows pinning the NotPortedError / "hook not kept" must follow the real port (internal-identity expectation + one-line disclosure, or report).
+5. tools/mutants/EV1.py (anchors once; TARGETS: test_event_swipl.jl, test_bootpred3_swipl.jl, plus every test file calling assert/retract/retractall/erase: grep -l), validate with a throwaway python3 -I + runpy checker; manifest entries (test/static_analysis_manifest.jl: the new 5-arg `_assertDefinition!`, `retractClauseDefinition!` with ld, `cleanDefinition!` 6-arg, event functions) and a docs/architecture.md block, appended at the END, each in its own commit. No `@enum` was added (no `_enum_hash` entry).
+6. Verified vs read-only: all of the above is read-only (types checked against the neighbours by reading: wakeup_state, PL_call_predicate, PL_put_clref, unify_definition, FUNCTOR_colon2, Clause{T}); nothing compiled. Possible compile traps for the gate agent: `Procedure{T}` as a type assertion inside event_callback.procedure (a `procedure{definition{T}}`), `PL_new_term_refs` returns 0 on failure,
+   `getfield(gd.event_hook, Symbol)` dynamic, `delayed_event{T}` constructor positional (type, clause, offset, proc).
+### DEFERRED sites (no Julia function yet; each owner raises when its step lands)
+breakpoint events DBG1 (pl-comp.c:9084-9173), abort raise (pl-pro.c:105), delayEvents in unloadFile/endReconsult (pl-srcfile.c:804/835, 1604/1639: reload step), reconsultFinalizePredicate (pl-proc.c:1937), thread start/exit + PL_thread_at_exit + register_event_function (TH1), untable raise (pl-tabling.c:11317) and table_answer_event call (TAB1), transactions (pl-transaction.c:400/523), cleanupEvents caller (PL_cleanup, pl-init.c:2037), freePrologLocalData (pl-setup.c:1796).
+### Gate agent runs (after groups 5-7): see "Gate agent runs" above.
