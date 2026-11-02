@@ -837,7 +837,7 @@ function setVarPrefix(
 end
 
 # PORT: pl-prologflag.c setUnknown
-# DIVERGES: the database is an argument; `printMessage` appends the warning to `ld.messages`.
+# DIVERGES: the database is an argument.
 "Set the `unknown` flag of the module `m` from the atom `a` (`error`, `warning`, `fail`); in `user` and `system` a value other than `error` warns, and in `system` it is refused outside system mode (pl-prologflag.c)."
 function setUnknown(
     gd::PL_global_data{T}, ld::PL_local_data{T}, value::term_t, a::T, m::module_t{T}

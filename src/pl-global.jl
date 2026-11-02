@@ -106,6 +106,7 @@ mutable struct PL_global_data{T}
     const event_hook::event_hooks{T}                            # event.hook: the event lists (R2 EV1)
     const closure_refs::Vector{closure{T}}                      # (pl-wrap.c: the closure a closure blob names, by its number in the payload; TAB1-min)
     paths_CWDdir::String                                        # paths.CWDdir: the cached working directory, '/'-terminated ("" = none; paths.CWDlen is its byte length; R2 LB2b)
+    procedures_print_message2::Procedure{T}                     # procedures.print_message2: print_message/2, printMessage's (R2 LB4 b2)
 end
 # DIVERGES: `atoms` is upstream's `GD->atoms` as a struct of its own (src/pl-atom.jl), one table per
 # database, built first as upstream's `initAtoms` runs first; `functors` likewise `GD->functors` with
@@ -226,7 +227,8 @@ function setupProlog(::Type{T})::PL_global_data{T} where {T}
         Int[],                                  # halt_exited
         event_hooks{T}(),                       # event.hook: no listener yet (R2 EV1)
         closure{T}[],                           # closure_refs: no closure has a reference yet (TAB1-min)
-        ""                                      # paths.CWDdir: none until the first PL_cwd (R2 LB2b)
+        "",                                     # paths.CWDdir: none until the first PL_cwd (R2 LB2b)
+        dc_proc                                 # procedures_print_message2: set by initBuildIns!
     )
     initPrologFlags!(gd)                        # setup:136 (src/os/pl-prologflag.jl): before the built-ins (:158), whose boot clauses read the mask
     initBuildIns!(gd)                           # setup:158 (src/pl-ext.jl)
@@ -418,8 +420,8 @@ ld_statistics() = ld_statistics(0, 0, 0, 0, WallTime(), 0.0, 0.0, 0.0, 0.0)
 # so one that changes the database (`assertz/1`) reads it through this field; `nothing` until a
 # query is opened. Since R1f: `read_source` (the start of the term read last), the style checks
 # (`_debugstatus.styleCheck`, pl-init.c's default), `modules.source` (a module index: `user`), and
-# `messages` — no upstream field: `printMessage` appends `(kind, message)` there, as print_message/2
-# (boot/messages.pl, R2) is not ported; the loader returns them. Since R1e's write/1 family:
+# `messages` — no upstream field: what upstream's `Sdprintf` writes to `Serror` is collected there as
+# `(kind, message)` (src/pl-qlf.jl; printMessage calls print_message/2 since LB4 b2). Since R1e's write/1 family:
 # `variable_names` (since R1g) — upstream's GLOBAL VARIABLE `$variable_names`, which boot/init.pl
 # sets to the bindings of the clause being loaded (`b_setval`) and the compiler reads for its
 # warnings (`get_variable_names`); the kernel has no global variables (pl-gvar.c), so it is a term
@@ -570,7 +572,7 @@ mutable struct PL_local_data{T}
     debugstatus_styleCheck::Int                                 # _debugstatus.styleCheck
     modules_source::Int                                         # modules.source (an index)
     modules_typein::Int                                         # modules.typein (an index)
-    messages::Vector{Tuple{Symbol, T}}                          # (printMessage's messages)
+    messages::Vector{Tuple{Symbol, T}}                          # (the collected Sdprintf text and terms, src/pl-qlf.jl)
     IO_streams::Vector{Union{Nothing, IOSTREAM}}                # IO.streams[SNO_*]
     IO_initialised::Bool                                        # GD->io_initialised (per LD)
     IO_stream_type_check::Int                                   # IO.stream_type_check
@@ -613,6 +615,7 @@ mutable struct PL_local_data{T}
     prompt_next::Bool                                           # prompt.next: the next read from user_input prompts (R2 LB5b)
     autoload_nesting::Vector{definition{T}}                     # autoload.nesting: the autoloader's chain, the innermost last (R2 AUTOLOAD1 A2)
     autoload_loop::Union{Nothing, definition{T}}                # autoload.loop: we are looping on this def (nothing: NULL)
+    in_print_message::Int                                       # in_print_message: inside printMessage() (R2 LB4 b2)
 end
 function PL_local_data{T}(gd::PL_global_data{T}) where {T}
     e = mk_expr(T, T[])                         # any term: the idle placeholders' (index context, …)
@@ -711,7 +714,8 @@ function PL_local_data{T}(gd::PL_global_data{T}) where {T}
         nothing,                                # event.hook.onthreadexit: no listener yet (R2 EV1)
         false,                                  # prompt.next: false (pl-global.c: zero; set by set_stream's alias(user_input), R2 LB5b)
         definition{T}[],                        # autoload.nesting: NULL (R2 AUTOLOAD1 A2)
-        nothing                                 # autoload.loop: NULL
+        nothing,                                # autoload.loop: NULL
+        0                                       # in_print_message: not inside printMessage() (pl-pro.c:82)
     )
     allocStacks!(ld)                            # the initial local stack, its spare reserved
     emptyStacks!(ld)

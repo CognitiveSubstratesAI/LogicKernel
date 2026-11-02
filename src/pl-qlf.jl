@@ -15,7 +15,7 @@
 # `writeWicTrailer`) write nothing, and the seven write-side predicates take their NULL branch — upstream's
 # whole behaviour when no state is open. The other 15 predicates of the table read or write a QLF file and are
 # refused by name (`NotPortedError`). A message the C loop prints with `Sdprintf` is collected on the local
-# data's `messages` (`_qlf_Sdprintf!`), as `printMessage` collects a message (src/pl-error.jl).
+# data's `messages` (`_qlf_Sdprintf!`), as printMessage's fallback branches are (src/pl-error.jl).
 
 # ── conditional compilation (pl-qlf.c:4582-4689) ───────────────────────────────────────────────────
 
@@ -146,12 +146,21 @@ end
 # ── the state file's write steps, with no state (LD2) ───────────────────────────────────────────────
 
 # ORIGINAL (LB3): upstream's `Sdprintf(fmt, …)` to `Serror` in the boot loop. The text is collected on the
-# local data's `messages` as the atom of the text, severity `:error`, where printMessage collects a message
-# (src/pl-error.jl), so a boot message is never lost (the design's H1).
+# local data's `messages` as the atom of the text, severity `:error`, so a boot message is never lost (the
+# design's H1). Since LB4 b2 printMessage's fallback branches (src/pl-error.jl) collect here too.
 "Collect the boot loop's diagnostic `text` (upstream: `Sdprintf` to the error stream)."
 function _qlf_Sdprintf!(ld::PL_local_data{T}, text::String)::Nothing where {T}
     push!(ld.messages, (:error, mk_sym(T, Symbol(text))))
     return nothing
+end
+
+# ORIGINAL (LB4 b2): upstream's `pl_write(term)` after a boot diagnostic (addClauseWic) and printMessage's
+# `PL_write_term(Serror, av+1, 1200, 0)`: the term is collected on the local data's `messages`, severity `:error`,
+# EXPORTED off the cells once (`export_cells`), after the `_qlf_Sdprintf!` text it follows.
+"Collect the term `t` references after a boot diagnostic (upstream: written to the error stream). True."
+function _qlf_pl_write!(ld::PL_local_data{T}, t::term_t)::Bool where {T}
+    push!(ld.messages, (:error, export_cells(ld, cell_export{T}(), -(t + 1))))
+    return true
 end
 
 # PORT: pl-qlf.c qlfStartFile
@@ -177,7 +186,7 @@ addDirectiveWic(state::Nothing, term::term_t)::Bool = true
 # (swipl-devel cbf4e189, src/pl-qlf.c:3220-3238)
 # DIVERGES: the clause is asserted as upstream's; with no state (LD2) `openPredicateWic` and `saveWicClause`
 # write nothing. `pl_write(term)` after "Failed to compile: " is the term collected as an `:error` message
-# (`printMessage`), the line end not collected.
+# (`_qlf_pl_write!`), the line end not collected.
 "Assert the clause `term` read from `file` at the end of its predicate, as loading the file does (pl-qlf.c)."
 function addClauseWic(
     gd::PL_global_data{T}, ld::PL_local_data{T}, state::Nothing, term::term_t, file::T
@@ -191,7 +200,7 @@ function addClauseWic(
     end
 
     _qlf_Sdprintf!(ld, "Failed to compile: ")
-    printMessage(ld, :error, term)                  # pl_write(term)
+    _qlf_pl_write!(ld, term)                        # pl_write(term)
     return false
 end
 

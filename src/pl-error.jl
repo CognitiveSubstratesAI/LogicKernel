@@ -1014,17 +1014,88 @@ end
 
 # ── printing messages (pl-error.c), since R1f ───────────────────────────────────────────────────
 
+# PORT: pl-error.c OK_RECURSIVE
+# (swipl-devel cbf4e189, src/pl-error.c:990)
+"How deep `printMessage` may nest before it stops calling print_message/2 (pl-error.c `OK_RECURSIVE`)."
+const OK_RECURSIVE = 10
+
 # PORT: pl-error.c printMessage
+# PORT: pl-error.c printMessagev
+# (swipl-devel cbf4e189, src/pl-error.c:992-1063; printMessage :992-1002 is the varargs wrapper of printMessagev)
 # DIVERGES: the message is a term reference holding it, laid out on the cells by the caller, where
-# upstream builds it from `PL_unify_term` arguments into `av+1` (f3b-4); it is not printed —
-# print_message/2 is boot/messages.pl's (R2) — but appended to the local data's `messages` as
-# `(severity, message)`, which the loader returns: EXPORTED off the cells once (`export_cells`), the one
-# place a message leaves the engine. So it never fails and never raises: no recursion guard, no
-# wakeup state to save.
-"Report the message term reference `msg` holds, of severity `severity` (`:warning`, `:error`, …) (pl-error.c)."
+# upstream builds it from `PL_unify_term` arguments into `av+1` (f3b-4): `av+1` is unified with it. The
+# severity is the atom of the Symbol. `fatalError` (upstream ends the process) is a Julia `error` naming
+# upstream's message. `Sdprintf` to `Serror` and `PL_write_term(Serror, …)` in the fallback branches are
+# COLLECTED on the local data's `messages` (`_qlf_Sdprintf!`, `_qlf_pl_write!`, src/pl-qlf.jl: the text,
+# then the message term), as the boot loop's diagnostics are; `PL_backtrace(5, 1)` is left to DBG1.
+# `PL_thread_self()` is 1, the main thread (one thread: `threads` false, pl-prologflag.c:2620-2622).
+"""
+Print the message term reference `msg` holds, of severity `severity` (`:warning`, `:error`, …), by calling
+print_message/2 with the pending exception and wakeup list set aside (pl-error.c). False when that raised
+(the exception is kept); true when it printed or merely failed.
+"""
 function printMessage(ld::PL_local_data{T}, severity::Symbol, msg::term_t)::Bool where {T}
-    push!(ld.messages, (severity, export_cells(ld, cell_export{T}(), -(msg + 1))))
-    return true
+    gd = _query_gd(ld)
+    pred = gd.procedures_print_message2         # PROCEDURE_print_message2
+
+    ld.in_print_message += 1
+    if ld.in_print_message >= OK_RECURSIVE * 3
+        error("printMessage(): recursive call")             # fatalError
+    end
+    wstate = saveWakeup(ld, true)
+    if wstate === nothing
+        ld.in_print_message -= 1
+        return false
+    end
+
+    av = PL_new_term_refs(ld, 2)
+    PL_put_atom(ld, av, mk_sym(T, severity))
+    rc = PL_unify(ld, av + 1, msg)              # PL_unify_termv(av+1, args)
+
+    if rc
+        _initIO(ld)
+        if Sferror(Suser_error(ld)) == 0
+            if isDefinedProcedure(gd, pred) && ld.in_print_message <= OK_RECURSIVE
+                rc = PL_call_predicate(
+                    gd, ld, nothing, PL_Q_NODEBUG | PL_Q_PASS_EXCEPTION, pred, av
+                )
+            else
+                if ld.in_print_message <= OK_RECURSIVE * 2
+                    _qlf_Sdprintf!(ld, "print_message/2: recursive call: ")
+                    if ReadingSource(ld)                # source_file_name:source_line_no
+                        line = ld.read_source.position.lineno
+                        _qlf_Sdprintf!(ld, "$(_qlf_source_file_text(ld)):$(line) ")
+                    end
+                    rc = _qlf_pl_write!(ld, av + 1)          # PL_write_term(Serror, av+1, 1200, 0)
+                    _qlf_Sdprintf!(ld, "\n")
+                    # PL_backtrace(5, 1): left to DBG1
+                else                                # in_print_message == 2
+                    _qlf_Sdprintf!(ld, "printMessage(): recursive call\n")
+                end
+            end
+        else
+            if truePrologFlag(ld, PLFLAG_DEBUG_ON_ERROR)  # Serror's error state: collected, never set
+                _qlf_Sdprintf!(ld, "[1] printMessage(): Cannot write to user_error:\n")
+                rc = _qlf_pl_write!(ld, av + 1)              # PL_write_term(Serror, av+1, 1200, 0)
+                _qlf_Sdprintf!(ld, "\n")
+            else
+                rc = false
+            end
+        end
+    end
+
+    if !rc && PL_exception(ld, 0) != 0
+        wstate = wakeup_state(                  # set(&wstate, WAKEUP_KEEP_URGENT_EXCEPTION)
+            wstate.fid, wstate.outofstack, wstate.flags | WAKEUP_KEEP_URGENT_EXCEPTION
+        )
+    else
+        rc = true
+    end
+
+    restoreWakeup(ld, wstate)
+    ld.in_print_message -= 1
+
+    return rc
 end
 
 # PORT: pl-error.c inc_message_count as pl_inc_message_count1_va
