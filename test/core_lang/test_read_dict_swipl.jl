@@ -1,0 +1,601 @@
+# ORIGINAL: a LIVE differential of RDDICT against swipl at the pin (pl-read.c's dict branch) — the reader's dict syntax
+# test/core_lang/test_read_dict_swipl.jl — dict syntax read by the parser written for R2b (D-0363 item 3; the wip/rddict stack):
+# `_{}`, `Tag{k:v}` (read_dict_start/key/end/resume, is_key_token, build_dict, dict_order_term_refs), the dict-dot reads and the
+# var_tag flag's setter and getter (os/pl-prologflag.c setVarTagFlag/getVarTagFlag) against swipl 10.1.19:
+#   * A PROGRAM consulted by the kernel's loader and cases `t_<id>(R)` run in order in one database, each wrapped in
+#     `catch(Goal, error(SsuE, _), R = raised(SsuE))`; the driver and the term encoder are test_dict_preds_swipl.jl's (one extractor, both sides).
+#     A row reads a TEXT with term_to_atom/2 and observes the term through helpers that hold no dict syntax (rdd, rdv, rda, rdx, rds).
+#   * Every answer line is swipl's, PINNED (swipl 10.1.19-1-gcbf4e189, evidence/RDDICT/rdd_rows.out in the wip/rddict branch, two
+#     byte-identical runs); with `swipl` on PATH the live answers are compared with the pins too.
+#   * The var_tag modes (error, warning, attvar, `#`, dict): the same nine cases per mode; swipl sets the flag by a directive atop the
+#     program, the kernel on the module's flags before the load (the `set_prolog_flag/2` arm is F1b's): pins rdd_mode_rows_<mode>.out.
+#   * The program's own clauses hold dict syntax (the boot lines of init.pl:1297, autoload.pl:889): the loader reads them with this parser.
+#   * UNVERIFIED on the kernel (nothing was compiled when these rows were written): every kernel answer; the gate decides.
+#   * A dict never appears in an answer (the writer has no dict arm): a row observes it through dict_pairs/3.
+# rd01-rd37: dicts: reads, tags, keys, values
+# rd38-rd54: dicts: nested, in arguments, with operators
+# rd55-rd92: syntax errors (syn(Id, CharNo))
+# rd93-rd105: dict-dot reads: the generic '.'/2 term (no dict-specific reader code)
+# rd106-rd114: clause bodies and heads read by the loader (the program's own dict syntax)
+# rm01-rm09: the var_tag modes
+using Test, LogicKernel
+const LK = LogicKernel
+
+# TERM TYPES PER CHUNK: REFERENCE — the reader rides the term layer through the term stack and the dict cells; every type in CI
+include(joinpath(@__DIR__, "..", "term_under_test.jl"))
+const _RDD = lk_term_type(Union{Int64, Float64, String, BigInt, Rational{BigInt}})
+_rdds(x) = lk_sym(_RDD, Symbol(x))
+
+_rdd_codes(s::String) = "[" * join(Int.(collect(s)), ",") * "]"
+"A term as the driver's `enc/1` writes it: `V<i>` by first occurrence, atoms and functors by their codes."
+function _rdd_enc(t::_RDD, seen::Vector{UInt64}=UInt64[])::String
+    k = kind(t)
+    if k === VAR
+        i = findfirst(==(var_key(t)), seen)
+        if i === nothing
+            push!(seen, var_key(t))
+            i = length(seen)
+        end
+        return "V$(i - 1)"
+    elseif k === SYM
+        return is_nil(t) ? "nil" : "a" * _rdd_codes(sym_text(t))
+    elseif k === GND
+        v = lk_value(t)
+        v isa AbstractString && return "s" * _rdd_codes(String(v))
+        v isa Integer && return "i$v"
+        v isa Rational && return "q$(numerator(v))r$(denominator(v))"
+        v isa AbstractFloat && return "f$(v)"
+        return "?$(typeof(v))"
+    end
+    h = child(t, 1)
+    return (is_nil(h) ? "c[]" : "c" * _rdd_codes(sym_text(h))) * "/$(nchildren(t) - 1)(" *
+           join([_rdd_enc(child(t, i), seen) for i in 2:nchildren(t)], ",") * ")"
+end
+
+# the swipl side: test/core_lang/test_ssu_swipl.jl's driver (consult, then every answer of each t_<id>/1, `enc`oded)
+const _RDD_DRIVER = raw"""
+enc(T) :- enc(T, [], _).
+enc(V, S0, S) :- var(V), !, ( vidx(S0, V, 0, I) -> S = S0 ; length(S0, I), append(S0, [V], S) ), format("V~w", [I]).
+enc(T, S, S) :- T == [], !, write(nil).
+enc(T, S, S) :- atom(T), !, atom_codes(T, Cs), format("a~w", [Cs]).
+enc(T, S, S) :- string(T), !, string_codes(T, Cs), format("s~w", [Cs]).
+enc(T, S, S) :- integer(T), !, format("i~w", [T]).
+enc(T, S, S) :- rational(T, N, D), !, format("q~wr~w", [N, D]).
+enc(T, S, S) :- float(T), !, format("f~w", [T]).
+enc(T, S0, S) :- compound_name_arity(T, N, A),
+    ( N == [] -> write('c[]') ; atom_codes(N, Cs), format("c~w", [Cs]) ),
+    format("/~w(", [A]), encargs(1, A, T, S0, S), write(')').
+encargs(I, A, _, S, S) :- I > A, !.
+encargs(I, A, T, S0, S) :- arg(I, T, X), enc(X, S0, S1), ( I < A -> write(',') ; true ),
+    I1 is I+1, encargs(I1, A, T, S1, S).
+vidx([X|_], V, I, I) :- X == V, !.
+vidx([_|Xs], V, I0, I) :- I1 is I0+1, vidx(Xs, V, I1, I).
+fz_pred(N) :-
+    format("~w", [N]), functor(G, N, 1),
+    catch(findnsols(50, G, G, Gs), _, Gs = [exception]),
+    forall(member(S, Gs), ( S == exception -> write(' exception') ; write(' '), enc(S) )), nl.
+fz_run(File, Ns) :-
+    catch(( consult(File), S = ok ), E, S = exc(E)),
+    ( S == ok -> writeln(ok) ; S = exc(B), write('exc '), enc(B), nl ),
+    forall(member(N, Ns), fz_pred(N)).
+"""
+function _rdd_swipl_lines(path::String, names::Vector{String})::Vector{String}
+    out = mktempdir() do d
+        f = joinpath(d, "drv.pl")
+        write(
+            f,
+            _RDD_DRIVER * ":- initialization((fz_run('$path', [" * join(names, ",") *
+            "]), halt)).\n"
+        )
+        read(pipeline(`swipl -q $f`; stdin=devnull, stderr=devnull), String)
+    end
+    return String.(split(chomp(out), '\n'; keepempty=false))
+end
+
+
+
+# the program: helpers (no dict syntax) observe a read term; the bodies hold dict syntax the loader reads (main rows only)
+const _RDD_PROGRAM = raw"""
+rdt(G, G1) :- ( var(G) -> G1 = var ; G1 = G ).
+rdo(A, R) :- ( attvar(A) -> R = attvar ; is_dict(A) -> dict_pairs(A, G, Ps), rdt(G, G1), R = d(G1, Ps) ; var(A) -> R = var ; R = A ).
+rdd(Txt, R) :- term_to_atom(T, Txt), ( attvar(T) -> R = attvar ; is_dict(T) -> dict_pairs(T, G, Ps), rdt(G, G1), R = d(G1, Ps) ; R = nodict(T) ).
+rdv(Txt, K, R) :- term_to_atom(T, Txt), get_dict(K, T, V), rdo(V, R).
+rdw(Txt, K1, K2, R) :- term_to_atom(T, Txt), get_dict(K1, T, V1), get_dict(K2, V1, V2), rdo(V2, R).
+rda(Txt, N, R) :- term_to_atom(T, Txt), arg(N, T, A), rdo(A, R).
+rdx(Txt, R) :- term_to_atom(T, Txt), ( compound(T), T =.. [F, A, B] -> rdo(A, A1), rdo(B, B1), R = F-A1-B1 ; R = other(T) ).
+rds(Txt, R) :- catch(( term_to_atom(_, Txt), R = read ), error(syntax_error(I), string(_, P)), R = syn(I, P)).
+"""
+const _RDD_BODIES = raw"""
+rdb1(R) :- D = _{a:1,b:2}, dict_pairs(D, _, R).
+rdb2(R) :- X = _{file_type:regular}, dict_pairs(X, _, R).
+rdb3(R) :- _{module:M, exports:E, file:F} :< _{module:m1, exports:[a/1], file:'x.pl', extra:1}, R = M-E-F.
+rdb4(R) :- T = point{x:1, y:2}, dict_pairs(T, Tag, Ps), R = Tag-Ps.
+rdb5(R) :- T = Tag{k:v}, dict_pairs(T, G, Ps), ( G == Tag -> R = same(Ps) ; R = other ).
+rdh(_{a:1}, yes).
+rdh(t{a:1}, tagged).
+"""
+const _RDD_MODES = ["dict", "error", "warning", "attvar", "#"]
+
+const _RDD_CASES = [
+    ("rd01", raw"rdd('_{}', R)"),
+    ("rd02", raw"rdd('_{ }', R)"),
+    ("rd03", raw"rdd('_{a:1}', R)"),
+    ("rd04", raw"rdd('t{b:1,a:2}', R)"),
+    ("rd05", raw"rdd('Tag{k:v,k2:v2}', R)"),
+    ("rd06", raw"rdd('t{}', R)"),
+    ("rd07", raw"rdd('X{a:1}', R)"),
+    ("rd08", raw"rdd('\'x y\'{a:2}', R)"),
+    ("rd09", raw"rdd('_{1:a,2:b}', R)"),
+    ("rd10", raw"rdd('_{[]:x}', R)"),
+    ("rd11", raw"rdd('_{\'\':1}', R)"),
+    ("rd12", raw"rdd('_{-1:a}', R)"),
+    ("rd13", raw"rdd('_{a:1,1:b,[]:c,z:d}', R)"),
+    ("rd14", raw"rdd('_{0\'a:1}', R)"),
+    ("rd15", raw"rdd('_{a:1,b:2,c:3,d:4,e:5,f:6,g:7,h:8}', R)"),
+    ("rd16", raw"rdd('_{h:8,g:7,f:6,e:5,d:4,c:3,b:2,a:1}', R)"),
+    ("rd17", raw"rdd('_{a:X,b:X}', R)"),
+    ("rd18", raw"rdd('_{a:f(X,Y),b:\"str\",c:1.5,d:[1,2],e:\'q q\',f:Y}', R)"),
+    ("rd19", raw"rdd('_{a: -1}', R)"),
+    ("rd20", raw"rdd('_{a:(b,c)}', R)"),
+    ("rd21", raw"rdd('_{a:b:c}', R)"),
+    ("rd22", raw"rdd('_{a:(x:-y)}', R)"),
+    ("rd23", raw"rdd('_{a:- 1}', R)"),
+    ("rd24", raw"rdd('_{a:{x}}', R)"),
+    ("rd25", raw"rdd('_{a:1+2*3}', R)"),
+    ("rd26", raw"rdd('_{ a : 1 , b : 2 }', R)"),
+    ("rd27", raw"rdd('_{a:1,\nb:2}', R)"),
+    ("rd28", raw"rdd('_{a:1, /* c */ b:2}', R)"),
+    ("rd29", raw"rdd('_{\'a b\':1}', R)"),
+    ("rd30", raw"rdd('_{{}:1}', R)"),
+    ("rd31", raw"rdd('_{+ :1}', R)"),
+    ("rd32", raw"rdd('_{1:a,a:1,[]:b,\'\':c}', R)"),
+    ("rd33", raw"rdd('{a}', R)"),
+    ("rd34", raw"rdd('f(x)', R)"),
+    ("rd35", raw"rdd('f{}', R)"),
+    ("rd36", raw"rdd('_{a:1} ', R)"),
+    ("rd37", raw"rdd('_{a:\'_{b:1}\'}', R)"),
+    ("rd38", raw"rdv('_{a:_{b:1}}', a, R)"),
+    ("rd39", raw"rdv('_{a:t{b:1,c:x}}', a, R)"),
+    ("rd40", raw"rdw('_{a:t{b:1,c:_{}}}', a, c, R)"),
+    ("rd41", raw"rdw('t{a:u{b:v{c:1}}}', a, b, R)"),
+    ("rd42", raw"rdw('_{a:t{c:_{x:1,y:2}}}', a, c, R)"),
+    ("rd43", raw"rdv('_{a:1,b:X{c:2}}', b, R)"),
+    ("rd44", raw"rda('f(_{a:1},_{b:2})', 1, R)"),
+    ("rd45", raw"rda('f(_{a:1},_{b:2})', 2, R)"),
+    ("rd46", raw"rda('g(x,t{a:1,b:2},y)', 2, R)"),
+    ("rd47", raw"rda('[_{a:1}]', 1, R)"),
+    ("rd48", raw"rda('a- _{x:1}', 2, R)"),
+    ("rd49", raw"rda('f(t{a:1}, t{a:1})', 1, R)"),
+    ("rd50", raw"rda('f(_{a:1,b:2,c:3},x)', 1, R)"),
+    ("rd51", raw"rdx('_{a:1}:b', R)"),
+    ("rd52", raw"rdx('t{a:1}=X', R)"),
+    ("rd53", raw"rdx('p:-_{a:1}', R)"),
+    ("rd54", raw"rdx('f(x):_{a:1}', R)"),
+    ("rd55", raw"rds('_{a}', R)"),
+    ("rd56", raw"rds('_{a:1', R)"),
+    ("rd57", raw"rds('_{a:1,a:2}', R)"),
+    ("rd58", raw"rds('_{1.5:a}', R)"),
+    ("rd59", raw"rds('_{99999999999999999999:1}', R)"),
+    ("rd60", raw"rds('_{f(x):1}', R)"),
+    ("rd61", raw"rds('_{a:1,}', R)"),
+    ("rd62", raw"rds('t{a:1,,b:2}', R)"),
+    ("rd63", raw"rds('_{\"s\":1}', R)"),
+    ("rd64", raw"rds('_{a:-}', R)"),
+    ("rd65", raw"rds('_{a:1}{b:2}', R)"),
+    ("rd66", raw"rds('1{a:2}', R)"),
+    ("rd67", raw"rds('\"s\"{a:2}', R)"),
+    ("rd68", raw"rds('_{a:1 b:2}', R)"),
+    ("rd69", raw"rds('_{:1}', R)"),
+    ("rd70", raw"rds('_{a:}', R)"),
+    ("rd71", raw"rds('_{a:1,b}', R)"),
+    ("rd72", raw"rds('_{,}', R)"),
+    ("rd73", raw"rds('_{a:1)', R)"),
+    ("rd74", raw"rds('_{a:1]', R)"),
+    ("rd75", raw"rds('_{a:x:-y}', R)"),
+    ("rd76", raw"rds('_ {a:1}', R)"),
+    ("rd77", raw"rds('foo {a:1}', R)"),
+    ("rd78", raw"rds('_{1:a,1:b}', R)"),
+    ("rd79", raw"rds('_{a:1,b:2,a:3}', R)"),
+    ("rd80", raw"rds('_{(a):1}', R)"),
+    ("rd81", raw"rds('_{a;1}', R)"),
+    ("rd82", raw"rds('_{a=1}', R)"),
+    ("rd83", raw"rds('_{\'a\':1,a:2}', R)"),
+    ("rd84", raw"rds('_{0\'a:1,97:2}', R)"),
+    ("rd85", raw"rds('_{-1:a,-1:b}', R)"),
+    ("rd86", raw"rds('_{a:1,b:2', R)"),
+    ("rd87", raw"rds('_{', R)"),
+    ("rd88", raw"rds('t{', R)"),
+    ("rd89", raw"rds('a{b}', R)"),
+    ("rd90", raw"rds('_{a:1,[a]:2}', R)"),
+    ("rd91", raw"rds('X{a:1}.', R)"),
+    ("rd92", raw"rds('_{[]:1,[]:2}', R)"),
+    ("rd93", raw"rdx('Ctx.get(stack)', R)"),
+    ("rd94", raw"rdx('_{a:1}.put(b,2)', R)"),
+    ("rd95", raw"rdx('X.y.z', R)"),
+    ("rd96", raw"rdx('X.put(a,1).get(a)', R)"),
+    ("rd97", raw"rdx('_{a:1}.a', R)"),
+    ("rd98", raw"rdx('t{a:1}.get(a)', R)"),
+    ("rd99", raw"rdx('a.b', R)"),
+    ("rd100", raw"rdx('X.Y', R)"),
+    ("rd101", raw"rdx('1.5', R)"),
+    ("rd102", raw"rdx('f(a).g', R)"),
+    ("rd103", raw"rdx('X.put(k,v)', R)"),
+    ("rd104", raw"rdx('X.put(f(Y),Y)', R)"),
+    ("rd105", raw"rdx('X.put(a,Y).get(a)', R)"),
+    ("rd106", raw"rdb1(R)"),
+    ("rd107", raw"rdb2(R)"),
+    ("rd108", raw"rdb3(R)"),
+    ("rd109", raw"rdb4(R)"),
+    ("rd110", raw"rdb5(R)"),
+    ("rd111", raw"rdh(_{a:1}, R)"),
+    ("rd112", raw"rdh(_{a:2}, R)"),
+    ("rd113", raw"rdh(t{a:1}, R)"),
+    ("rd114", raw"rdh(X, R), X = _{a:1}")
+]
+
+const _RDD_MODE_CASES = [
+    ("rm01", raw"rdd('_{a:1}', R)"),
+    ("rm02", raw"rdd('Tag{a:1,b:2}', R)"),
+    ("rm03", raw"rdd('t{a:1}', R)"),
+    ("rm04", raw"rdd('_{}', R)"),
+    ("rm05", raw"rda('f(_{a:1},_)', 1, R)"),
+    ("rm06", raw"rda('f(t{a:1},_{b:2})', 2, R)"),
+    ("rm07", raw"rds('_{a:1,a:2}', R)"),
+    ("rm08", raw"rds('_{a}', R)"),
+    ("rm09", raw"rds('t{a:1,a:2}', R)")
+]
+
+# swipl 10.1.19-1-gcbf4e189's answers to the program and cases above (the driver's lines; evidence/RDDICT/rdd_rows.out in the wip/rddict branch)
+const _RDD_PINNED = [
+    "ok",
+    "t_rd01 c[116,95,114,100,48,49]/1(c[100]/2(a[118,97,114],nil))",
+    "t_rd02 c[116,95,114,100,48,50]/1(c[100]/2(a[118,97,114],nil))",
+    "t_rd03 c[116,95,114,100,48,51]/1(c[100]/2(a[118,97,114],c[91,124,93]/2(c[45]/2(a[97],i1),nil)))",
+    "t_rd04 c[116,95,114,100,48,52]/1(c[100]/2(a[116],c[91,124,93]/2(c[45]/2(a[97],i2),c[91,124,93]/2(c[45]/2(a[98],i1),nil))))",
+    "t_rd05 c[116,95,114,100,48,53]/1(c[100]/2(a[118,97,114],c[91,124,93]/2(c[45]/2(a[107],a[118]),c[91,124,93]/2(c[45]/2(a[107,50],a[118,50]),nil))))",
+    "t_rd06 c[116,95,114,100,48,54]/1(c[100]/2(a[116],nil))",
+    "t_rd07 c[116,95,114,100,48,55]/1(c[100]/2(a[118,97,114],c[91,124,93]/2(c[45]/2(a[97],i1),nil)))",
+    "t_rd08 c[116,95,114,100,48,56]/1(c[100]/2(a[120,32,121],c[91,124,93]/2(c[45]/2(a[97],i2),nil)))",
+    "t_rd09 c[116,95,114,100,48,57]/1(c[100]/2(a[118,97,114],c[91,124,93]/2(c[45]/2(i1,a[97]),c[91,124,93]/2(c[45]/2(i2,a[98]),nil))))",
+    "t_rd10 c[116,95,114,100,49,48]/1(c[100]/2(a[118,97,114],c[91,124,93]/2(c[45]/2(nil,a[120]),nil)))",
+    "t_rd11 c[116,95,114,100,49,49]/1(c[100]/2(a[118,97,114],c[91,124,93]/2(c[45]/2(a[],i1),nil)))",
+    "t_rd12 c[116,95,114,100,49,50]/1(c[100]/2(a[118,97,114],c[91,124,93]/2(c[45]/2(i-1,a[97]),nil)))",
+    "t_rd13 c[116,95,114,100,49,51]/1(c[100]/2(a[118,97,114],c[91,124,93]/2(c[45]/2(i1,a[98]),c[91,124,93]/2(c[45]/2(nil,a[99]),c[91,124,93]/2(c[45]/2(a[97],i1),c[91,124,93]/2(c[45]/2(a[122],a[100]),nil))))))",
+    "t_rd14 c[116,95,114,100,49,52]/1(c[100]/2(a[118,97,114],c[91,124,93]/2(c[45]/2(i97,i1),nil)))",
+    "t_rd15 c[116,95,114,100,49,53]/1(c[100]/2(a[118,97,114],c[91,124,93]/2(c[45]/2(a[97],i1),c[91,124,93]/2(c[45]/2(a[98],i2),c[91,124,93]/2(c[45]/2(a[99],i3),c[91,124,93]/2(c[45]/2(a[100],i4),c[91,124,93]/2(c[45]/2(a[101],i5),c[91,124,93]/2(c[45]/2(a[102],i6),c[91,124,93]/2(c[45]/2(a[103],i7),c[91,124,93]/2(c[45]/2(a[104],i8),nil))))))))))",
+    "t_rd16 c[116,95,114,100,49,54]/1(c[100]/2(a[118,97,114],c[91,124,93]/2(c[45]/2(a[97],i1),c[91,124,93]/2(c[45]/2(a[98],i2),c[91,124,93]/2(c[45]/2(a[99],i3),c[91,124,93]/2(c[45]/2(a[100],i4),c[91,124,93]/2(c[45]/2(a[101],i5),c[91,124,93]/2(c[45]/2(a[102],i6),c[91,124,93]/2(c[45]/2(a[103],i7),c[91,124,93]/2(c[45]/2(a[104],i8),nil))))))))))",
+    "t_rd17 c[116,95,114,100,49,55]/1(c[100]/2(a[118,97,114],c[91,124,93]/2(c[45]/2(a[97],V0),c[91,124,93]/2(c[45]/2(a[98],V0),nil))))",
+    "t_rd18 c[116,95,114,100,49,56]/1(c[100]/2(a[118,97,114],c[91,124,93]/2(c[45]/2(a[97],c[102]/2(V0,V1)),c[91,124,93]/2(c[45]/2(a[98],s[115,116,114]),c[91,124,93]/2(c[45]/2(a[99],f1.5),c[91,124,93]/2(c[45]/2(a[100],c[91,124,93]/2(i1,c[91,124,93]/2(i2,nil))),c[91,124,93]/2(c[45]/2(a[101],a[113,32,113]),c[91,124,93]/2(c[45]/2(a[102],V1),nil))))))))",
+    "t_rd19 c[116,95,114,100,49,57]/1(c[100]/2(a[118,97,114],c[91,124,93]/2(c[45]/2(a[97],i-1),nil)))",
+    "t_rd20 c[116,95,114,100,50,48]/1(c[100]/2(a[118,97,114],c[91,124,93]/2(c[45]/2(a[97],c[44]/2(a[98],a[99])),nil)))",
+    "t_rd21 c[116,95,114,100,50,49]/1(c[100]/2(a[118,97,114],c[91,124,93]/2(c[45]/2(a[97],c[58]/2(a[98],a[99])),nil)))",
+    "t_rd22 c[116,95,114,100,50,50]/1(c[100]/2(a[118,97,114],c[91,124,93]/2(c[45]/2(a[97],c[58,45]/2(a[120],a[121])),nil)))",
+    "t_rd23 c[116,95,114,100,50,51]/1(c[114,97,105,115,101,100]/1(c[115,121,110,116,97,120,95,101,114,114,111,114]/1(a[99,111,108,111,110,95,101,120,112,101,99,116,101,100])))",
+    "t_rd24 c[116,95,114,100,50,52]/1(c[100]/2(a[118,97,114],c[91,124,93]/2(c[45]/2(a[97],c[123,125]/1(a[120])),nil)))",
+    "t_rd25 c[116,95,114,100,50,53]/1(c[100]/2(a[118,97,114],c[91,124,93]/2(c[45]/2(a[97],c[43]/2(i1,c[42]/2(i2,i3))),nil)))",
+    "t_rd26 c[116,95,114,100,50,54]/1(c[100]/2(a[118,97,114],c[91,124,93]/2(c[45]/2(a[97],i1),c[91,124,93]/2(c[45]/2(a[98],i2),nil))))",
+    "t_rd27 c[116,95,114,100,50,55]/1(c[100]/2(a[118,97,114],c[91,124,93]/2(c[45]/2(a[97],i1),c[91,124,93]/2(c[45]/2(a[98],i2),nil))))",
+    "t_rd28 c[116,95,114,100,50,56]/1(c[100]/2(a[118,97,114],c[91,124,93]/2(c[45]/2(a[97],i1),c[91,124,93]/2(c[45]/2(a[98],i2),nil))))",
+    "t_rd29 c[116,95,114,100,50,57]/1(c[100]/2(a[118,97,114],c[91,124,93]/2(c[45]/2(a[97,32,98],i1),nil)))",
+    "t_rd30 c[116,95,114,100,51,48]/1(c[100]/2(a[118,97,114],c[91,124,93]/2(c[45]/2(a[123,125],i1),nil)))",
+    "t_rd31 c[116,95,114,100,51,49]/1(c[100]/2(a[118,97,114],c[91,124,93]/2(c[45]/2(a[43],i1),nil)))",
+    "t_rd32 c[116,95,114,100,51,50]/1(c[100]/2(a[118,97,114],c[91,124,93]/2(c[45]/2(i1,a[97]),c[91,124,93]/2(c[45]/2(nil,a[98]),c[91,124,93]/2(c[45]/2(a[],a[99]),c[91,124,93]/2(c[45]/2(a[97],i1),nil))))))",
+    "t_rd33 c[116,95,114,100,51,51]/1(c[110,111,100,105,99,116]/1(c[123,125]/1(a[97])))",
+    "t_rd34 c[116,95,114,100,51,52]/1(c[110,111,100,105,99,116]/1(c[102]/1(a[120])))",
+    "t_rd35 c[116,95,114,100,51,53]/1(c[100]/2(a[102],nil))",
+    "t_rd36 c[116,95,114,100,51,54]/1(c[100]/2(a[118,97,114],c[91,124,93]/2(c[45]/2(a[97],i1),nil)))",
+    "t_rd37 c[116,95,114,100,51,55]/1(c[100]/2(a[118,97,114],c[91,124,93]/2(c[45]/2(a[97],a[95,123,98,58,49,125]),nil)))",
+    "t_rd38 c[116,95,114,100,51,56]/1(c[100]/2(a[118,97,114],c[91,124,93]/2(c[45]/2(a[98],i1),nil)))",
+    "t_rd39 c[116,95,114,100,51,57]/1(c[100]/2(a[116],c[91,124,93]/2(c[45]/2(a[98],i1),c[91,124,93]/2(c[45]/2(a[99],a[120]),nil))))",
+    "t_rd40 c[116,95,114,100,52,48]/1(c[100]/2(a[118,97,114],nil))",
+    "t_rd41 c[116,95,114,100,52,49]/1(c[100]/2(a[118],c[91,124,93]/2(c[45]/2(a[99],i1),nil)))",
+    "t_rd42 c[116,95,114,100,52,50]/1(c[100]/2(a[118,97,114],c[91,124,93]/2(c[45]/2(a[120],i1),c[91,124,93]/2(c[45]/2(a[121],i2),nil))))",
+    "t_rd43 c[116,95,114,100,52,51]/1(c[100]/2(a[118,97,114],c[91,124,93]/2(c[45]/2(a[99],i2),nil)))",
+    "t_rd44 c[116,95,114,100,52,52]/1(c[100]/2(a[118,97,114],c[91,124,93]/2(c[45]/2(a[97],i1),nil)))",
+    "t_rd45 c[116,95,114,100,52,53]/1(c[100]/2(a[118,97,114],c[91,124,93]/2(c[45]/2(a[98],i2),nil)))",
+    "t_rd46 c[116,95,114,100,52,54]/1(c[100]/2(a[116],c[91,124,93]/2(c[45]/2(a[97],i1),c[91,124,93]/2(c[45]/2(a[98],i2),nil))))",
+    "t_rd47 c[116,95,114,100,52,55]/1(c[100]/2(a[118,97,114],c[91,124,93]/2(c[45]/2(a[97],i1),nil)))",
+    "t_rd48 c[116,95,114,100,52,56]/1(c[100]/2(a[118,97,114],c[91,124,93]/2(c[45]/2(a[120],i1),nil)))",
+    "t_rd49 c[116,95,114,100,52,57]/1(c[100]/2(a[116],c[91,124,93]/2(c[45]/2(a[97],i1),nil)))",
+    "t_rd50 c[116,95,114,100,53,48]/1(c[100]/2(a[118,97,114],c[91,124,93]/2(c[45]/2(a[97],i1),c[91,124,93]/2(c[45]/2(a[98],i2),c[91,124,93]/2(c[45]/2(a[99],i3),nil)))))",
+    "t_rd51 c[116,95,114,100,53,49]/1(c[45]/2(c[45]/2(a[58],c[100]/2(a[118,97,114],c[91,124,93]/2(c[45]/2(a[97],i1),nil))),a[98]))",
+    "t_rd52 c[116,95,114,100,53,50]/1(c[45]/2(c[45]/2(a[61],c[100]/2(a[116],c[91,124,93]/2(c[45]/2(a[97],i1),nil))),a[118,97,114]))",
+    "t_rd53 c[116,95,114,100,53,51]/1(c[45]/2(c[45]/2(a[58,45],a[112]),c[100]/2(a[118,97,114],c[91,124,93]/2(c[45]/2(a[97],i1),nil))))",
+    "t_rd54 c[116,95,114,100,53,52]/1(c[45]/2(c[45]/2(a[58],c[102]/1(a[120])),c[100]/2(a[118,97,114],c[91,124,93]/2(c[45]/2(a[97],i1),nil))))",
+    "t_rd55 c[116,95,114,100,53,53]/1(c[115,121,110]/2(a[99,111,108,111,110,95,101,120,112,101,99,116,101,100],i2))",
+    "t_rd56 c[116,95,114,100,53,54]/1(c[115,121,110]/2(a[111,112,101,114,97,116,111,114,95,101,120,112,101,99,116,101,100],i5))",
+    "t_rd57 c[116,95,114,100,53,55]/1(c[115,121,110]/2(c[100,117,112,108,105,99,97,116,101,95,107,101,121]/1(a[97]),i8))",
+    "t_rd58 c[116,95,114,100,53,56]/1(c[115,121,110]/2(a[107,101,121,95,100,111,109,97,105,110],i1))",
+    "t_rd59 c[116,95,114,100,53,57]/1(c[115,121,110]/2(a[107,101,121,95,100,111,109,97,105,110],i1))",
+    "t_rd60 c[116,95,114,100,54,48]/1(c[115,121,110]/2(a[99,111,108,111,110,95,101,120,112,101,99,116,101,100],i2))",
+    "t_rd61 c[116,95,114,100,54,49]/1(c[115,121,110]/2(a[107,101,121,95,101,120,112,101,99,116,101,100],i5))",
+    "t_rd62 c[116,95,114,100,54,50]/1(c[115,121,110]/2(a[107,101,121,95,101,120,112,101,99,116,101,100],i5))",
+    "t_rd63 c[116,95,114,100,54,51]/1(c[115,121,110]/2(a[107,101,121,95,101,120,112,101,99,116,101,100],i1))",
+    "t_rd64 c[116,95,114,100,54,52]/1(c[115,121,110]/2(a[99,111,108,111,110,95,101,120,112,101,99,116,101,100],i2))",
+    "t_rd65 c[116,95,114,100,54,53]/1(c[115,121,110]/2(a[111,112,101,114,97,116,111,114,95,101,120,112,101,99,116,101,100],i5))",
+    "t_rd66 c[116,95,114,100,54,54]/1(c[115,121,110]/2(a[111,112,101,114,97,116,111,114,95,101,120,112,101,99,116,101,100],i0))",
+    "t_rd67 c[116,95,114,100,54,55]/1(c[115,121,110]/2(a[111,112,101,114,97,116,111,114,95,101,120,112,101,99,116,101,100],i2))",
+    "t_rd68 c[116,95,114,100,54,56]/1(c[115,121,110]/2(a[111,112,101,114,97,116,111,114,95,101,120,112,101,99,116,101,100],i5))",
+    "t_rd69 c[116,95,114,100,54,57]/1(c[115,121,110]/2(a[99,111,108,111,110,95,101,120,112,101,99,116,101,100],i2))",
+    "t_rd70 c[116,95,114,100,55,48]/1(c[115,121,110]/2(a[99,97,110,110,111,116,95,115,116,97,114,116,95,116,101,114,109],i3))",
+    "t_rd71 c[116,95,114,100,55,49]/1(c[115,121,110]/2(a[99,111,108,111,110,95,101,120,112,101,99,116,101,100],i6))",
+    "t_rd72 c[116,95,114,100,55,50]/1(c[115,121,110]/2(a[107,101,121,95,101,120,112,101,99,116,101,100],i1))",
+    "t_rd73 c[116,95,114,100,55,51]/1(c[115,121,110]/2(a[99,97,110,110,111,116,95,115,116,97,114,116,95,116,101,114,109],i4))",
+    "t_rd74 c[116,95,114,100,55,52]/1(c[115,121,110]/2(a[99,97,110,110,111,116,95,115,116,97,114,116,95,116,101,114,109],i4))",
+    "t_rd75 c[116,95,114,100,55,53]/1(a[114,101,97,100])",
+    "t_rd76 c[116,95,114,100,55,54]/1(c[115,121,110]/2(a[111,112,101,114,97,116,111,114,95,101,120,112,101,99,116,101,100],i1))",
+    "t_rd77 c[116,95,114,100,55,55]/1(c[115,121,110]/2(a[111,112,101,114,97,116,111,114,95,101,120,112,101,99,116,101,100],i3))",
+    "t_rd78 c[116,95,114,100,55,56]/1(c[115,121,110]/2(c[100,117,112,108,105,99,97,116,101,95,107,101,121]/1(i1),i8))",
+    "t_rd79 c[116,95,114,100,55,57]/1(c[115,121,110]/2(c[100,117,112,108,105,99,97,116,101,95,107,101,121]/1(a[97]),i12))",
+    "t_rd80 c[116,95,114,100,56,48]/1(c[115,121,110]/2(a[107,101,121,95,101,120,112,101,99,116,101,100],i1))",
+    "t_rd81 c[116,95,114,100,56,49]/1(c[115,121,110]/2(a[99,111,108,111,110,95,101,120,112,101,99,116,101,100],i2))",
+    "t_rd82 c[116,95,114,100,56,50]/1(c[115,121,110]/2(a[99,111,108,111,110,95,101,120,112,101,99,116,101,100],i2))",
+    "t_rd83 c[116,95,114,100,56,51]/1(c[115,121,110]/2(c[100,117,112,108,105,99,97,116,101,95,107,101,121]/1(a[97]),i10))",
+    "t_rd84 c[116,95,114,100,56,52]/1(c[115,121,110]/2(c[100,117,112,108,105,99,97,116,101,95,107,101,121]/1(i97),i11))",
+    "t_rd85 c[116,95,114,100,56,53]/1(c[115,121,110]/2(c[100,117,112,108,105,99,97,116,101,95,107,101,121]/1(i-1),i10))",
+    "t_rd86 c[116,95,114,100,56,54]/1(c[115,121,110]/2(a[111,112,101,114,97,116,111,114,95,101,120,112,101,99,116,101,100],i9))",
+    "t_rd87 c[116,95,114,100,56,55]/1(c[115,121,110]/2(a[107,101,121,95,101,120,112,101,99,116,101,100],i2))",
+    "t_rd88 c[116,95,114,100,56,56]/1(c[115,121,110]/2(a[107,101,121,95,101,120,112,101,99,116,101,100],i2))",
+    "t_rd89 c[116,95,114,100,56,57]/1(c[115,121,110]/2(a[99,111,108,111,110,95,101,120,112,101,99,116,101,100],i2))",
+    "t_rd90 c[116,95,114,100,57,48]/1(c[115,121,110]/2(a[107,101,121,95,101,120,112,101,99,116,101,100],i5))",
+    "t_rd91 c[116,95,114,100,57,49]/1(a[114,101,97,100])",
+    "t_rd92 c[116,95,114,100,57,50]/1(c[115,121,110]/2(c[100,117,112,108,105,99,97,116,101,95,107,101,121]/1(nil),i10))",
+    "t_rd93 c[116,95,114,100,57,51]/1(c[45]/2(c[45]/2(a[46],a[118,97,114]),c[103,101,116]/1(a[115,116,97,99,107])))",
+    "t_rd94 c[116,95,114,100,57,52]/1(c[45]/2(c[45]/2(a[46],c[100]/2(a[118,97,114],c[91,124,93]/2(c[45]/2(a[97],i1),nil))),c[112,117,116]/2(a[98],i2)))",
+    "t_rd95 c[116,95,114,100,57,53]/1(c[45]/2(c[45]/2(a[46],c[46]/2(V0,a[121])),a[122]))",
+    "t_rd96 c[116,95,114,100,57,54]/1(c[45]/2(c[45]/2(a[46],c[46]/2(V0,c[112,117,116]/2(a[97],i1))),c[103,101,116]/1(a[97])))",
+    "t_rd97 c[116,95,114,100,57,55]/1(c[45]/2(c[45]/2(a[46],c[100]/2(a[118,97,114],c[91,124,93]/2(c[45]/2(a[97],i1),nil))),a[97]))",
+    "t_rd98 c[116,95,114,100,57,56]/1(c[45]/2(c[45]/2(a[46],c[100]/2(a[116],c[91,124,93]/2(c[45]/2(a[97],i1),nil))),c[103,101,116]/1(a[97])))",
+    "t_rd99 c[116,95,114,100,57,57]/1(c[45]/2(c[45]/2(a[46],a[97]),a[98]))",
+    "t_rd100 c[116,95,114,100,49,48,48]/1(c[45]/2(c[45]/2(a[46],a[118,97,114]),a[118,97,114]))",
+    "t_rd101 c[116,95,114,100,49,48,49]/1(c[111,116,104,101,114]/1(f1.5))",
+    "t_rd102 c[116,95,114,100,49,48,50]/1(c[45]/2(c[45]/2(a[46],c[102]/1(a[97])),a[103]))",
+    "t_rd103 c[116,95,114,100,49,48,51]/1(c[45]/2(c[45]/2(a[46],a[118,97,114]),c[112,117,116]/2(a[107],a[118])))",
+    "t_rd104 c[116,95,114,100,49,48,52]/1(c[45]/2(c[45]/2(a[46],a[118,97,114]),c[112,117,116]/2(c[102]/1(V0),V0)))",
+    "t_rd105 c[116,95,114,100,49,48,53]/1(c[45]/2(c[45]/2(a[46],c[46]/2(V0,c[112,117,116]/2(a[97],V1))),c[103,101,116]/1(a[97])))",
+    "t_rd106 c[116,95,114,100,49,48,54]/1(c[91,124,93]/2(c[45]/2(a[97],i1),c[91,124,93]/2(c[45]/2(a[98],i2),nil)))",
+    "t_rd107 c[116,95,114,100,49,48,55]/1(c[91,124,93]/2(c[45]/2(a[102,105,108,101,95,116,121,112,101],a[114,101,103,117,108,97,114]),nil))",
+    "t_rd108 c[116,95,114,100,49,48,56]/1(c[45]/2(c[45]/2(a[109,49],c[91,124,93]/2(c[47]/2(a[97],i1),nil)),a[120,46,112,108]))",
+    "t_rd109 c[116,95,114,100,49,48,57]/1(c[45]/2(a[112,111,105,110,116],c[91,124,93]/2(c[45]/2(a[120],i1),c[91,124,93]/2(c[45]/2(a[121],i2),nil))))",
+    "t_rd110 c[116,95,114,100,49,49,48]/1(c[115,97,109,101]/1(c[91,124,93]/2(c[45]/2(a[107],a[118]),nil)))",
+    "t_rd111 c[116,95,114,100,49,49,49]/1(a[121,101,115]) c[116,95,114,100,49,49,49]/1(a[116,97,103,103,101,100])",
+    "t_rd112",
+    "t_rd113 c[116,95,114,100,49,49,51]/1(a[121,101,115]) c[116,95,114,100,49,49,51]/1(a[116,97,103,103,101,100])",
+    "t_rd114 c[116,95,114,100,49,49,52]/1(a[121,101,115]) c[116,95,114,100,49,49,52]/1(a[116,97,103,103,101,100])"
+]
+
+# the same for the mode programs (evidence/RDDICT/rdd_mode_rows_<mode>.out): the program is atop-prefixed by `:- set_prolog_flag(var_tag, Mode).`
+const _RDD_MODE_DICT = [
+    "ok",
+    "t_rm01 c[116,95,114,109,48,49]/1(c[100]/2(a[118,97,114],c[91,124,93]/2(c[45]/2(a[97],i1),nil)))",
+    "t_rm02 c[116,95,114,109,48,50]/1(c[100]/2(a[118,97,114],c[91,124,93]/2(c[45]/2(a[97],i1),c[91,124,93]/2(c[45]/2(a[98],i2),nil))))",
+    "t_rm03 c[116,95,114,109,48,51]/1(c[100]/2(a[116],c[91,124,93]/2(c[45]/2(a[97],i1),nil)))",
+    "t_rm04 c[116,95,114,109,48,52]/1(c[100]/2(a[118,97,114],nil))",
+    "t_rm05 c[116,95,114,109,48,53]/1(c[100]/2(a[118,97,114],c[91,124,93]/2(c[45]/2(a[97],i1),nil)))",
+    "t_rm06 c[116,95,114,109,48,54]/1(c[100]/2(a[118,97,114],c[91,124,93]/2(c[45]/2(a[98],i2),nil)))",
+    "t_rm07 c[116,95,114,109,48,55]/1(c[115,121,110]/2(c[100,117,112,108,105,99,97,116,101,95,107,101,121]/1(a[97]),i8))",
+    "t_rm08 c[116,95,114,109,48,56]/1(c[115,121,110]/2(a[99,111,108,111,110,95,101,120,112,101,99,116,101,100],i2))",
+    "t_rm09 c[116,95,114,109,48,57]/1(c[115,121,110]/2(c[100,117,112,108,105,99,97,116,101,95,107,101,121]/1(a[97]),i8))"
+]
+const _RDD_MODE_ERROR = [
+    "ok",
+    "t_rm01 c[116,95,114,109,48,49]/1(c[114,97,105,115,101,100]/1(c[115,121,110,116,97,120,95,101,114,114,111,114]/1(a[118,97,114,95,116,97,103])))",
+    "t_rm02 c[116,95,114,109,48,50]/1(c[114,97,105,115,101,100]/1(c[115,121,110,116,97,120,95,101,114,114,111,114]/1(a[118,97,114,95,116,97,103])))",
+    "t_rm03 c[116,95,114,109,48,51]/1(c[100]/2(a[116],c[91,124,93]/2(c[45]/2(a[97],i1),nil)))",
+    "t_rm04 c[116,95,114,109,48,52]/1(c[114,97,105,115,101,100]/1(c[115,121,110,116,97,120,95,101,114,114,111,114]/1(a[118,97,114,95,116,97,103])))",
+    "t_rm05 c[116,95,114,109,48,53]/1(c[114,97,105,115,101,100]/1(c[115,121,110,116,97,120,95,101,114,114,111,114]/1(a[118,97,114,95,116,97,103])))",
+    "t_rm06 c[116,95,114,109,48,54]/1(c[114,97,105,115,101,100]/1(c[115,121,110,116,97,120,95,101,114,114,111,114]/1(a[118,97,114,95,116,97,103])))",
+    "t_rm07 c[116,95,114,109,48,55]/1(c[115,121,110]/2(a[118,97,114,95,116,97,103],i8))",
+    "t_rm08 c[116,95,114,109,48,56]/1(c[115,121,110]/2(a[99,111,108,111,110,95,101,120,112,101,99,116,101,100],i2))",
+    "t_rm09 c[116,95,114,109,48,57]/1(c[115,121,110]/2(c[100,117,112,108,105,99,97,116,101,95,107,101,121]/1(a[97]),i8))"
+]
+const _RDD_MODE_WARNING = [
+    "ok",
+    "t_rm01 c[116,95,114,109,48,49]/1(c[100]/2(a[35],c[91,124,93]/2(c[45]/2(a[97],i1),nil)))",
+    "t_rm02 c[116,95,114,109,48,50]/1(c[100]/2(a[35],c[91,124,93]/2(c[45]/2(a[97],i1),c[91,124,93]/2(c[45]/2(a[98],i2),nil))))",
+    "t_rm03 c[116,95,114,109,48,51]/1(c[100]/2(a[116],c[91,124,93]/2(c[45]/2(a[97],i1),nil)))",
+    "t_rm04 c[116,95,114,109,48,52]/1(c[100]/2(a[35],nil))",
+    "t_rm05 c[116,95,114,109,48,53]/1(c[100]/2(a[35],c[91,124,93]/2(c[45]/2(a[97],i1),nil)))",
+    "t_rm06 c[116,95,114,109,48,54]/1(c[100]/2(a[35],c[91,124,93]/2(c[45]/2(a[98],i2),nil)))",
+    "t_rm07 c[116,95,114,109,48,55]/1(c[115,121,110]/2(c[100,117,112,108,105,99,97,116,101,95,107,101,121]/1(a[97]),i8))",
+    "t_rm08 c[116,95,114,109,48,56]/1(c[115,121,110]/2(a[99,111,108,111,110,95,101,120,112,101,99,116,101,100],i2))",
+    "t_rm09 c[116,95,114,109,48,57]/1(c[115,121,110]/2(c[100,117,112,108,105,99,97,116,101,95,107,101,121]/1(a[97]),i8))"
+]
+const _RDD_MODE_ATTVAR = [
+    "ok",
+    "t_rm01 c[116,95,114,109,48,49]/1(a[97,116,116,118,97,114])",
+    "t_rm02 c[116,95,114,109,48,50]/1(a[97,116,116,118,97,114])",
+    "t_rm03 c[116,95,114,109,48,51]/1(c[100]/2(a[116],c[91,124,93]/2(c[45]/2(a[97],i1),nil)))",
+    "t_rm04 c[116,95,114,109,48,52]/1(c[110,111,100,105,99,116]/1(V0))",
+    "t_rm05 c[116,95,114,109,48,53]/1(a[97,116,116,118,97,114])",
+    "t_rm06 c[116,95,114,109,48,54]/1(a[97,116,116,118,97,114])",
+    "t_rm07 c[116,95,114,109,48,55]/1(c[115,121,110]/2(a[100,117,112,108,105,99,97,116,101,95,97,116,116,114,105,98,117,116,101],i8))",
+    "t_rm08 c[116,95,114,109,48,56]/1(c[115,121,110]/2(a[99,111,108,111,110,95,101,120,112,101,99,116,101,100],i2))",
+    "t_rm09 c[116,95,114,109,48,57]/1(c[115,121,110]/2(c[100,117,112,108,105,99,97,116,101,95,107,101,121]/1(a[97]),i8))"
+]
+const _RDD_MODE_DYNDICT = [
+    "ok",
+    "t_rm01 c[116,95,114,109,48,49]/1(c[100]/2(a[35],c[91,124,93]/2(c[45]/2(a[97],i1),nil)))",
+    "t_rm02 c[116,95,114,109,48,50]/1(c[100]/2(a[35],c[91,124,93]/2(c[45]/2(a[97],i1),c[91,124,93]/2(c[45]/2(a[98],i2),nil))))",
+    "t_rm03 c[116,95,114,109,48,51]/1(c[100]/2(a[116],c[91,124,93]/2(c[45]/2(a[97],i1),nil)))",
+    "t_rm04 c[116,95,114,109,48,52]/1(c[100]/2(a[35],nil))",
+    "t_rm05 c[116,95,114,109,48,53]/1(c[100]/2(a[35],c[91,124,93]/2(c[45]/2(a[97],i1),nil)))",
+    "t_rm06 c[116,95,114,109,48,54]/1(c[100]/2(a[35],c[91,124,93]/2(c[45]/2(a[98],i2),nil)))",
+    "t_rm07 c[116,95,114,109,48,55]/1(c[115,121,110]/2(c[100,117,112,108,105,99,97,116,101,95,107,101,121]/1(a[97]),i8))",
+    "t_rm08 c[116,95,114,109,48,56]/1(c[115,121,110]/2(a[99,111,108,111,110,95,101,120,112,101,99,116,101,100],i2))",
+    "t_rm09 c[116,95,114,109,48,57]/1(c[115,121,110]/2(c[100,117,112,108,105,99,97,116,101,95,107,101,121]/1(a[97]),i8))"
+]
+
+"The program file as a loader (kernel) or swipl reads it: the helpers, the bodies (main rows), the cases; for a mode, swipl's file has the flag directive atop."
+function _rdd_file(cases, bodies::Bool; mode::Union{Nothing, String}=nothing, swipl::Bool=false)::Tuple{String, Vector{String}}
+    names = ["t_$(id)" for (id, _) in cases]
+    text =
+        (swipl && mode !== nothing ? ":- set_prolog_flag(var_tag, '$(mode)').\n" : "") *
+        _RDD_PROGRAM * (bodies ? _RDD_BODIES : "") * join([
+            "t_$(id)(R) :- catch(($g), error(SsuE, _), R = raised(SsuE)).\n" for (id, g) in cases
+        ])
+    f = joinpath(mktempdir(), "readdict.pl")
+    write(f, text)
+    return f, names
+end
+
+"The kernel's lines for `names` after consulting `path`, as the driver writes swipl's; the database, for the white-box tests."
+function _rdd_kernel(path::String, names::Vector{String}; mode::Union{Nothing, String}=nothing)
+    gd = LK.PL_global_data{_RDD}()
+    ld = LK.PL_local_data{_RDD}(gd)
+    if mode !== nothing      # the module's var_tag, as `set_prolog_flag(var_tag, Mode)` sets it (F1b writes that arm): setVarTagFlag on the module's flags
+        user = LK.MODULE_user(gd)
+        user.flags = LK.setVarTagFlag(ld, _rdds(mode), user.flags)::UInt32
+    end
+    st, ball, _ = LK.load_file!(gd, ld, path)
+    out = [st === :ok ? "ok" : "exc " * _rdd_enc(ball::_RDD)]
+    for name in names
+        proc = LK.isCurrentProcedure(sym_key(_rdds(name)), 1, LK.MODULE_user(gd))
+        if proc === nothing || !LK.isDefinedProcedure(gd, proc)
+            push!(out, "$name undefined")
+            continue
+        end
+        sols = String[]
+        fid = LK.PL_open_foreign_frame(ld)
+        a = LK.PL_new_term_refs(ld, 1)
+        LK.putSlotValue!(ld, a + 1, mk_var(_RDD, LK.fresh_var_keys!(1)), LK.PutVarMap())
+        qid = LK.PL_open_query(
+            gd, ld, nothing, LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS, proc, a
+        )
+        n = 0
+        while (n += 1) <= 50
+            rc = LK.PL_next_solution(gd, ld, qid)
+            if rc == LK.PL_S_TRUE || rc == LK.PL_S_LAST
+                push!(
+                    sols,
+                    _rdd_enc(mk_expr(_RDD, _RDD[_rdds(name), lk_answers(ld, (a:a)...)...]))
+                )
+                rc == LK.PL_S_LAST && break
+            elseif rc == LK.PL_S_EXCEPTION
+                push!(sols, "exception")
+                break
+            else
+                break
+            end
+        end
+        LK.PL_close_query(ld, qid)
+        LK.PL_close_foreign_frame(ld, fid)
+        push!(out, "$name" * join(" " .* sols))
+    end
+    return out, gd, ld
+end
+
+
+
+@testset "read-dict rows: the kernel's answers are swipl's (rd01-rd114)" begin
+    f, names = _rdd_file(_RDD_CASES, true)
+    kl, _, _ = _rdd_kernel(f, names)
+    @test length(kl) == length(_RDD_PINNED)
+    for (k, p) in zip(kl, _RDD_PINNED)
+        k == p || println(stderr, "  ours  ", k, "\n  swipl ", p)
+        @test k == p
+    end
+end
+
+@testset "var_tag mode rows: the kernel's answers are swipl's, mode $(m) (rm01-rm09)" for (m, pins) in
+                                                                                             Dict("dict" => _RDD_MODE_DICT, "error" => _RDD_MODE_ERROR, "warning" => _RDD_MODE_WARNING, "attvar" => _RDD_MODE_ATTVAR, "#" => _RDD_MODE_DYNDICT)
+    f, names = _rdd_file(_RDD_MODE_CASES, false)
+    kl, _, _ = _rdd_kernel(f, names; mode=m)
+    @test length(kl) == length(pins)
+    for (k, p) in zip(kl, pins)
+        k == p || println(stderr, "  ours  ", k, "\n  swipl ", p)
+        @test k == p
+    end
+end
+
+@testset "the read-dict rows are not vacuous (rd01-rd114)" begin
+    rows = _RDD_PINNED[2:end]                                                      # the driver's first line is `ok`
+    @test _RDD_PINNED[1] == "ok"
+    @test length(rows) == length(_RDD_CASES) == 114
+    code(t) = "[" * join(Int.(collect(t)), ",") * "]"
+    # rows that fail have no answer after the name; rows whose reader raised (raised(…): an error the row did not catch itself)
+    @test count(l -> occursin(r"^t_rd\d+$", l), rows) == 1
+    @test count(l -> occursin(code("raised"), l), rows) == 1
+    # rds rows: syn(Id, CharNo) answers, read answers (the text read without an error)
+    @test count(l -> occursin(code("syn") * "/2", l), rows) == 36
+    @test count(l -> endswith(l, "(a" * code("read") * ")"), rows) == 2
+    # rdd/rdv/rda observations: d(Tag, Pairs) answers (var tags answer `var`), and rdd's nodict(T)
+    @test count(l -> occursin(code("d") * "/2(", l), rows) == 54
+    @test count(l -> occursin(code("nodict") * "/1(", l), rows) == 2
+    @test count(l -> occursin(code("var"), l), rows) == 49
+    # rdx answers hold the functor of the term read: `.`/2 (code 46) for the dict-dot rows
+    @test count(l -> occursin("c[46]/2(", l) || occursin(code("-") * "/2(c[45]/2(a[46]", l), rows) == 12
+    # the duplicate-key errors are syn(duplicate_key(Key), _)
+    @test count(l -> occursin(code("duplicate_key") * "/1", l), rows) == 7
+    # no answer holds a dict (a dict is a compound named `dict`)
+    @test !any(l -> occursin(code("dict") * "/", l), _RDD_PINNED)
+end
+
+@testset "the var_tag mode rows are not vacuous (rm01-rm09 in 5 modes)" begin
+    code(t) = "[" * join(Int.(collect(t)), ",") * "]"
+    for (m, pins) in zip(_RDD_MODES, [_RDD_MODE_DICT, _RDD_MODE_ERROR, _RDD_MODE_WARNING, _RDD_MODE_ATTVAR, _RDD_MODE_DYNDICT])
+        @test pins[1] == "ok" && length(pins) == length(_RDD_MODE_CASES) + 1
+    end
+    # `error`: a variable tag is syn(var_tag, _); `attvar`: the answer is the atom `attvar`; `#` and `warning`: the tag answers `#`
+    @test count(l -> occursin(code("var_tag"), l), _RDD_MODE_ERROR) == 6
+    @test count(l -> occursin(code("attvar"), l), _RDD_MODE_ATTVAR) == 4
+    @test count(l -> occursin("a[35]", l), _RDD_MODE_DYNDICT) == 5
+    @test count(l -> occursin("a[35]", l), _RDD_MODE_WARNING) == 5
+    @test count(l -> occursin("a[35]", l), _RDD_MODE_DICT) == 0
+end
+
+@testset "the pins are swipl's (live, when swipl is on PATH)" begin
+    swipl = get(ENV, "LOGICKERNEL_NO_SWIPL", "") == "1" ? nothing : Sys.which("swipl")
+    # each pinned table is the driver's whole output (the inert-testset guard: an assertion either way)
+    @test length(_RDD_PINNED) == length(_RDD_CASES) + 1
+    for (m, pins) in Dict("dict" => _RDD_MODE_DICT, "error" => _RDD_MODE_ERROR, "warning" => _RDD_MODE_WARNING, "attvar" => _RDD_MODE_ATTVAR, "#" => _RDD_MODE_DYNDICT)
+        @test length(pins) == length(_RDD_MODE_CASES) + 1
+    end
+    if swipl === nothing
+        @info "RDDICT LIVE CHECK NOT RUN: `swipl` is not on PATH here. It runs in tools/run_tests.sh and CI."
+    else
+        f, names = _rdd_file(_RDD_CASES, true)
+        @test _rdd_swipl_lines(f, names) == _RDD_PINNED
+        for (m, pins) in Dict("dict" => _RDD_MODE_DICT, "error" => _RDD_MODE_ERROR, "warning" => _RDD_MODE_WARNING, "attvar" => _RDD_MODE_ATTVAR, "#" => _RDD_MODE_DYNDICT)
+            f, names = _rdd_file(_RDD_MODE_CASES, false; mode=m, swipl=true)
+            @test _rdd_swipl_lines(f, names) == pins
+        end
+    end
+end
+
+# var_tag's setter and getter as plain functions (os/pl-prologflag.c; the `set_prolog_flag/2` arm is F1b's). swipl 10.1.19, set_prolog_flag(var_tag, M)
+# then current_prolog_flag(var_tag, X): attvar -> attvar, # -> #, dict -> dict, error -> error, warning -> warning; a fresh swipl answers `dict`;
+# set_prolog_flag(var_tag, foo) and set_prolog_flag(var_tag, 'Dict') raise domain_error(var_tag, Atom) and leave the flag unchanged.
+@testset "var_tag: setVarTagFlag / getVarTagFlag (swipl: set then current_prolog_flag)" begin
+    gd = LK.PL_global_data{_RDD}()
+    ld = LK.PL_local_data{_RDD}(gd)
+    user = LK.MODULE_user(gd)
+    @test (user.flags & LK.VARTAG_MASK) == LK.VARTAG_DICT == 0        # a module starts in `dict` (current_prolog_flag(var_tag, X): dict)
+    @test sym_text(LK.getVarTagFlag(_RDD, user.flags)) == "dict"
+    bits = Dict(
+        "attvar" => LK.VARTAG_ATTVAR, "#" => LK.VARTAG_DYNDICT, "dict" => LK.VARTAG_DICT,
+        "error" => LK.VARTAG_ERROR, "warning" => LK.VARTAG_WARNING
+    )
+    @test length(Set(values(bits))) == 5                              # five modes, five distinct bit patterns
+    for (name, b) in bits
+        f = LK.setVarTagFlag(ld, _rdds(name), UInt32(0))
+        @test f == b
+        @test sym_text(LK.getVarTagFlag(_RDD, f)) == name
+        # the bits replace the mode and keep every other module flag
+        other = UInt32(LK.M_CHARESCAPE)
+        g = LK.setVarTagFlag(ld, _rdds(name), other | LK.VARTAG_ERROR)
+        @test (g & LK.VARTAG_MASK) == b && (g & ~LK.VARTAG_MASK) == other
+    end
+    for bad in ("foo", "Dict", "ERROR")
+        fid = LK.PL_open_foreign_frame(ld)
+        @test LK.setVarTagFlag(ld, _rdds(bad), UInt32(0)) === nothing
+        ex = LK.PL_exception(ld, 0)
+        @test ex != 0
+        ball = lk_answer(ld, ex)
+        formal = child(ball, 2)                                       # error(domain_error(var_tag, Atom), _)
+        @test _rdd_enc(formal) ==
+              "c" * _rdd_codes("domain_error") * "/2(a" * _rdd_codes("var_tag") * ",a" * _rdd_codes(bad) * ")"
+        LK.PL_clear_exception(ld)
+        LK.PL_close_foreign_frame(ld, fid)
+    end
+end

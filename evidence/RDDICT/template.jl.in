@@ -1,0 +1,133 @@
+# ORIGINAL: a LIVE differential of RDDICT against swipl at the pin (pl-read.c's dict branch) — the reader's dict syntax
+# test/core_lang/test_read_dict_swipl.jl — dict syntax read by the parser written for R2b (D-0363 item 3; the wip/rddict stack):
+# `_{}`, `Tag{k:v}` (read_dict_start/key/end/resume, is_key_token, build_dict, dict_order_term_refs), the dict-dot reads and the
+# var_tag flag's setter and getter (os/pl-prologflag.c setVarTagFlag/getVarTagFlag) against swipl 10.1.19:
+#   * A PROGRAM consulted by the kernel's loader and cases `t_<id>(R)` run in order in one database, each wrapped in
+#     `catch(Goal, error(SsuE, _), R = raised(SsuE))`; the driver and the term encoder are test_dict_preds_swipl.jl's (one extractor, both sides).
+#     A row reads a TEXT with term_to_atom/2 and observes the term through helpers that hold no dict syntax (rdd, rdv, rda, rdx, rds).
+#   * Every answer line is swipl's, PINNED (swipl 10.1.19-1-gcbf4e189, evidence/RDDICT/rdd_rows.out in the wip/rddict branch, two
+#     byte-identical runs); with `swipl` on PATH the live answers are compared with the pins too.
+#   * The var_tag modes (error, warning, attvar, `#`, dict): the same nine cases per mode; swipl sets the flag by a directive atop the
+#     program, the kernel on the module's flags before the load (the `set_prolog_flag/2` arm is F1b's): pins rdd_mode_rows_<mode>.out.
+#   * The program's own clauses hold dict syntax (the boot lines of init.pl:1297, autoload.pl:889): the loader reads them with this parser.
+#   * UNVERIFIED on the kernel (nothing was compiled when these rows were written): every kernel answer; the gate decides.
+#   * A dict never appears in an answer (the writer has no dict arm): a row observes it through dict_pairs/3.
+@@GROUPS@@# rm01-rm@@M@@: the var_tag modes
+using Test, LogicKernel
+const LK = LogicKernel
+
+# TERM TYPES PER CHUNK: REFERENCE — the reader rides the term layer through the term stack and the dict cells; every type in CI
+include(joinpath(@__DIR__, "..", "term_under_test.jl"))
+const _RDD = lk_term_type(Union{Int64, Float64, String, BigInt, Rational{BigInt}})
+_rdds(x) = lk_sym(_RDD, Symbol(x))
+
+@@ENC@@@@DRIVER@@@@SWL@@
+# the program: helpers (no dict syntax) observe a read term; the bodies hold dict syntax the loader reads (main rows only)
+const _RDD_PROGRAM = raw"""
+@@PROGRAM@@"""
+const _RDD_BODIES = raw"""
+@@BODIES@@"""
+const _RDD_MODES = [@@MODES@@]
+
+const _RDD_CASES = [
+@@CASES@@
+]
+
+const _RDD_MODE_CASES = [
+@@MCASES@@
+]
+
+# swipl 10.1.19-1-gcbf4e189's answers to the program and cases above (the driver's lines; evidence/RDDICT/rdd_rows.out in the wip/rddict branch)
+@@PINS@@
+# the same for the mode programs (evidence/RDDICT/rdd_mode_rows_<mode>.out): the program is atop-prefixed by `:- set_prolog_flag(var_tag, Mode).`
+@@MPINS@@
+"The program file as a loader (kernel) or swipl reads it: the helpers, the bodies (main rows), the cases; for a mode, swipl's file has the flag directive atop."
+function _rdd_file(cases, bodies::Bool; mode::Union{Nothing, String}=nothing, swipl::Bool=false)::Tuple{String, Vector{String}}
+    names = ["t_$(id)" for (id, _) in cases]
+    text =
+        (swipl && mode !== nothing ? ":- set_prolog_flag(var_tag, '$(mode)').\n" : "") *
+        _RDD_PROGRAM * (bodies ? _RDD_BODIES : "") * join([
+            "t_$(id)(R) :- catch(($g), error(SsuE, _), R = raised(SsuE)).\n" for (id, g) in cases
+        ])
+    f = joinpath(mktempdir(), "readdict.pl")
+    write(f, text)
+    return f, names
+end
+
+@@KERNEL@@
+@testset "read-dict rows: the kernel's answers are swipl's (rd01-rd@@N@@)" begin
+    f, names = _rdd_file(_RDD_CASES, true)
+    kl, _, _ = _rdd_kernel(f, names)
+    @test length(kl) == length(_RDD_PINNED)
+    for (k, p) in zip(kl, _RDD_PINNED)
+        k == p || println(stderr, "  ours  ", k, "\n  swipl ", p)
+        @test k == p
+    end
+end
+
+@testset "var_tag mode rows: the kernel's answers are swipl's, mode $(m) (rm01-rm@@M@@)" for (m, pins) in
+                                                                                             Dict(@@MODEDICT@@)
+    f, names = _rdd_file(_RDD_MODE_CASES, false)
+    kl, _, _ = _rdd_kernel(f, names; mode=m)
+    @test length(kl) == length(pins)
+    for (k, p) in zip(kl, pins)
+        k == p || println(stderr, "  ours  ", k, "\n  swipl ", p)
+        @test k == p
+    end
+end
+@@NONVAC@@
+@testset "the pins are swipl's (live, when swipl is on PATH)" begin
+    swipl = get(ENV, "LOGICKERNEL_NO_SWIPL", "") == "1" ? nothing : Sys.which("swipl")
+    # each pinned table is the driver's whole output (the inert-testset guard: an assertion either way)
+    @test length(_RDD_PINNED) == length(_RDD_CASES) + 1
+    for (m, pins) in Dict(@@MODEDICT@@)
+        @test length(pins) == length(_RDD_MODE_CASES) + 1
+    end
+    if swipl === nothing
+        @info "RDDICT LIVE CHECK NOT RUN: `swipl` is not on PATH here. It runs in tools/run_tests.sh and CI."
+    else
+        f, names = _rdd_file(_RDD_CASES, true)
+        @test _rdd_swipl_lines(f, names) == _RDD_PINNED
+        for (m, pins) in Dict(@@MODEDICT@@)
+            f, names = _rdd_file(_RDD_MODE_CASES, false; mode=m, swipl=true)
+            @test _rdd_swipl_lines(f, names) == pins
+        end
+    end
+end
+
+# var_tag's setter and getter as plain functions (os/pl-prologflag.c; the `set_prolog_flag/2` arm is F1b's). swipl 10.1.19, set_prolog_flag(var_tag, M)
+# then current_prolog_flag(var_tag, X): attvar -> attvar, # -> #, dict -> dict, error -> error, warning -> warning; a fresh swipl answers `dict`;
+# set_prolog_flag(var_tag, foo) and set_prolog_flag(var_tag, 'Dict') raise domain_error(var_tag, Atom) and leave the flag unchanged.
+@testset "var_tag: setVarTagFlag / getVarTagFlag (swipl: set then current_prolog_flag)" begin
+    gd = LK.PL_global_data{_RDD}()
+    ld = LK.PL_local_data{_RDD}(gd)
+    user = LK.MODULE_user(gd)
+    @test (user.flags & LK.VARTAG_MASK) == LK.VARTAG_DICT == 0        # a module starts in `dict` (current_prolog_flag(var_tag, X): dict)
+    @test sym_text(LK.getVarTagFlag(_RDD, user.flags)) == "dict"
+    bits = Dict(
+        "attvar" => LK.VARTAG_ATTVAR, "#" => LK.VARTAG_DYNDICT, "dict" => LK.VARTAG_DICT,
+        "error" => LK.VARTAG_ERROR, "warning" => LK.VARTAG_WARNING
+    )
+    @test length(Set(values(bits))) == 5                              # five modes, five distinct bit patterns
+    for (name, b) in bits
+        f = LK.setVarTagFlag(ld, _rdds(name), UInt32(0))
+        @test f == b
+        @test sym_text(LK.getVarTagFlag(_RDD, f)) == name
+        # the bits replace the mode and keep every other module flag
+        other = UInt32(LK.M_CHARESCAPE)
+        g = LK.setVarTagFlag(ld, _rdds(name), other | LK.VARTAG_ERROR)
+        @test (g & LK.VARTAG_MASK) == b && (g & ~LK.VARTAG_MASK) == other
+    end
+    for bad in ("foo", "Dict", "ERROR")
+        fid = LK.PL_open_foreign_frame(ld)
+        @test LK.setVarTagFlag(ld, _rdds(bad), UInt32(0)) === nothing
+        ex = LK.PL_exception(ld, 0)
+        @test ex != 0
+        ball = lk_answer(ld, ex)
+        formal = child(ball, 2)                                       # error(domain_error(var_tag, Atom), _)
+        @test _rdd_enc(formal) ==
+              "c" * _rdd_codes("domain_error") * "/2(a" * _rdd_codes("var_tag") * ",a" * _rdd_codes(bad) * ")"
+        LK.PL_clear_exception(ld)
+        LK.PL_close_foreign_frame(ld, fid)
+    end
+end
