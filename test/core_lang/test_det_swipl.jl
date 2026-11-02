@@ -115,9 +115,14 @@ function _rdt_goals()
     return g
 end
 
-"The kernel's lines for `goals` under the flag value `flag`, the pools checked at every answer."
+"""
+The kernel's lines for `goals` under the flag value `flag`, the pools checked at every answer, and the
+`error`/`warning` messages print_message/2 got meanwhile (the collector of test/term_under_test.jl, LB4 b2).
+"""
 function _rdt_ours(clauses, goals, flag::Symbol)
     db = _rdb(clauses)
+    lk_install_message_collector!(db.gd, db.ld)
+    lk_take_messages!(db.ld)
     LK.current_prolog_flag(db.gd, "determinism_error").a = LK.mk_sym(_R, flag)   # the flag's table entry
     ours = String[]
     for g in goals
@@ -126,7 +131,7 @@ function _rdt_ours(clauses, goals, flag::Symbol)
         end
         push!(ours, "end")
     end
-    return ours, db
+    return ours, db, lk_take_messages!(db.ld)
 end
 
 function _rdt_compare(ours, theirs)
@@ -143,7 +148,7 @@ end
 @testset "\$/1 and \$/0: answers, balls and determinism equal swipl's, the pools live at every answer" begin
     clauses = _rdt_clauses()
     goals = _rdt_goals()
-    ours, db = _rdt_ours(clauses, goals, :error)
+    ours, db, msgs = _rdt_ours(clauses, goals, :error)
     @test count(==("end"), ours) == length(goals)
     # both kinds of ball, each of the three declarations, and plain answers
     for needle in (",det,nondet,goal)", ",det,fail,goal)", ",det,nondet,guard)",
@@ -151,7 +156,7 @@ end
         @test count(l -> occursin(needle, l), ours) >= 1
     end
     @test count(l -> !occursin("determinism_error", l) && l != "end", ours) >= 12
-    @test isempty(db.ld.messages)                               # an error is raised, not reported
+    @test isempty(msgs)                                         # an error is raised, not reported
     if _R_SWIPL
         _rdt_compare(ours, _rswipl(clauses, goals))
     elseif _R_SWIPL_REQUIRED
@@ -162,9 +167,9 @@ end
 @testset "determinism_error = silent: nothing is raised or reported, the goals answer as without the guard" begin
     clauses = _rdt_clauses()
     goals = _rdt_goals()
-    ours, db = _rdt_ours(clauses, goals, :silent)
+    ours, db, msgs = _rdt_ours(clauses, goals, :silent)
     @test !any(l -> occursin("determinism_error", l), ours)
-    @test isempty(db.ld.messages)
+    @test isempty(msgs)
     if _R_SWIPL
         _rdt_compare(
             ours,
@@ -190,10 +195,10 @@ user:message_hook(error(determinism_error(A, B, C, D), _), warning, _) :-
 @testset "determinism_error = warning: the same answers, and the reported terms equal swipl's, in order" begin
     clauses = _rdt_clauses()
     goals = _rdt_goals()
-    ours, db = _rdt_ours(clauses, goals, :warning)
+    ours, db, msgs = _rdt_ours(clauses, goals, :warning)
     @test !any(l -> occursin("determinism_error", l), ours)
     reported = String[]
-    for (severity, msg) in db.ld.messages
+    for (severity, msg) in msgs
         @test severity === :warning
         @test kind(msg) === EXPR && nchildren(msg) == 3 &&
             _ratom_text(child(msg, 1)) == "error"

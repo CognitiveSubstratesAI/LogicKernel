@@ -6,8 +6,8 @@
 # `setStreamTypeCheck`, `setAccessLevelFromAtom`, `checkOnError`, the mask writes (`setPrologFlagMask!`) that the compiler, the VM and
 # the arithmetic read (D3), and the rows of D-0280 item 5: `protected_predicate` once `iso` and `protect_static_code` are settable
 # (rows sf80-sf89 are the kill rows of D1-95 and D1-96 of tools/mutants/D1c.py, and of F1B.py). sf37 is the `unknown=fail` row of pl-vmi.c's S_UNDEF and sf90
-# its `unknown=warning` row: the answer is the same as the fail branch's (swipl prints the message to stderr, the kernel appends it to `ld.messages`),
-# so the first testset also reads the kernel's messages (white-box: print_message/2 and `message_hook` are R2's, boot/messages.pl).
+# its `unknown=warning` row: the answer is the same as the fail branch's (swipl prints the message to stderr; the kernel too, through
+# print_message/2 since LB4 b2), so the first testset also reads the kernel's messages through a `user:message_hook/3` collector.
 #   * A PROGRAM consulted by the kernel's loader, and cases `t_<id>(R)` run IN ORDER in one database, each wrapped in
 #     `catch(Goal, error(E, _), R = raised(E))`; a case restores the flags it changes, but sf85-sf89 end with `protect_static_code`
 #     true: it cannot be set false again (swipl's answer), so they come last.
@@ -448,12 +448,13 @@ end
 function _sf_kernel(path::String, names::Vector{String})
     gd = LK.PL_global_data{_SF}()
     ld = LK.PL_local_data{_SF}(gd)
+    lk_install_message_collector!(gd, ld)       # the messages are print_message/2's (LB4 b2)
     st, ball = LK.load_file!(gd, ld, path)
     out = [st === :ok ? "ok" : "exc " * _sf_enc(ball::_SF)]
     for name in names
         push!(out, _sf_query(gd, ld, name))
     end
-    return out, gd, ld
+    return out, gd, ld, lk_take_messages!(ld)
 end
 
 @testset "set_prolog_flag/2, create_prolog_flag/3 and the flag side effects as swipl's (sf01-sf90)" begin
@@ -479,12 +480,12 @@ end
 
 @testset "unknown=warning prints the existence_error as a warning, once, and the call fails (pl-vmi.c S_UNDEF)" begin
     f, names = _sf_file()
-    _, _, ld = _sf_kernel(f, names)
+    _, _, _, msgs = _sf_kernel(f, names)
     # the program's own load prints singleton warnings; only sf90 sets unknown=warning, so its call is the only existence_error message
     # (sf37's unknown=fail prints nothing, sf38's error is thrown)
     code(s) = join(Int.(codeunits(s)), ",")
     hits = filter(
-        m -> occursin("c[" * code("existence_error") * "]", _sf_enc(m[2])), ld.messages
+        m -> occursin("c[" * code("existence_error") * "]", _sf_enc(m[2])), msgs
     )
     @test length(hits) == 1
     sev, msg = hits[1]

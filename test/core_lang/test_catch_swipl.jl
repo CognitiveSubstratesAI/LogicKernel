@@ -309,22 +309,27 @@ end
     end
 end
 
-# KNOWN DIFFERENCE, pinned (R2 checklist: "`unwind(_)` balls ('\$recover_and_rethrow'/2)"):
-#   kernel: NotPortedError at the catcher — the recover goal's wrapper is boot/init.pl's
-#   swipl 10.1.17: the recover goal runs, then the ball is thrown again and no catch/3 stops it —
-#     `catch(catch(throw(unwind(x)), _, true), _, true)` ends the query with unwind(x) (probed)
-@testset "an unwind(_) ball reaching a catcher is refused by name (R2)" begin
-    db = _rdb([(
-        _rf("tu"), _rf("catch", _rf("throw", _rf("unwind", _rs("x"))), _rv(1), _rs("true"))
-    )])
-    err = try
-        _rcall(db, _rs("tu"))
-        nothing
-    catch e
-        e
-    end
-    @test err isa LK.NotPortedError
-    @test err isa LK.NotPortedError && occursin("unwind(_)", err.what) && err.step == "R2"
+# Until LB4 b2 a KNOWN DIFFERENCE (the kernel refused the ball by name at the catcher: the recover goal's
+# wrapper '\$recover_and_rethrow'/2 is boot/init.pl's). Since LB4 b2 init.pl is booted and b_throw_resume
+# wraps the recover goal (pin pl-vmi.c:5266-5278), so the expectation is swipl's:
+#   swipl 10.1.19: the recover goal runs, then the ball is thrown again and no catch/3 stops it —
+#     `catch(catch(throw(unwind(x)), _, R), _, true)` runs R, then ends the query with unwind(x)
+#     (probed: `swipl -g 'catch(throw(unwind(x)),_,format(user_error,"rec~n",[]))'` prints rec, then
+#     "Unknown "unwind" exception: x")
+# UNVERIFIED on the kernel: gate decides
+@testset "an unwind(_) ball reaching a catcher: the recover goal runs, the ball goes on (LB4 b2)" begin
+    db = _rdb([
+        (
+            _rf("tu"),
+            _rf("catch", _rf("throw", _rf("unwind", _rs("x"))), _rv(1),
+                _rf("assertz", _rf("tu_recovered", _rs("yes"))))
+        ),
+        (_rf("tv", _rv(1)), _rf("catch", _rs("tu"), _rv(2), _rs("true"))),
+        (_rf("tw", _rv(1)), _rf("tu_recovered", _rv(1)))
+    ])
+    @test _rcall(db, _rs("tu")) == [("exception(unwind(x))", true)]
+    @test _rcall(db, _rf("tv", _rv(1))) == [("exception(unwind(x))", true)]  # the outer catch/3 does not stop it
+    @test [a for (a, _) in _rcall(db, _rf("tw", _rv(1)))] == ["tw(yes)", "tw(yes)"]  # each recover goal ran
 end
 
 # Frame positions after a CAUGHT exception (read with prolog_current_frame/1 on both sides, as the

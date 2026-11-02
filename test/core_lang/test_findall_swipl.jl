@@ -346,10 +346,11 @@ _rec_out(ld, out) = _rcanonical(lk_answer(ld, out))
     LK.PL_close_foreign_frame(ld, fid)
 end
 
-# KNOWN DIFFERENCE, pinned (R2 checklist: "boot/bags.pl in its module `'\$bags'`"):
-#   kernel: `context(system:findall_loop/4, _)` — the stand-in's clauses are `system`'s
-#   swipl 10.1.18: `context('\$bags':findall_loop/4, _)` (probed)
-@testset "an unbound goal: the error's context names the stand-in's module (R2)" begin
+# Until LB4 b2 a KNOWN DIFFERENCE (the boot stand-in's clauses were `system`'s: `context(system:findall_loop/4, _)`);
+# since LB4 b2 boot/bags.pl is booted in its module `'\$bags'`, so the expectation is swipl's.
+#   swipl 10.1.19: `context('\$bags':findall_loop/4, _)` (probed, two runs identical)
+# UNVERIFIED on the kernel: gate decides
+@testset "an unbound goal: the error's context names boot/bags.pl's module (LB4 b2)" begin
     X, Y, L, E = _rv(1), _rv(2), _rv(3), _rv(4)
     db = _rdb([
         (
@@ -358,5 +359,5 @@ end
     )
     ])
     @test [a for (a, _) in _rcall(db, _rf("ctx", _rv(51)))] ==
-        ["ctx(context(:(system,/(findall_loop,4)),_))"]
+        ["ctx(context(:('\$bags',/(findall_loop,4)),_))"]
 end

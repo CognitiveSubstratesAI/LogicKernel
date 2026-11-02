@@ -137,6 +137,43 @@ message_hook(Term, Kind, _Lines) :-
     ( Kind == error ; Kind == warning ),
     assertz('\$lk_message'(Kind, Term)).
 """
+# The same collector, failing after the record (as the swipl drivers' hooks that end in `fail`), so
+# print_message/2 still prints the message to user_error, as in swipl.
+const LK_MESSAGE_COLLECTOR_PRINTING = replace(LK_MESSAGE_COLLECTOR, "(Kind, Term))." => "(Kind, Term)),\n    fail.")
+"""
+Install the `user:message_hook/3` collector of [`LK_MESSAGE_COLLECTOR`](@ref) on the database of `ld`, once
+(loaded with `load_file!` from a file of its own); `printing=true` installs
+[`LK_MESSAGE_COLLECTOR_PRINTING`](@ref) instead (the message is recorded AND printed).
+"""
+function lk_install_message_collector!(
+    gd::LogicKernel.PL_global_data{T}, ld::LogicKernel.PL_local_data{T}; printing::Bool=false
+)::Nothing where {T}
+    m = LogicKernel.mk_sym(T, Symbol("\$lk_message"))
+    if LogicKernel.isCurrentProcedure(LogicKernel.sym_key(m), 2, LogicKernel.MODULE_user(gd)) === nothing
+        hook = tempname() * "_lk_message_collector.pl"     # once per database
+        write(hook, printing ? LK_MESSAGE_COLLECTOR_PRINTING : LK_MESSAGE_COLLECTOR)
+        hst, hball = LogicKernel.load_file!(gd, ld, hook)
+        rm(hook; force=true)
+        hst === :ok || error("lk_install_message_collector!: the collector did not load: $hst $hball")
+    end
+    return nothing
+end
+
+"""
+The `(kind, term)` pairs the collector recorded since the last call, in the order they were printed;
+they are retracted. The collector must be installed ([`lk_install_message_collector!`](@ref)).
+"""
+function lk_take_messages!(ld::LogicKernel.PL_local_data{T})::Vector{Tuple{Symbol, T}} where {T}
+    m = LogicKernel.mk_sym(T, Symbol("\$lk_message"))
+    q = LogicKernel.mk_expr(T, T[m, lk_var(T, UInt64(1)), lk_var(T, UInt64(2))])
+    qual(g) = LogicKernel.mk_expr(T, T[LogicKernel.mk_sym(T, :(:)), LogicKernel.mk_sym(T, :user), g])
+    msgs = Tuple{Symbol, T}[(lk_name(LogicKernel.child(a, 2)), LogicKernel.child(a, 3)) for a in
+        (LogicKernel.child(r, 3) for r in LogicKernel.query_answers(ld, qual(q)))]
+    retract = LogicKernel.mk_expr(T, T[LogicKernel.mk_sym(T, :retractall), q])
+    LogicKernel.query_answers(ld, qual(retract); limit=1)
+    return msgs
+end
+
 """
 Load `path` with `load_file!` and collect its `error` and `warning` messages through a `user:message_hook/3`
 collector: `(status, ball, msgs)`, `msgs` the `(kind, term)` pairs in the order they were printed.
@@ -144,20 +181,8 @@ collector: `(status, ball, msgs)`, `msgs` the `(kind, term)` pairs in the order 
 function lk_load_file_messages!(
     gd::LogicKernel.PL_global_data{T}, ld::LogicKernel.PL_local_data{T}, path::AbstractString
 ) where {T}
-    m = LogicKernel.mk_sym(T, Symbol("\$lk_message"))
-    if LogicKernel.isCurrentProcedure(LogicKernel.sym_key(m), 2, LogicKernel.MODULE_user(gd)) === nothing
-        hook = tempname() * "_lk_message_collector.pl"     # once per database
-        write(hook, LK_MESSAGE_COLLECTOR)
-        hst, hball = LogicKernel.load_file!(gd, ld, hook)
-        rm(hook; force=true)
-        hst === :ok || error("lk_load_file_messages!: the collector did not load: $hst $hball")
-    end
+    lk_install_message_collector!(gd, ld)
+    lk_take_messages!(ld)                                   # earlier messages are not this load's
     st, ball = LogicKernel.load_file!(gd, ld, path)
-    q = LogicKernel.mk_expr(T, T[m, lk_var(T, UInt64(1)), lk_var(T, UInt64(2))])
-    qual(g) = LogicKernel.mk_expr(T, T[LogicKernel.mk_sym(T, :(:)), LogicKernel.mk_sym(T, :user), g])
-    msgs = Tuple{Symbol, T}[(lk_name(LogicKernel.child(a, 2)), LogicKernel.child(a, 3)) for a in
-        (LogicKernel.child(r, 3) for r in LogicKernel.query_answers(ld, qual(q)))]
-    retract = LogicKernel.mk_expr(T, T[LogicKernel.mk_sym(T, :retractall), q])
-    LogicKernel.query_answers(ld, qual(retract); limit=1)
-    return (st, ball, msgs)
+    return (st, ball, lk_take_messages!(ld))
 end

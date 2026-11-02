@@ -25,7 +25,7 @@ _mpf(f, xs::_MP...) = mk_expr(_MP, _MP[_mps(f), xs...])
 _mpv() = mk_var(_MP, LK.fresh_var_keys!(1))
 
 @testset "the module table: system, then user, its super" begin
-    gd = LK.PL_global_data{_MP}()
+    gd = LK.setupProlog(_MP)            # the table setupProlog builds, before the boot adds the boot modules (LB4 b2)
     @test length(gd.modules) == 2
     sys, user = gd.modules
     @test sys === LK.MODULE_system(gd) && user === LK.MODULE_user(gd)
@@ -55,7 +55,7 @@ _mpv() = mk_var(_MP, LK.fresh_var_keys!(1))
 end
 
 @testset "autoImport and trapUndefined" begin
-    gd = LK.PL_global_data{_MP}()
+    gd = LK.setupProlog(_MP)
     ld = LK.PL_local_data{_MP}(gd)
     sys, user = LK.MODULE_system(gd), LK.MODULE_user(gd)
     sysdef = LK.isCurrentProcedure(sym_key(_mps(:rational)), 1, sys).definition
@@ -87,7 +87,7 @@ end
 end
 
 @testset "unify_definition on a term reference (f3b-4): the same references, on the cells" begin
-    gd = LK.PL_global_data{_MP}()
+    gd = LK.setupProlog(_MP)
     ld = LK.PL_local_data{_MP}(gd)
     sys, user = LK.MODULE_system(gd), LK.MODULE_user(gd)
     ud = LK.lookupProcedure(_mps(:p), 2, user).definition
@@ -123,7 +123,7 @@ end
 end
 
 @testset "PL_strip_module_ex" begin
-    gd = LK.PL_global_data{_MP}()
+    gd = LK.setupProlog(_MP)
     sys, user = LK.MODULE_system(gd), LK.MODULE_user(gd)
     "Strip the term `t` with module `m` given: `(ok, module, plain, the pending formal)`."
     function strip(t, m=0)

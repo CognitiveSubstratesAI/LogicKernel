@@ -375,12 +375,14 @@ function _call(gd, ld, name::String, args::Vector)
 end
 
 _db() = (gd=LK.PL_global_data{_TL}(); (gd, LK.PL_local_data{_TL}(gd)))
+# the table as setupProlog builds it, before the boot (LB4 b2) adds its modules and clauses
+_db0() = (gd=LK.setupProlog(_TL); (gd, LK.PL_local_data{_TL}(gd)))
 
 # the syntax flags every module starts with (pl-modul.c:_lookupModule, SWI-7 syntax: !GD->options.traditional)
 const _SYNTAX = LK.M_CHARESCAPE | LK.DBLQ_STRING | LK.BQ_CODES | LK.O_RATIONAL_SYNTAX
 
 @testset "the table: creation order, a name index, the record of a created module" begin
-    gd, ld = _db()
+    gd, ld = _db0()
     @test gd.modules isa LK.module_table && length(gd.modules) == 2
     @test [m.index for m in gd.modules] == [1, 2]                  # gd.modules[i].index == i (design H3)
     @test LK.isCurrentModule(gd.modules, _tls(:wb_none)) === nothing &&
@@ -405,8 +407,9 @@ const _SYNTAX = LK.M_CHARESCAPE | LK.DBLQ_STRING | LK.BQ_CODES | LK.O_RATIONAL_S
     for m in (sys, user, d, a)
         @test m.file == 0 && m.line_no == 0 && m.code_size == 0 && m.code_limit == 0
         @test m.var_prefix == 0 && m.references == 0
-        # `system` has had the stand-in boot's clauses asserted into it (setLastModifiedPredicate!); the others none
-        @test m === sys ? 0 < m.last_modified <= gd._generation : m.last_modified == 0
+        # before the boot no module has had a clause added (setLastModifiedPredicate!; R1f's stand-in boot asserted
+        # into `system` here, deleted in LB4 b2)
+        @test m.last_modified == 0
         @test isempty(m.public_) && isempty(m.public_order)
     end
     @test LK.getUnknownModule(gd, a) == LK.UNKNOWN_ERROR           # inherited: a → user → system

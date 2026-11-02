@@ -42,6 +42,9 @@ const _CR_SWIPL = (
 const _CR_SWIPL_REQUIRED = get(ENV, "LOGICKERNEL_REQUIRE_SWIPL", "") == "1"
 const _CR_GD = LK.PL_global_data{_CR}()
 const _CR_LD = LK.PL_local_data{_CR}(_CR_GD)
+# the messages are print_message/2's (LB4 b2): recorded and still printed, as the driver's failing hook does
+# UNVERIFIED on the kernel: gate decides
+lk_install_message_collector!(_CR_GD, _CR_LD; printing=true)
 
 "Run `name` on `args`: `(rc, answers, ball)` — `:true`, `:false`, `:exception`, `:notported`."
 function _cr_call(name::String, args::Vector{_CR})
@@ -105,14 +108,14 @@ end
 """
 Call `name` on `args` with fresh user_output/user_error buffers and an empty message list:
 `[out, err, verdict, messages]` — the verdict `true`/`false`/`NOTPORTED`/`ex:<ball>`, the
-messages (printMessage's, R1f) as `kind:<text>` joined by `;`. `args` after the call are
+messages (print_message/2's, collected by the hook) as `kind:<text>` joined by `;`. `args` after the call are
 returned too (the options' bindings).
 """
 function _cr_run(name::String, args::Vector{_CR})
     out, err = IOBuffer(), IOBuffer()
     LK.set_standard_stream!(_CR_LD, LK.SNO_USER_OUTPUT, out)
     LK.set_standard_stream!(_CR_LD, LK.SNO_USER_ERROR, err)
-    empty!(_CR_LD.messages)
+    lk_take_messages!(_CR_LD)
     rc, ans, ball = _cr_call(name, args)
     LK.Sflush(LK.Suser_output(_CR_LD))
     LK.Sflush(LK.Suser_error(_CR_LD))
@@ -126,7 +129,7 @@ function _cr_run(name::String, args::Vector{_CR})
         "ex:" * _cr_text(ball::_CR)
     end
     msgs = join(
-        [string(k) * ":" * _cr_text(m) for (k, m) in _CR_LD.messages], ";"
+        [string(k) * ":" * _cr_text(m) for (k, m) in lk_take_messages!(_CR_LD)], ";"
     )
     return ([String(take!(out)), String(take!(err)), verdict, msgs], ans)
 end
@@ -218,16 +221,9 @@ function _cr_swipl(goals::Vector{String})::Vector{Vector{String}}
 end
 
 # swipl PRINTS a reported syntax error and a singleton warning on user_error (print_message/2,
-# boot/messages.pl: R2); the kernel collects the message term instead (printMessage, R1f). Both
-# sides' message LISTS are compared; swipl's printed lines are dropped from its user_error here.
-_cr_strip_printed(err::String)::String =
-    join(
-        filter(
-            l -> !startswith(l, "ERROR: ") && !startswith(l, "Warning: "),
-            split(err, '\n'; keepempty=true)
-        ),
-        '\n'
-    )
+# boot/messages.pl); since LB4 b2 the kernel prints them through the same boot/messages.pl (R1f collected
+# the term and swipl's printed lines were dropped here). Both sides' message LISTS and their user_error
+# texts are compared. UNVERIFIED on the kernel: gate decides
 
 "Compare kernel and swipl results, label by label; the texts normalised when `norm`."
 function _cr_compare(labels, ours, theirs; norm=true)
@@ -237,7 +233,6 @@ function _cr_compare(labels, ours, theirs; norm=true)
     for k in 1:min(length(ours), length(theirs))
         o = norm ? [_cr_norm(x) for x in ours[k]] : copy(ours[k])
         s = norm ? [_cr_norm(x) for x in theirs[k]] : copy(theirs[k])
-        s[2] = _cr_strip_printed(s[2])
         if any(x -> occursin("NUL-TEXT", x), o)   # named, counted
             cut += 1
             continue
@@ -407,7 +402,7 @@ function _cr_run_goal(t::_CR)
     out, err = IOBuffer(), IOBuffer()
     LK.set_standard_stream!(_CR_LD, LK.SNO_USER_OUTPUT, out)
     LK.set_standard_stream!(_CR_LD, LK.SNO_USER_ERROR, err)
-    empty!(_CR_LD.messages)
+    lk_take_messages!(_CR_LD)
     verdict = "true"
     fid = LK.PL_open_foreign_frame(_CR_LD)
     # ONE PutVarMap for the whole conjunction: its conjuncts share their variables as one record
@@ -448,7 +443,7 @@ function _cr_run_goal(t::_CR)
     end
     LK.Sflush(LK.Suser_output(_CR_LD))
     LK.Sflush(LK.Suser_error(_CR_LD))
-    msgs = join([string(k) * ":" * _cr_text(m) for (k, m) in _CR_LD.messages], ";")
+    msgs = join([string(k) * ":" * _cr_text(m) for (k, m) in lk_take_messages!(_CR_LD)], ";")
     LK.PL_close_foreign_frame(_CR_LD, fid)
     return [String(take!(out)), String(take!(err)), verdict, msgs]
 end

@@ -210,7 +210,7 @@ function _ql_list_atoms(line::String)::Vector{String}
     ]
 end
 
-"The messages the boot loop collected, as text."
+"The messages the boot loop collected, as text (its Sdprintf branches, `_qlf_Sdprintf!`: still on `ld.messages`)."
 _ql_messages(ld) =
     String[String(sym_text(m)) for (k, m) in ld.messages if k === :error && kind(m) === SYM]
 
@@ -397,12 +397,16 @@ end
     @test count(m -> occursin(r":[0-9]+: directive failed\n$", m), msgs) == 2   # elif/1 is called in user (unknown procedure), then fail/0
     @test all(m -> occursin(f, m), filter(m -> occursin("directive failed", m), msgs))
 
-    rc, gd, ld, f = _ql_compile("r(a).\nfoo(.\nr(b).\nt_q01(L) :- findall(X, r(X), L).\n")
+    gd, ld, f = _ql_db("r(a).\nfoo(.\nr(b).\nt_q01(L) :- findall(X, r(X), L).\n")
+    lk_install_message_collector!(gd, ld)       # the report is print_message/2's since LB4 b2
+    lk_take_messages!(ld)
+    rc = LK.compileFile(gd, ld, nothing, f)
     @test rc
     @test _ql_list_atoms(_ql_query_lines(gd, ld, ["t_q01"])[1]) == ["a", "b"]
     # read_clause/3 reports the error itself (syntax_errors dec10, src/pl-read.jl:4099, reportReadError) and reads on, so
     # the loop's own "Syntax error" branch is not reached; the report is a message TERM, not text
-    @test any(((k, m),) -> k === :error && kind(m) !== SYM, ld.messages)
+    # (printMessage -> print_message/2, read through the collector), UNVERIFIED on the kernel: gate decides
+    @test any(((k, m),) -> k === :error && kind(m) !== SYM, lk_take_messages!(ld))
     @test !any(m -> occursin("Syntax error", m), _ql_messages(ld))
 
     gd = LK.PL_global_data{_QL}()

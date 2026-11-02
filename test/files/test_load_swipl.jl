@@ -7,12 +7,14 @@
 #     them since R1g (`compiler_warnings(Clause, Warnings)`: its `Clause`, the clause reference, is a clause
 #     blob since D1; the driver prints it as a fresh variable on swipl's side, and `_tl_enc` encodes
 #     the kernel's blob as one too — an address is no value anyone compares). One NAMED normalisation, counted: an
-#     error a directive's goal raises has the context `system:'$c_call_prolog'/0` (the query's top
-#     frame) where swipl's is `system:catch/3` (boot's wrapper; boot/init.jl `execute_directive!`);
+#     error a directive's goal raised under R1f's Julia loader had the context `system:'$c_call_prolog'/0`
+#     (the query's top frame) where swipl's is `system:catch/3` (boot's wrapper). Since LB4 b2 the kernel's
+#     directives run through boot/init.pl's own catch/3, so the count must be zero;
 #   * THE BENCH PROGRAMS loaded from their .pl files, their answers compared with swipl's;
-#   * THE REFUSALS (decision 4): DCG rules, term_expansion, module/use_module/include/
+#   * THE FORMER REFUSALS (R1f decision 4: DCG rules, term_expansion, module/use_module/include/
 #     initialization, conditional compilation, a reconsult, a directive that needs the meta-call,
-#     — each an explicit refusal exception (a second file redefining a predicate is no refusal since PR1b: it abolishes, as swipl).
+#     a second file redefining a predicate): since LB4 b2 each loads through boot/init.pl, compared
+#     with swipl.
 using Test, LogicKernel
 const LK = LogicKernel
 
@@ -307,8 +309,10 @@ if _TL_SWIPL !== nothing
                 @test ours == theirs
             end
         end
-        # the named normalisation is used, and only for directive goals' errors
-        @test 1 <= _TL_NORMALISED[] <= 4
+        # the named normalisation (R1f): since LB4 b2 a directive's goal runs under boot/init.pl's
+        # catch/3 as in swipl, so the context is swipl's and the normalisation never fires
+        # UNVERIFIED on the kernel: gate decides
+        @test _TL_NORMALISED[] == 0
         # the compiler's own warnings (since R1g) are compared, not excluded: swipl sends this
         # many `compiler_warnings/2` messages on the corpus, and the kernel the same ones
         @test nwarn == 12

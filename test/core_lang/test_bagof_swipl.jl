@@ -298,8 +298,9 @@ _rbg_goals() = _R[_rf(name, _rv(50 + i)) for (i, (name, _, _)) in enumerate(_rbg
     end
 end
 
-# The stand-in's helper predicates are `system`'s but NOT locked: `user` defines predicates of
-# those names, as it may in swipl, and bagof/3 keeps calling its own.
+# boot/bags.pl's helper predicates are its module `'\$bags'`'s (booted since LB4 b2; R1f's stand-in
+# put them in `system`): `user` defines predicates of those names, as it may in swipl, and bagof/3
+# keeps calling its own.
 @testset "user may define pick/3 and the other private names of boot/bags.pl" begin
     X, Y, L = _rv(1), _rv(2), _rv(3)
     clauses = Tuple{_R, Union{Nothing, _R}}[

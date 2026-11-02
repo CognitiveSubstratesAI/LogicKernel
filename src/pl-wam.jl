@@ -5387,9 +5387,10 @@ function PL_next_solution_guarded(
     # PORT: pl-vmi.c b_throw_resume
     # DIVERGES: since V9f both branches. The catcher's: the recover goal's WORD is copied to
     # `argFrameP(lTop, 0)` (`_slot_copy!`, f3b-5b); `LD->query->next_environment` (GC's) is not
-    # kept; an `unwind(_)` ball (`uncachableException`, on the words: `PL_is_functor`; abort, halt —
-    # `'$recover_and_rethrow'/2`, boot/init.pl) is refused by name (R2), its culprit the atom
-    # `unwind`. No GC request to honour.
+    # kept. An `unwind(_)` ball (`uncachableException`, pl-wam.c:2253-2263, on the words: `PL_is_functor`)
+    # wraps the recover goal as `'$recover_and_rethrow'(Goal, Ball)` (boot/init.pl, booted since LB4 b2;
+    # pin pl-vmi.c:5266-5278), both arguments stored dereferenced (`_cell_link!`: upstream copies the
+    # recover goal's word as is, the ball's deRef'd). `fatalError` is a Julia `error`. No GC request to honour.
     @label b_throw_resume
     ld.statistics.inferences += 1                   # box exit, needed for GC (Y1)
     if bt_catchfr != 0
@@ -5401,16 +5402,15 @@ function PL_next_solution_guarded(
         ld.environment_frame = FR
         PL_unify(ld, argFrameP(br_base, 1), ld.exception_term)      # re-unify
         setLTop!(ld, argFrameP(br_base, 3))                         # above the catch/3
-        if PL_is_functor(ld, ld.exception_term, mk_sym(T, :unwind), 1)  # uncachableException
-            throw(                                  # (the culprit names the refusal: f3b-5a's rule)
-                NotPortedError{T}(
-                    mk_sym(T, :unwind),
-                    "an unwind(_) ball caught ('\$recover_and_rethrow'/2, boot/init.pl)",
-                    "R2"
-                )
-            )
+        if PL_is_functor(ld, ld.exception_term, mk_sym(T, :unwind), 1)  # (w=uncachableException(exception_term))
+            has_emergency_space_global(ld, 3) || error("Cannot wrap abort exception")  # fatalError
+            br_p = _alloc_compound!(ld, FUNCTOR_drecover_and_rethrow2, 2)   # p = gTop; p[0] = FUNCTOR_…; gTop = p+3
+            _cell_link!(ld, br_p + 1, argFrameP(br_base, 2) + 1)            # p[1] = argFrame(FR, 2)
+            _cell_link!(ld, br_p + 2, ld.exception_term + 1)                # p[2] = w
+            ld.slots[argFrameP(ld.lTop, 0) + 1] = consPtr(br_p, TAG_COMPOUND | STG_GLOBAL)  # argFrame(lTop, 0) = consPtr(p, …)
+        else
+            _slot_copy!(ld, argFrameP(ld.lTop, 0) + 1, argFrameP(br_base, 2) + 1)  # copy recover goal
         end
-        _slot_copy!(ld, argFrameP(ld.lTop, 0) + 1, argFrameP(br_base, 2) + 1)  # copy recover goal
         br_exit = findCatchExit(gd)                                 # PC = findCatchExit()
         PCc = br_exit.codes
         PCl = br_exit.literals

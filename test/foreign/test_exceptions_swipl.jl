@@ -331,17 +331,20 @@ end
 
 # reportStreamError's warning branch (pl-file.c 1391: io_warning(Stream, Message), then the error
 # state cleared): no Prolog-level trigger at the pin without a failing device, so pinned from the
-# source; the message leaves the engine through printMessage's one export.
+# source; the message leaves the engine through printMessage, print_message/2 since LB4 b2 (read through
+# the `user:message_hook/3` collector of test/term_under_test.jl).
 @testset "f3b-4: reportStreamError reports io_warning(Stream, Message) and clears the state" begin
     gd = LKE.PL_global_data{_E}()
     ld = LKE.PL_local_data{_E}(gd)
+    lk_install_message_collector!(gd, ld)
+    lk_take_messages!(ld)
     s = LKE.set_standard_stream!(ld, LKE.SNO_USER_ERROR, IOBuffer())   # the host's user_error
     fid = LKE.PL_open_foreign_frame(ld)
     LKE.Sseterr(s, LKE.SIO_WARN, "a warning")
-    n = length(ld.messages)
     @test LKE.reportStreamError(ld, s)
-    @test length(ld.messages) == n + 1
-    sev, m = ld.messages[end]
+    msgs = lk_take_messages!(ld)
+    @test length(msgs) == 1
+    sev, m = msgs[end]
     @test sev === :warning
     @test lk_eq(m, _ef(:io_warning, _es(:user_error), _es(Symbol("a warning"))))
     @test (s.flags & LKE.SIO_WARN) == 0                     # Sseterr(s, 0, NULL)
