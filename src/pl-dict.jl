@@ -274,6 +274,29 @@ function dict_order(
     return dict_ordered(ld, dict + 2, n, true)
 end
 
+# PORT: pl-dict.c dict_order_term_refs
+# DIVERGES: the key/value array of term references is the reader's term stack: `words` its words, `base` the index of
+# the first KEY (upstream's `av`, the array of references: key `i` at `av[i*2]`, value `i` at `av[i*2+1]`); `indexes`
+# is the vector of pair indexes (from 0), sorted in place by key WORD (`SCALAR_TO_CMP`; the stable `sortperm`, where
+# upstream's `sort_r` is not: both name the same key for the duplicate); the keys are never references (the reader
+# stores an atom's or a tagged integer's word).
+"Order `indexes` by the key words of the term-stack pairs at `base`; 0, or the index in `indexes` of the first duplicate key (pl-dict.c)."
+function dict_order_term_refs(words::Vector{word}, base::Int, indexes::Vector{Int}, count::Int)::Int
+    ord = sortperm(word[words[base + indexes[i] * 2] for i in 1:count])   # sort_r(indexes, count, …, compare_term_refs)
+    indexes[1:count] = indexes[ord]
+
+    if count > 1
+        k = words[base + indexes[1] * 2]
+        for i in 2:count
+            k2 = words[base + indexes[i] * 2]
+            k == k2 && return i - 1                 # the index of the duplicate, from 0
+            k = k2
+        end
+    end
+
+    return 0
+end
+
 # PORT: pl-dict.c get_name_ex
 # DIVERGES: the key's word is the result, `nothing` for upstream's false.
 "The dict key (an atom or a small integer word) the term reference `t` holds, else a type error (pl-dict.c)."

@@ -1054,6 +1054,24 @@ const RAT_NATURAL = UInt32(0x00000100)
 # PORT: pl-incl.h RAT_MASK
 "The rational syntax flags (pl-incl.h)."
 const RAT_MASK = RAT_NATURAL
+# PORT: pl-incl.h VARTAG_DICT
+"Module syntax flag: `_{...}` reads as a dict with a variable tag (pl-incl.h)."
+const VARTAG_DICT = UInt32(0x00000000)
+# PORT: pl-incl.h VARTAG_DYNDICT
+"Module syntax flag: `_{...}` reads as `#{...}` (pl-incl.h)."
+const VARTAG_DYNDICT = UInt32(0x00000200)
+# PORT: pl-incl.h VARTAG_ATTVAR
+"Module syntax flag: `_{...}` reads as an attributed variable (pl-incl.h)."
+const VARTAG_ATTVAR = UInt32(0x00000400)
+# PORT: pl-incl.h VARTAG_ERROR
+"Module syntax flag: `_{...}` is a syntax error (pl-incl.h)."
+const VARTAG_ERROR = UInt32(0x00000600)
+# PORT: pl-incl.h VARTAG_WARNING
+"Module syntax flag: `_{...}` reads as a dict and warns (pl-incl.h)."
+const VARTAG_WARNING = UInt32(0x00000800)
+# PORT: pl-incl.h VARTAG_MASK
+"The variable-tag flags (pl-incl.h)."
+const VARTAG_MASK = UInt32(0x00000e00)
 # PORT: pl-incl.h O_RATIONAL_SYNTAX
 "The default rational syntax (pl-incl.h)."
 const O_RATIONAL_SYNTAX = RAT_COMPAT
