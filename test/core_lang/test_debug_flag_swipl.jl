@@ -370,6 +370,8 @@ _db_atom_list_enc(xs::Vector{String})::String =
     r_ctx(R) :- set_prolog_flag(debugger_show_context, true), R = ok.
     r_lib(R) :- '$current_prolog_flag'(libswipl, _, _, A, T), R = [A, T].
     r_git(R) :- current_prolog_flag(version_git, R).
+    r_lco_off(R) :- set_prolog_flag(last_call_optimisation, false), R = ok.
+    r_lco_on(R) :- set_prolog_flag(last_call_optimisation, true), R = ok.
     """
     path = joinpath(mktempdir(), "kernel.pl")
     write(path, text)
@@ -413,7 +415,62 @@ _db_atom_list_enc(xs::Vector{String})::String =
     @test occursin(_db_atom_list_enc(["write", "atom"]), _db_query(gd, ld, "r_lib"))
     @test _db_query(gd, ld, "r_git") ==
           "r_git c" * _db_codes("r_git") * "/1(a" * _db_codes("10.1.19-1-gcbf4e189") * ")"
+    # `debug` false while the debug mode is already off still sets the run-mode bits (pl-trace.c:2253 `else if (!doit) setPrologRunMode`; pl-incl.h
+    # sets them whatever the table's `last_call_optimisation` says): clear LASTCALL by the flag, then `debug` false puts it back
+    @test LK.truePrologFlag(ld, LK.PLFLAG_LASTCALL)
+    _db_query(gd, ld, "r_lco_off")
+    @test !LK.truePrologFlag(ld, LK.PLFLAG_LASTCALL)
+    @test !ld.debugstatus_debugging
+    _db_query(gd, ld, "r_off_again")
+    @test LK.truePrologFlag(ld, LK.PLFLAG_LASTCALL)
+    @test LK.truePrologFlag(ld, LK.PLFLAG_VMI_BUILTIN)
+    _db_query(gd, ld, "r_lco_on")
+    @test LK.truePrologFlag(ld, LK.PLFLAG_LASTCALL)
+    @test length(debug_msgs()) == n0 + 2                # none of this changed the mode
+    # `tracemode(true)` is reached by no flag path (the flag `debug` only turns tracing off): the direct calls. It switches the debug mode on too.
+    trace_msgs() = [m for m in ld.messages if occursin(_db_codes("trace_mode"), msg_text(m))]
+    t0 = length(trace_msgs())
+    old = Ref(true)
+    @test LK.tracemode(ld, true, old)
+    @test old[] == false                                # the old trace mode
+    @test ld.debugstatus_tracing
+    @test ld.debugstatus_debugging
+    @test ld.debugstatus_skiplevel == typemax(UInt)
+    @test !LK.truePrologFlag(ld, LK.PLFLAG_LASTCALL)
+    @test !LK.truePrologFlag(ld, LK.PLFLAG_VMI_BUILTIN)
+    @test length(debug_msgs()) == n0 + 3                # debug_mode(true) from tracemode's debugmode
+    @test occursin("a" * _db_codes("true"), msg_text(last(debug_msgs())))
+    @test length(trace_msgs()) == t0 + 1
+    @test occursin("a" * _db_codes("true"), msg_text(last(trace_msgs())))
+    # "make sure trace works inside skip": a second call with the mode already on resets a lowered skip level, and answers the old mode
+    ld.debugstatus_skiplevel = UInt(0)
+    old2 = Ref(false)
+    @test LK.tracemode(ld, true, nothing)
+    @test ld.debugstatus_skiplevel == typemax(UInt)
+    ld.debugstatus_skiplevel = UInt(0)
+    @test LK.tracemode(ld, true, old2)
+    @test old2[] == true
+    @test ld.debugstatus_skiplevel == typemax(UInt)
+    @test length(trace_msgs()) == t0 + 1                # no change, no message
+    @test length(debug_msgs()) == n0 + 3
+    # debugmode writes the old mode into the Ref (and leaves tracing alone): the flag `debug` false then also ends the trace mode
+    old3 = Ref(false)
+    @test LK.debugmode(ld, false, old3, UInt32(0))
+    @test old3[] == true
+    @test !ld.debugstatus_debugging
+    @test ld.debugstatus_tracing
+    @test LK.truePrologFlag(ld, LK.PLFLAG_LASTCALL)
+    old4 = Ref(true)
+    @test LK.debugmode(ld, false, old4, UInt32(0))      # already off: the old mode is false, nothing changes
+    @test old4[] == false
+    _db_query(gd, ld, "r_off")
+    @test !ld.debugstatus_tracing
+    @test !ld.debugstatus_debugging
+    @test length(trace_msgs()) == t0 + 2
+    @test occursin("a" * _db_codes("false"), msg_text(last(trace_msgs())))
+    @test ld.debugstatus_skiplevel == typemax(UInt)     # nothing lowers it
     # not vacuous: every check above could fail (the encodings are non-empty and the messages were counted)
     @test !isempty(_db_atom_list_enc(["write", "atom"]))
     @test length(debug_msgs()) >= 2
+    @test length(trace_msgs()) >= 2
 end
