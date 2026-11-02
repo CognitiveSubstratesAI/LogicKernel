@@ -347,12 +347,22 @@ echo "$*" >> "$STUB_LOG"
 exit 0
 EOF
 chmod +x "$W/warm_stub.sh"
+cat > "$W/scan_stub.sh" <<'EOF'
+#!/usr/bin/env bash
+# stands for tools/secret_scan.sh: records its calls; STUB_SCAN_RC is the exit status of a scan (not of --check),
+# STUB_SCAN_DOWN=1 makes --check fail
+echo "scan $*" >> "$STUB_SCAN_LOG"
+if [ "$1" = --check ]; then [ "${STUB_SCAN_DOWN:-}" = 1 ] && { echo "stub: gitleaks not installed"; exit 3; }; exit 0; fi
+[ "${STUB_SCAN_RC:-0}" != 0 ] && { echo "stub: FINDING in $1"; exit "$STUB_SCAN_RC"; }
+echo "stub: scan clean"
+EOF
+chmod +x "$W/scan_stub.sh"
 R="$W/repo"
 mkrepo "$R"
 printf 'f(x) = x\ng(x) = x # registers foo/2\n' > "$R/src/a.jl"
 commit "$R" "ADDED: g"
-export STUB_LOG="$W/stub.log" STUB_REPO="$R"
-runpre() { : > "$STUB_LOG"; LOGICKERNEL_PREPUSH_WARM="$W/warm_stub.sh" LOGICKERNEL_PREPUSH_REPO="$R" "$PRE" "$@" 2>&1; }
+export STUB_LOG="$W/stub.log" STUB_SCAN_LOG="$W/scan.log" STUB_REPO="$R"
+runpre() { : > "$STUB_LOG"; : > "$STUB_SCAN_LOG"; LOGICKERNEL_PREPUSH_WARM="$W/warm_stub.sh" LOGICKERNEL_PREPUSH_SECRETS="$W/scan_stub.sh" LOGICKERNEL_PREPUSH_REPO="$R" "$PRE" "$@" 2>&1; }
 out="$(runpre S1)"; rc=$?
 ok "prepush all passing: exit 0" 0 "$rc"
 same "prepush: the stub saw the steps in the playbook order" "status
@@ -365,6 +375,22 @@ has "prepush: the stale-pin hunt lists the hit naming a name the diff adds" "$ou
 has "prepush: next command, ls-remote first" "$out" 'git ls-remote origin refs/heads/gate/S1'
 has "prepush: next command, rename and bare push" "$out" 'git branch -m .* gate/S1 && git push -u origin gate/S1'
 hasnt "prepush: never --no-verify, never force" "$out" '\-\-no-verify|\-\-force'
+# the secret scan (audit D-0340): checked at step 0, run last over the merge-base range, a finding stops with exit 1
+ok "prepush: the scanner was checked, then asked for origin/main..HEAD" "scan --check
+scan origin/main..HEAD" "$(cat "$STUB_SCAN_LOG")"
+has "prepush: the scan's result line is shown" "$out" 'stub: scan clean'
+out="$(STUB_SCAN_RC=1 runpre S1)"; rc=$?
+ok "prepush a finding: exit 1" 1 "$rc"
+has "prepush a finding: named, and says not to allowlist it" "$out" '^prepush: FAILED at secret scan'
+has "prepush a finding: its report is shown" "$out" 'stub: FINDING in origin/main\.\.HEAD'
+has "prepush a finding: the instruction" "$out" 'do NOT allowlist or ignore'
+hasnt "prepush a finding: no ALL PASSED" "$out" '^prepush: ALL PASSED'
+out="$(STUB_SCAN_RC=2 runpre S1)"; rc=$?
+ok "prepush a scan that itself failed: exit 1 (fails closed)" 1 "$rc"
+out="$(STUB_SCAN_DOWN=1 runpre S1)"; rc=$?
+ok "prepush scanner not installed: exit 3" 3 "$rc"
+has "prepush scanner not installed: says nothing was run" "$out" 'secret scanner is not ready; nothing was run'
+ok "prepush scanner not installed: no warm step ran after status" "status" "$(cat "$STUB_LOG")"
 # the warm lane is down: loud, exit 3, nothing run
 out="$(STUB_DOWN=1 runpre S1)"; rc=$?
 ok "prepush warm lane down: exit 3" 3 "$rc"

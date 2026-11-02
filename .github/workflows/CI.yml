@@ -305,6 +305,40 @@ jobs:
           fi
           echo "All files Blue-formatted."
 
+  # ── THE SECRET SCAN (audit D-0340, D-0338 item 2b) ─────────────────────────────────────────────────
+  # The same scan as tools/prepush.sh step 7, on the pushed range: the patches of the commits that are not on
+  # main yet (a gate branch, a PR: against the merge base; a push to main: since the previous push), by the
+  # PINNED gitleaks that tools/install_gitleaks.sh installs after checking its SHA-256 (no marketplace action:
+  # the binary is the pin). A finding fails the job; it is reported (redacted) and never allowlisted by an agent
+  # (tools/secret_scan.sh refuses an allowlist, a .gitleaksignore and gitleaks:allow comments). With no base to
+  # compare with it scans the whole history (fails closed).
+  secret-scan:
+    name: Secret scan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Install the pinned gitleaks (SHA-256 checked)
+        run: tools/install_gitleaks.sh
+      - name: Scan the pushed range
+        env:
+          BEFORE: ${{ github.event.before }}   # through env, never interpolated into the script
+        run: |
+          if [ "$GITHUB_REF" = refs/heads/main ] && [ -n "$BEFORE" ] &&
+             git cat-file -e "$BEFORE^{commit}" 2> /dev/null; then
+              range="$BEFORE..$GITHUB_SHA"
+          elif base="$(git merge-base origin/main "$GITHUB_SHA" 2> /dev/null)" && [ -n "$base" ]; then
+              range="$base..$GITHUB_SHA"
+          else
+              echo "no base to compare with — scanning the whole history (fails closed)"
+              range="$GITHUB_SHA"
+          fi
+          tools/secret_scan.sh "$range"
+
   # ── THE TOOLING GATE (user, 2026-10-14) ──────────────────────────────────────────────────────────
   # The gate checked the engine and not the tools that run the gate: 1dada85 passed CI with a
   # defect tools/test_warm.sh catches (a deleted function Revise kept failed `warm.sh check` instead
@@ -448,6 +482,12 @@ jobs:
       - name: tools/test_ci_tools.sh
         if: steps.changed.outputs.run == 'true' && matrix.shard == 'light'
         run: tools/test_ci_tools.sh
+      - name: Install the pinned gitleaks (SHA-256 checked)
+        if: steps.changed.outputs.run == 'true' && matrix.shard == 'light'
+        run: tools/install_gitleaks.sh
+      - name: tools/test_secret_scan.sh
+        if: steps.changed.outputs.run == 'true' && matrix.shard == 'light'
+        run: tools/test_secret_scan.sh
       - name: tools/test_setup_machine.sh
         if: steps.changed.outputs.run == 'true' && matrix.shard == 'light'
         run: tools/test_setup_machine.sh

@@ -1,0 +1,8 @@
+# ORIGINAL: no swipl-devel counterpart — the PINNED gitleaks release (audit D-0340; sourced by tools/install_gitleaks.sh
+# and tools/secret_scan.sh). A new release is a deliberate commit: read the release page's published checksums file
+# (gitleaks_<version>_checksums.txt), copy the archive's SHA-256 here, install, copy the binary's SHA-256.
+GITLEAKS_VERSION=8.30.1
+# gitleaks_8.30.1_linux_x64.tar.gz, from the release's published checksums file
+GITLEAKS_ARCHIVE_SHA256=551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
+# the `gitleaks` file inside that archive (sha256sum of the extracted member)
+GITLEAKS_BINARY_SHA256=88f91962aa2f93ac6ab281d553b9e125f5197bbbce38f9f2437f7299c32e5509

@@ -1,0 +1,7 @@
+# ORIGINAL: no swipl-devel counterpart — the gitleaks configuration of tools/secret_scan.sh (audit D-0340): the built-in
+# rules, NOTHING added. An allowlist, a path rule or a regex exclusion is never put here by an agent: a finding is
+# reported to the dispatcher and Shivaji, who rule on it (tools/secret_scan.sh refuses a file that carries one).
+title = "LogicKernel secret scan"
+
+[extend]
+useDefault = true

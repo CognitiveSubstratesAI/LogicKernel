@@ -14,16 +14,21 @@
 #                  name a name/arity the diff adds to src/ are listed — READ them (information, not a stop)
 #   6  D-0164 terms the D-0164 grep over the added lines of `git diff origin/main..HEAD` and over the commit
 #                  messages of origin/main..HEAD
+#   7  secret scan the pinned gitleaks (tools/secret_scan.sh, audit D-0340) over the patches of origin/main..HEAD
+#                  (the diff against the merge base); a finding STOPS the push and is reported (redacted), and is
+#                  NEVER allowlisted or ignored by the agent. The binary is checked at step 0, before any long step.
 # Then it prints the next command (rename to gate/<STEP>, `git ls-remote` empty first, push for CI).
 # It never creates, touches or deletes a gate marker, never passes --no-verify, never pushes, never
 # edits a file itself (only the warm.sh steps it names do), and reads no environment value.
 # Exit status: 0 all passed; 1 the first failed step (named on the "prepush: FAILED at <step>" line);
-# 3 the warm lane is not up; 64 usage.
+# 3 the warm lane is not up, or the pinned gitleaks is not installed (tools/install_gitleaks.sh); 64 usage.
 # Seams for tools/test_ci_tools.sh: LOGICKERNEL_PREPUSH_WARM=<program> stands for tools/warm.sh,
-# LOGICKERNEL_PREPUSH_REPO=<dir> for the repository root.
+# LOGICKERNEL_PREPUSH_REPO=<dir> for the repository root, LOGICKERNEL_PREPUSH_SECRETS=<program> for
+# tools/secret_scan.sh.
 set -u
 ROOT="${LOGICKERNEL_PREPUSH_REPO:-$(cd "$(dirname "$0")/.." && pwd)}"
 WARM="${LOGICKERNEL_PREPUSH_WARM:-$ROOT/tools/warm.sh}"
+SECRETS="${LOGICKERNEL_PREPUSH_SECRETS:-$(cd "$(dirname "$0")" && pwd)/secret_scan.sh}"
 STEP="${1:-}"
 case "$STEP" in '' | *[!A-Za-z0-9._-]*) echo "usage: tools/prepush.sh <STEP>" >&2; exit 64 ;; esac
 cd "$ROOT" || exit 64
@@ -44,6 +49,11 @@ step() { echo "prepush: [$1] $2"; }
 if ! "$WARM" status > /dev/null 2>&1; then
     echo "prepush: the warm lane of this checkout is NOT up; nothing was run."
     echo "  start it:  LOGICKERNEL_WARM_SECOND=1 tools/warm.sh start   (run it as its own background command)"
+    exit 3
+fi
+if ! sc="$("$SECRETS" --check 2>&1)"; then
+    echo "prepush: the secret scanner is not ready; nothing was run."
+    printf '  %s\n' "$sc"
     exit 3
 fi
 git rev-parse --verify --quiet "$BASE" > /dev/null || fail "0 setup" "no $BASE to compare with (git fetch origin)"
@@ -106,6 +116,13 @@ if [ -s "$L/d0164_diff.txt" ] || [ -s "$L/d0164_msg.txt" ]; then
     fail "D-0164 term grep" "D-0164: no upstream failure details in public text; reword:" \
         "$(cut -c1-200 "$L/d0164_diff.txt" | head -n 8)" "$(cut -c1-200 "$L/d0164_msg.txt" | head -n 4)"
 fi
+
+# --- 7: the secret scan --------------------------------------------------------------------------
+step 7 "secret scan (gitleaks, the patches of $BASE..HEAD)"
+LOGICKERNEL_SECRET_SCAN_REPO="$ROOT" "$SECRETS" "$BASE..HEAD" > "$L/secrets.txt" 2>&1
+src=$?
+[ "$src" -eq 0 ] || fail "secret scan" "tools/secret_scan.sh exited $src: STOP and report it (do NOT allowlist or ignore a finding):" "$(head -n 40 "$L/secrets.txt" | cut -c1-200)"
+echo "  $(tail -n 1 "$L/secrets.txt")"
 
 echo "prepush: ALL PASSED for $STEP at $(git rev-parse --short HEAD) ($(git rev-list --count "$BASE..HEAD") commit(s) over $BASE)"
 echo "next: git ls-remote origin refs/heads/gate/$STEP   # must print nothing"

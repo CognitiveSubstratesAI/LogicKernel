@@ -213,6 +213,18 @@ file) — so evidence is a process that started clean. The daemon follows Revise
     argv). `tools/test_ci_tools.sh` (CI Tooling job, light shard) runs them on saved real answers in
     `tools/fixtures/ci/`, with no network; every guard in it was hand-proved to fail with its check
     removed.
+    **A secret scan runs before every gate push and in CI** (SECRETS1, audit D-0340): `tools/prepush.sh`
+    step 7 and the CI job `Secret scan` run `tools/secret_scan.sh <range>`, the pinned gitleaks
+    (`tools/gitleaks.pin`: version, archive and binary SHA-256, from the release's published checksums
+    file) over the patches of `origin/main..HEAD`. The binary is installed by the explicit
+    `tools/install_gitleaks.sh` (archive checked BEFORE extraction, binary checked before install; no hook
+    downloads anything at push time) into the git-ignored `tools/bin/`, and `prepush.sh` stops at step 0
+    when it is missing or does not match the pin. A finding stops the push, is printed redacted (rule,
+    file, line, commit) and is never allowlisted by an agent: the configuration is the built-in rules
+    (`tools/gitleaks.toml`, which the scan refuses if it carries an allowlist), `gitleaks:allow` comments and
+    GITLEAKS_* variables are not honoured, a `.gitleaksignore` in the repository is refused.
+    `tools/test_secret_scan.sh` (CI Tooling job, light shard) generates its fake secrets at run time and
+    never prints or stores one; every route above was hand-proved closed by removing its check.
   * **it RECOVERS from a stale daemon** (user, 2026-10-04: "make the gate recover, not just
     detect"). Revise can leave a deleted method alive in the daemon: Julia's method table keeps it,
     and the manifest gate's live-method filter (`which(m.sig) === m`) cannot tell it from a live one,

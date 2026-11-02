@@ -20,6 +20,9 @@ docs/build/
 /tools/mutants/verdicts.tsv
 /tools/mutants/par*/
 
+# the pinned gitleaks binary (tools/install_gitleaks.sh installs it; never committed)
+/tools/bin/
+
 # Benchmark outputs
 bench/results/
 *.log
