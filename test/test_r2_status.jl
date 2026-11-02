@@ -188,6 +188,11 @@ end
 function pl_q1(ld)
     $(R2_QLF_REFUSAL_HELPER)(T, "\\\$qlf_versions", 6)
 end
+function pl_split(x)
+    throw($(R2_REFUSAL_EXCEPTION){T}(x, "split
+        what", "R2 first; " *
+        "second part"))
+end
 function pl_dup(x)
     throw($(R2_REFUSAL_EXCEPTION){T}(x, "same", "S1")); throw($(R2_REFUSAL_EXCEPTION){T}(x, "same", "S2"))
 end
@@ -197,13 +202,16 @@ end
     rows = r2_refusal_rows(Dict("src/fix.jl" => _r2_fixture_jl()))
     @test !isempty(rows)
     labels = [r.label for r in rows]
-    @test sort(labels) == sort(["a feature, \$(x)", "other (with, comma)", "QLF predicate \$qlf_versions/6", "same", "same"])
+    @test sort(labels) == sort(["a feature, \$(x)", "other (with, comma)", "QLF predicate \$qlf_versions/6", "same", "same", "split what"])
     @test all(r -> r.status == "refused" && r.cat == "refusal" && r.cfile == "src/fix.jl", rows)
     ks = [r.key for r in rows]
     @test length(unique(ks)) == length(ks)                                           # a second identical site gets a suffix
     @test "refusal:src/fix.jl::alpha::a feature, \$(x)" in ks && any(k -> startswith(k, "refusal:src/fix.jl::beta::"), ks)
     @test any(r -> r.label == "a feature, \$(x)" && occursin("step V9", r.detail), rows)
     @test "refusal:src/fix.jl::pl_dup::same #2" in ks
+    # a literal split over lines (what, or a `"a; " * "b"` step) is ONE line: it must not break a TSV or Markdown row
+    sp = only(r for r in rows if r.label == "split what")
+    @test sp.detail == "line 25; step R2 first; second part" && all(r -> !occursin(r"[\n\t]", r.label * r.detail * r.key), rows)
     # MUTATION: one site fewer, one row fewer
     @test length(r2_refusal_rows(Dict("src/fix.jl" => _r2_fixture_jl(; beta=false)))) == length(rows) - 1
     @test r2_strip_jl("x = 1 # c\ny = 'a'  # d\nz = \"s # not a comment\"") == "x = 1    \ny = 'a'     \nz = \"s # not a comment\""
