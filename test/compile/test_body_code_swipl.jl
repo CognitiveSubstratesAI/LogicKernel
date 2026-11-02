@@ -1111,10 +1111,11 @@ const _BC_IS_CELLS = [
         _bconj(_bf("\$shift_for_copy", _bv(1)), _bcq(_bv(1))), "")
 ]
 
-# the cells still refused: their instructions are V9's (`I_CALLCONT`, `I_SHIFT`, `I_SHIFTCP`).
-# Since V9a every =, == and \== cell compiles, and its code is swipl's; since ARGINL the arg/3
-# cells compile too (`B_ARG_CF`, `B_ARG_VF`).
-const _BC_IS_REFUSED = ("i_callcont", "i_shift", "i_shiftcp")
+# the cells still refused: none. Since V9a every =, == and \== cell compiles, and its code is
+# swipl's; since ARGINL the arg/3 cells compile too (`B_ARG_CF`, `B_ARG_VF`); since LB4 b2
+# (2026-11-03, audit D-0363 item 2) `I_CALLCONT`, `I_SHIFT` and `I_SHIFTCP` are emitted as
+# upstream's (pl-comp.c:4703-4735; their RUN is the step CONT1's).
+const _BC_IS_REFUSED = ()
 
 @testset "=, ==, \\==, arg/3, \$call_continuation, \$shift compile as upstream decides (V6b2, V9a)" begin
     ours = Union{Nothing, Vector{String}}[]
@@ -1136,16 +1137,15 @@ const _BC_IS_REFUSED = ("i_callcont", "i_shift", "i_shiftcp")
             @test any(startswith(instr), got)
         end
     end
-    # every emission of the compilers still refusing is reached: each names a refusal
-    for i in ("I_CALLCONT", "I_SHIFT ", "I_SHIFTCP")
-        @test any(r -> occursin(i, r), refusals)
-    end
+    # no cell is refused any more (LB4 b2): every compiler of the family emits
+    @test isempty(refusals)
     # every instruction of the family is emitted by some cell (C_VAR: eb3; B_UNIFY_EXIT: ub9-ub11)
     for i in (
         "i_true", "b_unify_ff", "b_unify_fv", "b_unify_vf", "b_unify_vv", "b_unify_fc",
         "b_unify_vc", "b_unify_firstvar", "b_unify_var(", "b_unify_exit", "b_eq_vv",
         "b_eq_vc",
-        "b_neq_vv", "b_neq_vc", "c_var", "b_arg_cf", "b_arg_vf"
+        "b_neq_vv", "b_neq_vc", "c_var", "b_arg_cf", "b_arg_vf",
+        "i_callcont(", "i_shift(", "i_shiftcp("
     )
         @test any(c -> c !== nothing && any(startswith(i), c), ours)
     end
@@ -3023,11 +3023,8 @@ end
     p = _bs("pr")
     # since MOD3a `m:g` compiles (I_CALLM/I_DEPARTM), since MOD3b `g@m` (I_CALLATM/I_DEPARTATM): their
     # code is pinned in the "M:Goal in a body" and "Goal@Module in a body" testsets
-    for body in (
-        _bconj(_bs("q"), _bs("\$reset")),                      # a reserved goal atom (V9)
-    )
-        @test_throws LK.NotPortedError _bclause(p, body)
-    end
+    # since LB4 b2 (2026-11-03, audit D-0363 item 2) `\$reset`, `\$cut` and `\$yield` compile as
+    # upstream's (c:3543-3556): their rows are pt7-pt10 below; no reserved goal atom is refused
     # since V9a `true` and `fail` compile to I_TRUE and I_FAIL, as swipl's do
     # since V9f `\$catch` compiles to I_CATCH I_EXITCATCH (c:3539): boot/init.pl's catch/3 is `\$catch`
     tf = [
@@ -3040,11 +3037,23 @@ end
             _bf("pt5", _bv(1), _bv(2), _bv(3)),
             _bconj(_bf("sig_atomic", _bv(1)), _bs("\$call_cleanup"))
         ),
-        (_bf("pt6", _bv(1), _bv(2)), _bs("\$call_cleanup"))
+        (_bf("pt6", _bv(1), _bv(2)), _bs("\$call_cleanup")),
+        # since LB4 b2: boot/init.pl's reset/3 and '$tbl_reset'/6 are `'$reset'`, prolog_cut_to/1 is
+        # `'$cut'`, boot/engines.pl's '$engine_yield'/2 is `'$yield'` (their RUN: I_CUTCHP since LB4
+        # b2, the others at the step CONT1)
+        (_bf("pt7", _bv(1), _bv(2), _bv(3)), _bs("\$reset")),
+        (_bs("pt8"), _bconj(_bs("q"), _bs("\$reset"))),
+        (_bf("pt9", _bv(1)), _bs("\$cut")),
+        (_bf("pt10", _bv(1), _bv(2)), _bs("\$yield"))
     ]
     ours_tf = [_bc_kernel(_bclause(h, b)) for (h, b) in tf]
     @test any(startswith("i_true"), ours_tf[1]) && any(startswith("i_fail"), ours_tf[2])
     @test ours_tf[3] == ["i_enter", "i_catch", "i_exitcatch", "i_exit"]     # c:3540-3541, then compileClause's I_EXIT
+    # swipl 10.1.19 vm_list/1 of reset/3, prolog_cut_to/1 and an asserted `pt10(_,_) :- '\$yield'`
+    # (LC_ALL=C, two byte-identical runs, 2026-11-03)
+    @test ours_tf[7] == ["i_enter", "i_reset", "i_exitreset", "i_exit"]     # c:3544-3545
+    @test ours_tf[9] == ["i_enter", "i_cutchp", "i_exit"]                   # c:3552
+    @test ours_tf[10] == ["i_enter", "i_yield", "i_exit"]                   # c:3555
     if _BC_SWIPL_BIN !== nothing
         @test _bc_swipl(["bc_case_show(($(_bc_text(h, b))))" for (h, b) in tf]) == ours_tf
     end
