@@ -53,9 +53,9 @@
 #
 # DIVERGES (file-wide): the per-module flags are read from the module record. `var_prefix` is the module's
 # (`module_t.var_prefix`, MOD1: the character, 0 for none), as upstream's `m->var_prefix`; the write side
-# (`setVarPrefix`, `set_prolog_flag(var_prefix, V)`) is F1b's. `module_t` has no `var_tag` (upstream keeps it in
-# the VARTAG_* bits of `m->flags`, which the kernel does not have), so `var_tag` reads the table's value (its
-# default, `dict`), until the modules area gives the record those bits.
+# (`setVarPrefix`, `set_prolog_flag(var_prefix, V)`) is F1b's. `var_tag` is the module's too, as upstream's: the
+# VARTAG_* bits of `module_t.flags` (`setVarTagFlag`, `getVarTagFlag`; the reader's `build_dict` takes them from
+# the read data's flags); its `set_prolog_flag/2` arm (:1383) is F1b's, with the rest of the write side.
 # The flags whose value upstream reads from the debugger (`debug`, `debugger_show_context`), the toplevel
 # (`break_level`) or the local data (`access_level`) read what the kernel has: the debugger's status fields of the local data
 # (since R2 F1c; the tracer itself is DBG1's) and no toplevel,
@@ -119,6 +119,50 @@ function setBackQuotes(
     flags |= f
 
     return flags
+end
+
+# PORT: pl-prologflag.c setVarTagFlag
+# DIVERGES: as `setBackQuotes`.
+"`flags` with the VARTAG_* bits the atom `a` names (`attvar`, `#`, `dict`, `error`, `warning`), or `nothing` after `domain_error(var_tag, A)` (pl-prologflag.c)."
+function setVarTagFlag(
+    ld::PL_local_data{T}, a::T, flags::UInt32
+)::Union{Nothing, UInt32} where {T}
+    k = sym_key(a)
+    if k == sym_key(mk_sym(T, :attvar))
+        f = VARTAG_ATTVAR
+    elseif k == sym_key(mk_sym(T, Symbol("#")))             # ATOM_dyndict
+        f = VARTAG_DYNDICT
+    elseif k == sym_key(mk_sym(T, :dict))                   # ATOM_dict_txt
+        f = VARTAG_DICT
+    elseif k == sym_key(mk_sym(T, :error))
+        f = VARTAG_ERROR
+    elseif k == sym_key(mk_sym(T, :warning))
+        f = VARTAG_WARNING
+    else
+        value = PL_new_term_ref(ld)
+        setSlotValue!(ld, value + 1, a)                     # PL_put_atom(value, a)
+        PL_error(ld, ERR_DOMAIN, mk_sym(T, :var_tag), value)
+        return nothing
+    end
+
+    flags &= ~VARTAG_MASK
+    flags |= f
+
+    return flags
+end
+
+# PORT: pl-prologflag.c getVarTagFlag
+# DIVERGES: the atom is the term type's symbol; the VARTAG_* bits are always one of the five values (the
+# `assert(0)` default is a refusal here).
+"The atom naming the VARTAG_* bits of `flags` (pl-prologflag.c): `dict`, `#`, `attvar`, `error` or `warning`."
+function getVarTagFlag(::Type{T}, flags::UInt32)::T where {T}
+    m = flags & VARTAG_MASK
+    m == VARTAG_DICT && return mk_sym(T, :dict)             # ATOM_dict_txt
+    m == VARTAG_DYNDICT && return mk_sym(T, Symbol("#"))    # ATOM_dyndict
+    m == VARTAG_ATTVAR && return mk_sym(T, :attvar)
+    m == VARTAG_ERROR && return mk_sym(T, :error)
+    m == VARTAG_WARNING && return mk_sym(T, :warning)
+    error("getVarTagFlag: the VARTAG bits $(m) name no mode")   # assert(0)
 end
 
 # ── the mask (pl-incl.h) ─────────────────────────────────────────────────────────────────────────
@@ -416,6 +460,8 @@ function unify_prolog_flag_value(
     elseif name == "rational_syntax"
         v = (mdl.flags & RAT_MASK) == RAT_NATURAL ? :natural : :compatibility
         return PL_unify_atom(ld, val, mk_sym(T, v))
+    elseif name == "var_tag"
+        return PL_unify_atom(ld, val, getVarTagFlag(T, mdl.flags))
     elseif name == "unknown"
         u = getUnknownModule(gd, mdl)
         u == UNKNOWN_ERROR && return PL_unify_atom(ld, val, mk_sym(T, :error))
