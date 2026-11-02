@@ -105,3 +105,18 @@ Commits on wip/rd1 after 17d795e: 36a2ad9 (group 2 rows), bc28041 (group 3 mutan
   of the reader's block-comment error: the gate agent reports the kernel line.
 - Gate agent runs: fmt, inventory, check (Pkg.test-way on test_read_stream_swipl.jl and test_io.jl), the rows file on all three term types, test/test_type_discipline.jl, push mutants/RD1 + gate/rd1 at one SHA; first smoke run needs a daemon slot.
 - No branch deleted. Tier 3.
+
+## WRITER 3 (edit-only, nothing compiled or run)
+Commits on wip/rd1 after a74b1e2: 3161dc5 (manifest: seven entries appended at the end of `_manifest_index`, in the shape of the
+`pl_read_clause3_va` entry; names grepped first, none present), 7a20a81 (docs/architecture.md RD1 block at the end: header names pl-read.c and
+pl-ext.c in the rows, the pin-tree line ranges, the rows file and the mutant list, DEFERRED items with reasons: char_conversion/2 +
+current_char_conversion/2, `$qq_open/2`, `$code_class/2`, the `unify_location` refusal (src/pl-read.jl:1087, the throw starts at 1087 not 1088),
+the refused read_term options), then the commit holding this note.
+Note for writers: the absence hook matches the words "not" + "ported" case-insensitively even without a space, so the refusal exception's own
+name in ADDED text is refused too; the block says "the refusal exception".
+RD1 written; gate agent runs: fmt (re-flows the long lines in the rows file), inventory, check, pkgtest_way on test_read_stream_swipl.jl and
+test_io.jl, the rows file x3 term types, test_type_discipline, push mutants/RD1 and gate/rd1 at one SHA; first smoke run needs a daemon slot;
+if a KNOWN pin is wrong fix it from the kernel's jlerr line; Tier 3, no battery.
+The manifest entry types (`Tuple{LD, Int64, Int64, LK.foreign_context{T}}` for the three `_va` wrappers, `Tuple{LD, Int64[, Int64]}` for the
+FRG ones) are copied from neighbours, not checked against `control_t{T}`: if `check` reports a missing method, adjust from the signature
+(`control_t{T}` at src/pl-read.jl:4436).
