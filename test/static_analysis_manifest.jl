@@ -2477,13 +2477,46 @@ function _manifest_index(T)
             (f, Tuple{LD, Int, Int, LK.control_t{T}}, false) for f in (
                 LK.pl_memberchk3_va, LK.pl_inc_message_count1_va, LK.pl_notrace2_va,
                 LK.pl_restore_trace2_va, LK.pl_prolog_listen2_va, LK.pl_prolog_listen3_va,
-                LK.pl_variant_sha1_2_va
+                LK.pl_variant_sha1_2_va, LK.pl_prolog_unlisten2_va
             )
         ]...,
         (LK.prolog_listen, Tuple{GD, LD, Int, Int, Int}, false),
-        (LK.add_event_hook, Tuple{GD, LD, Union{Nothing, T}, Bool, Int, Int}, false),
-        (LK.get_event_listp, Tuple{LD, Int}, false),
-        (LK.get_callback, Tuple{GD, LD, Int, Int}, false)
+        (LK.get_callback, Tuple{GD, LD, Int, Int}, false),
+        # EV1 — the event lists of pl-event.c (src/pl-event.jl) and the sites that raise them. The event's values are
+        # `args...`: each entry names the commonest call's types (a clause for the assert, retract and erase events).
+        (LK.event_list_at, Tuple{GD, LD, LK.event_location{T}}, false),
+        (LK.event_list_set!, Tuple{GD, LD, LK.event_location{T}, Union{Nothing, LK.event_list{T, D}}}, false),
+        (LK.link_event, Tuple{LK.event_list{T, D}, LK.event_callback{T, D}, Bool}, false),
+        (LK.add_event_hook, Tuple{GD, LD, LK.event_list{T, D}, Union{Nothing, T}, Bool, Int, Int}, false),
+        (LK.get_event_list!, Tuple{GD, LD, LK.event_location{T}}, false),
+        (LK.register_event_hook, Tuple{GD, LD, LK.event_location{T}, Union{Nothing, T}, Bool, Int, Int}, false),
+        (LK.get_event_listp, Tuple{GD, LD, Int}, false),
+        (LK.prolog_unlisten, Tuple{GD, LD, Int, Int}, false),
+        (LK.free_event_callback, Tuple{LK.event_callback{T, D}}, false),
+        (LK.destroy_event_list!, Tuple{GD, LD, LK.event_location{T}}, false),
+        (LK.destroy_event_list!, Tuple{D}, false),
+        (LK.destroy_event_list!, Tuple{GD, LD, D}, false),
+        (LK.cleanupEvents, Tuple{GD, LD}, false),
+        (LK.call_event_list, Tuple{GD, LD, Union{Nothing, LK.event_list{T, D}}, Int, Int}, false),
+        (LK.delayEvent, Tuple{LD, Int, C, Int}, false),
+        (LK.delayEvents, Tuple{LD}, false),
+        (LK.sendDelayedEvents, Tuple{GD, LD, Bool}, false),
+        (LK.callEventHook, Tuple{GD, LD, Int, C}, false),
+        (LK.PL_call_event_hook, Tuple{GD, LD, Int, C}, false),
+        (LK.PL_call_event_hook_va, Tuple{GD, LD, Int, C}, false),
+        (LK.predicate_update_event, Tuple{GD, LD, D, T, C, UInt32}, false),
+        (LK.table_answer_event, Tuple{GD, LD, D, T, Int}, false),
+        (LK.retractall_event, Tuple{GD, LD, D, Int, Symbol}, false),
+        (LK.term_to_fastheap, Tuple{LD, Int}, false),
+        (LK.free_fastheap, Tuple{LK.fastheap_term{T}}, false),
+        (LK.put_fastheap, Tuple{LD, LK.fastheap_term{T}, Int}, false),
+        (LK.PL_put_frame, Tuple{LD, Int, Int}, false),
+        (LK.get_procedure_resolve_namearity, Tuple{GD, LD, Int}, false),
+        (LK._assertDefinition!, Tuple{GD, LD, D, C, Int}, false),
+        (LK._assertDefinition!, Tuple{GD, LD, D, C, CR}, false),
+        (LK.retractClauseDefinition!, Tuple{GD, LD, D, C, Bool}, false),
+        (LK.announceErasedClause, Tuple{GD, LD, C}, false),
+        (LK.cleanDefinition!, Tuple{GD, LD, D, DDI, UInt64, Base.RefValue{Bool}}, false)
     )
 end
 
