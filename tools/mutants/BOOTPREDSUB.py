@@ -11,8 +11,7 @@
 # NOT LISTED (with its reason):
 #   * `updateAlerted(ld)` in `'$notrace'/2` and `'$restore_trace'/2`, and the foreign-frame close calls of `'$memberchk'/3`: they
 #     recompute or release state no row can observe (the kernel keeps no debugger state, the frame is closed by the query's exit).
-#   * the argument count of the event table (`PL_events`' second column) and the `argc` handed to `add_event_hook`: unused until EV1
-#     keeps the hooks (src/pl-event.jl header), an equivalent for every row.
+#   * (EV1 keeps the hooks now: the event table's argument count and `argc` are exercised by tools/mutants/EV1.py's battery.)
 #   * the `PL_FA_VARARGS` flag of a table entry and an entry's arity: a broken call path (the row driver reports "undefined" or
 #     "exception"), not a verdict about the port.
 #   * the digest walk of `variant_sha1/2` (`pl_variant_sha1`, src/pl-termhash.jl): owned by the step that ported it; its battery names
@@ -20,6 +19,8 @@
 # TARGETS (audit D-0238): the only test file that calls these five predicates (the Prolog sources of the other tests call memberchk/2,
 # which does not go through `'$memberchk'/3` before the boot files load, LB4).
 TARGETS = ["test/core_lang/test_bootpred3_swipl.jl"]
+# the event hooks (src/pl-event.jl, EV1) are exercised by test_event_swipl.jl as well (audit D-0238)
+TARGETS_EV = TARGETS + ["test/core_lang/test_event_swipl.jl"]
 L = "src/pl-list.jl"
 E = "src/pl-error.jl"
 P = "src/pl-pro.jl"
@@ -111,41 +112,49 @@ MUTANTS = [
          old="flags = PL_get_integer_ex(ld, A1)",
          new="flags = PL_get_int64_ex(ld, A1)"),
     dict(id="BP3-L1 an `as` value other than first and last is accepted (KILL bp3l08, bp3l28, bp3l32)",
-         file=V, targets=TARGETS,
+         file=V, targets=TARGETS_EV,
          old="    if !(as == mk_sym(T, :first) || as == mk_sym(T, :last))\n",
          new="    if false\n"),
     dict(id="BP3-L2 the `as` option is read as an integer (KILL bp3l02, bp3l03, bp3l06)",
-         file=V, targets=TARGETS,
+         file=V, targets=TARGETS_EV,
          old="PL_option_t(:as, OPT_ATOM)",
          new="PL_option_t(:as, OPT_INT)"),
     dict(id="BP3-L3 the `name` option is read as an integer (KILL bp3l04, bp3l05, bp3l06)",
-         file=V, targets=TARGETS,
+         file=V, targets=TARGETS_EV,
          old="PL_option_t(:name, OPT_ATOM)",
          new="PL_option_t(:name, OPT_INT)"),
     dict(id="BP3-L4 an unknown event is a type error (KILL bp3l13, bp3l31)",
-         file=V, targets=TARGETS,
+         file=V, targets=TARGETS_EV,
          old="PL_domain_error(ld, \"event\", type)",
          new="PL_type_error(ld, \"event\", type)"),
     dict(id="BP3-L5 a non-callable event is a domain error (KILL bp3l14)",
-         file=V, targets=TARGETS,
+         file=V, targets=TARGETS_EV,
          old="PL_type_error(ld, \"callable\", type)",
          new="PL_domain_error(ld, \"callable\", type)"),
     dict(id="BP3-L6 the closure is not checked for being callable (KILL bp3l16, bp3l19, bp3l30)",
-         file=V, targets=TARGETS,
+         file=V, targets=TARGETS_EV,
          old="    if !PL_is_callable(ld, cb)\n",
          new="    if false\n"),
     dict(id="BP3-L7 the event `abort` is not accepted (KILL bp3l20)",
-         file=V, targets=TARGETS,
-         old="(:abort, 0), ",
-         new="(:abort_, 0), "),
+         file=V, targets=TARGETS_EV,
+         old="event_type(PLEV_ABORT, :abort, 0, false, :onabort)",
+         new="event_type(PLEV_ABORT, :abort_, 0, false, :onabort)"),
     dict(id="BP3-L8 the event `this_thread_exit` is not accepted (KILL bp3l26)",
-         file=V, targets=TARGETS,
-         old="(:this_thread_exit, 0)",
-         new="(:this_thread_exit_, 0)"),
-    dict(id="BP3-L9 the last events are all that is accepted: the first four are refused (KILL bp3l20, bp3l21, bp3l22, bp3l23)",
-         file=V, targets=TARGETS,
-         old="(:erase, 1), (:break, 3), (:frame_finished, 1), ",
-         new="(:erase_, 1), (:break_, 3), (:frame_finished_, 1), "),
+         file=V, targets=TARGETS_EV,
+         old="event_type(PLEV_THIS_THREAD_EXIT, :this_thread_exit, 0, true, :event_hook_onthreadexit)",
+         new="event_type(PLEV_THIS_THREAD_EXIT, :this_thread_exit_, 0, true, :event_hook_onthreadexit)"),
+    dict(id="BP3-L9 the event `erase` (both its rows) is not accepted (KILL bp3l21, bp3l33, ev1r01)",
+         file=V, targets=TARGETS_EV,
+         old="event_type(PLEV_ERASED_CLAUSE, :erase, 1, false, :onerase),\n    event_type(PLEV_ERASED_RECORD, :erase, 1, false, :onerase),\n",
+         new="event_type(PLEV_ERASED_CLAUSE, :erase_, 1, false, :onerase),\n    event_type(PLEV_ERASED_RECORD, :erase_, 1, false, :onerase),\n"),
+    dict(id="BP3-L10 the event `break` (its four rows) is not accepted (KILL bp3l22)",
+         file=V, targets=TARGETS_EV,
+         old="    event_type(PLEV_BREAK, :break, 3, false, :onbreak),\n    event_type(PLEV_BREAK_EXISTS, :break, 3, false, :onbreak),\n    event_type(PLEV_NOBREAK, :break, 3, false, :onbreak),\n    event_type(PLEV_RETRACTNOBREAK, :break, 3, false, :onbreak),\n",
+         new="    event_type(PLEV_BREAK, :break_, 3, false, :onbreak),\n    event_type(PLEV_BREAK_EXISTS, :break_, 3, false, :onbreak),\n    event_type(PLEV_NOBREAK, :break_, 3, false, :onbreak),\n    event_type(PLEV_RETRACTNOBREAK, :break_, 3, false, :onbreak),\n"),
+    dict(id="BP3-L11 the event `frame_finished` is not accepted (KILL bp3l23)",
+         file=V, targets=TARGETS_EV,
+         old="event_type(PLEV_FRAMEFINISHED, :frame_finished, 1, false, :onframefinish)",
+         new="event_type(PLEV_FRAMEFINISHED, :frame_finished_, 1, false, :onframefinish)"),
     dict(id="BP3-V1 the digest is unified with the term itself's slot, not Digest's (KILL bp3v01, bp3v04, bp3v05)",
          file=H, targets=TARGETS,
          old="PL_unify_atom(ld, A2, mk_sym(T, Symbol(pl_variant_sha1(t))))",

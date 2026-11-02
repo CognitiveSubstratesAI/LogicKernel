@@ -7,8 +7,7 @@
 #     with `swipl` on PATH the live answers are compared with the pins too.
 #   * KNOWN DIFFERENCES, each a row whose pin is swipl's answer and whose kernel answer is pinned too (`_B3_KNOWN`, with swipl's in
 #     a comment): the debugger state and the message counters are not kernel state (src/pl-pro.jl, src/pl-error.jl: rows bp3n01,
-#     bp3n07, bp3n18, bp3i11, bp3i12), a listener is checked and not kept (src/pl-event.jl, EV1 completes it: row bp3l33) and
-#     variant_sha1's DIGEST VALUES are not swipl's (pl-termhash.jl DIVERGES 1-2: row bp3v15; the other v-rows compare lengths,
+#     bp3n07, bp3n18, bp3i11, bp3i12; the listeners of prolog_listen/2,3 are kept since EV1: row bp3l33 is swipl's answer), and variant_sha1's DIGEST VALUES are not swipl's (pl-termhash.jl DIVERGES 1-2: row bp3v15; the other v-rows compare lengths,
 #     alphabet and variant equality, never a digest). A known row stops being one when its kernel line equals swipl's.
 using Test, LogicKernel
 const LK = LogicKernel
@@ -108,8 +107,8 @@ bp3_mk(N, [N|T]) :- N1 is N-1, bp3_mk(N1, T).
 # '$restore_trace'/2 (pl-pro.c:317-390); bp3l: prolog_listen/2,3 (pl-event.c:241-290); bp3v: variant_sha1/2 (pl-termhash.c:659-681).
 # The debugger state is not kernel state (the file header of src/pl-pro.jl): the n-rows never pass the tracing or debugging
 # bits; the skip level swipl reads first is 0 and the kernel's is -1 (rows bp3n01, bp3n07, bp3n18). The error and warning counters
-# are not kept by the kernel (src/pl-error.jl): bp3i01-bp3i10 check arguments, bp3i11 and bp3i12 read the counters. A listener on
-# a predicate and a cyclic list have no row (the kernel refuses the first by name; it has no cyclic terms).
+# are not kept by the kernel (src/pl-error.jl): bp3i01-bp3i10 check arguments, bp3i11 and bp3i12 read the counters. Listeners on
+# a predicate have their rows in test_event_swipl.jl (EV1); a cyclic list has no row (the kernel has no cyclic terms).
 const _B3_CASES = [
     ("bp3m01", raw"'$memberchk'(b, [a,b,c], T), R = T"),
     ("bp3m02", raw"'$memberchk'(z, [a,b], T), R = T"),
@@ -312,14 +311,12 @@ const _B3_PINNED = [
     "t_bp3v15 c[116,95,98,112,51,118,49,53]/1(a[99,101,101,55,49,101,98,99,49,100,48,50,51,97,102,49,51,49,101,51,52,54,49,98,51,50,50,101,52,50,53,49,98,50,101,53,97,53,49,48])"
 ]
 # KNOWN DIFFERENCE rows: the id of the driver line -> the kernel's exact line (swipl's is the pin above). Each swipl answer is quoted
-# in the comment; EV1, DBG1 and the counters' struct field retire them.
+# in the comment; DBG1 and the counters' struct field retire them (EV1 retired row bp3l33).
 const _B3_KNOWN = Dict{String, String}(
     # no error counter is kept (src/pl-error.jl DIVERGES): swipl counts 1
     "t_bp3i11" => "t_bp3i11 c[116,95,98,112,51,105,49,49]/1(i0)",
     # no warning counter is kept (src/pl-error.jl DIVERGES): swipl counts 1
     "t_bp3i12" => "t_bp3i12 c[116,95,98,112,51,105,49,50]/1(i0)",
-    # swipl calls the kept erase listener once (pl-event.c); the kernel checks the registration and does not keep it (EV1)
-    "t_bp3l33" => "t_bp3l33 c[116,95,98,112,51,108,51,51]/1(i0)",
     # swipl's first skip level is 0 (pl-pro.c:317-348 reads debugstatus.skiplevel); the kernel has no such state and reads -1
     "t_bp3n01" => "t_bp3n01 c[116,95,98,112,51,110,48,49]/1(c[45]/2(i12,i-1))",
     # swipl reads back the -2 it restored (pl-pro.c:350-390); the kernel keeps no skip level and reads -1
