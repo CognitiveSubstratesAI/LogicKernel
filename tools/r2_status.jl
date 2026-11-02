@@ -182,6 +182,16 @@ function r2_arity(toks::Vector{R2Tok}, i::Int)::Tuple{Int, Int}
     return (0, length(toks))
 end
 
+# Operators are calls too: `A :< B` is `:<`(A, B), `:- dynamic foo/1` is `dynamic(foo/1)`. Only a key that matches a C-defined
+# predicate counts later, so an arithmetic `+` between two operands is harmless. Neither the clause neck nor the DCG arrow is a call.
+const _R2_NOT_INFIX = (":-", "?-", "-->", "=>", "?=>", ":")
+const R2_PREFIX_GOALS = (
+    "dynamic", "discontiguous", "initialization", "meta_predicate", "module_transparent", "multifile", "public",
+    "thread_local", "thread_initialization", "volatile", "table"
+)
+_r2_operand_end(t::R2Tok)::Bool = t.kind in (:atom, :qatom, :var, :num, :str) || (t.kind == :punct && t.text in (")", "]", "}"))
+_r2_operand_start(t::R2Tok)::Bool = t.kind in (:atom, :qatom, :var, :num, :str) || (t.kind == :punct && t.text in ("(", "[", "{"))
+
 const _R2_GOAL_PREV = (":-", "?-", ",", "(", ";", "->", "*->", "\\+", "|", "{")
 const _R2_GOAL_NEXT = (",", ")", ";", "->", "*->", "|", "}")
 
@@ -201,11 +211,24 @@ function r2_calls(clause::Vector{R2Tok})::Vector{Tuple{String, Int, Int}}
         elseif t.kind == :punct && t.text in (")", "]", "}")
             isempty(stack) || pop!(stack)
         end
+        nxt = k < length(clause) ? clause[k + 1] : nothing
+        if t.kind == :sym                                  # `=(A, B)` or the infix `A :< B`, `A \\=@= B`
+            if nxt !== nothing && nxt.kind == :punct && nxt.text == "(" && nxt.adj
+                push!(out, (t.text, first(r2_arity(clause, k + 1)), t.line))
+            elseif !(t.text in _R2_NOT_INFIX) && k > 1 && nxt !== nothing && _r2_operand_end(clause[k - 1]) && _r2_operand_start(nxt)
+                push!(out, (t.text, 2, t.line))
+            end
+            continue
+        end
         name = r2_atom_name(t)
         name === nothing && continue
-        nxt = k < length(clause) ? clause[k + 1] : nothing
         if nxt !== nothing && nxt.kind == :punct && nxt.text == "(" && nxt.adj
             push!(out, (name, first(r2_arity(clause, k + 1)), t.line))
+        elseif t.kind == :atom && name == "is" && k > 1 && nxt !== nothing && _r2_operand_end(clause[k - 1]) && _r2_operand_start(nxt)
+            push!(out, (name, 2, t.line))                  # `X is Expr`
+        elseif t.kind == :atom && name in R2_PREFIX_GOALS && nxt !== nothing && _r2_operand_start(nxt) &&
+            !(k > 1 && _r2_operand_end(clause[k - 1]))
+            push!(out, (name, 1, t.line))                  # `:- dynamic foo/1.`
         else
             prev = k > 1 ? clause[k - 1] : nothing
             isempty(stack) || !(last(stack) in ("[", "c")) || continue
@@ -494,12 +517,12 @@ function r2_kernel_texts(root::AbstractString)::Dict{String, String}
     return out
 end
 
-"`name/arity` of every `PL_extension(\"name\", N, …)` call (the entries of the `PL_predicates_from_*` tables); comment lines dropped."
+"`name/arity` of every `PL_extension(\"name\", N, …)` call (the entries of the `PL_predicates_from_*` tables); comments (also trailing ones) blanked first."
 function r2_registered(texts)::Set{String}
     out = Set{String}()
     rx = Regex("PL_extension\\(\\s*$(_R2_RX_NAME)\\s*,\\s*(\\d+)")
     for t in texts
-        body = join((l for l in split(t, '\n') if !startswith(lstrip(l), "#")), '\n')
+        body = r2_strip_jl(t)                            # comments blanked, strings kept: `PL_extension(  # note` then the name
         for m in eachmatch(rx, body)
             push!(out, _r2_unescape(m[1]) * "/" * m[2])
         end
