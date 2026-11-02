@@ -2557,7 +2557,26 @@ function _manifest_index(T)
                 LK.pl_punify_dict2_va, LK.pl_dict_same_keys2_va, LK.pl_get_dict_kv4_va,
                 LK.pl_get_dict_kv6_va, LK.pl_get_dict_kv8_va
             )
-        ]...
+        ]...,
+        # RDDICT — the reader's dict branch (src/pl-read.jl), dict_order_term_refs (src/pl-dict.jl) and the
+        # var_tag flag helpers (src/os/pl-prologflag.jl)
+        (LK.is_key_token, Tuple{LK.token{T}, LK.read_data{T}}, false),
+        (LK._key_atom, Tuple{LK.token{T}}, false),
+        (LK.read_dict_end, Tuple{LK.pframe{T}, LK.token{T}, LK.read_data{T}}, false),
+        (LK.read_dict_key, Tuple{LK.pframe{T}, LK.ct_request, LK.read_data{T}}, false),
+        (
+            LK.read_dict_start,
+            Tuple{LK.pframe{T}, LK.token{T}, LK.ct_request, LK.read_data{T}},
+            false
+        ),
+        (LK.read_dict_resume, Tuple{LK.pframe{T}, LK.ct_request, LK.read_data{T}}, false),
+        (LK.end_range, Tuple{LD, Int}, false),
+        (LK.setVarTagFlag, Tuple{LD, T, UInt32}, false),
+        (LK.getVarTagFlag, Tuple{Type{T}, UInt32}, false),
+        (LK.dict_order_term_refs, Tuple{Vector{UInt64}, Int, Vector{Int}, Int}, false),
+        (LK.build_dict, Tuple{Int, LK.read_data{T}}, false),
+        (LK.build_attvar, Tuple{Int, LK.read_data{T}}, false),
+        (LK.build_labeled_subterm, Tuple{Int, LK.read_data{T}}, false)
     )
 end
 
