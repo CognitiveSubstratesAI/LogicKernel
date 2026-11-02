@@ -825,3 +825,77 @@ k = CELL_KEY_TAG | s   # trailing comment: gkey
     @test !l1f_done("| **L1f** copy_term over cells — NEXT |")
     @test !l1f_done("| **L1e** — ✅ **DONE** | L1f waits |")
 end
+
+# ── the R2 status guards (tools/r2_status.jl, wired into port_check for the kernel's own tree) ─────────
+
+@testset "the R2 status: snapshot, owners, rendering — each guard passes on a good tree and fires on its mutation" begin
+    mktempdir() do d
+        write_(rel, text) = (mkpath(dirname(joinpath(d, rel))); write(joinpath(d, rel), text))
+        write_("vendor/swipl-devel/boot/init.pl", "init :- exists_file(f), foo_missing(1), current_prolog_flag(bounded, _).\n")
+        write_("vendor/swipl-devel/boot/load.pl", "")
+        write_("src/pl-inline.jl", "# the kernel's own tree marker\n")
+        write_("src/pl-fix.jl", """
+        PL_extension("exists_file", 1, pl_exists_file)
+        setPrologFlag(gd, ld, "bounded", false)
+        # PORT: pl-vmi.c I_ENTER
+        f(x) = throw($(R2_REFUSAL_EXCEPTION){T}(x, "a feature", "R2 X"))
+        """)
+        write_(
+            "docs/r2_upstream.tsv",
+            "# swipl-devel $("a"^40): fixture\n# kind\tkey\tfile\tclass\tcondition\npred\texists_file/1\tsrc/pl-x.c\t\t\npred\tfoo_missing/1\tsrc/pl-x.c\t\t\nvmi\tI_ENTER\tsrc/pl-vmi.c\t\t\n"
+        )
+        write_("docs/r2_owners.tsv", "pred:foo_missing/1\tX1\tx\nkfile:pl-fix.jl\tX2\n")
+        write_("docs/architecture.md", "# arch\n\n$R2_BEGIN\n$R2_END\n")
+        codes() = [first(split(x, ' ')) for x in r2_status_violations(d, "docs/architecture.md")]
+        arch = joinpath(d, "docs", "architecture.md")
+        @test codes() == ["R2-STATUS-EMPTY"]                                    # markers there, block empty
+        write(arch, "# arch\n")
+        @test codes() == ["R2-STATUS-MISSING"]
+        gen = r2_render(d)
+        write(arch, "# arch\n\n$R2_BEGIN\n$gen\n$R2_END\n")
+        @test codes() == String[]                                                # PASS: all four categories have rows, nothing drifts
+        @test occursin("| predicates (C-defined, reached by the boot) | 1 | 0 | 1 | 0 | 0 |", gen) &&
+              occursin("| refusal sites | 0 | 1 | 0 | 0 | 0 |", gen) && occursin("| VM instructions | 1 | 0 | 0 | 0 | 0 |", gen)
+        # MUTATION: a number in the block
+        write(arch, replace(read(arch, String), "| predicates (C-defined, reached by the boot) | 1 |" => "| predicates (C-defined, reached by the boot) | 2 |"))
+        @test codes() == ["R2-STATUS-DRIFT"]
+        write(arch, "# arch\n\n$R2_BEGIN\n$gen\n$R2_END\n")
+        @test codes() == String[]
+        # MUTATION: the kernel registers one more predicate — the block is stale, and X1's predicate is done, so its line is stale
+        src = joinpath(d, "src", "pl-fix.jl")
+        good = read(src, String)
+        write(src, good * "PL_extension(\"foo_missing\", 1, pl_foo)\n")
+        @test sort(codes()) == ["R2-OWNER-STALE", "R2-STATUS-DRIFT"]
+        # MUTATION: no refusal site left — the generator has a category with no row (and X2's file key names nothing)
+        write(src, replace(good, R2_REFUSAL_EXCEPTION => "ArgumentError"))
+        @test "R2-STATUS-EMPTY" in codes() && "R2-OWNER-STALE" in codes()
+        write(src, good)
+        @test codes() == String[]
+        # MUTATIONS of the owners file
+        ow = joinpath(d, "docs", "r2_owners.tsv")
+        owgood = read(ow, String)
+        write(ow, owgood * "pred:exists_file/1\tX3\n")                           # a done predicate owes no owner
+        @test codes() == ["R2-OWNER-STALE"]
+        write(ow, owgood * "pred:foo_missing/1\tX4\n")
+        @test codes() == ["R2-OWNER-DUP"]
+        write(ow, owgood * "pred:foo_missing/1\n")
+        @test "R2-OWNER-DUP" in codes() || "R2-OWNER-BAD" in codes()
+        rm(ow)
+        @test "R2-OWNER-MISSING" in codes()
+        write(ow, owgood)
+        @test codes() == String[]
+        # MUTATIONS of the snapshot
+        snap = joinpath(d, "docs", "r2_upstream.tsv")
+        sgood = read(snap, String)
+        rm(snap)
+        @test codes() == ["R2-UPSTREAM-MISSING"]
+        write(snap, "# swipl-devel $("a"^40): fixture\n")
+        @test codes() == ["R2-UPSTREAM-EMPTY"]
+        write(snap, sgood)
+        @test codes() == String[]
+    end
+    # the kernel's own tree: the committed snapshot, owners and block all hold (the pass side, on real data)
+    root = abspath(joinpath(@__DIR__, ".."))
+    @test isfile(joinpath(root, "src", "pl-inline.jl")) && isfile(joinpath(root, R2_SNAPSHOT)) && isfile(joinpath(root, R2_OWNERS))
+    @test filter(x -> startswith(x, "R2-"), port_check(root).violations) == String[]
+end
