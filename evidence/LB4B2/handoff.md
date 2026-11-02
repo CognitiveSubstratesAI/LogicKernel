@@ -230,3 +230,17 @@ NEXT AGENT (in order):
 FLAG F6 (audit): ruling 1 (D-0354 item 3) lists init.pl and toplevel.pl lines; load.pl:78-80 (threads.pl consulted only
    when threads is true) is the same DIVERGES; T3's 24-vs-25 file row cites it. Needs the audit's nod.
 FLAG F7 (audit): T1/T3 pins live in a .out fixture beside the test (2187 rows, 214 KB), not inline.
+
+## State (writer 6, 2026-11-02; in progress)
+COMMITTED (edit-only; NO Julia run; swipl run as the oracle only):
+- 6e1343b the T1/T3 oracle is now swipl's OWN BOOT FROM SOURCE: the driver is a second file of the boot command
+  (pl-qlf.c:4784-4806 compileFileList) and prints from its last directive. Writer 5's restored-state rows had load_count 2
+  and start-up dynamic counts (library_index 1247); from source: load_count 1, from_state TRUE (pl-srcfile.c:310
+  GD->bootsession; writer 5's "from_state false" was wrong), T3 gets a from_state column. Static rows and flags unchanged.
+- 34c4c4f test/db/test_boot_image_swipl.jl: T1 + T3 + H12, config rewrite rows (threads, open_shared_object, LD12 wrap
+  closures), kernel pins `_BI_KERNEL_*` empty / -1 until G9. H12 swipl pin (3240, 192, 0, 0) = the .out's T1 sums.
+FLAG F8 (audit): `open_shared_object` is undefined in the kernel (D-0151 item 6, build without O_DYNAMIC_EXTENSIONS), so
+  syspred.pl:485-493 and :497-589 compile neither branch: '$syspreds' use_foreign_library/1,2, use_foreign_library_noi/1,
+  ensure_shlib/0 undefined, unload_file_/1 one clause (T1/T3 pin these as DIVERGES). D-0151 ruled the flag, not this
+  boot-file consequence: needs the audit's nod. Every other `:- if` of boot/*.pl reads a flag both sides agree on
+  (windows/apple/emscripten/prolog_debug undefined in both; threads; open_shared_object).
