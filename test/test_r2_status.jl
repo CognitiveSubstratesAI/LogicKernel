@@ -1,0 +1,172 @@
+# ORIGINAL: the test of tools/r2_status.jl, the generated R2 status (audit D-0370 item 1); no swipl-devel counterpart.
+# test/test_r2_status.jl — the R2 generator on a small fixture tree, and both sides of each comparison non-empty on the real tree.
+#
+# Text only: no kernel term type is involved, so this file runs once (it is no `term_under_test` file).
+using Test, LogicKernel
+
+include(joinpath(@__DIR__, "..", "tools", "r2_status.jl"))
+
+"A fixture root: a vendor tree with boot files and one library file, and a kernel `src/`."
+function _r2_fixture(base::AbstractString)
+    boot = joinpath(base, "vendor", "swipl-devel", "boot")
+    lib = joinpath(base, "vendor", "swipl-devel", "library")
+    mkpath(boot)
+    mkpath(lib)
+    mkpath(joinpath(base, "src"))
+    write(joinpath(boot, "init.pl"), """
+% a comment mentioning old_pred(1,2,3)
+my_helper(X) :- exists_file(X), atom_length('a b', _).
+'\$memberchk'(a, b, c).
+init :- sub_atom(abc, 0'a, 1, _, S), print_message(S), halt.
+user_pred(X, Y) :- foo(X), bar(Y), baz.
+""")
+    write(joinpath(boot, "load.pl"), """
+:- consult([ a, b ]).
+:- if(current_prolog_flag(threads, true)).
+:- consult(t).
+:- endif.
+:- consult([ user:c ]).
+""")
+    write(joinpath(boot, "a.pl"), "a_pred :- thread_self(_), time_file(f, _), my_helper(1), win_only(1).\n:- use_module(library(debug)).\n")
+    write(joinpath(boot, "b.pl"), "b_pred :- exists_file(f), garbage_collect, '\$qlf_load'(x, y).\n")
+    write(joinpath(boot, "c.pl"), "c_pred :- tab(2).\n")
+    write(joinpath(boot, "t.pl"), "t_pred :- thread_create(g, _).\n")
+    write(joinpath(lib, "debug.pl"), ":- use_module(library(lists)).\n:- autoload(library(dcg/high_order), [sequence/3]).\ndbg :- true.\n")
+    write(joinpath(lib, "lists.pl"), "append(X, Y, Z) :- tab(X).\n")
+    return base
+end
+
+const _R2_FIXTURE_C = """
+/* a comment with PRED_IMPL("in_comment", 1, c, 0) */
+PRED_IMPL("exists_file", 1, exists_file, 0)
+PRED_IMPL("time_file", 2,
+          time_file, 0)
+PRED_IMPL("\$memberchk", 3, memberchk, 0)
+PRED_IMPL("garbage_collect", 0, gc, 0)
+PRED_IMPL("\$qlf_load", 2, qlf_load, 0)
+#ifdef O_PLMT
+PRED_IMPL("thread_self", 1, thread_self, 0)
+PRED_IMPL("thread_create", 3, thread_create, 0)
+#endif
+#ifdef __WINDOWS__
+PRED_IMPL("win_only", 1, win_only, 0)
+#else
+PRED_IMPL("not_win", 1, not_win, 0)
+#endif
+PRED_IMPL("tab", 1, tab1, 0)
+PRED_IMPL("atom_length", 2, atom_length, 0)
+VMI(I_ENTER, 0, 0, ())
+VMI(A_ADD, 0, 0, ())
+  FRG("frg_fixture", 0, pl_frg_fixture, 0),
+"""
+
+@testset "r2_status: the Prolog tokenizer and the call/head scans" begin
+    toks = r2_tokenize("foo(a, [b,c], g(d)) :- bar, 0'a, 0''', X = 'it''s', 16'FF, 1.5e3, \"s(t)\".\n% c\nnext(1).\n")
+    @test count(t -> t.kind == :end, toks) == 2
+    cls = r2_clauses(toks)
+    @test length(cls) == 2
+    calls = r2_calls(cls[1])
+    @test ("foo", 3, 1) in calls && ("g", 1, 1) in calls
+    @test ("bar", 0, 1) in calls                               # an atom in goal position
+    @test !any(c -> c[1] in ("b", "c", "d", "a"), calls)       # list elements and arguments are no goals
+    @test r2_heads(cls) == Set(["foo/3", "next/1"])
+    @test r2_heads(r2_clauses(r2_tokenize("x:y(1,2) :- true.\nd --> e.\nh.\n:- dynamic q/1.\n"))) == Set(["y/2", "d/2", "h/0"])
+    @test r2_arity(r2_tokenize("f((a,b), c)"), 2) == (2, 10)
+end
+
+@testset "r2_status: load.pl's consult lists, conditions and the library closure" begin
+    mktempdir() do base
+        _r2_fixture(base)
+        files = r2_boot_files(base)
+        rels = [f.rel for f in files]
+        @test rels[1:2] == ["boot/init.pl", "boot/load.pl"]
+        @test rels[3:6] == ["boot/a.pl", "boot/b.pl", "boot/t.pl", "boot/c.pl"]
+        @test [f.loaded for f in files[3:6]] == [true, true, false, true]      # threads is false in the kernel
+        @test files[5].cond == "current_prolog_flag(threads,true)"
+        libs = [f.rel for f in files if f.kind == "library"]
+        @test "library/debug.pl" in libs && "library/lists.pl" in libs && "library/dcg/high_order.pl" in libs
+        @test !files[findfirst(f -> f.rel == "library/dcg/high_order.pl", files)].exists
+        @test r2_library_deps(":- use_module(library(dcg/high_order)).\n:- autoload(library(lists), [append/3]).\nx :- y.\n") ==
+              ["dcg/high_order", "lists"]
+        @test r2_eval_cond("current_prolog_flag(threads, true)") === false
+        @test r2_eval_cond("current_prolog_flag(threads, false)") === true
+        @test r2_eval_cond("current_prolog_flag(windows, true)") === nothing
+    end
+end
+
+@testset "r2_status: the upstream C scan, the registered scan, the predicate rows" begin
+    up = r2_scan_c(_R2_FIXTURE_C, "src/pl-fixture.c")
+    keys = Set(u.key for u in up if u.kind == "pred")
+    @test "exists_file/1" in keys && "time_file/2" in keys && "\$memberchk/3" in keys     # the multi-line one too
+    @test !("in_comment/1" in keys)
+    @test "frg_fixture/0" in keys                                                       # FRG
+    cls = Dict(u.key => u.cls for u in up if u.kind == "pred")
+    @test cls["thread_self/1"] == "threads" && cls["win_only/1"] == "windows"
+    @test cls["not_win/1"] == "" && cls["tab/1"] == ""                                     # `#else` and `#endif` close the class
+    vmi = [u for u in r2_scan_c(_R2_FIXTURE_C, "src/pl-vmi.c") if u.kind == "vmi"]
+    @test Set(u.key for u in vmi) == Set(["I_ENTER", "A_ADD"])
+    @test isempty([u for u in up if u.kind == "vmi"])                                       # VMI() is read in pl-vmi.c only
+    @test isempty([u for u in r2_scan_c(replace(_R2_FIXTURE_C, "VMI(" => "XMI("), "src/pl-vmi.c") if u.kind == "vmi"])
+    reg = r2_registered([
+        """
+        const T = (
+            PL_extension("exists_file", 1, f, 0),
+            PL_extension(
+                "\\\$memberchk", 3, g, 0
+            ),
+            # PL_extension("commented", 1, h, 0),
+        )
+        """,
+    ])
+    @test reg == Set(["exists_file/1", "\$memberchk/3"])
+
+    mktempdir() do base
+        _r2_fixture(base)
+        files = r2_boot_files(base)
+        scan = r2_boot_scan(base, files)
+        @test !isempty(scan.refs) && !isempty(scan.defined)                                # both sides non-empty
+        @test "my_helper/1" in scan.defined && !("t_pred/0" in keys(scan.refs))
+        @test !haskey(scan.refs, "thread_create/3")                                        # threads.pl is skipped
+        rows = r2_pred_rows(scan.refs, up, reg, scan.defined)
+        st = Dict(r.label => r.status for r in rows)
+        @test st["exists_file/1"] == "done"
+        @test st["time_file/2"] == "missing" && st["garbage_collect/0"] == "missing" && st["\$qlf_load/2"] == "missing"
+        @test st["win_only/1"] == "platform"
+        @test st["thread_self/1"] == "missing"
+        @test !haskey(st, "my_helper/1")                                                   # defined by the boot Prolog itself
+        @test !haskey(st, "foo/1")                                                         # no C definition: no row
+        @test r2_counts(rows).done >= 1 && r2_counts(rows).nmissing >= 3 && r2_counts(rows).platform == 1
+        ft = r2_file_table(files, rows)
+        a = ft[findfirst(t -> t.rel == "boot/a.pl", ft)]
+        @test a.done == 0 && a.nmissing == 2 && a.platform == 1                            # thread_self, time_file / win_only
+        @test ft[findfirst(t -> t.rel == "boot/t.pl", ft)].loaded == false
+
+        # MUTATION: registering time_file/2 moves exactly that row from missing to done
+        rows2 = r2_pred_rows(scan.refs, up, union(reg, Set(["time_file/2"])), scan.defined)
+        @test Dict(r.label => r.status for r in rows2)["time_file/2"] == "done"
+        @test r2_counts(rows2).nmissing == r2_counts(rows).nmissing - 1
+    end
+end
+
+@testset "r2_status: the committed upstream snapshot round-trips (the drift guard's input)" begin
+    up = r2_scan_c(_R2_FIXTURE_C, "src/pl-vmi.c")
+    text = r2_snapshot_text(up, "0123456789012345678901234567890123456789")
+    back = r2_read_snapshot(text)
+    @test !isempty(up) && !isempty(back)
+    @test sort(back; by=u -> (u.kind, u.key)) == sort(unique(up); by=u -> (u.kind, u.key))
+    @test startswith(text, "# swipl-devel 0123456789")
+end
+
+@testset "r2_status: the real tree, both sides non-empty" begin
+    root = abspath(joinpath(@__DIR__, ".."))
+    files = r2_boot_files(root)
+    rels = [f.rel for f in files]
+    @test all(r -> r in rels, ["boot/init.pl", "boot/load.pl", "boot/tabling.pl", "boot/topvars.pl", "library/debug.pl"])
+    @test files[findfirst(f -> f.rel == "boot/threads.pl", files)].loaded == false
+    @test all(f -> f.exists, filter(f -> f.kind == "boot", files))
+    scan = r2_boot_scan(root, files)
+    reg = r2_registered(values(r2_kernel_texts(root)))
+    @test length(scan.refs) > 500 && !isempty(scan.defined)
+    @test length(reg) > 100 && "op/3" in reg && "between/3" in reg
+    @test r2_pin(root) !== nothing
+end
