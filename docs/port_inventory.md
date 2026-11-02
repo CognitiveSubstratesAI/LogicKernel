@@ -60,7 +60,7 @@ how many of the upstream file's functions are ported.
 | swipl-devel `src/os/pl-codelist.c` | code | `cbf4e1896275` | `src/os/pl-codelist.jl` | 1 | 1 |
 | swipl-devel `src/os/pl-ctype.c` | code | `cbf4e1896275` | `src/os/pl-ctype.jl` | 1 | 1 |
 | swipl-devel `src/os/pl-ctype.h` | code | `cbf4e1896275` | `src/os/pl-ctype.jl` | 29 | 0 |
-| swipl-devel `src/os/pl-file.c` | code | `cbf4e1896275` | `src/os/pl-file.jl` | 72 | 38 |
+| swipl-devel `src/os/pl-file.c` | code | `cbf4e1896275` | `src/os/pl-file.jl` | 139 | 57 |
 | swipl-devel `src/os/pl-file.c` | code | `cbf4e1896275` | `src/pl-global.jl` | 1 | 1 |
 | swipl-devel `src/os/pl-file.c` | code | `cbf4e1896275` | `src/pl-string.jl` | 1 | 1 |
 | swipl-devel `src/os/pl-file.h` | code | `cbf4e1896275` | `src/os/pl-file.jl` | 9 | 0 |
@@ -72,6 +72,7 @@ how many of the upstream file's functions are ported.
 | swipl-devel `src/os/pl-os.c` | code | `cbf4e1896275` | `src/os/pl-os.jl` | 6 | 6 |
 | swipl-devel `src/os/pl-os.c` | code | `cbf4e1896275` | `src/pl-arith.jl` | 0 | 0 |
 | swipl-devel `src/os/pl-os.h` | code | `cbf4e1896275` | `src/os/pl-os.jl` | 2 | 0 |
+| swipl-devel `src/os/pl-prologflag.c` | code | `cbf4e1896275` | `src/os/pl-file.jl` | 1 | 1 |
 | swipl-devel `src/os/pl-prologflag.c` | code | `cbf4e1896275` | `src/os/pl-prologflag.jl` | 45 | 32 |
 | swipl-devel `src/os/pl-prologflag.c` | code | `cbf4e1896275` | `src/pl-incl.jl` | 3 | 1 |
 | swipl-devel `src/os/pl-prologflag.h` | code | `cbf4e1896275` | `src/os/pl-prologflag.jl` | 0 | 0 |
@@ -229,7 +230,7 @@ checkout is pulled.
 | swipl-devel `src/os/pl-codelist.c` | `cbf4e1896275` | 1 | 1 | 1 | src/os/pl-codelist.jl |
 | swipl-devel `src/os/pl-ctype.c` | `cbf4e1896275` | 0 | 43 | 0 | src/os/pl-ctype.jl |
 | swipl-devel `src/os/pl-ctype.h` | `cbf4e1896275` | 0 | 0 | 0 | src/os/pl-ctype.jl |
-| swipl-devel `src/os/pl-file.c` | `cbf4e1896275` | 54 | 219 | 33 | src/os/pl-file.jl, src/pl-global.jl, src/pl-string.jl |
+| swipl-devel `src/os/pl-file.c` | `cbf4e1896275` | 99 | 219 | 45 | src/os/pl-file.jl, src/pl-global.jl, src/pl-string.jl |
 | swipl-devel `src/os/pl-file.h` | `cbf4e1896275` | 0 | 0 | 0 | src/os/pl-file.jl |
 | swipl-devel `src/os/pl-files.c` | `cbf4e1896275` | 5 | 44 | 5 | src/os/pl-files.jl |
 | swipl-devel `src/os/pl-fmt.c` | `cbf4e1896275` | 27 | 29 | 15 | src/os/pl-fmt.jl |
@@ -238,7 +239,7 @@ checkout is pulled.
 | swipl-devel `src/os/pl-option.h` | `cbf4e1896275` | 0 | 1 | 0 | src/os/pl-option.jl |
 | swipl-devel `src/os/pl-os.c` | `cbf4e1896275` | 6 | 83 | 6 | src/os/pl-os.jl, src/pl-arith.jl |
 | swipl-devel `src/os/pl-os.h` | `cbf4e1896275` | 0 | 0 | 0 | src/os/pl-os.jl |
-| swipl-devel `src/os/pl-prologflag.c` | `cbf4e1896275` | 40 | 83 | 32 | src/os/pl-prologflag.jl, src/pl-incl.jl |
+| swipl-devel `src/os/pl-prologflag.c` | `cbf4e1896275` | 41 | 83 | 33 | src/os/pl-file.jl, src/os/pl-prologflag.jl, src/pl-incl.jl |
 | swipl-devel `src/os/pl-prologflag.h` | `cbf4e1896275` | 0 | 1 | 0 | src/os/pl-prologflag.jl, src/pl-incl.jl |
 | swipl-devel `src/os/pl-stream.c` | `cbf4e1896275` | 53 | 141 | 20 | src/os/pl-file.jl, src/os/pl-stream.jl |
 | swipl-devel `src/os/pl-string.c` | `cbf4e1896275` | 1 | 12 | 0 | src/os/pl-string.jl |
@@ -327,7 +328,7 @@ checkout is pulled.
 | swipl-devel `tests/db/test_db.pl` | `cbf4e1896275` | 2 | 10 | 0 | test/db/test_db.jl |
 | swipl-devel `tests/db/test_jit.pl` | `cbf4e1896275` | 16 | 21 | 0 | test/db/test_jit.jl |
 | swipl-devel `tests/rational/test_ieee754.pl` | `cbf4e1896275` | 0 | 15 | 0 | test/rational/test_ieee754.jl |
-| **total** | | **1724** | **5252** | **998** | |
+| **total** | | **1773** | **5252** | **1013** | |
 <!-- END GENERATED coverage -->
 
 ### Not ported: unreachable upstream
