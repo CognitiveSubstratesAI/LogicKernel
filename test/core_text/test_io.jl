@@ -9,8 +9,8 @@
 # ends, with `PL_exception`, as plunit's `error(existence_error(stream, protocol))` reads the one it
 # caught: the formal term is compared, the context is not.
 #
+# PORTED since RD1: no_protocol_in (read_term/3 on the standard alias `protocol`, pl-read.c, registered in src/pl-read.jl).
 # NOT PORTED, and why:
-#   io: no_protocol_in      read_term/3 on a stream; the kernel reads from text only until R2.
 #   io: every other unit    open/4, open_null_stream/1, close/1, set_stream/2, current_input/1,
 #                           current_output/1 — files and stream handles: R2.
 #   stream_pair ×3          stream_pair/3: R2.
@@ -54,6 +54,19 @@ end
     # PORT: test_io.pl no_protocol_out
     @testset "no_protocol_out" begin                # error(existence_error(stream, protocol))
         rc, ball = _tiorun(gd, ld, "write", _tios("protocol"), _tios("x"))
+        @test rc == _TIO_LK.PL_S_EXCEPTION
+        @test ball !== nothing && lk_name(child(ball, 1)) === :error &&
+            lk_eq(
+                child(ball, 2),
+                _tiof("existence_error", _tios("stream"), _tios("protocol"))
+            )
+    end
+    # PORT: test_io.pl no_protocol_in
+    @testset "no_protocol_in" begin                 # error(existence_error(stream, protocol))
+        rc, ball = _tiorun(
+            gd, ld, "read_term", _tios("protocol"),
+            mk_var(_TIO, _TIO_LK.fresh_var_keys!(1)), mk_nil(_TIO)
+        )
         @test rc == _TIO_LK.PL_S_EXCEPTION
         @test ball !== nothing && lk_name(child(ball, 1)) === :error &&
             lk_eq(

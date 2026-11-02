@@ -76,3 +76,32 @@ the new test file on all three term types, test/test_type_discipline.jl, push `m
 push `gate/rd1` and `mutants/RD1` at the SAME SHA; Tier 3: no battery, but the ROOT SUITE runs; alloc pins x3 are NOT needed (no pl-global/Tier-1 file).
 A daemon slot is needed for the first smoke run (read/1 through the `foreigns` dispatch is the one thing unrun: `_fcall_det` tree grew by 4 entries,
 and one FRG entry per arity of `read`/`$raw_read` with the same name: registerBuiltins! must accept two arities of one name, as write/1 and write/2).
+
+## WRITER 2 (edit-only, nothing compiled or run; hand-back at the 150k cap)
+Commits on wip/rd1 after 17d795e: 36a2ad9 (group 2 rows), bc28041 (group 3 mutants), then the commit holding this handoff + the test_io.jl change (see git log).
+- Group 2 DONE (unrun): test/core_text/test_read_stream_swipl.jl (190 rows rt01-rt219, rt300-rt304; 15 are `_RT_KNOWN`). NAME: the brief's
+  test_read_term_swipl.jl is R1d's gate file (571 lines, exists on main): NOT overwritten, hence `test_read_stream_swipl.jl`. Pins = swipl 10.1.19,
+  LC_ALL=C, two byte-identical runs (evidence/RD1/rt_rows.out; gen_rows.py regenerates rt_rows.pl/rt_driver.pl, `--fill` writes the pins).
+  Row design: program helpers rt_str (open_string/2), rt_file/rt_bin/rt_out (open/3 + write/2 on `@RTDIR@/rt.txt`), rt_serr (syntax-error location,
+  file name and stream dropped); the kernel runner makes a fresh engine per row and prints a Julia exception as `jlerr <type> <what>`.
+  Oracle surprises (pinned as swipl answers, the brief's expectations were different): a binary stream is READ (no permission_error(input,binary_stream));
+  an output stream is permission_error(read,stream,S); `syntax_errors(bar)` is accepted; `variable_names(foo)`/`variables(foo)`/`term_position(foo)` FAIL;
+  `/* abc` unterminated on a FILE stream has context stream(...) not file(...) (rt113, rt187: the kernel's file(...) will likely differ: gate decides).
+  KNOWN rows (kernel pin READ from the source, NOT RUN): rt300-rt304 (comments, var_prefix, quasi_quotations, blob(error), unicode_atoms(accept):
+  `NotPortedError` "read_term's <opt> option"), rt87-89, rt120-124, rt176, rt184 (syntax error over open_string/2: Sopenmem is not Sstringfunctions, so
+  `unify_location` throws "unify_location: a stream's location, stream(S, L, LP, C)": flag 4). If a pin is wrong the gate agent fixes it from the kernel's line.
+  UNVERIFIED stdin rows rt21-rt26, rt170, rt171 (stdin /dev/null in run_tests.sh). Not yet run: also check Julia syntax, `warm.sh fmt` will re-flow long lines.
+- Group 3 DONE: tools/mutants/RD1.py, 21 mutants (checked: old once, new != old, ids unique, targets exist); 2 ISO-flag mutants declared equivalent (read, not run).
+- Group 5 PARTLY: stale-pin hunt DONE: only test/core_text/test_io.jl named read_term (the `no_protocol_in` note "reads from text only until R2"): reworded and the
+  upstream unit no_protocol_in ported (read_term(protocol, _, []) -> existence_error(stream, protocol), `_tiorun` on read_term/3 in MODULE_system: unrun, the gate agent
+  checks it passes; if read_term/3 is not found in the system module, fix the lookup). No other test pins read/1,2, read_term, $raw_read, $is_named_var as unknown.
+- registerBuiltins!: NOT read (cap). The precedent holds in the list itself: write/1 and write/2, writeq/1 and writeq/2 are both in the `foreigns` list of
+  src/pl-ext.jl (lines 42, 57, 43, 59), so two arities of one name are accepted there; the gate agent's first smoke run is the check.
+- STILL TO DO (a fresh agent, 2 small commits): (4) test/static_analysis_manifest.jl: APPEND entries for pl_read_term3_va, pl_read_term2_va, pl_is_named_var1_va,
+  pl_raw_read2, pl_raw_read, pl_read2, pl_read in the shape of the `pl_read_clause3_va` entry (grep it); (5) docs/architecture.md: APPEND at the END an RD1 block
+  (UPSTREAM header names pl-read.c, pl-ext.c kept; bullets UPSTREAM/DIVERGES/ORIGINAL; DIVERGES: no stream locks, no free_read_data, refused options, the
+  Sstringfunctions/unify_location limit); never regenerate docs/port_inventory.md; then final handoff copy to ~/code/lk-channel/evidence/RD1/handoff2.md.
+- FLAGS 1-4 unchanged (the audit's). New flag 8: the brief's file name collided (see above); flag 9: rt113/rt187 context difference (file vs stream) is likely a real kernel DIVERGES
+  of the reader's block-comment error: the gate agent reports the kernel line.
+- Gate agent runs: fmt, inventory, check (Pkg.test-way on test_read_stream_swipl.jl and test_io.jl), the rows file on all three term types, test/test_type_discipline.jl, push mutants/RD1 + gate/rd1 at one SHA; first smoke run needs a daemon slot.
+- No branch deleted. Tier 3.
