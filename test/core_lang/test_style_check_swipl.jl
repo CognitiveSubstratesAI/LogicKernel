@@ -173,7 +173,7 @@ end
 function _sc_kernel(path::String, names::Vector{String})
     gd = LK.PL_global_data{_SC}()
     ld = LK.PL_local_data{_SC}(gd)
-    st, ball, _ = LK.load_file!(gd, ld, path)
+    st, ball = LK.load_file!(gd, ld, path)
     out = [st === :ok ? "ok" : "exc " * _sc_enc(ball::_SC)]
     for name in names
         proc = LK.isCurrentProcedure(sym_key(_scs(name)), 1, LK.MODULE_user(gd))

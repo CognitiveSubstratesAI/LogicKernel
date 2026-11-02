@@ -1750,9 +1750,9 @@ function setMetapredicateMask(def::Definition{T}, args::Vector{arg_info})::Nothi
 end
 
 # PORT: pl-proc.c meta_declaration
-# DIVERGES: `ReadingSource` (a declaration while a file loads) needs `setMetapredicateSource`, the
-# loader's (pl-srcfile.c; LB2): refused by name until then (A-0149 decision 2, accepted D-0246). The masks are a
-# vector, where upstream's are on the C stack.
+# (swipl-devel cbf4e189, src/pl-proc.c:2025-2089; since R2 LB4 b2 the `ReadingSource` branch is upstream's,
+# `setMetapredicateSource` of src/pl-srcfile.jl: the first boot runs init.pl's `:- meta_predicate` directives)
+# DIVERGES: the masks are a vector, where upstream's are on the C stack.
 "Declare the meta-argument (`ismeta`) or mode masks of the predicate `spec` names (pl-proc.c)."
 function meta_declaration(
     gd::PL_global_data{T}, ld::PL_local_data{T}, spec::term_t, ismeta::Bool
@@ -1801,16 +1801,15 @@ function meta_declaration(
         end
     end
 
-    if ReadingSource(ld)
-        throw(
-            NotPortedError{T}(
-                name, "meta_predicate/1 while loading a file (setMetapredicateSource)",
-                "LB2"
-            )
-        )
+    rc = if ReadingSource(ld)
+        sf = lookupSourceFile(gd, ld.read_source.file::T, true)::SourceFile{T}   # lookupSourceFile(source_file_name, true)
+        r = setMetapredicateSource(ld, sf, proc, args)
+        releaseSourceFile(sf)
+        r
+    else
+        setMetapredicateMask(proc.definition, args)
+        true
     end
-    setMetapredicateMask(proc.definition, args)
-    rc = true
     PL_reset_term_refs(ld, head)
     return rc
 end

@@ -332,3 +332,49 @@ NEXT AGENT: when a daemon slot is free (load < 8, <= 3 daemons): the local merge
   `LOGICKERNEL_WARM_THIRD=1 tools/warm.sh start` in this worktree (cold compile ~30 min: three struct changes), the
   first boot, fixes on wip/lb4b2c. Gate files to run first: test/db/test_boot_image_swipl.jl, test_boot_clauses_swipl.jl,
   test_boot_messages_swipl.jl, test/files/test_load_swipl.jl, test/files/test_qlf_swipl.jl.
+
+## State (writer 9, G9 first boot, 2026-11-02 ~19:10Z; FORCED hand-back by the 150k cap hook)
+RUN TREE ~/code/lk-lb4b2-run (branch wip/lb4b2-run at 0c85fe6, NEVER commit/push it): an UNCOMMITTED, STAGED merge of
+  wip/bootpred3b, wip/lb2bw, wip/pr1c, wip/f2u, wip/rd1 (no dict), made as `git diff <merge-base> <branch> > p; git apply
+  --3way p`, conflicts resolved keep-both (docs/architecture.md each time; manifest: b1 block + BOOTPRED3 block, LB3/S2a/P1
+  + _manifest_lb2b, Q10/BOOTPRED3 + RD1 entries; src/LogicKernel.jl pl-glob.jl include before pl-file.jl; src/pl-ext.jl
+  `_PRED_TABLES`/`_FOREIGN_VA` wic + glob, foreigns[] in upstream order pl-ext.c:116-118 read/$raw_read BEFORE 125-126
+  abolish, 171 garbage_collect_clauses BEFORE 175 read/2; src/pl-global.jl our fields then `paths_CWDdir`, the LB2b
+  comment line before `# PORT: pl-setup.c setupProlog`, ctor `dc_proc,` then `""`; docs/port_inventory.md ours (generated)).
+  Home tree built in the run tree on the daemon (tools/build_home.jl via `warm.sh send`; gitignored; F2 stays the audit's).
+  Three-value `load_file!` destructurings fixed IN THE RUN TREE ONLY for other branches' files (they fix them when they
+  land second, D-0360 item 10): test/files/test_lb2b_swipl.jl:137,234 (lb2bw), test/core_text/test_read_stream_swipl.jl:533
+  (rd1), test/core_lang/test_push_flag_swipl.jl:350,414 (f2u), test_bootpred3_swipl.jl:349 (bootpred3b),
+  test_pr1_swipl.jl:486 (pr1c).
+DAEMON: unit logickernel-warm-17790d9d (pid 95631) in lk-lb4b2-run, started LOGICKERNEL_WARM_SECOND=1 via the ABSOLUTE
+  path /home/shivaji1012/code/lk-lb4b2-run/tools/warm.sh (a `cd` does NOT carry over in an agent; my first start landed in
+  lk-dstack and was stopped by me within a minute). It came up in ~5 min, NOT 30: warm_session's Revise.stale_load took
+  the newest cache and revised it; a probe confirmed the layout is current (PL_global_data has 42 fields incl.
+  paths_CWDdir and procedures_print_message2). Dispatcher told "ready". LEFT RUNNING for the next agent.
+UNCOMMITTED FIXES in ~/code/lk-lb4b2 (wip/lb4b2c; the cap hook blocked the commit; the next agent reviews, term-greps and
+  commits them, then re-applies nothing: they are ALREADY in the run tree via $S/p1.patch):
+  (1) test/db/test_boot_messages_swipl.jl:74-76 `:(;)`, `:(,)`, `:(:-)` are no Julia symbols (ParseError at 75:19):
+      Symbol(";"), Symbol(","), Symbol(":-").
+  (2) test/core_lang/test_style_check_swipl.jl:176 (Q10, on main) read three values from load_file!: b2's own breakage.
+  (3) FIRST-BOOT FINDING 1, FIXED (verified: the boot passes it): pl-proc.c:2077-2081 meta_declaration's ReadingSource
+      branch -> src/pl-proc.jl (the LB2 refusal replaced by upstream's branch) + NEW src/pl-srcfile.jl
+      setMetapredicateSource (pl-srcfile.c:1333-1360, the non-reload branch; reload is LB6) + manifest entry appended
+      to the LB4 b2 block. Hit by init.pl's first `:- meta_predicate` directive during boot_from_source!.
+FIRST RUN of test/db/test_boot_messages_swipl.jl [3 types]: 21 pass, 6 fail, 6 error, ALL from finding 1 (boot raised,
+  so load_files/2 and print_message/2 undefined). NOT re-run after the fix.
+FIRST-BOOT FINDING 2, OPEN (traced, not fixed): a probe boot (setupProlog + boot_from_source!, NO query before it) raises
+  at once "atom word 0x4c05 has no recorded symbol": src/pl-qlf.jl:47 directiveClause builds `PL_cons_functor(ld,
+  directive, FUNCTOR_colon2, m, d0)` with the BUILT-IN functor; ':' (builtin atom 152, src/ATOMS `A colon`) never got
+  its symbol in this database (atom_symbols is filled only by `_atom_word!`, src/pl-atom.jl:2248-2288), so the next
+  PL_is_functor (src/pl-fli.jl:582 `_atom_value`) in update_conditional_compilation (src/pl-qlf.jl:94) throws. The test
+  file escaped it only because its query_answers on `user:...` recorded ':' first. boot_global_data (the template boot)
+  takes exactly the probe's path, so EVERY database build will hit it. Options: (a) record the symbol of every built-in
+  atom at setupProlog/do_init_atoms! (mk_nil for "[]"; reserved-symbol blobs need care: read src/pl-inline.jl:218
+  `_atom_word!(atoms, syms, v)` and src/pl-atom.jl:2516 registerBuiltinAtoms first) - restores the C6b invariant for all
+  ATOM_/FUNCTOR_ constants; (b) PL_is_functor compare words (`n == _atom_word!(ld, name)`, upstream compares functor_t)
+  - local, other readers of ':' would still miss. RECOMMEND (a), a representation-only change; it touches
+  setupProlog (pl-global.jl): alloc pins x3 at the gate.
+NEXT AGENT (fresh, Opus): commit (1)-(3) on wip/lb4b2c; fix finding 2 in the clean tree, `git diff > p; git apply` into the
+  run tree; re-run the probe $S/boot.jl (copy in evidence: the snippet is setupProlog + boot_from_source! printing the
+  exception and ld.messages) then the five files in order (boot_messages, boot_image, boot_clauses, load, qlf), each
+  ALONE (a messages run took ~15 min: compile + boot, 3 types). Pins only after each difference is traced.

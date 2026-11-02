@@ -2928,7 +2928,9 @@ _manifest_gd_template(::Type{T}) where {T} = (
     # pl-qlf.c compileFileList) and addClauseWic's pl_write(term) (pl-qlf.c:3220-3238)
     (LK.setupProlog, Tuple{Type{T}}, false),
     (LK.boot_global_data, Tuple{Type{T}}, false),
-    (LK._qlf_pl_write!, Tuple{LK.PL_local_data{T}, Int}, false)
+    (LK._qlf_pl_write!, Tuple{LK.PL_local_data{T}, Int}, false),
+    # LB4 b2 first boot (G9): meta_declaration's ReadingSource branch (pl-srcfile.c setMetapredicateSource)
+    (LK.setMetapredicateSource, Tuple{LK.PL_local_data{T}, LK.SourceFile{T}, LK.Procedure{T}, Vector{LK.arg_info}}, false)
 )
 
 const _DISPATCH_MANIFEST_TUPLE = (

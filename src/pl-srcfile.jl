@@ -156,6 +156,19 @@ function setAttrProcedureSource(
     return setAttrDefinition(ld, proc.definition, attr, val)
 end
 
+# PORT: pl-srcfile.c setMetapredicateSource
+# (swipl-devel cbf4e189, src/pl-srcfile.c:1333-1360)
+# DIVERGES: no reload context (as `setAttrProcedureSource`): `sf->reload` is set by a re-consult, which
+# `startConsult` refuses (LB6), so the branch taken is upstream's `else`; `ld` is an argument (see `associateSource`).
+"Set the meta-argument masks `args` of `proc` while loading the source file `sf` (pl-srcfile.c)."
+function setMetapredicateSource(
+    ld::PL_local_data{T}, sf::SourceFile{T}, proc::Procedure{T}, args::Vector{arg_info}
+)::Bool where {T}
+    associateSource(ld, sf, proc)
+    setMetapredicateMask(proc.definition, args)
+    return true
+end
+
 # PORT: pl-srcfile.c startConsult
 # DIVERGES: a RE-consult — the file was consulted before — is refused (`NotPortedError`):
 # `startReconsultFile` and its reload context are not ported (LB6, loader_boot H9).
