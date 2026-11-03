@@ -132,8 +132,11 @@ function get_size_or_inf(ld::PL_local_data{T}, t::term_t)::Union{Nothing, Int} w
 end
 
 # PORT: pl-tabling.c tbl_set_incremental_predicate
+# DIVERGES: the database is an argument (a wrapped predicate keeps its wrapper: `freeCodesDefinition!` finds the closure there).
 "Switch the incremental tabling of `def` on or off; a change resets its supervisor (pl-tabling.c)."
-function tbl_set_incremental_predicate(def::Definition, val::Bool)::Nothing
+function tbl_set_incremental_predicate(
+    gd::PL_global_data{T}, def::Definition{T}, val::Bool
+)::Nothing where {T}
     p = get_predicate_table_props!(def)
     now = (p.flags & TP_INCREMENTAL) != 0
 
@@ -143,7 +146,7 @@ function tbl_set_incremental_predicate(def::Definition, val::Bool)::Nothing
         else
             p.flags &= ~TP_INCREMENTAL
         end
-        freeCodesDefinition!(def, true)
+        freeCodesDefinition!(gd, def, true)
     end
     return nothing
 end
@@ -156,7 +159,7 @@ function set_bool_attr(
     v = PL_get_bool_ex(ld, value)
     v === nothing && return false
     if flag == TP_INCREMENTAL
-        tbl_set_incremental_predicate(def, v)
+        tbl_set_incremental_predicate(_query_gd(ld), def, v)
         return true
     else
         props = get_predicate_table_props!(def)

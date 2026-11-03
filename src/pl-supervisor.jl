@@ -16,10 +16,10 @@
 # freeing a supervisor and lingering it for other threads do not exist. The database's global data
 # is passed in where upstream reads `global_generation()`.
 #
-# Since V5a2, the deterministic foreign supervisors (`createForeignSupervisor`). NOT PORTED: the
-# non-deterministic ones (`I_FOPENNDET` …, V9), the wrapper supervisors
-# (`S_CALLWRAPPER`, `wrap_predicate/4`), the tabling supervisors (`S_INCR_DYNAMIC`, `S_TRIE_GEN`) and
-# `S_THREAD_LOCAL` — none of their subsystems exists.
+# Since V5a2, the deterministic foreign supervisors (`createForeignSupervisor`). Left out: the
+# non-deterministic ones (`I_FOPENNDET` …, V9), the tabling supervisors (`S_INCR_DYNAMIC`, `S_TRIE_GEN`) and
+# `S_THREAD_LOCAL` — none of their subsystems exists. Since TAB1-min (T3/T4/T5) the wrapper supervisors
+# (`S_CALLWRAPPER`, `S_TABLED`; src/pl-wrap.jl) are installed by `'$c_wrap_predicate'/5` and kept by `freeCodesDefinition!`.
 
 # PORT: pl-supervisor.c initSupervisors
 # DIVERGES: returns the database's shared blocks (one `PL_code_data` per database). Each is
@@ -50,12 +50,44 @@ end
 freeSupervisor(def::Definition, codes::Vector{code}, do_linger::Bool)::Nothing = nothing
 
 # PORT: pl-supervisor.c freeCodesDefinition as freeCodesDefinition!
-# DIVERGES: no wrapper supervisors (`S_CALLWRAPPER`), so the wrapper branch is not ported. The side
-# table is left as it is: `S_VIRGIN` has no operand to read it.
-"Reset `def`'s supervisor to the shared `S_VIRGIN` (pl-supervisor.c `freeCodesDefinition`)."
-function freeCodesDefinition!(def::Definition, do_linger::Bool)::Nothing
+# DIVERGES: the side table is left as it is: `S_VIRGIN` has no operand to read it. The WRAPPER branch needs the closure a
+# wrapper supervisor names, which is found in the database's table (`gd.closure_refs`): the method with `gd` is the whole
+# function, and the method without `gd` raises a named error for a wrapped predicate (the callers without a database are
+# `setDynamicDefinition!`, `resetProcedure!`, `setThreadLocalDefinition!`; threading `gd` through them is TAB1's).
+"Reset `def`'s supervisor to the shared `S_VIRGIN`; a wrapped predicate keeps its wrapper and resets the wrapped supervisor (pl-supervisor.c `freeCodesDefinition`)."
+function freeCodesDefinition!(
+    gd::PL_global_data{T}, def::Definition{T}, do_linger::Bool
+)::Nothing where {T}
     virgin = def.code_data.virgin
     if (codes = def.codes) !== virgin
+        if isCallWrapper(codes[skipWrapperPrefix(codes)])   # unlikely(isCallWrapper(skipWrapperPrefix(codes)[0]))
+            resetWrappedSupervisor(gd, def, do_linger)
+            if !do_linger
+                codes = def.codes
+                def.codes = virgin
+                freeSupervisor(def, codes, do_linger)
+            end
+        else
+            def.codes = virgin
+            freeSupervisor(def, codes, do_linger)
+        end
+    end
+    return nothing
+end
+
+# PORT: pl-supervisor.c freeCodesDefinition as freeCodesDefinition!
+# DIVERGES: see above: a definition with a wrapper supervisor is refused by name, never reset silently.
+"Reset `def`'s supervisor to the shared `S_VIRGIN`; the method without the database refuses a wrapped predicate (pl-supervisor.c)."
+function freeCodesDefinition!(def::Definition{T}, do_linger::Bool)::Nothing where {T}
+    virgin = def.code_data.virgin
+    if (codes = def.codes) !== virgin
+        if isCallWrapper(codes[skipWrapperPrefix(codes)])
+            throw(
+                NotPortedError{T}(
+                    def.name, "freeCodesDefinition! of a wrapped predicate needs the database", "TAB1"
+                )
+            )
+        end
         def.codes = virgin
         freeSupervisor(def, codes, do_linger)
     end

@@ -116,6 +116,38 @@ function skipWrapperPrefix(codes::Vector{code}, pc::Int=1)::Int
     end
 end
 
+# PORT: pl-wrap.c unregisterWrappedSupervisor
+# DIVERGES: a no-op. Upstream drops the references the supervisor holds on the closure atom and the wrapper name
+# (`PL_unregister_atom`); atoms live for ever here (see the file header).
+"Release the atoms a wrapper supervisor `codes` references (pl-wrap.c; a no-op here, see above)."
+unregisterWrappedSupervisor(codes::Vector{code})::Nothing = nothing
+
+# PORT: pl-wrap.c resetWrappedSupervisor
+# DIVERGES: the database is an argument (the closures are found from their atom words); the innermost closure's `wrapped`
+# supervisor is replaced by the shared `S_VIRGIN` and an empty side table (upstream: `impl.wrapped.supervisor =
+# SUPERVISOR(virgin)`).
+"""
+Called from `freeCodesDefinition!` to reset the eventually wrapped supervisor to `S_VIRGIN` after a change to the wrapped
+predicate. `S_WRAP` will eventually trap this and re-create an appropriate new supervisor (pl-wrap.c).
+"""
+function resetWrappedSupervisor(
+    gd::PL_global_data{T}, def0::Definition{T}, do_linger::Bool
+)::Nothing where {T}
+    codes = def0.codes
+    cw = skipWrapperPrefix(codes)
+    c = nothing
+    while isCallWrapper(codes[cw])
+        c = closure_of_word(gd, codes[cw + 2])::closure{T}      # PL_blob_data(cw[2], NULL, NULL)
+        codes = c.supervisor                                    # c->def.impl.wrapped.supervisor
+        cw = skipWrapperPrefix(codes)
+    end
+    @assert c !== nothing                                       # assert(def != def0): def is the definition inside the closure
+    c.supervisor = def0.code_data.virgin                        # def->impl.wrapped.supervisor = SUPERVISOR(virgin)
+    c.supervisor_crefs = ClauseRef{T}[]
+    freeSupervisor(c.def, codes, do_linger)
+    return nothing
+end
+
 # PORT: pl-wrap.c find_wrapper
 # DIVERGES: the database is an argument (the closure is found from its atom word); returns the supervisor holding the
 # wrapper (its code, its side table) and the index of the wrapper instruction in the code, or `nothing` (upstream: the `Code`

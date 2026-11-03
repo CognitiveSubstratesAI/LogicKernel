@@ -515,7 +515,7 @@ function _assertDefinition!(
         cl.number_of_rules += 1
     end
     if (def.flags & (P_DYNAMIC | P_LOCKED_SUPERVISOR)) == 0     # see (*) above
-        freeCodesDefinition!(def, true)
+        freeCodesDefinition!(gd, def, true)
     end
     addClauseToIndexes!(def, clause, where_)
     gd._generation += 1                                 # PL_LOCK(L_GENERATION)

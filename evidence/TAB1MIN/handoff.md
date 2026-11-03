@@ -174,3 +174,60 @@ PL_code_data, pl-wam.jl bodies) was not touched. T4 and T5 need T3's names (`S_C
    one file at a time, alloc pins x3 (239/377/433; test_query 347 old main / 365 after ENG3), static_analysis (JET + AllocCheck), term grep, gate/tab1min + mutants/TAB1MIN at the same SHA.
    Expected effect on the T3 pin: `$init_goal/3` 2 -> 7 and load.pl's list reaching user:topvars; tabling.pl cannot be read before RDDICT (`#{}` :1280, `Dict0.put` :1373).
 Daemon state: writer 2 started none, ran no Julia.
+
+## WRITER 3 (Sonnet, edit-only; nothing compiled or run: every line UNVERIFIED). Forced hand-back at the 150k cap.
+origin/main fetched at start: STILL f08167f (ENG3 NOT landed): T3 NOT TOUCHED. Scratch prefix t1w3-.
+### Committed / staged
+- 3ed9158 T4: src/pl-wrap.jl (NEW): closure_blob, _closure_bytes, closure_of_word(gd, w), initWrap!(atoms) (called in the
+  PL_global_data constructor right after initDBRef!, pl-global.jl), unify_closure, get_closure_predicate, isCallWrapper,
+  skipWrapperPrefix(codes, pc=1)::Int (1-based index; S_DET left out: not declared), find_wrapper(gd, def, namew) ->
+  (codes, crefs, i) | nothing, assert_wrapper, unify_wrapped, wrapper_vmi, pl_c_wrap_predicate5_va, PL_predicates_from_wrap
+  (PL_FA_TRANSPARENT|PL_FA_VARARGS); included after pl-tabling.jl in LogicKernel.jl, appended to _PRED_TABLES/_FOREIGN_VA.
+  Wrapper supervisor layout: codes = code[op, 1, closure atom word, wrapper name atom word] (op at i, side-table index i+1,
+  closure i+2, name i+3), crefs = [wrapper clause ref]; chained by chainPredicateSupervisor; installed by assigning
+  def.codes / def.codes_crefs.
+- T5 STAGED in the index (src/pl-supervisor.jl, src/pl-wrap.jl, src/pl-proc.jl, src/pl-tabling.jl), committed together with this
+  handoff by the writer's last command (message: evidence/TAB1MIN/t1w3-msg-t5.txt in lk-channel, removed after): if `git log` does
+  not show it, run `git status`, and commit the staged files with the message "UPSTREAM: pl-supervisor.c freeCodesDefinition wrapper
+  branch; pl-wrap.c resetWrappedSupervisor, unregisterWrappedSupervisor (swipl-devel cbf4e1896275)".
+  Content: freeCodesDefinition!(gd, def, do_linger) = the whole upstream function (pl-supervisor.c:108-129); the 2-argument method
+  keeps the old behaviour for an unwrapped def and THROWS NotPortedError naming "freeCodesDefinition! of a wrapped predicate needs the
+  database" for a wrapped one; resetWrappedSupervisor(gd, def0, do_linger) and a no-op unregisterWrappedSupervisor in pl-wrap.jl;
+  _assertDefinition! (pl-proc.jl) passes gd; tbl_set_incremental_predicate now takes gd (set_bool_attr passes _query_gd(ld)).
+### DESIGN QUESTION for the audit (T5)
+Q-A: freeCodesDefinition! has no database at setDynamicDefinition! (pl-proc.jl:363), resetProcedure! (:926), setThreadLocalDefinition!
+(:1537); the closure is found through gd.closure_refs. Options: (a) as written: the 2-arg method refuses a wrapped predicate by name
+(`dynamic`/abolish of a wrapped predicate then raises; deferred to TAB1); (b) thread gd through those three functions and their ~25
+callers (test files call setDynamicDefinition!(def, bool)); (c) a closure back-pointer in `definition` (impossible: mutually recursive
+structs). RECOMMEND (a) for the minimal slice.
+### NOT DONE (all UNVERIFIED / NOT STARTED), in order
+1. T5 white-box row (an installed wrapper survives the first added clause; must FAIL without T5) and rows tmt23+: groups tma (T2 attribute
+   rows), tmw (`$c_wrap_predicate`), tmc (clause after wrap), pins from swipl 10.1.19 via evidence/TAB1MIN/gen_rows.py (see the T1 notes
+   above: `_TM_CASES`, two byte-identical runs, `--fill`, extend the non-vacuity prefix list).
+2. tools/mutants/TAB1MIN.py (>= 10 mutants over T1/T2/T4/T5; TARGETS: test_tabling_min_swipl.jl, test_pr1_swipl.jl (getter row pr93),
+   test_type_discipline.jl, test_atom_table.jl [the `closure` atom adds one atom to a fresh database: grep for a pinned count]; module
+   TARGETS only real test files: `grep -L '@testset\|@test'`); candidate mutants: T1 `w == ATOM_trienode` -> `!=`; `mk_reserved_symbol` ->
+   `mk_sym`; T4 `codes[i + 3] == name` -> `!=`; wrapper_vmi S_TABLED<->S_CALLWRAPPER; skipWrapperPrefix `pc += 2` -> `+= 1`; T5 drop the
+   `isCallWrapper` branch of freeCodesDefinition!; resetWrappedSupervisor `c.supervisor = virgin` removed; T2 `p.flags |= flag`.
+   Every `old` once (throwaway python3 -I checker), ids unique, old != new.
+3. Manifest entries at the END of `_manifest_index` (test/static_analysis_manifest.jl): T1 pl_tbl_trienode1_va / pl_tbl_is_trienode1_va
+   (Tuple{LD, Int, Int, LK.control_t{T}} rows like the BOOTPRED3 block), PL_predicates_from_tabling, T2 functions (clear_table_props!,
+   tbl_reset_tabling_attributes!, get_predicate_table_props!, tbl_get_predicate_attribute, get_size_or_inf,
+   tbl_set_incremental_predicate(gd, def, Bool), set_bool_attr, tbl_set_predicate_attribute), T4 (closure_of_word, initWrap!, unify_closure,
+   get_closure_predicate, isCallWrapper, skipWrapperPrefix, unregisterWrappedSupervisor, resetWrappedSupervisor, find_wrapper, assert_wrapper,
+   unify_wrapped, wrapper_vmi, pl_c_wrap_predicate5_va, _closure_bytes), T5 (the 3-arg freeCodesDefinition!; the 2-arg row at
+   test/static_analysis_manifest.jl:1416 stays); docs/architecture.md block at the END (rows for src/pl-tabling.jl and src/pl-wrap.jl;
+   DIVERGES: table_props sizes as Int with -1 for (size_t)-1 and the representation_error above typemax(Int); lazy_queue left to TAB1;
+   `<closure>(m:p/1)` needs a writer blob hook: a DIVERGES row; closure = a record, owner WRAP1). Never regenerate docs/port_inventory.md.
+4. T3 (after ENG3 lands: `git fetch origin`, `git rebase origin/main`): see "Left, in order" item 3 of writer 2 above; T4/T5 need
+   S_CALLWRAPPER, S_TABLED, S_WRAP, `code_data.wrapper` (a 7th block in PL_code_data, initSupervisors, the PL_code_data literal in
+   pl-global.jl ~611), S_MQUAL/S_LMQUAL/S_SSU_DET exist (pl-vmi.jl:567-582, S_DET is NOT declared). Opcodes at the PIN's VMI order, named
+   refusals in pl-wam.jl, keep one declared opcode outside VMI_RUN (test/foreign/test_query.jl:305-330).
+5. READY-FOR-GATE (D-order): inventory, fmt via warm.sh send, check (cold compile: struct change), rows x3, type discipline, test_atom_table,
+   manifest entries, pkgtest_way (one file at a time), alloc pins x3 (239/377/433; test_query 347 on f08167f / 365 after ENG3), static analysis
+   (JET + AllocCheck), term grep (crash-term pattern over diff + messages), gate/tab1min + mutants/TAB1MIN at the same SHA.
+   Things the gate must check that the writers could not: `ClauseList{T}()` + `cl.args =` assignment (clause_list is mutable), `PL_unify_functor`
+   with a blob T-term as the name, `atomValue(gd.atoms, w)` on a blob word, `_atom_value(ld, w)` for the closure word (symbol recorded by
+   `_blob_term!`), `assert_term!` accepting a blob-headed compound inside the wrapper clause body (open since writer 1), whether the
+   `closure` atom shifts a pinned atom count (test_atom_table.jl) or blob rank.
+Daemon state: writer 3 started none, ran no Julia.
