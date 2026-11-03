@@ -111,3 +111,47 @@ Committed by writer 2:
   UNVERIFIED on the kernel: every kernel answer. Likeliest to differ: kernel lacks stream_property/2 natively (boot/init.pl), the rows avoid it;
   lb010-011 (kernel open/4 record_position(false)); lb097-106 (the kernel does not restore a captured standard alias on close:
   restoreStandardStream NOT STARTED; the rows restore inside the row); at_end_of_stream/0, get_code/1, tab on user_input read process stdin: no row.
+- 1fdaecd G5 committed (rows lb001-lb106 + evidence/LB5 generator/pins). Pins: two byte-identical swipl runs (done).
+## WRITER 2 HAND-BACK (150k cap). LEFT, in order:
+A. (optional, small) two more rows for the mutants: append at the END of CASES in the throwaway table (or add by hand to
+   test/core_lang/test_lb5_swipl.jl `_LB5_CASES`, then re-run evidence/LB5/gen_rows.py + swipl x2 + --fill): lb107
+   `write_size('abcd\nx', W, H, []), R = W-H` (widest line is not the last; kills a mutant `width = pos.linepos`), lb108
+   `line_count(user_output, N), integer(N), R = yes` (alias argument). Then bump the header "(lb001-lb106)" and the
+   `length(answered) >= 95` / noans list stay valid unless a new row has no answer.
+B. G6 tools/mutants/LB5.py (model tools/mutants/MOD3b.py: header comment, TS/TARGETS lists, `MUTANTS = [dict(id=, file=, old=, new=, targets=)]`).
+   TARGETS: test/core_lang/test_lb5_swipl.jl first, then per mutant (grep -l result, non-recursive globs):
+   current_output/input: test_io.jl, test_write_family_swipl.jl, test_canonical_readatom_swipl.jl, files/test_open_close_swipl.jl, test_blob.jl, test_compare_swipl.jl;
+   line_count/position: core_text/test_io.jl, files/test_stream_swipl.jl, core_lang/test_s2a_swipl.jl, test_pr1_swipl.jl, test_module_swipl.jl;
+   set_stream alias: core_lang/test_s2a_swipl.jl, core_text/test_io.jl, test_write_family_swipl.jl, test_canonical_readatom_swipl.jl, files/test_open_close_swipl.jl;
+   get_code: files/test_open_close_swipl.jl; put_code/put_char: core_text/test_read.jl. (D-0238: also the brief's four: write-family, canonical-readatom, s2a, open_close.)
+   Candidate mutants (file, single-line `old` anchor to check EXACTLY once with a throwaway python3 -I script, `new`):
+   1 src/os/pl-file.jl `            setStandardStream(ld, i, s)\n` (set_stream alias branch, ~2553) -> `            nothing\n` (kills al_out/al_err rows)
+   2 pl-file.jl `        return s === cur\n` (current_io) -> `return s !== cur` (cur_out_inp/cur_in_outp rows)
+   3 pl-file.jl `        is_stream_blob(ld, t) || return not_a_stream(ld, t, 0)\n` -> `nothing` (current_output(foo)/(1) rows)
+   4 pl-file.jl `    n = (s.position::IOPOS).lineno\n` -> `.linepos` (pos rows)   5 `    n = (s.position::IOPOS).linepos\n` -> `.lineno`
+   6 pl-file.jl `    while count > 0\n` (tab) -> `count >= 0` (tab0 row)   7 `    count === nothing && return false\n` (tab) -> `    nothing\n` (tab(a) row)
+   8 pl-file.jl `    if rval < 0\n` (at_end_of_stream) -> `if rval > 0` (eos rows)
+   9 pl-file.jl `Scurin(ld), :current_input)` -> `Scurout(ld), :current_input)` (cur_in_out row)
+   10 pl-file.jl `    Sputcode(c, s)\n` (put_code; check it is unique, pl-file.jl may hold others) -> `    nothing\n` (put rows)
+   11 pl-file.jl get_code2 the line `        (i == -1 || (a !== nothing && sym_key(a) == sym_key(mk_sym(T, :end_of_file)))) &&\n` -> `        false &&\n` (get_eofatom row; may survive if PL_get_char accepts end_of_file: then list as equivalent with that reason after reading PL_get_char)
+   12 src/pl-arith.jl `        if toIntegerNumber(ld, n, 0)\n` -> `        if true\n` (tab(2.5) rows)   13 `                if fits\n` -> `                if true\n` (tab(1<<70) row; check uniqueness in pl-arith.jl)
+   14 src/pl-write.jl `    height = (width > 0 || pos.lineno > 0) ? pos.lineno + 1 : 0\n` -> `    height = pos.lineno + 1\n` (ws_empty row)
+   15 pl-write.jl `    (width > max_width || height > max_height) && return false\n` -> `width >= max_width` (ws_wok row)
+   16 pl-write.jl `            pos.linepos > width && (width = pos.linepos)\n` -> `            width = pos.linepos\n` (needs lb107)
+   17 pl-write.jl `        toldString(ld)\n` inside write_size (check the anchor is unique in pl-write.jl) -> `        nothing\n` (ws_ctx row)
+   18 src/os/pl-option.jl `        i = PL_get_int64_ex(ld, val)\n` -> `        i = 0\n` (ws_wlimit/ws_hlimit rows; targets = LB5 rows file only)
+   19 pl-file.jl getStreamWithPosition `SH_ERRORS | SH_ALIAS)` (check count in the file) -> `SH_ERRORS)` (needs lb108)
+   EQUIVALENT (record with reason): `clearPrologFlagMask!(ld, PLFLAG_ISO)` and `ld.prolog_flag_mask = oldmask` in write_size (the ISO flag is
+   clear by default and no row sets it). NOT LISTED: `if s.position === nothing` in getStreamWithPosition (swipl 10.1.19 gives
+   ok-1/ok-0 even for open(..., [record_position(false)]) streams, lb010-011: no oracle row reaches the permission_error).
+C. G7 manifest entries appended at the END of `_manifest_index` in test/static_analysis_manifest.jl (signatures: the G2+G3 list above, plus
+   LK.pl_write_size4_va (Tuple{PL_local_data{T},Int,Int,control_t{T}} as the neighbours' pl_write_term3_va entry) and LK.write_size
+   (ld, term_t, term_t, term_t, term_t); LK.PL_eval_expression_to_int64_ex, LK.tab etc. as listed) and a docs/architecture.md block at the END
+   (never regenerate docs/port_inventory.md).
+D. READY-FOR-GATE list (the playbook order): inventory (gate regenerates), `tools/warm.sh send` fmt on the changed files (src/os/pl-file.jl,
+   src/os/pl-option.jl, src/pl-write.jl, src/pl-arith.jl, test/core_lang/test_lb5_swipl.jl, tools/mutants/LB5.py), `warm.sh check`, the new rows
+   file on three term types (`warm.sh file test/core_lang/test_lb5_swipl.jl` x3 types), test/test_type_discipline.jl, manifest entries,
+   `tools/pkgtest_way.sh test/core_lang/test_lb5_swipl.jl` (ONE at a time), alloc pins x3 [239/377/347/433] (pl-arith.jl/pl-file.jl are
+   Tier-1 candidates: ask), the crash-term grep over diff + message, push `mutants/LB5` at the WIP SHA once tools/mutants/LB5.py exists, then
+   branch-gate, push `gate/lb5` and `mutants/LB5` at the SAME SHA. Expect first-run kernel failures: the rows are UNVERIFIED.
+E. Overlap with b2 (wip/lb4b2c, af6540c edits pl-file.jl get_stream_handle): conflict only in the PL_predicates_from_file table block.
