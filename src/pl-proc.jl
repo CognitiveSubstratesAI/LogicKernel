@@ -333,7 +333,7 @@ end
 # local data `ld` is an argument as upstream's `DECL_LD` (A1 of AUTOLOAD1): the autoloader's query runs on it.
 # LEFT TO A3 (AUTOLOAD1): the autoloader branch (`autoLoader`, `test_autoload_loop`, the retry). This body is
 # upstream's `autoImport` and `createUndefSupervisor` path.
-# DIVERGES (representation only, as the other fatal errors of the kernel: sysError aborts the process, the kernel raises a
+# DIVERGES (representation only, as the other fatal errors of the kernel: sysError ends the process, the kernel raises a
 # Julia error naming the predicate; audit D-0387 item 3, Q3): an undefined predicate during `gd.bootsession` is upstream's
 # `sysError("Undefined predicate: ...")` (pl-proc.c:3051-3053, swipl-devel cbf4e189; :3027 skips the autoloader in the boot session), here an `error(...)`.
 """

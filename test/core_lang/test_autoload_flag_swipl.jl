@@ -342,7 +342,7 @@ end
     line = _af_query(gd, ld, "t_nb_undef")
     @test occursin(_af_codes("existence_error"), line)
     @test occursin(_af_codes("zz_af_no_such_pred_xx"), line)
-    # ... and in the boot session the AUTOLOAD1 Q3 error naming the predicate (pl-proc.c:3051-3053; DIVERGES: upstream aborts the process)
+    # ... and in the boot session the AUTOLOAD1 Q3 error naming the predicate (pl-proc.c:3051-3053; DIVERGES: upstream ends the process)
     gd.bootsession = true
     err = try
         _af_query(gd, ld, "t_nb_undef")

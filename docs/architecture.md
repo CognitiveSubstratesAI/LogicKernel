@@ -6817,7 +6817,7 @@ Ported:
   before `createUndefSupervisor`.
 
 DIVERGES:
-- **Q3, representation only**: upstream's `sysError("Undefined predicate: %s")` (pl-proc.c:3051-3053) aborts the process; the kernel raises a Julia error
+- **Q3, representation only**: upstream's `sysError("Undefined predicate: %s")` (pl-proc.c:3051-3053) ends the process; the kernel raises a Julia error
   naming the predicate. Same class as the other fatal errors of the kernel (audit D-0361 item 3, D-0387 item 3(b)). The boot-files lane reads it as
   a loud failure instead of the soft `existence_error` S_UNDEF raised before.
 - **`ld` is explicit** wherever upstream has `GET_LD` (trapUndefined, getProcDefinedDefinition, setAutoload, propagateAutoload, PL_set_prolog_flag); the
