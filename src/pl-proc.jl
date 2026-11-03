@@ -2137,6 +2137,116 @@ end
 pl_garbage_collect_clauses0(ld::PL_local_data{T}) where {T} =
     pl_garbage_collect_clauses!(_query_gd(ld), ld) ? FTRUE : FFALSE
 
+# Upstream: pl-fli.c PL_strip_module_flags, as PL_strip_module_nocreate
+# DIVERGES: `PL_strip_module_flags` with `SM_NOCREATE`; as `PL_strip_module` (the module an index into `gd`'s table, returned; `m` is NULL on entry) with the flag fixed to
+# `SM_NOCREATE` (pl-modul.c `stripModule`, 823-828): a qualifier naming no existing module makes the strip FAIL.
+"""
+    PL_strip_module_nocreate(gd, ld, raw, plain) -> (ok, m)
+
+Put the term in `raw`, stripped of its atom `Module:` qualifiers, into `plain`, and return the module they name, which must
+exist; with no qualifier the context module (pl-fli.c, pl-modul.c).
+"""
+function PL_strip_module_nocreate(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, raw::term_t, plain::term_t
+)::Tuple{Bool, Int} where {T}
+    k, w, q = _deref_loc(ld, -(raw + 1))                    # p = valTermRef(raw); deRef(p)
+    if _is_colon2_word(ld, k, w)                            # hasFunctor(*p, FUNCTOR_colon2)
+        ok, rc, nm = stripModuleName_cells(ld, -(raw + 1))  # stripModule(p, m, flags)
+        ok || return (false, 0)
+        m = 0
+        if nm != 0                                          # if ( mname )
+            mm = isCurrentModule(gd.modules, _atom_value(ld, nm))   # SM_NOCREATE: isCurrentModule(mname)
+            mm === nothing && return (false, 0)             # return NULL
+            m = mm.index
+        elseif ld.environment_frame != 0
+            m = contextModule(gd, ld, ld.environment_frame)
+        else
+            m = MODULE_user(gd).index
+        end
+        _slot_link_loc!(ld, plain + 1, rc)                  # setHandle(plain, linkValI(p))
+        return (true, m)
+    end
+    m = if ld.environment_frame != 0                        # *m = environment_frame ? contextModule(…) : MODULE_user
+        contextModule(gd, ld, ld.environment_frame)
+    else
+        MODULE_user(gd).index
+    end
+    raw != plain && _slot_link_loc!(ld, plain + 1, (k, w, q))
+    return (true, m)
+end
+
+# ORIGINAL: PL_get_functor of a term that is a compound or a text atom; a number or a string has no functor (upstream's
+# `PL_get_functor` fails for them: its `isTerm` and `isTextAtom` tests; the kernel's reads an atom word of any non-compound word).
+"The `(name, arity)` of the compound or text atom `t` holds, else `nothing` (pl-fli.c `PL_get_functor`)."
+function _cp_get_functor(
+    ld::PL_local_data{T}, t::term_t
+)::Union{Nothing, Tuple{T, Int}} where {T}
+    (PL_is_compound(ld, t) || PL_is_atom(ld, t)) || return nothing
+    return PL_get_functor(ld, t)
+end
+
+# PORT: pl-proc.c pl_current_predicate
+# (FRG("\$c_current_predicate", 2, pl_current_predicate, NDET|META), pl-ext.c:132)
+# DIVERGES: the state is a record of the local data's pool (`ld.cur_pred_enums`), its index the `REDO_PTR` context; the
+# procedures are the keys of the module's table at the first call, in its order (upstream's hash order), each looked up again
+# when its turn comes (one removed meanwhile is skipped). The database is the query's (`_query_gd`).
+"`\$c_current_predicate(?Name, :Head)`: the predicates of a module, one per answer (pl-proc.c)."
+function pl_current_predicate(
+    ld::PL_local_data{T}, name::term_t, spec::term_t, ctx::control_t{T}
+)::foreign_t where {T}
+    pool = ld.cur_pred_enums
+    ctl = PL_foreign_control(ctx)
+    if ctl == FRG_CUTTED                                    # e = ForeignContextPtr(h); freeTableEnum(e)
+        free_foreign_state!(pool, PL_foreign_context_address(ctx))
+        return FTRUE
+    end
+
+    gd = _query_gd(ld)
+    functor = PL_new_term_ref(ld)
+    ok, mi = PL_strip_module_nocreate(gd, ld, spec, functor)
+    ok || return FFALSE
+    m = gd.modules[mi]
+
+    n = PL_get_atom(ld, name)
+    if n === nothing
+        PL_is_variable(ld, name) || return FFALSE           # n = NULL_ATOM
+    end
+    f = _cp_get_functor(ld, functor)
+    if f === nothing
+        PL_is_variable(ld, functor) || return FFALSE        # f = 0
+    end
+
+    if ctl == FRG_FIRST_CALL
+        if f !== nothing
+            isCurrentProcedure(sym_key(f[1]), f[2], m) === nothing && return FFALSE
+            return PL_unify_atom(ld, name, f[1]) ? FTRUE : FFALSE   # PL_unify_atom(name, nameFunctor(f))
+        end
+        idx = alloc_foreign_state!(pool)                    # e = newTableEnumWP(m->procedures)
+        e = pool.states[idx]
+        resize!(e.keys, 0)
+        append!(e.keys, keys(m.procedures))
+        e.next = 1
+    else                                                    # FRG_REDO: e = ForeignContextPtr(h)
+        idx = PL_foreign_context_address(ctx)
+        e = pool.states[idx]
+    end
+
+    while e.next <= length(e.keys)                          # advanceTableEnum(e, NULL, &tv)
+        key = e.keys[e.next]
+        e.next += 1
+        proc = get(m.procedures, key, nothing)
+        proc === nothing && continue
+        fname = proc.definition.name                        # fdef->name
+        (n !== nothing && sym_key(n) != sym_key(fname)) && continue
+        PL_unify_atom(ld, name, fname) || continue
+        PL_unify_functor(ld, functor, fname, proc.definition.arity) || continue
+        return PL_retry_address(idx)                        # ForeignRedoPtr(e)
+    end
+
+    free_foreign_state!(pool, idx)                          # freeTableEnum(e)
+    return FFALSE
+end
+
 # PORT: pl-proc.c BeginPredDefs as PL_predicates_from_proc
 # DIVERGES: the entries of the predicates the kernel has ported; `PRED_DEF` ors in `PL_FA_VARARGS`.
 "pl-proc.c's registration table (`BeginPredDefs(proc)`): the ported entries."

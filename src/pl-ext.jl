@@ -35,7 +35,7 @@
 # context_module/1 (pl-modul.c; `META` is `PL_FA_TRANSPARENT`, pl-ext.c:90), after prolog_current_frame/1; since BOOTPRED
 # `$garbage_collect/1` (pl-gc.c, after context_module/1 as pl-ext.c:168), thread_self/1 (pl-thread.c) and with_mutex/2
 # (pl-mutex.c), the last two at the end of the table (pl-ext.c:186-187). Since PR1 abolish/1,2 (pl-proc.c, before
-# repeat/0 as pl-ext.c:125-126) and garbage_collect_clauses/0 (after `$garbage_collect/1` as pl-ext.c:171).
+# repeat/0 as pl-ext.c:125-126), `$c_current_predicate`/2 (pl-ext.c:132, after them) and garbage_collect_clauses/0 (after `$garbage_collect/1` as pl-ext.c:171).
 "pl-ext.c's own registration table of FRG built-ins (`foreigns[]`): the ported entries."
 const foreigns = (
     PL_extension("write_canonical", 1, pl_write_canonical, PL_FA_ISO),
@@ -45,6 +45,10 @@ const foreigns = (
     PL_extension("print", 1, pl_print, 0x00),
     PL_extension("abolish", 1, pl_abolish1, PL_FA_TRANSPARENT | PL_FA_ISO),     # META|ISO (PR1, pl-ext.c:125)
     PL_extension("abolish", 2, pl_abolish, PL_FA_TRANSPARENT),                  # META (PR1, pl-ext.c:126)
+    PL_extension(                                                               # NDET|META (PR1, pl-ext.c:132)
+        "\$c_current_predicate", 2, pl_current_predicate,
+        PL_FA_TRANSPARENT | PL_FA_NONDETERMINISTIC
+    ),
     PL_extension("repeat", 0, pl_repeat, PL_FA_NONDETERMINISTIC | PL_FA_ISO),
     PL_extension("fail", 0, pl_fail, PL_FA_ISO),
     PL_extension("true", 0, pl_true, PL_FA_ISO),
