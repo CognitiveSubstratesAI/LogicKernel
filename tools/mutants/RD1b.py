@@ -1,5 +1,5 @@
 # ORIGINAL: RD1's mutant list — no swipl-devel counterpart.
-# tools/mutants/RD1.py — the mutation battery of RD1 (pl-read.c's stream-reading predicates: read_term/3,2 `pl_read_term3_va`,
+# tools/mutants/RD1b.py — the mutation battery of RD1 (pl-read.c's stream-reading predicates: read_term/3,2 `pl_read_term3_va`,
 # `pl_read_term2_va`, `$is_named_var/1` `pl_is_named_var1_va`, `pl_raw_read2`, `pl_raw_read`, `pl_read2`, `pl_read`, as registered in
 # src/pl-read.jl and src/pl-ext.jl), run ONCE, in CI (.github/workflows/mutation.yml; locally: tools/mutate.sh run). Format:
 # tools/mutate_drive.py's (as MOD3b.py): `id`, `file`, `old` (must occur EXACTLY once), `new`, optional `equivalent` and `targets`.

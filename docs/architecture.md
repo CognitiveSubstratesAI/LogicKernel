@@ -6352,7 +6352,7 @@ stream, over the reader R1 built (`read_term_from_stream`); the pin tree is swip
   of a syntax error on an `open_string/2` stream keeps `unify_location`'s refusal (below), as the reader had it since R1.
 * **Rows:** test/core_text/test_read_stream_swipl.jl, 207 rows over string and file streams (pins from swipl 10.1.19, two
   byte-identical runs; generator and pins in evidence/RD1/), 16 of them KNOWN (the kernel's answer read from the source, to be
-  settled by the gate's first run). Mutants: tools/mutants/RD1.py, 33 mutants (21 over the wrappers, 12 over the blob option), 2 declared equivalent (the two
+  settled by the gate's first run). Mutants: tools/mutants/RD1b.py, 33 mutants (21 over the wrappers, 12 over the blob option), 2 declared equivalent (the two
   `PL_FA_ISO` flag mutants; read, not run). test/core_text/test_io.jl carries the upstream `no_protocol_in` unit
   (`read_term/3` on the `protocol` alias: `existence_error(stream, protocol)`).
 * **DEFERRED, each with its reason (none dropped):**
