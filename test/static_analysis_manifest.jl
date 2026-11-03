@@ -720,6 +720,9 @@ function _manifest_index(T)
         (LK._impl_any_defined, Tuple{D}, true),
         (LK.autoImport, Tuple{GD, T, Int, MOD}, false),
         (LK.trapUndefined, Tuple{GD, LD, D}, false),
+        (LK._autoload_predicate_name, Tuple{GD, D}, false),       # AUTOLOAD1 A3 (pl-util.c predicateName)
+        (LK.test_autoload_loop, Tuple{GD, LD, D}, false),
+        (LK.autoLoader, Tuple{GD, LD, D}, false),
         (LK.createUndefSupervisor, Tuple{D}, false),
         (LK.getProcDefinedDefinition, Tuple{GD, LD, D}, false),
         # MOD2 — the context module (src/pl-wam.jl), strip_module/3 and context_module/1 (src/pl-modul.jl)
