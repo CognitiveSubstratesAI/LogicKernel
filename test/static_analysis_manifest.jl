@@ -346,7 +346,14 @@ _manifest_per_type(T) = (
     (LK.setFramePredicate, Tuple{LK.localFrame{T}, LK.Definition{T}}, true),
     # Base methods on the default type
     (Base.:(==), Tuple{T, T}, false), (Base.hash, Tuple{T, UInt}, false),
-    (Base.show, Tuple{IOBuffer, T}, false)
+    (Base.show, Tuple{IOBuffer, T}, false),
+    # the compact printers of the database's records (R2 LB4 b2, ORIGINAL)
+    (Base.show, Tuple{IOBuffer, LK.PL_global_data{T}}, false),
+    (Base.show, Tuple{IOBuffer, LK.PL_local_data{T}}, false),
+    (Base.show, Tuple{IOBuffer, LK.Definition{T}}, false),
+    (Base.show, Tuple{IOBuffer, LK.Procedure{T}}, false),
+    (Base.show, Tuple{IOBuffer, LK.SourceFile{T}}, false),
+    (LK._show_atom_text, Tuple{IOBuffer, T}, false)
 )
 
 # A concrete stand-in for the sink `pl_retract!` and `pl_clause!` take: a singleton function type,

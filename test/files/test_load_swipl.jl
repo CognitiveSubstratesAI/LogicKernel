@@ -283,6 +283,38 @@ const _TL_CASES = [
         [("p", 1)])
 ]
 
+# KNOWN DIFFERENCES THE BOOT EXPOSES (LB4 b2's first boot, 2026-11-03; dispatcher ruling on STOP 2, option (b),
+# provisional and pending audit: each is PINNED here, deferred to its owner). Before the boot the kernel answered these
+# cases from its Julia side; the booted boot/init.pl now runs and reaches predicates left to later steps. A case named here
+# must differ from swipl EXACTLY so: `(line, kernel, swipl)` for each line that differs (the case file's path written
+# `<path>`), every other line equal. Checklist items (docs/architecture.md, LB4 b2) and owners:
+#   L1 `'$dwim':'$dwim_predicate'/2` undefined (pl-ext.c:156 → pl-dwim.c @ cbf4e189; called by dwim.pl's dwim_pred/2
+#      when an undefined procedure is reported): owner DBG1 (docs/r2_owners.tsv).
+#   L2 `'$syspreds':'$foreign_predicate_source'/2` undefined (pl-proc.c:4146 @ cbf4e189; called by syspred.pl's
+#      '$foreign_source_location'/3 when a message carries a location): owner PR1 (docs/r2_owners.tsv).
+#   L3 `system:'$set_table_wrappers'/1` undefined (boot/tabling.pl:1647 @ cbf4e189; tabling.pl's rows the kernel lacks,
+#      pl-wrap.c deferred, D-0353 item 1): owner LD12 (tabling).
+#   L4 `initialization(main)`: swipl AUTOLOADS library(main)'s main/0, which calls the undefined main/1; the kernel has
+#      no autoloader yet, so main/0 itself is undefined: owner the autoloader step.
+"The lines of `ours` and `theirs` that differ, `(line, kernel, swipl)`, `path` (the case file) written `<path>`."
+function _tl_diff(
+    ours::Vector{String}, theirs::Vector{String}, path::String
+)::Vector{Tuple{Int, String, String}}
+    norm(l) = replace(l, _tl_codes(path) => "<path>")
+    out = Tuple{Int, String, String}[]
+    for k in 1:max(length(ours), length(theirs))
+        o = k <= length(ours) ? norm(ours[k]) : "—"
+        s = k <= length(theirs) ? norm(theirs[k]) : "—"
+        o == s || push!(out, (k, o, s))
+    end
+    return out
+end
+
+# The pins, by case name (both tables: `_TL_CASES` and `_TL_FORMER_REFUSALS`), from the first boot run's values.
+const _TL_KNOWN_DIFFS = Dict{String, Vector{Tuple{Int, String, String}}}(
+# PINS-HERE
+)
+
 if _TL_SWIPL !== nothing
     @testset "consulting a file, as swipl: messages, status, the predicates after" begin
         _TL_NORMALISED[] = 0
@@ -298,15 +330,16 @@ if _TL_SWIPL !== nothing
                         startswith(l, "warning c" * _tl_codes("compiler_warnings") * "/2("),
                     theirs
                 )
-                if ours != theirs
-                    println(stderr, "  DIVERGES (", name, "):")
-                    for k in 1:max(length(ours), length(theirs))
-                        o = k <= length(ours) ? ours[k] : "—"
-                        s = k <= length(theirs) ? theirs[k] : "—"
-                        o == s || println(stderr, "    kernel ", o, "\n    swipl  ", s)
-                    end
+                d = _tl_diff(ours, theirs, path)
+                pin = get(_TL_KNOWN_DIFFS, name, nothing)
+                if d != something(pin, Tuple{Int, String, String}[])
+                    println(stderr, "  DIVERGES (", name, "): ", repr(d))
                 end
-                @test ours == theirs
+                if pin === nothing
+                    @test ours == theirs
+                else
+                    @test !isempty(pin) && d == pin   # THE PIN: exactly these lines differ, exactly so
+                end
             end
         end
         # the named normalisation (R1f): since LB4 b2 a directive's goal runs under boot/init.pl's
@@ -542,7 +575,7 @@ const _TL_FORMER_REFUSALS = [
     ("incremental", ":- dynamic(p/1 as incremental).\n"),
     ("thread_local", ":- thread_local p/1.\n"),
     ("encoding", ":- encoding(utf8).\n"),
-    ("asserted-then-file", ":- assertz(q(1)).\nq(2).\n"),       # swipl warns and abolishes
+    ("asserted-then-file", ":- assertz(q(1)).\nq(2).\n")       # swipl warns and abolishes
 ]
 
 if _TL_SWIPL !== nothing
@@ -551,11 +584,37 @@ if _TL_SWIPL !== nothing
             for (i, (name, text)) in enumerate(_TL_FORMER_REFUSALS)
                 path = joinpath(d, "former$i.pl")
                 write(path, text)
-                ours = _tl_kernel(path, Tuple{String, Int}[])
                 theirs = _tl_swipl(path, Tuple{String, Int}[])
+                if name == "asserted-then-file"
+                    # KNOWN DIFFERENCE L5, pinned: the kernel refuses, deferred (NotPortedError, owner R2; raised at
+                    # src/pl-proc.jl:1138, redefineProcedure); swipl warns redefine_procedure and abolishes (`ok`, then
+                    # the warning line)
+                    err = try
+                        _tl_kernel(path, Tuple{String, Int}[])
+                        nothing
+                    catch e
+                        e
+                    end
+                    @test err isa LK.NotPortedError && sym_text(err.culprit) == "q" &&
+                        err.what ==
+                        "redefining a predicate another file defined (abolishProcedure)" &&
+                        err.step == "R2"
+                    @test length(theirs) == 2 && theirs[1] == "ok" &&
+                        startswith(theirs[2], "warning ")
+                    continue
+                end
+                ours = _tl_kernel(path, Tuple{String, Int}[])
                 @test !isempty(ours) && !isempty(theirs)         # both sides non-empty: the status line
-                ours == theirs || println(stderr, "  DIVERGES (", name, "): ", ours, " vs ", theirs)
-                @test ours == theirs
+                d = _tl_diff(ours, theirs, path)
+                pin = get(_TL_KNOWN_DIFFS, name, nothing)
+                if d != something(pin, Tuple{Int, String, String}[])
+                    println(stderr, "  DIVERGES (", name, "): ", repr(d))
+                end
+                if pin === nothing
+                    @test ours == theirs
+                else
+                    @test !isempty(pin) && d == pin   # THE PIN: exactly these lines differ, exactly so
+                end
             end
         end
     end
@@ -570,14 +629,33 @@ end
         gd = LK.PL_global_data{_TL}()
         ld = LK.PL_local_data{_TL}(gd)
         @test LK.load_file!(gd, ld, path) === (:ok, nothing)
-        @test LK.load_file!(gd, ld, path) === (:ok, nothing)
+        # KNOWN DIFFERENCE L6, pinned (LB4 b2 first boot; docs/architecture.md, LB4 b2 checklist): swipl reconsults the
+        # file (`(:ok, nothing)`, as the row expected); the kernel refuses, the reconsult is deferred (owner LB6;
+        # NotPortedError raised at src/pl-srcfile.jl:181, startConsult)
+        err6 = try
+            LK.load_file!(gd, ld, path)
+            nothing
+        catch e
+            e
+        end
+        @test err6 isa LK.NotPortedError && sym_text(err6.culprit) == abspath(path) &&
+            err6.what == "consulting a file again (reconsult)" && err6.step == "LB6"
         p1, p2 = joinpath(d, "one.pl"), joinpath(d, "two.pl")
         write(p1, "s(1).\n")
         write(p2, "s(2).\n")
         @test LK.load_file!(gd, ld, p1) === (:ok, nothing)
-        st, _, msgs = lk_load_file_messages!(gd, ld, p2)
-        @test st === :ok && length(msgs) == 1 && msgs[1][1] === :warning &&
-            sym_text(child(msgs[1][2], 1)) == "redefined_procedure"
+        # KNOWN DIFFERENCE L5, pinned: swipl loads two.pl with one warning, redefined_procedure, and abolishes one.pl's
+        # s/1 (`:ok`, as the row expected); the kernel refuses, abolishProcedure's redefinition is deferred
+        # (NotPortedError, owner R2; raised at src/pl-proc.jl:1138, redefineProcedure)
+        err5 = try
+            lk_load_file_messages!(gd, ld, p2)
+            nothing
+        catch e
+            e
+        end
+        @test err5 isa LK.NotPortedError && sym_text(err5.culprit) == "s" &&
+            err5.what == "redefining a predicate another file defined (abolishProcedure)" &&
+            err5.step == "R2"
     end
     # a file clause for a predicate asserted before (no file): swipl warns and abolishes; the kernel does too since PR1b
     # (redefineProcedure -> abolishProcedure!; the answers are rows t_rd1-t_rd7 of test_pr1_swipl.jl)

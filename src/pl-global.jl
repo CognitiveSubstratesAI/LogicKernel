@@ -719,6 +719,26 @@ function PL_local_data{T}(gd::PL_global_data{T}) where {T}
     return ld
 end
 
+# ORIGINAL (R2 LB4 b2, the printing trap): a compact `show` for the database and the engine, NOT a port
+# (upstream's structs have no printer). Julia's default `show` walks every reachable field, and a booted
+# database reaches the boot files' whole graph: a failing `@test` whose value reached one printed it for
+# over an hour (test_load and test_qlf, 2026-11-02). These print a few scalar fields and follow no
+# reference; nothing reads their text, so no behaviour changes. The same for `procedure`, `definition`
+# and `sourceFile` (src/pl-incl.jl).
+function Base.show(io::IO, gd::PL_global_data{T}) where {T}
+    print(io, "PL_global_data{", T, "}(modules=", length(gd.modules.modules))
+    print(io, ", files=", length(gd.files_array), ", generation=", gd._generation)
+    print(io, ", bootsession=", gd.bootsession, ")")
+    return nothing
+end
+
+# ORIGINAL (R2 LB4 b2): see `show(::IO, ::PL_global_data)` above.
+function Base.show(io::IO, ld::PL_local_data{T}) where {T}
+    print(io, "PL_local_data{", T, "}(gTop=", ld.gTop, ", lTop=", ld.lTop)
+    print(io, ", trail=", length(ld.trail), ")")
+    return nothing
+end
+
 # PORT: pl-incl.h SYSTEM_MODE
 # (pl-incl.h:2973)
 # DIVERGES: a function of the local data.

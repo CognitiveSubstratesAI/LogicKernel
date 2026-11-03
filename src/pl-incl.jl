@@ -1233,6 +1233,40 @@ end
 "A source file of terms `T` (pl-incl.h `SourceFile`)."
 const SourceFile{T} = sourceFile{T}
 
+# ORIGINAL (R2 LB4 b2, the printing trap): compact `show`s, NOT ports (see `show(::IO, ::PL_global_data)`,
+# src/pl-global.jl). A procedure, a predicate and a source file reach their database's graph (a clause's
+# predicate, a file's procedures); these print the name and a few counts and follow no further reference.
+# `_show_atom_text` is their reader of a name: a blob, whose text the interface refuses, prints as `<blob>`.
+_show_atom_text(io::IO, name)::Nothing =
+    (print(io, is_blob(name) ? "<blob>" : sym_text(name)); nothing)
+
+# ORIGINAL (R2 LB4 b2): see above.
+function Base.show(io::IO, def::definition{T}) where {T}
+    print(io, "definition(")
+    _show_atom_text(io, def.name)
+    print(io, "/", def.arity, ", module=", def.module_)
+    print(io, ", clauses=", def.impl_clauses.number_of_clauses, ")")
+    return nothing
+end
+
+# ORIGINAL (R2 LB4 b2): see above.
+function Base.show(io::IO, proc::procedure{definition{T}}) where {T}
+    def = proc.definition
+    print(io, "procedure(")
+    _show_atom_text(io, def.name)
+    print(io, "/", def.arity, ", source_no=", proc.source_no, ")")
+    return nothing
+end
+
+# ORIGINAL (R2 LB4 b2): see above.
+function Base.show(io::IO, sf::sourceFile{T}) where {T}
+    print(io, "sourceFile(")
+    _show_atom_text(io, sf.name)
+    print(io, ", index=", sf.index, ", procedures=", length(sf.procedures))
+    print(io, ", clauses=", sf.number_of_clauses, ", count=", sf.count, ")")
+    return nothing
+end
+
 # ── the local stack: positions, frames, choice points, foreign frames (pl-incl.h; decision 3) ───
 #
 # ONE POSITION SPACE, as upstream has one local stack. A position is a word offset from `lBase`
