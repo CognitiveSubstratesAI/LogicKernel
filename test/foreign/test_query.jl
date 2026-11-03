@@ -11,8 +11,10 @@
 #     a failing call of f/1 at +61 and of h/2 at +69 (`S_STATIC`'s quirk); a nested query at +63;
 #   * nested queries: only the innermost may be advanced, cut or closed (`PL_S_NOT_INNER`);
 #   * `PL_cut_query` keeps the answer's bindings, `PL_close_query` undoes them; after a deterministic
-#     last answer the next call undoes them and fails, and no term reference can be made until the
-#     query is closed;
+#     last answer the next call undoes them and fails, and no term reference can be made through the
+#     API stubs until the query is closed (`PL_new_term_ref_api`, the exact fatalError text of
+#     pl-fli.c:538/547), while the LD forms the kernel's own ports call make no check (pl-fli.c:450-508;
+#     since ENG3, audit D-0379);
 #   * an uncaught exception: `PL_S_EXCEPTION` under `PL_Q_EXT_STATUS`, the error term from
 #     `PL_exception`; `PL_Q_PASS_EXCEPTION` leaves it pending;
 #   * the `except` arm re-entering the loop (`PrologThrow`), and a Julia exception ending the query;
@@ -189,6 +191,10 @@ end
     @test LK.PL_cut_query(ld, q1) == LK.PL_S_NOT_INNER
 end
 
+# the API stubs' error (pl-fli.c:538, 547: fatalError's text; ENG3)
+const _Q_NO_ENV_REF = ErrorException("PL_new_term_ref(): No foreign environment")
+const _Q_NO_ENV_REFS = ErrorException("PL_new_term_refs(): No foreign environment")
+
 @testset "cut keeps the bindings, close undoes them; after a deterministic last answer" begin
     db, p = _ydb()
     ld = db.ld
@@ -207,9 +213,18 @@ end
     qid, a, fid = _yopen(p[:g], X)
     @test _ynext(p[:g], qid) == 2
     @test _ynext(p[:g], qid) == 0 && kind(_yval(p[:g], a)) === VAR
-    @test_throws ErrorException LK.PL_new_term_ref(ld)
+    # (the stubs' text is upstream's fatalError text, pl-fli.c:538/547: swipl's Prolog side cannot reach
+    # a stub without a foreign environment, so it is read from the source, not queried)
+    @test_throws _Q_NO_ENV_REF LK.PL_new_term_ref_api(ld)
+    @test_throws _Q_NO_ENV_REFS LK.PL_new_term_refs_api(ld, 2)
+    # ENG3 (D-0379): the LD forms make no check (pl-fli.c:450-508) — they take the references at lTop,
+    # as an internal port (unify_definition under PL_error) does while a frame is being filled
+    t0 = ld.lTop
+    @test LK.PL_new_term_ref(ld) == t0 && ld.lTop == t0 + 1
+    @test LK.PL_new_term_refs(ld, 2) == t0 + 1 && ld.lTop == t0 + 3
     @test LK.PL_close_query(ld, qid) == 1
-    @test LK.PL_new_term_ref(ld) > 0                            # the caller's frame is current again
+    @test LK.PL_new_term_ref_api(ld) > 0                        # the caller's frame is current again
+    @test LK.PL_new_term_refs_api(ld, 2) > 0
     LK.PL_close_foreign_frame(ld, fid)
     # a closed query: PL_next_solution fails (its frame not reused — all upstream guarantees)
     @test _ynext(p[:g], qid) == 0
@@ -249,14 +264,14 @@ end
     db, p = _ydb()
     ld = db.ld
     # the exception is raised in the caller's foreign frame (a running query's frame has none above
-    # it before its first answer — PL_new_term_ref refuses there, as upstream)
+    # it before its first answer — the API stub PL_new_term_ref refuses there, as upstream)
     fid0 = LK.PL_open_foreign_frame(ld)
     b = LK.PL_new_term_ref(ld)
     LK.putSlotValue!(ld, b + 1, _yf(:error, _ys(:boom), _yv(2)))
     LK.PL_raise_exception(ld, b)
     @test ld.exception_term == ld.exception_bin
     qid, a, fid = _yopen(p[:f], _yv(1); flags=LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS)
-    @test_throws ErrorException LK.PL_new_term_ref(ld)          # no foreign frame above the query's
+    @test_throws _Q_NO_ENV_REF LK.PL_new_term_ref_api(ld)      # no foreign frame above the query's
     @test LK.PL_next_solution_guarded(db.gd, ld, qid, true) == LK.PL_S_EXCEPTION
     # (a variant: the ball is a copy with fresh variables, copy_exception — since V9f)
     @test LK.is_variant_ptr(
