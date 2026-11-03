@@ -2,7 +2,7 @@
 # tools/mutants/EV1.py — the mutation battery of step EV1 (the event lists of pl-event.c, src/pl-event.jl: prolog_listen/2,3,
 # prolog_unlisten/2, the calling side, and the raise sites wired to it: assertDefinition and retractClauseDefinition
 # (src/pl-proc.jl), retractall/1 start and end, the erase of a record (src/pl-rec.jl), the clause GC's announceErasedClause,
-# and the destroy_event_list of a pristine abolish (src/pl-modul.jl)), run ONCE, in CI (.github/workflows/mutation.yml;
+# and the destroy_event_list of resetProcedure! (src/pl-proc.jl, called by abolishProcedure!)), run ONCE, in CI (.github/workflows/mutation.yml;
 # locally: tools/mutate.sh run). Format: tools/mutate_drive.py's (as BOOTPREDSUB.py): `id`, `file`, `old` (must occur EXACTLY
 # once), `new`, optional `equivalent` and `targets`. Killed by test/core_lang/test_event_swipl.jl (rows ev1p01-ev1g01 named in
 # each id's KILL); the KILL lists are what the rows are EXPECTED to do (read, not run): the battery's verdict is the evidence.
@@ -21,7 +21,7 @@
 #   * the `rc = false` of the C-function branch of call_event_list, the thread events of PL_call_event_hook_va, the
 #     `event_delay_nesting != 0` branch (delayEvent/delayEvents/sendDelayedEvents have no caller until the reload step), the
 #     untable raise (TAB1), break/abort (DBG1): unreachable today; each is covered by the step that wires it.
-#   * the `destroy_event_list!(def)` of a pristine abolish (src/pl-modul.jl:1330): no row abolishes a predicate that has listeners;
+#   * the `destroy_event_list!(def)` of resetProcedure! (src/pl-proc.jl, since the re-stack onto PR1b): no row abolishes a predicate that has listeners;
 #     a gate agent may add one (`abolish` of an own pristine procedure after prolog_listen on it, then a re-assert).
 #   * `rcp[] = false` of cleanDefinition! (a listener that raises during the clause GC): no row raises there, the white-box row
 #     ev1g01 sees only the log; a gate agent may add a throwing-listener row.

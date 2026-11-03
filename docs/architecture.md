@@ -6523,13 +6523,13 @@ What EV1 adds (pin `cbf4e1896275`, oracle swipl 10.1.19; written edit-only over 
 - **Raise sites WIRED:** `_assertDefinition!` (pl-proc.c:1472-1478: a listener that fails VETOES the assert, the clause is retracted again),
   `retractClauseDefinition!` (:1706-1712: a failing listener vetoes the retract), `pl_retractall!` (:3308 `start` before, :3397 `end` after; no `end` on upstream's early
   returns: no clause, or a clause choice that ends), the erase of a record (pl-rec.c:2468; a failing listener does NOT stop it), `announceErasedClause` in the
-  clause GC pass (`cleanDefinition!`, pl-proc.c:1773, 1850), `frameFinished` (pl-wam.c:959), and `destroy_event_list!` at the abolish of an own pristine procedure
-  (pl-proc.c:269, 409). A listener's exception breaks the loop and propagates (`WAKEUP_KEEP_URGENT_EXCEPTION`).
+  clause GC pass (`cleanDefinition!`, pl-proc.c:1773, 1850), `frameFinished` (pl-wam.c:959), and `destroy_event_list!` in `resetProcedure!` (pl-proc.c:409; `abolishProcedure!` calls it since PR1b; the imported-link branch drops the old definition to Julia's
+  garbage collector: `unallocDefinition`'s call, pl-proc.c:269). A listener's exception breaks the loop and propagates (`WAKEUP_KEEP_URGENT_EXCEPTION`).
 - **Raise sites DEFERRED** (no Julia function yet; each step that ports the function raises the event): break events and `$break_at` (pl-comp.c:9084-9173, DBG1; `frameFinished`'s raise is
   wired but unreachable until DBG1, nothing sets `FR_NOTIFY`), `abort` (pl-pro.c:105, DBG1), `untable` (pl-tabling.c:11317) and `table_answer_event`'s caller (pl-tabling.c:10156, TAB1; boot/tabling.pl's
   `prolog_listen(untable, untable_reconsult)` registers), thread start/exit and `PL_thread_at_exit` (pl-thread.c, TH1; the thread events throw `NotPortedError`, a C-function listener counts as a failure),
   `delayEvents` in `unloadFile`/`endReconsult` and `reconsultFinalizePredicate` (pl-srcfile.c, pl-proc.c:1937: the reload step), transactions (pl-transaction.c), `cleanupEvents` (`PL_cleanup`, pl-init.c:2037),
-  `freePrologLocalData` (pl-setup.c:1796), and the full abolish/`resetProcedure` (PR1/abolish step).
+  `freePrologLocalData` (pl-setup.c:1796), and `unallocDefinition` (no such function).
 - **DIVERGES (representation only, each needs the audit's D-entry):** a list is a Vector (no head/tail chain, no lock; `call_event_list` walks a SNAPSHOT); a closure is the term's record
   (`fastheap_term`: upstream's relocatable cells need the word stacks); attributed variables in a closure are unchecked; the foreign frame of `prolog_unlisten/2` is closed at the return;
   `definition.events` is typed `event_list{T, definition{T}}` (the struct cycle).
