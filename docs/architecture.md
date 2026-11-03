@@ -7210,10 +7210,12 @@ cbf4e189.
   driver had asked predicate_property(_, system), which syspred.pl does not define, and compared 0 with P_LOCKED.
 - **T2 rewritten rows**: the four `_BC_REWRITTEN` hashes are swipl's, computed by the driver over the clause texts the
   single-thread configuration compiles (evidence/LB4B2/rw.pl); the kernel's equal them.
-- **Open for the audit: the template keeps one boot-session import link.** compileFileList's last call
-  (pl-qlf.c:4811-4812, `user:'$load_additional_boot_files'/0`) links user's procedure to system's definition (autoImport,
-  pl-proc.c:2870-2903); swipl's state file carries no such link (a started swipl consults a user clause for it), the
-  kernel's template is the boot session's memory and keeps it, so a user clause for it is refused
-  (`permission_error(redefine, built_in_procedure, ...)`, overruleImportedProcedure pl-proc.c:507-509). It is the only
-  link in user. test/files/test_qlf_swipl.jl's three compileFileList rows on the booted database fail on it (design
-  question in evidence/LB4B2/handoff18.md).
+- **The template keeps no autoImport link of the boot session** (fixed, ruling R-A, audit D-0377 item 2).
+  compileFileList's last call (pl-qlf.c:4811-4812, `user:'$load_additional_boot_files'/0`) linked user's procedure to
+  system's definition (autoImport, pl-proc.c:2870-2903), and a user clause for it was refused
+  (`permission_error(redefine, built_in_procedure, ...)`, overruleImportedProcedure pl-proc.c:507-509). A started swipl
+  loads the saved state, and autoImport links made while compiling the boot files are run-time resolution, not saved
+  state: the writer records a reference by its definition's module (saveXRProc, pl-qlf.c:2646-2648), the loader
+  resolves it afresh (XR_PRED, pl-qlf.c:771-777), and only the 'I' records carry links (pl-qlf.c:3257-3271). So
+  `drop_boot_autoimports!` (src/gd_template.jl) gives the 96 such procedures (user's and ten boot modules') a fresh
+  definition; system's 139 weak imports stay. Rows in test/files/test_qlf_swipl.jl.

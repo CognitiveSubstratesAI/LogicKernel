@@ -144,3 +144,56 @@ function reset_gd_templates!()::Nothing
     end
     return nothing
 end
+
+# ── the boot session's autoImport links ─────────────────────────────────────────────────────────
+# ORIGINAL (R2 LB4 b2, dispatcher ruling R-A, audit D-0377 item 1): the template keeps none of the boot session's
+# autoImport links, as `drop_boot_std_streams!` (src/pl-qlf.jl) keeps none of its streams. A started swipl loads the
+# saved state, and autoImport links made while compiling the boot files are run-time resolution, not saved state.
+# Upstream (swipl-devel cbf4e189; the state writer is pl-qlf.c at the pin, init.pl:4777 still calls it pl-wic.c): the
+# writer records a procedure reference by its DEFINITION's functor and module (saveXRProc, src/pl-qlf.c:2646-2648), so a
+# procedure whose definition another module's procedure shares is written as that module's; and the loader resolves
+# each reference afresh, `lookupProcedure(f, m)` (XR_PRED, src/pl-qlf.c:771-777), a procedure with its own definition
+# that autoImport (pl-proc.c:2870-2903) links at its first call. The only links the state carries are its 'I' records
+# (importWic, src/pl-qlf.c:3257-3271, written by `'$import_wic'` from init.pl:3794; replayed by loadImport,
+# src/pl-qlf.c:1771-1779, through importDefinitionModule, which gives the procedure the import's strength flags, and
+# PROC_IMPORTED when it links an existing undefined one: pl-modul.c:1720, :1782). So a procedure with no import flag whose definition is the one its module's supers make
+# visible (autoImport's own search) gets, in place, the fresh definition the loader's `lookupProcedure` makes; it is
+# linked again at its first call (trapUndefined -> autoImport). Measured on the first boot: 96 such links, in user
+# (the one compileFileList's last call makes, pl-qlf.c:4811-4812) and ten boot modules; system's 139 links all carry
+# PROC_WEAK (its imports). The procedure stays in its module's table (code that names it keeps naming it). A strong
+# import (flags 0) of the very definition the supers make visible would be reset too: the boot makes none (its files'
+# only module-level import directive is tabling.pl:119's autoload/2, which links nothing).
+"""
+    drop_boot_autoimports!(gd) -> Int
+
+Give every procedure the boot session linked by autoImport (no import flag, the definition its module's supers make
+visible) a fresh definition of its own, as the state loader's `lookupProcedure` makes (pl-qlf.c:771-779); the number of
+procedures reset. Called by `boot_global_data` before the template is kept.
+"""
+function drop_boot_autoimports!(gd::PL_global_data{T})::Int where {T}
+    n = 0
+    for m in gd.modules
+        m === nothing && continue
+        links = Tuple{UInt64, Int}[]
+        for (k, p) in m.procedures
+            def = p.definition
+            (def.module_ == m.index || p.flags != 0) && continue
+            vis::Union{Nothing, Procedure{T}} = nothing
+            for s in m.supers                                      # autoImport's search, in its order
+                vis = visibleProcedure(gd, def.name, def.arity, gd.modules[s])
+                vis !== nothing && break                           # goto found
+            end
+            (vis !== nothing && vis.definition === def) && push!(links, k)
+        end
+        for k in links
+            p = m.procedures[k]
+            odef = p.definition
+            delete!(m.procedures, k)
+            p.definition = lookupProcedure(odef.name, odef.arity, m).definition   # the loader's fresh resolution
+            m.procedures[k] = p                                    # the same procedure object, its own definition
+            unshareDefinition(odef)
+            n += 1
+        end
+    end
+    return n
+end

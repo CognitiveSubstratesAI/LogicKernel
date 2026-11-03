@@ -398,6 +398,7 @@ function boot_global_data(::Type{T})::PL_global_data{T} where {T}
             "boot_global_data: the boot left its stacks at $after, not $left (from $empty_at, H11)"
         )
     drop_boot_std_streams!(gd, ld)                                # the template keeps no stream of the dropped ld
+    drop_boot_autoimports!(gd)                                    # nor a run-time autoImport link (src/gd_template.jl)
     return gd
 end
 

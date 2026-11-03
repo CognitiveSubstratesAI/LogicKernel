@@ -310,6 +310,39 @@ end
     @test length(c.stream_table) == n0 + 4 && all(isnothing, c.stream_table)
 end
 
+@testset "the template keeps no autoImport link of the boot session (R-A; pl-qlf.c saveXRProc, XR_PRED)" begin
+    # a started swipl loads the saved state, and autoImport links made while compiling the boot files are run-time
+    # resolution, not saved state (cbf4e189 src/pl-qlf.c:2646-2648 writes a reference by its definition's module,
+    # :771-777 resolves it afresh). swipl 10.1.19, live 2026-11-03: `'$c_current_predicate'(_, user:'$load_additional_boot_files')`
+    # is false (user has no definition of it) and `user:'$load_additional_boot_files'` is true (system's, by autoImport).
+    tm = LK.gd_template(_QL)
+    u = LK.isCurrentProcedure(
+        LK.sym_key(_qls("\$load_additional_boot_files")), 0, tm.modules_user
+    )
+    @test u !== nothing && u.definition.module_ == tm.modules_user.index    # its own definition, not system's
+    @test !LK.isDefinedProcedure(tm, u)
+    s = LK.isCurrentProcedure(
+        LK.sym_key(_qls("\$load_additional_boot_files")), 0, LK.MODULE_system(tm)
+    )
+    @test s !== nothing && LK.isDefinedProcedure(tm, s) && s.definition.shared == 1   # unshared by the reset
+    @test LK.drop_boot_autoimports!(LK.copy_global_data(tm)) == 0           # none left
+    linked = 0
+    for m in tm.modules
+        m === nothing && continue
+        for (_, p) in m.procedures
+            linked += p.definition.module_ != m.index && p.flags == 0
+        end
+    end
+    @test linked == 0                                                        # every remaining link is an import
+    gd = LK.PL_global_data{_QL}()
+    ld = LK.PL_local_data{_QL}(gd)
+    @test LK.compileFileList(gd, ld, nothing, String[])                     # the call links it again (autoImport)
+    u = LK.isCurrentProcedure(
+        LK.sym_key(_qls("\$load_additional_boot_files")), 0, gd.modules_user
+    )
+    @test u !== nothing && u.definition.module_ != gd.modules_user.index
+end
+
 @testset "the boot compile runs with autoload off (LB3-L3; swipl pin: autoload set false before consult)" begin
     dir = mktempdir()
     g = joinpath(dir, "autoload.pl")
@@ -328,6 +361,24 @@ end
     @test String(sym_text(LK.PL_current_prolog_flag(gd, mk_sym(_QL, :autoload), :atom))) ==
         "true"                                            # restored after the list
     @test isempty(_ql_messages(ld))
+end
+
+@testset "R-B: closing a query after an exception on the unbooted database (owner ENG2, audit D-0377 item 3)" begin
+    # findall/3 is undefined on setupProlog's database (boot/bags.pl not loaded): the query raises, and PL_close_query
+    # then raises `_release_frozen!: slot 27 references global position 31 above the reset target 19`
+    # (src/pl-inline.jl). A latent engine bug, not fixed here; the row stays broken until ENG2 lands.
+    g = joinpath(mktempdir(), "autoload.pl")
+    write(g, _QL_AUTOLOAD_PROGRAM)
+    gd = LK.setupProlog(_QL)
+    ld = LK.PL_local_data{_QL}(gd)
+    @test LK.compileFileList(gd, ld, nothing, [g])
+    @test_broken (
+        try
+            _ql_query_lines(gd, ld, ["t_q01"]) == ["t_q01 exception"]
+        catch
+            false
+        end
+    )
 end
 
 @testset "the pins are swipl's (live, when swipl is on PATH)" begin
@@ -527,24 +578,13 @@ end
     ld = LK.PL_local_data{_QL}(gd)
     @test !LK.boot_from_source!(gd, ld, [joinpath(dir, "no_such.pl"), f4])    # f4 would make the last step succeed
     @test !gd.bootsession
-    # user:'$load_additional_boot_files'/0 is called: with none defined, an undefined predicate in the boot session raises a Julia error
-    # naming it (AUTOLOAD1 Q3: trapUndefined, pl-proc.c:3051-3053; upstream ends the process). Before Q3 the call was a soft
-    # existence_error and the list failed. The error leaves `gd.bootsession` on, as an exit would.
-    # UNVERIFIED on the kernel: gate decides
+    # user:'$load_additional_boot_files'/0 is called with no user clause for it: it resolves to system's, init.pl:4782
+    # (cbf4e189), which succeeds, as a started swipl 10.1.19 answers `user:'$load_additional_boot_files'` true (live,
+    # 2026-11-03). The database is a copy of the booted template, whose user procedure has its own definition (R-A).
     gd = LK.PL_global_data{_QL}()
     ld = LK.PL_local_data{_QL}(gd)
-    err = try
-        LK.boot_from_source!(gd, ld, [f2])
-        nothing
-    catch e
-        e
-    end
-    @test err isa ErrorException &&
-        occursin(
-        "Undefined predicate during the boot session: user:\$load_additional_boot_files/0",
-        err.msg
-    )
-    gd.bootsession = false
+    @test LK.boot_from_source!(gd, ld, [f2])
+    @test !gd.bootsession
 
     # compileFileList alone restores the access level and `autoload`, and leaves the boot flag as it was
     gd = LK.PL_global_data{_QL}()

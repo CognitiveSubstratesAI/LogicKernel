@@ -2941,6 +2941,8 @@ _manifest_gd_template(::Type{T}) where {T} = (
     (LK.compileFile_leaves, Tuple{NTuple{4, Int}, Int}, false),
     # the boot ld's standard streams cleared from the template's stream table (pl-file.c initIO, freeStream)
     (LK.drop_boot_std_streams!, Tuple{LK.PL_global_data{T}, LK.PL_local_data{T}}, false),
+    # the boot session's autoImport links reset in the template (ruling R-A; pl-qlf.c saveXRProc, XR_PRED)
+    (LK.drop_boot_autoimports!, Tuple{LK.PL_global_data{T}}, false),
     # LB4 b2 first boot (G9): meta_declaration's ReadingSource branch (pl-srcfile.c setMetapredicateSource)
     (
         LK.setMetapredicateSource,
