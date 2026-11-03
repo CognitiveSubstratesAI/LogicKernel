@@ -2468,9 +2468,77 @@ pl_print(ld::PL_local_data{T}, term::term_t) where {T} = pl_print2(ld, 0, term)
 pl_writeln(ld::PL_local_data{T}, term::term_t) where {T} =
     do_write2(ld, 0, term, PL_WRT_NUMBERVARS | PL_WRT_NEWLINE, false)
 
+# ── write_size/4 (pl-write.c:3283-3380), since LB5 ─────────────────────────────────────────────
+
+# PORT: pl-write.c write_length_options
+"write_size/4's options, in upstream's order (pl-write.c)."
+const write_length_options = (
+    PL_option_t(:max_width, OPT_INT64), PL_option_t(:max_height, OPT_INT64)
+)
+
+# PORT: pl-write.c write_size
+# DIVERGES: representation only. Upstream writes to a stream of its own (`limit_size_stream`, its
+# function set `Swrite_lss`) that tracks the position of every character and fails the write with
+# EINVAL once the width or height passes the limit (pl-write.c:3283-3340, :3366-3376). The kernel's
+# stream layer has no custom write function (its function sets are the memory, string and OS-file
+# ones), so the term is written into a memory stream (`tellString`, as format's call-backs do) and
+# measured afterwards: the UTF-8 text is walked with `Supdatepos` over a fresh `IOPOS`, the same
+# update upstream applies, and the limits are checked once, after the write. The answer is the same;
+# the difference is only that output exceeding a limit is produced in full before the call fails (it
+# differs for output that would exhaust memory), and that the I/O-error exception upstream clears
+# (`PL_clear_exception`) is never raised.
+"""
+write_size(+Term, -Width, -Height, +Options): `Width` and `Height` of the text `write_term(Term, Options)`
+produces; fails when `max_width(W)` or `max_height(H)` of `Options` is passed (pl-write.c).
+"""
+function write_size(
+    ld::PL_local_data{T}, A1::term_t, A2::term_t, A3::term_t, A4::term_t
+)::Bool where {T}
+    lims = PL_scan_options(ld, A4, 0, "write_length_option", write_length_options)
+    lims === nothing && return false
+    max_width = something(lims[1], typemax(Int64))::Int
+    max_height = something(lims[2], typemax(Int64))::Int
+
+    bufp = Ref{Union{Nothing, Vector{UInt8}}}(nothing)
+    sizep = Ref(0)
+    oldmask = ld.prolog_flag_mask                          # (*) upstream's oldmask
+    rc = false
+    tellString(ld, bufp, sizep, ENC_UTF8)
+    try
+        clearPrologFlagMask!(ld, PLFLAG_ISO)
+        rc = pl_write_term3(ld, 0, A1, A4)
+    finally
+        ld.prolog_flag_mask = oldmask
+        toldString(ld)
+    end
+    rc || return false
+
+    pos = IOPOS()
+    width = 0
+    if sizep[] > 0
+        text = bufp[]::Vector{UInt8}
+        for ch in String(text[1:sizep[]])
+            Supdatepos(pos, Int(ch))
+            pos.linepos > width && (width = pos.linepos)
+        end
+    end
+    height = (width > 0 || pos.lineno > 0) ? pos.lineno + 1 : 0
+    (width > max_width || height > max_height) && return false
+    return PL_unify_int64(ld, A2, width) && PL_unify_int64(ld, A3, height)
+end
+
+# PORT: pl-write.c write_size as pl_write_size4_va
+# (PRED_IMPL("write_size", 4, write_size, PL_FA_TRANSPARENT))
+function pl_write_size4_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2, A3, A4 = PL__t0, PL__t0 + 1, PL__t0 + 2, PL__t0 + 3
+    return write_size(ld, A1, A2, A3, A4) ? FTRUE : FFALSE
+end
+
 # PORT: pl-write.c BeginPredDefs as PL_predicates_from_write
 # DIVERGES: the entries of the predicates the kernel has ported, in upstream's order
-# (write:3423-3432). NOT PORTED: `$put_token/2`, `$put_quoted/4`, `$needs_quotes/1`, write_size/4.
+# (write:3423-3432). Left to a later step: `$put_token/2`, `$put_quoted/4`, `$needs_quotes/1`.
 "pl-write.c's registration table (`BeginPredDefs(write)`): the ported entries."
 const PL_predicates_from_write = (
     PL_extension(
@@ -2480,5 +2548,6 @@ const PL_predicates_from_write = (
         "write_term", 3, pl_write_term3_va, PL_FA_TRANSPARENT | PL_FA_ISO | PL_FA_VARARGS
     ),
     PL_extension("nl", 0, pl_nl0_va, PL_FA_ISO | PL_FA_VARARGS),
-    PL_extension("nl", 1, pl_nl1_va, PL_FA_ISO | PL_FA_VARARGS)
+    PL_extension("nl", 1, pl_nl1_va, PL_FA_ISO | PL_FA_VARARGS),
+    PL_extension("write_size", 4, pl_write_size4_va, PL_FA_TRANSPARENT | PL_FA_VARARGS)
 )
