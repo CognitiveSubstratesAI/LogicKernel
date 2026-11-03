@@ -310,6 +310,32 @@ end
     @test length(c.stream_table) == n0 + 4 && all(isnothing, c.stream_table)
 end
 
+@testset "a fresh engine's first stream access finds user_error (pl-file.c get_stream_handle after initIO)" begin
+    # upstream's standard streams are open from the boot on (setupProlog calls initIO, cbf4e189 src/pl-setup.c:173); the
+    # kernel's engine on a database copied from the template opens them at its first `_initIO`, which
+    # get_stream_handle now runs first. swipl 10.1.19, live 2026-11-03: `'$stream_property'(user_error, alias(A))`
+    # has the one answer A = user_error (re-run below when swipl is on PATH).
+    gd = LK.PL_global_data{_QL}()
+    ld = LK.PL_local_data{_QL}(gd)
+    @test !ld.IO_initialised                                           # not vacuous: nothing opened them yet
+    goal = mk_expr(
+        _QL, _QL[
+            _qls("\$stream_property"), _qls("user_error"),
+            mk_expr(_QL, _QL[_qls("alias"), mk_var(_QL, LK.fresh_var_keys!(1))])
+        ]
+    )
+    ans = LK.query_answers(ld, goal)
+    @test length(ans) == 1 && _ql_enc(child(child(ans[1], 3), 2)) == _ql_enc(_qls("user_error"))
+    swipl = get(ENV, "LOGICKERNEL_NO_SWIPL", "") == "1" ? nothing : Sys.which("swipl")
+    if swipl === nothing
+        @info "the user_error alias row: swipl's answer not re-checked — `swipl` is not on PATH here."
+        @test true
+    else
+        g = "forall('\$stream_property'(user_error, alias(A)), (writeq(A), nl)), halt"
+        @test readchomp(`$swipl -q -g $g -t 'halt(1)'`) == "user_error"
+    end
+end
+
 @testset "the template keeps no autoImport link of the boot session (R-A; pl-qlf.c saveXRProc, XR_PRED)" begin
     # a started swipl loads the saved state, and autoImport links made while compiling the boot files are run-time
     # resolution, not saved state (cbf4e189 src/pl-qlf.c:2646-2648 writes a reference by its definition's module,
