@@ -12,7 +12,7 @@
 #   * THE BENCH PROGRAMS loaded from their .pl files, their answers compared with swipl's;
 #   * THE REFUSALS (decision 4): DCG rules, term_expansion, module/use_module/include/
 #     initialization, conditional compilation, a reconsult, a directive that needs the meta-call,
-#     a second file redefining a predicate — each an explicit `NotPortedError`.
+#     — each an explicit refusal exception (a second file redefining a predicate is no refusal since PR1b: it abolishes, as swipl).
 using Test, LogicKernel
 const LK = LogicKernel
 
@@ -551,9 +551,16 @@ end
         @test LK.load_file!(gd, ld, path)[1] === :ok
         @test_throws LK.NotPortedError LK.load_file!(gd, ld, path)
     end
-    # a file clause for a predicate asserted before (no file): swipl warns and abolishes (R2)
-    @test notported(":- assertz(q(1)).\nq(2).\n")
-    # a second file defining a predicate the first defined: swipl warns and abolishes (R2)
+    # a file clause for a predicate asserted before (no file): swipl warns and abolishes; the kernel does too since PR1b
+    # (redefineProcedure -> abolishProcedure!; the answers are rows t_rd1-t_rd7 of test_pr1_swipl.jl)
+    mktempdir() do d
+        path = joinpath(d, "q.pl")
+        write(path, ":- assertz(q(1)).\nq(2).\n")
+        gd = LK.PL_global_data{_TL}()
+        ld = LK.PL_local_data{_TL}(gd)
+        @test LK.load_file!(gd, ld, path)[1] === :ok
+    end
+    # a second file defining a predicate the first defined: swipl warns and abolishes (PR1b: the kernel too)
     mktempdir() do d
         p1, p2 = joinpath(d, "one.pl"), joinpath(d, "two.pl")
         write(p1, "s(1).\n")
@@ -561,7 +568,7 @@ end
         gd = LK.PL_global_data{_TL}()
         ld = LK.PL_local_data{_TL}(gd)
         @test LK.load_file!(gd, ld, p1)[1] === :ok
-        @test_throws LK.NotPortedError LK.load_file!(gd, ld, p2)
+        @test LK.load_file!(gd, ld, p2)[1] === :ok
         @test ld.messages[end][1] === :warning &&
             sym_text(child(ld.messages[end][2], 1)) == "redefined_procedure"
     end

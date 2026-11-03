@@ -46,7 +46,19 @@ pl_abolish1, pl_garbage_collect_clauses0 + FRG entries abolish/1,2 (before repea
 PL_strip_module_nocreate (pl-proc.jl) + FRG entry before repeat/0; 988e2b1 current_predicate/1 (pl_current_predicate1_va,
 _cur_enum_clean!) + table entry after retract; dee70dd `$get_predicate_attribute`/3 + unify_meta_argument/pattern,
 num_visible_clauses, sizeof_predicate, _tbl_is_predicate_attribute + table entry after `$set_predicate_attribute`.
-NOT YET WRITTEN (groups 7-10): oracle rows test/core_lang/test_pr1_swipl.jl + evidence/PR1 generator/driver/.out; tools/mutants/PR1.py;
+GROUP 7 STARTED (coder 2 hit the cap): test/core_lang/test_pr1_swipl.jl is assembled (105 cases pr01-pr105, program, helpers pr_try/pr_cp,
+copy of test_style_check_swipl.jl's encoder/driver/kernel runner with sc->pr) and committed UNFINISHED. TO DO for the next coder:
+(a) fix the file's header comment (says pr01-pr72 and pr60/pr61: now pr01-pr105; size/last_modified rows are the two `integer(V)` rows near the end),
+and the tail still carries style_check text: rename the testset titles, `error(SsuE, _)` -> `error(E, _)` in `_pr_file` (file name pr1.pl),
+rewrite the non-vacuity testset (both sides non-empty: `ok` first, count of `raised` lines >= 10, rows pr-abolish bad-arg lines have `raised`,
+enumeration rows non-empty); add the `# TERM TYPES PER CHUNK` comment line before `include(term_under_test.jl)`;
+(b) write evidence/PR1/gen_rows.py: parse THIS test file (regex `const _PR_PROGRAM = raw"""(.*?)"""`, `_PR_CASES` tuples `("id", raw"goal")`, `_PR_DRIVER`)
+-> build the same text `_pr_file` builds -> run `swipl -q drv.pl` TWICE (driver from `_pr_swipl_lines`) -> require byte-identical -> write evidence/PR1/pr_rows.out
+and with --fill rewrite the `const _PR_PINNED = [...]` block (one line per output line, double quotes escaped, `$` escaped); check the swipl output has
+one line per case; review rows whose swipl answer is an error you did not expect (a row that raises for the wrong reason is rewritten, not pinned);
+(c) the generator source in the test is the single extractor; rows were never run, kernel answers are UNVERIFIED (gate decides). The assembler
+script lives only in the previous coder's scratchpad: edit the test file directly. Then groups 8-10 below.
+NOT YET WRITTEN (groups 8-10; group 7 above): oracle rows test/core_lang/test_pr1_swipl.jl + evidence/PR1 generator/driver/.out; tools/mutants/PR1.py;
 docs/architecture.md block; manifest entries. Row ideas are in the list of group 7 above.
 
 ### Flags for the audit

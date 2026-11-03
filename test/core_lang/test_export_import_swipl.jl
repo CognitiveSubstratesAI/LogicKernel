@@ -328,15 +328,15 @@ const _MX_PINNED = [
     "t_d17 c[116,95,100,49,55]/1(c[91,124,93]/2(c[45]/2(a[117,115,101,114],c[91,124,93]/2(c[47]/2(a[112,117],i1),nil)),nil))"
 ]
 
-# F5: a weak import overruled by a clause of a loaded file — swipl drops the import and makes a local definition; the kernel refuses
-# (abolishProcedure is not available: pl-proc.jl overruleImportedProcedure). Not a row of the compared table.
+# F5: a weak import overruled by a clause of a loaded file — swipl drops the import and makes a local definition; the kernel does the
+# same (PR1b: pl-proc.jl overruleImportedProcedure calls abolishProcedure!). Not a row of the compared table.
 const _MX_F5_PROGRAM = raw"""
-:- assertz(mwfs:wq(1)).
-:- mwf:'$import'(mwfs:wq/1, weak).
-mwf:wq(9).
-t_f5(R) :- findall(X, mwf:wq(X), R).
+:- assertz(mwfs:mw_wq(1)).
+:- '$import'(mwfs:mw_wq/1, weak).
+mw_wq(9).
+t_f5(R) :- findall(X, mw_wq(X), R).
 """
-# DIVERGES (F5): abolishProcedure is not available — swipl 10.1.19's line is below, the kernel raises NotPortedError
+# swipl 10.1.19's line (live below); the kernel's answer is the same line since PR1b (no longer a pinned difference)
 const _MX_F5_SWIPL = "t_f5 c[116,95,102,53]/1(c[91,124,93]/2(i9,nil))"
 
 "The program and cases as one file; the case predicates' names."
@@ -448,18 +448,14 @@ end
     @test count(l -> !occursin(" ", l), _MX_PINNED) == 1                                # only "ok" has no answer; no row fails
 end
 
-@testset "F5: a weak import overruled by a definition (pinned difference)" begin
-    # swipl's answer is the line in _MX_F5_SWIPL; the kernel refuses: pl-proc.jl overruleImportedProcedure keeps its NotPortedError
+@testset "F5: a weak import overruled by a definition" begin
+    # swipl's answer is the line in _MX_F5_SWIPL; the kernel abolishes the link (overruleImportedProcedure -> abolishProcedure!)
     f = joinpath(mktempdir(), "mx_f5.pl")
     write(f, _MX_F5_PROGRAM)
     @test startswith(_MX_F5_SWIPL, "t_f5 ")
-    # UNVERIFIED on the kernel: gate decides (the refusal reaches the caller as the exception, or the loader reports a status that is not ok)
-    res = try
-        _mx_kernel(f, ["t_f5"])
-    catch e
-        e
-    end
-    @test res isa LK.NotPortedError || (res isa Tuple && res[1][1] != "ok")
+    # UNVERIFIED on the kernel: gate decides
+    res = _mx_kernel(f, ["t_f5"])
+    @test res[1] == ["ok", _MX_F5_SWIPL]
 end
 
 @testset "the pins are swipl's (live, when swipl is on PATH)" begin

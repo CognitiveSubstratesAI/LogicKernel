@@ -1,0 +1,15 @@
+Warning: /home/shivaji1012/code/lk-pr1/evidence/PR1/pr1_rows.pl:27:
+Warning:    import/1: prws:pr_wq/1 is not exported (still imported into user)
+Warning: /home/shivaji1012/code/lk-pr1/evidence/PR1/pr1_rows.pl:28:
+Warning:    Local definition of user:pr_wq/1 overrides weak import from prws
+
+Warning: [Thread main] import/1: pr_m2:pr_i/1 is not exported (still imported into pr_m3)
+
+Warning: [Thread main] import/1: pr_m2:pr_i2/1 is not exported (still imported into pr_m3)
+
+Warning: [Thread main] import/1: pr_m2:pr_i3/1 is not exported (still imported into pr_m3)
+
+Warning: [Thread main] import/1: pr_m2:pr_gi/1 is not exported (still imported into pr_m3)
+
+Warning: [Thread main] Loading module mrq abolished:
+Warning: [Thread main]     mrq:qs/1 [undefined]

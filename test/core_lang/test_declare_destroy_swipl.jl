@@ -10,8 +10,8 @@
 #     `catch(Goal, error(F, _), R = raised(F))` and followed by `mb_done` (the source and typein modules back to `user`).
 #   * Every answer line is swipl's, PINNED (swipl 10.1.19-1-gcbf4e189, this program and test_export_import_swipl.jl's driver; lk-channel
 #     evidence/MOD5b/mb_rows.out in the MOD5b branch); with `swipl` on PATH the live answers are compared with the pins too.
-#   * Q7 (modules.md §8): re-declaring a module whose static predicates have clauses needs `abolishProcedure`, which the kernel does
-#     not have: swipl's answers are pinned, the kernel refuses by name (`NotPortedError`), in its own testset below.
+#   * Q7 (modules.md §8): re-declaring a module whose static predicates have clauses abolishes them (`abolishProcedure!`, PR1b; first
+#     the kernel refused by name): swipl's answers are pinned and the kernel's are the same, in its own testset below.
 using Test, LogicKernel
 const LK = LogicKernel
 
@@ -324,14 +324,14 @@ const _MB_PINNED = [
 ]
 
 # Q7 (modules.md §8): a module whose STATIC predicate has clauses, declared. swipl abolishes the predicate and warns (stderr);
-# the kernel has no abolishProcedure and refuses by name (NotPortedError).
+# the kernel does the same since PR1b (declareModule calls abolishProcedure!).
 const _MB_Q7_PROGRAM = raw"""
 mq:qs(1).
 mq:qs(2).
 t_q7a(R) :- '$declare_module'(mq, user, user, '/mb/q.pl', 1, false), '$set_source_module'(user), R = ok.
 t_q7b(R) :- catch(findall(X, mq:qs(X), R), error(F, _), R = raised(F)).
 """
-# DIVERGES (Q7, F5): swipl 10.1.19's lines are below; the kernel raises NotPortedError at t_q7a
+# swipl 10.1.19's lines are below; the kernel's are the same since PR1b
 const _MB_Q7_SWIPL = [
     "t_q7a c[116,95,113,55,97]/1(a[111,107])",
     "t_q7b c[116,95,113,55,98]/1(c[114,97,105,115,101,100]/1(c[101,120,105,115,116,101,110,99,101,95,101,114,114,111,114]/2(a[112,114,111,99,101,100,117,114,101],c[58]/2(a[109,113],c[47]/2(a[113,115],i1)))))"
@@ -438,18 +438,14 @@ end
     @test mtd8 !== nothing && sym_key(mtd8.class) == sym_key(_mbs("temporary"))
 end
 
-@testset "Q7: declaring a module whose static predicate has clauses (pinned difference)" begin
-    # swipl's answers are _MB_Q7_SWIPL; the kernel refuses (declareModule: _abolishProcedure_pristine raises NotPortedError)
+@testset "Q7: declaring a module whose static predicate has clauses" begin
+    # swipl's answers are _MB_Q7_SWIPL; the kernel abolishes the predicate (declareModule -> abolishProcedure!)
     f = joinpath(mktempdir(), "mb_q7.pl")
     write(f, _MB_Q7_PROGRAM)
     @test length(_MB_Q7_SWIPL) == 2 && startswith(_MB_Q7_SWIPL[1], "t_q7a ")
-    # UNVERIFIED on the kernel: gate decides (the refusal reaches the caller as the exception, or the loader reports a status that is not ok)
-    res = try
-        _mb_kernel(f, ["t_q7a", "t_q7b"])
-    catch e
-        e
-    end
-    @test res isa LK.NotPortedError || (res isa Tuple && res[1][1] != "ok")
+    # UNVERIFIED on the kernel: gate decides
+    res = _mb_kernel(f, ["t_q7a", "t_q7b"])
+    @test res[1] == ["ok", _MB_Q7_SWIPL...]
 end
 
 @testset "the pins are swipl's (live, when swipl is on PATH)" begin
