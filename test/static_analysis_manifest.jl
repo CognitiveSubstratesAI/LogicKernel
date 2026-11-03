@@ -2612,7 +2612,30 @@ function _manifest_index(T)
         (LK.pl_put_code1_va, Tuple{LD, Int64, Int64, LK.foreign_context{T}}, false),
         (LK.PL_eval_expression_to_int64_ex, Tuple{LD, Int64}, false),
         (LK.write_size, Tuple{LD, Int64, Int64, Int64, Int64}, false),
-        (LK.pl_write_size4_va, Tuple{LD, Int64, Int64, LK.foreign_context{T}}, false)
+        (LK.pl_write_size4_va, Tuple{LD, Int64, Int64, LK.foreign_context{T}}, false),
+        # TAB1-min — '$tbl_trienode'/1, '$tbl_is_trienode'/1 (src/pl-tabling.jl) and '$c_wrap_predicate'/5 (src/pl-wrap.jl)
+        [
+            (f, Tuple{LD, Int, Int, LK.control_t{T}}, false) for f in
+            (LK.pl_tbl_trienode1_va, LK.pl_tbl_is_trienode1_va, LK.pl_c_wrap_predicate5_va)
+        ]...,
+        # T2: the tabling properties of a predicate (src/pl-tabling.jl)
+        (LK.tbl_reset_tabling_attributes!, Tuple{D}, false),
+        (LK.get_predicate_table_props!, Tuple{D}, false),
+        (LK.tbl_get_predicate_attribute, Tuple{LD, D, T, Int}, false),
+        (LK.get_size_or_inf, Tuple{LD, Int}, false),
+        (LK.tbl_set_incremental_predicate, Tuple{GD, D, Bool}, false),
+        (LK.set_bool_attr, Tuple{LD, D, UInt32, Int}, false),
+        (LK.tbl_set_predicate_attribute, Tuple{LD, D, T, Int}, false),
+        # T4/T5: the closure blob and the wrapper supervisors (src/pl-wrap.jl, src/pl-supervisor.jl)
+        (LK.closure_of_word, Tuple{GD, UInt64}, false),
+        (LK.unify_closure, Tuple{GD, LD, Int, D, Vector{LK.code}, Vector{CR}}, false),
+        (LK.get_closure_predicate, Tuple{GD, LD, Int}, false),
+        (LK.resetWrappedSupervisor, Tuple{GD, D, Bool}, false),
+        (LK.find_wrapper, Tuple{GD, D, UInt64}, false),
+        (LK.assert_wrapper, Tuple{GD, LD, Int}, false),
+        (LK.unify_wrapped, Tuple{LD, Int, T, Int}, false),
+        (LK.wrapper_vmi, Tuple{D, T}, false),
+        (LK.freeCodesDefinition!, Tuple{GD, D, Bool}, false)
     )
 end
 
@@ -3428,7 +3451,18 @@ const _DISPATCH_MANIFEST_TUPLE = (
     # BOOTPRED3: the registration tables of src/pl-error.jl, src/pl-event.jl and src/pl-termhash.jl
     (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_error)}, false),
     (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_event)}, false),
-    (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_termhash)}, false)
+    (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_termhash)}, false),
+    # TAB1-min: the registration tables of src/pl-tabling.jl and src/pl-wrap.jl, and the term-type-independent helpers
+    (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_tabling)}, false),
+    (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_wrap)}, false),
+    (LK.table_props, Tuple{}, false),
+    (LK.clear_table_props!, Tuple{LK.table_props}, false),
+    (LK._closure_bytes, Tuple{Int}, false),
+    (LK.initWrap!, Tuple{LK.atoms_t}, false),
+    (LK.isCallWrapper, Tuple{LK.code}, false),
+    (LK.skipWrapperPrefix, Tuple{Vector{LK.code}}, false),
+    (LK.skipWrapperPrefix, Tuple{Vector{LK.code}, Int}, false),
+    (LK.unregisterWrappedSupervisor, Tuple{Vector{LK.code}}, false)
 )
 
 """

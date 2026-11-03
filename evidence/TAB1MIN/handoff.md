@@ -295,3 +295,11 @@ origin/main fetched at start: STILL f08167f (ENG3 NOT landed): T3 NOT possible (
    NOT LISTED with reasons: `k == DU_WORD &&` of `$tbl_is_trienode`, `freeCodesDefinition!` in `tbl_set_incremental_predicate`,
    the two asserts, `unregisterWrappedSupervisor` (header of the file). D6 (side table reset) kills only if the called single-clause
    supervisor had a side-table entry: new white-box row `@test isempty(c06.supervisor_crefs)` added to the test file (UNVERIFIED).
+   Commit 5a6a6de.
+2. (B) manifest entries (test/static_analysis_manifest.jl): at the END of `_manifest_index(T)` (the 3 pl_*_va rows, T2 functions,
+   T4/T5 functions incl. the 3-argument freeCodesDefinition!, noalloc false) and at the end of `_DISPATCH_MANIFEST_TUPLE` (the two
+   `_extension_sigs` rows, `table_props()`, clear_table_props!, _closure_bytes, initWrap!, isCallWrapper, skipWrapperPrefix [1 and 2
+   args], unregisterWrappedSupervisor). Checked against `git diff f08167f HEAD -U0 -- src`: every new function/method has a row
+   (the auto constructors of table_props [6 args] and closure/definition are structs' own). RISK for the gate: the 2-argument
+   freeCodesDefinition! row (:1416) is `noalloc=true` and the method now contains a `throw(NotPortedError...)` branch: if AllocCheck
+   counts the throw path, flip that row to false (alloc pin).
