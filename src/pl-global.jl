@@ -161,6 +161,7 @@ function PL_global_data{T}() where {T}
     syms = atom_symbols{T}()                   # (the atoms' symbols: filled as words are made)
     functors = initFunctors!(functors_t())     # initFunctors (after the atoms, as upstream's)
     initDBRef!(atoms)                          # initDBRef (setup:146): the clause blob type (D1)
+    initWrap!(atoms)                           # initWrap (setup:152): the closure blob type (TAB1-min)
     dexpr = first(lookupBlob(atoms, Vector{UInt8}(codeunits("\$expr")), 5, reserved_symbol))
     dot2 = lookupFunctorDef(functors, _atom_word!(atoms, syms, mk_sym(T, Symbol("[|]"))), 2)
     nilw = _atom_word!(atoms, syms, mk_nil(T))  # ATOM_nil's word, once (L1c-6)
