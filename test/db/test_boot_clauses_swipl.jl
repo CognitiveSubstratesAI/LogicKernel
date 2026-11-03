@@ -36,13 +36,16 @@ _bcs(x) = lk_sym(_BC, Symbol(x))
 _bce(f, xs::_BC...) = LK.mk_expr(_BC, _BC[_bcs(f), xs...])
 _bcv(i) = lk_var(_BC, UInt64(i))
 
-const _BC_SWIPL = (get(ENV, "LOGICKERNEL_NO_SWIPL", "") == "1" ? nothing : Sys.which("swipl"))
+const _BC_SWIPL = (
+    get(ENV, "LOGICKERNEL_NO_SWIPL", "") == "1" ? nothing : Sys.which("swipl")
+)
 const _BC_OUT = joinpath(@__DIR__, "test_boot_clauses_swipl_rows.out")
 const _BC_DRIVER = joinpath(@__DIR__, "test_boot_clauses_swipl_rows.pl")
 
 # ---- ONE text for a row (the driver's `format/2` line) and ONE parser for both sides
 _bc_codes(s::AbstractString)::String = "[" * join(Int.(collect(s)), ",") * "]"
-_bc_text(c::AbstractString)::String = c == "[]" ? "" : String(Char.(parse.(Int, split(c[2:(end - 1)], ","))))
+_bc_text(c::AbstractString)::String =
+    c == "[]" ? "" : String(Char.(parse.(Int, split(c[2:(end - 1)], ","))))
 _bc_line(m, n, a, nc, h)::String = "t2 $(_bc_codes(m)) $(_bc_codes(n)) $a $nc $h"
 
 const _BcKey = Tuple{String, String, Int}
@@ -70,14 +73,17 @@ const _BC_UNDEFINED = _BcKey[
     ("\$syspreds", "use_foreign_library", 1),            # syspred.pl:497-589 (open_shared_object, FLAG F8)
     ("\$syspreds", "use_foreign_library", 2),
     ("\$syspreds", "use_foreign_library_noi", 1),
-    ("\$syspreds", "ensure_shlib", 0),
+    ("\$syspreds", "ensure_shlib", 0)
 ]
-# rewritten: (the clauses of the kernel's configuration, the kernel's hash: `nothing` until G9 pins it from the boot run)
+# rewritten: (the clauses of the kernel's configuration, their hash). The hash is SWIPL'S: swipl 10.1.19 encodes, with
+# this file's driver (lb4b2c_enc/2, lb4b2c_hash/3), the clause texts the kernel's configuration compiles at the pin
+# (the unconditional and `:- else` branches, read with term_string/2); where swipl has the same clause, its clause/2
+# encoding is identical (checked for all three: evidence/LB4B2/rw.pl, 2026-11-03).
 const _BC_REWRITTEN = Dict{_BcKey, Tuple{Int, Union{Nothing, Int}}}(
-    ("system", "\$error_count", 2) => (1, nothing),          # init.pl:2557-2564: the thread_statistics clause skipped
-    ("system", "\$mt_load_file", 4) => (2, nothing),         # init.pl:2720-2741: the queue clause skipped
-    ("\$toplevel", "main_thread_init", 0) => (1, nothing),   # toplevel.pl:560-582: the else clause only
-    ("\$syspreds", "unload_file_", 1) => (1, nothing),       # syspred.pl:485-493: the shlib clause skipped (F8)
+    ("system", "\$error_count", 2) => (1, 1528547892),       # init.pl:2557-2564: the thread_statistics clause skipped
+    ("system", "\$mt_load_file", 4) => (2, 1258476312),      # init.pl:2720-2741: the queue clause skipped
+    ("\$toplevel", "main_thread_init", 0) => (1, 803882513), # toplevel.pl:560-582: the else clause only
+    ("\$syspreds", "unload_file_", 1) => (1, 1523927706)    # syspred.pl:485-493: the shlib clause skipped (F8)
 )
 
 # ---- THE KERNEL'S PIN (G9 fills it from the first boot run, each entry with its cause; the list only shrinks):
@@ -108,12 +114,16 @@ function _bc_kernel(mods)::Vector{String}
     f = joinpath(mktempdir(), "lb4b2c_kernel.pl")
     write(
         f,
-        "lb4b2c_kmods([" * join(("'" * replace(m, "'" => "\\'") * "'" for m in sort(collect(mods))), ",") * "]).\n" *
-            "lb4b2c_krow(M, N, A, NC, H) :- lb4b2c_kmods(Ms), lb4b2c_row(Ms, M, N, A, NC, H).\n"
+        "lb4b2c_kmods([" *
+        join(("'" * replace(m, "'" => "\\'") * "'" for m in sort(collect(mods))), ",") *
+        "]).\n" *
+        "lb4b2c_krow(M, N, A, NC, H) :- lb4b2c_kmods(Ms), lb4b2c_row(Ms, M, N, A, NC, H).\n"
     )
     st, ball = LK.load_file!(gd, ld, f)
     @test st === :ok && ball === nothing
-    goal = _bce(":", _bcs(:user), _bce(:lb4b2c_krow, _bcv(1), _bcv(2), _bcv(3), _bcv(4), _bcv(5)))
+    goal = _bce(
+        ":", _bcs(:user), _bce(:lb4b2c_krow, _bcv(1), _bcv(2), _bcv(3), _bcv(4), _bcv(5))
+    )
     lines = String[]
     for a in LK.query_answers(ld, goal)
         g = LK.child(a, 3)
@@ -139,16 +149,21 @@ end
     @test sum(o[c][1] for c in common; init=0) > 2000
     # THE GUARDS. UNVERIFIED on the kernel: gate decides.
     differ = sort([
-        "$(_bc_key_line(c)) $(o[c][1]) $(o[c][2]) $(k[c][1]) $(k[c][2])" for c in common if o[c] != k[c]
+        "$(_bc_key_line(c)) $(o[c][1]) $(o[c][2]) $(k[c][1]) $(k[c][2])" for
+        c in common if o[c] != k[c]
     ])
+    differ == _BC_KERNEL_DIFFER ||
+        println(stderr, "  PIN (_BC_KERNEL_DIFFER): ", repr(differ))
     @test differ == _BC_KERNEL_DIFFER
     @test all(c -> k[c][1] >= 0, common)                  # clause/2 raised on no common row (NCLAUSES -1)
     for (c, (nc, h)) in _BC_REWRITTEN
         @test haskey(k, c)
         haskey(k, c) || continue
+        k[c] == (nc, h) ||
+            println(stderr, "  PIN (_BC_REWRITTEN ", _bc_key_line(c), "): ", repr(k[c]))
         @test k[c][1] == nc                               # the configuration's clause count
         @test k[c] != orw[c]                              # and not the oracle's threaded/shlib body
-        @test h !== nothing && k[c][2] == h               # the kernel's hash, pinned at G9
+        @test h !== nothing && k[c][2] == h               # swipl's hash of the configuration's clauses
     end
 end
 
@@ -159,7 +174,9 @@ const _BC_OPTIMISE_DIFFER = 33
     if _BC_SWIPL === nothing
         @test_skip "swipl not on PATH (the pin: test_boot_clauses_swipl_rows.out)"
     else
-        m = match(r"PLBASE=\"([^\"]*)\"", readchomp(`$(_BC_SWIPL) --dump-runtime-variables=sh`))
+        m = match(
+            r"PLBASE=\"([^\"]*)\"", readchomp(`$(_BC_SWIPL) --dump-runtime-variables=sh`)
+        )
         @test m !== nothing
         plbase = String(m.captures[1])
         out = mktempdir()
@@ -174,7 +191,9 @@ const _BC_OPTIMISE_DIFFER = 33
         # FLAG F3's measure: the same boot WITH -O
         orows = joinpath(out, "rows_O.out")
         cmd = `$(_BC_SWIPL) --home=$plbase -q -O -o $(joinpath(out, "b.prc")) -b $initpl $(_BC_DRIVER) $mainpl`
-        p = run(pipeline(ignorestatus(cmd); stdout=orows, stderr=joinpath(out, "rows_O.err")))
+        p = run(
+            pipeline(ignorestatus(cmd); stdout=orows, stderr=joinpath(out, "rows_O.err"))
+        )
         @test p.exitcode == 0
         o = _bc_parse(readlines(_BC_OUT))
         oo = _bc_parse(readlines(orows))

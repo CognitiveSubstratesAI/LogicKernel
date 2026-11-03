@@ -43,20 +43,23 @@ _bis(x) = lk_sym(_BI, Symbol(x))
 _bie(f, xs::_BI...) = LK.mk_expr(_BI, _BI[_bis(f), xs...])
 _biv(i) = lk_var(_BI, UInt64(i))
 
-const _BI_SWIPL = (get(ENV, "LOGICKERNEL_NO_SWIPL", "") == "1" ? nothing : Sys.which("swipl"))
+const _BI_SWIPL = (
+    get(ENV, "LOGICKERNEL_NO_SWIPL", "") == "1" ? nothing : Sys.which("swipl")
+)
 const _BI_OUT = joinpath(@__DIR__, "test_boot_image_swipl_rows.out")
 const _BI_DRIVER = joinpath(@__DIR__, "test_boot_image_swipl_rows.pl")
 
 # ---- ONE text for a row (the driver's `format/2` lines) and ONE parser for both sides
 _bi_codes(s::AbstractString)::String = "[" * join(Int.(collect(s)), ",") * "]"
-_bi_text(c::AbstractString)::String = c == "[]" ? "" : String(Char.(parse.(Int, split(c[2:(end - 1)], ","))))
+_bi_text(c::AbstractString)::String =
+    c == "[]" ? "" : String(Char.(parse.(Int, split(c[2:(end - 1)], ","))))
 _bi_b(x::Bool)::Char = x ? '1' : '0'
 
 "The kernel's T1 row in the driver's text: `t1 MODULE NAME ARITY FLAGS CLAUSES` (test_boot_image_swipl_rows.pl:29)."
 function _bi_t1_line(r::LK.BootImagePredicate)::String
     fl = String(
         [_bi_b(r.dynamic), _bi_b(r.foreign), _bi_b(r.locked), _bi_b(r.iso),
-            _bi_b(r.transparent), _bi_b(r.meta), _bi_b(r.public), _bi_b(r.exported)]
+        _bi_b(r.transparent), _bi_b(r.meta), _bi_b(r.public), _bi_b(r.exported)]
     )
     nc = r.number_of_clauses === nothing ? "none" : string(r.number_of_clauses)
     return "t1 $(_bi_codes(r.module_name)) $(_bi_codes(r.name)) $(r.arity) $fl $nc"
@@ -90,8 +93,23 @@ function _bi_parse(lines::Vector{String})
             t1[key] = (String(p[5]), p[6] == "none" ? nothing : parse(Int, p[6]))
         elseif p[1] == "t3"
             @assert length(p) == 8 l
-            ms = p[8] == "[]" ? String[] : [strip(m, '\'') for m in split(p[8][2:(end - 1)], ",")]
-            push!(t3, (String(p[2]), String(p[3]), parse(Int, p[4]), parse(Int, p[5]), String(p[6]), String(p[7]), sort(String.(ms))))
+            ms = if p[8] == "[]"
+                String[]
+            else
+                [strip(m, '\'') for m in split(p[8][2:(end - 1)], ",")]
+            end
+            push!(
+                t3,
+                (
+                    String(p[2]),
+                    String(p[3]),
+                    parse(Int, p[4]),
+                    parse(Int, p[5]),
+                    String(p[6]),
+                    String(p[7]),
+                    sort(String.(ms))
+                )
+            )
         else
             error("test_boot_image_swipl: a line that is no row: $l")
         end
@@ -140,6 +158,7 @@ const _BI_KERNEL_ONLY = String[]          # rows the kernel defines that swipl's
 const _BI_KERNEL_MISSING_PROLOG = String[] # swipl's Prolog (foreign 0) rows the kernel lacks after the config rewrite
 const _BI_KERNEL_COLUMNS = String[]       # rows on both sides whose columns differ: "KEY swipl-cols kernel-cols"
 const _BI_KERNEL_MISSING_FOREIGN = -1     # how many of swipl's foreign rows the kernel lacks (the list only shrinks)
+const _BI_KERNEL_MODULES_LACKING = String[] # swipl's T1 modules the kernel's boot has no module (or no row) for
 
 "The oracle's T1/T3 with the configuration rows applied."
 function _bi_oracle()
@@ -172,7 +191,9 @@ function _bi_kernel(gd::LK.PL_global_data{_BI})
     mods = Set{String}(["system"])
     foreach(f -> union!(mods, f.modules), files)          # the driver's lb4b2_module/1 (rows.pl:10-11)
     rows = [r for r in LK.boot_image_predicates(gd) if r.defined && r.module_name in mods]
-    lines = vcat(String[_bi_t1_line(r) for r in rows], String[_bi_t3_line(f, bootdir) for f in files])
+    lines = vcat(
+        String[_bi_t1_line(r) for r in rows], String[_bi_t3_line(f, bootdir) for f in files]
+    )
     t1, t3 = _bi_parse(lines)
     return t1, t3, mods
 end
@@ -185,7 +206,7 @@ _bi_key_line(k::_BiKey)::String = "$(k[1]):$(k[2])/$(k[3])"
     omods = Set(k[1] for k in keys(o1))
     # non-vacuity: both sides read, over the same modules
     @test length(o1) > 2000 && length(k1) > 1000
-    @test length(omods) > 20 && kmods ⊇ omods
+    @test length(omods) > 20 && kmods ⊇ setdiff(omods, _BI_KERNEL_MODULES_LACKING)
     common = intersect(Set(keys(o1)), Set(keys(k1)))
     @test length(common) > 1000
     @test count(k -> o1[k][1][2] == '0', common) > 1000   # Prolog rows, not only foreign ones
@@ -198,10 +219,25 @@ _bi_key_line(k::_BiKey)::String = "$(k[1]):$(k[2])/$(k[3])"
         "$(_bi_key_line(k)) $(o1[k][1]) $(something(o1[k][2], "none")) $(k1[k][1]) $(something(k1[k][2], "none"))"
         for k in common if o1[k] != k1[k]
     ])
+    # a value that differs from its pin is printed whole, to paste (a failing `@test` would print a summary only)
+    for (name, v, pin) in (
+        ("_BI_KERNEL_ONLY", only_k, _BI_KERNEL_ONLY),
+        ("_BI_KERNEL_MISSING_PROLOG", missing_prolog, _BI_KERNEL_MISSING_PROLOG),
+        ("_BI_KERNEL_COLUMNS", cols, _BI_KERNEL_COLUMNS),
+        ("_BI_KERNEL_MISSING_FOREIGN", missing_foreign, _BI_KERNEL_MISSING_FOREIGN),
+        (
+            "_BI_KERNEL_MODULES_LACKING",
+            sort(collect(setdiff(omods, kmods))),
+            _BI_KERNEL_MODULES_LACKING
+        )
+    )
+        v == pin || println(stderr, "  PIN (", name, "): ", repr(v))
+    end
     @test only_k == _BI_KERNEL_ONLY
     @test missing_prolog == _BI_KERNEL_MISSING_PROLOG
     @test cols == _BI_KERNEL_COLUMNS
     @test missing_foreign == _BI_KERNEL_MISSING_FOREIGN
+    @test sort(collect(setdiff(omods, kmods))) == _BI_KERNEL_MODULES_LACKING
 end
 
 @testset "T3: the boot image's source files == swipl's boot (config rows applied)" begin
@@ -210,6 +246,17 @@ end
     @test length(o3) == 24 && length(k3) > 20             # non-vacuity: 25 boot files in swipl, threads.pl left out
     @test all(r -> r[3] == 1 && r[6] == "true", o3)       # from source: loaded once, from_state (pl-srcfile.c:310)
     # THE GUARD: order, type, load_count, clauses, reloading, from_state, modules. UNVERIFIED on the kernel: gate decides.
+    if k3 != o3   # printed whole, to paste: the rows that differ, `(row, kernel, swipl)`
+        n = max(length(k3), length(o3))
+        get3(v, i) = i <= length(v) ? v[i] : nothing
+        println(
+            stderr,
+            "  PIN (T3): ",
+            repr([
+                (i, get3(k3, i), get3(o3, i)) for i in 1:n if get3(k3, i) != get3(o3, i)
+            ])
+        )
+    end
     @test [r[1] for r in k3] == [r[1] for r in o3]
     @test k3 == o3
 end
@@ -237,16 +284,23 @@ lk_h12_member(X, [_|T]) :- lk_h12_member(X, T).
 const _BI_H12_SWIPL = (3240, 192, 0, 0)
 
 _bi_h12_text(mods)::String =
-    "lk_h12_mods([" * join(("'" * replace(m, "'" => "\\'") * "'" for m in sort(collect(mods))), ",") * "]).\n" * _BI_H12
+    "lk_h12_mods([" *
+    join(("'" * replace(m, "'" => "\\'") * "'" for m in sort(collect(mods))), ",") *
+    "]).\n" * _BI_H12
 _bi_static_sum(t1, mods)::Int =
-    sum(something(v[2], 0) for (k, v) in t1 if k[1] in mods && v[1][1] == '0' && v[1][2] == '0'; init=0)
+    sum(
+        something(v[2], 0) for
+        (k, v) in t1 if k[1] in mods && v[1][1] == '0' && v[1][2] == '0';
+        init=0
+    )
 
 @testset "H12: no attributed variable in a booted clause (clause/2 + term_attvars/2, both sides)" begin
     o1, _ = _bi_oracle()
     omods = Set(k[1] for k in keys(o1))
     oraw, _ = _bi_parse(readlines(_BI_OUT))
     # swipl's pin is consistent with its own rows (the config rewrite is the kernel's, so the raw rows count here)
-    @test _BI_H12_SWIPL[1] == _bi_static_sum(oraw, omods) && _BI_H12_SWIPL[3] == 0 && _BI_H12_SWIPL[4] == 0
+    @test _BI_H12_SWIPL[1] == _bi_static_sum(oraw, omods) && _BI_H12_SWIPL[3] == 0 &&
+        _BI_H12_SWIPL[4] == 0
     gd = LK.PL_global_data{_BI}()
     ld = LK.PL_local_data{_BI}(gd)
     k1, _, _ = _bi_kernel(gd)                             # read BEFORE the load below adds its own facts
@@ -254,7 +308,11 @@ _bi_static_sum(t1, mods)::Int =
     write(f, _bi_h12_text(omods))
     st, ball = LK.load_file!(gd, ld, f)
     @test st === :ok && ball === nothing
-    ans = LK.query_answers(ld, _bie(":", _bis(:user), _bie(:lk_h12, _biv(1), _biv(2), _biv(3), _biv(4))); limit=1)
+    ans = LK.query_answers(
+        ld,
+        _bie(":", _bis(:user), _bie(:lk_h12, _biv(1), _biv(2), _biv(3), _biv(4)));
+        limit=1
+    )
     @test length(ans) == 1
     if length(ans) == 1
         g = LK.child(ans[1], 3)
@@ -270,7 +328,9 @@ end
     if _BI_SWIPL === nothing
         @test_skip "swipl not on PATH (the pin: test_boot_image_swipl_rows.out, h12 $(_BI_H12_SWIPL))"
     else
-        m = match(r"PLBASE=\"([^\"]*)\"", readchomp(`$(_BI_SWIPL) --dump-runtime-variables=sh`))
+        m = match(
+            r"PLBASE=\"([^\"]*)\"", readchomp(`$(_BI_SWIPL) --dump-runtime-variables=sh`)
+        )
         @test m !== nothing
         plbase = String(m.captures[1])
         out = mktempdir()
@@ -285,7 +345,7 @@ end
         write(
             h,
             _bi_h12_text(Set(k[1] for k in keys(o1))) *
-                ":- lk_h12(S, D, A, E), format(\"h12 ~d ~d ~d ~d~n\", [S, D, A, E]).\n"
+            ":- lk_h12(S, D, A, E), format(\"h12 ~d ~d ~d ~d~n\", [S, D, A, E]).\n"
         )
         cmd = `$(_BI_SWIPL) --home=$plbase -q -O -o $(joinpath(out, "b.prc")) -b $initpl $h`
         @test readchomp(ignorestatus(cmd)) == "h12 " * join(_BI_H12_SWIPL, " ")
