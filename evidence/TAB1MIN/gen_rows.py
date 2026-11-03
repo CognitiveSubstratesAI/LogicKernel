@@ -1,0 +1,27 @@
+# TAB1MIN rows: the program + cases of test/core_lang/test_tabling_min_swipl.jl, written as _tm_file() writes them, then run through the
+# test file's own driver (fz_run) in swipl 10.1.19, LC_ALL=C. Usage (cwd = evidence/TAB1MIN, repo = the worktree root):
+#   python3 gen_rows.py ../../test/core_lang/test_tabling_min_swipl.jl          # writes tm_rows.pl, tm_driver.pl
+#   LC_ALL=C swipl -q tm_driver.pl < /dev/null > tm_rows.out            # run twice, the two outputs must be byte-identical
+#   python3 gen_rows.py ../../test/core_lang/test_tabling_min_swipl.jl --fill   # puts tm_rows.out into _TM_PINNED
+import re, sys, pathlib
+tf = pathlib.Path(sys.argv[1])
+src = tf.read_text()
+prog = re.search(r'const _TM_PROGRAM = raw"""\n(.*?)"""', src, re.S).group(1)
+cases = re.findall(r'\(\s*"(tm[a-z]\d{2})",\s*raw"(.*?)"\s*\)', src, re.S)
+drv = re.search(r'const _TM_DRIVER = raw"""\n(.*?)"""', src, re.S).group(1)
+if "--fill" in sys.argv:
+    lines = pathlib.Path("tm_rows.out").read_text().split("\n")
+    lines = [l for l in lines if l]
+    assert len(lines) == len(cases) + 1, (len(lines), len(cases))
+    block = "const _TM_PINNED = [\n" + ",\n".join('    "%s"' % l for l in lines) + "\n]\n"
+    new, n = re.subn(r"const _TM_PINNED = \[\n(?:.*?\n)?\]\n", lambda m: block, src, count=1, flags=re.S)
+    assert n == 1
+    tf.write_text(new)
+    print("filled", len(lines), "lines")
+    sys.exit(0)
+text = prog + "".join(f"t_{i}(R) :- catch(({g}), error(SsuE, _), R = raised(SsuE)).\n" for i, g in cases)
+pathlib.Path("tm_rows.pl").write_text(text)
+names = ",".join(f"t_{i}" for i, _ in cases)
+here = pathlib.Path("tm_rows.pl").resolve()
+pathlib.Path("tm_driver.pl").write_text(drv + f":- initialization((fz_run('{here}', [{names}]), halt)).\n")
+print(len(cases), "cases")
