@@ -1,0 +1,93 @@
+ 1:  132cc38 =  1:  f65db9c ADDED: evidence/F1C/handoff.md — the plan of F1c (the debug flag setter, shared_object_extension, version_git, libswipl)
+ 2:  6d70c2f !  2:  cc1cf83 UPSTREAM: pl-prologflag.c set_flag_value unify_prolog_flag_value, pl-trace.c debugmode tracemode (swipl-devel cbf4e1896275)
+    @@ src/os/pl-prologflag.jl: function set_flag_value(
+     
+      ## src/pl-global.jl ##
+     @@ src/pl-global.jl: ld_statistics() = ld_statistics(0, 0, 0, 0, WallTime(), 0.0, 0.0, 0.0, 0.0)
+    - # (`recorded_state`, pl-incl.jl). Since R2 O1B: `IO_output_stack` (`LD->IO.output_stack`: the output context stack
+    + # (`cur_pred_enum`, `cur_enum`, pl-incl.jl). Since R2 O1B: `IO_output_stack` (`LD->IO.output_stack`: the output context stack
+      # of `with_output_to/2` and `format/3`'s redirect, src/os/pl-file.jl).
+      # Since R2 S2a: `prompt_current`, `prompt_first`, `prompt_first_used` (`LD->prompt`: prompt/2, prompt1/1; src/os/pl-file.jl).
+     +# Since R2 F1c: `debugstatus_skiplevel`, `debugstatus_tracing`, `debugstatus_debugging`, `debugstatus_showContext` (`LD->_debugstatus`, pl-incl.h
+ 3:  ffcf51e =  3:  a574647 UPSTREAM: pl-prologflag.c initPrologFlags set_libswipl, pl-version.c setGITVersion (swipl-devel cbf4e1896275)
+ 4:  78234f4 =  4:  ecd6be4 MODIFIED: test/core_lang/test_set_flag_swipl.jl, test_push_flag_swipl.jl, test_prolog_flag_swipl.jl, evidence/F1C/handoff.md — debug accepted, three flags defined (F1c)
+ 5:  abca0f1 =  5:  134de15 ADDED: test/core_lang/test_debug_flag_swipl.jl, evidence/F1C/gen_rows.py — the debug flag and the three build flags against swipl 10.1.19 (F1c)
+ 6:  bb0a627 =  6:  aeee90a MODIFIED: evidence/F1C/handoff.md — writer 2 state: rows committed, white-box additions, mutant plan, docs and manifest plan (F1c)
+ 7:  762c875 =  7:  482f6f6 ADDED: white-box rows for debugmode and tracemode in test_debug_flag_swipl.jl (F1c)
+ 8:  02a51ad =  8:  b87b9ae ADDED: tools/mutants/F1C.py, a skip-level row in test_debug_flag_swipl.jl (F1c)
+ 9:  a8f0e36 !  9:  0e65905 DOC: docs/architecture.md block and manifest entries for the debug flag (F1c)
+    @@ docs/architecture.md: graph LR
+          pl_pro --> term_interface
+          pl_pro --> default_term
+          pl_pro --> pl_incl
+    -@@ docs/architecture.md: paths with (`atomic_list_concat/2,3`, `sub_atom/5`) and boot/messages.pl its mes
+    +@@ docs/architecture.md: Tier 1 files touched: src/pl-wam.jl (`handles_unwind`) and src/pl-global.jl (the
+      
+    - Tests: test/core_lang/test_p2_swipl.jl (rows p01-p70; pins from swipl 10.1.19, two byte-identical runs; generator
+    - evidence/P2/gen_rows.py). Mutants: tools/mutants/P2.py.
+    + Tests: test/core_lang/test_halt_swipl.jl (eight testsets against swipl 10.1.19, one process per live row; the catch/cleanup rows and the
+    + `at_halt` rows are gated and print a SKIP note where the loader is absent). Mutants: tools/mutants/HALT1.py (39, F9 declared equivalent).
+     +
+     +## F1c — the `debug` flag setter and the build flags `shared_object_extension`, `version_git`, `libswipl` (R2, audit D-0370 item 5, edit-only: nothing was compiled when this was written; the gate decides)
+     +
+    @@ docs/architecture.md: paths with (`atomic_list_concat/2,3`, `sub_atom/5`) and bo
+     +test_set_flag_swipl.jl, test_push_flag_swipl.jl and test_prolog_flag_swipl.jl lost their refusal rows and pinned-only entries for the five
+     +names. Mutants: tools/mutants/F1C.py (35, four declared equivalent).
+     
+    - ## docs/port_inventory.md ##
+    -@@ docs/port_inventory.md: how many of the upstream file's functions are ported.
+    - | swipl-devel `src/pl-hash.c` | code | `cbf4e1896275` | `src/pl-hash.jl` | 1 | 1 |
+    - | swipl-devel `src/pl-hash.h` | code | `cbf4e1896275` | `src/pl-hash.jl` | 1 | 0 |
+    - | swipl-devel `src/pl-incl.h` | code | `cbf4e1896275` | `src/os/pl-file.jl` | 2 | 1 |
+    --| swipl-devel `src/pl-incl.h` | code | `cbf4e1896275` | `src/os/pl-prologflag.jl` | 3 | 3 |
+    -+| swipl-devel `src/pl-incl.h` | code | `cbf4e1896275` | `src/os/pl-prologflag.jl` | 6 | 5 |
+    - | swipl-devel `src/pl-incl.h` | code | `cbf4e1896275` | `src/pl-arith.jl` | 10 | 0 |
+    - | swipl-devel `src/pl-incl.h` | code | `cbf4e1896275` | `src/pl-atom.jl` | 12 | 3 |
+    - | swipl-devel `src/pl-incl.h` | code | `cbf4e1896275` | `src/pl-comp.jl` | 5 | 2 |
+    -@@ docs/port_inventory.md: how many of the upstream file's functions are ported.
+    - | swipl-devel `src/pl-termhash.h` | code | `cbf4e1896275` | `src/pl-termhash.jl` | 3 | 1 |
+    - | swipl-devel `src/pl-termwalk.c` | code | `cbf4e1896275` | `src/pl-termwalk.jl` | 15 | 5 |
+    - | swipl-devel `src/pl-thread.c` | code | `cbf4e1896275` | `src/pl-thread.jl` | 6 | 4 |
+    --| swipl-devel `src/pl-trace.c` | code | `cbf4e1896275` | `src/pl-trace.jl` | 6 | 3 |
+    -+| swipl-devel `src/pl-trace.c` | code | `cbf4e1896275` | `src/pl-trace.jl` | 8 | 5 |
+    -+| swipl-devel `src/pl-trace.h` | code | `cbf4e1896275` | `src/pl-trace.jl` | 1 | 0 |
+    - | swipl-devel `src/pl-umap.c` | code | `cbf4e1896275` | `src/pl-umap.jl` | 6 | 3 |
+    - | swipl-devel `src/pl-variant.c` | code | `cbf4e1896275` | `src/pl-global.jl` | 2 | 2 |
+    - | swipl-devel `src/pl-variant.c` | code | `cbf4e1896275` | `src/pl-variant.jl` | 16 | 6 |
+    -@@ docs/port_inventory.md: checkout is pulled.
+    - | swipl-devel `src/pl-termhash.h` | `cbf4e1896275` | 0 | 0 | 0 | src/pl-termhash.jl |
+    - | swipl-devel `src/pl-termwalk.c` | `cbf4e1896275` | 11 | 28 | 3 | src/pl-termwalk.jl |
+    - | swipl-devel `src/pl-thread.c` | `cbf4e1896275` | 6 | 267 | 4 | src/pl-thread.jl |
+    --| swipl-devel `src/pl-trace.c` | `cbf4e1896275` | 6 | 77 | 3 | src/pl-trace.jl |
+    -+| swipl-devel `src/pl-trace.c` | `cbf4e1896275` | 8 | 77 | 5 | src/pl-trace.jl |
+    -+| swipl-devel `src/pl-trace.h` | `cbf4e1896275` | 0 | 0 | 0 | src/pl-trace.jl |
+    - | swipl-devel `src/pl-umap.c` | `cbf4e1896275` | 4 | 8 | 3 | src/pl-umap.jl |
+    - | swipl-devel `src/pl-variant.c` | `cbf4e1896275` | 9 | 17 | 5 | src/pl-global.jl, src/pl-variant.jl |
+    - | swipl-devel `src/pl-vmi.c` | `cbf4e1896275` | 159 | 243 | 83 | src/pl-vmi.jl, src/pl-wam.jl |
+    -@@ docs/port_inventory.md: checkout is pulled.
+    - | swipl-devel `tests/db/test_db.pl` | `cbf4e1896275` | 2 | 10 | 0 | test/db/test_db.jl |
+    - | swipl-devel `tests/db/test_jit.pl` | `cbf4e1896275` | 16 | 21 | 0 | test/db/test_jit.jl |
+    - | swipl-devel `tests/rational/test_ieee754.pl` | `cbf4e1896275` | 0 | 15 | 0 | test/rational/test_ieee754.jl |
+    --| **total** | | **1781** | **5252** | **1021** | |
+    -+| **total** | | **1783** | **5252** | **1023** | |
+    - <!-- END GENERATED coverage -->
+    - 
+    - ### Not ported: unreachable upstream
+    -
+      ## test/static_analysis_manifest.jl ##
+     @@ test/static_analysis_manifest.jl: function _manifest_index(T)
+    -             L in (Nothing, LK.PL_locale)
+    -         ]...,
+    -         # Q10 — '$style_check'/2 (src/pl-prims.jl)
+    --        (LK.pl_style_check2_va, Tuple{LD, Int, Int, LK.foreign_context{T}}, false)
+    -+        (LK.pl_style_check2_va, Tuple{LD, Int, Int, LK.foreign_context{T}}, false),
+    +         (LK.pl_abort0_va, Tuple{LD, Int, Int, LK.control_t{T}}, false),
+    +         (LK.raise_halt_exception, Tuple{LD, Int, Bool}, false),
+    +         (LK.handles_unwind, Tuple{LD, Int, UInt32}, false),
+    +-        (LK._halt_exit!, Tuple{GD, Int}, false)
+    ++        (LK._halt_exit!, Tuple{GD, Int}, false),
+     +        # R2 F1c — the debug flag (pl-trace.c debugmode, tracemode; pl-incl.h run mode)
+     +        (LK.debugmode, Tuple{LD, Bool, Nothing, UInt32}, false),
+     +        (LK.debugmode, Tuple{LD, Bool, Base.RefValue{Bool}, UInt32}, false),
+10:  98e5f30 = 10:  c48417b MODIFIED: evidence/F1C/handoff.md — writer 3 state: 4b, 4c, 5 done, gate agent next (F1c)
+11:  4ecdf20 = 11:  c6ee5c6 ADDED: evidence/F1C/gate1.md — F1c gate agent 1 state, yielded to the PR1 fix (audit D-0373)

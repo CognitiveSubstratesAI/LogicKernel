@@ -6441,7 +6441,7 @@ names `halt/1` accepts: `halt(term)`, `halt('SIGusr1')`, status `128 + signal`);
 Tier 1 files touched: src/pl-wam.jl (`handles_unwind`) and src/pl-global.jl (the struct): the alloc pins x3 at the gate.
 
 Tests: test/core_lang/test_halt_swipl.jl (eight testsets against swipl 10.1.19, one process per live row; the catch/cleanup rows and the
-`at_halt` rows are gated and print a SKIP note where the loader is absent). Mutants: tools/mutants/HALT1.py (39, F9 declared equivalent).
+`at_halt` rows are gated and print a SKIP note where the loader is absent). Mutants: tools/mutants/HF1.py (the HALT1 part: 39, F9 declared equivalent).
 
 ## F1c — the `debug` flag setter and the build flags `shared_object_extension`, `version_git`, `libswipl` (R2, audit D-0370 item 5, edit-only: nothing was compiled when this was written; the gate decides)
 
@@ -6481,4 +6481,4 @@ F1b refused `debug` and `debugger_show_context` by name (design D4); F1c follows
 Tests: test/core_lang/test_debug_flag_swipl.jl (rows db01-db35 from swipl 10.1.19, two byte-identical runs, generator evidence/F1C/gen_rows.py;
 a white-box testset for the debugger fields, the messages, the run-mode bits, `libswipl`'s access and the exact `version_git`);
 test_set_flag_swipl.jl, test_push_flag_swipl.jl and test_prolog_flag_swipl.jl lost their refusal rows and pinned-only entries for the five
-names. Mutants: tools/mutants/F1C.py (35, four declared equivalent).
+names. Mutants: tools/mutants/HF1.py (the F1c part: 35, four declared equivalent).

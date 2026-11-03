@@ -1,0 +1,170 @@
+1:  7d68328 = 1:  94b16ac ADDED: evidence/HALT1/handoff.md — the plan for halt/1 and abort/0 (pin ranges, swipl 10.1.19 answer table)
+2:  af13e70 = 2:  47be4a7 UPSTREAM: pl-pro.c abortProlog raise_halt_exception abort/0, pl-wam.c handles_unwind (swipl-devel cbf4e189)
+3:  33fcbfd = 3:  b24f57f UPSTREAM: pl-fli.c PL_halt haltProlog PL_abort_process, pl-init.c PL_cleanup, pl-setup.c PL_get_signum_ex, pl-prims.c halt (swipl-devel cbf4e189)
+4:  8ff2e3e = 4:  a76e832 ADDED: test_halt_swipl.jl, the rows of halt/1, abort/0 and signal_index (halt1 group 3)
+5:  e916b81 = 5:  378e42e ADDED: tools/mutants/HALT1.py, the mutation battery of halt/1 and abort/0
+6:  0471b54 ! 6:  f5d8393 ADDED: static-analysis manifest entries and docs for halt/1 and abort/0 (halt1 group 5)
+    @@ docs/architecture.md: graph LR
+          pl_mutex --> SWI_Prolog
+          pl_mutex --> pl_global
+          pl_mutex --> pl_comp
+    -@@ docs/architecture.md: paths with (`atomic_list_concat/2,3`, `sub_atom/5`) and boot/messages.pl its mes
+    - 
+    - Tests: test/core_lang/test_p2_swipl.jl (rows p01-p70; pins from swipl 10.1.19, two byte-identical runs; generator
+    - evidence/P2/gen_rows.py). Mutants: tools/mutants/P2.py.
+    +@@ docs/architecture.md: stream, over the reader R1 built (`read_term_from_stream`); the pin tree is swip
+    +   toplevel's `blob(resolve)` reads), rows rt303 and rt305-rt319 pin this; rt320 and rt321 are the KNOWN rows of the refusal.
+    + * **Tier 3:** no Tier-1 file changed and no enum, so no `_enum_hash` entry and no allocation pins (RD1b adds the field `blobs` to
+    +   `read_data`); the manifest gets eleven entries (test/static_analysis_manifest.jl). No battery.
+     +
+     +## HALT1 — `halt/1`, `abort/0`, `PL_halt`, `PL_cleanup` (R2, pl-fli.c, pl-init.c, pl-setup.c, pl-pro.c, pl-wam.c at swipl-devel cbf4e189; edit-only: nothing was compiled when this was written, the gate decides)
+     +
+    @@ docs/architecture.md: paths with (`atomic_list_concat/2,3`, `sub_atom/5`) and bo
+     +Tests: test/core_lang/test_halt_swipl.jl (eight testsets against swipl 10.1.19, one process per live row; the catch/cleanup rows and the
+     +`at_halt` rows are gated and print a SKIP note where the loader is absent). Mutants: tools/mutants/HALT1.py (39, F9 declared equivalent).
+     
+    - ## docs/port_inventory.md ##
+    -@@ docs/port_inventory.md: how many of the upstream file's functions are ported.
+    - | swipl-devel `boot/init.pl` | design | `cbf4e1896275` | `boot/init.jl` | 9 | 9 |
+    - | swipl-devel `src/ATOMS` | code | `cbf4e1896275` | `src/pl-atom.jl` | 0 | 0 |
+    - | swipl-devel `src/ATOMS` | code | `cbf4e1896275` | `src/pl-funct.jl` | 0 | 0 |
+    --| swipl-devel `src/SWI-Prolog.h` | code | `cbf4e1896275` | `src/SWI-Prolog.jl` | 112 | 4 |
+    -+| swipl-devel `src/SWI-Prolog.h` | code | `cbf4e1896275` | `src/SWI-Prolog.jl` | 120 | 4 |
+    - | swipl-devel `src/SWI-Prolog.h` | code | `cbf4e1896275` | `src/pl-incl.jl` | 7 | 0 |
+    - | swipl-devel `src/Unicode/prolog_syntax_map.pl` | code | `cbf4e1896275` | `src/pl-umap.jl` | 0 | 0 |
+    - | swipl-devel `src/os/SWI-Stream.h` | code | `cbf4e1896275` | `src/os/pl-stream.jl` | 48 | 3 |
+    -@@ docs/port_inventory.md: how many of the upstream file's functions are ported.
+    - | swipl-devel `src/pl-error.c` | code | `cbf4e1896275` | `src/pl-string.jl` | 3 | 3 |
+    - | swipl-devel `src/pl-error.h` | code | `cbf4e1896275` | `src/pl-error.jl` | 1 | 1 |
+    - | swipl-devel `src/pl-ext.c` | code | `cbf4e1896275` | `src/pl-ext.jl` | 5 | 3 |
+    --| swipl-devel `src/pl-fli.c` | code | `cbf4e1896275` | `src/pl-fli.jl` | 82 | 69 |
+    -+| swipl-devel `src/pl-fli.c` | code | `cbf4e1896275` | `src/pl-fli.jl` | 85 | 71 |
+    - | swipl-devel `src/pl-fli.h` | code | `cbf4e1896275` | `src/pl-fli.jl` | 11 | 9 |
+    - | swipl-devel `src/pl-funct.c` | code | `cbf4e1896275` | `src/pl-funct.jl` | 12 | 9 |
+    - | swipl-devel `src/pl-gc.c` | code | `cbf4e1896275` | `src/pl-gc.jl` | 7 | 5 |
+    -@@ docs/port_inventory.md: how many of the upstream file's functions are ported.
+    - | swipl-devel `src/pl-incl.h` | code | `cbf4e1896275` | `src/pl-atom.jl` | 12 | 3 |
+    - | swipl-devel `src/pl-incl.h` | code | `cbf4e1896275` | `src/pl-comp.jl` | 5 | 2 |
+    - | swipl-devel `src/pl-incl.h` | code | `cbf4e1896275` | `src/pl-funct.jl` | 7 | 1 |
+    --| swipl-devel `src/pl-incl.h` | code | `cbf4e1896275` | `src/pl-global.jl` | 5 | 2 |
+    -+| swipl-devel `src/pl-incl.h` | code | `cbf4e1896275` | `src/pl-global.jl` | 6 | 3 |
+    - | swipl-devel `src/pl-incl.h` | code | `cbf4e1896275` | `src/pl-incl.jl` | 275 | 27 |
+    - | swipl-devel `src/pl-incl.h` | code | `cbf4e1896275` | `src/pl-inline.jl` | 9 | 3 |
+    - | swipl-devel `src/pl-incl.h` | code | `cbf4e1896275` | `src/pl-modul.jl` | 6 | 2 |
+    -@@ docs/port_inventory.md: how many of the upstream file's functions are ported.
+    - | swipl-devel `src/pl-incl.h` | code | `cbf4e1896275` | `src/pl-wam.jl` | 2 | 2 |
+    - | swipl-devel `src/pl-incl.h` | code | `cbf4e1896275` | `src/pl-write.jl` | 3 | 1 |
+    - | swipl-devel `src/pl-index.c` | code | `cbf4e1896275` | `src/pl-index.jl` | 110 | 33 |
+    -+| swipl-devel `src/pl-init.c` | code | `cbf4e1896275` | `src/pl-init.jl` | 2 | 0 |
+    - | swipl-devel `src/pl-inline.h` | code | `cbf4e1896275` | `src/pl-arith.jl` | 1 | 0 |
+    - | swipl-devel `src/pl-inline.h` | code | `cbf4e1896275` | `src/pl-gmp.jl` | 1 | 0 |
+    - | swipl-devel `src/pl-inline.h` | code | `cbf4e1896275` | `src/pl-inline.jl` | 18 | 15 |
+    -@@ docs/port_inventory.md: how many of the upstream file's functions are ported.
+    - | swipl-devel `src/pl-mutex.c` | code | `cbf4e1896275` | `src/pl-mutex.jl` | 1 | 1 |
+    - | swipl-devel `src/pl-op.c` | code | `cbf4e1896275` | `src/pl-incl.jl` | 1 | 1 |
+    - | swipl-devel `src/pl-op.c` | code | `cbf4e1896275` | `src/pl-op.jl` | 20 | 16 |
+    --| swipl-devel `src/pl-prims.c` | code | `cbf4e1896275` | `src/pl-prims.jl` | 160 | 78 |
+    -+| swipl-devel `src/pl-prims.c` | code | `cbf4e1896275` | `src/pl-prims.jl` | 161 | 79 |
+    - | swipl-devel `src/pl-prims.c` | code | `cbf4e1896275` | `src/pl-string.jl` | 7 | 4 |
+    - | swipl-devel `src/pl-prims.h` | code | `cbf4e1896275` | `src/pl-prims.jl` | 2 | 0 |
+    - | swipl-devel `src/pl-privitf.c` | code | `cbf4e1896275` | `src/os/pl-file.jl` | 1 | 1 |
+    - | swipl-devel `src/pl-privitf.c` | code | `cbf4e1896275` | `src/pl-string.jl` | 1 | 1 |
+    --| swipl-devel `src/pl-pro.c` | code | `cbf4e1896275` | `src/pl-pro.jl` | 3 | 3 |
+    -+| swipl-devel `src/pl-pro.c` | code | `cbf4e1896275` | `src/pl-pro.jl` | 6 | 5 |
+    - | swipl-devel `src/pl-proc.c` | code | `cbf4e1896275` | `src/pl-incl.jl` | 1 | 1 |
+    - | swipl-devel `src/pl-proc.c` | code | `cbf4e1896275` | `src/pl-proc.jl` | 71 | 52 |
+    - | swipl-devel `src/pl-proc.h` | code | `cbf4e1896275` | `src/pl-proc.jl` | 1 | 0 |
+    -@@ docs/port_inventory.md: how many of the upstream file's functions are ported.
+    - | swipl-devel `src/pl-rec.c` | code | `cbf4e1896275` | `src/pl-rec.jl` | 37 | 26 |
+    - | swipl-devel `src/pl-rec.h` | code | `cbf4e1896275` | `src/pl-incl.jl` | 1 | 1 |
+    - | swipl-devel `src/pl-ressymbol.c` | code | `cbf4e1896275` | `src/pl-ressymbol.jl` | 6 | 4 |
+    --| swipl-devel `src/pl-setup.c` | code | `cbf4e1896275` | `src/pl-setup.jl` | 7 | 5 |
+    -+| swipl-devel `src/pl-setup.c` | code | `cbf4e1896275` | `src/pl-setup.jl` | 10 | 7 |
+    - | swipl-devel `src/pl-srcfile.c` | code | `cbf4e1896275` | `src/pl-srcfile.jl` | 27 | 18 |
+    - | swipl-devel `src/pl-string.c` | code | `cbf4e1896275` | `src/pl-string.jl` | 16 | 10 |
+    - | swipl-devel `src/pl-supervisor.c` | code | `cbf4e1896275` | `src/pl-supervisor.jl` | 17 | 9 |
+    -@@ docs/port_inventory.md: how many of the upstream file's functions are ported.
+    - | swipl-devel `src/pl-variant.c` | code | `cbf4e1896275` | `src/pl-variant.jl` | 16 | 6 |
+    - | swipl-devel `src/pl-vmi.c` | code | `cbf4e1896275` | `src/pl-vmi.jl` | 159 | 0 |
+    - | swipl-devel `src/pl-vmi.c` | code | `cbf4e1896275` | `src/pl-wam.jl` | 183 | 120 |
+    --| swipl-devel `src/pl-wam.c` | code | `cbf4e1896275` | `src/pl-wam.jl` | 53 | 43 |
+    -+| swipl-devel `src/pl-wam.c` | code | `cbf4e1896275` | `src/pl-wam.jl` | 54 | 44 |
+    - | swipl-devel `src/pl-write.c` | code | `cbf4e1896275` | `src/pl-write.jl` | 118 | 47 |
+    - | swipl-devel `tests/core_lang/test_bips.pl` | code | `cbf4e1896275` | `test/core_lang/test_bips.jl` | 10 | 1 |
+    - | swipl-devel `tests/core_lang/test_exception.pl` | code | `cbf4e1896275` | `test/core_lang/test_exception.jl` | 4 | 0 |
+    -@@ docs/port_inventory.md: checkout is pulled.
+    - | swipl-devel `src/pl-error.c` | `cbf4e1896275` | 20 | 41 | 13 | src/pl-error.jl, src/pl-string.jl |
+    - | swipl-devel `src/pl-error.h` | `cbf4e1896275` | 0 | 0 | 0 | src/pl-error.jl |
+    - | swipl-devel `src/pl-ext.c` | `cbf4e1896275` | 4 | 10 | 2 | src/pl-ext.jl |
+    --| swipl-devel `src/pl-fli.c` | `cbf4e1896275` | 78 | 286 | 67 | src/pl-fli.jl |
+    -+| swipl-devel `src/pl-fli.c` | `cbf4e1896275` | 81 | 286 | 69 | src/pl-fli.jl |
+    - | swipl-devel `src/pl-fli.h` | `cbf4e1896275` | 11 | 15 | 9 | src/pl-fli.jl |
+    - | swipl-devel `src/pl-funct.c` | `cbf4e1896275` | 10 | 17 | 7 | src/pl-funct.jl |
+    - | swipl-devel `src/pl-gc.c` | `cbf4e1896275` | 7 | 166 | 6 | src/pl-gc.jl, src/pl-wam.jl |
+    -@@ docs/port_inventory.md: checkout is pulled.
+    - | swipl-devel `src/pl-hash.h` | `cbf4e1896275` | 0 | 0 | 0 | src/pl-hash.jl |
+    - | swipl-devel `src/pl-incl.h` | `cbf4e1896275` | 1 | 11 | 0 | src/os/pl-file.jl, src/os/pl-prologflag.jl, src/pl-arith.jl, src/pl-atom.jl, src/pl-comp.jl, src/pl-funct.jl, src/pl-global.jl, src/pl-incl.jl, src/pl-inline.jl, src/pl-modul.jl, src/pl-prims.jl, src/pl-vmi.jl, src/pl-wam.jl, src/pl-write.jl |
+    - | swipl-devel `src/pl-index.c` | `cbf4e1896275` | 90 | 125 | 28 | src/pl-index.jl |
+    -+| swipl-devel `src/pl-init.c` | `cbf4e1896275` | 1 | 68 | 0 | src/pl-init.jl |
+    - | swipl-devel `src/pl-inline.h` | `cbf4e1896275` | 18 | 53 | 13 | src/pl-arith.jl, src/pl-gmp.jl, src/pl-inline.jl |
+    - | swipl-devel `src/pl-list.c` | `cbf4e1896275` | 11 | 13 | 7 | src/pl-list.jl |
+    - | swipl-devel `src/pl-modul.c` | `cbf4e1896275` | 50 | 70 | 40 | src/pl-modul.jl |
+    - | swipl-devel `src/pl-mutex.c` | `cbf4e1896275` | 1 | 33 | 1 | src/pl-mutex.jl |
+    - | swipl-devel `src/pl-op.c` | `cbf4e1896275` | 16 | 21 | 15 | src/pl-incl.jl, src/pl-op.jl |
+    --| swipl-devel `src/pl-prims.c` | `cbf4e1896275` | 116 | 188 | 67 | src/pl-prims.jl, src/pl-string.jl |
+    -+| swipl-devel `src/pl-prims.c` | `cbf4e1896275` | 117 | 188 | 68 | src/pl-prims.jl, src/pl-string.jl |
+    - | swipl-devel `src/pl-prims.h` | `cbf4e1896275` | 0 | 0 | 0 | src/pl-prims.jl |
+    - | swipl-devel `src/pl-privitf.c` | `cbf4e1896275` | 2 | 5 | 2 | src/os/pl-file.jl, src/pl-string.jl |
+    --| swipl-devel `src/pl-pro.c` | `cbf4e1896275` | 3 | 33 | 3 | src/pl-pro.jl |
+    -+| swipl-devel `src/pl-pro.c` | `cbf4e1896275` | 6 | 33 | 5 | src/pl-pro.jl |
+    - | swipl-devel `src/pl-proc.c` | `cbf4e1896275` | 59 | 126 | 43 | src/pl-incl.jl, src/pl-proc.jl |
+    - | swipl-devel `src/pl-proc.h` | `cbf4e1896275` | 1 | 2 | 0 | src/pl-proc.jl |
+    - | swipl-devel `src/pl-qlf.c` | `cbf4e1896275` | 11 | 156 | 9 | src/pl-qlf.jl |
+    -@@ docs/port_inventory.md: checkout is pulled.
+    - | swipl-devel `src/pl-rec.c` | `cbf4e1896275` | 34 | 76 | 23 | src/pl-incl.jl, src/pl-rec.jl |
+    - | swipl-devel `src/pl-rec.h` | `cbf4e1896275` | 0 | 0 | 0 | src/pl-incl.jl |
+    - | swipl-devel `src/pl-ressymbol.c` | `cbf4e1896275` | 3 | 7 | 2 | src/pl-ressymbol.jl |
+    --| swipl-devel `src/pl-setup.c` | `cbf4e1896275` | 5 | 62 | 5 | src/pl-setup.jl |
+    -+| swipl-devel `src/pl-setup.c` | `cbf4e1896275` | 7 | 62 | 7 | src/pl-setup.jl |
+    - | swipl-devel `src/pl-srcfile.c` | `cbf4e1896275` | 19 | 74 | 14 | src/pl-srcfile.jl |
+    - | swipl-devel `src/pl-string.c` | `cbf4e1896275` | 15 | 18 | 9 | src/pl-string.jl |
+    - | swipl-devel `src/pl-supervisor.c` | `cbf4e1896275` | 16 | 28 | 9 | src/pl-supervisor.jl |
+    -@@ docs/port_inventory.md: checkout is pulled.
+    - | swipl-devel `src/pl-umap.c` | `cbf4e1896275` | 4 | 8 | 3 | src/pl-umap.jl |
+    - | swipl-devel `src/pl-variant.c` | `cbf4e1896275` | 9 | 17 | 5 | src/pl-global.jl, src/pl-variant.jl |
+    - | swipl-devel `src/pl-vmi.c` | `cbf4e1896275` | 159 | 243 | 83 | src/pl-vmi.jl, src/pl-wam.jl |
+    --| swipl-devel `src/pl-wam.c` | `cbf4e1896275` | 49 | 98 | 41 | src/pl-wam.jl |
+    -+| swipl-devel `src/pl-wam.c` | `cbf4e1896275` | 50 | 98 | 42 | src/pl-wam.jl |
+    - | swipl-devel `src/pl-write.c` | `cbf4e1896275` | 87 | 111 | 44 | src/pl-write.jl |
+    - | swipl-devel `tests/core_lang/test_bips.pl` | `cbf4e1896275` | 0 | 7 | 0 | test/core_lang/test_bips.jl |
+    - | swipl-devel `tests/core_lang/test_exception.pl` | `cbf4e1896275` | 0 | 2 | 0 | test/core_lang/test_exception.jl |
+    -@@ docs/port_inventory.md: checkout is pulled.
+    - | swipl-devel `tests/db/test_db.pl` | `cbf4e1896275` | 2 | 10 | 0 | test/db/test_db.jl |
+    - | swipl-devel `tests/db/test_jit.pl` | `cbf4e1896275` | 16 | 21 | 0 | test/db/test_jit.jl |
+    - | swipl-devel `tests/rational/test_ieee754.pl` | `cbf4e1896275` | 0 | 15 | 0 | test/rational/test_ieee754.jl |
+    --| **total** | | **1781** | **5252** | **1021** | |
+    -+| **total** | | **1792** | **5320** | **1029** | |
+    - <!-- END GENERATED coverage -->
+    - 
+    - ### Not ported: unreachable upstream
+    -
+      ## evidence/HALT1/handoff.md ##
+     @@ evidence/HALT1/handoff.md: GROUP 5 LEFT (a fresh agent; commits still to fold: the five test pieces into ON
+      2. docs/architecture.md: a file row for src/pl-init.jl next to the pl-mutex.jl row (~line 784), a mermaid node near ~line 962, a `pl-init.c` header block, and the HALT1 block with the DIVERGES disclosure (sections 6 and 9 of this file: exit seam `halt_exit::Bool` + `halt_exited`, reduced PL_cleanup, one thread, Linux-only signal table (+ sys, winch; no emt/info), query_loop/halt_from_exception left to the toplevel step, abortProlog without trace/debug switches, PL_abort_process through the seam, CLN_* as Int constants). docs/port_inventory.md is regenerated by a tool at the gate.
+    @@ evidence/HALT1/handoff.md: GROUP 5 LEFT (a fresh agent; commits still to fold: t
+     
+      ## test/static_analysis_manifest.jl ##
+     @@ test/static_analysis_manifest.jl: function _manifest_index(T)
+    -             L in (Nothing, LK.PL_locale)
+    -         ]...,
+    -         # Q10 — '$style_check'/2 (src/pl-prims.jl)
+    --        (LK.pl_style_check2_va, Tuple{LD, Int, Int, LK.foreign_context{T}}, false)
+    -+        (LK.pl_style_check2_va, Tuple{LD, Int, Int, LK.foreign_context{T}}, false),
+    +         (LK.blob_syntax_available, Tuple{LK.read_data{T}}, false),
+    +         (LK.blob_name_char, Tuple{Int}, false),
+    +         (LK.scan_blob_name, Tuple{Type{T}, Vector{UInt8}, Int}, false),
+    +-        (LK.atom_to_blob_mode_ex, Tuple{LD, LK.read_data{T}, T}, false)
+    ++        (LK.atom_to_blob_mode_ex, Tuple{LD, LK.read_data{T}, T}, false),
+     +        # HALT1 — halt/1, abort/0 (pl-fli.c haltProlog/PL_halt/PL_abort_process, pl-init.c PL_cleanup,
+     +        # pl-setup.c signal_index/PL_get_signum_ex, pl-pro.c abortProlog/raise_halt_exception, pl-wam.c handles_unwind)
+     +        (LK.haltProlog, Tuple{GD, LD, Int}, false),
