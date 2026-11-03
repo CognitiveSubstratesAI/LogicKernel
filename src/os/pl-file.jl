@@ -2293,8 +2293,9 @@ end
 
 # PORT: pl-file.c set_stream
 # DIVERGES: not ported, each by the upstream line, with the answer the stream layer can give:
-#  - `alias(Std)` of a standard stream name (file:2461-2468 `setStandardStream`, with `LD->prompt.next`): REFUSED
-#    (`NotPortedError`), the function belongs to the output-redirection step (landing B);
+#  - `alias(Std)` of a standard stream name (file:2215-2227): `setStandardStream`, as upstream; the one line of the
+#    branch the kernel does not run is `LD->prompt.next = true` for `user_input` (the local data has no `prompt.next`
+#    field: src/pl-global.jl; only the prompt of an interactive read depends on it);
 #  - `timeout(T)` (file:2325-2342, `Sset_timeout`): the stream layer has no timeout; `infinite` is what every stream
 #    has and succeeds, any other time raises upstream's own failure, `permission_error(timeout, stream, S)`;
 #  - `locale(L)` (file:2395-2404, `getLocaleEx`, `Ssetlocale`): REFUSED (`NotPortedError`), as open/4's `locale`;
@@ -2312,13 +2313,10 @@ function set_stream(
         alias = PL_get_atom_ex(ld, a)
         alias === nothing && return false
 
-        if standardStreamIndexFromName(ld, alias) >= 0
-            throw(
-                NotPortedError{T}(
-                    alias, "set_stream/2's alias(Std) of a standard stream",
-                    "setStandardStream (landing B)"
-                )
-            )
+        i = standardStreamIndexFromName(ld, alias)
+        if i >= 0
+            setStandardStream(ld, i, s)
+            return true                             # (i == 0: LD->prompt.next = true; no such field)
         end
 
         aliasStream(gd, s, alias)
