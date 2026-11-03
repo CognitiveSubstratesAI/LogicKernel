@@ -12,6 +12,9 @@
 # UPSTREAM: swipl-devel src/os/pl-prologflag.c @ cbf4e1896275
 # UPSTREAM: swipl-devel src/pl-rec.h @ cbf4e1896275
 # UPSTREAM: swipl-devel src/pl-rec.c @ cbf4e1896275
+# UPSTREAM: swipl-devel src/pl-event.h @ cbf4e1896275
+# UPSTREAM: swipl-devel src/pl-event.c @ cbf4e1896275
+# UPSTREAM: swipl-devel src/pl-copyterm.h @ cbf4e1896275
 # UPSTREAM: swipl-devel src/pl-gvar.c @ cbf4e1896275
 # CLASS: code
 # COPYRIGHT: Copyright (c)  1985-2026, University of Amsterdam,
@@ -776,7 +779,7 @@ struct PL_code_data
 end
 
 # ── event lists (pl-event.h, pl-copyterm.h), since R2's EV1 ─────────────────────────────────────────
-# PORT: pl-event.h pl_event_type
+# PORT: pl-event.h pl_event_type as PLEV_ABORT
 # DIVERGES: Int constants in upstream's order (the repo's precedent, `RECORDA`: an `@enum` would need a `_enum_hash` entry).
 "`PLEV_ABORT`: the `abort` event, raised when execution is cut short (pl-event.h `pl_event_type`)."
 const PLEV_ABORT = 0

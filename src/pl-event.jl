@@ -1,4 +1,5 @@
 # UPSTREAM: swipl-devel src/pl-event.c @ cbf4e1896275
+# UPSTREAM: swipl-devel src/pl-event.h @ cbf4e1896275
 # CLASS: code
 # COPYRIGHT: Copyright (c)  2019-2026, University of Amsterdam
 # COPYRIGHT: VU University Amsterdam
@@ -50,7 +51,7 @@ const PL_events = (
     event_type(PLEV_THIS_THREAD_EXIT, :this_thread_exit, 0, true, :event_hook_onthreadexit)
 )
 
-# PORT: pl-event.c event_list_location (pl-event.h)
+# PORT: pl-event.h event_list_location as event_location
 # DIVERGES: the place of a list as a value: `ev` the event id (-1: a predicate's list), `def` that predicate's definition.
 # Upstream's `event_list **`: read it with `event_list_at`, write it with `event_list_set!`.
 "Where an event list is kept (pl-event.h `event_list **`): the table of the event `ev`, or the `events` of `def` (`ev` = -1)."
@@ -398,7 +399,8 @@ function destroy_event_list!(
     return nothing
 end
 
-# PORT: pl-event.c destroy_event_list as destroy_event_list! on a predicate's list
+# PORT: pl-event.c destroy_event_list as destroy_event_list!
+# (on a predicate's list)
 "Remove the event list of the definition `def` (`unallocDefinition`, `resetProcedure`: pl-proc.c)."
 function destroy_event_list!(def::definition{T})::Nothing where {T}
     list = def.events
@@ -411,7 +413,8 @@ function destroy_event_list!(def::definition{T})::Nothing where {T}
     return nothing
 end
 
-# PORT: pl-event.c destroy_event_list as destroy_event_list! on a predicate's list, with the database and local data
+# PORT: pl-event.c destroy_event_list as destroy_event_list!
+# (on a predicate's list, with the database and local data)
 "The method of `destroy_event_list!` that takes the database and the local data; the predicate's list needs neither."
 function destroy_event_list!(
     gd::PL_global_data{T}, ld::PL_local_data{T}, def::definition{T}

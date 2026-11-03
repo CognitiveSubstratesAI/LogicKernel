@@ -195,11 +195,14 @@ function raise_halt_exception(
     return false
 end
 
-# PORT: pl-pro.c NOTRACE_TRACE, NOTRACE_DEBUG, NOTRACE_LCO, NOTRACE_VMI
+# PORT: pl-pro.c NOTRACE_TRACE
 "The bits of `'\$notrace'/2`'s saved flags (pl-pro.c): tracing, debugging, last-call optimisation, VMI built-ins."
 const NOTRACE_TRACE = 0x1
+# PORT: pl-pro.c NOTRACE_DEBUG
 const NOTRACE_DEBUG = 0x2
+# PORT: pl-pro.c NOTRACE_LCO
 const NOTRACE_LCO = 0x4
+# PORT: pl-pro.c NOTRACE_VMI
 const NOTRACE_VMI = 0x8
 
 # PORT: pl-pro.c notrace as pl_notrace2_va

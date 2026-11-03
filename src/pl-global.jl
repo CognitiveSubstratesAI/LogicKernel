@@ -27,7 +27,7 @@ mutable struct source_location{T}
     position::IOPOS             # Line, line pos, char and byte
 end
 
-# PORT: pl-global.h event.hook as event_hooks
+# PORT: pl-global.h hook as event_hooks
 # DIVERGES: GD's `event.hook` struct as a mutable struct of its own (a list is created at its first listener, as
 # `get_event_list` does); the thread events' lists exist in every build (O_ENGINES). The LD's `onthreadexit` is a field
 # of the local data (`event_hook_onthreadexit`).
