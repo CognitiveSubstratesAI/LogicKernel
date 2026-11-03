@@ -156,6 +156,12 @@ end
 # ── the Prolog layer (src/term_interface.jl, Q1) ─────────────────────────────────────────────────
 mk_sym(::Type{Term{G}}, name::Symbol) where {G} = sym_term(Term{G}, name)
 mk_gnd(::Type{Term{G}}, v::G) where {G} = gnd_term(Term{G}, v)
+# A `Term{G}` whose payload holds no `Int64` (the fixture `Term{Union{BigInt, Float64, String}}` of the D-0231
+# and AV3-W4 rows) holds an integer as its `BigInt` (R2 LB4 b2: `PL_global_data{T}()` boots such a type from the
+# boot files' text, whose integers `put_number` writes with `mk_gnd(T, ::Int64)`). The bound keeps `G` free of
+# `Int64`, so no call the method above takes reaches this one (no ambiguity).
+mk_gnd(::Type{Term{G}}, v::Int64) where {G <: Union{BigInt, Rational{BigInt}, Float64, String}} =
+    gnd_term(Term{G}, BigInt(v))
 
 # Whether `Term{G}` can hold a value of type `X` (`mk_gnd`'s method exists): a compile-time
 # constant, so a caller's branch on it is folded (src/pl-gmp.jl, the interim for the user's Q-AR1).

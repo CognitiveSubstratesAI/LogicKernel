@@ -3050,6 +3050,7 @@ const _DISPATCH_MANIFEST_TUPLE = (
     (mk_gnd, Tuple{Type{_M1}, Float64}, false),
     (mk_gnd, Tuple{Type{_M2}, Int64}, false), (mk_gnd, Tuple{Type{_M2}, String}, false),
     (mk_gnd, Tuple{Type{_M3}, Vector{Float64}}, false),
+    (mk_gnd, Tuple{Type{Term{Union{BigInt, Float64, String}}}, Int64}, false),   # the D-0231 fixture: an integer as its BigInt
     (LK._compare_other, Tuple{Vector{Float64}, _M3}, false),
     (LK._compare_other, Tuple{Int64, _M2}, false),
     (gnd_value_key, Tuple{Float64}, false), (gnd_value_key, Tuple{Int64}, false),
