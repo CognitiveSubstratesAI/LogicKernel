@@ -2045,6 +2045,98 @@ function pl_retractall1_va(
     return pl_retractall!(gd, ld, def, thehead) ? FTRUE : FFALSE
 end
 
+# PORT: pl-proc.c get_arity
+# DIVERGES: returns the arity, or `nothing` with the error raised, where upstream writes it through `arity`.
+"The arity in `t` plus `extra` (an integer not below 0, at most `maxarity` unless that is negative), or `nothing` with an error raised (pl-proc.c)."
+function get_arity(
+    ld::PL_local_data{T}, t::term_t, extra::Int, maxarity::Int
+)::Union{Nothing, Int} where {T}
+    a = PL_get_integer_ex(ld, t)
+    a === nothing && return nothing
+    if a < 0
+        PL_error(ld, ERR_DOMAIN, mk_sym(T, :not_less_than_zero), t)
+        return nothing
+    end
+    a += extra
+    if maxarity >= 0 && a > maxarity
+        PL_error(
+            ld, "", 0, "limit is $maxarity, request = $a", ERR_REPRESENTATION,
+            mk_sym(T, :max_procedure_arity)
+        )
+        return nothing
+    end
+    return a
+end
+
+# PORT: pl-proc.c do_abolish
+# DIVERGES: the functor is its parts; `isCurrentFunctor` (no functor, so no procedure: success) is the lookup of the
+# procedure itself, `checkModifySystemProc` of a name that has no functor having nothing to refuse.
+"Abolish the procedure `atom`/`arity` of module `m` (pl-proc.c)."
+function do_abolish(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, m::module_t{T}, atom::term_t, arity::term_t
+)::foreign_t where {T}
+    name = PL_get_atom_ex(ld, atom)
+    name === nothing && return FFALSE
+    a = get_arity(ld, arity, 0, MAXARITY)
+    a === nothing && return FFALSE
+
+    checkModifySystemProc(gd, ld, sym_key(name), a) || return FFALSE
+    proc = isCurrentProcedure(sym_key(name), a, m)
+    proc === nothing && return FTRUE
+
+    if truePrologFlag(ld, PLFLAG_ISO) && (proc.definition.flags & P_DYNAMIC) == 0
+        PL_error(ld, ERR_MODIFY_STATIC_PROC, proc)
+        return FFALSE
+    end
+
+    return abolishProcedure!(gd, ld, proc, m) ? FTRUE : FFALSE
+end
+
+# PORT: pl-proc.c pl_abolish
+# (FRG("abolish", 2, pl_abolish, META), pl-ext.c:126)
+# DIVERGES: the database is the query's (`_query_gd`); the module an index into its table.
+"`abolish(:Name, +Arity)`: abolish the predicate `Name/Arity` (pl-proc.c)."
+function pl_abolish(
+    ld::PL_local_data{T}, name::term_t, arity::term_t
+)::foreign_t where {T}
+    gd = _query_gd(ld)
+    plain = PL_new_term_ref(ld)
+    ok, m = PL_strip_module(gd, ld, name, 0, plain)     # PL_strip_module(name, &m, name)
+    ok || return FFALSE
+    return do_abolish(gd, ld, gd.modules[m], plain, arity)
+end
+
+# PORT: pl-proc.c pl_abolish1
+# (FRG("abolish", 1, pl_abolish1, META|ISO), pl-ext.c:125)
+# DIVERGES: as pl_abolish.
+"`abolish(:PredicateIndicator)`: abolish the predicate `Name/Arity` (pl-proc.c)."
+function pl_abolish1(ld::PL_local_data{T}, spec::term_t)::foreign_t where {T}
+    gd = _query_gd(ld)
+    name = PL_new_term_ref(ld)
+    arity = PL_new_term_ref(ld)
+    plain = PL_new_term_ref(ld)
+
+    ok, m = PL_strip_module(gd, ld, spec, 0, plain)     # PL_strip_module(spec, &m, spec)
+    ok || return FFALSE
+
+    if !PL_is_functor(ld, plain, mk_sym(T, :/), 2)
+        PL_error(ld, ERR_TYPE, mk_sym(T, :predicate_indicator), plain)
+        return FFALSE
+    end
+
+    _PL_get_arg(ld, 1, plain, name)
+    _PL_get_arg(ld, 2, plain, arity)
+
+    return do_abolish(gd, ld, gd.modules[m], name, arity)
+end
+
+# PORT: pl-proc.c pl_garbage_collect_clauses as pl_garbage_collect_clauses0
+# (FRG("garbage_collect_clauses", 0, pl_garbage_collect_clauses, 0), pl-ext.c:171)
+# DIVERGES: the database is the query's (`_query_gd`); `pl_garbage_collect_clauses!` is the Julia function.
+"`garbage_collect_clauses`: collect the erased clauses nothing can see (pl-proc.c)."
+pl_garbage_collect_clauses0(ld::PL_local_data{T}) where {T} =
+    pl_garbage_collect_clauses!(_query_gd(ld), ld) ? FTRUE : FFALSE
+
 # PORT: pl-proc.c BeginPredDefs as PL_predicates_from_proc
 # DIVERGES: the entries of the predicates the kernel has ported; `PRED_DEF` ors in `PL_FA_VARARGS`.
 "pl-proc.c's registration table (`BeginPredDefs(proc)`): the ported entries."
