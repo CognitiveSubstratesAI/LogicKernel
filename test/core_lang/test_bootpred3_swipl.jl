@@ -446,8 +446,10 @@ _b3_digest_shape(l::AbstractString) = replace(l, r"a\[(?:\d+,){39}\d+\]" => "a[4
     for (k, p) in zip(kl, _B3_PINNED)
         want = get(_B3_KNOWN, first(split(p, ' ')), p)
         if LK_TERM_IMPL != "reference" && first(split(p, ' ')) == "t_bp3v15"
-            # variant_sha1's digest hashes the term type's symbol hash (src/pl-termhash.jl DIVERGES 1-2): the
-            # value is type-dependent and not swipl's, so the alt types are compared by SHAPE (one atom of 40 codes).
+            # variant_sha1's digest hashes the term type's own `sym_hash` (RECORDED OWNER: src/pl-termhash.jl file-wide
+            # DIVERGES 1, "ATOMIC DATA", and the pl-termhash.jl row of docs/architecture.md: "not SWI's values"; the
+            # `sym_hash` contract is src/term_interface.jl's): the value is type-dependent and not swipl's, so the alt
+            # types are compared by SHAPE (one atom of 40 codes); the reference type keeps the exact pin.
             k = _b3_digest_shape(k)
             want = _b3_digest_shape(want)
             @test k == "t_bp3v15 c[116,95,98,112,51,118,49,53]/1(a[40 codes])"

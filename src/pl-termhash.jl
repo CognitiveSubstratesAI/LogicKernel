@@ -19,7 +19,9 @@
 #      process-independent `sym_hash` where upstream contributes its name (term_hash: the name's
 #      32-bit hash; variant_sha1: length, name and blob type), and a grounded value contributes its
 #      `gnd_key` where upstream contributes the number's or string's bytes; a value with no key
-#      contributes a constant. So the VALUES are not SWI's (tests/core_lang/test_hash.jl asserts
+#      contributes a constant. `sym_hash` and `gnd_key` are the term TYPE's own (src/term_interface.jl), so the
+#      digest of one term differs between the term implementations too (test_bootpred3_swipl.jl compares row bp3v15
+#      by shape on the alt types). So the VALUES are not SWI's (tests/core_lang/test_hash.jl asserts
 #      the properties upstream's pinned values stand for), and upstream's "same digest IFF variant"
 #      holds in one direction: variants ⇒ the same digest. The converse fails only where keys
 #      collide — by chance, for `sym_hash` and for `gnd_key`, which follows the term type's
