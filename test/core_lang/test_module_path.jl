@@ -56,6 +56,7 @@ end
 
 @testset "autoImport and trapUndefined" begin
     gd = LK.PL_global_data{_MP}()
+    ld = LK.PL_local_data{_MP}(gd)
     sys, user = LK.MODULE_system(gd), LK.MODULE_user(gd)
     sysdef = LK.isCurrentProcedure(sym_key(_mps(:rational)), 1, sys).definition
     # nothing in user yet: autoImport creates the procedure and links system's definition
@@ -66,7 +67,7 @@ end
     p = LK.lookupProcedure(_mps(:string), 1, user)
     own = p.definition
     @test own.module_ == user.index
-    got = LK.trapUndefined(gd, own)
+    got = LK.trapUndefined(gd, ld, own)
     @test got === LK.isCurrentProcedure(sym_key(_mps(:string)), 1, sys).definition
     @test p.definition === got
     # a defined user procedure keeps its own: no import
@@ -80,9 +81,9 @@ end
     # nothing to import: trapUndefined keeps the definition and installs S_UNDEF
     u = LK.lookupProcedure(_mps(:nowhere), 0, user)
     @test u.definition.codes[1] == LK.S_VIRGIN
-    @test LK.trapUndefined(gd, u.definition) === u.definition
+    @test LK.trapUndefined(gd, ld, u.definition) === u.definition
     @test u.definition.codes[1] == LK.S_UNDEF
-    @test LK.getProcDefinedDefinition(gd, u.definition) === u.definition
+    @test LK.getProcDefinedDefinition(gd, ld, u.definition) === u.definition
 end
 
 @testset "unify_definition on a term reference (f3b-4): the same references, on the cells" begin

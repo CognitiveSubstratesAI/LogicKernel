@@ -56,7 +56,7 @@ MUTANTS = [
          old="    mc_mi = Int(PCc[PC])                            # Module module = code2ptr(Module, *PC++)\n",
          new="    mc_mi = MODULE_user(gd).index\n"),
     dict(id="MOD3a-M2 mcall_cont tests the transparency of the UNRESOLVED definition (KILL b08)", file=W, targets=RUN + TMC,
-         old="        DEF = getProcDefinedDefinition(gd, DEF)     # DEF = trapUndefined(DEF)\n",
+         old="        DEF = getProcDefinedDefinition(gd, ld, DEF) # DEF = trapUndefined(DEF)\n",
          new="        nothing\n"),
     # ── pl-comp.c getTargetModule ──
     dict(id="MOD3a-T1 getTargetModule accepts a variable met first (KILL b31, bc)", file=C, targets=COMP,

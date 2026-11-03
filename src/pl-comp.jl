@@ -3659,7 +3659,7 @@ function clause_ndet(
         proc === nothing && return FFALSE
         def = proc.definition                               # getProcDefinition(proc)
         if !isDefinedProcedure(gd, proc) && (def.flags & P_AUTOLOAD) != 0
-            def = trapUndefined(gd, def)
+            def = trapUndefined(gd, ld, def)
         end
 
         protected_predicate(gd, ld, def) && return FFALSE

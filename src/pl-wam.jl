@@ -1808,14 +1808,15 @@ macro vmi_dispatch(x, table::Symbol)
 end
 
 # PORT: pl-wam.c getProcDefinedDefinition
-# DIVERGES: the database `gd` is an argument (`trapUndefined` reads its modules).
+# DIVERGES: the database `gd` is an argument (`trapUndefined` reads its modules), and the local data `ld`
+# as upstream's `DECL_LD`.
 # NOT PORTED: thread-local predicates (`getLocalProcDefinition`: no threads).
 "`def`, or the definition `trapUndefined` resolves it to when it is not defined (pl-wam.c)."
 function getProcDefinedDefinition(
-    gd::PL_global_data{T}, def::Definition{T}
+    gd::PL_global_data{T}, ld::PL_local_data{T}, def::Definition{T}
 )::Definition{T} where {T}
     if !_impl_any_defined(def) && (def.flags & PROC_DEFINED) == 0
-        def = trapUndefined(gd, def)
+        def = trapUndefined(gd, ld, def)
     end
     return def
 end
@@ -1994,7 +1995,7 @@ function PL_open_query(
         "create a fresh PL_local_data"
     )
     ld.GD = gd                                  # (the built-ins' GD; see above)
-    def = getProcDefinedDefinition(gd, proc.definition)    # resolve can call-back
+    def = getProcDefinedDefinition(gd, ld, proc.definition)    # resolve can call-back
     arity = def.arity
 
     lneeded = SIZEOF_QUERYFRAME + MAXARITY
@@ -3717,15 +3718,27 @@ function PL_next_solution_guarded(
     #       setContextModule(NFR, module);
     # Since MOD3a the undefined definition is resolved first, so the transparency is the resolved
     # predicate's (pl-vmi.c:5703-5723: `DEF = trapUndefined(DEF)`), through `getProcDefinedDefinition`
-    # as `I_LCALL` resolves it: the kernel's `trapUndefined` runs no Prolog (no autoloader), so upstream's
-    # frame set-up around the call (`NFR->parent`, `environment_frame = FR = NFR`, `lTop`, then back) has
-    # nothing to serve and is not made.
+    # as `I_LCALL` resolves it. Since AUTOLOAD1 A1 the frame set-up around the call is made as upstream's
+    # (pl-vmi.c:5707-5722 at the pin): the new frame is the environment frame and `lTop` is above its
+    # arguments while `trapUndefined` runs (a Prolog query may run in it), then `FR` is the parent again.
+    # `NFR = valTermRef(nref)` is not needed: a frame is an index, which a stack shift leaves alone.
     @label mcall_cont
     setNextFrameFlags(ld.frames[NFR], ld.frames[FR])
     if !_impl_any_defined(DEF) && (DEF.flags & PROC_DEFINED) == 0
+        mc_nf = ld.frames[NFR]
+        mc_nf.parent = FR                           # NFR->parent = FR
+        setFramePredicate(mc_nf, DEF)               # TBD
+        setGenerationFrame(gd, ld, NFR)
+        mc_nf.programPointer = Code{T}(PCc, PCl, PC)    # save PC in child
+        mc_nf.clause = nothing                      # NFR->clause = NULL
+        setNextFrameFlags(mc_nf, ld.frames[FR])
+        FR = NFR                                    # environment_frame = FR = NFR
+        ld.environment_frame = FR
+        setLTop!(ld, argFrameP(mc_nf.base, DEF.arity))  # lTop = argFrameP(NFR, arity)
         @SAVE_REGISTERS(QID)
-        DEF = getProcDefinedDefinition(gd, DEF)     # DEF = trapUndefined(DEF)
+        DEF = getProcDefinedDefinition(gd, ld, DEF) # DEF = trapUndefined(DEF)
         @LOAD_REGISTERS(QID)
+        FR = ld.frames[FR].parent                   # FR = FR->parent
     end
     if (DEF.flags & P_TRANSPARENT) != 0             # ison(DEF, P_TRANSPARENT)
         setContextModule!(ld.frames[NFR], mc_mi)    # setContextModule(NFR, module)
@@ -4083,7 +4096,7 @@ function PL_next_solution_guarded(
     @assert (il_f.flags & FR_WATCHED) == 0
     if !_impl_any_defined(DEF) && (DEF.flags & PROC_DEFINED) == 0
         @SAVE_REGISTERS(QID)
-        DEF = getProcDefinedDefinition(gd, DEF)
+        DEF = getProcDefinedDefinition(gd, ld, DEF)
         @LOAD_REGISTERS(QID)
     end
     if (DEF.flags & P_TRANSPARENT) != 0             # ison(DEF, P_TRANSPARENT)
@@ -4540,7 +4553,7 @@ function PL_next_solution_guarded(
 
     if !_impl_any_defined(DEF) && (DEF.flags & PROC_DEFINED) == 0
         @SAVE_REGISTERS(QID)
-        DEF = getProcDefinedDefinition(gd, DEF)     # since V5c: autoImport, as decided since Q-A
+        DEF = getProcDefinedDefinition(gd, ld, DEF) # since V5c: autoImport, as decided since Q-A
         @LOAD_REGISTERS(QID)
         setFramePredicate(ld.frames[FR], DEF)
         setGenerationFrame(gd, ld, FR)

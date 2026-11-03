@@ -329,17 +329,20 @@ function autoImport(
 end
 
 # PORT: pl-proc.c trapUndefined
-# DIVERGES: the database `gd` is an argument; the module is the definition's index into its table.
-# NOT PORTED: the autoloader — the `autoload` flag, `autoLoader` and its retry — as decided since Q-A
-# (no autoload), and `GD->bootsession`'s `sysError` (not ported: R2 LB3's boot session).
+# DIVERGES: the database `gd` is an argument; the module is the definition's index into its table. The
+# local data `ld` is an argument as upstream's `DECL_LD` (A1 of AUTOLOAD1): the autoloader's query runs on it.
+# LEFT TO A3 (AUTOLOAD1): the autoloader branch (`autoLoader`, `test_autoload_loop`, the retry), and to the
+# boot lane: `GD->bootsession`'s `sysError`. This body is upstream's `autoImport` and `createUndefSupervisor` path.
 """
-    trapUndefined(gd, def) -> Definition
+    trapUndefined(gd, ld, def) -> Definition
 
 Resolve the undefined `def`: a definition `autoImport` finds through its module's supers; else
 `def` itself, its supervisor `S_UNDEF` unless it is defined otherwise or its module's `unknown`
 flag is `fail` (pl-proc.c).
 """
-function trapUndefined(gd::PL_global_data{T}, def::Definition{T})::Definition{T} where {T}
+function trapUndefined(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, def::Definition{T}
+)::Definition{T} where {T}
     m = gd.modules[def.module_]
     newdef = autoImport(gd, def.name, def.arity, m)     # Auto import
     newdef !== nothing && return newdef
