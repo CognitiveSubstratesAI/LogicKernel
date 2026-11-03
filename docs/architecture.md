@@ -6656,3 +6656,42 @@ of test/core_lang/test_catch_swipl.jl MC19 shows it. The pin tree is swipl-devel
   on main through the same chain), because the state arises only with b2's booted catch/3.
 * **Tier 1** (engine core file src/pl-fli.jl): allocation pins expected unchanged (the check was a branch); the manifest gets two
   entries (test/static_analysis_manifest.jl); `PL_new_nil_ref` (pl-fli.c:563-574, same check) has no port in the kernel.
+
+## LB5 — the stream predicates the plunit and listing path reach: `current_input/1`, `current_output/1`, `line_count/2`, `line_position/2`, `tab/1,2`, `at_end_of_stream/0,1`, `get_code/1,2`, `put_code/1,2` (+ `put_char/1,2`), `write_size/4`, `set_stream/2` `alias(Std)` (R2, audit D-0386 items 1c and 2; edit-only: nothing was compiled when this was written; the gate decides)
+
+UPSTREAM: swipl-devel cbf4e1896275 — os/pl-file.c (`setStandardStream` use in `set_stream`, :2215-2227; `current_io`, :5693-5735; `getStreamWithPosition`,
+:5524-5540; `line_count`, :5773-5785; `line_position`, :5789-5801; `tab`, :3809-3848; `at_end_of_stream`, :5827-5860; `get_code`, :3626-3652; `put_code`,
+:3427-3459; the table entries), pl-write.c (`write_size`, `write_length_options`, :3283-3380, table :3437), pl-arith.c (`PL_eval_expression_to_int64_ex`, :5346),
+os/pl-option.c (`get_optval`'s `OPT_INT64`). Sizing: evidence/R2/lb5_sizing.md of the audit channel.
+
+- **Ported** (src/os/pl-file.jl): `set_stream(S, alias(Std))` of `user_input`, `user_output`, `user_error` calls `setStandardStream` (the refusal the S2a block above
+  describes is lifted); `is_stream_blob`, `current_io` and `current_input/1`, `current_output/1` (an unbound argument is unified with the stream, a bound one
+  is a stream blob or alias and is compared; any other term is `domain_error(stream, T)` (rows lb017-lb019)); `getStreamWithPosition`, `line_count/2`, `line_position/2`
+  (`permission_error(property, position, S)` for a stream that records none); `tab/1,2` (the amount is an integer expression); `at_end_of_stream/0,1`;
+  `get_code/1,2`, `put_code/1,2` and `put_char/1,2` (upstream's table maps `put_char` to the `put_code` functions). Flags as upstream's table: `PL_FA_ISO` for
+  `get_code`, `put_code`, `at_end_of_stream`, `current_input`, `current_output`.
+- **Ported** (src/pl-arith.jl): `PL_eval_expression_to_int64_ex` (`type_error(integer_expression, T)` for a non-integer, `int_overflow` past 64 bits). (src/os/pl-option.jl):
+  the `OPT_INT64` branch of `get_optval`. (src/pl-write.jl): `write_length_options`, `write_size/4` registered `PL_FA_TRANSPARENT`, no ISO flag, as upstream.
+- **DIVERGES (each in a comment at its site)**: `getStreamWithPosition` answers the stream or `nothing` (no lock to release); `current_io` answers `existence_error` where
+  upstream dereferences a NULL current stream; `get_code/2` writes the end-of-file test of `PL_get_char(chr, &c, true)` out; no lock (`releaseStream`) anywhere.
+- **DIVERGES — write_size/4 (representation only; audit D-0388 item 6 rules when it is in a gate; OWNER: the stream layer's custom-write-function step)**:
+  upstream writes into a stream of its own (`limit_size_stream`, function set `Swrite_lss`) that tracks the position of every character and fails the write with
+  `EINVAL` as soon as the width or the height passes the limit. The kernel's stream layer has no custom write function (its function sets are the memory, string
+  and OS-file ones), so the term is written into a memory stream (`tellString`/`toldString`, with the ISO flag cleared and restored as upstream does) and
+  measured AFTERWARDS: the UTF-8 text is walked with `Supdatepos` over a fresh `IOPOS`, the width is the largest `linepos`, the height `lineno + 1` (0 for no text).
+  **Limits are checked after the write, not during it**: the answers are the same, and the two differ only for output that would exhaust memory (produced in
+  full before the call fails). Owner: no step row in this file or in evidence/R2 names the custom-write-function work (the sizing file names Q10 for the C file
+  pl-write.c, listing.pl:1204); S2b (the remainder of pl-file.c, after R2) is the nearest row, and the same stream-layer step would also supply `Sseek64`, `Stell64`
+  and `Sunit_size`. The step that adds it removes this DIVERGES; the dispatcher rules the owner.
+- **Known differences and flags for the audit**: (1) `set_stream(S, alias(user_input))` does not set `LD->prompt.next` (upstream :2224): `PL_local_data` has no such
+  field; a NEED for pl-global.jl after the gates land. (2) A stream captured as a standard alias and then closed leaves the standard slot as it is
+  (`restoreStandardStream`: NOT STARTED); the rows restore the alias inside the row. (3) `current_input/1` and `put_char/1,2` were outside the sizing's list; they
+  are the twin of `current_output/1` in one upstream function and upstream's aliases of `put_code`. (4) Rows lb010-lb011 pin swipl's answer for
+  `open(..., [record_position(false)])` (`ok-1`, `ok-0`); the kernel's stream may answer `permission_error` there: UNVERIFIED, judged by the gate.
+  (5) The /0 forms that read the process's standard input (`at_end_of_stream/0`, `get_code/1`) have no row.
+- **Left out of this step** (the dispatcher's ruling, D-0388 and the writer handoff): `succ/2` (pl-arith.c:274-355), `peek_string/3`, `seek/4`, `set_stream_position/2`
+  (these two need `Sseek64`/`Stell64`: the stream layer has none), `with_tty_raw/1`, `nb_set_dict/3` and `del_dict/4` (they wait for pl-dict).
+
+Tests: test/core_lang/test_lb5_swipl.jl (ORIGINAL; rows lb001-lb108 from swipl 10.1.19 under `LC_ALL=C.UTF-8`, two byte-identical runs, generator
+evidence/LB5/gen_rows.py; the live compare of the pins runs when `swipl` is on the path). Mutants: tools/mutants/LB5.py (ORIGINAL; 18 mutants and 2 declared
+equivalent: write_size's ISO clear and restore; not run when this was written).

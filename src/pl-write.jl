@@ -2487,6 +2487,9 @@ const write_length_options = (
 # the difference is only that output exceeding a limit is produced in full before the call fails (it
 # differs for output that would exhaust memory), and that the I/O-error exception upstream clears
 # (`PL_clear_exception`) is never raised.
+# OWNER: the stream layer's custom-write-function step (a function set with its own `S_write`, `Swrite_lss`;
+# a stream-layer gap, as the missing `Sseek64` is for `seek/4`); the nearest named owner row is S2b
+# (docs/architecture.md, section LB5). The step that adds it removes this DIVERGES.
 """
 write_size(+Term, -Width, -Height, +Options): `Width` and `Height` of the text `write_term(Term, Options)`
 produces; fails when `max_width(W)` or `max_height(H)` of `Options` is passed (pl-write.c).

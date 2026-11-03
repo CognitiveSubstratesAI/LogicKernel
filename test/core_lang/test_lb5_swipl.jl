@@ -5,7 +5,7 @@
 #     `catch(Goal, error(SsuE, _), R = raised(SsuE))`; the driver is test_style_check_swipl.jl's (`enc`oded answers).
 #     A stream in an error term would not encode: the rows that raise a permission_error or existence_error on a stream catch it
 #     themselves and answer `perm(Action, Type)` / `ex(Type)`.
-#   * Every answer line is swipl's, PINNED (swipl 10.1.19-1-gcbf4e189, two runs byte-identical, evidence/LB5/lb5_rows.out of the
+#   * Every answer line is swipl's, PINNED (swipl 10.1.19-1-gcbf4e189, LC_ALL=C.UTF-8, two runs byte-identical, evidence/LB5/lb5_rows.out of the
 #     LB5 branch); with `swipl` on PATH the live answers are compared with the pins too.
 #   * Streams are made with open_string/2, open('/dev/null', ...) and with_output_to/2; the rows that move a standard alias
 #     (al_*) put it back inside the row, so a row never leaves user_output, user_error or user_input captured.
@@ -84,7 +84,10 @@ function _lb5_swipl_lines(path::String, names::Vector{String})::Vector{String}
             _LB5_DRIVER * ":- initialization((fz_run('$path', [" * join(names, ",") *
             "]), halt)).\n"
         )
-        read(pipeline(`swipl -q $f`; stdin=devnull, stderr=devnull), String)
+        read(
+            pipeline(addenv(`swipl -q $f`, "LC_ALL" => "C.UTF-8"); stdin=devnull, stderr=devnull),
+            String
+        )
     end
     return String.(split(chomp(out), '\n'; keepempty=false))
 end

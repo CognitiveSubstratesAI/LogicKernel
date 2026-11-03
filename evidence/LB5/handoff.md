@@ -160,10 +160,19 @@ E. Overlap with b2 (wip/lb4b2c, af6540c edits pl-file.jl get_stream_handle): con
 - 1398d6d (a) rows lb107 (`write_size('abcd\nx', W, H, [])` pins 4-2) and lb108 (`line_count(user_output, N), integer(N)` pins yes) added
   to the generator's source (the CASES table of test/core_lang/test_lb5_swipl.jl) and the rows file; pins from swipl 10.1.19 under the
   DEFAULT UTF-8 locale (LANG=en_US.UTF-8), two byte-identical runs; lb001-lb106 unchanged. NOTE: a `LC_ALL=C` run differs on lb048,
-  lb067, lb089 (the pins are the UTF-8 ones; the handoff's earlier "LC_ALL=C" is wrong for them). Vacuity checks for both rows added.
+  lb067, lb089 (the pins are the UTF-8 ones; the earlier "LC_ALL=C" advice does not hold for them: use LC_ALL=C.UTF-8, which reproduces the pins byte for byte). Vacuity checks for both rows added.
 - (b) tools/mutants/LB5.py: 20 entries, 18 killers (A1 B1-B3 C1-C3 D1 E1 F1 F2 G1 G2 H1-H4 I1) + 2 declared EQUIVALENT (X1, X2: write_size's
   ISO clear and restore, pl-write.jl:2508, :2511). Validated with a throwaway python3 -I script: every `old` occurs once, ids unique,
   old != new, every target exists and holds @test, the module-level TARGETS (11 files) is exactly the union of the mutants' targets
   (no helper file). NOT LISTED with reasons in the header: getStreamWithPosition's permission_error branch (lb010-011 pin swipl's ok
   answers: no oracle row reaches it), tab's `count === nothing` line (a MethodError, not a verdict). The `old` strings are in the repo's
   formatted style before `warm.sh fmt`: RE-FIT after fmt. UNVERIFIED: the KILL row ids are by reading, no mutant was run.
+- (c) G7 committed: test/static_analysis_manifest.jl: 24 entries appended at the END of `_manifest_index` (is_stream_blob, current_io, getStreamWithPosition,
+  tab, at_end_of_stream, get_code2, put_code, PL_eval_expression_to_int64_ex, write_size and the 12 `pl_*_va` of this step plus pl_write_size4_va; every new
+  `function` of `git diff 9cc76fa HEAD -- src` is covered; types as the neighbours: LD, Int64, Union{Nothing, LK.IOSTREAM}, LK.foreign_context{T}); docs/architecture.md
+  section "LB5" at the END (UPSTREAM names pl-file.c, pl-write.c, pl-arith.c, pl-option.c; write_size/4 DIVERGES with OWNER: the stream layer's custom-write-function
+  step, S2b as the nearest named row, and the sentence that limits are checked after the write; ORIGINAL tests/mutants); the same OWNER lines in the DIVERGES comment of
+  `write_size` (src/pl-write.jl). The live swipl compare of the rows now runs under `LC_ALL=C.UTF-8` (test file, as test_open_close_swipl.jl does).
+  OWNER QUESTION FOR THE DISPATCHER: no row in docs/architecture.md or evidence/R2 names a custom-write-function step; S2b is written as the nearest. docs/architecture.md
+  line ~6114 (S2a block) still says alias(Std) raises the refusal: the LB5 block says it is lifted; test_s2a_swipl.jl header lines 4 and 9 name the same refusal (no row pins it).
+  UNVERIFIED: manifest signatures (no Julia), whether the docs block passes warm.sh inventory (WHATS-HERE-UPSTREAM reads the src/os/pl-file.jl TABLE ROW, untouched).

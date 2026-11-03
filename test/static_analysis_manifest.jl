@@ -2587,7 +2587,32 @@ function _manifest_index(T)
         (LK.build_labeled_subterm, Tuple{Int, LK.read_data{T}}, false),
         # ENG3: pl-fli.c's API stubs PL_new_term_ref/PL_new_term_refs (the foreign-environment check, then the LD form)
         (LK.PL_new_term_ref_api, Tuple{LD}, false),
-        (LK.PL_new_term_refs_api, Tuple{LD, Int}, false)
+        (LK.PL_new_term_refs_api, Tuple{LD, Int}, false),
+        # LB5 — set_stream/2 alias(Std), current_input/1, current_output/1, line_count/2, line_position/2, tab/1,2,
+        # at_end_of_stream/0,1, get_code/1,2, put_code/1,2 (+ put_char, upstream's alias), write_size/4
+        # (pl-file.c, pl-arith.c PL_eval_expression_to_int64_ex, pl-write.c write_size, pl-option.c OPT_INT64)
+        (LK.is_stream_blob, Tuple{LD, Int64}, false),
+        (LK.current_io, Tuple{LD, Int64, Union{Nothing, LK.IOSTREAM}, Symbol}, false),
+        (LK.pl_current_input1_va, Tuple{LD, Int64, Int64, LK.foreign_context{T}}, false),
+        (LK.pl_current_output1_va, Tuple{LD, Int64, Int64, LK.foreign_context{T}}, false),
+        (LK.getStreamWithPosition, Tuple{LD, Int64}, false),
+        (LK.pl_line_count2_va, Tuple{LD, Int64, Int64, LK.foreign_context{T}}, false),
+        (LK.pl_line_position2_va, Tuple{LD, Int64, Int64, LK.foreign_context{T}}, false),
+        (LK.tab, Tuple{LD, Int64, Int64}, false),
+        (LK.pl_tab2_va, Tuple{LD, Int64, Int64, LK.foreign_context{T}}, false),
+        (LK.pl_tab1_va, Tuple{LD, Int64, Int64, LK.foreign_context{T}}, false),
+        (LK.at_end_of_stream, Tuple{LD, Int64}, false),
+        (LK.pl_at_end_of_stream1_va, Tuple{LD, Int64, Int64, LK.foreign_context{T}}, false),
+        (LK.pl_at_end_of_stream0_va, Tuple{LD, Int64, Int64, LK.foreign_context{T}}, false),
+        (LK.get_code2, Tuple{LD, Int64, Int64}, false),
+        (LK.pl_get_code2_va, Tuple{LD, Int64, Int64, LK.foreign_context{T}}, false),
+        (LK.pl_get_code1_va, Tuple{LD, Int64, Int64, LK.foreign_context{T}}, false),
+        (LK.put_code, Tuple{LD, Int64, Int64}, false),
+        (LK.pl_put_code2_va, Tuple{LD, Int64, Int64, LK.foreign_context{T}}, false),
+        (LK.pl_put_code1_va, Tuple{LD, Int64, Int64, LK.foreign_context{T}}, false),
+        (LK.PL_eval_expression_to_int64_ex, Tuple{LD, Int64}, false),
+        (LK.write_size, Tuple{LD, Int64, Int64, Int64, Int64}, false),
+        (LK.pl_write_size4_va, Tuple{LD, Int64, Int64, LK.foreign_context{T}}, false)
     )
 end
 
