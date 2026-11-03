@@ -74,6 +74,7 @@ include("pl-bag.jl")           # swipl-devel src/pl-bag.c — the bags of findal
 include("pl-gvar.jl")          # swipl-devel src/pl-gvar.c — global variables: b_setval, nb_setval, nb_current …
 include("pl-list.jl")          # swipl-devel src/pl-list.c — is_list/1, '$length'/2, sort/2, msort/2, keysort/2
 include("pl-dict.jl")          # swipl-devel src/pl-dict.c — is_dict/1,2, dict_create/3, put_dict/3, select_dict/3, get_dict/3
+include("pl-tabling.jl")       # swipl-devel src/pl-tabling.c — '$tbl_trienode'/1, '$tbl_is_trienode'/1 (TAB1-min)
 include("pl-op.jl")            # swipl-devel src/pl-op.c — the operator tables, op/3
 include("pl-write.jl")         # swipl-devel src/pl-write.c — the NaN helpers and the quoting rules the reader needs
 include("pl-sys.jl")           # swipl-devel src/pl-sys.c — getenv/2, setenv/2, unsetenv/1, get_time/1, sleep/1 (Y1)
