@@ -224,7 +224,8 @@ const _Q_NO_ENV_REFS = ErrorException("PL_new_term_refs(): No foreign environmen
     @test LK.PL_new_term_refs(ld, 2) == t0 + 1 && ld.lTop == t0 + 3
     @test LK.PL_close_query(ld, qid) == 1
     @test LK.PL_new_term_ref_api(ld) > 0                        # the caller's frame is current again
-    @test LK.PL_new_term_refs_api(ld, 2) > 0
+    r2 = LK.PL_new_term_refs_api(ld, 2)
+    @test r2 > 0 && ld.lTop == r2 + 2                           # the stub makes all `n` (ENG3)
     LK.PL_close_foreign_frame(ld, fid)
     # a closed query: PL_next_solution fails (its frame not reused — all upstream guarantees)
     @test _ynext(p[:g], qid) == 0
@@ -272,6 +273,12 @@ end
     @test ld.exception_term == ld.exception_bin
     qid, a, fid = _yopen(p[:f], _yv(1); flags=LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS)
     @test_throws _Q_NO_ENV_REF LK.PL_new_term_ref_api(ld)      # no foreign frame above the query's
+    # a foreign frame opened above the query's frame: the stub's check passes there (ENG3: the running
+    # frame is set, the foreign frame is newer — fli_context > environment_frame, pl-fli.c:546)
+    @test ld.environment_frame != 0
+    fid2 = LK.PL_open_foreign_frame(ld)
+    @test LK.PL_new_term_ref_api(ld) > 0
+    LK.PL_close_foreign_frame(ld, fid2)
     @test LK.PL_next_solution_guarded(db.gd, ld, qid, true) == LK.PL_S_EXCEPTION
     # (a variant: the ball is a copy with fresh variables, copy_exception — since V9f)
     @test LK.is_variant_ptr(
