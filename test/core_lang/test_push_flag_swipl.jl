@@ -394,7 +394,6 @@ end
 # `set_flag_value` succeeds).
 const _PF_REFUSED = [
     ("encoding", "utf8"), ("stack_limit", "1000000000"),
-    ("autoload", "false"),
     ("agc_margin", "100"), ("var_tag", "dict"), ("heartbeat", "0")
 ]
 
@@ -423,5 +422,5 @@ const _PF_REFUSED = [
             line
         )
     end
-    @test length(_PF_REFUSED) >= 6
+    @test length(_PF_REFUSED) >= 5
 end

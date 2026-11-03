@@ -515,7 +515,7 @@ end
 const _SF_REFUSED = [
     ("tty_control", "true"), ("debug_on_interrupt", "true"), ("var_tag", "dict"),
     ("incomparable", "error"), ("encoding", "utf8"), ("unicode_atoms", "error"),
-    ("autoload", "false"), ("table_monotonic", "lazy"),
+    ("table_monotonic", "lazy"),
     ("theme", "dark"), ("agc_margin", "100"), ("table_space", "1000000"),
     ("table_compile_threshold", "5"), ("table_drop_intermediate", "5"),
     ("stack_limit", "1000000000"),
@@ -538,7 +538,7 @@ const _SF_REFUSED = [
         # UNVERIFIED on the kernel: gate decides (the refusal's class for `threads`, `tty_control`: the value that changes the flag)
         @test_throws LK.NotPortedError _sf_query(gd, ld, "r_$(f)")
     end
-    @test length(_SF_REFUSED) >= 18
+    @test length(_SF_REFUSED) >= 17
 end
 
 # KNOWN DIFFERENCE BY DESIGN (D1, the no-threads build; checklist: R2's threads): `threads` is read-only in the kernel (upstream's `#else` of

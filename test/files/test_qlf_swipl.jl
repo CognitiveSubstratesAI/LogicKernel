@@ -283,7 +283,11 @@ end
     write(g, _QL_AUTOLOAD_PROGRAM)
     gd = LK.PL_global_data{_QL}()
     ld = LK.PL_local_data{_QL}(gd)
+    # AUTOLOAD1 A4: compileFileList sets `autoload` through PL_set_prolog_flag, whose propagateAutoload calls `\$autoload:set_autoload/1`
+    # outside a boot session (pl-prologflag.c:987-1000); upstream runs compileFileList in the boot session only, so the row does too
+    gd.bootsession = true
     @test LK.compileFileList(gd, ld, nothing, [g])
+    gd.bootsession = false
     kl = _ql_query_lines(gd, ld, ["t_q01"])
     @test _ql_list_atoms(kl[1]) == _ql_list_atoms(_QL_AUTOLOAD_PINNED[2]) ==
         ["autoload_off"]
@@ -477,12 +481,15 @@ end
     # compileFileList alone restores the access level and `autoload`, and leaves the boot flag as it was
     gd = LK.PL_global_data{_QL}()
     ld = LK.PL_local_data{_QL}(gd)
+    gd.bootsession = true                                        # AUTOLOAD1 A4: as above, the boot session only
     @test LK.compileFileList(gd, ld, nothing, [f4])
+    @test gd.bootsession                                         # left as it was
+    gd.bootsession = false
     @test ld.prolog_flag_access_level == LK.ACCESS_LEVEL_USER && !gd.bootsession
     @test String(sym_text(LK.PL_current_prolog_flag(gd, mk_sym(_QL, :autoload), :atom))) ==
         "true"
     sf = LK.lookupSourceFile_unlocked(gd, mk_sym(_QL, Symbol(abspath(f4))), false)
-    @test sf !== nothing && !sf.system
+    @test sf !== nothing && sf.system                            # created while GD->bootsession was on (AUTOLOAD1 A4: the row runs in the boot session)
 end
 
 # one goal on the `system` predicate `name/length(args)`: :ok, :fail, :exception, or :notported (the QLF predicates refused by name)
