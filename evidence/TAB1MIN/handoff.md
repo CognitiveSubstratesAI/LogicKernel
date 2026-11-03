@@ -327,3 +327,43 @@ origin/main fetched at start: STILL f08167f (ENG3 NOT landed): T3 NOT possible (
    dynamic tm_x22 clearing the properties (tma22), D6's white-box `isempty(c06.supervisor_crefs)`.
    Commits on wip/tab1min (writer 5): 5a6a6de mutants (33), c9edf71 manifest rows, ae550dc docs block.
    Daemons: writer 5 started none, ran no Julia.
+
+## WRITER 6 (Sonnet, edit-only; nothing compiled or run: every line UNVERIFIED). Scratch prefix t3w_. Forced hand-back at the 150k cap.
+origin/main = 133de9c (ENG3 + RDDICT landed). Rebased ONCE: branch wip/tab1min-b (old wip/tab1min untouched). Two append-only conflicts kept
+both sides: test/static_analysis_manifest.jl (ENG3's PL_new_term_ref_api rows + TAB1-min rows; comma added after ENG3's last row),
+docs/architecture.md (RDDICT/ENG3 blocks then the TAB1-min block). No non-append conflict.
+### Committed on wip/tab1min-b (rebased commits keep their messages; new ones below)
+- fe29aeb UPSTREAM T3: src/pl-vmi.jl `S_WRAP`=159, `S_CALLWRAPPER`=160, `S_TABLED`=161 (pl-vmi.c order :3560, :3624, :3644; appended after B_ARG_VF)
+  + `_CODE_TABLE` rows (S_WRAP 0 operands; the other two 3: CA1_CLAUSEREF, CA1_DATA, CA1_DATA); src/pl-incl.jl `PL_code_data.wrapper` (7th field, after
+  staticp, as upstream's order); src/pl-supervisor.jl `initSupervisors` builds `code[S_WRAP, I_EXIT]`, `_shared_supervisor` knows it, header lines;
+  src/pl-global.jl idle index_context literal has 7 `code[]`; src/pl-wam.jl: the three names in `VMI_RUN` and three labels after `S_LMQUAL`, each a
+  `throw(NotPortedError{T}(DEF.name, "the VM instruction <NAME> (...)", "WRAP1" | "TAB1"))`. I_NOP (code 0) stays the first declared opcode outside VMI_RUN
+  (checked by a python parse of _CODE_TABLE vs VMI_RUN: 159 declared before T3, only I_NOP outside), so test/foreign/test_query.jl:305-330 keeps its refusal.
+  T4's names (S_CALLWRAPPER, S_TABLED, code_data.wrapper, isCallWrapper) now exist: pl-wrap.jl was read against them, no rename needed.
+- da87ffc TEST: white-box testset "wrapper opcodes and the wrapper block (T3, LK-only)" at the end of the main testset of
+  test/core_lang/test_tabling_min_swipl.jl (+ helper `_tm_call_error`): opcode order and table rows, decoder step lands after a wrapper supervisor, the shared block,
+  closure copy's `codes === code_data.wrapper`, three calls raising NotPortedError (tm_w02 -> S_CALLWRAPPER/WRAP1, tm_c05 -> S_TABLED/TAB1, tm_w03 with
+  `codes` set to the wrapper block -> S_WRAP/WRAP1), `ld.query == 0 && ld.nqueries == 0` after each, `:I_NOP` outside VMI_RUN. No swipl rows for T3: swipl
+  cannot answer for opcodes (so no tmt23+ pins were added).
+### LEFT (the next writer), in order
+1. tools/mutants/TAB1MIN.py: add T3 mutants (format: dict(id, file, old, new, targets); read the head of the file and one mutant first; each `old` once).
+   Candidates: pl-supervisor.jl `code[S_WRAP, I_EXIT]` -> `code[S_TABLED, I_EXIT]` (kills the block row); `_shared_supervisor` `|| codes === cd.wrapper` dropped
+   (kills `_shared_supervisor(cd, cd.wrapper)`); pl-vmi.jl row `code_info(:S_CALLWRAPPER, 0x00, 3, ...)` -> 2 arguments (kills the decoder-step row and the table row);
+   `code_info(:S_TABLED ... CA1_DATA, CA1_DATA` -> `0x00, 0x00`; pl-wam.jl `"WRAP1"` of S_CALLWRAPPER -> "TAB1" (kills e.step); S_TABLED's `"TAB1"` -> "WRAP1"; label S_WRAP body
+   -> `@goto next_instruction` (kills the tm_w03 refusal row); VMI_RUN without `:S_TABLED` (kills the `nm in VMI_RUN` row; the unknown-instruction message names no owner, and
+   the step check is `e.step`). TARGETS: test_tabling_min_swipl.jl only for those (+ test/foreign/test_query.jl for any mutant that changes which opcode is first outside VMI_RUN).
+   NOT KILLABLE (list under NOT LISTED with the code reason): the `PL_code_data` field order (pl-incl.jl: positional constructor; a swap of two empty vectors in pl-global.jl:618
+   changes nothing observable); the `@label` span effect on static_analysis_body's call-path spans (not a behaviour).
+2. Manifest: no new function was added by T3 (initSupervisors / _shared_supervisor rows exist; `_tm_call_error` is test code). Check by `git diff 133de9c HEAD -U0 -- src` for a
+   function with no row. Grep new manifest entries for `::Any` arguments (JET lesson D-0390): TAB1-min's rows (pl-tabling.jl, pl-wrap.jl) were not grepped for it yet.
+3. docs/architecture.md: the TAB1-min block says "T3 NOT STARTED" (grep that phrase): rewrite to say T3 declared the three opcodes (numbers 159..161 appended in pl-vmi.c's order,
+   second to land vs the continuation step renumbers), the 7th block, the run loop's named refusals (owners WRAP1/TAB1, removal condition: a wrapped/tabled goal is called);
+   add the pl-vmi.jl / pl-supervisor.jl / pl-wam.jl rows if the block lists files; DIVERGES (d) opcode numbers appended, (e) S_* bodies are named refusals.
+4. Handoff rows READY-FOR-GATE: unchanged list of writer 5 (section "READY-FOR-GATE LIST (final state)", items b), now with "T3 is on the branch (fe29aeb)": the gate can start
+   after items 1-3. ADDITIONAL checks only the gate can run, from this writer: (a) the white-box rows' query path: `PL_open_query` on a Procedure whose `def.codes` is a wrapper
+   reaches the run loop's dispatch (S_CALLWRAPPER label) and the NotPortedError leaves `ld.query == 0`; (b) the new labels in `PL_next_solution_guarded` (JET: a `throw` after
+   `@label` followed by another `@label`; AllocCheck spans of static_analysis_body.jl "call_path" are unchanged since none of the new labels is on the path); (c) test_atom_table.jl pin of
+   the `closure` atom (initWrap!); (d) ClauseList{T}() + `cl.args =`, `PL_unify_functor` with a blob T-term, `atomValue` on a blob word, `assert_term!` with a blob-headed compound (tmw12)
+   (unchanged from writer 5); (e) the 2-argument freeCodesDefinition! manifest row noalloc=true with its throw branch; (f) the `PL_code_data` literal in pl-global.jl: all 7 fields; any
+   other `PL_code_data(` call: git grep found only pl-global.jl:618 and initSupervisors; (g) after ENG3 the test_query allocation pin is 365 (not 347).
+Daemon state: writer 6 started none, ran no Julia. A daemon is not needed by the next edit-only writer.
