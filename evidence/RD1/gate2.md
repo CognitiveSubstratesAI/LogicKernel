@@ -1,42 +1,37 @@
-# RD1c fix agent 1 (2026-11-03) — PART 1: edits committed, runs NOT done (no daemon slot)
+# RD1c fix agent 1 (2026-11-03) — hand-back at the 150k cap. Edits + most runs DONE; NOT pushed.
 
-Commit d70183f on wip/rd1 (over 807850c; bd38a5c is the pushed gate/rd1b tip). Nothing pushed.
+Tip of wip/rd1: 76855a3 (rows rt322/rt323 + mutants RD1c.py), over d7076d2 (gate2 part 1), d70183f (canonical row fix), 807850c, bd38a5c (= gate/rd1b tip).
+Nothing pushed. Working tree clean at 76855a3 except this file.
 
-## Step 1: the stale-pin grep over test/ (blob read option, the refusal text, option-table users)
-- The refusal text "read options the kernel cannot honour": test/core_text/test_canonical_readatom_swipl.jl:576 only.
-- Rows naming the blob read option `blob(`: test_canonical_readatom_swipl.jl (the stale row, :579) and test_read_stream_swipl.jl (rt303-rt321; already
-  written for the ported option, passing in gate 1). No other file names `blob(Mode)` as a read option; the other "blob" hits are blob TYPE tests
-  (alt_term.jl, test_blob.jl, test_atom_table.jl, test_sort.jl, test_compare_swipl.jl, test_termhash.jl, term_interface_testlib.jl, test_s2a_swipl.jl,
-  test_clause_ref/nth_clause/record/source_file, test_open_close, test_load, test_write_family, test_vendored_*, test_gate_split, test_syntax.jl,
-  static_analysis_manifest.jl).
-- read_term_from_atom / term_to_atom / term_string users: test_read_term_swipl.jl, test_read.jl, test_read_positions_swipl.jl, test_roundtrip_swipl.jl,
-  test_syntax.jl, test_reader_cells.jl, test_op.jl, test_write_swipl.jl, test_write_family_swipl.jl, test_float_write_swipl.jl, test_load_swipl.jl,
-  test_open_close_swipl.jl, test_clause_ref_swipl.jl, test_record_swipl.jl, test_set_flag_swipl.jl, test_fli_words.jl, test_read_swipl.jl (core_lang),
-  test_head_code_swipl.jl, code_testlib.jl, static_analysis_manifest.jl. None lists blob as NOTPORTED (grep for NOTPORTED/refus near blob: no match).
+## Step 1 file list (stale-pin grep over test/): see git history of this file (d7076d2). Files that name the blob READ option: test_canonical_readatom_swipl.jl (stale row, fixed), test_read_stream_swipl.jl (rt303-rt323).
 
-## Step 2: the fix (test side only)
-- blob(x) out of the refusal list (comments, var_prefix, quasi_quotations, unicode_atoms stay).
-- swipl 10.1.19 queried (/home/shivaji1012/.local/bin/swipl; not on the agent shell's PATH, the file's `Sys.which("swipl")` finds it in the daemon's env):
-  blob(x) -> error(domain_error(blob,x),context(system:read_term_from_atom/3,_)); blob(_) -> error(instantiation_error,context(system:read_term_from_atom/3,_));
-  blob(1) -> type_error(atom,1); blob("dead") -> type_error(atom,"dead"); blob(error|dead|resolve) on 'f(X)' -> true;
-  '<a>(f)' with blob(error) -> syntax_error(operator_expected),string("<a>(f) . ",0).
-- 8 rows appended to _CR_GOALS ("the hand goals, as swipl", end of list so no index shifts) + a swipl-independent testset "blob(Mode): ported (RD1b)...".
-  Left out: '<a>(f)' with blob(dead): that is RD1b's documented DIVERGES (kernel refuses, upstream builds a dead blob).
-- Also updated: header comment of the file; docs/architecture.md path text (RD1b.py -> RD1c.py).
+## Runs DONE (daemon of ~/code/lk-rd1, unit logickernel-warm-4d22bbd8; first slice; started this session)
+- fmt: JuliaFormatter via warm.sh send over test_canonical_readatom_swipl.jl and test_read_stream_swipl.jl: no rewrite of the hand-formatted rows.
+- `warm.sh check`: PASS twice (128 s at d70183f, 116 s at 76855a3): format, port_check clean (253 files), manifest 3397, term scopes, meta files, inert guard.
+- test_canonical_readatom_swipl.jl (swipl 10.1.19 live): 445/445 on reference, alt, alt_interned. The 8 new hand-goal rows + the "blob(Mode)" testset pass.
+- test_read_stream_swipl.jl at 76855a3: 261/261 on all three types (was 259; +rt322, rt323). test_read_term_swipl.jl 66/66 x3, test_read.jl 113/113 x3 (at d70183f; src unchanged since). test_type_discipline.jl 33/33.
+- No SKIP / Warning / DIVERGES lines in any of these logs (grep over the logs).
 
-## Step 3: mutants
-tools/mutants/RD1b.py git-mv'd to RD1c.py; TC = test_canonical_readatom_swipl.jl added to TB (F1-F6, F12) and as TF (TS+TC) to F7-F10. Throwaway python3 -I checker:
-33 mutants, each `old` once, ids unique, old != new, every target exists.
+## D-0376 survivors, run IN-TREE (tools/mutate.sh run-in-tree tools/mutants/RD1c.py test/core_text/test_read_stream_swipl.jl -- <ID>, one at a time)
+- RD1-A3 (kill rows rt174, rt199): SURVIVED in-tree. Cause: raw_read2 never puts leading layout into its buffer (every blank/comment/NUL branch is gated by
+  `something_read`: src/pl-read.jl 779, 804, 822, 834, 924-927, 967-970; pl-read.c ensure_space 1440-1443 and 1672, 1724, 1769, 1785, 1810, 1817, 1839, 1947),
+  so pl_raw_read2's skipSpaces (pl-read.c:6691, src/pl-read.jl:4585) has nothing to skip: no row can kill it. Declared `equivalent=` in tools/mutants/RD1c.py with
+  this code reason, FOR THE DISPATCHER'S RULING (read, not run, plus the in-tree survival).
+- RD1-F2 (rt315): SURVIVED in-tree. Cause: rt311 runs first and leaves `<` a prefix operator in module rtm, so blob_syntax_available is false in rt315 and the
+  `!must_be_op` test is never reached. New row rt322 (fresh module rtn, `op(200,xfy,rtn:(>))`, `a <b>(c).` with blob(dead)): kernel = swipl 10.1.19 = a<(b>c);
+  F2 now CAUGHT in-tree (by "read/1,2, read_term/2,3 ... rows" testset).
+- RD1-F6 (rt316): SURVIVED in-tree. Cause: `X = <a>.` has `>.` as ONE symbol atom, so the raw read ends in end_of_file before the tokeniser runs. New row rt323
+  (`X = <a> .` from a file, blob(dead)): swipl 10.1.19 and kernel = syntax_error(operator_expected); F6 now CAUGHT in-tree.
+- RD1-F1 control (probe): rt314 DIFFs under F1, so the probe/reload path works.
+- Mutants list: RD1-F2/F6 KILL names now rt322/rt323; header says rt300-rt323. checker: 33 mutants, anchors once, ids unique.
 
-## Step 4: fmt / check NOT run (no daemon for lk-rd1). Edits follow the file's style by hand; fmt must still run.
-
-## READY TO RUN (needs a daemon slot for ~/code/lk-rd1). Commands, in this order:
-    cd ~/code/lk-rd1
-    tools/warm.sh send   (JuliaFormatter over test/core_text/test_canonical_readatom_swipl.jl; then git diff, commit if it rewrote anything)
-    tools/warm.sh check
-    for T in reference alt alt_interned: tools/warm.sh file test/core_text/test_canonical_readatom_swipl.jl $T
-    same three types: test/core_text/test_read_stream_swipl.jl (unchanged since gate 1, 259/259; re-run as the rule says)
-    same three types: test/core_text/test_read_term_swipl.jl and test/core_text/test_read.jl (mutant TARGETS in TB)
-    tools/warm.sh file test/test_type_discipline.jl
-    tools/pkgtest_way.sh test/core_text/test_canonical_readatom_swipl.jl
-Then: author check, git fetch + plain rebase if origin/main moved, bare pushes at the SAME SHA to refs/heads/gate/rd1c and refs/heads/mutants/RD1c, one ci_status.
+## LEFT (the next agent, or the dispatcher), in order
+1. `tools/pkgtest_way.sh test/core_text/test_canonical_readatom_swipl.jl` and then `.../test_read_stream_swipl.jl` (ONE at a time; the hook cap stopped me before they ran;
+   the earlier `warm.sh check` runs include the Pkg.test-way pass on changed test files, both PASS, but the explicit runs are not done).
+2. Crash-term grep (`segment|SIGSEGV|crash|abort|invalid term_t|dies of`) over `git diff origin/main..HEAD` added lines and all messages; author check
+   (`git log --format=%an%n%cn origin/main..HEAD` = Shivaji Gadde only); `git fetch`, plain `git rebase origin/main` if main moved.
+3. Bare pushes at the SAME SHA: `git push origin <sha>:refs/heads/gate/rd1c` and `git push origin <sha>:refs/heads/mutants/RD1c` (pre-push needs tools/mutants/RD1c.py: present). One ci_status.
+4. Copy this file to ~/code/lk-channel/evidence/RD1/gate2.md, stage then commit in two calls, push.
+5. Stop MY daemon with `# allow-restart: RD1c done, slot returned`: `cd ~/code/lk-rd1 && tools/warm.sh stop`. IT IS STILL RUNNING (unit logickernel-warm-4d22bbd8, started this session by me).
+   The lk-lb4b2-run daemon (logickernel-warm-17790d9d) was never touched.
+6. The battery on mutants/RD1c only after Evidence is green on the same SHA.
