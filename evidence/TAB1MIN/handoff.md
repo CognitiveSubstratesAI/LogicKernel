@@ -367,3 +367,31 @@ docs/architecture.md (RDDICT/ENG3 blocks then the TAB1-min block). No non-append
    (unchanged from writer 5); (e) the 2-argument freeCodesDefinition! manifest row noalloc=true with its throw branch; (f) the `PL_code_data` literal in pl-global.jl: all 7 fields; any
    other `PL_code_data(` call: git grep found only pl-global.jl:618 and initSupervisors; (g) after ENG3 the test_query allocation pin is 365 (not 347).
 Daemon state: writer 6 started none, ran no Julia. A daemon is not needed by the next edit-only writer.
+
+## WRITER 7 (Sonnet, edit-only; nothing compiled or run: every line UNVERIFIED). Scratch prefix t3x_.
+Branch wip/tab1min-b, started at da87ffc (rebased on origin/main 133de9c); origin/main NOT re-fetched by this writer.
+Committed (in order): 63d9f68 the writer-6 handoff (the staged section; commit hook accepted it), a8079d8 mutants E1-E16, e909eea architecture.md T3 block.
+1. tools/mutants/TAB1MIN.py: 16 T3 mutants E1-E16 (49 in all), validated by a throwaway `python3 -I` script: each `old` occurs exactly once in its file, old != new, ids
+   unique, every target exists, module TARGETS = five real test files (each holds @testset/@test). E1 wrapper block built from S_TABLED (kill test_tabling_min_swipl.jl:471, :492);
+   E2 `_shared_supervisor` drops the wrapper block (:473); E3/E4/E5 the code_info rows of S_CALLWRAPPER (arguments 3 -> 2: :463, :468), S_TABLED (argtype: :463), S_WRAP
+   (arguments 0 -> 1: :459); E6 `S_TABLED = code(162)` (:455; may die at load first); E7-E9 the owner strings (:492, :482, :485); E10-E12 the label bodies replaced by
+   `@goto next_instruction` before the throw (:492, :482, :485); E13-E15 each of the three names dropped from VMI_RUN (:479 + the e.step rows); E16 `unify_closure` gives the
+   closure copy `code_data.virgin` (:476). TARGETS = the tabling-min file (E2 also the supervisor set). test/foreign/test_query.jl is NOT a target: `:I_NOP` stays the first
+   opcode outside VMI_RUN under every listed mutant (the header says so). NOT LISTED (header): PL_code_data field order, the `@label` span effect.
+   GATE: fmt may rewrap the `throw(NotPortedError...)` blocks of pl-wam.jl: E7-E9 anchor the one-line message-and-owner string, E10-E12 a two-line `@label X\n    throw(`
+   anchor: RE-FIT after `warm.sh fmt` (mutate_drive.py refuses an `old` that does not occur once). E10-E12 insert dead code after `@goto`: if JET/the compiler objects, replace
+   by deleting the `throw(` call's block.
+2. docs/architecture.md: the "T3 NOT STARTED" bullet is replaced (numbers 159..161, the 7th block, the refusals with owners WRAP1/WRAP1/TAB1 and removal conditions);
+   DIVERGES 6 (appended numbers) and 7 (refusal bodies); writer count and Tests line (49 mutants). No absence-hook phrase used.
+3. Manifest: TAB1-min's own rows (git diff 133de9c..HEAD of test/static_analysis_manifest.jl, 37 added lines): no `Any` anywhere; a scan of every signature of
+   src/pl-tabling.jl and src/pl-wrap.jl found no untyped argument and no callback argument. Two functions take the bare UnionAll `Definition` (not `Definition{T}`):
+   `tbl_reset_tabling_attributes!(def::Definition)` and `get_predicate_table_props!(def::Definition)`; the manifest rows use `D` (concrete), Julia specialises on the call's
+   concrete type, so no change was made; if JET reports runtime dispatch there, add `{T}` / `where {T}` (two lines). T3 (fe29aeb) added NO function: no row needed.
+### READY-FOR-GATE
+Unchanged from writer 5's "READY-FOR-GATE LIST (final state)" item (b) and writer 6's additional checks (a)-(g): T3 IS on the branch (fe29aeb), the mutants, manifest rows,
+docs block are done. The gate-only checks of writers 5 and 6 stand (ClauseList{T}() + cl.args; PL_unify_functor with a blob; atomValue on a blob word; assert_term! with a
+blob-headed compound (tmw12); the `closure` atom in test_atom_table.jl; blob/2 of the closure; abolish clearing the properties (tma22); D6's `isempty(c06.supervisor_crefs)`;
+PL_open_query reaching the S_CALLWRAPPER label and `ld.query == 0` afterwards; JET over the three new labels; the 2-argument freeCodesDefinition! row noalloc=true with its
+throw branch; every `PL_code_data(` literal has 7 fields; the test_query allocation pin 365 after ENG3). Plus from writer 7: re-fit the E7-E12 anchors after fmt; run
+`warm.sh inventory` and commit docs/port_inventory.md; `git fetch origin` and rebase if main moved (a second opcode append renumbers).
+Daemon state: writer 7 started none, ran no Julia. A daemon is not needed by the next edit-only writer.
