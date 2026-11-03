@@ -34,7 +34,7 @@
 # PORT: pl-proc.c lookupProcedure
 # DIVERGES: the functor is its parts: the name symbol `name` and the arity (there is no functor
 # table); the procedure table is keyed by the name's `sym_key`. No `resetProcedure`: for a NEW
-# procedure it sets the debugger's `TRACE_ME`, which is not ported (`resetProcedure!`, since PR1, omits it
+# procedure it sets the debugger's `TRACE_ME`, which the kernel has no debugger for (`resetProcedure!`, since PR1, omits it
 # too), and `SUPERVISOR(virgin)`, which the new definition starts with. No
 # program-space limit, statistics or lock: there are no threads, so the table cannot gain the
 # functor between the lookup and the add.
@@ -857,7 +857,7 @@ end
 
 # PORT: pl-proc.c resetProcedure
 # DIVERGES: no statistics (`GD->clauses.dirty`), update events or tabling attributes (`def->events`, `def->tabling`: not
-# in the kernel); the debugger's `TRACE_ME` is not set for a user predicate (not ported, as in `lookupProcedure`). Upstream's
+# in the kernel); the debugger's `TRACE_ME` is not set for a user predicate (no debugger, as in `lookupProcedure`). Upstream's
 # `def->impl.any.defined` (the union member overlaying the first clause or the foreign function) is the first clause or
 # the foreign function index.
 "Reset `proc`'s definition to a pristine one but for `SPY_ME` and `P_DIRTYREG`; `isnew`: drop the indexes at once (pl-proc.c)."
@@ -2465,6 +2465,227 @@ function pl_current_predicate1_va(
     return FFALSE
 end
 
+# PORT: pl-proc.c unify_meta_argument
+# DIVERGES: the database's atoms are terms of the type `T` (`mk_sym`); `ld` is an argument.
+"Unify argument `i` (from 0) of the term `head` with the meta-argument specifier of `def`'s argument `i` (pl-proc.c)."
+function unify_meta_argument(
+    ld::PL_local_data{T}, head::term_t, def::Definition{T}, i::Int
+)::Bool where {T}
+    arg = PL_new_term_ref(ld)
+    m = (def.impl_clauses.args::Vector{arg_info})[i + 1].meta
+
+    _PL_get_arg(ld, i + 1, head, arg)
+    if m < 10
+        return PL_unify_integer(ld, arg, Int(m))
+    else
+        a = if m == MA_META
+            Symbol(":")
+        elseif m == MA_VAR
+            Symbol("-")
+        elseif m == MA_ANY
+            Symbol("?")
+        elseif m == MA_NONVAR
+            Symbol("+")
+        elseif m == MA_HAT
+            Symbol("^")
+        elseif m == MA_DCG
+            Symbol("//")
+        else
+            error("unify_meta_argument: meta specifier $m")      # assert(0)
+        end
+        return PL_unify_atom(ld, arg, mk_sym(T, a))
+    end
+end
+
+# PORT: pl-proc.c unify_meta_pattern
+"Unify `head` with the meta-predicate pattern of `proc`, e.g. `maplist(2, ?, ?)` (pl-proc.c)."
+function unify_meta_pattern(
+    ld::PL_local_data{T}, proc::Procedure{T}, head::term_t
+)::Bool where {T}
+    def = proc.definition
+    if PL_unify_functor(ld, head, def.name, def.arity)
+        for i in 0:(def.arity - 1)
+            unify_meta_argument(ld, head, def, i) || return false
+        end
+        return true
+    end
+    return false
+end
+
+# PORT: pl-proc.c num_visible_clauses
+# DIVERGES: `LD->reload.generation != GEN_INVALID` (a reload in progress; the kernel has no reloading) is false, so only a dynamic
+# predicate walks its clauses; the database is an argument and `rules` is `key == ATOM_number_of_rules`.
+"The number of clauses (or of rules) of `def` the current generation sees (pl-proc.c)."
+function num_visible_clauses(
+    gd::PL_global_data{T}, def::Definition{T}, rules::Bool
+)::Int where {T}
+    count = Int(
+        rules ? def.impl_clauses.number_of_rules : def.impl_clauses.number_of_clauses
+    )
+
+    if count > 0 && (def.flags & P_DYNAMIC) != 0
+        gen = current_generation(gd, def)
+
+        count = 0
+        c = def.impl_clauses.first_clause
+        while c !== nothing
+            cl = c.clause::Clause{T}
+            if !(rules && (cl.flags & UNIT_CLAUSE) != 0) && visibleClause(cl, gen)
+                count += 1
+            end
+            c = c.next
+        end
+    end
+
+    return count
+end
+
+# PORT: pl-proc.c sizeof_predicate
+# DIVERGES: the kernel's own count, not upstream's byte count (`sizeof(*def)` and the C structs of the supervisor and the
+# clause indexes, which no Julia value has): the supervisor's code words and each clause as `module_code_size` counts it,
+# 8 bytes a word (pl-proc.c:3547-3566 sums the same parts).
+"The size in bytes of `def` as the kernel counts it (pl-proc.c)."
+function sizeof_predicate(def::Definition{T})::Int where {T}
+    size = 8 * length(def.codes)                            # sizeof_supervisor(def->codes)
+    if (def.flags & P_FOREIGN) == 0
+        c = def.impl_clauses.first_clause
+        while c !== nothing
+            cl = c.clause::Clause{T}
+            size += 8 * (sizeofClause(length(cl.codes)) + SIZEOF_CREF_CLAUSE)
+            c = c.next
+        end
+    end
+    return size
+end
+
+# PORT: pl-proc.c get_predicate_attribute as pl_get_predicate_attribute3_va
+# (PRED_IMPL("$get_predicate_attribute", 3, get_predicate_attribute, PL_FA_TRANSPARENT))
+# DIVERGES: `indexed` is refused by name (`NotPortedError`: its value is a Prolog dict per index and dicts are NOT PORTED);
+# `last_modified_generation` is the module's (`last_modified`, `setLastModifiedPredicate!`'s rise: the definition has no such
+# field; pl-proc.c:3642-3645 reads `def->last_modified`); `size` is `sizeof_predicate`, the kernel's own count (pl-proc.c:3657-3659);
+# the tabling keys (`tbl_is_predicate_attribute`, pl-proc.c:3676) fail: a definition's `tabling` is NULL here (tabling is R3, TAB1),
+# which is `tbl_get_predicate_attribute`'s own failing branch (pl-tabling.c:10281); transactions are NOT PORTED (`P_TRANSACT` branch, 3639-3641).
+"`'\$get_predicate_attribute'(:Head, +Key, -Value)`: a property of the predicate `Head` names (pl-proc.c)."
+function pl_get_predicate_attribute3_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    gd = _query_gd(ld)
+    pred, what, value = PL__t0, PL__t0 + 1, PL__t0 + 2
+    head = PL_new_term_ref(ld)
+
+    ok, mi = PL_strip_module(gd, ld, pred, 0, head)
+    ok || return FFALSE
+    module_ = gd.modules[mi]
+    fd = _cp_get_functor(ld, head)
+    fd === nothing && return FFALSE
+    proc = visibleProcedure(gd, fd[1], fd[2], module_)
+    if proc === nothing
+        proc = isCurrentProcedure(sym_key(fd[1]), fd[2], module_)
+        proc === nothing && return FFALSE
+    end
+    def = proc.definition
+
+    key = PL_get_atom(ld, what)
+    if key === nothing
+        PL_error(ld, ERR_TYPE, mk_sym(T, :atom), what)
+        return FFALSE
+    end
+    k = sym_key(key)
+    clist = def.impl_clauses
+
+    if k == sym_key(mk_sym(T, :imported))
+        module_.index == def.module_ && return FFALSE
+        return PL_unify_atom(ld, value, gd.modules[def.module_].atom) ? FTRUE : FFALSE
+    elseif k == sym_key(mk_sym(T, :indexed))
+        throw(
+            NotPortedError{T}(key, "indexed(L): the Prolog dict of an index property", "R3")
+        )
+    elseif k == sym_key(mk_sym(T, :meta_predicate))
+        (def.flags & P_META) == 0 && return FFALSE
+        return unify_meta_pattern(ld, proc, value) ? FTRUE : FFALSE
+    elseif k == sym_key(mk_sym(T, :exported))
+        return if PL_unify_integer(ld, value, isPublicModule(module_, proc) ? 1 : 0)
+            FTRUE
+        else
+            FFALSE
+        end
+    elseif k == sym_key(mk_sym(T, :defined))
+        d = isDefinedProcedure(gd, proc) ? 1 : 0
+        return PL_unify_integer(ld, value, d) ? FTRUE : FFALSE
+    elseif k == sym_key(mk_sym(T, :line_count)) || k == sym_key(mk_sym(T, :file))
+        rc = false
+        if (def.flags & (P_FOREIGN | P_THREAD_LOCAL)) == 0
+            if clist.first_clause !== nothing
+                clause = clist.first_clause.clause::Clause{T}
+                line = Int(clause.line_no)
+                if line != 0
+                    if k == sym_key(mk_sym(T, :line_count))
+                        rc = PL_unify_integer(ld, value, line)
+                    else
+                        sf = indexToSourceFile(gd, clause.source_no)
+                        sf === nothing || (rc = PL_unify_atom(ld, value, sf.name))
+                    end
+                end
+            end
+        end
+        return rc ? FTRUE : FFALSE
+    elseif k == sym_key(mk_sym(T, :foreign))
+        return if PL_unify_integer(ld, value, (def.flags & P_FOREIGN) != 0 ? 1 : 0)
+            FTRUE
+        else
+            FFALSE
+        end
+    elseif k == sym_key(mk_sym(T, :number_of_clauses))
+        (def.flags & P_FOREIGN) != 0 && return FFALSE
+        num_clauses = num_visible_clauses(gd, def, false)
+        num_clauses == 0 && (def.flags & P_DYNAMIC) == 0 && return FFALSE
+        return PL_unify_int64(ld, value, num_clauses) ? FTRUE : FFALSE
+    elseif k == sym_key(mk_sym(T, :last_modified_generation))
+        (def.flags & P_FOREIGN) != 0 && return FFALSE
+        g = Int(gd.modules[def.module_].last_modified)
+        return PL_unify_int64(ld, value, g) ? FTRUE : FFALSE
+    elseif k == sym_key(mk_sym(T, :number_of_rules))
+        (def.flags & P_FOREIGN) != 0 && return FFALSE
+        clist.number_of_clauses == 0 && (def.flags & P_DYNAMIC) == 0 && return FFALSE
+        return if PL_unify_integer(ld, value, num_visible_clauses(gd, def, true))
+            FTRUE
+        else
+            FFALSE
+        end
+    elseif k == sym_key(mk_sym(T, :size))
+        return PL_unify_integer(ld, value, sizeof_predicate(def)) ? FTRUE : FFALSE
+    elseif k == sym_key(mk_sym(T, :primary_index))
+        clist.pindex_verified || update_primary_index!(def)
+        if !clist.unindexed
+            return if PL_unify_integer(ld, value, Int(clist.primary_index) + 1)
+                FTRUE
+            else
+                FFALSE
+            end
+        end
+        return FFALSE
+    elseif _tbl_is_predicate_attribute(T, k)
+        return FFALSE
+    else
+        att = attribute_mask(ld, key)
+        att == 0 && return FFALSE
+        return PL_unify_integer(ld, value, (def.flags & att) != 0 ? 1 : 0) ? FTRUE : FFALSE
+    end
+end
+
+# Upstream: pl-tabling.c tbl_is_predicate_attribute
+"Whether `k` (an atom's `sym_key`) is a tabling attribute of a predicate (pl-tabling.c)."
+function _tbl_is_predicate_attribute(::Type{T}, k::UInt64)::Bool where {T}
+    return k in (
+        sym_key(mk_sym(T, :abstract)), sym_key(mk_sym(T, :subgoal_abstract)),
+        sym_key(mk_sym(T, :answer_abstract)), sym_key(mk_sym(T, :max_answers)),
+        sym_key(mk_sym(T, :monotonic)), sym_key(mk_sym(T, :incremental)),
+        sym_key(mk_sym(T, :tshared)), sym_key(mk_sym(T, :opaque)),
+        sym_key(mk_sym(T, :lazy)),
+        sym_key(mk_sym(T, :tabled)), sym_key(mk_sym(T, :tabled_variant))
+    )
+end
+
 # PORT: pl-proc.c BeginPredDefs as PL_predicates_from_proc
 # DIVERGES: the entries of the predicates the kernel has ported; `PRED_DEF` ors in `PL_FA_VARARGS`.
 "pl-proc.c's registration table (`BeginPredDefs(proc)`): the ported entries."
@@ -2472,6 +2693,10 @@ const PL_predicates_from_proc = (
     PL_extension("retractall", 1, pl_retractall1_va, PL_FA_ISO | PL_FA_VARARGS),
     PL_extension(
         "\$set_predicate_attribute", 3, pl_set_predicate_attribute3_va,
+        PL_FA_TRANSPARENT | PL_FA_VARARGS
+    ),
+    PL_extension(                                   # (pl-proc.c:4369, since PR1)
+        "\$get_predicate_attribute", 3, pl_get_predicate_attribute3_va,
         PL_FA_TRANSPARENT | PL_FA_VARARGS
     ),
     PL_extension(                                   # (pl-proc.c:4372, since MOD4)
