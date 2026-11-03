@@ -88,3 +88,26 @@ STALE-PIN HUNT (GATE-PLAYBOOK): test/core_lang/test_s2a_swipl.jl header (lines 4
   and test_canonical_readatom_swipl.jl:162-165 run set_stream(S, alias(user_output)) together with set_output/1 (set_output/1 is
   registered by no table yet: read these tests before the gate; they may begin to run further than before).
 No Julia or daemon run. Hook note: the absence-claim hook scans added text for absence phrases; phrase positively (NOT STARTED).
+
+## WRITER 2 (D-0386 1c + 2; Sonnet; edit-only) — state after each commit
+DISPATCHER RULINGS on writer 1's questions (provisional, pending audit):
+ (1) current_input/1 stays and put_char/1,2 as upstream's aliases of put_code: accepted.
+ (2) The `LD->prompt.next = true` gap for user_input needs a pl-global.jl field: a recorded NEED for after the gates land (not this step).
+ (3) write_size/4: representation-only DIVERGES accepted (write into a memory stream, measure afterwards with Supdatepos; limits
+     checked after the write, differing only for output that would exhaust memory). Prerequisite OPT_INT64 in src/os/pl-option.jl.
+ (4) seek/4, set_stream_position/2 (Sseek64/Stell64/Sunit_size missing in the stream layer): NOT in this step; LEFT TO A STREAM-LAYER STEP.
+ (5) set_output/1: DECIDED it does NOT join this step. test_write_family_swipl.jl:377-387 and test_canonical_readatom_swipl.jl:159-168 hold
+     `cap/1`, which is swipl-side driver text only (the kernel side of both files runs the predicates directly: `_wf_goal_results`,
+     the PL_open_query loop); the kernel never runs set_stream(S, alias(user_output)) or set_output/1 in them. No stale pin.
+Committed by writer 2:
+- bad6f39 G4a  OPT_INT64 branch of get_optval (src/os/pl-option.jl) + header text.
+- d26bf01 G4b  write_size/4 in src/pl-write.jl (`write_length_options`, `write_size`, `pl_write_size4_va`, registered in
+  PL_predicates_from_write with PL_FA_TRANSPARENT|PL_FA_VARARGS; DIVERGES comment above `write_size`). UNVERIFIED: all (no Julia).
+  Uses tellString/toldString (pl-file.jl), clearPrologFlagMask!, pl_write_term3, IOPOS/Supdatepos, PL_unify_int64.
+- G5 (next commit): test/core_lang/test_lb5_swipl.jl (106 rows lb001-lb106) + evidence/LB5/{gen_rows.py,lb5_rows.pl,lb5_driver.pl,lb5_rows.out}.
+  Groups: lb001-011 line_position/line_count; 012-021 current_input/output; 022-035 tab; 036-043 at_end_of_stream; 044-056 get_code;
+  057-073 put_code/put_char; 074-096 write_size; 097-106 set_stream alias. Pins = swipl 10.1.19, two byte-identical runs.
+  Regenerate: `cd evidence/LB5; python3 -I gen_rows.py ../../test/core_lang/test_lb5_swipl.jl; swipl -q lb5_driver.pl </dev/null >lb5_rows.out` (twice, cmp), then `--fill`.
+  UNVERIFIED on the kernel: every kernel answer. Likeliest to differ: kernel lacks stream_property/2 natively (boot/init.pl), the rows avoid it;
+  lb010-011 (kernel open/4 record_position(false)); lb097-106 (the kernel does not restore a captured standard alias on close:
+  restoreStandardStream NOT STARTED; the rows restore inside the row); at_end_of_stream/0, get_code/1, tab on user_input read process stdin: no row.
