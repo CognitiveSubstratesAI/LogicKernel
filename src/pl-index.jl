@@ -25,8 +25,8 @@
 # what it calls, cleanClauseIndexes and what it calls, shrunkpow2.
 #
 # NOT PORTED: deleteClauseList, deleteClauseBucket and delClauseFromIndex (nothing calls
-# delClauseFromIndex upstream), deleteIndexes and deleteIndexesDefinition (abolish, halt — not
-# ported), the memory reports sizeofClauseIndex/sizeofClauseIndexes, the debug checks
+# delClauseFromIndex upstream), deleteIndexesDefinition (halt — not
+# ported; deleteIndexes is, since PR1), the memory reports sizeofClauseIndex/sizeofClauseIndexes, the debug checks
 # checkClauseIndexSizes/checkClauseIndexes/listIndexGenerations, and the `$candidate_indexes` and
 # `$set_candidate_indexes` predicates. Threads (index locks, waiting for another thread's index) do
 # not exist in the kernel.
@@ -1013,7 +1013,7 @@ end
 # still need it. Retract only counts it as DIRTY (`deleteActiveClauseFromIndexes!`); clause GC
 # unlinks it once no generation in use can see it (`cleanClauseIndexes!`).
 # NOT PORTED: deleteClauseList and deleteClauseBucket (reached only from delClauseFromIndex, which
-# nothing calls upstream), deleteIndexes and deleteIndexesDefinition (abolish, halt), and the
+# nothing calls upstream), deleteIndexesDefinition (halt), and the
 # memory release of unlinked references (freeClauseListRef, lingerClauseRef) — the garbage
 # collector's job here; an unlinked reference keeps its `next`, as upstream's lingering one does,
 # so an enumeration standing on it continues.
@@ -1552,6 +1552,27 @@ function deleteIndex!(
         end
     end
     @assert false "deleteIndex!: index not in the clause list"
+    return nothing
+end
+
+# PORT: pl-index.c deleteIndexes
+# DIVERGES: `unallocClauseIndexTable` and `unalloc_index_array` (the memory release of a new predicate's indexes) are
+# Julia's garbage collector: with `isnew` the array is dropped.
+"Drop the indexes of `clist` (`isnew`: all at once; else each marked dead, as in a predicate that may be running) (pl-index.c)."
+function deleteIndexes!(
+    def::Definition{T}, clist::ClauseList{T}, isnew::Bool
+)::Nothing where {T}
+    cip = clist.clause_indexes
+    if cip !== nothing
+        if isnew
+            clist.clause_indexes = nothing
+        else
+            for i in eachindex(cip)
+                ISDEADCI(cip[i]) && continue
+                deleteIndexP!(def, clist, cip, i)
+            end
+        end
+    end
     return nothing
 end
 
