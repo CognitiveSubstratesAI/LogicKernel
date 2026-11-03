@@ -252,3 +252,38 @@ Julia) are NOT taken. Stated in the architecture DIVERGES with owner TAB1.
 2. row tmc07 (a predicate that RAN before the wrap: the clause add resets the wrapped supervisor) + white-box rows (c06.supervisor virgin,
    rewrap installs the newest wrapper clause in the side table) + a unit testset for skipWrapperPrefix/isCallWrapper (hand-built codes
    with S_MQUAL, S_LMQUAL, S_SSU_DET prefixes): these kill the pc increments and the side-table update, which no swipl row reaches.
+
+### STATE at writer 4's hand-back (150k cap hit before the mutants file). Committed: 6033b70 (rows), b95f2e1 (tmc07 + white-box/unit rows). All UNVERIFIED.
+origin/main still f08167f at start (ENG3 NOT landed): T3 NOT possible/NOT TOUCHED (needs: opcodes at the PIN's VMI order [S_CALLWRAPPER, S_TABLED, S_WRAP],
+7th block `wrapper` in PL_code_data + initSupervisors + the idle index_context literal at pl-global.jl ~611, named-refusal bodies in pl-wam.jl, one declared
+opcode outside VMI_RUN for test/foreign/test_query.jl:305-330; b2 holds 159..165). The tmw/tmc rows and the white-box rows cannot load before T3.
+Rows now: 65 cases (tmt01-22, tma01-23, tmw01-13, tmc01-07), pins from two identical swipl 10.1.19 runs; kernel-FAIL-without-T5: tmc02, tmc03, tmc07 (white-box), `_tm_wrapped`.
+#### LEFT (next agent), in order
+A. tools/mutants/TAB1MIN.py (format of tools/mutants/MOD3b.py: dict(id, file, old, new, targets); module TARGETS = real test files only, `grep -L '@testset\|@test'`).
+   TM = test/core_lang/test_tabling_min_swipl.jl; getter mutants add test/core_lang/test_pr1_swipl.jl (pr93); supervisor/reset mutants add test_pr1_swipl.jl + test_event_swipl.jl.
+   Candidates (anchor line then mutation; check each `old` occurs exactly once with a throwaway python3 -I script): pl-tabling.jl `w == ATOM_trienode` -> `!=`;
+   `mk_reserved_symbol(T, :trienode)` -> `mk_sym(T, :trienode)`; set_bool_attr `props.flags |= flag` -> `|= TP_TABLED`; `props.flags &= ~flag` -> no-op;
+   tbl_get `(p.flags & TP_VARIANT) != 0 ? 1 : 0` -> TP_TABLED; `v0 != -1 &&` -> `v0 != -2 &&`; tbl_reset `p === nothing || clear_table_props!(p)` -> `|| nothing`;
+   tbl_set `set_bool_attr(ld, def, TP_INCREMENTAL, value)` (the :incremental branch) -> TP_MONOTONIC; `if val != now` -> `if val == now`;
+   pl-proc.jl resetProcedure! `def.tabling === nothing || tbl_reset_tabling_attributes!(def)` -> drop the call;
+   pl-wrap.jl `codes[i + 3] == name && return` -> `!=`; wrapper_vmi `return S_TABLED` -> `return S_CALLWRAPPER`; unify_wrapped arity-0 `return PL_unify_atom(ld, wrapped, clo)` -> `return false`;
+   `retractClauseDefinition!(gd, old.predicate, old, false)` removed (kills tmw05); `crefs[Int(codes[i + 1])] = cref` removed (white-box side-table row);
+   skipWrapperPrefix `pc += 2` -> `pc += 1`; isCallWrapper `|| c == S_TABLED` dropped; resetWrappedSupervisor `while isCallWrapper(codes[cw])` -> `if` (kills tmc03);
+   `c.supervisor = def0.code_data.virgin` removed (kills only via tmc07/white-box c06, because a never-called predicate already has the virgin supervisor);
+   pl-supervisor.jl 3-arg freeCodesDefinition! `if isCallWrapper(codes[skipWrapperPrefix(codes)])` -> `if false`, and `if !do_linger` -> `if do_linger` (kill tmc02);
+   2-arg method's `throw(` refusal -> `nothing` (white-box @test_throws).
+B. manifest entries at the END of `_manifest_index` (test/static_analysis_manifest.jl): `LK.pl_tbl_trienode1_va`, `LK.pl_tbl_is_trienode1_va` (Tuple{LD, Int, Int, LK.control_t{T}} rows
+   like the BOOTPRED3 block), `(LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_tabling)}, false)` after :3352, T2 (clear_table_props!, tbl_reset_tabling_attributes!,
+   get_predicate_table_props!, tbl_get_predicate_attribute, get_size_or_inf, tbl_set_incremental_predicate(gd, def, Bool), set_bool_attr, tbl_set_predicate_attribute), T4
+   (closure_of_word, initWrap!, unify_closure, get_closure_predicate, isCallWrapper, skipWrapperPrefix, unregisterWrappedSupervisor, resetWrappedSupervisor, find_wrapper,
+   assert_wrapper, unify_wrapped, wrapper_vmi, pl_c_wrap_predicate5_va, _closure_bytes), T5 (3-arg freeCodesDefinition!; the 2-arg row at :1416 stays);
+   check with `git diff f08167f HEAD -- src` that no new function is missing. docs/architecture.md block at the END: UPSTREAM header names pl-tabling.c, pl-wrap.c, pl-supervisor.c,
+   pl-proc.c rows; DIVERGES: table_props sizes as Int with -1 for (size_t)-1 and the representation_error above typemax(Int); lazy_queue left to TAB1; Q-A (the 2-argument
+   freeCodesDefinition! refuses a wrapped predicate by name: `dynamic`/abolish of a wrapped predicate refused until TAB1; owner TAB1; ruling above); printing `<closure>(m:p/1)` needs a
+   writer blob hook; closure = a record (owner WRAP1); ORIGINAL rows; never regenerate docs/port_inventory.md.
+C. READY-FOR-GATE list (D-order), once T3 exists: inventory (`warm.sh inventory`), fmt via warm.sh send, check (struct change restarts the daemon: cold compile), rows on three term types,
+   test/test_type_discipline.jl, test_atom_table.jl (the `closure` atom adds one atom), manifest entries, `tools/pkgtest_way.sh test/core_lang/test_tabling_min_swipl.jl` one at a time,
+   alloc pins x3 (239/377/433; test_query 347 on f08167f / 365 after ENG3), static analysis (JET + AllocCheck), crash-term grep over diff + messages, push mutants/TAB1MIN and gate/tab1min at the SAME SHA.
+   Things only the gate can check: `ClauseList{T}()` + `cl.args =`, `PL_unify_functor` with a blob T-term as name, `atomValue` on a blob word, `assert_term!` accepting a blob-headed compound
+   (row tmw12 reads it back through clause/2), whether `closure` shifts a pinned atom count, `blob/2` of the closure blob (tmw02-04), `abolish` of a dynamic tm_x22 clearing the properties (tma22).
+Daemon state: writer 4 started none, ran no Julia. Scratch prefix t1w4-.
