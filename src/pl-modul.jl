@@ -1296,50 +1296,12 @@ function _text_summary(s::AbstractString, maxlen::Int)::String
     return String(take!(io))
 end
 
-# Ported from pl-proc.c abolishProcedure (a file this module does not mirror, so no PORT marker).
-# Differs (MOD5b; Q7, F5; audit): only the imported-link branch (pl-proc.c:1517-1530) is the kernel's; the rest (pl-proc.c:1531-1550:
-# `resetProcedure`, a foreign predicate made normal, `removeClausesPredicate`, `setDynamicDefinition_unlocked`) is not in the kernel. A procedure of the module's own whose abolish would
-# change nothing (no clauses, no flags) needs no work; any other own procedure is refused by name (`NotPortedError`). An IMPORTED link is
-# removed as upstream does: a fresh definition for the module (upstream's `memset` leaves `shared` 0), the old one unshared; no statistics
-# or code-size accounting, no `lingerDefinition` (Julia's garbage collector), and `resetProcedure` of the fresh definition only sets the
-# debugger's `TRACE_ME` (not ported, as in `lookupProcedure`).
-"Abolish `proc` of module `m` (pl-proc.c): an imported link is removed; an own procedure with nothing to abolish is left; else a `NotPortedError`."
-function _abolishProcedure_pristine(
-    gd::PL_global_data{T}, m::module_t{T}, proc::Procedure{T}
-)::Bool where {T}
-    def = proc.definition
-    if def.module_ != m.index                           # imported predicate; remove link
-        clauses = ClauseList{T}()
-        if def.arity > 0
-            clauses.args = [arg_info() for _ in 1:(def.arity)]
-        else
-            clauses.args = nothing
-        end
-        cd = m.code_data
-        ndef = Definition{T}(
-            def.functor_name, def.arity, clauses, UInt64(0), def.name, cd.virgin,
-            ClauseRef{T}[], cd, 0, m.index, 0   # memset: shared 0
-        )
-        proc.definition = ndef
-        unshareDefinition(def)
-        return true
-    end
-    if hasClausesDefinition(gd, def) === nothing && def.flags == 0
-        return true
-    end
-    throw(
-        NotPortedError{T}(
-            def.name, "redeclaring a module that has predicates (abolishProcedure)", "R2"
-        )
-    )
-end
-
 # PORT: pl-modul.c declareModule
 # DIVERGES: `class` and `super` are atoms (the one caller, `'$declare_module'/6`, gets them with `PL_get_atom_ex`); the source file has no
 # `reload` (reconsult is not ported: `registerReloadModule` is not reached); the module's file is the source file's INDEX (0: none); the
 # procedures are walked in the order of the module's table (Julia's), where upstream's follows its hash table (D-0149 item 1); the
-# abolish of a procedure with something to abolish is refused (Q7, `_abolishProcedure_pristine`), so the warning
-# `declare_module(M, abolish(PIs))` below is written for the day `abolishProcedure` is ported.
+# procedures are abolished by `abolishProcedure!` (pl-proc.jl; PR1), as upstream's `abolishProcedure(proc, module)` (pl-modul.c:1338),
+# its result ignored there too; the warning `declare_module(M, abolish(PIs))` below names those that had clauses.
 """
     declareModule(gd, ld, name, class, super, sf, line, allow_newfile) -> Bool
 
@@ -1390,7 +1352,7 @@ function declareModule(
                 PL_unify_list(ld, rtail, tmp, rtail)
                 unify_definition(gd, ld, MODULE_user(gd), tmp, def, 0, GP_NAMEARITY)
             end
-            _abolishProcedure_pristine(gd, module_, proc)
+            abolishProcedure!(gd, ld, proc, module_)
         end
     end
     empty!(module_.public_)                             # clearHTableWP(module->public)

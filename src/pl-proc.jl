@@ -26,7 +26,7 @@
 # predicate (`pl_retract1_va`, its state in a pool, docs/architecture.md "Non-deterministic built-ins");
 # the sink `pl_retract!` stays for its Julia callers until they are re-pointed (audit D-0136 Q3).
 #
-# NOT PORTED: abolish/reload (`removeClausesPredicate`, `resetProcedure`), transactions, update
+# NOT PORTED: reload (the `fromfile` use of `removeClausesPredicate!`), transactions, update
 # events, the clause GC thread and its trigger (`considerClauseGC`: clause GC runs when
 # `pl_garbage_collect_clauses!` is called), memory accounting and reclamation (the garbage
 # collector's), statistics and the debug checks.
@@ -34,8 +34,8 @@
 # PORT: pl-proc.c lookupProcedure
 # DIVERGES: the functor is its parts: the name symbol `name` and the arity (there is no functor
 # table); the procedure table is keyed by the name's `sym_key`. No `resetProcedure`: for a NEW
-# procedure it sets the debugger's `TRACE_ME`, which is not ported (abolish, its other caller, is
-# not ported either), and `SUPERVISOR(virgin)`, which the new definition starts with. No
+# procedure it sets the debugger's `TRACE_ME`, which is not ported (`resetProcedure!`, since PR1, omits it
+# too), and `SUPERVISOR(virgin)`, which the new definition starts with. No
 # program-space limit, statistics or lock: there are no threads, so the table cannot gain the
 # functor between the lookup and the add.
 """
@@ -855,6 +855,100 @@ function pl_garbage_collect_clauses!(
     return rc
 end
 
+# PORT: pl-proc.c resetProcedure
+# DIVERGES: no statistics (`GD->clauses.dirty`), update events or tabling attributes (`def->events`, `def->tabling`: not
+# in the kernel); the debugger's `TRACE_ME` is not set for a user predicate (not ported, as in `lookupProcedure`). Upstream's
+# `def->impl.any.defined` (the union member overlaying the first clause or the foreign function) is the first clause or
+# the foreign function index.
+"Reset `proc`'s definition to a pristine one but for `SPY_ME` and `P_DIRTYREG`; `isnew`: drop the indexes at once (pl-proc.c)."
+function resetProcedure!(proc::Procedure{T}, isnew::Bool)::Nothing where {T}
+    def = proc.definition
+    defined = def.impl_clauses.first_clause !== nothing || def.impl_foreign_function != 0
+    if (def.flags & P_DYNAMIC) != 0 || !defined
+        isnew = true
+    end
+    def.flags &= (SPY_ME | P_DIRTYREG)                  # flags0 ^ (flags0 & ~(SPY_ME|P_DIRTYREG))
+    def.impl_clauses.number_of_clauses = 0x00000000
+    deleteIndexes!(def, def.impl_clauses, isnew)
+    freeCodesDefinition!(def, !isnew)
+    return nothing
+end
+
+# PORT: pl-proc.c removeClausesPredicate
+# DIVERGES: no threads, statistics (`erased_size`, `erased`, `dirty`, `code_size`), debug registration (`registerRetracted`)
+# or final-cleanup branch (`CLN_DATA`); the database `gd` is an argument.
+"Mark every clause of `def` that comes from source file `sfindex` (0: any) erased; the number marked (pl-proc.c)."
+function removeClausesPredicate!(
+    gd::PL_global_data{T}, def::Definition{T}, sfindex::Integer, fromfile::Bool
+)::Int where {T}
+    (def.flags & P_THREAD_LOCAL) != 0 && return 0
+    deleted = 0
+    update = global_generation(gd) + 1
+    c = def.impl_clauses.first_clause
+    while c !== nothing
+        cl = c.clause::Clause{T}
+        next = c.next
+        if (sfindex == 0 || sfindex == cl.owner_no) &&
+            (!fromfile || cl.line_no > 0) &&
+            (cl.flags & CL_ERASED) == 0
+            cl.flags |= CL_ERASED
+            cl.generation_erased = update
+            deleted += 1
+            def.impl_clauses.number_of_clauses -= 0x00000001
+            def.impl_clauses.erased_clauses += 1
+            if (cl.flags & UNIT_CLAUSE) == 0
+                def.impl_clauses.number_of_rules -= 0x00000001
+            end
+            deleteActiveClauseFromIndexes!(def, cl)
+        end
+        c = next
+    end
+    gd._generation = update
+    deleted > 0 && registerDirtyDefinition!(gd, def)
+    return deleted
+end
+
+# PORT: pl-proc.c abolishProcedure
+# DIVERGES: no locks, statistics or code-size accounting, no `lingerDefinition` (Julia's garbage collector); the fresh
+# definition of an imported link has `shared` 0, as upstream's `memset`; `proc`'s module is given as `m`.
+"Abolish `proc` of module `m`: an imported link is removed, a foreign predicate made normal, else its clauses erased (pl-proc.c)."
+function abolishProcedure!(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, proc::Procedure{T}, m::module_t{T}
+)::Bool where {T}
+    def = proc.definition
+    if def.module_ != m.index                           # imported predicate; remove link
+        clauses = ClauseList{T}()
+        if def.arity > 0
+            clauses.args = [arg_info() for _ in 1:(def.arity)]
+        else
+            clauses.args = nothing
+        end
+        cd = m.code_data
+        ndef = Definition{T}(
+            def.functor_name, def.arity, clauses, UInt64(0), def.name, cd.virgin,
+            ClauseRef{T}[], cd, 0, m.index, 0           # memset: shared 0
+        )
+        proc.definition = ndef
+        resetProcedure!(proc, true)
+        unshareDefinition(def)
+    elseif (def.flags & P_FOREIGN) != 0                 # foreign: make normal
+        def.impl_clauses.first_clause = nothing
+        def.impl_clauses.last_clause = nothing
+        def.impl_foreign_function = 0                   # (the union member of `first_clause`)
+        resetProcedure!(proc, true)
+    elseif (def.flags & P_THREAD_LOCAL) != 0
+        return PL_error(
+            ld, ERR_PERMISSION_PROC, mk_sym(T, :modify),
+            mk_sym(T, :thread_local_procedure), proc
+        )
+    else                                                # normal Prolog procedure
+        removeClausesPredicate!(gd, def, 0, false)
+        setDynamicDefinition!(def, false)
+        resetProcedure!(proc, false)
+    end
+    return true
+end
+
 # PORT: pl-proc.c retract as pl_retract
 # DIVERGES: the predicate is given (no module lookup); `retract(Head)` only — its body is `true`, so
 # only facts answer (a rule's body is V9's `decompile`); an SSU clause is no fact, so it never answers
@@ -1021,9 +1115,9 @@ mode_arg_is_unbound(def::definition, arg0::Int)::Bool =
 # ── defining a predicate from a file (pl-proc.c), since R1f ─────────────────────────────────────
 
 # PORT: pl-proc.c overruleImportedProcedure
-# DIVERGES: the database `gd` is an argument; a module is an index into its table. NOT PORTED:
-# a weak (implicit) import is abolished (`abolishProcedure`) — refused (`NotPortedError`) until
-# `abolishProcedure` is ported; `'$import'(PI, weak)` (MOD5a, pl-modul.jl `import_`) makes a weak import and reaches it.
+# DIVERGES: the database `gd` is an argument; a module is an index into its table. A weak (implicit) import is overruled as
+# upstream does (pl-proc.c:515-529): the `ignored_weak_import` warning under the flag `warn_override_implicit_import`, then
+# `abolishProcedure!` of the link in `target`; `'$import'(PI, weak)` (MOD5a, pl-modul.jl `import_`) makes a weak import and reaches it.
 """
 May `target` define `proc` — its own, or an import it may overrule (pl-proc.c)? Raises
 `permission_error(redefine, built_in_procedure | imported_procedure, PI)` when not.
@@ -1045,9 +1139,16 @@ function overruleImportedProcedure(
             proc
         )
     elseif (proc.flags & PROC_WEAK) != 0
-        throw(
-            NotPortedError{T}(def.name, "overruling a weak import (abolishProcedure)", "R2")
-        )
+        if truePrologFlag(ld, PLFLAG_WARN_OVERRIDE_IMPLICIT_IMPORT)
+            pi = new_term_ref(ld)
+            unify_definition(gd, ld, MODULE_user(gd), pi, def, 0, GP_NAMEARITY) ||
+                return false                        # PL_unify_predicate(pi, proc, GP_NAMEARITY)
+            printMessage(
+                ld, :warning,
+                _message_term(ld, :ignored_weak_import, _err_atom(ld, target.atom), pi)
+            ) || return false
+        end
+        return abolishProcedure!(gd, ld, proc, target)
     end
     return PL_error(
         ld, ERR_PERMISSION_PROC, mk_sym(T, :redefine), mk_sym(T, :imported_procedure), proc
@@ -1067,9 +1168,9 @@ end
 
 # PORT: pl-proc.c redefineProcedure
 # DIVERGES: the database `gd` is an argument; the warnings go to `printMessage`. No reload context
-# (a first load). NOT PORTED, refused (`NotPortedError`): abolishing a definition another file — or
-# C — made (`abolishProcedure`: a second file defining a predicate, a foreign predicate redefined),
-# after its warning (for a thread-local predicate: the `thread_local_procedure` permission error of abolishProcedure, since LB2).
+# (a first load). A definition another file — or C — made is abolished (`abolishProcedure!`: a second file defining a
+# predicate, a foreign predicate redefined) after its warning; for a thread-local predicate that is the
+# `thread_local_procedure` permission error of abolishProcedure (since LB2, now by `abolishProcedure!` itself).
 """
 `proc` is about to get a clause from the source file `sf`, which owns the definition: warn of a
 discontiguous predicate or a redefinition, as the style checks ask (pl-proc.c). True to go on.
@@ -1089,11 +1190,8 @@ function redefineProcedure(
                 _redefine_indicator(gd, ld, def)
             )
         ) || return false
-        throw(
-            NotPortedError{T}(
-                def.name, "redefining a foreign predicate (abolishProcedure)", "R2"
-            )
-        )
+        # ... then abolish
+        return abolishProcedure!(gd, ld, proc, gd.modules[def.module_])
     elseif (def.flags & P_MULTIFILE) == 0
         # def = getLocalProcDefinition(def): one thread, so the thread-local definition IS the local one (its own clause list), which
         # upstream's local definition holds WITHOUT P_THREAD_LOCAL (pl-proc.c:8102); hasClausesDefinition() answers nothing for the flag
@@ -1127,20 +1225,10 @@ function redefineProcedure(
                 )
             ) || return false
             # again, _after_ the printMessage()
-            # abolishProcedure(): pl-proc.c:1537. pl-proc.c:4014 (`ison(def, P_THREAD_LOCAL)` -> ERR_MODIFY_THREAD_LOCAL_PROC) is dead
-            # upstream too: `def` is the local definition there, which has P_THREAD_LOCAL cleared (pl-proc.c:8102); measured on swipl
-            # 10.1.19: the warning `Redefined static procedure`, then the permission_error below.
-            (def.flags & P_THREAD_LOCAL) != 0 && return PL_error(
-                ld, ERR_PERMISSION_PROC, mk_sym(T, :modify),
-                mk_sym(T, :thread_local_procedure), proc
-            )
-            throw(
-                NotPortedError{T}(
-                    def.name,
-                    "redefining a predicate another file defined (abolishProcedure)",
-                    "R2"
-                )
-            )
+            # pl-proc.c:4014 (`ison(def, P_THREAD_LOCAL)` -> ERR_MODIFY_THREAD_LOCAL_PROC) is dead upstream: `def` is the local
+            # definition there, which has P_THREAD_LOCAL cleared (pl-proc.c:8102); measured on swipl 10.1.19: the warning
+            # `Redefined static procedure`, then abolishProcedure()'s permission_error (pl-proc.c:1537), here `abolishProcedure!`'s.
+            return abolishProcedure!(gd, ld, proc, gd.modules[def.module_])
         end
     end
     return true

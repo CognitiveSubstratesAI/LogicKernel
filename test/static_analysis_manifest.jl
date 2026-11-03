@@ -769,7 +769,6 @@ function _manifest_index(T)
         (LK.releaseModule, Tuple{GD, LD, MOD}, false),
         (LK.destroyModule, Tuple{GD, LD, MOD}, false),
         (LK._text_summary, Tuple{String, Int}, false),
-        (LK._abolishProcedure_pristine, Tuple{GD, MOD, PR}, false),
         (LK.declareModule, Tuple{GD, LD, T, T, T, LK.SourceFile{T}, Int, Bool}, false),
         (LK._message_term, Tuple{LD, Symbol, Int}, false),
         [
