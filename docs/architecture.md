@@ -6715,7 +6715,7 @@ os/pl-file.c (`seek/4` :5613, `set_stream_position/2` :5569, `setStandardStream`
 
 ## TAB1-min — the load-time slice of tabling: pl-tabling.c's reserved node and attributes, pl-wrap.c's closure and `'$c_wrap_predicate'/5`, pl-supervisor.c's wrapper branch (R2, swipl-devel cbf4e189)
 
-What TAB1-min adds (pin `cbf4e1896275`, oracle swipl 10.1.19; written edit-only over five writers; NOTHING was compiled or run when this block was written:
+What TAB1-min adds (pin `cbf4e1896275`, oracle swipl 10.1.19; written edit-only over seven writers; NOTHING was compiled or run when this block was written:
 every claim below is UNVERIFIED until the gate). The aim is that boot/tabling.pl's `:- table` expansion (`wrappers//2`, tabling.pl:1273-1334) and the
 `'$wrap_predicate'/5` it ends in (boot/syspred.pl:1717-1732) can LOAD; nothing evaluates a tabled goal.
 - **UPSTREAM files:** `src/pl-tabling.c` (src/pl-tabling.jl: T1 `'$tbl_trienode'/1`, `'$tbl_is_trienode'/1`; T2 the tabling attributes), `src/pl-tabling.h` (src/pl-incl.jl:
@@ -6728,9 +6728,16 @@ every claim below is UNVERIFIED until the gate). The aim is that boot/tabling.pl
   makes a closure and installs the wrapper supervisor, a second wrap of the same name replaces the wrapper clause and retracts the old one); the wrapper branch of
   `freeCodesDefinition!` (a clause added to a wrapped predicate keeps the wrapper and resets the wrapped supervisor, so tabling.pl:2358's `:- table` followed by clauses works).
   This SUPERSEDES the sentence of section PR1 (`'$get_predicate_attribute'/3`) that says the tabling keys of `'$get_predicate_attribute'/3` fail: they fail only for a definition without properties.
-- **T3 (the supervisor opcodes `S_CALLWRAPPER`, `S_TABLED`, `S_WRAP`, the `wrapper` block of `PL_code_data`, their run-loop bodies as named refusals): NOT STARTED at the time of
-  writing (it needs the ENG3 stubs); the files above are written against those names and do not load before it.** A wrapped predicate is not CALLED by these rows:
-  the run-loop bodies are WRAP1 / TAB1.
+- **T3 (the supervisor opcodes, the `wrapper` block, the run loop's named refusals), ported** (`src/pl-vmi.c` S_WRAP, S_CALLWRAPPER, S_TABLED; `src/pl-supervisor.c`
+  `MAKE_SV1(wrapper, S_WRAP)`): `src/pl-vmi.jl` declares `S_WRAP` = 159, `S_CALLWRAPPER` = 160, `S_TABLED` = 161, appended after `B_ARG_VF` in pl-vmi.c's order (:3560, :3624,
+  :3644) with their `_CODE_TABLE` rows (`S_WRAP` no operands; the other two three: `CA1_CLAUSEREF`, `CA1_DATA`, `CA1_DATA`); `PL_code_data` (src/pl-incl.jl) has a 7th block,
+  `wrapper` (after `staticp`, upstream's order), built by `initSupervisors` as `[S_WRAP, I_EXIT]`, known to `_shared_supervisor`, and the supervisor of a closure's copy of a
+  wrapped predicate (`unify_closure`); the idle `index_context` literal in src/pl-global.jl carries all seven. The three names are in `VMI_RUN` (src/pl-wam.jl), each label a
+  NAMED REFUSAL: `NotPortedError` naming the instruction, owner `WRAP1` for `S_WRAP` and `S_CALLWRAPPER`, owner `TAB1` for `S_TABLED`. Removal condition: a wrapped goal is
+  called (WRAP1: the closure branch of `I_CALL1`/`I_CALLN`, pl-vmi.c:5482-5520, with the bodies of `S_WRAP` and `S_CALLWRAPPER`), a tabled goal is called (TAB1: `S_TABLED`,
+  tries, `start_tabling/3`). Installing a wrapper (`'$c_wrap_predicate'/5`) never enters them. `:I_NOP` (code 0) stays the first declared opcode outside `VMI_RUN`, so
+  test/foreign/test_query.jl:305-330 keeps its refusal. If another branch also appends opcodes after `B_ARG_VF` (a continuation step), the second to land renumbers; no test or
+  tool pins 159..161.
 - **DIVERGES (representation only):**
   1. `table_props` sizes (`abstract`, `subgoal_abstract`, `answer_abstract`, `max_answers`) are `Int` with -1 for `(size_t)-1` ("none", `infinite`); a size above `typemax(Int)` is
      refused by `PL_get_size_ex` with `representation_error(size_t)` where upstream accepts up to 2^64-1. Owner TAB1.
@@ -6742,6 +6749,8 @@ every claim below is UNVERIFIED until the gate). The aim is that boot/tabling.pl
   4. Printing a closure (`<closure>(m:p/1)`, pl-wrap.c `write_closure`) needs a blob write hook in the writer: the kernel prints the term layer's blob form. Owner: the writer step.
   5. The closure is a RECORD (`closure{T}` in `gd.closure_refs`; the blob's payload is its number), not a memcpy of `struct definition` in the blob; the blob type has no
      `release`/`write`/`acquire`/`save`/`load` slots; atoms keep no reference counts, so `unregisterWrappedSupervisor` is a no-op (audit D-0388 item 5, Q1 (a); owner WRAP1).
+  6. T3's opcode numbers are APPENDED (159..161) in pl-vmi.c's relative order, where upstream's numbers follow the whole VMI list; no behaviour reads an absolute number. Owner: none.
+  7. The bodies of `S_WRAP`, `S_CALLWRAPPER` and `S_TABLED` are named refusals (owners WRAP1 / WRAP1 / TAB1, see the T3 bullet), not upstream's frame set-up.
 - **Left out (each needs its subsystem):** `wrapped_predicate/2`, `unwrap_predicate/2`, `$wrapped_implementation/3`, `$closure_predicate/2` (WRAP1); the other `$tbl_*` predicates, the
   tries, worklists, answer tables and `start_tabling/3` (TAB1); `S_DET` in `skipWrapperPrefix` (the opcode is not declared); `tbl_set_incremental_predicate`'s effect on a trie
   (the incremental dependency graph is TAB1's).
@@ -6749,5 +6758,5 @@ every claim below is UNVERIFIED until the gate). The aim is that boot/tabling.pl
   supervisor (`code[op, 1, closure atom word, wrapper name atom word]` with the clause reference in `codes_crefs`), tools/mutants/TAB1MIN.py and the LK-only white-box rows.
 
 Tests: test/core_lang/test_tabling_min_swipl.jl (65 rows tmt, tma, tmw, tmc; pins from swipl 10.1.19, two byte-identical runs; generator evidence/TAB1MIN/gen_rows.py; plus LK-only
-white-box rows for the wrapper supervisors and a unit testset for `skipWrapperPrefix`/`isCallWrapper`; the tmw/tmc rows need T3 to load). Mutants: tools/mutants/TAB1MIN.py (33; none
+white-box rows for the wrapper supervisors and a unit testset for `skipWrapperPrefix`/`isCallWrapper`; and a T3 white-box testset for the opcodes, the wrapper block and the refusals). Mutants: tools/mutants/TAB1MIN.py (49; none
 declared EQUIVALENT; the NOT LISTED ones with reasons in its header).
