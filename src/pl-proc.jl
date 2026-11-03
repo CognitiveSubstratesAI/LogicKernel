@@ -374,11 +374,12 @@ function test_autoload_loop(
 end
 
 # PORT: pl-proc.c autoLoader
-# DIVERGES (Prolog half not loaded; owner: AUTOLOAD1 A5, which brings boot/autoload.pl on the boot path; removed when
-# `system:'$undefined_procedure'/4` is defined by the boot): upstream's `PL_pred` creates the hook and the boot defines it
-# (boot/init.pl). Here the hook is looked up WITHOUT creating it and, when it is missing or undefined, the answer is the
-# "nil" one at once, before the foreign frame, the input context and the nesting: a database without the Prolog half then
-# behaves as before A3 (`createUndefSupervisor`). `GD->procedures.undefinterc4` is not cached: the table is searched on each call.
+# DIVERGES (TRANSIENT, "the Prolog half is not loaded": `system:'$undefined_procedure'/4` lives in boot/init.pl:949; owner b2 / AUTOLOAD1 A5,
+# the first boot; the guard line is deleted when the hook is defined): upstream's `PL_pred` creates the hook and the boot defines it.
+# Here the hook is looked up WITHOUT creating it (`isCurrentProcedure`) and, when it is missing or undefined, the answer is the
+# "nil" one at once, BEFORE the foreign frame, the input context and the nesting: a database without the Prolog half then
+# behaves as before A3 (`createUndefSupervisor`). A skip, not a stand-in: no Julia `$undefined_procedure/4` is defined (D-0387 Q4).
+# `GD->procedures.undefinterc4` is not cached: the table is searched on each call.
 # DIVERGES: `gd`, `ld` are arguments; the chain is a vector (A2); the answer is `nothing` for `ATOM_nil`.
 """
     autoLoader(gd, ld, def) -> atom, or nothing
