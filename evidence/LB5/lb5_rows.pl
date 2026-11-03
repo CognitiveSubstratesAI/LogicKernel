@@ -105,3 +105,5 @@ t_lb103(R) :- catch((current_output(O), set_stream(user_input, alias(lb5_saved_i
 t_lb104(R) :- catch((open_string(x, S), current_output(OO), catch((set_stream(S, alias(user_output)), R = ok), error(Err, _), ( Err = permission_error(A, B, _) -> R = perm(A, B) ; R = Err )), set_stream(OO, alias(user_output))), error(SsuE, _), R = raised(SsuE)).
 t_lb105(R) :- catch((current_output(O), set_stream(O, alias(1))), error(SsuE, _), R = raised(SsuE)).
 t_lb106(R) :- catch((current_output(O), set_stream(O, alias(_))), error(SsuE, _), R = raised(SsuE)).
+t_lb107(R) :- catch((write_size('abcd\nx', W, H, []), R = W-H), error(SsuE, _), R = raised(SsuE)).
+t_lb108(R) :- catch((line_count(user_output, N), integer(N), R = yes), error(SsuE, _), R = raised(SsuE)).
