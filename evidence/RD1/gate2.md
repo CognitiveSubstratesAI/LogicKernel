@@ -35,3 +35,12 @@ Nothing pushed. Working tree clean at 76855a3 except this file.
 5. Stop MY daemon with `# allow-restart: RD1c done, slot returned`: `cd ~/code/lk-rd1 && tools/warm.sh stop`. IT IS STILL RUNNING (unit logickernel-warm-4d22bbd8, started this session by me).
    The lk-lb4b2-run daemon (logickernel-warm-17790d9d) was never touched.
 6. The battery on mutants/RD1c only after Evidence is green on the same SHA.
+
+## RD1c gate finish agent (2026-11-03): LEFT list steps 1-4 results
+
+- tools/pkgtest_way.sh test/core_text/test_canonical_readatom_swipl.jl: passed the way Pkg.test runs it, peak 1260 MiB (cap 3G, oom_kill 0).
+- tools/pkgtest_way.sh test/core_text/test_read_stream_swipl.jl: passed the way Pkg.test runs it, peak 1480 MiB (cap 3G, oom_kill 0). Run one at a time, same daemon slice (unit logickernel-warm-4d22bbd8) untouched.
+- git fetch: origin/main = dd93b68 (unmoved; merge-base is dd93b68), so no rebase and no re-run of check or the three-type runs. 20 commits ahead of origin/main, all authored and committed by Shivaji Gadde.
+- Crash-term grep over the added lines of the diff and over all 20 commit messages: no match in src/, test/, tools/ or any message. The only matches are two lines in this evidence directory that quote the grep pattern itself (gate2.md, the report of the grep). Reading: the pattern text, not a crash.
+- RD1-A3 is declared equivalent, pending audit. Cited lines checked against the pin source (swipl-devel-cbf4e189, pl-read.c): 1440-1443 (ensure_space gated by something_read), 1672, 1724, 1769, 1785, 1810, 1817, 1839, 1947 (each `if ( something_read )`), 6691 (`s = skipSpaces(s);` in pl_raw_read2). Kernel side: src/pl-read.jl 779, 804, 822, 834, 924, 967 gate on something_read; 4585 is the skipSpaces call. The in-tree run against rt174/rt199 survived. tools/mutants/RD1c.py unchanged since the 33-mutant anchor check.
+- Daemon of ~/code/lk-rd1 left RUNNING (dispatcher hands the slot over).
