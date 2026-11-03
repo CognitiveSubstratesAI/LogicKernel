@@ -1452,6 +1452,7 @@ graph LR
     pl_proc --> SWI_Prolog
     pl_proc --> pl_atom
     pl_proc --> pl_index
+    pl_proc --> pl_funct
     pl_proc --> pl_global
     pl_proc --> pl_modul
     pl_proc --> pl_inline
@@ -1464,9 +1465,11 @@ graph LR
     pl_proc --> pl_error
     pl_proc --> pl_dbref
     pl_proc --> pl_arith
+    pl_proc --> os_pl_prologflag
     pl_proc --> os_pl_text
     pl_proc --> pl_srcfile
     pl_proc --> pl_supervisor
+    pl_proc --> pl_read
     pl_srcfile --> term_interface
     pl_srcfile --> default_term
     pl_srcfile --> pl_incl
@@ -5606,7 +5609,7 @@ What MOD5b ports (swipl-devel cbf4e1896275; src/pl-modul.jl unless named):
   src/pl-srcfile.jl). Only the class `temporary` counts references. The destroy takes the NAME out of `gd.modules.names` and sets
   `M_DESTROYED`; the last release resets the source and typein modules that were the destroyed one to `user`.
 - **`_text_summary`** (pl-util.c:67-116, `text_summary`/`atom_summary`) for the "Already loaded from …" message.
-- **`abolishProcedure`'s imported-link branch** (pl-proc.c:1517-1530, `_abolishProcedure_pristine`): an auto-imported link of a
+- **`abolishProcedure`'s imported-link branch** (pl-proc.c:1517-1530, `abolishProcedure!` since PR1b; MOD5b ported it first as `_abolishProcedure_pristine`): an auto-imported link of a
   re-declared module is replaced by a fresh definition of the module (`shared` 0, as upstream's `memset`), the old one unshared. A
   link to a DYNAMIC predicate survives, because the loop skips a definition with `P_DYNAMIC|P_MULTIFILE|P_FOREIGN` and tests the
   imported definition (rows b04/b05 against b06, which links a static predicate).
@@ -6136,6 +6139,29 @@ What F2 ports (src/os/pl-prologflag.jl, section "push and pop"; stacked on F1b, 
 
 Tests and mutants: evidence/F2/handoff.md (rows pf01-pf44 against swipl 10.1.19 in
 test/core_lang/test_push_flag_swipl.jl; tools/mutants/F2.py).
+
+## PR1 — pl-proc.c remainder: `abolish/1,2`, `garbage_collect_clauses/0`, `current_predicate/1`, `'$c_current_predicate'/2`, `'$get_predicate_attribute'/3` (R2, audit D-0306 items 2-3)
+
+What PR1 adds (written edit-only; nothing was compiled or run when this was written; swipl-devel pin `cbf4e1896275`, oracle swipl 10.1.19; plan and verdicts: evidence/PR1/handoff.md):
+
+- **Abolish (pl-proc.c, src/pl-proc.jl, src/pl-index.jl).** `deleteIndexes!` (pl-index.c), `resetProcedure!`, `removeClausesPredicate!` and `abolishProcedure!` with its four
+  branches (an imported link is replaced by a fresh definition, a foreign predicate is made normal, a thread-local one is refused with `permission_error`, a normal one has its
+  clauses erased and its flags reset), then `get_arity`, `do_abolish`, `pl_abolish`, `pl_abolish1`; the entries `abolish/1` (META|ISO), `abolish/2` (META) and
+  `garbage_collect_clauses/0` (pl-ext.c:125, 126, 171; the Julia function `pl_garbage_collect_clauses!` was there already) are in the `foreigns` table of src/pl-ext.jl.
+- **Two enumerations.** `'$c_current_predicate'/2` (non-deterministic, module-sensitive; `PL_strip_module_nocreate`: a qualifier that names no module makes the strip FAIL,
+  pl-modul.c SM_NOCREATE) and `current_predicate/1` (the module and predicate enumerations, `Name/Arity` and `Name//Arity`, the super chain of a bound module). Their state is a
+  record in a pool of the local data (`cur_pred_enum`, `cur_enum{T}`; `ld.cur_pred_enums`, `ld.cur_enums`, counted by `live_states`), the redo context its index; a cut frees it.
+- **The attribute reader.** `'$get_predicate_attribute'/3` with `unify_meta_argument`, `unify_meta_pattern`, `num_visible_clauses`, `sizeof_predicate` and the flag keys.
+- **DIVERGES (each in a comment at its site; the audit decides the behaviour-visible ones):** the key `indexed` raises `NotPortedError` (its value is a dict per index);
+  the tabling keys FAIL, as upstream does for a definition whose `tabling` is NULL (no predicate is tabled until TAB1); `last_modified_generation` is the module's value
+  and `size` the kernel's own count; `num_visible_clauses` ignores a reload; `resetProcedure!` does not set `TRACE_ME` (as `lookupProcedure`); the enumerations walk the keys
+  of the table at their first call, in its order.
+- **The three abolish refusals are re-pointed at `abolishProcedure!`** (PR1b; boot/load.pl:47,49 abolish predicates that have clauses): `declareModule` (pl-modul.c:1338), `overruleImportedProcedure`
+  (pl-proc.c:515-529, the `ignored_weak_import` warning under `warn_override_implicit_import`, then the abolish of the link) and `redefineProcedure` (pl-proc.c:4003-4040, the foreign and the other-file branches).
+  `_abolishProcedure_pristine` is gone. Left to R3: `'$foreign_predicate_source'/2`, `'$addr2line'/2`, `'$local_definitions'/2`, `'$default_predicate'/2`, `copy_predicate_clauses/2`, `'$cgc_params'/6` (no boot file calls them).
+
+Tests: test/core_lang/test_pr1_swipl.jl (rows pr01-pr127 and the two-file rows t_rd1-t_rd7: abolish, the two enumerations, the attribute reader, the re-pointed refusals; swipl 10.1.19 pins from two byte-identical runs of
+evidence/PR1/gen_rows.py, a non-vacuity testset, a white-box testset on `erased_clauses` and the dead index slots, `live_states(ld) == 0`, the live check when `swipl` is on PATH); tools/mutants/PR1c.py (60 mutants; PR1-A2 declared equivalent with its code reason, D-0373).
 
 ## Still to come
 
