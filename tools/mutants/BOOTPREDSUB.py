@@ -11,7 +11,7 @@
 # NOT LISTED (with its reason):
 #   * `updateAlerted(ld)` in `'$notrace'/2` and `'$restore_trace'/2`, and the foreign-frame close calls of `'$memberchk'/3`: they
 #     recompute or release state no row can observe (the kernel keeps no debugger state, the frame is closed by the query's exit).
-#   * (EV1 keeps the hooks now: the event table's argument count and `argc` are exercised by tools/mutants/EV1.py's battery.)
+#   * (EV1 keeps the hooks now: the event table's argument count and `argc` are exercised by tools/mutants/EV1c.py's battery.)
 #   * the `PL_FA_VARARGS` flag of a table entry and an entry's arity: a broken call path (the row driver reports "undefined" or
 #     "exception"), not a verdict about the port.
 #   * the digest walk of `variant_sha1/2` (`pl_variant_sha1`, src/pl-termhash.jl): owned by the step that ported it; its battery names

@@ -1,5 +1,5 @@
 # ORIGINAL: the EV1 mutant list — no swipl-devel counterpart.
-# tools/mutants/EV1.py — the mutation battery of step EV1 (the event lists of pl-event.c, src/pl-event.jl: prolog_listen/2,3,
+# tools/mutants/EV1c.py — the mutation battery of step EV1 (the event lists of pl-event.c, src/pl-event.jl: prolog_listen/2,3,
 # prolog_unlisten/2, the calling side, and the raise sites wired to it: assertDefinition and retractClauseDefinition
 # (src/pl-proc.jl), retractall/1 start and end, the erase of a record (src/pl-rec.jl), the clause GC's announceErasedClause,
 # and the destroy_event_list of resetProcedure! (src/pl-proc.jl, called by abolishProcedure!)), run ONCE, in CI (.github/workflows/mutation.yml;
@@ -154,17 +154,17 @@ MUTANTS = [
          file=V, targets=TARGETS,
          old="    if rc && (flags & P_EVENT_ROLLBACK) != 0\n",
          new="    if false\n",
-         equivalent="src/pl-event.jl:609 — every caller of predicate_update_event passes UInt32(0) (src/pl-proc.jl:521 and :592), so the flag is never set: pl-transaction.c is not ported, the only upstream source of P_EVENT_ROLLBACK."),
+         equivalent="src/pl-event.jl:677 — every caller of predicate_update_event passes UInt32(0) (src/pl-proc.jl:525-531 and :604; no other file calls it), so the flag is never set: pl-transaction.c is not ported, the only upstream source of P_EVENT_ROLLBACK."),
     dict(id="EV1-C9 the `add` test of a named listener ignores function_ (EQUIVALENT)",
          file=V, targets=TARGETS,
          old="event_name_is(ev.name, name) && ev.function_ == 0",
          new="event_name_is(ev.name, name)",
-         equivalent="src/pl-event.jl:138-139 — every event_callback is built with function_ 0 (src/pl-event.jl add_event_hook: the constructor's fourth argument); a nonzero function_ comes from register_event_function (pl-thread.c, TH1), not ported."),
+         equivalent="src/pl-event.jl:164 — every event_callback is built with function_ 0 (src/pl-event.jl:173, add_event_hook: the constructor's fourth argument); a nonzero function_ comes from register_event_function (pl-thread.c, TH1), not ported."),
     dict(id="EV1-C10 the frameFinished raise is dropped (EQUIVALENT)",
          file=W, targets=TARGETS,
          old="        return callEventHook(_query_gd(ld), ld, PLEV_FRAMEFINISHED, fr)\n",
          new="        return true\n",
-         equivalent="src/pl-wam.jl:1089-1090 — the raise sits behind `(ld.frames[fr].flags & FR_NOTIFY) != 0`, and nothing in the kernel sets FR_NOTIFY (grep: only its definition and comments, e.g. src/pl-wam.jl:2262, :3372, :3957 say it is asserted absent) until the debugger step DBG1."),
+         equivalent="src/pl-wam.jl:1089-1090 — the raise sits behind `(ld.frames[fr].flags & FR_NOTIFY) != 0`, and nothing in the kernel sets FR_NOTIFY (src/pl-incl.jl:1232 defines it, :1262 folds it into FR_WATCHED; the uses in src/pl-wam.jl are the test at :1089 and comments, e.g. :2262, :3372, :3957 say it is asserted absent) until the debugger step DBG1."),
     # ---- predicate_update_event / retractall_event
     dict(id="EV1-P1 the retractall action is announced as `retract` (KILL ev1p09, ev1p10, ev1p12)",
          file=V, targets=TARGETS,

@@ -6572,4 +6572,4 @@ What EV1 adds (pin `cbf4e1896275`, oracle swipl 10.1.19; written edit-only over 
 - **KNOWN DIFFERENCE, no row:** a listener that unlistens itself while the list is walked (upstream walks the live chain; the snapshot cannot see it).
 
 Tests: test/core_lang/test_event_swipl.jl (80 rows ev1p, ev1o, ev1u, ev1v, ev1e, ev1r, ev1g; pins from swipl 10.1.19, two byte-identical runs; generator evidence/EV1/gen_rows.py; ev1g01 is white-box:
-`garbage_collect_clauses/0` is not registered yet, the row calls `pl_garbage_collect_clauses!`). Mutants: tools/mutants/EV1.py (48; three declared EQUIVALENT with file:line) and the event ones of tools/mutants/BOOTPREDSUB.py.
+`garbage_collect_clauses/0` is not registered yet, the row calls `pl_garbage_collect_clauses!`). Mutants: tools/mutants/EV1c.py (51; three declared EQUIVALENT with file:line) and the event ones of tools/mutants/BOOTPREDSUB.py.
