@@ -403,6 +403,7 @@ _tm_wrapped(def) = LK.isCallWrapper(def.codes[LK.skipWrapperPrefix(def.codes)])
         d06 = _tm_def(gd, "tm_c06")
         c06 = LK.closure_of_word(gd, d06.codes[LK.skipWrapperPrefix(d06.codes) + 2])::LK.closure
         @test c06.supervisor === d06.code_data.virgin
+        @test isempty(c06.supervisor_crefs)                       # the reset also drops the side table of the old supervisor
         # T4: the second wrap of a name (tmw05) installs the NEW wrapper clause in the side table, the old one is gone
         d05w = _tm_def(gd, "tm_w05")
         j = LK.skipWrapperPrefix(d05w.codes)

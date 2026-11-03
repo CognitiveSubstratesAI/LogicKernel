@@ -287,3 +287,11 @@ C. READY-FOR-GATE list (D-order), once T3 exists: inventory (`warm.sh inventory`
    Things only the gate can check: `ClauseList{T}()` + `cl.args =`, `PL_unify_functor` with a blob T-term as name, `atomValue` on a blob word, `assert_term!` accepting a blob-headed compound
    (row tmw12 reads it back through clause/2), whether `closure` shifts a pinned atom count, `blob/2` of the closure blob (tmw02-04), `abolish` of a dynamic tm_x22 clearing the properties (tma22).
 Daemon state: writer 4 started none, ran no Julia. Scratch prefix t1w4-.
+
+## WRITER 5 (Sonnet, edit-only; nothing compiled or run: every line UNVERIFIED). Scratch prefix t1w5-.
+origin/main fetched at start: STILL f08167f (ENG3 NOT landed): T3 NOT possible (needs ENG3's stubs); NOT TOUCHED.
+1. (A) tools/mutants/TAB1MIN.py: 33 mutants (ids TAB1MIN-A1..D10) over T1/T2/T4/T5; validated by a throwaway python3 -I script
+   (each `old` once, old != new, ids unique, targets exist, module TARGETS = five real test files [`grep -L '@testset\|@test'` empty]).
+   NOT LISTED with reasons: `k == DU_WORD &&` of `$tbl_is_trienode`, `freeCodesDefinition!` in `tbl_set_incremental_predicate`,
+   the two asserts, `unregisterWrappedSupervisor` (header of the file). D6 (side table reset) kills only if the called single-clause
+   supervisor had a side-table entry: new white-box row `@test isempty(c06.supervisor_crefs)` added to the test file (UNVERIFIED).
