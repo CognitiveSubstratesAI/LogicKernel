@@ -472,11 +472,21 @@ end
     ld = LK.PL_local_data{_QL}(gd)
     @test !LK.boot_from_source!(gd, ld, [joinpath(dir, "no_such.pl"), f4])    # f4 would make the last step succeed
     @test !gd.bootsession
-    # user:'$load_additional_boot_files'/0 is called: with none defined the list fails
+    # user:'$load_additional_boot_files'/0 is called: with none defined, an undefined predicate in the boot session raises a Julia error
+    # naming it (AUTOLOAD1 Q3: trapUndefined, pl-proc.c:3051-3053; upstream aborts the process). Before Q3 the call was a soft
+    # existence_error and the list failed. The error leaves `gd.bootsession` on, as an abort would.
+    # UNVERIFIED on the kernel: gate decides
     gd = LK.PL_global_data{_QL}()
     ld = LK.PL_local_data{_QL}(gd)
-    @test !LK.boot_from_source!(gd, ld, [f2])
-    @test !gd.bootsession
+    err = try
+        LK.boot_from_source!(gd, ld, [f2])
+        nothing
+    catch e
+        e
+    end
+    @test err isa ErrorException &&
+        occursin("Undefined predicate during the boot session: user:\$load_additional_boot_files/0", err.msg)
+    gd.bootsession = false
 
     # compileFileList alone restores the access level and `autoload`, and leaves the boot flag as it was
     gd = LK.PL_global_data{_QL}()
