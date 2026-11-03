@@ -468,9 +468,11 @@ function assertDefinition!(
 end
 
 # DIVERGES (no upstream function): without local data no listener of the predicate is called (the tests' database builders).
-_assertDefinition!(
+function _assertDefinition!(
     gd::PL_global_data{T}, def::Definition{T}, clause::Clause{T}, where_::Union{Int, ClauseRef{T}}
-)::ClauseRef{T} where {T} = _assertDefinition!(gd, nothing, def, clause, where_)::ClauseRef{T}
+)::ClauseRef{T} where {T}
+    return _assertDefinition!(gd, nothing, def, clause, where_)::ClauseRef{T}
+end
 
 # From pl-proc.c assertDefinition (pl-proc.c:1409-1489): everything after `add_ssu_clause`.
 # The update event (pl-proc.c:1472-1478) is raised when `ld` is given and `def` has listeners: a veto (a listener that
@@ -618,8 +620,11 @@ end
 
 # PORT: pl-proc.c announceErasedClause
 "Tell the listeners of the `erase` event that `clause` is going (pl-proc.c): false when a listener raised."
-announceErasedClause(gd::PL_global_data{T}, ld::PL_local_data{T}, clause::Clause{T})::Bool where {T} =
-    callEventHook(gd, ld, PLEV_ERASED_CLAUSE, clause)
+function announceErasedClause(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, clause::Clause{T}
+)::Bool where {T}
+    return callEventHook(gd, ld, PLEV_ERASED_CLAUSE, clause)
+end
 
 # PORT: pl-proc.c cleanDefinition
 # DIVERGES: no transactions (`tr_starts`); the `erase` event (`announceErasedClause`) is raised when `gd` and `ld` are
@@ -673,9 +678,11 @@ function cleanDefinition!(
 end
 
 # DIVERGES (no upstream function): the tests' call: no `erase` event and no result.
-cleanDefinition!(
+function cleanDefinition!(
     def::Definition{T}, ddi::dirty_def_info{T}, start::gen_t
-)::Int where {T} = cleanDefinition!(nothing, nothing, def, ddi, start, Ref(true))
+)::Int where {T}
+    return cleanDefinition!(nothing, nothing, def, ddi, start, Ref(true))
+end
 
 # PORT: pl-proc.c mustCleanDefinition
 "True when `def` has erased clauses to collect (pl-proc.c)."

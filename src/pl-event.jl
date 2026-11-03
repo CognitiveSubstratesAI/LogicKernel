@@ -66,7 +66,15 @@ function event_list_at(
     loc.def === nothing || return loc.def.events
     et = PL_events[loc.ev + 1]
     et.local_ && return ld.event_hook_onthreadexit
-    return getfield(gd.event_hook, et.location)
+    h = gd.event_hook
+    loc_ = et.location
+    loc_ === :onabort && return h.onabort
+    loc_ === :onerase && return h.onerase
+    loc_ === :onbreak && return h.onbreak
+    loc_ === :onframefinish && return h.onframefinish
+    loc_ === :onthreadstart && return h.onthreadstart
+    loc_ === :onthreadexit && return h.onthreadexit
+    return h.onuntable
 end
 
 "Make the event list at `loc` `list` (`nothing`: NULL), as `*listp = list` does (pl-event.c)."
@@ -82,7 +90,23 @@ function event_list_set!(
     if et.local_
         ld.event_hook_onthreadexit = list
     else
-        setfield!(gd.event_hook, et.location, list)
+        h = gd.event_hook
+        loc_ = et.location
+        if loc_ === :onabort
+            h.onabort = list
+        elseif loc_ === :onerase
+            h.onerase = list
+        elseif loc_ === :onbreak
+            h.onbreak = list
+        elseif loc_ === :onframefinish
+            h.onframefinish = list
+        elseif loc_ === :onthreadstart
+            h.onthreadstart = list
+        elseif loc_ === :onthreadexit
+            h.onthreadexit = list
+        else
+            h.onuntable = list
+        end
     end
     return nothing
 end
