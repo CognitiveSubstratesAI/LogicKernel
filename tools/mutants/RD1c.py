@@ -5,7 +5,7 @@
 # tools/mutate_drive.py's (as MOD3b.py): `id`, `file`, `old` (must occur EXACTLY once), `new`, optional `equivalent` and `targets`.
 # RD1c (audit D-0375): the file is the RD1b list renamed; the blob(Mode) mutants (F1-F10, F12) also name test_canonical_readatom_swipl.jl,
 # whose read_term_from_atom/3 rows reach the same code.
-# Killed by test/core_text/test_read_stream_swipl.jl (rows rt01-rt219, rt300-rt321 named in each id's KILL). Verdicts: written by the
+# Killed by test/core_text/test_read_stream_swipl.jl (rows rt01-rt219, rt300-rt323 named in each id's KILL). Verdicts: written by the
 # battery, not yet run. RD1 is Tier 3 (registration, argument checks, error terms; no engine/reader/writer code): the battery is
 # advisory, the root suite is the gate.
 # The `old` strings are written in the repo's formatted style BEFORE `tools/warm.sh fmt` ran (the coding agent had no daemon):
@@ -44,7 +44,8 @@ MUTANTS = [
     m("RD1-A2 $raw_read does not strip the layout before the full stop (KILL rt172, rt177, rt193)",
       "        top = backSkipBlanks(b, s, t2)\n", "        top = t2\n"),
     m("RD1-A3 $raw_read keeps the leading layout (comments are blanks) (KILL rt174, rt199)",
-      "    s = skipSpaces(b, s)\n", "    nothing\n"),
+      "    s = skipSpaces(b, s)\n", "    nothing\n",
+      equivalent="read, not run, and SURVIVED in-tree against rt174/rt199 (RD1c): raw_read2 adds nothing to its buffer before the first token (src/pl-read.jl 779, 804, 822, 834, 924-927, 967-970: every blank, comment and NUL is gated by `something_read`, as in pl-read.c ensure_space 1440-1443, 1672, 1724, 1769, 1785, 1810, 1817, 1839, 1947), so the buffer never starts with layout and pl_raw_read2's skipSpaces (pl-read.c:6691, the defensive call) has nothing to skip. For the dispatcher's ruling."),
     m("RD1-A4 $raw_read's `0' .` guard does not give the space back (KILL rt173)",
       "        top += 1\n    end\n    s = skipSpaces(b, s)", "        nothing\n    end\n    s = skipSpaces(b, s)"),
     m("RD1-A5 $raw_read's `0'` guard asks for one character before the end only at `top - 2 > s` (KILL rt173)",
@@ -98,7 +99,7 @@ MUTANTS = [
       "c == Int('<') && !must_be_op && rd.blobs !== :error && blob_syntax_available(rd)",
       "c == Int('<') && !must_be_op && blob_syntax_available(rd)",
       targets=TB),
-    m("RD1-F2 the tokeniser claims `<type>(` where an operator is expected (KILL rt315)",
+    m("RD1-F2 the tokeniser claims `<type>(` where an operator is expected (KILL rt322; rt315 never reached it: in-tree survivor, D-0376)",
       "c == Int('<') && !must_be_op && rd.blobs !== :error",
       "c == Int('<') && rd.blobs !== :error",
       targets=TB),
@@ -114,7 +115,7 @@ MUTANTS = [
       "(e == in || _byte(b, e + 1) != Int('(')) && return nothing",
       "_byte(b, e + 1) != Int('(') && return nothing",
       targets=TB),
-    m("RD1-F6 `<type>` not followed by `(` is a blob (KILL rt316)",
+    m("RD1-F6 `<type>` not followed by `(` is a blob (KILL rt323; rt316 never reached it: in-tree survivor, D-0376)",
       "(e == in || _byte(b, e + 1) != Int('(')) && return nothing",
       "e == in && return nothing",
       targets=TB),

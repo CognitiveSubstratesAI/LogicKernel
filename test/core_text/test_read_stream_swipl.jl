@@ -459,7 +459,18 @@ const _RT_CASES = [
     ),
     ("rt317", raw"""rt_file('<a>(1).', S), rt_serr_formal(read_term(S,T,[]), R)"""),
     ("rt318", raw"""rt_str('f.', S), read_clause(S,T,[blob(foo)]), R = T"""),
-    ("rt319", raw"""rt_str('f(X).', S), read_clause(S,T,[blob(dead)]), R = T""")
+    ("rt319", raw"""rt_str('f(X).', S), read_clause(S,T,[blob(dead)]), R = T"""),
+    # rt315 and rt316 never reach the tokeniser's blob test (audit D-0376, the in-tree runs of RD1-F2 and RD1-F6): rt311 leaves `<` a prefix
+    # operator in module rtm, so blob_syntax_available is false there; `a>.` is one symbol atom, so rt316's raw read ends in end_of_file.
+    # rt322: a fresh module (infix `<` only) and an operator position; rt323: the `>` is followed by layout, not by `(`
+    (
+        "rt322",
+        raw"""op(200, xfy, rtn:(>)), rt_str('a <b>(c).', S), read_term(S,T,[blob(dead),module(rtn)]), R = T"""
+    ),
+    (
+        "rt323",
+        raw"""rt_file('X = <a> .', S), rt_serr_formal(read_term(S,T,[blob(dead)]), R)"""
+    )
 ]
 
 # KNOWN DIFFERENCE rows: (id, goal, the kernel's exact answer). swipl's answer is in `_RT_PINNED` (the rows after the cases), compared live too.
@@ -766,6 +777,8 @@ const _RT_PINNED = [
     "t_rt317 c[116,95,114,116,51,49,55]/1(c[114,97,105,115,101,100]/1(c[115,121,110,116,97,120,95,101,114,114,111,114]/1(a[111,112,101,114,97,116,111,114,95,101,120,112,101,99,116,101,100])))",
     "t_rt318 c[116,95,114,116,51,49,56]/1(c[114,97,105,115,101,100]/1(c[100,111,109,97,105,110,95,101,114,114,111,114]/2(a[98,108,111,98],a[102,111,111])))",
     "t_rt319 c[116,95,114,116,51,49,57]/1(c[102]/1(V0))",
+    "t_rt322 c[116,95,114,116,51,50,50]/1(c[60]/2(a[97],c[62]/2(a[98],a[99])))",
+    "t_rt323 c[116,95,114,116,51,50,51]/1(c[114,97,105,115,101,100]/1(c[115,121,110,116,97,120,95,101,114,114,111,114]/1(a[111,112,101,114,97,116,111,114,95,101,120,112,101,99,116,101,100])))",
     "t_rt87",
     "t_rt88",
     "t_rt89 c[116,95,114,116,56,57]/1(a[99])",
@@ -855,7 +868,7 @@ function _rt_kernel(path::String, names::Vector{String})
     return out
 end
 
-@testset "read/1,2, read_term/2,3, \$raw_read/1,2, \$is_named_var/1 as swipl's (rt01-rt219, rt300-rt321)" begin
+@testset "read/1,2, read_term/2,3, \$raw_read/1,2, \$is_named_var/1 as swipl's (rt01-rt219, rt300-rt323)" begin
     mktempdir() do dir
         f, names = _rt_file(dir)
         kl = _rt_kernel(f, names)
