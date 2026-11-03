@@ -7219,3 +7219,11 @@ cbf4e189.
   resolves it afresh (XR_PRED, pl-qlf.c:771-777), and only the 'I' records carry links (pl-qlf.c:3257-3271). So
   `drop_boot_autoimports!` (src/gd_template.jl) gives the 96 such procedures (user's and ten boot modules') a fresh
   definition; system's 139 weak imports stay. Rows in test/files/test_qlf_swipl.jl.
+- **when/2 keeps its boot stand-in** (`_boot_when!`, src/pl-ext.jl, a `# DIVERGES` marker; ruling on wh05-wh07,
+  option 1, accepted by audit D-0378). b2's family-3 commit took it out as autoloaded from library/when.pl, but trapUndefined's
+  autoloader (pl-proc.c: the `autoload` flag, `autoLoader`, `'$undefined_procedure'/4` and the retry) is deferred, so
+  when/2 raised existence_error(procedure, when/2) on the booted database (test_attvar_wakeup.jl wh05-wh07). The stand-in
+  (when/2, trigger_first/2 in `system`, `when(+, 0)` as when.pl:40-41) has owner AUTOLOAD1, an R2b step on the R2
+  path (the autoLoader branch of trapUndefined: pl-proc.c autoLoader/autoImport, the `autoload` flag, the call into
+  boot/autoload.pl's `'$autoload'/1`), and the removal condition "trapUndefined autoloads": AUTOLOAD1 deletes it and
+  runs the rows it flips.

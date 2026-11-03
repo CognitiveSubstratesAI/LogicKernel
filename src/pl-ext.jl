@@ -187,6 +187,91 @@ function initBuildIns!(gd::PL_global_data{T})::Nothing where {T}
     first = _register_tables!(gd, 0, _PRED_TABLES)
     @assert first == length(_FOREIGN_VA)
     setBuiltinPredicateProperties!(gd)
+    _boot_when!(gd, PL_local_data{T}(gd))       # (no upstream line: library/when.pl's stand-in, see `_boot_when!`)
+    return nothing
+end
+
+# (The clause helpers below are the boot stand-ins' of AV3-AV9, back with `_boot_when!` only; LB4 b2.)
+"Compile `name(args…) :- body` (`body` nothing: a fact) into the `system` module of `gd`, and set the predicate's `flags`."
+function _boot_clause!(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, name::Symbol, args::Vector{T},
+    body::Union{Nothing, T}, flags::UInt64
+)::Nothing where {T}
+    m = MODULE_system(gd)
+    proc = lookupProcedure(mk_sym(T, name), length(args), m)
+    cl = compileClause(
+        gd, ld, mk_expr(T, pushfirst!(copy(args), mk_sym(T, name))), body, proc, m
+    )
+    cl === nothing && error("_boot_clause!: the boot clause of $name does not compile")
+    assertDefinition!(gd, ld, proc.definition, cl, CL_END) !== nothing ||   # no SSU clause: never refused
+        error("_boot_clause!: the boot clause of $name is refused")
+    proc.definition.flags |= flags
+    return nothing
+end
+
+"The compound `name(args…)` of a boot clause."
+function _boot_term(name::Symbol, args::Vector{T})::T where {T}
+    return mk_expr(T, pushfirst!(copy(args), mk_sym(T, name)))
+end
+
+"The conjunction `(g1, g2, …)` of a boot clause's body."
+function _boot_conj(goals::Vector{T})::T where {T}
+    c = goals[end]
+    for i in (length(goals) - 1):-1:1
+        c = _boot_term(Symbol(","), T[goals[i], c])
+    end
+    return c
+end
+
+"`n` fresh variables for the clauses of a boot stand-in."
+function _boot_vars(::Type{T}, n::Int)::Vector{T} where {T}
+    k = fresh_var_keys!(n)
+    v = Vector{T}(undef, n)
+    for i in 1:n
+        v[i] = mk_var(T, k + UInt64(i - 1))
+    end
+    return v
+end
+
+# DIVERGES (no upstream function; AV8): library/when.pl's when/2 and the two trigger_first/2 clauses that
+# need no attribute hook (swipl-devel cbf4e189, library/when.pl:84-86, 98-100, 104-105), `system`'s and
+# locked, with when.pl:40-41's `:- meta_predicate when(+, 0)` (`PL_meta_predicate`, as `_boot_meta!` set it
+# until LB4 b2):
+#     when(Condition, Goal) :- '$eval_when_condition'(Condition, Optimised), trigger_first(Optimised, Goal).
+#     trigger_first(true, Goal) :- !, call(Goal).
+#     trigger_first(Cond, Goal) :- trigger(Cond, Goal).
+# LB4 b2 (d95a8d7) took it out on the grounds that when/2 is autoloaded from library/when.pl, but the
+# autoloader in trapUndefined (pl-proc.c) is deferred (src/pl-proc.jl's `trapUndefined`), so an undefined
+# when/2 raised existence_error (rows wh05-wh07). Owner AUTOLOAD1 (audit D-0378: the autoLoader branch of
+# trapUndefined, pl-proc.c autoLoader/autoImport, the `autoload` flag, boot/autoload.pl's `'$autoload'/1`);
+# removal condition: trapUndefined autoloads. AUTOLOAD1 deletes this stand-in and reruns wh05-wh07.
+# when.pl:101-103's `trigger_first(nonvar(X), Goal)` and trigger/2 wait for library(when) itself (their
+# wakeup is module `when`'s attr_unify_hook/2): a condition still pending after
+# `'$eval_when_condition'/2` raises the existence error of trigger/2, never a silent failure.
+"Define when/2 in the `system` module of `gd` as library/when.pl defines it, up to the conditions that are already true."
+function _boot_when!(gd::PL_global_data{T}, ld::PL_local_data{T})::Nothing where {T}
+    v = _boot_vars(T, 3)
+    Condition, Goal, Optimised = v[1], v[2], v[3]
+    _boot_clause!(
+        gd, ld, :when, T[Condition, Goal],
+        _boot_conj(
+            T[
+                _boot_term(Symbol("\$eval_when_condition"), T[Condition, Optimised]),
+                _boot_term(:trigger_first, T[Optimised, Goal])
+            ]
+        ),
+        P_LOCKED
+    )
+    _boot_clause!(
+        gd, ld, :trigger_first, T[mk_sym(T, Symbol("true")), Goal],
+        _boot_conj(T[mk_sym(T, :!), _boot_term(:call, T[Goal])]), UInt64(0)
+    )
+    _boot_clause!(
+        gd, ld, :trigger_first, T[Condition, Goal],
+        _boot_term(:trigger, T[Condition, Goal]),
+        UInt64(0)
+    )
+    PL_meta_predicate(lookupProcedure(mk_sym(T, :when), 2, MODULE_system(gd)), "+0")  # when.pl:40-41
     return nothing
 end
 

@@ -1641,6 +1641,8 @@ function _manifest_index(T)
         # group F (D-0123): callPortray calls Prolog (src/pl-fli.jl)
         (LK.PL_call_predicate, Tuple{GD, LD, Nothing, UInt32, LK.Procedure{T}, Int}, false),
         (LK.pl_sig_atomic1_va, Tuple{LD, Int, Int, LK.control_t{T}}, false),
+        (LK._boot_clause!, Tuple{GD, LD, Symbol, Vector{T}, T, UInt64}, false),
+        (LK._boot_clause!, Tuple{GD, LD, Symbol, Vector{T}, Nothing, UInt64}, false),
         # V9g-b — the bags: recorded terms (src/pl-rec.jl), findall/3's bag (src/pl-bag.jl), the
         # sorts and '$length'/2 (src/pl-list.jl), what bagof/3 and setof/3 call of pl-prims.c, the
         # list and functor unifiers (src/pl-fli.jl), the boot clauses (src/pl-ext.jl)
@@ -1713,6 +1715,10 @@ function _manifest_index(T)
                 LK.pl_term_multitons2_va, LK.pl_is_most_general_term1_va
             )
         ]...,
+        (LK._boot_term, Tuple{Symbol, Vector{T}}, false),
+        (LK._boot_conj, Tuple{Vector{T}}, false),
+        (LK._boot_vars, Tuple{Type{T}, Int}, false),
+        (LK._boot_when!, Tuple{GD, LD}, false),                  # library/when.pl's when/2, trigger_first/2 (AV8; back in LB4 b2)
         (LK.initVM, Tuple{PR}, false),
         (LK.PL_open_query, Tuple{GD, LD, Nothing, UInt32, PR, Int}, false),
         (LK.PL_open_query, Tuple{GD, LD, MOD, UInt32, PR, Int}, false),
