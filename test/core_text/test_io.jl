@@ -11,10 +11,10 @@
 #
 # PORTED since RD1: no_protocol_in (read_term/3 on the standard alias `protocol`, pl-read.c, registered in src/pl-read.jl).
 # NOT PORTED, and why:
-#   io: every other unit    open/4, open_null_stream/1, close/1, set_stream/2, current_input/1,
-#                           current_output/1 — files and stream handles: R2.
+#   io: every other unit    these units need files and stream handles; open/4, open_null_stream/1, close/1, set_stream/2 (S2a) and
+#                           current_input/1, current_output/1 (LB5) are registered now; the units are left out until their driver runs: R2.
 #   stream_pair ×3          stream_pair/3: R2.
-#   line_position ×15       with_output_to/2 and line_position/2: R2.
+#   line_position ×15       with_output_to/2 is the driver (R2); line_position/2 is registered (LB5).
 using Test, LogicKernel
 const _TIO_LK = LogicKernel
 

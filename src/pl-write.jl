@@ -2487,9 +2487,12 @@ const write_length_options = (
 # the difference is only that output exceeding a limit is produced in full before the call fails (it
 # differs for output that would exhaust memory), and that the I/O-error exception upstream clears
 # (`PL_clear_exception`) is never raised.
-# OWNER: the stream layer's custom-write-function step (a function set with its own `S_write`, `Swrite_lss`;
-# a stream-layer gap, as the missing `Sseek64` is for `seek/4`); the nearest named owner row is S2b
-# (docs/architecture.md, section LB5). The step that adds it removes this DIVERGES.
+# OWNER: S2b (stream-layer custom functions; docs/architecture.md section S2b, evidence/R2/status_board.md): a
+# function set with its own `S_write`, as `Swrite_lss` (pl-write.c:3293-3350, installed by the `lss_functions` table at
+# :3352-3357), is the stream-layer gap that `Sseek64`/`Stell64`/`Sunit_size` (pl-stream.c:2020, :2116, :1967) share.
+# What the kernel does now: write into a memory stream, measure afterwards, fail after the write. What upstream does:
+# `write_size` (pl-write.c:3366-3430) writes into a `limit_size_stream`, checks the limits in `Swrite_lss` per buffer
+# and breaks the write with `errno = EINVAL` (:3338). S2b removes this DIVERGES.
 """
 write_size(+Term, -Width, -Height, +Options): `Width` and `Height` of the text `write_term(Term, Options)`
 produces; fails when `max_width(W)` or `max_height(H)` of `Options` is passed (pl-write.c).

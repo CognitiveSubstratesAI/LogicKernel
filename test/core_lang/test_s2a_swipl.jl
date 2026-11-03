@@ -6,7 +6,7 @@
 #     database, each wrapped in `catch(Goal, error(F, _), R = raised(F))` (a stream blob in F becomes '<stream>'; no row answers a blob or a path).
 #   * Every answer line is swipl's, PINNED (swipl 10.1.19-1-gcbf4e189, two byte-identical runs, 2026-11-01, evidence/S2A/s2a_rows.out); with `swipl` on
 #     PATH the live answers are compared with the pins too. NOT in the rows (kernel answers differ from swipl by the audit's DIVERGES): timeout(Seconds),
-#     close_on_exec(Bool), alias(Std) of a standard stream, locale(L), unicode_atoms(nfc), and get_single_char/1 (reads the process's stdin).
+#     close_on_exec(Bool), locale(L), unicode_atoms(nfc), and get_single_char/1 (reads the process's stdin).
 using Test, LogicKernel
 const LK = LogicKernel
 

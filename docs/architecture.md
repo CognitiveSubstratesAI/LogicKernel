@@ -998,6 +998,7 @@ graph LR
     os_pl_stream --> os_pl_utf8
     os_pl_stream --> pl_incl
     os_pl_stream --> pl_comp
+    os_pl_stream --> os_pl_file
     os_pl_stream --> pl_read
     pl_incl --> term_interface
     pl_incl --> default_term
@@ -1376,6 +1377,7 @@ graph LR
     os_pl_option --> pl_arith
     os_pl_option --> os_pl_prologflag
     os_pl_option --> os_pl_text
+    os_pl_option --> pl_string
     os_pl_prologflag --> term_interface
     os_pl_prologflag --> default_term
     os_pl_prologflag --> pl_incl
@@ -6150,8 +6152,8 @@ registered. All sit in `PL_predicates_from_file` (src/os/pl-file.jl), in upstrea
   `infinite` (swipl's default); `reposition` is true only for a Julia `IOStream` file handle (stands in for the `fstat`
   `S_ISREG` test).
 - **`set_stream/2`**: `set_stream`, `ss_info` (the `SS_*` flags) and `prop_get_stream`, with `Ssetbuffer` and `Ssetenc` in
-  src/os/pl-stream.jl. Refusals, each a known difference: `alias(Std)` of a standard stream raises `NotPortedError` until landing
-  B's `setStandardStream`; `locale(L)` and `unicode_atoms(nfc)` raise `NotPortedError`; `timeout(T)` other than `infinite` and
+  src/os/pl-stream.jl. Refusals, each a known difference: `alias(Std)` of a standard stream was refused here and is lifted by
+  the LB5 block below (`setStandardStream`); `locale(L)` and `unicode_atoms(nfc)` raise `NotPortedError`; `timeout(T)` other than `infinite` and
   `close_on_exec(B)` raise upstream's `permission_error` (swipl 10.1.19 accepts both on a file; the rows leave them out);
   `buffer_size(N)` on an input stream holding more than `N` buffered bytes stops in `S__setbuf`'s `@assert`.
 - **Left to R3 on evidence** (the boot does not call them; in boot/dicts.pl they are dict-function names): `get/1,2`, `put/1,2`.
@@ -6680,9 +6682,9 @@ os/pl-option.c (`get_optval`'s `OPT_INT64`). Sizing: evidence/R2/lb5_sizing.md o
   and OS-file ones), so the term is written into a memory stream (`tellString`/`toldString`, with the ISO flag cleared and restored as upstream does) and
   measured AFTERWARDS: the UTF-8 text is walked with `Supdatepos` over a fresh `IOPOS`, the width is the largest `linepos`, the height `lineno + 1` (0 for no text).
   **Limits are checked after the write, not during it**: the answers are the same, and the two differ only for output that would exhaust memory (produced in
-  full before the call fails). Owner: no step row in this file or in evidence/R2 names the custom-write-function work (the sizing file names Q10 for the C file
-  pl-write.c, listing.pl:1204); S2b (the remainder of pl-file.c, after R2) is the nearest row, and the same stream-layer step would also supply `Sseek64`, `Stell64`
-  and `Sunit_size`. The step that adds it removes this DIVERGES; the dispatcher rules the owner.
+  full before the call fails). **Owner: S2b** (audit D-0389; row below and in evidence/R2/status_board.md). Upstream (pin cbf4e1896275): `write_size` (pl-write.c:3366-3430)
+  writes into a `limit_size_stream` whose function set `lss_functions` (pl-write.c:3352-3357) has its own `Swrite_lss` (:3293-3350); it checks the limits per buffer and
+  breaks the write with `errno = EINVAL` (:3338). The kernel's stream layer has no custom write function. S2b removes this DIVERGES.
 - **Known differences and flags for the audit**: (1) `set_stream(S, alias(user_input))` does not set `LD->prompt.next` (upstream :2224): `PL_local_data` has no such
   field; a NEED for pl-global.jl after the gates land. (2) A stream captured as a standard alias and then closed leaves the standard slot as it is
   (`restoreStandardStream`: NOT STARTED); the rows restore the alias inside the row. (3) `current_input/1` and `put_char/1,2` were outside the sizing's list; they
@@ -6695,3 +6697,13 @@ os/pl-option.c (`get_optval`'s `OPT_INT64`). Sizing: evidence/R2/lb5_sizing.md o
 Tests: test/core_lang/test_lb5_swipl.jl (ORIGINAL; rows lb001-lb108 from swipl 10.1.19 under `LC_ALL=C.UTF-8`, two byte-identical runs, generator
 evidence/LB5/gen_rows.py; the live compare of the pins runs when `swipl` is on the path). Mutants: tools/mutants/LB5.py (ORIGINAL; 18 mutants and 2 declared
 equivalent: write_size's ISO clear and restore; not run when this was written).
+
+## S2b — stream-layer custom functions (DEFERRED; owner of the LB5 DIVERGES; after R2b, NOT on the first-boot path; audit D-0389 items 1-2)
+
+UPSTREAM: swipl-devel cbf4e1896275 — os/pl-stream.c (`Sseek64` :2020, `Stell64` :2116, `Sunit_size` :1967), pl-write.c (`Swrite_lss`, `lss_functions`, `write_size`, :3293-3430),
+os/pl-file.c (`seek/4` :5613, `set_stream_position/2` :5569, `setStandardStream` :331, `restoreStandardStream` :374, called from the stream lookup at :898).
+
+- **What S2b will hold**: a stream with a function set of its own (the kernel's function sets are the memory, string and OS-file ones: `Smemfunctions`, `Sstringfunctions`,
+  `Siofunctions`), `Sseek64`/`Stell64`/`Sunit_size`, `seek/4`, `set_stream_position/2`, the write_size/4 custom write function, and `restoreStandardStream` (a captured
+  standard stream that is closed: the kernel leaves the standard slot as it is; upstream restores the saved original at the next lookup, pl-file.c:898).
+- **Until then**: LB5's rows that restore a standard alias do so inside the row and cite S2b in their comment; write_size/4 measures after the write (the DIVERGES above).

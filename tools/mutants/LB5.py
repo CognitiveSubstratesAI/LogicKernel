@@ -9,8 +9,8 @@
 # RE-FIT any that fmt rewraps (mutate_drive.py refuses a string that does not occur exactly once). Every `old` was checked to
 # occur exactly once in the source at wip/lb5 (a text count, no Julia).
 # EQUIVALENT (declared, each with its code reason):
-#   * LB5-X1, LB5-X2: write_size's `clearPrologFlagMask!(ld, PLFLAG_ISO)` (src/pl-write.jl:2508) and the restore
-#     `ld.prolog_flag_mask = oldmask` (:2511). The only reader of the ISO flag on the path write_size runs is PL_scan_options'
+#   * LB5-X1, LB5-X2: write_size's `clearPrologFlagMask!(ld, PLFLAG_ISO)` (src/pl-write.jl:2514) and the restore
+#     `ld.prolog_flag_mask = oldmask` (:2517). The only reader of the ISO flag on the path write_size runs is PL_scan_options'
 #     arity-0 option test (src/os/pl-option.jl:120: a bare option atom such as `quoted` is accepted only when the flag is clear),
 #     the flag's default is false (src/os/pl-prologflag.jl:1873) and no row of any target file sets it, so clearing it is a
 #     no-op and not restoring it restores the same value. A row `set_prolog_flag(iso, true)` followed by a bare-atom option would
@@ -126,15 +126,15 @@ MUTANTS = [
     dict(id="LB5-H4 write_size leaves the memory stream as the current output (KILL lb094)", file=W, targets=LB5T,
          old="        toldString(ld)\n",
          new="        nothing\n"),
-    dict(id="LB5-X1 write_size keeps the ISO flag set while writing (EQUIVALENT: src/pl-write.jl:2508, see the header)",
+    dict(id="LB5-X1 write_size keeps the ISO flag set while writing (EQUIVALENT: src/pl-write.jl:2514, see the header)",
          file=W, targets=LB5T,
-         equivalent="src/pl-write.jl:2508 — the ISO flag defaults to false (pl-prologflag.jl:1873) and is read on this path only by "
+         equivalent="src/pl-write.jl:2514 — the ISO flag defaults to false (pl-prologflag.jl:1873) and is read on this path only by "
                     "PL_scan_options' bare-atom test (pl-option.jl:120); no target row sets it",
          old="        clearPrologFlagMask!(ld, PLFLAG_ISO)\n",
          new="        nothing\n"),
-    dict(id="LB5-X2 write_size does not restore the flag mask (EQUIVALENT: src/pl-write.jl:2511, see the header)",
+    dict(id="LB5-X2 write_size does not restore the flag mask (EQUIVALENT: src/pl-write.jl:2517, see the header)",
          file=W, targets=LB5T,
-         equivalent="src/pl-write.jl:2511 — without the clear (LB5-X1) the mask is unchanged, so restoring it is a no-op",
+         equivalent="src/pl-write.jl:2517 — without the clear (LB5-X1) the mask is unchanged, so restoring it is a no-op",
          old="        ld.prolog_flag_mask = oldmask\n",
          new="        nothing\n"),
     # ── pl-option.c get_optval OPT_INT64 ──

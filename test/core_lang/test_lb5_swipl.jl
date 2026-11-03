@@ -8,12 +8,13 @@
 #   * Every answer line is swipl's, PINNED (swipl 10.1.19-1-gcbf4e189, LC_ALL=C.UTF-8, two runs byte-identical, evidence/LB5/lb5_rows.out of the
 #     LB5 branch); with `swipl` on PATH the live answers are compared with the pins too.
 #   * Streams are made with open_string/2, open('/dev/null', ...) and with_output_to/2; the rows that move a standard alias
-#     (al_*) put it back inside the row, so a row never leaves user_output, user_error or user_input captured.
+#     (al_*) put it back inside the row, so a row never leaves user_output, user_error or user_input captured
+#     (the kernel does not restore a captured standard alias when the stream closes: owner S2b, docs/architecture.md).
 #   * The /0 forms (at_end_of_stream/0, get_code/1, tab on user_input) read the process's standard input and are covered by the
 #     mutants through the /1 and /2 forms that share their function; NOT a row here.
 #   * UNVERIFIED on the kernel (nothing was compiled when these rows were written): every kernel answer; the gate decides. Rows whose
 #     setup is the likeliest to differ: the pos_noposn pair (the kernel's open/4 option record_position(false)), the al_* rows (the
-#     kernel closes a captured standard stream without restoring the alias: restoreStandardStream NOT STARTED).
+#     kernel closes a captured standard stream without restoring the alias: restoreStandardStream is S2b's).
 using Test, LogicKernel
 const LK = LogicKernel
 
@@ -85,7 +86,9 @@ function _lb5_swipl_lines(path::String, names::Vector{String})::Vector{String}
             "]), halt)).\n"
         )
         read(
-            pipeline(addenv(`swipl -q $f`, "LC_ALL" => "C.UTF-8"); stdin=devnull, stderr=devnull),
+            pipeline(
+                addenv(`swipl -q $f`, "LC_ALL" => "C.UTF-8"); stdin=devnull, stderr=devnull
+            ),
             String
         )
     end
@@ -101,22 +104,46 @@ lb5_p(1).
 # lb036-043 at_end_of_stream; lb044-056 get_code; lb057-073 put_code/put_char; lb074-096 write_size; lb097-106 set_stream alias; lb107-108 write_size widest line, line_count of an alias
 # (the group boundaries are the generator's: evidence/LB5/gen_rows.py reads these tuples, nothing else)
 const _LB5_CASES = [
-    ("lb001", raw"with_output_to(string(S), (write(abc), current_output(O), line_position(O, P), line_count(O, L))), R = S-P-L"),   # pos_abc: text, then position and count of the capture stream
-    ("lb002", raw"with_output_to(string(S), (write(ab), nl, write(c), current_output(O), line_position(O, P), line_count(O, L))), R = S-P-L"),   # pos_nl: after a newline
-    ("lb003", raw"with_output_to(string(S), (write(ab), put_char('\t'), current_output(O), line_position(O, P))), R = S-P"),   # pos_tab: a tab advances to the next multiple of 8
-    ("lb004", raw"open_string('ab\ncd', S), get_code(S, _), get_code(S, _), get_code(S, _), get_code(S, _), line_count(S, L), line_position(S, P), R = L-P"),   # pos_in: an input string stream, 4 characters read
+    (
+        "lb001",
+        raw"with_output_to(string(S), (write(abc), current_output(O), line_position(O, P), line_count(O, L))), R = S-P-L"
+    ),   # pos_abc: text, then position and count of the capture stream
+    (
+        "lb002",
+        raw"with_output_to(string(S), (write(ab), nl, write(c), current_output(O), line_position(O, P), line_count(O, L))), R = S-P-L"
+    ),   # pos_nl: after a newline
+    (
+        "lb003",
+        raw"with_output_to(string(S), (write(ab), put_char('\t'), current_output(O), line_position(O, P))), R = S-P"
+    ),   # pos_tab: a tab advances to the next multiple of 8
+    (
+        "lb004",
+        raw"open_string('ab\ncd', S), get_code(S, _), get_code(S, _), get_code(S, _), get_code(S, _), line_count(S, L), line_position(S, P), R = L-P"
+    ),   # pos_in: an input string stream, 4 characters read
     ("lb005", raw"open_string(abc, S), line_count(S, L), line_position(S, P), R = L-P"),   # pos_in0: an input string stream, nothing read
     ("lb006", raw"open_string(abc, S), ( line_count(S, 2) -> R = yes ; R = no )"),   # pos_unify: the count unified with a wrong value fails
     ("lb007", raw"line_count(foo, _)"),   # pos_nostream: an unknown stream: existence_error
     ("lb008", raw"line_position(_, _)"),   # pos_inst: an unbound stream: instantiation_error
-    ("lb009", raw"open_string(abc, S), close(S), catch(line_count(S, _), error(existence_error(A, _), _), R = ex(A))"),   # pos_closed: a closed stream: existence_error
-    ("lb010", raw"open('/dev/null', read, S, [record_position(false)]), catch((line_count(S, N), R = ok-N), error(permission_error(A, B, _), _), R = perm(A, B))"),   # pos_noposn: a stream without position: permission_error(property, position, S)
-    ("lb011", raw"open('/dev/null', read, S, [record_position(false)]), catch((line_position(S, N), R = ok-N), error(permission_error(A, B, _), _), R = perm(A, B))"),   # pos_noposn2: line_position of the same
+    (
+        "lb009",
+        raw"open_string(abc, S), close(S), catch(line_count(S, _), error(existence_error(A, _), _), R = ex(A))"
+    ),   # pos_closed: a closed stream: existence_error
+    (
+        "lb010",
+        raw"open('/dev/null', read, S, [record_position(false)]), catch((line_count(S, N), R = ok-N), error(permission_error(A, B, _), _), R = perm(A, B))"
+    ),   # pos_noposn: a stream without position: permission_error(property, position, S)
+    (
+        "lb011",
+        raw"open('/dev/null', read, S, [record_position(false)]), catch((line_position(S, N), R = ok-N), error(permission_error(A, B, _), _), R = perm(A, B))"
+    ),   # pos_noposn2: line_position of the same
     ("lb012", raw"current_output(S), is_stream(S), R = yes"),   # cur_out: current_output yields a stream
     ("lb013", raw"current_input(S), is_stream(S), R = yes"),   # cur_in: current_input yields a stream
     ("lb014", raw"current_output(A), current_output(B), ( A == B -> R = same ; R = diff )"),   # cur_out_same: two calls give the same stream
     ("lb015", raw"current_input(A), current_output(B), ( A == B -> R = same ; R = diff )"),   # cur_in_out: input and output differ
-    ("lb016", raw"current_output(O0), with_output_to(string(_), ( current_output(O1), ( O0 == O1 -> R = same ; R = diff ) ))"),   # cur_out_cap: inside with_output_to the current output is another stream
+    (
+        "lb016",
+        raw"current_output(O0), with_output_to(string(_), ( current_output(O1), ( O0 == O1 -> R = same ; R = diff ) ))"
+    ),   # cur_out_cap: inside with_output_to the current output is another stream
     ("lb017", raw"current_output(foo)"),   # cur_out_foo: an atom that is no stream
     ("lb018", raw"current_output(1)"),   # cur_out_int: an integer
     ("lb019", raw"current_input(foo)"),   # cur_in_foo: an atom that is no stream (input)
@@ -132,22 +159,52 @@ const _LB5_CASES = [
     ("lb029", raw"with_output_to(string(S), tab(2.0 * 2)), R = S"),   # tab_float2: tab(2.0 * 2)
     ("lb030", raw"with_output_to(string(S), (write(a), tab(3*2), write(b))), R = S"),   # tab_mul: tab(3*2)
     ("lb031", raw"tab(1 << 70)"),   # tab_big: tab of a number past int64
-    ("lb032", raw"with_output_to(string(S), (current_output(O), tab(O, 2), write(x), tab(O, 1+1), write(y))), R = S"),   # tab_str: tab on a given stream, expression too
+    (
+        "lb032",
+        raw"with_output_to(string(S), (current_output(O), tab(O, 2), write(x), tab(O, 1+1), write(y))), R = S"
+    ),   # tab_str: tab on a given stream, expression too
     ("lb033", raw"tab(foo, 2)"),   # tab_nostream: tab(foo, 2)
-    ("lb034", raw"catch((open_string(abc, S), tab(S, 2), R = ok), error(permission_error(A, B, _), _), R = perm(A, B))"),   # tab_instream: tab on an input stream
-    ("lb035", raw"with_output_to(string(_), (tab(5), current_output(O), line_position(O, P))), R = P"),   # tab_pos: the position after tab
+    (
+        "lb034",
+        raw"catch((open_string(abc, S), tab(S, 2), R = ok), error(permission_error(A, B, _), _), R = perm(A, B))"
+    ),   # tab_instream: tab on an input stream
+    (
+        "lb035",
+        raw"with_output_to(string(_), (tab(5), current_output(O), line_position(O, P))), R = P"
+    ),   # tab_pos: the position after tab
     ("lb036", raw"open_string('', S), ( at_end_of_stream(S) -> R = eof ; R = more )"),   # eos_empty: an empty input
     ("lb037", raw"open_string(a, S), ( at_end_of_stream(S) -> R = eof ; R = more )"),   # eos_more: one character left
-    ("lb038", raw"open_string(a, S), get_code(S, _), ( at_end_of_stream(S) -> R = eof ; R = more )"),   # eos_read: after reading it
-    ("lb039", raw"open_string(a, S), get_code(S, _), get_code(S, C), ( at_end_of_stream(S) -> R = C-eof ; R = C-more )"),   # eos_past: after reading past the end
+    (
+        "lb038",
+        raw"open_string(a, S), get_code(S, _), ( at_end_of_stream(S) -> R = eof ; R = more )"
+    ),   # eos_read: after reading it
+    (
+        "lb039",
+        raw"open_string(a, S), get_code(S, _), get_code(S, C), ( at_end_of_stream(S) -> R = C-eof ; R = C-more )"
+    ),   # eos_past: after reading past the end
     ("lb040", raw"at_end_of_stream(foo)"),   # eos_nostream: an unknown stream
     ("lb041", raw"at_end_of_stream(_)"),   # eos_inst: an unbound stream
-    ("lb042", raw"catch((current_output(O), at_end_of_stream(O), R = ok), error(permission_error(A, B, _), _), R = perm(A, B))"),   # eos_output: an output stream
-    ("lb043", raw"open_string(abc, S), close(S), catch(at_end_of_stream(S), error(existence_error(A, _), _), R = ex(A))"),   # eos_closed: a closed stream
-    ("lb044", raw"open_string(ab, S), get_code(S, A), get_code(S, B), get_code(S, C), R = [A, B, C]"),   # get2: codes in order, then end of file
-    ("lb045", raw"open_string(a, S), get_code(S, _), get_code(S, C1), get_code(S, C2), R = [C1, C2]"),   # get_past: reading past the end twice
+    (
+        "lb042",
+        raw"catch((current_output(O), at_end_of_stream(O), R = ok), error(permission_error(A, B, _), _), R = perm(A, B))"
+    ),   # eos_output: an output stream
+    (
+        "lb043",
+        raw"open_string(abc, S), close(S), catch(at_end_of_stream(S), error(existence_error(A, _), _), R = ex(A))"
+    ),   # eos_closed: a closed stream
+    (
+        "lb044",
+        raw"open_string(ab, S), get_code(S, A), get_code(S, B), get_code(S, C), R = [A, B, C]"
+    ),   # get2: codes in order, then end of file
+    (
+        "lb045",
+        raw"open_string(a, S), get_code(S, _), get_code(S, C1), get_code(S, C2), R = [C1, C2]"
+    ),   # get_past: reading past the end twice
     ("lb046", raw"open_string(ab, S), ( get_code(S, 97) -> R = yes ; R = no )"),   # get_match: a matching code
-    ("lb047", raw"open_string(ab, S), ( get_code(S, 98) -> X = yes ; X = no ), get_code(S, C), R = X-C"),   # get_nomatch: a non-matching code consumes the character
+    (
+        "lb047",
+        raw"open_string(ab, S), ( get_code(S, 98) -> X = yes ; X = no ), get_code(S, C), R = X-C"
+    ),   # get_nomatch: a non-matching code consumes the character
     ("lb048", raw"open_string('é', S), get_code(S, C), R = C"),   # get_wide: a wide character
     ("lb049", raw"open_string(ab, S), get_code(S, a)"),   # get_atom: get_code(S, a)
     ("lb050", raw"open_string(ab, S), get_code(S, end_of_file)"),   # get_eofatom: get_code(S, end_of_file)
@@ -155,25 +212,43 @@ const _LB5_CASES = [
     ("lb052", raw"open_string(ab, S), get_code(S, 1114112)"),   # get_big: get_code(S, 1114112)
     ("lb053", raw"get_code(foo, _)"),   # get_nostream: an unknown stream
     ("lb054", raw"get_code(_, _)"),   # get_inst: an unbound stream
-    ("lb055", raw"catch((current_output(O), get_code(O, _), R = ok), error(permission_error(A, B, _), _), R = perm(A, B))"),   # get_output: an output stream
+    (
+        "lb055",
+        raw"catch((current_output(O), get_code(O, _), R = ok), error(permission_error(A, B, _), _), R = perm(A, B))"
+    ),   # get_output: an output stream
     ("lb056", raw"open_string('', S), ( get_code(S, -1) -> R = yes ; R = no )"),   # get_eof_m1: -1 is accepted as the end-of-file answer
-    ("lb057", raw"with_output_to(string(S), (put_code(97), put_code(233), put_code(0x1F600))), R = S"),   # put_codes: three codes, one beyond the BMP
+    (
+        "lb057",
+        raw"with_output_to(string(S), (put_code(97), put_code(233), put_code(0x1F600))), R = S"
+    ),   # put_codes: three codes, one beyond the BMP
     ("lb058", raw"put_code(-1)"),   # put_neg: put_code(-1)
     ("lb059", raw"with_output_to(string(S), put_code(a)), R = S"),   # put_atom: put_code(a)
     ("lb060", raw"put_code(_)"),   # put_inst: put_code(_)
     ("lb061", raw"put_code(1114112)"),   # put_big: put_code(1114112)
     ("lb062", raw"put_code(97.0)"),   # put_float: put_code(97.0)
-    ("lb063", raw"catch((open_string(abc, S), put_code(S, 97), R = ok), error(permission_error(A, B, _), _), R = perm(A, B))"),   # put_input: put_code on an input stream
+    (
+        "lb063",
+        raw"catch((open_string(abc, S), put_code(S, 97), R = ok), error(permission_error(A, B, _), _), R = perm(A, B))"
+    ),   # put_input: put_code on an input stream
     ("lb064", raw"with_output_to(string(S), (current_output(O), put_code(O, 0))), R = S"),   # put_nul: put_code(S, 0)
-    ("lb065", raw"with_output_to(string(S), (current_output(O), put_code(O, 104), put_code(O, 105))), R = S"),   # put_str: put_code(S, C)
+    (
+        "lb065",
+        raw"with_output_to(string(S), (current_output(O), put_code(O, 104), put_code(O, 105))), R = S"
+    ),   # put_str: put_code(S, C)
     ("lb066", raw"put_code(foo, 97)"),   # put_nostream: an unknown stream
     ("lb067", raw"with_output_to(string(S), (put_char(a), put_char('é'))), R = S"),   # char1: put_char(a)
     ("lb068", raw"put_char(ab)"),   # char_long: put_char(ab)
     ("lb069", raw"with_output_to(string(S), put_char(1)), R = S"),   # char_int: put_char(1)
     ("lb070", raw"put_char(_)"),   # char_inst: put_char(_)
-    ("lb071", raw"with_output_to(string(S), (current_output(O), put_char(O, x), put_char(O, y))), R = S"),   # char2: put_char(S, x)
+    (
+        "lb071",
+        raw"with_output_to(string(S), (current_output(O), put_char(O, x), put_char(O, y))), R = S"
+    ),   # char2: put_char(S, x)
     ("lb072", raw"put_char(foo, x)"),   # char_nostream: put_char(foo, x)
-    ("lb073", raw"with_output_to(string(_), (put_code(97), put_code(10), put_code(98), current_output(O), line_position(O, P), line_count(O, L))), R = P-L"),   # put_pos: the position after put_code and a newline code
+    (
+        "lb073",
+        raw"with_output_to(string(_), (put_code(97), put_code(10), put_code(98), current_output(O), line_position(O, P), line_count(O, L))), R = P-L"
+    ),   # put_pos: the position after put_code and a newline code
     ("lb074", raw"write_size(foo(bar,baz), W, H, []), R = W-H"),   # ws_term: foo(bar,baz)
     ("lb075", raw"write_size('hello world', W, H, [quoted(true)]), R = W-H"),   # ws_quoted: quoted(true) adds the quotes
     ("lb076", raw"write_size('a\nbcd', W, H, []), R = W-H"),   # ws_nl: two lines
@@ -194,17 +269,41 @@ const _LB5_CASES = [
     ("lb091", raw"write_size('$VAR'(1), W, H, [numbervars(true)]), R = W-H"),   # ws_var: numbervars passes through to write_term
     ("lb092", raw"write_size([1,2,3], W, H, [max_width(7)]), R = W-H"),   # ws_list3: a list
     ("lb093", raw"write_size(x, W, H, [quoted(true), max_width(1)]), R = W-H"),   # ws_wq: quoted and a limit
-    ("lb094", raw"with_output_to(string(S), (write(a), write_size(bcd, W, H, []), write(e))), R = S-W-H"),   # ws_ctx: the current output is untouched by write_size
+    (
+        "lb094",
+        raw"with_output_to(string(S), (write(a), write_size(bcd, W, H, []), write(e))), R = S-W-H"
+    ),   # ws_ctx: the current output is untouched by write_size
     ("lb095", raw"write_size(f(x), W, H, [quoted]), R = W-H"),   # ws_bare: a bare option atom is write_term's
     ("lb096", raw"write_size(f(x), W, H, [no_such_option(1)]), R = W-H"),   # ws_unknown: an option write_term does not know
-    ("lb097", raw"current_output(OO), with_output_to(string(S), ( current_output(M), set_stream(M, alias(user_output)), write(user_output, hi), set_stream(OO, alias(user_output)) )), R = S"),   # al_out: user_output captured by a memory stream, then restored
-    ("lb098", raw"set_stream(user_error, alias(lb5_saved_err)), with_output_to(string(S), ( current_output(M), set_stream(M, alias(user_error)), write(user_error, hi), set_stream(lb5_saved_err, alias(user_error)) )), R = S"),   # al_err: user_error captured, then restored
-    ("lb099", raw"open_string(xy, S), set_stream(user_input, alias(lb5_saved_in)), set_stream(S, alias(user_input)), get_code(user_input, C1), get_char(user_input, C2), set_stream(lb5_saved_in, alias(user_input)), R = C1-C2"),   # al_in: user_input read from a string stream, then restored
-    ("lb100", raw"open_string(xy, S), current_input(I0), set_stream(user_input, alias(lb5_saved_in2)), set_stream(S, alias(user_input)), current_input(I1), set_stream(lb5_saved_in2, alias(user_input)), ( I0 == I1 -> R = same ; R = diff )"),   # al_in_cur: the current input does not move with user_input
-    ("lb101", raw"current_output(OO), with_output_to(string(_), ( current_output(M), set_stream(M, alias(user_output)), set_stream(OO, alias(user_output)) )), current_output(O2), ( OO == O2 -> R = same ; R = diff )"),   # al_out_cur: the current output does not move with user_output
+    (
+        "lb097",
+        raw"current_output(OO), with_output_to(string(S), ( current_output(M), set_stream(M, alias(user_output)), write(user_output, hi), set_stream(OO, alias(user_output)) )), R = S"
+    ),   # al_out: user_output captured by a memory stream, then restored
+    (
+        "lb098",
+        raw"set_stream(user_error, alias(lb5_saved_err)), with_output_to(string(S), ( current_output(M), set_stream(M, alias(user_error)), write(user_error, hi), set_stream(lb5_saved_err, alias(user_error)) )), R = S"
+    ),   # al_err: user_error captured, then restored
+    (
+        "lb099",
+        raw"open_string(xy, S), set_stream(user_input, alias(lb5_saved_in)), set_stream(S, alias(user_input)), get_code(user_input, C1), get_char(user_input, C2), set_stream(lb5_saved_in, alias(user_input)), R = C1-C2"
+    ),   # al_in: user_input read from a string stream, then restored
+    (
+        "lb100",
+        raw"open_string(xy, S), current_input(I0), set_stream(user_input, alias(lb5_saved_in2)), set_stream(S, alias(user_input)), current_input(I1), set_stream(lb5_saved_in2, alias(user_input)), ( I0 == I1 -> R = same ; R = diff )"
+    ),   # al_in_cur: the current input does not move with user_input
+    (
+        "lb101",
+        raw"current_output(OO), with_output_to(string(_), ( current_output(M), set_stream(M, alias(user_output)), set_stream(OO, alias(user_output)) )), current_output(O2), ( OO == O2 -> R = same ; R = diff )"
+    ),   # al_out_cur: the current output does not move with user_output
     ("lb102", raw"set_stream(foo, alias(user_output))"),   # al_nostream: an unknown stream
-    ("lb103", raw"current_output(O), set_stream(user_input, alias(lb5_saved_in3)), catch((set_stream(O, alias(user_input)), R = ok), error(Err, _), ( Err = permission_error(A, B, _) -> R = perm(A, B) ; R = Err )), set_stream(lb5_saved_in3, alias(user_input))"),   # al_out_as_in: an output stream as user_input
-    ("lb104", raw"open_string(x, S), current_output(OO), catch((set_stream(S, alias(user_output)), R = ok), error(Err, _), ( Err = permission_error(A, B, _) -> R = perm(A, B) ; R = Err )), set_stream(OO, alias(user_output))"),   # al_in_as_out: an input stream as user_output
+    (
+        "lb103",
+        raw"current_output(O), set_stream(user_input, alias(lb5_saved_in3)), catch((set_stream(O, alias(user_input)), R = ok), error(Err, _), ( Err = permission_error(A, B, _) -> R = perm(A, B) ; R = Err )), set_stream(lb5_saved_in3, alias(user_input))"
+    ),   # al_out_as_in: an output stream as user_input
+    (
+        "lb104",
+        raw"open_string(x, S), current_output(OO), catch((set_stream(S, alias(user_output)), R = ok), error(Err, _), ( Err = permission_error(A, B, _) -> R = perm(A, B) ; R = Err )), set_stream(OO, alias(user_output))"
+    ),   # al_in_as_out: an input stream as user_output
     ("lb105", raw"current_output(O), set_stream(O, alias(1))"),   # al_int: alias(1)
     ("lb106", raw"current_output(O), set_stream(O, alias(_))"),   # al_inst: alias(_)
     ("lb107", raw"write_size('abcd\nx', W, H, []), R = W-H"),   # ws_widest: the widest line is not the last
@@ -400,15 +499,37 @@ end
     @test count(l -> occursin("c" * raised * "/1(", l), _LB5_PINNED) >= 25    # the error rows
     @test count(l -> occursin("c" * _lb5_codes("perm") * "/2(", l), _LB5_PINNED) == 4   # the permission rows
     # a few values the family stands on: the capture stream's text, position and count; the tab text; the codes; write_size
-    @test any(l -> startswith(l, "t_lb001 ") && occursin("s" * _lb5_codes("abc") * ",i3),i1)", l), _LB5_PINNED)
+    @test any(
+        l -> startswith(l, "t_lb001 ") && occursin("s" * _lb5_codes("abc") * ",i3),i1)", l),
+        _LB5_PINNED
+    )
     @test any(l -> startswith(l, "t_lb002 ") && endswith(l, ",i1),i2))"), _LB5_PINNED)
-    @test any(l -> startswith(l, "t_lb022 ") && occursin("s" * _lb5_codes("a   b"), l), _LB5_PINNED)
-    @test any(l -> startswith(l, "t_lb044 ") && occursin("i97,", l) && occursin("i-1", l), _LB5_PINNED)
+    @test any(
+        l -> startswith(l, "t_lb022 ") && occursin("s" * _lb5_codes("a   b"), l),
+        _LB5_PINNED
+    )
+    @test any(
+        l -> startswith(l, "t_lb044 ") && occursin("i97,", l) && occursin("i-1", l),
+        _LB5_PINNED
+    )
     @test any(l -> startswith(l, "t_lb057 ") && occursin("128512", l), _LB5_PINNED)
-    @test any(l -> startswith(l, "t_lb074 ") && endswith(l, "(c" * _lb5_codes("-") * "/2(i12,i1))"), _LB5_PINNED)
-    @test any(l -> startswith(l, "t_lb107 ") && endswith(l, "(c" * _lb5_codes("-") * "/2(i4,i2))"), _LB5_PINNED)
-    @test any(l -> startswith(l, "t_lb108 ") && occursin("a" * _lb5_codes("yes"), l), _LB5_PINNED)
-    @test any(l -> startswith(l, "t_lb097 ") && occursin("s" * _lb5_codes("hi"), l), _LB5_PINNED)
+    @test any(
+        l ->
+            startswith(l, "t_lb074 ") &&
+            endswith(l, "(c" * _lb5_codes("-") * "/2(i12,i1))"),
+        _LB5_PINNED
+    )
+    @test any(
+        l ->
+            startswith(l, "t_lb107 ") && endswith(l, "(c" * _lb5_codes("-") * "/2(i4,i2))"),
+        _LB5_PINNED
+    )
+    @test any(
+        l -> startswith(l, "t_lb108 ") && occursin("a" * _lb5_codes("yes"), l), _LB5_PINNED
+    )
+    @test any(
+        l -> startswith(l, "t_lb097 ") && occursin("s" * _lb5_codes("hi"), l), _LB5_PINNED
+    )
 end
 
 @testset "the pins are swipl's (live, when swipl is on PATH)" begin
