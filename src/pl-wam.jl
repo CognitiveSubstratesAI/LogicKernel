@@ -923,10 +923,11 @@ function query_answers(
         throw(ArgumentError("query_answers: limit must be nothing or ≥ 0, got $limit"))
     gd = db.GD::PL_global_data{T}                   # the engine's database (set when it was made)
     fid = PL_open_foreign_frame(db)
-    t = PL_new_term_ref(db)
+    # the host's entry: its term references through the API stubs, as a foreign caller's (ENG3)
+    t = PL_new_term_ref_api(db)
     putSlotValue!(db, t + 1, goal)                  # the goal as ONE term, as PL_call is given it
     # pl-pro.c callProlog: the module qualifiers stripped, then the functor and the arguments
-    g = PL_new_term_ref(db)
+    g = PL_new_term_ref_api(db)
     ok, m = PL_strip_module(gd, db, t, 0, g)
     na = ok ? PL_get_functor(db, g) : nothing       # PL_get_functor(g, &fd): on the words (f3b-5b)
     if na === nothing
@@ -938,7 +939,7 @@ function query_answers(
         )
     end
     name, arity = na
-    a = PL_new_term_refs(db, arity)
+    a = PL_new_term_refs_api(db, arity)
     for n in 0:(arity - 1)
         _PL_get_arg(db, n + 1, g, a + n)
     end

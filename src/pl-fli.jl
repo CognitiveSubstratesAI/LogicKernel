@@ -11,9 +11,12 @@
 # innermost foreign frame, which counts them. Since V5a2, the `PL_*` functions the first built-ins
 # and the foreign call path use, under upstream's names, on `(ld, term_t)`.
 
-# The check upstream's API entry points make (fli:535-548): a term reference is made inside a
-# foreign frame newer than the running Prolog frame — never while a query's answer has been left
-# without one (after `PL_next_solution` returned a deterministic last answer and was called again).
+# The check upstream's API stubs make (fli:535-550): a term reference is made inside a foreign frame
+# newer than the running Prolog frame — never while a query's answer has been left without one (after
+# `PL_next_solution` returned a deterministic last answer and was called again). Only the stubs check
+# (`PL_new_term_ref_api`, `PL_new_term_refs_api` below), the foreign-interface surface: the kernel's
+# own ports call the LD forms, which make no check, as upstream's C files do (pl-fli.h:72-74 maps
+# their `PL_new_term_ref()`/`PL_new_term_refs(n)` to the LDFUNC forms) — since ENG3 (audit D-0379).
 function _check_foreign_environment(ld::PL_local_data{T}, what::String)::Nothing where {T}
     env = ld.environment_frame
     if env != 0 && ld.fliframes[ld.fli_context].base <= ld.frames[env].base
@@ -23,12 +26,11 @@ function _check_foreign_environment(ld::PL_local_data{T}, what::String)::Nothing
 end
 
 # PORT: pl-fli.c PL_new_term_refs
+# (pl-fli.c:450-476, the LD form: no foreign-environment check — `PL_new_term_refs_api` makes it.)
 # DIVERGES: `n` positions. Each new reference holds a fresh variable: `setVar` of a cell is a new
-# variable key here (decision 2). `O_CHECK_TERM_REFS` is `O_DEBUG` only. The foreign-environment
-# check is the API entry point's (`PL_new_term_refs`, fli:535-548), made here.
+# variable key here (decision 2). `O_CHECK_TERM_REFS` is `O_DEBUG` only.
 "`n` new term references, each holding a fresh variable; the first one, or 0 (pl-fli.c)."
 function PL_new_term_refs(ld::PL_local_data{T}, n::Int)::Int where {T}
-    _check_foreign_environment(ld, "PL_new_term_refs")
     if !ensureLocalSpace(ld, n)
         return 0
     end
@@ -65,15 +67,44 @@ function new_term_ref(ld::PL_local_data{T})::Int where {T}
 end
 
 # PORT: pl-fli.c PL_new_term_ref
-# DIVERGES: the foreign-environment check is the API entry point's (fli:544-549), made here.
+# (pl-fli.c:503-508, the LD form the kernel's ports call: no foreign-environment check.)
 "A new term reference holding a fresh variable, or 0 (pl-fli.c)."
 function PL_new_term_ref(ld::PL_local_data{T})::Int where {T}
-    _check_foreign_environment(ld, "PL_new_term_ref")
     if !ensureLocalSpace(ld, 1)
         return 0
     end
 
     return new_term_ref(ld)
+end
+
+# PORT: pl-fli.c PL_new_term_refs as PL_new_term_refs_api
+# (pl-fli.c:535-541, `API_STUB(term_t)(PL_new_term_refs)(size_t n)`.)
+# DIVERGES: a name of its own — upstream's stub and its LD form share the name, the LDFUNC macro of
+# pl-fli.h:74 tells them apart; the local data is an argument (upstream: `GET_LD`).
+"""
+`PL_new_term_refs` as a foreign caller reaches it (pl-fli.c's API stub): an error while no foreign
+frame is newer than the running Prolog frame, else `n` new term references (the first one, or 0).
+"""
+function PL_new_term_refs_api(ld::PL_local_data{T}, n::Int)::Int where {T}
+    # if ( (void*)fli_context <= (void*)environment_frame ) fatalError("PL_new_term_refs(): …")
+    _check_foreign_environment(ld, "PL_new_term_refs")
+
+    return PL_new_term_refs(ld, n)
+end
+
+# PORT: pl-fli.c PL_new_term_ref as PL_new_term_ref_api
+# (pl-fli.c:544-550, `API_STUB(term_t)(PL_new_term_ref)()`.)
+# DIVERGES: a name of its own — upstream's stub and its LD form share the name, the LDFUNC macro of
+# pl-fli.h:72 tells them apart; the local data is an argument (upstream: `GET_LD`).
+"""
+`PL_new_term_ref` as a foreign caller reaches it (pl-fli.c's API stub): an error while no foreign
+frame is newer than the running Prolog frame, else a new term reference (or 0).
+"""
+function PL_new_term_ref_api(ld::PL_local_data{T})::Int where {T}
+    # if ( (void*)fli_context <= (void*)environment_frame ) fatalError("PL_new_term_ref(): …")
+    _check_foreign_environment(ld, "PL_new_term_ref")
+
+    return PL_new_term_ref(ld)
 end
 
 # PORT: pl-fli.c PL_reset_term_refs
