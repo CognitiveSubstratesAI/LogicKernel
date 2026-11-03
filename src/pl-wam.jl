@@ -2304,6 +2304,11 @@ function _abandon_query(ld::PL_local_data{T}, qid::Int)::Nothing where {T}
     return nothing
 end
 
+# PORT: pl-vmi.c FUNCTOR_drecover_and_rethrow2
+# (the handle itself is generated into pl-funct.ih from src/ATOMS; b_throw_resume wraps an unwind(_) ball with it)
+"The functor word of `'\$recover_and_rethrow'/2` (pl-funct.ih `FUNCTOR_drecover_and_rethrow2`): the same in every database."
+const FUNCTOR_drecover_and_rethrow2 = builtin_functor("drecover_and_rethrow", 2)
+
 # PORT: pl-wam.c PL_next_solution_guarded
 # DIVERGES: upstream's `switch` build (`!VMCODE_IS_ADDRESS`; user, 2026-10-05), as ONE function: every
 # instruction and helper of pl-vmi.c is a `@label` here, with its `# PORT: pl-vmi.c` marker, in

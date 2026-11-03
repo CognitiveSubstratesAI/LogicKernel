@@ -3612,10 +3612,6 @@ const FUNCTOR_hat2 = builtin_functor("hat", 2)
 # (the handle itself is generated into pl-funct.ih from src/ATOMS; free_variables_loop uses it)
 "The functor word of `:/2` (pl-funct.ih `FUNCTOR_colon2`): the same in every database."
 const FUNCTOR_colon2 = builtin_functor("colon", 2)
-# PORT: pl-vmi.c FUNCTOR_drecover_and_rethrow2
-# (the handle itself is generated into pl-funct.ih from src/ATOMS; b_throw_resume wraps an unwind(_) ball with it)
-"The functor word of `'\$recover_and_rethrow'/2` (pl-funct.ih `FUNCTOR_drecover_and_rethrow2`): the same in every database."
-const FUNCTOR_drecover_and_rethrow2 = builtin_functor("drecover_and_rethrow", 2)
 
 # PORT: pl-prims.c ph_visitedWord as ph_visited_cells
 # (`ph_visited(f, ph)` on the functor cell at global position `c`)
