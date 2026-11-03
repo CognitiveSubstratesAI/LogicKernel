@@ -309,3 +309,21 @@ origin/main fetched at start: STILL f08167f (ENG3 NOT landed): T3 NOT possible (
    = record], left out, ORIGINAL, tests/mutants). FOUND and FIXED: src/pl-incl.jl had `# PORT: pl-tabling.h` and `# PORT: pl-wrap.h`
    markers but no matching UPSTREAM header lines (port_check MARKER-FILE-UNKNOWN): the two UPSTREAM lines are added to the file header.
    docs/port_inventory.md NOT regenerated (the gate does; the inventory's counts and the new files' rows come with it).
+   Commit ae550dc. Writer 5 hit the 150k cap here (forced hand-back); this section 4 (ready list) is in the handoff commit after it.
+4. READY-FOR-GATE LIST (final state). CAN THE GATE START? NO: T3 is NOT on the branch (ENG3 not landed; origin/main = f08167f at the
+   start of writer 5). Without S_CALLWRAPPER/S_TABLED/S_WRAP and `code_data.wrapper`, src/pl-wrap.jl, the isCallWrapper branch of
+   pl-supervisor.jl and `unify_closure` do not load. Order: (a) ENG3 lands, `git fetch origin`, `git rebase origin/main`, T3 by a new
+   writer (opcodes at the PIN's VMI order S_CALLWRAPPER, S_TABLED, S_WRAP; 7th block `wrapper` in PL_code_data + initSupervisors + the idle
+   index_context literal at pl-global.jl ~611; named-refusal bodies in pl-wam.jl; ONE declared opcode outside VMI_RUN: test/foreign/test_query.jl:305-330;
+   no test or tool pins 159..165 [writer 2's grep]; b2 holds 159..165, the second to land renumbers). (b) then the gate, D-order:
+   `warm.sh inventory` (commit the generated docs/port_inventory.md; WHATS-HERE-UPSTREAM and MARKER-FILE-UNKNOWN were checked by reading only),
+   fmt via warm.sh send (RE-FIT the mutants' anchors fmt rewraps), `warm.sh check` (struct change: cold compile), test/core_lang/test_tabling_min_swipl.jl
+   on all three term types, test/test_type_discipline.jl, test_atom_table.jl (the `closure` atom), test_pr1_swipl.jl (pr93) and test_event_swipl.jl,
+   test_procedures.jl, test_assert_swipl.jl (freeCodesDefinition! callers), `tools/pkgtest_way.sh test/core_lang/test_tabling_min_swipl.jl` (one at a time),
+   alloc pins x3 (239/377/433; test_query 347 on f08167f / 365 after ENG3; the 2-arg freeCodesDefinition! row :1416 is noalloc=true and now has a throw branch),
+   static analysis (JET + AllocCheck), crash-term grep over diff + messages, push mutants/TAB1MIN and gate/tab1min at the SAME SHA.
+   Only the gate can check (writers could not): `ClauseList{T}()` + `cl.args =`, `PL_unify_functor` with a blob T-term as name, `atomValue` on a blob word,
+   `assert_term!` accepting a blob-headed compound (tmw12), whether `closure` shifts a pinned atom count, `blob/2` of the closure (tmw02-04), `abolish` of a
+   dynamic tm_x22 clearing the properties (tma22), D6's white-box `isempty(c06.supervisor_crefs)`.
+   Commits on wip/tab1min (writer 5): 5a6a6de mutants (33), c9edf71 manifest rows, ae550dc docs block.
+   Daemons: writer 5 started none, ran no Julia.
