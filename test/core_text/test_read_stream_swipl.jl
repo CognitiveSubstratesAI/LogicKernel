@@ -106,11 +106,20 @@ rt_serr_formal(G, R) :- catch((G, R = ok), error(F, _), R = raised(F)).
 # (id, goal), run IN ORDER; `R` is the answer
 const _RT_CASES = [
     # read/2 from a string stream and a file stream
-    ("rt01", raw"""rt_str('foo(X,Y,X). bar.', S), read(S,A), read(S,B), read(S,C), read(S,D), R = [A,B,C,D]"""),
+    (
+        "rt01",
+        raw"""rt_str('foo(X,Y,X). bar.', S), read(S,A), read(S,B), read(S,C), read(S,D), R = [A,B,C,D]"""
+    ),
     ("rt02", raw"""rt_str('42.', S), read(S,T), R = T"""),
-    ("rt03", raw"""rt_str('f("ab", \'c d\', 0\'a, 1.5, [1,2|T], - 1, -(1), 1r3).', S), read(S,T), R = T"""),
+    (
+        "rt03",
+        raw"""rt_str('f("ab", \'c d\', 0\'a, 1.5, [1,2|T], - 1, -(1), 1r3).', S), read(S,T), R = T"""
+    ),
     ("rt04", raw"""rt_str('', S), read(S,A), read(S,B), R = [A,B]"""),
-    ("rt05", raw"""rt_str('   % only a comment\n /* and another */ ', S), read(S,T), R = T"""),
+    (
+        "rt05",
+        raw"""rt_str('   % only a comment\n /* and another */ ', S), read(S,T), R = T"""
+    ),
     ("rt06", raw"""rt_str('foo(1).', S), read(S, foo(2)), R = yes"""),
     ("rt07", raw"""rt_str('a. b.', S), read(S,_), read(S,b), R = yes"""),
     ("rt08", raw"""T = foo(_), rt_str('foo(7).', S), read(S,T), R = T"""),
@@ -123,7 +132,10 @@ const _RT_CASES = [
     ("rt15", raw"""rt_bin('A', S), read(S,_), R = yes"""),
     ("rt16", raw"""rt_bin('', S), read(S,T), R = T"""),
     ("rt17", raw"""rt_bin('foo(X). ', S), read(S,T), R = T"""),
-    ("rt18", raw"""rt_file('foo(X, Y).\nbar.\n', S), read(S,A), read(S,B), read(S,C), R = [A,B,C]"""),
+    (
+        "rt18",
+        raw"""rt_file('foo(X, Y).\nbar.\n', S), read(S,A), read(S,B), read(S,C), R = [A,B,C]"""
+    ),
     ("rt19", raw"""rt_str('a. b.', S), read(S, a), read(S, c), R = yes"""),
     ("rt20", raw"""rt_str('a. b.', S), read(S, f(_)), R = yes"""),
     # read/1, read_term/2 and read/2 on user_input: stdin is /dev/null
@@ -134,19 +146,49 @@ const _RT_CASES = [
     ("rt25", raw"""read_term(T, foo), R = T"""),
     ("rt26", raw"""read_term(T, [variable_names(Vs)|_]), R = T-Vs"""),
     # read_term/3: variable_names, variables, singletons
-    ("rt30", raw"""rt_str('foo(X,Y,X,_Z,_).', S), read_term(S,T,[variable_names(V)]), R = T-V"""),
-    ("rt31", raw"""rt_str('foo(X,Y,X,_Z,_).', S), read_term(S,T,[variables(V)]), R = T-V"""),
-    ("rt32", raw"""rt_str('foo(X,Y,X,_Z,_).', S), read_term(S,T,[singletons(V)]), R = T-V"""),
-    ("rt33", raw"""rt_str('foo(X,Y,X,_Z,_).', S), read_term(S,T,[variable_names(N),variables(V),singletons(G)]), R = T-N-V-G"""),
-    ("rt34", raw"""rt_str('foo(X,Y,X,_).', S), read_term(S,T,[singletons(warning)]), R = T"""),
-    ("rt35", raw"""rt_str('foo(X,_Y,_Y,__Z).', S), read_term(S,T,[singletons(G)]), R = T-G"""),
-    ("rt36", raw"""rt_str('foo(a,b).', S), read_term(S,T,[variable_names(N),variables(V),singletons(G)]), R = T-N-V-G"""),
-    ("rt37", raw"""rt_str('', S), read_term(S,T,[variable_names(N),variables(V),singletons(G),subterm_positions(P),term_position(TP)]), R = T-N-V-G-P-TP"""),
+    (
+        "rt30",
+        raw"""rt_str('foo(X,Y,X,_Z,_).', S), read_term(S,T,[variable_names(V)]), R = T-V"""
+    ),
+    (
+        "rt31",
+        raw"""rt_str('foo(X,Y,X,_Z,_).', S), read_term(S,T,[variables(V)]), R = T-V"""
+    ),
+    (
+        "rt32",
+        raw"""rt_str('foo(X,Y,X,_Z,_).', S), read_term(S,T,[singletons(V)]), R = T-V"""
+    ),
+    (
+        "rt33",
+        raw"""rt_str('foo(X,Y,X,_Z,_).', S), read_term(S,T,[variable_names(N),variables(V),singletons(G)]), R = T-N-V-G"""
+    ),
+    (
+        "rt34",
+        raw"""rt_str('foo(X,Y,X,_).', S), read_term(S,T,[singletons(warning)]), R = T"""
+    ),
+    (
+        "rt35",
+        raw"""rt_str('foo(X,_Y,_Y,__Z).', S), read_term(S,T,[singletons(G)]), R = T-G"""
+    ),
+    (
+        "rt36",
+        raw"""rt_str('foo(a,b).', S), read_term(S,T,[variable_names(N),variables(V),singletons(G)]), R = T-N-V-G"""
+    ),
+    (
+        "rt37",
+        raw"""rt_str('', S), read_term(S,T,[variable_names(N),variables(V),singletons(G),subterm_positions(P),term_position(TP)]), R = T-N-V-G-P-TP"""
+    ),
     ("rt38", raw"""rt_str('f(X).', S), read_term(S,T,[variable_names(['X'=1])]), R = T"""),
     ("rt39", raw"""rt_str('f(X).', S), read_term(S,T,[variable_names(foo)]), R = T"""),
     ("rt40", raw"""rt_str('f(X).', S), read_term(S,T,[variables(foo)]), R = T"""),
-    ("rt41", raw"""rt_str('f(X,Y).', S), read_term(S,T,[variable_names(['X'=A|B])]), R = T-A-B"""),
-    ("rt42", raw"""rt_str('f(X).', S), read_term(S,T,[variable_names(N),variable_names(M)]), R = T-N-M"""),
+    (
+        "rt41",
+        raw"""rt_str('f(X,Y).', S), read_term(S,T,[variable_names(['X'=A|B])]), R = T-A-B"""
+    ),
+    (
+        "rt42",
+        raw"""rt_str('f(X).', S), read_term(S,T,[variable_names(N),variable_names(M)]), R = T-N-M"""
+    ),
     # read_term/3: option errors
     ("rt50", raw"""rt_str('f(X).', S), read_term(S,T,foo), R = T"""),
     ("rt51", raw"""rt_str('f(X).', S), read_term(S,T,[variable_names(V)|_]), R = T-V"""),
@@ -165,8 +207,14 @@ const _RT_CASES = [
     ("rt64", raw"""rt_str('f(X).', S), read_term(S,T,[character_escapes(maybe)]), R = T"""),
     ("rt65", raw"""rt_str('f(X).', S), read_term(S,T,[term_position(foo)]), R = T"""),
     ("rt66", raw"""rt_str('f(X).', S), read_term(S,T,[subterm_positions(foo)]), R = T"""),
-    ("rt67", raw"""rt_str('f(X).', S), read_term(S,T,[variable_names(V),variable_names(W)]), R = T-V-W"""),
-    ("rt68", raw"""rt_str('f(X).', S), read_term(S,T,[variable_names(V), module(M)]), R = T-V-M"""),
+    (
+        "rt67",
+        raw"""rt_str('f(X).', S), read_term(S,T,[variable_names(V),variable_names(W)]), R = T-V-W"""
+    ),
+    (
+        "rt68",
+        raw"""rt_str('f(X).', S), read_term(S,T,[variable_names(V), module(M)]), R = T-V-M"""
+    ),
     # read_term/3: stream errors
     ("rt70", raw"""read_term(_, T, []), R = T"""),
     ("rt71", raw"""read_term(foo, T, []), R = T"""),
@@ -182,8 +230,14 @@ const _RT_CASES = [
     ("rt82", raw"""rt_file('a b. c.', S), read_term(S,T,[syntax_errors(dec10)]), R = T"""),
     ("rt83", raw"""rt_file('a b. c.', S), read_term(S,T,[syntax_errors(error)]), R = T"""),
     ("rt84", raw"""rt_file('a b. c.', S), catch(read(S,_), _, true), read(S,T), R = T"""),
-    ("rt85", raw"""rt_file('a b. c.', S), ( read_term(S,_,[syntax_errors(fail)]) -> true ; true ), read_term(S,U,[]), R = U"""),
-    ("rt86", raw"""rt_file('a b. c.', S), ( read_term(S,_,[syntax_errors(quiet)]) -> true ; true ), read_term(S,U,[]), R = U"""),
+    (
+        "rt85",
+        raw"""rt_file('a b. c.', S), ( read_term(S,_,[syntax_errors(fail)]) -> true ; true ), read_term(S,U,[]), R = U"""
+    ),
+    (
+        "rt86",
+        raw"""rt_file('a b. c.', S), ( read_term(S,_,[syntax_errors(quiet)]) -> true ; true ), read_term(S,U,[]), R = U"""
+    ),
     # syntax errors on a file stream: the ball and its location
     ("rt100", raw"""rt_serr((rt_file('a b.', S), read(S,_)), R)"""),
     ("rt101", raw"""rt_serr((rt_file('foo(.', S), read(S,_)), R)"""),
@@ -201,45 +255,129 @@ const _RT_CASES = [
     ("rt113", raw"""rt_serr((rt_file('/* abc', S), read(S,_)), R)"""),
     ("rt114", raw"""rt_serr((rt_file('foo.bar', S), read(S,_), read(S,_)), R)"""),
     ("rt115", raw"""rt_serr((rt_file('X = [a,b', S), read(S,_)), R)"""),
-    ("rt116", raw"""rt_serr((rt_file('a b.', S), read_term(S,_,[syntax_errors(error)])), R)"""),
-    ("rt117", raw"""rt_serr((rt_file('a b.', S), read_term(S,_,[syntax_errors(bar)])), R)"""),
-    ("rt118", raw"""rt_serr((rt_file('a b.', S), read_term(S,_,[term_position(P), subterm_positions(Q)])), R)"""),
+    (
+        "rt116",
+        raw"""rt_serr((rt_file('a b.', S), read_term(S,_,[syntax_errors(error)])), R)"""
+    ),
+    (
+        "rt117",
+        raw"""rt_serr((rt_file('a b.', S), read_term(S,_,[syntax_errors(bar)])), R)"""
+    ),
+    (
+        "rt118",
+        raw"""rt_serr((rt_file('a b.', S), read_term(S,_,[term_position(P), subterm_positions(Q)])), R)"""
+    ),
     # positions
-    ("rt130", raw"""rt_str('  foo(X, bar).', S), read_term(S,T,[term_position(P)]), R = T-P"""),
-    ("rt131", raw"""rt_str('  foo(X, bar).', S), read_term(S,T,[subterm_positions(P)]), R = T-P"""),
-    ("rt132", raw"""rt_file('  foo(X, bar).', S), read_term(S,T,[term_position(P)]), R = T-P"""),
+    (
+        "rt130",
+        raw"""rt_str('  foo(X, bar).', S), read_term(S,T,[term_position(P)]), R = T-P"""
+    ),
+    (
+        "rt131",
+        raw"""rt_str('  foo(X, bar).', S), read_term(S,T,[subterm_positions(P)]), R = T-P"""
+    ),
+    (
+        "rt132",
+        raw"""rt_file('  foo(X, bar).', S), read_term(S,T,[term_position(P)]), R = T-P"""
+    ),
     ("rt133", raw"""rt_str('\n\n  x.', S), read_term(S,T,[term_position(P)]), R = T-P"""),
-    ("rt134", raw"""rt_str('foo(a,b). x', S), read_term(S,T,[subterm_positions(P)]), R = T-P"""),
-    ("rt135", raw"""rt_str('[a,b|C]. ', S), read_term(S,T,[subterm_positions(P)]), R = T-P"""),
-    ("rt136", raw"""rt_str('- 1 + {x} - "s" - \'q\'(Z) - [].', S), read_term(S,T,[subterm_positions(P)]), R = T-P"""),
-    ("rt137", raw"""rt_str('a. b.\nc.', S), read_term(S,_,[term_position(P1)]), read_term(S,_,[term_position(P2)]), read_term(S,_,[term_position(P3)]), R = [P1,P2,P3]"""),
-    ("rt138", raw"""rt_file('a. b.\nc.', S), read_term(S,_,[term_position(P1)]), read_term(S,_,[term_position(P2)]), read_term(S,_,[term_position(P3)]), R = [P1,P2,P3]"""),
-    ("rt139", raw"""rt_str('x.', S), read_term(S,_,[]), read_term(S,T,[term_position(P),subterm_positions(Q)]), R = T-P-Q"""),
-    ("rt140", raw"""rt_str('"s" + \'a b\' + 0\'c + 1.5 + a(B).', S), read_term(S,T,[subterm_positions(P)]), R = T-P"""),
-    ("rt141", raw"""rt_str('(a , b) :- {c}.', S), read_term(S,T,[subterm_positions(P)]), R = T-P"""),
+    (
+        "rt134",
+        raw"""rt_str('foo(a,b). x', S), read_term(S,T,[subterm_positions(P)]), R = T-P"""
+    ),
+    (
+        "rt135",
+        raw"""rt_str('[a,b|C]. ', S), read_term(S,T,[subterm_positions(P)]), R = T-P"""
+    ),
+    (
+        "rt136",
+        raw"""rt_str('- 1 + {x} - "s" - \'q\'(Z) - [].', S), read_term(S,T,[subterm_positions(P)]), R = T-P"""
+    ),
+    (
+        "rt137",
+        raw"""rt_str('a. b.\nc.', S), read_term(S,_,[term_position(P1)]), read_term(S,_,[term_position(P2)]), read_term(S,_,[term_position(P3)]), R = [P1,P2,P3]"""
+    ),
+    (
+        "rt138",
+        raw"""rt_file('a. b.\nc.', S), read_term(S,_,[term_position(P1)]), read_term(S,_,[term_position(P2)]), read_term(S,_,[term_position(P3)]), R = [P1,P2,P3]"""
+    ),
+    (
+        "rt139",
+        raw"""rt_str('x.', S), read_term(S,_,[]), read_term(S,T,[term_position(P),subterm_positions(Q)]), R = T-P-Q"""
+    ),
+    (
+        "rt140",
+        raw"""rt_str('"s" + \'a b\' + 0\'c + 1.5 + a(B).', S), read_term(S,T,[subterm_positions(P)]), R = T-P"""
+    ),
+    (
+        "rt141",
+        raw"""rt_str('(a , b) :- {c}.', S), read_term(S,T,[subterm_positions(P)]), R = T-P"""
+    ),
     ("rt142", raw"""rt_str('\\+ a.', S), read_term(S,T,[subterm_positions(P)]), R = T-P"""),
-    ("rt143", raw"""rt_str('f(- , a).', S), read_term(S,T,[subterm_positions(P)]), R = T-P"""),
+    (
+        "rt143",
+        raw"""rt_str('f(- , a).', S), read_term(S,T,[subterm_positions(P)]), R = T-P"""
+    ),
     ("rt144", raw"""rt_str('[].', S), read_term(S,T,[subterm_positions(P)]), R = T-P"""),
     # the other options
-    ("rt150", raw"""rt_str('f("ab", `cd`).', S), read_term(S,T,[double_quotes(codes)]), R = T"""),
-    ("rt151", raw"""rt_str('f("ab", `cd`).', S), read_term(S,T,[double_quotes(atom)]), R = T"""),
-    ("rt152", raw"""rt_str('f("ab", `cd`).', S), read_term(S,T,[double_quotes(string), back_quotes(string)]), R = T"""),
-    ("rt153", raw"""rt_str('f("ab", `cd`).', S), read_term(S,T,[double_quotes(chars)]), R = T"""),
-    ("rt154", raw"""rt_str('f("ab", `cd`).', S), read_term(S,T,[back_quotes(symbol_char)]), R = T"""),
-    ("rt155", raw"""rt_str('f("ab", `cd`).', S), read_term(S,T,[back_quotes(codes)]), R = T"""),
-    ("rt156", raw"""rt_str('f(\'a\\nb\').', S), read_term(S,T,[character_escapes(false)]), R = T"""),
-    ("rt157", raw"""rt_str('f(\'a\\nb\').', S), read_term(S,T,[character_escapes(true)]), R = T"""),
-    ("rt158", raw"""rt_str('f(X) :- X = @(Y, [Y=f(Y)]).', S), read_term(S,T,[cycles(true)]), R = T"""),
-    ("rt159", raw"""rt_str('f(X,X).', S), read_term(S,T,[cycles(true), variable_names(V)]), R = T-V"""),
+    (
+        "rt150",
+        raw"""rt_str('f("ab", `cd`).', S), read_term(S,T,[double_quotes(codes)]), R = T"""
+    ),
+    (
+        "rt151",
+        raw"""rt_str('f("ab", `cd`).', S), read_term(S,T,[double_quotes(atom)]), R = T"""
+    ),
+    (
+        "rt152",
+        raw"""rt_str('f("ab", `cd`).', S), read_term(S,T,[double_quotes(string), back_quotes(string)]), R = T"""
+    ),
+    (
+        "rt153",
+        raw"""rt_str('f("ab", `cd`).', S), read_term(S,T,[double_quotes(chars)]), R = T"""
+    ),
+    (
+        "rt154",
+        raw"""rt_str('f("ab", `cd`).', S), read_term(S,T,[back_quotes(symbol_char)]), R = T"""
+    ),
+    (
+        "rt155",
+        raw"""rt_str('f("ab", `cd`).', S), read_term(S,T,[back_quotes(codes)]), R = T"""
+    ),
+    (
+        "rt156",
+        raw"""rt_str('f(\'a\\nb\').', S), read_term(S,T,[character_escapes(false)]), R = T"""
+    ),
+    (
+        "rt157",
+        raw"""rt_str('f(\'a\\nb\').', S), read_term(S,T,[character_escapes(true)]), R = T"""
+    ),
+    (
+        "rt158",
+        raw"""rt_str('f(X) :- X = @(Y, [Y=f(Y)]).', S), read_term(S,T,[cycles(true)]), R = T"""
+    ),
+    (
+        "rt159",
+        raw"""rt_str('f(X,X).', S), read_term(S,T,[cycles(true), variable_names(V)]), R = T-V"""
+    ),
     ("rt160", raw"""rt_str('[a|b].', S), read_term(S,T,[dotlists(true)]), R = T"""),
     ("rt161", raw"""rt_str('\'[|]\'(a,b).', S), read_term(S,T,[dotlists(true)]), R = T"""),
     ("rt162", raw"""rt_str('foo:bar.', S), read_term(S,T,[module(user)]), R = T"""),
     ("rt163", raw"""rt_str('a +++ b.', S), read_term(S,T,[module(nomod)]), R = T"""),
-    ("rt164", raw"""rt_serr((rt_file('a +++ b.', S), read_term(S,_,[module(nomod)])), R)"""),
-    ("rt165", raw"""rt_str('f(X, Y).', S), read_term(S,T,[variable_names(V), module(user), double_quotes(codes), syntax_errors(error)]), R = T-V"""),
+    (
+        "rt164",
+        raw"""rt_serr((rt_file('a +++ b.', S), read_term(S,_,[module(nomod)])), R)"""
+    ),
+    (
+        "rt165",
+        raw"""rt_str('f(X, Y).', S), read_term(S,T,[variable_names(V), module(user), double_quotes(codes), syntax_errors(error)]), R = T-V"""
+    ),
     ("rt166", raw"""rt_str('f(\'$VAR\'(1), "x").', S), read_term(S,T,[]), R = T"""),
     ("rt167", raw"""rt_str('x.', S), read_term(S,T,[end_of_file(foo)]), R = T"""),
-    ("rt168", raw"""rt_str('x. y.', S), read_term(S,T,[]), read_term(S,U,[]), read_term(S,V,[]), read_term(S,W,[]), R = [T,U,V,W]"""),
+    (
+        "rt168",
+        raw"""rt_str('x. y.', S), read_term(S,T,[]), read_term(S,U,[]), read_term(S,V,[]), read_term(S,W,[]), R = [T,U,V,W]"""
+    ),
     ("rt169", raw"""rt_str('x.y', S), read_term(S,T,[]), R = T"""),
     # $raw_read/1,2
     ("rt170", raw"""'$raw_read'(user_input, T), R = T"""),
@@ -248,8 +386,14 @@ const _RT_CASES = [
     ("rt173", raw"""rt_str('0\' . foo', S), '$raw_read'(S, T), R = T"""),
     ("rt174", raw"""rt_str('/* c */ a % x\n . ', S), '$raw_read'(S, T), R = T"""),
     ("rt175", raw"""rt_str('', S), '$raw_read'(S, T), R = T"""),
-    ("rt177", raw"""rt_str('foo( X ,b ) . bar( Y ) . ', S), '$raw_read'(S, A), '$raw_read'(S, B), '$raw_read'(S, C), R = [A,B,C]"""),
-    ("rt178", raw"""rt_str('\'a. b\'. "x. y". c.', S), '$raw_read'(S, A), '$raw_read'(S, B), '$raw_read'(S, C), R = [A,B,C]"""),
+    (
+        "rt177",
+        raw"""rt_str('foo( X ,b ) . bar( Y ) . ', S), '$raw_read'(S, A), '$raw_read'(S, B), '$raw_read'(S, C), R = [A,B,C]"""
+    ),
+    (
+        "rt178",
+        raw"""rt_str('\'a. b\'. "x. y". c.', S), '$raw_read'(S, A), '$raw_read'(S, B), '$raw_read'(S, C), R = [A,B,C]"""
+    ),
     ("rt179", raw"""rt_str('foo(  X,\n   b)  .', S), '$raw_read'(S, T), R = T"""),
     ("rt180", raw"""rt_str('end_of_file.', S), '$raw_read'(S, T), R = T"""),
     ("rt181", raw"""rt_str('a. b.', S), '$raw_read'(S, _), read(S, T), R = T"""),
@@ -289,7 +433,10 @@ const _RT_CASES = [
     ("rt215", raw"""'$is_named_var'(''), R = yes"""),
     ("rt216", raw"""'$is_named_var'('_Z'), R = yes"""),
     ("rt217", raw"""char_code(A, 233), '$is_named_var'(A), R = yes"""),
-    ("rt218", raw"""char_code(C, 201), atom_concat(C, a, A), '$is_named_var'(A), R = yes"""),
+    (
+        "rt218",
+        raw"""char_code(C, 201), atom_concat(C, a, A), '$is_named_var'(A), R = yes"""
+    ),
     ("rt219", raw"""'$is_named_var'('1X'), R = yes"""),
     # the read option blob(Mode) (pl-read.c atom_to_blob_mode_ex, blob_syntax_available, scan_blob_name): the modes error, dead,
     # resolve, a domain error for another atom; `<type>(` is claimed only with dead/resolve and when `<` is not a prefix operator
@@ -300,12 +447,24 @@ const _RT_CASES = [
     ("rt308", raw"""rt_str('f.', S), read_term(S,T,[blob(1)]), R = T"""),
     ("rt309", raw"""rt_str('f.', S), read_term(S,T,[blob(_)]), R = T"""),
     ("rt310", raw"""rt_str('<>(1).', S), read_term(S,T,[blob(dead)]), R = T"""),
-    ("rt311", raw"""op(200, fy, rtm:(<)), rt_str('<a>(f).', S), read_term(S,T,[blob(dead),module(rtm)]), R = T"""),
+    (
+        "rt311",
+        raw"""op(200, fy, rtm:(<)), rt_str('<a>(f).', S), read_term(S,T,[blob(dead),module(rtm)]), R = T"""
+    ),
     ("rt312", raw"""rt_str('a < b.', S), read_term(S,T,[blob(dead)]), R = T"""),
     ("rt313", raw"""rt_str('<(1).', S), read_term(S,T,[blob(resolve)]), R = T"""),
-    ("rt314", raw"""rt_file('<a>(1).', S), rt_serr_formal(read_term(S,T,[blob(error)]), R)"""),
-    ("rt315", raw"""op(200, xfy, rtm:(>)), rt_str('a <b>(c).', S), read_term(S,T,[blob(dead),module(rtm)]), R = T"""),
-    ("rt316", raw"""rt_file('X = <a>.', S), rt_serr_formal(read_term(S,T,[blob(dead)]), R)"""),
+    (
+        "rt314",
+        raw"""rt_file('<a>(1).', S), rt_serr_formal(read_term(S,T,[blob(error)]), R)"""
+    ),
+    (
+        "rt315",
+        raw"""op(200, xfy, rtm:(>)), rt_str('a <b>(c).', S), read_term(S,T,[blob(dead),module(rtm)]), R = T"""
+    ),
+    (
+        "rt316",
+        raw"""rt_file('X = <a>.', S), rt_serr_formal(read_term(S,T,[blob(dead)]), R)"""
+    ),
     ("rt317", raw"""rt_file('<a>(1).', S), rt_serr_formal(read_term(S,T,[]), R)"""),
     ("rt318", raw"""rt_str('f.', S), read_clause(S,T,[blob(foo)]), R = T"""),
     ("rt319", raw"""rt_str('f(X).', S), read_clause(S,T,[blob(dead)]), R = T""")
@@ -318,24 +477,88 @@ const _RT_CASES = [
 #   `unify_location` (src/pl-read.jl) throws `NotPortedError` for a stream that is neither a file nor a string stream (the stream
 #   table). The kernel pins below are READ from the source, NOT RUN: the gate agent confirms or fixes them at the first run.
 const _RT_KNOWN = [
-    ("rt87", raw"""rt_str('a b. c.', S), read_term(S,T,[syntax_errors(fail)]), R = T""", "t_rt87 jlerr NotPortedError unify_location: a stream's location, stream(S, L, LP, C)"),
-    ("rt88", raw"""rt_str('a b. c.', S), read_term(S,T,[syntax_errors(quiet)]), R = T""", "t_rt88 jlerr NotPortedError unify_location: a stream's location, stream(S, L, LP, C)"),
-    ("rt89", raw"""rt_str('a b. c.', S), read_term(S,T,[syntax_errors(dec10)]), R = T""", "t_rt89 jlerr NotPortedError unify_location: a stream's location, stream(S, L, LP, C)"),
-    ("rt120", raw"""rt_serr_formal((rt_str('a b.', S), read(S,_)), R)""", "t_rt120 jlerr NotPortedError unify_location: a stream's location, stream(S, L, LP, C)"),
-    ("rt121", raw"""rt_serr_formal((rt_str('foo(.', S), read(S,_)), R)""", "t_rt121 jlerr NotPortedError unify_location: a stream's location, stream(S, L, LP, C)"),
-    ("rt122", raw"""rt_serr_formal((rt_str('foo(', S), read(S,_)), R)""", "t_rt122 jlerr NotPortedError unify_location: a stream's location, stream(S, L, LP, C)"),
-    ("rt123", raw"""rt_serr_formal((rt_str('\'abc', S), read(S,_)), R)""", "t_rt123 jlerr NotPortedError unify_location: a stream's location, stream(S, L, LP, C)"),
-    ("rt124", raw"""rt_serr_formal((rt_str('foo(X,Y)', S), read_term(S,_,[])), R)""", "t_rt124 jlerr NotPortedError unify_location: a stream's location, stream(S, L, LP, C)"),
-    ("rt176", raw"""rt_str('a', S), '$raw_read'(S, T), R = T""", "t_rt176 jlerr NotPortedError unify_location: a stream's location, stream(S, L, LP, C)"),
-    ("rt184", raw"""rt_str('\'abc', S), '$raw_read'(S, T), R = T""", "t_rt184 jlerr NotPortedError unify_location: a stream's location, stream(S, L, LP, C)"),
-    ("rt300", raw"""rt_str('f(X).', S), read_term(S,T,[comments(C)]), R = T-C""", "t_rt300 jlerr NotPortedError read_term's comments option"),
-    ("rt301", raw"""rt_str('f(X).', S), read_term(S,T,[var_prefix(true)]), R = T""", "t_rt301 jlerr NotPortedError read_term's var_prefix option"),
-    ("rt302", raw"""rt_str('f(X).', S), read_term(S,T,[quasi_quotations(Q)]), R = T-Q""", "t_rt302 jlerr NotPortedError read_term's quasi_quotations option"),
-    ("rt304", raw"""rt_str('f(X).', S), read_term(S,T,[unicode_atoms(accept)]), R = T""", "t_rt304 jlerr NotPortedError read_term's unicode_atoms option"),
+    (
+        "rt87",
+        raw"""rt_str('a b. c.', S), read_term(S,T,[syntax_errors(fail)]), R = T""",
+        "t_rt87 jlerr NotPortedError unify_location: a stream's location, stream(S, L, LP, C)"
+    ),
+    (
+        "rt88",
+        raw"""rt_str('a b. c.', S), read_term(S,T,[syntax_errors(quiet)]), R = T""",
+        "t_rt88 jlerr NotPortedError unify_location: a stream's location, stream(S, L, LP, C)"
+    ),
+    (
+        "rt89",
+        raw"""rt_str('a b. c.', S), read_term(S,T,[syntax_errors(dec10)]), R = T""",
+        "t_rt89 jlerr NotPortedError unify_location: a stream's location, stream(S, L, LP, C)"
+    ),
+    (
+        "rt120",
+        raw"""rt_serr_formal((rt_str('a b.', S), read(S,_)), R)""",
+        "t_rt120 jlerr NotPortedError unify_location: a stream's location, stream(S, L, LP, C)"
+    ),
+    (
+        "rt121",
+        raw"""rt_serr_formal((rt_str('foo(.', S), read(S,_)), R)""",
+        "t_rt121 jlerr NotPortedError unify_location: a stream's location, stream(S, L, LP, C)"
+    ),
+    (
+        "rt122",
+        raw"""rt_serr_formal((rt_str('foo(', S), read(S,_)), R)""",
+        "t_rt122 jlerr NotPortedError unify_location: a stream's location, stream(S, L, LP, C)"
+    ),
+    (
+        "rt123",
+        raw"""rt_serr_formal((rt_str('\'abc', S), read(S,_)), R)""",
+        "t_rt123 jlerr NotPortedError unify_location: a stream's location, stream(S, L, LP, C)"
+    ),
+    (
+        "rt124",
+        raw"""rt_serr_formal((rt_str('foo(X,Y)', S), read_term(S,_,[])), R)""",
+        "t_rt124 jlerr NotPortedError unify_location: a stream's location, stream(S, L, LP, C)"
+    ),
+    (
+        "rt176",
+        raw"""rt_str('a', S), '$raw_read'(S, T), R = T""",
+        "t_rt176 jlerr NotPortedError unify_location: a stream's location, stream(S, L, LP, C)"
+    ),
+    (
+        "rt184",
+        raw"""rt_str('\'abc', S), '$raw_read'(S, T), R = T""",
+        "t_rt184 jlerr NotPortedError unify_location: a stream's location, stream(S, L, LP, C)"
+    ),
+    (
+        "rt300",
+        raw"""rt_str('f(X).', S), read_term(S,T,[comments(C)]), R = T-C""",
+        "t_rt300 jlerr NotPortedError read_term's comments option"
+    ),
+    (
+        "rt301",
+        raw"""rt_str('f(X).', S), read_term(S,T,[var_prefix(true)]), R = T""",
+        "t_rt301 jlerr NotPortedError read_term's var_prefix option"
+    ),
+    (
+        "rt302",
+        raw"""rt_str('f(X).', S), read_term(S,T,[quasi_quotations(Q)]), R = T-Q""",
+        "t_rt302 jlerr NotPortedError read_term's quasi_quotations option"
+    ),
+    (
+        "rt304",
+        raw"""rt_str('f(X).', S), read_term(S,T,[unicode_atoms(accept)]), R = T""",
+        "t_rt304 jlerr NotPortedError read_term's unicode_atoms option"
+    ),
     # blob(dead|resolve) on `<type>(…)`: swipl reads a dead blob (its type is the answer); the kernel has no blob object: refused when read
     # (DIVERGES in src/pl-read.jl `atom_to_blob_mode_ex`; owner: the blob step). UNVERIFIED on the kernel: gate decides.
-    ("rt320", raw"""rt_str('<a-b>(x, "y").', S), read_term(S,T,[blob(dead)]), blob(T, Ty), R = Ty""", "t_rt320 jlerr NotPortedError read: a blob <type>(…)"),
-    ("rt321", raw"""rt_str('<a-b>(x).', S), read_term(S,T,[blob(resolve)]), blob(T, Ty), R = Ty""", "t_rt321 jlerr NotPortedError read: a blob <type>(…)")
+    (
+        "rt320",
+        raw"""rt_str('<a-b>(x, "y").', S), read_term(S,T,[blob(dead)]), blob(T, Ty), R = Ty""",
+        "t_rt320 jlerr NotPortedError read: a blob <type>(…)"
+    ),
+    (
+        "rt321",
+        raw"""rt_str('<a-b>(x).', S), read_term(S,T,[blob(resolve)]), blob(T, Ty), R = Ty""",
+        "t_rt321 jlerr NotPortedError read: a blob <type>(…)"
+    )
 ]
 
 const _RT_PINNED = [
@@ -591,7 +814,9 @@ function _rt_kernel(path::String, names::Vector{String})
                 if rc == LK.PL_S_TRUE || rc == LK.PL_S_LAST
                     push!(
                         sols,
-                        _rt_enc(mk_expr(_RT, _RT[_rts(name), lk_answers(rld, (a:a)...)...]))
+                        _rt_enc(
+                            mk_expr(_RT, _RT[_rts(name), lk_answers(rld, (a:a)...)...])
+                        )
                     )
                     rc == LK.PL_S_LAST && break
                 elseif rc == LK.PL_S_EXCEPTION
@@ -604,7 +829,9 @@ function _rt_kernel(path::String, names::Vector{String})
             LK.PL_close_query(rld, qid)
             LK.PL_close_foreign_frame(rld, fid)
         catch e
-            sols = ["jlerr $(nameof(typeof(e)))" * (e isa LK.NotPortedError ? " $(e.what)" : "")]
+            sols = [
+                "jlerr $(nameof(typeof(e)))" * (e isa LK.NotPortedError ? " $(e.what)" : "")
+            ]
         end
         push!(out, "$name" * join(" " .* sols))
     end
@@ -634,10 +861,19 @@ end
     # not vacuous: the pins hold terms read, raised errors, failures and end_of_file, so the comparison can pass and can fail
     nraised = count(l -> occursin("c[114,97,105,115,101,100]", l), _RT_PINNED)       # raised(...)
     @test nraised >= 60
-    @test count(l -> occursin("a[101,110,100,95,111,102,95,102,105,108,101]", l), _RT_PINNED) >= 10    # end_of_file
+    @test count(
+        l -> occursin("a[101,110,100,95,111,102,95,102,105,108,101]", l), _RT_PINNED
+    ) >= 10    # end_of_file
     @test count(l -> !occursin(' ', l), _RT_PINNED[2:end]) >= 10                     # the rows that fail: no answer
-    @test count(l -> occursin("c[115,121,110,116,97,120,95,101,114,114,111,114]/1(", l), _RT_PINNED) >= 25    # syntax_error(...)
-    @test count(l -> occursin("c[36,115,116,114,101,97,109,95,112,111,115,105,116,105,111,110]/4(", l), _RT_PINNED) >= 7    # '$stream_position'/4
+    @test count(
+        l -> occursin("c[115,121,110,116,97,120,95,101,114,114,111,114]/1(", l), _RT_PINNED
+    ) >= 25    # syntax_error(...)
+    @test count(
+        l -> occursin(
+            "c[36,115,116,114,101,97,109,95,112,111,115,105,116,105,111,110]/4(", l
+        ),
+        _RT_PINNED
+    ) >= 7    # '$stream_position'/4
 end
 
 @testset "the pins are swipl's (live, when swipl is on PATH)" begin

@@ -4577,8 +4577,9 @@ function pl_raw_read2(ld::PL_local_data{T}, from::term_t, term::term_t)::foreign
     if chr == Int('.')
         top = backSkipBlanks(b, s, t2)
     end
-                                                    # watch for "0' ."
-    if top < e && top - 2 >= s && _byte(b, top - 1) == Int('\'') && _byte(b, top - 2) == Int('0')
+    # watch for "0' ."
+    if top < e && top - 2 >= s && _byte(b, top - 1) == Int('\'') &&
+        _byte(b, top - 2) == Int('0')
         top += 1
     end
     s = skipSpaces(b, s)
