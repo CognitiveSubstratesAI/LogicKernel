@@ -6793,3 +6793,47 @@ every claim below is UNVERIFIED until the gate). The aim is that boot/tabling.pl
 Tests: test/core_lang/test_tabling_min_swipl.jl (65 rows tmt, tma, tmw, tmc; pins from swipl 10.1.19, two byte-identical runs; generator evidence/TAB1MIN/gen_rows.py; plus LK-only
 white-box rows for the wrapper supervisors and a unit testset for `skipWrapperPrefix`/`isCallWrapper`; and a T3 white-box testset for the opcodes, the wrapper block and the refusals). Mutants: tools/mutants/TAB1MIN.py (49; none
 declared EQUIVALENT; the NOT LISTED ones with reasons in its header).
+
+## AUTOLOAD1 (A1, A4, Q3) — `ld` in trapUndefined, the `autoload` flag setter, the loud boot-session error (R2, audit D-0387 item 3, edit-only: nothing was compiled when this was written; the gate decides)
+
+UPSTREAM: swipl-devel cbf4e1896275 — pl-proc.c (`trapUndefined`, :3008-3063), pl-wam.c (`getProcDefinedDefinition`, :1731-1741),
+pl-vmi.c (`mcall_cont`, :5707-5722), os/pl-prologflag.c (`setAutoload`, :928-945; `propagateAutoload`, :987-1000; `set_prolog_flag_ptr`, :1681),
+pl-fli.c (`PL_set_prolog_flag`, the `PL_BOOL` case), pl-qlf.c (`compileFileList`, :4798 and :4808).
+The autoloader itself (`autoLoader`, `test_autoload_loop`, the `autoload.nesting` fields of the local data, the retry) is A3, left to the
+next AUTOLOAD1 step after ENG3 and EV1; A5-A7 wait for the first boot. Plan: lk-channel evidence/R2/autoload1_sizing.md.
+
+Ported:
+- **A1** (src/pl-proc.jl `trapUndefined(gd, ld, def)`, src/pl-wam.jl `getProcDefinedDefinition(gd, ld, def)`): the local data is an argument (design Q1 (a)),
+  carried by the five call sites (`PL_open_query`, `mcall_cont`, the `I_DEPART` family's resolve, `S_VIRGIN`, src/pl-comp.jl `clause/2`) and read from A3 on.
+  `mcall_cont` makes upstream's frame set-up around the call (pl-vmi.c:5707-5722): the new frame is the environment frame and `lTop` is
+  above its arguments while the call runs, then `FR` is the parent again. No behaviour change.
+- **A4** (src/os/pl-prologflag.jl): `setAutoload` (`false` clears the mask bit `PLFLAG_AUTOLOAD`; `explicit`, `true`, `user`, `user_or_explicit` set it;
+  any other atom is `domain_error(autoload, A)`, the setter alone checks the domain: design Q7), `propagateAutoload` (calls `$autoload:set_autoload/1` with
+  `PL_Q_PASS_EXCEPTION` unless `gd.bootsession`), `set_flag_value`'s `autoload` branch (the former refusal by name is gone), `set_prolog_flag_ptr` (calls
+  `propagateAutoload` first, as :1681), and `PL_set_prolog_flag(gd, ld, name, ::Bool)` (the `PL_BOOL` case of pl-fli.c). src/pl-qlf.jl `compileFileList`
+  sets `autoload` false before the boot files and true after them through it, so the mask bit follows the flag (the former atom-only writes left it set).
+  `push_prolog_flag(autoload, V)` and `pop_prolog_flag` work as a consequence (they use `set_flag_value`).
+- **Q3** (src/pl-proc.jl `trapUndefined`): an undefined predicate during `gd.bootsession` raises a Julia `error(...)` naming `Module:name/arity`
+  before `createUndefSupervisor`.
+
+DIVERGES:
+- **Q3, representation only**: upstream's `sysError("Undefined predicate: %s")` (pl-proc.c:3051-3053) aborts the process; the kernel raises a Julia error
+  naming the predicate. Same class as the other fatal errors of the kernel (audit D-0361 item 3, D-0387 item 3(b)). The boot-files lane reads it as
+  a loud failure instead of the soft `existence_error` S_UNDEF raised before.
+- **`ld` is explicit** wherever upstream has `GET_LD` (trapUndefined, getProcDefinedDefinition, setAutoload, propagateAutoload, PL_set_prolog_flag); the
+  database `gd` is an argument as everywhere in the kernel. `PL_predicate("set_autoload", 1, "$autoload")` is `lookupProcedure` in `lookupModule`'s
+  module on each call (both create what is not there), not a cached `predicate_t`.
+- **The rows run with `gd.bootsession` set** (test/core_lang/test_autoload_flag_swipl.jl): swipl's `propagateAutoload` reaches `autoload.pl`, whose
+  `set_autoload/1` is defined only on a booted database, so the rows compare the setter's answers, and an LK-ONLY testset states the existence error
+  for `$autoload:set_autoload/1` raised with the boot session off (the PI term in the error is UNVERIFIED: the gate decides).
+
+ORIGINAL: none in the source (the generator evidence/AUTOLOAD1/gen_af_rows.py and the mutant list tools/mutants/AUTOLOAD1.py are the step's own).
+
+Removal conditions: the `_boot_when!` stand-in stays until A6 (trapUndefined autoloads `when/2` from library(when) on a booted database); the
+mcall_cont `lTop` line gets its mutant with A3 (a query runs inside `trapUndefined` from A3 on).
+
+Tests: test/core_lang/test_autoload_flag_swipl.jl (25 swipl rows af01-af25, pins from swipl 10.1.19, two byte-identical runs; LK-ONLY testsets: the mask
+bit after each value, `PL_set_prolog_flag`, the existence error with the boot session off, the Q3 error with it on); test_qlf_swipl.jl (the
+`compileFileList` rows run in the boot session; `boot_from_source!` expects the Q3 error for the undefined `$load_additional_boot_files/0`);
+test_set_flag_swipl.jl and test_push_flag_swipl.jl lost their `("autoload","false")` refusal pins; test_module_path.jl calls `trapUndefined(gd, ld, def)`.
+Mutants: tools/mutants/AUTOLOAD1.py (14; the A1 mutants of MOD3a.py and MOD3a2.py were re-fitted to the new call text).
