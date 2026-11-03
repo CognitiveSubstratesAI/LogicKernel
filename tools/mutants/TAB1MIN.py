@@ -4,7 +4,8 @@
 # `tbl_get/set_predicate_attribute`, the `$set_predicate_attribute`/`$get_predicate_attribute` branches in src/pl-proc.jl,
 # the `TP_*` flags in src/pl-incl.jl), T4 pl-wrap.c (`$c_wrap_predicate`, find_wrapper, assert_wrapper, unify_wrapped,
 # wrapper_vmi; src/pl-wrap.jl), T5 pl-supervisor.c freeCodesDefinition's wrapper branch and pl-wrap.c
-# skipWrapperPrefix/isCallWrapper/resetWrappedSupervisor. Run ONCE, in CI (.github/workflows/mutation.yml; locally:
+# skipWrapperPrefix/isCallWrapper/resetWrappedSupervisor, T3 the three opcodes S_WRAP/S_CALLWRAPPER/S_TABLED (src/pl-vmi.jl, the
+# 7th `PL_code_data` block in src/pl-supervisor.jl, the run loop's named refusals in src/pl-wam.jl). Run ONCE, in CI (.github/workflows/mutation.yml; locally:
 # tools/mutate.sh run). Format: tools/mutate_drive.py's (as MOD3b.py): `id`, `file`, `old` (must occur EXACTLY once),
 # `new`, optional `equivalent` and `targets`. Killed by test/core_lang/test_tabling_min_swipl.jl (rows tmt01-tmt22,
 # tma01-tma23, tmw01-tmw13, tmc01-tmc07 and its two LK-only white-box testsets, named in each id's KILL).
@@ -24,6 +25,13 @@
 #   * `unregisterWrappedSupervisor` (src/pl-wrap.jl): a no-op by design (atoms live for ever here); nothing to mutate.
 #   * `@assert c !== nothing` in `resetWrappedSupervisor` and `@assert cref !== nothing` in `assert_wrapper`: the asserts
 #     mirror upstream's `assert()`; a row would have to reach a state the callers exclude.
+#   * T3 (src/pl-global.jl idle `index_context` literal, src/pl-incl.jl `PL_code_data`): the FIELD ORDER of the seven blocks is
+#     not observable: the constructor is positional, `initSupervisors` is its only other caller, and swapping two of the
+#     identical-shaped empty `code[]` vectors in the idle literal (pl-global.jl) changes nothing a test can read; likewise the
+#     `@label` span effect on `static_analysis_body`'s call-path spans is not a behaviour.
+#   * T3 mutants that change WHICH opcode is the first one outside `VMI_RUN` (test/foreign/test_query.jl:305-330 takes
+#     `first(notrun)`): none is listed. `:I_NOP` (code 0) stays that opcode under every mutant below, so test_query.jl does not
+#     decide any of them and is not a target (the E13-E15 mutants drop a later name from `VMI_RUN`).
 # TARGETS (audit D-0238): the step's own file first (a run stops at the first target that decides). Only
 # test_tabling_min_swipl.jl names `$c_wrap_predicate`, `$tbl_trienode` and sets a tabling attribute; test_pr1_swipl.jl (row
 # pr93) reads the `tabled` attribute through `$get_predicate_attribute`; `freeCodesDefinition!`, `resetProcedure!` and
@@ -42,6 +50,8 @@ WR = "src/pl-wrap.jl"
 PR = "src/pl-proc.jl"
 SV = "src/pl-supervisor.jl"
 IN = "src/pl-incl.jl"
+VM = "src/pl-vmi.jl"
+WM = "src/pl-wam.jl"
 MUTANTS = [
     # ── T1: pl-tabling.c tbl_trienode, tbl_is_trienode ──
     dict(id="TAB1MIN-A1 `$tbl_is_trienode` accepts every word but the reserved atom (KILL tmt03, tmt04)", file=TB, targets=TM,
@@ -146,4 +156,54 @@ MUTANTS = [
     dict(id="TAB1MIN-D10 _assertDefinition! calls the 2-argument freeCodesDefinition!: a clause added to a wrapped predicate raises (KILL tmc01-tmc07: the program does not load)", file=PR, targets=TM,
          old="freeCodesDefinition!(gd, def, true)",
          new="freeCodesDefinition!(def, true)"),
+    # ── T3: pl-vmi.c S_WRAP / S_CALLWRAPPER / S_TABLED, pl-supervisor.c MAKE_SV1(wrapper, S_WRAP), the run loop's named refusals ──
+    # (every KILL names the white-box testset "wrapper opcodes and the wrapper block (T3, LK-only)", test/core_lang/test_tabling_min_swipl.jl:451-496)
+    dict(id="TAB1MIN-E1 initSupervisors builds the wrapper block from S_TABLED (KILL test_tabling_min_swipl.jl:471 `cd.wrapper == code[S_WRAP, I_EXIT]`; :492 the entered block raises S_TABLED, not S_WRAP)", file=SV, targets=TM,
+         old="code[S_WRAP, I_EXIT]",
+         new="code[S_TABLED, I_EXIT]"),
+    dict(id="TAB1MIN-E2 _shared_supervisor does not know the wrapper block (KILL test_tabling_min_swipl.jl:473 `_shared_supervisor(cd, cd.wrapper)`)", file=SV, targets=SUP,
+         old="codes === cd.wrapper",
+         new="false"),
+    dict(id="TAB1MIN-E3 S_CALLWRAPPER is declared with two operands (KILL test_tabling_min_swipl.jl:463 `ic.arguments == 3`, :468 the decoder step lands inside the instruction)", file=VM, targets=TM,
+         old="code_info(:S_CALLWRAPPER, 0x00, 3,",
+         new="code_info(:S_CALLWRAPPER, 0x00, 2,"),
+    dict(id="TAB1MIN-E4 S_TABLED's second and third operands are declared untyped (KILL test_tabling_min_swipl.jl:463 `ic.argtype == want`)", file=VM, targets=TM,
+         old="code_info(:S_TABLED, 0x00, 3, (CA1_CLAUSEREF, CA1_DATA, CA1_DATA, 0x00))",
+         new="code_info(:S_TABLED, 0x00, 3, (CA1_CLAUSEREF, 0x00, 0x00, 0x00))"),
+    dict(id="TAB1MIN-E5 S_WRAP is declared with an operand (KILL test_tabling_min_swipl.jl:459 `iw.arguments == 0`)", file=VM, targets=TM,
+         old="code_info(:S_WRAP, 0x00, 0,",
+         new="code_info(:S_WRAP, 0x00, 1,"),
+    dict(id="TAB1MIN-E6 S_TABLED leaves a gap after S_CALLWRAPPER (KILL test_tabling_min_swipl.jl:455 `S_TABLED == S_CALLWRAPPER + 1`; the table lookup may fail at load first)", file=VM, targets=TM,
+         old="const S_TABLED = code(161)",
+         new="const S_TABLED = code(162)"),
+    dict(id="TAB1MIN-E7 S_WRAP's refusal names TAB1 (KILL test_tabling_min_swipl.jl:492 `e.step == \"WRAP1\"`)", file=WM, targets=TM,
+         old='"the VM instruction S_WRAP (calling a wrapped predicate from a closure)", "WRAP1"',
+         new='"the VM instruction S_WRAP (calling a wrapped predicate from a closure)", "TAB1"'),
+    dict(id="TAB1MIN-E8 S_CALLWRAPPER's refusal names TAB1 (KILL test_tabling_min_swipl.jl:482 `e.step == \"WRAP1\"`)", file=WM, targets=TM,
+         old='"the VM instruction S_CALLWRAPPER (calling a wrapped predicate)", "WRAP1"',
+         new='"the VM instruction S_CALLWRAPPER (calling a wrapped predicate)", "TAB1"'),
+    dict(id="TAB1MIN-E9 S_TABLED's refusal names WRAP1 (KILL test_tabling_min_swipl.jl:485 `e.step == \"TAB1\"`)", file=WM, targets=TM,
+         old='"the VM instruction S_TABLED (calling a tabled predicate)", "TAB1"',
+         new='"the VM instruction S_TABLED (calling a tabled predicate)", "WRAP1"'),
+    dict(id="TAB1MIN-E10 S_WRAP continues with the next instruction instead of refusing (KILL test_tabling_min_swipl.jl:492 `e isa NotPortedError`: the entered wrapper block answers)", file=WM, targets=TM,
+         old="@label S_WRAP\n    throw(",
+         new="@label S_WRAP\n    @goto next_instruction\n    throw("),
+    dict(id="TAB1MIN-E11 S_CALLWRAPPER continues with the next instruction instead of refusing (KILL test_tabling_min_swipl.jl:482 `e isa NotPortedError`)", file=WM, targets=TM,
+         old="@label S_CALLWRAPPER\n    throw(",
+         new="@label S_CALLWRAPPER\n    @goto next_instruction\n    throw("),
+    dict(id="TAB1MIN-E12 S_TABLED continues with the next instruction instead of refusing (KILL test_tabling_min_swipl.jl:485 `e isa NotPortedError`)", file=WM, targets=TM,
+         old="@label S_TABLED\n    throw(",
+         new="@label S_TABLED\n    @goto next_instruction\n    throw("),
+    dict(id="TAB1MIN-E13 VMI_RUN does not list S_WRAP (KILL test_tabling_min_swipl.jl:479 `nm in VMI_RUN`; :492 the refusal is the unknown-instruction one, without the owner)", file=WM, targets=TM,
+         old=":S_WRAP, :S_CALLWRAPPER, :S_TABLED",
+         new=":S_CALLWRAPPER, :S_TABLED"),
+    dict(id="TAB1MIN-E14 VMI_RUN does not list S_CALLWRAPPER (KILL test_tabling_min_swipl.jl:479; :482 `e.step == \"WRAP1\"`)", file=WM, targets=TM,
+         old=":S_WRAP, :S_CALLWRAPPER, :S_TABLED",
+         new=":S_WRAP, :S_TABLED"),
+    dict(id="TAB1MIN-E15 VMI_RUN does not list S_TABLED (KILL test_tabling_min_swipl.jl:479; :485 `e.step == \"TAB1\"`)", file=WM, targets=TM,
+         old=":S_WRAP, :S_CALLWRAPPER, :S_TABLED",
+         new=":S_WRAP, :S_CALLWRAPPER"),
+    dict(id="TAB1MIN-E16 unify_closure gives the closure copy the virgin supervisor, not the wrapper block (KILL test_tabling_min_swipl.jl:476 `c01.def.codes === cd.wrapper`)", file=WR, targets=TM,
+         old="def.code_data.wrapper,",
+         new="def.code_data.virgin,"),
 ]
