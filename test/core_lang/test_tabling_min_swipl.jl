@@ -131,6 +131,10 @@ tm_c04(2).
    tm_wrap(tm_c05(_), table, C, _), assertz(tm_ck(c05, C)).
 tm_c05(1).
 tm_c05(2).
+tm_c06(1).
+:- tm_c06(_).
+:- tm_wrap(tm_c06(_), n1, C, _), assertz(tm_ck(c06, C)).
+tm_c06(2).
 """
 
 # tmt: '$tbl_trienode'/1 and '$tbl_is_trienode'/1.
@@ -201,7 +205,8 @@ const _TM_CASES = [
     ("tmc03", raw"tm_ck(c03a, A0), tm_ck(c03b, B0), tm_wrap(tm_c03(_), n1, A1, _), tm_wrap(tm_c03(_), n2, B1, _), tm_same(A0, A1, S1), tm_same(B0, B1, S2), tm_same(A0, B0, S3), tm_nc('$wrap$tm_c03'(_), N), R = r(S1, S2, S3, N)"),
     ("tmc04", raw"tm_nc(tm_c04(_), A), tm_nc('$wrap$tm_c04'(_), B), R = r(A, B)"),
     ("tmc05", raw"tm_get(tm_c05(_), tabled, T), tm_get(tm_c05(_), tabled_variant, V), tm_nc(tm_c05(_), A), tm_nc('$wrap$tm_c05'(_), B), R = r(T, V, A, B)"),
-    ("tmc06", raw"tm_ck(c05, C0), tm_wrap(tm_c05(_), table, C1, _), tm_same(C0, C1, R)")
+    ("tmc06", raw"tm_ck(c05, C0), tm_wrap(tm_c05(_), table, C1, _), tm_same(C0, C1, R)"),
+    ("tmc07", raw"tm_ck(c06, C0), tm_wrap(tm_c06(_), n1, C1, _), tm_same(C0, C1, S), tm_nc(tm_c06(_), A), tm_nc('$wrap$tm_c06'(_), B), R = r(S, A, B)")
 ]
 
 # the pins are filled by evidence/TAB1MIN/gen_rows.py --fill from swipl's output
@@ -270,7 +275,8 @@ const _TM_PINNED = [
     "t_tmc03 c[116,95,116,109,99,48,51]/1(c[114]/4(a[115,97,109,101],a[115,97,109,101],a[100,105,102,102],i2))",
     "t_tmc04 c[116,95,116,109,99,48,52]/1(c[114]/2(i2,i1))",
     "t_tmc05 c[116,95,116,109,99,48,53]/1(c[114]/4(i1,i1,i2,i1))",
-    "t_tmc06 c[116,95,116,109,99,48,54]/1(a[115,97,109,101])"
+    "t_tmc06 c[116,95,116,109,99,48,54]/1(a[115,97,109,101])",
+    "t_tmc07 c[116,95,116,109,99,48,55]/1(c[114]/3(a[115,97,109,101],i2,i1))"
 ]
 
 function _tm_file()::Tuple{String, Vector{String}}
@@ -393,6 +399,32 @@ _tm_wrapped(def) = LK.isCallWrapper(def.codes[LK.skipWrapperPrefix(def.codes)])
         @test _tm_wrapped(d01c)                                   # the refusal changed nothing
         LK.freeCodesDefinition!(gd, d01c, true)                   # with the database the wrapper stays
         @test _tm_wrapped(d01c)
+        # T5: a predicate that RAN before it was wrapped (tmc07) has its wrapped supervisor reset by the clause add
+        d06 = _tm_def(gd, "tm_c06")
+        c06 = LK.closure_of_word(gd, d06.codes[LK.skipWrapperPrefix(d06.codes) + 2])::LK.closure
+        @test c06.supervisor === d06.code_data.virgin
+        # T4: the second wrap of a name (tmw05) installs the NEW wrapper clause in the side table, the old one is gone
+        d05w = _tm_def(gd, "tm_w05")
+        j = LK.skipWrapperPrefix(d05w.codes)
+        wd = _tm_def(gd, "\$wrap\$tm_w05")
+        @test d05w.codes_crefs[Int(d05w.codes[j + 1])].clause === wd.impl_clauses.last_clause.clause   # the newest clause
+        @test wd.impl_clauses.number_of_clauses == 1                          # the old one was retracted
+    end
+
+    @testset "skipWrapperPrefix and isCallWrapper (LK-only)" begin
+        c(x...) = LK.code[x...]
+        @test LK.skipWrapperPrefix(c(LK.S_CALLWRAPPER, 1, 0, 0)) == 1
+        @test LK.skipWrapperPrefix(c(LK.S_MQUAL, 7, LK.S_TABLED, 1, 0, 0)) == 3
+        @test LK.skipWrapperPrefix(c(LK.S_LMQUAL, 7, LK.S_TABLED, 1, 0, 0)) == 3
+        @test LK.skipWrapperPrefix(c(LK.S_SSU_DET, LK.S_CALLWRAPPER, 1, 0, 0)) == 2
+        @test LK.skipWrapperPrefix(c(LK.S_MQUAL, 7, LK.S_SSU_DET, LK.S_CALLWRAPPER, 1, 0, 0)) == 4
+        @test LK.skipWrapperPrefix(c(LK.S_MQUAL, 7, LK.S_VIRGIN)) == 3
+        @test LK.skipWrapperPrefix(c(LK.S_MQUAL, 7, LK.S_CALLWRAPPER, 1, 0, 0), 3) == 3
+        @test LK.isCallWrapper(LK.S_CALLWRAPPER)
+        @test LK.isCallWrapper(LK.S_TABLED)
+        @test !LK.isCallWrapper(LK.S_VIRGIN)
+        @test !LK.isCallWrapper(LK.S_TRUSTME)
+        @test !LK.isCallWrapper(LK.S_MQUAL)
     end
 end
 

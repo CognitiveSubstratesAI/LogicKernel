@@ -249,3 +249,6 @@ Julia) are NOT taken. Stated in the architecture DIVERGES with owner TAB1.
    `tmc` rows wrap in a DIRECTIVE of the consulted program (assertProcedure calls freeCodesDefinition only for STATIC predicates, so
    a clause added by `assertz` to a dynamic one never reaches it: the clause must come from the file).
    Not written: rows that CALL a wrapped predicate (S_CALLWRAPPER/S_WRAP run-loop bodies are named refusals; WRAP1).
+2. row tmc07 (a predicate that RAN before the wrap: the clause add resets the wrapped supervisor) + white-box rows (c06.supervisor virgin,
+   rewrap installs the newest wrapper clause in the side table) + a unit testset for skipWrapperPrefix/isCallWrapper (hand-built codes
+   with S_MQUAL, S_LMQUAL, S_SSU_DET prefixes): these kill the pc increments and the side-table update, which no swipl row reaches.

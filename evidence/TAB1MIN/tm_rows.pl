@@ -41,6 +41,10 @@ tm_c04(2).
    tm_wrap(tm_c05(_), table, C, _), assertz(tm_ck(c05, C)).
 tm_c05(1).
 tm_c05(2).
+tm_c06(1).
+:- tm_c06(_).
+:- tm_wrap(tm_c06(_), n1, C, _), assertz(tm_ck(c06, C)).
+tm_c06(2).
 t_tmt01(R) :- catch(('$tbl_trienode'(X), ( atom(X) -> R = atom ; R = notatom )), error(SsuE, _), R = raised(SsuE)).
 t_tmt02(R) :- catch(('$tbl_trienode'(X), ( atomic(X) -> R = atomic ; R = notatomic )), error(SsuE, _), R = raised(SsuE)).
 t_tmt03(R) :- catch(('$tbl_trienode'(X), tm_yn('$tbl_is_trienode'(X), R)), error(SsuE, _), R = raised(SsuE)).
@@ -105,3 +109,4 @@ t_tmc03(R) :- catch((tm_ck(c03a, A0), tm_ck(c03b, B0), tm_wrap(tm_c03(_), n1, A1
 t_tmc04(R) :- catch((tm_nc(tm_c04(_), A), tm_nc('$wrap$tm_c04'(_), B), R = r(A, B)), error(SsuE, _), R = raised(SsuE)).
 t_tmc05(R) :- catch((tm_get(tm_c05(_), tabled, T), tm_get(tm_c05(_), tabled_variant, V), tm_nc(tm_c05(_), A), tm_nc('$wrap$tm_c05'(_), B), R = r(T, V, A, B)), error(SsuE, _), R = raised(SsuE)).
 t_tmc06(R) :- catch((tm_ck(c05, C0), tm_wrap(tm_c05(_), table, C1, _), tm_same(C0, C1, R)), error(SsuE, _), R = raised(SsuE)).
+t_tmc07(R) :- catch((tm_ck(c06, C0), tm_wrap(tm_c06(_), n1, C1, _), tm_same(C0, C1, S), tm_nc(tm_c06(_), A), tm_nc('$wrap$tm_c06'(_), B), R = r(S, A, B)), error(SsuE, _), R = raised(SsuE)).
