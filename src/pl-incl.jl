@@ -1775,6 +1775,39 @@ mutable struct recorded_state{T}
 end
 recorded_state{T}() where {T} = recorded_state{T}(0, nothing, false)
 
+# PORT: pl-proc.c TableEnum as cur_pred_enum
+# DIVERGES: a record of the local data's pool (`ld.cur_pred_enums`, `foreign_state_pool`, design D3 of NF1), its index the
+# `REDO_PTR` context; `keys` are the keys of the module's procedure table at the first call, in its order (upstream's hash
+# order), each looked up again when its turn comes; `next` is the next index into `keys` (upstream's `TableEnum`).
+"`'\$c_current_predicate'/2`'s state between answers: the procedure keys of the module and the place to resume at."
+mutable struct cur_pred_enum
+    keys::Vector{Tuple{UInt64, Int}}                    # the procedure table's keys (name key, arity)
+    next::Int                                           # the next place in `keys`
+end
+cur_pred_enum() = cur_pred_enum(Tuple{UInt64, Int}[], 1)
+
+# PORT: pl-proc.c cur_enum
+# DIVERGES: a record of the local data's pool (`ld.cur_enums`, `foreign_state_pool`), its index the `REDO_PTR` context, where
+# upstream's is `malloc`ed after being built on the C stack. `functor` is `has_functor` with `name` and `arity` (`name`
+# `nothing`: NULL_ATOM, `arity` -1: any); `module_` and `super` are indices into the database's module table (0: NULL);
+# `epred` is `epred_keys` and `epred_next` (as `cur_pred_enum`, 0 keys with `has_epred` false: NULL); `emod` is the index of a
+# record of `ld.module_enums` (0: NULL). A pool record is REUSED: every field is set again by the first call.
+"The state of `current_predicate/1` between answers (pl-proc.c `cur_enum`)."
+mutable struct cur_enum{T}
+    has_functor::Bool                                   # functor != 0
+    name::Union{Nothing, T}                             # name: the name of the target predicate
+    arity::Int                                          # arity: of the target predicate (-1: any)
+    macq::Bool                                          # module is acquired
+    module_::Int                                        # module: the module to search in (an index; 0: NULL)
+    super::Int                                          # super: walking along the super-chain (an index; 0: NULL)
+    has_epred::Bool                                     # epred != NULL
+    epred_keys::Vector{Tuple{UInt64, Int}}              # epred: the procedure table's keys
+    epred_next::Int                                     # epred: the next place in `epred_keys`
+    emod::Int                                           # emod: the module enumeration (`ld.module_enums` index; 0: NULL)
+end
+cur_enum{T}() where {T} =
+    cur_enum{T}(false, nothing, -1, false, 0, 0, false, Tuple{UInt64, Int}[], 1, 0)
+
 # PORT: pl-bag.c findall_bag
 # DIVERGES: the bags are a vector (the local data's `bags`, upstream's `bag_stack`), so a bag's
 # `parent` is the element below it; `answers` is a vector of records (upstream's segmented stack).

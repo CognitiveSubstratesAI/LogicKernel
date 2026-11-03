@@ -365,7 +365,9 @@ ld_statistics() = ld_statistics(0, 0, 0, 0, WallTime(), 0.0, 0.0, 0.0, 0.0)
 # Since R2 G1: `gvar_nb_vars` and `gvar_grefs`, upstream's `LD->gvar.nb_vars` (the
 # global variables: atom word -> value word) and `.grefs` (how many hold a value on the global stack, which
 # `_release_frozen!` then keeps), and `gvar_enums`, the pool of nb_current/2's states (src/pl-gvar.jl). Since R2 D2: `recorded_states`, the pool of recorded/2,3's states
-# (`recorded_state`, pl-incl.jl). Since R2 O1B: `IO_output_stack` (`LD->IO.output_stack`: the output context stack
+# (`recorded_state`, pl-incl.jl).
+# Since R2 PR1: `cur_pred_enums` and `cur_enums`, the pools of `'$c_current_predicate'/2`'s and `current_predicate/1`'s states
+# (`cur_pred_enum`, `cur_enum`, pl-incl.jl). Since R2 O1B: `IO_output_stack` (`LD->IO.output_stack`: the output context stack
 # of `with_output_to/2` and `format/3`'s redirect, src/os/pl-file.jl).
 # Since R2 S2a: `prompt_current`, `prompt_first`, `prompt_first_used` (`LD->prompt`: prompt/2, prompt1/1; src/os/pl-file.jl).
 # (the input context stack is LB3's `input_context_stack`, which `'\$push_input_context'/1` shares; src/os/pl-file.jl).
@@ -498,6 +500,8 @@ mutable struct PL_local_data{T}
     gvar_grefs::Int                                             # gvar.grefs: the values on the global stack
     gvar_enums::foreign_state_pool{gvar_enum}                   # (nb_current/2's REDO_PTR states, R2 G1)
     recorded_states::foreign_state_pool{recorded_state{T}}      # (recorded/2,3's REDO_PTR states, R2 D2)
+    cur_pred_enums::foreign_state_pool{cur_pred_enum}           # ('$c_current_predicate'/2's REDO_PTR states, R2 PR1)
+    cur_enums::foreign_state_pool{cur_enum{T}}                  # (current_predicate/1's REDO_PTR states, R2 PR1)
     input_context_stack::Vector{input_context{T}}               # input_context_stack: see/seen's (R2 LB3)
     qlf_write_state::Nothing                                    # qlf.write_state: always NULL, no state file (R2 LB3, LD2)
     IO_output_stack::Vector{IOSTREAM}                           # IO.output_stack: the streams current_output was before each redirect (R2 O1B)
@@ -584,6 +588,8 @@ function PL_local_data{T}(gd::PL_global_data{T}) where {T}
         0,                                      # gvar.grefs: none
         foreign_state_pool{gvar_enum}(),        # nb_current/2's states: none
         foreign_state_pool{recorded_state{T}}(), # recorded/2,3's states: none
+        foreign_state_pool{cur_pred_enum}(),    # '$c_current_predicate'/2's states: none
+        foreign_state_pool{cur_enum{T}}(),      # current_predicate/1's states: none
         input_context{T}[],                     # input_context_stack: empty (NULL)
         nothing,                                # qlf.write_state: NULL (LD2: the state is never written)
         IOSTREAM[],                             # output_stack: no redirect (R2 O1B)
