@@ -2542,6 +2542,8 @@ function _manifest_index(T)
         (LK.pl_dict_pairs, Tuple{LD, Int}, false),
         (LK.pl_dict_sort_indexes, Tuple{LD, Int, Int}, false),
         (LK.pl_dict_pair, Tuple{LD, Int, Union{Nothing, Vector{Int}}, Int, Int}, false),
+        # pl_for_dict's `func` is untyped (upstream's function pointer; the caller's closure), so its signature says Any
+        (LK.pl_for_dict, Tuple{LD, Int, Any, Int}, false),
         (LK.put_pair, Tuple{LD, Int, Int, Int, Int, Int}, false),
         (LK.del_dict, Tuple{LD, UInt64, UInt64}, false),
         (LK.partial_unify_dict, Tuple{LD, UInt64, UInt64}, false),

@@ -3,8 +3,8 @@
 # src/pl-read.jl: is_key_token, read_dict_start/key/resume/end, build_dict, build_attvar, build_labeled_subterm; src/pl-dict.jl:
 # dict_order_term_refs; src/os/pl-prologflag.jl: setVarTagFlag, getVarTagFlag and the current_prolog_flag `var_tag` arm — run ONCE, in
 # CI (.github/workflows/mutation.yml). Format: tools/mutate_drive.py's (as DICT.py): `id`, `file`, `old` (must occur EXACTLY once), `new`,
-# optional `equivalent` and `targets`. Killed by test/core_lang/test_read_dict_swipl.jl (rows rdNN, mode rows rmNN). Verdicts: not yet run.
-# The `old` strings are in the repo's formatted style BEFORE `tools/warm.sh fmt`: RE-FIT any that fmt rewraps at the first battery run.
+# optional `equivalent` and `targets`. Killed by test/core_lang/test_read_dict_swipl.jl (rows rdNN, mode rows rmNN). Verdicts: the battery has not run (after Evidence is green).
+# The `old` strings are in the formatted style (re-fitted after `tools/warm.sh fmt` at the gate: only S2 was rewrapped).
 # Anchors that occur more than once in src/pl-read.jl (re-counted with a python3 -I checker) are written with their neighbouring lines:
 # E3/E4 start at `pv = f.dict_pv` / `if pv != 0` (the compound's read_compound_end has the same two lines), S1 at the `ld, f.pin,
 # :dict_position,` line (read_compound_start has the same tuple), S3 at `if t == TK_DICT` (read_atomic's TK_NAME arm has the same
@@ -12,14 +12,18 @@
 # NOT LISTED: read_dict_key's `req.maxpri = 999` (swipl reads `_{a:x:-y}` and `_{a:b;c}` as values: rows rd144, rd145; no row tells 999
 #   from 1200); build_dict's VARTAG_WARNING printMessage (no row observes the message sink); `_key_atom`'s punctuation arm (no row reaches
 #   it); `f.dict_pairs` count mutations (out-of-range term-stack reads); the `=== nothing && return 0` guards after get_token.
-# TARGETS (audit D-0238): the step's own file, test_read_swipl.jl (term_to_atom through the same parser), test_type_discipline.jl; the flag
-# mutants take test_prolog_flag_swipl.jl instead of test_read_swipl.jl.
+# TARGETS (audit D-0238): the step's own file, test_read_swipl.jl and test_read_term_swipl.jl (term_to_atom through the same parser; the latter reads
+# dict texts since the gate), test_type_discipline.jl; the flag mutants take test_prolog_flag_swipl.jl, test_set_flag_swipl.jl and
+# test_push_flag_swipl.jl (both list the var_tag flag's `dict` default) instead of the two reader files.
 TD = "test/core_lang/test_read_dict_swipl.jl"
 TR = "test/core_lang/test_read_swipl.jl"
 TF = "test/core_lang/test_prolog_flag_swipl.jl"
 TT = "test/test_type_discipline.jl"
-TARGETS = [TD, TR, TT]
-FTARGETS = [TD, TF, TT]
+TM = "test/core_text/test_read_term_swipl.jl"
+TS = "test/core_lang/test_set_flag_swipl.jl"
+TP = "test/core_lang/test_push_flag_swipl.jl"
+TARGETS = [TD, TR, TM, TT]
+FTARGETS = [TD, TF, TS, TP, TT]
 R = "src/pl-read.jl"
 D = "src/pl-dict.jl"
 P = "src/os/pl-prologflag.jl"
@@ -41,8 +45,8 @@ MUTANTS = [
          old=SD + "                (token.start, _POS_VARIABLE, token.start, token.end_),",
          new=SD + "                (token.start, _POS_VARIABLE, token.start, token.start),"),
     dict(id="RDDICT-S2 read_dict_start: an empty dict `{}` is read as a key (KILL rd01, rd02, rd06, rd117)", file=R, targets=TARGETS,
-         old="if tstart.type == TK_NAME && sym_key(_token_atom(tstart)) == sym_key(mk_sym(T, Symbol(\"{}\")))",
-         new="if false && sym_key(_token_atom(tstart)) == sym_key(mk_sym(T, Symbol(\"{}\")))"),
+         old="if tstart.type == TK_NAME &&\n        sym_key(_token_atom(tstart)) == sym_key(mk_sym(T, Symbol(\"{}\")))",
+         new="if false &&\n        sym_key(_token_atom(tstart)) == sym_key(mk_sym(T, Symbol(\"{}\")))"),
     dict(id="RDDICT-S3 read_dict_start: an atom tag is dropped (KILL rd04, rd06, rd08, rd35)", file=R, targets=TARGETS,
          old="    if t == TK_DICT\n        term = alloc_term(rd)\n        _setHandle!(term, _token_atom(token), rd)   # PL_put_atom(term, token->value.atom)",
          new="    if t == TK_DICT\n        term = alloc_term(rd)\n        nothing   # tag dropped"),

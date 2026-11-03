@@ -102,34 +102,70 @@ dp_mem(X, [_|T]) :- dp_mem(X, T).
 const _DP_CASES = [
     ("dp01", raw"dict_create(D, t, [a-1, b-2]), '$get_dict_ex'(a, D, V), R = V"),
     ("dp02", raw"dict_create(D, t, [a-1, b-2]), '$get_dict_ex'(b, D, V), R = V"),
-    ("dp03", raw"dict_create(D, t, [a-1, b-2]), catch('$get_dict_ex'(c, D, _), error(existence_error(T, K, _), _), R = ex(T, K))"),
+    (
+        "dp03",
+        raw"dict_create(D, t, [a-1, b-2]), catch('$get_dict_ex'(c, D, _), error(existence_error(T, K, _), _), R = ex(T, K))"
+    ),
     ("dp04", raw"'$get_dict_ex'(a, foo, V), R = V"),
     ("dp05", raw"'$get_dict_ex'(a, _, V), R = V"),
-    ("dp06", raw"dict_create(D, t, [a-1, b-2, c-3]), findall(K-V, '$get_dict_ex'(K, D, V), L), msort(L, R)"),
+    (
+        "dp06",
+        raw"dict_create(D, t, [a-1, b-2, c-3]), findall(K-V, '$get_dict_ex'(K, D, V), L), msort(L, R)"
+    ),
     ("dp07", raw"dict_create(D, t, [a-1, b-2]), '$get_dict_ex'(1.5, D, V), R = V"),
     ("dp08", raw"dict_create(D, t, [a-1, b-2]), '$get_dict_ex'(a, D, 2), R = yes"),
     ("dp09", raw"dict_create(D, t, [1-one]), '$get_dict_ex'(1, D, V), R = V"),
-    ("dp10", raw"dict_create(D, t, [a-1, b-2, c-3]), findall(K, '$get_dict_ex'(K, D, 2), R)"),
+    (
+        "dp10",
+        raw"dict_create(D, t, [a-1, b-2, c-3]), findall(K, '$get_dict_ex'(K, D, 2), R)"
+    ),
     ("dp11", raw"dict_create(D, t, []), findall(K, '$get_dict_ex'(K, D, _), R)"),
     ("dp12", raw"dict_create(D, t, [a-1]), findall(V, '$get_dict_ex'(a, D, V), R)"),
-    ("dp13", raw"dict_create(D, t, [a-1, b-2]), get_dict(a, D, V, N, 9), dpairs(N, P), R = V-P"),
-    ("dp14", raw"dict_create(D, t, [a-1, b-2]), get_dict(b, D, V, N, 9), dpairs(N, P), R = V-P"),
+    (
+        "dp13",
+        raw"dict_create(D, t, [a-1, b-2]), get_dict(a, D, V, N, 9), dpairs(N, P), R = V-P"
+    ),
+    (
+        "dp14",
+        raw"dict_create(D, t, [a-1, b-2]), get_dict(b, D, V, N, 9), dpairs(N, P), R = V-P"
+    ),
     ("dp15", raw"dict_create(D, t, [a-1, b-2]), get_dict(c, D, V, N, 9), R = V-N"),
     ("dp16", raw"dict_create(D, t, [a-1, b-2]), get_dict(a, D, 2, N, 9), R = N"),
     ("dp17", raw"dict_create(D, t, [a-1]), get_dict(1.5, D, V, N, 9), R = V-N"),
     ("dp18", raw"dict_create(D, t, [a-1]), get_dict(_, D, V, N, 9), R = V-N"),
     ("dp19", raw"get_dict(a, foo, V, N, 9), R = V-N"),
     ("dp20", raw"get_dict(a, [a-1, b-2], V, N, 9), dpairs(N, P), R = V-P"),
-    ("dp21", raw"dict_create(D, t, [a-1]), get_dict(a, D, _, N, X), get_dict(a, N, Y), Y == X, R = yes"),
-    ("dp22", raw"dict_create(D, t, [a-1]), get_dict(a, D, V, N, 9), get_dict(a, N, Y), dpairs(D, P0), R = V-Y-P0"),
+    (
+        "dp21",
+        raw"dict_create(D, t, [a-1]), get_dict(a, D, _, N, X), get_dict(a, N, Y), Y == X, R = yes"
+    ),
+    (
+        "dp22",
+        raw"dict_create(D, t, [a-1]), get_dict(a, D, V, N, 9), get_dict(a, N, Y), dpairs(D, P0), R = V-Y-P0"
+    ),
     ("dp23", raw"dict_create(D, t, [a-1]), get_dict(a, D, 1, N, 1), dpairs(N, P), R = P"),
-    ("dp24", raw"dict_create(D, t, [a-X, b-Y]), get_dict(a, D, 5, N, Z), dpairs(N, P), R = X-Y-P-Z"),
-    ("dp25", raw"dict_create(D, t, [a-1]), get_dict(a, D, _, N, f(Q)), get_dict(a, N, f(7)), R = Q"),
-    ("dp26", raw"dict_create(D, t, [a-1, b-2]), get_dict(a, D, _, N, 9), is_dict(N, T), R = T"),
+    (
+        "dp24",
+        raw"dict_create(D, t, [a-X, b-Y]), get_dict(a, D, 5, N, Z), dpairs(N, P), R = X-Y-P-Z"
+    ),
+    (
+        "dp25",
+        raw"dict_create(D, t, [a-1]), get_dict(a, D, _, N, f(Q)), get_dict(a, N, f(7)), R = Q"
+    ),
+    (
+        "dp26",
+        raw"dict_create(D, t, [a-1, b-2]), get_dict(a, D, _, N, 9), is_dict(N, T), R = T"
+    ),
     ("dp27", raw"dict_create(D, t, [a-1]), get_dict(f(x), D, V, N, 9), R = V-N"),
-    ("dp28", raw"dict_create(D, t, [1-a, 2-b]), get_dict(2, D, V, N, z), dpairs(N, P), R = V-P"),
+    (
+        "dp28",
+        raw"dict_create(D, t, [1-a, 2-b]), get_dict(2, D, V, N, z), dpairs(N, P), R = V-P"
+    ),
     ("dp29", raw"dict_create(D, t, [a-1]), get_dict(a, D, V, foo, 9), R = V"),
-    ("dp30", raw"dict_create(D, t, [a-1, b-2, c-3]), get_dict(b, D, _, N, new), dict_pairs(N, T, P), R = T-P"),
+    (
+        "dp30",
+        raw"dict_create(D, t, [a-1, b-2, c-3]), get_dict(b, D, _, N, new), dict_pairs(N, T, P), R = T-P"
+    ),
     ("dp31", raw"dict_create(D, t, [a-1]), put_dict(b, D, 2, N), dpairs(N, R)"),
     ("dp32", raw"dict_create(D, t, [a-1, b-2]), put_dict(a, D, 9, N), dpairs(N, R)"),
     ("dp33", raw"dict_create(D, t, []), put_dict(a, D, 1, N), dpairs(N, R)"),
@@ -139,15 +175,36 @@ const _DP_CASES = [
     ("dp37", raw"put_dict(a, foo, x, N), R = N"),
     ("dp38", raw"put_dict(a, _, x, N), R = N"),
     ("dp39", raw"dict_create(D, t, [a-1]), put_dict(a, D, 1, N), dpairs(N, R)"),
-    ("dp40", raw"dict_create(D, t, [a-1]), put_dict(b, D, X, N), get_dict(b, N, Y), X = 5, R = Y"),
+    (
+        "dp40",
+        raw"dict_create(D, t, [a-1]), put_dict(b, D, X, N), get_dict(b, N, Y), X = 5, R = Y"
+    ),
     ("dp41", raw"dict_create(D, t, [a-1]), put_dict(b, D, 2, _), dpairs(D, R)"),
-    ("dp42", raw"dict_create(D, t, [b-1, d-1]), put_dict(c, D, 2, N), put_dict(a, N, 3, M), put_dict(e, M, 4, Q), dpairs(Q, R)"),
+    (
+        "dp42",
+        raw"dict_create(D, t, [b-1, d-1]), put_dict(c, D, 2, N), put_dict(a, N, 3, M), put_dict(e, M, 4, Q), dpairs(Q, R)"
+    ),
     ("dp43", raw"dict_create(D, t, [a-1]), put_dict(b, D, 2, N), is_dict(N, T), R = T"),
-    ("dp44", raw"dict_create(D, t, [a-1]), put_dict(b, D, 2, N), put_dict(b, D, 2, N2), N == N2, R = same"),
-    ("dp45", raw"dict_create(D, t, [1-a]), put_dict(2, D, b, N), put_dict(c, N, x, M), dpairs(M, R)"),
-    ("dp46", raw"dict_create(D, t, [a-1]), put_dict(b, D, 2, N), put_dict(b, N, 3, M), dpairs(M, R)"),
-    ("dp47", raw"dict_create(D, T, [a-1]), put_dict(b, D, 2, N), is_dict(N, T2), T2 == T, R = yes"),
-    ("dp48", raw"dict_create(D, t, [a-1]), put_dict(a, D, 2, N), get_dict(a, D, V), get_dict(a, N, W), R = V-W"),
+    (
+        "dp44",
+        raw"dict_create(D, t, [a-1]), put_dict(b, D, 2, N), put_dict(b, D, 2, N2), N == N2, R = same"
+    ),
+    (
+        "dp45",
+        raw"dict_create(D, t, [1-a]), put_dict(2, D, b, N), put_dict(c, N, x, M), dpairs(M, R)"
+    ),
+    (
+        "dp46",
+        raw"dict_create(D, t, [a-1]), put_dict(b, D, 2, N), put_dict(b, N, 3, M), dpairs(M, R)"
+    ),
+    (
+        "dp47",
+        raw"dict_create(D, T, [a-1]), put_dict(b, D, 2, N), is_dict(N, T2), T2 == T, R = yes"
+    ),
+    (
+        "dp48",
+        raw"dict_create(D, t, [a-1]), put_dict(a, D, 2, N), get_dict(a, D, V), get_dict(a, N, W), R = V-W"
+    ),
     ("dp49", raw"dict_create(D, t, [a-1]), put_dict(b, D, 2, foo), R = yes"),
     ("dp50", raw"dict_create(D, t, [b-2, a-1, c-3]), dict_pairs(D, T, P), R = T-P"),
     ("dp51", raw"dict_create(D, t, [b-1, 2-x, a-3, 1-y]), dict_pairs(D, _, P), R = P"),
@@ -174,49 +231,115 @@ const _DP_CASES = [
     ("dp72", raw"dict_create(D, t, [a-1]), dict_pairs(D, t, [a-1, b-2]), R = yes"),
     ("dp73", raw"dict_create(D, t, [a-1]), dict_pairs(D, t, foo), R = yes"),
     ("dp74", raw"dict_create(D, t, [a-f(X), b-X, c-1.5]), dict_pairs(D, _, P), R = P"),
-    ("dp75", raw"dict_create(D, t, [a-1, b-2]), dict_pairs(D, t, P), findall(x, dict_pairs(D, t, _), L), R = P-L"),
+    (
+        "dp75",
+        raw"dict_create(D, t, [a-1, b-2]), dict_pairs(D, t, P), findall(x, dict_pairs(D, t, _), L), R = P-L"
+    ),
     ("dp76", raw"dict_create(D, t, [a-1]), dict_pairs(D, T, P), P = [K-V], R = K-V-T"),
     ("dp77", raw"dict_pairs([a-1, b-2], T, P), R = T-P"),
     ("dp78", raw"dict_pairs(D, t, [a-X]), dict_pairs(D, t, [a-1]), R = X"),
     ("dp79", raw"dict_create(D, t, [a-1]), dict_pairs(D, t, [a-1|T]), R = T"),
-    ("dp80", raw"dict_pairs(D, t, [h-8, g-7, f-6, e-5, d-4, c-3, b-2, a-1]), dict_pairs(D, _, P), R = P"),
+    (
+        "dp80",
+        raw"dict_pairs(D, t, [h-8, g-7, f-6, e-5, d-4, c-3, b-2, a-1]), dict_pairs(D, _, P), R = P"
+    ),
     ("dp81", raw"dict_pairs(D, t, [x-1, 5-a, y-2, 3-b]), dict_pairs(D, _, P), R = P"),
-    ("dp82", raw"dict_create(D, t, [a-1, b-2]), del_dict(a, D, V, N), dpairs(N, P), R = V-P"),
-    ("dp83", raw"dict_create(D, t, [a-1, b-2]), del_dict(b, D, V, N), dpairs(N, P), R = V-P"),
+    (
+        "dp82",
+        raw"dict_create(D, t, [a-1, b-2]), del_dict(a, D, V, N), dpairs(N, P), R = V-P"
+    ),
+    (
+        "dp83",
+        raw"dict_create(D, t, [a-1, b-2]), del_dict(b, D, V, N), dpairs(N, P), R = V-P"
+    ),
     ("dp84", raw"dict_create(D, t, [a-1, b-2]), del_dict(c, D, V, N), R = V-N"),
     ("dp85", raw"dict_create(D, t, [a-1, b-2]), del_dict(a, D, 2, N), R = N"),
     ("dp86", raw"dict_create(D, t, [a-1]), del_dict(1.5, D, V, N), R = V-N"),
     ("dp87", raw"dict_create(D, t, [a-1]), del_dict(_, D, V, N), R = V-N"),
     ("dp88", raw"del_dict(a, foo, V, N), R = V-N"),
-    ("dp89", raw"dict_create(D, t, [a-1]), del_dict(a, D, V, N), dict_pairs(N, T, P), R = V-T-P"),
+    (
+        "dp89",
+        raw"dict_create(D, t, [a-1]), del_dict(a, D, V, N), dict_pairs(N, T, P), R = V-T-P"
+    ),
     ("dp90", raw"del_dict(a, [a-1, b-2], V, N), dpairs(N, P), R = V-P"),
     ("dp91", raw"dict_create(D, t, [a-X, b-Y]), del_dict(a, D, 5, _), R = X-Y"),
-    ("dp92", raw"dict_create(D, t, [a-1, b-2, c-3]), del_dict(b, D, _, N), dpairs(D, P0), dpairs(N, P), R = P0-P"),
-    ("dp93", raw"dict_create(D, T, [a-1, b-2]), del_dict(a, D, _, N), is_dict(N, T2), T2 == T, R = yes"),
-    ("dp94", raw"dict_create(D, t, [1-x, a-y]), del_dict(1, D, V, N), dpairs(N, P), R = V-P"),
+    (
+        "dp92",
+        raw"dict_create(D, t, [a-1, b-2, c-3]), del_dict(b, D, _, N), dpairs(D, P0), dpairs(N, P), R = P0-P"
+    ),
+    (
+        "dp93",
+        raw"dict_create(D, T, [a-1, b-2]), del_dict(a, D, _, N), is_dict(N, T2), T2 == T, R = yes"
+    ),
+    (
+        "dp94",
+        raw"dict_create(D, t, [1-x, a-y]), del_dict(1, D, V, N), dpairs(N, P), R = V-P"
+    ),
     ("dp95", raw"dict_create(D, t, [a-f(Z)]), del_dict(a, D, f(3), _), R = Z"),
     ("dp96", raw"dict_create(D, t, [a-1]), del_dict(a, D, _, foo), R = yes"),
-    ("dp97", raw"dict_create(D, t, [a-1, b-2]), del_dict(a, D, V, N), del_dict(b, N, W, M), dict_pairs(M, T, P), R = V-W-T-P"),
-    ("dp98", raw"dict_create(S, _, [a-X]), dict_create(F, t, [a-1, b-2]), ':<'(S, F), R = X"),
-    ("dp99", raw"dict_create(S, s, [a-1]), dict_create(F, t, [a-1, b-2]), ':<'(S, F), R = yes"),
-    ("dp100", raw"dict_create(S, _, [a-1, c-3]), dict_create(F, t, [a-1, b-2]), ':<'(S, F), R = yes"),
-    ("dp101", raw"dict_create(S, _, [a-2]), dict_create(F, t, [a-1, b-2]), ':<'(S, F), R = yes"),
-    ("dp102", raw"dict_create(S, T, [a-1]), dict_create(F, t, [a-1, b-2]), ':<'(S, F), R = T"),
+    (
+        "dp97",
+        raw"dict_create(D, t, [a-1, b-2]), del_dict(a, D, V, N), del_dict(b, N, W, M), dict_pairs(M, T, P), R = V-W-T-P"
+    ),
+    (
+        "dp98",
+        raw"dict_create(S, _, [a-X]), dict_create(F, t, [a-1, b-2]), ':<'(S, F), R = X"
+    ),
+    (
+        "dp99",
+        raw"dict_create(S, s, [a-1]), dict_create(F, t, [a-1, b-2]), ':<'(S, F), R = yes"
+    ),
+    (
+        "dp100",
+        raw"dict_create(S, _, [a-1, c-3]), dict_create(F, t, [a-1, b-2]), ':<'(S, F), R = yes"
+    ),
+    (
+        "dp101",
+        raw"dict_create(S, _, [a-2]), dict_create(F, t, [a-1, b-2]), ':<'(S, F), R = yes"
+    ),
+    (
+        "dp102",
+        raw"dict_create(S, T, [a-1]), dict_create(F, t, [a-1, b-2]), ':<'(S, F), R = T"
+    ),
     ("dp103", raw"dict_create(S, _, []), dict_create(F, t, [a-1]), ':<'(S, F), R = yes"),
     ("dp104", raw"dict_create(S, _, [a-1]), dict_create(F, t, []), ':<'(S, F), R = yes"),
     ("dp105", raw"dict_create(F, t, [a-1, b-2, c-3]), ':<'([b-X], F), R = X"),
     ("dp106", raw"dict_create(F, t, [a-1]), ':<'(foo, F), R = yes"),
     ("dp107", raw"dict_create(S, _, [a-1]), ':<'(S, foo), R = yes"),
     ("dp108", raw"dict_create(F, t, [a-1]), ':<'(_, F), R = yes"),
-    ("dp109", raw"dict_create(S, _, [a-X, b-Y]), dict_create(F, t, [a-1, b-2]), ':<'(S, F), R = X-Y"),
+    (
+        "dp109",
+        raw"dict_create(S, _, [a-X, b-Y]), dict_create(F, t, [a-1, b-2]), ':<'(S, F), R = X-Y"
+    ),
     ("dp110", raw"':<'([a-X], [a-1, b-2]), R = X"),
-    ("dp111", raw"dict_create(S, _, [b-1, d-2]), dict_create(F, t, [a-0, b-1, c-0, d-2, e-0]), ':<'(S, F), R = yes"),
-    ("dp112", raw"dict_create(S, _, [b-1, z-2]), dict_create(F, t, [a-0, b-1, c-0, d-2, e-0]), ':<'(S, F), R = yes"),
-    ("dp113", raw"dict_create(S, _, [a-X]), dict_create(F, t, [a-f(Y)]), ':<'(S, F), R = X-Y"),
-    ("dp114", raw"dict_create(A, t, [a-X, b-2]), dict_create(B, t, [b-2, c-Y]), '>:<'(A, B), R = X-Y"),
-    ("dp115", raw"dict_create(A, t, [a-1]), dict_create(B, t, [a-2]), '>:<'(A, B), R = yes"),
-    ("dp116", raw"dict_create(A, t, [a-1]), dict_create(B, t, [b-2]), '>:<'(A, B), R = yes"),
-    ("dp117", raw"dict_create(A, t, [a-1]), dict_create(B, u, [a-1]), '>:<'(A, B), R = yes"),
+    (
+        "dp111",
+        raw"dict_create(S, _, [b-1, d-2]), dict_create(F, t, [a-0, b-1, c-0, d-2, e-0]), ':<'(S, F), R = yes"
+    ),
+    (
+        "dp112",
+        raw"dict_create(S, _, [b-1, z-2]), dict_create(F, t, [a-0, b-1, c-0, d-2, e-0]), ':<'(S, F), R = yes"
+    ),
+    (
+        "dp113",
+        raw"dict_create(S, _, [a-X]), dict_create(F, t, [a-f(Y)]), ':<'(S, F), R = X-Y"
+    ),
+    (
+        "dp114",
+        raw"dict_create(A, t, [a-X, b-2]), dict_create(B, t, [b-2, c-Y]), '>:<'(A, B), R = X-Y"
+    ),
+    (
+        "dp115",
+        raw"dict_create(A, t, [a-1]), dict_create(B, t, [a-2]), '>:<'(A, B), R = yes"
+    ),
+    (
+        "dp116",
+        raw"dict_create(A, t, [a-1]), dict_create(B, t, [b-2]), '>:<'(A, B), R = yes"
+    ),
+    (
+        "dp117",
+        raw"dict_create(A, t, [a-1]), dict_create(B, u, [a-1]), '>:<'(A, B), R = yes"
+    ),
     ("dp118", raw"dict_create(A, T, [a-1]), dict_create(B, u, [b-2]), '>:<'(A, B), R = T"),
     ("dp119", raw"dict_create(A, t, [a-X]), dict_create(B, t, [a-1]), '>:<'(A, B), R = X"),
     ("dp120", raw"dict_create(A, t, []), dict_create(B, t, []), '>:<'(A, B), R = yes"),
@@ -224,26 +347,68 @@ const _DP_CASES = [
     ("dp122", raw"dict_create(A, t, [a-1]), '>:<'(A, foo), R = yes"),
     ("dp123", raw"dict_create(B, t, [a-1]), '>:<'(_, B), R = yes"),
     ("dp124", raw"'>:<'([a-X], [a-1, b-2]), R = X"),
-    ("dp125", raw"dict_create(A, t, [a-X, b-Y]), dict_create(B, t, [a-Y, b-3]), '>:<'(A, B), R = X-Y"),
-    ("dp126", raw"dict_create(A, t, [a-1, b-2, c-3]), dict_create(B, t, [a-1, c-4]), '>:<'(A, B), R = yes"),
-    ("dp127", raw"dict_create(A, t, [a-1, c-3]), dict_create(B, t, [a-1, b-2, c-3, d-4]), '>:<'(A, B), R = yes"),
-    ("dp128", raw"dict_create(A, t, [a-1, b-2]), dict_create(B, u, [b-9, a-8]), dict_same_keys(A, B), R = yes"),
-    ("dp129", raw"dict_create(A, t, [a-1, b-2]), dict_create(B, t, [a-1, c-2]), dict_same_keys(A, B), R = yes"),
-    ("dp130", raw"dict_create(A, t, [a-1, b-2]), dict_create(B, t, [a-1]), dict_same_keys(A, B), R = yes"),
-    ("dp131", raw"dict_create(A, t, [a-1, b-2]), dict_same_keys(A, B), dict_pairs(B, T, P), R = T-P"),
-    ("dp132", raw"dict_create(A, t, [a-1, b-2]), dict_same_keys(B, A), dict_pairs(B, T, P), R = T-P"),
+    (
+        "dp125",
+        raw"dict_create(A, t, [a-X, b-Y]), dict_create(B, t, [a-Y, b-3]), '>:<'(A, B), R = X-Y"
+    ),
+    (
+        "dp126",
+        raw"dict_create(A, t, [a-1, b-2, c-3]), dict_create(B, t, [a-1, c-4]), '>:<'(A, B), R = yes"
+    ),
+    (
+        "dp127",
+        raw"dict_create(A, t, [a-1, c-3]), dict_create(B, t, [a-1, b-2, c-3, d-4]), '>:<'(A, B), R = yes"
+    ),
+    (
+        "dp128",
+        raw"dict_create(A, t, [a-1, b-2]), dict_create(B, u, [b-9, a-8]), dict_same_keys(A, B), R = yes"
+    ),
+    (
+        "dp129",
+        raw"dict_create(A, t, [a-1, b-2]), dict_create(B, t, [a-1, c-2]), dict_same_keys(A, B), R = yes"
+    ),
+    (
+        "dp130",
+        raw"dict_create(A, t, [a-1, b-2]), dict_create(B, t, [a-1]), dict_same_keys(A, B), R = yes"
+    ),
+    (
+        "dp131",
+        raw"dict_create(A, t, [a-1, b-2]), dict_same_keys(A, B), dict_pairs(B, T, P), R = T-P"
+    ),
+    (
+        "dp132",
+        raw"dict_create(A, t, [a-1, b-2]), dict_same_keys(B, A), dict_pairs(B, T, P), R = T-P"
+    ),
     ("dp133", raw"dict_same_keys(_, _), R = yes"),
     ("dp134", raw"dict_create(A, t, [a-1]), dict_same_keys(A, foo), R = yes"),
     ("dp135", raw"dict_create(A, t, [a-1]), dict_same_keys(foo, A), R = yes"),
     ("dp136", raw"dict_same_keys(foo, bar), R = yes"),
-    ("dp137", raw"dict_create(A, t, []), dict_same_keys(A, B), dict_pairs(B, T, P), R = T-P"),
-    ("dp138", raw"dict_create(A, t, [a-1]), dict_same_keys(A, B), dict_same_keys(A, B), R = yes"),
-    ("dp139", raw"dict_create(A, t, [a-1]), dict_same_keys(A, B), dict_pairs(B, _, [_-V]), V = 7, dpairs(A, R)"),
+    (
+        "dp137",
+        raw"dict_create(A, t, []), dict_same_keys(A, B), dict_pairs(B, T, P), R = T-P"
+    ),
+    (
+        "dp138",
+        raw"dict_create(A, t, [a-1]), dict_same_keys(A, B), dict_same_keys(A, B), R = yes"
+    ),
+    (
+        "dp139",
+        raw"dict_create(A, t, [a-1]), dict_same_keys(A, B), dict_pairs(B, _, [_-V]), V = 7, dpairs(A, R)"
+    ),
     ("dp140", raw"dict_same_keys([a-1], _), R = yes"),
-    ("dp141", raw"dict_create(A, t, [a-1, b-2, c-3, d-4]), dict_same_keys(A, B), dict_pairs(B, _, P), length(P, R)"),
+    (
+        "dp141",
+        raw"dict_create(A, t, [a-1, b-2, c-3, d-4]), dict_same_keys(A, B), dict_pairs(B, _, P), length(P, R)"
+    ),
     ("dp142", raw"dict_create(A, t, [a-1]), dict_same_keys(A, [a-1]), R = yes"),
-    ("dp143", raw"dict_create(A, t, [a-1, b-2]), dict_same_keys(A, B), dict_pairs(B, _, [K1-V1, K2-V2]), R = K1-K2-(V1 == V2)"),
-    ("dp144", raw"dict_create(D, t, [a-1, b-2, c-3]), findall(K-V, (dp_mem(I, [1, 2, 3]), '$get_dict_kv'(I, D, K, V)), L), msort(L, R)"),
+    (
+        "dp143",
+        raw"dict_create(A, t, [a-1, b-2]), dict_same_keys(A, B), dict_pairs(B, _, [K1-V1, K2-V2]), R = K1-K2-(V1 == V2)"
+    ),
+    (
+        "dp144",
+        raw"dict_create(D, t, [a-1, b-2, c-3]), findall(K-V, (dp_mem(I, [1, 2, 3]), '$get_dict_kv'(I, D, K, V)), L), msort(L, R)"
+    ),
     ("dp145", raw"dict_create(D, t, [a-1, b-2, c-3]), '$get_dict_kv'(0, D, K, V), R = K-V"),
     ("dp146", raw"dict_create(D, t, [a-1, b-2, c-3]), '$get_dict_kv'(4, D, K, V), R = K-V"),
     ("dp147", raw"dict_create(D, t, [a-1]), '$get_dict_kv'(-1, D, K, V), R = K-V"),
@@ -255,15 +420,42 @@ const _DP_CASES = [
     ("dp153", raw"dict_create(D, t, [a-1]), '$get_dict_kv'(1, D, b, V), R = V"),
     ("dp154", raw"dict_create(D, t, [a-1]), '$get_dict_kv'(1, D, K, 2), R = K"),
     ("dp155", raw"dict_create(D, t, []), '$get_dict_kv'(1, D, K, V), R = K-V"),
-    ("dp156", raw"dict_create(D, t, [a-1, b-2]), dict_create(E, u, [a-x, b-y]), findall(K-V1-V2, (dp_mem(I, [1, 2]), '$get_dict_kv'(I, D, E, K, V1, V2)), L), msort(L, R)"),
-    ("dp157", raw"dict_create(D, t, [a-1, b-2]), dict_create(E, u, [c-x, d-y]), catch('$get_dict_kv'(1, D, E, K, V1, V2), error(domain_error(T, _), _), R = d(T)), R \== K-V1-V2"),
-    ("dp158", raw"dict_create(D, t, [a-1, b-2]), dict_create(E, u, [a-x]), catch('$get_dict_kv'(1, D, E, K, V1, V2), error(domain_error(T, _), _), R = d(T)), R \== K-V1-V2"),
-    ("dp159", raw"dict_create(D, t, [a-1, b-2]), '$get_dict_kv'(1, D, foo, K, V1, V2), R = K-V1-V2"),
-    ("dp160", raw"dict_create(D, t, [a-1, b-2]), '$get_dict_kv'(1, D, _, K, V1, V2), R = K-V1-V2"),
-    ("dp161", raw"dict_create(D, t, [a-1, b-2]), dict_create(E, u, [a-x, b-y]), dict_create(F, v, [a-p, b-q]), findall(K-V1-V2-V3, (dp_mem(I, [1, 2]), '$get_dict_kv'(I, D, E, F, K, V1, V2, V3)), L), msort(L, R)"),
-    ("dp162", raw"dict_create(D, t, [a-1, b-2]), dict_create(E, u, [a-x, b-y]), dict_create(F, v, [c-p, d-q]), catch('$get_dict_kv'(1, D, E, F, K, V1, V2, V3), error(domain_error(T, _), _), R = d(T)), R \== K-V1-V2-V3"),
-    ("dp163", raw"dict_create(D, t, [a-1, b-2]), '$get_dict_kv'(3, D, D, K, V1, V2), R = K-V1-V2"),
-    ("dp164", raw"dict_create(D, t, [a-1, b-2]), '$get_dict_kv'(1, D, D, K, V1, V1), R = K-V1")
+    (
+        "dp156",
+        raw"dict_create(D, t, [a-1, b-2]), dict_create(E, u, [a-x, b-y]), findall(K-V1-V2, (dp_mem(I, [1, 2]), '$get_dict_kv'(I, D, E, K, V1, V2)), L), msort(L, R)"
+    ),
+    (
+        "dp157",
+        raw"dict_create(D, t, [a-1, b-2]), dict_create(E, u, [c-x, d-y]), catch('$get_dict_kv'(1, D, E, K, V1, V2), error(domain_error(T, _), _), R = d(T)), R \== K-V1-V2"
+    ),
+    (
+        "dp158",
+        raw"dict_create(D, t, [a-1, b-2]), dict_create(E, u, [a-x]), catch('$get_dict_kv'(1, D, E, K, V1, V2), error(domain_error(T, _), _), R = d(T)), R \== K-V1-V2"
+    ),
+    (
+        "dp159",
+        raw"dict_create(D, t, [a-1, b-2]), '$get_dict_kv'(1, D, foo, K, V1, V2), R = K-V1-V2"
+    ),
+    (
+        "dp160",
+        raw"dict_create(D, t, [a-1, b-2]), '$get_dict_kv'(1, D, _, K, V1, V2), R = K-V1-V2"
+    ),
+    (
+        "dp161",
+        raw"dict_create(D, t, [a-1, b-2]), dict_create(E, u, [a-x, b-y]), dict_create(F, v, [a-p, b-q]), findall(K-V1-V2-V3, (dp_mem(I, [1, 2]), '$get_dict_kv'(I, D, E, F, K, V1, V2, V3)), L), msort(L, R)"
+    ),
+    (
+        "dp162",
+        raw"dict_create(D, t, [a-1, b-2]), dict_create(E, u, [a-x, b-y]), dict_create(F, v, [c-p, d-q]), catch('$get_dict_kv'(1, D, E, F, K, V1, V2, V3), error(domain_error(T, _), _), R = d(T)), R \== K-V1-V2-V3"
+    ),
+    (
+        "dp163",
+        raw"dict_create(D, t, [a-1, b-2]), '$get_dict_kv'(3, D, D, K, V1, V2), R = K-V1-V2"
+    ),
+    (
+        "dp164",
+        raw"dict_create(D, t, [a-1, b-2]), '$get_dict_kv'(1, D, D, K, V1, V1), R = K-V1"
+    )
 ]
 
 # swipl 10.1.19-1-gcbf4e189's answers to the program and cases above (the driver's lines; evidence/DICT/dict_rows.out in the wip/dict branch)
@@ -513,15 +705,25 @@ end
     @test count(l -> occursin(code("not_less_than_zero"), l), rows) == 1
     # rows that fail have no answer after the name; rows that answer `yes`
     @test count(l -> occursin(r"^t_dp\d+$", l), rows) == 31
-    @test count(l -> endswith(l, "(a" * code("yes") * "))"), rows) == 12
+    @test count(l -> endswith(l, "(a" * code("yes") * ")"), rows) == 12
     # '$get_dict_kv'/6,8 on dicts with other keys raise domain_error(compatible_dict, _), caught inside the row as d(compatible_dict)
     @test count(l -> occursin(code("compatible_dict"), l), rows) == 3
     # no answer holds a dict (a dict is a compound named `dict`)
     @test !any(l -> occursin(code("dict") * "/", l), _DP_PINNED)
     # '$get_dict_ex'/3 raises existence_error(key, c) (dp03)
-    @test any(l -> startswith(l, "t_dp03 ") && occursin(code("key"), l) && endswith(l, "a" * code("c") * "))"), rows)
+    @test any(
+        l ->
+            startswith(l, "t_dp03 ") && occursin(code("key"), l) &&
+            endswith(l, "a" * code("c") * "))"),
+        rows
+    )
     # get_dict/5 hands back V and the new dict's pairs (dp13: 1 with [a-9, b-2])
-    @test any(l -> startswith(l, "t_dp13 ") && occursin("c[45]/2(i1,c[91,124,93]/2(c[45]/2(a[97],i9)", l), rows)
+    @test any(
+        l ->
+            startswith(l, "t_dp13 ") &&
+            occursin("c[45]/2(i1,c[91,124,93]/2(c[45]/2(a[97],i9)", l),
+        rows
+    )
 end
 
 @testset "the pins are swipl's (live, when swipl is on PATH)" begin

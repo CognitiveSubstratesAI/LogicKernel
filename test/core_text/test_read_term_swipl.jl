@@ -13,8 +13,8 @@
 #     there, src/pl-read.jl);
 #   * THE ENTRY POINTS: term_to_atom/2 and term_string/2 on every text a term can hold (atom,
 #     string, number, code and character lists, `[]`) and their errors; atom_to_term/3's bindings;
-#   * THE REFUSALS (R1's decision): a dict, a quasi-quotation — `NotPortedError` where swipl reads
-#     or raises a syntax error. A float's text (format_float) since R1e's floats; the write
+#   * THE REFUSALS (R1's decision): a quasi-quotation — `NotPortedError` where swipl calls its syntax
+#     hook (a dict is read since RDDICT, compared with swipl). A float's text (format_float) since R1e's floats; the write
 #     direction is R1e's (test_write_swipl.jl).
 using Test, LogicKernel, Random
 const LK = LogicKernel
@@ -259,7 +259,7 @@ if _TR_SWIPL !== nothing
         ours = [_tr_read(t) for t in _TR_CORPUS]
         theirs = _tr_swipl_read(_TR_CORPUS)
         refused = Dict(                         # R1's decision: refused, never a misread
-            "{a||b}" => "a quasi-quotation's raw text in braces", "-{a}" => "a dict"
+            "{a||b}" => "a quasi-quotation's raw text in braces"
         )
         # swipl's answer where the kernel refuses: pinned below, not compared here
         keep = [k for k in eachindex(_TR_CORPUS) if ours[k] != "NOTPORTED"]
@@ -268,13 +268,34 @@ if _TR_SWIPL !== nothing
         @test count(startswith("err "), ours) > 60 && count(startswith("c"), ours) > 120
     end
 
-    @testset "the refusals: a dict, a quasi-quotation — explicit, where swipl reads or errs" begin
-        # swipl reads a dict (`a{}`) or raises a syntax error inside one (`-{a}`: colon_expected);
-        # a complete quasi-quotation calls its Prolog syntax hook (`{|x||y|}`) — the kernel refuses
-        # each with NotPortedError (src/pl-read.jl `start_pframe`), never a misread
-        texts = ["-{a}", "a{b}", "a{}", "X{a:1}", "_{a:1}", "point{x: 1}", "{|a}",
-            "{|x||y|}",
-            "f({|x||y|})"]
+    @testset "dict syntax is read (RDDICT); a quasi-quotation is still refused" begin
+        # swipl reads a dict (`a{}`) or raises a syntax error inside one (`-{a}`: colon_expected): since RDDICT
+        # (src/pl-read.jl `read_dict_start`) the kernel answers the same, term and error ball compared with
+        # swipl's. The refusal list moved to the quasi-quotations alone: a complete one calls its Prolog
+        # syntax hook (`{|x||y|}`) — NotPortedError (src/pl-read.jl `start_pframe`), never a misread
+        # the driver's `enc/1` cannot write a dict (`compound_name_arity/3` raises on one), so: the two syntax
+        # errors are compared as whole balls, the four dicts by "swipl reads a dict" against "the kernel's
+        # term is the dict compound" (their contents are the rows of test_read_dict_swipl.jl, compared there)
+        errs = ["-{a}", "a{b}"]
+        ours_e = [_tr_read(t) for t in errs]
+        _tr_compare(errs, ours_e, _tr_swipl_read(errs))
+        @test all(startswith("err "), ours_e)
+        dicts = ["a{}", "X{a:1}", "_{a:1}", "point{x: 1}"]
+        ours_d = [_tr_read(t) for t in dicts]
+        @test all(startswith("c[100,105,99,116]/"), ours_d)      # the compound `dict(Tag, V, K, ...)`
+        prog =
+            "dd(Cs) :- atom_codes(A, Cs), catch((term_to_atom(T, A), (is_dict(T) -> writeln(dict) ; writeln(other))), _, writeln(err)).\n" *
+            "run :- " *
+            join(["dd([" * join(Int.(collect(t)), ",") * "])" for t in dicts], ", ") *
+            ".\n" *
+            ":- initialization((run, halt)).\n"
+        theirs_d = mktempdir() do d
+            f = joinpath(d, "d.pl")
+            write(f, prog)
+            split(chomp(read(pipeline(`swipl -q $f`; stderr=devnull), String)), '\n')
+        end
+        @test theirs_d == fill("dict", length(dicts))
+        texts = ["{|a}", "{|x||y|}", "f({|x||y|})"]
         ours = [_tr_read(t) for t in texts]
         theirs = _tr_swipl_read(texts)
         @test all(==("NOTPORTED"), ours)

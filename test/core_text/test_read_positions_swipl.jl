@@ -20,8 +20,8 @@
 #     names compared together; an instantiated position that does not unify fails the read.
 #   * read_clause/3's ERRORS: a stream that is no atom, not a stream, an output stream, an options
 #     list that is no list — the whole ball, as swipl raises it.
-#   * The refused constructs (a dict, a quasi-quotation: R1's decision) stay NotPortedError and are
-#     left out by name; nothing else may be refused.
+#   * The refused construct (a quasi-quotation: R1's decision) stays NotPortedError and is left out by
+#     name; a dict is read since RDDICT (its positions: test_read_dict_swipl.jl); nothing else may be refused.
 using Test, LogicKernel, Random
 const LK = LogicKernel
 
@@ -236,8 +236,8 @@ function _rp_compare(labels, ours::Vector{String}, theirs::Vector{String}; label
     return bad
 end
 
-# R1's decision: a dict is refused, never misread — left out by name. No text here holds one
-# (`-{a}` is in test_read_term_swipl.jl), and `{a||b}` (a quasi-quotation) is swipl's syntax error
+# R1's decision: a quasi-quotation is refused, never misread — left out by name. No text here holds one;
+# a dict is read since RDDICT (`-{a}` is in test_read_term_swipl.jl), and `{a||b}` (a quasi-quotation) is swipl's syntax error
 # `end_of_file_in_quasi_quotation` without the quasi_quotations option, which the kernel raises
 # too: compared (first run, 2026-10-25). Any NOTPORTED row therefore fails the test.
 const _RP_REFUSED = Set{String}()

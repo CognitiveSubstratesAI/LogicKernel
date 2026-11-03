@@ -215,7 +215,7 @@ end
         ["NAME([])", "NAME('{}')", "PUNCTUATION([)", "NAME(a)"]
     # a string stream ends its text with " . ", so a term needs no full stop (term_to_atom/2: `x`)
     @test _rd_raw("x", :string) == "x"
-    # a dict tag is its own token (the parser refuses dicts, R1d)
+    # a dict tag is its own token (read_dict_start reads the dict since RDDICT)
     @test _rd_tokens("point{x: 1}.")[1] == "DICT(point)"
     # a quoted functor, a symbol atom, a solo character
     @test _rd_tokens("'hello world'(x) =.. ! ;.")[1:6] ==

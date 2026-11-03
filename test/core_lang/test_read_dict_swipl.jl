@@ -10,7 +10,7 @@
 #   * The var_tag modes (error, warning, attvar, `#`, dict): the same cases per mode (rm10-rm23: attributes and labels of `attvar`); swipl sets the flag by a directive atop the
 #     program, the kernel on the module's flags before the load (the `set_prolog_flag/2` arm is F1b's): pins rdd_mode_rows_<mode>.out.
 #   * The program's own clauses hold dict syntax (the boot lines of init.pl:1297, autoload.pl:889): the loader reads them with this parser.
-#   * UNVERIFIED on the kernel (nothing was compiled when these rows were written): every kernel answer; the gate decides.
+#   * RUN at the gate (2026-11-03): the first parse and run on `reference` passed, 357 assertions; the kernel's answers are swipl's pins.
 #   * A dict never appears in an answer (the writer has no dict arm): a row observes it through dict_pairs/3.
 # rd01-rd37: dicts: reads, tags, keys, values
 # rd38-rd54: dicts: nested, in arguments, with operators
@@ -598,12 +598,16 @@ const _RDD_MODE_DYNDICT = [
 ]
 
 "The program file as a loader (kernel) or swipl reads it: the helpers, the bodies (main rows), the cases; for a mode, swipl's file has the flag directive atop."
-function _rdd_file(cases, bodies::Bool; mode::Union{Nothing, String}=nothing, swipl::Bool=false)::Tuple{String, Vector{String}}
+function _rdd_file(
+    cases, bodies::Bool; mode::Union{Nothing, String}=nothing, swipl::Bool=false
+)::Tuple{String, Vector{String}}
     names = ["t_$(id)" for (id, _) in cases]
     text =
         (swipl && mode !== nothing ? ":- set_prolog_flag(var_tag, '$(mode)').\n" : "") *
-        _RDD_PROGRAM * (bodies ? _RDD_BODIES : "") * join([
-            "t_$(id)(R) :- catch(($g), error(SsuE, _), R = raised(SsuE)).\n" for (id, g) in cases
+        _RDD_PROGRAM * (bodies ? _RDD_BODIES : "") *
+        join([
+            "t_$(id)(R) :- catch(($g), error(SsuE, _), R = raised(SsuE)).\n" for
+            (id, g) in cases
         ])
     f = joinpath(mktempdir(), "readdict.pl")
     write(f, text)
@@ -611,7 +615,9 @@ function _rdd_file(cases, bodies::Bool; mode::Union{Nothing, String}=nothing, sw
 end
 
 "The kernel's lines for `names` after consulting `path`, as the driver writes swipl's; the database, for the white-box tests."
-function _rdd_kernel(path::String, names::Vector{String}; mode::Union{Nothing, String}=nothing)
+function _rdd_kernel(
+    path::String, names::Vector{String}; mode::Union{Nothing, String}=nothing
+)
     gd = LK.PL_global_data{_RDD}()
     ld = LK.PL_local_data{_RDD}(gd)
     if mode !== nothing      # the module's var_tag, as `set_prolog_flag(var_tag, Mode)` sets it (F1b writes that arm): setVarTagFlag on the module's flags
@@ -668,8 +674,16 @@ end
     end
 end
 
-@testset "var_tag mode rows: the kernel's answers are swipl's, mode $(m) (rm01-rm24)" for (m, pins) in
-                                                                                             Dict("dict" => _RDD_MODE_DICT, "error" => _RDD_MODE_ERROR, "warning" => _RDD_MODE_WARNING, "attvar" => _RDD_MODE_ATTVAR, "#" => _RDD_MODE_DYNDICT)
+@testset "var_tag mode rows: the kernel's answers are swipl's, mode $(m) (rm01-rm24)" for (
+    m, pins
+) in
+                                                                                          Dict(
+    "dict" => _RDD_MODE_DICT,
+    "error" => _RDD_MODE_ERROR,
+    "warning" => _RDD_MODE_WARNING,
+    "attvar" => _RDD_MODE_ATTVAR,
+    "#" => _RDD_MODE_DYNDICT
+)
     f, names = _rdd_file(_RDD_MODE_CASES, false)
     kl, _, _ = _rdd_kernel(f, names; mode=m)
     @test length(kl) == length(pins)
@@ -695,7 +709,9 @@ end
     @test count(l -> occursin(code("nodict") * "/1(", l), rows) == 2
     @test count(l -> occursin(code("var"), l), rows) == 56
     # rdx answers hold the functor of the term read: `.`/2 (code 46) for the dict-dot rows
-    @test count(l -> occursin("c[46]/2(", l) || occursin(code("-") * "/2(c[45]/2(a[46]", l), rows) == 12
+    @test count(
+        l -> occursin("c[46]/2(", l) || occursin(code("-") * "/2(c[45]/2(a[46]", l), rows
+    ) == 12
     # rdp rows: dict_position/5 answers and the key_value_position/7 elements of their last argument
     @test count(l -> occursin(code("dict_position") * "/5(", l), rows) == 12
     @test count(l -> occursin(code("key_value_position") * "/7(", l), rows) == 10
@@ -707,7 +723,16 @@ end
 
 @testset "the var_tag mode rows are not vacuous (rm01-rm24 in 5 modes)" begin
     code(t) = "[" * join(Int.(collect(t)), ",") * "]"
-    for (m, pins) in zip(_RDD_MODES, [_RDD_MODE_DICT, _RDD_MODE_ERROR, _RDD_MODE_WARNING, _RDD_MODE_ATTVAR, _RDD_MODE_DYNDICT])
+    for (m, pins) in zip(
+        _RDD_MODES,
+        [
+            _RDD_MODE_DICT,
+            _RDD_MODE_ERROR,
+            _RDD_MODE_WARNING,
+            _RDD_MODE_ATTVAR,
+            _RDD_MODE_DYNDICT
+        ]
+    )
         @test pins[1] == "ok" && length(pins) == length(_RDD_MODE_CASES) + 1
     end
     # `error`: a variable tag is syn(var_tag, _); `attvar`: the answer is the atom `attvar`; `#` and `warning`: the tag answers `#`
@@ -718,7 +743,7 @@ end
     @test count(l -> occursin("a[35]", l), _RDD_MODE_DICT) == 0
     # build_attvar and build_labeled_subterm: their syntax errors, one row each in `attvar` mode (the other modes read the same texts as dicts)
     for (id, n) in (("duplicate_attribute", 2), ("label_on_attvar", 2),
-                    ("duplicate_label_value", 1), ("attvar_on_label", 1))
+        ("duplicate_label_value", 1), ("attvar_on_label", 1))
         @test count(l -> occursin(code(id), l), _RDD_MODE_ATTVAR) == n
         @test count(l -> occursin(code(id), l), _RDD_MODE_DICT) == 0
     end
@@ -730,7 +755,13 @@ end
     swipl = get(ENV, "LOGICKERNEL_NO_SWIPL", "") == "1" ? nothing : Sys.which("swipl")
     # each pinned table is the driver's whole output (the inert-testset guard: an assertion either way)
     @test length(_RDD_PINNED) == length(_RDD_CASES) + 1
-    for (m, pins) in Dict("dict" => _RDD_MODE_DICT, "error" => _RDD_MODE_ERROR, "warning" => _RDD_MODE_WARNING, "attvar" => _RDD_MODE_ATTVAR, "#" => _RDD_MODE_DYNDICT)
+    for (m, pins) in Dict(
+        "dict" => _RDD_MODE_DICT,
+        "error" => _RDD_MODE_ERROR,
+        "warning" => _RDD_MODE_WARNING,
+        "attvar" => _RDD_MODE_ATTVAR,
+        "#" => _RDD_MODE_DYNDICT
+    )
         @test length(pins) == length(_RDD_MODE_CASES) + 1
     end
     if swipl === nothing
@@ -738,7 +769,13 @@ end
     else
         f, names = _rdd_file(_RDD_CASES, true)
         @test _rdd_swipl_lines(f, names) == _RDD_PINNED
-        for (m, pins) in Dict("dict" => _RDD_MODE_DICT, "error" => _RDD_MODE_ERROR, "warning" => _RDD_MODE_WARNING, "attvar" => _RDD_MODE_ATTVAR, "#" => _RDD_MODE_DYNDICT)
+        for (m, pins) in Dict(
+            "dict" => _RDD_MODE_DICT,
+            "error" => _RDD_MODE_ERROR,
+            "warning" => _RDD_MODE_WARNING,
+            "attvar" => _RDD_MODE_ATTVAR,
+            "#" => _RDD_MODE_DYNDICT
+        )
             f, names = _rdd_file(_RDD_MODE_CASES, false; mode=m, swipl=true)
             @test _rdd_swipl_lines(f, names) == pins
         end
@@ -776,7 +813,8 @@ end
         ball = lk_answer(ld, ex)
         formal = child(ball, 2)                                       # error(domain_error(var_tag, Atom), _)
         @test _rdd_enc(formal) ==
-              "c" * _rdd_codes("domain_error") * "/2(a" * _rdd_codes("var_tag") * ",a" * _rdd_codes(bad) * ")"
+            "c" * _rdd_codes("domain_error") * "/2(a" * _rdd_codes("var_tag") * ",a" *
+              _rdd_codes(bad) * ")"
         LK.PL_clear_exception(ld)
         LK.PL_close_foreign_frame(ld, fid)
     end

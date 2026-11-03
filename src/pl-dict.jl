@@ -1,5 +1,6 @@
 # UPSTREAM: swipl-devel src/pl-dict.c @ cbf4e1896275
 # UPSTREAM: swipl-devel src/pl-dict.h @ cbf4e1896275
+# UPSTREAM: swipl-devel src/SWI-Prolog.h @ cbf4e1896275
 # CLASS: code
 # COPYRIGHT: Copyright (c)  2013-2026, VU University Amsterdam
 # COPYRIGHT: SWI-Prolog Solutions b.v.
@@ -281,7 +282,9 @@ end
 # upstream's `sort_r` is not: both name the same key for the duplicate); the keys are never references (the reader
 # stores an atom's or a tagged integer's word).
 "Order `indexes` by the key words of the term-stack pairs at `base`; 0, or the index in `indexes` of the first duplicate key (pl-dict.c)."
-function dict_order_term_refs(words::Vector{word}, base::Int, indexes::Vector{Int}, count::Int)::Int
+function dict_order_term_refs(
+    words::Vector{word}, base::Int, indexes::Vector{Int}, count::Int
+)::Int
     ord = sortperm(word[words[base + indexes[i] * 2] for i in 1:count])   # sort_r(indexes, count, …, compare_term_refs)
     indexes[1:count] = indexes[ord]
 
@@ -929,7 +932,10 @@ function pl_dict_sort_indexes(ld::PL_local_data, dict::term_t, pairs::Int)::Vect
     _, w, _ = _deref_loc(ld, -(dict + 1))
     f = valPtr(w)
     indexes = collect(0:(pairs - 1))
-    sort!(indexes; lt = (a, b) -> compareStandard_cells(ld, f + 3 + 2 * a, f + 3 + 2 * b, false) < 0)
+    sort!(
+        indexes;
+        lt=(a, b) -> compareStandard_cells(ld, f + 3 + 2 * a, f + 3 + 2 * b, false) < 0
+    )
 
     return indexes
 end
@@ -939,7 +945,8 @@ end
 # reads the cells (`_slot_from_cell!`).
 "Put the key and the value of the `i`-th pair (0-based, in the order `indexes` gives) of `dict` in `av+0`, `av+1` (pl-dict.c)."
 function pl_dict_pair(
-    ld::PL_local_data, dict::term_t, indexes::Union{Nothing, Vector{Int}}, i::Int, av::term_t
+    ld::PL_local_data, dict::term_t, indexes::Union{Nothing, Vector{Int}}, i::Int,
+    av::term_t
 )::Nothing
     _, w, _ = _deref_loc(ld, -(dict + 1))
     f = valPtr(w)
@@ -958,7 +965,8 @@ end
 function pl_for_dict(ld::PL_local_data, dict::term_t, func, flags::Int)::Int
     av = PL_new_term_refs(ld, 2)
     pairs = pl_dict_pairs(ld, dict)
-    indexes = (flags & PL_FOR_DICT_SORTED) != 0 ? pl_dict_sort_indexes(ld, dict, pairs) : nothing
+    indexes =
+        (flags & PL_FOR_DICT_SORTED) != 0 ? pl_dict_sort_indexes(ld, dict, pairs) : nothing
     rc = 0
 
     i = 0
@@ -976,11 +984,12 @@ end
 # DIVERGES: the closure's `head`, `tail`, `tmp` term references are captured by `pl_dict_pairs3_va`'s function.
 "Append `key-value` to the list under construction: `tmp` the pair, `tail` the open tail, `head` its new head (pl-dict.c)."
 function put_pair(
-    ld::PL_local_data{T}, key::term_t, value::term_t, head::term_t, tail::term_t, tmp::term_t
+    ld::PL_local_data{T}, key::term_t, value::term_t, head::term_t, tail::term_t,
+    tmp::term_t
 )::Int where {T}
     if PL_cons_functor(ld, tmp, _err_functor(ld, :-, 2), key, value) &&
-       PL_unify_list_ex(ld, tail, head, tail) &&
-       PL_unify(ld, head, tmp)
+        PL_unify_list_ex(ld, tail, head, tail) &&
+        PL_unify(ld, head, tmp)
         return 0
     end
 
@@ -1004,8 +1013,13 @@ function pl_dict_pairs3_va(
             tmp = head + 1
 
             if _PL_get_arg(ld, 1, dict, tmp) &&
-               PL_unify(ld, tmp, A2) &&
-               pl_for_dict(ld, dict, (k, v, last) -> put_pair(ld, k, v, head, tail, tmp), PL_FOR_DICT_SORTED) == 0
+                PL_unify(ld, tmp, A2) &&
+                pl_for_dict(
+                    ld,
+                    dict,
+                    (k, v, last) -> put_pair(ld, k, v, head, tail, tmp),
+                    PL_FOR_DICT_SORTED
+                ) == 0
                 return PL_unify_nil_ex(ld, tail) ? FTRUE : FFALSE
             end
 
@@ -1027,7 +1041,9 @@ end
 # `ensureGlobalSpace`); the pairs kept are planned first and laid out at their exact size (as `put_dict`). `dict` is the dict's
 # compound word, `key` a key word.
 "The dict `dict` without the pair of key `key`, tag and the other pairs kept (pl-dict.c)."
-function del_dict(ld::PL_local_data{T}, dict::word, key::word)::Union{Nothing, word} where {T}
+function del_dict(
+    ld::PL_local_data{T}, dict::word, key::word
+)::Union{Nothing, word} where {T}
     f = valPtr(dict)
     arity = arityFunctor(ld.functors, ld.gstack[f])
 
@@ -1254,7 +1270,9 @@ end
 # DIVERGES: no overflow retry loop (`ensureGlobalSpace` raises); `dict` is the compound word, `dt` unused for the reload
 # upstream does after a stack shift (the positions here do not move).
 "Unify `t` with a copy of the keys of `dict` (fresh tag and values); `dt` is the term reference of `dict` (pl-dict.c)."
-function unify_dict_copy(ld::PL_local_data{T}, t::term_t, dt::term_t, dict::word)::Bool where {T}
+function unify_dict_copy(
+    ld::PL_local_data{T}, t::term_t, dt::term_t, dict::word
+)::Bool where {T}
     tmp = PL_new_term_ref(ld)
     copy = copy_keys_dict(ld, dict)
     copy === nothing && return false
@@ -1389,7 +1407,9 @@ const PL_predicates_from_dict = (
     PL_extension("put_dict", 3, pl_put_dict3_va, PL_FA_VARARGS),
     PL_extension("get_dict", 3, pl_get_dict3_va, PL_FA_NONDETERMINISTIC | PL_FA_VARARGS),
     PL_extension("select_dict", 3, pl_select_dict3_va, PL_FA_VARARGS),
-    PL_extension("\$get_dict_ex", 3, pl_get_dict_ex3_va, PL_FA_NONDETERMINISTIC | PL_FA_VARARGS),
+    PL_extension(
+        "\$get_dict_ex", 3, pl_get_dict_ex3_va, PL_FA_NONDETERMINISTIC | PL_FA_VARARGS
+    ),
     PL_extension("get_dict", 5, pl_get_dict5_va, PL_FA_VARARGS),
     PL_extension("put_dict", 4, pl_put_dict4_va, PL_FA_VARARGS),
     PL_extension("dict_pairs", 3, pl_dict_pairs3_va, PL_FA_VARARGS),

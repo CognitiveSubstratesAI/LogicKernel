@@ -784,7 +784,7 @@ fixed it or a public issue exists.
 | `src/pl-mutex.jl` | since BOOTPRED, `with_mutex/2` (`pl_with_mutex`) in the form pl-mutex.c has for a build without threads: `once/1` through `callProlog`, the mutex argument not examined (swipl 10.1.19 examines it); the mutex table and the `mutex_*` predicates are not ported | `src/pl-mutex.c` |
 | `src/pl-init.jl` | since HALT1, `PL_cleanup`, the clean-up `halt/1` ends with, in a reduced form (`exit_status` flag, `'$run_at_halt'/0` as one query, flush of the standard streams; the command line, the saved states and the foreign hook lists are left out), `_query_run_at_halt`, `MAX_HALT_CANCELLED`; `PL_halt`, `haltProlog` and `PL_abort_process` stay in `src/pl-fli.jl` (pl-fli.c), `signal_index` and `PL_get_signum_ex` in `src/pl-setup.jl`, `halt/1` in `src/pl-prims.jl`; see the HALT1 block | `src/pl-init.c` |
 | `src/pl-qlf.jl` | since LB3 (R2), the boot loop of pl-qlf.c with no state file (LD2): `compileFile` (see the file, read terms, `:- if`/`else`/`endif`, directives, clauses), `compileFileList`, `boot_from_source!` (pl-init.c's `bootsession` branch), `directiveClause`, `update_conditional_compilation`, the 8 write-side shells and the 14 predicates refused by name (`PL_predicates_from_wic`, src/pl-ext.jl) | `src/pl-qlf.c` |
-| `src/pl-dict.jl` | since BOOTPRED, dicts as pl-dict.c lays them out (`dict`/(2N+1), tag then value/key pairs sorted by the key word): `is_dict/1,2`, `dict_create/3`, `put_dict/3`, `select_dict/3`, `get_dict/3` (`PL_predicates_from_dict`) with `dict_lookup_ptr`, `dict_order`, `PL_get_dict_ex`, `put_dict`, `select_dict` and their helpers; the reader and writer have no dict syntax, and the other dict predicates are not ported | `src/pl-dict.c`, `src/pl-dict.h` |
+| `src/pl-dict.jl` | since BOOTPRED, dicts as pl-dict.c lays them out (`dict`/(2N+1), tag then value/key pairs sorted by the key word): `is_dict/1,2`, `dict_create/3`, `put_dict/3`, `select_dict/3`, `get_dict/3` (`PL_predicates_from_dict`) with `dict_lookup_ptr`, `dict_order`, `PL_get_dict_ex`, `put_dict`, `select_dict` and their helpers; the reader and writer have no dict syntax, and the other dict predicates are not ported | `src/pl-dict.c`, `src/pl-dict.h`, `src/SWI-Prolog.h` |
 | `src/pl-rec.jl` | recorded terms (since V9g-b): `compileTermToHeap` — a term taken off the stacks, as a copy whose cyclic references are kept beside it instead of in the binding store — and `copyRecordToGlobal`, which puts it back with fresh variables whose standard order is the order of upstream's cells; `erase/1` and `instance/2` (with `fixup_ssu`) of a clause reference (since D1); the recorded database (`recorda/3`, `recorded/3`, `erase/1` and `instance/2` of a record) is not ported | `src/pl-rec.c` |
 | `src/pl-dbref.jl` | since R2 D1, database references: the clause blob type (`clause_blob`, registered by the database, `initDBRef!`), `lookup_clref`, `clause_clref`, `PL_unify_clref`, `PL_put_clref`, `PL_is_dbref`, `PL_get_dbref`, `PL_get_clref`, `acquire_clause_blob`/`release_clause_blob` (the `DBREF_CLAUSE` mark); the payload is the clause's number in `gd.clause_refs` (upstream: the pointer); the record blob is D2's | `src/pl-dbref.c`, `src/pl-dbref.h` |
 | `src/pl-rec.jl` | recorded terms (since V9g-b): `compileTermToHeap` — a term taken off the stacks, as a copy whose cyclic references are kept beside it instead of in the binding store — and `copyRecordToGlobal`, which puts it back with fresh variables whose standard order is the order of upstream's cells; `erase/1` and `instance/2` (with `fixup_ssu`) of a clause reference (since D1); since D2 the recorded database (`recorda/2,3`, `recordz/2,3`, `recorded/2,3`, `current_key/1`, the record branches of `erase/1` and `instance/2`: lists, keys, the `recorded` state, section D2 below) | `src/pl-rec.c` |
@@ -1387,6 +1387,7 @@ graph LR
     os_pl_prologflag --> pl_inline
     os_pl_prologflag --> pl_prims
     os_pl_prologflag --> pl_comp
+    os_pl_prologflag --> pl_variant
     os_pl_prologflag --> pl_wam
     os_pl_prologflag --> pl_fli
     os_pl_prologflag --> pl_error
@@ -1692,9 +1693,11 @@ graph LR
     pl_read --> pl_inline
     pl_read --> pl_prims
     pl_read --> pl_comp
+    pl_read --> pl_variant
     pl_read --> pl_alloc
     pl_read --> pl_wam
     pl_read --> pl_fli
+    pl_read --> pl_attvar
     pl_read --> pl_error
     pl_read --> pl_gmp
     pl_read --> pl_arith
@@ -1702,6 +1705,7 @@ graph LR
     pl_read --> os_pl_prologflag
     pl_read --> os_pl_text
     pl_read --> os_pl_file
+    pl_read --> pl_dict
     pl_read --> pl_op
     pl_read --> pl_write
     pl_qlf --> term_interface
@@ -3020,9 +3024,9 @@ explicit error, term positions refused until needed.
   wide character — the same for every ASCII name); `bind_variable_names` builds the list and
   unifies it once; an atom's or a string's text is UTF-8 in `PL_chars_t`, where upstream's is
   Latin-1 or `wchar_t`.
-* **Refused, explicitly (`NotPortedError`):** a dict (`Tag{…}`, `-{a}`, `X{…}`), a blob (`<type>(…)`,
-  read only with the blob option), a quasi-quotation (`{|Syntax||Text|}`) — at `start_pframe`,
-  where swipl reads a dict or raises a syntax error inside one (pinned); term-to-text
+* **Refused, explicitly (`NotPortedError`):** a blob (`<type>(…)`, read only with the blob option), a
+  quasi-quotation (`{|Syntax||Text|}`) — at `start_pframe`, where swipl raises a syntax error
+  inside one (pinned); a dict (`Tag{…}`, `-{a}`, `X{…}`) is read since RDDICT (`read_dict_start`; section RDDICT); term-to-text
   (`term_to_atom(+T, -A)`, `term_string(+T, -S)`: `PL_write_term`, R1e) and a float's text
   (`PL_get_text`'s `format_float`, R1e) — both ported since, R1e's core and R1e (floats).
 * **NOT PORTED:** read_term/2,3 and read_clause/3 (a stream argument: the stream table, R2),
@@ -6595,8 +6599,9 @@ swipl 10.1.19 pins from two byte-identical runs, a non-vacuity testset, the live
 ## RDDICT — dict syntax in the reader and the `var_tag` flag helpers (R2b, audit D-0363 item 3, D-0368)
 
 UPSTREAM: pl-read.c (`is_key_token`, `read_dict_start/key/resume/end`, `build_dict`, `build_attvar`, `build_labeled_subterm`), pl-dict.c (`dict_order_term_refs`),
-os/pl-prologflag.c (`setVarTagFlag`, `getVarTagFlag`, the `var_tag` arm of `current_prolog_flag`). Written edit-only on wip/rddict (swipl-devel pin `cbf4e1896275`, oracle swipl 10.1.19);
-nothing was compiled or run when this was written: every kernel answer is UNVERIFIED until the gate.
+os/pl-prologflag.c (`setVarTagFlag`, `getVarTagFlag`, the `var_tag` arm of `current_prolog_flag`). Written edit-only on wip/rddict (swipl-devel pin `cbf4e1896275`, oracle swipl 10.1.19); the gate
+parsed and ran it for the first time (test_read_dict_swipl.jl: all 357 assertions passed on `reference`; evidence/RDDICT/gate1.md). The step is stacked on DICT (wip/dict: the
+remaining pl-dict.c predicates), which was not on main and rides in the same gate.
 
 - **Reader.** `Tag{Key:Value, ...}` is read by `read_dict_start` (the class token: an atom, a variable or `_`), `read_dict_key` (`Key:` and the value request, `maxpri` as the arguments'),
   `read_dict_resume` (`,` or `}`) and `read_dict_end` (closes the positions and calls `build_dict`). With `subterm_positions`, the term is `dict_position/5` with
@@ -6617,4 +6622,5 @@ nothing was compiled or run when this was written: every kernel answer is UNVERI
 
 Tests: test/core_lang/test_read_dict_swipl.jl (152 main rows rd01-rd152 and the mode rows rm01-rm24 over the five modes, generated by evidence/RDDICT/mk_rows.py from cases.py; swipl 10.1.19
 pins from two byte-identical runs; a testset for the setter and getter as functions); tools/mutants/RDDICT.py (52 mutants; omissions declared in its header: `maxpri = 999`, the warning
-message, `_key_atom`'s punctuation arm; TARGETS the new rows file, test_read_swipl.jl or test_prolog_flag_swipl.jl, and test_type_discipline.jl).
+message, `_key_atom`'s punctuation arm; TARGETS the new rows file, test_read_swipl.jl and test_read_term_swipl.jl (or, for the flag mutants, test_prolog_flag_swipl.jl, test_set_flag_swipl.jl and test_push_flag_swipl.jl), and test_type_discipline.jl).
+The gate flipped the dict refusal: test_read_term_swipl.jl's refusal testset now compares the dict syntax errors with swipl and checks that the dict texts read; the quasi-quotations stay refused.

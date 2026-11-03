@@ -1,0 +1,93 @@
+ 1:  8f750f2 =  1:  99d32d4 MODIFIED: DICT plan — verified missing pl-dict.c predicates and the group order (R2b, D-0290)
+ 2:  1f48cec =  2:  1fb2c94 UPSTREAM: pl-dict.c get_dict_ex get_dict5 (swipl-devel cbf4e1896275)
+ 3:  098e26c =  3:  3407d49 UPSTREAM: pl-dict.c put_dict4 (swipl-devel cbf4e1896275)
+ 4:  eebd1ac =  4:  3ab5c87 UPSTREAM: pl-dict.c pl_for_dict dict_pairs put_pair (swipl-devel cbf4e1896275)
+ 5:  017da30 =  5:  b14912f UPSTREAM: pl-dict.c del_dict (swipl-devel cbf4e1896275)
+ 6:  a61d24f =  6:  2f56c4a UPSTREAM: pl-dict.c partial_unify_dict unify_left_dict (swipl-devel cbf4e1896275)
+ 7:  af5b11a =  7:  bd8b9df UPSTREAM: pl-dict.c copy_keys_dict same_keys_dict get_dict_kv (swipl-devel cbf4e1896275)
+ 8:  dd3530e =  8:  714bcd2 MODIFIED: pl-dict.jl header and table comment name the predicates written for R2b
+ 9:  d277554 =  9:  212db00 MODIFIED: DICT handoff — predicate table, state and the oracle case list (evidence/DICT)
+10:  4440cc3 = 10:  aaca54a ADDED: DICT oracle rows dp01-dp164 and test_dict_preds_swipl.jl (swipl 10.1.19 pins)
+11:  bf70fdf = 11:  563d212 ADDED: tools/mutants/DICT.py — 25 mutants for the pl-dict.c predicates of wip/dict
+12:  140f53c ! 12:  a7dd829 MODIFIED: docs/architecture.md — BOOTPRED-dict block (the remaining pl-dict.c predicates, R2b)
+    @@ Commit message
+         Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>
+     
+      ## docs/architecture.md ##
+    -@@ docs/architecture.md: streams of `open_string/2`, `read_string/3,5`) are marked for the gate to decide
+    -   resets one scratch context in the local data and is gated allocation-free.
+    - * **The canonical-encoding property** — the kernel's variant key of a term equals MORK's De Bruijn
+    -   bytes for it. It arrives with variant canonicalisation (`unify`) and a PathMap extension.
+    +@@ docs/architecture.md: stream, over the reader R1 built (`read_term_from_stream`); the pin tree is swip
+    +   toplevel's `blob(resolve)` reads), rows rt303 and rt305-rt319 pin this; rt320 and rt321 are the KNOWN rows of the refusal.
+    + * **Tier 3:** no Tier-1 file changed and no enum, so no `_enum_hash` entry and no allocation pins (RD1b adds the field `blobs` to
+    +   `read_data`); the manifest gets eleven entries (test/static_analysis_manifest.jl). No battery.
+     +
+     +## BOOTPRED-dict — the remaining pl-dict.c predicates the boot and library files reference (R2b, audit D-0290, D-0291 item 5)
+     +
+13:  7e8f730 ! 13:  da77160 MODIFIED: static_analysis_manifest — BOOTPRED-dict entries (the new pl-dict.jl functions)
+    @@ Commit message
+     
+      ## test/static_analysis_manifest.jl ##
+     @@ test/static_analysis_manifest.jl: function _manifest_index(T)
+    -                 LK.pl_is_dict1_va, LK.pl_is_dict2_va, LK.pl_dict_create3_va,
+    -                 LK.pl_put_dict3_va, LK.pl_select_dict3_va, LK.pl_get_dict3_va
+    -             )
+    -+        ]...,
+    +         (LK.blob_syntax_available, Tuple{LK.read_data{T}}, false),
+    +         (LK.blob_name_char, Tuple{Int}, false),
+    +         (LK.scan_blob_name, Tuple{Type{T}, Vector{UInt8}, Int}, false),
+    +-        (LK.atom_to_blob_mode_ex, Tuple{LD, LK.read_data{T}, T}, false)
+    ++        (LK.atom_to_blob_mode_ex, Tuple{LD, LK.read_data{T}, T}, false),
+     +        # BOOTPRED-dict — the remaining pl-dict.c predicates (src/pl-dict.jl)
+     +        (LK.put_dict4, Tuple{LD, Int, Int, Int, Int}, false),
+     +        (LK.pl_dict_pairs, Tuple{LD, Int}, false),
+    @@ test/static_analysis_manifest.jl: function _manifest_index(T)
+     +                LK.pl_punify_dict2_va, LK.pl_dict_same_keys2_va, LK.pl_get_dict_kv4_va,
+     +                LK.pl_get_dict_kv6_va, LK.pl_get_dict_kv8_va
+     +            )
+    -         ]...
+    ++        ]...
+          )
+      end
+    + 
+14:  a772c27 = 14:  bd2fa9a MODIFIED: DICT handoff — rows, mutants, docs and manifest written; the setarg-bound group is the one left
+15:  b484d4f = 15:  b6592a1 ADDED: RDDICT handoff — plan, the boot dict lines, the pin ranges to port
+16:  6429ce6 = 16:  93b18b7 UPSTREAM: pl-dict.c dict_order_term_refs, pl-incl.h VARTAG flags (swipl-devel cbf4e189)
+17:  0bcfe25 = 17:  6dc7434 UPSTREAM: pl-read.c build_dict build_attvar build_labeled_subterm (swipl-devel cbf4e189)
+18:  3665757 ! 18:  0ffe4cd UPSTREAM: pl-read.c read_dict_end read_dict_key read_dict_start read_dict_resume is_key_token end_range (swipl-devel cbf4e189)
+    @@ src/pl-read.jl: function read_compound_resume(
+      # PORT: pl-read.c simple_term
+      # DIVERGES: returns the result and the construct to read (`*kind`); no atom locks.
+      """
+    -@@ src/pl-read.jl: function simple_term(
+    - end
+    +@@ src/pl-read.jl: end
+      
+      # PORT: pl-read.c start_pframe
+    --# DIVERGES: a blob (`<type>(…)`, read only with the blob option), a dict (`Tag{…}`) or a
+    --# quasi-quotation (`{|Syntax||Quotation|}`) raises `NotPortedError`: refused, R1's decision (user,
+    --# 2026-10-07: an explicit error, never a misread). Where swipl raises a SYNTAX error inside one of
+    + # DIVERGES: a blob (`<type>(…)`, read only with blob(dead) or blob(resolve): the dead blob needs an
+    +-# atom object the kernel has not got, `read_blob_start`/`read_blob_end`: the blob step), a dict (`Tag{…}`) or a
+    ++# atom object the kernel has not got, `read_blob_start`/`read_blob_end`: the blob step) or a
+    + # quasi-quotation (`{|Syntax||Quotation|}`) raises `NotPortedError`: refused, R1's decision (user,
+    + # 2026-10-07: an explicit error, never a misread). Where swipl raises a SYNTAX error inside one of
+     -# them (`-{a}`, a dict: `colon_expected`), the kernel's refusal comes first.
+    -+# DIVERGES: a blob (`<type>(…)`, read only with the blob option) or a quasi-quotation
+    -+# (`{|Syntax||Quotation|}`) raises `NotPortedError`: refused, R1's decision (user, 2026-10-07: an
+    -+# explicit error, never a misread). Where swipl raises a SYNTAX error inside one of them, the
+    -+# kernel's refusal comes first. A dict (`Tag{…}`) is read as upstream reads it (`read_dict_start`).
+    ++# them, the kernel's refusal comes first. A dict (`Tag{…}`) is read as upstream reads it (`read_dict_start`).
+      "Start reading the construct `f.kind` (pl-read.c): `CTR_SUB` for a subterm, 1 if complete, 0 on an error."
+      function start_pframe(
+          f::pframe{T}, token::token{T}, req::ct_request, rd::read_data{T}
+19:  5920f01 = 19:  b2ca5df UPSTREAM: os/pl-prologflag.c setVarTagFlag getVarTagFlag (swipl-devel cbf4e189)
+20:  ba1955a = 20:  ecb6f8c MODIFIED: RDDICT handoff — reader slices written (dict branch, var_tag setter/getter); dict-dot and module VARTAG default need no new code
+21:  9e6b396 = 21:  1284289 ADDED: RDDICT rows — dict syntax read by the parser, swipl 10.1.19 pins (test_read_dict_swipl.jl)
+22:  1aa3f01 = 22:  105c088 ADDED: RDDICT rows rd115-rd126 — subterm_positions of dicts (dict_position/5, key_value_position/7)
+23:  a02b344 = 23:  ddb7728 ADDED: RDDICT mode rows rm10-rm23 — attributes and labels of the attvar var_tag mode (build_attvar, build_labeled_subterm)
+24:  85ffce7 = 24:  bcb1e51 ADDED: RDDICT rows rd127-rd152, mode row rm24, mutant draft and handoff 3 (evidence/RDDICT)
+25:  1f4e9b0 = 25:  dd7fab6 ADDED: RDDICT mutant list (tools/mutants/RDDICT.py, 52 mutants)
+26:  d9c959e = 26:  a4a8dec ADDED: static_analysis_manifest — RDDICT entries (the reader's dict branch, var_tag helpers)
+27:  ce4b7e9 = 27:  dac6bf7 DOC: architecture.md — RDDICT block (dict syntax in the reader, var_tag helpers, DIVERGES)

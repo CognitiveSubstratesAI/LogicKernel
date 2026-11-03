@@ -2483,7 +2483,7 @@ function build_labeled_subterm(pairs::Int, rd::read_data{T})::Int where {T}
         argv = term_av(-3, rd)
 
         if ts.vars[argv + 1] == TS_VALUE &&
-           ts.words[argv + 1] == _atom_word!(ld, mk_sym(T, Symbol("=")))    # ATOM_equals
+            ts.words[argv + 1] == _atom_word!(ld, mk_sym(T, Symbol("=")))    # ATOM_equals
             tv = ts.vars[argv]
             var = tv >= 0 ? var_from_index(tv, rd) : nothing    # varInfo(w)
 
@@ -2520,8 +2520,8 @@ end
 
 # PORT: pl-read.c build_attvar
 # DIVERGES: positions and term-stack entries for upstream's words and term references; the errors go through the
-# read data (`errorWarning`), as every syntax error here. UNVERIFIED: reached only when the module's var_tag flag is
-# `attvar`, and the flag's setter (`setVarTagFlag`, os/pl-prologflag.c) is deferred.
+# read data (`errorWarning`), as every syntax error here. Reached only when the module's var_tag flag is
+# `attvar` (rows rm10-rm23 of test_read_dict_swipl.jl), which `setVarTagFlag` (src/os/pl-prologflag.jl) sets; the set_prolog_flag/2 arm of the flag is F1b's.
 "Build an attributed variable from the data collected for a dict whose tag is a variable (pl-read.c)."
 function build_attvar(pairs::Int, rd::read_data{T})::Bool where {T}
     ld = rd.ld
@@ -3817,7 +3817,7 @@ end
 
 # PORT: pl-read.c read_dict_end
 # DIVERGES: the errors of `build_dict` go through the read data (`errorWarning`), a representation-only
-# difference accepted by D-0365 item 3. UNVERIFIED on the kernel: gate decides.
+# difference accepted by D-0365 item 3. Run by the gate: test_read_dict_swipl.jl.
 "End the dict at its `}`: close its key-value positions and build it (pl-read.c)."
 function read_dict_end(f::pframe{T}, token::token{T}, rd::read_data{T})::Int where {T}
     pv = f.dict_pv
@@ -3834,7 +3834,7 @@ end
 # DIVERGES: `get_token` returns the one shared token here as upstream does, so `key` and `sep` are the same
 # object: its fields are read before `sep` is fetched (`kstart`, `kend`, as upstream); the key is a term-stack
 # entry (`key_term`) holding the key's word, so `key_value_position`'s key cell takes that word; no atom
-# locks. UNVERIFIED on the kernel: gate decides.
+# locks. Run by the gate: test_read_dict_swipl.jl.
 """
 Read `Key:` and request the value (pl-read.c). With positions, `key_value_position(From, _, SepFrom,
 SepTo, Key, KStart-KEnd, ValuePos)` is the next element of `P_ARG`.
@@ -3904,7 +3904,7 @@ end
 
 # PORT: pl-read.c read_dict_start
 # DIVERGES: no atom locks; a variable class (`TK_VCLASS_DICT`) is the variable's term-stack entry, as a
-# variable token's. UNVERIFIED on the kernel: gate decides.
+# variable token's. Run by the gate: test_read_dict_swipl.jl.
 """
 Start reading `Tag{…}` at its class token (pl-read.c): push the class, skip the `{`; `{}` ends at once.
 With positions, `dict_position(From, _, ClassFrom, ClassTo, KeyValuePositions)`.
@@ -3946,7 +3946,8 @@ function read_dict_start(
     tstart === nothing && return 0
 
     # process the key-values
-    if tstart.type == TK_NAME && sym_key(_token_atom(tstart)) == sym_key(mk_sym(T, Symbol("{}")))
+    if tstart.type == TK_NAME &&
+        sym_key(_token_atom(tstart)) == sym_key(mk_sym(T, Symbol("{}")))
         return read_dict_end(f, tstart, rd)
     end
 

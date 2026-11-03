@@ -24,7 +24,7 @@
 #   positions                                    valid_term_position/2 is library(prolog_source);
 #                                                its text's positions are compared with swipl's
 #                                                in test_read_positions_swipl.jl
-#   valid_position_dict*, dict                   dicts: refused (R1's decision)
+#   valid_position_dict*, dict                   dicts: read since RDDICT (rows in test_read_dict_swipl.jl)
 #   float_overflow (the second)                  the float_overflow flag (no Prolog flags yet)
 #   quote_eos (the second)                       number_codes/2 is not a built-in of the kernel yet
 #   read_term's other units                      read_term/2,3 on streams with positions, comments
