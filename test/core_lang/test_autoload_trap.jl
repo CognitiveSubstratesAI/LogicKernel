@@ -213,8 +213,10 @@ end
         db = _at_db()
         _at_hook!(db, name, answer; body = _at_record(name))
         nctx = length(db.ld.input_context_stack)
+        fli0 = db.ld.fli_context
         def = _at_proc(db, name).definition
         got = LK.autoLoader(db.gd, db.ld, def)
+        @test db.ld.fli_context == fli0                       # the foreign frame is discarded
         @test got !== nothing && sym_key(got) == sym_key(_rs(answer))     # the hook's 4th argument, as an atom
         @test isempty(db.ld.autoload_nesting)
         @test length(db.ld.input_context_stack) == nctx
@@ -229,6 +231,7 @@ end
     @test got === nothing
     @test isempty(db.ld.autoload_nesting)
     @test length(db.ld.input_context_stack) == nctx
+    @test LK.PL_exception(db.ld, 0) != 0                         # PL_Q_PASS_EXCEPTION: the ball is left pending (UNVERIFIED)
     LK.PL_clear_exception(db.ld)
 end
 
