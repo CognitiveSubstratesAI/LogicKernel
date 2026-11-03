@@ -14,7 +14,7 @@
 #     ensureGlobalSpace itself and no row grows the stacks, so no row can tell the line from its removal (the global-overflow rows are
 #     the stack tests', not the dict rows').
 #   * same_keys_dict's functor comparison (`ld.gstack[f1] != ld.gstack[f2]` removed): with different arities the loop would read
-#     past the shorter dict, a crash or a hang, not a verdict.
+#     past the shorter dict, so the mutant gives no verdict the rows could read.
 #   * get_dict_kv's `dict_count` arithmetic: a wrong count reads the term-reference block out of range, the same.
 # TARGETS (audit D-0238): every mutant lists every test file that exercises its mutated code: the step's own file first, then
 # test_bootpred_swipl.jl (the pl-dict.c rows of BOOTPRED: put_dict and the lookup share the mutated functions) and
@@ -41,11 +41,11 @@ MUTANTS = [
          new="        new = put_dict(ld, d0, 0, av)\n"),
     # ── dict_pairs/3 ──
     dict(id="DICT-D1 dict_pairs/3 does not sort the pairs: the kernel's own key-word order shows (KILL dp51, dp80, dp81)", file=D, targets=TARGETS,
-         old="    sort!(indexes; lt = (a, b) -> compareStandard_cells(ld, f + 3 + 2 * a, f + 3 + 2 * b, false) < 0)\n",
-         new="    sort!(indexes; lt = (a, b) -> a < b)\n"),
+         old="        lt=(a, b) -> compareStandard_cells(ld, f + 3 + 2 * a, f + 3 + 2 * b, false) < 0\n",
+         new="        lt=(a, b) -> a < b\n"),
     dict(id="DICT-D2 dict_pairs/3 sorts the keys in reverse standard order (KILL dp50, dp51, dp80)", file=D, targets=TARGETS,
-         old="    sort!(indexes; lt = (a, b) -> compareStandard_cells(ld, f + 3 + 2 * a, f + 3 + 2 * b, false) < 0)\n",
-         new="    sort!(indexes; lt = (a, b) -> compareStandard_cells(ld, f + 3 + 2 * a, f + 3 + 2 * b, false) > 0)\n"),
+         old="        lt=(a, b) -> compareStandard_cells(ld, f + 3 + 2 * a, f + 3 + 2 * b, false) < 0\n",
+         new="        lt=(a, b) -> compareStandard_cells(ld, f + 3 + 2 * a, f + 3 + 2 * b, false) > 0\n"),
     dict(id="DICT-D3 put_pair builds `=`/2 pairs, not `-`/2 (KILL dp50, dp51, dp54)", file=D, targets=TARGETS,
          old="    if PL_cons_functor(ld, tmp, _err_functor(ld, :-, 2), key, value) &&\n",
          new="    if PL_cons_functor(ld, tmp, _err_functor(ld, :(=), 2), key, value) &&\n"),

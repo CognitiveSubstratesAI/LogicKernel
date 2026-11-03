@@ -6615,7 +6615,7 @@ remaining pl-dict.c predicates), which was not on main and rides in the same gat
   reader, where upstream raises them through `PL_error`/`PL_syntax_error` on the C stack; the answer (`syntax_error(Id)` and the character position) is the same. (2) A token's atom is a
   field (`_key_atom`); a punctuation token's atom is the character's. (3) The values and keys are term-stack entries, not term references; no atom locks. (4) `build_dict` has no global
   stack to run out of (`ensureGlobalSpace` raises the overflow).
-- **Deferred to F1b:** the `set_prolog_flag/2` arm of `var_tag` (pl-prologflag.c:1383, the call to `setVarTagFlag` from the flag's write side) is NOT ported here; the tests set the
+- **Deferred to F1b:** the `set_prolog_flag/2` arm of `var_tag` (pl-prologflag.c:1383, the call to `setVarTagFlag` from the flag's write side) is left out until F1b; the tests set the
   mode on the module (`user.flags = setVarTagFlag(...)`) before `load_file!`, which is what the arm does. `current_prolog_flag(var_tag, R)` reads it back (row rm24).
 - **Not here:** the dict-dot functional notation `X.y` is read as the generic `'.'/2` term (no new reader code; the boot files' expansion comes with LB4), the writer's dict arm stays
   with R3. The `warning` mode's message sink is not observed by any row.

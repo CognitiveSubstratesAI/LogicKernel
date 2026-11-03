@@ -957,11 +957,13 @@ function pl_dict_pair(
 end
 
 # PORT: pl-dict.c pl_for_dict
-# DIVERGES: `func(key, value, last)` is a Julia function returning 0 to go on (upstream's `func` with its `closure`; the
-# closure is what `func` captures). `PL_for_dict`'s `func(key, value, closure)` is `pl_for_dict` with a `func` of two
-# arguments: `(k, v, last) -> func(k, v)`.
-"Run `func(key, value, last)` on each pair of `dict` until it returns non-zero, that value (pl-dict.c)."
-function pl_for_dict(ld::PL_local_data, dict::term_t, func, flags::Int)::Int
+# DIVERGES: `func` and `closure` are type parameters (upstream's function pointer and its `void *closure`), so that the call
+# is specialised and not a runtime dispatch; `func(key, value, closure, last)` returns 0 to go on, and takes `last`
+# (true on the final pair) as a fourth argument.
+"Run `func(key, value, closure, last)` on each pair of `dict` until it returns non-zero, that value (pl-dict.c)."
+function pl_for_dict(
+    ld::PL_local_data, dict::term_t, func::F, closure::C, flags::Int
+)::Int where {F, C}
     av = PL_new_term_refs(ld, 2)
     pairs = pl_dict_pairs(ld, dict)
     indexes =
@@ -972,15 +974,25 @@ function pl_for_dict(ld::PL_local_data, dict::term_t, func, flags::Int)::Int
     while i < pairs
         pl_dict_pair(ld, dict, indexes, i, av)
         i += 1
-        rc = func(av + 0, av + 1, i == pairs)
+        rc = func(av + 0, av + 1, closure, i == pairs)
         rc != 0 && break
     end
 
     return rc
 end
 
+# ORIGINAL (BOOTPRED-dict): the closure of `dict_pairs/3`'s `put_pair` callback (pl-dict.c's `put_pair_closure`-style
+# `void *closure`): the local data and the `head`, `tail`, `tmp` term references, as a concrete type for `pl_for_dict`.
+"The closure `dict_pairs/3` hands to `pl_for_dict`: the local data and the term references `put_pair` fills."
+struct PutPairClosure{T}
+    ld::PL_local_data{T}
+    head::term_t
+    tail::term_t
+    tmp::term_t
+end
+
 # PORT: pl-dict.c put_pair
-# DIVERGES: the closure's `head`, `tail`, `tmp` term references are captured by `pl_dict_pairs3_va`'s function.
+# DIVERGES: the closure's `head`, `tail`, `tmp` term references and the local data are passed as `put_pair_cb`'s `PutPairClosure`.
 "Append `key-value` to the list under construction: `tmp` the pair, `tail` the open tail, `head` its new head (pl-dict.c)."
 function put_pair(
     ld::PL_local_data{T}, key::term_t, value::term_t, head::term_t, tail::term_t,
@@ -994,6 +1006,11 @@ function put_pair(
 
     return -1
 end
+
+# ORIGINAL (BOOTPRED-dict): `put_pair` in the callback form `pl_for_dict` calls (upstream's `func(key, value, closure)`).
+"The callback `dict_pairs/3` gives `pl_for_dict`: `put_pair` on the closure's term references (pl-dict.c)."
+put_pair_cb(key::term_t, value::term_t, c::PutPairClosure, ::Bool)::Int =
+    put_pair(c.ld, key, value, c.head, c.tail, c.tmp)
 
 # PORT: pl-dict.c dict_pairs as pl_dict_pairs3_va
 # (PRED_IMPL("dict_pairs", 3, dict_pairs, 0))
@@ -1014,9 +1031,7 @@ function pl_dict_pairs3_va(
             if _PL_get_arg(ld, 1, dict, tmp) &&
                 PL_unify(ld, tmp, A2) &&
                 pl_for_dict(
-                    ld,
-                    dict,
-                    (k, v, last) -> put_pair(ld, k, v, head, tail, tmp),
+                    ld, dict, put_pair_cb, PutPairClosure(ld, head, tail, tmp),
                     PL_FOR_DICT_SORTED
                 ) == 0
                 return PL_unify_nil_ex(ld, tail) ? FTRUE : FFALSE
