@@ -3145,8 +3145,9 @@ end
 function get_arg_integer_ex(ld::PL_local_data{T}, t::term_t)::Tuple{Int, Int} where {T}
     k, x, _ = _deref_loc(ld, -(t + 1))                  # Word p = valTermRef(t); deRef(p)
     if k == DU_VALUE
-        if isTaggedIntW(x)                              # isTaggedInt(*p)
-            v = valInt(x)
+        # isTaggedInt(*p); on a term type that tags no integer its small integer (`_untagged_int`, src/pl-fli.jl)
+        v = isTaggedIntW(x) ? valInt(x) : _untagged_int(ld, x)
+        if v !== nothing && PLMINTAGGEDINT <= v <= PLMAXTAGGEDINT
             v > 0 && return (1, Int(v))
             v == 0 && return (0, 0)
             PL_error(ld, ERR_DOMAIN, mk_sym(T, :not_less_than_zero), t)   # isInteger(*p), sign < 0

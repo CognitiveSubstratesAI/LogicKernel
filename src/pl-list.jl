@@ -452,7 +452,8 @@ function get_key_arg_ex(
 )::Tuple{Int, Union{Nothing, Int, T}} where {T}
     if PL_is_integer(ld, t)                             # isTaggedInt, then isInteger(*p)
         _, w, _ = _deref_loc(ld, -(t + 1))
-        n = isTaggedIntW(w) ? valInt(w) : bigint_value(_value_term(ld, w))
+        u = isTaggedIntW(w) ? valInt(w) : _untagged_int(ld, w)    # (a type that tags none: src/pl-fli.jl)
+        n = u !== nothing ? u : bigint_value(_value_term(ld, w))
         tagged = n isa Int64 && valInt(consInt(n)) == n
         tagged && n > 0 && return (1, Int(n))
         tagged && n == 0 && zero_ok && return (1, 0)

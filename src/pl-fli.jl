@@ -427,33 +427,48 @@ function PL_get_atom(ld::PL_local_data{T}, t::term_t)::Union{Nothing, T} where {
     return nothing
 end
 
+# ORIGINAL (R2 LB4 b2): the integer a `DU_VALUE` word that is not tagged holds, on a term type that tags no
+# integer. Upstream keeps every integer of the tagged range tagged, so its `int` and `unsigned int` readers
+# (swipl-devel cbf4e189 src/pl-fli.c:2004-2040) test the tag alone; a term type with no `Int64` payload
+# (`_tagged_int_word`: the fixture `Term{Union{BigInt, Float64, String}}` of the D-0231 rows) writes even 0 as
+# a value-table word, so on it the boot files' `:- meta_predicate` masks (`PL_cvt_i_uint`) read as no integer
+# and five init.pl directives failed. `nothing` on every other type (`_holds_payload` is a compile-time
+# constant: the branch folds away), and for a value that is not an integer of `Int64`'s range.
+"The integer an untagged value word `w` holds on a term type that tags no integer, else `nothing` (see above)."
+@inline function _untagged_int(ld::PL_local_data{T}, w::word)::Union{Nothing, Int64} where {T}
+    _holds_payload(T, Int64) && return nothing
+    v = _indirect_value(ld, w)
+    (isInteger(v) && integer_is_int64(v)) || return nothing
+    return int64_value(v)
+end
+
 # PORT: pl-fli.c PL_get_integer
+# (swipl-devel cbf4e189, src/pl-fli.c:2003-2016)
 # DIVERGES: returns the value, or `nothing`, where upstream writes it through `i`; on the WORDS (L1e e2):
-# a tagged integer's value (`valInt(w)`).
+# a tagged integer's value (`valInt(w)`), or on a term type that tags no integer the value-table word's
+# (`_untagged_int`).
 "The C `int` term reference `t` holds — a tagged integer in `int`'s range — or `nothing` (pl-fli.c)."
 function PL_get_integer(ld::PL_local_data{T}, t::term_t)::Union{Nothing, Int} where {T}
     k, w, _ = _deref_loc(ld, -(t + 1))                      # word w = valHandle(t)
-    if k == DU_VALUE && isTaggedIntW(w)                     # isTaggedInt(w)
-        val = valInt(w)
-        (val > typemax(Int32) || val < typemin(Int32)) && return nothing
-        return Int(val)
-    end
-    return nothing
+    k == DU_VALUE || return nothing
+    val = isTaggedIntW(w) ? valInt(w) : _untagged_int(ld, w)    # isTaggedInt(w); sword val = valInt(w)
+    val === nothing && return nothing
+    (val > typemax(Int32) || val < typemin(Int32)) && return nothing
+    return Int(val)
 end
 
 # PORT: pl-fli.c PL_get_uint
 # (pl-fli.c:2027-2039 at the pin, since MOD4)
 # DIVERGES: returns the value, or `nothing`, where upstream writes it through `i`; on the WORDS, as
-# `PL_get_integer` above.
+# `PL_get_integer` above (the untagged branch too).
 "The C `unsigned int` term reference `t` holds — a tagged integer in `0..UINT_MAX` — or `nothing` (pl-fli.c)."
 function PL_get_uint(ld::PL_local_data{T}, t::term_t)::Union{Nothing, Int} where {T}
     k, w, _ = _deref_loc(ld, -(t + 1))                      # word w = valHandle(t)
-    if k == DU_VALUE && isTaggedIntW(w)                     # isTaggedInt(w)
-        val = valInt(w)
-        (val < 0 || val > typemax(UInt32)) && return nothing   # val < 0 || val > UINT_MAX
-        return Int(val)
-    end
-    return nothing
+    k == DU_VALUE || return nothing
+    val = isTaggedIntW(w) ? valInt(w) : _untagged_int(ld, w)    # isTaggedInt(w); sword val = valInt(w)
+    val === nothing && return nothing
+    (val < 0 || val > typemax(UInt32)) && return nothing   # val < 0 || val > UINT_MAX
+    return Int(val)
 end
 
 # PORT: pl-fli.c PL_cvt_i_uint
