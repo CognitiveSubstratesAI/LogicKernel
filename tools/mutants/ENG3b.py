@@ -191,11 +191,15 @@ MUTANTS = [
          old='''    if env != 0 && ld.fliframes[ld.fli_context].base <= ld.frames[env].base''',
          new='''    if env != 0 && ld.fliframes[ld.fli_context].base >= ld.frames[env].base'''),
     # ---- the LD forms themselves
-    dict(id="ENG3-8 PL_new_term_ref's LD form makes two references after the data boots (KILL test_query.jl: == t0 && "
-            "lTop == t0 + 1; run in-tree, caught earlier at :74)",
+    dict(id="ENG3-8 PL_new_term_ref's LD form makes two references in the state the API stub refuses (no foreign frame newer "
+            "than the running Prolog frame; the mutation is not reached while the data boots, where no frame runs — "
+            "an extra reference at boot broke setup's attvar-slot @assert, D-0391; KILL test_query.jl: == t0 && "
+            "lTop == t0 + 1, the row after the stubs' fatalError rows)",
          file=F, targets=TLD,
          old='''    return new_term_ref(ld)''',
-         new='''    ld.exception_cells != 0 && new_term_ref(ld)   # not while the data boots: setup's @assert on the exception slots
+         new='''    if ld.environment_frame != 0 && ld.fliframes[ld.fli_context].base <= ld.frames[ld.environment_frame].base
+        new_term_ref(ld)
+    end
     return new_term_ref(ld)'''),
     dict(id="ENG3-9 PL_new_term_ref's LD form does not make room first (KILL: a row that grows the local stack through a "
             "term reference — KILL test_local_stack.jl \"term references\": a reference made at lMax grows the stack, and at the limit "
