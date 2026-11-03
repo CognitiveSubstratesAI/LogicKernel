@@ -918,8 +918,8 @@ function pl_garbage_collect_clauses!(
 end
 
 # PORT: pl-proc.c resetProcedure
-# DIVERGES: no statistics (`GD->clauses.dirty`) or tabling attributes (`def->tabling`: not
-# in the kernel); the update listeners are destroyed (EV1); the debugger's `TRACE_ME` is not set for a user predicate (no debugger, as in `lookupProcedure`). Upstream's
+# DIVERGES: no statistics (`GD->clauses.dirty`); the tabling attributes are cleared and the update listeners destroyed
+# (EV1); the debugger's `TRACE_ME` is not set for a user predicate (no debugger, as in `lookupProcedure`). Upstream's
 # `def->impl.any.defined` (the union member overlaying the first clause or the foreign function) is the first clause or
 # the foreign function index.
 "Reset `proc`'s definition to a pristine one but for `SPY_ME` and `P_DIRTYREG`; `isnew`: drop the indexes at once (pl-proc.c)."
@@ -932,6 +932,7 @@ function resetProcedure!(proc::Procedure{T}, isnew::Bool)::Nothing where {T}
     def.flags &= (SPY_ME | P_DIRTYREG)                  # flags0 ^ (flags0 & ~(SPY_ME|P_DIRTYREG))
     def.impl_clauses.number_of_clauses = 0x00000000
     destroy_event_list!(def)                            # if ( def->events ) destroy_event_list(&def->events) (EV1)
+    def.tabling === nothing || tbl_reset_tabling_attributes!(def)   # if ( def->tabling ) tbl_reset_tabling_attributes(def)
     deleteIndexes!(def, def.impl_clauses, isnew)
     freeCodesDefinition!(def, !isnew)
     return nothing
@@ -1431,8 +1432,7 @@ end
 
 # PORT: pl-proc.c set_predicate_attribute as pl_set_predicate_attribute3_va
 # (PRED_IMPL("$set_predicate_attribute", 3, set_predicate_attribute, PL_FA_TRANSPARENT))
-# DIVERGES: no tabling attributes (`tbl_is_predicate_attribute`: refused, as is `spy`, which needs
-# `GP_RESOLVE`); `ReadingSource` is `LD->read_source`'s file and line (src/pl-modul.jl), `MODULE_parse` the source
+# DIVERGES: `spy` is refused (it needs `GP_RESOLVE`); `ReadingSource` is `LD->read_source`'s file and line (src/pl-modul.jl), `MODULE_parse` the source
 # module while reading, else the typein module.
 "`'\$set_predicate_attribute'(:Head, +Key, +Value)` (pl-proc.c): set a predicate attribute."
 function pl_set_predicate_attribute3_va(
@@ -1443,6 +1443,11 @@ function pl_set_predicate_attribute3_va(
 
     key = PL_get_atom_ex(ld, what)
     key === nothing && return FFALSE
+    if _tbl_is_predicate_attribute(T, sym_key(key))     # if ( tbl_is_predicate_attribute(key) )
+        proc = get_procedure(gd, ld, pred, GP_DEFINE | GP_NAMEARITY)
+        proc === nothing && return FFALSE
+        return tbl_set_predicate_attribute(ld, proc.definition, key, value) ? FTRUE : FFALSE
+    end
     val = get_bool_or_int_ex(ld, value)
     val === nothing && return FFALSE
     att = attribute_mask(ld, key)
@@ -2653,8 +2658,8 @@ end
 # DIVERGES: `indexed` is refused by name (`NotPortedError`: its value is a Prolog dict per index and dicts are NOT PORTED);
 # `last_modified_generation` is the module's (`last_modified`, `setLastModifiedPredicate!`'s rise: the definition has no such
 # field; pl-proc.c:3642-3645 reads `def->last_modified`); `size` is `sizeof_predicate`, the kernel's own count (pl-proc.c:3657-3659);
-# the tabling keys (`tbl_is_predicate_attribute`, pl-proc.c:3676) fail: a definition's `tabling` is NULL here (tabling is R3, TAB1),
-# which is `tbl_get_predicate_attribute`'s own failing branch (pl-tabling.c:10281); transactions are NOT PORTED (`P_TRANSACT` branch, 3639-3641).
+# the tabling keys (`tbl_is_predicate_attribute`) are `tbl_get_predicate_attribute`'s (src/pl-tabling.jl), which fails for a
+# definition without `tabling` properties, as upstream does; the `P_TRANSACT` branch (3639-3641) is left to a transactions step.
 "`'\$get_predicate_attribute'(:Head, +Key, -Value)`: a property of the predicate `Head` names (pl-proc.c)."
 function pl_get_predicate_attribute3_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
@@ -2755,7 +2760,7 @@ function pl_get_predicate_attribute3_va(
         end
         return FFALSE
     elseif _tbl_is_predicate_attribute(T, k)
-        return FFALSE
+        return tbl_get_predicate_attribute(ld, def, key, value) ? FTRUE : FFALSE
     else
         att = attribute_mask(ld, key)
         att == 0 && return FFALSE

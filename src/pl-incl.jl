@@ -853,6 +853,46 @@ mutable struct event_list{T, D}
 end
 event_list{T, D}() where {T, D} = event_list{T, D}(event_callback{T, D}[])
 
+# PORT: pl-tabling.h TP_TABLED
+"`table_props.flags`: the predicate is tabled (pl-tabling.h)."
+const TP_TABLED = UInt32(0x0001)
+# PORT: pl-tabling.h TP_MONOTONIC
+"`table_props.flags`: monotonic tabling (pl-tabling.h)."
+const TP_MONOTONIC = UInt32(0x0002)
+# PORT: pl-tabling.h TP_SHARED
+"`table_props.flags`: shared tabling (pl-tabling.h)."
+const TP_SHARED = UInt32(0x0004)
+# PORT: pl-tabling.h TP_OPAQUE
+"`table_props.flags`: declared opaque (pl-tabling.h)."
+const TP_OPAQUE = UInt32(0x0008)
+# PORT: pl-tabling.h TP_LAZY
+"`table_props.flags`: lazy (monotonic) tabling (pl-tabling.h)."
+const TP_LAZY = UInt32(0x0010)
+# PORT: pl-tabling.h TP_INCREMENTAL
+"`table_props.flags`: incremental tabling (pl-tabling.h)."
+const TP_INCREMENTAL = UInt32(0x0020)
+# PORT: pl-tabling.h TP_VARIANT
+"`table_props.flags`: plain variant tabling, supervisor `S_TABLED` (pl-tabling.h)."
+const TP_VARIANT = UInt32(0x0040)
+
+# PORT: pl-tabling.h table_props
+# DIVERGES: the sizes (`size_t`, with `(size_t)-1` for "none" or `infinite`) are `Int` with -1 for it, so a size above
+# `typemax(Int)` (which `PL_get_size_ex` of this kernel refuses with `representation_error(size_t)`, upstream accepts up
+# to 2^64-1) is not storable; `lazy_queue` (the `Buffer` of clauses queued by monotonic tabling) is left to TAB1, which
+# is the first user (owner TAB1).
+"The tabling properties of a predicate (pl-tabling.h `struct table_props`): `TP_*` flags and the abstraction limits."
+mutable struct table_props
+    flags::UInt32                                       # TP_* flags
+    abstract::Int                                       # IDG abstraction (-1: none)
+    subgoal_abstract::Int                               # Subgoal abstraction (-1: none)
+    answer_abstract::Int                                # Answer abstraction (-1: none)
+    max_answers::Int                                    # Answer count limit (-1: none)
+    start_id::UInt32                                    # Index in the start node arrays
+end
+# ORIGINAL: upstream's `clear_table_props()` values for a new `table_props` (pl-tabling.c get_predicate_table_props
+# allocates and clears it).
+table_props() = table_props(UInt32(0), -1, -1, -1, -1, UInt32(0))
+
 # PORT: pl-incl.h definition
 # DIVERGES: `functor` (a pointer into SWI's functor table) is its parts here — the name's `sym_key`,
 # the arity, and the name itself (`name`, the symbol: an error term names the predicate) — as there
@@ -884,9 +924,10 @@ mutable struct definition{T}
     module_::Int                                            # module (an index: see below)
     shared::Int                                             # #procedures sharing this def
     events::Union{Nothing, event_list{T, definition{T}}}    # Forward update events (EV1; nothing: NULL)
+    tabling::Union{Nothing, table_props}                    # Extended properties for tabling (TAB1-min; nothing: NULL)
 end
-# DIVERGES (no upstream function): `events` is NULL in a new definition, as upstream's memset: the constructors of the
-# definition's other fields do not name it.
+# DIVERGES (no upstream function): `events` and `tabling` are NULL in a new definition, as upstream's memset: the
+# constructors of the definition's other fields do not name them.
 definition{T}(
     functor_name, arity, impl_clauses, flags, name, codes, codes_crefs, code_data,
     impl_foreign_function,
@@ -894,7 +935,7 @@ definition{T}(
 ) where {T} = definition{T}(
     functor_name, arity, impl_clauses, flags, name, codes, codes_crefs, code_data,
     impl_foreign_function,
-    module_, shared, nothing
+    module_, shared, nothing, nothing
 )
 
 # PORT: pl-incl.h module as module_t
@@ -1121,6 +1162,21 @@ const ClauseIndex{T} = clause_index{ClauseRef{T}}
 # PORT: pl-incl.h Definition
 "A predicate of terms `T` (pl-incl.h `Definition`)."
 const Definition{T} = definition{T}
+
+# PORT: pl-wrap.h closure
+# DIVERGES (since TAB1-min; audit D-0388 item 5, Q1 (a), owner WRAP1): upstream's `struct closure` holds a COPY of the
+# whole `struct definition` in a blob, with the `impl` union's `wrapped` member (`predicate`, `supervisor`) overlaying the
+# clause list. A Julia record holds the copy (`def`, whose `impl_clauses` is an empty list, as nothing reads the union's
+# other members through a closure) and the union's `wrapped` member as the fields `predicate`, `supervisor` and
+# `supervisor_crefs` (the side table of that supervisor, see `definition.codes_crefs`). The blob's payload is the record's
+# number in `gd.closure_refs` (src/pl-wrap.jl), as the clause blob's (src/pl-dbref.jl).
+"A closure (pl-wrap.h `struct closure`): the copy of a wrapped predicate that calls its wrapper's `S_WRAP` supervisor."
+mutable struct closure{T}
+    def::definition{T}                                  # def: the copy of the wrapped predicate's definition
+    predicate::definition{T}                            # def.impl.wrapped.predicate
+    supervisor::Vector{code}                            # def.impl.wrapped.supervisor
+    supervisor_crefs::Vector{ClauseRef{T}}              # (the clause references the supervisor's operands index)
+end
 # PORT: pl-incl.h ClauseChoice
 "A clause choice of terms `T` (pl-incl.h `ClauseChoice`)."
 const ClauseChoice{T} = clause_choice{ClauseRef{T}}

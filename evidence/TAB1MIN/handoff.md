@@ -94,3 +94,24 @@ of test/ for tbl_/trienode: only test_atom_table.jl:183 names the atom); candida
 Nothing yet: T1 (pl-tabling.jl + rows tmt) is complete as written but is gated together with the rest (inventory, fmt, check, rows x3, pkgtest_way on
 test_tabling_min_swipl.jl, type discipline, mutants TAB1MIN not yet written).
 Daemons: this writer started none and ran no Julia.
+
+## WRITER 2 (Sonnet, edit-only; nothing compiled or run: every line UNVERIFIED). Origin/main still f08167f at start: ENG3 NOT landed.
+Scratch logs are in the shared scratchpad with prefix t1w2-.
+### Opcode-number grep (D-0388 item 5; `git grep` over test/ and tools/, 37 lines, log t1w2-opnum.log)
+No test or tool pins the numbers 159..165 as opcodes (hits are unrelated: signal numbers in test_halt_swipl.jl, array indexes, bench tsv).
+ONE test reads the whole table: test/foreign/test_query.jl:305-330 builds `notrun` = every opcode of `LK._CODE_TABLE` whose name is not in `LK.VMI_RUN`,
+takes `first(notrun)` and expects a NotPortedError naming it (and `isempty(notrun)` is an error). T3 must keep at least one declared opcode
+outside VMI_RUN, and the named-refusal bodies of S_CALLWRAPPER/S_TABLED/S_WRAP change which opcode is first (only if they are declared before it).
+### T2 (struct commit): written, committed (see git log: "T2")
+- src/pl-incl.jl: `TP_TABLED..TP_VARIANT` (pl-tabling.h), `mutable struct table_props` (flags, abstract, subgoal_abstract, answer_abstract,
+  max_answers as Int with -1 for (size_t)-1, start_id; `lazy_queue` left to TAB1: DIVERGES), field `tabling::Union{Nothing, table_props}` AFTER `events`
+  in `definition{T}` (the 11-argument outer constructor passes `nothing, nothing`), `mutable struct closure{T}` (def, predicate, supervisor,
+  supervisor_crefs) after `const Definition`.
+- src/pl-global.jl: `const closure_refs::Vector{closure{T}}` appended at the END of `PL_global_data` and of its constructor call, header note.
+- src/pl-tabling.jl: clear_table_props!, tbl_reset_tabling_attributes!, get_predicate_table_props!, tbl_get_predicate_attribute, get_size_or_inf,
+  tbl_set_incremental_predicate (calls freeCodesDefinition!), set_bool_attr, tbl_set_predicate_attribute.
+- src/pl-proc.jl: `$set_predicate_attribute` tabling branch BEFORE `get_bool_or_int_ex` (upstream order: pl-proc.c:3864-3868; value may be `infinite`),
+  `$get_predicate_attribute` calls tbl_get_predicate_attribute (was `FFALSE`), resetProcedure! clears the properties.
+  unallocDefinition (pl-proc.c:264) has no kernel counterpart (Julia's GC): the `def->tabling` free is not needed.
+- NOT done in T2: `_tbl_is_predicate_attribute` stays in pl-proc.jl (already there, unchanged); the blob type and `initWrap!` come with T4.
+- The struct changes (definition.tabling, PL_global_data.closure_refs) restart the daemon: cold compile at the gate.
