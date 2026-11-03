@@ -118,9 +118,13 @@ ev1_rveto(Tag, Ref) :- ev1_r(Tag, Ref), fail.
 ev1_rthrow(Tag, Ref) :- ev1_r(Tag, Ref), throw(ev1_ball(Tag)).
 ev1_e(Tag, X) :- ev1_x(X, Y), assertz(ev1_log(Tag-erase-Y)).
 ev1_ethrow(Tag, X) :- ev1_e(Tag, X), throw(ev1_ball(Tag)).
+ev1_ebad(Tag, X) :-
+    ev1_e(Tag, X),
+    findall(x, ev1_log(_), Ls),
+    (   Ls = [_] -> throw(ev1_ball(Tag)) ; throw(error(type_error(integer, Tag), _)) ).
 ev1_pair(P, Q, Act, X) :- ev1_t(P-Q, Act, X).
 ev1_get(R) :- findall(L, ev1_log(L), R).
-ev1_unl(E) :- ev1_unl(E, [ev1_a, ev1_b, ev1_t(_), ev1_veto(_), ev1_vend, ev1_throw(_), ev1_r(_), ev1_rveto(_), ev1_rthrow(_), ev1_e(_), ev1_ethrow(_), ev1_pair(_, _)]).
+ev1_unl(E) :- ev1_unl(E, [ev1_a, ev1_b, ev1_t(_), ev1_veto(_), ev1_vend, ev1_throw(_), ev1_r(_), ev1_rveto(_), ev1_rthrow(_), ev1_e(_), ev1_ethrow(_), ev1_ebad(_), ev1_pair(_, _)]).
 ev1_unl(_, []).
 ev1_unl(E, [C|Cs]) :- prolog_unlisten(E, C), ev1_unl(E, Cs).
 ev1_unl_all([]).
@@ -422,6 +426,10 @@ const _EV_CASES = [
     (
         "ev1p20",
         raw"ev1_clear, assertz(ev1_p(1)), prolog_listen(ev1_p/1, ev1_a), abolish(ev1_p/1), assertz(ev1_p(2)), ev1_get(R)"
+    ),
+    (
+        "ev1g03",
+        raw"ev1_clear, garbage_collect_clauses, prolog_listen(erase, ev1_ebad(g)), assertz(ev1_p(1)), assertz(ev1_p(2)), retract(ev1_p(1)), retract(ev1_p(2)), catch(garbage_collect_clauses, E, true), ev1_get(L), ev1_unl(erase), R = E-L"
     )
 ]
 
@@ -509,7 +517,8 @@ const _EV_PINNED = [
     "t_ev1g01 c[116,95,101,118,49,103,48,49]/1(c[91,124,93]/2(c[45]/2(c[45]/2(a[103],a[101,114,97,115,101]),a[103,111,110,101]),nil))",
     "t_ev1g02 c[116,95,101,118,49,103,48,50]/1(c[45]/2(c[101,118,49,95,98,97,108,108]/1(a[103]),c[91,124,93]/2(c[45]/2(c[45]/2(a[103],a[101,114,97,115,101]),a[103,111,110,101]),nil)))",
     "t_ev1u18 c[116,95,101,118,49,117,49,56]/1(c[45]/2(V0,c[91,124,93]/2(c[45]/2(c[45]/2(c[45]/2(a[97],a[98]),a[97,115,115,101,114,116,122]),c[99,108]/2(c[101,118,49,95,112]/1(i1),a[116,114,117,101])),nil)))",
-    "t_ev1p20 c[116,95,101,118,49,112,50,48]/1(nil)"
+    "t_ev1p20 c[116,95,101,118,49,112,50,48]/1(nil)",
+    "t_ev1g03 c[116,95,101,118,49,103,48,51]/1(c[45]/2(c[101,114,114,111,114]/2(c[116,121,112,101,95,101,114,114,111,114]/2(a[105,110,116,101,103,101,114],a[103]),V0),c[91,124,93]/2(c[45]/2(c[45]/2(a[103],a[101,114,97,115,101]),a[103,111,110,101]),c[91,124,93]/2(c[45]/2(c[45]/2(a[103],a[101,114,97,115,101]),a[103,111,110,101]),nil))))"
 ]
 
 

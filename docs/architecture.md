@@ -962,7 +962,6 @@ graph LR
     pl_trace["pl-trace.jl"]
     pl_pro["pl-pro.jl"]
     pl_init["pl-init.jl"]
-
     pl_event["pl-event.jl"]
     pl_mutex["pl-mutex.jl"]
     pl_bag["pl-bag.jl"]
@@ -1540,6 +1539,7 @@ graph LR
     pl_pro --> os_pl_prologflag
     pl_pro --> pl_proc
     pl_pro --> pl_write
+    pl_pro --> pl_string
     pl_init --> term_interface
     pl_init --> default_term
     pl_init --> os_pl_stream
@@ -1551,8 +1551,6 @@ graph LR
     pl_init --> os_pl_prologflag
     pl_init --> os_pl_file
     pl_init --> pl_proc
-
-    pl_pro --> pl_string
     pl_event --> term_interface
     pl_event --> default_term
     pl_event --> pl_incl

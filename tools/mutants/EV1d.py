@@ -6,13 +6,15 @@
 # locally: tools/mutate.sh run). Format: tools/mutate_drive.py's (as BOOTPREDSUB.py): `id`, `file`, `old` (must occur EXACTLY
 # once), `new`, optional `equivalent` and `targets`. Killed by test/core_lang/test_event_swipl.jl (rows ev1p01-ev1g01 named in
 # each id's KILL); the KILL lists are what the rows are EXPECTED to do (read, not run): the battery's verdict is the evidence.
-# Verdicts: written by the battery, not yet run. 51 mutants: 48 of the writer's list (3 declared EQUIVALENT) and N1-N3 of the gate.
+# Verdicts: written by the battery, not yet run. 51 mutants: 48 of the writer's list (3 declared EQUIVALENT) and N1-N3 of the gate. After the EV1c battery (2 survivors):
+# C5 is killed by the new row ev1g03; C3 is declared EQUIVALENT below (read at the pin, in-tree run SURVIVED: evidence/EV1/g5/).
 # The `old` strings are written in the repo's formatted style BEFORE `tools/warm.sh fmt` ran for this file's anchors (the coding
 # agent had no daemon): RE-FIT any that fmt rewrapped. Every `old` was checked to occur exactly once in its file with a throwaway
 # `python3 -I` script (a text count, no Julia).
 # The table-name mutants of prolog_listen (the event's NAME, the registration entry) are BOOTPREDSUB.py's BP3-L7..L11; here the
 # `location` column (the list a raise looks in) is mutated.
-# EQUIVALENT (declared in the dicts, with file:line): the frameFinished raise (nothing sets FR_NOTIFY before DBG1), the rollback
+# EQUIVALENT (declared in the dicts, with file:line): the `break` after a listener's exception (the `rc = rc &&` forms already stop the
+# later listeners), the frameFinished raise (nothing sets FR_NOTIFY before DBG1), the rollback
 # flag of predicate_update_event (every caller passes 0: no transactions), the `function_ == 0` test of add_event_hook (every
 # callback has function_ 0: no register_event_function before TH1).
 # NOT LISTED (with its reason):
@@ -130,15 +132,16 @@ MUTANTS = [
          file=V, targets=TARGETS,
          old="                    rc && (\n                        put_fastheap(ld, clo, argv) &&\n",
          new="                    (\n                        put_fastheap(ld, clo, argv) &&\n"),
-    dict(id="EV1-C3 an exception in a listener does not stop the later ones (KILL ev1v10)",
+    dict(id="EV1-C3 an exception in a listener does not stop the later ones (EQUIVALENT)",
          file=V, targets=TARGETS,
          old="            if !rc && PL_exception(ld, 0) != 0\n                break\n            end\n",
-         new="            if false\n                break\n            end\n"),
+         new="            if false\n                break\n            end\n",
+         equivalent="src/pl-event.jl:471 — the `break` only skips what follows, and what follows a listener that left rc false is nothing: every later listener is a term closure (`rc = rc && (` at src/pl-event.jl:453-454) or a named one (`rc = rc && PL_call_predicate(` at src/pl-event.jl:464-465), both written `rc = rc && …`, so with rc false their call is never evaluated (a sole `@assert ev.argc == argc` at :463 runs and holds); the only writer of rc that is not short-circuited is the C-function branch (:450-451), which sets rc false and is dead anyway (function_ is 0 for every callback, see EV1-C9, src/pl-event.jl:164 and :173). pl-event.c:456 and :462 are the same `rc = rc &&` forms; upstream needs its break (pl-event.c:465-466) only because its C-function branch (pl-event.c:420-454) assigns rc without the `&&`, a branch the kernel has no listener for: C-function listeners are TH1's and do not exist here, so every callback has function_ 0 (EV1-C9). READ, not run; in-tree run: SURVIVED against test_event_swipl.jl, as an equivalent must (evidence/EV1/g5/mut_c3c5.log)."),
     dict(id="EV1-C4 a failing listener leaves the event false: the record erase fails (KILL ev1r04, ev1r08)",
          file=V, targets=TARGETS,
          old="        else\n            rc = true                                           # only false on error\n",
          new="        else\n            nothing\n"),
-    dict(id="EV1-C5 the exception of a listener is dropped when the wakeup state is restored (KILL ev1v08, ev1v09, ev1v11, ev1r03)",
+    dict(id="EV1-C5 the exception of a listener is dropped when the wakeup state is restored (KILL ev1g03: the only row with a ball already pending at the event)",
          file=V, targets=TARGETS,
          old="wstate.flags | WAKEUP_KEEP_URGENT_EXCEPTION\n",
          new="wstate.flags\n"),

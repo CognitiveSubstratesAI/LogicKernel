@@ -211,7 +211,7 @@ function PL_global_data{T}() where {T}
         CLN_NORMAL,                             # halt_cleaning
         0,                                      # halt_cancelled
         true,                                   # halt_exit: the process exit
-        Int[]                                   # halt_exited,
+        Int[],                                  # halt_exited
         event_hooks{T}()                        # event.hook: no listener yet (R2 EV1)
     )
     initPrologFlags!(gd)                        # setup:136 (src/os/pl-prologflag.jl): before the built-ins (:158), whose boot clauses read the mask
@@ -672,7 +672,7 @@ function PL_local_data{T}(gd::PL_global_data{T}) where {T}
         UInt(0),                                # debugstatus.skiplevel: resetTracer (pl-trace.c:1888)
         false,                                  # debugstatus.tracing
         false,                                  # debugstatus.debugging
-        false                                   # debugstatus.showContext: zero (static LD),
+        false,                                  # debugstatus.showContext: zero (static LD)
         nothing,                                # event.buffered: NULL
         0,                                      # event.delay_nesting
         nothing                                 # event.hook.onthreadexit: no listener yet (R2 EV1)

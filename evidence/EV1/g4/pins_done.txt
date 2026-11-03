@@ -1,0 +1,13 @@
+test_zero_exports reference exit=0
+test_zero_exports alt exit=0
+test_zero_exports alt_interned exit=0
+test_local_stack reference exit=0
+test_local_stack alt exit=0
+test_local_stack alt_interned exit=0
+test_query reference exit=0
+test_query alt exit=0
+test_query alt_interned exit=0
+test_rules_swipl reference exit=0
+test_rules_swipl alt exit=0
+test_rules_swipl alt_interned exit=0
+ALLDONE

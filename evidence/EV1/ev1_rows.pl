@@ -19,9 +19,13 @@ ev1_rveto(Tag, Ref) :- ev1_r(Tag, Ref), fail.
 ev1_rthrow(Tag, Ref) :- ev1_r(Tag, Ref), throw(ev1_ball(Tag)).
 ev1_e(Tag, X) :- ev1_x(X, Y), assertz(ev1_log(Tag-erase-Y)).
 ev1_ethrow(Tag, X) :- ev1_e(Tag, X), throw(ev1_ball(Tag)).
+ev1_ebad(Tag, X) :-
+    ev1_e(Tag, X),
+    findall(x, ev1_log(_), Ls),
+    (   Ls = [_] -> throw(ev1_ball(Tag)) ; throw(error(type_error(integer, Tag), _)) ).
 ev1_pair(P, Q, Act, X) :- ev1_t(P-Q, Act, X).
 ev1_get(R) :- findall(L, ev1_log(L), R).
-ev1_unl(E) :- ev1_unl(E, [ev1_a, ev1_b, ev1_t(_), ev1_veto(_), ev1_vend, ev1_throw(_), ev1_r(_), ev1_rveto(_), ev1_rthrow(_), ev1_e(_), ev1_ethrow(_), ev1_pair(_, _)]).
+ev1_unl(E) :- ev1_unl(E, [ev1_a, ev1_b, ev1_t(_), ev1_veto(_), ev1_vend, ev1_throw(_), ev1_r(_), ev1_rveto(_), ev1_rthrow(_), ev1_e(_), ev1_ethrow(_), ev1_ebad(_), ev1_pair(_, _)]).
 ev1_unl(_, []).
 ev1_unl(E, [C|Cs]) :- prolog_unlisten(E, C), ev1_unl(E, Cs).
 ev1_unl_all([]).
@@ -115,3 +119,4 @@ t_ev1g01(R) :- catch((ev1_clear, garbage_collect_clauses, prolog_listen(erase, e
 t_ev1g02(R) :- catch((ev1_clear, garbage_collect_clauses, prolog_listen(erase, ev1_ethrow(g)), assertz(ev1_p(1)), retract(ev1_p(1)), catch(garbage_collect_clauses, E, true), ev1_get(L), R = E-L), error(SsuE, _), R = raised(SsuE)).
 t_ev1u18(R) :- catch((ev1_clear, prolog_listen(ev1_p/1, ev1_pair(a, b)), prolog_listen(ev1_p/1, ev1_pair(z, c)), prolog_unlisten(ev1_p/1, ev1_pair(X, c)), assertz(ev1_p(1)), ev1_get(L), R = X-L), error(SsuE, _), R = raised(SsuE)).
 t_ev1p20(R) :- catch((ev1_clear, assertz(ev1_p(1)), prolog_listen(ev1_p/1, ev1_a), abolish(ev1_p/1), assertz(ev1_p(2)), ev1_get(R)), error(SsuE, _), R = raised(SsuE)).
+t_ev1g03(R) :- catch((ev1_clear, garbage_collect_clauses, prolog_listen(erase, ev1_ebad(g)), assertz(ev1_p(1)), assertz(ev1_p(2)), retract(ev1_p(1)), retract(ev1_p(2)), catch(garbage_collect_clauses, E, true), ev1_get(L), ev1_unl(erase), R = E-L), error(SsuE, _), R = raised(SsuE)).
