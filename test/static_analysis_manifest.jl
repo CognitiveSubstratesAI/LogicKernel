@@ -2584,7 +2584,10 @@ function _manifest_index(T)
         (LK.dict_order_term_refs, Tuple{Vector{UInt64}, Int, Vector{Int}, Int}, false),
         (LK.build_dict, Tuple{Int, LK.read_data{T}}, false),
         (LK.build_attvar, Tuple{Int, LK.read_data{T}}, false),
-        (LK.build_labeled_subterm, Tuple{Int, LK.read_data{T}}, false)
+        (LK.build_labeled_subterm, Tuple{Int, LK.read_data{T}}, false),
+        # ENG3: pl-fli.c's API stubs PL_new_term_ref/PL_new_term_refs (the foreign-environment check, then the LD form)
+        (LK.PL_new_term_ref_api, Tuple{LD}, false),
+        (LK.PL_new_term_refs_api, Tuple{LD, Int}, false)
     )
 end
 
