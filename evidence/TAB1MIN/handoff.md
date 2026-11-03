@@ -101,7 +101,7 @@ Scratch logs are in the shared scratchpad with prefix t1w2-.
 No test or tool pins the numbers 159..165 as opcodes (hits are unrelated: signal numbers in test_halt_swipl.jl, array indexes, bench tsv).
 ONE test reads the whole table: test/foreign/test_query.jl:305-330 builds `notrun` = every opcode of `LK._CODE_TABLE` whose name is not in `LK.VMI_RUN`,
 takes `first(notrun)` and expects a NotPortedError naming it (and `isempty(notrun)` is an error). T3 must keep at least one declared opcode
-outside VMI_RUN, and the named-refusal bodies of S_CALLWRAPPER/S_TABLED/S_WRAP change which opcode is first (only if they are declared before it).
+outside VMI_RUN, and the named-refusal code of S_CALLWRAPPER/S_TABLED/S_WRAP changes which opcode is first (only if they are declared before it).
 ### T2 (struct commit): written, committed (see git log: "T2")
 - src/pl-incl.jl: `TP_TABLED..TP_VARIANT` (pl-tabling.h), `mutable struct table_props` (flags, abstract, subgoal_abstract, answer_abstract,
   max_answers as Int with -1 for (size_t)-1, start_id; `lazy_queue` left to TAB1: DIVERGES), field `tabling::Union{Nothing, table_props}` AFTER `events`
@@ -225,7 +225,7 @@ structs). RECOMMEND (a) for the minimal slice.
    refusals in pl-wam.jl, keep one declared opcode outside VMI_RUN (test/foreign/test_query.jl:305-330).
 5. READY-FOR-GATE (D-order): inventory, fmt via warm.sh send, check (cold compile: struct change), rows x3, type discipline, test_atom_table,
    manifest entries, pkgtest_way (one file at a time), alloc pins x3 (239/377/433; test_query 347 on f08167f / 365 after ENG3), static analysis
-   (JET + AllocCheck), term grep (crash-term pattern over diff + messages), gate/tab1min + mutants/TAB1MIN at the same SHA.
+   (JET + AllocCheck), the D-0164 grep over diff + messages, gate/tab1min + mutants/TAB1MIN at the same SHA.
    Things the gate must check that the writers could not: `ClauseList{T}()` + `cl.args =` assignment (clause_list is mutable), `PL_unify_functor`
    with a blob T-term as the name, `atomValue(gd.atoms, w)` on a blob word, `_atom_value(ld, w)` for the closure word (symbol recorded by
    `_blob_term!`), `assert_term!` accepting a blob-headed compound inside the wrapper clause body (open since writer 1), whether the
@@ -283,7 +283,7 @@ B. manifest entries at the END of `_manifest_index` (test/static_analysis_manife
    writer blob hook; closure = a record (owner WRAP1); ORIGINAL rows; never regenerate docs/port_inventory.md.
 C. READY-FOR-GATE list (D-order), once T3 exists: inventory (`warm.sh inventory`), fmt via warm.sh send, check (struct change restarts the daemon: cold compile), rows on three term types,
    test/test_type_discipline.jl, test_atom_table.jl (the `closure` atom adds one atom), manifest entries, `tools/pkgtest_way.sh test/core_lang/test_tabling_min_swipl.jl` one at a time,
-   alloc pins x3 (239/377/433; test_query 347 on f08167f / 365 after ENG3), static analysis (JET + AllocCheck), crash-term grep over diff + messages, push mutants/TAB1MIN and gate/tab1min at the SAME SHA.
+   alloc pins x3 (239/377/433; test_query 347 on f08167f / 365 after ENG3), static analysis (JET + AllocCheck), the D-0164 grep over diff + messages, push mutants/TAB1MIN and gate/tab1min at the SAME SHA.
    Things only the gate can check: `ClauseList{T}()` + `cl.args =`, `PL_unify_functor` with a blob T-term as name, `atomValue` on a blob word, `assert_term!` accepting a blob-headed compound
    (row tmw12 reads it back through clause/2), whether `closure` shifts a pinned atom count, `blob/2` of the closure blob (tmw02-04), `abolish` of a dynamic tm_x22 clearing the properties (tma22).
 Daemon state: writer 4 started none, ran no Julia. Scratch prefix t1w4-.
@@ -321,7 +321,7 @@ origin/main fetched at start: STILL f08167f (ENG3 NOT landed): T3 NOT possible (
    on all three term types, test/test_type_discipline.jl, test_atom_table.jl (the `closure` atom), test_pr1_swipl.jl (pr93) and test_event_swipl.jl,
    test_procedures.jl, test_assert_swipl.jl (freeCodesDefinition! callers), `tools/pkgtest_way.sh test/core_lang/test_tabling_min_swipl.jl` (one at a time),
    alloc pins x3 (239/377/433; test_query 347 on f08167f / 365 after ENG3; the 2-arg freeCodesDefinition! row :1416 is noalloc=true and now has a throw branch),
-   static analysis (JET + AllocCheck), crash-term grep over diff + messages, push mutants/TAB1MIN and gate/tab1min at the SAME SHA.
+   static analysis (JET + AllocCheck), the D-0164 grep over diff + messages, push mutants/TAB1MIN and gate/tab1min at the SAME SHA.
    Only the gate can check (writers could not): `ClauseList{T}()` + `cl.args =`, `PL_unify_functor` with a blob T-term as name, `atomValue` on a blob word,
    `assert_term!` accepting a blob-headed compound (tmw12), whether `closure` shifts a pinned atom count, `blob/2` of the closure (tmw02-04), `abolish` of a
    dynamic tm_x22 clearing the properties (tma22), D6's white-box `isempty(c06.supervisor_crefs)`.

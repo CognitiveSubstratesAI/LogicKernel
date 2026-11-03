@@ -108,7 +108,8 @@ const _FOREIGN_VA = (
     PL_predicates_from_op..., PL_predicates_from_rec..., PL_predicates_from_attvar...,
     PL_predicates_from_gvar..., PL_predicates_from_dict..., PL_predicates_from_strings...,
     PL_predicates_from_error..., PL_predicates_from_event...,
-    PL_predicates_from_termhash..., PL_predicates_from_tabling..., PL_predicates_from_wrap...
+    PL_predicates_from_termhash..., PL_predicates_from_tabling...,
+    PL_predicates_from_wrap...
 )
 const _FOREIGN_DET = foreigns
 

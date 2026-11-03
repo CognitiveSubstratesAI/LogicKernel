@@ -970,6 +970,8 @@ graph LR
     pl_gvar["pl-gvar.jl"]
     pl_list["pl-list.jl"]
     pl_dict["pl-dict.jl"]
+    pl_tabling["pl-tabling.jl"]
+    pl_wrap["pl-wrap.jl"]
     pl_op["pl-op.jl"]
     pl_write["pl-write.jl"]
     pl_sys["pl-sys.jl"]
@@ -1063,6 +1065,7 @@ graph LR
     pl_global --> os_pl_os
     pl_global --> pl_setup
     pl_global --> pl_supervisor
+    pl_global --> pl_wrap
     pl_global --> pl_op
     pl_global --> pl_ext
     pl_modul --> term_interface
@@ -1492,6 +1495,7 @@ graph LR
     pl_proc --> pl_srcfile
     pl_proc --> pl_supervisor
     pl_proc --> pl_event
+    pl_proc --> pl_tabling
     pl_proc --> pl_read
     pl_srcfile --> term_interface
     pl_srcfile --> default_term
@@ -1518,6 +1522,7 @@ graph LR
     pl_supervisor --> pl_arith
     pl_supervisor --> os_pl_text
     pl_supervisor --> pl_proc
+    pl_supervisor --> pl_wrap
     pl_trace --> term_interface
     pl_trace --> default_term
     pl_trace --> pl_incl
@@ -1632,6 +1637,32 @@ graph LR
     pl_dict --> pl_attvar
     pl_dict --> pl_error
     pl_dict --> pl_read
+    pl_tabling --> term_interface
+    pl_tabling --> default_term
+    pl_tabling --> pl_incl
+    pl_tabling --> SWI_Prolog
+    pl_tabling --> pl_atom
+    pl_tabling --> pl_global
+    pl_tabling --> pl_prims
+    pl_tabling --> pl_comp
+    pl_tabling --> pl_fli
+    pl_tabling --> pl_error
+    pl_tabling --> pl_supervisor
+    pl_wrap --> term_interface
+    pl_wrap --> default_term
+    pl_wrap --> pl_incl
+    pl_wrap --> SWI_Prolog
+    pl_wrap --> pl_atom
+    pl_wrap --> pl_vmi
+    pl_wrap --> pl_global
+    pl_wrap --> pl_inline
+    pl_wrap --> pl_comp
+    pl_wrap --> pl_thread
+    pl_wrap --> pl_wam
+    pl_wrap --> pl_fli
+    pl_wrap --> pl_error
+    pl_wrap --> pl_proc
+    pl_wrap --> pl_supervisor
     pl_op --> term_interface
     pl_op --> default_term
     pl_op --> pl_incl
@@ -1804,6 +1835,8 @@ graph LR
     pl_ext --> pl_gvar
     pl_ext --> pl_list
     pl_ext --> pl_dict
+    pl_ext --> pl_tabling
+    pl_ext --> pl_wrap
     pl_ext --> pl_op
     pl_ext --> pl_write
     pl_ext --> pl_sys
@@ -6734,7 +6767,7 @@ every claim below is UNVERIFIED until the gate). The aim is that boot/tabling.pl
   `wrapper` (after `staticp`, upstream's order), built by `initSupervisors` as `[S_WRAP, I_EXIT]`, known to `_shared_supervisor`, and the supervisor of a closure's copy of a
   wrapped predicate (`unify_closure`); the idle `index_context` literal in src/pl-global.jl carries all seven. The three names are in `VMI_RUN` (src/pl-wam.jl), each label a
   NAMED REFUSAL: `NotPortedError` naming the instruction, owner `WRAP1` for `S_WRAP` and `S_CALLWRAPPER`, owner `TAB1` for `S_TABLED`. Removal condition: a wrapped goal is
-  called (WRAP1: the closure branch of `I_CALL1`/`I_CALLN`, pl-vmi.c:5482-5520, with the bodies of `S_WRAP` and `S_CALLWRAPPER`), a tabled goal is called (TAB1: `S_TABLED`,
+  called (WRAP1: the closure branch of `I_CALL1`/`I_CALLN`, pl-vmi.c:5482-5520, with the refusal code for `S_WRAP` and `S_CALLWRAPPER`), a tabled goal is called (TAB1: `S_TABLED`,
   tries, `start_tabling/3`). Installing a wrapper (`'$c_wrap_predicate'/5`) never enters them. `:I_NOP` (code 0) stays the first declared opcode outside `VMI_RUN`, so
   test/foreign/test_query.jl:305-330 keeps its refusal. If another branch also appends opcodes after `B_ARG_VF` (a continuation step), the second to land renumbers; no test or
   tool pins 159..161.
@@ -6750,7 +6783,7 @@ every claim below is UNVERIFIED until the gate). The aim is that boot/tabling.pl
   5. The closure is a RECORD (`closure{T}` in `gd.closure_refs`; the blob's payload is its number), not a memcpy of `struct definition` in the blob; the blob type has no
      `release`/`write`/`acquire`/`save`/`load` slots; atoms keep no reference counts, so `unregisterWrappedSupervisor` is a no-op (audit D-0388 item 5, Q1 (a); owner WRAP1).
   6. T3's opcode numbers are APPENDED (159..161) in pl-vmi.c's relative order, where upstream's numbers follow the whole VMI list; no behaviour reads an absolute number. Owner: none.
-  7. The bodies of `S_WRAP`, `S_CALLWRAPPER` and `S_TABLED` are named refusals (owners WRAP1 / WRAP1 / TAB1, see the T3 bullet), not upstream's frame set-up.
+  7. The code behind `S_WRAP`, `S_CALLWRAPPER` and `S_TABLED` is a set of named refusals (owners WRAP1 / WRAP1 / TAB1, see the T3 bullet), not upstream's frame set-up.
 - **Left out (each needs its subsystem):** `wrapped_predicate/2`, `unwrap_predicate/2`, `$wrapped_implementation/3`, `$closure_predicate/2` (WRAP1); the other `$tbl_*` predicates, the
   tries, worklists, answer tables and `start_tabling/3` (TAB1); `S_DET` in `skipWrapperPrefix` (the opcode is not declared); `tbl_set_incremental_predicate`'s effect on a trie
   (the incremental dependency graph is TAB1's).

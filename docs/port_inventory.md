@@ -179,9 +179,11 @@ how many of the upstream file's functions are ported.
 | swipl-devel `src/pl-setup.c` | code | `cbf4e1896275` | `src/pl-setup.jl` | 10 | 7 |
 | swipl-devel `src/pl-srcfile.c` | code | `cbf4e1896275` | `src/pl-srcfile.jl` | 27 | 18 |
 | swipl-devel `src/pl-string.c` | code | `cbf4e1896275` | `src/pl-string.jl` | 16 | 10 |
-| swipl-devel `src/pl-supervisor.c` | code | `cbf4e1896275` | `src/pl-supervisor.jl` | 17 | 9 |
+| swipl-devel `src/pl-supervisor.c` | code | `cbf4e1896275` | `src/pl-supervisor.jl` | 18 | 10 |
 | swipl-devel `src/pl-sys.c` | code | `cbf4e1896275` | `src/pl-sys.jl` | 6 | 3 |
 | swipl-devel `src/pl-tabling.c` | code | `cbf4e1896275` | `src/os/pl-prologflag.jl` | 1 | 1 |
+| swipl-devel `src/pl-tabling.c` | code | `cbf4e1896275` | `src/pl-tabling.jl` | 11 | 8 |
+| swipl-devel `src/pl-tabling.h` | code | `cbf4e1896275` | `src/pl-incl.jl` | 8 | 1 |
 | swipl-devel `src/pl-termhash.c` | code | `cbf4e1896275` | `src/pl-termhash.jl` | 37 | 9 |
 | swipl-devel `src/pl-termhash.h` | code | `cbf4e1896275` | `src/pl-termhash.jl` | 3 | 1 |
 | swipl-devel `src/pl-termwalk.c` | code | `cbf4e1896275` | `src/pl-termwalk.jl` | 15 | 5 |
@@ -191,9 +193,12 @@ how many of the upstream file's functions are ported.
 | swipl-devel `src/pl-umap.c` | code | `cbf4e1896275` | `src/pl-umap.jl` | 6 | 3 |
 | swipl-devel `src/pl-variant.c` | code | `cbf4e1896275` | `src/pl-global.jl` | 2 | 2 |
 | swipl-devel `src/pl-variant.c` | code | `cbf4e1896275` | `src/pl-variant.jl` | 16 | 6 |
-| swipl-devel `src/pl-vmi.c` | code | `cbf4e1896275` | `src/pl-vmi.jl` | 159 | 0 |
-| swipl-devel `src/pl-vmi.c` | code | `cbf4e1896275` | `src/pl-wam.jl` | 183 | 120 |
+| swipl-devel `src/pl-vmi.c` | code | `cbf4e1896275` | `src/pl-vmi.jl` | 162 | 0 |
+| swipl-devel `src/pl-vmi.c` | code | `cbf4e1896275` | `src/pl-wam.jl` | 186 | 123 |
 | swipl-devel `src/pl-wam.c` | code | `cbf4e1896275` | `src/pl-wam.jl` | 54 | 43 |
+| swipl-devel `src/pl-wrap.c` | code | `cbf4e1896275` | `src/pl-wrap.jl` | 13 | 13 |
+| swipl-devel `src/pl-wrap.h` | code | `cbf4e1896275` | `src/pl-incl.jl` | 1 | 0 |
+| swipl-devel `src/pl-wrap.h` | code | `cbf4e1896275` | `src/pl-wrap.jl` | 1 | 1 |
 | swipl-devel `src/pl-write.c` | code | `cbf4e1896275` | `src/pl-write.jl` | 121 | 48 |
 | swipl-devel `tests/core_lang/test_bips.pl` | code | `cbf4e1896275` | `test/core_lang/test_bips.jl` | 10 | 1 |
 | swipl-devel `tests/core_lang/test_exception.pl` | code | `cbf4e1896275` | `test/core_lang/test_exception.jl` | 4 | 0 |
@@ -314,7 +319,8 @@ checkout is pulled.
 | swipl-devel `src/pl-string.c` | `cbf4e1896275` | 15 | 18 | 9 | src/pl-string.jl |
 | swipl-devel `src/pl-supervisor.c` | `cbf4e1896275` | 16 | 28 | 9 | src/pl-supervisor.jl |
 | swipl-devel `src/pl-sys.c` | `cbf4e1896275` | 6 | 7 | 3 | src/pl-sys.jl |
-| swipl-devel `src/pl-tabling.c` | `cbf4e1896275` | 1 | 402 | 1 | src/os/pl-prologflag.jl |
+| swipl-devel `src/pl-tabling.c` | `cbf4e1896275` | 10 | 402 | 7 | src/os/pl-prologflag.jl, src/pl-tabling.jl |
+| swipl-devel `src/pl-tabling.h` | `cbf4e1896275` | 0 | 0 | 0 | src/pl-incl.jl |
 | swipl-devel `src/pl-termhash.c` | `cbf4e1896275` | 12 | 16 | 3 | src/pl-termhash.jl |
 | swipl-devel `src/pl-termhash.h` | `cbf4e1896275` | 0 | 0 | 0 | src/pl-termhash.jl |
 | swipl-devel `src/pl-termwalk.c` | `cbf4e1896275` | 11 | 28 | 3 | src/pl-termwalk.jl |
@@ -323,8 +329,10 @@ checkout is pulled.
 | swipl-devel `src/pl-trace.h` | `cbf4e1896275` | 0 | 0 | 0 | src/pl-trace.jl |
 | swipl-devel `src/pl-umap.c` | `cbf4e1896275` | 4 | 8 | 3 | src/pl-umap.jl |
 | swipl-devel `src/pl-variant.c` | `cbf4e1896275` | 9 | 17 | 5 | src/pl-global.jl, src/pl-variant.jl |
-| swipl-devel `src/pl-vmi.c` | `cbf4e1896275` | 159 | 243 | 83 | src/pl-vmi.jl, src/pl-wam.jl |
+| swipl-devel `src/pl-vmi.c` | `cbf4e1896275` | 162 | 243 | 86 | src/pl-vmi.jl, src/pl-wam.jl |
 | swipl-devel `src/pl-wam.c` | `cbf4e1896275` | 50 | 98 | 41 | src/pl-wam.jl |
+| swipl-devel `src/pl-wrap.c` | `cbf4e1896275` | 11 | 21 | 11 | src/pl-wrap.jl |
+| swipl-devel `src/pl-wrap.h` | `cbf4e1896275` | 0 | 0 | 0 | src/pl-incl.jl, src/pl-wrap.jl |
 | swipl-devel `src/pl-write.c` | `cbf4e1896275` | 88 | 111 | 45 | src/pl-write.jl |
 | swipl-devel `tests/core_lang/test_bips.pl` | `cbf4e1896275` | 0 | 7 | 0 | test/core_lang/test_bips.jl |
 | swipl-devel `tests/core_lang/test_exception.pl` | `cbf4e1896275` | 0 | 2 | 0 | test/core_lang/test_exception.jl |
@@ -341,7 +349,7 @@ checkout is pulled.
 | swipl-devel `tests/db/test_db.pl` | `cbf4e1896275` | 2 | 10 | 0 | test/db/test_db.jl |
 | swipl-devel `tests/db/test_jit.pl` | `cbf4e1896275` | 16 | 21 | 0 | test/db/test_jit.jl |
 | swipl-devel `tests/rational/test_ieee754.pl` | `cbf4e1896275` | 0 | 15 | 0 | test/rational/test_ieee754.jl |
-| **total** | | **1885** | **5345** | **1103** | |
+| **total** | | **1908** | **5366** | **1123** | |
 <!-- END GENERATED coverage -->
 
 ### Not ported: unreachable upstream
@@ -648,11 +656,11 @@ marker exists in `src/pl-vmi.jl` (declaration only — no instruction executes y
 | `S_DYNAMIC` | 3486 | — |  | declared |
 | `S_THREAD_LOCAL` | 3499 | — |  |  |
 | `S_INCR_DYNAMIC` | 3522 | — |  |  |
-| `S_WRAP` | 3560 | — |  |  |
+| `S_WRAP` | 3560 | — |  | declared |
 | `S_MULTIFILE` | 3586 | — |  | declared |
 | `S_TRUSTME` | 3600 | CA1_CLAUSEREF | NDQP | declared |
-| `S_CALLWRAPPER` | 3624 | CA1_CLAUSEREF,CA1_DATA,CA1_DATA |  |  |
-| `S_TABLED` | 3644 | CA1_CLAUSEREF,CA1_DATA,CA1_DATA |  |  |
+| `S_CALLWRAPPER` | 3624 | CA1_CLAUSEREF,CA1_DATA,CA1_DATA |  | declared |
+| `S_TABLED` | 3644 | CA1_CLAUSEREF,CA1_DATA,CA1_DATA |  | declared |
 | `S_LIST` | 3674 | CA1_INTEGER, CA1_CLAUSEREF, CA1_CLAUSEREF | NQP | declared |
 | `S_MQUAL` | 3706 | CA1_VAR |  | declared |
 | `S_LMQUAL` | 3721 | CA1_VAR |  | declared |

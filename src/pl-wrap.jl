@@ -1,7 +1,8 @@
 # UPSTREAM: swipl-devel src/pl-wrap.c @ cbf4e1896275
 # UPSTREAM: swipl-devel src/pl-wrap.h @ cbf4e1896275
 # CLASS: code
-# COPYRIGHT: Copyright (c)  2020-2025, VU University Amsterdam
+# COPYRIGHT: Copyright (c)  2019-2025, University of Amsterdam
+# COPYRIGHT: VU University Amsterdam
 # COPYRIGHT: CWI, Amsterdam
 # COPYRIGHT: SWI-Prolog Solutions b.v.
 # allow-new-artifact: a 1:1 port of swipl-devel src/pl-wrap.c (the upstream file was read at the pin; capability search in evidence/TAB1MIN/handoff.md)
@@ -38,7 +39,9 @@ _closure_bytes(serial::Int)::Vector{UInt8} = collect(reinterpret(UInt8, Int64[se
 # ORIGINAL: upstream's `PL_blob_data(aref, NULL, NULL)` of a closure blob, with the type test of its callers
 # (`type == &_PL_closure_blob`), as `recref_record` (src/pl-dbref.jl); the atom is the atom WORD a supervisor holds.
 "The closure the blob atom word `w` names, or `nothing` when `w` is no closure blob."
-function closure_of_word(gd::PL_global_data{T}, w::word)::Union{Nothing, closure{T}} where {T}
+function closure_of_word(
+    gd::PL_global_data{T}, w::word
+)::Union{Nothing, closure{T}} where {T}
     at = atomValue(gd.atoms, w)
     at.type === closure_blob || return nothing
     serial = reinterpret(Int64, at.name[1:8])[1]

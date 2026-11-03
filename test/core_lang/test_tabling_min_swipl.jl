@@ -148,65 +148,173 @@ const _TM_CASES = [
     ("tmt07", raw"tm_yn('$tbl_is_trienode'(f(a)), R)"),
     ("tmt08", raw"tm_yn('$tbl_is_trienode'([]), R)"),
     ("tmt09", raw"tm_yn('$tbl_is_trienode'(1), R)"),
-    ("tmt10", raw"'$tbl_trienode'(X), '$tbl_trienode'(Y), ( X == Y -> R = same ; R = diff )"),
+    (
+        "tmt10",
+        raw"'$tbl_trienode'(X), '$tbl_trienode'(Y), ( X == Y -> R = same ; R = diff )"
+    ),
     ("tmt11", raw"'$tbl_trienode'(X), ( X == trienode -> R = eqtext ; R = neqtext )"),
     ("tmt12", raw"tm_yn('$tbl_trienode'(a), R)"),
     ("tmt13", raw"tm_yn('$tbl_trienode'(trienode), R)"),
-    ("tmt14", raw"'$tbl_trienode'(X), Y = f(X), arg(1, Y, Z), tm_yn('$tbl_is_trienode'(Z), R)"),
+    (
+        "tmt14",
+        raw"'$tbl_trienode'(X), Y = f(X), arg(1, Y, Z), tm_yn('$tbl_is_trienode'(Z), R)"
+    ),
     ("tmt15", raw"'$tbl_trienode'(X), compare(O, X, aaa), R = O"),
     ("tmt16", raw"'$tbl_trienode'(X), compare(O, X, []), R = O"),
     ("tmt17", raw"'$tbl_trienode'(X), ( var(X) -> R = var ; R = nonvar )"),
     ("tmt18", raw"'$tbl_trienode'(X), copy_term(X, Y), tm_yn('$tbl_is_trienode'(Y), R)"),
     ("tmt19", raw"findall(X, '$tbl_trienode'(X), L), length(L, R)"),
-    ("tmt20", raw"retractall(tm_hold(_)), '$tbl_trienode'(X), assertz(tm_hold(X)), tm_hold(Y), tm_yn('$tbl_is_trienode'(Y), R)"),
-    ("tmt21", raw"'$get_predicate_attribute'(system:'$tbl_trienode'(_), foreign, V), R = V"),
-    ("tmt22", raw"'$get_predicate_attribute'(system:'$tbl_is_trienode'(_), foreign, V), R = V"),
+    (
+        "tmt20",
+        raw"retractall(tm_hold(_)), '$tbl_trienode'(X), assertz(tm_hold(X)), tm_hold(Y), tm_yn('$tbl_is_trienode'(Y), R)"
+    ),
+    (
+        "tmt21",
+        raw"'$get_predicate_attribute'(system:'$tbl_trienode'(_), foreign, V), R = V"
+    ),
+    (
+        "tmt22",
+        raw"'$get_predicate_attribute'(system:'$tbl_is_trienode'(_), foreign, V), R = V"
+    ),
     # tma: the tabling attributes of '$set_predicate_attribute'/3 and '$get_predicate_attribute'/3 (pl-tabling.c:10299-10393)
     ("tma01", raw"tm_get(tm_a01(_), tabled, R)"),
-    ("tma02", raw"'$set_predicate_attribute'(tm_a02(_), tabled, true), tm_get(tm_a02(_), tabled, R)"),
-    ("tma03", raw"'$set_predicate_attribute'(tm_a03(_), tabled, true), tm_get(tm_a03(_), tabled_variant, R)"),
-    ("tma04", raw"'$set_predicate_attribute'(tm_a04(_), tabled_variant, true), tm_get(tm_a04(_), tabled_variant, R)"),
-    ("tma05", raw"'$set_predicate_attribute'(tm_a05(_), tabled, true), '$set_predicate_attribute'(tm_a05(_), tabled, false), tm_get(tm_a05(_), tabled, R)"),
+    (
+        "tma02",
+        raw"'$set_predicate_attribute'(tm_a02(_), tabled, true), tm_get(tm_a02(_), tabled, R)"
+    ),
+    (
+        "tma03",
+        raw"'$set_predicate_attribute'(tm_a03(_), tabled, true), tm_get(tm_a03(_), tabled_variant, R)"
+    ),
+    (
+        "tma04",
+        raw"'$set_predicate_attribute'(tm_a04(_), tabled_variant, true), tm_get(tm_a04(_), tabled_variant, R)"
+    ),
+    (
+        "tma05",
+        raw"'$set_predicate_attribute'(tm_a05(_), tabled, true), '$set_predicate_attribute'(tm_a05(_), tabled, false), tm_get(tm_a05(_), tabled, R)"
+    ),
     ("tma06", raw"'$set_predicate_attribute'(tm_a06(_), tabled, foo)"),
     ("tma07", raw"'$set_predicate_attribute'(tm_a07(_), tabled, _)"),
-    ("tma08", raw"'$set_predicate_attribute'(tm_a08(_), tabled, 1), tm_get(tm_a08(_), tabled, R)"),
-    ("tma09", raw"'$set_predicate_attribute'(tm_a09(_), incremental, true), tm_get(tm_a09(_), incremental, R)"),
-    ("tma10", raw"'$set_predicate_attribute'(tm_a10(_), incremental, true), '$set_predicate_attribute'(tm_a10(_), incremental, false), tm_get(tm_a10(_), incremental, R)"),
-    ("tma11", raw"'$set_predicate_attribute'(tm_a11(_), monotonic, true), tm_get(tm_a11(_), monotonic, M), tm_get(tm_a11(_), opaque, O), tm_get(tm_a11(_), tshared, S), R = r(M, O, S)"),
-    ("tma12", raw"'$set_predicate_attribute'(tm_a12(_), tshared, true), '$set_predicate_attribute'(tm_a12(_), opaque, true), '$set_predicate_attribute'(tm_a12(_), lazy, true), tm_get(tm_a12(_), tshared, S), tm_get(tm_a12(_), opaque, O), tm_get(tm_a12(_), lazy, L), R = r(S, O, L)"),
-    ("tma13", raw"'$set_predicate_attribute'(tm_a13(_), abstract, infinite), tm_get(tm_a13(_), abstract, R)"),
-    ("tma14", raw"'$set_predicate_attribute'(tm_a14(_), abstract, 5), tm_get(tm_a14(_), abstract, R)"),
+    (
+        "tma08",
+        raw"'$set_predicate_attribute'(tm_a08(_), tabled, 1), tm_get(tm_a08(_), tabled, R)"
+    ),
+    (
+        "tma09",
+        raw"'$set_predicate_attribute'(tm_a09(_), incremental, true), tm_get(tm_a09(_), incremental, R)"
+    ),
+    (
+        "tma10",
+        raw"'$set_predicate_attribute'(tm_a10(_), incremental, true), '$set_predicate_attribute'(tm_a10(_), incremental, false), tm_get(tm_a10(_), incremental, R)"
+    ),
+    (
+        "tma11",
+        raw"'$set_predicate_attribute'(tm_a11(_), monotonic, true), tm_get(tm_a11(_), monotonic, M), tm_get(tm_a11(_), opaque, O), tm_get(tm_a11(_), tshared, S), R = r(M, O, S)"
+    ),
+    (
+        "tma12",
+        raw"'$set_predicate_attribute'(tm_a12(_), tshared, true), '$set_predicate_attribute'(tm_a12(_), opaque, true), '$set_predicate_attribute'(tm_a12(_), lazy, true), tm_get(tm_a12(_), tshared, S), tm_get(tm_a12(_), opaque, O), tm_get(tm_a12(_), lazy, L), R = r(S, O, L)"
+    ),
+    (
+        "tma13",
+        raw"'$set_predicate_attribute'(tm_a13(_), abstract, infinite), tm_get(tm_a13(_), abstract, R)"
+    ),
+    (
+        "tma14",
+        raw"'$set_predicate_attribute'(tm_a14(_), abstract, 5), tm_get(tm_a14(_), abstract, R)"
+    ),
     ("tma15", raw"'$set_predicate_attribute'(tm_a15(_), abstract, -1)"),
     ("tma16", raw"'$set_predicate_attribute'(tm_a16(_), abstract, foo)"),
     ("tma17", raw"'$set_predicate_attribute'(tm_a17(_), abstract, _)"),
-    ("tma18", raw"'$set_predicate_attribute'(tm_a18(_), subgoal_abstract, 3), '$set_predicate_attribute'(tm_a18(_), answer_abstract, 4), tm_get(tm_a18(_), subgoal_abstract, S), tm_get(tm_a18(_), answer_abstract, A), tm_get(tm_a18(_), abstract, B), R = r(S, A, B)"),
-    ("tma19", raw"'$set_predicate_attribute'(tm_a19(_), max_answers, 7), tm_get(tm_a19(_), max_answers, A), '$set_predicate_attribute'(tm_a19(_), max_answers, infinite), tm_get(tm_a19(_), max_answers, B), R = r(A, B)"),
-    ("tma20", raw"'$set_predicate_attribute'(tm_a20(_), incremental, true), tm_get(tm_a20(_), tabled, R)"),
-    ("tma21", raw"'$set_predicate_attribute'(tm_a21(_), tabled, true), tm_get(tm_a21(_), tabled, T), tm_get(tm_a21(_), defined, D), R = r(T, D)"),
-    ("tma22", raw"'$set_predicate_attribute'(tm_x22(_), tabled, true), '$set_predicate_attribute'(tm_x22(_), abstract, 5), abolish(tm_x22/1), tm_get(tm_x22(_), tabled, T), tm_get(tm_x22(_), abstract, A), R = r(T, A)"),
-    ("tma23", raw"'$set_predicate_attribute'(tm_a23(_), tabled, true), tm_get(tm_a23(_), incremental, I), tm_get(tm_a23(_), monotonic, M), R = r(I, M)"),
+    (
+        "tma18",
+        raw"'$set_predicate_attribute'(tm_a18(_), subgoal_abstract, 3), '$set_predicate_attribute'(tm_a18(_), answer_abstract, 4), tm_get(tm_a18(_), subgoal_abstract, S), tm_get(tm_a18(_), answer_abstract, A), tm_get(tm_a18(_), abstract, B), R = r(S, A, B)"
+    ),
+    (
+        "tma19",
+        raw"'$set_predicate_attribute'(tm_a19(_), max_answers, 7), tm_get(tm_a19(_), max_answers, A), '$set_predicate_attribute'(tm_a19(_), max_answers, infinite), tm_get(tm_a19(_), max_answers, B), R = r(A, B)"
+    ),
+    (
+        "tma20",
+        raw"'$set_predicate_attribute'(tm_a20(_), incremental, true), tm_get(tm_a20(_), tabled, R)"
+    ),
+    (
+        "tma21",
+        raw"'$set_predicate_attribute'(tm_a21(_), tabled, true), tm_get(tm_a21(_), tabled, T), tm_get(tm_a21(_), defined, D), R = r(T, D)"
+    ),
+    (
+        "tma22",
+        raw"'$set_predicate_attribute'(tm_x22(_), tabled, true), '$set_predicate_attribute'(tm_x22(_), abstract, 5), abolish(tm_x22/1), tm_get(tm_x22(_), tabled, T), tm_get(tm_x22(_), abstract, A), R = r(T, A)"
+    ),
+    (
+        "tma23",
+        raw"'$set_predicate_attribute'(tm_a23(_), tabled, true), tm_get(tm_a23(_), incremental, I), tm_get(tm_a23(_), monotonic, M), R = r(I, M)"
+    ),
     # tmw: '$c_wrap_predicate'/5 called directly (the wrapper clause is `$wrap$P(Args) :- Body`; the closure is a blob)
-    ("tmw01", raw"tm_wrap(tm_w01(_), n1, _, _), tm_nc(tm_w01(_), A), tm_nc('$wrap$tm_w01'(_), B), R = r(A, B)"),
+    (
+        "tmw01",
+        raw"tm_wrap(tm_w01(_), n1, _, _), tm_nc(tm_w01(_), A), tm_nc('$wrap$tm_w01'(_), B), R = r(A, B)"
+    ),
     ("tmw02", raw"tm_wrap(tm_w02(_), n1, C, _), blob(C, T), R = T"),
-    ("tmw03", raw"tm_wrap(tm_w03(P), n1, _, call(W)), functor(W, N, A), blob(N, T), arg(1, W, X), tm_same(X, P, S), R = r(A, T, S)"),
-    ("tmw04", raw"tm_wrap(tm_w04, n1, C, call(W)), blob(W, T), tm_same(W, C, S), R = r(T, S)"),
-    ("tmw05", raw"tm_wrap(tm_w05(_), n1, C1, call(W1)), tm_wrap(tm_w05(_), n1, C2, call(W2)), tm_same(C1, C2, S), functor(W1, N1, _), functor(W2, N2, _), tm_same(N1, N2, S2), tm_nc('$wrap$tm_w05'(_), N), R = r(S, S2, N)"),
-    ("tmw06", raw"tm_wrap(tm_w06(_), n1, C1, _), tm_wrap(tm_w06(_), n2, C2, _), tm_same(C1, C2, S), tm_nc('$wrap$tm_w06'(_), N), R = r(S, N)"),
-    ("tmw07", raw"tm_wrap(tm_w07(_), n1, C1, _), tm_wrap(tm_w07b(_), n1, C2, _), tm_same(C1, C2, R)"),
-    ("tmw08", raw"'$c_wrap_predicate'(user:tm_w08(_), 1, _, _, user:('$wrap$tm_w08'(_) :- true))"),
-    ("tmw09", raw"'$c_wrap_predicate'(user:tm_w09(_), _, _, _, user:('$wrap$tm_w09'(_) :- true))"),
+    (
+        "tmw03",
+        raw"tm_wrap(tm_w03(P), n1, _, call(W)), functor(W, N, A), blob(N, T), arg(1, W, X), tm_same(X, P, S), R = r(A, T, S)"
+    ),
+    (
+        "tmw04",
+        raw"tm_wrap(tm_w04, n1, C, call(W)), blob(W, T), tm_same(W, C, S), R = r(T, S)"
+    ),
+    (
+        "tmw05",
+        raw"tm_wrap(tm_w05(_), n1, C1, call(W1)), tm_wrap(tm_w05(_), n1, C2, call(W2)), tm_same(C1, C2, S), functor(W1, N1, _), functor(W2, N2, _), tm_same(N1, N2, S2), tm_nc('$wrap$tm_w05'(_), N), R = r(S, S2, N)"
+    ),
+    (
+        "tmw06",
+        raw"tm_wrap(tm_w06(_), n1, C1, _), tm_wrap(tm_w06(_), n2, C2, _), tm_same(C1, C2, S), tm_nc('$wrap$tm_w06'(_), N), R = r(S, N)"
+    ),
+    (
+        "tmw07",
+        raw"tm_wrap(tm_w07(_), n1, C1, _), tm_wrap(tm_w07b(_), n1, C2, _), tm_same(C1, C2, R)"
+    ),
+    (
+        "tmw08",
+        raw"'$c_wrap_predicate'(user:tm_w08(_), 1, _, _, user:('$wrap$tm_w08'(_) :- true))"
+    ),
+    (
+        "tmw09",
+        raw"'$c_wrap_predicate'(user:tm_w09(_), _, _, _, user:('$wrap$tm_w09'(_) :- true))"
+    ),
     ("tmw10", raw"'$c_wrap_predicate'(_, n1, _, _, user:('$wrap$tm_w10'(_) :- true))"),
     ("tmw11", raw"'$c_wrap_predicate'(user:tm_w11(_), n1, _, _, _)"),
-    ("tmw12", raw"tm_wrapb(tm_w12(_), n1, C, call(W), tm_h(C, W)), clause('$wrap$tm_w12'(Z), B), B = tm_h(C2, W2), tm_same(C2, C, S1), functor(W2, N2, A2), functor(W, N, _), tm_same(N2, N, S2), arg(1, W2, X), tm_same(X, Z, S3), R = r(S1, S2, A2, S3)"),
-    ("tmw13", raw"tm_wrap(tm_w13(_), n1, _, _), findall(X, clause(tm_w13(X), true), L), R = L"),
+    (
+        "tmw12",
+        raw"tm_wrapb(tm_w12(_), n1, C, call(W), tm_h(C, W)), clause('$wrap$tm_w12'(Z), B), B = tm_h(C2, W2), tm_same(C2, C, S1), functor(W2, N2, A2), functor(W, N, _), tm_same(N2, N, S2), arg(1, W2, X), tm_same(X, Z, S3), R = r(S1, S2, A2, S3)"
+    ),
+    (
+        "tmw13",
+        raw"tm_wrap(tm_w13(_), n1, _, _), findall(X, clause(tm_w13(X), true), L), R = L"
+    ),
     # tmc: clauses added to a wrapped predicate while the file loads (boot/tabling.pl:2358 shape); the program wraps in a directive
     ("tmc01", raw"tm_nc(tm_c01(_), A), tm_nc('$wrap$tm_c01'(_), B), R = r(A, B)"),
-    ("tmc02", raw"tm_ck(c02, C0), tm_wrap(tm_c02(_), n1, C1, _), tm_same(C0, C1, S), tm_nc('$wrap$tm_c02'(_), N), R = r(S, N)"),
-    ("tmc03", raw"tm_ck(c03a, A0), tm_ck(c03b, B0), tm_wrap(tm_c03(_), n1, A1, _), tm_wrap(tm_c03(_), n2, B1, _), tm_same(A0, A1, S1), tm_same(B0, B1, S2), tm_same(A0, B0, S3), tm_nc('$wrap$tm_c03'(_), N), R = r(S1, S2, S3, N)"),
+    (
+        "tmc02",
+        raw"tm_ck(c02, C0), tm_wrap(tm_c02(_), n1, C1, _), tm_same(C0, C1, S), tm_nc('$wrap$tm_c02'(_), N), R = r(S, N)"
+    ),
+    (
+        "tmc03",
+        raw"tm_ck(c03a, A0), tm_ck(c03b, B0), tm_wrap(tm_c03(_), n1, A1, _), tm_wrap(tm_c03(_), n2, B1, _), tm_same(A0, A1, S1), tm_same(B0, B1, S2), tm_same(A0, B0, S3), tm_nc('$wrap$tm_c03'(_), N), R = r(S1, S2, S3, N)"
+    ),
     ("tmc04", raw"tm_nc(tm_c04(_), A), tm_nc('$wrap$tm_c04'(_), B), R = r(A, B)"),
-    ("tmc05", raw"tm_get(tm_c05(_), tabled, T), tm_get(tm_c05(_), tabled_variant, V), tm_nc(tm_c05(_), A), tm_nc('$wrap$tm_c05'(_), B), R = r(T, V, A, B)"),
+    (
+        "tmc05",
+        raw"tm_get(tm_c05(_), tabled, T), tm_get(tm_c05(_), tabled_variant, V), tm_nc(tm_c05(_), A), tm_nc('$wrap$tm_c05'(_), B), R = r(T, V, A, B)"
+    ),
     ("tmc06", raw"tm_ck(c05, C0), tm_wrap(tm_c05(_), table, C1, _), tm_same(C0, C1, R)"),
-    ("tmc07", raw"tm_ck(c06, C0), tm_wrap(tm_c06(_), n1, C1, _), tm_same(C0, C1, S), tm_nc(tm_c06(_), A), tm_nc('$wrap$tm_c06'(_), B), R = r(S, A, B)")
+    (
+        "tmc07",
+        raw"tm_ck(c06, C0), tm_wrap(tm_c06(_), n1, C1, _), tm_same(C0, C1, S), tm_nc(tm_c06(_), A), tm_nc('$wrap$tm_c06'(_), B), R = r(S, A, B)"
+    )
 ]
 
 # the pins are filled by evidence/TAB1MIN/gen_rows.py --fill from swipl's output
@@ -419,14 +527,17 @@ end
         @test _tm_wrapped(d01c)
         # T5: a predicate that RAN before it was wrapped (tmc07) has its wrapped supervisor reset by the clause add
         d06 = _tm_def(gd, "tm_c06")
-        c06 = LK.closure_of_word(gd, d06.codes[LK.skipWrapperPrefix(d06.codes) + 2])::LK.closure
+        c06 = LK.closure_of_word(
+            gd, d06.codes[LK.skipWrapperPrefix(d06.codes) + 2]
+        )::LK.closure
         @test c06.supervisor === d06.code_data.virgin
         @test isempty(c06.supervisor_crefs)                       # the reset also drops the side table of the old supervisor
         # T4: the second wrap of a name (tmw05) installs the NEW wrapper clause in the side table, the old one is gone
         d05w = _tm_def(gd, "tm_w05")
         j = LK.skipWrapperPrefix(d05w.codes)
         wd = _tm_def(gd, "\$wrap\$tm_w05")
-        @test d05w.codes_crefs[Int(d05w.codes[j + 1])].clause === wd.impl_clauses.last_clause.clause   # the newest clause
+        @test d05w.codes_crefs[Int(d05w.codes[j + 1])].clause ===
+            wd.impl_clauses.last_clause.clause   # the newest clause
         @test wd.impl_clauses.number_of_clauses == 1                          # the old one was retracted
     end
 
@@ -436,7 +547,9 @@ end
         @test LK.skipWrapperPrefix(c(LK.S_MQUAL, 7, LK.S_TABLED, 1, 0, 0)) == 3
         @test LK.skipWrapperPrefix(c(LK.S_LMQUAL, 7, LK.S_TABLED, 1, 0, 0)) == 3
         @test LK.skipWrapperPrefix(c(LK.S_SSU_DET, LK.S_CALLWRAPPER, 1, 0, 0)) == 2
-        @test LK.skipWrapperPrefix(c(LK.S_MQUAL, 7, LK.S_SSU_DET, LK.S_CALLWRAPPER, 1, 0, 0)) == 4
+        @test LK.skipWrapperPrefix(
+            c(LK.S_MQUAL, 7, LK.S_SSU_DET, LK.S_CALLWRAPPER, 1, 0, 0)
+        ) == 4
         @test LK.skipWrapperPrefix(c(LK.S_MQUAL, 7, LK.S_VIRGIN)) == 3
         @test LK.skipWrapperPrefix(c(LK.S_MQUAL, 7, LK.S_CALLWRAPPER, 1, 0, 0), 3) == 3
         @test LK.isCallWrapper(LK.S_CALLWRAPPER)
@@ -456,11 +569,13 @@ end
         @test LK.code(length(LK._CODE_TABLE) - 1) >= LK.S_TABLED     # the table has their rows
         z = (0x00, 0x00, 0x00, 0x00)
         iw = LK.codeTable(LK.S_WRAP)
-        @test iw.name === :S_WRAP && iw.arguments == 0 && iw.flags == 0x00 && iw.argtype == z
+        @test iw.name === :S_WRAP && iw.arguments == 0 && iw.flags == 0x00 &&
+            iw.argtype == z
         want = (LK.CA1_CLAUSEREF, LK.CA1_DATA, LK.CA1_DATA, 0x00)
         for (op, nm) in ((LK.S_CALLWRAPPER, :S_CALLWRAPPER), (LK.S_TABLED, :S_TABLED))
             ic = LK.codeTable(op)
-            @test ic.name === nm && ic.arguments == 3 && ic.flags == 0x00 && ic.argtype == want
+            @test ic.name === nm && ic.arguments == 3 && ic.flags == 0x00 &&
+                ic.argtype == want
         end
         # every operand word the wrapper supervisors write is counted: a decoder that steps `1 + arguments` lands after them
         d01 = _tm_def(gd, "tm_w01")
@@ -469,7 +584,10 @@ end
         # the shared block (pl-supervisor.c MAKE_SV1(wrapper, S_WRAP)) is the closure copy's supervisor and is known by identity
         cd = d01.code_data
         @test cd.wrapper == LK.code[LK.S_WRAP, LK.I_EXIT]
-        @test all(b -> cd.wrapper !== b, (cd.exit, cd.virgin, cd.undef, cd.dynamic, cd.multifile, cd.staticp))
+        @test all(
+            b -> cd.wrapper !== b,
+            (cd.exit, cd.virgin, cd.undef, cd.dynamic, cd.multifile, cd.staticp)
+        )
         @test LK._shared_supervisor(cd, cd.wrapper)
         @test !LK._shared_supervisor(cd, LK.code[LK.S_WRAP, LK.I_EXIT])
         c01 = LK.closure_of_word(gd, d01.codes[wi + 2])::LK.closure
@@ -479,7 +597,8 @@ end
             @test nm in LK.VMI_RUN
         end
         e = _tm_call_error(gd, ld, "tm_w02")                      # wrapped by tmw02: S_CALLWRAPPER
-        @test e isa LK.NotPortedError && occursin("S_CALLWRAPPER", e.what) && e.step == "WRAP1"
+        @test e isa LK.NotPortedError && occursin("S_CALLWRAPPER", e.what) &&
+            e.step == "WRAP1"
         @test ld.query == 0 && ld.nqueries == 0
         e = _tm_call_error(gd, ld, "tm_c05")                      # the `table` wrapper of a variant tabled predicate: S_TABLED
         @test e isa LK.NotPortedError && occursin("S_TABLED", e.what) && e.step == "TAB1"
@@ -502,7 +621,8 @@ end
     for pre in ("tmt", "tma", "tmw", "tmc")
         ids = [id for (id, _) in _TM_CASES if startswith(id, pre)]
         @test !isempty(ids)
-        @test length([l for l in _TM_PINNED if any(id -> startswith(l, "t_$id "), ids)]) == length(ids)
+        @test length([l for l in _TM_PINNED if any(id -> startswith(l, "t_$id "), ids)]) ==
+            length(ids)
     end
     line(id) = only(filter(l -> startswith(l, "t_$id "), _TM_PINNED))
     ans(id) = split(line(id), " "; limit=2)[2]
@@ -514,8 +634,9 @@ end
     @test ans("tma23") != ans("tma01")            # properties allocated by `tabled`: incremental and monotonic read 0
     @test ans("tma22") != ans("tma02")            # abolish clears the properties
     @test ans("tmw05") != ans("tmw06")            # the same name finds its wrapper, another name adds one
-    @test occursin("diff", ans("tmw07"))          # a closure is per predicate, even for the same wrapper name
-    @test occursin("same", ans("tmc02")) && occursin("same", ans("tmc06"))   # the wrapper survived the clause adds (T5)
+    @test occursin(_tm_codes("diff"), ans("tmw07"))          # a closure is per predicate, even for the same wrapper name
+    @test occursin(_tm_codes("same"), ans("tmc02")) &&
+        occursin(_tm_codes("same"), ans("tmc06"))   # the wrapper survived the clause adds (T5)
     @test ans("tmc03") != ans("tmc02")            # two layers: both found, but the layers differ
 end
 

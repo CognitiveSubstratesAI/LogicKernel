@@ -88,7 +88,8 @@ function freeCodesDefinition!(def::Definition{T}, do_linger::Bool)::Nothing wher
         if isCallWrapper(codes[skipWrapperPrefix(codes)])
             throw(
                 NotPortedError{T}(
-                    def.name, "freeCodesDefinition! of a wrapped predicate needs the database", "TAB1"
+                    def.name,
+                    "freeCodesDefinition! of a wrapped predicate needs the database", "TAB1"
                 )
             )
         end

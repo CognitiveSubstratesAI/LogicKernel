@@ -619,7 +619,8 @@ function PL_local_data{T}(gd::PL_global_data{T}) where {T}
             gen_t(0),
             Definition{T}(
                 UInt64(0), 0, ClauseList{T}(), UInt64(0), e, code[], ClauseRef{T}[],
-                PL_code_data(code[], code[], code[], code[], code[], code[], code[]), 0, 0, 0
+                PL_code_data(code[], code[], code[], code[], code[], code[], code[]), 0, 0,
+                0
             ),
             nothing,
             0,

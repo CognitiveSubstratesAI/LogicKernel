@@ -4761,7 +4761,9 @@ function PL_next_solution_guarded(
     @label S_WRAP
     throw(
         NotPortedError{T}(
-            DEF.name, "the VM instruction S_WRAP (calling a wrapped predicate from a closure)", "WRAP1"
+            DEF.name,
+            "the VM instruction S_WRAP (calling a wrapped predicate from a closure)",
+            "WRAP1"
         )
     )
 
@@ -4773,7 +4775,8 @@ function PL_next_solution_guarded(
     @label S_CALLWRAPPER
     throw(
         NotPortedError{T}(
-            DEF.name, "the VM instruction S_CALLWRAPPER (calling a wrapped predicate)", "WRAP1"
+            DEF.name, "the VM instruction S_CALLWRAPPER (calling a wrapped predicate)",
+            "WRAP1"
         )
     )
 
