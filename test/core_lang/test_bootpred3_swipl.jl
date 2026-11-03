@@ -436,12 +436,22 @@ function _b3_kernel(path::String, names::Vector{String})
 end
 
 
+# a digest atom's 40 character codes replaced by a shape (one atom of exactly 40 codes), for the alt term types' bp3v15
+_b3_digest_shape(l::AbstractString) = replace(l, r"a\[(?:\d+,){39}\d+\]" => "a[40 codes]")
+
 @testset "BOOTPRED3's five predicates as swipl's (bp3m, bp3i, bp3n, bp3l, bp3v)" begin
     f, names = _b3_file()
     kl, _, _ = _b3_kernel(f, names)
     @test length(kl) == length(_B3_PINNED)
     for (k, p) in zip(kl, _B3_PINNED)
         want = get(_B3_KNOWN, first(split(p, ' ')), p)
+        if LK_TERM_IMPL != "reference" && first(split(p, ' ')) == "t_bp3v15"
+            # variant_sha1's digest hashes the term type's symbol hash (src/pl-termhash.jl DIVERGES 1-2): the
+            # value is type-dependent and not swipl's, so the alt types are compared by SHAPE (one atom of 40 codes).
+            k = _b3_digest_shape(k)
+            want = _b3_digest_shape(want)
+            @test k == "t_bp3v15 c[116,95,98,112,51,118,49,53]/1(a[40 codes])"
+        end
         k == want || println(stderr, "  ours  ", k, "\\n  swipl ", p)
         @test k == want
     end
