@@ -365,6 +365,26 @@ end
     @test ld.lTop == r + 1 && nrefs(ld) == n0 + 1
     LK.PL_reset_term_refs(ld, r)
     @test ld.lTop == r && nrefs(ld) == n0
+
+    # ENG3-9: PL_new_term_ref makes room first (pl-fli.c:503-508 `if ( !ensureLocalSpace(sizeof(word)) )
+    # return 0;`), like PL_open_foreign_frame above: a reference made at the stack's end grows it
+    ld2 = LK.PL_local_data{_L}(_LGD)
+    top = ld2.lMax
+    ld2.lTop = top
+    t2 = LK.PL_new_term_ref(ld2)
+    @test t2 == top && ld2.lTop == top + 1 && ld2.lMax >= ld2.lTop &&
+        ld2.lMax + ld2.local_spare == 2 * LK.LOCAL_INITIAL
+
+    # and no room, no growth (the stack limit reached): 0, the stack overflow pending as an error ball
+    # (the limit row of "growing the local stack" below: error(resource_error(stack), stack_overflow))
+    ld3 = LK.PL_local_data{_L}(_LGD)
+    ld3.stacks_limit = ld3.lMax + ld3.local_spare
+    ld3.lTop = ld3.lMax
+    @test LK.PL_new_term_ref(ld3) == 0
+    @test lk_eq(
+        lk_answer(ld3, ld3.exception_term),
+        _lf("error", _lf("resource_error", _ls("stack")), _ls("stack_overflow"))
+    )
 end
 
 @testset "every lowering of lTop drops the records above it; a dropped record stays readable" begin
