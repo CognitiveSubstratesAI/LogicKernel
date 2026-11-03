@@ -282,6 +282,34 @@ end
     end
 end
 
+# AN INTEGER BEYOND `Int64` ON THE SAME FIXTURE TYPE (LB4 b2, `_untagged_int` in src/pl-fli.jl): there
+# every integer is a value-table word, so arg/3's position (get_arg_integer_ex) and sort/4's key
+# (get_key_arg_ex) read a small one through `_untagged_int`, which must answer `nothing` for one outside
+# `Int64`'s range; the reader then takes upstream's large-integer branch. Expected: swipl 10.1.19, probed
+# 2026-11-03: `arg(1180591620717411303424, f(a), X)` fails, `sort(1180591620717411303424, @<, [f(a)], L)`
+# fails. A `1` beside each is the positive control (X = a; L = [f(a)]).
+@testset "arg/3 and sort/4 on a term type with no Int64 payload: an integer beyond Int64 (LB4 b2)" begin
+    TB = LogicKernel.Term{Union{BigInt, Float64, String}}
+    s(x) = mk_sym(TB, Symbol(x))
+    c(f, xs...) = mk_expr(TB, TB[s(f), xs...])
+    i(n) = mk_gnd(TB, big(n))
+    l(xs...) = foldr((x, t) -> c("[|]", x, t), xs; init = LogicKernel.mk_nil(TB))   # `[]`, not the atom '[]'
+    big70 = big(2)^70
+    rows = [
+        ("arg(2^70, f(a), X)", false, (X, Y) -> c("arg", i(big70), c("f", s("a")), X)),
+        ("sort(2^70, @<, [f(a)], X)", false, (X, Y) -> c("sort", i(big70), s("@<"), l(c("f", s("a"))), X)),
+        ("arg(1, f(a), X)", true, (X, Y) -> c("arg", i(1), c("f", s("a")), X)),
+        ("sort(1, @<, [f(a)], X)", true, (X, Y) -> c("sort", i(1), s("@<"), l(c("f", s("a"))), X))
+    ]
+    for (goal, want, body) in rows
+        rc, _, _ = _td_cond_row(TB, body)
+        ok = rc in (LogicKernel.PL_S_TRUE, LogicKernel.PL_S_LAST)
+        @test (goal, ok, rc == LogicKernel.PL_S_FALSE) == (goal, want, !want)
+    end
+    rc, ans, _ = _td_cond_row(TB, (X, Y) -> c("arg", i(1), c("f", s("a")), X))
+    @test (rc in (LogicKernel.PL_S_TRUE, LogicKernel.PL_S_LAST), ans == s("a")) == (true, true)
+end
+
 # THE MANIFEST'S LIVE-METHOD FILTER (test/static_analysis_gates.jl `_current_method`; measured
 # 2026-10-14): a method Revise DELETED — the old signature of a re-signed function — is not live; a
 # live one is, and so is each method of an ambiguous pair (the gate must still check those).
