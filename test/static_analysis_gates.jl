@@ -36,6 +36,50 @@ function _scan_any!(out::Vector{String}, ex, file::String, line::Int)::Int
     return line
 end
 
+# THE ALLOWLIST of `Any` in src/ (dispatcher ruling, LB4 b2 part 9, pending audit): `"file" => (count, reasons)`,
+# one reason per site, in the pattern of test_type_discipline.jl's `_TD_UNCHECKED_ALLOWED`. A site the type system
+# cannot narrow (an object graph of every type, Base's own `IdDict{Any, Any}` argument type) stands here with its
+# reason; every other file keeps none. The `# allow-any:` comment at each site is its human-readable twin.
+const ANY_ALLOWED = Dict{String, Tuple{Int, Vector{String}}}(
+    "gd_template.jl" => (
+        7,
+        [
+            "copy_global_data: `IdDict{Any, Any}`, the key type of deepcopy_internal's stack dict " *
+            "(Base.deepcopy_internal(x, stackdict::IdDict)); its keys are the copied objects, of every type",
+            "copy_global_data: the value type of that stack dict, the copies, of every type",
+            "_reachable_mutables: its result type, the set of the objects of a database graph (every type)",
+            "_reachable_mutables: the `seen` set it returns, the same objects",
+            "_reachable_mutables: the walk's explicit stack, any field value of the graph (a test-time walk)",
+            "gd_aliased_objects: its result type, objects of the graph reachable from both states",
+            "gd_aliased_objects: the `shared` vector it returns, the same objects"
+        ]
+    )
+)
+
+"""
+    any_uses_beyond(dir, allowed = ANY_ALLOWED) -> Vector{String}
+
+The violations of the no-`Any` rule under `dir` (`any_uses`) against the allowlist `allowed`: every hit in a file
+the list does not name, as `"file:line"`, and `"file: n uses, the allowlist says k"` for a listed file whose count
+differs from the list's in either direction (a listed file that is gone counts 0).
+"""
+function any_uses_beyond(
+    dir::AbstractString, allowed::Dict{String, Tuple{Int, Vector{String}}}=ANY_ALLOWED
+)::Vector{String}
+    out = String[]
+    count = Dict{String, Int}()
+    for h in any_uses(dir)
+        file = String(first(split(h, ':')))
+        count[file] = get(count, file, 0) + 1
+        haskey(allowed, file) || push!(out, h)
+    end
+    for file in sort!(collect(keys(allowed)))
+        n, k = get(count, file, 0), allowed[file][1]
+        n == k || push!(out, "$file: $n uses, the allowlist says $k")
+    end
+    return out
+end
+
 # THE UNCHECKED-ACCESS RULE (user, 2026-10-04, on Julia 1.13: `Pkg.test` no longer forces
 # `--check-bounds=yes`, so an out-of-range index inside `@inbounds` corrupts memory silently instead
 # of failing a test). Every construct that turns bounds checking off or reads/writes raw memory is

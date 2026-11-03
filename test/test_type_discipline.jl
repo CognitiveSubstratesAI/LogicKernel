@@ -129,10 +129,27 @@ const _TD_UNCHECKED_ALLOWED = Dict(
         @test fx == ["fixture.jl:1 bad1", "fixture.jl:2 bad2", "fixture.jl:6 bad3"]
     end
 
-    @testset "no Any in LogicKernel's src" begin
-        hits = any_uses(joinpath(pkgdir(LogicKernel), "src"))
+    @testset "no Any in LogicKernel's src beyond the allowlist" begin
+        hits = any_uses_beyond(joinpath(pkgdir(LogicKernel), "src"))
         isempty(hits) || foreach(h -> println(stderr, "  Any at src/", h), hits)
         @test isempty(hits)
+        @test all(v -> length(v[2]) == v[1], values(ANY_ALLOWED))           # a reason per site
+        @test all(v -> all(r -> length(r) > 20, v[2]), values(ANY_ALLOWED)) # every reason says why
+    end
+
+    @testset "fixture: the Any allowlist fails a new site, a removed one and an unlisted file" begin
+        mktempdir() do d
+            write(joinpath(d, "fx.jl"), _TD_ANY_FIXTURE)
+            listed(n) = Dict("fx.jl" => (n, fill("a planted site of the fixture", n)))
+            @test any_uses_beyond(d, listed(3)) == String[]
+            @test any_uses_beyond(d, listed(2)) == ["fx.jl: 3 uses, the allowlist says 2"]
+            @test any_uses_beyond(d, listed(4)) == ["fx.jl: 3 uses, the allowlist says 4"]
+            @test any_uses_beyond(d, Dict{String, Tuple{Int, Vector{String}}}()) ==
+                ["fx.jl:3", "fx.jl:4", "fx.jl:6"]
+            gone = Dict("gone.jl" => (1, ["a listed file that is no longer there"]))
+            @test any_uses_beyond(d, merge(listed(3), gone)) ==
+                ["gone.jl: 0 uses, the allowlist says 1"]
+        end
     end
 
     @testset "no abstractly typed struct field in LogicKernel" begin
