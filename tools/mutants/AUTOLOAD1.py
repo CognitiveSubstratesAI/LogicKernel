@@ -75,7 +75,7 @@ MUTANTS = [
          new="        return true\n"),
     dict(id="AUTOLOAD1-A4c setAutoload refuses `user` (KILL the `user` row of test_autoload_flag_swipl.jl)",
          file=P, targets=TA4,
-         old="           k == sym_key(mk_sym(T, :user)) ||\n",
+         old="        k == sym_key(mk_sym(T, :user)) ||\n",
          new=""),
     dict(id="AUTOLOAD1-A4d set_flag_value ignores setAutoload's failure: a bad value is stored (KILL the 'bad value leaves the flag unchanged' rows)",
          file=P, targets=TA4,

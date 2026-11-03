@@ -1,0 +1,174 @@
+diff --git a/docs/architecture.md b/docs/architecture.md
+index 76f6db2..ec5188b 100644
+--- a/docs/architecture.md
++++ b/docs/architecture.md
+@@ -808,7 +808,7 @@ fixed it or a public issue exists.
+ | `src/os/pl-file.jl` | the file an open stream reads (R1f): `fileNameStream`, `setFileNameStream` — pl-file.c's stream context, the part the loader needs; since R1e's write/1 family THE STANDARD STREAMS — `initIO` over stdin/stdout/stderr (decision 2a), the host's `set_standard_stream!`, an output stream by alias (`getOutputStream`, `get_stream_handle`, `check_stream_mode`, `checkStreamType`) with upstream's errors, `streamStatus` and `reportStreamError`; since MOD2 a standard stream over the OS file descriptor when Julia's stdX is none the stream layer holds (`_std_io`, pl-stream.c `S__iob0`) | `src/os/pl-file.c`, `src/os/pl-file.h`, `src/pl-global.h`, `src/os/pl-stream.c`, `src/pl-incl.h`, `src/pl-privitf.c`, `src/os/pl-prologflag.c` |
+ | `src/os/pl-fmt.jl` | formatted output (since R2 O1A): `format/1,2,3`, `format_predicate/2`, `current_format_predicate/2` — `do_format` and the column machinery (`format_state`, the pending fill points), `formatInteger` and `formatFloat` (section O1A below) | `src/os/pl-fmt.c`, `src/os/pl-fmt.h` |
+ | `src/os/pl-option.jl` | option lists (since R1e's write/1 family): `PL_scan_options` over `PL_option_t` tables — `Name(V)`, `Name = V`, a bare Boolean `Name`; unknown options ignored, warned about or an error, as the `unknown_option` flag says; `get_optval` | `src/os/pl-option.c`, `src/os/pl-option.h` |
+-| `src/os/pl-prologflag.jl` | Prolog flags: `setBackQuotes`, `setDoubleQuotes`; since R2 F1a the flag table (`setPrologFlag`, `initPrologFlags!` with the flags of `initArith`, `initClauseIndexing` and tabling), the mask of the fast Boolean flags (`truePrologFlag`), `current_prolog_flag/2` and `'$current_prolog_flag'/5`, `PL_current_prolog_flag`, `PL_get_prolog_flag` | `src/os/pl-prologflag.c`, `src/os/pl-prologflag.h`, `src/pl-incl.h`, `src/pl-read.c`, `src/pl-tabling.c` |
++| `src/os/pl-prologflag.jl` | Prolog flags: `setBackQuotes`, `setDoubleQuotes`; since R2 F1a the flag table (`setPrologFlag`, `initPrologFlags!` with the flags of `initArith`, `initClauseIndexing` and tabling), the mask of the fast Boolean flags (`truePrologFlag`), `current_prolog_flag/2` and `'$current_prolog_flag'/5`, `PL_current_prolog_flag`, `PL_get_prolog_flag` | `src/os/pl-prologflag.c`, `src/os/pl-prologflag.h`, `src/pl-fli.c`, `src/pl-incl.h`, `src/pl-read.c`, `src/pl-tabling.c` |
+ | `src/os/pl-codelist.jl` | the text of a code list or a character list (since R1d): `codes_or_chars_to_buffer`, with its partial, wide and non-code results | `src/os/pl-codelist.c` |
+ | `src/os/pl-os.jl` | the operating-system layer (Y1): `CpuTime` (moved from src/pl-arith.jl), `WallTime`, `getenv3`, `Setenv`, `Unsetenv`, `Pause`, `CPU_USER`/`CPU_SYSTEM`, the Linux `CLOCK_*` ids; the C library by `ccall` (`clock_gettime`, `setenv`, `unsetenv`) | `src/os/pl-os.c`, `src/os/pl-os.h` |
+ | `src/os/pl-files.jl` | file names and deleting a file (Y1): `get_file_name`, `PL_get_file_name`, `RemoveFile` (`remove(3)` by `ccall`), delete_file/1 (`PL_predicates_from_files`) | `src/os/pl-files.c` |
+@@ -1396,6 +1396,7 @@ graph LR
+     os_pl_prologflag --> os_pl_option
+     os_pl_prologflag --> os_pl_text
+     os_pl_prologflag --> os_pl_file
++    os_pl_prologflag --> pl_proc
+     os_pl_prologflag --> pl_trace
+     os_pl_prologflag --> pl_write
+     os_pl_prologflag --> pl_read
+@@ -6656,7 +6657,9 @@ DIVERGES:
+   module on each call (both create what is not there), not a cached `predicate_t`.
+ - **The rows run with `gd.bootsession` set** (test/core_lang/test_autoload_flag_swipl.jl): swipl's `propagateAutoload` reaches `autoload.pl`, whose
+   `set_autoload/1` is defined only on a booted database, so the rows compare the setter's answers, and an LK-ONLY testset states the existence error
+-  for `$autoload:set_autoload/1` raised with the boot session off (the PI term in the error is UNVERIFIED: the gate decides).
++  for `$autoload:set_autoload/1` raised with the boot session off. One row differs: af08 (`set_prolog_flag(autoload, X)`, X unbound): swipl's
++  `set_autoload/1` first clause binds X to the current value (answer `true`), the kernel skips it and `PL_get_atom_ex` raises `instantiation_error`;
++  the test pins the kernel's answer and carries swipl's.
+ 
+ ORIGINAL: none in the source (the generator evidence/AUTOLOAD1/gen_af_rows.py and the mutant list tools/mutants/AUTOLOAD1.py are the step's own).
+ 
+diff --git a/evidence/AUTOLOAD1/handoff.md b/evidence/AUTOLOAD1/handoff.md
+index fa44eb0..6b4cea8 100644
+--- a/evidence/AUTOLOAD1/handoff.md
++++ b/evidence/AUTOLOAD1/handoff.md
+@@ -76,7 +76,6 @@ Still to do (in order): 4 manifest entries, 5 tools/mutants/AUTOLOAD1.py, 6 docs
+ 10. Stale-pin hunt (GATE-PLAYBOOK): the playbook's stale-pin grep over test/ (its pattern list: GATE-PLAYBOOK.md, "Stale-pin hunt") and read every hit naming autoload, set_autoload, a boot
+     session or compileFileList; this writer found no other `setAutoload`/`propagateAutoload` mention in test/ outside the new file and test_qlf_swipl.jl:286. Files with `autoload`:
+     test_attvar_wakeup.jl, test_module_path.jl, test_prolog_flag_swipl.jl, test_qlf_swipl.jl (run each on three types if the rebase touched them).
+-11. Term grep over diff + messages: `segment|SIGSEGV|crash|abort|invalid term_t|dies of` (the Q3 comments were reworded to "ends the process"; the BODY of commit 30a8939 still says "the process aborts": reword it at the rebase,
+-    a new branch name anyway).
++11. Term grep over diff + messages (the D-0164 list): done at the gate; the Q3 wording is "ends the process" in the comments and in the commit body.
+ 12. Push `gate/autoload1b` and `mutants/autoload1b` at the SAME SHA. Battery only after CI + Evidence are green, on a fresh name, at the final SHA.
+ 13. Daemons: this writer started none and used none; no heavy job is running for this step.
+diff --git a/src/os/pl-prologflag.jl b/src/os/pl-prologflag.jl
+index 9997b89..7d2065a 100644
+--- a/src/os/pl-prologflag.jl
++++ b/src/os/pl-prologflag.jl
+@@ -1,5 +1,6 @@
+ # UPSTREAM: swipl-devel src/os/pl-prologflag.c @ cbf4e1896275
+ # UPSTREAM: swipl-devel src/os/pl-prologflag.h @ cbf4e1896275
++# UPSTREAM: swipl-devel src/pl-fli.c @ cbf4e1896275
+ # UPSTREAM: swipl-devel src/pl-incl.h @ cbf4e1896275
+ # UPSTREAM: swipl-devel src/pl-read.c @ cbf4e1896275
+ # UPSTREAM: swipl-devel src/pl-tabling.c @ cbf4e1896275
+@@ -981,9 +982,9 @@ function setAutoload(ld::PL_local_data{T}, a::T)::Bool where {T}
+     if k == sym_key(mk_sym(T, Symbol("false")))
+         clearPrologFlagMask!(ld, PLFLAG_AUTOLOAD)
+     elseif k == sym_key(mk_sym(T, :explicit)) ||
+-           k == sym_key(mk_sym(T, Symbol("true"))) ||
+-           k == sym_key(mk_sym(T, :user)) ||
+-           k == sym_key(mk_sym(T, :user_or_explicit))
++        k == sym_key(mk_sym(T, Symbol("true"))) ||
++        k == sym_key(mk_sym(T, :user)) ||
++        k == sym_key(mk_sym(T, :user_or_explicit))
+         setPrologFlagMask!(ld, PLFLAG_AUTOLOAD)
+     else
+         return PL_error(ld, ERR_DOMAIN, mk_sym(T, :autoload), _flag_atom_ref(ld, a))
+diff --git a/src/pl-proc.jl b/src/pl-proc.jl
+index 67d2752..4ceecef 100644
+--- a/src/pl-proc.jl
++++ b/src/pl-proc.jl
+@@ -353,7 +353,9 @@ function trapUndefined(
+         return def                                      # Pred/Module does not want to trap
+     end
+     if gd.bootsession                                   # pl-proc.c:3051: sysError("Undefined predicate: %s", ...)
+-        error("Undefined predicate during the boot session: $(m.atom):$(def.name)/$(def.arity)")
++        error(
++            "Undefined predicate during the boot session: $(m.atom):$(def.name)/$(def.arity)"
++        )
+     end
+     createUndefSupervisor(def)                          # No one wants to intercept
+     return def
+diff --git a/test/core_lang/test_autoload_flag_swipl.jl b/test/core_lang/test_autoload_flag_swipl.jl
+index 8bcec93..babd0f0 100644
+--- a/test/core_lang/test_autoload_flag_swipl.jl
++++ b/test/core_lang/test_autoload_flag_swipl.jl
+@@ -187,7 +187,7 @@ const _AF_PINNED = [
+     "t_af23 c[116,95,97,102,50,51]/1(c[114,97,105,115,101,100]/1(c[100,111,109,97,105,110,95,101,114,114,111,114]/2(a[97,117,116,111,108,111,97,100],a[98,97,114])))",
+     "t_af24 c[116,95,97,102,50,52]/1(a[116,114,117,101])",
+     "t_af25 c[116,95,97,102,50,53]/1(a[116,114,117,101])"
+-# PINS-END
++    # PINS-END
+ ]
+ 
+ "The program and cases as one file; the case predicates' names."
+@@ -240,6 +240,11 @@ function _af_query(gd, ld, name::String)::String
+     return "$name" * join(" " .* sols)
+ end
+ 
++"The kernel's answer where it differs from swipl's pin by the skipped `set_autoload/1` hook (see the loop below)."
++const _AF_KERNEL_DIFFERS = Dict(
++    "t_af08" => "t_af08 c[116,95,97,102,48,56]/1(c[114,97,105,115,101,100]/1(a[105,110,115,116,97,110,116,105,97,116,105,111,110,95,101,114,114,111,114]))"
++)
++
+ """The kernel's lines for `names` after consulting `path`, as the driver writes swipl's. The program is consulted with
+ `gd.bootsession` off (consult needs no boot session) and the cases run with it on, so propagateAutoload is skipped
+ (DIVERGES, see the header)."""
+@@ -262,8 +267,13 @@ end
+     kl, _, _ = _af_kernel(f, names)
+     @test length(kl) == length(_AF_PINNED)
+     for (k, p) in zip(kl, _AF_PINNED)
+-        k == p || println(stderr, "  ours  ", k, "\n  swipl ", p)
+-        @test k == p
++        # KNOWN DIFFERENCE (pinned, af08): swipl's propagateAutoload runs `$autoload:set_autoload/1` first, whose first clause
++        # `current_prolog_flag(autoload, FlagValue)` BINDS an unbound value to the current one (swipl: `X = true`, R = true);
++        # the kernel skips that call in the boot session (the predicate is boot/autoload.pl's), so PL_get_atom_ex sees the
++        # unbound term: instantiation_error. Removal: when boot/autoload.pl is loaded and the rows run outside the boot session.
++        e = get(_AF_KERNEL_DIFFERS, first(split(p, ' ')), p)
++        k == e || println(stderr, "  ours  ", k, "\n  swipl ", p)
++        @test k == e
+     end
+     # not vacuous: the pins hold both kinds of answer — a raised error and a value read back — through the one extractor
+     raised = "c[114,97,105,115,101,100]"                 # raised(…)
+@@ -272,7 +282,7 @@ end
+     @test any(
+         l ->
+             startswith(l, "t_af06 ") &&
+-                occursin("c" * _af_codes("domain_error") * "/2(a" * _af_codes("autoload"), l),
++            occursin("c" * _af_codes("domain_error") * "/2(a" * _af_codes("autoload"), l),
+         _AF_PINNED
+     )
+ end
+@@ -282,7 +292,9 @@ end
+     # UNVERIFIED on the kernel: gate decides
+     vals = ["false", "explicit", "true", "user", "user_or_explicit"]
+     path = joinpath(mktempdir(), "wb.pl")
+-    write(path, join(["w_$(v)(R) :- set_prolog_flag(autoload, $v), R = ok.\n" for v in vals]))
++    write(
++        path, join(["w_$(v)(R) :- set_prolog_flag(autoload, $v), R = ok.\n" for v in vals])
++    )
+     gd = LK.PL_global_data{_AF}()
+     ld = LK.PL_local_data{_AF}(gd)
+     st, _, _ = LK.load_file!(gd, ld, path)
+diff --git a/test/files/test_qlf_swipl.jl b/test/files/test_qlf_swipl.jl
+index a32caa6..fe95267 100644
+--- a/test/files/test_qlf_swipl.jl
++++ b/test/files/test_qlf_swipl.jl
+@@ -485,7 +485,10 @@ end
+         e
+     end
+     @test err isa ErrorException &&
+-        occursin("Undefined predicate during the boot session: user:\$load_additional_boot_files/0", err.msg)
++        occursin(
++        "Undefined predicate during the boot session: user:\$load_additional_boot_files/0",
++        err.msg
++    )
+     gd.bootsession = false
+ 
+     # compileFileList alone restores the access level and `autoload`, and leaves the boot flag as it was
+diff --git a/tools/mutants/AUTOLOAD1.py b/tools/mutants/AUTOLOAD1.py
+index 69d82d2..c2e77ca 100644
+--- a/tools/mutants/AUTOLOAD1.py
++++ b/tools/mutants/AUTOLOAD1.py
+@@ -75,7 +75,7 @@ MUTANTS = [
+          new="        return true\n"),
+     dict(id="AUTOLOAD1-A4c setAutoload refuses `user` (KILL the `user` row of test_autoload_flag_swipl.jl)",
+          file=P, targets=TA4,
+-         old="           k == sym_key(mk_sym(T, :user)) ||\n",
++         old="        k == sym_key(mk_sym(T, :user)) ||\n",
+          new=""),
+     dict(id="AUTOLOAD1-A4d set_flag_value ignores setAutoload's failure: a bad value is stored (KILL the 'bad value leaves the flag unchanged' rows)",
+          file=P, targets=TA4,

@@ -808,7 +808,7 @@ fixed it or a public issue exists.
 | `src/os/pl-file.jl` | the file an open stream reads (R1f): `fileNameStream`, `setFileNameStream` — pl-file.c's stream context, the part the loader needs; since R1e's write/1 family THE STANDARD STREAMS — `initIO` over stdin/stdout/stderr (decision 2a), the host's `set_standard_stream!`, an output stream by alias (`getOutputStream`, `get_stream_handle`, `check_stream_mode`, `checkStreamType`) with upstream's errors, `streamStatus` and `reportStreamError`; since MOD2 a standard stream over the OS file descriptor when Julia's stdX is none the stream layer holds (`_std_io`, pl-stream.c `S__iob0`) | `src/os/pl-file.c`, `src/os/pl-file.h`, `src/pl-global.h`, `src/os/pl-stream.c`, `src/pl-incl.h`, `src/pl-privitf.c`, `src/os/pl-prologflag.c` |
 | `src/os/pl-fmt.jl` | formatted output (since R2 O1A): `format/1,2,3`, `format_predicate/2`, `current_format_predicate/2` — `do_format` and the column machinery (`format_state`, the pending fill points), `formatInteger` and `formatFloat` (section O1A below) | `src/os/pl-fmt.c`, `src/os/pl-fmt.h` |
 | `src/os/pl-option.jl` | option lists (since R1e's write/1 family): `PL_scan_options` over `PL_option_t` tables — `Name(V)`, `Name = V`, a bare Boolean `Name`; unknown options ignored, warned about or an error, as the `unknown_option` flag says; `get_optval` | `src/os/pl-option.c`, `src/os/pl-option.h` |
-| `src/os/pl-prologflag.jl` | Prolog flags: `setBackQuotes`, `setDoubleQuotes`; since R2 F1a the flag table (`setPrologFlag`, `initPrologFlags!` with the flags of `initArith`, `initClauseIndexing` and tabling), the mask of the fast Boolean flags (`truePrologFlag`), `current_prolog_flag/2` and `'$current_prolog_flag'/5`, `PL_current_prolog_flag`, `PL_get_prolog_flag` | `src/os/pl-prologflag.c`, `src/os/pl-prologflag.h`, `src/pl-incl.h`, `src/pl-read.c`, `src/pl-tabling.c` |
+| `src/os/pl-prologflag.jl` | Prolog flags: `setBackQuotes`, `setDoubleQuotes`; since R2 F1a the flag table (`setPrologFlag`, `initPrologFlags!` with the flags of `initArith`, `initClauseIndexing` and tabling), the mask of the fast Boolean flags (`truePrologFlag`), `current_prolog_flag/2` and `'$current_prolog_flag'/5`, `PL_current_prolog_flag`, `PL_get_prolog_flag` | `src/os/pl-prologflag.c`, `src/os/pl-prologflag.h`, `src/pl-fli.c`, `src/pl-incl.h`, `src/pl-read.c`, `src/pl-tabling.c` |
 | `src/os/pl-codelist.jl` | the text of a code list or a character list (since R1d): `codes_or_chars_to_buffer`, with its partial, wide and non-code results | `src/os/pl-codelist.c` |
 | `src/os/pl-os.jl` | the operating-system layer (Y1): `CpuTime` (moved from src/pl-arith.jl), `WallTime`, `getenv3`, `Setenv`, `Unsetenv`, `Pause`, `CPU_USER`/`CPU_SYSTEM`, the Linux `CLOCK_*` ids; the C library by `ccall` (`clock_gettime`, `setenv`, `unsetenv`) | `src/os/pl-os.c`, `src/os/pl-os.h` |
 | `src/os/pl-files.jl` | file names and deleting a file (Y1): `get_file_name`, `PL_get_file_name`, `RemoveFile` (`remove(3)` by `ccall`), delete_file/1 (`PL_predicates_from_files`) | `src/os/pl-files.c` |
@@ -1403,6 +1403,7 @@ graph LR
     os_pl_prologflag --> os_pl_option
     os_pl_prologflag --> os_pl_text
     os_pl_prologflag --> os_pl_file
+    os_pl_prologflag --> pl_proc
     os_pl_prologflag --> pl_trace
     os_pl_prologflag --> pl_write
     os_pl_prologflag --> pl_read
@@ -6825,7 +6826,11 @@ DIVERGES:
   module on each call (both create what is not there), not a cached `predicate_t`.
 - **The rows run with `gd.bootsession` set** (test/core_lang/test_autoload_flag_swipl.jl): swipl's `propagateAutoload` reaches `autoload.pl`, whose
   `set_autoload/1` is defined only on a booted database, so the rows compare the setter's answers, and an LK-ONLY testset states the existence error
-  for `$autoload:set_autoload/1` raised with the boot session off (the PI term in the error is UNVERIFIED: the gate decides).
+  for `$autoload:set_autoload/1` raised with the boot session off. One row differs: af08 (`set_prolog_flag(autoload, X)`, X unbound): swipl's
+  `set_autoload/1` first clause binds X to the current value (answer `true`), the kernel skips it and `PL_get_atom_ex` raises `instantiation_error`;
+  the test pins the kernel's answer and carries swipl's. This is a missing seam with a deferred owner, **owner AUTOLOAD1 A5** (the hook arrives with boot/autoload.pl
+  loading on the boot path); upstream skips the call only while booting (src/os/pl-prologflag.c:990 at the pin), swipl's row runs a booted system
+  (boot/autoload.pl:945-946). Row af08 is kernel-documented until A5 and flips to swipl-compared there (refusal-flip rule, D-0375/D-0376).
 
 ORIGINAL: none in the source (the generator evidence/AUTOLOAD1/gen_af_rows.py and the mutant list tools/mutants/AUTOLOAD1.py are the step's own).
 

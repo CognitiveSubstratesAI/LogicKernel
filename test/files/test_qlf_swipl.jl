@@ -485,7 +485,10 @@ end
         e
     end
     @test err isa ErrorException &&
-        occursin("Undefined predicate during the boot session: user:\$load_additional_boot_files/0", err.msg)
+        occursin(
+        "Undefined predicate during the boot session: user:\$load_additional_boot_files/0",
+        err.msg
+    )
     gd.bootsession = false
 
     # compileFileList alone restores the access level and `autoload`, and leaves the boot flag as it was

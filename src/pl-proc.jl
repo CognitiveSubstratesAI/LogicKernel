@@ -353,7 +353,9 @@ function trapUndefined(
         return def                                      # Pred/Module does not want to trap
     end
     if gd.bootsession                                   # pl-proc.c:3051: sysError("Undefined predicate: %s", ...)
-        error("Undefined predicate during the boot session: $(m.atom):$(def.name)/$(def.arity)")
+        error(
+            "Undefined predicate during the boot session: $(m.atom):$(def.name)/$(def.arity)"
+        )
     end
     createUndefSupervisor(def)                          # No one wants to intercept
     return def

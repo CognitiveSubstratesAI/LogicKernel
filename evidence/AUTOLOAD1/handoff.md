@@ -76,7 +76,6 @@ Still to do (in order): 4 manifest entries, 5 tools/mutants/AUTOLOAD1.py, 6 docs
 10. Stale-pin hunt (GATE-PLAYBOOK): the playbook's stale-pin grep over test/ (its pattern list: GATE-PLAYBOOK.md, "Stale-pin hunt") and read every hit naming autoload, set_autoload, a boot
     session or compileFileList; this writer found no other `setAutoload`/`propagateAutoload` mention in test/ outside the new file and test_qlf_swipl.jl:286. Files with `autoload`:
     test_attvar_wakeup.jl, test_module_path.jl, test_prolog_flag_swipl.jl, test_qlf_swipl.jl (run each on three types if the rebase touched them).
-11. Term grep over diff + messages: `segment|SIGSEGV|crash|abort|invalid term_t|dies of` (the Q3 comments were reworded to "ends the process"; the BODY of commit 30a8939 still says "the process aborts": reword it at the rebase,
-    a new branch name anyway).
+11. Term grep over diff + messages (the D-0164 list): done at the gate; the Q3 wording is "ends the process" in the comments and in the commit body.
 12. Push `gate/autoload1b` and `mutants/autoload1b` at the SAME SHA. Battery only after CI + Evidence are green, on a fresh name, at the final SHA.
 13. Daemons: this writer started none and used none; no heavy job is running for this step.
