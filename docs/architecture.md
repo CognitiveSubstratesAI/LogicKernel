@@ -7171,3 +7171,49 @@ files, swipl-devel cbf4e189:
 Tests: test/db/test_boot_image_swipl.jl (T1 predicates, T3 source files, H12), test/db/test_boot_clauses_swipl.jl (T2: a
 hash per static predicate, 1389 rows), test/db/test_boot_messages_swipl.jl (T4: the boot messages); oracle swipl 10.1.19, two
 byte-identical runs. Mutants: tools/mutants/LB4B2.py (19). Handoff: evidence/LB4B2/handoff.md.
+
+**LB4 b2 checklist: what the first boot exposes** (pinned in the tests, each with its cause; dispatcher rulings on the
+boot-files STOPs, option (b) and option 1, provisional and pending audit; every list only shrinks). Upstream lines at
+cbf4e189.
+
+- **The tabling chain (T3, missing_prolog, cols, T4).** boot/tabling.pl:2356 `:- table eval_subgoal_in_residual/2` raises
+  `existence_error('$tabling':'$tbl_trienode'/1)` in the booted kernel (pl-tabling.c:6259, deferred: owner LD12). The
+  message's translation calls `'$dwim':'$dwim_predicate'/2` (pl-ext.c:156 -> pl-dwim.c:200, deferred: owner DBG1), whose
+  existence error escapes print_message/2 and then `'$load_file_list'`'s recovery (its print_message raises the same
+  way). So tabling.pl's load ends at :2356 and load.pl's consult list (boot/load.pl:74-75) ends before `user:topvars`:
+  T3 has 23 files, swipl 24 (toplevel_variables missing; tabling.pl 272 clauses vs 293; load.pl 21 vs 23, topvars.pl's
+  `'$load_context_module'/3` row and threads.pl's, the single-thread configuration); T1's missing_prolog rows are
+  tabling.pl's after :2356 (the `:- table` wrappers' `'$tabled'/2` and `'$table_mode'/3` facts, tabling.pl:1315-1324,
+  and the predicates of :2363-2433) and topvars.pl's 23. The cols rows: `$dcg:dcg_extend_cache/4` 144 vs 142
+  (dcg.pl:258 caches one row per nonterminal; topvars.pl's expand_vars//3 and expand_args//5 are never translated),
+  `system:'$init_goal'/3` 7 vs 2 (one `'$wrap_tabled'/2` goal per tabled head, tabling.pl:1326/1349 via
+  init.pl:750-751: the five heads of :2356 and :2407-2411, listed by swipl's own -b session), and
+  `system:'$load_context_module'/3` 23 vs 22 (topvars.pl's row, init.pl:3221-3231).
+- **trie_gen_compiled/2,3** (T1 missing_prolog): system predicates with supervisor code that pl-trie.c:4975-4987
+  (initTries) creates; deferred with the trie step (docs/r2_owners.tsv: trie_gen/2,3 -> TRIE1).
+- **T4 is blind to these messages** (a guard that cannot fail): test_boot_messages passes with `_BM_KNOWN` empty because
+  the boot's messages whose translation reaches dwim are never printed (the printing raises), so the collector records
+  none. T4 sees them only once DBG1's `'$dwim_predicate'/2` lands; until then the tabling error is pinned through T3/T1.
+- **missing_foreign = 410**: swipl's foreign (C) predicates in the boot modules the kernel does not register yet (T1);
+  the count only falls, by the steps that register them (R2 owners table).
+- **test_load L1-L6** (test/files/test_load_swipl.jl `_TL_KNOWN_DIFFS`, `(line, kernel, swipl)` per line):
+  L1 `'$dwim_predicate'/2` (owner DBG1), L2 `'$syspreds':'$foreign_predicate_source'/2` (pl-proc.c:4146, owner PR1),
+  L3 `system:'$set_table_wrappers'/1` (tabling.pl:1647, owner LD12): `'$tabling'` defines and exports it, but the
+  tabling chain stops tabling.pl's load, so init.pl:2929 `'$import_from_loaded_module'` never imports it into system;
+  the incremental case's two extra lines (domain_error(predicate_property, incremental|opaque), init.pl:187-191) are the
+  kernel's set_predicate_attribute without the tabling branch (pl-proc.c:3864-3868 -> pl-tabling.c:10361; the recorded
+  DIVERGES in src/pl-proc.jl, owner LD12). L4 `initialization(main)` (swipl autoloads library(main); owner the
+  autoloader step), L5 redefining a predicate another file defined (abolishProcedure): deferred, NotPortedError raised
+  in redefineProcedure (src/pl-proc.jl), owner R2; L6 a reconsult: deferred, NotPortedError raised in startConsult
+  (src/pl-srcfile.jl), owner LB6.
+- **T1 driver** (fixed): `locked` is read as `'$get_predicate_attribute'(M:H, system, 1)` (pl-proc.c:3472-3473); the
+  driver had asked predicate_property(_, system), which syspred.pl does not define, and compared 0 with P_LOCKED.
+- **T2 rewritten rows**: the four `_BC_REWRITTEN` hashes are swipl's, computed by the driver over the clause texts the
+  single-thread configuration compiles (evidence/LB4B2/rw.pl); the kernel's equal them.
+- **Open for the audit: the template keeps one boot-session import link.** compileFileList's last call
+  (pl-qlf.c:4811-4812, `user:'$load_additional_boot_files'/0`) links user's procedure to system's definition (autoImport,
+  pl-proc.c:2870-2903); swipl's state file carries no such link (a started swipl consults a user clause for it), the
+  kernel's template is the boot session's memory and keeps it, so a user clause for it is refused
+  (`permission_error(redefine, built_in_procedure, ...)`, overruleImportedProcedure pl-proc.c:507-509). It is the only
+  link in user. test/files/test_qlf_swipl.jl's three compileFileList rows on the booted database fail on it (design
+  question in evidence/LB4B2/handoff18.md).
