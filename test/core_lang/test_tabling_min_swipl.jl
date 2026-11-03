@@ -1,6 +1,9 @@
 # ORIGINAL: a LIVE differential of the load-time slice of boot/tabling.pl's `:- table` path (TAB1-min; audit D-0387 item 2,
 # swipl-devel 10.1.19, cbf4e1896275) against swipl at the pin. Rows tmt: '$tbl_trienode'/1 and '$tbl_is_trienode'/1
-# (pl-tabling.c:6253-6277). Further groups are appended with their commits (tmw: '$c_wrap_predicate'/5, tmc: a clause added after the wrap).
+# (pl-tabling.c:6253-6277). Groups: tma = the tabling attributes of '$set_predicate_attribute'/3 and '$get_predicate_attribute'/3
+# (pl-tabling.c:10299-10393), tmw = '$c_wrap_predicate'/5 called directly (pl-wrap.c:337-403), tmc = clauses added to a wrapped
+# predicate while the file loads (boot/tabling.pl:2358 shape; pl-supervisor.c:108-129). The tmw and tmc rows (and the wrapper
+# white-box rows at the end) need the supervisor opcodes of T3 to load at all: UNVERIFIED until T3 has landed.
 #   * A PROGRAM consulted by the kernel's loader and cases `t_<id>(R)` run in order in one database, each wrapped in
 #     `catch(Goal, error(SsuE, _), R = raised(SsuE))`; the driver is test_event_swipl.jl's (`enc`oded answers).
 #   * Every answer line is swipl's, PINNED (swipl 10.1.19-1-gcbf4e189, evidence/TAB1MIN/tm_rows.out, two byte-identical runs); with
@@ -86,7 +89,48 @@ end
 # the program: `tm_yn/2` turns a goal into `yes`/`no` (the answers stay atoms: the reserved symbol itself is never encoded).
 const _TM_PROGRAM = raw"""
 :- dynamic tm_hold/1.
+:- dynamic tm_ck/2.
+:- dynamic tm_x22/1.
 tm_yn(G, R) :- ( call(G) -> R = yes ; R = no ).
+tm_get(P, A, R) :- ( '$get_predicate_attribute'(P, A, V) -> R = V ; R = none ).
+tm_nc(P, N) :- '$get_predicate_attribute'(P, number_of_clauses, N).
+tm_wrapb(Head, WName, Closure, call(Wrapped), Body) :-
+    Head =.. [P|Args], atom_concat('$wrap$', P, WP), WHead =.. [WP|Args],
+    '$c_wrap_predicate'(user:Head, WName, Closure, Wrapped, user:(WHead :- Body)).
+tm_wrap(Head, WName, Closure, Wrapped) :- tm_wrapb(Head, WName, Closure, Wrapped, true).
+tm_same(A, B, R) :- ( A == B -> R = same ; R = diff ).
+tm_w01(1).
+tm_w01(2).
+tm_w02(1).
+tm_w03(1).
+tm_w04.
+tm_w05(1).
+tm_w06(1).
+tm_w07(1).
+tm_w07b(1).
+tm_w11(1).
+tm_w12(1).
+tm_w13(1).
+tm_w13(2).
+tm_c01(1).
+:- tm_wrap(tm_c01(_), n1, C, _), assertz(tm_ck(c01, C)).
+tm_c01(2).
+tm_c01(3).
+tm_c02(1).
+:- tm_wrap(tm_c02(_), n1, C, _), assertz(tm_ck(c02, C)).
+tm_c02(2).
+tm_c03(1).
+:- tm_wrap(tm_c03(_), n1, C, _), assertz(tm_ck(c03a, C)).
+tm_c03(2).
+:- tm_wrap(tm_c03(_), n2, C, _), assertz(tm_ck(c03b, C)).
+tm_c03(3).
+:- tm_wrap(tm_c04(_), n1, C, _), assertz(tm_ck(c04, C)).
+tm_c04(1).
+tm_c04(2).
+:- '$set_predicate_attribute'(tm_c05(_), tabled, true), '$set_predicate_attribute'(tm_c05(_), tabled_variant, true),
+   tm_wrap(tm_c05(_), table, C, _), assertz(tm_ck(c05, C)).
+tm_c05(1).
+tm_c05(2).
 """
 
 # tmt: '$tbl_trienode'/1 and '$tbl_is_trienode'/1.
@@ -112,7 +156,52 @@ const _TM_CASES = [
     ("tmt19", raw"findall(X, '$tbl_trienode'(X), L), length(L, R)"),
     ("tmt20", raw"retractall(tm_hold(_)), '$tbl_trienode'(X), assertz(tm_hold(X)), tm_hold(Y), tm_yn('$tbl_is_trienode'(Y), R)"),
     ("tmt21", raw"'$get_predicate_attribute'(system:'$tbl_trienode'(_), foreign, V), R = V"),
-    ("tmt22", raw"'$get_predicate_attribute'(system:'$tbl_is_trienode'(_), foreign, V), R = V")
+    ("tmt22", raw"'$get_predicate_attribute'(system:'$tbl_is_trienode'(_), foreign, V), R = V"),
+    # tma: the tabling attributes of '$set_predicate_attribute'/3 and '$get_predicate_attribute'/3 (pl-tabling.c:10299-10393)
+    ("tma01", raw"tm_get(tm_a01(_), tabled, R)"),
+    ("tma02", raw"'$set_predicate_attribute'(tm_a02(_), tabled, true), tm_get(tm_a02(_), tabled, R)"),
+    ("tma03", raw"'$set_predicate_attribute'(tm_a03(_), tabled, true), tm_get(tm_a03(_), tabled_variant, R)"),
+    ("tma04", raw"'$set_predicate_attribute'(tm_a04(_), tabled_variant, true), tm_get(tm_a04(_), tabled_variant, R)"),
+    ("tma05", raw"'$set_predicate_attribute'(tm_a05(_), tabled, true), '$set_predicate_attribute'(tm_a05(_), tabled, false), tm_get(tm_a05(_), tabled, R)"),
+    ("tma06", raw"'$set_predicate_attribute'(tm_a06(_), tabled, foo)"),
+    ("tma07", raw"'$set_predicate_attribute'(tm_a07(_), tabled, _)"),
+    ("tma08", raw"'$set_predicate_attribute'(tm_a08(_), tabled, 1), tm_get(tm_a08(_), tabled, R)"),
+    ("tma09", raw"'$set_predicate_attribute'(tm_a09(_), incremental, true), tm_get(tm_a09(_), incremental, R)"),
+    ("tma10", raw"'$set_predicate_attribute'(tm_a10(_), incremental, true), '$set_predicate_attribute'(tm_a10(_), incremental, false), tm_get(tm_a10(_), incremental, R)"),
+    ("tma11", raw"'$set_predicate_attribute'(tm_a11(_), monotonic, true), tm_get(tm_a11(_), monotonic, M), tm_get(tm_a11(_), opaque, O), tm_get(tm_a11(_), tshared, S), R = r(M, O, S)"),
+    ("tma12", raw"'$set_predicate_attribute'(tm_a12(_), tshared, true), '$set_predicate_attribute'(tm_a12(_), opaque, true), '$set_predicate_attribute'(tm_a12(_), lazy, true), tm_get(tm_a12(_), tshared, S), tm_get(tm_a12(_), opaque, O), tm_get(tm_a12(_), lazy, L), R = r(S, O, L)"),
+    ("tma13", raw"'$set_predicate_attribute'(tm_a13(_), abstract, infinite), tm_get(tm_a13(_), abstract, R)"),
+    ("tma14", raw"'$set_predicate_attribute'(tm_a14(_), abstract, 5), tm_get(tm_a14(_), abstract, R)"),
+    ("tma15", raw"'$set_predicate_attribute'(tm_a15(_), abstract, -1)"),
+    ("tma16", raw"'$set_predicate_attribute'(tm_a16(_), abstract, foo)"),
+    ("tma17", raw"'$set_predicate_attribute'(tm_a17(_), abstract, _)"),
+    ("tma18", raw"'$set_predicate_attribute'(tm_a18(_), subgoal_abstract, 3), '$set_predicate_attribute'(tm_a18(_), answer_abstract, 4), tm_get(tm_a18(_), subgoal_abstract, S), tm_get(tm_a18(_), answer_abstract, A), tm_get(tm_a18(_), abstract, B), R = r(S, A, B)"),
+    ("tma19", raw"'$set_predicate_attribute'(tm_a19(_), max_answers, 7), tm_get(tm_a19(_), max_answers, A), '$set_predicate_attribute'(tm_a19(_), max_answers, infinite), tm_get(tm_a19(_), max_answers, B), R = r(A, B)"),
+    ("tma20", raw"'$set_predicate_attribute'(tm_a20(_), incremental, true), tm_get(tm_a20(_), tabled, R)"),
+    ("tma21", raw"'$set_predicate_attribute'(tm_a21(_), tabled, true), tm_get(tm_a21(_), tabled, T), tm_get(tm_a21(_), defined, D), R = r(T, D)"),
+    ("tma22", raw"'$set_predicate_attribute'(tm_x22(_), tabled, true), '$set_predicate_attribute'(tm_x22(_), abstract, 5), abolish(tm_x22/1), tm_get(tm_x22(_), tabled, T), tm_get(tm_x22(_), abstract, A), R = r(T, A)"),
+    ("tma23", raw"'$set_predicate_attribute'(tm_a23(_), tabled, true), tm_get(tm_a23(_), incremental, I), tm_get(tm_a23(_), monotonic, M), R = r(I, M)"),
+    # tmw: '$c_wrap_predicate'/5 called directly (the wrapper clause is `$wrap$P(Args) :- Body`; the closure is a blob)
+    ("tmw01", raw"tm_wrap(tm_w01(_), n1, _, _), tm_nc(tm_w01(_), A), tm_nc('$wrap$tm_w01'(_), B), R = r(A, B)"),
+    ("tmw02", raw"tm_wrap(tm_w02(_), n1, C, _), blob(C, T), R = T"),
+    ("tmw03", raw"tm_wrap(tm_w03(P), n1, _, call(W)), functor(W, N, A), blob(N, T), arg(1, W, X), tm_same(X, P, S), R = r(A, T, S)"),
+    ("tmw04", raw"tm_wrap(tm_w04, n1, C, call(W)), blob(W, T), tm_same(W, C, S), R = r(T, S)"),
+    ("tmw05", raw"tm_wrap(tm_w05(_), n1, C1, call(W1)), tm_wrap(tm_w05(_), n1, C2, call(W2)), tm_same(C1, C2, S), functor(W1, N1, _), functor(W2, N2, _), tm_same(N1, N2, S2), tm_nc('$wrap$tm_w05'(_), N), R = r(S, S2, N)"),
+    ("tmw06", raw"tm_wrap(tm_w06(_), n1, C1, _), tm_wrap(tm_w06(_), n2, C2, _), tm_same(C1, C2, S), tm_nc('$wrap$tm_w06'(_), N), R = r(S, N)"),
+    ("tmw07", raw"tm_wrap(tm_w07(_), n1, C1, _), tm_wrap(tm_w07b(_), n1, C2, _), tm_same(C1, C2, R)"),
+    ("tmw08", raw"'$c_wrap_predicate'(user:tm_w08(_), 1, _, _, user:('$wrap$tm_w08'(_) :- true))"),
+    ("tmw09", raw"'$c_wrap_predicate'(user:tm_w09(_), _, _, _, user:('$wrap$tm_w09'(_) :- true))"),
+    ("tmw10", raw"'$c_wrap_predicate'(_, n1, _, _, user:('$wrap$tm_w10'(_) :- true))"),
+    ("tmw11", raw"'$c_wrap_predicate'(user:tm_w11(_), n1, _, _, _)"),
+    ("tmw12", raw"tm_wrapb(tm_w12(_), n1, C, call(W), tm_h(C, W)), clause('$wrap$tm_w12'(Z), B), B = tm_h(C2, W2), tm_same(C2, C, S1), functor(W2, N2, A2), functor(W, N, _), tm_same(N2, N, S2), arg(1, W2, X), tm_same(X, Z, S3), R = r(S1, S2, A2, S3)"),
+    ("tmw13", raw"tm_wrap(tm_w13(_), n1, _, _), findall(X, clause(tm_w13(X), true), L), R = L"),
+    # tmc: clauses added to a wrapped predicate while the file loads (boot/tabling.pl:2358 shape); the program wraps in a directive
+    ("tmc01", raw"tm_nc(tm_c01(_), A), tm_nc('$wrap$tm_c01'(_), B), R = r(A, B)"),
+    ("tmc02", raw"tm_ck(c02, C0), tm_wrap(tm_c02(_), n1, C1, _), tm_same(C0, C1, S), tm_nc('$wrap$tm_c02'(_), N), R = r(S, N)"),
+    ("tmc03", raw"tm_ck(c03a, A0), tm_ck(c03b, B0), tm_wrap(tm_c03(_), n1, A1, _), tm_wrap(tm_c03(_), n2, B1, _), tm_same(A0, A1, S1), tm_same(B0, B1, S2), tm_same(A0, B0, S3), tm_nc('$wrap$tm_c03'(_), N), R = r(S1, S2, S3, N)"),
+    ("tmc04", raw"tm_nc(tm_c04(_), A), tm_nc('$wrap$tm_c04'(_), B), R = r(A, B)"),
+    ("tmc05", raw"tm_get(tm_c05(_), tabled, T), tm_get(tm_c05(_), tabled_variant, V), tm_nc(tm_c05(_), A), tm_nc('$wrap$tm_c05'(_), B), R = r(T, V, A, B)"),
+    ("tmc06", raw"tm_ck(c05, C0), tm_wrap(tm_c05(_), table, C1, _), tm_same(C0, C1, R)")
 ]
 
 # the pins are filled by evidence/TAB1MIN/gen_rows.py --fill from swipl's output
@@ -139,7 +228,49 @@ const _TM_PINNED = [
     "t_tmt19 c[116,95,116,109,116,49,57]/1(i1)",
     "t_tmt20 c[116,95,116,109,116,50,48]/1(a[121,101,115])",
     "t_tmt21 c[116,95,116,109,116,50,49]/1(i1)",
-    "t_tmt22 c[116,95,116,109,116,50,50]/1(i1)"
+    "t_tmt22 c[116,95,116,109,116,50,50]/1(i1)",
+    "t_tma01 c[116,95,116,109,97,48,49]/1(a[110,111,110,101])",
+    "t_tma02 c[116,95,116,109,97,48,50]/1(i1)",
+    "t_tma03 c[116,95,116,109,97,48,51]/1(i0)",
+    "t_tma04 c[116,95,116,109,97,48,52]/1(i1)",
+    "t_tma05 c[116,95,116,109,97,48,53]/1(i0)",
+    "t_tma06 c[116,95,116,109,97,48,54]/1(c[114,97,105,115,101,100]/1(c[116,121,112,101,95,101,114,114,111,114]/2(a[98,111,111,108],a[102,111,111])))",
+    "t_tma07 c[116,95,116,109,97,48,55]/1(c[114,97,105,115,101,100]/1(a[105,110,115,116,97,110,116,105,97,116,105,111,110,95,101,114,114,111,114]))",
+    "t_tma08 c[116,95,116,109,97,48,56]/1(i1)",
+    "t_tma09 c[116,95,116,109,97,48,57]/1(i1)",
+    "t_tma10 c[116,95,116,109,97,49,48]/1(i0)",
+    "t_tma11 c[116,95,116,109,97,49,49]/1(c[114]/3(i1,i0,i0))",
+    "t_tma12 c[116,95,116,109,97,49,50]/1(c[114]/3(i1,i1,i1))",
+    "t_tma13 c[116,95,116,109,97,49,51]/1(a[110,111,110,101])",
+    "t_tma14 c[116,95,116,109,97,49,52]/1(i5)",
+    "t_tma15 c[116,95,116,109,97,49,53]/1(c[114,97,105,115,101,100]/1(c[100,111,109,97,105,110,95,101,114,114,111,114]/2(a[110,111,116,95,108,101,115,115,95,116,104,97,110,95,122,101,114,111],i-1)))",
+    "t_tma16 c[116,95,116,109,97,49,54]/1(c[114,97,105,115,101,100]/1(c[116,121,112,101,95,101,114,114,111,114]/2(a[105,110,116,101,103,101,114],a[102,111,111])))",
+    "t_tma17 c[116,95,116,109,97,49,55]/1(c[114,97,105,115,101,100]/1(a[105,110,115,116,97,110,116,105,97,116,105,111,110,95,101,114,114,111,114]))",
+    "t_tma18 c[116,95,116,109,97,49,56]/1(c[114]/3(i3,i4,a[110,111,110,101]))",
+    "t_tma19 c[116,95,116,109,97,49,57]/1(c[114]/2(i7,a[110,111,110,101]))",
+    "t_tma20 c[116,95,116,109,97,50,48]/1(i0)",
+    "t_tma21 c[116,95,116,109,97,50,49]/1(c[114]/2(i1,i0))",
+    "t_tma22 c[116,95,116,109,97,50,50]/1(c[114]/2(i0,a[110,111,110,101]))",
+    "t_tma23 c[116,95,116,109,97,50,51]/1(c[114]/2(i0,i0))",
+    "t_tmw01 c[116,95,116,109,119,48,49]/1(c[114]/2(i2,i1))",
+    "t_tmw02 c[116,95,116,109,119,48,50]/1(a[99,108,111,115,117,114,101])",
+    "t_tmw03 c[116,95,116,109,119,48,51]/1(c[114]/3(i1,a[99,108,111,115,117,114,101],a[115,97,109,101]))",
+    "t_tmw04 c[116,95,116,109,119,48,52]/1(c[114]/2(a[99,108,111,115,117,114,101],a[115,97,109,101]))",
+    "t_tmw05 c[116,95,116,109,119,48,53]/1(c[114]/3(a[115,97,109,101],a[115,97,109,101],i1))",
+    "t_tmw06 c[116,95,116,109,119,48,54]/1(c[114]/2(a[100,105,102,102],i2))",
+    "t_tmw07 c[116,95,116,109,119,48,55]/1(a[100,105,102,102])",
+    "t_tmw08 c[116,95,116,109,119,48,56]/1(c[114,97,105,115,101,100]/1(c[116,121,112,101,95,101,114,114,111,114]/2(a[97,116,111,109],i1)))",
+    "t_tmw09 c[116,95,116,109,119,48,57]/1(c[114,97,105,115,101,100]/1(a[105,110,115,116,97,110,116,105,97,116,105,111,110,95,101,114,114,111,114]))",
+    "t_tmw10 c[116,95,116,109,119,49,48]/1(c[114,97,105,115,101,100]/1(a[105,110,115,116,97,110,116,105,97,116,105,111,110,95,101,114,114,111,114]))",
+    "t_tmw11 c[116,95,116,109,119,49,49]/1(c[114,97,105,115,101,100]/1(a[105,110,115,116,97,110,116,105,97,116,105,111,110,95,101,114,114,111,114]))",
+    "t_tmw12 c[116,95,116,109,119,49,50]/1(c[114]/4(a[115,97,109,101],a[115,97,109,101],i1,a[115,97,109,101]))",
+    "t_tmw13 c[116,95,116,109,119,49,51]/1(c[91,124,93]/2(i1,c[91,124,93]/2(i2,nil)))",
+    "t_tmc01 c[116,95,116,109,99,48,49]/1(c[114]/2(i3,i1))",
+    "t_tmc02 c[116,95,116,109,99,48,50]/1(c[114]/2(a[115,97,109,101],i1))",
+    "t_tmc03 c[116,95,116,109,99,48,51]/1(c[114]/4(a[115,97,109,101],a[115,97,109,101],a[100,105,102,102],i2))",
+    "t_tmc04 c[116,95,116,109,99,48,52]/1(c[114]/2(i2,i1))",
+    "t_tmc05 c[116,95,116,109,99,48,53]/1(c[114]/4(i1,i1,i2,i1))",
+    "t_tmc06 c[116,95,116,109,99,48,54]/1(a[115,97,109,101])"
 ]
 
 function _tm_file()::Tuple{String, Vector{String}}
@@ -203,26 +334,89 @@ function _tm_kernel(path::String, names::Vector{String})
     return out, gd, ld
 end
 
-@testset "tabling minimum as swipl's (tmt)" begin
+"The definition of `name/arity` in the user module of `gd`."
+function _tm_def(gd, name::String, arity::Int=1)
+    proc = LK.isCurrentProcedure(sym_key(_tms(name)), arity, LK.MODULE_user(gd))
+    @assert proc !== nothing
+    return proc.definition
+end
+
+"Whether `def`'s supervisor is a wrapper: the first instruction after the prefix is a wrapper opcode."
+_tm_wrapped(def) = LK.isCallWrapper(def.codes[LK.skipWrapperPrefix(def.codes)])
+
+@testset "tabling minimum as swipl's (tmt, tma, tmw, tmc)" begin
     f, names = _tm_file()
-    kl, _, _ = _tm_kernel(f, names)
+    kl, gd, ld = _tm_kernel(f, names)
     @test length(kl) == length(_TM_PINNED)
     for (k, p) in zip(kl, _TM_PINNED)
         k == p || println(stderr, "  ours  ", k, "\n  swipl ", p)
         @test k == p
+    end
+
+    # LK-only white-box rows (swipl keeps the supervisor in C structures): UNVERIFIED on the kernel, the gate decides.
+    @testset "wrapper supervisors (LK-only white-box)" begin
+        # T4: '$c_wrap_predicate' installed a wrapper that names its closure; the closure wraps the definition itself
+        d01 = _tm_def(gd, "tm_w01")
+        i = LK.skipWrapperPrefix(d01.codes)
+        @test d01.codes[i] == LK.S_CALLWRAPPER
+        c = LK.closure_of_word(gd, d01.codes[i + 2])
+        @test c !== nothing
+        @test c.predicate === d01
+        @test c.supervisor === d01.code_data.virgin             # the wrapped predicate had its virgin supervisor
+        @test length(d01.codes_crefs) >= 1
+        # wrapper_vmi: the `table` wrapper of a variant tabled predicate is S_TABLED, every other wrapper S_CALLWRAPPER
+        d05 = _tm_def(gd, "tm_c05")
+        @test d05.codes[LK.skipWrapperPrefix(d05.codes)] == LK.S_TABLED
+        d01c = _tm_def(gd, "tm_c01")
+        @test d01c.codes[LK.skipWrapperPrefix(d01c.codes)] == LK.S_CALLWRAPPER
+        # T5: the clauses added after the wrap (tmc01) left the wrapper in place and reset the wrapped supervisor
+        # (this row FAILS without the wrapper branch of freeCodesDefinition!: the supervisor would be the virgin one)
+        @test _tm_wrapped(d01c)
+        ic = LK.skipWrapperPrefix(d01c.codes)
+        cc = LK.closure_of_word(gd, d01c.codes[ic + 2])::LK.closure
+        @test cc.supervisor === d01c.code_data.virgin
+        @test isempty(cc.supervisor_crefs)
+        @test d01c.codes !== d01c.code_data.virgin
+        # T5: two wrappers (tmc03): both found by name after the clause adds, an unknown name is not found
+        d03 = _tm_def(gd, "tm_c03")
+        @test _tm_wrapped(d03)
+        n1 = LK._atom_word!(ld, _tms("n1"))
+        n2 = LK._atom_word!(ld, _tms("n2"))
+        n3 = LK._atom_word!(ld, _tms("n3"))
+        @test LK.find_wrapper(gd, d03, n1) !== nothing
+        @test LK.find_wrapper(gd, d03, n2) !== nothing
+        @test LK.find_wrapper(gd, d03, n3) === nothing
+        @test LK.find_wrapper(gd, d03, n2)[1] === d03.codes       # the last wrapper is the outer one
+        @test LK.find_wrapper(gd, d03, n1)[1] !== d03.codes       # the first sits in the closure of the outer one
+        # Q-A (audit ruling): without the database a wrapped predicate is refused by name; an unwrapped one is reset as before
+        @test_throws LK.NotPortedError LK.freeCodesDefinition!(d01c, true)
+        @test _tm_wrapped(d01c)                                   # the refusal changed nothing
+        LK.freeCodesDefinition!(gd, d01c, true)                   # with the database the wrapper stays
+        @test _tm_wrapped(d01c)
     end
 end
 
 @testset "the tabling minimum rows are not vacuous" begin
     @test _TM_PINNED[1] == "ok"
     @test length(_TM_PINNED) == length(_TM_CASES) + 1
-    for pre in ("tmt",)
+    for pre in ("tmt", "tma", "tmw", "tmc")
         ids = [id for (id, _) in _TM_CASES if startswith(id, pre)]
-        @test !isempty([l for l in _TM_PINNED if any(id -> startswith(l, "t_$id "), ids)])
+        @test !isempty(ids)
+        @test length([l for l in _TM_PINNED if any(id -> startswith(l, "t_$id "), ids)]) == length(ids)
     end
     line(id) = only(filter(l -> startswith(l, "t_$id "), _TM_PINNED))
+    ans(id) = split(line(id), " "; limit=2)[2]
     @test line("tmt03") != line("tmt04")          # the node is recognised, other terms are not
     @test line("tmt10") != line("tmt11")          # the node is the same symbol each time, not the text atom
+    @test ans("tma01") != ans("tma20")            # no properties at all (the getter fails) vs properties with the flag clear (0)
+    @test ans("tma02") != ans("tma05")            # set, then cleared
+    @test ans("tma13") != ans("tma14")            # `infinite` is not unified, an integer is
+    @test ans("tma23") != ans("tma01")            # properties allocated by `tabled`: incremental and monotonic read 0
+    @test ans("tma22") != ans("tma02")            # abolish clears the properties
+    @test ans("tmw05") != ans("tmw06")            # the same name finds its wrapper, another name adds one
+    @test occursin("diff", ans("tmw07"))          # a closure is per predicate, even for the same wrapper name
+    @test occursin("same", ans("tmc02")) && occursin("same", ans("tmc06"))   # the wrapper survived the clause adds (T5)
+    @test ans("tmc03") != ans("tmc02")            # two layers: both found, but the layers differ
 end
 
 @testset "the pins are swipl's (live, when swipl is on PATH)" begin

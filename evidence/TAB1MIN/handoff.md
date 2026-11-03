@@ -231,3 +231,21 @@ structs). RECOMMEND (a) for the minimal slice.
    `_blob_term!`), `assert_term!` accepting a blob-headed compound inside the wrapper clause body (open since writer 1), whether the
    `closure` atom shifts a pinned atom count (test_atom_table.jl) or blob rank.
 Daemon state: writer 3 started none, ran no Julia.
+
+## WRITER 4 (Sonnet, edit-only; nothing compiled or run: every line UNVERIFIED). Scratch prefix t1w4-.
+origin/main fetched at start: STILL f08167f (ENG3 NOT landed): T3 NOT TOUCHED (it needs ENG3's stubs; opcodes in the PIN's VMI order
+[S_CALLWRAPPER, S_TABLED, S_WRAP], the 7th block `wrapper` in PL_code_data + initSupervisors + the idle index_context literal at
+pl-global.jl ~611, named-refusal bodies in pl-wam.jl, ONE declared opcode outside VMI_RUN for test/foreign/test_query.jl:305-330; b2
+holds 159..165, whoever lands second renumbers).
+### DISPATCHER RULING (provisional, pending audit) on writer 3's Q-A
+Option (a): the 2-argument freeCodesDefinition! raises a named refusal naming the problem for a wrapped predicate, so `dynamic` or
+abolish of a wrapped predicate is refused until TAB1; (b) (thread gd through ~25 callers) and (c) (a back-pointer; impossible in
+Julia) are NOT taken. Stated in the architecture DIVERGES with owner TAB1.
+### Committed by writer 4 (in order; each commit also updates this file)
+1. rows tma01-tma23 (T2), tmw01-tmw13 (T4), tmc01-tmc06 (T5) in test/core_lang/test_tabling_min_swipl.jl + a white-box testset
+   (LK-only: wrapper supervisors read from `def.codes`/`closure_of_word`); pins from swipl 10.1.19 (two byte-identical runs, 64 cases,
+   LC_ALL=C), evidence/TAB1MIN/tm_rows.{pl,out}, tm_driver.pl; non-vacuity prefix list tmt/tma/tmw/tmc + distinctness asserts.
+   Rows that FAIL without T5: tmc02, tmc03 (the rewrap of a name after a clause add finds the SAME closure), white-box `_tm_wrapped(d01c)`.
+   `tmc` rows wrap in a DIRECTIVE of the consulted program (assertProcedure calls freeCodesDefinition only for STATIC predicates, so
+   a clause added by `assertz` to a dynamic one never reaches it: the clause must come from the file).
+   Not written: rows that CALL a wrapped predicate (S_CALLWRAPPER/S_WRAP run-loop bodies are named refusals; WRAP1).
