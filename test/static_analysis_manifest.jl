@@ -2203,6 +2203,44 @@ function _manifest_index(T)
         ),
         (LK.pl_get_clause_attribute3_va, Tuple{LD, Int, Int, LK.foreign_context{T}}, false),   # LB2
         (LK.PL_error, Tuple{LD, LK.PL_error_code, D, String}, false),   # LB2 ERR_MODIFY_STATIC_PROC
+        # PR1 — abolish/1,2, garbage_collect_clauses/0 (pl-proc.jl, pl-index.jl), `$c_current_predicate`/2, current_predicate/1 and
+        # `$get_predicate_attribute`/3 (pl-proc.jl); the two state records and their pools (pl-incl.jl, pl-global.jl)
+        (LK.deleteIndexes!, Tuple{D, CL, Bool}, false),
+        (LK.resetProcedure!, Tuple{PR, Bool}, false),
+        (LK.removeClausesPredicate!, Tuple{GD, D, Int, Bool}, false),
+        (LK.abolishProcedure!, Tuple{GD, LD, PR, MOD}, false),
+        (LK.get_arity, Tuple{LD, Int, Int, Int}, false),
+        (LK.do_abolish, Tuple{GD, LD, MOD, Int, Int}, false),
+        (LK.pl_abolish, Tuple{LD, Int, Int}, false),
+        (LK.pl_abolish1, Tuple{LD, Int}, false),
+        (LK.pl_garbage_collect_clauses0, Tuple{LD}, false),
+        (LK.PL_strip_module_nocreate, Tuple{GD, LD, Int, Int}, false),
+        (LK._cp_get_functor, Tuple{LD, Int}, false),
+        (LK.pl_current_predicate, Tuple{LD, Int, Int, LK.foreign_context{T}}, false),
+        (LK._cur_enum_clean!, Tuple{GD, LD, Int}, false),
+        (LK.pl_current_predicate1_va, Tuple{LD, Int, Int, LK.foreign_context{T}}, false),
+        (LK.unify_meta_argument, Tuple{LD, Int, D, Int}, false),
+        (LK.unify_meta_pattern, Tuple{LD, PR, Int}, false),
+        (LK.num_visible_clauses, Tuple{GD, D, Bool}, false),
+        (LK.sizeof_predicate, Tuple{D}, false),
+        (
+            LK.pl_get_predicate_attribute3_va,
+            Tuple{LD, Int, Int, LK.foreign_context{T}},
+            false
+        ),
+        (LK._tbl_is_predicate_attribute, Tuple{Type{T}, UInt64}, false),
+        (LK.cur_pred_enum, Tuple{}, false),
+        (LK.cur_enum{T}, Tuple{}, false),
+        (LK.foreign_state_pool{LK.cur_pred_enum}, Tuple{}, false),
+        (LK.foreign_state_pool{LK.cur_enum{T}}, Tuple{}, false),
+        (LK.alloc_foreign_state!, Tuple{LK.foreign_state_pool{LK.cur_pred_enum}}, false),
+        (
+            LK.free_foreign_state!,
+            Tuple{LK.foreign_state_pool{LK.cur_pred_enum}, Int},
+            false
+        ),
+        (LK.alloc_foreign_state!, Tuple{LK.foreign_state_pool{LK.cur_enum{T}}}, false),
+        (LK.free_foreign_state!, Tuple{LK.foreign_state_pool{LK.cur_enum{T}}, Int}, false),
         (LK.SYSTEM_MODE, Tuple{LD}, false),   # LB2
         (LK.setAccessLevel!, Tuple{LD, Int64}, false),   # LB2
         (LK.setAttrDefinition, Tuple{LD, D, UInt64, Bool}, false),
@@ -3362,10 +3400,15 @@ const SPAN_CALLEE_EXEMPT = [
     (LK.outOfStack!, :error, "a stack overflow raises"),
     (LK.resumeAfterException, :error, "an exception unwinds the frames"),
     (LK._fcall_va, :builtin, "V5a2: the built-ins' dispatch tree"),
-    (LK._fcall_det, :builtin, "V5a2: the FRG built-ins' dispatch tree")
-    # NOT `_fcall_ndet` (NF4): with repeat/0 its only non-deterministic entry, every other leaf throws, so
-    # the run loop inlines it and its leaf's built-in (`pl_repeat`) is the span callee, AllocChecked
-    # on its own. The entry comes back when a second one (NF4b's sub_atom/5) keeps the tree a call.
+    (LK._fcall_det, :builtin, "V5a2: the FRG built-ins' dispatch tree"),
+    # NF4 left `_fcall_ndet` out: with repeat/0 its only non-deterministic entry the run loop inlined it. PR1 adds
+    # `$c_current_predicate`/2 and current_predicate/1 (both PL_FA_NONDETERMINISTIC, state in the pools of the local
+    # data), so the tree is a call again and its leaves' built-ins allocate (a state pool grows): the entry is back.
+    (
+        LK._fcall_ndet,
+        :builtin,
+        "NF4, PR1: the non-deterministic FRG built-ins' dispatch tree"
+    )
 ]
 
 const DISPATCH_EXEMPT = (
