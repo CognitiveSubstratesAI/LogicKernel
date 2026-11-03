@@ -16,13 +16,12 @@
 # key WORD (`dict_order`): the kernel's words are not swipl's, so the order of the pairs differs from swipl's;
 # nothing here depends on it except the order `get_dict/3` enumerates in (upstream: undefined).
 #
-# NOT PORTED: the reader's dict syntax `Tag{…}` (src/pl-read.jl refuses it) and the writer's dict arm — a dict
-# exists only through `dict_create/3` and `put_dict/3`; `is_most_general_dict/1`, the public `PL_for_dict` (its core
+# WAITING for their steps: the writer's dict arm (src/pl-write.jl), `is_most_general_dict/1`, the public `PL_for_dict` (its core
 # `pl_for_dict` is here), the functional notation's `./3` (boot/dicts.pl defines it); `b_set_dict/3`, `nb_set_dict/3`
 # and `nb_link_dict/3` wait for `setarg` (pl-prims.c: NOT STARTED); the `dict_functors` cache (`lookupFunctorDef` is
-# called each time).
-# The rest of the predicates in pl-dict.c's table (`dict_pairs/3`, `put_dict/4`, `del_dict/4`, `get_dict/5`, `:</2`,
-# `>:</2`, `$get_dict_ex/3`, `dict_same_keys/2`, `$get_dict_kv/4,6,8`) are written for R2b (boot/dicts.pl, library/dicts.pl).
+# called each time). The reader reads dict syntax since RDDICT (src/pl-read.jl `read_dict_start` and the rest).
+# Since BOOTPRED-dict the rest of pl-dict.c's table is here too (`dict_pairs/3`, `put_dict/4`, `del_dict/4`, `get_dict/5`, `:</2`,
+# `>:</2`, `$get_dict_ex/3`, `dict_same_keys/2`, `$get_dict_kv/4,6,8`), for R2b (boot/dicts.pl, library/dicts.pl).
 
 # ORIGINAL (BOOTPRED): pl-atom.ih `ATOM_dict` (generated from src/ATOMS): the reserved atom `dict` (src/pl-ressymbol.jl retypes it).
 "The atom word of the reserved symbol `dict` (pl-atom.ih `ATOM_dict`): the same in every database."
