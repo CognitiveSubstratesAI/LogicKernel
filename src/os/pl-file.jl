@@ -322,6 +322,10 @@ end
 function get_stream_handle(
     ld::PL_local_data{T}, a::T, flags::Int
 )::Union{Nothing, IOSTREAM} where {T}
+    # the standard streams are open from the boot on upstream (initIO, setupProlog): a database copied from
+    # the booted template (R2 LB4 b2) holds none until its engine's first `_initIO`, and the autoloader's
+    # `'$stream_property'(user_error, …)` is that engine's first stream access
+    _initIO(ld)
     gd = _query_gd(ld)
     ref = _stream_ref_of(ld, a)
     if ref !== nothing                              # type == &stream_blob
