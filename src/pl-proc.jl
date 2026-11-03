@@ -328,18 +328,110 @@ function autoImport(
     return def
 end
 
+# ORIGINAL (AUTOLOAD1 A3): upstream's `predicateName(def)` (pl-util.c:137, `isUserSystemPredicate` pl-util.c:295; pl-util.c is not
+# among this file's UPSTREAM headers): the text of a predicate in a message, `name/arity`, prefixed by `module:` unless the
+# module is `user` or the predicate is locked and also visible in `user`. Without the atom summary (`atom_summary(.., 50)`) and the
+# `(nil)` of a missing module (`GD->halt.cleaning`): the kernel has no data cleaning. Used by `test_autoload_loop` and
+# `trapUndefined`.
+"The text `[module:]name/arity` of `def` in a message (pl-util.c `predicateName`)."
+function _autoload_predicate_name(gd::PL_global_data{T}, def::Definition{T})::String where {T}
+    user = MODULE_user(gd)
+    prefix = ""
+    if def.module_ != user.index
+        usersys = (def.flags & P_LOCKED) != 0 && isCurrentProcedure(sym_key(def.name), def.arity, user) !== nothing
+        usersys || (prefix = string(sym_text(gd.modules[def.module_].atom), ":"))
+    end
+    return string(prefix, sym_text(def.name), "/", def.arity)
+end
+
+# PORT: pl-proc.c test_autoload_loop
+# DIVERGES: the chain `LD->autoload.nesting` is a vector, the innermost LAST (A2 of AUTOLOAD1), so the walks go from its end;
+# `gd` is an argument (for the names in the messages). The messages are not written to a stream: upstream's `Sdprintf` is
+# collected on `ld.messages` as the boot loop's are (`_qlf_Sdprintf!`, src/pl-qlf.jl; the kernel has no stream-side
+# `Sdprintf`). As upstream, `LD->autoload.loop` is only set here, never cleared (upstream clears it in `resetProlog`).
+"""
+    test_autoload_loop(gd, ld, def) -> Bool
+
+False, with the loop reported, if the autoloader is already loading `def` (pl-proc.c); true otherwise.
+"""
+function test_autoload_loop(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, def::Definition{T}
+)::Bool where {T}
+    nesting = ld.autoload_nesting
+    for i in length(nesting):-1:1
+        if nesting[i] === def
+            ld.autoload_loop = def
+            _qlf_Sdprintf!(ld, "ERROR: autoload loop:\n")
+            _qlf_Sdprintf!(ld, string("ERROR:   ", _autoload_predicate_name(gd, def), "\n"))
+            for j in length(nesting):-1:1
+                _qlf_Sdprintf!(ld, string("ERROR:   ", _autoload_predicate_name(gd, nesting[j]), "\n"))
+                nesting[j] === def && break
+            end
+            return false
+        end
+    end
+    return true
+end
+
+# PORT: pl-proc.c autoLoader
+# DIVERGES (Prolog half not loaded; owner: AUTOLOAD1 A5, which brings boot/autoload.pl on the boot path; removed when
+# `system:'$undefined_procedure'/4` is defined by the boot): upstream's `PL_pred` creates the hook and the boot defines it
+# (boot/init.pl). Here the hook is looked up WITHOUT creating it and, when it is missing or undefined, the answer is the
+# "nil" one at once, before the foreign frame, the input context and the nesting: a database without the Prolog half then
+# behaves as before A3 (`createUndefSupervisor`). `GD->procedures.undefinterc4` is not cached: the table is searched on each call.
+# DIVERGES: `gd`, `ld` are arguments; the chain is a vector (A2); the answer is `nothing` for `ATOM_nil`.
+"""
+    autoLoader(gd, ld, def) -> atom, or nothing
+
+Call `system:'\$undefined_procedure'(Module, Name, Arity, Action)` for `def` in a query of its own, with the autoloader's
+input context and `def` on the nesting; the atom `Action` it answers, or `nothing` (upstream's `ATOM_nil`) (pl-proc.c).
+"""
+function autoLoader(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, def::Definition{T}
+)::Union{Nothing, T} where {T}
+    answer::Union{Nothing, T} = nothing
+    hook = isCurrentProcedure(sym_key(mk_sym(T, Symbol("\$undefined_procedure"))), 4, MODULE_system(gd))
+    (hook === nothing || !isDefinedProcedure(gd, hook)) && return answer
+
+    cid = PL_open_foreign_frame(ld)
+    cid == 0 && return answer
+    argv = PL_new_term_refs(ld, 4)
+    PL_put_atom(ld, argv, gd.modules[def.module_].atom)
+    PL_put_atom(ld, argv + 1, def.name)
+    PL_put_integer(ld, argv + 2, def.arity)
+
+    push_input_context(ld, mk_sym(T, :autoload))
+    push!(ld.autoload_nesting, def)
+    qid = PL_open_query(gd, ld, MODULE_system(gd), PL_Q_NODEBUG | PL_Q_PASS_EXCEPTION, hook, argv)
+    if qid != 0
+        if PL_next_solution(gd, ld, qid) != 0
+            answer = PL_get_atom(ld, argv + 3)
+        end
+        PL_close_query(ld, qid)
+    elseif PL_exception(ld, 0) != 0
+        PL_clear_exception(ld)
+    end
+    pop!(ld.autoload_nesting)
+    pop_input_context(ld)
+    PL_discard_foreign_frame(ld, cid)
+    return answer
+end
+
 # PORT: pl-proc.c trapUndefined
 # DIVERGES: the database `gd` is an argument; the module is the definition's index into its table. The
 # local data `ld` is an argument as upstream's `DECL_LD` (A1 of AUTOLOAD1): the autoloader's query runs on it.
-# LEFT TO A3 (AUTOLOAD1): the autoloader branch (`autoLoader`, `test_autoload_loop`, the retry). This body is
-# upstream's `autoImport` and `createUndefSupervisor` path.
+# DIVERGES: the code after `retry:` is a `while true` loop (Julia has no `goto`): `goto retry` is the next round, `goto error` a
+# `break`. The module and the functor of `def` are fixed through the retries, as upstream's `module` and `functor`.
+# The autoloader branch is `test_autoload_loop` and `autoLoader` above.
 # DIVERGES (representation only, as the other fatal errors of the kernel: sysError ends the process, the kernel raises a
 # Julia error naming the predicate; audit D-0387 item 3, Q3): an undefined predicate during `gd.bootsession` is upstream's
 # `sysError("Undefined predicate: ...")` (pl-proc.c:3051-3053, swipl-devel cbf4e189; :3027 skips the autoloader in the boot session), here an `error(...)`.
 """
     trapUndefined(gd, ld, def) -> Definition
 
-Resolve the undefined `def`: a definition `autoImport` finds through its module's supers; else
+Resolve the undefined `def`: a definition `autoImport` finds through its module's supers; else, with the `autoload`
+flag and outside the boot session, the autoloader's `'\$undefined_procedure'/4` (`autoLoader`: `fail` returns `def`,
+`error` goes to the supervisor, `retry` goes round again once, a second `retry` is warned of); else
 `def` itself, its supervisor `S_UNDEF` unless it is defined otherwise or its module's `unknown`
 flag is `fail` (pl-proc.c).
 """
@@ -347,15 +439,39 @@ function trapUndefined(
     gd::PL_global_data{T}, ld::PL_local_data{T}, def::Definition{T}
 )::Definition{T} where {T}
     m = gd.modules[def.module_]
-    newdef = autoImport(gd, def.name, def.arity, m)     # Auto import
-    newdef !== nothing && return newdef
-    if (def.flags & PROC_DEFINED) != 0 || getUnknownModule(gd, m) == UNKNOWN_FAIL
-        return def                                      # Pred/Module does not want to trap
+    name = def.name
+    arity = def.arity
+    retry_times = 0
+    while true                                          # retry:
+        newdef = autoImport(gd, name, arity, m)         # Auto import
+        newdef !== nothing && return newdef
+        if (def.flags & PROC_DEFINED) != 0 || getUnknownModule(gd, m) == UNKNOWN_FAIL
+            return def                                  # Pred/Module does not want to trap
+        end
+        if truePrologFlag(ld, PLFLAG_AUTOLOAD) && !gd.bootsession   # Trap via exception/3
+            test_autoload_loop(gd, ld, def) || return def
+            answer = autoLoader(gd, ld, def)
+            def = lookupProcedure(name, arity, m).definition        # lookupDefinition(functor, module)
+            if answer !== nothing
+                key = sym_key(answer)
+                key == sym_key(mk_sym(T, :fail)) && return def
+                key == sym_key(mk_sym(T, :error)) && break          # goto error
+                if key == sym_key(mk_sym(T, :retry))
+                    if retry_times != 0                 # retry_times++
+                        _qlf_Sdprintf!(ld, string("[Thread 1]: exception handler failed to define ",
+                                                  _autoload_predicate_name(gd, def), "\n"))
+                        return def
+                    end
+                    retry_times += 1
+                    continue                            # goto retry
+                end
+            end
+        end
+        break
     end
+    # error:
     if gd.bootsession                                   # pl-proc.c:3051: sysError("Undefined predicate: %s", ...)
-        error(
-            "Undefined predicate during the boot session: $(m.atom):$(def.name)/$(def.arity)"
-        )
+        error("Undefined predicate during the boot session: $(m.atom):$(name)/$(arity)")
     end
     createUndefSupervisor(def)                          # No one wants to intercept
     return def
