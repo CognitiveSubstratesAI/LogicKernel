@@ -1,5 +1,5 @@
 # ORIGINAL: ENG3's mutant list — no swipl-devel counterpart.
-# tools/mutants/ENG3b.py — the mutation battery of ENG3, re-stacked on EV1d (branch mutants/ENG3b; was ENG3.py) (audit D-0379, option 1: the foreign-environment check of pl-fli.c's
+# tools/mutants/ENG3d.py — the mutation battery of ENG3, re-stacked on RDDICT (a52a43b; branch mutants/ENG3d; was ENG3b.py, ENG3.py) (audit D-0379, option 1: the foreign-environment check of pl-fli.c's
 # API stubs `PL_new_term_ref`/`PL_new_term_refs` (pl-fli.c:535-550) split out of the LD forms (pl-fli.c:450-508) as
 # upstream; src/pl-fli.jl `PL_new_term_ref`, `PL_new_term_refs` (the LD forms), `PL_new_term_ref_api`,
 # `PL_new_term_refs_api` (the stubs), `_check_foreign_environment`; src/pl-wam.jl `query_answers` calls the stubs), run
@@ -10,7 +10,7 @@
 # RE-FIT any that fmt rewraps. Every `old` was checked to occur exactly once at wip/eng3 5f56012 (a text count, no Julia).
 # TARGETS (audit D-0238): every test file that exercises the mutated code, the step's own file first (a run stops at the
 # first target that decides). TLD — the LD forms: test_query.jl, then every test file that calls PL_new_term_ref( or
-# PL_new_term_refs( itself (`grep -rlE` over test/ at 5f56012, 127 files; at the re-stack f08167f rules_common.jl and index_testlib.jl are include-helpers with no @test and are NOT targets (D-0388); four more call them: test_bootpred3_swipl, test_debug_flag_swipl, test_event_swipl, test_halt_swipl); every other file that runs a query reaches the
+# PL_new_term_refs( itself (`grep -rlE` over test/ at 5f56012, 127 files; at the re-stack f08167f rules_common.jl and index_testlib.jl are include-helpers with no @test and are NOT targets (D-0388); four more call them: test_bootpred3_swipl, test_debug_flag_swipl, test_event_swipl, test_halt_swipl; at the re-stack a52a43b two more, test_dict_preds_swipl and test_read_dict_swipl); every other file that runs a query reaches the
 # LD forms through the engine's own ports too, and the first target decides each of TLD's mutants. TAPI — the stubs:
 # test_query.jl, then the files that call query_answers (the only src caller of the stubs).
 TLD = [
@@ -49,6 +49,7 @@ TLD = [
     "test/core_lang/test_cyclic_term_swipl.jl",
     "test/core_lang/test_debug_flag_swipl.jl",
     "test/core_lang/test_declare_destroy_swipl.jl",
+    "test/core_lang/test_dict_preds_swipl.jl",
     "test/core_lang/test_default_term.jl",
     "test/core_lang/test_event_swipl.jl",
     "test/core_lang/test_exception.jl",
@@ -80,6 +81,7 @@ TLD = [
     "test/core_lang/test_pr1_swipl.jl",
     "test/core_lang/test_prolog_flag_swipl.jl",
     "test/core_lang/test_push_flag_swipl.jl",
+    "test/core_lang/test_read_dict_swipl.jl",
     "test/core_lang/test_read_swipl.jl",
     "test/core_lang/test_repeat_swipl.jl",
     "test/core_lang/test_rules_swipl.jl",

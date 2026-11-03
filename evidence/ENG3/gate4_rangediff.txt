@@ -1,0 +1,27 @@
+ 1:  388715d =  1:  0882065 DOC: evidence/ENG3/handoff.md — the plan of the foreign-environment check split (D-0379)
+ 2:  c06f50e =  2:  6411227 FIXED: the foreign-environment check only in the API stubs of PL_new_term_ref(s) (D-0379)
+ 3:  31b763a =  3:  235adb8 TEST: test_query.jl — the API stubs' error text and the LD forms without the check (ENG3)
+ 4:  401c87d =  4:  b8f8a14 TEST: test_query.jl — the stub passes above a running frame and makes all n references (ENG3)
+ 5:  8f61216 =  5:  b36d157 ADDED: tools/mutants/ENG3.py — the mutant list of the foreign-environment check split (D-0379)
+ 6:  f2207a3 <  -:  ------- MODIFIED: test/static_analysis_manifest.jl — entries for PL_new_term_ref_api and PL_new_term_refs_api (ENG3)
+ -:  ------- >  6:  9891dd3 MODIFIED: test/static_analysis_manifest.jl — entries for PL_new_term_ref_api and PL_new_term_refs_api (ENG3)
+ 7:  f96a0f1 !  7:  967cd98 DOC: docs/architecture.md — the pl-fli.jl row and an ENG3 block (foreign-environment check in the API stubs)
+    @@ docs/architecture.md: fixed it or a public issue exists.
+      | `src/SWI-Prolog.jl` | the query API's flags (`PL_Q_*`) and return codes (`PL_S_*`); the foreign interface's types (`term_t`, `fid_t`, `foreign_t`), registration flags (`PL_FA_*`) and record (`PL_extension`); since R1c `PL_CTYPE_SPACE`; since R1d the text conversion flags (`CVT_*`), the text types `PL_ATOM`, `PL_STRING`, and since R1e every write flag (`PL_WRT_*`, as `Int`); since R1e's write/1 family the option types (`OPT_*`) and `PL_option_t` | `src/SWI-Prolog.h` |
+      | `src/pl-supervisor.jl` | supervisors: the code a call enters first — `S_VIRGIN` installing `S_UNDEF`, `S_DYNAMIC`, `S_MULTIFILE`, `S_TRUSTME`, `S_LIST` or `S_STATIC` (`createSupervisor`, `setDefaultSupervisor`), reset when the clauses change (`freeCodesDefinition!`); since V5c `createUndefSupervisor` | `src/pl-supervisor.c` |
+      | `src/pl-error.jl` | building and raising an ISO error term for the running predicate (`PL_error`, one typed method per code family: instantiation, type, domain and occurs-check errors, since V5b the undefined procedure's existence error with its caller, since V6c1 arithmetic's (`ERR_NOT_EVALUABLE`, the evaluation errors) with upstream's `pred`, `arity`, `msg`, since V8 `ERR_AR_TYPE`, and since V9c `ERR_REPRESENTATION`, `ERR_MODIFY_STATIC_PROC` and `rewrite_callable`, since R1b `ERR_PERMISSION`; `PL_type_error`, `PL_domain_error`; since R1b `PL_get_atom_ex`, `PL_get_integer_ex`, `PL_get_list_ex`, `PL_get_nil_ex`); since R1f `ERR_PERMISSION_PROC` and `printMessage` (the message collected, not printed: print_message/2 is R2's); since R1e's write/1 family `ERR_EXISTENCE`, `ERR_STREAM_OP`, `PL_get_stdbool_ex`, `PL_get_bool_ex`, `PL_unify_bool_ex`; since T1 `ERR_SYNTAX`; since Y1 `ERR_FILE_OPERATION`, `ERR_SYSCALL` (with `errno`) | `src/pl-error.c`, `src/pl-error.h` |
+    -@@ docs/architecture.md: What EV1 adds (pin `cbf4e1896275`, oracle swipl 10.1.19; written edit-only over
+    - 
+    - Tests: test/core_lang/test_event_swipl.jl (80 rows ev1p, ev1o, ev1u, ev1v, ev1e, ev1r, ev1g; pins from swipl 10.1.19, two byte-identical runs; generator evidence/EV1/gen_rows.py; ev1g01 is white-box:
+    - `garbage_collect_clauses/0` is not registered yet, the row calls `pl_garbage_collect_clauses!`). Mutants: tools/mutants/EV1c.py (51; three declared EQUIVALENT with file:line) and the event ones of tools/mutants/BOOTPREDSUB.py.
+    +@@ docs/architecture.md: Tests: test/core_lang/test_read_dict_swipl.jl (152 main rows rd01-rd152 and the
+    + pins from two byte-identical runs; a testset for the setter and getter as functions); tools/mutants/RDDICT.py (52 mutants; omissions declared in its header: `maxpri = 999`, the warning
+    + message, `_key_atom`'s punctuation arm; TARGETS the new rows file, test_read_swipl.jl and test_read_term_swipl.jl (or, for the flag mutants, test_prolog_flag_swipl.jl, test_set_flag_swipl.jl and test_push_flag_swipl.jl), and test_type_discipline.jl).
+    + The gate flipped the dict refusal: test_read_term_swipl.jl's refusal testset now compares the dict syntax errors with swipl and checks that the dict texts read; the quasi-quotations stay refused.
+     +
+     +## ENG3 — the foreign-environment check of `PL_new_term_ref(s)` moves to the API stubs (R2, audit D-0379)
+     +
+ 8:  0b4025e =  8:  fd22892 DOC: evidence/ENG3/handoff.md — the finisher section (mutant list TARGETS, manifest, architecture block)
+ 9:  452eb30 =  9:  b350266 MODIFIED: docs/port_inventory.md and evidence/ENG3/gate1.md — the regenerated pl-fli.c row, the gate's state file
+10:  834a856 = 10:  77fb5b3 TEST: test_local_stack.jl rows kill ENG3-9; ENG3b.py replaces ENG3.py (battery fix, D-0388)
+11:  f00dc63 = 11:  363a2d1 TEST: ENG3b.py — ENG3-8 mutates the LD form only where the API stub would refuse (D-0391)
