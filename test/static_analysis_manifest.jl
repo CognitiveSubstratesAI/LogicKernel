@@ -2637,7 +2637,11 @@ function _manifest_index(T)
         (LK.assert_wrapper, Tuple{GD, LD, Int}, false),
         (LK.unify_wrapped, Tuple{LD, Int, T, Int}, false),
         (LK.wrapper_vmi, Tuple{D, T}, false),
-        (LK.freeCodesDefinition!, Tuple{GD, D, Bool}, false)
+        (LK.freeCodesDefinition!, Tuple{GD, D, Bool}, false),
+        # AUTOLOAD1 A4 — the autoload flag (pl-prologflag.c setAutoload, propagateAutoload; pl-fli.c PL_set_prolog_flag)
+        (LK.setAutoload, Tuple{LD, T}, false),
+        (LK.propagateAutoload, Tuple{GD, LD, Int}, false),
+        (LK.PL_set_prolog_flag, Tuple{GD, LD, String, Bool}, false)
     )
 end
 
