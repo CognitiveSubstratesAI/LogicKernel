@@ -143,99 +143,11 @@ end
 # unless a boot compilation sets it (`lookupSourceFile` marks a file `system`, `from_state` and `resource` while it is on).
 # Since R2's D2: `record_lists` (`GD->recorded_db.record_lists`, a hash table by the key's word, initRecords in pl-rec.c),
 # `record_lists_order` (its entries in creation order: upstream enumerates the table, we cannot, see src/pl-rec.jl) and
-# `record_refs` (the records a `record` blob names, as `clause_refs`).
+# `record_refs` (the records a `record` blob names, as `clause_refs`). The constructor that fills them is
+# src/pl-setup.jl's `setupProlog`.
 # Since TAB1-min: `closure_refs` (the closures a `closure` blob names, as `clause_refs`; pl-wrap.c keeps the `struct closure`
 # in the blob's payload, src/pl-wrap.jl).
 # Since R2's LB2b: `paths_CWDdir`, `GD->paths.CWDdir` (pl-global.h), the working directory `PL_cwd` caches and `ChDir` sets (src/os/pl-os.jl).
-# PORT: pl-setup.c setupProlog
-# (swipl-devel cbf4e189, src/pl-setup.c:101-186; the steps it runs are cited at each line below)
-# DIVERGES: upstream fills the process's one `GD`; this makes a NEW database state and returns it (one per
-# `PL_global_data{T}`). It is the unbooted half of `PL_initialise` (pl-init.c:1603): `boot_global_data` (src/pl-qlf.jl)
-# runs the boot over it, and `PL_global_data{T}()` below is a copy of that booted database (R2 LB4 b2-1).
-"The database state before the boot: modules, supervisors, atoms, functors, flags, built-ins, operators (pl-setup.c)."
-function setupProlog(::Type{T})::PL_global_data{T} where {T}
-    cd = initSupervisors()
-    modules = module_table{T}()                 # initModules: system, then user
-    system = _lookupModule!(modules, cd, mk_sym(T, :system))
-    user = _lookupModule!(modules, cd, mk_sym(T, :user))
-    dc = mk_sym(T, Symbol("\$c_call_prolog"))
-    dc_def = Definition{T}(
-        sym_key(dc), 0, ClauseList{T}(), UInt64(0), dc, cd.virgin, ClauseRef{T}[], cd, 0,
-        system.index, 1
-    )
-    dc_proc = Procedure{T}(dc_def, UInt32(0), UInt32(0))
-    top_clause, top_cref = initVM(dc_proc)
-    system.procedures[(sym_key(dc), 0)] = dc_proc
-    atoms = do_init_atoms!(atoms_t())          # initAtoms (setup: before everything here)
-    syms = atom_symbols{T}()                   # (the atoms' symbols: filled as words are made)
-    registerBuiltinAtomSymbols!(atoms, syms)   # (the built-in atoms' symbols: upstream's a->name, pl-atom.c:1977)
-    functors = initFunctors!(functors_t())     # initFunctors (after the atoms, as upstream's)
-    initDBRef!(atoms)                          # initDBRef (setup:146): the clause blob type (D1)
-    initWrap!(atoms)                           # initWrap (setup:152): the closure blob type (TAB1-min)
-    dexpr = first(lookupBlob(atoms, Vector{UInt8}(codeunits("\$expr")), 5, reserved_symbol))
-    dot2 = lookupFunctorDef(functors, _atom_word!(atoms, syms, mk_sym(T, Symbol("[|]"))), 2)
-    nilw = _atom_word!(atoms, syms, mk_nil(T))  # ATOM_nil's word, once (L1c-6)
-    # (L1d step 4) the index's fixed keys ARE the database's words — built-ins registered in a fixed
-    # order (`registerBuiltinAtoms`, `registerBuiltinFunctors`), as upstream's generated handles
-    dot2 == FUNCTOR_dot2 || error("FUNCTOR_dot2 is not this database's '[|]'/2 word")
-    nilw == ATOM_nil || error("ATOM_nil is not this database's [] word")
-    gd = PL_global_data{T}(
-        gen_t(0),
-        Dict{Definition{T}, dirty_def_info{T}}(),
-        false,
-        registerControlFunctors(T),
-        modules,
-        user,
-        system,
-        _subclause_names(T),
-        cd,
-        dc_proc,
-        dc_proc,                                # procedures_equals2: set by initBuildIns!
-        dc_proc,                                # procedures_dcall1: set by initBuildIns!
-        dc_proc,                                # procedures_catch3: set by initBuildIns!
-        dc_proc,                                # procedures_dwakeup1: set by initBuildIns!
-        dc_proc,                                # procedures_arg3: set by initBuildIns!
-        top_clause,
-        top_cref,
-        mk_nil(T),
-        mk_sym(T, Symbol("[|]")),
-        T[],
-        Dict{UInt64, SourceFile{T}}(),
-        SourceFile{T}[],
-        1,                                      # files.no_hole_before = 1
-        IdDict{IOSTREAM, T}(),
-        Dict{UInt64, IOSTREAM}(),
-        Dict{Int, Vector{T}}(),
-        Union{Nothing, IOSTREAM}[],
-        atoms,
-        syms,
-        functors,
-        dexpr,
-        dot2,
-        nilw,
-        prolog_flag_table{T}(),                 # prolog_flag: none yet (initPrologFlags! defines them)
-        Clause{T}[],                            # clause_refs: no clause has a reference yet
-        IdDict{Clause{T}, Int}(),               # clause_serials
-        false,                                  # bootsession: no boot compilation until LB3's `-b` path sets it
-        Dict{word, RecordList{T}}(),            # record_lists: no key has a record yet
-        RecordList{T}[],                        # record_lists_order
-        RecordRef{T}[],                         # record_refs: no record has a reference yet
-        0,                                      # halt_status: no halt in progress
-        0,                                      # halt_thread
-        CLN_NORMAL,                             # halt_cleaning
-        0,                                      # halt_cancelled
-        true,                                   # halt_exit: the process exit
-        Int[],                                  # halt_exited
-        event_hooks{T}(),                       # event.hook: no listener yet (R2 EV1)
-        closure{T}[],                           # closure_refs: no closure has a reference yet (TAB1-min)
-        "",                                     # paths.CWDdir: none until the first PL_cwd (R2 LB2b)
-        dc_proc                                 # procedures_print_message2: set by initBuildIns!
-    )
-    initPrologFlags!(gd)                        # setup:136 (src/os/pl-prologflag.jl): before the built-ins (:158), whose boot clauses read the mask
-    initBuildIns!(gd)                           # setup:158 (src/pl-ext.jl)
-    initOperators!(gd)                          # setup:164 (src/pl-op.jl)
-    return gd
-end
 
 # PORT: pl-incl.h cleanup_status as CLN_NORMAL
 # DIVERGES: the enum's values as `Int` constants (`halt_cleaning` is an `Int`), pl-incl.h:1054-1060.
