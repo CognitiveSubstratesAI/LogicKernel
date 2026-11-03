@@ -1546,6 +1546,241 @@ function pl_flush_output1_va(
     return flush_output(ld, PL__t0) ? FTRUE : FFALSE
 end
 
+# ── current_input/1, current_output/1, line_count/2, line_position/2, tab/1,2 (pl-file.c) ──────
+
+# ORIGINAL: pl-file.c `is_stream_blob`'s `PL_blob_data(a, NULL, &type); type == &stream_blob`, through `_stream_ref_of`.
+"Whether the term reference `t` holds a stream blob (pl-file.c `is_stream_blob`)."
+function is_stream_blob(ld::PL_local_data{T}, t::term_t)::Bool where {T}
+    a = PL_get_atom(ld, t)
+    a === nothing && return false
+    return _stream_ref_of(ld, a) !== nothing
+end
+
+# PORT: pl-file.c current_io
+# DIVERGES: `cur` is `nothing` when the current stream is unset (upstream dereferences NULL): `existence_error`.
+"Unify `t` with the stream `cur`, or test a bound `t` (a stream blob or alias) against it (pl-file.c)."
+function current_io(
+    ld::PL_local_data{T}, t::term_t, cur::Union{Nothing, IOSTREAM}, name::Symbol
+)::Bool where {T}
+    cur === nothing && return no_stream(ld, 0, name)
+    if PL_is_variable(ld, t)
+        return PL_unify_stream(ld, t, cur)
+    else
+        is_stream_blob(ld, t) || return not_a_stream(ld, t, 0)
+        s = term_stream_handle(ld, t, SH_ALIAS | SH_UNLOCKED)
+        s === nothing && return false
+        return s === cur
+    end
+end
+
+# PORT: pl-file.c current_input as pl_current_input1_va
+# (PRED_IMPL("current_input", 1, current_input, PL_FA_ISO)) — pl-file.c:5727-5731
+"`current_input(-Stream)`: the current input stream (pl-file.c)."
+function pl_current_input1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    _initIO(ld)
+    return current_io(ld, PL__t0, Scurin(ld), :current_input) ? FTRUE : FFALSE
+end
+
+# PORT: pl-file.c current_output as pl_current_output1_va
+# (PRED_IMPL("current_output", 1, current_output, PL_FA_ISO)) — pl-file.c:5734-5738
+"`current_output(-Stream)`: the current output stream (pl-file.c)."
+function pl_current_output1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    _initIO(ld)
+    return current_io(ld, PL__t0, Scurout(ld), :current_output) ? FTRUE : FFALSE
+end
+
+# PORT: pl-file.c getStreamWithPosition
+# DIVERGES: returns the stream or `nothing` (upstream: `bool` and `IOSTREAM **sp`); `PL_get_stream(stream, &s, 0)` is
+# `term_stream_handle(SH_ERRORS|SH_ALIAS)` (no `SH_NOPAIR`: a stream pair is refused by name); no lock to release.
+"The stream `stream` names if it records a position, else `permission_error(property, position, Stream)` (pl-file.c)."
+function getStreamWithPosition(
+    ld::PL_local_data{T}, stream::term_t
+)::Union{Nothing, IOSTREAM} where {T}
+    s = term_stream_handle(ld, stream, SH_ERRORS | SH_ALIAS)
+    s === nothing && return nothing
+    if s.position === nothing
+        _PL_permission_error(ld, :property, :position, stream)     # non-ISO
+        return nothing
+    end
+    return s
+end
+
+# PORT: pl-file.c line_count as pl_line_count2_va
+# (PRED_IMPL("line_count", 2, line_count, 0)) — pl-file.c:5773-5785
+"`line_count(+Stream, -Count)`: the line number of `Stream` (pl-file.c)."
+function pl_line_count2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    s = getStreamWithPosition(ld, PL__t0)
+    s === nothing && return FFALSE
+    n = (s.position::IOPOS).lineno
+    return PL_unify_integer(ld, PL__t0 + 1, n) ? FTRUE : FFALSE
+end
+
+# PORT: pl-file.c line_position as pl_line_position2_va
+# (PRED_IMPL("line_position", 2, line_position, 0)) — pl-file.c:5789-5801
+"`line_position(+Stream, -Position)`: the column of `Stream` (pl-file.c)."
+function pl_line_position2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    s = getStreamWithPosition(ld, PL__t0)
+    s === nothing && return FFALSE
+    n = (s.position::IOPOS).linepos
+    return PL_unify_integer(ld, PL__t0 + 1, n) ? FTRUE : FFALSE
+end
+
+# PORT: pl-file.c tab
+# DIVERGES: no lock (`releaseStream`).
+"Write `spaces` (an integer expression) space characters to the text output stream `out` names (pl-file.c)."
+function tab(ld::PL_local_data, out::term_t, spaces::term_t)::Bool
+    s = getTextOutputStream(ld, out)
+    s === nothing && return false
+    count = PL_eval_expression_to_int64_ex(ld, spaces)
+    count === nothing && return false
+
+    while count > 0
+        count -= 1
+        Sputcode(Int(' '), s) < 0 && break
+    end
+
+    return streamStatus(ld, s)
+end
+
+# PORT: pl-file.c tab2 as pl_tab2_va
+# (PRED_IMPL("tab", 2, tab2, 0)) — pl-file.c:3837-3841
+"`tab(+Stream, +Amount)`: write `Amount` spaces to `Stream` (pl-file.c)."
+function pl_tab2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    return tab(ld, PL__t0, PL__t0 + 1) ? FTRUE : FFALSE
+end
+
+# PORT: pl-file.c tab1 as pl_tab1_va
+# (PRED_IMPL("tab", 1, tab1, 0)) — pl-file.c:3844-3848
+"`tab(+Amount)`: write `Amount` spaces to the current output (pl-file.c)."
+function pl_tab1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    return tab(ld, 0, PL__t0) ? FTRUE : FFALSE
+end
+
+# ── at_end_of_stream/0,1, get_code/1,2, put_code/1,2 (pl-file.c) ────────────────────────────────
+
+# PORT: pl-file.c at_end_of_stream
+# DIVERGES: no lock (`releaseStream`).
+"Whether the input stream `stream` names (0: the current input) is at its end; an unbuffered stream is a permission error (pl-file.c)."
+function at_end_of_stream(ld::PL_local_data{T}, stream::term_t)::Bool where {T}
+    s = getInputStream(ld, stream, S_DONTCARE)
+    s === nothing && return false                   # exception
+
+    rval = Sfeof(s)
+
+    if rval < 0
+        PL_error(
+            ld, "", 0, "not-buffered stream", ERR_PERMISSION, mk_sym(T, :end_of_stream),
+            mk_sym(T, :stream), stream
+        )
+        rval = 0
+    end
+
+    rval != 0 && Sferror(s) != 0 && return streamStatus(ld, s)     # due to error
+
+    return rval != 0
+end
+
+# PORT: pl-file.c at_end_of_stream as pl_at_end_of_stream1_va
+# (PRED_IMPL("at_end_of_stream", 1, at_end_of_stream, PL_FA_ISO)) — pl-file.c:5850-5853
+"`at_end_of_stream(+Stream)`: true if `Stream` is at its end (pl-file.c)."
+function pl_at_end_of_stream1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    return at_end_of_stream(ld, PL__t0) ? FTRUE : FFALSE
+end
+
+# PORT: pl-file.c at_end_of_stream0 as pl_at_end_of_stream0_va
+# (PRED_IMPL("at_end_of_stream", 0, at_end_of_stream0, PL_FA_ISO)) — pl-file.c:5856-5859
+"`at_end_of_stream`: true if the current input is at its end (pl-file.c)."
+function pl_at_end_of_stream0_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    return at_end_of_stream(ld, 0) ? FTRUE : FFALSE
+end
+
+# PORT: pl-file.c get_code2
+# DIVERGES: `PL_get_char(chr, &c, true)` (eof accepted) is written out as in `PL_unify_char`: `-1` and `end_of_file`
+# make the call fail without the type error; no lock.
+function get_code2(ld::PL_local_data{T}, in::term_t, chr::term_t)::Bool where {T}
+    s = getTextInputStream(ld, in)
+    if s !== nothing
+        c = Sgetcode(s)
+
+        streamStatus(ld, s) || return false         # I/O error
+
+        PL_unify_integer(ld, chr, c) && return true
+
+        i = PL_get_integer(ld, chr)
+        a = PL_get_atom(ld, chr)
+        (i == -1 || (a !== nothing && sym_key(a) == sym_key(mk_sym(T, :end_of_file)))) &&
+            return false
+        PL_get_char(ld, chr)                        # set type-error
+    end
+    return false
+end
+
+# PORT: pl-file.c get_code2 as pl_get_code2_va
+# (PRED_IMPL("get_code", 2, get_code2, 0)) — pl-file.c:3641-3645
+"`get_code(+Stream, -Code)`: read the next character code of `Stream`; -1 at its end (pl-file.c)."
+function pl_get_code2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    return get_code2(ld, PL__t0, PL__t0 + 1) ? FTRUE : FFALSE
+end
+
+# PORT: pl-file.c get_code1 as pl_get_code1_va
+# (PRED_IMPL("get_code", 1, get_code1, 0)) — pl-file.c:3648-3652
+"`get_code(-Code)`: read the next character code of the current input (pl-file.c)."
+function pl_get_code1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    return get_code2(ld, 0, PL__t0) ? FTRUE : FFALSE
+end
+
+# PORT: pl-file.c put_code
+# DIVERGES: no lock; the three-argument form (`ld` first) is distinct from pl-stream.jl's `put_code(c, s)`.
+"Write the character code `chr` to the text output stream `stream` names (0: the current output) (pl-file.c)."
+function put_code(ld::PL_local_data, stream::term_t, chr::term_t)::Bool
+    c = PL_get_char(ld, chr)                        # PL_get_char(chr, &c, false)
+    c === nothing && return false
+    s = getTextOutputStream(ld, stream)
+    s === nothing && return false
+
+    Sputcode(c, s)
+
+    return streamStatus(ld, s)
+end
+
+# PORT: pl-file.c put_code2 as pl_put_code2_va
+# (PRED_IMPL("put_code", 2, put_code2, 0)) — pl-file.c:3447-3451
+"`put_code(+Stream, +Code)`: write the character `Code` to `Stream` (pl-file.c)."
+function pl_put_code2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    return put_code(ld, PL__t0, PL__t0 + 1) ? FTRUE : FFALSE
+end
+
+# PORT: pl-file.c put_code1 as pl_put_code1_va
+# (PRED_IMPL("put_code", 1, put_code1, 0)) — pl-file.c:3455-3459
+"`put_code(+Code)`: write the character `Code` to the current output (pl-file.c)."
+function pl_put_code1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    return put_code(ld, 0, PL__t0) ? FTRUE : FFALSE
+end
+
 # ── character input (pl-file.c): get_char/2, peek_char/2, skip/2, get_single_char/1 ──────────────
 
 # PORT: pl-privitf.c PL_unify_char
@@ -2614,7 +2849,8 @@ function symbol_stream_pair_not_allowed(ld::PL_local_data{T}, symbol::T)::Bool w
 end
 
 # PORT: pl-file.c BeginPredDefs as PL_predicates_from_file
-# DIVERGES: the entries of the predicates the kernel has ported (S1: open/3,4 and close/1,2; S2a: prompt/2, prompt1/1, get_char/2, peek_char/2, flush_output/1, skip/2, ttyflush/0, is_stream/1, get_single_char/1, '\$alias_stream'/2, the input context trio and '\$stream_property'/2, '\$stream_properties'/2, '\$streams_properties'/2 and set_stream/2; LB2:
+# DIVERGES: the entries of the predicates the kernel has ported (LB5: current_input/1, current_output/1, line_count/2,
+# line_position/2, tab/1,2, at_end_of_stream/0,1, get_code/1,2, put_code/1,2 and its alias put_char/1,2; S1: open/3,4 and close/1,2; S2a: prompt/2, prompt1/1, get_char/2, peek_char/2, flush_output/1, skip/2, ttyflush/0, is_stream/1, get_single_char/1, '\$alias_stream'/2, the input context trio and '\$stream_property'/2, '\$stream_properties'/2, '\$streams_properties'/2 and set_stream/2; LB2:
 # source_location/2 and '$set_source_location'/2, upstream's order file:6396-6397); `PRED_DEF` ors in `PL_FA_VARARGS`.
 "pl-file.c's registration table (`BeginPredDefs(file)`): the ported entries."
 const PL_predicates_from_file = (
@@ -2625,6 +2861,20 @@ const PL_predicates_from_file = (
     PL_extension("get_char", 2, pl_get_char2_va, PL_FA_ISO | PL_FA_VARARGS),
     PL_extension("peek_char", 2, pl_peek_char2_va, PL_FA_ISO | PL_FA_VARARGS),
     PL_extension("flush_output", 1, pl_flush_output1_va, PL_FA_ISO | PL_FA_VARARGS),
+    PL_extension("current_input", 1, pl_current_input1_va, PL_FA_ISO | PL_FA_VARARGS),
+    PL_extension("current_output", 1, pl_current_output1_va, PL_FA_ISO | PL_FA_VARARGS),
+    PL_extension("line_count", 2, pl_line_count2_va, PL_FA_VARARGS),
+    PL_extension("line_position", 2, pl_line_position2_va, PL_FA_VARARGS),
+    PL_extension("tab", 2, pl_tab2_va, PL_FA_VARARGS),
+    PL_extension("tab", 1, pl_tab1_va, PL_FA_VARARGS),
+    PL_extension("at_end_of_stream", 1, pl_at_end_of_stream1_va, PL_FA_ISO | PL_FA_VARARGS),
+    PL_extension("at_end_of_stream", 0, pl_at_end_of_stream0_va, PL_FA_ISO | PL_FA_VARARGS),
+    PL_extension("get_code", 2, pl_get_code2_va, PL_FA_ISO | PL_FA_VARARGS),
+    PL_extension("get_code", 1, pl_get_code1_va, PL_FA_ISO | PL_FA_VARARGS),
+    PL_extension("put_code", 2, pl_put_code2_va, PL_FA_ISO | PL_FA_VARARGS),
+    PL_extension("put_code", 1, pl_put_code1_va, PL_FA_ISO | PL_FA_VARARGS),
+    PL_extension("put_char", 2, pl_put_code2_va, PL_FA_ISO | PL_FA_VARARGS),
+    PL_extension("put_char", 1, pl_put_code1_va, PL_FA_ISO | PL_FA_VARARGS),
     PL_extension("skip", 2, pl_skip2_va, PL_FA_VARARGS),
     PL_extension("ttyflush", 0, pl_ttyflush0_va, PL_FA_VARARGS),
     PL_extension("prompt", 2, pl_prompt2_va, PL_FA_VARARGS),

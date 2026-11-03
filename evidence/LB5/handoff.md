@@ -18,3 +18,17 @@ Optional / may be handed on: succ/2 (pl-arith.c:274-355), peek_string/3 (needs b
 (see "Committed" below, updated after each commit)
 
 ## Committed
+- G1 84d905d  set_stream alias(Std) -> setStandardStream (pl-file.jl). UNVERIFIED: whether closing a captured stream
+  leaves the standard slot dangling (restoreStandardStream: NOT STARTED; closeStream keeps the standard streams open).
+  NEED (pl-global.jl, in flight): `LD->prompt.next = true` for alias(user_input): no field in PL_local_data.
+- G2+G3 (this commit): pl-file.jl current_input/1, current_output/1 (current_io, is_stream_blob), line_count/2,
+  line_position/2 (getStreamWithPosition), tab/1,2, at_end_of_stream/0,1, get_code/1,2, put_code/1,2, put_char/1,2
+  (the upstream table maps put_char to put_code2/1); src/pl-arith.jl PL_eval_expression_to_int64_ex (tab needs it).
+  Registered in PL_predicates_from_file with the upstream flags (PL_FA_ISO for get/put_code, at_end_of_stream, current_*).
+  UNVERIFIED (no Julia run): all of it; `current_io` of an alias argument (term_stream_handle SH_ALIAS), arity-0 `0`
+  term_t for "current stream", PL_eval_expression_to_int64_ex's mpz branch.
+  MANIFEST ENTRIES NEEDED (commit 6): LK.pl_current_input1_va pl_current_output1_va pl_line_count2_va pl_line_position2_va
+  pl_tab1_va pl_tab2_va pl_at_end_of_stream0_va pl_at_end_of_stream1_va pl_get_code1_va pl_get_code2_va pl_put_code1_va
+  pl_put_code2_va (Tuple{PL_local_data{T},Int,Int,foreign_context{T}}); is_stream_blob (ld,Int), current_io (ld,Int,
+  Union{Nothing,IOSTREAM},Symbol), getStreamWithPosition (ld,Int), tab (ld,Int,Int), at_end_of_stream (ld,Int),
+  get_code2 (ld,Int,Int), put_code (ld,Int,Int), PL_eval_expression_to_int64_ex (ld,Int).

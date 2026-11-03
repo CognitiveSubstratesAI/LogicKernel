@@ -2930,6 +2930,34 @@ function get_arith_flag(ld::PL_local_data{T}, val::term_t, k::T)::Bool where {T}
     return PL_unify_atom(ld, val, mk_sym(T, a))
 end
 
+# PORT: pl-arith.c PL_eval_expression_to_int64_ex
+# DIVERGES: returns the value or `nothing` (upstream: `int *` result and `int64_t *val`), the error raised.
+"Evaluate the expression term `t` to an `Int64` (pl-arith.c): `type_error(integer_expression, T)` for a non-integer, `int_overflow` past 64 bits."
+function PL_eval_expression_to_int64_ex(
+    ld::PL_local_data{T}, t::term_t
+)::Union{Nothing, Int64} where {T}
+    n = _number_alloc!(ld)
+    val = nothing
+    if valueExpression(ld, t, n)
+        if toIntegerNumber(ld, n, 0)
+            if n.type === V_INTEGER
+                val = n.i
+            else                                            # V_MPZ
+                fits, v = mpz_to_int64(n.mpz)
+                if fits
+                    val = v
+                else
+                    PL_error(ld, "", 0, "", ERR_EVALUATION, mk_sym(T, :int_overflow))
+                end
+            end
+        else
+            PL_error(ld, ERR_TYPE, mk_sym(T, :integer_expression), t)
+        end
+    end
+    _number_free!(ld, 1)
+    return val
+end
+
 # PORT: pl-arith.c BeginPredDefs as PL_predicates_from_arith
 # DIVERGES: the entries of the predicates the kernel has ported, in upstream's order
 # (ar:5386-5393); `PRED_DEF` ors in `PL_FA_VARARGS`.
