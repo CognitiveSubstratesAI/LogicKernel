@@ -287,8 +287,10 @@ end
 # (swipl-devel cbf4e189, src/pl-qlf.c:4783-4820)
 # DIVERGES: `writeWicHeader` and `writeWicTrailer` write the state file's header and trailer: there is no state
 # (LD2), so `fd` is no argument and both are left out; `argv` is a vector of file names. `PL_set_prolog_flag("autoload",
-# PL_BOOL, …)` is `setPrologFlag` of the atom flag (the kernel has no `set_prolog_flag` yet, R2 F1b; the flag is
-# `FT_ATOM`, src/os/pl-prologflag.jl). `setAccessLevel` returns nothing, so the level to restore is read first.
+# PL_BOOL, …)` is the kernel's `PL_set_prolog_flag` (src/os/pl-prologflag.jl): through `set_prolog_flag`, so the
+# mask bit `PLFLAG_AUTOLOAD` follows the flag (`setAutoload`; `propagateAutoload` is skipped in the boot session) —
+# since AUTOLOAD1 A4; before, `setPrologFlag` wrote the atom alone. `setAccessLevel` returns nothing, so the level to
+# restore is read first.
 # As upstream: a false `compileFile` returns false with the access level and `autoload` not restored.
 """
 Compile the boot files `argv` in system mode with `autoload` off, up to an argument `"-c"`, then call
@@ -300,7 +302,7 @@ function compileFileList(
 )::Bool where {T}
     alevel = ld.prolog_flag_access_level                       # alevel = setAccessLevel(ACCESS_LEVEL_SYSTEM)
     setAccessLevel!(ld, ACCESS_LEVEL_SYSTEM)
-    setPrologFlag(gd, "autoload", FT_ATOM, "false")
+    PL_set_prolog_flag(gd, ld, "autoload", false)
 
     ld.qlf_write_state = state                                 # make Prolog compilation go into state
     for file in argv
@@ -308,7 +310,7 @@ function compileFileList(
         compileFile(gd, ld, state, file) || return false
     end
 
-    setPrologFlag(gd, "autoload", FT_ATOM, "true")
+    PL_set_prolog_flag(gd, ld, "autoload", true)
     setAccessLevel!(ld, alevel)
 
     pred = lookupProcedure(

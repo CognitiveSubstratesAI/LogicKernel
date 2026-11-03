@@ -753,7 +753,7 @@ end
 # no answer swipl gives is changed. The flags (`debug` and `debugger_show_context` are accepted since R2 F1c): `tty_control`, `debug_on_interrupt`,
 # `stack_limit` (set_stack_limit), `table_space`, `table_compile_threshold`, `table_drop_intermediate`,
 # `table_monotonic`, `agc_margin`, `string_stack_tripwire`, `heartbeat`, `encoding`, `unicode_atoms`,
-# `autoload` (propagateAutoload), `theme`, `incomparable` (`LD->prolog_flag.incomparable_error`), `var_tag`
+# `theme`, `incomparable` (`LD->prolog_flag.incomparable_error`), `var_tag`
 # (the VARTAG_* bits of `m->flags`, which the kernel's `module_t` has not), the ci_* and tabling restraint flags (pseudo-flags of pl-index.c and pl-tabling.c, whose state is
 # constants here), the arithmetic flags (`set_arith_flag`, pl-arith.c) and `file_name_case_handling`.
 # `on_error`/`on_warning` are checked and stored (the `halt`/`status` actions belong to the toplevel).
@@ -969,6 +969,44 @@ function setStreamTypeCheck(ld::PL_local_data{T}, a::T)::Bool where {T}
     end
     ld.IO_stream_type_check = check
     return true
+end
+
+# PORT: pl-prologflag.c setAutoload
+# DIVERGES: the local data is an argument (upstream's `GET_LD`). Only `false` and not-`false` matter to the C side
+# (the mask bit `PLFLAG_AUTOLOAD`); the Prolog side (`autoload_in/3`, boot/autoload.pl) tells `explicit`, `user` and
+# `user_or_explicit` from `true`. Upstream's setter alone checks the domain (AUTOLOAD1 ruling Q7).
+"Set the mask bit `PLFLAG_AUTOLOAD` from the atom `a` (`false` clears it; `explicit`, `true`, `user`, `user_or_explicit` set it), else `domain_error(autoload, A)` (pl-prologflag.c)."
+function setAutoload(ld::PL_local_data{T}, a::T)::Bool where {T}
+    k = sym_key(a)
+    if k == sym_key(mk_sym(T, Symbol("false")))
+        clearPrologFlagMask!(ld, PLFLAG_AUTOLOAD)
+    elseif k == sym_key(mk_sym(T, :explicit)) ||
+           k == sym_key(mk_sym(T, Symbol("true"))) ||
+           k == sym_key(mk_sym(T, :user)) ||
+           k == sym_key(mk_sym(T, :user_or_explicit))
+        setPrologFlagMask!(ld, PLFLAG_AUTOLOAD)
+    else
+        return PL_error(ld, ERR_DOMAIN, mk_sym(T, :autoload), _flag_atom_ref(ld, a))
+    end
+    return true
+end
+
+# PORT: pl-prologflag.c propagateAutoload
+# DIVERGES: the database and the local data are arguments; `PL_predicate("set_autoload", 1, "$autoload")` is
+# `lookupProcedure` in `lookupModule`'s module (both create what is not there), looked up on each call. Before
+# boot/autoload.pl is loaded `$autoload:set_autoload/1` has no clauses, so a call outside the boot session raises
+# the existence error upstream raises too (`PL_Q_PASS_EXCEPTION`).
+"Tell the Prolog side that `autoload` is set to the term `val`: `\$autoload:set_autoload(Val)`, not in the boot session (pl-prologflag.c)."
+function propagateAutoload(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, val::term_t
+)::Bool where {T}
+    gd.bootsession && return true
+    pred = lookupProcedure(
+        mk_sym(T, :set_autoload), 1, lookupModule(gd, mk_sym(T, Symbol("\$autoload")))
+    )
+    av = PL_new_term_refs(ld, 2)
+    return PL_put_term(ld, av, val) &&
+           PL_call_predicate(gd, ld, nothing, PL_Q_PASS_EXCEPTION, pred, av)
 end
 
 # ── changing a flag: oneof, keep_flag, new_prolog_flag, set_flag_value (pl-prologflag.c), R2 F1b ─────
@@ -1242,7 +1280,7 @@ end
 # PORT: pl-prologflag.c set_flag_value
 # DIVERGES: the database and the local data are arguments, the module is its record, and the key an atom. The side
 # effects the kernel has none for are refused by name (design D4): `tty_control` (changed), `debug_on_interrupt`, `var_tag`, `incomparable`, `encoding`,
-# `unicode_atoms`, `file_name_case_handling`, `autoload`, `table_monotonic`, `theme`, `agc_margin`, `table_space`,
+# `unicode_atoms`, `file_name_case_handling`, `table_monotonic`, `theme`, `agc_margin`, `table_space`,
 # `table_compile_threshold`, `table_drop_intermediate`, `stack_limit`, `string_stack_tripwire` and `heartbeat`.
 # Since R2 F1c `debug` and `debugger_show_context` are accepted: `debug` calls `debugmode` and `tracemode` (src/pl-trace.jl) and
 # `rval` is their answer, as upstream's (pl-prologflag.c:1317-1326); the value goes to the table as upstream does, the mask bit only if `rval`.
@@ -1353,7 +1391,7 @@ function set_flag_value(
         elseif name == "file_name_case_handling"
             _flag_not_ported(k, "setFileNameCaseHandling")
         elseif name == "autoload"
-            _flag_not_ported(k, "setAutoload (propagateAutoload)")
+            setAutoload(ld, a) || return false
         elseif name == "table_monotonic"
             _flag_not_ported(k, "setMonotonicMode (tabling)")
         elseif name == "theme"
@@ -1496,8 +1534,8 @@ end
 # PORT: pl-prologflag.c set_prolog_flag_ptr
 # DIVERGES: no `PL_LOCK(L_PLFLAG)` (one thread), so the flags `threads`, `unicode_atoms` and `theme`, which upstream
 # sets unlocked, go the same way; no thread-local table, so no second `set_prolog_flag_unlocked` for `FF_GLOBAL`.
-# `autoload` is refused by name (design D4: `propagateAutoload`). The module is the parse module unless the key is
-# qualified.
+# `autoload` is propagated to `$autoload:set_autoload/1` first (`propagateAutoload`, AUTOLOAD1 A4). The module is the
+# parse module unless the key is qualified.
 "Set the flag the possibly module-qualified key `key` names to the value of `value`; the flag, `PSEUDO_FLAG` or `nothing` after an error (pl-prologflag.c)."
 function set_prolog_flag_ptr(
     gd::PL_global_data{T}, ld::PL_local_data{T}, key::term_t, value::term_t, flags::UInt32,
@@ -1510,7 +1548,8 @@ function set_prolog_flag_ptr(
     m = gd.modules[mi]
 
     sym_key(k) == sym_key(mk_sym(T, :autoload)) &&
-        _flag_not_ported(k, "propagateAutoload")
+        !propagateAutoload(gd, ld, value) &&
+        return nothing
 
     f = set_prolog_flag_unlocked(gd, ld, m, k, value, flags, of)
     set_oneof(ld, f, of, flags)
@@ -1525,6 +1564,25 @@ function set_prolog_flag(
     gd::PL_global_data{T}, ld::PL_local_data{T}, key::term_t, value::term_t, flags::UInt32
 )::Bool where {T}
     return set_prolog_flag_ptr(gd, ld, key, value, flags, nothing) !== nothing
+end
+
+# PORT: pl-fli.c PL_set_prolog_flag
+# DIVERGES: the `PL_BOOL` case only (a Julia `Bool` value), and the first branch only (`HAS_LD && GD->io_initialised`:
+# the kernel's flag table exists from the database's construction, so there is no initialisation order to serve);
+# the database and the local data are arguments, and it lives with `set_prolog_flag`, not in src/pl-fli.jl. A failed
+# foreign frame or term reference is false (upstream falls to the branch that defines the flag outright).
+"Set the flag `name` to the Boolean `val` through `set_prolog_flag` (pl-fli.c)."
+function PL_set_prolog_flag(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, name::AbstractString, val::Bool
+)::Bool where {T}
+    fid = PL_open_foreign_frame(ld)
+    fid == 0 && return false
+    av = PL_new_term_refs(ld, 2)
+    PL_put_atom(ld, av, mk_sym(T, Symbol(name)))
+    PL_put_atom(ld, av + 1, mk_sym(T, Symbol(val ? "true" : "false")))     # PL_put_bool
+    rval = set_prolog_flag(gd, ld, av, av + 1, FT_BOOL)
+    PL_close_foreign_frame(ld, fid)
+    return rval
 end
 
 # PORT: pl-prologflag.c set_prolog_flag as pl_set_prolog_flag2_va
