@@ -2921,6 +2921,21 @@ function _tbl_is_predicate_attribute(::Type{T}, k::UInt64)::Bool where {T}
     )
 end
 
+# PORT: pl-proc.c get_predicate_attribute as _predicate_number_of_clauses
+# (swipl-devel cbf4e189, src/pl-proc.c:3648-3657, the ATOM_number_of_clauses branch of PRED_IMPL
+# `'$get_predicate_attribute'`/3 :3577)
+# DIVERGES: that one key, as a function of the definition (the T1 reader of src/boot_image.jl calls it); the predicate
+# itself is not registered here.
+"The `number_of_clauses` attribute of `def`, or `nothing` where upstream's attribute fails (pl-proc.c:3648-3658)."
+function _predicate_number_of_clauses(
+    gd::PL_global_data{T}, def::Definition{T}
+)::Union{Nothing, Int} where {T}
+    (def.flags & P_FOREIGN) != 0 && return nothing
+    n = num_visible_clauses(gd, def, false)
+    (n == 0 && (def.flags & P_DYNAMIC) == 0) && return nothing
+    return n
+end
+
 # PORT: pl-proc.c BeginPredDefs as PL_predicates_from_proc
 # DIVERGES: the entries of the predicates the kernel has ported; `PRED_DEF` ors in `PL_FA_VARARGS`.
 "pl-proc.c's registration table (`BeginPredDefs(proc)`): the ported entries."

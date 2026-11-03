@@ -423,7 +423,7 @@ ld_statistics() = ld_statistics(0, 0, 0, 0, WallTime(), 0.0, 0.0, 0.0, 0.0)
 # (`_debugstatus.styleCheck`, pl-init.c's default), `modules.source` (a module index: `user`), and
 # `messages` — no upstream field: what upstream's `Sdprintf` writes to `Serror` is collected there as
 # `(kind, message)` (src/pl-qlf.jl; printMessage calls print_message/2 since LB4 b2). Since R1e's write/1 family:
-# (R1g's `variable_names` term reference went in LB4 b2: `$variable_names` is the global variable
+# (The `variable_names` term reference, there since R1g, went in LB4 b2: `$variable_names` is the global variable
 # boot/init.pl:1949 sets, src/pl-gvar.jl, which the compiler reads, `get_variable_names`.) `IO_streams` — upstream's `IO.streams`, the standard streams indexed by `SNO_*` (+1), opened over
 # the process's stdin, stdout and stderr when first asked for (`initIO`, src/os/pl-file.jl), or set
 # by the host (`set_standard_stream!`; decision 2a), `IO_initialised` once they are; `IO_stream_type_check` (the `stream_type_check`

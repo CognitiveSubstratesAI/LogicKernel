@@ -1019,9 +1019,9 @@ end
 "How deep `printMessage` may nest before it stops calling print_message/2 (pl-error.c `OK_RECURSIVE`)."
 const OK_RECURSIVE = 10
 
-# PORT: pl-error.c printMessage
-# PORT: pl-error.c printMessagev
-# (swipl-devel cbf4e189, src/pl-error.c:992-1063; printMessage :992-1002 is the varargs wrapper of printMessagev)
+# PORT: pl-error.c printMessagev as printMessage
+# (swipl-devel cbf4e189, src/pl-error.c:992-1063; printMessage :992-1002 is the varargs wrapper of printMessagev,
+# and the one function here is both)
 # DIVERGES: the message is a term reference holding it, laid out on the cells by the caller, where
 # upstream builds it from `PL_unify_term` arguments into `av+1` (f3b-4): `av+1` is unified with it. The
 # severity is the atom of the Symbol. `fatalError` (upstream ends the process) is a Julia `error` naming

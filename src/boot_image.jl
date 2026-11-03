@@ -53,18 +53,6 @@ struct BootImageSourceFile
     modules::Vector{String}
 end
 
-# The `number_of_clauses` case of pl-proc.c's pl_get_predicate_attribute, read straight from the definition: the count is the port
-# `num_visible_clauses` (src/pl-proc.jl), the attribute fails for a foreign predicate and for a static one with no clause.
-"The `number_of_clauses` attribute of `def`, or `nothing` where upstream's attribute fails (pl-proc.c:3648-3658)."
-function _predicate_number_of_clauses(
-    gd::PL_global_data{T}, def::Definition{T}
-)::Union{Nothing, Int} where {T}
-    (def.flags & P_FOREIGN) != 0 && return nothing
-    n = num_visible_clauses(gd, def, false)
-    (n == 0 && (def.flags & P_DYNAMIC) == 0) && return nothing
-    return n
-end
-
 """
     boot_image_predicates(gd) -> Vector{BootImagePredicate}
 
