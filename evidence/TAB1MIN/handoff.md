@@ -112,6 +112,65 @@ outside VMI_RUN, and the named-refusal bodies of S_CALLWRAPPER/S_TABLED/S_WRAP c
   tbl_set_incremental_predicate (calls freeCodesDefinition!), set_bool_attr, tbl_set_predicate_attribute.
 - src/pl-proc.jl: `$set_predicate_attribute` tabling branch BEFORE `get_bool_or_int_ex` (upstream order: pl-proc.c:3864-3868; value may be `infinite`),
   `$get_predicate_attribute` calls tbl_get_predicate_attribute (was `FFALSE`), resetProcedure! clears the properties.
-  unallocDefinition (pl-proc.c:264) has no kernel counterpart (Julia's GC): the `def->tabling` free is not needed.
+  unallocDefinition (pl-proc.c:264): Julia's GC frees the properties; no hook is written.
 - NOT done in T2: `_tbl_is_predicate_attribute` stays in pl-proc.jl (already there, unchanged); the blob type and `initWrap!` come with T4.
 - The struct changes (definition.tabling, PL_global_data.closure_refs) restart the daemon: cold compile at the gate.
+- T2 commit: 921d1eb. (A reworded comment in pl-proc.jl: the absence-claim hook fires on a re-flowed old comment that holds the phrase for
+  a not-ported item; the new text says "left to a transactions step".)
+- T2 rows (swipl-compared `$set_predicate_attribute` / `$get_predicate_attribute` of tabled, tabled_variant, incremental, abstract
+  infinite/integer, the type error of a non-bool, and the resetProcedure clear) are NOT WRITTEN: a `tmt`-style group `tma` in gen_rows.py.
+
+### STATE at the forced hand-back of writer 2 (context cap): T2 committed; T4, T5, T3, rows, mutants, manifest, docs NOT WRITTEN
+ENG3 has NOT landed (origin/main still f08167f at writer 2's start): T3 (opcodes S_CALLWRAPPER/S_TABLED/S_WRAP, `wrapper` field of
+PL_code_data, pl-wam.jl bodies) was not touched. T4 and T5 need T3's names (`S_CALLWRAPPER`, `S_TABLED`, `code_data.wrapper`).
+
+#### What writer 2 READ for T4 (signatures; all UNVERIFIED against a run)
+- Upstream pl-wrap.c at the pin: write_closure prints `<closure>(%s)` with predicateName; unify_closure :132-142; skipWrapperPrefix :170-187;
+  unregisterWrappedSupervisor :190-203; resetWrappedSupervisor :205-226; find_wrapper :228-243; assert_wrapper :246-278; unify_wrapped :280-319;
+  wrapper_vmi :322-332; c_wrap_predicate :337-403; initWrap :558 (`PL_register_blob_type(&_PL_closure_blob)`, called at pl-setup.c:152, after initDBRef).
+- `closure` is NOT in ATOMS: `PL_register_blob_type(atoms, closure_blob)` (third argument defaulted) makes the atom by `lookupAtom` as upstream's
+  `PL_new_atom(type->name)`. Plan: `const closure_blob = PL_blob_t(PL_BLOB_UNIQUE, "closure")` in src/pl-wrap.jl, `initWrap!(atoms)` called in the
+  PL_global_data constructor (src/pl-global.jl) right after `initDBRef!(atoms)` (line ~160). Stale-pin risk: a test that counts atoms of a fresh database
+  (test_atom_table.jl) or pins atom indexes: grep before the gate.
+- Blob idiom (src/pl-dbref.jl:140-150, 112-125): `bytes = _clref_bytes(serial)`; `w, new = lookupBlob(gd.atoms, bytes, length(bytes), clause_blob)`;
+  `a = _blob_term!(gd.atoms, gd.atom_symbols, T, w)`; read back `atomValue(gd.atoms, blob_handle(a)).type === closure_blob`, `serial = reinterpret(Int64, at.name[1:8])[1]`,
+  `gd.closure_refs[Int(serial)]`. An atom word is `UInt64` and `code = UInt64` (pl-incl.jl:51), so a wrapper supervisor can hold the words directly:
+  `code[S_CALLWRAPPER_or_S_TABLED, code(1), w_closure, _atom_word!(ld, wname)]` with crefs `[cref]` (operand 1 = index into the side table, as S_LIST's
+  `code(1), code(2)` in src/pl-supervisor.jl:160). `_atom_word!(ld::PL_local_data{T}, v::T)` is src/pl-inline.jl:257; `_atom_value(ld, w)` :272.
+- Supervisor install idiom: `codes, crefs = chainPredicateSupervisor(def, (codes, crefs))`; then `def.codes = def.code_data.virgin; def.codes, def.codes_crefs = codes, crefs`
+  (setDefaultSupervisor, pl-supervisor.jl:~270, sets `def.codes`/`def.codes_crefs` directly; setSupervisor/allocCodes are replaced by that assignment).
+- `get_procedure(gd, ld, descr, GP_DEFINE, head_term_ref)` returns the Procedure or `nothing` (pl-proc.jl:1376; the 5th argument receives the stripped head).
+- `assert_term!(gd, ld, term, module_, where_, owner, loc, flags)` (pl-comp.jl:4032): call `assert_term!(gd, ld, A5, 0, CL_END, nothing, nothing, 0)`; returns the
+  Clause{T} or `nothing`. The clause's predicate: check the `clause{T,D}` field name (`predicate`) at pl-incl.jl (~line 1010-1030, NOT READ).
+  The ClauseRef of the clause: walk `def.impl_clauses.first_clause` until `cref.clause === cl` (as assert_wrapper does).
+- `retractClauseDefinition!(gd, def, clause, notify)` (pl-proc.jl:588, no ld) or `(gd, ld, def, clause, notify)` (:596): upstream passes `false` for notify.
+- `pushPredicateAccessObj!(ld, gd, def)` (pl-thread.jl:38, NOTE the argument order ld, gd) and `popPredicateAccess!(ld, def)`; `acquire_def/release_def` are threads-only
+  (left out), the loop scanning for the cref sits between push and pop.
+- unify_wrapped plan: `PL_get_name_arity(ld, ...)` (pl-fli.jl:532, signature NOT READ) or `_cp_get_functor(ld, head)` (pl-proc.jl:2276) for (name, arity); for arity > 0
+  `t = PL_new_term_ref(ld)`; `PL_unify_functor(ld, t, closure_term::T, arity)` (pl-fli.jl:171: name is the T blob term, `_atom_word!` takes the blob branch),
+  then per argument `_PL_get_arg(ld, i, head, tmp)` + `PL_unify_arg(ld, i, t, tmp)`, then `PL_unify(ld, wrapped, t)`; for arity 0 `PL_unify_atom(ld, wrapped, closure_term)`.
+- unify_closure plan: copy = `definition{T}(def.functor_name, def.arity, ClauseList{T}() [set its `args` field to def.impl_clauses.args], def.flags, def.name,
+  def.code_data.wrapper [T3], ClauseRef{T}[], def.code_data, def.impl_foreign_function, def.module_, def.shared)`; set `copy.tabling = def.tabling`, `copy.events = def.events`;
+  `closure{T}(copy, def, supervisor, supervisor_crefs)`; push to `gd.closure_refs`, payload `_clref_bytes`-style (own `_closure_bytes`).
+- OPEN, the gate decides: whether `compileClause`/`export_cells` accept a compound whose head is a BLOB (the wrapper clause body holds `<blob>(Args...)` as an argument of
+  `start_tabling/3`, syspred.pl:1717-1732; it is data, not a goal). The term interface allows it; NOT READ in pl-comp.jl/export_cells.
+- Printing `<closure>(m:p/1)`: the writer has no blob hook: DIVERGES row, UNVERIFIED.
+
+#### Left, in order
+1. T4 src/pl-wrap.jl (NEW, `# allow-new-artifact:` line): closure_blob, initWrap!, unify_closure, get_closure_predicate, find_wrapper, assert_wrapper, unify_wrapped, wrapper_vmi,
+   pl_c_wrap_predicate5_va (PL_FA_TRANSPARENT|PL_FA_VARARGS) and `PL_predicates_from_wrap`; include after pl-tabling.jl in src/LogicKernel.jl; append the table to `_PRED_TABLES`/`_FOREIGN_VA` in
+   src/pl-ext.jl as T1 did (grep the T1 diff `git show 0f8e0bd -- src/pl-ext.jl src/LogicKernel.jl`); call `initWrap!(atoms)` in pl-global.jl after initDBRef!.
+2. T5 src/pl-supervisor.jl: `isCallWrapper`, `skipWrapperPrefix`, `unregisterWrappedSupervisor` (no-op: no atom refcounts), `resetWrappedSupervisor`, and the wrapper branch of
+   `freeCodesDefinition!` (pl-supervisor.c:108-129 at the pin, NOT READ by writer 2; the current function is lines 52-64 of src/pl-supervisor.jl), dropping the DIVERGES text above it
+   and the header lines 21-24; a white-box row: install a wrapper, add a clause (tabling.pl:2358 shape), the wrapper survives (must FAIL without T5).
+3. T3 after ENG3 lands (`git -C /home/shivaji1012/code/lk-tab1 fetch origin`, `git rebase origin/main`): opcodes in src/pl-vmi.jl at the PIN's VMI order, `_CODE_TABLE` rows,
+   `wrapper` field of PL_code_data (pl-incl.jl:~770) + `initSupervisors` (pl-supervisor.jl:36, `code[S_WRAP, I_EXIT]`) + the PL_code_data(...) literal at src/pl-global.jl:~611 (a 6-block literal in the
+   idle index_context: needs the 7th), run-loop bodies in pl-wam.jl as named refusals. Keep one declared opcode outside VMI_RUN (test/foreign/test_query.jl:305-330).
+4. rows tmt23+ (generator in evidence/TAB1MIN/gen_rows.py, `_TM_CASES`; groups tmw, tmc, tma), the non-vacuity prefix list; tools/mutants/TAB1MIN.py (>= 8 mutants over T1/T2/T4/T5, TARGETS =
+   test_tabling_min_swipl.jl + test_pr1_swipl.jl (the getter row pr93) + every file the changed code reaches, `grep -L '@testset\|@test'` check); manifest entries at the END of `_manifest_index`
+   (T1: `LK.pl_tbl_trienode1_va`, `LK.pl_tbl_is_trienode1_va`; T2: `clear_table_props!`, `tbl_reset_tabling_attributes!`, `get_predicate_table_props!`, `tbl_get_predicate_attribute`, `get_size_or_inf`,
+   `tbl_set_incremental_predicate`, `set_bool_attr`, `tbl_set_predicate_attribute`); docs/architecture.md block at the END (rows for src/pl-tabling.jl, src/pl-wrap.jl).
+5. READY-FOR-GATE list (D-order): inventory, fmt via warm.sh send, check (cold compile: struct change), rows x3 + type discipline + every file calling definition/closure code (grep -l), manifest, pkgtest_way
+   one file at a time, alloc pins x3 (239/377/433; test_query 347 old main / 365 after ENG3), static_analysis (JET + AllocCheck), term grep, gate/tab1min + mutants/TAB1MIN at the same SHA.
+   Expected effect on the T3 pin: `$init_goal/3` 2 -> 7 and load.pl's list reaching user:topvars; tabling.pl cannot be read before RDDICT (`#{}` :1280, `Dict0.put` :1373).
+Daemon state: writer 2 started none, ran no Julia.
