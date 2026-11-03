@@ -82,3 +82,18 @@ callers) · test/core_lang/test_local_stack.jl x3 · test/test_type_discipline.j
 branch) · static analysis (JET + AllocCheck on the new-term-ref path: an engine hot path, bench risk) · push
 `mutants/ENG3` at the WIP SHA · branch-gate · term grep over diff + messages · push gate/eng3 + mutants/ENG3 at one SHA ·
 battery after Evidence.
+
+## FINISHER (Sonnet, edit-only, no Julia) — LEFT items 1-3 done, item 4 still the gate's
+- ee22ed5 ADDED tools/mutants/ENG3.py (+ this handoff as it stood). The list needed ONE fix: mutate_ci.py `plan` reads a
+  module-level `TARGETS` (the baseline, and a push-triggered run's targets), which the file lacked; added
+  `TARGETS = TLD + [t for t in TAPI if t not in TLD]` (128 files, as MOD3b.py builds a union). The per-mutant
+  `targets=TLD` / `targets=TAPI` are accepted as they are: mutate_ci.py:130 and mutate_drive.py:194 read `m.get("targets")`
+  from the dict (the list names are only Python variables). Re-checked with a python3 -I runpy script: 11 mutants, every
+  `old` once, ids unique, old != new, all targets exist, `mutate_ci.py plan` prints matrix/count/targets (read, no Julia).
+- 97cddc1 MODIFIED test/static_analysis_manifest.jl: `(LK.PL_new_term_ref_api, Tuple{LD}, false)` and
+  `(LK.PL_new_term_refs_api, Tuple{LD, Int}, false)` after the RD1b block, inside `_manifest_index` where `LD` is spelled.
+- b2e06b5 DOC docs/architecture.md: the pl-fli.jl row reworded; ENG3 block appended at the end. docs/port_inventory.md not
+  touched (the gate runs `tools/warm.sh inventory`).
+- Commit hook: accepted all three commits (no marker was needed/created by me).
+- Gate agent: the new ENG3.py `old` strings were written before fmt (RE-FIT any that fmt rewraps); the baseline of the
+  mutation run is 128 files (long: if the budget is tight, give `targets` as the workflow input).
