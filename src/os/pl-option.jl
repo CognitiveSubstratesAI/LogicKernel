@@ -11,7 +11,7 @@
 # `type_error(list, L)`, a bad item `type_error(option, O)`, a bad value its type's error, an
 # unknown option ignored, warned about or a `domain_error`, as the flags or the `unknown_option`
 # flag say (swipl 10.1.16's default: `ignore`). NOT PORTED: option DICTS (`dict_options`: the kernel
-# reads no dicts, R1d), the option types no specification uses yet (`OPT_INT64`, `OPT_UINT64`,
+# reads no dicts, R1d), the option types no specification uses yet (`OPT_UINT64`,
 # `OPT_SIZE`, `OPT_DOUBLE`, `OPT_STRING`, `OPT_LOCALE`) — reaching one is an assertion, as upstream's
 # `assert(0)` for an unknown type.
 
@@ -38,6 +38,10 @@ function get_optval(
         return (true, bval)
     elseif type == OPT_INT
         i = PL_get_integer_ex(ld, val)
+        i === nothing && return (false, nothing)
+        return (true, i)
+    elseif type == OPT_INT64
+        i = PL_get_int64_ex(ld, val)
         i === nothing && return (false, nothing)
         return (true, i)
     elseif type == OPT_ATOM
