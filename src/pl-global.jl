@@ -444,6 +444,12 @@ ld_statistics() = ld_statistics(0, 0, 0, 0, WallTime(), 0.0, 0.0, 0.0, 0.0)
 # Since R2 F1c: `debugstatus_skiplevel`, `debugstatus_tracing`, `debugstatus_debugging`, `debugstatus_showContext` (`LD->_debugstatus`, pl-incl.h
 # `pl_debugstatus_t`; the flags `debug`, `debugger_show_context`: src/os/pl-prologflag.jl, `debugmode`, `tracemode`: src/pl-trace.jl).
 # (the input context stack is LB3's `input_context_stack`, which `'\$push_input_context'/1` shares; src/os/pl-file.jl).
+# Since R2 AUTOLOAD1 A2: `autoload_nesting` and `autoload_loop`, upstream's `LD->autoload.nesting` (a chain of `struct
+# definition_chain`, pl-incl.h:1780, the innermost first; here a vector, the innermost LAST, as `input_context_stack`) and
+# `LD->autoload.loop` (pl-global.h:897-899): the predicates the autoloader is loading, and the one it found itself looping on
+# (src/pl-proc.jl `autoLoader`, `test_autoload_loop`). Upstream sets both to NULL in `resetProlog` (pl-pro.c:89-90), a
+# function of the toplevel (`query_loop`), which the kernel LEFT OUT (src/pl-pro.jl header): here a new local data
+# starts empty and nothing resets it between queries (DIVERGES owner: the toplevel step).
 """
     PL_local_data{T}(gd)
 
@@ -590,6 +596,8 @@ mutable struct PL_local_data{T}
     event_delay_nesting::Int                                    # event.delay_nesting: how deeply is delay nested?
     event_hook_onthreadexit::Union{Nothing, event_list{T, definition{T}}}  # event.hook.onthreadexit: this thread's exit hook
     prompt_next::Bool                                           # prompt.next: the next read from user_input prompts (R2 LB5b)
+    autoload_nesting::Vector{definition{T}}                     # autoload.nesting: the autoloader's chain, the innermost last (R2 AUTOLOAD1 A2)
+    autoload_loop::Union{Nothing, definition{T}}                # autoload.loop: we are looping on this def (nothing: NULL)
 end
 function PL_local_data{T}(gd::PL_global_data{T}) where {T}
     e = mk_expr(T, T[])                         # any term: the idle placeholders' (index context, …)
@@ -686,7 +694,9 @@ function PL_local_data{T}(gd::PL_global_data{T}) where {T}
         nothing,                                # event.buffered: NULL
         0,                                      # event.delay_nesting
         nothing,                                # event.hook.onthreadexit: no listener yet (R2 EV1)
-        false                                   # prompt.next: false (pl-global.c: zero; set by set_stream's alias(user_input), R2 LB5b)
+        false,                                  # prompt.next: false (pl-global.c: zero; set by set_stream's alias(user_input), R2 LB5b)
+        definition{T}[],                        # autoload.nesting: NULL (R2 AUTOLOAD1 A2)
+        nothing                                 # autoload.loop: NULL
     )
     allocStacks!(ld)                            # the initial local stack, its spare reserved
     emptyStacks!(ld)
