@@ -2247,6 +2247,224 @@ function pl_current_predicate(
     return FFALSE
 end
 
+# ORIGINAL (PR1): the `clean:` label of pl-proc.c `current_predicate`, on a pool record: the table and module enumerations,
+# the acquired module, and the state itself. Every exit of the kernel's function after the record is made passes here.
+"Free what the `cur_enum` at index `idx` of `ld.cur_enums` holds, and the record itself."
+function _cur_enum_clean!(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, idx::Int
+)::Nothing where {T}
+    pool = ld.cur_enums
+    e = pool.states[idx]
+    e.emod != 0 && freeModuleEnum(gd, ld, e.emod)           # if ( e->emod ) freeModuleEnum(e->emod)
+    if e.module_ != 0 && e.macq                             # if ( e->module && e->macq ) releaseModule(e->module)
+        releaseModule(gd, ld, gd.modules[e.module_])
+    end
+    free_foreign_state!(pool, idx)                          # freeForeignState(e, sizeof(*e))
+    return nothing
+end
+
+# PORT: pl-proc.c current_predicate as pl_current_predicate1_va
+# (PRED_IMPL("current_predicate", 1, current_predicate, PL_FA_TRANSPARENT|PL_FA_NONDETERMINISTIC|PL_FA_ISO))
+# DIVERGES: the state is a record of the local data's pool (`ld.cur_enums`), its index the `REDO_PTR` context, made at the
+# start of the module set-up (upstream builds `e0` on the C stack and copies it at the end) and freed at every exit that follows
+# (upstream's `return false` after a first `advanceModuleEnum` or `acquireModule` that finds no module returns before its
+# `clean:`; here the module enumeration is freed); the procedure table is the keys at the moment a module's turn comes, in its
+# order (upstream's hash order), each looked up again when its turn comes. The database is the query's (`_query_gd`); the
+# modules are indices into its table.
+"`current_predicate(:PredicateIndicator)`: the predicates that are defined and visible, one per answer (pl-proc.c)."
+function pl_current_predicate1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    pool = ld.cur_enums
+    ctl = PL_foreign_control(PL__ctx)
+    gd = _query_gd(ld)
+    spec = PL__t0
+    mt = 0                                                  # term_t mt = 0: module-term
+    nt = 0                                                  # name-term
+    at = 0                                                  # arity-term
+    aextra = 0
+
+    if ctl != FRG_CUTTED
+        pi = PL_copy_term_ref(ld, spec)
+        nt = PL_new_term_ref(ld)
+        at = PL_new_term_ref(ld)
+
+        colon = mk_sym(T, :(:))
+        while PL_is_functor(ld, pi, colon, 2)
+            mt == 0 && (mt = PL_new_term_ref(ld))
+            _PL_get_arg(ld, 1, pi, mt)
+            _PL_get_arg(ld, 2, pi, pi)
+        end
+
+        if PL_is_functor(ld, pi, mk_sym(T, :/), 2)
+            _PL_get_arg(ld, 1, pi, nt)
+            _PL_get_arg(ld, 2, pi, at)
+        elseif PL_is_functor(ld, pi, mk_sym(T, Symbol("//")), 2)
+            _PL_get_arg(ld, 1, pi, nt)
+            _PL_get_arg(ld, 2, pi, at)
+            aextra = 2
+        elseif PL_is_variable(ld, pi)
+            a = PL_new_term_ref(ld)
+            fdiv = lookupFunctorDef(ld.functors, _atom_word!(ld, mk_sym(T, :/)), 2)
+            (a != 0 && PL_cons_functor(ld, a, fdiv, nt, at) && PL_unify(ld, pi, a)) ||
+                return FFALSE
+        else
+            PL_error(ld, ERR_TYPE, mk_sym(T, :predicate_indicator), spec)
+            return FFALSE
+        end
+    end
+
+    if ctl == FRG_FIRST_CALL
+        ename = PL_get_atom(ld, nt)
+        if ename === nothing && !PL_is_variable(ld, nt)
+            PL_error(ld, ERR_TYPE, mk_sym(T, :predicate_indicator), spec)
+            return FFALSE
+        end
+        earity = PL_get_integer(ld, at)
+        if earity !== nothing
+            if earity < 0
+                PL_error(ld, ERR_DOMAIN, mk_sym(T, :not_less_than_zero), at)
+                return FFALSE
+            end
+            earity += aextra
+        else
+            if !PL_is_variable(ld, at)
+                PL_error(ld, ERR_TYPE, mk_sym(T, :predicate_indicator), spec)
+                return FFALSE
+            end
+            earity = -1
+        end
+
+        idx = alloc_foreign_state!(pool)                    # e = allocForeignState; every field is set again
+        e = pool.states[idx]
+        e.name = ename
+        e.arity = earity
+        e.has_functor = ename !== nothing && earity >= 0    # e->functor = PL_new_functor(e->name, e->arity)
+        e.macq = false
+        e.module_ = 0
+        e.super = 0
+        e.has_epred = false
+        resize!(e.epred_keys, 0)
+        e.epred_next = 1
+        e.emod = 0
+
+        if mt != 0
+            if PL_is_variable(ld, mt)
+                e.emod = newModuleEnum(ld, 0)
+                mm = advanceModuleEnum(gd, ld, ld.module_enums.states[e.emod])
+                if mm === nothing
+                    _cur_enum_clean!(gd, ld, idx)
+                    return FFALSE
+                end
+                e.module_ = mm.index
+            else
+                mname = PL_get_atom_ex(ld, mt)
+                mm = mname === nothing ? nothing : acquireModule(gd, mname)
+                if mm === nothing
+                    _cur_enum_clean!(gd, ld, idx)
+                    return FFALSE
+                end
+                e.module_ = mm.index
+                e.macq = true
+            end
+        else
+            e.module_ = if ld.environment_frame != 0
+                contextModule(gd, ld, ld.environment_frame)
+            else
+                MODULE_user(gd).index
+            end
+            e.super = e.module_
+        end
+
+        if e.has_functor
+            if e.emod == 0                                  # fully specified
+                rval =
+                    visibleProcedure(gd, e.name::T, e.arity, gd.modules[e.module_]) !==
+                    nothing
+                _cur_enum_clean!(gd, ld, idx)
+                return rval ? FTRUE : FFALSE
+            end
+        else
+            e.has_epred = true                              # e->epred = newTableEnumWP(e->module->procedures)
+            append!(e.epred_keys, keys(gd.modules[e.module_].procedures))
+        end
+    elseif ctl == FRG_REDO
+        idx = PL_foreign_context_address(PL__ctx)           # e = CTX_PTR
+        e = pool.states[idx]
+    else                                                    # FRG_CUTTED
+        _cur_enum_clean!(gd, ld, PL_foreign_context_address(PL__ctx))
+        return FTRUE
+    end
+
+    system = sym_key(mk_sym(T, :system))
+    while true
+        mod = gd.modules[e.module_]
+        if e.has_functor                                    # _M:foo/2
+            if visibleProcedure(gd, e.name::T, e.arity, mod) !== nothing
+                PL_unify_atom(ld, mt, mod.atom)
+
+                mm = advanceModuleEnum(gd, ld, ld.module_enums.states[e.emod])
+                if mm !== nothing
+                    e.module_ = mm.index
+                    return PL_retry_address(idx)            # ForeignRedoPtr(e)
+                else
+                    _cur_enum_clean!(gd, ld, idx)
+                    return FTRUE
+                end
+            end
+        else
+            # e->epred enumerates the table of `e->super` once the walk moved to a super module (else of `e->module`)
+            tmod = e.super != 0 ? gd.modules[e.super] : mod
+            while e.epred_next <= length(e.epred_keys)      # advanceTableEnum(e->epred, &tk, &tv)
+                proc = get(tmod.procedures, e.epred_keys[e.epred_next], nothing)
+                e.epred_next += 1
+                proc === nothing && continue
+                fdname = proc.definition.name               # fd = valueFunctor(f)
+                fdarity = proc.definition.arity
+
+                if (e.name === nothing || sym_key(e.name::T) == sym_key(fdname)) &&
+                    (e.arity < 0 || e.arity == fdarity) &&
+                    fdarity >= aextra &&
+                    isDefinedProcedure(gd, proc)
+                    mt != 0 && PL_unify_atom(ld, mt, mod.atom)
+                    e.name === nothing && PL_unify_atom(ld, nt, fdname)
+                    e.arity < 0 && PL_unify_integer(ld, at, fdarity - aextra)
+
+                    return PL_retry_address(idx)            # ForeignRedoPtr(e)
+                end
+            end
+        end
+
+        if e.emod != 0                                      # enumerate all modules
+            mm = advanceModuleEnum(gd, ld, ld.module_enums.states[e.emod])
+            while mm !== nothing                            # skip hidden modules
+                (SYSTEM_MODE(ld) || mm.name == system || sym_key(mm.class) != system) &&
+                    break
+                mm = advanceModuleEnum(gd, ld, ld.module_enums.states[e.emod])
+            end
+            if mm !== nothing
+                e.super = e.module_ = mm.index
+            else
+                break
+            end
+        elseif !e.has_functor && e.super != 0 && !isempty(gd.modules[e.super].supers)
+            e.super = gd.modules[e.super].supers[1]         # advance to user-modules
+        # TBD upstream: handle multiple supers
+        else
+            break                                           # finished all modules
+        end
+
+        if !e.has_functor
+            resize!(e.epred_keys, 0)                        # freeTableEnum; newTableEnumWP(e->super->procedures)
+            append!(e.epred_keys, keys(gd.modules[e.super].procedures))
+            e.epred_next = 1
+        end
+    end
+
+    _cur_enum_clean!(gd, ld, idx)
+    return FFALSE
+end
+
 # PORT: pl-proc.c BeginPredDefs as PL_predicates_from_proc
 # DIVERGES: the entries of the predicates the kernel has ported; `PRED_DEF` ors in `PL_FA_VARARGS`.
 "pl-proc.c's registration table (`BeginPredDefs(proc)`): the ported entries."
@@ -2263,6 +2481,10 @@ const PL_predicates_from_proc = (
     PL_extension("\$get_clause_attribute", 3, pl_get_clause_attribute3_va, PL_FA_VARARGS),
     PL_extension(
         "retract", 1, pl_retract1_va,
+        PL_FA_TRANSPARENT | PL_FA_NONDETERMINISTIC | PL_FA_ISO | PL_FA_VARARGS
+    ),
+    PL_extension(
+        "current_predicate", 1, pl_current_predicate1_va,
         PL_FA_TRANSPARENT | PL_FA_NONDETERMINISTIC | PL_FA_ISO | PL_FA_VARARGS
     )
 )
