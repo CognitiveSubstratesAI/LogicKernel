@@ -20,9 +20,9 @@
 #   * B_UNIFY_VC's second path (AV3-W4): a small integer without a word, on a payload without `Int64`;
 #   * hk14 (a hook module inheriting from `user`, made by MOD1's `lookupModule`) and two rows beside it, live;
 #     hk14s / hk14t (two attributed variables, both modules `user`) answer for its hooks' order;
-#   * AV9's rows (deterministic/1, call_residue_vars/2: dt*, cr*, after AV8's; cr11 a known difference).
+#   * AV9's rows (deterministic/1, call_residue_vars/2: dt*, cr*, after AV8's; cr11 its own testset).
 # NOT AV3 ROWS: hk05, hk05b (a module that inherits from `user`: R2); hk22, hk23 (freeze/2: the AV7 rows, with
-# fz01-fz15, after the AV6 rows; frozen/2's rows a known difference at the end); hk10, hk11, hk13
+# fz01-fz15, after the AV6 rows; frozen/2's rows at the end); hk10, hk11, hk13
 # (`\=`, catch/3's catcher: foreignWakeup, AV4 — their rows here, more in test_attvar_wakeup.jl (the AV4 rows at its end)); hk20 (numbervars/4's
 # `attvar(bind)`: pl-prims.jl numberVars reads no attributed variable — AV5).
 # Every expected answer is swipl's: the tables were produced by running the programs under swipl 10.1.19 (the
@@ -1224,8 +1224,8 @@ end
 # fz01-fz15, hk22, hk23 of evidence/av/rows.tsv (swipl 10.1.18; goals verbatim), answers re-checked live by
 # `_wk_check_rows` (swipl 10.1.19). The fz rows' fixture there is `none`; the hooks fixture only adds `user`'s
 # attr_unify_hook/2 and log/1, which a `freeze` attribute never reaches. The frozen/2 rows (fz02, fz06, fz10,
-# fz11, fz13, fz14) wait for R2 (frozen/2 is library Prolog): each has a COMPANION here (`<id>g`) that reads the
-# same state through get_attr/3, attvar/1 or term_attvars/2, and is pinned as a known difference below.
+# fz11, fz13, fz14; frozen/2 is boot/attvar.pl's) are their own testset at the end: each has a COMPANION here
+# (`<id>g`) that reads the same state through get_attr/3, attvar/1 or term_attvars/2.
 const _WK_AV7 = [
     ("fz01", "freeze(X, R = done), X = 1", _ea("done")),
     ("fz03", "freeze(1, R = done)", _ea("done")),
@@ -1320,8 +1320,8 @@ const _WK_AV7 = [
     _wk_check_rows(_WK_AV7, "AV7 rows")
 end
 
-# AV8 — when/2's C half (pl-attvar.c `'$eval_when_condition'/2`, `'$suspend'/3`; when/2 library/when.pl's,
-# autoloaded since LB4 b2; a boot stand-in before). Rows wh05, wh06, wh07, wh10 of evidence/av/rows.tsv (goals verbatim) and the probe rows
+# AV8 — when/2's C half (pl-attvar.c `'$eval_when_condition'/2`, `'$suspend'/3`; when/2 the boot stand-in
+# `_boot_when!`, src/pl-ext.jl, a DIVERGES stand-in until trapUndefined autoloads: owner AUTOLOAD1). Rows wh05, wh06, wh07, wh10 of evidence/av/rows.tsv (goals verbatim) and the probe rows
 # we01-we20, su01-su08 of lk-channel evidence/AV8/swipl_probe_rows.pl (swipl 10.1.19; we21 probed separately); answers re-checked live by
 # `_wk_check_rows`. The other wh rows suspend a goal (trigger/2, library/when.pl) and wait for R2.
 _wk_ugoal(g::String) = _ec(":", _ea("user"), _ea(g))
@@ -1782,8 +1782,8 @@ end
 # option (nv01-nv03; pl-prims.c do_number_vars), hk20 (`attvar(bind)` wakes the hook at numbervars/4's exit
 # with `'$VAR'(0)`) and put_sort_list (msort/2, sort/2: an attributed variable sorts as a variable, before
 # atoms; a duplicate removed). Answers: swipl 10.1.19 under this file's fixture (re-checked by `_wk_check_rows`).
-# nv04 (`attvar(bind)` with module `a` and no hook: swipl raises existence_error in '$attvar':uhook/3) needs
-# R2's '$attvar' module: not a row here.
+# nv04 (`attvar(bind)` with module `a` and no hook: swipl raises existence_error in '$attvar':uhook/3) is its
+# own testset below (a program without the hooks fixture).
 const _WK_AV5 = [
     ("av18", "T = f(X,Y), put_attr(X,a,1), compare(R, X, Y), T = T", _ea(">")),
     (
@@ -1880,11 +1880,12 @@ const _WK_AV5 = [
 end
 
 # nv04 (rows.tsv, fixture none): numbervars/4's `attvar(bind)` on an attributed variable whose module `a` has no
-# hook. KNOWN DIFFERENCE (pending R2): swipl 10.1.19 raises existence_error(procedure, a:attr_unify_hook/2) with
-# context('$attvar':uhook/3, _) — the wakeup runs `'$attvar':uhook/3`, which needs R2's '$attvar' module (under
-# this file's hooks fixture the row would answer "no solution", user's attr_unify_hook/2 having no clause: a
-# program of its own, without the fixture). `_NV04_SWIPL` is swipl's answer, re-run live below; `_NV04_KERNEL` is
-# the kernel's answer, pinned on the kernel's behaviour.
+# hook. swipl 10.1.19 raises existence_error(procedure, a:attr_unify_hook/2) with context('$attvar':uhook/3, _) —
+# the wakeup runs `'$attvar':uhook/3`, boot/attvar.pl's (under this file's hooks fixture the row would answer "no
+# solution", user's attr_unify_hook/2 having no clause: a program of its own, without the fixture). Until LB4 b2 a
+# known difference (the kernel's boot stand-in ran a system-module uhook/3, so the context named system:uhook/3);
+# since LB4 b2 the booted database loads boot/attvar.pl in '$attvar' and the kernel answers swipl's. `_NV04_SWIPL`
+# is swipl's answer, re-run live below.
 const _NV04_GOAL = "put_attr(X,a,1), catch(numbervars(f(X), 0, _, [attvar(bind)]), error(Er, Ctx), true), R = Er/Ctx"
 const _NV04_SWIPL = _ec(
     "/",
@@ -1894,18 +1895,8 @@ const _NV04_SWIPL = _ec(
     ),
     _ec("context", _ec(":", _ea("\$attvar"), _pi("uhook", 3)), "V0")
 )
-# The kernel's answer (first run, 2026-10-27): the same existence_error, but the context's module is `system`:
-# context(system:uhook/3, _) — the kernel's wakeup runs a system-module `uhook/3`, not R2's `'$attvar'`.
-const _NV04_KERNEL = _ec(
-    "/",
-    _ec(
-        "existence_error", _ea("procedure"),
-        _ec(":", _ea("a"), _pi("attr_unify_hook", 2))
-    ),
-    _ec("context", _ec(":", _ea("system"), _pi("uhook", 3)), "V0")
-)
 
-@testset "nv04: numbervars/4 attvar(bind), module without a hook — a known difference pending R2's '\$attvar'" begin
+@testset "nv04: numbervars/4 attvar(bind), module without a hook — the wakeup's '\$attvar':uhook/3" begin
     f = joinpath(mktempdir(), "nv04.pl")
     write(f, "t0(R) :- $(_NV04_GOAL).\n")                # no hooks fixture: module `a` has no attr_unify_hook/2
     got = try
@@ -1914,7 +1905,7 @@ const _NV04_KERNEL = _ec(
         ["THROW", "t0 " * sprint(showerror, e)]
     end
     @test length(got) == 2 && got[1] == "ok"
-    @test get(got, 2, "missing") == _wk_line("t0", _NV04_KERNEL)
+    @test get(got, 2, "missing") == _wk_line("t0", _NV04_SWIPL)
     swipl = get(ENV, "LOGICKERNEL_NO_SWIPL", "") == "1" ? nothing : Sys.which("swipl")
     if swipl === nothing
         @info "AV5 nv04: swipl's answer not re-checked — `swipl` is not on PATH here."
@@ -1924,12 +1915,11 @@ const _NV04_KERNEL = _ec(
     end
 end
 
-# fz02, fz06, fz10, fz11, fz13, fz14 (rows.tsv, fixture none): frozen/2. KNOWN DIFFERENCE (pending R2; AV7 design
-# Q3 (a)): frozen/2 is library Prolog (boot/attvar.pl frozen/2 over '$attvar':portray_attvar/'$attvar' goals), not
-# ported before R2; the kernel raises existence_error(procedure, frozen/2). One program, each goal wrapped in
-# `catch(…, error(Er, _), R = Er)`; `_FZ_KD_KERNEL` is the kernel's answer (first run, 2026-10-28), pinned; the
-# third column is swipl's (rows.tsv, re-run live below). Their companions fz02g … fz14g are AV7 rows above.
-const _FZ_KD_KERNEL = _ec("existence_error", _ea("procedure"), _pi("frozen", 2))
+# fz02, fz06, fz10, fz11, fz13, fz14 (rows.tsv, fixture none): frozen/2, boot/attvar.pl's (over '$attvar' goals).
+# Until LB4 b2 a known difference (AV7 design Q3 (a): the kernel raised existence_error(procedure, frozen/2) before
+# the boot files loaded); since LB4 b2 the booted database loads boot/attvar.pl and the kernel answers swipl's.
+# One program, each goal wrapped in `catch(…, error(Er, _), R = Er)`; the third column is swipl's (rows.tsv,
+# re-run live below), the kernel's expected answer too. Their companions fz02g … fz14g are AV7 rows above.
 const _FZ_KD = [
     # swipl: R = freeze(X, user:true)
     (
@@ -1964,13 +1954,13 @@ const _FZ_KD = [
     ("fz14", "frozen(f(_), R)", _ea("true"))
 ]
 
-@testset "fz02/06/10/11/13/14: frozen/2 — a known difference pending R2 (library frozen/2)" begin
+@testset "fz02/06/10/11/13/14: frozen/2 — boot/attvar.pl's, booted since LB4 b2" begin
     @test length(_FZ_KD) == 6
     f, names = _wk_program(["catch(($g), error(Er, _), R = Er)" for (_, g, _) in _FZ_KD])
     got = kernel_lines(f, names)
     @test length(got) == 7 && got[1] == "ok"
-    for (i, (id, _, _)) in enumerate(_FZ_KD)
-        @test (id, get(got, i + 1, "missing")) == (id, _wk_line(names[i], _FZ_KD_KERNEL))
+    for (i, (id, _, r)) in enumerate(_FZ_KD)
+        @test (id, get(got, i + 1, "missing")) == (id, _wk_line(names[i], r))
     end
     swipl = get(ENV, "LOGICKERNEL_NO_SWIPL", "") == "1" ? nothing : Sys.which("swipl")
     if swipl === nothing

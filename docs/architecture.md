@@ -7227,3 +7227,5 @@ cbf4e189.
   path (the autoLoader branch of trapUndefined: pl-proc.c autoLoader/autoImport, the `autoload` flag, the call into
   boot/autoload.pl's `'$autoload'/1`), and the removal condition "trapUndefined autoloads": AUTOLOAD1 deletes it and
   runs the rows it flips.
+- **Rows that agree with swipl since the first boot**: test_attvar_wakeup.jl nv04 ('$attvar':uhook/3) and fz02, fz06,
+  fz10, fz11, fz13, fz14 (frozen/2) lost their known-difference pins and assert swipl's answer.
