@@ -3,7 +3,7 @@
 # (pl-tabling.c:6253-6277). Groups: tma = the tabling attributes of '$set_predicate_attribute'/3 and '$get_predicate_attribute'/3
 # (pl-tabling.c:10299-10393), tmw = '$c_wrap_predicate'/5 called directly (pl-wrap.c:337-403), tmc = clauses added to a wrapped
 # predicate while the file loads (boot/tabling.pl:2358 shape; pl-supervisor.c:108-129). The tmw and tmc rows (and the wrapper
-# white-box rows at the end) need the supervisor opcodes of T3 to load at all: UNVERIFIED until T3 has landed.
+# white-box rows at the end, among them T3's opcode rows) need the supervisor opcodes of T3, declared in the same step: UNVERIFIED until the gate.
 #   * A PROGRAM consulted by the kernel's loader and cases `t_<id>(R)` run in order in one database, each wrapped in
 #     `catch(Goal, error(SsuE, _), R = raised(SsuE))`; the driver is test_event_swipl.jl's (`enc`oded answers).
 #   * Every answer line is swipl's, PINNED (swipl 10.1.19-1-gcbf4e189, evidence/TAB1MIN/tm_rows.out, two byte-identical runs); with
@@ -350,6 +350,24 @@ end
 "Whether `def`'s supervisor is a wrapper: the first instruction after the prefix is a wrapper opcode."
 _tm_wrapped(def) = LK.isCallWrapper(def.codes[LK.skipWrapperPrefix(def.codes)])
 
+"Call `name/1` of the user module once with a fresh variable; the Julia exception the run loop raised, or `nothing`."
+function _tm_call_error(gd, ld, name::String)
+    proc = LK.isCurrentProcedure(sym_key(_tms(name)), 1, LK.MODULE_user(gd))
+    @assert proc !== nothing
+    fid = LK.PL_open_foreign_frame(ld)
+    a = LK.PL_new_term_refs(ld, 1)
+    LK.putSlotValue!(ld, a + 1, mk_var(_TM, LK.fresh_var_keys!(1)), LK.PutVarMap())
+    qid = LK.PL_open_query(gd, ld, nothing, LK.PL_Q_NORMAL, proc, a)
+    err = try
+        LK.PL_next_solution(gd, ld, qid)
+        nothing
+    catch e
+        e
+    end
+    LK.PL_close_foreign_frame(ld, fid)
+    return err
+end
+
 @testset "tabling minimum as swipl's (tmt, tma, tmw, tmc)" begin
     f, names = _tm_file()
     kl, gd, ld = _tm_kernel(f, names)
@@ -426,6 +444,55 @@ _tm_wrapped(def) = LK.isCallWrapper(def.codes[LK.skipWrapperPrefix(def.codes)])
         @test !LK.isCallWrapper(LK.S_VIRGIN)
         @test !LK.isCallWrapper(LK.S_TRUSTME)
         @test !LK.isCallWrapper(LK.S_MQUAL)
+    end
+
+    # T3: the three opcodes, the shared `wrapper` block and the run loop's named refusals (swipl keeps all of it in C: LK-only).
+    # UNVERIFIED on the kernel (nothing was compiled when these rows were written): the gate decides.
+    @testset "wrapper opcodes and the wrapper block (T3, LK-only)" begin
+        # pl-vmi.c order: S_WRAP (3560) before S_CALLWRAPPER (3624) before S_TABLED (3644); appended after B_ARG_VF
+        @test LK.S_WRAP == LK.B_ARG_VF + 1
+        @test LK.S_CALLWRAPPER == LK.S_WRAP + 1
+        @test LK.S_TABLED == LK.S_CALLWRAPPER + 1
+        @test LK.code(length(LK._CODE_TABLE) - 1) >= LK.S_TABLED     # the table has their rows
+        z = (0x00, 0x00, 0x00, 0x00)
+        iw = LK.codeTable(LK.S_WRAP)
+        @test iw.name === :S_WRAP && iw.arguments == 0 && iw.flags == 0x00 && iw.argtype == z
+        want = (LK.CA1_CLAUSEREF, LK.CA1_DATA, LK.CA1_DATA, 0x00)
+        for (op, nm) in ((LK.S_CALLWRAPPER, :S_CALLWRAPPER), (LK.S_TABLED, :S_TABLED))
+            ic = LK.codeTable(op)
+            @test ic.name === nm && ic.arguments == 3 && ic.flags == 0x00 && ic.argtype == want
+        end
+        # every operand word the wrapper supervisors write is counted: a decoder that steps `1 + arguments` lands after them
+        d01 = _tm_def(gd, "tm_w01")
+        wi = LK.skipWrapperPrefix(d01.codes)
+        @test wi + 1 + LK.codeTable(d01.codes[wi]).arguments == length(d01.codes) + 1
+        # the shared block (pl-supervisor.c MAKE_SV1(wrapper, S_WRAP)) is the closure copy's supervisor and is known by identity
+        cd = d01.code_data
+        @test cd.wrapper == LK.code[LK.S_WRAP, LK.I_EXIT]
+        @test all(b -> cd.wrapper !== b, (cd.exit, cd.virgin, cd.undef, cd.dynamic, cd.multifile, cd.staticp))
+        @test LK._shared_supervisor(cd, cd.wrapper)
+        @test !LK._shared_supervisor(cd, LK.code[LK.S_WRAP, LK.I_EXIT])
+        c01 = LK.closure_of_word(gd, d01.codes[wi + 2])::LK.closure
+        @test c01.def.codes === cd.wrapper
+        # the run loop executes them as named refusals (not as unknown instructions): the owner is named
+        for nm in (:S_WRAP, :S_CALLWRAPPER, :S_TABLED)
+            @test nm in LK.VMI_RUN
+        end
+        e = _tm_call_error(gd, ld, "tm_w02")                      # wrapped by tmw02: S_CALLWRAPPER
+        @test e isa LK.NotPortedError && occursin("S_CALLWRAPPER", e.what) && e.step == "WRAP1"
+        @test ld.query == 0 && ld.nqueries == 0
+        e = _tm_call_error(gd, ld, "tm_c05")                      # the `table` wrapper of a variant tabled predicate: S_TABLED
+        @test e isa LK.NotPortedError && occursin("S_TABLED", e.what) && e.step == "TAB1"
+        @test ld.query == 0 && ld.nqueries == 0
+        d03 = _tm_def(gd, "tm_w03")                               # S_WRAP is a closure copy's supervisor: enter it by hand
+        saved = d03.codes
+        d03.codes = d03.code_data.wrapper
+        e = _tm_call_error(gd, ld, "tm_w03")
+        d03.codes = saved
+        @test e isa LK.NotPortedError && occursin("S_WRAP", e.what) && e.step == "WRAP1"
+        @test ld.query == 0 && ld.nqueries == 0
+        # the first declared instruction outside the dispatch stays an unknown-instruction refusal (test/foreign/test_query.jl)
+        @test !(:I_NOP in LK.VMI_RUN)
     end
 end
 
