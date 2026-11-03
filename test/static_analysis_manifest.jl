@@ -2505,6 +2505,8 @@ function _manifest_index(T)
         (LK.get_event_listp, Tuple{GD, LD, Int}, false),
         (LK.event_atom_is, Tuple{T, Symbol}, false),
         (LK.event_name_is, Tuple{Union{Nothing, T}, T}, false),
+        (LK.event_arg, Tuple{Type{C}, Tuple{C, Int}, Int}, false),
+        (LK.event_arg, Tuple{Type{Int}, Tuple{C, Int}, Int}, false),
         (LK.prolog_unlisten, Tuple{GD, LD, Int, Int}, false),
         (LK.free_event_callback, Tuple{LK.event_callback{T, D}}, false),
         (LK.destroy_event_list!, Tuple{GD, LD, LK.event_location{T}}, false),

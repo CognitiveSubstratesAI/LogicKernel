@@ -305,8 +305,9 @@ end
 # DIVERGES: nothing to free (Julia's garbage collector; upstream frees the closure's cells and unregisters the name atom).
 "Free the callback `cb` (pl-event.c)."
 function free_event_callback(cb::event_callback)::Nothing
-    if cb.function_ == 0 && cb.closure !== nothing
-        free_fastheap(cb.closure)
+    clo = cb.closure
+    if cb.function_ == 0 && clo !== nothing
+        free_fastheap(clo)
     end
     return nothing
 end
@@ -349,8 +350,8 @@ function prolog_unlisten(
                 if (ev.procedure::Procedure{T}).definition === proc.definition
                     delete = true
                 end
-            elseif ev.closure !== nothing
-                if put_fastheap(ld, ev.closure, tmp) && PL_unify(ld, A2, tmp)
+            elseif (clo = ev.closure) !== nothing
+                if put_fastheap(ld, clo, tmp) && PL_unify(ld, A2, tmp)
                     delete = true
                 elseif PL_exception(ld, 0) != 0
                     PL_close_foreign_frame(ld, fid)
@@ -448,10 +449,10 @@ function call_event_list(
         for ev in copy(list.callbacks)
             if ev.function_ != 0
                 rc = false                                  # a C function: TH1's
-            elseif ev.closure !== nothing
+            elseif (clo = ev.closure) !== nothing
                 rc =
                     rc && (
-                        put_fastheap(ld, ev.closure, argv) &&
+                        put_fastheap(ld, clo, argv) &&
                         PL_call_predicate(
                             gd, ld, gd.modules[ev.module_],
                             PL_Q_NODEBUG | PL_Q_PASS_EXCEPTION,
@@ -476,6 +477,15 @@ function call_event_list(
     return rc
 end
 
+# The values of an event are a tuple (upstream's `va_arg`s), read by `event_arg`: a value of another type is an error (a
+# type assertion on a tuple element of another type is a static error for JET, which sees only the one caller's tuple).
+"The `i`-th value of an event as a `X` (upstream's `va_arg(args, X)`)."
+@inline function event_arg(::Type{X}, args::Tuple, i::Int)::X where {X}
+    a = args[i]
+    a isa X || throw(ArgumentError("event value $i is not a $X"))
+    return a
+end
+
 # PORT: pl-event.c delayEvent
 # DIVERGES: the arguments are the event's values (`clause`, `offset` for the break events, `clause` for an erase, the procedure
 # for `PLEV_UNTABLE`), `va_arg`'s; no `acquire_clause` (the reference keeps the clause); upstream's `assert(0)` is `@assert`.
@@ -484,11 +494,13 @@ function delayEvent(ld::PL_local_data{T}, ev::Int, args...)::Bool where {T}
     if ld.event_buffered !== nothing
         if ev == PLEV_BREAK_EXISTS || ev == PLEV_BREAK || ev == PLEV_NOBREAK ||
             ev == PLEV_RETRACTNOBREAK
-            dev = delayed_event{T}(ev, args[1]::Clause{T}, args[2]::Int, nothing)
+            dev = delayed_event{T}(
+                ev, event_arg(Clause{T}, args, 1), event_arg(Int, args, 2), nothing
+            )
         elseif ev == PLEV_ERASED_CLAUSE
-            dev = delayed_event{T}(ev, args[1]::Clause{T}, 0, nothing)
+            dev = delayed_event{T}(ev, event_arg(Clause{T}, args, 1), 0, nothing)
         elseif ev == PLEV_UNTABLE
-            dev = delayed_event{T}(ev, nothing, 0, args[1]::Procedure{T})
+            dev = delayed_event{T}(ev, nothing, 0, event_arg(Procedure{T}, args, 1))
         else
             @assert false "delayEvent(): the event $ev cannot be delayed"
         end
@@ -599,21 +611,21 @@ function PL_call_event_hook_va(
     if ev == PLEV_ABORT
         # nothing to put
     elseif ev == PLEV_ERASED_CLAUSE
-        rc = PL_put_clref(gd, ld, av + 1, args[1]::Clause{T})           # object erased
+        rc = PL_put_clref(gd, ld, av + 1, event_arg(Clause{T}, args, 1))           # object erased
     elseif ev == PLEV_ERASED_RECORD
-        rc = PL_unify_recref(gd, ld, av + 1, args[1]::RecordRef{T})     # object erased
+        rc = PL_unify_recref(gd, ld, av + 1, event_arg(RecordRef{T}, args, 1))     # object erased
     elseif ev == PLEV_BREAK || ev == PLEV_BREAK_EXISTS || ev == PLEV_NOBREAK ||
         ev == PLEV_RETRACTNOBREAK
-        cl = args[1]::Clause{T}
-        offset = args[2]::Int
+        cl = event_arg(Clause{T}, args, 1)
+        offset = event_arg(Int, args, 2)
         rc = (
             PL_put_atom(
                 ld, av + 1,
                 mk_sym(
                     T, if ev == PLEV_BREAK
-                        :true
+                        Symbol("true")                  # (`:true` is the Bool)
                     elseif ev == PLEV_NOBREAK
-                        :false
+                        Symbol("false")
                     elseif ev == PLEV_RETRACTNOBREAK
                         :retract
                     else
@@ -625,7 +637,7 @@ function PL_call_event_hook_va(
             PL_put_intptr(ld, av + 3, offset)
         )
     elseif ev == PLEV_FRAMEFINISHED
-        rc = PL_put_frame(ld, av + 1, args[1]::Int)
+        rc = PL_put_frame(ld, av + 1, event_arg(Int, args, 1))
     elseif ev == PLEV_THREAD_START || ev == PLEV_THREAD_EXIT
         throw(
             NotPortedError{T}(
@@ -635,7 +647,7 @@ function PL_call_event_hook_va(
     elseif ev == PLEV_THIS_THREAD_EXIT
         # nothing to put
     elseif ev == PLEV_UNTABLE
-        proc = args[1]::Procedure{T}
+        proc = event_arg(Procedure{T}, args, 1)
         rc = unify_definition(
             gd, ld, MODULE_user(gd), av + 1, proc.definition, 0, GP_QUALIFY | GP_NAMEARITY
         )
