@@ -16,6 +16,8 @@
 # UPSTREAM: swipl-devel src/pl-event.c @ cbf4e1896275
 # UPSTREAM: swipl-devel src/pl-copyterm.h @ cbf4e1896275
 # UPSTREAM: swipl-devel src/pl-gvar.c @ cbf4e1896275
+# UPSTREAM: swipl-devel src/pl-tabling.h @ cbf4e1896275
+# UPSTREAM: swipl-devel src/pl-wrap.h @ cbf4e1896275
 # CLASS: code
 # COPYRIGHT: Copyright (c)  1985-2026, University of Amsterdam,
 # COPYRIGHT: VU University Amsterdam

@@ -302,4 +302,10 @@ origin/main fetched at start: STILL f08167f (ENG3 NOT landed): T3 NOT possible (
    args], unregisterWrappedSupervisor). Checked against `git diff f08167f HEAD -U0 -- src`: every new function/method has a row
    (the auto constructors of table_props [6 args] and closure/definition are structs' own). RISK for the gate: the 2-argument
    freeCodesDefinition! row (:1416) is `noalloc=true` and the method now contains a `throw(NotPortedError...)` branch: if AllocCheck
-   counts the throw path, flip that row to false (alloc pin).
+   counts the throw path, flip that row to false (alloc pin). Commit c9edf71.
+3. (docs) docs/architecture.md: rows for src/pl-tabling.jl (`src/pl-tabling.c`) and src/pl-wrap.jl (`src/pl-wrap.c`, `src/pl-wrap.h`)
+   after the pl-event.jl row of "What's here", the pl-incl.jl row gains `src/pl-tabling.h`, `src/pl-wrap.h`, and the block
+   "TAB1-min" at the END (ported, T3 NOT STARTED, DIVERGES 1-5 with owners [sizes as Int -1; lazy_queue; Q-A; writer blob hook; closure
+   = record], left out, ORIGINAL, tests/mutants). FOUND and FIXED: src/pl-incl.jl had `# PORT: pl-tabling.h` and `# PORT: pl-wrap.h`
+   markers but no matching UPSTREAM header lines (port_check MARKER-FILE-UNKNOWN): the two UPSTREAM lines are added to the file header.
+   docs/port_inventory.md NOT regenerated (the gate does; the inventory's counts and the new files' rows come with it).
