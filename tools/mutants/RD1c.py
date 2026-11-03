@@ -1,8 +1,10 @@
 # ORIGINAL: RD1's mutant list — no swipl-devel counterpart.
-# tools/mutants/RD1b.py — the mutation battery of RD1 (pl-read.c's stream-reading predicates: read_term/3,2 `pl_read_term3_va`,
+# tools/mutants/RD1c.py — the mutation battery of RD1 (pl-read.c's stream-reading predicates: read_term/3,2 `pl_read_term3_va`,
 # `pl_read_term2_va`, `$is_named_var/1` `pl_is_named_var1_va`, `pl_raw_read2`, `pl_raw_read`, `pl_read2`, `pl_read`, as registered in
 # src/pl-read.jl and src/pl-ext.jl), run ONCE, in CI (.github/workflows/mutation.yml; locally: tools/mutate.sh run). Format:
 # tools/mutate_drive.py's (as MOD3b.py): `id`, `file`, `old` (must occur EXACTLY once), `new`, optional `equivalent` and `targets`.
+# RD1c (audit D-0375): the file is the RD1b list renamed; the blob(Mode) mutants (F1-F10, F12) also name test_canonical_readatom_swipl.jl,
+# whose read_term_from_atom/3 rows reach the same code.
 # Killed by test/core_text/test_read_stream_swipl.jl (rows rt01-rt219, rt300-rt321 named in each id's KILL). Verdicts: written by the
 # battery, not yet run. RD1 is Tier 3 (registration, argument checks, error terms; no engine/reader/writer code): the battery is
 # advisory, the root suite is the gate.
@@ -23,7 +25,9 @@ TS = ["test/core_text/test_read_stream_swipl.jl"]
 TARGETS = TS   # the baseline's (mutate_ci.py plan reads TARGETS)
 W = "src/pl-read.jl"
 X = "src/pl-ext.jl"
-TB = TS + ["test/core_text/test_read.jl", "test/core_text/test_read_term_swipl.jl"]
+TC = ["test/core_text/test_canonical_readatom_swipl.jl"]   # read_term_from_atom/3 shares read_term_from_stream and the blob(Mode) scan (RD1c, audit D-0375)
+TB = TS + TC + ["test/core_text/test_read.jl", "test/core_text/test_read_term_swipl.jl"]
+TF = TS + TC
 
 
 def m(id, old, new, targets=TS, equivalent=None, file=W):
@@ -116,16 +120,20 @@ MUTANTS = [
       targets=TB),
     m("RD1-F7 blob(dead) is read as blob(error) (KILL rt320)",
       "        rd.blobs = :dead\n",
-      "        rd.blobs = :error\n"),
+      "        rd.blobs = :error\n",
+      targets=TF),
     m("RD1-F8 blob(resolve) is read as blob(error) (KILL rt321)",
       "        rd.blobs = :resolve\n",
-      "        rd.blobs = :error\n"),
+      "        rd.blobs = :error\n",
+      targets=TF),
     m("RD1-F9 another atom as the blob mode is accepted (KILL rt307, rt318)",
       "        return PL_put_atom(ld, v, a) && PL_error(ld, ERR_DOMAIN, mk_sym(T, :blob), v)\n",
-      "        return true\n"),
+      "        return true\n",
+      targets=TF),
     m("RD1-F10 read_term's blob option is never applied (KILL rt307, rt320, rt321)",
       "    opt_blobs !== nothing && !atom_to_blob_mode_ex(ld, rd, opt_blobs::T) && return false\n",
-      "    opt_blobs !== nothing && false && return false\n"),
+      "    opt_blobs !== nothing && false && return false\n",
+      targets=TF),
     m("RD1-F11 read_clause's blob option is never applied (KILL rt318)",
       "            if opt_blobs !== nothing && !atom_to_blob_mode_ex(ld, rd, opt_blobs::T)\n",
       "            if false && !atom_to_blob_mode_ex(ld, rd, opt_blobs::T)\n"),

@@ -21,9 +21,11 @@
 #     excluded by name and counted; upstream fix 7f8024cc7 gives the text read, and the exclusion is gone.)
 #   * CYCLIC TERMS WRITTEN (group F, D-0123: `PL_factorize_term`; until then write_canonical of a
 #     cyclic term was refused, decision 4a): 27 goals — three shapes and more, every writer.
-#   * THE REFUSALS, explicit: comments, var_prefix, quasi_quotations (R2), unicode_atoms, blob —
+#   * THE REFUSALS, explicit: comments, var_prefix, quasi_quotations (R2), unicode_atoms —
 #     each `NotPortedError`. term_position and subterm_positions are honoured since LB1 (compared
-#     with swipl in test_read_positions_swipl.jl).
+#     with swipl in test_read_positions_swipl.jl). blob(Mode) is ported since RD1b (pl-read.c
+#     atom_to_blob_mode_ex): its modes and its domain/type/instantiation errors are compared with
+#     swipl in "the hand goals" and pinned in "blob(Mode)" below.
 using Test, LogicKernel, Random
 const LK = LogicKernel
 
@@ -316,7 +318,17 @@ const _CR_GOALS = [
     "read_term_from_atom('f(X', T, [syntax_errors(dec10)]), read_term_from_atom('g(y)', T2, []), write(T-T2)",
     "write_canonical(f(" * join(fill("X", 300), ",") * "))",
     "write_canonical([" * join(["'\$VAR'($k)" for k in 1:300], ",") * "])",
-    "write_canonical(f(" * join(["V$k" for k in 1:300], ",") * "))"
+    "write_canonical(f(" * join(["V$k" for k in 1:300], ",") * "))",
+    # blob(Mode) (RD1b; pl-read.c atom_to_blob_mode_ex): the three modes, then the mode errors
+    "read_term_from_atom('f(X)', T, [blob(error)]), write(T)",
+    "read_term_from_atom('f(X)', T, [blob(dead)]), write(T)",
+    "read_term_from_atom('f(X)', T, [blob(resolve)]), write(T)",
+    "read_term_from_atom('f(X)', T, [blob(x)])",
+    "read_term_from_atom('f(X)', T, [blob(_)])",
+    "read_term_from_atom('f(X)', T, [blob(1)])",
+    "read_term_from_atom('f(X)', T, [blob(\"dead\")])",
+    # (`<a>(f)` read in dead/resolve mode is the DIVERGES of RD1b: upstream builds a dead blob, the kernel refuses; rows rt320/rt321)
+    "read_term_from_atom('<a>(f)', T, [blob(error)])"
 ]
 
 # read_term_from_atom/3 with cycles(true): the template instantiated (group F, D-0123). The cyclic
@@ -575,8 +587,7 @@ end
 
 @testset "the refusals: read options the kernel cannot honour" begin
     for o in
-        ("comments(_)", "var_prefix(true)", "quasi_quotations(_)", "unicode_atoms(nfc)",
-        "blob(x)")
+        ("comments(_)", "var_prefix(true)", "quasi_quotations(_)", "unicode_atoms(nfc)")
         r, _ = _cr_run(
             "read_term_from_atom",
             _CR[_crs("f(X)"), _cr_var(), _cr_read("[" * o * "]")::_CR]
@@ -586,6 +597,22 @@ end
     # (a cyclic term's canonical text was refused here until group F, D-0123 — `X = f(X),
     # write_canonical(X)` gave `r[3] == "NOTPORTED"`; it is written as swipl writes it since, and
     # compared with swipl in "writing a cyclic term, as swipl")
+end
+
+@testset "blob(Mode): ported (RD1b), the mode errors are swipl's (pl-read.c atom_to_blob_mode_ex)" begin
+    # swipl 10.1.19: blob(x) -> error(domain_error(blob,x),context(system:read_term_from_atom/3,_));
+    # blob(_) -> instantiation_error; blob(1), blob("dead") -> type_error(atom,...); error/dead/resolve read f(X)
+    rfa(o) = _cr_run(
+        "read_term_from_atom",
+        _CR[_crs("f(X)"), _cr_var(), _cr_read("[" * o * "]")::_CR]
+    )[1][3]
+    ctx = ",context(system:read_term_from_atom/3,"
+    @test startswith(rfa("blob(x)"), "ex:error(domain_error(blob,x)" * ctx)
+    @test startswith(rfa("blob(_)"), "ex:error(instantiation_error" * ctx)
+    @test startswith(rfa("blob(1)"), "ex:error(type_error(atom,1)" * ctx)
+    for m in ("error", "dead", "resolve")
+        @test rfa("blob($m)") == "true"
+    end
 end
 
 @testset "numberVars: the bindings are undone after write_canonical; the frame is restored" begin
