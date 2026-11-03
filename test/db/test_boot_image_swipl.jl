@@ -153,12 +153,88 @@ const _BI_T3_CONFIG = Dict{String, Union{Nothing, Int}}(
 # The oracle's row of '$directive_mode_store'/1 (1 clause) is read INSIDE the driver's directive (init.pl:1741-1743);
 # the kernel's after the boot. Kept as swipl's: UNVERIFIED on the kernel: gate decides.
 
-# ---- THE KERNEL'S PINS (G9 fills each from the first boot run, with its cause; UNVERIFIED on the kernel: gate decides)
+# ---- THE KERNEL'S PINS (LB4 b2: the first boot run, reference, 2026-11-03; each with its cause; every list only shrinks).
+# THE TABLING CHAIN (docs/architecture.md, LB4 b2 checklist): boot/tabling.pl:2356 `:- table eval_subgoal_in_residual/2`
+# raises existence_error('$tabling':'$tbl_trienode'/1) in the booted kernel (pl-tabling.c:6259, deferred: owner LD12); the
+# message's translation calls '$dwim':'$dwim_predicate'/2 (pl-ext.c:156 -> pl-dwim.c:200, deferred: owner DBG1), whose
+# existence error escapes print_message/2 and '$load_file_list''s recovery. So tabling.pl's load ends at :2356 and load.pl's
+# consult list (boot/load.pl:74-75) ends before `user:topvars`. Upstream lines at swipl-devel cbf4e189.
 const _BI_KERNEL_ONLY = String[]          # rows the kernel defines that swipl's boot image does not (`t1` lines)
-const _BI_KERNEL_MISSING_PROLOG = String[] # swipl's Prolog (foreign 0) rows the kernel lacks after the config rewrite
-const _BI_KERNEL_COLUMNS = String[]       # rows on both sides whose columns differ: "KEY swipl-cols kernel-cols"
-const _BI_KERNEL_MISSING_FOREIGN = -1     # how many of swipl's foreign rows the kernel lacks (the list only shrinks)
-const _BI_KERNEL_MODULES_LACKING = String[] # swipl's T1 modules the kernel's boot has no module (or no row) for
+const _BI_KERNEL_MISSING_PROLOG = sort!([ # sorted, as the guard compares; swipl's Prolog (foreign 0) rows the kernel lacks after the config rewrite
+    # the chain, tabling.pl after :2356: the `:- table` wrappers' facts '$tabled'/2, '$table_mode'/3 (tabling.pl:1315-1324,
+    # in the tabled head's module: $tabling for :2356, system for :2407-2411), eval_subgoal_in_residual/2 (:2363-2367),
+    # tripwire/3 (:2387-2390), tripwire_action/2 (:2394-2398), system:undefined/0, answer_count_restraint/0,
+    # radial_restraint/0, tabled_call/1 (:2417-2433)
+    "\$tabling:\$table_mode/3",
+    "\$tabling:\$tabled/2",
+    "\$tabling:eval_subgoal_in_residual/2",
+    "\$tabling:tripwire/3",
+    "\$tabling:tripwire_action/2",
+    "system:\$table_mode/3",
+    "system:\$tabled/2",
+    "system:answer_count_restraint/0",
+    "system:radial_restraint/0",
+    "system:tabled_call/1",
+    "system:undefined/0",
+    # pl-trie.c:4975-4987 (initTries): system:trie_gen_compiled/2,3, supervisor code, no clauses; deferred with the trie
+    # step (docs/r2_owners.tsv: trie_gen/2,3 -> TRIE1)
+    "system:trie_gen_compiled/2",
+    "system:trie_gen_compiled/3",
+    # the chain: boot/topvars.pl is never loaded
+    "toplevel_variables:\$replace_toplevel_vars/4",
+    "toplevel_variables:\$save_toplevel_vars/1",
+    "toplevel_variables:\$switch_toplevel_mode/1",
+    "toplevel_variables:assert_binding/2",
+    "toplevel_variables:assert_bindings/1",
+    "toplevel_variables:bind_vars/1",
+    "toplevel_variables:delete_bound_vars/3",
+    "toplevel_variables:delete_var/1",
+    "toplevel_variables:do_expand_vars/4",
+    "toplevel_variables:expand_args/7",
+    "toplevel_variables:expand_vars/4",
+    "toplevel_variables:expand_vars/5",
+    "toplevel_variables:name_var/3",
+    "toplevel_variables:print_query/2",
+    "toplevel_variables:print_toplevel_variables/0",
+    "toplevel_variables:rebind/1",
+    "toplevel_variables:retract_topvar/2",
+    "toplevel_variables:set_var/2",
+    "toplevel_variables:toplevel_var/2",
+    "toplevel_variables:update_var/2",
+    "toplevel_variables:v_member/2",
+    "toplevel_variables:verbose/0",
+    "toplevel_variables:verbose_expansion/1"
+])
+const _BI_KERNEL_COLUMNS = [              # rows on both sides whose columns differ: "KEY swipl-cols kernel-cols"
+    # dcg.pl:258 asserts one row per nonterminal translated first; topvars.pl's expand_vars//3, expand_args//5
+    # (topvars.pl:107-130, no other boot file defines them) are never translated (the chain)
+    "\$dcg:dcg_extend_cache/4 10100000 144 10100000 142",
+    # one row per tabled head: wrappers//3 emits `:- initialization('$wrap_tabled'(M:H, Opts), now)` (tabling.pl:1326,
+    # 1349), stored by '$compile_init_goal'(-, ..) (init.pl:750-751, 789-790); swipl's boot session (cbf4e189 build, -b)
+    # lists the kernel's two (toplevel.pl:1456, tabling.pl:300) and five '$wrap_tabled'/2 (tabling.pl:2356, 4 x :2407);
+    # the kernel never reaches the five (the chain)
+    "system:\$init_goal/3 10100000 7 10100000 2",
+    # one row per file load_files/2 loads (init.pl:3221-3231); topvars.pl's (from load.pl:75) is never asserted (the chain)
+    "system:\$load_context_module/3 10100000 23 10100000 22"
+]
+const _BI_KERNEL_MISSING_FOREIGN = 410    # swipl's foreign (C) rows in the boot modules the kernel registers later (R2 owners)
+const _BI_KERNEL_MODULES_LACKING = ["toplevel_variables"] # topvars.pl's module: never loaded (the chain)
+# T3, `(row, kernel, swipl)`: load.pl owns two '$load_context_module'/3 rows fewer (topvars.pl's: the chain; threads.pl's:
+# the single-thread configuration, load.pl:78-80, FLAG F6, which the T3 config rows leave in load.pl's count); tabling.pl
+# 272 clauses vs 293 (its rows after :2356); topvars.pl never loaded (the chain)
+const _BI_KERNEL_T3_DIFFER = [
+    (
+        2,
+        ("load.pl", "system", 1, 21, "false", "true", String[]),
+        ("load.pl", "system", 1, 23, "false", "true", String[])
+    ),
+    (
+        23,
+        ("tabling.pl", "system", 1, 272, "false", "true", ["\$tabling"]),
+        ("tabling.pl", "system", 1, 293, "false", "true", ["\$tabling"])
+    ),
+    (24, nothing, ("topvars.pl", "system", 1, 40, "false", "true", ["toplevel_variables"]))
+]
 
 "The oracle's T1/T3 with the configuration rows applied."
 function _bi_oracle()
@@ -246,19 +322,13 @@ end
     @test length(o3) == 24 && length(k3) > 20             # non-vacuity: 25 boot files in swipl, threads.pl left out
     @test all(r -> r[3] == 1 && r[6] == "true", o3)       # from source: loaded once, from_state (pl-srcfile.c:310)
     # THE GUARD: order, type, load_count, clauses, reloading, from_state, modules. UNVERIFIED on the kernel: gate decides.
-    if k3 != o3   # printed whole, to paste: the rows that differ, `(row, kernel, swipl)`
-        n = max(length(k3), length(o3))
-        get3(v, i) = i <= length(v) ? v[i] : nothing
-        println(
-            stderr,
-            "  PIN (T3): ",
-            repr([
-                (i, get3(k3, i), get3(o3, i)) for i in 1:n if get3(k3, i) != get3(o3, i)
-            ])
-        )
-    end
-    @test [r[1] for r in k3] == [r[1] for r in o3]
-    @test k3 == o3
+    n = max(length(k3), length(o3))
+    get3(v, i) = i <= length(v) ? v[i] : nothing
+    d3 = [(i, get3(k3, i), get3(o3, i)) for i in 1:n if get3(k3, i) != get3(o3, i)]
+    d3 == _BI_KERNEL_T3_DIFFER || println(stderr, "  PIN (T3): ", repr(d3))   # printed whole, to paste
+    @test !isempty(_BI_KERNEL_T3_DIFFER) && d3 == _BI_KERNEL_T3_DIFFER
+    # the files, in order: the kernel's 23 are swipl's first 23 (topvars.pl, the 24th, never loaded)
+    @test [r[1] for r in k3] == [r[1] for r in o3[1:(end - 1)]]
 end
 
 # ---- H12: the same Prolog text on both sides; the module list from the oracle's T1 rows
