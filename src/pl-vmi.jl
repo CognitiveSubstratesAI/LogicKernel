@@ -29,7 +29,10 @@
 # pl-vmi.c's order), then MOD4's meta-argument supervisors (`S_MQUAL`, `S_LMQUAL`: the module
 # qualification of a `meta_predicate` argument, in pl-vmi.c's order), then MOD3b's `Goal@Module`
 # calls (`I_DEPARTATM`, `I_CALLATM`, `I_DEPARTATMV`, `I_CALLATMV`, in pl-vmi.c's order), then ARGINL's
-# inline `arg/3` (`B_ARG_CF`, `B_ARG_VF`, in pl-vmi.c's order).
+# inline `arg/3` (`B_ARG_CF`, `B_ARG_VF`, in pl-vmi.c's order), then TAB1-min's wrapper supervisors
+# (`S_WRAP`, `S_CALLWRAPPER`, `S_TABLED`, in pl-vmi.c's order: pl-vmi.c:3560, :3624, :3644; the
+# continuation opcodes of another step append after or before them by the order of landing, the
+# second to land renumbers its own).
 #
 # NOT EMITTED, so not declared: H_SMALLINTW/B_SMALLINTW/L_SMALLINTW (only where a code word is
 # narrower than a word, `CODES_PER_WORD > 1`: on 64-bit swipl every tagged integer is a SMALLINT,
@@ -598,6 +601,15 @@ const B_ARG_CF = code(157)
 # PORT: pl-vmi.c B_ARG_VF
 "`arg(Var, Var, FirstVar)` inline in a body: operands the index variable, the compound's variable, the first variable (pl-vmi.c)."
 const B_ARG_VF = code(158)
+# PORT: pl-vmi.c S_WRAP
+"Supervisor of a closure's copy of a wrapped predicate: continue in the wrapped predicate's own supervisor (pl-vmi.c; TAB1-min declares it, the body is refused until WRAP1)."
+const S_WRAP = code(159)
+# PORT: pl-vmi.c S_CALLWRAPPER
+"Supervisor of a wrapped predicate: run the wrapper clause the operand names (pl-vmi.c); operands: the clause reference, the closure atom, the wrapper's name (TAB1-min declares it, the body is refused until WRAP1)."
+const S_CALLWRAPPER = code(160)
+# PORT: pl-vmi.c S_TABLED
+"Supervisor of the `table` wrapper of a variant tabled predicate: the answer trie of a complete table, else `S_CALLWRAPPER`; the operands are `S_CALLWRAPPER`'s (pl-vmi.c; TAB1-min declares it, the body is refused until TAB1)."
+const S_TABLED = code(161)
 
 # PORT: pl-incl.h code_info
 # DIVERGES: `arguments` counts the kernel's operand WORDS — a literal is one (see above), where
@@ -773,7 +785,10 @@ const _CODE_TABLE = (
     code_info(:I_DEPARTATMV, VIF_BREAK, 3, (CA1_MODULE, CA1_VAR, CA1_PROC, 0x00)),
     code_info(:I_CALLATMV, VIF_BREAK, 3, (CA1_MODULE, CA1_VAR, CA1_PROC, 0x00)),
     code_info(:B_ARG_CF, VIF_BREAK, 3, (CA1_INTEGER, CA1_VAR, CA1_FVAR, 0x00)),
-    code_info(:B_ARG_VF, VIF_BREAK, 3, (CA1_VAR, CA1_VAR, CA1_FVAR, 0x00))
+    code_info(:B_ARG_VF, VIF_BREAK, 3, (CA1_VAR, CA1_VAR, CA1_FVAR, 0x00)),
+    code_info(:S_WRAP, 0x00, 0, (0x00, 0x00, 0x00, 0x00)),
+    code_info(:S_CALLWRAPPER, 0x00, 3, (CA1_CLAUSEREF, CA1_DATA, CA1_DATA, 0x00)),
+    code_info(:S_TABLED, 0x00, 3, (CA1_CLAUSEREF, CA1_DATA, CA1_DATA, 0x00))
 )
 
 # PORT: pl-codetable.c codeTable

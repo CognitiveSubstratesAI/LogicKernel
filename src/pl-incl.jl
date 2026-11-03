@@ -778,6 +778,7 @@ struct PL_code_data
     dynamic::Vector{code}       # S_DYNAMIC
     multifile::Vector{code}     # S_MULTIFILE
     staticp::Vector{code}       # S_STATIC
+    wrapper::Vector{code}       # S_WRAP: the supervisor of a closure's copy of a wrapped predicate (TAB1-min)
 end
 
 # ── event lists (pl-event.h, pl-copyterm.h), since R2's EV1 ─────────────────────────────────────────

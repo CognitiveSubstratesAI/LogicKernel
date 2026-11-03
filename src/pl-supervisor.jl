@@ -19,12 +19,14 @@
 # Since V5a2, the deterministic foreign supervisors (`createForeignSupervisor`). Left out: the
 # non-deterministic ones (`I_FOPENNDET` …, V9), the tabling supervisors (`S_INCR_DYNAMIC`, `S_TRIE_GEN`) and
 # `S_THREAD_LOCAL` — none of their subsystems exists. Since TAB1-min (T3/T4/T5) the wrapper supervisors
-# (`S_CALLWRAPPER`, `S_TABLED`; src/pl-wrap.jl) are installed by `'$c_wrap_predicate'/5` and kept by `freeCodesDefinition!`.
+# (`S_CALLWRAPPER`, `S_TABLED`; src/pl-wrap.jl) are installed by `'$c_wrap_predicate'/5` and kept by `freeCodesDefinition!`;
+# `S_WRAP` and the shared `wrapper` block (`PL_code_data.wrapper`) belong to the closure's copy of the wrapped predicate;
+# the run loop refuses all three by name until a wrapped goal is called (WRAP1, TAB1).
 
 # PORT: pl-supervisor.c initSupervisors
 # DIVERGES: returns the database's shared blocks (one `PL_code_data` per database). Each is
-# upstream's `[I, I_EXIT]` without the length word; `incr_dynamic`, `thread_local`, `wrapper` and
-# `trie_gen` are not ported (see above).
+# upstream's `[I, I_EXIT]` without the length word; `incr_dynamic`, `thread_local` and `trie_gen` are
+# left out (see above); `wrapper` is TAB1-min's (T3).
 "The shared supervisor code blocks, each `[I, I_EXIT]` (pl-supervisor.c `initSupervisors`)."
 function initSupervisors()::PL_code_data
     return PL_code_data(
@@ -33,14 +35,16 @@ function initSupervisors()::PL_code_data
         code[S_UNDEF, I_EXIT],              # MAKE_SV1(undef, S_UNDEF)
         code[S_DYNAMIC, I_EXIT],            # MAKE_SV1(dynamic, S_DYNAMIC)
         code[S_MULTIFILE, I_EXIT],          # MAKE_SV1(multifile, S_MULTIFILE)
-        code[S_STATIC, I_EXIT]              # MAKE_SV1(staticp, S_STATIC)
+        code[S_STATIC, I_EXIT],             # MAKE_SV1(staticp, S_STATIC)
+        code[S_WRAP, I_EXIT]                # MAKE_SV1(wrapper, S_WRAP)
     )
 end
 
 # Whether `codes` is one of the database's shared blocks (upstream: its length word is 0).
 function _shared_supervisor(cd::PL_code_data, codes::Vector{code})::Bool
     return codes === cd.exit || codes === cd.virgin || codes === cd.undef ||
-           codes === cd.dynamic || codes === cd.multifile || codes === cd.staticp
+           codes === cd.dynamic || codes === cd.multifile || codes === cd.staticp ||
+           codes === cd.wrapper
 end
 
 # PORT: pl-supervisor.c freeSupervisor

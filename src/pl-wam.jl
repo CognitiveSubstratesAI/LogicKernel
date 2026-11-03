@@ -1796,7 +1796,8 @@ const VMI_RUN = (
     :I_FCALLNDET6, :I_FCALLNDET7, :I_FCALLNDET8, :I_FCALLNDET9, :I_FCALLNDET10,
     :I_CHP, :I_SSU_CHOICE, :I_SSU_COMMIT, :S_SSU_DET,
     :I_CONTEXT, :I_CALLM, :I_DEPARTM, :S_MQUAL, :S_LMQUAL,
-    :I_DEPARTATM, :I_CALLATM, :I_DEPARTATMV, :I_CALLATMV, :B_ARG_CF, :B_ARG_VF
+    :I_DEPARTATM, :I_CALLATM, :I_DEPARTATMV, :I_CALLATMV, :B_ARG_CF, :B_ARG_VF,
+    :S_WRAP, :S_CALLWRAPPER, :S_TABLED
 )
 
 "Jump to the label named after instruction `x`, one of those `table` names (a balanced tree of compares)."
@@ -4749,6 +4750,45 @@ function PL_next_solution_guarded(
     lmq_rc || @goto b_throw                         # if ( !rc ) THROW_EXCEPTION
     setContextModule!(ld.frames[FR], (ld.frames[FR].predicate::Definition{T}).module_)  # setContextModule(FR, FR->predicate->module)
     @goto next_instruction
+
+    # PORT: pl-vmi.c S_WRAP
+    # (pl-vmi.c:3560-3578 at the pin; TAB1-min T3.) The supervisor of a closure's copy of a wrapped predicate: take the wrapped
+    # predicate's own supervisor (creating it when it is still `S_VIRGIN`) and continue in it with the frame's predicate set to
+    # the wrapped one.
+    # DIVERGES: the body is a named refusal. Installing a wrapper (`'$c_wrap_predicate'/5`) never enters it; entering it needs a
+    # call through the closure (the closure branch of `I_CALL1`/`I_CALLN`, pl-vmi.c:5482-5520), which is deferred with it.
+    # Removal condition: a wrapped goal is called (owner WRAP1).
+    @label S_WRAP
+    throw(
+        NotPortedError{T}(
+            DEF.name, "the VM instruction S_WRAP (calling a wrapped predicate from a closure)", "WRAP1"
+        )
+    )
+
+    # PORT: pl-vmi.c S_CALLWRAPPER
+    # (pl-vmi.c:3624-3632 at the pin; TAB1-min T3.) The supervisor `'$c_wrap_predicate'/5` installs on a wrapped predicate: run the
+    # wrapper clause the first operand names (`TRUST_CLAUSE`), with the frame's predicate set to that clause's predicate.
+    # DIVERGES: the body is a named refusal (a wrapped predicate is never called before WRAP1); the operands (the clause
+    # reference, the closure atom, the wrapper's name) are laid out as `wrapper_vmi`'s caller writes them (src/pl-wrap.jl).
+    @label S_CALLWRAPPER
+    throw(
+        NotPortedError{T}(
+            DEF.name, "the VM instruction S_CALLWRAPPER (calling a wrapped predicate)", "WRAP1"
+        )
+    )
+
+    # PORT: pl-vmi.c S_TABLED
+    # (pl-vmi.c:3644-3665 at the pin; TAB1-min T3.) The supervisor of the `table` wrapper of a variant tabled predicate: when its
+    # table is complete (`tbl_complete_answer_clause`) run the answer trie as `trie_gen_compiled/2` in this frame, else continue as
+    # `S_CALLWRAPPER`, calling `start_tabling/3`.
+    # DIVERGES: the body is a named refusal: tables, tries and `trie_gen_compiled/2` are TAB1's. Removal condition: a tabled goal
+    # is called (owner TAB1).
+    @label S_TABLED
+    throw(
+        NotPortedError{T}(
+            DEF.name, "the VM instruction S_TABLED (calling a tabled predicate)", "TAB1"
+        )
+    )
 
     # ── deterministic foreign calls (pl-vmi.c; V5a2, decision 5) ─────────────────────────────────
     # PORT: pl-vmi.c I_FCALLDETVA
