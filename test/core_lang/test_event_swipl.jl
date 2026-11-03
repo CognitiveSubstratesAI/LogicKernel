@@ -86,7 +86,10 @@ function _ev_swipl_lines(path::String, names::Vector{String})::Vector{String}
             _EV_DRIVER * ":- initialization((fz_run('$path', [" * join(names, ",") *
             "]), halt)).\n"
         )
-        read(pipeline(addenv(`swipl -q $f`, "LC_ALL" => "C"); stdin=devnull, stderr=devnull), String)
+        read(
+            pipeline(addenv(`swipl -q $f`, "LC_ALL" => "C"); stdin=devnull, stderr=devnull),
+            String
+        )
     end
     return String.(split(chomp(out), '\n'; keepempty=false))
 end
@@ -114,8 +117,10 @@ ev1_r(Tag, Ref) :-
 ev1_rveto(Tag, Ref) :- ev1_r(Tag, Ref), fail.
 ev1_rthrow(Tag, Ref) :- ev1_r(Tag, Ref), throw(ev1_ball(Tag)).
 ev1_e(Tag, X) :- ev1_x(X, Y), assertz(ev1_log(Tag-erase-Y)).
+ev1_ethrow(Tag, X) :- ev1_e(Tag, X), throw(ev1_ball(Tag)).
+ev1_pair(P, Q, Act, X) :- ev1_t(P-Q, Act, X).
 ev1_get(R) :- findall(L, ev1_log(L), R).
-ev1_unl(E) :- ev1_unl(E, [ev1_a, ev1_b, ev1_t(_), ev1_veto(_), ev1_vend, ev1_throw(_), ev1_r(_), ev1_rveto(_), ev1_rthrow(_), ev1_e(_)]).
+ev1_unl(E) :- ev1_unl(E, [ev1_a, ev1_b, ev1_t(_), ev1_veto(_), ev1_vend, ev1_throw(_), ev1_r(_), ev1_rveto(_), ev1_rthrow(_), ev1_e(_), ev1_ethrow(_), ev1_pair(_, _)]).
 ev1_unl(_, []).
 ev1_unl(E, [C|Cs]) :- prolog_unlisten(E, C), ev1_unl(E, Cs).
 ev1_unl_all([]).
@@ -132,85 +137,292 @@ ev1_retall :- ( retract(ev1_p(_)), fail ; true ).
 # ev1p: events of a predicate; ev1o: order; ev1u: prolog_unlisten/2; ev1v: vetoes and exceptions; ev1e: bad options; ev1r: record
 # erase; ev1g: the clause GC.
 const _EV_CASES = [
-    ("ev1p01", raw"ev1_clear, prolog_listen(ev1_p/1, ev1_a), assertz(ev1_p(1)), ev1_get(R)"),
-    ("ev1p02", raw"ev1_clear, prolog_listen(ev1_p/1, ev1_a), asserta(ev1_p(1)), ev1_get(R)"),
+    (
+        "ev1p01",
+        raw"ev1_clear, prolog_listen(ev1_p/1, ev1_a), assertz(ev1_p(1)), ev1_get(R)"
+    ),
+    (
+        "ev1p02",
+        raw"ev1_clear, prolog_listen(ev1_p/1, ev1_a), asserta(ev1_p(1)), ev1_get(R)"
+    ),
     ("ev1p03", raw"ev1_clear, prolog_listen(ev1_p/1, ev1_a), assert(ev1_p(1)), ev1_get(R)"),
-    ("ev1p04", raw"ev1_clear, prolog_listen(ev1_p/1, ev1_a), assertz((ev1_p(X) :- ev1_q(X))), ev1_get(R)"),
-    ("ev1p05", raw"ev1_clear, assertz(ev1_p(1)), prolog_listen(ev1_p/1, ev1_a), retract(ev1_p(1)), ev1_get(R)"),
-    ("ev1p06", raw"ev1_clear, assertz(ev1_p(1)), assertz(ev1_p(2)), prolog_listen(ev1_p/1, ev1_a), ev1_retall, ev1_get(R)"),
-    ("ev1p07", raw"ev1_clear, assertz(ev1_p(1)), prolog_listen(ev1_p/1, ev1_a), ( retract(ev1_p(9)) -> true ; true ), ev1_get(R)"),
-    ("ev1p08", raw"ev1_clear, assertz(ev1_p(1), Ref), prolog_listen(ev1_p/1, ev1_a), erase(Ref), ev1_get(R)"),
-    ("ev1p09", raw"ev1_clear, assertz(ev1_p(1)), assertz(ev1_p(2)), assertz(ev1_p(1)), prolog_listen(ev1_p/1, ev1_a), retractall(ev1_p(1)), findall(X, ev1_p(X), Xs), ev1_get(L), R = Xs-L"),
-    ("ev1p10", raw"ev1_clear, prolog_listen(ev1_p/1, ev1_a), retractall(ev1_p(_)), ev1_get(R)"),
-    ("ev1p11", raw"ev1_clear, assertz(ev1_p(1)), prolog_listen(ev1_p/1, ev1_a), retractall(ev1_p(9)), ev1_get(R)"),
-    ("ev1p12", raw"ev1_clear, assertz(ev1_p(1)), assertz(ev1_p(2)), assertz(ev1_p(3)), prolog_listen(ev1_p/1, ev1_a), retractall(ev1_p(2)), findall(X, ev1_p(X), Xs), ev1_get(L), R = Xs-L"),
-    ("ev1p13", raw"ev1_clear, prolog_listen(ev1_u/1, ev1_a), retractall(ev1_u(_)), ev1_get(R)"),
-    ("ev1p14", raw"ev1_clear, prolog_listen(ev1_m:ev1_q/1, ev1_a), ev1_m:assertz(ev1_q(1)), ev1_get(R)"),
-    ("ev1p15", raw"ev1_clear, prolog_listen(ev1_p/1, ev1_a), assertz(ev1_q(1)), ev1_get(R)"),
-    ("ev1p16", raw"ev1_clear, prolog_listen(ev1_p(_), ev1_a), assertz(ev1_p(1)), ev1_get(R)"),
-    ("ev1p17", raw"ev1_clear, prolog_listen(ev1_p/1, ev1_a), prolog_unlisten(ev1_p/1, ev1_a), assertz(ev1_p(1)), ev1_get(R)"),
-    ("ev1p19", raw"ev1_clear, prolog_listen(ev1_p/1, ev1_a), assertz(ev1_p(1), Ref), erase(Ref), ev1_get(R)"),
-    ("ev1o01", raw"ev1_clear, prolog_listen(ev1_p/1, ev1_a), prolog_listen(ev1_p/1, ev1_b), assertz(ev1_p(1)), ev1_get(R)"),
-    ("ev1o02", raw"ev1_clear, prolog_listen(ev1_p/1, ev1_a, [as(last)]), prolog_listen(ev1_p/1, ev1_b, [as(last)]), assertz(ev1_p(1)), ev1_get(R)"),
-    ("ev1o03", raw"ev1_clear, prolog_listen(ev1_p/1, ev1_a), prolog_listen(ev1_p/1, ev1_b, [as(last)]), prolog_listen(ev1_p/1, ev1_t(c), [as(first)]), assertz(ev1_p(1)), ev1_get(R)"),
-    ("ev1o04", raw"ev1_clear, prolog_listen(ev1_p/1, ev1_t(one), [name(n)]), prolog_listen(ev1_p/1, ev1_t(two), [name(n)]), assertz(ev1_p(1)), ev1_get(R)"),
-    ("ev1o05", raw"ev1_clear, prolog_listen(ev1_p/1, ev1_a), prolog_listen(ev1_p/1, ev1_t(one), [name(n), as(last)]), prolog_listen(ev1_p/1, ev1_b, [as(last)]), prolog_listen(ev1_p/1, ev1_t(two), [name(n), as(first)]), assertz(ev1_p(1)), ev1_get(R)"),
-    ("ev1o06", raw"ev1_clear, prolog_listen(ev1_p/1, ev1_t(one), [name(n1)]), prolog_listen(ev1_p/1, ev1_t(two), [name(n2)]), assertz(ev1_p(1)), ev1_get(R)"),
-    ("ev1o07", raw"ev1_clear, prolog_listen(ev1_p/1, ev1_a), prolog_listen(ev1_p/1, ev1_a), assertz(ev1_p(1)), ev1_get(R)"),
-    ("ev1o08", raw"ev1_clear, prolog_listen(ev1_p/1, ev1_a, [as(first)]), prolog_listen(ev1_p/1, ev1_b, [as(first)]), assertz(ev1_p(1)), ev1_get(R)"),
-    ("ev1o09", raw"ev1_clear, prolog_listen(ev1_p/1, ev1_a, [name(n)]), prolog_listen(ev1_q/1, ev1_b, [name(n)]), assertz(ev1_p(1)), assertz(ev1_q(1)), ev1_get(R)"),
-    ("ev1o10", raw"ev1_clear, prolog_listen(ev1_p/1, ev1_a), prolog_listen(ev1_p/1, ev1_t(one), [name(n)]), prolog_listen(ev1_p/1, ev1_t(three), [name(n)]), assertz(ev1_p(1)), ev1_get(R)"),
-    ("ev1o11", raw"ev1_clear, prolog_listen(ev1_p/1, ev1_a, [name(n)]), prolog_listen(ev1_p/1, ev1_t(two), [name(n)]), assertz(ev1_p(1)), ev1_get(R)"),
-    ("ev1u01", raw"ev1_clear, prolog_listen(ev1_p/1, ev1_a), prolog_listen(ev1_p/1, ev1_b), prolog_unlisten(ev1_p/1, ev1_a), assertz(ev1_p(1)), ev1_get(R)"),
-    ("ev1u02", raw"ev1_clear, prolog_listen(ev1_p/1, ev1_t(1)), prolog_listen(ev1_p/1, ev1_t(2)), prolog_unlisten(ev1_p/1, ev1_t(1)), assertz(ev1_p(1)), ev1_get(R)"),
-    ("ev1u03", raw"ev1_clear, prolog_listen(ev1_p/1, ev1_t(1)), prolog_listen(ev1_p/1, ev1_t(2)), prolog_listen(ev1_p/1, ev1_a), prolog_unlisten(ev1_p/1, ev1_t(_)), assertz(ev1_p(1)), ev1_get(R)"),
-    ("ev1u04", raw"ev1_clear, prolog_listen(ev1_p/1, ev1_t(1)), prolog_unlisten(ev1_p/1, ev1_t), assertz(ev1_p(1)), ev1_get(R)"),
+    (
+        "ev1p04",
+        raw"ev1_clear, prolog_listen(ev1_p/1, ev1_a), assertz((ev1_p(X) :- ev1_q(X))), ev1_get(R)"
+    ),
+    (
+        "ev1p05",
+        raw"ev1_clear, assertz(ev1_p(1)), prolog_listen(ev1_p/1, ev1_a), retract(ev1_p(1)), ev1_get(R)"
+    ),
+    (
+        "ev1p06",
+        raw"ev1_clear, assertz(ev1_p(1)), assertz(ev1_p(2)), prolog_listen(ev1_p/1, ev1_a), ev1_retall, ev1_get(R)"
+    ),
+    (
+        "ev1p07",
+        raw"ev1_clear, assertz(ev1_p(1)), prolog_listen(ev1_p/1, ev1_a), ( retract(ev1_p(9)) -> true ; true ), ev1_get(R)"
+    ),
+    (
+        "ev1p08",
+        raw"ev1_clear, assertz(ev1_p(1), Ref), prolog_listen(ev1_p/1, ev1_a), erase(Ref), ev1_get(R)"
+    ),
+    (
+        "ev1p09",
+        raw"ev1_clear, assertz(ev1_p(1)), assertz(ev1_p(2)), assertz(ev1_p(1)), prolog_listen(ev1_p/1, ev1_a), retractall(ev1_p(1)), findall(X, ev1_p(X), Xs), ev1_get(L), R = Xs-L"
+    ),
+    (
+        "ev1p10",
+        raw"ev1_clear, prolog_listen(ev1_p/1, ev1_a), retractall(ev1_p(_)), ev1_get(R)"
+    ),
+    (
+        "ev1p11",
+        raw"ev1_clear, assertz(ev1_p(1)), prolog_listen(ev1_p/1, ev1_a), retractall(ev1_p(9)), ev1_get(R)"
+    ),
+    (
+        "ev1p12",
+        raw"ev1_clear, assertz(ev1_p(1)), assertz(ev1_p(2)), assertz(ev1_p(3)), prolog_listen(ev1_p/1, ev1_a), retractall(ev1_p(2)), findall(X, ev1_p(X), Xs), ev1_get(L), R = Xs-L"
+    ),
+    (
+        "ev1p13",
+        raw"ev1_clear, prolog_listen(ev1_u/1, ev1_a), retractall(ev1_u(_)), ev1_get(R)"
+    ),
+    (
+        "ev1p14",
+        raw"ev1_clear, prolog_listen(ev1_m:ev1_q/1, ev1_a), ev1_m:assertz(ev1_q(1)), ev1_get(R)"
+    ),
+    (
+        "ev1p15",
+        raw"ev1_clear, prolog_listen(ev1_p/1, ev1_a), assertz(ev1_q(1)), ev1_get(R)"
+    ),
+    (
+        "ev1p16",
+        raw"ev1_clear, prolog_listen(ev1_p(_), ev1_a), assertz(ev1_p(1)), ev1_get(R)"
+    ),
+    (
+        "ev1p17",
+        raw"ev1_clear, prolog_listen(ev1_p/1, ev1_a), prolog_unlisten(ev1_p/1, ev1_a), assertz(ev1_p(1)), ev1_get(R)"
+    ),
+    (
+        "ev1p19",
+        raw"ev1_clear, prolog_listen(ev1_p/1, ev1_a), assertz(ev1_p(1), Ref), erase(Ref), ev1_get(R)"
+    ),
+    (
+        "ev1o01",
+        raw"ev1_clear, prolog_listen(ev1_p/1, ev1_a), prolog_listen(ev1_p/1, ev1_b), assertz(ev1_p(1)), ev1_get(R)"
+    ),
+    (
+        "ev1o02",
+        raw"ev1_clear, prolog_listen(ev1_p/1, ev1_a, [as(last)]), prolog_listen(ev1_p/1, ev1_b, [as(last)]), assertz(ev1_p(1)), ev1_get(R)"
+    ),
+    (
+        "ev1o03",
+        raw"ev1_clear, prolog_listen(ev1_p/1, ev1_a), prolog_listen(ev1_p/1, ev1_b, [as(last)]), prolog_listen(ev1_p/1, ev1_t(c), [as(first)]), assertz(ev1_p(1)), ev1_get(R)"
+    ),
+    (
+        "ev1o04",
+        raw"ev1_clear, prolog_listen(ev1_p/1, ev1_t(one), [name(n)]), prolog_listen(ev1_p/1, ev1_t(two), [name(n)]), assertz(ev1_p(1)), ev1_get(R)"
+    ),
+    (
+        "ev1o05",
+        raw"ev1_clear, prolog_listen(ev1_p/1, ev1_a), prolog_listen(ev1_p/1, ev1_t(one), [name(n), as(last)]), prolog_listen(ev1_p/1, ev1_b, [as(last)]), prolog_listen(ev1_p/1, ev1_t(two), [name(n), as(first)]), assertz(ev1_p(1)), ev1_get(R)"
+    ),
+    (
+        "ev1o06",
+        raw"ev1_clear, prolog_listen(ev1_p/1, ev1_t(one), [name(n1)]), prolog_listen(ev1_p/1, ev1_t(two), [name(n2)]), assertz(ev1_p(1)), ev1_get(R)"
+    ),
+    (
+        "ev1o07",
+        raw"ev1_clear, prolog_listen(ev1_p/1, ev1_a), prolog_listen(ev1_p/1, ev1_a), assertz(ev1_p(1)), ev1_get(R)"
+    ),
+    (
+        "ev1o08",
+        raw"ev1_clear, prolog_listen(ev1_p/1, ev1_a, [as(first)]), prolog_listen(ev1_p/1, ev1_b, [as(first)]), assertz(ev1_p(1)), ev1_get(R)"
+    ),
+    (
+        "ev1o09",
+        raw"ev1_clear, prolog_listen(ev1_p/1, ev1_a, [name(n)]), prolog_listen(ev1_q/1, ev1_b, [name(n)]), assertz(ev1_p(1)), assertz(ev1_q(1)), ev1_get(R)"
+    ),
+    (
+        "ev1o10",
+        raw"ev1_clear, prolog_listen(ev1_p/1, ev1_a), prolog_listen(ev1_p/1, ev1_t(one), [name(n)]), prolog_listen(ev1_p/1, ev1_t(three), [name(n)]), assertz(ev1_p(1)), ev1_get(R)"
+    ),
+    (
+        "ev1o11",
+        raw"ev1_clear, prolog_listen(ev1_p/1, ev1_a, [name(n)]), prolog_listen(ev1_p/1, ev1_t(two), [name(n)]), assertz(ev1_p(1)), ev1_get(R)"
+    ),
+    (
+        "ev1u01",
+        raw"ev1_clear, prolog_listen(ev1_p/1, ev1_a), prolog_listen(ev1_p/1, ev1_b), prolog_unlisten(ev1_p/1, ev1_a), assertz(ev1_p(1)), ev1_get(R)"
+    ),
+    (
+        "ev1u02",
+        raw"ev1_clear, prolog_listen(ev1_p/1, ev1_t(1)), prolog_listen(ev1_p/1, ev1_t(2)), prolog_unlisten(ev1_p/1, ev1_t(1)), assertz(ev1_p(1)), ev1_get(R)"
+    ),
+    (
+        "ev1u03",
+        raw"ev1_clear, prolog_listen(ev1_p/1, ev1_t(1)), prolog_listen(ev1_p/1, ev1_t(2)), prolog_listen(ev1_p/1, ev1_a), prolog_unlisten(ev1_p/1, ev1_t(_)), assertz(ev1_p(1)), ev1_get(R)"
+    ),
+    (
+        "ev1u04",
+        raw"ev1_clear, prolog_listen(ev1_p/1, ev1_t(1)), prolog_unlisten(ev1_p/1, ev1_t), assertz(ev1_p(1)), ev1_get(R)"
+    ),
     ("ev1u05", raw"ev1_clear, ( prolog_unlisten(ev1_q/1, ev1_a) -> R = yes ; R = no )"),
     ("ev1u06", raw"ev1_clear, prolog_unlisten(nosuchevent, ev1_a), R = yes"),
     ("ev1u07", raw"ev1_clear, prolog_unlisten(1, ev1_a), R = yes"),
-    ("ev1u08", raw"ev1_clear, prolog_listen(ev1_p/1, ev1_a), prolog_unlisten(ev1_p/1, 1), R = yes"),
-    ("ev1u09", raw"ev1_clear, prolog_listen(ev1_p/1, ev1_a), prolog_unlisten(ev1_p/1, _), R = yes"),
-    ("ev1u10", raw"ev1_clear, prolog_listen(ev1_p/1, ev1_a), ( prolog_unlisten(ev1_p/1, ev1_b) -> A = yes ; A = no ), assertz(ev1_p(1)), ev1_get(L), R = A-L"),
-    ("ev1u11", raw"ev1_clear, prolog_listen(erase, ev1_r(x)), prolog_unlisten(erase, ev1_r(x)), recorda(ev1_k, v, Ref), erase(Ref), ev1_get(R)"),
-    ("ev1u12", raw"ev1_clear, prolog_listen(ev1_p/1, user:ev1_a), prolog_unlisten(ev1_p/1, ev1_a), assertz(ev1_p(1)), ev1_get(R)"),
-    ("ev1u13", raw"ev1_clear, prolog_listen(ev1_p/1, ev1_a), prolog_unlisten(ev1_p/1, ev1_a), prolog_unlisten(ev1_p/1, ev1_a), assertz(ev1_p(1)), ev1_get(R)"),
-    ("ev1u14", raw"ev1_clear, prolog_listen(ev1_p/1, ev1_a), prolog_listen(ev1_p/1, ev1_a), prolog_unlisten(ev1_p/1, ev1_a), assertz(ev1_p(1)), ev1_get(R)"),
-    ("ev1u15", raw"ev1_clear, prolog_listen(ev1_p/1, ev1_t(1)), prolog_listen(ev1_p/1, ev1_t(1)), prolog_unlisten(ev1_p/1, ev1_t(1)), assertz(ev1_p(1)), ev1_get(R)"),
-    ("ev1u16", raw"ev1_clear, prolog_listen(ev1_p/1, ev1_t(f(1))), prolog_unlisten(ev1_p/1, ev1_t(f(2))), assertz(ev1_p(1)), ev1_get(R)"),
-    ("ev1u17", raw"ev1_clear, prolog_listen(untable, ev1_a), prolog_unlisten(untable, ev1_a), R = yes"),
-    ("ev1v01", raw"ev1_clear, prolog_listen(ev1_p/1, ev1_veto(v)), ( assertz(ev1_p(1)) -> A = yes ; A = no ), findall(X, ev1_p(X), Xs), ev1_get(L), R = A-Xs-L"),
-    ("ev1v02", raw"ev1_clear, assertz(ev1_p(1)), prolog_listen(ev1_p/1, ev1_veto(v)), ( retract(ev1_p(1)) -> A = yes ; A = no ), findall(X, ev1_p(X), Xs), ev1_get(L), R = A-Xs-L"),
-    ("ev1v03", raw"ev1_clear, prolog_listen(ev1_p/1, ev1_veto(v)), prolog_listen(ev1_p/1, ev1_b, [as(last)]), ( assertz(ev1_p(1)) -> A = yes ; A = no ), ev1_get(L), R = A-L"),
-    ("ev1v04", raw"ev1_clear, prolog_listen(ev1_p/1, ev1_t(w)), prolog_listen(ev1_p/1, ev1_veto(v), [as(last)]), ( assertz(ev1_p(1)) -> A = yes ; A = no ), ev1_get(L), R = A-L"),
-    ("ev1v05", raw"ev1_clear, assertz(ev1_p(1)), assertz(ev1_p(2)), prolog_listen(ev1_p/1, ev1_veto(v)), ( retractall(ev1_p(_)) -> A = yes ; A = no ), findall(X, ev1_p(X), Xs), ev1_get(L), R = A-Xs-L"),
-    ("ev1v06", raw"ev1_clear, assertz(ev1_p(1)), assertz(ev1_p(2)), prolog_listen(ev1_p/1, ev1_vend), ( retractall(ev1_p(_)) -> A = yes ; A = no ), findall(X, ev1_p(X), Xs), ev1_get(L), R = A-Xs-L"),
-    ("ev1v07", raw"ev1_clear, assertz(ev1_p(1), Ref), prolog_listen(ev1_p/1, ev1_veto(v)), ( erase(Ref) -> A = yes ; A = no ), findall(X, ev1_p(X), Xs), ev1_get(L), R = A-Xs-L"),
-    ("ev1v08", raw"ev1_clear, prolog_listen(ev1_p/1, ev1_throw(t)), catch(assertz(ev1_p(1)), E, true), findall(X, ev1_p(X), Xs), ev1_get(L), R = E-Xs-L"),
-    ("ev1v09", raw"ev1_clear, assertz(ev1_p(1)), prolog_listen(ev1_p/1, ev1_throw(t)), catch(retract(ev1_p(1)), E, true), findall(X, ev1_p(X), Xs), ev1_get(L), R = E-Xs-L"),
-    ("ev1v10", raw"ev1_clear, prolog_listen(ev1_p/1, ev1_throw(t)), prolog_listen(ev1_p/1, ev1_b, [as(last)]), catch(assertz(ev1_p(1)), E, true), ev1_get(L), R = E-L"),
-    ("ev1v11", raw"ev1_clear, assertz(ev1_p(1)), prolog_listen(ev1_p/1, ev1_throw(t)), catch(retractall(ev1_p(_)), E, true), findall(X, ev1_p(X), Xs), ev1_get(L), R = E-Xs-L"),
-    ("ev1v12", raw"ev1_clear, prolog_listen(ev1_p/1, ev1_veto(v)), prolog_listen(ev1_p/1, ev1_t(w), [as(last)]), ( assertz(ev1_p(1)) -> A = yes ; A = no ), ev1_get(L), R = A-L"),
+    (
+        "ev1u08",
+        raw"ev1_clear, prolog_listen(ev1_p/1, ev1_a), prolog_unlisten(ev1_p/1, 1), R = yes"
+    ),
+    (
+        "ev1u09",
+        raw"ev1_clear, prolog_listen(ev1_p/1, ev1_a), prolog_unlisten(ev1_p/1, _), R = yes"
+    ),
+    (
+        "ev1u10",
+        raw"ev1_clear, prolog_listen(ev1_p/1, ev1_a), ( prolog_unlisten(ev1_p/1, ev1_b) -> A = yes ; A = no ), assertz(ev1_p(1)), ev1_get(L), R = A-L"
+    ),
+    (
+        "ev1u11",
+        raw"ev1_clear, prolog_listen(erase, ev1_r(x)), prolog_unlisten(erase, ev1_r(x)), recorda(ev1_k, v, Ref), erase(Ref), ev1_get(R)"
+    ),
+    (
+        "ev1u12",
+        raw"ev1_clear, prolog_listen(ev1_p/1, user:ev1_a), prolog_unlisten(ev1_p/1, ev1_a), assertz(ev1_p(1)), ev1_get(R)"
+    ),
+    (
+        "ev1u13",
+        raw"ev1_clear, prolog_listen(ev1_p/1, ev1_a), prolog_unlisten(ev1_p/1, ev1_a), prolog_unlisten(ev1_p/1, ev1_a), assertz(ev1_p(1)), ev1_get(R)"
+    ),
+    (
+        "ev1u14",
+        raw"ev1_clear, prolog_listen(ev1_p/1, ev1_a), prolog_listen(ev1_p/1, ev1_a), prolog_unlisten(ev1_p/1, ev1_a), assertz(ev1_p(1)), ev1_get(R)"
+    ),
+    (
+        "ev1u15",
+        raw"ev1_clear, prolog_listen(ev1_p/1, ev1_t(1)), prolog_listen(ev1_p/1, ev1_t(1)), prolog_unlisten(ev1_p/1, ev1_t(1)), assertz(ev1_p(1)), ev1_get(R)"
+    ),
+    (
+        "ev1u16",
+        raw"ev1_clear, prolog_listen(ev1_p/1, ev1_t(f(1))), prolog_unlisten(ev1_p/1, ev1_t(f(2))), assertz(ev1_p(1)), ev1_get(R)"
+    ),
+    (
+        "ev1u17",
+        raw"ev1_clear, prolog_listen(untable, ev1_a), prolog_unlisten(untable, ev1_a), R = yes"
+    ),
+    (
+        "ev1v01",
+        raw"ev1_clear, prolog_listen(ev1_p/1, ev1_veto(v)), ( assertz(ev1_p(1)) -> A = yes ; A = no ), findall(X, ev1_p(X), Xs), ev1_get(L), R = A-Xs-L"
+    ),
+    (
+        "ev1v02",
+        raw"ev1_clear, assertz(ev1_p(1)), prolog_listen(ev1_p/1, ev1_veto(v)), ( retract(ev1_p(1)) -> A = yes ; A = no ), findall(X, ev1_p(X), Xs), ev1_get(L), R = A-Xs-L"
+    ),
+    (
+        "ev1v03",
+        raw"ev1_clear, prolog_listen(ev1_p/1, ev1_veto(v)), prolog_listen(ev1_p/1, ev1_b, [as(last)]), ( assertz(ev1_p(1)) -> A = yes ; A = no ), ev1_get(L), R = A-L"
+    ),
+    (
+        "ev1v04",
+        raw"ev1_clear, prolog_listen(ev1_p/1, ev1_t(w)), prolog_listen(ev1_p/1, ev1_veto(v), [as(last)]), ( assertz(ev1_p(1)) -> A = yes ; A = no ), ev1_get(L), R = A-L"
+    ),
+    (
+        "ev1v05",
+        raw"ev1_clear, assertz(ev1_p(1)), assertz(ev1_p(2)), prolog_listen(ev1_p/1, ev1_veto(v)), ( retractall(ev1_p(_)) -> A = yes ; A = no ), findall(X, ev1_p(X), Xs), ev1_get(L), R = A-Xs-L"
+    ),
+    (
+        "ev1v06",
+        raw"ev1_clear, assertz(ev1_p(1)), assertz(ev1_p(2)), prolog_listen(ev1_p/1, ev1_vend), ( retractall(ev1_p(_)) -> A = yes ; A = no ), findall(X, ev1_p(X), Xs), ev1_get(L), R = A-Xs-L"
+    ),
+    (
+        "ev1v07",
+        raw"ev1_clear, assertz(ev1_p(1), Ref), prolog_listen(ev1_p/1, ev1_veto(v)), ( erase(Ref) -> A = yes ; A = no ), findall(X, ev1_p(X), Xs), ev1_get(L), R = A-Xs-L"
+    ),
+    (
+        "ev1v08",
+        raw"ev1_clear, prolog_listen(ev1_p/1, ev1_throw(t)), catch(assertz(ev1_p(1)), E, true), findall(X, ev1_p(X), Xs), ev1_get(L), R = E-Xs-L"
+    ),
+    (
+        "ev1v09",
+        raw"ev1_clear, assertz(ev1_p(1)), prolog_listen(ev1_p/1, ev1_throw(t)), catch(retract(ev1_p(1)), E, true), findall(X, ev1_p(X), Xs), ev1_get(L), R = E-Xs-L"
+    ),
+    (
+        "ev1v10",
+        raw"ev1_clear, prolog_listen(ev1_p/1, ev1_throw(t)), prolog_listen(ev1_p/1, ev1_b, [as(last)]), catch(assertz(ev1_p(1)), E, true), ev1_get(L), R = E-L"
+    ),
+    (
+        "ev1v11",
+        raw"ev1_clear, assertz(ev1_p(1)), prolog_listen(ev1_p/1, ev1_throw(t)), catch(retractall(ev1_p(_)), E, true), findall(X, ev1_p(X), Xs), ev1_get(L), R = E-Xs-L"
+    ),
+    (
+        "ev1v12",
+        raw"ev1_clear, prolog_listen(ev1_p/1, ev1_veto(v)), prolog_listen(ev1_p/1, ev1_t(w), [as(last)]), ( assertz(ev1_p(1)) -> A = yes ; A = no ), ev1_get(L), R = A-L"
+    ),
     ("ev1e01", raw"ev1_clear, prolog_listen(ev1_p/1, ev1_a, [as(middle)]), R = yes"),
     ("ev1e02", raw"ev1_clear, prolog_listen(ev1_p/1, ev1_a, [name(1)]), R = yes"),
     ("ev1e03", raw"ev1_clear, prolog_listen(ev1_p/1, 1), R = yes"),
     ("ev1e04", raw"ev1_clear, prolog_listen(ev1_p/1, _), R = yes"),
     ("ev1e05", raw"ev1_clear, prolog_listen(ev1_p/a, ev1_a), R = yes"),
     ("ev1e06", raw"ev1_clear, prolog_listen(ev1_p/(-1), ev1_a), R = yes"),
-    ("ev1e07", raw"ev1_clear, prolog_listen(ev1_p/2, ev1_a), assertz(ev1_p(1)), ev1_get(R)"),
+    (
+        "ev1e07",
+        raw"ev1_clear, prolog_listen(ev1_p/2, ev1_a), assertz(ev1_p(1)), ev1_get(R)"
+    ),
     ("ev1e08", raw"ev1_clear, prolog_listen(ev1_p/1, ev1_a, foo), R = yes"),
     ("ev1e09", raw"ev1_clear, prolog_listen(_, ev1_a), R = yes"),
     ("ev1e10", raw"ev1_clear, prolog_listen(nosuchevent/1, ev1_a), R = yes"),
     ("ev1e11", raw"ev1_clear, prolog_listen(foo:ev1_p/1, ev1_a), R = yes"),
-    ("ev1e12", raw"ev1_clear, prolog_listen(ev1_p/1, ev1_a, [as(first), foo(1)]), assertz(ev1_p(1)), ev1_get(R)"),
-    ("ev1r01", raw"ev1_clear, prolog_listen(erase, ev1_r(x)), recorda(ev1_k, v, Ref), erase(Ref), ev1_get(R)"),
-    ("ev1r02", raw"ev1_clear, prolog_listen(erase, ev1_r(x)), prolog_listen(erase, ev1_r(y)), recordz(ev1_k, v, Ref), erase(Ref), ev1_get(R)"),
-    ("ev1r03", raw"ev1_clear, prolog_listen(erase, ev1_rthrow(t)), recorda(ev1_k, v, Ref), catch(erase(Ref), E, true), findall(V, recorded(ev1_k, V), Vs), ev1_get(L), R = E-Vs-L"),
-    ("ev1r04", raw"ev1_clear, prolog_listen(erase, ev1_rveto(t)), recorda(ev1_k, v, Ref), ( erase(Ref) -> A = yes ; A = no ), findall(V, recorded(ev1_k, V), Vs), ev1_get(L), R = A-Vs-L"),
-    ("ev1r05", raw"ev1_clear, prolog_listen(erase, ev1_r(x)), recorda(ev1_k, v, _), recorda(ev1_k, w, _), ( recorded(ev1_k, v, Ref) -> erase(Ref) ; true ), ev1_get(R)"),
-    ("ev1r06", raw"ev1_clear, prolog_listen(erase, ev1_r(x)), recorda(ev1_k, v, Ref), erase(Ref), ( catch(erase(Ref), error(E, _), true) -> true ; true ), ev1_get(L), R = E-L"),
-    ("ev1r07", raw"ev1_clear, prolog_listen(erase, ev1_r(x)), assertz(ev1_p(1)), ev1_get(R)"),
-    ("ev1r08", raw"ev1_clear, prolog_listen(erase, ev1_rveto(t)), prolog_listen(erase, ev1_r(x), [as(last)]), recorda(ev1_k, v, Ref), ( erase(Ref) -> A = yes ; A = no ), ev1_get(L), R = A-L"),
-    ("ev1g01", raw"ev1_clear, garbage_collect_clauses, prolog_listen(erase, ev1_e(g)), assertz(ev1_p(1)), retract(ev1_p(1)), garbage_collect_clauses, ev1_get(R)")
+    (
+        "ev1e12",
+        raw"ev1_clear, prolog_listen(ev1_p/1, ev1_a, [as(first), foo(1)]), assertz(ev1_p(1)), ev1_get(R)"
+    ),
+    (
+        "ev1r01",
+        raw"ev1_clear, prolog_listen(erase, ev1_r(x)), recorda(ev1_k, v, Ref), erase(Ref), ev1_get(R)"
+    ),
+    (
+        "ev1r02",
+        raw"ev1_clear, prolog_listen(erase, ev1_r(x)), prolog_listen(erase, ev1_r(y)), recordz(ev1_k, v, Ref), erase(Ref), ev1_get(R)"
+    ),
+    (
+        "ev1r03",
+        raw"ev1_clear, prolog_listen(erase, ev1_rthrow(t)), recorda(ev1_k, v, Ref), catch(erase(Ref), E, true), findall(V, recorded(ev1_k, V), Vs), ev1_get(L), R = E-Vs-L"
+    ),
+    (
+        "ev1r04",
+        raw"ev1_clear, prolog_listen(erase, ev1_rveto(t)), recorda(ev1_k, v, Ref), ( erase(Ref) -> A = yes ; A = no ), findall(V, recorded(ev1_k, V), Vs), ev1_get(L), R = A-Vs-L"
+    ),
+    (
+        "ev1r05",
+        raw"ev1_clear, prolog_listen(erase, ev1_r(x)), recorda(ev1_k, v, _), recorda(ev1_k, w, _), ( recorded(ev1_k, v, Ref) -> erase(Ref) ; true ), ev1_get(R)"
+    ),
+    (
+        "ev1r06",
+        raw"ev1_clear, prolog_listen(erase, ev1_r(x)), recorda(ev1_k, v, Ref), erase(Ref), ( catch(erase(Ref), error(E, _), true) -> true ; true ), ev1_get(L), R = E-L"
+    ),
+    (
+        "ev1r07",
+        raw"ev1_clear, prolog_listen(erase, ev1_r(x)), assertz(ev1_p(1)), ev1_get(R)"
+    ),
+    (
+        "ev1r08",
+        raw"ev1_clear, prolog_listen(erase, ev1_rveto(t)), prolog_listen(erase, ev1_r(x), [as(last)]), recorda(ev1_k, v, Ref), ( erase(Ref) -> A = yes ; A = no ), ev1_get(L), R = A-L"
+    ),
+    (
+        "ev1g01",
+        raw"ev1_clear, garbage_collect_clauses, prolog_listen(erase, ev1_e(g)), assertz(ev1_p(1)), retract(ev1_p(1)), garbage_collect_clauses, ev1_get(R)"
+    ),
+    (
+        "ev1g02",
+        raw"ev1_clear, garbage_collect_clauses, prolog_listen(erase, ev1_ethrow(g)), assertz(ev1_p(1)), retract(ev1_p(1)), catch(garbage_collect_clauses, E, true), ev1_get(L), R = E-L"
+    ),
+    (
+        "ev1u18",
+        raw"ev1_clear, prolog_listen(ev1_p/1, ev1_pair(a, b)), prolog_listen(ev1_p/1, ev1_pair(z, c)), prolog_unlisten(ev1_p/1, ev1_pair(X, c)), assertz(ev1_p(1)), ev1_get(L), R = X-L"
+    ),
+    (
+        "ev1p20",
+        raw"ev1_clear, assertz(ev1_p(1)), prolog_listen(ev1_p/1, ev1_a), abolish(ev1_p/1), assertz(ev1_p(2)), ev1_get(R)"
+    )
 ]
 
 # the driver's whole output, one line per case after `ok`, filled by evidence/EV1/gen_rows.py --fill from swipl 10.1.19
@@ -294,7 +506,10 @@ const _EV_PINNED = [
     "t_ev1r06 c[116,95,101,118,49,114,48,54]/1(c[45]/2(V0,c[91,124,93]/2(c[45]/2(c[45]/2(a[120],a[101,114,97,115,101]),c[112,114,101,115,101,110,116]/1(a[118])),nil)))",
     "t_ev1r07 c[116,95,101,118,49,114,48,55]/1(nil)",
     "t_ev1r08 c[116,95,101,118,49,114,48,56]/1(c[45]/2(a[121,101,115],c[91,124,93]/2(c[45]/2(c[45]/2(a[116],a[101,114,97,115,101]),c[112,114,101,115,101,110,116]/1(a[118])),nil)))",
-    "t_ev1g01 c[116,95,101,118,49,103,48,49]/1(c[91,124,93]/2(c[45]/2(c[45]/2(a[103],a[101,114,97,115,101]),a[103,111,110,101]),nil))"
+    "t_ev1g01 c[116,95,101,118,49,103,48,49]/1(c[91,124,93]/2(c[45]/2(c[45]/2(a[103],a[101,114,97,115,101]),a[103,111,110,101]),nil))",
+    "t_ev1g02 c[116,95,101,118,49,103,48,50]/1(c[45]/2(c[101,118,49,95,98,97,108,108]/1(a[103]),c[91,124,93]/2(c[45]/2(c[45]/2(a[103],a[101,114,97,115,101]),a[103,111,110,101]),nil)))",
+    "t_ev1u18 c[116,95,101,118,49,117,49,56]/1(c[45]/2(V0,c[91,124,93]/2(c[45]/2(c[45]/2(c[45]/2(a[97],a[98]),a[97,115,115,101,114,116,122]),c[99,108]/2(c[101,118,49,95,112]/1(i1),a[116,114,117,101])),nil)))",
+    "t_ev1p20 c[116,95,101,118,49,112,50,48]/1(nil)"
 ]
 
 
@@ -333,7 +548,9 @@ function _ev_ask(gd, ld, pred::String, asname::String=pred)::String
     while (n += 1) <= 50
         rc = LK.PL_next_solution(gd, ld, qid)
         if rc == LK.PL_S_TRUE || rc == LK.PL_S_LAST
-            push!(sols, _ev_enc(mk_expr(_EV, _EV[_evs(asname), lk_answers(ld, (a:a)...)...])))
+            push!(
+                sols, _ev_enc(mk_expr(_EV, _EV[_evs(asname), lk_answers(ld, (a:a)...)...]))
+            )
             rc == LK.PL_S_LAST && break
         elseif rc == LK.PL_S_EXCEPTION
             push!(sols, "exception")
@@ -374,8 +591,10 @@ end
         ids = [id for (id, _) in _EV_CASES if startswith(id, pre)]
         @test !isempty([l for l in _EV_PINNED if any(id -> startswith(l, "t_$id "), ids)])
     end
-    nonempty(id) = !endswith(only(filter(l -> startswith(l, "t_$id "), _EV_PINNED)), "(nil)")
-    @test nonempty("ev1p01") && nonempty("ev1o03") && nonempty("ev1r02") && nonempty("ev1g01")   # events were delivered
+    nonempty(id) =
+        !endswith(only(filter(l -> startswith(l, "t_$id "), _EV_PINNED)), "(nil)")
+    @test nonempty("ev1p01") && nonempty("ev1o03") && nonempty("ev1r02") &&
+        nonempty("ev1g01")   # events were delivered
     @test !nonempty("ev1p15") && !nonempty("ev1p17") && !nonempty("ev1u11")                     # and withheld
     @test count(l -> occursin("c[114,97,105,115,101,100]/1", l), _EV_PINNED) >= 10                                    # errors were raised
 end

@@ -113,7 +113,7 @@ MUTANTS = [
          new="flags = PL_get_int64_ex(ld, A1)"),
     dict(id="BP3-L1 an `as` value other than first and last is accepted (KILL bp3l08, bp3l28, bp3l32)",
          file=V, targets=TARGETS_EV,
-         old="    if !(as == mk_sym(T, :first) || as == mk_sym(T, :last))\n",
+         old="    if !(event_atom_is(as, :first) || event_atom_is(as, :last))\n",
          new="    if false\n"),
     dict(id="BP3-L2 the `as` option is read as an integer (KILL bp3l02, bp3l03, bp3l06)",
          file=V, targets=TARGETS_EV,

@@ -160,7 +160,7 @@ function add_event_hook(
 
     if name !== nothing
         for ev in list.callbacks
-            if ev.name == name && ev.function_ == 0
+            if event_name_is(ev.name, name) && ev.function_ == 0
                 r = ev.closure
                 ev.closure = term_to_fastheap(ld, closure)
                 r === nothing || free_fastheap(r)
@@ -203,6 +203,15 @@ function register_event_hook(
     return add_event_hook(gd, ld, get_event_list!(gd, ld, loc), name, last, closure, argc)
 end
 
+# `a == b` on two atoms is `==` of the reference term type only: the other term types compare through the interface (the alt types
+# raise on `==`), so an atom is tested against a name by its text.
+"Whether the term `t` is the atom `name`."
+event_atom_is(t::T, name::Symbol) where {T} = kind(t) === SYM && sym_text(t) == String(name)
+
+"Whether the listener name `a` (`nothing`: none) is the atom `b`."
+event_name_is(a::Union{Nothing, T}, b::T) where {T} =
+    a !== nothing && sym_key(a) == sym_key(b)
+
 # PORT: pl-event.c get_event_listp
 # DIVERGES: returns `(location, argc)` where upstream writes the list's location through `listpp` and `argc`, or `nothing`
 # after raising the error. A predicate indicator (`arity != 0` after `PL_get_name_arity`) resolves the procedure
@@ -218,7 +227,7 @@ function get_event_listp(
 
         if arity == 0
             for (i, et) in enumerate(PL_events)
-                if name == mk_sym(T, et.name)
+                if event_atom_is(name, et.name)
                     @assert et.id + 1 == i              # assert(et->id == et-PL_events)
                     return (event_location{T}(et.id, nothing), et.argc)
                 end
@@ -249,13 +258,15 @@ function prolog_listen(
     name = nothing
 
     if options != 0
-        vals = PL_scan_options(ld, options, 0, "prolog_listen_option", prolog_listen_options)
+        vals = PL_scan_options(
+            ld, options, 0, "prolog_listen_option", prolog_listen_options
+        )
         vals === nothing && return false
         vals[1] === nothing || (as = vals[1]::T)
         vals[2] === nothing || (name = vals[2]::T)
     end
 
-    if !(as == mk_sym(T, :first) || as == mk_sym(T, :last))
+    if !(event_atom_is(as, :first) || event_atom_is(as, :last))
         ex = PL_new_term_ref(ld)
         return PL_put_atom(ld, ex, as) && PL_domain_error(ld, "as", ex)
     end
@@ -264,7 +275,7 @@ function prolog_listen(
     r === nothing && return false
     loc, argc = r
 
-    return register_event_hook(gd, ld, loc, name, as == mk_sym(T, :last), closure, argc)
+    return register_event_hook(gd, ld, loc, name, event_atom_is(as, :last), closure, argc)
 end
 
 # PORT: pl-event.c prolog_listen as pl_prolog_listen2_va
@@ -424,7 +435,8 @@ end
 # and counts as a failure; a callback's module is its index.
 "Call the listeners of `list` with the event's arguments `argv+1…`, `argv` the closure's slot (pl-event.c)."
 function call_event_list(
-    gd::PL_global_data{T}, ld::PL_local_data{T}, list::Union{Nothing, event_list{T, definition{T}}},
+    gd::PL_global_data{T}, ld::PL_local_data{T},
+    list::Union{Nothing, event_list{T, definition{T}}},
     argc::Int, argv::term_t
 )::Bool where {T}
     rc = true
@@ -434,19 +446,23 @@ function call_event_list(
             if ev.function_ != 0
                 rc = false                                  # a C function: TH1's
             elseif ev.closure !== nothing
-                rc = rc && (
-                    put_fastheap(ld, ev.closure, argv) &&
+                rc =
+                    rc && (
+                        put_fastheap(ld, ev.closure, argv) &&
                         PL_call_predicate(
-                            gd, ld, gd.modules[ev.module_], PL_Q_NODEBUG | PL_Q_PASS_EXCEPTION,
+                            gd, ld, gd.modules[ev.module_],
+                            PL_Q_NODEBUG | PL_Q_PASS_EXCEPTION,
                             ev.procedure::Procedure{T}, argv
                         )
-                )
+                    )
             else
                 @assert ev.argc == argc
-                rc = rc && PL_call_predicate(
-                    gd, ld, nothing, PL_Q_NODEBUG | PL_Q_PASS_EXCEPTION, ev.procedure::Procedure{T},
-                    argv + 1
-                )
+                rc =
+                    rc && PL_call_predicate(
+                        gd, ld, nothing, PL_Q_NODEBUG | PL_Q_PASS_EXCEPTION,
+                        ev.procedure::Procedure{T},
+                        argv + 1
+                    )
             end
             if !rc && PL_exception(ld, 0) != 0
                 break
@@ -463,7 +479,8 @@ end
 "Keep the event `ev` until `sendDelayedEvents` (pl-event.c): only the break, erase and untable events are delayed."
 function delayEvent(ld::PL_local_data{T}, ev::Int, args...)::Bool where {T}
     if ld.event_buffered !== nothing
-        if ev == PLEV_BREAK_EXISTS || ev == PLEV_BREAK || ev == PLEV_NOBREAK || ev == PLEV_RETRACTNOBREAK
+        if ev == PLEV_BREAK_EXISTS || ev == PLEV_BREAK || ev == PLEV_NOBREAK ||
+            ev == PLEV_RETRACTNOBREAK
             dev = delayed_event{T}(ev, args[1]::Clause{T}, args[2]::Int, nothing)
         elseif ev == PLEV_ERASED_CLAUSE
             dev = delayed_event{T}(ev, args[1]::Clause{T}, 0, nothing)
@@ -501,7 +518,9 @@ end
 Leave one level of delaying; at the outermost, send the events kept (pl-event.c): -1 when a listener
 raised, else the number sent.
 """
-function sendDelayedEvents(gd::PL_global_data{T}, ld::PL_local_data{T}, noerror::Bool)::Int where {T}
+function sendDelayedEvents(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, noerror::Bool
+)::Int where {T}
     sent = 0
 
     ld.event_delay_nesting -= 1
@@ -512,7 +531,8 @@ function sendDelayedEvents(gd::PL_global_data{T}, ld::PL_local_data{T}, noerror:
         for dev in b
             if noerror
                 ev = dev.type
-                if ev == PLEV_BREAK_EXISTS || ev == PLEV_BREAK || ev == PLEV_NOBREAK || ev == PLEV_RETRACTNOBREAK
+                if ev == PLEV_BREAK_EXISTS || ev == PLEV_BREAK || ev == PLEV_NOBREAK ||
+                    ev == PLEV_RETRACTNOBREAK
                     noerror = callEventHook(gd, ld, ev, dev.clause::Clause{T}, dev.offset)
                     sent += 1
                 elseif ev == PLEV_ERASED_CLAUSE
@@ -534,7 +554,9 @@ end
 # PORT: pl-event.h callEventHook
 # DIVERGES: the database and the local data are arguments; `args` are the event's values (`va_arg`'s).
 "Raise the event `ev` with its values: true when no listener, else `PL_call_event_hook_va`; false iff a listener raised (pl-event.h)."
-function callEventHook(gd::PL_global_data{T}, ld::PL_local_data{T}, ev::Int, args...)::Bool where {T}
+function callEventHook(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, ev::Int, args...
+)::Bool where {T}
     if event_list_at(gd, ld, event_location{T}(ev, nothing)) !== nothing
         return PL_call_event_hook_va(gd, ld, ev, args...)
     end
@@ -545,7 +567,9 @@ end
 # PORT: pl-event.c PL_call_event_hook
 # DIVERGES: NOT STARTED: the `GD->halt.cleaning != CLN_DATA` test (`PL_cleanup` is a later step); the kernel's callers use `callEventHook`.
 "Raise the event `ev` as `callEventHook` does, for the C interface (pl-event.c)."
-function PL_call_event_hook(gd::PL_global_data{T}, ld::PL_local_data{T}, ev::Int, args...)::Bool where {T}
+function PL_call_event_hook(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, ev::Int, args...
+)::Bool where {T}
     return callEventHook(gd, ld, ev, args...)
 end
 
@@ -553,7 +577,9 @@ end
 # DIVERGES: `args` are the event's values; the thread events raise a `NotPortedError` naming TH1 (`unify_thread_id`: no
 # thread table); an unknown event is `false` (upstream warns).
 "Raise the event `ev`: put its arguments and call its listeners; false iff there is an exception in a hook (pl-event.c)."
-function PL_call_event_hook_va(gd::PL_global_data{T}, ld::PL_local_data{T}, ev::Int, args...)::Bool where {T}
+function PL_call_event_hook_va(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, ev::Int, args...
+)::Bool where {T}
     rc = true
     list = event_list_at(gd, ld, event_location{T}(ev, nothing))
     event_decl = PL_events[ev + 1]
@@ -573,31 +599,43 @@ function PL_call_event_hook_va(gd::PL_global_data{T}, ld::PL_local_data{T}, ev::
         rc = PL_put_clref(gd, ld, av + 1, args[1]::Clause{T})           # object erased
     elseif ev == PLEV_ERASED_RECORD
         rc = PL_unify_recref(gd, ld, av + 1, args[1]::RecordRef{T})     # object erased
-    elseif ev == PLEV_BREAK || ev == PLEV_BREAK_EXISTS || ev == PLEV_NOBREAK || ev == PLEV_RETRACTNOBREAK
+    elseif ev == PLEV_BREAK || ev == PLEV_BREAK_EXISTS || ev == PLEV_NOBREAK ||
+        ev == PLEV_RETRACTNOBREAK
         cl = args[1]::Clause{T}
         offset = args[2]::Int
         rc = (
             PL_put_atom(
                 ld, av + 1,
                 mk_sym(
-                    T,
-                    ev == PLEV_BREAK ? :true :
-                        ev == PLEV_NOBREAK ? :false :
-                        ev == PLEV_RETRACTNOBREAK ? :retract : :exist
+                    T, if ev == PLEV_BREAK
+                        :true
+                    elseif ev == PLEV_NOBREAK
+                        :false
+                    elseif ev == PLEV_RETRACTNOBREAK
+                        :retract
+                    else
+                        :exist
+                    end
                 )
             ) &&
-                PL_put_clref(gd, ld, av + 2, cl) &&
-                PL_put_intptr(ld, av + 3, offset)
+            PL_put_clref(gd, ld, av + 2, cl) &&
+            PL_put_intptr(ld, av + 3, offset)
         )
     elseif ev == PLEV_FRAMEFINISHED
         rc = PL_put_frame(ld, av + 1, args[1]::Int)
     elseif ev == PLEV_THREAD_START || ev == PLEV_THREAD_EXIT
-        throw(NotPortedError{T}(mk_sym(T, :prolog_listen), "the thread events (`unify_thread_id`)", "TH1"))
+        throw(
+            NotPortedError{T}(
+                mk_sym(T, :prolog_listen), "the thread events (`unify_thread_id`)", "TH1"
+            )
+        )
     elseif ev == PLEV_THIS_THREAD_EXIT
         # nothing to put
     elseif ev == PLEV_UNTABLE
         proc = args[1]::Procedure{T}
-        rc = unify_definition(gd, ld, MODULE_user(gd), av + 1, proc.definition, 0, GP_QUALIFY | GP_NAMEARITY)
+        rc = unify_definition(
+            gd, ld, MODULE_user(gd), av + 1, proc.definition, 0, GP_QUALIFY | GP_NAMEARITY
+        )
     else
         rc = false                                              # callEventHook(): unknown event
         restoreWakeup(ld, wstate)
@@ -608,7 +646,9 @@ function PL_call_event_hook_va(gd::PL_global_data{T}, ld::PL_local_data{T}, ev::
         rc = call_event_list(gd, ld, list, event_decl.argc, av)
 
         if !rc && PL_exception(ld, 0) != 0
-            wstate = wakeup_state(wstate.fid, wstate.outofstack, wstate.flags | WAKEUP_KEEP_URGENT_EXCEPTION)
+            wstate = wakeup_state(
+                wstate.fid, wstate.outofstack, wstate.flags | WAKEUP_KEEP_URGENT_EXCEPTION
+            )
         else
             rc = true                                           # only false on error
         end
@@ -623,7 +663,8 @@ end
 # DIVERGES: the database is an argument; `action` is the atom's term; the `rollback/1` functor is looked up by name.
 "Tell the listeners of the predicate `def` that the clause `cl` was added or removed by `action` (pl-event.c)."
 function predicate_update_event(
-    gd::PL_global_data{T}, ld::PL_local_data{T}, def::definition{T}, action::T, cl::Clause{T}, flags::UInt32
+    gd::PL_global_data{T}, ld::PL_local_data{T}, def::definition{T}, action::T,
+    cl::Clause{T}, flags::UInt32
 )::Bool where {T}
     wstate = saveWakeup(ld, true)
     wstate === nothing && return false
@@ -649,7 +690,8 @@ end
 # nothing calls this function yet.
 "Tell the listeners of the tabled predicate `def` about the `answer` added or removed by `action` (pl-event.c)."
 function table_answer_event(
-    gd::PL_global_data{T}, ld::PL_local_data{T}, def::definition{T}, action::T, answer::term_t
+    gd::PL_global_data{T}, ld::PL_local_data{T}, def::definition{T}, action::T,
+    answer::term_t
 )::Bool where {T}
     wstate = saveWakeup(ld, true)
     wstate === nothing && return false
@@ -671,7 +713,8 @@ end
 # wakeup state not restored.
 "Tell the listeners of `def` that `retractall/1` is about to start (`:start`) or has ended (`:end`) on `head` (pl-event.c)."
 function retractall_event(
-    gd::PL_global_data{T}, ld::PL_local_data{T}, def::definition{T}, head::term_t, start::Symbol
+    gd::PL_global_data{T}, ld::PL_local_data{T}, def::definition{T}, head::term_t,
+    start::Symbol
 )::Bool where {T}
     wstate = saveWakeup(ld, true)
     wstate === nothing && return false
@@ -679,12 +722,12 @@ function retractall_event(
     start1 = lookupFunctorDef(ld.functors, _atom_word!(ld, mk_sym(T, start)), 1)
 
     if !(
-            PL_put_atom(ld, av + 1, gd.modules[def.module_].atom) &&
-                PL_put_term(ld, av + 2, head) &&
-                PL_cons_functor(ld, av + 2, FUNCTOR_colon2, av + 1, av + 2) &&
-                PL_cons_functor(ld, av + 2, start1, av + 2) &&
-                PL_put_atom(ld, av + 1, mk_sym(T, :retractall))
-        )
+        PL_put_atom(ld, av + 1, gd.modules[def.module_].atom) &&
+        PL_put_term(ld, av + 2, head) &&
+        PL_cons_functor(ld, av + 2, FUNCTOR_colon2, av + 1, av + 2) &&
+        PL_cons_functor(ld, av + 2, start1, av + 2) &&
+        PL_put_atom(ld, av + 1, mk_sym(T, :retractall))
+    )
         return false
     end
 
@@ -699,7 +742,13 @@ end
 # `META` is PL_FA_TRANSPARENT (pl-event.c:805-810 at the pin).
 "pl-event.c's registration table (`BeginPredDefs(event)`): prolog_listen/2,3 and prolog_unlisten/2."
 const PL_predicates_from_event = (
-    PL_extension("prolog_listen", 2, pl_prolog_listen2_va, PL_FA_VARARGS | PL_FA_TRANSPARENT),
-    PL_extension("prolog_listen", 3, pl_prolog_listen3_va, PL_FA_VARARGS | PL_FA_TRANSPARENT),
-    PL_extension("prolog_unlisten", 2, pl_prolog_unlisten2_va, PL_FA_VARARGS | PL_FA_TRANSPARENT)
+    PL_extension(
+        "prolog_listen", 2, pl_prolog_listen2_va, PL_FA_VARARGS | PL_FA_TRANSPARENT
+    ),
+    PL_extension(
+        "prolog_listen", 3, pl_prolog_listen3_va, PL_FA_VARARGS | PL_FA_TRANSPARENT
+    ),
+    PL_extension(
+        "prolog_unlisten", 2, pl_prolog_unlisten2_va, PL_FA_VARARGS | PL_FA_TRANSPARENT
+    )
 )

@@ -2485,19 +2485,37 @@ function _manifest_index(T)
         # EV1 — the event lists of pl-event.c (src/pl-event.jl) and the sites that raise them. The event's values are
         # `args...`: each entry names the commonest call's types (a clause for the assert, retract and erase events).
         (LK.event_list_at, Tuple{GD, LD, LK.event_location{T}}, false),
-        (LK.event_list_set!, Tuple{GD, LD, LK.event_location{T}, Union{Nothing, LK.event_list{T, D}}}, false),
+        (
+            LK.event_list_set!,
+            Tuple{GD, LD, LK.event_location{T}, Union{Nothing, LK.event_list{T, D}}},
+            false
+        ),
         (LK.link_event, Tuple{LK.event_list{T, D}, LK.event_callback{T, D}, Bool}, false),
-        (LK.add_event_hook, Tuple{GD, LD, LK.event_list{T, D}, Union{Nothing, T}, Bool, Int, Int}, false),
+        (
+            LK.add_event_hook,
+            Tuple{GD, LD, LK.event_list{T, D}, Union{Nothing, T}, Bool, Int, Int},
+            false
+        ),
         (LK.get_event_list!, Tuple{GD, LD, LK.event_location{T}}, false),
-        (LK.register_event_hook, Tuple{GD, LD, LK.event_location{T}, Union{Nothing, T}, Bool, Int, Int}, false),
+        (
+            LK.register_event_hook,
+            Tuple{GD, LD, LK.event_location{T}, Union{Nothing, T}, Bool, Int, Int},
+            false
+        ),
         (LK.get_event_listp, Tuple{GD, LD, Int}, false),
+        (LK.event_atom_is, Tuple{T, Symbol}, false),
+        (LK.event_name_is, Tuple{Union{Nothing, T}, T}, false),
         (LK.prolog_unlisten, Tuple{GD, LD, Int, Int}, false),
         (LK.free_event_callback, Tuple{LK.event_callback{T, D}}, false),
         (LK.destroy_event_list!, Tuple{GD, LD, LK.event_location{T}}, false),
         (LK.destroy_event_list!, Tuple{D}, false),
         (LK.destroy_event_list!, Tuple{GD, LD, D}, false),
         (LK.cleanupEvents, Tuple{GD, LD}, false),
-        (LK.call_event_list, Tuple{GD, LD, Union{Nothing, LK.event_list{T, D}}, Int, Int}, false),
+        (
+            LK.call_event_list,
+            Tuple{GD, LD, Union{Nothing, LK.event_list{T, D}}, Int, Int},
+            false
+        ),
         (LK.delayEvent, Tuple{LD, Int, C, Int}, false),
         (LK.delayEvents, Tuple{LD}, false),
         (LK.sendDelayedEvents, Tuple{GD, LD, Bool}, false),

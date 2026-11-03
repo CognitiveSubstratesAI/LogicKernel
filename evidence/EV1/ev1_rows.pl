@@ -1,4 +1,4 @@
-:- dynamic ev1_log/1, ev1_p/1, ev1_q/1, ev1_m:ev1_q/1.
+:- dynamic ev1_log/1, ev1_p/1, ev1_q/1.
 ev1_x(X, Y) :-
     (   X = start(_) -> Y = X
     ;   X = end(_) -> Y = X
@@ -12,29 +12,33 @@ ev1_b(Act, X) :- ev1_t(b, Act, X).
 ev1_veto(Tag, Act, X) :- ev1_t(Tag, Act, X), fail.
 ev1_vend(Act, X) :- ev1_t(v, Act, X), \+ X = end(_).
 ev1_throw(Tag, Act, X) :- ev1_t(Tag, Act, X), throw(ev1_ball(Tag)).
-ev1_m:ev1_ma(Act, X) :- user:ev1_t(m, Act, X).
 ev1_r(Tag, Ref) :-
     (   recorded(ev1_k, V, Ref) -> Y = present(V) ; Y = gone ),
     assertz(ev1_log(Tag-erase-Y)).
 ev1_rveto(Tag, Ref) :- ev1_r(Tag, Ref), fail.
 ev1_rthrow(Tag, Ref) :- ev1_r(Tag, Ref), throw(ev1_ball(Tag)).
 ev1_e(Tag, X) :- ev1_x(X, Y), assertz(ev1_log(Tag-erase-Y)).
+ev1_ethrow(Tag, X) :- ev1_e(Tag, X), throw(ev1_ball(Tag)).
+ev1_pair(P, Q, Act, X) :- ev1_t(P-Q, Act, X).
 ev1_get(R) :- findall(L, ev1_log(L), R).
-ev1_unl(E) :-
-    forall(member(C, [ev1_a, ev1_b, ev1_m:ev1_ma, ev1_t(_), ev1_veto(_), ev1_vend, ev1_throw(_), ev1_r(_), ev1_rveto(_), ev1_rthrow(_), ev1_e(_)]),
-           prolog_unlisten(E, C)).
+ev1_unl(E) :- ev1_unl(E, [ev1_a, ev1_b, ev1_t(_), ev1_veto(_), ev1_vend, ev1_throw(_), ev1_r(_), ev1_rveto(_), ev1_rthrow(_), ev1_e(_), ev1_ethrow(_), ev1_pair(_, _)]).
+ev1_unl(_, []).
+ev1_unl(E, [C|Cs]) :- prolog_unlisten(E, C), ev1_unl(E, Cs).
+ev1_unl_all([]).
+ev1_unl_all([E|Es]) :- ev1_unl(E), ev1_unl_all(Es).
+ev1_rounds(0) :- !.
+ev1_rounds(N) :- ev1_unl_all([ev1_p/1, ev1_q/1, ev1_m:ev1_q/1, ev1_u/1, ev1_p/2, erase, untable]), N1 is N-1, ev1_rounds(N1).
 ev1_clear :-
-    forall(between(1, 4, _), forall(member(E, [ev1_p/1, ev1_q/1, ev1_m:ev1_q/1, ev1_u/1, ev1_p/2, erase, untable]), ev1_unl(E))),
+    ev1_rounds(4),
     retractall(ev1_log(_)), retractall(ev1_p(_)), retractall(ev1_q(_)), retractall(ev1_m:ev1_q(_)),
-    forall(recorded(ev1_k, _, Ref), erase(Ref)).
-ev1_gc_a(R) :- ev1_clear, prolog_listen(erase, ev1_e(g)), assertz(ev1_p(1)), retract(ev1_p(1)), R = ok.
-ev1_gc_b(R) :- ev1_get(R).
+    ( recorded(ev1_k, _, Ref), erase(Ref), fail ; true ).
+ev1_retall :- ( retract(ev1_p(_)), fail ; true ).
 t_ev1p01(R) :- catch((ev1_clear, prolog_listen(ev1_p/1, ev1_a), assertz(ev1_p(1)), ev1_get(R)), error(SsuE, _), R = raised(SsuE)).
 t_ev1p02(R) :- catch((ev1_clear, prolog_listen(ev1_p/1, ev1_a), asserta(ev1_p(1)), ev1_get(R)), error(SsuE, _), R = raised(SsuE)).
 t_ev1p03(R) :- catch((ev1_clear, prolog_listen(ev1_p/1, ev1_a), assert(ev1_p(1)), ev1_get(R)), error(SsuE, _), R = raised(SsuE)).
 t_ev1p04(R) :- catch((ev1_clear, prolog_listen(ev1_p/1, ev1_a), assertz((ev1_p(X) :- ev1_q(X))), ev1_get(R)), error(SsuE, _), R = raised(SsuE)).
 t_ev1p05(R) :- catch((ev1_clear, assertz(ev1_p(1)), prolog_listen(ev1_p/1, ev1_a), retract(ev1_p(1)), ev1_get(R)), error(SsuE, _), R = raised(SsuE)).
-t_ev1p06(R) :- catch((ev1_clear, assertz(ev1_p(1)), assertz(ev1_p(2)), prolog_listen(ev1_p/1, ev1_a), forall(retract(ev1_p(_)), true), ev1_get(R)), error(SsuE, _), R = raised(SsuE)).
+t_ev1p06(R) :- catch((ev1_clear, assertz(ev1_p(1)), assertz(ev1_p(2)), prolog_listen(ev1_p/1, ev1_a), ev1_retall, ev1_get(R)), error(SsuE, _), R = raised(SsuE)).
 t_ev1p07(R) :- catch((ev1_clear, assertz(ev1_p(1)), prolog_listen(ev1_p/1, ev1_a), ( retract(ev1_p(9)) -> true ; true ), ev1_get(R)), error(SsuE, _), R = raised(SsuE)).
 t_ev1p08(R) :- catch((ev1_clear, assertz(ev1_p(1), Ref), prolog_listen(ev1_p/1, ev1_a), erase(Ref), ev1_get(R)), error(SsuE, _), R = raised(SsuE)).
 t_ev1p09(R) :- catch((ev1_clear, assertz(ev1_p(1)), assertz(ev1_p(2)), assertz(ev1_p(1)), prolog_listen(ev1_p/1, ev1_a), retractall(ev1_p(1)), findall(X, ev1_p(X), Xs), ev1_get(L), R = Xs-L), error(SsuE, _), R = raised(SsuE)).
@@ -46,7 +50,6 @@ t_ev1p14(R) :- catch((ev1_clear, prolog_listen(ev1_m:ev1_q/1, ev1_a), ev1_m:asse
 t_ev1p15(R) :- catch((ev1_clear, prolog_listen(ev1_p/1, ev1_a), assertz(ev1_q(1)), ev1_get(R)), error(SsuE, _), R = raised(SsuE)).
 t_ev1p16(R) :- catch((ev1_clear, prolog_listen(ev1_p(_), ev1_a), assertz(ev1_p(1)), ev1_get(R)), error(SsuE, _), R = raised(SsuE)).
 t_ev1p17(R) :- catch((ev1_clear, prolog_listen(ev1_p/1, ev1_a), prolog_unlisten(ev1_p/1, ev1_a), assertz(ev1_p(1)), ev1_get(R)), error(SsuE, _), R = raised(SsuE)).
-t_ev1p18(R) :- catch((ev1_clear, prolog_listen(ev1_p/1, ev1_m:ev1_ma), assertz(ev1_p(1)), ev1_get(R)), error(SsuE, _), R = raised(SsuE)).
 t_ev1p19(R) :- catch((ev1_clear, prolog_listen(ev1_p/1, ev1_a), assertz(ev1_p(1), Ref), erase(Ref), ev1_get(R)), error(SsuE, _), R = raised(SsuE)).
 t_ev1o01(R) :- catch((ev1_clear, prolog_listen(ev1_p/1, ev1_a), prolog_listen(ev1_p/1, ev1_b), assertz(ev1_p(1)), ev1_get(R)), error(SsuE, _), R = raised(SsuE)).
 t_ev1o02(R) :- catch((ev1_clear, prolog_listen(ev1_p/1, ev1_a, [as(last)]), prolog_listen(ev1_p/1, ev1_b, [as(last)]), assertz(ev1_p(1)), ev1_get(R)), error(SsuE, _), R = raised(SsuE)).
@@ -109,3 +112,6 @@ t_ev1r06(R) :- catch((ev1_clear, prolog_listen(erase, ev1_r(x)), recorda(ev1_k, 
 t_ev1r07(R) :- catch((ev1_clear, prolog_listen(erase, ev1_r(x)), assertz(ev1_p(1)), ev1_get(R)), error(SsuE, _), R = raised(SsuE)).
 t_ev1r08(R) :- catch((ev1_clear, prolog_listen(erase, ev1_rveto(t)), prolog_listen(erase, ev1_r(x), [as(last)]), recorda(ev1_k, v, Ref), ( erase(Ref) -> A = yes ; A = no ), ev1_get(L), R = A-L), error(SsuE, _), R = raised(SsuE)).
 t_ev1g01(R) :- catch((ev1_clear, garbage_collect_clauses, prolog_listen(erase, ev1_e(g)), assertz(ev1_p(1)), retract(ev1_p(1)), garbage_collect_clauses, ev1_get(R)), error(SsuE, _), R = raised(SsuE)).
+t_ev1g02(R) :- catch((ev1_clear, garbage_collect_clauses, prolog_listen(erase, ev1_ethrow(g)), assertz(ev1_p(1)), retract(ev1_p(1)), catch(garbage_collect_clauses, E, true), ev1_get(L), R = E-L), error(SsuE, _), R = raised(SsuE)).
+t_ev1u18(R) :- catch((ev1_clear, prolog_listen(ev1_p/1, ev1_pair(a, b)), prolog_listen(ev1_p/1, ev1_pair(z, c)), prolog_unlisten(ev1_p/1, ev1_pair(X, c)), assertz(ev1_p(1)), ev1_get(L), R = X-L), error(SsuE, _), R = raised(SsuE)).
+t_ev1p20(R) :- catch((ev1_clear, assertz(ev1_p(1)), prolog_listen(ev1_p/1, ev1_a), abolish(ev1_p/1), assertz(ev1_p(2)), ev1_get(R)), error(SsuE, _), R = raised(SsuE)).

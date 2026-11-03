@@ -885,10 +885,12 @@ end
 # DIVERGES (no upstream function): `events` is NULL in a new definition, as upstream's memset: the constructors of the
 # definition's other fields do not name it.
 definition{T}(
-    functor_name, arity, impl_clauses, flags, name, codes, codes_crefs, code_data, impl_foreign_function,
+    functor_name, arity, impl_clauses, flags, name, codes, codes_crefs, code_data,
+    impl_foreign_function,
     module_, shared
 ) where {T} = definition{T}(
-    functor_name, arity, impl_clauses, flags, name, codes, codes_crefs, code_data, impl_foreign_function,
+    functor_name, arity, impl_clauses, flags, name, codes, codes_crefs, code_data,
+    impl_foreign_function,
     module_, shared, nothing
 )
 

@@ -138,15 +138,39 @@ const _B3_CASES = [
     ("bp3i08", raw"'$inc_message_count'(1.5), R = yes"),
     ("bp3i09", raw"'$inc_message_count'([]), R = yes"),
     ("bp3i10", raw"findall(x, '$inc_message_count'(error), R)"),
-    ("bp3i11", raw"statistics(errors, E0), '$inc_message_count'(error), statistics(errors, E1), R is E1-E0"),
-    ("bp3i12", raw"statistics(warnings, E0), '$inc_message_count'(warning), statistics(warnings, E1), R is E1-E0"),
+    (
+        "bp3i11",
+        raw"statistics(errors, E0), '$inc_message_count'(error), statistics(errors, E1), R is E1-E0"
+    ),
+    (
+        "bp3i12",
+        raw"statistics(warnings, E0), '$inc_message_count'(warning), statistics(warnings, E1), R is E1-E0"
+    ),
     ("bp3n01", raw"'$notrace'(F, S), '$restore_trace'(F, S), R = F-S"),
-    ("bp3n02", raw"'$notrace'(F0, S0), '$notrace'(F, S), '$restore_trace'(F0, S0), R = F-S"),
-    ("bp3n03", raw"'$notrace'(F0, S0), '$restore_trace'(0, -1), '$notrace'(F, _), '$restore_trace'(F0, S0), R = F"),
-    ("bp3n04", raw"'$notrace'(F0, S0), '$restore_trace'(4, -1), '$notrace'(F, _), '$restore_trace'(F0, S0), R = F"),
-    ("bp3n05", raw"'$notrace'(F0, S0), '$restore_trace'(8, -1), '$notrace'(F, _), '$restore_trace'(F0, S0), R = F"),
-    ("bp3n06", raw"'$notrace'(F0, S0), '$restore_trace'(12, -1), '$notrace'(F, _), '$restore_trace'(F0, S0), R = F"),
-    ("bp3n07", raw"'$notrace'(F0, S0), '$restore_trace'(F0, -2), '$notrace'(_, S), '$restore_trace'(F0, S0), R = S"),
+    (
+        "bp3n02",
+        raw"'$notrace'(F0, S0), '$notrace'(F, S), '$restore_trace'(F0, S0), R = F-S"
+    ),
+    (
+        "bp3n03",
+        raw"'$notrace'(F0, S0), '$restore_trace'(0, -1), '$notrace'(F, _), '$restore_trace'(F0, S0), R = F"
+    ),
+    (
+        "bp3n04",
+        raw"'$notrace'(F0, S0), '$restore_trace'(4, -1), '$notrace'(F, _), '$restore_trace'(F0, S0), R = F"
+    ),
+    (
+        "bp3n05",
+        raw"'$notrace'(F0, S0), '$restore_trace'(8, -1), '$notrace'(F, _), '$restore_trace'(F0, S0), R = F"
+    ),
+    (
+        "bp3n06",
+        raw"'$notrace'(F0, S0), '$restore_trace'(12, -1), '$notrace'(F, _), '$restore_trace'(F0, S0), R = F"
+    ),
+    (
+        "bp3n07",
+        raw"'$notrace'(F0, S0), '$restore_trace'(F0, -2), '$notrace'(_, S), '$restore_trace'(F0, S0), R = S"
+    ),
     ("bp3n08", raw"'$notrace'(a, _), R = yes"),
     ("bp3n09", raw"'$notrace'(_, 5), R = yes"),
     ("bp3n10", raw"'$restore_trace'(a, -1), R = yes"),
@@ -157,7 +181,10 @@ const _B3_CASES = [
     ("bp3n15", raw"'$restore_trace'(12, -3), R = yes"),
     ("bp3n16", raw"'$restore_trace'(12, -1.5), R = yes"),
     ("bp3n17", raw"'$restore_trace'(12, 99999999999999999999), R = yes"),
-    ("bp3n18", raw"'$notrace'(F0, S0), '$restore_trace'(F0, S0), '$restore_trace'(F0, S0), '$notrace'(F, S), '$restore_trace'(F0, S0), R = F-S"),
+    (
+        "bp3n18",
+        raw"'$notrace'(F0, S0), '$restore_trace'(F0, S0), '$restore_trace'(F0, S0), '$notrace'(F, S), '$restore_trace'(F0, S0), R = F-S"
+    ),
     ("bp3n19", raw"'$notrace'(F0, S0), '$notrace'(F, _), '$restore_trace'(F0, S0), R = F"),
     ("bp3l01", raw"prolog_listen(untable, bp3_cb), R = yes"),
     ("bp3l02", raw"prolog_listen(untable, bp3_cb, [as(last)]), R = yes"),
@@ -191,20 +218,47 @@ const _B3_CASES = [
     ("bp3l30", raw"prolog_listen(untable, bp3_cb, [name(1)]), R = yes"),
     ("bp3l31", raw"prolog_listen(nosuchevent, 1, [as(first)]), R = yes"),
     ("bp3l32", raw"prolog_listen(1, bp3_cb, [as(middle)]), R = yes"),
-    ("bp3l33", raw"prolog_listen(erase, bp3_hit1), recorda(bp3_k, v, Ref), erase(Ref), findall(H, bp3_hit(H), Hs), length(Hs, R)"),
+    (
+        "bp3l33",
+        raw"prolog_listen(erase, bp3_hit1), recorda(bp3_k, v, Ref), erase(Ref), findall(H, bp3_hit(H), Hs), length(Hs, R)"
+    ),
     ("bp3v01", raw"variant_sha1(foo, H), atom_length(H, R)"),
-    ("bp3v02", raw"variant_sha1(f(X,Y,X), H1), variant_sha1(f(A,B,A), H2), ( H1 == H2 -> R = same ; R = diff )"),
-    ("bp3v03", raw"variant_sha1(f(X,Y), H1), variant_sha1(f(X,X), H2), ( H1 == H2 -> R = same ; R = diff )"),
+    (
+        "bp3v02",
+        raw"variant_sha1(f(X,Y,X), H1), variant_sha1(f(A,B,A), H2), ( H1 == H2 -> R = same ; R = diff )"
+    ),
+    (
+        "bp3v03",
+        raw"variant_sha1(f(X,Y), H1), variant_sha1(f(X,X), H2), ( H1 == H2 -> R = same ; R = diff )"
+    ),
     ("bp3v04", raw"variant_sha1(f(a), H), ( atom(H) -> R = atom ; R = other )"),
-    ("bp3v05", raw"variant_sha1(f(a,_), H), atom_codes(H, Cs), ( bp3_hex(Cs) -> R = hex ; R = nothex )"),
-    ("bp3v06", raw"variant_sha1(a, H1), variant_sha1(b, H2), ( H1 == H2 -> R = same ; R = diff )"),
-    ("bp3v07", raw"variant_sha1(a, H1), variant_sha1(a, H2), ( H1 == H2 -> R = same ; R = diff )"),
+    (
+        "bp3v05",
+        raw"variant_sha1(f(a,_), H), atom_codes(H, Cs), ( bp3_hex(Cs) -> R = hex ; R = nothex )"
+    ),
+    (
+        "bp3v06",
+        raw"variant_sha1(a, H1), variant_sha1(b, H2), ( H1 == H2 -> R = same ; R = diff )"
+    ),
+    (
+        "bp3v07",
+        raw"variant_sha1(a, H1), variant_sha1(a, H2), ( H1 == H2 -> R = same ; R = diff )"
+    ),
     ("bp3v08", raw"variant_sha1(a, foo), R = yes"),
     ("bp3v09", raw"variant_sha1(a, 1), R = yes"),
     ("bp3v10", raw"findall(H, variant_sha1(g(_), H), Hs), length(Hs, R)"),
-    ("bp3v11", raw"variant_sha1([a,b|T], H1), variant_sha1([a,b|U], H2), ( H1 == H2 -> R = same ; R = diff )"),
-    ("bp3v12", raw"variant_sha1(1, H1), variant_sha1(2, H2), ( H1 == H2 -> R = same ; R = diff )"),
-    ("bp3v13", raw"variant_sha1(f(X,Y), H1), variant_sha1(f(Y,X), H2), ( H1 == H2 -> R = same ; R = diff )"),
+    (
+        "bp3v11",
+        raw"variant_sha1([a,b|T], H1), variant_sha1([a,b|U], H2), ( H1 == H2 -> R = same ; R = diff )"
+    ),
+    (
+        "bp3v12",
+        raw"variant_sha1(1, H1), variant_sha1(2, H2), ( H1 == H2 -> R = same ; R = diff )"
+    ),
+    (
+        "bp3v13",
+        raw"variant_sha1(f(X,Y), H1), variant_sha1(f(Y,X), H2), ( H1 == H2 -> R = same ; R = diff )"
+    ),
     ("bp3v14", raw"variant_sha1(f(a), H), atom_length(H, R)"),
     ("bp3v15", raw"variant_sha1(foo, R)")
 ]
@@ -411,7 +465,9 @@ end
         @test !isempty(answered)                                            # some rows answer
         pre == "bp3v" || @test !isempty(failed) || pre == "bp3i" || pre == "bp3l"  # some rows fail, where the predicate can
     end
-    @test count(l -> occursin("raised", l) || occursin(",97,105,115,101,100", l), _B3_PINNED) >= 1
+    @test count(
+        l -> occursin("raised", l) || occursin(",97,105,115,101,100", l), _B3_PINNED
+    ) >= 1
     @test any(l -> startswith(l, "t_bp3m01 ") && endswith(l, "(nil)"), _B3_PINNED)           # found: the tail is []
     @test any(l -> startswith(l, "t_bp3m02") && !occursin(" ", l), _B3_PINNED)                # not found: fails
     @test any(l -> startswith(l, "t_bp3v01 ") && endswith(l, "(i40)"), _B3_PINNED)           # 40 hex digits

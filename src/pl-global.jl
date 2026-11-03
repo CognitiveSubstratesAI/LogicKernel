@@ -41,7 +41,8 @@ mutable struct event_hooks{T}
     onthreadexit::Union{Nothing, event_list{T, definition{T}}}      # thread exit hook
     onuntable::Union{Nothing, event_list{T, definition{T}}}         # Untable after reload
 end
-event_hooks{T}() where {T} = event_hooks{T}(nothing, nothing, nothing, nothing, nothing, nothing, nothing)
+event_hooks{T}() where {T} =
+    event_hooks{T}(nothing, nothing, nothing, nothing, nothing, nothing, nothing)
 
 # PORT: pl-global.h PL_global_data
 """

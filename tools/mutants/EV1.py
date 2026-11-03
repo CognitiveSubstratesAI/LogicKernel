@@ -6,7 +6,7 @@
 # locally: tools/mutate.sh run). Format: tools/mutate_drive.py's (as BOOTPREDSUB.py): `id`, `file`, `old` (must occur EXACTLY
 # once), `new`, optional `equivalent` and `targets`. Killed by test/core_lang/test_event_swipl.jl (rows ev1p01-ev1g01 named in
 # each id's KILL); the KILL lists are what the rows are EXPECTED to do (read, not run): the battery's verdict is the evidence.
-# Verdicts: written by the battery, not yet run.
+# Verdicts: written by the battery, not yet run. 51 mutants: 48 of the writer's list (3 declared EQUIVALENT) and N1-N3 of the gate.
 # The `old` strings are written in the repo's formatted style BEFORE `tools/warm.sh fmt` ran for this file's anchors (the coding
 # agent had no daemon): RE-FIT any that fmt rewrapped. Every `old` was checked to occur exactly once in its file with a throwaway
 # `python3 -I` script (a text count, no Julia).
@@ -21,12 +21,10 @@
 #   * the `rc = false` of the C-function branch of call_event_list, the thread events of PL_call_event_hook_va, the
 #     `event_delay_nesting != 0` branch (delayEvent/delayEvents/sendDelayedEvents have no caller until the reload step), the
 #     untable raise (TAB1), break/abort (DBG1): unreachable today; each is covered by the step that wires it.
-#   * the `destroy_event_list!(def)` of resetProcedure! (src/pl-proc.jl, since the re-stack onto PR1b): no row abolishes a predicate that has listeners;
-#     a gate agent may add one (`abolish` of an own pristine procedure after prolog_listen on it, then a re-assert).
-#   * `rcp[] = false` of cleanDefinition! (a listener that raises during the clause GC): no row raises there, the white-box row
-#     ev1g01 sees only the log; a gate agent may add a throwing-listener row.
-#   * the `PL_rewind_foreign_frame` after a missed closure of prolog_unlisten: no row has a PARTIAL unification (a closure
-#     `f(X, 1)` against `f(2, 2)`); a gate agent may add a row.
+#   * (rows added at the gate, mutants EV1-N1..N3) the `destroy_event_list!(def)` of resetProcedure! (row ev1p20: abolish of a
+#     predicate that has listeners, then a re-assert), `rcp[] = false` of cleanDefinition! (row ev1g02: a listener that raises during
+#     garbage_collect_clauses) and the `PL_rewind_foreign_frame` after a missed closure of prolog_unlisten (row ev1u18: listeners
+#     ev1_pair(a,b) and ev1_pair(z,c), unlisten ev1_pair(X,c)). Still NOT LISTED: the snapshot above (private to the audit).
 # TARGETS (audit D-0238): the files that register a listener: test_event_swipl.jl and test_bootpred3_swipl.jl (prolog_listen
 # rows). No other test file registers a listener, so none of the assert/retract/retractall/erase tests exercises an event path
 # beyond the `def.events === nothing` test (itself covered by every one of them: that test is not mutated here).
@@ -56,7 +54,7 @@ MUTANTS = [
          new="        vals[1] === nothing || nothing\n"),
     dict(id="EV1-R5 an `as` other than first and last is accepted (KILL ev1e01)",
          file=V, targets=TARGETS,
-         old="    if !(as == mk_sym(T, :first) || as == mk_sym(T, :last))\n",
+         old="    if !(event_atom_is(as, :first) || event_atom_is(as, :last))\n",
          new="    if false\n"),
     dict(id="EV1-R6 a name never matches an earlier listener: the callback is stored without its name (KILL ev1o04, ev1o05, ev1o10, ev1o11)",
          file=V, targets=TARGETS,
@@ -64,7 +62,7 @@ MUTANTS = [
          new="event_callback{T, definition{T}}(nothing, m, nothing, 0, nothing, argc, UInt32(0))"),
     dict(id="EV1-R7 a listener of the same name is not replaced: the new one is added (KILL ev1o04, ev1o05, ev1o10, ev1o11)",
          file=V, targets=TARGETS,
-         old="            if ev.name == name && ev.function_ == 0\n",
+         old="            if event_name_is(ev.name, name) && ev.function_ == 0\n",
          new="            if false\n"),
     dict(id="EV1-R8 the replacement of a named listener keeps the OLD closure (KILL ev1o04, ev1o05, ev1o10, ev1o11)",
          file=V, targets=TARGETS,
@@ -126,12 +124,12 @@ MUTANTS = [
     # ---- the calling side
     dict(id="EV1-C1 a failing listener does not stop the later ones (an atom closure) (KILL ev1v03, ev1v04, ev1v12)",
          file=V, targets=TARGETS,
-         old="                rc = rc && PL_call_predicate(\n",
-         new="                rc = PL_call_predicate(\n"),
+         old="                    rc && PL_call_predicate(\n",
+         new="                    PL_call_predicate(\n"),
     dict(id="EV1-C2 a failing listener does not stop the later ones (a term closure) (KILL ev1v04, ev1v12)",
          file=V, targets=TARGETS,
-         old="                rc = rc && (\n                    put_fastheap(ld, ev.closure, argv) &&\n",
-         new="                rc = (\n                    put_fastheap(ld, ev.closure, argv) &&\n"),
+         old="                    rc && (\n                        put_fastheap(ld, ev.closure, argv) &&\n",
+         new="                    (\n                        put_fastheap(ld, ev.closure, argv) &&\n"),
     dict(id="EV1-C3 an exception in a listener does not stop the later ones (KILL ev1v10)",
          file=V, targets=TARGETS,
          old="            if !rc && PL_exception(ld, 0) != 0\n                break\n            end\n",
@@ -142,8 +140,8 @@ MUTANTS = [
          new="        else\n            nothing\n"),
     dict(id="EV1-C5 the exception of a listener is dropped when the wakeup state is restored (KILL ev1v08, ev1v09, ev1v11, ev1r03)",
          file=V, targets=TARGETS,
-         old="wstate.flags | WAKEUP_KEEP_URGENT_EXCEPTION)",
-         new="wstate.flags)"),
+         old="wstate.flags | WAKEUP_KEEP_URGENT_EXCEPTION\n",
+         new="wstate.flags\n"),
     dict(id="EV1-C6 the clause of an erase event is not put: the listener gets an unbound argument (KILL ev1g01)",
          file=V, targets=TARGETS,
          old="        rc = PL_put_clref(gd, ld, av + 1, args[1]::Clause{T})           # object erased\n",
@@ -159,8 +157,8 @@ MUTANTS = [
          equivalent="src/pl-event.jl:609 — every caller of predicate_update_event passes UInt32(0) (src/pl-proc.jl:521 and :592), so the flag is never set: pl-transaction.c is not ported, the only upstream source of P_EVENT_ROLLBACK."),
     dict(id="EV1-C9 the `add` test of a named listener ignores function_ (EQUIVALENT)",
          file=V, targets=TARGETS,
-         old="ev.name == name && ev.function_ == 0",
-         new="ev.name == name",
+         old="event_name_is(ev.name, name) && ev.function_ == 0",
+         new="event_name_is(ev.name, name)",
          equivalent="src/pl-event.jl:138-139 — every event_callback is built with function_ 0 (src/pl-event.jl add_event_hook: the constructor's fourth argument); a nonzero function_ comes from register_event_function (pl-thread.c, TH1), not ported."),
     dict(id="EV1-C10 the frameFinished raise is dropped (EQUIVALENT)",
          file=W, targets=TARGETS,
@@ -170,16 +168,16 @@ MUTANTS = [
     # ---- predicate_update_event / retractall_event
     dict(id="EV1-P1 the retractall action is announced as `retract` (KILL ev1p09, ev1p10, ev1p12)",
          file=V, targets=TARGETS,
-         old="                PL_put_atom(ld, av + 1, mk_sym(T, :retractall))\n",
-         new="                PL_put_atom(ld, av + 1, mk_sym(T, :retract))\n"),
+         old="        PL_put_atom(ld, av + 1, mk_sym(T, :retractall))\n",
+         new="        PL_put_atom(ld, av + 1, mk_sym(T, :retract))\n"),
     dict(id="EV1-P2 the end of retractall is announced as `start` (KILL ev1p09, ev1p12, ev1v06)",
          file=V, targets=TARGETS,
          old="    start1 = lookupFunctorDef(ld.functors, _atom_word!(ld, mk_sym(T, start)), 1)\n",
          new="    start1 = lookupFunctorDef(ld.functors, _atom_word!(ld, mk_sym(T, :start)), 1)\n"),
     dict(id="EV1-P3 the retractall head is not module-qualified (KILL ev1p09, ev1p10, ev1p12, ev1p13)",
          file=V, targets=TARGETS,
-         old="                PL_cons_functor(ld, av + 2, FUNCTOR_colon2, av + 1, av + 2) &&\n",
-         new="                true &&\n"),
+         old="        PL_cons_functor(ld, av + 2, FUNCTOR_colon2, av + 1, av + 2) &&\n",
+         new="        true &&\n"),
     # ---- the raise sites (src/pl-proc.jl, src/pl-rec.jl)
     dict(id="EV1-S1 asserta is announced as assertz and the reverse (KILL ev1p01, ev1p02)",
          file=P, targets=TARGETS,
@@ -237,4 +235,17 @@ MUTANTS = [
          file=R, targets=TARGETS,
          old="        return rc ? FTRUE : FFALSE\n    end\nend\n\n# PORT: pl-rec.c fixup_ssu\n",
          new="        return FTRUE\n    end\nend\n\n# PORT: pl-rec.c fixup_ssu\n"),
+    # ---- rows added at the gate for the sites the first list left out (D-0238: each is killed by a row, not declared)
+    dict(id="EV1-N1 a listener that raises during the clause GC no longer fails garbage_collect_clauses (KILL ev1g02)",
+         file=P, targets=TARGETS,
+         old="                    rcp[] = false                       # *rcp = false\n",
+         new="                    nothing                             # *rcp = false\n"),
+    dict(id="EV1-N2 prolog_unlisten keeps the bindings of a closure that did not match (KILL ev1u18)",
+         file=V, targets=TARGETS,
+         old="                    PL_rewind_foreign_frame(ld, fid)\n",
+         new="                    nothing\n"),
+    dict(id="EV1-N3 abolish keeps the listeners of the predicate (resetProcedure! no longer destroys the list) (KILL ev1p20)",
+         file=P, targets=TARGETS,
+         old="    destroy_event_list!(def)                            # if ( def->events ) destroy_event_list(&def->events) (EV1)\n",
+         new="    nothing                                             # if ( def->events ) destroy_event_list(&def->events) (EV1)\n"),
 ]

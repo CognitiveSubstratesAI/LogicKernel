@@ -579,7 +579,9 @@ end
 # `put_fastheap`), where upstream copies the duplicate's cells and registers its atoms; `nothing` for upstream's NULL
 # (the record's building raised). Representation only: see `fastheap_term`.
 "Copy the term `t` off the stacks (pl-copyterm.c): a `fastheap_term` that `put_fastheap` copies back, or `nothing`."
-function term_to_fastheap(ld::PL_local_data{T}, t::term_t)::Union{Nothing, fastheap_term{T}} where {T}
+function term_to_fastheap(
+    ld::PL_local_data{T}, t::term_t
+)::Union{Nothing, fastheap_term{T}} where {T}
     r = compileTermToHeap(ld, t)
     return fastheap_term{T}(r.gsize, r.nvars, r.code, r.values)
 end
@@ -592,7 +594,9 @@ free_fastheap(::fastheap_term)::Nothing = nothing
 # PORT: pl-copyterm.c put_fastheap
 # DIVERGES: `copyRecordToGlobal` of the term's record into `t`, where upstream copies the cells to `gTop`.
 "Make term reference `t` hold a fresh copy of the fast heap term `fht` (pl-copyterm.c); false when it does not fit."
-function put_fastheap(ld::PL_local_data{T}, fht::fastheap_term{T}, t::term_t)::Bool where {T}
+function put_fastheap(
+    ld::PL_local_data{T}, fht::fastheap_term{T}, t::term_t
+)::Bool where {T}
     return copyRecordToGlobal(ld, t, record{T}(fht.gsize, fht.nvars, fht.code, fht.values))
 end
 

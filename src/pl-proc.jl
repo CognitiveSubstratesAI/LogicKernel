@@ -469,7 +469,8 @@ end
 
 # DIVERGES (no upstream function): without local data no listener of the predicate is called (the tests' database builders).
 function _assertDefinition!(
-    gd::PL_global_data{T}, def::Definition{T}, clause::Clause{T}, where_::Union{Int, ClauseRef{T}}
+    gd::PL_global_data{T}, def::Definition{T}, clause::Clause{T},
+    where_::Union{Int, ClauseRef{T}}
 )::ClauseRef{T} where {T}
     return _assertDefinition!(gd, nothing, def, clause, where_)::ClauseRef{T}
 end
@@ -479,7 +480,8 @@ end
 # raised) takes the clause out again and returns `nothing`.
 "`assertDefinition`'s body after `add_ssu_clause`: link `clause` into `def` at `where_` (pl-proc.c)."
 function _assertDefinition!(
-    gd::PL_global_data{T}, ld::Union{Nothing, PL_local_data{T}}, def::Definition{T}, clause::Clause{T},
+    gd::PL_global_data{T}, ld::Union{Nothing, PL_local_data{T}}, def::Definition{T},
+    clause::Clause{T},
     where_::Union{Int, ClauseRef{T}}
 )::Union{Nothing, ClauseRef{T}} where {T}
     key = argKey(Code(clause, 1), Int(def.impl_clauses.primary_index))
@@ -520,7 +522,14 @@ function _assertDefinition!(
     clause.generation_created = gd._generation
     clause.generation_erased = max_generation(def)
     if def.events !== nothing && ld !== nothing &&                    # def->events && !(LD->transaction.flags&TR_BULK) (no transactions)
-        !predicate_update_event(gd, ld, def, mk_sym(T, where_ === CL_START ? :asserta : :assertz), clause, UInt32(0))
+        !predicate_update_event(
+            gd,
+            ld,
+            def,
+            mk_sym(T, where_ === CL_START ? :asserta : :assertz),
+            clause,
+            UInt32(0)
+        )
         retractClauseDefinition!(gd, def, clause, false)              # error: retractClauseDefinition(def, clause, false)
         return nothing
     end
@@ -588,7 +597,8 @@ retractClauseDefinition!(
 # DIVERGES: as above; the update event (pl-proc.c:1706-1712) is raised, with `ld` to run the listeners in.
 "Retract `clause` of `def` (pl-proc.c): erase/1, retract/1 and retractall/1 come through here; false when a listener raised."
 function retractClauseDefinition!(
-    gd::PL_global_data{T}, ld::PL_local_data{T}, def::Definition{T}, clause::Clause{T}, notify::Bool
+    gd::PL_global_data{T}, ld::PL_local_data{T}, def::Definition{T}, clause::Clause{T},
+    notify::Bool
 )::Bool where {T}
     if def.events !== nothing && notify &&                      # def->events && notify && !(LD->transaction.flags&TR_BULK)
         !predicate_update_event(gd, ld, def, mk_sym(T, :retract), clause, UInt32(0))
@@ -638,7 +648,8 @@ Unlink from `def`'s clause list every erased clause no generation in use can see
 indexes; the number removed (pl-proc.c).
 """
 function cleanDefinition!(
-    gd::Union{Nothing, PL_global_data{T}}, ld::Union{Nothing, PL_local_data{T}}, def::Definition{T},
+    gd::Union{Nothing, PL_global_data{T}}, ld::Union{Nothing, PL_local_data{T}},
+    def::Definition{T},
     ddi::dirty_def_info{T}, start::gen_t, rcp::Base.RefValue{Bool}
 )::Int where {T}
     removed = 0

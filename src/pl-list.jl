@@ -537,7 +537,11 @@ function pl_memberchk3_va(
         done += 1
         if done % 10000 == 0
             if done > _used_stack(ld, :global) ÷ 16            # usedStack(global)/(sizeof(word)*2)
-                return PL_error(ld, "", 0, "", ERR_TYPE, mk_sym(T, :list), A2) ? FTRUE : FFALSE
+                return if PL_error(ld, "", 0, "", ERR_TYPE, mk_sym(T, :list), A2)
+                    FTRUE
+                else
+                    FFALSE
+                end
             end
         end
 
