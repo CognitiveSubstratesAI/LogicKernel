@@ -164,7 +164,7 @@ how many of the upstream file's functions are ported.
 | swipl-devel `src/pl-proc.h` | code | `cbf4e1896275` | `src/pl-proc.jl` | 1 | 0 |
 | swipl-devel `src/pl-qlf.c` | code | `cbf4e1896275` | `src/pl-qlf.jl` | 35 | 12 |
 | swipl-devel `src/pl-read.c` | code | `cbf4e1896275` | `src/os/pl-prologflag.jl` | 2 | 2 |
-| swipl-devel `src/pl-read.c` | code | `cbf4e1896275` | `src/pl-read.jl` | 192 | 77 |
+| swipl-devel `src/pl-read.c` | code | `cbf4e1896275` | `src/pl-read.jl` | 203 | 82 |
 | swipl-devel `src/pl-rec.c` | code | `cbf4e1896275` | `src/pl-incl.jl` | 1 | 1 |
 | swipl-devel `src/pl-rec.c` | code | `cbf4e1896275` | `src/pl-rec.jl` | 37 | 26 |
 | swipl-devel `src/pl-rec.h` | code | `cbf4e1896275` | `src/pl-incl.jl` | 1 | 1 |
@@ -195,7 +195,7 @@ how many of the upstream file's functions are ported.
 | swipl-devel `tests/core_lang/test_sort.pl` | code | `cbf4e1896275` | `test/core_lang/test_sort.jl` | 1 | 0 |
 | swipl-devel `tests/core_lang/test_term.pl` | code | `cbf4e1896275` | `test/core_lang/test_term.jl` | 27 | 0 |
 | swipl-devel `tests/core_lang/test_unify.pl` | code | `cbf4e1896275` | `test/core_lang/test_unify.jl` | 10 | 0 |
-| swipl-devel `tests/core_text/test_io.pl` | code | `cbf4e1896275` | `test/core_text/test_io.jl` | 1 | 0 |
+| swipl-devel `tests/core_text/test_io.pl` | code | `cbf4e1896275` | `test/core_text/test_io.jl` | 2 | 0 |
 | swipl-devel `tests/core_text/test_op.pl` | code | `cbf4e1896275` | `test/core_text/test_op.jl` | 4 | 0 |
 | swipl-devel `tests/core_text/test_read.pl` | code | `cbf4e1896275` | `test/core_text/test_read.jl` | 40 | 0 |
 | swipl-devel `tests/core_text/test_syntax.pl` | code | `cbf4e1896275` | `test/core_text/test_syntax.jl` | 46 | 0 |
@@ -293,7 +293,7 @@ checkout is pulled.
 | swipl-devel `src/pl-proc.c` | `cbf4e1896275` | 72 | 126 | 55 | src/pl-incl.jl, src/pl-proc.jl |
 | swipl-devel `src/pl-proc.h` | `cbf4e1896275` | 1 | 2 | 0 | src/pl-proc.jl |
 | swipl-devel `src/pl-qlf.c` | `cbf4e1896275` | 11 | 156 | 9 | src/pl-qlf.jl |
-| swipl-devel `src/pl-read.c` | `cbf4e1896275` | 142 | 209 | 66 | src/os/pl-prologflag.jl, src/pl-read.jl |
+| swipl-devel `src/pl-read.c` | `cbf4e1896275` | 150 | 209 | 70 | src/os/pl-prologflag.jl, src/pl-read.jl |
 | swipl-devel `src/pl-rec.c` | `cbf4e1896275` | 34 | 76 | 23 | src/pl-incl.jl, src/pl-rec.jl |
 | swipl-devel `src/pl-rec.h` | `cbf4e1896275` | 0 | 0 | 0 | src/pl-incl.jl |
 | swipl-devel `src/pl-ressymbol.c` | `cbf4e1896275` | 3 | 7 | 2 | src/pl-ressymbol.jl |
@@ -328,7 +328,7 @@ checkout is pulled.
 | swipl-devel `tests/db/test_db.pl` | `cbf4e1896275` | 2 | 10 | 0 | test/db/test_db.jl |
 | swipl-devel `tests/db/test_jit.pl` | `cbf4e1896275` | 16 | 21 | 0 | test/db/test_jit.jl |
 | swipl-devel `tests/rational/test_ieee754.pl` | `cbf4e1896275` | 0 | 15 | 0 | test/rational/test_ieee754.jl |
-| **total** | | **1795** | **5252** | **1034** | |
+| **total** | | **1803** | **5252** | **1038** | |
 <!-- END GENERATED coverage -->
 
 ### Not ported: unreachable upstream
