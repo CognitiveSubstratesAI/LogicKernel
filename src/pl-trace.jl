@@ -13,6 +13,7 @@
 # position is a word offset from `lBase`, so the kernel's equals swipl's (src/pl-incl.jl § the local
 # stack). The debugger itself is deferred (DBG1). Since R2 F1c: `debugmode` and `tracemode`, the two functions the flag `debug` calls
 # (pl-prologflag.c set_flag_value), over the debugger-status fields of the local data (`ld.debugstatus_*`, src/pl-global.jl).
+# Since R2 TOP1: `resetTracer` and `enable_debug_on_interrupt`, which `resetProlog` and `query_loop` (src/pl-pro.jl) call.
 
 # PORT: pl-trace.c PL_unify_frame
 "Unify `t` with frame `fr`'s position, or `none` for no frame (pl-trace.c)."
@@ -211,5 +212,36 @@ function tracemode(
         ld.debugstatus_skiplevel = SKIP_VERY_DEEP
     end
 
+    return true
+end
+
+# PORT: pl-trace.c resetTracer
+# DIVERGES: the local data is an argument (upstream's `LD`). `debugstatus.suspendTrace` and `debugstatus.retryFrame` are the
+# tracer's (DBG1) and the local data holds no field for them; the other three fields and the run mode are reset as upstream.
+"Reset the debugger: tracing and debugging off, no skipping, the normal run mode (pl-trace.c)."
+function resetTracer(ld::PL_local_data)::Nothing
+    ld.debugstatus_tracing = false              # debugstatus.tracing      = false
+    ld.debugstatus_debugging = false            # debugstatus.debugging    = false
+    # debugstatus.suspendTrace = 0 (DBG1)
+    ld.debugstatus_skiplevel = UInt(0)          # debugstatus.skiplevel    = 0
+    # debugstatus.retryFrame   = 0 (DBG1)
+    setPrologRunMode!(ld, RUN_MODE_NORMAL)      # setPrologRunMode(RUN_MODE_NORMAL)
+    return nothing
+end
+
+# PORT: pl-trace.c enable_debug_on_interrupt
+# DIVERGES: the local data is an argument. The signal half is the signal step's: `PL_signal(SIGINT, PL_interrupt)` (enable) and
+# `terminate_on_signal(SIGINT)` (disable) have no counterpart yet, so the flag `debug_on_interrupt` is set and cleared as upstream
+# does, and an interrupt does not reach the debugger.
+"Switch the flag `debug_on_interrupt` on or off: false where it cannot be switched on (the flag `signals` is off) (pl-trace.c)."
+function enable_debug_on_interrupt(ld::PL_local_data, enable::Bool)::Bool
+    if enable
+        truePrologFlag(ld, PLFLAG_SIGNALS) || return false
+        # PL_signal(SIGINT, PL_interrupt)
+        setPrologFlagMask!(ld, PLFLAG_DEBUG_ON_INTERRUPT)
+    else
+        # terminate_on_signal(SIGINT)
+        clearPrologFlagMask!(ld, PLFLAG_DEBUG_ON_INTERRUPT)
+    end
     return true
 end
