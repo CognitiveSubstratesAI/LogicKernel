@@ -107,16 +107,28 @@ const PL_predicates_from_system = (
     PL_extension("sleep", 1, pl_sleep1_va, PL_FA_VARARGS)
 )
 
-# ORIGINAL (CT1a): `PL_get_chars(t, &s, CVT_ATOM|CVT_EXCEPTION)` — the text of an atom as a `String`, as pl-ctype.c's
-# setlocale/3 reads it. A C string ends at its first NUL, so does this one; a term that is not an atom raises the
-# error (`type_error(atom, …)`, `instantiation_error`) and answers `nothing`.
-"The text of the atom term reference `t` holds (`CVT_ATOM|CVT_EXCEPTION`), or `nothing` after the error."
+# ORIGINAL (CT1a): `PL_get_chars(t, &s, CVT_ATOM|CVT_EXCEPTION)` — the text of an atom as the bytes of a C string, as
+# pl-ctype.c's setlocale/3 reads it: ISO Latin-1 (no `REP_*` flag), so a character above 0xFF raises
+# `representation_error(encoding)`; the string ends at its first NUL; a term that is not an atom raises the error
+# (`type_error(atom, …)`, `instantiation_error`) and answers `nothing`.
+"The Latin-1 bytes of the atom term reference `t` holds (`CVT_ATOM|CVT_EXCEPTION`), or `nothing` after the error."
 function _ctype_chars(ld::PL_local_data{T}, t::term_t)::Union{Nothing, String} where {T}
     txt = PL_get_text(ld, t, CVT_ATOM | CVT_EXCEPTION)
     txt === nothing && return nothing
-    s = text_string(txt)
-    i = findfirst(==('\0'), s)
-    return i === nothing ? s : s[1:prevind(s, i)]
+    b = UInt8[]
+    for c in text_string(txt)
+        if UInt32(c) > 0xff
+            PL_error(
+                ld, "", 0, "cannot represent text using encoding iso_latin_1",
+                ERR_REPRESENTATION, mk_sym(T, :encoding)
+            )
+            return nothing
+        end
+        push!(b, UInt8(c))
+    end
+    i = findfirst(==(0x00), b)
+    i === nothing || resize!(b, i - 1)
+    return String(b)
 end
 
 # ORIGINAL (CT1a): libc's `setlocale(category, locale)` through `ccall` (as `Setenv`, src/os/pl-os.jl); `locale`
