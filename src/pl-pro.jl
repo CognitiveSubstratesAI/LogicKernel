@@ -12,9 +12,13 @@
 #
 # Since HALT1: `abortProlog` and `abort/0` (the `unwind(abort)` ball), `raise_halt_exception` (the
 # `unwind(halt(Status))` ball `halt/1` raises). `halt_from_exception` and `restore_after_exception` are
-# left to the toplevel step with `query_loop`.
+# ported with `query_loop` since R2 TOP1.
 #
-# LEFT OUT: the rest of pl-pro.c — the toplevel (`pl_break`, `query_loop`, `prologToplevel`),
+# Since R2 TOP1: `resetProlog` (it resets the autoloader's chain and loop mark, `autoload_nesting`, `autoload_loop`),
+# `restore_after_exception`, `halt_from_exception` and `query_loop`. `prologToplevel`, `pl_break` and `currentBreakLevel` (they
+# need `LD->break_level`) are left to TOP1b.
+#
+# LEFT OUT: the rest of pl-pro.c — the toplevel (`pl_break`, `prologToplevel`),
 # `'$notrace'/1`, `'$call_no_catch'/1`, `'$can_yield'/0`, the other entries of the table (pl-pro.c:1060-1069),
 # `'$trap_gdb'/0`, the metacut `!/0` (`pl_metacut`), `checkStacks` and the C-stack queries.
 
@@ -281,6 +285,178 @@ function pl_restore_trace2_va(
     updateAlerted(ld)
 
     return FTRUE
+end
+
+# PORT: pl-pro.c resetProlog
+# DIVERGES: the local data is the only argument (upstream's `GET_LD`); `clear_stacks` is a Bool. The standard streams are opened
+# first (`_initIO`). `Scurin = in` and `Scurout = Suser_output` are the raw assignments of upstream's macros (no reference
+# counts). `gc_status.blocked`, `LD->shift_status.blocked` and `LD->in_print_message` are the garbage collector's and
+# `print_message/2`'s (the kernel's stacks grow by doubling, src/pl-gc.jl, and its messages go through `printMessage`): their
+# resets belong to the steps that port those counters. `LD->depth_info.limit = DEPTH_NO_LIMIT` is the depth limit's (P3, the
+# `$depth_limit*` family). The nesting is a vector (A2), emptied; `autoload.loop` is `nothing`.
+"""
+    resetProlog(ld, clear_stacks) -> true
+
+Bring the engine back to a sane state before the toplevel runs a goal again: clear an error on `user_input` (the next read
+prompts), make the user streams the current ones, clear the pending exception, reset the debugger and, with `clear_stacks`
+and no global variable, empty the stacks; the autoloader's chain and loop mark are reset (pl-pro.c).
+"""
+function resetProlog(ld::PL_local_data, clear_stacks::Bool)::Bool
+    _initIO(ld)
+    in = Suser_input(ld)
+
+    if in !== nothing && Sferror(in) != 0
+        Sclearerr(in)
+        ld.prompt_next = true
+    end
+
+    ld.IO_streams[SNO_CURRENT_INPUT + 1] = in                   # Scurin  = in
+    ld.IO_streams[SNO_CURRENT_OUTPUT + 1] = Suser_output(ld)    # Scurout = Suser_output
+
+    PL_clear_exception(ld)
+    resetTracer(ld)
+
+    if clear_stacks
+        if isempty(ld.gvar_nb_vars)                             # we would loose nb_setval/2 vars
+            emptyStacks!(ld)
+        end
+        # gc_status.blocked = 0; LD->shift_status.blocked = 0; LD->in_print_message = 0
+    end
+
+    empty!(ld.autoload_nesting)                                 # LD->autoload.nesting = NULL
+    ld.autoload_loop = nothing                                  # LD->autoload.loop = NULL
+    updateAlerted(ld)
+
+    return true
+end
+
+# PORT: pl-pro.c restore_after_exception
+# DIVERGES: the database and the local data are arguments; `except` is a term reference. The message term is built as
+# `abortProlog`'s.
+"Switch tracing and debugging off after an exception; after `unwind(abort)` call the `abort` event and print the message (pl-pro.c)."
+function restore_after_exception(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, except::term_t
+)::Bool where {T}
+    rc = true
+
+    tracemode(ld, false, nothing)
+    debugmode(ld, false, nothing, UInt32(0))
+    if classify_exception(ld, except) == EXCEPT_ABORT
+        rc = callEventHook(gd, ld, PLEV_ABORT) &&
+            printMessage(                                       # PL_FUNCTOR, FUNCTOR_unwind1, PL_ATOM, ATOM_abort
+                ld, :informational,
+                _message_term(ld, :unwind, _err_atom(ld, mk_sym(T, :abort)))
+            )
+    end
+
+    return rc
+end
+
+# PORT: pl-pro.c halt_from_exception
+# DIVERGES: the database and the local data are arguments; the ball is read on its words as `classify_exception_cells` reads it.
+"Halt the system with the status of the ball `unwind(halt(Status))` in `ex` (`Status & 0xff`); false for another ball (pl-pro.c)."
+function halt_from_exception(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, ex::term_t
+)::Bool where {T}
+    unwind1 = lookupFunctorDef(ld.functors, _atom_word!(ld, mk_sym(T, :unwind)), 1)
+    halt1 = lookupFunctorDef(ld.functors, _atom_word!(ld, mk_sym(T, :halt)), 1)
+    k, w, _ = _deref_loc(ld, -(ex + 1))                         # valTermRef(ex); deRef
+    if k == DU_WORD && _is_gcompound(w)
+        q = valPtr(w)
+        if ld.gstack[q] == unwind1                              # hasFunctor(*p, FUNCTOR_unwind1)
+            ka, wa, _ = _deref_loc(ld, q + 1)                   # p = argTermP(*p, 0); deRef(p)
+            if ka == DU_WORD && _is_gcompound(wa)
+                qa = valPtr(wa)
+                if ld.gstack[qa] == halt1                       # hasFunctor(*p, FUNCTOR_halt1)
+                    kb, wb, _ = _deref_loc(ld, qa + 1)
+                    if kb == DU_VALUE && isTaggedIntW(wb)
+                        status = valInt(wb)
+
+                        return PL_halt(gd, ld, Int(status & 0xff))
+                    end
+                end
+            end
+        end
+    end
+
+    return false
+end
+
+# PORT: pl-pro.c query_loop
+# DIVERGES: the database and the local data are arguments; `goal` is the atom, its predicate `system:Goal/0` (`PL_pred`, which
+# creates it: `lookupProcedure`). One thread: `PL_thread_self()` is 1, so `halt_from_exception` is always tried, and `LD->thread.exit_requested`
+# (`O_ENGINES`) is never set. The error exit (`goto error`) leaves the loop with the foreign frame still open, as upstream: the
+# next `resetProlog` that empties the stacks closes it. The result is an Int, `rc` of upstream: 1, 0, -1.
+"""
+    query_loop(gd, ld, goal, loop) -> Int
+
+Run the zero-argument predicate `system:goal` on behalf of the toplevel and return 1 (success), 0 (failure) or -1 (exception).
+After an exception, with `loop` and unless it is a halt or a thread exit, the goal is run again once the system is restored
+to a sane state (`resetProlog`, `restore_after_exception`); a halt ball halts the system (`halt_from_exception`) (pl-pro.c).
+"""
+function query_loop(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, goal::T, loop::Bool
+)::Int where {T}
+    rc = 0
+    clear_stacks = ld.query == 0                                # LD->query == NULL
+
+    if loop
+        enable_debug_on_interrupt(ld, true)
+    end
+
+    while true                                                  # do { … } while(loop)
+        fid = 0
+        qid = 0
+        except = 0
+
+        ok = resetProlog(ld, clear_stacks)
+        if ok
+            fid = PL_open_foreign_frame(ld)
+            ok = fid != 0
+        end
+        if ok
+            p = lookupProcedure(goal, 0, MODULE_system(gd))         # PL_pred(PL_new_functor(goal, 0), MODULE_system)
+            qid = PL_open_query(
+                gd, ld, MODULE_system(gd), PL_Q_NORMAL | PL_Q_EXCEPT_HALT, p,
+                PL_new_term_refs(ld, 0)
+            )
+            if qid != 0
+                rc = PL_next_solution(gd, ld, qid)
+            else
+                ok = false
+            end
+        end
+        if !ok                                                  # error:
+            except = ld.exception_term
+            rc = -1                                             # Won't get any better
+            break
+        end
+
+        if rc == 0 && (except = PL_exception(ld, qid)) != 0
+            exclass = classify_exception(ld, except)
+
+            if exclass == EXCEPT_ABORT
+                Sclearerr(Suser_input(ld)::IOSTREAM)
+            elseif exclass == EXCEPT_HALT
+                loop = false
+                halt_from_exception(gd, ld, except)             # me < 0 || me == 1: the one thread
+            elseif exclass == EXCEPT_THREAD_EXIT
+                loop = false
+            end
+
+            validUserStreams(ld) || (loop = false)
+
+            restore_after_exception(gd, ld, except)
+            rc = -1
+        end
+
+        qid != 0 && PL_close_query(ld, qid)
+        fid != 0 && PL_discard_foreign_frame(ld, fid)
+        except == 0 && break
+        loop || break                                           # } while(loop)
+    end
+
+    return rc
 end
 
 # PORT: pl-pro.c BeginPredDefs as PL_predicates_from_pro
