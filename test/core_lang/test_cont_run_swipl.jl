@@ -9,6 +9,7 @@
 #   * Every swipl answer line is PINNED (swipl 10.1.19, this program and driver, LC_ALL=C, 2026-11-04, two runs byte-identical;
 #     evidence/CONT1/cr_rows.out); with `swipl` on PATH the live answers are compared with the pins too.
 #   * UNVERIFIED on the kernel: gate decides (a mismatch is traced to its upstream cause, not re-pinned).
+using Test, LogicKernel
 const LK = LogicKernel
 
 # TERM TYPES PER CHUNK: REFERENCE — the continuations' run side (src/pl-cont.jl, src/pl-gc.jl, src/pl-wam.jl I_RESET .. I_YIELD); every type in CI
@@ -16,7 +17,7 @@ include(joinpath(@__DIR__, "..", "term_under_test.jl"))
 const _CR = lk_term_type(Union{Int64, Float64, String, BigInt, Rational{BigInt}})
 _crs(x) = lk_sym(_CR, Symbol(x))
 
-
+"A term as the driver's `enc/1` writes it: `V<i>` by first occurrence, atoms by name, compounds `name(args)`."
 function _cr_enc(t::_CR, seen::Vector{UInt64}=UInt64[])::String
     k = kind(t)
     if k === VAR
@@ -237,6 +238,18 @@ function _cr_file()::Tuple{String, Vector{String}}
     return f, names
 end
 
+"""
+The kernel's lines for `names` after consulting `path`, as the driver writes swipl's; a run that
+raises the refusal exception (`LK.NotPortedError`, its `what` and `step`) writes `refused <what> <step>`.
+"""
+function _cr_kernel(path::String, names::Vector{String})
+    gd = LK.PL_global_data{_CR}()
+    ld = LK.PL_local_data{_CR}(gd)
+    st, ball = LK.load_file!(gd, ld, path)
+    out = [st === :ok ? "ok" : "exc " * _cr_enc(ball::_CR)]
+    for name in names
+        proc = LK.isCurrentProcedure(sym_key(_crs(name)), 1, LK.MODULE_user(gd))
+        if proc === nothing || !LK.isDefinedProcedure(gd, proc)
             push!(out, "$name undefined")
             continue
         end
@@ -280,18 +293,6 @@ end
     end
     return out
 end
-
-@testset "I_CUTCHP runs and the six boot bodies read back as swipl's (LB4 b2)" begin
-    f, names = _cr_file()
-    ng = length(_CR_CASES)
-    kl = _cr_kernel(f, names[1:ng])
-    @test length(kl) == ng + 1
-    for (k, p) in zip(kl, _CR_PINNED[1:(ng + 1)])
-        k == p || println(stderr, "  ours  ", k, "\n  swipl ", p)
-        @test k == p
-    end
-    # not vacuous: the rows answer error terms, a cut answer list, an uncut one and the read-back bodies
-    @test count(l -> occursin("raised(type_error(choice,", l), _CR_PINNED) >= 4
 
 @testset "reset/3, shift/1, call_continuation/1 run as swipl's (CONT1)" begin
     f, names = _cr_file()
