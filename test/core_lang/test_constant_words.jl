@@ -87,7 +87,8 @@ end
 
 @testset "an opaque literal (NUM_OTHER) packs no atom word" begin
     O = lk_term_type(Union{Int64, Bool})
-    gd = LK.PL_global_data{O}()
+    # the unbooted database: a booted copy needs a payload that holds the boot files' floats, strings and big numbers
+    gd = LK.setupProlog(O)
     user = LK.MODULE_user(gd)
     v = lk_gnd(O, true)
     pr = LK.lookupProcedure(lk_sym(O, :kw_o), 1, user)
