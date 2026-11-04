@@ -181,7 +181,7 @@ function canonicaliseFileName(path::String)::String
         start = inp
     end
     while _cfn_at(buf, inp) == slash && _cfn_at(buf, inp + 1) == dot &&
-        _cfn_at(buf, inp + 2) == dot && _cfn_at(buf, inp + 3) == slash
+          _cfn_at(buf, inp + 2) == dot && _cfn_at(buf, inp + 3) == slash
         inp += 3
     end
     while _cfn_at(buf, inp) == dot && _cfn_at(buf, inp + 1) == slash
@@ -278,7 +278,9 @@ end
 `canonicaliseFileName`, then lower-cased unless the `file_name_case_handling` flag says the file system is
 case-sensitive (pl-os.c).
 """
-function canonicalisePath(ld::PL_local_data{T}, path::String)::Union{Nothing, String} where {T}
+function canonicalisePath(
+    ld::PL_local_data{T}, path::String
+)::Union{Nothing, String} where {T}
     p = canonicaliseFileName(path)
     if !truePrologFlag(ld, PLFLAG_FILE_CASE)                    # not case-sensitive
         p = utf8_path_lwr(p)
@@ -472,7 +474,7 @@ function PL_changed_cwd(ld::PL_local_data)::Nothing
     return nothing
 end
 
-# PORT: pl-os.c cwd_unlocked, PL_cwd
+# PORT: pl-os.c cwd_unlocked as PL_cwd
 # DIVERGES: returns the directory (with its closing `/`), or `nothing` after raising the error; with no database
 # (`ld.GD`, set by `PL_open_query`) there is no cache and the OS is asked every time. `pwd()` is `getcwd(3)`
 # through libuv, whose failure carries the `errno`.
