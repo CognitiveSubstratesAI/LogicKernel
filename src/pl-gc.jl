@@ -337,7 +337,7 @@ end
 # DIVERGES: `pc` and the result are the INDEX of an opcode in `codes`, not a pointer past it, so an
 # operand `PC[k]` is `codes[pc + 1 + k]`; the instructions are those the kernel declares, a literal
 # operand is one word (`code_get_indirect`'s block is the table's `arguments`), and `D_BREAK`
-# (`replacedBreak`) has no counterpart in the code. Left to the stack collector: `mark_argp`,
+# (`replacedBreak`) is left out (the debugger is deferred). Left to the stack collector: `mark_argp`,
 # `adepth`, `GCM_ALTCLAUSE` (so the control constructs are always walked) and `I_FREDO`'s
 # `mark_arguments`. A variable operand of `I_RATIONAL` is not marked, as upstream's list of the type
 # tests has no `I_RATIONAL` (10.1.19).
