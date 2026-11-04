@@ -10,6 +10,8 @@ mem(X, [X|_]).
 mem(X, [_|T]) :- mem(X, T).
 rep(0, []) :- !.
 rep(N, [97|T]) :- N1 is N-1, rep(N1, T).
+repv(0, []) :- !.
+repv(N, [36,76,75,95,76,66,50,66,95,86|T]) :- N1 is N-1, repv(N1, T).   % N times $LK_LB2B_V
 res(G, R) :- catch(( G -> R = true ; R = false ), error(E, C), R = error(E, C)).
 ans(T, G, R) :- catch(( G -> R = T ; R = false ), error(E, C), R = error(E, C)).
 rel(A, Rel) :- '$cwd'(C), ( atom_concat(C, Rel, A) -> true ; atom_concat(A, '/', C) -> Rel = cwd ; Rel = abs(A) ).
@@ -423,3 +425,12 @@ t390(R) :- res('$mark_executable'(_), R).
 t391(R) :- res('$mark_executable'(f(x)), R).
 % --- wildcard_match/3 (non-mutating, appended last so the row numbers above stay)
 t392(R) :- res(wildcard_match('[a-c]x', 'Bx', [case_sensitive(false)]), R).
+% --- expand_file_name/2, appended after the survivors LB2B-E4 and LB2B-E6 (the rows above keep their numbers)
+% E4: the names of ONE directory come out of readdir in a sorted order on every file system the test runs on (libuv's scandir sorts),
+% so only the sort ACROSS the directory segments shows: lk_lb2b_gs.d/f1 sorts before lk_lb2b_gs/f1 (`.` is 0x2E, `/` is 0x2F),
+% the order in which the outer segment is visited is the reverse.
+t393(R) :- ans(L, expand_file_name('lk_lb2b_gs*/f*', L), R).
+% E6: 500 times `$LK_LB2B_V` (V = a) is 5000 characters but expands to 500: only the length test on the RAW name refuses it
+t394(R) :- ( setenv('LK_LB2B_V', a), repv(500, Cs), atom_codes(A, Cs), res(expand_file_name(A, _), R0), unsetenv('LK_LB2B_V') -> R = R0 ; R = no ).
+% the same name, 400 times (4000 characters, under the limit): the expansion is accepted: the one answer is the 400 characters
+t395(R) :- ( setenv('LK_LB2B_V', a), repv(400, Cs), atom_codes(A, Cs), expand_file_name(A, [X]), atom_length(X, N), unsetenv('LK_LB2B_V') -> R = N ; R = no ).
