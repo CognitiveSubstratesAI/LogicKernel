@@ -6,8 +6,6 @@
 # `Q10 stubs … rest NEW D3` → D3; `DEFER to LB5-LB7` → LB5-LB7; NONE → no owner); VM instructions by family; the QLF refusal sites → LB3; table_* flags → TAB1.
 pred:$absolute_file_name/2	LB2b	seed: missing_c_preds.tsv
 pred:$activate_static_extension/1	LB5-LB7	seed: missing_c_preds.tsv
-pred:$c_current_predicate/2	PR1	seed: missing_c_preds.tsv
-pred:$c_wrap_predicate/5	WRAP1	seed: missing_c_preds.tsv
 pred:$call_no_catch/1	DBG1	seed: missing_c_preds.tsv
 pred:$can_yield/0	DBG1	seed: missing_c_preds.tsv
 pred:$chdir/1	LB2b	seed: missing_c_preds.tsv
@@ -24,8 +22,6 @@ pred:$foreign_predicate_source/2	PR1	seed: missing_c_preds.tsv
 pred:$gc_clear/1	TH1	seed: missing_c_preds.tsv
 pred:$gc_stop/0	TH1	seed: missing_c_preds.tsv
 pred:$gc_wait/1	TH1	seed: missing_c_preds.tsv
-pred:$get_dict_ex/3	D3	seed: missing_c_preds.tsv
-pred:$get_predicate_attribute/3	PR1	seed: missing_c_preds.tsv
 pred:$idg_add_edge/1	TAB1	seed: missing_c_preds.tsv
 pred:$idg_add_mono_dyn_dep/3	TAB1	seed: missing_c_preds.tsv
 pred:$idg_add_monotonic_dep/3	TAB1	seed: missing_c_preds.tsv
@@ -42,24 +38,19 @@ pred:$idg_mono_index_deps/4	TAB1	seed: missing_c_preds.tsv
 pred:$idg_mono_invalidate/1	TAB1	seed: missing_c_preds.tsv
 pred:$idg_reset_current/0	TAB1	seed: missing_c_preds.tsv
 pred:$idg_set_current/2	TAB1	seed: missing_c_preds.tsv
-pred:$inc_message_count/1	Q10	seed: missing_c_preds.tsv
 pred:$inference_limit/2	P3	seed: missing_c_preds.tsv
 pred:$inference_limit_except/3	P3	seed: missing_c_preds.tsv
 pred:$inference_limit_false/1	P3	seed: missing_c_preds.tsv
 pred:$inference_limit_true/3	P3	seed: missing_c_preds.tsv
 pred:$is_answer_trie/2	TAB1	seed: missing_c_preds.tsv
 pred:$leash/2	DBG1	seed: missing_c_preds.tsv
-pred:$memberchk/3	Q10	seed: missing_c_preds.tsv
 pred:$mono_idg_changed/2	TAB1	seed: missing_c_preds.tsv
 pred:$mono_reeval_done/3	TAB1	seed: missing_c_preds.tsv
 pred:$mono_reeval_prepare/2	TAB1	seed: missing_c_preds.tsv
 pred:$my_file/1	LB2b	seed: missing_c_preds.tsv
-pred:$notrace/2	DBG1	seed: missing_c_preds.tsv
 pred:$on_signal/4	Q10	seed: missing_c_preds.tsv
 pred:$put_token/2	Q10	seed: missing_c_preds.tsv
-pred:$raw_read/2	RD1	seed: missing_c_preds.tsv
 pred:$rc_handle/1	ZIP1	seed: missing_c_preds.tsv
-pred:$restore_trace/2	DBG1	seed: missing_c_preds.tsv
 pred:$seek_list/4	P2	seed: missing_c_preds.tsv
 pred:$set_prolog_stack/4	Q10	seed: missing_c_preds.tsv
 pred:$sig_unblock/0	TH1	seed: missing_c_preds.tsv
@@ -81,7 +72,6 @@ pred:$tbl_force_truth_value/3	TAB1	seed: missing_c_preds.tsv
 pred:$tbl_global_variant_table/1	TAB1	seed: missing_c_preds.tsv
 pred:$tbl_implementation/2	TAB1	seed: missing_c_preds.tsv
 pred:$tbl_is_answer_completed/1	TAB1	seed: missing_c_preds.tsv
-pred:$tbl_is_trienode/1	TAB1	seed: missing_c_preds.tsv
 pred:$tbl_leader_complete/4	TAB1	seed: missing_c_preds.tsv
 pred:$tbl_local_variant_table/1	TAB1	seed: missing_c_preds.tsv
 pred:$tbl_moded_variant_table/6	TAB1	seed: missing_c_preds.tsv
@@ -98,7 +88,6 @@ pred:$tbl_set_delay_list/1	TAB1	seed: missing_c_preds.tsv
 pred:$tbl_table_complete_all/3	TAB1	seed: missing_c_preds.tsv
 pred:$tbl_table_status/2	TAB1	seed: missing_c_preds.tsv
 pred:$tbl_table_status/4	TAB1	seed: missing_c_preds.tsv
-pred:$tbl_trienode/1	TAB1	seed: missing_c_preds.tsv
 pred:$tbl_variant_table/1	TAB1	seed: missing_c_preds.tsv
 pred:$tbl_variant_table/6	TAB1	seed: missing_c_preds.tsv
 pred:$tbl_wkl_add_answer/4	TAB1	seed: missing_c_preds.tsv
@@ -121,19 +110,12 @@ pred:$urgent_exception/3	P3	seed: missing_c_preds.tsv
 pred:$usage/0	Q10	seed: missing_c_preds.tsv
 pred:$visible/2	DBG1	seed: missing_c_preds.tsv
 pred:$wrapped_implementation/3	WRAP1	seed: missing_c_preds.tsv
-pred::</2	D3	seed: missing_c_preds.tsv
-pred:>:</2	D3	seed: missing_c_preds.tsv
 pred:\=@=/2	Q10	seed: missing_c_preds.tsv
-pred:abolish/1	PR1	seed: missing_c_preds.tsv
-pred:abort/0	DBG1	seed: missing_c_preds.tsv
 pred:access_file/2	LB2b	seed: missing_c_preds.tsv
 pred:break/0	DBG1	seed: missing_c_preds.tsv
 pred:char_type/2	CT1	seed: missing_c_preds.tsv
 pred:code_type/2	CT1	seed: missing_c_preds.tsv
 pred:current_blob/2	Q10	seed: missing_c_preds.tsv
-pred:current_predicate/1	PR1	seed: missing_c_preds.tsv
-pred:del_dict/4	D3	seed: missing_c_preds.tsv
-pred:dict_pairs/3	D3	seed: missing_c_preds.tsv
 pred:directory_files/2	LB2b	seed: missing_c_preds.tsv
 pred:dwim_match/3	DBG1	seed: missing_c_preds.tsv
 pred:engine_next/2	TH1	seed: missing_c_preds.tsv
@@ -145,12 +127,9 @@ pred:file_directory_name/2	LB2b	seed: missing_c_preds.tsv
 pred:file_name_extension/3	LB2b	seed: missing_c_preds.tsv
 pred:format_time/3	TAI1	seed: missing_c_preds.tsv
 pred:garbage_collect_atoms/0	Q10	seed: missing_c_preds.tsv
-pred:garbage_collect_clauses/0	PR1	seed: missing_c_preds.tsv
 pred:get/1	S2a	seed: missing_c_preds.tsv
 pred:get/2	S2a	seed: missing_c_preds.tsv
-pred:get_dict/5	D3	seed: missing_c_preds.tsv
 pred:get_flag/2	FL1	seed: missing_c_preds.tsv
-pred:halt/1	Q10	seed: missing_c_preds.tsv
 pred:is_absolute_file_name/1	LB2b	seed: missing_c_preds.tsv
 pred:is_engine/1	TH1	seed: missing_c_preds.tsv
 pred:is_trie/1	TRIE1	seed: missing_c_preds.tsv
@@ -160,14 +139,9 @@ pred:message_queue_destroy/1	TH1	seed: missing_c_preds.tsv
 pred:notrace/0	DBG1	seed: missing_c_preds.tsv
 pred:prolog_choice_attribute/3	DBG1	seed: missing_c_preds.tsv
 pred:prolog_frame_attribute/3	DBG1	seed: missing_c_preds.tsv
-pred:prolog_listen/2	EV1	seed: missing_c_preds.tsv
 pred:prolog_to_os_filename/2	LB2b	seed: missing_c_preds.tsv
-pred:prolog_unlisten/2	EV1	seed: missing_c_preds.tsv
 pred:put/1	S2a	seed: missing_c_preds.tsv
 pred:put/2	S2a	seed: missing_c_preds.tsv
-pred:put_dict/4	D3	seed: missing_c_preds.tsv
-pred:read/2	RD1	seed: missing_c_preds.tsv
-pred:read_term/3	RD1	seed: missing_c_preds.tsv
 pred:rename_file/2	LB2b	seed: missing_c_preds.tsv
 pred:same_file/2	LB2b	seed: missing_c_preds.tsv
 pred:set_flag/2	FL1	seed: missing_c_preds.tsv
@@ -195,7 +169,6 @@ pred:trie_term/2	TRIE1	seed: missing_c_preds.tsv
 pred:trim_heap/0	Q10	seed: missing_c_preds.tsv
 pred:trim_stacks/0	Q10	seed: missing_c_preds.tsv
 pred:unwrap_predicate/2	WRAP1	seed: missing_c_preds.tsv
-pred:variant_sha1/2	HASH1	seed: missing_c_preds.tsv
 pred:zip_clone/2	ZIP1	seed: missing_c_preds.tsv
 pred:zip_close_/2	ZIP1	seed: missing_c_preds.tsv
 pred:zip_file_info_/3	ZIP1	seed: missing_c_preds.tsv
@@ -235,10 +208,7 @@ vmi:I_RESET	CONT1	seed: VM-instruction family
 vmi:I_SHIFT	CONT1	seed: VM-instruction family
 vmi:I_SHIFTCP	CONT1	seed: VM-instruction family
 vmi:I_YIELD	CONT1	seed: VM-instruction family
-vmi:S_CALLWRAPPER	WRAP1	seed: VM-instruction family
-vmi:S_TABLED	TAB1	seed: VM-instruction family
 vmi:S_TRIE_GEN	TAB1	seed: VM-instruction family
-vmi:S_WRAP	WRAP1	seed: VM-instruction family
 vmi:T_ATOM	TAB1	seed: VM-instruction family
 vmi:T_ATTVARA	TAB1	seed: VM-instruction family
 vmi:T_ATTVARZ	TAB1	seed: VM-instruction family

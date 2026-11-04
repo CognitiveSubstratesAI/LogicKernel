@@ -107,7 +107,10 @@ function r2_tokenize(text::AbstractString)::Vector{R2Tok}
                             i += 1
                         end
                         if i < n && (cs[i] == 'e' || cs[i] == 'E') &&
-                            (isdigit(cs[i + 1]) || (i + 1 < n && cs[i + 1] in "+-" && isdigit(cs[i + 2])))
+                            (
+                                isdigit(cs[i + 1]) ||
+                                (i + 1 < n && cs[i + 1] in "+-" && isdigit(cs[i + 2]))
+                            )
                             i += 2
                             while i <= n && isdigit(cs[i])
                                 i += 1
@@ -186,11 +189,16 @@ end
 # predicate counts later, so an arithmetic `+` between two operands is harmless. Neither the clause neck nor the DCG arrow is a call.
 const _R2_NOT_INFIX = (":-", "?-", "-->", "=>", "?=>", ":")
 const R2_PREFIX_GOALS = (
-    "dynamic", "discontiguous", "initialization", "meta_predicate", "module_transparent", "multifile", "public",
+    "dynamic", "discontiguous", "initialization", "meta_predicate", "module_transparent",
+    "multifile", "public",
     "thread_local", "thread_initialization", "volatile", "table"
 )
-_r2_operand_end(t::R2Tok)::Bool = t.kind in (:atom, :qatom, :var, :num, :str) || (t.kind == :punct && t.text in (")", "]", "}"))
-_r2_operand_start(t::R2Tok)::Bool = t.kind in (:atom, :qatom, :var, :num, :str) || (t.kind == :punct && t.text in ("(", "[", "{"))
+_r2_operand_end(t::R2Tok)::Bool =
+    t.kind in (:atom, :qatom, :var, :num, :str) ||
+    (t.kind == :punct && t.text in (")", "]", "}"))
+_r2_operand_start(t::R2Tok)::Bool =
+    t.kind in (:atom, :qatom, :var, :num, :str) ||
+    (t.kind == :punct && t.text in ("(", "[", "{"))
 
 const _R2_GOAL_PREV = (":-", "?-", ",", "(", ";", "->", "*->", "\\+", "|", "{")
 const _R2_GOAL_NEXT = (",", ")", ";", "->", "*->", "|", "}")
@@ -205,7 +213,10 @@ function r2_calls(clause::Vector{R2Tok})::Vector{Tuple{String, Int, Int}}
     stack = String[]
     for (k, t) in enumerate(clause)
         if t.kind == :punct && t.text == "("
-            push!(stack, (k > 1 && t.adj && clause[k - 1].kind in (:atom, :qatom, :var)) ? "c" : "(")   # "c": a compound's arguments
+            push!(
+                stack,
+                (k > 1 && t.adj && clause[k - 1].kind in (:atom, :qatom, :var)) ? "c" : "("
+            )   # "c": a compound's arguments
         elseif t.kind == :punct && t.text in ("[", "{")
             push!(stack, t.text)
         elseif t.kind == :punct && t.text in (")", "]", "}")
@@ -215,7 +226,8 @@ function r2_calls(clause::Vector{R2Tok})::Vector{Tuple{String, Int, Int}}
         if t.kind == :sym                                  # `=(A, B)` or the infix `A :< B`, `A \\=@= B`
             if nxt !== nothing && nxt.kind == :punct && nxt.text == "(" && nxt.adj
                 push!(out, (t.text, first(r2_arity(clause, k + 1)), t.line))
-            elseif !(t.text in _R2_NOT_INFIX) && k > 1 && nxt !== nothing && _r2_operand_end(clause[k - 1]) && _r2_operand_start(nxt)
+            elseif !(t.text in _R2_NOT_INFIX) && k > 1 && nxt !== nothing &&
+                _r2_operand_end(clause[k - 1]) && _r2_operand_start(nxt)
                 push!(out, (t.text, 2, t.line))
             end
             continue
@@ -224,16 +236,21 @@ function r2_calls(clause::Vector{R2Tok})::Vector{Tuple{String, Int, Int}}
         name === nothing && continue
         if nxt !== nothing && nxt.kind == :punct && nxt.text == "(" && nxt.adj
             push!(out, (name, first(r2_arity(clause, k + 1)), t.line))
-        elseif t.kind == :atom && name == "is" && k > 1 && nxt !== nothing && _r2_operand_end(clause[k - 1]) && _r2_operand_start(nxt)
+        elseif t.kind == :atom && name == "is" && k > 1 && nxt !== nothing &&
+            _r2_operand_end(clause[k - 1]) && _r2_operand_start(nxt)
             push!(out, (name, 2, t.line))                  # `X is Expr`
-        elseif t.kind == :atom && name in R2_PREFIX_GOALS && nxt !== nothing && _r2_operand_start(nxt) &&
+        elseif t.kind == :atom && name in R2_PREFIX_GOALS && nxt !== nothing &&
+            _r2_operand_start(nxt) &&
             !(k > 1 && _r2_operand_end(clause[k - 1]))
             push!(out, (name, 1, t.line))                  # `:- dynamic foo/1.`
         else
             prev = k > 1 ? clause[k - 1] : nothing
             isempty(stack) || !(last(stack) in ("[", "c")) || continue
-            pok = prev !== nothing && prev.kind in (:sym, :punct) && prev.text in _R2_GOAL_PREV
-            nok = nxt === nothing || (nxt.kind in (:sym, :punct) && nxt.text in _R2_GOAL_NEXT)
+            pok =
+                prev !== nothing && prev.kind in (:sym, :punct) &&
+                prev.text in _R2_GOAL_PREV
+            nok =
+                nxt === nothing || (nxt.kind in (:sym, :punct) && nxt.text in _R2_GOAL_NEXT)
             pok && nok && push!(out, (name, 0, t.line))
         end
     end
@@ -246,7 +263,8 @@ function r2_heads(clauses::Vector{Vector{R2Tok}})::Set{String}
     for cl in clauses
         (isempty(cl) || (cl[1].kind == :sym && cl[1].text in (":-", "?-"))) && continue
         k = 1
-        if length(cl) > 2 && cl[2].kind == :sym && cl[2].text == ":" && cl[1].kind in (:atom, :qatom)
+        if length(cl) > 2 && cl[2].kind == :sym && cl[2].text == ":" &&
+            cl[1].kind in (:atom, :qatom)
             k = 3
         end
         k <= length(cl) || continue
@@ -305,7 +323,8 @@ function r2_load_list(load_pl::AbstractString)
             for k in 3:length(cl)
                 nm = r2_atom_name(cl[k])
                 nm === nothing && continue
-                k < length(cl) && cl[k + 1].kind == :sym && cl[k + 1].text == ":" && continue   # `user:` prefix
+                k < length(cl) && cl[k + 1].kind == :sym && cl[k + 1].text == ":" &&
+                    continue   # `user:` prefix
                 push!(names, nm)
             end
             cond = join((s[2] ? s[1] : "!(" * s[1] * ")" for s in stack), " && ")
@@ -324,9 +343,11 @@ function r2_library_deps(text::AbstractString)::Vector{String}
     out = String[]
     for cl in r2_clauses(r2_tokenize(text))
         (length(cl) >= 2 && cl[1].kind == :sym && cl[1].text == ":-") || continue
-        r2_atom_name(cl[2]) in ("use_module", "autoload", "ensure_loaded", "reexport") || continue
+        r2_atom_name(cl[2]) in ("use_module", "autoload", "ensure_loaded", "reexport") ||
+            continue
         for k in 3:(length(cl) - 2)
-            if r2_atom_name(cl[k]) == "library" && cl[k + 1].kind == :punct && cl[k + 1].text == "("
+            if r2_atom_name(cl[k]) == "library" && cl[k + 1].kind == :punct &&
+                cl[k + 1].text == "("
                 j = k + 2
                 parts = String[]
                 while j <= length(cl) && !(cl[j].kind == :punct && cl[j].text == ")")
@@ -354,7 +375,9 @@ struct R2Up
     cond::String
 end
 
-const _R2_CLS_RANK = Dict("" => 0, "threads" => 1, "other" => 2, "apple" => 3, "windows" => 4)
+const _R2_CLS_RANK = Dict(
+    "" => 0, "threads" => 1, "other" => 2, "apple" => 3, "windows" => 4
+)
 
 "The class of a preprocessor condition stack: the worst entry (windows > apple > other > threads), a negated entry counts for nothing."
 function r2_cond_class(stack::Vector{String})::String
@@ -404,8 +427,12 @@ end
 _r2_unescape(s::AbstractString)::String = String(replace(s, r"\\(.)" => s"\1"))
 
 const _R2_RX_NAME = "\"((?:[^\"\\\\]|\\\\.)*)\""
-const _R2_RX_PRED = Regex("^\\s*(?:PRED_IMPL|PRED_SHARE|PRED_DEF|FRG)\\(\\s*$(_R2_RX_NAME)\\s*,\\s*(\\d+)\\s*,")
-const _R2_RX_REGF = Regex("PL_register_foreign(?:_in_module)?\\(\\s*(?:$(_R2_RX_NAME)\\s*,\\s*)?$(_R2_RX_NAME)\\s*,\\s*(\\d+)\\s*,")
+const _R2_RX_PRED = Regex(
+    "^\\s*(?:PRED_IMPL|PRED_SHARE|PRED_DEF|FRG)\\(\\s*$(_R2_RX_NAME)\\s*,\\s*(\\d+)\\s*,"
+)
+const _R2_RX_REGF = Regex(
+    "PL_register_foreign(?:_in_module)?\\(\\s*(?:$(_R2_RX_NAME)\\s*,\\s*)?$(_R2_RX_NAME)\\s*,\\s*(\\d+)\\s*,"
+)
 const _R2_RX_VMI = r"^\s*VMI\(\s*(\w+)\s*,"
 
 "The predicate and VM-instruction definitions in one upstream C file's text (loose: a first-line pattern, a 3-line window)."
@@ -452,7 +479,9 @@ end
 
 "The snapshot file's text (`docs/r2_upstream.tsv`): one definition per line, sorted, with a header naming the pin."
 function r2_snapshot_text(rows::Vector{R2Up}, pin::AbstractString)::String
-    body = sort!(unique!([join((r.kind, r.key, r.file, r.cls, r.cond), '\t') for r in rows]))
+    body = sort!(
+        unique!([join((r.kind, r.key, r.file, r.cls, r.cond), '\t') for r in rows])
+    )
     return "# swipl-devel $pin: the predicate and VM-instruction definitions of src/**/*.c, generated by tools/port_check.jl --write-inventory — do not hand-edit\n" *
            "# kind\tkey\tfile\tclass\tcondition\n" * join(body, '\n') * "\n"
 end
@@ -483,12 +512,17 @@ end
 "A swipl-devel checkout that has the pin commit (LOGICKERNEL_UPSTREAM_SWIPL_DEVEL, ~/dev-zone/swipl-devel-<pin8>, ~/dev-zone/swipl-devel), or `nothing`."
 function r2_pin_checkout(pin::AbstractString)::Union{String, Nothing}
     cands = String[]
-    haskey(ENV, "LOGICKERNEL_UPSTREAM_SWIPL_DEVEL") && push!(cands, ENV["LOGICKERNEL_UPSTREAM_SWIPL_DEVEL"])
+    haskey(ENV, "LOGICKERNEL_UPSTREAM_SWIPL_DEVEL") &&
+        push!(cands, ENV["LOGICKERNEL_UPSTREAM_SWIPL_DEVEL"])
     push!(cands, joinpath(homedir(), "dev-zone", "swipl-devel-" * pin[1:8]))
     push!(cands, joinpath(homedir(), "dev-zone", "swipl-devel"))
     for d in cands
         isdir(d) || continue
-        success(pipeline(`git -C $d cat-file -e $(pin * "^{commit}")`; stdout=devnull, stderr=devnull)) &&
+        success(
+            pipeline(
+                `git -C $d cat-file -e $(pin * "^{commit}")`; stdout=devnull, stderr=devnull
+            )
+        ) &&
             return d
     end
     return nothing
@@ -496,11 +530,14 @@ end
 
 "Every predicate and VM-instruction definition of `src/**/*.c` at `pin` in the checkout `up` (read with `git show`, never the working tree)."
 function r2_pin_c_rows(up::AbstractString, pin::AbstractString)::Vector{R2Up}
-    files = split(read(`git -C $up ls-tree -r --name-only $pin src`, String), '\n'; keepempty=false)
+    files = split(
+        read(`git -C $up ls-tree -r --name-only $pin src`, String), '\n'; keepempty=false
+    )
     rows = R2Up[]
     for f in sort!(String.(filter(f -> endswith(f, ".c"), files)))
         text = String(read(`git -C $up show $(pin * ":" * f)`))
-        isvalid(text) || (text = String(map(b -> b < 0x80 ? b : UInt8('?'), codeunits(text))))
+        isvalid(text) ||
+            (text = String(map(b -> b < 0x80 ? b : UInt8('?'), codeunits(text))))
         append!(rows, r2_scan_c(text, f))
     end
     return rows
@@ -512,7 +549,8 @@ end
 function r2_kernel_texts(root::AbstractString)::Dict{String, String}
     out = Dict{String, String}()
     for (d, _, fs) in walkdir(joinpath(root, "src")), f in fs
-        endswith(f, ".jl") && (out[relpath(joinpath(d, f), root)] = read(joinpath(d, f), String))
+        endswith(f, ".jl") &&
+            (out[relpath(joinpath(d, f), root)] = read(joinpath(d, f), String))
     end
     return out
 end
@@ -624,13 +662,15 @@ The predicate rows: every C-defined predicate (at the pin) that a boot or librar
 define itself — done when registered in the kernel (or compiled inline), else missing; platform-only ones leave the count.
 """
 function r2_pred_rows(
-    refs::Dict{String, Vector{String}}, up::Vector{R2Up}, registered::Set{String}, defined::Set{String}
+    refs::Dict{String, Vector{String}}, up::Vector{R2Up}, registered::Set{String},
+    defined::Set{String}
 )::Vector{R2Row}
     best = Dict{String, R2Up}()
     for u in up
         u.kind == "pred" || continue
         haskey(refs, u.key) || continue
-        (!haskey(best, u.key) || _R2_CLS_RANK[u.cls] < _R2_CLS_RANK[best[u.key].cls]) && (best[u.key] = u)
+        (!haskey(best, u.key) || _R2_CLS_RANK[u.cls] < _R2_CLS_RANK[best[u.key].cls]) &&
+            (best[u.key] = u)
     end
     rows = R2Row[]
     for k in sort!(collect(keys(best)))
@@ -653,11 +693,15 @@ function r2_file_table(files::Vector{R2File}, rows::Vector{R2Row})
     out = _R2FileCounts[]
     for f in files
         mine = [r for r in rows if r.cat == "pred" && f.rel in r.refs]
-        push!(out, (;
-            rel=f.rel, loaded=f.loaded, exists=f.exists,
-            done=count(r -> r.status == "done", mine), nmissing=count(r -> r.status == "missing", mine),
-            platform=count(r -> r.status == "platform", mine)
-        ))
+        push!(
+            out,
+            (;
+                rel=f.rel, loaded=f.loaded, exists=f.exists,
+                done=count(r -> r.status == "done", mine),
+                nmissing=count(r -> r.status == "missing", mine),
+                platform=count(r -> r.status == "platform", mine)
+            )
+        )
     end
     return out
 end
@@ -665,8 +709,10 @@ end
 "The status counts of rows: `(done, refused, missing, platform)`."
 function r2_counts(rows::Vector{R2Row})
     return (;
-        done=count(r -> r.status == "done", rows), refused=count(r -> r.status == "refused", rows),
-        nmissing=count(r -> r.status == "missing", rows), platform=count(r -> r.status == "platform", rows)
+        done=count(r -> r.status == "done", rows),
+        refused=count(r -> r.status == "refused", rows),
+        nmissing=count(r -> r.status == "missing", rows),
+        platform=count(r -> r.status == "platform", rows)
     )
 end
 
@@ -795,7 +841,8 @@ function r2_functions(s::String)::Vector{Tuple{Int, String}}
 end
 
 "A line number of byte `pos` in `s`."
-_r2_line(s::String, pos::Int)::Int = 1 + count(==(UInt8('\n')), codeunits(s)[1:max(pos - 1, 0)])
+_r2_line(s::String, pos::Int)::Int =
+    1 + count(==(UInt8('\n')), codeunits(s)[1:max(pos - 1, 0)])
 
 """
 The refusal rows of the kernel texts (path → text): one per throw site of the refusal exception (the helpers' own constructor
@@ -806,14 +853,25 @@ function r2_refusal_rows(texts::AbstractDict{String, String})::Vector{R2Row}
     rows = R2Row[]
     seen = Dict{String, Int}()
     ctor = Regex(R2_REFUSAL_EXCEPTION * "\\{[^}]*\\}\\(")
-    qlf = Regex(R2_QLF_REFUSAL_HELPER * "\\(\\s*T\\s*,\\s*$(_R2_RX_NAME)\\s*,\\s*(\\d+)\\s*\\)")
+    qlf = Regex(
+        R2_QLF_REFUSAL_HELPER * "\\(\\s*T\\s*,\\s*$(_R2_RX_NAME)\\s*,\\s*(\\d+)\\s*\\)"
+    )
     helpers = (R2_FLAG_REFUSAL_HELPER, R2_QLF_REFUSAL_HELPER)
     squeeze(x) = strip(replace(x, r"\s+" => " "))
     function add!(file, fn, what, step, line)
         what, step = squeeze(what), squeeze(step)          # a literal split over two lines would break a TSV or Markdown row
         base = "refusal:$file::$fn::" * first(what, 60)
-        k = (seen[base] = get(seen, base, 0) + 1) == 1 ? base : base * " #" * string(seen[base])
-        push!(rows, R2Row("refusal", k, what, "refused", file, "", String[], "line $line; step $step"))
+        k = if (seen[base] = get(seen, base, 0) + 1) == 1
+            base
+        else
+            base * " #" * string(seen[base])
+        end
+        push!(
+            rows,
+            R2Row(
+                "refusal", k, what, "refused", file, "", String[], "line $line; step $step"
+            )
+        )
     end
     for file in sort!(collect(keys(texts)))
         s = r2_strip_jl(texts[file])
@@ -827,7 +885,13 @@ function r2_refusal_rows(texts::AbstractDict{String, String})::Vector{R2Row}
             add!(file, fn, what, step, _r2_line(s, m.offset))
         end
         for m in eachmatch(qlf, s)
-            add!(file, R2_QLF_REFUSAL_HELPER, "QLF predicate $(_r2_unescape(m[1]))/$(m[2])", "LB3", _r2_line(s, m.offset))
+            add!(
+                file,
+                R2_QLF_REFUSAL_HELPER,
+                "QLF predicate $(_r2_unescape(m[1]))/$(m[2])",
+                "LB3",
+                _r2_line(s, m.offset)
+            )
         end
     end
     return rows
@@ -835,7 +899,9 @@ end
 
 # ── the flags (slice 3) ──────────────────────────────────────────────────────────────────────────────
 
-const R2_FLAG_PREDS = ("current_prolog_flag", "set_prolog_flag", "create_prolog_flag", "push_prolog_flag")
+const R2_FLAG_PREDS = (
+    "current_prolog_flag", "set_prolog_flag", "create_prolog_flag", "push_prolog_flag"
+)
 
 """
 `(refs, created)` over the loaded boot and library files: `refs` maps a flag name (the first argument of
@@ -851,7 +917,8 @@ function r2_flag_scan(root::AbstractString, files::Vector{R2File})
         for cl in r2_clauses(r2_tokenize(read(joinpath(vend, f.rel), String)))
             for k in 1:(length(cl) - 2)
                 cl[k].kind == :atom && cl[k].text in R2_FLAG_PREDS || continue
-                cl[k + 1].kind == :punct && cl[k + 1].text == "(" && cl[k + 1].adj || continue
+                cl[k + 1].kind == :punct && cl[k + 1].text == "(" && cl[k + 1].adj ||
+                    continue
                 flag = r2_atom_name(cl[k + 2])
                 flag === nothing && continue
                 v = get!(refs, flag, String[])
@@ -902,12 +969,26 @@ end
 The flag rows (category `flag`, key `flag:NAME`): every flag the boot reaches plus every flag a setter refuses. refused (the
 setter refuses it; the row's detail names the effect) | done (the kernel or the boot defines it) | missing.
 """
-function r2_flag_rows(refs, created::Set{String}, defined::Set{String}, refusals)::Vector{R2Row}
+function r2_flag_rows(
+    refs, created::Set{String}, defined::Set{String}, refusals
+)::Vector{R2Row}
     refused = Dict{String, Tuple{String, String, Int}}()
     rows = R2Row[]
     for (flag, effect, file, ln) in refusals
         if flag === nothing
-            push!(rows, R2Row("flag", "flag:(" * effect * ")", effect, "refused", file, "", String[], "line $ln; setter refusal by predicate"))
+            push!(
+                rows,
+                R2Row(
+                    "flag",
+                    "flag:(" * effect * ")",
+                    effect,
+                    "refused",
+                    file,
+                    "",
+                    String[],
+                    "line $ln; setter refusal by predicate"
+                )
+            )
         elseif !haskey(refused, flag)
             refused[flag] = (effect, file, ln)
         end
@@ -916,9 +997,23 @@ function r2_flag_rows(refs, created::Set{String}, defined::Set{String}, refusals
         rs = sort(get(refs, k, String[]))
         if haskey(refused, k)
             e, file, ln = refused[k]
-            push!(rows, R2Row("flag", "flag:" * k, k, "refused", file, "", rs, "line $ln; $e"))
+            push!(
+                rows, R2Row("flag", "flag:" * k, k, "refused", file, "", rs, "line $ln; $e")
+            )
         else
-            push!(rows, R2Row("flag", "flag:" * k, k, (k in defined || k in created) ? "done" : "missing", "", "", rs, ""))
+            push!(
+                rows,
+                R2Row(
+                    "flag",
+                    "flag:" * k,
+                    k,
+                    (k in defined || k in created) ? "done" : "missing",
+                    "",
+                    "",
+                    rs,
+                    ""
+                )
+            )
         end
     end
     return rows
@@ -940,7 +1035,19 @@ function r2_vmi_rows(up::Vector{R2Up}, markers::Set{String})::Vector{R2Row}
     rows = R2Row[]
     for k in sort!(unique!([u.key for u in up if u.kind == "vmi"]))
         u = first(u for u in up if u.kind == "vmi" && u.key == k)
-        push!(rows, R2Row("vmi", "vmi:" * k, k, k in markers ? "done" : "missing", u.file, u.cls, String[], u.cond))
+        push!(
+            rows,
+            R2Row(
+                "vmi",
+                "vmi:" * k,
+                k,
+                k in markers ? "done" : "missing",
+                u.file,
+                u.cls,
+                String[],
+                u.cond
+            )
+        )
     end
     return rows
 end
@@ -954,7 +1061,8 @@ function r2_upstream(root::AbstractString)::Vector{R2Up}
     pin = r2_pin(root)
     pin === nothing && error("r2_status: no commit: line in tools/SWIPL_VERSION")
     co = r2_pin_checkout(pin)
-    co === nothing && error("r2_status: no docs/r2_upstream.tsv and no swipl-devel checkout with $pin")
+    co === nothing &&
+        error("r2_status: no docs/r2_upstream.tsv and no swipl-devel checkout with $pin")
     return r2_pin_c_rows(co, pin)
 end
 
@@ -968,7 +1076,15 @@ function r2_collect(root::AbstractString, up::Vector{R2Up})
     preds = r2_pred_rows(scan.refs, up, r2_registered(values(texts)), scan.defined)
     append!(rows, preds)
     append!(rows, r2_refusal_rows(texts))
-    append!(rows, r2_flag_rows(fscan.refs, fscan.created, r2_flags_defined(values(texts)), r2_flag_refusals(texts)))
+    append!(
+        rows,
+        r2_flag_rows(
+            fscan.refs,
+            fscan.created,
+            r2_flags_defined(values(texts)),
+            r2_flag_refusals(texts)
+        )
+    )
     append!(rows, r2_vmi_rows(up, r2_vmi_markers(values(texts))))
     return (; rows, files, preds)
 end
@@ -993,19 +1109,28 @@ tools/SWIPL_VERSION — a sync that did not regenerate it), and DRIFT against th
 """
 function r2_upstream_violations(root::AbstractString)::Vector{String}
     snap = joinpath(root, R2_SNAPSHOT)
-    isfile(snap) || return ["R2-UPSTREAM-MISSING $R2_SNAPSHOT: run tools/port_check.jl --write-inventory"]
+    isfile(snap) || return [
+        "R2-UPSTREAM-MISSING $R2_SNAPSHOT: run tools/port_check.jl --write-inventory"
+    ]
     text = read(snap, String)
     v = String[]
-    isempty(r2_read_snapshot(text)) && push!(v, "R2-UPSTREAM-EMPTY $R2_SNAPSHOT: no definition in it")
+    isempty(r2_read_snapshot(text)) &&
+        push!(v, "R2-UPSTREAM-EMPTY $R2_SNAPSHOT: no definition in it")
     pin = r2_pin(root)
     have = r2_snapshot_pin(text)
     if pin !== nothing && have != pin
-        push!(v, "R2-UPSTREAM-PIN $R2_SNAPSHOT: header names $(have === nothing ? "no commit" : have[1:8]), tools/SWIPL_VERSION $(pin[1:8]) — run tools/port_check.jl --write-inventory")
+        push!(
+            v,
+            "R2-UPSTREAM-PIN $R2_SNAPSHOT: header names $(have === nothing ? "no commit" : have[1:8]), tools/SWIPL_VERSION $(pin[1:8]) — run tools/port_check.jl --write-inventory"
+        )
         return v
     end
     co = pin === nothing ? nothing : r2_pin_checkout(pin)
     if co !== nothing && r2_snapshot_text(r2_pin_c_rows(co, pin), pin) != text
-        push!(v, "R2-UPSTREAM-DRIFT $R2_SNAPSHOT: differs from src/*.c at $(pin[1:8]) — run tools/port_check.jl --write-inventory")
+        push!(
+            v,
+            "R2-UPSTREAM-DRIFT $R2_SNAPSHOT: differs from src/*.c at $(pin[1:8]) — run tools/port_check.jl --write-inventory"
+        )
     end
     return v
 end
@@ -1015,7 +1140,9 @@ function r2_write_snapshot(root::AbstractString)::String
     pin = r2_pin(root)
     pin === nothing && error("r2_status: no commit: line in tools/SWIPL_VERSION")
     co = r2_pin_checkout(pin)
-    co === nothing && error("r2_status: no swipl-devel checkout with $pin (LOGICKERNEL_UPSTREAM_SWIPL_DEVEL)")
+    co === nothing && error(
+        "r2_status: no swipl-devel checkout with $pin (LOGICKERNEL_UPSTREAM_SWIPL_DEVEL)"
+    )
     path = joinpath(root, R2_SNAPSHOT)
     write(path, r2_snapshot_text(r2_pin_c_rows(co, pin), pin))
     return path
@@ -1039,7 +1166,9 @@ function r2_owners_parse(text::AbstractString)
         elseif haskey(owners, String(f[1]))
             push!(bad, "R2-OWNER-DUP $R2_OWNERS:$n: key $(f[1]) twice")
         else
-            owners[String(f[1])] = (String(strip(f[2])), length(f) >= 3 ? String(strip(f[3])) : "")
+            owners[String(f[1])] = (
+                String(strip(f[2])), length(f) >= 3 ? String(strip(f[3])) : ""
+            )
         end
     end
     return (; owners, bad)
@@ -1064,7 +1193,8 @@ end
 r2_owes(r::R2Row) = r.status in ("missing", "refused")
 
 "The rows without an owner that owe one."
-r2_no_owner(rows::Vector{R2Row}, owners) = [r for r in rows if r2_owes(r) && isempty(r2_owner_of(r, owners))]
+r2_no_owner(rows::Vector{R2Row}, owners) =
+    [r for r in rows if r2_owes(r) && isempty(r2_owner_of(r, owners))]
 
 """
 The owners file against the rows: BAD / DUP from the parse, STALE for a key that names no row that owes an owner (a finished
@@ -1081,7 +1211,8 @@ function r2_owner_violations(rows::Vector{R2Row}, text::AbstractString)::Vector{
         isempty(fk) || push!(live, fk)
     end
     for k in sort!(collect(keys(owners)))
-        k in live || push!(v, "R2-OWNER-STALE $R2_OWNERS: key $k names no missing or refused row")
+        k in live ||
+            push!(v, "R2-OWNER-STALE $R2_OWNERS: key $k names no missing or refused row")
     end
     return v
 end
@@ -1097,11 +1228,18 @@ const R2_CATS = (
 )
 
 "A cell of a Markdown table: one line, `|` escaped."
-_r2_cell(x::AbstractString) = replace(strip(replace(String(x), r"\s+" => " ")), "|" => "\\|")
+_r2_cell(x::AbstractString) =
+    replace(strip(replace(String(x), r"\s+" => " ")), "|" => "\\|")
 
 "A row as a short code span for the by-owner list (the owner key without its category prefix for predicates and VM instructions)."
 function _r2_short(r::R2Row)::String
-    t = r.cat == "flag" ? "flag " * r.label : r.cat == "refusal" ? "refusal " * first(r.label, 40) * (length(r.label) > 40 ? "…" : "") : r.label
+    t = if r.cat == "flag"
+        "flag " * r.label
+    elseif r.cat == "refusal"
+        "refusal " * first(r.label, 40) * (length(r.label) > 40 ? "…" : "")
+    else
+        r.label
+    end
     return "`" * _r2_cell(replace(t, "`" => "'")) * "`"
 end
 
@@ -1109,11 +1247,31 @@ end
 The block between `R2_BEGIN` and `R2_END`: counts per category, per boot file, the remaining rows by owner, the Mermaid chart.
 `pin` and `nup` (the snapshot's pin and its number of definitions) are in the first line, so a snapshot change shows.
 """
-function r2_render_rows(rows::Vector{R2Row}, files::Vector{R2File}, preds::Vector{R2Row}, owners, pin::AbstractString, nup::Int)::String
+function r2_render_rows(
+    rows::Vector{R2Row},
+    files::Vector{R2File},
+    preds::Vector{R2Row},
+    owners,
+    pin::AbstractString,
+    nup::Int
+)::String
     io = IOBuffer()
-    println(io, "Generated from `docs/r2_upstream.tsv` (swipl-devel `", first(pin, 8), "`: ", nup, " definitions), `docs/r2_owners.tsv` and the kernel's `src/`.")
-    println(io, "A row is **done** (registered, defined or marked in the kernel), **refused** (the kernel raises the refusal on purpose), **missing**,")
-    println(io, "or **platform** (a Windows or macOS definition: out of the count). **NO OWNER** counts missing and refused rows no step owns yet.")
+    println(
+        io,
+        "Generated from `docs/r2_upstream.tsv` (swipl-devel `",
+        first(pin, 8),
+        "`: ",
+        nup,
+        " definitions), `docs/r2_owners.tsv` and the kernel's `src/`."
+    )
+    println(
+        io,
+        "A row is **done** (registered, defined or marked in the kernel), **refused** (the kernel raises the refusal on purpose), **missing**,"
+    )
+    println(
+        io,
+        "or **platform** (a Windows or macOS definition: out of the count). **NO OWNER** counts missing and refused rows no step owns yet."
+    )
     println(io)
     println(io, "| category | done | refused | missing | platform | NO OWNER |")
     println(io, "|---|---:|---:|---:|---:|---:|")
@@ -1124,21 +1282,52 @@ function r2_render_rows(rows::Vector{R2Row}, files::Vector{R2File}, preds::Vecto
         c = r2_counts(rs)
         no = length(r2_no_owner(rs, owners))
         perc[cat] = (; c..., no)
-        println(io, "| ", name, " | ", c.done, " | ", c.refused, " | ", c.nmissing, " | ", c.platform, " | ", no, " |")
+        println(
+            io,
+            "| ",
+            name,
+            " | ",
+            c.done,
+            " | ",
+            c.refused,
+            " | ",
+            c.nmissing,
+            " | ",
+            c.platform,
+            " | ",
+            no,
+            " |"
+        )
         tot .+= [c.done, c.refused, c.nmissing, c.platform, no]
     end
     println(io, "| **total** | ", join(tot, " | "), " |")
     println(io)
     println(io, "#### The boot and library files")
     println(io)
-    println(io, "Predicate rows each file's calls reach (a predicate several files call counts in each, so the columns do not add up to the table above).")
+    println(
+        io,
+        "Predicate rows each file's calls reach (a predicate several files call counts in each, so the columns do not add up to the table above)."
+    )
     println(io)
     println(io, "| file | state | done | missing | platform |")
     println(io, "|---|---|---:|---:|---:|")
     for t in r2_file_table(files, preds)
         t.exists || continue
         state = t.loaded ? "loaded" : "skipped (conditional)"
-        println(io, "| `", t.rel, "` | ", state, " | ", t.done, " | ", t.nmissing, " | ", t.platform, " |")
+        println(
+            io,
+            "| `",
+            t.rel,
+            "` | ",
+            state,
+            " | ",
+            t.done,
+            " | ",
+            t.nmissing,
+            " | ",
+            t.platform,
+            " |"
+        )
     end
     println(io)
     println(io, "#### What is left, by owner")
@@ -1155,8 +1344,23 @@ function r2_render_rows(rows::Vector{R2Row}, files::Vector{R2File}, preds::Vecto
     catrank = Dict("pred" => 1, "vmi" => 2, "flag" => 3, "refusal" => 4)
     for o in order
         rs = sort(byowner[o]; by=r -> (catrank[r.cat], r.key))
-        which = join(_r2_short.(first(rs, 8)), ", ") * (length(rs) > 8 ? ", … +" * string(length(rs) - 8) : "")
-        println(io, "| ", o, " | ", length(rs), " | ", count(r -> r.status == "missing", rs), " | ", count(r -> r.status == "refused", rs), " | ", which, " |")
+        which =
+            join(_r2_short.(first(rs, 8)), ", ") *
+            (length(rs) > 8 ? ", … +" * string(length(rs) - 8) : "")
+        println(
+            io,
+            "| ",
+            o,
+            " | ",
+            length(rs),
+            " | ",
+            count(r -> r.status == "missing", rs),
+            " | ",
+            count(r -> r.status == "refused", rs),
+            " | ",
+            which,
+            " |"
+        )
     end
     println(io)
     println(io, "#### Missing and refused per category")
@@ -1166,7 +1370,9 @@ function r2_render_rows(rows::Vector{R2Row}, files::Vector{R2File}, preds::Vecto
     println(io, "```mermaid")
     println(io, "xychart-beta")
     println(io, "    title \"R2: missing (bars) and refused (line) rows\"")
-    println(io, "    x-axis [\"predicates\", \"refusal sites\", \"flags\", \"VM instructions\"]")
+    println(
+        io, "    x-axis [\"predicates\", \"refusal sites\", \"flags\", \"VM instructions\"]"
+    )
     println(io, "    y-axis \"rows\" 0 --> ", ymax)
     println(io, "    bar [", join((perc[c].nmissing for (c, _) in R2_CATS), ", "), "]")
     println(io, "    line [", join((perc[c].refused for (c, _) in R2_CATS), ", "), "]")
@@ -1185,7 +1391,11 @@ function r2_state(root::AbstractString)
     up = r2_read_snapshot(stext)
     owf = joinpath(root, R2_OWNERS)
     otext = isfile(owf) ? read(owf, String) : nothing
-    owners = otext === nothing ? Dict{String, Tuple{String, String}}() : r2_owners_parse(otext).owners
+    owners = if otext === nothing
+        Dict{String, Tuple{String, String}}()
+    else
+        r2_owners_parse(otext).owners
+    end
     res = r2_collect(root, up)
     return (;
         res..., owners, otext, pin=something(r2_snapshot_pin(stext), "0"^40),
@@ -1210,6 +1420,16 @@ if abspath(PROGRAM_FILE) == @__FILE__
         println(rpad(cat, 8), r2_counts([r for r in res.rows if r.cat == cat]))
     end
     for t in r2_file_table(res.files, res.preds)
-        println(rpad(t.rel, 28), " loaded=", t.loaded, " done=", t.done, " missing=", t.nmissing, " platform=", t.platform)
+        println(
+            rpad(t.rel, 28),
+            " loaded=",
+            t.loaded,
+            " done=",
+            t.done,
+            " missing=",
+            t.nmissing,
+            " platform=",
+            t.platform
+        )
     end
 end
