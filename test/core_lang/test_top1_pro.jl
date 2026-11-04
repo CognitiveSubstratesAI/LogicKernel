@@ -22,10 +22,11 @@ include(joinpath(@__DIR__, "..", "term_under_test.jl"))
 include(joinpath(@__DIR__, "rules_common.jl"))
 
 "A database whose three user streams are buffers (`halt_exit` off): `(db, (inb, outb, errb), (ui, uo, ue))`."
-function _tp_db()
-    db = _RDB()
+function _tp_db(; booted::Bool=true)
+    db = booted ? _RDB() : _RDB_unbooted()
     # the `informational` unwind(abort) message is print_message/2's since LB4 b2: a `user:message_hook/3` collector records it
-    lk_install_message_collector!(db.gd, db.ld; kinds=(:informational,))
+    # (the unbooted database cannot load the collector, which needs load_files/2: its rows record no message)
+    booted && lk_install_message_collector!(db.gd, db.ld; kinds=(:informational,))
     db.gd.halt_exit = false
     bufs = (IOBuffer(), IOBuffer(), IOBuffer())
     ld = db.ld
@@ -76,8 +77,8 @@ function _tp_aborts(ld)
 end
 
 "The goals of the query_loop rows: a marker is asserted the first time the goal runs."
-function _tp_loop_db()
-    db, bufs, ss = _tp_db()
+function _tp_loop_db(; booted::Bool=true)
+    db, bufs, ss = _tp_db(; booted)
     _tp_dyn!(db, :tp_seen, :tp_seen2, :tp_seen3, :tp_ev_ran)
     _tp_sys!(db, :tp_ok)                                                    # a fact
     _tp_sys!(db, :tp_fail, _rs(:fail))
@@ -312,8 +313,11 @@ end
 end
 
 @testset "query_loop: the stacks are emptied before the first run (clear_stacks)" begin
-    db, _, _ = _tp_loop_db()
+    # pl-pro.c resetProlog: `if ( !LD->gvar.nb_vars ) emptyStacks()` (we would lose nb_setval/2 variables). The UNBOOTED database
+    # has none; a booted copy has the boot's (the next row)
+    db, _, _ = _tp_loop_db(; booted=false)
     gd, ld = db.gd, db.ld
+    @test isempty(ld.gvar_nb_vars)
     n0 = ld.nfliframes
     LK.PL_open_foreign_frame(ld)
     LK.PL_open_foreign_frame(ld)
@@ -321,6 +325,19 @@ end
     @test ld.nfliframes == n0 + 3
     @test LK.query_loop(gd, ld, _rs(:tp_ok), false) == 1
     @test ld.nfliframes == n0
+end
+
+@testset "query_loop: with nb_setval/2 variables the stacks are NOT emptied (resetProlog keeps them)" begin
+    db, _, _ = _tp_loop_db()                                      # a booted copy: the boot's global variables
+    gd, ld = db.gd, db.ld
+    @test !isempty(ld.gvar_nb_vars)
+    n0 = ld.nfliframes
+    LK.PL_open_foreign_frame(ld)
+    LK.PL_open_foreign_frame(ld)
+    LK.PL_open_foreign_frame(ld)
+    @test ld.nfliframes == n0 + 3
+    @test LK.query_loop(gd, ld, _rs(:tp_ok), false) == 1
+    @test ld.nfliframes == n0 + 3                                 # the frames stay: emptyStacks did not run
 end
 
 @testset "query_loop: after an error the goal runs again only with loop" begin
