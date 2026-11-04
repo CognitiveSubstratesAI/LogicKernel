@@ -294,6 +294,61 @@ function _cr_kernel(path::String, names::Vector{String})
     return out
 end
 
+# ── lTop after shift/1 and reset/3 (audit D-0403 item 4; LK-only white-box rows, pinned from swipl 10.1.19) ──
+# What is compared: `statistics(localused, U)` is `8 * ld.lTop` (src/pl-prims.jl `_used_stack`, as test_at_body_swipl.jl reads it), taken
+# twice inside ONE clause body: U0 inside the shifting clause (`cl_sh`, at the I_SHIFT instruction's frame) and handed out as the ball,
+# U1 in the CALLER after `reset/3` returned. Upstream's `shift` trims lTop and `PL_close_foreign_frame` sets it back to the foreign frame
+# opened at `lTop` (pl-cont.c:407/:411; pl-vmi.c:5889, :5891; pl-wam.c:327, :349), so the net lTop of `I_SHIFT` is the value before it:
+# U1 == U0 (`same`), also for `shift_for_copy/1`. `t_lt_none` (reset/3 with no shift) leaves lTop as it was before the call (`same`).
+# `t_lt_call` measures U0 BEFORE `reset/3` instead: the dead frames' words stay on the stack, so the answer is `above`: the rows do not
+# all say `same`. A mutant that skips the raise before the close (CONT1-V3), or drops lTop to the caller's own, changes `same` to an
+# error or `below`/`above`. Not vacuous: U0 is bound ONLY by a shift (the ball `ltop(U0)`); with no shift `D is U1-U0` raises and the row
+# reads `exception`, which differs from the pin. Both sides are one extractor (`_cr_enc`) over the same file. The first `reset(cl_sh, ..)`
+# of each row is a warm-up: swipl's first shift grows its local stack, which moves lBase and makes the first measurement differ.
+const _CR_LT_PROGRAM = raw"""
+cl_sh :- statistics(localused, U), shift(ltop(U)).
+cl_sc :- statistics(localused, U), shift_for_copy(ltop(U)).
+cl_cmp(U0, U1, R) :- D is U1-U0, ( D =:= 0 -> R = same ; D > 0 -> R = above ; R = below ).
+cl_kind(C, K) :- ( C == 0 -> K = plain ; K = shifted ).
+t_lt_shift(R) :- reset(cl_sh, _, _), reset(cl_sh, ltop(U0), _), statistics(localused, U1), cl_cmp(U0, U1, R).
+t_lt_copy(R) :- reset(cl_sc, _, _), reset(cl_sc, ltop(U0), _), statistics(localused, U1), cl_cmp(U0, U1, R).
+t_lt_none(R) :- statistics(localused, U0), reset(true, _, _), statistics(localused, U1), cl_cmp(U0, U1, R).
+t_lt_call(R) :- reset(cl_sh, _, _), statistics(localused, U0), reset(cl_sh, _, _), statistics(localused, U1), cl_cmp(U0, U1, R).
+t_lt_cont(R) :- reset(cl_sh, _, _), reset(cl_sh, ltop(U0), C), statistics(localused, U1), cl_cmp(U0, U1, R0), cl_kind(C, K), R = R0-K.
+"""
+const _CR_LT_NAMES = ["t_lt_shift", "t_lt_copy", "t_lt_none", "t_lt_call", "t_lt_cont"]
+const _CR_LT_PINNED = [
+    raw"ok",
+    raw"t_lt_shift t_lt_shift(same)",
+    raw"t_lt_copy t_lt_copy(same)",
+    raw"t_lt_none t_lt_none(same)",
+    raw"t_lt_call t_lt_call(above)",
+    raw"t_lt_cont t_lt_cont(-(same,shifted))"
+]
+function _cr_lt_file()::Tuple{String, Vector{String}}
+    f = joinpath(mktempdir(), "contlt.pl")
+    write(f, _CR_LT_PROGRAM)
+    return f, _CR_LT_NAMES
+end
+
+@testset "lTop after shift/reset equals the value before the call (CONT1, white-box)" begin
+    f, names = _cr_lt_file()
+    kl = _cr_kernel(f, names)
+    @test length(kl) == length(_CR_LT_NAMES) + 1
+    for (k, p) in zip(kl, _CR_LT_PINNED)
+        k == p || println(stderr, "  ours  ", k, "\n  swipl ", p)
+        @test k == p
+    end
+    # not vacuous: both sides answer every row (a pin per name plus "ok"), the answers are not all `same` (t_lt_call), and the shifted
+    # rows answer `same` with the continuation non-empty (t_lt_cont)
+    @test length(_CR_LT_PINNED) == length(_CR_LT_NAMES) + 1
+    @test all(l -> startswith(l, "t_lt_") || l == "ok", _CR_LT_PINNED)
+    @test count(l -> occursin("(same)", l) || occursin("same,shifted", l), _CR_LT_PINNED) >= 4
+    @test any(l -> occursin("(above)", l), _CR_LT_PINNED)
+    @test raw"t_lt_cont t_lt_cont(-(same,shifted))" in _CR_LT_PINNED
+    @test !any(l -> occursin("exception", l) || occursin("refused", l), kl)
+end
+
 @testset "reset/3, shift/1, call_continuation/1 run as swipl's (CONT1)" begin
     f, names = _cr_file()
     kl = _cr_kernel(f, names)
@@ -323,5 +378,7 @@ end
     else
         f, names = _cr_file()
         @test _cr_swipl_lines(f, names) == _CR_PINNED
+        f2, names2 = _cr_lt_file()
+        @test _cr_swipl_lines(f2, names2) == _CR_LT_PINNED
     end
 end

@@ -1,0 +1,6 @@
+ok
+t_lt_shift t_lt_shift(same)
+t_lt_copy t_lt_copy(same)
+t_lt_none t_lt_none(same)
+t_lt_call t_lt_call(above)
+t_lt_cont t_lt_cont(-(same,shifted))
