@@ -1493,11 +1493,13 @@ graph LR
     pl_proc --> pl_arith
     pl_proc --> os_pl_prologflag
     pl_proc --> os_pl_text
+    pl_proc --> os_pl_file
     pl_proc --> pl_srcfile
     pl_proc --> pl_supervisor
     pl_proc --> pl_event
     pl_proc --> pl_tabling
     pl_proc --> pl_read
+    pl_proc --> pl_qlf
     pl_srcfile --> term_interface
     pl_srcfile --> default_term
     pl_srcfile --> pl_incl

@@ -334,11 +334,15 @@ end
 # `(nil)` of a missing module (`GD->halt.cleaning`): the kernel has no data cleaning. Used by `test_autoload_loop` and
 # `trapUndefined`.
 "The text `[module:]name/arity` of `def` in a message (pl-util.c `predicateName`)."
-function _autoload_predicate_name(gd::PL_global_data{T}, def::Definition{T})::String where {T}
+function _autoload_predicate_name(
+    gd::PL_global_data{T}, def::Definition{T}
+)::String where {T}
     user = MODULE_user(gd)
     prefix = ""
     if def.module_ != user.index
-        usersys = (def.flags & P_LOCKED) != 0 && isCurrentProcedure(sym_key(def.name), def.arity, user) !== nothing
+        usersys =
+            (def.flags & P_LOCKED) != 0 &&
+            isCurrentProcedure(sym_key(def.name), def.arity, user) !== nothing
         usersys || (prefix = string(sym_text(gd.modules[def.module_].atom), ":"))
     end
     return string(prefix, sym_text(def.name), "/", def.arity)
@@ -364,7 +368,9 @@ function test_autoload_loop(
             _qlf_Sdprintf!(ld, "ERROR: autoload loop:\n")
             _qlf_Sdprintf!(ld, string("ERROR:   ", _autoload_predicate_name(gd, def), "\n"))
             for j in length(nesting):-1:1
-                _qlf_Sdprintf!(ld, string("ERROR:   ", _autoload_predicate_name(gd, nesting[j]), "\n"))
+                _qlf_Sdprintf!(
+                    ld, string("ERROR:   ", _autoload_predicate_name(gd, nesting[j]), "\n")
+                )
                 nesting[j] === def && break
             end
             return false
@@ -391,7 +397,9 @@ function autoLoader(
     gd::PL_global_data{T}, ld::PL_local_data{T}, def::Definition{T}
 )::Union{Nothing, T} where {T}
     answer::Union{Nothing, T} = nothing
-    hook = isCurrentProcedure(sym_key(mk_sym(T, Symbol("\$undefined_procedure"))), 4, MODULE_system(gd))
+    hook = isCurrentProcedure(
+        sym_key(mk_sym(T, Symbol("\$undefined_procedure"))), 4, MODULE_system(gd)
+    )
     (hook === nothing || !isDefinedProcedure(gd, hook)) && return answer
 
     cid = PL_open_foreign_frame(ld)
@@ -403,7 +411,9 @@ function autoLoader(
 
     push_input_context(ld, mk_sym(T, :autoload))
     push!(ld.autoload_nesting, def)
-    qid = PL_open_query(gd, ld, MODULE_system(gd), PL_Q_NODEBUG | PL_Q_PASS_EXCEPTION, hook, argv)
+    qid = PL_open_query(
+        gd, ld, MODULE_system(gd), PL_Q_NODEBUG | PL_Q_PASS_EXCEPTION, hook, argv
+    )
     if qid != 0
         if PL_next_solution(gd, ld, qid) != 0
             answer = PL_get_atom(ld, argv + 3)
@@ -459,8 +469,11 @@ function trapUndefined(
                 key == sym_key(mk_sym(T, :error)) && break          # goto error
                 if key == sym_key(mk_sym(T, :retry))
                     if retry_times != 0                 # retry_times++
-                        _qlf_Sdprintf!(ld, string("[Thread 1]: exception handler failed to define ",
-                                                  _autoload_predicate_name(gd, def), "\n"))
+                        _qlf_Sdprintf!(
+                            ld,
+                            string("[Thread 1]: exception handler failed to define ",
+                                _autoload_predicate_name(gd, def), "\n")
+                        )
                         return def
                     end
                     retry_times += 1

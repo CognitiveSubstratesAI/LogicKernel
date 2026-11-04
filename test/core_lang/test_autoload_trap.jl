@@ -32,8 +32,10 @@ include(joinpath(@__DIR__, "rules_common.jl"))
 const _AT_HOOK = "\$undefined_procedure"
 _at_user(x) = _rf(":", _rs(:user), _rs(x))
 _at_proc(db::_RDB, name, arity::Int=0) = LK.lookupProcedure(_rs(name), arity, db.user)
-_at_sysproc(db::_RDB, name, arity::Int) = LK.lookupProcedure(_rs(name), arity, LK.MODULE_system(db.gd))
-_at_hookproc(db::_RDB) = LK.isCurrentProcedure(sym_key(_rs(_AT_HOOK)), 4, LK.MODULE_system(db.gd))
+_at_sysproc(db::_RDB, name, arity::Int) =
+    LK.lookupProcedure(_rs(name), arity, LK.MODULE_system(db.gd))
+_at_hookproc(db::_RDB) =
+    LK.isCurrentProcedure(sym_key(_rs(_AT_HOOK)), 4, LK.MODULE_system(db.gd))
 _at_text(m::Tuple{Symbol, _R}) = String(lk_name(m[2]))
 _at_texts(ld, from::Int) = String[_at_text(m) for m in ld.messages[(from + 1):end]]
 
@@ -116,7 +118,9 @@ end
     @test def.codes[1] == LK.S_UNDEF
     @test called == ["called(er)"]
     # retry, the hook defines the predicate: round two finds it defined, no warning
-    db, def, got, called = _at_run(:rd, :retry; body = _rconj(_rf("assertz", _at_user_goal(_rs(:rd))), _at_record(:rd)))
+    db, def, got, called = _at_run(
+        :rd, :retry; body=_rconj(_rf("assertz", _at_user_goal(_rs(:rd))), _at_record(:rd))
+    )
     @test got === def
     @test LK.isDefinedProcedure(db.gd, _at_proc(db, :rd))
     @test def.codes[1] != LK.S_UNDEF
@@ -136,8 +140,10 @@ end
     @test called == ["called(ot)"]
     # the arity is passed as an integer and the name as its atom: a hook of arity 2 for ar/2 answers; the hook for ar/0 would not
     db, def, got, called = _at_run(
-        :ar, :retry; arity = 2,
-        body = _rconj(_rf("assertz", _at_user_goal(_rf("ar", _rs(:a), _rs(:b)))), _at_record(:ar)),
+        :ar, :retry; arity=2,
+        body=_rconj(
+            _rf("assertz", _at_user_goal(_rf("ar", _rs(:a), _rs(:b)))), _at_record(:ar)
+        )
     )
     @test got === def
     @test called == ["called(ar)"]
@@ -160,7 +166,12 @@ end
     # UNVERIFIED (never run): the hook defines `fi` in system and calls user:fi, whose trap links user's procedure to it; the
     # outer answer is `fail`, so the returned definition is the refresh `lookupDefinition(functor, module)`, not the stale argument.
     db = _at_db()
-    _at_hook!(db, :fi, :fail; body = _rconj(_rf("assertz", _rf(":", _rs(:system), _rs(:fi))), _at_user(:fi)))
+    _at_hook!(
+        db,
+        :fi,
+        :fail;
+        body=_rconj(_rf("assertz", _rf(":", _rs(:system), _rs(:fi))), _at_user(:fi))
+    )
     def = _at_proc(db, :fi).definition
     got = LK.trapUndefined(db.gd, db.ld, def)
     sysdef = _at_sysproc(db, :fi, 0).definition
@@ -187,18 +198,21 @@ end
     @test ld.autoload_loop === nothing
     @test !LK.test_autoload_loop(gd, ld, d1)
     @test ld.autoload_loop === d1
-    @test _at_texts(ld, 0) == ["ERROR: autoload loop:\n", "ERROR:   lp/0\n", "ERROR:   mm:q/1\n", "ERROR:   lp/0\n"]
+    @test _at_texts(ld, 0) == [
+        "ERROR: autoload loop:\n", "ERROR:   lp/0\n", "ERROR:   mm:q/1\n", "ERROR:   lp/0\n"
+    ]
     # a hit on the innermost entry stops the walk there
     n0 = length(ld.messages)
     @test !LK.test_autoload_loop(gd, ld, d2)
     @test ld.autoload_loop === d2
-    @test _at_texts(ld, n0) == ["ERROR: autoload loop:\n", "ERROR:   mm:q/1\n", "ERROR:   mm:q/1\n"]
+    @test _at_texts(ld, n0) ==
+        ["ERROR: autoload loop:\n", "ERROR:   mm:q/1\n", "ERROR:   mm:q/1\n"]
     # `autoload_loop` is never cleared by a later search that finds no loop (upstream clears it in resetProlog only)
     @test LK.test_autoload_loop(gd, ld, d3)
     @test ld.autoload_loop === d2
     empty!(ld.autoload_nesting)
     # trapUndefined: the definition is on the chain, so it returns at once and the hook is NOT called
-    _at_hook!(db, :lp, :retry; body = _at_record(:lp))
+    _at_hook!(db, :lp, :retry; body=_at_record(:lp))
     push!(ld.autoload_nesting, d1)
     n1 = length(ld.messages)
     @test LK.trapUndefined(gd, ld, d1) === d1
@@ -211,7 +225,7 @@ end
 @testset "autoLoader restores the chain and the input context stack" begin
     for (name, answer) in ((:ra, :fail), (:rb, :error), (:rc, :retry), (:rd2, :nope))
         db = _at_db()
-        _at_hook!(db, name, answer; body = _at_record(name))
+        _at_hook!(db, name, answer; body=_at_record(name))
         nctx = length(db.ld.input_context_stack)
         fli0 = db.ld.fli_context
         def = _at_proc(db, name).definition
@@ -224,7 +238,7 @@ end
     end
     db = _at_db()
     # UNVERIFIED (never run, the sizing's risk 6): a hook that RAISES leaves the exception pending under PL_Q_PASS_EXCEPTION
-    _at_hook!(db, :thr, :retry; body = _rf("throw", _rs(:boom)))
+    _at_hook!(db, :thr, :retry; body=_rf("throw", _rs(:boom)))
     nctx = length(db.ld.input_context_stack)
     def = _at_proc(db, :thr).definition
     got = LK.autoLoader(db.gd, db.ld, def)
@@ -237,7 +251,7 @@ end
 
 @testset "the autoload flag false and the boot session: the hook is not called" begin
     db = _at_db()
-    _at_hook!(db, :fl, :fail; body = _at_record(:fl))
+    _at_hook!(db, :fl, :fail; body=_at_record(:fl))
     LK.clearPrologFlagMask!(db.ld, LK.PLFLAG_AUTOLOAD)
     def = _at_proc(db, :fl).definition
     @test LK.trapUndefined(db.gd, db.ld, def) === def
@@ -261,7 +275,7 @@ end
 
 @testset "autoImport precedes the autoloader" begin
     db = _at_db()
-    _at_hook!(db, :rational, :retry; arity = 1, body = _at_record(:rational))
+    _at_hook!(db, :rational, :retry; arity=1, body=_at_record(:rational))
     sysdef = _at_sysproc(db, :rational, 1).definition
     def = _at_proc(db, :rational, 1).definition
     @test LK.trapUndefined(db.gd, db.ld, def) === sysdef
@@ -273,7 +287,8 @@ end
     gd = db.gd
     mm = LK.lookupModule(gd, _rs(:mm))
     @test LK._autoload_predicate_name(gd, _at_proc(db, :foo, 0).definition) == "foo/0"
-    @test LK._autoload_predicate_name(gd, LK.lookupProcedure(_rs(:q), 1, mm).definition) == "mm:q/1"
+    @test LK._autoload_predicate_name(gd, LK.lookupProcedure(_rs(:q), 1, mm).definition) ==
+        "mm:q/1"
     sysdef = _at_sysproc(db, :rational, 1).definition
     @test (sysdef.flags & LK.P_LOCKED) != 0
     @test LK._autoload_predicate_name(gd, sysdef) == "system:rational/1"     # locked, but not visible in user yet
@@ -285,18 +300,24 @@ end
     # UNVERIFIED (never run). `call(user:foo)` goes through `mcall_cont`; the hook's query runs on the same local stack: if the
     # frame set-up there left `lTop` below the caller's frame, the hook would overwrite `Y` and `X`.
     db = _at_db()
-    _at_hook!(db, :foo, :retry; body = _rconj(_rf("assertz", _at_user(:foo)), _at_record(:foo)))
+    _at_hook!(
+        db, :foo, :retry; body=_rconj(_rf("assertz", _at_user(:foo)), _at_record(:foo))
+    )
     _radd!(
         db, _rf("t", _rv(1), _rv(2)),
-        _rconj(_rf("=", _rv(2), _rg(1)), _rf("call", _at_user(:foo)), _rf("=", _rv(1), _rv(2))),
+        _rconj(
+            _rf("=", _rv(2), _rg(1)), _rf("call", _at_user(:foo)), _rf("=", _rv(1), _rv(2))
+        )
     )
     @test String[a for (a, _) in _rcall(db, _rf("t", _rv(3), _rv(4)))] == ["t(1,1)"]
     @test _at_called(db) == ["called(foo)"]
     # the same through a plain call of an undefined predicate in a clause body
-    _at_hook!(db, :baz, :retry; body = _rconj(_rf("assertz", _at_user(:baz)), _at_record(:baz)))
+    _at_hook!(
+        db, :baz, :retry; body=_rconj(_rf("assertz", _at_user(:baz)), _at_record(:baz))
+    )
     _radd!(
         db, _rf("u", _rv(1), _rv(2)),
-        _rconj(_rf("=", _rv(2), _rg(2)), _rs(:baz), _rf("=", _rv(1), _rv(2))),
+        _rconj(_rf("=", _rv(2), _rg(2)), _rs(:baz), _rf("=", _rv(1), _rv(2)))
     )
     @test String[a for (a, _) in _rcall(db, _rf("u", _rv(3), _rv(4)))] == ["u(2,2)"]
     @test isempty(db.ld.autoload_nesting)
