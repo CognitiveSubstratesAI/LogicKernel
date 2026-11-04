@@ -7,9 +7,8 @@
 #     database; `rb_*` rows read the clauses back with clause/2 (pl-comp.c decompile: I_CUTCHP, I_RESET, I_YIELD, I_CALLCONT, I_SHIFT,
 #     I_SHIFTCP). The compiled VM code itself is pinned, live against swipl, in test/compile/test_body_code_swipl.jl (pt7-pt10 and
 #     the `\$call_continuation` / `\$shift` cells).
-#   * `c_*` rows RUN I_RESET, I_SHIFT, I_SHIFTCP, I_CALLCONT, I_YIELD: the kernel raises a named error (the instruction, its pl-vmi.c
-#     line, the step CONT1; the DIVERGES in src/pl-wam.jl), one fresh database per row. Their kernel pins are `_CB_CONT1_KERNEL`,
-#     marked CONT1 flips: at CONT1 each becomes swipl's answer, pinned beside it in `_CB_PINNED`.
+#   * `c_*` rows RUN I_RESET, I_SHIFT, I_SHIFTCP, I_CALLCONT, I_YIELD (CONT1 flipped them: until then the kernel raised a named
+#     refusal): the kernel answers swipl's line pinned in `_CB_PINNED`, one fresh database per row.
 #   * Every swipl answer line is PINNED (swipl 10.1.19, this program and driver, LC_ALL=C, 2026-11-03, two runs byte-identical;
 #     lk-channel evidence/LB4B2/cb_rows.out); with `swipl` on PATH the live answers are compared with the pins too.
 #   * UNVERIFIED on the kernel: gate decides (a mismatch is traced to its upstream cause, not re-pinned).
@@ -136,21 +135,14 @@ const _CB_CASES = [
     ("rb_yield", raw"clause(cb_yield(A, B), C), R = f(A, B, C)")
 ]
 
-# (id, goal, the kernel's refusal until CONT1): each in a database of its own (the refusal leaves the run loop)
+# (id, goal): each in a database of its own
 const _CB_CONT1 = [
-    (
-        "c_reset",
-        raw"cb_reset(true, B, C), R = B-C",
-        "the VM instruction I_RESET (pl-vmi.c:5754)"
-    ),
-    (
-        "c_reset_shift", raw"cb_reset(cb_shift(x), B, C), R = B-C",
-        "the VM instruction I_RESET (pl-vmi.c:5754)"
-    ),
-    ("c_shift", raw"cb_shift(x)", "the VM instruction I_SHIFT (pl-vmi.c:5874)"),
-    ("c_shiftcp", raw"cb_shiftcp(x)", "the VM instruction I_SHIFTCP (pl-vmi.c:5908)"),
-    ("c_cc", raw"cb_cc([])", "the VM instruction I_CALLCONT (pl-vmi.c:5839)"),
-    ("c_yield", raw"cb_yield(t, 256)", "the VM instruction I_YIELD (pl-vmi.c:2410)")
+    ("c_reset", raw"cb_reset(true, B, C), R = B-C"),
+    ("c_reset_shift", raw"cb_reset(cb_shift(x), B, C), R = B-C"),
+    ("c_shift", raw"cb_shift(x)"),
+    ("c_shiftcp", raw"cb_shiftcp(x)"),
+    ("c_cc", raw"cb_cc([])"),
+    ("c_yield", raw"cb_yield(t, 256)")
 ]
 
 # swipl 10.1.19's answers (the driver's whole output: `ok`, then one line per case of _CB_CASES, then of _CB_CONT1)
@@ -184,17 +176,13 @@ const _CB_PINNED = [
     raw"t_c_yield t_c_yield(raised(permission_error(execute,vmi,I_YIELD)))"
 ]
 
-# the kernel's pins of the c_* rows: CONT1 flips each to swipl's line in _CB_PINNED. swipl 10.1.19 answers
-# c_reset `-(V0,0)` (the goal's success: Cont = 0); c_reset_shift, c_shift, c_shiftcp `existence_error(reset, x)` (a user clause of
-# the reset/3 body is no reset/3 frame for findReset); c_cc `type_error(continuation, [])`; c_yield
+# swipl 10.1.19 answers c_reset `-(V0,0)` (the goal's success: Cont = 0); c_reset_shift, c_shift, c_shiftcp `existence_error(reset, x)`
+# (a user clause of the reset/3 body is no reset/3 frame for findReset); c_cc `type_error(continuation, [])`; c_yield
 # `permission_error(execute, vmi, 'I_YIELD')` (not an engine). UNVERIFIED on the kernel: gate decides.
-const _CB_CONT1_KERNEL = [
-    "t_$(id) refused $(what) CONT1" for (id, _, what) in _CB_CONT1
-]
 
 "The program and cases as one file; the case predicates' names."
 function _cb_file()::Tuple{String, Vector{String}}
-    all_ = [[(id, g) for (id, g) in _CB_CASES]; [(id, g) for (id, g, _) in _CB_CONT1]]
+    all_ = [[(id, g) for (id, g) in _CB_CASES]; [(id, g) for (id, g) in _CB_CONT1]]
     names = ["t_$(id)" for (id, _) in all_]
     text =
         _CB_PROGRAM * join([
@@ -279,19 +267,24 @@ end
     @test any(l -> startswith(l, "t_rb_shift ") && occursin("\$shift(V0)", l), _CB_PINNED)
 end
 
-@testset "the continuation instructions raise the named error until CONT1 (CONT1 flips)" begin
+@testset "I_RESET, I_SHIFT, I_SHIFTCP, I_CALLCONT, I_YIELD answer as swipl's (CONT1 flipped the refusals)" begin
     f, names = _cb_file()
     ng = length(_CB_CASES)
-    for (k, (id, _, _)) in enumerate(_CB_CONT1)
+    for (k, (id, _)) in enumerate(_CB_CONT1)
         kl = _cb_kernel(f, [names[ng + k]])     # a database of its own per row
         @test kl[1] == "ok"
-        # CONT1 flips: the kernel's answer becomes swipl's, `_CB_PINNED[ng + 1 + k]`
-        kl[end] == _CB_CONT1_KERNEL[k] ||
-            println(stderr, "  ours  ", kl[end], "\n  pin   ", _CB_CONT1_KERNEL[k])
-        @test kl[end] == _CB_CONT1_KERNEL[k]
+        @test length(kl) == 2
+        kl[end] == _CB_PINNED[ng + 1 + k] ||
+            println(stderr, "  ours  ", kl[end], "\n  swipl ", _CB_PINNED[ng + 1 + k])
+        @test kl[end] == _CB_PINNED[ng + 1 + k]
         @test startswith(_CB_PINNED[ng + 1 + k], "t_$(id) ")
-        @test _CB_PINNED[ng + 1 + k] != _CB_CONT1_KERNEL[k]     # the pin differs from swipl's: a deferral
+        @test !occursin("refused", kl[end])     # the named refusal is gone
     end
+    # not vacuous: the pins are swipl's answers (a success, three existence errors, a type error, a permission error)
+    @test count(l -> occursin("raised(existence_error(reset,x))", l), _CB_PINNED) == 3
+    @test raw"t_c_reset t_c_reset(-(V0,0))" in _CB_PINNED
+    @test raw"t_c_cc t_c_cc(raised(type_error(continuation,[])))" in _CB_PINNED
+    @test raw"t_c_yield t_c_yield(raised(permission_error(execute,vmi,I_YIELD)))" in _CB_PINNED
 end
 
 @testset "the pins are swipl's (live, when swipl is on PATH)" begin

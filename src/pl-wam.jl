@@ -3286,13 +3286,10 @@ function PL_next_solution_guarded(
     @goto arg3_slow
 
     # ── continuations and engines (pl-vmi.c), compiled since LB4 b2 ───────────────────────────────
-    # DIVERGES (audit D-0363 item 2; a recorded deferral, owner the step CONT1: pl-cont.c, the
-    # continuations, and the engines): the clauses of reset/3, '$tbl_reset'/6, shift/1,
-    # shift_for_copy/1, call_continuation/1 and '$engine_yield'/2 compile to these instructions as
-    # upstream's, so listing, decompile and clause shape are swipl's. Their RUN: reset/3, shift/1,
-    # shift_for_copy/1 and call_continuation/1 run since CONT1 C2/C4/C5; `I_YIELD` outside an engine
-    # raises the permission error since C6, in an engine (TH1) it raises `NotPortedError`
-    # naming the instruction and its upstream line.
+    # The clauses of reset/3, '$tbl_reset'/6, shift/1, shift_for_copy/1, call_continuation/1 and
+    # '$engine_yield'/2 compile to these instructions as upstream's (LB4 b2, audit D-0363 item 2), so
+    # listing, decompile and clause shape are swipl's; CONT1 runs them (C2, C4, C5, C6). The tabled
+    # branches of I_RESET / I_EXITRESET are deferred to TAB1 and the engine branch of I_YIELD to TH1 (below).
     # PORT: pl-vmi.c I_YIELD
     # (pl-vmi.c:2410-2418 at the pin; CONT1 C6) The branch of a query opened without `PL_Q_ALLOW_YIELD`
     # (every query here): `permission_error(execute, vmi, 'I_YIELD')`, context message "not an engine".
