@@ -2294,7 +2294,9 @@ end
 # constant never passes (a fresh boot's first `:- Directive` met `:`/2 with no symbol). An atom `initReservedSymbols!`
 # retyped gets its reserved symbol (`[]` is `mk_nil`), every other one its text symbol.
 "Record in `syms` the interface symbol of every built-in atom of `atoms` (after `do_init_atoms!`)."
-function registerBuiltinAtomSymbols!(atoms::atoms_t, syms::atom_symbols{T})::Nothing where {T}
+function registerBuiltinAtomSymbols!(
+    atoms::atoms_t, syms::atom_symbols{T}
+)::Nothing where {T}
     for index in 1:length(_BUILTIN_ATOMS)
         a = fetchAtomArray(atoms, index)
         name = Symbol(String(a.name[1:(a.length)]))

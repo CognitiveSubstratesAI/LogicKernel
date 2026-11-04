@@ -293,13 +293,21 @@ end
     s(x) = mk_sym(TB, Symbol(x))
     c(f, xs...) = mk_expr(TB, TB[s(f), xs...])
     i(n) = mk_gnd(TB, big(n))
-    l(xs...) = foldr((x, t) -> c("[|]", x, t), xs; init = LogicKernel.mk_nil(TB))   # `[]`, not the atom '[]'
+    l(xs...) = foldr((x, t) -> c("[|]", x, t), xs; init=LogicKernel.mk_nil(TB))   # `[]`, not the atom '[]'
     big70 = big(2)^70
     rows = [
         ("arg(2^70, f(a), X)", false, (X, Y) -> c("arg", i(big70), c("f", s("a")), X)),
-        ("sort(2^70, @<, [f(a)], X)", false, (X, Y) -> c("sort", i(big70), s("@<"), l(c("f", s("a"))), X)),
+        (
+            "sort(2^70, @<, [f(a)], X)",
+            false,
+            (X, Y) -> c("sort", i(big70), s("@<"), l(c("f", s("a"))), X)
+        ),
         ("arg(1, f(a), X)", true, (X, Y) -> c("arg", i(1), c("f", s("a")), X)),
-        ("sort(1, @<, [f(a)], X)", true, (X, Y) -> c("sort", i(1), s("@<"), l(c("f", s("a"))), X))
+        (
+            "sort(1, @<, [f(a)], X)",
+            true,
+            (X, Y) -> c("sort", i(1), s("@<"), l(c("f", s("a"))), X)
+        )
     ]
     for (goal, want, body) in rows
         rc, _, _ = _td_cond_row(TB, body)
@@ -307,7 +315,8 @@ end
         @test (goal, ok, rc == LogicKernel.PL_S_FALSE) == (goal, want, !want)
     end
     rc, ans, _ = _td_cond_row(TB, (X, Y) -> c("arg", i(1), c("f", s("a")), X))
-    @test (rc in (LogicKernel.PL_S_TRUE, LogicKernel.PL_S_LAST), ans == s("a")) == (true, true)
+    @test (rc in (LogicKernel.PL_S_TRUE, LogicKernel.PL_S_LAST), ans == s("a")) ==
+        (true, true)
 end
 
 # THE MANIFEST'S LIVE-METHOD FILTER (test/static_analysis_gates.jl `_current_method`; measured

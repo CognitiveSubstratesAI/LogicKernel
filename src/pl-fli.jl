@@ -435,7 +435,9 @@ end
 # and five init.pl directives failed. `nothing` on every other type (`_holds_payload` is a compile-time
 # constant: the branch folds away), and for a value that is not an integer of `Int64`'s range.
 "The integer an untagged value word `w` holds on a term type that tags no integer, else `nothing` (see above)."
-@inline function _untagged_int(ld::PL_local_data{T}, w::word)::Union{Nothing, Int64} where {T}
+@inline function _untagged_int(
+    ld::PL_local_data{T}, w::word
+)::Union{Nothing, Int64} where {T}
     _holds_payload(T, Int64) && return nothing
     v = _indirect_value(ld, w)
     (isInteger(v) && integer_is_int64(v)) || return nothing

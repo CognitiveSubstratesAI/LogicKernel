@@ -443,7 +443,9 @@ function _cr_run_goal(t::_CR)
     end
     LK.Sflush(LK.Suser_output(_CR_LD))
     LK.Sflush(LK.Suser_error(_CR_LD))
-    msgs = join([string(k) * ":" * _cr_text(m) for (k, m) in lk_take_messages!(_CR_LD)], ";")
+    msgs = join(
+        [string(k) * ":" * _cr_text(m) for (k, m) in lk_take_messages!(_CR_LD)], ";"
+    )
     LK.PL_close_foreign_frame(_CR_LD, fid)
     return [String(take!(out)), String(take!(err)), verdict, msgs]
 end

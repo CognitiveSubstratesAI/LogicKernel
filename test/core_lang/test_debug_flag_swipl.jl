@@ -390,7 +390,10 @@ _db_atom_list_enc(xs::Vector{String})::String =
     lk_install_message_collector!(gd, ld; kinds=(:silent,))
     taken = Tuple{Symbol, _DB}[]
     msg_text(m) = _db_enc(m[2])
-    msgs_with(code::String) = (append!(taken, lk_take_messages!(ld)); [m for m in taken if occursin(code, msg_text(m))])
+    msgs_with(code::String) = (
+        append!(taken, lk_take_messages!(ld));
+        [m for m in taken if occursin(code, msg_text(m))]
+    )
     debug_msgs() = msgs_with(_db_codes("debug_mode"))
     @test !ld.debugstatus_debugging
     @test LK.truePrologFlag(ld, LK.PLFLAG_LASTCALL)

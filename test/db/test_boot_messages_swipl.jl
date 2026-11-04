@@ -29,7 +29,9 @@ _bms(x) = lk_sym(_BM, Symbol(x))
 _bme(f, xs::_BM...) = LK.mk_expr(_BM, _BM[_bms(f), xs...])
 _bmv(i) = lk_var(_BM, UInt64(i))
 
-const _BM_SWIPL = (get(ENV, "LOGICKERNEL_NO_SWIPL", "") == "1" ? nothing : Sys.which("swipl"))
+const _BM_SWIPL = (
+    get(ENV, "LOGICKERNEL_NO_SWIPL", "") == "1" ? nothing : Sys.which("swipl")
+)
 
 # ONE encoding for every message (the read differential's, as test/files/test_load_swipl.jl's `_tl_enc`)
 function _bm_enc(t::_BM, seen::Vector{UInt64}=UInt64[])::String
@@ -52,7 +54,8 @@ function _bm_enc(t::_BM, seen::Vector{UInt64}=UInt64[])::String
     end
     h = LK.child(t, 1)
     hs = LK.is_nil(h) ? "c[]" : "c" * _bm_codes(LK.sym_text(h))
-    return hs * "/$(LK.nchildren(t) - 1)(" * join([_bm_enc(LK.child(t, i), seen) for i in 2:LK.nchildren(t)], ",") * ")"
+    return hs * "/$(LK.nchildren(t) - 1)(" *
+           join([_bm_enc(LK.child(t, i), seen) for i in 2:LK.nchildren(t)], ",") * ")"
 end
 _bm_codes(s::String)::String = "[" * join(Int.(collect(s)), ",") * "]"
 _bm_line(kind::Symbol, t::_BM)::String = string(kind) * " " * _bm_enc(t)
@@ -69,10 +72,20 @@ function _bm_boot()
     ld = LK.PL_local_data{_BM}(gd)
     # :- dynamic '$lk_message'/2 (a clause asserted and retracted), then the hook (test/term_under_test.jl's collector)
     rec = _bme(Symbol("\$lk_message"), _bmv(1), _bmv(2))
-    LK.query_answers(ld, _bm_user(_bme(:assertz, _bme(Symbol("\$lk_message"), _bms(:none), _bms(:none)))); limit=1)
+    LK.query_answers(
+        ld,
+        _bm_user(_bme(:assertz, _bme(Symbol("\$lk_message"), _bms(:none), _bms(:none))));
+        limit=1
+    )
     LK.query_answers(ld, _bm_user(_bme(:retractall, rec)); limit=1)
-    kinds = _bme(Symbol(";"), _bme(:(==), _bmv(2), _bms(:error)), _bme(:(==), _bmv(2), _bms(:warning)))
-    body = _bme(Symbol(","), kinds, _bme(:assertz, _bme(Symbol("\$lk_message"), _bmv(2), _bmv(1))))
+    kinds = _bme(
+        Symbol(";"),
+        _bme(:(==), _bmv(2), _bms(:error)),
+        _bme(:(==), _bmv(2), _bms(:warning))
+    )
+    body = _bme(
+        Symbol(","), kinds, _bme(:assertz, _bme(Symbol("\$lk_message"), _bmv(2), _bmv(1)))
+    )
     hook = _bme(Symbol(":-"), _bme(:message_hook, _bmv(1), _bmv(2), _bmv(3)), body)
     @test length(LK.query_answers(ld, _bm_user(_bme(:assertz, hook)); limit=1)) == 1
     home = LK.current_prolog_flag_atom(gd, LK.mk_sym(_BM, :home))
@@ -94,7 +107,11 @@ end
     msgs = LK.isCurrentProcedure(LK.sym_key(_bms(:print_message)), 2, LK.MODULE_system(gd))
     @test msgs !== nothing && LK.isDefinedProcedure(gd, msgs)
     # ... and the collector is live after it (one error printed, one recorded)
-    pm = _bme(:print_message, _bms(:error), _bme(:format, lk_gnd(_BM, "lk boot message probe"), LK.mk_nil(_BM)))
+    pm = _bme(
+        :print_message,
+        _bms(:error),
+        _bme(:format, lk_gnd(_BM, "lk boot message probe"), LK.mk_nil(_BM))
+    )
     LK.query_answers(ld, _bm_user(pm); limit=1)
     probe = lk_take_messages!(ld)
     @test length(probe) == 1 && probe[1][1] === :error

@@ -319,13 +319,15 @@ end
     ld = LK.PL_local_data{_QL}(gd)
     @test !ld.IO_initialised                                           # not vacuous: nothing opened them yet
     goal = mk_expr(
-        _QL, _QL[
+        _QL,
+        _QL[
             _qls("\$stream_property"), _qls("user_error"),
             mk_expr(_QL, _QL[_qls("alias"), mk_var(_QL, LK.fresh_var_keys!(1))])
         ]
     )
     ans = LK.query_answers(ld, goal)
-    @test length(ans) == 1 && _ql_enc(child(child(ans[1], 3), 2)) == _ql_enc(_qls("user_error"))
+    @test length(ans) == 1 &&
+        _ql_enc(child(child(ans[1], 3), 2)) == _ql_enc(_qls("user_error"))
     swipl = get(ENV, "LOGICKERNEL_NO_SWIPL", "") == "1" ? nothing : Sys.which("swipl")
     if swipl === nothing
         @info "the user_error alias row: swipl's answer not re-checked — `swipl` is not on PATH here."

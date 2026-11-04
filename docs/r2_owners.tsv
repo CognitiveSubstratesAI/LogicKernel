@@ -181,13 +181,6 @@ vmi:A_VAR0	AR1	seed: VM-instruction family
 vmi:A_VAR1	AR1	seed: VM-instruction family
 vmi:A_VAR2	AR1	seed: VM-instruction family
 vmi:D_BREAK	DBG1	seed: VM-instruction family
-vmi:I_CALLCONT	CONT1	seed: VM-instruction family
-vmi:I_CUTCHP	CONT1	seed: VM-instruction family
-vmi:I_EXITRESET	CONT1	seed: VM-instruction family
-vmi:I_RESET	CONT1	seed: VM-instruction family
-vmi:I_SHIFT	CONT1	seed: VM-instruction family
-vmi:I_SHIFTCP	CONT1	seed: VM-instruction family
-vmi:I_YIELD	CONT1	seed: VM-instruction family
 vmi:S_TRIE_GEN	TAB1	seed: VM-instruction family
 vmi:T_ATOM	TAB1	seed: VM-instruction family
 vmi:T_ATTVARA	TAB1	seed: VM-instruction family

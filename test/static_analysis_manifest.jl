@@ -124,6 +124,8 @@ _manifest_per_type(T) = (
     # f3-1 (audit D-0110): a slot's grounded side value read as a value word (its side word) — the read
     # allocates nothing; the word a cell stores for it is a new value-table entry
     (LK._indirect_value, Tuple{LK.PL_local_data{T}, UInt64}, true),
+    # R2 LB4 b2: the integer an untagged value word holds on a term type that tags none (reads `int64_value`)
+    (LK._untagged_int, Tuple{LK.PL_local_data{T}, UInt64}, false),
     (LK._value_word!, Tuple{LK.PL_local_data{T}, UInt64}, false),
     (LK._side_value_word!, Tuple{LK.PL_local_data{T}, UInt64}, false),
     # compounds on the global stack (L1c): the layout grows the stack; the two cold adapters allocate

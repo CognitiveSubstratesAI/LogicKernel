@@ -777,7 +777,6 @@ fixed it or a public issue exists.
 | `src/pl-supervisor.jl` | supervisors: the code a call enters first — `S_VIRGIN` installing `S_UNDEF`, `S_DYNAMIC`, `S_MULTIFILE`, `S_TRUSTME`, `S_LIST` or `S_STATIC` (`createSupervisor`, `setDefaultSupervisor`), reset when the clauses change (`freeCodesDefinition!`); since V5c `createUndefSupervisor` | `src/pl-supervisor.c` |
 | `src/pl-error.jl` | building and raising an ISO error term for the running predicate (`PL_error`, one typed method per code family: instantiation, type, domain and occurs-check errors, since V5b the undefined procedure's existence error with its caller, since V6c1 arithmetic's (`ERR_NOT_EVALUABLE`, the evaluation errors) with upstream's `pred`, `arity`, `msg`, since V8 `ERR_AR_TYPE`, and since V9c `ERR_REPRESENTATION`, `ERR_MODIFY_STATIC_PROC` and `rewrite_callable`, since R1b `ERR_PERMISSION`; `PL_type_error`, `PL_domain_error`; since R1b `PL_get_atom_ex`, `PL_get_integer_ex`, `PL_get_list_ex`, `PL_get_nil_ex`); since R1f `ERR_PERMISSION_PROC` and `printMessage` (the message collected, not printed: print_message/2 is R2's); since R1e's write/1 family `ERR_EXISTENCE`, `ERR_STREAM_OP`, `PL_get_stdbool_ex`, `PL_get_bool_ex`, `PL_unify_bool_ex`; since T1 `ERR_SYNTAX`; since Y1 `ERR_FILE_OPERATION`, `ERR_SYSCALL` (with `errno`) | `src/pl-error.c`, `src/pl-error.h` |
 | `src/pl-ext.jl` | registering the built-ins in the `system` module (`initBuildIns!`, `registerBuiltins!`, `builtin_pred_flags`; pl-ext.c's FRG table `foreigns`) and their DISPATCH: sorted branch trees over the tables by call shape (`_fcall_va`, `_fcall_det`; decision 5, measured against a typed function pointer); the tables in `initBuildIns`' order (arith, comp, prims, variant, trace, read — since R1d — proc — since R1f — write — since R1e's write/1 family — op); pl-ext.c's own FRG table, since R1e's write/1 family with write/1,2, writeq/1,2, writeln/1,2, print/1,2 | `src/pl-ext.c` |
-| `boot/init.jl` | the MINIMAL LOADER (R1f): `load_file!` — boot/init.pl's consult path in Julia over the C ports: `read_clause`, `'$compile_term'`, `'$store_clause'` (through `'$record_clause'/3`), `'$execute_directive_3'` (a goal or a conjunction, through the query API, backtracking), `'$pattr_directive'`/`'$set_pattr'` (through `'$set_predicate_attribute'/3`), `'$valid_term'`; the messages swipl prints, returned | `boot/init.pl` |
 | `src/pl-attvar.jl` | `saveWakeup`, `restoreWakeup`, `restore_exception` — the pending exception set aside while `findCatcher` unifies the ball with the catchers (since V9f); `varBindConst` (L1c: the VM's `bindConst` of a global cell); `bindConst` (AV1: its attributed-variable branch is refused, a `NotPortedError` naming AV3, until AV3); since AV2 the attribute STORE — `PL_get_attr`, `link_attvar`, `make_new_attvar`, `put_new_attvar`, `find_attr`, `put_att_value`, `put_attr`, `get_attr`, `del_attr` and attvar/1, put_attr/3, get_attr/3, del_attr/2, del_attrs/1, get_attrs/2, put_attrs/2, `$attv_unify/2` (`PL_predicates_from_attvar`; `PL_is_attvar` in src/pl-fli.jl); binding and waking them is AV3's — AV1 ported their word layer (`DU_ATTVAR`/`DREF_ATTVAR`, `linkValI` by `needsRef`, the index key, the chain: `register_attvar` in src/pl-inline.jl, `reclaim_attvars` in src/pl-wam.jl) | `src/pl-attvar.c`, `src/pl-attvar.h` |
 | `src/pl-string.jl` | the string predicates (since T2, R2): atom_string/2, string_codes/2, string_chars/2, text_to_string/2, string_length/2, string_concat/3, sub_string/5 (`sub_text`, shared with sub_atom/5), string_code/3, get_string_code/3, split_string/4, string_bytes/3, read_string/3,5, open_string/2 (`PL_predicates_from_strings`, src/pl-ext.jl); the UTF-16 decode and `PL_text_recode` of string_bytes/3 are local to this file | `src/pl-string.c`, `src/pl-prims.c`, `src/pl-privitf.c`, `src/pl-error.c`, `src/os/pl-text.c`, `src/os/pl-text.h`, `src/os/pl-utf8.h`, `src/os/pl-file.c` |
 | `src/pl-pro.jl` | `callProlog` — a goal called from foreign code, in a query of its own — and `sig_atomic/1`, through which the cleanup family runs its Setup goal (since V9g); since HALT1 also `abortProlog`, `abort/0` (`pl_abort0_va`) and `raise_halt_exception` (the `unwind(halt(Status))` ball); the toplevel (`query_loop`) and the metacut are left out | `src/pl-pro.c` |
@@ -986,10 +985,11 @@ graph LR
     pl_ext["pl-ext.jl"]
     gd_template["gd_template.jl"]
     boot_image["boot_image.jl"]
-    ___boot_init["../boot/init.jl"]
     precompile_workload["precompile_workload.jl"]
     term_interface --> default_term
     default_term --> term_interface
+    default_term --> pl_incl
+    default_term --> pl_global
     default_term --> pl_prims
     default_term --> pl_ressymbol
     default_term --> pl_gmp
@@ -1013,9 +1013,11 @@ graph LR
     pl_incl --> term_interface
     pl_incl --> default_term
     pl_incl --> pl_atom
+    pl_incl --> pl_global
     pl_incl --> pl_inline
     pl_incl --> pl_arith
     pl_incl --> pl_op
+    pl_atom --> term_interface
     pl_atom --> default_term
     pl_atom --> pl_hash
     pl_atom --> pl_incl
@@ -1059,21 +1061,10 @@ graph LR
     pl_global --> pl_termwalk
     pl_global --> pl_index
     pl_global --> pl_funct
-    pl_global --> pl_modul
     pl_global --> pl_inline
-    pl_global --> pl_ressymbol
-    pl_global --> pl_comp
-    pl_global --> pl_wam
-    pl_global --> pl_dbref
-    pl_global --> pl_arith
-    pl_global --> os_pl_prologflag
-    pl_global --> os_pl_text
     pl_global --> os_pl_os
     pl_global --> pl_setup
-    pl_global --> pl_supervisor
-    pl_global --> pl_wrap
-    pl_global --> pl_op
-    pl_global --> pl_ext
+    pl_global --> gd_template
     pl_modul --> term_interface
     pl_modul --> default_term
     pl_modul --> pl_incl
@@ -1173,6 +1164,7 @@ graph LR
     pl_comp --> os_pl_file
     pl_comp --> pl_proc
     pl_comp --> pl_srcfile
+    pl_comp --> pl_gvar
     pl_comp --> pl_read
     pl_variant --> term_interface
     pl_variant --> default_term
@@ -1281,6 +1273,7 @@ graph LR
     pl_wam --> pl_trace
     pl_wam --> pl_event
     pl_wam --> pl_write
+    pl_wam --> pl_read
     pl_wam --> pl_ext
     pl_fli --> term_interface
     pl_fli --> default_term
@@ -1324,19 +1317,26 @@ graph LR
     pl_attvar --> pl_error
     pl_error --> term_interface
     pl_error --> default_term
+    pl_error --> os_pl_stream
     pl_error --> pl_incl
     pl_error --> SWI_Prolog
     pl_error --> pl_atom
     pl_error --> pl_funct
     pl_error --> pl_global
+    pl_error --> pl_modul
     pl_error --> pl_inline
     pl_error --> pl_prims
     pl_error --> pl_comp
     pl_error --> pl_wam
     pl_error --> pl_fli
+    pl_error --> pl_attvar
     pl_error --> pl_arith
+    pl_error --> os_pl_prologflag
     pl_error --> os_pl_text
+    pl_error --> os_pl_file
+    pl_error --> pl_proc
     pl_error --> pl_read
+    pl_error --> pl_qlf
     pl_dbref --> term_interface
     pl_dbref --> default_term
     pl_dbref --> pl_incl
@@ -1497,15 +1497,29 @@ graph LR
     os_pl_file --> pl_string
     pl_setup --> term_interface
     pl_setup --> default_term
+    pl_setup --> os_pl_stream
     pl_setup --> pl_incl
     pl_setup --> SWI_Prolog
+    pl_setup --> pl_atom
+    pl_setup --> pl_funct
     pl_setup --> pl_global
+    pl_setup --> pl_modul
     pl_setup --> pl_inline
+    pl_setup --> pl_ressymbol
+    pl_setup --> pl_comp
     pl_setup --> pl_gc
     pl_setup --> pl_alloc
     pl_setup --> pl_wam
     pl_setup --> pl_fli
     pl_setup --> pl_error
+    pl_setup --> pl_dbref
+    pl_setup --> pl_arith
+    pl_setup --> os_pl_prologflag
+    pl_setup --> os_pl_text
+    pl_setup --> pl_supervisor
+    pl_setup --> pl_wrap
+    pl_setup --> pl_op
+    pl_setup --> pl_ext
     pl_proc --> term_interface
     pl_proc --> default_term
     pl_proc --> pl_incl
@@ -1804,10 +1818,12 @@ graph LR
     pl_qlf --> os_pl_prologflag
     pl_qlf --> os_pl_text
     pl_qlf --> os_pl_file
+    pl_qlf --> pl_setup
     pl_qlf --> pl_proc
     pl_qlf --> pl_srcfile
     pl_qlf --> pl_pro
     pl_qlf --> pl_read
+    pl_qlf --> gd_template
     pl_string --> term_interface
     pl_string --> default_term
     pl_string --> os_pl_utf8
@@ -1859,11 +1875,9 @@ graph LR
     pl_ext --> pl_termhash
     pl_ext --> pl_thread
     pl_ext --> pl_gc
-    pl_ext --> pl_wam
     pl_ext --> pl_fli
     pl_ext --> pl_attvar
     pl_ext --> pl_error
-    pl_ext --> pl_gmp
     pl_ext --> pl_arith
     pl_ext --> os_pl_prologflag
     pl_ext --> os_pl_text
@@ -1890,9 +1904,13 @@ graph LR
     pl_ext --> pl_qlf
     pl_ext --> pl_string
     pl_ext --> os_pl_fmt
+    gd_template --> default_term
+    gd_template --> pl_incl
     gd_template --> pl_global
     gd_template --> pl_arith
     gd_template --> os_pl_text
+    gd_template --> pl_proc
+    gd_template --> pl_qlf
     boot_image --> term_interface
     boot_image --> default_term
     boot_image --> pl_incl
@@ -1900,25 +1918,6 @@ graph LR
     boot_image --> pl_global
     boot_image --> pl_proc
     boot_image --> pl_srcfile
-    ___boot_init --> term_interface
-    ___boot_init --> default_term
-    ___boot_init --> os_pl_stream
-    ___boot_init --> pl_incl
-    ___boot_init --> SWI_Prolog
-    ___boot_init --> pl_atom
-    ___boot_init --> pl_global
-    ___boot_init --> pl_comp
-    ___boot_init --> pl_rec
-    ___boot_init --> pl_wam
-    ___boot_init --> pl_fli
-    ___boot_init --> pl_error
-    ___boot_init --> pl_arith
-    ___boot_init --> os_pl_prologflag
-    ___boot_init --> os_pl_text
-    ___boot_init --> os_pl_file
-    ___boot_init --> pl_proc
-    ___boot_init --> pl_srcfile
-    ___boot_init --> pl_read
     precompile_workload --> term_interface
     precompile_workload --> default_term
     precompile_workload --> pl_incl
@@ -1931,6 +1930,7 @@ graph LR
     precompile_workload --> pl_termhash
     precompile_workload --> pl_wam
     precompile_workload --> pl_fli
+    precompile_workload --> pl_setup
     precompile_workload --> pl_proc
 ```
 <!-- END GENERATED code graph -->
@@ -1952,10 +1952,10 @@ or **platform** (a Windows or macOS definition: out of the count). **NO OWNER** 
 | category | done | refused | missing | platform | NO OWNER |
 |---|---:|---:|---:|---:|---:|
 | predicates (C-defined, reached by the boot) | 271 | 0 | 151 | 3 | 1 |
-| refusal sites | 0 | 77 | 0 | 0 | 63 |
+| refusal sites | 0 | 78 | 0 | 0 | 64 |
 | Prolog flags | 64 | 19 | 20 | 0 | 35 |
-| VM instructions | 162 | 0 | 71 | 0 | 7 |
-| **total** | 497 | 96 | 242 | 3 | 106 |
+| VM instructions | 169 | 0 | 64 | 0 | 7 |
+| **total** | 504 | 97 | 235 | 3 | 107 |
 
 #### The boot and library files
 
@@ -2005,7 +2005,6 @@ Predicate rows each file's calls reach (a predicate several files call counts in
 | DBG1 | 13 | 13 | 0 | `$call_no_catch/1`, `$can_yield/0`, `$dwim_predicate/2`, `$leash/2`, `$visible/2`, `break/0`, `dwim_match/3`, `notrace/0`, … +5 |
 | Q10 | 13 | 13 | 0 | `$cmd_option_val/2`, `$on_signal/4`, `$put_token/2`, `$set_prolog_stack/4`, `$suspend_findall_bag/0`, `$usage/0`, `\=@=/2`, `current_blob/2`, … +5 |
 | P3 | 9 | 9 | 0 | `$depth_limit/3`, `$depth_limit_except/3`, `$depth_limit_false/3`, `$depth_limit_true/5`, `$inference_limit/2`, `$inference_limit_except/3`, `$inference_limit_false/1`, `$inference_limit_true/3`, … +1 |
-| CONT1 | 7 | 7 | 0 | `I_CALLCONT`, `I_CUTCHP`, `I_EXITRESET`, `I_RESET`, `I_SHIFT`, `I_SHIFTCP`, `I_YIELD` |
 | TRIE1 | 7 | 7 | 0 | `$trie_gen_node/3`, `$trie_property/2`, `is_trie/1`, `trie_gen/2`, `trie_gen/3`, `trie_lookup/3`, `trie_term/2` |
 | ZIP1 | 6 | 6 | 0 | `$rc_handle/1`, `zip_clone/2`, `zip_close_/2`, `zip_file_info_/3`, `zipper_goto/2`, `zipper_open_current/3` |
 | S2a | 4 | 4 | 0 | `get/1`, `get/2`, `put/1`, `put/2` |
@@ -2018,7 +2017,7 @@ Predicate rows each file's calls reach (a predicate several files call counts in
 | PR1 | 1 | 1 | 0 | `$foreign_predicate_source/2` |
 | SRC2 | 1 | 1 | 0 | `$unload_file/1` |
 | TAI1 | 1 | 1 | 0 | `format_time/3` |
-| NO OWNER | 106 | 28 | 78 | `apple_current_locale_identifier/1`, `B_SMALLINTW`, `B_THROW`, `H_SMALLINTW`, `L_SMALLINTW`, `S_DET`, `S_INCR_DYNAMIC`, `S_THREAD_LOCAL`, … +98 |
+| NO OWNER | 107 | 28 | 79 | `apple_current_locale_identifier/1`, `B_SMALLINTW`, `B_THROW`, `H_SMALLINTW`, `L_SMALLINTW`, `S_DET`, `S_INCR_DYNAMIC`, `S_THREAD_LOCAL`, … +99 |
 
 #### Missing and refused per category
 
@@ -2027,8 +2026,8 @@ xychart-beta
     title "R2: missing (bars) and refused (line) rows"
     x-axis ["predicates", "refusal sites", "flags", "VM instructions"]
     y-axis "rows" 0 --> 200
-    bar [151, 0, 20, 71]
-    line [0, 77, 19, 0]
+    bar [151, 0, 20, 64]
+    line [0, 78, 19, 0]
 ```
 
 <!-- END GENERATED R2 status -->
