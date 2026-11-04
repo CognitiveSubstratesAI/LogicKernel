@@ -39,6 +39,15 @@ function _radd!(db::_RDB, head::_R, body::Union{Nothing, _R}=nothing)
     return cl
 end
 
+"A database of `clauses` on the UNBOOTED database (see `_RDB_unbooted`)."
+function _rdb_unbooted(clauses)::_RDB
+    db = _RDB_unbooted()
+    for (h, b) in clauses
+        _radd!(db, h, b)
+    end
+    return db
+end
+
 """
 Every answer of `goal` through the query API, as `(write_canonical text, deterministic)`;
 `at(qid, k)` runs at answer `k` while it is current.

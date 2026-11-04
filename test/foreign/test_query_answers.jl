@@ -83,7 +83,11 @@ _qa_clauses() = Tuple{_R, Union{Nothing, _R}}[
 end
 
 @testset "query_answers: an uncaught exception is thrown with its ball" begin
-    db = _rdb(_qa_clauses())
+    # The UNBOOTED database: on a booted copy the boot's message machinery sets a global variable (nb_setval/2: measured,
+    # `gvar_grefs` is 1 and `frozen_bar` equals gTop after the throw), and while `ld.gvar_grefs > 0` the ball's global region is
+    # kept, as upstream keeps `frozen_bar` for the thread's life (`_release_frozen!`, src/pl-inline.jl: it returns at once).
+    # The row's subject, the stacks back at their baseline after the throw, is the release, which needs no global variable.
+    db = _rdb_unbooted(_qa_clauses())
     ld = db.ld
     base = (ld.gTop, length(ld.trail), ld.lTop)
     ex = try
