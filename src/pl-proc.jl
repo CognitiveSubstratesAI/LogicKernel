@@ -352,7 +352,7 @@ end
 # DIVERGES: the chain `LD->autoload.nesting` is a vector, the innermost LAST (A2 of AUTOLOAD1), so the walks go from its end;
 # `gd` is an argument (for the names in the messages). The messages are not written to a stream: upstream's `Sdprintf` is
 # collected on `ld.messages` as the boot loop's are (`_qlf_Sdprintf!`, src/pl-qlf.jl; the kernel has no stream-side
-# `Sdprintf`). As upstream, `LD->autoload.loop` is only set here, never cleared (upstream clears it in `resetProlog`).
+# `Sdprintf`). As upstream, `LD->autoload.loop` is only set here, never cleared here (upstream clears it in `resetProlog`; since R2 TOP1 src/pl-pro.jl `resetProlog` does).
 """
     test_autoload_loop(gd, ld, def) -> Bool
 

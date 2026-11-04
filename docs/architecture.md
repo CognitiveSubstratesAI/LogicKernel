@@ -6724,9 +6724,9 @@ os/pl-option.c (`get_optval`'s `OPT_INT64`). Sizing: evidence/R2/lb5_sizing.md o
   writes into a `limit_size_stream` whose function set `lss_functions` (pl-write.c:3352-3357) has its own `Swrite_lss` (:3293-3350); it checks the limits per buffer and
   breaks the write with `errno = EINVAL` (:3338). The kernel's stream layer has no custom write function. S2b removes this DIVERGES.
 - **Known differences and flags for the audit**: (1) `set_stream(S, alias(user_input))` sets `LD->prompt.next` (upstream :2224-2225) since R2 LB5b: the field `prompt_next` is the
-  last of `PL_local_data` (src/pl-global.jl). DIVERGES: the flag is only set; its readers (`Sread_user` pl-file.c:5992-6004, `PL_write_prompt` :1884,
-  `wrapIO` :6150, pl-os.c, pl-fli.c:5349, pl-pro.c:67) are the interactive toplevel's. **Owner: the toplevel step (status board row TOP1)**; removal
-  condition: TOP1 ports those readers and they clear and set the flag as upstream does. Rows: test/core_lang/test_lb5b_prompt.jl (white-box; swipl cannot
+  last of `PL_local_data` (src/pl-global.jl). DIVERGES: the flag is only set here. Since R2 TOP1 three readers are ported (`PL_write_prompt` :1884, `PL_prompt_next` pl-fli.c:5349,
+  `resetProlog` pl-pro.c:67; see the block "R2 TOP1"); `Sread_user` pl-file.c:5992-6004, `wrapIO` :6150 and pl-os.c `Sread_terminal` stay. **Owner: TOP1b (status board)**;
+  removal condition: TOP1b ports those readers and they clear and set the flag as upstream does. Rows: test/core_lang/test_lb5b_prompt.jl (white-box; swipl cannot
   read the flag). (2) A stream captured as a standard alias and then closed leaves the standard slot as it is
   (`restoreStandardStream`: NOT STARTED); the rows restore the alias inside the row. (3) `current_input/1` and `put_char/1,2` were outside the sizing's list; they
   are the twin of `current_output/1` in one upstream function and upstream's aliases of `put_code`. (4) Rows lb010-lb011 pin swipl's answer for
@@ -6870,9 +6870,9 @@ DIVERGES:
   existing rows (test_module_path.jl "autoImport and trapUndefined" and every existence-error row) are the guard's proof; the guard has its own mutant
   (AUTOLOAD1-A3a). At A5 the swipl-compared rows run with the real hook and the white-box rows of test_autoload_trap.jl that define a test hook are
   retired in the same commit (refusal-flip rule D-0375/D-0376).
-- **No `resetProlog`** (owner: the toplevel step; row TOP1 in evidence/R2/status_board.md): upstream sets `LD->autoload.nesting` and `.loop` to NULL in `resetProlog`
-  (pl-pro.c:89-90), which only `query_loop` calls (pl-pro.c:162); the kernel has neither (src/pl-pro.jl), so a fresh local data starts empty and nothing resets
-  it between queries. `autoload_loop` is set by `test_autoload_loop` and never cleared, as upstream.
+- **`resetProlog` (RESOLVED by R2 TOP1; see the block "R2 TOP1")**: upstream sets `LD->autoload.nesting` and `.loop` to NULL in `resetProlog`
+  (pl-pro.c:89-90), which `query_loop` calls (pl-pro.c:162); since TOP1 both exist (src/pl-pro.jl) and the row of test_top1_pro.jl reads both after the reset.
+  `autoload_loop` is set by `test_autoload_loop` and cleared only there, as upstream.
 - **The chain is a vector** (innermost last) instead of a linked chain of stack cells (`struct definition_chain cell` on the C stack).
 - **Messages are collected**: upstream's `Sdprintf` ("ERROR: autoload loop:", the chain lines, innermost first up to the definition) and the retry
   warning (`warning("[Thread %d]: exception handler failed to define %s")`, the thread number is 1) go to `ld.messages` through `_qlf_Sdprintf!`
@@ -6882,10 +6882,51 @@ DIVERGES:
   (50 characters) and no `(nil)` module (`GD->halt.cleaning`).
 - `GD->procedures.undefinterc4` is not cached; `gd`, `ld` are arguments; the module and functor of `def` are fixed through the retries as upstream's locals.
 
-Removal conditions: the hook guard goes with A5 (see above); the toplevel step adds the reset; the `_boot_when!` stand-in stays until A6.
+Removal conditions: the hook guard goes with A5 (see above); the reset went in with R2 TOP1; the `_boot_when!` stand-in stays until A6.
 
 Tests: test/core_lang/test_autoload_trap.jl (LK-only white-box: a fresh local data, the guard, a test-defined hook with each answer and the arguments,
 the retry's post-increment, the loop report, the restored chain, input context and frame, the flag and boot-session skips, `autoImport` first,
 the refreshed definition, `predicateName`, and A1's `lTop` killer through `call(user:foo)`). Rows marked UNVERIFIED in the file were never run.
 Mutants: tools/mutants/AUTOLOAD1.py (A3a-A3r, and A1e, the mcall_cont `lTop` line, moved out of NOT LISTED; unkillable ones are under NOT LISTED with
 their reason). Manifest: three rows (`_autoload_predicate_name`, `test_autoload_loop`, `autoLoader`), no `::Any` argument.
+
+## TOP1 — `resetProlog`, `query_loop` and the prompt functions (R2, edit-only: nothing was compiled when this was written; the gate decides)
+
+UPSTREAM: swipl-devel cbf4e1896275 — pl-pro.c (`resetProlog` :60-94, `halt_from_exception` :100-124, `restore_after_exception` :126-145, `query_loop`
+:147-218), pl-trace.c (`resetTracer` :1882, `enable_debug_on_interrupt` :2092), pl-file.c (`validUserStreams` :1488, `PL_write_prompt` :1868,
+`PrologPrompt` :3795), pl-fli.c (`PL_prompt_next` :5345), pl-write.c (`writeAtomToStream` :1318).
+
+Ported:
+- **src/pl-pro.jl**: `resetProlog(ld, clear_stacks)` (the user streams made current, the error on `user_input` cleared with `prompt_next` set, the pending
+  exception cleared, `resetTracer`, `emptyStacks!` when `clear_stacks` and no `nb_setval/2` variable, and `autoload_nesting`/`autoload_loop` reset:
+  the AUTOLOAD1 A2 DIVERGES is RESOLVED); `restore_after_exception` (tracing and debugging off; for `unwind(abort)` the `abort` event and the informational
+  `unwind(abort)` message); `halt_from_exception` (`unwind(halt(S))` halts with `S & 0xff`); `query_loop(gd, ld, goal, loop) -> 1 | 0 | -1` over
+  `system:goal/0`, with upstream's loop: after an exception the goal runs again only with `loop`, a halt ball, a thread exit or a user stream in error end it.
+- **src/pl-trace.jl**: `resetTracer` and the flag half of `enable_debug_on_interrupt`.
+- **src/os/pl-file.jl**: `validUserStreams`, `PrologPrompt` (prompt1/1's atom once, else prompt/2's at the start of a line, else `nothing`), `PL_write_prompt`
+  (writes the prompt, flushes, clears `prompt_next`). **src/pl-fli.jl**: `PL_prompt_next`. **src/pl-write.jl**: `writeAtomToStream`.
+
+DIVERGES (representation only unless marked):
+- **`resetProlog` leaves out, by field, each with its owner**: `gc_status.blocked` and `LD->shift_status.blocked` (the garbage collector's step; the kernel's stacks grow
+  by doubling, src/pl-gc.jl), `LD->in_print_message` (the `print_message/2` step), `LD->depth_info.limit` (P3, the `$depth_limit*` family), and in `resetTracer`
+  `debugstatus.suspendTrace` and `debugstatus.retryFrame` (DBG1; the local data holds no field). The SIGINT handler of `enable_debug_on_interrupt`
+  (`PL_signal`, `terminate_on_signal`) is left to the signal step: the flag is set and cleared, an interrupt does not reach the debugger.
+- `resetProlog` calls `emptyStacks!` mid-life (written for the constructor): UNVERIFIED on the kernel, the gate decides. It resets the local, argument, trail and
+  global stacks, the value table, the frames and the queries to the constructor's state, so a term reference or foreign frame id held across the call is
+  invalid after it, as upstream. `query_loop` passes `clear_stacks = (ld.query == 0)`; the rows pin the effect through `ld.nfliframes`.
+- **`_query_run_at_halt` (src/pl-init.jl) is NOT switched to `query_loop`**: it is a reduced `query_loop(.., false)` for `PL_cleanup`; switching adds `resetProlog`,
+  `restore_after_exception` and `halt_from_exception` to the at-halt query, a behaviour change left to the gate and the audit.
+- With the seam `gd.halt_exit` off `PL_halt` returns false, so `halt_from_exception` returns false; the rows read `gd.halt_exited`.
+- The error exit of `query_loop` (`goto error`) leaves the foreign frame open, as upstream; the next `resetProlog` that empties the stacks closes it.
+  One thread: `PL_thread_self()` is 1, so `halt_from_exception` is always tried and `exit_requested` is never set.
+
+Left to TOP1b (status board, PROPOSED): `Sread_user`, `wrapIO`, `set_prolog_IO/3` (pl-file.c:5987, :6047, :6125), `Sread_terminal` (pl-os.c:2171-2224, :2462),
+`prologToplevel`, `pl_break`, `currentBreakLevel` with the `break_level` flag (a `break_level` field), `PL_prompt_is_continuation`, `PL_prompt_string`.
+Why: the stream layer dispatches on the closed enum `IOFUNCTIONS` and `S_read` takes no local data; recommended: a new function-set member plus a local-data
+reference in the handle. Until then no read of `user_input` calls `PL_write_prompt`; the pty rows model `Sread_user`'s three lines by hand.
+
+Tests: test/core_lang/test_top1_prompt_swipl.jl (twelve swipl 10.1.19 transcripts driven on a pty by evidence/TOP1/gen_top1_rows.py; swipl prints the prompt only for
+a TTY stdin, pl-os.c:2171-2185; the test reads the committed evidence/TOP1/top1_rows.out; kernel side: `PL_write_prompt` over buffers sharing one position record) and
+test/core_lang/test_top1_pro.jl (LK-only white-box rows of every function above, `# UNVERIFIED on the kernel: gate decides`; none was run).
+Mutants: tools/mutants/TOP1.py (28; the abort branch's `Sclearerr` has no kill row and is under NOT LISTED). Manifest: eleven rows. Tier 1: src/pl-fli.jl gains
+`PL_prompt_next` (no struct or existing body changed): the alloc pins x3 at the gate, expected unchanged.

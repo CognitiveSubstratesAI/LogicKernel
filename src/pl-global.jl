@@ -447,9 +447,9 @@ ld_statistics() = ld_statistics(0, 0, 0, 0, WallTime(), 0.0, 0.0, 0.0, 0.0)
 # Since R2 AUTOLOAD1 A2: `autoload_nesting` and `autoload_loop`, upstream's `LD->autoload.nesting` (a chain of `struct
 # definition_chain`, pl-incl.h:1780, the innermost first; here a vector, the innermost LAST, as `input_context_stack`) and
 # `LD->autoload.loop` (pl-global.h:897-899): the predicates the autoloader is loading, and the one it found itself looping on
-# (src/pl-proc.jl `autoLoader`, `test_autoload_loop`). Upstream sets both to NULL in `resetProlog` (pl-pro.c:89-90), a
-# function of the toplevel (`query_loop`), which the kernel LEFT OUT (src/pl-pro.jl header): here a new local data
-# starts empty and nothing resets it between queries (DIVERGES owner: the toplevel step).
+# (src/pl-proc.jl `autoLoader`, `test_autoload_loop`). Upstream sets both to NULL in `resetProlog` (pl-pro.c:89-90); since R2 TOP1
+# `resetProlog` (src/pl-pro.jl) empties the vector and sets the loop mark to `nothing`, and `query_loop` calls it before every run
+# (this A2 DIVERGES is resolved); a new local data starts empty.
 """
     PL_local_data{T}(gd)
 
