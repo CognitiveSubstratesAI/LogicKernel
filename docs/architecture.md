@@ -7233,6 +7233,11 @@ cbf4e189.
   runs the rows it flips.
 - **Rows that agree with swipl since the first boot**: test_attvar_wakeup.jl nv04 ('$attvar':uhook/3) and fz02, fz06,
   fz10, fz11, fz13, fz14 (frozen/2) lost their known-difference pins and assert swipl's answer.
+- **The copy resets the cached working directory** (src/gd_template.jl; audit D-0408 item 4). `GD_COPY_POLICY` has a third
+  kind, `:reset`: the copy gets the start-up value `GD_COPY_RESET` names for the field (the value `setupProlog` passes to the
+  constructor), not the template's. `paths_CWDdir` is the one field: upstream sets `GD->paths.CWDdir = NULL` at start
+  (pl-os.c:989) and computes it at the first `PL_cwd` (:1860-1866), so a database made after the boot has no cached directory
+  and `working_directory/2` answers the directory of the process when it is asked. Row and mutants LB4B2-CWD1, CWD2.
 
 ## CT1a — `setlocale/3` (pl-ctype.c, pulled into LB4 b2: the boot's `os_user_lang` calls it; edit-only, the gate decides)
 
