@@ -240,6 +240,27 @@ end
     @test typeof(c.stream_filenames) == typeof(gd.stream_filenames)
 end
 
+# The two stream DICTS refuse a live stream as well (the vector's check above never reaches them): a template whose
+# `stream_table` is empty and whose alias / filename dict holds an IOSTREAM must refuse the copy, not copy it as an empty dict.
+@testset "the stream dicts: a live stream in the aliases or the filenames refuses the copy" begin
+    s = LK.Sopen_string(Vector{UInt8}("abc"), 3, "r")
+    @test s !== nothing
+    ga = LK.PL_global_data{_P}()
+    @test isempty(ga.stream_table) && isempty(ga.stream_aliases) &&
+        isempty(ga.stream_filenames)
+    ga.stream_aliases[UInt64(7)] = s
+    @test length(ga.stream_aliases) == 1
+    @test_throws ErrorException LK.copy_global_data(ga)             # the alias dict holds a live stream
+    gf = LK.PL_global_data{_P}()
+    gf.stream_filenames[s] = _pg(1)
+    @test length(gf.stream_filenames) == 1 && isempty(gf.stream_table)
+    @test_throws ErrorException LK.copy_global_data(gf)             # the filename dict holds a live stream
+    empty!(ga.stream_aliases)                                       # emptied: the same database copies, with empty dicts
+    c = LK.copy_global_data(ga)
+    @test isempty(c.stream_aliases) && c.stream_aliases !== ga.stream_aliases
+    @test typeof(c.stream_aliases) == typeof(ga.stream_aliases)
+end
+
 @testset "the registry builds once per process and term type" begin
     LK.reset_gd_templates!()
     n1, n2 = Ref(0), Ref(0)
