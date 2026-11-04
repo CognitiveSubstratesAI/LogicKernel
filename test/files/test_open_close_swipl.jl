@@ -861,7 +861,38 @@ end
     @test name_of(codes233) == ("é", false)                            # a code list: its characters, as UTF-8
     @test name_of(lk_gnd(_TL, "a"^4095)) == ("a"^4095, false)
     @test name_of(lk_gnd(_TL, "a"^4096)) == (nothing, true)          # representation_error(max_path_length)
-    @test_throws LK.NotPortedError LK.PL_get_file_name(ld, LK.PL_new_term_ref(ld), 1)
+    # PL_FILE_ABSOLUTE (flag 1), since LB2b (this row pinned a NotPortedError for ANY nonzero flag before): the text is
+    # read first (pl-files.c:487-493, `PL_get_nchars(n, &len, &name, CVT_FILENAME|CVT_EXCEPTION)`, at the pin), so an
+    # unbound term raises instantiation_error exactly as with flags 0 and AbsoluteFile (pl-files.c get_file_name,
+    # `flags & PL_FILE_ABSOLUTE`) is never reached; swipl's exists_file(_), open(_, read, _), delete_file(_) and
+    # absolute_file_name(_, _) all answer error(instantiation_error, _), checked below when swipl is on PATH
+    for flags in (0, 1)
+        fid = LK.PL_open_foreign_frame(ld)
+        r = LK.PL_get_file_name(ld, LK.PL_new_term_ref(ld), flags)
+        ball = ld.exception_term != 0 ? lk_answer(ld, LK.PL_exception(ld, 0)) : nothing
+        ld.exception_term != 0 && LK.PL_clear_exception(ld)
+        LK.PL_close_foreign_frame(ld, fid)
+        @test r === nothing
+        @test ball !== nothing && occursin(_codes("instantiation_error"), enc(ball))
+    end
+    if _swipl() !== nothing
+        sw = read(
+            pipeline(
+                `$(_swipl()) -q -g "catch(exists_file(_), error(F, _), true), print(F), nl" -t halt`;
+                stderr=devnull
+            ),
+            String
+        )
+        @test chomp(sw) == "instantiation_error"
+    end
+    # the one flag LB2b still refuses by name: PL_FILE_SEARCH (0x04) calls system:absolute_file_name/3 (pl-files.c:446);
+    # OWNER LB4 (src/os/pl-files.jl get_file_name). PL_FILE_EXIST/READ/WRITE/EXECUTE/OSPATH/ABSOLUTE/NOERRORS are ported.
+    fid = LK.PL_open_foreign_frame(ld)
+    @test_throws LK.NotPortedError LK.PL_get_file_name(
+        ld, LK.PL_new_term_ref(ld), Int(LK.PL_FILE_SEARCH)
+    )
+    ld.exception_term != 0 && LK.PL_clear_exception(ld)
+    LK.PL_close_foreign_frame(ld, fid)
 end
 
 @testset "Sopen_file's how string: the letters it knows, EINVAL for the rest" begin
