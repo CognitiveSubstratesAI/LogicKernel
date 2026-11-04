@@ -107,6 +107,11 @@ mutable struct PL_global_data{T}
     const closure_refs::Vector{closure{T}}                      # (pl-wrap.c: the closure a closure blob names, by its number in the payload; TAB1-min)
     paths_CWDdir::String                                        # paths.CWDdir: the cached working directory, '/'-terminated ("" = none; paths.CWDlen is its byte length; R2 LB2b)
     procedures_print_message2::Procedure{T}                     # procedures.print_message2: print_message/2, printMessage's (R2 LB4 b2)
+    procedures_reset3::Procedure{T}                             # procedures.reset3: reset/3 (R2 CONT1)
+    procedures_dtbl_reset6::Procedure{T}                        # procedures.dtbl_reset6: '$tbl_reset'/6 (R2 CONT1)
+    procedures_call_continuation1::Procedure{T}                 # procedures.call_continuation1: call_continuation/1 (R2 CONT1)
+    procedures_dmeta_call1::Procedure{T}                        # procedures.dmeta_call1: '$meta_call'/1 (R2 CONT1)
+    procedures_findall_loop4::Procedure{T}                      # procedures.findall_loop4: '$bags':findall_loop/4, looked up by findReset (R2 CONT1)
 end
 # DIVERGES: `atoms` is upstream's `GD->atoms` as a struct of its own (src/pl-atom.jl), one table per
 # database, built first as upstream's `initAtoms` runs first; `functors` likewise `GD->functors` with
@@ -357,6 +362,8 @@ ld_statistics() = ld_statistics(0, 0, 0, 0, WallTime(), 0.0, 0.0, 0.0, 0.0)
 # `trail_new_attvar`, src/pl-attvar.jl). NOT PORTED: `gc_attvars` (the collector's, G1).
 # Since R2 F1a: `prolog_flag_mask` (`LD->prolog_flag.mask`, a copy of the database's) and `prolog_flag_enums`,
 # the pool of current_prolog_flag/2's states.
+# Since R2 CONT1: the five `procedures_*` fields `reset3`, `dtbl_reset6`, `call_continuation1`, `dmeta_call1` (set by
+# `setBuiltinPredicateProperties!`, pl-ext.c) and `findall_loop4` (set by pl-cont.c `findReset`'s `_PL_predicate`).
 # Since MOD6: `module_enums`, the pool of `'$current_module'/2`'s states.
 # Since R2 G1: `gvar_nb_vars` and `gvar_grefs`, upstream's `LD->gvar.nb_vars` (the
 # global variables: atom word -> value word) and `.grefs` (how many hold a value on the global stack, which

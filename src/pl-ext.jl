@@ -282,9 +282,9 @@ end
 # NOT PORTED: every `LOOKUPPROC` but `equals2`, `dcall1` (the goal clauses' predicate, since
 # V9e-2; `HIDE_CHILDS|TRACE_ME` cleared, `P_DYNAMIC|P_LOCKED` set), `catch3` (since V9f),
 # `dwakeup1` (the VM's wakeup call, since AV3), `arg3` (the slow route of the inline `arg/3`, since ARGINL) and
-# `print_message2` (printMessage's, since LB4 b2) — the
-# procedures nothing reads yet (`true/0`, `fail/0`, `is/2`, `==/2`, `\==/2`, …; since
-# 10.1.19 `'$tbl_reset'/6` and `call_continuation/1`: tabling and continuations), each when
+# `print_message2` (printMessage's, since LB4 b2),
+# `reset3`, `dtbl_reset6`, `call_continuation1` and `dmeta_call1` (continuations, since CONT1) — the
+# procedures nothing reads yet (`true/0`, `fail/0`, `is/2`, `==/2`, `\==/2`, …), each when
 # its first reader is ported;
 # `$c_call_prolog/0` is created with the global data (src/pl-global.jl); `heartbeat/0`; `call/1`'s
 # flags and the meta-predicate declarations (no meta-call, V9).
@@ -301,6 +301,10 @@ function setBuiltinPredicateProperties!(gd::PL_global_data{T})::Nothing where {T
     gd.procedures_dwakeup1 = lookupProcedure(mk_sym(T, Symbol("\$wakeup")), 1, m)  # LOOKUPPROC(dwakeup1)
     gd.procedures_arg3 = lookupProcedure(mk_sym(T, :arg), 3, m)   # LOOKUPPROC(arg3): the slow route of B_ARG_CF/B_ARG_VF
     gd.procedures_print_message2 = lookupProcedure(mk_sym(T, :print_message), 2, m)  # LOOKUPPROC(print_message2)
+    gd.procedures_reset3 = lookupProcedure(mk_sym(T, :reset), 3, m)   # LOOKUPPROC(reset3)
+    gd.procedures_dtbl_reset6 = lookupProcedure(mk_sym(T, Symbol("\$tbl_reset")), 6, m)  # LOOKUPPROC(dtbl_reset6)
+    gd.procedures_call_continuation1 = lookupProcedure(mk_sym(T, :call_continuation), 1, m)  # LOOKUPPROC(call_continuation1)
+    gd.procedures_dmeta_call1 = lookupProcedure(mk_sym(T, Symbol("\$meta_call")), 1, m)  # LOOKUPPROC(dmeta_call1)
     # `:- dynamic user:exception/3` (boot/init.pl:945), here before init.pl is loaded: pl-gvar.c's
     # auto_define_gvar calls the hook through `PL_call_predicate` (G1, design D8; the repeat in init.pl is harmless)
     exception3 = lookupProcedure(mk_sym(T, :exception), 3, MODULE_user(gd))

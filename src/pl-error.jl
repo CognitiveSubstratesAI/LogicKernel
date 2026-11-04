@@ -63,6 +63,7 @@
     ERR_SYSCALL                     # const char *op (errno: Y1)
     ERR_PERMISSION_SSU_DEF          # Definition def (SSU1: add_ssu_clause)
     ERR_IMPORT_PROC                 # Procedure proc, atom_t dest, atom_t old (MOD5a: import/1)
+    ERR_PERMISSION_VMI              # const char *vmi (CONT1: I_YIELD outside an engine)
 end
 
 # The head of upstream's `PL_error`: nothing if an exception is pending ("do not overrule older
@@ -519,10 +520,12 @@ function PL_error(
 end
 
 """
-    PL_error(ld, pred, arity, msg, ERR_SYNTAX, what) -> false
+    PL_error(ld, pred, arity, msg, ERR_SYNTAX | ERR_PERMISSION_VMI, what) -> false
 
 Raise `error(syntax_error(What), context(pred/arity, …))`, `What` the atom of the text `what` (pl-error.c; since
-T1, `x_chars`: `number_codes(X, "3x")`).
+T1, `x_chars`: `number_codes(X, "3x")`). With `ERR_PERMISSION_VMI` (since CONT1) raise
+`error(permission_error(execute, vmi, What), context(pred/arity, Msg))`, `What` the name of the VM instruction
+(pl-error.c:384-391; I_YIELD, pl-vmi.c:2415).
 """
 function PL_error(
     ld::PL_local_data{T}, pred::String, arity::Int, msg::String, id::PL_error_code,
@@ -531,11 +534,19 @@ function PL_error(
     h = _PL_error_open(ld)
     h === nothing && return false
     caller, fid, except, formal, swi = h
-    @assert id == ERR_SYNTAX
-    PL_cons_functor(
-        ld, formal, _err_functor(ld, :syntax_error, 1),
-        _err_atom(ld, mk_sym(T, Symbol(what)))
-    )
+    @assert id == ERR_SYNTAX || id == ERR_PERMISSION_VMI
+    if id == ERR_PERMISSION_VMI                 # case ERR_PERMISSION_VMI
+        PL_cons_functor(
+            ld, formal, _err_functor(ld, :permission_error, 3),
+            _err_atom(ld, mk_sym(T, :execute)), _err_atom(ld, mk_sym(T, :vmi)),
+            _err_atom(ld, mk_sym(T, Symbol(what)))
+        )
+    else
+        PL_cons_functor(
+            ld, formal, _err_functor(ld, :syntax_error, 1),
+            _err_atom(ld, mk_sym(T, Symbol(what)))
+        )
+    end
     return _PL_error_close!(ld, caller, fid, except, formal, swi, pred, arity, msg)
 end
 
