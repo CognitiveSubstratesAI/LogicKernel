@@ -1937,11 +1937,11 @@ or **platform** (a Windows or macOS definition: out of the count). **NO OWNER** 
 
 | category | done | refused | missing | platform | NO OWNER |
 |---|---:|---:|---:|---:|---:|
-| predicates (C-defined, reached by the boot) | 251 | 0 | 171 | 3 | 1 |
-| refusal sites | 0 | 74 | 0 | 0 | 60 |
+| predicates (C-defined, reached by the boot) | 271 | 0 | 151 | 3 | 1 |
+| refusal sites | 0 | 77 | 0 | 0 | 63 |
 | Prolog flags | 64 | 19 | 20 | 0 | 35 |
 | VM instructions | 162 | 0 | 71 | 0 | 7 |
-| **total** | 477 | 93 | 262 | 3 | 103 |
+| **total** | 497 | 96 | 242 | 3 | 106 |
 
 #### The boot and library files
 
@@ -1949,34 +1949,34 @@ Predicate rows each file's calls reach (a predicate several files call counts in
 
 | file | state | done | missing | platform |
 |---|---|---:|---:|---:|
-| `boot/init.pl` | loaded | 142 | 19 | 1 |
+| `boot/init.pl` | loaded | 156 | 5 | 1 |
 | `boot/load.pl` | loaded | 5 | 0 | 0 |
 | `boot/gc.pl` | loaded | 5 | 4 | 0 |
 | `boot/expand.pl` | loaded | 55 | 0 | 0 |
 | `boot/dcg.pl` | loaded | 20 | 0 | 0 |
 | `boot/license.pl` | loaded | 5 | 0 | 0 |
-| `boot/syspred.pl` | loaded | 75 | 38 | 0 |
-| `boot/messages.pl` | loaded | 74 | 11 | 1 |
-| `boot/toplevel.pl` | loaded | 75 | 24 | 2 |
+| `boot/syspred.pl` | loaded | 81 | 32 | 0 |
+| `boot/messages.pl` | loaded | 76 | 9 | 1 |
+| `boot/toplevel.pl` | loaded | 82 | 17 | 2 |
 | `boot/attvar.pl` | loaded | 29 | 0 | 0 |
 | `boot/bags.pl` | loaded | 21 | 1 | 0 |
 | `boot/apply.pl` | loaded | 4 | 0 | 0 |
 | `boot/history.pl` | loaded | 19 | 2 | 0 |
 | `boot/dwim.pl` | loaded | 30 | 1 | 0 |
-| `boot/autoload.pl` | loaded | 69 | 8 | 0 |
+| `boot/autoload.pl` | loaded | 76 | 1 | 0 |
 | `boot/iri.pl` | loaded | 3 | 0 | 0 |
-| `boot/qlf.pl` | loaded | 9 | 1 | 0 |
-| `boot/rc.pl` | loaded | 15 | 7 | 0 |
+| `boot/qlf.pl` | loaded | 10 | 0 | 0 |
+| `boot/rc.pl` | loaded | 16 | 6 | 0 |
 | `boot/predopts.pl` | loaded | 11 | 0 | 0 |
-| `boot/packs.pl` | loaded | 17 | 6 | 0 |
+| `boot/packs.pl` | loaded | 23 | 0 | 0 |
 | `boot/dicts.pl` | loaded | 18 | 4 | 0 |
 | `boot/engines.pl` | loaded | 6 | 4 | 0 |
-| `boot/tabling.pl` | loaded | 64 | 75 | 0 |
+| `boot/tabling.pl` | loaded | 65 | 74 | 0 |
 | `boot/topvars.pl` | loaded | 36 | 1 | 0 |
 | `boot/threads.pl` | skipped (conditional) | 0 | 0 | 0 |
 | `library/debug.pl` | loaded | 23 | 2 | 0 |
 | `library/lists.pl` | loaded | 16 | 2 | 0 |
-| `library/prolog_stack.pl` | loaded | 35 | 4 | 0 |
+| `library/prolog_stack.pl` | loaded | 36 | 3 | 0 |
 | `library/option.pl` | loaded | 20 | 0 | 0 |
 | `library/dcg/high_order.pl` | loaded | 8 | 0 | 0 |
 
@@ -1986,7 +1986,6 @@ Predicate rows each file's calls reach (a predicate several files call counts in
 |---|---:|---:|---:|---|
 | TAB1 | 97 | 93 | 4 | `$idg_add_edge/1`, `$idg_add_mono_dyn_dep/3`, `$idg_add_monotonic_dep/3`, `$idg_changed/1`, `$idg_false_edge/3`, `$idg_falsecount/2`, `$idg_forced/1`, `$idg_mono_affects/3`, … +89 |
 | AR1 | 27 | 27 | 0 | `succ/2`, `A_ADD`, `A_DOUBLE`, `A_ENTER`, `A_EQ`, `A_FIRSTVAR_IS`, `A_FUNC`, `A_FUNC0`, … +19 |
-| LB2b | 20 | 20 | 0 | `$absolute_file_name/2`, `$chdir/1`, `$cwd/1`, `$my_file/1`, `$tmp_file_stream/4`, `access_file/2`, `directory_files/2`, `exists_directory/1`, … +12 |
 | TH1 | 17 | 17 | 0 | `$engine_create/3`, `$gc_clear/1`, `$gc_stop/0`, `$gc_wait/1`, `$sig_unblock/0`, `engine_next/2`, `is_engine/1`, `message_queue_create/1`, … +9 |
 | LB3 | 14 | 0 | 14 | `refusal QLF predicate $close_wic/0`, `refusal QLF predicate $file_hash/2`, `refusal QLF predicate $map_id/2`, `refusal QLF predicate $open_wic/2`, `refusal QLF predicate $qlf_close/0`, `refusal QLF predicate $qlf_current_source/1`, `refusal QLF predicate $qlf_dependency/1`, `refusal QLF predicate $qlf_is_compatible/1`, … +6 |
 | DBG1 | 13 | 13 | 0 | `$call_no_catch/1`, `$can_yield/0`, `$dwim_predicate/2`, `$leash/2`, `$visible/2`, `break/0`, `dwim_match/3`, `notrace/0`, … +5 |
@@ -2005,7 +2004,7 @@ Predicate rows each file's calls reach (a predicate several files call counts in
 | PR1 | 1 | 1 | 0 | `$foreign_predicate_source/2` |
 | SRC2 | 1 | 1 | 0 | `$unload_file/1` |
 | TAI1 | 1 | 1 | 0 | `format_time/3` |
-| NO OWNER | 103 | 28 | 75 | `apple_current_locale_identifier/1`, `B_SMALLINTW`, `B_THROW`, `H_SMALLINTW`, `L_SMALLINTW`, `S_DET`, `S_INCR_DYNAMIC`, `S_THREAD_LOCAL`, … +95 |
+| NO OWNER | 106 | 28 | 78 | `apple_current_locale_identifier/1`, `B_SMALLINTW`, `B_THROW`, `H_SMALLINTW`, `L_SMALLINTW`, `S_DET`, `S_INCR_DYNAMIC`, `S_THREAD_LOCAL`, … +98 |
 
 #### Missing and refused per category
 
@@ -2014,8 +2013,8 @@ xychart-beta
     title "R2: missing (bars) and refused (line) rows"
     x-axis ["predicates", "refusal sites", "flags", "VM instructions"]
     y-axis "rows" 0 --> 200
-    bar [171, 0, 20, 71]
-    line [0, 74, 19, 0]
+    bar [151, 0, 20, 71]
+    line [0, 77, 19, 0]
 ```
 
 <!-- END GENERATED R2 status -->
