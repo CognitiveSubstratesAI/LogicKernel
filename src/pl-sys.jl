@@ -1,4 +1,5 @@
 # UPSTREAM: swipl-devel src/pl-sys.c @ cbf4e1896275
+# UPSTREAM: swipl-devel src/os/pl-ctype.c @ cbf4e1896275
 # CLASS: code
 # COPYRIGHT: Copyright (c)  1985-2023, University of Amsterdam
 # COPYRIGHT: SWI-Prolog Solutions b.v.
@@ -9,6 +10,9 @@
 #
 # NOT PORTED: shell/2 (`System`: running a command through the shell; not needed before the loader's
 # `shell` callers, which no R2 step reaches).
+#
+# CT1a: setlocale/3 (pl-ctype.c) is here as well: the boot's `os_user_lang` (boot/messages.pl) calls it, and the file of its
+# upstream, src/os/pl-ctype.jl, is loaded before the FLI that a predicate needs. Its category table is in that file.
 
 # ORIGINAL (Y1): `PL_get_chars(t, &s, CVT_ALL|REP_FN|CVT_EXCEPTION)` — the text of an atom, a string, a number or
 # a code list, as a `String`. A C string ends at its first NUL, so does this one; a conversion failure
@@ -101,4 +105,85 @@ const PL_predicates_from_system = (
     PL_extension("getenv", 2, pl_getenv2_va, PL_FA_VARARGS),
     PL_extension("get_time", 1, pl_get_time1_va, PL_FA_VARARGS),
     PL_extension("sleep", 1, pl_sleep1_va, PL_FA_VARARGS)
+)
+
+# ORIGINAL (CT1a): `PL_get_chars(t, &s, CVT_ATOM|CVT_EXCEPTION)` — the text of an atom as a `String`, as pl-ctype.c's
+# setlocale/3 reads it. A C string ends at its first NUL, so does this one; a term that is not an atom raises the
+# error (`type_error(atom, …)`, `instantiation_error`) and answers `nothing`.
+"The text of the atom term reference `t` holds (`CVT_ATOM|CVT_EXCEPTION`), or `nothing` after the error."
+function _ctype_chars(ld::PL_local_data{T}, t::term_t)::Union{Nothing, String} where {T}
+    txt = PL_get_text(ld, t, CVT_ATOM | CVT_EXCEPTION)
+    txt === nothing && return nothing
+    s = text_string(txt)
+    i = findfirst(==('\0'), s)
+    return i === nothing ? s : s[1:prevind(s, i)]
+end
+
+# ORIGINAL (CT1a): libc's `setlocale(category, locale)` through `ccall` (as `Setenv`, src/os/pl-os.jl); `locale`
+# `nothing` is the NULL query. The answer is copied at once (libc's buffer lives until the next call) and `errno` read
+# before anything else runs.
+"`(name, errno)`: libc's answer of `setlocale(category, locale)` — `nothing` when it fails — and the `errno` it left."
+function _libc_setlocale(
+    category::Cint, locale::Union{Nothing, String}
+)::Tuple{Union{Nothing, String}, Int}
+    p = if locale === nothing
+        ccall((:setlocale, LIBC), Ptr{UInt8}, (Cint, Ptr{UInt8}), category, C_NULL)
+    else
+        ccall((:setlocale, LIBC), Ptr{UInt8}, (Cint, Cstring), category, locale)
+    end
+    e = Int(Base.Libc.errno())
+    p == C_NULL && return (nothing, e)
+    return (unsafe_string(p), e)
+end
+
+# PORT: pl-ctype.c setlocale as pl_setlocale3_va
+# (PRED_IMPL("setlocale", 3, setlocale, 0))
+# DIVERGES: the old locale is an atom of its UTF-8 text; no `CMP_ERROR` from the comparison (the kernel's compare
+# raises nothing, src/pl-prims.jl); a failed query (libc answers NULL) fails. LEFT to the port of pl-locale.c:
+# `updateLocale(category, locale)`, which updates the default locale object (`O_LOCALE`: locale_create/3 and its rows).
+"`setlocale(+Category, -Old, +New)`: unify `Old` with the locale of `Category` and set it to `New` unless `Old` equals `New`; an unbound `New` only queries (pl-ctype.c)."
+function pl_setlocale3_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2, A3 = PL__t0, PL__t0 + 1, PL__t0 + 2
+    what = _ctype_chars(ld, A1)
+    what === nothing && return FFALSE
+    locale::Union{Nothing, String} = nothing
+    if !PL_is_variable(ld, A3)
+        locale = _ctype_chars(ld, A3)
+        locale === nothing && return FFALSE
+    end
+
+    for lcp in lccats
+        if lcp.name == what
+            old, _ = _libc_setlocale(lcp.category, nothing)
+            old === nothing && return FFALSE
+            PL_unify_atom(ld, A2, mk_sym(T, Symbol(old))) || return FFALSE
+
+            rc = PL_compare(ld, A2, A3)
+            if rc != CMP_EQUAL
+                r, e = _libc_setlocale(lcp.category, locale)
+                if r === nothing
+                    if e == ENOENT
+                        PL_error(ld, ERR_EXISTENCE, mk_sym(T, :locale), A3)
+                        return FFALSE
+                    end
+                    PL_error(ld, "", 0, MSG_ERRNO, ERR_SYSCALL, "setlocale", e)
+                    return FFALSE
+                end
+            end
+
+            return FTRUE
+        end
+    end
+
+    PL_domain_error(ld, "category", A1)
+    return FFALSE
+end
+
+# PORT: pl-ctype.c BeginPredDefs as PL_predicates_from_ctype
+# DIVERGES: the ported entries (upstream's table also has char_type/2, code_type/2, downcase_atom/2, ...).
+"pl-ctype.c's registration table (`BeginPredDefs(ctype)`): the ported entries."
+const PL_predicates_from_ctype = (
+    PL_extension("setlocale", 3, pl_setlocale3_va, PL_FA_VARARGS),
 )

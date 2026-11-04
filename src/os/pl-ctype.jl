@@ -136,3 +136,35 @@ isSymbolW(c::Int)::Bool = (c % UInt32) < 0x80 ? _char_type(c) == SY : false
 # PORT: pl-ctype.h isPunctW
 "Is `c` ASCII punctuation (pl-ctype.h: deliberately ASCII only)?"
 isPunctW(c::Int)::Bool = (c % UInt32) < 0x80 ? _char_type(c) == PU : false
+
+# ── the locale categories of setlocale/3 (pl-ctype.c) ───────────────────────────────────────────────────────
+# ORIGINAL (CT1a): the values of `<locale.h>`'s `LC_*` on glibc (bits/locale.h: `__LC_CTYPE` …), as the kernel runs on
+# Linux (`LIBC`, src/os/pl-os.jl). setlocale/3 itself, which reads this table, sits in src/pl-sys.jl: it needs the
+# FLI, which is loaded after this file.
+const LC_CTYPE = Cint(0)
+const LC_NUMERIC = Cint(1)
+const LC_TIME = Cint(2)
+const LC_COLLATE = Cint(3)
+const LC_MONETARY = Cint(4)
+const LC_MESSAGES = Cint(5)
+const LC_ALL = Cint(6)
+
+# PORT: pl-ctype.c lccat
+"A locale category and its Prolog name (pl-ctype.c `lccat`)."
+struct lccat
+    category::Cint
+    name::String
+end
+
+# PORT: pl-ctype.c lccats
+# DIVERGES: a tuple (frozen); a loop over it ends at its last entry, where upstream's ends at the `{0, NULL}` entry.
+"The categories setlocale/3 accepts, in upstream's order (pl-ctype.c)."
+const lccats = (
+    lccat(LC_ALL, "all"),
+    lccat(LC_COLLATE, "collate"),
+    lccat(LC_CTYPE, "ctype"),
+    lccat(LC_MESSAGES, "messages"),
+    lccat(LC_MONETARY, "monetary"),
+    lccat(LC_NUMERIC, "numeric"),
+    lccat(LC_TIME, "time")
+)
