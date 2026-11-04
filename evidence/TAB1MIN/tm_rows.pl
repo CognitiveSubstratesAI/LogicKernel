@@ -22,6 +22,8 @@ tm_w11(1).
 tm_w12(1).
 tm_w13(1).
 tm_w13(2).
+tm_w14(1, 2).
+tm_w15(1, 2, 3).
 tm_c01(1).
 :- tm_wrap(tm_c01(_), n1, C, _), assertz(tm_ck(c01, C)).
 tm_c01(2).
@@ -103,6 +105,8 @@ t_tmw10(R) :- catch(('$c_wrap_predicate'(_, n1, _, _, user:('$wrap$tm_w10'(_) :-
 t_tmw11(R) :- catch(('$c_wrap_predicate'(user:tm_w11(_), n1, _, _, _)), error(SsuE, _), R = raised(SsuE)).
 t_tmw12(R) :- catch((tm_wrapb(tm_w12(_), n1, C, call(W), tm_h(C, W)), clause('$wrap$tm_w12'(Z), B), B = tm_h(C2, W2), tm_same(C2, C, S1), functor(W2, N2, A2), functor(W, N, _), tm_same(N2, N, S2), arg(1, W2, X), tm_same(X, Z, S3), R = r(S1, S2, A2, S3)), error(SsuE, _), R = raised(SsuE)).
 t_tmw13(R) :- catch((tm_wrap(tm_w13(_), n1, _, _), findall(X, clause(tm_w13(X), true), L), R = L), error(SsuE, _), R = raised(SsuE)).
+t_tmw14(R) :- catch((tm_wrap(tm_w14(P, Q), n1, _, call(W)), functor(W, _, A), arg(1, W, X), arg(2, W, Y), tm_same(X, P, S1), tm_same(Y, Q, S2), tm_same(X, Y, S3), R = r(A, S1, S2, S3)), error(SsuE, _), R = raised(SsuE)).
+t_tmw15(R) :- catch((tm_wrap(tm_w15(a, P, c), n1, _, call(W)), arg(1, W, X1), arg(2, W, X2), arg(3, W, X3), tm_same(X2, P, S), R = r(X1, S, X3)), error(SsuE, _), R = raised(SsuE)).
 t_tmc01(R) :- catch((tm_nc(tm_c01(_), A), tm_nc('$wrap$tm_c01'(_), B), R = r(A, B)), error(SsuE, _), R = raised(SsuE)).
 t_tmc02(R) :- catch((tm_ck(c02, C0), tm_wrap(tm_c02(_), n1, C1, _), tm_same(C0, C1, S), tm_nc('$wrap$tm_c02'(_), N), R = r(S, N)), error(SsuE, _), R = raised(SsuE)).
 t_tmc03(R) :- catch((tm_ck(c03a, A0), tm_ck(c03b, B0), tm_wrap(tm_c03(_), n1, A1, _), tm_wrap(tm_c03(_), n2, B1, _), tm_same(A0, A1, S1), tm_same(B0, B1, S2), tm_same(A0, B0, S3), tm_nc('$wrap$tm_c03'(_), N), R = r(S1, S2, S3, N)), error(SsuE, _), R = raised(SsuE)).

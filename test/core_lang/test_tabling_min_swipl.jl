@@ -112,6 +112,8 @@ tm_w11(1).
 tm_w12(1).
 tm_w13(1).
 tm_w13(2).
+tm_w14(1, 2).
+tm_w15(1, 2, 3).
 tm_c01(1).
 :- tm_wrap(tm_c01(_), n1, C, _), assertz(tm_ck(c01, C)).
 tm_c01(2).
@@ -295,6 +297,16 @@ const _TM_CASES = [
         "tmw13",
         raw"tm_wrap(tm_w13(_), n1, _, _), findall(X, clause(tm_w13(X), true), L), R = L"
     ),
+    # tmw14, tmw15: a wrapped predicate of arity 2 and 3 with DIFFERENT arguments: unify_wrapped (pl-wrap.c) copies argument i of the
+    # head to argument i of the closure compound (every other tmw head has arity 1, where the argument position cannot differ)
+    (
+        "tmw14",
+        raw"tm_wrap(tm_w14(P, Q), n1, _, call(W)), functor(W, _, A), arg(1, W, X), arg(2, W, Y), tm_same(X, P, S1), tm_same(Y, Q, S2), tm_same(X, Y, S3), R = r(A, S1, S2, S3)"
+    ),
+    (
+        "tmw15",
+        raw"tm_wrap(tm_w15(a, P, c), n1, _, call(W)), arg(1, W, X1), arg(2, W, X2), arg(3, W, X3), tm_same(X2, P, S), R = r(X1, S, X3)"
+    ),
     # tmc: clauses added to a wrapped predicate while the file loads (boot/tabling.pl:2358 shape); the program wraps in a directive
     ("tmc01", raw"tm_nc(tm_c01(_), A), tm_nc('$wrap$tm_c01'(_), B), R = r(A, B)"),
     (
@@ -378,6 +390,8 @@ const _TM_PINNED = [
     "t_tmw11 c[116,95,116,109,119,49,49]/1(c[114,97,105,115,101,100]/1(a[105,110,115,116,97,110,116,105,97,116,105,111,110,95,101,114,114,111,114]))",
     "t_tmw12 c[116,95,116,109,119,49,50]/1(c[114]/4(a[115,97,109,101],a[115,97,109,101],i1,a[115,97,109,101]))",
     "t_tmw13 c[116,95,116,109,119,49,51]/1(c[91,124,93]/2(i1,c[91,124,93]/2(i2,nil)))",
+    "t_tmw14 c[116,95,116,109,119,49,52]/1(c[114]/4(i2,a[115,97,109,101],a[115,97,109,101],a[100,105,102,102]))",
+    "t_tmw15 c[116,95,116,109,119,49,53]/1(c[114]/3(a[97],a[115,97,109,101],a[99]))",
     "t_tmc01 c[116,95,116,109,99,48,49]/1(c[114]/2(i3,i1))",
     "t_tmc02 c[116,95,116,109,99,48,50]/1(c[114]/2(a[115,97,109,101],i1))",
     "t_tmc03 c[116,95,116,109,99,48,51]/1(c[114]/4(a[115,97,109,101],a[115,97,109,101],a[100,105,102,102],i2))",

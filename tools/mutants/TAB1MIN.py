@@ -122,7 +122,7 @@ MUTANTS = [
     dict(id="TAB1MIN-C6 the rewrap leaves the old clause reference in the side table (KILL white-box d05w)", file=WR, targets=TM,
          old="crefs[Int(codes[i + 1])] = cref",
          new="nothing"),
-    dict(id="TAB1MIN-C7 unify_wrapped links the arguments from the wrong argument position (KILL tmw03, tmw12)", file=WR, targets=TM,
+    dict(id="TAB1MIN-C7 unify_wrapped links the arguments from the wrong argument position (KILL tmw14, tmw15: the only wrapped heads of arity >= 2; tmw03 and tmw12 are arity 1)", file=WR, targets=TM,
          old="_PL_get_arg(ld, i, head, a)",
          new="_PL_get_arg(ld, 1, head, a)"),
     # ── T5: pl-wrap.c skipWrapperPrefix, isCallWrapper, resetWrappedSupervisor; pl-supervisor.c freeCodesDefinition ──
