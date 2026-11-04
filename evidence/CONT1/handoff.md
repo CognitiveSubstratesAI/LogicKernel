@@ -157,3 +157,62 @@ with `rc == 1` and the `msg[-rc]` index; (3) `PL_cons_functor(ld, av, fd, contv)
   erased clause is restarted as upstream restarts it; no type_error for it. `lookup_clref` gives a clause its serial on first reference, so
   `'$cont$'` terms made by `put_environment` always resolve. Risk left: a frame running an erased clause must survive `I_EXIT`'s
   `ec_f.clause = nothing` / clause-GC paths (the existing erased-clause-in-frame handling), which the first C5 run will show.
+
+
+## C5 and C6 (writer 4; nothing run, no Julia, no daemon)
+Commits on wip/cont1 after c0412770: 740719f9 (`push_continuation`, src/pl-cont.jl), b602448c (`I_CALLCONT`, src/pl-wam.jl,
+replacing the refusal), 0b732579 (`I_YIELD` non-engine branch, src/pl-wam.jl; `PL_Q_ALLOW_YIELD` declared in src/SWI-Prolog.jl,
+its header comment updated; the header comment above the six instructions in pl-wam.jl brought up to date), this file.
+
+### Written
+- `push_continuation(gd, ld, continuation, pfr, pcret)` -> `Code{T}` or `nothing`: the term read DEREFERENCED word by word
+  (`_deref_loc`); a non-compound, an arity < 3, a context or blob that is no atom, a PC that is no integer, a non-clause blob or
+  `arity != variables + 3` gives `PL_type_error(ld, "continuation", continuation)`. Room: `ensureLocalSpace(SIZEOF_LOCALFRAME +
+  variables + LOCAL_MARGIN)` (the margin is a representation addition; no `retry`, growing moves nothing). Frame = `pushFrame!(ld,
+  ld.lTop)`; slots `_slot_from_cell!`; choice slots (`prolog_vars .. variables-1`): the word `consInt(base)` of the term is kept when
+  a choice of the `BFR` chain has exactly that base, else `consInt(choices[BFR].base)`; `setLTop!(argFrameP(base, variables))`;
+  `programPointer = pcret`, `parent = pfr`, `setNextFrameFlags`, `clause = ClauseRef{T}(nothing, word(0), cl, nothing)`, `fctx = 0`,
+  predicate, context (`[]` -> the predicate's module index; else `setContextModule!(lookupModule(gd, name).index)`),
+  `setGenerationFrame`, `environment_frame`. Returns `Code{T}(cl.codes, cl.literals, pcoffset + 1)`. `enterDefinition` is a no-op upstream.
+- `I_CALLCONT`: location deref of the operand slot; a `call/1` compound (functor word compared with `_cont_functor(ld, :call, 1)`)
+  stores `linkValI` of its argument in `argFrameP(ld.lTop, 0)` and `@goto I_CALL1`; else `pushWordAsTermRef`, `push_continuation(.., FR,
+  Code{T}(PCc, PCl, PC))`, then `PCc/PCl/PC`, `FR = ld.environment_frame`, `DEF`, `ARGP`, `next_instruction`; `nothing` -> `b_throw`.
+- `I_YIELD`: `ld.queries[QueryFromQid(ld, QID)].flags & PL_Q_ALLOW_YIELD == 0` -> `PL_error(ld, "", 0, "not an engine",
+  ERR_PERMISSION_VMI, "I_YIELD")`, `b_throw`; the engine branch throws `NotPortedError` owner TH1. No query carries the flag
+  (decision 1), so only the permission error is reachable. `push_continuation_list`: left to TAB1 (tabling only; nothing calls it).
+
+### Unrun / unverified (the gate decides)
+(1) `Code{T}(cl.codes, cl.literals, ...)` field names of `clause` (codes, literals, predicate::Definition, variables, prolog_vars)
+read from pl-incl.jl; (2) `_atom_value(ld, bw)` of a clause blob word (blobs are in `atom_symbols` through `_blob_term!`; `put_environment`
+makes the word with `_atom_word!(ld, cref)`); (3) `lookupModule(gd, mname).index` and `is_nil(mname)` on the `T` symbol; (4) in the tuple
+ternaries of `push_continuation` the three `_deref_loc` results are `Tuple{UInt8,word,Int}`; (5) the `call/1` shortcut writes slot
+`argFrameP(ld.lTop, 0) + 1` while `lTop` is the position of the callee's frame (as `I_CALL1`'s `pushFrame!(ld, ld.lTop)`); (6) `ld.choices[ld.BFR]`
+read with `BFR != 0`; (7) fmt will re-flow the long `if` in `push_continuation` and `I_CALLCONT`; (8) `PL_Q_ALLOW_YIELD` is the first constant
+of a left-out flag to be declared: `port_inventory` (gate-regenerated) and any "all declared flags" check may list it.
+
+### The remaining risk: a frame running an ERASED clause (read, not run)
+Sites read: `I_EXIT` `exit_continue` (src/pl-wam.jl ~4034) sets `ec_f.clause = nothing` and `lowerLTop!`: the Clause object is not touched, it
+stays in `gd.clause_refs` (append-only) and in the closure of the next `ClauseRef`; `cleanDefinition!` (src/pl-proc.jl:602) only UNLINKS erased
+clauses ("left to the garbage collector"), nothing frees or empties `codes`; `markPredicatesInEnvironments!` (pl-gc.jl) reads only `fr.predicate`
+and the frame generation (set to now by `push_continuation`), not the clause; `walk_and_mark` reads `f.clause.clause`. So the first run must check:
+(a) `c_cut`/`b_throw` assert `frame.clause !== nothing || foreign` (pl-wam.jl ~4415): holds, the pushed frame has a ClauseRef;
+(b) a continuation of a clause that was RETRACTED between shift and call (`assert`/`retract` a predicate with a `shift` in its body,
+resume afterwards): run once, it should run the old body to its end (upstream: the blob keeps the clause alive); (c) clause GC
+(`garbage_collect_clauses/0`) while such a frame is live, then `clause_property`/backtrace of the frame (`prolog_frame_attribute(F, clause, C)`
+reads `fr.clause`); (d) `ddi_is_garbage` does not know that frame's clause: only the predicate/generation protection exists, which cannot
+free a Julia object, so the risk is limited to code that re-finds the clause THROUGH the predicate (decompile of an unlinked clause: a clause_ref
+lookup by serial still works through `gd.clause_refs`).
+
+### What C7 and C8 need (unchanged plan, plus)
+- C7: flip b2's six `c_*` pin rows (test/core_lang/test_cont_boot_swipl.jl) from swipl 10.1.19 and remove the DIVERGES owner-CONT1 block at
+  src/pl-wam.jl ~3267-3273 (the sentence on `I_YIELD` in an engine stays: owner TH1); src/pl-vmi.jl header (~34-37: "the other six are ... refused
+  by name when run" is stale: only the engine branch of I_YIELD refuses). Rows to add: `call_continuation` twice resumed (shift_for_copy), a continuation
+  with a live `->` choice slot, `type_error(continuation, foo)` (`call_continuation([foo])`; `'$call_continuation'` is reachable as `call_continuation/1`'s
+  helper), `'$engine_yield'(a, 256)` outside an engine -> `permission_error(execute, vmi, 'I_YIELD')`.
+- C8: tools/mutants/CONT1.py (TARGETS: the cont rows file, test_cont_boot_swipl.jl, every file running reset/shift or call_continuation; candidates for mutants in
+  push_continuation: `pcoffset + 1` -> `pcoffset`, the `==` of the choice base, the `>` of the chain walk, `arity != variables + 3`, `is_nil(mname)` branch, `prolog_vars`
+  loop bound, the `call/1` shortcut condition, I_YIELD's `== 0`), manifest rows for ALL new pl-cont.jl functions (`findReset`, `env_functor`, `_cont_functor`,
+  `_cont_predicate_name`, `put_environment`, `env3_predicate`, `is_last_call`, `put_continuation`, `shift`, `push_continuation`) and pl-gc.jl's `walk_and_mark`,
+  `mark_active_environment`, `mark_frame_var`, `clear_frame_var`, `clear_choice_mark`, `mark_choice_mark`; `PL_cons_functor_v`, `PL_cons_list_v`; then the architecture block.
+- Gate order after the last commit: as the list above (fmt through `warm.sh send`, inventory, check, rows x3, type discipline, pkgtest_way per changed test file one at a time,
+  mutants branch, branch-gate, term grep, alloc pins x3, gate push on a fresh name).
