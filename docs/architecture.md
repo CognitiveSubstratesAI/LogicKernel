@@ -1278,6 +1278,7 @@ graph LR
     pl_wam --> pl_ext
     pl_fli --> term_interface
     pl_fli --> default_term
+    pl_fli --> os_pl_stream
     pl_fli --> pl_incl
     pl_fli --> SWI_Prolog
     pl_fli --> pl_atom
@@ -1296,6 +1297,7 @@ graph LR
     pl_fli --> pl_gmp
     pl_fli --> pl_arith
     pl_fli --> os_pl_text
+    pl_fli --> os_pl_file
     pl_fli --> pl_pro
     pl_fli --> pl_init
     pl_fli --> pl_write
@@ -1459,6 +1461,7 @@ graph LR
     os_pl_file --> os_pl_text
     os_pl_file --> os_pl_files
     os_pl_file --> pl_pro
+    os_pl_file --> pl_write
     os_pl_file --> pl_read
     os_pl_file --> pl_string
     pl_setup --> term_interface
@@ -1542,15 +1545,23 @@ graph LR
     pl_trace --> os_pl_prologflag
     pl_pro --> term_interface
     pl_pro --> default_term
+    pl_pro --> os_pl_stream
     pl_pro --> pl_incl
     pl_pro --> SWI_Prolog
+    pl_pro --> pl_funct
     pl_pro --> pl_global
+    pl_pro --> pl_inline
+    pl_pro --> pl_prims
     pl_pro --> pl_comp
     pl_pro --> pl_wam
     pl_pro --> pl_fli
     pl_pro --> pl_error
     pl_pro --> os_pl_prologflag
+    pl_pro --> os_pl_file
+    pl_pro --> pl_setup
     pl_pro --> pl_proc
+    pl_pro --> pl_trace
+    pl_pro --> pl_event
     pl_pro --> pl_write
     pl_pro --> pl_string
     pl_init --> term_interface

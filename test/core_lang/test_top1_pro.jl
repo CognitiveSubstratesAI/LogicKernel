@@ -62,7 +62,9 @@ _tp_has(db::_RDB, name::Symbol) = !isempty(_rcall(db, _rs(name)))
 
 "`unwind(abort)` messages `printMessage` collected."
 _tp_aborts(ld) =
-    count(m -> m[1] === :informational && lk_eq(m[2], _rf("unwind", _rs(:abort))), ld.messages)
+    count(
+        m -> m[1] === :informational && lk_eq(m[2], _rf("unwind", _rs(:abort))), ld.messages
+    )
 
 "The goals of the query_loop rows: a marker is asserted the first time the goal runs."
 function _tp_loop_db()

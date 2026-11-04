@@ -342,7 +342,8 @@ function restore_after_exception(
     tracemode(ld, false, nothing)
     debugmode(ld, false, nothing, UInt32(0))
     if classify_exception(ld, except) == EXCEPT_ABORT
-        rc = callEventHook(gd, ld, PLEV_ABORT) &&
+        rc =
+            callEventHook(gd, ld, PLEV_ABORT) &&
             printMessage(                                       # PL_FUNCTOR, FUNCTOR_unwind1, PL_ATOM, ATOM_abort
                 ld, :informational,
                 _message_term(ld, :unwind, _err_atom(ld, mk_sym(T, :abort)))

@@ -50,7 +50,7 @@ const _TP_PINNED = [
     "tp10 80,50,62,32;103,111,116,40,97,41;103,111,116,40,98,41,10,81,62,32;",
     "tp11 65,62,32;120,10,66,62,32;121,10,66,62,32;122,10,67,62,32;",
     "tp12 80,50,62,32;10,80,50,62,32;10"
-# PINS-END
+    # PINS-END
 ]
 
 _tp_dec(f::AbstractString)::String = replace(f, "\\n" => "\n")
@@ -93,7 +93,9 @@ function _tp_transcript(::Type{T}, steps)::Vector{String} where {T}
             LK.Sflush(uo)                           # else Sflush(Suser_output)
         end
         push!(prompts, String(take!(outb)))
+        rp = position(inb)                          # an IOBuffer's read and write pointer are ONE: write, then go back to read
         write(inb, line)                            # the terminal delivers the line
+        seek(inb, rp)
         for _ in 1:length(line)
             LK.Sgetcode(ui)
         end
@@ -150,7 +152,10 @@ end
 
 @testset "the pins are swipl's own words (decoded)" begin
     # the default prompt, prompt1/1 once, prompt/2 at the line start, nothing mid-line: read from the decoded pins, not from the kernel
-    dec(l) = [String(Char.(parse.(Int, filter(!isempty, split(s, ","))))) for s in split(split(l, " "; limit=2)[2], ";"; keepempty=true)]
+    dec(l) = [
+        String(Char.(parse.(Int, filter(!isempty, split(s, ","))))) for
+        s in split(l, ";"; keepempty=true)
+    ]
     @test dec(_tp_pin("tp01"))[1] == "|: "
     @test dec(_tp_pin("tp02"))[1] == "P1> "
     @test dec(_tp_pin("tp02"))[2] == "got(a)\nP2> "
