@@ -399,7 +399,15 @@ end
     write(g, _QL_AUTOLOAD_PROGRAM)
     gd = LK.setupProlog(_QL)
     ld = LK.PL_local_data{_QL}(gd)
+    # compileFileList runs in the boot session (upstream runs it nowhere else; see the AUTOLOAD1 A4 note above). Outside it the
+    # `autoload` flag's propagateAutoload calls the not yet loaded `$autoload:set_autoload/1`, the compile leaves
+    # `exception_term` = 6 and `frozen_bar` = 133, and PL_close_query then finds nothing above its target: the bug is MASKED
+    # (gate 7 probe, ENG2: with the boot session the database is clean before the query -- gvar_grefs 0, frozen_bar 0, exception
+    # 0 -- and the close raises "slot 27 references global position 33 above the reset target 23"; a booted copy has findall/3
+    # and the query answers, no exception).
+    gd.bootsession = true
     @test LK.compileFileList(gd, ld, nothing, [g])
+    gd.bootsession = false
     @test_broken (
         try
             _ql_query_lines(gd, ld, ["t_q01"]) == ["t_q01 exception"]
