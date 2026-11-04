@@ -233,8 +233,17 @@ function _hruns(db::_RDB)::Int
     return length(ans) == 1 && startswith(ans[1][1], "exception") ? 0 : length(ans)
 end
 
+# The vetoing `'$run_at_halt'` below is the WHOLE procedure of the row: a booted copy carries boot/init.pl's own `'$run_at_halt'/0` clauses
+# (they run the at_halt/1 goals and succeed, so the appended veto clause is never reached and the halt is not cancelled), so these rows
+# build the UNBOOTED database; the booted system's own `'$run_at_halt'` is the subject of no row here.
+function _hdb_unbooted()::_RDB
+    db = _RDB_unbooted()
+    db.gd.halt_exit = false
+    return db
+end
+
 @testset "a vetoing hook cancels a halt nine times, the tenth goes ahead (MAX_HALT_CANCELLED); a signal name or halt(abort) is not cancelled" begin
-    let db = _hdb()
+    let db = _hdb_unbooted()
         _hveto_hook!(db)
         for k in 1:9
             rc, ball = _hrun(db, _hint(4); except_halt=false)
@@ -256,7 +265,7 @@ end
         @test _hruns(db) == 10
     end
     # NO_CANCEL: a signal name goes ahead at once, the hook runs once
-    let db = _hdb()
+    let db = _hdb_unbooted()
         _hveto_hook!(db)
         rc, _ = _hrun(db, _hatom("term"); except_halt=false)
         @test rc == Int(LK.PL_S_FALSE)
@@ -265,7 +274,7 @@ end
         @test _hruns(db) == 1
     end
     # halt(abort): haltProlog with NO_CANCEL, the hook runs once, the status is 134
-    let db = _hdb()
+    let db = _hdb_unbooted()
         _hveto_hook!(db)
         rc, _ = _hrun(db, _hatom("abort"); except_halt=false)
         @test rc == Int(LK.PL_S_FALSE)
@@ -274,7 +283,7 @@ end
         @test _hruns(db) == 1
     end
     # the EXCEPT_HALT query raises before any clean-up: the hook does not run
-    let db = _hdb()
+    let db = _hdb_unbooted()
         _hveto_hook!(db)
         rc, ball = _hrun(db, _hint(4))
         @test rc == Int(LK.PL_S_EXCEPTION)
