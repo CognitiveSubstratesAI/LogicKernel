@@ -7336,8 +7336,9 @@ What CONT1 adds (written edit-only on top of LB4 b2's declarations and compile s
 - **src/pl-global.jl** grows by five fields (`procedures_reset3`, `dtbl_reset6`, `call_continuation1`, `dmeta_call1`, `findall_loop4`; the
   last is looked up by `findReset`, as upstream does): Tier 1, allocation pins on all three term types.
 - **DIVERGES (representation only, logged in the comments):**
-  - `lTop`: upstream's `shift` trims `lTop` and `shift_common`'s `PL_close_foreign_frame` sets it back to the foreign frame opened before the
-    trim, so the net `lTop` is the one before `shift`. Here `shift` uses `setLTop!` (which drops the records of the dead frames) and
+  - `lTop`: upstream's `shift` trims `lTop` (pl-cont.c:403-413, the assignments at :407 and :411) and `shift_common`'s `PL_close_foreign_frame`
+    (pl-vmi.c:5891; `lTop = (LocalFrame) fr` at pl-wam.c:349) sets it back to the foreign frame opened before the trim (pl-vmi.c:5889;
+    pl-wam.c:327), so the net `lTop` is the one before `shift`. Here `shift` uses `setLTop!` (which drops the records of the dead frames) and
     `shift_common` raises `lTop` to the foreign frame's base before the close (a raise, nothing dropped). The net `lTop` is upstream's.
   - The PC of a `'$cont$'` term is stored as `pc - 1` (swipl's 0-based offset); `push_continuation` adds the 1 back (`codes[offset + 1]`).
   - `push_continuation` asks for `SIZEOF_LOCALFRAME + variables + LOCAL_MARGIN` cells (the margin is the stack's own spare upstream); growing

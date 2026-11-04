@@ -3398,9 +3398,11 @@ function PL_next_solution_guarded(
 
     # PORT: pl-vmi.c shift_common
     # (pl-vmi.c:5879-5906 at the pin; CONT1 C4)
-    # DIVERGES (representation only): upstream's `shift` trims `lTop` to the parent of `reset/3`, and
-    # `PL_close_foreign_frame(fid)` then sets `lTop` back to the foreign frame (pl-wam.c: `lTop = (LocalFrame) fr`),
-    # which sits above the trimmed frames: the net `lTop` is the one before `shift`, with the dead
+    # DIVERGES (representation only): upstream's `shift` trims `lTop` to the parent of `reset/3`
+    # (pl-cont.c:403-413: `lTop = (LocalFrame)(LD->choicepoints+1)` at :407, or `lTop = (LocalFrame)argFrameP(fr,
+    # fr->clause->value.clause->variables)` at :411), and `PL_close_foreign_frame(fid)` (pl-vmi.c:5891) then sets `lTop`
+    # back to the foreign frame opened at pl-vmi.c:5889 (pl-wam.c:349, `lTop = (LocalFrame) fr`; the open is
+    # pl-wam.c:327, `lTop = (LocalFrame)(fr+1)`), which sits above the trimmed frames: the net `lTop` is the one before `shift`, with the dead
     # frames' words left on the stack. Here the trim (`setLTop!` in `shift`, src/pl-cont.jl) DROPS the
     # records of the dead frames and of the foreign frame, and `lowerLTop!` (inside
     # `PL_close_foreign_frame`) asserts that it only lowers `lTop`; so `lTop` is raised to the foreign
