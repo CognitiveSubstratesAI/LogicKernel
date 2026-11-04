@@ -29,7 +29,7 @@ are over distinct keys, as before.
 3. `tools/pkgtest_way.sh test/test_r2_status.jl` (text only, one process), then test/test_port_check.jl on all three term types
    (it takes ~55 s for the R2 testset alone; the R2 guards add ~10 s to every port_check run on the real tree: r2_collect + the
    `git show` scan when a checkout has the pin)
-4. branch-gate; crash-term grep (the refusal exception's name appears only through R2_REFUSAL_EXCEPTION, never as one word in text)
+4. branch-gate; the D-0164 term grep (the refusal exception's name appears only through R2_REFUSAL_EXCEPTION, never as one word in text)
 5. check whether test/ci_slices.jl / test costs list new test files (test_r2_status.jl is new) and register it if required
 6. push gate + mutants (Tier 3: ask the dispatcher). Mutants to write: r2_registered (drop a match), r2_owner_violations (never STALE),
    r2_status_violations (no EMPTY check), r2_upstream_violations (no PIN), `_r2_lit` (no join); TARGETS: test_r2_status.jl AND
