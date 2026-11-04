@@ -6685,8 +6685,11 @@ os/pl-option.c (`get_optval`'s `OPT_INT64`). Sizing: evidence/R2/lb5_sizing.md o
   full before the call fails). **Owner: S2b** (audit D-0389; row below and in evidence/R2/status_board.md). Upstream (pin cbf4e1896275): `write_size` (pl-write.c:3366-3430)
   writes into a `limit_size_stream` whose function set `lss_functions` (pl-write.c:3352-3357) has its own `Swrite_lss` (:3293-3350); it checks the limits per buffer and
   breaks the write with `errno = EINVAL` (:3338). The kernel's stream layer has no custom write function. S2b removes this DIVERGES.
-- **Known differences and flags for the audit**: (1) `set_stream(S, alias(user_input))` does not set `LD->prompt.next` (upstream :2224): `PL_local_data` has no such
-  field; a NEED for pl-global.jl after the gates land. (2) A stream captured as a standard alias and then closed leaves the standard slot as it is
+- **Known differences and flags for the audit**: (1) `set_stream(S, alias(user_input))` sets `LD->prompt.next` (upstream :2224-2225) since R2 LB5b: the field `prompt_next` is the
+  last of `PL_local_data` (src/pl-global.jl). DIVERGES: the flag is only set; its readers (`Sread_user` pl-file.c:5992-6004, `PL_write_prompt` :1884,
+  `wrapIO` :6150, pl-os.c, pl-fli.c:5349, pl-pro.c:67) are the interactive toplevel's. **Owner: the toplevel step (status board row TOP1)**; removal
+  condition: TOP1 ports those readers and they clear and set the flag as upstream does. Rows: test/core_lang/test_lb5b_prompt.jl (white-box; swipl cannot
+  read the flag). (2) A stream captured as a standard alias and then closed leaves the standard slot as it is
   (`restoreStandardStream`: NOT STARTED); the rows restore the alias inside the row. (3) `current_input/1` and `put_char/1,2` were outside the sizing's list; they
   are the twin of `current_output/1` in one upstream function and upstream's aliases of `put_code`. (4) Rows lb010-lb011 pin swipl's answer for
   `open(..., [record_position(false)])` (`ok-1`, `ok-0`); the kernel's stream may answer `permission_error` there: UNVERIFIED, judged by the gate.

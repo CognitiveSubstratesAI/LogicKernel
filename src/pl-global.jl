@@ -433,6 +433,9 @@ ld_statistics() = ld_statistics(0, 0, 0, 0, WallTime(), 0.0, 0.0, 0.0, 0.0)
 # (`cur_pred_enum`, `cur_enum`, pl-incl.jl). Since R2 O1B: `IO_output_stack` (`LD->IO.output_stack`: the output context stack
 # of `with_output_to/2` and `format/3`'s redirect, src/os/pl-file.jl).
 # Since R2 S2a: `prompt_current`, `prompt_first`, `prompt_first_used` (`LD->prompt`: prompt/2, prompt1/1; src/os/pl-file.jl).
+# Since R2 LB5b: `prompt_next` (`LD->prompt.next`), appended last. DIVERGES: only `set_stream/2`'s alias(user_input) sets it
+# (src/os/pl-file.jl); upstream's readers (`Sread_user`, `PL_write_prompt`, pl-file.c) belong to the interactive toplevel (status
+# board row TOP1), which clears it once a prompt is written. Removal condition: that step ports the readers.
 # Since R2 F1c: `debugstatus_skiplevel`, `debugstatus_tracing`, `debugstatus_debugging`, `debugstatus_showContext` (`LD->_debugstatus`, pl-incl.h
 # `pl_debugstatus_t`; the flags `debug`, `debugger_show_context`: src/os/pl-prologflag.jl, `debugmode`, `tracemode`: src/pl-trace.jl).
 # (the input context stack is LB3's `input_context_stack`, which `'\$push_input_context'/1` shares; src/os/pl-file.jl).
@@ -581,6 +584,7 @@ mutable struct PL_local_data{T}
     event_buffered::Union{Nothing, Vector{delayed_event{T}}}    # event.buffered: the delayed events (R2 EV1; nothing: NULL)
     event_delay_nesting::Int                                    # event.delay_nesting: how deeply is delay nested?
     event_hook_onthreadexit::Union{Nothing, event_list{T, definition{T}}}  # event.hook.onthreadexit: this thread's exit hook
+    prompt_next::Bool                                           # prompt.next: the next read from user_input prompts (R2 LB5b)
 end
 function PL_local_data{T}(gd::PL_global_data{T}) where {T}
     e = mk_expr(T, T[])                         # any term: the idle placeholders' (index context, …)
@@ -675,7 +679,8 @@ function PL_local_data{T}(gd::PL_global_data{T}) where {T}
         false,                                  # debugstatus.showContext: zero (static LD)
         nothing,                                # event.buffered: NULL
         0,                                      # event.delay_nesting
-        nothing                                 # event.hook.onthreadexit: no listener yet (R2 EV1)
+        nothing,                                # event.hook.onthreadexit: no listener yet (R2 EV1)
+        false                                   # prompt.next: false (pl-global.c: zero; set by set_stream's alias(user_input), R2 LB5b)
     )
     allocStacks!(ld)                            # the initial local stack, its spare reserved
     emptyStacks!(ld)

@@ -2530,9 +2530,11 @@ end
 
 # PORT: pl-file.c set_stream
 # DIVERGES: not ported, each by the upstream line, with the answer the stream layer can give:
-#  - `alias(Std)` of a standard stream name (file:2215-2227): `setStandardStream`, as upstream; the one line of the
-#    branch the kernel does not run is `LD->prompt.next = true` for `user_input` (the local data has no `prompt.next`
-#    field: src/pl-global.jl; only the prompt of an interactive read depends on it);
+#  - `alias(Std)` of a standard stream name (file:2215-2227): `setStandardStream`, then `LD->prompt.next = true` for
+#    `user_input` (`ld.prompt_next`, R2 LB5b). The flag is only SET here: its readers are `Sread_user` (pl-file.c:5992-6004),
+#    `PL_write_prompt` (:1884), `wrapIO` (:6150), and pl-os.c, pl-fli.c:5349, pl-pro.c:67, which belong to the interactive toplevel
+#    (status board row TOP1); nothing in the kernel writes a prompt, so nothing consumes it until that step. Removal condition of this
+#    DIVERGES: TOP1 ports those readers;
 #  - `timeout(T)` (file:2325-2342, `Sset_timeout`): the stream layer has no timeout; `infinite` is what every stream
 #    has and succeeds, any other time raises upstream's own failure, `permission_error(timeout, stream, S)`;
 #  - `locale(L)` (file:2395-2404, `getLocaleEx`, `Ssetlocale`): REFUSED (`NotPortedError`), as open/4's `locale`;
@@ -2553,7 +2555,8 @@ function set_stream(
         i = standardStreamIndexFromName(ld, alias)
         if i >= 0
             setStandardStream(ld, i, s)
-            return true                             # (i == 0: LD->prompt.next = true; no such field)
+            i == 0 && (ld.prompt_next = true)       # changed Sinput: prompt! (pl-file.c:2224-2225)
+            return true
         end
 
         aliasStream(gd, s, alias)
