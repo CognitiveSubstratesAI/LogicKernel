@@ -811,7 +811,8 @@ fixed it or a public issue exists.
 | `src/os/pl-prologflag.jl` | Prolog flags: `setBackQuotes`, `setDoubleQuotes`; since R2 F1a the flag table (`setPrologFlag`, `initPrologFlags!` with the flags of `initArith`, `initClauseIndexing` and tabling), the mask of the fast Boolean flags (`truePrologFlag`), `current_prolog_flag/2` and `'$current_prolog_flag'/5`, `PL_current_prolog_flag`, `PL_get_prolog_flag` | `src/os/pl-prologflag.c`, `src/os/pl-prologflag.h`, `src/pl-fli.c`, `src/pl-incl.h`, `src/pl-read.c`, `src/pl-tabling.c` |
 | `src/os/pl-codelist.jl` | the text of a code list or a character list (since R1d): `codes_or_chars_to_buffer`, with its partial, wide and non-code results | `src/os/pl-codelist.c` |
 | `src/os/pl-os.jl` | the operating-system layer (Y1): `CpuTime` (moved from src/pl-arith.jl), `WallTime`, `getenv3`, `Setenv`, `Unsetenv`, `Pause`, `CPU_USER`/`CPU_SYSTEM`, the Linux `CLOCK_*` ids; the C library by `ccall` (`clock_gettime`, `setenv`, `unsetenv`) | `src/os/pl-os.c`, `src/os/pl-os.h` |
-| `src/os/pl-files.jl` | file names and deleting a file (Y1): `get_file_name`, `PL_get_file_name`, `RemoveFile` (`remove(3)` by `ccall`), delete_file/1 (`PL_predicates_from_files`) | `src/os/pl-files.c` |
+| `src/os/pl-files.jl` | file names and deleting a file (Y1): `get_file_name`, `PL_get_file_name`, `RemoveFile` (`remove(3)` by `ccall`), delete_file/1 (`PL_predicates_from_files`) | `src/os/pl-files.c`, `src/os/pl-files.h`, `src/os/pl-file.c` |
+| `src/os/pl-glob.jl` | wildcards and file-name expansion (LB2b): `compilePattern`, `matchPattern`, wildcard_match/2,3, `expand`, expand_file_name/2, directory_files/2 (`PL_predicates_from_glob`) | `src/os/pl-glob.c` |
 | `src/pl-sys.jl` | the system built-ins (Y1): getenv/2, setenv/2, unsetenv/1, get_time/1, sleep/1 (`PL_predicates_from_system`); shell/2 NOT PORTED | `src/pl-sys.c` |
 | `src/pl-setup.jl` | `emptyStacks`: a new local data's stacks, with one foreign frame at the base; since V5d `allocStacks`/`init_stack` (the local stack's spare reserved above `max`) and `trim_stack`/`trimStacks` (the spare given back after an exception) | `src/pl-setup.c` |
 | `test/core_lang/test_rules_swipl.jl` | V4b's gate: nreverse and an execution differential over random rule clauses identical to swipl (answers and determinism), the body family covered; a call failing before its frame is filled; positions after deterministic exits (MQ6) pinned and live, with the record pools held to the live records; flatness of the last-call optimisation (and its absence growing the stack); open/next/close cycles at their baseline; warm, calls and exits allocate nothing | — |
@@ -956,6 +957,7 @@ graph LR
     os_pl_text["os/pl-text.jl"]
     os_pl_os["os/pl-os.jl"]
     os_pl_files["os/pl-files.jl"]
+    os_pl_glob["os/pl-glob.jl"]
     os_pl_file["os/pl-file.jl"]
     pl_setup["pl-setup.jl"]
     pl_proc["pl-proc.jl"]
@@ -1429,18 +1431,43 @@ graph LR
     os_pl_text --> os_pl_codelist
     os_pl_text --> pl_write
     os_pl_text --> pl_read
+    os_pl_os --> term_interface
     os_pl_os --> default_term
+    os_pl_os --> os_pl_ctype
+    os_pl_os --> pl_incl
     os_pl_os --> pl_global
+    os_pl_os --> pl_comp
+    os_pl_os --> pl_fli
     os_pl_os --> pl_error
+    os_pl_os --> os_pl_prologflag
+    os_pl_os --> os_pl_files
+    os_pl_os --> pl_read
     os_pl_files --> term_interface
     os_pl_files --> default_term
     os_pl_files --> pl_incl
     os_pl_files --> SWI_Prolog
+    os_pl_files --> pl_atom
     os_pl_files --> pl_global
     os_pl_files --> pl_comp
+    os_pl_files --> pl_fli
     os_pl_files --> pl_error
+    os_pl_files --> os_pl_prologflag
     os_pl_files --> os_pl_text
     os_pl_files --> os_pl_os
+    os_pl_glob --> term_interface
+    os_pl_glob --> default_term
+    os_pl_glob --> pl_incl
+    os_pl_glob --> SWI_Prolog
+    os_pl_glob --> pl_global
+    os_pl_glob --> pl_fli
+    os_pl_glob --> pl_error
+    os_pl_glob --> os_pl_option
+    os_pl_glob --> os_pl_prologflag
+    os_pl_glob --> os_pl_text
+    os_pl_glob --> os_pl_os
+    os_pl_glob --> os_pl_files
+    os_pl_glob --> pl_read
+    os_pl_glob --> pl_string
     os_pl_file --> term_interface
     os_pl_file --> default_term
     os_pl_file --> os_pl_stream
@@ -1837,6 +1864,7 @@ graph LR
     pl_ext --> os_pl_prologflag
     pl_ext --> os_pl_text
     pl_ext --> os_pl_files
+    pl_ext --> os_pl_glob
     pl_ext --> os_pl_file
     pl_ext --> pl_proc
     pl_ext --> pl_srcfile

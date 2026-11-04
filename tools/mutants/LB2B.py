@@ -44,8 +44,8 @@ MUTANTS = [
          old="if (c == Int('}') || c == Int(',')) && curl == GLOB_CURL",
          new="if false && curl == GLOB_CURL"),
     dict(id="LB2B-G7 the unmatched-brace syntax error names a bracket (KILL t264, t343)", file=G, targets=TL,
-         old="ERR_SYNTAX, \"Unmatched '{'\"",
-         new="ERR_SYNTAX, \"Unmatched '['\""),
+         old="PL_syntax_error(ld, \"Unmatched '{'\", nothing)",
+         new="PL_syntax_error(ld, \"Unmatched '['\", nothing)"),
     # ── pl-glob.c match_pattern ──
     dict(id="LB2B-M1 `?` matches the end of the string (KILL t248)", file=G, targets=TL,
          old="_glob_at(s, si) == 0 && return false",
@@ -120,7 +120,7 @@ MUTANTS = [
     dict(id="LB2B-F7 SameFile compares inodes only", file=F, targets=TL,
          old="return st1.inode == st2.inode && st1.device == st2.device",
          new="return st1.inode == st2.inode",
-         equivalent="pl-files.jl:210 — inode numbers are unique within one device; every row of test_lb2b_swipl.jl names files "
+         equivalent="pl-files.jl:214 — inode numbers are unique within one device; every row of test_lb2b_swipl.jl names files "
                     "of the one fixture directory (evidence/LB2B/fixtures.sh), so no two names share an inode on two devices"),
     dict(id="LB2B-F8 access_file/2 mode none is a domain error (KILL t28, t41, t56)", file=F, targets=TL,
          old="    _is_atom_named(m, T, :none) && return FTRUE\n",
@@ -141,8 +141,8 @@ MUTANTS = [
          old="truePrologFlag(ld, PLFLAG_FILE_CASE) && return rest == e",
          new="return true"),
     dict(id="LB2B-F14 delete_directory/1 reports the action remove (KILL t369, t370, t371)", file=F, targets=TL,
-         old="mk_sym(T, :delete), mk_sym(T, :directory), A1,",
-         new="mk_sym(T, :remove), mk_sym(T, :directory), A1,"),
+         old="mk_sym(T, :delete), mk_sym(T, :directory),",
+         new="mk_sym(T, :remove), mk_sym(T, :directory),"),
     dict(id="LB2B-F15 rename_file/2 renames a file onto itself (KILL t383)", file=F, targets=TL,
          old="    if SameFile(ld, o, n)",
          new="    if false"),
@@ -154,10 +154,10 @@ MUTANTS = [
          old="if s - 1 >= 2 && s + 2 <= n",
          new="if s - 1 >= 1 && s + 2 <= n"),
     dict(id="LB2B-F18 file_name_extension/3 tests only has_extension", file=F, targets=TL,
-         old="(has_extension(ld, b, e) || isempty(e)) && return",
-         new="has_extension(ld, b, e) && return",
-         equivalent="pl-files.jl:724 — has_extension returns true for an empty extension on its first line, so `|| isempty(e)` "
-                    "at pl-files.jl:788 never decides"),
+         old="(has_extension(ld, b, e) || isempty(e)) &&",
+         new="has_extension(ld, b, e) &&",
+         equivalent="pl-files.jl:748 — has_extension returns true for an empty extension on its first line, so `|| isempty(e)` "
+                    "at pl-files.jl:815 never decides"),
     # ── pl-os.c file names ──
     dict(id="LB2B-O1 BaseName of only slashes is the empty name (KILL t123, t124)", file=O, targets=TL,
          old="    stop == e && b[e + 1] == UInt8('/') && return \"/\"\n",

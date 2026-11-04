@@ -1,4 +1,6 @@
 # UPSTREAM: swipl-devel src/os/pl-files.c @ cbf4e1896275
+# UPSTREAM: swipl-devel src/os/pl-files.h @ cbf4e1896275
+# UPSTREAM: swipl-devel src/os/pl-file.c @ cbf4e1896275
 # CLASS: code
 # COPYRIGHT: Copyright (c)  2011-2023, University of Amsterdam
 # COPYRIGHT: VU University Amsterdam
@@ -118,7 +120,8 @@ end
 # PORT: pl-files.c AccessFile
 "Can `path` be accessed in the `ACCESS_*` mode `mode` (pl-files.c)."
 function AccessFile(path::String, mode::Int)::Bool
-    return ccall((:access, LIBC), Cint, (Cstring, Cint), OsPath(path), access_mode(mode)) == 0
+    return ccall((:access, LIBC), Cint, (Cstring, Cint), OsPath(path), access_mode(mode)) ==
+           0
 end
 
 # PORT: pl-files.c AccessDirectory
@@ -146,7 +149,8 @@ end
 function ReadLink(f::String)::Union{Nothing, String}
     buf = Vector{UInt8}(undef, PATH_MAX)
     n = ccall(
-        (:readlink, LIBC), Int, (Cstring, Ptr{UInt8}, Csize_t), f, buf, Csize_t(PATH_MAX - 1)
+        (:readlink, LIBC), Int, (Cstring, Ptr{UInt8}, Csize_t), f, buf,
+        Csize_t(PATH_MAX - 1)
     )
     n > 0 || return nothing
     return String(buf[1:n])
@@ -180,8 +184,8 @@ function DeRefLink(ld::PL_local_data{T}, link::String)::Union{Nothing, String} w
         f === nothing && break
         old = n                                                 # `&& n-- > 0`
         n -= 1
+        link = f                                                # upstream's `f` is its `tmp`, the buffer `link` already names from the second step on: the 21st step is in `link` too
         old > 0 || break
-        link = f
     end
     if n > 0
         return link
@@ -232,7 +236,8 @@ function get_file_name(
     (flags & PL_FILE_SEARCH) == 0 || throw(
         NotPortedError{T}(
             mk_sym(T, :file_name),
-            "PL_get_file_name flag PL_FILE_SEARCH (system:absolute_file_name/3 of init.pl)", "LB4"
+            "PL_get_file_name flag PL_FILE_SEARCH (system:absolute_file_name/3 of init.pl)",
+            "LB4"
         )
     )
     chflags = CVT_ATOM | CVT_STRING | CVT_LIST                  # CVT_FILENAME
@@ -256,7 +261,8 @@ function get_file_name(
     end
     if (flags & PL_FILE_NOERRORS) == 0
         op = nothing
-        if (flags & (PL_FILE_READ | PL_FILE_WRITE | PL_FILE_EXECUTE | PL_FILE_EXIST)) != 0 &&
+        if (flags & (PL_FILE_READ | PL_FILE_WRITE | PL_FILE_EXECUTE | PL_FILE_EXIST)) !=
+           0 &&
             !AccessFile(name, ACCESS_EXIST)
             PL_error(ld, ERR_EXISTENCE, mk_sym(T, :file), n)
             return nothing
@@ -327,7 +333,8 @@ function MarkExecutable(ld::PL_local_data{T}, name::String)::Bool where {T}
         file = PL_new_term_ref(ld)
         PL_put_atom(ld, file, mk_sym(T, Symbol(name)))
         return PL_error(
-            ld, "", 0, MSG_ERRNO, ERR_FILE_OPERATION, mk_sym(T, :stat), mk_sym(T, :file), file,
+            ld, "", 0, MSG_ERRNO, ERR_FILE_OPERATION, mk_sym(T, :stat), mk_sym(T, :file),
+            file,
             -st
         )
     end
@@ -339,7 +346,8 @@ function MarkExecutable(ld::PL_local_data{T}, name::String)::Bool where {T}
         file = PL_new_term_ref(ld)
         PL_put_atom(ld, file, mk_sym(T, Symbol(name)))
         return PL_error(
-            ld, "", 0, MSG_ERRNO, ERR_FILE_OPERATION, mk_sym(T, :chmod), mk_sym(T, :file), file,
+            ld, "", 0, MSG_ERRNO, ERR_FILE_OPERATION, mk_sym(T, :chmod), mk_sym(T, :file),
+            file,
             errno
         )
     end
@@ -349,11 +357,16 @@ end
 # ORIGINAL (LB2b): the IRI hook of pl-file.c `iri_hook` calls the Prolog `$iri`:iri_hook/4 of init.pl; it is
 # refused by name, left to LB4. `what` is the operation (`IRI_TIME`, `IRI_SIZE`, `IRI_ACCESS`).
 function _iri_hook_refused(ld::PL_local_data{T}, fn::String, what::String) where {T}
-    throw(NotPortedError{T}(mk_sym(T, Symbol(fn)), "iri_hook $what (`\$iri`:iri_hook/4 of init.pl)", "LB4"))
+    throw(
+        NotPortedError{T}(
+            mk_sym(T, Symbol(fn)), "iri_hook $what (`\$iri`:iri_hook/4 of init.pl)", "LB4"
+        )
+    )
 end
 
 # ORIGINAL (LB2b): `sym_key` equality of an atom with the atom named `name`, for `PL_get_atom`'s result.
-_is_atom_named(a, ::Type{T}, name::Symbol) where {T} = sym_key(a) == sym_key(mk_sym(T, name))
+_is_atom_named(a, ::Type{T}, name::Symbol) where {T} =
+    sym_key(a) == sym_key(mk_sym(T, name))
 
 # ORIGINAL (LB2b): unify the term `t` with the atom whose text is `s` (`PL_unify_chars(t, PL_ATOM|REP_FN, -1, s)`).
 _unify_atom_chars(ld::PL_local_data{T}, t::term_t, s::String) where {T} =
@@ -372,7 +385,9 @@ function pl_time_file2_va(
     file_name_is_iri(fn) != 0 && _iri_hook_refused(ld, fn, "IRI_TIME")
     time, errno = LastModifiedFile(fn)
     errno == 0 && return PL_unify_float(ld, A2, time) ? FTRUE : FFALSE
-    rc = PL_error(ld, "", 0, "", ERR_FILE_OPERATION, mk_sym(T, :time), mk_sym(T, :file), A1, errno)
+    rc = PL_error(
+        ld, "", 0, "", ERR_FILE_OPERATION, mk_sym(T, :time), mk_sym(T, :file), A1, errno
+    )
     return rc ? FTRUE : FFALSE
 end
 
@@ -390,7 +405,8 @@ function pl_size_file2_va(
     size, errno = SizeFile(n)
     if size < 0
         rc = PL_error(
-            ld, "size_file", 2, MSG_ERRNO, ERR_FILE_OPERATION, mk_sym(T, :size), mk_sym(T, :file), A1,
+            ld, "size_file", 2, MSG_ERRNO, ERR_FILE_OPERATION, mk_sym(T, :size),
+            mk_sym(T, :file), A1,
             errno
         )
         return rc ? FTRUE : FFALSE
@@ -601,8 +617,11 @@ _rmdir(path::String)::Int =
 
 # ORIGINAL (LB2b): `mkdir(2)`.
 _mkdir(path::String, mode::Integer)::Int =
-    ccall((:mkdir, LIBC), Cint, (Cstring, Cuint), path, mode % Cuint) == 0 ? 0 :
-    Int(Base.Libc.errno())
+    if ccall((:mkdir, LIBC), Cint, (Cstring, Cuint), path, mode % Cuint) == 0
+        0
+    else
+        Int(Base.Libc.errno())
+    end
 
 # PORT: pl-files.c delete_directory as pl_delete_directory1_va
 # (PRED_IMPL("delete_directory", 1, delete_directory, 0))
@@ -616,7 +635,8 @@ function pl_delete_directory1_va(
     errno = _rmdir(n)
     errno == 0 && return FTRUE
     rc = PL_error(
-        ld, "", 0, MSG_ERRNO, ERR_FILE_OPERATION, mk_sym(T, :delete), mk_sym(T, :directory), A1,
+        ld, "", 0, MSG_ERRNO, ERR_FILE_OPERATION, mk_sym(T, :delete), mk_sym(T, :directory),
+        A1,
         errno
     )
     return rc ? FTRUE : FFALSE
@@ -634,7 +654,8 @@ function pl_make_directory1_va(
     errno = _mkdir(n, 0o777)
     errno == 0 && return FTRUE
     rc = PL_error(
-        ld, "", 0, MSG_ERRNO, ERR_FILE_OPERATION, mk_sym(T, :create), mk_sym(T, :directory), A1,
+        ld, "", 0, MSG_ERRNO, ERR_FILE_OPERATION, mk_sym(T, :create), mk_sym(T, :directory),
+        A1,
         errno
     )
     return rc ? FTRUE : FFALSE
@@ -711,12 +732,16 @@ function pl_chdir1_va(
     errno == 0 && return FTRUE
     if errno > 0 && truePrologFlag(ld, PLFLAG_FILEERRORS)
         rc = PL_error(
-            ld, "", 0, "", ERR_FILE_OPERATION, mk_sym(T, :chdir), mk_sym(T, :directory), A1, errno
+            ld, "", 0, "", ERR_FILE_OPERATION, mk_sym(T, :chdir), mk_sym(T, :directory), A1,
+            errno
         )
         return rc ? FTRUE : FFALSE
     end
     return FFALSE
 end
+
+# ORIGINAL (LB2b): the byte at the 0-based index `i` of the `n` bytes of a file name, 0 beyond the end (C reads the NUL at `name + strlen(name)`).
+_fname_at(b::Base.CodeUnits{UInt8, String}, n::Int, i::Int)::UInt8 = i < n ? b[i + 1] : 0x00
 
 # PORT: pl-files.c has_extension
 "Does the file name `name` end in the extension `ext` (a leading `.` of `ext` already removed) (pl-files.c)."
@@ -724,12 +749,11 @@ function has_extension(ld::PL_local_data, name::String, ext::String)::Bool
     isempty(ext) && return true
     b = codeunits(name)
     n = length(b)
-    at(i) = i < n ? b[i + 1] : 0x00                    # C reads the NUL at `name + strlen(name)`
     s = n
-    while at(s) != UInt8('.') && at(s) != UInt8('/') && s > 0
+    while _fname_at(b, n, s) != UInt8('.') && _fname_at(b, n, s) != UInt8('/') && s > 0
         s -= 1
     end
-    if at(s) == UInt8('.') && s > 0 && at(s - 1) != UInt8('/')
+    if _fname_at(b, n, s) == UInt8('.') && s > 0 && _fname_at(b, n, s - 1) != UInt8('/')
         e = codeunits(ext)
         e = (!isempty(e) && e[1] == UInt8('.')) ? e[2:end] : e
         rest = b[(s + 2):n]
@@ -752,20 +776,23 @@ function pl_file_name_extension3_va(
         if ftxt !== nothing
             f = codeunits(text_string(ftxt))
             n = length(f)
-            at(i) = i < n ? f[i + 1] : 0x00
             s = n                                       # ?base, ?ext, +full
-            while at(s) != UInt8('.') && at(s) != UInt8('/') && s > 0
+            while _fname_at(f, n, s) != UInt8('.') && _fname_at(f, n, s) != UInt8('/') &&
+                  s > 0
                 s -= 1
             end
-            if at(s) == UInt8('.')
+            if _fname_at(f, n, s) == UInt8('.')
                 after = f[(s + 2):n]
                 etxt = PL_get_text(ld, ext, CVT_ALL)
                 if etxt !== nothing
                     e = codeunits(text_string(etxt))
                     (!isempty(e) && e[1] == UInt8('.')) && (e = e[2:end])
                     same =
-                        truePrologFlag(ld, PLFLAG_FILE_CASE) ? after == e :
-                        _ascii_lower(after) == _ascii_lower(e)
+                        if truePrologFlag(ld, PLFLAG_FILE_CASE)
+                            after == e
+                        else
+                            _ascii_lower(after) == _ascii_lower(e)
+                        end
                     same || return FFALSE
                 else
                     _unify_atom_chars(ld, ext, String(copy(after))) || return FFALSE
@@ -785,7 +812,8 @@ function pl_file_name_extension3_va(
     b = text_string(btxt)
     e = text_string(etxt)
     startswith(e, '.') && (e = e[2:end])                # +Base, +Extension, -Full
-    (has_extension(ld, b, e) || isempty(e)) && return PL_unify(ld, base, full) ? FTRUE : FFALSE
+    (has_extension(ld, b, e) || isempty(e)) &&
+        return PL_unify(ld, base, full) ? FTRUE : FFALSE
     if ncodeunits(b) + 1 + ncodeunits(e) + 1 > PATH_MAX
         PL_error(ld, ERR_REPRESENTATION, mk_sym(T, :max_path_length))      # name_too_long()
         return FFALSE
@@ -832,7 +860,8 @@ function pl_my_file1_va(
     (n === nothing || file_name_is_iri(n) != 0) && return FFALSE
     st = statfunc(OsPath(n))
     if st isa Int
-        println(stderr, OsPath(n), ": ", Base.Libc.strerror(-st))      # perror(tmp)
+        msg = string(OsPath(n), ": ", Base.Libc.strerror(-st), "\n")      # perror(tmp): the errno is the stat's, not libc's
+        ccall((:write, LIBC), Int, (Cint, Ptr{UInt8}, Csize_t), 2, msg, sizeof(msg))
         return FFALSE
     end
     st.uid != ccall((:getuid, LIBC), Cuint, ()) && return FFALSE
@@ -865,5 +894,5 @@ const PL_predicates_from_files = (
     PL_extension("prolog_to_os_filename", 2, pl_prolog_to_os_filename2_va, PL_FA_VARARGS),
     PL_extension("\$mark_executable", 1, pl_mark_executable1_va, PL_FA_VARARGS),
     PL_extension("\$absolute_file_name", 2, pl_absolute_file_name2_va, PL_FA_VARARGS),
-    PL_extension("\$my_file", 1, pl_my_file1_va, PL_FA_VARARGS),
+    PL_extension("\$my_file", 1, pl_my_file1_va, PL_FA_VARARGS)
 )

@@ -91,14 +91,15 @@ const _TD_UNCHECKED_ALLOWED = Dict(
         "Ref the call fills with two Int64s, and returns an Int32"
     ),
     "os/pl-files.jl ccall" => (
-        9,
+        10,
         "Y1: RemoveFile, remove(3) as upstream's pl-files.c calls it (it deletes a file or an empty " *
         "directory, and the errno delete_file/1 reports); LB2b: the other C-library calls of pl-files.c " *
         "as upstream makes them: access (AccessFile), readlink (ReadLink), rename (RenameFile), umask " *
         "and chmod (MarkExecutable), rmdir and mkdir (delete_directory/1, make_directory/1), getuid " *
-        "(\$my_file/1); each is handed a Cstring of a name the caller checked for NULs and PATH_MAX " *
+        "(\$my_file/1), write (the line \$my_file/1 prints to fd 2 as perror does); each is handed a Cstring of a name the caller checked for NULs and PATH_MAX " *
         "(readlink also a buffer of PATH_MAX bytes it fills and reads only up to the returned length) " *
-        "or an integer mode, and returns an Int32, an Int or an unsigned"
+        "or an integer mode, and returns an Int32, an Int or an unsigned; write is handed the " *
+        "message String with its byte length"
     ),
     "pl-read.jl ccall" => (
         1,

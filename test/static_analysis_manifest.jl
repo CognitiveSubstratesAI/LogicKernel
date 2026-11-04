@@ -2889,16 +2889,19 @@ _manifest_lb2b(T) = begin
                 LK.pl_time_file2_va, LK.pl_size_file2_va, LK.pl_access_file2_va,
                 LK.pl_read_link3_va, LK.pl_exists_file1_va, LK.pl_exists_directory1_va,
                 LK.pl_is_absolute_file_name1_va, LK.pl_same_file2_va,
-                LK.pl_file_base_name2_va, LK.pl_file_directory_name2_va, LK.pl_tmp_file2_va,
+                LK.pl_file_base_name2_va, LK.pl_file_directory_name2_va,
+                LK.pl_tmp_file2_va,
                 LK.pl_tmp_file_stream4_va, LK.pl_delete_directory1_va,
                 LK.pl_make_directory1_va, LK.pl_rename_file2_va,
                 LK.pl_absolute_file_name2_va, LK.pl_cwd1_va, LK.pl_chdir1_va,
                 LK.pl_file_name_extension3_va, LK.pl_prolog_to_os_filename2_va,
                 LK.pl_mark_executable1_va, LK.pl_my_file1_va, LK.pl_wildcard_match2_va,
-                LK.pl_wildcard_match3_va, LK.pl_expand_file_name2_va, LK.pl_directory_files2_va
+                LK.pl_wildcard_match3_va, LK.pl_expand_file_name2_va,
+                LK.pl_directory_files2_va
             )
         ]...,
-        (LK.DeRefLink, Tuple{LD, String}, false), (LK.SameFile, Tuple{LD, String, String}, false),
+        (LK.DeRefLink, Tuple{LD, String}, false),
+        (LK.SameFile, Tuple{LD, String, String}, false),
         (LK.MarkExecutable, Tuple{LD, String}, false),
         (LK._iri_hook_refused, Tuple{LD, String, String}, false),
         (LK._tmp_file_refused, Tuple{LD, String}, false),
@@ -2907,14 +2910,16 @@ _manifest_lb2b(T) = begin
         (LK._is_atom_named, Tuple{T, Type{T}, Symbol}, false),
         (LK.canonicalisePath, Tuple{LD, String}, false),
         (LK.takeWord, Tuple{LD, Vector{UInt8}, Int}, false),
-        (LK.expandVars, Tuple{LD, String}, false), (LK.AbsoluteFile, Tuple{LD, String}, false),
+        (LK.expandVars, Tuple{LD, String}, false),
+        (LK.AbsoluteFile, Tuple{LD, String}, false),
         (LK.PL_changed_cwd, Tuple{LD}, false), (LK.PL_cwd, Tuple{LD}, false),
         (LK.is_cwd, Tuple{LD, String}, false), (LK.ChDir, Tuple{LD, String}, false),
         (LK.compile_pattern, Tuple{LD, Vector{Int}, Vector{Int}, Int, Int, Int}, false),
         (LK.compilePattern, Tuple{LD, Vector{Int}, Int}, false),
         (LK.wildcard_match, Tuple{LD, Int, Int, Nothing}, false),
         (LK.wildcard_match, Tuple{LD, Int, Int, Int}, false),
-        (LK.expand, Tuple{LD, String}, false), (LK.sort_expand, Tuple{LD, Vector{String}}, false)
+        (LK.expand, Tuple{LD, String}, false),
+        (LK.sort_expand, Tuple{LD, Vector{String}}, false)
     )
 end
 
@@ -2931,10 +2936,13 @@ const _MANIFEST_LB2B_FREE = (
     (LK._mkdir, Tuple{String, Int}, false), (LK.PrologPath, Tuple{String}, false),
     (LK.OsPath, Tuple{String}, false), (LK.IsAbsolutePath, Tuple{String}, false),
     (LK._cfn_at, Tuple{Vector{UInt8}, Int}, false),
-    (LK.canonicaliseFileName, Tuple{String}, false), (LK.utf8_path_lwr, Tuple{String}, false),
+    (LK.canonicaliseFileName, Tuple{String}, false),
+    (LK.utf8_path_lwr, Tuple{String}, false),
     (LK.BaseName, Tuple{String}, false), (LK.DirName, Tuple{String}, false),
     (LK._glob_codes, Tuple{String}, false), (LK._glob_at, Tuple{Vector{Int}, Int}, false),
     (LK._glob_lower, Tuple{Int}, false),
+    (LK._glob_ubyte, Tuple{Vector{UInt8}, Int}, false),
+    (LK._fname_at, Tuple{Base.CodeUnits{UInt8, String}, Int, Int}, false),
     (LK.match_pattern, Tuple{Vector{Int}, Int, Vector{Int}, Int, Int}, false),
     (LK.matchPattern, Tuple{Vector{Int}, Vector{Int}, Int}, false),
     (LK._glob_isspecial, Tuple{UInt8}, false),

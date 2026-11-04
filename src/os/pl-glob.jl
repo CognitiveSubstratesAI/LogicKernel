@@ -11,25 +11,25 @@
 # strings are vectors of Unicode code points (upstream walks UTF-8 bytes with `PL_utf8_code_point`), read as
 # 0 beyond their end (upstream reads the terminating NUL).
 
-# PORT: pl-glob.c CBASE
+# PORT: pl-glob.c CBASE as GLOB_CBASE
 const GLOB_CBASE = 0x80000000
-# PORT: pl-glob.c ANY
+# PORT: pl-glob.c ANY as GLOB_ANY
 const GLOB_ANY = GLOB_CBASE + 1
-# PORT: pl-glob.c STAR
+# PORT: pl-glob.c STAR as GLOB_STAR
 const GLOB_STAR = GLOB_CBASE + 2
-# PORT: pl-glob.c ALT
+# PORT: pl-glob.c ALT as GLOB_ALT
 const GLOB_ALT = GLOB_CBASE + 3
-# PORT: pl-glob.c JMP
+# PORT: pl-glob.c JMP as GLOB_JMP
 const GLOB_JMP = GLOB_CBASE + 4
-# PORT: pl-glob.c ANYOF
+# PORT: pl-glob.c ANYOF as GLOB_ANYOF
 const GLOB_ANYOF = GLOB_CBASE + 5
-# PORT: pl-glob.c ANYRANGE
+# PORT: pl-glob.c ANYRANGE as GLOB_ANYRANGE
 const GLOB_ANYRANGE = GLOB_CBASE + 6
-# PORT: pl-glob.c EXIT
+# PORT: pl-glob.c EXIT as GLOB_EXIT
 const GLOB_EXIT = GLOB_CBASE + 7
-# PORT: pl-glob.c NOCURL
+# PORT: pl-glob.c NOCURL as GLOB_NOCURL
 const GLOB_NOCURL = 0
-# PORT: pl-glob.c CURL
+# PORT: pl-glob.c CURL as GLOB_CURL
 const GLOB_CURL = 1
 # PORT: pl-glob.c M_IGNCASE
 const M_IGNCASE = 0x01
@@ -40,7 +40,10 @@ _glob_codes(s::String)::Vector{Int} = Int[Int(c) for c in Iterators.takewhile(!=
 # ORIGINAL (LB2b): the code point at the 1-based index `i`, 0 beyond the end (the NUL of the C string).
 _glob_at(b::Vector{Int}, i::Int)::Int = (1 <= i <= length(b)) ? b[i] : 0
 
-# PORT: pl-glob.c makeLowerW
+# ORIGINAL (LB2b): the byte at the 1-based index `i` of `b`, 0 beyond it (the NUL of the C string).
+_glob_ubyte(b::Vector{UInt8}, i::Int)::UInt8 = (1 <= i <= length(b)) ? b[i] : 0x00
+
+# PORT: pl-glob.c makeLowerW as _glob_lower
 # DIVERGES: `lowercase(::Char)` (Julia's simple Unicode case mapping) stands in for `PL_tolower`
 # (pl-umap.c), as in `utf8_path_lwr`.
 _glob_lower(c::Int)::Int = c == 0 ? 0 : Int(lowercase(Char(c)))
@@ -77,13 +80,13 @@ function compile_pattern(
                 c = _glob_at(p, pos)
                 pos += 1
                 if c == 0
-                    PL_error(ld, "", 0, "", ERR_SYNTAX, "Unmatched '['")
+                    PL_syntax_error(ld, "Unmatched '['", nothing)
                     return nothing
                 elseif c == Int('\\')
                     c2 = _glob_at(p, pos)
                     pos += 1
                     if c2 == 0
-                        PL_error(ld, "", 0, "", ERR_SYNTAX, "Unmatched '['")
+                        PL_syntax_error(ld, "Unmatched '['", nothing)
                         return nothing
                     end
                     push!(out, c2)
@@ -127,7 +130,7 @@ function compile_pattern(
                     pos += 1
                     break
                 else
-                    PL_error(ld, "", 0, "", ERR_SYNTAX, "Unmatched '{'")
+                    PL_syntax_error(ld, "Unmatched '{'", nothing)
                     return nothing
                 end
             end
@@ -270,7 +273,7 @@ function pl_wildcard_match3_va(
     return wildcard_match(ld, PL__t0, PL__t0 + 1, PL__t0 + 2) ? FTRUE : FFALSE
 end
 
-# PORT: pl-glob.c isspecial
+# PORT: pl-glob.c isspecial as _glob_isspecial
 "Is the byte `c` one of the wildcard characters `[`, `{`, `?`, `*` (pl-glob.c)."
 _glob_isspecial(c::UInt8)::Bool =
     c == UInt8('[') || c == UInt8('{') || c == UInt8('?') || c == UInt8('*')
@@ -280,13 +283,16 @@ _glob_isspecial(c::UInt8)::Bool =
 # before a wildcard or `\` removed; `from[1]` is read from the whole of `b`, 0 beyond it.
 "The text of `b[from:to-1]` with the `\\` escapes of wildcard characters removed (pl-glob.c)."
 function un_escape(b::Vector{UInt8}, from::Int, to::Int)::String
-    at(i) = (1 <= i <= length(b)) ? b[i] : 0x00
     out = UInt8[]
     while from < to
-        if at(from) == UInt8('\\') && (_glob_isspecial(at(from + 1)) || at(from + 1) == UInt8('\\'))
+        if _glob_ubyte(b, from) == UInt8('\\') &&
+            (
+            _glob_isspecial(_glob_ubyte(b, from + 1)) ||
+            _glob_ubyte(b, from + 1) == UInt8('\\')
+        )
             from += 1
         end
-        push!(out, at(from))
+        push!(out, _glob_ubyte(b, from))
         from += 1
     end
     return String(out)
@@ -309,9 +315,8 @@ utf8_exists_file(name::String)::Bool = AccessFile(name, ACCESS_EXIST)
 The files that match the wildcard `pattern`, directory segment by directory segment, unsorted (pl-glob.c).
 """
 function expand(ld::PL_local_data, pattern::String)::Union{Nothing, Vector{String}}
-    mflags = truePrologFlag(ld, PLFLAG_FILE_CASE) ? 0 : M_IGNCASE
+    mflags = truePrologFlag(ld, PLFLAG_FILE_CASE) ? 0 : Int(M_IGNCASE)
     pat = Vector{UInt8}(codeunits(pattern))
-    at(i) = (1 <= i <= length(pat)) ? pat[i] : 0x00
     files = String[""]                                          # utf8_add_path("", info)
     start = 0
     fend = 1
@@ -320,7 +325,7 @@ function expand(ld::PL_local_data, pattern::String)::Union{Nothing, Vector{Strin
         s = pos
         head = pos
         while true
-            c = at(s)
+            c = _glob_ubyte(pat, s)
             s += 1
             if c == 0x00
                 if s > pos                                      # something left and expanded
@@ -332,7 +337,8 @@ function expand(ld::PL_local_data, pattern::String)::Union{Nothing, Vector{Strin
                         plen = ncodeunits(entry)
                         if plen + prefix_len + 2 <= PATH_MAX
                             path = entry
-                            if !isempty(prefix) && plen > 0 && codeunits(path)[plen] != UInt8('/')
+                            if !isempty(prefix) && plen > 0 &&
+                                codeunits(path)[plen] != UInt8('/')
                                 path *= "/"
                             end
                             path *= prefix
@@ -347,14 +353,14 @@ function expand(ld::PL_local_data, pattern::String)::Union{Nothing, Vector{Strin
                 return files[(start + 1):fend]
             elseif c == UInt8('[') || c == UInt8('{') || c == UInt8('?') || c == UInt8('*')
                 break                                           # meta characters: expand
-            elseif c == UInt8('\\') && _glob_isspecial(at(s))
+            elseif c == UInt8('\\') && _glob_isspecial(_glob_ubyte(pat, s))
                 s += 1
             elseif c == UInt8('/')
                 head = s
             end
         end
         tail = s
-        while at(tail) != 0x00 && at(tail) != UInt8('/')
+        while _glob_ubyte(pat, tail) != 0x00 && _glob_ubyte(pat, tail) != UInt8('/')
             tail += 1
         end
         #  ..../meta*path/....
@@ -394,7 +400,7 @@ function expand(ld::PL_local_data, pattern::String)::Union{Nothing, Vector{Strin
             end
         end
         pos = tail
-        at(pos) == UInt8('/') && (pos += 1)
+        _glob_ubyte(pat, pos) == UInt8('/') && (pos += 1)
     end
 end
 
@@ -414,7 +420,7 @@ function utf8casecmp(s1::String, s2::String)::Int
     return (i <= length(a) && i <= length(b)) ? 0 : (i <= length(a) ? 1 : -1)
 end
 
-# PORT: pl-glob.c compareBagEntries, sort_expand
+# PORT: pl-glob.c compareBagEntries as sort_expand
 # DIVERGES: sorts the vector of names; `strcmp` is the byte order of `isless(::String, ::String)`.
 "Sort the names `expand` found: bytewise when `file_name_case_handling` is case sensitive, else ignoring case (pl-glob.c)."
 function sort_expand(ld::PL_local_data, files::Vector{String})::Vector{String}
@@ -466,7 +472,8 @@ function pl_directory_files2_va(
     catch e
         e isa Base.IOError || rethrow()
         rc = PL_error(
-            ld, "", 0, MSG_ERRNO, ERR_FILE_OPERATION, mk_sym(T, :open), mk_sym(T, :directory),
+            ld, "", 0, MSG_ERRNO, ERR_FILE_OPERATION, mk_sym(T, :open),
+            mk_sym(T, :directory),
             A1, -Int(e.code)
         )
         return rc ? FTRUE : FFALSE
@@ -487,5 +494,5 @@ const PL_predicates_from_glob = (
     PL_extension("expand_file_name", 2, pl_expand_file_name2_va, PL_FA_VARARGS),
     PL_extension("wildcard_match", 2, pl_wildcard_match2_va, PL_FA_VARARGS),
     PL_extension("wildcard_match", 3, pl_wildcard_match3_va, PL_FA_VARARGS),
-    PL_extension("directory_files", 2, pl_directory_files2_va, PL_FA_VARARGS),
+    PL_extension("directory_files", 2, pl_directory_files2_va, PL_FA_VARARGS)
 )
