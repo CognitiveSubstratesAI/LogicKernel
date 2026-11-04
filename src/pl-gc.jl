@@ -284,3 +284,189 @@ end
 function pl_garbage_collect(ld::PL_local_data{T}, d::term_t)::foreign_t where {T}
     return FTRUE
 end
+
+# ── the liveness walk of an environment (pl-gc.c), CONT1 C3 ──────────────────────────────────────
+# PORT: pl-gc.c walk_state
+# DIVERGES: only what the ACTIVE walk (`GCM_ACTIVE|GCM_CLEAR|GCM_CHOICE`, `mark_active_environment`)
+# reads: the stack collector's fields (`envtop`, `unmarked`, `ARGP`, `adepth`, `MARK_ALT_CLAUSES`'s
+# `GCM_ALTCLAUSE` and `mark_argp`) belong to the stack garbage collection the kernel does not have
+# (above). `c0`, the start of the code list, is read by upstream's debug output only. The walk is on
+# an INDEX into the clause's code (the opcode's position, as `clearUninitialisedVarsFrame`), and
+# `arity` is `state->frame->predicate->functor->arity`. The flag word is not carried: the active walk always
+# sets `GCM_ACTIVE|GCM_CLEAR|GCM_CHOICE`.
+"The state of one `walk_and_mark` (pl-gc.c `walk_state`): the bit vectors `active` and `clear` (index `i` is bit `i+1`) and the arity of the frame's predicate."
+struct walk_state
+    arity::Int                                  # frame->predicate->functor->arity
+    active::BitVector                           # bit_vector *active: variables read before they are written
+    clear::BitVector                            # bit_vector *clear: variables (and choice slots) written first
+end
+
+# PORT: pl-gc.c mark_frame_var
+# (the `state->active` branch; the other is the stack collector's)
+"Variable operand `v` is read: it is active unless an earlier instruction cleared it (pl-gc.c `mark_frame_var`)."
+@inline function mark_frame_var(state::walk_state, v::code)::Nothing
+    i = VARNUM(v) + 1
+    state.clear[i] || (state.active[i] = true)  # if ( !true_bit(state->clear, i) ) set_bit(state->active, i)
+    return nothing
+end
+
+# PORT: pl-gc.c clear_frame_var
+# (the `state->clear` branch; the `GCM_CLEAR` one writes the frame's cell, as the stack collector's)
+"Variable operand `v` is written first here: it is not active before this point (pl-gc.c `clear_frame_var`)."
+@inline function clear_frame_var(state::walk_state, v::code)::Nothing
+    state.clear[VARNUM(v) + 1] = true           # set_bit(state->clear, i)
+    return nothing
+end
+
+# PORT: pl-gc.c clear_choice_mark
+"A choice-point slot is (re)made at operand `slot`: it is not active before this point (pl-gc.c; `GCM_CHOICE`)."
+@inline function clear_choice_mark(state::walk_state, slot::code)::Nothing
+    state.clear[VARNUM(slot) + 1] = true
+    return nothing
+end
+
+# PORT: pl-gc.c mark_choice_mark
+"A choice-point slot is read (a cut): it is active unless cleared since (pl-gc.c; `GCM_CHOICE`)."
+@inline function mark_choice_mark(state::walk_state, slot::code)::Nothing
+    i = VARNUM(slot) + 1
+    state.clear[i] || (state.active[i] = true)
+    return nothing
+end
+
+# PORT: pl-gc.c walk_and_mark
+# DIVERGES: `pc` and the result are the INDEX of an opcode in `codes`, not a pointer past it, so an
+# operand `PC[k]` is `codes[pc + 1 + k]`; the instructions are those the kernel declares, a literal
+# operand is one word (`code_get_indirect`'s block is the table's `arguments`), and `D_BREAK`
+# (`replacedBreak`) has no counterpart in the code. Left to the stack collector: `mark_argp`,
+# `adepth`, `GCM_ALTCLAUSE` (so the control constructs are always walked) and `I_FREDO`'s
+# `mark_arguments`. A variable operand of `I_RATIONAL` is not marked, as upstream's list of the type
+# tests has no `I_RATIONAL` (10.1.19).
+"""
+    walk_and_mark(state, codes, pc, end_op) -> Int
+
+Walk the byte code of a clause from the instruction at `codes[pc]` to the first instruction `end_op`
+(or the end of the code list), marking the variables read (`state.active`) and cleared (`state.clear`)
+on the way, and return the index of the instruction it stopped at (pl-gc.c). The branches of the
+control constructs are walked one after the other: `mark_frame_var` after a `clear` of the same
+variable in an earlier instruction of the SAME path does not mark it.
+"""
+function walk_and_mark(state::walk_state, codes::Vector{code}, pc::Int, end_op::code)::Int
+    while true
+        op = codes[pc]
+        op == end_op && return pc                   # if ( op == end ) { PC--; return PC; }
+        if op == I_EXITQUERY || op == I_EXITFACT || op == I_FCALLDETVA || op == I_FEXITDET ||
+            op == I_FEXITNDET || op == S_TRUSTME || op == S_LIST || op == I_FREDO
+            return pc                               # return PC-1 (I_FREDO: mark_arguments is the collector's)
+        elseif op == C_JMP || op == L_NOLCO         # unconditional jump
+            pc += Int(codes[pc + 1]) + 2
+            continue
+        elseif op == C_OR
+            alt = pc + Int(codes[pc + 1]) + 2       # Code alt = PC+PC[0]+1
+            walk_and_mark(state, codes, pc + 2, C_JMP)  # PC++; walk_and_mark(state, PC, C_JMP)
+            pc = alt
+            continue
+        elseif op == C_NOT || op == C_DET
+            alt = pc + Int(codes[pc + 2]) + 3       # Code alt = PC+PC[1]+2
+            ec = op == C_NOT ? C_CUT : C_DETTRUE
+            clear_choice_mark(state, codes[pc + 1])
+            walk_and_mark(state, codes, pc + 3, ec) # PC += 2: skip the two arguments
+            pc = alt
+            continue
+        elseif op == C_SOFTIF || op == C_IFTHENELSE || op == C_FASTCOND
+            alt = pc + Int(codes[pc + 2]) + 3
+            clear_choice_mark(state, codes[pc + 1])
+            walk_and_mark(state, codes, pc + 3, C_JMP)  # skip the 'MARK' variable and jmp
+            pc = alt
+            continue
+        elseif op == C_IFTHEN || op == C_SOFTIFTHEN
+            clear_choice_mark(state, codes[pc + 1])
+            pc = walk_and_mark(state, codes, pc + 2, C_END) + 1     # PC++: skip C_END
+            continue
+        elseif op == C_CUT || op == C_LSCUT || op == C_LCUT || op == C_SOFTCUT ||
+            op == C_LCUTIFTHEN || op == C_FASTCUT || op == C_DETTRUE
+            mark_choice_mark(state, codes[pc + 1])
+        elseif op == B_UNIFY_VAR                    # Var = Term
+            mark_frame_var(state, codes[pc + 1])
+        elseif op == B_UNIFY_FIRSTVAR || op == B_FIRSTVAR || op == B_ARGFIRSTVAR ||
+            op == B_UNIFY_FC || op == C_VAR || op == H_FIRSTVAR
+            clear_frame_var(state, codes[pc + 1])
+        elseif op == C_VAR_N
+            var = codes[pc + 1]
+            for _ in 1:Int(codes[pc + 2])           # while(count--) clear_frame_var(state, var++, PC)
+                clear_frame_var(state, var)
+                var += code(1)
+            end
+        elseif op == H_LIST_FF || op == B_UNIFY_FF
+            clear_frame_var(state, codes[pc + 1])
+            clear_frame_var(state, codes[pc + 2])
+        elseif op == A_ADD_FC || op == B_UNIFY_FV || op == B_UNIFY_VF
+            clear_frame_var(state, codes[pc + 1])
+            mark_frame_var(state, codes[pc + 2])
+        elseif op == B_UNIFY_VV || op == B_EQ_VV || op == B_NEQ_VV
+            mark_frame_var(state, codes[pc + 1])
+            mark_frame_var(state, codes[pc + 2])
+        elseif op == B_ARG_VF || op == B_ARG_CF
+            op == B_ARG_VF && mark_frame_var(state, codes[pc + 1])
+            mark_frame_var(state, codes[pc + 2])
+            clear_frame_var(state, codes[pc + 3])
+        elseif op == I_VAR || op == I_NONVAR || op == I_INTEGER || op == I_FLOAT ||
+            op == I_NUMBER || op == I_ATOMIC || op == I_ATOM || op == I_STRING ||
+            op == I_COMPOUND || op == I_CALLABLE || op == I_CALLCONT || op == I_SHIFT ||
+            op == I_SHIFTCP || op == H_VAR || op == B_UNIFY_VC || op == B_EQ_VC ||
+            op == B_NEQ_VC || op == B_ARGVAR || op == B_VAR
+            mark_frame_var(state, codes[pc + 1])
+        elseif op == B_VAR0
+            mark_frame_var(state, VAROFFSET(0))
+        elseif op == B_VAR1
+            mark_frame_var(state, VAROFFSET(1))
+        elseif op == B_VAR2
+            mark_frame_var(state, VAROFFSET(2))
+        elseif op == I_CALLCLEANUP
+            arg_goal = state.arity == 2 ? 1 : 2
+            mark_frame_var(state, VAROFFSET(arg_goal - 1))          # main goal
+        elseif op == I_EXITCLEANUP
+            if state.arity == 5                     # '$tbl_leader'/5: C cleanup uses all args
+                for i in 0:(state.arity - 1)
+                    mark_frame_var(state, VAROFFSET(i))
+                end
+            else
+                state.arity == 4 && mark_frame_var(state, VAROFFSET(state.arity - 2))   # The ball
+                mark_frame_var(state, VAROFFSET(state.arity - 1))   # cleanup goal
+            end
+        elseif op == I_EXITRESET || op == I_EXITCATCH
+            if op == I_EXITRESET && state.arity == 6    # '$tbl_reset'/6: worklist, skeleton, delays
+                for i in 3:5
+                    mark_frame_var(state, VAROFFSET(i))
+                end
+            end
+            mark_frame_var(state, VAROFFSET(1))     # The ball
+            mark_frame_var(state, VAROFFSET(2))     # recovery goal
+        elseif op == I_CUTCHP
+            mark_frame_var(state, VAROFFSET(1))     # choice-point
+        elseif op == I_CALLATMV || op == I_DEPARTATMV
+            mark_frame_var(state, codes[pc + 2])
+        end
+        pc += 1 + codeTable(op).arguments
+    end
+end
+
+# PORT: pl-gc.c mark_active_environment
+# DIVERGES: `active` is a `BitVector` the caller sizes (`sizeof_bitvector`, `init_bitvector`); the
+# cleared set is a second one made here; `pc` is the index of the instruction the frame resumes at
+# in `codes` (upstream: `fr->clause->value.clause->codes` and a pointer into it).
+"""
+    mark_active_environment(ld, active, fr, codes, pc)
+
+Set bit `i+1` of `active` for each variable slot `i` of frame `fr` whose value the code from the
+instruction at `codes[pc]` to the clause's `I_EXIT` still reads (pl-gc.c): the environment a
+continuation has to keep (`put_environment`, pl-cont.c).
+"""
+function mark_active_environment(
+    ld::PL_local_data{T}, active::BitVector, fr::Int, codes::Vector{code}, pc::Int
+)::Nothing where {T}
+    state = walk_state(
+        (ld.frames[fr].predicate::Definition{T}).arity, active, falses(length(active))
+    )
+    walk_and_mark(state, codes, pc, I_EXIT)
+    return nothing
+end
