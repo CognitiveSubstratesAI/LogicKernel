@@ -62,15 +62,18 @@ how many of the upstream file's functions are ported.
 | swipl-devel `src/os/pl-ctype.c` | code | `cbf4e1896275` | `src/os/pl-ctype.jl` | 1 | 1 |
 | swipl-devel `src/os/pl-ctype.h` | code | `cbf4e1896275` | `src/os/pl-ctype.jl` | 29 | 0 |
 | swipl-devel `src/os/pl-file.c` | code | `cbf4e1896275` | `src/os/pl-file.jl` | 160 | 66 |
+| swipl-devel `src/os/pl-file.c` | code | `cbf4e1896275` | `src/os/pl-files.jl` | 1 | 1 |
 | swipl-devel `src/os/pl-file.c` | code | `cbf4e1896275` | `src/pl-global.jl` | 1 | 1 |
 | swipl-devel `src/os/pl-file.c` | code | `cbf4e1896275` | `src/pl-string.jl` | 1 | 1 |
 | swipl-devel `src/os/pl-file.h` | code | `cbf4e1896275` | `src/os/pl-file.jl` | 9 | 0 |
-| swipl-devel `src/os/pl-files.c` | code | `cbf4e1896275` | `src/os/pl-files.jl` | 5 | 5 |
+| swipl-devel `src/os/pl-files.c` | code | `cbf4e1896275` | `src/os/pl-files.jl` | 41 | 24 |
+| swipl-devel `src/os/pl-files.h` | code | `cbf4e1896275` | `src/os/pl-files.jl` | 6 | 0 |
 | swipl-devel `src/os/pl-fmt.c` | code | `cbf4e1896275` | `src/os/pl-fmt.jl` | 45 | 22 |
 | swipl-devel `src/os/pl-fmt.h` | code | `cbf4e1896275` | `src/os/pl-fmt.jl` | 0 | 0 |
+| swipl-devel `src/os/pl-glob.c` | code | `cbf4e1896275` | `src/os/pl-glob.jl` | 29 | 11 |
 | swipl-devel `src/os/pl-option.c` | code | `cbf4e1896275` | `src/os/pl-option.jl` | 4 | 2 |
 | swipl-devel `src/os/pl-option.h` | code | `cbf4e1896275` | `src/os/pl-option.jl` | 0 | 0 |
-| swipl-devel `src/os/pl-os.c` | code | `cbf4e1896275` | `src/os/pl-os.jl` | 6 | 6 |
+| swipl-devel `src/os/pl-os.c` | code | `cbf4e1896275` | `src/os/pl-os.jl` | 21 | 18 |
 | swipl-devel `src/os/pl-os.c` | code | `cbf4e1896275` | `src/pl-arith.jl` | 0 | 0 |
 | swipl-devel `src/os/pl-os.h` | code | `cbf4e1896275` | `src/os/pl-os.jl` | 2 | 0 |
 | swipl-devel `src/os/pl-prologflag.c` | code | `cbf4e1896275` | `src/os/pl-file.jl` | 1 | 1 |
@@ -244,14 +247,16 @@ checkout is pulled.
 | swipl-devel `src/os/pl-codelist.c` | `cbf4e1896275` | 1 | 1 | 1 | src/os/pl-codelist.jl |
 | swipl-devel `src/os/pl-ctype.c` | `cbf4e1896275` | 0 | 43 | 0 | src/os/pl-ctype.jl |
 | swipl-devel `src/os/pl-ctype.h` | `cbf4e1896275` | 0 | 0 | 0 | src/os/pl-ctype.jl |
-| swipl-devel `src/os/pl-file.c` | `cbf4e1896275` | 112 | 219 | 54 | src/os/pl-file.jl, src/pl-global.jl, src/pl-string.jl |
+| swipl-devel `src/os/pl-file.c` | `cbf4e1896275` | 113 | 219 | 55 | src/os/pl-file.jl, src/os/pl-files.jl, src/pl-global.jl, src/pl-string.jl |
 | swipl-devel `src/os/pl-file.h` | `cbf4e1896275` | 0 | 0 | 0 | src/os/pl-file.jl |
-| swipl-devel `src/os/pl-files.c` | `cbf4e1896275` | 5 | 44 | 5 | src/os/pl-files.jl |
+| swipl-devel `src/os/pl-files.c` | `cbf4e1896275` | 35 | 44 | 21 | src/os/pl-files.jl |
+| swipl-devel `src/os/pl-files.h` | `cbf4e1896275` | 0 | 0 | 0 | src/os/pl-files.jl |
 | swipl-devel `src/os/pl-fmt.c` | `cbf4e1896275` | 27 | 29 | 15 | src/os/pl-fmt.jl |
 | swipl-devel `src/os/pl-fmt.h` | `cbf4e1896275` | 0 | 1 | 0 | src/os/pl-fmt.jl |
+| swipl-devel `src/os/pl-glob.c` | `cbf4e1896275` | 13 | 23 | 10 | src/os/pl-glob.jl |
 | swipl-devel `src/os/pl-option.c` | `cbf4e1896275` | 2 | 6 | 2 | src/os/pl-option.jl |
 | swipl-devel `src/os/pl-option.h` | `cbf4e1896275` | 0 | 1 | 0 | src/os/pl-option.jl |
-| swipl-devel `src/os/pl-os.c` | `cbf4e1896275` | 6 | 83 | 6 | src/os/pl-os.jl, src/pl-arith.jl |
+| swipl-devel `src/os/pl-os.c` | `cbf4e1896275` | 21 | 83 | 18 | src/os/pl-os.jl, src/pl-arith.jl |
 | swipl-devel `src/os/pl-os.h` | `cbf4e1896275` | 0 | 0 | 0 | src/os/pl-os.jl |
 | swipl-devel `src/os/pl-prologflag.c` | `cbf4e1896275` | 50 | 83 | 42 | src/os/pl-file.jl, src/os/pl-prologflag.jl, src/pl-incl.jl |
 | swipl-devel `src/os/pl-prologflag.h` | `cbf4e1896275` | 0 | 1 | 0 | src/os/pl-prologflag.jl, src/pl-incl.jl |
@@ -350,7 +355,7 @@ checkout is pulled.
 | swipl-devel `tests/db/test_db.pl` | `cbf4e1896275` | 2 | 10 | 0 | test/db/test_db.jl |
 | swipl-devel `tests/db/test_jit.pl` | `cbf4e1896275` | 16 | 21 | 0 | test/db/test_jit.jl |
 | swipl-devel `tests/rational/test_ieee754.pl` | `cbf4e1896275` | 0 | 15 | 0 | test/rational/test_ieee754.jl |
-| **total** | | **1924** | **5366** | **1139** | |
+| **total** | | **1983** | **5389** | **1178** | |
 <!-- END GENERATED coverage -->
 
 ### Not ported: unreachable upstream
