@@ -70,4 +70,44 @@ base frame and the permanent exception/attvar/tmp cells; query_loop calls it onl
 (the gvar_nb_vars test = upstream's). It is safe when no caller holds a term_t or foreign frame id across the call (they are invalid after, as
 upstream); the rows in test_top1_pro.jl (nfliframes) pin the effect; the gate decides. (3) The D-0164 term grep matches "abort" in the rows and in
 restore_after_exception: it is the Prolog primitive unwind(abort), not the crash term.
-Ready-for-gate list: NOT ready (b), (c), (d) missing.
+Ready-for-gate list: see "Writer 3 state" below (all of (b), (c), (d) are done).
+
+## Writer 3 state: READY FOR THE GATE (edit-only: nothing compiled or run; flags below)
+Commits on wip/top1 after e30c8f9a: bbe66183 (FIXED: the enable_debug_on_interrupt comment names the signal step as owner), e3c1a3c3 (tools/mutants/TOP1.py, 28
+mutants), bcc43848 (manifest: 11 rows after AUTOLOAD1 A4), 8bce9fa6 (docs/architecture.md block "TOP1" + the DIVERGES flips in src/pl-global.jl, src/pl-proc.jl,
+the set_stream block of src/os/pl-file.jl, the LB5 known-difference bullet and the AUTOLOAD1 bullet), 046c9b59 (rename of a transcript's parts to "pieces" in the
+row file and the generator, for the term grep), then this handoff. Channel: status board TOP1 row -> written/gate-pending, new PROPOSED row TOP1b, LB5/LB5b
+landed row (lk-channel be52ebe, pushed).
+
+Mutants: 28, ids TOP1-R1..R9 (resetProlog), X1..X3 (restore_after_exception, halt_from_exception), Q1..Q5 (query_loop), T1..T2 (pl-trace.jl), P1..P6
+(PrologPrompt, PL_write_prompt), V1 (validUserStreams), N1 (PL_prompt_next), W1 (writeAtomToStream). Checked read-only: every `old` occurs once in its file,
+`new` differs, ids unique, both TARGETS files hold @test (python3 -I + runpy). TARGETS: test_top1_pro.jl (all), + test_top1_prompt_swipl.jl for P1-P5 and W1.
+test_lb5b_prompt.jl and test_autoload_trap.jl are NOT listed: neither calls a new function (they read fresh-data fields only). The `Sclearerr` of query_loop's
+exception branch has no kill row: listed under NOT LISTED in the header (the next resetProlog clears the same error; the toplevel step TOP1b reads it).
+R1/R2 (autoload_nesting, autoload_loop) are killed by test_top1_pro.jl:213-218, which sets both and reads them after the reset. Anchors need a re-fit if fmt rewraps.
+
+Alloc pins: src/pl-fli.jl is a Tier-1 file (architecture.md:6697) and gains `PL_prompt_next`. How the pins count: @allocated of ONE warm call of the benchmark programs
+(test_zero_exports.jl, test_local_stack.jl, test/foreign/test_query.jl, test_rules_swipl.jl). The step is ADDITIONS ONLY (git diff base..HEAD on src: 2 removed lines,
+both header comments; no struct field, no existing function body), and none of the new functions is called on a benchmark path, so the pins are expected
+UNCHANGED. Decision: run the four pins x3 at the gate as the Tier-1 rule says (baselines 239, 377, 347, 433 per the PR1 gate), no re-pin expected.
+
+READY-FOR-GATE LIST, in order (the gate agent; daemon needed):
+1. `warm.sh fmt` (it sees the HEAD diff only: format committed files through `warm.sh send`); long lines in src/pl-pro.jl and the mutant anchors may re-flow: re-fit.
+2. inventory (do not hand-edit docs/port_inventory.md; the gate regenerates it), then `warm.sh check` (includes the Pkg.test-way run, D-0222).
+3. test/core_lang/test_top1_pro.jl and test/core_lang/test_top1_prompt_swipl.jl on all three term types. The pty generator evidence/TOP1/gen_top1_rows.py needs
+   swipl 10.1.19 on PATH and a pty; the TEST does not run it: it reads the committed evidence/TOP1/top1_rows.out (two byte-identical swipl runs were pinned).
+   Rows in test_top1_pro.jl are `# UNVERIFIED on the kernel: gate decides`: a failing one is a first look at the kernel, fix the code or the row by the upstream line.
+4. test/test_type_discipline.jl (no `@enum`, no new `T`-taking term builder with a missing `::Type{T}`: the helpers in the rows take the type from the db).
+5. `tools/pkgtest_way.sh test/core_lang/test_top1_pro.jl`, then `tools/pkgtest_way.sh test/core_lang/test_top1_prompt_swipl.jl`, ONE at a time (the pty rows read a file, no pty at test time).
+6. push `mutants/TOP1` at the WIP SHA (list and TARGETS exist), then branch-gate, term grep, alloc pins x3 (above), then `gate/top1` and `mutants/TOP1` at the SAME SHA (fresh names).
+7. Term grep (D-0164, `segment|SIGSEGV|crash|abort|invalid term_t|dies of`) over `git diff 30fb3a16..HEAD` (added lines) and the commit messages: no match for the
+   other five terms (the generator's word was renamed in 046c9b59). The matches of the fourth term are all the Prolog primitive `unwind(abort)` and its names, for the audit to
+   accept: src/pl-pro.jl 7 (`abortProlog`, `EXCEPT_ABORT`, `PLEV_ABORT`, `ATOM_abort`, docstrings of restore_after_exception), test/core_lang/test_top1_pro.jl 18 (the row
+   `query_loop: unwind(abort)...`, `_tp_aborts`, `tp_abort_once`, `abortProlog`), tools/mutants/TOP1.py 6 (ids and header), docs/architecture.md 3 (the TOP1 block), plus commit
+   e3c1a3c3's message (one line) and this file. No match is a process failure. The words cannot be reworded without breaking the upstream names.
+
+Flags for the audit (added by writer 3): (1) TOP1b needs a design ruling (status board row): the stream layer dispatches on the closed enum IOFUNCTIONS and `S_read` has no
+`ld`; recommended a new function-set member plus a local-data reference in the handle. (2) `_query_run_at_halt` is not switched (above). (3) `resetProlog` calls `emptyStacks!`
+mid-life: UNVERIFIED, the gate decides. (4) The parts of `resetProlog` left out and their owners: gc_status.blocked and shift_status.blocked (GC step), in_print_message
+(print_message step), depth_info.limit (P3), suspendTrace and retryFrame (DBG1); the SIGINT handler (signal step). All stated in the architecture block and the pl-pro.jl docs.
+(5) Daemons: this writer used none.
