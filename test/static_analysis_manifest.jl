@@ -2944,7 +2944,6 @@ _manifest_gd_template(::Type{T}) where {T} = (
     (LK._qlf_pl_write!, Tuple{LK.PL_local_data{T}, Int}, false),
     # LB4 b2 first boot (G9): H11's reader and compileFile's leftover (loader_boot.md H11, pl-qlf.c:4726-4741)
     (LK.boot_stacks, Tuple{LK.PL_local_data{T}}, false),
-    (LK.compileFile_leaves, Tuple{NTuple{4, Int}, Int}, false),
     # the boot ld's standard streams cleared from the template's stream table (pl-file.c initIO, freeStream)
     (LK.drop_boot_std_streams!, Tuple{LK.PL_global_data{T}, LK.PL_local_data{T}}, false),
     # the boot session's autoImport links reset in the template (ruling R-A; pl-qlf.c saveXRProc, XR_PRED)
@@ -3580,6 +3579,8 @@ const _DISPATCH_MANIFEST_TUPLE = (
     (LK._copy_stream_free, Tuple{Vector{Union{Nothing, LK.IOSTREAM}}}, false),
     (LK._copy_stream_free, Tuple{Dict{UInt64, LK.IOSTREAM}}, false),
     (LK.reset_gd_templates!, Tuple{}, false),
+    # compileFile's leftover check (src/pl-qlf.jl) names no term type: listed once, not once per type (LB4 b2 G9)
+    (LK.compileFile_leaves, Tuple{NTuple{4, Int}, Int}, false),
     (
         LK.gd_template_registry,
         Tuple{ReentrantLock, Dict{DataType, LK.PL_global_data}},
