@@ -2971,6 +2971,51 @@ _manifest_gd_template(::Type{T}) where {T} = (
     (LK.registerBuiltinAtomSymbols!, Tuple{LK.atoms_t, LK.atom_symbols{T}}, false)
 )
 
+# CONT1 (pl-cont.c, pl-gc.c's liveness walker, pl-fli.c): the continuation builders and readers. The four walker leaves and
+# `is_last_call` only read the code and write bits of a BitVector, so they are held allocation-free (as `_slot_from_cell!`);
+# every other function here builds a term, a frame or a message and is not.
+_manifest_cont(::Type{T}) where {T} = (
+    (LK.findReset, Tuple{LK.PL_global_data{T}, LK.PL_local_data{T}, Int, Int}, false),
+    (LK.env_functor, Tuple{LK.PL_local_data{T}, Int}, false),
+    (LK._cont_functor, Tuple{LK.PL_local_data{T}, Symbol, Int}, false),
+    (LK._cont_predicate_name, Tuple{LK.PL_global_data{T}, LK.Definition{T}}, false),
+    (
+        LK.put_environment,
+        Tuple{LK.PL_global_data{T}, LK.PL_local_data{T}, Int, Int, Int, Bool},
+        false
+    ),
+    (
+        LK.env3_predicate,
+        Tuple{LK.PL_global_data{T}, LK.PL_local_data{T}, LK.Definition{T}},
+        false
+    ),
+    (LK.is_last_call, Tuple{LK.Code{T}}, true),
+    (
+        LK.put_continuation,
+        Tuple{LK.PL_global_data{T}, LK.PL_local_data{T}, Int, Int, Int, LK.Code{T}, Bool},
+        false
+    ),
+    (LK.shift, Tuple{LK.PL_global_data{T}, LK.PL_local_data{T}, Int, Bool}, false),
+    (
+        LK.push_continuation,
+        Tuple{LK.PL_global_data{T}, LK.PL_local_data{T}, Int, Int, LK.Code{T}},
+        false
+    ),
+    (LK.walk_state, Tuple{Int, BitVector, BitVector}, false),     # the struct's constructor
+    (LK.walk_and_mark, Tuple{LK.walk_state, Vector{LK.code}, Int, LK.code}, false),
+    (
+        LK.mark_active_environment,
+        Tuple{LK.PL_local_data{T}, BitVector, Int, Vector{LK.code}, Int},
+        false
+    ),
+    (LK.mark_frame_var, Tuple{LK.walk_state, LK.code}, true),
+    (LK.clear_frame_var, Tuple{LK.walk_state, LK.code}, true),
+    (LK.clear_choice_mark, Tuple{LK.walk_state, LK.code}, true),
+    (LK.mark_choice_mark, Tuple{LK.walk_state, LK.code}, true),
+    (LK.PL_cons_functor_v, Tuple{LK.PL_local_data{T}, Int, LK.word, Int}, false),
+    (LK.PL_cons_list_v, Tuple{LK.PL_local_data{T}, Int, Int, Int}, false)
+)
+
 const _DISPATCH_MANIFEST_TUPLE = (
     _manifest_per_type(_M1)...,
     _manifest_per_type(_M2)...,
@@ -3649,7 +3694,9 @@ const _DISPATCH_MANIFEST_TUPLE = (
             Vector{String}
         },
         false
-    )
+    ),
+    # CONT1: the continuations' run side (src/pl-cont.jl, src/pl-gc.jl, src/pl-fli.jl)
+    _manifest_cont(_M2)...
 )
 
 """
