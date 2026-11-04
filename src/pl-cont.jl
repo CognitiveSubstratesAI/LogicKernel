@@ -74,6 +74,23 @@ end
 _cont_functor(ld::PL_local_data{T}, name::Symbol, arity::Int) where {T} =
     lookupFunctorDef(ld.functors, _atom_word!(ld, mk_sym(T, name)), arity)
 
+# ORIGINAL (CONT1): upstream's `predicateName(def)` (pl-util.c), the text of a predicate in the
+# `shift_check` message of `put_environment`: `name/arity`, prefixed by `module:` unless the module
+# is `user` or the predicate is locked and also visible in `user`. AUTOLOAD1 A3 writes the same helper
+# (`_autoload_predicate_name`, src/pl-proc.jl, not on this branch); the two merge when both have landed.
+"The text `[module:]name/arity` of `def` in a message (pl-util.c `predicateName`)."
+function _cont_predicate_name(gd::PL_global_data{T}, def::Definition{T})::String where {T}
+    user = MODULE_user(gd)
+    prefix = ""
+    if def.module_ != user.index
+        usersys =
+            (def.flags & P_LOCKED) != 0 &&
+            isCurrentProcedure(sym_key(def.name), def.arity, user) !== nothing
+        usersys || (prefix = string(sym_text(gd.modules[def.module_].atom), ":"))
+    end
+    return string(prefix, sym_text(def.name), "/", def.arity)
+end
+
 # PORT: pl-cont.c put_environment
 # DIVERGES: `fr` is a frame index, `pc` the INDEX of the instruction the frame resumes at in the
 # clause's code (a frame that called a child resumes at the child's saved `programPointer.pc`) and
@@ -117,6 +134,8 @@ function put_environment(
         ld.gstack[p] = _atom_word!(ld, gd.modules[contextModule(gd, ld, fr)].atom)  # contextModule(fr)->name
     end
     ld.gstack[p + 1] = _atom_word!(ld, cref)                    # cref
+    # The PC of the term is the 0-based offset, the index minus 1: `push_continuation` (C5) must add
+    # the 1 back (`codes[offset + 1]`) when it restarts the clause.
     ld.gstack[p + 2] = consInt(Int64(pc - 1))                   # consInt(pc - cl->codes)
     p += 3
 
@@ -136,7 +155,7 @@ function put_environment(
                 if truePrologFlag(ld, PLFLAG_SHIFT_CHECK)
                     _qlf_Sdprintf!(
                         ld,
-                        "Shift: clause of $(f.predicate.name)/$(f.predicate.arity): " *
+                        "Shift: clause of $(_cont_predicate_name(gd, f.predicate::Definition{T})): " *
                         "active choice-point in slot $i.  Stack:\n",
                     )
                 end
@@ -185,4 +204,145 @@ function is_last_call(PC::Code{T})::Bool where {T}
         c = codes[i]
     end
     return c == I_EXIT || c == I_EXITFACT
+end
+
+# PORT: pl-cont.c put_continuation
+# DIVERGES: frames are pool indices and never move, so upstream's `reset_ref` / `fr_ref` round trips
+# (`consTermRef` / `valTermRef`, which survive a stack shift) are left out; `pc` is a `Code` (the clause's
+# code and the index of the instruction the frame resumes at, `pc.pc`, which `put_environment` takes).
+# A frame argument is the term reference at `argFrameP`. The test `onStackArea(local, cl)` and its
+# `PL_representation_error("continuation")` are left out: a clause is a Julia object, it is never
+# a value on the local stack. `PL_new_term_refs(av)` is tested (upstream passes a failed 0 on).
+"""
+    put_continuation(gd, ld, cont, resetfr, fr, pc, for_copy) -> Bool
+
+Make term reference `cont` hold `call_continuation(List)`, the list of the `'\$cont\$'` terms of the
+frames from `fr` (resuming at `pc`) up to, not including, `resetfr` (pl-cont.c): a frame whose
+remaining code is `I_EXIT` adds none, a `catch/3`, `reset/3` or `'\$tbl_reset'/6` frame adds the goal
+`call(catch(...))` (`env3_predicate`) after the list so far.
+"""
+function put_continuation(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, cont::term_t, resetfr::Int, fr::Int,
+    pc::Code{T}, for_copy::Bool
+)::Bool where {T}
+    depth = 0
+
+    fr2 = fr
+    while fr2 != resetfr                                        # for(fr2=fr; fr2 != resetfr; fr2=fr2->parent)
+        depth += 1
+        fr2 = ld.frames[fr2].parent
+    end
+    contv = PL_new_term_refs(ld, depth)
+    if contv == 0
+        return false
+    end
+
+    depth = 0
+    while fr != resetfr                                         # for( depth=0; fr != resetfr; … )
+        f = ld.frames[fr]
+
+        if !is_last_call(pc)
+            env_f = env3_predicate(gd, ld, f.predicate::Definition{T})
+            if env_f != word(0)                                 # (env_f=env3_predicate(fr->predicate))
+                arity = arityFunctor(ld.functors, env_f)
+                av = PL_new_term_refs(ld, arity)
+                if av == 0
+                    return false
+                end
+
+                for i in 1:(arity - 1)
+                    PL_put_term(ld, av + i, argFrameP(f.base, i))
+                end
+
+                if PL_cons_list_v(ld, contv, depth, contv) &&
+                    PL_cons_functor(
+                    ld, av, _cont_functor(ld, :call_continuation, 1), contv
+                ) &&
+                    PL_cons_functor_v(ld, contv, env_f, av) &&
+                    PL_cons_functor(ld, contv, _cont_functor(ld, :call, 1), contv)
+                    depth = 0
+                else
+                    return false
+                end
+            elseif !put_environment(gd, ld, contv + depth, fr, pc.pc, for_copy)
+                return false
+            end
+
+            depth += 1
+        end
+
+        pc = f.programPointer                                   # pc = fr->programPointer
+        fr = f.parent                                           # fr = fr->parent
+    end
+
+    return PL_cons_list_v(ld, cont, depth, contv) &&
+           PL_cons_functor_v(ld, cont, _cont_functor(ld, :call_continuation, 1), cont)
+end
+
+# PORT: pl-cont.c shift
+# DIVERGES: the result is the `Code` the parent of `reset/3` resumes at, `nothing` for upstream's
+# NULL (an error is pending). The frames are indices, so the `valTermRef` reloads after each call that
+# could shift a stack are left out. The trim of `lTop` is `setLTop!`: the records of the frames above
+# the new `lTop` (the continuation's frames, the shifting frame, the foreign frame of the caller's
+# `shift_common`) are dropped with it, where upstream leaves their words as garbage on the stack
+# (`BFR` is never 0 here: the query's `CHP_TOP`, so `LD->choicepoints` is `choices[BFR]`). The
+# `DEBUG(MSG_CONTINUE, …)` and `CHK_SECURE` lines are debug output only. The reset frame's record is
+# read after the trim, as upstream reads it: a dropped record stays readable until a push reuses it.
+"""
+    shift(gd, ld, ball, for_copy) -> Union{Nothing, Code{T}}
+
+Collect the continuation of `ball`'s `reset/3` (pl-cont.c): search the frames for the `reset/3` whose
+ball unifies, put the continuation list into its `Cont` argument, trim `lTop`, and return the program
+counter `reset/3` returns to, `environment_frame` being its parent. An existence error when no
+`reset/3` matches, or when a `findall_loop/4` lies in between; `nothing` with an error pending.
+"""
+function shift(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, ball::term_t, for_copy::Bool
+)::Union{Nothing, Code{T}} where {T}
+    rc, reset = findReset(gd, ld, ld.environment_frame, ball)
+    if rc == 1
+        cont = PL_new_term_ref(ld)
+        PL_put_nil(ld, cont)
+        resetfr = reset
+        envf = ld.frames[ld.environment_frame]
+        if !put_continuation(gd, ld, cont, resetfr, envf.parent, envf.programPointer, for_copy)
+            return nothing                                      # resource error
+        end
+
+        if !PL_unify(ld, argFrameP(ld.frames[resetfr].base, 2), cont)
+            if PL_exception(ld, 0) == 0
+                PL_error(
+                    ld, "", 0, "", ERR_UNINSTANTIATION, 0, argFrameP(ld.frames[resetfr].base, 1)
+                )
+            end
+            return nothing
+        end
+
+        fr = envf.parent                                        # Find parent to keep and trim lTop
+        while true
+            f = ld.frames[fr]
+            if f.base <= ld.choices[ld.BFR].base                # fr <= (LocalFrame)LD->choicepoints
+                setLTop!(ld, ld.choices[ld.BFR].base + SIZEOF_CHOICE)   # found newer choicepoint
+                break
+            elseif fr == resetfr
+                fr = f.parent
+                pf = ld.frames[fr]
+                setLTop!(
+                    ld,
+                    argFrameP(pf.base, Int(((pf.clause::ClauseRef{T}).clause::Clause{T}).variables))
+                )
+                break
+            end
+            @assert fr > resetfr                                # frame indices ascend with their bases
+            fr = f.parent
+        end
+                                                                # return as from reset/3
+        rf = ld.frames[resetfr]
+        ld.environment_frame = rf.parent
+        return rf.programPointer
+    end
+
+    msg = ("No matching reset/3 call", "Cannot catch continuation through findall/3")
+    PL_error(ld, "shift", 1, msg[-rc], ERR_EXISTENCE, mk_sym(T, :reset), ball)
+    return nothing
 end
