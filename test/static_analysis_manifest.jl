@@ -2965,11 +2965,8 @@ _manifest_gd_template(::Type{T}) where {T} = (
     (LK.gd_template_built, Tuple{Type{T}}, false),
     (LK.PL_global_data_from_template, Tuple{Type{T}}, false),
     (LK.PL_global_data_from_template, Tuple{Type{T}, Type{LK.PL_global_data{T}}}, false),
-    (LK._reachable_mutables, Tuple{LK.PL_global_data{T}}, false),
-    (LK.gd_aliased_objects, Tuple{LK.PL_global_data{T}, LK.PL_global_data{T}}, false),
     (LK.boot_image_predicates, Tuple{LK.PL_global_data{T}}, false),
     (LK.boot_image_source_files, Tuple{LK.PL_global_data{T}}, false),
-    (LK._num_visible_clauses, Tuple{LK.PL_global_data{T}, LK.Definition{T}}, false),
     (LK._predicate_number_of_clauses, Tuple{LK.PL_global_data{T}, LK.Definition{T}}, false)
 )
 
@@ -3590,16 +3587,45 @@ const _DISPATCH_MANIFEST_TUPLE = (
     _manifest_gd_template(_M2)...,
     _manifest_gd_template(_M3)...,
     (LK.reset_gd_templates!, Tuple{}, false),
-    (LK._alias_skip, Tuple{Int}, false),
-    (LK.gd_template_registry, Tuple{ReentrantLock, Dict{DataType, LK.PL_global_data}}, false),
+    (
+        LK.gd_template_registry,
+        Tuple{ReentrantLock, Dict{DataType, LK.PL_global_data}},
+        false
+    ),
     (
         LK.BootImagePredicate,
-        Tuple{String, String, Int, Bool, Bool, Bool, Bool, Bool, Bool, Bool, Bool, Bool, Union{Nothing, Int}},
+        Tuple{
+            String,
+            String,
+            Int,
+            Bool,
+            Bool,
+            Bool,
+            Bool,
+            Bool,
+            Bool,
+            Bool,
+            Bool,
+            Bool,
+            Union{Nothing, Int}
+        },
         false
     ),
     (
         LK.BootImageSourceFile,
-        Tuple{Int, String, Symbol, Float64, Int, Int, Bool, Bool, Union{Nothing, Float64}, Bool, Vector{String}},
+        Tuple{
+            Int,
+            String,
+            Symbol,
+            Float64,
+            Int,
+            Int,
+            Bool,
+            Bool,
+            Union{Nothing, Float64},
+            Bool,
+            Vector{String}
+        },
         false
     )
 )

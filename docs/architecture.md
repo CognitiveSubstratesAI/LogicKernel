@@ -904,6 +904,8 @@ fixed it or a public issue exists.
 | `src/pl-event.jl` | EV1 (R2): the event lists of pl-event.c over the 12-row `PL_events` table (`event_type`, `event_location`; a list is a vector, the `fastheap_term` of a closure is its record): registration (`prolog_listen/2,3`: `as(first|last)`, `name(Name)`, an event name or a predicate indicator, module-qualified callable closures), `prolog_unlisten/2`, `destroy_event_list!`, and the calling side (`callEventHook`, `PL_call_event_hook(_va)`, `call_event_list`, `predicate_update_event`, `retractall_event`, `table_answer_event`, `delayEvent(s)`, `sendDelayedEvents`); table `PL_predicates_from_event` (src/pl-ext.jl). Wired raise sites: assert, retract, retractall `start`/`end`, the erase of a record, the clause GC's erase, the destroy of a pristine abolish; the rest is deferred (section EV1) | `src/pl-event.c`, `src/pl-event.h` |
 | `src/pl-tabling.jl` | TAB1-min (R2): the load-time slice of pl-tabling.c that boot/tabling.pl's `:- table` expansion asks for: `'$tbl_trienode'/1`, `'$tbl_is_trienode'/1` (the reserved symbol `trienode`), the tabling properties of a predicate (`table_props`, `definition.tabling`: `tbl_get_predicate_attribute`, `tbl_set_predicate_attribute`, `tbl_set_incremental_predicate`, `tbl_reset_tabling_attributes!`) behind the `tabled`, `tabled_variant`, `incremental`, `monotonic`, `tshared`, `opaque`, `lazy`, `abstract`, `subgoal_abstract`, `answer_abstract` and `max_answers` keys of `'$set_predicate_attribute'/3` and `'$get_predicate_attribute'/3`; table `PL_predicates_from_tabling` (src/pl-ext.jl). The tries, worklists and `start_tabling/3` are TAB1 (section TAB1-min) | `src/pl-tabling.c` |
 | `src/pl-wrap.jl` | TAB1-min (R2): pl-wrap.c's closure blob (`closure_blob`, a record in `gd.closure_refs`), `'$c_wrap_predicate'/5` installing a wrapper supervisor (`S_CALLWRAPPER` or `S_TABLED` over the predicate's own supervisor), `find_wrapper`, `assert_wrapper`, `unify_wrapped`, `wrapper_vmi`, `skipWrapperPrefix`, `isCallWrapper`, `resetWrappedSupervisor` (called by `freeCodesDefinition!`, src/pl-supervisor.jl); table `PL_predicates_from_wrap`. `wrapped_predicate/2`, `unwrap_predicate/2`, `$wrapped_implementation/3` and `$closure_predicate/2` are left to WRAP1 (section TAB1-min) | `src/pl-wrap.c`, `src/pl-wrap.h` |
+| `src/gd_template.jl` | LB4 b1 (R2): the template database (ORIGINAL): `copy_global_data`, generated field by field from `PL_global_data` (the stream tables an empty copy of the same shape, every other field one deep copy that keeps the identities inside the database), the per-process, per-term-type registry (`gd_template`, `PL_global_data_from_template`, `reset_gd_templates!`, `gd_template_built`); no constructor calls it until b2 | — |
+| `src/boot_image.jl` | LB4 b1-3 (R2): the readers of a booted database for the boot check, read from the definition tables and `files_array` (no syspred.pl): `boot_image_predicates` (T1: module, name, arity, defined, dynamic, foreign, number_of_clauses, locked, iso, transparent, meta, public, exported) and `boot_image_source_files` (T3: the `$time_source_file/3` order and the `$source_file_property/3` columns) | — |
 
 ## Code graph — src/, generated (M1)
 
@@ -982,6 +984,8 @@ graph LR
     pl_string["pl-string.jl"]
     os_pl_fmt["os/pl-fmt.jl"]
     pl_ext["pl-ext.jl"]
+    gd_template["gd_template.jl"]
+    boot_image["boot_image.jl"]
     ___boot_init["../boot/init.jl"]
     precompile_workload["precompile_workload.jl"]
     term_interface --> default_term
@@ -1886,6 +1890,16 @@ graph LR
     pl_ext --> pl_qlf
     pl_ext --> pl_string
     pl_ext --> os_pl_fmt
+    gd_template --> pl_global
+    gd_template --> pl_arith
+    gd_template --> os_pl_text
+    boot_image --> term_interface
+    boot_image --> default_term
+    boot_image --> pl_incl
+    boot_image --> pl_atom
+    boot_image --> pl_global
+    boot_image --> pl_proc
+    boot_image --> pl_srcfile
     ___boot_init --> term_interface
     ___boot_init --> default_term
     ___boot_init --> os_pl_stream
@@ -6436,8 +6450,8 @@ What LB4 b1 adds (new files src/gd_template.jl and src/boot_image.jl, included a
   `stream_table` get empty tables of the same shape, and a template holding a live `IOSTREAM` REFUSES the copy); every other
   field is deep-copied through ONE `IdDict` for the whole GD, so the identities inside the database hold in its copy
   (`modules_user` is an entry of `modules`, the `procedures_*` of the system module's table, every definition holds the one
-  `code_data`). `gd_aliased_objects(a, b)` returns the mutable objects reachable from both; the H3 rows assert it is empty for a
-  template and its copy, and has negative controls.
+  `code_data`). The H3 rows (test/db/test_gd_template.jl) walk both graphs for the mutable objects reachable from both and assert there are
+  none for a template and its copy; the walk is test code and has negative controls.
 - **The registry.** `gd_template(T, build)` builds the template of term type `T` ONCE per process, under a lock;
   `PL_global_data_from_template(T)` is a copy of it; `reset_gd_templates!()` and `gd_template_built(T)` are for tests. DORMANT:
   no constructor calls any of it (the default `build` is the UNBOOTED `PL_global_data{T}()`); b2 swaps the default for the booted

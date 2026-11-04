@@ -1,17 +1,14 @@
 # ORIGINAL: LB4 b1's mutant list — no swipl-devel counterpart (the template database and the boot-image readers are the kernel's own).
 # tools/mutants/LB4B1.py — the mutation battery of LB4 b1 (src/gd_template.jl: copy_global_data's generated body, the stream
-# tables' copy, the template registry, the alias check; src/boot_image.jl: T1 `boot_image_predicates` and its number_of_clauses
+# tables' copy, the template registry; src/boot_image.jl: T1 `boot_image_predicates` and its number_of_clauses
 # rule (pl-proc.c:3648-3658), T3 `boot_image_source_files` ($time_source_file/3, pl-srcfile.c:655-699)), run ONCE, in CI
 # (.github/workflows/mutation.yml; locally: tools/mutate.sh run). Format: tools/mutate_drive.py's (as MOD3b.py): `id`, `file`,
 # `old` (must occur EXACTLY once), `new`, optional `equivalent` and `targets`. Verdicts: written by the battery, not yet run.
 # The `old` strings are written in the repo's formatted style BEFORE `tools/warm.sh fmt` ran (the coding agent had no daemon):
 # RE-FIT any that fmt rewraps at the first battery run. Every `old` was checked to occur exactly once at wip/lb4b1 (a text count).
 # NOT LISTED (each with its reason):
-#   * `_reachable_mutables`' `x in seen && continue`: with it gone the walk of a cyclic graph (Clause <-> Definition) never
-#     ends, a HANG, not a verdict; a mutant that hangs proves nothing about the check.
-#   * `_alias_skip`: the skipped kinds (bits, symbols, strings, modules, types) are values a database cannot own, and a copy
-#     shares them by design; dropping a kind only makes the walk visit more of them and flag a shared type object, which the
-#     alias rows would report as a kill of nothing the copy did.
+#   * the alias walk (`_reachable_mutables`, `_aliased_objects`) is test code of test/db/test_gd_template.jl (src carries no `Any`:
+#     test/test_type_discipline.jl), so it is not a mutation site of src.
 # TARGETS (audit D-0238): src/gd_template.jl is DORMANT (no constructor calls it until LB4 b2), and src/boot_image.jl has no
 # caller outside its test; the only files that exercise them are the two new test files. test/test_lint_globals.jl reads the
 # allowlist text only and runs none of the mutated functions.
@@ -41,7 +38,7 @@ MUTANTS = [
          old="            push!(args, :(Base.deepcopy_internal(getfield(gd, $(QuoteNode(f))), stay)::$ft))\n",
          new="            push!(args, :(getfield(gd, $(QuoteNode(f)))::$ft))\n"),
     dict(id="LB4B1-G7 the stream_table policy entry removed: a live stream is deep-copied, not refused (KILL the stream-tables row)", file=G, targets=TG,
-         old="    stream_table = :streams,\n",
+         old="    stream_table=:streams\n",
          new=""),
     # ── src/gd_template.jl: the registry ──
     dict(id="LB4B1-R1 the registry builds at every request (KILL the build-once rows)", file=G, targets=TG,
@@ -68,13 +65,6 @@ MUTANTS = [
     dict(id="LB4B1-R8 the registry entry is REPLACED by a copy at every request after the build (KILL the 'registry is not mutated after init' row: identity)", file=G, targets=TG,
          old="        return t::PL_global_data{T}\n    finally\n        unlock(reg.lock)\n    end\nend\n\ngd_template(::Type{T}) where",
          new="        reg.templates[T] = copy_global_data(t)\n        return reg.templates[T]::PL_global_data{T}\n    finally\n        unlock(reg.lock)\n    end\nend\n\ngd_template(::Type{T}) where"),
-    # ── src/gd_template.jl: the alias check ──
-    dict(id="LB4B1-A1 the walk counts the shared empty Memory: a false alias between two empty vectors (KILL the alias rows)", file=G, targets=TG,
-         old="        x isa Memory && isempty(x) && continue",
-         new="        nothing"),
-    dict(id="LB4B1-A2 gd_aliased_objects reports nothing (KILL the negative-control rows)", file=G, targets=TG,
-         old="        x in rb && push!(shared, x)\n",
-         new="        x in rb && nothing\n"),
     # ── src/boot_image.jl: T1 ──
     dict(id="LB4B1-T1a an imported entry is a row of the importing module (KILL the import row)", file=B, targets=TR,
          old="            def.module_ == m.index || continue",
@@ -85,14 +75,8 @@ MUTANTS = [
     dict(id="LB4B1-T1c a static predicate with no clause answers 0, not absent (KILL the b1_undef row, the oracle's foreign rows)", file=B, targets=TR,
          old="    (n == 0 && (def.flags & P_DYNAMIC) == 0) && return nothing\n",
          new="    nothing\n"),
-    dict(id="LB4B1-T1d a dynamic predicate answers the list's count, not the visible one (KILL the b1_dyn row: 3 against 2)", file=B, targets=TR,
-         old="    if count > 0 && (def.flags & P_DYNAMIC) != 0\n",
-         new="    if false\n"),
-    dict(id="LB4B1-T1e the recount counts every clause of the list, visible or not (KILL the b1_dyn row)", file=B, targets=TR,
-         old="            visibleClauseCNT(cref.clause::Clause{T}, gen) && (count += 1)\n",
-         new="            count += 1\n"),
     dict(id="LB4B1-T1f the rows are in table order (KILL the sorted-order row)", file=B, targets=TR,
-         old="    sort!(rows; by = r -> (r.module_name, r.name, r.arity))\n",
+         old="    sort!(rows; by=r -> (r.module_name, r.name, r.arity))\n",
          new="    nothing\n"),
     dict(id="LB4B1-T1g `defined` is always true (KILL the b1_undef row)", file=B, targets=TR,
          old="                    isDefinedProcedure(gd, proc),\n",

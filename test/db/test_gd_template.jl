@@ -1,7 +1,7 @@
 # ORIGINAL: LB4 b1's gate for the template database (src/gd_template.jl; loader_boot design LD4 and H3) — upstream has one GD per process and no copy of it, so there is no swipl counterpart to compare with.
 # test/db/test_gd_template.jl — the H3 rows (design evidence/r2/design/loader_boot.md §5 H3):
 #   * the copy of a database state equals it (a DIGEST of the generation, the atom count, the flag table, the module table,
-#     every procedure's flags and clause count) and shares NO mutable object with it (`gd_aliased_objects`, with a
+#     every procedure's flags and clause count) and shares NO mutable object with it (`_aliased_objects`, with a
 #     negative control: a shallow rebuild of the struct, and one with the atom table shared, are both caught);
 #   * the identities inside a database hold in its copy (`modules_user` is an entry of `modules`, `=/2` is the system module's
 #     procedure, the definitions hold the copy's supervisors);
@@ -22,6 +22,50 @@ _ps(n) = lk_sym(_P, Symbol(n))
 _pe(f, xs::_P...) = mk_expr(_P, _P[_ps(f), xs...])
 _pg(v) = lk_gnd(_P, v)
 
+# ── the alias check: the mutable objects of a database graph (test code: the walk is typed by what it finds) ──
+# Skipped by the walk: values with no identity worth tracking (bits, symbols, strings, types, modules).
+_alias_skip(x) =
+    isbits(x) ||
+    x isa Union{Symbol, String, Module, DataType, Union, UnionAll, Core.SimpleVector}
+
+# Every mutable object reachable from `root` through fields and array elements (strings, symbols and types left out).
+# Explicit stack: a clause list is a linked list as long as the predicate.
+function _reachable_mutables(root)
+    seen = Base.IdSet{Any}()   # allow-any: the objects of a database graph have every type
+    stack = Any[root]   # allow-any: as above
+    while !isempty(stack)
+        x = pop!(stack)
+        _alias_skip(x) && continue
+        x isa Memory && isempty(x) && continue   # the empty Memory of a type is one shared instance: no database owns it
+        if ismutable(x)
+            x in seen && continue
+            push!(seen, x)
+        end
+        if x isa Memory
+            isbitstype(eltype(x)) && continue
+            for i in eachindex(x)
+                isassigned(x, i) && push!(stack, x[i])
+            end
+        else
+            for i in 1:nfields(x)
+                isdefined(x, i) && push!(stack, getfield(x, i))
+            end
+        end
+    end
+    return seen
+end
+
+# The mutable objects reachable from both `a` and `b` (two database states): empty for a template and its copy, and for two copies.
+function _aliased_objects(a, b)
+    ra = _reachable_mutables(a)
+    rb = _reachable_mutables(b)
+    shared = Any[]   # allow-any: as above
+    for x in ra
+        x in rb && push!(shared, x)
+    end
+    return shared
+end
+
 # what an observer of the database can tell: ONE extractor for every side of every comparison below
 function gd_digest(gd::LK.PL_global_data{T}) where {T}
     rows = Tuple[]
@@ -32,11 +76,29 @@ function gd_digest(gd::LK.PL_global_data{T}) where {T}
     for m in gd.modules
         push!(
             rows,
-            (:module, m.index, sym_key(m.atom), length(m.procedures), length(m.operators), copy(m.supers), m.flags)
+            (
+                :module,
+                m.index,
+                sym_key(m.atom),
+                length(m.procedures),
+                length(m.operators),
+                copy(m.supers),
+                m.flags
+            )
         )
         for k in sort!(collect(keys(m.procedures)))
             d = m.procedures[k].definition
-            push!(rows, (:procedure, m.index, k, d.flags, Int(d.impl_clauses.number_of_clauses), d.impl_foreign_function))
+            push!(
+                rows,
+                (
+                    :procedure,
+                    m.index,
+                    k,
+                    d.flags,
+                    Int(d.impl_clauses.number_of_clauses),
+                    d.impl_foreign_function
+                )
+            )
         end
     end
     return rows
@@ -64,14 +126,16 @@ function lb4b1_mutations()
             return nothing
         end,
         :operator => function (c)
-            LK.defOperator!(c, nothing, LK.MODULE_user(c), _ps(:lb4b1_op), LK.OP_XFX, Int16(700), true)
+            LK.defOperator!(
+                c, nothing, LK.MODULE_user(c), _ps(:lb4b1_op), LK.OP_XFX, Int16(700), true
+            )
             return nothing
         end,
         :source_file => function (c)
             sf = LK.lookupSourceFile(c, _ps(:lb4b1_file), true)
             sf === nothing || LK.releaseSourceFile(sf)
             return nothing
-        end,
+        end
     ]
 end
 
@@ -86,29 +150,31 @@ const D0 = gd_digest(TMPL)
     nmut = 0
     for f in fieldnames(typeof(TMPL))
         a, b = getfield(TMPL, f), getfield(c, f)
-        al = LK.gd_aliased_objects(a, b)
+        al = _aliased_objects(a, b)
         @test isempty(al)                                           # field $f shares no mutable object
-        isempty(LK._reachable_mutables(a)) || (nmut += 1)
+        isempty(_reachable_mutables(a)) || (nmut += 1)
     end
     @test nmut > 20                                                 # most fields hold mutable state: the loop saw them
     @test all(k in fieldnames(typeof(TMPL)) for k in keys(LK.GD_COPY_POLICY))   # no stale name in the policy table
-    ra, rb = LK._reachable_mutables(TMPL), LK._reachable_mutables(c)
+    ra, rb = _reachable_mutables(TMPL), _reachable_mutables(c)
     @test length(ra) == length(rb) > 3 * length(TMPL.modules_system.procedures)   # the same graph, and a large one
-    @test isempty(LK.gd_aliased_objects(TMPL, c))
-    @test isempty(LK.gd_aliased_objects(c, LK.copy_global_data(TMPL)))        # two copies: nothing in common
+    @test isempty(_aliased_objects(TMPL, c))
+    @test isempty(_aliased_objects(c, LK.copy_global_data(TMPL)))        # two copies: nothing in common
 end
 
 @testset "the alias check catches a shared table (negative control)" begin
     n = nfields(TMPL)
     fields = Any[getfield(TMPL, i) for i in 1:n]
     shallow = typeof(TMPL)(fields...)                               # every field the template's own
-    al = LK.gd_aliased_objects(TMPL, shallow)
-    @test length(al) == length(LK._reachable_mutables(TMPL))
+    al = _aliased_objects(TMPL, shallow)
+    # everything reachable from the template except the template object itself (`shallow` is a new object)
+    @test length(al) == length(_reachable_mutables(TMPL)) - 1
+    @test !any(x -> x === TMPL, al)
     c = LK.copy_global_data(TMPL)
     cf = Any[getfield(c, i) for i in 1:n]
     cf[Base.fieldindex(typeof(TMPL), :atoms)] = TMPL.atoms
     half = typeof(TMPL)(cf...)                                      # a copy that shares only the atom table
-    al = LK.gd_aliased_objects(TMPL, half)
+    al = _aliased_objects(TMPL, half)
     @test any(x -> x === TMPL.atoms, al)
     @test !any(x -> x === TMPL.modules_user, al)
     @test !any(x -> x === TMPL.prolog_flag, al)

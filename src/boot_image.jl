@@ -53,31 +53,14 @@ struct BootImageSourceFile
     modules::Vector{String}
 end
 
-# PORT: pl-proc.c num_visible_clauses (the ATOM_number_of_clauses case)
-# DIVERGES: the reload context is deferred (`LD->reload.generation` stays invalid), so only a dynamic predicate counts the visible
-# clauses; the generation is the database's (`current_generation(def)` without a transaction).
-"The number of clauses of `def` visible now: the list's count, recounted for a dynamic predicate (pl-proc.c)."
-function _num_visible_clauses(gd::PL_global_data{T}, def::Definition{T})::Int where {T}
-    count = Int(def.impl_clauses.number_of_clauses)
-    if count > 0 && (def.flags & P_DYNAMIC) != 0
-        gen = global_generation(gd)
-        count = 0
-        cref = def.impl_clauses.first_clause
-        while cref !== nothing
-            visibleClauseCNT(cref.clause::Clause{T}, gen) && (count += 1)
-            cref = cref.next
-        end
-    end
-    return count
-end
-
-# PORT: pl-proc.c pl_get_predicate_attribute, the number_of_clauses case (pl-proc.c:3648-3658)
+# The `number_of_clauses` case of pl-proc.c's pl_get_predicate_attribute, read straight from the definition: the count is the port
+# `num_visible_clauses` (src/pl-proc.jl), the attribute fails for a foreign predicate and for a static one with no clause.
 "The `number_of_clauses` attribute of `def`, or `nothing` where upstream's attribute fails (pl-proc.c:3648-3658)."
 function _predicate_number_of_clauses(
     gd::PL_global_data{T}, def::Definition{T}
 )::Union{Nothing, Int} where {T}
     (def.flags & P_FOREIGN) != 0 && return nothing
-    n = _num_visible_clauses(gd, def)
+    n = num_visible_clauses(gd, def, false)
     (n == 0 && (def.flags & P_DYNAMIC) == 0) && return nothing
     return n
 end
@@ -116,7 +99,7 @@ function boot_image_predicates(gd::PL_global_data{T})::Vector{BootImagePredicate
             )
         end
     end
-    sort!(rows; by = r -> (r.module_name, r.name, r.arity))
+    sort!(rows; by=r -> (r.module_name, r.name, r.arity))
     return rows
 end
 
@@ -126,7 +109,9 @@ end
 T3 of the boot image: a row per loaded source file of `gd` (`count != 0`), in the order of `'\$time_source_file'/3`: by
 index (see the comment at the top of src/boot_image.jl).
 """
-function boot_image_source_files(gd::PL_global_data{T})::Vector{BootImageSourceFile} where {T}
+function boot_image_source_files(
+    gd::PL_global_data{T}
+)::Vector{BootImageSourceFile} where {T}
     rows = BootImageSourceFile[]
     mx = highSourceFileIndex(gd)
     index = 0

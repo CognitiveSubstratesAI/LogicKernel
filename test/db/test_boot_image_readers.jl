@@ -24,16 +24,21 @@ _pg(v) = lk_gnd(_P, v)
 
 # ONE extractor for every side of every comparison below
 _pred_tuple(r::LK.BootImagePredicate) = (
-    r.module_name, r.name, r.arity, r.defined, r.dynamic, r.foreign, r.locked, r.iso, r.transparent, r.meta,
+    r.module_name, r.name, r.arity, r.defined, r.dynamic, r.foreign, r.locked, r.iso,
+    r.transparent, r.meta,
     r.public, r.exported, r.number_of_clauses
 )
 _file_tuple(r::LK.BootImageSourceFile) = (
-    r.index, r.name, r.type, r.file_time, r.load_count, r.number_of_clauses, r.resource, r.from_state, r.loaded,
+    r.index, r.name, r.type, r.file_time, r.load_count, r.number_of_clauses, r.resource,
+    r.from_state, r.loaded,
     r.reloading, copy(r.modules)
 )
 _t1(gd) = [_pred_tuple(r) for r in LK.boot_image_predicates(gd)]
 _t3(gd) = [_file_tuple(r) for r in LK.boot_image_source_files(gd)]
-_row(rows, m, n, a) = (i = findfirst(r -> r.module_name == m && r.name == n && r.arity == a, rows); i === nothing ? nothing : rows[i])
+_row(rows, m, n, a) = (
+    i=findfirst(r -> r.module_name == m && r.name == n && r.arity == a, rows);
+    i === nothing ? nothing : rows[i]
+)
 
 # a database with the predicates and files of the rows below
 function lb4b1_hand_db()
@@ -56,7 +61,8 @@ function lb4b1_hand_db()
     ix_assertz!(forcl, _pe(:b1_forcl, _pg(1)))
     forcl.def.flags |= LK.P_FOREIGN
     flagged = LK.lookupProcedure(_ps(:b1_flags), 2, user)
-    flagged.definition.flags |= LK.P_ISO | LK.P_TRANSPARENT | LK.P_META | LK.P_LOCKED | LK.P_PUBLIC
+    flagged.definition.flags |=
+        LK.P_ISO | LK.P_TRANSPARENT | LK.P_META | LK.P_LOCKED | LK.P_PUBLIC
     key = (sym_key(_ps(:b1_flags)), 2)
     user.public_[key] = flagged                                     # an export
     push!(user.public_order, key)
@@ -94,7 +100,8 @@ const HGD = HAND.gd
     stat = _row(rows, "user", "b1_stat", 1)
     @test stat !== nothing && stat.defined && !stat.dynamic && stat.number_of_clauses == 2
     undef = _row(rows, "user", "b1_undef", 1)
-    @test undef !== nothing && !undef.defined && !undef.dynamic && undef.number_of_clauses === nothing
+    @test undef !== nothing && !undef.defined && !undef.dynamic &&
+        undef.number_of_clauses === nothing
     dyn0 = _row(rows, "user", "b1_dyn0", 0)
     @test dyn0 !== nothing && dyn0.defined && dyn0.dynamic && dyn0.number_of_clauses == 0
     fr = _row(rows, "user", "b1_for", 1)
@@ -117,7 +124,7 @@ end
     @test _row(rows, "system", "=", 2) !== nothing                  # non-vacuous: the import's own row exists
     mp = _row(rows, "b1_mod", "b1_m_pred", 0)
     @test mp !== nothing && !mp.defined && !mp.exported
-    @test issorted(rows; by = r -> (r.module_name, r.name, r.arity))
+    @test issorted(rows; by=r -> (r.module_name, r.name, r.arity))
     @test length(rows) > 100
     mods = Set(r.module_name for r in rows)
     @test "system" in mods && "user" in mods && "b1_mod" in mods
@@ -129,10 +136,14 @@ end
     @test [r.name for r in rows] == ["b1_f1", "b1_f3"]              # b1_f2 has count 0: skipped
     f1, f3 = rows
     @test f1.index < f3.index
-    @test f1.type === :user && f1.file_time == 12.5 && f1.load_count == 1 && f1.number_of_clauses == 4
-    @test !f1.resource && !f1.from_state && f1.loaded == 7.0 && !f1.reloading && f1.modules == ["user"]
-    @test f3.type === :system && f3.file_time == 0.0 && f3.load_count == 2 && f3.number_of_clauses == 0
-    @test f3.resource && f3.from_state && f3.loaded === nothing && !f3.reloading && isempty(f3.modules)
+    @test f1.type === :user && f1.file_time == 12.5 && f1.load_count == 1 &&
+        f1.number_of_clauses == 4
+    @test !f1.resource && !f1.from_state && f1.loaded == 7.0 && !f1.reloading &&
+        f1.modules == ["user"]
+    @test f3.type === :system && f3.file_time == 0.0 && f3.load_count == 2 &&
+        f3.number_of_clauses == 0
+    @test f3.resource && f3.from_state && f3.loaded === nothing && !f3.reloading &&
+        isempty(f3.modules)
     @test isempty(LK.boot_image_source_files(LK.PL_global_data{_P}()))   # a fresh database: every file has count 0
 end
 
@@ -192,7 +203,7 @@ end
     @test length(pins) == 20                                        # the pins were read
     rows = LK.boot_image_predicates(LK.PL_global_data{_P}())
     ncompared = 0
-    for ((name, arity), cols) in sort!(collect(pins))
+    for ((name, arity), cols) in sort!(collect(pins); by=first)
         cols["foreign"] == "1" || continue                          # clauses of boot/*.pl are not the kernel's built-ins
         r = _row(rows, "system", name, arity)
         r === nothing && continue                                   # UNVERIFIED on the kernel: gate decides which of these the kernel registers
