@@ -3352,13 +3352,34 @@ function PL_next_solution_guarded(
     end
 
     # PORT: pl-vmi.c I_CALLCONT
-    # DIVERGES: refused by name until CONT1 (above).
+    # (pl-vmi.c:5839-5862 at the pin; CONT1 C5)
+    # DIVERGES: the continuation is the DEREFERENCED location of the variable (`pushWordAsTermRef`, as
+    # `I_SHIFT`'s ball); the `call(Goal)` shortcut stores the goal's argument in the slot `I_CALL1`
+    # reads it from (`argFrameP(lTop, 0)`, upstream's `*ARGP++`). The pushed frame is the record
+    # `push_continuation` makes at `lTop` (src/pl-cont.jl).
     @label I_CALLCONT
-    throw(
-        NotPortedError{T}(
-            DEF.name, "the VM instruction I_CALLCONT (pl-vmi.c:5839)", "CONT1"
-        )
-    )
+    cc_k, cc_w, cc_p = _deref_loc(ld, -(varFrameP(ld.frames[FR].base, Int(PCc[PC])) + 1))
+    PC += 1                                         # Word cp = varFrameP(FR, (int)*PC++); deRef(cp)
+    if cc_k == DU_WORD && _is_gcompound(cc_w) && ld.gstack[valPtr(cc_w)] == _cont_functor(ld, :call, 1)
+        _slot_from_cell!(ld, argFrameP(ld.lTop, 0) + 1, valPtr(cc_w) + 1)  # *ARGP++ = linkValI(argTermP(*cp, 0))
+        @goto I_CALL1                               # VMI_GOTO(I_CALL1)
+    end
+    cc_cont = pushWordAsTermRef(ld, (cc_k, cc_w, cc_p))
+    @SAVE_REGISTERS(QID)
+    cc_pc = push_continuation(gd, ld, cc_cont, FR, Code{T}(PCc, PCl, PC))
+    @LOAD_REGISTERS(QID)
+    popTermRef(ld)
+    if cc_pc !== nothing
+        PCc = cc_pc.codes                           # PC = pc
+        PCl = cc_pc.literals
+        PC = cc_pc.pc
+        FR = ld.environment_frame                   # FR = environment_frame
+        DEF = ld.frames[FR].predicate::Definition{T}
+        ARGP = argp_t{T}(ARGP_SLOT, argFrameP(ld.lTop, 0), ph)  # ARGP = argFrameP(lTop, 0)
+        @goto next_instruction
+    else
+        @goto b_throw                               # THROW_EXCEPTION
+    end
 
     # PORT: pl-vmi.c I_SHIFT
     # (pl-vmi.c:5874-5877 at the pin; CONT1 C4)
