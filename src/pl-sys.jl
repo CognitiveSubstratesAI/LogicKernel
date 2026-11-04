@@ -134,10 +134,17 @@ end
 # ORIGINAL (CT1a): libc's `setlocale(category, locale)` through `ccall` (as `Setenv`, src/os/pl-os.jl); `locale`
 # `nothing` is the NULL query. The answer is copied at once (libc's buffer lives until the next call) and `errno` read
 # before anything else runs.
+# DIVERGES (measured, glibc 2.39): upstream tests `errno == ENOENT` after a failed `setlocale(3)`, but glibc sets ENOENT only the
+# FIRST time it fails to find a locale name and leaves `errno` untouched on every later try of that name (a negative cache), so
+# upstream's answer for a repeated unknown name rests on whatever errno held before (a C program that sets `errno = 0` first
+# sees `0` the second time). The kernel clears `errno` before the call and reads a failure that left it 0 as the not-found
+# case (ENOENT): `existence_error(locale, Name)` every time, as swipl 10.1.19 answers in the .out. A failure with another
+# errno (EINVAL for a name of 5000 characters) stays `system_error`.
 "`(name, errno)`: libc's answer of `setlocale(category, locale)` — `nothing` when it fails — and the `errno` it left."
 function _libc_setlocale(
     category::Cint, locale::Union{Nothing, String}
 )::Tuple{Union{Nothing, String}, Int}
+    Base.Libc.errno(0)
     p = if locale === nothing
         ccall((:setlocale, LIBC), Ptr{UInt8}, (Cint, Ptr{UInt8}), category, C_NULL)
     else
@@ -176,7 +183,7 @@ function pl_setlocale3_va(
             if rc != CMP_EQUAL
                 r, e = _libc_setlocale(lcp.category, locale)
                 if r === nothing
-                    if e == ENOENT
+                    if e == ENOENT || e == 0    # DIVERGES: e == 0 is glibc's repeated not-found (_libc_setlocale)
                         PL_error(ld, ERR_EXISTENCE, mk_sym(T, :locale), A3)
                         return FFALSE
                     end
