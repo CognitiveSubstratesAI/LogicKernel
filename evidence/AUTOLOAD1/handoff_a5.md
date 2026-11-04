@@ -15,9 +15,9 @@ the white-box side; everything that needs the real hook waits.
 ## Groups, in order
 | # | Group | Upstream | Julia site | State |
 |---|---|---|---|---|
-| G1 | A1c row: the autoloader's query returns to the trapped frame (test-defined hook, VM path `call(user:foo)`; reads the hook query's record from the pool inside the `at` callback of `_rcall`) | pl-wam.c PL_open_query (`saved_environment`), pl-vmi.c:5707-5722 | test/core_lang/test_autoload_trap.jl | WRITTEN (commit 2), UNVERIFIED |
-| G2 | tools/mutants/AUTOLOAD1.py: A1c `equivalent:` declaration -> KILL naming the G1 row; header lines | D-0400 item 2 | tools/mutants/AUTOLOAD1.py | WRITTEN (commit 3) |
-| G3 | architecture block "AUTOLOAD1 A5 (part 1)" | - | docs/architecture.md | LAST commit |
+| G1 | A1c row: the autoloader's query returns to the trapped frame (test-defined hook, VM path `call(user:foo)`; reads the hook query's record from the pool inside the `at` callback of `_rcall`) | pl-wam.c PL_open_query (`saved_environment`), pl-vmi.c:5707-5722 | test/core_lang/test_autoload_trap.jl | WRITTEN (014c8bf2), UNVERIFIED |
+| G2 | tools/mutants/AUTOLOAD1.py: A1c `equivalent:` declaration -> KILL naming the G1 row; header lines | D-0400 item 2 | tools/mutants/AUTOLOAD1.py | WRITTEN (9f8166e2) |
+| G3 | architecture block "AUTOLOAD1 A5 (part 1)" | - | docs/architecture.md | WRITTEN (e8806273) |
 No manifest rows: G1 adds no function.
 
 ## Waits for the first boot (b2 = LB4 b2 first boot; owner: the boot-files lane). The READY-AFTER-BOOT list, in landing order
@@ -77,6 +77,13 @@ Now: 4 (plan, G1, G2, G3 docs) plus this handoff update. After the boot: item 1 
 
 ## Gate order for the pre-boot commits (gate agent)
 fmt (committed files via `warm.sh send`), check (incl. Pkg.test-way), test_autoload_trap.jl x3 term types + `tools/pkgtest_way.sh
-test/core_lang/test_autoload_trap.jl`, test_type_discipline.jl, push `mutants/AUTOLOAD1` at the WIP SHA, branch-gate, crash-term grep,
+test/core_lang/test_autoload_trap.jl`, test_type_discipline.jl, push `mutants/AUTOLOAD1` at the WIP SHA, branch-gate, term grep,
 push `gate/<name>` and `mutants/AUTOLOAD1` at the same SHA. The mutants file changed: the battery re-runs (D-0374). Re-fit anchors
 after fmt (every `old` once).
+
+## State at hand-back (writer 1)
+Commits on wip/autoload5 (oldest first): fd0f9d90 plan; 014c8bf2 G1 row; 9f8166e2 G2 mutants (33 mutants, anchors checked read-only with
+python3 -I, no equivalent field left); e8806273 G3 architecture block; this handoff update after it. Authors: Shivaji Gadde. Nothing pushed.
+Unrun: everything (no Julia). The G1 row is the one risk: it reads the pool slot `ld.queries[ld.nqueries + 1]` and `ld.frames[e]` inside the
+`at` callback. If the first run shows the slot recycled or `qid` not an index, the fallbacks are in "Notes only". Daemons: none used.
+Untouched on purpose: src/ (the hook guard stays until the first boot, item 3), test_autoload_flag_swipl.jl (af08, item 2), src/pl-comp.jl (item 6).
