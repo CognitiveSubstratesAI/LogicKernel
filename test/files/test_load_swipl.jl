@@ -292,15 +292,15 @@ const _TL_CASES = [
 #      when an undefined procedure is reported): owner DBG1 (docs/r2_owners.tsv).
 #   L2 `'$syspreds':'$foreign_predicate_source'/2` undefined (pl-proc.c:4146 @ cbf4e189; called by syspred.pl's
 #      '$foreign_source_location'/3 when a message carries a location): owner PR1 (docs/r2_owners.tsv).
-#   L3 `system:'$set_table_wrappers'/1` undefined: `'$tabling':'$set_table_wrappers'/1` IS defined and exported
-#      (boot/tabling.pl:70, :1647 @ cbf4e189), but tabling.pl's load raises at :2356 (`:- table`, '$tbl_trienode'/1,
-#      pl-tabling.c), the error escapes '$load_file'/… and init.pl:2929 '$import_from_loaded_module' never imports
-#      it into `system` (docs/architecture.md, LB4 b2 checklist, the tabling chain). Also `incremental` and `opaque`
-#      each print domain_error(predicate_property, K) (init.pl:187-191): the kernel's set_predicate_attribute has no
-#      tabling branch (pl-proc.c:3864-3868 -> pl-tabling.c:10361 tbl_set_predicate_attribute; the DIVERGES at
-#      src/pl-proc.jl set_predicate_attribute). Owner LD12 (tabling).
-#   L4 `initialization(main)`: swipl AUTOLOADS library(main)'s main/0, which calls the undefined main/1; the kernel has
-#      no autoloader yet, so main/0 itself is undefined: owner the autoloader step.
+#   L3 (re-measured at the LB4 b2 gate, 2026-11-04: the boot now loads boot/tabling.pl whole) `:- dynamic(p/1 as incremental)`:
+#      '$tabling':unwrap_monotonic/1 calls `prolog_wrap:unwrap_predicate/2` (pl-wrap.c), which is undefined: the
+#      directive raises existence_error(procedure, prolog_wrap:unwrap_predicate/2) where swipl answers `ok`, and the
+#      loader prints undefined_export(prolog_wrap, unwrap_predicate/2) (the export of the module whose predicate is
+#      missing). Owner WRAP1 (docs/r2_owners.tsv, pred:unwrap_predicate/2).
+#   L4 `initialization(main)`: swipl AUTOLOADS library(main)'s main/0, which calls the undefined main/1 and prints an
+#      initialization_error; the kernel has no autoloader yet, so main/0 itself is undefined and the report of it reaches
+#      `'$dwim':'$dwim_predicate'/2` (L1): the load raises there (line 1) and prints nothing (line 2). Owner DBG1 for the
+#      raise (L1), AUTOLOAD1 for the autoload of main/0 behind it.
 "The lines of `ours` and `theirs` that differ, `(line, kernel, swipl)`, `path` (the case file) written `<path>`."
 function _tl_diff(
     ours::Vector{String}, theirs::Vector{String}, path::String
@@ -458,12 +458,19 @@ const _TL_KNOWN_DIFFS = Dict{String, Vector{Tuple{Int, String, String}}}(
         ),
         (3, "—", "atom_number/2 static exception")
     ],
-    # L4 (autoload of library(main))
-    "initialization" => [(
-        2,
-        "error c[105,110,105,116,105,97,108,105,122,97,116,105,111,110,95,101,114,114,111,114]/3(c[58]/2(a[117,115,101,114],a[109,97,105,110]),c[101,114,114,111,114]/2(c[101,120,105,115,116,101,110,99,101,95,101,114,114,111,114]/2(a[112,114,111,99,101,100,117,114,101],c[47]/2(a[109,97,105,110],i0)),c[99,111,110,116,101,120,116]/2(c[58]/2(a[115,121,115,116,101,109],c[47]/2(a[36,114,117,110,95,105,110,105,116,95,103,111,97,108],i1)),V0)),c[58]/2(a<path>,i1))",
-        "error c[105,110,105,116,105,97,108,105,122,97,116,105,111,110,95,101,114,114,111,114]/3(c[58]/2(a[117,115,101,114],a[109,97,105,110]),c[101,114,114,111,114]/2(c[101,120,105,115,116,101,110,99,101,95,101,114,114,111,114]/2(a[112,114,111,99,101,100,117,114,101],c[47]/2(a[109,97,105,110],i1)),c[99,111,110,116,101,120,116]/2(c[58]/2(a[115,121,115,116,101,109],c[47]/2(a[99,97,116,99,104],i3)),V0)),c[58]/2(a<path>,i1))"
-    )],
+    # L4 (dwim, then the autoload of library(main))
+    "initialization" => [
+        (
+            1,
+            "exc c[101,114,114,111,114]/2(c[101,120,105,115,116,101,110,99,101,95,101,114,114,111,114]/2(a[112,114,111,99,101,100,117,114,101],c[58]/2(a[36,100,119,105,109],c[47]/2(a[36,100,119,105,109,95,112,114,101,100,105,99,97,116,101],i2))),c[99,111,110,116,101,120,116]/2(c[58]/2(a[36,100,119,105,109],c[47]/2(a[100,119,105,109,95,112,114,101,100],i2)),V0))",
+            "ok"
+        ),
+        (
+            2,
+            "—",
+            "error c[105,110,105,116,105,97,108,105,122,97,116,105,111,110,95,101,114,114,111,114]/3(c[58]/2(a[117,115,101,114],a[109,97,105,110]),c[101,114,114,111,114]/2(c[101,120,105,115,116,101,110,99,101,95,101,114,114,111,114]/2(a[112,114,111,99,101,100,117,114,101],c[47]/2(a[109,97,105,110],i1)),c[99,111,110,116,101,120,116]/2(c[58]/2(a[115,121,115,116,101,109],c[47]/2(a[99,97,116,99,104],i3)),V0)),c[58]/2(a<path>,i1))"
+        )
+    ],
     # L1 (dwim)
     "disjunction" => [
         (
@@ -518,21 +525,16 @@ const _TL_KNOWN_DIFFS = Dict{String, Vector{Tuple{Int, String, String}}}(
             "warning c[103,111,97,108,95,102,97,105,108,101,100]/2(a[100,105,114,101,99,116,105,118,101],c[58]/2(a[117,115,101,114],c[92,43]/1(a[97])))"
         )
     ],
-    # L3 (tabling: the attribute and the wrappers)
+    # L3 (unwrap_predicate/2: owner WRAP1)
     "incremental" => [
         (
             1,
-            "exc c[101,114,114,111,114]/2(c[101,120,105,115,116,101,110,99,101,95,101,114,114,111,114]/2(a[112,114,111,99,101,100,117,114,101],c[58]/2(a[115,121,115,116,101,109],c[47]/2(a[36,115,101,116,95,116,97,98,108,101,95,119,114,97,112,112,101,114,115],i1))),c[99,111,110,116,101,120,116]/2(c[58]/2(a[115,121,115,116,101,109],c[47]/2(a[36,101,120,101,99,117,116,101,95,100,105,114,101,99,116,105,118,101,95,51],i1)),V0))",
+            "exc c[101,114,114,111,114]/2(c[101,120,105,115,116,101,110,99,101,95,101,114,114,111,114]/2(a[112,114,111,99,101,100,117,114,101],c[58]/2(a[112,114,111,108,111,103,95,119,114,97,112],c[47]/2(a[117,110,119,114,97,112,95,112,114,101,100,105,99,97,116,101],i2))),c[99,111,110,116,101,120,116]/2(c[58]/2(a[36,116,97,98,108,105,110,103],c[47]/2(a[117,110,119,114,97,112,95,109,111,110,111,116,111,110,105,99],i1)),V0))",
             "ok"
         ),
         (
             2,
-            "error c[101,114,114,111,114]/2(c[100,111,109,97,105,110,95,101,114,114,111,114]/2(a[112,114,101,100,105,99,97,116,101,95,112,114,111,112,101,114,116,121],a[105,110,99,114,101,109,101,110,116,97,108]),c[99,111,110,116,101,120,116]/2(c[47]/2(a[105,110,99,114,101,109,101,110,116,97,108],i1),V0))",
-            "—"
-        ),
-        (
-            3,
-            "error c[101,114,114,111,114]/2(c[100,111,109,97,105,110,95,101,114,114,111,114]/2(a[112,114,101,100,105,99,97,116,101,95,112,114,111,112,101,114,116,121],a[111,112,97,113,117,101]),c[99,111,110,116,101,120,116]/2(c[47]/2(a[111,112,97,113,117,101],i1),V0))",
+            "error c[117,110,100,101,102,105,110,101,100,95,101,120,112,111,114,116]/2(a[112,114,111,108,111,103,95,119,114,97,112],c[47]/2(a[117,110,119,114,97,112,95,112,114,101,100,105,99,97,116,101],i2))",
             "—"
         )
     ]
@@ -567,7 +569,7 @@ if _TL_SWIPL !== nothing
         end
         # the named normalisation (R1f): since LB4 b2 a directive's goal runs under boot/init.pl's
         # catch/3 as in swipl, so the context is swipl's and the normalisation never fires
-        # UNVERIFIED on the kernel: gate decides
+        # (verified on the kernel at the LB4 b2 gate, 2026-11-04)
         @test _TL_NORMALISED[] == 0
         # the compiler's own warnings (since R1g) are compared, not excluded: swipl sends this
         # many `compiler_warnings/2` messages on the corpus, and the kernel the same ones
@@ -778,8 +780,8 @@ end
 
 # The former refusals (R1f-LB2: the minimal loader raised NotPortedError on each). Since LB4 b2 the file is
 # loaded by boot/init.pl's load_files/2, so each now loads as swipl loads it: compared, line for line, with
-# the swipl driver (messages, status), as the cases above. UNVERIFIED on the kernel: gate decides (a row that
-# differs is a first-boot item or a recorded DIVERGES with the upstream line, never a skip).
+# the swipl driver (messages, status), as the cases above. Verified on the kernel at the LB4 b2 gate (2026-11-04): a row
+# that differs is a recorded DIVERGES with the upstream line (`_TL_KNOWN_DIFFS`), never a skip.
 const _TL_FORMER_REFUSALS = [
     ("dcg", "a --> b.\n"),                                      # DCG (boot/dcg.pl)
     ("module", ":- module(m, []).\n"),
@@ -809,19 +811,11 @@ if _TL_SWIPL !== nothing
                 write(path, text)
                 theirs = _tl_swipl(path, Tuple{String, Int}[])
                 if name == "asserted-then-file"
-                    # KNOWN DIFFERENCE L5, pinned: the kernel refuses, deferred (NotPortedError, owner R2; raised at
-                    # src/pl-proc.jl:1138, redefineProcedure); swipl warns redefine_procedure and abolishes (`ok`, then
-                    # the warning line)
-                    err = try
-                        _tl_kernel(path, Tuple{String, Int}[])
-                        nothing
-                    catch e
-                        e
-                    end
-                    @test err isa LK.NotPortedError && sym_text(err.culprit) == "q" &&
-                        err.what ==
-                        "redefining a predicate another file defined (abolishProcedure)" &&
-                        err.step == "R2"
+                    # swipl warns redefined_procedure and abolishes (`ok`, then the warning line); the kernel does the same
+                    # since redefineProcedure stopped refusing (was KNOWN DIFFERENCE L5: NotPortedError, owner R2; refusal
+                    # flipped to swipl's answer at the LB4 b2 gate, audit D-0410 item 7)
+                    ours = _tl_kernel(path, Tuple{String, Int}[])
+                    @test ours == theirs
                     # swipl 10.1.19's lines (verified live 2026-11-03): ok, then redefined_procedure(static, q/1)
                     @test theirs == [
                         "ok",
@@ -849,7 +843,7 @@ end
 
 @testset "a reconsult and a second file: load_file! returns (status, ball) (LB4 b2)" begin
     # a reconsult: the same file twice; a second file defining a predicate the first defined (swipl
-    # warns, redefined_procedure, and abolishes). UNVERIFIED on the kernel: gate decides
+    # warns, redefined_procedure, and abolishes). Verified on the kernel at the LB4 b2 gate (2026-11-04)
     mktempdir() do d
         path = joinpath(d, "twice.pl")
         write(path, "a.\n")
@@ -871,18 +865,16 @@ end
         write(p1, "s(1).\n")
         write(p2, "s(2).\n")
         @test LK.load_file!(gd, ld, p1) === (:ok, nothing)
-        # KNOWN DIFFERENCE L5, pinned: swipl loads two.pl with one warning, redefined_procedure, and abolishes one.pl's
-        # s/1 (`:ok`, as the row expected); the kernel refuses, abolishProcedure's redefinition is deferred
-        # (NotPortedError, owner R2; raised at src/pl-proc.jl:1138, redefineProcedure)
-        err5 = try
-            lk_load_file_messages!(gd, ld, p2)
-            nothing
-        catch e
-            e
-        end
-        @test err5 isa LK.NotPortedError && sym_text(err5.culprit) == "s" &&
-            err5.what == "redefining a predicate another file defined (abolishProcedure)" &&
-            err5.step == "R2"
+        # swipl loads two.pl with one warning, redefined_procedure, and abolishes one.pl's s/1 (`:ok`); the kernel does the
+        # same since redefineProcedure stopped refusing (was KNOWN DIFFERENCE L5, NotPortedError owner R2; flipped at the
+        # LB4 b2 gate, audit D-0410 item 7). swipl 10.1.19, `consult(one), consult(two)` with the driver's message_hook, two
+        # identical runs (2026-11-04): ok, then `warning redefined_procedure(static, s/1)` (the line below, the driver's encoding)
+        st5, _, msgs5 = lk_load_file_messages!(gd, ld, p2)
+        @test st5 === :ok
+        @test [string(k) * " " * _tl_enc(_tl_normalise(m)) for (k, m) in msgs5] == [
+            "warning c[114,101,100,101,102,105,110,101,100,95,112,114,111,99,101,100,117,114,101]/2(" *
+            "a[115,116,97,116,105,99],c[47]/2(a[115],i1))"
+        ]
     end
     # a file clause for a predicate asserted before (no file): swipl warns and abolishes; the kernel does too since PR1b
     # (redefineProcedure -> abolishProcedure!; the answers are rows t_rd1-t_rd7 of test_pr1_swipl.jl)
