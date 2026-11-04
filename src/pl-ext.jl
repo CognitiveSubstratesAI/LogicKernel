@@ -161,6 +161,19 @@ function registerBuiltins!(
     return nothing
 end
 
+# DIVERGES: a Julia helper for `initBuildIns!`'s REG_PLIST sequence, in upstream's order with one running
+# dispatch index `first`. A recursive walk (`Base.tail`) specialises per table; a `map` over a tuple of 32
+# or more entries (`_PRED_TABLES` has 33) takes Base's `Any32` method, whose result is not inferred (JET).
+"Register the tables `tables` in order, the first at dispatch index `first + 1`; returns the next free index."
+function _register_tables!(gd::PL_global_data{T}, first::Int, ::Tuple{})::Int where {T}
+    return first
+end
+function _register_tables!(gd::PL_global_data{T}, first::Int, tables::Tuple)::Int where {T}
+    sigs = _extension_sigs(tables[1])
+    registerBuiltins!(gd, sigs, first)          # REG_PLIST(prims), REG_PLIST(variant), …
+    return _register_tables!(gd, first + length(sigs), Base.tail(tables))
+end
+
 # PORT: pl-ext.c initBuildIns as initBuildIns!
 # DIVERGES: the tables ported (see `foreigns`, `_PRED_TABLES`), in upstream's order. `initProcedures`
 # creates `GD->procedures.dirty`, which the kernel creates with the global data (`procedures_dirty`,
@@ -169,11 +182,8 @@ end
 "Register the built-ins in the database whose global data is `gd` (pl-ext.c `initBuildIns`)."
 function initBuildIns!(gd::PL_global_data{T})::Nothing where {T}
     registerBuiltins!(gd, _extension_sigs(foreigns), 0)
-    first = 0
-    for sigs in map(_extension_sigs, _PRED_TABLES)     # (a tuple map: no dynamic dispatch)
-        registerBuiltins!(gd, sigs, first)      # REG_PLIST(prims), REG_PLIST(variant), …
-        first += length(sigs)
-    end
+    # (a recursive walk over the tuple: a `map` over 32 or more entries is not inferred, see `_register_tables!`)
+    first = _register_tables!(gd, 0, _PRED_TABLES)
     @assert first == length(_FOREIGN_VA)
     setBuiltinPredicateProperties!(gd)
     _boot_catch3!(gd)

@@ -1801,6 +1801,8 @@ function _manifest_index(T)
         (LK.createForeignSupervisor!, Tuple{D, Int}, false),
         (LK.builtin_pred_flags, Tuple{UInt8, UInt64}, true),
         (LK.registerBuiltins!, Tuple{GD, Vector{Tuple{String, Int, UInt8}}, Int}, false),
+        (LK._register_tables!, Tuple{GD, Int, Tuple{}}, false),
+        (LK._register_tables!, Tuple{GD, Int, typeof(LK._PRED_TABLES)}, false),
         (LK.initBuildIns!, Tuple{GD}, false),
         (LK.setBuiltinPredicateProperties!, Tuple{GD}, false),
         (LK._boot_catch3!, Tuple{GD}, false),                   # V9f: boot/init.pl's catch/3
