@@ -54,7 +54,7 @@ struct BootImageSourceFile
 end
 
 # PORT: pl-proc.c num_visible_clauses (the ATOM_number_of_clauses case)
-# DIVERGES: the reload context is NOT PORTED (`LD->reload.generation` stays invalid), so only a dynamic predicate counts the visible
+# DIVERGES: the reload context is deferred (`LD->reload.generation` stays invalid), so only a dynamic predicate counts the visible
 # clauses; the generation is the database's (`current_generation(def)` without a transaction).
 "The number of clauses of `def` visible now: the list's count, recounted for a dynamic predicate (pl-proc.c)."
 function _num_visible_clauses(gd::PL_global_data{T}, def::Definition{T})::Int where {T}
@@ -145,7 +145,7 @@ function boot_image_source_files(gd::PL_global_data{T})::Vector{BootImageSourceF
                     f.resource,
                     f.from_state,
                     f.ltime == 0.0 ? nothing : f.ltime,
-                    false,                              # `reloading`: the reload context is NOT PORTED
+                    false,                              # `reloading`: the reload context is deferred
                     String[sym_text(mm.atom) for mm in f.modules]
                 )
             )
