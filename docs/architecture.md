@@ -7319,3 +7319,39 @@ setlocale, 0)`, with `lccats`) is ported ahead of the rest of that file.
 - **Rows:** test/core_lang/test_setlocale_swipl.jl (t0..t31, swipl 10.1.19's answers byte-identical in two runs and under
   LANG=C, LANG unset, LC_ALL set); the locales named are C, POSIX, '' and C.utf8, and every row puts the locale and its
   environment variables back. Mutants: tools/mutants/CT1A.py.
+
+## CONT1 — continuations at run time: `reset/3`, `shift/1`, `shift_for_copy/1`, `call_continuation/1` (R2, audit D-0402 item 2d; pl-cont.c, pl-vmi.c, pl-gc.c at swipl-devel cbf4e1896275)
+
+What CONT1 adds (written edit-only on top of LB4 b2's declarations and compile side; nothing was compiled or run when this was written):
+
+- **The instructions** (src/pl-wam.jl): `I_RESET` and `I_EXITRESET` (pl-vmi.c:5754-5833; `FR_INRESET` on the `reset/3` frame, and the
+  `mcall_cont` branch of `i_metacall_common`, :5529-5535, so a control construct under `reset/3` runs through `'$meta_call'/1`), `I_CALLCONT`
+  (:5839-5862, with the `call(Goal)` shortcut), `I_SHIFT` / `I_SHIFTCP` / `shift_common` (:5874-5915) and the non-engine branch of `I_YIELD`
+  (:2410-2418: `permission_error(execute, vmi, 'I_YIELD')` through the new `ERR_PERMISSION_VMI`, src/pl-error.jl).
+- **src/pl-cont.jl** (new, after pl-gc.jl): `findReset`, `env_functor`, `env3_predicate`, `is_last_call`, `put_environment`, `put_continuation`,
+  `shift`, `push_continuation` (pl-cont.c:74-548). `put_environment` builds `'$cont$'(Module, Clause, PC, Slot...)` with the slots the
+  liveness walker finds active; `push_continuation` reads it back and pushes the frame.
+- **src/pl-gc.jl**: `walk_state`, `walk_and_mark`, `mark_active_environment` and the four mark/clear leaves (pl-gc.c:1709-1726, 1866-2287): which
+  variables of a frame are read before they are written from a given instruction on. `src/pl-fli.jl`: `PL_cons_functor_v`, `PL_cons_list_v`.
+- **src/pl-global.jl** grows by five fields (`procedures_reset3`, `dtbl_reset6`, `call_continuation1`, `dmeta_call1`, `findall_loop4`; the
+  last is looked up by `findReset`, as upstream does): Tier 1, allocation pins on all three term types.
+- **DIVERGES (representation only, logged in the comments):**
+  - `lTop`: upstream's `shift` trims `lTop` and `shift_common`'s `PL_close_foreign_frame` sets it back to the foreign frame opened before the
+    trim, so the net `lTop` is the one before `shift`. Here `shift` uses `setLTop!` (which drops the records of the dead frames) and
+    `shift_common` raises `lTop` to the foreign frame's base before the close (a raise, nothing dropped). The net `lTop` is upstream's.
+  - The PC of a `'$cont$'` term is stored as `pc - 1` (swipl's 0-based offset); `push_continuation` adds the 1 back (`codes[offset + 1]`).
+  - `push_continuation` asks for `SIZEOF_LOCALFRAME + variables + LOCAL_MARGIN` cells (the margin is the stack's own spare upstream); growing
+    the local stack moves nothing here, so there is no `retry`. The blob word upstream stores below the frame (atom-GC protection) is
+    left out: `gd.clause_refs` keeps every clause. `onStackArea(local, cl)` is left out: a clause is a Julia object.
+  - The text of `Shift: clause of ...` (the `shift_check` flag) names the predicate with `_cont_predicate_name`; the backtrace and the clause
+    number of that message are left to DBG1.
+- **Left to later steps (refused by name, owner in the message):** the `'$tbl_reset'/6` branches of `I_RESET` / `I_EXITRESET` and
+  `push_continuation_list` (TAB1: they need the worklists of tabling); the engine branch of `I_YIELD` (TH1). `PL_Q_ALLOW_YIELD` is declared
+  (src/SWI-Prolog.jl) but no query carries it, so only the permission error is reachable.
+- **An erased clause** in a resumed frame is restarted as upstream restarts it (`clause_clref` answers for any serial of the append-only
+  table); the first run reads it through a retract between `shift` and `call_continuation`.
+
+Tests: test/core_lang/test_cont_run_swipl.jl (43 rows against swipl 10.1.19, two byte-identical runs, evidence/CONT1/cr_rows.out) and the six
+`c_*` rows of test/core_lang/test_cont_boot_swipl.jl, which now assert swipl's answers. Read first if the kernel differs: r_slots (where
+`<inactive>` sits), r_lco (the empty list), r_ctx (a transparent frame's context), r_nested (which `reset/3` takes a ball). Mutants
+tools/mutants/CONT1.py (26, one equivalent with its reason; the choice-slot restore has no separating row and is listed as such).
