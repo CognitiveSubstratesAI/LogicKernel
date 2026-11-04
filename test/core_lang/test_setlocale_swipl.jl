@@ -182,7 +182,8 @@ _slc_locales() = String[first(LK._libc_setlocale(c, nothing)) for c in _SLC_CATS
     main = filter(n -> !(n in _SLC_NUL_ROWS), names)
     keep = [1; [i + 1 for i in eachindex(names) if !(names[i] in _SLC_NUL_ROWS)]]
     kl = kernel_lines(_TL, _SLC_PL, main)
-    @test length(kl) == length(keep) && length(kl) == length(expected) - length(_SLC_NUL_ROWS)
+    @test length(kl) == length(keep) &&
+        length(kl) == length(expected) - length(_SLC_NUL_ROWS)
     for i in eachindex(kl)
         @test (i, kl[i]) == (i, expected[keep[i]])
     end

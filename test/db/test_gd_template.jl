@@ -296,7 +296,10 @@ end
         cd(start)
     end
     @test LK.GD_COPY_POLICY.paths_CWDdir === :reset
-    @test all(k in keys(LK.GD_COPY_RESET) for k in keys(LK.GD_COPY_POLICY) if LK.GD_COPY_POLICY[k] === :reset)
+    @test all(
+        k in keys(LK.GD_COPY_RESET) for
+        k in keys(LK.GD_COPY_POLICY) if LK.GD_COPY_POLICY[k] === :reset
+    )
     @test all(k in fieldnames(typeof(TMPL)) for k in keys(LK.GD_COPY_RESET))
 end
 
