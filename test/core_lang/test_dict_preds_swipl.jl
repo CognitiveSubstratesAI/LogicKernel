@@ -643,7 +643,7 @@ end
 function _dp_kernel(path::String, names::Vector{String})
     gd = LK.PL_global_data{_DP}()
     ld = LK.PL_local_data{_DP}(gd)
-    st, ball, _ = LK.load_file!(gd, ld, path)
+    st, ball = LK.load_file!(gd, ld, path)
     out = [st === :ok ? "ok" : "exc " * _dp_enc(ball::_DP)]
     for name in names
         proc = LK.isCurrentProcedure(sym_key(_dps(name)), 1, LK.MODULE_user(gd))

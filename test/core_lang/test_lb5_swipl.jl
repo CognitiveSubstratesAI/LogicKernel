@@ -443,7 +443,7 @@ end
 function _lb5_kernel(path::String, names::Vector{String})
     gd = LK.PL_global_data{_LB5}()
     ld = LK.PL_local_data{_LB5}(gd)
-    st, ball, _ = LK.load_file!(gd, ld, path)
+    st, ball = LK.load_file!(gd, ld, path)
     out = [st === :ok ? "ok" : "exc " * _lb5_enc(ball::_LB5)]
     for name in names
         proc = LK.isCurrentProcedure(sym_key(_lb5s(name)), 1, LK.MODULE_user(gd))

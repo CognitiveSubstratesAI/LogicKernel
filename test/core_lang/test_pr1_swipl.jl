@@ -542,7 +542,7 @@ function _pr_kernel(paths::Vector{String}, names::Vector{String})
     ld = LK.PL_local_data{_PR}(gd)
     st, ball = :ok, nothing
     for path in paths                                    # a file after another, as `consult/1` of a list does
-        st, ball, _ = LK.load_file!(gd, ld, path)
+        st, ball = LK.load_file!(gd, ld, path)
         st === :ok || break
     end
     out = [st === :ok ? "ok" : "exc " * _pr_enc(ball::_PR)]
@@ -755,7 +755,7 @@ end
     )
     gd = LK.PL_global_data{_PR}()
     ld = LK.PL_local_data{_PR}(gd)
-    st, _, _ = LK.load_file!(gd, ld, f1)
+    st, _ = LK.load_file!(gd, ld, f1)
     @test st === :ok
     proc(n, a) = LK.isCurrentProcedure(sym_key(_prs(n)), a, LK.MODULE_user(gd))
     pw = proc("wb_w", 1)
@@ -777,7 +777,7 @@ end
     @test any(ci -> ci !== nothing, cli.clause_indexes)
     f2 = joinpath(d, "wb2.pl")
     write(f2, ":- abolish(wb_i/2).\n")
-    st, _, _ = LK.load_file!(gd, ld, f2)
+    st, _ = LK.load_file!(gd, ld, f2)
     @test st === :ok
     cip = cli.clause_indexes
     @test cip !== nothing                          # A1: kept as an array of dead slots, not dropped

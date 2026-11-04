@@ -347,7 +347,7 @@ end
 function _pf_kernel(path::String, names::Vector{String})
     gd = LK.PL_global_data{_PF}()
     ld = LK.PL_local_data{_PF}(gd)
-    st, ball, _ = LK.load_file!(gd, ld, path)
+    st, ball = LK.load_file!(gd, ld, path)
     out = [st === :ok ? "ok" : "exc " * _pf_enc(ball::_PF)]
     for name in names
         push!(out, _pf_query(gd, ld, name))
@@ -410,7 +410,7 @@ const _PF_REFUSED = [
     for (f, _) in _PF_REFUSED
         gd = LK.PL_global_data{_PF}()
         ld = LK.PL_local_data{_PF}(gd)
-        st, _, _ = LK.load_file!(gd, ld, path)
+        st, _ = LK.load_file!(gd, ld, path)
         @test st === :ok
         # UNVERIFIED on the kernel: gate decides (the refusal's class: the push reaches set_flag_value)
         @test_throws LK.NotPortedError _pf_query(gd, ld, "r_$(f)")

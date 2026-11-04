@@ -624,7 +624,7 @@ function _rdd_kernel(
         user = LK.MODULE_user(gd)
         user.flags = LK.setVarTagFlag(ld, _rdds(mode), user.flags)::UInt32
     end
-    st, ball, _ = LK.load_file!(gd, ld, path)
+    st, ball = LK.load_file!(gd, ld, path)
     out = [st === :ok ? "ok" : "exc " * _rdd_enc(ball::_RDD)]
     for name in names
         proc = LK.isCurrentProcedure(sym_key(_rdds(name)), 1, LK.MODULE_user(gd))

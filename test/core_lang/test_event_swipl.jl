@@ -538,7 +538,7 @@ end
 function _ev_load(path::String)
     gd = LK.PL_global_data{_EV}()
     ld = LK.PL_local_data{_EV}(gd)
-    st, ball, _ = LK.load_file!(gd, ld, path)
+    st, ball = LK.load_file!(gd, ld, path)
     return gd, ld, (st === :ok ? "ok" : "exc " * _ev_enc(ball::_EV))
 end
 

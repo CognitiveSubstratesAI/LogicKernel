@@ -251,7 +251,7 @@ const _AF_KERNEL_DIFFERS = Dict(
 function _af_kernel(path::String, names::Vector{String}; boot::Bool=true)
     gd = LK.PL_global_data{_AF}()
     ld = LK.PL_local_data{_AF}(gd)
-    st, ball, _ = LK.load_file!(gd, ld, path)
+    st, ball = LK.load_file!(gd, ld, path)
     out = [st === :ok ? "ok" : "exc " * _af_enc(ball::_AF)]
     gd.bootsession = boot
     for name in names
@@ -299,7 +299,7 @@ end
     )
     gd = LK.PL_global_data{_AF}()
     ld = LK.PL_local_data{_AF}(gd)
-    st, _, _ = LK.load_file!(gd, ld, path)
+    st, _ = LK.load_file!(gd, ld, path)
     @test st === :ok
     @test LK.truePrologFlag(ld, LK.PLFLAG_AUTOLOAD)       # the default: autoload is on
     gd.bootsession = true                                  # propagateAutoload is skipped (DIVERGES, header)
@@ -343,7 +343,7 @@ end
     )
     gd = LK.PL_global_data{_AF}()
     ld = LK.PL_local_data{_AF}(gd)
-    st, _, _ = LK.load_file!(gd, ld, path)
+    st, _ = LK.load_file!(gd, ld, path)
     @test st === :ok
     line = _af_query(gd, ld, "t_nb")
     @test occursin(_af_codes("existence_error"), line)

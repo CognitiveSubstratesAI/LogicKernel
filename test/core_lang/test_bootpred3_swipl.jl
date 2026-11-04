@@ -397,7 +397,7 @@ end
 function _b3_kernel(path::String, names::Vector{String})
     gd = LK.PL_global_data{_B3}()
     ld = LK.PL_local_data{_B3}(gd)
-    st, ball, _ = LK.load_file!(gd, ld, path)
+    st, ball = LK.load_file!(gd, ld, path)
     out = [st === :ok ? "ok" : "exc " * _b3_enc(ball::_B3)]
     for name in names
         proc = LK.isCurrentProcedure(sym_key(_b3s(name)), 1, LK.MODULE_user(gd))

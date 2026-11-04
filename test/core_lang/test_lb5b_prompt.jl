@@ -114,7 +114,7 @@ end
     gd = LK.PL_global_data{_PB}()
     ld = LK.PL_local_data{_PB}(gd)
     @test ld.prompt_next === false                      # a fresh local data: zero, as pl-global.c leaves it
-    st, _, _ = LK.load_file!(gd, ld, _pb_file())
+    st, _ = LK.load_file!(gd, ld, _pb_file())
     @test st === :ok
     # The standard streams are opened the first time one is asked for (initIO's DIVERGES, src/os/pl-file.jl): a goal whose FIRST
     # stream use is `set_stream(user_input, alias(_))` raises existence_error(stream, user_input) on a fresh local data (measured

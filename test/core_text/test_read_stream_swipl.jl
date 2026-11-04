@@ -821,7 +821,7 @@ end
 function _rt_kernel(path::String, names::Vector{String})
     gd = LK.PL_global_data{_RT}()
     ld = LK.PL_local_data{_RT}(gd)
-    st, ball, _ = LK.load_file!(gd, ld, path)
+    st, ball = LK.load_file!(gd, ld, path)
     out = [st === :ok ? "ok" : "exc " * _rt_enc(ball::_RT)]
     for name in names
         proc = LK.isCurrentProcedure(sym_key(_rts(name)), 1, LK.MODULE_user(gd))

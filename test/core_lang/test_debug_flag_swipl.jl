@@ -312,7 +312,7 @@ end
 function _db_kernel(path::String, names::Vector{String})
     gd = LK.PL_global_data{_DB}()
     ld = LK.PL_local_data{_DB}(gd)
-    st, ball, _ = LK.load_file!(gd, ld, path)
+    st, ball = LK.load_file!(gd, ld, path)
     out = [st === :ok ? "ok" : "exc " * _db_enc(ball::_DB)]
     for name in names
         push!(out, _db_query(gd, ld, name))
@@ -384,7 +384,7 @@ _db_atom_list_enc(xs::Vector{String})::String =
     write(path, text)
     gd = LK.PL_global_data{_DB}()
     ld = LK.PL_local_data{_DB}(gd)
-    st, _, _ = LK.load_file!(gd, ld, path)
+    st, _ = LK.load_file!(gd, ld, path)
     @test st === :ok
     msg_text(m) = _db_enc(m[2])
     debug_msgs() =

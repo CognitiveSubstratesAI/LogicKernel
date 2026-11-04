@@ -417,7 +417,7 @@ end
 function _tm_load(path::String)
     gd = LK.PL_global_data{_TM}()
     ld = LK.PL_local_data{_TM}(gd)
-    st, ball, _ = LK.load_file!(gd, ld, path)
+    st, ball = LK.load_file!(gd, ld, path)
     return gd, ld, (st === :ok ? "ok" : "exc " * _tm_enc(ball::_TM))
 end
 
