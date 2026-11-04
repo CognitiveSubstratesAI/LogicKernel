@@ -101,6 +101,17 @@ const _TD_UNCHECKED_ALLOWED = Dict(
         "or an integer mode, and returns an Int32, an Int or an unsigned; write is handed the " *
         "message String with its byte length"
     ),
+    "pl-sys.jl ccall" => (
+        2,
+        "_libc_setlocale (CT1a): the C library's setlocale(3) for setlocale/3, as pl-ctype.c calls it, once " *
+        "to query (a NULL locale) and once to set; it is handed an integer category and a Cstring (Julia's " *
+        "conversion refuses a NUL) or NULL, and returns a pointer that the caller reads at once"
+    ),
+    "pl-sys.jl unsafe_string" => (
+        1,
+        "_libc_setlocale (CT1a): copies the NUL-terminated name setlocale(3) answers, at once and only " *
+        "when the answer is not NULL; libc's static buffer is read before any other call can overwrite it"
+    ),
     "pl-read.jl ccall" => (
         1,
         "_strtod (R1c): the C library's strtod, as upstream's ascii_to_double calls it, for its " *

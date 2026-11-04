@@ -248,13 +248,13 @@ end
 @testset "the stream dicts: a live stream in the aliases or the filenames refuses the copy" begin
     s = LK.Sopen_string(Vector{UInt8}("abc"), 3, "r")
     @test s !== nothing
-    ga = LK.PL_global_data{_P}()
+    ga = LK.setupProlog(_P)
     @test isempty(ga.stream_table) && isempty(ga.stream_aliases) &&
         isempty(ga.stream_filenames)
     ga.stream_aliases[UInt64(7)] = s
     @test length(ga.stream_aliases) == 1
     @test_throws ErrorException LK.copy_global_data(ga)             # the alias dict holds a live stream
-    gf = LK.PL_global_data{_P}()
+    gf = LK.setupProlog(_P)
     gf.stream_filenames[s] = _pg(1)
     @test length(gf.stream_filenames) == 1 && isempty(gf.stream_table)
     @test_throws ErrorException LK.copy_global_data(gf)             # the filename dict holds a live stream

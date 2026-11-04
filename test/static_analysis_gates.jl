@@ -38,23 +38,10 @@ end
 
 # THE ALLOWLIST of `Any` in src/ (dispatcher ruling, LB4 b2 part 9, pending audit): `"file" => (count, reasons)`,
 # one reason per site, in the pattern of test_type_discipline.jl's `_TD_UNCHECKED_ALLOWED`. A site the type system
-# cannot narrow (an object graph of every type, Base's own `IdDict{Any, Any}` argument type) stands here with its
-# reason; every other file keeps none. The `# allow-any:` comment at each site is its human-readable twin.
-const ANY_ALLOWED = Dict{String, Tuple{Int, Vector{String}}}(
-    "gd_template.jl" => (
-        7,
-        [
-            "copy_global_data: `IdDict{Any, Any}`, the key type of deepcopy_internal's stack dict " *
-            "(Base.deepcopy_internal(x, stackdict::IdDict)); its keys are the copied objects, of every type",
-            "copy_global_data: the value type of that stack dict, the copies, of every type",
-            "_reachable_mutables: its result type, the set of the objects of a database graph (every type)",
-            "_reachable_mutables: the `seen` set it returns, the same objects",
-            "_reachable_mutables: the walk's explicit stack, any field value of the graph (a test-time walk)",
-            "gd_aliased_objects: its result type, objects of the graph reachable from both states",
-            "gd_aliased_objects: the `shared` vector it returns, the same objects"
-        ]
-    )
-)
+# cannot narrow stands here with its reason; every other file keeps none. The `# allow-any:` comment at each site is
+# its human-readable twin. The table is EMPTY: src/gd_template.jl keeps no `Any` (its former seven sites live in test
+# code), so a new use in src/ fails the rule until it is listed here.
+const ANY_ALLOWED = Dict{String, Tuple{Int, Vector{String}}}()
 
 """
     any_uses_beyond(dir, allowed = ANY_ALLOWED) -> Vector{String}
