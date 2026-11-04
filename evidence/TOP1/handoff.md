@@ -47,3 +47,27 @@ Prerequisites verified present by grep: `emptyStacks!`, `classify_exception`, `P
 - Not ported in resetProlog, by field: gc_status.blocked, shift_status.blocked, in_print_message (GC/print_message steps), depth_info.limit (P3), debugstatus.suspendTrace/retryFrame (DBG1). SIGINT handler of enable_debug_on_interrupt (signal step).
 - Long code lines in pl-pro.jl may be re-wrapped by `warm.sh fmt`.
 - Gate order after G4: fmt (committed files via `warm.sh send`), inventory, check, new test x3 term types, test_type_discipline, pkgtest_way once, mutants/TOP1 push, branch-gate, term grep, gate push. Struct unchanged by this step (no new field), so no alloc pins unless pl-fli.jl counts as Tier 1 (PL_prompt_next is added there).
+
+## Writer 2 state (context cap reached after group 4a)
+Committed on wip/top1: dff67ba8 = G4(a): test/core_lang/test_top1_prompt_swipl.jl (12 swipl-pinned prompt transcripts, pty-driven by
+evidence/TOP1/gen_top1_rows.py, two byte-identical runs, evidence/TOP1/top1_rows.out; kernel side = Sread_user's three lines by hand over buffers
+sharing one position record) and test/core_lang/test_top1_pro.jl (LK-only: PL_prompt_next, PrologPrompt/PL_write_prompt, writeAtomToStream,
+validUserStreams, resetTracer/enable_debug_on_interrupt, resetProlog, halt_from_exception/restore_after_exception, query_loop x8 testsets).
+Nothing compiled or run. Found: swipl prints the prompt only for a TTY stdin (pl-os.c:2171-2185), so the oracle needs a pty (python pty, echo off),
+NOT a pipe. halt_from_exception returns false with the seam off (PL_halt), so the rows read gd.halt_exited.
+LEFT (next agent, in order): (b) tools/mutants/TOP1.py (>=6; MOD3b.py format; candidates in "LEFT 2" above; TARGETS: test_top1_pro.jl,
+test_top1_prompt_swipl.jl, test_lb5b_prompt.jl, test_autoload_trap.jl; anchors once via grep -c -F; throwaway runpy checker); (c) manifest rows
+(pl-trace.jl/pl-pro.jl neighbours; PL_prompt_next is in src/pl-fli.jl: say whether the alloc pins x3 apply); (d) architecture block + DIVERGES flips
+(src/pl-global.jl:447-452, src/pl-proc.jl:355, set_stream block in src/os/pl-file.jl, architecture ~6726 and ~6873), status board TOP1 row and a NEW
+row TOP1b (PROPOSED: Sread_user, wrapIO, set_prolog_IO/3, Sread_terminal pl-os.c:2171-2224/:2462, prologToplevel, pl_break, currentBreakLevel +
+break_level flag, PL_prompt_is_continuation, PL_prompt_string; why: stream layer dispatches on closed enum IOFUNCTIONS, S_read has no ld; recommend a
+new function-set member plus an ld reference in the handle) in ~/code/lk-channel/evidence/R2/status_board.md (commit + push there). Also reword
+the comment "have no counterpart yet" in src/pl-trace.jl enable_debug_on_interrupt (absence-claim hook).
+FOR THE AUDIT: (1) src/pl-init.jl `_query_run_at_halt` is a reduced query_loop(.., false) and is NOT switched: switching adds resetProlog,
+restore_after_exception and halt_from_exception to the at-halt query = behaviour change. (2) emptyStacks! mid-life, read-only analysis: it resets
+the local/argument/trail/global stacks, the value table, frames and queries to the constructor's own state (pl-global.jl:702 calls it) and reopens the
+base frame and the permanent exception/attvar/tmp cells; query_loop calls it only when ld.query == 0 and resetProlog only without nb_setval vars
+(the gvar_nb_vars test = upstream's). It is safe when no caller holds a term_t or foreign frame id across the call (they are invalid after, as
+upstream); the rows in test_top1_pro.jl (nfliframes) pin the effect; the gate decides. (3) The D-0164 term grep matches "abort" in the rows and in
+restore_after_exception: it is the Prolog primitive unwind(abort), not the crash term.
+Ready-for-gate list: NOT ready (b), (c), (d) missing.
