@@ -231,8 +231,8 @@ end
 
 # PORT: pl-trace.c enable_debug_on_interrupt
 # DIVERGES: the local data is an argument. The signal half is the signal step's: `PL_signal(SIGINT, PL_interrupt)` (enable) and
-# `terminate_on_signal(SIGINT)` (disable) have no counterpart yet, so the flag `debug_on_interrupt` is set and cleared as upstream
-# does, and an interrupt does not reach the debugger.
+# `terminate_on_signal(SIGINT)` (disable) are left to the signal step (owner: the signal step), so the flag `debug_on_interrupt` is set
+# and cleared as upstream does, and an interrupt does not reach the debugger until that step lands.
 "Switch the flag `debug_on_interrupt` on or off: false where it cannot be switched on (the flag `signals` is off) (pl-trace.c)."
 function enable_debug_on_interrupt(ld::PL_local_data, enable::Bool)::Bool
     if enable
