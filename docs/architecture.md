@@ -812,7 +812,7 @@ fixed it or a public issue exists.
 | `src/os/pl-os.jl` | the operating-system layer (Y1): `CpuTime` (moved from src/pl-arith.jl), `WallTime`, `getenv3`, `Setenv`, `Unsetenv`, `Pause`, `CPU_USER`/`CPU_SYSTEM`, the Linux `CLOCK_*` ids; the C library by `ccall` (`clock_gettime`, `setenv`, `unsetenv`) | `src/os/pl-os.c`, `src/os/pl-os.h` |
 | `src/os/pl-files.jl` | file names and deleting a file (Y1): `get_file_name`, `PL_get_file_name`, `RemoveFile` (`remove(3)` by `ccall`), delete_file/1 (`PL_predicates_from_files`) | `src/os/pl-files.c`, `src/os/pl-files.h`, `src/os/pl-file.c` |
 | `src/os/pl-glob.jl` | wildcards and file-name expansion (LB2b): `compilePattern`, `matchPattern`, wildcard_match/2,3, `expand`, expand_file_name/2, directory_files/2 (`PL_predicates_from_glob`) | `src/os/pl-glob.c` |
-| `src/pl-sys.jl` | the system built-ins (Y1): getenv/2, setenv/2, unsetenv/1, get_time/1, sleep/1 (`PL_predicates_from_system`); shell/2 NOT PORTED | `src/pl-sys.c` |
+| `src/pl-sys.jl` | the system built-ins (Y1): getenv/2, setenv/2, unsetenv/1, get_time/1, sleep/1 (`PL_predicates_from_system`); shell/2 NOT PORTED; setlocale/3 (CT1a, `PL_predicates_from_ctype`) | `src/pl-sys.c`, `src/os/pl-ctype.c` |
 | `src/pl-setup.jl` | `emptyStacks`: a new local data's stacks, with one foreign frame at the base; since V5d `allocStacks`/`init_stack` (the local stack's spare reserved above `max`) and `trim_stack`/`trimStacks` (the spare given back after an exception) | `src/pl-setup.c` |
 | `test/core_lang/test_rules_swipl.jl` | V4b's gate: nreverse and an execution differential over random rule clauses identical to swipl (answers and determinism), the body family covered; a call failing before its frame is filled; positions after deterministic exits (MQ6) pinned and live, with the record pools held to the live records; flatness of the last-call optimisation (and its absence growing the stack); open/next/close cycles at their baseline; warm, calls and exits allocate nothing | — |
 | `test/foreign/test_builtins_swipl.jl` | V5a2's gate: the built-ins' registration; the first users as queries against a live swipl (600 random goals × 3 `occurs_check` modes), from clause bodies, and the position built-ins pinned to libswipl | — |
@@ -1763,10 +1763,14 @@ graph LR
     pl_write --> pl_read
     pl_sys --> term_interface
     pl_sys --> default_term
+    pl_sys --> os_pl_ctype
+    pl_sys --> os_pl_stream
     pl_sys --> pl_incl
     pl_sys --> SWI_Prolog
     pl_sys --> pl_global
+    pl_sys --> pl_prims
     pl_sys --> pl_fli
+    pl_sys --> pl_error
     pl_sys --> os_pl_text
     pl_sys --> os_pl_os
     pl_read --> term_interface
@@ -1951,11 +1955,11 @@ or **platform** (a Windows or macOS definition: out of the count). **NO OWNER** 
 
 | category | done | refused | missing | platform | NO OWNER |
 |---|---:|---:|---:|---:|---:|
-| predicates (C-defined, reached by the boot) | 271 | 0 | 151 | 3 | 1 |
-| refusal sites | 0 | 78 | 0 | 0 | 64 |
+| predicates (C-defined, reached by the boot) | 272 | 0 | 150 | 3 | 1 |
+| refusal sites | 0 | 78 | 0 | 0 | 55 |
 | Prolog flags | 64 | 19 | 20 | 0 | 35 |
 | VM instructions | 169 | 0 | 64 | 0 | 7 |
-| **total** | 504 | 97 | 235 | 3 | 107 |
+| **total** | 505 | 97 | 234 | 3 | 98 |
 
 #### The boot and library files
 
@@ -1970,8 +1974,8 @@ Predicate rows each file's calls reach (a predicate several files call counts in
 | `boot/dcg.pl` | loaded | 20 | 0 | 0 |
 | `boot/license.pl` | loaded | 5 | 0 | 0 |
 | `boot/syspred.pl` | loaded | 81 | 32 | 0 |
-| `boot/messages.pl` | loaded | 76 | 9 | 1 |
-| `boot/toplevel.pl` | loaded | 82 | 17 | 2 |
+| `boot/messages.pl` | loaded | 77 | 8 | 1 |
+| `boot/toplevel.pl` | loaded | 83 | 16 | 2 |
 | `boot/attvar.pl` | loaded | 29 | 0 | 0 |
 | `boot/bags.pl` | loaded | 21 | 1 | 0 |
 | `boot/apply.pl` | loaded | 4 | 0 | 0 |
@@ -1998,7 +2002,7 @@ Predicate rows each file's calls reach (a predicate several files call counts in
 
 | owner | rows | missing | refused | which (first 8) |
 |---|---:|---:|---:|---|
-| TAB1 | 97 | 93 | 4 | `$idg_add_edge/1`, `$idg_add_mono_dyn_dep/3`, `$idg_add_monotonic_dep/3`, `$idg_changed/1`, `$idg_false_edge/3`, `$idg_falsecount/2`, `$idg_forced/1`, `$idg_mono_affects/3`, … +89 |
+| TAB1 | 98 | 93 | 5 | `$idg_add_edge/1`, `$idg_add_mono_dyn_dep/3`, `$idg_add_monotonic_dep/3`, `$idg_changed/1`, `$idg_false_edge/3`, `$idg_falsecount/2`, `$idg_forced/1`, `$idg_mono_affects/3`, … +90 |
 | AR1 | 27 | 27 | 0 | `succ/2`, `A_ADD`, `A_DOUBLE`, `A_ENTER`, `A_EQ`, `A_FIRSTVAR_IS`, `A_FUNC`, `A_FUNC0`, … +19 |
 | TH1 | 17 | 17 | 0 | `$engine_create/3`, `$gc_clear/1`, `$gc_stop/0`, `$gc_wait/1`, `$sig_unblock/0`, `engine_next/2`, `is_engine/1`, `message_queue_create/1`, … +9 |
 | LB3 | 14 | 0 | 14 | `refusal QLF predicate $close_wic/0`, `refusal QLF predicate $file_hash/2`, `refusal QLF predicate $map_id/2`, `refusal QLF predicate $open_wic/2`, `refusal QLF predicate $qlf_close/0`, `refusal QLF predicate $qlf_current_source/1`, `refusal QLF predicate $qlf_dependency/1`, `refusal QLF predicate $qlf_is_compatible/1`, … +6 |
@@ -2006,18 +2010,19 @@ Predicate rows each file's calls reach (a predicate several files call counts in
 | Q10 | 13 | 13 | 0 | `$cmd_option_val/2`, `$on_signal/4`, `$put_token/2`, `$set_prolog_stack/4`, `$suspend_findall_bag/0`, `$usage/0`, `\=@=/2`, `current_blob/2`, … +5 |
 | P3 | 9 | 9 | 0 | `$depth_limit/3`, `$depth_limit_except/3`, `$depth_limit_false/3`, `$depth_limit_true/5`, `$inference_limit/2`, `$inference_limit_except/3`, `$inference_limit_false/1`, `$inference_limit_true/3`, … +1 |
 | TRIE1 | 7 | 7 | 0 | `$trie_gen_node/3`, `$trie_property/2`, `is_trie/1`, `trie_gen/2`, `trie_gen/3`, `trie_lookup/3`, `trie_term/2` |
+| CONT1 | 6 | 0 | 6 | `refusal the VM instruction I_CALLCONT (pl-vmi.c:…`, `refusal the VM instruction I_EXITRESET (pl-vmi.c…`, `refusal the VM instruction I_RESET (pl-vmi.c:575…`, `refusal the VM instruction I_SHIFT (pl-vmi.c:587…`, `refusal the VM instruction I_SHIFTCP (pl-vmi.c:5…`, `refusal the VM instruction I_YIELD (pl-vmi.c:241…` |
 | ZIP1 | 6 | 6 | 0 | `$rc_handle/1`, `zip_clone/2`, `zip_close_/2`, `zip_file_info_/3`, `zipper_goto/2`, `zipper_open_current/3` |
 | S2a | 4 | 4 | 0 | `get/1`, `get/2`, `put/1`, `put/2` |
 | TX1 | 4 | 4 | 0 | `$snapshot/1`, `$transaction/2`, `$transaction/3`, `$undo/1` |
-| CT1 | 3 | 3 | 0 | `char_type/2`, `code_type/2`, `setlocale/3` |
+| WRAP1 | 4 | 2 | 2 | `$wrapped_implementation/3`, `unwrap_predicate/2`, `refusal the VM instruction S_CALLWRAPPER (callin…`, `refusal the VM instruction S_WRAP (calling a wra…` |
+| CT1 | 2 | 2 | 0 | `char_type/2`, `code_type/2` |
 | FL1 | 2 | 2 | 0 | `get_flag/2`, `set_flag/2` |
 | LB5-LB7 | 2 | 2 | 0 | `$activate_static_extension/1`, `$clause_term_position/3` |
 | P2 | 2 | 2 | 0 | `$seek_list/4`, `sub_atom_icasechk/3` |
-| WRAP1 | 2 | 2 | 0 | `$wrapped_implementation/3`, `unwrap_predicate/2` |
 | PR1 | 1 | 1 | 0 | `$foreign_predicate_source/2` |
 | SRC2 | 1 | 1 | 0 | `$unload_file/1` |
 | TAI1 | 1 | 1 | 0 | `format_time/3` |
-| NO OWNER | 107 | 28 | 79 | `apple_current_locale_identifier/1`, `B_SMALLINTW`, `B_THROW`, `H_SMALLINTW`, `L_SMALLINTW`, `S_DET`, `S_INCR_DYNAMIC`, `S_THREAD_LOCAL`, … +99 |
+| NO OWNER | 98 | 28 | 70 | `apple_current_locale_identifier/1`, `B_SMALLINTW`, `B_THROW`, `H_SMALLINTW`, `L_SMALLINTW`, `S_DET`, `S_INCR_DYNAMIC`, `S_THREAD_LOCAL`, … +90 |
 
 #### Missing and refused per category
 
@@ -2025,8 +2030,8 @@ Predicate rows each file's calls reach (a predicate several files call counts in
 xychart-beta
     title "R2: missing (bars) and refused (line) rows"
     x-axis ["predicates", "refusal sites", "flags", "VM instructions"]
-    y-axis "rows" 0 --> 200
-    bar [151, 0, 20, 64]
+    y-axis "rows" 0 --> 150
+    bar [150, 0, 20, 64]
     line [0, 78, 19, 0]
 ```
 

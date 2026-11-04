@@ -128,7 +128,6 @@ pred:put/1	S2a	seed: missing_c_preds.tsv
 pred:put/2	S2a	seed: missing_c_preds.tsv
 pred:set_flag/2	FL1	seed: missing_c_preds.tsv
 pred:set_thread/2	TH1	seed: missing_c_preds.tsv
-pred:setlocale/3	CT1	seed: missing_c_preds.tsv
 pred:shell/2	Q10	seed: missing_c_preds.tsv
 pred:sub_atom_icasechk/3	P2	seed: missing_c_preds.tsv
 pred:succ/2	AR1	seed: missing_c_preds.tsv
@@ -216,3 +215,12 @@ flag:table_drop_intermediate	TAB1	seed: table_* flag
 flag:table_monotonic	TAB1	seed: table_* flag
 flag:table_space	TAB1	seed: table_* flag
 kfile:pl-qlf.jl	LB3	seed: the QLF refusal sites
+refusal:src/pl-wam.jl::PL_next_solution_guarded::the VM instruction I_YIELD (pl-vmi.c:2410)	CONT1	the named refusal of the instruction (its body is the owner's step)
+refusal:src/pl-wam.jl::PL_next_solution_guarded::the VM instruction I_RESET (pl-vmi.c:5754)	CONT1	the named refusal of the instruction (its body is the owner's step)
+refusal:src/pl-wam.jl::PL_next_solution_guarded::the VM instruction I_EXITRESET (pl-vmi.c:5801)	CONT1	the named refusal of the instruction (its body is the owner's step)
+refusal:src/pl-wam.jl::PL_next_solution_guarded::the VM instruction I_CALLCONT (pl-vmi.c:5839)	CONT1	the named refusal of the instruction (its body is the owner's step)
+refusal:src/pl-wam.jl::PL_next_solution_guarded::the VM instruction I_SHIFT (pl-vmi.c:5874)	CONT1	the named refusal of the instruction (its body is the owner's step)
+refusal:src/pl-wam.jl::PL_next_solution_guarded::the VM instruction I_SHIFTCP (pl-vmi.c:5908)	CONT1	the named refusal of the instruction (its body is the owner's step)
+refusal:src/pl-wam.jl::PL_next_solution_guarded::the VM instruction S_WRAP (calling a wrapped predicate from 	WRAP1	the named refusal of the instruction (its body is the owner's step)
+refusal:src/pl-wam.jl::PL_next_solution_guarded::the VM instruction S_CALLWRAPPER (calling a wrapped predicat	WRAP1	the named refusal of the instruction (its body is the owner's step)
+refusal:src/pl-wam.jl::PL_next_solution_guarded::the VM instruction S_TABLED (calling a tabled predicate)	TAB1	the named refusal of the instruction (its body is the owner's step)
