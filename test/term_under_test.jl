@@ -143,15 +143,20 @@ const LK_MESSAGE_COLLECTOR_PRINTING = replace(LK_MESSAGE_COLLECTOR, "(Kind, Term
 """
 Install the `user:message_hook/3` collector of [`LK_MESSAGE_COLLECTOR`](@ref) on the database of `ld`, once
 (loaded with `load_file!` from a file of its own); `printing=true` installs
-[`LK_MESSAGE_COLLECTOR_PRINTING`](@ref) instead (the message is recorded AND printed).
+[`LK_MESSAGE_COLLECTOR_PRINTING`](@ref) instead (the message is recorded AND printed). `kinds` names the message kinds recorded (default `error` and
+`warning`; `(:silent,)` for the `debug_mode(_)` messages, `(:informational,)` for `unwind(abort)`).
 """
 function lk_install_message_collector!(
-    gd::LogicKernel.PL_global_data{T}, ld::LogicKernel.PL_local_data{T}; printing::Bool=false
+    gd::LogicKernel.PL_global_data{T}, ld::LogicKernel.PL_local_data{T}; printing::Bool=false,
+    kinds::Tuple{Vararg{Symbol}}=(:error, :warning)
 )::Nothing where {T}
     m = LogicKernel.mk_sym(T, Symbol("\$lk_message"))
     if LogicKernel.isCurrentProcedure(LogicKernel.sym_key(m), 2, LogicKernel.MODULE_user(gd)) === nothing
         hook = tempname() * "_lk_message_collector.pl"     # once per database
-        write(hook, printing ? LK_MESSAGE_COLLECTOR_PRINTING : LK_MESSAGE_COLLECTOR)
+        text = printing ? LK_MESSAGE_COLLECTOR_PRINTING : LK_MESSAGE_COLLECTOR
+        kinds == (:error, :warning) ||
+            (text = replace(text, "( Kind == error ; Kind == warning )" => "( " * join(("Kind == $k" for k in kinds), " ; ") * " )"))
+        write(hook, text)
         hst, hball = LogicKernel.load_file!(gd, ld, hook)
         rm(hook; force=true)
         hst === :ok || error("lk_install_message_collector!: the collector did not load: $hst $hball")

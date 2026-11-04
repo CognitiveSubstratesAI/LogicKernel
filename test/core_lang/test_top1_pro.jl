@@ -24,6 +24,8 @@ include(joinpath(@__DIR__, "rules_common.jl"))
 "A database whose three user streams are buffers (`halt_exit` off): `(db, (inb, outb, errb), (ui, uo, ue))`."
 function _tp_db()
     db = _RDB()
+    # the `informational` unwind(abort) message is print_message/2's since LB4 b2: a `user:message_hook/3` collector records it
+    lk_install_message_collector!(db.gd, db.ld; kinds=(:informational,))
     db.gd.halt_exit = false
     bufs = (IOBuffer(), IOBuffer(), IOBuffer())
     ld = db.ld
@@ -60,11 +62,18 @@ _tp_user(x::Symbol) = _rf(":", _rs(:user), _rs(x))
 "Does `user:name` hold? (the marker was asserted)"
 _tp_has(db::_RDB, name::Symbol) = !isempty(_rcall(db, _rs(name)))
 
-"`unwind(abort)` messages `printMessage` collected."
-_tp_aborts(ld) =
-    count(
-        m -> m[1] === :informational && lk_eq(m[2], _rf("unwind", _rs(:abort))), ld.messages
+const _TP_ABORTS = IdDict{Any, Int}()       # per local data: the unwind(abort) messages taken so far
+"""
+The `unwind(abort)` messages `printMessage` printed on `ld` so far: the collector's records since the last call are
+taken (a query, so no exception may be pending) and added to the count.
+"""
+function _tp_aborts(ld)
+    n = count(
+        m -> m[1] === :informational && lk_eq(m[2], _rf("unwind", _rs(:abort))),
+        lk_take_messages!(ld)
     )
+    return _TP_ABORTS[ld] = get(_TP_ABORTS, ld, 0) + n
+end
 
 "The goals of the query_loop rows: a marker is asserted the first time the goal runs."
 function _tp_loop_db()
@@ -271,6 +280,7 @@ end
     @test [r & 0xffff for r in gd.halt_exited] == [7]
     LK.PL_clear_exception(ld)
     # another ball is left alone
+    m0 = _tp_aborts(ld)                                           # read with no exception pending
     LK.abortProlog(ld)
     n = length(gd.halt_exited)
     LK.halt_from_exception(gd, ld, ld.exception_term)
@@ -278,14 +288,14 @@ end
     # the abort ball: tracing and debugging off, the message printed; another ball prints nothing
     ld.debugstatus_tracing = true
     ld.debugstatus_debugging = true
-    m0 = _tp_aborts(ld)
     @test LK.restore_after_exception(gd, ld, ld.exception_term)
     @test !ld.debugstatus_tracing && !ld.debugstatus_debugging
-    @test _tp_aborts(ld) == m0 + 1
     LK.PL_clear_exception(ld)
+    @test _tp_aborts(ld) == m0 + 1
     LK.raise_halt_exception(ld, 1, true)
     @test LK.restore_after_exception(gd, ld, ld.exception_term)
-    @test _tp_aborts(ld) == m0 + 1
+    LK.PL_clear_exception(ld)
+    @test _tp_aborts(ld) == m0 + 1                                # the halt ball printed no abort message
 end
 
 @testset "query_loop: the three results" begin

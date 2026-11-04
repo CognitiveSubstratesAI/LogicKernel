@@ -362,7 +362,7 @@ _db_atom_list_enc(xs::Vector{String})::String =
 #   * the local data's debugger status and the mask bits (`debugmode`, pl-trace.c:2223-2275): while `debug` is on `debugstatus.debugging` is set,
 #     `PLFLAG_LASTCALL` and `PLFLAG_VMI_BUILTIN` (RUN_MODE_NORMAL) are cleared in the mask and `skiplevel` is SKIP_VERY_DEEP; off sets the bits again
 #     (the flag's table value `last_call_optimisation` is NOT changed: row db09);
-#   * the `silent` messages `debug_mode(true)` / `debug_mode(false)`, one per change (kept in `ld.messages`, printMessage; none for a repeated set);
+#   * the `silent` messages `debug_mode(true)` / `debug_mode(false)`, one per change (print_message/2's, read through the `message_hook` collector; none for a repeated set);
 #   * the access of `libswipl`: swipl 10.1.19's is `read` (set_libswipl found the library by dladdr, FF_READONLY, pl-prologflag.c:2483-2488); the kernel loads
 #     no library, so the LIBPL_PATH fallback (:2491-2493) answers: an atom flag, WRITABLE: `write`. A KNOWN DIFFERENCE, pinned here with swipl's answer
 #     (checklist: libswipl access read vs write, owner F8 with the dynamic-extension flags);
@@ -386,9 +386,12 @@ _db_atom_list_enc(xs::Vector{String})::String =
     ld = LK.PL_local_data{_DB}(gd)
     st, _ = LK.load_file!(gd, ld, path)
     @test st === :ok
+    # the `silent` messages are print_message/2's since LB4 b2: a `user:message_hook/3` collector records them (kept, in order, in `taken`)
+    lk_install_message_collector!(gd, ld; kinds=(:silent,))
+    taken = Tuple{Symbol, _DB}[]
     msg_text(m) = _db_enc(m[2])
-    debug_msgs() =
-        [m for m in ld.messages if occursin(_db_codes("debug_mode"), msg_text(m))]
+    msgs_with(code::String) = (append!(taken, lk_take_messages!(ld)); [m for m in taken if occursin(code, msg_text(m))])
+    debug_msgs() = msgs_with(_db_codes("debug_mode"))
     @test !ld.debugstatus_debugging
     @test LK.truePrologFlag(ld, LK.PLFLAG_LASTCALL)
     @test LK.truePrologFlag(ld, LK.PLFLAG_VMI_BUILTIN)
@@ -436,8 +439,7 @@ _db_atom_list_enc(xs::Vector{String})::String =
     @test LK.truePrologFlag(ld, LK.PLFLAG_LASTCALL)
     @test length(debug_msgs()) == n0 + 2                # none of this changed the mode
     # `tracemode(true)` is reached by no flag path (the flag `debug` only turns tracing off): the direct calls. It switches the debug mode on too.
-    trace_msgs() =
-        [m for m in ld.messages if occursin(_db_codes("trace_mode"), msg_text(m))]
+    trace_msgs() = msgs_with(_db_codes("trace_mode"))
     t0 = length(trace_msgs())
     old = Ref(true)
     @test LK.tracemode(ld, true, old)

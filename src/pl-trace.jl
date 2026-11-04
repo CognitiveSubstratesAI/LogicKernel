@@ -145,7 +145,7 @@ const SKIP_VERY_DEEP = typemax(UInt)
 # PORT: pl-trace.c debugmode
 # DIVERGES: one engine, so the local data is its argument (never NULL) and the message is always sent by the calling engine
 # (`set && ld == LD`); `old` is a `Ref{Bool}` or `nothing`. The messages go through the kernel's `printMessage`
-# (a `silent` `debug_mode(Bool)`, kept in `ld.messages` until boot/messages.pl runs). DBG1 (the tracer) owns what follows, each
+# (a `silent` `debug_mode(Bool)`, print_message/2's since LB4 b2: a test reads it through a `user:message_hook/3` collector). DBG1 (the tracer) owns what follows, each
 # a deferred part of the same function: `have_space_for_debugging` and `enlargeMinFreeStacks` (pl-trace.c:2163-2204, :2236-2241:
 # they only enlarge `min_free` of the stacks and the kernel's stacks grow by doubling, src/pl-gc.jl), `qf->debugSave = true` of
 # every query for `DBG_ALL` (:2246-2249: the kernel's query frame has no `debugSave` slot; `PL_Q_NODEBUG` is deferred as well,
