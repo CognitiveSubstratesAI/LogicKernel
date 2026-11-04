@@ -3289,8 +3289,9 @@ function PL_next_solution_guarded(
     # DIVERGES (audit D-0363 item 2; a recorded deferral, owner the step CONT1: pl-cont.c, the
     # continuations, and the engines): the clauses of reset/3, '$tbl_reset'/6, shift/1,
     # shift_for_copy/1, call_continuation/1 and '$engine_yield'/2 compile to these instructions as
-    # upstream's, so listing, decompile and clause shape are swipl's; their RUN raises
-    # `NotPortedError` naming the instruction and its upstream line until CONT1 ports them.
+    # upstream's, so listing, decompile and clause shape are swipl's. Their RUN: reset/3 and shift/1,
+    # shift_for_copy/1 run since CONT1 C2/C4; `I_CALLCONT` and `I_YIELD` raise `NotPortedError`
+    # naming the instruction and its upstream line until CONT1 C5/C6.
     # PORT: pl-vmi.c I_YIELD
     # DIVERGES: refused by name until CONT1 (above).
     @label I_YIELD
@@ -3360,18 +3361,55 @@ function PL_next_solution_guarded(
     )
 
     # PORT: pl-vmi.c I_SHIFT
-    # DIVERGES: refused by name until CONT1 (above).
+    # (pl-vmi.c:5874-5877 at the pin; CONT1 C4)
     @label I_SHIFT
-    throw(
-        NotPortedError{T}(DEF.name, "the VM instruction I_SHIFT (pl-vmi.c:5874)", "CONT1")
-    )
+    sh_copy = false                                 # VMH_GOTO(shift_common, false)
+    @goto shift_common
+
+    # PORT: pl-vmi.c shift_common
+    # (pl-vmi.c:5879-5906 at the pin; CONT1 C4)
+    # DIVERGES (representation only): upstream's `shift` trims `lTop` to the parent of `reset/3`, and
+    # `PL_close_foreign_frame(fid)` then sets `lTop` back to the foreign frame (pl-wam.c: `lTop = (LocalFrame) fr`),
+    # which sits above the trimmed frames: the net `lTop` is the one before `shift`, with the dead
+    # frames' words left on the stack. Here the trim (`setLTop!` in `shift`, src/pl-cont.jl) DROPS the
+    # records of the dead frames and of the foreign frame, and `lowerLTop!` (inside
+    # `PL_close_foreign_frame`) asserts that it only lowers `lTop`; so `lTop` is raised to the foreign
+    # frame's position first (a raise, nothing dropped, the dead records stay dead). The net `lTop`
+    # is upstream's. The ball is the DEREFERENCED location of the variable (`pushWordAsTermRef`, as
+    # `I_EXITRESET`).
+    @label shift_common
+    sh_k, sh_w, sh_p = _deref_loc(ld, -(varFrameP(ld.frames[FR].base, Int(PCc[PC])) + 1))
+    PC += 1                                         # ballp = varFrameP(FR, (int)*PC++)
+    sh_ball = pushWordAsTermRef(ld, (sh_k, sh_w, sh_p))
+
+    @SAVE_REGISTERS(QID)
+    sh_fid = PL_open_foreign_frame(ld)
+    sh_pc = shift(gd, ld, sh_ball, sh_copy)
+    if ld.lTop < sh_fid                             # the trim of `shift` went below the foreign frame
+        ld.lTop = sh_fid                            # (a raise: see the DIVERGES above)
+    end
+    PL_close_foreign_frame(ld, sh_fid)
+    @LOAD_REGISTERS(QID)
+
+    popTermRef(ld)
+
+    if sh_pc !== nothing
+        PCc = sh_pc.codes                           # PC = pc
+        PCl = sh_pc.literals
+        PC = sh_pc.pc
+        FR = ld.environment_frame                   # FR = environment_frame
+        DEF = ld.frames[FR].predicate::Definition{T}
+        ARGP = argp_t{T}(ARGP_SLOT, argFrameP(ld.lTop, 0), ph)  # ARGP = argFrameP(lTop, 0)
+        @goto next_instruction
+    else
+        @goto b_throw                               # THROW_EXCEPTION
+    end
 
     # PORT: pl-vmi.c I_SHIFTCP
-    # DIVERGES: refused by name until CONT1 (above).
+    # (pl-vmi.c:5908-5911 at the pin; CONT1 C4)
     @label I_SHIFTCP
-    throw(
-        NotPortedError{T}(DEF.name, "the VM instruction I_SHIFTCP (pl-vmi.c:5908)", "CONT1")
-    )
+    sh_copy = true                                  # VMH_GOTO(shift_common, true)
+    @goto shift_common
 
     # ── single sided unification (pl-vmi.c), SSU2 ─────────────────────────────────────────────────
     # An SSU clause (`Head => Body`, `Head ?=> Body`) starts with `I_CHP`, so a choice point of its
