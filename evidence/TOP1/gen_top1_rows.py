@@ -4,7 +4,7 @@
 # lines between the PINS-BEGIN/PINS-END markers of the test file.
 # A case is a list of steps (";;"-separated); a step is `p1|p2|chunk|after` : the prompt1/1 atom ("-" = not called), the prompt/2 atom ("-" =
 # not called), the line the terminal delivers (ends in \n), the text the goal writes after reading it. "\n" is a newline in every field.
-# The transcript of a case: n+1 segments (the output before the first chunk; the output after each chunk), each as its character codes.
+# The transcript of a case: n+1 pieces (the output before the first chunk; the output after each chunk), each as its character codes.
 # Usage (from the worktree root): python3 -I evidence/TOP1/gen_top1_rows.py
 import os, pty, re, select, subprocess, sys, tempfile, termios, time
 T = "test/core_lang/test_top1_prompt_swipl.jl"
@@ -73,7 +73,7 @@ if __name__ == "__main__":
             return ["%s %s" % (i, enc(session(drv, parse(spec)))) for i, spec in cases]
         a, b = run(), run()
     assert a == b, "two swipl runs differ"
-    # non-vacuity: every case has n+1 segments and some prompt text was written in the whole set
+    # non-vacuity: every case has n+1 pieces and some prompt text was written in the whole set
     for (i, spec), l in zip(cases, a):
         assert len(l.split(" ", 1)[1].split(";")) == len(parse(spec)) + 1, i
     assert any(len(l.split(" ", 1)[1].replace(";", "")) > 0 for l in a)

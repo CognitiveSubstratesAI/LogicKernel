@@ -3,7 +3,7 @@
 # evidence/TOP1/gen_top1_rows.py.
 # test/core_lang/test_top1_prompt_swipl.jl — what swipl writes before each read of `user_input`, and what the kernel's prompt functions write.
 #   * swipl writes the prompt in `Sread_terminal` (pl-os.c:2171-2185) and ONLY for a terminal input (`SIO_ISATTY`), so the generator runs swipl
-#     on a pty (echo off), feeds one line per step and drains the output after each line. A transcript is n+1 segments for n steps: the output
+#     on a pty (echo off), feeds one line per step and drains the output after each line. A transcript is n+1 pieces for n steps: the output
 #     before the first line, then the output after each line (the goal's own text, then the next prompt).
 #   * The kernel has no terminal read yet: `Sread_user` (pl-file.c:5987) and `Sread_terminal` are left to TOP1b. The harness `_tp_transcript` is
 #     their three lines made by hand (`prompt.next` set at the start, as `ResetTty` does, and again once a line ending in a newline was read;
@@ -35,7 +35,7 @@ const _TP_CASES = [
     ("tp12", raw"-|P2> |a\n|\n;;-|-|b\n|\n")
 ]
 
-# the transcripts swipl 10.1.19 gives (filled by evidence/TOP1/gen_top1_rows.py): the case id, then its segments as character codes
+# the transcripts swipl 10.1.19 gives (filled by evidence/TOP1/gen_top1_rows.py): the case id, then its pieces as character codes
 const _TP_PINNED = [
     # PINS-BEGIN
     "tp01 124,58,32;103,111,116,10",
@@ -65,7 +65,7 @@ function _tp_steps(spec::String)::Vector{NTuple{4, Union{Nothing, String}}}
     ]
 end
 
-"A transcript as the generator's `enc` writes it: the segments as character codes, `;` between segments, `,` between codes."
+"A transcript as the generator's `enc` writes it: the pieces as character codes, `;` between pieces, `,` between codes."
 _tp_enc(segs::Vector{String})::String =
     join([join(Int.(collect(s)), ",") for s in segs], ";")
 
@@ -111,7 +111,7 @@ function _tp_transcript(::Type{T}, steps)::Vector{String} where {T}
     return segs
 end
 
-"The pin of case `id`: its segments' encoding."
+"The pin of case `id`: its pieces' encoding."
 function _tp_pin(id::String)::Union{Nothing, String}
     for l in _TP_PINNED
         k, v = split(l, " "; limit=2)
@@ -134,18 +134,18 @@ end
         push!(pins, pin)
         @test _tp_enc(segs) == pin
     end
-    # not vacuous, both sides through ONE extractor: the cases are all pinned, prompts were written (some segments non-empty) and withheld
+    # not vacuous, both sides through ONE extractor: the cases are all pinned, prompts were written (some pieces non-empty) and withheld
     # (some prompt positions empty), on the kernel's side as on swipl's
     @test length(pins) == length(_TP_CASES) == length(_TP_PINNED)
     @test [first(split(l, " ")) for l in _TP_PINNED] == first.(_TP_CASES)
     @test length(unique(pins)) > 6
     @test count(!isempty, kernel) == length(kernel) > 0
-    nonempty_segments(ls) = sum(count(!isempty, split(l, ";"; keepempty=true)) for l in ls)
-    empty_segments(ls) = sum(count(isempty, split(l, ";"; keepempty=true)) for l in ls)
-    @test nonempty_segments(pins) > 20
-    @test empty_segments(pins) > 3
-    @test nonempty_segments(kernel) == nonempty_segments(pins)
-    @test empty_segments(kernel) == empty_segments(pins)
+    nonempty_pieces(ls) = sum(count(!isempty, split(l, ";"; keepempty=true)) for l in ls)
+    empty_pieces(ls) = sum(count(isempty, split(l, ";"; keepempty=true)) for l in ls)
+    @test nonempty_pieces(pins) > 20
+    @test empty_pieces(pins) > 3
+    @test nonempty_pieces(kernel) == nonempty_pieces(pins)
+    @test empty_pieces(kernel) == empty_pieces(pins)
 end
 
 @testset "the pins are swipl's own words (decoded)" begin
