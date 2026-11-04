@@ -73,7 +73,7 @@ MUTANTS = [
          file=W, targets=RUN,
          old="PL_Q_ALLOW_YIELD) == 0",
          new="PL_Q_ALLOW_YIELD) != 0"),
-    dict(id="CONT1-V3 shift_common does not raise lTop to the foreign frame before closing it (KILL test_cont_run_swipl.jl:148 r_meta_shift, :162 r_iter: lowerLTop! asserts p <= lTop)",
+    dict(id="CONT1-V3 shift_common does not raise lTop to the foreign frame before closing it (KILL test_cont_run_swipl.jl:313 t_lt_shift, :314 t_lt_copy, :317 t_lt_cont (the lTop white-box rows: lowerLTop! asserts p <= lTop, so the shifting row ends in an error where swipl answers `same`), also :148 r_meta_shift, :162 r_iter)",
          file=W, targets=RUN,
          old="if ld.lTop < sh_fid",
          new="if false"),
