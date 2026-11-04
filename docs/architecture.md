@@ -7228,3 +7228,34 @@ cbf4e189.
   runs the rows it flips.
 - **Rows that agree with swipl since the first boot**: test_attvar_wakeup.jl nv04 ('$attvar':uhook/3) and fz02, fz06,
   fz10, fz11, fz13, fz14 (frozen/2) lost their known-difference pins and assert swipl's answer.
+
+## CT1a — `setlocale/3` (pl-ctype.c, pulled into LB4 b2: the boot's `os_user_lang` calls it; edit-only, the gate decides)
+
+The boot (boot/messages.pl `os_user_lang`) calls `setlocale(messages, _, '')` under `catch/3`; a predicate undefined in the
+boot session ends the boot, so `setlocale/3` of swipl-devel cbf4e189 `src/os/pl-ctype.c` (`PRED_IMPL("setlocale", 3,
+setlocale, 0)`, with `lccats`) is ported ahead of the rest of that file.
+
+- **Split.** The categories (`LC_*`, `lccat`, `lccats` in upstream's order) are in src/os/pl-ctype.jl, which loads BEFORE
+  the FLI; the predicate (`pl_setlocale3_va`, the text reader `_ctype_chars`, libc's call `_libc_setlocale`, the table
+  `PL_predicates_from_ctype`) is in src/pl-sys.jl, which needs the FLI. src/pl-sys.jl carries the second `# UPSTREAM`
+  line for pl-ctype.c. The table is registered after glob (pl-ext.c:526, `REG_PLIST(ctype)`) in `_PRED_TABLES` and
+  `_FOREIGN_VA`, so every `_FOREIGN_VA` index after glob moves up by one.
+- **Platform: the `LC_*` values are glibc's** (`<locale.h>` -> bits/locale.h: LC_CTYPE 0, LC_NUMERIC 1, LC_TIME 2,
+  LC_COLLATE 3, LC_MONETARY 4, LC_MESSAGES 5, LC_ALL 6), as the kernel runs on Linux/glibc (`LIBC`, src/os/pl-os.jl). A libc
+  with other values (musl, macOS, Windows) needs its own table; DIVERGES owner: none needed, the CI runs ubuntu-24.04 only (glibc 2.39, the version of the pins).
+- **Semantics as pl-ctype.c:912-955.** The text of A1, and of A3 when it is nonvar, is read as `PL_get_chars(.., CVT_ATOM|
+  CVT_EXCEPTION)`: ISO Latin-1 text, so a character above 0xFF raises `representation_error(encoding)` (swipl 10.1.19:
+  context message 'cannot represent text using encoding iso_latin_1') and the name ends at its first NUL. Then: category by
+  name; Old = libc `setlocale(cat, NULL)` unified with A2 as an atom; when `PL_compare(A2, A3)` is not equal, libc
+  `setlocale(cat, locale)` sets it (a NULL A3 only queries); NULL with errno ENOENT -> `existence_error(locale, A3)`, any
+  other errno -> `system_error` (ERR_SYSCALL "setlocale"); an unknown category -> `domain_error(category, A1)`.
+- **DIVERGES (representation only):** the old locale is an atom of its UTF-8 text; the comparison raises no `CMP_ERROR`
+  (the kernel's compare raises nothing); a failed query fails. `lccats` is a tuple, not a NULL-terminated array.
+- **LEFT to the port of pl-locale.c, owner CT1:** `updateLocale(category, locale)` (`#ifdef O_LOCALE`), the update of the
+  default locale object after a successful set. It shows in `locale_property/2`, `current_locale/1` and `format/2`'s
+  grouping, whose rows are `pred:locale_create/3` and its neighbours in docs/r2_upstream.tsv (class `other`). The gate
+  regenerates the R2 tables: the row `pred setlocale/3` flips missing -> done and the owner line
+  `pred:setlocale/3	CT1` of docs/r2_owners.tsv goes; the updateLocale half stays with CT1.
+- **Rows:** test/core_lang/test_setlocale_swipl.jl (t0..t31, swipl 10.1.19's answers byte-identical in two runs and under
+  LANG=C, LANG unset, LC_ALL set); the locales named are C, POSIX, '' and C.utf8, and every row puts the locale and its
+  environment variables back. Mutants: tools/mutants/CT1A.py.
