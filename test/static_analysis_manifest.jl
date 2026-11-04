@@ -2957,9 +2957,7 @@ const _MANIFEST_LB2B_FREE = (
 # argument is the constructor `PL_global_data{T}` (its singleton type, as the registry's default and b2's caller pass it).
 _manifest_gd_template(::Type{T}) where {T} = (
     (LK.copy_global_data, Tuple{LK.PL_global_data{T}}, false),
-    (LK._copy_stream_free, Tuple{Vector{Union{Nothing, LK.IOSTREAM}}}, false),
     (LK._copy_stream_free, Tuple{IdDict{LK.IOSTREAM, T}}, false),
-    (LK._copy_stream_free, Tuple{Dict{UInt64, LK.IOSTREAM}}, false),
     (LK.gd_template, Tuple{Type{T}}, false),
     (LK.gd_template, Tuple{Type{T}, Type{LK.PL_global_data{T}}}, false),
     (LK.gd_template_built, Tuple{Type{T}}, false),
@@ -3586,6 +3584,9 @@ const _DISPATCH_MANIFEST_TUPLE = (
     _manifest_gd_template(_M1)...,
     _manifest_gd_template(_M2)...,
     _manifest_gd_template(_M3)...,
+    # the two stream-table copies that name no term type (listed once, not once per type: a duplicate fails the dispatch claims)
+    (LK._copy_stream_free, Tuple{Vector{Union{Nothing, LK.IOSTREAM}}}, false),
+    (LK._copy_stream_free, Tuple{Dict{UInt64, LK.IOSTREAM}}, false),
     (LK.reset_gd_templates!, Tuple{}, false),
     (
         LK.gd_template_registry,
