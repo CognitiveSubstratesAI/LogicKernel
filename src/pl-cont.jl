@@ -6,9 +6,10 @@
 # What the kernel takes from SWI-Prolog's delimited continuations (pl-cont.c): `shift/1` collects the
 # environments between the shifting frame and the `reset/3` frame it matches as a list of
 # `'$cont$'(Module, Clause, PC, Slot...)` terms (`put_continuation`, `put_environment`), unifies the
-# list with the continuation of `reset/3`, and returns from `reset/3` (`shift`); the VMI bodies
-# `I_SHIFT` and `I_SHIFTCP` are in src/pl-wam.jl. The tabling branches (`'$tbl_reset'/6` and its
-# worklists) are refused by name, owner TAB1.
+# list with the continuation of `reset/3`, and returns from `reset/3` (`shift`); `push_continuation`
+# makes the frame of one such environment again, for `call_continuation/1`. The VMI bodies `I_SHIFT`,
+# `I_SHIFTCP` and `I_CALLCONT` are in src/pl-wam.jl. The tabling branches (`'$tbl_reset'/6` and its
+# worklists) are refused by name, owner TAB1; `push_continuation_list` (tabling only) is left to TAB1.
 
 # PORT: pl-cont.c FRESET_NO_FRAME
 "`findReset`: no `reset/3` frame matches the ball (pl-cont.c)."
@@ -345,4 +346,92 @@ function shift(
     msg = ("No matching reset/3 call", "Cannot catch continuation through findall/3")
     PL_error(ld, "shift", 1, msg[-rc], ERR_EXISTENCE, mk_sym(T, :reset), ball)
     return nothing
+end
+
+# PORT: pl-cont.c push_continuation
+# DIVERGES: `continuation` is a term reference, `pfr` a frame index and the result a `Code`, or
+# `nothing` with the exception raised. The new frame is the record pushed at `lTop` (`pushFrame!`),
+# upstream's cast of `top`. The words of the term are read dereferenced; a context that is not an
+# atom, a clause that is not a blob, a PC that is not an integer or an arity below 3 raise the
+# `type_error(continuation, _)` of a non-matching arity. `clause_clref` gives the `Clause` for any
+# serial of the append-only table, erased or not, as upstream's blob keeps the clause. Left out: the
+# blob word upstream stores below the frame (it only protects the blob from atom GC; there is none)
+# and the `DEBUG(MSG_CONTINUE)` output. The room asked for is the frame, its slots and `LOCAL_MARGIN`
+# (upstream's margin is the stack's own spare); growing the local stack moves nothing, so there is no
+# `retry`. A slot is linked from its global cell (`_slot_from_cell!`, `linkValI`); a choice-point slot
+# keeps the word `consInt(position)` that `put_environment` copied, when that position is still a
+# choice point of the chain (upstream's `chp > ch` walk compares addresses; positions here), else it
+# names the newest choice point. The PC of the term is the 0-based offset: the index is offset + 1.
+"""
+    push_continuation(gd, ld, continuation, pfr, pcret) -> Union{Nothing, Code}
+
+Push the frame of the environment `'\$cont\$'(Context, Clause, PC, Slot...)` in term reference
+`continuation` above frame `pfr`, returning into `pcret`, and give the code to resume it at
+(pl-cont.c); `nothing` with an exception when it is no environment.
+"""
+function push_continuation(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, continuation::term_t, pfr::Int, pcret::Code{T}
+)::Union{Nothing, Code{T}} where {T}
+    ck, cw, _ = _deref_loc(ld, -(continuation + 1))             # cont = valTermRef(continuation); deRef(cont)
+    if !(ck == DU_WORD && _is_gcompound(cw))                    # isTerm(*cont)
+        PL_type_error(ld, "continuation", continuation)
+        return nothing
+    end
+    cp = valPtr(cw)                                             # Functor f = valueTerm(*cont)
+    arity = arityFunctor(ld.functors, ld.gstack[cp])
+    mk, mw, _ = arity >= 3 ? _deref_loc(ld, cp + 1) : (DU_CELL, word(0), 0)
+    bk, bw, _ = arity >= 3 ? _deref_loc(ld, cp + 2) : (DU_CELL, word(0), 0)
+    pk, pw, _ = arity >= 3 ? _deref_loc(ld, cp + 3) : (DU_CELL, word(0), 0)
+    cl = nothing
+    if mk == DU_WORD && isAtomW(mw) && bk == DU_WORD && isAtomW(bw) && pk == DU_VALUE && isTaggedIntW(pw)
+        cl = clause_clref(gd, _atom_value(ld, bw))
+    end
+    if cl === nothing || arity != Int(cl.variables) + 3
+        PL_type_error(ld, "continuation", continuation)
+        return nothing
+    end
+    cl = cl::Clause{T}
+    mname = _atom_value(ld, mw)                                 # atom_t mname = word2atom(*ep++)
+    pcoffset = Int(valInt(pw))                                  # pcoffset = (size_t)valInt(*ep++)
+
+    ensureLocalSpace(ld, SIZEOF_LOCALFRAME + Int(cl.variables) + LOCAL_MARGIN) || return nothing
+
+    nfr = pushFrame!(ld, ld.lTop)                               # fr = (LocalFrame)top
+    f = ld.frames[nfr]
+    ap = argFrameP(f.base, 0)
+    ep = cp + 4                                                 # the first slot of the term
+    nvars = Int(cl.variables)
+    for i in 0:(Int(cl.prolog_vars) - 1)
+        _slot_from_cell!(ld, ap + i + 1, ep + i)                # *ap = linkValI(ep)
+    end
+    for i in Int(cl.prolog_vars):(nvars - 1)
+        c = ld.gstack[ep + i]
+        newest = consInt(Int64(ld.choices[ld.BFR].base))        # consTermRef(LD->choicepoints)
+        if isTaggedIntW(c)
+            ichp = Int(valInt(c))
+            chp = ld.BFR
+            while chp != 0 && ld.choices[chp].base > ichp       # for ( chp = LD->choicepoints; chp > ch; ...)
+                chp = ld.choices[chp].parent
+            end
+            ld.slots[ap + i + 1] = (chp != 0 && ld.choices[chp].base == ichp) ? c : newest
+        else
+            ld.slots[ap + i + 1] = newest
+        end
+    end
+    setLTop!(ld, argFrameP(f.base, nvars))                      # lTop = top
+
+    f.programPointer = pcret                                    # fr->programPointer = pcret
+    f.parent = pfr                                              # fr->parent = pfr
+    setNextFrameFlags(f, ld.frames[pfr])
+    f.clause = ClauseRef{T}(nothing, word(0), cl, nothing)      # fr->clause = cref
+    f.fctx = UInt(0)
+    setFramePredicate(f, cl.predicate)
+    if is_nil(mname)                                            # mname == ATOM_nil
+        f.context = (f.predicate::Definition{T}).module_        # fr->context = fr->predicate->module
+    else
+        setContextModule!(f, lookupModule(gd, mname).index)     # fr->context = lookupModule(mname); set(fr, FR_CONTEXT)
+    end
+    setGenerationFrame(gd, ld, nfr)
+    ld.environment_frame = nfr
+    return Code{T}(cl.codes, cl.literals, pcoffset + 1)         # cl->codes + pcoffset
 end
