@@ -7,9 +7,10 @@
 # What the kernel takes from SWI-Prolog's public C interface header (SWI-Prolog.h): the flags a
 # query is opened with and the codes `PL_next_solution` returns (decision 1); since V5a2 the types
 # and the registration record of the foreign interface (decision 5). Not ported: the flags
-# of the parts decision 1 leaves out — `PL_Q_ALLOW_YIELD`,
-# `PL_Q_TRACE_WITH_YIELD`, `PL_Q_EXCEPT_THREAD_EXIT` — and the yield codes `PL_S_YIELD_DEBUG`,
-# `PL_S_YIELD`. Since HALT1: `PL_Q_EXCEPT_HALT` and the halt flags `PL_CLEANUP_*`, `PL_HALT_WITH_EXCEPTION`.
+# of the parts decision 1 leaves out — `PL_Q_TRACE_WITH_YIELD`, `PL_Q_EXCEPT_THREAD_EXIT` — and the yield
+# codes `PL_S_YIELD_DEBUG`, `PL_S_YIELD`. Since HALT1: `PL_Q_EXCEPT_HALT` and the halt flags `PL_CLEANUP_*`,
+# `PL_HALT_WITH_EXCEPTION`. `PL_Q_ALLOW_YIELD` is declared (since CONT1) for `I_YIELD`'s test; no query opens
+# with it until the engines (TH1).
 
 # PORT: SWI-Prolog.h PL_Q_DEBUG
 "Query flag: `true`, for backward compatibility; opened as `PL_Q_NORMAL` (SWI-Prolog.h)."
@@ -32,6 +33,9 @@ const PL_Q_EXT_STATUS = UInt32(0x0040)
 # PORT: SWI-Prolog.h PL_Q_EXCEPT_HALT
 "Query flag: the query handles `unwind(halt(Status))` (SWI-Prolog.h; HALT1)."
 const PL_Q_EXCEPT_HALT = UInt32(0x0080)
+# PORT: SWI-Prolog.h PL_Q_ALLOW_YIELD
+"Query flag: support `I_YIELD` (SWI-Prolog.h); set by the engines only (TH1)."
+const PL_Q_ALLOW_YIELD = UInt32(0x0020)
 # PORT: SWI-Prolog.h PL_Q_DETERMINISTIC
 "Query flag, the engine's own: the call was deterministic (SWI-Prolog.h)."
 const PL_Q_DETERMINISTIC = UInt32(0x1000)

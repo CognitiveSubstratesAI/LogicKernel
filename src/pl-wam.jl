@@ -3289,14 +3289,26 @@ function PL_next_solution_guarded(
     # DIVERGES (audit D-0363 item 2; a recorded deferral, owner the step CONT1: pl-cont.c, the
     # continuations, and the engines): the clauses of reset/3, '$tbl_reset'/6, shift/1,
     # shift_for_copy/1, call_continuation/1 and '$engine_yield'/2 compile to these instructions as
-    # upstream's, so listing, decompile and clause shape are swipl's. Their RUN: reset/3 and shift/1,
-    # shift_for_copy/1 run since CONT1 C2/C4; `I_CALLCONT` and `I_YIELD` raise `NotPortedError`
-    # naming the instruction and its upstream line until CONT1 C5/C6.
+    # upstream's, so listing, decompile and clause shape are swipl's. Their RUN: reset/3, shift/1,
+    # shift_for_copy/1 and call_continuation/1 run since CONT1 C2/C4/C5; `I_YIELD` outside an engine
+    # raises the permission error since C6, in an engine (TH1) it raises `NotPortedError`
+    # naming the instruction and its upstream line.
     # PORT: pl-vmi.c I_YIELD
-    # DIVERGES: refused by name until CONT1 (above).
+    # (pl-vmi.c:2410-2418 at the pin; CONT1 C6) The branch of a query opened without `PL_Q_ALLOW_YIELD`
+    # (every query here): `permission_error(execute, vmi, 'I_YIELD')`, context message "not an engine".
+    # DIVERGES: the branch of an engine's query (pl-vmi.c:2419-2447: `lTop`, the foreign frame, the
+    # yielded term and code, `SOLUTION_RETURN`) is deferred, owner TH1: it raises `NotPortedError`.
     @label I_YIELD
+    @SAVE_REGISTERS(QID)
+    if (ld.queries[QueryFromQid(ld, QID)].flags & PL_Q_ALLOW_YIELD) == 0    # !(QF->flags&PL_Q_ALLOW_YIELD)
+        PL_error(ld, "", 0, "not an engine", ERR_PERMISSION_VMI, "I_YIELD")
+        @LOAD_REGISTERS(QID)
+        @goto b_throw                               # THROW_EXCEPTION
+    end
     throw(
-        NotPortedError{T}(DEF.name, "the VM instruction I_YIELD (pl-vmi.c:2410)", "CONT1")
+        NotPortedError{T}(
+            DEF.name, "the VM instruction I_YIELD in an engine (pl-vmi.c:2419)", "TH1"
+        )
     )
 
     # PORT: pl-vmi.c I_RESET
