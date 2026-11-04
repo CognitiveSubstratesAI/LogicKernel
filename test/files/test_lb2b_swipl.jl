@@ -75,6 +75,10 @@ function _lb2b_fixtures()
         write(f, "")
     end
     mkdir("lk_lb2b_rd1")
+    mkdir("lk_lb2b_gs")                                       # LB2B-E4: two directories whose names differ at `.`/`/`
+    mkdir("lk_lb2b_gs.d")
+    write(joinpath("lk_lb2b_gs", "f1"), "")
+    write(joinpath("lk_lb2b_gs.d", "f1"), "")
     return nothing
 end
 
@@ -180,6 +184,22 @@ function swipl_lines(path::String, names::Vector{String})::Vector{String}
         read(pipeline(`swipl -q $f`; stdin=devnull, stderr=devnull), String)
     end
     return String.(split(chomp(out), '\n'; keepempty=false))
+end
+
+# LB2B-E4 (white box): the sort of expand_file_name/2's answers, called on an UNSORTED vector of names. The order in which a
+# directory's names come out of readdir is the file system's, so no row can be sure to see a missing sort: this one does not
+# go through the file system. pl-glob.c sort_expand compares with strcmp (bytes): 'A' < 'a', a prefix before its extensions,
+# and '-' (0x2D) < '.' (0x2E) < '/' (0x2F), so the names of two directories sort by the directory name, `/` last.
+@testset "LB2b: sort_expand sorts the names expand found, bytewise (pl-glob.c sort_expand)" begin
+    gd = LK.PL_global_data{_TL}()
+    ld = LK.PL_local_data{_TL}(gd)
+    unsorted = ["lk_b/f", "lk_a/f", "lk_a.d/f", "lk_a-b/f", "lk_a", "lk_A/f", "lk_"]
+    sorted = ["lk_", "lk_A/f", "lk_a", "lk_a-b/f", "lk_a.d/f", "lk_a/f", "lk_b/f"]
+    @test unsorted != sorted                                    # not vacuous: the input is out of order
+    @test LK.sort_expand(ld, unsorted) == sorted
+    @test LK.sort_expand(ld, reverse(sorted)) == sorted
+    @test LK.sort_expand(ld, sorted) == sorted
+    @test LK.sort_expand(ld, String[]) == String[]
 end
 
 @testset "LB2b: the file predicates == swipl's answers (the .out), through a program" begin

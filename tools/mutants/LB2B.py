@@ -4,8 +4,8 @@
 # sort_expand, expand_file_name/2, directory_files/2; os/pl-os.c: BaseName, DirName, AbsoluteFile, PL_cwd, ChDir), run ONCE, in CI
 # (.github/workflows/mutation.yml; locally: tools/mutate.sh run). Format: tools/mutate_drive.py's: `id`, `file`, `old` (must occur
 # EXACTLY once), `new`, optional `equivalent` (file:line reason) and `targets`. The rows are the tNNN of test/files/test_lb2b_swipl.pl
-# (the generator evidence/LB2B/gen_lb2b_rows.py: the numbers move when a row is inserted, the .pl is the index; the six rows added
-# last are t29, t248, t254, t255, t262, t366 and t392). Verdicts: written by the battery, not yet run.
+# (the generator evidence/LB2B/gen_lb2b_rows.py: the numbers move when a row is inserted, the .pl is the index; the rows added
+# last are t29, t248, t254, t255, t262, t366, t392 and, for E4 and E6, t393, t394 and t395). Verdicts: written by the battery, not yet run.
 # The `old` strings are short single-line anchors (one two-line anchor where a branch has no unique line): RE-FIT any that
 # `tools/warm.sh fmt` rewraps (mutate_drive.py refuses a string that does not occur exactly once). Every `old` was counted with
 # grep -c -F at wip/lb2bw before this file was written (a text count, no Julia run).
@@ -88,14 +88,14 @@ MUTANTS = [
     dict(id="LB2B-E3 directory_files/2 leaves out `.` and `..` (KILL t291, t292, t293, t294, t295)", file=G, targets=TO,
          old="for e in vcat([\".\", \"..\"], names)",
          new="for e in names"),
-    dict(id="LB2B-E4 the answers of expand_file_name/2 stay in directory order (KILL t311, t312; the order of readdir is the file system's)",
+    dict(id="LB2B-E4 the answers of expand_file_name/2 stay in the order the directory segments were visited (KILL the testset `sort_expand sorts the names expand found` (white box, an unsorted vector) and t393; the names of ONE directory come sorted from libuv's scandir and a file system may sort by luck, so t311/t312 cannot be the kill)",
          file=G, targets=TL,
          old="return sort(files)",
          new="return files"),
     dict(id="LB2B-E5 a trailing literal segment is added without the existence test (KILL t319, t322)", file=G, targets=TL,
          old="if last == 1 || utf8_exists_file(path)",
          new="if last == 1"),
-    dict(id="LB2B-E6 expand_file_name/2 accepts a name four times the path limit (KILL t354)", file=G, targets=TL,
+    dict(id="LB2B-E6 expand_file_name/2 accepts a name four times the path limit (KILL t394; expandVars refuses a plain name of that length too, so only a name that SHRINKS in expansion reaches the length test)", file=G, targets=TL,
          old="if ncodeunits(s) > PATH_MAX - 1",
          new="if ncodeunits(s) > PATH_MAX * 4"),
     # ── pl-files.c helpers ──

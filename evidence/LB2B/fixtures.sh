@@ -6,3 +6,4 @@ ln -s lk_lb2b_file lk_lb2b_link; ln -s lk_lb2b_dir lk_lb2b_dlink; ln -s lk_lb2b_
 ln -s lk_lb2b_loop2 lk_lb2b_loop1; ln -s lk_lb2b_loop1 lk_lb2b_loop2
 : > lk_lb2b_exec; chmod 755 lk_lb2b_exec; : > lk_lb2b_ro; chmod 444 lk_lb2b_ro
 : > lk_lb2b_r1; : > lk_lb2b_r2; : > lk_lb2b_r3; : > lk_lb2b_r4; mkdir lk_lb2b_rd1; : > lk_lb2b_m1
+mkdir lk_lb2b_gs lk_lb2b_gs.d; : > lk_lb2b_gs/f1; : > lk_lb2b_gs.d/f1
