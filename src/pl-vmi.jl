@@ -60,6 +60,12 @@
 # `CA1_INTEGER` operand the integer itself as a signed code (`scode`; as `A_ADD_FC`'s). The
 # `argtype` column keeps upstream's kinds, so a
 # reader decodes each operand by its kind as upstream does — a literal kind through the table.
+#
+# DIVERGES (owner: the QLF step, audit D-0408 item 2): the ABSOLUTE order of pl-vmi.c is not reproduced. Only the tail
+# from `B_ARG_CF` on follows it (the relative-order row of test_cont_boot_swipl.jl); the landed steps' `S_*` and earlier
+# opcodes (21 descents against pl-vmi.c's order) keep their numbers, as they were grouped by landing. An opcode number is
+# observable only where QLF/wic reads or writes a clause's code words, so the QLF step renumbers the whole table with its
+# own row.
 
 # ── operand kinds and flags (pl-incl.h) ─────────────────────────────────────────────────────────
 # PORT: pl-incl.h CA1_PROC

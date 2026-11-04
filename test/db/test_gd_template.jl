@@ -19,7 +19,8 @@ include(joinpath(@__DIR__, "index_testlib.jl"))
 # TERM TYPES PER CHUNK: REFERENCE — built on the term layer; every type in CI and at milestones
 include(joinpath(@__DIR__, "..", "term_under_test.jl"))
 
-const _P = lk_term_type(Union{Int64, Float64})
+# the payload the booted constructor needs: the boot files carry strings and big numbers (LB4 b2 turns the boot on)
+const _P = lk_term_type(Union{Int64, Float64, String, BigInt, Rational{BigInt}})
 _ps(n) = lk_sym(_P, Symbol(n))
 _pe(f, xs::_P...) = mk_expr(_P, _P[_ps(f), xs...])
 _pg(v) = lk_gnd(_P, v)
@@ -228,7 +229,7 @@ end
 end
 
 @testset "the stream tables: a closed slot is kept, a live stream refuses the copy" begin
-    gd = LK.PL_global_data{_P}()
+    gd = LK.setupProlog(_P)                                         # unbooted: its stream table is empty (a booted copy's has the standard slots)
     s = LK.Sopen_string(Vector{UInt8}("abc"), 3, "r")
     @test s !== nothing
     @test LK.getStreamContext(gd, s) == 1
@@ -302,9 +303,9 @@ end
 @testset "the registry builds once per process and term type" begin
     LK.reset_gd_templates!()
     n1, n2 = Ref(0), Ref(0)
-    b1 = () -> (n1[] += 1; LK.PL_global_data{_P}())
+    b1 = () -> (n1[] += 1; LK.setupProlog(_P))                 # an unbooted build: the registry counts builds, whatever they make
     other = LK.Term{Float64} == _P ? LK.Term{Int64} : LK.Term{Float64}   # a second term type
-    b2 = () -> (n2[] += 1; LK.PL_global_data{other}())
+    b2 = () -> (n2[] += 1; LK.setupProlog(other))
     @test !LK.gd_template_built(_P) && !LK.gd_template_built(other)
     t1 = LK.gd_template(_P, b1)
     @test LK.gd_template(_P, b1) === t1 && n1[] == 1                # built once
@@ -335,7 +336,7 @@ end
 @testset "the registry is not mutated after init" begin
     LK.reset_gd_templates!()
     reg = LK._GD_TEMPLATES
-    t = LK.gd_template(_P, () -> LK.PL_global_data{_P}())
+    t = LK.gd_template(_P, () -> LK.setupProlog(_P))
     d0 = gd_digest(t)
     @test length(d0) > 100                                          # non-vacuous
     keys0 = collect(keys(reg.templates))

@@ -224,3 +224,6 @@ refusal:src/pl-wam.jl::PL_next_solution_guarded::the VM instruction I_SHIFTCP (p
 refusal:src/pl-wam.jl::PL_next_solution_guarded::the VM instruction S_WRAP (calling a wrapped predicate from 	WRAP1	the named refusal of the instruction (its body is the owner's step)
 refusal:src/pl-wam.jl::PL_next_solution_guarded::the VM instruction S_CALLWRAPPER (calling a wrapped predicat	WRAP1	the named refusal of the instruction (its body is the owner's step)
 refusal:src/pl-wam.jl::PL_next_solution_guarded::the VM instruction S_TABLED (calling a tabled predicate)	TAB1	the named refusal of the instruction (its body is the owner's step)
+refusal:src/os/pl-files.jl::get_file_name::PL_get_file_name flag PL_FILE_SEARCH (system:absolute_file_n	LB4	the first boot: absolute_file_name/3 of init.pl runs through PL_get_file_name(PL_FILE_SEARCH)
+refusal:src/os/pl-files.jl::_iri_hook_refused::iri_hook $what (`\$iri`:iri_hook/4 of init.pl)	LB5-LB7	off the load path: serves http:// style IRIs; the library ring
+refusal:src/os/pl-files.jl::_tmp_file_refused::what	LB5-LB7	tmp_file/2 and $tmp_file_stream/4: boot, off the load path (lb5_sizing.md Ring Q)

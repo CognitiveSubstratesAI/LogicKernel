@@ -1956,10 +1956,10 @@ or **platform** (a Windows or macOS definition: out of the count). **NO OWNER** 
 | category | done | refused | missing | platform | NO OWNER |
 |---|---:|---:|---:|---:|---:|
 | predicates (C-defined, reached by the boot) | 272 | 0 | 150 | 3 | 1 |
-| refusal sites | 0 | 78 | 0 | 0 | 55 |
+| refusal sites | 0 | 78 | 0 | 0 | 52 |
 | Prolog flags | 64 | 19 | 20 | 0 | 35 |
 | VM instructions | 169 | 0 | 64 | 0 | 7 |
-| **total** | 505 | 97 | 234 | 3 | 98 |
+| **total** | 505 | 97 | 234 | 3 | 95 |
 
 #### The boot and library files
 
@@ -2012,17 +2012,18 @@ Predicate rows each file's calls reach (a predicate several files call counts in
 | TRIE1 | 7 | 7 | 0 | `$trie_gen_node/3`, `$trie_property/2`, `is_trie/1`, `trie_gen/2`, `trie_gen/3`, `trie_lookup/3`, `trie_term/2` |
 | CONT1 | 6 | 0 | 6 | `refusal the VM instruction I_CALLCONT (pl-vmi.c:…`, `refusal the VM instruction I_EXITRESET (pl-vmi.c…`, `refusal the VM instruction I_RESET (pl-vmi.c:575…`, `refusal the VM instruction I_SHIFT (pl-vmi.c:587…`, `refusal the VM instruction I_SHIFTCP (pl-vmi.c:5…`, `refusal the VM instruction I_YIELD (pl-vmi.c:241…` |
 | ZIP1 | 6 | 6 | 0 | `$rc_handle/1`, `zip_clone/2`, `zip_close_/2`, `zip_file_info_/3`, `zipper_goto/2`, `zipper_open_current/3` |
+| LB5-LB7 | 4 | 2 | 2 | `$activate_static_extension/1`, `$clause_term_position/3`, `refusal iri_hook $what ('\$iri':iri_hook/4 of in…`, `refusal what` |
 | S2a | 4 | 4 | 0 | `get/1`, `get/2`, `put/1`, `put/2` |
 | TX1 | 4 | 4 | 0 | `$snapshot/1`, `$transaction/2`, `$transaction/3`, `$undo/1` |
 | WRAP1 | 4 | 2 | 2 | `$wrapped_implementation/3`, `unwrap_predicate/2`, `refusal the VM instruction S_CALLWRAPPER (callin…`, `refusal the VM instruction S_WRAP (calling a wra…` |
 | CT1 | 2 | 2 | 0 | `char_type/2`, `code_type/2` |
 | FL1 | 2 | 2 | 0 | `get_flag/2`, `set_flag/2` |
-| LB5-LB7 | 2 | 2 | 0 | `$activate_static_extension/1`, `$clause_term_position/3` |
 | P2 | 2 | 2 | 0 | `$seek_list/4`, `sub_atom_icasechk/3` |
+| LB4 | 1 | 0 | 1 | `refusal PL_get_file_name flag PL_FILE_SEARCH (sy…` |
 | PR1 | 1 | 1 | 0 | `$foreign_predicate_source/2` |
 | SRC2 | 1 | 1 | 0 | `$unload_file/1` |
 | TAI1 | 1 | 1 | 0 | `format_time/3` |
-| NO OWNER | 98 | 28 | 70 | `apple_current_locale_identifier/1`, `B_SMALLINTW`, `B_THROW`, `H_SMALLINTW`, `L_SMALLINTW`, `S_DET`, `S_INCR_DYNAMIC`, `S_THREAD_LOCAL`, … +90 |
+| NO OWNER | 95 | 28 | 67 | `apple_current_locale_identifier/1`, `B_SMALLINTW`, `B_THROW`, `H_SMALLINTW`, `L_SMALLINTW`, `S_DET`, `S_INCR_DYNAMIC`, `S_THREAD_LOCAL`, … +87 |
 
 #### Missing and refused per category
 
