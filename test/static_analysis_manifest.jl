@@ -2014,6 +2014,9 @@ function _manifest_index(T)
             )
         ]...,
         (LK._sys_chars, Tuple{LD, Int}, false),
+        # CT1a — setlocale/3 (src/pl-sys.jl; pl-ctype.c): the predicate and its text reader, over term type T
+        (LK.pl_setlocale3_va, Tuple{LD, Int, Int, LK.foreign_context{T}}, false),
+        (LK._ctype_chars, Tuple{LD, Int}, false),
         (LK.Setenv, Tuple{LD, String, String}, false),
         (LK.Unsetenv, Tuple{LD, String}, false),
         (LK.get_file_name, Tuple{LD, Int, Int}, false),
@@ -3429,6 +3432,9 @@ const _DISPATCH_MANIFEST_TUPLE = (
     (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_gvar)}, false),   # G1
     (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_files)}, false),  # Y1
     (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_system)}, false),  # Y1
+    # CT1a — setlocale/3: the table, and libc's setlocale through ccall (no term type: outside the per-type block)
+    (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_ctype)}, false),
+    (LK._libc_setlocale, Tuple{Cint, Union{Nothing, String}}, false),
     # the built-ins' dispatch trees, built when src/pl-ext.jl loads
     (LK._foreign_tree, Tuple{Symbol, Int, Int, typeof(LK._va_leaf)}, false),
     (LK._foreign_tree, Tuple{Symbol, Int, Int, typeof(LK._det_leaf)}, false),
