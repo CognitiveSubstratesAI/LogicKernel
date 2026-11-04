@@ -11,14 +11,13 @@
 # is the template's alone, so test_qlf_swipl.jl's boot_from_source! row could not hold on a copy of it) and by test_autoload_flag_swipl.jl's Q3 testset (:359).
 # The A1 mutants by any test that meta-calls an undefined predicate: mcall_cont's undefined branch runs `trapUndefined` between
 # `FR = NFR` and the restore, and `normal_call` (pl-wam.jl:3324) reads `FR` as the new frame's parent.
-# A1c (the `ld.environment_frame = FR` line, src/pl-wam.jl:3735) is a DEFERRED KILL, owner AUTOLOAD1 A5 (audit D-0400 item 2), declared through
-# the `equivalent` field so that the battery expects it to SURVIVE (run 41741989891 at 95331639: survived in 296 s; re-run CI-way on the
-# staged tree: "EQUIVALENT (declared)"). Why no test can see it before A5: `_save_registers!` (src/pl-wam.jl:1622) saves the LOCAL `FR`, not
-# environment_frame; trapUndefined/autoImport/getUnknownModule/createUndefSupervisor take no frame; the Q3 error unwinds with
-# environment_frame 0 (measured); `normal_call` sets it again (src/pl-wam.jl:3337). Its only reader is the Prolog query of the autoloader
-# (PL_open_query, src/pl-wam.jl:1987: the parent frame, `saved_environment`), which runs the hook, undefined until A5 (A3 guard). No Julia
-# stand-in hook is allowed. AT A5 the declaration goes and a row asserting the query's parent frame (prolog_current_frame inside the hook)
-# replaces it (refusal-flip rule D-0376).
+# A1c (the `ld.environment_frame = FR` line, src/pl-wam.jl:3735) was a DEFERRED KILL, owner AUTOLOAD1 A5 (audit D-0400 item 2; battery run
+# 41741989891 at 95331639: survived in 296 s). Its only reader is the Prolog query of the autoloader (PL_open_query, src/pl-wam.jl:1987: the
+# parent frame, `saved_environment`), which runs the hook; the A3 guard leaves the hook undefined before the first boot, and no Julia stand-in
+# hook is allowed. The declaration is replaced (refusal-flip rule D-0376) by a KILL naming the row "A1c's killer (A5)" of
+# test_autoload_trap.jl: a test-defined hook (the D-0398 white-box form) run through `call(user:foo)`; the row reads the hook query's record
+# inside the `at` callback and asserts that its `saved_environment` is the frame of foo. The swipl-compared form (prolog_frame_attribute/3,
+# DBG1, on the booted hook) is evidence/AUTOLOAD1/handoff_a5.md item 4. UNVERIFIED until the battery runs (the row was written without a run).
 # A1a's TARGETS start with test_export_import_swipl.jl: with the frame its own parent targets loop until LIMIT_S (inferred from 4796 s =
 # 3 x 1500 s + ~300 s in run 41741989891, against 150-300 s for the others: three hung) before test_export_import_swipl.jl:397 fails; `run_targets` stops at the first
 # deciding target, so the failing one goes first.
@@ -78,9 +77,8 @@ MUTANTS = [
          file=W, targets=[TAT] + TA1,
          old="        mc_nf.parent = FR                           # NFR->parent = FR\n",
          new="        nothing\n"),
-    dict(id="AUTOLOAD1-A1c mcall_cont does not set `ld.environment_frame` to the new frame (DEFERRED KILL, owner AUTOLOAD1 A5; audit D-0400 item 2)",
-         file=W, targets=TA1,
-         equivalent="DEFERRED KILL, owner AUTOLOAD1 A5: the Prolog query inside trapUndefined is the only reader of environment_frame in this window (src/pl-wam.jl:3735); the hook is undefined until A5 (A3 guard)",
+    dict(id="AUTOLOAD1-A1c mcall_cont does not set `ld.environment_frame` to the new frame (KILL the A1c row of test_autoload_trap.jl: the hook query's saved_environment is not foo's frame)",
+         file=W, targets=[TAT] + TA1,
          old="        FR = NFR                                    # environment_frame = FR = NFR\n        ld.environment_frame = FR\n",
          new="        FR = NFR                                    # environment_frame = FR = NFR\n"),
     dict(id="AUTOLOAD1-A1d mcall_cont leaves FR at the caller's frame when it sets the environment frame (FR = NFR dropped, environment_frame set to the caller) (KILL as A1a)",
