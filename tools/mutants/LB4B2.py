@@ -256,6 +256,13 @@ MUTANTS = [
     dict(id="LB4B2-S3 the copy takes a template holding a live stream (KILL test_qlf_swipl.jl's open-stream row, test_gd_template.jl's stream-table row)", file=GT, targets=_first(["test/files/test_qlf_swipl.jl", "test/db/test_gd_template.jl"]),
          old="        s === nothing || error(\"copy_global_data: the template holds an open stream\")\n",
          new="        nothing\n"),
+    # ── src/gd_template.jl: the cached working directory is start-up state, reset in the copy (audit D-0408 item 4) ──
+    dict(id="LB4B2-CWD1 paths_CWDdir keeps the template's value in the copy: the :reset entry is gone, the default :deep (KILL test_gd_template.jl 'the cached working directory is start-up state': the copy's field is A's and it answers A in B)", file=GT, targets=_first(["test/db/test_gd_template.jl"]),
+         old="    paths_CWDdir=:reset              # pl-os.c:989, :1864-1866 at cbf4e189\n",
+         new=""),
+    dict(id="LB4B2-CWD2 the reset value is \"/\", not the constructor's \"\" (KILL the same row: the copy's field differs from setupProlog's, and PL_cwd trusts \"/\")", file=GT, targets=_first(["test/db/test_gd_template.jl"]),
+         old='const GD_COPY_RESET = (paths_CWDdir="",)',
+         new='const GD_COPY_RESET = (paths_CWDdir="/",)'),
     # ── src/pl-error.jl: printMessage calls print_message/2 ──
     dict(id="LB4B2-E1 printMessage never calls print_message/2, the fallback branch always (KILL test_load_swipl.jl's message_hook rows, T4)", file=ER, targets=TP,
          old="            if isDefinedProcedure(gd, pred) && ld.in_print_message <= OK_RECURSIVE\n",

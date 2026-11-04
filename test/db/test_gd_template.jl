@@ -8,6 +8,8 @@
 #   * ASSERT INTO A COPY: a clause, a new atom, a flag, a module, an operator and a source file each change the copy
 #     and leave the TEMPLATE and a SIBLING copy unchanged (digests compared; the copy's digest must change, so the
 #     comparison is not vacuous); a copy of a mutated copy is independent too;
+#   * the cached working directory (`paths_CWDdir`, policy `:reset`): a copy of a template that cached directory A, made in
+#     directory B, holds the start-up value and answers B (LB4 b2, audit D-0408 item 4);
 #   * the registry: the template is built once per process and term type, a build that raises registers nothing, a reset
 #     builds again; the stream tables: a closed slot is kept, a live stream refuses the copy.
 # NOT RUN when written (edit-only, 2026-11-01): every row is "UNVERIFIED on the kernel: gate decides".
@@ -259,6 +261,42 @@ end
     c = LK.copy_global_data(ga)
     @test isempty(c.stream_aliases) && c.stream_aliases !== ga.stream_aliases
     @test typeof(c.stream_aliases) == typeof(ga.stream_aliases)
+end
+
+# The cached working directory is start-up state, not the template's (pl-os.c:989 sets GD->paths.CWDdir = NULL at start,
+# :1864-1866 stores it at the first PL_cwd; `GD_COPY_POLICY`'s `:reset`). `working_directory/2` (boot/syspred.pl:1243) asks
+# '$cwd'/1, which is PL_cwd(ld) (src/os/pl-files.jl pl_cwd1_va): the row asks PL_cwd on the copy's own engine.
+# What lets the row fail: (1) the template's cache is read back non-empty and A's before the copy (a template that never
+# cached would make the keep-the-field mutant invisible); (2) the copy's cache must be "" (setupProlog's value, read off a
+# fresh setupProlog database, not typed twice) and its answer B's, which differs from A's (two distinct real directories,
+# checked); a copy that keeps the field answers A and carries A's text in its field.
+@testset "the cached working directory is start-up state: a copy answers the directory it is asked in" begin
+    start = pwd()
+    a = realpath(mktempdir())
+    b = realpath(mktempdir())
+    try
+        @test a != b
+        tmpl = LK.copy_global_data(TMPL)                            # a stand-in template: the registry's own stays untouched
+        ldt = LK.PL_local_data{_P}(tmpl)
+        ldt.GD = tmpl
+        cd(a)                                                       # the template's directory
+        @test LK.PL_cwd(ldt) == a * "/"
+        @test tmpl.paths_CWDdir == a * "/"                          # cached in the template's field: non-empty, A's
+        cd(b)                                                       # the process moves on
+        c = LK.copy_global_data(tmpl)
+        @test c.paths_CWDdir == LK.setupProlog(_P).paths_CWDdir == ""    # the start-up value, as the constructor gives it
+        @test tmpl.paths_CWDdir == a * "/"                          # the template keeps its own cache
+        ldc = LK.PL_local_data{_P}(c)
+        ldc.GD = c
+        @test LK.PL_cwd(ldc) == b * "/"                             # the copy answers B
+        @test c.paths_CWDdir == b * "/"                             # and caches it in its own field
+        @test LK.PL_cwd(ldt) == a * "/"                             # the template, asked again, still answers its cache
+    finally
+        cd(start)
+    end
+    @test LK.GD_COPY_POLICY.paths_CWDdir === :reset
+    @test all(k in keys(LK.GD_COPY_RESET) for k in keys(LK.GD_COPY_POLICY) if LK.GD_COPY_POLICY[k] === :reset)
+    @test all(k in fieldnames(typeof(TMPL)) for k in keys(LK.GD_COPY_RESET))
 end
 
 @testset "the registry builds once per process and term type" begin

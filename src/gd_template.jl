@@ -22,13 +22,22 @@
 #              streams, `drop_boot_std_streams!` in src/pl-qlf.jl); the copy gets EMPTY tables of the same shape (a closed
 #              stream's slot in `stream_table` stays `nothing`, so a stream context keeps its index) and REFUSES a template
 #              that holds a live IOSTREAM: an open file must not be shared by two databases, and an IOSTREAM wraps a Julia IO.
+#   :reset   — the field is not the template's state but the process's start-up state: the copy gets the value `GD_COPY_RESET`
+#              names for it, the value the constructor (`setupProlog`, src/pl-setup.jl) gives the field. `paths_CWDdir` is
+#              the one field: upstream sets `GD->paths.CWDdir = NULL` at start (pl-os.c:989-990, initExpand) and computes it at the first
+#              `PL_cwd` (cwd_unlocked: `CWDlen == 0`, pl-os.c:1827; stored at :1860-1866), so a database made after the
+#              boot has no cached directory yet, and the template's (the directory the boot ran in) must not reach it.
 # Any field not named here is :deep.
-"How `copy_global_data` copies a `PL_global_data` field, when it is not a deep copy (`:streams`: see the comment above)."
+"How `copy_global_data` copies a `PL_global_data` field, when it is not a deep copy (`:streams`, `:reset`: see the comment above)."
 const GD_COPY_POLICY = (
     stream_filenames=:streams,
     stream_aliases=:streams,
-    stream_table=:streams
+    stream_table=:streams,
+    paths_CWDdir=:reset              # pl-os.c:989, :1864-1866 at cbf4e189
 )
+
+"The start-up value of each `:reset` field of `GD_COPY_POLICY`, as `setupProlog` (src/pl-setup.jl) passes it to the constructor."
+const GD_COPY_RESET = (paths_CWDdir="",)   # "" = none, src/pl-setup.jl `paths.CWDdir: none until the first PL_cwd`
 
 # The copy of one stream table: empty, and the same shape. `x` is the template's field.
 function _copy_stream_free(x::AbstractVector)
@@ -58,6 +67,8 @@ field in the struct's order, each by its policy, so the copy follows the struct.
         policy = get(GD_COPY_POLICY, f, :deep)
         if policy === :streams
             push!(args, :(_copy_stream_free(getfield(gd, $(QuoteNode(f))))::$ft))
+        elseif policy === :reset
+            push!(args, :($(getfield(GD_COPY_RESET, f))::$ft))     # the start-up value, a literal of the field's type
         elseif policy === :deep
             push!(args, :(Base.deepcopy_internal(getfield(gd, $(QuoteNode(f))), stay)::$ft))
         else
