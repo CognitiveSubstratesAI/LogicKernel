@@ -3299,20 +3299,56 @@ function PL_next_solution_guarded(
     )
 
     # PORT: pl-vmi.c I_RESET
-    # DIVERGES: refused by name until CONT1 (above).
+    # (pl-vmi.c:5754-5798 at the pin; CONT1 C2)
+    # DIVERGES: the goal goes to `argFrameP(lTop, 0)` as a value (`_slot_link!`, `linkValI`), as
+    # `I_CATCH`'s. The `dtbl_reset6` branch (`'$tbl_reset'/6`, resuming a tabled goal through
+    # `push_continuation_list`) is refused by name, owner TAB1: it needs the worklists of tabling.
     @label I_RESET
-    throw(
-        NotPortedError{T}(DEF.name, "the VM instruction I_RESET (pl-vmi.c:5754)", "CONT1")
-    )
+    ir_p = argFrameP(ld.frames[FR].base, 0)
+    if _slot_is_var(ld, ir_p + 1)                   # if ( isVar(*p) )
+        @SAVE_REGISTERS(QID)
+        ir_fid = PL_open_foreign_frame(ld)
+        PL_error(ld, ERR_INSTANTIATION)
+        PL_close_foreign_frame(ld, ir_fid)
+        @LOAD_REGISTERS(QID)
+        @goto b_throw                               # THROW_EXCEPTION
+    end
+    ld.frames[FR].flags |= FR_INRESET               # setLocal(FR, FR_INRESET)
+    if ld.frames[FR].predicate === gd.procedures_dtbl_reset6.definition
+        throw(
+            NotPortedError{T}(
+                DEF.name, "the dtbl_reset6 branch of I_RESET (pl-vmi.c:5762)", "TAB1"
+            )
+        )
+    end
+    _slot_link!(ld, argFrameP(ld.lTop, 0) + 1, ir_p + 1)    # *argFrameP(lTop, 0) = linkValI(p): B_VAR0
+    @goto I_CALL1                                   # VMI_GOTO(I_CALL1)
 
     # PORT: pl-vmi.c I_EXITRESET
-    # DIVERGES: refused by name until CONT1 (above).
+    # (pl-vmi.c:5801-5833 at the pin; CONT1 C2)
+    # DIVERGES: the `dtbl_reset6` branch (`tbl_reset_add_answer`, pl-tabling.c:4478) is refused by name,
+    # owner TAB1. `ENSURE_GLOBAL_SPACE(0)` has nothing to make room for: `bindConst` of a small integer
+    # only trails.
     @label I_EXITRESET
-    throw(
-        NotPortedError{T}(
-            DEF.name, "the VM instruction I_EXITRESET (pl-vmi.c:5801)", "CONT1"
-        )
-    )
+    ier_k, ier_w, ier_p = _deref_loc(ld, -(argFrameP(ld.frames[FR].base, 2) + 1))   # p = argFrameP(FR, 2); deRef(p)
+    if ier_k == DU_CELL || ier_k == DU_ATTVAR       # canBind(*p)
+        if ld.frames[FR].predicate === gd.procedures_dtbl_reset6.definition
+            throw(
+                NotPortedError{T}(
+                    DEF.name, "the dtbl_reset6 branch of I_EXITRESET (pl-vmi.c:5806)", "TAB1"
+                )
+            )
+        end
+        bindConst(ld, ier_p, consInt(Int64(0)))     # bindConst(p, consInt(0))
+        @goto next_instruction                      # NEXT_INSTRUCTION
+    else
+        @SAVE_REGISTERS(QID)
+        ier_t = pushWordAsTermRef(ld, (ier_k, ier_w, ier_p))
+        PL_error(ld, "", 0, "", ERR_UNINSTANTIATION, 0, ier_t)  # PL_uninstantiation_error(pushWordAsTermRef(p))
+        popTermRef(ld)
+        @LOAD_REGISTERS(QID)
+        @goto b_throw                               # THROW_EXCEPTION
+    end
 
     # PORT: pl-vmi.c I_CALLCONT
     # DIVERGES: refused by name until CONT1 (above).
@@ -3582,9 +3618,11 @@ function PL_next_solution_guarded(
     # frame above `lTop`.
     # Since V9e-2 the control constructs and `call/N` for N > 8 under `call/1` run in a temporary
     # clause (`compileGoalClause`, src/pl-comp.jl), entered here as upstream enters it; since MOD3b
-    # so is `Goal@Module`, after `checkCallAtContextInstantiation`. NOT PORTED: closures (`_PL_closure_blob`: no closures), `FR_INRESET` (no `reset/3`:
-    # asserted absent) and the `mcall_cont` trap of an undefined procedure (the supervisor
-    # `S_VIRGIN` traps it, as for `I_CALL`).
+    # so is `Goal@Module`, after `checkCallAtContextInstantiation`. Since CONT1 a control construct or `call/N`
+    # (N > 8) under a frame with `FR_INRESET` (the body of `reset/3`) is called through `'$meta_call'/1`
+    # (`mcall_cont`, pl-vmi.c:5529-5535), as upstream does, where it is compiled to a temporary clause
+    # elsewhere. Closures (`_PL_closure_blob`) are left to the closure step; the `mcall_cont` trap of an
+    # undefined procedure is the supervisor's `S_VIRGIN`, as for `I_CALL`.
     @label i_metacall_common
     mc_nb = ld.frames[NFR].base
     _assert_frame_above_choice(ld, mc_nb, :i_metacall_common)  # (L1e e1 assertion)
@@ -3618,6 +3656,13 @@ function PL_next_solution_guarded(
         )
             # the goal clause is compiled from the goal's LOCATION (f3b-3: `localGoal` on the
             # cells); a goal word held in the slot itself has no position: the slot's location
+            # pl-vmi.c:5529-5535: `else if ( ison(FR, FR_INRESET) )`; its inner `isoff(fd, CONTROL_F) && fd->name
+            # != ATOM_call` arm ("arity > 8 will raise existence error") cannot hold here, as this branch is
+            # reached for CONTROL_F or for call/N with N > 8
+            if (ld.frames[FR].flags & FR_INRESET) != 0
+                DEF = gd.procedures_dmeta_call1.definition  # DEF = GD->procedures.dmeta_call1->definition
+                @goto mcall_cont                            # VMH_GOTO(mcall_cont, module)
+            end
             mc_gloc = mc_loc[3] != 0 ? mc_loc[3] : -(argFrameP(mc_nb, 0) + 1)
             @goto i_metacall_clause
         end
@@ -3630,7 +3675,6 @@ function PL_next_solution_guarded(
     # (its `compileClause` branch, a helper label: f3b-5b)
     # DIVERGES: see `i_metacall_common`.
     @label i_metacall_clause
-    @assert (ld.frames[FR].flags & FR_INRESET) == 0     # (no reset/3: '$meta_call'/1)
     # (pl-vmi.c:5540-5542 at the pin; MOD3b)
     #     if ( fd->functor == FUNCTOR_at_sign2 &&
     #          !checkCallAtContextInstantiation(a) )
