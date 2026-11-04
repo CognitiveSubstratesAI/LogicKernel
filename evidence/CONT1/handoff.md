@@ -310,3 +310,15 @@ alloc pins x3 (src/pl-global.jl +5 fields, Tier 1; src/pl-gc.jl and the new pl-c
 re-commit per group, or `warm.sh send` of the committed files); `mutants/CONT1` pushed at the WIP SHA once fmt is done (anchors re-fit at the first battery run: the formatter may re-flow
 `if active[i + 1]   ` and `state.clear[i] || (state.active[i] = true)  # if`); the b2 dependency: the stack sits on wip/lb4b2c, re-stack (cherry-pick onto main, in order) after LB4 b2 lands.
 Term grep (D-0164): writer 6 ran it over the added lines of the stack and the messages: no hit once this file is committed; re-run before the push.
+
+## D-0403 item 4 follow-up (edit-only; nothing run, no Julia)
+Commits on wip/cont1 after the C8 stack: f9f794dd (FIXED: test_cont_run_swipl.jl at HEAD was cut: the `_cr_kernel` header, `using Test, LogicKernel`,
+the `_cr_enc` docstring were missing and a copy of a boot-file testset without its `end` stood before the CONT1 testset; restored from 90b4a758, the diff against it is
+the C7b/C7c additions only), a030957d (DIVERGES at shift_common + the architecture.md CONT1 block cite: pl-cont.c:403-413 with the trim at :407 and :411;
+pl-vmi.c:5889 open, :5891 close; pl-wam.c:327 open, :349 `lTop = (LocalFrame) fr`), 0ae96d84 (five white-box rows `t_lt_*` + `_CR_LT_PROGRAM`/`_CR_LT_PINNED`,
+evidence/CONT1/lt_rows.pl and lt_rows.out), 7f5aca11 (CONT1-V3's KILL names t_lt_shift :313, t_lt_copy :314, t_lt_cont :317).
+- What upstream does: the net lTop of I_SHIFT is the value BEFORE THE I_SHIFT INSTRUCTION (the fli frame opened at the old lTop), not the value before `reset/3`. A measure taken before
+  `reset/3` answers `above` in swipl (t_lt_call); the rows pin both.
+- The rows read lTop as `statistics(localused)` (= 8*ld.lTop, as test_at_body_swipl.jl does) at the shift site and after the reset returned. swipl's FIRST shift of a process answers
+  differently (stack growth), so each row starts with a warm-up reset(cl_sh,_,_). A deep-shift row (shift under three non-last-call frames) answered `below` in swipl, unexplained: left out.
+- Unrun: the new rows and the file (no Julia); the mutant checker (read-only python3 -I) passed: 26 entries, each `old` once, new != old, targets exist.
