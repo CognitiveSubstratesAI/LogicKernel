@@ -232,10 +232,10 @@ lookup by serial still works through `gd.clause_refs`).
   clause to `_CR_PROGRAM`), run `python3 -I evidence/CONT1/gen_cr_rows.py test/core_lang/test_cont_run_swipl.jl <scratch dir> > evidence/CONT1/cr_rows.out`,
   then replace the `_CR_PINNED` block by `raw"<line>"` per output line (one per line, first is `ok`).
 
-### Swipl finding for the audit (private register, NOT in the public repo text)
-swipl 10.1.19 itself aborts the process on `call_continuation(['$cont$'(a)])` (a `$cont$` term of arity 1: push_continuation reads
-three arguments of an arity-1 term; the API error "invalid atom_t ... (bad tag)" in `clause_clref`). The kernel's `push_continuation` raises
-`type_error(continuation, _)` for arity < 3 (deliberate); NO row pins it (oracle cannot answer). Register it by SHA only.
+### Swipl finding for the audit (private register, by SHA only)
+One finding on swipl 10.1.19's `call_continuation/1` with a `$cont$` term of arity 1 ends the swipl process; it is recorded in the private
+register by SHA and described nowhere in this repo. The kernel's `push_continuation` raises `type_error(continuation, _)` for arity < 3
+(deliberate); NO row pins it (the oracle cannot answer).
 
 ### LEFT: C8 (own commits, in this order; nothing written yet)
 1. tools/mutants/CONT1.py (format: tools/mutants/MOD3b.py: `MUTANTS = [dict(id=, file=, targets=, old=, new=[, equivalent=])]`, header says anchors
@@ -275,10 +275,38 @@ three arguments of an arity-1 term; the API error "invalid atom_t ... (bad tag)"
 ### Ready-for-gate list (to run after C8 is committed; nothing has run)
 fmt (committed stack: the `reset --mixed` trick, then `warm.sh send` of the committed files) ; inventory (the gate regenerates docs/port_inventory.md) ; `warm.sh check` (includes the Pkg.test-way run) ;
 test files x3 term types: test/core_lang/test_cont_run_swipl.jl, test/core_lang/test_cont_boot_swipl.jl ; test/test_type_discipline.jl ; alloc pins x3 (src/pl-global.jl gained five fields: Tier 1) ;
-`tools/pkgtest_way.sh <file>` for each changed test file, ONE at a time ; push `mutants/CONT1` at the WIP SHA once the list exists, then branch-gate, term grep (D-0164: segment|SIGSEGV|crash|abort|invalid term_t|dies of
-over the added lines of `git diff 4e90042a..HEAD` and the messages: the evidence/CONT1/handoff.md of this file names the swipl abort ABOVE in words only; re-grep before the push), then `gate/cont1` and
-`mutants/CONT1` at the SAME SHA on a FRESH name.
+`tools/pkgtest_way.sh <file>` for each changed test file, ONE at a time ; push `mutants/CONT1` at the WIP SHA once the list exists, then branch-gate, the term grep (D-0164, over the added lines of
+`git diff 4e90042a..HEAD` and the messages: writer 6 ran it, no hit; re-run before the push), then `gate/cont1` and `mutants/CONT1` at the SAME SHA on a FRESH name.
 NOTE: the stack sits on wip/lb4b2c (b2, NOT landed): it must be re-stacked (cherry-pick onto main in order) after b2 lands; CONT1 cannot land before it. Dependency: the opcode declarations and the compile side live only on b2.
 First-run points: the eight listed in the C4/C5/C6 sections above, plus: (a) the new rows assume the booted system defines reset/3 etc. (b2's boot) and `engine_yield/1` exported to user;
 (b) `_cr_kernel` keeps all 43 rows in ONE database, a failing row after a refusal returns early: read the first mismatch only; (c) r_shift_out_msg / r_shift_findall_msg read the context message atom;
 (d) r_ctx needs `context_module/1` and a module created by `cr_m:` (default import user); (e) the unrun kernel may differ on r_slots (`<inactive>` placement) = a walker finding, trace it to pl-gc.c, do not re-pin.
+
+
+## C8 (writer 6; nothing run, no Julia, no daemon). C1-C8 are all COMMITTED
+Commits on wip/cont1 after dfdb3b60: c19440c7 `tools/mutants/CONT1.py`, 186e6c42 manifest, 55d1ca79 architecture block, this file.
+
+### Written
+- **tools/mutants/CONT1.py**: 26 mutants (25 live, 1 equivalent), ids CONT1-R1..R6 (I_RESET / I_EXITRESET / the FR_INRESET branch), V1..V3 (I_CALLCONT shortcut, I_YIELD,
+  the lTop raise), S1..S5 (findReset, shift), E1..E6 (put_environment, put_continuation), P1..P3 (push_continuation), W1..W3 (walker). Checked by a python3 -I runpy script
+  (every `old` once in its file, `new != old`, ids unique, every target holds @test and @testset): 0 bad. Each KILL names a case line of test_cont_run_swipl.jl (135-177) or
+  test_cont_boot_swipl.jl (140-145); they are the rows EXPECTED to kill, read in the row's goal and pin, not run. TARGETS: the two row files; R2 adds test_metacall_control.jl.
+  EQUIVALENT: S4 (`reset6` in findReset) until TAB1. NOT LISTED (header, with reasons): the choice-slot restore of push_continuation, the `for_copy` word of put_environment,
+  `sh_copy` of I_SHIFTCP and the choice arms of the walker (swipl answers the same for shift and shift_for_copy: t_r_ite_cut = t_r_ite_copy = [b], t_r_twice = t_r_twice_fc), the
+  attvar arm of I_EXITRESET, shift's uninstantiation error, a variable written then read after the shift (r_slots writes W before the shift), the C_JMP step / control arms of
+  the walker, stack-space failures. A row separating the restore from the newest choice needs a program whose cut after the resume depends on an older choice still standing:
+  not found; add a row (and the mutants E7 `==` -> `!=`, E8 `>` -> `>=`) only if swipl's two answers differ.
+- **Manifest** (test/static_analysis_manifest.jl): `_manifest_cont(T)` (19 entries incl. the `walk_state` constructor), spliced at the end of `_DISPATCH_MANIFEST_TUPLE` for DefaultTerm.
+  The four walker leaves and `is_last_call` are marked allocation-free, the others allocating: the gate (`check`, alloc pins) decides; flip a flag if it says so.
+- **docs/architecture.md**: the CONT1 block (the DIVERGES list; tests and mutants named). docs/port_inventory.md is untouched (the gate regenerates it).
+
+### Housekeeping
+- The worktree held an UNCOMMITTED, quote-stripped partial regeneration of test/core_lang/test_cont_run_swipl.jl (a scratch assembler's output: the doc comment lost its backticks,
+  `_CR_PINNED` held only `ok`, the last two testsets cut); it blocked the commit hook ("unstaged changes"), so it was restored from HEAD after saving a copy
+  (the dispatcher's scratchpad of writer 6, test_cont_run_swipl.jl.uncommitted-corrupt). HEAD's file (43 rows, full pins) is the committed truth.
+
+### Ready for the gate (the list above stands), adding
+alloc pins x3 (src/pl-global.jl +5 fields, Tier 1; src/pl-gc.jl and the new pl-cont.jl are on the call path); the fmt `reset --mixed` trick (committed stack: `git reset --mixed 4e90042a`, `warm.sh fmt`,
+re-commit per group, or `warm.sh send` of the committed files); `mutants/CONT1` pushed at the WIP SHA once fmt is done (anchors re-fit at the first battery run: the formatter may re-flow
+`if active[i + 1]   ` and `state.clear[i] || (state.active[i] = true)  # if`); the b2 dependency: the stack sits on wip/lb4b2c, re-stack (cherry-pick onto main, in order) after LB4 b2 lands.
+Term grep (D-0164): writer 6 ran it over the added lines of the stack and the messages: no hit once this file is committed; re-run before the push.
