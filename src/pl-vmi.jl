@@ -29,14 +29,14 @@
 # pl-vmi.c's order), then MOD4's meta-argument supervisors (`S_MQUAL`, `S_LMQUAL`: the module
 # qualification of a `meta_predicate` argument, in pl-vmi.c's order), then MOD3b's `Goal@Module`
 # calls (`I_DEPARTATM`, `I_CALLATM`, `I_DEPARTATMV`, `I_CALLATMV`, in pl-vmi.c's order), then ARGINL's
-# inline `arg/3` (`B_ARG_CF`, `B_ARG_VF`, in pl-vmi.c's order), then TAB1-min's wrapper supervisors
-# (`S_WRAP`, `S_CALLWRAPPER`, `S_TABLED`, in pl-vmi.c's order: pl-vmi.c:3560, :3624, :3644; the
-# continuation opcodes of another step append after or before them by the order of landing, the
-# second to land renumbers its own), then LB4 b2's continuation and engine instructions the boot's
-# clauses compile to (`I_YIELD`, `I_CUTCHP`, `I_RESET`, `I_EXITRESET`, `I_CALLCONT`, `I_SHIFT`,
-# `I_SHIFTCP`, in pl-vmi.c's order among themselves; audit D-0363 item 2; numbered after TAB1-min's three,
-# which landed first): `I_CUTCHP` runs, the other six are compiled as upstream and refused by name when
-# run, until the step CONT1.
+# inline `arg/3` (`B_ARG_CF`, `B_ARG_VF`, in pl-vmi.c's order), then TAB1-min's wrapper supervisors and
+# LB4 b2's continuation and engine instructions, numbered together in pl-vmi.c's order (audit D-0407
+# item 3): `I_YIELD` (pl-vmi.c:2410), `I_CUTCHP` (:2935), `S_WRAP` (:3560), `S_CALLWRAPPER` (:3624),
+# `S_TABLED` (:3644), `I_RESET` (:5754), `I_EXITRESET` (:5801), `I_CALLCONT` (:5839), `I_SHIFT` (:5874),
+# `I_SHIFTCP` (:5908), the tail from `B_ARG_CF` (:1537) on ascending in the table; the whole table is not
+# in pl-vmi.c's order, earlier steps grouped their instructions by landing, and the row of
+# test_cont_boot_swipl.jl compares that tail. `I_CUTCHP` runs, the other six of LB4 b2 are compiled as
+# upstream and refused by name when run, until the step CONT1.
 #
 # NOT EMITTED, so not declared: H_SMALLINTW/B_SMALLINTW/L_SMALLINTW (only where a code word is
 # narrower than a word, `CODES_PER_WORD > 1`: on 64-bit swipl every tagged integer is a SMALLINT,
@@ -604,21 +604,21 @@ const B_ARG_CF = code(157)
 # PORT: pl-vmi.c B_ARG_VF
 "`arg(Var, Var, FirstVar)` inline in a body: operands the index variable, the compound's variable, the first variable (pl-vmi.c)."
 const B_ARG_VF = code(158)
-# PORT: pl-vmi.c S_WRAP
-"Supervisor of a closure's copy of a wrapped predicate: continue in the wrapped predicate's own supervisor (pl-vmi.c; TAB1-min declares it, the body is refused until WRAP1)."
-const S_WRAP = code(159)
-# PORT: pl-vmi.c S_CALLWRAPPER
-"Supervisor of a wrapped predicate: run the wrapper clause the operand names (pl-vmi.c); operands: the clause reference, the closure atom, the wrapper's name (TAB1-min declares it, the body is refused until WRAP1)."
-const S_CALLWRAPPER = code(160)
-# PORT: pl-vmi.c S_TABLED
-"Supervisor of the `table` wrapper of a variant tabled predicate: the answer trie of a complete table, else `S_CALLWRAPPER`; the operands are `S_CALLWRAPPER`'s (pl-vmi.c; TAB1-min declares it, the body is refused until TAB1)."
-const S_TABLED = code(161)
 # PORT: pl-vmi.c I_YIELD
 "`'\$yield'`: yield control from this engine (pl-vmi.c; `'\$engine_yield'/2`'s body). Compiled since LB4 b2; run: CONT1."
-const I_YIELD = code(162)
+const I_YIELD = code(159)
 # PORT: pl-vmi.c I_CUTCHP
 "`'\$cut'`: cut every choice point after the one in the frame's first argument (pl-vmi.c; `prolog_cut_to/1`'s body)."
-const I_CUTCHP = code(163)
+const I_CUTCHP = code(160)
+# PORT: pl-vmi.c S_WRAP
+"Supervisor of a closure's copy of a wrapped predicate: continue in the wrapped predicate's own supervisor (pl-vmi.c; TAB1-min declares it, the body is refused until WRAP1)."
+const S_WRAP = code(161)
+# PORT: pl-vmi.c S_CALLWRAPPER
+"Supervisor of a wrapped predicate: run the wrapper clause the operand names (pl-vmi.c); operands: the clause reference, the closure atom, the wrapper's name (TAB1-min declares it, the body is refused until WRAP1)."
+const S_CALLWRAPPER = code(162)
+# PORT: pl-vmi.c S_TABLED
+"Supervisor of the `table` wrapper of a variant tabled predicate: the answer trie of a complete table, else `S_CALLWRAPPER`; the operands are `S_CALLWRAPPER`'s (pl-vmi.c; TAB1-min declares it, the body is refused until TAB1)."
+const S_TABLED = code(163)
 # PORT: pl-vmi.c I_RESET
 "`'\$reset'`, first half: start the goal of `reset/3` (or `'\$tbl_reset'/6`) under a reset marker (pl-vmi.c). Compiled since LB4 b2; run: CONT1."
 const I_RESET = code(164)
@@ -810,11 +810,11 @@ const _CODE_TABLE = (
     code_info(:I_CALLATMV, VIF_BREAK, 3, (CA1_MODULE, CA1_VAR, CA1_PROC, 0x00)),
     code_info(:B_ARG_CF, VIF_BREAK, 3, (CA1_INTEGER, CA1_VAR, CA1_FVAR, 0x00)),
     code_info(:B_ARG_VF, VIF_BREAK, 3, (CA1_VAR, CA1_VAR, CA1_FVAR, 0x00)),
+    code_info(:I_YIELD, VIF_BREAK, 0, (0x00, 0x00, 0x00, 0x00)),
+    code_info(:I_CUTCHP, 0x00, 0, (0x00, 0x00, 0x00, 0x00)),
     code_info(:S_WRAP, 0x00, 0, (0x00, 0x00, 0x00, 0x00)),
     code_info(:S_CALLWRAPPER, 0x00, 3, (CA1_CLAUSEREF, CA1_DATA, CA1_DATA, 0x00)),
     code_info(:S_TABLED, 0x00, 3, (CA1_CLAUSEREF, CA1_DATA, CA1_DATA, 0x00)),
-    code_info(:I_YIELD, VIF_BREAK, 0, (0x00, 0x00, 0x00, 0x00)),
-    code_info(:I_CUTCHP, 0x00, 0, (0x00, 0x00, 0x00, 0x00)),
     code_info(:I_RESET, 0x00, 0, (0x00, 0x00, 0x00, 0x00)),
     code_info(:I_EXITRESET, 0x00, 0, (0x00, 0x00, 0x00, 0x00)),
     code_info(:I_CALLCONT, 0x00, 1, (CA1_VAR, 0x00, 0x00, 0x00)),

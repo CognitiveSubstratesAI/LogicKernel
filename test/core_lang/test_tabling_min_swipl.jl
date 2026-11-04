@@ -576,8 +576,10 @@ end
     # T3: the three opcodes, the shared `wrapper` block and the run loop's named refusals (swipl keeps all of it in C: LK-only).
     # UNVERIFIED on the kernel (nothing was compiled when these rows were written): the gate decides.
     @testset "wrapper opcodes and the wrapper block (T3, LK-only)" begin
-        # pl-vmi.c order: S_WRAP (3560) before S_CALLWRAPPER (3624) before S_TABLED (3644); appended after B_ARG_VF
-        @test LK.S_WRAP == LK.B_ARG_VF + 1
+        # pl-vmi.c order: I_YIELD (2410), I_CUTCHP (2935), S_WRAP (3560), S_CALLWRAPPER (3624), S_TABLED (3644); after B_ARG_VF
+        @test LK.I_YIELD == LK.B_ARG_VF + 1
+        @test LK.I_CUTCHP == LK.I_YIELD + 1
+        @test LK.S_WRAP == LK.I_CUTCHP + 1
         @test LK.S_CALLWRAPPER == LK.S_WRAP + 1
         @test LK.S_TABLED == LK.S_CALLWRAPPER + 1
         @test LK.code(length(LK._CODE_TABLE) - 1) >= LK.S_TABLED     # the table has their rows

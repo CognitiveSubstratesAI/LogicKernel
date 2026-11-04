@@ -1833,8 +1833,8 @@ const VMI_RUN = (
     :I_CHP, :I_SSU_CHOICE, :I_SSU_COMMIT, :S_SSU_DET,
     :I_CONTEXT, :I_CALLM, :I_DEPARTM, :S_MQUAL, :S_LMQUAL,
     :I_DEPARTATM, :I_CALLATM, :I_DEPARTATMV, :I_CALLATMV, :B_ARG_CF, :B_ARG_VF,
-    :S_WRAP, :S_CALLWRAPPER, :S_TABLED,
-    :I_YIELD, :I_CUTCHP, :I_RESET, :I_EXITRESET, :I_CALLCONT, :I_SHIFT, :I_SHIFTCP
+    :I_YIELD, :I_CUTCHP, :S_WRAP, :S_CALLWRAPPER, :S_TABLED,
+    :I_RESET, :I_EXITRESET, :I_CALLCONT, :I_SHIFT, :I_SHIFTCP
 )
 
 "Jump to the label named after instruction `x`, one of those `table` names (a balanced tree of compares)."

@@ -6969,15 +6969,15 @@ every claim below is UNVERIFIED until the gate). The aim is that boot/tabling.pl
   `freeCodesDefinition!` (a clause added to a wrapped predicate keeps the wrapper and resets the wrapped supervisor, so tabling.pl:2358's `:- table` followed by clauses works).
   This SUPERSEDES the sentence of section PR1 (`'$get_predicate_attribute'/3`) that says the tabling keys of `'$get_predicate_attribute'/3` fail: they fail only for a definition without properties.
 - **T3 (the supervisor opcodes, the `wrapper` block, the run loop's named refusals), ported** (`src/pl-vmi.c` S_WRAP, S_CALLWRAPPER, S_TABLED; `src/pl-supervisor.c`
-  `MAKE_SV1(wrapper, S_WRAP)`): `src/pl-vmi.jl` declares `S_WRAP` = 159, `S_CALLWRAPPER` = 160, `S_TABLED` = 161, appended after `B_ARG_VF` in pl-vmi.c's order (:3560, :3624,
-  :3644) with their `_CODE_TABLE` rows (`S_WRAP` no operands; the other two three: `CA1_CLAUSEREF`, `CA1_DATA`, `CA1_DATA`); `PL_code_data` (src/pl-incl.jl) has a 7th block,
+  `MAKE_SV1(wrapper, S_WRAP)`): `src/pl-vmi.jl` declares `S_WRAP` = 161, `S_CALLWRAPPER` = 162, `S_TABLED` = 163, numbered with LB4 b2's `I_YIELD` = 159 and `I_CUTCHP` = 160 after `B_ARG_VF` in pl-vmi.c's order (:2410, :2935, :3560,
+  :3624, :3644; audit D-0407 item 3) with their `_CODE_TABLE` rows (`S_WRAP` no operands; the other two three: `CA1_CLAUSEREF`, `CA1_DATA`, `CA1_DATA`); `PL_code_data` (src/pl-incl.jl) has a 7th block,
   `wrapper` (after `staticp`, upstream's order), built by `initSupervisors` as `[S_WRAP, I_EXIT]`, known to `_shared_supervisor`, and the supervisor of a closure's copy of a
   wrapped predicate (`unify_closure`); the idle `index_context` literal in src/pl-global.jl carries all seven. The three names are in `VMI_RUN` (src/pl-wam.jl), each label a
   NAMED REFUSAL: `NotPortedError` naming the instruction, owner `WRAP1` for `S_WRAP` and `S_CALLWRAPPER`, owner `TAB1` for `S_TABLED`. Removal condition: a wrapped goal is
   called (WRAP1: the closure branch of `I_CALL1`/`I_CALLN`, pl-vmi.c:5482-5520, with the refusal code for `S_WRAP` and `S_CALLWRAPPER`), a tabled goal is called (TAB1: `S_TABLED`,
   tries, `start_tabling/3`). Installing a wrapper (`'$c_wrap_predicate'/5`) never enters them. `:I_NOP` (code 0) stays the first declared opcode outside `VMI_RUN`, so
-  test/foreign/test_query.jl:305-330 keeps its refusal. If another branch also appends opcodes after `B_ARG_VF` (a continuation step), the second to land renumbers; no test or
-  tool pins 159..161.
+  test/foreign/test_query.jl:305-330 keeps its refusal. LB4 b2's `I_YIELD` and `I_CUTCHP` (159, 160) precede them and `I_RESET` .. `I_SHIFTCP` (164..168) follow, as in pl-vmi.c; a renumber of the
+  landed steps' whole table to pl-vmi.c's order is a separate decision (audit D-0407); no test or tool pins 161..163 but the rows of test_tabling_min_swipl.jl.
 - **DIVERGES (representation only):**
   1. `table_props` sizes (`abstract`, `subgoal_abstract`, `answer_abstract`, `max_answers`) are `Int` with -1 for `(size_t)-1` ("none", `infinite`); a size above `typemax(Int)` is
      refused by `PL_get_size_ex` with `representation_error(size_t)` where upstream accepts up to 2^64-1. Owner TAB1.
@@ -6989,7 +6989,7 @@ every claim below is UNVERIFIED until the gate). The aim is that boot/tabling.pl
   4. Printing a closure (`<closure>(m:p/1)`, pl-wrap.c `write_closure`) needs a blob write hook in the writer: the kernel prints the term layer's blob form. Owner: the writer step.
   5. The closure is a RECORD (`closure{T}` in `gd.closure_refs`; the blob's payload is its number), not a memcpy of `struct definition` in the blob; the blob type has no
      `release`/`write`/`acquire`/`save`/`load` slots; atoms keep no reference counts, so `unregisterWrappedSupervisor` is a no-op (audit D-0388 item 5, Q1 (a); owner WRAP1).
-  6. T3's opcode numbers are APPENDED (159..161) in pl-vmi.c's relative order, where upstream's numbers follow the whole VMI list; no behaviour reads an absolute number. Owner: none.
+  6. T3's opcode numbers (161..163) follow the tail of the table (from `B_ARG_CF`) in pl-vmi.c's relative order, where upstream's numbers follow the whole VMI list; no behaviour reads an absolute number. Owner: none.
   7. The code behind `S_WRAP`, `S_CALLWRAPPER` and `S_TABLED` is a set of named refusals (owners WRAP1 / WRAP1 / TAB1, see the T3 bullet), not upstream's frame set-up.
 - **Left out (each needs its subsystem):** `wrapped_predicate/2`, `unwrap_predicate/2`, `$wrapped_implementation/3`, `$closure_predicate/2` (WRAP1); the other `$tbl_*` predicates, the
   tries, worklists, answer tables and `start_tabling/3` (TAB1); `S_DET` in `skipWrapperPrefix` (the opcode is not declared); `tbl_set_incremental_predicate`'s effect on a trie

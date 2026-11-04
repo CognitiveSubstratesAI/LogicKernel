@@ -7,7 +7,8 @@
 # `new`, optional `equivalent` and `targets`. Verdicts: written by the battery, not yet run.
 # KILL: the A4 and Q3 mutants by test/core_lang/test_autoload_flag_swipl.jl (rows af01-af25 and its LK-ONLY testsets: the mask bit after
 # each value, PL_set_prolog_flag, the existence error for `$autoload:set_autoload/1` with the boot session off, the Q3 error with it on)
-# and test/files/test_qlf_swipl.jl (the compileFileList rows read the flag back; the boot_from_source! row expects the Q3 error).
+# and test/files/test_qlf_swipl.jl (the compileFileList rows read the flag back). The boot-session Q3 error is killed by test/core_lang/test_autoload_trap.jl's `bootsession` row (LB4 b2: the boot session
+# is the template's alone, so test_qlf_swipl.jl's boot_from_source! row could not hold on a copy of it) and by test_autoload_flag_swipl.jl's Q3 testset (:359).
 # The A1 mutants by any test that meta-calls an undefined predicate: mcall_cont's undefined branch runs `trapUndefined` between
 # `FR = NFR` and the restore, and `normal_call` (pl-wam.jl:3324) reads `FR` as the new frame's parent.
 # A1c (the `ld.environment_frame = FR` line, src/pl-wam.jl:3735) is a DEFERRED KILL, owner AUTOLOAD1 A5 (audit D-0400 item 2), declared through
@@ -38,7 +39,7 @@
 # called directly) plus MOD3a2.py's TMC (mcall_cont through the meta-call) and RUN lists plus the rule, assertion and type-test files that
 # call an undefined predicate through call/N. A4: the setter's own file, test_set_flag_swipl.jl and test_push_flag_swipl.jl (push/pop
 # go through set_flag_value; the `_SF_REFUSED`/`_PF_REFUSED` pins were dropped), test_prolog_flag_swipl.jl (the flag's mask bit is set by
-# hand there and its key set is listed), test_qlf_swipl.jl (compileFileList). Q3: test_qlf_swipl.jl and the new file; test_source_file_swipl.jl
+# hand there and its key set is listed), test_qlf_swipl.jl (compileFileList). Q3: test_autoload_trap.jl and test_autoload_flag_swipl.jl (test_qlf_swipl.jl stays in the list); test_source_file_swipl.jl
 # sets `bootsession` and runs no query (Q3-safe) so it is not a target.
 # A3: every A3 mutant lists TA3 (test_autoload_trap.jl, the A1 files, the flag file, the qlf file): every file that reaches an undefined
 # predicate with the autoload flag on. The hook is the test's own (clauses compiled into `system`), no Julia stand-in.
@@ -204,8 +205,8 @@ MUTANTS = [
          file=PR, targets=TA3,
          old="            test_autoload_loop(gd, ld, def) || return def\n",
          new="            test_autoload_loop(gd, ld, def)\n"),
-    dict(id="AUTOLOAD1-Q3a trapUndefined does not raise in the boot session: createUndefSupervisor as before (KILL test_qlf_swipl.jl boot_from_source! row, the Q3 testset of the new file)",
-         file=PR, targets=TQ3 + [TAT],
+    dict(id="AUTOLOAD1-Q3a trapUndefined does not raise in the boot session: createUndefSupervisor as before (KILL test_autoload_trap.jl 'the autoload flag false and the boot session' testset: `err isa ErrorException`; the Q3 testset of test_autoload_flag_swipl.jl)",
+         file=PR, targets=[TAT] + TQ3,
          old="    if gd.bootsession ",
          new="    if false && gd.bootsession "),
 ]

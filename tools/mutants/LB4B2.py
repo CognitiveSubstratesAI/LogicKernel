@@ -11,6 +11,9 @@
 # `python3 -I` text count). NOTHING here has run on the kernel: each KILL names the row EXPECTED to kill it.
 # The deletions of b2 (boot/init.jl, the `_boot_*!` stand-ins of src/pl-ext.jl, `ld.variable_names`) remove code: no
 # mutant mutates code that is gone; the boot that replaces them is mutated at its entry (Q1, G1, G2).
+# O1 swaps two adjacent rows of src/pl-vmi.jl's `_CODE_TABLE` (the opcode order of audit D-0407 item 3); the AUTOLOAD1 list is appended at the
+# end as a regression set (D-0407 item 4: Q3a runs CI-way with it, tools/mutate_ci.py; its kills are test_autoload_trap.jl's `bootsession` row and
+# test_autoload_flag_swipl.jl's Q3 testset).
 # NOT LISTED (each with its reason):
 #   * boot_global_data's H11 check itself (`(left != empty_at && after == left) || error(...)`) and the check of
 #     boot_from_source!'s result (Q1 mutates the call itself): guards on invariants a correct boot keeps; a mutant that
@@ -27,6 +30,9 @@
 # them prints, `$variable_names` by every clause compiled with a warning, load_file! by every file it loads and
 # b_throw_resume by every catch/3: the same list, each mutant's deciding files first (a kill decides there; the
 # driver stops at the first kill, run_targets).
+import os
+import runpy
+
 TBOOT = [
     "test/db/test_boot_image_swipl.jl",
     "test/db/test_boot_clauses_swipl.jl",
@@ -197,8 +203,15 @@ TK = _first(["test/core_lang/test_cont_boot_swipl.jl", "test/compile/test_body_c
              "test/foreign/test_query.jl"])
 TKB = _first(["test/compile/test_body_code_swipl.jl", "test/core_lang/test_cont_boot_swipl.jl",
               "test/foreign/test_query.jl"])
+# THE AUTOLOAD1 REGRESSION SET (audit D-0407 item 4): b2 changes the boot session the AUTOLOAD1 mutants test (trapUndefined's Q3
+# branch, the compileFileList pair, the autoloader's hook calls), so the whole of AUTOLOAD1's list runs with this one, each mutant on
+# its own targets, and the baseline runs the union of the files. Q3a (trapUndefined does not raise in the boot session) is killed by
+# test_autoload_trap.jl's `bootsession` row and test_autoload_flag_swipl.jl's Q3 testset (tools/mutants/AUTOLOAD1.py).
+_AL = runpy.run_path(os.path.join(os.path.dirname(os.path.abspath(__file__)), "AUTOLOAD1.py"))
+_AL_TARGETS = [t for t in _AL["TARGETS"] if t not in TBOOT]
+TSW = TK + ["test/core_lang/test_tabling_min_swipl.jl"]    # the opcode-order row, the body-code pins, TAB1-min's rows
 GC = "src/pl-gc.jl"
-TARGETS = TBOOT                                      # the baseline's targets (mutate_ci.py plan reads TARGETS)
+TARGETS = TBOOT + _AL_TARGETS                        # the baseline's targets (mutate_ci.py plan reads TARGETS)
 QL = "src/pl-qlf.jl"
 GL = "src/pl-global.jl"
 GT = "src/gd_template.jl"
@@ -339,4 +352,9 @@ MUTANTS = [
          old='        if c == I_EXIT || c == I_EXITFACT || c == I_EXITCATCH || c == I_EXITRESET ||\n',
          new='        if c == I_EXIT || c == I_EXITFACT || c == I_EXITCATCH ||\n',
          equivalent='src/pl-wam.jl I_RESET: every clause holding I_EXITRESET runs I_RESET before it, and I_RESET raises the named error until CONT1, so no frame scanned by clearUninitialisedVarsFrame (src/pl-gc.jl:253) has its PC before an I_EXITRESET; CONT1 re-runs it'),
+    dict(id="LB4B2-O1 two adjacent rows of _CODE_TABLE swapped: I_YIELD and I_CUTCHP trade places (KILL test_cont_boot_swipl.jl 'the tail of the opcode table is in pl-vmi.c order': the tail names are no longer upstream's order, the row of a const is another name)", file="src/pl-vmi.jl", targets=TSW,
+         old='    code_info(:I_YIELD, VIF_BREAK, 0, (0x00, 0x00, 0x00, 0x00)),\n    code_info(:I_CUTCHP, 0x00, 0, (0x00, 0x00, 0x00, 0x00)),\n',
+         new='    code_info(:I_CUTCHP, 0x00, 0, (0x00, 0x00, 0x00, 0x00)),\n    code_info(:I_YIELD, VIF_BREAK, 0, (0x00, 0x00, 0x00, 0x00)),\n'),
 ]
+
+MUTANTS = MUTANTS + _AL["MUTANTS"]                  # the AUTOLOAD1 regression set, each on its own targets

@@ -305,3 +305,66 @@ end
         @test _cb_swipl_lines(f, names) == _CB_PINNED
     end
 end
+
+# THE OPCODE ORDER (audit D-0407 item 3), type independent. The table is src/pl-vmi.jl `_CODE_TABLE` (row = code + 1); upstream's
+# order is that of the `VMI(NAME, ...)` entries of pl-vmi.c at the pin: B_ARG_CF :1537, B_ARG_VF :1580, I_YIELD :2410, I_CUTCHP :2935,
+# S_WRAP :3560, S_CALLWRAPPER :3624, S_TABLED :3644, I_RESET :5754, I_EXITRESET :5801, I_CALLCONT :5839, I_SHIFT :5874, I_SHIFTCP :5908.
+# The whole table is not in pl-vmi.c's order (the steps before ARGINL grouped their instructions by landing: a renumber of their
+# numbers is a separate decision), so the row compares the TAIL, from B_ARG_CF to the last row. Both sides come through ONE extractor
+# (the names in order) and both are asserted non-empty. As test/test_vendored_swipl.jl: the checkout is always there in CI (the
+# testset FAILS without it), a local run without it skips and says so.
+const _CB_UP = get(
+    ENV,
+    "LOGICKERNEL_UPSTREAM_SWIPL_DEVEL",
+    joinpath(homedir(), "dev-zone", "swipl-devel")
+)
+const _CB_CI = get(ENV, "CI", "") == "true"
+"The instruction names of `lines`, in order: the first word of each `VMI(NAME, ...` line (pl-vmi.c) or of each `code_info(:NAME, ...` row."
+function _cb_vmi_names(lines::Vector{String})::Vector{Symbol}
+    out = Symbol[]
+    for l in lines
+        m = match(r"^VMI\((\w+),", l)
+        m === nothing && (m = match(r"^\s*code_info\(:(\w+),", l))
+        m === nothing || push!(out, Symbol(m.captures[1]))
+    end
+    return out
+end
+if _CB_CI || isdir(joinpath(_CB_UP, ".git"))
+    @testset "the tail of the opcode table is in pl-vmi.c's order, consecutive (D-0407 item 3)" begin
+        have_up = isdir(joinpath(_CB_UP, ".git"))
+        have_up ||
+            @error "test_cont_boot_swipl: CI must check out swipl-devel at the pinned " *
+                "commit (LOGICKERNEL_UPSTREAM_SWIPL_DEVEL = $_CB_UP): none there"
+        @test have_up
+        if have_up
+            pinline = first(
+                filter(
+                    l -> startswith(l, "commit:"),
+                    readlines(joinpath(@__DIR__, "..", "..", "tools", "SWIPL_VERSION"))
+                )
+            )
+            pin = String(strip(pinline[8:end]))
+            @test occursin(r"^[0-9a-f]{40}$", pin)
+            up = _cb_vmi_names(readlines(`git -C $_CB_UP show $pin:src/pl-vmi.c`))
+            # the table's rows through the SAME extractor, read from src/pl-vmi.jl's text (`_CODE_TABLE` .. its closing paren)
+            src = readlines(joinpath(@__DIR__, "..", "..", "src", "pl-vmi.jl"))
+            r0 = findfirst(l -> startswith(l, "const _CODE_TABLE = ("), src)
+            r1 = r0 + findfirst(==(")"), src[r0:end]) - 1
+            tbl = _cb_vmi_names(src[r0:r1])
+            kern = Symbol[LK._CODE_TABLE[i].name for i in 1:length(LK._CODE_TABLE)]
+            @test !isempty(up) && !isempty(tbl) && !isempty(kern)
+            @test kern == tbl                            # the live table is the one the text declares
+            first_row = Int(LK.B_ARG_CF) + 1
+            tail = kern[first_row:end]
+            @test length(tail) == 12                     # B_ARG_CF .. I_SHIFTCP
+            @test first(tail) == :B_ARG_CF && last(tail) == :I_SHIFTCP
+            @test all(n -> n in up, tail)                 # every tail name is a VMI() entry of the pin
+            @test tail == filter(n -> n in Set(tail), up) # the same names, upstream's order
+            codes = [getfield(LK, n) for n in tail]
+            @test all(i -> Int(codes[i]) == Int(codes[i - 1]) + 1, 2:length(codes))
+            @test [LK._CODE_TABLE[Int(c) + 1].name for c in codes] == tail  # the consts and the rows agree
+        end
+    end
+else
+    @info "test_cont_boot_swipl: opcode-order row SKIPPED: no swipl-devel checkout at $_CB_UP (CI always has one)"
+end
