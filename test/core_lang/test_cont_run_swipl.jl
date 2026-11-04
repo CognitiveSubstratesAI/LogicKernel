@@ -9,7 +9,6 @@
 #   * Every swipl answer line is PINNED (swipl 10.1.19, this program and driver, LC_ALL=C, 2026-11-04, two runs byte-identical;
 #     evidence/CONT1/cr_rows.out); with `swipl` on PATH the live answers are compared with the pins too.
 #   * UNVERIFIED on the kernel: gate decides (a mismatch is traced to its upstream cause, not re-pinned).
-using Test, LogicKernel
 const LK = LogicKernel
 
 # TERM TYPES PER CHUNK: REFERENCE — the continuations' run side (src/pl-cont.jl, src/pl-gc.jl, src/pl-wam.jl I_RESET .. I_YIELD); every type in CI
@@ -17,7 +16,7 @@ include(joinpath(@__DIR__, "..", "term_under_test.jl"))
 const _CR = lk_term_type(Union{Int64, Float64, String, BigInt, Rational{BigInt}})
 _crs(x) = lk_sym(_CR, Symbol(x))
 
-"A term as the driver's `enc/1` writes it: `V<i>` by first occurrence, atoms by name, compounds `name(args)`."
+
 function _cr_enc(t::_CR, seen::Vector{UInt64}=UInt64[])::String
     k = kind(t)
     if k === VAR
@@ -82,6 +81,7 @@ function _cr_swipl_lines(path::String, names::Vector{String})::Vector{String}
     return String.(split(chomp(out), '\n'; keepempty=false))
 end
 
+
 # the program: the user predicates the rows run (iterator, effect handler, copied continuations, choice slots, liveness)
 const _CR_PROGRAM = raw"""
 cr_mem(a).
@@ -120,6 +120,12 @@ cr_tr(M) :- shift(a), context_module(M).
 cr_ctx(M) :- reset(cr_m:cr_tr(M), _, C), call(C).
 cr_slots(G, S) :- reset(G, _, call_continuation([T|_])), T =.. [_, _, _, _|S].
 cr_sha(T2) :- reset(cr_sh(_), _, call_continuation([T])), T =.. L, append(L0, [_], L), T2 =.. L0.
+cr_not :- \+ ( shift(n), fail ), true.
+cr_or(X) :- ( shift(o1), X = 1 ; X = 2 ).
+cr_soft(X) :- ( shift(s1), cr_mem(Y), Y == b *-> X = Y ; X = none ).
+cr_cutdeep(X) :- cr_mem(X), shift(c1), !.
+cr_if2(X) :- ( cr_mem(Y), shift(i1), Y == b -> X = Y ; X = none ).
+cr_late(X, Y) :- shift(l1), Y = f(X).
 """
 
 # (id, goal), run IN ORDER in one database
@@ -137,6 +143,14 @@ const _CR_CASES = [
     ("r_nested", raw"reset(reset(shift(outer), inner, _), B, _), R = B"),
     ("r_nested_inner", raw"reset(reset(shift(inner), inner, C1), B, C), R = B-C-C1"),
     ("r_shape", raw"reset(cr_sh(_), B, C), C = call_continuation(L), length(L, N), R = B-N"),
+    ("r_meta_shift", raw"reset((cr_mem(X), shift(s(X))), B, _), R = B-X"),
+    ("r_meta_resume", raw"reset((cr_mem(X), shift(s(X)), Y = X), B, C), call(C), R = B-X-Y"),
+    ("r_not", raw"once(reset(cr_not, B, C)), ( call(C) -> R = yes-B ; R = no-B )"),
+    ("r_or", raw"once(reset(cr_or(X), _, C)), findall(X, call(C), R)"),
+    ("r_soft", raw"reset(cr_soft(X), _, C), findall(X, call(C), R)"),
+    ("r_cutdeep", raw"reset(cr_cutdeep(X), _, C), findall(X, call(C), R)"),
+    ("r_if2", raw"reset(cr_if2(X), B, C), findall(X-B, call(C), R)"),
+    ("r_late", raw"reset(cr_late(1, Y), _, C), call(C), R = Y"),
     ("r_iter", raw"cr_sum(cr_gen(1, 5), 0, R)"),
     ("r_iter_empty", raw"cr_sum(cr_gen(2, 1), 0, R)"),
     ("r_effect", raw"cr_run(cr_prog, 0, R)"),
@@ -171,6 +185,14 @@ const _CR_PINNED = [
     raw"t_r_nested t_r_nested(outer)",
     raw"t_r_nested_inner t_r_nested_inner(-(-(V0,0),call_continuation([])))",
     raw"t_r_shape t_r_shape(-(b,1))",
+    raw"t_r_meta_shift t_r_meta_shift(-(s(a),a)) t_r_meta_shift(-(s(b),b)) t_r_meta_shift(-(s(c),c))",
+    raw"t_r_meta_resume t_r_meta_resume(-(-(s(a),a),a)) t_r_meta_resume(-(-(s(b),b),b)) t_r_meta_resume(-(-(s(c),c),c))",
+    raw"t_r_not t_r_not(-(no,n))",
+    raw"t_r_or t_r_or([|](1,[]))",
+    raw"t_r_soft t_r_soft([|](b,[]))",
+    raw"t_r_cutdeep t_r_cutdeep([|](a,[])) t_r_cutdeep([|](b,[])) t_r_cutdeep([|](c,[]))",
+    raw"t_r_if2 t_r_if2([])",
+    raw"t_r_late t_r_late(f(1))",
     raw"t_r_iter t_r_iter(15)",
     raw"t_r_iter_empty t_r_iter_empty(0)",
     raw"t_r_effect t_r_effect(3)",
@@ -202,18 +224,6 @@ function _cr_file()::Tuple{String, Vector{String}}
     return f, names
 end
 
-"""
-The kernel's lines for `names` after consulting `path`, as the driver writes swipl's; a run that
-raises the refusal exception (`LK.NotPortedError`, its `what` and `step`) writes `refused <what> <step>`.
-"""
-function _cr_kernel(path::String, names::Vector{String})
-    gd = LK.PL_global_data{_CR}()
-    ld = LK.PL_local_data{_CR}(gd)
-    st, ball = LK.load_file!(gd, ld, path)
-    out = [st === :ok ? "ok" : "exc " * _cr_enc(ball::_CR)]
-    for name in names
-        proc = LK.isCurrentProcedure(sym_key(_crs(name)), 1, LK.MODULE_user(gd))
-        if proc === nothing || !LK.isDefinedProcedure(gd, proc)
             push!(out, "$name undefined")
             continue
         end
@@ -257,6 +267,18 @@ function _cr_kernel(path::String, names::Vector{String})
     end
     return out
 end
+
+@testset "I_CUTCHP runs and the six boot bodies read back as swipl's (LB4 b2)" begin
+    f, names = _cr_file()
+    ng = length(_CR_CASES)
+    kl = _cr_kernel(f, names[1:ng])
+    @test length(kl) == ng + 1
+    for (k, p) in zip(kl, _CR_PINNED[1:(ng + 1)])
+        k == p || println(stderr, "  ours  ", k, "\n  swipl ", p)
+        @test k == p
+    end
+    # not vacuous: the rows answer error terms, a cut answer list, an uncut one and the read-back bodies
+    @test count(l -> occursin("raised(type_error(choice,", l), _CR_PINNED) >= 4
 
 @testset "reset/3, shift/1, call_continuation/1 run as swipl's (CONT1)" begin
     f, names = _cr_file()
