@@ -812,7 +812,7 @@ fixed it or a public issue exists.
 | `src/os/pl-os.jl` | the operating-system layer (Y1): `CpuTime` (moved from src/pl-arith.jl), `WallTime`, `getenv3`, `Setenv`, `Unsetenv`, `Pause`, `CPU_USER`/`CPU_SYSTEM`, the Linux `CLOCK_*` ids; the C library by `ccall` (`clock_gettime`, `setenv`, `unsetenv`) | `src/os/pl-os.c`, `src/os/pl-os.h` |
 | `src/os/pl-files.jl` | file names and deleting a file (Y1): `get_file_name`, `PL_get_file_name`, `RemoveFile` (`remove(3)` by `ccall`), delete_file/1 (`PL_predicates_from_files`) | `src/os/pl-files.c`, `src/os/pl-files.h`, `src/os/pl-file.c` |
 | `src/os/pl-glob.jl` | wildcards and file-name expansion (LB2b): `compilePattern`, `matchPattern`, wildcard_match/2,3, `expand`, expand_file_name/2, directory_files/2 (`PL_predicates_from_glob`) | `src/os/pl-glob.c` |
-| `src/pl-sys.jl` | the system built-ins (Y1): getenv/2, setenv/2, unsetenv/1, get_time/1, sleep/1 (`PL_predicates_from_system`); shell/2 NOT PORTED; setlocale/3 (CT1a, `PL_predicates_from_ctype`) | `src/pl-sys.c`, `src/os/pl-ctype.c` |
+| `src/pl-sys.jl` | the system built-ins (Y1): getenv/2, setenv/2, unsetenv/1, get_time/1, sleep/1 (`PL_predicates_from_system`); shell/2 is left out (deferred); setlocale/3 (CT1a, `PL_predicates_from_ctype`) | `src/pl-sys.c`, `src/os/pl-ctype.c` |
 | `src/pl-setup.jl` | `emptyStacks`: a new local data's stacks, with one foreign frame at the base; since V5d `allocStacks`/`init_stack` (the local stack's spare reserved above `max`) and `trim_stack`/`trimStacks` (the spare given back after an exception) | `src/pl-setup.c` |
 | `test/core_lang/test_rules_swipl.jl` | V4b's gate: nreverse and an execution differential over random rule clauses identical to swipl (answers and determinism), the body family covered; a call failing before its frame is filled; positions after deterministic exits (MQ6) pinned and live, with the record pools held to the live records; flatness of the last-call optimisation (and its absence growing the stack); open/next/close cycles at their baseline; warm, calls and exits allocate nothing | — |
 | `test/foreign/test_builtins_swipl.jl` | V5a2's gate: the built-ins' registration; the first users as queries against a live swipl (600 random goals × 3 `occurs_check` modes), from clause bodies, and the position built-ins pinned to libswipl | — |
@@ -7181,36 +7181,34 @@ byte-identical runs. Mutants: tools/mutants/LB4B2.py (19). Handoff: evidence/LB4
 boot-files STOPs, option (b) and option 1, provisional and pending audit; every list only shrinks). Upstream lines at
 cbf4e189.
 
-- **The tabling chain (T3, missing_prolog, cols, T4).** boot/tabling.pl:2356 `:- table eval_subgoal_in_residual/2` raises
-  `existence_error('$tabling':'$tbl_trienode'/1)` in the booted kernel (pl-tabling.c:6259, deferred: owner LD12). The
-  message's translation calls `'$dwim':'$dwim_predicate'/2` (pl-ext.c:156 -> pl-dwim.c:200, deferred: owner DBG1), whose
-  existence error escapes print_message/2 and then `'$load_file_list'`'s recovery (its print_message raises the same
-  way). So tabling.pl's load ends at :2356 and load.pl's consult list (boot/load.pl:74-75) ends before `user:topvars`:
-  T3 has 23 files, swipl 24 (toplevel_variables missing; tabling.pl 272 clauses vs 293; load.pl 21 vs 23, topvars.pl's
-  `'$load_context_module'/3` row and threads.pl's, the single-thread configuration); T1's missing_prolog rows are
-  tabling.pl's after :2356 (the `:- table` wrappers' `'$tabled'/2` and `'$table_mode'/3` facts, tabling.pl:1315-1324,
-  and the predicates of :2363-2433) and topvars.pl's 23. The cols rows: `$dcg:dcg_extend_cache/4` 144 vs 142
-  (dcg.pl:258 caches one row per nonterminal; topvars.pl's expand_vars//3 and expand_args//5 are never translated),
-  `system:'$init_goal'/3` 7 vs 2 (one `'$wrap_tabled'/2` goal per tabled head, tabling.pl:1326/1349 via
-  init.pl:750-751: the five heads of :2356 and :2407-2411, listed by swipl's own -b session), and
-  `system:'$load_context_module'/3` 23 vs 22 (topvars.pl's row, init.pl:3221-3231).
+- **The boot loads whole** (T3, missing_prolog, cols; re-measured at the LB4 b2 gate, 2026-11-04). The earlier "tabling chain"
+  (boot/tabling.pl:2356 `:- table` raising `existence_error('$tabling':'$tbl_trienode'/1)`, the message's translation reaching
+  `'$dwim':'$dwim_predicate'/2`, tabling.pl's load ending at :2356 and topvars.pl never loaded) is gone: pl-wrap.c's
+  `wrap_predicate` landed with TAB1-min, so the five `'$wrap$...'` closures (`'$tabling':'$wrap$eval_subgoal_in_residual'/2`,
+  and `system:'$wrap$answer_count_restraint'/0`, `'$wrap$radial_restraint'/0`, `'$wrap$tabled_call'/1`, `'$wrap$undefined'/0`)
+  exist on both sides and are compared as any row (they are rows of the oracle's .out; their names are code lists there; the old
+  LD12 rewrite that deleted them from the oracle is removed). T3 lists the same 24 files on both sides and differs in one count:
+  load.pl 22 vs 23 (threads.pl's `'$load_context_module'/3` fact, which load.pl:78-80 does not consult in the single-thread
+  configuration, FLAG F6). T1 has no cols difference and no lacking module. T1's ONLY rows are `system:when/2` and
+  `system:trigger_first/2`: the kernel defines them natively (the AV8 stand-in `_boot_when!`, src/pl-ext.jl; owner AUTOLOAD1,
+  removal condition "trapUndefined autoloads"), swipl has them in library/when.pl, not in the boot image.
 - **trie_gen_compiled/2,3** (T1 missing_prolog): system predicates with supervisor code that pl-trie.c:4975-4987
   (initTries) creates; deferred with the trie step (docs/r2_owners.tsv: trie_gen/2,3 -> TRIE1).
-- **T4 is blind to these messages** (a guard that cannot fail): test_boot_messages passes with `_BM_KNOWN` empty because
-  the boot's messages whose translation reaches dwim are never printed (the printing raises), so the collector records
-  none. T4 sees them only once DBG1's `'$dwim_predicate'/2` lands; until then the tabling error is pinned through T3/T1.
-- **missing_foreign = 410**: swipl's foreign (C) predicates in the boot modules the kernel does not register yet (T1);
+- **T4 and dwim**: test_boot_messages passes with `_BM_KNOWN` empty. A boot message whose translation reaches
+  `'$dwim':'$dwim_predicate'/2` (pl-ext.c:156 -> pl-dwim.c:200, deferred: owner DBG1) would raise while printing and be
+  missed by the collector; such a message appears only once DBG1 lands and the guard's rows then decide.
+- **missing_foreign = 388**: swipl's foreign (C) predicates in the boot modules the kernel does not register yet (T1);
   the count only falls, by the steps that register them (R2 owners table).
 - **test_load L1-L6** (test/files/test_load_swipl.jl `_TL_KNOWN_DIFFS`, `(line, kernel, swipl)` per line):
   L1 `'$dwim_predicate'/2` (owner DBG1), L2 `'$syspreds':'$foreign_predicate_source'/2` (pl-proc.c:4146, owner PR1),
-  L3 `system:'$set_table_wrappers'/1` (tabling.pl:1647, owner LD12): `'$tabling'` defines and exports it, but the
-  tabling chain stops tabling.pl's load, so init.pl:2929 `'$import_from_loaded_module'` never imports it into system;
-  the incremental case's two extra lines (domain_error(predicate_property, incremental|opaque), init.pl:187-191) are the
-  kernel's set_predicate_attribute without the tabling branch (pl-proc.c:3864-3868 -> pl-tabling.c:10361; the recorded
-  DIVERGES in src/pl-proc.jl, owner LD12). L4 `initialization(main)` (swipl autoloads library(main); owner the
-  autoloader step), L5 redefining a predicate another file defined (abolishProcedure): deferred, NotPortedError raised
-  in redefineProcedure (src/pl-proc.jl), owner R2; L6 a reconsult: deferred, NotPortedError raised in startConsult
-  (src/pl-srcfile.jl), owner LB6.
+  L3 `:- dynamic(p/1 as incremental)`: `'$tabling':unwrap_monotonic/1` calls `prolog_wrap:unwrap_predicate/2` (pl-wrap.c),
+  which is undefined (owner WRAP1, docs/r2_owners.tsv): the directive raises and the loader prints undefined_export
+  (prolog_wrap, unwrap_predicate/2) where swipl answers `ok`. L4 `initialization(main)` (swipl autoloads library(main)
+  and prints an initialization_error for main/1; the kernel has no autoloader, so main/0 is undefined and the report reaches
+  `'$dwim_predicate'/2`: the load raises there; owners DBG1 and AUTOLOAD1). L5 FLIPPED at the LB4 b2 gate (audit D-0410
+  item 7): redefineProcedure no longer refuses, and both rows (a predicate another file defined; asserted-then-file) load as
+  swipl 10.1.19 loads them (`ok`, then `warning redefined_procedure(static, s/1)`), compared with `@test ours == theirs`.
+  L6 a reconsult: deferred, NotPortedError raised in startConsult (src/pl-srcfile.jl), owner LB6.
 - **T1 driver** (fixed): `locked` is read as `'$get_predicate_attribute'(M:H, system, 1)` (pl-proc.c:3472-3473); the
   driver had asked predicate_property(_, system), which syspred.pl does not define, and compared 0 with P_LOCKED.
 - **T2 rewritten rows**: the four `_BC_REWRITTEN` hashes are swipl's, computed by the driver over the clause texts the
@@ -7262,13 +7260,13 @@ setlocale, 0)`, with `lccats`) is ported ahead of the rest of that file.
   other errno -> `system_error` (ERR_SYSCALL "setlocale"); an unknown category -> `domain_error(category, A1)`.
 - **DIVERGES (representation only):** the old locale is an atom of its UTF-8 text; the comparison raises no `CMP_ERROR`
   (the kernel's compare raises nothing); a failed query fails. `lccats` is a tuple, not a NULL-terminated array.
-- **DIVERGES (errno; representation only, owner: none, platform behaviour; measured at the first kernel run):** glibc 2.39 sets `errno` to ENOENT only the FIRST time it fails to
+- **DIVERGES (errno; representation only, owner: CT1, the platform locale step that keeps `updateLocale`, D-0408 item 3; measured at the first kernel run):** glibc 2.39 sets `errno` to ENOENT only the FIRST time it fails to
   find a locale name and leaves it untouched on every later try of that name (a C program with `errno = 0` before the
   second try reads `0`), so upstream's `errno == ENOENT` test (pl-ctype.c:938) rests on whatever `errno` held before; swipl 10.1.19 answers
   `existence_error(locale, Name)` every time because its `errno` stays ENOENT by accident. The kernel clears `errno` before
   the call (`_libc_setlocale`) and reads a failure that left it 0 as ENOENT; another errno (EINVAL for a name of 5000
   characters, row t24) stays `system_error`. Mutants CT1a-A3, A3b, A4.
-- **KNOWN DIFFERENCE (the character 0; owner: the atom-text step that lifts the NUL limit, src/pl-read.jl:2005):** the kernel's atoms are Symbols and cannot hold the character 0 (`NotPortedError`, 'the
+- **KNOWN DIFFERENCE (the character 0; owner: ATOM1, PROPOSED on the status board (atoms holding the character 0), src/pl-read.jl:2005):** the kernel's atoms are Symbols and cannot hold the character 0 (`NotPortedError`, 'the
   term interface', src/pl-read.jl:2005), so rows t25, t26 and t31, which build such an atom with `atom_codes/2`, raise it
   before `setlocale/3` is reached; the test pins that and carries swipl's answers (t25 `'C'`, t26 `ok`, t31
   `representation_error(encoding)`). The cut of the name at its NUL stays in `_ctype_chars` (mutant B2, declared

@@ -173,7 +173,7 @@ COMMITTED (edit-only, NOTHING RUN, no daemon slot taken):
   side effects via threads), test_load_swipl (`_TL_NORMALISED[] == 0`; header lines 9-15 reworded). test_module_swipl
   "the table" testset and test_module_path.jl use `LK.setupProlog(T)` (the unbooted table: 2 modules, no clause).
 TERM GREP: one expected hit in da14a14's diff: upstream's own fatalError text "Cannot wrap abort exception" (pl-vmi.c:5270),
-  copied as is into a Julia `error`; not a crash description. The audit may ask for a reword.
+  copied as is into a Julia `error` (accepted, D-0407 item 6).
 LEFT for G5 (stale-pin hunt, 166 hits of KNOWN DIFFERENCE|interim|until R2|stand-in|NotPortedError|printMessage over test/,
   scratch list rebuilt by that grep): checked and left (expectation already swipl's or a refusal still in src):
   test_ssu_compile_swipl:561 (','/2 stand-in comment), test_metacall:243, test_attvar_wakeup header, test_declare_destroy /
