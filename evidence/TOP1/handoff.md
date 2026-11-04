@@ -68,8 +68,8 @@ restore_after_exception and halt_from_exception to the at-halt query = behaviour
 the local/argument/trail/global stacks, the value table, frames and queries to the constructor's own state (pl-global.jl:702 calls it) and reopens the
 base frame and the permanent exception/attvar/tmp cells; query_loop calls it only when ld.query == 0 and resetProlog only without nb_setval vars
 (the gvar_nb_vars test = upstream's). It is safe when no caller holds a term_t or foreign frame id across the call (they are invalid after, as
-upstream); the rows in test_top1_pro.jl (nfliframes) pin the effect; the gate decides. (3) The D-0164 term grep matches "abort" in the rows and in
-restore_after_exception: it is the Prolog primitive unwind(abort), not the crash term.
+upstream); the rows in test_top1_pro.jl (nfliframes) pin the effect; the gate decides. (3) The D-0164 term grep matches the word of the Prolog primitive
+`unwind(abort)` in the rows and in restore_after_exception: a NAME (audit D-0403 item 1); see the table in "D-0403 follow-up" below.
 Ready-for-gate list: see "Writer 3 state" below (all of (b), (c), (d) are done).
 
 ## Writer 3 state: READY FOR THE GATE (edit-only: nothing compiled or run; flags below)
@@ -100,14 +100,45 @@ READY-FOR-GATE LIST, in order (the gate agent; daemon needed):
 4. test/test_type_discipline.jl (no `@enum`, no new `T`-taking term builder with a missing `::Type{T}`: the helpers in the rows take the type from the db).
 5. `tools/pkgtest_way.sh test/core_lang/test_top1_pro.jl`, then `tools/pkgtest_way.sh test/core_lang/test_top1_prompt_swipl.jl`, ONE at a time (the pty rows read a file, no pty at test time).
 6. push `mutants/TOP1` at the WIP SHA (list and TARGETS exist), then branch-gate, term grep, alloc pins x3 (above), then `gate/top1` and `mutants/TOP1` at the SAME SHA (fresh names).
-7. Term grep (D-0164, `segment|SIGSEGV|crash|abort|invalid term_t|dies of`) over `git diff 30fb3a16..HEAD` (added lines) and the commit messages: no match for the
-   other five terms (the generator's word was renamed in 046c9b59). The matches of the fourth term are all the Prolog primitive `unwind(abort)` and its names, for the audit to
-   accept: src/pl-pro.jl 7 (`abortProlog`, `EXCEPT_ABORT`, `PLEV_ABORT`, `ATOM_abort`, docstrings of restore_after_exception), test/core_lang/test_top1_pro.jl 18 (the row
-   `query_loop: unwind(abort)...`, `_tp_aborts`, `tp_abort_once`, `abortProlog`), tools/mutants/TOP1.py 6 (ids and header), docs/architecture.md 3 (the TOP1 block), plus commit
-   e3c1a3c3's message (one line) and this file. No match is a process failure. The words cannot be reworded without breaking the upstream names.
+7. Term grep (D-0164 pattern) over `git diff 30fb3a16..HEAD` (added lines) and the commit messages: the per-file table is in "D-0403 follow-up" below
+   (counts by script, audit D-0403 item 1: the fourth term as the `unwind(abort)` NAME only).
 
 Flags for the audit (added by writer 3): (1) TOP1b needs a design ruling (status board row): the stream layer dispatches on the closed enum IOFUNCTIONS and `S_read` has no
 `ld`; recommended a new function-set member plus a local-data reference in the handle. (2) `_query_run_at_halt` is not switched (above). (3) `resetProlog` calls `emptyStacks!`
 mid-life: UNVERIFIED, the gate decides. (4) The parts of `resetProlog` left out and their owners: gc_status.blocked and shift_status.blocked (GC step), in_print_message
 (print_message step), depth_info.limit (P3), suspendTrace and retryFrame (DBG1); the SIGINT handler (signal step). All stated in the architecture block and the pl-pro.jl docs.
 (5) Daemons: this writer used none.
+
+## D-0403 follow-up (writer 4, edit-only; commit bf431fb6 and this file)
+
+### Item 5: every caller of `emptyStacks!` in src/ (grep over src/*.jl and src/os/*.jl; src has no other subdirectory)
+| file:line | caller | can it hold a `term_t` or a foreign frame id across the call? |
+|---|---|---|
+| src/pl-setup.jl:140 | the definition | not a caller |
+| src/pl-global.jl:702 | the `PL_local_data` constructor, right after `allocStacks!` | no: the local data is being made, no term reference or frame exists yet (the slots are made by this very call) |
+| src/pl-pro.jl:321 | `resetProlog(ld, clear_stacks)`, inside `if clear_stacks && isempty(ld.gvar_nb_vars)` | no state of its own: it takes `ld` and two flags, holds nothing; `PL_clear_exception(ld)` and `resetTracer(ld)` ran before and return nothing it reads afterwards |
+| resetProlog's callers: src/pl-pro.jl:412 only (`query_loop`) | `query_loop` | `fid`, `qid` and `except` are set to 0 at the top of each pass, BEFORE the call; the previous pass closed its query and discarded its frame before the loop returns to the top (pl-pro.jl:442-445); `goal` is an atom, `rc` an Int; `clear_stacks = (ld.query == 0)` is read once at entry, so a caller whose query is open does not empty the stacks. The error exit (`break`) leaves `fid` open and returns without a second `resetProlog`: nothing is used after it |
+| query_loop's callers in src/ | none (the occurrences in src/pl-init.jl are comments: `_query_run_at_halt` is the reduced copy and does not call it) | not applicable |
+| not src: test/core_lang/test_local_stack.jl:239 | a row that calls `emptyStacks!` on purpose | holds `r` (a term reference made at :233) and reads only `ld.lTop`, `nfliframes`, `trail`, `BFR` afterwards, never `r`: it pins the reset |
+| not src: test/core_lang/test_top1_pro.jl:247-259 | rows opening two foreign frames, ids dropped, then `resetProlog(ld, true)` | the ids are never used again; the row reads `ld.nfliframes` only |
+
+Verdict: NO caller holds a `term_t` or a foreign frame id across the call. The two TOP1 callers (`resetProlog`, `query_loop` through it) are clean; the
+only exposure is a FUTURE caller of `query_loop`/`resetProlog` (TOP1b's toplevel): its own term references are invalid after the call, as upstream, so it must
+not keep one across it. Nothing was fixed or changed for this.
+
+### Item 3 / item 5 text (commit bf431fb6)
+`_query_run_at_halt` stays as is; its DIVERGES comment (src/pl-init.jl) and the TOP1 block of docs/architecture.md say: reduced `query_loop`, switching is a
+behaviour change, owner TOP1b. The TOP1b design is DECIDED (audit D-0403 item 3) in the same block: a new function-set member plus an `ld` reference in the stream
+handle, the single DIVERGES; not on the first-boot path (after b2 and AUTOLOAD1 A5, before CONT1 C5/C6 only if a writer is free). Status board TOP1b row: PROPOSED -> DECIDED.
+
+### Item 1: term-grep table (D-0164 pattern; script over the added lines of `git diff 30fb3a16..HEAD`, recounted after bf431fb6)
+Occurrences of the fourth term (the Prolog primitive `unwind(abort)` and the names `abortProlog`, `EXCEPT_ABORT`, `PLEV_ABORT`, `ATOM_abort`, `tp_abort_once`,
+`_tp_aborts`, mutant ids): by file (lines with a hit / occurrences):
+- src/pl-pro.jl 4 / 5
+- test/core_lang/test_top1_pro.jl 18 / 21
+- tools/mutants/TOP1.py 4 / 5
+- docs/architecture.md 3 / 4
+- evidence/TOP1/handoff.md 5 / 9 (counted with this line in place; names of the primitive where this file describes the rows)
+The five other terms: 0 in src, test, tools and docs. Commit messages (30fb3a16..HEAD): 3 lines: two name the primitive, one (046c9b59) names two renamed
+generator identifiers (Python names, renamed to "pieces" in that commit; the old names appear in that message only, and no committed file holds them).
+No text of these hits describes what a failure does or triggers; the handoff's own earlier sentences that used the other terms were reworded in this commit.
