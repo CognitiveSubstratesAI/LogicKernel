@@ -7382,3 +7382,20 @@ Tests: test/core_lang/test_cont_run_swipl.jl (43 rows against swipl 10.1.19, two
 `c_*` rows of test/core_lang/test_cont_boot_swipl.jl, which now assert swipl's answers. Read first if the kernel differs: r_slots (where
 `<inactive>` sits), r_lco (the empty list), r_ctx (a transparent frame's context), r_nested (which `reset/3` takes a ball). Mutants
 tools/mutants/CONT1.py (26, one equivalent with its reason; the choice-slot restore has no separating row and is listed as such).
+
+## AUTOLOAD1 (A5, part 1) — the A1c row, the first-boot list (R2, audit D-0397 item 3, D-0398 item 2, D-0400 item 2; edit-only: nothing was compiled when this was written; the gate decides)
+
+UPSTREAM: swipl-devel cbf4e1896275 — boot/init.pl (`'$undefined_procedure'/4` :949-969), boot/autoload.pl (`'$autoload'/1`, `set_autoload/1` :945-946),
+pl-proc.c (`autoLoader` :2962, `trapUndefined` :3008-3063), pl-init.c (`vwarning` :2347). Plan and list: evidence/AUTOLOAD1/handoff_a5.md.
+
+Written: the Prolog half of the hook is upstream's own text, vendored verbatim (vendor/swipl-devel/boot); the loader defines it at the first boot
+(LB4 b2), so no Prolog is written here. `autoLoader` already reaches it as pl-proc.c does. The A1c mutant (mcall_cont's `ld.environment_frame = FR`)
+changes only the parent frame of the autoloader's query: the DEFERRED KILL declaration in tools/mutants/AUTOLOAD1.py is replaced by a KILL naming the
+LK-only row "A1c's killer (A5)" of test/core_lang/test_autoload_trap.jl (a test-defined hook through `call(user:foo)`; the hook query's
+`saved_environment` must be foo's frame). The row retires with the other test-hook rows when the hook guard is deleted; its swipl-compared form needs
+`prolog_frame_attribute/3` (DBG1).
+
+Left to the first boot (b2), in order: the booted swipl-compared rows (test_autoload_swipl.jl); the af08 flip (`set_prolog_flag(autoload, X)` with X
+unbound answers true through `$autoload:set_autoload/1`; the kernel's rows run with `bootsession` set and `propagateAutoload` returns at once);
+deleting the hook guard with the test-hook rows and the guard mutant in one commit; the retry warning through `print_message/2` (`vwarning` needs
+`gd.initialised`, a struct change, and messages.pl); the clause/2 `@assert` removal with the NF2-C5 kill row.
