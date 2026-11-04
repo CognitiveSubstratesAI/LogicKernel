@@ -155,6 +155,31 @@ function PL_cons_list(
     return true
 end
 
+# PORT: pl-fli.c PL_cons_list_v
+# DIVERGES: no global space to ensure, so it cannot fail; on the CELLS, as `PL_cons_list`: the
+# `count` list cells at `gTop`, each head `_cell_link!` (`bindConsVal`) from the consecutive term
+# references `elems`, `elems+1`, …, the last tail `[]`. `list` is set after the heads are read, so
+# it may be `elems` itself.
+"Make term reference `list` hold the list of the `count` terms the references `elems`… hold (pl-fli.c)."
+function PL_cons_list_v(
+    ld::PL_local_data{T}, list::term_t, count::Int, elems::term_t
+)::Bool where {T}
+    if count > 0
+        p = allocGlobalCells!(ld, 3 * count)                    # p = gTop; (3*count cells)
+        for i in 0:(count - 1)
+            q = p + 3 * i
+            ld.gstack[q] = ld.functor_dot2                      # p[0] = FUNCTOR_dot2
+            _cell_link!(ld, q + 1, elems + i + 1)               # bindConsVal(&p[1], valHandleP(elems))
+            ld.gstack[q + 2] =
+                i + 1 < count ? consPtr(q + 3, TAG_COMPOUND | STG_GLOBAL) : ld.atom_nil_w
+        end
+        ld.slots[list + 1] = consPtr(p, TAG_COMPOUND | STG_GLOBAL)  # setHandle(list, consPtr(gTop, …))
+    else
+        ld.slots[list + 1] = ld.atom_nil_w                      # setHandle(list, ATOM_nil)
+    end
+    return true
+end
+
 # PORT: pl-fli.c PL_unify_list
 # DIVERGES: no global space to ensure; on the CELLS (L1e e3): a cell that `canBind` — unbound, or (AV1b) an
 # attributed variable — bound (`bindConst`) to a new `'[|]'/2` compound at gTop, `h`/`t` its argument
@@ -322,6 +347,27 @@ function PL_cons_functor(
         _cell_link!(ld, p + i, a[i] + 1)                        # bindConsVal(++a, valHandleP(r))
     end
     ld.slots[h + 1] = consPtr(p, TAG_COMPOUND | STG_GLOBAL)     # setHandle(h, consPtr(t, …))
+    return true
+end
+
+# PORT: pl-fli.c PL_cons_functor_v
+# DIVERGES: the functor is a functor WORD, as `PL_cons_functor`'s; no global space to ensure, so it
+# cannot fail. The arguments are the consecutive term references `a0`, `a0+1`, …, each laid in by
+# `_cell_link!` (`bindConsVal`).
+"Make term reference `h` hold a new compound of functor word `fd` whose arguments are the term references `a0`… (pl-fli.c)."
+function PL_cons_functor_v(
+    ld::PL_local_data{T}, h::term_t, fd::word, a0::term_t
+)::Bool where {T}
+    arity = arityFunctor(ld.functors, fd)                       # size_t arity = arityFunctor(fd)
+    if arity == 0
+        ld.slots[h + 1] = nameFunctor(ld.functors, fd)          # setHandle(h, nameFunctor(fd))
+    else
+        p = _alloc_compound!(ld, fd, arity)                     # a = t = gTop; gTop += 1+arity; *a = fd
+        for i in 1:arity
+            _cell_link!(ld, p + i, a0 + i)                      # bindConsVal(++a, ai++): slot of a0+i-1
+        end
+        ld.slots[h + 1] = consPtr(p, TAG_COMPOUND | STG_GLOBAL) # setHandle(h, consPtr(t, …))
+    end
     return true
 end
 
