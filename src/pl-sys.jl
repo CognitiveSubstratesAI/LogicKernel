@@ -134,7 +134,7 @@ end
 # ORIGINAL (CT1a): libc's `setlocale(category, locale)` through `ccall` (as `Setenv`, src/os/pl-os.jl); `locale`
 # `nothing` is the NULL query. The answer is copied at once (libc's buffer lives until the next call) and `errno` read
 # before anything else runs.
-# DIVERGES (measured, glibc 2.39): upstream tests `errno == ENOENT` after a failed `setlocale(3)`, but glibc sets ENOENT only the
+# DIVERGES (representation only; owner: none, platform behaviour; measured, glibc 2.39): upstream tests `errno == ENOENT` (src/os/pl-ctype.c:938) after a failed `setlocale(3)`, but glibc sets ENOENT only the
 # FIRST time it fails to find a locale name and leaves `errno` untouched on every later try of that name (a negative cache), so
 # upstream's answer for a repeated unknown name rests on whatever errno held before (a C program that sets `errno = 0` first
 # sees `0` the second time). The kernel clears `errno` before the call and reads a failure that left it 0 as the not-found

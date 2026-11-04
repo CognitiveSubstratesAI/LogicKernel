@@ -7256,13 +7256,13 @@ setlocale, 0)`, with `lccats`) is ported ahead of the rest of that file.
   other errno -> `system_error` (ERR_SYSCALL "setlocale"); an unknown category -> `domain_error(category, A1)`.
 - **DIVERGES (representation only):** the old locale is an atom of its UTF-8 text; the comparison raises no `CMP_ERROR`
   (the kernel's compare raises nothing); a failed query fails. `lccats` is a tuple, not a NULL-terminated array.
-- **DIVERGES (errno, measured at the first kernel run):** glibc 2.39 sets `errno` to ENOENT only the FIRST time it fails to
+- **DIVERGES (errno; representation only, owner: none, platform behaviour; measured at the first kernel run):** glibc 2.39 sets `errno` to ENOENT only the FIRST time it fails to
   find a locale name and leaves it untouched on every later try of that name (a C program with `errno = 0` before the
-  second try reads `0`), so upstream's `errno == ENOENT` test rests on whatever `errno` held before; swipl 10.1.19 answers
+  second try reads `0`), so upstream's `errno == ENOENT` test (pl-ctype.c:938) rests on whatever `errno` held before; swipl 10.1.19 answers
   `existence_error(locale, Name)` every time because its `errno` stays ENOENT by accident. The kernel clears `errno` before
   the call (`_libc_setlocale`) and reads a failure that left it 0 as ENOENT; another errno (EINVAL for a name of 5000
   characters, row t24) stays `system_error`. Mutants CT1a-A3, A3b, A4.
-- **DIVERGES (the character 0):** the kernel's atoms are Symbols and cannot hold the character 0 (`NotPortedError`, 'the
+- **KNOWN DIFFERENCE (the character 0; owner: the atom-text step that lifts the NUL limit, src/pl-read.jl:2005):** the kernel's atoms are Symbols and cannot hold the character 0 (`NotPortedError`, 'the
   term interface', src/pl-read.jl:2005), so rows t25, t26 and t31, which build such an atom with `atom_codes/2`, raise it
   before `setlocale/3` is reached; the test pins that and carries swipl's answers (t25 `'C'`, t26 `ok`, t31
   `representation_error(encoding)`). The cut of the name at its NUL stays in `_ctype_chars` (mutant B2, declared
