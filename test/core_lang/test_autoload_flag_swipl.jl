@@ -335,31 +335,36 @@ end
 # here: the call raises the existence error upstream raises (PL_Q_PASS_EXCEPTION) and the flag is as it was; in the boot session it is skipped
 @testset "LK-ONLY: set_prolog_flag(autoload, V) outside the boot session raises for \$autoload:set_autoload/1" begin
     # UNVERIFIED on the kernel: gate decides (the exact error term; the test reads the encoded line for the names)
-    path = joinpath(mktempdir(), "nb.pl")
-    write(
-        path,
-        "t_nb(R) :- catch(set_prolog_flag(autoload, false), error(E, _), R = raised(E)).\n" *
-        "t_nb_undef(R) :- catch(zz_af_no_such_pred_xx, error(E, _), R = raised(E)).\n"
-    )
-    gd = LK.PL_global_data{_AF}()
+    # the UNBOOTED database (`setupProlog`): a booted copy (`PL_global_data{T}()`) has boot/autoload.pl loaded, so `\$autoload:set_autoload/1`
+    # exists there and this row's subject (the call before the Prolog half is loaded) is not reached. catch/3 and load_files/2 are the Prolog
+    # half's too, so the goals are run directly and the uncaught ball is read (the PrologException of the query API).
+    gd = LK.setupProlog(_AF)
     ld = LK.PL_local_data{_AF}(gd)
-    st, _ = LK.load_file!(gd, ld, path)
-    @test st === :ok
-    line = _af_query(gd, ld, "t_nb")
+    ball(g) =
+        try
+            LK.query_answers(ld, g; limit=1)
+            nothing
+        catch ex
+            ex isa LK.PrologException || rethrow()
+            _af_enc(ex.ball)
+        end
+    line = ball(mk_expr(_AF, _AF[_afs(:set_prolog_flag), _afs(:autoload), _afs(:false)]))
+    @test line !== nothing
+    line = something(line, "")
     @test occursin(_af_codes("existence_error"), line)
     @test occursin(_af_codes("set_autoload"), line)
     @test occursin(_af_codes("\$autoload"), line)
     @test LK.truePrologFlag(ld, LK.PLFLAG_AUTOLOAD)         # the flag was not changed
     @test String(sym_text(LK.PL_current_prolog_flag(gd, mk_sym(_AF, :autoload), :atom))) ==
         "true"
-    # the same program outside the boot session: an undefined predicate is the soft existence_error (S_UNDEF) ...
-    line = _af_query(gd, ld, "t_nb_undef")
+    # the same database outside the boot session: an undefined predicate is the soft existence_error (S_UNDEF) ...
+    line = something(ball(_afs(:zz_af_no_such_pred_xx)), "")
     @test occursin(_af_codes("existence_error"), line)
     @test occursin(_af_codes("zz_af_no_such_pred_xx"), line)
     # ... and in the boot session the AUTOLOAD1 Q3 error naming the predicate (pl-proc.c:3051-3053; DIVERGES: upstream ends the process)
     gd.bootsession = true
     err = try
-        _af_query(gd, ld, "t_nb_undef")
+        LK.query_answers(ld, _afs(:zz_af_no_such_pred_xx); limit=1)
         nothing
     catch e
         e

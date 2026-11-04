@@ -21,6 +21,8 @@
 #     `_autoload_predicate_name` (pl-util.c predicateName);
 #   * the A1 killer: a hook run THROUGH the VM from `call(user:foo)` and from a plain call leaves the caller's frame intact
 #     (the autoloader's query frame must not overwrite an unprotected `lTop`, A1's `mcall_cont` frame set-up).
+# Every row builds the UNBOOTED database (`LK.setupProlog`, via `_RDB_unbooted()`): the white-box test hooks stand where the pre-boot kernel has no
+# `$undefined_procedure/4`; a booted copy (`PL_global_data{T}()`) has the real one from boot/init.pl (D-0398 (e)).
 # Mutation-tested by tools/mutants/AUTOLOAD1.py.
 using Test, LogicKernel
 const LK = LogicKernel
@@ -41,7 +43,7 @@ _at_texts(ld, from::Int) = String[_at_text(m) for m in ld.messages[(from + 1):en
 
 "A database whose `called/1` is dynamic (the hook's bodies record in it) and a foreign frame open."
 function _at_db()::_RDB
-    db = _RDB()
+    db = _RDB_unbooted()
     LK.setDynamicDefinition!(_at_proc(db, :called, 1).definition, true)
     LK.PL_open_foreign_frame(db.ld)
     return db
@@ -77,14 +79,14 @@ function _at_run(name, answer; arity::Int=0, body::Union{Nothing, _R}=_at_record
 end
 
 @testset "A2: a fresh local data has an empty chain and no loop" begin
-    gd = LK.PL_global_data{_R}()
+    gd = LK.setupProlog(_R)
     ld = LK.PL_local_data{_R}(gd)
     @test isempty(ld.autoload_nesting)
     @test ld.autoload_loop === nothing
 end
 
 @testset "the guard: no defined hook, the answer is nil at once" begin
-    db = _RDB()
+    db = _RDB_unbooted()
     ld = db.ld
     @test LK.truePrologFlag(ld, LK.PLFLAG_AUTOLOAD)              # the default: autoload is on
     @test _at_hookproc(db) === nothing

@@ -20,10 +20,14 @@ struct _RDB
     ld::LK.PL_local_data{_R}
     user::LK.module_t{_R}
 end
-function _RDB()
-    gd = LK.PL_global_data{_R}()
+function _RDB(gd::LK.PL_global_data{_R})
     return _RDB(gd, LK.PL_local_data{_R}(gd), LK.MODULE_user(gd))
 end
+# the default database is the booted template's copy (b2: `PL_global_data{T}()`)
+_RDB() = _RDB(LK.PL_global_data{_R}())
+# the UNBOOTED database (`setupProlog`: the system module's built-ins, no boot/*.pl loaded), for the rows whose subject is
+# the kernel before the boot (the white-box hooks of the autoload trap: the Prolog half's `$undefined_procedure/4` is absent)
+_RDB_unbooted() = _RDB(LK.setupProlog(_R))
 _rfunctor(t::_R) = kind(t) === SYM ? (t, 0) : (child(t, 1), nchildren(t) - 1)
 _rproc(db::_RDB, t::_R) = LK.lookupProcedure(_rfunctor(t)..., db.user)
 
