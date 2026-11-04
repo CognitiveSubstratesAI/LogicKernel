@@ -169,10 +169,10 @@ const _BI_KERNEL_MODULES_LACKING = String[] # every boot module the oracle has, 
 # load.pl's count as swipl's (T1's `'$load_context_module'/3` row carries the same rewrite, 23).
 const _BI_KERNEL_T3_DIFFER = [
     (
-        2,
-        ("load.pl", "system", 1, 22, "false", "true", String[]),
-        ("load.pl", "system", 1, 23, "false", "true", String[])
-    )
+    2,
+    ("load.pl", "system", 1, 22, "false", "true", String[]),
+    ("load.pl", "system", 1, 23, "false", "true", String[])
+)
 ]
 
 "The oracle's T1/T3 with the configuration rows applied."
