@@ -3614,7 +3614,13 @@ const SPAN_CALLEE_EXEMPT = [
         :cold,
         "the cold import through _cell_link! (B_ARGVAR, H_VAR write mode)"
     ),
-    (LK.autoImport, :cold, "V5c: the first call of an undefined predicate"),
+    (
+        LK.trapUndefined,
+        :cold,
+        "V5c: the first call of an undefined predicate, once per predicate (pl-wam.c getProcDefinedDefinition, called from I_LCALL; " *
+        "pl-proc.c trapUndefined: autoImport, since AUTOLOAD1 A3 the autoloader's query, the S_UNDEF supervisor); a call of the loop " *
+        "since A3 (pl-wam.jl I_LCALL), where `autoImport` was one before"
+    ),
     (
         LK.discardChoicesAfter,
         :cold,

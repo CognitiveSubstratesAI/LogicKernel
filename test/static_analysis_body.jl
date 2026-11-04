@@ -254,11 +254,19 @@ end
             loop_tt = (LK.PL_global_data{_M2}, LK.PL_local_data{_M2}, Int, Bool)
             allocs = check_allocs(LK.PL_next_solution_guarded, loop_tt)
             # V5c: resolving an UNDEFINED predicate (`getProcDefinedDefinition` → `trapUndefined` →
-            # `autoImport`, which may create a procedure, or `S_UNDEF`'s supervisor) runs once per
-            # predicate, at its first call — the cold path upstream takes from `I_LCALL` too — so its
-            # sites are not the call path's; every other site in the spans still is (the BOUNDARY's
-            # out-of-line frames, exempt here since L1c-6, went with the keyed variables in L1f f3-3)
-            cold(a) = any(fr -> fr.func === :getProcDefinedDefinition, a.backtrace)
+            # `autoImport`, which may create a procedure, the autoloader's query since AUTOLOAD1 A3,
+            # or `S_UNDEF`'s supervisor) runs once per predicate, at its first call — the cold path
+            # upstream takes from `I_LCALL` too — so its sites are not the call path's; every other
+            # site in the spans still is (the BOUNDARY's out-of-line frames, exempt here since L1c-6,
+            # went with the keyed variables in L1f f3-3). Since A3 the run loop CALLS `trapUndefined`
+            # (the call-site pass sees it at I_LCALL; its own entry of `SPAN_CALLEE_EXEMPT`) instead of
+            # inlining it: the sites of the callee carry no `getProcDefinedDefinition` frame, they carry
+            # the `trapUndefined` one. Both frames stay: the cold path is whatever lies under either.
+            cold(a) = any(
+                fr ->
+                    fr.func === :getProcDefinedDefinition || fr.func === :trapUndefined,
+                a.backtrace
+            )
             @test any(cold, allocs)                     # the exemption matches real sites
             attributed = Int[]
             for a in allocs
