@@ -10,6 +10,17 @@
 # and test/files/test_qlf_swipl.jl (the compileFileList rows read the flag back; the boot_from_source! row expects the Q3 error).
 # The A1 mutants by any test that meta-calls an undefined predicate: mcall_cont's undefined branch runs `trapUndefined` between
 # `FR = NFR` and the restore, and `normal_call` (pl-wam.jl:3324) reads `FR` as the new frame's parent.
+# A1c (the `ld.environment_frame = FR` line, src/pl-wam.jl:3735) is a DEFERRED KILL, owner AUTOLOAD1 A5 (audit D-0400 item 2), declared through
+# the `equivalent` field so that the battery expects it to SURVIVE (run 41741989891 at 95331639: survived in 296 s; re-run CI-way on the
+# staged tree: "EQUIVALENT (declared)"). Why no test can see it before A5: `_save_registers!` (src/pl-wam.jl:1622) saves the LOCAL `FR`, not
+# environment_frame; trapUndefined/autoImport/getUnknownModule/createUndefSupervisor take no frame; the Q3 error unwinds with
+# environment_frame 0 (measured); `normal_call` sets it again (src/pl-wam.jl:3337). Its only reader is the Prolog query of the autoloader
+# (PL_open_query, src/pl-wam.jl:1987: the parent frame, `saved_environment`), which runs the hook, undefined until A5 (A3 guard). No Julia
+# stand-in hook is allowed. AT A5 the declaration goes and a row asserting the query's parent frame (prolog_current_frame inside the hook)
+# replaces it (refusal-flip rule D-0376).
+# A1a's TARGETS start with test_export_import_swipl.jl: with the frame its own parent targets loop until LIMIT_S (inferred from 4796 s =
+# 3 x 1500 s + ~300 s in run 41741989891, against 150-300 s for the others: three hung) before test_export_import_swipl.jl:397 fails; `run_targets` stops at the first
+# deciding target, so the failing one goes first.
 # NOT LISTED (each with its reason):
 #   * mcall_cont's `setLTop!(ld, argFrameP(mc_nf.base, DEF.arity))` (pl-vmi.c:5719 `lTop = argFrameP(NFR, arity)`): lTop above the
 #     arguments matters only while a Prolog query runs inside `trapUndefined`, which A3 (the autoloader) adds; until A3 no test can see
@@ -39,6 +50,7 @@ TRUN = ["test/core_lang/test_colon_body_swipl.jl", "test/core_lang/test_context_
 TCALL = ["test/core_lang/test_rules_swipl.jl", "test/db/test_assert_swipl.jl", "test/foreign/test_builtins_swipl.jl",
          "test/foreign/test_typetests_swipl.jl", "test/core_lang/test_export_import_swipl.jl"]   # call/N of undefined predicates
 TA1 = [TMP] + TMC + TRUN + TCALL
+TA1A = [TCALL[-1]] + [t for t in TA1 if t != TCALL[-1]]    # A1a: the fast failing target first (see the header)
 TA4 = [TAF, TSF, TPF, TPL, TQLF]
 TQ3 = [TQLF, TAF]
 TARGETS = TA1 + TA4 + ["test/test_type_discipline.jl"]       # the baseline's targets (mutate_ci.py plan reads TARGETS)
@@ -49,15 +61,16 @@ PR = "src/pl-proc.jl"
 MUTANTS = [
     # ── pl-vmi.c mcall_cont (A1): the frame set-up around trapUndefined ──
     dict(id="AUTOLOAD1-A1a mcall_cont does not restore FR after trapUndefined: normal_call makes the new frame its own parent (KILL any meta-call of an undefined predicate)",
-         file=W, targets=TA1,
+         file=W, targets=TA1A,
          old="        FR = ld.frames[FR].parent                   # FR = FR->parent\n",
          new="        nothing\n"),
     dict(id="AUTOLOAD1-A1b mcall_cont does not set the new frame's parent (NFR->parent = FR): the restore reads a stale parent (KILL as A1a)",
          file=W, targets=TA1,
          old="        mc_nf.parent = FR                           # NFR->parent = FR\n",
          new="        nothing\n"),
-    dict(id="AUTOLOAD1-A1c mcall_cont does not make the new frame the environment frame: the register reload and the restore read the caller's frame (KILL as A1a)",
+    dict(id="AUTOLOAD1-A1c mcall_cont does not set `ld.environment_frame` to the new frame (DEFERRED KILL, owner AUTOLOAD1 A5; audit D-0400 item 2)",
          file=W, targets=TA1,
+         equivalent="DEFERRED KILL, owner AUTOLOAD1 A5: the Prolog query inside trapUndefined is the only reader of environment_frame in this window (src/pl-wam.jl:3735); the hook is undefined until A5 (A3 guard)",
          old="        FR = NFR                                    # environment_frame = FR = NFR\n        ld.environment_frame = FR\n",
          new="        FR = NFR                                    # environment_frame = FR = NFR\n"),
     dict(id="AUTOLOAD1-A1d mcall_cont leaves FR at the caller's frame when it sets the environment frame (FR = NFR dropped, environment_frame set to the caller) (KILL as A1a)",
