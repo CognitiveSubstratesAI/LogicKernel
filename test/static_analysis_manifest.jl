@@ -2644,7 +2644,21 @@ function _manifest_index(T)
         # AUTOLOAD1 A4 — the autoload flag (pl-prologflag.c setAutoload, propagateAutoload; pl-fli.c PL_set_prolog_flag)
         (LK.setAutoload, Tuple{LD, T}, false),
         (LK.propagateAutoload, Tuple{GD, LD, Int}, false),
-        (LK.PL_set_prolog_flag, Tuple{GD, LD, String, Bool}, false)
+        (LK.PL_set_prolog_flag, Tuple{GD, LD, String, Bool}, false),
+        # TOP1 — resetProlog, restore_after_exception, halt_from_exception, query_loop (pl-pro.c); resetTracer,
+        # enable_debug_on_interrupt (pl-trace.c); validUserStreams, PrologPrompt, PL_write_prompt (pl-file.c);
+        # PL_prompt_next (pl-fli.c); writeAtomToStream (pl-write.c)
+        (LK.resetProlog, Tuple{LD, Bool}, false),
+        (LK.restore_after_exception, Tuple{GD, LD, Int}, false),
+        (LK.halt_from_exception, Tuple{GD, LD, Int}, false),
+        (LK.query_loop, Tuple{GD, LD, T, Bool}, false),
+        (LK.resetTracer, Tuple{LD}, false),
+        (LK.enable_debug_on_interrupt, Tuple{LD, Bool}, false),
+        (LK.validUserStreams, Tuple{LD}, false),
+        (LK.PrologPrompt, Tuple{LD}, false),
+        (LK.PL_write_prompt, Tuple{GD, LD, Bool}, false),
+        (LK.PL_prompt_next, Tuple{LD, LK.IOSTREAM}, false),
+        (LK.writeAtomToStream, Tuple{GD, LD, LK.IOSTREAM, T}, false)
     )
 end
 
