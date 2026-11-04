@@ -1429,6 +1429,17 @@ function PL_halt(gd::PL_global_data{T}, ld::PL_local_data{T}, status::Int)::Bool
     return true
 end
 
+# PORT: pl-fli.c PL_prompt_next
+# DIVERGES: the local data is an argument (upstream's `LD`).
+"The next read from `in` prompts, where `in` is `user_input` (pl-fli.c)."
+function PL_prompt_next(ld::PL_local_data, in::IOSTREAM)::Nothing
+    _initIO(ld)
+    if in === Suser_input(ld)
+        ld.prompt_next = true
+    end
+    return nothing
+end
+
 # PORT: pl-fli.c PL_abort_process
 # DIVERGES: upstream's `abort()` (SIGABRT, exit 134 under a shell) is the call of the seam with 134 (`128+SIGABRT`);
 # `PL_abort_process` returns where the seam does. `SIGABRT` is Linux's, 6.

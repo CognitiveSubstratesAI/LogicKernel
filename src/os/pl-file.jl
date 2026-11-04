@@ -1429,6 +1429,62 @@ function pl_prompt1_1_va(
     return FTRUE
 end
 
+# PORT: pl-file.c validUserStreams
+# DIVERGES: the standard streams are opened first (`_initIO`); a stream slot that holds none counts as in error.
+"True if the three user streams are not in an error mode (pl-file.c)."
+function validUserStreams(ld::PL_local_data)::Bool
+    _initIO(ld)
+    for s in (Suser_input(ld), Suser_output(ld), Suser_error(ld))
+        (s === nothing || Sferror(s) != 0) && return false
+    end
+    return true
+end
+
+# PORT: pl-file.c PrologPrompt
+# DIVERGES: the atom is the symbol, `nothing` for upstream's 0 (the empty prompt).
+"The prompt for the next read from `user_input`: `prompt1/1`'s once, else `prompt/2`'s at the start of a line, else `nothing` (pl-file.c)."
+function PrologPrompt(ld::PL_local_data{T})::Union{Nothing, T} where {T}
+    _initIO(ld)
+    if !ld.prompt_first_used && ld.prompt_first !== nothing
+        ld.prompt_first_used = true
+
+        return ld.prompt_first::T
+    end
+
+    in = Suser_input(ld)
+    if in !== nothing && in.position !== nothing && (in.position::IOPOS).linepos == 0
+        return ld.prompt_current
+    end
+
+    return nothing                                      # ""
+end
+
+# PORT: pl-file.c PL_write_prompt
+# DIVERGES: the database is an argument (the atom is written by `writeAtomToStream`); no stream lock (`getStream` is the magic check).
+"Write the prompt to `user_output` where `dowrite`, flush it, and clear `prompt.next` (pl-file.c)."
+function PL_write_prompt(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, dowrite::Bool
+)::Nothing where {T}
+    _initIO(ld)
+    uo = Suser_output(ld)
+    s = uo === nothing ? nothing : getStream(uo)
+
+    if s !== nothing
+        if dowrite
+            a = PrologPrompt(ld)
+
+            a === nothing || writeAtomToStream(gd, ld, s, a)
+        end
+
+        Sflush(s)
+        # releaseStream(s)
+    end
+
+    ld.prompt_next = false
+
+    return nothing
+end
+
 # ── the input context stack: the predicates (pl-file.c, "TEMPORARY I/O"); `push_input_context` and
 # `pop_input_context` are LB3's (above), the stack is `ld.input_context_stack` ─────────────────────────────────
 

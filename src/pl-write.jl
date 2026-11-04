@@ -923,6 +923,18 @@ function writeAtom(a::T, options::write_options{T})::Int where {T}
     end
 end
 
+# PORT: pl-write.c writeAtomToStream
+# DIVERGES: the database and the local data are arguments; the default write options (`WRITE_OPTIONS_DEFAULTS`, module `user`)
+# come from the constructor `write_options(gd, ld, out)`.
+"Write the text of the atom `atom` to `s`, unquoted (pl-write.c)."
+function writeAtomToStream(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, s::IOSTREAM, atom::T
+)::Bool where {T}
+    options = write_options(gd, ld, s)
+
+    return writeAtom(atom, options) != 0
+end
+
 # ORIGINAL: the VALUE a number's or a string's term reference holds, read once on its word (L1d step
 # 7b) — where upstream's `PL_get_number` and `PL_get_text` read the indirect: a value word's value
 # (`_value_term`: a tagged integer's term, or the value-table entry, a slot's side value too).
