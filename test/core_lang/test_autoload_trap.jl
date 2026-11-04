@@ -20,7 +20,8 @@
 #   * `autoImport` precedes everything; the refreshed definition (a hook that makes the module link a super's definition); the helper
 #     `_autoload_predicate_name` (pl-util.c predicateName);
 #   * the A1 killer: a hook run THROUGH the VM from `call(user:foo)` and from a plain call leaves the caller's frame intact
-#     (the autoloader's query frame must not overwrite an unprotected `lTop`, A1's `mcall_cont` frame set-up).
+#     (the autoloader's query frame must not overwrite an unprotected `lTop`, A1's `mcall_cont` frame set-up);
+#   * A1c's killer (A5, audit D-0400 item 2): the hook's query returns to the trapped call's frame (`saved_environment` is foo's frame).
 # Every row builds the UNBOOTED database (`LK.setupProlog`, via `_RDB_unbooted()`): the white-box test hooks stand where the pre-boot kernel has no
 # `$undefined_procedure/4`; a booted copy (`PL_global_data{T}()`) has the real one from boot/init.pl (D-0398 (e)).
 # Mutation-tested by tools/mutants/AUTOLOAD1.py.
@@ -349,4 +350,40 @@ end
     @test got == ["t(7)"]
     @test _at_called(db) == ["called(foo)"]
     @test isempty(db.ld.autoload_nesting)
+end
+
+@testset "A1c's killer (A5): the autoloader's query returns to the trapped frame" begin
+    # UNVERIFIED (never run); LK-ONLY (white-box): swipl cannot show the query's `saved_environment`; the swipl-compared form needs
+    # `prolog_frame_attribute/3` (DBG1) and the booted hook, see evidence/AUTOLOAD1/handoff_a5.md item 4. `call(user:foo)` goes through
+    # `mcall_cont`; the hook's query is opened by `PL_open_query` with `saved_environment = ld.environment_frame`, which `mcall_cont`
+    # sets to the new frame (`ld.environment_frame = FR`, src/pl-wam.jl:3735, mutant AUTOLOAD1-A1c): that frame is foo's. The query
+    # record is read inside the `at` callback, while the outer query is open: a dropped record stays readable until a push reuses it.
+    db = _at_db()
+    _at_hook!(
+        db, :foo, :retry; body=_rconj(_rf("assertz", _at_user(:foo)), _at_record(:foo))
+    )
+    _radd!(
+        db, _rf("t", _rv(1)), _rconj(_rf("call", _at_user(:foo)), _rf("=", _rv(1), _rg(1)))
+    )
+    foodef = _at_proc(db, :foo).definition
+    seen = NamedTuple[]
+    at = function (qid, k)
+        ld = db.ld
+        q = ld.queries[ld.nqueries + 1]          # the hook's query: the one opened inside the outer query
+        e = q.saved_environment
+        push!(
+            seen,
+            (; flags=q.flags, env=e, pred=(e == 0 ? nothing : ld.frames[e].predicate))
+        )
+    end
+    @test String[a for (a, _) in _rcall(db, _rf("t", _rv(2)); at)] == ["t(1)"]
+    @test _at_called(db) == ["called(foo)"]            # the hook ran once, through the VM
+    # not vacuous: one answer, and the record read is the hook's query (its flags), with a parent frame
+    @test length(seen) == 1
+    s = only(seen)
+    @test (s.flags & LK.PL_Q_PASS_EXCEPTION) != 0
+    @test (s.flags & LK.PL_Q_NODEBUG) != 0
+    @test s.env != 0
+    # the query returns to the frame of the trapped call: the predicate of that frame is foo
+    @test s.pred === foodef
 end
