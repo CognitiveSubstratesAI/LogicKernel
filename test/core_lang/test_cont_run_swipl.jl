@@ -126,6 +126,7 @@ cr_soft(X) :- ( shift(s1), cr_mem(Y), Y == b *-> X = Y ; X = none ).
 cr_cutdeep(X) :- cr_mem(X), shift(c1), !.
 cr_if2(X) :- ( cr_mem(Y), shift(i1), Y == b -> X = Y ; X = none ).
 cr_late(X, Y) :- shift(l1), Y = f(X).
+cr_fc_ite(X) :- ( shift_for_copy(f), cr_mem(Y), Y == b -> X = Y ; X = none ).
 """
 
 # (id, goal), run IN ORDER in one database
@@ -151,6 +152,12 @@ const _CR_CASES = [
     ("r_cutdeep", raw"reset(cr_cutdeep(X), _, C), findall(X, call(C), R)"),
     ("r_if2", raw"reset(cr_if2(X), B, C), findall(X-B, call(C), R)"),
     ("r_late", raw"reset(cr_late(1, Y), _, C), call(C), R = Y"),
+    ("r_var_goal_ctx", raw"catch(reset(_, _, _), error(instantiation_error, context(Ctx, _)), R = Ctx)"),
+    ("r_meta_len", raw"once(reset((cr_mem(_), shift(s), cr_nop), _, call_continuation(L))), length(L, N), R = N"),
+    ("r_catch_shift", raw"reset(catch((shift(c), X = 1), _, true), B, C), call(C), R = B-X"),
+    ("r_catch_len", raw"reset(catch(shift(c), _, true), _, call_continuation(L)), length(L, N), R = N"),
+    ("r_nested_resume", raw"reset(reset((shift(outer), Y = 1), inner, IC), B, C), call(C), R = B-IC-Y"),
+    ("r_ite_copy", raw"once(reset(cr_fc_ite(X), _, C)), findall(X, call(C), R)"),
     ("r_iter", raw"cr_sum(cr_gen(1, 5), 0, R)"),
     ("r_iter_empty", raw"cr_sum(cr_gen(2, 1), 0, R)"),
     ("r_effect", raw"cr_run(cr_prog, 0, R)"),
@@ -193,6 +200,12 @@ const _CR_PINNED = [
     raw"t_r_cutdeep t_r_cutdeep([|](a,[])) t_r_cutdeep([|](b,[])) t_r_cutdeep([|](c,[]))",
     raw"t_r_if2 t_r_if2([])",
     raw"t_r_late t_r_late(f(1))",
+    raw"t_r_var_goal_ctx t_r_var_goal_ctx(:(system,/(reset,3)))",
+    raw"t_r_meta_len t_r_meta_len(1)",
+    raw"t_r_catch_shift t_r_catch_shift(-(c,1))",
+    raw"t_r_catch_len t_r_catch_len(1)",
+    raw"t_r_nested_resume t_r_nested_resume(-(-(outer,0),1))",
+    raw"t_r_ite_copy t_r_ite_copy([|](b,[]))",
     raw"t_r_iter t_r_iter(15)",
     raw"t_r_iter_empty t_r_iter_empty(0)",
     raw"t_r_effect t_r_effect(3)",
