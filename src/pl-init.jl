@@ -68,6 +68,9 @@ end
 # `query_loop(PL_new_atom("$run_at_halt"), false)` reduced (see `PL_cleanup`): true where the one query
 # `system:'$run_at_halt'/0` succeeded, raised, or was not run (the loader has not defined it); false where it
 # failed — `cancel_halt/1` vetoed the halt.
+# DIVERGES (audit D-0403 item 5; owner TOP1b): a reduced `query_loop(.., false)`. The full `query_loop` (src/pl-pro.jl, R2 TOP1) stays as is
+# beside it: switching this function to it adds `resetProlog`, `restore_after_exception` and `halt_from_exception` to the at-halt query,
+# a behaviour change, taken by TOP1b and not by TOP1.
 function _query_run_at_halt(gd::PL_global_data{T}, ld::PL_local_data{T})::Bool where {T}
     proc = lookupProcedure(mk_sym(T, Symbol("\$run_at_halt")), 0, MODULE_system(gd))
     isDefinedProcedure(gd, proc) || return true

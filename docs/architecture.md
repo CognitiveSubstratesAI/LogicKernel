@@ -6914,16 +6914,17 @@ DIVERGES (representation only unless marked):
 - `resetProlog` calls `emptyStacks!` mid-life (written for the constructor): UNVERIFIED on the kernel, the gate decides. It resets the local, argument, trail and
   global stacks, the value table, the frames and the queries to the constructor's state, so a term reference or foreign frame id held across the call is
   invalid after it, as upstream. `query_loop` passes `clear_stacks = (ld.query == 0)`; the rows pin the effect through `ld.nfliframes`.
-- **`_query_run_at_halt` (src/pl-init.jl) is NOT switched to `query_loop`**: it is a reduced `query_loop(.., false)` for `PL_cleanup`; switching adds `resetProlog`,
-  `restore_after_exception` and `halt_from_exception` to the at-halt query, a behaviour change left to the gate and the audit.
+- **`_query_run_at_halt` (src/pl-init.jl) stays as it is (audit D-0403 item 5)**: DIVERGES, a reduced `query_loop(.., false)` for `PL_cleanup`; switching it to
+  `query_loop` adds `resetProlog`, `restore_after_exception` and `halt_from_exception` to the at-halt query, a behaviour change. **Owner: TOP1b.**
 - With the seam `gd.halt_exit` off `PL_halt` returns false, so `halt_from_exception` returns false; the rows read `gd.halt_exited`.
 - The error exit of `query_loop` (`goto error`) leaves the foreign frame open, as upstream; the next `resetProlog` that empties the stacks closes it.
   One thread: `PL_thread_self()` is 1, so `halt_from_exception` is always tried and `exit_requested` is never set.
 
 Left to TOP1b (status board, PROPOSED): `Sread_user`, `wrapIO`, `set_prolog_IO/3` (pl-file.c:5987, :6047, :6125), `Sread_terminal` (pl-os.c:2171-2224, :2462),
 `prologToplevel`, `pl_break`, `currentBreakLevel` with the `break_level` flag (a `break_level` field), `PL_prompt_is_continuation`, `PL_prompt_string`.
-Why: the stream layer dispatches on the closed enum `IOFUNCTIONS` and `S_read` takes no local data; recommended: a new function-set member plus a local-data
-reference in the handle. Until then no read of `user_input` calls `PL_write_prompt`; the pty rows model `Sread_user`'s three lines by hand.
+Why: the stream layer dispatches on the closed enum `IOFUNCTIONS` and `S_read` takes no local data. **DECIDED (audit D-0403 item 3)**: a new function-set member plus an
+`ld` reference in the stream handle, as the single DIVERGES (upstream reads the thread-local LD in `Sread_user`; the closed `IOFUNCTIONS` enum has no `ld`); owner TOP1b.
+TOP1b is not on the first-boot path: after b2 and AUTOLOAD1 A5, before CONT1 C5/C6 only if a writer is free. Until then no read of `user_input` calls `PL_write_prompt`; the pty rows model `Sread_user`'s three lines by hand.
 
 Tests: test/core_lang/test_top1_prompt_swipl.jl (twelve swipl 10.1.19 transcripts driven on a pty by evidence/TOP1/gen_top1_rows.py; swipl prints the prompt only for
 a TTY stdin, pl-os.c:2171-2185; the test reads the committed evidence/TOP1/top1_rows.out; kernel side: `PL_write_prompt` over buffers sharing one position record) and
