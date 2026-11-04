@@ -107,3 +107,5 @@ t_lb105(R) :- catch((current_output(O), set_stream(O, alias(1))), error(SsuE, _)
 t_lb106(R) :- catch((current_output(O), set_stream(O, alias(_))), error(SsuE, _), R = raised(SsuE)).
 t_lb107(R) :- catch((write_size('abcd\nx', W, H, []), R = W-H), error(SsuE, _), R = raised(SsuE)).
 t_lb108(R) :- catch((line_count(user_output, N), integer(N), R = yes), error(SsuE, _), R = raised(SsuE)).
+t_lb109(R) :- catch((line_count(1, _)), error(SsuE, _), R = raised(SsuE)).
+t_lb110(R) :- catch((line_position(foo(a), _)), error(SsuE, _), R = raised(SsuE)).

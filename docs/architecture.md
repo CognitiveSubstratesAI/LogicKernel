@@ -6694,7 +6694,7 @@ os/pl-option.c (`get_optval`'s `OPT_INT64`). Sizing: evidence/R2/lb5_sizing.md o
 - **Left out of this step** (the dispatcher's ruling, D-0388 and the writer handoff): `succ/2` (pl-arith.c:274-355), `peek_string/3`, `seek/4`, `set_stream_position/2`
   (these two need `Sseek64`/`Stell64`: the stream layer has none), `with_tty_raw/1`, `nb_set_dict/3` and `del_dict/4` (they wait for pl-dict).
 
-Tests: test/core_lang/test_lb5_swipl.jl (ORIGINAL; rows lb001-lb108 from swipl 10.1.19 under `LC_ALL=C.UTF-8`, two byte-identical runs, generator
+Tests: test/core_lang/test_lb5_swipl.jl (ORIGINAL; rows lb001-lb110 from swipl 10.1.19 under `LC_ALL=C.UTF-8`, two byte-identical runs, generator
 evidence/LB5/gen_rows.py; the live compare of the pins runs when `swipl` is on the path). Mutants: tools/mutants/LB5.py (ORIGINAL; 18 mutants and 2 declared
 equivalent: write_size's ISO clear and restore; not run when this was written).
 

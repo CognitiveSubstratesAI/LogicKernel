@@ -4,7 +4,7 @@
 # put_code; pl-arith.c PL_eval_expression_to_int64_ex; pl-write.c write_size/4 with write_length_options; pl-option.c get_optval's
 # OPT_INT64), run ONCE, in CI (.github/workflows/mutation.yml; locally: tools/mutate.sh run). Format: tools/mutate_drive.py's
 # (as MOD3b.py): `id`, `file`, `old` (must occur EXACTLY once), `new`, optional `equivalent` and `targets`. Killed by
-# test/core_lang/test_lb5_swipl.jl (rows lb001-lb108 named in each id's KILL). Verdicts: written by the battery, not yet run.
+# test/core_lang/test_lb5_swipl.jl (rows lb001-lb110 named in each id's KILL). Verdicts: written by the battery, not yet run.
 # The `old` strings are written in the repo's formatted style BEFORE `tools/warm.sh fmt` ran (the coding agent had no daemon):
 # RE-FIT any that fmt rewraps (mutate_drive.py refuses a string that does not occur exactly once). Every `old` was checked to
 # occur exactly once in the source at wip/lb5 (a text count, no Julia).
@@ -85,9 +85,10 @@ MUTANTS = [
     dict(id="LB5-C2 line_position answers the line number (KILL lb001, lb002, lb035)", file=F, targets=POS,
          old="    n = (s.position::IOPOS).linepos\n",
          new="    n = (s.position::IOPOS).lineno\n"),
-    dict(id="LB5-C3 getStreamWithPosition does not take an alias: SH_ALIAS dropped (KILL lb108)", file=F, targets=POS,
-         old="stream, SH_ERRORS | SH_ALIAS)\n    s === nothing && return nothing\n    if s.position",
-         new="stream, SH_ERRORS)\n    s === nothing && return nothing\n    if s.position"),
+    dict(id="LB5-C3 getStreamWithPosition takes SH_ALIAS (PL_get_stream passes flags 0): a non-atom is domain_error(stream_or_alias, X) (KILL lb109, lb110)",
+         file=F, targets=POS,
+         old="stream, SH_ERRORS)\n    s === nothing && return nothing\n    if s.position",
+         new="stream, SH_ERRORS | SH_ALIAS)\n    s === nothing && return nothing\n    if s.position"),
     # ── pl-file.c tab ──
     dict(id="LB5-D1 tab writes one space too many: `count >= 0` (KILL lb022-lb024, lb029, lb030, lb032, lb035)",
          file=F, targets=PF,

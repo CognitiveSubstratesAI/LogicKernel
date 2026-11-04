@@ -1,6 +1,6 @@
 # ORIGINAL: a LIVE differential of LB5's stream predicates against swipl at the pin (src/os/pl-file.c, src/pl-write.c, src/pl-arith.c)
 # test/core_lang/test_lb5_swipl.jl — set_stream/2 alias(user_output|user_error|user_input), current_input/1, current_output/1,
-# line_count/2, line_position/2, tab/1,2, at_end_of_stream/1, get_code/2, put_code/2, put_char/1,2 and write_size/4 (lb001-lb108):
+# line_count/2, line_position/2, tab/1,2, at_end_of_stream/1, get_code/2, put_code/2, put_char/1,2 and write_size/4 (lb001-lb110):
 #   * A PROGRAM consulted by the kernel's loader and cases `t_<id>(R)` run in order in one database, each wrapped in
 #     `catch(Goal, error(SsuE, _), R = raised(SsuE))`; the driver is test_style_check_swipl.jl's (`enc`oded answers).
 #     A stream in an error term would not encode: the rows that raise a permission_error or existence_error on a stream catch it
@@ -101,7 +101,7 @@ lb5_p(1).
 """
 
 # the cases, in groups: lb001-011 line_position/line_count; lb012-021 current_input/current_output; lb022-035 tab;
-# lb036-043 at_end_of_stream; lb044-056 get_code; lb057-073 put_code/put_char; lb074-096 write_size; lb097-106 set_stream alias; lb107-108 write_size widest line, line_count of an alias
+# lb036-043 at_end_of_stream; lb044-056 get_code; lb057-073 put_code/put_char; lb074-096 write_size; lb097-106 set_stream alias; lb107-110 write_size widest line, line_count of an alias, the non-stream argument of line_count/line_position
 # (the group boundaries are the generator's: evidence/LB5/gen_rows.py reads these tuples, nothing else)
 const _LB5_CASES = [
     (
@@ -307,7 +307,9 @@ const _LB5_CASES = [
     ("lb105", raw"current_output(O), set_stream(O, alias(1))"),   # al_int: alias(1)
     ("lb106", raw"current_output(O), set_stream(O, alias(_))"),   # al_inst: alias(_)
     ("lb107", raw"write_size('abcd\nx', W, H, []), R = W-H"),   # ws_widest: the widest line is not the last
-    ("lb108", raw"line_count(user_output, N), integer(N), R = yes")   # lc_alias: an alias names the stream
+    ("lb108", raw"line_count(user_output, N), integer(N), R = yes"),   # lc_alias: an alias names the stream
+    ("lb109", raw"line_count(1, _)"),   # lc_int: a non-atom is domain_error(stream, 1), not stream_or_alias (PL_get_stream flags 0)
+    ("lb110", raw"line_position(foo(a), _)")   # lp_cmp: a compound, the same domain_error(stream, foo(a))
 ]
 
 # the driver's whole output, one line per case after `ok`, filled by evidence/LB5/gen_rows.py --fill from swipl 10.1.19
@@ -420,7 +422,9 @@ const _LB5_PINNED = [
     "t_lb105 c[116,95,108,98,49,48,53]/1(c[114,97,105,115,101,100]/1(c[116,121,112,101,95,101,114,114,111,114]/2(a[97,116,111,109],i1)))",
     "t_lb106 c[116,95,108,98,49,48,54]/1(c[114,97,105,115,101,100]/1(a[105,110,115,116,97,110,116,105,97,116,105,111,110,95,101,114,114,111,114]))",
     "t_lb107 c[116,95,108,98,49,48,55]/1(c[45]/2(i4,i2))",
-    "t_lb108 c[116,95,108,98,49,48,56]/1(a[121,101,115])"
+    "t_lb108 c[116,95,108,98,49,48,56]/1(a[121,101,115])",
+    "t_lb109 c[116,95,108,98,49,48,57]/1(c[114,97,105,115,101,100]/1(c[100,111,109,97,105,110,95,101,114,114,111,114]/2(a[115,116,114,101,97,109],i1)))",
+    "t_lb110 c[116,95,108,98,49,49,48]/1(c[114,97,105,115,101,100]/1(c[100,111,109,97,105,110,95,101,114,114,111,114]/2(a[115,116,114,101,97,109],c[102,111,111]/1(a[97]))))"
 ]
 
 function _lb5_file()::Tuple{String, Vector{String}}
@@ -477,7 +481,7 @@ function _lb5_kernel(path::String, names::Vector{String})
     return out, gd, ld
 end
 
-@testset "the LB5 stream predicates as swipl's (lb001-lb108)" begin
+@testset "the LB5 stream predicates as swipl's (lb001-lb110)" begin
     f, names = _lb5_file()
     kl, _, _ = _lb5_kernel(f, names)
     @test length(kl) == length(_LB5_PINNED)
@@ -526,6 +530,18 @@ end
     )
     @test any(
         l -> startswith(l, "t_lb108 ") && occursin("a" * _lb5_codes("yes"), l), _LB5_PINNED
+    )
+    @test any(
+        l ->
+            startswith(l, "t_lb109 ") &&
+            endswith(l, "(a" * _lb5_codes("stream") * ",i1)))"),
+        _LB5_PINNED
+    )
+    @test any(
+        l ->
+            startswith(l, "t_lb110 ") &&
+            occursin("a" * _lb5_codes("stream") * ",c" * _lb5_codes("foo") * "/1(", l),
+        _LB5_PINNED
     )
     @test any(
         l -> startswith(l, "t_lb097 ") && occursin("s" * _lb5_codes("hi"), l), _LB5_PINNED

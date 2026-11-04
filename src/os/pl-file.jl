@@ -1595,12 +1595,14 @@ end
 
 # PORT: pl-file.c getStreamWithPosition
 # DIVERGES: returns the stream or `nothing` (upstream: `bool` and `IOSTREAM **sp`); `PL_get_stream(stream, &s, 0)` is
-# `term_stream_handle(SH_ERRORS|SH_ALIAS)` (no `SH_NOPAIR`: a stream pair is refused by name); no lock to release.
+# `term_stream_handle(SH_ERRORS)` (no `SH_NOPAIR`: a stream pair is refused by name); no lock to release. `PL_get_stream`
+# passes its own flags (0) to `not_a_stream`, so a non-atom argument is `domain_error(stream, X)`, not `stream_or_alias`
+# (swipl 10.1.19: `line_count(1, N)`); `get_stream_handle` never reads `SH_ALIAS` for an atom's lookup.
 "The stream `stream` names if it records a position, else `permission_error(property, position, Stream)` (pl-file.c)."
 function getStreamWithPosition(
     ld::PL_local_data{T}, stream::term_t
 )::Union{Nothing, IOSTREAM} where {T}
-    s = term_stream_handle(ld, stream, SH_ERRORS | SH_ALIAS)
+    s = term_stream_handle(ld, stream, SH_ERRORS)
     s === nothing && return nothing
     if s.position === nothing
         _PL_permission_error(ld, :property, :position, stream)     # non-ISO
