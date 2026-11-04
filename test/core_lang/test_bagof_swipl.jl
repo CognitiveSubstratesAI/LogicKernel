@@ -336,10 +336,15 @@ end
         @test (p.definition.flags & LK.P_LOCKED) != 0
         @test ((p.definition.flags & LK.P_ISO) != 0) == iso
     end
+    bags = LK.isCurrentModule(gd.modules, _rs("\$bags"))
+    @test bags !== nothing
     for (n, a) in (("pick", 3), ("select_bag", 5), ("pick_first", 4), ("pick_same", 4),
         ("alloc_bind_key_list", 2), ("bind_bagof_keys", 2), ("findall_loop", 4),
         ("cleanup_bag", 2))
-        p = LK.isCurrentProcedure(sym_key(_rs(n)), a, sys)
-        @test p !== nothing && (p.definition.flags & LK.P_LOCKED) == 0
+        # swipl 10.1.19 (queried): `'$bags':pick/3` ... are defined in boot/bags.pl's own module, with
+        # `'$get_predicate_attribute'(M:H, system, 1)` (= P_LOCKED), and ABSENT from `system` (predicate_property(system:H, defined) fails)
+        @test LK.isCurrentProcedure(sym_key(_rs(n)), a, sys) === nothing
+        p = LK.isCurrentProcedure(sym_key(_rs(n)), a, bags)
+        @test p !== nothing && (p.definition.flags & LK.P_LOCKED) != 0
     end
 end
