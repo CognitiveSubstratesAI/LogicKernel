@@ -4419,6 +4419,143 @@ function pl_nb_linkarg3_va(
     return setarg_t(ld, A1, A2, A3, SETARG_LINK) ? FTRUE : FFALSE
 end
 
+# ── '$cmd_option_val'/2, '$cmd_option_set'/2 (pl-prims.c "OPTIONS"): the command-line options, `GD->options`, to Prolog ───
+# PORT: pl-prims.c optdefs
+# (swipl-devel cbf4e189, src/pl-prims.c:6358-6377; CMDOPT_* :6350-6353)
+# DIVERGES: an entry is `(name, type, field)`, `field` the symbol of the `pl_options_t` member (`:home` is `gd.defaults_home`,
+# `GD->defaults.home`), where upstream's is the member's address. `win_app` (Windows) is left out.
+const CMDOPT_BOOL = 0
+const CMDOPT_SIZE_T = 1
+const CMDOPT_STRING = 2
+const CMDOPT_LIST = 3
+const OPTDEFS = (
+    ("stack_limit", CMDOPT_SIZE_T, :stackLimit),
+    ("goals", CMDOPT_LIST, :goals),
+    ("toplevel", CMDOPT_STRING, :topLevel),
+    ("init_file", CMDOPT_STRING, :initFile),
+    ("system_init_file", CMDOPT_STRING, :systemInitFile),
+    ("script_file", CMDOPT_LIST, :scriptFiles),
+    ("config", CMDOPT_STRING, :config),
+    ("compileout", CMDOPT_STRING, :compileOut),
+    ("class", CMDOPT_STRING, :saveclass),
+    ("search_paths", CMDOPT_LIST, :search_paths),
+    ("defines", CMDOPT_LIST, :defines),
+    ("pldoc_server", CMDOPT_STRING, :pldoc_server),
+    ("nosignals", CMDOPT_BOOL, :nosignals),
+    ("home", CMDOPT_STRING, :home)
+)
+
+# The member `field` of the options (`:home`: the home directory of `GD->defaults`).
+_optdef_get(gd::PL_global_data, field::Symbol) =
+    field === :home ? gd.defaults_home : getfield(gd.options, field)
+
+# PORT: pl-prims.c cmd_option_val as pl_cmd_option_val2_va
+# (PRED_IMPL("$cmd_option_val", 2, cmd_option_val, 0), pl-prims.c:6394-6444 at the pin)
+# DIVERGES: the option text is `String`; an atom is made with `mk_sym` (`PL_unify_chars(PL_ATOM|REP_FN)`).
+"""
+    '\$cmd_option_val'(+Key, -Value)
+
+The value of the command-line option `Key` (an atom): a Boolean, an integer (`stack_limit`), an atom (failing where the option
+is unset) or a list of atoms; any other key raises `existence_error(cmd_option, Key)` (pl-prims.c).
+"""
+function pl_cmd_option_val2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    key = PL__t0
+    val = PL__t0 + 1
+    a = PL_get_atom(ld, key)                         # PL_get_atom_chars(key, &k)
+    if a !== nothing
+        k = sym_text(a)
+        gd = _query_gd(ld)
+        for (name, type, field) in OPTDEFS
+            k == name || continue
+            v = _optdef_get(gd, field)
+            if type == CMDOPT_BOOL
+                return PL_unify_bool(ld, val, v::Bool) ? FTRUE : FFALSE
+            elseif type == CMDOPT_SIZE_T
+                return PL_unify_int64(ld, val, v::Int) ? FTRUE : FFALSE
+            elseif type == CMDOPT_STRING
+                v === nothing && return FFALSE          # if ( *sp ) ... return false
+                return PL_unify_atom(ld, val, mk_sym(T, Symbol(v::String))) ? FTRUE : FFALSE
+            else                                        # CMDOPT_LIST
+                tail = PL_copy_term_ref(ld, val)
+                head = PL_new_term_ref(ld)
+                for item in v::Vector{String}
+                    (
+                        PL_unify_list(ld, tail, head, tail) &&
+                        PL_unify_atom(ld, head, mk_sym(T, Symbol(item)))
+                    ) || return FFALSE
+                end
+                return PL_unify_nil(ld, tail) ? FTRUE : FFALSE
+            end
+        end
+    end
+    return PL_error(ld, ERR_EXISTENCE, mk_sym(T, :cmd_option), key) ? FTRUE : FFALSE
+end
+
+# PORT: pl-prims.c set_pl_option
+# (swipl-devel cbf4e189, src/pl-prims.c:6463-6513)
+# DIVERGES: the databases are arguments; a BOOL option whose value is neither `true` nor `false` is upstream's `assert(0)`: an
+# `AssertionError` here. `*val = (size_t)n.value.i` takes only a `V_INTEGER` (see `memarea_limit`).
+"Set the command-line option `name` to `value` (pl-prims.c): `true`, or `false` for an unknown option or a bad size."
+function set_pl_option(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, name::AbstractString, value::AbstractString
+)::Bool where {T}
+    name == "goal" && (name = "goals")                  # HACK
+    for (oname, type, field) in OPTDEFS
+        name == oname || continue
+        if type == CMDOPT_BOOL
+            if value == "true"
+                setfield!(gd.options, field, true)
+            elseif value == "false"
+                setfield!(gd.options, field, false)
+            else
+                throw(AssertionError("set_pl_option: a Boolean option takes true or false"))
+            end
+            return true
+        elseif type == CMDOPT_SIZE_T
+            b = UInt8[codeunits(value); 0x00]
+            n = number()
+            rc, q = str_number(ld, b, 1, n, UInt32(0))
+            if rc == NUM_OK && b[q] == 0x00 && n.type === V_INTEGER
+                gd.options.stackLimit = n.i
+                return true
+            end
+            return false
+        elseif type == CMDOPT_STRING
+            if field === :home
+                gd.defaults_home = String(value)
+            else
+                setfield!(gd.options, field, String(value))
+            end
+            return true
+        else                                            # CMDOPT_LIST
+            push!(getfield(gd.options, field), String(value))
+            return true
+        end
+    end
+    return false
+end
+
+# PORT: pl-prims.c cmd_option_set as pl_cmd_option_set2_va
+# (PRED_IMPL("$cmd_option_set", 2, cmd_option_set, 0), pl-prims.c:6448-6460 at the pin)
+# DIVERGES: only `stack_limit` is a SIZE_T option, as upstream's table; the text of both arguments is taken as `CVT_ALL`.
+"""
+    '\$cmd_option_set'(+Key, +Value)
+
+Set the command-line option `Key` to the text of `Value` (pl-prims.c); no boot file calls it.
+"""
+function pl_cmd_option_set2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    key = PL_get_text(ld, PL__t0, CVT_ALL | CVT_EXCEPTION)
+    key === nothing && return FFALSE
+    val = PL_get_text(ld, PL__t0 + 1, CVT_ALL | CVT_EXCEPTION)
+    val === nothing && return FFALSE
+    return set_pl_option(_query_gd(ld), ld, String(copy(key.text)), String(copy(val.text))) ?
+           FTRUE : FFALSE
+end
+
 # ── '$style_check'/2 (pl-prims.c "STYLE CHECK"): what boot/syspred.pl's style_check/1 reads and writes ───
 # PORT: pl-prims.c style_check as pl_style_check2_va
 # (PRED_IMPL("$style_check", 2, style_check, 0), pl-prims.c:6523-6537 at the pin)
@@ -4555,6 +4692,8 @@ const PL_predicates_from_prims = (
     PL_extension("char_code", 2, pl_char_code2_va, PL_FA_ISO | PL_FA_VARARGS),
     PL_extension("atom_number", 2, pl_atom_number2_va, PL_FA_VARARGS),
     PL_extension("statistics", 2, pl_statistics2_va, PL_FA_VARARGS),
+    PL_extension("\$cmd_option_val", 2, pl_cmd_option_val2_va, PL_FA_VARARGS),     # (LB7)
+    PL_extension("\$cmd_option_set", 2, pl_cmd_option_set2_va, PL_FA_VARARGS),
     PL_extension("setarg", 3, pl_setarg3_va, PL_FA_VARARGS),
     PL_extension("nb_setarg", 3, pl_nb_setarg3_va, PL_FA_VARARGS),
     PL_extension("nb_linkarg", 3, pl_nb_linkarg3_va, PL_FA_VARARGS),

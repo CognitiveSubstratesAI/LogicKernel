@@ -504,3 +504,81 @@ function _parse_long_option!(
     end
     return 1
 end
+
+# ----- '$usage'/0 (R2 LB7): the text of `swipl --help` -----
+# PORT: pl-init.c usage
+# (swipl-devel cbf4e189, src/pl-init.c:1699-1769)
+# DIVERGES: the lines in the pinned build's configuration (O_PLMT: `--shared-table-space`; no O_DEBUG: no `-d topic`; not Windows),
+# one text, `%s` the program name. The program name is `swipl` always: upstream's `if ( os_argc <= 0 || (prog = BaseName(...)) )
+# prog = "swipl"` assigns it where the BaseName call succeeds too (the condition is true either way), so `prog` is `swipl`
+# whatever `os_argv[0]` is; the measured output of swipl 10.1.19 is this text with `swipl` (evidence/LB7/usage.txt).
+const USAGE_TEXT = """%s: Usage:
+    1) %s [options] prolog-file ... [-- arg ...]
+    2) %s [options] [-o executable] -c prolog-file ...
+    3) %s app ...        Use "%s app list" for available apps
+    4) %s --help         Display this message
+    5) %s --version      Display version information
+    6) %s --abi-version  Display ABI version key
+    7) %s --arch         Display architecture
+    8) %s --dump-runtime-variables[=format]
+                            Dump link info in sh(1) format
+
+Options:
+    -x state                 Start from state (must be first)
+    -g goal                  Run goal (may be repeated)
+    -t toplevel              Toplevel goal
+    -f file                  User initialisation file
+    -F file                  Site initialisation file
+    -l file                  Script source file
+    -s file                  Script source file
+    -p alias=path            Define file search path 'alias'
+    -Dname[=value]           Set a Prolog flag (may be repeated)
+    -O                       Optimised compilation
+    --on-error=style         One of print, halt or status
+    --on-warning=style       One of print, halt or status
+    --tty[=bool]             (Dis)allow tty control
+    --packs[=bool]           Do (not) attach add-ons
+    --signals[=bool]         Do (not) modify signal handling
+    --sigalert[=num]         Use signal num for alerting threads
+    --threads[=bool]         Do (not) allow for threads
+    --debug[=bool]           Do (not) generate debug info
+    --debug-on-interrupt[=bool] Trap the debugger on interrupt
+    --quiet[=bool] (-q)      Do (not) suppress informational messages
+    --traditional            Disable extensions of version 7
+    --home[=DIR]             Print home or use DIR as SWI-Prolog home
+    --stack-limit=size[BKMG] Specify maximum size of Prolog stacks
+    --table-space=size[BKMG] Specify maximum size of SLG tables
+    --shared-table-space=size[BKMG] Maximum size of shared SLG tables
+    --pce[=bool]             Make the xpce gui available
+    --pldoc[=port]           Start PlDoc server [at port]
+
+Boolean options may be written as --name=bool, --name, --no-name or --noname.
+Both '-' or '_' are accepted as word-separator for long options.
+"""
+
+"The text `usage()` writes to `user_error`: `USAGE_TEXT` with the program name `swipl` (pl-init.c)."
+usage_text()::String = replace(USAGE_TEXT, "%s" => "swipl")
+
+"Write the usage text to `user_error` (pl-init.c `usage`). True."
+function usage(ld::PL_local_data)::Bool
+    _initIO(ld)                                 # the standard streams are open (as printMessage)
+    s = Suser_error(ld)::IOSTREAM
+    PutString(usage_text(), s)
+    Sflush(s)
+    return true
+end
+
+# PORT: pl-init.c usage as pl_usage0_va
+# (PRED_IMPL("$usage", 0, usage, 0), pl-init.c:1771-1776 at the pin)
+"`'\$usage'`: write the usage text to `user_error` (pl-init.c); reached by `argv_prolog_files` on an unknown option word."
+function pl_usage0_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    usage(ld)
+    return FTRUE
+end
+
+# PORT: pl-init.c BeginPredDefs(init)
+# DIVERGES: `$usage/0` only; `$run_state/1` (saved states) is left to the step that ports them.
+"pl-init.c's registration table (`BeginPredDefs(init)`): the ported entries."
+const PL_predicates_from_init = (PL_extension("\$usage", 0, pl_usage0_va, PL_FA_VARARGS),)

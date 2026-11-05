@@ -80,7 +80,8 @@ const foreigns = (
 # as for every module-level constant the global-state lint reads.
 const _PRED_TABLES = (
     PL_predicates_from_atom, PL_predicates_from_arith, PL_predicates_from_bag,
-    PL_predicates_from_comp, PL_predicates_from_list, PL_predicates_from_module,
+    PL_predicates_from_comp, PL_predicates_from_init, PL_predicates_from_list,
+    PL_predicates_from_module,
     PL_predicates_from_prims, PL_predicates_from_variant, PL_predicates_from_copyterm,
     PL_predicates_from_prologflag,
     PL_predicates_from_trace, PL_predicates_from_pro, PL_predicates_from_read,
@@ -98,7 +99,7 @@ const _PRED_TABLES = (
 )
 const _FOREIGN_VA = (
     PL_predicates_from_atom..., PL_predicates_from_arith..., PL_predicates_from_bag...,
-    PL_predicates_from_comp...,
+    PL_predicates_from_comp..., PL_predicates_from_init...,
     PL_predicates_from_list..., PL_predicates_from_module..., PL_predicates_from_prims...,
     PL_predicates_from_variant..., PL_predicates_from_copyterm...,
     PL_predicates_from_prologflag..., PL_predicates_from_trace...,
