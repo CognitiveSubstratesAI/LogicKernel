@@ -2850,7 +2850,7 @@ _index_entry_points(T) = (
             LK.pl_get_char2_va, LK.pl_peek_char2_va, LK.pl_skip2_va,
             LK.pl_get_single_char1_va, LK.pl_dstream_property2_va,
             LK.pl_dstream_properties2_va, LK.pl_dstreams_properties2_va,
-            LK.pl_set_stream2_va
+            LK.pl_set_stream2_va, LK.pl_set_prolog_IO3_va
         )
     ]...,
     (LK.prompt1, Tuple{LK.PL_local_data{T}, T}, false),
@@ -2863,6 +2863,7 @@ _index_entry_points(T) = (
     (LK.PL_encoding_to_atom, Tuple{Type{T}, LK.IOENC}, false),
     (LK.unicode_atoms_to_atom, Tuple{Type{T}, LK.Sunicode_atoms_t}, false),
     (LK.term_stream_handle, Tuple{LK.PL_local_data{T}, Int, Int}, false),
+    (LK.getIOStreams, Tuple{LK.PL_local_data{T}, Int, Int, Int}, false),    # TOP1b F
     (LK._put_functor, Tuple{LK.PL_local_data{T}, Int, Symbol, Int}, false),
     [
         (f, Tuple{LK.PL_local_data{T}, LK.IOSTREAM, Int}, false) for
@@ -3768,6 +3769,7 @@ const _DISPATCH_MANIFEST_TUPLE = (
     (LK.unregisterLocalData!, Tuple{LK.LDTable, Int}, false),
     (LK.Sread_user, Tuple{Nothing, LK.IOSTREAM, LK.wrappedIO, Vector{UInt8}, Int, Int}, false),
     (LK.closeWrappedIO, Tuple{LK.IOSTREAM, LK.wrappedIO}, false),
+    (LK.Swrite_stderr, Tuple{LK.IOSTREAM, Vector{UInt8}, Int, Int}, false),    # TOP1b F
     (LK.S_read_wrapped, Tuple{LK.IOSTREAM, Vector{UInt8}, Int, Int}, false),
     (LK.S_close_wrapped, Tuple{LK.IOSTREAM}, false),
     # TOP1b: PL_dispatch's no-hook form (pl-fli.c)

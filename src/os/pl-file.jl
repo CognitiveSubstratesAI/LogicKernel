@@ -2970,6 +2970,7 @@ const PL_predicates_from_file = (
     PL_extension("\$streams_properties", 2, pl_dstreams_properties2_va, PL_FA_VARARGS),
     PL_extension("\$alias_stream", 2, pl_dalias_stream2_va, PL_FA_VARARGS),
     PL_extension("set_stream", 2, pl_set_stream2_va, PL_FA_VARARGS),
+    PL_extension("set_prolog_IO", 3, pl_set_prolog_IO3_va, PL_FA_VARARGS),
     PL_extension("\$push_input_context", 1, pl_push_input_context1_va, PL_FA_VARARGS),
     PL_extension("\$pop_input_context", 0, pl_pop_input_context0_va, PL_FA_VARARGS),
     PL_extension("\$input_context", 1, pl_input_context1_va, PL_FA_VARARGS)
@@ -3091,6 +3092,94 @@ function wrapIO(
     s.flags &= ~WRAP_CLEAR_FLAGS
     s.wrapped = wrappedIO(gd.ld_table, registerLocalData!(gd.ld_table, ld), read, saved)
     return nothing
+end
+
+# PORT: pl-file.c Swrite_stderr
+# (swipl-devel cbf4e189, src/os/pl-file.c:6071-6079)
+# DIVERGES: `buf` is `mem` from `from`; `Sfwrite` is its loop over `Sputc` (pl-stream.c:1577-1587, the count of bytes written).
+"Write to the stream `org` the error stream copies, and flush it (pl-file.c): the count, or -1."
+function Swrite_stderr(org::IOSTREAM, mem::Vector{UInt8}, from::Int, size::Int)::Int
+    rc = 0
+    for i in from:(from + size - 1)
+        Sputc(Int(mem[i]), org) < 0 && break
+        rc += 1
+    end
+
+    return (rc > 0 && Sflush(org) == 0) ? rc : -1
+end
+
+# NOT PORTED as a table: `Sstderrfunctions` (pl-file.c:6081-6090) is the enum member of that name, `S_write` and `S_close`
+# dispatch on it (no `read`, `seek`, `control`: a stream made over it is an output).
+
+# PORT: pl-file.c getIOStreams
+# (swipl-devel cbf4e189, src/os/pl-file.c:6093-6122)
+# DIVERGES: the streams are the result (upstream: three out parameters and `bool`), `nothing` with the error raised;
+# `PL_get_stream(t, &s, SIO_INPUT)` is `term_stream_handle(SH_ERRORS|SH_ALIAS|SH_INPUT)` (pl-file.c:973-986), no lock to
+# release; `PL_compare` raises nothing here (no `CMP_ERROR`); `SIO_ABUF` is `SIO_FBUF|SIO_LBUF|SIO_NBUF`.
+"The input, output and error streams `set_prolog_IO/3` names; a separate error stream if Out == Error (pl-file.c)."
+function getIOStreams(
+    ld::PL_local_data{T}, tin::term_t, tout::term_t, terror::term_t
+)::Union{Nothing, Tuple{IOSTREAM, IOSTREAM, IOSTREAM}} where {T}
+    in = term_stream_handle(ld, tin, SH_ERRORS | SH_ALIAS | SH_INPUT)
+    in === nothing && return nothing
+
+    out = term_stream_handle(ld, tout, SH_ERRORS | SH_ALIAS | SH_OUTPUT)
+    out === nothing && return nothing
+
+    local error::IOSTREAM
+    if PL_compare(ld, tout, terror) == CMP_EQUAL         # ==
+        err = getStream(Snew(out, out.flags & ~WRAP_CLEAR_FLAGS, Sstderrfunctions))
+        err === nothing && return nothing
+        error = err
+    else
+        e = term_stream_handle(ld, terror, SH_ERRORS | SH_ALIAS | SH_OUTPUT)
+        e === nothing && return nothing
+        error = e
+    end
+
+    out.flags &= ~(SIO_FBUF | SIO_LBUF | SIO_NBUF)       # output: line buffered
+    out.flags |= SIO_LBUF
+
+    error.flags &= ~(SIO_FBUF | SIO_LBUF | SIO_NBUF)     # disable buffering
+    error.flags |= SIO_NBUF
+
+    return (in, out, error)
+end
+
+# PORT: pl-file.c set_prolog_IO as pl_set_prolog_IO3_va
+# (PRED_IMPL("set_prolog_IO", 3, set_prolog_IO, 0)) — pl-file.c:6125-6167
+# DIVERGES: no `PL_LOCK(L_FILE)`/`releaseStream` (no threads, no stream locks); `LD->IO.streams[0]` is `Suser_input`;
+# the wrap is `wrapIO(gd, ld, in, true)` (`Sread_user`, see there).
+"`set_prolog_IO(+In, +Out, +Error)`: make the three streams the user streams, `In` read with a prompt (pl-file.c)."
+function pl_set_prolog_IO3_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    _initIO(ld)
+    io = getIOStreams(ld, PL__t0, PL__t0 + 1, PL__t0 + 2)
+    io === nothing && return FFALSE
+    in, out, error = io
+
+    wrapin = Suser_input(ld) !== in
+
+    setStandardStream(ld, SNO_USER_OUTPUT, out)
+    setStandardStream(ld, SNO_USER_ERROR, error)
+    setStandardStream(ld, SNO_CURRENT_OUTPUT, out)
+
+    if wrapin
+        setStandardStream(ld, SNO_CURRENT_INPUT, in)
+        setStandardStream(ld, SNO_USER_INPUT, in)
+        wrapIO(_query_gd(ld), ld, in, true)
+        ld.prompt_next = true
+    end
+
+    posbuf = (Suser_input(ld)::IOSTREAM).posbuf
+    for i in SNO_USER_INPUT:SNO_USER_ERROR
+        st = ld.IO_streams[i + 1]::IOSTREAM
+        st.position = posbuf
+        st.flags |= SIO_RECORDPOS
+    end
+
+    return FTRUE
 end
 
 # PORT: pl-file.c pushOutputContext

@@ -203,6 +203,7 @@ IOPOS() = IOPOS(0, 0, 0, 0, 0)
     Smemfunctions
     Sstringfunctions
     Siofunctions
+    Sstderrfunctions       # pl-file.c's: write to the stream it copies and flush it (R2 TOP1b F)
 end
 
 # PORT: pl-stream.c memfile
@@ -339,6 +340,8 @@ function S_write(s::IOSTREAM, mem::Vector{UInt8}, from::Int, size::Int)::Int
         return Swrite_memfile(h, mem, from, size)
     s.functions == Siofunctions && h isa Sjulia_io &&
         return Swrite_julia_io(h, mem, from, size)
+    s.functions == Sstderrfunctions && h isa IOSTREAM &&
+        return Swrite_stderr(h, mem, from, size)
     return Swrite_string(s, mem, from, size)
 end
 
@@ -354,6 +357,7 @@ function S_close_wrapped(s::IOSTREAM)::Int
     h = s.handle
     s.functions == Smemfunctions && h isa memfile && return Sclose_memfile(h)
     s.functions == Siofunctions && h isa Sjulia_io && return Sclose_julia_io(h)
+    s.functions == Sstderrfunctions && return 0                 # (`close` is NULL)
     h isa IOSTREAM && return Sclose_string(h)
     return -1
 end
