@@ -217,13 +217,13 @@ MUTANTS = [
             while cref !== nothing
                 if cref.clause === clause'''),
     dict(id="LB2-50 nth_clause by reference counts erased clauses too", file="src/pl-comp.jl", targets=N,
-         old='''visibleClauseCNT(cref.clause::Clause{T}, generation) && (i += 1)''',
+         old='''visibleClauseCNT(ld, cref.clause::Clause{T}, generation) && (i += 1)''',
          new='''(i += 1)'''),
     dict(id="LB2-51 nth_clause accepts an erased reference", file="src/pl-comp.jl", targets=N,
          old='''if rc == 1                                          # PL_get_clref(ref, &clause) == true''',
          new='''if rc != 0'''),
     dict(id="LB2-52 nth_clause does not skip invisible first clauses", file="src/pl-comp.jl", targets=N,
-         old='''        while cref !== nothing && !visibleClauseCNT(cref.clause::Clause{T}, generation)
+         old='''        while cref !== nothing && !visibleClauseCNT(ld, cref.clause::Clause{T}, generation)
             cref = cref.next
         end
         if cref === nothing
@@ -302,8 +302,8 @@ MUTANTS = [
          old='''PL_unify_bool(ld, value, (clause.flags & UNIT_CLAUSE) != 0)''',
          new='''PL_unify_bool(ld, value, (clause.flags & UNIT_CLAUSE) == 0)'''),
     dict(id="LB2-71 get_clause_attribute erased is inverted", file=PR, targets=N + T,
-         old='''PL_unify_bool(ld, value, !visibleClause(clause, gen))''',
-         new='''PL_unify_bool(ld, value, visibleClause(clause, gen))'''),
+         old='''PL_unify_bool(ld, value, !visibleClause(ld, clause, gen))''',
+         new='''PL_unify_bool(ld, value, visibleClause(ld, clause, gen))'''),
     dict(id="LB2-72 get_clause_attribute predicate_indicator is not qualified", file=PR, targets=N + T,
          old='''GP_QUALIFY | GP_NAMEARITY
         ) && return FTRUE''',

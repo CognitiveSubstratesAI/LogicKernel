@@ -178,7 +178,7 @@ MUTANTS = [
          old="        for i in 0:(def.arity - 1)\n            unify_meta_argument",
          new="        for i in 1:(def.arity - 1)\n            unify_meta_argument"),
     dict(id="PR1-F6 num_visible_clauses counts an erased clause not yet collected (KILL pr79, pr106)", file=P, targets=TATT,
-         old="            if !(rules && (cl.flags & UNIT_CLAUSE) != 0) && visibleClause(cl, gen)",
+         old="            if !(rules && (cl.flags & UNIT_CLAUSE) != 0) && visibleClause(cl, gen, gd.reload_generation)",
          new="            if !(rules && (cl.flags & UNIT_CLAUSE) != 0) && true"),
     dict(id="PR1-F7 number_of_clauses answers a foreign predicate (KILL pr87)", file=P, targets=TATT,
          old="        (def.flags & P_FOREIGN) != 0 && return FFALSE\n        num_clauses = num_visible_clauses(gd, def, false)",

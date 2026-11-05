@@ -451,13 +451,13 @@ end'''),
          old='''        return PL_unify(ld, term, res) ? FTRUE : FFALSE         # PL_unify_term(term, PL_FUNCTOR, FUNCTOR_prove2, …)''',
          new='''        return FTRUE                                            # PL_unify_term(term, PL_FUNCTOR, FUNCTOR_prove2, …)'''),
     dict(id="D1-117 instance/2 answers a goal clause", file=R, targets=T,
-         old='''    if (clause.flags & GOAL_CLAUSE) != 0 || !visibleClause(clause, generation)''',
-         new='''    if !visibleClause(clause, generation)''',
+         old='''    if (clause.flags & GOAL_CLAUSE) != 0 || !visibleClause(ld, clause, generation)''',
+         new='''    if !visibleClause(ld, clause, generation)''',
          equivalent="no goal clause has a reference: PL_unify_clref/PL_put_clref are called only for the clauses assert/2, asserta/2, assertz/2, "
                     "'$record_clause'/4 and clause/3 hand out (src/pl-comp.jl:3445, 3719, 3793, 3807, 3845), and a goal clause is a heap Clause "
                     "that no definition holds (src/pl-comp.jl:3089-3096, compileGoalClause)"),
     dict(id="D1-118 instance/2 does not test that the clause is visible", file=R, targets=T,
-         old='''    if (clause.flags & GOAL_CLAUSE) != 0 || !visibleClause(clause, generation)''',
+         old='''    if (clause.flags & GOAL_CLAUSE) != 0 || !visibleClause(ld, clause, generation)''',
          new='''    if (clause.flags & GOAL_CLAUSE) != 0''',
          equivalent="PL_get_dbref has turned an erased clause away (src/pl-dbref.jl:161), and retractClauseDefinition! sets CL_ERASED in the "
                     "same step as generation_erased (src/pl-proc.jl:505-516); every referenced clause was created before the foreign frame "
