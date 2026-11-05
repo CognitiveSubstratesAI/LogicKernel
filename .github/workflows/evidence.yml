@@ -81,6 +81,11 @@ jobs:
           version: '1.13'
       - uses: julia-actions/cache@9353db09a0f2bbbdec6f41791918c75d37391b36  # v3.5.0
       # (no analysis tools: the static analysis is in no file group — the `static_analysis` jobs)
+      # THE HOME TREE (LB4 b2): every database is a copy of the BOOTED one, which reads HOME/boot/init.pl; `home/` is
+      # generated and git-ignored, so a fresh checkout has none (Evidence 42021496734: 664 failing tests, "build the home
+      # tree first"). tools/build_home.jl links the tracked vendor/ and packages/plunit: no network, no packages, about a second.
+      - name: The home tree (tools/build_home.jl)
+        run: julia tools/build_home.jl
       - run: julia --project=. -e 'using Pkg; Pkg.instantiate()'
       # COVERAGE PER TERM TYPE (user, 2026-10-14): each type's run is instrumented and uploaded
       # under its own Codecov flag; Codecov merges the uploads of one commit — a type's file groups
@@ -153,6 +158,11 @@ jobs:
             PackageSpec(url="https://github.com/aviatesk/JET.jl", rev="master"),
             PackageSpec(url="https://github.com/JuliaTesting/Aqua.jl", rev="master"),
             PackageSpec(name="AllocCheck")])'
+      # THE HOME TREE (LB4 b2): every database is a copy of the BOOTED one, which reads HOME/boot/init.pl; `home/` is
+      # generated and git-ignored, so a fresh checkout has none (Evidence 42021496734: 664 failing tests, "build the home
+      # tree first"). tools/build_home.jl links the tracked vendor/ and packages/plunit: no network, no packages, about a second.
+      - name: The home tree (tools/build_home.jl)
+        run: julia tools/build_home.jl
       - run: julia --project=. -e 'using Pkg; Pkg.instantiate()'
       - name: Run this shard of the static analysis
         env:

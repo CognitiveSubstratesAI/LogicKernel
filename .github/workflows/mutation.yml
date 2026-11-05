@@ -120,6 +120,11 @@ jobs:
             PackageSpec(url="https://github.com/aviatesk/JET.jl", rev="master"),
             PackageSpec(url="https://github.com/JuliaTesting/Aqua.jl", rev="master"),
             PackageSpec(name="AllocCheck")])'
+      # THE HOME TREE (LB4 b2): every database is a copy of the BOOTED one, which reads HOME/boot/init.pl; `home/` is
+      # generated and git-ignored, so a fresh checkout has none (Evidence 42021496734: 664 failing tests, "build the home
+      # tree first"). tools/build_home.jl links the tracked vendor/ and packages/plunit: no network, no packages, about a second.
+      - name: The home tree (tools/build_home.jl)
+        run: julia tools/build_home.jl
       - run: julia --project=. -e 'using Pkg; Pkg.instantiate()'
       - name: Run the targets
         run: python3 tools/mutate_ci.py baseline "$LIMIT_S" $TARGETS
@@ -164,6 +169,11 @@ jobs:
             PackageSpec(url="https://github.com/aviatesk/JET.jl", rev="master"),
             PackageSpec(url="https://github.com/JuliaTesting/Aqua.jl", rev="master"),
             PackageSpec(name="AllocCheck")])'
+      # THE HOME TREE (LB4 b2): every database is a copy of the BOOTED one, which reads HOME/boot/init.pl; `home/` is
+      # generated and git-ignored, so a fresh checkout has none (Evidence 42021496734: 664 failing tests, "build the home
+      # tree first"). tools/build_home.jl links the tracked vendor/ and packages/plunit: no network, no packages, about a second.
+      - name: The home tree (tools/build_home.jl)
+        run: julia tools/build_home.jl
       - run: julia --project=. -e 'using Pkg; Pkg.instantiate()'
       # Applies the mutant (its text must occur exactly once: else BADMATCH), runs the targets in
       # fresh processes, writes mutation-out/<name>.json and the log. Exits 0 whatever the verdict:
