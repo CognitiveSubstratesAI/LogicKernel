@@ -2966,6 +2966,53 @@ const _MANIFEST_LB2B_FREE = (
     (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_glob)}, false)
 )
 
+# LB7 — the command line and the start-up of pl-init.c, and pl-prims.c's `$cmd_option_val/2` and `$cmd_option_set/2`
+# (src/pl-init.jl, src/pl-prims.jl; `_stream_or_alias_term` is pl-read.c's unify_location helper, src/pl-read.jl). The methods
+# that take the databases are checked for every payload type; the ones on strings and the options structs once, below.
+_manifest_lb7(T) = begin
+    GD = LK.PL_global_data{T}
+    LD = LK.PL_local_data{T}
+    (
+        (LK.memarea_limit, Tuple{LD, String}, false),
+        (
+            LK.parseCommandLineOptions,
+            Tuple{GD, LD, LK.pl_options_t, LK.pl_cmdline_t, Vector{String}},
+            false
+        ),
+        (
+            LK._parse_long_option!,
+            Tuple{GD, LD, LK.pl_options_t, LK.pl_cmdline_t, String},
+            false
+        ),
+        (LK.usage, Tuple{LD}, false),
+        (LK.pl_usage0_va, Tuple{LD, Int, Int, LK.control_t{T}}, false),
+        (LK.apply_options_to_flags!, Tuple{GD, LD}, false),
+        (LK.PL_initialise_tail!, Tuple{GD, LD}, false),
+        (LK.PL_initialise!, Tuple{GD, LD, Vector{String}}, false),
+        (LK.PL_initialise!, Tuple{Type{T}, Vector{String}}, false),
+        (LK._optdef_get, Tuple{GD, Symbol}, false),
+        (LK.pl_cmd_option_val2_va, Tuple{LD, Int, Int, LK.control_t{T}}, false),
+        (LK.set_pl_option, Tuple{GD, LD, String, String}, false),
+        (LK.pl_cmd_option_set2_va, Tuple{LD, Int, Int, LK.control_t{T}}, false),
+        (LK._stream_or_alias_term, Tuple{LD, LK.IOSTREAM}, false)
+    )
+end
+
+# the same, on strings and the options structs: one entry each
+const _MANIFEST_LB7_FREE = (
+    (LK.optcmp, Tuple{String, String}, false),
+    (LK.is_longopt, Tuple{String, String}, false),
+    (LK.skip_wsep, Tuple{String}, false),
+    (LK.is_bool_opt, Tuple{String, String}, false),
+    (LK.on_error_style, Tuple{String}, false),
+    (LK.is_early_define, Tuple{String}, false),
+    (LK.find_define, Tuple{String, Vector{String}}, false),
+    (LK.initDefaultOptions!, Tuple{LK.pl_options_t}, false),
+    (LK.usage_text, Tuple{}, false),
+    (LK.defaultSystemInitFile, Tuple{String}, false),
+    (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_init)}, false)
+)
+
 # LB4 b1: the template database (src/gd_template.jl) and the boot-image readers (src/boot_image.jl), over term type T.
 # `copy_global_data` is @generated from the fields of PL_global_data, so it is analysed per T. `gd_template`'s build
 # argument is any callable: the registry's default since LB4 b2 is the closure `() -> boot_global_data(T)` (a `#…`
@@ -3071,6 +3118,10 @@ const _DISPATCH_MANIFEST_TUPLE = (
     _manifest_lb2b(_M2)...,
     _manifest_lb2b(_M3)...,
     _MANIFEST_LB2B_FREE...,
+    _manifest_lb7(_M1)...,
+    _manifest_lb7(_M2)...,
+    _manifest_lb7(_M3)...,
+    _MANIFEST_LB7_FREE...,
     # term-type-independent parts of the index and its head compiler
     (LK._le_byte, Tuple{NTuple{4, UInt64}, Int}, true),
     (LK._le_byte, Tuple{Vector{UInt8}, Int}, true),
