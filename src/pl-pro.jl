@@ -16,8 +16,8 @@
 # ported with `query_loop` since R2 TOP1.
 #
 # Since R2 TOP1: `resetProlog` (it resets the autoloader's chain and loop mark, `autoload_nesting`, `autoload_loop`),
-# `restore_after_exception`, `halt_from_exception` and `query_loop`. `prologToplevel`, `pl_break` and `currentBreakLevel` (they
-# need `LD->break_level`) are left to TOP1b.
+# `restore_after_exception`, `halt_from_exception` and `query_loop`. Since R2 TOP1b: `currentBreakLevel` (`LD->break_level`, -1
+# outside a toplevel); `prologToplevel` and `pl_break` follow in the same step.
 #
 # LEFT OUT: the rest of pl-pro.c — the toplevel (`pl_break`, `prologToplevel`),
 # `'$notrace'/1`, `'$call_no_catch'/1`, `'$can_yield'/0`, the other entries of the table (pl-pro.c:1060-1069),
@@ -478,6 +478,11 @@ function query_loop(
 
     return rc
 end
+
+# PORT: pl-pro.c currentBreakLevel
+# DIVERGES: the local data is the argument (upstream's `GET_LD`).
+"The nesting level of the toplevel: 0 in the first, higher in a `break/0`, -1 when no toplevel runs (pl-pro.c)."
+currentBreakLevel(ld::PL_local_data)::Int = ld.break_level
 
 # PORT: pl-pro.c BeginPredDefs as PL_predicates_from_pro
 # DIVERGES: the registered entries only (upstream's table has eight, pl-pro.c:1060-1069).

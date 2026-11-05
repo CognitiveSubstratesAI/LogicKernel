@@ -2669,7 +2669,9 @@ function _manifest_index(T)
         (LK.PrologPrompt, Tuple{LD}, false),
         (LK.PL_write_prompt, Tuple{GD, LD, Bool}, false),
         (LK.PL_prompt_next, Tuple{LD, LK.IOSTREAM}, false),
-        (LK.writeAtomToStream, Tuple{GD, LD, LK.IOSTREAM, T}, false)
+        (LK.writeAtomToStream, Tuple{GD, LD, LK.IOSTREAM, T}, false),
+        # TOP1b — currentBreakLevel (pl-pro.c); the break_level flag (pl-prologflag.c) reads it
+        (LK.currentBreakLevel, Tuple{LD}, true)
     )
 end
 
@@ -3743,6 +3745,9 @@ const _DISPATCH_MANIFEST_TUPLE = (
     (LK._copy_stream_free, Tuple{Vector{Union{Nothing, LK.IOSTREAM}}}, false),
     (LK._copy_stream_free, Tuple{Dict{UInt64, LK.IOSTREAM}}, false),
     (LK.reset_gd_templates!, Tuple{}, false),
+    # TOP1b: the terminal mode a stream records (pl-os.c Sttymode, Sset_ttymode); no term type
+    (LK.Sttymode, Tuple{LK.IOSTREAM}, true),
+    (LK.Sset_ttymode, Tuple{LK.IOSTREAM, Int}, false),
     # compileFile's leftover check (src/pl-qlf.jl) names no term type: listed once, not once per type (LB4 b2 G9)
     (LK.compileFile_leaves, Tuple{NTuple{4, Int}, Int}, false),
     (

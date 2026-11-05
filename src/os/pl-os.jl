@@ -15,6 +15,8 @@
 # the unchecked-access allowlist (test/test_type_discipline.jl, "os/pl-os.jl ccall").
 #
 # Since R2 LB2b: the file-name functions at the end of the file (`canonicaliseFileName`, `AbsoluteFile`, `PL_cwd`, `ChDir`, …).
+# Since R2 TOP1b: the terminal mode a stream records (`TTY_COOKED`, `TTY_RAW`, `TTY_SAVE`, `Sttymode`, `Sset_ttymode`); the kernel
+# has no ttys, so only the `SIO_RAW` flag moves (`PushTty`/`PopTty` stay out, see src/pl-read.jl's note).
 # NOT PORTED: the rest of pl-os.c (`System`, the signals, the tmp-file
 # registry `DeleteTemporaryFile` needs: no tmp_file/2 yet), the Windows and HAVE_TIMES branches, the
 # `mitigate_spectre` flag's `clock_jitter` (the flag table, F1).
@@ -541,4 +543,30 @@ function ChDir(ld::PL_local_data, path::String)::Int
     gd = ld.GD
     gd === nothing || (gd.paths_CWDdir = tmp)
     return 0
+end
+
+# PORT: pl-os.h TTY_COOKED
+"The initial terminal mode: echo (pl-os.h)."
+const TTY_COOKED = 1
+# PORT: pl-os.h TTY_RAW
+"The terminal mode without echo, non-blocking (pl-os.h)."
+const TTY_RAW = 2
+# PORT: pl-os.h TTY_SAVE
+"The terminal mode argument that only saves the status (pl-os.h)."
+const TTY_SAVE = 3
+
+# PORT: pl-os.c Sttymode
+"The terminal mode of the stream `s`: `TTY_RAW` when it carries `SIO_RAW`, else `TTY_COOKED` (pl-os.c)."
+Sttymode(s::IOSTREAM)::Int = (s.flags & SIO_RAW) != 0 ? TTY_RAW : TTY_COOKED
+
+# PORT: pl-os.c Sset_ttymode
+"Record the terminal mode `mode` in the stream `s`: `SIO_RAW` for `TTY_RAW`, else cleared (pl-os.c)."
+function Sset_ttymode(s::IOSTREAM, mode::Int)::Nothing
+    if mode == TTY_RAW
+        s.flags |= SIO_RAW
+    else
+        s.flags &= ~SIO_RAW
+    end
+
+    return nothing
 end

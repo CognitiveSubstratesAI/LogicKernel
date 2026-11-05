@@ -606,6 +606,7 @@ mutable struct PL_local_data{T}
     autoload_loop::Union{Nothing, definition{T}}                # autoload.loop: we are looping on this def (nothing: NULL)
     in_print_message::Int                                       # in_print_message: inside printMessage() (R2 LB4 b2)
     reload_nesting::Int                                         # reload.nesting: how deeply is reconsult nested
+    break_level::Int                                            # break_level: the toplevel's nesting, -1 outside one (R2 TOP1b)
 end
 function PL_local_data{T}(gd::PL_global_data{T}) where {T}
     ld = _bare_local_data(gd)
@@ -715,7 +716,8 @@ function _bare_local_data(gd::PL_global_data{T}) where {T}
         definition{T}[],                        # autoload.nesting: NULL (R2 AUTOLOAD1 A2)
         nothing,                                # autoload.loop: NULL
         0,                                      # in_print_message: not inside printMessage() (pl-pro.c:82)
-        0                                       # reload.nesting (the generation is gd.reload_generation)
+        0,                                      # reload.nesting (the generation is gd.reload_generation)
+        -1                                      # break_level: no toplevel runs (pl-setup.c:199)
     )
     allocStacks!(ld)                            # the initial local stack, its spare reserved
     emptyStacks!(ld)

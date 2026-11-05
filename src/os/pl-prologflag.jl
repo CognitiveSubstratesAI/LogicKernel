@@ -59,7 +59,7 @@
 # the read data's flags); its `set_prolog_flag/2` arm (:1383) is F1b's, with the rest of the write side.
 # The flags whose value upstream reads from the debugger (`debug`, `debugger_show_context`), the toplevel
 # (`break_level`) or the local data (`access_level`) read what the kernel has: the debugger's status fields of the local data
-# (since R2 F1c; the tracer itself is DBG1's) and no toplevel,
+# (since R2 F1c; the tracer itself is DBG1's) and the toplevel's level (since R2 TOP1b: `currentBreakLevel`, -1 outside one),
 # `access_level` the local data's (since R2 LB2: `user` unless `setAccessLevel!` set `system`).
 # Since R2 F1b the compiler, the VM and write read the Boolean flags from the mask (`truePrologFlag`), as upstream:
 # the five stand-in fields of the local data and `_prolog_flag_bit` are deleted; the flag `determinism_error` is read
@@ -420,7 +420,7 @@ end
 # DIVERGES: the database and the module (an index into its table) are arguments; the key is compared by its
 # text, where upstream compares atom handles. The per-module flags are the module record's (see the file
 # header for `var_tag`, which reads the table); `debug` and `debugger_show_context` answer
-# the local data's debugger status (`debugstatus.debugging`, `.showContext`, pl-prologflag.c:2113-2116; since R2 F1c), `break_level` fails (no toplevel: `currentBreakLevel() < 0`), `access_level` is
+# the local data's debugger status (`debugstatus.debugging`, `.showContext`, pl-prologflag.c:2113-2116; since R2 F1c), `break_level` fails outside a toplevel (`currentBreakLevel() < 0`, since R2 TOP1b the local data's), `access_level` is
 # the local data's (`user` by default); `stack_limit` is the local stack's limit in bytes (the kernel counts words). The shared-flag
 # copy (`unify_shared_prolog_flag`) is not needed without threads.
 "Unify `val` with the value of the flag `f`, named `key`, as module `m` sees it (pl-prologflag.c)."
@@ -474,7 +474,8 @@ function unify_prolog_flag_value(
     elseif name == "debugger_show_context"
         return PL_unify_bool_ex(ld, val, ld.debugstatus_showContext)
     elseif name == "break_level"
-        return false
+        bl = currentBreakLevel(ld)
+        return bl >= 0 && PL_unify_integer(ld, val, bl)
     elseif name == "access_level"
         # PL_unify_atom(val, accessLevel()): `system` in system mode, else `user` (pl-prologflag.c:2011; R2 LB2)
         return PL_unify_atom(ld, val, mk_sym(T, SYSTEM_MODE(ld) ? :system : :user))

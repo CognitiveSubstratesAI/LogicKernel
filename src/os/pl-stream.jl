@@ -127,6 +127,9 @@ const SIO_NOMUTEX = UInt32(1) << 24
 # PORT: SWI-Stream.h SIO_WARN
 "A warning is pending (SWI-Stream.h)."
 const SIO_WARN = UInt32(1) << 26
+# PORT: SWI-Stream.h SIO_RAW
+"A terminal stream is in raw mode (SWI-Stream.h)."
+const SIO_RAW = UInt32(1) << 27
 # PORT: SWI-Stream.h SIO_REPXML
 "An unrepresentable character is written as an XML entity (SWI-Stream.h)."
 const SIO_REPXML = UInt32(1) << 28
