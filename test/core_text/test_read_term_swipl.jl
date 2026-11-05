@@ -302,16 +302,13 @@ if _TR_SWIPL !== nothing
         @test all(s -> s != "NOTPORTED", theirs)
     end
 
-    @testset "`\$` is no operator: boot/topvars.pl's op(1, fx, \$) in `user` is not loaded" begin
-        # swipl's boot file topvars.pl declares `:- op(1, fx, user:(\$))`; the kernel loads no
-        # boot file (R1f's loader reads Prolog source), so `\$a` is a syntax error where swipl
-        # reads `\$(a)`. Never a misread: without the operator, a `\$` that takes an operand is
-        # two operands in a row. This pin fails when the operator is there.
-        @test _tr_swipl_read(["\$a"]) == ["c[36]/1(a[97])|[]"]
-        @test startswith(
-            _tr_read("\$a"),
-            "err c[101,114,114,111,114]/2(c[115,121,110,116,97,120,95,101,114,114,111,114]/1(a[111,112,101,114,97,116,111,114,95,101,120,112,101,99,116,101,100])"
-        )
+    @testset "`\$` is an operator: boot/topvars.pl's op(1, fx, \$) in `user` is loaded" begin
+        # swipl's boot file topvars.pl declares `:- op(1, fx, user:(\$))`; the database is a copy of the
+        # booted template, so it has the operator and `\$a` reads as swipl reads it, `\$(a)`. (This row
+        # was written for the empty database, where `\$a` was a syntax error; swipl's answer is the pin.)
+        theirs = _tr_swipl_read(["\$a"])
+        @test theirs == ["c[36]/1(a[97])|[]"]
+        @test [_tr_read("\$a")] == theirs
     end
 
     @testset "user operators == swipl: infix-and-postfix, prefix-and-infix, block operators" begin

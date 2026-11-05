@@ -138,7 +138,7 @@ end
 function kernel_lines(path::String, names::Vector{String})::Vector{String}
     gd = LK.PL_global_data{_TL}()
     ld = LK.PL_local_data{_TL}(gd)
-    st, ball, _ = LK.load_file!(gd, ld, path)
+    st, ball = LK.load_file!(gd, ld, path)
     out = [st === :ok ? "ok" : "exc " * enc(ball::_TL)]
     for name in names
         append!(out, _lb2b_row(gd, ld, name))
@@ -252,7 +252,7 @@ end
         write(path, "t0(R) :- $goal, R = ok.\n")
         gd = LK.PL_global_data{_TL}()
         ld = LK.PL_local_data{_TL}(gd)
-        st, _, _ = LK.load_file!(gd, ld, path)
+        st, _ = LK.load_file!(gd, ld, path)
         @test st === :ok
         try
             _lb2b_row(gd, ld, "t0")

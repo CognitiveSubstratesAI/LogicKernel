@@ -132,8 +132,9 @@ function test_index_2(d::IxPred{T}, convert, int)::Nothing where {T}
     return nothing
 end
 
-"The term type for the `bigint` units: `1<<100+I` needs an unbounded integer."
-const _JBig = lk_term_type(BigInt)
+"The term type for the `bigint` units: `1<<100+I` needs an unbounded integer. (Int64, Float64 and String as well:
+a database is a copy of the booted template, which reads them from boot/*.pl.)"
+const _JBig = lk_term_type(Union{Int64, BigInt, Float64, String})
 
 @testset "jit" begin
     d = ix_pred(_J, :d, 2; dynamic=true)            # :- dynamic d/2.

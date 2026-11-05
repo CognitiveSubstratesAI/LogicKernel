@@ -37,6 +37,7 @@ end
 @testset "lookupBodyProcedure: the database's procedure for the goal's functor" begin
     gd = LK.PL_global_data{_O}()
     user = LK.MODULE_user(gd)
+    boot = Set(keys(user.procedures))     # a database is a copy of the booted template: boot/*.pl's procedures
     q = sym_key(_os(:q))
     @test LK.isCurrentProcedure(q, 2, user) === nothing
     pq = LK.lookupBodyProcedure(gd, _of(:q, _ov(1), _og(1)), user)    # created: q/2 is new
@@ -49,12 +50,12 @@ end
     LK.setDynamicDefinition!(pq.definition, true)                       # defined: the current one
     @test LK.isDefinedProcedure(gd, pq)
     @test LK.lookupBodyProcedure(gd, _of(:q, _ov(1), _ov(2)), user) === pq
-    # q/2, q/1, go/0 and user:exception/3, which G1 declares dynamic at the boot (design D8)
-    @test length(user.procedures) == 4
-    @test Set(keys(user.procedures)) ==
-        Set([
-        (q, 2), (sym_key(_os(:q)), 1), (sym_key(_os(:go)), 0), (sym_key(_os(:exception)), 3)
-    ])
+    # user:exception/3, which G1 declares dynamic at the boot (design D8), is one of the boot's; this test
+    # added q/2, q/1 and go/0 and nothing else
+    @test (sym_key(_os(:exception)), 3) in boot
+    @test length(user.procedures) == length(boot) + 3
+    @test setdiff(Set(keys(user.procedures)), boot) ==
+        Set([(q, 2), (sym_key(_os(:q)), 1), (sym_key(_os(:go)), 0)])
 end
 
 @testset "lookupBodyProcedure: callable as compileSubClause decides" begin

@@ -335,7 +335,7 @@ end
 @testset "the interim (Q-AR1), [Atom] (Q-AR7, since R1) and the kernel-only terms (Q-AR5), pinned" begin
     # Q-AR1: DefaultTerm holds no BigInt: a big result raises, loudly — never a wrong value
     D = DefaultTerm
-    dgd = LKA.PL_global_data{D}()
+    dgd = LKA.setupProlog(D)    # the unbooted database: a booted copy needs a payload that holds the boot files' floats, strings and big numbers
     dld = LKA.PL_local_data{D}(dgd)
     p = LKA.isCurrentProcedure(sym_key(mk_sym(D, :is)), 2, LKA.MODULE_system(dgd))
     fid = LKA.PL_open_foreign_frame(dld)
@@ -362,7 +362,7 @@ end
     end
     # Q-AR5: a value of no SWI type is not evaluable; `$expr/n` is evaluated, then not evaluable
     O = lk_term_type(Union{Int64, Bool})
-    ogd = LKA.PL_global_data{O}()
+    ogd = LKA.setupProlog(O)    # unbooted: O holds no float, string or big number, which the booted copy reads
     old = LKA.PL_local_data{O}(ogd)
     po = LKA.isCurrentProcedure(sym_key(lk_sym(O, :is)), 2, LKA.MODULE_system(ogd))
     fid = LKA.PL_open_foreign_frame(old)

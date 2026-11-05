@@ -203,7 +203,7 @@ end
     @test _ttrow(gd, ld, user, "expr", ex, :call) == ".T.......T."   # compound, not callable
     @test _ttrow(gd, ld, user, "expr", ex, :inline) == ".T.......T."
     O = lk_term_type(Union{Int64, Bool})
-    ogd = LKT.PL_global_data{O}()
+    ogd = LKT.setupProlog(O)    # unbooted: O holds no float or string, which the booted copy reads
     old = LKT.PL_local_data{O}(ogd)
     v = lk_gnd(O, true)                                             # NUM_OTHER
     row = map(_TT_TESTS) do t

@@ -17,7 +17,8 @@ include(joinpath(@__DIR__, "index_testlib.jl"))
 # TERM TYPES PER CHUNK: REFERENCE — built on the term layer; every type in CI and at milestones
 include(joinpath(@__DIR__, "..", "term_under_test.jl"))
 
-const _P = lk_term_type(Union{Int64, Float64})
+# a database is a copy of the booted template, which reads floats and strings (boot/*.pl)
+const _P = lk_term_type(Union{Int64, Float64, String})
 _ps(n) = lk_sym(_P, Symbol(n))
 _pe(f, xs::_P...) = mk_expr(_P, _P[_ps(f), xs...])
 _pg(v) = lk_gnd(_P, v)
@@ -132,7 +133,14 @@ end
 end
 
 @testset "T3: the loaded source files, in the order of \$time_source_file/3" begin
-    rows = LK.boot_image_source_files(HGD)
+    # the database is a copy of the booted template: its rows are the boot's loaded files (init.pl, load.pl, ...)
+    # followed by the hand-made ones, whose names start with b1_
+    boot = LK.boot_image_source_files(LK.PL_global_data{_P}())
+    @test !isempty(boot) && !any(r -> startswith(r.name, "b1_"), boot)   # non-vacuous: the boot loaded files
+    all_rows = LK.boot_image_source_files(HGD)
+    @test [_file_tuple(r) for r in all_rows[1:length(boot)]] ==
+        [_file_tuple(r) for r in boot]
+    rows = all_rows[(length(boot) + 1):end]
     @test [r.name for r in rows] == ["b1_f1", "b1_f3"]              # b1_f2 has count 0: skipped
     f1, f3 = rows
     @test f1.index < f3.index
@@ -144,12 +152,12 @@ end
         f3.number_of_clauses == 0
     @test f3.resource && f3.from_state && f3.loaded === nothing && !f3.reloading &&
         isempty(f3.modules)
-    @test isempty(LK.boot_image_source_files(LK.PL_global_data{_P}()))   # a fresh database: every file has count 0
+    @test all(r -> r.load_count > 0, boot)                          # a fresh database: only the boot's files, all loaded
 end
 
 @testset "the readers change nothing and read a copy as they read the original" begin
     t1, t3 = _t1(HGD), _t3(HGD)
-    @test length(t1) > 100 && length(t3) == 2                       # non-vacuous
+    @test length(t1) > 100 && length(t3) == length(_t3(LK.PL_global_data{_P}())) + 2   # non-vacuous: the boot's files and 2
     gen = LK.global_generation(HGD)
     @test _t1(HGD) == t1 && _t3(HGD) == t3                          # reading twice gives the same rows
     @test LK.global_generation(HGD) == gen

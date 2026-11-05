@@ -135,10 +135,12 @@ const _OP_GOALS = [
 @testset "the operators visible from user: system's defaults (pl-op.c)" begin
     gd = LK.PL_global_data{_OP}()
     ours = _opvisible(gd)
-    @test length(ours) == 66
+    @test length(ours) == 67                                # pl-op.c's 66, and `$` (fx 1) of the boot (boot/topvars.pl)
     @test "+-fy-200" in ours && "+-yfx-500" in ours && ".-yfx-100" in ours &&
         ":=-xfx-800" in ours
-    @test isempty(LK.MODULE_user(gd).operators)             # all of them in `system`
+    @test "\$-fx-1" in ours
+    # all of pl-op.c's in `system`; `user` holds only the boot's `:- op(1, fx, user:(\$))` (booted template)
+    @test length(LK.MODULE_user(gd).operators) == 1
     if _OP_SWIPL !== nothing
         prog = """
             :- initialization(main, main).
@@ -149,8 +151,8 @@ const _OP_GOALS = [
             write(f, prog)
             sort!(split(chomp(read(`swipl -q $f`, String)), '\n'))
         end
-        # the one difference: `$` (fx 1) comes from boot/init.pl (Prolog, R2), not pl-op.c's table
-        @test setdiff(theirs, ours) == ["\$-fx-1"]
+        # `$` (fx 1) comes from boot/topvars.pl, which the booted copy loads: no difference left
+        @test isempty(setdiff(theirs, ours))
         @test isempty(setdiff(ours, theirs))
     elseif _OP_SWIPL_REQUIRED
         @test _OP_SWIPL !== nothing                         # LOGICKERNEL_REQUIRE_SWIPL=1

@@ -15,7 +15,8 @@ include(joinpath(@__DIR__, "index_testlib.jl"))
 # TERM TYPES PER CHUNK: REFERENCE — built on the term layer; every type in CI and at milestones
 include(joinpath(@__DIR__, "..", "term_under_test.jl"))
 
-const _P = lk_term_type(Union{Int64, Float64})
+# a database is a copy of the booted template, which reads floats and strings (boot/*.pl)
+const _P = lk_term_type(Union{Int64, Float64, String})
 _ps(n) = lk_sym(_P, Symbol(n))
 _pe(f, xs::_P...) = mk_expr(_P, _P[_ps(f), xs...])
 _pg(v) = lk_gnd(_P, v)
@@ -23,7 +24,8 @@ _pg(v) = lk_gnd(_P, v)
 @testset "user:exception/3 exists and is dynamic from the start (G1, design D8: `:- dynamic user:exception/3`, boot/init.pl)" begin
     gd = LK.PL_global_data{_P}()
     user = LK.MODULE_user(gd)
-    @test collect(keys(user.procedures)) == [(sym_key(_ps(:exception)), 3)]    # the only procedure of a fresh `user`
+    # user:exception/3 is one of the procedures of a fresh `user` (the booted template's: boot/*.pl define more)
+    @test (sym_key(_ps(:exception)), 3) in keys(user.procedures)
     ex = LK.isCurrentProcedure(sym_key(_ps(:exception)), 3, user)
     @test ex !== nothing && ex.definition.arity == 3
     @test (ex.definition.flags & LK.P_DYNAMIC) != 0
@@ -33,6 +35,7 @@ end
 @testset "one procedure per functor and database" begin
     gd = LK.PL_global_data{_P}()
     user = LK.MODULE_user(gd)
+    boot = Set(keys(user.procedures))                           # the booted template's procedures of `user`
     @test user === LK.MODULE_user(gd)
     @test user.name == sym_key(_ps(:user))
     p = sym_key(_ps(:p))
@@ -42,9 +45,11 @@ end
     @test LK.lookupProcedure(_ps(:p), 1, user) === p1           # found, not created again
     p2 = LK.lookupProcedure(_ps(:p), 2, user)
     @test p2 !== p1 && p2.definition !== p1.definition          # the arity is part of the functor
-    # `user` holds the two procedures made here and user:exception/3, which G1 declares dynamic at the boot (design D8)
-    @test length(user.procedures) == 3
-    @test Set(keys(user.procedures)) == Set([(p, 1), (p, 2), (sym_key(_ps(:exception)), 3)])
+    # `user` holds the two procedures made here and the boot's (among them user:exception/3, which G1
+    # declares dynamic at the boot, design D8)
+    @test (sym_key(_ps(:exception)), 3) in boot
+    @test length(user.procedures) == length(boot) + 2
+    @test setdiff(Set(keys(user.procedures)), boot) == Set([(p, 1), (p, 2)])
     d = p2.definition                                           # a new predicate
     @test d.functor_name == p && d.arity == 2 && d.flags == 0 && p2.flags == 0
     @test lk_eq(d.name, _ps(:p))                                # the name itself, for error terms

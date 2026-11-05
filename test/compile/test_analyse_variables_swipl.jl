@@ -36,7 +36,8 @@ include(joinpath(@__DIR__, "..", "db", "index_testlib.jl"))
 # TERM TYPES PER CHUNK: REFERENCE — built on the term layer; every type in CI and at milestones
 include(joinpath(@__DIR__, "..", "term_under_test.jl"))
 include(joinpath(@__DIR__, "code_testlib.jl"))
-const _V = lk_term_type(Union{Int64, Float64})
+# a database is a copy of the booted template, which reads floats and strings (boot/*.pl)
+const _V = lk_term_type(Union{Int64, Float64, String})
 "The database the clauses of this file are analysed in (its global data)."
 const _VGD = LK.PL_global_data{_V}()
 _vs(n) = lk_sym(_V, Symbol(n))

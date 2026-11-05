@@ -269,8 +269,12 @@ const _BSWIPL_REQUIRED = get(ENV, "LOGICKERNEL_REQUIRE_SWIPL", "") == "1"
 
 @testset "registered as upstream registers them" begin
     gd = PL_global_data{_BT}()
-    # built-ins live in `system`; `user` holds exactly user:exception/3, dynamic from the start (G1, design D8)
-    @test collect(keys(LKB.MODULE_user(gd).procedures)) == [(sym_key(_bs(:exception)), 3)]
+    # built-ins live in `system`, not in `user`; `user` holds the boot's procedures (boot/*.pl), among them
+    # user:exception/3, dynamic from the start (G1, design D8)
+    @test (sym_key(_bs(:exception)), 3) in keys(LKB.MODULE_user(gd).procedures)
+    for (name, arity, _) in _B_FIRST
+        @test !((sym_key(_bs(name)), arity) in keys(LKB.MODULE_user(gd).procedures))
+    end
     @test (
         LKB.MODULE_user(gd).procedures[(sym_key(_bs(:exception)), 3)].definition.flags &
         LKB.P_DYNAMIC
