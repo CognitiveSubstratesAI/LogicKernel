@@ -7426,8 +7426,8 @@ pl-global.h:892-899 (`LD->reload`). Plan and rulings: evidence/LB6/plan.md and h
     (`hasClausesDefinition` and so `isDefinedProcedure`, `_hasLocalClausesDefinition`, `num_visible_clauses`, `getClauses`, `setDefaultSupervisor`; audit QUESTION 6, option B).
     `startReconsultFile` writes it next to `ld.reload_generation`; `endReconsult` (LB6b) must clear BOTH. `GEN_RELOAD = GEN_MAX-1` is the value of upstream's non-threaded
     branch (pl-srcfile.c:896); the per-thread value is TH1's. Thread-local predicates (`P_THREAD_LOCAL` arms) are TH1's; no lock, no `acquire_def`/`release_def`.
-  - *representation only (no owner named at the site):* `visibleClause(cl, gen, rgen)` skips the two reload tests when `rgen == GEN_INVALID`
-    (0), because the kernel's generations start at 0 where upstream's start at 1.
+  - *representation, owner LB6b (the step that wires clause reclamation and `endReconsult`; audit D-0416 item 5):* `visibleClause(cl, gen, rgen)` skips the two reload tests when
+    `rgen == GEN_INVALID` (0), because the kernel's generations start at 0 where upstream's start at 1. The guard is named at its site (src/pl-inline.jl).
   - *representation:* the index context holds `reload_generation` (the search's copy of `LD->reload.generation`, D-0415 item 1), READ AT EVERY ENTRY into the search (first call and
     every redo, `_index_context!`) and not at every clause, because the context lives in a choice point and is resumed on redo; a reload started between two solutions changes what the second sees.
   - *`equal_clause` comparison (representation; D-0415 item 3):* upstream `memcmp`s the code words, which hold atoms, functors, numbers, strings and procedures. A kernel clause's code

@@ -71,6 +71,8 @@ end
 # DIVERGES: upstream reads `LD->reload.generation`; this core takes the value as `rgen`, and the form with `ld` below passes
 # `ld.reload_generation` (R2 LB6a, QUESTION 1 option B: a search holds the value in its `index_context`). The transaction case is
 # not ported (no transactions). `rgen` is GEN_INVALID (0) outside a reload, and then the two tests are skipped: the kernel's generations start at 0, where upstream's start at 1, so a clause of generation 0 must not match.
+# DIVERGES (representation; owner LB6b, the step that wires clause reclamation and `endReconsult`): the `rgen != GEN_INVALID` guard is this port's, upstream has none; LB6b revisits it
+# when generations start at 1 or when reclamation makes a clause of generation 0 reachable.
 "True when clause `cl` is visible in generation `gen`, with `rgen` the generation being reloaded (pl-inline.h)."
 function visibleClause(cl::clause, gen::gen_t, rgen::gen_t)::Bool
     c = cl.generation_created
