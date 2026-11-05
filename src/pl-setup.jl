@@ -327,7 +327,10 @@ function setupProlog(::Type{T})::PL_global_data{T} where {T}
         dc_proc,                                # procedures_call_continuation1: set by initBuildIns!
         dc_proc,                                # procedures_dmeta_call1: set by initBuildIns!
         dc_proc,                                # procedures_findall_loop4: set by findReset
-        GEN_INVALID                             # reload_generation: no file is being reloaded (R2 LB6a)
+        GEN_INVALID,                            # reload_generation: no file is being reloaded (R2 LB6a)
+        initDefaultOptions!(pl_options_t()),    # options: pl-init.c initDefaultOptions, before the command line is read (R2 LB7)
+        pl_cmdline_t(),                         # cmdline: no arguments, packs on, no -O (R2 LB7)
+        nothing                                 # defaults_home: set with the `home` flag by initPrologFlags!
     )
     initPrologFlags!(gd)                        # setup:136 (src/os/pl-prologflag.jl): before the built-ins (:158), whose boot clauses read the mask
     initBuildIns!(gd)                           # setup:158 (src/pl-ext.jl)

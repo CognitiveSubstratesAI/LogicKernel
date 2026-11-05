@@ -170,6 +170,9 @@ mutable struct PL_global_data{T}
     procedures_dmeta_call1::Procedure{T}                        # procedures.dmeta_call1: '$meta_call'/1 (R2 CONT1)
     procedures_findall_loop4::Procedure{T}                      # procedures.findall_loop4: '$bags':findall_loop/4, looked up by findReset (R2 CONT1)
     reload_generation::gen_t                                    # reload.generation: GEN_INVALID (0) unless a file is being reloaded (R2 LB6a; DIVERGES, owner TH1: LD->reload.generation, kept here)
+    const options::pl_options_t                                 # options: the command-line options, `$cmd_option_val/2`'s table (R2 LB7)
+    const cmdline::pl_cmdline_t                                 # cmdline: the arguments and the -O/--no-packs switches (R2 LB7)
+    defaults_home::Union{Nothing, String}                       # defaults.home: the home directory, `$cmd_option_val(home, _)` (R2 LB7; nothing = NULL)
 end
 # DIVERGES: `atoms` is upstream's `GD->atoms` as a struct of its own (src/pl-atom.jl), one table per
 # database, built first as upstream's `initAtoms` runs first; `functors` likewise `GD->functors` with
@@ -216,6 +219,8 @@ end
 # clears it; every reader takes it from the database: the functions that have `gd` (`hasClausesDefinition` and what calls it, `num_visible_clauses`,
 # `getClauses`, `setDefaultSupervisor`) directly, the ones that have `ld` (`visibleClause`/`visibleClauseCNT` with `ld`, `firstClause!`, `nextClause!`)
 # through `ld.GD`. TH1 moves the field into the local data when a thread has a local data of its own.
+# Since R2's LB7: `options` and `cmdline`, `GD->options` and `GD->cmdline` (pl-global.h, the records above), and `defaults_home`,
+# `GD->defaults.home` (`systemDefaults.home`, pl-init.c); the other members of `GD->defaults` are build constants (pl-init.c `initDefaults`).
 
 # PORT: pl-incl.h cleanup_status as CLN_NORMAL
 # DIVERGES: the enum's values as `Int` constants (`halt_cleaning` is an `Int`), pl-incl.h:1054-1060.

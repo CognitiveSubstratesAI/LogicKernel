@@ -2000,9 +2000,9 @@ function initPrologFlags!(gd::PL_global_data{T})::Nothing where {T}
     # pl-prologflag.c:2548-2549 defines `home` where `systemDefaults.home` is known; the kernel's own is the HOME TREE of R2 LB4
     # (design D5, audit D-0151 item 6; loader_boot.md LD6): `home` in the package directory, a tree of links over vendor/swipl-devel
     # and packages/plunit that tools/build_home.jl builds (swipl's build home, cmake/InstallSource.cmake:8-25)
-    setPrologFlag(
-        gd, "home", FT_ATOM | FF_READONLY, joinpath(dirname(dirname(@__DIR__)), "home")
-    )
+    home = joinpath(dirname(dirname(@__DIR__)), "home")
+    gd.defaults_home = home                             # systemDefaults.home (pl-init.c initPaths): `$cmd_option_val(home, _)` reads it
+    setPrologFlag(gd, "home", FT_ATOM | FF_READONLY, home)
     # Port of pl-prologflag.c set_libswipl (:2470-2493). DIVERGES: no libswipl is loaded, so `dladdr` (:2483-2488) has no object to find and
     # the `#ifdef LIBPL_PATH` fallback (:2491-2493, `FT_ATOM`, writable) answers: `<prefix>/lib/libswipl.so` as cmake/Params.cmake:60-63 builds
     # it (`LIBSWIPL_DIR` = `lib`, src/CMakeLists.txt:421-422; `SO_EXT`, :40), the prefix being the package directory `home` lies in. The file is none.
