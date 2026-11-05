@@ -116,9 +116,11 @@ function optcmp(av::AbstractString, opt::AbstractString)::Union{Nothing, String}
     i = 1
     j = 1
     while i <= length(a) && j <= length(o) && a[i] != UInt8('=')   # *av && *opt && *av != '='
-        if !(a[i] == o[j] ||
-             (a[i] == UInt8('-') && o[j] == UInt8('_')) ||
-             (a[i] == UInt8('_') && o[j] == UInt8('-')))
+        if !(
+            a[i] == o[j] ||
+            (a[i] == UInt8('-') && o[j] == UInt8('_')) ||
+            (a[i] == UInt8('_') && o[j] == UInt8('-'))
+        )
             return nothing
         end
         i += 1
@@ -178,7 +180,7 @@ end
 "Whether `s` is a value of `--on-error` or `--on-warning`: `print`, `halt` or `status` (pl-init.c)."
 on_error_style(s::AbstractString)::Bool = s == "print" || s == "halt" || s == "status"
 
-# PORT: pl-init.c early_defines
+# PORT: pl-init.c early_defines as EARLY_DEFINES
 # (swipl-devel cbf4e189, src/pl-init.c:181-187)
 # DIVERGES: the names only. The flag setter of the one entry (`setFileNameCaseHandlingName`) is left to the step that ports
 # `setEarlyDefines`; `-Dfile_name_case_handling=…` is dropped from `defines` as upstream drops it, and then not applied at all.
@@ -188,12 +190,15 @@ const EARLY_DEFINES = ("file_name_case_handling",)
 # PORT: pl-init.c is_early_define
 # (swipl-devel cbf4e189, src/pl-init.c:193-202)
 "Whether the `-D` argument `def` (`name` or `name=value`) names an early define (pl-init.c)."
-is_early_define(def::AbstractString)::Bool = any(n -> optcmp(def, n) !== nothing, EARLY_DEFINES)
+is_early_define(def::AbstractString)::Bool =
+    any(n -> optcmp(def, n) !== nothing, EARLY_DEFINES)
 
 # PORT: pl-init.c find_define
 # (swipl-devel cbf4e189, src/pl-init.c:211-239)
 "The value of `-Dname[=value]` in the raw arguments `argv` (`\"\"` where it carries no value, the last one wins), `nothing` where absent (pl-init.c)."
-function find_define(name::AbstractString, argv::AbstractVector{<:AbstractString})::Union{Nothing, String}
+function find_define(
+    name::AbstractString, argv::AbstractVector{<:AbstractString}
+)::Union{Nothing, String}
     value = nothing
     k = 1
     while k <= length(argv)
@@ -229,7 +234,7 @@ function initDefaultOptions!(
     table_space::Int=1 << 30,
     toplevel::String="default",
     startup::Union{Nothing, String}=nothing,
-    goal::Union{Nothing, String}=nothing,
+    goal::Union{Nothing, String}=nothing
 )::pl_options_t
     o.stackLimit = stack_limit
     o.tableSpace = table_space
@@ -257,7 +262,9 @@ end
 The size in bytes of `s`: an integer and an optional suffix `k`/`K` (KiB), `m`/`M` (MiB), `g`/`G` (GiB) or `b`/`B` (bytes),
 `nothing` where `s` is anything else (pl-init.c).
 """
-function memarea_limit(ld::PL_local_data{T}, s::AbstractString)::Union{Nothing, Int} where {T}
+function memarea_limit(
+    ld::PL_local_data{T}, s::AbstractString
+)::Union{Nothing, Int} where {T}
     b = UInt8[codeunits(s); 0x00]                        # the C string, EOS-terminated
     n = number()
     rc, q = str_number(ld, b, 1, n, UInt32(0))
@@ -394,7 +401,8 @@ end
 # `parseCommandLineOptions`: `0` the option was taken, `1` it is none of these (the caller leaves it for the application),
 # `-1` an error.
 function _parse_long_option!(
-    gd::PL_global_data{T}, ld::PL_local_data{T}, o::pl_options_t, cmd::pl_cmdline_t, s::AbstractString
+    gd::PL_global_data{T}, ld::PL_local_data{T}, o::pl_options_t, cmd::pl_cmdline_t,
+    s::AbstractString
 )::Int where {T}
     rc, b = is_bool_opt(s, "quiet")
     if rc != 0
@@ -456,7 +464,8 @@ function _parse_long_option!(
     if is_longopt(s, "traditional") !== nothing
         throw(
             NotPortedError{T}(
-                mk_sym(T, :traditional), "--traditional (setTraditional, resetListAtoms): the kernel is SWI-7 only",
+                mk_sym(T, :traditional),
+                "--traditional (setTraditional, resetListAtoms): the kernel is SWI-7 only",
                 "R2 LB7"
             )
         )
@@ -509,7 +518,7 @@ function _parse_long_option!(
 end
 
 # ----- '$usage'/0 (R2 LB7): the text of `swipl --help` -----
-# PORT: pl-init.c usage
+# PORT: pl-init.c usage as USAGE_TEXT
 # (swipl-devel cbf4e189, src/pl-init.c:1699-1769)
 # DIVERGES: the lines in the pinned build's configuration (O_PLMT: `--shared-table-space`; no O_DEBUG: no `-d topic`; not Windows),
 # one text, `%s` the program name. The program name is `swipl` always: upstream's `if ( os_argc <= 0 || (prog = BaseName(...)) )
@@ -581,7 +590,7 @@ function pl_usage0_va(
     return FTRUE
 end
 
-# PORT: pl-init.c BeginPredDefs(init)
+# PORT: pl-init.c BeginPredDefs(init) as PL_predicates_from_init
 # DIVERGES: `$usage/0` only; `$run_state/1` (saved states) is left to the step that ports them.
 "pl-init.c's registration table (`BeginPredDefs(init)`): the ported entries."
 const PL_predicates_from_init = (PL_extension("\$usage", 0, pl_usage0_va, PL_FA_VARARGS),)
@@ -630,15 +639,21 @@ Write the command-line options (`gd.options`, `gd.cmdline`) into the Prolog flag
 `generate_debug_info`, `debug_on_interrupt`, `signals` (flags and mask bits), `verbose` (for `-q`), `on_error`, `on_warning`,
 `packs`, `table_space`, `stack_limit`, `os_argv` and `argv`.
 """
-function apply_options_to_flags!(gd::PL_global_data{T}, ld::PL_local_data{T})::Nothing where {T}
+function apply_options_to_flags!(
+    gd::PL_global_data{T}, ld::PL_local_data{T}
+)::Nothing where {T}
     o = gd.options
     cmd = gd.cmdline
 
     for (name, bit, val) in (
         ("optimise", PLFLAG_OPTIMISE, cmd.optimise),                              # pl-prologflag.c:2561
         ("generate_debug_info", PLFLAG_DEBUGINFO, truePrologFlag(ld, PLFLAG_DEBUGINFO)),
-        ("debug_on_interrupt", PLFLAG_DEBUG_ON_INTERRUPT, truePrologFlag(ld, PLFLAG_DEBUG_ON_INTERRUPT)),
-        ("signals", PLFLAG_SIGNALS, truePrologFlag(ld, PLFLAG_SIGNALS)),
+        (
+            "debug_on_interrupt",
+            PLFLAG_DEBUG_ON_INTERRUPT,
+            truePrologFlag(ld, PLFLAG_DEBUG_ON_INTERRUPT)
+        ),
+        ("signals", PLFLAG_SIGNALS, truePrologFlag(ld, PLFLAG_SIGNALS))
     )
         setPrologFlag(gd, name, FT_BOOL, val, bit)
         val ? setPrologFlagMask!(ld, bit) : clearPrologFlagMask!(ld, bit)
@@ -648,7 +663,8 @@ function apply_options_to_flags!(gd::PL_global_data{T}, ld::PL_local_data{T})::N
     setPrologFlag(gd, "stack_limit", FT_INTEGER, o.stackLimit)
     ld.stacks_limit = o.stackLimit ÷ 8                                            # initPrologStacks(GD->options.stackLimit)
     o.on_error === nothing || setPrologFlag(gd, "on_error", FT_ATOM, o.on_error::String)       # :2640
-    o.on_warning === nothing || setPrologFlag(gd, "on_warning", FT_ATOM, o.on_warning::String) # :2641
+    o.on_warning === nothing ||
+        setPrologFlag(gd, "on_warning", FT_ATOM, o.on_warning::String) # :2641
     o.silent && setPrologFlag(gd, "verbose", FT_ATOM, "silent")                   # :2706
     setPrologFlag(gd, "packs", FT_BOOL, cmd.packs, 0)                             # :2776
     _set_argv_prolog_flag!(gd, ld, "os_argv", cmd.os_argv)                        # :2812
@@ -657,7 +673,7 @@ function apply_options_to_flags!(gd::PL_global_data{T}, ld::PL_local_data{T})::N
 end
 
 # ----- PL_initialise: the part that starts the Prolog side (R2 LB7) -----
-# PORT: pl-init.c PL_initialise
+# PORT: pl-init.c PL_initialise as PL_initialise_tail!
 # (swipl-devel cbf4e189, src/pl-init.c:1483-1682; the tail :1599-1682)
 # DIVERGES: (1) the database is the booted template's copy: `setupProlog` and the loading of the boot state (`zip_open_archive`,
 # `SopenZIP`, `loadWicFromStream`) have been done by the build of the template, so this runs the command-line part (:1501-1597,

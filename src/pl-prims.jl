@@ -4420,14 +4420,16 @@ function pl_nb_linkarg3_va(
 end
 
 # ── '$cmd_option_val'/2, '$cmd_option_set'/2 (pl-prims.c "OPTIONS"): the command-line options, `GD->options`, to Prolog ───
-# PORT: pl-prims.c optdefs
-# (swipl-devel cbf4e189, src/pl-prims.c:6358-6377; CMDOPT_* :6350-6353)
-# DIVERGES: an entry is `(name, type, field)`, `field` the symbol of the `pl_options_t` member (`:home` is `gd.defaults_home`,
-# `GD->defaults.home`), where upstream's is the member's address. `win_app` (Windows) is left out.
+# The types of an option entry (pl-prims.c:6350-6353).
 const CMDOPT_BOOL = 0
 const CMDOPT_SIZE_T = 1
 const CMDOPT_STRING = 2
 const CMDOPT_LIST = 3
+
+# PORT: pl-prims.c optdefs as OPTDEFS
+# (swipl-devel cbf4e189, src/pl-prims.c:6358-6377; CMDOPT_* :6350-6353)
+# DIVERGES: an entry is `(name, type, field)`, `field` the symbol of the `pl_options_t` member (`:home` is `gd.defaults_home`,
+# `GD->defaults.home`), where upstream's is the member's address. `win_app` (Windows) is left out.
 const OPTDEFS = (
     ("stack_limit", CMDOPT_SIZE_T, :stackLimit),
     ("goals", CMDOPT_LIST, :goals),
@@ -4552,8 +4554,13 @@ function pl_cmd_option_set2_va(
     key === nothing && return FFALSE
     val = PL_get_text(ld, PL__t0 + 1, CVT_ALL | CVT_EXCEPTION)
     val === nothing && return FFALSE
-    return set_pl_option(_query_gd(ld), ld, String(copy(key.text)), String(copy(val.text))) ?
-           FTRUE : FFALSE
+    return if set_pl_option(
+        _query_gd(ld), ld, String(copy(key.text)), String(copy(val.text))
+    )
+        FTRUE
+    else
+        FFALSE
+    end
 end
 
 # ── '$style_check'/2 (pl-prims.c "STYLE CHECK"): what boot/syspred.pl's style_check/1 reads and writes ───
