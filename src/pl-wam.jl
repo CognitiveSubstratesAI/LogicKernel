@@ -3345,7 +3345,8 @@ function PL_next_solution_guarded(
         if ld.frames[FR].predicate === gd.procedures_dtbl_reset6.definition
             throw(
                 NotPortedError{T}(
-                    DEF.name, "the dtbl_reset6 branch of I_EXITRESET (pl-vmi.c:5806)", "TAB1"
+                    DEF.name, "the dtbl_reset6 branch of I_EXITRESET (pl-vmi.c:5806)",
+                    "TAB1"
                 )
             )
         end
@@ -3369,7 +3370,8 @@ function PL_next_solution_guarded(
     @label I_CALLCONT
     cc_k, cc_w, cc_p = _deref_loc(ld, -(varFrameP(ld.frames[FR].base, Int(PCc[PC])) + 1))
     PC += 1                                         # Word cp = varFrameP(FR, (int)*PC++); deRef(cp)
-    if cc_k == DU_WORD && _is_gcompound(cc_w) && ld.gstack[valPtr(cc_w)] == _cont_functor(ld, :call, 1)
+    if cc_k == DU_WORD && _is_gcompound(cc_w) &&
+        ld.gstack[valPtr(cc_w)] == _cont_functor(ld, :call, 1)
         _slot_from_cell!(ld, argFrameP(ld.lTop, 0) + 1, valPtr(cc_w) + 1)  # *ARGP++ = linkValI(argTermP(*cp, 0))
         @goto I_CALL1                               # VMI_GOTO(I_CALL1)
     end

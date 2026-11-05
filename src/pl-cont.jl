@@ -65,7 +65,9 @@ end
 "The functor `'\$cont\$'/(slots+3)`: Context, Clause and PC, then the frame's slots (pl-cont.c)."
 function env_functor(ld::PL_local_data{T}, slots::Int)::word where {T}
     arity = slots + 3                                           # Context, Clause and PC
-    return lookupFunctorDef(ld.functors, _atom_word!(ld, mk_sym(T, Symbol("\$cont\$"))), arity)
+    return lookupFunctorDef(
+        ld.functors, _atom_word!(ld, mk_sym(T, Symbol("\$cont\$"))), arity
+    )
 end
 
 # ORIGINAL (CONT1): the functor word `name/arity` of a pl-cont.c constant (`FUNCTOR_catch3`,
@@ -114,7 +116,8 @@ frame `fr` resuming at the instruction `codes[pc]` of its clause (pl-cont.c): th
 the clause reads (`mark_active_environment`), the others the atom `<inactive>`.
 """
 function put_environment(
-    gd::PL_global_data{T}, ld::PL_local_data{T}, env::term_t, fr::Int, pc::Int, for_copy::Bool
+    gd::PL_global_data{T}, ld::PL_local_data{T}, env::term_t, fr::Int, pc::Int,
+    for_copy::Bool
 )::Bool where {T}
     f = ld.frames[fr]
     cl = f.clause.clause::Clause{T}                             # const Clause cl = fr->clause->value.clause
@@ -149,7 +152,7 @@ function put_environment(
         end
         p += 1
     end
-                                        # Store choice points (*)
+    # Store choice points (*)
     for i in Int(cl.prolog_vars):(slots - 1)
         if active[i + 1]
             if for_copy
@@ -157,7 +160,7 @@ function put_environment(
                     _qlf_Sdprintf!(
                         ld,
                         "Shift: clause of $(_cont_predicate_name(gd, f.predicate::Definition{T})): " *
-                        "active choice-point in slot $i.  Stack:\n",
+                        "active choice-point in slot $i.  Stack:\n"
                     )
                 end
                 ld.gstack[p] = word(0)                          # *p++ = 0
@@ -257,8 +260,8 @@ function put_continuation(
 
                 if PL_cons_list_v(ld, contv, depth, contv) &&
                     PL_cons_functor(
-                    ld, av, _cont_functor(ld, :call_continuation, 1), contv
-                ) &&
+                        ld, av, _cont_functor(ld, :call_continuation, 1), contv
+                    ) &&
                     PL_cons_functor_v(ld, contv, env_f, av) &&
                     PL_cons_functor(ld, contv, _cont_functor(ld, :call, 1), contv)
                     depth = 0
@@ -306,14 +309,17 @@ function shift(
         PL_put_nil(ld, cont)
         resetfr = reset
         envf = ld.frames[ld.environment_frame]
-        if !put_continuation(gd, ld, cont, resetfr, envf.parent, envf.programPointer, for_copy)
+        if !put_continuation(
+            gd, ld, cont, resetfr, envf.parent, envf.programPointer, for_copy
+        )
             return nothing                                      # resource error
         end
 
         if !PL_unify(ld, argFrameP(ld.frames[resetfr].base, 2), cont)
             if PL_exception(ld, 0) == 0
                 PL_error(
-                    ld, "", 0, "", ERR_UNINSTANTIATION, 0, argFrameP(ld.frames[resetfr].base, 1)
+                    ld, "", 0, "", ERR_UNINSTANTIATION, 0,
+                    argFrameP(ld.frames[resetfr].base, 1)
                 )
             end
             return nothing
@@ -330,14 +336,17 @@ function shift(
                 pf = ld.frames[fr]
                 setLTop!(
                     ld,
-                    argFrameP(pf.base, Int(((pf.clause::ClauseRef{T}).clause::Clause{T}).variables))
+                    argFrameP(
+                        pf.base,
+                        Int(((pf.clause::ClauseRef{T}).clause::Clause{T}).variables)
+                    )
                 )
                 break
             end
             @assert fr > resetfr                                # frame indices ascend with their bases
             fr = f.parent
         end
-                                                                # return as from reset/3
+        # return as from reset/3
         rf = ld.frames[resetfr]
         ld.environment_frame = rf.parent
         return rf.programPointer
@@ -370,7 +379,8 @@ Push the frame of the environment `'\$cont\$'(Context, Clause, PC, Slot...)` in 
 (pl-cont.c); `nothing` with an exception when it is no environment.
 """
 function push_continuation(
-    gd::PL_global_data{T}, ld::PL_local_data{T}, continuation::term_t, pfr::Int, pcret::Code{T}
+    gd::PL_global_data{T}, ld::PL_local_data{T}, continuation::term_t, pfr::Int,
+    pcret::Code{T}
 )::Union{Nothing, Code{T}} where {T}
     ck, cw, _ = _deref_loc(ld, -(continuation + 1))             # cont = valTermRef(continuation); deRef(cont)
     if !(ck == DU_WORD && _is_gcompound(cw))                    # isTerm(*cont)
@@ -383,7 +393,8 @@ function push_continuation(
     bk, bw, _ = arity >= 3 ? _deref_loc(ld, cp + 2) : (DU_CELL, word(0), 0)
     pk, pw, _ = arity >= 3 ? _deref_loc(ld, cp + 3) : (DU_CELL, word(0), 0)
     cl = nothing
-    if mk == DU_WORD && isAtomW(mw) && bk == DU_WORD && isAtomW(bw) && pk == DU_VALUE && isTaggedIntW(pw)
+    if mk == DU_WORD && isAtomW(mw) && bk == DU_WORD && isAtomW(bw) && pk == DU_VALUE &&
+        isTaggedIntW(pw)
         cl = clause_clref(gd, _atom_value(ld, bw))
     end
     if cl === nothing || arity != Int(cl.variables) + 3
@@ -394,7 +405,8 @@ function push_continuation(
     mname = _atom_value(ld, mw)                                 # atom_t mname = word2atom(*ep++)
     pcoffset = Int(valInt(pw))                                  # pcoffset = (size_t)valInt(*ep++)
 
-    ensureLocalSpace(ld, SIZEOF_LOCALFRAME + Int(cl.variables) + LOCAL_MARGIN) || return nothing
+    ensureLocalSpace(ld, SIZEOF_LOCALFRAME + Int(cl.variables) + LOCAL_MARGIN) ||
+        return nothing
 
     nfr = pushFrame!(ld, ld.lTop)                               # fr = (LocalFrame)top
     f = ld.frames[nfr]

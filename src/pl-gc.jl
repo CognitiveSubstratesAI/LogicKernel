@@ -354,7 +354,8 @@ function walk_and_mark(state::walk_state, codes::Vector{code}, pc::Int, end_op::
     while true
         op = codes[pc]
         op == end_op && return pc                   # if ( op == end ) { PC--; return PC; }
-        if op == I_EXITQUERY || op == I_EXITFACT || op == I_FCALLDETVA || op == I_FEXITDET ||
+        if op == I_EXITQUERY || op == I_EXITFACT || op == I_FCALLDETVA ||
+            op == I_FEXITDET ||
             op == I_FEXITNDET || op == S_TRUSTME || op == S_LIST || op == I_FREDO
             return pc                               # return PC-1 (I_FREDO: mark_arguments is the collector's)
         elseif op == C_JMP || op == L_NOLCO         # unconditional jump

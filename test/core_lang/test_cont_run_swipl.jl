@@ -140,31 +140,58 @@ const _CR_CASES = [
     ("r_var_goal", raw"reset(_, _, _)"),
     ("r_shift_out", raw"shift(a)"),
     ("r_shift_out_msg", raw"catch(shift(a), error(_, context(_, M)), R = M)"),
-    ("r_shift_findall_msg", raw"catch(reset(findall(X, (cr_mem(X), shift(s(X))), _), _, _), error(_, context(_, M)), R = M)"),
+    (
+        "r_shift_findall_msg",
+        raw"catch(reset(findall(X, (cr_mem(X), shift(s(X))), _), _, _), error(_, context(_, M)), R = M)"
+    ),
     ("r_shift_findall", raw"reset(findall(X, (cr_mem(X), shift(s(X))), _), _, _)"),
     ("r_nested", raw"reset(reset(shift(outer), inner, _), B, _), R = B"),
     ("r_nested_inner", raw"reset(reset(shift(inner), inner, C1), B, C), R = B-C-C1"),
-    ("r_shape", raw"reset(cr_sh(_), B, C), C = call_continuation(L), length(L, N), R = B-N"),
+    (
+        "r_shape",
+        raw"reset(cr_sh(_), B, C), C = call_continuation(L), length(L, N), R = B-N"
+    ),
     ("r_meta_shift", raw"reset((cr_mem(X), shift(s(X))), B, _), R = B-X"),
-    ("r_meta_resume", raw"reset((cr_mem(X), shift(s(X)), Y = X), B, C), call(C), R = B-X-Y"),
+    (
+        "r_meta_resume",
+        raw"reset((cr_mem(X), shift(s(X)), Y = X), B, C), call(C), R = B-X-Y"
+    ),
     ("r_not", raw"once(reset(cr_not, B, C)), ( call(C) -> R = yes-B ; R = no-B )"),
     ("r_or", raw"once(reset(cr_or(X), _, C)), findall(X, call(C), R)"),
     ("r_soft", raw"reset(cr_soft(X), _, C), findall(X, call(C), R)"),
     ("r_cutdeep", raw"reset(cr_cutdeep(X), _, C), findall(X, call(C), R)"),
     ("r_if2", raw"reset(cr_if2(X), B, C), findall(X-B, call(C), R)"),
     ("r_late", raw"reset(cr_late(1, Y), _, C), call(C), R = Y"),
-    ("r_var_goal_ctx", raw"catch(reset(_, _, _), error(instantiation_error, context(Ctx, _)), R = Ctx)"),
-    ("r_meta_len", raw"once(reset((cr_mem(_), shift(s), cr_nop), _, call_continuation(L))), length(L, N), R = N"),
-    ("r_catch_shift", raw"reset(catch((shift(c), X = 1), _, true), B, C), call(C), R = B-X"),
-    ("r_catch_len", raw"reset(catch(shift(c), _, true), _, call_continuation(L)), length(L, N), R = N"),
-    ("r_nested_resume", raw"reset(reset((shift(outer), Y = 1), inner, IC), B, C), call(C), R = B-IC-Y"),
+    (
+        "r_var_goal_ctx",
+        raw"catch(reset(_, _, _), error(instantiation_error, context(Ctx, _)), R = Ctx)"
+    ),
+    (
+        "r_meta_len",
+        raw"once(reset((cr_mem(_), shift(s), cr_nop), _, call_continuation(L))), length(L, N), R = N"
+    ),
+    (
+        "r_catch_shift",
+        raw"reset(catch((shift(c), X = 1), _, true), B, C), call(C), R = B-X"
+    ),
+    (
+        "r_catch_len",
+        raw"reset(catch(shift(c), _, true), _, call_continuation(L)), length(L, N), R = N"
+    ),
+    (
+        "r_nested_resume",
+        raw"reset(reset((shift(outer), Y = 1), inner, IC), B, C), call(C), R = B-IC-Y"
+    ),
     ("r_ite_copy", raw"once(reset(cr_fc_ite(X), _, C)), findall(X, call(C), R)"),
     ("r_iter", raw"cr_sum(cr_gen(1, 5), 0, R)"),
     ("r_iter_empty", raw"cr_sum(cr_gen(2, 1), 0, R)"),
     ("r_effect", raw"cr_run(cr_prog, 0, R)"),
     ("r_twice", raw"reset(cr_sh(X), _, C), findall(X, (member(_, [1, 2]), call(C)), R)"),
     ("r_twice_fc", raw"reset(cr_fc(X), _, C), findall(X, (member(_, [1, 2]), call(C)), R)"),
-    ("r_twice_copy", raw"reset(cr_fc(X), _, C), copy_term(C, C2), call(C), call(C2), R = X"),
+    (
+        "r_twice_copy",
+        raw"reset(cr_fc(X), _, C), copy_term(C, C2), call(C), call(C2), R = X"
+    ),
     ("r_ite_cut", raw"findall(X, (reset(cr_ite(X), _, C), call(C)), R)"),
     ("r_ite_once", raw"reset(cr_ite(X), _, C), call(C), R = X"),
     ("r_deep", raw"reset(cr_deep(3), _, call_continuation(L)), length(L, N), R = N"),
@@ -172,7 +199,10 @@ const _CR_CASES = [
     ("r_slots", raw"cr_slots(cr_live(_, _, _), R)"),
     ("r_ctx", raw"cr_ctx(R)"),
     ("r_type_atom", raw"call_continuation([foo])"),
-    ("r_type_arity", raw"cr_sha(T2), catch(call_continuation([T2]), error(type_error(continuation, _), _), R = te)"),
+    (
+        "r_type_arity",
+        raw"cr_sha(T2), catch(call_continuation([T2]), error(type_error(continuation, _), _), R = te)"
+    ),
     ("r_cc_empty", raw"call_continuation([])"),
     ("r_yield_out", raw"engine_yield(a)")
 ]
@@ -343,7 +373,8 @@ end
     # rows answer `same` with the continuation non-empty (t_lt_cont)
     @test length(_CR_LT_PINNED) == length(_CR_LT_NAMES) + 1
     @test all(l -> startswith(l, "t_lt_") || l == "ok", _CR_LT_PINNED)
-    @test count(l -> occursin("(same)", l) || occursin("same,shifted", l), _CR_LT_PINNED) >= 4
+    @test count(l -> occursin("(same)", l) || occursin("same,shifted", l), _CR_LT_PINNED) >=
+        4
     @test any(l -> occursin("(above)", l), _CR_LT_PINNED)
     @test raw"t_lt_cont t_lt_cont(-(same,shifted))" in _CR_LT_PINNED
     @test !any(l -> occursin("exception", l) || occursin("refused", l), kl)
@@ -368,7 +399,12 @@ end
     @test raw"t_r_twice t_r_twice([|](r,[|](r,[])))" in _CR_PINNED
     @test raw"t_r_ite_cut t_r_ite_cut([|](b,[]))" in _CR_PINNED
     @test any(l -> startswith(l, "t_r_slots ") && occursin("<inactive>", l), _CR_PINNED)
-    @test any(l -> startswith(l, "t_r_yield_out ") && occursin("permission_error(execute,vmi,I_YIELD)", l), _CR_PINNED)
+    @test any(
+        l ->
+            startswith(l, "t_r_yield_out ") &&
+            occursin("permission_error(execute,vmi,I_YIELD)", l),
+        _CR_PINNED
+    )
 end
 
 @testset "the pins are swipl's (live, when swipl is on PATH)" begin

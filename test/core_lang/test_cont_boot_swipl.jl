@@ -284,7 +284,8 @@ end
     @test count(l -> occursin("raised(existence_error(reset,x))", l), _CB_PINNED) == 3
     @test raw"t_c_reset t_c_reset(-(V0,0))" in _CB_PINNED
     @test raw"t_c_cc t_c_cc(raised(type_error(continuation,[])))" in _CB_PINNED
-    @test raw"t_c_yield t_c_yield(raised(permission_error(execute,vmi,I_YIELD)))" in _CB_PINNED
+    @test raw"t_c_yield t_c_yield(raised(permission_error(execute,vmi,I_YIELD)))" in
+        _CB_PINNED
 end
 
 @testset "the pins are swipl's (live, when swipl is on PATH)" begin
