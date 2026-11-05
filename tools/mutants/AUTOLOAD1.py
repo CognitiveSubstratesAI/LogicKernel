@@ -11,7 +11,7 @@
 # is the template's alone, so test_qlf_swipl.jl's boot_from_source! row could not hold on a copy of it) and by test_autoload_flag_swipl.jl's Q3 testset (:359).
 # The A1 mutants by any test that meta-calls an undefined predicate: mcall_cont's undefined branch runs `trapUndefined` between
 # `FR = NFR` and the restore, and `normal_call` (pl-wam.jl:3324) reads `FR` as the new frame's parent.
-# A1c (the `ld.environment_frame = FR` line, src/pl-wam.jl:3735) was a DEFERRED KILL, owner AUTOLOAD1 A5 (audit D-0400 item 2; battery run
+# A1c (the `ld.environment_frame = FR` line, src/pl-wam.jl:3736) was a DEFERRED KILL, owner AUTOLOAD1 A5 (audit D-0400 item 2; battery run
 # 41741989891 at 95331639: survived in 296 s). Its only reader is the Prolog query of the autoloader (PL_open_query, src/pl-wam.jl:1987: the
 # parent frame, `saved_environment`), which runs the hook; the A3 guard leaves the hook undefined before the first boot, and no Julia stand-in
 # hook is allowed. The declaration is replaced (refusal-flip rule D-0376) by a KILL naming the row "A1c's killer (A5)" of

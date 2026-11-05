@@ -64,7 +64,7 @@ Needs: b2 passes; LB4 b1 (INDEX.pl vendored); LB2b; EV1; DBG1 `$notrace/2`, `$re
 
 ## Notes only (no action)
 - `_autoload_predicate_name` (src/pl-proc.jl:337) is the single `predicateName` text helper in this tree; the brief's
-  `_cont_predicate_name` has zero matches in src/ at 7d691c4a (probably the MOD helper under another name): NOTE only, one helper once
+  `_cont_predicate_name` does not appear in src/ at 7d691c4a (probably the MOD helper under another name): NOTE only, one helper once
   pl-util.c's `predicateName` is ported.
 - The G1 row reads `ld.queries[ld.nqueries + 1]` and `ld.frames[E]` inside the `at` callback: dropped records stay readable until a
   push reuses them (test_local_stack.jl header). If the gate finds the pool slot recycled, move the read into the hook's own record
@@ -87,3 +87,12 @@ python3 -I, no equivalent field left); e8806273 G3 architecture block; this hand
 Unrun: everything (no Julia). The G1 row is the one risk: it reads the pool slot `ld.queries[ld.nqueries + 1]` and `ld.frames[e]` inside the
 `at` callback. If the first run shows the slot recycled or `qid` not an index, the fallbacks are in "Notes only". Daemons: none used.
 Untouched on purpose: src/ (the hook guard stays until the first boot, item 3), test_autoload_flag_swipl.jl (af08, item 2), src/pl-comp.jl (item 6).
+
+## Re-stack and review (reviewer, Sonnet, 2026-11-05; edit-only, no Julia, no daemon)
+Branch wip/autoload5b (worktree ~/code/lk-autoload5b) = the 5 commits cherry-picked onto origin/main 7afb9a50; wip/autoload5 is untouched. The ONE conflict was
+docs/architecture.md (the TOP1 block landed at the same place): both blocks kept, TOP1's first. Nothing in src/ is touched by the stack, so the A3 landing and the
+R2GEN guard changed no function the stack edits. Checked on 7afb9a50: the 33 mutant anchors each occur once (python3 -I checker), no duplicate manifest entries
+(manifest_dups.py: 3769 entries, 0 duplicates; the stack edits no manifest), no new predicate/flag/VMI/refusal site (so docs/r2_*.tsv and the GENERATED blocks need no
+regeneration; the gate's `tools/warm.sh inventory` / `port_check --write-inventory` must change nothing). Claim corrected: the A1c line is src/pl-wam.jl:3736, not :3735
+(fixed in the mutants header and the G1 row comment). The post-boot list with exact edits is evidence/AUTOLOAD1/postboot_a5.md (it also corrects item 3: convert the
+test-hook rows to `user:exception/3` clauses instead of retiring them, and keep the Q3 rows that Q3a needs).
