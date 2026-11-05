@@ -334,6 +334,9 @@ _bi_static_sum(t1, mods)::Int =
 end
 
 @testset "T1/T3/H12 oracle: swipl's boot prints the same rows again" begin
+    # the inert-testset guard (audit D-0411 item 8): an assertion without swipl too, on the pinned rows the run is compared with
+    pin1, pin3 = _bi_parse(readlines(_BI_OUT))
+    @test length(pin1) > 2000 && length(pin3) > 20
     if _BI_SWIPL === nothing
         @test_skip "swipl not on PATH (the pin: test_boot_image_swipl_rows.out, h12 $(_BI_H12_SWIPL))"
     else

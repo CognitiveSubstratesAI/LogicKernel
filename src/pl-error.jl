@@ -1054,7 +1054,8 @@ function printMessage(ld::PL_local_data{T}, severity::Symbol, msg::term_t)::Bool
 
     if rc
         _initIO(ld)
-        if Sferror(Suser_error(ld)) == 0
+        # Suser_error is `&S__iob[2]`, never NULL: the standard streams are open here (`_initIO`)
+        if Sferror(Suser_error(ld)::IOSTREAM) == 0
             if isDefinedProcedure(gd, pred) && ld.in_print_message <= OK_RECURSIVE
                 rc = PL_call_predicate(
                     gd, ld, nothing, PL_Q_NODEBUG | PL_Q_PASS_EXCEPTION, pred, av

@@ -171,6 +171,10 @@ end
 const _BC_OPTIMISE_DIFFER = 33
 
 @testset "T2 oracle: swipl's boot prints the same rows again (and -O changes 33 \$tabling rows)" begin
+    # the inert-testset guard (audit D-0411 item 8): an assertion without swipl too, on the pinned rows the run is compared with
+    pin = _bc_parse(readlines(_BC_OUT))
+    @test length(pin) > 1300
+    @test count(c -> c[1] == "\$tabling", keys(pin)) >= _BC_OPTIMISE_DIFFER
     if _BC_SWIPL === nothing
         @test_skip "swipl not on PATH (the pin: test_boot_clauses_swipl_rows.out)"
     else

@@ -387,7 +387,8 @@ if _CW_SWIPL !== nothing
         isempty(err) || println(stderr, "  swipl wrote to stderr:\n", first(err, 2000))
         @test isempty(err)
 
-        gd = LK.PL_global_data{_CW}()
+        # the unbooted database: a booted copy needs a payload that holds the boot files' floats, strings and big numbers
+        gd = LK.setupProlog(_CW)
         ld = LK.PL_local_data{_CW}(gd)
         diverging = 0
         kinds = Dict{String, Int}()
@@ -433,7 +434,8 @@ if _CW_SWIPL !== nothing
     end
 
     @testset "no warnings without a caller that asks, and none are left behind" begin
-        gd = LK.PL_global_data{_CW}()
+        # the unbooted database: a booted copy needs a payload that holds the boot files' floats, strings and big numbers
+        gd = LK.setupProlog(_CW)
         ld = LK.PL_local_data{_CW}(gd)
         user = LK.MODULE_user(gd)
         x = lk_var(_CW, UInt64(1))

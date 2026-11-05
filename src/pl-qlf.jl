@@ -207,8 +207,10 @@ end
 # ── the boot loop (pl-qlf.c:4691-4820) ─────────────────────────────────────────────────────────────
 
 # ORIGINAL (LB3): `source_file_name` (an atom, NULL_ATOM while no file is read) as the text `%s` prints.
-_qlf_source_file_text(ld::PL_local_data{T}) where {T} =
-    ld.read_source.file === nothing ? "" : String(sym_text(ld.read_source.file))
+function _qlf_source_file_text(ld::PL_local_data{T}) where {T}
+    f = ld.read_source.file                         # read once: the field is mutable
+    return f === nothing ? "" : String(sym_text(f))
+end
 
 # PORT: pl-qlf.c compileFile
 # (swipl-devel cbf4e189, src/pl-qlf.c:4691-4780)

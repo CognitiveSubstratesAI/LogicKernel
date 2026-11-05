@@ -3110,7 +3110,8 @@ end
         c[4] == "b_atom(a:[97])" && c[5] == "b_pop"
     # a value SWI has no type for: an opaque B_ATOM literal, moved by L_ATOM with the same index
     O = lk_term_type(Union{Int64, Bool})
-    gd = LK.PL_global_data{O}()
+    # the unbooted database: a booted copy needs a payload that holds the boot files' floats, strings and big numbers
+    gd = LK.setupProlog(O)
     user = LK.MODULE_user(gd)
     po = LK.lookupProcedure(lk_sym(O, :po), 0, user)
     v = lk_gnd(O, true)

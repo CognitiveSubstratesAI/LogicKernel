@@ -63,6 +63,8 @@ _bm_line(kind::Symbol, t::_BM)::String = string(kind) * " " * _bm_enc(t)
 # THE KNOWN DIFFERENCES: each boot message the kernel prints where swipl prints none, `_bm_line`'s text, with its cause.
 # Filled from the first boot run (G9); empty until then. UNVERIFIED on the kernel: gate decides.
 const _BM_KNOWN = String[]
+"The boot's messages as T4 read them (set by T4, read by the oracle testset's swipl-free assertion)."
+const _BM_BOOT_LINES = Ref{Union{Nothing, Vector{String}}}(nothing)
 
 _bm_user(g::_BM)::_BM = _bme(":", _bms(:user), g)
 
@@ -117,9 +119,14 @@ end
     @test length(probe) == 1 && probe[1][1] === :error
     # THE GUARD: the boot's messages, in order, are the pinned list. UNVERIFIED on the kernel: gate decides.
     @test lines == _BM_KNOWN
+    _BM_BOOT_LINES[] = lines
 end
 
 @testset "T4 oracle: swipl's boot command prints nothing" begin
+    # the inert-testset guard (audit D-0411 item 8): an assertion without swipl too. swipl prints nothing, so the kernel's boot
+    # messages (T4's lines) ARE the known differences, each a message of kind error or warning (the hook's filter)
+    @test _BM_BOOT_LINES[] !== nothing && _BM_BOOT_LINES[] == _BM_KNOWN
+    @test all(l -> startswith(l, "error ") || startswith(l, "warning "), _BM_KNOWN)
     if _BM_SWIPL === nothing
         @test_skip "swipl not on PATH (the pin: empty output, exit 0)"
     else
