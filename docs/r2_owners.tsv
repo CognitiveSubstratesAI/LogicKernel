@@ -225,3 +225,18 @@ refusal:src/pl-wam.jl::PL_next_solution_guarded::the VM instruction S_TABLED (ca
 refusal:src/os/pl-files.jl::get_file_name::PL_get_file_name flag PL_FILE_SEARCH (system:absolute_file_n	LB4	the first boot: absolute_file_name/3 of init.pl runs through PL_get_file_name(PL_FILE_SEARCH)
 refusal:src/os/pl-files.jl::_iri_hook_refused::iri_hook $what (`\$iri`:iri_hook/4 of init.pl)	LB5-LB7	off the load path: serves http:// style IRIs; the library ring
 refusal:src/os/pl-files.jl::_tmp_file_refused::what	LB5-LB7	tmp_file/2 and $tmp_file_stream/4: boot, off the load path (lb5_sizing.md Ring Q)
+# refusal sites, assignments settled by an existing step list (D-0408 item 5, D-0414 item 3f): evidence/R2/refusal_owners.md has the upstream function of each
+refusal:src/os/pl-file.jl::get_stream_handle::a stream pair	S2b	stream_pair/3 handle (pl-file.c get_stream_handle); S2b is the pl-file.c remainder
+refusal:src/os/pl-file.jl::openStream::open/4's locale(Locale) option	CT1	open/4 locale(Locale) option (pl-file.c openStream, PL_locale); the locale objects of pl-locale.c
+refusal:src/os/pl-file.jl::openStream::open/4's lock(Lock) option (advisory file locks)	S2b	open/4 lock(Lock) option (pl-file.c openStream, Sseterr/flock); stream-layer remainder
+refusal:src/os/pl-file.jl::openStream::open(pipe(Command), …)	S2b	open(pipe(Cmd)) (pl-file.c openStream, pl-stream.c Sopen_pipe); stream-layer remainder
+refusal:src/os/pl-file.jl::pl_close::closing a stream pair	S2b	close of a stream pair (pl-file.c do_close via stream_pair); with the pair itself
+refusal:src/os/pl-file.jl::set_stream::set_stream/2's locale(Locale)	CT1	set_stream/2 locale(Locale) (pl-file.c set_stream, PL_locale); with open/4's locale option
+refusal:src/pl-comp.jl::compileSubClause!::compileArith (optimise)	AR1	compileArith under the optimise flag (pl-comp.c O_COMPILE_ARITH); needs the A_* instructions (Q-AR3)
+refusal:src/pl-event.jl::PL_call_event_hook_va::the thread events (`unify_thread_id`)	TH1	thread events unify_thread_id (pl-event.c); threads flag is false
+refusal:src/pl-proc.jl::pl_set_predicate_attribute3_va::spy points (GP_RESOLVE)	DBG1	spy points, GP_RESOLVE (pl-proc.c pl_set_predicate_attribute, SPY_ME)
+refusal:src/pl-proc.jl::setAttrDefinition::setAttrDefinition: attribute $attr	SSU1b	P_CLAUSABLE and P_DET in setAttrDefinition (pl-proc.c); SSU1b is the det/1 setter
+refusal:src/pl-read.jl::_atom_from_text::an atom containing the character 0 (a Symbol cannot hold it)	ATOM1	atoms holding the character 0 (pl-read.c atom from text); board row ATOM1, D-0410 item 7
+refusal:src/pl-srcfile.jl::startConsult::consulting a file again (reconsult)	LB6	startConsult on a loaded file, reconsult (pl-srcfile.c); LB6b item h re-points it (lb67_sizing.md)
+refusal:src/pl-wam.jl::PL_next_solution_guarded::backtracking into a $(db_c.type) choice point	CONT1	backtracking into a non-clause choice point (pl-wam.c, the I_RESET/I_YIELD/foreign-redo frames)
+refusal:src/pl-write.jl::writeAttVar::write_term/2 attributes(portray): '\$attvar':portray_attvar/	AV10	attributes(portray) writeAttVar (pl-write.c, '$attvar':portray_attvar/1)
