@@ -52,7 +52,7 @@ how many of the upstream file's functions are ported.
 | swipl-bench `programs/qsort.pl` | design | `d74163e6d756` | `bench/programs/qsort.jl` | 4 | 0 |
 | swipl-devel `src/ATOMS` | code | `cbf4e1896275` | `src/pl-atom.jl` | 0 | 0 |
 | swipl-devel `src/ATOMS` | code | `cbf4e1896275` | `src/pl-funct.jl` | 0 | 0 |
-| swipl-devel `src/SWI-Prolog.h` | code | `cbf4e1896275` | `src/SWI-Prolog.jl` | 120 | 4 |
+| swipl-devel `src/SWI-Prolog.h` | code | `cbf4e1896275` | `src/SWI-Prolog.jl` | 121 | 4 |
 | swipl-devel `src/SWI-Prolog.h` | code | `cbf4e1896275` | `src/pl-dict.jl` | 1 | 0 |
 | swipl-devel `src/SWI-Prolog.h` | code | `cbf4e1896275` | `src/pl-incl.jl` | 7 | 0 |
 | swipl-devel `src/Unicode/prolog_syntax_map.pl` | code | `cbf4e1896275` | `src/pl-umap.jl` | 0 | 0 |
@@ -105,6 +105,7 @@ how many of the upstream file's functions are ported.
 | swipl-devel `src/pl-codetable.c` | code | `cbf4e1896275` | `src/pl-vmi.jl` | 1 | 1 |
 | swipl-devel `src/pl-comp.c` | code | `cbf4e1896275` | `src/pl-comp.jl` | 160 | 82 |
 | swipl-devel `src/pl-comp.h` | code | `cbf4e1896275` | `src/pl-comp.jl` | 1 | 0 |
+| swipl-devel `src/pl-cont.c` | code | `cbf4e1896275` | `src/pl-cont.jl` | 10 | 8 |
 | swipl-devel `src/pl-copyterm.c` | code | `cbf4e1896275` | `src/pl-copyterm.jl` | 25 | 16 |
 | swipl-devel `src/pl-copyterm.h` | code | `cbf4e1896275` | `src/pl-incl.jl` | 1 | 1 |
 | swipl-devel `src/pl-data.h` | code | `cbf4e1896275` | `src/pl-incl.jl` | 77 | 8 |
@@ -123,10 +124,10 @@ how many of the upstream file's functions are ported.
 | swipl-devel `src/pl-event.h` | code | `cbf4e1896275` | `src/pl-incl.jl` | 6 | 3 |
 | swipl-devel `src/pl-ext.c` | code | `cbf4e1896275` | `src/pl-ext.jl` | 5 | 3 |
 | swipl-devel `src/pl-fli.c` | code | `cbf4e1896275` | `src/os/pl-prologflag.jl` | 1 | 1 |
-| swipl-devel `src/pl-fli.c` | code | `cbf4e1896275` | `src/pl-fli.jl` | 88 | 73 |
+| swipl-devel `src/pl-fli.c` | code | `cbf4e1896275` | `src/pl-fli.jl` | 90 | 75 |
 | swipl-devel `src/pl-fli.h` | code | `cbf4e1896275` | `src/pl-fli.jl` | 11 | 9 |
 | swipl-devel `src/pl-funct.c` | code | `cbf4e1896275` | `src/pl-funct.jl` | 12 | 9 |
-| swipl-devel `src/pl-gc.c` | code | `cbf4e1896275` | `src/pl-gc.jl` | 7 | 5 |
+| swipl-devel `src/pl-gc.c` | code | `cbf4e1896275` | `src/pl-gc.jl` | 14 | 8 |
 | swipl-devel `src/pl-gc.c` | code | `cbf4e1896275` | `src/pl-wam.jl` | 1 | 1 |
 | swipl-devel `src/pl-gc.h` | code | `cbf4e1896275` | `src/pl-alloc.jl` | 1 | 0 |
 | swipl-devel `src/pl-gc.h` | code | `cbf4e1896275` | `src/pl-gc.jl` | 1 | 1 |
@@ -199,7 +200,7 @@ how many of the upstream file's functions are ported.
 | swipl-devel `src/pl-variant.c` | code | `cbf4e1896275` | `src/pl-global.jl` | 2 | 2 |
 | swipl-devel `src/pl-variant.c` | code | `cbf4e1896275` | `src/pl-variant.jl` | 16 | 6 |
 | swipl-devel `src/pl-vmi.c` | code | `cbf4e1896275` | `src/pl-vmi.jl` | 169 | 0 |
-| swipl-devel `src/pl-vmi.c` | code | `cbf4e1896275` | `src/pl-wam.jl` | 194 | 130 |
+| swipl-devel `src/pl-vmi.c` | code | `cbf4e1896275` | `src/pl-wam.jl` | 195 | 128 |
 | swipl-devel `src/pl-wam.c` | code | `cbf4e1896275` | `src/pl-wam.jl` | 54 | 43 |
 | swipl-devel `src/pl-wrap.c` | code | `cbf4e1896275` | `src/pl-wrap.jl` | 13 | 13 |
 | swipl-devel `src/pl-wrap.h` | code | `cbf4e1896275` | `src/pl-incl.jl` | 1 | 0 |
@@ -278,6 +279,7 @@ checkout is pulled.
 | swipl-devel `src/pl-codetable.c` | `cbf4e1896275` | 0 | 0 | 0 | src/pl-vmi.jl |
 | swipl-devel `src/pl-comp.c` | `cbf4e1896275` | 95 | 167 | 65 | src/pl-comp.jl |
 | swipl-devel `src/pl-comp.h` | `cbf4e1896275` | 1 | 6 | 0 | src/pl-comp.jl |
+| swipl-devel `src/pl-cont.c` | `cbf4e1896275` | 8 | 11 | 8 | src/pl-cont.jl |
 | swipl-devel `src/pl-copyterm.c` | `cbf4e1896275` | 18 | 29 | 15 | src/pl-copyterm.jl |
 | swipl-devel `src/pl-copyterm.h` | `cbf4e1896275` | 0 | 0 | 0 | src/pl-incl.jl |
 | swipl-devel `src/pl-data.h` | `cbf4e1896275` | 2 | 2 | 0 | src/pl-incl.jl, src/pl-inline.jl |
@@ -291,10 +293,10 @@ checkout is pulled.
 | swipl-devel `src/pl-event.c` | `cbf4e1896275` | 21 | 23 | 19 | src/pl-event.jl, src/pl-incl.jl |
 | swipl-devel `src/pl-event.h` | `cbf4e1896275` | 2 | 2 | 2 | src/pl-event.jl, src/pl-incl.jl |
 | swipl-devel `src/pl-ext.c` | `cbf4e1896275` | 4 | 10 | 2 | src/pl-ext.jl |
-| swipl-devel `src/pl-fli.c` | `cbf4e1896275` | 83 | 286 | 71 | src/os/pl-prologflag.jl, src/pl-fli.jl |
+| swipl-devel `src/pl-fli.c` | `cbf4e1896275` | 85 | 286 | 73 | src/os/pl-prologflag.jl, src/pl-fli.jl |
 | swipl-devel `src/pl-fli.h` | `cbf4e1896275` | 11 | 15 | 9 | src/pl-fli.jl |
 | swipl-devel `src/pl-funct.c` | `cbf4e1896275` | 10 | 17 | 7 | src/pl-funct.jl |
-| swipl-devel `src/pl-gc.c` | `cbf4e1896275` | 7 | 166 | 6 | src/pl-gc.jl, src/pl-wam.jl |
+| swipl-devel `src/pl-gc.c` | `cbf4e1896275` | 13 | 166 | 8 | src/pl-gc.jl, src/pl-wam.jl |
 | swipl-devel `src/pl-gc.h` | `cbf4e1896275` | 1 | 2 | 1 | src/pl-alloc.jl, src/pl-gc.jl |
 | swipl-devel `src/pl-global.h` | `cbf4e1896275` | 0 | 0 | 0 | src/os/pl-file.jl, src/pl-global.jl, src/pl-incl.jl |
 | swipl-devel `src/pl-gmp.c` | `cbf4e1896275` | 29 | 81 | 8 | src/pl-gmp.jl |
@@ -336,7 +338,7 @@ checkout is pulled.
 | swipl-devel `src/pl-trace.h` | `cbf4e1896275` | 0 | 0 | 0 | src/pl-trace.jl |
 | swipl-devel `src/pl-umap.c` | `cbf4e1896275` | 4 | 8 | 3 | src/pl-umap.jl |
 | swipl-devel `src/pl-variant.c` | `cbf4e1896275` | 9 | 17 | 5 | src/pl-global.jl, src/pl-variant.jl |
-| swipl-devel `src/pl-vmi.c` | `cbf4e1896275` | 169 | 243 | 93 | src/pl-vmi.jl, src/pl-wam.jl |
+| swipl-devel `src/pl-vmi.c` | `cbf4e1896275` | 169 | 243 | 91 | src/pl-vmi.jl, src/pl-wam.jl |
 | swipl-devel `src/pl-wam.c` | `cbf4e1896275` | 50 | 98 | 41 | src/pl-wam.jl |
 | swipl-devel `src/pl-wrap.c` | `cbf4e1896275` | 11 | 21 | 11 | src/pl-wrap.jl |
 | swipl-devel `src/pl-wrap.h` | `cbf4e1896275` | 0 | 0 | 0 | src/pl-incl.jl, src/pl-wrap.jl |

@@ -906,6 +906,7 @@ fixed it or a public issue exists.
 | `src/pl-wrap.jl` | TAB1-min (R2): pl-wrap.c's closure blob (`closure_blob`, a record in `gd.closure_refs`), `'$c_wrap_predicate'/5` installing a wrapper supervisor (`S_CALLWRAPPER` or `S_TABLED` over the predicate's own supervisor), `find_wrapper`, `assert_wrapper`, `unify_wrapped`, `wrapper_vmi`, `skipWrapperPrefix`, `isCallWrapper`, `resetWrappedSupervisor` (called by `freeCodesDefinition!`, src/pl-supervisor.jl); table `PL_predicates_from_wrap`. `wrapped_predicate/2`, `unwrap_predicate/2`, `$wrapped_implementation/3` and `$closure_predicate/2` are left to WRAP1 (section TAB1-min) | `src/pl-wrap.c`, `src/pl-wrap.h` |
 | `src/gd_template.jl` | LB4 b1 (R2): the template database (ORIGINAL): `copy_global_data`, generated field by field from `PL_global_data` (the stream tables an empty copy of the same shape, every other field one deep copy that keeps the identities inside the database), the per-process, per-term-type registry (`gd_template`, `PL_global_data_from_template`, `reset_gd_templates!`, `gd_template_built`); no constructor calls it until b2 | — |
 | `src/boot_image.jl` | LB4 b1-3 (R2): the readers of a booted database for the boot check, read from the definition tables and `files_array` (no syspred.pl): `boot_image_predicates` (T1: module, name, arity, defined, dynamic, foreign, number_of_clauses, locked, iso, transparent, meta, public, exported) and `boot_image_source_files` (T3: the `$time_source_file/3` order and the `$source_file_property/3` columns) | — |
+| `src/pl-cont.jl` | since CONT1 (R2), delimited continuations at run time: `findReset`, `put_environment`, `put_continuation` and `shift` (what `shift/1` and `shift_for_copy/1` collect from the frames between the shifting frame and its `reset/3`), `push_continuation` (the frame `call_continuation/1` makes again); the VMI bodies `I_RESET`, `I_EXITRESET`, `I_CALLCONT`, `I_SHIFT`, `I_SHIFTCP`, `I_YIELD` are in src/pl-wam.jl, the liveness walk `walk_and_mark` in src/pl-gc.jl; the tabled branches are TAB1's | `src/pl-cont.c` |
 
 ## Code graph — src/, generated (M1)
 
@@ -945,6 +946,7 @@ graph LR
     pl_termhash["pl-termhash.jl"]
     pl_thread["pl-thread.jl"]
     pl_gc["pl-gc.jl"]
+    pl_cont["pl-cont.jl"]
     pl_alloc["pl-alloc.jl"]
     pl_wam["pl-wam.jl"]
     pl_fli["pl-fli.jl"]
@@ -1043,6 +1045,7 @@ graph LR
     pl_index --> pl_prims
     pl_index --> pl_ressymbol
     pl_index --> pl_comp
+    pl_index --> pl_cont
     pl_index --> pl_wam
     pl_index --> pl_arith
     pl_index --> os_pl_text
@@ -1238,6 +1241,27 @@ graph LR
     pl_gc --> pl_arith
     pl_gc --> pl_setup
     pl_gc --> pl_proc
+    pl_cont --> term_interface
+    pl_cont --> default_term
+    pl_cont --> pl_incl
+    pl_cont --> SWI_Prolog
+    pl_cont --> pl_atom
+    pl_cont --> pl_vmi
+    pl_cont --> pl_funct
+    pl_cont --> pl_global
+    pl_cont --> pl_modul
+    pl_cont --> pl_inline
+    pl_cont --> pl_prims
+    pl_cont --> pl_comp
+    pl_cont --> pl_gc
+    pl_cont --> pl_alloc
+    pl_cont --> pl_wam
+    pl_cont --> pl_fli
+    pl_cont --> pl_error
+    pl_cont --> pl_dbref
+    pl_cont --> os_pl_prologflag
+    pl_cont --> pl_proc
+    pl_cont --> pl_qlf
     pl_alloc --> term_interface
     pl_alloc --> default_term
     pl_alloc --> pl_incl
@@ -1261,6 +1285,7 @@ graph LR
     pl_wam --> pl_prims
     pl_wam --> pl_comp
     pl_wam --> pl_gc
+    pl_wam --> pl_cont
     pl_wam --> pl_alloc
     pl_wam --> pl_fli
     pl_wam --> pl_attvar
@@ -1365,6 +1390,7 @@ graph LR
     pl_arith --> pl_global
     pl_arith --> pl_inline
     pl_arith --> pl_prims
+    pl_arith --> pl_cont
     pl_arith --> pl_alloc
     pl_arith --> pl_fli
     pl_arith --> pl_error
