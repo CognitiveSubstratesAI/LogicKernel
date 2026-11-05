@@ -2675,7 +2675,13 @@ function _manifest_index(T)
         # TOP1b — PL_ttymode, PL_prompt_is_continuation, PL_prompt_string (pl-fli.c)
         (LK.PL_ttymode, Tuple{LD, LK.IOSTREAM}, false),
         (LK.PL_prompt_is_continuation, Tuple{LD, LK.IOSTREAM}, false),
-        (LK.PL_prompt_string, Tuple{LD, LK.IOSTREAM}, false)
+        (LK.PL_prompt_string, Tuple{LD, LK.IOSTREAM}, false),
+        # TOP1b — prologToplevel, pl_break1, pl_break (break/0) (pl-pro.c); PL_toplevel (pl-fli.c)
+        (LK.prologToplevel, Tuple{GD, LD, T}, false),
+        (LK.pl_break1, Tuple{GD, LD, T}, false),
+        (LK.pl_break, Tuple{GD, LD}, false),
+        (LK.pl_break_va, Tuple{LD, Int, Int, LK.control_t{T}}, false),
+        (LK.PL_toplevel, Tuple{GD, LD}, false)
     )
 end
 

@@ -1503,6 +1503,7 @@ function PL_prompt_next(ld::PL_local_data, in::IOSTREAM)::Nothing
 end
 
 # PORT: pl-fli.c PL_ttymode
+# (swipl-devel cbf4e189, src/pl-fli.c:5329-5341)
 # DIVERGES: the local data is an argument (upstream's `LD`).
 "The terminal mode of `s`: `PL_NOTTY` unless it is `user_input` with `tty_control` on, then `PL_RAWTTY` or `PL_COOKEDTTY` (pl-fli.c)."
 function PL_ttymode(ld::PL_local_data, s::IOSTREAM)::Int
@@ -1518,6 +1519,7 @@ function PL_ttymode(ld::PL_local_data, s::IOSTREAM)::Int
 end
 
 # PORT: pl-fli.c PL_prompt_is_continuation
+# (swipl-devel cbf4e189, src/pl-fli.c:5364-5371)
 # DIVERGES: the local data is an argument (upstream's `LD`).
 "Does the prompt that comes next continue an input started earlier: `in` is `user_input` and `prompt1/1`'s prompt was handed out (pl-fli.c)?"
 function PL_prompt_is_continuation(ld::PL_local_data, in::IOSTREAM)::Bool
@@ -1527,6 +1529,7 @@ function PL_prompt_is_continuation(ld::PL_local_data, in::IOSTREAM)::Bool
 end
 
 # PORT: pl-fli.c PL_prompt_string
+# (swipl-devel cbf4e189, src/pl-fli.c:5374-5398)
 # DIVERGES: the local data is an argument (upstream's `LD`); the text is a `String` (UTF-8, `REP_UTF8`), `nothing` for
 # upstream's NULL: there is no `char *` and no `PL_save_text` buffer (`PL_STRINGS_MARK_IF_MALLOC` has no counterpart).
 "The text of the prompt for the next read from `in`, a `String`; `nothing` unless `in` is `user_input` and there is a prompt (pl-fli.c)."

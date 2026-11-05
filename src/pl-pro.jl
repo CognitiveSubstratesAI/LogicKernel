@@ -17,10 +17,9 @@
 #
 # Since R2 TOP1: `resetProlog` (it resets the autoloader's chain and loop mark, `autoload_nesting`, `autoload_loop`),
 # `restore_after_exception`, `halt_from_exception` and `query_loop`. Since R2 TOP1b: `currentBreakLevel` (`LD->break_level`, -1
-# outside a toplevel); `prologToplevel` and `pl_break` follow in the same step.
+# outside a toplevel); `prologToplevel`, `pl_break1`, `pl_break` (`break/0`) and, from pl-fli.c, `PL_toplevel`.
 #
-# LEFT OUT: the rest of pl-pro.c — the toplevel (`pl_break`, `prologToplevel`),
-# `'$notrace'/1`, `'$call_no_catch'/1`, `'$can_yield'/0`, the other entries of the table (pl-pro.c:1060-1069),
+# LEFT OUT: the rest of pl-pro.c — `'$notrace'/1`, `'$call_no_catch'/1`, `'$can_yield'/0`, the other entries of the table (pl-pro.c:1060-1069),
 # `'$trap_gdb'/0`, the metacut `!/0` (`pl_metacut`), `checkStacks` and the C-stack queries.
 
 # PORT: pl-pro.c callProlog
@@ -480,12 +479,138 @@ function query_loop(
 end
 
 # PORT: pl-pro.c currentBreakLevel
+# (swipl-devel cbf4e189, src/pl-pro.c:303-308)
 # DIVERGES: the local data is the argument (upstream's `GET_LD`).
 "The nesting level of the toplevel: 0 in the first, higher in a `break/0`, -1 when no toplevel runs (pl-pro.c)."
 currentBreakLevel(ld::PL_local_data)::Int = ld.break_level
 
+# PORT: pl-pro.c pl_break1
+# (swipl-devel cbf4e189, src/pl-pro.c:227-276)
+# DIVERGES: the database and the local data are arguments; `goal` is the atom as a term. `Sinput` and `Soutput` (the
+# process's streams) are `Suser_input(ld)` and `Suser_output(ld)`, as `initIO` and `push_input_context` take them (the
+# streams are per local data). `debugstatus.suspendTrace` (DBG1: the kernel keeps no trace suspension, as `resetTracer`) and
+# `save_tabling_status`/`restore_tabling_status` (TAB1: the local data has no tabling status, as src/pl-event.jl) are left
+# out. The two `break(begin|end, Level)` messages are built from term references as `printMessage`'s other callers.
+"""
+    pl_break1(gd, ld, goal) -> Bool
+
+Run a nested toplevel: reset the current streams to the user's and switch the debugger off, raise the break level,
+tell `break(begin, Level)` where the level is above 0, run `system:goal` as `query_loop` with `loop`, tell
+`break(end, Level)`, and restore the level, the debugger and the current streams (pl-pro.c).
+"""
+function pl_break1(gd::PL_global_data{T}, ld::PL_local_data{T}, goal::T)::Bool where {T}
+    rc = true
+    _initIO(ld)
+    old_level = ld.break_level
+
+    inSave = ld.IO_streams[SNO_CURRENT_INPUT + 1]           # Scurin
+    outSave = ld.IO_streams[SNO_CURRENT_OUTPUT + 1]         # Scurout
+    skipSave = ld.debugstatus_skiplevel
+    traceSave = Ref(false)
+    debugSave = Ref(false)
+
+    tracemode(ld, false, traceSave)
+    debugmode(ld, false, debugSave, UInt32(0))
+
+    ld.IO_streams[SNO_CURRENT_INPUT + 1] = Suser_input(ld)          # Scurin  = Sinput
+    ld.IO_streams[SNO_CURRENT_OUTPUT + 1] = Suser_output(ld)        # Scurout = Soutput
+
+    ld.break_level += 1
+    if ld.break_level > 0
+        rc = printMessage(                                  # PL_FUNCTOR, FUNCTOR_break2, PL_ATOM, ATOM_begin, PL_INT, break_level
+            ld, :informational,
+            _message_term(ld, :break, _err_atom(ld, mk_sym(T, :begin)), _err_int(ld, ld.break_level))
+        )
+    end
+
+    rc = rc && query_loop(gd, ld, goal, true) == 1
+
+    if ld.break_level > 0
+        rc =
+            rc && printMessage(                             # PL_FUNCTOR, FUNCTOR_break2, PL_ATOM, ATOM_end, PL_INT, break_level
+                ld, :informational,
+                _message_term(ld, :break, _err_atom(ld, mk_sym(T, :end)), _err_int(ld, ld.break_level))
+            )
+    end
+    ld.break_level = old_level
+
+    ld.debugstatus_skiplevel = skipSave
+    tracemode(ld, traceSave[], nothing)
+    debugmode(ld, debugSave[], nothing, UInt32(0))
+
+    ld.IO_streams[SNO_CURRENT_OUTPUT + 1] = outSave         # Scurout = outSave
+    ld.IO_streams[SNO_CURRENT_INPUT + 1] = inSave           # Scurin  = inSave
+
+    return rc
+end
+
+# PORT: pl-pro.c pl_break
+# (swipl-devel cbf4e189, src/pl-pro.c:285-300)
+# DIVERGES: the database and the local data are arguments.
+"""
+    pl_break(gd, ld) -> Bool
+
+`break/0`: run a nested toplevel (`'\$query_loop'`) with the pending exception and wakeup list set aside (pl-pro.c).
+"""
+function pl_break(gd::PL_global_data{T}, ld::PL_local_data{T})::Bool where {T}
+    wstate = saveWakeup(ld, true)
+    if wstate !== nothing
+        rc = pl_break1(gd, ld, mk_sym(T, Symbol("\$query_loop")))
+        restoreWakeup(ld, wstate)
+
+        return rc
+    end
+
+    return false
+end
+
+# ORIGINAL (R2 TOP1b): the registration form of `pl_break` (upstream: `FRG("break", 0, pl_break, 0)`, pl-ext.c:108).
+"`break/0`, as the foreign-predicate table calls it: `pl_break` (pl-ext.c's `FRG`)."
+function pl_break_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    return pl_break(_query_gd(ld), ld) ? FTRUE : FFALSE
+end
+
+# PORT: pl-pro.c prologToplevel
+# (swipl-devel cbf4e189, src/pl-pro.c:662-679)
+# DIVERGES: the database and the local data are arguments; `goal` is the atom as a term, compared with `$query_loop` and
+# `$toplevel` by its atom word (upstream compares `atom_t`).
+"""
+    prologToplevel(gd, ld, goal) -> Bool
+
+Run `system:goal` as the toplevel: `'\$query_loop'` and `'\$toplevel'` count as a toplevel (the break level is raised and the
+goal restarted after an exception, `loop`), any other goal (`'\$initialise'`, `'\$compile'`) runs once. True when the goal
+succeeded; the break level is restored (pl-pro.c).
+"""
+function prologToplevel(gd::PL_global_data{T}, ld::PL_local_data{T}, goal::T)::Bool where {T}
+    old_level = ld.break_level
+
+    g = _atom_word!(ld, goal)
+    if g == _atom_word!(ld, mk_sym(T, Symbol("\$query_loop"))) ||
+            g == _atom_word!(ld, mk_sym(T, Symbol("\$toplevel")))
+        ld.break_level += 1
+        loop = true
+    else
+        loop = false
+    end
+    rc = query_loop(gd, ld, goal, loop)
+    ld.break_level = old_level
+
+    return rc == 1
+end
+
+# PORT: pl-fli.c PL_toplevel
+# (swipl-devel cbf4e189, src/pl-fli.c:5019-5027)
+# DIVERGES: the database and the local data are arguments; the atom `$toplevel` is a term (`PL_new_atom` and
+# `PL_unregister_atom` have no counterpart: the symbol is not counted).
+"Run the interactive toplevel, `prologToplevel` of `'\$toplevel'`; true when it succeeded (pl-fli.c)."
+PL_toplevel(gd::PL_global_data{T}, ld::PL_local_data{T}) where {T} =
+    prologToplevel(gd, ld, mk_sym(T, Symbol("\$toplevel")))::Bool
+
 # PORT: pl-pro.c BeginPredDefs as PL_predicates_from_pro
-# DIVERGES: the registered entries only (upstream's table has eight, pl-pro.c:1060-1069).
+# DIVERGES: the registered entries only (upstream's table has eight, pl-pro.c:1060-1069). `break/0` is registered here, where
+# upstream's pl-ext.c has it (`FRG("break", 0, pl_break, 0)`, pl-ext.c:108), next to the function it calls.
 "pl-pro.c's registration table (`BeginPredDefs(pro)`): the registered entries."
 const PL_predicates_from_pro = (
     PL_extension("abort", 0, pl_abort0_va, PL_FA_VARARGS),
@@ -494,5 +619,6 @@ const PL_predicates_from_pro = (
         PL_FA_VARARGS | PL_FA_TRANSPARENT | PL_FA_SIG_ATOMIC
     ),
     PL_extension("\$notrace", 2, pl_notrace2_va, PL_FA_VARARGS | PL_FA_NOTRACE),
-    PL_extension("\$restore_trace", 2, pl_restore_trace2_va, PL_FA_VARARGS | PL_FA_NOTRACE)
+    PL_extension("\$restore_trace", 2, pl_restore_trace2_va, PL_FA_VARARGS | PL_FA_NOTRACE),
+    PL_extension("break", 0, pl_break_va, PL_FA_VARARGS)
 )

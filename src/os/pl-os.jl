@@ -556,10 +556,12 @@ const TTY_RAW = 2
 const TTY_SAVE = 3
 
 # PORT: pl-os.c Sttymode
+# (swipl-devel cbf4e189, src/os/pl-os.c:2149-2152)
 "The terminal mode of the stream `s`: `TTY_RAW` when it carries `SIO_RAW`, else `TTY_COOKED` (pl-os.c)."
 Sttymode(s::IOSTREAM)::Int = (s.flags & SIO_RAW) != 0 ? TTY_RAW : TTY_COOKED
 
 # PORT: pl-os.c Sset_ttymode
+# (swipl-devel cbf4e189, src/os/pl-os.c:2154-2160)
 "Record the terminal mode `mode` in the stream `s`: `SIO_RAW` for `TTY_RAW`, else cleared (pl-os.c)."
 function Sset_ttymode(s::IOSTREAM, mode::Int)::Nothing
     if mode == TTY_RAW
