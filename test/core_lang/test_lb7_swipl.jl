@@ -546,6 +546,8 @@ end
         (["-f", "none", "x.pl", "a"], ["x.pl", "a"]),
         (["-g", "t", "--", "x"], ["--", "x"]),
         (["--", "x"], ["--", "x"]),
+        (["--", "-q"], ["--", "-q"]),                 # `--` ends the options: what follows it is not read as one (pl-init.c:1186)
+        (["-g", "t", "--", "-z"], ["--", "-z"]),
         (["-z"], ["-z"]),
         (["-q", "-z"], ["-z"]),
         (["--foo"], ["--foo"]),                       # an unknown long option stays for argv_prolog_files (swipl: `$usage` there, exit 1)
