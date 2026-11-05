@@ -951,6 +951,34 @@ function freezeGlobal!(ld::PL_local_data)::Nothing
     return nothing
 end
 
+# ORIGINAL (e5): the global position word `w` references — a reference's cell, a compound's first cell, a
+# value-table word's box — or 0 for a word that references none (an atom, a small integer, a free cell).
+"The global position the word `w` references, 0 for none (`_release_frozen!`'s reading of a word)."
+@inline function _global_pos(ld::PL_local_data, w::word)::Int
+    return if isRef(w)
+        unRef(w)
+    elseif _is_gcompound(w)
+        valPtr(w)
+    elseif _is_vword(w)
+        ld.vbox[valPtr(w)]
+    else
+        0
+    end
+end
+
+# ORIGINAL (ENG2a, audit D-0411): the scan of pl-gc.c `gvars_to_term_refs` (:1109-1131), reduced to the
+# highest position: every value of the table, a `b_setval` entry being the reference to its cell. A value
+# made before a mark lies wholly at or below that mark's `globaltop` (the stack only grows between), so its
+# first position decides. Linear in the number of global variables; no allocation (a Dict's values).
+"The highest global position a global variable's value references, 0 for none (pl-gc.c `gvars_to_term_refs`)."
+function _gvar_reach(ld::PL_local_data)::Int
+    hi = 0
+    for w in values(ld.gvar_nb_vars)
+        hi = max(hi, _global_pos(ld, w))
+    end
+    return hi
+end
+
 # ORIGINAL (e5; audit D-0029 option (b)): the frozen region released when the OUTERMOST query ends.
 # DIVERGES: upstream keeps `frozen_bar` for the thread's life (pl-gvar.c `destroyGlobalVars`) and its
 # garbage collector frees a frozen ball once nothing references it; the kernel has no collector until G1,
@@ -959,26 +987,31 @@ end
 # exception pending, nothing the engine runs can reach the region: the bar is lowered to 0 and, after a
 # CLOSE, `gTop` to the query's own mark `target` — but first every live term reference (the slots below
 # `lTop`) and every open foreign frame's mark is checked to point at or below `target` (raises
-# otherwise). GOES with the collector. Global variables (pl-gvar.c, G1; design D7) keep the region: while
-# `ld.gvar_grefs > 0` (upstream's `LD->gvar.grefs`: a value of nb_setval/b_setval lives on the global
-# stack) the function returns at once, as upstream's `frozen_bar` stays for the thread's life.
+# otherwise). GOES with the collector.
+# DIVERGES (ENG2a, audit D-0411): global variables (pl-gvar.c, G1; design D7). Upstream's `Undo` leaves
+# `gTop = max(frozen_bar, mark.globaltop)` (pl-incl.h:2250, pl-wam.c:1632) and the bar stays until
+# `destroyGlobalVars` (pl-gvar.c:62-70); a ball above a global variable's value is then the collector's:
+# `gvars_to_term_refs` makes every value a root and keeps the bar across the collection (pl-gc.c:1109-1163).
+# The kernel releases what the collector would release for a dead ball: it scans the live values (the
+# `nb_vars` table, whose `b_setval` entries reference their trailed cell; `_gvar_reach`) and keeps the
+# region, returning at once, when a value reaches above `target` — or above the mark of an open foreign
+# frame, which a later `Undo!` to that mark would otherwise cut through with the bar at 0 (all but frame 1,
+# the one `emptyStacks` opens at global position 0 (pl-setup.c:1544), which nothing undoes). Every value
+# at or below both: the region is released as above. The full collector comes with G1 (owner G1).
 "Release the frozen region after the outermost query ended, its mark `m` (`close`: lower `gTop` to `m.globaltop`)."
 function _release_frozen!(ld::PL_local_data, m::mark, close::Bool)::Nothing
     target = m.globaltop
-    (ld.frozen_bar == 0 || ld.query != 0 || ld.exception_term != 0 || ld.gvar_grefs > 0) &&
-        return nothing
+    (ld.frozen_bar == 0 || ld.query != 0 || ld.exception_term != 0) && return nothing
+    if ld.gvar_grefs > 0                            # a value on the global stack (LD->gvar.grefs)
+        lim = target
+        for f in 2:(ld.nfliframes)                  # … must survive an Undo! to an open frame's mark
+            lim = min(lim, ld.fliframes[f].mark.globaltop)  # (not frame 1: emptyStacks' own, never undone)
+        end
+        _gvar_reach(ld) > lim && return nothing     # a live value above it: the region stays
+    end
     if close && ld.gTop > target
         for i in 1:(ld.lTop)                        # live term references: none above `target`
-            w = ld.slots[i]
-            p = if isRef(w)
-                unRef(w)
-            elseif _is_gcompound(w)
-                valPtr(w)
-            elseif _is_vword(w)
-                ld.vbox[valPtr(w)]
-            else
-                0
-            end
+            p = _global_pos(ld, ld.slots[i])
             p > target && error(
                 "_release_frozen!: slot $i references global position $p above the reset target $target"
             )
