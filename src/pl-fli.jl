@@ -1545,6 +1545,15 @@ function PL_prompt_string(ld::PL_local_data{T}, in::IOSTREAM)::Union{Nothing, St
     return nothing
 end
 
+# PORT: pl-fli.c PL_dispatch
+# (swipl-devel cbf4e189, src/pl-fli.c:5484-5506)
+# DIVERGES: the no-hook form. `GD->foreign.dispatch_events` is NULL (the kernel has `PL_dispatch_hook` nowhere, no
+# embedding event loop), so `PL_DISPATCH_INSTALLED` answers false and every other mode returns true at once, as upstream
+# does with no hook; the `input_on_stream`/`PL_handle_signals` loop and the exception test after the hook are
+# unreachable. Owner of the hook form: the embedding step (`PL_dispatch_hook`).
+"Dispatch events while waiting for input on `in`: with no hook installed, true at once (false for `PL_DISPATCH_INSTALLED`) (pl-fli.c)."
+PL_dispatch(in::IOSTREAM, wait::Int)::Bool = wait != PL_DISPATCH_INSTALLED
+
 # PORT: pl-fli.c PL_abort_process
 # DIVERGES: upstream's `abort()` (SIGABRT, exit 134 under a shell) is the call of the seam with 134 (`128+SIGABRT`);
 # `PL_abort_process` returns where the seam does. `SIGABRT` is Linux's, 6.

@@ -3758,6 +3758,8 @@ const _DISPATCH_MANIFEST_TUPLE = (
     # TOP1b: the terminal mode a stream records (pl-os.c Sttymode, Sset_ttymode); no term type
     (LK.Sttymode, Tuple{LK.IOSTREAM}, true),
     (LK.Sset_ttymode, Tuple{LK.IOSTREAM, Int}, false),
+    # TOP1b: PL_dispatch's no-hook form (pl-fli.c)
+    (LK.PL_dispatch, Tuple{LK.IOSTREAM, Int}, true),
     # compileFile's leftover check (src/pl-qlf.jl) names no term type: listed once, not once per type (LB4 b2 G9)
     (LK.compileFile_leaves, Tuple{NTuple{4, Int}, Int}, false),
     (

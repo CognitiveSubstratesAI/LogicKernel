@@ -425,3 +425,13 @@ const PL_RAWTTY = 1
 # PORT: SWI-Prolog.h PL_COOKEDTTY
 "`PL_ttymode` result: `user_input` is in the normal mode (SWI-Prolog.h)."
 const PL_COOKEDTTY = 2
+
+# PORT: SWI-Prolog.h PL_DISPATCH_NOWAIT
+"`PL_dispatch` mode: dispatch only once (SWI-Prolog.h)."
+const PL_DISPATCH_NOWAIT = 0
+# PORT: SWI-Prolog.h PL_DISPATCH_WAIT
+"`PL_dispatch` mode: dispatch till input is available (SWI-Prolog.h)."
+const PL_DISPATCH_WAIT = 1
+# PORT: SWI-Prolog.h PL_DISPATCH_INSTALLED
+"`PL_dispatch` mode: is a dispatch function installed (SWI-Prolog.h)?"
+const PL_DISPATCH_INSTALLED = 2
