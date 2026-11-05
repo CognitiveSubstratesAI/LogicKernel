@@ -120,10 +120,11 @@ function hasProcedureSourceFile(sf::SourceFile{T}, proc::Procedure{T})::Bool whe
 end
 
 # PORT: pl-srcfile.c addProcedureSourceFile
-# DIVERGES: no reload (`sf->reload` is always NULL); `COMPARE_AND_SWAP` is a plain test (no threads).
+# (swipl-devel cbf4e189, src/pl-srcfile.c:436-457)
+# DIVERGES: `COMPARE_AND_SWAP` is a plain test (no threads); no lock.
 "Associate `proc` with the source file `sf` (pl-srcfile.c); a procedure may have several."
 function addProcedureSourceFile(sf::SourceFile{T}, proc::Procedure{T})::Nothing where {T}
-    if !(sf.index == proc.source_no)
+    if !(sf.index == proc.source_no && sf.reload === nothing)
         if !hasProcedureSourceFile(sf, proc)
             push!(sf.procedures, proc)
             proc.definition.flags |= FILE_ASSIGNED
@@ -319,16 +320,107 @@ function reloadContext(
     return reload
 end
 
+# PORT: pl-srcfile.c fix_det
+# (swipl-devel cbf4e189, src/pl-srcfile.c:1302-1310)
+# DIVERGES: the database is an argument (`freeCodesDefinition!`).
+"At the first clause of a reload: a predicate that was `det` and is not declared so again loses `P_DET` and its supervisor (pl-srcfile.c)."
+function fix_det(gd::PL_global_data{T}, r::p_reload{T})::Nothing where {T}
+    def = r.predicate
+    if (def.flags & P_DET) != 0 && (r.flags & P_DET) == 0
+        def.flags &= ~P_DET
+        freeCodesDefinition!(gd, def, true)
+    end
+    return nothing
+end
+
+# PORT: pl-srcfile.c fix_ssu
+# (swipl-devel cbf4e189, src/pl-srcfile.c:1313-1334)
+"At the first clause of a reload: the SSU-ness of the predicate follows the new first clause, `P_CHECK_SSU` records a change (pl-srcfile.c)."
+function fix_ssu(r::p_reload{T}, clause::Clause{T})::Nothing where {T}
+    def = r.predicate
+    if (def.flags & (P_DYNAMIC | P_MULTIFILE)) == 0
+        if (clause.flags & (SSU_COMMIT_CLAUSE | SSU_CHOICE_CLAUSE)) != 0
+            if (def.flags & P_SSU_DET) == 0
+                def.flags |= P_SSU_DET
+                r.flags |= P_CHECK_SSU
+            end
+        else
+            if (def.flags & P_SSU_DET) != 0
+                def.flags &= ~P_SSU_DET
+                r.flags |= P_CHECK_SSU
+            end
+        end
+    end
+    return nothing
+end
+
 # PORT: pl-srcfile.c assertProcedureSource
-# DIVERGES: no reload context — the path of a first load: the file counts the clause, which goes at
-# the end of the predicate; `nothing` is upstream's NULL (since SSU1: `assertProcedure!` refused a
-# clause that mixes SSU and normal clauses, its error raised in `ld`, which is an argument for it).
-"Add `clause` to `proc` on behalf of the source file `sf` (pl-srcfile.c); `nothing` when refused."
+# (swipl-devel cbf4e189, src/pl-srcfile.c:1108-1204)
+# DIVERGES: `nothing` is upstream's NULL (since SSU1: `assertProcedure!` refused a clause that mixes SSU and normal clauses, its error
+# raised in `ld`, which is an argument for it), and the database is an argument; the debug messages (`DEBUG(MSG_RECONSULT_CLAUSE, ...)`,
+# and the loop upstream runs over the deleted clauses only to print them) are not kept; `assert(proc == sf->current_procedure)` is not
+# kept (a debug-build assertion, and the white-box rows call this function without a loader); `reloadContext` cannot fail here (upstream's
+# `PL_no_memory` branch, which frees the clause, is not reachable). No `acquire_def`/`release_def` around the walk (no threads).
+"Add `clause` to `proc` on behalf of the source file `sf` (pl-srcfile.c); during a reload it is matched with the old clauses; `nothing` when refused."
 function assertProcedureSource(
     gd::PL_global_data{T}, ld::PL_local_data{T}, sf::Union{Nothing, SourceFile{T}},
     proc::Procedure{T}, clause::Clause{T}
 )::Union{Nothing, ClauseRef{T}} where {T}
-    sf === nothing || (sf.number_of_clauses += UInt32(1))
+    if sf !== nothing && sf.reload !== nothing
+        rl = sf.reload::sf_reload{T}
+        def = proc.definition
+
+        rl.number_of_clauses += UInt32(1)
+
+        reload = reloadContext(gd, ld, sf, proc)
+
+        isfirst = reload.number_of_clauses == 0                   # reload->number_of_clauses++ == 0
+        reload.number_of_clauses += UInt32(1)
+        if isfirst
+            fix_det(gd, reload)
+            fix_ssu(reload, clause)
+        end
+
+        if (reload.flags & (P_NEW | P_NO_CLAUSES)) != 0
+            return assertProcedure!(gd, ld, proc, clause, CL_END)
+        end
+
+        cref = reload.current_clause
+        if cref !== nothing
+            if equal_clause(cref.clause::Clause{T}, clause) && ((cref.clause::Clause{T}).flags & CL_ERASED) == 0
+                return keep_clause(gd, reload, clause)
+            end
+
+            reload.flags |= P_MODIFIED
+
+            cref2 = cref.next
+            while cref2 !== nothing
+                c2 = cref2.clause::Clause{T}
+                if GLOBALLY_VISIBLE_CLAUSE(c2, reload.generation) && (c2.flags & CL_ERASED) == 0 &&
+                    !((def.flags & P_MULTIFILE) != 0 && c2.owner_no != sf.index) &&
+                    equal_clause(c2, clause)
+                    # the clauses from `cref` up to `cref2` stay at GEN_RELOAD: `endReconsult` (LB6b) deletes them
+                    reload.current_clause = cref2
+                    return keep_clause(gd, reload, clause)
+                end
+                cref2 = cref2.next
+            end
+
+            cref3 = assertProcedure!(gd, ld, proc, clause, cref)       # inserted before the current clause
+            cref3 === nothing || ((cref3.clause::Clause{T}).generation_created = rl.reload_gen)
+            return cref3
+        else
+            cref3 = assertProcedure!(gd, ld, proc, clause, CL_END)
+            cref3 === nothing || ((cref3.clause::Clause{T}).generation_created = rl.reload_gen)
+
+            reload.flags |= P_MODIFIED
+
+            return cref3
+        end
+    elseif sf !== nothing
+        sf.number_of_clauses += UInt32(1)
+    end
+
     return assertProcedure!(gd, ld, proc, clause, CL_END)
 end
 

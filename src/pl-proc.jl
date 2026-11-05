@@ -1404,8 +1404,7 @@ end
 
 
 # PORT: pl-proc.c redefineProcedure
-# DIVERGES: the database `gd` is an argument; the warnings go to `printMessage`. No reload context
-# (a first load). A definition another file — or C — made is abolished (`abolishProcedure!`: a second file defining a
+# DIVERGES: the database `gd` is an argument; the warnings go to `printMessage`. A definition another file — or C — made is abolished (`abolishProcedure!`: a second file defining a
 # predicate, a foreign predicate redefined) after its warning; for a thread-local predicate that is the
 # `thread_local_procedure` permission error of abolishProcedure (since LB2, now by `abolishProcedure!` itself).
 """
@@ -1441,7 +1440,7 @@ function redefineProcedure(
 
         cl = first.clause::Clause{T}
         if cl.owner_no == sf.index
-            # sf->reload: never (no reload context)
+            sf.reload !== nothing && !reloadHasClauses(sf, proc) && return true      # (**) see above
             if ((ld.debugstatus_styleCheck & ~suppress) & DISCONTIGUOUS_STYLE) != 0 &&
                 (def.flags & P_DISCONTIGUOUS) == 0 && sf.current_procedure !== nothing
                 cur = (sf.current_procedure::Procedure{T}).definition
