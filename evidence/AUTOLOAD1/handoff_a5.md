@@ -96,3 +96,11 @@ R2GEN guard changed no function the stack edits. Checked on 7afb9a50: the 33 mut
 regeneration; the gate's `tools/warm.sh inventory` / `port_check --write-inventory` must change nothing). Claim corrected: the A1c line is src/pl-wam.jl:3736, not :3735
 (fixed in the mutants header and the G1 row comment). The post-boot list with exact edits is evidence/AUTOLOAD1/postboot_a5.md (it also corrects item 3: convert the
 test-hook rows to `user:exception/3` clauses instead of retiring them, and keep the Q3 rows that Q3a needs).
+
+## First kernel run (a5run, Sonnet, 2026-11-05; slot-2 daemon in ~/code/lk-autoload5b)
+Branch wip/autoload5c = the 6 commits of wip/autoload5b cherry-picked onto main 9a9440e3 (conflicts: test_autoload_trap.jl header + the A1b testset next to the G1 row,
+docs/architecture.md; both sides kept) plus 91232d3f (the A1c line is src/pl-wam.jl:3830 on this main; comment-only). No src change. Run, all green first time, no G1 fallback needed:
+check PASS (205 s); test_autoload_trap.jl 114 x 3 types (342), test_autoload_flag_swipl.jl 65 x 3, test_load_swipl.jl 103 x 3, test_type_discipline.jl 45;
+AUTOLOAD1-A1c by hand (reference type): ONLY the G1 row fails, at `s.pred === foodef` (t/1 against foo/0); real tree 114/114; src/pl-wam.jl restored (cmp identical);
+33 anchors once each; inventory rc 0, no diff; manifest dups 3803 entries / 0; pkgtest_way test_autoload_trap.jl passed (peak 412 MiB); D-0164 grep: no match.
+Not run (as briefed): branch-gate, pushes. Evidence: lk-channel evidence/AUTOLOAD1/firstrun_a5.md.
