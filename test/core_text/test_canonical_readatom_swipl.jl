@@ -152,8 +152,9 @@ const _CR_OPTS_TEXT = """[
     [cycles(true), dotlists(true)]
 ]"""
 
+# (No `:- op(0, fx, $).` here since LB4 b2: that line made swipl write `$` as the kernel did before the boot. The booted
+# kernel has swipl's own `op(1, fx, $)` from boot/topvars.pl:49, so both sides now write `- ($)-[]`.)
 const _CR_DRIVER = raw"""
-:- op(0, fx, $).
 :- dynamic seen/2.
 user:message_hook(T, K, _) :- ( K == warning ; K == error ), assertz(seen(K, T)), fail.
 codes(S) :- string_codes(S, Cs), format("~w", [Cs]).

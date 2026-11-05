@@ -453,8 +453,11 @@ _v() = mk_var(_TL, LK.fresh_var_keys!(1))
     sf = LK.lookupSourceFile(gd, _tls(f), false)
     @test sf !== nothing && sf.count == 1 && sf.number_of_clauses == 3 && sf.isfile
     @test !sf.system && !sf.from_state && !sf.resource                       # GD->bootsession is off: all three false
-    @test LK.highSourceFileIndex(gd) == sf.index + 1 == 2
-    @test LK.indexToSourceFile(gd, 0) === nothing && LK.indexToSourceFile(gd, 1) === sf
+    # the database is the booted copy (LB4 b2): the boot's files hold the indexes before this file's (an empty one: 1)
+    nboot = LK.highSourceFileIndex(LK.PL_global_data{_TL}())
+    @test nboot >= 1 && sf.index == nboot
+    @test LK.highSourceFileIndex(gd) == sf.index + 1 == nboot + 1
+    @test LK.indexToSourceFile(gd, 0) === nothing && LK.indexToSourceFile(gd, nboot) === sf
     @test isempty(sf.modules)
     m1 = LK.lookupModule(gd, _tls("lb2_m1"))
     m2 = LK.lookupModule(gd, _tls("lb2_m2"))
@@ -574,7 +577,7 @@ end
 # the kernel keeps the record: load_count 1 and the file is enumerated. These rows PIN THE KERNEL'S CURRENT ANSWER.
 # LB6: port destroySourceFile (files_array with holes), flip these rows to swipl's answers.
 @testset "KNOWN DIFFERENCE (until LB6: destroySourceFile): an empty file consulted once keeps its record" begin
-    gd = LK.PL_global_data{_TL}()
+    gd = LK.setupProlog(_TL)       # the unbooted database: the booted copy's enumeration lists the boot's files first (LB4 b2)
     ld = LK.PL_local_data{_TL}(gd)
     f = _tls("/no/such/d01")
     st, _ = kcall(gd, ld, "\$start_consult", _TL[f, lk_gnd(_TL, 0)])
@@ -612,7 +615,7 @@ end
     st, _ = kcall(gd, ld, "\$end_consult", _TL[f])
     @test st === :true && refs() == 0
     # a file that exists but has count 0 (looked up with create, never started) is neither listed nor asked for its predicates
-    gd2 = LK.PL_global_data{_TL}()
+    gd2 = LK.setupProlog(_TL)      # unbooted: the booted copy lists the boot's files, so '$time_source_file' succeeds there
     ld2 = LK.PL_local_data{_TL}(gd2)
     sf0 = LK.lookupSourceFile(gd2, _tls("/no/such/r02"), true)
     @test sf0.count == 0

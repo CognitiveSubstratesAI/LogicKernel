@@ -211,6 +211,9 @@ const _TOOLCHAIN = "the C toolchain and shared objects (pl-prologflag.c O_DYNAMI
 const _BUILD = "the build's identity (a CMake build: pl-prologflag.c #ifdef BUILD_TYPE / EXEC_FORMAT / HAVE_DLADDR, pl-version.c #ifdef GIT_VERSION / CMAKE_BUILD_TYPE): the kernel is not one"
 const _OTHER_FILE = "set outside pl-prologflag.c (pl-init.c, pl-alloc.c): waits for that file"
 const _THREADS = "threads and engines (pl-prologflag.c O_PLMT; O_ENGINES is the cmake option ENGINES): the kernel is the no-threads, no-engines build (design D1)"
+# Since LB4 b2 the kernel is the booted copy, and twelve of the flags the boot files create left this list: compile_meta_arguments,
+# debug_term_position, debugger_goal_links, emulated_dialect, file_search_cache_time, message_context, message_language, qcompile,
+# query_debug_settings, toplevel_mode, warn_autoload, xref.
 const PINNED_ONLY_SWIPL = Dict{String, String}(
     "abi_version" => "pl-prologflag.c setABIVersionPrologFlag (every build defines it): its value is a dict (PL_put_dict), which the kernel has not",
     "answer_write_options" => _BOOT_PL,
@@ -223,24 +226,15 @@ const PINNED_ONLY_SWIPL = Dict{String, String}(
     "c_libplso" => _TOOLCHAIN,
     "c_libs" => _TOOLCHAIN,
     "cmake_build_type" => _BUILD,
-    "compile_meta_arguments" => _BOOT_PL,
-    "debug_term_position" => _BOOT_PL,
-    "debugger_goal_links" => _BOOT_PL,
     "debugger_write_options" => _BOOT_PL,
     "emacs_inferior_process" => _OTHER_FILE,
-    "emulated_dialect" => _BOOT_PL,
     "engines" => _THREADS,
     "executable_format" => _BUILD,
-    "file_search_cache_time" => _BOOT_PL,
     "malloc" => _OTHER_FILE * " (the allocator found: the kernel uses Julia's)",
-    "message_context" => _BOOT_PL,
-    "message_language" => _BOOT_PL,
     "open_shared_object" => _TOOLCHAIN,
     "pipe" => "pipe streams (pl-prologflag.c HAVE_POPEN): open(pipe(Cmd)) is not ported until R2 S1",
     "print_write_options" => _BOOT_PL,
     "prompt_alternatives_on" => _BOOT_PL,
-    "qcompile" => _BOOT_PL,
-    "query_debug_settings" => _BOOT_PL,
     "resource_database" => _OTHER_FILE,
     "shared_object_search_path" => _TOOLCHAIN,
     "shared_table_space" => _THREADS,
@@ -248,12 +242,9 @@ const PINNED_ONLY_SWIPL = Dict{String, String}(
     "toplevel_extra_white_line" => _BOOT_PL,
     "toplevel_goal" => _BOOT_PL,
     "toplevel_list_wfs_residual_program" => _BOOT_PL,
-    "toplevel_mode" => _BOOT_PL,
     "toplevel_print_factorized" => _BOOT_PL,
     "toplevel_residue_vars" => _BOOT_PL,
-    "toplevel_thread" => _BOOT_PL,
-    "warn_autoload" => _BOOT_PL,
-    "xref" => _BOOT_PL
+    "toplevel_thread" => _BOOT_PL
 )
 
 @testset "current_prolog_flag/2, '\$current_prolog_flag'/5 == live swipl, through a program; no state leaked" begin

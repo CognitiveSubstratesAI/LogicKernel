@@ -504,7 +504,7 @@ end
 end
 
 @testset "the payload, the clause table and the mark: lookup_clref, clause_clref, acquire/release" begin
-    gd = LK.PL_global_data{_TL}()
+    gd = LK.setupProlog(_TL)       # the unbooted database: the booted copy's clause table holds the boot's clauses (LB4 b2)
     ld = LK.PL_local_data{_TL}(gd)
     v() = mk_var(_TL, LK.fresh_var_keys!(1))
     d(n) = mk_expr(_TL, _TL[_tls("d"), lk_gnd(_TL, n)])
@@ -614,7 +614,7 @@ end
 end
 
 @testset "erase/1 of a clause of a static predicate: permission_error(clause, erase, Ref), context erase/1" begin
-    gd = LK.PL_global_data{_TL}()
+    gd = LK.setupProlog(_TL)       # the unbooted database: the booted copy's clause table holds the boot's clauses (LB4 b2)
     ld = LK.PL_local_data{_TL}(gd)
     v() = mk_var(_TL, LK.fresh_var_keys!(1))
     src(f, l) = mk_expr(_TL, _TL[_tls(":"), _tls(f), lk_gnd(_TL, l)])
