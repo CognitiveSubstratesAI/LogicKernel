@@ -736,6 +736,29 @@ end
     _rb_end!(db)
 end
 
+@testset "A20 an old clause with CL_ERASED set is not kept for an equal new clause" begin
+    s = _rb_scene(_RB, :p, 2)
+    db, sf, proc, def, olds = s.db, s.sf, s.proc, s.def, s.olds
+    gd, ld = db.gd, db.ld
+    old1 = olds[1]
+    old1.flags |= LK.CL_ERASED                       # retracted by hand: still in the list, still globally visible at the reload generation
+    @test LK.GLOBALLY_VISIBLE_CLAUSE(old1, LK.global_generation(gd)) && (olds[2].flags & LK.CL_ERASED) == 0
+    new1 = _rb_clause(db, sf, proc, _rb_p(_RB, :p, 1))
+    @test LK.equal_clause(old1, new1)                # the precondition: only the flag differs
+    cref = LK.assertProcedureSource(gd, ld, sf, proc, new1)
+    @test cref !== nothing && cref.clause === new1   # NOT the erased old clause (A20)
+    @test _rb_same(_rb_list(def), [new1, old1, olds[2]])
+    @test new1.generation_created == LK.GEN_RELOAD && old1.generation_erased == LK.GEN_RELOAD
+    reload = sf.reload.procedures[proc]
+    @test (reload.flags & LK.P_MODIFIED) != 0 && reload.current_clause.clause === old1
+    # the other side: p(2) equals the live old clause behind it and that one is kept
+    new2 = _rb_clause(db, sf, proc, _rb_p(_RB, :p, 2))
+    cref = LK.assertProcedureSource(gd, ld, sf, proc, new2)
+    @test cref !== nothing && cref.clause === olds[2] && olds[2].generation_erased == LK.GEN_MAX
+    @test _rb_same(_rb_list(def), [new1, old1, olds[2]])
+    _rb_end!(db)
+end
+
 function _rb_ec(db::IxDB{T}, head::T; body::Union{Nothing, T}=nothing)::LK.Clause{T} where {T}
     proc = _rb_proc(db, :ec, 1)
     cl = LK.compileClause(db.gd, db.ld, head, body, proc, LK.MODULE_user(db.gd))

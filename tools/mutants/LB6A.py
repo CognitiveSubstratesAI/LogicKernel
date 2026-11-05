@@ -2,7 +2,8 @@
 # and pl-index.c STATIC_RELOADING). Format: tools/mutate_drive.py's (as LB4B1.py): `id`, `file`, `old` (must occur EXACTLY once), `new`,
 # optional `equivalent` and `targets`. Verdicts: written by the battery, not yet run; no mutant is declared equivalent now (decided at the gate).
 # The `old` strings were each checked to occur exactly once at wip/lb6a (a text count, tools/mutants/LB6A.py's writer); RE-FIT any that
-# `tools/warm.sh fmt` rewraps. THE ROWS ARE NOT WRITTEN YET (C8, second half): TW names the planned file test/db/test_reload_blocks_swipl.jl.
+# `tools/warm.sh fmt` rewraps. THE ROWS ARE WRITTEN (C8, second half; UNVERIFIED on the kernel until the gate): TW names the file
+# test/db/test_reload_blocks_swipl.jl, which carries a row for every mutant below (walked by the writer of piece 5; no mutant lacks a killer on paper).
 # TARGETS (audit D-0238) name every file that exercises the mutated code: the white-box file first, then the files that run the visibility test
 # (the index walk, nth_clause, retract, clause/2), the source-file file for the addProcedureSourceFile arm, and test_procedures.jl.
 # Rows the audit (D-0415) asked for, and the mutant that pins each: Q1 refresh at every entry -> A21; Q3 identity (1 vs 1.0, 0.0 vs -0.0,
