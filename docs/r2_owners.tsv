@@ -8,6 +8,7 @@ pred:$activate_static_extension/1	LB5-LB7	seed: missing_c_preds.tsv
 pred:$call_no_catch/1	DBG1	seed: missing_c_preds.tsv
 pred:$can_yield/0	DBG1	seed: missing_c_preds.tsv
 pred:$clause_term_position/3	LB5-LB7	seed: missing_c_preds.tsv
+pred:$cmd_option_set/2	LB7	registered by LB7 (pl-prims.c); not reached by the boot, so r2_owner_violations may call it stale: audit D-0419 wants the line kept
 pred:$depth_limit/3	P3	seed: missing_c_preds.tsv
 pred:$depth_limit_except/3	P3	seed: missing_c_preds.tsv
 pred:$depth_limit_false/3	P3	seed: missing_c_preds.tsv
