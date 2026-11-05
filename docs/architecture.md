@@ -7392,8 +7392,8 @@ Written: the Prolog half of the hook is upstream's own text, vendored verbatim (
 (LB4 b2), so no Prolog is written here. `autoLoader` already reaches it as pl-proc.c does. The A1c mutant (mcall_cont's `ld.environment_frame = FR`)
 changes only the parent frame of the autoloader's query: the DEFERRED KILL declaration in tools/mutants/AUTOLOAD1.py is replaced by a KILL naming the
 LK-only row "A1c's killer (A5)" of test/core_lang/test_autoload_trap.jl (a test-defined hook through `call(user:foo)`; the hook query's
-`saved_environment` must be foo's frame). The row retires with the other test-hook rows when the hook guard is deleted; its swipl-compared form needs
-`prolog_frame_attribute/3` (DBG1).
+`saved_environment` must be foo's frame). The row is converted with the other test-hook rows when the hook guard is deleted (audit D-0416 item 2, option (a): the test-hook
+rows become `user:exception/3` clauses on the booted database); its swipl-compared form needs `prolog_frame_attribute/3` (DBG1).
 
 Left to the first boot (b2), in order: the booted swipl-compared rows (test_autoload_swipl.jl); the af08 flip (`set_prolog_flag(autoload, X)` with X
 unbound answers true through `$autoload:set_autoload/1`; the kernel's rows run with `bootsession` set and `propagateAutoload` returns at once);
