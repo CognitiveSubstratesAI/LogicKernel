@@ -2163,7 +2163,7 @@ function _manifest_index(T)
         (LK.assertProcedureSource, Tuple{GD, LD, LK.SourceFile{T}, PR, C}, false),
         (LK.assertProcedureSource, Tuple{GD, LD, Nothing, PR, C}, false),
         (LK.associateSource, Tuple{LD, LK.SourceFile{T}, PR}, false),
-        (LK.setAttrProcedureSource, Tuple{LD, LK.SourceFile{T}, PR, UInt64, Bool}, false),
+        (LK.setAttrProcedureSource, Tuple{GD, LD, LK.SourceFile{T}, PR, UInt64, Bool}, false),
         (LK.startConsult, Tuple{LK.SourceFile{T}}, false),
         (LK.endConsult, Tuple{LK.SourceFile{T}}, false),
         (LK.highSourceFileIndex, Tuple{GD}, false),

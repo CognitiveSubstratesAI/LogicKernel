@@ -443,14 +443,81 @@ function associateSource(
     return nothing
 end
 
+# PORT: pl-srcfile.c P_ATEND
+# (swipl-devel cbf4e189, src/pl-srcfile.c:1230)
+"The attributes `fix_attributes` copies from a reload to the definition at its end (`P_ATEND`, pl-srcfile.c)."
+const P_ATEND = P_VOLATILE | P_PUBLIC | P_ISO | P_NOPROFILE | P_NON_TERMINAL
+
 # PORT: pl-srcfile.c setAttrProcedureSource
-# DIVERGES: no reload context; `ld` is an argument (see `associateSource`).
-"Set (or clear) attribute `attr` of `proc` while loading the source file `sf` (pl-srcfile.c)."
+# (swipl-devel cbf4e189, src/pl-srcfile.c:1232-1255)
+# DIVERGES: the database and `ld` are arguments (see `associateSource`).
+"Set (or clear) attribute `attr` of `proc` while loading the source file `sf` (pl-srcfile.c); during a reload it is recorded in the reload."
 function setAttrProcedureSource(
-    ld::PL_local_data{T}, sf::SourceFile{T}, proc::Procedure{T}, attr::UInt64, val::Bool
+    gd::PL_global_data{T}, ld::PL_local_data{T}, sf::SourceFile{T}, proc::Procedure{T},
+    attr::UInt64, val::Bool
 )::Bool where {T}
     val && (attr & PROC_DEFINED) != 0 && associateSource(ld, sf, proc)
+
+    if sf.reload !== nothing
+        reload = reloadContext(gd, ld, sf, proc)
+
+        if val
+            reload.flags |= attr
+        else
+            reload.flags &= ~attr
+        end
+
+        (attr & (P_ATEND | P_TRANSPARENT)) != 0 && return true
+    end
+
     return setAttrDefinition(ld, proc.definition, attr, val)
+end
+
+# PORT: pl-srcfile.c check_ssu
+# (swipl-devel cbf4e189, src/pl-srcfile.c:1257-1289)
+# DIVERGES: the database and `ld` are arguments; upstream's `Sdprintf` to `Serror` is collected on the local data's `messages`
+# (`_qlf_Sdprintf!`, as the boot loop's), and `predicateName` is `_autoload_predicate_name`. No `acquire_def`/`release_def`.
+"After a reload: print an error when the live clauses of `r`'s predicate mix SSU (`=>`) and normal (`:-`) clauses (pl-srcfile.c)."
+function check_ssu(gd::PL_global_data{T}, ld::PL_local_data{T}, r::p_reload{T})::Nothing where {T}
+    def = r.predicate
+    errors = 0
+
+    cref = def.impl_clauses.first_clause
+    while cref !== nothing && errors == 0
+        cl = cref.clause::Clause{T}
+
+        if (cl.flags & CL_ERASED) == 0
+            if (def.flags & P_SSU_DET) != 0 && (cl.flags & (SSU_COMMIT_CLAUSE | SSU_CHOICE_CLAUSE)) == 0
+                errors += 1
+            end
+            if (def.flags & P_SSU_DET) == 0 && (cl.flags & (SSU_COMMIT_CLAUSE | SSU_CHOICE_CLAUSE)) != 0
+                errors += 1
+            end
+        end
+        cref = cref.next
+    end
+
+    if errors != 0
+        _qlf_Sdprintf!(ld, "ERROR: Mixed SSU (=> and :-) clauses in $(_autoload_predicate_name(gd, def))\n")
+    end
+    return nothing
+end
+
+# PORT: pl-srcfile.c fix_attributes
+# (swipl-devel cbf4e189, src/pl-srcfile.c:1291-1300)
+# DIVERGES: the database is an argument (`fix_metapredicate`); `sf` is unused, as upstream.
+"At the end of a reload: copy the attributes the reload recorded (`P_ATEND`) to the definition, then its meta-predicate declaration (pl-srcfile.c)."
+function fix_attributes(
+    gd::PL_global_data{T}, sf::SourceFile{T}, def::Definition{T}, r::p_reload{T}
+)::Nothing where {T}
+    if (def.flags & P_MULTIFILE) == 0
+        def.flags = (def.flags & ~P_ATEND) | (r.flags & P_ATEND)
+    else
+        def.flags |= (r.flags & P_ATEND)
+    end
+
+    fix_metapredicate(gd, r)
+    return nothing
 end
 
 # PORT: pl-srcfile.c setMetapredicateSource

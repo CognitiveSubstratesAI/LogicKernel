@@ -1622,7 +1622,7 @@ function pl_set_predicate_attribute3_va(
     mparse = MODULE_parse(ld)
     if reading && mparse == def.module_
         sf = lookupSourceFile(gd, ld.read_source.file::T, true)::SourceFile{T}
-        rc = setAttrProcedureSource(ld, sf, proc, att, val == 1)
+        rc = setAttrProcedureSource(gd, ld, sf, proc, att, val == 1)
         releaseSourceFile(sf)
         return rc ? FTRUE : FFALSE
     else
