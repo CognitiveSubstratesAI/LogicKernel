@@ -2671,7 +2671,11 @@ function _manifest_index(T)
         (LK.PL_prompt_next, Tuple{LD, LK.IOSTREAM}, false),
         (LK.writeAtomToStream, Tuple{GD, LD, LK.IOSTREAM, T}, false),
         # TOP1b — currentBreakLevel (pl-pro.c); the break_level flag (pl-prologflag.c) reads it
-        (LK.currentBreakLevel, Tuple{LD}, true)
+        (LK.currentBreakLevel, Tuple{LD}, true),
+        # TOP1b — PL_ttymode, PL_prompt_is_continuation, PL_prompt_string (pl-fli.c)
+        (LK.PL_ttymode, Tuple{LD, LK.IOSTREAM}, false),
+        (LK.PL_prompt_is_continuation, Tuple{LD, LK.IOSTREAM}, false),
+        (LK.PL_prompt_string, Tuple{LD, LK.IOSTREAM}, false)
     )
 end
 

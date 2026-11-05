@@ -415,3 +415,13 @@ const PL_FILE_EXECUTE = 0x40
 # PORT: SWI-Prolog.h PL_FILE_NOERRORS
 "`PL_get_file_name` flag: do not raise exceptions (SWI-Prolog.h)."
 const PL_FILE_NOERRORS = 0x80
+
+# PORT: SWI-Prolog.h PL_NOTTY
+"`PL_ttymode` result: `-tty` is in effect, or the stream is not `user_input` (SWI-Prolog.h)."
+const PL_NOTTY = 0
+# PORT: SWI-Prolog.h PL_RAWTTY
+"`PL_ttymode` result: `user_input` is in raw mode, `get_single_char/1` (SWI-Prolog.h)."
+const PL_RAWTTY = 1
+# PORT: SWI-Prolog.h PL_COOKEDTTY
+"`PL_ttymode` result: `user_input` is in the normal mode (SWI-Prolog.h)."
+const PL_COOKEDTTY = 2
