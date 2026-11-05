@@ -356,7 +356,7 @@ end
     # UNVERIFIED (never run); LK-ONLY (white-box): swipl cannot show the query's `saved_environment`; the swipl-compared form needs
     # `prolog_frame_attribute/3` (DBG1) and the booted hook, see evidence/AUTOLOAD1/handoff_a5.md item 4. `call(user:foo)` goes through
     # `mcall_cont`; the hook's query is opened by `PL_open_query` with `saved_environment = ld.environment_frame`, which `mcall_cont`
-    # sets to the new frame (`ld.environment_frame = FR`, src/pl-wam.jl:3736, mutant AUTOLOAD1-A1c): that frame is foo's. The query
+    # sets to the new frame (`ld.environment_frame = FR`, src/pl-wam.jl:3830, mutant AUTOLOAD1-A1c): that frame is foo's. The query
     # record is read inside the `at` callback, while the outer query is open: a dropped record stays readable until a push reuses it.
     db = _at_db()
     _at_hook!(
