@@ -1,5 +1,6 @@
 # UPSTREAM: swipl-devel src/pl-global.h @ cbf4e1896275
 # UPSTREAM: swipl-devel src/pl-incl.h @ cbf4e1896275
+# UPSTREAM: swipl-devel src/pl-init.h @ cbf4e1896275
 # UPSTREAM: swipl-devel src/pl-variant.c @ cbf4e1896275
 # UPSTREAM: swipl-devel src/os/pl-file.c @ cbf4e1896275
 # CLASS: code
@@ -84,7 +85,7 @@ Base.@kwdef mutable struct pl_options_t
     xpce::Int = -1                               # int xpce: --no-pce (-1 = not given)
 end
 
-# PORT: pl-global.h cmdline
+# PORT: pl-global.h cmdline as pl_cmdline_t
 # (swipl-devel cbf4e189, src/pl-global.h, the `cmdline` member of `PL_global_data`: `os_argc`, `os_argv`, `appl_argc`,
 # `appl_argv`, `packs`, `optimise`, `appl_malloc`)
 # DIVERGES (representation only): the `argc`/`argv` pairs are `Vector{String}`; `appl_malloc` (a C allocation note) is left out.

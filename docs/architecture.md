@@ -767,7 +767,7 @@ fixed it or a public issue exists.
 | `src/pl-vmi.jl` | the VM instructions clauses compile to — head, body, calls, the LCO block — with upstream's flags (`VIF_*`) and operand kinds (`CA1_*`), in pl-vmi.c's order (declarations only) | `src/pl-vmi.c`, `src/pl-incl.h`, `src/pl-codetable.c` |
 | `src/pl-proc.jl` | the clause database: predicates (`lookupProcedure` in the user module's procedure table, `isCurrentProcedure`, `isDefinedProcedure`, `setDynamicDefinition!`; since V9c `assert_term`'s checks `get_head_functor`, `checkModifySystemProc`, `isStaticSystemProcedure`, and `assertProcedure!`); since V5c `autoImport` and `trapUndefined` (a call from `user` reaches a `system` built-in), assert with generations, retract (the logical update view), clause garbage collection, `retract/1`, `retractall/1`; since R1f `overruleImportedProcedure`, `redefineProcedure` (the `discontiguous` and `redefined_procedure` warnings), `lookupProcedureToDefine`, `get_procedure` (`GP_DEFINE`), `'$set_predicate_attribute'/3` with `attribute_mask` and `setAttrDefinition`, registered as `PL_predicates_from_proc` | `src/pl-proc.c`, `src/pl-proc.h` |
 | `src/pl-srcfile.jl` | source files (R1f): the record of each consulted file (`lookupSourceFile`, numbered as upstream), the procedures it defines (`addProcedureSourceFile`), a clause added on its behalf (`assertProcedureSource`), `startConsult`/`endConsult`, `setAttrProcedureSource` — a FIRST load (a reconsult refused) | `src/pl-srcfile.c` |
-| `src/pl-global.jl` | the database state — upstream's GD and LD, as values the caller passes; GD holds the control functors the clause compiler reads and, since V5c, the module table (`system`, `user`), LD the bindings, the trail, the `occurs_check` flag and the local stack (its cells, record pools and registers), since V9c the running query's database (`GD`, which a built-in reads), and since V5d the local stack's spare, `exception.processing`, `outofstack` and the unusable mark; since R1c `source_location`; since R1f the source files (`files.table`, `files.array`), the streams' file names, `LD->read_source`, the style checks, `modules.source`, the messages `printMessage` collects; since R1e's write/1 family the standard streams (`IO.streams`), `stream_type_check`, the numbervars frame, and the flags `unknown_option`, `write_attributes`, `character_escapes_unicode`; since L1d 8a the `=@=` walk's side vector, node buffer and agenda (`vt_node`, `vt_pairs`: pl-variant.c's `node`, `argPairs`); since Y1 the LD statistics (`ld_statistics`: inferences, the cputime/walltime bases) | `src/pl-global.h`, `src/pl-incl.h`, `src/pl-variant.c`, `src/os/pl-file.c` |
+| `src/pl-global.jl` | the database state — upstream's GD and LD, as values the caller passes; GD holds the control functors the clause compiler reads and, since V5c, the module table (`system`, `user`), LD the bindings, the trail, the `occurs_check` flag and the local stack (its cells, record pools and registers), since V9c the running query's database (`GD`, which a built-in reads), and since V5d the local stack's spare, `exception.processing`, `outofstack` and the unusable mark; since R1c `source_location`; since R1f the source files (`files.table`, `files.array`), the streams' file names, `LD->read_source`, the style checks, `modules.source`, the messages `printMessage` collects; since R1e's write/1 family the standard streams (`IO.streams`), `stream_type_check`, the numbervars frame, and the flags `unknown_option`, `write_attributes`, `character_escapes_unicode`; since L1d 8a the `=@=` walk's side vector, node buffer and agenda (`vt_node`, `vt_pairs`: pl-variant.c's `node`, `argPairs`); since Y1 the LD statistics (`ld_statistics`: inferences, the cputime/walltime bases) | `src/pl-global.h`, `src/pl-incl.h`, `src/pl-init.h`, `src/pl-variant.c`, `src/os/pl-file.c` |
 | `src/pl-inline.jl` | clause visibility, the database generation, key cleaning; the binding primitives `deRef`, `linkValI`, `Trail!`, `Mark`, `DiscardMark`, `NoMark`, `Undo!` (kept at or above the frozen ball's cells: `freezeGlobal!`, L1e e5a); `hasLocalSpace` | `src/pl-inline.h`, `src/pl-incl.h`, `src/pl-data.h`, `src/pl-gvar.c` |
 | `src/pl-thread.jl`, `src/pl-gc.jl` | the predicate references an enumeration registers, so clause GC keeps what it can still see; growing the local stack (`growLocalSpace`, `growStacks`, `ensureLocalSpace` — the only allocating path; since V5d with the spare on top, and the limit stretched by 1 MiB while an exception is processed) | `src/pl-thread.c`, `src/pl-gc.c`, `src/pl-gc.h` |
 | `src/pl-alloc.jl` | raising a local-stack overflow — since V5d as upstream's `error(resource_error(stack), Ctx)` (`raiseStackOverflow`, `outOfStack!`; Ctx the atom `stack_overflow` for both stacks since D-0040, swipl's dict tag), the spare enabled (`enableSpareStack!`), a second overflow before recovery marking the local data unusable; growing the argument stack; the global stack's limit (`ensureGlobalSpace` — L1f f2) | `src/pl-alloc.c`, `src/pl-gc.h` |
@@ -1546,6 +1546,7 @@ graph LR
     pl_setup --> os_pl_prologflag
     pl_setup --> os_pl_text
     pl_setup --> pl_supervisor
+    pl_setup --> pl_init
     pl_setup --> pl_wrap
     pl_setup --> pl_op
     pl_setup --> pl_ext
@@ -1644,15 +1645,23 @@ graph LR
     pl_pro --> pl_string
     pl_init --> term_interface
     pl_init --> default_term
+    pl_init --> os_pl_ctype
     pl_init --> os_pl_stream
     pl_init --> pl_incl
     pl_init --> SWI_Prolog
     pl_init --> pl_global
+    pl_init --> pl_comp
     pl_init --> pl_wam
     pl_init --> pl_fli
+    pl_init --> pl_gmp
     pl_init --> os_pl_prologflag
+    pl_init --> os_pl_os
     pl_init --> os_pl_file
     pl_init --> pl_proc
+    pl_init --> pl_pro
+    pl_init --> pl_write
+    pl_init --> pl_read
+    pl_init --> pl_qlf
     pl_event --> term_interface
     pl_event --> default_term
     pl_event --> pl_incl
@@ -1936,6 +1945,7 @@ graph LR
     pl_ext --> pl_supervisor
     pl_ext --> pl_trace
     pl_ext --> pl_pro
+    pl_ext --> pl_init
     pl_ext --> pl_event
     pl_ext --> pl_mutex
     pl_ext --> pl_bag
@@ -2019,7 +2029,7 @@ Predicate rows each file's calls reach (a predicate several files call counts in
 | `boot/license.pl` | loaded | 5 | 0 | 0 |
 | `boot/syspred.pl` | loaded | 82 | 31 | 0 |
 | `boot/messages.pl` | loaded | 77 | 8 | 1 |
-| `boot/toplevel.pl` | loaded | 83 | 16 | 2 |
+| `boot/toplevel.pl` | loaded | 85 | 14 | 2 |
 | `boot/attvar.pl` | loaded | 29 | 0 | 0 |
 | `boot/bags.pl` | loaded | 21 | 1 | 0 |
 | `boot/apply.pl` | loaded | 4 | 0 | 0 |
