@@ -2967,7 +2967,7 @@ _manifest_gd_template(::Type{T}) where {T} = (
     # LB4 b2 first boot (G9): meta_declaration's ReadingSource branch (pl-srcfile.c setMetapredicateSource)
     (
         LK.setMetapredicateSource,
-        Tuple{LK.PL_local_data{T}, LK.SourceFile{T}, LK.Procedure{T}, Vector{LK.arg_info}},
+        Tuple{LK.PL_global_data{T}, LK.PL_local_data{T}, LK.SourceFile{T}, LK.Procedure{T}, Vector{LK.arg_info}},
         false
     ),
     # LB4 b2 first boot (G9): the built-in atoms' symbols at database setup (pl-atom.c registerBuiltinAtoms' a->name)

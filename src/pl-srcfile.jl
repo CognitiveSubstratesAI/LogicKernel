@@ -334,7 +334,7 @@ function fix_det(gd::PL_global_data{T}, r::p_reload{T})::Nothing where {T}
 end
 
 # PORT: pl-srcfile.c fix_ssu
-# (swipl-devel cbf4e189, src/pl-srcfile.c:1313-1334)
+# (swipl-devel cbf4e189, src/pl-srcfile.c:1313-1330)
 "At the first clause of a reload: the SSU-ness of the predicate follows the new first clause, `P_CHECK_SSU` records a change (pl-srcfile.c)."
 function fix_ssu(r::p_reload{T}, clause::Clause{T})::Nothing where {T}
     def = r.predicate
@@ -474,7 +474,7 @@ function setAttrProcedureSource(
 end
 
 # PORT: pl-srcfile.c check_ssu
-# (swipl-devel cbf4e189, src/pl-srcfile.c:1257-1289)
+# (swipl-devel cbf4e189, src/pl-srcfile.c:1256-1288)
 # DIVERGES: the database and `ld` are arguments; upstream's `Sdprintf` to `Serror` is collected on the local data's `messages`
 # (`_qlf_Sdprintf!`, as the boot loop's), and `predicateName` is `_autoload_predicate_name`. No `acquire_def`/`release_def`.
 "After a reload: print an error when the live clauses of `r`'s predicate mix SSU (`=>`) and normal (`:-`) clauses (pl-srcfile.c)."
@@ -504,7 +504,7 @@ function check_ssu(gd::PL_global_data{T}, ld::PL_local_data{T}, r::p_reload{T}):
 end
 
 # PORT: pl-srcfile.c fix_attributes
-# (swipl-devel cbf4e189, src/pl-srcfile.c:1291-1300)
+# (swipl-devel cbf4e189, src/pl-srcfile.c:1290-1299)
 # DIVERGES: the database is an argument (`fix_metapredicate`); `sf` is unused, as upstream.
 "At the end of a reload: copy the attributes the reload recorded (`P_ATEND`) to the definition, then its meta-predicate declaration (pl-srcfile.c)."
 function fix_attributes(
@@ -521,16 +521,87 @@ function fix_attributes(
 end
 
 # PORT: pl-srcfile.c setMetapredicateSource
-# (swipl-devel cbf4e189, src/pl-srcfile.c:1333-1360)
-# DIVERGES: no reload context (as `setAttrProcedureSource`): `sf->reload` is set by a re-consult, which
-# `startConsult` refuses (LB6), so the branch taken is upstream's `else`; `ld` is an argument (see `associateSource`).
-"Set the meta-argument masks `args` of `proc` while loading the source file `sf` (pl-srcfile.c)."
+# (swipl-devel cbf4e189, src/pl-srcfile.c:1333-1361)
+# DIVERGES: the database and `ld` are arguments (see `associateSource`); the reload's `args` is a fresh vector of `arg_info()` where upstream's
+# `allocHeapOrHalt` memory is filled below, for every argument.
+"Set the meta-argument masks `args` of `proc` while loading the source file `sf` (pl-srcfile.c); during a reload they are recorded in the reload."
 function setMetapredicateSource(
-    ld::PL_local_data{T}, sf::SourceFile{T}, proc::Procedure{T}, args::Vector{arg_info}
+    gd::PL_global_data{T}, ld::PL_local_data{T}, sf::SourceFile{T}, proc::Procedure{T},
+    args::Vector{arg_info}
 )::Bool where {T}
     associateSource(ld, sf, proc)
-    setMetapredicateMask(proc.definition, args)
+
+    if sf.reload !== nothing
+        arity = proc.definition.arity
+
+        reload = reloadContext(gd, ld, sf, proc)
+
+        if reload.args === nothing
+            reload.args = [arg_info() for _ in 1:arity]
+        end
+        rargs = reload.args::Vector{arg_info}
+        for i in 1:arity
+            rargs[i].meta = args[i].meta
+        end
+
+        if isTransparentMetamask(proc.definition, args)
+            reload.flags |= P_TRANSPARENT
+        else
+            reload.flags &= ~P_TRANSPARENT
+        end
+        reload.flags |= P_META
+    else
+        setMetapredicateMask(proc.definition, args)
+    end
+
     return true
+end
+
+# PORT: pl-srcfile.c equal_meta
+# (swipl-devel cbf4e189, src/pl-srcfile.c:1363-1377)
+# DIVERGES: `args` is `nothing` for NULL (a predicate of arity 0 has no `args` in either).
+"Do the meta-argument masks of `def` equal `args` (pl-srcfile.c)? False when either is missing."
+function equal_meta(
+    def::Definition{T}, args::Union{Nothing, Vector{arg_info}}
+)::Bool where {T}
+    dargs = def.impl_clauses.args
+    if dargs !== nothing && args !== nothing
+        for i in 1:def.arity
+            dargs[i].meta != args[i].meta && return false
+        end
+        return true
+    end
+    return false
+end
+
+# PORT: pl-srcfile.c fix_metapredicate
+# (swipl-devel cbf4e189, src/pl-srcfile.c:1379-1404)
+# DIVERGES: the database is an argument (`freeCodesDefinition!`).
+"At the end of a reload: make the definition's meta-predicate declaration (and `P_TRANSPARENT`) the one the reload recorded (pl-srcfile.c)."
+function fix_metapredicate(gd::PL_global_data{T}, r::p_reload{T})::Nothing where {T}
+    def = r.predicate
+
+    if (def.flags & P_MULTIFILE) == 0
+        mfmask = P_META | P_TRANSPARENT
+
+        if (def.flags & mfmask) != (r.flags & mfmask) || !equal_meta(def, r.args)
+            if (def.flags & P_META) != 0 && (r.flags & P_META) == 0
+                clear_meta_declaration(def)
+            elseif (r.flags & P_META) != 0
+                setMetapredicateMask(def, r.args::Vector{arg_info})
+            end
+            def.flags &= ~P_TRANSPARENT
+            def.flags |= r.flags & P_TRANSPARENT
+
+            freeCodesDefinition!(gd, def, true)
+        end
+    elseif (r.flags & P_META) != 0
+        setMetapredicateMask(def, r.args::Vector{arg_info})
+        freeCodesDefinition!(gd, def, true)
+    elseif (r.flags & P_TRANSPARENT) != 0
+        def.flags |= P_TRANSPARENT
+    end
+    return nothing
 end
 
 # PORT: pl-srcfile.c startConsult

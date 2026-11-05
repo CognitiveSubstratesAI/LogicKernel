@@ -1767,6 +1767,21 @@ function setMetapredicateMask(def::Definition{T}, args::Vector{arg_info})::Nothi
     return nothing
 end
 
+# PORT: pl-proc.c clear_meta_declaration
+# (swipl-devel cbf4e189, src/pl-proc.c:2235-2242)
+# DIVERGES: the masks are `def.impl_clauses.args` (see `setMetapredicateMask`).
+"Remove the meta-predicate declaration of `def`: every argument `MA_ANY`, `P_META` and `P_TRANSPARENT` cleared (pl-proc.c)."
+function clear_meta_declaration(def::Definition{T})::Nothing where {T}
+    if def.arity > 0
+        dargs = def.impl_clauses.args::Vector{arg_info}
+        for i in 1:def.arity
+            dargs[i].meta = MA_ANY
+        end
+    end
+    def.flags &= ~(P_META | P_TRANSPARENT)
+    return nothing
+end
+
 # PORT: pl-proc.c meta_declaration
 # (swipl-devel cbf4e189, src/pl-proc.c:2025-2089; since R2 LB4 b2 the `ReadingSource` branch is upstream's,
 # `setMetapredicateSource` of src/pl-srcfile.jl: the first boot runs init.pl's `:- meta_predicate` directives)
@@ -1821,7 +1836,7 @@ function meta_declaration(
 
     rc = if ReadingSource(ld)
         sf = lookupSourceFile(gd, ld.read_source.file::T, true)::SourceFile{T}   # lookupSourceFile(source_file_name, true)
-        r = setMetapredicateSource(ld, sf, proc, args)
+        r = setMetapredicateSource(gd, ld, sf, proc, args)
         releaseSourceFile(sf)
         r
     else
