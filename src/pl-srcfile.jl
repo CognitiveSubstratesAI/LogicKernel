@@ -249,6 +249,75 @@ function isRedefinedProcedure(proc::Procedure{T}, gen::gen_t)::Bool where {T}
     return false
 end
 
+# PORT: pl-srcfile.c startReconsultFile
+# (swipl-devel cbf4e189, src/pl-srcfile.c:900-953)
+# DIVERGES: no `acquire_def`/`release_def`, no allocation failure (`PL_no_memory`); the database and the local data are arguments. Dead until LB6b
+# re-points `startConsult` (R2 LB6a): the rows call it directly.
+"Start reloading `sf`: its clauses are marked erased at the reload generation, a reload context is made (pl-srcfile.c)."
+function startReconsultFile(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, sf::SourceFile{T}
+)::Bool where {T}
+    r = sf_reload{T}(
+        IdDict{Procedure{T}, p_reload{T}}(), GEN_RELOAD, popNPredicateAccess!(ld, 0),
+        IdDict{module_t{T}, m_reload{T}}(), UInt32(0)
+    )
+    sf.reload = r
+
+    ld.reload_generation = r.reload_gen
+    ld.reload_nesting += 1
+
+    for proc in sf.procedures
+        def = proc.definition
+
+        if (def.flags & (P_FOREIGN | P_THREAD_LOCAL)) == 0
+            c = def.impl_clauses.first_clause
+            while c !== nothing
+                cl = c.clause::Clause{T}
+                if GLOBALLY_VISIBLE_CLAUSE(cl, global_generation(gd)) && (cl.flags & CL_ERASED) == 0 &&
+                    !((def.flags & P_MULTIFILE) != 0 && cl.owner_no != sf.index) &&
+                    !((def.flags & P_DYNAMIC) != 0 && cl.owner_no == 0)
+                    cl.generation_erased = r.reload_gen
+                end
+                c = c.next
+            end
+            def.flags |= P_RELOADING
+            def.flags &= ~P_DISCONTIGUOUS                   # will be reinstantiated
+        end
+        if (def.flags & P_AUTOLOAD) != 0
+            def.flags &= ~P_AUTOLOAD                        # should be be more selective?
+        end
+    end
+
+    return true
+end
+
+# PORT: pl-srcfile.c reloadContext
+# (swipl-devel cbf4e189, src/pl-srcfile.c:1065-1104)
+# DIVERGES: the table is an `IdDict` (see `sf_reload`); no `acquire_def`/`release_def`; `nothing` for the failure upstream reports as
+# `PL_no_memory()` (never here); `pushPredicateAccessObj!` has no depth limit. The debug messages are not kept.
+"The reload record of `proc` in the reload of `sf`, made on first use (pl-srcfile.c)."
+function reloadContext(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, sf::SourceFile{T}, proc::Procedure{T}
+)::p_reload{T} where {T}
+    rl = sf.reload::sf_reload{T}
+    reload = get(rl.procedures, proc, nothing)
+    if reload === nothing
+        def = proc.definition
+        reload = p_reload{T}(def, gen_t(0), nothing, nothing, UInt64(0), UInt32(0))
+        if (def.flags & (P_THREAD_LOCAL | P_FOREIGN)) != 0
+            reload.flags |= P_NO_CLAUSES
+        elseif isRedefinedProcedure(proc, global_generation(gd))
+            dref = pushPredicateAccessObj!(ld, gd, def)
+            reload.generation = dref.generation
+            reload.current_clause = find_clause(def.impl_clauses.first_clause, reload.generation)
+        else
+            reload.flags |= P_NEW
+        end
+        rl.procedures[proc] = reload
+    end
+    return reload
+end
+
 # PORT: pl-srcfile.c assertProcedureSource
 # DIVERGES: no reload context — the path of a first load: the file counts the clause, which goes at
 # the end of the predicate; `nothing` is upstream's NULL (since SSU1: `assertProcedure!` refused a
