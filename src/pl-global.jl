@@ -112,6 +112,7 @@ mutable struct PL_global_data{T}
     procedures_call_continuation1::Procedure{T}                 # procedures.call_continuation1: call_continuation/1 (R2 CONT1)
     procedures_dmeta_call1::Procedure{T}                        # procedures.dmeta_call1: '$meta_call'/1 (R2 CONT1)
     procedures_findall_loop4::Procedure{T}                      # procedures.findall_loop4: '$bags':findall_loop/4, looked up by findReset (R2 CONT1)
+    reload_generation::gen_t                                    # a copy of the local data's reload generation: GEN_INVALID (0) unless a file is being reloaded (R2 LB6a; ORIGINAL, owner TH1)
 end
 # DIVERGES: `atoms` is upstream's `GD->atoms` as a struct of its own (src/pl-atom.jl), one table per
 # database, built first as upstream's `initAtoms` runs first; `functors` likewise `GD->functors` with
@@ -153,6 +154,10 @@ end
 # Since TAB1-min: `closure_refs` (the closures a `closure` blob names, as `clause_refs`; pl-wrap.c keeps the `struct closure`
 # in the blob's payload, src/pl-wrap.jl).
 # Since R2's LB2b: `paths_CWDdir`, `GD->paths.CWDdir` (pl-global.h), the working directory `PL_cwd` caches and `ChDir` sets (src/os/pl-os.jl).
+# Since R2 LB6a: `reload_generation`, ORIGINAL (no upstream field): the value of `LD->reload.generation` for the functions that have the database
+# but no local data (`hasClausesDefinition` and what calls it, `num_visible_clauses`, `getClauses`, `setDefaultSupervisor`; audit ruling on QUESTION 6
+# of evidence/LB6/handoff.md). `startReconsultFile` writes it next to the local data's value, `endReconsult` (LB6b) clears both. One thread, so one
+# value; TH1 removes the field when the local data is reachable from those functions.
 
 # PORT: pl-incl.h cleanup_status as CLN_NORMAL
 # DIVERGES: the enum's values as `Int` constants (`halt_cleaning` is an `Int`), pl-incl.h:1054-1060.

@@ -326,7 +326,8 @@ function setupProlog(::Type{T})::PL_global_data{T} where {T}
         dc_proc,                                # procedures_dtbl_reset6: set by initBuildIns!
         dc_proc,                                # procedures_call_continuation1: set by initBuildIns!
         dc_proc,                                # procedures_dmeta_call1: set by initBuildIns!
-        dc_proc                                 # procedures_findall_loop4: set by findReset
+        dc_proc,                                # procedures_findall_loop4: set by findReset
+        GEN_INVALID                             # reload_generation: no file is being reloaded (R2 LB6a)
     )
     initPrologFlags!(gd)                        # setup:136 (src/os/pl-prologflag.jl): before the built-ins (:158), whose boot clauses read the mask
     initBuildIns!(gd)                           # setup:158 (src/pl-ext.jl)

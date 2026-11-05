@@ -2577,8 +2577,7 @@ function update_primary_index!(def::Definition{T}, rgen::gen_t)::Nothing where {
 end
 
 # DIVERGES (no upstream function): a caller outside any reload — the tests' database builders — has no local data to read
-# `reload_generation` from; the value is GEN_INVALID. `setDefaultSupervisor` (src/pl-supervisor.jl, `gd` only) calls it: QUESTION 6 of
-# evidence/LB6/handoff.md (the `gd`-only sites that read the reload generation).
+# `reload_generation` from; the value is GEN_INVALID.
 "`update_primary_index!` for a caller outside a reload (R2 LB6a)."
 update_primary_index!(def::Definition) = update_primary_index!(def, GEN_INVALID)
 

@@ -165,8 +165,8 @@ end
 
 # PORT: pl-proc.c hasClausesDefinition
 # DIVERGES: no `acquire_def`/`release_def` around the walk — with no threads, clause GC cannot run
-# during it — and no reload generation: the function has the database only, so `LD->reload.generation` is read as `GEN_INVALID`
-# (R2 LB6a, QUESTION 6 of evidence/LB6/handoff.md; the reload arm waits for the audit's answer). The `P_FOREIGN|P_THREAD_LOCAL` test is upstream's: a built-in is foreign since V5a2, so
+# during it. DIVERGES (representation): global field standing in for LD->reload.generation, owner TH1 (the function has the database
+# only: `gd.reload_generation`, written next to the local data's value by `startReconsultFile`). The `P_FOREIGN|P_THREAD_LOCAL` test is upstream's: a built-in is foreign since V5a2, so
 # it has no clauses here, as upstream; a thread-local definition (since LB2) answers `nothing` (its clauses are the
 # local definition's: `_hasLocalClausesDefinition`).
 """
@@ -179,14 +179,15 @@ function hasClausesDefinition(
 )::Union{Nothing, ClauseRef{T}} where {T}
     if (def.flags & (P_FOREIGN | P_THREAD_LOCAL)) == 0 &&
         def.impl_clauses.first_clause !== nothing
-        if (def.flags & P_DIRTYREG) == 0 && (def.flags & P_DYNAMIC) == 0
+        if (def.flags & P_DIRTYREG) == 0 && (def.flags & P_DYNAMIC) == 0 &&
+            gd.reload_generation == GEN_INVALID
             return def.impl_clauses.first_clause
         else
             generation = global_generation(gd)
             c = def.impl_clauses.first_clause
             while c !== nothing
                 cl = c.clause::Clause{T}
-                visibleClauseCNT(cl, generation, GEN_INVALID) && break
+                visibleClauseCNT(cl, generation, gd.reload_generation) && break
                 c = c.next
             end
             return c
@@ -197,14 +198,15 @@ end
 
 # The clauses of a thread-local definition as the thread's LOCAL definition has them (upstream's local definition has P_THREAD_LOCAL cleared,
 # pl-proc.c:8102, so `hasClausesDefinition` walks its list): the first clause visible in the current generation. A thread-local
-# definition is always P_DYNAMIC, so the walk is upstream's `else` branch.
+# definition is always P_DYNAMIC, so the walk is upstream's `else` branch. DIVERGES (representation): global field standing in for
+# LD->reload.generation, owner TH1 (`gd.reload_generation`).
 function _hasLocalClausesDefinition(
     gd::PL_global_data{T}, def::Definition{T}
 )::Union{Nothing, ClauseRef{T}} where {T}
     generation = global_generation(gd)
     c = def.impl_clauses.first_clause
     while c !== nothing
-        visibleClauseCNT(c.clause::Clause{T}, generation, GEN_INVALID) && break
+        visibleClauseCNT(c.clause::Clause{T}, generation, gd.reload_generation) && break
         c = c.next
     end
     return c
@@ -2765,8 +2767,8 @@ function unify_meta_pattern(
 end
 
 # PORT: pl-proc.c num_visible_clauses
-# DIVERGES: `LD->reload.generation != GEN_INVALID` (a reload in progress) is read as false (the function has the database only:
-# R2 LB6a, QUESTION 6 of evidence/LB6/handoff.md), so only a dynamic predicate walks its clauses; the database is an argument and `rules` is `key == ATOM_number_of_rules`.
+# DIVERGES: the database is an argument and `rules` is `key == ATOM_number_of_rules`. DIVERGES (representation): global field standing in for
+# LD->reload.generation, owner TH1 (`gd.reload_generation`: the function has the database only).
 "The number of clauses (or of rules) of `def` the current generation sees (pl-proc.c)."
 function num_visible_clauses(
     gd::PL_global_data{T}, def::Definition{T}, rules::Bool
@@ -2775,14 +2777,14 @@ function num_visible_clauses(
         rules ? def.impl_clauses.number_of_rules : def.impl_clauses.number_of_clauses
     )
 
-    if count > 0 && (def.flags & P_DYNAMIC) != 0
+    if count > 0 && (gd.reload_generation != GEN_INVALID || (def.flags & P_DYNAMIC) != 0)
         gen = current_generation(gd, def)
 
         count = 0
         c = def.impl_clauses.first_clause
         while c !== nothing
             cl = c.clause::Clause{T}
-            if !(rules && (cl.flags & UNIT_CLAUSE) != 0) && visibleClause(cl, gen, GEN_INVALID)
+            if !(rules && (cl.flags & UNIT_CLAUSE) != 0) && visibleClause(cl, gen, gd.reload_generation)
                 count += 1
             end
             c = c.next

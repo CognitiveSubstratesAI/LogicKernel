@@ -118,8 +118,8 @@ end
 
 # PORT: pl-supervisor.c getClauses
 # DIVERGES: fills `refp` (emptied first) with up to `max` clause references; no reference count on
-# the predicate (`acquire_def`) — that serves clause GC across threads; `LD->reload.generation` is read as GEN_INVALID (database only:
-# R2 LB6a, QUESTION 6 of evidence/LB6/handoff.md).
+# the predicate (`acquire_def`) — that serves clause GC across threads. DIVERGES (representation): global field standing in for
+# LD->reload.generation, owner TH1 (`gd.reload_generation`: the function has the database only).
 "Collect up to `max` clauses of `def` visible now into `refp`; the number visible (pl-supervisor.c)."
 function getClauses(
     gd::PL_global_data{T}, def::Definition{T}, refp::Vector{ClauseRef{T}}, max::Int
@@ -128,7 +128,7 @@ function getClauses(
     empty!(refp)
     cref = def.impl_clauses.first_clause
     while cref !== nothing
-        if visibleClause(cref.clause::Clause{T}, global_generation(gd), GEN_INVALID)
+        if visibleClause(cref.clause::Clause{T}, global_generation(gd), gd.reload_generation)
             if found < max
                 push!(refp, cref)
             end
@@ -300,7 +300,8 @@ function createSupervisor(
 end
 
 # PORT: pl-supervisor.c setDefaultSupervisor
-# DIVERGES: no lock or memory barrier (no threads).
+# DIVERGES: no lock or memory barrier (no threads). DIVERGES (representation): global field standing in for LD->reload.generation, owner TH1
+# (`gd.reload_generation`, read by `update_primary_index!`).
 """
     setDefaultSupervisor(gd, def) -> Bool
 
@@ -313,10 +314,10 @@ function setDefaultSupervisor(gd::PL_global_data{T}, def::Definition{T})::Bool w
         codes, crefs = createSupervisor(gd, def)
         if equalSupervisors(def.code_data, old, oldrefs, codes, crefs)
             freeSupervisor(def, codes, false)
-            update_primary_index!(def)
+            update_primary_index!(def, gd.reload_generation)
         else
             reconsiderIndexes!(def)                 # clause shape changed; re-decide
-            update_primary_index!(def)
+            update_primary_index!(def, gd.reload_generation)
             def.codes = codes
             def.codes_crefs = crefs
             freeSupervisor(def, old, true)

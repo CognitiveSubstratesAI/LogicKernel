@@ -264,6 +264,7 @@ function startReconsultFile(
     sf.reload = r
 
     ld.reload_generation = r.reload_gen
+    gd.reload_generation = r.reload_gen                 # DIVERGES (representation): the global field standing in for LD->reload.generation, owner TH1
     ld.reload_nesting += 1
 
     for proc in sf.procedures
