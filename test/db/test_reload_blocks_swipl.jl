@@ -613,22 +613,25 @@ end
     @test own in sf.procedures && (own.definition.flags & LK.FILE_ASSIGNED) != 0       # during a reload it is added (A27)
     # A26 (pl-proc.c:3996-4004): the reload has seen no clause of rd. startReconsultFile marked rd's clause, which would end the call at the
     # `first === nothing` return; the mark is undone so the call reaches the reload test. The discontiguous warning is what the early return
-    # skips: it needs a current procedure and the style check, and an unbooted database collects the message text on `ld.messages`.
+    # skips: it needs a current procedure and the style check; the warning goes to print_message/2 (the database is booted), read by the message collector.
     xs[1].generation_erased = LK.GEN_MAX
     sf.current_procedure = cur
     ld.debugstatus_styleCheck |= Int(LK.DISCONTIGUOUS_STYLE)
     rd.definition.flags &= ~LK.P_DISCONTIGUOUS
     @test !LK.reloadHasClauses(sf, rd) &&
         LK.hasClausesDefinition(gd, rd.definition) !== nothing
-    n0 = length(ld.messages)
+    lk_install_message_collector!(gd, ld)
+    lk_take_messages!(ld)                                            # earlier messages are not this call's
     @test LK.redefineProcedure(gd, ld, rd, sf, 0)
-    @test length(ld.messages) == n0                                  # the early return: no warning
+    @test isempty(lk_take_messages!(ld))                             # the early return: no warning
     @test xs[1].generation_erased == LK.GEN_MAX && _rb_same(_rb_list(rd.definition), xs)
     # the other side: once the reload has seen a clause of rd the same call does warn (the guard can fail)
     LK.reloadContext(gd, ld, sf, rd).number_of_clauses = UInt32(1)
     @test LK.reloadHasClauses(sf, rd)
     @test LK.redefineProcedure(gd, ld, rd, sf, 0)
-    @test length(ld.messages) > n0
+    msgs = lk_take_messages!(ld)
+    @test length(msgs) == 1 && msgs[1][1] === :warning &&
+        lk_name(LK.child(msgs[1][2], 1)) === :discontiguous
     _rb_end!(db)
 end
 
@@ -681,7 +684,7 @@ end
         sf,
         pr,
         _rb_p(_RB, :fs1, 1);
-        body=lk_sym(_RB, :true),
+        body=lk_sym(_RB, Symbol("true")),
         flags=UInt32(LK.SSU_COMMIT_CLAUSE)
     )
     nrm = _rb_clause(db, sf, pr, _rb_p(_RB, :fs1, 2))
@@ -886,10 +889,14 @@ end
     @test !LK.equal_clause(i1, i2) && LK.equal_clause(i1, ec(ep(_rb_int(_RB, 1))))
     # different instruction, different table sizes: not equal
     @test !LK.equal_clause(ec(ep(a)), ec(ep(_rb_int(_RB, 1))))
-    # A13b: EQUAL codes, different literals
+    # an atom is an operand of the code vector: two atoms, two codes (the control: they differ already there)
     ab1, ab2 = ec(ep(a)), ec(ep(b))
-    @test ab1.codes == ab2.codes && ab1.literals != ab2.literals                       # the precondition: only the literal differs
-    @test !LK.equal_clause(ab1, ab2)
+    @test ab1.codes != ab2.codes && !LK.equal_clause(ab1, ab2)
+    # A13b: EQUAL codes, different literals (a float is an entry of the literal table, its code word is the same)
+    g1, g2 = ec(ep(lk_gnd(_RB, 1.5))), ec(ep(lk_gnd(_RB, 2.5)))
+    @test g1.codes == g2.codes && length(g1.literals) == 1 && length(g2.literals) == 1 &&
+        LK.compareStandard(g1.literals[1], g2.literals[1], true) != 0                           # the precondition: only the literal differs
+    @test !LK.equal_clause(g1, g2)
     # floats: 1.5 vs 2.5 (equal codes, different literals); 0.0 vs -0.0; one NaN payload pair (equal when the bits are equal)
     f(x) = ec(ep(lk_gnd(_RB, x)))
     @test LK.equal_clause(f(1.5), f(1.5)) && !LK.equal_clause(f(1.5), f(2.5))
