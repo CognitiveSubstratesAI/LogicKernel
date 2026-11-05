@@ -359,7 +359,9 @@ end
     # `p(1r3, a). p(2r3, b).` H_MPQ is as H_MPZ: no key, so the predicate gets S_STATIC. The
     # answers are those of upstream's own unit (tests/rational/test_rational.pl `first_arg`):
     # findall(X-Y, rat_arg1(X, Y), L), L == [1r3-a, 2r3-b].
-    Q = lk_term_type(Union{Int64, Rational{BigInt}})
+    # The payload holds what the booted copy's boot files read (floats, strings, big integers): a database is
+    # a copy of the booted template (R2 LB4 b2-1), and a type without Float64 cannot read boot/init.pl.
+    Q = lk_term_type(Union{Int64, Float64, String, BigInt, Rational{BigInt}})
     db = IxDB{Q}()
     p = ix_pred(Q, :p, 2; db=db)
     pq(x, y) = mk_expr(Q, Q[lk_sym(Q, :p), x, y])
