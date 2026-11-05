@@ -2118,6 +2118,7 @@ function _manifest_index(T)
         (LK._drop_unfilled_frame!, Tuple{LD, Int}, true),
         (LK._no_record_above, Tuple{LD, Int}, true),
         (LK.dropUnlinkedChoices!, Tuple{LD, Int}, true),
+        (LK.dropDeadRecords!, Tuple{LD, Int}, true),     # CONT1 (D-0424): the LCO sites' slow path
         (LK._is_newest_live_frame, Tuple{LD, Int}, true),
         (LK._call_procedure, Tuple{LD, Int, LK.code}, true),
         # V9c — assert/1, assertz/1, asserta/1 (src/pl-comp.jl, pl-proc.jl, pl-error.jl), over

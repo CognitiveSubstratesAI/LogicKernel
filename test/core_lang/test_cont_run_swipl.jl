@@ -8,6 +8,8 @@
 #     stack positions): the rows print B, whether C == 0, the length of the call_continuation list, the slots, the context module.
 #   * Every swipl answer line is PINNED (swipl 10.1.19, this program and driver, LC_ALL=C, 2026-11-04, two runs byte-identical;
 #     evidence/CONT1/cr_rows.out); with `swipl` on PATH the live answers are compared with the pins too.
+#   * t_r_y, t_r_y_meta, t_r_sb, t_r_hold, t_r_hold_cl, t_r_ssu, t_r_ssu_l, t_r_ssu_meta (and the program's cr_id/cr_y/cr_sb/cr_hold/cr_s/cr_ssu*) were added 2026-11-05 for the CONT1 engine fix (audit D-0424),
+#     pinned from swipl 10.1.19 with the same driver (two runs byte-identical); the pool check `_cr_pools_live` runs at every answer.
 #   * UNVERIFIED on the kernel: gate decides (a mismatch is traced to its upstream cause, not re-pinned).
 using Test, LogicKernel
 const LK = LogicKernel
@@ -128,6 +130,16 @@ cr_cutdeep(X) :- cr_mem(X), shift(c1), !.
 cr_if2(X) :- ( cr_mem(Y), shift(i1), Y == b -> X = Y ; X = none ).
 cr_late(X, Y) :- shift(l1), Y = f(X).
 cr_fc_ite(X) :- ( shift_for_copy(f), cr_mem(Y), Y == b -> X = Y ; X = none ).
+cr_id(X, X).
+cr_y(R) :- reset(cr_ite(X), _, C), call(C), cr_id(X, R).
+cr_sb(R) :- reset(cr_ite(X), _, C), call(C), X == zz, R = X.
+cr_sb(second).
+cr_hold(R) :- reset(cr_ite(X), _, C), call(C), cr_id(X, R), cr_mem(_), true.
+cr_s(a, R) => R = no.
+cr_s(b, R) => R = ok.
+cr_ssu_ite(X) => ( shift(c), cr_mem(Y), Y == b -> X = Y ; X = none ).
+cr_ssu(R) :- reset(cr_ssu_ite(X), _, C), call(C), cr_s(X, R0), R = R0.
+cr_ssu_l(R) :- reset(cr_ssu_ite(X), _, C), call(C), cr_s(X, R).
 """
 
 # (id, goal), run IN ORDER in one database
@@ -194,6 +206,14 @@ const _CR_CASES = [
     ),
     ("r_ite_cut", raw"findall(X, (reset(cr_ite(X), _, C), call(C)), R)"),
     ("r_ite_once", raw"reset(cr_ite(X), _, C), call(C), R = X"),
+    ("r_y", raw"cr_y(R)"),
+    ("r_y_meta", raw"reset(cr_ite(X), _, C), call(C), cr_id(X, R)"),
+    ("r_sb", raw"cr_sb(R)"),
+    ("r_hold", raw"reset(cr_ite(X), _, C), call(C), cr_id(X, R), cr_mem(_), true"),
+    ("r_hold_cl", raw"cr_hold(R)"),
+    ("r_ssu", raw"cr_ssu(R)"),
+    ("r_ssu_l", raw"cr_ssu_l(R)"),
+    ("r_ssu_meta", raw"reset(cr_ssu_ite(X), _, C), call(C), cr_s(X, R)"),
     ("r_deep", raw"reset(cr_deep(3), _, call_continuation(L)), length(L, N), R = N"),
     ("r_lco", raw"reset(cr_lco(3), _, call_continuation(L)), length(L, N), R = N"),
     ("r_slots", raw"cr_slots(cr_live(_, _, _), R)"),
@@ -245,6 +265,14 @@ const _CR_PINNED = [
     raw"t_r_twice_copy t_r_twice_copy(r)",
     raw"t_r_ite_cut t_r_ite_cut([|](b,[]))",
     raw"t_r_ite_once t_r_ite_once(b)",
+    raw"t_r_y t_r_y(b)",
+    raw"t_r_y_meta t_r_y_meta(b)",
+    raw"t_r_sb t_r_sb(second)",
+    raw"t_r_hold t_r_hold(b) t_r_hold(b) t_r_hold(b)",
+    raw"t_r_hold_cl t_r_hold_cl(b) t_r_hold_cl(b) t_r_hold_cl(b)",
+    raw"t_r_ssu t_r_ssu(ok)",
+    raw"t_r_ssu_l t_r_ssu_l(ok)",
+    raw"t_r_ssu_meta t_r_ssu_meta(ok)",
     raw"t_r_deep t_r_deep(3)",
     raw"t_r_lco t_r_lco(0)",
     raw"t_r_slots t_r_slots([|](<inactive>,[|](f(V0,1),[|](V1,[|](<inactive>,[])))))",
@@ -269,10 +297,52 @@ function _cr_file()::Tuple{String, Vector{String}}
 end
 
 """
+At an answer: the record pools hold the LIVE records — the choice points on the `BFR` chain and the frames
+on the parent chains of the current frame and of those choice points' frames (rules_common.jl
+`_rpools_live`) — plus records off those chains that lie below `lTop` and are marked dead: choice points
+`unlinked` (`C_SOFTCUT`, or `c_cut` in a continuation's frame) and frames killed (`LK.isFrame` false, `c_cut`'s
+`killFrame`); nothing else (src/pl-wam.jl, THE POOLS' INVARIANT; audit D-0424). A live record marked dead, or
+a dead record not marked, is a reason string; `nothing` when the pools hold.
+"""
+function _cr_pools_live(ld::LK.PL_local_data{_CR})::Union{Nothing, String}
+    chain = Set{Int}()
+    c = ld.BFR
+    while c != 0
+        c <= ld.nchoices || return "BFR chain choice $c above nchoices=$(ld.nchoices)"
+        ld.choices[c].unlinked && return "choice $c on the BFR chain is unlinked"
+        push!(chain, c)
+        c = ld.choices[c].parent
+    end
+    for i in 1:(ld.nchoices)
+        i in chain && continue
+        (ld.choices[i].unlinked && ld.choices[i].base < ld.lTop) ||
+            return "choice $i off the chain (base $(ld.choices[i].base), lTop $(ld.lTop)) not unlinked below lTop"
+    end
+    fr = Set{Int}()
+    for f0 in [[ld.choices[c].frame for c in chain]; ld.environment_frame]
+        f = f0
+        while f != 0 && !(f in fr)
+            f <= ld.nframes || return "live frame $f above nframes=$(ld.nframes)"
+            LK.isFrame(ld.frames[f]) || return "live frame $f is killed"
+            push!(fr, f)
+            f = ld.frames[f].parent
+        end
+    end
+    for i in 1:(ld.nframes)
+        i in fr && continue
+        (!LK.isFrame(ld.frames[i]) && ld.frames[i].base < ld.lTop) ||
+            return "frame $i off every live chain (base $(ld.frames[i].base), lTop $(ld.lTop)) not killed below lTop"
+    end
+    return nothing
+end
+
+"""
 The kernel's lines for `names` after consulting `path`, as the driver writes swipl's; a run that
 raises the refusal exception (`LK.NotPortedError`, its `what` and `step`) writes `refused <what> <step>`.
+With `pools`, every answer's `_cr_pools_live` failure and every row that does not leave `nchoices`,
+`nframes`, `lTop` and `BFR` as it found them is pushed there as `<name>: <reason>`.
 """
-function _cr_kernel(path::String, names::Vector{String})
+function _cr_kernel(path::String, names::Vector{String}; pools::Vector{String}=String[])
     gd = LK.PL_global_data{_CR}()
     ld = LK.PL_local_data{_CR}(gd)
     st, ball = LK.load_file!(gd, ld, path)
@@ -284,6 +354,7 @@ function _cr_kernel(path::String, names::Vector{String})
             continue
         end
         sols = String[]
+        before = (ld.nchoices, ld.nframes, ld.lTop, ld.BFR)
         fid = LK.PL_open_foreign_frame(ld)
         a = LK.PL_new_term_refs(ld, 1)
         LK.putSlotValue!(ld, a + 1, mk_var(_CR, LK.fresh_var_keys!(1)), LK.PutVarMap())
@@ -301,6 +372,8 @@ function _cr_kernel(path::String, names::Vector{String})
                 break
             end
             if rc == LK.PL_S_TRUE || rc == LK.PL_S_LAST
+                why = _cr_pools_live(ld)
+                why === nothing || push!(pools, "$name: answer $n: $why")
                 push!(
                     sols,
                     _cr_enc(mk_expr(_CR, _CR[_crs(name), lk_answers(ld, (a:a)...)...]))
@@ -319,6 +392,9 @@ function _cr_kernel(path::String, names::Vector{String})
         end
         LK.PL_close_query(ld, qid)
         LK.PL_close_foreign_frame(ld, fid)
+        after = (ld.nchoices, ld.nframes, ld.lTop, ld.BFR)
+        after == before ||
+            push!(pools, "$name: (nchoices, nframes, lTop, BFR) $before -> $after")
         push!(out, "$name" * join(" " .* sols))
     end
     return out
@@ -363,8 +439,13 @@ end
 
 @testset "lTop after shift/reset equals the value before the call (CONT1, white-box)" begin
     f, names = _cr_lt_file()
-    kl = _cr_kernel(f, names)
+    pools = String[]
+    kl = _cr_kernel(f, names; pools=pools)
     @test length(kl) == length(_CR_LT_NAMES) + 1
+    for l in pools
+        println(stderr, "  pools ", l)
+    end
+    @test isempty(pools)                        # the pools after every answer and every row (audit D-0424)
     for (k, p) in zip(kl, _CR_LT_PINNED)
         k == p || println(stderr, "  ours  ", k, "\n  swipl ", p)
         @test k == p
@@ -382,7 +463,8 @@ end
 
 @testset "reset/3, shift/1, call_continuation/1 run as swipl's (CONT1)" begin
     f, names = _cr_file()
-    kl = _cr_kernel(f, names)
+    pools = String[]
+    kl = _cr_kernel(f, names; pools=pools)
     @test length(kl) == length(_CR_CASES) + 1
     for (k, p) in zip(kl, _CR_PINNED)
         k == p || println(stderr, "  ours  ", k, "\n  swipl ", p)
@@ -398,6 +480,27 @@ end
     @test raw"t_r_effect t_r_effect(3)" in _CR_PINNED
     @test raw"t_r_twice t_r_twice([|](r,[|](r,[])))" in _CR_PINNED
     @test raw"t_r_ite_cut t_r_ite_cut([|](b,[]))" in _CR_PINNED
+    # the pools after every answer and every row (audit D-0424): a cut in a continuation's frame (t_r_ite_once, t_r_y,
+    # t_r_y_meta, t_r_sb) leaves its records below lTop marked dead, and the last call (I_DEPART: t_r_ite_once and t_r_y_meta
+    # under catch/3's meta-call; L_NOLCO: t_r_y's compiled clause) or the clause choice point resumed in place (t_r_sb)
+    # reclaims them (src/pl-wam.jl `dropDeadRecords!`). Not vacuous: the four rows answer (their pins are in the list)
+    # t_r_hold, t_r_hold_cl: NO last call after the cut and a choice point left (`cr_mem(_), true`: lTop cannot fall past the dead
+    # records), so they stay in the pools up to every answer and `_cr_pools_live` alone sees them (not the LCO assertions): without c_cut's marks it says 'not unlinked below lTop'
+    # / 'not killed below lTop'.
+    for l in pools
+        println(stderr, "  pools ", l)
+    end
+    @test isempty(pools)
+    @test raw"t_r_y t_r_y(b)" in _CR_PINNED
+    @test raw"t_r_sb t_r_sb(second)" in _CR_PINNED
+    @test raw"t_r_hold t_r_hold(b) t_r_hold(b) t_r_hold(b)" in _CR_PINNED
+    @test raw"t_r_hold_cl t_r_hold_cl(b) t_r_hold_cl(b) t_r_hold_cl(b)" in _CR_PINNED
+    # t_r_ssu, t_r_ssu_l, t_r_ssu_meta: an SSU clause (`=>`, I_CHP .. I_SSU_COMMIT) called after the cut in a continuation's
+    # frame, as a non-last, a last (I_DEPART) and a meta-called last goal: I_SSU_COMMIT's `_no_record_above` assertion holds
+    # (the dead records lie BELOW the new frame, or are reclaimed by I_DEPART's slow path first; D-0424 follow-up probe)
+    @test raw"t_r_ssu t_r_ssu(ok)" in _CR_PINNED
+    @test raw"t_r_ssu_l t_r_ssu_l(ok)" in _CR_PINNED
+    @test raw"t_r_ssu_meta t_r_ssu_meta(ok)" in _CR_PINNED
     @test any(l -> startswith(l, "t_r_slots ") && occursin("<inactive>", l), _CR_PINNED)
     @test any(
         l ->

@@ -1391,11 +1391,15 @@ end
 # THE POOLS' INVARIANT (user, 2026-10-05; restated 2026-10-12 for `*->`): the pools hold the LIVE
 # records — the choice points on the `BFR` chain, the frames on the parent chains of the running
 # frame and of those choice points' frames — PLUS the choice-point records `C_SOFTCUT` unlinked
-# (`unlinked`) whose stack region is still in use; those are reclaimed when that region is popped:
-# by every lowering of `lTop` to or below them (`dropRecords!`), and, where upstream reuses the
-# region WITHOUT lowering `lTop` past it — a last call reusing its frame, a clause choice point
-# resumed in place — by `dropUnlinkedChoices!` first. So `_no_record_above` stays exact at those
-# points. test/core_lang/test_rules_swipl.jl `_rpools_live` checks exactly this at every answer.
+# (`unlinked`) whose stack region is still in use, and (CONT1, audit D-0424) the records a cut in a
+# continuation's frame took off the chain BELOW that frame: its choice points `unlinked` (`c_cut`)
+# and the frames they protected killed (`killFrame`, upstream's own mark); those are reclaimed when
+# that region is popped: by every lowering of `lTop` to or below them (`dropRecords!`), and, where
+# upstream reuses the region WITHOUT lowering `lTop` past it — a last call reusing its frame, a
+# clause choice point resumed in place — by `dropDeadRecords!` first, on the slow path only (when
+# `_no_record_above` is false). So `_no_record_above` stays exact at those points.
+# test/core_lang/test_rules_swipl.jl `_rpools_live` checks exactly this at every answer;
+# test/core_lang/test_cont_run_swipl.jl `_cr_pools_live` with the continuation's records.
 """
     dropUnlinkedChoices!(ld, p)
 
@@ -1414,6 +1418,29 @@ function dropUnlinkedChoices!(ld::PL_local_data{T}, p::Int)::Nothing where {T}
         n -= 1
     end
     ld.nchoices = n
+    return nothing
+end
+
+"""
+    dropDeadRecords!(ld, p)
+
+The slow path of the three reuses of the region above `p` (`I_DEPART`, `L_NOLCO`, the clause
+choice point `shallow_backtrack` resumes in place), taken only when `_no_record_above(ld, p)` is
+false: reclaim the choice-point records above `p` that are unlinked (`dropUnlinkedChoices!`) and
+the frame records above `p` that `c_cut` killed (`killFrame`: `isFrame` is false). Those are the
+records a cut in a continuation's frame left BELOW that frame (CONT1, audit D-0424 option A: the
+frame `push_continuation` builds lies above the choice point `shift` kept and the frames it
+protected; its cut takes them off the chain while `lTop` stays above them). A frame record above
+`p` that was not killed is a CHECKED assertion, as the unlinked mark is in `dropUnlinkedChoices!`.
+"""
+function dropDeadRecords!(ld::PL_local_data{T}, p::Int)::Nothing where {T}
+    dropUnlinkedChoices!(ld, p)
+    n = ld.nframes
+    while n > 0 && ld.frames[n].base > p
+        @assert !isFrame(ld.frames[n]) "dropDeadRecords!: a LIVE frame record above p=$p at n=$n (the pool invariant: no live record above a region about to be reused)"
+        n -= 1
+    end
+    ld.nframes = n
     return nothing
 end
 
@@ -3610,7 +3637,7 @@ function PL_next_solution_guarded(
         id_f = ld.frames[FR]
         @assert (id_f.flags & FR_WATCHED) == 0
         _assert_frame_above_choice(ld, id_f.base, :I_DEPART)   # (L1e e1 assertion) its arguments
-        dropUnlinkedChoices!(ld, id_f.base)         # (the region above the frame is reused)
+        _no_record_above(ld, id_f.base) || dropDeadRecords!(ld, id_f.base)  # (the region above is reused)
         @assert _is_newest_live_frame(ld, FR) "I_DEPART: last-call reuse of a frame that is not the newest live record"
         id_f.clause = nothing                       # for save atom-gc
         # leaveDefinition(DEF): (void)0 upstream
@@ -4224,7 +4251,7 @@ function PL_next_solution_guarded(
     if (ld.BFR == 0 || ld.choices[ld.BFR].base <= ld.frames[FR].base) &&
         truePrologFlag(ld, PLFLAG_LASTCALL)
         _assert_frame_above_choice(ld, ld.frames[FR].base, :L_NOLCO)   # (L1e e1 assertion) L_* write its arguments
-        dropUnlinkedChoices!(ld, ld.frames[FR].base)    # (the region above the frame is reused)
+        _no_record_above(ld, ld.frames[FR].base) || dropDeadRecords!(ld, ld.frames[FR].base)  # (reused)
         @assert _is_newest_live_frame(ld, FR) "L_NOLCO: last-call reuse of a frame that is not the newest live record"
         @goto next_instruction
     end
@@ -4494,6 +4521,10 @@ function PL_next_solution_guarded(
             killFrame(cc_f2)                        # kill for markPredicates()
             cc_fr2 = cc_f2.parent
         end
+        # (CONT1, D-0424: a choice point BELOW the cutting frame — FR a continuation's frame,
+        # `push_continuation`, pushed above it — stays below the new `lTop`: unlinked, see
+        # `dropDeadRecords!`; the frames it protected are the ones `killFrame` killed above.)
+        cc_c.base < ld.frames[FR].base && (cc_c.unlinked = true)
         if cc_c.parent != 0 && ld.choices[cc_c.parent].base == cc_och   # ch->parent == och
             DiscardMark(ld, cc_c.mark)
         end
@@ -5340,8 +5371,9 @@ function PL_next_solution_guarded(
                 # MQ18 (user, 2026-10-05): when the failing frame owns the youngest choice point, no
                 # record lives above that choice point — every path that removes a younger one also
                 # lowers `lTop` — so the drop below finds nothing. Asserted, so every run checks it.
-                # (A record C_SOFTCUT unlinked may lie there: it is reclaimed first — `*->`, V9d.)
-                dropUnlinkedChoices!(ld, sb_c.base)
+                # (A record C_SOFTCUT unlinked may lie there: it is reclaimed first — `*->`, V9d; so
+                # may the records a continuation frame's cut left below it — CONT1, `dropDeadRecords!`.)
+                _no_record_above(ld, sb_c.base) || dropDeadRecords!(ld, sb_c.base)
                 @assert _no_record_above(ld, sb_c.base) "shallow_backtrack: a record above the resumed choice point"
                 dropRecords!(ld, sb_c.base + 1)     # the failed attempt's records (none: above)
                 if sb_c.value_clause.cref !== nothing

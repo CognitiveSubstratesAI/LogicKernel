@@ -8,7 +8,7 @@
 # list (a text count by a python3 -I checker, no Julia); the anchors are short single-line substrings, RE-FIT any `old` that `tools/warm.sh
 # fmt` rewraps. NOTHING here has run on the kernel: each KILL names the row EXPECTED to kill it (read in the row's goal and pin), the
 # battery's verdict decides.
-# KILL: test/core_lang/test_cont_run_swipl.jl (43 rows r_*, case lines 135-177, pins from evidence/CONT1/cr_rows.out) and
+# KILL: test/core_lang/test_cont_run_swipl.jl (46 rows r_*: 43 pinned in evidence/CONT1/cr_rows.out, r_y, r_y_meta, r_sb added for the engine fix, D-0424; the line numbers in the ids below predate those three rows) and
 # test/core_lang/test_cont_boot_swipl.jl (rows c_reset .. c_yield, case lines 140-145).
 # TARGETS (audit D-0238): the mutated code is reached through the booted system's reset/3, shift/1, shift_for_copy/1 and
 # call_continuation/1; a grep over test/*/*.jl for `reset(`, `shift(`, `call_continuation`, `shift_for_copy` finds the two files above and
@@ -38,6 +38,18 @@ BOOT_ROWS = "test_cont_boot_swipl.jl"
 W = "src/pl-wam.jl"
 C = "src/pl-cont.jl"
 G = "src/pl-gc.jl"
+# the CONT1 engine fix (audit D-0424): c_cut runs on every cut, the three LCO sites on every last call and clause retry; the
+# files that exercise them by name (a grep of test/*/*.jl for C_CUT, c_cut, I_DEPART, L_NOLCO, shallow_backtrack, _rpools_live,
+# each holding @testset), the killer rows' file first
+DTGT = ["test/core_lang/test_cont_run_swipl.jl", "test/core_lang/test_cont_boot_swipl.jl", "test/core_lang/test_softcut.jl",
+        "test/core_lang/test_rules_swipl.jl", "test/core_lang/test_catch_swipl.jl", "test/core_lang/test_cleanup_swipl.jl",
+        "test/core_lang/test_det_swipl.jl", "test/core_lang/test_ssu_swipl.jl", "test/core_lang/test_metacall_control.jl",
+        "test/core_lang/test_metacall.jl", "test/core_lang/test_at_body_swipl.jl", "test/core_lang/test_bagof_swipl.jl",
+        "test/core_lang/test_between_swipl.jl", "test/core_lang/test_colon_body_swipl.jl", "test/core_lang/test_context_module_swipl.jl",
+        "test/core_lang/test_copyterm_swipl.jl", "test/core_lang/test_current_op_swipl.jl", "test/core_lang/test_findall_swipl.jl",
+        "test/core_lang/test_firstvar_swipl.jl", "test/core_lang/test_sortlist_swipl.jl", "test/core_lang/test_slot_words.jl",
+        "test/foreign/test_builtins_swipl.jl", "test/foreign/test_query.jl", "test/compile/test_body_code_swipl.jl",
+        "test/compile/test_analyse_variables_swipl.jl"]
 MUTANTS = [
     # ── pl-vmi.c I_CALL1 FR_INRESET branch, I_RESET, I_EXITRESET ──
     dict(id="CONT1-R1 I_RESET does not set FR_INRESET on the reset/3 frame (KILL test_cont_run_swipl.jl:157 r_meta_len, :148 r_meta_shift)",
@@ -150,4 +162,37 @@ MUTANTS = [
          file=G, targets=RUN,
          old="walk_and_mark(state, codes, pc, I_EXIT)",
          new="walk_and_mark(state, codes, pc, I_EXITFACT)"),
+    # ── the CONT1 engine fix (audit D-0424 option A): c_cut's marks, dropDeadRecords!, the three LCO sites' slow path ──
+    # KILL rows: test_cont_run_swipl.jl r_ite_once (I_DEPART under catch/3's meta-call; the answer's pool check `_cr_pools_live`),
+    # r_y (L_NOLCO: cr_y's compiled last call), r_y_meta (I_DEPART), r_sb (shallow_backtrack: cr_sb's clause choice point resumed in place).
+    # TARGETS (D-0238): the mutated lines run on every cut / last call / clause retry; the files that exercise them by name
+    # (C_CUT, I_DEPART, L_NOLCO, shallow_backtrack, `_rpools_live`) are DTGT.
+    dict(id="CONT1-D1 c_cut does not mark a popped choice point below the cutting frame unlinked (KILL r_hold, r_hold_cl: _cr_pools_live 'not unlinked below lTop', no LCO assertion in their way; r_ite_once, r_y, r_y_meta, r_sb: dropUnlinkedChoices! asserts)",
+         file=W, targets=DTGT,
+         old="cc_c.base < ld.frames[FR].base && (cc_c.unlinked = true)",
+         new="nothing"),
+    dict(id="CONT1-D2 c_cut does not kill the frames a popped choice point protected (KILL r_y, r_y_meta, r_sb: dropDeadRecords! asserts a LIVE frame; r_hold, r_hold_cl: _cr_pools_live 'not killed below lTop')",
+         file=W, targets=DTGT,
+         old="killFrame(cc_f2)                        # kill for markPredicates()",
+         new="nothing"),
+    dict(id="CONT1-D3 dropDeadRecords! reclaims no frame record (KILL r_y, r_y_meta: 'not the newest live record'; r_sb: shallow_backtrack's assertion)",
+         file=W, targets=DTGT,
+         old="while n > 0 && ld.frames[n].base > p",
+         new="while false"),
+    dict(id="CONT1-D4 I_DEPART skips its slow path (KILL r_ite_once, r_y_meta: I_DEPART's assertion; test_softcut.jl's *-> rows: the unlinked record)",
+         file=W, targets=DTGT,
+         old="_no_record_above(ld, id_f.base) || dropDeadRecords!(ld, id_f.base)",
+         new="nothing"),
+    dict(id="CONT1-D5 L_NOLCO skips its slow path (KILL r_y: L_NOLCO's assertion)",
+         file=W, targets=DTGT,
+         old="_no_record_above(ld, ld.frames[FR].base) || dropDeadRecords!(ld, ld.frames[FR].base)",
+         new="nothing"),
+    dict(id="CONT1-D6 shallow_backtrack skips its slow path (KILL r_sb: 'a record above the resumed choice point')",
+         file=W, targets=DTGT,
+         old="_no_record_above(ld, sb_c.base) || dropDeadRecords!(ld, sb_c.base)",
+         new="nothing"),
+    dict(id="CONT1-D7 the guard of I_DEPART's slow path inverted: taken only when NO record lies above (KILL r_ite_once, r_y_meta)",
+         file=W, targets=DTGT,
+         old="_no_record_above(ld, id_f.base) || dropDeadRecords!",
+         new="!_no_record_above(ld, id_f.base) || dropDeadRecords!"),
 ]

@@ -292,6 +292,15 @@ end
 # (`BFR` is never 0 here: the query's `CHP_TOP`, so `LD->choicepoints` is `choices[BFR]`). The
 # `DEBUG(MSG_CONTINUE, …)` and `CHK_SECURE` lines are debug output only. The reset frame's record is
 # read after the trim, as upstream reads it: a dropped record stays readable until a push reuses it.
+# The trim stops at a choice point newer than the kept frames (an `( shift, ... -> ...)`): that choice
+# point and the frames it protects stay, and the frame `push_continuation` builds lies ABOVE them.
+# When that frame cuts them, upstream's `lTop` stays above their words (garbage until it falls);
+# here their records stay in the pools marked dead — `c_cut` marks the choice point `unlinked`
+# (src/pl-wam.jl:4527) and `killFrame` its frames — and the reuse of their region reclaims them on
+# the slow path only (`dropDeadRecords!`, pl-wam.jl:1436, at I_DEPART :3640, L_NOLCO :4254 and
+# shallow_backtrack :5377). The pool invariant is written once, THE POOLS' INVARIANT (pl-wam.jl:1391).
+# Representation only: answers, exceptions and the `lTop` read by `statistics(localused, _)` are
+# swipl's (test/core_lang/test_cont_run_swipl.jl, `_cr_pools_live`; audit D-0424 items 1 and 3).
 """
     shift(gd, ld, ball, for_copy) -> Union{Nothing, Code{T}}
 
