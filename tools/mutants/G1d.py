@@ -96,10 +96,8 @@ MUTANTS = [
          old="pl_nb_current2_va, PL_FA_NONDETERMINISTIC | PL_FA_VARARGS",
          new="pl_nb_current2_va, PL_FA_VARARGS"),
     # ── D7, D8, duplicate_term ──
-    dict(id="G1-R1 _release_frozen! frees the frozen region while global variables hold values (KILL g04, g06)",
-         file="src/pl-inline.jl", targets=TF,
-         old="ld.exception_term != 0 || ld.gvar_grefs > 0) &&",
-         new="ld.exception_term != 0) &&"),
+    # G1-R1 (the early return while `gvar_grefs > 0`) is gone: ENG2a replaced that return by a scan of the values;
+    # its mutants are ENG2A-M1 (the old early return) and ENG2A-M2 (the scan ignores the values), tools/mutants/ENG2A.py.
     dict(id="G1-E1 user:exception/3 is not made dynamic before init.pl: the hook call raises an existence error (KILL h9)",
          file="src/pl-ext.jl", targets=TX,
          old="setDynamicDefinition!(exception3.definition, true)",

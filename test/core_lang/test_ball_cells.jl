@@ -140,6 +140,94 @@ end
     end
 end
 
+# ENG2a (audit D-0411): on the booted copy global variables live on the global stack (`gvar_grefs > 0` after a load). The
+# release scans their values: a value above the query's mark (made by the query) keeps the region, read back intact after
+# the close; one below it (made by an earlier query) does not; one above an OPEN foreign frame's mark keeps it too, so the
+# frame's discard (an Undo! to that mark) does not cut it; the boundary is `<=` (a value AT the target releases).
+const _BL_GV = """
+bl_set(K) :- nb_setval(K, h(x, y)).
+bl_setv(K) :- nb_setval(K, _).
+bl_thr(K) :- catch(throw(f(_X, [1,2,3], g(a))), _, true), atom(K).
+bl_setthr(K) :- nb_setval(K, h(x, y)), catch(throw(f(_X, [1,2,3], g(a))), _, true).
+bl_get(K, V) :- length(_, 50), nb_getval(K, V).
+"""
+
+"The goal `pred(args...)` as a term of type `T`."
+_bl_gv_goal(::Type{T}, pred::String, args::T...) where {T} =
+    mk_expr(T, T[mk_sym(T, Symbol(pred)), args...])
+
+"Run `goal` on `db`: (its driver lines, `gTop` growth from before the query, `frozen_bar` after)."
+function _bl_gv_run(db, goal)
+    g0 = db.ld.gTop
+    lines = _rlines(db, [goal])
+    return lines, db.ld.gTop - g0, db.ld.frozen_bar
+end
+
+@testset "ENG2a: the release scans the global variables' values (booted copy)" begin
+    db = _RDB()
+    f = joinpath(mktempdir(), "blgv.pl")
+    write(f, _BL_GV)
+    st, _ = LK.load_file!(db.gd, db.ld, f)
+    @test st === :ok
+    ld = db.ld
+    @test ld.gvar_grefs > 0                                         # the booted copy has values on the stack
+    G(p, a...) = _bl_gv_goal(_R, p, a...)
+    ours = String[]
+    # (1) a value made BY the query lies above its target: the region stays, the value reads back intact
+    l1, grow1, fb1 = _bl_gv_run(db, G("bl_setthr", _rs("bl_k1")))
+    append!(ours, l1)
+    @test grow1 > 0 && fb1 > 0
+    l1r, _, _ = _bl_gv_run(db, G("bl_get", _rs("bl_k1"), _rv(60)))
+    append!(ours, l1r)
+    @test l1r == ["bl_get(bl_k1,h(x,y)) det", "end"]
+    # (2) a value made by an EARLIER query lies below the target: the ball's region is released
+    l2s, _, _ = _bl_gv_run(db, G("bl_set", _rs("bl_k2")))
+    append!(ours, l2s)
+    l2, grow2, fb2 = _bl_gv_run(db, G("bl_thr", _rs("bl_k2")))
+    append!(ours, l2)
+    @test grow2 <= 0 && fb2 == 0
+    l2r, _, _ = _bl_gv_run(db, G("bl_get", _rs("bl_k2"), _rv(60)))
+    append!(ours, l2r)
+    @test l2r == ["bl_get(bl_k2,h(x,y)) det", "end"]
+    # (3) a value made inside an open foreign frame by an earlier query: kept across the frame's discard
+    fid = LK.PL_open_foreign_frame(ld)
+    l3s, _, _ = _bl_gv_run(db, G("bl_set", _rs("bl_k3")))
+    append!(ours, l3s)
+    p3 = LK._gvar_reach(ld)
+    l3, _, fb3 = _bl_gv_run(db, G("bl_thr", _rs("bl_k3")))
+    append!(ours, l3)
+    @test fb3 >= p3 > 0                                             # the bar still covers the value
+    LK.PL_discard_foreign_frame(ld, fid)
+    @test ld.gTop >= p3
+    l3r, _, _ = _bl_gv_run(db, G("bl_get", _rs("bl_k3"), _rv(60)))
+    append!(ours, l3r)
+    @test l3r == ["bl_get(bl_k3,h(x,y)) det", "end"]
+    # (4) the boundary: a value one cell above the target keeps the bar, a value AT the target releases it
+    l4s, _, _ = _bl_gv_run(db, G("bl_setv", _rs("bl_k4")))
+    append!(ours, l4s)
+    p4 = LK._gvar_reach(ld)
+    fb4 = ld.frozen_bar
+    @test fb4 >= p4 > 0
+    @test ld.query == 0 && ld.exception_term == 0 && ld.nfliframes == 1     # only emptyStacks' base frame is open
+    LK._release_frozen!(ld, LK.mark(length(ld.trail), p4 - 1, ld.mark_bar), false)
+    @test ld.frozen_bar == fb4
+    LK._release_frozen!(ld, LK.mark(length(ld.trail), p4, ld.mark_bar), false)
+    @test ld.frozen_bar == 0
+    if _R_SWIPL
+        gs = _R[G("bl_setthr", _rs("bl_k1")), G("bl_get", _rs("bl_k1"), _rv(60)),
+            G("bl_set", _rs("bl_k2")),
+            G("bl_thr", _rs("bl_k2")), G("bl_get", _rs("bl_k2"), _rv(60)),
+            G("bl_set", _rs("bl_k3")),
+            G("bl_thr", _rs("bl_k3")), G("bl_get", _rs("bl_k3"), _rv(60)),
+            G("bl_setv", _rs("bl_k4"))]
+        theirs = _rswipl(Tuple{_R, Union{Nothing, _R}}[], gs; extra=_BL_GV)
+        @test ours == theirs
+        ours == theirs || @info "ENG2a differential" ours theirs
+    elseif _R_SWIPL_REQUIRED
+        @test false
+    end
+end
+
 @testset "white-box: the throw freezes the ball; an Undo! to an older mark keeps it" begin
     db = _rdb(Tuple{_R, Union{Nothing, _R}}[])
     ld = db.ld
