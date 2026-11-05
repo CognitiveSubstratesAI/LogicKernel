@@ -166,7 +166,7 @@ end
 # PORT: pl-proc.c hasClausesDefinition
 # DIVERGES: no `acquire_def`/`release_def` around the walk — with no threads, clause GC cannot run
 # during it. DIVERGES (representation): global field standing in for LD->reload.generation, owner TH1 (the function has the database
-# only: `gd.reload_generation`, written next to the local data's value by `startReconsultFile`). The `P_FOREIGN|P_THREAD_LOCAL` test is upstream's: a built-in is foreign since V5a2, so
+# only: `gd.reload_generation`, written by `startReconsultFile`). The `P_FOREIGN|P_THREAD_LOCAL` test is upstream's: a built-in is foreign since V5a2, so
 # it has no clauses here, as upstream; a thread-local definition (since LB2) answers `nothing` (its clauses are the
 # local definition's: `_hasLocalClausesDefinition`).
 """
@@ -2923,7 +2923,7 @@ function pl_get_predicate_attribute3_va(
     elseif k == sym_key(mk_sym(T, :size))
         return PL_unify_integer(ld, value, sizeof_predicate(def)) ? FTRUE : FFALSE
     elseif k == sym_key(mk_sym(T, :primary_index))
-        clist.pindex_verified || update_primary_index!(def, ld.reload_generation)
+        clist.pindex_verified || update_primary_index!(def, gd.reload_generation)
         if !clist.unindexed
             return if PL_unify_integer(ld, value, Int(clist.primary_index) + 1)
                 FTRUE

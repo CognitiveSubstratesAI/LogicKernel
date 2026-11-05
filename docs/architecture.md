@@ -7422,9 +7422,10 @@ pl-global.h:892-899 (`LD->reload`). Plan and rulings: evidence/LB6/plan.md and h
   `destroySourceFile`, SRC2's three predicates and the `$fixup_reconsult/1` reload arm are LB6b's. The swipl-compared reload rows (exports, clause lists after a reload,
   `source_file_property`) are LB6b's too; LB6a's rows are white-box (Julia calls on a hand-built reload context), each marked UNVERIFIED on the kernel.
 - **DIVERGES (each in a comment at its site):**
-  - *representation, owner TH1:* `gd.reload_generation` (a field of `PL_global_data`) stands in for `LD->reload.generation` where a function has the database and no local data
-    (`hasClausesDefinition` and so `isDefinedProcedure`, `_hasLocalClausesDefinition`, `num_visible_clauses`, `getClauses`, `setDefaultSupervisor`; audit QUESTION 6, option B).
-    `startReconsultFile` writes it next to `ld.reload_generation`; `endReconsult` (LB6b) must clear BOTH. `GEN_RELOAD = GEN_MAX-1` is the value of upstream's non-threaded
+  - *representation, owner TH1:* `gd.reload_generation` (a field of `PL_global_data`) stands in for `LD->reload.generation` and is its ONLY copy (audit D-0416 item 3; the local data has
+    no such field). A function that has the database reads it directly (`hasClausesDefinition` and so `isDefinedProcedure`, `_hasLocalClausesDefinition`, `num_visible_clauses`,
+    `getClauses`, `setDefaultSupervisor`); one that has the local data reads it through `ld.GD` (`visibleClause`/`visibleClauseCNT` with `ld`, `firstClause!`, `nextClause!`, which
+    refresh the index context from it at every entry, D-0415 item 1). `startReconsultFile` writes it; `endReconsult` (LB6b) must clear it. `LD->reload.nesting` stays in the local data (`ld.reload_nesting`). `GEN_RELOAD = GEN_MAX-1` is the value of upstream's non-threaded
     branch (pl-srcfile.c:896); the per-thread value is TH1's. Thread-local predicates (`P_THREAD_LOCAL` arms) are TH1's; no lock, no `acquire_def`/`release_def`.
   - *representation, owner LB6b (the step that wires clause reclamation and `endReconsult`; audit D-0416 item 5):* `visibleClause(cl, gen, rgen)` skips the two reload tests when
     `rgen == GEN_INVALID` (0), because the kernel's generations start at 0 where upstream's start at 1. The guard is named at its site (src/pl-inline.jl).
@@ -7443,12 +7444,12 @@ pl-global.h:892-899 (`LD->reload`). Plan and rulings: evidence/LB6/plan.md and h
     reclamation is LB6b's group g (with a row). `untable_from_clause` (owner TAB1) and `clearBreakPointsClause` (owner DBG1) are left out.
   - *`setAttrProcedureSource` and `setMetapredicateSource` take `gd` FIRST* (callers `$set_predicate_attribute` and `meta_declaration` updated); a reloaded non-multifile predicate with no meta
     declaration has `args == nothing`, so `equal_meta` is false and `fix_metapredicate` runs `freeCodesDefinition!` for every reloaded predicate, as upstream (its `args` is NULL).
-- **Struct changes (Tier 1; the allocation pins MUST be re-measured on all three term types at the gate):** `PL_local_data` +2 fields (`reload_generation::gen_t`, `reload_nesting::Int`, appended last,
-  positional constructor tail `GEN_INVALID, 0`), `PL_global_data` +1 field (`reload_generation::gen_t`, last; constructor argument in src/pl-setup.jl), `sourceFile.reload` (one positional
+- **Struct changes (Tier 1; the allocation pins MUST be re-measured on all three term types at the gate):** `PL_local_data` +1 field (`reload_nesting::Int`, appended last,
+  positional constructor tail `0`), `PL_global_data` +1 field (`reload_generation::gen_t`, last; constructor argument in src/pl-setup.jl), `sourceFile.reload` (one positional
   constructor call site in `lookupSourceFile_unlocked`), flags `P_NEW`, `P_NO_CLAUSES`, `P_CHECK_SSU` (FLAG64 37-39), `P_ATEND`; `index_context.reload_generation` (last field). A struct change restarts the daemon
   (a cold compile). Signature changes: `visibleClause`, `visibleClauseCNT`, `STATIC_RELOADING` and `update_primary_index!` take the reload generation (a 1-argument `update_primary_index!` stays for callers
-  outside a reload), `_index_context!` has a new last argument. The manifest (test/static_analysis_manifest.jl) gains the entries of the new functions with `must_not_allocate = false` until the gate measures.
-- **Tests / mutants:** test/db/test_reload_blocks_swipl.jl (white-box rows r01-r22, r04b (two files reloading in turn, D-0416 item 3) and the Q1, Q3, Q6, A12, A19, A20, A26/A27 testsets), tools/mutants/LB6A.py (38 mutants; TARGETS follow D-0238:
+  outside a reload), `_index_context!` has a new last argument (`rgen`, read by `firstClause!`/`nextClause!` from `ld.GD.reload_generation`). The manifest (test/static_analysis_manifest.jl) gains the entries of the new functions with `must_not_allocate = false` until the gate measures.
+- **Tests / mutants:** test/db/test_reload_blocks_swipl.jl (white-box rows r01-r22, r04b (two files reloading in turn, D-0416 item 3) and the Q1, Q3, Q6, A12, A19, A20, A26/A27 testsets), tools/mutants/LB6A.py (39 mutants; TARGETS follow D-0238:
   the new file plus the files that exercise the mutated visibility and index code). The tests index_testlib.jl and test_procedures.jl use the 3-argument `visibleClause` with `GEN_INVALID`.
 - **Left out of this step:** `endReconsult` and the rest of LB6b above; the wiring of `freeClause!` into clause reclamation; `untable_from_clause` (TAB1); breakpoints (DBG1); thread-local
   predicates and the per-thread reload generation (TH1). `tools/warm.sh inventory` regenerates docs/port_inventory.md and the R2 block of this file (function counts move; predicate and refusal counts do not).

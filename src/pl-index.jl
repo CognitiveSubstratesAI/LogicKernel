@@ -66,7 +66,7 @@ const MIN_CLAUSES_FOR_INDEX = 10
 # `active` is set on entry, cleared on exit and asserted clear on entry, so a violation — the VM,
 # nested queries, deeper indexing may one day cause one — fails loudly, never corrupting a search.
 # `reload_generation` (R2 LB6a) is upstream's `LD->reload.generation`, which `visibleClause` and `STATIC_RELOADING` read for every
-# clause: representation only, it is copied from the local data at EVERY entry into a search (`_index_context!`: the first call and
+# clause: representation only, it is copied from the database (`ld.GD.reload_generation`, the one copy) at EVERY entry into a search (`_index_context!`: the first call and
 # each redo/resume, as a choice point resumes the search), not at every clause.
 "The state of one clause search (pl-index.c `index_context`)."
 mutable struct index_context{T}
@@ -100,7 +100,7 @@ end
 hash_hints() = hash_hints(0.0f0, false, 0x00, (0x00, 0x00, 0x00, 0x00))
 
 # PORT: pl-index.c STATIC_RELOADING
-# DIVERGES: `rgen` is `LD->reload.generation` (see `index_context`): the search's `ctx.reload_generation`, or the local data's.
+# DIVERGES: `rgen` is `LD->reload.generation` (see `index_context`): the search's `ctx.reload_generation`, or the database's.
 "True while a static predicate is being reloaded: a reload is running (`rgen`) and `def` is not dynamic (pl-index.c)."
 STATIC_RELOADING(rgen::gen_t, def::definition)::Bool = rgen != GEN_INVALID && (def.flags & P_DYNAMIC) == 0
 
@@ -617,11 +617,11 @@ call was a heap allocation on every `nextClause!` — every step of every enumer
 """
 function _index_context!(
     ctx::index_context{T}, generation::gen_t, def::Definition{T}, chp::ClauseChoice{T},
-    ld_reload_generation::gen_t
+    rgen::gen_t
 )::index_context{T} where {T}
     @assert !ctx.active "firstClause!/nextClause! re-entered: the shared index_context is in use"
     ctx.active = true
-    ctx.reload_generation = ld_reload_generation
+    ctx.reload_generation = rgen
     ctx.generation = generation
     ctx.predicate = def
     ctx.chp = chp
@@ -644,7 +644,7 @@ The first clause of `def` that may match the call whose arguments `argv` views (
 function firstClause!(
     ld, argv::A, generation::gen_t, def::Definition{T}, chp::ClauseChoice{T}
 )::Union{Nothing, ClauseRef{T}} where {T, A}
-    ctx = _index_context!(ld.index_ctx::index_context{T}, generation, def, chp, ld.reload_generation::gen_t)
+    ctx = _index_context!(ld.index_ctx::index_context{T}, generation, def, chp, (ld.GD::PL_global_data{T}).reload_generation)
     try
         return first_clause_guarded!(argv, def.arity, def.impl_clauses, ctx)
     finally
@@ -663,7 +663,7 @@ The next candidate clause after the ones `chp` has produced (pl-index.c).
 function nextClause!(
     ld, chp::ClauseChoice{T}, argv::A, generation::gen_t, def::Definition{T}
 )::Union{Nothing, ClauseRef{T}} where {T, A}
-    ctx = _index_context!(ld.index_ctx::index_context{T}, generation, def, chp, ld.reload_generation::gen_t)
+    ctx = _index_context!(ld.index_ctx::index_context{T}, generation, def, chp, (ld.GD::PL_global_data{T}).reload_generation)
     try
         if chp.key == 0                 # not indexed
             return next_clause_unindexed!(ctx)
@@ -2576,7 +2576,7 @@ function update_primary_index!(def::Definition{T}, rgen::gen_t)::Nothing where {
     return nothing
 end
 
-# DIVERGES (no upstream function): a caller outside any reload — the tests' database builders — has no local data to read
+# DIVERGES (no upstream function): a caller outside any reload — the tests' database builders — has no database to read
 # `reload_generation` from; the value is GEN_INVALID.
 "`update_primary_index!` for a caller outside a reload (R2 LB6a)."
 update_primary_index!(def::Definition) = update_primary_index!(def, GEN_INVALID)

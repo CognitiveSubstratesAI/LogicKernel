@@ -8,7 +8,8 @@
 # (the index walk, nth_clause, retract, clause/2), the source-file file for the addProcedureSourceFile arm, and test_procedures.jl.
 # Rows the audit (D-0415) asked for, and the mutant that pins each: Q1 refresh at every entry -> A21; Q3 identity (1 vs 1.0, 0.0 vs -0.0,
 # a NaN pair, equal codes with different literals) -> A13, A13b, A13c.
-# D-0416 item 3: two files reloading in turn, the generation after each (row r04b) -> A6c (a stale copy in the local data).
+# D-0416 item 3: ONE copy of the reload generation, `gd.reload_generation`; two files reloading in turn, the generation after each (row r04b) -> A6d, A6e
+# (the two `ld` readers; the write is A6b's). A mutant on `_rb_end!` (the test's stand-in for LB6b's `endReconsult`) is the end's mutant at LB6b.
 TW = ["test/db/test_reload_blocks_swipl.jl"]
 TS = ["test/db/test_source_file_swipl.jl"]
 TV = [
@@ -41,9 +42,12 @@ MUTANTS = [
     dict(id="LB6A-A6 reload_nesting is not incremented", file=S, targets=TW,
          old="    ld.reload_nesting += 1\n",
          new="    nothing\n"),
-    dict(id="LB6A-A6c the local data's copy of the reload generation is written only when it is GEN_INVALID: a stale copy survives the next file (D-0416 item 3)", file=S, targets=TW + TV,
-         old="    ld.reload_generation = r.reload_gen\n",
-         new="    ld.reload_generation == GEN_INVALID && (ld.reload_generation = r.reload_gen)\n"),
+    dict(id="LB6A-A6d visibleClause with `ld` ignores the database's reload generation (the one copy)", file=I, targets=TW + TV,
+         old="visibleClause(ld, cl::clause, gen::gen_t)::Bool = visibleClause(cl, gen, (ld.GD::PL_global_data).reload_generation)",
+         new="visibleClause(ld, cl::clause, gen::gen_t)::Bool = visibleClause(cl, gen, GEN_INVALID)"),
+    dict(id="LB6A-A6e visibleClauseCNT with `ld` ignores the database's reload generation (the one copy)", file=I, targets=TW + TV,
+         old="visibleClauseCNT(ld, cl::clause, gen::gen_t)::Bool = visibleClause(cl, gen, (ld.GD::PL_global_data).reload_generation)",
+         new="visibleClauseCNT(ld, cl::clause, gen::gen_t)::Bool = visibleClause(cl, gen, GEN_INVALID)"),
     dict(id="LB6A-A6b the global copy of the reload generation is not written (QUESTION 6)", file=S, targets=TW + TV,
          old="    gd.reload_generation = r.reload_gen",
          new="    gd.reload_generation = GEN_INVALID"),
@@ -67,7 +71,7 @@ MUTANTS = [
          old="global_generation(gd), gd.reload_generation)",
          new="global_generation(gd), GEN_INVALID)"),
     dict(id="LB6A-A21 the search's reload generation is copied only when the context is made (D-0415 item 1: a reload started between two solutions)", file=X, targets=TW + TV,
-         old="    ctx.reload_generation = ld_reload_generation\n",
+         old="    ctx.reload_generation = rgen\n",
          new="    nothing\n"),
     # ── the leaf functions ──
     dict(id="LB6A-A11 keep_clause leaves generation_erased at the reload generation", file=S, targets=TW,

@@ -112,7 +112,7 @@ mutable struct PL_global_data{T}
     procedures_call_continuation1::Procedure{T}                 # procedures.call_continuation1: call_continuation/1 (R2 CONT1)
     procedures_dmeta_call1::Procedure{T}                        # procedures.dmeta_call1: '$meta_call'/1 (R2 CONT1)
     procedures_findall_loop4::Procedure{T}                      # procedures.findall_loop4: '$bags':findall_loop/4, looked up by findReset (R2 CONT1)
-    reload_generation::gen_t                                    # a copy of the local data's reload generation: GEN_INVALID (0) unless a file is being reloaded (R2 LB6a; ORIGINAL, owner TH1)
+    reload_generation::gen_t                                    # reload.generation: GEN_INVALID (0) unless a file is being reloaded (R2 LB6a; DIVERGES, owner TH1: LD->reload.generation, kept here)
 end
 # DIVERGES: `atoms` is upstream's `GD->atoms` as a struct of its own (src/pl-atom.jl), one table per
 # database, built first as upstream's `initAtoms` runs first; `functors` likewise `GD->functors` with
@@ -154,10 +154,11 @@ end
 # Since TAB1-min: `closure_refs` (the closures a `closure` blob names, as `clause_refs`; pl-wrap.c keeps the `struct closure`
 # in the blob's payload, src/pl-wrap.jl).
 # Since R2's LB2b: `paths_CWDdir`, `GD->paths.CWDdir` (pl-global.h), the working directory `PL_cwd` caches and `ChDir` sets (src/os/pl-os.jl).
-# Since R2 LB6a: `reload_generation`, ORIGINAL (no upstream field): the value of `LD->reload.generation` for the functions that have the database
-# but no local data (`hasClausesDefinition` and what calls it, `num_visible_clauses`, `getClauses`, `setDefaultSupervisor`; audit ruling on QUESTION 6
-# of evidence/LB6/handoff.md). `startReconsultFile` writes it next to the local data's value, `endReconsult` (LB6b) clears both. One thread, so one
-# value; TH1 removes the field when the local data is reachable from those functions.
+# Since R2 LB6a: `reload_generation`, DIVERGES (representation, owner TH1): upstream's `LD->reload.generation` is per thread; the kernel has one thread,
+# so ONE copy lives here and nothing keeps a second in the local data (audit D-0416 item 3). `startReconsultFile` writes it and `endReconsult` (LB6b)
+# clears it; every reader takes it from the database: the functions that have `gd` (`hasClausesDefinition` and what calls it, `num_visible_clauses`,
+# `getClauses`, `setDefaultSupervisor`) directly, the ones that have `ld` (`visibleClause`/`visibleClauseCNT` with `ld`, `firstClause!`, `nextClause!`)
+# through `ld.GD`. TH1 moves the field into the local data when a thread has a local data of its own.
 
 # PORT: pl-incl.h cleanup_status as CLN_NORMAL
 # DIVERGES: the enum's values as `Int` constants (`halt_cleaning` is an `Int`), pl-incl.h:1054-1060.
@@ -390,8 +391,9 @@ ld_statistics() = ld_statistics(0, 0, 0, 0, WallTime(), 0.0, 0.0, 0.0, 0.0)
 # (src/pl-proc.jl `autoLoader`, `test_autoload_loop`). Upstream sets both to NULL in `resetProlog` (pl-pro.c:89-90); since R2 TOP1
 # `resetProlog` (src/pl-pro.jl) empties the vector and sets the loop mark to `nothing`, and `query_loop` calls it before every run
 # (this A2 DIVERGES is resolved); a new local data starts empty.
-# Since R2 LB6a: `reload_generation` and `reload_nesting`, upstream's `LD->reload.generation` and `.nesting` (pl-global.h:892-894), appended
-# last. `reload_generation` is GEN_INVALID unless `startReconsultFile` (src/pl-srcfile.jl) set it; `visibleClause` and `STATIC_RELOADING` read it.
+# Since R2 LB6a: `reload_nesting`, upstream's `LD->reload.nesting` (pl-global.h:892-894), appended last: how deeply reconsult is nested, written by
+# `startReconsultFile` (src/pl-srcfile.jl). Upstream's `.generation` is NOT a field of this struct: `gd.reload_generation` is its single copy (see
+# `PL_global_data`; audit D-0416 item 3).
 """
     PL_local_data{T}(gd)
 
@@ -540,7 +542,6 @@ mutable struct PL_local_data{T}
     autoload_nesting::Vector{definition{T}}                     # autoload.nesting: the autoloader's chain, the innermost last (R2 AUTOLOAD1 A2)
     autoload_loop::Union{Nothing, definition{T}}                # autoload.loop: we are looping on this def (nothing: NULL)
     in_print_message::Int                                       # in_print_message: inside printMessage() (R2 LB4 b2)
-    reload_generation::gen_t                                    # reload.generation: GEN_INVALID (0) unless a file is being reloaded (R2 LB6a)
     reload_nesting::Int                                         # reload.nesting: how deeply is reconsult nested
 end
 function PL_local_data{T}(gd::PL_global_data{T}) where {T}
@@ -642,8 +643,7 @@ function PL_local_data{T}(gd::PL_global_data{T}) where {T}
         definition{T}[],                        # autoload.nesting: NULL (R2 AUTOLOAD1 A2)
         nothing,                                # autoload.loop: NULL
         0,                                      # in_print_message: not inside printMessage() (pl-pro.c:82)
-        GEN_INVALID,                            # reload.generation: no file is being reloaded (R2 LB6a)
-        0                                       # reload.nesting
+        0                                       # reload.nesting (the generation is gd.reload_generation)
     )
     allocStacks!(ld)                            # the initial local stack, its spare reserved
     emptyStacks!(ld)

@@ -69,7 +69,7 @@ end
 # PORT: pl-inline.h visibleClause
 # (swipl-devel cbf4e189, src/pl-inline.h:655-680)
 # DIVERGES: upstream reads `LD->reload.generation`; this core takes the value as `rgen`, and the form with `ld` below passes
-# `ld.reload_generation` (R2 LB6a, QUESTION 1 option B: a search holds the value in its `index_context`). The transaction case is
+# `ld.GD.reload_generation`, the one copy (R2 LB6a, QUESTION 1 option B: a search holds the value in its `index_context`). The transaction case is
 # not ported (no transactions). `rgen` is GEN_INVALID (0) outside a reload, and then the two tests are skipped: the kernel's generations start at 0, where upstream's start at 1, so a clause of generation 0 must not match.
 # DIVERGES (representation; owner LB6b, the step that wires clause reclamation and `endReconsult`): the `rgen != GEN_INVALID` guard is this port's, upstream has none; LB6b revisits it
 # when generations start at 1 or when reclamation makes a clause of generation 0 reachable.
@@ -91,8 +91,8 @@ function visibleClause(cl::clause, gen::gen_t, rgen::gen_t)::Bool
     return false
 end
 
-"`visibleClause` for the local data `ld`: `rgen` is `ld.reload_generation` (pl-inline.h `LD->reload.generation`)."
-visibleClause(ld, cl::clause, gen::gen_t)::Bool = visibleClause(cl, gen, ld.reload_generation::gen_t)
+"`visibleClause` for the local data `ld`: `rgen` is `ld.GD.reload_generation` (pl-inline.h `LD->reload.generation`; the one copy is the database's, audit D-0416 item 3)."
+visibleClause(ld, cl::clause, gen::gen_t)::Bool = visibleClause(cl, gen, (ld.GD::PL_global_data).reload_generation)
 
 # PORT: pl-inline.h visibleClauseCNT
 # DIVERGES: the erased-skipped statistic is not kept.
@@ -100,7 +100,7 @@ visibleClause(ld, cl::clause, gen::gen_t)::Bool = visibleClause(cl, gen, ld.relo
 visibleClauseCNT(cl::clause, gen::gen_t, rgen::gen_t)::Bool = visibleClause(cl, gen, rgen)
 
 "`visibleClauseCNT` for the local data `ld` (pl-inline.h)."
-visibleClauseCNT(ld, cl::clause, gen::gen_t)::Bool = visibleClause(cl, gen, ld.reload_generation::gen_t)
+visibleClauseCNT(ld, cl::clause, gen::gen_t)::Bool = visibleClause(cl, gen, (ld.GD::PL_global_data).reload_generation)
 
 # PORT: pl-inline.h global_generation
 "The generation of the database (pl-inline.h)."

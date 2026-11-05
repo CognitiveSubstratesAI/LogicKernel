@@ -109,9 +109,8 @@ function _rb_args(ms::UInt8...)::Vector{LK.arg_info}
     return out
 end
 
-"What `endReconsult` (LB6b) does to the three values `startReconsultFile` writes."
+"What `endReconsult` (LB6b) does to the two values `startReconsultFile` writes."
 function _rb_end!(db::IxDB)::Nothing
-    db.ld.reload_generation = LK.GEN_INVALID
     db.gd.reload_generation = LK.GEN_INVALID
     db.ld.reload_nesting = 0
     return nothing
@@ -177,7 +176,7 @@ end
     @test length(allcl) == 2 + 1 + 3 + 2 + 3 && all(cl -> cl.generation_erased == LK.GEN_MAX, allcl)
     @test s1 in sfA.procedures && s2 in sfA.procedures && mf in sfA.procedures && dy in sfA.procedures && q in sfA.procedures
     @test sfA.index != sfB.index && sfA.reload === nothing
-    @test ld.reload_generation == LK.GEN_INVALID && gd.reload_generation == LK.GEN_INVALID && ld.reload_nesting == 0
+    @test gd.reload_generation == LK.GEN_INVALID && ld.reload_nesting == 0
     for proc in sfA.procedures
         proc.definition.flags |= LK.P_DISCONTIGUOUS | LK.P_AUTOLOAD
     end
@@ -217,7 +216,7 @@ end
     @test LK.P_RELOADING == LK.P_MODIFIED                              # one bit, pl-incl.h:1127 (swipl's own alias)
     rl = sfA.reload
     @test rl !== nothing && rl.reload_gen == LK.GEN_RELOAD && isempty(rl.procedures) && isempty(rl.modules) && rl.number_of_clauses == 0
-    @test ld.reload_generation == LK.GEN_RELOAD && gd.reload_generation == LK.GEN_RELOAD
+    @test gd.reload_generation == LK.GEN_RELOAD
     @test ld.reload_nesting == 1
     # nesting 2 after a second start (another file; the C counter, `endReconsult` decrements it in LB6b)
     @test LK.startReconsultFile(gd, ld, sfB)
@@ -228,33 +227,41 @@ end
     _rb_end!(db)
 end
 
-# r04b (audit D-0416 item 3, LB6a Q6): two files reloading IN TURN: the generation after each. One source of truth: `startReconsultFile` writes the value (the
-# local data's `LD->reload.generation` and the global stand-in `gd.reload_generation`, owner TH1), `endReconsult` (LB6b; here `_rb_end!`, the same three writes)
-# clears it, and nothing keeps a copy that outlives the file. `endReconsult` does not exist before LB6b, so the row calls `_rb_end!`, the helper that does what it does
-# to these values; the stale value between the files is planted by hand because the generation is the constant GEN_RELOAD and a stale copy would otherwise read the same.
+# r04b (audit D-0416 item 3, LB6a Q6): two files reloading IN TURN: the generation after each. ONE source of truth: `gd.reload_generation`. `startReconsultFile` writes it
+# (it stands in for `LD->reload.generation`, owner TH1) and `endReconsult` (LB6b; here `_rb_end!`, the same write) clears it; the local data keeps NO copy (it has no such field),
+# and its readers (`visibleClause` with `ld`, `firstClause!`, `nextClause!`) reach the value through `ld.GD`. `endReconsult` does not exist before LB6b, so the row calls
+# `_rb_end!`, the helper that does what it does to these values.
 @testset "r04b two files reloading in turn: the reload generation after each start and each end" begin
     db = IxDB{_RB}()
     gd, ld = db.gd, db.ld
     sfA = _rb_sf(db, "/lb6a/turn_a.pl")
     sfB = _rb_sf(db, "/lb6a/turn_b.pl")
     @test sfA.index != sfB.index && sfA.reload === nothing && sfB.reload === nothing
-    @test gd.reload_generation == LK.GEN_INVALID && ld.reload_generation == LK.GEN_INVALID && ld.reload_nesting == 0
-    # file A: started, the generation is the reload generation on both sides; ended, it is gone
+    @test !hasfield(typeof(ld), :reload_generation) && hasfield(typeof(ld), :reload_nesting)    # no second copy in the local data
+    @test ld.GD === gd                                                                            # the local data's readers reach the one copy through it
+    @test gd.reload_generation == LK.GEN_INVALID && ld.reload_nesting == 0
+    # a clause no file owns, erased at the reload generation: the `ld` forms of the visibility test read the one copy, so they follow it start and end
+    tv = _rb_proc(db, :tv, 1)
+    cl = _rb_clause(db, sfA, tv, _rb_p(_RB, :tv, 1))               # compiled, not asserted: `startReconsultFile` does not mark it
+    g = LK.gen_t(20)
+    cl.generation_created = LK.gen_t(3); cl.generation_erased = LK.GEN_RELOAD
+    @test LK.visibleClause(ld, cl, g) && LK.visibleClauseCNT(ld, cl, g)               # outside a reload: the plain rule
+    # file A: started, the generation is the reload generation; ended, it is gone
     @test LK.startReconsultFile(gd, ld, sfA)
-    @test gd.reload_generation == LK.GEN_RELOAD && ld.reload_generation == LK.GEN_RELOAD && ld.reload_nesting == 1
+    @test gd.reload_generation == LK.GEN_RELOAD && ld.reload_nesting == 1
     @test sfA.reload !== nothing && sfA.reload.reload_gen == gd.reload_generation
+    @test !LK.visibleClause(ld, cl, g) && !LK.visibleClauseCNT(ld, cl, g)             # during A: the reload rule
     _rb_end!(db)
-    @test gd.reload_generation == LK.GEN_INVALID && ld.reload_generation == LK.GEN_INVALID && ld.reload_nesting == 0
-    # a stale value left in the local data between the files (the thing a second copy would be): file B's start overwrites it, so the two agree
-    stale = LK.gen_t(7)
-    @test stale != LK.GEN_RELOAD && stale != LK.GEN_INVALID
-    ld.reload_generation = stale
+    @test gd.reload_generation == LK.GEN_INVALID && ld.reload_nesting == 0
+    @test LK.visibleClause(ld, cl, g) && LK.visibleClauseCNT(ld, cl, g)               # after A: the plain rule again
+    # file B in turn: its own reload context, the generation is the reload generation again; ended, it is gone
     @test LK.startReconsultFile(gd, ld, sfB)
-    @test gd.reload_generation == LK.GEN_RELOAD && ld.reload_generation == LK.GEN_RELOAD && ld.reload_nesting == 1
+    @test gd.reload_generation == LK.GEN_RELOAD && ld.reload_nesting == 1
     @test sfB.reload !== nothing && sfB.reload !== sfA.reload && sfB.reload.reload_gen == gd.reload_generation
-    @test ld.reload_generation == gd.reload_generation                              # one value, read through either name
+    @test !LK.visibleClause(ld, cl, g) && !LK.visibleClauseCNT(ld, cl, g)             # during B: the reload rule
     _rb_end!(db)
-    @test gd.reload_generation == LK.GEN_INVALID && ld.reload_generation == LK.GEN_INVALID && ld.reload_nesting == 0
+    @test gd.reload_generation == LK.GEN_INVALID && ld.reload_nesting == 0
+    @test LK.visibleClause(ld, cl, g) && LK.visibleClauseCNT(ld, cl, g)
 end
 
 # ========================================================================================================
@@ -286,13 +293,13 @@ end
     @test !LK.visibleClause(cl, g, R) && !LK.visibleClause(cl, g, LK.GEN_INVALID)
     cl.generation_created = LK.gen_t(30); cl.generation_erased = LK.GEN_MAX
     @test !LK.visibleClause(cl, g, R) && !LK.visibleClause(cl, g, LK.GEN_INVALID)
-    # r07: the `ld` form reads ld.reload_generation: outside a reload it is the plain rule, inside it the reload rule
+    # r07: the `ld` form reads gd.reload_generation (through ld.GD): outside a reload it is the plain rule, inside it the reload rule
     cl.generation_created = LK.gen_t(3); cl.generation_erased = R
-    @test ld.reload_generation == LK.GEN_INVALID
+    @test db.gd.reload_generation == LK.GEN_INVALID
     @test LK.visibleClause(ld, cl, g) && LK.visibleClauseCNT(ld, cl, g)
-    ld.reload_generation = R
+    db.gd.reload_generation = R
     @test !LK.visibleClause(ld, cl, g) && !LK.visibleClauseCNT(ld, cl, g)
-    ld.reload_generation = LK.GEN_INVALID
+    db.gd.reload_generation = LK.GEN_INVALID
     # STATIC_RELOADING (pl-index.c:159-160): static and reloading only
     dyn = _rb_proc(db, :vd, 1)
     LK.setDynamicDefinition!(dyn.definition, true)
@@ -333,7 +340,7 @@ end
         c = LK.firstClause!(ld, argv, gen, def, chp)
         first_found[] = c !== nothing
         more_before[] = chp.cref !== nothing
-        @test ld.reload_generation == LK.GEN_INVALID                 # the first call ran with no reload
+        @test gd.reload_generation == LK.GEN_INVALID                 # the first call ran with no reload
         LK.startReconsultFile(gd, ld, sfA)                           # q's clauses are now erased at the reload generation
         second[] = LK.nextClause!(ld, chp, argv, gen, def)           # redo: the value is read again at this entry (A21)
     end
