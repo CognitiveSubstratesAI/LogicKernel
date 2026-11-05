@@ -65,6 +65,9 @@ const MIN_CLAUSES_FOR_INDEX = 10
 # `_index_context!`), which is safe only while firstClause/nextClause are never re-entered mid-call;
 # `active` is set on entry, cleared on exit and asserted clear on entry, so a violation — the VM,
 # nested queries, deeper indexing may one day cause one — fails loudly, never corrupting a search.
+# `reload_generation` (R2 LB6a) is upstream's `LD->reload.generation`, which `visibleClause` and `STATIC_RELOADING` read for every
+# clause: representation only, it is copied from the local data at EVERY entry into a search (`_index_context!`: the first call and
+# each redo/resume, as a choice point resumes the search), not at every clause.
 "The state of one clause search (pl-index.c `index_context`)."
 mutable struct index_context{T}
     generation::gen_t                               # Current generation
@@ -73,6 +76,7 @@ mutable struct index_context{T}
     depth::Int                                      # current depth (0..)
     position::NTuple{MAXINDEXDEPTH + 1, iarg_t}     # Keep track of argument position
     active::Bool                                    # a search is using it (re-entrance guard)
+    reload_generation::gen_t                        # LD->reload.generation, read at every entry into a search (R2 LB6a)
 end
 
 "A position path holding only `END_INDEX_POS` — upstream's `.position[0] = END_INDEX_POS`."
@@ -96,10 +100,9 @@ end
 hash_hints() = hash_hints(0.0f0, false, 0x00, (0x00, 0x00, 0x00, 0x00))
 
 # PORT: pl-index.c STATIC_RELOADING
-# DIVERGES: upstream tests LD->reload.generation (a source file being reloaded). There is no reload
-# yet, so it is never true.
-"True while a static predicate is being reloaded (pl-index.c) — never, until reload exists."
-STATIC_RELOADING(def::definition)::Bool = false
+# DIVERGES: `rgen` is `LD->reload.generation` (see `index_context`): the search's `ctx.reload_generation`, or the local data's.
+"True while a static predicate is being reloaded: a reload is running (`rgen`) and `def` is not dynamic (pl-index.c)."
+STATIC_RELOADING(rgen::gen_t, def::definition)::Bool = rgen != GEN_INVALID && (def.flags & P_DYNAMIC) == 0
 
 # PORT: pl-index.c cref_matches
 "Same as `!cref->d.key || cref->d.key == k` (pl-index.c)."
@@ -235,7 +238,7 @@ function next_clause_unindexed!(
     else
         cref = chp.cref
         while cref !== nothing
-            if visibleClauseCNT(cref.clause::Clause{T}, ctx.generation)
+            if visibleClauseCNT(cref.clause::Clause{T}, ctx.generation, ctx.reload_generation)
                 chp.key = 0
                 setClauseChoice!(cref.next, ctx)
                 return cref
@@ -279,13 +282,13 @@ function next_clause_primary_index!(
         cref = chp.cref
         while cref !== nothing
             if cref_matches(cref, key) &&
-                visibleClauseCNT(cref.clause::Clause{T}, ctx.generation)
+                visibleClauseCNT(cref.clause::Clause{T}, ctx.generation, ctx.reload_generation)
                 result = cref
                 maxsearch = MAX_LOOKAHEAD
                 cref = cref.next
                 while cref !== nothing
                     if cref_matches(cref, key)
-                        if visibleClauseCNT(cref.clause::Clause{T}, ctx.generation)
+                        if visibleClauseCNT(cref.clause::Clause{T}, ctx.generation, ctx.reload_generation)
                             chp.cref = cref
                             return result
                         end
@@ -365,7 +368,7 @@ function setClauseChoice!(
     cref::Union{Nothing, ClauseRef{T}}, ctx::index_context{T}
 )::Nothing where {T}
     if !is_clean_predicate(ctx.predicate)                               # O_INDEX_STATIC
-        while cref !== nothing && !visibleClauseCNT(cref.clause::Clause{T}, ctx.generation)
+        while cref !== nothing && !visibleClauseCNT(cref.clause::Clause{T}, ctx.generation, ctx.reload_generation)
             cref = cref.next
         end
     end
@@ -518,7 +521,7 @@ function first_clause_guarded!(
     if pkey != 0 && ctx.depth == 0 &&
         (
             clist.number_of_clauses <= MIN_CLAUSES_FOR_INDEX ||
-            STATIC_RELOADING(ctx.predicate)
+            STATIC_RELOADING(ctx.reload_generation, ctx.predicate)
         )
         chp.key = pkey
         chp.cref = clist.first_clause
@@ -538,7 +541,7 @@ function first_clause_guarded!(
         if best_index !== nothing
             chp.key = k
             if !best_index.good
-                if !clist.fixed_indexes && !STATIC_RELOADING(ctx.predicate) &&
+                if !clist.fixed_indexes && !STATIC_RELOADING(ctx.reload_generation, ctx.predicate) &&
                     consider_better_index(best_index.speedup, clist.number_of_clauses)
                     ci = createIndex!(argv, argc, clist, best_index, ctx)
                     if ci !== nothing
@@ -580,7 +583,7 @@ function first_clause_guarded!(
         set_candidate_indexes!(ctx.predicate, clist, 10, true)
         @goto retry
     end
-    if !STATIC_RELOADING(ctx.predicate)
+    if !STATIC_RELOADING(ctx.reload_generation, ctx.predicate)
         ci = createIndex!(argv, argc, clist, nothing, ctx)
         if ci !== nothing
             if ci === CI_RETRY
@@ -613,10 +616,12 @@ BETWEEN calls, and resets it in turn), and nothing keeps the context past the ca
 call was a heap allocation on every `nextClause!` — every step of every enumeration.
 """
 function _index_context!(
-    ctx::index_context{T}, generation::gen_t, def::Definition{T}, chp::ClauseChoice{T}
+    ctx::index_context{T}, generation::gen_t, def::Definition{T}, chp::ClauseChoice{T},
+    ld_reload_generation::gen_t
 )::index_context{T} where {T}
     @assert !ctx.active "firstClause!/nextClause! re-entered: the shared index_context is in use"
     ctx.active = true
+    ctx.reload_generation = ld_reload_generation
     ctx.generation = generation
     ctx.predicate = def
     ctx.chp = chp
@@ -639,7 +644,7 @@ The first clause of `def` that may match the call whose arguments `argv` views (
 function firstClause!(
     ld, argv::A, generation::gen_t, def::Definition{T}, chp::ClauseChoice{T}
 )::Union{Nothing, ClauseRef{T}} where {T, A}
-    ctx = _index_context!(ld.index_ctx::index_context{T}, generation, def, chp)
+    ctx = _index_context!(ld.index_ctx::index_context{T}, generation, def, chp, ld.reload_generation::gen_t)
     try
         return first_clause_guarded!(argv, def.arity, def.impl_clauses, ctx)
     finally
@@ -658,7 +663,7 @@ The next candidate clause after the ones `chp` has produced (pl-index.c).
 function nextClause!(
     ld, chp::ClauseChoice{T}, argv::A, generation::gen_t, def::Definition{T}
 )::Union{Nothing, ClauseRef{T}} where {T, A}
-    ctx = _index_context!(ld.index_ctx::index_context{T}, generation, def, chp)
+    ctx = _index_context!(ld.index_ctx::index_context{T}, generation, def, chp, ld.reload_generation::gen_t)
     try
         if chp.key == 0                 # not indexed
             return next_clause_unindexed!(ctx)
@@ -2417,7 +2422,7 @@ function set_candidate_indexes!(
     def::Definition{T}, clist::ClauseList{T}, max::Int, lock::Bool
 )::Bool where {T}
     hints = [hash_hints() for _ in 1:max]
-    ctx = index_context{T}(gen_t(0), def, nothing, 0, _TOP_POSITION, false)
+    ctx = index_context{T}(gen_t(0), def, nothing, 0, _TOP_POSITION, false, GEN_INVALID)   # (no visibleClause test in candidate_indexes!)
     ac = def.arity > MAXINDEXARG ? MAXINDEXARG : def.arity
     _, max = candidate_indexes!(ac, clist, hints, max, ctx)
     if max > 0
@@ -2539,9 +2544,9 @@ end
 """
 Choose the primary index of a small static predicate — the argument `cref.key` holds, used for the
 linear scan instead of a hash table (pl-index.c). Upstream calls it when it sets the predicate's
-supervisor, before the first call.
+supervisor, before the first call. `rgen` is `LD->reload.generation` (`STATIC_RELOADING`), R2 LB6a.
 """
-function update_primary_index!(def::Definition{T})::Nothing where {T}
+function update_primary_index!(def::Definition{T}, rgen::gen_t)::Nothing where {T}
     clist = def.impl_clauses
     if clist.pindex_verified
         return nothing
@@ -2551,7 +2556,7 @@ function update_primary_index!(def::Definition{T})::Nothing where {T}
         noc = clist.number_of_clauses
         if noc < MIN_CLAUSES_FOR_INDEX &&
             (def.flags & (P_DYNAMIC | P_MULTIFILE | P_THREAD_LOCAL | P_FOREIGN)) == 0 &&
-            !STATIC_RELOADING(def)
+            !STATIC_RELOADING(rgen, def)
             arg0 = Int(clist.primary_index)
             argn = preferred_primary_index(def)
             if argn >= 0
@@ -2570,6 +2575,12 @@ function update_primary_index!(def::Definition{T})::Nothing where {T}
     end
     return nothing
 end
+
+# DIVERGES (no upstream function): a caller outside any reload — the tests' database builders — has no local data to read
+# `reload_generation` from; the value is GEN_INVALID. `setDefaultSupervisor` (src/pl-supervisor.jl, `gd` only) calls it: QUESTION 6 of
+# evidence/LB6/handoff.md (the `gd`-only sites that read the reload generation).
+"`update_primary_index!` for a caller outside a reload (R2 LB6a)."
+update_primary_index!(def::Definition) = update_primary_index!(def, GEN_INVALID)
 
 # ── PREDICATE PROPERTY SUPPORT: `indexed(L)` ────────────────────────────────────────────────────
 """

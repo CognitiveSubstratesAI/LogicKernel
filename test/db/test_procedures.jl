@@ -99,9 +99,9 @@ end
     @test length(ix_retract!(d, _pe(:d, _pg(1)))) == 1          # d(1) erased, still in the chain
     gen = LK.global_generation(db.gd)
     @test d.def.impl_clauses.first_clause === first &&
-        !LK.visibleClauseCNT(first.clause, gen)
+        !LK.visibleClauseCNT(first.clause, gen, LK.GEN_INVALID)
     r = LK.hasClausesDefinition(db.gd, d.def)                   # the walk skips it
-    @test r !== nothing && r !== first && LK.visibleClauseCNT(r.clause, gen)
+    @test r !== nothing && r !== first && LK.visibleClauseCNT(r.clause, gen, LK.GEN_INVALID)
     @test length(ix_retract!(d, _pe(:d, _pg(2)))) == 1
     @test LK.hasClausesDefinition(db.gd, d.def) === nothing
     @test LK.isDefinedProcedure(db.gd, d.proc)                  # still dynamic

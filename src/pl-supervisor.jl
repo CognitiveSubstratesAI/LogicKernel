@@ -118,7 +118,8 @@ end
 
 # PORT: pl-supervisor.c getClauses
 # DIVERGES: fills `refp` (emptied first) with up to `max` clause references; no reference count on
-# the predicate (`acquire_def`) — that serves clause GC across threads.
+# the predicate (`acquire_def`) — that serves clause GC across threads; `LD->reload.generation` is read as GEN_INVALID (database only:
+# R2 LB6a, QUESTION 6 of evidence/LB6/handoff.md).
 "Collect up to `max` clauses of `def` visible now into `refp`; the number visible (pl-supervisor.c)."
 function getClauses(
     gd::PL_global_data{T}, def::Definition{T}, refp::Vector{ClauseRef{T}}, max::Int
@@ -127,7 +128,7 @@ function getClauses(
     empty!(refp)
     cref = def.impl_clauses.first_clause
     while cref !== nothing
-        if visibleClause(cref.clause::Clause{T}, global_generation(gd))
+        if visibleClause(cref.clause::Clause{T}, global_generation(gd), GEN_INVALID)
             if found < max
                 push!(refp, cref)
             end

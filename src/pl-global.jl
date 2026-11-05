@@ -572,7 +572,8 @@ function PL_local_data{T}(gd::PL_global_data{T}) where {T}
             nothing,
             0,
             _TOP_POSITION,
-            false
+            false,
+            GEN_INVALID
         ),
         word[], T[], 0, 0, STACK_LIMIT_DEFAULT, 0, 0, 0, 0, 0, 0, localFrame{T}[], 0,
         choice{T}[], 0,

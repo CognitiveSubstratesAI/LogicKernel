@@ -3880,7 +3880,7 @@ function pl_nth_clause3_va(
                     popPredicateAccess!(ld, def)
                     return ok ? FTRUE : FFALSE
                 end
-                visibleClauseCNT(cref.clause::Clause{T}, generation) && (i += 1)
+                visibleClauseCNT(ld, cref.clause::Clause{T}, generation) && (i += 1)
                 cref = cref.next
             end
             popPredicateAccess!(ld, def)
@@ -3895,7 +3895,7 @@ function pl_nth_clause3_va(
         dref = pushPredicateAccessObj!(ld, gd, def)
         generation = dref.generation
         cref = def.impl_clauses.first_clause
-        while cref !== nothing && !visibleClauseCNT(cref.clause::Clause{T}, generation)
+        while cref !== nothing && !visibleClauseCNT(ld, cref.clause::Clause{T}, generation)
             cref = cref.next
         end
         if cref === nothing
@@ -3909,7 +3909,7 @@ function pl_nth_clause3_va(
             while i > 0 && cref !== nothing
                 cref = cref.next
                 while cref !== nothing &&
-                      !visibleClauseCNT(cref.clause::Clause{T}, generation)
+                      !visibleClauseCNT(ld, cref.clause::Clause{T}, generation)
                     cref = cref.next
                 end
                 i -= 1
@@ -3936,7 +3936,7 @@ function pl_nth_clause3_va(
     PL_unify_clref(gd, ld, ref, (cr.cref::ClauseRef{T}).clause::Clause{T})
 
     cref = (cr.cref::ClauseRef{T}).next
-    while cref !== nothing && !visibleClauseCNT(cref.clause::Clause{T}, generation)
+    while cref !== nothing && !visibleClauseCNT(ld, cref.clause::Clause{T}, generation)
         cref = cref.next
     end
     if cref !== nothing

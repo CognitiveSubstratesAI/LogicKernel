@@ -202,17 +202,19 @@ end
 
 # PORT: pl-srcfile.c equal_clause
 # (swipl-devel cbf4e189, src/pl-srcfile.c:1015-1026)
-# DIVERGES (representation): upstream compares the code words with `memcmp`, and these words hold the atoms, functors, numbers and
-# procedures the clause refers to. A kernel clause's code words index its `literals` and `procedures` tables, so the clauses are
-# equal when the code vectors are equal, the literal tables are equal element by element under the standard order with identical
-# types (`1` and `1.0` differ), and the procedure tables hold the same procedures. Equal codes with different literals: not equal.
+# DIVERGES (representation): upstream compares the code words with `memcmp`, and these words hold the atoms and functors
+# (by handle), the numbers and strings (inline, by their bytes) and the procedures the clause refers to. A kernel clause's code words
+# index its `literals` and `procedures` tables, so the clauses are equal when the code vectors are equal, the literal tables are equal
+# element by element by IDENTITY (`atomic_compare`: atoms and functors by key, strings by content, integers by value, floats by their
+# bits: `1` and `1.0` differ, `0.0` and `-0.0` differ, a NaN equals a NaN of the same bits), and the procedure tables hold the same
+# procedures. Not the standard order. Equal codes with different literals: not equal.
 "Do the clauses `cl1` and `cl2` hold the same code (pl-srcfile.c)?"
 function equal_clause(cl1::Clause{T}, cl2::Clause{T})::Bool where {T}
     length(cl1.codes) == length(cl2.codes) || return false
     cl1.codes == cl2.codes || return false
     length(cl1.literals) == length(cl2.literals) || return false
     for i in eachindex(cl1.literals)
-        compareStandard(cl1.literals[i], cl2.literals[i], true) == 0 || return false
+        atomic_compare(cl1.literals[i], cl2.literals[i]) == 0 || return false
     end
     length(cl1.procedures) == length(cl2.procedures) || return false
     for i in eachindex(cl1.procedures)

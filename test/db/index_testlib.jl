@@ -220,7 +220,7 @@ function ix_call_unindexed(p::IxPred{T}, goal::T)::Vector{Tuple{T, Bool}} where 
     c = p.def.impl_clauses.first_clause
     while c !== nothing
         cl = c.clause::LK.Clause{T}
-        if LK.visibleClause(cl, gen)
+        if LK.visibleClause(cl, gen, LK.GEN_INVALID)
             a = ix_answer(p.db.ld, goal, cl)
             a === nothing || push!(out, (a, c.next === nothing))
         end

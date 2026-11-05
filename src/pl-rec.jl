@@ -1009,7 +1009,7 @@ function pl_instance2_va(
     clause = ptr::Clause{T}
     generation = generationFrame(ld.frames[ld.environment_frame])
 
-    if (clause.flags & GOAL_CLAUSE) != 0 || !visibleClause(clause, generation)
+    if (clause.flags & GOAL_CLAUSE) != 0 || !visibleClause(ld, clause, generation)
         return FFALSE
     end
 
