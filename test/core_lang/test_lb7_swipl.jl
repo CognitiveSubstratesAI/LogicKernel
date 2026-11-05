@@ -222,8 +222,15 @@ Both '-' or '_' are accepted as word-separator for long options.
 
 "The words of a row after the program name: `-f none -F none` (as the generator), the row's options, the script word of a `run` row."
 function _lb7_words(kind::String, args::Vector{String})::Vector{String}
-    return String["-f", "none", "-F", "none", args..., (kind == "run" ? ["drv.pl"] : String[])...]
+    return String[
+        "-f", "none", "-F", "none", args..., (kind == "run" ? ["drv.pl"] : String[])...
+    ]
 end
+
+# The kernel's database is not booted: `member/2` is swipl's library(lists), which the oracle program gets by autoloading and the unbooted
+# kernel cannot load (the autoloader needs the streams of a booted system). The kernel's copy of the program defines it (same clauses as
+# lists.pl); the oracle program does not (swipl's own is used). The rows' meaning is the same.
+const _LB7_KERNEL_LISTS = "member(X, [X|_]).\nmember(X, [_|T]) :- member(X, T).\n"
 
 "A new database and local data of term type `T` and the parse of `words`: `(gd, ld, left)`, `left` the arguments left to the application, `nothing` for an error."
 function _lb7_parse(::Type{T}, words::Vector{String}) where {T}
@@ -233,14 +240,14 @@ function _lb7_parse(::Type{T}, words::Vector{String}) where {T}
     return gd, ld, left
 end
 
-"The kernel's line for the predicate `name`/1 of the program loaded in `gd`: `name` and its answers (at most 50), as the driver writes them."
-function _lb7_query(::Type{T}, gd, name::String)::String where {T}
+"The kernel's line for the predicate `name`/1 of the program loaded in `gd`, asked on the engine `ld`: `name` and its answers (at most 50), as the driver writes them."
+function _lb7_query(::Type{T}, gd, ld, name::String)::String where {T}
     proc = LK.isCurrentProcedure(sym_key(lk_sym(T, Symbol(name))), 1, LK.MODULE_user(gd))
     if proc === nothing || !LK.isDefinedProcedure(gd, proc)
         return "$name undefined"
     end
     sols = String[]
-    rld = LK.PL_local_data{T}(gd)        # a fresh engine per row: a Julia exception leaves no frame behind
+    rld = ld        # the engine the options were applied to: `stack_limit` reads the querying engine's limit (`ld.stacks_limit`); one query per row
     fid = LK.PL_open_foreign_frame(rld)
     a = LK.PL_new_term_refs(rld, 1)
     LK.putSlotValue!(rld, a + 1, mk_var(T, LK.fresh_var_keys!(1)), LK.PutVarMap())
@@ -253,7 +260,9 @@ function _lb7_query(::Type{T}, gd, name::String)::String where {T}
         if rc == LK.PL_S_TRUE || rc == LK.PL_S_LAST
             push!(
                 sols,
-                _lb7_enc(mk_expr(T, T[lk_sym(T, Symbol(name)), lk_answers(rld, (a:a)...)...]))
+                _lb7_enc(
+                    mk_expr(T, T[lk_sym(T, Symbol(name)), lk_answers(rld, (a:a)...)...])
+                )
             )
             rc == LK.PL_S_LAST && break
         elseif rc == LK.PL_S_EXCEPTION
@@ -285,10 +294,10 @@ function _lb7_kernel_line(::Type{T}, dir::String, (id, kind, goal, args)) where 
         gd.cmdline.appl_argv = left
         goal == "flags" && LK.apply_options_to_flags!(gd, ld)
         f = joinpath(dir, "prog_$id.pl")
-        write(f, _LB7_HEAD * "t_$(id)(R) :- lb7_$(goal)(R).\n")
+        write(f, _LB7_KERNEL_LISTS * _LB7_HEAD * "t_$(id)(R) :- lb7_$(goal)(R).\n")
         st, ball = LK.load_file!(gd, ld, f)
         st === :ok || return "t_$id load failed " * _lb7_enc(ball::T)
-        return _lb7_query(T, gd, "t_$id")
+        return _lb7_query(T, gd, ld, "t_$id")
     catch e
         return "jlerr $(nameof(typeof(e)))" * (e isa LK.NotPortedError ? " $(e.what)" : "")
     end
@@ -302,7 +311,8 @@ function _lb7_swipl_lines()::Vector{String}
         write(
             joinpath(dir, "prog.pl"),
             _LB7_HEAD * join([
-                "t_$(id)(R) :- lb7_$(goal)(R).\n" for (id, kind, goal, _) in _LB7_ROWS if kind == "run"
+                "t_$(id)(R) :- lb7_$(goal)(R).\n" for
+                (id, kind, goal, _) in _LB7_ROWS if kind == "run"
             ])
         )
         outf = joinpath(dir, "out.txt")
@@ -316,7 +326,7 @@ function _lb7_swipl_lines()::Vector{String}
                     ":- initialization((consult('prog.pl'), fz_pred(t_$id), halt)).\n"
                 )
             end
-            cmd = Cmd(String["swipl"; _lb7_words(kind, args)]; dir=dir)
+            cmd = Cmd(Cmd(String["swipl"; _lb7_words(kind, args)]); dir=dir)
             rc = withenv("LC_ALL" => "C") do
                 try
                     run(pipeline(cmd; stdin=devnull, stdout=outf, stderr=errf))
@@ -328,8 +338,11 @@ function _lb7_swipl_lines()::Vector{String}
             if kind == "usage"
                 push!(
                     lines,
-                    rc == 1 && startswith(read(errf, String), "swipl: Usage:") ? "usage" :
-                    "swipl rc=$rc"
+                    if rc == 1 && startswith(read(errf, String), "swipl: Usage:")
+                        "usage"
+                    else
+                        "swipl rc=$rc"
+                    end
                 )
             else
                 push!(lines, rstrip(read(outf, String), '\n'))
@@ -374,7 +387,10 @@ end
     @test occursin(_lb7_kv("stack_limit", "i536870912"), _lb7_pin("o12"))           # --stack-limit=512m
     @test occursin(_lb7_kv("stack_limit", "i2147483648"), _lb7_pin("o13"))          # --stack_limit=2g
     @test occursin(_lb7_kv("stack_limit", "i4194304"), _lb7_pin("o14"))             # 4096k
-    @test occursin("c[45]/2(" * _lb7_atom("goals") * ",c[91,124,93]/2(" * _lb7_atom("true") * ",", _lb7_pin("o02"))
+    @test occursin(
+        "c[45]/2(" * _lb7_atom("goals") * ",c[91,124,93]/2(" * _lb7_atom("true") * ",",
+        _lb7_pin("o02")
+    )
     @test !occursin(_lb7_kv("goals", "nil"), _lb7_pin("o02"))
     @test occursin(_lb7_kv("goals", "nil"), _lb7_pin("o01"))                         # [] in the default
     @test occursin(_lb7_kv("nosignals", _lb7_atom("true")), _lb7_pin("o09"))
@@ -388,7 +404,10 @@ end
     @test occursin(_lb7_kv("verbose", _lb7_atom("silent")), _lb7_pin("f03"))
     @test occursin(_lb7_kv("verbose", _lb7_atom("normal")), _lb7_pin("f01"))
     @test occursin(_lb7_kv("packs", _lb7_atom("false")), _lb7_pin("f09"))
-    @test occursin("c" * _lb7_codes("existence_error") * "/2(" * _lb7_atom("cmd_option") * ",", _lb7_pin("k01"))
+    @test occursin(
+        "c" * _lb7_codes("existence_error") * "/2(" * _lb7_atom("cmd_option") * ",",
+        _lb7_pin("k01")
+    )
     @test occursin(_lb7_atom("same"), _lb7_pin("k03"))
     @test _lb7_pin("o01") != _lb7_pin("o02")
 end
@@ -410,7 +429,14 @@ end
         mktempdir() do dir
             errf = joinpath(dir, "help.txt")
             withenv("LC_ALL" => "C") do
-                run(pipeline(ignorestatus(`swipl --help`); stdin=devnull, stdout=devnull, stderr=errf))
+                run(
+                    pipeline(
+                        ignorestatus(`swipl --help`);
+                        stdin=devnull,
+                        stdout=devnull,
+                        stderr=errf
+                    )
+                )
             end
             @test read(errf, String) == _LB7_USAGE_PINNED
         end
@@ -484,7 +510,7 @@ end
         @test LK.is_bool_opt(opt, name) == want
     end
     @test count(r -> r[3][1] == 1, rows) >= 10 && count(r -> r[3][1] == -1, rows) >= 2 &&
-          count(r -> r[3][1] == 0, rows) >= 3                              # all three outcomes
+        count(r -> r[3][1] == 0, rows) >= 3                              # all three outcomes
 end
 
 # find_define (pl-init.c:211-239): the value of `-Dname[=value]` in the raw words, the last one wins, the scan ends at `--`, `-D name=value` is
@@ -570,10 +596,12 @@ end
     ]
     for (words, want) in rows
         _, _, left = _lb7_parse(_LB7, words)
-        left == want || println(stderr, "  ours ", repr(left), "  want ", repr(want), "  for ", words)
+        left == want ||
+            println(stderr, "  ours ", repr(left), "  want ", repr(want), "  for ", words)
         @test left == want
     end
-    @test count(r -> r[2] === nothing, rows) >= 4 && count(r -> r[2] !== nothing, rows) >= 12
+    @test count(r -> r[2] === nothing, rows) >= 4 &&
+        count(r -> r[2] !== nothing, rows) >= 12
     @test count(r -> r[2] !== nothing && !isempty(r[2]), rows) >= 6                 # a non-empty rest and an empty one
 end
 
@@ -586,8 +614,13 @@ end
     gd, _, _ = p(["-x", "s"])
     @test gd.options.bootFrom == "s"
     gd, _, _ = p(["-f", "ini", "-F", "sys", "-o", "out", "-t", "tl"])
-    @test (gd.options.initFile, gd.options.systemInitFile, gd.options.compileOut, gd.options.topLevel) ==
-          ("ini", "sys", "out", "tl")
+    @test (
+        gd.options.initFile,
+        gd.options.systemInitFile,
+        gd.options.compileOut,
+        gd.options.topLevel
+    ) ==
+        ("ini", "sys", "out", "tl")
     gd, _, _ = p(["--pldoc=4000"])
     @test gd.options.pldoc_server == "4000"
     gd, _, _ = p(["--pldoc"])
@@ -631,11 +664,13 @@ end
 @testset "initDefaultOptions!" begin
     gd = LK.PL_global_data{_LB7}()
     o = gd.options
-    @test o.stackLimit == 1 << 30 && o.tableSpace == 1 << 30 && o.sharedTableSpace == 1 << 30
+    @test o.stackLimit == 1 << 30 && o.tableSpace == 1 << 30 &&
+        o.sharedTableSpace == 1 << 30
     @test o.compileOut == "a.out" && o.topLevel == "default" && o.saveclass == "none"
     @test o.on_error == "print" && o.on_warning == "print"
     @test o.initFile === nothing && o.bootFrom === nothing && o.config === nothing
-    @test isempty(o.goals) && isempty(o.scriptFiles) && isempty(o.search_paths) && isempty(o.defines)
+    @test isempty(o.goals) && isempty(o.scriptFiles) && isempty(o.search_paths) &&
+        isempty(o.defines)
     # a second call resets what a parse set; the keyword arguments are the build's constants
     o.scriptFiles = ["x.pl"]
     o.goals = ["g1", "g2"]
@@ -652,16 +687,21 @@ end
 # (BeginPredDefs(prims)). Pinned by o01 (the keys, in the generator's lb7_keys order, are these minus `home`) and k01-k05.
 @testset "OPTDEFS and the prims table" begin
     @test [d[1] for d in LK.OPTDEFS] == [
-        "stack_limit", "goals", "toplevel", "init_file", "system_init_file", "script_file", "config",
-        "compileout", "class", "search_paths", "defines", "pldoc_server", "nosignals", "home"
+        "stack_limit", "goals", "toplevel", "init_file", "system_init_file", "script_file",
+        "config",
+        "compileout", "class", "search_paths", "defines", "pldoc_server", "nosignals",
+        "home"
     ]
     @test [d[2] for d in LK.OPTDEFS] == [
-        LK.CMDOPT_SIZE_T, LK.CMDOPT_LIST, LK.CMDOPT_STRING, LK.CMDOPT_STRING, LK.CMDOPT_STRING, LK.CMDOPT_LIST,
-        LK.CMDOPT_STRING, LK.CMDOPT_STRING, LK.CMDOPT_STRING, LK.CMDOPT_LIST, LK.CMDOPT_LIST, LK.CMDOPT_STRING,
+        LK.CMDOPT_SIZE_T, LK.CMDOPT_LIST, LK.CMDOPT_STRING, LK.CMDOPT_STRING,
+        LK.CMDOPT_STRING, LK.CMDOPT_LIST,
+        LK.CMDOPT_STRING, LK.CMDOPT_STRING, LK.CMDOPT_STRING, LK.CMDOPT_LIST,
+        LK.CMDOPT_LIST, LK.CMDOPT_STRING,
         LK.CMDOPT_BOOL, LK.CMDOPT_STRING
     ]
     @test [d[3] for d in LK.OPTDEFS] == [
-        :stackLimit, :goals, :topLevel, :initFile, :systemInitFile, :scriptFiles, :config, :compileOut,
+        :stackLimit, :goals, :topLevel, :initFile, :systemInitFile, :scriptFiles, :config,
+        :compileOut,
         :saveclass, :search_paths, :defines, :pldoc_server, :nosignals, :home
     ]
     names = [e.predicate_name for e in LK.PL_predicates_from_prims]
@@ -673,7 +713,7 @@ end
     for (name, _, _) in LK.OPTDEFS
         name == "home" && continue
         @test occursin("c[45]/2(a" * _lb7_codes(name) * ",", _lb7_pin("o01")) ==
-              !(name in ("config", "pldoc_server"))
+            !(name in ("config", "pldoc_server"))
     end
 end
 
