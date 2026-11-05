@@ -165,6 +165,7 @@ MUTANTS = [
          new='nothing'),
     dict(id='DWIM1-I3 a number or string head has the functor of its word (KILL t26: 123, "foo_bor")',
          file=D, targets=TS,
+         equivalent='src/pl-dwim.jl:276 — after `a === nothing` the head is no atom word (PL_get_atom, src/pl-fli.jl:422-428) and no compound (line 274 returned), so _deref_loc (src/pl-prims.jl:691-725) found DU_CELL, DU_ATTVAR or DU_VALUE for it (a number, a string, a variable: DU_WORD is only an atom word or a g-compound, lines 698 and 714; the id names the intent of the mutant, t26 cannot tell the two answers apart), and PL_get_functor (src/pl-fli.jl:546-560) answers nothing for every kind but DU_WORD, the very answer line 276 gives',
          old='a === nothing && return nothing',
          new='a === nothing && return PL_get_functor(ld, t)'),
     dict(id='DWIM1-J1 a redo is taken for the cut (KILL t14: the second answer)',
