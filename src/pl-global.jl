@@ -174,6 +174,7 @@ mutable struct PL_global_data{T}
     const options::pl_options_t                                 # options: the command-line options, `$cmd_option_val/2`'s table (R2 LB7)
     const cmdline::pl_cmdline_t                                 # cmdline: the arguments and the -O/--no-packs switches (R2 LB7)
     defaults_home::Union{Nothing, String}                       # defaults.home: the home directory, `$cmd_option_val(home, _)` (R2 LB7; nothing = NULL)
+    const ld_table::LDTable                                     # the local data a wrapped stream names by number (IOSTREAM.wrapped; src/os/pl-stream.jl, R2 TOP1b E; owner TH1)
 end
 # DIVERGES: `atoms` is upstream's `GD->atoms` as a struct of its own (src/pl-atom.jl), one table per
 # database, built first as upstream's `initAtoms` runs first; `functors` likewise `GD->functors` with
@@ -470,7 +471,7 @@ cells, its frames, choice points and foreign frames, and the registers that poin
 one has upstream's initial local stack, emptied as `emptyStacks` leaves it: one foreign frame at
 its base, and the three standard streams open (`initIO`, as upstream's start-up leaves them). It is made for the database `gd`: its atom words name atoms in `gd.atoms` (`GD->atoms`).
 """
-mutable struct PL_local_data{T}
+mutable struct PL_local_data{T} <: AbstractLocalData
     predicate_references::Vector{definition_ref{T}}            # Referenced predicates
     trail::Vector{UInt64}                                       # stacks.trail: its entries (L1b D)
     gstack::Vector{UInt64}                                      # stacks.global: its WORDS (L1b C2)

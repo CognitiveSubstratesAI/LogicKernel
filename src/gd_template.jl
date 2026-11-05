@@ -22,6 +22,8 @@
 #              streams, `drop_boot_std_streams!` in src/pl-qlf.jl); the copy gets EMPTY tables of the same shape (a closed
 #              stream's slot in `stream_table` stays `nothing`, so a stream context keeps its index) and REFUSES a template
 #              that holds a live IOSTREAM: an open file must not be shared by two databases, and an IOSTREAM wraps a Julia IO.
+#              `ld_table` (the local data a wrapped stream names, R2 TOP1b E) is of the same kind: an entry stands for an open
+#              wrapped stream, so the copy gets an empty table and a template with an entry is refused.
 #   :reset   — the field is not the template's state but the process's start-up state: the copy gets the value `GD_COPY_RESET`
 #              names for it, the value the constructor (`setupProlog`, src/pl-setup.jl) gives the field. `paths_CWDdir` is
 #              the one field: upstream sets `GD->paths.CWDdir = NULL` at start (pl-os.c:989-990, initExpand) and computes it at the first
@@ -33,6 +35,7 @@ const GD_COPY_POLICY = (
     stream_filenames=:streams,
     stream_aliases=:streams,
     stream_table=:streams,
+    ld_table=:streams,
     paths_CWDdir=:reset              # pl-os.c:989, :1864-1866 at cbf4e189
 )
 

@@ -3000,6 +3000,99 @@ function setStandardStream(ld::PL_local_data, i::Int, s::Union{Nothing, IOSTREAM
     return nothing
 end
 
+# ── INTERACTION: wrapping the stream `set_prolog_IO/3` reads from (R2 TOP1b E) ───────────────────────────────────
+# `wrapIO` replaces the read of a stream by `Sread_user`, which prompts as `Sread_terminal` does but without the tty
+# test (pl-file.c:5959-6045). The record is `IOSTREAM.wrapped` (src/os/pl-stream.jl `wrappedIO`); `S_read` and
+# `S_close` look at it first. DIVERGES (owner TH1): upstream's `GET_LD` in `Sread_user` is the thread's `LD`; the stream
+# holds the number of its engine in `gd.ld_table` (`registerLocalData!`) and `S_read` looks it up there, the engine's term
+# type being known only from the entry (`Sread_user`'s method on `PL_local_data{T}`).
+
+# PORT: pl-file.c WRAP_CLEAR_FLAGS
+# (swipl-devel cbf4e189, src/os/pl-file.c:5967)
+"The flags `wrapIO` clears on the stream it wraps and `closeWrappedIO` restores (pl-file.c)."
+const WRAP_CLEAR_FLAGS = SIO_FILE
+
+# PORT: pl-file.c Sread_user
+# (swipl-devel cbf4e189, src/os/pl-file.c:5987-6007)
+# DIVERGES: `handle` is the record `wio` and `buf` is `mem` from `from`, `Sttymode(wio->wrapped_stream)` has the stream
+# `s` (what `S_read` was called on); `wrapped_functions->read` is `S_read_wrapped` (the stream's own function set, or the
+# record's next wrapper's: a stream is wrapped once, see `wrapIO`); `Suser_output`/`Suser_input` are the engine's.
+"Read for a wrapped stream: prompt as the toplevel does, read, map ^D to end-of-file, re-arm the prompt after a line (pl-file.c)."
+function Sread_user(
+    ld::PL_local_data{T}, s::IOSTREAM, wio::wrappedIO, mem::Vector{UInt8}, from::Int,
+    size::Int
+)::Int where {T}
+    gd = ld.GD::PL_global_data{T}                       # (`wrapIO` records it)
+    if ld.prompt_next && Sttymode(s) != TTY_RAW
+        PL_write_prompt(gd, ld, true)
+    else
+        uo = Suser_output(ld)
+        uo === nothing || Sflush(uo)
+    end
+
+    rc = S_read_wrapped(s, mem, from, size)
+    if rc == 0                                          # end-of-file
+        ui = Suser_input(ld)
+        ui === nothing || Sclearerr(ui)
+        ld.prompt_next = true
+    elseif rc == 1 && mem[from] == 0x04
+        rc = 0                                          # Map ^D to end-of-file
+    elseif rc > 0 && mem[from + rc - 1] == UInt8('\n')
+        ld.prompt_next = true
+    end
+
+    return rc
+end
+
+# (the local data was freed meanwhile: no engine to prompt for, a read error)
+Sread_user(
+    ::Nothing, ::IOSTREAM, ::wrappedIO, ::Vector{UInt8}, ::Int, ::Int
+)::Int = -1
+
+# PORT: pl-file.c closeWrappedIO
+# (swipl-devel cbf4e189, src/os/pl-file.c:6010-6027)
+# DIVERGES: `handle`/`functions` were never replaced (see `wrappedIO`), so the restore is `wrapped = nothing` and the
+# flags; the record's entry in `gd.ld_table` is freed; `PL_free(wio)` is Julia's GC.
+"Close a wrapped stream: its own close, then the wrapper goes and the flags it cleared come back (pl-file.c)."
+function closeWrappedIO(s::IOSTREAM, wio::wrappedIO)::Int
+    rval = S_close_wrapped(s)
+
+    s.wrapped = nothing
+    s.flags &= ~WRAP_CLEAR_FLAGS
+    s.flags |= wio.saved_flags
+    unregisterLocalData!(wio.table, wio.ld)
+
+    return rval
+end
+
+# NOT PORTED: controlWrappedIO (pl-file.c:6030-6044): the kernel's function sets have no `control` to pass to.
+
+# PORT: pl-file.c wrapIO
+# (swipl-devel cbf4e189, src/os/pl-file.c:6047-6068)
+# DIVERGES: the database `gd` is an argument (the table the engine is registered in); `read` is whether the replacement is
+# `Sread_user` (the only one given) and `write` is not a parameter (always NULL); a stream wrapped twice keeps its one
+# record with the new engine registered (upstream chains two function blocks, and closing the outer frees the inner's:
+# a use after free); the engine records its database in `ld.GD` if it has none (`PL_open_query` does it for a query).
+"Wrap `s` for `ld`: clear `WRAP_CLEAR_FLAGS`, remember them, and read with `Sread_user` (pl-file.c)."
+function wrapIO(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, s::IOSTREAM, read::Bool
+)::Nothing where {T}
+    ld.GD === nothing && (ld.GD = gd)
+    old = s.wrapped
+    if old !== nothing
+        unregisterLocalData!(old.table, old.ld)
+        old.table = gd.ld_table
+        old.ld = registerLocalData!(gd.ld_table, ld)
+        old.user_read |= read
+        return nothing
+    end
+
+    saved = s.flags & WRAP_CLEAR_FLAGS
+    s.flags &= ~WRAP_CLEAR_FLAGS
+    s.wrapped = wrappedIO(gd.ld_table, registerLocalData!(gd.ld_table, ld), read, saved)
+    return nothing
+end
+
 # PORT: pl-file.c pushOutputContext
 # DIVERGES: the context stack is a Vector of the streams (upstream: a linked list of
 # `struct output_context`, `LD->IO.output_stack`).

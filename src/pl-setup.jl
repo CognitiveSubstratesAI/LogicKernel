@@ -330,7 +330,8 @@ function setupProlog(::Type{T})::PL_global_data{T} where {T}
         GEN_INVALID,                            # reload_generation: no file is being reloaded (R2 LB6a)
         initDefaultOptions!(pl_options_t()),    # options: pl-init.c initDefaultOptions, before the command line is read (R2 LB7)
         pl_cmdline_t(),                         # cmdline: no arguments, packs on, no -O (R2 LB7)
-        nothing                                 # defaults_home: set with the `home` flag by initPrologFlags!
+        nothing,                                # defaults_home: set with the `home` flag by initPrologFlags!
+        LDTable()                               # ld_table: no wrapped stream yet (R2 TOP1b E)
     )
     initPrologFlags!(gd)                        # setup:136 (src/os/pl-prologflag.jl): before the built-ins (:158), whose boot clauses read the mask
     initBuildIns!(gd)                           # setup:158 (src/pl-ext.jl)

@@ -229,6 +229,50 @@ mutable struct Sjulia_io
     close_io::Bool                                     # close the IO with the stream
 end
 
+# ORIGINAL (R2 TOP1b E): the thread-local `LD` of upstream (pl-global.h `LD`/`GLOBAL_LD`) is found by thread; the kernel has
+# one thread and `PL_local_data{T}` is defined AFTER this file (it holds `IOSTREAM`s), so a stream names its local
+# data by a number into a table the database owns (`PL_global_data.ld_table`), the abstract supertype being all this file
+# can say of it. DIVERGES (owner TH1: the table goes when threads land, the lookup is then upstream's `LD`).
+"The supertype of `PL_local_data{T}` (src/pl-global.jl): the type a stream's registered local data is held under."
+abstract type AbstractLocalData end
+
+"The table of registered local data (`PL_global_data.ld_table`): an entry is a wrapped stream's engine, `nothing` once free."
+const LDTable = Vector{Union{Nothing, AbstractLocalData}}
+
+# ORIGINAL: the kernel's counterpart of upstream's `GET_LD` (the thread's `LD` is found by number, see the comment above).
+"Register `ld` in the table `tbl` (the first free entry, else a new one): its number."
+function registerLocalData!(tbl::LDTable, ld::AbstractLocalData)::Int
+    i = findfirst(isnothing, tbl)
+    if i === nothing
+        push!(tbl, ld)
+        return length(tbl)
+    end
+    tbl[i] = ld
+    return i
+end
+
+"Free the entry `i` of the table `tbl` (the stream that held it was closed)."
+function unregisterLocalData!(tbl::LDTable, i::Int)::Nothing
+    1 <= i <= length(tbl) && (tbl[i] = nothing)
+    return nothing
+end
+
+# PORT: pl-file.c wrappedIO
+# (swipl-devel cbf4e189, src/os/pl-file.c:5970-5977)
+# DIVERGES: the wrapped stream keeps its own `handle` and `functions` (upstream replaces both with the record and a
+# function block that holds the originals): the record is `IOSTREAM.wrapped`, the originals stay where they were, so
+# nothing that reads `handle` or `functions` (`file_name`, `Ssize`, `isStringStream`) changes. `functions` is not a
+# function block but `user_read`: whether the replacement of `read` is `Sread_user` (the one use, set_prolog_IO/3; the
+# `write` replacement is never given). `wrapped_stream` is the stream whose `wrapped` this is (S_read and S_close
+# have it). `ld` is the number of the registered local data (see `AbstractLocalData`), `table` the database's.
+"What `wrapIO` records about a stream it wrapped (pl-file.c `wrappedIO`)."
+mutable struct wrappedIO
+    table::LDTable                      # PL_global_data.ld_table: where `ld` is looked up
+    ld::Int                             # the registered local data of the engine the read prompts for
+    user_read::Bool                     # functions.read == Sread_user
+    saved_flags::UInt32                 # SIO_flags we must restore
+end
+
 # PORT: SWI-Stream.h io_stream as IOSTREAM
 # DIVERGES: see the file's header — the buffer pointers are indices into `mem`, `functions` names a
 # function set; the fields of the parts not ported are absent. `context` is upstream's `void
@@ -257,10 +301,11 @@ mutable struct IOSTREAM
     unicode_atoms::Sunicode_atoms_t     # per-stream atom-content policy
     context::Int                        # the stream's entry in the database's stream table (0: none)
     erased::Bool                        # closed while a reference is held
+    wrapped::Union{Nothing, wrappedIO}  # what wrapIO() replaced the read of (pl-file.c: `handle` is the wrappedIO)
     IOSTREAM() = new(
         UInt8[], 0, 0, 0, 0, EOF, 0, 0, UInt32(0), IOPOS(), nothing, nothing,
         Smemfunctions,
-        ENC_UNKNOWN, 0, SIO_NL_POSIX, 0, nothing, S_UATOMS_ACCEPT, 0, false
+        ENC_UNKNOWN, 0, SIO_NL_POSIX, 0, nothing, S_UATOMS_ACCEPT, 0, false, nothing
     )
 end
 
@@ -270,6 +315,15 @@ end
 
 "Read up to `size` bytes into `mem` at `from`: the count, 0 at end of file, -1 on error."
 function S_read(s::IOSTREAM, mem::Vector{UInt8}, from::Int, size::Int)::Int
+    w = s.wrapped
+    if w !== nothing && w.user_read
+        return Sread_user(w.table[w.ld], s, w, mem, from, size)
+    end
+    return S_read_wrapped(s, mem, from, size)
+end
+
+"Read as the stream's own function set does, the one a wrapper (pl-file.c `wrapIO`) calls as `wrapped_functions->read`."
+function S_read_wrapped(s::IOSTREAM, mem::Vector{UInt8}, from::Int, size::Int)::Int
     h = s.handle
     s.functions == Smemfunctions && h isa memfile &&
         return Sread_memfile(h, mem, from, size)
@@ -290,6 +344,13 @@ end
 
 "Close the stream's handle: 0, or -1 on error."
 function S_close(s::IOSTREAM)::Int
+    w = s.wrapped
+    w === nothing || return closeWrappedIO(s, w)
+    return S_close_wrapped(s)
+end
+
+"Close as the stream's own function set does, the one a wrapper (pl-file.c `closeWrappedIO`) calls as `wrapped_functions->close`."
+function S_close_wrapped(s::IOSTREAM)::Int
     h = s.handle
     s.functions == Smemfunctions && h isa memfile && return Sclose_memfile(h)
     s.functions == Siofunctions && h isa Sjulia_io && return Sclose_julia_io(h)
