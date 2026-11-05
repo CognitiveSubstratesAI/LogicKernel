@@ -240,7 +240,7 @@ refusal:src/pl-read.jl::_atom_from_text::an atom containing the character 0 (a S
 refusal:src/pl-srcfile.jl::startConsult::consulting a file again (reconsult)	LB6	startConsult on a loaded file, reconsult (pl-srcfile.c); LB6b item h re-points it (lb67_sizing.md)
 refusal:src/pl-wam.jl::PL_next_solution_guarded::backtracking into a $(db_c.type) choice point	CONT1	backtracking into a non-clause choice point (pl-wam.c, the I_RESET/I_YIELD/foreign-redo frames)
 refusal:src/pl-write.jl::writeAttVar::write_term/2 attributes(portray): '\$attvar':portray_attvar/	AV10	attributes(portray) writeAttVar (pl-write.c, '$attvar':portray_attvar/1)
-# refusal sites, assignments proposed in evidence/R2/refusal_owners.md (new deferred step names ENC1, RD2, WR2 and the QUESTION rows): the dispatcher confirms or edits the owner column
+# refusal sites, assignments proposed in evidence/R2/refusal_owners.md (new deferred step names ENC1, RD2, WR2 and the QUESTION rows): confirmed by the audit (D-0415 item 5: ENC1, RD2, WR2 are the names of deferred steps; indexed(L) is PR1b)
 refusal:src/os/pl-file.jl::openStream::open/4's unicode_atoms(Mode) option	ENC1	open/4 unicode_atoms(Mode) option (pl-file.c openStream); the NFC normalizer rides with ENC1
 refusal:src/os/pl-file.jl::openStream::string("open/4 with the stream encoding ", enc)	ENC1	open/4 encodings other than UTF-8 (pl-file.c openStream); UTF-8 only by the R1 decision of 2026-10-07
 refusal:src/os/pl-file.jl::_atom_to_unicode_atoms::set_stream/2's unicode_atoms(nfc)	ENC1	set_stream/2 unicode_atoms(nfc) (pl-file.c set_stream); the NFC normalizer rides with ENC1
@@ -259,7 +259,7 @@ refusal:src/os/pl-text.jl::_text_code_points::the code points of a text in $(tex
 refusal:src/pl-comp.jl::assert_term!::assert_term: PL_CREATE_INCREMENTAL/THREAD_LOCAL	TAB1	assert_term PL_CREATE_INCREMENTAL (tabling); the PL_CREATE_THREAD_LOCAL half is TH1 (pl-comp.c assert_term)
 refusal:src/pl-modul.jl::set_module::set_module(program_space(N)): the module's code accounting	P3	set_module(program_space(N)) code accounting (pl-modul.c); resource-limit family, unreached by the boot
 refusal:src/pl-proc.jl::get_procedure::get_procedure: other than GP_DEFINE	PR1	generic get_procedure modes beyond GP_DEFINE (pl-proc.c); callers use the split get_procedure_* functions, PR1 residual
-refusal:src/pl-proc.jl::pl_get_predicate_attribute3_va::indexed(L): the Prolog dict of an index property	PR1	indexed(L) of pl_get_predicate_attribute (pl-proc.c, unify_index_property): predicate_property(P, X) enumeration reaches it via syspred.pl:874; PR1 residual, needs the dict builder
+refusal:src/pl-proc.jl::pl_get_predicate_attribute3_va::indexed(L): the Prolog dict of an index property	PR1b	indexed(L) of pl_get_predicate_attribute (pl-proc.c, unify_index_property): predicate_property(P, X) enumeration reaches it via syspred.pl:874; PR1b (R2b list, D-0415 item 5), needs the dict builder; size it before the first boot decides whether it is needed
 refusal:src/pl-read.jl::raw_read2::raw_read2: reading past the end of a stream (its error names	RD2	raw_read2 past the end of a stream, eof_action(error) (pl-read.c); the stream term is available since LB5 (PL_unify_stream_or_alias)
 refusal:src/pl-read.jl::raw_read2::raw_read2: the comments(C) read option	RD2	raw_read2 comments(C) read option (pl-read.c); the comments collector of library(prolog_source)
 refusal:src/pl-read.jl::raw_read2::raw_read2: the comments(C) read option #2	RD2	raw_read2 comments(C) read option, second site (pl-read.c); the comments collector

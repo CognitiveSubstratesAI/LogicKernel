@@ -1969,10 +1969,10 @@ or **platform** (a Windows or macOS definition: out of the count). **NO OWNER** 
 | category | done | refused | missing | platform | NO OWNER |
 |---|---:|---:|---:|---:|---:|
 | predicates (C-defined, reached by the boot) | 274 | 0 | 148 | 3 | 1 |
-| refusal sites | 0 | 78 | 0 | 0 | 52 |
+| refusal sites | 0 | 78 | 0 | 0 | 0 |
 | Prolog flags | 64 | 19 | 20 | 0 | 35 |
 | VM instructions | 169 | 0 | 64 | 0 | 7 |
-| **total** | 507 | 97 | 232 | 3 | 95 |
+| **total** | 507 | 97 | 232 | 3 | 43 |
 
 #### The boot and library files
 
@@ -2015,28 +2015,38 @@ Predicate rows each file's calls reach (a predicate several files call counts in
 
 | owner | rows | missing | refused | which (first 8) |
 |---|---:|---:|---:|---|
-| TAB1 | 98 | 93 | 5 | `$idg_add_edge/1`, `$idg_add_mono_dyn_dep/3`, `$idg_add_monotonic_dep/3`, `$idg_changed/1`, `$idg_false_edge/3`, `$idg_falsecount/2`, `$idg_forced/1`, `$idg_mono_affects/3`, … +90 |
-| AR1 | 27 | 27 | 0 | `succ/2`, `A_ADD`, `A_DOUBLE`, `A_ENTER`, `A_EQ`, `A_FIRSTVAR_IS`, `A_FUNC`, `A_FUNC0`, … +19 |
-| TH1 | 17 | 17 | 0 | `$engine_create/3`, `$gc_clear/1`, `$gc_stop/0`, `$gc_wait/1`, `$sig_unblock/0`, `engine_next/2`, `is_engine/1`, `message_queue_create/1`, … +9 |
+| TAB1 | 100 | 93 | 7 | `$idg_add_edge/1`, `$idg_add_mono_dyn_dep/3`, `$idg_add_monotonic_dep/3`, `$idg_changed/1`, `$idg_false_edge/3`, `$idg_falsecount/2`, `$idg_forced/1`, `$idg_mono_affects/3`, … +92 |
+| AR1 | 28 | 27 | 1 | `succ/2`, `A_ADD`, `A_DOUBLE`, `A_ENTER`, `A_EQ`, `A_FIRSTVAR_IS`, `A_FUNC`, `A_FUNC0`, … +20 |
+| TH1 | 18 | 17 | 1 | `$engine_create/3`, `$gc_clear/1`, `$gc_stop/0`, `$gc_wait/1`, `$sig_unblock/0`, `engine_next/2`, `is_engine/1`, `message_queue_create/1`, … +10 |
+| ENC1 | 16 | 0 | 16 | `refusal set_stream/2's unicode_atoms(nfc)`, `refusal open/4's unicode_atoms(Mode) option`, `refusal string("open/4 with the stream encoding …`, `refusal Scanrepresent: encoding $enc`, `refusal Sgetcode: encoding $enc`, `refusal put_code: encoding $enc`, `refusal PL_canonicalise_text of $enc`, `refusal PL_mb_text of $(text.encoding)`, … +8 |
 | LB3 | 14 | 0 | 14 | `refusal QLF predicate $close_wic/0`, `refusal QLF predicate $file_hash/2`, `refusal QLF predicate $map_id/2`, `refusal QLF predicate $open_wic/2`, `refusal QLF predicate $qlf_close/0`, `refusal QLF predicate $qlf_current_source/1`, `refusal QLF predicate $qlf_dependency/1`, `refusal QLF predicate $qlf_is_compatible/1`, … +6 |
 | Q10 | 13 | 13 | 0 | `$cmd_option_val/2`, `$on_signal/4`, `$put_token/2`, `$set_prolog_stack/4`, `$suspend_findall_bag/0`, `$usage/0`, `\=@=/2`, `current_blob/2`, … +5 |
-| DBG1 | 11 | 11 | 0 | `$call_no_catch/1`, `$can_yield/0`, `$leash/2`, `$visible/2`, `break/0`, `notrace/0`, `prolog_choice_attribute/3`, `prolog_frame_attribute/3`, … +3 |
-| P3 | 9 | 9 | 0 | `$depth_limit/3`, `$depth_limit_except/3`, `$depth_limit_false/3`, `$depth_limit_true/5`, `$inference_limit/2`, `$inference_limit_except/3`, `$inference_limit_false/1`, `$inference_limit_true/3`, … +1 |
+| DBG1 | 12 | 11 | 1 | `$call_no_catch/1`, `$can_yield/0`, `$leash/2`, `$visible/2`, `break/0`, `notrace/0`, `prolog_choice_attribute/3`, `prolog_frame_attribute/3`, … +4 |
+| P3 | 10 | 9 | 1 | `$depth_limit/3`, `$depth_limit_except/3`, `$depth_limit_false/3`, `$depth_limit_true/5`, `$inference_limit/2`, `$inference_limit_except/3`, `$inference_limit_false/1`, `$inference_limit_true/3`, … +2 |
+| RD2 | 8 | 0 | 8 | `refusal raw_read2: reading past the end of a str…`, `refusal raw_read2: the comments(C) read option`, `refusal raw_read2: the comments(C) read option`, `refusal read_clause's $what option`, `refusal read_clause's process_comment(true) or u…`, `refusal read_term's $what option`, `refusal read: a blob <type>(…)`, `refusal read: a quasi-quotation {\|Syntax\|\|Quotat…` |
+| CONT1 | 7 | 0 | 7 | `refusal backtracking into a $(db_c.type) choice …`, `refusal the VM instruction I_CALLCONT (pl-vmi.c:…`, `refusal the VM instruction I_EXITRESET (pl-vmi.c…`, `refusal the VM instruction I_RESET (pl-vmi.c:575…`, `refusal the VM instruction I_SHIFT (pl-vmi.c:587…`, `refusal the VM instruction I_SHIFTCP (pl-vmi.c:5…`, `refusal the VM instruction I_YIELD (pl-vmi.c:241…` |
 | TRIE1 | 7 | 7 | 0 | `$trie_gen_node/3`, `$trie_property/2`, `is_trie/1`, `trie_gen/2`, `trie_gen/3`, `trie_lookup/3`, `trie_term/2` |
-| CONT1 | 6 | 0 | 6 | `refusal the VM instruction I_CALLCONT (pl-vmi.c:…`, `refusal the VM instruction I_EXITRESET (pl-vmi.c…`, `refusal the VM instruction I_RESET (pl-vmi.c:575…`, `refusal the VM instruction I_SHIFT (pl-vmi.c:587…`, `refusal the VM instruction I_SHIFTCP (pl-vmi.c:5…`, `refusal the VM instruction I_YIELD (pl-vmi.c:241…` |
+| LB5-LB7 | 6 | 2 | 4 | `$activate_static_extension/1`, `$clause_term_position/3`, `refusal iri_hook $what ('\$iri':iri_hook/4 of in…`, `refusal what`, `refusal format_predicate/2 (GD->format.predicate…`, `refusal expandVars: ~user (getpwnam)` |
 | ZIP1 | 6 | 6 | 0 | `$rc_handle/1`, `zip_clone/2`, `zip_close_/2`, `zip_file_info_/3`, `zipper_goto/2`, `zipper_open_current/3` |
-| LB5-LB7 | 4 | 2 | 2 | `$activate_static_extension/1`, `$clause_term_position/3`, `refusal iri_hook $what ('\$iri':iri_hook/4 of in…`, `refusal what` |
+| WR2 | 5 | 0 | 5 | `refusal PL_get_text: CVT_WRITE, CVT_WRITEQ, CVT_…`, `refusal writing a blob with portray/1 (blobs(por…`, `refusal float_format other than ~h`, `refusal integer_format other than ~d`, `refusal writing a grounded value SWI has no type…` |
+| WRAP1 | 5 | 2 | 3 | `$wrapped_implementation/3`, `unwrap_predicate/2`, `refusal freeCodesDefinition! of a wrapped predic…`, `refusal the VM instruction S_CALLWRAPPER (callin…`, `refusal the VM instruction S_WRAP (calling a wra…` |
+| CT1 | 4 | 2 | 2 | `char_type/2`, `code_type/2`, `refusal open/4's locale(Locale) option`, `refusal set_stream/2's locale(Locale)` |
 | S2a | 4 | 4 | 0 | `get/1`, `get/2`, `put/1`, `put/2` |
+| S2b | 4 | 0 | 4 | `refusal a stream pair`, `refusal open(pipe(Command), …)`, `refusal open/4's lock(Lock) option (advisory fil…`, `refusal closing a stream pair` |
 | TX1 | 4 | 4 | 0 | `$snapshot/1`, `$transaction/2`, `$transaction/3`, `$undo/1` |
-| WRAP1 | 4 | 2 | 2 | `$wrapped_implementation/3`, `unwrap_predicate/2`, `refusal the VM instruction S_CALLWRAPPER (callin…`, `refusal the VM instruction S_WRAP (calling a wra…` |
-| CT1 | 2 | 2 | 0 | `char_type/2`, `code_type/2` |
 | FL1 | 2 | 2 | 0 | `get_flag/2`, `set_flag/2` |
 | P2 | 2 | 2 | 0 | `$seek_list/4`, `sub_atom_icasechk/3` |
+| PR1 | 2 | 1 | 1 | `$foreign_predicate_source/2`, `refusal get_procedure: other than GP_DEFINE` |
+| ATOM1 | 1 | 0 | 1 | `refusal an atom containing the character 0 (a Sy…` |
+| AV10 | 1 | 0 | 1 | `refusal write_term/2 attributes(portray): '\$att…` |
 | LB4 | 1 | 0 | 1 | `refusal PL_get_file_name flag PL_FILE_SEARCH (sy…` |
-| PR1 | 1 | 1 | 0 | `$foreign_predicate_source/2` |
+| LB6 | 1 | 0 | 1 | `refusal consulting a file again (reconsult)` |
+| LB7 | 1 | 0 | 1 | `refusal unify_location: a stream's location, str…` |
+| PR1b | 1 | 0 | 1 | `refusal indexed(L): the Prolog dict of an index …` |
 | SRC2 | 1 | 1 | 0 | `$unload_file/1` |
+| SSU1b | 1 | 0 | 1 | `refusal setAttrDefinition: attribute $attr` |
 | TAI1 | 1 | 1 | 0 | `format_time/3` |
-| NO OWNER | 95 | 28 | 67 | `apple_current_locale_identifier/1`, `B_SMALLINTW`, `B_THROW`, `H_SMALLINTW`, `L_SMALLINTW`, `S_DET`, `S_INCR_DYNAMIC`, `S_THREAD_LOCAL`, … +87 |
+| NO OWNER | 43 | 28 | 15 | `apple_current_locale_identifier/1`, `B_SMALLINTW`, `B_THROW`, `H_SMALLINTW`, `L_SMALLINTW`, `S_DET`, `S_INCR_DYNAMIC`, `S_THREAD_LOCAL`, … +35 |
 
 #### Missing and refused per category
 
