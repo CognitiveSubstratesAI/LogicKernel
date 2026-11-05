@@ -279,7 +279,7 @@ end
 # (swipl-devel cbf4e189, src/pl-init.c:1113-1347; the macros optionString and optionList :100-117)
 # DIVERGES: (1) the records `o` and `cmd` (`GD->options`, `GD->cmdline`) and the databases are arguments; the arguments left over
 # (`argvleft`) are the value and `nothing` is upstream's `-1`. (2) `-d topic` (debug topics, `prolog_debug_from_string`) takes its
-# word and is ignored: the kernel has no debug topics (D-0415 ruling Q7, pending audit). (3) `--traditional` (`setTraditional`) raises a
+# word and is ignored: the kernel has no debug topics (owner DBG1; ruling Q7, audit D-0416 item 4). (3) `--traditional` (`setTraditional`) raises a
 # `NotPortedError`: the kernel is SWI-7 only (`resetListAtoms` is not ported). (4) `--sigalert=N` is checked (0..31) and
 # ignored: the kernel has no signal-alert thread. (5) `--no-tty`/`--tty` go through `PL_set_prolog_flag("tty_control", ...)` as
 # upstream and so raise where the flag's value changes (os/pl-prologflag.jl: no terminal control). (6) `-b` sets
@@ -664,9 +664,9 @@ end
 # without `initOs`, `initDefaults`, `setEarlyDefines`, `initPaths`' paths, `giveVersionInfo`, the saved-state options), then
 # `apply_options_to_flags!` where upstream's `initPrologFlags` read the options, then the tail. (2) `GD->initialised` is not stored
 # (the database is new at each call, the early return `if GD->initialised` has no case). (3) `-c` (`GD->options.compile`) and
-# `--config` (`$compile`, `$config`) raise `NotPortedError` by name. (4) `prologToplevel` (pl-pro.c:663-676) is its `loop == false`
-# branch: `$initialise` is neither `$query_loop` nor `$toplevel`, so `break_level` is not touched and the call is `query_loop(goal,
-# false)` (owner TOP1b, which ports `prologToplevel` whole). (5) `initialiseForeign`, `registerForeignLicenses`, the resource
+# `--config` (`$compile`, `$config`) raise `NotPortedError` by name. (4) `query_loop(goal, false)` is upstream's own path (`prologToplevel`, pl-pro.c:663-676, its `loop == false`
+# branch: `$initialise` is neither `$query_loop` nor `$toplevel`, so `break_level` is not touched); owner TOP1b only for what the kernel's
+# reduced `query_loop` leaves out of it (audit D-0416 item 4). (5) `initialiseForeign`, `registerForeignLicenses`, the resource
 # database flag and `enableThreads` have nothing to do (no foreign libraries, no resource database, one thread).
 """
     PL_initialise_tail!(gd, ld) -> Bool
