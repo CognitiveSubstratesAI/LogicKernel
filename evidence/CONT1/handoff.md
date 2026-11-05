@@ -81,7 +81,7 @@ LEFT for the next agent (C4 groups 3-4, then C5):
   Notes from reading: frames are pool indices (stable: no reload of valTermRef); a frame argument is the term_t `argFrameP(f.base, i)`;
   `contv = PL_new_term_refs(ld, depth)` (0 = failure); the `env3_predicate` branch uses `PL_put_term(ld, av+i, argFrameP(base,i))`,
   `PL_cons_list_v`, `PL_cons_functor(ld, av+0, _cont_functor(ld,:call_continuation,1), contv)`, `PL_cons_functor_v`, `PL_cons_functor(.., :call, 1, ..)`;
-  `onStackArea(local, cl)` has no counterpart (a Clause is a Julia object): omit with a comment; the loop's `pc = fr->programPointer` is a `Code{T}`;
+  `onStackArea(local, cl)` is left out (a Clause is a Julia object): omit with a comment; the loop's `pc = fr->programPointer` is a `Code{T}`;
   put_environment takes `pc.pc` (index). Errors: `PL_error(ld, "shift", 1, msg, ERR_EXISTENCE, mk_sym(T,:reset), ball)` with msg
   "No matching reset/3 call" / "Cannot catch continuation through findall/3" (FRESET_FINDALL -> second); ERR_UNINSTANTIATION via
   `PL_error(ld, "", 0, "", ERR_UNINSTANTIATION, 0, argFrameP(resetbase,1))` when `PL_exception(ld,0) == 0`; `PL_new_term_ref(ld)` + `PL_put_nil(ld, cont)`.
@@ -322,3 +322,20 @@ evidence/CONT1/lt_rows.pl and lt_rows.out), 7f5aca11 (CONT1-V3's KILL names t_lt
 - The rows read lTop as `statistics(localused)` (= 8*ld.lTop, as test_at_body_swipl.jl does) at the shift site and after the reset returned. swipl's FIRST shift of a process answers
   differently (stack growth), so each row starts with a warm-up reset(cl_sh,_,_). A deep-shift row (shift under three non-last-call frames) answered `below` in swipl, unexplained: left out.
 - Unrun: the new rows and the file (no Julia); the mutant checker (read-only python3 -I) passed: 26 entries, each `old` once, new != old, targets exist.
+
+
+## Re-stack onto the b2 line (wip/cont1b; edit-only, nothing run, no Julia, no daemon)
+Branch wip/cont1b = wip/lb4b2f 7276111b + the 28 commits of wip/cont1 (019220a5 .. 8f472242) cherry-picked in order + one commit of
+follow-ups to b2's new files. wip/cont1 is untouched. The opcode numbers (I_YIELD=159, I_CUTCHP=160, S_WRAP..S_TABLED=161..163,
+I_RESET..I_SHIFTCP=164..168) are b2's; no CONT1 source, test or mutant names an opcode by number (all by name), so nothing was renumbered.
+Conflicts and their resolution (evidence in lk-channel evidence/CONT1/restack.md): src/pl-setup.jl (constructor tail: b2 appended
+`procedures_print_message2` after the halt/event/closure/CWD fields; the CONT1 fields follow it, comma added), src/SWI-Prolog.jl
+(`PL_Q_EXCEPT_HALT` and `PL_Q_ALLOW_YIELD` both kept; the header comment lists the flags left out without `PL_Q_ALLOW_YIELD`),
+src/pl-vmi.jl (header sentence on the six instructions: b2's numbering text kept, last sentence is CONT1's), docs/architecture.md
+(two appended blocks: both kept).
+Follow-ups on b2's files: docs/r2_owners.tsv (six CONT1 refusal lines out; three new refusal lines: I_YIELD in an engine TH1, the
+dtbl_reset6 branches of I_RESET / I_EXITRESET TAB1); tools/mutants/LB4B2.py (K15 removed: its anchor is the I_RESET refusal CONT1 deletes;
+K16's equivalence reason rewritten); manifest: the six walker entries that name no term type moved out of `_manifest_cont(T)` into the
+tuple (manifest_dups probe 0 dups); src/pl-comp.jl one comment.
+Flips of test_cont_boot_swipl.jl (b2 file): the six rows c_reset, c_reset_shift, c_shift, c_shiftcp, c_cc, c_yield compare with swipl's
+pinned line in `_CB_PINNED`; the testset is renamed and asserts the pins (3 existence errors, `-(V0,0)`, the type error, the permission error).
