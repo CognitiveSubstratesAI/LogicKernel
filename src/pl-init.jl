@@ -6,10 +6,13 @@
 # COPYRIGHT: CWI, Amsterdam
 # COPYRIGHT: SWI-Prolog Solutions b.v.
 #
-# PORTED FROM pl-init.c, exactly this: `PL_cleanup`, the clean-up `halt/1` ends with (HALT1), in a reduced
-# form (below). NOT PORTED: the command line and the start-up (`PL_initialise`, `parseCommandLineOptions`,
-# `script_argv`, the saved states), `run_on_halt` and the foreign hook lists (`PL_on_halt`, `PL_exit_hook`:
-# the kernel has none), `qlfCleanup`, `RemoveTemporaryFiles`, `cleanupSignals` and the memory reclaim of
+# PORTED FROM pl-init.c: `PL_cleanup`, the clean-up `halt/1` ends with (HALT1), in a reduced form (below); and,
+# from R2 LB7, the command line and the start-up of the Prolog part: `parseCommandLineOptions` and its helpers,
+# `usage`, `defaultSystemInitFile`, the option records' defaults (`initDefaultOptions`) and the tail of
+# `PL_initialise` that runs `'$initialise'` (`PL_initialise!`; the database it starts is the booted template's copy).
+# LEFT OUT: `script_argv`, the saved states and the resource database, `findHome`/`initPaths` apart from the system
+# init file name, `giveVersionInfo`, `run_on_halt` and the foreign hook lists (`PL_on_halt`, `PL_exit_hook`: the
+# kernel has none), `qlfCleanup`, `RemoveTemporaryFiles`, `cleanupSignals` and the memory reclaim of
 # `cleanupProlog` (the host process's memory is the host's).
 
 # PORT: pl-init.c MAX_HALT_CANCELLED
@@ -651,4 +654,80 @@ function apply_options_to_flags!(gd::PL_global_data{T}, ld::PL_local_data{T})::N
     _set_argv_prolog_flag!(gd, ld, "os_argv", cmd.os_argv)                        # :2812
     _set_argv_prolog_flag!(gd, ld, "argv", cmd.appl_argv)                         # :2813
     return nothing
+end
+
+# ----- PL_initialise: the part that starts the Prolog side (R2 LB7) -----
+# PORT: pl-init.c PL_initialise
+# (swipl-devel cbf4e189, src/pl-init.c:1483-1682; the tail :1599-1682)
+# DIVERGES: (1) the database is the booted template's copy: `setupProlog` and the loading of the boot state (`zip_open_archive`,
+# `SopenZIP`, `loadWicFromStream`) have been done by the build of the template, so this runs the command-line part (:1501-1597,
+# without `initOs`, `initDefaults`, `setEarlyDefines`, `initPaths`' paths, `giveVersionInfo`, the saved-state options), then
+# `apply_options_to_flags!` where upstream's `initPrologFlags` read the options, then the tail. (2) `GD->initialised` is not stored
+# (the database is new at each call, the early return `if GD->initialised` has no case). (3) `-c` (`GD->options.compile`) and
+# `--config` (`$compile`, `$config`) raise `NotPortedError` by name. (4) `prologToplevel` (pl-pro.c:663-676) is its `loop == false`
+# branch: `$initialise` is neither `$query_loop` nor `$toplevel`, so `break_level` is not touched and the call is `query_loop(goal,
+# false)` (owner TOP1b, which ports `prologToplevel` whole). (5) `initialiseForeign`, `registerForeignLicenses`, the resource
+# database flag and `enableThreads` have nothing to do (no foreign libraries, no resource database, one thread).
+"""
+    PL_initialise_tail!(gd, ld) -> Bool
+
+The end of `PL_initialise`: system access level while the options settle, the style checks every later load runs under, user access
+level, then the Prolog goal `'\$initialise'` (`initialise_prolog`), whose success is the answer (pl-init.c).
+"""
+function PL_initialise_tail!(gd::PL_global_data{T}, ld::PL_local_data{T})::Bool where {T}
+    o = gd.options
+    setAccessLevel!(ld, ACCESS_LEVEL_SYSTEM)                       # :1614
+    o.nosignals && clearPrologFlagMask!(ld, PLFLAG_SIGNALS)       # :1615-1617
+
+    ld.debugstatus_styleCheck =                                    # :1663
+        SINGLETON_CHECK | SEMSINGLETON_CHECK | DISCONTIGUOUS_STYLE | NOEFFECT_CHECK
+    setAccessLevel!(ld, ACCESS_LEVEL_USER)                         # :1666
+
+    if o.config !== nothing
+        throw(NotPortedError{T}(mk_sym(T, :config), "--config (\$config)", "R2 LB7"))
+    elseif o.compile
+        throw(NotPortedError{T}(mk_sym(T, :compile), "-c (\$compile)", "R2 LB7"))
+    end
+    return query_loop(gd, ld, mk_sym(T, Symbol("\$initialise")), false) == 1   # prologToplevel("$initialise")
+end
+
+"""
+    PL_initialise!(gd, ld, argv) -> Bool
+
+`PL_initialise(argc, argv)` on the database `gd` with local data `ld`: `argv[1]` is the program name. Reads the options
+(`parseCommandLineOptions`; an error writes the usage text to `user_error` and answers false), feeds the flags
+(`apply_options_to_flags!`) and runs `'\$initialise'` (`PL_initialise_tail!`) (pl-init.c).
+"""
+function PL_initialise!(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, argv::AbstractVector{<:AbstractString}
+)::Bool where {T}
+    o = gd.options
+    cmd = gd.cmdline
+    cmd.os_argv = String[String(a) for a in argv]                   # :1501-1503
+    cmd.packs = true
+    o.systemInitFile = isempty(argv) ? "none" : defaultSystemInitFile(argv[1])   # initPaths, :881
+    initDefaultOptions!(o)                                          # :1524
+
+    args = String[String(a) for a in argv[(firstindex(argv) + 1):end]]   # argc--; argv++
+    argvleft = parseCommandLineOptions(gd, ld, o, cmd, args)
+    if argvleft === nothing
+        usage(ld)
+        return false
+    end
+    cmd.appl_argv = argvleft                                        # :1591-1592
+    apply_options_to_flags!(gd, ld)
+    return PL_initialise_tail!(gd, ld)
+end
+
+"""
+    PL_initialise!(T, argv) -> (gd, ld, ok)
+
+A new database of term type `T` (the booted template's copy) and a local data, started by `PL_initialise!(gd, ld, argv)`;
+`ok` is its answer (pl-init.c).
+"""
+function PL_initialise!(::Type{T}, argv::AbstractVector{<:AbstractString}) where {T}
+    gd = PL_global_data{T}()
+    ld = PL_local_data{T}(gd)
+    ok = PL_initialise!(gd, ld, argv)
+    return (gd, ld, ok)
 end
