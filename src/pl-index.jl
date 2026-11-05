@@ -883,7 +883,15 @@ function insertIntoSparseList!(
                     return (head, cref)
                 else
                     cref.next = ci_cref
-                    (ci_prev::ClauseRef{T}).next = cref
+                    # Upstream's invariant, made explicit as above: `ci_cref !== head` means the walk has
+                    # advanced at least once, so `ci_prev` is set; JET (given the concrete call path of the
+                    # reload arm of assertProcedureSource, LB6a) infers it `Nothing` here and reports the
+                    # `typeassert` it used to carry.
+                    ci_prev === nothing &&
+                        error(
+                            "insertIntoSparseList!: the walk has no predecessor of the insertion point"
+                        )
+                    ci_prev.next = cref
                     return (head, tail)
                 end
             end
