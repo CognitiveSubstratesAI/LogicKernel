@@ -351,6 +351,36 @@ end
     LKE.PL_discard_foreign_frame(ld, fid)
 end
 
+# printMessage sets the pending exception aside (saveWakeup) and PUTS IT BACK (restoreWakeup, pl-error.c:1059-1062 at the pin: a
+# message printed with a ball pending must not lose the ball nor leave the wakeup frame open). LK-ONLY row, pinned from the source;
+# no Prolog-level swipl route to a foreign caller of printMessage (LB4B2-E5).
+@testset "LB4 b2: printMessage gives the pending exception back and closes its frame (LK-ONLY)" begin
+    gd = LKE.PL_global_data{_E}()
+    ld = LKE.PL_local_data{_E}(gd)
+    lk_install_message_collector!(gd, ld)
+    lk_take_messages!(ld)
+    s = LKE.set_standard_stream!(ld, LKE.SNO_USER_ERROR, IOBuffer())
+    fid = LKE.PL_open_foreign_frame(ld)
+    ball = LKE.PL_new_term_ref(ld)
+    LKE.PL_put_atom(ld, ball, _es(:e5_ball))
+    LKE.PL_raise_exception(ld, ball)
+    @test LKE.PL_exception(ld, 0) != 0
+    msg = LKE.PL_new_term_ref(ld)
+    LKE.putSlotValue!(ld, msg + 1, _ef(:io_warning, _es(:user_error), _es(:e5_probe)))
+    ctx0 = ld.fli_context
+    @test LKE.printMessage(ld, :warning, msg)
+    @test LKE.PL_exception(ld, 0) != 0                      # the ball is pending again …
+    @test lk_eq(lk_answer(ld, ld.exception_term), _es(:e5_ball))
+    @test ld.fli_context == ctx0                            # … and the wakeup frame of printMessage is closed
+    @test ld.in_print_message == 0
+    LKE.PL_clear_exception(ld)
+    msgs = lk_take_messages!(ld)                            # non-vacuity: print_message/2 did run, once
+    @test length(msgs) == 1
+    @test msgs[1][1] === :warning
+    @test lk_eq(msgs[1][2], _ef(:io_warning, _es(:user_error), _es(:e5_probe)))
+    LKE.PL_discard_foreign_frame(ld, fid)
+end
+
 # pushWordAsTermRef/popTermRef (pl-fli.c 404-419): every error built from a word culprit hands its
 # temporary handles back — the ring's top is 0 again and each handle references its PERMANENT cell,
 # unbound (a handle left bound, or a fresh cell, would be freed under it by the next Undo!).

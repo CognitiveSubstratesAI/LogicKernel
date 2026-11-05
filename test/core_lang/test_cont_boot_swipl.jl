@@ -306,6 +306,36 @@ end
     end
 end
 
+# I_EXITRESET ENDS clearUninitialisedVarsFrame's walk (pl-gc.c:1354 at the pin lists it with I_EXIT and I_EXITFACT; LK-ONLY row, the
+# function is called directly: no clause the compiler makes reaches it, compileClause ends every clause with I_EXIT after I_EXITRESET,
+# so only a code list that goes on after an I_EXITRESET shows the walk stopping, LB4B2-K16). A synthetic frame as test_local_stack.jl's
+# (pushFrame!, lTop above the clause's variables); two first-variable cells, 0 before and 1 after the terminator. The control puts I_TRUE
+# where the terminator was: the walk does go on past it and sets cell 1, so "cell 1 unchanged" can fail.
+@testset "clearUninitialisedVarsFrame stops at I_EXITRESET (pl-gc.c:1354; LK-ONLY)" begin
+    sentinel = UInt64(0x0123456789abcdef)
+    function run_walk(codes::Vector{LK.code})
+        ld = LK.PL_local_data{_CB}(LK.PL_global_data{_CB}())
+        fr = LK.pushFrame!(ld, ld.lTop)
+        base = ld.frames[fr].base
+        ld.lTop = LK.argFrameP(base, 2)
+        cell(n) = LK.varFrameP(base, n) + 1
+        @test cell(1) <= length(ld.slots)
+        for n in 0:1
+            ld.slots[cell(n)] = sentinel
+        end
+        LK.clearUninitialisedVarsFrame(ld, fr, codes, 1)
+        return (ld.slots[cell(0)] != sentinel, ld.slots[cell(1)] != sentinel)
+    end
+    stop = LK.code[
+        LK.B_FIRSTVAR, LK.code(0), LK.I_EXITRESET, LK.B_FIRSTVAR, LK.code(1), LK.I_EXIT
+    ]
+    go_on = LK.code[
+        LK.B_FIRSTVAR, LK.code(0), LK.I_TRUE, LK.B_FIRSTVAR, LK.code(1), LK.I_EXIT
+    ]
+    @test run_walk(go_on) == (true, true)          # the control: both cells set (the walk crosses a non-terminal)
+    @test run_walk(stop) == (true, false)          # cell 0 set (non-vacuity), cell 1 untouched: the walk ended at I_EXITRESET
+end
+
 # THE OPCODE ORDER (audit D-0407 item 3), type independent. The table is src/pl-vmi.jl `_CODE_TABLE` (row = code + 1); upstream's
 # order is that of the `VMI(NAME, ...)` entries of pl-vmi.c at the pin: B_ARG_CF :1537, B_ARG_VF :1580, I_YIELD :2410, I_CUTCHP :2935,
 # S_WRAP :3560, S_CALLWRAPPER :3624, S_TABLED :3644, I_RESET :5754, I_EXITRESET :5801, I_CALLCONT :5839, I_SHIFT :5874, I_SHIFTCP :5908.

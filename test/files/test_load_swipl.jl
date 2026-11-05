@@ -898,3 +898,30 @@ end
     ld = LK.PL_local_data{_TL}(gd)
     @test LK.load_file!(gd, ld, f) == (:ok, nothing)
 end
+
+@testset "load_file! reports a load whose load_files/2 fails as :failed (LB4B2-L2)" begin
+    # src/pl-wam.jl load_file!: the status is `:failed` when load_files(user:Path, []) has no answer. The system's load_files/2 only
+    # succeeds or raises (boot/init.pl:2563, the catch-all last clause of '$load_file_e'), but load_files/2 is not ISO: a clause of it
+    # in `user` replaces it (swipl 10.1.19: after `load_files(_, _) :- fail.` is loaded, user:load_files(File, []) FAILS; measured
+    # 2026-11-04). LK-ONLY row, the :failed status being the host API's. One database per half; a file is never loaded twice in one.
+    function defined(gd, name)
+        p = LK.isCurrentProcedure(sym_key(_tls(name)), 1, LK.MODULE_user(gd))
+        return p !== nothing && LK.isDefinedProcedure(gd, p)
+    end
+    d = mktempdir()
+    f1 = joinpath(d, "lf_fail1.pl")
+    f2 = joinpath(d, "lf_fail2.pl")
+    f3 = joinpath(d, "lf_fail3.pl")
+    write(f1, "load_files(_, _) :- fail.\n")
+    write(f2, "lf_after(a).\n")
+    write(f3, "lf_after(a).\n")
+    gd = LK.PL_global_data{_TL}()
+    ld = LK.PL_local_data{_TL}(gd)
+    @test LK.load_file!(gd, ld, f1) == (:ok, nothing)              # the redefinition itself loads
+    @test LK.load_file!(gd, ld, f2) == (:failed, nothing)          # the second load goes through it and fails
+    @test !defined(gd, "lf_after")                                 # non-vacuity: the file was not loaded
+    gd2 = LK.PL_global_data{_TL}()                                 # the control: a fresh database loads the same text
+    ld2 = LK.PL_local_data{_TL}(gd2)
+    @test LK.load_file!(gd2, ld2, f3) == (:ok, nothing)
+    @test defined(gd2, "lf_after")
+end

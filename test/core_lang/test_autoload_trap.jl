@@ -324,3 +324,29 @@ end
     @test String[a for (a, _) in _rcall(db, _rf("u", _rv(3), _rv(4)))] == ["u(2,2)"]
     @test isempty(db.ld.autoload_nesting)
 end
+
+@testset "A1b's killer: mcall_cont gives the new frame its parent before the hook runs (NFR->parent = FR)" begin
+    # src/pl-wam.jl mcall_cont: the restore after trapUndefined reads the NEW frame's parent (`FR = FR->parent`, pl-vmi.c:5722). The
+    # frame records are pooled by index and a dropped record keeps its fields (pushFrame!), so a record's STALE parent is often the
+    # right one by chance; this row makes it WRONG: every pooled record's parent is set to a position no frame has, as a record
+    # left by an earlier call of another shape would hold one. With the parent written the call runs through; without it the
+    # restore returns into frame 999999 (a BoundsError on `ld.frames`, no loop). White box, LK-ONLY.
+    db = _at_db()
+    _at_hook!(
+        db, :foo, :retry; body=_rconj(_rf("assertz", _at_user(:foo)), _at_record(:foo))
+    )
+    _radd!(
+        db, _rf("t", _rv(1)), _rconj(_rf("call", _at_user(:foo)), _rf("=", _rv(1), _rg(7)))
+    )
+    for fr in db.ld.frames
+        fr.parent = 999_999
+    end
+    got = try
+        String[a for (a, _) in _rcall(db, _rf("t", _rv(2)))]
+    catch e
+        "raised " * string(typeof(e))                      # the type only: a failing `==` shows both sides, and a BoundsError carries the frame pool
+    end
+    @test got == ["t(7)"]
+    @test _at_called(db) == ["called(foo)"]
+    @test isempty(db.ld.autoload_nesting)
+end

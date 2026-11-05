@@ -64,6 +64,8 @@ env:
   # FullSuite battery, refused by `collect`). The checkout below is made when the battery's targets name
   # that script, or either of those test files (LB4A: its mutants target them directly; the manifest-vs-
   # `git ls-tree` testset of test_vendored_swipl.jl is what kills a manifest line added or dropped).
+  # LB4B2 (slice 17): test/core_lang/test_cont_boot_swipl.jl reads the checkout too (`@test have_up`, the opcode-order
+  # testset): without it every mutant reaching that testset was "caught" at that line, a no-op included.
   LOGICKERNEL_UPSTREAM_SWIPL_DEVEL: ${{ github.workspace }}/.upstream/swipl-devel
   # a push to mutants/<step> has no inputs: the list is tools/mutants/<step>.py, the targets the
   # list's own (the `plan` job's output), the limit the default
@@ -101,9 +103,9 @@ jobs:
         with:
           version: '1.13'
       - uses: julia-actions/cache@9353db09a0f2bbbdec6f41791918c75d37391b36  # v3.5.0
-      - name: The pinned swipl-devel commit (a whole-suite target, or test/test_vendored_*.jl)
+      - name: The pinned swipl-devel commit (a whole-suite target, test/test_vendored_*.jl, or test_cont_boot_swipl.jl)
         id: pin
-        if: ${{ contains(format('{0} {1}', inputs.targets, needs.plan.outputs.targets), 'mutate_suite') || contains(format('{0} {1}', inputs.targets, needs.plan.outputs.targets), 'test_vendored') }}
+        if: ${{ contains(format('{0} {1}', inputs.targets, needs.plan.outputs.targets), 'mutate_suite') || contains(format('{0} {1}', inputs.targets, needs.plan.outputs.targets), 'test_vendored') || contains(format('{0} {1}', inputs.targets, needs.plan.outputs.targets), 'test_cont_boot') }}
         run: echo "commit=$(sed -n 's/^commit:[[:space:]]*//p' tools/SWIPL_VERSION | tr -d '[:space:]')" >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         if: ${{ steps.pin.outputs.commit != '' }}
@@ -150,9 +152,9 @@ jobs:
         with:
           version: '1.13'
       - uses: julia-actions/cache@9353db09a0f2bbbdec6f41791918c75d37391b36  # v3.5.0
-      - name: The pinned swipl-devel commit (a whole-suite target, or test/test_vendored_*.jl)
+      - name: The pinned swipl-devel commit (a whole-suite target, test/test_vendored_*.jl, or test_cont_boot_swipl.jl)
         id: pin
-        if: ${{ contains(format('{0} {1}', inputs.targets, needs.plan.outputs.targets), 'mutate_suite') || contains(format('{0} {1}', inputs.targets, needs.plan.outputs.targets), 'test_vendored') }}
+        if: ${{ contains(format('{0} {1}', inputs.targets, needs.plan.outputs.targets), 'mutate_suite') || contains(format('{0} {1}', inputs.targets, needs.plan.outputs.targets), 'test_vendored') || contains(format('{0} {1}', inputs.targets, needs.plan.outputs.targets), 'test_cont_boot') }}
         run: echo "commit=$(sed -n 's/^commit:[[:space:]]*//p' tools/SWIPL_VERSION | tr -d '[:space:]')" >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         if: ${{ steps.pin.outputs.commit != '' }}
