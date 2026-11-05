@@ -582,3 +582,73 @@ end
 # DIVERGES: `$usage/0` only; `$run_state/1` (saved states) is left to the step that ports them.
 "pl-init.c's registration table (`BeginPredDefs(init)`): the ported entries."
 const PL_predicates_from_init = (PL_extension("\$usage", 0, pl_usage0_va, PL_FA_VARARGS),)
+
+# ----- the system init file name and the flags the options feed (R2 LB7) -----
+# PORT: pl-init.c defaultSystemInitFile
+# (swipl-devel cbf4e189, src/pl-init.c:738-759; called by `initPaths`, :881)
+# DIVERGES: the program name is a `String`; the 255-character buffer limit (`--limit`) is kept; a path `PrologPath` refuses (too long) is
+# `swipl` (upstream hands the NULL to `BaseName`).
+"""
+    defaultSystemInitFile(a0) -> String
+
+The default name of the system init file (`-F`), from the program name `a0`: the leading letters and `-` of its base name, `swipl`
+where there are none (pl-init.c).
+"""
+function defaultSystemInitFile(a0::AbstractString)::String
+    plp = PrologPath(String(a0))
+    base = plp === nothing ? nothing : BaseName(plp)
+    if base !== nothing
+        buf = UInt8[]
+        limit = 256
+        for c in codeunits(base)                        # *base && (isAlpha(*base) || *base == '-') && --limit > 0
+            (isAlpha(Int(c)) || c == UInt8('-')) || break
+            (limit -= 1) > 0 || break
+            push!(buf, c)
+        end
+        !isempty(buf) && limit > 0 && return String(buf)
+    end
+    return "swipl"
+end
+
+# ORIGINAL (LB7): upstream reads `GD->options` and `GD->cmdline` where `initPrologFlags` defines each flag (pl-prologflag.c:2561,
+# 2582, 2640-2641, 2706, 2776, 2812-2813), once, before any Prolog runs. The kernel's flag table exists when the command line is read
+# (the booted template), so the same values are written after the parse; the mask bits `-q`-style options set on the local data
+# (`--debug`, `--signals`, `--debug-on-interrupt`, `-O`) go to the database's mask too (`setPrologFlag` writes the database's; the local
+# data keeps its own copy).
+# DIVERGES: (1) `verbose` is written only for `-q` (`FF_KEEP`: upstream keeps a value `-Dverbose=...` set earlier; the early defines
+# are not applied here). (2) `threads` is not written (read-only `false`, the single-thread configuration) and `xpce` and
+# `shared_table_space` are not defined (those flags exist in upstream's threaded configuration only). (3) The stack limit goes to the
+# local data in words (`ld.stacks_limit`, upstream's `LD->stacks.limit` is bytes). (4) `os_argv` is the whole command line, `argv` the
+# arguments the parser left (the program name is dropped: pl-init.c:1537).
+"""
+    apply_options_to_flags!(gd, ld)
+
+Write the command-line options (`gd.options`, `gd.cmdline`) into the Prolog flags and the masks they feed: `optimise`,
+`generate_debug_info`, `debug_on_interrupt`, `signals` (flags and mask bits), `verbose` (for `-q`), `on_error`, `on_warning`,
+`packs`, `table_space`, `stack_limit`, `os_argv` and `argv`.
+"""
+function apply_options_to_flags!(gd::PL_global_data{T}, ld::PL_local_data{T})::Nothing where {T}
+    o = gd.options
+    cmd = gd.cmdline
+
+    for (name, bit, val) in (
+        ("optimise", PLFLAG_OPTIMISE, cmd.optimise),                              # pl-prologflag.c:2561
+        ("generate_debug_info", PLFLAG_DEBUGINFO, truePrologFlag(ld, PLFLAG_DEBUGINFO)),
+        ("debug_on_interrupt", PLFLAG_DEBUG_ON_INTERRUPT, truePrologFlag(ld, PLFLAG_DEBUG_ON_INTERRUPT)),
+        ("signals", PLFLAG_SIGNALS, truePrologFlag(ld, PLFLAG_SIGNALS)),
+    )
+        setPrologFlag(gd, name, FT_BOOL, val, bit)
+        val ? setPrologFlagMask!(ld, bit) : clearPrologFlagMask!(ld, bit)
+    end
+
+    setPrologFlag(gd, "table_space", FT_INTEGER, o.tableSpace)                    # :2582
+    setPrologFlag(gd, "stack_limit", FT_INTEGER, o.stackLimit)
+    ld.stacks_limit = o.stackLimit ÷ 8                                            # initPrologStacks(GD->options.stackLimit)
+    o.on_error === nothing || setPrologFlag(gd, "on_error", FT_ATOM, o.on_error::String)       # :2640
+    o.on_warning === nothing || setPrologFlag(gd, "on_warning", FT_ATOM, o.on_warning::String) # :2641
+    o.silent && setPrologFlag(gd, "verbose", FT_ATOM, "silent")                   # :2706
+    setPrologFlag(gd, "packs", FT_BOOL, cmd.packs, 0)                             # :2776
+    _set_argv_prolog_flag!(gd, ld, "os_argv", cmd.os_argv)                        # :2812
+    _set_argv_prolog_flag!(gd, ld, "argv", cmd.appl_argv)                         # :2813
+    return nothing
+end
