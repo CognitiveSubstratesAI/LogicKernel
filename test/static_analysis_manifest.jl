@@ -552,8 +552,10 @@ function _manifest_index(T)
         (LK._has_functor, Tuple{T, UInt64, Int}, true),
         (LK._is_control, Tuple{T, LK.ControlFunctors}, true),
         # src/pl-index.jl
-        (LK.STATIC_RELOADING, Tuple{UInt64, D}, true), (LK.cref_matches, Tuple{CR, UInt64}, true),
-        (LK.is_clean_predicate, Tuple{D}, true), (LK.visibleClause, Tuple{C, UInt64, UInt64}, true),
+        (LK.STATIC_RELOADING, Tuple{UInt64, D}, true),
+        (LK.cref_matches, Tuple{CR, UInt64}, true),
+        (LK.is_clean_predicate, Tuple{D}, true),
+        (LK.visibleClause, Tuple{C, UInt64, UInt64}, true),
         (LK.visibleClauseCNT, Tuple{C, UInt64, UInt64}, true),
         (LK.visibleClause, Tuple{LD, C, UInt64}, true),
         (LK.visibleClauseCNT, Tuple{LD, C, UInt64}, true),
@@ -654,7 +656,9 @@ function _manifest_index(T)
         (LK.can_be_primary_index, Tuple{CL, Int}, true),
         (LK.preferred_primary_index, Tuple{D}, true),
         (LK.modify_primary_index_arg!, Tuple{D, Int}, true),
-        (LK.update_primary_index!, Tuple{D}, false), (LK.update_primary_index!, Tuple{D, UInt64}, false), (LK.collisionCount, Tuple{CI}, true),
+        (LK.update_primary_index!, Tuple{D}, false),
+        (LK.update_primary_index!, Tuple{D, UInt64}, false),
+        (LK.collisionCount, Tuple{CI}, true),
         (LK.unify_clause_index, Tuple{CI}, false),
         (LK.add_deep_indexes!, Tuple{Vector{LK.index_property}, CI}, false),
         (LK.unify_index_pattern, Tuple{D}, false),
@@ -2163,7 +2167,11 @@ function _manifest_index(T)
         (LK.assertProcedureSource, Tuple{GD, LD, LK.SourceFile{T}, PR, C}, false),
         (LK.assertProcedureSource, Tuple{GD, LD, Nothing, PR, C}, false),
         (LK.associateSource, Tuple{LD, LK.SourceFile{T}, PR}, false),
-        (LK.setAttrProcedureSource, Tuple{GD, LD, LK.SourceFile{T}, PR, UInt64, Bool}, false),
+        (
+            LK.setAttrProcedureSource,
+            Tuple{GD, LD, LK.SourceFile{T}, PR, UInt64, Bool},
+            false
+        ),
         # R2 LB6a — reconsult: the leaf functions, the reload context and the assert path (pl-srcfile.c, pl-thread.c, pl-proc.c)
         (LK.popNPredicateAccess!, Tuple{LD, Int}, false),
         (LK.acquireSourceFileNo, Tuple{GD, Int}, false),
@@ -2989,7 +2997,13 @@ _manifest_gd_template(::Type{T}) where {T} = (
     # LB4 b2 first boot (G9): meta_declaration's ReadingSource branch (pl-srcfile.c setMetapredicateSource)
     (
         LK.setMetapredicateSource,
-        Tuple{LK.PL_global_data{T}, LK.PL_local_data{T}, LK.SourceFile{T}, LK.Procedure{T}, Vector{LK.arg_info}},
+        Tuple{
+            LK.PL_global_data{T},
+            LK.PL_local_data{T},
+            LK.SourceFile{T},
+            LK.Procedure{T},
+            Vector{LK.arg_info}
+        },
         false
     ),
     # LB4 b2 first boot (G9): the built-in atoms' symbols at database setup (pl-atom.c registerBuiltinAtoms' a->name)

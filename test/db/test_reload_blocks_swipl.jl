@@ -42,7 +42,8 @@ A clause for `head` of `proc` as `assert_term!` leaves a loaded one: its source 
 that `freeClause!`/`copy_clause_source` give back.
 """
 function _rb_clause(
-    db::IxDB{T}, sf::LK.SourceFile{T}, proc::LK.Procedure{T}, head::T; body::Union{Nothing, T}=nothing,
+    db::IxDB{T}, sf::LK.SourceFile{T}, proc::LK.Procedure{T}, head::T;
+    body::Union{Nothing, T}=nothing,
     flags::UInt32=UInt32(0), line::Integer=1, owner::LK.SourceFile{T}=sf
 )::LK.Clause{T} where {T}
     cl = LK.compileClause(db.gd, db.ld, head, body, proc, LK.MODULE_user(db.gd), 0, flags)
@@ -57,7 +58,8 @@ end
 
 "Add the clauses with the heads `heads` to `proc` for the file `sf` in the first-load way (`assertProcedureSource` with no reload); the clauses, in order."
 function _rb_old!(
-    db::IxDB{T}, sf::LK.SourceFile{T}, proc::LK.Procedure{T}, heads::Vector{T}; owner::LK.SourceFile{T}=sf
+    db::IxDB{T}, sf::LK.SourceFile{T}, proc::LK.Procedure{T}, heads::Vector{T};
+    owner::LK.SourceFile{T}=sf
 )::Vector{LK.Clause{T}} where {T}
     LK.addProcedureSourceFile(sf, proc)
     out = LK.Clause{T}[]
@@ -93,7 +95,8 @@ function _rb_refs(def::LK.Definition{T})::Vector{LK.ClauseRef{T}} where {T}
 end
 
 "Are `a` and `b` the same clauses, element by element, by identity?"
-_rb_same(a::Vector{<:LK.Clause}, b::Vector{<:LK.Clause}) = length(a) == length(b) && all(i -> a[i] === b[i], eachindex(a))
+_rb_same(a::Vector{<:LK.Clause}, b::Vector{<:LK.Clause}) =
+    length(a) == length(b) && all(i -> a[i] === b[i], eachindex(a))
 
 "The metas of an argument-mask vector."
 _rb_metas(v::Vector{LK.arg_info}) = UInt8[a.meta for a in v]
@@ -172,9 +175,17 @@ end
     rt = LK.compileClause(gd, ld, _rb_p(_RB, :dy, 99), nothing, dy, LK.MODULE_user(gd))
     LK.assertDefinition!(gd, ld, dy.definition, rt, LK.CL_END)
     # the state the comparison starts from: every clause live; the procedures of A are recorded; the flags to be cleared are set
-    allcl = vcat(_rb_list(s1.definition), _rb_list(s2.definition), _rb_list(mf.definition), _rb_list(dy.definition), _rb_list(q.definition))
-    @test length(allcl) == 2 + 1 + 3 + 2 + 3 && all(cl -> cl.generation_erased == LK.GEN_MAX, allcl)
-    @test s1 in sfA.procedures && s2 in sfA.procedures && mf in sfA.procedures && dy in sfA.procedures && q in sfA.procedures
+    allcl = vcat(
+        _rb_list(s1.definition),
+        _rb_list(s2.definition),
+        _rb_list(mf.definition),
+        _rb_list(dy.definition),
+        _rb_list(q.definition)
+    )
+    @test length(allcl) == 2 + 1 + 3 + 2 + 3 &&
+        all(cl -> cl.generation_erased == LK.GEN_MAX, allcl)
+    @test s1 in sfA.procedures && s2 in sfA.procedures && mf in sfA.procedures &&
+        dy in sfA.procedures && q in sfA.procedures
     @test sfA.index != sfB.index && sfA.reload === nothing
     @test gd.reload_generation == LK.GEN_INVALID && ld.reload_nesting == 0
     for proc in sfA.procedures
@@ -187,13 +198,16 @@ end
     # r01: the file's static clauses are erased at the reload generation (A1: not at the global generation)
     for p in (s1, s2, q)
         cls = _rb_list(p.definition)
-        @test !isempty(cls) && all(cl -> cl.generation_erased == LK.GEN_RELOAD && cl.owner_no == sfA.index, cls)
+        @test !isempty(cls) && all(
+            cl -> cl.generation_erased == LK.GEN_RELOAD && cl.owner_no == sfA.index, cls
+        )
     end
     @test LK.GEN_RELOAD == LK.GEN_MAX - 1 && LK.global_generation(gd) == gen0         # nothing moved the database's generation
     # r02: a multifile predicate: A's clauses are marked, B's clause (another owner) is not (A2)
     mfc = _rb_list(mf.definition)
     @test length(mfc) == 3
-    @test count(cl -> cl.owner_no == sfA.index, mfc) == 2 && count(cl -> cl.owner_no == sfB.index, mfc) == 1
+    @test count(cl -> cl.owner_no == sfA.index, mfc) == 2 &&
+        count(cl -> cl.owner_no == sfB.index, mfc) == 1
     for cl in mfc
         if cl.owner_no == sfA.index
             @test cl.generation_erased == LK.GEN_RELOAD
@@ -203,7 +217,8 @@ end
     end
     # r03: a dynamic predicate: the file's clause is marked, the run-time clause (owner_no 0) is not (A3)
     dyc = _rb_list(dy.definition)
-    @test length(dyc) == 2 && count(cl -> cl.owner_no == 0, dyc) == 1 && count(cl -> cl.owner_no == sfA.index, dyc) == 1
+    @test length(dyc) == 2 && count(cl -> cl.owner_no == 0, dyc) == 1 &&
+        count(cl -> cl.owner_no == sfA.index, dyc) == 1
     for cl in dyc
         @test cl.generation_erased == (cl.owner_no == 0 ? LK.GEN_MAX : LK.GEN_RELOAD)
     end
@@ -211,18 +226,23 @@ end
     # r04: the flags and counters (A4, A5, A6, A6b)
     for proc in sfA.procedures
         fl = proc.definition.flags
-        @test (fl & LK.P_RELOADING) != 0 && (fl & LK.P_DISCONTIGUOUS) == 0 && (fl & LK.P_AUTOLOAD) == 0
+        @test (fl & LK.P_RELOADING) != 0 && (fl & LK.P_DISCONTIGUOUS) == 0 &&
+            (fl & LK.P_AUTOLOAD) == 0
     end
     @test LK.P_RELOADING == LK.P_MODIFIED                              # one bit, pl-incl.h:1127 (swipl's own alias)
     rl = sfA.reload
-    @test rl !== nothing && rl.reload_gen == LK.GEN_RELOAD && isempty(rl.procedures) && isempty(rl.modules) && rl.number_of_clauses == 0
+    @test rl !== nothing && rl.reload_gen == LK.GEN_RELOAD && isempty(rl.procedures) &&
+        isempty(rl.modules) && rl.number_of_clauses == 0
     @test gd.reload_generation == LK.GEN_RELOAD
     @test ld.reload_nesting == 1
     # nesting 2 after a second start (another file; the C counter, `endReconsult` decrements it in LB6b)
     @test LK.startReconsultFile(gd, ld, sfB)
     @test ld.reload_nesting == 2 && sfB.reload !== nothing && sfB.reload !== rl
     # B's own clause is now marked, A's marks are untouched
-    @test all(cl -> cl.generation_erased == (cl.owner_no == 0 ? LK.GEN_MAX : LK.GEN_RELOAD), _rb_list(dy.definition))
+    @test all(
+        cl -> cl.generation_erased == (cl.owner_no == 0 ? LK.GEN_MAX : LK.GEN_RELOAD),
+        _rb_list(dy.definition)
+    )
     @test count(cl -> cl.generation_erased == LK.GEN_RELOAD, _rb_list(mf.definition)) == 3
     _rb_end!(db)
 end
@@ -244,7 +264,8 @@ end
     tv = _rb_proc(db, :tv, 1)
     cl = _rb_clause(db, sfA, tv, _rb_p(_RB, :tv, 1))               # compiled, not asserted: `startReconsultFile` does not mark it
     g = LK.gen_t(20)
-    cl.generation_created = LK.gen_t(3); cl.generation_erased = LK.GEN_RELOAD
+    cl.generation_created = LK.gen_t(3)
+    cl.generation_erased = LK.GEN_RELOAD
     @test LK.visibleClause(ld, cl, g) && LK.visibleClauseCNT(ld, cl, g)               # outside a reload: the plain rule
     # file A: started, the generation is the reload generation; ended, it is gone
     @test LK.startReconsultFile(gd, ld, sfA)
@@ -257,7 +278,8 @@ end
     # file B in turn: its own reload context, the generation is the reload generation again; ended, it is gone
     @test LK.startReconsultFile(gd, ld, sfB)
     @test gd.reload_generation == LK.GEN_RELOAD && ld.reload_nesting == 1
-    @test sfB.reload !== nothing && sfB.reload !== sfA.reload && sfB.reload.reload_gen == gd.reload_generation
+    @test sfB.reload !== nothing && sfB.reload !== sfA.reload &&
+        sfB.reload.reload_gen == gd.reload_generation
     @test !LK.visibleClause(ld, cl, g) && !LK.visibleClauseCNT(ld, cl, g)             # during B: the reload rule
     _rb_end!(db)
     @test gd.reload_generation == LK.GEN_INVALID && ld.reload_nesting == 0
@@ -276,25 +298,31 @@ end
     g = LK.gen_t(20)                                          # a database generation, the clauses below are placed relative to it
     R = LK.GEN_RELOAD
     # the plain rule (rgen == GEN_INVALID): created <= gen < erased
-    cl.generation_created = LK.gen_t(3); cl.generation_erased = LK.GEN_MAX
+    cl.generation_created = LK.gen_t(3)
+    cl.generation_erased = LK.GEN_MAX
     @test LK.visibleClause(cl, g, LK.GEN_INVALID)
     @test LK.visibleClause(cl, g, R)                                  # an ordinary live clause stays visible during a reload
     # r05: erased at the reload generation: invisible during the reload (A7), visible by the plain rule (the control: both sides)
-    cl.generation_created = LK.gen_t(3); cl.generation_erased = R
+    cl.generation_created = LK.gen_t(3)
+    cl.generation_erased = R
     @test LK.visibleClause(cl, g, LK.GEN_INVALID)
     @test !LK.visibleClause(cl, g, R)
     @test !LK.visibleClauseCNT(cl, g, R)
     # r06: created at the reload generation: visible during the reload (A8), invisible by the plain rule
-    cl.generation_created = R; cl.generation_erased = LK.GEN_MAX
+    cl.generation_created = R
+    cl.generation_erased = LK.GEN_MAX
     @test !LK.visibleClause(cl, g, LK.GEN_INVALID)
     @test LK.visibleClause(cl, g, R)
     # a clause erased at an ordinary generation stays invisible, a clause created in the future likewise
-    cl.generation_created = LK.gen_t(3); cl.generation_erased = LK.gen_t(7)
+    cl.generation_created = LK.gen_t(3)
+    cl.generation_erased = LK.gen_t(7)
     @test !LK.visibleClause(cl, g, R) && !LK.visibleClause(cl, g, LK.GEN_INVALID)
-    cl.generation_created = LK.gen_t(30); cl.generation_erased = LK.GEN_MAX
+    cl.generation_created = LK.gen_t(30)
+    cl.generation_erased = LK.GEN_MAX
     @test !LK.visibleClause(cl, g, R) && !LK.visibleClause(cl, g, LK.GEN_INVALID)
     # r07: the `ld` form reads gd.reload_generation (through ld.GD): outside a reload it is the plain rule, inside it the reload rule
-    cl.generation_created = LK.gen_t(3); cl.generation_erased = R
+    cl.generation_created = LK.gen_t(3)
+    cl.generation_erased = R
     @test db.gd.reload_generation == LK.GEN_INVALID
     @test LK.visibleClause(ld, cl, g) && LK.visibleClauseCNT(ld, cl, g)
     db.gd.reload_generation = R
@@ -412,7 +440,8 @@ end
     @test sf.reload.number_of_clauses == 1 && reload.number_of_clauses == 1             # A31
     @test LK.reloadHasClauses(sf, proc)
     @test (reload.flags & (LK.P_NEW | LK.P_NO_CLAUSES)) == 0                           # p is redefined, not new (A16)
-    @test olds[2].generation_erased == LK.GEN_RELOAD && olds[3].generation_erased == LK.GEN_RELOAD   # the rest still waits
+    @test olds[2].generation_erased == LK.GEN_RELOAD &&
+        olds[3].generation_erased == LK.GEN_RELOAD   # the rest still waits
     # r09: p(9) differs from the current clause (p(2)) and from every later one: inserted BEFORE p(2)
     new2 = _rb_clause(db, sf, proc, _rb_p(_RB, :p, 9))
     cref = LK.assertProcedureSource(gd, ld, sf, proc, new2)
@@ -459,8 +488,10 @@ end
     cref = LK.assertProcedureSource(gd, ld, sf, nw, cl)
     reload = sf.reload.procedures[nw]
     @test cref !== nothing && cref.clause === cl
-    @test (reload.flags & LK.P_NEW) != 0 && (reload.flags & LK.P_NO_CLAUSES) == 0 && reload.current_clause === nothing    # A16
-    @test cl.generation_created != LK.GEN_RELOAD && cl.generation_created == LK.global_generation(gd)   # no reload generation for a new predicate
+    @test (reload.flags & LK.P_NEW) != 0 && (reload.flags & LK.P_NO_CLAUSES) == 0 &&
+        reload.current_clause === nothing    # A16
+    @test cl.generation_created != LK.GEN_RELOAD &&
+        cl.generation_created == LK.global_generation(gd)   # no reload generation for a new predicate
     @test LK.isRedefinedProcedure(nw, LK.global_generation(gd))                          # now it has a clause
     # the redefined one is not new (the other side of A16)
     cl2 = _rb_clause(db, sf, s.proc, _rb_p(_RB, :p, 1))
@@ -475,7 +506,8 @@ end
     fp = _rb_proc(db, :fp, 1)
     fp.definition.flags |= LK.P_FOREIGN
     r = LK.reloadContext(gd, ld, sf, fp)
-    @test (r.flags & LK.P_NO_CLAUSES) != 0 && (r.flags & LK.P_NEW) == 0 && r.current_clause === nothing
+    @test (r.flags & LK.P_NO_CLAUSES) != 0 && (r.flags & LK.P_NEW) == 0 &&
+        r.current_clause === nothing
     @test LK.reloadContext(gd, ld, sf, fp) === r && sf.reload.procedures[fp] === r
     @test !LK.reloadHasClauses(sf, fp)                                                  # a record with no clause seen
     tp = _rb_proc(db, :tp, 1)
@@ -483,7 +515,8 @@ end
     @test (LK.reloadContext(gd, ld, sf, tp).flags & LK.P_NO_CLAUSES) != 0
     # the ordinary predicate, for the contrast: its record has a generation and a current clause
     r0 = LK.reloadContext(gd, ld, sf, s.proc)
-    @test (r0.flags & LK.P_NO_CLAUSES) == 0 && r0.current_clause !== nothing && r0.current_clause.clause === s.olds[1]
+    @test (r0.flags & LK.P_NO_CLAUSES) == 0 && r0.current_clause !== nothing &&
+        r0.current_clause.clause === s.olds[1]
     @test r0.generation == LK.global_generation(gd) && r0.predicate === s.def
     @test !isempty(ld.predicate_references)                                              # pushPredicateAccessObj! for the redefined predicate
     _rb_end!(db)
@@ -497,12 +530,17 @@ end
     proc = _rb_proc(db, :m, 1)
     proc.definition.flags |= LK.P_MULTIFILE
     LK.addProcedureSourceFile(sf, proc)
-    m1 = _rb_clause(db, sf, proc, _rb_p(_RB, :m, 1)); LK.assertProcedureSource(gd, ld, sf, proc, m1)
-    m5 = _rb_clause(db, sfO, proc, _rb_p(_RB, :m, 5)); LK.assertProcedureSource(gd, ld, sfO, proc, m5)
-    m2 = _rb_clause(db, sf, proc, _rb_p(_RB, :m, 2)); LK.assertProcedureSource(gd, ld, sf, proc, m2)
-    @test _rb_same(_rb_list(proc.definition), [m1, m5, m2]) && m1.owner_no == sf.index && m5.owner_no == sfO.index
+    m1 = _rb_clause(db, sf, proc, _rb_p(_RB, :m, 1))
+    LK.assertProcedureSource(gd, ld, sf, proc, m1)
+    m5 = _rb_clause(db, sfO, proc, _rb_p(_RB, :m, 5))
+    LK.assertProcedureSource(gd, ld, sfO, proc, m5)
+    m2 = _rb_clause(db, sf, proc, _rb_p(_RB, :m, 2))
+    LK.assertProcedureSource(gd, ld, sf, proc, m2)
+    @test _rb_same(_rb_list(proc.definition), [m1, m5, m2]) && m1.owner_no == sf.index &&
+        m5.owner_no == sfO.index
     LK.startReconsultFile(gd, ld, sf)
-    @test m1.generation_erased == LK.GEN_RELOAD && m5.generation_erased == LK.GEN_MAX && m2.generation_erased == LK.GEN_RELOAD
+    @test m1.generation_erased == LK.GEN_RELOAD && m5.generation_erased == LK.GEN_MAX &&
+        m2.generation_erased == LK.GEN_RELOAD
     new5 = _rb_clause(db, sf, proc, _rb_p(_RB, :m, 5))
     cref = LK.assertProcedureSource(gd, ld, sf, proc, new5)
     @test cref !== nothing && cref.clause === new5                                       # NOT the other file's m(5)
@@ -530,7 +568,8 @@ end
     @test LK.find_clause(refs[1], g) === refs[2]                   # skips the erased one
     @test LK.find_clause(refs[3], g) === refs[4]                   # skips the one of the future
     @test LK.find_clause(refs[2], g) === refs[2]                   # a visible one is its own answer
-    @test LK.find_clause(refs[4].next, g) === nothing && LK.find_clause(nothing, g) === nothing
+    @test LK.find_clause(refs[4].next, g) === nothing &&
+        LK.find_clause(nothing, g) === nothing
     r = LK.p_reload{_RB}(proc.definition, g, refs[2], nothing, UInt64(0), UInt32(0))
     LK.advance_clause(r)
     @test r.current_clause === refs[4]                              # past the invisible p(3)
@@ -579,7 +618,8 @@ end
     sf.current_procedure = cur
     ld.debugstatus_styleCheck |= Int(LK.DISCONTIGUOUS_STYLE)
     rd.definition.flags &= ~LK.P_DISCONTIGUOUS
-    @test !LK.reloadHasClauses(sf, rd) && LK.hasClausesDefinition(gd, rd.definition) !== nothing
+    @test !LK.reloadHasClauses(sf, rd) &&
+        LK.hasClausesDefinition(gd, rd.definition) !== nothing
     n0 = length(ld.messages)
     @test LK.redefineProcedure(gd, ld, rd, sf, 0)
     @test length(ld.messages) == n0                                  # the early return: no warning
@@ -636,9 +676,17 @@ end
     @test (d2.flags & LK.P_DET) != 0
     # fix_ssu: SSU first clause sets P_SSU_DET and P_CHECK_SSU; a normal first clause clears them; dynamic and multifile predicates are left alone
     pr = _rb_proc(db, :fs1, 1)
-    ssu = _rb_clause(db, sf, pr, _rb_p(_RB, :fs1, 1); body=lk_sym(_RB, :true), flags=UInt32(LK.SSU_COMMIT_CLAUSE))
+    ssu = _rb_clause(
+        db,
+        sf,
+        pr,
+        _rb_p(_RB, :fs1, 1);
+        body=lk_sym(_RB, :true),
+        flags=UInt32(LK.SSU_COMMIT_CLAUSE)
+    )
     nrm = _rb_clause(db, sf, pr, _rb_p(_RB, :fs1, 2))
-    @test (ssu.flags & LK.SSU_COMMIT_CLAUSE) != 0 && (nrm.flags & (LK.SSU_COMMIT_CLAUSE | LK.SSU_CHOICE_CLAUSE)) == 0
+    @test (ssu.flags & LK.SSU_COMMIT_CLAUSE) != 0 &&
+        (nrm.flags & (LK.SSU_COMMIT_CLAUSE | LK.SSU_CHOICE_CLAUSE)) == 0
     r = mkr(pr.definition)
     LK.fix_ssu(r, ssu)
     @test (pr.definition.flags & LK.P_SSU_DET) != 0 && (r.flags & LK.P_CHECK_SSU) != 0     # A17b
@@ -661,7 +709,10 @@ end
     s = _rb_scene(_RB, :p, 2)
     db, sf, proc, def, gd, ld = s.db, s.sf, s.proc, s.def, s.db.gd, s.db.ld
     r = LK.reloadContext(gd, ld, sf, proc)
-    mixed(ld) = count(m -> occursin("Mixed SSU (=> and :-) clauses in", String(sym_text(m[2]))), ld.messages)
+    mixed(ld) = count(
+        m -> occursin("Mixed SSU (=> and :-) clauses in", String(sym_text(m[2]))),
+        ld.messages
+    )
     # the other side: all clauses normal and the predicate not SSU: no message
     n0 = mixed(ld)
     LK.check_ssu(gd, ld, r)
@@ -679,9 +730,12 @@ end
     @test (def.flags & LK.P_VOLATILE) != 0 && (def.flags & LK.P_ISO) == 0
     mfp = _rb_proc(db, :atm, 1)
     mfp.definition.flags |= LK.P_MULTIFILE | LK.P_ISO
-    r2 = LK.p_reload{_RB}(mfp.definition, LK.gen_t(0), nothing, nothing, LK.P_VOLATILE, UInt32(0))
+    r2 = LK.p_reload{_RB}(
+        mfp.definition, LK.gen_t(0), nothing, nothing, LK.P_VOLATILE, UInt32(0)
+    )
     LK.fix_attributes(gd, sf, mfp.definition, r2)
-    @test (mfp.definition.flags & LK.P_VOLATILE) != 0 && (mfp.definition.flags & LK.P_ISO) != 0
+    @test (mfp.definition.flags & LK.P_VOLATILE) != 0 &&
+        (mfp.definition.flags & LK.P_ISO) != 0
     _rb_end!(db)
 end
 
@@ -708,15 +762,18 @@ end
     m2 = _rb_proc(db, :mp2, 2)
     @test sf2.reload === nothing
     @test LK.setMetapredicateSource(gd, ld, sf2, m2, _rb_args(LK.MA_META, LK.MA_ANY))
-    @test (m2.definition.flags & LK.P_META) != 0 && (m2.definition.flags & LK.P_TRANSPARENT) != 0
-    @test _rb_metas(m2.definition.impl_clauses.args::Vector{LK.arg_info}) == UInt8[LK.MA_META, LK.MA_ANY]
+    @test (m2.definition.flags & LK.P_META) != 0 &&
+        (m2.definition.flags & LK.P_TRANSPARENT) != 0
+    @test _rb_metas(m2.definition.impl_clauses.args::Vector{LK.arg_info}) ==
+        UInt8[LK.MA_META, LK.MA_ANY]
     _rb_end!(db)
 end
 
 @testset "r22 equal_meta, fix_metapredicate: copy or leave the masks" begin
     db = IxDB{_RB}()
     gd = db.gd
-    mkr(def, flags, args) = LK.p_reload{_RB}(def, LK.gen_t(0), nothing, args, UInt64(flags), UInt32(0))
+    mkr(def, flags, args) =
+        LK.p_reload{_RB}(def, LK.gen_t(0), nothing, args, UInt64(flags), UInt32(0))
     defargs(def) = _rb_metas(def.impl_clauses.args::Vector{LK.arg_info})
     # equal_meta
     e = _rb_proc(db, :em, 2).definition
@@ -727,14 +784,18 @@ end
     @test !LK.equal_meta(e, nothing)
     # (a) a reload that declares: the definition gets P_META, P_TRANSPARENT and the masks
     a = _rb_proc(db, :fm1, 2).definition
-    LK.fix_metapredicate(gd, mkr(a, LK.P_META | LK.P_TRANSPARENT, _rb_args(LK.MA_META, LK.MA_ANY)))
-    @test (a.flags & LK.P_META) != 0 && (a.flags & LK.P_TRANSPARENT) != 0 && defargs(a) == UInt8[LK.MA_META, LK.MA_ANY]
+    LK.fix_metapredicate(
+        gd, mkr(a, LK.P_META | LK.P_TRANSPARENT, _rb_args(LK.MA_META, LK.MA_ANY))
+    )
+    @test (a.flags & LK.P_META) != 0 && (a.flags & LK.P_TRANSPARENT) != 0 &&
+        defargs(a) == UInt8[LK.MA_META, LK.MA_ANY]
     # (b) a reload that no longer declares: the declaration goes
     b = _rb_proc(db, :fm2, 2).definition
     LK.setMetapredicateMask(b, _rb_args(LK.MA_META, LK.MA_ANY))
     @test (b.flags & LK.P_META) != 0
     LK.fix_metapredicate(gd, mkr(b, 0, nothing))
-    @test (b.flags & (LK.P_META | LK.P_TRANSPARENT)) == 0 && defargs(b) == UInt8[LK.MA_ANY, LK.MA_ANY]
+    @test (b.flags & (LK.P_META | LK.P_TRANSPARENT)) == 0 &&
+        defargs(b) == UInt8[LK.MA_ANY, LK.MA_ANY]
     # (c) a module_transparent predicate the reload does not declare so again: P_TRANSPARENT is cleared (A24)
     c = _rb_proc(db, :fm3, 2).definition
     c.flags |= LK.P_TRANSPARENT
@@ -743,12 +804,16 @@ end
     # (d) the same flags, different masks: the definition takes the reload's masks (A18)
     d = _rb_proc(db, :fm4, 2).definition
     LK.setMetapredicateMask(d, _rb_args(LK.MA_META, LK.MA_ANY))
-    LK.fix_metapredicate(gd, mkr(d, LK.P_META | LK.P_TRANSPARENT, _rb_args(LK.MA_META, LK.MA_NONVAR)))
+    LK.fix_metapredicate(
+        gd, mkr(d, LK.P_META | LK.P_TRANSPARENT, _rb_args(LK.MA_META, LK.MA_NONVAR))
+    )
     @test defargs(d) == UInt8[LK.MA_META, LK.MA_NONVAR] && (d.flags & LK.P_META) != 0
     # (e) multifile: a declaration is set, a bare P_TRANSPARENT is added, nothing is removed
     f = _rb_proc(db, :fm5, 2).definition
     f.flags |= LK.P_MULTIFILE
-    LK.fix_metapredicate(gd, mkr(f, LK.P_META | LK.P_TRANSPARENT, _rb_args(LK.MA_META, LK.MA_ANY)))
+    LK.fix_metapredicate(
+        gd, mkr(f, LK.P_META | LK.P_TRANSPARENT, _rb_args(LK.MA_META, LK.MA_ANY))
+    )
     @test (f.flags & LK.P_META) != 0 && defargs(f) == UInt8[LK.MA_META, LK.MA_ANY]
     g = _rb_proc(db, :fm6, 1).definition
     g.flags |= LK.P_MULTIFILE
@@ -767,7 +832,8 @@ end
     a0, b0 = sf.references, sf2.references
     cref = LK.assertProcedureSource(gd, ld, sf, proc, nw)
     @test cref !== nothing && cref.clause === olds[1]
-    @test olds[1].owner_no == sf2.index && olds[1].source_no == sf.index && olds[1].line_no == 5      # A12, A12b
+    @test olds[1].owner_no == sf2.index && olds[1].source_no == sf.index &&
+        olds[1].line_no == 5      # A12, A12b
     @test sf.references == a0 - 1 && sf2.references == b0                               # the references stay balanced: old (1) + new (2) -> kept (2)
     _rb_end!(db)
 end
@@ -778,24 +844,29 @@ end
     gd, ld = db.gd, db.ld
     old1 = olds[1]
     old1.flags |= LK.CL_ERASED                       # retracted by hand: still in the list, still globally visible at the reload generation
-    @test LK.GLOBALLY_VISIBLE_CLAUSE(old1, LK.global_generation(gd)) && (olds[2].flags & LK.CL_ERASED) == 0
+    @test LK.GLOBALLY_VISIBLE_CLAUSE(old1, LK.global_generation(gd)) &&
+        (olds[2].flags & LK.CL_ERASED) == 0
     new1 = _rb_clause(db, sf, proc, _rb_p(_RB, :p, 1))
     @test LK.equal_clause(old1, new1)                # the precondition: only the flag differs
     cref = LK.assertProcedureSource(gd, ld, sf, proc, new1)
     @test cref !== nothing && cref.clause === new1   # NOT the erased old clause (A20)
     @test _rb_same(_rb_list(def), [new1, old1, olds[2]])
-    @test new1.generation_created == LK.GEN_RELOAD && old1.generation_erased == LK.GEN_RELOAD
+    @test new1.generation_created == LK.GEN_RELOAD &&
+        old1.generation_erased == LK.GEN_RELOAD
     reload = sf.reload.procedures[proc]
     @test (reload.flags & LK.P_MODIFIED) != 0 && reload.current_clause.clause === old1
     # the other side: p(2) equals the live old clause behind it and that one is kept
     new2 = _rb_clause(db, sf, proc, _rb_p(_RB, :p, 2))
     cref = LK.assertProcedureSource(gd, ld, sf, proc, new2)
-    @test cref !== nothing && cref.clause === olds[2] && olds[2].generation_erased == LK.GEN_MAX
+    @test cref !== nothing && cref.clause === olds[2] &&
+        olds[2].generation_erased == LK.GEN_MAX
     @test _rb_same(_rb_list(def), [new1, old1, olds[2]])
     _rb_end!(db)
 end
 
-function _rb_ec(db::IxDB{T}, head::T; body::Union{Nothing, T}=nothing)::LK.Clause{T} where {T}
+function _rb_ec(
+    db::IxDB{T}, head::T; body::Union{Nothing, T}=nothing
+)::LK.Clause{T} where {T}
     proc = _rb_proc(db, :ec, 1)
     cl = LK.compileClause(db.gd, db.ld, head, body, proc, LK.MODULE_user(db.gd))
     cl === nothing && error("compileClause refused the clause")
@@ -824,10 +895,12 @@ end
     @test LK.equal_clause(f(1.5), f(1.5)) && !LK.equal_clause(f(1.5), f(2.5))
     z0, zm = f(0.0), f(-0.0)
     @test z0.codes == zm.codes && length(z0.literals) == 1                            # only the sign bit differs
-    @test !LK.equal_clause(z0, zm) && LK.equal_clause(z0, f(0.0)) && LK.equal_clause(zm, f(-0.0))
+    @test !LK.equal_clause(z0, zm) && LK.equal_clause(z0, f(0.0)) &&
+        LK.equal_clause(zm, f(-0.0))
     nan1 = reinterpret(Float64, 0x7ff8000000000001)
     nan2 = reinterpret(Float64, 0x7ff8000000000002)
-    @test isnan(nan1) && isnan(nan2) && reinterpret(UInt64, nan1) != reinterpret(UInt64, nan2)
+    @test isnan(nan1) && isnan(nan2) &&
+        reinterpret(UInt64, nan1) != reinterpret(UInt64, nan2)
     @test LK.equal_clause(f(nan1), f(nan1))                                            # the same bits: equal
     @test !LK.equal_clause(f(nan1), f(nan2))                                           # another payload: not equal
     # 1 vs 1.0: equal codes cannot be had from a compiled integer (a small integer is no literal), so the literal of a float clause is replaced by the integer: identity says they differ
@@ -842,8 +915,10 @@ end
     @test LK.equal_clause(s("xy"), s("xy")) && !LK.equal_clause(s("xy"), s("xz"))
     # A13c: equal codes, different procedure tables (a call of f/1 against a call of g/1)
     x = lk_var(_RB, UInt64(1))
-    cf1, cf2 = ec(ep(x); body=_rb_expr(_RB, :ecf, x)), ec(ep(x); body=_rb_expr(_RB, :ecg, x))
-    @test cf1.codes == cf2.codes && length(cf1.procedures) == 1 && cf1.procedures[1] !== cf2.procedures[1]
+    cf1, cf2 = ec(ep(x); body=_rb_expr(_RB, :ecf, x)),
+    ec(ep(x); body=_rb_expr(_RB, :ecg, x))
+    @test cf1.codes == cf2.codes && length(cf1.procedures) == 1 &&
+        cf1.procedures[1] !== cf2.procedures[1]
     @test !LK.equal_clause(cf1, cf2)
     @test LK.equal_clause(cf1, ec(ep(x); body=_rb_expr(_RB, :ecf, x)))
 end

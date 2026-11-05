@@ -92,7 +92,8 @@ function visibleClause(cl::clause, gen::gen_t, rgen::gen_t)::Bool
 end
 
 "`visibleClause` for the local data `ld`: `rgen` is `ld.GD.reload_generation` (pl-inline.h `LD->reload.generation`; the one copy is the database's, audit D-0416 item 3)."
-visibleClause(ld, cl::clause, gen::gen_t)::Bool = visibleClause(cl, gen, (ld.GD::PL_global_data).reload_generation)
+visibleClause(ld, cl::clause, gen::gen_t)::Bool =
+    visibleClause(cl, gen, (ld.GD::PL_global_data).reload_generation)
 
 # PORT: pl-inline.h visibleClauseCNT
 # DIVERGES: the erased-skipped statistic is not kept.
@@ -100,7 +101,8 @@ visibleClause(ld, cl::clause, gen::gen_t)::Bool = visibleClause(cl, gen, (ld.GD:
 visibleClauseCNT(cl::clause, gen::gen_t, rgen::gen_t)::Bool = visibleClause(cl, gen, rgen)
 
 "`visibleClauseCNT` for the local data `ld` (pl-inline.h)."
-visibleClauseCNT(ld, cl::clause, gen::gen_t)::Bool = visibleClause(cl, gen, (ld.GD::PL_global_data).reload_generation)
+visibleClauseCNT(ld, cl::clause, gen::gen_t)::Bool =
+    visibleClause(cl, gen, (ld.GD::PL_global_data).reload_generation)
 
 # PORT: pl-inline.h global_generation
 "The generation of the database (pl-inline.h)."

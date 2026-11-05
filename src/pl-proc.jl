@@ -2798,7 +2798,8 @@ function num_visible_clauses(
         c = def.impl_clauses.first_clause
         while c !== nothing
             cl = c.clause::Clause{T}
-            if !(rules && (cl.flags & UNIT_CLAUSE) != 0) && visibleClause(cl, gen, gd.reload_generation)
+            if !(rules && (cl.flags & UNIT_CLAUSE) != 0) &&
+                visibleClause(cl, gen, gd.reload_generation)
                 count += 1
             end
             c = c.next

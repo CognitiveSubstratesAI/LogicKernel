@@ -102,7 +102,8 @@ hash_hints() = hash_hints(0.0f0, false, 0x00, (0x00, 0x00, 0x00, 0x00))
 # PORT: pl-index.c STATIC_RELOADING
 # DIVERGES: `rgen` is `LD->reload.generation` (see `index_context`): the search's `ctx.reload_generation`, or the database's.
 "True while a static predicate is being reloaded: a reload is running (`rgen`) and `def` is not dynamic (pl-index.c)."
-STATIC_RELOADING(rgen::gen_t, def::definition)::Bool = rgen != GEN_INVALID && (def.flags & P_DYNAMIC) == 0
+STATIC_RELOADING(rgen::gen_t, def::definition)::Bool =
+    rgen != GEN_INVALID && (def.flags & P_DYNAMIC) == 0
 
 # PORT: pl-index.c cref_matches
 "Same as `!cref->d.key || cref->d.key == k` (pl-index.c)."
@@ -238,7 +239,9 @@ function next_clause_unindexed!(
     else
         cref = chp.cref
         while cref !== nothing
-            if visibleClauseCNT(cref.clause::Clause{T}, ctx.generation, ctx.reload_generation)
+            if visibleClauseCNT(
+                cref.clause::Clause{T}, ctx.generation, ctx.reload_generation
+            )
                 chp.key = 0
                 setClauseChoice!(cref.next, ctx)
                 return cref
@@ -282,13 +285,17 @@ function next_clause_primary_index!(
         cref = chp.cref
         while cref !== nothing
             if cref_matches(cref, key) &&
-                visibleClauseCNT(cref.clause::Clause{T}, ctx.generation, ctx.reload_generation)
+                visibleClauseCNT(
+                cref.clause::Clause{T}, ctx.generation, ctx.reload_generation
+            )
                 result = cref
                 maxsearch = MAX_LOOKAHEAD
                 cref = cref.next
                 while cref !== nothing
                     if cref_matches(cref, key)
-                        if visibleClauseCNT(cref.clause::Clause{T}, ctx.generation, ctx.reload_generation)
+                        if visibleClauseCNT(
+                            cref.clause::Clause{T}, ctx.generation, ctx.reload_generation
+                        )
                             chp.cref = cref
                             return result
                         end
@@ -368,7 +375,10 @@ function setClauseChoice!(
     cref::Union{Nothing, ClauseRef{T}}, ctx::index_context{T}
 )::Nothing where {T}
     if !is_clean_predicate(ctx.predicate)                               # O_INDEX_STATIC
-        while cref !== nothing && !visibleClauseCNT(cref.clause::Clause{T}, ctx.generation, ctx.reload_generation)
+        while cref !== nothing &&
+              !visibleClauseCNT(
+            cref.clause::Clause{T}, ctx.generation, ctx.reload_generation
+        )
             cref = cref.next
         end
     end
@@ -541,7 +551,8 @@ function first_clause_guarded!(
         if best_index !== nothing
             chp.key = k
             if !best_index.good
-                if !clist.fixed_indexes && !STATIC_RELOADING(ctx.reload_generation, ctx.predicate) &&
+                if !clist.fixed_indexes &&
+                    !STATIC_RELOADING(ctx.reload_generation, ctx.predicate) &&
                     consider_better_index(best_index.speedup, clist.number_of_clauses)
                     ci = createIndex!(argv, argc, clist, best_index, ctx)
                     if ci !== nothing
@@ -644,7 +655,13 @@ The first clause of `def` that may match the call whose arguments `argv` views (
 function firstClause!(
     ld, argv::A, generation::gen_t, def::Definition{T}, chp::ClauseChoice{T}
 )::Union{Nothing, ClauseRef{T}} where {T, A}
-    ctx = _index_context!(ld.index_ctx::index_context{T}, generation, def, chp, (ld.GD::PL_global_data{T}).reload_generation)
+    ctx = _index_context!(
+        ld.index_ctx::index_context{T},
+        generation,
+        def,
+        chp,
+        (ld.GD::PL_global_data{T}).reload_generation
+    )
     try
         return first_clause_guarded!(argv, def.arity, def.impl_clauses, ctx)
     finally
@@ -663,7 +680,13 @@ The next candidate clause after the ones `chp` has produced (pl-index.c).
 function nextClause!(
     ld, chp::ClauseChoice{T}, argv::A, generation::gen_t, def::Definition{T}
 )::Union{Nothing, ClauseRef{T}} where {T, A}
-    ctx = _index_context!(ld.index_ctx::index_context{T}, generation, def, chp, (ld.GD::PL_global_data{T}).reload_generation)
+    ctx = _index_context!(
+        ld.index_ctx::index_context{T},
+        generation,
+        def,
+        chp,
+        (ld.GD::PL_global_data{T}).reload_generation
+    )
     try
         if chp.key == 0                 # not indexed
             return next_clause_unindexed!(ctx)

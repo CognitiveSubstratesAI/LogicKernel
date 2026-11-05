@@ -128,7 +128,9 @@ function getClauses(
     empty!(refp)
     cref = def.impl_clauses.first_clause
     while cref !== nothing
-        if visibleClause(cref.clause::Clause{T}, global_generation(gd), gd.reload_generation)
+        if visibleClause(
+            cref.clause::Clause{T}, global_generation(gd), gd.reload_generation
+        )
             if found < max
                 push!(refp, cref)
             end

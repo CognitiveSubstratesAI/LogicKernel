@@ -148,7 +148,9 @@ end
 # DIVERGES: `nothing` is upstream's NULL; it is a method of its own, because `T` appears in the argument type only inside a `Union`
 # with `Nothing` and is unbound when the argument is `nothing`.
 "The first clause reference from `cref` on whose clause is globally visible in `generation` (pl-srcfile.c)."
-function find_clause(cref::ClauseRef{T}, generation::gen_t)::Union{Nothing, ClauseRef{T}} where {T}
+function find_clause(
+    cref::ClauseRef{T}, generation::gen_t
+)::Union{Nothing, ClauseRef{T}} where {T}
     while cref !== nothing
         GLOBALLY_VISIBLE_CLAUSE(cref.clause::Clause{T}, generation) && break
         cref = cref.next
@@ -277,7 +279,8 @@ function startReconsultFile(
             c = def.impl_clauses.first_clause
             while c !== nothing
                 cl = c.clause::Clause{T}
-                if GLOBALLY_VISIBLE_CLAUSE(cl, global_generation(gd)) && (cl.flags & CL_ERASED) == 0 &&
+                if GLOBALLY_VISIBLE_CLAUSE(cl, global_generation(gd)) &&
+                    (cl.flags & CL_ERASED) == 0 &&
                     !((def.flags & P_MULTIFILE) != 0 && cl.owner_no != sf.index) &&
                     !((def.flags & P_DYNAMIC) != 0 && cl.owner_no == 0)
                     cl.generation_erased = r.reload_gen
@@ -313,7 +316,9 @@ function reloadContext(
         elseif isRedefinedProcedure(proc, global_generation(gd))
             dref = pushPredicateAccessObj!(ld, gd, def)
             reload.generation = dref.generation
-            reload.current_clause = find_clause(def.impl_clauses.first_clause, reload.generation)
+            reload.current_clause = find_clause(
+                def.impl_clauses.first_clause, reload.generation
+            )
         else
             reload.flags |= P_NEW
         end
@@ -389,7 +394,8 @@ function assertProcedureSource(
 
         cref = reload.current_clause
         if cref !== nothing
-            if equal_clause(cref.clause::Clause{T}, clause) && ((cref.clause::Clause{T}).flags & CL_ERASED) == 0
+            if equal_clause(cref.clause::Clause{T}, clause) &&
+                ((cref.clause::Clause{T}).flags & CL_ERASED) == 0
                 return keep_clause(gd, reload, clause)
             end
 
@@ -398,7 +404,8 @@ function assertProcedureSource(
             cref2 = cref.next
             while cref2 !== nothing
                 c2 = cref2.clause::Clause{T}
-                if GLOBALLY_VISIBLE_CLAUSE(c2, reload.generation) && (c2.flags & CL_ERASED) == 0 &&
+                if GLOBALLY_VISIBLE_CLAUSE(c2, reload.generation) &&
+                    (c2.flags & CL_ERASED) == 0 &&
                     !((def.flags & P_MULTIFILE) != 0 && c2.owner_no != sf.index) &&
                     equal_clause(c2, clause)
                     # the clauses from `cref` up to `cref2` stay at GEN_RELOAD: `endReconsult` (LB6b) deletes them
@@ -409,11 +416,13 @@ function assertProcedureSource(
             end
 
             cref3 = assertProcedure!(gd, ld, proc, clause, cref)       # inserted before the current clause
-            cref3 === nothing || ((cref3.clause::Clause{T}).generation_created = rl.reload_gen)
+            cref3 === nothing ||
+                ((cref3.clause::Clause{T}).generation_created = rl.reload_gen)
             return cref3
         else
             cref3 = assertProcedure!(gd, ld, proc, clause, CL_END)
-            cref3 === nothing || ((cref3.clause::Clause{T}).generation_created = rl.reload_gen)
+            cref3 === nothing ||
+                ((cref3.clause::Clause{T}).generation_created = rl.reload_gen)
 
             reload.flags |= P_MODIFIED
 
@@ -480,7 +489,9 @@ end
 # DIVERGES: the database and `ld` are arguments; upstream's `Sdprintf` to `Serror` is collected on the local data's `messages`
 # (`_qlf_Sdprintf!`, as the boot loop's), and `predicateName` is `_autoload_predicate_name`. No `acquire_def`/`release_def`.
 "After a reload: print an error when the live clauses of `r`'s predicate mix SSU (`=>`) and normal (`:-`) clauses (pl-srcfile.c)."
-function check_ssu(gd::PL_global_data{T}, ld::PL_local_data{T}, r::p_reload{T})::Nothing where {T}
+function check_ssu(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, r::p_reload{T}
+)::Nothing where {T}
     def = r.predicate
     errors = 0
 
@@ -489,10 +500,12 @@ function check_ssu(gd::PL_global_data{T}, ld::PL_local_data{T}, r::p_reload{T}):
         cl = cref.clause::Clause{T}
 
         if (cl.flags & CL_ERASED) == 0
-            if (def.flags & P_SSU_DET) != 0 && (cl.flags & (SSU_COMMIT_CLAUSE | SSU_CHOICE_CLAUSE)) == 0
+            if (def.flags & P_SSU_DET) != 0 &&
+                (cl.flags & (SSU_COMMIT_CLAUSE | SSU_CHOICE_CLAUSE)) == 0
                 errors += 1
             end
-            if (def.flags & P_SSU_DET) == 0 && (cl.flags & (SSU_COMMIT_CLAUSE | SSU_CHOICE_CLAUSE)) != 0
+            if (def.flags & P_SSU_DET) == 0 &&
+                (cl.flags & (SSU_COMMIT_CLAUSE | SSU_CHOICE_CLAUSE)) != 0
                 errors += 1
             end
         end
@@ -500,7 +513,10 @@ function check_ssu(gd::PL_global_data{T}, ld::PL_local_data{T}, r::p_reload{T}):
     end
 
     if errors != 0
-        _qlf_Sdprintf!(ld, "ERROR: Mixed SSU (=> and :-) clauses in $(_autoload_predicate_name(gd, def))\n")
+        _qlf_Sdprintf!(
+            ld,
+            "ERROR: Mixed SSU (=> and :-) clauses in $(_autoload_predicate_name(gd, def))\n"
+        )
     end
     return nothing
 end

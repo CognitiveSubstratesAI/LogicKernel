@@ -1041,6 +1041,7 @@ graph LR
     pl_index --> pl_hash
     pl_index --> pl_incl
     pl_index --> pl_vmi
+    pl_index --> pl_global
     pl_index --> pl_inline
     pl_index --> pl_prims
     pl_index --> pl_ressymbol
@@ -1582,13 +1583,17 @@ graph LR
     pl_srcfile --> SWI_Prolog
     pl_srcfile --> pl_global
     pl_srcfile --> pl_modul
+    pl_srcfile --> pl_inline
     pl_srcfile --> pl_comp
+    pl_srcfile --> pl_thread
     pl_srcfile --> pl_wam
     pl_srcfile --> pl_fli
     pl_srcfile --> pl_error
     pl_srcfile --> pl_arith
     pl_srcfile --> os_pl_text
     pl_srcfile --> pl_proc
+    pl_srcfile --> pl_supervisor
+    pl_srcfile --> pl_qlf
     pl_supervisor --> default_term
     pl_supervisor --> pl_incl
     pl_supervisor --> pl_vmi
