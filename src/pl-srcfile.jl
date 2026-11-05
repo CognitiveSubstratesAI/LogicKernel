@@ -78,6 +78,15 @@ function acquireSourceFile(sf::SourceFile)::Nothing
     return nothing
 end
 
+# PORT: pl-srcfile.c acquireSourceFileNo
+# (swipl-devel cbf4e189, src/pl-srcfile.c:353-359)
+"Count a reference to the source file with index `index`, if there is one (pl-srcfile.c)."
+function acquireSourceFileNo(gd::PL_global_data, index::Integer)::Nothing
+    sf = indexToSourceFile(gd, index)
+    sf === nothing || acquireSourceFile(sf)
+    return nothing
+end
+
 # PORT: pl-srcfile.c releaseSourceFile
 # DIVERGES (TEMPORARY, until LB6: destroySourceFile; audit D-0248): an unreferenced, empty file is NOT destroyed
 # (`destroySourceFile` and `clearSourceAdmin` are not ported), so this only counts: an empty file consulted once
@@ -88,6 +97,15 @@ function releaseSourceFile(sf::SourceFile)::Bool
     sf.references <= 0 && error("releaseSourceFile: no reference to release (Oops)")
     sf.references -= UInt32(1)
     return true
+end
+
+# PORT: pl-srcfile.c releaseSourceFileNo
+# (swipl-devel cbf4e189, src/pl-srcfile.c:407-415)
+"Drop a reference to the source file with index `index`, if there is one (pl-srcfile.c)."
+function releaseSourceFileNo(gd::PL_global_data, index::Integer)::Bool
+    sf = indexToSourceFile(gd, index)
+    sf === nothing && return true
+    return releaseSourceFile(sf)
 end
 
 # PORT: pl-srcfile.c hasProcedureSourceFile
@@ -118,6 +136,115 @@ function addProcedureSourceFile(sf::SourceFile{T}, proc::Procedure{T})::Nothing 
         end
     end
     return nothing
+end
+
+# ── reconsult: the clause-matching leaf functions (R2 LB6a; pl-srcfile.c:955-1062) ─────────────────
+# PORT: pl-srcfile.c find_clause
+# (swipl-devel cbf4e189, src/pl-srcfile.c:955-964)
+# DIVERGES: `nothing` is upstream's NULL.
+"The first clause reference from `cref` on whose clause is globally visible in `generation` (pl-srcfile.c)."
+function find_clause(
+    cref::Union{Nothing, ClauseRef{T}}, generation::gen_t
+)::Union{Nothing, ClauseRef{T}} where {T}
+    while cref !== nothing
+        GLOBALLY_VISIBLE_CLAUSE(cref.clause::Clause{T}, generation) && break
+        cref = cref.next
+    end
+    return cref
+end
+
+# PORT: pl-srcfile.c advance_clause
+# (swipl-devel cbf4e189, src/pl-srcfile.c:966-981)
+# DIVERGES: no `acquire_def`/`release_def` (threads only).
+"Move the reload's current clause to the next globally visible clause of its generation (pl-srcfile.c)."
+function advance_clause(r::p_reload{T})::Nothing where {T}
+    cref = r.current_clause
+    if cref !== nothing
+        cref = find_clause(cref.next, r.generation)
+        r.current_clause = cref
+    end
+    return nothing
+end
+
+# PORT: pl-srcfile.c copy_clause_source
+# (swipl-devel cbf4e189, src/pl-srcfile.c:983-999)
+# DIVERGES: the database is an argument (the source-file table).
+"Give clause `dest` the source position and files of clause `src`, moving the file references (pl-srcfile.c)."
+function copy_clause_source(
+    gd::PL_global_data{T}, dest::Clause{T}, src::Clause{T}
+)::Nothing where {T}
+    dest.line_no = src.line_no
+    if dest.source_no != src.source_no || dest.owner_no != src.owner_no
+        acquireSourceFileNo(gd, src.owner_no)
+        src.source_no != src.owner_no && acquireSourceFileNo(gd, src.source_no)
+        releaseSourceFileNo(gd, dest.owner_no)
+        dest.source_no != dest.owner_no && releaseSourceFileNo(gd, dest.source_no)
+        dest.source_no = src.source_no
+        dest.owner_no = src.owner_no
+    end
+    return nothing
+end
+
+# PORT: pl-srcfile.c keep_clause
+# (swipl-devel cbf4e189, src/pl-srcfile.c:1001-1013)
+"Keep the old clause `r.current_clause` for the equal new `clause`: it is live again, takes the new source position; the new one is freed (pl-srcfile.c)."
+function keep_clause(
+    gd::PL_global_data{T}, r::p_reload{T}, clause::Clause{T}
+)::ClauseRef{T} where {T}
+    cref = r.current_clause::ClauseRef{T}
+    keep = cref.clause::Clause{T}
+    keep.generation_erased = GEN_MAX
+    copy_clause_source(gd, keep, clause)
+    freeClause!(gd, clause)
+    advance_clause(r)
+    return cref
+end
+
+# PORT: pl-srcfile.c equal_clause
+# (swipl-devel cbf4e189, src/pl-srcfile.c:1015-1026)
+# DIVERGES (representation): upstream compares the code words with `memcmp`, and these words hold the atoms, functors, numbers and
+# procedures the clause refers to. A kernel clause's code words index its `literals` and `procedures` tables, so the clauses are
+# equal when the code vectors are equal, the literal tables are equal element by element under the standard order with identical
+# types (`1` and `1.0` differ), and the procedure tables hold the same procedures. Equal codes with different literals: not equal.
+"Do the clauses `cl1` and `cl2` hold the same code (pl-srcfile.c)?"
+function equal_clause(cl1::Clause{T}, cl2::Clause{T})::Bool where {T}
+    length(cl1.codes) == length(cl2.codes) || return false
+    cl1.codes == cl2.codes || return false
+    length(cl1.literals) == length(cl2.literals) || return false
+    for i in eachindex(cl1.literals)
+        compareStandard(cl1.literals[i], cl2.literals[i], true) == 0 || return false
+    end
+    length(cl1.procedures) == length(cl2.procedures) || return false
+    for i in eachindex(cl1.procedures)
+        cl1.procedures[i] === cl2.procedures[i] || return false
+    end
+    return true
+end
+
+# PORT: pl-srcfile.c reloadHasClauses
+# (swipl-devel cbf4e189, src/pl-srcfile.c:1027-1038)
+# DIVERGES: the reload's procedure table is an `IdDict` (see `sf_reload`).
+"Has the reload of `sf` seen a clause of `proc` so far (pl-srcfile.c)?"
+function reloadHasClauses(sf::SourceFile{T}, proc::Procedure{T})::Bool where {T}
+    rl = sf.reload
+    if rl !== nothing
+        reload = get(rl.procedures, proc, nothing)
+        reload === nothing || return reload.number_of_clauses > 0
+    end
+    return false
+end
+
+# PORT: pl-srcfile.c isRedefinedProcedure
+# (swipl-devel cbf4e189, src/pl-srcfile.c:1044-1062)
+# DIVERGES: no `acquire_def`/`release_def` (threads only).
+"True if `proc` has at least one clause globally visible in generation `gen` (pl-srcfile.c)."
+function isRedefinedProcedure(proc::Procedure{T}, gen::gen_t)::Bool where {T}
+    c = proc.definition.impl_clauses.first_clause
+    while c !== nothing
+        GLOBALLY_VISIBLE_CLAUSE(c.clause::Clause{T}, gen) && return true
+        c = c.next
+    end
+    return false
 end
 
 # PORT: pl-srcfile.c assertProcedureSource

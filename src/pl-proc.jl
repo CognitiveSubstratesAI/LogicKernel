@@ -567,6 +567,23 @@ function add_ssu_clause(
     return true
 end
 
+# PORT: pl-proc.c freeClause
+# (swipl-devel cbf4e189, src/pl-proc.c:1760-1769, with `unallocClause`, :1727-1743)
+# DIVERGES: the RELEASE part only. A clause's memory and its atom references are Julia's; the statistics are not kept (see
+# `pl-prims.jl`, Y1); a clause that has a blob (DBREF_CLAUSE) is left alone, where upstream sets DBREF_ERASED_CLAUSE and lets
+# the blob's release call `unallocClause` (the kernel's blobs are freed by Julia's GC, which releases nothing). What stays is the
+# source-file references `assert_term!` took (`source_no`, `owner_no`): they are given back here, so that the acquire/release
+# pairs of the reload (`copy_clause_source`, `keep_clause`) stay balanced. Wiring this into clause reclamation is LB6b.
+"Release the source-file references of a clause that is not used (pl-proc.c `freeClause`)."
+function freeClause!(gd::PL_global_data{T}, c::Clause{T})::Nothing where {T}
+    (c.flags & DBREF_CLAUSE) != 0 && return nothing
+    if c.source_no != 0                             # set by assert_term()
+        c.owner_no != c.source_no && releaseSourceFileNo(gd, c.owner_no)
+        releaseSourceFileNo(gd, c.source_no)
+    end
+    return nothing
+end
+
 # PORT: pl-proc.c assertDefinition
 # DIVERGES: no transactions; the predicate's update event is raised (EV1); `nothing` is upstream's NULL (since SSU1: `add_ssu_clause`
 # refused the clause, its error raised, or, since EV1, a listener of the predicate raised: the clause is left to Julia's

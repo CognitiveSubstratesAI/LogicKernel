@@ -69,6 +69,21 @@ function popPredicateAccess!(ld::PL_local_data{T}, def::Definition{T})::Nothing 
     return nothing
 end
 
+# PORT: pl-thread.c popNPredicateAccess
+# (swipl-devel cbf4e189, src/pl-thread.c:8682-8704)
+# DIVERGES: the reference stack is a Vector, so the entries go with `pop!` (upstream clears the top entry and decrements `top`);
+# `leaveDefinition()` is a no-op macro (see `pushPredicateAccessObj!`).
+"Pop the `n` top predicate references; the number left, upstream's `refs->top` (pl-thread.c)."
+function popNPredicateAccess!(ld::PL_local_data, n::Integer)::Int
+    refs = ld.predicate_references
+    while n > 0
+        @assert !isempty(refs) "popNPredicateAccess!: no reference left"
+        pop!(refs)
+        n -= 1
+    end
+    return length(refs)
+end
+
 # PORT: pl-thread.c markAccessedPredicates
 "Record every referenced predicate's generation with clause GC (pl-thread.c)."
 function markAccessedPredicates!(
