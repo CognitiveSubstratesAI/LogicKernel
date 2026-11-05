@@ -2606,10 +2606,12 @@ end
 # DIVERGES: not ported, each by the upstream line, with the answer the stream layer can give:
 #  - `alias(Std)` of a standard stream name (file:2215-2227): `setStandardStream`, then `LD->prompt.next = true` for
 #    `user_input` (`ld.prompt_next`, R2 LB5b). Its readers since R2 TOP1: `PL_write_prompt` (:1884, above; it clears the flag),
-#    `PL_prompt_next` (pl-fli.c:5349, src/pl-fli.jl) and `resetProlog` (pl-pro.c:67, src/pl-pro.jl). The readers `Sread_user`
-#    (pl-file.c:5992-6004), `wrapIO` (:6150), `set_prolog_IO/3` and pl-os.c `Sread_terminal` are left to TOP1b (status board row TOP1b:
-#    the stream layer dispatches on the closed enum IOFUNCTIONS and `S_read` takes no local data), so no read calls `PL_write_prompt`
-#    until then. Removal condition of this DIVERGES: TOP1b ports those readers;
+#    `PL_prompt_next` (pl-fli.c:5349, src/pl-fli.jl), `resetProlog` (pl-pro.c:67, src/pl-pro.jl) and, since R2 TOP1b A-D,
+#    `PL_prompt_string` and `PL_prompt_is_continuation` (pl-fli.c:5364-5398, src/pl-fli.jl). The readers `Sread_user`
+#    (pl-file.c:5992-6004), `wrapIO` (:6150), `set_prolog_IO/3` and pl-os.c `Sread_terminal` are left to TOP1b pieces E-G (status board row TOP1b:
+#    the stream layer dispatches on the closed enum IOFUNCTIONS and `S_read` takes no local data; they wait for the audit's ruling on
+#    where the stream handle's local data lives), so no read calls `PL_write_prompt` until then. Removal condition of this DIVERGES:
+#    TOP1b ports those readers;
 #  - `timeout(T)` (file:2325-2342, `Sset_timeout`): the stream layer has no timeout; `infinite` is what every stream
 #    has and succeeds, any other time raises upstream's own failure, `permission_error(timeout, stream, S)`;
 #  - `locale(L)` (file:2395-2404, `getLocaleEx`, `Ssetlocale`): REFUSED (`NotPortedError`), as open/4's `locale`;

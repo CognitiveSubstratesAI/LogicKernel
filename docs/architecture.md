@@ -7229,8 +7229,9 @@ DIVERGES (representation only unless marked):
 - The error exit of `query_loop` (`goto error`) leaves the foreign frame open, as upstream; the next `resetProlog` that empties the stacks closes it.
   One thread: `PL_thread_self()` is 1, so `halt_from_exception` is always tried and `exit_requested` is never set.
 
-Left to TOP1b (status board, PROPOSED): `Sread_user`, `wrapIO`, `set_prolog_IO/3` (pl-file.c:5987, :6047, :6125), `Sread_terminal` (pl-os.c:2171-2224, :2462),
-`prologToplevel`, `pl_break`, `currentBreakLevel` with the `break_level` flag (a `break_level` field), `PL_prompt_is_continuation`, `PL_prompt_string`.
+Left to TOP1b (status board, PROPOSED): `Sread_user`, `wrapIO`, `set_prolog_IO/3` (pl-file.c:5987, :6047, :6125), `Sread_terminal` (pl-os.c:2171-2224, :2462).
+`prologToplevel`, `pl_break`, `currentBreakLevel` with the `break_level` flag (a `break_level` field), `PL_prompt_is_continuation` and `PL_prompt_string` are
+TOP1b pieces A-D, see the block "TOP1b (A-D)" below.
 Why: the stream layer dispatches on the closed enum `IOFUNCTIONS` and `S_read` takes no local data. **DECIDED (audit D-0403 item 3)**: a new function-set member plus an
 `ld` reference in the stream handle, as the single DIVERGES (upstream reads the thread-local LD in `Sread_user`; the closed `IOFUNCTIONS` enum has no `ld`); owner TOP1b.
 TOP1b is not on the first-boot path: after b2 and AUTOLOAD1 A5, before CONT1 C5/C6 only if a writer is free. Until then no read of `user_input` calls `PL_write_prompt`; the pty rows model `Sread_user`'s three lines by hand.
@@ -7240,6 +7241,46 @@ a TTY stdin, pl-os.c:2171-2185; the test reads the committed evidence/TOP1/top1_
 test/core_lang/test_top1_pro.jl (LK-only white-box rows of every function above, `# UNVERIFIED on the kernel: gate decides`; none was run).
 Mutants: tools/mutants/TOP1.py (28; the abort branch's `Sclearerr` has no kill row and is under NOT LISTED). Manifest: eleven rows. Tier 1: src/pl-fli.jl gains
 `PL_prompt_next` (no struct or existing body changed): the alloc pins x3 at the gate, expected unchanged.
+
+## TOP1b (A-D) — the break level, `break/0`, `prologToplevel`, `PL_toplevel`, the terminal mode and the prompt queries (R2, edit-only: nothing was compiled when this was written; the gate decides)
+
+UPSTREAM: swipl-devel cbf4e1896275 — pl-pro.c (`pl_break1` :227-276, `pl_break` :285-300, `currentBreakLevel` :303-308, `prologToplevel` :662-679),
+pl-fli.c (`PL_toplevel` :5019-5027, `PL_ttymode` :5329-5341, `PL_prompt_is_continuation` :5364-5371, `PL_prompt_string` :5374-5398, `PL_dispatch` :5484-5506),
+pl-os.c (`Sttymode` :2149-2152, `Sset_ttymode` :2154-2160), pl-ext.c (`FRG("break", 0, pl_break, 0)` :108), pl-prologflag.c (the `break_level` flag :2117-2121),
+pl-setup.c (`LD->break_level = -1` :199), SWI-Stream.h (`SIO_RAW`, `SmakeFlag(28)`), SWI-Prolog.h (`PL_NOTTY`, `PL_RAWTTY`, `PL_COOKEDTTY`, `PL_DISPATCH_*`).
+
+Ported (four commits on wip/top1b, one per piece, each with its manifest rows):
+- **A**: `PL_local_data.break_level::Int` (the last field, initial -1), `currentBreakLevel(ld)` (src/pl-pro.jl), the flag arm of `break_level`
+  (src/os/pl-prologflag.jl: `bl >= 0 && PL_unify_integer`, so the flag fails outside a toplevel as before), `SIO_RAW` (bit 27, src/os/pl-stream.jl),
+  `TTY_COOKED`, `TTY_RAW`, `TTY_SAVE`, `Sttymode` and `Sset_ttymode` (src/os/pl-os.jl; the kernel has no tty, only the flag bit moves).
+- **B**: `PL_ttymode`, `PL_prompt_is_continuation`, `PL_prompt_string` (src/pl-fli.jl) and `PL_NOTTY`, `PL_RAWTTY`, `PL_COOKEDTTY` (src/SWI-Prolog.jl).
+- **C**: `pl_break1(gd, ld, goal)`, `pl_break(gd, ld)`, `prologToplevel(gd, ld, goal)` (src/pl-pro.jl), `PL_toplevel(gd, ld)`; `break/0` is registered in
+  `PL_predicates_from_pro` through `pl_break_va` (an ORIGINAL registration adapter; upstream's `FRG` sits in pl-ext.c).
+- **D**: `PL_dispatch(in, wait)` and `PL_DISPATCH_NOWAIT`, `PL_DISPATCH_WAIT`, `PL_DISPATCH_INSTALLED`.
+
+DIVERGES (representation only unless marked):
+- **`save_tabling_status`/`restore_tabling_status` in `pl_break1` are left out. Owner: TAB1** (the local data holds no tabling status; `tbl_status` has no
+  kernel counterpart). **`debugstatus.suspendTrace` is left out. Owner: DBG1** (the same cut as `resetTracer`, TOP1).
+- `Sinput`/`Soutput` in `pl_break1` are `Suser_input(ld)`/`Suser_output(ld)`, the kernel's convention (the streams belong to the local data, src/os/pl-file.jl:1318, :1328);
+  the database `gd` is an argument of `pl_break1`, `pl_break`, `prologToplevel` and `PL_toplevel`, as `query_loop`'s. The goal is the atom as a term.
+- `PL_prompt_string` answers a `String` (UTF-8, `REP_UTF8`) or `nothing` for upstream's NULL: there is no `char *` and no `PL_save_text` buffer.
+- `PL_dispatch` is the no-hook form (`GD->foreign.dispatch_events` is NULL): `PL_DISPATCH_INSTALLED` answers false, every other mode true at once. Owner of the hook form:
+  the embedding step (`PL_dispatch_hook`).
+- `PL_ttymode`, `PL_prompt_is_continuation`, `PL_prompt_string`, `currentBreakLevel` take the local data as an argument (upstream's `LD`/`GET_LD`).
+- **Struct change**: `PL_local_data` gains `break_level` (the one appended field, one more positional entry in the constructor, src/pl-global.jl): a Tier 1 gate,
+  the alloc pins x3 (test_zero_exports, test_local_stack, test/foreign/test_query, test_rules_swipl pin the constructor's allocation), and the warm daemon restarts by itself.
+- `break/0`'s owner in docs/r2_owners.tsv (`pred:break/0`, line 109) is DBG1 and moves to TOP1b at the owners step; until then the port check may report the line.
+
+Waiting for the audit (A-0321 Q1): pieces **E, F, G** (the `Sread_user`, `wrapIO`, `set_prolog_IO/3` and `Sread_terminal` readers, `ResetTty` in `initIO`) need the ruling on where
+the stream handle's local data lives (`IOSTREAM.handle` is already at the four-member Union limit of test/test_type_discipline.jl `field_type_ok`), and **H**
+(`_query_run_at_halt` onto `query_loop`, src/pl-init.jl) follows G. Nothing of E-H is written.
+
+Tests: test/core_lang/test_top1b_swipl.jl (twelve testsets; seven swipl 10.1.19 pins tb01, tb02, tb03, tb03n, tb04, tb06a, tb06b generated by
+evidence/TOP1B/gen_top1b_rows.py and held between `# PINS-BEGIN` / `# PINS-END`; the rest hand-written from the C with the line named, every row
+`# UNVERIFIED on the kernel: gate decides`; the toplevel rows use `system:` stand-ins for `$query_loop`/`$toplevel` on an unbooted database, as test_top1_pro.jl).
+The old row t_e15 of test_prolog_flag_swipl.jl (the flag fails outside a toplevel) must still pass.
+Mutants: tools/mutants/TOP1B.py (28; one declared equivalent; the skiplevel and tracing restores of `pl_break1` have no kill row, listed in the header). Manifest: nine
+rows in the term-type block plus three (`Sttymode`, `Sset_ttymode`, `PL_dispatch`) outside the term-type block; `noalloc=true` is GUESSED for `currentBreakLevel`, `Sttymode`, `PL_dispatch`.
 
 ## LB4 b2 — the atomic boot: every database is a copy of one booted from boot/init.pl (R2 loader_boot, audit D-0286, D-0354)
 

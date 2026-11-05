@@ -442,9 +442,11 @@ ld_statistics() = ld_statistics(0, 0, 0, 0, WallTime(), 0.0, 0.0, 0.0, 0.0)
 # (`cur_pred_enum`, `cur_enum`, pl-incl.jl). Since R2 O1B: `IO_output_stack` (`LD->IO.output_stack`: the output context stack
 # of `with_output_to/2` and `format/3`'s redirect, src/os/pl-file.jl).
 # Since R2 S2a: `prompt_current`, `prompt_first`, `prompt_first_used` (`LD->prompt`: prompt/2, prompt1/1; src/os/pl-file.jl).
-# Since R2 LB5b: `prompt_next` (`LD->prompt.next`), appended last. DIVERGES: only `set_stream/2`'s alias(user_input) sets it
-# (src/os/pl-file.jl); upstream's readers (`Sread_user`, `PL_write_prompt`, pl-file.c) belong to the interactive toplevel (status
-# board row TOP1), which clears it once a prompt is written. Removal condition: that step ports the readers.
+# Since R2 LB5b: `prompt_next` (`LD->prompt.next`). DIVERGES: only `set_stream/2`'s alias(user_input) sets it
+# (src/os/pl-file.jl); of upstream's readers `PL_write_prompt` (clears it once a prompt is written), `PL_prompt_next` and `resetProlog`
+# are ported since R2 TOP1, but `Sread_user`, `wrapIO` and `Sread_terminal` (pl-file.c, pl-os.c) are TOP1b's pieces E-G, which wait for the
+# audit's ruling on where the stream handle's local data lives. Removal condition: those pieces port the readers.
+# Since R2 TOP1b A: `break_level` (`LD->break_level`, pl-setup.c:199: -1 outside a toplevel; `currentBreakLevel`, src/pl-pro.jl), appended last.
 # Since R2 F1c: `debugstatus_skiplevel`, `debugstatus_tracing`, `debugstatus_debugging`, `debugstatus_showContext` (`LD->_debugstatus`, pl-incl.h
 # `pl_debugstatus_t`; the flags `debug`, `debugger_show_context`: src/os/pl-prologflag.jl, `debugmode`, `tracemode`: src/pl-trace.jl).
 # (the input context stack is LB3's `input_context_stack`, which `'\$push_input_context'/1` shares; src/os/pl-file.jl).
