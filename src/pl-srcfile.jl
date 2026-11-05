@@ -8,10 +8,13 @@
 # loaded file (`lookupSourceFile`, numbered as upstream numbers them), the procedures a file defines
 # (`addProcedureSourceFile`), adding a clause on behalf of a file (`assertProcedureSource`), the
 # start and end of a consult (`startConsult`, `endConsult`) and a predicate attribute set from a
-# file (`setAttrProcedureSource`). A FIRST load only: NOT PORTED — reconsult (`startReconsultFile`,
-# the reload context and its clause matching, `endReconsult`'s work: a second consult of a file is
-# refused, `NotPortedError`), unloading (`unloadFile`, `destroySourceFile`), module files, the
-# locks. Since R2 LB2 the `$source_file…`/`$start_consult`/`$end_consult` predicates are here (below).
+# file (`setAttrProcedureSource`). Since R2 LB6a the RELOAD half is here as code that nothing reaches yet:
+# the reload context (`startReconsultFile`, `reloadContext`), the clause matching (`find_clause`,
+# `keep_clause`, `equal_clause`, ...), the reload arms of `assertProcedureSource`, `setAttrProcedureSource`
+# and `setMetapredicateSource`, and the fixes applied at the end (`fix_attributes`, `fix_metapredicate`,
+# `fix_det`, `fix_ssu`, `check_ssu`). `startConsult` still refuses a second consult (`NotPortedError`): LB6b re-points it
+# and ports `endReconsult` with `delete_old_predicates`, `unloadFile` and `destroySourceFile`; the module files and the
+# locks are not here either. Since R2 LB2 the `$source_file…`/`$start_consult`/`$end_consult` predicates are here (below).
 
 # PORT: pl-srcfile.c GEN_RELOAD
 # (swipl-devel cbf4e189, src/pl-srcfile.c:892-896)
@@ -605,8 +608,8 @@ function fix_metapredicate(gd::PL_global_data{T}, r::p_reload{T})::Nothing where
 end
 
 # PORT: pl-srcfile.c startConsult
-# DIVERGES: a RE-consult — the file was consulted before — is refused (`NotPortedError`):
-# `startReconsultFile` and its reload context are not ported (LB6, loader_boot H9).
+# DIVERGES: a RE-consult — the file was consulted before — is refused (`NotPortedError`): `startReconsultFile` exists since LB6a, but
+# `endReconsult` (delete_old_predicates, reconsultFinalizePredicate) comes with LB6b, which re-points this function (loader_boot H9).
 "Start consulting the source file `sf` (pl-srcfile.c)."
 function startConsult(sf::SourceFile{T})::Bool where {T}
     acquireSourceFile(sf)
