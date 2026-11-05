@@ -145,17 +145,17 @@ end
 # ── reconsult: the clause-matching leaf functions (R2 LB6a; pl-srcfile.c:955-1062) ─────────────────
 # PORT: pl-srcfile.c find_clause
 # (swipl-devel cbf4e189, src/pl-srcfile.c:955-964)
-# DIVERGES: `nothing` is upstream's NULL.
+# DIVERGES: `nothing` is upstream's NULL; it is a method of its own, because `T` appears in the argument type only inside a `Union`
+# with `Nothing` and is unbound when the argument is `nothing`.
 "The first clause reference from `cref` on whose clause is globally visible in `generation` (pl-srcfile.c)."
-function find_clause(
-    cref::Union{Nothing, ClauseRef{T}}, generation::gen_t
-)::Union{Nothing, ClauseRef{T}} where {T}
+function find_clause(cref::ClauseRef{T}, generation::gen_t)::Union{Nothing, ClauseRef{T}} where {T}
     while cref !== nothing
         GLOBALLY_VISIBLE_CLAUSE(cref.clause::Clause{T}, generation) && break
         cref = cref.next
     end
     return cref
 end
+find_clause(::Nothing, ::gen_t) = nothing
 
 # PORT: pl-srcfile.c advance_clause
 # (swipl-devel cbf4e189, src/pl-srcfile.c:966-981)
