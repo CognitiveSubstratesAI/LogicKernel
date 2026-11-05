@@ -182,8 +182,9 @@ function _tw_norm(s::String)::String
     )
 end
 
+# (No `:- op(0, fx, $).` in the driver since LB4 b2: that line hid swipl's own `op(1, fx, $)`, so swipl wrote `$` as the kernel did
+# before the boot. The booted kernel has the operator (boot/topvars.pl:49), so both sides now write `- ($)` and `$(a)`.)
 const _TW_DRIVER = raw"""
-:- op(0, fx, $).
 dec(a(Cs), A, _) :- !, atom_codes(A, Cs).
 dec(nil, [], _) :- !.
 dec(i(N), N, _) :- !.

@@ -2006,8 +2006,8 @@ Predicate rows each file's calls reach (a predicate several files call counts in
 | AR1 | 27 | 27 | 0 | `succ/2`, `A_ADD`, `A_DOUBLE`, `A_ENTER`, `A_EQ`, `A_FIRSTVAR_IS`, `A_FUNC`, `A_FUNC0`, … +19 |
 | TH1 | 17 | 17 | 0 | `$engine_create/3`, `$gc_clear/1`, `$gc_stop/0`, `$gc_wait/1`, `$sig_unblock/0`, `engine_next/2`, `is_engine/1`, `message_queue_create/1`, … +9 |
 | LB3 | 14 | 0 | 14 | `refusal QLF predicate $close_wic/0`, `refusal QLF predicate $file_hash/2`, `refusal QLF predicate $map_id/2`, `refusal QLF predicate $open_wic/2`, `refusal QLF predicate $qlf_close/0`, `refusal QLF predicate $qlf_current_source/1`, `refusal QLF predicate $qlf_dependency/1`, `refusal QLF predicate $qlf_is_compatible/1`, … +6 |
-| DBG1 | 13 | 13 | 0 | `$call_no_catch/1`, `$can_yield/0`, `$dwim_predicate/2`, `$leash/2`, `$visible/2`, `break/0`, `dwim_match/3`, `notrace/0`, … +5 |
 | Q10 | 13 | 13 | 0 | `$cmd_option_val/2`, `$on_signal/4`, `$put_token/2`, `$set_prolog_stack/4`, `$suspend_findall_bag/0`, `$usage/0`, `\=@=/2`, `current_blob/2`, … +5 |
+| DBG1 | 11 | 11 | 0 | `$call_no_catch/1`, `$can_yield/0`, `$leash/2`, `$visible/2`, `break/0`, `notrace/0`, `prolog_choice_attribute/3`, `prolog_frame_attribute/3`, … +3 |
 | P3 | 9 | 9 | 0 | `$depth_limit/3`, `$depth_limit_except/3`, `$depth_limit_false/3`, `$depth_limit_true/5`, `$inference_limit/2`, `$inference_limit_except/3`, `$inference_limit_false/1`, `$inference_limit_true/3`, … +1 |
 | TRIE1 | 7 | 7 | 0 | `$trie_gen_node/3`, `$trie_property/2`, `is_trie/1`, `trie_gen/2`, `trie_gen/3`, `trie_lookup/3`, `trie_term/2` |
 | CONT1 | 6 | 0 | 6 | `refusal the VM instruction I_CALLCONT (pl-vmi.c:…`, `refusal the VM instruction I_EXITRESET (pl-vmi.c…`, `refusal the VM instruction I_RESET (pl-vmi.c:575…`, `refusal the VM instruction I_SHIFT (pl-vmi.c:587…`, `refusal the VM instruction I_SHIFTCP (pl-vmi.c:5…`, `refusal the VM instruction I_YIELD (pl-vmi.c:241…` |
@@ -2017,6 +2017,7 @@ Predicate rows each file's calls reach (a predicate several files call counts in
 | TX1 | 4 | 4 | 0 | `$snapshot/1`, `$transaction/2`, `$transaction/3`, `$undo/1` |
 | WRAP1 | 4 | 2 | 2 | `$wrapped_implementation/3`, `unwrap_predicate/2`, `refusal the VM instruction S_CALLWRAPPER (callin…`, `refusal the VM instruction S_WRAP (calling a wra…` |
 | CT1 | 2 | 2 | 0 | `char_type/2`, `code_type/2` |
+| DWIM1 | 2 | 2 | 0 | `$dwim_predicate/2`, `dwim_match/3` |
 | FL1 | 2 | 2 | 0 | `get_flag/2`, `set_flag/2` |
 | P2 | 2 | 2 | 0 | `$seek_list/4`, `sub_atom_icasechk/3` |
 | LB4 | 1 | 0 | 1 | `refusal PL_get_file_name flag PL_FILE_SEARCH (sy…` |
@@ -7195,17 +7196,26 @@ cbf4e189.
 - **trie_gen_compiled/2,3** (T1 missing_prolog): system predicates with supervisor code that pl-trie.c:4975-4987
   (initTries) creates; deferred with the trie step (docs/r2_owners.tsv: trie_gen/2,3 -> TRIE1).
 - **T4 and dwim**: test_boot_messages passes with `_BM_KNOWN` empty. A boot message whose translation reaches
-  `'$dwim':'$dwim_predicate'/2` (pl-ext.c:156 -> pl-dwim.c:200, deferred: owner DBG1) would raise while printing and be
-  missed by the collector; such a message appears only once DBG1 lands and the guard's rows then decide.
+  `'$dwim':'$dwim_predicate'/2` (pl-ext.c:156 -> pl-dwim.c:200, deferred: owner DWIM1) would raise while printing and be
+  missed by the collector; such a message appears only once DWIM1 lands and the guard's rows then decide.
+- **unknown=warning raises in the booted kernel** (KNOWN DIFFERENCE, owner DWIM1; ruling on A-0317, audit D-0413 items 1-2).
+  With `unknown=warning` S_UNDEF (pl-vmi.c; src/pl-wam.jl) calls print_message/2 with `error(existence_error(procedure, P), _)`; the
+  translation reaches `dwim_predicates/2` (messages.pl:466-470) -> `dwim_predicate/2` (dwim.pl:449-457) -> `'$dwim_predicate'/2`, the
+  foreign predicate of pl-ext.c:156 (pl-dwim.c:200, NDET; `dwim_match/3` is pl-ext.c:155, pl-dwim.c:179), which the kernel does not
+  register. So the call RAISES `error(existence_error(procedure, '$dwim':'$dwim_predicate'/2), context('$dwim':dwim_pred/2, _))`
+  where swipl 10.1.19 collects `unknown_in_module_user`, then `error(existence_error(procedure, zz_nopred_xx/0), _)`, and fails.
+  test_set_flag_swipl.jl ("unknown=warning") pins the kernel's exact term and swipl's two lines (`_SF90_KERNEL_DIFFERS`,
+  `_SF90_PINNED`). **DWIM1 flips the row to `ours == theirs`** (refusal-flip rule, D-0375/D-0376); the two predicates moved from
+  DBG1 to DWIM1 in docs/r2_owners.tsv, the rest of DBG1 stays. DWIM1 gates right after b2, before the CONT1 re-stack.
 - **missing_foreign = 388**: swipl's foreign (C) predicates in the boot modules the kernel does not register yet (T1);
   the count only falls, by the steps that register them (R2 owners table).
 - **test_load L1-L6** (test/files/test_load_swipl.jl `_TL_KNOWN_DIFFS`, `(line, kernel, swipl)` per line):
-  L1 `'$dwim_predicate'/2` (owner DBG1), L2 `'$syspreds':'$foreign_predicate_source'/2` (pl-proc.c:4146, owner PR1),
+  L1 `'$dwim_predicate'/2` (owner DWIM1), L2 `'$syspreds':'$foreign_predicate_source'/2` (pl-proc.c:4146, owner PR1),
   L3 `:- dynamic(p/1 as incremental)`: `'$tabling':unwrap_monotonic/1` calls `prolog_wrap:unwrap_predicate/2` (pl-wrap.c),
   which is undefined (owner WRAP1, docs/r2_owners.tsv): the directive raises and the loader prints undefined_export
   (prolog_wrap, unwrap_predicate/2) where swipl answers `ok`. L4 `initialization(main)` (swipl autoloads library(main)
   and prints an initialization_error for main/1; the kernel has no autoloader, so main/0 is undefined and the report reaches
-  `'$dwim_predicate'/2`: the load raises there; owners DBG1 and AUTOLOAD1). L5 FLIPPED at the LB4 b2 gate (audit D-0410
+  `'$dwim_predicate'/2`: the load raises there; owners DWIM1 and AUTOLOAD1). L5 FLIPPED at the LB4 b2 gate (audit D-0410
   item 7): redefineProcedure no longer refuses, and both rows (a predicate another file defined; asserted-then-file) load as
   swipl 10.1.19 loads them (`ok`, then `warning redefined_procedure(static, s/1)`), compared with `@test ours == theirs`.
   L6 a reconsult: deferred, NotPortedError raised in startConsult (src/pl-srcfile.jl), owner LB6.
