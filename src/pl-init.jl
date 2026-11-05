@@ -94,8 +94,8 @@ end
 # ----- the command-line options (R2 LB7, plan: evidence/LB7/plan.md): the pure helpers of pl-init.c's option parser -----
 # PORTED here, exactly this: `optcmp`, `is_longopt`, `is_bool_opt` (with `skip_wsep`), `on_error_style`, `is_early_define`,
 # `find_define`, `initDefaultOptions`. They read and write the records `pl_options_t` and `pl_cmdline_t`
-# (src/pl-global.jl) and nothing else. `parseCommandLineOptions`, `memarea_limit`, `$cmd_option_val/2` and the start-up
-# tail of `PL_initialise` follow in the next commits of LB7.
+# (src/pl-global.jl) and nothing else; below them `memarea_limit` and `parseCommandLineOptions`. `$cmd_option_val/2` and the
+# start-up tail of `PL_initialise` follow in the next commits of LB7.
 
 # PORT: pl-init.c optcmp
 # (swipl-devel cbf4e189, src/pl-init.c:127-144)
@@ -242,4 +242,265 @@ function initDefaultOptions!(
     empty!(o.goals)
     goal === nothing || push!(o.goals, goal)           # opt_append(&GD->options.goals, systemDefaults.goal)
     return o
+end
+
+# PORT: pl-init.c memarea_limit
+# (swipl-devel cbf4e189, src/pl-init.c:780-806; MEMAREA_INVALID_SIZE :780)
+# DIVERGES: the size is an `Int` and `MEMAREA_INVALID_SIZE` is `nothing`. A negative number and a number above 64 bits are
+# invalid here; upstream casts them to `size_t` (a huge limit, or a read of the unused part of the `number` union).
+"""
+    memarea_limit(ld, s) -> Union{Nothing, Int}
+
+The size in bytes of `s`: an integer and an optional suffix `k`/`K` (KiB), `m`/`M` (MiB), `g`/`G` (GiB) or `b`/`B` (bytes),
+`nothing` where `s` is anything else (pl-init.c).
+"""
+function memarea_limit(ld::PL_local_data{T}, s::AbstractString)::Union{Nothing, Int} where {T}
+    b = UInt8[codeunits(s); 0x00]                        # the C string, EOS-terminated
+    n = number()
+    rc, q = str_number(ld, b, 1, n, UInt32(0))
+    if rc == NUM_OK && n.type === V_INTEGER && n.i >= 0
+        c = b[q]                                         # *q
+        clearNumber(n)
+        c == 0x00 && return n.i
+        (c == UInt8('k') || c == UInt8('K')) && return n.i * 1024
+        (c == UInt8('m') || c == UInt8('M')) && return n.i * 1024 * 1024
+        (c == UInt8('g') || c == UInt8('G')) && return n.i * 1024 * 1024 * 1024
+        (c == UInt8('b') || c == UInt8('B')) && return n.i
+        return nothing
+    end
+    clearNumber(n)
+    return nothing
+end
+
+# PORT: pl-init.c parseCommandLineOptions
+# (swipl-devel cbf4e189, src/pl-init.c:1113-1347; the macros optionString and optionList :100-117)
+# DIVERGES: (1) the records `o` and `cmd` (`GD->options`, `GD->cmdline`) and the databases are arguments; the arguments left over
+# (`argvleft`) are the value and `nothing` is upstream's `-1`. (2) `-d topic` (debug topics, `prolog_debug_from_string`) takes its
+# word and is ignored: the kernel has no debug topics (D-0415 ruling Q7, pending audit). (3) `--traditional` (`setTraditional`) raises a
+# `NotPortedError`: the kernel is SWI-7 only (`resetListAtoms` is not ported). (4) `--sigalert=N` is checked (0..31) and
+# ignored: the kernel has no signal-alert thread. (5) `--no-tty`/`--tty` go through `PL_set_prolog_flag("tty_control", ...)` as
+# upstream and so raise where the flag's value changes (os/pl-prologflag.jl: no terminal control). (6) `-b` sets
+# `gd.bootsession`. (7) the `-tty` warning (`Sdprintf`) is collected on `ld.messages` (`_qlf_Sdprintf!`).
+# The options are read before `$initialise` runs: the Prolog flags the mask bits feed
+# (`debug`, `signals`, `debug_on_interrupt`) are re-read from the mask by `apply_options_to_flags!`.
+"""
+    parseCommandLineOptions(gd, ld, o, cmd, argv) -> Union{Nothing, Vector{String}}
+
+Read the options of the command line `argv` (without the program name) into `o` and `cmd`, up to the first word that is not an
+option or the word `--` (which stays, with everything after it, in the answer): the arguments left for the application, or `nothing`
+for an error (an unknown or incomplete option, a bad value) (pl-init.c).
+"""
+function parseCommandLineOptions(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, o::pl_options_t, cmd::pl_cmdline_t,
+    argv0::AbstractVector{<:AbstractString}
+)::Union{Nothing, Vector{String}} where {T}
+    argvleft = String[]
+    o.xpce = -1
+    n = length(argv0)
+    k = 1
+    while k <= n && startswith(argv0[k], '-')            # argv[0][0] == '-'
+        s = SubString(String(argv0[k]), 2)               # &argv[0][1]
+        if startswith(s, '-')                            # long options
+            s = SubString(s, 2)
+            isempty(s) && break                          # swipl <plargs> -- <app-args>
+            rc = _parse_long_option!(gd, ld, o, cmd, s)
+            rc < 0 && return nothing
+            rc > 0 && !o.compile && push!(argvleft, String(argv0[k]))
+            k += 1
+            continue
+        end
+        if s == "tty"
+            _qlf_Sdprintf!(ld, "Warning: `-tty` is deprecated.  Please use `--no-tty`\n")
+            PL_set_prolog_flag(gd, ld, "tty_control", false)
+            k += 1
+            continue
+        end
+        if startswith(s, 'D')
+            def = SubString(s, 2)
+            if isempty(def)                              # -D name=value
+                k < n || return nothing
+                def = argv0[k + 1]
+                k += 1
+            end
+            is_early_define(def) || push!(o.defines, String(def))   # setEarlyDefines() did these
+            k += 1
+            continue
+        end
+        atfirst = true
+        for c in s
+            if c == 'd'
+                k < n || return nothing                  # -d topic (ignored: DIVERGES 2)
+                k += 1
+            elseif c == 'p'
+                k < n || return nothing
+                k += 1
+                push!(o.search_paths, String(argv0[k]))
+            elseif c == 'O'
+                cmd.optimise = true
+            elseif c == 'x'
+                k < n || return nothing
+                k += 1
+                o.bootFrom = String(argv0[k])
+            elseif c == 'o'
+                k < n || return nothing
+                k += 1
+                o.compileOut = String(argv0[k])
+            elseif c == 'f'
+                k < n || return nothing
+                k += 1
+                o.initFile = String(argv0[k])
+            elseif c == 'F'
+                k < n || return nothing
+                k += 1
+                o.systemInitFile = String(argv0[k])
+            elseif c == 'l' || c == 's'
+                k < n || return nothing
+                k += 1
+                push!(o.scriptFiles, String(argv0[k]))
+            elseif c == 'g'
+                k < n || return nothing
+                k += 1
+                push!(o.goals, String(argv0[k]))
+            elseif c == 't'
+                k < n || return nothing
+                k += 1
+                o.topLevel = String(argv0[k])
+            elseif c == 'c'
+                o.compile = true
+            elseif c == 'b'
+                gd.bootsession = true
+            elseif c == 'q'
+                o.silent = true
+            else
+                atfirst || return nothing                  # a letter after others: error
+                push!(argvleft, String(argv0[k]))        # an unknown option stays for the application
+                break
+            end
+            atfirst = false
+        end
+        k += 1
+    end
+    while k <= n                                         # for(; argc>0; ...) the rest
+        push!(argvleft, String(argv0[k]))
+        k += 1
+    end
+    return argvleft
+end
+
+# The chain of `if ( rc=is_bool_opt(...) ) ... else if ( optval=is_longopt(...) )` of the long options of
+# `parseCommandLineOptions`: `0` the option was taken, `1` it is none of these (the caller leaves it for the application),
+# `-1` an error.
+function _parse_long_option!(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, o::pl_options_t, cmd::pl_cmdline_t, s::AbstractString
+)::Int where {T}
+    rc, b = is_bool_opt(s, "quiet")
+    if rc != 0
+        rc == 1 || return -1
+        b && (o.silent = true)
+        return 0
+    end
+    rc, b = is_bool_opt(s, "debug_on_interrupt")
+    if rc != 0
+        rc == 1 || return -1
+        b && setPrologFlagMask!(ld, PLFLAG_DEBUG_ON_INTERRUPT)
+        return 0
+    end
+    rc, b = is_bool_opt(s, "debug")
+    if rc != 0
+        rc == 1 || return -1
+        b || clearPrologFlagMask!(ld, PLFLAG_DEBUGINFO)
+        return 0
+    end
+    rc, b = is_bool_opt(s, "signals")
+    if rc != 0
+        rc == 1 || return -1
+        if !b
+            clearPrologFlagMask!(ld, PLFLAG_SIGNALS)
+            o.nosignals = true
+        end
+        return 0
+    end
+    rc, b = is_bool_opt(s, "threads")
+    if rc != 0
+        rc == 1 || return -1
+        b || (o.nothreads = true)
+        return 0
+    end
+    rc, b = is_bool_opt(s, "tty")
+    if rc != 0
+        rc == 1 || return -1
+        PL_set_prolog_flag(gd, ld, "tty_control", b)
+        return 0
+    end
+    rc, b = is_bool_opt(s, "pce")
+    if rc != 0
+        rc == 1 || return -1
+        o.xpce = b ? 1 : 0
+        return 0
+    end
+    rc, b = is_bool_opt(s, "packs")
+    if rc != 0
+        rc == 1 || return -1
+        cmd.packs = b
+        return 0
+    end
+    optval = is_longopt(s, "pldoc")
+    if optval !== nothing
+        o.pldoc_server = optval
+        return 0
+    end
+    is_longopt(s, "home") !== nothing && return 0        # already handled
+    if is_longopt(s, "traditional") !== nothing
+        throw(
+            NotPortedError{T}(
+                mk_sym(T, :traditional), "--traditional (setTraditional, resetListAtoms): the kernel is SWI-7 only",
+                "R2 LB7"
+            )
+        )
+    end
+    optval = is_longopt(s, "sigalert")
+    if optval !== nothing
+        sig = tryparse(Int, optval)
+        (sig !== nothing && sig >= 0 && sig < 32) || return -1   # DIVERGES 4: checked, no signal-alert thread
+        return 0
+    end
+    optval = is_longopt(s, "stack_limit")
+    if optval !== nothing
+        size = memarea_limit(ld, optval)
+        size === nothing && return -1
+        o.stackLimit = size
+        return 0
+    end
+    optval = is_longopt(s, "table_space")
+    if optval !== nothing
+        size = memarea_limit(ld, optval)
+        size === nothing && return -1
+        o.tableSpace = size
+        return 0
+    end
+    optval = is_longopt(s, "shared_table_space")
+    if optval !== nothing
+        size = memarea_limit(ld, optval)
+        size === nothing && return -1
+        o.sharedTableSpace = size
+        return 0
+    end
+    optval = is_longopt(s, "dump-runtime-variables")
+    if optval !== nothing
+        o.config = optval
+        return 0
+    end
+    optval = is_longopt(s, "on-error")
+    if optval !== nothing
+        on_error_style(optval) || return -1
+        o.on_error = optval
+        return 0
+    end
+    optval = is_longopt(s, "on-warning")
+    if optval !== nothing
+        on_error_style(optval) || return -1
+        o.on_warning = optval
+        return 0
+    end
+    return 1
 end
