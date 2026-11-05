@@ -213,12 +213,9 @@ flag:table_drop_intermediate	TAB1	seed: table_* flag
 flag:table_monotonic	TAB1	seed: table_* flag
 flag:table_space	TAB1	seed: table_* flag
 kfile:pl-qlf.jl	LB3	seed: the QLF refusal sites
-refusal:src/pl-wam.jl::PL_next_solution_guarded::the VM instruction I_YIELD (pl-vmi.c:2410)	CONT1	the named refusal of the instruction (its body is the owner's step)
-refusal:src/pl-wam.jl::PL_next_solution_guarded::the VM instruction I_RESET (pl-vmi.c:5754)	CONT1	the named refusal of the instruction (its body is the owner's step)
-refusal:src/pl-wam.jl::PL_next_solution_guarded::the VM instruction I_EXITRESET (pl-vmi.c:5801)	CONT1	the named refusal of the instruction (its body is the owner's step)
-refusal:src/pl-wam.jl::PL_next_solution_guarded::the VM instruction I_CALLCONT (pl-vmi.c:5839)	CONT1	the named refusal of the instruction (its body is the owner's step)
-refusal:src/pl-wam.jl::PL_next_solution_guarded::the VM instruction I_SHIFT (pl-vmi.c:5874)	CONT1	the named refusal of the instruction (its body is the owner's step)
-refusal:src/pl-wam.jl::PL_next_solution_guarded::the VM instruction I_SHIFTCP (pl-vmi.c:5908)	CONT1	the named refusal of the instruction (its body is the owner's step)
+refusal:src/pl-wam.jl::PL_next_solution_guarded::the VM instruction I_YIELD in an engine (pl-vmi.c:2419)	TH1	the named refusal of the branch (its body is the owner's step)
+refusal:src/pl-wam.jl::PL_next_solution_guarded::the dtbl_reset6 branch of I_RESET (pl-vmi.c:5762)	TAB1	the named refusal of the branch (its body is the owner's step)
+refusal:src/pl-wam.jl::PL_next_solution_guarded::the dtbl_reset6 branch of I_EXITRESET (pl-vmi.c:5806)	TAB1	the named refusal of the branch (its body is the owner's step)
 refusal:src/pl-wam.jl::PL_next_solution_guarded::the VM instruction S_WRAP (calling a wrapped predicate from 	WRAP1	the named refusal of the instruction (its body is the owner's step)
 refusal:src/pl-wam.jl::PL_next_solution_guarded::the VM instruction S_CALLWRAPPER (calling a wrapped predicat	WRAP1	the named refusal of the instruction (its body is the owner's step)
 refusal:src/pl-wam.jl::PL_next_solution_guarded::the VM instruction S_TABLED (calling a tabled predicate)	TAB1	the named refusal of the instruction (its body is the owner's step)

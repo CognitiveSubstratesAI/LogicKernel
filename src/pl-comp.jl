@@ -2039,7 +2039,7 @@ end
 # Upstream's own decision, compiler by compiler (the memo's Q-1, (a)). Since V9a the unification
 # family is emitted and executed — `I_TRUE`, `I_FAIL`, `C_VAR`, `B_UNIFY_*`, `B_EQ_*`, `B_NEQ_*`;
 # since LB4 b2 `I_CALLCONT`, `I_SHIFT` and `I_SHIFTCP` are emitted where upstream emits them (their
-# run is the step CONT1's, refused by name in the run loop); each `false` is upstream's, and
+# run is the step CONT1's, in the run loop); each `false` is upstream's, and
 # compiles as a call. A void variable is
 # upstream's `isVar(*a)`: a variable the analysis gave no slot.
 
