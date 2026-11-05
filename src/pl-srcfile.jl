@@ -13,6 +13,12 @@
 # refused, `NotPortedError`), unloading (`unloadFile`, `destroySourceFile`), module files, the
 # locks. Since R2 LB2 the `$source_file…`/`$start_consult`/`$end_consult` predicates are here (below).
 
+# PORT: pl-srcfile.c GEN_RELOAD
+# (swipl-devel cbf4e189, src/pl-srcfile.c:892-896)
+# DIVERGES: the value of upstream's non-threaded `#else` branch, `GEN_MAX-1`, a constant; the per-thread value of the threaded build is owned by TH1.
+"The magic generation a file being reloaded marks the clauses it may replace with (pl-srcfile.c `GEN_RELOAD`)."
+const GEN_RELOAD = GEN_MAX - gen_t(1)
+
 # PORT: pl-srcfile.c registerSourceFile as registerSourceFile!
 # DIVERGES: the files are a vector, and no hole is ever made in it (no source file is destroyed), so
 # the first free index is the next one; `no_hole_before` is kept as upstream keeps it.
@@ -46,7 +52,7 @@ function lookupSourceFile_unlocked(
         boot = gd.bootsession                       # GD->bootsession&1: system, from_state, resource
         file = SourceFile{T}(
             name, 0.0, 0.0, Procedure{T}[], nothing, SF_MAGIC, 0, UInt32(0), 0, UInt32(0),
-            false, boot, boot, boot, module_t{T}[]
+            false, boot, boot, boot, module_t{T}[], nothing     # reload: NULL
         )
         registerSourceFile!(gd, file)
         gd.files_table[sym_key(name)] = file

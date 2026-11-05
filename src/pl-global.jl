@@ -385,6 +385,8 @@ ld_statistics() = ld_statistics(0, 0, 0, 0, WallTime(), 0.0, 0.0, 0.0, 0.0)
 # (src/pl-proc.jl `autoLoader`, `test_autoload_loop`). Upstream sets both to NULL in `resetProlog` (pl-pro.c:89-90); since R2 TOP1
 # `resetProlog` (src/pl-pro.jl) empties the vector and sets the loop mark to `nothing`, and `query_loop` calls it before every run
 # (this A2 DIVERGES is resolved); a new local data starts empty.
+# Since R2 LB6a: `reload_generation` and `reload_nesting`, upstream's `LD->reload.generation` and `.nesting` (pl-global.h:892-894), appended
+# last. `reload_generation` is GEN_INVALID unless `startReconsultFile` (src/pl-srcfile.jl) set it; `visibleClause` and `STATIC_RELOADING` read it.
 """
     PL_local_data{T}(gd)
 
@@ -533,6 +535,8 @@ mutable struct PL_local_data{T}
     autoload_nesting::Vector{definition{T}}                     # autoload.nesting: the autoloader's chain, the innermost last (R2 AUTOLOAD1 A2)
     autoload_loop::Union{Nothing, definition{T}}                # autoload.loop: we are looping on this def (nothing: NULL)
     in_print_message::Int                                       # in_print_message: inside printMessage() (R2 LB4 b2)
+    reload_generation::gen_t                                    # reload.generation: GEN_INVALID (0) unless a file is being reloaded (R2 LB6a)
+    reload_nesting::Int                                         # reload.nesting: how deeply is reconsult nested
 end
 function PL_local_data{T}(gd::PL_global_data{T}) where {T}
     e = mk_expr(T, T[])                         # any term: the idle placeholders' (index context, …)
@@ -631,7 +635,9 @@ function PL_local_data{T}(gd::PL_global_data{T}) where {T}
         false,                                  # prompt.next: false (pl-global.c: zero; set by set_stream's alias(user_input), R2 LB5b)
         definition{T}[],                        # autoload.nesting: NULL (R2 AUTOLOAD1 A2)
         nothing,                                # autoload.loop: NULL
-        0                                       # in_print_message: not inside printMessage() (pl-pro.c:82)
+        0,                                      # in_print_message: not inside printMessage() (pl-pro.c:82)
+        GEN_INVALID,                            # reload.generation: no file is being reloaded (R2 LB6a)
+        0                                       # reload.nesting
     )
     allocStacks!(ld)                            # the initial local stack, its spare reserved
     emptyStacks!(ld)

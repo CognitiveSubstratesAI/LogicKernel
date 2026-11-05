@@ -80,6 +80,9 @@ const GEN_MAX = GEN_TRANSACTION_BASE - 1
 # PORT: pl-incl.h GEN_INFINITE
 "The generation that never comes: a goal clause's `generation_erased` (pl-incl.h)."
 const GEN_INFINITE = typemax(gen_t)
+# PORT: pl-incl.h GEN_INVALID
+"The invalid generation: `LD->reload.generation` while no file is being reloaded (pl-incl.h)."
+const GEN_INVALID = gen_t(0)
 # PORT: pl-incl.h CL_START
 "Insertion point: the start of the clause list — `asserta` (pl-incl.h)."
 const CL_START = 1
@@ -249,6 +252,15 @@ const P_MODIFIED = FLAG64(36)
 # PORT: pl-incl.h P_RELOADING
 "Predicate flag: being reloaded (pl-incl.h — an alias of `P_MODIFIED`)."
 const P_RELOADING = P_MODIFIED
+# PORT: pl-incl.h P_NEW
+"p_reload flag (reconsult): a new predicate, none of its clauses is from an earlier load (pl-incl.h:1129)."
+const P_NEW = FLAG64(37)
+# PORT: pl-incl.h P_NO_CLAUSES
+"p_reload flag (reconsult): a foreign or thread-local predicate, which holds no clauses to match (pl-incl.h:1130)."
+const P_NO_CLAUSES = FLAG64(38)
+# PORT: pl-incl.h P_CHECK_SSU
+"p_reload flag (reconsult): check that `=>` and `:-` clauses are not mixed (pl-incl.h:1131)."
+const P_CHECK_SSU = FLAG64(39)
 # PORT: pl-incl.h FILE_ASSIGNED
 "Predicate flag: assigned to a source file (pl-incl.h)."
 const FILE_ASSIGNED = FLAG64(32)
@@ -1205,11 +1217,47 @@ end
 "A live source file's magic number (pl-incl.h)."
 const SF_MAGIC = 0x14a3c90f
 
+# PORT: pl-incl.h p_reload
+# (swipl-devel cbf4e189, src/pl-incl.h:2122-2129)
+# DIVERGES: `args` is `nothing` for NULL; `current_clause` is `nothing` for NULL. A reference to the definition, as upstream.
+"The reload state of one predicate while its source file is reloaded (pl-incl.h `struct p_reload`)."
+mutable struct p_reload{T}
+    predicate::Definition{T}                            # definition we are working on
+    generation::gen_t                                   # generation we update
+    current_clause::Union{Nothing, ClauseRef{T}}        # currently reloading clause
+    args::Union{Nothing, Vector{arg_info}}              # Meta info on arguments
+    flags::UInt64                                       # new flags (P_DYNAMIC, etc.)
+    number_of_clauses::UInt32                           # Number of clauses we've seen
+end
+
+# PORT: pl-incl.h m_reload
+# (swipl-devel cbf4e189, src/pl-incl.h:2131-2135)
+# DIVERGES: upstream's `TableWP public` (functor_t -> Procedure) is a Dict plus the keys in the order added, as the module's own public
+# table (`module_t.public_`, `public_order`): representation only.
+"The reload state of one module while its source file is reloaded (pl-incl.h `struct m_reload`)."
+mutable struct m_reload{T}
+    module_::module_t{T}                                # the module
+    public_::Dict{Tuple{UInt64, Int}, Procedure{T}}     # new export list (functor -> Procedure)
+    public_order::Vector{Tuple{UInt64, Int}}            # (the keys of `public_`, in order added)
+end
+
+# PORT: pl-incl.h sf_reload
+# (swipl-devel cbf4e189, src/pl-incl.h:2137-2144)
+# DIVERGES: `procedures` and `modules` (upstream's `TablePP`, pointer -> pointer) are identity-keyed dictionaries: representation only.
+"The reload context of a source file being reloaded (pl-incl.h `struct sf_reload`)."
+mutable struct sf_reload{T}
+    procedures::IdDict{Procedure{T}, p_reload{T}}       # Procedure -> p_reload
+    reload_gen::gen_t                                   # Magic gen for reloading
+    pred_access_count::Int                              # Top of predicate access stack
+    modules::IdDict{module_t{T}, m_reload{T}}           # Module -> m_reload
+    number_of_clauses::UInt32                           # reload clause count
+end
+
 # PORT: pl-incl.h sourceFile
 # DIVERGES: the file's procedures are a vector, the most recent LAST, where upstream's `ListCell`
 # chain holds it FIRST; `modules` (R2 LB2) is a vector in upstream's order (it appends at the end);
-# no `reload` (reconsult is not ported: a second consult of a file is refused), no mutex (no threads);
-# `name` is the file's atom.
+# `reload` (R2 LB6a) is the LAST field, where upstream puts it after `modules` (the constructor has one call site,
+# `lookupSourceFile_unlocked`); no mutex (no threads); `name` is the file's atom.
 "A source file (pl-incl.h `struct sourceFile`): its name, its procedures, the one being loaded."
 mutable struct sourceFile{T}
     name::T                                             # name of source file
@@ -1227,6 +1275,7 @@ mutable struct sourceFile{T}
     from_state::Bool                                    # Loaded from resource DB state
     resource::Bool                                      # Loaded from resource DB file
     modules::Vector{module_t{T}}                        # modules defined in this file (R2 LB2)
+    reload::Union{Nothing, sf_reload{T}}                # Reloading context (R2 LB6a; nothing: NULL)
 end
 
 # PORT: pl-incl.h SourceFile
