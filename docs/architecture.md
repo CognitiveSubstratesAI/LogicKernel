@@ -7458,3 +7458,50 @@ pl-global.h:892-899 (`LD->reload`). Plan and rulings: evidence/LB6/plan.md and h
   the new file plus the files that exercise the mutated visibility and index code). The tests index_testlib.jl and test_procedures.jl use the 3-argument `visibleClause` with `GEN_INVALID`.
 - **Left out of this step:** `endReconsult` and the rest of LB6b above; the wiring of `freeClause!` into clause reclamation; `untable_from_clause` (TAB1); breakpoints (DBG1); thread-local
   predicates and the per-thread reload generation (TH1). `tools/warm.sh inventory` regenerates docs/port_inventory.md and the R2 block of this file (function counts move; predicate and refusal counts do not).
+
+## LB7 — the command line and the start-up of pl-init.c, `$cmd_option_val/2`, `$cmd_option_set/2`, `$usage/0` (R2 loader_boot; edit-only, the gate decides)
+
+swipl-devel cbf4e189 `src/pl-init.c` reads the command line before the Prolog part boots, and `boot/init.pl` asks for the result
+through `'$cmd_option_val'/2` (pl-prims.c). LB7 ports that Prolog-visible part: the option parser, the options record, the
+flags the options feed, the usage text, and the two option predicates. Nothing here ran on the kernel when it was written.
+
+- **Where.** src/pl-init.jl: `optcmp`, `is_longopt`, `skip_wsep`, `is_bool_opt`, `on_error_style`, `find_define` with
+  `is_early_define`, `initDefaultOptions!`, `memarea_limit`, `parseCommandLineOptions` with `_parse_long_option!`, `USAGE_TEXT`
+  with `usage_text` / `usage` / `$usage/0` (`PL_predicates_from_init`, in `_PRED_TABLES` and `_FOREIGN_VA`), `defaultSystemInitFile`,
+  `apply_options_to_flags!`, `PL_initialise_tail!`, `PL_initialise!`. src/pl-prims.jl: `OPTDEFS`, `_optdef_get`,
+  `pl_cmd_option_val2_va`, `set_pl_option`, `pl_cmd_option_set2_va`, registered right after `statistics`. src/pl-read.jl:
+  `unify_location` builds `stream(S, Line, LinePos, CharNo)` for any stream (`_stream_or_alias_term`).
+- **The struct change (commit ec3f899d).** `PL_global_data` gets three fields at its tail: `options` (`pl_options_t`, `GD->options`),
+  `cmdline` (`pl_cmdline_t`, `GD->cmdline`) and `defaults_home` (`GD->defaults.home`, set with the home flag in `initPrologFlags!`).
+  The constructor call in src/pl-setup.jl gives them their defaults; the template copy (`copy_global_data`, generated) deep-copies
+  them. A changed struct restarts the daemon, and the allocation pins of the `PL_global_data` construction move (three pins, re-measured
+  at the gate). **Coordination with LB6a** (`reload_generation` on `PL_global_data`): whichever step gates second rebases onto the
+  first, so one cold restart serves both; the textual conflicts are the struct tail and the constructor's argument list, resolved by
+  keeping both field blocks.
+- **DIVERGES (owner DBG1):** `-d topic` takes its word and is ignored; the kernel has no debug topics (`prolog_debug_from_string`).
+- **DIVERGES (owner TOP1b, only what the reduced `query_loop` leaves out):** `PL_initialise!` ends with `query_loop(goal, false)`, which
+  is upstream's own path (`prologToplevel`, pl-pro.c:663-676, its `loop == false` branch). What the kernel's reduced `query_loop`
+  does not do of upstream's is TOP1b's; LB7 adds no loop code.
+- **DIVERGES (refused by name, `NotPortedError`):** `--traditional` (`setTraditional`; the kernel is SWI-7 only), `-c` (`$compile`), `--config`
+  (`$config`). `--tty` / `--no-tty` go through the `tty_control` flag as upstream and so raise where its value changes, naming
+  `PushTty and PopTty (the terminal)` (src/os/pl-prologflag.jl `_flag_not_ported`); the owner is the step that ports PushTty.
+- **DIVERGES (representation):** the stack limit goes to the local data in words (`ld.stacks_limit`), upstream's `LD->stacks.limit` is
+  bytes; `memarea_limit` answers `nothing` for `MEMAREA_INVALID_SIZE`, and a negative number or one above 64 bits is invalid (upstream
+  casts it to `size_t`); `optcmp` and `is_bool_opt` return their value (`String`, `(rc, bool)`) where upstream fills a pointer;
+  `parseCommandLineOptions` returns the words left (`nothing` is upstream's `-1`); `--sigalert=N` is range-checked (0..31) and ignored.
+- **DIVERGES (flags):** `verbose` is written only for `-q` (`FF_KEEP`: the early defines are not applied); `threads` is read-only
+  `false`; `xpce` and `shared_table_space` are not defined (those flags exist in the threaded configuration only).
+- **DIVERGES (usage and names):** the usage text is the pinned build's configuration (`--shared-table-space` present; no `-d topic` line; not
+  Windows), and the program name in it is always `swipl` (upstream's `prog = "swipl"` is assigned whether or not `BaseName` succeeded), so
+  `usage_text()` equals `swipl --help`; `defaultSystemInitFile` keeps the 255-character limit and answers `swipl` for a name `PrologPath` refuses.
+- **DIVERGES (reduced start-up):** `PL_initialise!` runs the command-line part of `PL_initialise` (:1501-1597) on the booted template's copy;
+  `setupProlog`, the boot-state loading, `initOs`, `initDefaults`, `setEarlyDefines`, `giveVersionInfo` and the saved-state options belong to the
+  template build; `GD->initialised` is not stored; foreign libraries, the resource database and `enableThreads` have nothing to do.
+- **Rows.** test/core_lang/test_lb7_swipl.jl: 43 oracle rows (31 run, 12 usage) compared with swipl 10.1.19 one process each, `swipl --help` against
+  the pinned usage text, a non-vacuity testset, and hand rows for `optcmp`, `is_bool_opt`, `find_define`, `memarea_limit`, the words left,
+  the options set, `initDefaultOptions!`, `OPTDEFS`, `defaultSystemInitFile` and the stack limit in words. The 15 rows of
+  test/core_text/test_read_stream_swipl.jl that show `stream(...)` locations moved there. Mutants: tools/mutants/LB7.py (31 and one equivalent).
+- **Left out (first-boot rows).** Calling `'$usage'` (it writes to `user_error`; no capture seam), the `argv` flag after `$initialise`, and every
+  row that needs the booted `$initialise` (the effect of `-p` and `-D` on `file_search_path`): the gate agent's first-boot rows come first,
+  their mutants after. The generated tables (the R2 block above, docs/port_inventory.md, docs/r2_upstream.tsv) are regenerated by
+  `warm.sh inventory` at the gate, never by hand. The owner of `$cmd_option_set/2` is the line `pred:$cmd_option_set/2  LB7` of docs/r2_owners.tsv.
