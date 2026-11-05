@@ -90,3 +90,156 @@ function _query_run_at_halt(gd::PL_global_data{T}, ld::PL_local_data{T})::Bool w
 
     return rval
 end
+
+# ----- the command-line options (R2 LB7, plan: evidence/LB7/plan.md): the pure helpers of pl-init.c's option parser -----
+# PORTED here, exactly this: `optcmp`, `is_longopt`, `is_bool_opt` (with `skip_wsep`), `on_error_style`, `is_early_define`,
+# `find_define`, `initDefaultOptions`. They read and write the records `pl_options_t` and `pl_cmdline_t`
+# (src/pl-global.jl) and nothing else. `parseCommandLineOptions`, `memarea_limit`, `$cmd_option_val/2` and the start-up
+# tail of `PL_initialise` follow in the next commits of LB7.
+
+# PORT: pl-init.c optcmp
+# (swipl-devel cbf4e189, src/pl-init.c:127-144)
+# DIVERGES (representation only): returns the rest of `av` after `opt` (and after an `=`) as a `String`, `nothing` for NULL; the
+# strings are ASCII bytes, compared as upstream compares `char`.
+"""
+    optcmp(av, opt) -> Union{Nothing, String}
+
+Compare the command-line word `av` with the option name `opt` up to the first `=` of `av`, a `-` of `av` matching a `_` of
+`opt` and the other way round: the text after `opt` (after the `=` if there is one), or `nothing` where they differ (pl-init.c).
+"""
+function optcmp(av::AbstractString, opt::AbstractString)::Union{Nothing, String}
+    a = codeunits(av)
+    o = codeunits(opt)
+    i = 1
+    j = 1
+    while i <= length(a) && j <= length(o) && a[i] != UInt8('=')   # *av && *opt && *av != '='
+        if !(a[i] == o[j] ||
+             (a[i] == UInt8('-') && o[j] == UInt8('_')) ||
+             (a[i] == UInt8('_') && o[j] == UInt8('-')))
+            return nothing
+        end
+        i += 1
+        j += 1
+    end
+    if j > length(o)                                    # if ( !*opt )
+        i <= length(a) && a[i] == UInt8('=') && (i += 1)
+        return String(a[i:end])
+    end
+    return nothing
+end
+
+# PORT: pl-init.c is_longopt
+# (swipl-devel cbf4e189, src/pl-init.c:256-264)
+"The value of the long option `name` in `optstring` (`\"\"` where it carries none), `nothing` where `optstring` is another option (pl-init.c)."
+function is_longopt(optstring::AbstractString, name::AbstractString)::Union{Nothing, String}
+    return optcmp(optstring, name)
+end
+
+# PORT: pl-init.c skip_wsep
+# (swipl-devel cbf4e189, src/pl-init.c:268-272)
+"Skip one `-` or `_` at the start of `s` (pl-init.c)."
+function skip_wsep(s::AbstractString)::SubString{String}
+    ss = SubString(String(s), 1)
+    return !isempty(ss) && (ss[1] == '-' || ss[1] == '_') ? SubString(ss, 2) : ss
+end
+
+# PORT: pl-init.c is_bool_opt
+# (swipl-devel cbf4e189, src/pl-init.c:275-305)
+# DIVERGES (representation only): returns `(rc, val)` where upstream returns `rc` (`1` true, `0` false, `-1` error) and
+# writes `*val`; `val` is meaningful for `rc == 1`.
+"""
+    is_bool_opt(opt, name) -> (rc, val)
+
+Whether `opt` is the boolean long option `name`, `--name`, `--name=true|yes|y|false|no|n` or `--no-name`: `rc` is `1`
+(then `val` is its value), `0` (another option) or `-1` (a value that is no boolean) (pl-init.c).
+"""
+function is_bool_opt(opt::AbstractString, name::AbstractString)::Tuple{Int, Bool}
+    optval = is_longopt(opt, name)
+    if optval !== nothing
+        lv = lowercase(optval)                         # strcasecmp
+        (isempty(optval) || lv == "true" || lv == "yes" || lv == "y") && return (1, true)
+        (lv == "false" || lv == "no" || lv == "n") && return (1, false)
+        return (-1, false)
+    elseif startswith(opt, "no")                       # strncmp(opt, "no", 2) == 0
+        optval = is_longopt(skip_wsep(SubString(String(opt), 3)), name)
+        if optval !== nothing
+            isempty(optval) && return (1, false)
+            return (-1, false)
+        end
+    end
+    return (0, false)
+end
+
+# PORT: pl-init.c on_error_style
+# (swipl-devel cbf4e189, src/pl-init.c:812-816)
+"Whether `s` is a value of `--on-error` or `--on-warning`: `print`, `halt` or `status` (pl-init.c)."
+on_error_style(s::AbstractString)::Bool = s == "print" || s == "halt" || s == "status"
+
+# PORT: pl-init.c early_defines
+# (swipl-devel cbf4e189, src/pl-init.c:181-187)
+# DIVERGES: the names only. The flag setter of the one entry (`setFileNameCaseHandlingName`) is left to the step that ports
+# `setEarlyDefines`; `-Dfile_name_case_handling=…` is dropped from `defines` as upstream drops it, and then not applied at all.
+"The `-D` flags the boot depends on, which pl-init.c sets before Prolog starts and `parseCommandLineOptions` leaves out of `defines`."
+const EARLY_DEFINES = ("file_name_case_handling",)
+
+# PORT: pl-init.c is_early_define
+# (swipl-devel cbf4e189, src/pl-init.c:193-202)
+"Whether the `-D` argument `def` (`name` or `name=value`) names an early define (pl-init.c)."
+is_early_define(def::AbstractString)::Bool = any(n -> optcmp(def, n) !== nothing, EARLY_DEFINES)
+
+# PORT: pl-init.c find_define
+# (swipl-devel cbf4e189, src/pl-init.c:211-239)
+"The value of `-Dname[=value]` in the raw arguments `argv` (`\"\"` where it carries no value, the last one wins), `nothing` where absent (pl-init.c)."
+function find_define(name::AbstractString, argv::AbstractVector{<:AbstractString})::Union{Nothing, String}
+    value = nothing
+    k = 1
+    while k <= length(argv)
+        a = argv[k]
+        def = nothing
+        a == "--" && break                              # --: end of args
+        if length(a) >= 2 && a[1] == '-' && a[2] == 'D'
+            if length(a) > 2
+                def = SubString(a, 3)
+            elseif k < length(argv)                     # -D name=value
+                def = argv[k + 1]
+                k += 1
+            end
+        end
+        if def !== nothing
+            v = optcmp(def, name)
+            v === nothing || (value = v)
+        end
+        k += 1
+    end
+    return value
+end
+
+# PORT: pl-init.c initDefaultOptions
+# (swipl-devel cbf4e189, src/pl-init.c:1073-1092)
+# DIVERGES: `systemDefaults` are keyword arguments: `stack_limit` and `table_space` (DEFSTACKLIMIT, DEFTABLE: 1 GiB,
+# pl-init.h:131-138), `toplevel` (`default`), `startup` (DEFSTARTUP, absent in the pinned build's configuration: `nothing`)
+# and `goal` (none). The set of these is the build's, not the run's.
+"Set the options to their defaults, as `initDefaultOptions` does before the command line is read (pl-init.c)."
+function initDefaultOptions!(
+    o::pl_options_t;
+    stack_limit::Int=1 << 30,
+    table_space::Int=1 << 30,
+    toplevel::String="default",
+    startup::Union{Nothing, String}=nothing,
+    goal::Union{Nothing, String}=nothing,
+)::pl_options_t
+    o.stackLimit = stack_limit
+    o.tableSpace = table_space
+    o.sharedTableSpace = table_space                   # O_PLMT: systemDefaults.shared_table_space
+    o.compileOut = "a.out"
+    o.topLevel = toplevel
+    o.initFile = startup
+    o.saveclass = "none"
+    o.on_error = "print"
+    o.on_warning = "print"
+    o.bootFrom = nothing
+    empty!(o.scriptFiles)
+    empty!(o.goals)
+    goal === nothing || push!(o.goals, goal)           # opt_append(&GD->options.goals, systemDefaults.goal)
+    return o
+end

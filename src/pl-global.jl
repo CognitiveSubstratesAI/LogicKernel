@@ -44,6 +44,63 @@ end
 event_hooks{T}() where {T} =
     event_hooks{T}(nothing, nothing, nothing, nothing, nothing, nothing, nothing)
 
+# PORT: pl-init.h pl_options_t
+# (swipl-devel cbf4e189, src/pl-init.h:61-95; `GD->options`, filled by pl-init.c `initDefaultOptions` and
+# `parseCommandLineOptions`, read by `$cmd_option_val/2`, pl-prims.c:6340-6440, and by the Prolog flags)
+# DIVERGES (representation only): `opt_list` (a C linked list of strings, appended at the end) is a `Vector{String}`;
+# `char *` is `Union{Nothing, String}` (`nothing` = NULL); sizes are `Int` (bytes). `win_app` (Windows) is left out.
+# STRUCT TYPE ONLY: the field of `PL_global_data` that holds it is LB7's struct commit (evidence/LB7/plan.md).
+"""
+    pl_options_t(; kw...)
+
+The command-line options (pl-init.h `pl_options_t`): the stack and table limits in bytes, the lists `goals` (`-g`),
+`scriptFiles` (`-s`, `-l`), `search_paths` (`-p`) and `defines` (`-D`), the strings `topLevel` (`-t`), `initFile`
+(`-f`), `systemInitFile` (`-F`), `config`, `pldoc_server`, `bootFrom` (`-x`), `compileOut` (`-o`), `saveclass`,
+`on_error` and `on_warning`, and the switches. `xpce` is `-1` until `--pce`/`--no-pce` sets it.
+"""
+Base.@kwdef mutable struct pl_options_t
+    stackLimit::Int = 0                          # size_t stackLimit: total stack limit
+    tableSpace::Int = 0                          # size_t tableSpace
+    sharedTableSpace::Int = 0                    # size_t sharedTableSpace (O_PLMT)
+    goals::Vector{String} = String[]             # opt_list *goals: initialization goals (-g)
+    topLevel::Union{Nothing, String} = nothing   # char *topLevel: toplevel goal (-t)
+    initFile::Union{Nothing, String} = nothing   # char *initFile: -f initialisation file
+    systemInitFile::Union{Nothing, String} = nothing   # char *systemInitFile: -F initialisation file
+    config::Union{Nothing, String} = nothing     # char *config: show config info
+    scriptFiles::Vector{String} = String[]       # opt_list *scriptFiles (-s, -l)
+    search_paths::Vector{String} = String[]      # opt_list *search_paths (-p path)
+    defines::Vector{String} = String[]           # opt_list *defines (-Dname=value)
+    pldoc_server::Union{Nothing, String} = nothing   # char *pldoc_server (--pldoc=Server)
+    bootFrom::Union{Nothing, String} = nothing   # char *bootFrom (-x file)
+    compileOut::Union{Nothing, String} = nothing # char *compileOut: file to store compiler output (-o)
+    saveclass::Union{Nothing, String} = nothing  # char *saveclass: type of saved state
+    compile::Bool = false                        # -c source ...
+    silent::Bool = false                         # -q: quiet operation
+    traditional::Bool = false                    # --traditional: no version 7 exts
+    nothreads::Bool = false                      # --no-threads
+    nosignals::Bool = false                      # --no-signals
+    on_error::Union{Nothing, String} = nothing   # --on-error
+    on_warning::Union{Nothing, String} = nothing # --on-warning
+    xpce::Int = -1                               # int xpce: --no-pce (-1 = not given)
+end
+
+# PORT: pl-global.h cmdline
+# (swipl-devel cbf4e189, src/pl-global.h, the `cmdline` member of `PL_global_data`: `os_argc`, `os_argv`, `appl_argc`,
+# `appl_argv`, `packs`, `optimise`, `appl_malloc`)
+# DIVERGES (representation only): the `argc`/`argv` pairs are `Vector{String}`; `appl_malloc` (a C allocation note) is left out.
+"""
+    pl_cmdline_t(; kw...)
+
+`GD->cmdline`: the process's arguments (`os_argv`), the arguments left to the application after the options
+(`appl_argv`, what the `argv` flag holds), and the switches `-O` (`optimise`) and `--no-packs` (`packs`).
+"""
+Base.@kwdef mutable struct pl_cmdline_t
+    os_argv::Vector{String} = String[]           # os_argc, os_argv
+    appl_argv::Vector{String} = String[]         # appl_argc, appl_argv
+    packs::Bool = true                           # packs: attach packs (--no-packs)
+    optimise::Bool = false                       # optimise: -O
+end
+
 # PORT: pl-global.h PL_global_data
 """
     PL_global_data{T}()
