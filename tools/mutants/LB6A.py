@@ -8,6 +8,7 @@
 # (the index walk, nth_clause, retract, clause/2), the source-file file for the addProcedureSourceFile arm, and test_procedures.jl.
 # Rows the audit (D-0415) asked for, and the mutant that pins each: Q1 refresh at every entry -> A21; Q3 identity (1 vs 1.0, 0.0 vs -0.0,
 # a NaN pair, equal codes with different literals) -> A13, A13b, A13c.
+# D-0416 item 3: two files reloading in turn, the generation after each (row r04b) -> A6c (a stale copy in the local data).
 TW = ["test/db/test_reload_blocks_swipl.jl"]
 TS = ["test/db/test_source_file_swipl.jl"]
 TV = [
@@ -40,6 +41,9 @@ MUTANTS = [
     dict(id="LB6A-A6 reload_nesting is not incremented", file=S, targets=TW,
          old="    ld.reload_nesting += 1\n",
          new="    nothing\n"),
+    dict(id="LB6A-A6c the local data's copy of the reload generation is written only when it is GEN_INVALID: a stale copy survives the next file (D-0416 item 3)", file=S, targets=TW + TV,
+         old="    ld.reload_generation = r.reload_gen\n",
+         new="    ld.reload_generation == GEN_INVALID && (ld.reload_generation = r.reload_gen)\n"),
     dict(id="LB6A-A6b the global copy of the reload generation is not written (QUESTION 6)", file=S, targets=TW + TV,
          old="    gd.reload_generation = r.reload_gen",
          new="    gd.reload_generation = GEN_INVALID"),

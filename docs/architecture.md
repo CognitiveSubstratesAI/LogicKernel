@@ -7448,7 +7448,7 @@ pl-global.h:892-899 (`LD->reload`). Plan and rulings: evidence/LB6/plan.md and h
   constructor call site in `lookupSourceFile_unlocked`), flags `P_NEW`, `P_NO_CLAUSES`, `P_CHECK_SSU` (FLAG64 37-39), `P_ATEND`; `index_context.reload_generation` (last field). A struct change restarts the daemon
   (a cold compile). Signature changes: `visibleClause`, `visibleClauseCNT`, `STATIC_RELOADING` and `update_primary_index!` take the reload generation (a 1-argument `update_primary_index!` stays for callers
   outside a reload), `_index_context!` has a new last argument. The manifest (test/static_analysis_manifest.jl) gains the entries of the new functions with `must_not_allocate = false` until the gate measures.
-- **Tests / mutants:** test/db/test_reload_blocks_swipl.jl (white-box rows r01-r22 and the Q1, Q3, Q6, A12, A19, A20, A26/A27 testsets), tools/mutants/LB6A.py (37 mutants; TARGETS follow D-0238:
+- **Tests / mutants:** test/db/test_reload_blocks_swipl.jl (white-box rows r01-r22, r04b (two files reloading in turn, D-0416 item 3) and the Q1, Q3, Q6, A12, A19, A20, A26/A27 testsets), tools/mutants/LB6A.py (38 mutants; TARGETS follow D-0238:
   the new file plus the files that exercise the mutated visibility and index code). The tests index_testlib.jl and test_procedures.jl use the 3-argument `visibleClause` with `GEN_INVALID`.
 - **Left out of this step:** `endReconsult` and the rest of LB6b above; the wiring of `freeClause!` into clause reclamation; `untable_from_clause` (TAB1); breakpoints (DBG1); thread-local
   predicates and the per-thread reload generation (TH1). `tools/warm.sh inventory` regenerates docs/port_inventory.md and the R2 block of this file (function counts move; predicate and refusal counts do not).
