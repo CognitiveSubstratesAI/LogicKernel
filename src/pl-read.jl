@@ -1067,10 +1067,25 @@ function _rd_text(rd::read_data)::String
     return String(b[rd.base:(e - 1)])
 end
 
+# ORIGINAL (LB7): `PL_unify_stream_or_alias` (src/os/pl-file.jl) for a fresh variable, as the term: the standard stream's name, the
+# stream's first alias, else its blob. `unify_location` builds its term whole, where upstream unifies a term reference.
+"The term `PL_unify_stream_or_alias` would bind a fresh variable to for `s`: an alias atom or the stream blob."
+function _stream_or_alias_term(ld::PL_local_data{T}, s::IOSTREAM)::T where {T}
+    i = standardStreamIndexFromStream(ld, s)
+    (i >= 0 && i < 3) && return mk_sym(T, standardStreams[i + 1])
+    gd = _query_gd(ld)
+    names = s.context != 0 ? get(gd.stream_alias_names, s.context, nothing) : nothing
+    (names !== nothing && !isempty(names)) && return names[1]
+    ctx = getStreamContext(gd, s)
+    ref = (s.flags & SIO_INPUT) != 0 ? stream_ref(ctx, 0) : stream_ref(0, ctx)
+    return _stream_blob_term(ld, ref)
+end
+
 # PORT: pl-read.c unify_location
-# DIVERGES: builds the location term, where upstream unifies a term reference with it; a stream
-# that is neither a file nor a string is NOT PORTED (its location names the stream).
-"The location term of `pos`: `file(…)`, or `string(Text, CharNo)` for a string stream (pl-read.c)."
+# (swipl-devel cbf4e189, src/pl-read.c:1115-1150)
+# DIVERGES: builds the location term, where upstream unifies a term reference with it; the stream of the third branch is the term
+# `PL_unify_stream_or_alias` gives (`_stream_or_alias_term`).
+"The location term of `pos`: `file(…)`, `string(Text, CharNo)` for a string stream, else `stream(S, Line, LinePos, CharNo)` (pl-read.c)."
 function unify_location(pos::source_location{T}, rd::read_data{T})::T where {T}
     f = pos.file
     if f !== nothing                                # reading a file
@@ -1085,12 +1100,11 @@ function unify_location(pos::source_location{T}, rd::read_data{T})::T where {T}
             T, T[mk_sym(T, :string), mk_gnd(T, _rd_text(rd)), mk_gnd(T, Int(charno))]
         )
     end
-    throw(
-        NotPortedError{Nothing}(
-            nothing,
-            "unify_location: a stream's location, stream(S, L, LP, C)",
-            "the stream table (R2)"
-        )
+    return mk_expr(                                 # any stream
+        T,
+        T[mk_sym(T, :stream), _stream_or_alias_term(rd.ld, rd._rb.stream),
+            mk_gnd(T, Int(pos.position.lineno)), mk_gnd(T, Int(pos.position.linepos)),
+            mk_gnd(T, Int(pos.position.charno))]
     )
 end
 
