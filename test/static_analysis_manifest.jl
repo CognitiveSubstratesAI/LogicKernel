@@ -2019,6 +2019,12 @@ function _manifest_index(T)
         # CT1a — setlocale/3 (src/pl-sys.jl; pl-ctype.c): the predicate and its text reader, over term type T
         (LK.pl_setlocale3_va, Tuple{LD, Int, Int, LK.foreign_context{T}}, false),
         (LK._ctype_chars, Tuple{LD, Int}, false),
+        # DWIM1 — dwim_match/3 and '$dwim_predicate'/2 (pl-dwim.c)
+        (LK.pl_dwim_match, Tuple{LD, Int, Int, Int}, false),
+        (LK.pl_dwim_predicate, Tuple{LD, Int, Int, LK.foreign_context{T}}, false),
+        (LK._dwim_chars, Tuple{LD, Int}, false),
+        (LK._dwim_get_functor, Tuple{LD, Int}, false),
+        (LK._dwim_stringAtom, Tuple{T}, false),
         (LK.Setenv, Tuple{LD, String, String}, false),
         (LK.Unsetenv, Tuple{LD, String}, false),
         (LK.get_file_name, Tuple{LD, Int, Int}, false),
@@ -3287,6 +3293,7 @@ const _DISPATCH_MANIFEST_TUPLE = (
     (LK.isVarPrefixSymbol, Tuple{Int64}, true),
     (LK.is_bidi_override, Tuple{Int64}, true),
     (LK.is_eol_char, Tuple{Int64}, true),
+    (LK.makeLower, Tuple{Int64}, true),
     (LK.make_nan, Tuple{Float64}, true),
     (LK.matchingBracket, Tuple{Int64}, true),
     (LK.pl_cat_is_id_continue, Tuple{LK.u_category}, true),
@@ -3307,6 +3314,7 @@ const _DISPATCH_MANIFEST_TUPLE = (
     (LK.special_float, Tuple{Vector{UInt8}, Int64, Int64, LK.number}, false),
     (LK.starts_1dot, Tuple{Vector{UInt8}, Int64}, true),
     (LK.str_number_error, Tuple{LK.strnumstat}, true),
+    (LK.toLower, Tuple{Int64}, true),
     (LK.uctypeFlagsW, Tuple{Int64}, true),
     (LK.uctypeRaw, Tuple{Int64}, true),
     (LK.uflagsRaw, Tuple{Int64}, true),
@@ -3437,6 +3445,16 @@ const _DISPATCH_MANIFEST_TUPLE = (
     # CT1a — setlocale/3: the table, and libc's setlocale through ccall (no term type: outside the per-type block)
     (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_ctype)}, false),
     (LK._libc_setlocale, Tuple{Cint, Union{Nothing, String}}, false),
+    # DWIM1 — the C-string comparison of pl-dwim.c (NUL-terminated byte vectors; no term type: outside the per-type block)
+    (LK._dwim_streq, Tuple{Vector{UInt8}, Int, Vector{UInt8}, Int}, false),
+    (LK._dwim_strlen, Tuple{Vector{UInt8}, Int}, false),
+    (LK.oneTypo, Tuple{Vector{UInt8}, Int, Vector{UInt8}, Int}, false),
+    (LK.twoTransposed, Tuple{Vector{UInt8}, Int, Vector{UInt8}, Int}, false),
+    (LK.oneInserted, Tuple{Vector{UInt8}, Int, Vector{UInt8}, Int}, false),
+    (LK.differentSeparated, Tuple{Vector{UInt8}, Vector{UInt8}}, false),
+    (LK.subWord, Tuple{Vector{UInt8}, Int, Vector{UInt8}}, false),
+    (LK.subwordsTransposed, Tuple{Vector{UInt8}, Vector{UInt8}}, false),
+    (LK.dwimMatch, Tuple{Vector{UInt8}, Vector{UInt8}}, false),
     # the built-ins' dispatch trees, built when src/pl-ext.jl loads
     (LK._foreign_tree, Tuple{Symbol, Int, Int, typeof(LK._va_leaf)}, false),
     (LK._foreign_tree, Tuple{Symbol, Int, Int, typeof(LK._det_leaf)}, false),

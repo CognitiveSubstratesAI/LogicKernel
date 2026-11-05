@@ -6,8 +6,8 @@
 # `setStreamTypeCheck`, `setAccessLevelFromAtom`, `checkOnError`, the mask writes (`setPrologFlagMask!`) that the compiler, the VM and
 # the arithmetic read (D3), and the rows of D-0280 item 5: `protected_predicate` once `iso` and `protect_static_code` are settable
 # (rows sf80-sf89 are the kill rows of D1-95 and D1-96 of tools/mutants/D1c.py, and of F1B.py). sf37 is the `unknown=fail` row of pl-vmi.c's S_UNDEF and sf90
-# its `unknown=warning` row: swipl answers `no` after printing two messages (the pinned `t_sf90`); the kernel's print_message/2 raises while
-# translating the second (KNOWN DIFFERENCE, owner DWIM1: the testset "unknown=warning" below pins the kernel's exact answer and swipl's lines).
+# its `unknown=warning` row: swipl answers `no` after printing two messages (the pinned `t_sf90`); the testset "unknown=warning" below
+# compares the kernel's two messages and its answer with swipl's (they were a pinned difference until DWIM1 registered `$dwim_predicate/2`).
 #   * A PROGRAM consulted by the kernel's loader, and cases `t_<id>(R)` run IN ORDER in one database, each wrapped in
 #     `catch(Goal, error(E, _), R = raised(E))`; a case restores the flags it changes, but sf85-sf89 end with `protect_static_code`
 #     true: it cannot be set false again (swipl's answer), so they come last.
@@ -478,21 +478,18 @@ end
     )
 end
 
-# KNOWN DIFFERENCE (pinned; owner DWIM1, docs/r2_owners.tsv, docs/architecture.md): unknown=warning, sf90's call of an undefined predicate.
+# unknown=warning, sf90's call of an undefined predicate (a flipped known difference: DWIM1 registered `dwim_match/3` and `$dwim_predicate/2`,
+# pl-dwim.c, so ours == theirs; refusal-flip rule D-0375/D-0376).
 # swipl 10.1.19 (a message_hook collector, kinds error and warning, in the order printed) sees TWO messages:
 #   1. unknown_in_module_user
 #   2. error(existence_error(procedure, zz_nopred_xx/0), _)
-# and the call fails (that is the pinned `t_sf90 no`). The kernel prints message 2 through print_message/2, which translates it BEFORE the
+# and the call fails (the pinned `t_sf90 no`). The kernel prints message 2 through print_message/2, which translates it BEFORE the
 # hook (messages.pl:337 -> dwim_predicates/2 messages.pl:466-470 -> dwim_predicate/2 dwim.pl:449-457 -> dwim_pred/2 -> find_sim_pred
-# dwim.pl:331 `'$dwim_predicate'(Module:Name, Term)`), and `'$dwim_predicate'/2` is a foreign predicate (pl-ext.c:156, pl-dwim.c:200) the
-# kernel does not register yet: the translation raises, so the collector sees ONLY message 1 and the call RAISES the existence_error of
-# `'$dwim':'$dwim_predicate'/2`. The old row (`catch(zz_nopred_xx, _, fail)`, still the pinned `t_sf90` above) swallowed that raise
-# and matched swipl's `no` for the wrong reason; the row below catches with a variable and compares the WHOLE term and the whole
-# message list, so it fails if the kernel's answer changes (a different error, a message 2, no raise).
-# Removal: DWIM1 (dwim_match/3 and `$dwim_predicate/2`, pl-dwim.c) flips this to `ours == theirs`: _SF90_KERNEL_DIFFERS goes, the kernel's
-# lines are compared with _SF90_PINNED (D-0375/D-0376).
+# dwim.pl:331 `'$dwim_predicate'(Module:Name, Term)`). The row catches with a variable, so a raise from that translation (the old
+# existence_error of `'$dwim':'$dwim_predicate'/2`) would show as `ok(Error)` and not as `no`; it compares the WHOLE message list
+# and the answer with swipl's.
 const _SF90_PROGRAM = raw"""
-t_sf90w(R) :- set_prolog_flag(unknown, warning), catch(zz_nopred_xx, E, true), set_prolog_flag(unknown, error), R = E.
+t_sf90w(R) :- set_prolog_flag(unknown, warning), ( catch(zz_nopred_xx, E, true) -> R = ok(E) ; R = no ), set_prolog_flag(unknown, error).
 """
 _sf_c(name::String, args::Vector{String}) =
     "c" * _sf_codes(name) * "/$(length(args))(" * join(args, ",") * ")"
@@ -511,35 +508,10 @@ const _SF90_PINNED = [
         ]
     )
 ]
-# the kernel's CURRENT answer: message 1 only, and the raised error term in full (what `catch(…, E, true)` binds)
-const _SF90_KERNEL_DIFFERS = (
-    msgs=[_SF90_PINNED[1]],
-    ball=_sf_c(
-        "error",
-        [
-            _sf_c(
-                "existence_error",
-                [
-                    _sf_a("procedure"),
-                    # M:(N/A), the qualified indicator as the context writes it
-                    _sf_c(
-                        ":",
-                        [_sf_a("\$dwim"), _sf_c("/", [_sf_a("\$dwim_predicate"), "i2"])]
-                    )
-                ]
-            ),
-            _sf_c(
-                "context",
-                [
-                    _sf_c(":", [_sf_a("\$dwim"), _sf_c("/", [_sf_a("dwim_pred"), "i2"])]),
-                    "V0"
-                ]
-            )
-        ]
-    )
-)
+# the answer `t_sf90w` binds, as swipl gives it: the call fails (no exception reaches the catch)
+const _SF90_ANSWER = _sf_a("no")
 
-"The kernel's collected messages (encoded) and the ball `t_sf90w` binds, on a fresh database."
+"The kernel's collected messages (encoded) and the answer line of `t_sf90w`, on a fresh database."
 function _sf90_kernel()
     path = joinpath(mktempdir(), "sf90.pl")
     write(path, _SF90_PROGRAM)
@@ -564,25 +536,23 @@ function _sf90_swipl()::Vector{String}
             f,
             _SF_DRIVER * ":- dynamic seen/1.\n" *
             "user:message_hook(T, K, _) :- ( K == error ; K == warning ), assertz(seen(T)), fail.\n" *
-            "t_sf90w(R) :- set_prolog_flag(unknown, warning), ( catch(zz_nopred_xx, _, fail) -> R = yes ; R = no ), set_prolog_flag(unknown, error).\n" *
-            ":- initialization((catch(t_sf90w(_), _, true), forall(seen(T), (enc(T), nl)), halt)).\n"
+            _SF90_PROGRAM *
+            ":- initialization((catch(t_sf90w(R), _, R = exc), forall(seen(T), (enc(T), nl)), enc(R), nl, halt)).\n"
         )
         read(pipeline(`swipl -q $f`; stdin=devnull, stderr=devnull), String)
     end
     return String.(split(chomp(out), '\n'; keepempty=false))
 end
 
-@testset "unknown=warning: swipl prints unknown_in_module_user and the existence_error, the kernel raises from the second (DWIM1)" begin
+@testset "unknown=warning: swipl prints unknown_in_module_user and the existence_error; the kernel's messages and answer are the same (DWIM1)" begin
     msgs, line = _sf90_kernel()
-    # the kernel's CURRENT answer, exact: one message, and the whole error term the call raises
-    @test msgs == _SF90_KERNEL_DIFFERS.msgs
-    @test line == "t_sf90w " * _sf_c("t_sf90w", [_SF90_KERNEL_DIFFERS.ball])
-    # the difference is real and the pin can fail: swipl's list has the second message the kernel never delivers
-    @test length(_SF90_PINNED) == length(_SF90_KERNEL_DIFFERS.msgs) + 1
-    @test _SF90_PINNED[1:1] == _SF90_KERNEL_DIFFERS.msgs
+    # ours == theirs: both messages in order, and the call fails (a raise would bind `ok(Error)`)
+    @test length(_SF90_PINNED) == 2
+    @test msgs == _SF90_PINNED
+    @test line == "t_sf90w " * _sf_c("t_sf90w", [_SF90_ANSWER])
     swipl = get(ENV, "LOGICKERNEL_NO_SWIPL", "") == "1" ? nothing : Sys.which("swipl")
     if swipl !== nothing
-        @test _sf90_swipl() == _SF90_PINNED
+        @test _sf90_swipl() == [_SF90_PINNED; _sf_a("no")]
     end
 end
 

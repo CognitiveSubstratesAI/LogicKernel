@@ -13,7 +13,6 @@ pred:$depth_limit/3	P3	seed: missing_c_preds.tsv
 pred:$depth_limit_except/3	P3	seed: missing_c_preds.tsv
 pred:$depth_limit_false/3	P3	seed: missing_c_preds.tsv
 pred:$depth_limit_true/5	P3	seed: missing_c_preds.tsv
-pred:$dwim_predicate/2	DWIM1	seed: missing_c_preds.tsv
 pred:$engine_create/3	TH1	seed: missing_c_preds.tsv
 pred:$foreign_predicate_source/2	PR1	seed: missing_c_preds.tsv
 pred:$gc_clear/1	TH1	seed: missing_c_preds.tsv
@@ -110,7 +109,6 @@ pred:break/0	DBG1	seed: missing_c_preds.tsv
 pred:char_type/2	CT1	seed: missing_c_preds.tsv
 pred:code_type/2	CT1	seed: missing_c_preds.tsv
 pred:current_blob/2	Q10	seed: missing_c_preds.tsv
-pred:dwim_match/3	DWIM1	seed: missing_c_preds.tsv
 pred:engine_next/2	TH1	seed: missing_c_preds.tsv
 pred:format_time/3	TAI1	seed: missing_c_preds.tsv
 pred:garbage_collect_atoms/0	Q10	seed: missing_c_preds.tsv

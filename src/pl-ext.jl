@@ -36,6 +36,7 @@
 # `$garbage_collect/1` (pl-gc.c, after context_module/1 as pl-ext.c:168), thread_self/1 (pl-thread.c) and with_mutex/2
 # (pl-mutex.c), the last two at the end of the table (pl-ext.c:186-187). Since PR1 abolish/1,2 (pl-proc.c, before
 # repeat/0 as pl-ext.c:125-126), `$c_current_predicate`/2 (pl-ext.c:132, after them) and garbage_collect_clauses/0 (after `$garbage_collect/1` as pl-ext.c:171).
+# Since DWIM1 dwim_match/3 and `$dwim_predicate`/2 (pl-dwim.c) between prolog_current_frame/1 and context_module/1, pl-ext.c:155-156.
 # Since RD1 read/1 and `$raw_read/1,2` (pl-read.c) after print/1 and read/2 after `$garbage_collect/1`, at upstream's places (pl-ext.c:116-118, 175).
 "pl-ext.c's own registration table of FRG built-ins (`foreigns[]`): the ported entries."
 const foreigns = (
@@ -58,6 +59,8 @@ const foreigns = (
     PL_extension("true", 0, pl_true, PL_FA_ISO),
     PL_extension("\$fail", 0, pl_fail, PL_FA_NOTRACE),
     PL_extension("prolog_current_frame", 1, pl_prolog_current_frame, 0x00),
+    PL_extension("dwim_match", 3, pl_dwim_match, 0x00),                         # DWIM1 (pl-ext.c:155)
+    PL_extension("\$dwim_predicate", 2, pl_dwim_predicate, PL_FA_NONDETERMINISTIC),   # DWIM1 (pl-ext.c:156)
     PL_extension("context_module", 1, pl_context_module, PL_FA_TRANSPARENT),   # META (MOD2)
     PL_extension("\$garbage_collect", 1, pl_garbage_collect, 0x00),            # BOOTPRED (pl-ext.c:168)
     PL_extension("garbage_collect_clauses", 0, pl_garbage_collect_clauses0, 0x00),  # PR1 (pl-ext.c:171)

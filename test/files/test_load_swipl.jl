@@ -289,7 +289,8 @@ const _TL_CASES = [
 # must differ from swipl EXACTLY so: `(line, kernel, swipl)` for each line that differs (the case file's path written
 # `<path>`), every other line equal. Checklist items (docs/architecture.md, LB4 b2) and owners:
 #   L1 `'$dwim':'$dwim_predicate'/2` undefined (pl-ext.c:156 → pl-dwim.c @ cbf4e189; called by dwim.pl's dwim_pred/2
-#      when an undefined procedure is reported): owner DBG1 (docs/r2_owners.tsv).
+#      when an undefined procedure is reported): FLIPPED by DWIM1 (pl-dwim.jl registers dwim_match/3 and `$dwim_predicate/2`):
+#      the cases "directives", "disjunction", "if-then" and "negation" are now equal to swipl's lines (no pin; refusal-flip rule).
 #   L2 `'$syspreds':'$foreign_predicate_source'/2` undefined (pl-proc.c:4146 @ cbf4e189; called by syspred.pl's
 #      '$foreign_source_location'/3 when a message carries a location): owner PR1 (docs/r2_owners.tsv).
 #   L3 (re-measured at the LB4 b2 gate, 2026-11-04: the boot now loads boot/tabling.pl whole) `:- dynamic(p/1 as incremental)`:
@@ -297,10 +298,11 @@ const _TL_CASES = [
 #      directive raises existence_error(procedure, prolog_wrap:unwrap_predicate/2) where swipl answers `ok`, and the
 #      loader prints undefined_export(prolog_wrap, unwrap_predicate/2) (the export of the module whose predicate is
 #      missing). Owner WRAP1 (docs/r2_owners.tsv, pred:unwrap_predicate/2).
-#   L4 `initialization(main)`: swipl AUTOLOADS library(main)'s main/0, which calls the undefined main/1 and prints an
-#      initialization_error; the kernel has no autoloader yet, so main/0 itself is undefined and the report of it reaches
-#      `'$dwim':'$dwim_predicate'/2` (L1): the load raises there (line 1) and prints nothing (line 2). Owner DBG1 for the
-#      raise (L1), AUTOLOAD1 for the autoload of main/0 behind it.
+#   L4 `initialization(main)`: swipl autoloads library(main)'s main/0, which calls the undefined main/1 and prints an
+#      initialization_error (line 2: existence_error(procedure, main/1), context system:catch/3). Since DWIM1 the kernel's report of
+#      an undefined procedure no longer raises (L1), and its line 1 is `ok`; main/0 runs, and set_signals calls
+#      `$syspreds:on_signal/3`, which calls the undefined `$syspreds:'$on_signal'/4` (pl-setup.c; docs/r2_owners.tsv, owner Q10): the
+#      initialization_error of line 2 carries that existence_error. Measured at DWIM1's bring-up (2026-11-05).
 "The lines of `ours` and `theirs` that differ, `(line, kernel, swipl)`, `path` (the case file) written `<path>`."
 function _tl_diff(
     ours::Vector{String}, theirs::Vector{String}, path::String
@@ -317,34 +319,6 @@ end
 
 # The pins, by case name (both tables: `_TL_CASES` and `_TL_FORMER_REFUSALS`), from the first boot run's values.
 const _TL_KNOWN_DIFFS = Dict{String, Vector{Tuple{Int, String, String}}}(
-    # L1 (dwim)
-    "directives" => [
-        (
-            1,
-            "exc c[101,114,114,111,114]/2(c[101,120,105,115,116,101,110,99,101,95,101,114,114,111,114]/2(a[112,114,111,99,101,100,117,114,101],c[58]/2(a[36,100,119,105,109],c[47]/2(a[36,100,119,105,109,95,112,114,101,100,105,99,97,116,101],i2))),c[99,111,110,116,101,120,116]/2(c[58]/2(a[36,100,119,105,109],c[47]/2(a[100,119,105,109,95,112,114,101,100],i2)),V0))",
-            "ok"
-        ),
-        (
-            10,
-            "—",
-            "error c[101,114,114,111,114]/2(c[101,120,105,115,116,101,110,99,101,95,101,114,114,111,114]/2(a[112,114,111,99,101,100,117,114,101],c[47]/2(a[117,110,100,101,102,105,110,101,100,95,112,114,101,100,95,120,121,122],i0)),c[99,111,110,116,101,120,116]/2(c[58]/2(a[115,121,115,116,101,109],c[47]/2(a[99,97,116,99,104],i3)),V0))"
-        ),
-        (
-            11,
-            "—",
-            "warning c[103,111,97,108,95,102,97,105,108,101,100]/2(a[100,105,114,101,99,116,105,118,101],c[58]/2(a[117,115,101,114],a[117,110,100,101,102,105,110,101,100,95,112,114,101,100,95,120,121,122]))"
-        ),
-        (
-            12,
-            "—",
-            "warning c[103,111,97,108,95,102,97,105,108,101,100]/2(a[100,105,114,101,99,116,105,118,101],c[58]/2(a[117,115,101,114],c[44]/2(c[97,116,111,109,95,110,117,109,98,101,114]/2(a[51],V0),c[62]/2(V0,i5))))"
-        ),
-        (
-            13,
-            "—",
-            "warning c[103,111,97,108,95,102,97,105,108,101,100]/2(a[100,105,114,101,99,116,105,118,101],c[58]/2(a[117,115,101,114],c[44]/2(c[97,116,111,109,95,110,117,109,98,101,114]/2(a[52],V0),c[44]/2(c[62]/2(V0,i3),c[97,116,111,109]/1(V0)))))"
-        )
-    ],
     # L2 ($foreign_predicate_source)
     "dynamic" => [
         (
@@ -458,72 +432,13 @@ const _TL_KNOWN_DIFFS = Dict{String, Vector{Tuple{Int, String, String}}}(
         ),
         (3, "—", "atom_number/2 static exception")
     ],
-    # L4 (dwim, then the autoload of library(main))
+    # L4 (the autoload of library(main), then `$on_signal/4`; DWIM1 removed the dwim raise that stood here)
     "initialization" => [
         (
-            1,
-            "exc c[101,114,114,111,114]/2(c[101,120,105,115,116,101,110,99,101,95,101,114,114,111,114]/2(a[112,114,111,99,101,100,117,114,101],c[58]/2(a[36,100,119,105,109],c[47]/2(a[36,100,119,105,109,95,112,114,101,100,105,99,97,116,101],i2))),c[99,111,110,116,101,120,116]/2(c[58]/2(a[36,100,119,105,109],c[47]/2(a[100,119,105,109,95,112,114,101,100],i2)),V0))",
-            "ok"
-        ),
-        (
-            2,
-            "—",
-            "error c[105,110,105,116,105,97,108,105,122,97,116,105,111,110,95,101,114,114,111,114]/3(c[58]/2(a[117,115,101,114],a[109,97,105,110]),c[101,114,114,111,114]/2(c[101,120,105,115,116,101,110,99,101,95,101,114,114,111,114]/2(a[112,114,111,99,101,100,117,114,101],c[47]/2(a[109,97,105,110],i1)),c[99,111,110,116,101,120,116]/2(c[58]/2(a[115,121,115,116,101,109],c[47]/2(a[99,97,116,99,104],i3)),V0)),c[58]/2(a<path>,i1))"
-        )
-    ],
-    # L1 (dwim)
-    "disjunction" => [
-        (
-            1,
-            "exc c[101,114,114,111,114]/2(c[101,120,105,115,116,101,110,99,101,95,101,114,114,111,114]/2(a[112,114,111,99,101,100,117,114,101],c[58]/2(a[36,100,119,105,109],c[47]/2(a[36,100,119,105,109,95,112,114,101,100,105,99,97,116,101],i2))),c[99,111,110,116,101,120,116]/2(c[58]/2(a[36,100,119,105,109],c[47]/2(a[100,119,105,109,95,112,114,101,100],i2)),V0))",
-            "ok"
-        ),
-        (
-            2,
-            "—",
-            "error c[101,114,114,111,114]/2(c[101,120,105,115,116,101,110,99,101,95,101,114,114,111,114]/2(a[112,114,111,99,101,100,117,114,101],c[47]/2(a[97],i0)),c[99,111,110,116,101,120,116]/2(c[58]/2(a[115,121,115,116,101,109],c[47]/2(a[60,109,101,116,97,45,99,97,108,108,62],i1)),V0))"
-        ),
-        (
-            3,
-            "—",
-            "warning c[103,111,97,108,95,102,97,105,108,101,100]/2(a[100,105,114,101,99,116,105,118,101],c[58]/2(a[117,115,101,114],c[59]/2(a[97],a[98])))"
-        )
-    ],
-    # L1 (dwim)
-    "if-then" => [
-        (
-            1,
-            "exc c[101,114,114,111,114]/2(c[101,120,105,115,116,101,110,99,101,95,101,114,114,111,114]/2(a[112,114,111,99,101,100,117,114,101],c[58]/2(a[36,100,119,105,109],c[47]/2(a[36,100,119,105,109,95,112,114,101,100,105,99,97,116,101],i2))),c[99,111,110,116,101,120,116]/2(c[58]/2(a[36,100,119,105,109],c[47]/2(a[100,119,105,109,95,112,114,101,100],i2)),V0))",
-            "ok"
-        ),
-        (
-            2,
-            "—",
-            "error c[101,114,114,111,114]/2(c[101,120,105,115,116,101,110,99,101,95,101,114,114,111,114]/2(a[112,114,111,99,101,100,117,114,101],c[47]/2(a[97],i0)),c[99,111,110,116,101,120,116]/2(c[58]/2(a[115,121,115,116,101,109],c[47]/2(a[60,109,101,116,97,45,99,97,108,108,62],i1)),V0))"
-        ),
-        (
-            3,
-            "—",
-            "warning c[103,111,97,108,95,102,97,105,108,101,100]/2(a[100,105,114,101,99,116,105,118,101],c[58]/2(a[117,115,101,114],c[45,62]/2(a[97],a[98])))"
-        )
-    ],
-    # L1 (dwim)
-    "negation" => [
-        (
-            1,
-            "exc c[101,114,114,111,114]/2(c[101,120,105,115,116,101,110,99,101,95,101,114,114,111,114]/2(a[112,114,111,99,101,100,117,114,101],c[58]/2(a[36,100,119,105,109],c[47]/2(a[36,100,119,105,109,95,112,114,101,100,105,99,97,116,101],i2))),c[99,111,110,116,101,120,116]/2(c[58]/2(a[36,100,119,105,109],c[47]/2(a[100,119,105,109,95,112,114,101,100],i2)),V0))",
-            "ok"
-        ),
-        (
-            2,
-            "—",
-            "error c[101,114,114,111,114]/2(c[101,120,105,115,116,101,110,99,101,95,101,114,114,111,114]/2(a[112,114,111,99,101,100,117,114,101],c[47]/2(a[97],i0)),c[99,111,110,116,101,120,116]/2(c[58]/2(a[115,121,115,116,101,109],c[47]/2(a[60,109,101,116,97,45,99,97,108,108,62],i1)),V0))"
-        ),
-        (
-            3,
-            "—",
-            "warning c[103,111,97,108,95,102,97,105,108,101,100]/2(a[100,105,114,101,99,116,105,118,101],c[58]/2(a[117,115,101,114],c[92,43]/1(a[97])))"
-        )
+        2,
+        "error c[105,110,105,116,105,97,108,105,122,97,116,105,111,110,95,101,114,114,111,114]/3(c[58]/2(a[117,115,101,114],a[109,97,105,110]),c[101,114,114,111,114]/2(c[101,120,105,115,116,101,110,99,101,95,101,114,114,111,114]/2(a[112,114,111,99,101,100,117,114,101],c[58]/2(a[36,115,121,115,112,114,101,100,115],c[47]/2(a[36,111,110,95,115,105,103,110,97,108],i4))),c[99,111,110,116,101,120,116]/2(c[58]/2(a[36,115,121,115,112,114,101,100,115],c[47]/2(a[111,110,95,115,105,103,110,97,108],i3)),V0)),c[58]/2(a<path>,i1))",
+        "error c[105,110,105,116,105,97,108,105,122,97,116,105,111,110,95,101,114,114,111,114]/3(c[58]/2(a[117,115,101,114],a[109,97,105,110]),c[101,114,114,111,114]/2(c[101,120,105,115,116,101,110,99,101,95,101,114,114,111,114]/2(a[112,114,111,99,101,100,117,114,101],c[47]/2(a[109,97,105,110],i1)),c[99,111,110,116,101,120,116]/2(c[58]/2(a[115,121,115,116,101,109],c[47]/2(a[99,97,116,99,104],i3)),V0)),c[58]/2(a<path>,i1))"
+    )
     ],
     # L3 (unwrap_predicate/2: owner WRAP1)
     "incremental" => [

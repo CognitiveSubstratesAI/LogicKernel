@@ -60,7 +60,7 @@ how many of the upstream file's functions are ported.
 | swipl-devel `src/os/pl-codelist.c` | code | `cbf4e1896275` | `src/os/pl-codelist.jl` | 1 | 1 |
 | swipl-devel `src/os/pl-ctype.c` | code | `cbf4e1896275` | `src/os/pl-ctype.jl` | 3 | 2 |
 | swipl-devel `src/os/pl-ctype.c` | code | `cbf4e1896275` | `src/pl-sys.jl` | 2 | 2 |
-| swipl-devel `src/os/pl-ctype.h` | code | `cbf4e1896275` | `src/os/pl-ctype.jl` | 29 | 0 |
+| swipl-devel `src/os/pl-ctype.h` | code | `cbf4e1896275` | `src/os/pl-ctype.jl` | 31 | 0 |
 | swipl-devel `src/os/pl-file.c` | code | `cbf4e1896275` | `src/os/pl-file.jl` | 160 | 66 |
 | swipl-devel `src/os/pl-file.c` | code | `cbf4e1896275` | `src/os/pl-files.jl` | 1 | 1 |
 | swipl-devel `src/os/pl-file.c` | code | `cbf4e1896275` | `src/pl-global.jl` | 1 | 1 |
@@ -113,6 +113,7 @@ how many of the upstream file's functions are ported.
 | swipl-devel `src/pl-dbref.h` | code | `cbf4e1896275` | `src/pl-dbref.jl` | 1 | 1 |
 | swipl-devel `src/pl-dict.c` | code | `cbf4e1896275` | `src/pl-dict.jl` | 54 | 36 |
 | swipl-devel `src/pl-dict.h` | code | `cbf4e1896275` | `src/pl-dict.jl` | 2 | 0 |
+| swipl-devel `src/pl-dwim.c` | code | `cbf4e1896275` | `src/pl-dwim.jl` | 9 | 2 |
 | swipl-devel `src/pl-error.c` | code | `cbf4e1896275` | `src/pl-error.jl` | 26 | 15 |
 | swipl-devel `src/pl-error.c` | code | `cbf4e1896275` | `src/pl-string.jl` | 3 | 3 |
 | swipl-devel `src/pl-error.h` | code | `cbf4e1896275` | `src/pl-error.jl` | 1 | 1 |
@@ -284,6 +285,7 @@ checkout is pulled.
 | swipl-devel `src/pl-dbref.h` | `cbf4e1896275` | 0 | 0 | 0 | src/pl-dbref.jl |
 | swipl-devel `src/pl-dict.c` | `cbf4e1896275` | 37 | 57 | 30 | src/pl-dict.jl |
 | swipl-devel `src/pl-dict.h` | `cbf4e1896275` | 1 | 2 | 0 | src/pl-dict.jl |
+| swipl-devel `src/pl-dwim.c` | `cbf4e1896275` | 9 | 9 | 2 | src/pl-dwim.jl |
 | swipl-devel `src/pl-error.c` | `cbf4e1896275` | 21 | 41 | 13 | src/pl-error.jl, src/pl-string.jl |
 | swipl-devel `src/pl-error.h` | `cbf4e1896275` | 0 | 0 | 0 | src/pl-error.jl |
 | swipl-devel `src/pl-event.c` | `cbf4e1896275` | 21 | 23 | 19 | src/pl-event.jl, src/pl-incl.jl |
@@ -354,7 +356,7 @@ checkout is pulled.
 | swipl-devel `tests/db/test_db.pl` | `cbf4e1896275` | 2 | 10 | 0 | test/db/test_db.jl |
 | swipl-devel `tests/db/test_jit.pl` | `cbf4e1896275` | 16 | 21 | 0 | test/db/test_jit.jl |
 | swipl-devel `tests/rational/test_ieee754.pl` | `cbf4e1896275` | 0 | 15 | 0 | test/rational/test_ieee754.jl |
-| **total** | | **1985** | **5073** | **1178** | |
+| **total** | | **1994** | **5082** | **1180** | |
 <!-- END GENERATED coverage -->
 
 ### Not ported: unreachable upstream

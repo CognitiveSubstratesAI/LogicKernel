@@ -4723,9 +4723,8 @@ function PL_next_solution_guarded(
         if su_fid != 0
             su_pred = PL_new_term_ref(ld)
             if unify_definition(gd, ld, MODULE_user(gd), su_pred, DEF, 0, GP_NAMEARITY)
-                # KNOWN DIFFERENCE (owner DWIM1; pinned in test_set_flag_swipl.jl "unknown=warning"): print_message/2 translates the
-                # message through dwim_predicates -> `$dwim_predicate/2` (pl-dwim.c:200), not registered yet, so this call raises
-                # existence_error('$dwim':'$dwim_predicate'/2) where swipl prints the message and fails; DWIM1 flips the row.
+                # print_message/2 translates the message through dwim_predicates -> `$dwim_predicate/2` (pl-dwim.c:200, src/pl-dwim.jl);
+                # the call prints the warning and fails, as swipl's (test_set_flag_swipl.jl "unknown=warning" compares both messages).
                 printMessage(                       # PL_FUNCTOR, FUNCTOR_error2,
                     ld, :warning,                   #   PL_FUNCTOR, FUNCTOR_existence_error2,
                     _message_term(                  #     PL_ATOM, ATOM_procedure, PL_TERM, pred,

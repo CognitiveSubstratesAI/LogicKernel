@@ -800,7 +800,7 @@ fixed it or a public issue exists.
 | `src/pl-read.jl` | the reader (R1); since R1c its SCANNER: the Unicode classifiers over the map (`PlBlankW`, `PlIdContW`, …), the read buffer, `raw_read` (one term's text from a stream: comments dropped, positions kept, quoted items as written, the full stop), syntax errors with their location (`string(Text, CharNo)`, `file(…)`), numbers (`str_number`: every base syntax, digit groups, `1r3`, floats with `Inf`/`NaN`, other scripts' digits), escapes and quoted text (`escape_char`, `get_string`), the variable table (`lookupVariable`), the tokeniser (`get_token`); since R1d the PARSER — the term stack and `readValHandle` (the variables' order is swipl's), the operator queues and their resolution (`isOp`, `modify_op`, `can_reduce`, `must_reduce`, `reduce_op`, `build_op_term` with block operators), `complex_term`'s state machine, the list, bracket and compound readers, `read_term` — and `atom_to_term/3`, `term_to_atom/2`, `term_string/2` (both directions since R1e: the write through `PL_write_term`); since R1f `read_clause` (the consult's read: singletons reported, a syntax error reported and the next clause read), `check_singletons` and its kin, `reportReadError`, `LD->read_source`; since R1e's canonical `read_term_from_stream` with `read_term_options` (read_term_from_atom/3), `bind_variables`, `check_singletons`' list | `src/pl-read.c` |
 | `src/pl-umap.jl` | the Unicode map (since R1c): the syntax category and display width of every code point (`uflags_map`), its POSIX class (`uctype_map`, `ctype_to_flags`), the decimal digit runs, the paired brackets and quotes — data GENERATED from pl-umap.c by `tools/gen_umap.jl`, byte for byte — and their lookups (`uflagsRaw`, `uctypeRaw`, `pl_pair_lookup`) | `src/pl-umap.c`, `src/Unicode/prolog_syntax_map.pl` |
 | `src/os/pl-utf8.jl` | UTF-8 over a byte buffer (since R1c): decoding (`utf8_get_char`, `_PL__utf8_code_point`), encoding (`utf8_put_char`), skipping | `src/os/pl-utf8.c`, `src/os/pl-utf8.h` |
-| `src/os/pl-ctype.jl` | the ASCII character types (since R1c): `_PL_char_types` and the `is*` macros; `isBlankW` through the Unicode classes | `src/os/pl-ctype.c`, `src/os/pl-ctype.h` |
+| `src/os/pl-ctype.jl` | the ASCII character types (since R1c): `_PL_char_types` and the `is*` macros (`toLower`, `makeLower` since DWIM1); `isBlankW` through the Unicode classes | `src/os/pl-ctype.c`, `src/os/pl-ctype.h` |
 | `src/os/pl-string.jl` | `digitValue` (since R1c), a digit's value in a base | `src/os/pl-string.c` |
 | `src/os/pl-stream.jl` | the IOSTREAM subset (since R1c; user, 2026-10-07): a stream with upstream's buffer discipline (the undo area, `S__fillbuf`, `S__flushbuf`), characters in its encoding (`Sgetcode`, `Speekcode`, `Sputcode`, `Sungetc`), the position record (`IOPOS`, `Supdatepos` with ANSI escapes and wide characters), the error flags, memory streams (`Sopenmem`), string streams (`Sopen_string`) and a Julia IO (`Sopen_julia_io`: a file or a buffer, since R1e's write/1 family a terminal or a pipe; a failing IO is a write error) | `src/os/pl-stream.c`, `src/os/SWI-Stream.h` |
 | `src/os/pl-text.jl` | the text a term holds (since R1d): `PL_get_text` — an atom, a string, an integer or a rational, a code or character list, since R1e's floats a float (`format_float`) — with its errors, and a stream reading it (`Sopen_text`); `PL_chars_t`; since T1 unify with a text, compare, concatenate (`PL_unify_text`, `PL_unify_text_range`, `PL_cmp_text`, `PL_concat_text`, `PL_mb_text`), `CVT_VARNOFAIL`; DIVERGES, pl-text.c: a text from an atom or a string is UTF-8 and canonicalised by its consumer | `src/os/pl-text.c`, `src/os/pl-text.h` |
@@ -813,6 +813,7 @@ fixed it or a public issue exists.
 | `src/os/pl-files.jl` | file names and deleting a file (Y1): `get_file_name`, `PL_get_file_name`, `RemoveFile` (`remove(3)` by `ccall`), delete_file/1 (`PL_predicates_from_files`) | `src/os/pl-files.c`, `src/os/pl-files.h`, `src/os/pl-file.c` |
 | `src/os/pl-glob.jl` | wildcards and file-name expansion (LB2b): `compilePattern`, `matchPattern`, wildcard_match/2,3, `expand`, expand_file_name/2, directory_files/2 (`PL_predicates_from_glob`) | `src/os/pl-glob.c` |
 | `src/pl-sys.jl` | the system built-ins (Y1): getenv/2, setenv/2, unsetenv/1, get_time/1, sleep/1 (`PL_predicates_from_system`); shell/2 is left out (deferred); setlocale/3 (CT1a, `PL_predicates_from_ctype`) | `src/pl-sys.c`, `src/os/pl-ctype.c` |
+| `src/pl-dwim.jl` | since DWIM1 (R2), pl-dwim.c's two foreign predicates: `dwim_match/3` (`pl_dwim_match`, pl-ext.c:155) and `'$dwim_predicate'/2` (`pl_dwim_predicate`, NDET, pl-ext.c:156) over `dwimMatch` and its rules (`oneTypo`, `twoTransposed`, `oneInserted`, `differentSeparated`, `subWord`, `subwordsTransposed`) on NUL-terminated byte vectors (the C strings); the text of an argument is `PL_get_chars(CVT_ALL)` as ISO Latin-1 (`_dwim_chars`: a character above 0xFF fails silently), the name of an atom `stringAtom` (`_dwim_stringAtom`: a wide atom is read as UTF-32LE bytes up to the first NUL, as swipl's rows show); `dwim_match/2` is Prolog (boot/syspred.pl) | `src/pl-dwim.c` |
 | `src/pl-setup.jl` | `emptyStacks`: a new local data's stacks, with one foreign frame at the base; since V5d `allocStacks`/`init_stack` (the local stack's spare reserved above `max`) and `trim_stack`/`trimStacks` (the spare given back after an exception) | `src/pl-setup.c` |
 | `test/core_lang/test_rules_swipl.jl` | V4b's gate: nreverse and an execution differential over random rule clauses identical to swipl (answers and determinism), the body family covered; a call failing before its frame is filled; positions after deterministic exits (MQ6) pinned and live, with the record pools held to the live records; flatness of the last-call optimisation (and its absence growing the stack); open/next/close cycles at their baseline; warm, calls and exits allocate nothing | — |
 | `test/foreign/test_builtins_swipl.jl` | V5a2's gate: the built-ins' registration; the first users as queries against a live swipl (600 random goals × 3 `occurs_check` modes), from clause bodies, and the position built-ins pinned to libswipl | — |
@@ -982,6 +983,7 @@ graph LR
     pl_qlf["pl-qlf.jl"]
     pl_string["pl-string.jl"]
     os_pl_fmt["os/pl-fmt.jl"]
+    pl_dwim["pl-dwim.jl"]
     pl_ext["pl-ext.jl"]
     gd_template["gd_template.jl"]
     boot_image["boot_image.jl"]
@@ -1865,6 +1867,16 @@ graph LR
     os_pl_fmt --> pl_pro
     os_pl_fmt --> pl_write
     os_pl_fmt --> pl_read
+    pl_dwim --> term_interface
+    pl_dwim --> default_term
+    pl_dwim --> os_pl_ctype
+    pl_dwim --> pl_incl
+    pl_dwim --> SWI_Prolog
+    pl_dwim --> pl_global
+    pl_dwim --> pl_comp
+    pl_dwim --> pl_fli
+    pl_dwim --> os_pl_text
+    pl_dwim --> pl_proc
     pl_ext --> term_interface
     pl_ext --> default_term
     pl_ext --> pl_incl
@@ -1908,6 +1920,7 @@ graph LR
     pl_ext --> pl_qlf
     pl_ext --> pl_string
     pl_ext --> os_pl_fmt
+    pl_ext --> pl_dwim
     gd_template --> default_term
     gd_template --> pl_incl
     gd_template --> pl_global
@@ -1955,11 +1968,11 @@ or **platform** (a Windows or macOS definition: out of the count). **NO OWNER** 
 
 | category | done | refused | missing | platform | NO OWNER |
 |---|---:|---:|---:|---:|---:|
-| predicates (C-defined, reached by the boot) | 272 | 0 | 150 | 3 | 1 |
+| predicates (C-defined, reached by the boot) | 274 | 0 | 148 | 3 | 1 |
 | refusal sites | 0 | 78 | 0 | 0 | 52 |
 | Prolog flags | 64 | 19 | 20 | 0 | 35 |
 | VM instructions | 169 | 0 | 64 | 0 | 7 |
-| **total** | 505 | 97 | 234 | 3 | 95 |
+| **total** | 507 | 97 | 232 | 3 | 95 |
 
 #### The boot and library files
 
@@ -1973,14 +1986,14 @@ Predicate rows each file's calls reach (a predicate several files call counts in
 | `boot/expand.pl` | loaded | 55 | 0 | 0 |
 | `boot/dcg.pl` | loaded | 20 | 0 | 0 |
 | `boot/license.pl` | loaded | 5 | 0 | 0 |
-| `boot/syspred.pl` | loaded | 81 | 32 | 0 |
+| `boot/syspred.pl` | loaded | 82 | 31 | 0 |
 | `boot/messages.pl` | loaded | 77 | 8 | 1 |
 | `boot/toplevel.pl` | loaded | 83 | 16 | 2 |
 | `boot/attvar.pl` | loaded | 29 | 0 | 0 |
 | `boot/bags.pl` | loaded | 21 | 1 | 0 |
 | `boot/apply.pl` | loaded | 4 | 0 | 0 |
 | `boot/history.pl` | loaded | 19 | 2 | 0 |
-| `boot/dwim.pl` | loaded | 30 | 1 | 0 |
+| `boot/dwim.pl` | loaded | 31 | 0 | 0 |
 | `boot/autoload.pl` | loaded | 76 | 1 | 0 |
 | `boot/iri.pl` | loaded | 3 | 0 | 0 |
 | `boot/qlf.pl` | loaded | 10 | 0 | 0 |
@@ -2017,7 +2030,6 @@ Predicate rows each file's calls reach (a predicate several files call counts in
 | TX1 | 4 | 4 | 0 | `$snapshot/1`, `$transaction/2`, `$transaction/3`, `$undo/1` |
 | WRAP1 | 4 | 2 | 2 | `$wrapped_implementation/3`, `unwrap_predicate/2`, `refusal the VM instruction S_CALLWRAPPER (callin…`, `refusal the VM instruction S_WRAP (calling a wra…` |
 | CT1 | 2 | 2 | 0 | `char_type/2`, `code_type/2` |
-| DWIM1 | 2 | 2 | 0 | `$dwim_predicate/2`, `dwim_match/3` |
 | FL1 | 2 | 2 | 0 | `get_flag/2`, `set_flag/2` |
 | P2 | 2 | 2 | 0 | `$seek_list/4`, `sub_atom_icasechk/3` |
 | LB4 | 1 | 0 | 1 | `refusal PL_get_file_name flag PL_FILE_SEARCH (sy…` |
@@ -2033,7 +2045,7 @@ xychart-beta
     title "R2: missing (bars) and refused (line) rows"
     x-axis ["predicates", "refusal sites", "flags", "VM instructions"]
     y-axis "rows" 0 --> 150
-    bar [150, 0, 20, 64]
+    bar [148, 0, 20, 64]
     line [0, 78, 19, 0]
 ```
 
@@ -7195,27 +7207,35 @@ cbf4e189.
   removal condition "trapUndefined autoloads"), swipl has them in library/when.pl, not in the boot image.
 - **trie_gen_compiled/2,3** (T1 missing_prolog): system predicates with supervisor code that pl-trie.c:4975-4987
   (initTries) creates; deferred with the trie step (docs/r2_owners.tsv: trie_gen/2,3 -> TRIE1).
-- **T4 and dwim**: test_boot_messages passes with `_BM_KNOWN` empty. A boot message whose translation reaches
-  `'$dwim':'$dwim_predicate'/2` (pl-ext.c:156 -> pl-dwim.c:200, deferred: owner DWIM1) would raise while printing and be
-  missed by the collector; such a message appears only once DWIM1 lands and the guard's rows then decide.
-- **unknown=warning raises in the booted kernel** (KNOWN DIFFERENCE, owner DWIM1; ruling on A-0317, audit D-0413 items 1-2).
-  With `unknown=warning` S_UNDEF (pl-vmi.c; src/pl-wam.jl) calls print_message/2 with `error(existence_error(procedure, P), _)`; the
-  translation reaches `dwim_predicates/2` (messages.pl:466-470) -> `dwim_predicate/2` (dwim.pl:449-457) -> `'$dwim_predicate'/2`, the
-  foreign predicate of pl-ext.c:156 (pl-dwim.c:200, NDET; `dwim_match/3` is pl-ext.c:155, pl-dwim.c:179), which the kernel does not
-  register. So the call RAISES `error(existence_error(procedure, '$dwim':'$dwim_predicate'/2), context('$dwim':dwim_pred/2, _))`
-  where swipl 10.1.19 collects `unknown_in_module_user`, then `error(existence_error(procedure, zz_nopred_xx/0), _)`, and fails.
-  test_set_flag_swipl.jl ("unknown=warning") pins the kernel's exact term and swipl's two lines (`_SF90_KERNEL_DIFFERS`,
-  `_SF90_PINNED`). **DWIM1 flips the row to `ours == theirs`** (refusal-flip rule, D-0375/D-0376); the two predicates moved from
-  DBG1 to DWIM1 in docs/r2_owners.tsv, the rest of DBG1 stays. DWIM1 gates right after b2, before the CONT1 re-stack.
+- **T4 and dwim**: test_boot_messages passes with `_BM_KNOWN` empty, before and after DWIM1 (src/pl-dwim.jl registers
+  `'$dwim_predicate'/2`, pl-ext.c:156 -> pl-dwim.c:200, and `dwim_match/3`, pl-ext.c:155 -> pl-dwim.c:179): the guard's rows
+  need no pin for it, and a message whose translation reaches the predicate now finds it.
+- **unknown=warning (FLIPPED by DWIM1; ruling on A-0317, audit D-0413 items 1-2).** With `unknown=warning` S_UNDEF (pl-vmi.c;
+  src/pl-wam.jl) calls print_message/2 with `error(existence_error(procedure, P), _)`; the translation reaches
+  `dwim_predicates/2` (messages.pl:466-470) -> `dwim_predicate/2` (dwim.pl:449-457) -> `'$dwim_predicate'/2`. Until DWIM1 the
+  kernel did not register it, so the call RAISED `error(existence_error(procedure, '$dwim':'$dwim_predicate'/2), context('$dwim':dwim_pred/2, _))`;
+  now it collects `unknown_in_module_user`, then `error(existence_error(procedure, zz_nopred_xx/0), _)`, and fails, as swipl 10.1.19.
+  test_set_flag_swipl.jl ("unknown=warning") compares the kernel's two messages and its answer with `_SF90_PINNED` and `no`
+  (`ours == theirs`; refusal-flip rule, D-0375/D-0376, the `_SF90_KERNEL_DIFFERS` pin is gone). The two predicates left DBG1 in
+  docs/r2_owners.tsv with DWIM1's landing (the rest of DBG1 stays).
+- **DWIM1 (src/pl-dwim.jl; test/core_lang/test_dwim_swipl.jl, tools/mutants/DWIM1.py).** `dwim_match/3` and `'$dwim_predicate'/2`
+  are ported as pl-dwim.c has them; `dwim_match/2` is Prolog (boot/syspred.pl:230) and `'$dwim_predicate'/2` enumerates the procedures
+  of the ONE module its argument strips to (the walk over the super-modules is Prolog, boot/dwim.pl). DIVERGES (representation only,
+  as `pl_current_predicate`): the answers come in the table's key order (swipl: the hash order of `module->procedures`), so the rows
+  compare each answer set sorted; the 1024-byte stack buffers of `subwordsTransposed` are vectors. Oracle: swipl 10.1.19 answers
+  the 35 rows on the three term types. A wide-character atom name is read as swipl reads it (`stringAtom` of a `wchar_t` array as a
+  `char` string: UTF-32LE bytes up to the first NUL); rows t32 and t33 agree.
 - **missing_foreign = 388**: swipl's foreign (C) predicates in the boot modules the kernel does not register yet (T1);
   the count only falls, by the steps that register them (R2 owners table).
 - **test_load L1-L6** (test/files/test_load_swipl.jl `_TL_KNOWN_DIFFS`, `(line, kernel, swipl)` per line):
-  L1 `'$dwim_predicate'/2` (owner DWIM1), L2 `'$syspreds':'$foreign_predicate_source'/2` (pl-proc.c:4146, owner PR1),
+  L1 `'$dwim_predicate'/2` FLIPPED by DWIM1 (the cases "directives", "disjunction", "if-then", "negation" are `ours == theirs`),
+  L2 `'$syspreds':'$foreign_predicate_source'/2` (pl-proc.c:4146, owner PR1),
   L3 `:- dynamic(p/1 as incremental)`: `'$tabling':unwrap_monotonic/1` calls `prolog_wrap:unwrap_predicate/2` (pl-wrap.c),
   which is undefined (owner WRAP1, docs/r2_owners.tsv): the directive raises and the loader prints undefined_export
   (prolog_wrap, unwrap_predicate/2) where swipl answers `ok`. L4 `initialization(main)` (swipl autoloads library(main)
-  and prints an initialization_error for main/1; the kernel has no autoloader, so main/0 is undefined and the report reaches
-  `'$dwim_predicate'/2`: the load raises there; owners DWIM1 and AUTOLOAD1). L5 FLIPPED at the LB4 b2 gate (audit D-0410
+  and prints an initialization_error for main/1; since DWIM1 the kernel's load is `ok` and runs main/0, whose `set_signals`
+  reaches the undefined `'$syspreds':'$on_signal'/4`, so line 2 carries that existence_error: owner Q10, docs/r2_owners.tsv).
+  L5 FLIPPED at the LB4 b2 gate (audit D-0410
   item 7): redefineProcedure no longer refuses, and both rows (a predicate another file defined; asserted-then-file) load as
   swipl 10.1.19 loads them (`ok`, then `warning redefined_procedure(static, s/1)`), compared with `@test ours == theirs`.
   L6 a reconsult: deferred, NotPortedError raised in startConsult (src/pl-srcfile.jl), owner LB6.

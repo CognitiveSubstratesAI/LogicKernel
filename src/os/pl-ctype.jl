@@ -110,6 +110,14 @@ isSign(c::Int)::Bool = c == Int('-') || c == Int('+')
 "Is `c` one of the ten digits from `zero` (pl-ctype.h)?"
 isDecimal(zero::Int, c::Int)::Bool = c >= zero && c <= zero + 9
 
+# PORT: pl-ctype.h toLower
+# (DWIM1: pl-dwim.c's `makeLower`)
+"The lowercase letter of the uppercase ASCII letter `c`: `c + 'a' - 'A'` (pl-ctype.h)."
+toLower(c::Int)::Int = c + Int('a') - Int('A')
+# PORT: pl-ctype.h makeLower
+"`c` as a lowercase ASCII letter when it is an uppercase one, else `c` (pl-ctype.h)."
+makeLower(c::Int)::Int = (c >= Int('A') && c <= Int('Z')) ? toLower(c) : c
+
 # PORT: pl-ctype.h matchingBracket
 "The bracket that closes `c` (`[`, `{` or `(`), else 0 (pl-ctype.h)."
 matchingBracket(c::Int)::Int =
