@@ -6,8 +6,8 @@
 #     A syntax error's location is read through `rt_serr/2`: the file name and the stream blob are dropped, the numbers kept.
 #   * Every answer line is swipl's, PINNED (swipl 10.1.19-1-gcbf4e189, LC_ALL=C, two byte-identical runs, evidence/RD1/gen_rows.py of the
 #     RD1 branch); with `swipl` on PATH the live answers are compared with the pins too.
-#   * KNOWN DIFFERENCE rows (`_RT_KNOWN`): the options the kernel refuses and the syntax errors over an `open_string/2` stream pin the
-#     kernel's exact current answer (a `NotPortedError`) beside swipl's (the pin of the same row).
+#   * KNOWN DIFFERENCE rows (`_RT_KNOWN`): the options the kernel refuses pin the kernel's exact current answer (a `NotPortedError`)
+#     beside swipl's (the pin of the same row). The syntax errors over an `open_string/2` stream are cases again (LB7: `unify_location`).
 #   * Rows that read the process's standard input (rt21-rt26, rt170, rt171) are UNVERIFIED on the kernel: gate decides (stdin is /dev/null in
 #     tools/run_tests.sh and in the driver run).
 using Test, LogicKernel
@@ -470,66 +470,75 @@ const _RT_CASES = [
     (
         "rt323",
         raw"""rt_file('X = <a> .', S), rt_serr_formal(read_term(S,T,[blob(dead)]), R)"""
+    ),
+    # unify_location rows (a syntax error over a stream: swipl's ball carries stream(S, L, LP, C)): the kernel's `unify_location`
+    # builds it for any stream. The line/column numbers of the stream position are UNVERIFIED on the kernel: gate decides.
+    (
+        "rt87",
+        raw"""rt_str('a b. c.', S), read_term(S,T,[syntax_errors(fail)]), R = T"""
+    ),
+    (
+        "rt88",
+        raw"""rt_str('a b. c.', S), read_term(S,T,[syntax_errors(quiet)]), R = T"""
+    ),
+    (
+        "rt89",
+        raw"""rt_str('a b. c.', S), read_term(S,T,[syntax_errors(dec10)]), R = T"""
+    ),
+    (
+        "rt120",
+        raw"""rt_serr_formal((rt_str('a b.', S), read(S,_)), R)"""
+    ),
+    (
+        "rt121",
+        raw"""rt_serr_formal((rt_str('foo(.', S), read(S,_)), R)"""
+    ),
+    (
+        "rt122",
+        raw"""rt_serr_formal((rt_str('foo(', S), read(S,_)), R)"""
+    ),
+    (
+        "rt123",
+        raw"""rt_serr_formal((rt_str('\'abc', S), read(S,_)), R)"""
+    ),
+    (
+        "rt124",
+        raw"""rt_serr_formal((rt_str('foo(X,Y)', S), read_term(S,_,[])), R)"""
+    ),
+    (
+        "rt176",
+        raw"""rt_str('a', S), '$raw_read'(S, T), R = T"""
+    ),
+    (
+        "rt184",
+        raw"""rt_str('\'abc', S), '$raw_read'(S, T), R = T"""
+    ),
+    (
+        "rt113",
+        raw"""rt_serr((rt_file('/* abc', S), read(S,_)), R)"""
+    ),
+    (
+        "rt154",
+        raw"""rt_str('f("ab", `cd`).', S), read_term(S,T,[back_quotes(symbol_char)]), R = T"""
+    ),
+    (
+        "rt163",
+        raw"""rt_str('a +++ b.', S), read_term(S,T,[module(nomod)]), R = T"""
+    ),
+    (
+        "rt169",
+        raw"""rt_str('x.y', S), read_term(S,T,[]), R = T"""
+    ),
+    (
+        "rt187",
+        raw"""rt_serr((rt_file('/* abc', S), '$raw_read'(S, _)), R)"""
     )
 ]
 
 # KNOWN DIFFERENCE rows: (id, goal, the kernel's exact answer). swipl's answer is in `_RT_PINNED` (the rows after the cases), compared live too.
 #   rt300-rt302, rt304: read_term/3 options the kernel REFUSES with a `NotPortedError` (src/pl-read.jl `read_term_from_stream`, R1's decision);
-#   swipl answers the term (and for comments/quasi_quotations the collected lists).
-#   the rest: a syntax error read from an `open_string/2` stream: swipl's ball carries `stream(S, Line, LinePos, CharNo)`; the kernel's
-#   `unify_location` (src/pl-read.jl) throws `NotPortedError` for a stream that is neither a file nor a string stream (the stream
-#   table). The kernel pins below are READ from the source, NOT RUN: the gate agent confirms or fixes them at the first run.
+#   swipl answers the term (and for comments/quasi_quotations the collected lists). rt320, rt321: a blob `<type>(...)`, below.
 const _RT_KNOWN = [
-    (
-        "rt87",
-        raw"""rt_str('a b. c.', S), read_term(S,T,[syntax_errors(fail)]), R = T""",
-        "t_rt87 jlerr NotPortedError unify_location: a stream's location, stream(S, L, LP, C)"
-    ),
-    (
-        "rt88",
-        raw"""rt_str('a b. c.', S), read_term(S,T,[syntax_errors(quiet)]), R = T""",
-        "t_rt88 jlerr NotPortedError unify_location: a stream's location, stream(S, L, LP, C)"
-    ),
-    (
-        "rt89",
-        raw"""rt_str('a b. c.', S), read_term(S,T,[syntax_errors(dec10)]), R = T""",
-        "t_rt89 jlerr NotPortedError unify_location: a stream's location, stream(S, L, LP, C)"
-    ),
-    (
-        "rt120",
-        raw"""rt_serr_formal((rt_str('a b.', S), read(S,_)), R)""",
-        "t_rt120 jlerr NotPortedError unify_location: a stream's location, stream(S, L, LP, C)"
-    ),
-    (
-        "rt121",
-        raw"""rt_serr_formal((rt_str('foo(.', S), read(S,_)), R)""",
-        "t_rt121 jlerr NotPortedError unify_location: a stream's location, stream(S, L, LP, C)"
-    ),
-    (
-        "rt122",
-        raw"""rt_serr_formal((rt_str('foo(', S), read(S,_)), R)""",
-        "t_rt122 jlerr NotPortedError unify_location: a stream's location, stream(S, L, LP, C)"
-    ),
-    (
-        "rt123",
-        raw"""rt_serr_formal((rt_str('\'abc', S), read(S,_)), R)""",
-        "t_rt123 jlerr NotPortedError unify_location: a stream's location, stream(S, L, LP, C)"
-    ),
-    (
-        "rt124",
-        raw"""rt_serr_formal((rt_str('foo(X,Y)', S), read_term(S,_,[])), R)""",
-        "t_rt124 jlerr NotPortedError unify_location: a stream's location, stream(S, L, LP, C)"
-    ),
-    (
-        "rt176",
-        raw"""rt_str('a', S), '$raw_read'(S, T), R = T""",
-        "t_rt176 jlerr NotPortedError unify_location: a stream's location, stream(S, L, LP, C)"
-    ),
-    (
-        "rt184",
-        raw"""rt_str('\'abc', S), '$raw_read'(S, T), R = T""",
-        "t_rt184 jlerr NotPortedError unify_location: a stream's location, stream(S, L, LP, C)"
-    ),
     (
         "rt300",
         raw"""rt_str('f(X).', S), read_term(S,T,[comments(C)]), R = T-C""",
@@ -561,31 +570,6 @@ const _RT_KNOWN = [
         "rt321",
         raw"""rt_str('<a-b>(x).', S), read_term(S,T,[blob(resolve)]), blob(T, Ty), R = Ty""",
         "t_rt321 jlerr NotPortedError read: a blob <type>(…)"
-    ),
-    (
-        "rt113",
-        raw"""rt_serr((rt_file('/* abc', S), read(S,_)), R)""",
-        "t_rt113 jlerr NotPortedError unify_location: a stream's location, stream(S, L, LP, C)"
-    ),
-    (
-        "rt154",
-        raw"""rt_str('f("ab", `cd`).', S), read_term(S,T,[back_quotes(symbol_char)]), R = T""",
-        "t_rt154 jlerr NotPortedError unify_location: a stream's location, stream(S, L, LP, C)"
-    ),
-    (
-        "rt163",
-        raw"""rt_str('a +++ b.', S), read_term(S,T,[module(nomod)]), R = T""",
-        "t_rt163 jlerr NotPortedError unify_location: a stream's location, stream(S, L, LP, C)"
-    ),
-    (
-        "rt169",
-        raw"""rt_str('x.y', S), read_term(S,T,[]), R = T""",
-        "t_rt169 jlerr NotPortedError unify_location: a stream's location, stream(S, L, LP, C)"
-    ),
-    (
-        "rt187",
-        raw"""rt_serr((rt_file('/* abc', S), '$raw_read'(S, _)), R)""",
-        "t_rt187 jlerr NotPortedError unify_location: a stream's location, stream(S, L, LP, C)"
     )
 ]
 
@@ -789,17 +773,17 @@ const _RT_PINNED = [
     "t_rt124 c[116,95,114,116,49,50,52]/1(c[114,97,105,115,101,100]/1(c[115,121,110,116,97,120,95,101,114,114,111,114]/1(a[101,110,100,95,111,102,95,102,105,108,101])))",
     "t_rt176 c[116,95,114,116,49,55,54]/1(c[114,97,105,115,101,100]/1(c[115,121,110,116,97,120,95,101,114,114,111,114]/1(a[101,110,100,95,111,102,95,102,105,108,101])))",
     "t_rt184 c[116,95,114,116,49,56,52]/1(c[114,97,105,115,101,100]/1(c[115,121,110,116,97,120,95,101,114,114,111,114]/1(c[101,110,100,95,111,102,95,102,105,108,101,95,105,110,95,113,117,111,116,101,100]/1(a[39]))))",
+    "t_rt113 c[116,95,114,116,49,49,51]/1(c[114,97,105,115,101,100]/2(c[115,121,110,116,97,120,95,101,114,114,111,114]/1(a[101,110,100,95,111,102,95,102,105,108,101,95,105,110,95,98,108,111,99,107,95,99,111,109,109,101,110,116]),c[115,116,114,101,97,109]/3(i1,i0,i0)))",
+    "t_rt154 c[116,95,114,116,49,53,52]/1(c[114,97,105,115,101,100]/1(c[115,121,110,116,97,120,95,101,114,114,111,114]/1(a[111,112,101,114,97,116,111,114,95,101,120,112,101,99,116,101,100])))",
+    "t_rt163 c[116,95,114,116,49,54,51]/1(c[114,97,105,115,101,100]/1(c[115,121,110,116,97,120,95,101,114,114,111,114]/1(a[111,112,101,114,97,116,111,114,95,101,120,112,101,99,116,101,100])))",
+    "t_rt169 c[116,95,114,116,49,54,57]/1(c[114,97,105,115,101,100]/1(c[115,121,110,116,97,120,95,101,114,114,111,114]/1(a[101,110,100,95,111,102,95,102,105,108,101])))",
+    "t_rt187 c[116,95,114,116,49,56,55]/1(c[114,97,105,115,101,100]/2(c[115,121,110,116,97,120,95,101,114,114,111,114]/1(a[101,110,100,95,111,102,95,102,105,108,101,95,105,110,95,98,108,111,99,107,95,99,111,109,109,101,110,116]),c[115,116,114,101,97,109]/3(i1,i0,i0)))",
     "t_rt300 c[116,95,114,116,51,48,48]/1(c[45]/2(c[102]/1(V0),nil))",
     "t_rt301 c[116,95,114,116,51,48,49]/1(c[102]/1(a[88]))",
     "t_rt302 c[116,95,114,116,51,48,50]/1(c[45]/2(c[102]/1(V0),nil))",
     "t_rt304 c[116,95,114,116,51,48,52]/1(c[102]/1(V0))",
     "t_rt320 c[116,95,114,116,51,50,48]/1(a[97,45,98])",
-    "t_rt321 c[116,95,114,116,51,50,49]/1(a[97,45,98])",
-    "t_rt113 c[116,95,114,116,49,49,51]/1(c[114,97,105,115,101,100]/2(c[115,121,110,116,97,120,95,101,114,114,111,114]/1(a[101,110,100,95,111,102,95,102,105,108,101,95,105,110,95,98,108,111,99,107,95,99,111,109,109,101,110,116]),c[115,116,114,101,97,109]/3(i1,i0,i0)))",
-    "t_rt154 c[116,95,114,116,49,53,52]/1(c[114,97,105,115,101,100]/1(c[115,121,110,116,97,120,95,101,114,114,111,114]/1(a[111,112,101,114,97,116,111,114,95,101,120,112,101,99,116,101,100])))",
-    "t_rt163 c[116,95,114,116,49,54,51]/1(c[114,97,105,115,101,100]/1(c[115,121,110,116,97,120,95,101,114,114,111,114]/1(a[111,112,101,114,97,116,111,114,95,101,120,112,101,99,116,101,100])))",
-    "t_rt169 c[116,95,114,116,49,54,57]/1(c[114,97,105,115,101,100]/1(c[115,121,110,116,97,120,95,101,114,114,111,114]/1(a[101,110,100,95,111,102,95,102,105,108,101])))",
-    "t_rt187 c[116,95,114,116,49,56,55]/1(c[114,97,105,115,101,100]/2(c[115,121,110,116,97,120,95,101,114,114,111,114]/1(a[101,110,100,95,111,102,95,102,105,108,101,95,105,110,95,98,108,111,99,107,95,99,111,109,109,101,110,116]),c[115,116,114,101,97,109]/3(i1,i0,i0)))"
+    "t_rt321 c[116,95,114,116,51,50,49]/1(a[97,45,98])"
 ]
 
 "The program and cases as one file (in `dir`); the case predicates' names."
@@ -868,7 +852,7 @@ function _rt_kernel(path::String, names::Vector{String})
     return out
 end
 
-@testset "read/1,2, read_term/2,3, \$raw_read/1,2, \$is_named_var/1 as swipl's (rt01-rt219, rt300-rt323)" begin
+@testset "read/1,2, read_term/2,3, \$raw_read/1,2, \$is_named_var/1 as swipl's (rt01-rt323)" begin
     mktempdir() do dir
         f, names = _rt_file(dir)
         kl = _rt_kernel(f, names)
