@@ -139,8 +139,10 @@ MUTANTS = [
          old='''    if ncodeunits(name) >= PATH_MAX''',
          new='''    if false'''),
     dict(id="Y1-34 RemoveFile reports permission denied", file=F, targets=T,
-         old='''    return rc == 0 ? 0 : Int(Base.Libc.errno())''',
-         new='''    return rc == 0 ? 0 : EACCES'''),
+         old='''    rc = ccall((:remove, LIBC), Cint, (Cstring,), path)
+    return rc == 0 ? 0 : Int(Base.Libc.errno())''',
+         new='''    rc = ccall((:remove, LIBC), Cint, (Cstring,), path)
+    return rc == 0 ? 0 : EACCES'''),
     dict(id="Y1-35 RemoveFile removes nothing", file=F, targets=T,
          old='''    rc = ccall((:remove, LIBC), Cint, (Cstring,), path)''',
          new='''    rc = Cint(0)'''),

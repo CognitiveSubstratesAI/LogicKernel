@@ -113,8 +113,8 @@ runner=()'''),
          equivalent="tools/pkgtest_way.sh (the run line, the child's `9>&-`): the flock is on fd 9's open file description, released when every holder has closed it. The test process is the scope's only child and ends before the script's own exit; the descriptor outlives the run only in a grandchild the test process leaks, which neither the stub nor Julia does."),
     # ── tools/warm.sh: the lane's slice, and the step ──
     dict(id="TM26 the second daemon's lane names the first one's slice", file=W, targets=T,
-         old=r'''elif [ -f "$DIR/second" ]; then echo lk-warm2.slice''',
-         new=r'''elif [ -f "$DIR/second" ]; then echo lk-warm.slice'''),
+         old=r'''    elif [ -f "$DIR/second" ]; then _lane_slice_name second''',
+         new=r'''    elif [ -f "$DIR/second" ]; then echo lk-warm.slice'''),
     dict(id="TM27 the first daemon's lane names the second one's slice", file=W, targets=T,
          old=r'''else echo lk-warm.slice; fi''',
          new=r'''else echo lk-warm2.slice; fi'''),
@@ -124,8 +124,10 @@ runner=()'''),
     dict(id="TM29 a slice is named where the shared budget is off", file=W, targets=T,
          old=r'''    _lk_budget_on || return 0
     systemctl --user show-environment > /dev/null 2>&1 || return 0
+    local own
     if [ -n "${LOGICKERNEL_SLICE:-}" ]''',
          new=r'''    systemctl --user show-environment > /dev/null 2>&1 || return 0
+    local own
     if [ -n "${LOGICKERNEL_SLICE:-}" ]'''),
     dict(id="TM30 the step does not hand the slice on", file=W, targets=T,
          old=r'''        LOGICKERNEL_INERT_SLICE="$(_lane_slice)" "$ROOT/tools/pkgtest_way.sh" "$f" > "$log" 2>&1''',
