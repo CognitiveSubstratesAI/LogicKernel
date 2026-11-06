@@ -1533,7 +1533,9 @@ end
 # DIVERGES: the local data is an argument (upstream's `LD`); the text is a `String` (UTF-8, `REP_UTF8`), `nothing` for
 # upstream's NULL: there is no `char *` and no `PL_save_text` buffer (`PL_STRINGS_MARK_IF_MALLOC` has no counterpart).
 "The text of the prompt for the next read from `in`, a `String`; `nothing` unless `in` is `user_input` and there is a prompt (pl-fli.c)."
-function PL_prompt_string(ld::PL_local_data{T}, in::IOSTREAM)::Union{Nothing, String} where {T}
+function PL_prompt_string(
+    ld::PL_local_data{T}, in::IOSTREAM
+)::Union{Nothing, String} where {T}
     _initIO(ld)
     if in === Suser_input(ld)
         a = PrologPrompt(ld)

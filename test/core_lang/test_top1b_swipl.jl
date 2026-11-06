@@ -64,7 +64,7 @@ end
 function _tb_db(; booted::Bool)
     db = booted ? _RDB() : _RDB_unbooted()
     # the booted copy records the `informational` messages (break(begin|end, Level)) through a user:message_hook/3 collector
-    booted && lk_install_message_collector!(db.gd, db.ld; kinds = (:informational,))
+    booted && lk_install_message_collector!(db.gd, db.ld; kinds=(:informational,))
     db.gd.halt_exit = false
     ld = db.ld
     ui = LK.set_standard_stream!(ld, LK.SNO_USER_INPUT, IOBuffer())
@@ -76,7 +76,7 @@ function _tb_db(; booted::Bool)
 end
 
 "`name :- body` (a fact for `body` nothing) in the module `system`: a goal `query_loop` runs."
-function _tb_sys!(db::_RDB, name::Symbol, body::Union{Nothing, _R} = nothing)
+function _tb_sys!(db::_RDB, name::Symbol, body::Union{Nothing, _R}=nothing)
     head = _rs(name)
     sys = LK.MODULE_system(db.gd)
     pr = LK.lookupProcedure(head, 0, sys)
@@ -95,15 +95,25 @@ _tb_lvl(v::Int) = _rite(
 "`( user:tp_seen -> true ; assertz(user:tp_seen), throw(tp_ball) )`: raises the first time, succeeds the second"
 _tb_once_raise() = _rite(
     _rf(":", _rs(:user), _rs(:tp_seen)), _rs(:true),
-    _rconj(_rf("assertz", _rf(":", _rs(:user), _rs(:tp_seen))), _rf("throw", _rs(:tp_ball)))
+    _rconj(
+        _rf("assertz", _rf(":", _rs(:user), _rs(:tp_seen))), _rf("throw", _rs(:tp_ball))
+    )
 )
 "`current_input`/`current_output` named by their alias, recorded as `in(A)` and `out(B)` (`none` where the stream has no alias)"
 _tb_streams_goal() = _rconj(
     _rf("current_input", _rv(1)),
-    _rite(_rf("stream_property", _rv(1), _rf("alias", _rv(2))), _rs(:true), _rf("=", _rv(2), _rs(:none))),
+    _rite(
+        _rf("stream_property", _rv(1), _rf("alias", _rv(2))),
+        _rs(:true),
+        _rf("=", _rv(2), _rs(:none))
+    ),
     _tb_ev(_rf("in", _rv(2))),
     _rf("current_output", _rv(3)),
-    _rite(_rf("stream_property", _rv(3), _rf("alias", _rv(4))), _rs(:true), _rf("=", _rv(4), _rs(:none))),
+    _rite(
+        _rf("stream_property", _rv(3), _rf("alias", _rv(4))),
+        _rs(:true),
+        _rf("=", _rv(4), _rs(:none))
+    ),
     _tb_ev(_rf("out", _rv(4)))
 )
 
@@ -112,7 +122,7 @@ function _tb_events(db::_RDB)::Vector{String}
     out = String[]
     for (a, _) in _rcall(db, _rf("tp_ev", _rv(1)))
         @assert startswith(a, "tp_ev(") && endswith(a, ")") a
-        push!(out, chop(a; head = 6, tail = 1))
+        push!(out, chop(a; head=6, tail=1))
     end
     return out
 end
@@ -122,7 +132,11 @@ The `break(begin|end, Level)` messages printed so far: from the message_hook col
 from the fallback branch of `printMessage` on `ld.messages` (the term only: `begin(1)`, the UNBOOTED copy).
 """
 function _tb_breaks(ld::LK.PL_local_data{_R}; kinds::Bool)::Vector{String}
-    terms = kinds ? [(k, t) for (k, t) in lk_take_messages!(ld)] : [(k, t) for (k, t) in ld.messages]
+    terms = if kinds
+        [(k, t) for (k, t) in lk_take_messages!(ld)]
+    else
+        [(k, t) for (k, t) in ld.messages]
+    end
     out = String[]
     for (k, t) in terms
         m = match(r"^break\((begin|end),\s*(\d+)\)$", _rcanonical(t))
@@ -134,7 +148,7 @@ end
 
 @testset "break_level: the field, currentBreakLevel and the flag (pl-setup.c:199, pl-pro.c:304-308, pl-prologflag.c:2117-2121)" begin
     # UNVERIFIED on the kernel: gate decides
-    db, _ = _tb_db(; booted = true)
+    db, _ = _tb_db(; booted=true)
     gd, ld = db.gd, db.ld
     flag(db) = _rcall(db, _rf("current_prolog_flag", _rs(:break_level), _rv(1)))
     # a fresh local data runs no toplevel: -1, and the flag FAILS (the old row t_e15 of test_prolog_flag_swipl stays valid)
@@ -159,7 +173,7 @@ end
 
 @testset "prologToplevel with a goal that is no toplevel runs at level -1 and restores it (pl-pro.c:662-679)" begin
     # UNVERIFIED on the kernel: gate decides
-    db, _ = _tb_db(; booted = true)
+    db, _ = _tb_db(; booted=true)
     gd, ld = db.gd, db.ld
     _tb_sys!(db, :tp_lvl, _tb_lvl(1))
     _tb_sys!(db, :tp_nolvl, _rs(:fail))
@@ -176,7 +190,7 @@ end
 
 @testset "PL_toplevel and break/0: nested levels 0, 1, 2, 1, 0 and their messages (tb02, tb03n; pl-pro.c:227-300, :662-679, pl-fli.c:5019)" begin
     # UNVERIFIED on the kernel: gate decides
-    db, _ = _tb_db(; booted = false)
+    db, _ = _tb_db(; booted=false)
     gd, ld = db.gd, db.ld
     # `$toplevel :- '$query_loop'`; `$query_loop` records the level, nests ONE more break while the level is below 2, records the level again
     qloop = Symbol("\$query_loop")
@@ -186,7 +200,10 @@ end
         _rconj(
             _tb_lvl(1),
             _rite(
-                _rconj(_rf("current_prolog_flag", _rs(:break_level), _rv(2)), _rf("<", _rv(2), _rg(2))),
+                _rconj(
+                    _rf("current_prolog_flag", _rs(:break_level), _rv(2)),
+                    _rf("<", _rv(2), _rg(2))
+                ),
                 _rconj(_rs(:break), _tb_lvl(3)), _rs(:true)
             )
         )
@@ -197,11 +214,11 @@ end
     _tb_check("tb02", evs)
     @test length(evs) == 5
     @test ld.break_level == -1                                     # the level the caller had
-    msgs = _tb_breaks(ld; kinds = false)
+    msgs = _tb_breaks(ld; kinds=false)
     _tb_check("tb03n", msgs)
     @test length(msgs) == 4
     # a toplevel that fails is false and still restores the level (rc == 1)
-    db2, _ = _tb_db(; booted = false)
+    db2, _ = _tb_db(; booted=false)
     _tb_sys!(db2, Symbol("\$toplevel"), _rs(:fail))
     @test !LK.PL_toplevel(db2.gd, db2.ld)
     @test db2.ld.break_level == -1
@@ -209,39 +226,55 @@ end
 
 @testset "pl_break1 at level -1 prints nothing, above it begin and end; a failing goal prints no end (pl-pro.c:259-271)" begin
     # UNVERIFIED on the kernel: gate decides
-    db, _ = _tb_db(; booted = true)
+    db, _ = _tb_db(; booted=true)
     gd, ld = db.gd, db.ld
     _tb_sys!(db, :tp_ok)
     _tb_sys!(db, :tp_nolvl, _rs(:fail))
     lk_take_messages!(ld)
     # level -1 -> 0: `LD->break_level > 0` is false, no message
     @test LK.pl_break1(gd, ld, _rs(:tp_ok))
-    @test _tb_breaks(ld; kinds = true) == String[]
+    @test _tb_breaks(ld; kinds=true) == String[]
     @test ld.break_level == -1
     # level 0 -> 1 (inside a toplevel): begin and end, informational (tb03: swipl's hook sees the same two)
     ld.break_level = 0
     @test LK.pl_break1(gd, ld, _rs(:tp_ok))
-    _tb_check("tb03", _tb_breaks(ld; kinds = true))
+    _tb_check("tb03", _tb_breaks(ld; kinds=true))
     @test ld.break_level == 0
     # hand-written (pl-pro.c:269: `rc = rc && printMessage(end)`): a goal that fails makes pl_break1 false and the end message is not printed
     @test !LK.pl_break1(gd, ld, _rs(:tp_nolvl))
-    @test _tb_breaks(ld; kinds = true) == ["m(informational,begin,1)"]
+    @test _tb_breaks(ld; kinds=true) == ["m(informational,begin,1)"]
     @test ld.break_level == 0
 end
 
 @testset "pl_break1: the current streams inside are the user streams, afterwards the saved ones (tb04; pl-pro.c:233-234, :263-264, :286-287)" begin
     # UNVERIFIED on the kernel: gate decides
     curnames(ld, ui, uo, other, ue) = [
-        "in(" * (LK.Scurin(ld) === ui ? "user_input" : LK.Scurin(ld) === other ? "rowin" : "?") * ")",
-        "out(" * (LK.Scurout(ld) === uo ? "user_output" : LK.Scurout(ld) === ue ? "rowout" : "?") * ")"
+        "in(" * (
+            if LK.Scurin(ld) === ui
+                "user_input"
+            elseif LK.Scurin(ld) === other
+                "rowin"
+            else
+                "?"
+            end
+        ) * ")",
+        "out(" * (
+            if LK.Scurout(ld) === uo
+                "user_output"
+            elseif LK.Scurout(ld) === ue
+                "rowout"
+            else
+                "?"
+            end
+        ) * ")"
     ]
     # the guard: the extractor sees the user streams' aliases (`stream_property/2` on the buffers `set_standard_stream!` made)
-    db0, _ = _tb_db(; booted = true)
+    db0, _ = _tb_db(; booted=true)
     _radd!(db0, _rs(:tp_streams), _tb_streams_goal())
     @test !isempty(_rcall(db0, _rs(:tp_streams)))
     @test _tb_events(db0) == ["in(user_input)", "out(user_output)"]
     # the row: replace the current streams, break, look inside, look afterwards
-    db, (ui, uo, ue) = _tb_db(; booted = true)
+    db, (ui, uo, ue) = _tb_db(; booted=true)
     gd, ld = db.gd, db.ld
     _tb_sys!(db, :tp_streams, _tb_streams_goal())
     other = LK.Sopen_string(UInt8[0x78], 1, "r")
@@ -261,17 +294,33 @@ end
     # UNVERIFIED on the kernel: gate decides
     # swipl's `$query_loop` plumbing (boot/toplevel.pl) decides what the flag reads inside (measured, swipl 10.1.19: true), so the C effect is
     # asserted from the C text only: `debugmode(NULL, false, &debugSave, 0)` on the way in, `debugmode(NULL, debugSave, NULL, 0)` on the way out
-    db, _ = _tb_db(; booted = true)
+    db, _ = _tb_db(; booted=true)
     gd, ld = db.gd, db.ld
-    _tb_sys!(db, :tp_dbg, _rite(_rf("current_prolog_flag", _rs(:debug), _rs(:true)), _tb_ev(_rs(:dbg_on)), _tb_ev(_rs(:dbg_off))))
+    _tb_sys!(
+        db,
+        :tp_dbg,
+        _rite(
+            _rf("current_prolog_flag", _rs(:debug), _rs(:true)),
+            _tb_ev(_rs(:dbg_on)),
+            _tb_ev(_rs(:dbg_off))
+        )
+    )
     LK.debugmode(ld, true, nothing, UInt32(0))
     @test ld.debugstatus_debugging
     @test LK.pl_break1(gd, ld, _rs(:tp_dbg))
     @test _tb_events(db) == ["dbg_off"]
     @test ld.debugstatus_debugging                                  # switched on again
     # debugging off stays off
-    db2, _ = _tb_db(; booted = true)
-    _tb_sys!(db2, :tp_dbg, _rite(_rf("current_prolog_flag", _rs(:debug), _rs(:true)), _tb_ev(_rs(:dbg_on)), _tb_ev(_rs(:dbg_off))))
+    db2, _ = _tb_db(; booted=true)
+    _tb_sys!(
+        db2,
+        :tp_dbg,
+        _rite(
+            _rf("current_prolog_flag", _rs(:debug), _rs(:true)),
+            _tb_ev(_rs(:dbg_on)),
+            _tb_ev(_rs(:dbg_off))
+        )
+    )
     @test !db2.ld.debugstatus_debugging
     @test LK.pl_break1(db2.gd, db2.ld, _rs(:tp_dbg))
     @test _tb_events(db2) == ["dbg_off"]
@@ -281,7 +330,7 @@ end
 @testset "a raising goal keeps the level it ran at (tb06a, tb06b; pl-pro.c:662-679, :269)" begin
     # UNVERIFIED on the kernel: gate decides
     # at the first toplevel: `$toplevel` raises the first time, `query_loop` (loop) runs it again at the same level
-    db, _ = _tb_db(; booted = false)
+    db, _ = _tb_db(; booted=false)
     gd, ld = db.gd, db.ld
     _tb_sys!(db, Symbol("\$toplevel"), _rconj(_tb_lvl(1), _tb_once_raise()))
     @test LK.PL_toplevel(gd, ld)
@@ -290,7 +339,7 @@ end
     @test length(evs) == 2
     @test ld.break_level == -1
     # inside a break (the kernel's pl_break1 entered at level 0, as a toplevel's `break.` would)
-    db2, _ = _tb_db(; booted = true)
+    db2, _ = _tb_db(; booted=true)
     _tb_sys!(db2, :tp_twice, _rconj(_tb_lvl(1), _tb_once_raise()))
     db2.ld.break_level = 0
     @test LK.pl_break1(db2.gd, db2.ld, _rs(:tp_twice))
@@ -302,10 +351,13 @@ end
 
 @testset "Sttymode and Sset_ttymode: the SIO_RAW bit (os/pl-os.c:2149-2160; hand-written)" begin
     # UNVERIFIED on the kernel: gate decides
-    db, (ui, uo, ue) = _tb_db(; booted = false)
+    db, (ui, uo, ue) = _tb_db(; booted=false)
     # SmakeFlag(28) is bit 27 (SWI-Stream.h:307), and no other SIO_ flag shares it
     @test LK.SIO_RAW == UInt32(1) << 27
-    sio = [getfield(LK, n) for n in names(LK; all = true) if startswith(String(n), "SIO_") && isdefined(LK, n) && getfield(LK, n) isa UInt32]
+    sio = [
+        getfield(LK, n) for n in names(LK; all=true) if
+        startswith(String(n), "SIO_") && isdefined(LK, n) && getfield(LK, n) isa UInt32
+    ]
     @test length(sio) > 15
     @test count(==(LK.SIO_RAW), sio) == 1
     @test (LK.TTY_COOKED, LK.TTY_RAW, LK.TTY_SAVE) == (1, 2, 3)
@@ -328,7 +380,7 @@ end
 
 @testset "PL_ttymode: the mode of user_input under tty_control, else PL_NOTTY (pl-fli.c:5329-5341; hand-written)" begin
     # UNVERIFIED on the kernel: gate decides
-    db, (ui, uo, ue) = _tb_db(; booted = false)
+    db, (ui, uo, ue) = _tb_db(; booted=false)
     ld = db.ld
     @test (LK.PL_NOTTY, LK.PL_RAWTTY, LK.PL_COOKEDTTY) == (0, 1, 2)       # SWI-Prolog.h:1111-1113
     other = LK.Sopen_string(UInt8[0x78], 1, "r")
@@ -348,7 +400,7 @@ end
 
 @testset "PL_prompt_is_continuation and PL_prompt_string (pl-fli.c:5364-5398; hand-written, texts as tp01/tp02 of test_top1_prompt_swipl.jl)" begin
     # UNVERIFIED on the kernel: gate decides
-    db, (ui, uo, ue) = _tb_db(; booted = false)
+    db, (ui, uo, ue) = _tb_db(; booted=false)
     ld = db.ld
     # the default prompt, at the start of a line
     @test !LK.PL_prompt_is_continuation(ld, ui)                      # prompt1/1 never called
@@ -375,8 +427,9 @@ end
 
 @testset "PL_dispatch with no hook installed (pl-fli.c:5484-5506; hand-written)" begin
     # UNVERIFIED on the kernel: gate decides
-    db, (ui, uo, ue) = _tb_db(; booted = false)
-    @test (LK.PL_DISPATCH_NOWAIT, LK.PL_DISPATCH_WAIT, LK.PL_DISPATCH_INSTALLED) == (0, 1, 2)   # SWI-Prolog.h:1201-1203
+    db, (ui, uo, ue) = _tb_db(; booted=false)
+    @test (LK.PL_DISPATCH_NOWAIT, LK.PL_DISPATCH_WAIT, LK.PL_DISPATCH_INSTALLED) ==
+        (0, 1, 2)   # SWI-Prolog.h:1201-1203
     # `GD->foreign.dispatch_events` is NULL: INSTALLED answers false, every other mode true
     @test LK.PL_dispatch(ui, LK.PL_DISPATCH_INSTALLED) === false
     @test LK.PL_dispatch(ui, LK.PL_DISPATCH_NOWAIT) === true
@@ -389,11 +442,12 @@ end
     @test ids == ["tb01", "tb02", "tb03", "tb03n", "tb04", "tb06a", "tb06b"]
     @test sort!(collect(keys(_TB_GOT))) == ids                       # every pin was compared with a kernel transcript
     @test all(!isempty, values(_TB_GOT))
-    pins = [String(last(split(l, " "; limit = 2))) for l in _TB_PINNED]
+    pins = [String(last(split(l, " "; limit=2))) for l in _TB_PINNED]
     @test all(!isempty, pins)
-    events(s) = split(s, ","; keepempty = true)
+    events(s) = split(s, ","; keepempty=true)
     # the same number of events on swipl's side as on the kernel's, over all scenarios (the extractor is the `,` split)
-    @test sum(length(events(p)) for p in pins) == sum(length(events(v)) for v in values(_TB_GOT)) > 20
+    @test sum(length(events(p)) for p in pins) ==
+        sum(length(events(v)) for v in values(_TB_GOT)) > 20
     @test length(unique(pins)) == length(pins)
     # both outcomes of the flag are present: the level -1 case (`none`) and the levels
     @test any(==("none"), events(_tb_pin("tb01")))

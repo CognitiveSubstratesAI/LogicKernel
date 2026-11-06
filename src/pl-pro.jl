@@ -1,4 +1,5 @@
 # UPSTREAM: swipl-devel src/pl-pro.c @ cbf4e1896275
+# UPSTREAM: swipl-devel src/pl-fli.c @ cbf4e1896275
 # CLASS: code
 # COPYRIGHT: Copyright (c)  1985-2022, University of Amsterdam
 # COPYRIGHT: VU University Amsterdam
@@ -519,7 +520,9 @@ function pl_break1(gd::PL_global_data{T}, ld::PL_local_data{T}, goal::T)::Bool w
     if ld.break_level > 0
         rc = printMessage(                                  # PL_FUNCTOR, FUNCTOR_break2, PL_ATOM, ATOM_begin, PL_INT, break_level
             ld, :informational,
-            _message_term(ld, :break, _err_atom(ld, mk_sym(T, :begin)), _err_int(ld, ld.break_level))
+            _message_term(
+                ld, :break, _err_atom(ld, mk_sym(T, :begin)), _err_int(ld, ld.break_level)
+            )
         )
     end
 
@@ -529,7 +532,9 @@ function pl_break1(gd::PL_global_data{T}, ld::PL_local_data{T}, goal::T)::Bool w
         rc =
             rc && printMessage(                             # PL_FUNCTOR, FUNCTOR_break2, PL_ATOM, ATOM_end, PL_INT, break_level
                 ld, :informational,
-                _message_term(ld, :break, _err_atom(ld, mk_sym(T, :end)), _err_int(ld, ld.break_level))
+                _message_term(
+                    ld, :break, _err_atom(ld, mk_sym(T, :end)), _err_int(ld, ld.break_level)
+                )
             )
     end
     ld.break_level = old_level
@@ -583,12 +588,14 @@ Run `system:goal` as the toplevel: `'\$query_loop'` and `'\$toplevel'` count as 
 goal restarted after an exception, `loop`), any other goal (`'\$initialise'`, `'\$compile'`) runs once. True when the goal
 succeeded; the break level is restored (pl-pro.c).
 """
-function prologToplevel(gd::PL_global_data{T}, ld::PL_local_data{T}, goal::T)::Bool where {T}
+function prologToplevel(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, goal::T
+)::Bool where {T}
     old_level = ld.break_level
 
     g = _atom_word!(ld, goal)
     if g == _atom_word!(ld, mk_sym(T, Symbol("\$query_loop"))) ||
-            g == _atom_word!(ld, mk_sym(T, Symbol("\$toplevel")))
+        g == _atom_word!(ld, mk_sym(T, Symbol("\$toplevel")))
         ld.break_level += 1
         loop = true
     else

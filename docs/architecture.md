@@ -779,7 +779,7 @@ fixed it or a public issue exists.
 | `src/pl-ext.jl` | registering the built-ins in the `system` module (`initBuildIns!`, `registerBuiltins!`, `builtin_pred_flags`; pl-ext.c's FRG table `foreigns`) and their DISPATCH: sorted branch trees over the tables by call shape (`_fcall_va`, `_fcall_det`; decision 5, measured against a typed function pointer); the tables in `initBuildIns`' order (arith, comp, prims, variant, trace, read — since R1d — proc — since R1f — write — since R1e's write/1 family — op); pl-ext.c's own FRG table, since R1e's write/1 family with write/1,2, writeq/1,2, writeln/1,2, print/1,2 | `src/pl-ext.c` |
 | `src/pl-attvar.jl` | `saveWakeup`, `restoreWakeup`, `restore_exception` — the pending exception set aside while `findCatcher` unifies the ball with the catchers (since V9f); `varBindConst` (L1c: the VM's `bindConst` of a global cell); `bindConst` (AV1: its attributed-variable branch is refused, a `NotPortedError` naming AV3, until AV3); since AV2 the attribute STORE — `PL_get_attr`, `link_attvar`, `make_new_attvar`, `put_new_attvar`, `find_attr`, `put_att_value`, `put_attr`, `get_attr`, `del_attr` and attvar/1, put_attr/3, get_attr/3, del_attr/2, del_attrs/1, get_attrs/2, put_attrs/2, `$attv_unify/2` (`PL_predicates_from_attvar`; `PL_is_attvar` in src/pl-fli.jl); binding and waking them is AV3's — AV1 ported their word layer (`DU_ATTVAR`/`DREF_ATTVAR`, `linkValI` by `needsRef`, the index key, the chain: `register_attvar` in src/pl-inline.jl, `reclaim_attvars` in src/pl-wam.jl) | `src/pl-attvar.c`, `src/pl-attvar.h` |
 | `src/pl-string.jl` | the string predicates (since T2, R2): atom_string/2, string_codes/2, string_chars/2, text_to_string/2, string_length/2, string_concat/3, sub_string/5 (`sub_text`, shared with sub_atom/5), string_code/3, get_string_code/3, split_string/4, string_bytes/3, read_string/3,5, open_string/2 (`PL_predicates_from_strings`, src/pl-ext.jl); the UTF-16 decode and `PL_text_recode` of string_bytes/3 are local to this file | `src/pl-string.c`, `src/pl-prims.c`, `src/pl-privitf.c`, `src/pl-error.c`, `src/os/pl-text.c`, `src/os/pl-text.h`, `src/os/pl-utf8.h`, `src/os/pl-file.c` |
-| `src/pl-pro.jl` | `callProlog` — a goal called from foreign code, in a query of its own — and `sig_atomic/1`, through which the cleanup family runs its Setup goal (since V9g); since HALT1 also `abortProlog`, `abort/0` (`pl_abort0_va`) and `raise_halt_exception` (the `unwind(halt(Status))` ball); the toplevel (`query_loop`) and the metacut are left out | `src/pl-pro.c` |
+| `src/pl-pro.jl` | `callProlog` — a goal called from foreign code, in a query of its own — and `sig_atomic/1`, through which the cleanup family runs its Setup goal (since V9g); since HALT1 also `abortProlog`, `abort/0` (`pl_abort0_va`) and `raise_halt_exception` (the `unwind(halt(Status))` ball); since TOP1b also `prologToplevel`, `pl_break1`, `pl_break` (`break/0`), `currentBreakLevel` and `PL_toplevel` (`pl-fli.c`); the metacut is left out | `src/pl-pro.c`, `src/pl-fli.c` |
 | `src/pl-mutex.jl` | since BOOTPRED, `with_mutex/2` (`pl_with_mutex`) in the form pl-mutex.c has for a build without threads: `once/1` through `callProlog`, the mutex argument not examined (swipl 10.1.19 examines it); the mutex table and the `mutex_*` predicates are not ported | `src/pl-mutex.c` |
 | `src/pl-init.jl` | since HALT1, `PL_cleanup`, the clean-up `halt/1` ends with, in a reduced form (`exit_status` flag, `'$run_at_halt'/0` as one query, flush of the standard streams; the command line, the saved states and the foreign hook lists are left out), `_query_run_at_halt`, `MAX_HALT_CANCELLED`; `PL_halt`, `haltProlog` and `PL_abort_process` stay in `src/pl-fli.jl` (pl-fli.c), `signal_index` and `PL_get_signum_ex` in `src/pl-setup.jl`, `halt/1` in `src/pl-prims.jl`; see the HALT1 block | `src/pl-init.c` |
 | `src/pl-qlf.jl` | since LB3 (R2), the boot loop of pl-qlf.c with no state file (LD2): `compileFile` (see the file, read terms, `:- if`/`else`/`endif`, directives, clauses), `compileFileList`, `boot_from_source!` (pl-init.c's `bootsession` branch), `directiveClause`, `update_conditional_compilation`, the 8 write-side shells and the 14 predicates refused by name (`PL_predicates_from_wic`, src/pl-ext.jl) | `src/pl-qlf.c` |
@@ -802,7 +802,7 @@ fixed it or a public issue exists.
 | `src/os/pl-utf8.jl` | UTF-8 over a byte buffer (since R1c): decoding (`utf8_get_char`, `_PL__utf8_code_point`), encoding (`utf8_put_char`), skipping | `src/os/pl-utf8.c`, `src/os/pl-utf8.h` |
 | `src/os/pl-ctype.jl` | the ASCII character types (since R1c): `_PL_char_types` and the `is*` macros (`toLower`, `makeLower` since DWIM1); `isBlankW` through the Unicode classes | `src/os/pl-ctype.c`, `src/os/pl-ctype.h` |
 | `src/os/pl-string.jl` | `digitValue` (since R1c), a digit's value in a base | `src/os/pl-string.c` |
-| `src/os/pl-stream.jl` | the IOSTREAM subset (since R1c; user, 2026-10-07): a stream with upstream's buffer discipline (the undo area, `S__fillbuf`, `S__flushbuf`), characters in its encoding (`Sgetcode`, `Speekcode`, `Sputcode`, `Sungetc`), the position record (`IOPOS`, `Supdatepos` with ANSI escapes and wide characters), the error flags, memory streams (`Sopenmem`), string streams (`Sopen_string`) and a Julia IO (`Sopen_julia_io`: a file or a buffer, since R1e's write/1 family a terminal or a pipe; a failing IO is a write error) | `src/os/pl-stream.c`, `src/os/SWI-Stream.h` |
+| `src/os/pl-stream.jl` | the IOSTREAM subset (since R1c; user, 2026-10-07): a stream with upstream's buffer discipline (the undo area, `S__fillbuf`, `S__flushbuf`), characters in its encoding (`Sgetcode`, `Speekcode`, `Sputcode`, `Sungetc`), the position record (`IOPOS`, `Supdatepos` with ANSI escapes and wide characters), the error flags, memory streams (`Sopenmem`), string streams (`Sopen_string`) and a Julia IO (`Sopen_julia_io`: a file or a buffer, since R1e's write/1 family a terminal or a pipe; a failing IO is a write error); since TOP1b E the record of a wrapped stream (`wrappedIO`, `pl-file.c`) | `src/os/pl-stream.c`, `src/os/SWI-Stream.h`, `src/os/pl-file.c` |
 | `src/os/pl-text.jl` | the text a term holds (since R1d): `PL_get_text` — an atom, a string, an integer or a rational, a code or character list, since R1e's floats a float (`format_float`) — with its errors, and a stream reading it (`Sopen_text`); `PL_chars_t`; since T1 unify with a text, compare, concatenate (`PL_unify_text`, `PL_unify_text_range`, `PL_cmp_text`, `PL_concat_text`, `PL_mb_text`), `CVT_VARNOFAIL`; DIVERGES, pl-text.c: a text from an atom or a string is UTF-8 and canonicalised by its consumer | `src/os/pl-text.c`, `src/os/pl-text.h` |
 | `src/os/pl-file.jl` | the file an open stream reads (R1f): `fileNameStream`, `setFileNameStream` — pl-file.c's stream context, the part the loader needs; since R1e's write/1 family THE STANDARD STREAMS — `initIO` over stdin/stdout/stderr (decision 2a), the host's `set_standard_stream!`, an output stream by alias (`getOutputStream`, `get_stream_handle`, `check_stream_mode`, `checkStreamType`) with upstream's errors, `streamStatus` and `reportStreamError`; since MOD2 a standard stream over the OS file descriptor when Julia's stdX is none the stream layer holds (`_std_io`, pl-stream.c `S__iob0`) | `src/os/pl-file.c`, `src/os/pl-file.h`, `src/pl-global.h`, `src/os/pl-stream.c`, `src/pl-incl.h`, `src/pl-privitf.c`, `src/os/pl-prologflag.c` |
 | `src/os/pl-fmt.jl` | formatted output (since R2 O1A): `format/1,2,3`, `format_predicate/2`, `current_format_predicate/2` — `do_format` and the column machinery (`format_state`, the pending fill points), `formatInteger` and `formatFloat` (section O1A below) | `src/os/pl-fmt.c`, `src/os/pl-fmt.h` |
@@ -1324,7 +1324,9 @@ graph LR
     pl_fli --> pl_error
     pl_fli --> pl_gmp
     pl_fli --> pl_arith
+    pl_fli --> os_pl_prologflag
     pl_fli --> os_pl_text
+    pl_fli --> os_pl_os
     pl_fli --> os_pl_file
     pl_fli --> pl_pro
     pl_fli --> pl_init
@@ -1443,6 +1445,7 @@ graph LR
     os_pl_prologflag --> os_pl_file
     os_pl_prologflag --> pl_proc
     os_pl_prologflag --> pl_trace
+    os_pl_prologflag --> pl_pro
     os_pl_prologflag --> pl_write
     os_pl_prologflag --> pl_read
     os_pl_prologflag --> pl_string
@@ -1468,6 +1471,7 @@ graph LR
     os_pl_os --> term_interface
     os_pl_os --> default_term
     os_pl_os --> os_pl_ctype
+    os_pl_os --> os_pl_stream
     os_pl_os --> pl_incl
     os_pl_os --> pl_global
     os_pl_os --> pl_comp
@@ -1520,6 +1524,7 @@ graph LR
     os_pl_file --> os_pl_option
     os_pl_file --> os_pl_prologflag
     os_pl_file --> os_pl_text
+    os_pl_file --> os_pl_os
     os_pl_file --> os_pl_files
     os_pl_file --> pl_pro
     os_pl_file --> pl_write
@@ -1635,6 +1640,7 @@ graph LR
     pl_pro --> pl_comp
     pl_pro --> pl_wam
     pl_pro --> pl_fli
+    pl_pro --> pl_attvar
     pl_pro --> pl_error
     pl_pro --> os_pl_prologflag
     pl_pro --> os_pl_file
@@ -2044,7 +2050,7 @@ Predicate rows each file's calls reach (a predicate several files call counts in
 | `boot/packs.pl` | loaded | 23 | 0 | 0 |
 | `boot/dicts.pl` | loaded | 18 | 4 | 0 |
 | `boot/engines.pl` | loaded | 6 | 4 | 0 |
-| `boot/tabling.pl` | loaded | 65 | 74 | 0 |
+| `boot/tabling.pl` | loaded | 66 | 73 | 0 |
 | `boot/topvars.pl` | loaded | 36 | 1 | 0 |
 | `boot/threads.pl` | skipped (conditional) | 0 | 0 | 0 |
 | `library/debug.pl` | loaded | 23 | 2 | 0 |

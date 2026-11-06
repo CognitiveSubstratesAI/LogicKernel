@@ -1638,7 +1638,11 @@ function _manifest_index(T)
         (LK.popOutputContext, Tuple{LD}, false),
         # TOP1b E — wrapping the stream set_prolog_IO/3 reads from (pl-file.c; src/os/pl-file.jl): the registered local data
         (LK.registerLocalData!, Tuple{LK.LDTable, LD}, false),
-        (LK.Sread_user, Tuple{LD, LK.IOSTREAM, LK.wrappedIO, Vector{UInt8}, Int, Int}, false),
+        (
+            LK.Sread_user,
+            Tuple{LD, LK.IOSTREAM, LK.wrappedIO, Vector{UInt8}, Int, Int},
+            false
+        ),
         (LK.wrapIO, Tuple{GD, LD, LK.IOSTREAM, Bool}, false),
         (LK.setupOutputRedirect, Tuple{LD, Int, LK.redir_context, Bool}, false),
         (LK.closeOutputRedirect, Tuple{LD, LK.redir_context}, false),
@@ -3767,7 +3771,11 @@ const _DISPATCH_MANIFEST_TUPLE = (
     # TOP1b E: the wrapped stream's record and its functions (pl-file.c wrappedIO, Sread_user, closeWrappedIO); no term type
     (LK.wrappedIO, Tuple{LK.LDTable, Int, Bool, UInt32}, false),
     (LK.unregisterLocalData!, Tuple{LK.LDTable, Int}, false),
-    (LK.Sread_user, Tuple{Nothing, LK.IOSTREAM, LK.wrappedIO, Vector{UInt8}, Int, Int}, false),
+    (
+        LK.Sread_user,
+        Tuple{Nothing, LK.IOSTREAM, LK.wrappedIO, Vector{UInt8}, Int, Int},
+        false
+    ),
     (LK.closeWrappedIO, Tuple{LK.IOSTREAM, LK.wrappedIO}, false),
     (LK.Swrite_stderr, Tuple{LK.IOSTREAM, Vector{UInt8}, Int, Int}, false),    # TOP1b F
     (LK.S_read_wrapped, Tuple{LK.IOSTREAM, Vector{UInt8}, Int, Int}, false),

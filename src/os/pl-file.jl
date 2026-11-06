@@ -2930,6 +2930,44 @@ function symbol_stream_pair_not_allowed(ld::PL_local_data{T}, symbol::T)::Bool w
     )
 end
 
+# PORT: pl-file.c set_prolog_IO as pl_set_prolog_IO3_va
+# (PRED_IMPL("set_prolog_IO", 3, set_prolog_IO, 0)) — pl-file.c:6125-6167
+# DIVERGES: no `PL_LOCK(L_FILE)`/`releaseStream` (no threads, no stream locks); `LD->IO.streams[0]` is `Suser_input`;
+# the wrap is `wrapIO(gd, ld, in, true)` (`Sread_user`, see there).
+"`set_prolog_IO(+In, +Out, +Error)`: make the three streams the user streams, `In` read with a prompt (pl-file.c)."
+function pl_set_prolog_IO3_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    _initIO(ld)
+    io = getIOStreams(ld, PL__t0, PL__t0 + 1, PL__t0 + 2)
+    io === nothing && return FFALSE
+    in, out, error = io
+
+    wrapin = Suser_input(ld) !== in
+
+    setStandardStream(ld, SNO_USER_OUTPUT, out)
+    setStandardStream(ld, SNO_USER_ERROR, error)
+    setStandardStream(ld, SNO_CURRENT_OUTPUT, out)
+
+    if wrapin
+        setStandardStream(ld, SNO_CURRENT_INPUT, in)
+        setStandardStream(ld, SNO_USER_INPUT, in)
+        wrapIO(_query_gd(ld), ld, in, true)
+        ld.prompt_next = true
+    end
+
+    posbuf = (Suser_input(ld)::IOSTREAM).posbuf
+    for i in SNO_USER_INPUT:SNO_USER_ERROR
+        st = ld.IO_streams[i + 1]::IOSTREAM
+        st.position = posbuf
+        st.flags |= SIO_RECORDPOS
+    end
+
+    return FTRUE
+end
+
+# `pl_set_prolog_IO3_va` stands before the table (a `const` tuple names it); `getIOStreams` and `wrapIO` are looked up at the call.
+
 # PORT: pl-file.c BeginPredDefs as PL_predicates_from_file
 # DIVERGES: the entries of the predicates the kernel has ported (LB5: current_input/1, current_output/1, line_count/2,
 # line_position/2, tab/1,2, at_end_of_stream/0,1, get_code/1,2, put_code/1,2 and its alias put_char/1,2; S1: open/3,4 and close/1,2; S2a: prompt/2, prompt1/1, get_char/2, peek_char/2, flush_output/1, skip/2, ttyflush/0, is_stream/1, get_single_char/1, '\$alias_stream'/2, the input context trio and '\$stream_property'/2, '\$stream_properties'/2, '\$streams_properties'/2 and set_stream/2; LB2:
@@ -3144,42 +3182,6 @@ function getIOStreams(
     error.flags |= SIO_NBUF
 
     return (in, out, error)
-end
-
-# PORT: pl-file.c set_prolog_IO as pl_set_prolog_IO3_va
-# (PRED_IMPL("set_prolog_IO", 3, set_prolog_IO, 0)) — pl-file.c:6125-6167
-# DIVERGES: no `PL_LOCK(L_FILE)`/`releaseStream` (no threads, no stream locks); `LD->IO.streams[0]` is `Suser_input`;
-# the wrap is `wrapIO(gd, ld, in, true)` (`Sread_user`, see there).
-"`set_prolog_IO(+In, +Out, +Error)`: make the three streams the user streams, `In` read with a prompt (pl-file.c)."
-function pl_set_prolog_IO3_va(
-    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
-)::foreign_t where {T}
-    _initIO(ld)
-    io = getIOStreams(ld, PL__t0, PL__t0 + 1, PL__t0 + 2)
-    io === nothing && return FFALSE
-    in, out, error = io
-
-    wrapin = Suser_input(ld) !== in
-
-    setStandardStream(ld, SNO_USER_OUTPUT, out)
-    setStandardStream(ld, SNO_USER_ERROR, error)
-    setStandardStream(ld, SNO_CURRENT_OUTPUT, out)
-
-    if wrapin
-        setStandardStream(ld, SNO_CURRENT_INPUT, in)
-        setStandardStream(ld, SNO_USER_INPUT, in)
-        wrapIO(_query_gd(ld), ld, in, true)
-        ld.prompt_next = true
-    end
-
-    posbuf = (Suser_input(ld)::IOSTREAM).posbuf
-    for i in SNO_USER_INPUT:SNO_USER_ERROR
-        st = ld.IO_streams[i + 1]::IOSTREAM
-        st.position = posbuf
-        st.flags |= SIO_RECORDPOS
-    end
-
-    return FTRUE
 end
 
 # PORT: pl-file.c pushOutputContext

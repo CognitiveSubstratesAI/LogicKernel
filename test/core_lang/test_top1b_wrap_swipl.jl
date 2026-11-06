@@ -46,24 +46,64 @@ const _TW_CASES = [
     ("e01", raw"ab\ncd\n", raw"tw_wrap('{F}', _), tw_gc"),
     ("e02", raw"ab\ncd\n", raw"tw_wrap('{F}', _), tw_gcs(6)"),
     ("e03", raw"ab\ncd\n", raw"tw_wrap('{F}', _), tw_gcs(6), tw_gc, tw_gc"),
-    ("e04", raw"gen:128,64", raw"tw_wrap('{F}', _), prompt(_, 'Q> '), prompt1('P1> '), tw_skip(4096), tw_gc, tw_skip(4095), tw_gc, tw_gc"),
-    ("e04m", raw"gen:100,50", raw"tw_wrap('{F}', _), tw_skip(4096), tw_gc, tw_skip(903), tw_gc, tw_gc"),
-    ("e05", raw"ab\ncd\n", raw"tw_wrap('{F}', _), prompt(Old, 'Z> '), format(user_output, '<old:~w>~n', [Old]), tw_gcs(6), tw_gc"),
-    ("e06", raw"a\n\^Db\n", raw"open('{F}', read, In, [bom(false)]), set_stream(In, buffer(false)), set_prolog_IO(In, user_output, user_error), tw_gcs(5)"),
+    (
+        "e04",
+        raw"gen:128,64",
+        raw"tw_wrap('{F}', _), prompt(_, 'Q> '), prompt1('P1> '), tw_skip(4096), tw_gc, tw_skip(4095), tw_gc, tw_gc"
+    ),
+    (
+        "e04m",
+        raw"gen:100,50",
+        raw"tw_wrap('{F}', _), tw_skip(4096), tw_gc, tw_skip(903), tw_gc, tw_gc"
+    ),
+    (
+        "e05",
+        raw"ab\ncd\n",
+        raw"tw_wrap('{F}', _), prompt(Old, 'Z> '), format(user_output, '<old:~w>~n', [Old]), tw_gcs(6), tw_gc"
+    ),
+    (
+        "e06",
+        raw"a\n\^Db\n",
+        raw"open('{F}', read, In, [bom(false)]), set_stream(In, buffer(false)), set_prolog_IO(In, user_output, user_error), tw_gcs(5)"
+    ),
     ("e06b", raw"\^D", raw"tw_wrap('{F}', _), tw_gc, tw_gc"),
     ("e06c", raw"\^D\n", raw"tw_wrap('{F}', _), tw_gc, tw_gc, tw_gc"),
-    ("e07", raw"ab\n", raw"open('{F}', read, In, [bom(false)]), set_prolog_IO(In, user_output, user_output), tw_props, format(user_error, 'E1~n', []), format(user_output, 'O1', []), format(user_error, 'E2~n', []), format(user_output, 'O2~n', [])"),
+    (
+        "e07",
+        raw"ab\n",
+        raw"open('{F}', read, In, [bom(false)]), set_prolog_IO(In, user_output, user_output), tw_props, format(user_error, 'E1~n', []), format(user_output, 'O1', []), format(user_error, 'E2~n', []), format(user_output, 'O2~n', [])"
+    ),
     ("e08", raw"ab\n", raw"tw_wrap('{F}', _), tw_props"),
     ("e09", raw"ab\n", raw"set_prolog_IO(user_input, user_output, user_error), tw_gc"),
     ("e10", raw"ab\n", raw"tw_wrap('{F}', In), tw_gc, close(In), tw_gc"),
     ("e11a", raw"", raw"set_prolog_IO(foo, user_output, user_error)"),
     ("e11b", raw"", raw"set_prolog_IO(user_output, user_output, user_error)"),
-    ("e11c", raw"ab\n", raw"open('{F}', read, In, [bom(false)]), set_prolog_IO(In, In, user_error)"),
+    (
+        "e11c",
+        raw"ab\n",
+        raw"open('{F}', read, In, [bom(false)]), set_prolog_IO(In, In, user_error)"
+    ),
     ("e11d", raw"", raw"set_prolog_IO(_, user_output, user_error)"),
-    ("e11e", raw"ab\n", raw"open('{F}', read, In, [bom(false)]), catch(set_prolog_IO(In, user_output, foo), error(_, _), true), tw_gc"),
-    ("e12", raw"ab\ncd\n", raw"tw_wrap('{F}', _), tw_lc, tw_gcs(4), tw_lc, format(user_output, 'x~ny~n', []), tw_lc"),
-    ("e16", raw"ab\n", raw"open('{F}', read, In, [bom(true)]), set_prolog_IO(In, user_output, user_error), tw_gcs(4)"),
-    ("e17", raw"ab\n", raw"tw_wrap('{F}', In1), tw_gc, tw_wrap('{F}', In2), tw_gc, close(In2), tw_gc, close(In1)")
+    (
+        "e11e",
+        raw"ab\n",
+        raw"open('{F}', read, In, [bom(false)]), catch(set_prolog_IO(In, user_output, foo), error(_, _), true), tw_gc"
+    ),
+    (
+        "e12",
+        raw"ab\ncd\n",
+        raw"tw_wrap('{F}', _), tw_lc, tw_gcs(4), tw_lc, format(user_output, 'x~ny~n', []), tw_lc"
+    ),
+    (
+        "e16",
+        raw"ab\n",
+        raw"open('{F}', read, In, [bom(true)]), set_prolog_IO(In, user_output, user_error), tw_gcs(4)"
+    ),
+    (
+        "e17",
+        raw"ab\n",
+        raw"tw_wrap('{F}', In1), tw_gc, tw_wrap('{F}', In2), tw_gc, close(In2), tw_gc, close(In1)"
+    )
     # CASES-END
 ]
 
@@ -107,8 +147,8 @@ _tw_enc(s::AbstractString)::String = replace(replace(s, "\\" => "\\\\"), "\n" =>
 "The pin of case `id`: swipl's encoded output."
 function _tw_pin(id::String)::Union{Nothing, String}
     for l in _TW_PINNED
-        k, v = split(l, " "; limit = 2)
-        k == id && return String(v)
+        k, v = split(l, " "; limit=2)
+        k == id && return _tw_enc(String(v))     # the literal is the TEXT swipl wrote; the kernel side is encoded the same way
     end
     return nothing
 end
@@ -126,8 +166,16 @@ function _tw_db()
     ui = LK.set_standard_stream!(ld, LK.SNO_USER_INPUT, bufs[1])
     uo = LK.set_standard_stream!(ld, LK.SNO_USER_OUTPUT, bufs[2])
     ue = LK.set_standard_stream!(ld, LK.SNO_USER_ERROR, bufs[3])
-    _radd!(db, _rf("tw_load", _rv(1)), _rconj(_rf("term_to_atom", _rv(2), _rv(1)), _rf("assertz", _rv(2))))
-    _radd!(db, _rf("tw_run", _rv(1)), _rconj(_rf("term_to_atom", _rv(2), _rv(1)), _rf("call", _rv(2))))
+    _radd!(
+        db,
+        _rf("tw_load", _rv(1)),
+        _rconj(_rf("term_to_atom", _rv(2), _rv(1)), _rf("assertz", _rv(2)))
+    )
+    _radd!(
+        db,
+        _rf("tw_run", _rv(1)),
+        _rconj(_rf("term_to_atom", _rv(2), _rv(1)), _rf("call", _rv(2)))
+    )
     for clause in _TW_PRELUDE
         @test !isempty(_rcall(db, _rf("tw_load", _rs(Symbol(clause)))))
     end
@@ -210,8 +258,9 @@ end
     # UNVERIFIED on the kernel: gate decides
     gd = LK.PL_global_data{_R}()
     ld = LK.PL_local_data{_R}(gd)
-    ld.GD = nothing
+    ld.GD = gd                                                    # initIO (inside set_standard_stream!) reads the database of the engine
     s = LK.set_standard_stream!(ld, LK.SNO_USER_INPUT, IOBuffer("ab\n"))
+    ld.GD = nothing                                               # the guard under test: wrapIO records the database when there is none
     s.flags |= LK.SIO_FILE                                        # the flag upstream's wrapIO clears (the kernel's file streams carry none)
     flags0 = s.flags
     @test s.wrapped === nothing
@@ -234,6 +283,7 @@ end
     @test ld2.GD === gd2
     # a stream without the flag: nothing saved
     s3 = LK.set_standard_stream!(ld2, LK.SNO_USER_ERROR, IOBuffer())
+    s3.flags &= ~LK.SIO_FILE                                      # SIO_STDIO carries SIO_FILE (pl-stream.jl:112): take it off
     LK.wrapIO(gd, ld2, s3, false)
     @test s3.wrapped.saved_flags == UInt32(0) && !s3.wrapped.user_read
     @test (s3.flags & LK.SIO_FILE) == 0
@@ -285,7 +335,7 @@ end
 
 @testset "Sread_user driven directly: the prompt arm, the flush arm, the raw tty, the re-arm, ^D (pl-file.c:5987-6007)" begin
     # UNVERIFIED on the kernel: gate decides
-    function setup(text::String; raw::Bool = false)
+    function setup(text::String; raw::Bool=false)
         db = _RDB()
         ld = db.ld
         ld.GD = db.gd
@@ -314,7 +364,7 @@ end
     @test String(take!(outb)) == "x"
     @test !ld.prompt_next
     # raw tty: no prompt although `prompt.next`, the flag stays set, the pending output is flushed
-    _, ld, ui, uo, outb = setup("ab"; raw = true)
+    _, ld, ui, uo, outb = setup("ab"; raw=true)
     LK.Sputcode(Int('y'), uo)
     @test LK.Sgetcode(ui) == Int('a')
     @test String(take!(outb)) == "y"
@@ -373,9 +423,14 @@ end
     mktemp() do path, io
         write(io, "ab\n")
         close(io)
-        @test _tw_run(db, "open('$path', read, In, [bom(false)]), set_prolog_IO(In, user_output, user_output)")
+        @test _tw_run(
+            db,
+            "open('$path', read, In, [bom(false)]), set_prolog_IO(In, user_output, user_output)"
+        )
     end
-    nu, no, ne = LK.Suser_input(ld)::LK.IOSTREAM, LK.Suser_output(ld)::LK.IOSTREAM, ld.IO_streams[LK.SNO_USER_ERROR + 1]::LK.IOSTREAM
+    nu, no, ne = LK.Suser_input(ld)::LK.IOSTREAM,
+    LK.Suser_output(ld)::LK.IOSTREAM,
+    ld.IO_streams[LK.SNO_USER_ERROR + 1]::LK.IOSTREAM
     @test no === uo                                               # Out is taken as it is
     @test ne !== uo && ne !== ue
     @test ne.functions == LK.Sstderrfunctions && ne.handle === uo # a stream that writes to Out
@@ -403,7 +458,10 @@ end
     mktemp() do path, io
         write(io, "ab\n")
         close(io)
-        @test _tw_run(db2, "open('$path', read, In, [bom(false)]), set_prolog_IO(In, user_output, user_error)")
+        @test _tw_run(
+            db2,
+            "open('$path', read, In, [bom(false)]), set_prolog_IO(In, user_output, user_error)"
+        )
     end
     @test db2.ld.IO_streams[LK.SNO_USER_ERROR + 1] === ue2
     @test (ue2.flags & LK.SIO_NBUF) != 0 && (ue2.flags & (LK.SIO_FBUF | LK.SIO_LBUF)) == 0
@@ -413,7 +471,10 @@ end
     @test _tw_run(db3, "set_prolog_IO(user_input, user_output, user_error)")
     @test LK.Suser_input(db3.ld) === ui3 && ui3.wrapped === nothing
     @test !db3.ld.prompt_next
-    @test all(i -> db3.ld.IO_streams[i + 1].position === ui3.posbuf, LK.SNO_USER_INPUT:LK.SNO_USER_ERROR)
+    @test all(
+        i -> db3.ld.IO_streams[i + 1].position === ui3.posbuf,
+        LK.SNO_USER_INPUT:LK.SNO_USER_ERROR
+    )
     @test isempty(db3.gd.ld_table)
     @test (ui3.flags & LK.SIO_RECORDPOS) != 0                     # the loop starts at user_input: its flag is set although it was not wrapped
     # the wrapped engine is the caller's: the registry holds it
@@ -461,7 +522,7 @@ end
     @test pinids == ids                                           # a pin for every case, in the order of the cases
     @test sort!(collect(keys(_TW_GOT))) == sort(ids)              # every pin was compared with a kernel transcript
     @test all(!isempty, values(_TW_GOT))
-    pins = [String(last(split(l, " "; limit = 2))) for l in _TW_PINNED]
+    pins = [String(last(split(l, " "; limit=2))) for l in _TW_PINNED]
     @test all(!isempty, pins)
     # the extractor tells the outputs apart (it can fail): a lost prompt, a lost event line, a changed code
     @test _tw_enc("|: <97>\n") != _tw_enc("<97>\n")
