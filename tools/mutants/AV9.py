@@ -99,16 +99,8 @@ MUTANTS = [
          old="    ch2 != 0 && ld.choices[ch2].base == off || return 0     # if ( ch2 == ch )\n",
          new="    ch2 != 0 || return 0     # if ( ch2 == ch )\n"),
     # ── boot-level call_residue_vars/2 and run_crv/4 (_boot_call_residue_vars!) ──
-    dict(id="AV9-B1 call_residue_vars/2 never cuts its second clause (KILL dt13)", file=E, targets=TA,
-         old="                                mk_sym(T, :!)\n",
-         new="                                mk_sym(T, Symbol(\"true\"))\n"),
-    dict(id="AV9-B2 call_residue_vars/2 cuts after a nondeterministic goal (KILL cr06, cr07, dt14)", file=E, targets=TA,
-         old="                                _boot_term(Symbol(\"==\"), T[Det, mk_sym(T, Symbol(\"true\"))]),\n",
-         new="                                _boot_term(Symbol(\"==\"), T[Det, mk_sym(T, Symbol(\"false\"))]),\n"),
-    dict(id="AV9-B3 run_crv/4 does not call deterministic/1 (Det unbound: no cut; KILL dt13)", file=E, targets=TA,
-         old="                _boot_term(:deterministic, T[Det]),\n",
-         new=""),
-    dict(id="AV9-B4 call_residue_vars/2 is not defined (KILL cr01)", file=E, targets=TA,
-         old="    _boot_call_residue_vars!(gd, ld)\n    return nothing\nend\n",
-         new="    return nothing\nend\n"),
+    # AV9-B1 removed with the code it mutated (08660b2a); ledger: evidence/MUTREFIT/deleted_mutants.tsv
+    # AV9-B2 removed with the code it mutated (08660b2a); ledger: evidence/MUTREFIT/deleted_mutants.tsv
+    # AV9-B3 removed with the code it mutated (08660b2a); ledger: evidence/MUTREFIT/deleted_mutants.tsv
+    # AV9-B4 removed with the code it mutated (08660b2a); ledger: evidence/MUTREFIT/deleted_mutants.tsv
 ]

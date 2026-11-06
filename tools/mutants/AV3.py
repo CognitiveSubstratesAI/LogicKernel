@@ -149,21 +149,11 @@ MUTANTS = [
          old="    ld.gstack[h + 1] = ld.slots[p + 2]          # *valTermRef(LD->attvar.tail) = p[1]\n",
          new="    ld.gstack[h + 1] = ld.slots[p + 1]\n"),
     # ── the AV4 refusals ────────────────────────────────────────────────────────────────────────────────
-    dict(id="AV3-X1 a pending wakeup is refused when EITHER the bit or the list says so", file=A, targets=T,
-         old="    (ld.alerted & ALERT_WAKEUP) != 0 && ld.gstack[_attvar_head_cell(ld)] != 0\n",
-         new="    (ld.alerted & ALERT_WAKEUP) != 0 || ld.gstack[_attvar_head_cell(ld)] != 0\n"),
-    dict(id="AV3-X2 a pending wakeup is refused whatever the bit says", file=A, targets=T,
-         old="    (ld.alerted & ALERT_WAKEUP) != 0 && ld.gstack[_attvar_head_cell(ld)] != 0\n",
-         new="    ld.gstack[_attvar_head_cell(ld)] != 0\n"),
-    dict(id="AV3-X3 the refusal names AV3", file=A, targets=T,
-         old='    "AV4"\n)',
-         new='    "AV3"\n)'),
-    dict(id="AV3-X4 can_unify does not refuse a pending wakeup", file=P, targets=T,
-         old="            _foreign_wakeup_pending_refused(ld)\n            PL_discard_foreign_frame(ld, fid)\n",
-         new="            PL_discard_foreign_frame(ld, fid)\n"),
-    dict(id="AV3-X5 findCatcher does not refuse a pending wakeup", file=W, targets=T,
-         old="                if _foreign_wakeup_pending(ld)           # rc = foreignWakeup(ex2): AV4\n",
-         new="                if false\n"),
+    # AV3-X1 removed with the code it mutated (d361e5e0); ledger: evidence/MUTREFIT/deleted_mutants.tsv
+    # AV3-X2 removed with the code it mutated (d361e5e0); ledger: evidence/MUTREFIT/deleted_mutants.tsv
+    # AV3-X3 removed with the code it mutated (d361e5e0); ledger: evidence/MUTREFIT/deleted_mutants.tsv
+    # AV3-X4 removed with the code it mutated (d361e5e0); ledger: evidence/MUTREFIT/deleted_mutants.tsv
+    # AV3-X5 removed with the code it mutated (d361e5e0); ledger: evidence/MUTREFIT/deleted_mutants.tsv
     # ── pl-prims.c: unify_simple_cells, the occurs-check trail walk, unifiable ─────────────────────────
     dict(id="AV3-P1 Attvar = value binds the value's cell", file=P, targets=TS,
          old="        assignAttVar(ld, p1, (k2, w2, p2))          # assignAttVar(t1, t2)\n",

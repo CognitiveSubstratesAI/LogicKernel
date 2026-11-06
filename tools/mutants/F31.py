@@ -8,10 +8,7 @@ TARGETS = [                      # the union of the mutants' targets: the baseli
 ]
 MUTANTS = [
     # _deref_loc: a GROUND side entry is a value (its side word), not the boundary
-    dict(id="F1 a grounded side value is handed out as the boundary again", file="src/pl-prims.jl",
-         targets=["test/core_lang/test_slot_indirects.jl"],
-         old="                kind(ld.slot_values[-loc]) === GND && return (DU_VALUE, _side_word(-loc), 0)\n",
-         new=""),
+    # F1 removed with the code it mutated (59a05eed); ledger: evidence/MUTREFIT/deleted_mutants.tsv
     # _value_word!: a writer stores the value's own word, never the read-only side word (which names the slot's entry)
     dict(id="F2 a cell is bound to the read-only side word", file="src/pl-inline.jl",
          targets=["test/core_lang/test_slot_indirects.jl"],

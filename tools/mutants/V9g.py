@@ -38,6 +38,13 @@ T_SORT = ["test/core_lang/test_sortlist_swipl.jl"]
 T_BAGOF = ["test/core_lang/test_bagof_swipl.jl"]
 T_COPY = ["test/core_lang/test_copyterm_swipl.jl"]
 T_DET = ["test/core_lang/test_det_swipl.jl"]
+# DEFERRED (audit D-0428 item 2, class "replace, not delete"; D-0374: a missing seam is a deferred kill with an
+# owner): MB1, MB2, MB3, MB6 (src/pl-rec.jl) and CT1, CT2, CT3, CT4 (src/pl-copyterm.jl) were written for the
+# records / copy_term of the keyed variables; since c0a51524 and 59a05eed records are byte code and copy_term runs
+# on cells. The versions below are ANALOGS (anchor re-fitted at the nearest construct of the current code, MUTREFIT
+# pieces 1-2); they keep their old narrow `targets` (D-0238 stays). Their kills are unproven and the analog may
+# not mean what the old mutant meant. Owner: the next step that touches pl-rec.jl / pl-copyterm.jl writes the
+# real byte-code mutants; until then the eight are listed DEFERRED in evidence/MUTREFIT/deleted_mutants.tsv.
 MUTANTS = [
     # ── V9g-a: I_CALLCLEANUP, I_EXITCLEANUP ──
     dict(id="MG1 I_CALLCLEANUP does not mark the frame FR_CLEANUP", file=W, targets=T_CLEAN,
@@ -162,14 +169,8 @@ MUTANTS = [
     dict(id="MB3 copyRecordToGlobal does not bind the cyclic references", file=REC, targets=T_FIND,
          old='''            _rec_put!(ld, slot, p, consPtr(b.gbase + off, TAG_COMPOUND | STG_GLOBAL))''',
          new='''            nothing'''),
-    dict(id="MB4 _rec_copy gives the top compound's variables no keys first (first-visit order)", file=REC, targets=T_FIND,
-         old='''    _rec_block!(vars, t)
-    stack = Tuple{T, Vector{T}}[(t, T[])]''',
-         new='''    stack = Tuple{T, Vector{T}}[(t, T[])]'''),
-    dict(id="MB5 _rec_copy gives a nested compound's variables no keys first", file=REC, targets=T_FIND,
-         old='''            _rec_block!(vars, c)
-            push!(stack, (c, T[]))''',
-         new='''            push!(stack, (c, T[]))'''),
+    # MB4 removed with the code it mutated (59a05eed); ledger: evidence/MUTREFIT/deleted_mutants.tsv
+    # MB5 removed with the code it mutated (59a05eed); ledger: evidence/MUTREFIT/deleted_mutants.tsv
     dict(id="MB6 a record's variable met twice gets two fresh variables", file=REC, targets=T_FIND,
          old='''                ld.gstack[p] = word(0)                      # setVar(*p)
                 b.vars[n] = p
@@ -299,17 +300,9 @@ end'''),
          new='''            if visitedWord_cells(ld, c)                     # visited(f)
                 continue'''),
     # ── the boot clauses ──
-    dict(id="MB29 findall/4 hands cleanup_bag/2 an unqualified findall_loop/4", file=E, targets=T_BAGOF,
-         old='''                _boot_term(
-                    :(:), T[sys, _boot_term(:findall_loop, T[Templ, Goal, List, Tail])]
-                ),''',
-         new='''                _boot_term(:findall_loop, T[Templ, Goal, List, Tail]),'''),
-    dict(id="MB30 setof/3 always takes the ground-witness path", file=E, targets=T_BAGOF,
-         old='''_boot_ite(T, _boot_term(:ground, T[Answers]), ground_keys, bound_keys)''',
-         new='''ground_keys'''),
-    dict(id="MB31 bagof/3 does not make the variables of equal witnesses one", file=E, targets=T_BAGOF,
-         old='''            alloc, keyed, bind, _boot_term(:keysort, T[Answers, Sorted]),''',
-         new='''            alloc, keyed, _boot_term(:keysort, T[Answers, Sorted]),'''),
+    # MB29 removed with the code it mutated (759b8d64); ledger: evidence/MUTREFIT/deleted_mutants.tsv
+    # MB30 removed with the code it mutated (759b8d64); ledger: evidence/MUTREFIT/deleted_mutants.tsv
+    # MB31 removed with the code it mutated (759b8d64); ledger: evidence/MUTREFIT/deleted_mutants.tsv
     # ── copy_term (its battery of 2026-10-13; records are its copies, so findall/3 is a target too) ──
     dict(id="CT1 a ground compound is never shared", file=CP, targets=T_COPY,
          old='''                elseif (fd & BOTH_MASK) == FIRST_MASK       # is_ground: shared''',
@@ -325,31 +318,11 @@ end'''),
     dict(id="CT4 a compound with a variable below is shared (`same` never cleared)", file=CP, targets=T_COPY,
          old='''        can_share_cells(ld, a) || return nothing''',
          new='''        nothing'''),
-    dict(id="CT5 the cyclic copy is not bound (no Trail!)", file=CP, targets=T_COPY,
-         old='''            Trail!(ld, var_key(w), r)                   # the cyclic copy: w = r, and r holds w''',
-         new='''            nothing'''),
-    dict(id="CT6 a cycle's placeholder is a fresh variable that is not remembered", file=CP, targets=T_COPY,
-         old='''            w = get!(() -> mk_var(T, fresh_var_keys!(1)), st.cyclic, k)
-            return _cp_chain_done!(st, chain, w)''',
-         new='''            return _cp_chain_done!(st, chain, mk_var(T, fresh_var_keys!(1)))'''),
-    dict(id="CT7 a bound variable is not seen through (the variable itself is copied)", file=CP, targets=T_COPY,
-         old='''        b === nothing && break
-        if haskey(st.done, k)''',
-         new='''        b === nothing && break
-        break
-        if haskey(st.done, k)'''),
-    dict(id="CT8 the copy's last child of a compound is dropped to the original's", file=CP, targets=T_COPY,
-         old='''                f.kids[i] = r
-                r === c || (f.same = false)''',
-         new='''                f.kids[i] = i == length(f.kids) ? c : r
-                r === c || (f.same = false)'''),
-    dict(id="CT9 a copied bound variable is not remembered (the `done` memo)", file=CP, targets=T_COPY + T_FIND,
-         old='''    for k in chain
-        st.done[k] = r
-    end
-    return r''',
-         new='''    return r''',
-         equivalent="src/pl-copyterm.jl _cp_chain_done!: `done` only lets a bound variable met again reuse its copy — recopying gives an equal term, and a cycle is caught by `inprogress` before `done` is asked"),
+    # CT5 removed with the code it mutated (59a05eed); ledger: evidence/MUTREFIT/deleted_mutants.tsv
+    # CT6 removed with the code it mutated (59a05eed); ledger: evidence/MUTREFIT/deleted_mutants.tsv
+    # CT7 removed with the code it mutated (59a05eed); ledger: evidence/MUTREFIT/deleted_mutants.tsv
+    # CT8 removed with the code it mutated (59a05eed); ledger: evidence/MUTREFIT/deleted_mutants.tsv
+    # CT9 removed with the code it mutated (59a05eed); ledger: evidence/MUTREFIT/deleted_mutants.tsv
     dict(id="CT10 copy_term/2 has no atomic shortcut", file=CP, targets=T_COPY,
          old='''    if PL_is_atomic(ld, A1)                                 # if ( PL_is_atomic(A1) )
         return PL_unify(ld, A1, A2) ? FTRUE : FFALSE

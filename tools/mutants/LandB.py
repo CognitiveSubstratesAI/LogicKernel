@@ -14,10 +14,7 @@ WAM, CMP, BOOT = "src/pl-wam.jl", "src/pl-comp.jl", "boot/init.jl"
 MUTANTS = [
     # i_metacall_common (f3b-3): the goal clause compiled from the goal's LOCATION; without the wiring the term
     # method walks the cyclic export without end (G3: the base's stack overflow)
-    dict(id="LB1 i_metacall_common compiles the goal clause from the goal's term export", file=WAM,
-         targets=["test/core_lang/test_metacall_control.jl"],
-         old="            compileGoalClause(gd, ld, mc_gloc, gd.modules[mc_mi], mc_nb)\n",
-         new="            compileGoalClause(\n                gd, ld, _compound_term(ld, valPtr(mc_w)), gd.modules[mc_mi], mc_nb\n            )\n"),
+    # LB1 removed with the code it mutated (59a05eed); ledger: evidence/MUTREFIT/deleted_mutants.tsv
     # link_local_var (pl-comp.c 2947): a variable's pseudo cell references the variable's own cell
     dict(id="LB2 a goal-clause variable is not linked to its cell", file=CMP,
          targets=["test/core_lang/test_metacall_control.jl"],
@@ -29,19 +26,7 @@ MUTANTS = [
          old="                ld.slots[i] = lw[j].second                     # *k = *arg\n",
          new="                setSlotValue!(ld, i, t)                        # *k = *arg\n"),
     # boot's catch(…, error(_,_), …): an error ball is printed, any other ends the load
-    dict(id="LB4 boot ends the load on every directive error", file=BOOT,
-         targets=["test/files/test_load_swipl.jl"],
-         old="    _is_error_term(ld, ex) || return _init_export(ld, ex)\n",
-         new="    return _init_export(ld, ex)\n"),
+    # LB4 removed with the code it mutated (d6faa3f7); ledger: evidence/MUTREFIT/deleted_mutants.tsv
     # _pattr_error (f3b-3b): its message terms live in a frame of their own, gone before the query closes
-    dict(id="LB5 _pattr_error's message terms outlive the open query", file=BOOT,
-         targets=["test/files/test_load_swipl.jl"],
-         old="    PL_discard_foreign_frame(ld, fid)\n    return nothing\nend\n\n# PORT: init.pl $pi_head as _pi_head\n",
-         new="    return nothing\nend\n\n# PORT: init.pl $pi_head as _pi_head\n",
-         equivalent="boot/init.jl _pattr_error runs while _init_call's query is open; the frame it opens is "
-                    "above that query's, and _end_query's PL_close_foreign_frame(q.foreign_frame) "
-                    "(src/pl-wam.jl _end_query) lowers lTop below it, which drops its record "
-                    "(lowerLTop!: every lowering drops the records above, asserted and tested in "
-                    "test/core_lang/test_local_stack.jl, V3 decision 3); measured on the 'dynamic' load "
-                    "case: nfliframes, fli_context and lTop identical with and without the discard"),
+    # LB5 removed with the code it mutated (d6faa3f7); ledger: evidence/MUTREFIT/deleted_mutants.tsv
 ]

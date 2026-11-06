@@ -114,13 +114,7 @@ MUTANTS = [
          old="    if meta || (def.flags & P_SSU_DET) != 0         # ison(def, P_SSU_DET|P_DET) (P_DET: see above)\n",
          new="    if meta\n"),
     # ── boot/init.pl's guard rewrite (the consult stand-in, D7) ──
-    dict(id="SSU1-D1 the guard form is not rewritten (KILL c02, c15, v04)", file=B, targets=TA,
-         old="        if _init_is(ld, pre, Symbol(\",\"), 2)            # nonvar(Pre), Pre = (Head,Cond), !\n",
-         new="        if false\n"),
-    dict(id="SSU1-D2 a `true` guard is optimised away with the flag off (KILL c24)", file=B, targets=TA,
-         old="            if _init_is_true(ld, cond) && truePrologFlag(ld, PLFLAG_OPTIMISE)   # current_prolog_flag(optimise, true)\n",
-         new="            if _init_is_true(ld, cond)\n"),
-    dict(id="SSU1-D3 the rewrite drops the cut: `?=>(H, (G, B))` (KILL c02, c15, v04)", file=B, targets=TA,
-         old="                    ld, g, _err_functor(ld, Symbol(\",\"), 2), _err_atom(ld, mk_sym(T, :!)),\n",
-         new="                    ld, g, _err_functor(ld, Symbol(\",\"), 2), _err_atom(ld, mk_sym(T, Symbol(\"true\"))),\n"),
+    # SSU1-D1 removed with the code it mutated (d6faa3f7); ledger: evidence/MUTREFIT/deleted_mutants.tsv
+    # SSU1-D2 removed with the code it mutated (d6faa3f7); ledger: evidence/MUTREFIT/deleted_mutants.tsv
+    # SSU1-D3 removed with the code it mutated (d6faa3f7); ledger: evidence/MUTREFIT/deleted_mutants.tsv
 ]

@@ -157,15 +157,8 @@ MUTANTS = [
          old='            return PL_type_error(ld, "meta_argument_specifier", arg)\n',
          new='            return PL_type_error(ld, "mode", arg)\n'),
     # ── the stand-ins' masks (pl-ext.jl _boot_meta!) ──
-    dict(id="MOD4-B1 call/2 declared call(?,?): not transparent, its goal is not qualified (KILL b02)", file=E, targets=TS_ALL,
-         old='("call", 2, "1?")',
-         new='("call", 2, "??")'),
-    dict(id="MOD4-B2 bagof/3 declared bagof(?,0,-) for bagof(?,^,-)", file=E, targets=TS_ALL,
-         old='("bagof", 3, "?^-")',
-         new='("bagof", 3, "?0-")',
-         equivalent="MA_HAT and 0 are read alike: every reader of a mask is MA_NEEDS_TRANSPARENT (src/pl-incl.jl:300, true "
-                    "for both; src/pl-supervisor.jl:232, src/pl-proc.jl:1418) or the MA_VAR test (src/pl-proc.jl:982); "
-                    "m_qualify_argument reads no mask (src/pl-wam.jl:1041-1075)"),
+    # MOD4-B1 removed with the code it mutated (6dbe7952); ledger: evidence/MUTREFIT/deleted_mutants.tsv
+    # MOD4-B2 removed with the code it mutated (6dbe7952); ledger: evidence/MUTREFIT/deleted_mutants.tsv
     # ── pl-wam.c callCleanupHandler, mustBeCallable ──
     dict(id="MOD4-C1 callCleanupHandler calls the cleanup goal in user, not the frame's context", file=W, targets=TS_ALL,
          old="                rval = call_term(gd, ld, contextModule(gd, ld, fr), clean)  # call_term(contextModule(fr), clean)\n",

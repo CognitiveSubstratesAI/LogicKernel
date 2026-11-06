@@ -47,10 +47,7 @@ MUTANTS = [
          old="            unify_definition(gd, ld, MODULE_user(gd), predterm, caller, 0, GP_NAMEARITY)\n",
          new="            unify_definition(\n                gd, ld, MODULE_user(gd), predterm, caller, 0, GP_NAMEARITY | GP_HIDESYSTEM\n            )\n"),
     # printMessage: the message exported off the cells, once
-    dict(id="LA6 printMessage records [] instead of the message", file=ERR,
-         targets=["test/core_lang/test_det_swipl.jl"],
-         old="    push!(ld.messages, (severity, export_cells(ld, cell_export{T}(), -(msg + 1))))\n",
-         new="    push!(ld.messages, (severity, mk_nil(T)))\n"),
+    # LA6 removed with the code it mutated (484cffcf); ledger: evidence/MUTREFIT/deleted_mutants.tsv
     # Q-AR5 `$expr/n` on the cells: the head (argument 1) is not evaluated
     dict(id="LA7 $expr/n evaluates its head", file=ARITH,
          targets=["test/core_lang/test_arith_swipl.jl"],

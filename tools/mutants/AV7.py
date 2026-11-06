@@ -38,23 +38,11 @@ MUTANTS = [
          old="    PL_extension(\"\\$freeze\", 2, pl_dfreeze2_va, PL_FA_VARARGS),\n",
          new=""),
     # ── boot/attvar.pl uhook(freeze, …), unfreeze/1 (_boot_freeze_uhook!) ──
-    dict(id="AV7-U1 uhook(freeze, …) defined after the general uhook/3 clause (freeze:attr_unify_hook/2 is called; KILL fz01)", file=E, targets=TA,
-         old="    _boot_freeze_uhook!(gd, ld)\n    _boot_clause!(\n        gd, ld, :uhook, T[Module, AttVal, Value],\n",
-         new="    _boot_clause!(\n        gd, ld, :uhook, T[Module, AttVal, Value],\n"),
-    dict(id="AV7-U2 uhook(freeze, …) without its cut (a failing frozen goal backtracks into the general clause; KILL fz18)", file=E, targets=TA,
-         old="            T[\n                cut,\n                _boot_ite(\n                    T, _boot_term(:attvar, T[Y]), append, _boot_term(:unfreeze, T[Goal])\n",
-         new="            T[\n                _boot_ite(\n                    T, _boot_term(:attvar, T[Y]), append, _boot_term(:unfreeze, T[Goal])\n"),
-    dict(id="AV7-U3 uhook(freeze, …) never takes the attvar(Y) branch (the goal runs at X = Y; KILL fz06g, fz07)", file=E, targets=TA,
-         old="                    T, _boot_term(:attvar, T[Y]), append, _boot_term(:unfreeze, T[Goal])\n",
-         new="                    T, mk_sym(T, :fail), append, _boot_term(:unfreeze, T[Goal])\n"),
-    dict(id="AV7-U4 uhook(freeze, …) on two frozen variables keeps only the goal of the bound one (G2 dropped; KILL fz07)", file=E, targets=TA,
-         old="        _boot_term(:put_attr, T[Y, fz, _boot_term(dand, T[G2, Goal])]),\n",
-         new="        _boot_term(:put_attr, T[Y, fz, Goal]),\n"),
-    dict(id="AV7-U5 unfreeze('$and'(A,B)) runs only A (KILL fz05)", file=E, targets=TA,
-         old="        _boot_conj(T[cut, _boot_term(:unfreeze, T[A]), _boot_term(:unfreeze, T[B])]),\n",
-         new="        _boot_conj(T[cut, _boot_term(:unfreeze, T[A])]),\n"),
+    # AV7-U1 removed with the code it mutated (08660b2a); ledger: evidence/MUTREFIT/deleted_mutants.tsv
+    # AV7-U2 removed with the code it mutated (08660b2a); ledger: evidence/MUTREFIT/deleted_mutants.tsv
+    # AV7-U3 removed with the code it mutated (08660b2a); ledger: evidence/MUTREFIT/deleted_mutants.tsv
+    # AV7-U4 removed with the code it mutated (08660b2a); ledger: evidence/MUTREFIT/deleted_mutants.tsv
+    # AV7-U5 removed with the code it mutated (08660b2a); ledger: evidence/MUTREFIT/deleted_mutants.tsv
     # ── boot/attvar.pl freeze/2 (_boot_freeze!): the Q4 (a) qualification ──
-    dict(id="AV7-Q1 freeze/2 stores an unqualified goal (no user: ; KILL fz12, fz02g)", file=E, targets=TA,
-         old="        _boot_term(:(=), T[Goal, _boot_term(:(:), T[mk_sym(T, :user), Goal0])])\n",
-         new="        _boot_term(:(=), T[Goal, Goal0])\n"),
+    # AV7-Q1 removed with the code it mutated (08660b2a); ledger: evidence/MUTREFIT/deleted_mutants.tsv
 ]
