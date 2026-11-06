@@ -258,7 +258,6 @@ refusal:src/pl-proc.jl::pl_get_predicate_attribute3_va::indexed(L): the Prolog d
 refusal:src/pl-read.jl::raw_read2::raw_read2: reading past the end of a stream (its error names	RD2	raw_read2 past the end of a stream, eof_action(error) (pl-read.c); the stream term is available since LB5 (PL_unify_stream_or_alias)
 refusal:src/pl-read.jl::raw_read2::raw_read2: the comments(C) read option	RD2	raw_read2 comments(C) read option (pl-read.c); the comments collector of library(prolog_source)
 refusal:src/pl-read.jl::raw_read2::raw_read2: the comments(C) read option #2	RD2	raw_read2 comments(C) read option, second site (pl-read.c); the comments collector
-refusal:src/pl-read.jl::unify_location::unify_location: a stream's location, stream(S, L, LP, C)	LB7	unify_location for a stream that is neither file nor string (pl-read.c): a syntax error typed at the toplevel; PL_unify_stream_or_alias exists since LB5, one commit
 refusal:src/pl-read.jl::start_pframe::read: a blob <type>(…)	RD2	reading a blob <type>(...) (pl-read.c PF_BLOB); the blob lookup
 refusal:src/pl-read.jl::start_pframe::read: a quasi-quotation {|Syntax||Quotation|}	RD2	quasi-quotation {|Syntax||Text|} (pl-read.c); refused by the R1 decision, lifted only if the user lifts it
 refusal:src/pl-read.jl::read_clause::read_clause's $what option	RD2	read_clause comments / var_prefix options (pl-read.c read_clause)

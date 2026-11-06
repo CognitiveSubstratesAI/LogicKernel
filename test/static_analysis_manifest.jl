@@ -3008,6 +3008,15 @@ const _MANIFEST_LB7_FREE = (
     (LK.is_early_define, Tuple{String}, false),
     (LK.find_define, Tuple{String, Vector{String}}, false),
     (LK.initDefaultOptions!, Tuple{LK.pl_options_t}, false),
+    # (its keyword method: the build's `systemDefaults` as keywords, setupProlog and the tail of PL_initialise! call it with none)
+    (
+        Core.kwcall,
+        Tuple{NamedTuple{(), Tuple{}}, typeof(LK.initDefaultOptions!), LK.pl_options_t},
+        false
+    ),
+    # the `@kwdef` constructors of the two records (`pl_options_t()`, `pl_cmdline_t()` in setupProlog): the keyword method each macro defines
+    (Core.kwcall, Tuple{NamedTuple{(), Tuple{}}, Type{LK.pl_options_t}}, false),
+    (Core.kwcall, Tuple{NamedTuple{(), Tuple{}}, Type{LK.pl_cmdline_t}}, false),
     (LK.usage_text, Tuple{}, false),
     (LK.defaultSystemInitFile, Tuple{String}, false),
     (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_init)}, false)
