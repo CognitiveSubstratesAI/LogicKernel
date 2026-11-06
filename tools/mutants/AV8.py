@@ -87,7 +87,7 @@ MUTANTS = [
          old="_boot_conj(T[mk_sym(T, :!), _boot_term(:call, T[Goal])]), UInt64(0)",
          new="_boot_conj(T[mk_sym(T, :!), mk_sym(T, Symbol(\"true\"))]), UInt64(0)"),
     dict(id="AV8-B2 when/2 is not defined (KILL wh07)", file=E, targets=TA,
-         old="    _boot_when!(gd, PL_local_data{T}(gd))       # (no upstream line: library/when.pl's stand-in, see `_boot_when!`)\n"
+         old="    _boot_when!(gd, _bare_local_data(gd))       # (no stream: the template holds none; no upstream line: library/when.pl's stand-in, see `_boot_when!`)\n"
              "    return nothing\nend\n",
          new="    return nothing\nend\n"),
 ]
