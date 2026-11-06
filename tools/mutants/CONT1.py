@@ -50,6 +50,9 @@ DTGT = ["test/core_lang/test_cont_run_swipl.jl", "test/core_lang/test_cont_boot_
         "test/core_lang/test_firstvar_swipl.jl", "test/core_lang/test_sortlist_swipl.jl", "test/core_lang/test_slot_words.jl",
         "test/foreign/test_builtins_swipl.jl", "test/foreign/test_query.jl", "test/compile/test_body_code_swipl.jl",
         "test/compile/test_analyse_variables_swipl.jl"]
+# the baseline's targets (mutate_ci.py plan reads TARGETS; the pre-push check 5 refuses a list without it): the two files whose
+# rows kill the continuation mutants, test_metacall_control.jl (the FR_INRESET branch) and the files of the engine fix's DTGT
+TARGETS = list(dict.fromkeys(RUNMC + DTGT))
 MUTANTS = [
     # ── pl-vmi.c I_CALL1 FR_INRESET branch, I_RESET, I_EXITRESET ──
     dict(id="CONT1-R1 I_RESET does not set FR_INRESET on the reset/3 frame (KILL test_cont_run_swipl.jl:157 r_meta_len, :148 r_meta_shift)",
