@@ -6862,9 +6862,13 @@ What BOOTPRED3 adds (swipl-devel pin `cbf4e1896275`, oracle swipl 10.1.19; writt
   checks that `Level` is an atom, counts nothing. KNOWN DIFFERENCE: the kernel keeps no error/warning counters (`ld_statistics` has no
   field, a struct change), so `statistics(errors, _)` stays 0 where swipl's counts (rows bp3i11, bp3i12).
 - **`'$notrace'(-Flags, -SkipLevel)`, `'$restore_trace'(+Flags, +SkipLevel)`** (src/pl-pro.jl, pl-pro.c:317-390, not pl-trace.c): the saved
-  state is the last-call and VMI built-in flag bits; the debugger bits (tracing, debugging) read 0 and the skip level reads -1 because the
-  kernel has no debugger state (a field in the local data is a struct change). KNOWN DIFFERENCE where swipl's initial level is 0 and a
-  restored level -2 is read back (rows bp3n01, bp3n07, bp3n18).
+  state is the tracing and debugging status, the last-call and VMI built-in flag bits (`NOTRACE_*`, 1/2/4/8) and the skip level (-1
+  `SKIP_VERY_DEEP`, -2 `SKIP_REDO_IN_SKIP`). Since DBG1-SMALL (audit D-0431 item 2) they read and write the local data's
+  `debugstatus_tracing`, `_debugging` and `_skiplevel` (R2 F1c) as upstream does, and `'$notrace'/2` also sets the normal run mode
+  (`setPrologRunMode(RUN_MODE_NORMAL)`: last-call and VMI built-in bits on). The rows bp3n01, bp3n07 and bp3n18, once KNOWN DIFFERENCES
+  (initial level 0, a restored -2 read back), are swipl's answers now; test_notrace_swipl.jl (rows nt01-) pins the debugger bits, the
+  skip levels, the run mode and the `debug` flag against swipl. Left to DBG1: the tracer that READS this status (the kernel's VM never
+  starts a trace or consults the skip level) and `'$notrace'/1`.
 - **`prolog_listen/2,3`** (src/pl-event.jl, pl-event.c:241-290; table `PL_predicates_from_event`): options, event name and closure are
   checked here; EV1 (section EV1 below) keeps the hook and raises the events, so row bp3l33 is swipl's answer now.
 - **`variant_sha1/2`** (`pl_variant_sha1_2_va`, src/pl-termhash.jl, pl-termhash.c:659-681; table `PL_predicates_from_termhash`): the 40 hex digits

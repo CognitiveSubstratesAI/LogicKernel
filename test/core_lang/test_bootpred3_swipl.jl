@@ -6,8 +6,8 @@
 #   * Every answer line is swipl's, PINNED (swipl 10.1.19-1-gcbf4e189, lk-channel evidence/BOOTPRED3/bp3_rows.out on the branch);
 #     with `swipl` on PATH the live answers are compared with the pins too.
 #   * KNOWN DIFFERENCES, each a row whose pin is swipl's answer and whose kernel answer is pinned too (`_B3_KNOWN`, with swipl's in
-#     a comment): the debugger state and the message counters are not kernel state (src/pl-pro.jl, src/pl-error.jl: rows bp3n01,
-#     bp3n07, bp3n18, bp3i11, bp3i12; the listeners of prolog_listen/2,3 are kept since EV1: row bp3l33 is swipl's answer), and variant_sha1's DIGEST VALUES are not swipl's (pl-termhash.jl DIVERGES 1-2: row bp3v15; the other v-rows compare lengths,
+#     a comment): the message counters are not kernel state (src/pl-error.jl: rows bp3i11, bp3i12; the debugger state is since
+#     DBG1-SMALL: rows bp3n01, bp3n07, bp3n18 are swipl's answers; the listeners of prolog_listen/2,3 are kept since EV1: row bp3l33 is swipl's answer), and variant_sha1's DIGEST VALUES are not swipl's (pl-termhash.jl DIVERGES 1-2: row bp3v15; the other v-rows compare lengths,
 #     alphabet and variant equality, never a digest). A known row stops being one when its kernel line equals swipl's.
 using Test, LogicKernel
 const LK = LogicKernel
@@ -105,8 +105,8 @@ bp3_mk(N, [N|T]) :- N1 is N-1, bp3_mk(N1, T).
 
 # bp3m: '$memberchk'/3 (pl-list.c:109-152); bp3i: '$inc_message_count'/1 (pl-error.c:1457-1474); bp3n: '$notrace'/2 and
 # '$restore_trace'/2 (pl-pro.c:317-390); bp3l: prolog_listen/2,3 (pl-event.c:241-290); bp3v: variant_sha1/2 (pl-termhash.c:659-681).
-# The debugger state is not kernel state (the file header of src/pl-pro.jl): the n-rows never pass the tracing or debugging
-# bits; the skip level swipl reads first is 0 and the kernel's is -1 (rows bp3n01, bp3n07, bp3n18). The error and warning counters
+# The n-rows pass the last-call and VMI bits only (the tracing and debugging bits and the run mode have their rows in
+# test_notrace_swipl.jl); the skip level swipl reads first is 0 (rows bp3n01, bp3n07, bp3n18). The error and warning counters
 # are not kept by the kernel (src/pl-error.jl): bp3i01-bp3i10 check arguments, bp3i11 and bp3i12 read the counters. Listeners on
 # a predicate have their rows in test_event_swipl.jl (EV1); a cyclic list has no row (the kernel has no cyclic terms).
 const _B3_CASES = [
@@ -365,18 +365,12 @@ const _B3_PINNED = [
     "t_bp3v15 c[116,95,98,112,51,118,49,53]/1(a[99,101,101,55,49,101,98,99,49,100,48,50,51,97,102,49,51,49,101,51,52,54,49,98,51,50,50,101,52,50,53,49,98,50,101,53,97,53,49,48])"
 ]
 # KNOWN DIFFERENCE rows: the id of the driver line -> the kernel's exact line (swipl's is the pin above). Each swipl answer is quoted
-# in the comment; DBG1 and the counters' struct field retire them (EV1 retired row bp3l33).
+# in the comment; the counters' struct field retires them (EV1 retired row bp3l33, DBG1-SMALL rows bp3n01, bp3n07, bp3n18).
 const _B3_KNOWN = Dict{String, String}(
     # no error counter is kept (src/pl-error.jl DIVERGES): swipl counts 1
     "t_bp3i11" => "t_bp3i11 c[116,95,98,112,51,105,49,49]/1(i0)",
     # no warning counter is kept (src/pl-error.jl DIVERGES): swipl counts 1
     "t_bp3i12" => "t_bp3i12 c[116,95,98,112,51,105,49,50]/1(i0)",
-    # swipl's first skip level is 0 (pl-pro.c:317-348 reads debugstatus.skiplevel); the kernel has no such state and reads -1
-    "t_bp3n01" => "t_bp3n01 c[116,95,98,112,51,110,48,49]/1(c[45]/2(i12,i-1))",
-    # swipl reads back the -2 it restored (pl-pro.c:350-390); the kernel keeps no skip level and reads -1
-    "t_bp3n07" => "t_bp3n07 c[116,95,98,112,51,110,48,55]/1(i-1)",
-    # as bp3n01: swipl's skip level is 0 at the start of the row's save/restore pair, the kernel's -1
-    "t_bp3n18" => "t_bp3n18 c[116,95,98,112,51,110,49,56]/1(c[45]/2(i12,i-1))",
     # the digest values are not swipl's (src/pl-termhash.jl DIVERGES 1-2): swipl's is cee71ebc1d023af131e3461b322e4251b2e5a510
     "t_bp3v15" => "t_bp3v15 c[116,95,98,112,51,118,49,53]/1(a[53,100,97,52,50,51,51,48,52,100,101,50,50,97,101,53,97,49,52,102,56,54,49,57,55,55,53,99,98,49,53,49,99,97,54,55,102,100,55,53])"
 )

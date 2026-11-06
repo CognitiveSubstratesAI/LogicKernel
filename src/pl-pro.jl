@@ -8,7 +8,8 @@
 # of its own — and `sig_atomic/1`, its first caller: boot/init.pl's `setup_call_cleanup/3` and
 # `setup_call_catcher_cleanup/4` run their Setup goal through it, as once/1; and (BOOTPRED3)
 # `'$notrace'/2` and `'$restore_trace'/2`, which boot/init.pl's notrace/1 and print_message/2 use to
-# switch the debugger off around a goal. The kernel has no debugger state, see their DIVERGES.
+# switch the debugger off around a goal; since DBG1-SMALL they save and restore the debugger status of the local data
+# (`ld.debugstatus_*`, R2 F1c) and `'$notrace'/2` sets the normal run mode, as upstream does.
 #
 # Since HALT1: `abortProlog` and `abort/0` (the `unwind(abort)` ball), `raise_halt_exception` (the
 # `unwind(halt(Status))` ball `halt/1` raises). `halt_from_exception` and `restore_after_exception` are
@@ -211,10 +212,9 @@ const NOTRACE_VMI = 0x8
 
 # PORT: pl-pro.c notrace as pl_notrace2_va
 # (PRED_IMPL("$notrace", 2, notrace, PL_FA_NOTRACE), pl-pro.c:317-348 at the pin)
-# DIVERGES: `debugstatus.tracing`, `.debugging` and `.skiplevel` are not state here (the kernel has no debugger: the
-# VM never sets them, src/pl-wam.jl): they read false, false and `SKIP_VERY_DEEP` (-1), swipl's values with the
-# debugger off, and nothing is stored; the flag bits NOTRACE_TRACE and NOTRACE_DEBUG are always 0. The two prolog-flag
-# bits are the kernel's `prolog_flag_mask`. `setPrologFlagMask`/`setPrologRunMode(RUN_MODE_NORMAL)`: no run mode.
+# DIVERGES: `debugstatus` is the local data's `debugstatus_*` fields (one engine, src/pl-global.jl); the two prolog-flag
+# bits are the kernel's `prolog_flag_mask`; `setPrologRunMode(RUN_MODE_NORMAL)` is `setPrologRunMode!(ld, RUN_MODE_NORMAL)`.
+# The kernel has no tracer to stop, so the debugger status is data here (DBG1 owns the tracer that reads it).
 """
     '\$notrace'(-Flags, -SkipLevel)
 
@@ -228,13 +228,25 @@ function pl_notrace2_va(
     A1, A2 = PL__t0, PL__t0 + 1
     flags = 0
 
-    # debugstatus.tracing / debugstatus.debugging: false here
+    ld.debugstatus_tracing && (flags |= NOTRACE_TRACE)
+    ld.debugstatus_debugging && (flags |= NOTRACE_DEBUG)
     truePrologFlag(ld, PLFLAG_LASTCALL) && (flags |= NOTRACE_LCO)
     truePrologFlag(ld, PLFLAG_VMI_BUILTIN) && (flags |= NOTRACE_VMI)
 
-    sl = -1                                             # debugstatus.skiplevel == SKIP_VERY_DEEP
+    if ld.debugstatus_skiplevel == SKIP_VERY_DEEP
+        sl = -1                                         # debugstatus.skiplevel == SKIP_VERY_DEEP
+    elseif ld.debugstatus_skiplevel == SKIP_REDO_IN_SKIP
+        sl = -2
+    else
+        @assert ld.debugstatus_skiplevel <= UInt(typemax(Int64))        # assert(sl >= 0 && sl <= SIZE_MAX)
+        sl = Int64(ld.debugstatus_skiplevel)
+    end
 
     if PL_unify_integer(ld, A1, flags) && PL_unify_int64(ld, A2, sl)
+        ld.debugstatus_tracing = false
+        ld.debugstatus_debugging = false
+        ld.debugstatus_skiplevel = SKIP_VERY_DEEP
+        setPrologRunMode!(ld, RUN_MODE_NORMAL)
         updateAlerted(ld)
 
         return FTRUE
@@ -245,14 +257,13 @@ end
 
 # PORT: pl-pro.c restoretrace as pl_restore_trace2_va
 # (PRED_IMPL("$restore_trace", 2, restoretrace, PL_FA_NOTRACE), pl-pro.c:350-390 at the pin)
-# DIVERGES: as `pl_notrace2_va`: the tracing and debugging bits and the depth are checked and dropped (no debugger
-# state to set; a later `'$notrace'/2` answers -1 whatever depth was restored). `SKIP_VERY_DEEP` is -1 and
-# `SKIP_REDO_IN_SKIP` -2 (`depthi == -1`, `-2` are upstream's tests); a depth beyond `SIZE_MAX` cannot occur in an `Int`.
+# DIVERGES: as `pl_notrace2_va` (the debugger status is the local data's fields). A depth beyond `SIZE_MAX` cannot
+# occur in an `Int` (`depthi > SIZE_MAX` is upstream's second refusal).
 """
     '\$restore_trace'(+Flags, +SkipLevel)
 
-Restore what `'\$notrace'/2` saved: the last-call optimisation and VMI built-in flag bits (pl-pro.c); `Flags` must be
-an `int` and `SkipLevel` an `int64` (`representation_error(size_t)` for a negative depth other than -1 and -2).
+Restore what `'\$notrace'/2` saved: the tracing and debugging status, the skip level and the last-call optimisation and
+VMI built-in flag bits (pl-pro.c); `Flags` must be an `int` and `SkipLevel` an `int64` (`representation_error(size_t)` for a negative depth other than -1 and -2).
 """
 function pl_restore_trace2_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
@@ -268,7 +279,10 @@ function pl_restore_trace2_va(
         return PL_error(ld, ERR_REPRESENTATION, mk_sym(T, :size_t)) ? FTRUE : FFALSE   # PL_representation_error("size_t")
     end
 
-    # debugstatus.tracing / .debugging / .skiplevel: no state (above)
+    depth = depthi == -1 ? SKIP_VERY_DEEP : depthi == -2 ? SKIP_REDO_IN_SKIP : UInt(depthi)
+    ld.debugstatus_tracing = (flags & NOTRACE_TRACE) != 0
+    ld.debugstatus_debugging = (flags & NOTRACE_DEBUG) != 0
+    ld.debugstatus_skiplevel = depth
 
     if (flags & NOTRACE_LCO) != 0
         setPrologFlagMask!(ld, PLFLAG_LASTCALL)

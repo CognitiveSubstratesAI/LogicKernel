@@ -142,6 +142,10 @@ const DBG_ALL = UInt32(0x1)
 "The skip level of no skipping, `(size_t)-1` (pl-incl.h)."
 const SKIP_VERY_DEEP = typemax(UInt)
 
+# Not in pl-trace.c: pl-incl.h's SKIP_REDO_IN_SKIP.
+"The skip level of a redo inside a skip, `SKIP_VERY_DEEP-1` (pl-incl.h)."
+const SKIP_REDO_IN_SKIP = SKIP_VERY_DEEP - UInt(1)
+
 # PORT: pl-trace.c debugmode
 # DIVERGES: one engine, so the local data is its argument (never NULL) and the message is always sent by the calling engine
 # (`set && ld == LD`); `old` is a `Ref{Bool}` or `nothing`. The messages go through the kernel's `printMessage`
