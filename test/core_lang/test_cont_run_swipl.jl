@@ -30,7 +30,13 @@ function _cr_enc(t::_CR, seen::Vector{UInt64}=UInt64[])::String
         end
         return "V$(i - 1)"
     elseif k === SYM
-        return is_nil(t) ? "[]" : sym_text(t)
+        return if is_nil(t)
+            "[]"
+        elseif is_blob(t)
+            "<blob>"
+        else
+            sym_text(t)
+        end   # a clause blob (a continuation's `$cont$`): a row says so, it does not raise
     elseif k === GND
         v = lk_value(t)
         v isa AbstractString && return "s\"" * String(v) * "\""
@@ -224,7 +230,23 @@ const _CR_CASES = [
         raw"cr_sha(T2), catch(call_continuation([T2]), error(type_error(continuation, _), _), R = te)"
     ),
     ("r_cc_empty", raw"call_continuation([])"),
-    ("r_yield_out", raw"engine_yield(a)")
+    ("r_yield_out", raw"engine_yield(a)"),
+    # the three rows below answer what the battery's survivors R1, R2, E6 (D-0427) needed: a continuation's clause belongs to
+    # system:'$meta_call'/3 (the body of reset/3 called through `mcall_cont`, pl-vmi.c:5529-5535), not to call/1's temporary
+    # clause; an exception thrown after the resume is caught by the catch/3 that was re-established (the `call(catch(...))`
+    # goal `put_continuation` builds from `env3_predicate`, src/pl-cont.jl) and that goal's shape
+    (
+        "r_meta_pred",
+        raw"once(reset((cr_mem(_), shift(s), cr_nop), _, C)), C = call_continuation([T|_]), T =.. [_, _, Cl|_], clause_property(Cl, predicate(P)), R = P"
+    ),
+    (
+        "r_catch_throw",
+        raw"reset(catch((shift(c), throw(oops)), oops, X = caught), _, C), call(C), R = X"
+    ),
+    (
+        "r_catch_shape",
+        raw"reset(catch(shift(c), _, true), _, C), C = call_continuation(L), R = L"
+    )
 ]
 
 # swipl 10.1.19's answers (the driver's whole output: `ok`, then one line per case of _CR_CASES)
@@ -280,7 +302,10 @@ const _CR_PINNED = [
     raw"t_r_type_atom t_r_type_atom(raised(type_error(continuation,foo)))",
     raw"t_r_type_arity t_r_type_arity(te)",
     raw"t_r_cc_empty t_r_cc_empty(V0)",
-    raw"t_r_yield_out t_r_yield_out(raised(permission_error(execute,vmi,I_YIELD)))"
+    raw"t_r_yield_out t_r_yield_out(raised(permission_error(execute,vmi,I_YIELD)))",
+    raw"t_r_meta_pred t_r_meta_pred(:(system,/($meta_call,3)))",
+    raw"t_r_catch_throw t_r_catch_throw(caught)",
+    raw"t_r_catch_shape t_r_catch_shape([|](call(catch(call_continuation([]),V0,:(user,true))),[]))"
 ]
 
 "The program and cases as one file; the case predicates' names."

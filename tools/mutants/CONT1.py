@@ -8,7 +8,7 @@
 # list (a text count by a python3 -I checker, no Julia); the anchors are short single-line substrings, RE-FIT any `old` that `tools/warm.sh
 # fmt` rewraps. NOTHING here has run on the kernel: each KILL names the row EXPECTED to kill it (read in the row's goal and pin), the
 # battery's verdict decides.
-# KILL: test/core_lang/test_cont_run_swipl.jl (46 rows r_*: 43 pinned in evidence/CONT1/cr_rows.out, r_y, r_y_meta, r_sb added for the engine fix, D-0424; the line numbers in the ids below predate those three rows) and
+# KILL: test/core_lang/test_cont_run_swipl.jl (46 rows r_*: 43 pinned in evidence/CONT1/cr_rows.out, r_y, r_y_meta, r_sb added for the engine fix, D-0424, and r_meta_pred, r_catch_throw, r_catch_shape for the survivors R1, R2, E6 of battery 42137325123, D-0427; the line numbers in the ids below predate those three rows) and
 # test/core_lang/test_cont_boot_swipl.jl (rows c_reset .. c_yield, case lines 140-145).
 # TARGETS (audit D-0238): the mutated code is reached through the booted system's reset/3, shift/1, shift_for_copy/1 and
 # call_continuation/1; a grep over test/*/*.jl for `reset(`, `shift(`, `call_continuation`, `shift_for_copy` finds the two files above and
@@ -55,18 +55,19 @@ DTGT = ["test/core_lang/test_cont_run_swipl.jl", "test/core_lang/test_cont_boot_
 TARGETS = list(dict.fromkeys(RUNMC + DTGT))
 MUTANTS = [
     # ── pl-vmi.c I_CALL1 FR_INRESET branch, I_RESET, I_EXITRESET ──
-    dict(id="CONT1-R1 I_RESET does not set FR_INRESET on the reset/3 frame (KILL test_cont_run_swipl.jl:157 r_meta_len, :148 r_meta_shift)",
+    dict(id="CONT1-R1 I_RESET does not set FR_INRESET on the reset/3 frame (KILL test_cont_run_swipl.jl r_meta_pred: the continuation's clause belongs to system:'$meta_call'/3, not call/1's temporary clause; r_meta_len and r_meta_shift answer the same under it, CI battery 42137325123)",
          file=W, targets=RUN,
          old="ld.frames[FR].flags |= FR_INRESET",
          new="nothing"),
-    dict(id="CONT1-R2 a control construct under FR_INRESET is compiled to a temporary clause, not called through $meta_call (KILL test_cont_run_swipl.jl:157 r_meta_len, :149 r_meta_resume)",
+    dict(id="CONT1-R2 a control construct under FR_INRESET is compiled to a temporary clause, not called through $meta_call (KILL test_cont_run_swipl.jl r_meta_pred, as CONT1-R1: r_meta_len and r_meta_resume answer the same under it)",
          file=W, targets=RUNMC,
          old="if (ld.frames[FR].flags & FR_INRESET) != 0",
          new="if false"),
-    dict(id="CONT1-R3 I_RESET does not test for an unbound goal (KILL test_cont_run_swipl.jl:156 r_var_goal_ctx: the error context becomes call/1's)",
+    dict(id="CONT1-R3 I_RESET does not test for an unbound goal (EQUIVALENT: the goal goes to call_type_error, which raises the same instantiation_error from the same frame)",
          file=W, targets=RUN,
          old="if _slot_is_var(ld, ir_p + 1)",
-         new="if false"),
+         new="if false",
+         equivalent="an unbound goal (_slot_is_var is `k == DU_CELL`, src/pl-prims.jl:738-741) skips I_RESET's own test (src/pl-wam.jl:3345-3351) and goes through I_CALL1 to i_metacall_common, whose `else` arm for a non-callable goal is call_type_error (src/pl-wam.jl:3989-3998, `@SAVE_REGISTERS(QID)` so the context frame is still the reset/3 frame): PL_error(ERR_TYPE, callable, <unbound>) turns a variable culprit into instantiation_error (src/pl-error.jl:375-378), the term I_RESET's PL_error(ERR_INSTANTIATION) builds (src/pl-error.jl:220-229) with the same context system:reset/3. Measured by hand on the reference type (2026-11-06): the whole of test_cont_run_swipl.jl, r_var_goal, r_var_goal_ctx and the pools check included, passes 89/89 under the mutant; an attributed variable (DU_ATTVAR) takes the I_CALL1 path with or without the test"),
     dict(id="CONT1-R4 I_EXITRESET binds Cont to 1 (KILL test_cont_run_swipl.jl:135 r_noshift, :162 r_iter, test_cont_boot_swipl.jl:140 c_reset)",
          file=W, targets=RUN,
          old="bindConst(ld, ier_p, consInt(Int64(0)))",
@@ -135,7 +136,7 @@ MUTANTS = [
          file=C, targets=RUN,
          old="if !is_last_call(pc)",
          new="if true"),
-    dict(id="CONT1-E6 put_continuation treats a catch/3 or reset/3 frame as an ordinary frame (KILL test_cont_run_swipl.jl:159 r_catch_len, :158 r_catch_shift)",
+    dict(id="CONT1-E6 put_continuation treats a catch/3 or reset/3 frame as an ordinary frame (KILL test_cont_run_swipl.jl r_catch_throw: an exception after the resume is no longer caught; r_catch_shape: the list holds call(catch(...)); r_catch_len and r_catch_shift answer the same under it)",
          file=C, targets=RUN,
          old="if env_f != word(0)",
          new="if false"),
