@@ -1279,3 +1279,65 @@ end
         rm(dir; recursive=true, force=true)
     end
 end
+
+# The flag test of isSinput/isSoutputOrSerror stands in for upstream's address test (`s == Sinput`) ONLY IF no stream the kernel makes
+# besides the three standard ones carries SIO_STATIC (upstream's static streams are exactly the three S__iob entries). Every constructor
+# of the stream layer (Sopen_file, Sopen_string, Sopenmem, Sopen_julia_io) and open/3 and open/4 in each mode is checked; the standard
+# streams do carry it (non-vacuity).
+@testset "no stream but the standard ones carries SIO_STATIC: isSinput and isSoutputOrSerror are false for every other stream" begin
+    gd = LK.PL_global_data{_TL}()
+    ld = LK.PL_local_data{_TL}(gd)
+    dir = mktempdir()
+    try
+        f = joinpath(dir, "f")
+        write(f, "abc")
+        made = Pair{String, Any}[]
+        for how in ("r", "w", "a", "u")
+            s, errno = LK.Sopen_file(f, how)
+            push!(made, "Sopen_file $how" => s)
+        end
+        push!(made, "Sopen_string r" => LK.Sopen_string(Vector{UInt8}("abc"), 3, "r"))
+        push!(made, "Sopen_string w" => LK.Sopen_string(Vector{UInt8}(undef, 8), 8, "w"))
+        push!(
+            made,
+            "Sopenmem r" => LK.Sopenmem(
+                Ref{Union{Nothing, Vector{UInt8}}}(Vector{UInt8}("abc")), Ref(3), "r"
+            )
+        )
+        push!(
+            made,
+            "Sopenmem w" =>
+                LK.Sopenmem(Ref{Union{Nothing, Vector{UInt8}}}(nothing), Ref(0), "w")
+        )
+        push!(made, "Sopen_julia_io r" => LK.Sopen_julia_io(IOBuffer("abc"), "r", false))
+        push!(made, "Sopen_julia_io w" => LK.Sopen_julia_io(IOBuffer(), "w", false))
+        for mode in (:read, :write, :append)
+            st, a = kcall(
+                gd, ld, "open",
+                _TL[_tls(f), _tls(mode), mk_var(_TL, LK.fresh_var_keys!(1))]
+            )
+            @test st === :true
+            push!(made, "open/3 $mode" => LK.get_stream_handle(ld, a[3], LK.SH_ALIAS))
+        end
+        @test length(made) >= 13
+        for (what, s) in made
+            @test s isa LK.IOSTREAM
+            s isa LK.IOSTREAM || continue
+            @test (s.flags & LK.SIO_STATIC) == 0
+            @test !LK.isSinput(s) && !LK.isSoutputOrSerror(s)
+        end
+        # not vacuous: the three standard streams DO carry it, in their direction
+        @test (LK.Suser_input(ld).flags & LK.SIO_STATIC) != 0 &&
+            LK.isSinput(LK.Suser_input(ld))
+        @test (LK.Suser_output(ld).flags & LK.SIO_STATIC) != 0 &&
+            LK.isSoutputOrSerror(LK.Suser_output(ld))
+        @test (LK.Suser_error(ld).flags & LK.SIO_STATIC) != 0 &&
+            LK.isSoutputOrSerror(LK.Suser_error(ld))
+        for (_, s) in made
+            s isa LK.IOSTREAM && s.context == 0 && s.magic == LK.SIO_MAGIC &&
+                (LK.Sclose(s); true)
+        end
+    finally
+        rm(dir; recursive=true, force=true)
+    end
+end
