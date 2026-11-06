@@ -34,6 +34,6 @@ MUTANTS = [
          new="        aliasStream(gd, s, alias)\n        ld.prompt_next = true\n        return true\n"),
     dict(id="LB5B-B1 the local data starts with the flag set (KILL the fresh-data rows)",
          file=G, targets=PB,
-         old="        false                                   # prompt.next:",
-         new="        true                                    # prompt.next:"),
+         old="        false,                                  # prompt.next: false (pl-global.c: zero; set by set_stream's alias(user_input), R2 LB5b)",
+         new="        true,                                   # prompt.next: false (pl-global.c: zero; set by set_stream's alias(user_input), R2 LB5b)"),
 ]

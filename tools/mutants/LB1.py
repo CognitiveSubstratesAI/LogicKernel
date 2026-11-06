@@ -116,11 +116,19 @@ MUTANTS = [
          new='''    req.maxpri = OP_MAXPRIORITY + 1
     req.positions = 0'''),
     dict(id="LB1-27 a compound's name range is its start only", file=R, targets=TP + TU,
-         old='''                (token.start, _POS_VARIABLE, token.start, token.end_),  # PL_INT64 ×2,''',
-         new='''                (token.start, _POS_VARIABLE, token.start, token.start),  # PL_INT64 ×2,'''),
+         old='''                ld, f.pin, :term_position,          #   PL_INT64, token->start, PL_VARIABLE,
+                (token.start, _POS_VARIABLE, token.start, token.end_),  # PL_INT64 ×2,''',
+         new='''                ld, f.pin, :term_position,          #   PL_INT64, token->start, PL_VARIABLE,
+                (token.start, _POS_VARIABLE, token.start, token.start),  # PL_INT64 ×2,'''),
     dict(id="LB1-28 a compound's argument list is left open", file=R, targets=TP + TU,
-         old='''        PL_unify_nil(rd.ld, pv + 1) || return 0     # P_ARG''',
-         new='''        true || return 0                            # P_ARG'''),
+         old='''    pv = f.compound_pv
+    if pv != 0
+        set_range_position(rd.ld, f.pin, -1, token.end_)
+        PL_unify_nil(rd.ld, pv + 1) || return 0     # P_ARG''',
+         new='''    pv = f.compound_pv
+    if pv != 0
+        set_range_position(rd.ld, f.pin, -1, token.end_)
+        true || return 0                            # P_ARG'''),
     dict(id="LB1-29 a compound's argument gets no position", file=R, targets=TP + TU,
          old='''    req.positions = pv                              # P_HEAD''',
          new='''    req.positions = 0                               # P_HEAD'''),

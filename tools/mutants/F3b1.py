@@ -65,8 +65,10 @@ MUTANTS = [
          new='''nothing'''),
     # ── the import of a stale variable ──
     dict(id="FB8 the import of a stale variable is not counted (the changed test_compound_cells row)", file=INL, targets=TCC,
-         old='''            ld.cold_imports += 1''',
-         new='''            nothing'''),
+         old='''        ld.cold_imports += 1
+        vm.cells[key] = p''',
+         new='''        nothing
+        vm.cells[key] = p'''),
     dict(id="FB9 the fresh cell of an imported stale variable is not trailed", file=INL, targets=TQ + TCC,
          old='''Trail!(ld, var_key(t), mk_var(T, ck))''',
          new='''nothing'''),

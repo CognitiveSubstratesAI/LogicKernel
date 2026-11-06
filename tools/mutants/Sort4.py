@@ -28,7 +28,7 @@ MUTANTS = [
          old='''            expected = "dict"                           # no dict, atom key''',
          new='''            expected = "compound"                       # no dict, atom key'''),
     dict(id="SO7 sort/4 is not registered", file=L, targets=T,
-         old='''    PL_extension("sort", 4, pl_sort4_va, PL_FA_VARARGS)
+         old='''    PL_extension("sort", 4, pl_sort4_va, PL_FA_VARARGS),
 ''',
          new='''
 '''),

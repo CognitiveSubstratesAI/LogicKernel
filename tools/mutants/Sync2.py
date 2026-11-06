@@ -27,7 +27,7 @@ MUTANTS = [
          new='''    used, rc = (false, FFALSE)
     used && return rc != FFALSE'''),
     dict(id="SY3 the fast path takes any name, not only '$' (k47: retractall/1)", file=W, targets=CLEAN,
-         old='''        startswith(sym_text(def.name), '$')''',
+         old='''        sym_first_byte(def.name) == UInt8('$')''',
          new='''        true'''),
     dict(id="SY4 the fast path takes a transparent predicate (k48: '$set_predicate_attribute'/3)", file=W, targets=CLEAN,
          old='''        (def.flags & (P_NONDET | P_TRANSPARENT)) == 0 &&''',

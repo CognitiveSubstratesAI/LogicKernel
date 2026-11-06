@@ -40,8 +40,14 @@ MUTANTS = [
          old='''        if (DEF.flags & P_FOREIGN) != 0             # (NF1) an index into the supervisor''',
          new='''        if false                                    # (NF1) an index into the supervisor'''),
     dict(id="NF1-9 a discarded frame's built-in is not called with FRG_CUTTED", file=W, targets=T,
-         old='''    _fcall_va(func, ld, 0, argc, context)           # (*function)(0, argc, &context)''',
-         new='''    nothing                                         # (*function)(0, argc, &context)'''),
+         old='''    if (def.flags & P_VARARG) != 0
+        _fcall_va(func, ld, 0, argc, context)       # (*(FuncN)function)(0, argc, &context)
+    else
+        _fcall_ndet(func, ld, 0, context)           # CALL_FCUTTED(argc, function, &context)
+    end
+''',
+         new='''    nothing
+'''),
     dict(id="NF1-10 the context survives its FRG_CUTTED call", file=W, targets=T,
          old='''            f.fctx = UInt(0)                        # fr->clause = NULL''',
          new='''            nothing                                 # fr->clause = NULL'''),
