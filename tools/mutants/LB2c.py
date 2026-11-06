@@ -194,7 +194,7 @@ MUTANTS = [
          new='''arity += 0'''),
     dict(id="LB2-46 the arity limit is not checked", file="src/pl-proc.jl", targets=NS,
          old='''arity += dcgpi ? 2 : 0
-        if arity > MAXARITY''',
+        if (how & GF_PROCEDURE) != 0 && arity > MAXARITY''',
          new='''arity += dcgpi ? 2 : 0
         if false'''),
     dict(id="LB2-47 a non-PI is a callable type error, not predicate_indicator", file="src/pl-proc.jl", targets=NS,
@@ -290,8 +290,10 @@ MUTANTS = [
             return PL_unify_integer(ld, value, Int(clause.line_no)) ? FTRUE : FFALSE''',
          new='''        return PL_unify_integer(ld, value, Int(clause.line_no)) ? FTRUE : FFALSE'''),
     dict(id="LB2-67 get_clause_attribute file reads the owner's index", file=PR, targets=N + T,
-         old='''sf = indexToSourceFile(gd, clause.source_no)''',
-         new='''sf = indexToSourceFile(gd, clause.owner_no)'''),
+         old='''    elseif k == sym_key(mk_sym(T, :file))
+        sf = indexToSourceFile(gd, clause.source_no)''',
+         new='''    elseif k == sym_key(mk_sym(T, :file))
+        sf = indexToSourceFile(gd, clause.owner_no)'''),
     dict(id="LB2-68 get_clause_attribute owner reads the source's index", file=PR, targets=N + T,
          old='''sf = indexToSourceFile(gd, clause.owner_no)''',
          new='''sf = indexToSourceFile(gd, clause.source_no)'''),
@@ -376,10 +378,11 @@ end
         end''',
          new='''        first = hasClausesDefinition(gd, def)'''),
     dict(id="LB2-86 redefineProcedure: a thread-local predicate another file defines is not refused", file=PR, targets=N + ["test/files/test_load_swipl.jl"],
-         old='''            (def.flags & P_THREAD_LOCAL) != 0 && return PL_error(
-                ld, ERR_PERMISSION_PROC, mk_sym(T, :modify),
-                mk_sym(T, :thread_local_procedure), proc
-            )
+         old='''    elseif (def.flags & P_THREAD_LOCAL) != 0
+        return PL_error(
+            ld, ERR_PERMISSION_PROC, mk_sym(T, :modify),
+            mk_sym(T, :thread_local_procedure), proc
+        )
 ''',
          new=''''''),
     # expected survivor, look first: the error term of t16 goes to stderr (a message), the rows read only the answers; a white-box row on ld.messages

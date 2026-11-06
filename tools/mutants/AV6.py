@@ -91,8 +91,8 @@ MUTANTS = [
          old="copy_term_refs(ld, A1, copy, cp_options(COPY_SHARE)) || return FFALSE\n",
          new="copy_term_refs(ld, A1, copy, cp_options(COPY_SHARE | COPY_ATTRS)) || return FFALSE\n"),
     dict(id="AV6-F3 duplicate_term/2 without COPY_ATTRS (KILL dt02)", file=C, targets=TA,
-         old="copy_term_refs(ld, A1, copy, cp_options(COPY_ATTRS)) || return FFALSE\n",
-         new="copy_term_refs(ld, A1, copy, cp_options(0)) || return FFALSE\n"),
+         old="    return copy_term_refs(ld, in, copy, cp_options(COPY_ATTRS))\n",
+         new="    return copy_term_refs(ld, in, copy, cp_options(0))\n"),
     dict(id="AV6-F4 the ball is copied without COPY_ATTRS (KILL ex02)", file=F, targets=TA,
          old="    rc = do_copy_term_cells(ld, -(ex + 1), dest, cp_options(COPY_ATTRS))\n",
          new="    rc = do_copy_term_cells(ld, -(ex + 1), dest, cp_options(0))\n"),
@@ -128,8 +128,10 @@ MUTANTS = [
          old="                ((flags & TV_ATTVAR) != 0 && k != DU_ATTVAR) && break   # attributed vars only\n",
          new=""),
     dict(id="AV6-V2 TV_ATTS does not go into the attributes (`goto again`; KILL ta03, tv01)", file=P, targets=TA,
-         old="                if (flags & TV_ATTS) != 0 && k == DU_ATTVAR\n",
-         new="                if false && (flags & TV_ATTS) != 0 && k == DU_ATTVAR\n"),
+         old="                _new_term_ref_word!(ld, makeRefG(p))        # *valTermRef(v) = makeRefG(p)\n"
+             "                if (flags & TV_ATTS) != 0 && k == DU_ATTVAR\n",
+         new="                _new_term_ref_word!(ld, makeRefG(p))        # *valTermRef(v) = makeRefG(p)\n"
+             "                if false && (flags & TV_ATTS) != 0 && k == DU_ATTVAR\n"),
     dict(id="AV6-V3 term_attvars/2 without TV_ATTS (KILL ta03)", file=P, targets=TA,
          old="    return term_variables(ld, A1, A2, 0, TV_ATTVAR | TV_ATTS) ? FTRUE : FFALSE\n",
          new="    return term_variables(ld, A1, A2, 0, TV_ATTVAR) ? FTRUE : FFALSE\n"),

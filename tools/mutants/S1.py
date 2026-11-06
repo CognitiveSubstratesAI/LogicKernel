@@ -177,11 +177,15 @@ MUTANTS = [
          old='''    close_on_abort || (s.flags |= SIO_NOCLOSE)''',
          new='''    nothing'''),
     dict(id="S1-34 newline(dos) is posix", file=F, targets=T,
-         old='''            fnewline = SIO_NL_DOS''',
-         new='''            fnewline = SIO_NL_POSIX'''),
+         old='''        return SIO_NL_DOS
+''',
+         new='''        return SIO_NL_POSIX
+'''),
     dict(id="S1-35 newline(detect) is posix", file=F, targets=T,
-         old='''            fnewline = SIO_NL_DETECT''',
-         new='''            fnewline = SIO_NL_POSIX'''),
+         old='''        return SIO_NL_DETECT
+''',
+         new='''        return SIO_NL_POSIX
+'''),
     dict(id="S1-36 eof_action(error) sets no error flag", file=F, targets=T,
          old='''        s.flags &= ~SIO_NOFEOF
         s.flags |= SIO_FEOF2ERR''',

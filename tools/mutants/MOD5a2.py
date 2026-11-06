@@ -65,8 +65,8 @@ MUTANTS = [
          new="    return export_pi(gd, ld, PL__t0, 0, 0) ? FFALSE : FTRUE"),
     # ── '$undefined_export'/2 ──
     dict(id="MOD5a-U1 '$undefined_export' lists an imported export too (KILL u06)", file=M, targets=TS,
-         old="def.module_ == module_.index &&",
-         new="true &&"),
+         old="def.module_ == module_.index &&             # not imported",
+         new="true &&             # not imported"),
     dict(id="MOD5a-U2 '$undefined_export' lists an export that a default module defines (KILL e10)", file=M, targets=TS,
          old="autoImport(gd, def.name, def.arity, module_) === nothing",
          new="true"),

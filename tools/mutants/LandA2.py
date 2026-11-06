@@ -74,8 +74,8 @@ MUTANTS = [
     # is_neck (pl-comp.c 712): an SSU `=>` clause is refused, not asserted as a fact
     dict(id="LA11 is_neck takes Head => Body for a fact", file="src/pl-comp.jl",
          targets=["test/db/test_assert_swipl.jl"],
-         old="        f == lookupFunctorDef(fs, _atom_word!(ld, commit), 2) &&              # FUNCTOR_ssu_commit2\n",
-         new="        false &&                                                              # FUNCTOR_ssu_commit2\n"),
+         old="    f == lookupFunctorDef(fs, _atom_word!(ld, commit), 2) &&                           # FUNCTOR_ssu_commit2\n",
+         new="    false &&                                                                           # FUNCTOR_ssu_commit2\n"),
     # unify_finished (pl-wam.c 707): exception(Ball) for FINISH_EXCEPT
     dict(id="LA12 unify_finished swaps exception and external_exception", file=WAM,
          targets=["test/core_lang/test_cleanup_swipl.jl"],

@@ -231,8 +231,8 @@ MUTANTS = [
          old='''    ld.read_source.position.lineno > 0 && ld.read_source.file !== nothing''',
          new='''    ld.read_source.position.lineno >= 0 && ld.read_source.file !== nothing'''),
     dict(id="MOD1-R3 a line without a file is being read", file=M, targets=TS,
-         old='''    ld.read_source.position.lineno > 0 && ld.read_source.file !== nothing''',
-         new='''    ld.read_source.position.lineno > 0'''),
+         old='''    ld.read_source.position.lineno >= 0 && ld.read_source.file !== nothing''',
+         new='''    ld.read_source.position.lineno >= 0'''),
     # ---- '$module_property'/2
     dict(id="MOD1-Q1 line_count answers when there is no line", file=M, targets=TS,
          old='''        m.line_no > 0 || return FFALSE''',

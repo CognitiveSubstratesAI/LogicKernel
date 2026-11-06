@@ -52,7 +52,7 @@ MUTANTS = [
          new='''    PL_register_blob_type(atoms, clause_blob, UInt64(0))''',
          equivalent="PL_register_blob_type looks type.name up when the name atom is 0 (src/pl-atom.jl:2312), and \"clause\" is the "
                     "built-in ATOM_clause either way"),
-    dict(id="D1-60 the database does not call initDBRef!", file=G, targets=T,
+    dict(id="D1-60 the database does not call initDBRef!", file="src/pl-setup.jl", targets=T,
          old='''    initDBRef!(atoms)                          # initDBRef (setup:146): the clause blob type (D1)
 ''',
          new=''''''),
@@ -230,13 +230,13 @@ MUTANTS = [
          old='''ld, "erase", 1, "", ERR_PERMISSION,''',
          new='''ld, "", 0, "", ERR_PERMISSION,'''),
     dict(id="D1-54 erase/1 ignores the result of the retract", file=R, targets=T,
-         old='''    return retractClauseDefinition!(gd, def, clause, true) ? FTRUE : FFALSE''',
-         new='''    retractClauseDefinition!(gd, def, clause, true)
+         old='''    return retractClauseDefinition!(gd, ld, def, clause, true) ? FTRUE : FFALSE''',
+         new='''    retractClauseDefinition!(gd, ld, def, clause, true)
     return FTRUE''',
          equivalent="retractClauseDefinition! answers false only for a clause that is already erased (src/pl-proc.jl retract_clause!), "
                     "which PL_get_dbref has turned away (src/pl-dbref.jl)"),
     dict(id="D1-55 erase/1 does not retract", file=R, targets=T,
-         old='''    return retractClauseDefinition!(gd, def, clause, true) ? FTRUE : FFALSE''',
+         old='''    return retractClauseDefinition!(gd, ld, def, clause, true) ? FTRUE : FFALSE''',
          new='''    return FTRUE'''),
     dict(id="D1-56 erase/1 does not tell a clause reference from a record reference (KILL r65, r67 of test_record_swipl.jl)", file=R,
          targets=T + [TREC],
