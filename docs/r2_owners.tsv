@@ -103,7 +103,6 @@ pred:$urgent_exception/3	P3	seed: missing_c_preds.tsv
 pred:$visible/2	DBG1	seed: missing_c_preds.tsv
 pred:$wrapped_implementation/3	WRAP1	seed: missing_c_preds.tsv
 pred:\=@=/2	Q10	seed: missing_c_preds.tsv
-pred:break/0	DBG1	seed: missing_c_preds.tsv
 pred:char_type/2	CT1	seed: missing_c_preds.tsv
 pred:code_type/2	CT1	seed: missing_c_preds.tsv
 pred:current_blob/2	Q10	seed: missing_c_preds.tsv
