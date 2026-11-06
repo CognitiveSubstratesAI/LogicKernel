@@ -3,7 +3,7 @@
 #   * THE DATA: src/pl-atom.jl's generated region is exactly what tools/gen_atoms.jl makes of
 #     src/ATOMS AT THE PIN (`git show <commit>:src/ATOMS`) wherever a checkout is found; without
 #     one, the test asserts there is none, so it cannot skip silently;
-#   * the built-ins: 1056 atoms (`defatom` writes `ATOM("")` first, then the 1055 `A` lines),
+#   * the built-ins: 1066 atoms (`defatom` writes `ATOM("")` first, then the 1065 `A` lines),
 #     index 1 the empty atom, `.` registered as `[|]`, every built-in found again by lookup;
 #   * lookup: one atom per (bytes, length, type) — the character 0 is part of the text, so `a\0b`,
 #     `a`, `""` and `"\0"` are four atoms (a C-string comparison would merge them);
@@ -47,7 +47,7 @@ if isdir(joinpath(_AT_CHECKOUT, ".git"))
         src = read(`git -C $_AT_CHECKOUT show $commit:src/ATOMS`, String)
         fs = Base.invokelatest(m.parse_functors, src)
         @test length(fs) == 336 && all(f -> f[1] in ids, fs)
-        @test count(l -> startswith(l, 'A'), split(src, '\n')) == 1055 == length(texts) - 1
+        @test count(l -> startswith(l, 'A'), split(src, '\n')) == 1065 == length(texts) - 1
         # the generator refuses an escape it does not handle, and reads `\\` as one backslash
         @test_throws ErrorException Base.invokelatest(m.c_unescape, "a\\nb", "fixture")
         @test Base.invokelatest(m.c_unescape, "\\\\=", "fixture") == "\\="
@@ -59,13 +59,13 @@ else
     end
 end
 
-@testset "the built-in atoms: 1056, index 1 the empty atom, `.` as `[|]`" begin
+@testset "the built-in atoms: 1066, index 1 the empty atom, `.` as `[|]`" begin
     atoms = _at_table()
-    @test length(LK._BUILTIN_ATOMS) == 1056 == length(LK._BUILTIN_ATOM_IDS)
+    @test length(LK._BUILTIN_ATOMS) == 1066 == length(LK._BUILTIN_ATOM_IDS)
     @test LK._BUILTIN_ATOMS[1] == "" && LK._BUILTIN_ATOM_IDS[1] == ""
     @test LK._BUILTIN_ATOMS[2] == "UTF-8" && LK._BUILTIN_ATOM_IDS[2] == "UTF_8"
-    @test atoms.highest == 1057 && atoms.builtin == 1057 && atoms.no_hole_before == 1057
-    @test atoms.statistics_atoms == 1056        # no atom made at start-up beyond the built-ins
+    @test atoms.highest == 1067 && atoms.builtin == 1067 && atoms.no_hole_before == 1067
+    @test atoms.statistics_atoms == 1066        # no atom made at start-up beyond the built-ins
     dot = LK.builtin_atom("dot")
     @test _at_atom(atoms, dot).name == _at_bytes("[|]")          # SWI-7: not "."
     @test LK.lookupAtom(atoms, _at_bytes("[|]")) == dot
