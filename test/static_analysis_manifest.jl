@@ -1260,6 +1260,8 @@ function _manifest_index(T)
         (LK.Suser_error, Tuple{LD}, false),
         (LK.Scurin, Tuple{LD}, false),
         (LK.Scurout, Tuple{LD}, false),
+        (LK.isSinput, Tuple{LK.IOSTREAM}, false),         # CLOSESTREAM (pl-file.c closeStream's `s == Sinput`)
+        (LK.isSoutputOrSerror, Tuple{LK.IOSTREAM}, false),
         (LK.standardStreamIndexFromName, Tuple{LD, T}, false),
         (LK.standardStreamIndexFromStream, Tuple{LD, LK.IOSTREAM}, false),
         (LK.initIO, Tuple{LD}, false),

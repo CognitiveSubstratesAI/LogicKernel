@@ -1147,16 +1147,31 @@ end
 
 # ── close/1,2 (pl-file.c) ───────────────────────────────────────────────────────────────────────
 
+# The process's own standard streams (`Sinput`, `Soutput`, `Serror`, pl-stream.c `S__iob0`) as the tests of
+# `closeStream` and `do_close` (pl-file.c:1503-1521, 4668-4690) take them: NOT the streams `user_input`,
+# `user_output` and `user_error` are bound to now (a file stream under `set_stream(S, alias(user_input))` is
+# no `Sinput`), but the streams `initIO`, `set_standard_stream!` and `restoreStandardStream` make, which are the
+# only streams carrying `SIO_STATIC` (static: not allocated by `Snew` for an `open/3`).
+# ORIGINAL: upstream's `Sinput` is one process-wide object compared by address; the kernel keeps no permanent
+# stream (`restoreStandardStream` makes a new one, and a host replaces them), so the test is the stream's
+# `SIO_STATIC` flag and its direction, which only the standard streams carry.
+"Whether `s` is the process's standard input, upstream's `Sinput` (pl-file.c)."
+isSinput(s::IOSTREAM)::Bool =
+    (s.flags & (SIO_STATIC | SIO_INPUT)) == (SIO_STATIC | SIO_INPUT)
+"Whether `s` is the process's standard output or error, upstream's `Soutput` or `Serror` (pl-file.c)."
+isSoutputOrSerror(s::IOSTREAM)::Bool =
+    (s.flags & (SIO_STATIC | SIO_OUTPUT)) == (SIO_STATIC | SIO_OUTPUT)
+
 # PORT: pl-file.c closeStream
+# (pl-file.c:1503-1521, faithful: `s == Sinput`; `s == Soutput || s == Serror`; else flush and `Sclose`)
 # DIVERGES: `Sclose` leaves the error to its caller, which reports it (upstream: inside `S__close`);
-# the standard streams are those of `ld` (upstream's process-wide `Sinput`, `Soutput`, `Serror`);
 # `freeStream` runs after `Sclose` (upstream: the close hook); no lock to release.
 "Close the stream `s` at the Prolog level: never a standard stream, which is only flushed (pl-file.c)."
 function closeStream(ld::PL_local_data, s::IOSTREAM)::Bool
-    if s === Suser_input(ld)
+    if isSinput(s)
         Sclearerr(s)
         return true
-    elseif s === Suser_output(ld) || s === Suser_error(ld)
+    elseif isSoutputOrSerror(s)
         Sflush(s) < 0 && return streamStatus(ld, s)
         return true
     end
@@ -1181,9 +1196,9 @@ function do_close(
 )::Bool
     if force
         s === nothing && return true
-        if s === Suser_input(ld)
+        if isSinput(s)
             Sclearerr(s)
-        elseif s === Suser_output(ld) || s === Suser_error(ld)
+        elseif isSoutputOrSerror(s)
             Sflush(s)
             Sclearerr(s)
         else
