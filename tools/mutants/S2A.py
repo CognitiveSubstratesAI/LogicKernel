@@ -19,6 +19,7 @@
 TS = ["test/core_lang/test_s2a_swipl.jl"]
 TF = ["test/files/test_open_close_swipl.jl", "test/files/test_stream_swipl.jl"]
 ALL = TS + TF
+TARGETS = ALL                                        # the baseline's targets (mutate_ci.py plan reads TARGETS; pre-push check 5)
 F = "src/os/pl-file.jl"
 S = "src/os/pl-stream.jl"
 MUTANTS = [
