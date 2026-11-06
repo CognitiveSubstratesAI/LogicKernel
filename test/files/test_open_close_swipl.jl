@@ -1101,3 +1101,181 @@ end
         setglobal!(Base, :stderr, old)
     end
 end
+
+# ---- closeStream (pl-file.c:1503-1521) and do_close (pl-file.c:4668-4690): `s == Sinput` / `s == Soutput || s == Serror` are the
+# process's own standard streams, NOT the streams `user_input`, `user_output` and `user_error` are bound to at the moment. A file
+# stream under `set_stream(S, alias(user_input))` is really closed by close/1,2 (and the standard stream put back), the original
+# one is only flushed or cleared (S1 tested the current binding: the file stream stayed open). The program is swipl 10.1.19's own
+# answers, pinned (evidence/CLOSESTREAM/gen_closestream_rows.py reads this program, runs swipl twice per row and rewrites the pins;
+# `--check` fails if swipl now answers otherwise); a row's R is a flat list of atoms.
+# CSPROG-BEGIN
+const _CS_PROGRAM = raw"""
+mkf(F) :- open(F, write, S), write(S, abc), close(S).
+st(S, A) :- ( is_stream(S) -> A = open ; A = closed ).
+t_cs01(R) :- mkf('{D}/a'), open('{D}/a', read, S), set_stream(S, alias(user_input)), close(S), st(S, A), st(user_input, B), close(user_input), st(user_input, C), R = [A,B,C].
+t_cs02(R) :- mkf('{D}/a'), open('{D}/a', read, S), set_stream(S, alias(user_input)), close(user_input), st(S, A), st(user_input, B), R = [A,B].
+t_cs03(R) :- close(user_input), st(user_input, A), close(user_input), st(user_input, B), R = [A,B].
+t_cs04(R) :- close(user_input, [force(true)]), st(user_input, A), R = [A].
+t_cs05(R) :- mkf('{D}/a'), open('{D}/a', read, S), set_stream(S, alias(user_input)), close(user_input, [force(true)]), st(S, A), st(user_input, B), R = [A,B].
+t_cs06(R) :- open('{D}/o', write, S), set_stream(S, alias(user_output)), close(S), st(S, A), st(user_output, B), R = [A,B].
+t_cs07(R) :- open('{D}/o', write, S), set_stream(S, alias(user_error)), close(user_error), st(S, A), st(user_error, B), R = [A,B].
+t_cs08(R) :- close(user_output), st(user_output, A), close(user_error), st(user_error, B), R = [A,B].
+t_cs09(R) :- open('{D}/o', write, S), set_stream(S, alias(user_output)), write(user_output, hi), close(user_output), st(S, A), open('{D}/o', read, I), get_char(I, C1), get_char(I, C2), get_char(I, C3), close(I), R = [A,C1,C2,C3].
+t_cs10(R) :- open('{D}/o', write, S), set_stream(S, alias(user_output)), close(user_output, [force(true)]), st(S, A), st(user_output, B), R = [A,B].
+"""
+# CSPROG-END
+
+const _CS_PINS = [
+    # PINS-BEGIN
+    "cs01 closed open open",
+    "cs02 closed open",
+    "cs03 open open",
+    "cs04 open",
+    "cs05 closed open",
+    "cs06 closed open",
+    "cs07 closed open",
+    "cs08 open open",
+    "cs09 closed h i end_of_file",
+    "cs10 closed open"
+    # PINS-END
+]
+
+"The atoms of the flat list `t` (a row's answer), or `nothing`."
+function _cs_atoms(t::_TL)
+    out = String[]
+    while !is_nil(t)
+        kind(t) === EXPR && nchildren(t) == 3 || return nothing
+        h = child(t, 2)
+        kind(h) === SYM || return nothing
+        push!(out, sym_text(h))
+        t = child(t, 3)
+    end
+    return out
+end
+
+"The kernel's line of each row of `_CS_PROGRAM` run in `dir`: `csNN atom atom …` (the first answer; `csNN FAIL`, `csNN EXC`)."
+function _cs_kernel_lines(dir::String)::Vector{String}
+    path = joinpath(mktempdir(), "p.pl")
+    write(path, replace(_CS_PROGRAM, "{D}" => dir))
+    gd = LK.PL_global_data{_TL}()
+    ld = LK.PL_local_data{_TL}(gd)
+    st, _ = LK.load_file!(gd, ld, path)
+    @assert st === :ok
+    out = String[]
+    for m in eachmatch(r"^t_(cs\d+)\(R\)"m, _CS_PROGRAM)
+        id = String(m[1])
+        proc = LK.isCurrentProcedure(sym_key(_tls("t_$id")), 1, LK.MODULE_user(gd))
+        fid = LK.PL_open_foreign_frame(ld)
+        a = LK.PL_new_term_refs(ld, 1)
+        LK.putSlotValue!(ld, a + 1, mk_var(_TL, LK.fresh_var_keys!(1)), LK.PutVarMap())
+        qid = LK.PL_open_query(
+            gd, ld, nothing, LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS, proc, a
+        )
+        rc = LK.PL_next_solution(gd, ld, qid)
+        line = if rc == LK.PL_S_TRUE || rc == LK.PL_S_LAST
+            atoms = _cs_atoms(lk_answers(ld, (a:a)...)[1])
+            atoms === nothing ? "$id BADLIST" : join([id; atoms], " ")
+        elseif rc == LK.PL_S_EXCEPTION
+            "$id EXC"
+        else
+            "$id FAIL"
+        end
+        LK.PL_close_query(ld, qid)
+        LK.PL_close_foreign_frame(ld, fid)
+        push!(out, line)
+    end
+    return out
+end
+
+@testset "closeStream/do_close keep Sinput, Soutput and Serror, not whatever user_input/user_output/user_error name: == swipl's pinned answers" begin
+    mktempdir() do dir
+        kl = _cs_kernel_lines(dir)
+        @test kl == _CS_PINS
+        # not vacuous: the pins hold both answers, and every row of the program has a pin
+        @test length(_CS_PINS) ==
+            length(collect(eachmatch(r"^t_cs\d+\(R\)"m, _CS_PROGRAM))) >= 10
+        @test count(p -> occursin(" closed", p), _CS_PINS) >= 7 &&
+            count(p -> occursin(" open", p), _CS_PINS) >= 8
+        @test !any(p -> occursin(r"FAIL|EXC|BADLIST", p), _CS_PINS)
+    end
+end
+
+@testset "closeStream/do_close: a file stream bound to user_input is closed and the standard input put back; the original stays" begin
+    gd = LK.PL_global_data{_TL}()
+    ld = LK.PL_local_data{_TL}(gd)
+    dir = mktempdir()
+    try
+        orig = LK.Suser_input(ld)
+        @test LK.isSinput(orig) && !LK.isSoutputOrSerror(orig)
+        @test LK.isSoutputOrSerror(LK.Suser_output(ld)) &&
+            LK.isSoutputOrSerror(LK.Suser_error(ld))
+        # the original user_input: close/1 and close/2 (force) leave it open and bound (pl-file.c:1503-1507, 4675-4676)
+        for args in (
+            _TL[_tls(:user_input)],
+            _TL[
+                _tls(:user_input),
+                mk_expr(
+                    _TL,
+                    _TL[
+                        _tls("[|]"),
+                        mk_expr(_TL, _TL[_tls(:force), _tls(:true)]),
+                        mk_nil(_TL)
+                    ]
+                )
+            ]
+        )
+            st, _ = kcall(gd, ld, "close", args)
+            @test st === :true
+            @test LK.Suser_input(ld) === orig && orig.magic == LK.SIO_MAGIC
+        end
+        # a file stream bound to user_input is no Sinput: close/1 on the alias really closes it
+        write(joinpath(dir, "f"), "abc")
+        st, a = kcall(
+            gd, ld, "open",
+            _TL[_tls(joinpath(dir, "f")), _tls(:read), mk_var(_TL, LK.fresh_var_keys!(1))]
+        )
+        @test st === :true
+        s = LK.get_stream_handle(ld, a[3], LK.SH_ALIAS)
+        @test !LK.isSinput(s)
+        st, _ = kcall(
+            gd,
+            ld,
+            "set_stream",
+            _TL[a[3], mk_expr(_TL, _TL[_tls(:alias), _tls(:user_input)])]
+        )
+        @test st === :true && LK.Suser_input(ld) === s
+        st, _ = kcall(gd, ld, "close", _TL[_tls(:user_input)])
+        @test st === :true
+        @test s.magic != LK.SIO_MAGIC                               # really closed (S1: kept open)
+        fresh = LK.Suser_input(ld)
+        @test fresh isa LK.IOSTREAM && fresh !== s && fresh.magic == LK.SIO_MAGIC &&
+            LK.isSinput(fresh)
+        # and the stream that was put back is a standard stream again: closing it is a no-op
+        st, _ = kcall(gd, ld, "close", _TL[_tls(:user_input)])
+        @test st === :true && LK.Suser_input(ld) === fresh && fresh.magic == LK.SIO_MAGIC
+
+        # Sinput's error state is cleared, Soutput is flushed (pl-file.c:1504-1510, 4675-4679), by close/1 and close/2 (force)
+        force_true = mk_expr(
+            _TL,
+            _TL[_tls("[|]"), mk_expr(_TL, _TL[_tls(:force), _tls(:true)]), mk_nil(_TL)]
+        )
+        for args in (_TL[_tls(:user_input)], _TL[_tls(:user_input), force_true])
+            fresh.flags |= LK.SIO_FERR
+            @test LK.Sferror(fresh) == 1
+            st, _ = kcall(gd, ld, "close", args)
+            @test st === :true && LK.Sferror(fresh) == 0 && LK.Suser_input(ld) === fresh
+        end
+        for args in (_TL[_tls(:user_output)], _TL[_tls(:user_output), force_true])
+            io = IOBuffer()
+            so = LK.set_standard_stream!(ld, LK.SNO_USER_OUTPUT, io)
+            @test LK.Sputcode(Int('h'), so) == Int('h') &&
+                LK.Sputcode(Int('i'), so) == Int('i')
+            @test position(io) == 0                               # line buffered: nothing out yet
+            st, _ = kcall(gd, ld, "close", args)
+            @test st === :true && String(take!(io)) == "hi"             # flushed, and still the user output
+            @test LK.Suser_output(ld) === so && so.magic == LK.SIO_MAGIC
+        end
+    finally
+        rm(dir; recursive=true, force=true)
+    end
+end

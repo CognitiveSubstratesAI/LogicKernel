@@ -1,0 +1,79 @@
+# ORIGINAL: CLOSESTREAM's mutant list (audit D-0431 A-0330 option (b)): closeStream and do_close test the process's standard streams (pl-file.c:1503-1521, 4668-4690), not the streams user_input/user_output/user_error are bound to now; its counterpart is the port itself.
+# tools/mutants/CLOSESTREAM.py — the mutation battery of the closeStream fix (src/os/pl-file.jl `isSinput`, `isSoutputOrSerror`,
+# `closeStream`, `do_close`, the stream restored by `restoreStandardStream`). Run ONCE, in CI (.github/workflows/mutation.yml; locally:
+# tools/mutate.sh run). Format: tools/mutate_drive.py's (as NOTRACE2.py): `id`, `file`, `old` (EXACTLY once), `new`, `targets`.
+# Killed by test/files/test_open_close_swipl.jl: rows cs01-cs10 (swipl 10.1.19's pinned answers) and the white-box testset "a file stream
+# bound to user_input is closed and the standard input put back; the original stays" (named in each id's KILL). Verdicts: written by
+# the battery; the hand runs of the step are in evidence/CLOSESTREAM/handoff.md.
+# TARGETS (audit D-0238): every test file that closes a stream or reads the standard streams through the code mutated here.
+TS = [
+    "test/files/test_open_close_swipl.jl",
+    "test/files/test_stream_swipl.jl",
+    "test/files/test_process_streams_swipl.jl",
+    "test/core_text/test_write_family_swipl.jl",
+    "test/files/test_qlf_swipl.jl",
+    "test/core_lang/test_lb5b_prompt.jl",
+    "test/core_lang/test_top1_pro.jl",
+    "test/core_lang/test_top1_prompt_swipl.jl",
+    "test/files/test_load_swipl.jl",
+]
+TARGETS = TS
+F = "src/os/pl-file.jl"
+MUTANTS = [
+    # ── closeStream: the tests ──
+    dict(id="CS-1 closeStream keeps the stream user_input is bound to now (the S1 test) (KILL cs01, cs02, white-box file stream)",
+         file=F, targets=TS,
+         old="    if isSinput(s)\n        Sclearerr(s)\n        return true\n",
+         new="    if s === Suser_input(ld)\n        Sclearerr(s)\n        return true\n"),
+    dict(id="CS-2 closeStream flushes only the stream user_output/user_error are bound to now (KILL cs06, cs07, cs09)",
+         file=F, targets=TS,
+         old="    elseif isSoutputOrSerror(s)\n        Sflush(s) < 0 && return streamStatus(ld, s)\n",
+         new="    elseif s === Suser_output(ld) || s === Suser_error(ld)\n        Sflush(s) < 0 && return streamStatus(ld, s)\n"),
+    dict(id="CS-3 closeStream does not flush the standard output (KILL white-box flush of close/1)",
+         file=F, targets=TS,
+         old="        Sflush(s) < 0 && return streamStatus(ld, s)\n        return true\n    end\n",
+         new="        return true\n    end\n"),
+    dict(id="CS-4 closeStream does not clear the standard input's error state (KILL white-box SIO_FERR, close/1)",
+         file=F, targets=TS,
+         old="    if isSinput(s)\n        Sclearerr(s)\n        return true\n",
+         new="    if isSinput(s)\n        return true\n"),
+    # ── do_close (force) ──
+    dict(id="CS-5 do_close (force) keeps the stream user_input is bound to now (KILL cs05, white-box)",
+         file=F, targets=TS,
+         old="        if isSinput(s)\n            Sclearerr(s)\n        elseif isSoutputOrSerror(s)\n",
+         new="        if s === Suser_input(ld)\n            Sclearerr(s)\n        elseif isSoutputOrSerror(s)\n"),
+    dict(id="CS-6 do_close (force) flushes only the stream user_output/user_error are bound to now (KILL cs10)",
+         file=F, targets=TS,
+         old="        elseif isSoutputOrSerror(s)\n            Sflush(s)\n            Sclearerr(s)\n",
+         new="        elseif s === Suser_output(ld) || s === Suser_error(ld)\n            Sflush(s)\n            Sclearerr(s)\n"),
+    dict(id="CS-7 do_close (force) does not flush the standard output (KILL white-box flush of close/2 force)",
+         file=F, targets=TS,
+         old="        elseif isSoutputOrSerror(s)\n            Sflush(s)\n            Sclearerr(s)\n",
+         new="        elseif isSoutputOrSerror(s)\n            Sclearerr(s)\n"),
+    dict(id="CS-8 do_close (force) does not clear the standard input's error state (KILL white-box SIO_FERR, close/2 force)",
+         file=F, targets=TS,
+         old="        if isSinput(s)\n            Sclearerr(s)\n        elseif isSoutputOrSerror(s)\n",
+         new="        if isSinput(s)\n            nothing\n        elseif isSoutputOrSerror(s)\n"),
+    # ── the two predicates ──
+    dict(id="CS-9 isSinput: every input stream is the standard input (KILL cs01, cs02, cs05)",
+         file=F, targets=TS,
+         old="    (s.flags & (SIO_STATIC | SIO_INPUT)) == (SIO_STATIC | SIO_INPUT)\n",
+         new="    (s.flags & SIO_INPUT) == SIO_INPUT\n"),
+    dict(id="CS-10 isSinput: a static output stream is Sinput too (not flushed by close) (KILL white-box flush of close/1)",
+         file=F, targets=TS,
+         old="    (s.flags & (SIO_STATIC | SIO_INPUT)) == (SIO_STATIC | SIO_INPUT)\n",
+         new="    (s.flags & SIO_STATIC) == SIO_STATIC\n"),
+    dict(id="CS-11 isSoutputOrSerror: every output stream is a standard one (KILL cs06, cs07, cs09, cs10)",
+         file=F, targets=TS,
+         old="    (s.flags & (SIO_STATIC | SIO_OUTPUT)) == (SIO_STATIC | SIO_OUTPUT)\n",
+         new="    (s.flags & SIO_OUTPUT) == SIO_OUTPUT\n"),
+    dict(id="CS-12 isSoutputOrSerror: tests the input direction (the standard output is really closed) (KILL white-box user_output stays)",
+         file=F, targets=TS,
+         old="    (s.flags & (SIO_STATIC | SIO_OUTPUT)) == (SIO_STATIC | SIO_OUTPUT)\n",
+         new="    (s.flags & (SIO_STATIC | SIO_INPUT)) == (SIO_STATIC | SIO_INPUT)\n"),
+    # ── the stream put back ──
+    dict(id="CS-13 restoreStandardStream: the standard input put back is not static (KILL white-box isSinput(fresh))",
+         file=F, targets=TS,
+         old="        _std_stream(_std_io(Base.stdin, 0), SIO_STDIO | SIO_LBUF | SIO_INPUT | SIO_NOFEOF)\n    elseif i == SNO_USER_OUTPUT",
+         new="        _std_stream(_std_io(Base.stdin, 0), SIO_LBUF | SIO_INPUT | SIO_NOFEOF)\n    elseif i == SNO_USER_OUTPUT"),
+]

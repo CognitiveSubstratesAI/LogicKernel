@@ -65,7 +65,7 @@ MUTANTS = [
     return rc == 0''',
          new='''    return rc == 0'''),
     dict(id="S1-10 close/1 closes a standard stream", file=F, targets=T,
-         old='''    elseif s === Suser_output(ld) || s === Suser_error(ld)
+         old='''    elseif isSoutputOrSerror(s)
         Sflush(s) < 0 && return streamStatus(ld, s)
         return true
     end''',
@@ -82,9 +82,9 @@ MUTANTS = [
 '''),
     dict(id="S1-12 close(S, [force(true)]) of a closed stream fails", file=F, targets=T,
          old='''        s === nothing && return true
-        if s === Suser_input(ld)''',
+        if isSinput(s)''',
          new='''        s === nothing && return false
-        if s === Suser_input(ld)'''),
+        if isSinput(s)'''),
     dict(id="S1-13 close/2 ignores force", file=F, targets=T,
          old='''    force = vals[1] === true''',
          new='''    force = false'''),
