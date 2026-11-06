@@ -29,11 +29,9 @@ end
 const _GS_STEP_SETUP = r"uses:\s*julia-actions/setup-julia@"
 const _GS_STEP_HOME = r"(?m)^\s*(?:-\s+)?(?:run:\s+)?julia tools/build_home\.jl\s*$"
 # a step that RUNS julia (a `run:` line, or the two actions that do)
-const _GS_STEP_JULIA =
-    r"(?<![\w@/.-])julia +[-\w.]|julia-actions/julia-(?:runtest|buildpkg)@"
+const _GS_STEP_JULIA = r"(?<![\w@/.-])julia +[-\w.]|julia-actions/julia-(?:runtest|buildpkg)@"
 # a step that reads the database: the tests, the fuzzer, the mutation targets, the precompile of the package
-const _GS_STEP_DB =
-    r"julia-actions/julia-(?:runtest|buildpkg)@|Pkg\.(?:instantiate|test)|runtests\.jl|tools/fuzz\.jl|tools/(?:warm|run_tests|pkgtest_way|test_\w+)\.sh|tools/mutate\w*\.sh|mutate_ci\.py +(?:baseline|one)"
+const _GS_STEP_DB = r"julia-actions/julia-(?:runtest|buildpkg)@|Pkg\.(?:instantiate|test)|runtests\.jl|tools/fuzz\.jl|tools/(?:warm|run_tests|pkgtest_way|test_\w+)\.sh|tools/mutate\w*\.sh|mutate_ci\.py +(?:baseline|one)"
 
 # The Julia jobs that provably need no database, by "<file>:<job>", each with its reason. A Julia job that is
 # not listed here must build the home tree; an entry that names no Julia job of the real workflows is stale.
@@ -62,7 +60,7 @@ function _gs_workflow_jobs(yml::AbstractString)
         elseif steps_open && occursin(r"^      - ", l)
             push!(last(jobs).second, String(l))
         elseif steps_open && !isempty(last(jobs).second) &&
-               (isempty(strip(l)) || startswith(l, "        "))
+            (isempty(strip(l)) || startswith(l, "        "))
             last(jobs).second[end] *= "\n" * l                  # the body of the current step
         elseif occursin(r"^    \S", l)
             steps_open = false
@@ -2891,8 +2889,7 @@ MUTANTS = [
     # examining nothing.
     @testset "every Julia job of the workflows builds the home tree before reading a database" begin
         chk = "      - uses: actions/checkout@x\n"
-        setup =
-            "      - uses: julia-actions/setup-julia@x\n        with:\n          version: '1'\n"
+        setup = "      - uses: julia-actions/setup-julia@x\n        with:\n          version: '1'\n"
         home =
             "      - name: The home tree (tools/build_home.jl)\n" *
             "        run: julia tools/build_home.jl\n"
@@ -2921,8 +2918,7 @@ MUTANTS = [
         # …before the setup it is no step of a Julia job either (julia is not installed yet)
         @test length(gaps(wf(job("early", chk, home, setup, tests))).gaps) == 1
         # a step in the `run: |` form counts; a conditional step must carry the tests' own condition
-        block =
-            "      - name: The home tree\n        run: |\n          julia tools/build_home.jl\n"
+        block = "      - name: The home tree\n        run: |\n          julia tools/build_home.jl\n"
         @test isempty(gaps(wf(job("block", chk, setup, block, tests))).gaps)
         cond = "        if: steps.changed.outputs.run == 'true'\n"
         homeif = replace(home, "        run:" => cond * "        run:")
