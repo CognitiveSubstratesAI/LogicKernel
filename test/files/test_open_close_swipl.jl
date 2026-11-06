@@ -754,7 +754,7 @@ end
     try
         f(n) = _tls(joinpath(dir, n))
         v() = mk_var(_TL, LK.fresh_var_keys!(1))
-        # the table also holds the three standard streams once initIO has run (upstream: "add for
+        # the table also holds the three standard streams from the engine's creation (initIO; upstream: "add for
         # enumeration"); `live()` counts the streams opened here
         live() = count(
             s ->
@@ -1026,7 +1026,6 @@ end
         @test (fl & LK.SIO_INPUT) != 0 && (fl & LK.SIO_TEXT) != 0
 
         # the standard streams are flushed, never closed, by close/1 and close(S, [force(true)])
-        LK._initIO(ld)
         uo, ue = LK.Suser_output(ld), LK.Suser_error(ld)
         @test uo isa LK.IOSTREAM && ue isa LK.IOSTREAM
         for which in (:user_output, :user_error)

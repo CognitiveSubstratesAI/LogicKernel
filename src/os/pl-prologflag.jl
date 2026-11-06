@@ -2190,7 +2190,7 @@ function initPrologFlags!(gd::PL_global_data{T})::Nothing where {T}
     setPrologFlag(gd, "cpu_count", FT_INTEGER, Sys.CPU_THREADS)         # setOSPrologFlags
 
     # the flags that hold a term: records, made in a local data of their own
-    ld = PL_local_data{T}(gd)
+    ld = _bare_local_data(gd)                           # (no stream: the template holds none)
     if _holds_payload(T, Int64)                         # version_data holds integers
         t = PL_new_term_ref(ld)
         putSlotValue!(

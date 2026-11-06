@@ -1263,7 +1263,7 @@ function _manifest_index(T)
         (LK.standardStreamIndexFromName, Tuple{LD, T}, false),
         (LK.standardStreamIndexFromStream, Tuple{LD, LK.IOSTREAM}, false),
         (LK.initIO, Tuple{LD}, false),
-        (LK._initIO, Tuple{LD}, false),
+        (LK._bare_local_data, Tuple{GD}, false),   # setupProlog's engines: no stream (D-0431 item 5)
         (LK.set_standard_stream!, Tuple{LD, Int64, IOBuffer}, false),
         (LK.set_standard_stream!, Tuple{LD, Int64, IOStream}, false),
         (LK.no_stream, Tuple{LD, Int64, Symbol}, false),

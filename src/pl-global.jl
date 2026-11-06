@@ -411,8 +411,8 @@ ld_statistics() = ld_statistics(0, 0, 0, 0, WallTime(), 0.0, 0.0, 0.0, 0.0)
 # `(kind, message)` (src/pl-qlf.jl; printMessage calls print_message/2 since LB4 b2). Since R1e's write/1 family:
 # (The `variable_names` term reference, there since R1g, went in LB4 b2: `$variable_names` is the global variable
 # boot/init.pl:1949 sets, src/pl-gvar.jl, which the compiler reads, `get_variable_names`.) `IO_streams` — upstream's `IO.streams`, the standard streams indexed by `SNO_*` (+1), opened over
-# the process's stdin, stdout and stderr when first asked for (`initIO`, src/os/pl-file.jl), or set
-# by the host (`set_standard_stream!`; decision 2a), `IO_initialised` once they are; `IO_stream_type_check` (the `stream_type_check`
+# the process's stdin, stdout and stderr when the engine is made (`initIO`, src/os/pl-file.jl), or set
+# by the host (`set_standard_stream!`; decision 2a), `IO_initialised` from then on; `IO_stream_type_check` (the `stream_type_check`
 # flag), `IO_portray_nesting` (since group F, D-0123: the depth of nested `callPortray` calls, src/pl-write.jl), `var_names_numbervars_frame` (the foreign frame `BEGIN_NUMBERVARS` opens, 0: none) and two
 # flags as swipl 10.1.16 has them: `unknown_option` (`ignore`), `write_attributes` (`ignore`).
 # Since R2 F1b the Boolean flags the compiler, the VM and write read are bits of `prolog_flag_mask` (`truePrologFlag`),
@@ -466,7 +466,7 @@ the state of unification: the bindings, the trail that undoes them back to a [`m
 `occurs_check` flag, and the records the unifier keeps while it walks; and the local stack — its
 cells, its frames, choice points and foreign frames, and the registers that point into it. A new
 one has upstream's initial local stack, emptied as `emptyStacks` leaves it: one foreign frame at
-its base. It is made for the database `gd`: its atom words name atoms in `gd.atoms` (`GD->atoms`).
+its base, and the three standard streams open (`initIO`, as upstream's start-up leaves them). It is made for the database `gd`: its atom words name atoms in `gd.atoms` (`GD->atoms`).
 """
 mutable struct PL_local_data{T}
     predicate_references::Vector{definition_ref{T}}            # Referenced predicates
@@ -608,6 +608,15 @@ mutable struct PL_local_data{T}
     reload_nesting::Int                                         # reload.nesting: how deeply is reconsult nested
 end
 function PL_local_data{T}(gd::PL_global_data{T}) where {T}
+    ld = _bare_local_data(gd)
+    initIO(ld)              # Suser_input, Suser_output, Suser_error, Scurin, Scurout: open when the engine exists (pl-file.c initIO)
+    return ld
+end
+
+# ORIGINAL: `PL_local_data{T}(gd)` without `initIO`: the engines `setupProlog` makes for its own use (a record for a flag,
+# `_boot_when!`) while the database is not yet a template; they open no stream, so the template's stream table stays
+# empty (src/gd_template.jl `_copy_stream_free`). Every other engine is made by `PL_local_data{T}(gd)`.
+function _bare_local_data(gd::PL_global_data{T}) where {T}
     e = mk_expr(T, T[])                         # any term: the idle placeholders' (index context, …)
     ld = PL_local_data{T}(
         definition_ref{T}[], UInt64[],                              # predicate_references, trail
@@ -666,7 +675,7 @@ function PL_local_data{T}(gd::PL_global_data{T}) where {T}
         2,                                      # modules.typein: user (the module table's 2nd)
         Tuple{Symbol, T}[],
         Union{Nothing, IOSTREAM}[nothing, nothing, nothing, nothing, nothing, nothing],
-        false,                                  # the standard streams: opened when first asked
+        false,                                  # IO_initialised: `initIO` sets it (`PL_local_data{T}(gd)`)
         0,                                      # stream_type_check: loose (ST_LOOSE)
         0,                                      # portray_nesting: no portray call running
         0,                                      # no numbervars frame

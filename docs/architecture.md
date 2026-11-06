@@ -1069,6 +1069,7 @@ graph LR
     pl_global --> pl_funct
     pl_global --> pl_inline
     pl_global --> os_pl_os
+    pl_global --> os_pl_file
     pl_global --> pl_setup
     pl_global --> gd_template
     pl_modul --> term_interface
@@ -2943,7 +2944,7 @@ with `numberVars`, read_term_from_atom/3) is the next commit.
 * **Ported (C):** pl-write.c `pl_nl`, nl/0,1, `do_write2`, `pl_write2`/`pl_writeln2`/`pl_writeq2`/
   `pl_print2` and their /1 forms, `pl_write_term3` with `write_term_options`, `writeAttributeMask`,
   `writeBlobMask`, `bind_varnames`, write_term/2,3; pl-incl.h `BEGIN_NUMBERVARS`/`END_NUMBERVARS`;
-  pl-file.c `initIO` (lazily — below), `getOutputStream`, `getTextOutputStream`,
+  pl-file.c `initIO` (per engine, when it is made — below), `getOutputStream`, `getTextOutputStream`,
   `get_stream_handle`, `check_stream_mode`, `checkStreamType`, `no_stream`, `not_a_stream`,
   `symbol_no_stream`, `symbol_stream_wrong_mode`, `PL_unify_stream_or_alias`, `reportStreamError`,
   `streamStatus`, `standardStreams` and the `SNO_*`, `SH_*`, `ST_*` constants; pl-option.c
@@ -2958,8 +2959,8 @@ with `numberVars`, read_term_from_atom/3) is the next commit.
   through a variable bound since the frame opened (`_numbervars_newer`; equivalent — nothing else
   makes compounds inside the frame). The list writers pass a tail before dereferencing it, so `[a|X]`
   reaches it too. The bindings are undone with the frame (pinned).
-* **DIVERGES:** the standard streams are opened the first time one is asked for, per local data
-  (upstream: at start-up), over Julia's stdin, stdout and stderr when each is a file, a buffer, a
+* **DIVERGES:** the standard streams are opened when a local data is made (`PL_local_data{T}(gd)`, since S2a3),
+  per local data (upstream: once at start-up, setupProlog), over Julia's stdin, stdout and stderr when each is a file, a buffer, a
   terminal or a pipe; the host replaces one with `set_standard_stream!` (ORIGINAL — decision 2a's
   interface), current input/output following; no locks (stream blobs and user aliases: since S1, below);
   `Sjulia_io` holds four concrete IO types (no dynamic dispatch) and a throwing IO is a write error
@@ -6395,8 +6396,8 @@ registered. All sit in `PL_predicates_from_file` (src/os/pl-file.jl), in upstrea
   `prompt_first_used`), appended after LB3's `qlf_write_state`; `prompt_current` starts as `|: ` as `initIO` sets it. Atoms are not
   registered (no atom garbage collection). `prompt1(_)` unifies only when a first prompt is set (upstream's `NULL_ATOM` test).
 - **`$push_input_context/1`, `$pop_input_context/0`, `$input_context/1`**: the three predicates over LB3's
-  `ld.input_context_stack`, `push_input_context` and `pop_input_context` (the stack `pl_see`/`pl_seen` use); no second stack. Each
-  opens the standard streams first (`_initIO`), as they are open from the boot on upstream. `$input_context/1` lists
+  `ld.input_context_stack`, `push_input_context` and `pop_input_context` (the stack `pl_see`/`pl_seen` use); no second stack. The
+  standard streams are open from the engine's creation (S2a3), as they are from the boot on upstream. `$input_context/1` lists
   `input(Type, File, Line, Stream)` top first, `-` and 0 for a context pushed with no source file.
 - **`flush_output/1`, `ttyflush/0`, `is_stream/1`, `$alias_stream/2`**: `flush_output(ld, out)` is the C function the
   predicate and later callers share.
@@ -6418,6 +6419,22 @@ registered. All sit in `PL_predicates_from_file` (src/os/pl-file.jl), in upstrea
 Tests: test/core_lang/test_s2a_swipl.jl (rows s001-s137; pins from swipl 10.1.19, two byte-identical runs; generator
 evidence/S2A/gen_rows.py; rows marked `UNVERIFIED on the kernel` were judged by the gate). Mutants: tools/mutants/S2A.py (not run:
 tier 3).
+
+### S2a3 — the process streams at the engine's creation (audit D-0431 item 5)
+
+`PL_local_data{T}(gd)` calls `initIO` (pl-file.c:510-560, run once by setupProlog at pl-setup.c:173 on upstream) before it returns:
+`Suser_input`, `Suser_output`, `Suser_error`, `Scurin` and `Scurout` are bound to the process's stdin, stdout and stderr (flags as pl-stream.c
+`S__iob0`) and registered in the database's stream table. The lazy `_initIO` and its 19 call sites are gone; nothing opens the streams
+on a first use any more, so `push_input_context` (the autoloader's, src/pl-proc.jl) never stores `nothing`. `_bare_local_data(gd)` is the
+engine without the streams, for the two engines `setupProlog` makes for its own use (the flag records, `_boot_when!`): the booted template's
+stream table stays empty, and `copy_global_data` still starts a database with empty tables (`GD_COPY_POLICY :streams`). Left as DIVERGES:
+each local data opens its own three streams (upstream: one set per process, referenced by every thread). cbf4e189..V10.1.20: `initIO` and
+setupProlog are unchanged (diff read); the one pl-file.c hunk near the pin's `setStandardStream` is a PIN1 item.
+Known-difference checklist item (S2a3, dispatcher option A pending audit): `'$stream_property'(user_input|user_output|user_error, file_no(Fd))`
+answers file_no(0), file_no(1), file_no(2) in swipl 10.1.19 (pl-file.c:4996-5005); the kernel's stream layer has no OS descriptor, so the landed
+DIVERGES `stream_file_no_prop` (src/os/pl-file.jl) fails and the row reads `none`. A representation DIVERGES; pinned in rows 10, 20, 30 of
+test/files/test_process_streams_swipl.jl with swipl's answer in a comment; the live swipl compare skips exactly those three rows.
+Tests: test/files/test_process_streams_swipl.jl (a row per stream; the unbooted autoloader row). Mutants: tools/mutants/PSTREAM.py.
 
 ## Q10 — the unowned stubs of the loader/boot design (LDB 3.3), `'$style_check'/2` (R2, audit D-0290)
 

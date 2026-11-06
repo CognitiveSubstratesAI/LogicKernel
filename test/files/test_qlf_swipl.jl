@@ -264,14 +264,13 @@ end
     sf = LK.lookupSourceFile_unlocked(gd, mk_sym(_QL, Symbol(abspath(f))), false)
     @test sf !== nothing && sf.count == 1 && sf.mtime == mtime(f) && !sf.system
     @test isempty(ld.input_context_stack) && LK.Scurin(ld) === LK.Suser_input(ld)
-    @test LK.Scurin(ld) !== nothing          # not vacuous: `nothing === nothing` before the IO is initialised
+    @test LK.Scurin(ld) !== nothing          # not vacuous: `nothing === nothing` were the IO not initialised
 end
 
 @testset "the input stream before a file is the one restored after it (LB3-S4; swipl pin: restored)" begin
     # the stream current before the load is NOT user_input: closing the file's stream resets a current input that still is the file's to
     # user_input, so only a current input restored by pop_input_context stays what it was. Kernel side of the live row below.
     gd, ld, f = _ql_db("r(a).\n")
-    LK._initIO(ld)                         # the standard streams exist only once the IO is initialised (until then each is `nothing`)
     @test LK.Suser_input(ld) !== nothing && LK.Suser_error(ld) !== nothing
     ld.IO_streams[LK.SNO_CURRENT_INPUT + 1] = LK.Suser_error(ld)
     @test LK.Scurin(ld) !== LK.Suser_input(ld)
@@ -286,9 +285,8 @@ end
     tm = LK.gd_template(_QL)
     @test !isempty(tm.stream_table) && all(isnothing, tm.stream_table)    # the boot wrote (initIO ran), nothing is live
     gd = LK.PL_global_data{_QL}()
-    ld = LK.PL_local_data{_QL}(gd)
     n0 = length(gd.stream_table)
-    LK._initIO(ld)                                                         # the three user streams, registered
+    ld = LK.PL_local_data{_QL}(gd)                                         # the three user streams, registered by initIO
     std = [LK.Suser_input(ld), LK.Suser_output(ld), LK.Suser_error(ld)]
     @test length(gd.stream_table) == n0 + 3 &&
         all(s -> gd.stream_table[s.context] === s, std)
@@ -312,12 +310,13 @@ end
 
 @testset "a fresh engine's first stream access finds user_error (pl-file.c get_stream_handle after initIO)" begin
     # upstream's standard streams are open from the boot on (setupProlog calls initIO, cbf4e189 src/pl-setup.c:173); the
-    # kernel's engine on a database copied from the template opens them at its first `_initIO`, which
-    # get_stream_handle now runs first. swipl 10.1.19, live 2026-11-03: `'$stream_property'(user_error, alias(A))`
+    # kernel's engine opens them when it is made (`initIO` in `PL_local_data{T}(gd)`, D-0431 item 5), also on a database
+    # copied from the template, which holds none. swipl 10.1.19, live 2026-11-03: `'$stream_property'(user_error, alias(A))`
     # has the one answer A = user_error (re-run below when swipl is on PATH).
     gd = LK.PL_global_data{_QL}()
     ld = LK.PL_local_data{_QL}(gd)
-    @test !ld.IO_initialised                                           # not vacuous: nothing opened them yet
+    @test ld.IO_initialised &&
+        length(gd.stream_table) == length(LK.gd_template(_QL).stream_table) + 3   # not vacuous: the engine's own three
     goal = mk_expr(
         _QL,
         _QL[

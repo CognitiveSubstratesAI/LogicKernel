@@ -648,13 +648,13 @@ const _WF_PORTRAY_GOAL_ERRORS = [
 end
 
 @testset "the host: standard streams, replaced, a write error, bindings undone" begin
-    # a new local data has no stream until one is asked for; then stdin/stdout/stderr
+    # a new local data has stdin/stdout/stderr open as the user streams (initIO); no protocol stream
     ld = LK.PL_local_data{_WF}(_WF_GD)
-    @test !ld.IO_initialised && all(isnothing, ld.IO_streams)
-    LK._initIO(ld)
-    @test ld.IO_initialised && LK.Scurout(ld) === LK.Suser_output(ld)
-    @test LK.Suser_output(ld) === nothing || (LK.Suser_output(ld).flags & LK.SIO_LBUF) != 0
-    @test LK.Suser_error(ld) === nothing || (LK.Suser_error(ld).flags & LK.SIO_NBUF) != 0
+    @test ld.IO_initialised && !any(isnothing, ld.IO_streams[1:5]) &&
+        ld.IO_streams[6] === nothing
+    @test LK.Scurout(ld) === LK.Suser_output(ld)
+    @test (LK.Suser_output(ld).flags & LK.SIO_LBUF) != 0
+    @test (LK.Suser_error(ld).flags & LK.SIO_NBUF) != 0
     # replacing user_output moves the current output with it; user_error stays unbuffered
     b = IOBuffer()
     s = LK.set_standard_stream!(ld, LK.SNO_USER_OUTPUT, b)

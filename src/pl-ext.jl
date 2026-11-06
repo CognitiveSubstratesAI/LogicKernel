@@ -191,7 +191,7 @@ function initBuildIns!(gd::PL_global_data{T})::Nothing where {T}
     first = _register_tables!(gd, 0, _PRED_TABLES)
     @assert first == length(_FOREIGN_VA)
     setBuiltinPredicateProperties!(gd)
-    _boot_when!(gd, PL_local_data{T}(gd))       # (no upstream line: library/when.pl's stand-in, see `_boot_when!`)
+    _boot_when!(gd, _bare_local_data(gd))       # (no stream: the template holds none; no upstream line: library/when.pl's stand-in, see `_boot_when!`)
     return nothing
 end
 

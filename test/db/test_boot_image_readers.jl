@@ -43,8 +43,8 @@ _row(rows, m, n, a) = (
 
 # a database with the predicates and files of the rows below
 function lb4b1_hand_db()
-    db = IxDB{_P}()
-    gd = db.gd
+    gd = LK.PL_global_data{_P}()
+    db = IxDB{_P}(gd, LK._bare_local_data(gd))                 # S2a3: the engine binds the process streams at creation; this database is copied below, and a template holds none
     user = LK.MODULE_user(gd)
     dyn = ix_pred(_P, :b1_dyn, 1; dynamic=true, db=db)
     for i in 1:3

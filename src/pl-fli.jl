@@ -1496,7 +1496,6 @@ end
 # DIVERGES: the local data is an argument (upstream's `LD`).
 "The next read from `in` prompts, where `in` is `user_input` (pl-fli.c)."
 function PL_prompt_next(ld::PL_local_data, in::IOSTREAM)::Nothing
-    _initIO(ld)
     if in === Suser_input(ld)
         ld.prompt_next = true
     end

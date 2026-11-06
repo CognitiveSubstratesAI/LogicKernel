@@ -288,8 +288,8 @@ function pl_restore_trace2_va(
 end
 
 # PORT: pl-pro.c resetProlog
-# DIVERGES: the local data is the only argument (upstream's `GET_LD`); `clear_stacks` is a Bool. The standard streams are opened
-# first (`_initIO`). `Scurin = in` and `Scurout = Suser_output` are the raw assignments of upstream's macros (no reference
+# DIVERGES: the local data is the only argument (upstream's `GET_LD`); `clear_stacks` is a Bool.
+# `Scurin = in` and `Scurout = Suser_output` are the raw assignments of upstream's macros (no reference
 # counts). `gc_status.blocked`, `LD->shift_status.blocked` and `LD->in_print_message` are the garbage collector's and
 # `print_message/2`'s (the kernel's stacks grow by doubling, src/pl-gc.jl, and its messages go through `printMessage`): their
 # resets belong to the steps that port those counters. `LD->depth_info.limit = DEPTH_NO_LIMIT` is the depth limit's (P3, the
@@ -302,7 +302,6 @@ prompts), make the user streams the current ones, clear the pending exception, r
 and no global variable, empty the stacks; the autoloader's chain and loop mark are reset (pl-pro.c).
 """
 function resetProlog(ld::PL_local_data, clear_stacks::Bool)::Bool
-    _initIO(ld)
     in = Suser_input(ld)
 
     if in !== nothing && Sferror(in) != 0

@@ -1064,8 +1064,7 @@ function printMessage(ld::PL_local_data{T}, severity::Symbol, msg::term_t)::Bool
     rc = PL_unify(ld, av + 1, msg)              # PL_unify_termv(av+1, args)
 
     if rc
-        _initIO(ld)
-        # Suser_error is `&S__iob[2]`, never NULL: the standard streams are open here (`_initIO`)
+        # Suser_error is `&S__iob[2]`, never NULL: the standard streams are open from the engine's creation (`initIO`)
         if Sferror(Suser_error(ld)::IOSTREAM) == 0
             if isDefinedProcedure(gd, pred) && ld.in_print_message <= OK_RECURSIVE
                 rc = PL_call_predicate(

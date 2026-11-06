@@ -111,7 +111,7 @@ end
 function lb4b1_mutations()
     return Pair{Symbol, Function}[
         :clause => function (c)
-            db = IxDB{_P}(c, LK.PL_local_data{_P}(c))
+            db = IxDB{_P}(c, LK._bare_local_data(c))                # S2a3: the engine binds the process streams at creation; a database copied afterwards must hold none
             p = ix_pred(_P, :lb4b1_fact, 1; dynamic=true, db=db)
             ix_assertz!(p, _pe(:lb4b1_fact, _pg(1)))
             return nothing
@@ -278,7 +278,7 @@ end
     try
         @test a != b
         tmpl = LK.copy_global_data(TMPL)                            # a stand-in template: the registry's own stays untouched
-        ldt = LK.PL_local_data{_P}(tmpl)
+        ldt = LK._bare_local_data(tmpl)                             # S2a3: a full engine registers the user streams, and `tmpl` is copied below (a template holds none)
         ldt.GD = tmpl
         cd(a)                                                       # the template's directory
         @test LK.PL_cwd(ldt) == a * "/"

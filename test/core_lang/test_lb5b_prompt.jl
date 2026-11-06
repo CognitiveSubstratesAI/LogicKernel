@@ -116,10 +116,9 @@ end
     @test ld.prompt_next === false                      # a fresh local data: zero, as pl-global.c leaves it
     st, _ = LK.load_file!(gd, ld, _pb_file())
     @test st === :ok
-    # The standard streams are opened the first time one is asked for (initIO's DIVERGES, src/os/pl-file.jl): a goal whose FIRST
-    # stream use is `set_stream(user_input, alias(_))` raises existence_error(stream, user_input) on a fresh local data (measured
-    # 2026-11-04; upstream opens them at start-up). Open them here, as swipl's start-up has done; the flag rows are not about that.
-    LK._initIO(ld)
+    # The standard streams are open when the engine is made (initIO, src/os/pl-file.jl; upstream opens them at start-up): a goal
+    # whose FIRST stream use is `set_stream(user_input, alias(_))` finds user_input on a fresh local data (before D-0431 item 5 it
+    # raised existence_error(stream, user_input), measured 2026-11-04).
     flags = Bool[]
     for (id, _, want, _) in _PB_CASES
         ld.prompt_next = false

@@ -173,9 +173,9 @@ function _std_io(io::IO, fd::Int)::Union{IOStream, IOBuffer, Base.TTY, Base.Pipe
 end
 
 # PORT: pl-file.c initIO
-# DIVERGES: per local data, the FIRST TIME a standard stream is asked for (a new local data opens no
-# stream; the host may replace them, `set_standard_stream!`), where upstream opens them at start-up:
-# `Sinput`, `Soutput` and `Serror` (pl-stream.c `S__iob0`'s flags: line-buffered input and output,
+# DIVERGES: per local data, when `PL_local_data{T}(gd)` makes it (the host may replace the streams,
+# `set_standard_stream!`), where upstream opens them once for the process at start-up (setupProlog,
+# pl-setup.c:173, which every thread's local data then references): `Sinput`, `Soutput` and `Serror` (pl-stream.c `S__iob0`'s flags: line-buffered input and output,
 # an unbuffered error stream) over Julia's stdin, stdout and stderr (`_std_io`); the three share `Sinput`'s
 # position record, as upstream. No tty modes, no protocol stream (`Sprotocol` stays NULL), no alias
 # table (the aliases are `standardStreams`); the three streams are made known to Prolog
@@ -207,9 +207,6 @@ function initIO(ld::PL_local_data)::Nothing
     return nothing
 end
 
-"Open `ld`'s standard streams unless they are open (see `initIO`)."
-_initIO(ld::PL_local_data)::Nothing = (ld.IO_initialised || initIO(ld); nothing)
-
 # ORIGINAL: decision 2a's host interface — upstream's embedding code replaces `Suser_output` and its
 # kin through `_PL_streams()`.
 """
@@ -225,7 +222,6 @@ function set_standard_stream!(
     io::Union{IOStream, IOBuffer, Base.TTY, Base.PipeEndpoint}
 )::IOSTREAM
     @assert which in (SNO_USER_INPUT, SNO_USER_OUTPUT, SNO_USER_ERROR)
-    _initIO(ld)
     flags = if which == SNO_USER_INPUT
         SIO_STDIO | SIO_LBUF | SIO_INPUT | SIO_NOFEOF
     elseif which == SNO_USER_OUTPUT
@@ -322,10 +318,6 @@ end
 function get_stream_handle(
     ld::PL_local_data{T}, a::T, flags::Int
 )::Union{Nothing, IOSTREAM} where {T}
-    # the standard streams are open from the boot on upstream (initIO, setupProlog): a database copied from
-    # the booted template (R2 LB4 b2) holds none until its engine's first `_initIO`, and the autoloader's
-    # `'$stream_property'(user_error, …)` is that engine's first stream access
-    _initIO(ld)
     gd = _query_gd(ld)
     ref = _stream_ref_of(ld, a)
     if ref !== nothing                              # type == &stream_blob
@@ -392,7 +384,6 @@ alias — of the type `text` asks for, or `nothing` with upstream's error raised
 function getOutputStream(
     ld::PL_local_data{T}, t::term_t, text::Int
 )::Union{Nothing, IOSTREAM} where {T}
-    _initIO(ld)
     if t == 0
         s = Scurout(ld)
         if s === nothing
@@ -451,7 +442,6 @@ alias — of the type `text` asks for, or `nothing` with upstream's error raised
 function getInputStream(
     ld::PL_local_data{T}, t::term_t, text::Int
 )::Union{Nothing, IOSTREAM} where {T}
-    _initIO(ld)
     if t == 0
         s = Scurin(ld)
         if s === nothing
@@ -935,7 +925,6 @@ function openStream(
     ld::PL_local_data{T}, file::term_t, mode::term_t, options::term_t
 )::Union{Nothing, IOSTREAM} where {T}
     gd = _query_gd(ld)
-    _initIO(ld)
     type = mk_sym(T, :text)
     reposition = true
     alias = nothing
@@ -1213,7 +1202,6 @@ end
 # DIVERGES: a pair is NOT PORTED.
 "Close the stream (blob or alias) term reference `stream` holds (pl-file.c)."
 function pl_close(ld::PL_local_data{T}, stream::term_t, force::Bool)::Bool where {T}
-    _initIO(ld)
     a = PL_get_atom(ld, stream)
     a === nothing && return not_a_stream(ld, stream, SH_ALIAS)
 
@@ -1434,10 +1422,9 @@ function pl_prompt1_1_va(
 end
 
 # PORT: pl-file.c validUserStreams
-# DIVERGES: the standard streams are opened first (`_initIO`); a stream slot that holds none counts as in error.
+# DIVERGES: a stream slot that holds none counts as in error.
 "True if the three user streams are not in an error mode (pl-file.c)."
 function validUserStreams(ld::PL_local_data)::Bool
-    _initIO(ld)
     for s in (Suser_input(ld), Suser_output(ld), Suser_error(ld))
         (s === nothing || Sferror(s) != 0) && return false
     end
@@ -1448,7 +1435,6 @@ end
 # DIVERGES: the atom is the symbol, `nothing` for upstream's 0 (the empty prompt).
 "The prompt for the next read from `user_input`: `prompt1/1`'s once, else `prompt/2`'s at the start of a line, else `nothing` (pl-file.c)."
 function PrologPrompt(ld::PL_local_data{T})::Union{Nothing, T} where {T}
-    _initIO(ld)
     if !ld.prompt_first_used && ld.prompt_first !== nothing
         ld.prompt_first_used = true
 
@@ -1469,7 +1455,6 @@ end
 function PL_write_prompt(
     gd::PL_global_data{T}, ld::PL_local_data{T}, dowrite::Bool
 )::Nothing where {T}
-    _initIO(ld)
     uo = Suser_output(ld)
     s = uo === nothing ? nothing : getStream(uo)
 
@@ -1497,7 +1482,6 @@ end
 function pl_push_input_context1_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
 )::foreign_t where {T}
-    _initIO(ld)                                     # the standard streams are open from the boot on upstream
     type = PL_get_atom_ex(ld, PL__t0)
     type === nothing && return FFALSE
     return push_input_context(ld, type) ? FTRUE : FFALSE
@@ -1508,7 +1492,6 @@ end
 function pl_pop_input_context0_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
 )::foreign_t where {T}
-    _initIO(ld)
     return pop_input_context(ld) ? FTRUE : FFALSE
 end
 
@@ -1520,7 +1503,6 @@ function pl_input_context1_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
 )::foreign_t where {T}
     A1 = PL__t0
-    _initIO(ld)
     tail = PL_copy_term_ref(ld, A1)
     head = PL_new_term_ref(ld)
     stream = PL_new_term_ref(ld)
@@ -1529,7 +1511,7 @@ function pl_input_context1_va(
         file = c.term_file === nothing ? mk_sym(T, :-) : c.term_file::T
         line = c.term_file === nothing ? 0 : c.term_line
         PL_put_variable(ld, stream)
-        PL_unify_stream_or_alias(ld, stream, c.stream::IOSTREAM) || return FFALSE   # never NULL: the streams are open at a push
+        PL_unify_stream_or_alias(ld, stream, c.stream::IOSTREAM) || return FFALSE   # never NULL: the streams are open from the engine's creation
         PL_unify_list(ld, tail, head, tail) || return FFALSE
         PL_unify_functor(ld, head, mk_sym(T, :input), 4) || return FFALSE
         (
@@ -1546,12 +1528,10 @@ end
 
 # PORT: pl-file.c ttyflush as pl_ttyflush0_va
 # (PRED_IMPL("ttyflush", 0, ttyflush, 0)) — pl-file.c:3690-3702
-# DIVERGES: the standard streams are opened first (`_initIO`).
 "`ttyflush`: flush `user_output` (pl-file.c)."
 function pl_ttyflush0_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
 )::foreign_t where {T}
-    _initIO(ld)
     s = Suser_output(ld)
     if s !== nothing && s.magic == SIO_MAGIC                    # getStream(Suser_output)
         Sflush(s)
@@ -1639,7 +1619,6 @@ end
 function pl_current_input1_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
 )::foreign_t where {T}
-    _initIO(ld)
     return current_io(ld, PL__t0, Scurin(ld), :current_input) ? FTRUE : FFALSE
 end
 
@@ -1649,7 +1628,6 @@ end
 function pl_current_output1_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
 )::foreign_t where {T}
-    _initIO(ld)
     return current_io(ld, PL__t0, Scurout(ld), :current_output) ? FTRUE : FFALSE
 end
 
@@ -1995,7 +1973,6 @@ end
 function pl_get_single_char1_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
 )::foreign_t where {T}
-    _initIO(ld)
     s = Suser_input(ld)
     (s === nothing || s.magic != SIO_MAGIC) &&
         return symbol_no_stream(ld, mk_sym(T, :user_input)) ? FTRUE : FFALSE
@@ -2989,7 +2966,6 @@ end
 # `struct output_context`, `LD->IO.output_stack`).
 "Make `s` the current output; the old current output waits on the output context stack (pl-file.c)."
 function pushOutputContext(ld::PL_local_data, s::IOSTREAM)::Nothing
-    _initIO(ld)
     cur = Scurout(ld)::IOSTREAM
     push!(ld.IO_output_stack, cur)                  # c->stream = Scurout
     Sacquire(cur)
@@ -3054,7 +3030,6 @@ opened. With `redir` it is made the current output. False with the error raised.
 function setupOutputRedirect(
     ld::PL_local_data{T}, to::term_t, ctx::redir_context, redir::Bool
 )::Bool where {T}
-    _initIO(ld)
     ctx.term = to
     ctx.redirected = redir
 
@@ -3249,7 +3224,6 @@ end
 # PORT: pl-file.c toldString
 "End the redirect `tellString` began: restore the current output and close the memory stream (pl-file.c)."
 function toldString(ld::PL_local_data)::Bool
-    _initIO(ld)
     cur = Scurout(ld)
     s = cur === nothing ? nothing : getStream(cur)
     s === nothing && return true
