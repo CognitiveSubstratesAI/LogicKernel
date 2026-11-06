@@ -4,7 +4,7 @@
 % where the boot's files are all loaded, before `'$load_additional_boot_files'`, which loads nothing without `-c`,
 % init.pl:4782-4790):
 %   swipl --home=PLBASE -q -O -o SCRATCH/boot.prc -b PLBASE/boot/init.pl test_boot_image_swipl_rows.pl > test_boot_image_swipl_rows.out
-% (swipl 10.1.19-1-gcbf4e189, 2026-11-02; regenerated 2026-11-03 after the `locked` column's fix, two runs
+% (swipl 10.1.20-1-g18168e62, 2026-11-06, regenerated at the V10.1.20 pin (the `locked` column's fix: 2026-11-03), two runs
 % byte-identical, stderr empty). The boot runs with autoload false
 % (pl-qlf.c:4797) and an undefined predicate is fatal there, so this file calls boot predicates only (its own member/2).
 % The rows are read inside this file's directive: `'$directive_mode_store'/1` holds one clause then (init.pl:1741-1743).

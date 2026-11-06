@@ -162,7 +162,7 @@ const _BI_KERNEL_MISSING_PROLOG = [       # sorted, as the guard compares; swipl
     "system:trie_gen_compiled/3"
 ]
 const _BI_KERNEL_COLUMNS = String[]       # rows on both sides whose columns differ: "KEY swipl-cols kernel-cols" (none)
-const _BI_KERNEL_MISSING_FOREIGN = 383    # (388 before DWIM1 registered dwim_match/3 and '$dwim_predicate'/2; 386 before LB7 registered '$cmd_option_val'/2, '$cmd_option_set'/2 and '$usage'/0) swipl's foreign (C) rows in the boot modules the kernel registers later (R2 owners); a COUNT
+const _BI_KERNEL_MISSING_FOREIGN = 391    # (383 before the V10.1.20 pin added eight foreign rows to swipl's boot modules: '$idg_predicate_edges'/3, '$idg_thread_space'/2, '$idg_thread_summary'/3, '$prof_clock_cost'/1, '$prof_exact_ok'/1, '$tbl_incomplete'/3, '$tbl_sdg'/3, '$thread_local_predicate_size'/3; '$prof_statistics' went from arity 7 to 8, a swap; 388 before DWIM1 registered dwim_match/3 and '$dwim_predicate'/2; 386 before LB7 registered '$cmd_option_val'/2, '$cmd_option_set'/2 and '$usage'/0) swipl's foreign (C) rows in the boot modules the kernel registers later (R2 owners); a COUNT
 const _BI_KERNEL_MODULES_LACKING = String[] # every boot module the oracle has, the kernel has
 # T3, `(row, kernel, swipl)`: load.pl's clause count only (22 vs 23): swipl's 23 count the `'$load_context_module'/3` fact of
 # threads.pl, which load.pl:78-80 does not consult in the single-thread configuration (FLAG F6); the T3 config rows leave
@@ -288,9 +288,9 @@ lk_h12_member(X, [X|_]).
 lk_h12_member(X, [_|T]) :- lk_h12_member(X, T).
 """
 # swipl's answer at the pin (the boot command with the text above as a second file and the directive
-# `:- lk_h12(S, D, A, E), format("h12 ~d ~d ~d ~d~n", [S, D, A, E]).`, 2026-11-02, two runs identical): 3240 static and
-# 192 dynamic clauses, none with an attributed variable, none raising; 3240 and 192 are the .out's T1 sums.
-const _BI_H12_SWIPL = (3240, 192, 0, 0)
+# `:- lk_h12(S, D, A, E), format("h12 ~d ~d ~d ~d~n", [S, D, A, E]).`, 2026-11-06; 3240 static clauses at V10.1.19, 2 more here: syspred.pl's `$predicate_property/2` has 44 clauses): 3242 static and
+# 192 dynamic clauses, none with an attributed variable, none raising; 3242 and 192 are the .out's T1 sums.
+const _BI_H12_SWIPL = (3242, 192, 0, 0)
 
 _bi_h12_text(mods)::String =
     "lk_h12_mods([" *
