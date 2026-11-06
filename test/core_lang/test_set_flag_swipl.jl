@@ -582,7 +582,8 @@ const _SF_REFUSED = [
     ("stack_limit", "1000000000"),
     ("heartbeat", "0"),
     ("float_overflow", "infinity"), ("max_answers_for_subgoal", "5"),
-    ("max_table_subgoal_size", "5")
+    ("max_table_subgoal_size", "5"),
+    ("max_incomplete_subgoals", "5"), ("max_scc_subgoals", "5")
 ]
 
 @testset "the flags refused by name raise NotPortedError (design D4)" begin
@@ -599,7 +600,7 @@ const _SF_REFUSED = [
         # UNVERIFIED on the kernel: gate decides (the refusal's class for `threads`, `tty_control`: the value that changes the flag)
         @test_throws LK.NotPortedError _sf_query(gd, ld, "r_$(f)")
     end
-    @test length(_SF_REFUSED) >= 17
+    @test length(_SF_REFUSED) >= 19
 end
 
 # KNOWN DIFFERENCE BY DESIGN (D1, the no-threads build; checklist: R2's threads): `threads` is read-only in the kernel (upstream's `#else` of

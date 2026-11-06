@@ -263,7 +263,7 @@ const PINNED_ONLY_SWIPL = Dict{String, String}(
         @test count(l -> startswith(l, "t_defaults "), sw) == 1
         @test length(first(filter(l -> startswith(l, "t_defaults "), sw))) > 5000               # one answer per portable flag
         @test count(l -> occursin("114,114,111,114", l), sw) >= 4       # an `…rror` atom: type_error(atom, …), domain_error(scope, …)
-        @test any(l -> startswith(l, "t_count ") && endswith(l, "(i110)"), sw)
+        @test any(l -> startswith(l, "t_count ") && endswith(l, "(i113)"), sw)
         @test any(l -> startswith(l, "t_e04 ") && endswith(l, "(a[110,111])"), sw)               # a flag that is not there: `no`
         @test length(lives) == length(names)
         for (i, n) in enumerate(lives)
@@ -298,7 +298,8 @@ end
         for k in (
             "break_level", "max_rational_size", "max_integer_size",
             "max_table_subgoal_size",
-            "max_table_answer_size", "max_answers_for_subgoal"
+            "max_table_answer_size", "max_answers_for_subgoal",
+            "max_incomplete_subgoals", "max_scc_subgoals"
         )
             @test !(k in ours) && !(k in theirs)
             @test LK.current_prolog_flag(gd, k) !== nothing        # …but they are defined
@@ -527,10 +528,11 @@ end
         LK.PLFLAG_QUASI_QUOTES, LK.PLFLAG_DOT_IN_ATOM, LK.PLFLAG_PROTECT_STATIC_CODE,
         LK.PLFLAG_MITIGATE_SPECTRE, LK.PLFLAG_TABLE_INCREMENTAL, LK.PLFLAG_TABLE_SHARED,
         LK.PLFLAG_RATIONAL, LK.PLFLAG_DEBUG_ON_INTERRUPT, LK.PLFLAG_OPTIMISE_UNIFY,
-        LK.PLFLAG_SHIFT_CHECK, LK.PLFLAG_AGC_CLOSE_STREAMS, LK.PLFLAG_EPILOG
+        LK.PLFLAG_SHIFT_CHECK, LK.PLFLAG_AGC_CLOSE_STREAMS, LK.PLFLAG_EPILOG,
+        LK.PLFLAG_VALIDATE_API
     ]
-    @test sort(bits) == collect(1:36)                            # pl-incl.h enum plflag: the bit number plus one
-    @test LK.prologFlagMask(1) == UInt64(1) && LK.prologFlagMask(36) == UInt64(1) << 35
+    @test sort(bits) == collect(1:37)                            # pl-incl.h enum plflag: the bit number plus one
+    @test LK.prologFlagMask(1) == UInt64(1) && LK.prologFlagMask(37) == UInt64(1) << 36
 
     # the mask holds the value of every Boolean flag that owns a bit (the compiler and the VM read these bits since R2 F1b)
     owned = Int[]

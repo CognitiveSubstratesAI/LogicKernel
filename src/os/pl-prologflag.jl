@@ -413,7 +413,9 @@ function _tbl_restraint_unlimited(key::T)::Bool where {T}
     name = sym_text(key)
     return name == "max_table_subgoal_size" ||
            name == "max_table_answer_size" ||
-           name == "max_answers_for_subgoal"
+           name == "max_answers_for_subgoal" ||
+           name == "max_incomplete_subgoals" ||
+           name == "max_scc_subgoals"
 end
 
 # PORT: pl-prologflag.c unify_prolog_flag_value
@@ -1445,7 +1447,11 @@ function tbl_is_restraint_flag(k::T)::Bool where {T}
            name == "max_answers_for_subgoal" ||
            name == "max_table_subgoal_size_action" ||
            name == "max_table_answer_size_action" ||
-           name == "max_answers_for_subgoal_action"
+           name == "max_answers_for_subgoal_action" ||
+           name == "max_incomplete_subgoals" ||
+           name == "max_incomplete_subgoals_action" ||
+           name == "max_scc_subgoals" ||
+           name == "max_scc_subgoals_action"
 end
 
 # PORT: pl-prologflag.c check_flag_write_access
@@ -1930,6 +1936,11 @@ function _init_tabling_flags!(gd::PL_global_data{T})::Nothing where {T}
     setPrologFlag(gd, "max_table_subgoal_size", FT_INTEGER, -1)
     setPrologFlag(gd, "max_table_answer_size", FT_INTEGER, -1)
     setPrologFlag(gd, "max_answers_for_subgoal", FT_INTEGER, -1)
+    # the four flags of the incomplete-subgoal and SCC tripwires: swipl-devel V10.1.20 src/pl-tabling.c:12709-12712 (initTabling)
+    setPrologFlag(gd, "max_incomplete_subgoals_action", FT_ATOM, "error")
+    setPrologFlag(gd, "max_incomplete_subgoals", FT_INTEGER, -1)
+    setPrologFlag(gd, "max_scc_subgoals_action", FT_ATOM, "error")
+    setPrologFlag(gd, "max_scc_subgoals", FT_INTEGER, -1)
     setPrologFlag(gd, "table_monotonic", FT_ATOM, "eager")
     return nothing
 end
@@ -2124,6 +2135,11 @@ function initPrologFlags!(gd::PL_global_data{T})::Nothing where {T}
     setPrologFlag(gd, "occurs_check", FT_ATOM, "false")
     setPrologFlag(gd, "incomparable", FT_ATOM, "arbitrary")
     setPrologFlag(gd, "shift_check", FT_BOOL, false, PLFLAG_SHIFT_CHECK)
+    # PORT: pl-prologflag.c:2695-2700 at swipl-devel V10.1.20, `#if O_VALIDATE_API ... setPrologFlag("validate_api", FT_BOOL,
+    # !GD->cmdline.optimise, PLFLAG_VALIDATE_API)`. DIVERGES (representation only): the kernel is the build WITH `O_VALIDATE_API`
+    # (the reference oracle is one, `validate_api` is `true`); `validateAPI()` (pl-fli.h:138) is read by no kernel code yet, so the
+    # bit only carries the flag's value. (owner: FLI, PIN1 red list)
+    setPrologFlag(gd, "validate_api", FT_BOOL, !gd.cmdline.optimise, PLFLAG_VALIDATE_API)
     setPrologFlag(gd, "access_level", FT_ATOM, "user")
     setPrologFlag(gd, "double_quotes", FT_ATOM, "string")
     setPrologFlag(gd, "back_quotes", FT_ATOM, "codes")

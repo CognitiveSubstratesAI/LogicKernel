@@ -2271,6 +2271,9 @@ const PLFLAG_AGC_CLOSE_STREAMS = 35
 # PORT: pl-incl.h PLFLAG_EPILOG
 "Mask bit: swipl-win (pl-incl.h); the flag `epilog`."
 const PLFLAG_EPILOG = 36
+# PORT: pl-incl.h PLFLAG_VALIDATE_API (enum plflag, swipl-devel V10.1.20 src/pl-incl.h:2936)
+"Mask bit: validate the arguments of the PL_*() functions (pl-incl.h); the flag `validate_api`."
+const PLFLAG_VALIDATE_API = 37
 
 # PORT: pl-incl.h prologFlagMask
 # DIVERGES: the mask is one 64-bit word (bit `flag-1`), where upstream's is two `unsigned int`s and the macro

@@ -637,7 +637,7 @@ end
     apply_options_to_flags!(gd, ld)
 
 Write the command-line options (`gd.options`, `gd.cmdline`) into the Prolog flags and the masks they feed: `optimise`,
-`generate_debug_info`, `debug_on_interrupt`, `signals` (flags and mask bits), `verbose` (for `-q`), `on_error`, `on_warning`,
+`generate_debug_info`, `debug_on_interrupt`, `signals`, `validate_api` (flags and mask bits), `verbose` (for `-q`), `on_error`, `on_warning`,
 `packs`, `table_space`, `stack_limit`, `os_argv` and `argv`.
 """
 function apply_options_to_flags!(
@@ -654,7 +654,9 @@ function apply_options_to_flags!(
             PLFLAG_DEBUG_ON_INTERRUPT,
             truePrologFlag(ld, PLFLAG_DEBUG_ON_INTERRUPT)
         ),
-        ("signals", PLFLAG_SIGNALS, truePrologFlag(ld, PLFLAG_SIGNALS))
+        ("signals", PLFLAG_SIGNALS, truePrologFlag(ld, PLFLAG_SIGNALS)),
+        # `validate_api` is `!GD->cmdline.optimise` (swipl-devel V10.1.20 pl-prologflag.c:2695-2698): initPrologFlags! has run before the options
+        ("validate_api", PLFLAG_VALIDATE_API, !cmd.optimise)
     )
         setPrologFlag(gd, name, FT_BOOL, val, bit)
         val ? setPrologFlagMask!(ld, bit) : clearPrologFlagMask!(ld, bit)
