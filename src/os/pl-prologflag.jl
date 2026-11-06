@@ -1978,7 +1978,7 @@ function checkPrologFlagsAccess(gd::PL_global_data{T}, ld::PL_local_data{T})::Bo
         names = T[]
         for i in eachindex(tbl.entries)                 # FOR_TABLE(GD->prolog_flag.table, n, v)
             f = tbl.entries[i]
-            f === nothing && continue
+            isnothing(f) && continue
             if (f.flags & FF_WARN_NOT_ACCESSED) != 0 && (f.flags & FF_ACCESSED) == 0
                 push!(names, tbl.names[i])              # found++; PL_unify_list(tail, head, tail) …
             end
