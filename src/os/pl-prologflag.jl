@@ -1958,6 +1958,47 @@ function _set_argv_prolog_flag!(
     return nothing
 end
 
+# PORT: pl-prologflag.c checkPrologFlagsAccess
+# (swipl-devel cbf4e189, src/os/pl-prologflag.c:2968-3010)
+# DIVERGES: the database and the local data are arguments (`HAS_LD` holds: `PL_cleanup` runs in a local data); the
+# list of names is built as one term and put in one reference, where upstream unifies it cell by cell through
+# `head` and `tail`; the walk is the table's creation order, not upstream's hash order (design D2, audit D-0149
+# item 1), so with two or more names the list's order can differ.
+"""
+    checkPrologFlagsAccess(gd, ld) -> Bool
+
+Print the warning `not_accessed_flags(Names)` for the flags created with `warn_not_accessed(true)` (as `-D`
+makes an unknown flag) that nothing has read since; false where printing it raised (pl-prologflag.c).
+"""
+function checkPrologFlagsAccess(gd::PL_global_data{T}, ld::PL_local_data{T})::Bool where {T}
+    rc = true
+    fid = PL_open_foreign_frame(ld)
+    if fid != 0
+        tbl = gd.prolog_flag
+        names = T[]
+        for i in eachindex(tbl.entries)                 # FOR_TABLE(GD->prolog_flag.table, n, v)
+            f = tbl.entries[i]
+            f === nothing && continue
+            if (f.flags & FF_WARN_NOT_ACCESSED) != 0 && (f.flags & FF_ACCESSED) == 0
+                push!(names, tbl.names[i])              # found++; PL_unify_list(tail, head, tail) …
+            end
+        end
+        if !isempty(names)                              # if ( found && rc )
+            list = PL_new_term_ref(ld)
+            lst = mk_nil(T)                             # PL_unify_nil(tail)
+            for i in length(names):-1:1
+                lst = mk_expr(T, T[mk_sym(T, LIST_CONS_NAME), names[i], lst])
+            end
+            putSlotValue!(ld, list + 1, lst)
+            rc = printMessage(                          # printMessage(ATOM_warning, PL_FUNCTOR_CHARS,
+                ld, :warning, _message_term(ld, :not_accessed_flags, list)
+            )                                           #   "not_accessed_flags", 1, PL_TERM, list)
+        end
+        PL_discard_foreign_frame(ld, fid)
+    end
+    return rc
+end
+
 # Not a port of C code: the cmake variable SO_EXT (src/CMakeLists.txt:40).
 "The shared-object extension, `SO_EXT` (src/CMakeLists.txt:40: `CMAKE_SHARED_MODULE_SUFFIX` without its dot)."
 const SO_EXT = Sys.iswindows() ? "dll" : "so"

@@ -44,6 +44,8 @@ function PL_cleanup(gd::PL_global_data{T}, ld::PL_local_data{T}, status::Int)::I
 
     gd.halt_cleaning != CLN_NORMAL && return PL_CLEANUP_RECURSIVE
 
+    checkPrologFlagsAccess(gd, ld)
+
     gd.halt_cleaning = CLN_PROLOG
 
     setPrologFlag(gd, "exit_status", FT_INTEGER, rval)  # PL_set_prolog_flag("exit_status", PL_INTEGER, rval)

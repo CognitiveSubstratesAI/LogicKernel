@@ -77,7 +77,7 @@ how many of the upstream file's functions are ported.
 | swipl-devel `src/os/pl-os.c` | code | `cbf4e1896275` | `src/pl-arith.jl` | 0 | 0 |
 | swipl-devel `src/os/pl-os.h` | code | `cbf4e1896275` | `src/os/pl-os.jl` | 2 | 0 |
 | swipl-devel `src/os/pl-prologflag.c` | code | `cbf4e1896275` | `src/os/pl-file.jl` | 1 | 1 |
-| swipl-devel `src/os/pl-prologflag.c` | code | `cbf4e1896275` | `src/os/pl-prologflag.jl` | 56 | 41 |
+| swipl-devel `src/os/pl-prologflag.c` | code | `cbf4e1896275` | `src/os/pl-prologflag.jl` | 57 | 42 |
 | swipl-devel `src/os/pl-prologflag.c` | code | `cbf4e1896275` | `src/pl-incl.jl` | 3 | 1 |
 | swipl-devel `src/os/pl-prologflag.h` | code | `cbf4e1896275` | `src/os/pl-prologflag.jl` | 0 | 0 |
 | swipl-devel `src/os/pl-prologflag.h` | code | `cbf4e1896275` | `src/pl-incl.jl` | 7 | 2 |
@@ -260,7 +260,7 @@ checkout is pulled.
 | swipl-devel `src/os/pl-option.h` | `cbf4e1896275` | 0 | 1 | 0 | src/os/pl-option.jl |
 | swipl-devel `src/os/pl-os.c` | `cbf4e1896275` | 21 | 83 | 18 | src/os/pl-os.jl, src/pl-arith.jl |
 | swipl-devel `src/os/pl-os.h` | `cbf4e1896275` | 0 | 0 | 0 | src/os/pl-os.jl |
-| swipl-devel `src/os/pl-prologflag.c` | `cbf4e1896275` | 50 | 83 | 42 | src/os/pl-file.jl, src/os/pl-prologflag.jl, src/pl-incl.jl |
+| swipl-devel `src/os/pl-prologflag.c` | `cbf4e1896275` | 51 | 83 | 43 | src/os/pl-file.jl, src/os/pl-prologflag.jl, src/pl-incl.jl |
 | swipl-devel `src/os/pl-prologflag.h` | `cbf4e1896275` | 0 | 1 | 0 | src/os/pl-prologflag.jl, src/pl-incl.jl |
 | swipl-devel `src/os/pl-stream.c` | `cbf4e1896275` | 53 | 141 | 20 | src/os/pl-file.jl, src/os/pl-stream.jl |
 | swipl-devel `src/os/pl-string.c` | `cbf4e1896275` | 1 | 12 | 0 | src/os/pl-string.jl |
@@ -360,7 +360,7 @@ checkout is pulled.
 | swipl-devel `tests/db/test_db.pl` | `cbf4e1896275` | 2 | 10 | 0 | test/db/test_db.jl |
 | swipl-devel `tests/db/test_jit.pl` | `cbf4e1896275` | 16 | 21 | 0 | test/db/test_jit.jl |
 | swipl-devel `tests/rational/test_ieee754.pl` | `cbf4e1896275` | 0 | 15 | 0 | test/rational/test_ieee754.jl |
-| **total** | | **2044** | **5093** | **1212** | |
+| **total** | | **2045** | **5093** | **1213** | |
 <!-- END GENERATED coverage -->
 
 ### Not ported: unreachable upstream

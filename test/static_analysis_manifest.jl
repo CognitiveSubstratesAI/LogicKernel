@@ -1233,6 +1233,7 @@ function _manifest_index(T)
         (LK._utc_offset, Tuple{Float64}, false),
         (LK._init_tabling_flags!, Tuple{GD}, false),
         (LK._set_argv_prolog_flag!, Tuple{GD, LD, String, Vector{String}}, false),
+        (LK.checkPrologFlagsAccess, Tuple{GD, LD}, false),
         (LK.initPrologFlags!, Tuple{GD}, false),
         (LK.initArith!, Tuple{GD}, false),
         (LK.is_arith_flag, Tuple{T}, false),
