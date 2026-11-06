@@ -227,9 +227,7 @@ MUTANTS = [
     dict(id="MOD1-R4 MODULE_parse is the source module outside a load too", file=M, targets=TS,
          old='''    ReadingSource(ld) ? ld.modules_source : ld.modules_typein''',
          new='''    ReadingSource(ld) ? ld.modules_source : ld.modules_source'''),
-    dict(id="MOD1-R2 a file at line 0 is being read", file=M, targets=TS,
-         old='''    ld.read_source.position.lineno > 0 && ld.read_source.file !== nothing''',
-         new='''    ld.read_source.position.lineno >= 0 && ld.read_source.file !== nothing'''),
+    # MOD1-R2 removed with the code it mutated (0a120343); ledger: evidence/MUTREFIT/deleted_mutants.tsv
     dict(id="MOD1-R3 a line without a file is being read", file=M, targets=TS,
          old='''    ld.read_source.position.lineno >= 0 && ld.read_source.file !== nothing''',
          new='''    ld.read_source.position.lineno >= 0'''),

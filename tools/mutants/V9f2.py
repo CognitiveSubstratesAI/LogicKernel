@@ -114,9 +114,7 @@ MUTANTS = [
     # copy_term merge the ball copy IS `copy_term` without sharing, whose mutants are V9g's)
     # (MK22 — copy_exception keeps the copy's trail entries — is dropped at the landing-B re-stack: the
     # copy lost its trail copy in L1e e5, `resize!(ld.trail, tt)` is gone, there is no line to mutate)
-    dict(id="MK21 catch/3 is not locked", file=E,
-         old='''    def.flags |= P_ISO | P_LOCKED''',
-         new='''    def.flags |= P_ISO'''),                  # kill: t23 (assertz into catch/3)
+    # MK21 removed with the code it mutated (6dbe7952); ledger: evidence/MUTREFIT/deleted_mutants.tsv
     # ── V9f-b: `$/1`, `$/0` (kill tests: test_det_swipl.jl unless said) ──
     dict(id="MD1 I_DET does not mark the frame as the one that ran `$` (FR_DETGUARD_SET)", file=W,
          old='''    ld.frames[FR].flags |= FR_DETGUARD | FR_DETGUARD_SET       # set(FR, FR_DETGUARD|FR_DETGUARD_SET)''',

@@ -69,33 +69,14 @@ MUTANTS = [
         vm.cells[key] = p''',
          new='''        nothing
         vm.cells[key] = p'''),
-    dict(id="FB9 the fresh cell of an imported stale variable is not trailed", file=INL, targets=TQ + TCC,
-         old='''Trail!(ld, var_key(t), mk_var(T, ck))''',
-         new='''nothing'''),
+    # FB9 removed with the code it mutated (59a05eed); ledger: evidence/MUTREFIT/deleted_mutants.tsv
     # ── the exception ball read whole, and the caller's variable handed back (D-0087/D-0088; TRANSITIONAL, f3) ──
-    dict(id="FB10 the exception ball is exported one level deep, not resolved whole", file=INL, targets=TWF + TOC,
-         old='''    return _resolve_term(ld, _compound_term(ld, valPtr(cw)), true)''',
-         new='''    return _compound_term(ld, valPtr(cw))'''),
-    dict(id="FB11 the cut is off: a ball cyclic through a variable raises instead of keeping the variable", file=PRM, targets=TWF + TOC,
-         old='''if cut && kind(c0) === VAR''',
-         new='''if false'''),
-    dict(id="FB12 the frames on the cycle are not kept as the memoised compound", file=PRM, targets=TWF,
-         old='''cyc[j:end] .= true''',
-         new='''nothing'''),
-    dict(id="FB13 an imported cell's origin is not recorded (import_origin set)", file=INL, targets=TCV + TCC,
-         old='''ld.import_origin[ck] = var_key(t) ''',
-         new='''nothing; (t) '''),
-    dict(id="FB14 the origin of an undone import is not pruned (import_origin prune in _untrail!)", file=INL, targets=TCV + TCC,
-         old='''        isempty(ld.import_origin) || kind(v) !== VAR ||
-            delete!(ld.import_origin, var_key(v))''',
-         new='''        nothing'''),
-    dict(id="FB15 the caller's variable is not handed back (_caller_var)", file=PRM, targets=TCV + TCC,
-         old='''return o == k ? v : mk_var(T, o)''',
-         new='''return v'''),
-    dict(id="FB16 the query's ball word is not recorded (ball_word set)", file=WAM, targets=TQ + TWF,
-         old='''ld.ball_word = ld.slots[br_q.exception + 1] ''',
-         new='''nothing; (br_q) '''),
-    dict(id="FB17 the query's ball word is not cleared at its end (ball_word clear)", file=WAM, targets=TQ + TWF,
-         old='''q.exception != 0 && (ld.ball_word = UInt64(0))''',
-         new='''nothing'''),
+    # FB10 removed with the code it mutated (59a05eed); ledger: evidence/MUTREFIT/deleted_mutants.tsv
+    # FB11 removed with the code it mutated (59a05eed); ledger: evidence/MUTREFIT/deleted_mutants.tsv
+    # FB12 removed with the code it mutated (59a05eed); ledger: evidence/MUTREFIT/deleted_mutants.tsv
+    # FB13 removed with the code it mutated (59a05eed); ledger: evidence/MUTREFIT/deleted_mutants.tsv
+    # FB14 removed with the code it mutated (59a05eed); ledger: evidence/MUTREFIT/deleted_mutants.tsv
+    # FB15 removed with the code it mutated (59a05eed); ledger: evidence/MUTREFIT/deleted_mutants.tsv
+    # FB16 removed with the code it mutated (59a05eed); ledger: evidence/MUTREFIT/deleted_mutants.tsv
+    # FB17 removed with the code it mutated (59a05eed); ledger: evidence/MUTREFIT/deleted_mutants.tsv
 ]

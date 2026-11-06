@@ -27,13 +27,7 @@ MUTANTS = [
          old="        return gnd_equal(t1, t2) ? BOOLEX_TRUE : BOOLEX_FALSE\n",
          new="        return BOOLEX_TRUE\n"),
     # i_metacall_clause: a cyclic Goal@Module's culprit keeps the goal's functor ...
-    dict(id="C4 the cyclic goal's functor is lost from the culprit", file="src/pl-wam.jl",
-         targets=["test/core_lang/test_metacall_control.jl"],
-         old="                    push!(mc_args, mk_expr(T, mc_ac))\n",
-         new="                    push!(mc_args, mk_var(T, fresh_var_keys!(1)))\n"),
+    # C4 removed with the code it mutated (59a05eed); ledger: evidence/MUTREFIT/deleted_mutants.tsv
     # ... and its acyclic argument (the module) as it is
-    dict(id="C5 the module is lost from a cyclic goal's culprit", file="src/pl-wam.jl",
-         targets=["test/core_lang/test_metacall_control.jl"],
-         old="                    push!(mc_args, export_cells(ld, mc_ex, mc_a))\n",
-         new="                    push!(mc_args, mk_var(T, fresh_var_keys!(1)))\n"),
+    # C5 removed with the code it mutated (59a05eed); ledger: evidence/MUTREFIT/deleted_mutants.tsv
 ]

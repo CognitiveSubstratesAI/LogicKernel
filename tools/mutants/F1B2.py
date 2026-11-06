@@ -59,9 +59,7 @@ MUTANTS = [
     dict(id="F1B-A4 protect_static_code set false after true is not refused (KILL sf88)", file=P, targets=TF,
          old=" && val == false\n",
          new=" && false\n"),
-    dict(id="F1B-A5 the debugger flag `debug` is not refused by name (KILL refused)", file=P, targets=TF,
-         old="            _flag_not_ported(k, \"debugmode and tracemode (the debugger)\")\n",
-         new="            nothing\n"),
+    # F1B-A5 removed with the code it mutated (cc1cf83a); ledger: evidence/MUTREFIT/deleted_mutants.tsv
     # ── set_flag_value: FT_ATOM, FT_INTEGER; the validators ──
     dict(id="F1B-B1 an atom flag with a oneof takes any atom (KILL sf54)", file=P, targets=TF,
          old="        check_oneof_flag(ld, f.oneof, a, true) || return false\n",

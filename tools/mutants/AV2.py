@@ -83,12 +83,8 @@ MUTANTS = [
     dict(id="AV2-U4 the same attvar against itself is refused (no t1 == t2)", file=P, targets=T,
          old="    (k1 == DU_ATTVAR && k2 == DU_ATTVAR && p1 == p2) && return BOOLEX_TRUE   # t1 == t2: the same attvar\n",
          new=""),
-    dict(id="AV2-U5 Attvar = value fails silently instead of refusing (left)", file=P, targets=T,
-         old="    k1 == DU_ATTVAR && throw(_bind_attvar_const_error(p1, w1))   # assignAttVar(t1, t2): AV3",
-         new="    k1 == DU_ATTVAR && return BOOLEX_FALSE"),
-    dict(id="AV2-U6 … (right)", file=P, targets=T,
-         old="    k2 == DU_ATTVAR && throw(_bind_attvar_const_error(p2, w2))   # assignAttVar(t2, t1): AV3",
-         new="    k2 == DU_ATTVAR && return BOOLEX_FALSE"),
+    # AV2-U5 removed with the code it mutated (7c6e6f8f); ledger: evidence/MUTREFIT/deleted_mutants.tsv
+    # AV2-U6 removed with the code it mutated (7c6e6f8f); ledger: evidence/MUTREFIT/deleted_mutants.tsv
     dict(id="AV2-U7 \\\\= takes an attributed variable for an atomic value (no full check)", file=P, targets=T,
          old="    elseif k1 == DU_ATTVAR || k2 == DU_ATTVAR           # isAttVar(w1) || isAttVar(w2): goto full_check\n",
          new=""),
