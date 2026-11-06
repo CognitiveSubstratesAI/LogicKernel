@@ -235,7 +235,7 @@ const _DB_PINNED = [
     "t_db14 c[116,95,100,98,49,52]/1(c[91,124,93]/2(a[116,114,117,101],c[91,124,93]/2(a[119,114,105,116,101],c[91,124,93]/2(a[98,111,111,108,101,97,110],nil))))",
     "t_db15 c[116,95,100,98,49,53]/1(a[115,111])",
     "t_db16 c[116,95,100,98,49,54]/1(c[114,97,105,115,101,100]/1(c[112,101,114,109,105,115,115,105,111,110,95,101,114,114,111,114]/3(a[109,111,100,105,102,121],a[102,108,97,103],a[115,104,97,114,101,100,95,111,98,106,101,99,116,95,101,120,116,101,110,115,105,111,110])))",
-    "t_db17 c[116,95,100,98,49,55]/1(a[49,48,46,49,46,49,57])",
+    "t_db17 c[116,95,100,98,49,55]/1(a[49,48,46,49,46,50,48])",
     "t_db18 c[116,95,100,98,49,56]/1(c[114,97,105,115,101,100]/1(c[112,101,114,109,105,115,115,105,111,110,95,101,114,114,111,114]/3(a[109,111,100,105,102,121],a[102,108,97,103],a[118,101,114,115,105,111,110,95,103,105,116])))",
     "t_db19 c[116,95,100,98,49,57]/1(a[121,101,115])",
     "t_db20 c[116,95,100,98,50,48]/1(c[91,124,93]/2(a[116,114,117,101],c[91,124,93]/2(a[102,97,108,115,101],nil)))",
@@ -428,7 +428,7 @@ _db_atom_list_enc(xs::Vector{String})::String =
     # the build flags: the access of libswipl (swipl: read) and the exact version_git
     @test occursin(_db_atom_list_enc(["write", "atom"]), _db_query(gd, ld, "r_lib"))
     @test _db_query(gd, ld, "r_git") ==
-        "r_git c" * _db_codes("r_git") * "/1(a" * _db_codes("10.1.19-1-gcbf4e189") * ")"
+        "r_git c" * _db_codes("r_git") * "/1(a" * _db_codes("10.1.20-1-g18168e62") * ")"
     # `debug` false while the debug mode is already off still sets the run-mode bits (pl-trace.c:2253 `else if (!doit) setPrologRunMode`; pl-incl.h
     # sets them whatever the table's `last_call_optimisation` says): clear LASTCALL by the flag, then `debug` false puts it back
     @test LK.truePrologFlag(ld, LK.PLFLAG_LASTCALL)

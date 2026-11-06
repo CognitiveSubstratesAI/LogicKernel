@@ -802,7 +802,7 @@ end
     @test LK.PL_current_prolog_flag(gd, ld, _tls("version_data"), t)
     vd = lk_answers(ld, t)[1]
     @test sym_text(child(vd, 1)) == "swi" && nchildren(vd) == 5
-    @test [lk_value(child(vd, i)) for i in 2:4] == [10, 1, 19] && is_nil(child(vd, 5))
+    @test [lk_value(child(vd, i)) for i in 2:4] == [10, 1, 20] && is_nil(child(vd, 5))
     @test !LK.PL_current_prolog_flag(gd, ld, _tls("iso"), t)                  # not a term flag
     @test !LK.PL_current_prolog_flag(gd, ld, _tls("nosuchflag"), t)
     LK.PL_close_foreign_frame(ld, fid)
