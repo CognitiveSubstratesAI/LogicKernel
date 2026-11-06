@@ -21,6 +21,92 @@ function _gs_run_merged(cmd::Cmd)
     return (code=code, out=txt)
 end
 
+# audit D-0421 item 2 / D-0425: since LB4 b2 every database boots HOME/boot/init.pl, and `home/` is generated and
+# git-ignored (`julia tools/build_home.jl`), so a Julia job of a workflow that does not build it first fails on
+# every test (Evidence 42021496734: 664 failing tests). The workflows are read as TEXT (no YAML package): a job
+# is the 2-space key under `jobs:`, its steps the `      - ` items under `    steps:`; whole-line comments
+# are dropped (a comment naming the tool is no step).
+const _GS_STEP_SETUP = r"uses:\s*julia-actions/setup-julia@"
+const _GS_STEP_HOME = r"(?m)^\s*(?:-\s+)?(?:run:\s+)?julia tools/build_home\.jl\s*$"
+# a step that RUNS julia (a `run:` line, or the two actions that do)
+const _GS_STEP_JULIA =
+    r"(?<![\w@/.-])julia +[-\w.]|julia-actions/julia-(?:runtest|buildpkg)@"
+# a step that reads the database: the tests, the fuzzer, the mutation targets, the precompile of the package
+const _GS_STEP_DB =
+    r"julia-actions/julia-(?:runtest|buildpkg)@|Pkg\.(?:instantiate|test)|runtests\.jl|tools/fuzz\.jl|tools/(?:warm|run_tests|pkgtest_way|test_\w+)\.sh|tools/mutate\w*\.sh|mutate_ci\.py +(?:baseline|one)"
+
+# The Julia jobs that provably need no database, by "<file>:<job>", each with its reason. A Julia job that is
+# not listed here must build the home tree; an entry that names no Julia job of the real workflows is stale.
+const _GS_HOME_EXEMPT = Dict(
+    "CI.yml:format" => "JuliaFormatter only reads source text: no LogicKernel database is created"
+)
+
+# the jobs of a workflow text: name => the text of each of its steps, in order
+function _gs_workflow_jobs(yml::AbstractString)
+    jobs = Pair{String, Vector{String}}[]
+    injobs = steps_open = false
+    for l in split(yml, '\n')
+        if occursin(r"^jobs:\s*$", l)
+            injobs = true
+            continue
+        end
+        injobs || continue
+        startswith(strip(l), "#") && continue
+        if occursin(r"^\S", l)                                  # another top-level key ends the jobs
+            injobs = false
+        elseif (m = match(r"^  ([A-Za-z_][\w-]*):\s*(?:#.*)?$", l)) !== nothing
+            push!(jobs, String(m[1]) => String[])
+            steps_open = false
+        elseif occursin(r"^    steps:\s*$", l)
+            steps_open = true
+        elseif steps_open && occursin(r"^      - ", l)
+            push!(last(jobs).second, String(l))
+        elseif steps_open && !isempty(last(jobs).second) &&
+               (isempty(strip(l)) || startswith(l, "        "))
+            last(jobs).second[end] *= "\n" * l                  # the body of the current step
+        elseif occursin(r"^    \S", l)
+            steps_open = false
+        end
+    end
+    return jobs
+end
+
+function _gs_step_if(s)
+    m = match(r"(?m)^\s*(?:-\s+)?if:[ \t]*(.*?)[ \t]*$", s)
+    return m === nothing ? "" : String(m[1])
+end
+
+# The gaps of one workflow: a job with a setup-julia step and a LATER step that runs julia must have a
+# `julia tools/build_home.jl` step after the setup and BEFORE the first step that reads the database, under the
+# same `if:` as that step and not allowed to fail; `exempt` ("<file>:<job>" => reason) are skipped.
+# Returns the jobs examined, the gaps found (one message each) and the keys of every Julia job seen.
+function _gs_home_tree_gaps(
+    yml::AbstractString, file::AbstractString; exempt=Dict{String, String}()
+)
+    examined, gaps, seen = 0, String[], String[]
+    for (job, steps) in _gs_workflow_jobs(yml)
+        i = findfirst(s -> occursin(_GS_STEP_SETUP, s), steps)
+        i === nothing && continue
+        any(s -> occursin(_GS_STEP_JULIA, s), steps[(i + 1):end]) || continue
+        examined += 1
+        key = "$file:$job"
+        push!(seen, key)
+        haskey(exempt, key) && continue
+        h = findnext(s -> occursin(_GS_STEP_HOME, s), steps, i + 1)
+        d = findnext(s -> occursin(_GS_STEP_DB, s), steps, i + 1)
+        if h === nothing
+            push!(gaps, "$key: no `julia tools/build_home.jl` step after setup-julia")
+        elseif d !== nothing && d < h
+            push!(gaps, "$key: the home tree is built AFTER a step that reads the database")
+        elseif d !== nothing && _gs_step_if(steps[h]) != _gs_step_if(steps[d])
+            push!(gaps, "$key: the home-tree step has another `if:` than the database step")
+        elseif occursin(r"(?m)^\s*continue-on-error:\s*true", steps[h])
+            push!(gaps, "$key: the home-tree step may fail without failing the job")
+        end
+    end
+    return (examined=examined, gaps=gaps, seen=seen)
+end
+
 @testset "the gate split: declarations, term types, the CI condition" begin
     @testset "every term-generic file declares its term types per chunk" begin
         scopes = lk_term_scopes(joinpath(_GS_ROOT, "test"))      # throws on a missing or bad one
@@ -2797,6 +2883,97 @@ MUTANTS = [
             joinpath(_GS_ROOT, ".github", "actions", "oracle", "action.yml"), String
         )
         @test occursin(raw"key=${ImageOS:?", action)
+    end
+    # EVERY JULIA JOB BUILDS THE HOME TREE (audit D-0421 item 2 / D-0425; commit 63672e2b added the step to each
+    # job by hand, and a job added later would fail every test again). The checker is `_gs_home_tree_gaps`
+    # (above); it is judged here by its VERDICT on planted workflow texts, then run on the real ones, and its
+    # count of jobs is pinned against an independent count (python3 -I, same rule) so that it cannot pass by
+    # examining nothing.
+    @testset "every Julia job of the workflows builds the home tree before reading a database" begin
+        chk = "      - uses: actions/checkout@x\n"
+        setup =
+            "      - uses: julia-actions/setup-julia@x\n        with:\n          version: '1'\n"
+        home =
+            "      - name: The home tree (tools/build_home.jl)\n" *
+            "        run: julia tools/build_home.jl\n"
+        tests = "      - run: julia --project=. test/runtests.jl\n"
+        job(name, steps...) =
+            "  $name:\n    runs-on: ubuntu-24.04\n    steps:\n" * join(steps)
+        wf(jobs...) = "name: t\non: push\njobs:\n" * join(jobs, "\n")
+        gaps(text; exempt=Dict{String, String}()) =
+            _gs_home_tree_gaps(text, "t.yml"; exempt=exempt)
+        # the control: the step before the tests is clean, and the job was examined (a non-empty side)
+        r = gaps(wf(job("good", chk, setup, home, tests)))
+        @test r.examined == 1 && r.seen == ["t.yml:good"] && isempty(r.gaps)
+        # the same job without the step: one gap, naming the file, the job and the rule
+        r = gaps(wf(job("bad", chk, setup, tests)))
+        @test r.examined == 1 && length(r.gaps) == 1
+        @test occursin("t.yml:bad: no `julia tools/build_home.jl` step", only(r.gaps))
+        # a comment that names the tool is no step; neither is the name of a step
+        comment = "      # julia tools/build_home.jl\n"
+        named = "      - name: julia tools/build_home.jl\n        run: echo done\n"
+        @test length(gaps(wf(job("bad", chk, setup, comment, named, tests))).gaps) == 1
+        # the step AFTER the tests, or after the action that precompiles the package, is too late
+        r = gaps(wf(job("late", chk, setup, tests, home)))
+        @test length(r.gaps) == 1 && occursin("AFTER a step that reads", only(r.gaps))
+        buildpkg = "      - uses: julia-actions/julia-buildpkg@x\n"
+        @test length(gaps(wf(job("late", chk, setup, buildpkg, home, tests))).gaps) == 1
+        # …before the setup it is no step of a Julia job either (julia is not installed yet)
+        @test length(gaps(wf(job("early", chk, home, setup, tests))).gaps) == 1
+        # a step in the `run: |` form counts; a conditional step must carry the tests' own condition
+        block =
+            "      - name: The home tree\n        run: |\n          julia tools/build_home.jl\n"
+        @test isempty(gaps(wf(job("block", chk, setup, block, tests))).gaps)
+        cond = "        if: steps.changed.outputs.run == 'true'\n"
+        homeif = replace(home, "        run:" => cond * "        run:")
+        testsif =
+            "      - if: steps.changed.outputs.run == 'true'\n" *
+            "        run: julia --project=. test/runtests.jl\n"
+        @test isempty(gaps(wf(job("cond", chk, setup, homeif, testsif))).gaps)
+        r = gaps(wf(job("cond", chk, setup, homeif, tests)))      # skipped while the tests run
+        @test length(r.gaps) == 1 && occursin("another `if:`", only(r.gaps))
+        r = gaps(wf(job("cond", chk, setup, home, testsif)))      # not tracking the tests' condition
+        @test length(r.gaps) == 1 && occursin("another `if:`", only(r.gaps))
+        failing = replace(
+            home, "        run:" => "        continue-on-error: true\n        run:"
+        )
+        r = gaps(wf(job("soft", chk, setup, failing, tests)))
+        @test length(r.gaps) == 1 && occursin("without failing the job", only(r.gaps))
+        # an exempt job is examined but not required to build it; the others in the file still are
+        fmt = "      - run: julia -e 'using JuliaFormatter'\n"
+        mixed = wf(job("fmt", chk, setup, fmt), job("bad", chk, setup, tests))
+        r = gaps(mixed; exempt=Dict("t.yml:fmt" => "no database"))
+        @test r.examined == 2 && r.seen == ["t.yml:fmt", "t.yml:bad"]
+        @test length(r.gaps) == 1 && startswith(only(r.gaps), "t.yml:bad:")
+        @test length(gaps(mixed).gaps) == 2                       # without the exemption, both
+        # not a Julia job: no setup-julia, or no later step that runs julia (python and gathers)
+        py = "      - run: python3 tools/evidence_ci.py term evidence-out\n"
+        r = gaps(wf(job("gather", chk, py), job("noop", chk, setup, py)))
+        @test r.examined == 0 && isempty(r.gaps)
+
+        # the real workflows
+        wfdir = joinpath(_GS_ROOT, ".github", "workflows")
+        files = sort(filter(endswith(".yml"), readdir(wfdir)))
+        @test length(files) >= 5
+        examined, found, seen, builds = 0, String[], String[], 0
+        for f in files
+            text = read(joinpath(wfdir, f), String)
+            r = _gs_home_tree_gaps(text, f; exempt=_GS_HOME_EXEMPT)
+            examined += r.examined
+            append!(found, r.gaps)
+            append!(seen, r.seen)
+            builds += count("julia tools/build_home.jl", text)
+        end
+        @test isempty(found)
+        # nine Julia jobs, counted by python3 -I over the same files with the same rule (CI.yml: test, analysis,
+        # format, tooling; evidence.yml: evidence, static_analysis; mutation.yml: baseline, mutant; fuzz.yml:
+        # fuzz); a new Julia job moves this number and has to be added here on purpose
+        @test examined == 9
+        # one build step in every job but the exempt ones: the job count and the step count tell each other
+        @test builds == examined - length(_GS_HOME_EXEMPT) == 8
+        # every exemption names a Julia job that exists (a stale one would hide a job added under its name)
+        @test all(in(seen), keys(_GS_HOME_EXEMPT))
+        @test all(!isempty, values(_GS_HOME_EXEMPT))
     end
     # UNDER CI A MISSING ANALYSIS TOOL IS AN ERROR (test/test_static_analysis.jl's header): the real file
     # in a fresh process with the global environment off the load path (so JET, Aqua, AllocCheck are
