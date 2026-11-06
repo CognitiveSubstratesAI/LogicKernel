@@ -747,8 +747,16 @@ end
     ld = LK.PL_local_data{_LB7}(gd)
     LK.apply_options_to_flags!(gd, ld)
     @test ld.stacks_limit == (1 << 30) ÷ 8
+    # the STORED flag (the global table's entry): `current_prolog_flag(stack_limit, V)` answers from `ld.stacks_limit * 8`, so the
+    # f rows never see it
+    sl_key = LK._atom_word!(gd.atoms, gd.atom_symbols, LK.mk_sym(_LB7, :stack_limit))
+    sl = LK._prolog_flag_table_get(gd, sl_key)
+    @test sl !== nothing && sl.i == gd.options.stackLimit == 1 << 30
     gd.options.stackLimit = 1 << 20
     LK.apply_options_to_flags!(gd, ld)
     @test ld.stacks_limit == (1 << 20) ÷ 8
     @test ld.stacks_limit != (1 << 30) ÷ 8
+    sl = LK._prolog_flag_table_get(gd, sl_key)
+    @test sl !== nothing && sl.i == gd.options.stackLimit == 1 << 20
+    @test sl.i != 1 << 30
 end

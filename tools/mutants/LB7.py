@@ -171,7 +171,7 @@ MUTANTS = [
          file=I, targets=OPT, old="(\"signals\", PLFLAG_SIGNALS, truePrologFlag(ld, PLFLAG_SIGNALS))", new="(\"signals\", PLFLAG_SIGNALS, true)"),
     dict(id="LB7-E5 the flag table_space is the default (KILL f08)",
          file=I, targets=OPT, old="setPrologFlag(gd, \"table_space\", FT_INTEGER, o.tableSpace)", new="setPrologFlag(gd, \"table_space\", FT_INTEGER, 1 << 30)"),
-    dict(id="LB7-E6 the flag stack_limit is the default (KILL f08)",
+    dict(id="LB7-E6 the flag stack_limit is the default (KILL f08, H-apply_options_to_flags![the stored stack_limit flag])",
          file=I, targets=OPT, old="setPrologFlag(gd, \"stack_limit\", FT_INTEGER, o.stackLimit)", new="setPrologFlag(gd, \"stack_limit\", FT_INTEGER, 1 << 30)"),
     dict(id="LB7-E7 the local data's stack limit is in bytes, not words (KILL H-apply_options_to_flags![the stack limit in words])",
          file=I, targets=OPT, old="ld.stacks_limit = o.stackLimit ÷ 8", new="ld.stacks_limit = o.stackLimit"),
