@@ -8,6 +8,7 @@
 #     (the locale), `close_on_exec`.
 #   * White-box rows from the C code (pl-file.c initIO, pl-stream.c S__iob0): the flags of each stream, the position record the three share, Scurin and
 #     Scurout, the table entry of each stream; `_bare_local_data` (the engine setupProlog makes for itself) holds none.
+#   * The descriptor fallback: with Julia's stdin an IO the stream layer does not hold (`devnull`), user_input is file descriptor 0 (pl-stream.c STDIO(n, f)).
 #   * The finding (S2a, status_board.md, LB7's first run): on a database that is not initialised, the autoloader's `push_input_context` stored
 #     `Scurin(ld) === nothing` and `$input_context/1` died on `c.stream::IOSTREAM` (a Julia TypeError). A program consulted there calls member/2 (autoloaded
 #     from library(lists)); it now answers as swipl does.
@@ -225,6 +226,23 @@ _ps_flags(::Type{T}, i::Int) where {T} =
     @test !bare.IO_initialised && all(isnothing, bare.IO_streams)
     @test count(!isnothing, gd0.stream_table) == live0 + 6
     @test count(!isnothing, LK.gd_template(_PS).stream_table) == 0
+end
+
+# pl-stream.c:4479-4492 STDIO(n, f): `.handle = (void *)(n)`: upstream's standard stream n is file descriptor n. When Julia's stdin is an IO
+# the stream layer does not hold (a runner's wrapper: `devnull`), initIO reads file descriptor 0, and `_std_io` gives stdout 1 and stderr 2
+# (fdio names its stream "<fd n>"). Kills PSTREAM-5 (user_input over descriptor 1), which every run with a real stdin cannot see.
+@testset "initIO over a Julia stdin the stream layer does not hold: user_input is file descriptor 0; _std_io(…, 1/2) are descriptors 1 and 2" begin
+    saved = Base.stdin
+    local sin
+    try
+        Core.eval(Base, :(stdin = devnull))
+        @test Base.stdin isa Base.DevNull                              # not vacuous: the fallback is the path taken
+        sin = LK.Suser_input(LK.PL_local_data{_PS}(LK.PL_global_data{_PS}()))
+    finally
+        Core.eval(Base, :(stdin = $saved))
+    end
+    @test sin.handle.io.name == "<fd 0>"
+    @test LK._std_io(devnull, 1).name == "<fd 1>" && LK._std_io(devnull, 2).name == "<fd 2>"
 end
 
 @testset "the autoloader on a database whose engine has done nothing: member/2 from library(lists) (S2a finding)" begin
