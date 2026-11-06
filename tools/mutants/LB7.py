@@ -224,7 +224,7 @@ MUTANTS = [
     dict(id="LB7-P16 a STRING option is set into init_file (KILL k04, k05: toplevel foo)",
          file=P, targets=PRIMS, old="setfield!(gd.options, field, String(value))", new="setfield!(gd.options, :initFile, String(value))"),
     dict(id="LB7-P17 a LIST option is pushed on the goals (KILL k04, k05: defines a=b)",
-         file=P, targets=PRIMS, old="push!(getfield(gd.options, field), String(value))", new="push!(gd.options.goals, String(value))"),
+         file=P, targets=PRIMS, old="push!(getfield(gd.options, field)::Vector{String}, String(value))", new="push!(gd.options.goals, String(value))"),
     dict(id="LB7-P18 $cmd_option_set/2 sets the key as its value (KILL k04, k05)",
          file=P, targets=PRIMS, old="String(copy(val.text))", new="String(copy(key.text))"),
     dict(id="LB7-G1 packs is off by default (KILL f01; H-parseCommandLineOptions)",

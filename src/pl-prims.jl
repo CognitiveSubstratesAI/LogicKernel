@@ -4532,7 +4532,7 @@ function set_pl_option(
             end
             return true
         else                                            # CMDOPT_LIST
-            push!(getfield(gd.options, field), String(value))
+            push!(getfield(gd.options, field)::Vector{String}, String(value))
             return true
         end
     end
