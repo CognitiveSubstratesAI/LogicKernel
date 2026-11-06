@@ -1940,10 +1940,13 @@ function _init_tabling_flags!(gd::PL_global_data{T})::Nothing where {T}
     return nothing
 end
 
-# The flags that hold a list of atoms: `os_argv` and `argv` (pl-prologflag.c `setArgvPrologFlag`).
+# The flags that hold a list of atoms: `os_argv` and `argv` (pl-prologflag.c `setArgvPrologFlag`,
+# swipl-devel cbf4e189 src/os/pl-prologflag.c:2857-2876): the list is built in a foreign frame of its own,
+# discarded once the flag holds its record, so the term reference and the list's cells do not outlive the call.
 function _set_argv_prolog_flag!(
     gd::PL_global_data{T}, ld::PL_local_data{T}, flag::String, argv::Vector{String}
 )::Nothing where {T}
+    fid = PL_open_foreign_frame(ld)                 # fid_t fid = PL_open_foreign_frame();
     t = PL_new_term_ref(ld)
     lst = mk_nil(T)
     for i in length(argv):-1:1
@@ -1951,6 +1954,7 @@ function _set_argv_prolog_flag!(
     end
     putSlotValue!(ld, t + 1, lst)
     setPrologFlag(gd, ld, flag, FT_TERM, t)
+    PL_discard_foreign_frame(ld, fid)               # PL_discard_foreign_frame(fid);
     return nothing
 end
 
