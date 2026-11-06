@@ -1,6 +1,6 @@
 # UPSTREAM: swipl-devel src/pl-prims.c @ cbf4e1896275
 # UPSTREAM: swipl-devel src/pl-incl.h @ cbf4e1896275
-# UPSTREAM: swipl-devel src/pl-prims.h @ cbf4e1896275
+# UPSTREAM: swipl-devel src/pl-prims.h @ 18168e629eab
 # CLASS: code
 # COPYRIGHT: Copyright (c)  1985-2024, University of Amsterdam
 # COPYRIGHT: VU University Amsterdam

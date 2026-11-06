@@ -1,4 +1,4 @@
-# UPSTREAM: swipl-devel src/pl-funct.c @ cbf4e1896275
+# UPSTREAM: swipl-devel src/pl-funct.c @ 18168e629eab
 # UPSTREAM: swipl-devel src/ATOMS @ cbf4e1896275
 # UPSTREAM: swipl-devel src/pl-incl.h @ cbf4e1896275
 # UPSTREAM: swipl-devel src/os/pl-table.h @ cbf4e1896275

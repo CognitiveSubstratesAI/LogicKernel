@@ -1,4 +1,4 @@
-# UPSTREAM: swipl-devel src/pl-mutex.c @ cbf4e1896275
+# UPSTREAM: swipl-devel src/pl-mutex.c @ 18168e629eab
 # CLASS: code
 # COPYRIGHT: Copyright (c)  2017-2023, University of Amsterdam
 # COPYRIGHT: VU University Amsterdam

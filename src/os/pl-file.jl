@@ -1,9 +1,9 @@
 # UPSTREAM: swipl-devel src/os/pl-file.c @ cbf4e1896275
-# UPSTREAM: swipl-devel src/os/pl-file.h @ cbf4e1896275
+# UPSTREAM: swipl-devel src/os/pl-file.h @ 18168e629eab
 # UPSTREAM: swipl-devel src/pl-global.h @ cbf4e1896275
 # UPSTREAM: swipl-devel src/pl-incl.h @ cbf4e1896275
 # UPSTREAM: swipl-devel src/os/pl-stream.c @ cbf4e1896275
-# UPSTREAM: swipl-devel src/pl-privitf.c @ cbf4e1896275
+# UPSTREAM: swipl-devel src/pl-privitf.c @ 18168e629eab
 # UPSTREAM: swipl-devel src/os/pl-prologflag.c @ cbf4e1896275
 # CLASS: code
 # COPYRIGHT: Copyright (c)  2011-2024, University of Amsterdam

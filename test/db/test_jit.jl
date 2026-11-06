@@ -1,4 +1,4 @@
-# UPSTREAM: swipl-devel tests/db/test_jit.pl @ cbf4e1896275
+# UPSTREAM: swipl-devel tests/db/test_jit.pl @ 18168e629eab
 # CLASS: code
 # COPYRIGHT: Copyright (c)  2011-2025, University of Amsterdam
 # COPYRIGHT: VU University Amsterdam

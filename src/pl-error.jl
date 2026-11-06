@@ -1,5 +1,5 @@
-# UPSTREAM: swipl-devel src/pl-error.c @ cbf4e1896275
-# UPSTREAM: swipl-devel src/pl-error.h @ cbf4e1896275
+# UPSTREAM: swipl-devel src/pl-error.c @ 18168e629eab
+# UPSTREAM: swipl-devel src/pl-error.h @ 18168e629eab
 # CLASS: code
 # COPYRIGHT: Copyright (c)  1997-2024, University of Amsterdam
 # COPYRIGHT: VU University Amsterdam

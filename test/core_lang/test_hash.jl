@@ -1,4 +1,4 @@
-# UPSTREAM: swipl-devel tests/core_lang/test_hash.pl @ cbf4e1896275
+# UPSTREAM: swipl-devel tests/core_lang/test_hash.pl @ 18168e629eab
 # CLASS: code
 # COPYRIGHT: Copyright (c)  2010-2025, University of Amsterdam
 # COPYRIGHT: SWI-Prolog Solutions b.v.

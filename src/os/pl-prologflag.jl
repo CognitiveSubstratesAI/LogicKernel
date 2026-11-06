@@ -1,5 +1,5 @@
 # UPSTREAM: swipl-devel src/os/pl-prologflag.c @ cbf4e1896275
-# UPSTREAM: swipl-devel src/os/pl-prologflag.h @ cbf4e1896275
+# UPSTREAM: swipl-devel src/os/pl-prologflag.h @ 18168e629eab
 # UPSTREAM: swipl-devel src/pl-fli.c @ cbf4e1896275
 # UPSTREAM: swipl-devel src/pl-incl.h @ cbf4e1896275
 # UPSTREAM: swipl-devel src/pl-read.c @ cbf4e1896275

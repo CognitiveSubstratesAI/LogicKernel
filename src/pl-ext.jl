@@ -1,4 +1,4 @@
-# UPSTREAM: swipl-devel src/pl-ext.c @ cbf4e1896275
+# UPSTREAM: swipl-devel src/pl-ext.c @ 18168e629eab
 # CLASS: code
 # COPYRIGHT: Copyright (c)  1985-2024, University of Amsterdam
 # COPYRIGHT: VU University Amsterdam

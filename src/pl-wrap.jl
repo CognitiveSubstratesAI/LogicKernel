@@ -1,5 +1,5 @@
 # UPSTREAM: swipl-devel src/pl-wrap.c @ cbf4e1896275
-# UPSTREAM: swipl-devel src/pl-wrap.h @ cbf4e1896275
+# UPSTREAM: swipl-devel src/pl-wrap.h @ 18168e629eab
 # CLASS: code
 # COPYRIGHT: Copyright (c)  2019-2025, University of Amsterdam
 # COPYRIGHT: VU University Amsterdam

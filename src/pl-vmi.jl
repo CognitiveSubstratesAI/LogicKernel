@@ -1,6 +1,6 @@
 # UPSTREAM: swipl-devel src/pl-vmi.c @ cbf4e1896275
 # UPSTREAM: swipl-devel src/pl-incl.h @ cbf4e1896275
-# UPSTREAM: swipl-devel src/pl-codetable.c @ cbf4e1896275
+# UPSTREAM: swipl-devel src/pl-codetable.c @ 18168e629eab
 # CLASS: code
 # COPYRIGHT: Copyright (c)  2008-2025, University of Amsterdam
 # COPYRIGHT: VU University Amsterdam

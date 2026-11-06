@@ -1,10 +1,10 @@
-# UPSTREAM: swipl-devel src/pl-string.c @ cbf4e1896275
+# UPSTREAM: swipl-devel src/pl-string.c @ 18168e629eab
 # UPSTREAM: swipl-devel src/pl-prims.c @ cbf4e1896275
-# UPSTREAM: swipl-devel src/pl-privitf.c @ cbf4e1896275
-# UPSTREAM: swipl-devel src/pl-error.c @ cbf4e1896275
-# UPSTREAM: swipl-devel src/os/pl-text.c @ cbf4e1896275
-# UPSTREAM: swipl-devel src/os/pl-text.h @ cbf4e1896275
-# UPSTREAM: swipl-devel src/os/pl-utf8.h @ cbf4e1896275
+# UPSTREAM: swipl-devel src/pl-privitf.c @ 18168e629eab
+# UPSTREAM: swipl-devel src/pl-error.c @ 18168e629eab
+# UPSTREAM: swipl-devel src/os/pl-text.c @ 18168e629eab
+# UPSTREAM: swipl-devel src/os/pl-text.h @ 18168e629eab
+# UPSTREAM: swipl-devel src/os/pl-utf8.h @ 18168e629eab
 # UPSTREAM: swipl-devel src/os/pl-file.c @ cbf4e1896275
 # CLASS: code
 # COPYRIGHT: Copyright (c)  2013-2022, University of Amsterdam

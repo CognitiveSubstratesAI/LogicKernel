@@ -1,6 +1,6 @@
 # UPSTREAM: swipl-devel src/pl-global.h @ cbf4e1896275
 # UPSTREAM: swipl-devel src/pl-incl.h @ cbf4e1896275
-# UPSTREAM: swipl-devel src/pl-init.h @ cbf4e1896275
+# UPSTREAM: swipl-devel src/pl-init.h @ 18168e629eab
 # UPSTREAM: swipl-devel src/pl-variant.c @ cbf4e1896275
 # UPSTREAM: swipl-devel src/os/pl-file.c @ cbf4e1896275
 # CLASS: code

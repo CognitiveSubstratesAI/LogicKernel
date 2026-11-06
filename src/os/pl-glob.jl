@@ -1,4 +1,4 @@
-# UPSTREAM: swipl-devel src/os/pl-glob.c @ cbf4e1896275
+# UPSTREAM: swipl-devel src/os/pl-glob.c @ 18168e629eab
 # CLASS: code
 # COPYRIGHT: Copyright (c)  2011-2023, University of Amsterdam
 # COPYRIGHT: VU University Amsterdam

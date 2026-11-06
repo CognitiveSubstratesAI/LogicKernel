@@ -1,5 +1,5 @@
 # UPSTREAM: swipl-devel src/pl-dict.c @ cbf4e1896275
-# UPSTREAM: swipl-devel src/pl-dict.h @ cbf4e1896275
+# UPSTREAM: swipl-devel src/pl-dict.h @ 18168e629eab
 # UPSTREAM: swipl-devel src/SWI-Prolog.h @ cbf4e1896275
 # CLASS: code
 # COPYRIGHT: Copyright (c)  2013-2026, VU University Amsterdam

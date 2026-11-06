@@ -1,5 +1,5 @@
-# UPSTREAM: swipl-devel src/pl-event.c @ cbf4e1896275
-# UPSTREAM: swipl-devel src/pl-event.h @ cbf4e1896275
+# UPSTREAM: swipl-devel src/pl-event.c @ 18168e629eab
+# UPSTREAM: swipl-devel src/pl-event.h @ 18168e629eab
 # CLASS: code
 # COPYRIGHT: Copyright (c)  2019-2026, University of Amsterdam
 # COPYRIGHT: VU University Amsterdam

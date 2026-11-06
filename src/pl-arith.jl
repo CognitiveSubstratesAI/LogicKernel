@@ -2,7 +2,7 @@
 # UPSTREAM: swipl-devel src/pl-arith.h @ cbf4e1896275
 # UPSTREAM: swipl-devel src/pl-incl.h @ cbf4e1896275
 # UPSTREAM: swipl-devel src/pl-inline.h @ cbf4e1896275
-# UPSTREAM: swipl-devel src/os/pl-os.c @ cbf4e1896275
+# UPSTREAM: swipl-devel src/os/pl-os.c @ 18168e629eab
 # CLASS: code
 # COPYRIGHT: Copyright (c)  1985-2026, University of Amsterdam
 # COPYRIGHT: VU University Amsterdam
