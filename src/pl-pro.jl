@@ -279,7 +279,13 @@ function pl_restore_trace2_va(
         return PL_error(ld, ERR_REPRESENTATION, mk_sym(T, :size_t)) ? FTRUE : FFALSE   # PL_representation_error("size_t")
     end
 
-    depth = depthi == -1 ? SKIP_VERY_DEEP : depthi == -2 ? SKIP_REDO_IN_SKIP : UInt(depthi)
+    depth = if depthi == -1
+        SKIP_VERY_DEEP
+    elseif depthi == -2
+        SKIP_REDO_IN_SKIP
+    else
+        UInt(depthi)
+    end
     ld.debugstatus_tracing = (flags & NOTRACE_TRACE) != 0
     ld.debugstatus_debugging = (flags & NOTRACE_DEBUG) != 0
     ld.debugstatus_skiplevel = depth

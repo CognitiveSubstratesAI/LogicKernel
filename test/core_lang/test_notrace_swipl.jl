@@ -94,28 +94,94 @@ nt_dummy.
 # restore replaces the bits and the level (-1 and -2 are two levels); nt18: a failing row; nt19-nt22: the second `'$notrace'/2` reads the
 # cleared status, a restored status survives a save, one flag bit alone is restored.
 const _NT_CASES = [
-    ("nt01", raw"'$notrace'(F0, S0), '$restore_trace'(1, -1), '$notrace'(F, S), '$restore_trace'(F0, S0), R = F-S"),
-    ("nt02", raw"'$notrace'(F0, S0), '$restore_trace'(2, -1), '$notrace'(F, S), '$restore_trace'(F0, S0), R = F-S"),
-    ("nt03", raw"'$notrace'(F0, S0), '$restore_trace'(3, -1), '$notrace'(F, S), '$restore_trace'(F0, S0), R = F-S"),
-    ("nt04", raw"'$notrace'(F0, S0), '$restore_trace'(12, 5), '$notrace'(F, S), '$restore_trace'(F0, S0), R = F-S"),
-    ("nt05", raw"'$notrace'(F0, S0), '$restore_trace'(14, -2), '$notrace'(F, S), '$restore_trace'(F0, S0), R = F-S"),
-    ("nt06", raw"'$notrace'(F0, S0), '$restore_trace'(12, 4294967296), '$notrace'(F, S), '$restore_trace'(F0, S0), R = F-S"),
-    ("nt07", raw"'$notrace'(F0, S0), '$restore_trace'(12, 9223372036854775807), '$notrace'(F, S), '$restore_trace'(F0, S0), R = F-S"),
-    ("nt08", raw"'$notrace'(F0, S0), '$restore_trace'(15, 7), '$notrace'(_, _), '$notrace'(F, S), '$restore_trace'(F0, S0), R = F-S"),
-    ("nt09", raw"'$notrace'(F0, S0), '$restore_trace'(0, 0), '$notrace'(F1, S1), '$notrace'(F2, S2), '$restore_trace'(F0, S0), R = F1-S1-F2-S2"),
-    ("nt10", raw"'$notrace'(F0, S0), '$restore_trace'(2, -1), current_prolog_flag(debug, D1), '$notrace'(F, _), current_prolog_flag(debug, D2), '$restore_trace'(F0, S0), R = D1-F-D2"),
-    ("nt11", raw"'$notrace'(F0, S0), '$restore_trace'(1, -1), current_prolog_flag(debug, D), '$notrace'(F, _), '$restore_trace'(F0, S0), R = D-F"),
-    ("nt12", raw"'$notrace'(F0, S0), set_prolog_flag(debug, true), '$notrace'(F, S), '$restore_trace'(F, S), current_prolog_flag(debug, D), '$notrace'(_, _), '$restore_trace'(F0, S0), R = F-S-D"),
-    ("nt13", raw"'$notrace'(F0, S0), '$restore_trace'(3, 3), '$restore_trace'(0, 9), '$notrace'(F, S), '$restore_trace'(F0, S0), R = F-S"),
-    ("nt14", raw"'$notrace'(F0, S0), '$restore_trace'(15, 3), catch('$restore_trace'(0, -3), error(E, _), true), '$notrace'(F, S), '$restore_trace'(F0, S0), R = E-F-S"),
-    ("nt15", raw"'$notrace'(F0, S0), '$restore_trace'(15, 3), ( '$notrace'(0, _) -> X = yes ; X = no ), '$notrace'(F, S), '$restore_trace'(F0, S0), R = X-F-S"),
-    ("nt16", raw"'$notrace'(F0, S0), '$restore_trace'(1, 5), '$restore_trace'(2, -1), '$notrace'(F, S), '$restore_trace'(F0, S0), R = F-S"),
-    ("nt17", raw"'$notrace'(F0, S0), '$restore_trace'(12, -2), '$restore_trace'(12, -1), '$notrace'(F, S), '$restore_trace'(F0, S0), R = F-S"),
-    ("nt18", raw"'$notrace'(F0, S0), '$restore_trace'(F0, S0), '$notrace'(F, _), ( F == 99 -> true ; '$restore_trace'(F0, S0), fail )"),
-    ("nt19", raw"'$notrace'(F0, S0), '$restore_trace'(15, 1), '$notrace'(F, S), '$notrace'(G, T), '$restore_trace'(F0, S0), R = F-S-G-T"),
-    ("nt20", raw"'$notrace'(F0, S0), '$restore_trace'(F0, S0), '$restore_trace'(14, 0), '$notrace'(F, S), '$restore_trace'(F, S), '$notrace'(G, T), '$restore_trace'(F0, S0), R = F-S-G-T"),
-    ("nt21", raw"'$notrace'(F0, S0), '$restore_trace'(8, 2), '$notrace'(F, _), '$notrace'(G, _), '$restore_trace'(F0, S0), R = F-G"),
-    ("nt22", raw"'$notrace'(F0, S0), '$restore_trace'(4, -2), '$notrace'(F, S), '$restore_trace'(F0, S0), R = F-S"),
+    (
+        "nt01",
+        raw"'$notrace'(F0, S0), '$restore_trace'(1, -1), '$notrace'(F, S), '$restore_trace'(F0, S0), R = F-S"
+    ),
+    (
+        "nt02",
+        raw"'$notrace'(F0, S0), '$restore_trace'(2, -1), '$notrace'(F, S), '$restore_trace'(F0, S0), R = F-S"
+    ),
+    (
+        "nt03",
+        raw"'$notrace'(F0, S0), '$restore_trace'(3, -1), '$notrace'(F, S), '$restore_trace'(F0, S0), R = F-S"
+    ),
+    (
+        "nt04",
+        raw"'$notrace'(F0, S0), '$restore_trace'(12, 5), '$notrace'(F, S), '$restore_trace'(F0, S0), R = F-S"
+    ),
+    (
+        "nt05",
+        raw"'$notrace'(F0, S0), '$restore_trace'(14, -2), '$notrace'(F, S), '$restore_trace'(F0, S0), R = F-S"
+    ),
+    (
+        "nt06",
+        raw"'$notrace'(F0, S0), '$restore_trace'(12, 4294967296), '$notrace'(F, S), '$restore_trace'(F0, S0), R = F-S"
+    ),
+    (
+        "nt07",
+        raw"'$notrace'(F0, S0), '$restore_trace'(12, 9223372036854775807), '$notrace'(F, S), '$restore_trace'(F0, S0), R = F-S"
+    ),
+    (
+        "nt08",
+        raw"'$notrace'(F0, S0), '$restore_trace'(15, 7), '$notrace'(_, _), '$notrace'(F, S), '$restore_trace'(F0, S0), R = F-S"
+    ),
+    (
+        "nt09",
+        raw"'$notrace'(F0, S0), '$restore_trace'(0, 0), '$notrace'(F1, S1), '$notrace'(F2, S2), '$restore_trace'(F0, S0), R = F1-S1-F2-S2"
+    ),
+    (
+        "nt10",
+        raw"'$notrace'(F0, S0), '$restore_trace'(2, -1), current_prolog_flag(debug, D1), '$notrace'(F, _), current_prolog_flag(debug, D2), '$restore_trace'(F0, S0), R = D1-F-D2"
+    ),
+    (
+        "nt11",
+        raw"'$notrace'(F0, S0), '$restore_trace'(1, -1), current_prolog_flag(debug, D), '$notrace'(F, _), '$restore_trace'(F0, S0), R = D-F"
+    ),
+    (
+        "nt12",
+        raw"'$notrace'(F0, S0), set_prolog_flag(debug, true), '$notrace'(F, S), '$restore_trace'(F, S), current_prolog_flag(debug, D), '$notrace'(_, _), '$restore_trace'(F0, S0), R = F-S-D"
+    ),
+    (
+        "nt13",
+        raw"'$notrace'(F0, S0), '$restore_trace'(3, 3), '$restore_trace'(0, 9), '$notrace'(F, S), '$restore_trace'(F0, S0), R = F-S"
+    ),
+    (
+        "nt14",
+        raw"'$notrace'(F0, S0), '$restore_trace'(15, 3), catch('$restore_trace'(0, -3), error(E, _), true), '$notrace'(F, S), '$restore_trace'(F0, S0), R = E-F-S"
+    ),
+    (
+        "nt15",
+        raw"'$notrace'(F0, S0), '$restore_trace'(15, 3), ( '$notrace'(0, _) -> X = yes ; X = no ), '$notrace'(F, S), '$restore_trace'(F0, S0), R = X-F-S"
+    ),
+    (
+        "nt16",
+        raw"'$notrace'(F0, S0), '$restore_trace'(1, 5), '$restore_trace'(2, -1), '$notrace'(F, S), '$restore_trace'(F0, S0), R = F-S"
+    ),
+    (
+        "nt17",
+        raw"'$notrace'(F0, S0), '$restore_trace'(12, -2), '$restore_trace'(12, -1), '$notrace'(F, S), '$restore_trace'(F0, S0), R = F-S"
+    ),
+    (
+        "nt18",
+        raw"'$notrace'(F0, S0), '$restore_trace'(F0, S0), '$notrace'(F, _), ( F == 99 -> true ; '$restore_trace'(F0, S0), fail )"
+    ),
+    (
+        "nt19",
+        raw"'$notrace'(F0, S0), '$restore_trace'(15, 1), '$notrace'(F, S), '$notrace'(G, T), '$restore_trace'(F0, S0), R = F-S-G-T"
+    ),
+    (
+        "nt20",
+        raw"'$notrace'(F0, S0), '$restore_trace'(F0, S0), '$restore_trace'(14, 0), '$notrace'(F, S), '$restore_trace'(F, S), '$notrace'(G, T), '$restore_trace'(F0, S0), R = F-S-G-T"
+    ),
+    (
+        "nt21",
+        raw"'$notrace'(F0, S0), '$restore_trace'(8, 2), '$notrace'(F, _), '$notrace'(G, _), '$restore_trace'(F0, S0), R = F-G"
+    ),
+    (
+        "nt22",
+        raw"'$notrace'(F0, S0), '$restore_trace'(4, -2), '$notrace'(F, S), '$restore_trace'(F0, S0), R = F-S"
+    )
 ]
 
 # swipl's answer lines, generated by evidence/DBG1SMALL/gen_rows.py from the program and the cases above
@@ -211,7 +277,10 @@ end
 
 "The atom codes of a pin line, as text (for a substring test)."
 _nt_decode(l::AbstractString) = join(
-    [String(Char.(parse.(Int, split(m.captures[1], ',')))) for m in eachmatch(r"a\[([\d,]+)\]", l)],
+    [
+        String(Char.(parse.(Int, split(m.captures[1], ',')))) for
+        m in eachmatch(r"a\[([\d,]+)\]", l)
+    ],
     " "
 )
 
@@ -237,7 +306,9 @@ end
     @test any(l -> startswith(l, "t_nt01 ") && occursin("i1,i-1", l), _NT_PINNED)    # the tracing bit is read back
     @test any(l -> startswith(l, "t_nt05 ") && occursin("i14,i-2", l), _NT_PINNED)   # a redo-in-skip level is read back
     @test any(l -> startswith(l, "t_nt04 ") && occursin("i12,i5", l), _NT_PINNED)    # a count is read back
-    @test any(l -> startswith(l, "t_nt14 ") && occursin("size_t", _nt_decode(l)), _NT_PINNED)   # a refused restore
+    @test any(
+        l -> startswith(l, "t_nt14 ") && occursin("size_t", _nt_decode(l)), _NT_PINNED
+    )   # a refused restore
     @test length(unique(_NT_PINNED)) == length(_NT_PINNED)               # the rows differ from one another
 end
 
