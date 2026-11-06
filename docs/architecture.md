@@ -7547,4 +7547,8 @@ UPSTREAM: os/pl-file.c `closeStream` :1503-1521 (`s == Sinput`; `s == Soutput ||
   `(s.flags & (SIO_STATIC | SIO_INPUT)) == (SIO_STATIC | SIO_INPUT)`, `isSoutputOrSerror(s)` likewise with `SIO_OUTPUT` (src/os/pl-file.jl). `SIO_STATIC` is carried only by the streams `initIO`,
   `set_standard_stream!` and `restoreStandardStream` make (`open/3` streams do not have it). A host-replaced `user_input` is also a "Sinput" (a no-op close), as before. A literal identity test would need a
   7th slot in `ld.IO_streams` holding the original and `restoreStandardStream` giving it back: an engine decision, NOT taken (dispatcher, provisional, pending audit).
-- Rows: test/files/test_open_close_swipl.jl cs01-cs10 (swipl 10.1.19's pinned answers) and the white-box testset; mutants tools/mutants/CLOSESTREAM.py.
+- **The condition of the flag test (audit D-0436).** Upstream's static streams are exactly the three `S__iob` entries, so the test stands in for the address test only if no other
+  kernel stream carries `SIO_STATIC`. The testset "no stream but the standard ones carries SIO_STATIC" builds one stream per constructor of the stream layer (`Sopen_file` r/w/a/u,
+  `Sopen_string`, `Sopenmem`, `Sopen_julia_io`) and `open/3` in each mode, and asserts the flag and both predicates are false; the three standard streams do carry it.
+  Mutants CS-14..CS-19 make each constructor static and remove the flag test. A new stream constructor must not set `SIO_STATIC`.
+- Rows: test/files/test_open_close_swipl.jl cs01-cs10 (swipl 10.1.19's pinned answers) and the white-box testsets; mutants tools/mutants/CLOSESTREAM.py (19).
