@@ -575,8 +575,7 @@ usage_text()::String = replace(USAGE_TEXT, "%s" => "swipl")
 
 "Write the usage text to `user_error` (pl-init.c `usage`). True."
 function usage(ld::PL_local_data)::Bool
-    _initIO(ld)                                 # the standard streams are open (as printMessage)
-    s = Suser_error(ld)::IOSTREAM
+    s = Suser_error(ld)::IOSTREAM               # open from the engine's creation (`initIO`), as in printMessage
     PutString(usage_text(), s)
     Sflush(s)
     return true
