@@ -65,11 +65,12 @@ MUTANTS = [
     dict(id="MG7 the cleanup goal runs with the exception pending (no saveWakeup)", file=W, targets=T_CLEAN,
          old='''            wstate = saveWakeup(ld, false)
             if wstate !== nothing
-                rval = call_term(_query_gd(ld), ld, clean)''',
+                gd = _query_gd(ld)''',
          new='''            wstate = nothing
-            call_term(_query_gd(ld), ld, clean)
+            gd = _query_gd(ld)
+            call_term(gd, ld, contextModule(gd, ld, fr), clean)
             if wstate !== nothing
-                rval = false'''),
+                gd = _query_gd(ld)'''),
     dict(id="MG8 an exception of the cleanup goal never replaces a pending one (no WAKEUP_KEEP_URGENT_EXCEPTION)", file=W, targets=T_CLEAN,
          old='''                        wstate.flags | WAKEUP_KEEP_URGENT_EXCEPTION''',
          new='''                        wstate.flags'''),
@@ -122,10 +123,10 @@ MUTANTS = [
          new='''        nothing'''),
     # ── calling the goal ──
     dict(id="MG20 call_term calls a control construct directly, not through call/1", file=W, targets=T_CLEAN,
-         old='''            if isTextAtom(h) && !_is_control(p, gd.functors_control) &&''',
-         new='''            if isTextAtom(h) &&'''),
+         old='''        if isTextAtom(name) && (valueFunctor(ld.functors, f).flags & CONTROL_F) == 0 &&''',
+         new='''        if isTextAtom(name) &&'''),
     dict(id="MG21 callProlog has no shortcut for `true`", file=PRO, targets=T_CLEAN,
-         old='''    if isTextAtom(p) && sym_key(p) == gd.subclause_names.atom_true     # fd == FUNCTOR_true0
+         old='''    if arity == 0 && sym_key(name) == gd.subclause_names.atom_true     # fd == FUNCTOR_true0
         return true
     end
 ''',
@@ -137,25 +138,29 @@ MUTANTS = [
          new='''    PL_close_query(ld, qid)
     if rval && ld.exception_term != 0'''),
     dict(id="MG23 call_term closes its query (the cleanup goal's bindings are undone)", file=W, targets=T_CLEAN,
-         old='''        rval = PL_next_solution(gd, ld, qid) != 0
-        PL_cut_query(ld, qid)''',
-         new='''        rval = PL_next_solution(gd, ld, qid) != 0
-        PL_close_query(ld, qid)'''),
+         old='''    rval = PL_next_solution(gd, ld, qid) != 0
+    PL_cut_query(ld, qid)''',
+         new='''    rval = PL_next_solution(gd, ld, qid) != 0
+    PL_close_query(ld, qid)'''),
     dict(id="MG24 mustBeCallable accepts any bound term", file=W, targets=T_CLEAN,
-         old='''    (isTerm(ap) || isTextAtom(ap)) || return PL_type_error(ld, "callable", call)
+         old='''    (ak == DU_WORD && (_is_gcompound(aw) || isTextAtom(_atom_value(ld, aw)))) ||
+        return PL_error(ld, ERR_TYPE, mk_sym(T, :callable), call)   # isTerm(*ap) || isTextAtom(*ap)
 
     return true''',
          new='''    return true'''),
     # ── V9g-b: recorded terms ──
     dict(id="MB1 compileTermToHeap drops the cyclic references", file=REC, targets=T_FIND,
-         old='''        push!(cycles, (key, deRef(ld, mk_var(T, key))))''',
+         old='''                addOpCode(info, PL_REC_CYCLE)
+                addSizeInt(info, Int(valInt(fd)))''',
          new='''        nothing'''),
     dict(id="MB2 compileTermToHeap leaves the cyclic copies' bindings on the trail", file=REC, targets=T_FIND,
-         old='''    Undo!(ld, m)
-    return record{T}(c, cycles, false)''',
-         new='''    return record{T}(c, cycles, false)'''),
+         old='''    restoreVars(ld, info)
+    unvisit(ld, info)
+''',
+         new='''    restoreVars(ld, info)
+'''),
     dict(id="MB3 copyRecordToGlobal does not bind the cyclic references", file=REC, targets=T_FIND,
-         old='''            Trail!(ld, var_key(w), _rec_copy(vars, v))''',
+         old='''            _rec_put!(ld, slot, p, consPtr(b.gbase + off, TAG_COMPOUND | STG_GLOBAL))''',
          new='''            nothing'''),
     dict(id="MB4 _rec_copy gives the top compound's variables no keys first (first-visit order)", file=REC, targets=T_FIND,
          old='''    _rec_block!(vars, t)
@@ -166,9 +171,11 @@ MUTANTS = [
             push!(stack, (c, T[]))''',
          new='''            push!(stack, (c, T[]))'''),
     dict(id="MB6 a record's variable met twice gets two fresh variables", file=REC, targets=T_FIND,
-         old='''    vars[key] = v
-    return v''',
-         new='''    return v'''),
+         old='''                ld.gstack[p] = word(0)                      # setVar(*p)
+                b.vars[n] = p
+            end''',
+         new='''                ld.gstack[p] = word(0)                      # setVar(*p)
+            end'''),
     # ── the bag ──
     dict(id="MB7 '$add_findall_bag'/1 succeeds", file=BAG, targets=T_FIND,
          old='''    else
@@ -229,18 +236,20 @@ end'''),
                 p = r
                 next[p] = q'''),
     dict(id="MB17 a partial list is a type error to the sorts", file=LST, targets=T_SORT,
-         old='''        if kind(tail) === VAR
+         old='''        if tk == DU_CELL
             PL_error(ld, ERR_INSTANTIATION)
-        else''',
+        else
+            PL_error(ld, ERR_TYPE, mk_sym(T, :list), t)''',
          new='''        if false
             PL_error(ld, ERR_INSTANTIATION)
-        else'''),
+        else
+            PL_error(ld, ERR_TYPE, mk_sym(T, :list), t)'''),
     dict(id="MB18 sort/2 refuses a cyclic list", file=LST, targets=T_SORT,
-         old='''(is_pair(tail) && remove_dups))''',
+         old='''(tlist && remove_dups))''',
          new='''(false && remove_dups))'''),
     dict(id="MB19 keysort/2 takes one element without looking for its key", file=LST, targets=T_SORT,
-         old='''    if len == 1 && !pair && !is_pair(tail)''',
-         new='''    if len == 1 && !is_pair(tail)'''),
+         old='''    len == 1 && !pair && isempty(argv) && !tlist && return (SORT_NOSORT, nothing)''',
+         new='''    len == 1 && isempty(argv) && !tlist && return (SORT_NOSORT, nothing)'''),
     dict(id="MB20 '$length'/2 answers [] for a negative length", file=LST, targets=T_SORT,
          old='''        elseif len == 0
             return PL_unify_nil(ld, A1) ? FTRUE : FFALSE
@@ -260,35 +269,34 @@ end'''),
     end''',
          new=''''''),
     dict(id="MB23 term_variables lists a variable every time it is met", file=P, targets=T_SORT,
-         old='''            push!(visitedv, k)
-
-            count += 1''',
-         new='''            count += 1'''),
+         old='''                visitedWord_cells(ld, p) && break
+                ((flags & TV_ATTVAR) != 0 && k != DU_ATTVAR) && break   # attributed vars only''',
+         new='''                ((flags & TV_ATTVAR) != 0 && k != DU_ATTVAR) && break   # attributed vars only'''),
     # ── '$free_variable_set'/3 ──
     dict(id="MB24 free_variables_loop collects the variables left of ^", file=P, targets=T_BAGOF,
-         old='''                existential || push!(vars, t)''',
-         new='''                push!(vars, t)'''),
+         old='''            if !visitedWord_cells(ld, p) && !existential''',
+         new='''            if !visitedWord_cells(ld, p)'''),
     dict(id="MB25 free_variables_loop never enters the existential part", file=P, targets=T_BAGOF,
          old='''                    existential = true
                     continue''',
          new='''                    continue'''),
     dict(id="MB26 the mark does not end the existential part", file=P, targets=T_BAGOF,
-         old='''        if t === mark
+         old='''        if t == FV_MARK                                     # t == &mark
             existential = false
             continue''',
-         new='''        if t === mark
+         new='''        if t == FV_MARK                                     # t == &mark
             continue'''),
     dict(id="MB27 '$free_variable_set'/3 drops the module of the goal", file=P, targets=T_BAGOF,
-         old='''        if mname !== nothing            # PL_cons_functor(goal, FUNCTOR_colon2, m, goal)''',
+         old='''        if mname != 0                                       # PL_put_atom(m, mname);''',
          new='''        if false'''),
     dict(id="MB28 a goal that is a compound met before is not taken as the goal", file=P, targets=T_BAGOF,
-         old='''            if haskey(visitedf, t)                      # visited(f)
+         old='''            if visitedWord_cells(ld, c)                     # visited(f)
                 if !in_goal && !existential
-                    goal = t
+                    ld.slots[goal + 1] = w                  # *valTermRef(goal) = *t
                     in_goal = true
                 end
                 continue''',
-         new='''            if haskey(visitedf, t)                      # visited(f)
+         new='''            if visitedWord_cells(ld, c)                     # visited(f)
                 continue'''),
     # ── the boot clauses ──
     dict(id="MB29 findall/4 hands cleanup_bag/2 an unqualified findall_loop/4", file=E, targets=T_BAGOF,
@@ -304,17 +312,19 @@ end'''),
          new='''            alloc, keyed, _boot_term(:keysort, T[Answers, Sorted]),'''),
     # ── copy_term (its battery of 2026-10-13; records are its copies, so findall/3 is a target too) ──
     dict(id="CT1 a ground compound is never shared", file=CP, targets=T_COPY,
-         old='''    r = (st.share && f.same) ? f.orig : mk_expr(T, f.kids)''',
-         new='''    r = mk_expr(T, f.kids)'''),
+         old='''                elseif (fd & BOTH_MASK) == FIRST_MASK       # is_ground: shared''',
+         new='''                elseif false'''),
     dict(id="CT2 duplicate_term shares like copy_term", file=CP, targets=T_COPY,
-         old='''    copy = copy_term_refs(ld, A1, cp_options(false))''',
-         new='''    copy = copy_term_refs(ld, A1, cp_options(true))'''),
+         old='''    return copy_term_refs(ld, in, copy, cp_options(COPY_ATTRS))
+end''',
+         new='''    return copy_term_refs(ld, in, copy, cp_options(COPY_ATTRS | COPY_SHARE))
+end'''),
     dict(id="CT3 a variable met twice gets two fresh variables", file=CP, targets=T_COPY,
-         old='''        w = get!(() -> mk_var(T, fresh_var_keys!(1)), st.vars, var_key(t))''',
-         new='''        w = mk_var(T, fresh_var_keys!(1))'''),
+         old='''                if isVar(ld.gstack[p2]) && (_cp_vm(ld, p2) & _CPV_VARMARK) != 0''',
+         new='''                if false'''),
     dict(id="CT4 a compound with a variable below is shared (`same` never cleared)", file=CP, targets=T_COPY,
-         old='''                r === c || (f.same = false)''',
-         new='''                nothing'''),
+         old='''        can_share_cells(ld, a) || return nothing''',
+         new='''        nothing'''),
     dict(id="CT5 the cyclic copy is not bound (no Trail!)", file=CP, targets=T_COPY,
          old='''            Trail!(ld, var_key(w), r)                   # the cyclic copy: w = r, and r holds w''',
          new='''            nothing'''),
@@ -341,20 +351,14 @@ end'''),
          new='''    return r''',
          equivalent="src/pl-copyterm.jl _cp_chain_done!: `done` only lets a bound variable met again reuse its copy — recopying gives an equal term, and a cycle is caught by `inprogress` before `done` is asked"),
     dict(id="CT10 copy_term/2 has no atomic shortcut", file=CP, targets=T_COPY,
-         old='''    if _cp_atomic(ld, A1)
+         old='''    if PL_is_atomic(ld, A1)                                 # if ( PL_is_atomic(A1) )
         return PL_unify(ld, A1, A2) ? FTRUE : FFALSE
     end
-    copy = copy_term_refs(ld, A1, cp_options(true))
-    return PL_unify(ld, copy, A2) ? FTRUE : FFALSE
-end
-
-# PORT: pl-copyterm.c copy_term_nat''',
-         new='''    copy = copy_term_refs(ld, A1, cp_options(true))
-    return PL_unify(ld, copy, A2) ? FTRUE : FFALSE
-end
-
-# PORT: pl-copyterm.c copy_term_nat''',
-         equivalent="src/pl-copyterm.jl pl_copy_term2_va: the copy of an atomic term is the term itself (`_cp_visit!` returns it unchanged), so `PL_unify(copy, A2)` and `PL_unify(A1, A2)` are the same"),
+    copy = PL_new_term_ref(ld)
+    copy_term_refs(ld, A1, copy, cp_options(COPY_SHARE | COPY_ATTRS)) || return FFALSE''',
+         new='''    copy = PL_new_term_ref(ld)
+    copy_term_refs(ld, A1, copy, cp_options(COPY_SHARE | COPY_ATTRS)) || return FFALSE''',
+         equivalent="src/pl-copyterm.jl pl_copy_term2_va: the copy of an atomic term is the term itself (`do_copy_term_cells` stores the atomic word as it is: `*to = *from`), so `PL_unify(copy, A2)` and `PL_unify(A1, A2)` are the same"),
     # ── carried from V9e-1: it must stay caught ──
     dict(id="MC17 mcall_cont does not set the next frame's flags", file=W, targets=T_DET,
          old='''    @label mcall_cont
