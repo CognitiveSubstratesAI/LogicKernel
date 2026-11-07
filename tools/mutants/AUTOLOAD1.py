@@ -9,9 +9,10 @@
 # drops the defined test": the real hook is defined by the boot. The white-box rows of test_autoload_trap.jl run on the BOOTED database and steer
 # the real hook through `user:exception/3` clauses, so A3b-A3r, A1c and A1e keep their kill rows.)
 # KILL: the A4 and Q3 mutants by test/core_lang/test_autoload_flag_swipl.jl (rows af01-af25 and its LK-ONLY testsets: the mask bit after
-# each value, PL_set_prolog_flag, the existence error for `$autoload:set_autoload/1` with the boot session off, the Q3 error with it on)
+# each value, PL_set_prolog_flag, the skipped propagation with the boot session on [an unbound value: instantiation_error], the Q3 error with it on;
+# the rows run on the BOOTED database, so propagateAutoload calls `$autoload:set_autoload/1` for real: af08 and af26 observe the call)
 # and test/files/test_qlf_swipl.jl (the compileFileList rows read the flag back). The boot-session Q3 error is killed by test/core_lang/test_autoload_trap.jl's boot-session row (LB4 b2: the boot session
-# is the template's alone, so test_qlf_swipl.jl's boot_from_source! row could not hold on a copy of it) and by test_autoload_flag_swipl.jl's Q3 testset (:359).
+# is the template's alone, so test_qlf_swipl.jl's boot_from_source! row could not hold on a copy of it) and by test_autoload_flag_swipl.jl's Q3 testset (the last LK-ONLY testset).
 # The A1 mutants by any test that meta-calls an undefined predicate: mcall_cont's undefined branch runs `trapUndefined` between
 # `FR = NFR` and the restore, and `normal_call` (pl-wam.jl:3324) reads `FR` as the new frame's parent.
 # A1c (the `ld.environment_frame = FR` line, src/pl-wam.jl:3830) was a DEFERRED KILL until A5 (audit D-0400 item 2; battery run
@@ -103,11 +104,11 @@ MUTANTS = [
          old="            setAutoload(ld, a) || return false\n",
          new="            setAutoload(ld, a)\n"),
     # ── pl-prologflag.c propagateAutoload, set_prolog_flag_ptr (A4) ──
-    dict(id="AUTOLOAD1-A4e propagateAutoload runs inside the boot session: the existence error for $autoload:set_autoload/1 reaches every row (KILL test_autoload_flag_swipl.jl rows, compileFileList rows of test_qlf_swipl.jl)",
+    dict(id="AUTOLOAD1-A4e propagateAutoload runs inside the boot session (KILL the LK-ONLY testset of test_autoload_flag_swipl.jl: with the boot session on, set_prolog_flag(autoload, X) with X unbound answers instantiation_error; under A4e `$autoload:set_autoload/1` binds X and the call succeeds)",
          file=P, targets=TA4,
          old="    gd.bootsession && return true\n",
          new="    false && return true\n"),
-    dict(id="AUTOLOAD1-A4f set_prolog_flag_ptr does not propagate the autoload flag (KILL the LK-ONLY testset: set_prolog_flag(autoload, false) with the boot session off raises the existence error)",
+    dict(id="AUTOLOAD1-A4f set_prolog_flag_ptr does not propagate the autoload flag (KILL af08: the unbound value is never bound to the current one, and af26: `$autoload:set_autoload(false)` prints no message, so the program's user:message_hook records none)",
          file=P, targets=TA4,
          old="    sym_key(k) == sym_key(mk_sym(T, :autoload)) &&\n        !propagateAutoload(gd, ld, value) &&\n        return nothing\n",
          new=""),

@@ -997,12 +997,6 @@ end
 # `lookupProcedure` in `lookupModule`'s module (both create what is not there), looked up on each call. Before
 # boot/autoload.pl is loaded `$autoload:set_autoload/1` has no clauses, so a call outside the boot session raises
 # the existence error upstream raises too (`PL_Q_PASS_EXCEPTION`).
-# DIVERGES (a missing seam with a deferred owner; owner AUTOLOAD1 A5): upstream skips this call only while booting
-# (`!GD->bootsession`, pl-prologflag.c:990 at the pin) and swipl answers the rows of a booted system, where the call
-# runs `set_autoload/1` (boot/autoload.pl:945-946, first clause `current_prolog_flag(autoload, FlagValue)`, which binds
-# an unbound value: `set_prolog_flag(autoload, X)` answers `true`). The kernel's rows run with `gd.bootsession` set (no
-# booted autoload.pl), so the same call raises `instantiation_error` in `PL_get_atom_ex`. Removal: A5 (the hook arrives
-# with boot/autoload.pl loading on the boot path); row af08 is kernel-documented until then and flips to swipl-compared at A5.
 "Tell the Prolog side that `autoload` is set to the term `val`: `\$autoload:set_autoload(Val)`, not in the boot session (pl-prologflag.c)."
 function propagateAutoload(
     gd::PL_global_data{T}, ld::PL_local_data{T}, val::term_t

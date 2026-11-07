@@ -7131,21 +7131,22 @@ DIVERGES:
 - **`ld` is explicit** wherever upstream has `GET_LD` (trapUndefined, getProcDefinedDefinition, setAutoload, propagateAutoload, PL_set_prolog_flag); the
   database `gd` is an argument as everywhere in the kernel. `PL_predicate("set_autoload", 1, "$autoload")` is `lookupProcedure` in `lookupModule`'s
   module on each call (both create what is not there), not a cached `predicate_t`.
-- **The rows run with `gd.bootsession` set** (test/core_lang/test_autoload_flag_swipl.jl): swipl's `propagateAutoload` reaches `autoload.pl`, whose
-  `set_autoload/1` is defined only on a booted database, so the rows compare the setter's answers, and an LK-ONLY testset states the existence error
-  for `$autoload:set_autoload/1` raised with the boot session off. One row differs: af08 (`set_prolog_flag(autoload, X)`, X unbound): swipl's
-  `set_autoload/1` first clause binds X to the current value (answer `true`), the kernel skips it and `PL_get_atom_ex` raises `instantiation_error`;
-  the test pins the kernel's answer and carries swipl's. This is a missing seam with a deferred owner, **owner AUTOLOAD1 A5** (the hook arrives with boot/autoload.pl
-  loading on the boot path); upstream skips the call only while booting (src/os/pl-prologflag.c:990 at the pin), swipl's row runs a booted system
-  (boot/autoload.pl:945-946). Row af08 is kernel-documented until A5 and flips to swipl-compared there (refusal-flip rule, D-0375/D-0376).
+- **The rows run on the booted database (RESOLVED by A5 post-boot part 2, the af08 flip)** (test/core_lang/test_autoload_flag_swipl.jl): `propagateAutoload`
+  reaches `$autoload:set_autoload/1` (boot/autoload.pl:945-956) for real, as in swipl, so every row, af08 included (`set_prolog_flag(autoload, X)`, X unbound:
+  the first clause binds X to the current value, answer `true`), equals swipl's pin; the former kernel-documented af08 answer and its missing-seam DIVERGES are
+  gone. The LK-ONLY testsets state what swipl cannot: the mask bit, `PL_set_prolog_flag`, the propagation skipped in the boot session (upstream's
+  `!GD->bootsession`, pl-prologflag.c:990: an unbound value is an `instantiation_error`) and the Q3 error. Row af26 pins the message
+  `$autoload:set_autoload(false)` prints, `print_message(informational, autoload(disabled(Count)))` (boot/autoload.pl:954): swipl 10.1.19 prints
+  `% Disabled autoloading (loaded 0 files)` on stderr too, so the kernel's stderr line is correct; the row compares the message term the program's
+  `user:message_hook/3` records (kind, count, lines) with swipl's.
 
 ORIGINAL: none in the source (the generator evidence/AUTOLOAD1/gen_af_rows.py and the mutant list tools/mutants/AUTOLOAD1.py are the step's own).
 
 Removal conditions: the `_boot_when!` stand-in stays until A6 (trapUndefined autoloads `when/2` from library(when) on a booted database); the
 mcall_cont `lTop` line gets its mutant with A3 (a query runs inside `trapUndefined` from A3 on).
 
-Tests: test/core_lang/test_autoload_flag_swipl.jl (25 swipl rows af01-af25, pins from swipl 10.1.19, two byte-identical runs; LK-ONLY testsets: the mask
-bit after each value, `PL_set_prolog_flag`, the existence error with the boot session off, the Q3 error with it on); test_qlf_swipl.jl (the
+Tests: test/core_lang/test_autoload_flag_swipl.jl (26 swipl rows af01-af26, pins from swipl 10.1.19, two byte-identical runs; LK-ONLY testsets: the mask
+bit after each value, `PL_set_prolog_flag`, the skipped propagation with the boot session on, the Q3 error with it on); test_qlf_swipl.jl (the
 `compileFileList` rows run in the boot session; `boot_from_source!` expects the Q3 error for the undefined `$load_additional_boot_files/0`);
 test_set_flag_swipl.jl and test_push_flag_swipl.jl lost their `("autoload","false")` refusal pins; test_module_path.jl calls `trapUndefined(gd, ld, def)`.
 Mutants: tools/mutants/AUTOLOAD1.py (14; the A1 mutants of MOD3a.py and MOD3a2.py were re-fitted to the new call text).
@@ -7447,9 +7448,9 @@ replaced by a last call. The swipl-compared form needs `prolog_frame_attribute/3
 
 Post-boot part 1 (done): the test-hook rows converted (A1c's G1 row included), the hook guard, its mutant (A3a) and the TRANSIENT DIVERGES deleted The swipl-compared rows are test/core_lang/test_autoload_swipl.jl (new): 18 goals over 12 `user:exception/3` clauses, the kernel's
 answers and retry warnings against pins generated from swipl 10.1.19 (evidence/AUTOLOAD1/gen_autoload_rows.py).
-Left, in order: the af08 flip (`set_prolog_flag(autoload, X)` with X
-unbound answers true through `$autoload:set_autoload/1`; the kernel's rows run with `bootsession` set and `propagateAutoload` returns at once);
-the retry warning through `print_message/2` (`vwarning` needs
+Post-boot part 2 (done): the af08 flip (the rows of test_autoload_flag_swipl.jl run on the booted database; af08 is swipl-compared; the LK-ONLY existence-error
+half, `_AF_KERNEL_DIFFERS` and the `gd.bootsession` toggles are gone; row af26 for the message). 
+Left, in order: the retry warning through `print_message/2` (`vwarning` needs
 `gd.initialised`, a struct change, and messages.pl); the clause/2 `@assert` removal with the NF2-C5 kill row.
 
 ## LB6a — reload bookkeeping: `startReconsultFile`, `reloadContext`, the reload branches of the assert path, the attribute and metapredicate recording, `visibleClause` with the reload generation (R2 loader_boot, audit D-0403 item 6 and D-0415; edit-only: nothing was compiled when this was written; the gate decides)

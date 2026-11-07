@@ -9,10 +9,11 @@
 #     `catch(Goal, error(E, _), R = raised(E))`; a case that changes `autoload` sets it back to `true`.
 #   * Every answer line is swipl's, PINNED (swipl 10.1.19-1-gcbf4e189, evidence/AUTOLOAD1/gen_af_rows.py, two runs byte-identical); with
 #     `swipl` on PATH the live answers are compared with the pins too.
-#   * DIVERGES, representation only: the kernel runs the rows with `gd.bootsession` set after the program is consulted, so
-#     propagateAutoload (which calls `$autoload:set_autoload/1`, a predicate boot/autoload.pl defines) is skipped; the rows compare the
-#     setter's answers. swipl runs it for real. The LK-ONLY testsets at the end state what the kernel alone can state: the mask bit after each
-#     value, `PL_set_prolog_flag`, and the existence error outside the boot session (no autoload.pl is loaded yet).
+#   * The rows run on the BOOTED database (`PL_global_data{T}()`, `bootsession` off), as swipl runs them: `set_prolog_flag(autoload, V)` calls
+#     `$autoload:set_autoload/1` (boot/autoload.pl:945-956) for real, so the row of an unbound value (af08) binds it to the current one, as swipl does.
+#     The LK-ONLY testsets at the end state what the kernel alone can state: the mask bit after each value, `PL_set_prolog_flag`, the
+#     propagation skipped in the boot session (an unbound value is an instantiation_error, upstream's `!GD->bootsession`, pl-prologflag.c:990),
+#     and the Q3 error for an undefined predicate in the boot session.
 using Test, LogicKernel
 const LK = LogicKernel
 
@@ -91,6 +92,9 @@ end
 # the program: one fact, so the loaded file has a clause of its own
 const _AF_PROGRAM = raw"""
 zz_af_marker(1).
+:- dynamic zz_af_seen/1.
+:- multifile user:message_hook/3.
+user:message_hook(autoload(disabled(N)), K, Ls) :- assertz(zz_af_seen(m(K, N, Ls))), fail.
 """
 
 # (id, goal), run IN ORDER; every goal that changes `autoload` ends with it back at `true`
@@ -155,6 +159,12 @@ const _AF_CASES = [
     (
         "af25",
         raw"set_prolog_flag(autoload, false), set_prolog_flag(autoload, explicit), set_prolog_flag(autoload, true), current_prolog_flag(autoload, R)"
+    ),
+    # `$autoload:set_autoload(false)` prints `Disabled autoloading (loaded N files)` through print_message(informational, ...) in swipl too
+    # (boot/autoload.pl:954, pl-prologflag.c propagateAutoload); the hook of the program records the message term the first time it is printed
+    (
+        "af26",
+        raw"retractall(zz_af_seen(_)), set_prolog_flag(autoload, false), set_prolog_flag(autoload, true), set_prolog_flag(autoload, false), set_prolog_flag(autoload, true), findall(S, zz_af_seen(S), R)"
     )
 ]
 
@@ -186,7 +196,8 @@ const _AF_PINNED = [
     "t_af22 c[116,95,97,102,50,50]/1(a[101,120,112,108,105,99,105,116])",
     "t_af23 c[116,95,97,102,50,51]/1(c[114,97,105,115,101,100]/1(c[100,111,109,97,105,110,95,101,114,114,111,114]/2(a[97,117,116,111,108,111,97,100],a[98,97,114])))",
     "t_af24 c[116,95,97,102,50,52]/1(a[116,114,117,101])",
-    "t_af25 c[116,95,97,102,50,53]/1(a[116,114,117,101])"
+    "t_af25 c[116,95,97,102,50,53]/1(a[116,114,117,101])",
+    "t_af26 c[116,95,97,102,50,54]/1(c[91,124,93]/2(c[109]/3(a[105,110,102,111,114,109,97,116,105,111,110,97,108],i0,c[91,124,93]/2(c[45]/2(a[68,105,115,97,98,108,101,100,32,97,117,116,111,108,111,97,100,105,110,103,32,40,108,111,97,100,101,100,32,126,68,32,102,105,108,101,115,41],c[91,124,93]/2(i0,nil)),nil)),c[91,124,93]/2(c[109]/3(a[105,110,102,111,114,109,97,116,105,111,110,97,108],i0,c[91,124,93]/2(c[45]/2(a[68,105,115,97,98,108,101,100,32,97,117,116,111,108,111,97,100,105,110,103,32,40,108,111,97,100,101,100,32,126,68,32,102,105,108,101,115,41],c[91,124,93]/2(i0,nil)),nil)),nil)))"
     # PINS-END
 ]
 
@@ -240,42 +251,25 @@ function _af_query(gd, ld, name::String)::String
     return "$name" * join(" " .* sols)
 end
 
-"The kernel's answer where it differs from swipl's pin by the skipped `set_autoload/1` hook (see the loop below)."
-const _AF_KERNEL_DIFFERS = Dict(
-    "t_af08" => "t_af08 c[116,95,97,102,48,56]/1(c[114,97,105,115,101,100]/1(a[105,110,115,116,97,110,116,105,97,116,105,111,110,95,101,114,114,111,114]))"
-)
-
-"""The kernel's lines for `names` after consulting `path`, as the driver writes swipl's. The program is consulted with
-`gd.bootsession` off (consult needs no boot session) and the cases run with it on, so propagateAutoload is skipped
-(DIVERGES, see the header)."""
-function _af_kernel(path::String, names::Vector{String}; boot::Bool=true)
+"""The kernel's lines for `names` after consulting `path` on the booted database (`bootsession` off: propagateAutoload runs for real, as in swipl)."""
+function _af_kernel(path::String, names::Vector{String})
     gd = LK.PL_global_data{_AF}()
     ld = LK.PL_local_data{_AF}(gd)
     st, ball = LK.load_file!(gd, ld, path)
     out = [st === :ok ? "ok" : "exc " * _af_enc(ball::_AF)]
-    gd.bootsession = boot
     for name in names
         push!(out, _af_query(gd, ld, name))
     end
-    gd.bootsession = false
     return out, gd, ld
 end
 
 @testset "the autoload flag setter as swipl's (af01-af25)" begin
-    # UNVERIFIED on the kernel: gate decides (every row; nothing was run when the file was written)
     f, names = _af_file()
     kl, _, _ = _af_kernel(f, names)
     @test length(kl) == length(_AF_PINNED)
     for (k, p) in zip(kl, _AF_PINNED)
-        # KNOWN DIFFERENCE (pinned, af08): swipl's propagateAutoload runs `$autoload:set_autoload/1` first, whose first clause
-        # `current_prolog_flag(autoload, FlagValue)` BINDS an unbound value to the current one (swipl: `X = true`, R = true);
-        # the kernel skips that call in the boot session (the predicate is boot/autoload.pl's), so PL_get_atom_ex sees the
-        # unbound term: instantiation_error. missing seam, owner AUTOLOAD1 A5; upstream skips the call only while booting
-        # (pl-prologflag.c:990 at the pin), set_autoload/1 is boot/autoload.pl:945-946. Removal: A5 (the hook arrives with
-        # boot/autoload.pl loading on the boot path); the row flips to swipl-compared there (D-0375/D-0376).
-        e = get(_AF_KERNEL_DIFFERS, first(split(p, ' ')), p)
-        k == e || println(stderr, "  ours  ", k, "\n  swipl ", p)
-        @test k == e
+        k == p || println(stderr, "  ours  ", k, "\n  swipl ", p)
+        @test k == p
     end
     # not vacuous: the pins hold both kinds of answer — a raised error and a value read back — through the one extractor
     raised = "c[114,97,105,115,101,100]"                 # raised(…)
@@ -302,7 +296,6 @@ end
     st, _ = LK.load_file!(gd, ld, path)
     @test st === :ok
     @test LK.truePrologFlag(ld, LK.PLFLAG_AUTOLOAD)       # the default: autoload is on
-    gd.bootsession = true                                  # propagateAutoload is skipped (DIVERGES, header)
     for v in vals
         line = _af_query(gd, ld, "w_$(v)")
         @test endswith(line, "a" * _af_codes("ok") * ")")
@@ -311,7 +304,6 @@ end
             sym_text(LK.PL_current_prolog_flag(gd, mk_sym(_AF, :autoload), :atom))
         ) == v
     end
-    gd.bootsession = false
 end
 
 # LK-ONLY: PL_set_prolog_flag (pl-fli.c:5552, the PL_BOOL case) as compileFileList uses it (pl-qlf.c:4798, :4808)
@@ -319,7 +311,6 @@ end
     # UNVERIFIED on the kernel: gate decides (the PL_BOOL value goes through set_prolog_flag with FT_BOOL on an FT_ATOM flag)
     gd = LK.PL_global_data{_AF}()
     ld = LK.PL_local_data{_AF}(gd)
-    gd.bootsession = true
     @test LK.PL_set_prolog_flag(gd, ld, "autoload", false)
     @test String(sym_text(LK.PL_current_prolog_flag(gd, mk_sym(_AF, :autoload), :atom))) ==
         "false"
@@ -328,18 +319,15 @@ end
     @test String(sym_text(LK.PL_current_prolog_flag(gd, mk_sym(_AF, :autoload), :atom))) ==
         "true"
     @test LK.truePrologFlag(ld, LK.PLFLAG_AUTOLOAD)
-    gd.bootsession = false
 end
 
-# LK-ONLY: outside the boot session propagateAutoload calls `$autoload:set_autoload/1`, which boot/autoload.pl defines and nothing has loaded
-# here: the call raises the existence error upstream raises (PL_Q_PASS_EXCEPTION) and the flag is as it was; in the boot session it is skipped
-@testset "LK-ONLY: set_prolog_flag(autoload, V) outside the boot session raises for \$autoload:set_autoload/1" begin
-    # UNVERIFIED on the kernel: gate decides (the exact error term; the test reads the encoded line for the names)
-    # the UNBOOTED database (`setupProlog`): a booted copy (`PL_global_data{T}()`) has boot/autoload.pl loaded, so `\$autoload:set_autoload/1`
-    # exists there and this row's subject (the call before the Prolog half is loaded) is not reached. catch/3 and load_files/2 are the Prolog
-    # half's too, so the goals are run directly and the uncaught ball is read (the PrologException of the query API).
-    gd = LK.setupProlog(_AF)
+# LK-ONLY: in the boot session propagateAutoload is skipped (upstream's `!GD->bootsession`, pl-prologflag.c:990): an unbound value reaches
+# PL_get_atom_ex and raises instantiation_error, where the same call outside the boot session (row af08) binds it through `$autoload:set_autoload/1`;
+# an undefined predicate in the boot session is the AUTOLOAD1 Q3 error naming it
+@testset "LK-ONLY: the boot session skips propagateAutoload; an undefined predicate there names itself (Q3)" begin
+    gd = LK.PL_global_data{_AF}()
     ld = LK.PL_local_data{_AF}(gd)
+    # catch/3 and load_files/2 are the Prolog half's too, so the goals are run directly and the uncaught ball is read (the PrologException of the query API)
     ball(g) =
         try
             LK.query_answers(ld, g; limit=1)
@@ -348,16 +336,22 @@ end
             ex isa LK.PrologException || rethrow()
             _af_enc(ex.ball)
         end
-    line = ball(mk_expr(_AF, _AF[_afs(:set_prolog_flag), _afs(:autoload), _afs(:false)]))
+    unbound = mk_expr(
+        _AF,
+        _AF[_afs(:set_prolog_flag), _afs(:autoload), mk_var(_AF, LK.fresh_var_keys!(1))]
+    )
+    # outside the boot session: `\$autoload:set_autoload/1` binds the unbound value to the current one (af08): the call succeeds
+    @test ball(unbound) === nothing
+    # in the boot session the call is skipped: the unbound value is an instantiation_error and the flag is as it was
+    gd.bootsession = true
+    line = ball(unbound)
     @test line !== nothing
-    line = something(line, "")
-    @test occursin(_af_codes("existence_error"), line)
-    @test occursin(_af_codes("set_autoload"), line)
-    @test occursin(_af_codes("\$autoload"), line)
-    @test LK.truePrologFlag(ld, LK.PLFLAG_AUTOLOAD)         # the flag was not changed
+    @test occursin(_af_codes("instantiation_error"), something(line, ""))
+    @test LK.truePrologFlag(ld, LK.PLFLAG_AUTOLOAD)
     @test String(sym_text(LK.PL_current_prolog_flag(gd, mk_sym(_AF, :autoload), :atom))) ==
         "true"
-    # the same database outside the boot session: an undefined predicate is the soft existence_error (S_UNDEF) ...
+    gd.bootsession = false
+    # an undefined predicate outside the boot session: the real `\$undefined_procedure/4` answers `error` (`\$autoload` finds nothing): existence_error ...
     line = something(ball(_afs(:zz_af_no_such_pred_xx)), "")
     @test occursin(_af_codes("existence_error"), line)
     @test occursin(_af_codes("zz_af_no_such_pred_xx"), line)
