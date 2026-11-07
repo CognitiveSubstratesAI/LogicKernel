@@ -6406,7 +6406,8 @@ registered. All sit in `PL_predicates_from_file` (src/os/pl-file.jl), in upstrea
   line-buffered where swipl reads one key; a PushTty step is for the audit when the toplevel runs interactively.
 - **`$stream_property/2`, `$stream_properties/2`, `$streams_properties/2`**: the `sprop_list` of 26 properties and one
   `stream_*_prop` function each. Property answers that the kernel's streams cannot give honestly (representation only, the
-  `DIVERGES` comments cite the upstream line): `file_no`, `nlink`, `close_on_exec`, `locale` answer `false`; `timeout` answers
+  `DIVERGES` comments cite the upstream line): `nlink`, `close_on_exec`, `locale` answer `false`, and `file_no` for every stream but the
+  three standard ones (FILENO1, below); `timeout` answers
   `infinite` (swipl's default); `reposition` is true only for a Julia `IOStream` file handle (stands in for the `fstat`
   `S_ISREG` test).
 - **`set_stream/2`**: `set_stream`, `ss_info` (the `SS_*` flags) and `prop_get_stream`, with `Ssetbuffer` and `Ssetenc` in
@@ -6430,11 +6431,22 @@ engine without the streams, for the two engines `setupProlog` makes for its own 
 stream table stays empty, and `copy_global_data` still starts a database with empty tables (`GD_COPY_POLICY :streams`). Left as DIVERGES:
 each local data opens its own three streams (upstream: one set per process, referenced by every thread). cbf4e189..V10.1.20: `initIO` and
 setupProlog are unchanged (diff read); the one pl-file.c hunk near the pin's `setStandardStream` is a PIN1 item.
-Known-difference checklist item (S2a3, dispatcher option A pending audit): `'$stream_property'(user_input|user_output|user_error, file_no(Fd))`
-answers file_no(0), file_no(1), file_no(2) in swipl 10.1.19 (pl-file.c:4996-5005); the kernel's stream layer has no OS descriptor, so the landed
-DIVERGES `stream_file_no_prop` (src/os/pl-file.jl) fails and the row reads `none`. A representation DIVERGES; pinned in rows 10, 20, 30 of
-test/files/test_process_streams_swipl.jl with swipl's answer in a comment; the live swipl compare skips exactly those three rows.
+Known-difference checklist item (S2a3, closed by FILENO1): the standard streams' `file_no` rows (10, 20, 30) were pinned `none` here with swipl's answers in a comment;
+FILENO1 answers `file_no(0)`, `file_no(1)`, `file_no(2)` and the rows are swipl's, compared live. See the FILENO1 section.
 Tests: test/files/test_process_streams_swipl.jl (a row per stream; the unbooted autoloader row). Mutants: tools/mutants/PSTREAM.py.
+
+### FILENO1 — `file_no` of the standard streams (R2, swipl-devel cbf4e189; audit D-0436 item 4, D-0438 item 1)
+
+UPSTREAM: os/pl-file.c `stream_file_no_prop` :4996-5005 (`Sfileno(s) >= 0` -> `PL_unify_integer`), os/pl-stream.c `Sfileno` :3861-3872 (the `fileno` cached by `Snew`; the three `S__iob` entries have 0, 1, 2).
+Both are unchanged up to V10.1.20 (the one pl-stream.c hunk is `Sshare`, unrelated).
+
+- **What changed.** `stream_file_no_prop` answers 0, 1 or 2 for the process's standard streams (`_std_fileno`, src/os/pl-file.jl): `isSinput` -> 0; `isSoutputOrSerror` -> 2 when the stream is bound to the `user_error` slot of
+  the engine and not to `user_output`'s, 1 for the reverse; bound to both or neither (a standard stream aliased away or onto the other slot) it falls back on the flag it was made with, `SIO_NBUF` (`Serror`) -> 2, else 1.
+  The slots come first because `set_stream(user_error, buffer(line))` clears `SIO_NBUF`. No struct change.
+- **Remaining representation difference (owner FILENO1; DIVERGES kept).** The stream has no `fileno` field and the stream layer holds a Julia IO, not an OS descriptor, so every other stream (`open/3`, memory, string) answers no `file_no`;
+  swipl's is a number >= 3. `nlink` and `close_on_exec` stay `false` for all streams (no `fstat`/`fcntl`). A host that replaces a standard stream (`set_standard_stream!`) keeps the descriptor of its slot.
+- Rows: test/files/test_process_streams_swipl.jl: rows 10, 20, 30 of the first table (were `none`) and the second table fn01-fn12 (swipl compared live except fn10-fn12, which pin OUR `none` with swipl's answer shape in a comment:
+  `has`, an integer >= 3, `has`); mutants tools/mutants/FILENO1.py (11).
 
 ## Q10 — the unowned stubs of the loader/boot design (LDB 3.3), `'$style_check'/2` (R2, audit D-0290)
 
