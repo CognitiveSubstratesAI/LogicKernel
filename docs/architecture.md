@@ -2004,7 +2004,7 @@ or platform, with the step that owns the rest. The upstream side is the committe
 to its generator, here and in CI. The history of this block in git is the burn-down.
 
 <!-- BEGIN GENERATED R2 status by tools/port_check.jl --write-inventory — do not hand-edit -->
-Generated from `docs/r2_upstream.tsv` (swipl-devel `cbf4e189`: 1034 definitions), `docs/r2_owners.tsv` and the kernel's `src/`.
+Generated from `docs/r2_upstream.tsv` (swipl-devel `18168e62`: 1042 definitions), `docs/r2_owners.tsv` and the kernel's `src/`.
 A row is **done** (registered, defined or marked in the kernel), **refused** (the kernel raises the refusal on purpose), **missing**,
 or **platform** (a Windows or macOS definition: out of the count). **NO OWNER** counts missing and refused rows no step owns yet.
 

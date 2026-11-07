@@ -2135,8 +2135,8 @@ function initPrologFlags!(gd::PL_global_data{T})::Nothing where {T}
     setPrologFlag(gd, "occurs_check", FT_ATOM, "false")
     setPrologFlag(gd, "incomparable", FT_ATOM, "arbitrary")
     setPrologFlag(gd, "shift_check", FT_BOOL, false, PLFLAG_SHIFT_CHECK)
-    # PORT: pl-prologflag.c:2695-2700 at swipl-devel V10.1.20, `#if O_VALIDATE_API ... setPrologFlag("validate_api", FT_BOOL,
-    # !GD->cmdline.optimise, PLFLAG_VALIDATE_API)`. DIVERGES (representation only): the kernel is the build WITH `O_VALIDATE_API`
+    # Upstream pl-prologflag.c:2695-2700 at swipl-devel V10.1.20: `#if O_VALIDATE_API ... setPrologFlag("validate_api", FT_BOOL,
+    # !GD->cmdline.optimise, PLFLAG_VALIDATE_API)`. Differs (representation only): the kernel is the build WITH `O_VALIDATE_API`
     # (the reference oracle is one, `validate_api` is `true`); `validateAPI()` (pl-fli.h:138) is read by no kernel code yet, so the
     # bit only carries the flag's value. (owner: FLI, PIN1 red list)
     setPrologFlag(gd, "validate_api", FT_BOOL, !gd.cmdline.optimise, PLFLAG_VALIDATE_API)

@@ -634,7 +634,7 @@ end
     @test LK.current_prolog_flag(gd, "zz_keep") === nothing
     @test length(tab.slot) == nlive - 1 && count(f -> f === nothing, tab.entries) == 1
     keys1 = kernel_keys(ld)
-    @test !("zz_keep" in keys1) && length(keys1) == length(tab.slot) - 6    # six defined flags do not answer
+    @test !("zz_keep" in keys1) && length(keys1) == length(tab.slot) - 8    # eight defined flags do not answer (six before V10.1.20; max_incomplete_subgoals and max_scc_subgoals are two more unlimited sizes)
     LK.setPrologFlag(gd, "zz_keep", LK.FT_ATOM, "again")
     @test sym_text(LK.current_prolog_flag(gd, "zz_keep").a) == "again"
     @test "zz_keep" in kernel_keys(ld) && count(f -> f === nothing, tab.entries) == 1

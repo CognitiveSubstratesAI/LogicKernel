@@ -1,4 +1,4 @@
-# UPSTREAM: swipl-devel src/pl-incl.h @ cbf4e1896275
+# UPSTREAM: swipl-devel src/pl-incl.h @ 18168e629eab
 # UPSTREAM: swipl-devel src/pl-data.h @ cbf4e1896275
 # UPSTREAM: swipl-devel src/pl-global.h @ cbf4e1896275
 # UPSTREAM: swipl-devel src/pl-builtin.h @ 18168e629eab
@@ -396,7 +396,10 @@ tagex(w::word)::word = w & (TAG_MASK | STG_MASK)
 "True when the key `w` is a functor (pl-data.h)."
 isFunctor(w::word)::Bool = tagex(w) == (TAG_ATOM | STG_GLOBAL)
 # PORT: pl-incl.h MK_ATOM
-"The atom word of atom number `n` (pl-incl.h)."
+"""
+The atom word of atom number `n` (pl-incl.h). At V10.1.20 upstream's body is `consTagged(n, TAGEX_ATOM)`
+(`(n << LMASK_BITS) | (TAG_ATOM | STG_STATIC)`, pl-data.h): the same word, structure only, d755bdc4.
+"""
 MK_ATOM(n::UInt64)::word = (n << 7) | TAG_ATOM | STG_STATIC
 # PORT: pl-data.h indexAtom
 "The index of atom word `w` in the atom table (pl-data.h)."
@@ -431,17 +434,30 @@ nameFunctor(functors, w::word)::UInt64 = valueFunctor(functors, w).name
 MK_FUNCTOR(n::UInt64, a::UInt64)::word =
     (((n << F_ARITY_BITS) | a) << LMASK_BITS) | TAG_ATOM | STG_GLOBAL
 # PORT: pl-incl.h PLMINTAGGEDINT
-"The smallest integer a word holds tagged — inline, `STG_INLINE` (pl-incl.h; 64-bit words)."
+"""
+The smallest integer a word holds tagged — inline, `STG_INLINE` (pl-incl.h; 64-bit words). Upstream's body at V10.1.20
+is `1 << (TAGGED_INT_BITS-1)` with `TAGGED_INT_BITS = WORDBITSIZE-LMASK_BITS` (pl-data.h): the same value, structure only.
+"""
 const PLMINTAGGEDINT = -(Int64(1) << (64 - LMASK_BITS - 1))
 # PORT: pl-incl.h PLMAXTAGGEDINT
 "The largest integer a word holds tagged (pl-incl.h)."
 const PLMAXTAGGEDINT = -PLMINTAGGEDINT - 1
 # PORT: pl-incl.h PLMINTAGGEDINT32
-"The smallest integer a 32-bit word holds tagged (pl-incl.h)."
-const PLMINTAGGEDINT32 = -(Int64(1) << (32 - LMASK_BITS - 1))
+"""
+The smallest integer a 32-bit word holds tagged (pl-incl.h): the range of old 32-bit versions, FIXED at `1<<24` since
+V10.1.20 (`term_hash/2` values depend on it); it is `32 - LMASK_BITS - 1` for `LMASK_BITS = 7`.
+"""
+const PLMINTAGGEDINT32 = -(Int64(1) << 24)
 # PORT: pl-incl.h PLMAXTAGGEDINT32
 "The largest integer a 32-bit word holds tagged (pl-incl.h); `variant_hash/2` masks with it."
 const PLMAXTAGGEDINT32 = -PLMINTAGGEDINT32 - 1
+# PORT: pl-incl.h ATOM_RESERVE_BATCH
+"""
+Atom slots a thread reserves at once (pl-incl.h, V10.1.20). Read by pl-atom.c's `reserveAtom` and pl-global.h's
+`LD->atoms.reserved`; the kernel's `reserveAtom` (src/pl-atom.jl) takes one slot at a time, so nothing reads it yet
+(pl-atom.c at V10.1.20: step C of PIN1).
+"""
+const ATOM_RESERVE_BATCH = 64
 
 # ── the words of the stacks (pl-data.h; L1b stage C1) ───────────────────────────────────────────
 # The rest of pl-data.h's word layout, for the stacks that hold words from stage C2 on (the
@@ -2271,7 +2287,8 @@ const PLFLAG_AGC_CLOSE_STREAMS = 35
 # PORT: pl-incl.h PLFLAG_EPILOG
 "Mask bit: swipl-win (pl-incl.h); the flag `epilog`."
 const PLFLAG_EPILOG = 36
-# PORT: pl-incl.h PLFLAG_VALIDATE_API (enum plflag, swipl-devel V10.1.20 src/pl-incl.h:2936)
+# PORT: pl-incl.h PLFLAG_VALIDATE_API
+# (enum plflag, swipl-devel V10.1.20 src/pl-incl.h:2936)
 "Mask bit: validate the arguments of the PL_*() functions (pl-incl.h); the flag `validate_api`."
 const PLFLAG_VALIDATE_API = 37
 

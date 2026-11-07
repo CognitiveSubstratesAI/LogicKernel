@@ -45,7 +45,7 @@ function _lb7_enc(t::T, seen::Vector{UInt64}=UInt64[])::String where {T}
            join([_lb7_enc(child(t, i), seen) for i in 2:nchildren(t)], ",") * ")"
 end
 
-# BEGIN GENERATED (evidence/LB7/gen_rows.py of the channel: swipl 10.1.19-1-gcbf4e189, LC_ALL=C, two byte-identical runs)
+# BEGIN GENERATED (evidence/LB7/gen_rows.py of the channel: swipl 10.1.19-1-gcbf4e189, LC_ALL=C, two byte-identical runs; regenerated with 10.1.20-1-g18168e62 for PIN1: the block is byte-identical, so the rows hold at both pins)
 const _LB7_HEAD = raw"""
 lb7_keys([stack_limit, goals, toplevel, init_file, system_init_file, script_file, config, compileout, class, search_paths, defines, pldoc_server, nosignals]).
 lb7_opts(R) :- lb7_keys(Ks), findall(K-V, (member(K, Ks), '$cmd_option_val'(K, V)), R).
