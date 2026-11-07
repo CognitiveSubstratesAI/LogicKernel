@@ -1,29 +1,29 @@
-# ORIGINAL: AUTOLOAD1 A2/A3 white-box rows (audit D-0387 item 3, D-0398): the autoloader branch of `trapUndefined` (pl-proc.c:3008-3063 at
-# swipl-devel cbf4e189: `test_autoload_loop` :2932, `autoLoader` :2962, the retry loop) and the two LD fields `autoload.nesting`,
-# `autoload.loop` (pl-global.h:897-899). LK-only: the swipl-compared rows need the Prolog half (`system:'$undefined_procedure'/4`,
-# boot/init.pl:949), which the kernel does not load before the first boot, so the expected values below are HAND-WRITTEN from the
-# upstream C and checked against the kernel only; they ride with AUTOLOAD1 A5, where the swipl-compared rows run with the real hook
-# and the rows that define a test hook here are retired in the same commit (refusal-flip rule D-0375/D-0376).
+# ORIGINAL: AUTOLOAD1 A2/A3/A5 rows (audit D-0387 item 3, D-0398, D-0416 item 2): the autoloader branch of `trapUndefined` (pl-proc.c:3008-3063
+# at swipl-devel cbf4e189: `test_autoload_loop` :2932, `autoLoader` :2962, the retry loop) and the two LD fields `autoload.nesting`,
+# `autoload.loop` (pl-global.h:897-899). LK-only white-box rows on the BOOTED database: the real `system:'$undefined_procedure'/4`
+# (boot/init.pl:949) is the hook, and the rows steer it through upstream's own mechanism, `user:exception/3` clauses (init.pl:959-963,
+# `exception(undefined_predicate, Pred, Action)`, `Pred` = `Name/Arity` in `user`, `Module:Name/Arity` elsewhere; dynamic + multifile).
+# The expected values are read from the upstream C and the Prolog text and checked against the kernel; the swipl-COMPARED rows of the same
+# mechanism are in test_autoload_swipl.jl. (Before the first boot these rows defined clauses in `system:'$undefined_procedure'/4`; the
+# conversion keeps every kill row, refusal-flip rule D-0375/D-0376.)
 # test/core_lang/test_autoload_trap.jl — on every term type:
 #   * A2: a fresh local data has an empty `autoload_nesting` and `autoload_loop === nothing` (no reset code: upstream's `resetProlog`
 #     belongs to the toplevel step);
-#   * THE GUARD (DIVERGES "the Prolog half is not loaded", a skip, no stand-in): without a defined `system:'$undefined_procedure'/4` the
-#     answer is nil at once, the hook is NOT created, the supervisor is S_UNDEF, no message, the nesting stays empty — the rows every
-#     other test file holds (test_module_path.jl "autoImport and trapUndefined") are its proof too;
-#   * a TEST-DEFINED hook (clauses compiled into `system`): its three first arguments (module, name, arity) reach the head, the answers
-#     `fail` (returns, no supervisor), `error` (S_UNDEF), `retry` (the hook defines the predicate: returned DEFINED; the hook does not:
-#     the second round warns once and returns), any other atom (the error label), the retry's post-increment (the hook runs twice);
+#   * a hook `exception/3` clause: its Pred argument reaches the head, the answers `fail` (returns, no supervisor), `error` (S_UNDEF),
+#     `retry` (the clause defines the predicate: returned DEFINED; it does not: the second round warns once and returns), any other atom
+#     (the error label), the retry's post-increment (the clause runs twice); no clause matching: the real hook's own clauses answer
+#     (`$autoload` fails: `error`);
 #   * `test_autoload_loop`: a definition on the chain is a loop (false, `autoload_loop` set and never cleared, the report lines, innermost
 #     first, up to the definition), one that is not on it is not; `trapUndefined` returns at once and never calls the hook;
 #   * `autoLoader` restores the chain and the input context stack after every answer, also when the hook raises;
-#   * the `autoload` flag false and the boot session: the hook is not called (the Q3 error in the boot session);
+#   * the `autoload` flag false: the hook is not called; the boot session: the Q3 error naming the predicate;
 #   * `autoImport` precedes everything; the refreshed definition (a hook that makes the module link a super's definition); the helper
 #     `_autoload_predicate_name` (pl-util.c predicateName);
 #   * the A1 killer: a hook run THROUGH the VM from `call(user:foo)` and from a plain call leaves the caller's frame intact
 #     (the autoloader's query frame must not overwrite an unprotected `lTop`, A1's `mcall_cont` frame set-up);
-#   * A1c's killer (A5, audit D-0400 item 2): the hook's query returns to the trapped call's frame (`saved_environment` is foo's frame).
-# Every row builds the UNBOOTED database (`LK.setupProlog`, via `_RDB_unbooted()`): the white-box test hooks stand where the pre-boot kernel has no
-# `$undefined_procedure/4`; a booted copy (`PL_global_data{T}()`) has the real one from boot/init.pl (D-0398 (e)).
+#   * A1c's killer (audit D-0400 item 2): the hook's query returns to the trapped call's frame (`saved_environment` is foo's frame).
+# Every row builds the BOOTED database (`PL_global_data{T}()`, via `_RDB()`), as `_at_db` does; the guard that skipped an undefined hook
+# is gone (A5, D-0398 (e)).
 # Mutation-tested by tools/mutants/AUTOLOAD1.py.
 using Test, LogicKernel
 const LK = LogicKernel
@@ -32,35 +32,31 @@ const LK = LogicKernel
 include(joinpath(@__DIR__, "..", "term_under_test.jl"))
 include(joinpath(@__DIR__, "rules_common.jl"))
 
-const _AT_HOOK = "\$undefined_procedure"
 _at_user(x) = _rf(":", _rs(:user), _rs(x))
 _at_proc(db::_RDB, name, arity::Int=0) = LK.lookupProcedure(_rs(name), arity, db.user)
 _at_sysproc(db::_RDB, name, arity::Int) =
     LK.lookupProcedure(_rs(name), arity, LK.MODULE_system(db.gd))
-_at_hookproc(db::_RDB) =
-    LK.isCurrentProcedure(sym_key(_rs(_AT_HOOK)), 4, LK.MODULE_system(db.gd))
 _at_text(m::Tuple{Symbol, _R}) = String(lk_name(m[2]))
 _at_texts(ld, from::Int) = String[_at_text(m) for m in ld.messages[(from + 1):end]]
 
-"A database whose `called/1` is dynamic (the hook's bodies record in it) and a foreign frame open."
+"The BOOTED database whose `called/1` is dynamic (the hook's bodies record in it) and a foreign frame open."
 function _at_db()::_RDB
-    db = _RDB_unbooted()
+    db = _RDB()
     LK.setDynamicDefinition!(_at_proc(db, :called, 1).definition, true)
     LK.PL_open_foreign_frame(db.ld)
     return db
 end
 
 """
-Add `'\$undefined_procedure'(user, name, arity, answer) :- body` to the module `system`, the clause the Prolog half's hook
-(boot/init.pl:949) would be, with the module, the name and the arity the autoloader passes.
+Add `exception(undefined_predicate, Pred, answer) :- body` to `user:exception/3`, the clause the real `'\$undefined_procedure'/4`
+(boot/init.pl:959) asks first: `Pred` is `name/arity` for the module `user`, `mod:name/arity` for another one (`'\$prefix_module'`).
 """
-function _at_hook!(db::_RDB, name, answer; arity::Int=0, body::Union{Nothing, _R}=nothing)
-    head = _rf(_AT_HOOK, _rs(:user), _rs(name), _rg(arity), _rs(answer))
-    sys = LK.MODULE_system(db.gd)
-    pr = LK.lookupProcedure(_rs(_AT_HOOK), 4, sys)
-    cl = LK.compileClause(db.gd, db.ld, head, body, pr, sys)
-    LK.assertDefinition!(db.gd, pr.definition, cl, LK.CL_END)
-    return cl
+function _at_hook!(
+    db::_RDB, name, answer; arity::Int=0, body::Union{Nothing, _R}=nothing, mod=nothing
+)
+    ind = _rf("/", _rs(name), _rg(arity))
+    pred = mod === nothing ? ind : _rf(":", _rs(mod), ind)
+    return _radd!(db, _rf("exception", _rs(:undefined_predicate), pred, _rs(answer)), body)
 end
 
 "`assertz(user:called(name))`: the hook's record that it ran."
@@ -86,29 +82,7 @@ end
     @test ld.autoload_loop === nothing
 end
 
-@testset "the guard: no defined hook, the answer is nil at once" begin
-    db = _RDB_unbooted()
-    ld = db.ld
-    @test LK.truePrologFlag(ld, LK.PLFLAG_AUTOLOAD)              # the default: autoload is on
-    @test _at_hookproc(db) === nothing
-    def = _at_proc(db, :nohook).definition
-    n0 = length(ld.messages)
-    nctx = length(ld.input_context_stack)
-    @test LK.trapUndefined(db.gd, ld, def) === def
-    @test def.codes[1] == LK.S_UNDEF                             # createUndefSupervisor
-    @test length(ld.messages) == n0
-    @test isempty(ld.autoload_nesting)
-    @test length(ld.input_context_stack) == nctx
-    @test _at_hookproc(db) === nothing                           # looked up, NOT created (upstream's PL_pred creates it)
-    # a hook procedure that exists but has no clause is not defined either
-    _at_sysproc(db, _AT_HOOK, 4)
-    def2 = _at_proc(db, :nohook2).definition
-    @test LK.trapUndefined(db.gd, ld, def2) === def2
-    @test def2.codes[1] == LK.S_UNDEF
-    @test isempty(ld.autoload_nesting)
-end
-
-@testset "a test-defined hook: its arguments and its answers" begin
+@testset "a user:exception/3 clause as the hook: its arguments and its answers" begin
     # fail: returns the (still undefined) definition, no supervisor (pl-proc.c returns before `error:`)
     db, def, got, called = _at_run(:fa, :fail)
     @test got === def
@@ -151,16 +125,24 @@ end
     @test got === def
     @test called == ["called(ar)"]
     @test LK.isDefinedProcedure(db.gd, _at_proc(db, :ar, 2))
-    # a name the hook does not match: no solution, the answer is nil, the error label (the three put_* feed the head)
+    # a name no clause matches: the real hook's own clauses answer (`$autoload` finds nothing: `error`), the error label
     db = _at_db()
     _at_hook!(db, :other, :fail)
     def = _at_proc(db, :unmatched).definition
     @test LK.trapUndefined(db.gd, db.ld, def) === def
     @test def.codes[1] == LK.S_UNDEF
-    # a module the hook does not match: the same predicate name in the module `mm`
+    # a module the clause does not match: the same predicate name in the module `mm` (its Pred is `mm:inmm/0`, not `inmm/0`)
     mm = LK.lookupModule(db.gd, _rs(:mm))
-    _at_hook!(db, :inmm, :fail)                                  # (user, inmm, 0, fail) only
+    _at_hook!(db, :inmm, :fail)                                  # `inmm/0` of `user` only
     def = LK.lookupProcedure(_rs(:inmm), 0, mm).definition
+    @test LK.trapUndefined(db.gd, db.ld, def) === def
+    @test def.codes[1] == LK.S_UNDEF
+    # ... and a clause for `mm:inmm2/0` does match it, in `mm` and not in `user`
+    _at_hook!(db, :inmm2, :fail; mod=:mm)
+    def = LK.lookupProcedure(_rs(:inmm2), 0, mm).definition
+    @test LK.trapUndefined(db.gd, db.ld, def) === def
+    @test def.codes[1] == LK.S_VIRGIN                            # `fail`: no supervisor
+    def = _at_proc(db, :inmm2).definition
     @test LK.trapUndefined(db.gd, db.ld, def) === def
     @test def.codes[1] == LK.S_UNDEF
 end
@@ -252,7 +234,7 @@ end
     LK.PL_clear_exception(db.ld)
 end
 
-@testset "the autoload flag false and the boot session: the hook is not called" begin
+@testset "the autoload flag false: the hook is not called; the boot session: the Q3 error" begin
     db = _at_db()
     _at_hook!(db, :fl, :fail; body=_at_record(:fl))
     LK.clearPrologFlagMask!(db.ld, LK.PLFLAG_AUTOLOAD)
@@ -260,7 +242,7 @@ end
     @test LK.trapUndefined(db.gd, db.ld, def) === def
     @test def.codes[1] == LK.S_UNDEF
     @test _at_called(db) == String[]
-    # the boot session: the Q3 error naming the predicate, the hook not called (the flag is on again)
+    # the boot session: the Q3 error naming the predicate (the flag is on again; pl-proc.c:3027 skips the autoloader there)
     LK.setPrologFlagMask!(db.ld, LK.PLFLAG_AUTOLOAD)
     db.gd.bootsession = true
     def2 = _at_proc(db, :fl).definition

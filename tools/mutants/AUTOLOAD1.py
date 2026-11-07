@@ -5,19 +5,21 @@
 # the boot session, pl-proc.c:3051-3053, audit D-0387 item 3). Run ONCE, in CI (.github/workflows/mutation.yml; locally:
 # tools/mutate.sh run). Format: tools/mutate_drive.py's (as HF1.py and MOD3a2.py): `id`, `file`, `old` (must occur EXACTLY once),
 # `new`, optional `equivalent` and `targets`. Verdicts: written by the battery, not yet run.
+# (A5 part 1, audit D-0398 (e), D-0416 item 2: the hook guard of `autoLoader` is gone, so is its mutant AUTOLOAD1-A3a, "creates the hook and
+# drops the defined test": the real hook is defined by the boot. The white-box rows of test_autoload_trap.jl run on the BOOTED database and steer
+# the real hook through `user:exception/3` clauses, so A3b-A3r, A1c and A1e keep their kill rows.)
 # KILL: the A4 and Q3 mutants by test/core_lang/test_autoload_flag_swipl.jl (rows af01-af25 and its LK-ONLY testsets: the mask bit after
 # each value, PL_set_prolog_flag, the existence error for `$autoload:set_autoload/1` with the boot session off, the Q3 error with it on)
-# and test/files/test_qlf_swipl.jl (the compileFileList rows read the flag back). The boot-session Q3 error is killed by test/core_lang/test_autoload_trap.jl's `bootsession` row (LB4 b2: the boot session
+# and test/files/test_qlf_swipl.jl (the compileFileList rows read the flag back). The boot-session Q3 error is killed by test/core_lang/test_autoload_trap.jl's boot-session row (LB4 b2: the boot session
 # is the template's alone, so test_qlf_swipl.jl's boot_from_source! row could not hold on a copy of it) and by test_autoload_flag_swipl.jl's Q3 testset (:359).
 # The A1 mutants by any test that meta-calls an undefined predicate: mcall_cont's undefined branch runs `trapUndefined` between
 # `FR = NFR` and the restore, and `normal_call` (pl-wam.jl:3324) reads `FR` as the new frame's parent.
-# A1c (the `ld.environment_frame = FR` line, src/pl-wam.jl:3830) was a DEFERRED KILL, owner AUTOLOAD1 A5 (audit D-0400 item 2; battery run
+# A1c (the `ld.environment_frame = FR` line, src/pl-wam.jl:3830) was a DEFERRED KILL until A5 (audit D-0400 item 2; battery run
 # 41741989891 at 95331639: survived in 296 s). Its only reader is the Prolog query of the autoloader (PL_open_query, src/pl-wam.jl:1987: the
-# parent frame, `saved_environment`), which runs the hook; the A3 guard leaves the hook undefined before the first boot, and no Julia stand-in
-# hook is allowed. The declaration is replaced (refusal-flip rule D-0376) by a KILL naming the row "A1c's killer (A5)" of
-# test_autoload_trap.jl: a test-defined hook (the D-0398 white-box form) run through `call(user:foo)`; the row reads the hook query's record
-# inside the `at` callback and asserts that its `saved_environment` is the frame of foo. The swipl-compared form (prolog_frame_attribute/3,
-# DBG1, on the booted hook) is evidence/AUTOLOAD1/handoff_a5.md item 4. UNVERIFIED until the battery runs (the row was written without a run).
+# parent frame, `saved_environment`), which runs the hook. With the booted hook it is a KILL (refusal-flip rule D-0376): the row "A1c's killer"
+# of test_autoload_trap.jl runs a `user:exception/3` clause through `call(user:foo)` and asserts, through the frames recorded by
+# `prolog_current_frame/1` inside the clause, that the frame above the hook's query is foo's. The swipl-compared form (prolog_frame_attribute/3,
+# DBG1) is evidence/AUTOLOAD1/postboot_a5.md section 2.
 # A1a's TARGETS start with test_export_import_swipl.jl: with the frame its own parent targets loop until LIMIT_S (inferred from 4796 s =
 # 3 x 1500 s + ~300 s in run 41741989891, against 150-300 s for the others: three hung) before test_export_import_swipl.jl:397 fails; `run_targets` stops at the first
 # deciding target, so the failing one goes first.
@@ -27,8 +29,6 @@
 #   * `setGenerationFrame` and `programPointer` of the same block: normal_call sets the same fields again before any use (pl-wam.jl:3326-3328).
 #   * A3's `cid == 0` early return of `autoLoader` (pl-proc.c: `!(cid = PL_open_foreign_frame())`): PL_open_foreign_frame never returns 0 in the
 #     kernel (it grows the local stack or raises a Julia error), so the branch is dead code here, kept as upstream has it.
-#   * A3's guard order (the hook lookup BEFORE the foreign frame and the nesting push, against after them): both orders give the same answers
-#     and the same final state (the frame, the context and the nesting are restored); only the cost differs.
 #   * A3's `lookupProcedure(...)` refresh when the definition did not change: equivalent unless the hook relinks the module's procedure,
 #     which AUTOLOAD1-A3i's row does (a hook that defines `fi` in system and calls `user:fi`).
 #   * compileFileList's flag value of `PL_set_prolog_flag(... FT_BOOL)`: the existing atom flag ignores the creation type, so FT_BOOL
@@ -41,7 +41,7 @@
 # hand there and its key set is listed), test_qlf_swipl.jl (compileFileList). Q3: test_autoload_trap.jl and test_autoload_flag_swipl.jl (test_qlf_swipl.jl stays in the list); test_source_file_swipl.jl
 # sets `bootsession` and runs no query (Q3-safe) so it is not a target.
 # A3: every A3 mutant lists TA3 (test_autoload_trap.jl, the A1 files, the flag file, the qlf file): every file that reaches an undefined
-# predicate with the autoload flag on. The hook is the test's own (clauses compiled into `system`), no Julia stand-in.
+# predicate with the autoload flag on. The hook is the real one (boot/init.pl), steered by the test's `user:exception/3` clauses, no Julia stand-in.
 # The `old` strings were counted EXACTLY once in their file at the commit that adds this list (a text count, no Julia);
 # RE-FIT any `old` that `tools/warm.sh fmt` rewraps.
 TAF = "test/core_lang/test_autoload_flag_swipl.jl"
@@ -77,7 +77,7 @@ MUTANTS = [
          file=W, targets=[TAT] + TA1,
          old="        mc_nf.parent = FR                           # NFR->parent = FR\n",
          new="        nothing\n"),
-    dict(id="AUTOLOAD1-A1c mcall_cont does not set `ld.environment_frame` to the new frame (KILL the A1c row of test_autoload_trap.jl: the hook query's saved_environment is not foo's frame)",
+    dict(id="AUTOLOAD1-A1c mcall_cont does not set `ld.environment_frame` to the new frame (KILL the A1c row of test_autoload_trap.jl: the frame above the hook's query is not foo's)",
          file=W, targets=[TAT] + TA1,
          old="        FR = NFR                                    # environment_frame = FR = NFR\n        ld.environment_frame = FR\n",
          new="        FR = NFR                                    # environment_frame = FR = NFR\n"),
@@ -131,10 +131,6 @@ MUTANTS = [
          old="        setLTop!(ld, argFrameP(mc_nf.base, DEF.arity))  # lTop = argFrameP(NFR, arity)\n",
          new="        nothing\n"),
     # ── pl-proc.c autoLoader, test_autoload_loop, trapUndefined (A3) ──
-    dict(id="AUTOLOAD1-A3a autoLoader creates the hook and drops the defined test (upstream's PL_pred, the Prolog half assumed loaded): an unbooted database queries an undefined hook (KILL test_module_path.jl's S_UNDEF rows and the guard row of test_autoload_trap.jl)",
-         file=PR, targets=TA3,
-         old="    (hook === nothing || !isDefinedProcedure(gd, hook)) && return answer\n",
-         new='    hook === nothing && (hook = lookupProcedure(mk_sym(T, Symbol("\\$undefined_procedure")), 4, MODULE_system(gd)))\n'),
     dict(id="AUTOLOAD1-A3b the autoloader also runs in the boot session (!gd.bootsession -> true) (KILL the boot-session row: the Q3 error, hook not called)",
          file=PR, targets=TA3,
          old="PLFLAG_AUTOLOAD) && !gd.bootsession",
@@ -171,7 +167,7 @@ MUTANTS = [
          file=PR, targets=TA3,
          old="PL_Q_NODEBUG | PL_Q_PASS_EXCEPTION, hook, argv\n",
          new="PL_Q_NODEBUG, hook, argv\n"),
-    dict(id="AUTOLOAD1-A3k the hook gets the predicate's name as its module (KILL every hook row: the head (user, Name, Arity, A) does not match)",
+    dict(id="AUTOLOAD1-A3k the hook gets the predicate's name as its module (KILL every hook row: the clause's Pred argument `mod:name/arity` does not match)",
          file=PR, targets=TA3,
          old="    PL_put_atom(ld, argv, gd.modules[def.module_].atom)\n",
          new="    PL_put_atom(ld, argv, def.name)\n"),
@@ -203,7 +199,7 @@ MUTANTS = [
          file=PR, targets=TA3,
          old="            test_autoload_loop(gd, ld, def) || return def\n",
          new="            test_autoload_loop(gd, ld, def)\n"),
-    dict(id="AUTOLOAD1-Q3a trapUndefined does not raise in the boot session: createUndefSupervisor as before (KILL test_autoload_trap.jl 'the autoload flag false and the boot session' testset: `err isa ErrorException`; the Q3 testset of test_autoload_flag_swipl.jl)",
+    dict(id="AUTOLOAD1-Q3a trapUndefined does not raise in the boot session: createUndefSupervisor as before (KILL test_autoload_trap.jl 'the autoload flag false: the hook is not called; the boot session: the Q3 error' testset: `err isa ErrorException`; the Q3 testset of test_autoload_flag_swipl.jl)",
          file=PR, targets=[TAT] + TQ3,
          old="    if gd.bootsession ",
          new="    if false && gd.bootsession "),

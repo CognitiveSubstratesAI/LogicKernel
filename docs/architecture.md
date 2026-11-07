@@ -7168,13 +7168,12 @@ Ported:
   `ATOM_nil`; the chain, the input context and the foreign frame are restored after the query, an exception it raised is left pending as upstream.
 
 DIVERGES:
-- **The Prolog half is not loaded (TRANSIENT; owner b2 / AUTOLOAD1 A5, the first boot; the guard line is deleted when the hook is defined)**: `autoLoader`
-  looks `system:'$undefined_procedure'/4` up WITHOUT creating it (`isCurrentProcedure`) and returns the nil answer when it is missing or not defined, BEFORE the
-  foreign frame, the input-context push and the nesting push. Upstream's `PL_pred` creates the hook and boot/init.pl:949 defines it. A skip, not a
-  stand-in: no Julia `$undefined_procedure/4` is defined (D-0387 Q4). A database without the hook behaves as before A3 (`createUndefSupervisor`), so the
-  existing rows (test_module_path.jl "autoImport and trapUndefined" and every existence-error row) are the guard's proof; the guard has its own mutant
-  (AUTOLOAD1-A3a). At A5 the swipl-compared rows run with the real hook and the white-box rows of test_autoload_trap.jl that define a test hook are
-  retired in the same commit (refusal-flip rule D-0375/D-0376).
+- **The Prolog half is not loaded (RESOLVED by A5 part 1, the first boot)**: `autoLoader` creates `system:'$undefined_procedure'/4` with `lookupProcedure`
+  as pl-proc.c:2969-2971 does (`PL_pred`, no cache), and the boot defines it (boot/init.pl:949, vendored verbatim). The guard that returned the nil answer
+  for a missing or undefined hook, its mutant (AUTOLOAD1-A3a) and the test-defined `system:'$undefined_procedure'/4` rows are gone; the white-box rows run on the
+  booted database and steer the real hook through `user:exception/3` clauses (audit D-0416 item 2, option (a); the clause is asked first, init.pl:959-963). An
+  UNBOOTED database (`setupProlog`: no boot file loaded) has no hook, and an undefined predicate there queries the missing hook (measured: the call raises the existence error of
+  `system:'$undefined_procedure'/4` itself, after two "autoload loop" reports): the rows that call an undefined predicate run on the booted template.
 - **`resetProlog` (RESOLVED by R2 TOP1; see the block "R2 TOP1")**: upstream sets `LD->autoload.nesting` and `.loop` to NULL in `resetProlog`
   (pl-pro.c:89-90), which `query_loop` calls (pl-pro.c:162); since TOP1 both exist (src/pl-pro.jl) and the row of test_top1_pro.jl reads both after the reset.
   `autoload_loop` is set by `test_autoload_loop` and cleared only there, as upstream.
@@ -7187,12 +7186,12 @@ DIVERGES:
   (50 characters) and no `(nil)` module (`GD->halt.cleaning`).
 - `GD->procedures.undefinterc4` is not cached; `gd`, `ld` are arguments; the module and functor of `def` are fixed through the retries as upstream's locals.
 
-Removal conditions: the hook guard goes with A5 (see above); the reset went in with R2 TOP1; the `_boot_when!` stand-in stays until A6.
+Removal conditions: the hook guard went with A5 part 1 (see above); the reset went in with R2 TOP1; the `_boot_when!` stand-in stays until A6.
 
-Tests: test/core_lang/test_autoload_trap.jl (LK-only white-box: a fresh local data, the guard, a test-defined hook with each answer and the arguments,
-the retry's post-increment, the loop report, the restored chain, input context and frame, the flag and boot-session skips, `autoImport` first,
-the refreshed definition, `predicateName`, and A1's `lTop` killer through `call(user:foo)`). Rows marked UNVERIFIED in the file were never run.
-Mutants: tools/mutants/AUTOLOAD1.py (A3a-A3r, and A1e, the mcall_cont `lTop` line, moved out of NOT LISTED; unkillable ones are under NOT LISTED with
+Tests: test/core_lang/test_autoload_trap.jl (LK-only white-box, on the booted database: a fresh local data, `user:exception/3` clauses as the hook with each
+answer and the Pred argument, the retry's post-increment, the loop report, the restored chain, input context and frame, the flag and boot-session skips,
+`autoImport` first, the refreshed definition, `predicateName`, and A1's `lTop` killer through `call(user:foo)`).
+Mutants: tools/mutants/AUTOLOAD1.py (A3b-A3r, and A1e, the mcall_cont `lTop` line, moved out of NOT LISTED; unkillable ones are under NOT LISTED with
 their reason). Manifest: three rows (`_autoload_predicate_name`, `test_autoload_loop`, `autoLoader`), no `::Any` argument.
 
 ## TOP1 — `resetProlog`, `query_loop` and the prompt functions (R2, edit-only: nothing was compiled when this was written; the gate decides)
@@ -7438,13 +7437,14 @@ pl-proc.c (`autoLoader` :2962, `trapUndefined` :3008-3063), pl-init.c (`vwarning
 Written: the Prolog half of the hook is upstream's own text, vendored verbatim (vendor/swipl-devel/boot); the loader defines it at the first boot
 (LB4 b2), so no Prolog is written here. `autoLoader` already reaches it as pl-proc.c does. The A1c mutant (mcall_cont's `ld.environment_frame = FR`)
 changes only the parent frame of the autoloader's query: the DEFERRED KILL declaration in tools/mutants/AUTOLOAD1.py is replaced by a KILL naming the
-LK-only row "A1c's killer (A5)" of test/core_lang/test_autoload_trap.jl (a test-defined hook through `call(user:foo)`; the hook query's
-`saved_environment` must be foo's frame). The row is converted with the other test-hook rows when the hook guard is deleted (audit D-0416 item 2, option (a): the test-hook
-rows become `user:exception/3` clauses on the booted database); its swipl-compared form needs `prolog_frame_attribute/3` (DBG1).
+LK-only row "A1c's killer (A5)" of test/core_lang/test_autoload_trap.jl (a hook through `call(user:foo)`; the hook query's
+`saved_environment` must be foo's frame). Post-boot part 1 converted the test-hook rows to `user:exception/3` clauses on the booted database (audit D-0416 item 2,
+option (a)); the swipl-compared form of A1c needs `prolog_frame_attribute/3` (DBG1).
 
-Left to the first boot (b2), in order: the booted swipl-compared rows (test_autoload_swipl.jl); the af08 flip (`set_prolog_flag(autoload, X)` with X
+Post-boot part 1 (done): the test-hook rows converted, the hook guard, its mutant (A3a) and the TRANSIENT DIVERGES deleted.
+Left, in order: the af08 flip (`set_prolog_flag(autoload, X)` with X
 unbound answers true through `$autoload:set_autoload/1`; the kernel's rows run with `bootsession` set and `propagateAutoload` returns at once);
-deleting the hook guard with the test-hook rows and the guard mutant in one commit; the retry warning through `print_message/2` (`vwarning` needs
+the retry warning through `print_message/2` (`vwarning` needs
 `gd.initialised`, a struct change, and messages.pl); the clause/2 `@assert` removal with the NF2-C5 kill row.
 
 ## LB6a — reload bookkeeping: `startReconsultFile`, `reloadContext`, the reload branches of the assert path, the attribute and metapredicate recording, `visibleClause` with the reload generation (R2 loader_boot, audit D-0403 item 6 and D-0415; edit-only: nothing was compiled when this was written; the gate decides)
