@@ -571,8 +571,9 @@ end
         @test ex != 0
         @test _rcanonical(lk_answer(ld, ex)) == "unwind(halt(5))"
     end
+    # (the two hook rows below build the UNBOOTED database: a booted copy's own `$run_at_halt` clauses succeed first and the appended hook is never run, see _hdb_unbooted)
     # a hook that raises does not cancel the halt: the exception counts as "did not cancel" (pl-init.c: the query's failure alone cancels)
-    let db = _hdb()
+    let db = _hdb_unbooted()
         _hhook!(db, _rf("throw", _rs("oops")))
         rc, _ = _hrun(db, _hint(4); except_halt=false)
         @test rc == Int(LK.PL_S_FALSE)
@@ -580,7 +581,7 @@ end
         @test db.gd.halt_cancelled == 0
     end
     # a hook that halts and then fails: its query has PL_Q_EXCEPT_HALT, so the nested halt raises, the hook never reaches `fail`, nothing is cancelled
-    let db = _hdb()
+    let db = _hdb_unbooted()
         _hhook!(db, _rconj(_hint(12), _rs("fail")))
         rc, _ = _hrun(db, _hint(4); except_halt=false)
         @test rc == Int(LK.PL_S_FALSE)

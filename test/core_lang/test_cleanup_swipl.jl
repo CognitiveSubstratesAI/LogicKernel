@@ -11,7 +11,7 @@ include(joinpath(@__DIR__, "rules_common.jl"))
 # logged item, in order — so the differential compares WHAT ran, WHEN (between which answers), and
 # how often. The four ways a goal finishes — exit, fail, cut, exception — each alone, nested, and
 # with a cleanup goal that itself fails or raises.
-const _RCL_N = 48
+const _RCL_N = 51
 function _rcl_clauses()
     X, Y, Z, C, E = _rv(1), _rv(2), _rv(3), _rv(4), _rv(5)
     T = _rs("true")
@@ -172,7 +172,13 @@ function _rcl_clauses()
         (
             _rf("k48", X),
             c3(scc(_rf("\$set_predicate_attribute", Y, Z, C), T, T), E, eq(X, E))
-        )
+        ),
+        # a cleanup goal that is a CONTROL construct is called through call/1 (call_term's CONTROL_F test,
+        # pl-wam.c callCleanupHandler): the type error of `\+ 1` names the call/1 of the whole goal, a
+        # bare `\+/1` predicate call (boot/init.pl:530) would name the inner `1`
+        (_rf("k49", X), c3(scc(T, T, _rnot(_rg(1))), E, eq(X, E))),
+        (_rf("k50", X), c3(scc(T, T, _rnot(_rs("foo_undefined"))), E, eq(X, E))),
+        (_rf("k51", X), c3(scc(T, T, _rconj(T, _rg(1))), E, eq(X, E)))
     ]
 end
 
