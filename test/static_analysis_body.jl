@@ -15,7 +15,7 @@ include(joinpath(@__DIR__, "ci_slices.jl"))
 const _SA_SHARD = lk_slice("LOGICKERNEL_SA_SHARD")
 const _SA_PARTS = (
     "aqua", "jet_package", "dispatch_claims", "coverage", "argstack_push", "leaf_alloc",
-    "call_path", "controls"
+    "call_path", "controls", "jet_allowlist"
 )
 const _SA_RAN = Dict{String, Int}()               # part or per-entry gate → what this shard ran
 "Whether one-off gate `part` runs in this shard (and the record that it did)."
@@ -32,6 +32,35 @@ const _SA_DISPATCH = [
 ]
 "AllocCheck's entries: those marked allocation-free."
 const _SA_NOALLOC = [e for e in DISPATCH_MANIFEST if e[3]]
+
+"The JET reports of the runtime-dispatch analysis (`report_opt`) of `f` on `tt`, in LogicKernel."
+_sa_opt_reports(f, tt; kw...) =
+    JET.get_reports(JET.report_opt(f, tt; target_modules=(LogicKernel,), kw...))
+
+"""
+Whether the JET report `r` is a runtime dispatch that `allowed` (`JET_DISPATCH_ALLOWED`, audit D-0433) names: the call
+of `callee` on exactly `argtypes`, in the function `caller` (the last frame of the report's stack). Any other report,
+an optimization failure or another dispatch, is not allowed.
+"""
+function _sa_dispatch_allowed(r, allowed=JET_DISPATCH_ALLOWED)::Bool
+    nameof(typeof(r)) === :RuntimeDispatchReport || return false
+    isempty(r.vst) && return false
+    m = r.vst[end].linfo.def
+    m isa Method || return false
+    tt = r.sig.tt
+    tt === nothing && return false
+    for a in allowed
+        m.name === nameof(a.caller) && m.module === parentmodule(a.caller) || continue
+        tt == Tuple{typeof(a.callee), a.argtypes.parameters...} && return true
+    end
+    return false
+end
+
+"One line for a JET report: its kind, the call and the method that holds it."
+function _sa_describe(r)::String
+    site = isempty(r.vst) ? "?" : string(r.vst[end].linfo)
+    return string(nameof(typeof(r)), " ", r.sig.tt, " in ", site)
+end
 
 # Positive and negative controls: each gate must FAIL on a planted defect before its verdict on
 # LogicKernel means anything. (`Vector{Real}` — abstract element type — dispatches on every use.)
@@ -122,7 +151,11 @@ end
         n = 0
         for (i, (f, tt, _)) in enumerate(_SA_DISPATCH)
             lk_in_slice(i, _SA_SHARD) || continue
-            JET.test_opt(f, tt; target_modules=(LogicKernel,))
+            bad = filter(r -> !_sa_dispatch_allowed(r), _sa_opt_reports(f, tt))
+            isempty(bad) || foreach(
+                r -> println(stderr, "  runtime dispatch: ", f, tt, " — ", _sa_describe(r)), bad
+            )
+            @test isempty(bad)
             n += 1
         end
         _SA_RAN["dispatch"] = n
@@ -364,6 +397,43 @@ end
             @test isempty(stale)
             # …and the pass sees the loop's callees and checks some, so it cannot pass by seeing nothing
             @test length(seen) > count(e -> e[2] !== :growth, SPAN_CALLEE_EXEMPT)
+        end
+
+    # THE JET ALLOWLIST (audit D-0433): one entry, S_read -> Sread_user, and the family around it. The raw reports of each
+    # member's analysis are counted with the allowlist NOT applied: S_read has exactly the one allowed report, its
+    # neighbours none, so a second dispatch in the family (a second call of Sread_user included) fails here.
+    _sa_part("jet_allowlist") &&
+        @testset "JET allowlist: one site, S_read -> Sread_user; S_write, S_close, S_read_wrapped, S_close_wrapped, Swrite_stderr at 0" begin
+            @test length(JET_DISPATCH_ALLOWED) == 1
+            for a in JET_DISPATCH_ALLOWED
+                @test a.caller === LK.S_read && a.callee === LK.Sread_user
+                @test a.argtypes.parameters[1] == Union{Nothing, LK.AbstractLocalData}
+                @test occursin("pl-file.c:5987-5997", a.reason) && occursin("same as upstream", a.reason)
+            end
+            @test Set(e[1] for e in JET_DISPATCH_FAMILY) == Set(
+                [LK.S_read, LK.S_write, LK.S_close, LK.S_read_wrapped, LK.S_close_wrapped, LK.Swrite_stderr]
+            )
+            for (f, tt, expected) in JET_DISPATCH_FAMILY
+                rs = _sa_opt_reports(f, tt)
+                isempty(rs) || foreach(r -> println(stderr, "  ", f, ": ", _sa_describe(r)), rs)
+                @test length(rs) == expected                           # raw: the allowlist is not applied
+                @test count(_sa_dispatch_allowed, rs) == expected      # and each report of S_read is the allowed one
+            end
+            # the entry is keyed on the function, the callee AND the argument types: change any and S_read's
+            # report is no longer allowed (so the list cannot let a different dispatch through), and a fixture's
+            # dispatch is not allowed either
+            (f, tt, _) = first(JET_DISPATCH_FAMILY)
+            rs = _sa_opt_reports(f, tt)
+            a = first(JET_DISPATCH_ALLOWED)
+            @test length(rs) == 1 && _sa_dispatch_allowed(only(rs))
+            @test !_sa_dispatch_allowed(only(rs), [merge(a, (; caller=LK.S_write))])
+            @test !_sa_dispatch_allowed(only(rs), [merge(a, (; callee=LK.S_read_wrapped))])
+            @test !_sa_dispatch_allowed(
+                only(rs),
+                [merge(a, (; argtypes=Tuple{LK.PL_local_data{LK.DefaultTerm}, LK.IOSTREAM, LK.wrappedIO, Vector{UInt8}, Int, Int}))]
+            )
+            fixture = JET.get_reports(JET.report_opt(_sa_dispatches, (Vector{Real},)))
+            @test !isempty(fixture) && !any(_sa_dispatch_allowed, fixture)
         end
 
     _sa_part("controls") && @testset "controls: each gate fails on a planted defect" begin

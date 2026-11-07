@@ -3888,6 +3888,39 @@ const JET_ANALYSED_THROUGH = Dict(
     ) => (LK.query_answers, Tuple{LK.PL_local_data{LK.DefaultTerm}, LK.DefaultTerm})
 )
 
+# THE ONE RUNTIME DISPATCH THE JET GATE ALLOWS (audit D-0433, Shivaji 2026-11-06; R2 TOP1b E; the only loosening approved,
+# a new runtime dispatch anywhere else goes through the same question to Shivaji). `S_read` calls `Sread_user` on the
+# registered local data of the stream's engine: a `Union{Nothing, AbstractLocalData}`, because an IOSTREAM is not
+# parametrised by the term type (the engine's `T` is known only at the entry). Upstream does exactly this at run time,
+# with the callee unknown at compile time: pl-file.c:5987-5997 `Sread_user(void *handle, ...)` calls
+# `(*wio->wrapped_functions->read)(wio->wrapped_handle, buf, size)`, an INDIRECT CALL PER BUFFER FILL, same as upstream.
+# The entry names the function that holds the call (`caller`), the function called and its argument types (the `Tuple`
+# JET reports for the call), not a module. `nonconcrete_fields` stays empty and `field_type_ok` is unchanged. The family
+# below (`JET_DISPATCH_FAMILY`) pins the number of reports of `S_read` at 1 and of its neighbours at 0, so a SECOND
+# dispatch in any of them, an identical call included, fails test/static_analysis_body.jl.
+"Runtime dispatches the JET gate lets through: the call (`callee`, `argtypes`) in the function `caller`, and why."
+const JET_DISPATCH_ALLOWED = [
+    (
+        caller = LK.S_read,
+        callee = LK.Sread_user,
+        argtypes = Tuple{
+            Union{Nothing, LK.AbstractLocalData}, LK.IOSTREAM, LK.wrappedIO, Vector{UInt8},
+            Int, Int
+        },
+        reason = "pl-file.c:5987-5997 Sread_user: an indirect call per buffer fill, same as upstream (audit D-0433)"
+    )
+]
+
+"The stream function family around the allowed dispatch: `(f, argument types, the JET reports of f's analysis)`; every report of `S_read` is the allowed one."
+const JET_DISPATCH_FAMILY = [
+    (LK.S_read, Tuple{LK.IOSTREAM, Vector{UInt8}, Int64, Int64}, 1),
+    (LK.S_write, Tuple{LK.IOSTREAM, Vector{UInt8}, Int64, Int64}, 0),
+    (LK.S_close, Tuple{LK.IOSTREAM}, 0),
+    (LK.S_read_wrapped, Tuple{LK.IOSTREAM, Vector{UInt8}, Int, Int}, 0),
+    (LK.S_close_wrapped, Tuple{LK.IOSTREAM}, 0),
+    (LK.Swrite_stderr, Tuple{LK.IOSTREAM, Vector{UInt8}, Int, Int}, 0)
+]
+
 # `is_ground(t)` with an untyped argument is the interface's FALLBACK for implementations without a
 # cached bit; `Term` overrides it, so no reference type reaches it. (`Tuple{Int}` names the fallback
 # method by a non-term argument type — it is the method `which` selects.) Its body is
