@@ -2870,6 +2870,7 @@ _index_entry_points(T) = (
         )
     ]...,
     (LK.stream_input_prop, Tuple{LK.PL_local_data{T}, LK.IOSTREAM}, false),
+    (LK._std_fileno, Tuple{LK.PL_local_data{T}, LK.IOSTREAM}, false),
     (LK.stream_output_prop, Tuple{LK.PL_local_data{T}, LK.IOSTREAM}, false),
     (LK._unify_sym, Tuple{LK.PL_local_data{T}, Int, Symbol}, false),
     (LK.get_stream_property_def, Tuple{LK.PL_local_data{T}, Int}, false),
