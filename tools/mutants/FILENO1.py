@@ -1,0 +1,66 @@
+# ORIGINAL: FILENO1's mutant list (audit D-0436 item 4): the three standard streams answer file_no(0/1/2) as pl-file.c:4996-5005 (Sfileno of the S__iob entries); no swipl-devel counterpart.
+# tools/mutants/FILENO1.py — the mutation battery of FILENO1 (src/os/pl-file.jl `_std_fileno` and `stream_file_no_prop`). Run ONCE, in CI
+# (.github/workflows/mutation.yml; locally: one mutant at a time, by hand). Format: tools/mutate_drive.py's (as CLOSESTREAM.py): `id`, `file`, `old` (EXACTLY once),
+# `new`, `targets`.
+# Killed by test/files/test_process_streams_swipl.jl: rows 10, 20, 30 of the first table (`'$stream_property'` file_no of the three streams) and the second table
+# (rows fn01-fn12 of `_PS_FN_PROGRAM`, named in each id's KILL); the other files only read the standard streams through the code mutated here.
+# TARGETS (audit D-0238): every test file that asks a standard stream for its properties or closes/reads one (CLOSESTREAM's list) plus the step's own file first.
+TS = [
+    "test/files/test_process_streams_swipl.jl",
+    "test/files/test_open_close_swipl.jl",
+    "test/files/test_stream_swipl.jl",
+    "test/core_text/test_write_family_swipl.jl",
+    "test/files/test_qlf_swipl.jl",
+    "test/core_lang/test_lb5b_prompt.jl",
+    "test/core_lang/test_top1_pro.jl",
+    "test/core_lang/test_top1_prompt_swipl.jl",
+    "test/files/test_load_swipl.jl",
+]
+TARGETS = TS
+F = "src/os/pl-file.jl"
+MUTANTS = [
+    dict(id="FN-1 the standard input answers descriptor 1 (KILL rows 10, fn01, fn04)",
+         file=F, targets=TS,
+         old="    isSinput(s) && return 0\n",
+         new="    isSinput(s) && return 1\n"),
+    dict(id="FN-2 a standard output stream answers 1 for Serror and 2 for Soutput (KILL rows 20, 30, fn02, fn03, fn05-fn07)",
+         file=F, targets=TS,
+         old="    in_err != in_out && return in_err ? 2 : 1\n",
+         new="    in_err != in_out && return in_err ? 1 : 2\n"),
+    dict(id="FN-3 every stream that is not a standard input answers descriptor 3: the static-output test dropped (KILL fn10, fn11, fn12)",
+         file=F, targets=TS,
+         old="    isSoutputOrSerror(s) || return -1\n",
+         new="    isSoutputOrSerror(s) || return 3\n"),
+    dict(id="FN-4 file_no never answers: only a descriptor above 2 is unified (KILL rows 10, 20, 30, fn01-fn09)",
+         file=F, targets=TS,
+         old="    fd >= 0 && return PL_unify_integer(ld, prop, fd)\n",
+         new="    fd > 2 && return PL_unify_integer(ld, prop, fd)\n"),
+    dict(id="FN-5 the answer is one too high (KILL rows 10, 20, 30, fn01-fn09)",
+         file=F, targets=TS,
+         old="    fd >= 0 && return PL_unify_integer(ld, prop, fd)\n",
+         new="    fd >= 0 && return PL_unify_integer(ld, prop, fd + 1)\n"),
+    dict(id="FN-6 the static flag of the input dropped: any input stream answers 0 (KILL fn12)",
+         file=F, targets=TS,
+         old="    isSinput(s) && return 0\n",
+         new="    (s.flags & SIO_INPUT) != 0 && return 0\n"),
+    dict(id="FN-7 the slots dropped: Soutput and Serror told apart by SIO_NBUF alone (KILL fn07: buffer(line) on user_error)",
+         file=F, targets=TS,
+         old="    in_err != in_out && return in_err ? 2 : 1\n",
+         new=""),
+    dict(id="FN-8 a stream in both or neither slot answers 1 (KILL fn08: Serror under user_output too)",
+         file=F, targets=TS,
+         old="    return (s.flags & SIO_NBUF) != 0 ? 2 : 1\n",
+         new="    return 1\n"),
+    dict(id="FN-9 the SIO_NBUF fallback inverted (KILL fn08, fn09)",
+         file=F, targets=TS,
+         old="    return (s.flags & SIO_NBUF) != 0 ? 2 : 1\n",
+         new="    return (s.flags & SIO_NBUF) != 0 ? 1 : 2\n"),
+    dict(id="FN-10 a stream in either slot is taken for Serror: `in_err != in_out` becomes `in_err || in_out` (KILL fn09: Soutput under user_error too)",
+         file=F, targets=TS,
+         old="    in_err != in_out && return in_err ? 2 : 1\n",
+         new="    (in_err || in_out) && return in_err ? 2 : 1\n"),
+    dict(id="FN-11 the user_error slot is not consulted: Serror found by the flag alone (KILL fn07)",
+         file=F, targets=TS,
+         old="    in_err = (Suser_error(ld) === s)::Bool\n",
+         new="    in_err = false\n"),
+]
