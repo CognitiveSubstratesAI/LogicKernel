@@ -408,14 +408,23 @@ end
             for a in JET_DISPATCH_ALLOWED
                 @test a.caller === LK.S_read && a.callee === LK.Sread_user
                 @test a.argtypes.parameters[1] == Union{Nothing, LK.AbstractLocalData}
-                @test occursin("pl-file.c:5987-5997", a.reason) && occursin("same as upstream", a.reason)
+                @test occursin("pl-file.c:5987-5997", a.reason) &&
+                    occursin("same as upstream", a.reason)
             end
             @test Set(e[1] for e in JET_DISPATCH_FAMILY) == Set(
-                [LK.S_read, LK.S_write, LK.S_close, LK.S_read_wrapped, LK.S_close_wrapped, LK.Swrite_stderr]
+                [
+                LK.S_read,
+                LK.S_write,
+                LK.S_close,
+                LK.S_read_wrapped,
+                LK.S_close_wrapped,
+                LK.Swrite_stderr
+            ]
             )
             for (f, tt, expected) in JET_DISPATCH_FAMILY
                 rs = _sa_opt_reports(f, tt)
-                isempty(rs) || foreach(r -> println(stderr, "  ", f, ": ", _sa_describe(r)), rs)
+                isempty(rs) ||
+                    foreach(r -> println(stderr, "  ", f, ": ", _sa_describe(r)), rs)
                 @test length(rs) == expected                           # raw: the allowlist is not applied
                 @test count(_sa_dispatch_allowed, rs) == expected      # and each report of S_read is the allowed one
             end
@@ -430,7 +439,21 @@ end
             @test !_sa_dispatch_allowed(only(rs), [merge(a, (; callee=LK.S_read_wrapped))])
             @test !_sa_dispatch_allowed(
                 only(rs),
-                [merge(a, (; argtypes=Tuple{LK.PL_local_data{LK.DefaultTerm}, LK.IOSTREAM, LK.wrappedIO, Vector{UInt8}, Int, Int}))]
+                [
+                    merge(
+                        a,
+                        (;
+                            argtypes=Tuple{
+                                LK.PL_local_data{LK.DefaultTerm},
+                                LK.IOSTREAM,
+                                LK.wrappedIO,
+                                Vector{UInt8},
+                                Int,
+                                Int
+                            }
+                        )
+                    )
+                ]
             )
             fixture = JET.get_reports(JET.report_opt(_sa_dispatches, (Vector{Real},)))
             @test !isempty(fixture) && !any(_sa_dispatch_allowed, fixture)

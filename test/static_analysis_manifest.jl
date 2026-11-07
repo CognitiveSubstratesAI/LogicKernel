@@ -3901,14 +3901,14 @@ const JET_ANALYSED_THROUGH = Dict(
 "Runtime dispatches the JET gate lets through: the call (`callee`, `argtypes`) in the function `caller`, and why."
 const JET_DISPATCH_ALLOWED = [
     (
-        caller = LK.S_read,
-        callee = LK.Sread_user,
-        argtypes = Tuple{
-            Union{Nothing, LK.AbstractLocalData}, LK.IOSTREAM, LK.wrappedIO, Vector{UInt8},
-            Int, Int
-        },
-        reason = "pl-file.c:5987-5997 Sread_user: an indirect call per buffer fill, same as upstream (audit D-0433)"
-    )
+    caller=LK.S_read,
+    callee=LK.Sread_user,
+    argtypes=Tuple{
+        Union{Nothing, LK.AbstractLocalData}, LK.IOSTREAM, LK.wrappedIO, Vector{UInt8},
+        Int, Int
+    },
+    reason="pl-file.c:5987-5997 Sread_user: an indirect call per buffer fill, same as upstream (audit D-0433)"
+)
 ]
 
 "The stream function family around the allowed dispatch: `(f, argument types, the JET reports of f's analysis)`; every report of `S_read` is the allowed one."
