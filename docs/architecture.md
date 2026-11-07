@@ -7191,6 +7191,8 @@ Removal conditions: the hook guard went with A5 part 1 (see above); the reset we
 Tests: test/core_lang/test_autoload_trap.jl (LK-only white-box, on the booted database: a fresh local data, `user:exception/3` clauses as the hook with each
 answer and the Pred argument, the retry's post-increment, the loop report, the restored chain, input context and frame, the flag and boot-session skips,
 `autoImport` first, the refreshed definition, `predicateName`, and A1's `lTop` killer through `call(user:foo)`).
+Tests (swipl-compared): test/core_lang/test_autoload_swipl.jl (the same hook as `user:exception/3` clauses run by swipl 10.1.19 and the kernel: each goal's answer and the
+retry warnings, pinned between PINS-BEGIN/END).
 Mutants: tools/mutants/AUTOLOAD1.py (A3b-A3r, and A1e, the mcall_cont `lTop` line, moved out of NOT LISTED; unkillable ones are under NOT LISTED with
 their reason). Manifest: three rows (`_autoload_predicate_name`, `test_autoload_loop`, `autoLoader`), no `::Any` argument.
 
@@ -7443,7 +7445,8 @@ frames as `parentFrame` does (exception/3 -> `$undefined_procedure/4` -> the que
 must be foo's frame). The pool records are copied inside the `at` callback, and the clause ends in `true` so that exception/3's frame is not
 replaced by a last call. The swipl-compared form needs `prolog_frame_attribute/3` (DBG1).
 
-Post-boot part 1 (done): the test-hook rows converted (A1c's G1 row included), the hook guard, its mutant (A3a) and the TRANSIENT DIVERGES deleted.
+Post-boot part 1 (done): the test-hook rows converted (A1c's G1 row included), the hook guard, its mutant (A3a) and the TRANSIENT DIVERGES deleted The swipl-compared rows are test/core_lang/test_autoload_swipl.jl (new): 18 goals over 12 `user:exception/3` clauses, the kernel's
+answers and retry warnings against pins generated from swipl 10.1.19 (evidence/AUTOLOAD1/gen_autoload_rows.py).
 Left, in order: the af08 flip (`set_prolog_flag(autoload, X)` with X
 unbound answers true through `$autoload:set_autoload/1`; the kernel's rows run with `bootsession` set and `propagateAutoload` returns at once);
 the retry warning through `print_message/2` (`vwarning` needs
