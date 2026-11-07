@@ -9,7 +9,8 @@
 #     the ball intact; after the OUTERMOST query closes the frozen bar is 0 and `gTop` is back at its base — through
 #     backtracking and through recursion; A-0029's baseline pinned (recursion: 40 cells per iteration until the
 #     close — 34 before MOD4 qualified catch/3's meta-arguments; backtracking: 0);
-#   * condition 2: the release refuses when a live term reference points above its target.
+#   * condition 2: the release refuses when a live term reference points above its target;
+#   * ENG2 (audit D-0435): the live term references are each open foreign frame's own, not a header's old words.
 using Test, LogicKernel
 const LK = LogicKernel
 
@@ -255,6 +256,49 @@ end
     LK.freezeGlobal!(ld)
     @test ld.query == 0 && ld.exception_term == 0
     @test_throws ErrorException LK._release_frozen!(ld, m, true)
+end
+
+# ENG2 (audit D-0435 option (a)): the live term references the release checks are each open foreign frame's own `size`
+# references (pl-gc.c mark_term_refs, :1016-1055), not every slot below `lTop`. White-box: the release is kernel-own (the
+# stand-in for the collector until G1), so swipl has no answer to compare; each row reads the kernel's stacks directly.
+@testset "ENG2: the release reads each open foreign frame's references, not a header's old words" begin
+    db = _rdb(Tuple{_R, Union{Nothing, _R}}[])
+    ld = db.ld
+    # (1) a frame header over dead references: a rewind drops an outer frame's references, an inner frame opens on them
+    fid = LK.PL_open_foreign_frame(ld)
+    m = LK.Mark(ld)
+    t = LK.PL_new_term_refs(ld, 3)                   # three cells above m.globaltop
+    LK.PL_rewind_foreign_frame(ld, fid)              # the references dropped, gTop back at the frame's mark …
+    @test ld.gTop == m.globaltop
+    @test LK._global_pos(ld, ld.slots[t + 1]) > m.globaltop     # … their old words still in the slots
+    fid2 = LK.PL_open_foreign_frame(ld)              # whose header spans those slots
+    @test fid2 == t && ld.lTop == t + LK.SIZEOF_FLIFRAME
+    LK.allocGlobalCells!(ld, 4)                      # a region above the target, frozen (a ball's)
+    LK.freezeGlobal!(ld)
+    @test ld.query == 0 && ld.exception_term == 0
+    LK._release_frozen!(ld, m, true)
+    @test ld.frozen_bar == 0 && ld.gTop == m.globaltop
+    LK.PL_discard_foreign_frame(ld, fid2)
+    # (2) a live reference of an OUTER open frame above the target: refused, as condition 2 for the innermost
+    t2 = LK.PL_new_term_ref(ld)                      # a reference of frame `fid`
+    m2 = LK.Mark(ld)
+    fid3 = LK.PL_open_foreign_frame(ld)              # its mark at m2's: the frame check passes
+    p2 = LK.allocGlobalCells!(ld, 2)
+    ld.slots[t2 + 1] = LK.makeRefG(p2)               # the outer reference set to a cell above the target
+    LK.freezeGlobal!(ld)
+    @test p2 > m2.globaltop && ld.fliframes[ld.fli_context].size == 0
+    @test_throws ErrorException LK._release_frozen!(ld, m2, true)
+    LK.PL_discard_foreign_frame(ld, fid3)
+    LK.PL_rewind_foreign_frame(ld, fid)
+    # (3) the boundary: a live reference AT the target (its cell the last one below the mark) releases
+    t3 = LK.PL_new_term_ref(ld)
+    m3 = LK.Mark(ld)
+    @test LK._global_pos(ld, ld.slots[t3 + 1]) == m3.globaltop
+    LK.allocGlobalCells!(ld, 2)
+    LK.freezeGlobal!(ld)
+    LK._release_frozen!(ld, m3, true)
+    @test ld.frozen_bar == 0 && ld.gTop == m3.globaltop
+    LK.PL_discard_foreign_frame(ld, fid)
 end
 
 # ── e5b: classify_exception on the words, every class; its answers' round trip agrees ──────────

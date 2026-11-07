@@ -392,8 +392,10 @@ end
 
 @testset "R-B: closing a query after an exception on the unbooted database (owner ENG2, audit D-0377 item 3)" begin
     # findall/3 is undefined on setupProlog's database (boot/bags.pl not loaded): the query raises, and PL_close_query
-    # then raises `_release_frozen!: slot 27 references global position 31 above the reset target 19`
-    # (src/pl-inline.jl). A latent engine bug, not fixed here; the row stays broken until ENG2 lands.
+    # then raised `_release_frozen!: slot 27 references global position 31 above the reset target 19`
+    # (src/pl-inline.jl). Traced and fixed by ENG2 (audit D-0435 option (a)): slot 27 was the first HEADER word of the
+    # query's own foreign frame (base 26), an old word, not a term reference; the release now reads each open frame's
+    # references only (pl-gc.c mark_term_refs). The row flipped from @test_broken (refusal-flip rule, D-0375/D-0376).
     g = joinpath(mktempdir(), "autoload.pl")
     write(g, _QL_AUTOLOAD_PROGRAM)
     gd = LK.setupProlog(_QL)
@@ -407,7 +409,7 @@ end
     gd.bootsession = true
     @test LK.compileFileList(gd, ld, nothing, [g])
     gd.bootsession = false
-    @test_broken (
+    @test (
         try
             _ql_query_lines(gd, ld, ["t_q01"]) == ["t_q01 exception"]
         catch

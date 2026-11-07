@@ -1005,9 +1005,12 @@ end
 # so without this every throw would pin the global stack below its ball for the engine's life
 # (evidence/A-0029 in the audit channel). When the outermost query has ended (`ld.query == 0`) with no
 # exception pending, nothing the engine runs can reach the region: the bar is lowered to 0 and, after a
-# CLOSE, `gTop` to the query's own mark `target` — but first every live term reference (the slots below
-# `lTop`) and every open foreign frame's mark is checked to point at or below `target` (raises
-# otherwise). GOES with the collector.
+# CLOSE, `gTop` to the query's own mark `target` — but first every live term reference and every open
+# foreign frame's mark is checked to point at or below `target` (raises otherwise). GOES with the collector.
+# ENG2 (audit D-0435 option (a)): the live term references are what upstream's collector marks as roots
+# from foreign code, pl-gc.c `mark_term_refs` (:1016-1055): the `size` references above each frame of the
+# `fli_context` chain. With no query open nothing else on the local stack is live; a frame's header and a
+# slot a closed frame or query left behind may still hold an old word, which is not a reference.
 # DIVERGES (ENG2a, audit D-0411): global variables (pl-gvar.c, G1; design D7). Upstream's `Undo` leaves
 # `gTop = max(frozen_bar, mark.globaltop)` (pl-incl.h:2250, pl-wam.c:1632) and the bar stays until
 # `destroyGlobalVars` (pl-gvar.c:62-70); a ball above a global variable's value is then the collector's:
@@ -1030,11 +1033,17 @@ function _release_frozen!(ld::PL_local_data, m::mark, close::Bool)::Nothing
         _gvar_reach(ld) > lim && return nothing     # a live value above it: the region stays
     end
     if close && ld.gTop > target
-        for i in 1:(ld.lTop)                        # live term references: none above `target`
-            p = _global_pos(ld, ld.slots[i])
-            p > target && error(
-                "_release_frozen!: slot $i references global position $p above the reset target $target"
-            )
+        fr = ld.fli_context                         # live term references: none above `target`
+        while fr != 0                               # (pl-gc.c mark_term_refs: each open frame's own)
+            f = ld.fliframes[fr]
+            for n in 0:(f.size - 1)
+                r = refFliP(f.base, n)              # Word sp = refFliP(fr, 0); n-- > 0; sp++
+                p = _global_pos(ld, ld.slots[r + 1])
+                p > target && error(
+                    "_release_frozen!: term reference $r of foreign frame $fr references global position $p above the reset target $target"
+                )
+            end
+            fr = f.parent
         end
         for f in 1:(ld.nfliframes)                  # open foreign frames: none above `target`
             g = ld.fliframes[f].mark.globaltop

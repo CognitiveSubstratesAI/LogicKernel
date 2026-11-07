@@ -6185,8 +6185,10 @@ What G1 ports (pl-gvar.c at the pin cbf4e189; edit-only so far, nothing compiled
   `PL_local_data` gains `gvar_nb_vars::Dict{UInt64,UInt64}` (an EMPTY table stands for upstream's NULL), `gvar_grefs::Int` and
   `gvar_enums`; `live_states` counts the new pool. `duplicate_term(ld, in, copy)` (pl-copyterm.jl) is the C function, called by
   `duplicate_term/2` and by `setval_duplicate`.
-- **D7:** `_release_frozen!` (src/pl-inline.jl) returns while `ld.gvar_grefs > 0`: a global variable's value lives on the global
-  stack and the end-of-query reset must not free it (upstream keeps `frozen_bar` for the thread's life).
+- **D7:** `_release_frozen!` (src/pl-inline.jl), while `ld.gvar_grefs > 0`, scans the global variables' values (`_gvar_reach`, ENG2a) and
+  returns, keeping the frozen region, only when a value reaches above the reset target or above an open foreign frame's mark
+  (frame 1 excluded); with every value at or below both it releases the region as without global variables (a global variable's
+  value lives on the global stack and the end-of-query reset must not free it; upstream keeps `frozen_bar` for the thread's life).
 - **D8:** `setBuiltinPredicateProperties!` makes `user:exception/3` dynamic (boot/init.pl:945 before init.pl is loaded), so
   `auto_define_gvar`'s `PL_call_predicate` finds a predicate without clauses; the later declaration is harmless.
 - **Divergences:** (a) `duplicate_term` copies the whole term: upstream's `nshare`/`share` are a later port; (b) a float, string
