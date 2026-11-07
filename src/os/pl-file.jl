@@ -2199,11 +2199,33 @@ stream_close_on_abort_prop(ld::PL_local_data, s::IOSTREAM, prop::term_t)::Bool =
 stream_type_prop(ld::PL_local_data, s::IOSTREAM, prop::term_t)::Bool =
     _unify_sym(ld, prop, (s.flags & SIO_TEXT) != 0 ? :text : :binary)
 
+# The file descriptor of `s` as `Sfileno` (pl-stream.c) gives it, for the process's standard streams only: 0 for
+# `Sinput`, 1 for `Soutput`, 2 for `Serror` (`S__iob`), -1 for every other stream. ORIGINAL: no `fileno` field in
+# the stream (FILENO1; a struct change was not taken), so the standard streams are recognised as `closeStream` does
+# (`isSinput`, `isSoutputOrSerror`, the `SIO_STATIC` flag) and told apart by the slot of `ld` they are bound to
+# (the stream in `user_error`'s slot alone is `Serror`, in `user_output`'s alone `Soutput`); one in both or
+# neither slot (aliased away) falls back on the flag it was made with, `SIO_NBUF` for `Serror` (`set_stream(buffer(..))`
+# can change that flag, which is why the slots come first).
+function _std_fileno(ld::PL_local_data, s::IOSTREAM)::Int
+    isSinput(s) && return 0
+    isSoutputOrSerror(s) || return -1
+    in_err = (Suser_error(ld) === s)::Bool
+    in_out = (Suser_output(ld) === s)::Bool
+    in_err != in_out && return in_err ? 2 : 1
+    return (s.flags & SIO_NBUF) != 0 ? 2 : 1
+end
+
 # PORT: pl-file.c stream_file_no_prop
-# DIVERGES (representation): upstream answers `Sfileno(s)` when it is >= 0 (pl-file.c:4996-5005); the stream layer
-# holds a Julia IO, not an OS file descriptor, so the answer is `false`.
-"`file_no(Fd)` of `s` (pl-file.c)."
-stream_file_no_prop(ld::PL_local_data, s::IOSTREAM, prop::term_t)::Bool = false
+# DIVERGES (representation): upstream answers `Sfileno(s)` when it is >= 0 (pl-file.c:4996-5005), the descriptor
+# cached in the stream by `Snew`; the stream layer holds a Julia IO, not an OS file descriptor, so the answer is the
+# descriptor of the three standard streams (`_std_fileno`: 0, 1, 2) and `false` for every other stream (FILENO1: the
+# remaining representation difference; a file stream has no descriptor here, swipl's is a number >= 3).
+"`file_no(Fd)` of `s`: 0, 1 or 2 for a standard stream, no answer for any other (pl-file.c)."
+function stream_file_no_prop(ld::PL_local_data, s::IOSTREAM, prop::term_t)::Bool
+    fd = _std_fileno(ld, s)::Int
+    fd >= 0 && return PL_unify_integer(ld, prop, fd)
+    return false
+end
 
 # PORT: pl-file.c stream_tty_prop
 "`tty(true)` when `s` is a terminal (pl-file.c)."
@@ -2305,14 +2327,14 @@ stream_timeout_prop(ld::PL_local_data, s::IOSTREAM, prop::term_t)::Bool =
     _unify_sym(ld, prop, :infinite)
 
 # PORT: pl-file.c stream_nlink_prop
-# DIVERGES (representation): upstream is `fstat(Sfileno(s)).st_nlink` (pl-file.c:5151-5165); no file descriptor
-# here (see `stream_file_no_prop`): `false`.
+# DIVERGES (representation): upstream is `fstat(Sfileno(s)).st_nlink` (pl-file.c:5151-5165); no `fstat` here, even
+# for a standard stream (see `stream_file_no_prop`): `false`.
 "`nlink(Count)` of `s` (pl-file.c)."
 stream_nlink_prop(ld::PL_local_data, s::IOSTREAM, prop::term_t)::Bool = false
 
 # PORT: pl-file.c stream_close_on_exec_prop
-# DIVERGES (representation): upstream is `fcntl(fd, F_GETFD)` (pl-file.c:5167-5199); no file descriptor here
-# (see `stream_file_no_prop`): `false`.
+# DIVERGES (representation): upstream is `fcntl(fd, F_GETFD)` (pl-file.c:5167-5199); no `fcntl` here, even for a
+# standard stream (see `stream_file_no_prop`): `false`.
 "`close_on_exec(Bool)` of `s` (pl-file.c)."
 stream_close_on_exec_prop(ld::PL_local_data, s::IOSTREAM, prop::term_t)::Bool = false
 
