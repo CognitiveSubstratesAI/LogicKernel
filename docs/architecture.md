@@ -7437,11 +7437,13 @@ pl-proc.c (`autoLoader` :2962, `trapUndefined` :3008-3063), pl-init.c (`vwarning
 Written: the Prolog half of the hook is upstream's own text, vendored verbatim (vendor/swipl-devel/boot); the loader defines it at the first boot
 (LB4 b2), so no Prolog is written here. `autoLoader` already reaches it as pl-proc.c does. The A1c mutant (mcall_cont's `ld.environment_frame = FR`)
 changes only the parent frame of the autoloader's query: the DEFERRED KILL declaration in tools/mutants/AUTOLOAD1.py is replaced by a KILL naming the
-LK-only row "A1c's killer (A5)" of test/core_lang/test_autoload_trap.jl (a hook through `call(user:foo)`; the hook query's
-`saved_environment` must be foo's frame). Post-boot part 1 converted the test-hook rows to `user:exception/3` clauses on the booted database (audit D-0416 item 2,
-option (a)); the swipl-compared form of A1c needs `prolog_frame_attribute/3` (DBG1).
+LK-only row "A1c's killer" of test/core_lang/test_autoload_trap.jl, in its post-boot form (audit D-0416 item 2, option (a)): the real hook runs a
+`user:exception(undefined_predicate, foo, retry)` clause through `call(user:foo)`; the clause records `prolog_current_frame/1`; the row walks the
+frames as `parentFrame` does (exception/3 -> `$undefined_procedure/4` -> the query's top frame `$c_call_prolog/0` -> its `saved_environment`, which
+must be foo's frame). The pool records are copied inside the `at` callback, and the clause ends in `true` so that exception/3's frame is not
+replaced by a last call. The swipl-compared form needs `prolog_frame_attribute/3` (DBG1).
 
-Post-boot part 1 (done): the test-hook rows converted, the hook guard, its mutant (A3a) and the TRANSIENT DIVERGES deleted.
+Post-boot part 1 (done): the test-hook rows converted (A1c's G1 row included), the hook guard, its mutant (A3a) and the TRANSIENT DIVERGES deleted.
 Left, in order: the af08 flip (`set_prolog_flag(autoload, X)` with X
 unbound answers true through `$autoload:set_autoload/1`; the kernel's rows run with `bootsession` set and `propagateAutoload` returns at once);
 the retry warning through `print_message/2` (`vwarning` needs

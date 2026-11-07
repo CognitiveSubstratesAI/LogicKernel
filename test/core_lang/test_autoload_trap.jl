@@ -334,38 +334,75 @@ end
     @test isempty(db.ld.autoload_nesting)
 end
 
-@testset "A1c's killer (A5): the autoloader's query returns to the trapped frame" begin
-    # UNVERIFIED (never run); LK-ONLY (white-box): swipl cannot show the query's `saved_environment`; the swipl-compared form needs
-    # `prolog_frame_attribute/3` (DBG1) and the booted hook, see evidence/AUTOLOAD1/handoff_a5.md item 4. `call(user:foo)` goes through
-    # `mcall_cont`; the hook's query is opened by `PL_open_query` with `saved_environment = ld.environment_frame`, which `mcall_cont`
-    # sets to the new frame (`ld.environment_frame = FR`, src/pl-wam.jl:3830, mutant AUTOLOAD1-A1c): that frame is foo's. The query
-    # record is read inside the `at` callback, while the outer query is open: a dropped record stays readable until a push reuses it.
+@testset "A1c's killer: the autoloader's query returns to the trapped frame" begin
+    # LK-ONLY (white-box): swipl cannot show the query's `saved_environment` before DBG1's `prolog_frame_attribute/3`. `call(user:foo)` goes
+    # through `mcall_cont`; the hook's query is opened by `PL_open_query` with `saved_environment = ld.environment_frame`, which `mcall_cont`
+    # sets to the new frame (`ld.environment_frame = FR`, src/pl-wam.jl:3830, mutant AUTOLOAD1-A1c): that frame is foo's. The real hook runs
+    # the clause `exception(undefined_predicate, foo, retry)`, which records `prolog_current_frame/1` (the position of its own frame, the
+    # caller of that call). The walk is `parentFrame` (src/pl-wam.jl:1360): exception/3's frame -> `$undefined_procedure/4`'s, the query's top
+    # frame (parent 0) -> the query's `saved_environment`. The records are pooled and a dropped one stays readable until a push reuses it, and
+    # reading `seen_frame/1` is a query that pushes: so the pool records and the hook's query record are COPIED inside the `at` callback
+    # (no query there), and the position is read afterwards.
     db = _at_db()
+    LK.setDynamicDefinition!(_at_proc(db, :seen_frame, 1).definition, true)
     _at_hook!(
-        db, :foo, :retry; body=_rconj(_rf("assertz", _at_user(:foo)), _at_record(:foo))
+        db,
+        :foo,
+        :retry;
+        body=_rconj(
+            _rf("assertz", _at_user(:foo)),
+            _rf("prolog_current_frame", _rv(1)),
+            _rf("assertz", _at_user_goal(_rf("seen_frame", _rv(1)))),
+            _rs(:true)                            # not the last call: exception/3's frame stays (no LCO into assertz/1)
+        )
     )
     _radd!(
         db, _rf("t", _rv(1)), _rconj(_rf("call", _at_user(:foo)), _rf("=", _rv(1), _rg(1)))
     )
     foodef = _at_proc(db, :foo).definition
+    excdef = _at_proc(db, :exception, 3).definition
+    hookdef = _at_sysproc(db, "\$undefined_procedure", 4).definition
     seen = NamedTuple[]
     at = function (qid, k)
         ld = db.ld
         q = ld.queries[ld.nqueries + 1]          # the hook's query: the one opened inside the outer query
-        e = q.saved_environment
         push!(
             seen,
-            (; flags=q.flags, env=e, pred=(e == 0 ? nothing : ld.frames[e].predicate))
+            (;
+                flags=q.flags,
+                qbase=q.base,
+                saved=q.saved_environment,
+                nframes=ld.nframes,
+                frames=[
+                    (; idx=i, base=f.base, parent=f.parent, pred=f.predicate) for
+                    (i, f) in
+                    enumerate(ld.frames[1:min(length(ld.frames), ld.nframes + 16)])
+                ]
+            )
         )
     end
     @test String[a for (a, _) in _rcall(db, _rf("t", _rv(2)); at)] == ["t(1)"]
-    @test _at_called(db) == ["called(foo)"]            # the hook ran once, through the VM
-    # not vacuous: one answer, and the record read is the hook's query (its flags), with a parent frame
     @test length(seen) == 1
     s = only(seen)
+    # not vacuous: the record is the hook's query (its flags), it has a parent frame, and the hook ran once
     @test (s.flags & LK.PL_Q_PASS_EXCEPTION) != 0
     @test (s.flags & LK.PL_Q_NODEBUG) != 0
-    @test s.env != 0
-    # the query returns to the frame of the trapped call: the predicate of that frame is foo
-    @test s.pred === foodef
+    @test s.saved != 0
+    got = String[a for (a, _) in _rcall(db, _rf("seen_frame", _rv(1)))]
+    @test length(got) == 1                         # one recorded frame: the hook ran once, through the VM
+    F = parse(Int, got[1][(length("seen_frame(") + 1):(end - 1)])
+    # exception/3's frame: the record at position F whose predicate is exception/3
+    cand = [f for f in s.frames if f.base == F && f.pred === excdef]
+    @test length(cand) == 1
+    exc = only(cand)
+    # its parent is the hook's own frame, whose parent is the query's top frame (`$c_call_prolog/0`, parent 0, its position
+    # `QF_TOP_FRAME` above the query's base: the frame `parentFrame` takes the query's `saved_environment` for)
+    hk = s.frames[exc.parent]
+    @test hk.pred === hookdef
+    top = s.frames[hk.parent]
+    @test top.parent == 0
+    @test top.base - LK.QF_TOP_FRAME == s.qbase
+    @test String(lk_name(top.pred.name)) == "\$c_call_prolog"
+    # the query returns to the frame of the trapped call (a dropped record, readable until a push reuses it): foo
+    @test s.frames[s.saved].pred === foodef
 end
