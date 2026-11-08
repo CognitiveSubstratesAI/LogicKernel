@@ -449,8 +449,12 @@ end
     LK.Sputcode(Int('E'), ne)
     @test String(take!(outb)) == "E"
     # closing the error stream does not close Out (S_close of Sstderrfunctions: `close` is NULL)
+    # (a fall through to Sclose_string(Out) would put a 0 byte into Out's buffer: its `bufp` moves and the next flush writes it)
+    bufp0 = uo.bufp
     @test LK.Sclose(ne) == 0
     @test uo.magic == LK.SIO_MAGIC
+    @test uo.bufp == bufp0                                        # Out's buffer untouched by the copy's close
+    @test LK.Sflush(uo) == 0 && isempty(take!(outb))              # no 0 byte reaches Out
     # Out != Error: the error stream is taken as it is, NBUF set, its other buffering flags cleared
     db2, (ui2, uo2, ue2), _ = _tw_db()
     ue2.flags |= LK.SIO_FBUF
