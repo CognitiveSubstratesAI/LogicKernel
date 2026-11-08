@@ -610,3 +610,66 @@ end
         @test _s2_swipl_lines(f, names) == _S2_PINNED
     end
 end
+
+# ---- white-box: flush_output/1 raises the stream's recorded error (pl-file.c flush_output -> streamStatus, :5516), the row S2A-F4 needs.
+# The rows s001-s137 cannot record an error on a stream (no predicate sets SIO_FERR); the kernel's own state does, as pl-stream.c's
+# Sseterr does. swipl 10.1.19 produces the same ball with a REAL write failure (`open('/dev/full', write, S), write(S, x), flush_output(S)`:
+# error(io_error(write, S), context(system:flush_output/1, 'No space left on device'))); the message here is Sseterr's "boom", the
+# error state itself is not producible in swipl without a failing device.
+"Call the system predicate `name` on `args` (term_under_test's type): `(:true | :false | :exception, answers or [ball])`."
+function _s2_kcall(gd, ld, name::String, args::Vector{_S2})
+    proc = LK.isCurrentProcedure(
+        sym_key(_s2s(name)), length(args), LK.MODULE_system(gd)
+    )
+    @assert proc !== nothing "no system predicate $name/$(length(args))"
+    fid = LK.PL_open_foreign_frame(ld)
+    a = LK.PL_new_term_refs(ld, length(args))
+    pvm = LK.PutVarMap()
+    for (i, x) in enumerate(args)
+        LK.putSlotValue!(ld, a + i, x, pvm)
+    end
+    qid = LK.PL_open_query(
+        gd, ld, nothing, LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS, proc, a
+    )
+    rc = LK.PL_next_solution(gd, ld, qid)
+    status, ans = :false, _S2[]
+    if rc == LK.PL_S_TRUE || rc == LK.PL_S_LAST
+        status, ans = :true, lk_answers(ld, [a + i - 1 for i in 1:length(args)]...)
+    elseif rc == LK.PL_S_EXCEPTION
+        status, ans = :exception, _S2[lk_answer(ld, LK.PL_exception(ld, qid))]
+    end
+    LK.PL_close_query(ld, qid)
+    LK.PL_close_foreign_frame(ld, fid)
+    return status, ans
+end
+
+@testset "flush_output/1 raises io_error(write, S) for an error recorded on the stream, then the stream is clean (S2A-F4)" begin
+    gd = LK.PL_global_data{_S2}()
+    ld = LK.PL_local_data{_S2}(gd)
+    path = joinpath(mktempdir(), "flush.txt")
+    st, a = _s2_kcall(
+        gd, ld, "open", _S2[_s2s(path), _s2s(:write), mk_var(_S2, LK.fresh_var_keys!(1))]
+    )
+    @test st === :true
+    blob = a[3]
+    s = LK.get_stream_handle(ld, blob, LK.SH_ALIAS | LK.SH_OUTPUT)
+    @test s isa LK.IOSTREAM
+    @test _s2_kcall(gd, ld, "flush_output", _S2[blob])[1] === :true            # no error recorded: flush_output succeeds
+    LK.Sseterr(s, LK.SIO_FERR, "boom")
+    st, ball = _s2_kcall(gd, ld, "flush_output", _S2[blob])
+    @test st === :exception
+    b = ball[1]
+    @test nchildren(b) == 3 && sym_text(child(b, 1)) == "error"
+    f, ctx = child(b, 2), child(b, 3)
+    @test sym_text(child(f, 1)) == "io_error" && nchildren(f) == 3 &&
+        sym_text(child(f, 2)) == "write"
+    @test is_blob(child(f, 3)) && blob_type(child(f, 3)) === :stream             # io_error(write, S)
+    @test _s2_enc(ctx) ==
+        "c" * _s2_codes("context") * "/2(c" * _s2_codes(":") * "/2(a" *
+          _s2_codes("system") *
+          ",c" * _s2_codes("/") * "/2(a" * _s2_codes("flush_output") * ",i1)),a" *
+          _s2_codes("boom") * ")"
+    @test LK.Sferror(s) == 0                                                    # reportStreamError cleared it
+    @test _s2_kcall(gd, ld, "flush_output", _S2[blob])[1] === :true              # a second flush is clean
+    @test _s2_kcall(gd, ld, "close", _S2[blob])[1] === :true
+end
