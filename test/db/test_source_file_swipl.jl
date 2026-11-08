@@ -378,6 +378,61 @@ function kcall(gd::LK.PL_global_data{T}, ld, name::String, args::Vector{T}) wher
 end
 
 
+"The first `n` answers of the system predicate `name` on `args`, by `PL_next_solution` on ONE open query (a BOUNDED enumeration): `(count, first-arguments)`."
+function kenum(
+    gd::LK.PL_global_data{T}, ld, name::String, args::Vector{T}, n::Int
+) where {T}
+    proc = LK.isCurrentProcedure(
+        sym_key(lk_sym(T, Symbol(name))), length(args), LK.MODULE_system(gd)
+    )
+    @assert proc !== nothing "no system predicate $name/$(length(args))"
+    fid = LK.PL_open_foreign_frame(ld)
+    a = LK.PL_new_term_refs(ld, length(args))
+    pvm = LK.PutVarMap()
+    for (i, x) in enumerate(args)
+        LK.putSlotValue!(ld, a + i, x, pvm)
+    end
+    qid = LK.PL_open_query(
+        gd, ld, nothing, LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS, proc, a
+    )
+    firsts = T[]
+    while length(firsts) < n
+        rc = LK.PL_next_solution(gd, ld, qid)
+        (rc == LK.PL_S_TRUE || rc == LK.PL_S_LAST) || break
+        push!(firsts, lk_answers(ld, a)[1])
+        rc == LK.PL_S_LAST && break
+    end
+    LK.PL_close_query(ld, qid)
+    LK.PL_close_foreign_frame(ld, fid)
+    return length(firsts), firsts
+end
+
+# LB2-9 (pl-srcfile.c:655-699, `ForeignRedoInt(index+1)`): the redo of '$time_source_file'/3 resumes AFTER the answer it gave. With the context
+# left at `index` a redo answers the SAME file again, forever: every `findall` over the predicate below spins, BEFORE any @test, and
+# the mutation battery can only time out. This block runs FIRST, on the unbooted database (the booted copy lists the boot's files),
+# asks for at most 3 answers of ONE open query, and stops the file by an exception if the enumeration is not [a, b].
+# swipl 10.1.19: two files started, `findall(F, '$time_source_file'(F, _, _), L)` lists each once, in index order.
+let
+    ok, why = false, ""
+    # a throw under a mutant must end as a FAILED test, not as a bare LoadError (= "does not load" = no verdict for the driver)
+    try
+        gd = LK.setupProlog(_TL)
+        ld = LK.PL_local_data{_TL}(gd)
+        fa, fb = _tls("/no/such/lb29a"), _tls("/no/such/lb29b")
+        st1, _ = kcall(gd, ld, "\$start_consult", _TL[fa, lk_gnd(_TL, 0)])
+        st2, _ = kcall(gd, ld, "\$start_consult", _TL[fb, lk_gnd(_TL, 0)])
+        vs = _TL[mk_var(_TL, LK.fresh_var_keys!(1)) for _ in 1:3]
+        n, firsts = kenum(gd, ld, "\$time_source_file", vs, 3)
+        ok =
+            st1 === :true && st2 === :true && n == 2 &&
+            [sym_key(x) for x in firsts] == [sym_key(fa), sym_key(fb)]
+    catch e
+        why = "the enumeration threw: " * sprint(showerror, e)
+    end
+    @test (ok, why) == (true, "")      # a throw is shown in the failure text
+    ok || throw(Test.TestSetException(0, 1, 0, 0, Test.Result[]))
+end
+
 _swipl() = get(ENV, "LOGICKERNEL_NO_SWIPL", "") == "1" ? nothing : Sys.which("swipl")
 
 @testset "the source-file predicates == live swipl, through a program" begin

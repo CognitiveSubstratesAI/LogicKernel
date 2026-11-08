@@ -379,6 +379,34 @@ function _mb_kernel(path::String, names::Vector{String})
     return out, gd, ld
 end
 
+# MOD5b-C9 (pl-modul.c:1317 `LD->modules.source = module`): declareModule makes the declared module the SOURCE module. Rows a01 and the
+# rest of the program already fail without it, but the mutant changes boot-time code (the booted template, built by the first
+# `PL_global_data{_MB}()`, loads boot/*.pl through `'$declare_module'/6`): the battery's run ended in a TIMEOUT at 1500 s (= no verdict)
+# and a local run with a 900 s wall reached the row `@test k == p` below only after ~15-20 minutes with no output. This block runs
+# FIRST, on the UNBOOTED database (`LK.setupProlog`: no boot file is loaded), calls declareModule once and reads `ld.modules_source`
+# directly; a failure stops the file by an exception (a failed top-level @test does not).
+let
+    ok, why = false, ""
+    # a mutant that makes declareModule throw (MOD5b-C3: it refuses a module without a file) must end as a FAILED test
+    # ("Some tests did not pass"), not as a bare LoadError, which the battery driver judges as "does not load" = no verdict
+    try
+        gd = LK.setupProlog(_MB)
+        ld = LK.PL_local_data{_MB}(gd)
+        before = ld.modules_source
+        name = _mbs("mb_c9")
+        sf = LK.lookupSourceFile(gd, _mbs("/mb/c9.pl"), true)
+        rc = LK.declareModule(gd, ld, name, _mbs("user"), _mbs("user"), sf, 3, false)
+        m = LK.isCurrentModule(gd.modules, name)
+        ok =
+            rc && m !== nothing && ld.modules_source == m.index &&
+            ld.modules_source != before
+    catch e
+        why = "declareModule threw: " * sprint(showerror, e)
+    end
+    @test (ok, why) == (true, "")      # a throw is shown in the failure text
+    ok || throw(Test.TestSetException(0, 1, 0, 0, Test.Result[]))
+end
+
 @testset "declaring and destroying modules as swipl's (MOD5b rows)" begin
     f, names = _mb_file()
     kl, _, _ = _mb_kernel(f, names)
