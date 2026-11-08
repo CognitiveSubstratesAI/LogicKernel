@@ -158,7 +158,7 @@ const _BI_KERNEL_MISSING_PROLOG = [       # sorted, as the guard compares; swipl
     "system:trie_gen_compiled/3"
 ]
 const _BI_KERNEL_COLUMNS = String[]       # rows on both sides whose columns differ: "KEY swipl-cols kernel-cols" (none)
-const _BI_KERNEL_MISSING_FOREIGN = 383    # (388 before DWIM1 registered dwim_match/3 and '$dwim_predicate'/2; 386 before LB7 registered '$cmd_option_val'/2, '$cmd_option_set'/2 and '$usage'/0) swipl's foreign (C) rows in the boot modules the kernel registers later (R2 owners); a COUNT
+const _BI_KERNEL_MISSING_FOREIGN = 381    # (388 before DWIM1 registered dwim_match/3 and '$dwim_predicate'/2; 386 before LB7 registered '$cmd_option_val'/2, '$cmd_option_set'/2 and '$usage'/0; 383 before TOP1b registered break/0 and set_prolog_IO/3) swipl's foreign (C) rows in the boot modules the kernel registers later (R2 owners); a COUNT
 const _BI_KERNEL_MODULES_LACKING = String[] # every boot module the oracle has, the kernel has
 # T3, `(row, kernel, swipl)`: load.pl's clause count only (22 vs 23): swipl's 23 count the `'$load_context_module'/3` fact of
 # threads.pl, which load.pl:78-80 does not consult in the single-thread configuration (FLAG F6); the T3 config rows leave
