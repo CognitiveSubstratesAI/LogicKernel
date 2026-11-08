@@ -505,7 +505,7 @@ end
 @testset "the template copy: a database with a registered engine refuses it, a freed entry keeps its slot (src/gd_template.jl ld_table = :streams)" begin
     # UNVERIFIED on the kernel: gate decides
     gd = LK.setupProlog(_R)                                       # unbooted: its tables are empty
-    ld = LK.PL_local_data{_R}(gd)
+    ld = LK._bare_local_data(gd)                                  # not `PL_local_data{_R}(gd)`: since S2a3 that runs initIO, whose three process streams the copy refuses by themselves
     i = LK.registerLocalData!(gd.ld_table, ld)
     @test_throws ErrorException LK.copy_global_data(gd)           # a wrapped stream is open
     LK.unregisterLocalData!(gd.ld_table, i)

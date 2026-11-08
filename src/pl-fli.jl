@@ -1507,7 +1507,6 @@ end
 # DIVERGES: the local data is an argument (upstream's `LD`).
 "The terminal mode of `s`: `PL_NOTTY` unless it is `user_input` with `tty_control` on, then `PL_RAWTTY` or `PL_COOKEDTTY` (pl-fli.c)."
 function PL_ttymode(ld::PL_local_data, s::IOSTREAM)::Int
-    _initIO(ld)
     if s === Suser_input(ld)
         truePrologFlag(ld, PLFLAG_TTY_CONTROL) || return PL_NOTTY   # -tty in effect
         Sttymode(s) == TTY_RAW && return PL_RAWTTY                  # get_single_char/1 and friends
@@ -1523,8 +1522,6 @@ end
 # DIVERGES: the local data is an argument (upstream's `LD`).
 "Does the prompt that comes next continue an input started earlier: `in` is `user_input` and `prompt1/1`'s prompt was handed out (pl-fli.c)?"
 function PL_prompt_is_continuation(ld::PL_local_data, in::IOSTREAM)::Bool
-    _initIO(ld)
-
     return in === Suser_input(ld) && ld.prompt_first !== nothing && ld.prompt_first_used
 end
 
@@ -1536,7 +1533,6 @@ end
 function PL_prompt_string(
     ld::PL_local_data{T}, in::IOSTREAM
 )::Union{Nothing, String} where {T}
-    _initIO(ld)
     if in === Suser_input(ld)
         a = PrologPrompt(ld)
         if a !== nothing && isTextAtom(a)                           # get_atom_text(a, &text)

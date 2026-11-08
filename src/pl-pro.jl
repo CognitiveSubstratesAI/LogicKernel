@@ -501,7 +501,6 @@ tell `break(begin, Level)` where the level is above 0, run `system:goal` as `que
 """
 function pl_break1(gd::PL_global_data{T}, ld::PL_local_data{T}, goal::T)::Bool where {T}
     rc = true
-    _initIO(ld)
     old_level = ld.break_level
 
     inSave = ld.IO_streams[SNO_CURRENT_INPUT + 1]           # Scurin
