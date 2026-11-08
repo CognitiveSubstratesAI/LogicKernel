@@ -114,6 +114,12 @@ jobs:
           ref: ${{ steps.pin.outputs.commit }}
           path: .upstream/swipl-devel
           submodules: true
+      # SYNC ONLY (audit D-0444 item 1): while tools/SWIPL_VERSION has a `sync-from:` line, fetch that commit (depth 1) so
+      # tools/port_check.jl can read the headers that still cite it; a clean no-op without the line. REMOVED, with
+      # tools/fetch_sync_from.sh, by the PIN1 step that moves the last header and the `sync-from:` line.
+      - name: The previous pin (sync-from:), when a sync is in flight
+        if: ${{ steps.pin.outputs.commit != '' }}
+        run: tools/fetch_sync_from.sh
       - name: Install the analysis tools (the targets name test/test_static_analysis.jl or the whole suite)
         if: ${{ contains(format('{0} {1}', inputs.targets, needs.plan.outputs.targets), 'test_static_analysis') || contains(format('{0} {1}', inputs.targets, needs.plan.outputs.targets), 'mutate_suite') }}
         run: |
@@ -163,6 +169,12 @@ jobs:
           ref: ${{ steps.pin.outputs.commit }}
           path: .upstream/swipl-devel
           submodules: true
+      # SYNC ONLY (audit D-0444 item 1): while tools/SWIPL_VERSION has a `sync-from:` line, fetch that commit (depth 1) so
+      # tools/port_check.jl can read the headers that still cite it; a clean no-op without the line. REMOVED, with
+      # tools/fetch_sync_from.sh, by the PIN1 step that moves the last header and the `sync-from:` line.
+      - name: The previous pin (sync-from:), when a sync is in flight
+        if: ${{ steps.pin.outputs.commit != '' }}
+        run: tools/fetch_sync_from.sh
       - name: Install the analysis tools (the targets name test/test_static_analysis.jl or the whole suite)
         if: ${{ contains(format('{0} {1}', inputs.targets, needs.plan.outputs.targets), 'test_static_analysis') || contains(format('{0} {1}', inputs.targets, needs.plan.outputs.targets), 'mutate_suite') }}
         run: |

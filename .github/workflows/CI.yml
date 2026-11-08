@@ -91,6 +91,11 @@ jobs:
           ref: ${{ steps.pin.outputs.commit }}
           path: .upstream/swipl-devel
           submodules: true
+      # SYNC ONLY (audit D-0444 item 1): while tools/SWIPL_VERSION has a `sync-from:` line, fetch that commit (depth 1) so
+      # tools/port_check.jl can read the headers that still cite it; a clean no-op without the line. REMOVED, with
+      # tools/fetch_sync_from.sh, by the PIN1 step that moves the last header and the `sync-from:` line.
+      - name: The previous pin (sync-from:), when a sync is in flight
+        run: tools/fetch_sync_from.sh
       - uses: julia-actions/setup-julia@da908477b5db94c10ffce8cfea9f2b3b9d5db687  # v3.0.3
         with:
           version: ${{ matrix.version }}
@@ -266,6 +271,11 @@ jobs:
           ref: ${{ steps.pin.outputs.commit }}
           path: .upstream/swipl-devel
           submodules: true
+      # SYNC ONLY (audit D-0444 item 1): while tools/SWIPL_VERSION has a `sync-from:` line, fetch that commit (depth 1) so
+      # tools/port_check.jl can read the headers that still cite it; a clean no-op without the line. REMOVED, with
+      # tools/fetch_sync_from.sh, by the PIN1 step that moves the last header and the `sync-from:` line.
+      - name: The previous pin (sync-from:), when a sync is in flight
+        run: tools/fetch_sync_from.sh
       # The oracle: restored from the cache or built at the pin, put on PATH, and checked to BE
       # that build — one recipe for this job, evidence.yml and mutation.yml (.github/actions/oracle).
       - uses: ./.github/actions/oracle
@@ -416,6 +426,12 @@ jobs:
           ref: ${{ steps.pin.outputs.commit }}
           path: .upstream/swipl-devel
           submodules: true
+      # SYNC ONLY (audit D-0444 item 1): while tools/SWIPL_VERSION has a `sync-from:` line, fetch that commit (depth 1) so
+      # tools/port_check.jl can read the headers that still cite it; a clean no-op without the line. REMOVED, with
+      # tools/fetch_sync_from.sh, by the PIN1 step that moves the last header and the `sync-from:` line.
+      - name: The previous pin (sync-from:), when a sync is in flight
+        if: steps.changed.outputs.run == 'true'
+        run: tools/fetch_sync_from.sh
       - uses: ./.github/actions/oracle
         if: steps.changed.outputs.run == 'true'
       - uses: julia-actions/setup-julia@da908477b5db94c10ffce8cfea9f2b3b9d5db687  # v3.0.3
