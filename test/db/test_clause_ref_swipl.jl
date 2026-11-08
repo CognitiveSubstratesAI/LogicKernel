@@ -503,6 +503,21 @@ end
     @test length(gd.atoms.types) == n
 end
 
+# MUTREFIT D1f D1-3 (initDBRef! registers nothing) survived the testset above: `PL_global_data{_TL}()` copies the BOOTED template, and the boot's own
+# clause references register `clause_blob` lazily (src/pl-atom.jl lookupBlob), so it was registered anyway, only later (rank, below closure's).
+# The unbooted database has made no clause reference: initDBRef! (pl-setup.c:146) must have registered record, then clause, and initWrap!
+# (:152) closure after them (each later type ranks one lower: stream < clause < record in swipl 10.1.19, D-0230 item 2).
+@testset "initDBRef! registers the clause blob type in a fresh database, before any clause reference: record, clause, closure ranks (pl-setup.c:146)" begin
+    gd = LK.setupProlog(_TL)       # the unbooted database: no boot clause has made a reference
+    @test isempty(gd.clause_refs) && isempty(gd.clause_serials)
+    rreg = LK._blob_registration(gd.atoms, LK.record_blob)
+    creg = LK._blob_registration(gd.atoms, LK.clause_blob)
+    wreg = LK._blob_registration(gd.atoms, LK.closure_blob)
+    @test rreg !== nothing && creg !== nothing && wreg !== nothing
+    @test creg.rank == rreg.rank - 1 && wreg.rank == creg.rank - 1
+    @test creg.atom_name == LK.builtin_atom("clause")
+end
+
 @testset "the payload, the clause table and the mark: lookup_clref, clause_clref, acquire/release" begin
     gd = LK.setupProlog(_TL)       # the unbooted database: the booted copy's clause table holds the boot's clauses (LB4 b2)
     ld = LK.PL_local_data{_TL}(gd)
