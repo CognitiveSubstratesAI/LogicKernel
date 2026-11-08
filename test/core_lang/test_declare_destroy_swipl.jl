@@ -403,7 +403,13 @@ let
     catch e
         why = "declareModule threw: " * sprint(showerror, e)
     end
-    @test (ok, why) == (true, "")      # a throw is shown in the failure text
+    # THE @test IS INSIDE A @testset: a failed @test OUTSIDE one throws FallbackTestSetException ("There was an error during
+    # testing") in a fresh `julia file.jl` run, which the battery driver (tools/mutate_drive.py NOT_LOADED) judges as "does not
+    # load" = no verdict (CI batteries MOD5b2 C3/C9 and LB2c LB2-5/9/22, MUTFIND4c); a failed testset ends the file with
+    # TestSetException ("Some tests did not pass") = caught. The explicit throw stops the file under a harness that wraps it.
+    @testset "first-block row: a throw is shown in the failure text" begin
+        @test (ok, why) == (true, "")
+    end
     ok || throw(Test.TestSetException(0, 1, 0, 0, Test.Result[]))
 end
 

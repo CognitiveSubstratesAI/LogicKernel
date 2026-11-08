@@ -177,9 +177,13 @@ let
         (ld.frames[c.frame].fctx & LK.FRG_REDO_MASK) == LK.REDO_PTR
     LK.PL_close_query(ld, qid)
     LK.PL_close_foreign_frame(ld, fid)
-    @test stored
-    # a failed top-level `@test` does not stop a file in the warm daemon, so the file stops with the exception a failed
-    # testset ends with ("Some tests did not pass"): the driver reads it as a failed test, not as a file that did not load
+    # THE @test IS INSIDE A @testset: a failed @test OUTSIDE one throws FallbackTestSetException ("There was an error during
+    # testing") in a fresh `julia file.jl` run, which the battery driver (tools/mutate_drive.py NOT_LOADED) judges as "does not
+    # load" = no verdict (MUTFIND4c: the same flaw ended MOD5b-C3/C9 and LB2-5/9/22 in CI); a failed testset ends the file with
+    # TestSetException ("Some tests did not pass") = caught. The explicit throw stops the file under a harness that wraps it.
+    @testset "stores-the-retry-context row" begin
+        @test stored
+    end
     stored || throw(Test.TestSetException(0, 1, 0, 0, Test.Result[]))
 end
 
