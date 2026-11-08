@@ -151,6 +151,38 @@ const _BT_CASES = [
     "between(1, inf, R), R > 2"                                                # the query closed with a state live
 ]
 
+# BOUND for a mutant that stores no retry context (NF1-3, MUTREFIT batch 1: no verdict, the file spun in the redo
+# of the testset below). ONE first answer only: the frame must hold a REDO_PTR context behind a CHP_JUMP choice
+# (pl-vmi.c I_FEXITNDET, pl-wam.c `CL = word2ptr(ClauseRef, rc)`). No redo runs here, so a context lost is a
+# failed test that ends the file, not a loop.
+let
+    gd = LK.setupProlog(_TL)                    # the UNBOOTED database: the boot's own non-deterministic calls (the flag
+    ld = LK.PL_local_data{_TL}(gd)              # enumeration) would spin under that mutant before any row of this file
+    proc = LK.isCurrentProcedure(sym_key(_tls("between")), 3, LK.MODULE_system(gd))
+    pvm = LK.PutVarMap()
+    fid = LK.PL_open_foreign_frame(ld)
+    a = LK.PL_new_term_refs(ld, 3)
+    LK.putSlotValue!(ld, a + 1, mk_gnd(_TL, Int64(1)), pvm)
+    LK.putSlotValue!(ld, a + 2, mk_gnd(_TL, Int64(3)), pvm)
+    LK.putSlotValue!(ld, a + 3, mk_var(_TL, LK.fresh_var_keys!(1)), pvm)
+    qid = LK.PL_open_query(
+        gd, ld, nothing, LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS, proc, a
+    )
+    rc = LK.PL_next_solution(gd, ld, qid)
+    c = ld.choices[ld.BFR]
+    stored =
+        rc == LK.PL_S_TRUE &&
+        c.type == LK.CHP_JUMP &&
+        ld.frames[c.frame].fctx != 0 &&
+        (ld.frames[c.frame].fctx & LK.FRG_REDO_MASK) == LK.REDO_PTR
+    LK.PL_close_query(ld, qid)
+    LK.PL_close_foreign_frame(ld, fid)
+    @test stored
+    # a failed top-level `@test` does not stop a file in the warm daemon, so the file stops with the exception a failed
+    # testset ends with ("Some tests did not pass"): the driver reads it as a failed test, not as a file that did not load
+    stored || throw(Test.TestSetException(0, 1, 0, 0, Test.Result[]))
+end
+
 @testset "between/3 == live swipl, through a program; no state leaked" begin
     swipl = get(ENV, "LOGICKERNEL_NO_SWIPL", "") == "1" ? nothing : Sys.which("swipl")
     if swipl === nothing
