@@ -407,9 +407,9 @@ const _SYNTAX = LK.M_CHARESCAPE | LK.DBLQ_STRING | LK.BQ_CODES | LK.O_RATIONAL_S
     for m in (sys, user, d, a)
         @test m.file == 0 && m.line_no == 0 && m.code_size == 0 && m.code_limit == 0
         @test m.var_prefix == 0 && m.references == 0
-        # before the boot only `system` has had a clause added (setLastModifiedPredicate!): initBuildIns! still asserts
-        # library/when.pl's stand-in (`_boot_when!`, src/pl-ext.jl) into it; the other modules none
-        @test m === sys ? 0 < m.last_modified <= gd._generation : m.last_modified == 0
+        # before the boot no module has had a clause added (setLastModifiedPredicate!): initBuildIns! asserts none
+        # (WHEN2 removed library/when.pl's stand-in, which had asserted into `system`)
+        @test m.last_modified == 0
         @test isempty(m.public_) && isempty(m.public_order)
     end
     @test LK.getUnknownModule(gd, a) == LK.UNKNOWN_ERROR           # inherited: a → user → system

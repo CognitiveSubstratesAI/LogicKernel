@@ -613,8 +613,8 @@ function PL_local_data{T}(gd::PL_global_data{T}) where {T}
     return ld
 end
 
-# ORIGINAL: `PL_local_data{T}(gd)` without `initIO`: the engines `setupProlog` makes for its own use (a record for a flag,
-# `_boot_when!`) while the database is not yet a template; they open no stream, so the template's stream table stays
+# ORIGINAL: `PL_local_data{T}(gd)` without `initIO`: the engine `setupProlog` makes for its own use (a record for a flag)
+# while the database is not yet a template; they open no stream, so the template's stream table stays
 # empty (src/gd_template.jl `_copy_stream_free`). Every other engine is made by `PL_local_data{T}(gd)`.
 function _bare_local_data(gd::PL_global_data{T}) where {T}
     e = mk_expr(T, T[])                         # any term: the idle placeholders' (index context, …)

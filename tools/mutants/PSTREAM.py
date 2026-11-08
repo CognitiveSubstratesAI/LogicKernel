@@ -20,7 +20,6 @@ TARGETS = TP + TQ + TG + TD + TSTD   # the baseline's (mutate_ci.py plan reads T
 G = "src/pl-global.jl"
 O = "src/os/pl-file.jl"
 F = "src/os/pl-prologflag.jl"
-E = "src/pl-ext.jl"
 MUTANTS = [
     # ── the constructor ──
     dict(id="PSTREAM-1 PL_local_data{T}(gd) does not call initIO: an engine opens no stream (KILL stream rows, wb, finding)", file=G, targets=TARGETS,
@@ -32,9 +31,7 @@ MUTANTS = [
     dict(id="PSTREAM-3 the flag record's engine is made by PL_local_data{T}(gd) again: the booted template holds three streams (KILL test_open_close_swipl.jl:521, hand-run 2026-11-06; the stream table of the booted template is non-empty)", file=F, targets=TARGETS,
          old="    ld = _bare_local_data(gd)                           # (no stream: the template holds none)\n",
          new="    ld = PL_local_data{T}(gd)\n"),
-    dict(id="PSTREAM-4 _boot_when!'s engine is made by PL_local_data{T}(gd) again: the template holds three streams (KILL wb, test_gd_template)", file=E, targets=TARGETS,
-         old="    _boot_when!(gd, _bare_local_data(gd))       # (no stream: the template holds none; no upstream line: library/when.pl's stand-in, see `_boot_when!`)\n",
-         new="    _boot_when!(gd, PL_local_data{T}(gd))\n"),
+    # PSTREAM-4 removed with the code it mutated (WHEN2: `_boot_when!`, whose engine it made); ledger: evidence/MUTREFIT/deleted_mutants.tsv
     # ── initIO: the streams ──
     dict(id="PSTREAM-5 user_input reads file descriptor 1 (KILL the descriptor-fallback testset: devnull stdin, name \"<fd 0>\"; no other target: with a real stdin `_std_io` returns it and ignores fd, and file_no is a known difference)", file=O, targets=TARGETS,
          old="    sin = _std_stream(_std_io(Base.stdin, 0), SIO_STDIO | SIO_LBUF | SIO_INPUT | SIO_NOFEOF)\n",

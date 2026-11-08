@@ -491,7 +491,8 @@ end
 # for `PLEV_UNTABLE`), `va_arg`'s; no `acquire_clause` (the reference keeps the clause); upstream's `assert(0)` is `@assert`.
 "Keep the event `ev` until `sendDelayedEvents` (pl-event.c): only the break, erase and untable events are delayed."
 function delayEvent(ld::PL_local_data{T}, ev::Int, args...)::Bool where {T}
-    if ld.event_buffered !== nothing
+    buf = ld.event_buffered                     # a local: JET narrows it, not the field read twice
+    if buf !== nothing
         if ev == PLEV_BREAK_EXISTS || ev == PLEV_BREAK || ev == PLEV_NOBREAK ||
             ev == PLEV_RETRACTNOBREAK
             dev = delayed_event{T}(
@@ -504,7 +505,7 @@ function delayEvent(ld::PL_local_data{T}, ev::Int, args...)::Bool where {T}
         else
             @assert false "delayEvent(): the event $ev cannot be delayed"
         end
-        push!(ld.event_buffered, dev)
+        push!(buf, dev)
     end
 
     return true

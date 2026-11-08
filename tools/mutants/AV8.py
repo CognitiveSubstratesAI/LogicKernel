@@ -1,7 +1,7 @@
 # ORIGINAL: AV8's mutant list — no swipl-devel counterpart.
 # tools/mutants/AV8.py — the mutation battery of AV8 (when/2's C half: pl-attvar.c `$eval_when_condition` — is_or, add_or,
-# make_disj_list, when_condition, pl_deval_when_condition2_va — and `$suspend`, plus the boot-level when/2 and trigger_first/2
-# stand-ins `_boot_when!` in src/pl-ext.jl), run ONCE, in CI (.github/workflows/mutation.yml; locally: tools/mutate.sh run).
+# make_disj_list, when_condition, pl_deval_when_condition2_va — and `$suspend`, plus, until WHEN2, the boot-level when/2 and trigger_first/2
+# stand-ins `_boot_when!` in src/pl-ext.jl: removed), run ONCE, in CI (.github/workflows/mutation.yml; locally: tools/mutate.sh run).
 # Format: tools/mutate_drive.py's (as AV7.py): `id`, `file`, `old` (must occur EXACTLY once), `new`, optional `equivalent`
 # and `targets`. Killed by test/core_lang/test_attvar_wakeup.jl, the `_WK_AV8` rows named in each id's `KILL`.
 # Hand-run before the commit (D-0104, `tools/mutate.sh run-in-tree`): verdicts in lk-channel evidence/AV8/mutants_verdicts.tsv.
@@ -13,7 +13,6 @@
 TA = ["test/core_lang/test_attvar_wakeup.jl"]
 TARGETS = TA                                         # the baseline's targets (mutate_ci.py plan reads TARGETS)
 A = "src/pl-attvar.jl"
-E = "src/pl-ext.jl"
 MUTANTS = [
     # ── pl-attvar.c when_condition ──
     dict(id="AV8-W1 when_condition never checks a deep condition for cycles (KILL we14)", file=A, targets=TA,
@@ -82,12 +81,7 @@ MUTANTS = [
     dict(id="AV8-S8 `$suspend` is not registered (KILL su01)", file=A, targets=TA,
          old="    PL_extension(\"\\$suspend\", 3, pl_dsuspend3_va, PL_FA_TRANSPARENT | PL_FA_VARARGS),\n",
          new=""),
-    # ── boot-level when/2 and trigger_first/2 (_boot_when!) ──
-    dict(id="AV8-B1 trigger_first(true, Goal) does not call the goal (KILL wh07)", file=E, targets=TA,
-         old="_boot_conj(T[mk_sym(T, :!), _boot_term(:call, T[Goal])]), UInt64(0)",
-         new="_boot_conj(T[mk_sym(T, :!), mk_sym(T, Symbol(\"true\"))]), UInt64(0)"),
-    dict(id="AV8-B2 when/2 is not defined (KILL wh07)", file=E, targets=TA,
-         old="    _boot_when!(gd, _bare_local_data(gd))       # (no stream: the template holds none; no upstream line: library/when.pl's stand-in, see `_boot_when!`)\n"
-             "    return nothing\nend\n",
-         new="    return nothing\nend\n"),
+    # AV8-B1 and AV8-B2 (the boot-level when/2 and trigger_first/2, `_boot_when!`): superseded, removed with the code they mutated
+    # (WHEN2, audit D-0446 item 1; B2 had SURVIVED in MUTREFIT batch 3-5, recorded SUPERSEDED, not equivalent, not killed);
+    # ledger: evidence/MUTREFIT/deleted_mutants.tsv. The pinned rows wm01-wm04 of test_attvar_wakeup.jl now cover the autoload.
 ]

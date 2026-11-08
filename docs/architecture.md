@@ -5569,14 +5569,14 @@ What AV8 ports:
 - **pl-attvar.c `suspend`** as `pl_dsuspend3_va` (`'$suspend'/3`, `PL_FA_TRANSPARENT`): the goal qualified with the context
   module unless `_:_`; a plain variable gets attribute `call(Goal)`, an attvar whose attribute is `call(G0)` gets `call((G0,Goal))`
   (trailed), any other value fails, a missing attribute is appended; a bound first argument is `uninstantiation_error`.
-- **library/when.pl** as the boot stand-in `_boot_when!` (src/pl-ext.jl, after `_boot_freeze!`, `system`, when/2 `P_LOCKED`):
-  when/2 and the `true` / general clauses of trigger_first/2 (when.pl:84-86, 98-100, 104-105); trigger/2 and the `nonvar` clause
-  wait for R2 (module `when`'s attr_unify_hook/2): a pending condition raises trigger/2's existence error.
+- **library/when.pl** is no longer ported by a stand-in: the boot stand-in `_boot_when!` (when/2 and trigger_first/2 in `system`)
+  was removed by WHEN2 (audit D-0446 item 1) once trapUndefined autoloaded; when/2 is autoloaded from library/when.pl, as in swipl
+  (rows wm01-wm04 pin `current_module(when)`, `imported_from` and a pending goal).
 - **DIVERGES** (representation only, behaviour identical on every row): `when_status` as Int constants, E_NOSPACE never returned
   (`allocGlobalCells!` grows the stack; no `retry:`); results returned as `(rc, word)`; `'$suspend'` dereferences its goal and
   builds `call(Goal)` in 2 cells (upstream 3); the context module is `user` until contextModule is ported (design Q4 (a)).
 
-Tests: `_WK_AV8` (33 rows: we01-we21, su01-su08 from lk-channel evidence/AV8/swipl_probe_rows.pl, wh05-wh07, wh10) in
+Tests: `_WK_AV8` (33 rows: we01-we21, su01-su08 from lk-channel evidence/AV8/swipl_probe_rows.pl, wh05-wh07, wh10) and `_WK_AV8W` (4 rows, WHEN2) in
 test/core_lang/test_attvar_wakeup.jl, re-checked on swipl 10.1.19; mutants: tools/mutants/AV8.py.
 
 ## AV9 — deterministic/1 and call_residue_vars/2 (att. vars, step 9)
@@ -6429,7 +6429,7 @@ tier 3).
 `Suser_input`, `Suser_output`, `Suser_error`, `Scurin` and `Scurout` are bound to the process's stdin, stdout and stderr (flags as pl-stream.c
 `S__iob0`) and registered in the database's stream table. The lazy `_initIO` and its 19 call sites are gone; nothing opens the streams
 on a first use any more, so `push_input_context` (the autoloader's, src/pl-proc.jl) never stores `nothing`. `_bare_local_data(gd)` is the
-engine without the streams, for the two engines `setupProlog` makes for its own use (the flag records, `_boot_when!`): the booted template's
+engine without the streams, for the engine `setupProlog` makes for its own use (the flag records; `_boot_when!` was the second until WHEN2): the booted template's
 stream table stays empty, and `copy_global_data` still starts a database with empty tables (`GD_COPY_POLICY :streams`). Left as DIVERGES:
 each local data opens its own three streams (upstream: one set per process, referenced by every thread). cbf4e189..V10.1.20: `initIO` and
 setupProlog are unchanged (diff read); the one pl-file.c hunk near the pin's `setStandardStream` is a PIN1 item.
@@ -7144,7 +7144,7 @@ DIVERGES:
 
 ORIGINAL: none in the source (the generator evidence/AUTOLOAD1/gen_af_rows.py and the mutant list tools/mutants/AUTOLOAD1.py are the step's own).
 
-Removal conditions: the `_boot_when!` stand-in stays until A6 (trapUndefined autoloads `when/2` from library(when) on a booted database); the
+Removal conditions: the `_boot_when!` stand-in was removed by WHEN2 (trapUndefined autoloads `when/2` from library(when) on a booted database); the
 mcall_cont `lTop` line gets its mutant with A3 (a query runs inside `trapUndefined` from A3 on).
 
 Tests: test/core_lang/test_autoload_flag_swipl.jl (26 swipl rows af01-af26, pins from swipl 10.1.19, two byte-identical runs; LK-ONLY testsets: the mask
@@ -7189,7 +7189,7 @@ DIVERGES:
   (50 characters) and no `(nil)` module (`GD->halt.cleaning`).
 - `GD->procedures.undefinterc4` is not cached; `gd`, `ld` are arguments; the module and functor of `def` are fixed through the retries as upstream's locals.
 
-Removal conditions: the hook guard went with A5 part 1 (see above); the reset went in with R2 TOP1; the `_boot_when!` stand-in stays until A6.
+Removal conditions: the hook guard went with A5 part 1 (see above); the reset went in with R2 TOP1; the `_boot_when!` stand-in was removed by WHEN2.
 
 Tests: test/core_lang/test_autoload_trap.jl (LK-only white-box, on the booted database: a fresh local data, `user:exception/3` clauses as the hook with each
 answer and the Pred argument, the retry's post-increment, the loop report, the restored chain, input context and frame, the flag and boot-session skips,
@@ -7289,9 +7289,9 @@ cbf4e189.
   exist on both sides and are compared as any row (they are rows of the oracle's .out; their names are code lists there; the old
   LD12 rewrite that deleted them from the oracle is removed). T3 lists the same 24 files on both sides and differs in one count:
   load.pl 22 vs 23 (threads.pl's `'$load_context_module'/3` fact, which load.pl:78-80 does not consult in the single-thread
-  configuration, FLAG F6). T1 has no cols difference and no lacking module. T1's ONLY rows are `system:when/2` and
-  `system:trigger_first/2`: the kernel defines them natively (the AV8 stand-in `_boot_when!`, src/pl-ext.jl; owner AUTOLOAD1,
-  removal condition "trapUndefined autoloads"), swipl has them in library/when.pl, not in the boot image.
+  configuration, FLAG F6). T1 has no cols difference and no lacking module. T1's ONLY rows were `system:when/2` and
+  `system:trigger_first/2` (the AV8 stand-in `_boot_when!`, src/pl-ext.jl, which defined them natively where swipl has them in
+  library/when.pl, not in the boot image); WHEN2 removed the stand-in, `_BI_KERNEL_ONLY` is empty.
 - **trie_gen_compiled/2,3** (T1 missing_prolog): system predicates with supervisor code that pl-trie.c:4975-4987
   (initTries) creates; deferred with the trie step (docs/r2_owners.tsv: trie_gen/2,3 -> TRIE1).
 - **T4 and dwim**: test_boot_messages passes with `_BM_KNOWN` empty, before and after DWIM1 (src/pl-dwim.jl registers
@@ -7339,14 +7339,11 @@ cbf4e189.
   resolves it afresh (XR_PRED, pl-qlf.c:771-777), and only the 'I' records carry links (pl-qlf.c:3257-3271). So
   `drop_boot_autoimports!` (src/gd_template.jl) gives the 96 such procedures (user's and ten boot modules') a fresh
   definition; system's 139 weak imports stay. Rows in test/files/test_qlf_swipl.jl.
-- **when/2 keeps its boot stand-in** (`_boot_when!`, src/pl-ext.jl, a `# DIVERGES` marker; ruling on wh05-wh07,
-  option 1, accepted by audit D-0378). b2's family-3 commit took it out as autoloaded from library/when.pl, but trapUndefined's
-  autoloader (pl-proc.c: the `autoload` flag, `autoLoader`, `'$undefined_procedure'/4` and the retry) is deferred, so
-  when/2 raised existence_error(procedure, when/2) on the booted database (test_attvar_wakeup.jl wh05-wh07). The stand-in
-  (when/2, trigger_first/2 in `system`, `when(+, 0)` as when.pl:40-41) has owner AUTOLOAD1, an R2b step on the R2
-  path (the autoLoader branch of trapUndefined: pl-proc.c autoLoader/autoImport, the `autoload` flag, the call into
-  boot/autoload.pl's `'$autoload'/1`), and the removal condition "trapUndefined autoloads": AUTOLOAD1 deletes it and
-  runs the rows it flips.
+- **when/2's boot stand-in is REMOVED (WHEN2, audit D-0446 item 1).** `_boot_when!` (a `# DIVERGES` marker; ruling on wh05-wh07,
+  option 1, audit D-0378) defined when/2 and trigger_first/2 in `system` while trapUndefined's autoloader was deferred. Since
+  AUTOLOAD1 the autoloader works (src/pl-proc.jl), so when/2 is autoloaded from library/when.pl as in swipl:
+  `current_module(when)` fails until the first when/2 call, `imported_from` gives `when`, a pending `when(nonvar(X), G)` works.
+  Rows wh05-wh07 answer as before; new rows wm01-wm04 (test_attvar_wakeup.jl) pin swipl 10.1.19's answers.
 - **Rows that agree with swipl since the first boot**: test_attvar_wakeup.jl nv04 ('$attvar':uhook/3) and fz02, fz06,
   fz10, fz11, fz13, fz14 (frozen/2) lost their known-difference pins and assert swipl's answer.
 - **The copy resets the cached working directory** (src/gd_template.jl; audit D-0408 item 4). `GD_COPY_POLICY` has a third

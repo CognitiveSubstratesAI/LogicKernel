@@ -149,12 +149,8 @@ const _BI_T3_CONFIG = Dict{String, Union{Nothing, Int}}(
 # ---- THE KERNEL'S PINS (LB4 b2 gate, slice 6: the booted run, reference; each with its cause and owner; every list only shrinks).
 # Upstream lines at swipl-devel cbf4e189. The earlier "tabling chain" pins (tabling.pl's load ending at :2356, topvars.pl never
 # loaded) are gone: the whole boot loads, T3 lists the same 24 files.
-const _BI_KERNEL_ONLY = [                 # rows the kernel defines that swipl's boot image does not (`t1` lines)
-    # DIVERGES AV8 stand-in (src/pl-ext.jl `_boot_when!`, owner AUTOLOAD1, removal condition "trapUndefined autoloads"): the
-    # kernel defines when/2 and trigger_first/2 natively in `system`; swipl has them in library/when.pl, not in boot
-    "system:trigger_first/2",
-    "system:when/2"
-]
+const _BI_KERNEL_ONLY = String[]          # rows the kernel defines that swipl's boot image does not (`t1` lines): none since WHEN2
+# removed the AV8 stand-in (`system:when/2`, `system:trigger_first/2`: library/when.pl is autoloaded)
 const _BI_KERNEL_MISSING_PROLOG = [       # sorted, as the guard compares; swipl's Prolog (foreign 0) rows the kernel lacks after the config rewrite
     # pl-trie.c:4975-4987 (initTries): system:trie_gen_compiled/2,3, supervisor code, no clauses; deferred with the trie
     # step (docs/r2_owners.tsv: trie_gen/2,3 -> TRIE1)

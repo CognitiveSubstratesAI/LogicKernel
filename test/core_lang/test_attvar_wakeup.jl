@@ -1320,8 +1320,8 @@ const _WK_AV7 = [
     _wk_check_rows(_WK_AV7, "AV7 rows")
 end
 
-# AV8 — when/2's C half (pl-attvar.c `'$eval_when_condition'/2`, `'$suspend'/3`; when/2 the boot stand-in
-# `_boot_when!`, src/pl-ext.jl, a DIVERGES stand-in until trapUndefined autoloads: owner AUTOLOAD1). Rows wh05, wh06, wh07, wh10 of evidence/av/rows.tsv (goals verbatim) and the probe rows
+# AV8 — when/2's C half (pl-attvar.c `'$eval_when_condition'/2`, `'$suspend'/3`; when/2 itself is
+# autoloaded from library/when.pl since WHEN2 removed the boot stand-in `_boot_when!`). Rows wh05, wh06, wh07, wh10 of evidence/av/rows.tsv (goals verbatim) and the probe rows
 # we01-we20, su01-su08 of lk-channel evidence/AV8/swipl_probe_rows.pl (swipl 10.1.19; we21 probed separately); answers re-checked live by
 # `_wk_check_rows`. The other wh rows suspend a goal (trigger/2, library/when.pl) and wait for R2.
 _wk_ugoal(g::String) = _ec(":", _ea("user"), _ea(g))
@@ -1487,6 +1487,39 @@ const _WK_AV8 = [
 @testset "AV8: when/2's C half — '\$eval_when_condition'/2, '\$suspend'/3, rows we*, su*, wh05-wh07, wh10, re-checked on swipl" begin
     @test length(_WK_AV8) == 33
     _wk_check_rows(_WK_AV8, "AV8 rows")
+end
+
+# WHEN2 — when/2 is autoloaded from library/when.pl (the AV8 boot stand-in `_boot_when!` is removed). The four rows run in ONE
+# program, in order, on a fresh database each side: wm01 BEFORE any when/2 call, the others after wm02 (module `when` exists).
+# Answers = swipl 10.1.19's, queried one goal per process (`swipl -q -f none -g 'GOAL, print(R), nl' -t halt`):
+#   wm01 ( current_module(when) -> R = yes ; R = no )                                        -> no
+#   wm02 when(nonvar(a), true), ( current_module(when) -> R = yes ; R = no )                  -> yes
+#   wm03 when(nonvar(a), true), findall(M, predicate_property(user:when(_,_), imported_from(M)), R) -> [when]
+#   wm04 when(nonvar(X), Y = done), ( var(Y) -> R0 = pending ; R0 = early ), X = a, R = R0/Y  -> pending/done
+# The kernel with the stand-in (audit D-0446): current_module(when) failed after a when/2 call (wm02 no), imported_from gave system
+# (wm03 [system]), a pending condition raised existence_error(procedure, system:trigger/2) (wm04).
+const _WK_AV8W = [
+    ("wm01", "( current_module(when) -> R = yes ; R = no )", _ea("no")),
+    (
+        "wm02",
+        "when(nonvar(a), true), ( current_module(when) -> R = yes ; R = no )",
+        _ea("yes")
+    ),
+    (
+        "wm03",
+        "when(nonvar(a), true), findall(M, predicate_property(user:when(_,_), imported_from(M)), R)",
+        _wk_list(_ea("when"))
+    ),
+    (
+        "wm04",
+        "when(nonvar(X), Y = done), ( var(Y) -> R0 = pending ; R0 = early ), X = a, R = R0/Y",
+        _ec("/", _ea("pending"), _ea("done"))
+    )
+]
+
+@testset "WHEN2: when/2 is autoloaded from library/when.pl — current_module(when), imported_from, a pending goal, re-checked on swipl" begin
+    @test length(_WK_AV8W) == 4
+    _wk_check_rows(_WK_AV8W, "AV8W rows")
 end
 
 # AV9 — deterministic/1 (pl-prims.c) and call_residue_vars/2 (pl-attvar.c O_CALL_RESIDUE's C half; the
