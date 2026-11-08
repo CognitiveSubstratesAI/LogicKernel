@@ -331,26 +331,41 @@ end
         "every declared instruction runs: this test has served its purpose — retire it"
     )
     op = first(notrun)
-    db, p = _ydb()
-    ld = db.ld
-    r = ix_pred(_Y, :r, 1; db=db)
-    cl = LK.compileClause(
-        db.gd, db.ld, _yf(:r, _yv(1)), _yf(:f, _yv(1)), r.proc, LK.MODULE_user(db.gd)
-    )
-    LK.assertDefinition!(db.gd, r.def, cl, LK.CL_END)       # r(X) :- f(X).
-    cl.codes[1] = op                                        # …its first instruction, not run
-    fid = LK.PL_open_foreign_frame(ld)
-    a = LK.PL_new_term_ref(ld)
-    qid = LK.PL_open_query(db.gd, ld, nothing, LK.PL_Q_NORMAL, r.proc, a)
-    err = try
-        LK.PL_next_solution(db.gd, ld, qid)
-        nothing
-    catch e
-        e
+    # Twice: the second time with a ball PENDING when the query is abandoned (a Julia exception leaves the query
+    # mid-step with an exception raised: `_abandon_query` clears it with `PL_clear_exception`, whose
+    # `resumeAfterException` also resets the three bin slots and `exception.processing`; the exception term alone
+    # set to 0 leaves the ball in the bin and `processing` set, so the next query's stack-limit check is skipped)
+    for pending in (false, true)
+        db, p = _ydb()
+        ld = db.ld
+        r = ix_pred(_Y, :r, 1; db=db)
+        cl = LK.compileClause(
+            db.gd, db.ld, _yf(:r, _yv(1)), _yf(:f, _yv(1)), r.proc, LK.MODULE_user(db.gd)
+        )
+        LK.assertDefinition!(db.gd, r.def, cl, LK.CL_END)   # r(X) :- f(X).
+        cl.codes[1] = op                                    # …its first instruction, not run
+        fid = LK.PL_open_foreign_frame(ld)
+        a = LK.PL_new_term_ref(ld)
+        if pending
+            ball = LK.PL_new_term_ref(ld)
+            LK.putSlotValue!(ld, ball + 1, _yf(:error, _ys(:boom), _yv(2)))
+            LK.PL_raise_exception(ld, ball)
+            @test ld.exception_term == ld.exception_bin && ld.exception_processing
+        end
+        qid = LK.PL_open_query(db.gd, ld, nothing, LK.PL_Q_NORMAL, r.proc, a)
+        err = try
+            LK.PL_next_solution(db.gd, ld, qid)
+            nothing
+        catch e
+            e
+        end
+        @test err isa LK.NotPortedError && occursin(String(LK.codeTable(op).name), err.what)
+        @test ld.query == 0 && ld.lTop == qid && ld.nqueries == 0  # closed, its records dropped
+        # the exception is cleared as PL_clear_exception does: nothing pending, the bin a variable again, not processing
+        @test ld.exception_term == 0 && !ld.exception_processing
+        @test LK.PL_is_variable(ld, ld.exception_bin)
+        LK.PL_close_foreign_frame(ld, fid)
     end
-    @test err isa LK.NotPortedError && occursin(String(LK.codeTable(op).name), err.what)
-    @test ld.query == 0 && ld.lTop == qid && ld.nqueries == 0  # closed, its records dropped
-    LK.PL_close_foreign_frame(ld, fid)
 end
 
 @testset "two clauses with rational first arguments: no key, S_STATIC, both answers" begin

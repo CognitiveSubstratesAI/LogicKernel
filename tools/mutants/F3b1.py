@@ -53,7 +53,7 @@ MUTANTS = [
          old='''freezeGlobal!(ld)                               # freezeGlobal()''',
          new='''nothing'''),
     # ── the ball across a discard and an abandoned query ──
-    dict(id="FB6 an abandoned query leaves the ball in the exception bin (the changed test_catch_swipl row)", file=WAM, targets=TCS,
+    dict(id="FB6 an abandoned query leaves the ball in the exception bin (test_query.jl's unrun-instruction row, ball pending)", file=WAM, targets=TQ + TCS,
          old='''PL_clear_exception(ld)                          # (f3b-1) with its `setVar`: the ball is cells now''',
          new='''ld.exception_term = 0'''),
     # FB7 (AV6, D-0163): NOT equivalent — a cleanup handler run by the discard can raise and catch its own ball,
