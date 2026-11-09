@@ -582,3 +582,316 @@ function delete_child(tr::trie{T}, pid::Int, child::Int, compact::Bool)::Bool wh
     end
     return empty
 end
+
+# ---- NODE ALLOCATION (alloc_trie_node, new_trie_node, free_trie_node, sweep_node_chunks) ----
+# Upstream allocates the nodes of a trie without concurrent writers from chunks that grow geometrically, the first
+# TRIE_SINGLE_NODES individually; a deleted chunk node is kept on a free list, the chunks of the list that hold no node in
+# use are freed by a sweep. A TRIE_CONCURRENT trie allocates every node individually. The model is kept (the sizes the oracle
+# observes: `stat_trie`, and the free-list discipline), over the arena: an individual node is a slot of `trie.nodes`
+# (a freed one: its id on `trie.free_ids`), a chunk node is a slot too and is recycled through the head chunk's free list.
+
+# ORIGINAL: upstream takes a node from the pool; here a slot of the arena: a freed id, else a new one at the end.
+"The id of a new slot of `tr.nodes` holding `n`."
+function new_node_slot!(tr::trie{T}, n::trie_node)::Int where {T}
+    if isempty(tr.free_ids)
+        push!(tr.nodes, n)
+        return length(tr.nodes)
+    end
+    id = pop!(tr.free_ids)
+    tr.nodes[id] = n
+    return id
+end
+
+# PORT: pl-trie.c alloc_trie_node
+# DIVERGES: returns `(id, chunk, bump)`: `id` is the id of a recycled chunk node (a slot already of the arena), or 0 for
+# "a new slot" (`new_trie_node` makes it); `chunk` is `nothing` for an individual node; `bump` says a new node in `chunk`
+# (upstream's out parameters `*cp` and `*bump`).
+"Allocate a node of `tr`: `(id or 0, chunk or nothing, bump)` (pl-trie.c `alloc_trie_node`)."
+function alloc_trie_node(
+    tr::trie{T}
+)::Tuple{Int, Union{Nothing, trie_node_chunk}, Bool} where {T}
+    (tr.flags & TRIE_CONCURRENT) != 0 && return (0, nothing, false)
+    c = tr.chunks
+    if c !== nothing
+        if c.free != 0
+            id = c.free
+            n = tr.nodes[id]
+            c.free = n.parent
+            c.nfree -= 1
+            cc = n.chunk::trie_node_chunk                       # node_chunk(n)
+            cc.live += 1
+            return (id, cc, false)
+        end
+        if c.used < c.size
+            c.live += 1
+            return (0, c, true)
+        end
+    elseif tr.node_count <= TRIE_SINGLE_NODES
+        return (0, nothing, false)
+    end
+    bytes = c !== nothing ? Int(c.bytes) * 2 : TRIE_CHUNK_MIN
+    bytes > TRIE_CHUNK_MAX && (bytes = TRIE_CHUNK_MAX)
+    nc = trie_node_chunk(
+        c, 0, UInt16(0), UInt16(0), UInt32(bytes),
+        UInt32((bytes - OFFSETOF_TRIE_NODE_CHUNK_NODES) ÷ SIZEOF_TRIE_NODE),
+        UInt32(0), UInt32(1), UInt32(0),                         # used, live, nfree
+        c !== nothing ? c.sweep_at : UInt32(TRIE_SWEEP_MIN)
+    )
+    tr.chunks = nc
+    return (0, nc, true)
+end
+
+# PORT: pl-trie.c new_trie_node
+# DIVERGES: returns the node's id; `acquire_key` and `mark_new_key` are left out (no atom reference counts).
+"A new node with key `key` in `tr`; its id (pl-trie.c)."
+function new_trie_node(tr::trie{T}, key::word)::Int where {T}
+    id, c, bump = alloc_trie_node(tr)
+    tr.node_count += 1
+    if c === nothing
+        n = trie_node(UInt64(0), key, 0, 0, UInt32(0), nothing)
+    else
+        idx = bump ? Int(c.used) : Int(tr.nodes[id].flags >> TN_CHUNK_INDEX_SHIFT)
+        n = trie_node(
+            UInt64(0), key, 0, 0, TN_CHUNKED | (UInt32(idx) << TN_CHUNK_INDEX_SHIFT), c
+        )
+        bump && (c.used = UInt32(idx + 1))
+    end
+    if id == 0
+        id = new_node_slot!(tr, n)
+    else
+        tr.nodes[id] = n
+    end
+    return id
+end
+
+# PORT: pl-trie.c free_trie_node
+# DIVERGES: the node is an id; the key is not released (no atom reference counts); an individual node's id goes on `free_ids`.
+"Free the node `nid` of `tr` (pl-trie.c)."
+function free_trie_node(tr::trie{T}, nid::Int)::Nothing where {T}
+    n = tr.nodes[nid]
+    if (n.flags & TN_CHUNKED) != 0
+        c = n.chunk::trie_node_chunk
+        head = tr.chunks::trie_node_chunk
+        n.key = 0                                               # do not mark it
+        c.live -= 1
+        n.parent = head.free
+        head.free = nid
+        head.nfree += 1
+        if head.nfree >= head.sweep_at && head.nfree > tr.node_count
+            sweep_node_chunks(tr)
+        end
+    else
+        push!(tr.free_ids, nid)
+    end
+    return nothing
+end
+
+# PORT: pl-trie.c free_node_chunks
+# DIVERGES: nothing is freed (Julia's garbage collector); the chunks are dropped. `clear_nodes` resets the arena.
+"Drop the chunks of a trie that is cleared (pl-trie.c `free_node_chunks`)."
+function free_node_chunks(tr::trie{T})::Nothing where {T}
+    (tr.flags & TRIE_CONCURRENT) != 0 && return nothing
+    tr.chunks = nothing
+    return nothing
+end
+
+# PORT: pl-trie.c sweep_node_chunks
+# DIVERGES: `free_chunk_list` is left out (the dropped chunks go to the garbage collector); the ids of the nodes of a dropped
+# chunk (every one is on the free list, as its chunk has no live node) go on `trie.free_ids`.
+"Drop the chunks of `tr` that have no nodes in use, the newest excepted (pl-trie.c)."
+function sweep_node_chunks(tr::trie{T})::Nothing where {T}
+    head = tr.chunks::trie_node_chunk
+    keep = 0
+    kept = 0
+    id = head.free
+    while id != 0
+        n = tr.nodes[id]
+        nnext = n.parent
+        c = n.chunk::trie_node_chunk
+        if c.live == 0 && c !== head
+            push!(tr.free_ids, id)                              # its chunk goes
+        else
+            n.parent = keep
+            keep = id
+            kept += 1
+        end
+        id = nnext
+    end
+    head.free = keep
+    head.nfree = UInt32(kept)
+    head.sweep_at = UInt32(kept * 2 > TRIE_SWEEP_MIN ? kept * 2 : TRIE_SWEEP_MIN)
+
+    prev = head
+    c = head.next
+    while c !== nothing
+        next = c.next
+        if c.live == 0
+            prev.next = next
+        else
+            prev = c
+        end
+        c = next
+    end
+    return nothing
+end
+
+# ---- CLEARING AND PRUNING (clear_node, destroy_node, prune_node, prune_trie) ----
+
+# PORT: pl-trie.c clear_node
+# DIVERGES: `vt` is a function of the value (upstream: a `value_taker`); the node is an id; an iteration where upstream uses
+# `goto next`. The keys are not released (no atom reference counts).
+"Clear node `nid` and its descendants; with CN_ALL the whole trie is cleared (pl-trie.c)."
+function clear_node(
+    tr::trie{T}, nid::Int, flags::Int, vt::Union{Nothing, Function}
+)::Nothing where {T}
+    while true
+        n = tr.nodes[nid]
+        children = n.children
+        if vt !== nothing
+            if n.value != 0
+                vt(n.value)                                     # takes over the value
+                n.value = 0
+            end
+        else
+            release_node(tr, nid)
+        end
+        n.value != 0 && release_value(n.value)
+        if (flags & CN_DEALLOC) != 0
+            tr.node_count -= 1
+            if (flags & CN_ALL) == 0 || (n.flags & TN_CHUNKED) == 0
+                free_trie_node(tr, nid)
+            end
+        else
+            n.children = 0
+            n.flags &= ~(TN_PRIMARY | TN_SECONDARY)
+        end
+        children == 0 && return nothing
+        if is_single_child(children)
+            nid = single_child(children)
+            flags |= CN_DEALLOC
+        else
+            bid = children_block_id(children)
+            b = block_at(tr, bid)
+            for i in 1:b.count
+                child = b.entries[i].child
+                child != 0 && clear_node(tr, child, flags | CN_DEALLOC, vt)
+            end
+            free_block(tr, bid)
+            return nothing
+        end
+    end
+end
+
+# PORT: pl-trie.c destroy_node
+"Free node `nid` and its descendants (pl-trie.c)."
+destroy_node(tr::trie{T}, nid::Int) where {T} = clear_node(tr, nid, CN_DEALLOC, nothing)
+
+# PORT: pl-trie.c prune_node
+# DIVERGES: the trie is an argument and not optional (a node does not know its trie: `get_trie_from_node` is left out).
+"Prune the branch of the trie that does not end in a node, from node `nid` up (pl-trie.c)."
+function prune_node(tr::trie{T}, nid::Int)::Nothing where {T}
+    empty = true
+    while empty
+        n = tr.nodes[nid]
+        (n.parent != 0 && (n.flags & (TN_PRIMARY | TN_SECONDARY | TN_PINNED)) == 0) || break
+        p = n.parent
+        empty = delete_child(tr, p, nid, true)
+        destroy_node(tr, nid)
+        nid = p
+    end
+    return nothing
+end
+
+# PORT: pl-trie.c prune_trie
+# DIVERGES: the stack is a vector of `(parent, pos, active)` (upstream: a `segstack` of `prune_state`); `free` is a function
+# of the node id (upstream: a function and a context pointer); `@goto` stands for upstream's labels `prune` and `next_choice`.
+"Prune all branches below `root` that do not end in a value; `free(id)` is called for each removed leaf (pl-trie.c)."
+function prune_trie(
+    tr::trie{T}, root::Int, free::Union{Nothing, Function}=nothing
+)::Nothing where {T}
+    stack = Tuple{Int, Int, Bool}[]
+    n = root
+    ps_it = child_iter(0, 0)
+    ps_active = false
+    while true
+        children = tr.nodes[n].children
+        if children != 0
+            if is_single_child(children)
+                n = single_child(children)
+                continue
+            else
+                it = init_child_iter(n)
+                c, _ = next_child!(tr, it)
+                if c != 0
+                    push!(stack, (ps_it.parent, ps_it.pos, ps_active))
+                    ps_it = it
+                    ps_active = true
+                    n = c
+                    continue
+                end
+            end
+        else
+            free === nothing || free(n)
+        end
+
+        @label prune
+        while n != root && (tr.nodes[n].flags & (TN_PRIMARY | TN_SECONDARY | TN_PINNED)) == 0
+            p = tr.nodes[n].parent
+            pc = tr.nodes[p].children
+            choice = (pc != 0 && !is_single_child(pc))          # we are enumerating p
+            delete_child(tr, p, n, false)
+            destroy_node(tr, n)
+            choice && break
+            n = p
+        end
+
+        @label next_choice
+        if ps_active
+            c, _ = next_child!(tr, ps_it)
+            if c != 0
+                n = c
+                continue
+            else
+                n = ps_it.parent
+                pp, ppos, pact = pop!(stack)
+                ps_it = child_iter(pp, ppos)
+                ps_active = pact
+                compact_children(tr, n)
+                trie_has_children(tr.nodes[n]) || @goto prune
+                @goto next_choice
+            end
+        else
+            break
+        end
+    end
+    return nothing
+end
+
+# PORT: pl-trie.c insert_child
+# DIVERGES: nodes are ids; no write lock.
+"Insert a new child with key `key` under node `nid`; its id (pl-trie.c)."
+function insert_child(tr::trie{T}, nid::Int, key::word)::Int where {T}
+    child = new_trie_node(tr, key)
+    tr.nodes[child].parent = nid
+    if !add_child(tr, nid, child)
+        destroy_node(tr, child)
+        return 0
+    end
+    return child
+end
+
+# PORT: pl-trie.c follow_node
+"The child of node `nid` with key `value`; if there is none and `add`, a new one; else 0 (pl-trie.c)."
+function follow_node(tr::trie{T}, nid::Int, value::word, add::Bool)::Int where {T}
+    child = get_child(tr, nid, value)
+    child != 0 && return child
+    add && return insert_child(tr, nid, value)
+    return 0
+end
+
+# PORT: pl-trie.c prune_error
+"Prune the part of the trie an error leaves: first add a node under `nid`, then prune from it (pl-trie.c)."
+function prune_error(tr::trie{T}, nid::Int)::Nothing where {T}
+    prune_node(tr, follow_node(tr, nid, TRIE_ERROR_VAL, true))
+    return nothing
+end
