@@ -77,6 +77,10 @@ function unify_closure(
     cdef.events = def.events
     c = closure{T}(cdef, def, supervisor, supervisor_crefs)    # impl.wrapped.predicate / .supervisor
     push!(gd.closure_refs, c)
+    # DIVERGES (WRAP1, docs/architecture.md): upstream's `impl` union holds `impl.closure` (the `wrapped` member) in the
+    # copy, so `impl.any.defined` is true for a closure definition; here the copy's `impl_foreign_function` is the closure's
+    # number in `gd.closure_refs`, which `_impl_any_defined` reads (`!= 0`) and `S_WRAP` uses to find the closure.
+    cdef.impl_foreign_function = length(gd.closure_refs)
     bytes = _closure_bytes(length(gd.closure_refs))
     w, _ = lookupBlob(gd.atoms, bytes, length(bytes), closure_blob)   # PL_unify_blob(t, &c, sizeof(c), &_PL_closure_blob)
     a = _blob_term!(gd.atoms, gd.atom_symbols, T, w)
@@ -170,6 +174,47 @@ function find_wrapper(
         i = skipWrapperPrefix(codes)
     end
     return nothing
+end
+
+# ORIGINAL (WRAP1; upstream's supervisor operands hold the clause reference itself, `code2ptr(ClauseRef, *PC)`)
+# DIVERGES: a supervisor operand here indexes a side table (`definition.codes_crefs`, `closure.supervisor_crefs`), and after
+# `S_WRAP` the frame's predicate is the wrapped one while the supervisor that runs is the closure's, not `def.codes`. This
+# finds the side table of the running supervisor `codes`: `def.codes_crefs` when `codes === def.codes` (the hot path: no
+# wrapper), else the table of the wrapper-chain member (from `def.codes` inward) whose `supervisor` is `codes`.
+"The clause-reference side table of the supervisor `codes` running for `def` (a wrapped predicate: the closure's)."
+function supervisor_crefs(
+    gd::PL_global_data{T}, def::Definition{T}, codes::Vector{code}
+)::Vector{ClauseRef{T}} where {T}
+    codes === def.codes && return def.codes_crefs
+    cur = def.codes
+    i = skipWrapperPrefix(cur)
+    while isCallWrapper(cur[i])
+        c = closure_of_word(gd, cur[i + 2])::closure{T}
+        c.supervisor === codes && return c.supervisor_crefs
+        cur = c.supervisor
+        i = skipWrapperPrefix(cur)
+    end
+    error("supervisor_crefs: the running supervisor of ", def.name, " is not in its wrapper chain")
+end
+
+# ORIGINAL (WRAP1; upstream's choice point holds the code pointer itself, `ch->value.PC`)
+# DIVERGES: the kernel re-derives the code of a `P_FOREIGN` frame's retry as `DEF.codes` (src/pl-wam.jl, `shallow_backtrack`
+# and `deep_backtrack`); for a wrapped foreign predicate `DEF.codes` is the wrapper supervisor, so this returns the innermost
+# supervisor (the one `S_WRAP` ran, holding the foreign call) and its crefs.
+"The innermost supervisor of `def` under its wrapper chain: `(codes, crefs)`; `def`'s own when it has no wrapper."
+function innermost_supervisor(
+    gd::PL_global_data{T}, def::Definition{T}
+)::Tuple{Vector{code}, Vector{ClauseRef{T}}} where {T}
+    codes = def.codes
+    crefs = def.codes_crefs
+    i = skipWrapperPrefix(codes)
+    while isCallWrapper(codes[i])
+        c = closure_of_word(gd, codes[i + 2])::closure{T}
+        codes = c.supervisor
+        crefs = c.supervisor_crefs
+        i = skipWrapperPrefix(codes)
+    end
+    return codes, crefs
 end
 
 # PORT: pl-wrap.c assert_wrapper
