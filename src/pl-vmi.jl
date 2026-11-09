@@ -618,10 +618,10 @@ const I_YIELD = code(159)
 "`'\$cut'`: cut every choice point after the one in the frame's first argument (pl-vmi.c; `prolog_cut_to/1`'s body)."
 const I_CUTCHP = code(160)
 # PORT: pl-vmi.c S_WRAP
-"Supervisor of a closure's copy of a wrapped predicate: continue in the wrapped predicate's own supervisor (pl-vmi.c; TAB1-min declares it, the body is refused until WRAP1)."
+"Supervisor of a closure's copy of a wrapped predicate: continue in the wrapped predicate's own supervisor (pl-vmi.c; TAB1-min declares it, WRAP1 ports the body)."
 const S_WRAP = code(161)
 # PORT: pl-vmi.c S_CALLWRAPPER
-"Supervisor of a wrapped predicate: run the wrapper clause the operand names (pl-vmi.c); operands: the clause reference, the closure atom, the wrapper's name (TAB1-min declares it, the body is refused until WRAP1)."
+"Supervisor of a wrapped predicate: run the wrapper clause the operand names (pl-vmi.c); operands: the clause reference, the closure atom, the wrapper's name (TAB1-min declares it, WRAP1 ports the body)."
 const S_CALLWRAPPER = code(162)
 # PORT: pl-vmi.c S_TABLED
 "Supervisor of the `table` wrapper of a variant tabled predicate: the answer trie of a complete table, else `S_CALLWRAPPER`; the operands are `S_CALLWRAPPER`'s (pl-vmi.c; TAB1-min declares it, the body is refused until TAB1)."

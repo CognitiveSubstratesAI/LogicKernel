@@ -7146,12 +7146,12 @@ every claim below is UNVERIFIED until the gate). The aim is that boot/tabling.pl
      `setThreadLocalDefinition!` call it, and the closure of a wrapper is found through `gd.closure_refs`. The 2-argument method therefore REFUSES a wrapped predicate by
      name (`NotPortedError` naming "freeCodesDefinition! of a wrapped predicate needs the database"): `dynamic/1` or `abolish/1` of a WRAPPED predicate raises until TAB1
      threads the database through those callers. The 3-argument method (used by `_assertDefinition!` and the tabling attribute setter) is the whole function. Owner TAB1.
-  4. Printing a closure (`<closure>(m:p/1)`, pl-wrap.c `write_closure`) needs a blob write hook in the writer: the kernel prints the term layer's blob form. Owner: the writer step.
+  4. (CLOSED by WRAP1, see the WRAP1 section.) Printing a closure (`<closure>(m:p/1)`, pl-wrap.c `write_closure`) needed a blob write hook in the writer.
   5. The closure is a RECORD (`closure{T}` in `gd.closure_refs`; the blob's payload is its number), not a memcpy of `struct definition` in the blob; the blob type has no
      `release`/`write`/`acquire`/`save`/`load` slots; atoms keep no reference counts, so `unregisterWrappedSupervisor` is a no-op (audit D-0388 item 5, Q1 (a); owner WRAP1).
   6. T3's opcode numbers (161..163) follow the tail of the table (from `B_ARG_CF`) in pl-vmi.c's relative order, where upstream's numbers follow the whole VMI list; no behaviour reads an absolute number. Owner: none.
-  7. The code behind `S_WRAP`, `S_CALLWRAPPER` and `S_TABLED` is a set of named refusals (owners WRAP1 / WRAP1 / TAB1, see the T3 bullet), not upstream's frame set-up.
-- **Left out (each needs its subsystem):** `wrapped_predicate/2`, `unwrap_predicate/2`, `$wrapped_implementation/3`, `$closure_predicate/2` (WRAP1); the other `$tbl_*` predicates, the
+  7. The code behind `S_TABLED` is a named refusal (owner TAB1); `S_WRAP` and `S_CALLWRAPPER` are ported by WRAP1 (see the WRAP1 section).
+- **Left out (each needs its subsystem):** (`wrapped_predicate/2`, `unwrap_predicate/2`, `$wrapped_implementation/3`, `$closure_predicate/2`: ported by WRAP1); the other `$tbl_*` predicates, the
   tries, worklists, answer tables and `start_tabling/3` (TAB1); `S_DET` in `skipWrapperPrefix` (the opcode is not declared); `tbl_set_incremental_predicate`'s effect on a trie
   (the incremental dependency graph is TAB1's).
 - **ORIGINAL (no upstream counterpart):** the payload of a closure blob (`_closure_bytes`, `closure_of_word`), the zero-argument `table_props()`, the layout of a wrapper
@@ -7224,6 +7224,36 @@ shared with TB0's structs (item 3; the DIVERGES line is TR1's, written with its 
   defines `O_NESTED_TRIES`, and the pin build has none of the three (`predicate_property(system:H, defined)` fails for each, probed 2026-11-09 on ~/.local/swipl-pin1-18168e62); the other 16
   are defined there. TR2 owns the three; whether it ports the compiled-out code or records them as absent from the build is raised to the audit.
 - **TR3 (`O_TRIE_ATTVAR`, pl-trie.c:99 and the guards after it) has no predicate of its own**: it changes the insert, lookup and gen bodies the steps above write (audit D-0453 item 5).
+
+## WRAP1 — calling a wrapped predicate: the closure branch of `I_CALL1`/`I_CALLN`, `S_WRAP`, `S_CALLWRAPPER`, the wrap predicates, `write_closure` (R2, pin 18168e62, edit-only)
+
+UPSTREAM: swipl-devel 18168e629eab — pl-vmi.c (`i_metacall_common` :5484-5680 with the closure branch :5488-5520 and :5661-5663; `S_WRAP` :3557-3578;
+`S_CALLWRAPPER` :3610-3632), pl-wrap.c (:50-78 `write_closure`, :406-556 the four predicates). Written EDIT-ONLY over the parallel writers: NOTHING was compiled or
+run when this block was written; every claim is UNVERIFIED until the gate.
+- **Ported:** the closure branch of `i_metacall_common` and `i_metacall_args` (src/pl-wam.jl, `mc_clo`); `S_WRAP` and `S_CALLWRAPPER` (src/pl-wam.jl `@label S_WRAP`,
+  `@label S_CALLWRAPPER`); `supervisor_crefs` and `innermost_supervisor` (src/pl-wrap.jl); `unwrap_predicate/2`, `$wrapped_predicate/2`, `$wrapped_implementation/3`,
+  `$closure_predicate/2` (src/pl-wrap.jl, in `PL_predicates_from_wrap`); the `write_closure` hook in `writeAtom` (src/pl-write.jl). `S_TABLED` stays a TAB1 refusal.
+- **DIVERGES (all representation):**
+  1. The closure's number is the copy's `impl_foreign_function` (src/pl-wrap.jl `unify_closure`, `cdef.impl_foreign_function = length(gd.closure_refs)`): upstream's `impl` union
+     holds `impl.closure` (`wrapped.predicate`, `wrapped.supervisor`) in the copy, so `impl.any.defined` is true for a closure definition and `S_WRAP` reads the union in place.
+     Here `_impl_any_defined` (src/pl-proc.jl) reads `impl_foreign_function != 0`, and `S_WRAP` finds the record by `gd.closure_refs[DEF.impl_foreign_function]`. No `definition` field was
+     added (a struct change costs every predicate a word and restarts the daemon). The closure's copy never runs a foreign function: `S_WRAP` switches `DEF` at once.
+  2. A supervisor's clause-reference operands index a side table, so after `S_WRAP` (frame predicate = the wrapped one, running supervisor = the closure's) `S_TRUSTME`, `S_LIST` and
+     `S_CALLWRAPPER` find the table of the RUNNING supervisor by `supervisor_crefs(gd, DEF, PCc)` (src/pl-wrap.jl:187; `def.codes_crefs` when `PCc === def.codes`, else the wrapper chain's
+     `closure.supervisor_crefs`), where upstream's operands are the clause references. `unwrap_predicate/2` installs both code and table back. ORIGINAL, no upstream counterpart.
+  3. A non-deterministic foreign predicate that is wrapped retries (`shallow_backtrack`, `deep_backtrack`, src/pl-wam.jl:5361, :5476) in `innermost_supervisor(gd, DEF)` (src/pl-wrap.jl:207):
+     the kernel re-derives a foreign frame's code by `DEF.codes`, which for a wrapped predicate is the wrapper; upstream's choice point holds the code pointer. ORIGINAL.
+  4. `write_closure` (src/pl-write.jl:876) writes through `PutToken` (a token break, as the other blobs' hook) where upstream's `Sfprintf` writes raw; it closes TAB1-min DIVERGES item 4.
+  5. `get_procedure_resolve_head` (src/pl-wrap.jl:341) is `get_procedure`'s `GP_RESOLVE` arm without `GP_NAMEARITY` (a head), which the kernel's `get_procedure` has only for `GP_DEFINE`. ORIGINAL.
+  6. `$wrapped_predicate/2` builds `Name-ClauseRef` with `PL_unify_functor`/`PL_unify_arg` where upstream uses `PL_unify_term`; `$wrapped_implementation/3` builds the goal by `unify_wrapped`.
+- **NOT done (owner WRAP1b):** the 2-argument `freeCodesDefinition!` refusal (docs/r2_owners.tsv row 271; TAB1-min DIVERGES item 3): `setDynamicDefinition!` (~10 callers in four files),
+  `resetProcedure!` and `setThreadLocalDefinition!` lack `gd`. WRAP1b: thread `gd` through those callers, after TR1/TB0/def1 land. Until then `dynamic/1` or `abolish/1` of a wrapped predicate
+  raises by name.
+- **Closes (when the gate is green):** docs/r2_owners.tsv rows 104 (`pred:$wrapped_implementation/3`), 145 (`pred:unwrap_predicate/2`), 218 and 219 (the `S_WRAP` and `S_CALLWRAPPER` refusals). The two predicates
+  `$wrapped_predicate/2` and `$closure_predicate/2` had no row and are ported here, so need none.
+- **Not ported (unchanged):** the closure blob's `release` (no atom GC: closures live in `gd.closure_refs` for ever), the GC walker's `setStartOfVMI` comment of `S_CALLWRAPPER` (no GC walker reads `DEF`).
+
+Tests: test/core_lang/test_wrap_swipl.jl (+ .pl/.out), pins from the oracle swipl 10.1.20 (18168e62). Mutation list: tools/mutants/WRAP1.py is a LATER step.
 
 ## AUTOLOAD1 (A1, A4, Q3) — `ld` in trapUndefined, the `autoload` flag setter, the loud boot-session error (R2, audit D-0387 item 3, edit-only: nothing was compiled when this was written; the gate decides)
 
