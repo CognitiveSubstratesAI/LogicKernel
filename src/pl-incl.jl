@@ -1417,7 +1417,7 @@ end
 # DIVERGES (audit D-0453 Q3, Q5): `nodes` is the arena of the trie's nodes, id 1 the root (upstream embeds `root`); `blocks`
 # the arena of children blocks (an id >= 1); `free_ids` and `free_blocks` the slots of freed nodes and blocks; no `alloc_pool`,
 # `tid` (owner TH1); `mem.lingering` is `lingering` (block ids, TRIE_CONCURRENT tries), `mem.chunks` is `chunks`; `serial` is the trie's number in
-# `gd.tries` (the blob's payload). `data.worklist`/`IDG`/`predicate` are `Any` slots that TB0/TB1 own; `data.variant` is a node id.
+# `gd.tries` (the blob's payload). `data.worklist`/`IDG`/`predicate` are `Nothing` slots that TB0/TB1 own and widen (a field typed `Any` fails the gate of nonconcrete fields); `data.variant` is a node id.
 # `magic`, `references`, `node_count`, `value_count`, `flags` are `Int`/`UInt32`.
 "A trie of terms `T` (pl-trie.h `struct trie`)."
 mutable struct trie{T}
@@ -1437,10 +1437,10 @@ mutable struct trie{T}
     lingering::Vector{Int}                              # ids of replaced children blocks of a TRIE_CONCURRENT trie, freed by free_lingering_blocks
     lookups::Int                                        # stats.lookups
     gen_call::Int                                       # stats.gen_call
-    worklist::Any                                       # data.worklist (TB0)
+    worklist::Nothing                                   # data.worklist (TB0 widens the type to its record: `Any` fails the nonconcrete-fields gate)
     variant::Int                                        # data.variant: a node id of the variant trie (TB0)
-    IDG::Any                                            # data.IDG (TB0)
-    predicate::Any                                      # data.predicate (TB0)
+    IDG::Nothing                                        # data.IDG (TB0 widens the type)
+    predicate::Nothing                                  # data.predicate (TB0 widens the type)
     serial::Int                                         # the trie's number in `gd.tries` (0: not registered)
 end
 

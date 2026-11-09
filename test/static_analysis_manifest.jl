@@ -2959,6 +2959,68 @@ _index_entry_points(T) = (
     (LK.symbol_stream_pair_not_allowed, Tuple{LK.PL_local_data{T}, T}, false)
 )
 
+# TR1 A2a — pl-trie.c: the trie, its children blocks, the node chunks and the blob (src/pl-trie.jl). The methods that take a
+# trie (or the databases) are checked for every payload type; the ones on blocks, nodes and integers once, below.
+# The functions a caller hands in (`vt` of clear_node, `free` of prune_trie) are `_manifest_sink`'s type, as elsewhere.
+_manifest_tr1(T) = begin
+    TR, GD, LD = LK.trie{T}, LK.PL_global_data{T}, LK.PL_local_data{T}
+    SNK = typeof(_manifest_sink)
+    (
+        (LK.block_at, Tuple{TR, Int}, false),
+        (LK.trie_create, Tuple{Type{T}}, false),
+        (LK.release_node, Tuple{TR, Int}, false),
+        (LK.tbl_release_node, Tuple{TR, Int}, false),
+        (LK.trie_discard_clause, Tuple{TR}, false),
+        (LK.trie_discard_nodes, Tuple{TR}, false),
+        (LK.trie_restore_nodes, Tuple{TR}, false),
+        (LK.trie_ensure_nodes, Tuple{TR}, false),
+        (LK.clear_nodes, Tuple{TR, Nothing}, false),
+        (LK.clear_nodes, Tuple{TR, SNK}, false),
+        (LK.trie_clear_nodes, Tuple{TR}, false),
+        (LK.empty_trie, Tuple{TR, Nothing}, false),
+        (LK.empty_trie, Tuple{TR, SNK}, false),
+        (LK.trie_empty, Tuple{TR}, false),
+        (LK.trie_empty_take, Tuple{TR, SNK}, false),
+        (LK.trie_destroy, Tuple{TR}, false),
+        (LK.trie_clean, Tuple{TR}, false),
+        (LK.get_child, Tuple{TR, Int, UInt64}, false),
+        (LK.next_child!, Tuple{TR, LK.child_iter}, false),
+        (LK.is_leaf_trie_node, Tuple{TR, Int}, false),
+        (LK.trie_single_value_node, Tuple{TR}, false),
+        (LK.free_block, Tuple{TR, Int}, false),
+        (LK.retire_block, Tuple{TR, Int}, false),
+        (LK.free_lingering_blocks, Tuple{TR}, false),
+        (LK.new_block, Tuple{TR, Int}, false),
+        (LK.add_child, Tuple{TR, Int, Int}, false),
+        (LK.replace_block, Tuple{TR, Int, Int}, false),
+        (LK.compact_children, Tuple{TR, Int}, false),
+        (LK.delete_child, Tuple{TR, Int, Int, Bool}, false),
+        (LK.new_node_slot!, Tuple{TR, LK.trie_node}, false),
+        (LK.alloc_trie_node, Tuple{TR}, false),
+        (LK.new_trie_node, Tuple{TR, UInt64}, false),
+        (LK.free_trie_node, Tuple{TR, Int}, false),
+        (LK.free_node_chunks, Tuple{TR}, false),
+        (LK.sweep_node_chunks, Tuple{TR}, false),
+        (LK.clear_node, Tuple{TR, Int, Int, Nothing}, false),
+        (LK.clear_node, Tuple{TR, Int, Int, SNK}, false),
+        (LK.destroy_node, Tuple{TR, Int}, false),
+        (LK.prune_node, Tuple{TR, Int}, false),
+        (LK.prune_trie, Tuple{TR, Int}, false),
+        (LK.prune_trie, Tuple{TR, Int, SNK}, false),
+        (LK.insert_child, Tuple{TR, Int, UInt64}, false),
+        (LK.follow_node, Tuple{TR, Int, UInt64, Bool}, false),
+        (LK.prune_error, Tuple{TR, Int}, false),
+        (LK.trie_of_word, Tuple{GD, UInt64}, false),
+        (LK.trie_symbol, Tuple{GD, TR}, false),
+        (LK.symbol_trie, Tuple{GD, UInt64}, false),
+        (LK.unify_trie, Tuple{GD, LD, Int, TR}, false),
+        (LK.get_trie, Tuple{GD, LD, Int}, false),
+        (LK.get_trie_noex, Tuple{GD, LD, Int}, false),
+        (LK.trie_error, Tuple{LD, Int, Int}, false),
+        (LK.trie_trie_error, Tuple{GD, LD, Int, TR}, false)
+    )
+end
+
 # LB2b — locating files: os/pl-files.c, os/pl-glob.c and the file-name helpers of os/pl-os.c
 # (src/os/pl-files.jl, src/os/pl-glob.jl, src/os/pl-os.jl). The methods that take the local data (`ld`) are
 # checked for every payload type; the ones on plain strings, integers and byte vectors once, below.
@@ -3205,6 +3267,9 @@ const _DISPATCH_MANIFEST_TUPLE = (
     _manifest_lb2b(_M1)...,
     _manifest_lb2b(_M2)...,
     _manifest_lb2b(_M3)...,
+    _manifest_tr1(_M1)...,
+    _manifest_tr1(_M2)...,
+    _manifest_tr1(_M3)...,
     _MANIFEST_LB2B_FREE...,
     _manifest_lb7(_M1)...,
     _manifest_lb7(_M2)...,
@@ -3824,6 +3889,34 @@ const _DISPATCH_MANIFEST_TUPLE = (
     (LK.skipWrapperPrefix, Tuple{Vector{LK.code}}, false),
     (LK.skipWrapperPrefix, Tuple{Vector{LK.code}, Int}, false),
     (LK.unregisterWrappedSupervisor, Tuple{Vector{LK.code}}, false),
+    # TR1 A2a: the trie functions that take blocks, nodes and integers (src/pl-trie.jl); no term type
+    # TR1: the agenda of pl-termwalk.c with the pop count of the trie lookup (src/pl-termwalk.jl); allocation-free is not claimed
+    (LK.initCellAgenda_P, Tuple{Int, Int}, false),
+    (LK.clearCellAgenda_P!, Tuple{LK.cell_agenda_P}, false),
+    (LK.nextCellAgenda_P!, Tuple{LK.cell_agenda_P}, false),
+    (LK.pushWorkCellAgenda_P!, Tuple{LK.cell_agenda_P, Int, Int}, false),
+    (LK.pushWorkCellAgenda_P0!, Tuple{LK.cell_agenda_P, Int, Int}, false),
+    (LK.initTries!, Tuple{LK.atoms_t}, false),
+    (LK._trie_bytes, Tuple{Int}, false),
+    (LK.RESERVED_TRIE_VAL, Tuple{Int}, false),
+    (LK.TRIE_KEY_POP, Tuple{Int}, false),
+    (LK.IS_TRIE_KEY_POP, Tuple{UInt64}, false),
+    (LK.trie_has_children, Tuple{LK.trie_node}, false),
+    (LK.is_single_child, Tuple{Int}, false),
+    (LK.single_child, Tuple{Int}, false),
+    (LK.single_child_code, Tuple{Int}, false),
+    (LK.children_block_id, Tuple{Int}, false),
+    (LK.block_code, Tuple{Int}, false),
+    (LK.release_value, Tuple{UInt64}, false),
+    (LK.child_hash, Tuple{UInt64, Int}, false),
+    (LK.block_size, Tuple{Int, Int}, false),
+    (LK.sizeof_block, Tuple{LK.trie_children_block}, false),
+    (LK.block_find, Tuple{LK.trie_children_block, UInt64}, false),
+    (LK.init_child_iter, Tuple{Int}, false),
+    (LK.update_var_mask, Tuple{LK.trie_children_block, UInt64}, false),
+    (LK.index_entry, Tuple{LK.trie_children_block, Int}, false),
+    (LK.block_append, Tuple{LK.trie_children_block, UInt64, Int}, false),
+    (LK.block_copy, Tuple{LK.trie_children_block, LK.trie_children_block, Bool}, false),
     # the template database and the boot-image readers (LB4 b1)
     _manifest_gd_template(_M1)...,
     _manifest_gd_template(_M2)...,

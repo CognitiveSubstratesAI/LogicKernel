@@ -92,8 +92,6 @@ struct TrieRefusal <: Exception
     what::String
     owner::String
 end
-Base.showerror(io::IO, e::TrieRefusal) =
-    print(io, "TrieRefusal: ", e.what, " is refused by name (owner ", e.owner, ")")
 
 # PORT: pl-trie.h trie_has_children
 "Whether the node `n` has children (pl-trie.h `trie_has_children`)."
