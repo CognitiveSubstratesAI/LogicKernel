@@ -1281,11 +1281,12 @@ function _tr_value_rows(::Type{T}) where {T}
 end
 
 function _tr_unify_rows(::Type{T}) where {T}
-    # slots: f(X, X), f(1, 2), f(3, 3): the keys of the node are f/2, V1, V1 (a repeated variable)
+    # slots: f(X, X), f(1, 2), f(3, 3): the keys of the node are f/2, V1, V1 (a repeated variable); g(1.5), g(2.5), g(1.5): an indirect key
     gd, ld, t = _tr_engine(
         T, T[
             _trx(T, :f, _trv(T, 1), _trv(T, 1)), _trx(T, :f, lk_gnd(T, Int64(1)), lk_gnd(T, Int64(2))),
-            _trx(T, :f, lk_gnd(T, Int64(3)), lk_gnd(T, Int64(3)))
+            _trx(T, :f, lk_gnd(T, Int64(3)), lk_gnd(T, Int64(3))), _trx(T, :g, lk_gnd(T, 1.5)), _trx(T, :g, lk_gnd(T, 2.5)),
+            _trx(T, :g, lk_gnd(T, 1.5))
         ]
     )
     tr = LK.trie_create(T)
@@ -1294,6 +1295,11 @@ function _tr_unify_rows(::Type{T}) where {T}
     # the second occurrence of the variable is unified with the first: 1 and 2 do not unify, 3 and 3 do
     @test LK.unify_trie_term(ld, tr, nid, t + 2) == (false, 0)
     @test LK.unify_trie_term(ld, tr, nid, t + 3) == (true, 0)
+    # an indirect key (a float handle) is compared with the float of the term: 1.5 and 2.5 do not unify, 1.5 and 1.5 do
+    rc, nid = LK.trie_lookup_abstract(ld, tr, 0, -(t + 4), true, nothing, nothing)
+    @test rc == 1 && nid != 0
+    @test LK.unify_trie_term(ld, tr, nid, t + 5) == (false, 0)
+    @test LK.unify_trie_term(ld, tr, nid, t + 6) == (true, 0)
     return nothing
 end
 
