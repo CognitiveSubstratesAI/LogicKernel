@@ -1677,7 +1677,9 @@ ukey_state(tr::trie{T}, p::Int) where {T} =
 # DIVERGES: the index is a position in `vars`, grown with 0 (an unseen variable) up to it; returned as the index.
 "Make sure the numbered variable `index` (1..) of `st` has an entry (pl-trie.c `find_var`)."
 @inline function find_var!(st::ukey_state, index::Int)::Int
-    index > length(st.vars) && resize!(st.vars, index)
+    while length(st.vars) < index
+        push!(st.vars, 0)
+    end
     return index
 end
 
