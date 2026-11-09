@@ -2959,6 +2959,9 @@ _index_entry_points(T) = (
     (LK.symbol_stream_pair_not_allowed, Tuple{LK.PL_local_data{T}, T}, false)
 )
 
+# TR1 A2b: the concrete stand-in for the map function `map_trie_node` takes (`map(tr, id)` returns `nothing` to go on).
+_manifest_trie_map(tr, id) = nothing
+
 # TR1 A2a — pl-trie.c: the trie, its children blocks, the node chunks and the blob (src/pl-trie.jl). The methods that take a
 # trie (or the databases) are checked for every payload type; the ones on blocks, nodes and integers once, below.
 # The functions a caller hands in (`vt` of clear_node, `free` of prune_trie) are `_manifest_sink`'s type, as elsewhere.
@@ -3017,7 +3020,28 @@ _manifest_tr1(T) = begin
         (LK.get_trie, Tuple{GD, LD, Int}, false),
         (LK.get_trie_noex, Tuple{GD, LD, Int}, false),
         (LK.trie_error, Tuple{LD, Int, Int}, false),
-        (LK.trie_trie_error, Tuple{GD, LD, Int, TR}, false)
+        (LK.trie_trie_error, Tuple{GD, LD, Int, TR}, false),
+        # TR1 A2b: the indirect table, the lookup, the flat lookup and insert, the walk and the statistics
+        (LK.new_indirect_table, Tuple{Type{T}}, false),
+        (LK.destroy_indirect_table, Tuple{TR}, false),
+        (LK.indirect_tagex, Tuple{T}, false),
+        (LK.intern_indirect, Tuple{LK.indirect_table{T}, T, Bool}, false),
+        (LK.extern_indirect, Tuple{LK.indirect_table{T}, UInt64}, false),
+        (LK.trie_intern_indirect, Tuple{TR, T, Bool}, false),
+        (LK.trie_deref, Tuple{LD, Int}, false),
+        (
+            LK.trie_lookup_abstract,
+            Tuple{LD, TR, Int, Int, Bool, Union{Nothing, LK.size_abstract}, Union{Nothing, Vector{Int}}},
+            false
+        ),
+        (LK.follow_node_add, Tuple{TR, Int, UInt64}, false),
+        (LK.trie_lookup_flat, Tuple{GD, LD, TR, Int, LK.Definition{T}, Vector{Int}, Vector{Int}}, false),
+        (LK.trie_insert_flat, Tuple{LD, TR, Int}, false),
+        (LK.is_ground_trie_node, Tuple{TR, Int}, false),
+        (LK.map_trie_node, Tuple{TR, Int, typeof(_manifest_trie_map)}, false),
+        (LK.stat_node, Tuple{LK.trie_stats, TR, Int}, false),
+        (LK.stat_trie, Tuple{TR}, false),
+        (LK.trie_table_size, Tuple{TR}, false)
     )
 end
 
@@ -3917,6 +3941,7 @@ const _DISPATCH_MANIFEST_TUPLE = (
     (LK.index_entry, Tuple{LK.trie_children_block, Int}, false),
     (LK.block_append, Tuple{LK.trie_children_block, UInt64, Int}, false),
     (LK.block_copy, Tuple{LK.trie_children_block, LK.trie_children_block, Bool}, false),
+    (LK.is_indirect_word, Tuple{UInt64}, false),                   # TR1 A2b
     # the template database and the boot-image readers (LB4 b1)
     _manifest_gd_template(_M1)...,
     _manifest_gd_template(_M2)...,
