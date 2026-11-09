@@ -894,6 +894,459 @@ function prune_error(tr::trie{T}, nid::Int)::Nothing where {T}
     return nothing
 end
 
+# ---- INDIRECTS (trie_intern_indirect, pl-indirect.c) ----
+
+# PORT: pl-indirect.c new_indirect_table
+"A new, empty table of interned indirects of terms `T` (pl-indirect.c)."
+new_indirect_table(::Type{T}) where {T} =
+    indirect_table{T}(T[], Dict{UInt64, Vector{Int}}(), Int[])
+
+# PORT: pl-indirect.c destroy_indirect_table
+# DIVERGES: nothing is freed (Julia's garbage collector): the trie drops the table.
+"Drop the table of interned indirects of `tr` (pl-indirect.c `destroy_indirect_table`)."
+function destroy_indirect_table(tr::trie{T})::Nothing where {T}
+    tr.indirects = nothing
+    return nothing
+end
+
+# ORIGINAL: upstream's handle takes the `tagex` of the indirect it was created from (pl-indirect.c `create_indirect`: TAGEX_INDIRECT_FLOAT,
+# _INT or _STRING); the value is a term-interface value, whose kind says which.
+"The extended tag of the handle of the indirect value `v`: float, string, else integer (pl-indirect.c `create_indirect`)."
+function indirect_tagex(v::T)::word where {T}
+    k = number_kind(v)
+    k == NUM_FLOAT && return TAGEX_INDIRECT_FLOAT
+    k == NUM_STRING && return TAGEX_INDIRECT_STRING
+    return TAGEX_INDIRECT_INT
+end
+
+# PORT: pl-indirect.c intern_indirect
+# DIVERGES: the table holds the values themselves (see `indirect_table`): found by `gnd_key` and `gnd_equal` where upstream hashes the
+# bytes and compares header and data; no reference counts (the handle is the index of the value, 1-based as upstream's).
+"The handle of the indirect `v` in `tab`: its index with the extended tag `tx`; a new one if `create`, else 0 when it is not there (pl-indirect.c)."
+function intern_indirect(tab::indirect_table{T}, v::T, create::Bool)::word where {T}
+    k = gnd_key(v)
+    if k === nothing                                            # a wildcard: compare with every value
+        for i in eachindex(tab.values)
+            gnd_equal(tab.values[i], v) && return consTagged(i, indirect_tagex(tab.values[i]))
+        end
+    else
+        b = get(tab.buckets, k, nothing)
+        if b !== nothing
+            for i in b
+                gnd_equal(tab.values[i], v) && return consTagged(i, indirect_tagex(v))
+            end
+        end
+        for i in tab.wild
+            gnd_equal(tab.values[i], v) && return consTagged(i, indirect_tagex(v))
+        end
+    end
+    create || return word(0)
+    push!(tab.values, v)
+    i = length(tab.values)
+    if k === nothing
+        push!(tab.wild, i)
+    else
+        push!(get!(() -> Int[], tab.buckets, k), i)
+    end
+    return consTagged(i, indirect_tagex(v))
+end
+
+# PORT: pl-indirect.c extern_indirect
+# DIVERGES: returns the value (upstream builds the indirect on the global stack and returns its word); the caller makes the cell
+# from the value (`_vword!`).
+"The value the handle `w` of an interned indirect names in `tab` (pl-indirect.c `extern_indirect`)."
+extern_indirect(tab::indirect_table{T}, w::word)::T where {T} = tab.values[Int(valTagged(w))]
+
+# PORT: pl-trie.c trie_intern_indirect
+# DIVERGES: the value `v` of the indirect (a term-interface value) replaces its word; no compare-and-swap.
+"The handle of the indirect `v` in `tr`'s table: made if `add`, else 0 when it is not there (pl-trie.c)."
+function trie_intern_indirect(tr::trie{T}, v::T, add::Bool)::word where {T}
+    tab = tr.indirects
+    if tab === nothing
+        add || return word(0)
+        tab = new_indirect_table(T)
+        tr.indirects = tab
+    end
+    return intern_indirect(tab, v, add)
+end
+
+# ---- LOOKUP (trie_lookup_abstract, trie_lookup_flat, trie_insert_flat) ----
+
+# PORT: pl-trie.h size_abstract
+# DIVERGES: `size` is an `Int`; `typemax(Int)` stands for upstream's `(size_t)-1` (no limit).
+"The abstraction `trie_lookup_abstract` applies: below depth `from_depth` each term is limited to `size` compounds (pl-trie.h)."
+struct size_abstract
+    from_depth::Int                                             # start below depth
+    size::Int                                                   # limit each term to size
+end
+
+# ORIGINAL: upstream's `deRef(p)` on a location (pl-data.h), as pl-rec.jl `compile_term_to_heap` does it: a slot (`loc < 0`) holds
+# an atom, a compound, a value word or a reference; a cell that holds a numbered trie variable is a final word like an unbound
+# variable (`_deref_loc` would take it for no known kind). The result is `(position, word)`; the position is 0 for a slot that
+# holds its word itself (no cell to write).
+"The dereferenced `(position, word)` of the location `loc` (a global position, or `-i` for slot `i`)."
+@inline function trie_deref(ld::PL_local_data{T}, loc::Int)::Tuple{Int, word} where {T}
+    if loc < 0
+        w = ld.slots[-loc]
+        w == SLOT_VALUE && return (0, _side_word(-loc))
+        isRef(w) || return (0, w)
+        p = unRef(w)
+        w = ld.gstack[p]
+    else
+        p = loc
+        w = ld.gstack[p]
+    end
+    while isRef(w)
+        p = unRef(w)
+        w = ld.gstack[p]
+    end
+    return (p, w)
+end
+
+# ORIGINAL: whether `w` is an indirect (pl-data.h `isIndirect`), as the kernel's words keep them (a value-table word or a slot's side word).
+"Whether the dereferenced word `w` is an indirect: a value-table word or a side word."
+@inline is_indirect_word(w::word)::Bool = _is_vword(w) || _is_side_word(w)
+
+# PORT: pl-trie.c trie_lookup_abstract
+# DIVERGES: `k` is a location (a slot `-i` or a global position) and the dereference is `trie_deref`; the result is
+# `(rc, node id)` with `rc` 1 (true), 0 (false), TRIE_ABSTRACTED, TRIE_LOOKUP_CYCLIC; `vars` receives the (dereferenced) locations of the
+# variables, or is `nothing`; the variable cell of a slot (position 0) is not written (it has none: a slot is never unbound);
+# `abstract` is `abstraction`. An ATTRIBUTED VARIABLE is a named refusal, owner TR3 (upstream's O_TRIE_ATTVAR branches are ported
+# there): the lookup restores the variables it numbered and prunes what it added, then throws `TrieRefusal`
+# (never TRIE_LOOKUP_CONTAINS_ATTVAR, which swipl returns only without O_TRIE_ATTVAR).
+"""
+    trie_lookup_abstract(ld, tr, node, k, add, abstraction, vars) -> (rc, node)
+
+Look up the term at location `k` in `tr` from node `node` (0: the root) and give the leaf node it is represented by; `add` adds it
+when it is not there. Variables are numbered and bound to their number while the lookup runs (pl-trie.c).
+"""
+function trie_lookup_abstract(
+    ld::PL_local_data{T}, tr::trie{T}, node::Int, k::Int, add::Bool,
+    abstraction::Union{Nothing, size_abstract}, vars::Union{Nothing, Vector{Int}}
+)::Tuple{Int, Int} where {T}
+    var_number = 0
+    rc = 1
+    compounds = 0                                               # nesting depth
+    from_depth = 1
+    sz = typemax(Int)
+    aleft = typemax(Int)
+    attvar = false
+    vl = vars === nothing ? Int[] : vars
+    v0 = length(vl)
+
+    tr.lookups += 1
+    node == 0 && (node = 1)
+    if abstraction !== nothing
+        from_depth = abstraction.from_depth
+        sz = abstraction.size
+    end
+
+    agenda = initCellAgenda_P(1, k)
+    while node != 0
+        l, popn = nextCellAgenda_P!(agenda)
+        l == 0 && popn == 0 && break
+        if popn > 0
+            compounds -= popn
+            if compounds > 0
+                node = follow_node(tr, node, TRIE_KEY_POP(popn), add)
+                node == 0 && break
+                continue                                        # TR3: the end of an attributed variable
+            else
+                break                                           # finished toplevel
+            end
+        end
+
+        if compounds == from_depth
+            aleft = sz
+        end
+
+        p, w = trie_deref(ld, l)
+        isvar = false
+        if tag(w) == TAG_VAR
+            isvar = isVar(w)
+            isvar || (node = follow_node(tr, node, w, add))     # a numbered variable
+        elseif isAttVar(w)
+            attvar = true                                       # TR3
+            break
+        elseif _is_gcompound(w)
+            if aleft == 0
+                rc = TRIE_ABSTRACTED
+                isvar = true                                    # goto add_var
+            else
+                f = valPtr(w)
+                fd = ld.gstack[f]
+                arity = arityFunctor(ld.functors, fd)
+                aleft != typemax(Int) && (aleft -= 1)
+                compounds += 1
+                if compounds == 1000 && add && !is_acyclic_cells(ld, l)
+                    rc = TRIE_LOOKUP_CYCLIC
+                    prune_error(tr, node)
+                    node = 0
+                else
+                    node = follow_node(tr, node, fd, add)
+                    pushWorkCellAgenda_P!(agenda, arity, f + 1)
+                end
+            end
+        elseif is_indirect_word(w)
+            i = trie_intern_indirect(tr, _indirect_value(ld, w), add)
+            node = i != 0 ? follow_node(tr, node, i, add) : 0
+        else
+            node = follow_node(tr, node, w, add)
+        end
+
+        if isvar                                                # add_var:
+            var_number += 1
+            push!(vl, p == 0 ? l : p)
+            w2 = consTagged(var_number, TAGEX_VAR)
+            tag(w) == TAG_VAR && p > 0 && (ld.gstack[p] = w2)   # otherwise abstracted
+            node = follow_node(tr, node, w2, add)
+        end
+    end
+    clearCellAgenda_P!(agenda)
+
+    for i in (v0 + 1):length(vl)                                # restore the variables
+        vp = vl[i]
+        vp > 0 && tag(ld.gstack[vp]) == TAG_VAR && (ld.gstack[vp] = word(0))
+    end
+    vars === nothing && empty!(vl)
+
+    if attvar
+        add && prune_error(tr, node)
+        throw(TrieRefusal("trie_lookup_abstract (an attributed variable)", "TR3"))
+    end
+    if rc > 0 && node == 0
+        rc = 0
+    end
+    return (rc, node)
+end
+
+# PORT: pl-trie.c follow_node_add
+"As `follow_node` with `add` true, the lookup first (pl-trie.c)."
+@inline function follow_node_add(tr::trie{T}, nid::Int, key::word)::Int where {T}
+    child = get_child(tr, nid, key)
+    child != 0 && return child
+    return insert_child(tr, nid, key)
+end
+
+# PORT: pl-trie.c trie_lookup_flat
+# DIVERGES: the arguments are the locations `argv` (upstream: a `Word` to the argument array); `start` and the result are node ids
+# (0: NULL), the result is `(rc, start node, node)` with `rc` 1 (true), 0 (false) or TRIE_LOOKUP_NOT_FLAT; the database and the
+# local data are arguments (the names of the module and of the predicate, the functors); `vars` is the buffer of the dereferenced
+# locations of the variables, the numbering is the position in it.
+"""
+    trie_lookup_flat(gd, ld, tr, start, def, argv, vars) -> (rc, start, node)
+
+Look up `M:Head` of the predicate `def` with the argument locations `argv` in `tr` without creating anything; only flat calls (pl-trie.c).
+"""
+function trie_lookup_flat(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, tr::trie{T}, start::Int,
+    def::Definition{T}, argv::Vector{Int}, vars::Vector{Int}
+)::Tuple{Int, Int, Int} where {T}
+    arity = def.arity
+    tr.lookups += 1
+    node = start
+    if node == 0
+        colon = lookupFunctorDef(ld.functors, _atom_word!(ld, mk_sym(T, :(:))), 2)
+        mname = _atom_word!(ld, gd.modules[def.module_].atom)
+        (node = get_child(tr, 1, colon)) == 0 && return (0, start, 0)
+        (node = get_child(tr, node, mname)) == 0 && return (0, start, 0)
+        if arity > 0
+            fw = lookupFunctorDef(ld.functors, _atom_word!(ld, def.name), arity)
+            (node = get_child(tr, node, fw)) == 0 && return (0, start, 0)
+        end
+        start = node
+    end
+
+    if arity == 0
+        (node = get_child(tr, node, _atom_word!(ld, def.name))) == 0 && return (0, start, 0)
+    else
+        for i in 1:arity
+            p, w = trie_deref(ld, argv[i])
+            if tag(w) == TAG_VAR
+                n = 0
+                for j in eachindex(vars)
+                    if vars[j] == p
+                        n = j
+                        break
+                    end
+                end
+                if n == 0
+                    push!(vars, p)
+                    n = length(vars)
+                end
+                w = consTagged(n, TAGEX_VAR)
+            elseif isAttVar(w) || _is_gcompound(w)
+                return (TRIE_LOOKUP_NOT_FLAT, start, 0)
+            elseif is_indirect_word(w)
+                w = trie_intern_indirect(tr, _indirect_value(ld, w), false)
+                w == 0 && return (0, start, 0)
+            end
+            (node = get_child(tr, node, w)) == 0 && return (0, start, 0)
+        end
+    end
+    return (1, start, node)
+end
+
+# PORT: pl-trie.c FLAT_MAX_VARS
+"The most variables `trie_insert_flat` numbers (pl-trie.c)."
+const FLAT_MAX_VARS = 32
+# PORT: pl-trie.c FLAT_MAX_ARGS
+"The arguments `trie_insert_flat` dereferences once (pl-trie.c)."
+const FLAT_MAX_ARGS = 16
+
+# PORT: pl-trie.c trie_insert_flat
+# DIVERGES: `k` is a location; the result is `(rc, node)` with `rc` 1 (true), 0 (false) or TRIE_LOOKUP_NOT_FLAT. A cell that holds
+# a variable is bound to its number meanwhile and restored at the end, as upstream (the vector of the variables is local).
+"""
+    trie_insert_flat(ld, tr, k) -> (rc, node)
+
+Insert the flat term at location `k` (an atom, or a compound whose arguments are atomic or plain variables) into `tr` (pl-trie.c).
+"""
+function trie_insert_flat(
+    ld::PL_local_data{T}, tr::trie{T}, k::Int
+)::Tuple{Int, Int} where {T}
+    _, w = trie_deref(ld, k)
+    if isAtomW(w)
+        tr.lookups += 1
+        node = follow_node_add(tr, 1, w)
+        node == 0 && return (0, 0)
+        return (1, node)
+    end
+    _is_gcompound(w) || return (TRIE_LOOKUP_NOT_FLAT, 0)
+
+    f = valPtr(w)
+    fd = ld.gstack[f]
+    arity = arityFunctor(ld.functors, fd)
+    args = Tuple{Int, word}[]                                   # the first FLAT_MAX_ARGS arguments, dereferenced once
+    nvars = 0
+    for i in 1:arity                                            # verify it is flat
+        p, aw = trie_deref(ld, f + i)
+        i <= FLAT_MAX_ARGS && push!(args, (p, aw))
+        if tag(aw) == TAG_VAR
+            (nvars += 1) > FLAT_MAX_VARS && return (TRIE_LOOKUP_NOT_FLAT, 0)
+        elseif isAttVar(aw) || _is_gcompound(aw)
+            return (TRIE_LOOKUP_NOT_FLAT, 0)
+        end
+    end
+
+    tr.lookups += 1
+    node = follow_node_add(tr, 1, fd)
+    vars = Int[]
+    i = 1
+    while node != 0 && i <= arity
+        if i <= FLAT_MAX_ARGS
+            p, aw = args[i]
+        else
+            p, aw = trie_deref(ld, f + i)
+        end
+        w = p > 0 ? ld.gstack[p] : aw                           # a variable numbered meanwhile
+        if tag(w) == TAG_VAR
+            if isVar(w)
+                push!(vars, p)
+                w = consTagged(length(vars), TAGEX_VAR)
+                ld.gstack[p] = w
+            end
+        elseif is_indirect_word(w)
+            w = trie_intern_indirect(tr, _indirect_value(ld, w), true)
+            if w == 0
+                node = 0
+                break
+            end
+        end
+        node = follow_node_add(tr, node, w)
+        i += 1
+    end
+
+    for p in vars
+        ld.gstack[p] = word(0)
+    end
+    node == 0 && return (0, 0)
+    return (1, node)
+end
+
+# PORT: pl-trie.c is_ground_trie_node
+# DIVERGES: the trie is an argument (nodes are ids).
+"Whether the path from the root to node `nid` holds no variable key (pl-trie.c)."
+function is_ground_trie_node(tr::trie{T}, nid::Int)::Bool where {T}
+    while tr.nodes[nid].parent != 0
+        tx = tagex(tr.nodes[nid].key)
+        (tx == TAGEX_VAR || tx == TAGEX_TRIE_ATTVAR) && return false
+        nid = tr.nodes[nid].parent
+    end
+    return true
+end
+
+# PORT: pl-trie.c map_trie_node
+# DIVERGES: `map(tr, id)` returns `nothing` to go on, any other value stops and is returned (upstream: a function and a context
+# pointer returning NULL or a pointer); nodes are ids.
+"Call `map(tr, id)` for node `nid` and its descendants, until it returns a value other than `nothing`, which is returned (pl-trie.c)."
+function map_trie_node(tr::trie{T}, nid::Int, map::Function) where {T}
+    while true
+        children = tr.nodes[nid].children
+        rc = map(tr, nid)
+        rc === nothing || return rc
+        children == 0 && return nothing
+        if is_single_child(children)
+            nid = single_child(children)
+        else
+            it = init_child_iter(nid)
+            while true
+                n2, _ = next_child!(tr, it)
+                n2 == 0 && return nothing
+                rc = map_trie_node(tr, n2, map)
+                rc === nothing || return rc
+            end
+        end
+    end
+end
+
+# PORT: pl-trie.c trie_stats
+"What `stat_trie` counts (pl-trie.c `trie_stats`): the bytes upstream's trie takes, its nodes, its hashed blocks and its values."
+mutable struct trie_stats
+    bytes::Int
+    nodes::Int
+    hashes::Int
+    values::Int
+end
+
+# PORT: pl-trie.c stat_node
+# DIVERGES: a function of the trie and the node id; `stats` is the context; the sizes are upstream's (`SIZEOF_TRIE_NODE`, `sizeof_block`).
+"Count node `nid` in `stats` (pl-trie.c `stat_node`); `nothing` (go on)."
+function stat_node(stats::trie_stats, tr::trie{T}, nid::Int)::Nothing where {T}
+    n = tr.nodes[nid]
+    children = n.children
+    stats.nodes += 1
+    (n.flags & TN_CHUNKED) == 0 && (stats.bytes += SIZEOF_TRIE_NODE)   # chunks are added by stat_trie
+    n.value != 0 && (n.flags & TN_PRIMARY) != 0 && (stats.values += 1)
+    if children != 0 && !is_single_child(children)
+        b = block_at(tr, children_block_id(children))
+        stats.bytes += sizeof_block(b)
+        b.index_bits != 0 && (stats.hashes += 1)
+    end
+    return nothing
+end
+
+# PORT: pl-trie.c stat_trie
+# DIVERGES: the bytes are upstream's, from its sizes (the records here are not that big); `acquire_trie` and `release_trie` are O_PLMT
+# (owner TH1); returns the statistics (upstream fills `*stats`).
+"The statistics of `tr` (pl-trie.c `stat_trie`): the bytes of upstream's trie, nodes, hashed blocks and values."
+function stat_trie(tr::trie{T})::trie_stats where {T}
+    stats = trie_stats(SIZEOF_TRIE - SIZEOF_TRIE_NODE, 0, 0, 0)
+    map_trie_node(tr, 1, (t, id) -> stat_node(stats, t, id))
+    if (tr.flags & TRIE_CONCURRENT) == 0
+        c = tr.chunks
+        while c !== nothing
+            stats.bytes += Int(c.bytes)
+            c = c.next
+        end
+    end
+    return stats
+end
+
+# PORT: pl-trie.c trie_table_size
+"The bytes upstream's answer trie `tr` takes, for an estimate of the memory abolishing it frees (pl-trie.c): no clause before TR4."
+trie_table_size(tr::trie{T})::Int where {T} = SIZEOF_TRIE + tr.node_count * SIZEOF_TRIE_NODE
+
 # ---- THE TRIE BLOB (trie_symbol, symbol_trie, get_trie, trie_error) ----
 
 # PORT: pl-trie.c trie_blob

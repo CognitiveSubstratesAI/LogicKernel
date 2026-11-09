@@ -1405,12 +1405,14 @@ end
 # PORT: pl-indirect.h indirect_table
 # DIVERGES (audit D-0453 Q3): upstream hashes the bytes of the interned indirect (MurmurHash) and compares header and data;
 # here the table holds the values (`values[i]` is upstream's indirect number `i`; the handle is `consTagged(i, tagex)`, as
-# `create_indirect`) in buckets by `gnd_key` (`nothing`: bucket 0), compared with `gnd_equal`. No reference counts
+# `create_indirect`) in buckets by `gnd_key`, compared with `gnd_equal`; a value whose `gnd_key` is `nothing` is a WILDCARD
+# (in `wild`, searched with every lookup, and a lookup of such a value searches every value). No reference counts
 # (a trie never releases a single indirect; the table dies with `clear_nodes`).
 "The interned indirects of a trie (pl-indirect.h `indirect_table`)."
 mutable struct indirect_table{T}
     const values::Vector{T}                             # the indirect values, number 1.. = index 1..
-    const buckets::Dict{UInt64, Vector{Int}}            # gnd_key (0 for `nothing`) -> indexes in `values`
+    const buckets::Dict{UInt64, Vector{Int}}            # gnd_key -> indexes in `values` (of the values with that key)
+    const wild::Vector{Int}                             # indexes in `values` of the values whose gnd_key is `nothing` (WILDCARDS)
 end
 
 # PORT: pl-trie.h trie
