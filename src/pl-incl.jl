@@ -1303,7 +1303,7 @@ const TRIE_ISTRACKED = UInt32(0x0020)
 "`trie.flags`: the trie is an answer table (pl-trie.h)."
 const TRIE_ISTABLE = UInt32(0x0040)
 # PORT: pl-trie.h TRIE_CONCURRENT
-"`trie.flags`: lock for concurrent writers (pl-trie.h); never set here (single-threaded, owner TH1)."
+"`trie.flags`: concurrent writers (pl-trie.h); `trie_new/1` sets it. The flag is kept because it decides how nodes are allocated (individually, no chunks) and how a replaced children block is retired (`lingering`); nothing locks (single-threaded, owner TH1)."
 const TRIE_CONCURRENT = UInt32(0x0080)
 # PORT: pl-trie.h TRIE_DISCARDABLE
 "`trie.flags`: discard the nodes after compilation (pl-trie.h)."
@@ -1357,7 +1357,7 @@ end
 
 # PORT: pl-trie.h trie_children_block
 # DIVERGES (audit D-0453 Q3): the entries and the open-addressing index are two vectors (upstream: one allocation, the
-# index after the entries); `older` (the lingering list of a TRIE_CONCURRENT trie) is not kept (single-threaded, owner TH1).
+# index after the entries); `older` (the lingering list of a TRIE_CONCURRENT trie) is `trie.lingering`, a vector of block ids.
 "A block of children of a trie node (pl-trie.h `trie_children_block`)."
 mutable struct trie_children_block
     count::Int                                          # entries in use (live and dead)
@@ -1416,7 +1416,7 @@ end
 # PORT: pl-trie.h trie
 # DIVERGES (audit D-0453 Q3, Q5): `nodes` is the arena of the trie's nodes, id 1 the root (upstream embeds `root`); `blocks`
 # the arena of children blocks (an id >= 1); `free_ids` and `free_blocks` the slots of freed nodes and blocks; no `alloc_pool`,
-# `tid` or `mem.lingering` (TRIE_CONCURRENT, owner TH1); `mem.chunks` is `chunks`; `serial` is the trie's number in
+# `tid` (owner TH1); `mem.lingering` is `lingering` (block ids, TRIE_CONCURRENT tries), `mem.chunks` is `chunks`; `serial` is the trie's number in
 # `gd.tries` (the blob's payload). `data.worklist`/`IDG`/`predicate` are `Any` slots that TB0/TB1 own; `data.variant` is a node id.
 # `magic`, `references`, `node_count`, `value_count`, `flags` are `Int`/`UInt32`.
 "A trie of terms `T` (pl-trie.h `struct trie`)."
@@ -1434,6 +1434,7 @@ mutable struct trie{T}
     indirects::Union{Nothing, indirect_table{T}}        # indirect values
     clause::word                                        # compiled representation (TR4: always 0 here)
     chunks::Union{Nothing, trie_node_chunk}             # node chunks
+    lingering::Vector{Int}                              # ids of replaced children blocks of a TRIE_CONCURRENT trie, freed by free_lingering_blocks
     lookups::Int                                        # stats.lookups
     gen_call::Int                                       # stats.gen_call
     worklist::Any                                       # data.worklist (TB0)
