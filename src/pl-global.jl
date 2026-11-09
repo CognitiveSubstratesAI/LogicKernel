@@ -163,6 +163,7 @@ mutable struct PL_global_data{T}
 
     const event_hook::event_hooks{T}                            # event.hook: the event lists (R2 EV1)
     const closure_refs::Vector{closure{T}}                      # (pl-wrap.c: the closure a closure blob names, by its number in the payload; TAB1-min)
+    const tries::Vector{trie{T}}                                # (pl-trie.c: the trie a trie blob names, by its number in the payload; TAB1 TR1)
     paths_CWDdir::String                                        # paths.CWDdir: the cached working directory, '/'-terminated ("" = none; paths.CWDlen is its byte length; R2 LB2b)
     procedures_print_message2::Procedure{T}                     # procedures.print_message2: print_message/2, printMessage's (R2 LB4 b2)
     procedures_reset3::Procedure{T}                             # procedures.reset3: reset/3 (R2 CONT1)
@@ -216,6 +217,8 @@ end
 # src/pl-setup.jl's `setupProlog`.
 # Since TAB1-min: `closure_refs` (the closures a `closure` blob names, as `clause_refs`; pl-wrap.c keeps the `struct closure`
 # in the blob's payload, src/pl-wrap.jl).
+# Since TAB1 TR1: `tries` (the tries a `trie` blob names, as `closure_refs`; pl-trie.c `trie_symbol` makes the blob with the
+# `struct trie` as its data, here the trie's number in `tries` is the 8-byte payload, src/pl-trie.jl).
 # Since R2's LB2b: `paths_CWDdir`, `GD->paths.CWDdir` (pl-global.h), the working directory `PL_cwd` caches and `ChDir` sets (src/os/pl-os.jl).
 # Since R2 LB6a: `reload_generation`, DIVERGES (representation, owner TH1): upstream's `LD->reload.generation` is per thread; the kernel has one thread,
 # so ONE copy lives here and nothing keeps a second in the local data (audit D-0416 item 3). `startReconsultFile` writes it and `endReconsult` (LB6b)

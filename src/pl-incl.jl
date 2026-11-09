@@ -1211,6 +1211,238 @@ mutable struct closure{T}
     supervisor::Vector{code}                            # def.impl.wrapped.supervisor
     supervisor_crefs::Vector{ClauseRef{T}}              # (the clause references the supervisor's operands index)
 end
+# PORT: pl-data.h TAGEX_VAR
+"The extended tag of a numbered trie variable (pl-data.h `TAGEX_VAR`): `TAG_VAR|STG_STATIC`."
+const TAGEX_VAR = TAG_VAR | STG_STATIC
+# PORT: pl-data.h TAGEX_INDIRECT_FLOAT
+"The extended tag of a float indirect (pl-data.h): `TAG_FLOAT|STG_GLOBAL`."
+const TAGEX_INDIRECT_FLOAT = TAG_FLOAT | STG_GLOBAL
+# PORT: pl-data.h TAGEX_INDIRECT_INT
+"The extended tag of an integer indirect (pl-data.h): `TAG_INTEGER|STG_GLOBAL`."
+const TAGEX_INDIRECT_INT = TAG_INTEGER | STG_GLOBAL
+# PORT: pl-data.h TAGEX_INDIRECT_STRING
+"The extended tag of a string indirect (pl-data.h): `TAG_STRING|STG_GLOBAL`."
+const TAGEX_INDIRECT_STRING = TAG_STRING | STG_GLOBAL
+# PORT: pl-data.h TAGEX_TRIE_RESERVED
+"The extended tag of a reserved trie key (pl-data.h): `TAG_VAR|STG_LOCAL`."
+const TAGEX_TRIE_RESERVED = TAG_VAR | STG_LOCAL
+# PORT: pl-data.h TAGEX_TRIE_ATTVAR
+"The extended tag of `<begin_attvar N>` (pl-data.h): `TAG_ATTVAR|STG_STATIC`."
+const TAGEX_TRIE_ATTVAR = TAG_ATTVAR | STG_STATIC
+# PORT: pl-data.h TAGEX_TRIE_ATTVAR_END
+"The extended tag of `<end_attvar N>` (pl-data.h): `TAG_ATTVAR|STG_RESERVED`."
+const TAGEX_TRIE_ATTVAR_END = TAG_ATTVAR | STG_RESERVED
+# PORT: pl-data.h consTagged
+"A cell with extended tag `tx` holding the number `n` (pl-data.h `consTagged`)."
+consTagged(n::Integer, tx::word)::word = (UInt64(n) << LMASK_BITS) | tx
+# PORT: pl-data.h valTagged
+"The number a `consTagged` cell holds (pl-data.h `valTagged`)."
+valTagged(w::word)::UInt64 = w >> LMASK_BITS
+
+# PORT: pl-trie.h TRIE_MAGIC
+"`trie.magic` of a live trie (pl-trie.h)."
+const TRIE_MAGIC = Int32(0x4bcbcf87)
+# PORT: pl-trie.h TRIE_CMAGIC
+"`trie.magic` of a destroyed trie (pl-trie.h)."
+const TRIE_CMAGIC = Int32(0x4bcbcf88)
+# PORT: pl-trie.h TN_PRIMARY
+"`trie_node.flags`: a primary value node (pl-trie.h)."
+const TN_PRIMARY = UInt32(0x0001)
+# PORT: pl-trie.h TN_SECONDARY
+"`trie_node.flags`: a secondary value node (pl-trie.h)."
+const TN_SECONDARY = UInt32(0x0002)
+# PORT: pl-trie.h TN_PRUNED
+"`trie_node.flags`: the node's path was pruned (pl-trie.h)."
+const TN_PRUNED = UInt32(0x0004)
+# PORT: pl-trie.h TN_IDG_DELETED
+"`trie_node.flags`: IDG pre-evaluation (pl-trie.h)."
+const TN_IDG_DELETED = UInt32(0x0008)
+# PORT: pl-trie.h TN_IDG_ADDED
+"`trie_node.flags`: IDG recovery (pl-trie.h)."
+const TN_IDG_ADDED = UInt32(0x0010)
+# PORT: pl-trie.h TN_IDG_UNCONDITIONAL
+"`trie_node.flags`: IDG, previous conditional state (pl-trie.h)."
+const TN_IDG_UNCONDITIONAL = UInt32(0x0020)
+# PORT: pl-trie.h TN_IDG_AS_LAST
+"`trie_node.flags`: IDG, answer subsumption node (pl-trie.h)."
+const TN_IDG_AS_LAST = UInt32(0x0040)
+# PORT: pl-trie.h TN_PINNED
+"`trie_node.flags`: the node is never pruned (pl-trie.h)."
+const TN_PINNED = UInt32(0x0080)
+# PORT: pl-trie.h TN_CHUNKED
+"`trie_node.flags`: the node was allocated in a node chunk (pl-trie.h)."
+const TN_CHUNKED = UInt32(0x0100)
+# PORT: pl-trie.h TN_DELAYINFO
+"`trie_node.flags`: the answer has delay information (pl-trie.h)."
+const TN_DELAYINFO = UInt32(0x0200)
+# PORT: pl-trie.h TN_CHUNK_INDEX_SHIFT
+"`trie_node.flags`: the node's index in its chunk is in the bits from here (pl-trie.h)."
+const TN_CHUNK_INDEX_SHIFT = 16
+# PORT: pl-trie.h TN_IDG_MASK
+"`trie_node.flags`: the IDG bits (pl-trie.h)."
+const TN_IDG_MASK = TN_IDG_DELETED | TN_IDG_ADDED | TN_IDG_UNCONDITIONAL | TN_IDG_AS_LAST
+# PORT: pl-trie.h TRIE_ISSET
+"`trie.flags`: the nodes have no value (pl-trie.h)."
+const TRIE_ISSET = UInt32(0x0001)
+# PORT: pl-trie.h TRIE_ISMAP
+"`trie.flags`: the nodes have a value (pl-trie.h)."
+const TRIE_ISMAP = UInt32(0x0002)
+# PORT: pl-trie.h TRIE_ISSHARED
+"`trie.flags`: a shared answer trie (pl-trie.h)."
+const TRIE_ISSHARED = UInt32(0x0004)
+# PORT: pl-trie.h TRIE_COMPLETE
+"`trie.flags`: the answer trie is complete (pl-trie.h)."
+const TRIE_COMPLETE = UInt32(0x0008)
+# PORT: pl-trie.h TRIE_ABOLISH_ON_COMPLETE
+"`trie.flags`: abolish the table when it completes (pl-trie.h)."
+const TRIE_ABOLISH_ON_COMPLETE = UInt32(0x0010)
+# PORT: pl-trie.h TRIE_ISTRACKED
+"`trie.flags`: the changes of the trie are tracked (pl-trie.h)."
+const TRIE_ISTRACKED = UInt32(0x0020)
+# PORT: pl-trie.h TRIE_ISTABLE
+"`trie.flags`: the trie is an answer table (pl-trie.h)."
+const TRIE_ISTABLE = UInt32(0x0040)
+# PORT: pl-trie.h TRIE_CONCURRENT
+"`trie.flags`: lock for concurrent writers (pl-trie.h); never set here (single-threaded, owner TH1)."
+const TRIE_CONCURRENT = UInt32(0x0080)
+# PORT: pl-trie.h TRIE_DISCARDABLE
+"`trie.flags`: discard the nodes after compilation (pl-trie.h)."
+const TRIE_DISCARDABLE = UInt32(0x0100)
+# PORT: pl-trie.h TRIE_DISCARDED
+"`trie.flags`: the nodes were discarded, the clause has the keys (pl-trie.h)."
+const TRIE_DISCARDED = UInt32(0x0200)
+# PORT: pl-trie.h TRIE_ISVARIANT
+"`trie.flags`: the trie is a variant table (pl-trie.h)."
+const TRIE_ISVARIANT = UInt32(0x0400)
+# PORT: pl-trie.h TRIE_ABSTRACTED
+"`trie_lookup_abstract` result: ok, but abstracted (pl-trie.h)."
+const TRIE_ABSTRACTED = 2
+# PORT: pl-trie.h TRIE_LOOKUP_CONTAINS_ATTVAR
+"`trie_lookup_abstract` result: the term holds an attributed variable (pl-trie.h)."
+const TRIE_LOOKUP_CONTAINS_ATTVAR = -10
+# PORT: pl-trie.h TRIE_LOOKUP_CYCLIC
+"`trie_lookup_abstract` result: the term is cyclic (pl-trie.h)."
+const TRIE_LOOKUP_CYCLIC = -11
+# PORT: pl-trie.h TRIE_LOOKUP_NOT_FLAT
+"`trie_lookup_flat`/`trie_insert_flat` result: the term is not flat (pl-trie.h)."
+const TRIE_LOOKUP_NOT_FLAT = -12
+# PORT: pl-trie.h TRIE_ARGS
+"The number of arguments of the trie_lookup clause head (pl-trie.h)."
+const TRIE_ARGS = 3
+# PORT: pl-trie.h TRIE_VAR_OFFSET
+"The offset of the variables in the trie_lookup clause (pl-trie.h)."
+const TRIE_VAR_OFFSET = TRIE_ARGS + 4
+
+# ORIGINAL (pl-trie.h, sizeof at the pin): the sizes the oracle observes through `'$trie_property'` (`size`), as upstream's
+# constants: `sizeof(trie_node)` 40, `sizeof(trie)` 152 (with O_PLMT and O_TRIE_STATS on), `sizeof(trie_children_block)`
+# 32 (six `unsigned` and `older`; the entries follow), `offsetof(trie_node_chunk, nodes)` 72 (checked with a C file that
+# copies the structs of pl-trie.h at the pin). The Julia records are not that big; `stat_trie` (TR2) computes upstream's bytes.
+"`sizeof(trie_node)` at the pin (pl-trie.h): 40."
+const SIZEOF_TRIE_NODE = 40
+"`sizeof(trie)` at the pin (pl-trie.h): 152."
+const SIZEOF_TRIE = 152
+"`sizeof(trie_child)` (pl-trie.h): 16."
+const SIZEOF_TRIE_CHILD = 16
+"`sizeof(trie_children_block)` (pl-trie.h): 32, the entries not included."
+const SIZEOF_TRIE_CHILDREN_BLOCK = 32
+"`offsetof(trie_node_chunk, nodes)` (pl-trie.h): 72."
+const OFFSETOF_TRIE_NODE_CHUNK_NODES = 72
+
+# PORT: pl-trie.h trie_child
+"One entry of a children block (pl-trie.h): the key and the child node's id (0: deleted, upstream's NULL)."
+struct trie_child
+    key::word                                           # key of the child
+    child::Int                                          # the child's id in `trie.nodes`, or 0 if deleted
+end
+
+# PORT: pl-trie.h trie_children_block
+# DIVERGES (audit D-0453 Q3): the entries and the open-addressing index are two vectors (upstream: one allocation, the
+# index after the entries); `older` (the lingering list of a TRIE_CONCURRENT trie) is not kept (single-threaded, owner TH1).
+"A block of children of a trie node (pl-trie.h `trie_children_block`)."
+mutable struct trie_children_block
+    count::Int                                          # entries in use (live and dead)
+    capacity::Int                                       # allocated entries
+    dead::Int                                           # entries with child == 0
+    var_mask::UInt32                                    # variables in this place
+    attvar_mask::UInt32                                 # attributed variables in this place
+    index_bits::Int                                     # 0: no index (linear search)
+    entries::Vector{trie_child}                         # entries[capacity]
+    index::Vector{UInt32}                               # 1<<index_bits slots holding the entry position+1 (0: empty)
+end
+
+# PORT: pl-trie.h trie_node_chunk
+# DIVERGES: the chunk is bookkeeping for the sizes the oracle observes (`stat_trie`: `bytes`) and for the free-list
+# discipline of `alloc_trie_node`; the nodes themselves live in `trie.nodes`. `gprev`, `gnext`, `pool` are not kept (the global
+# chunk list is atom-GC's: `markAtomsInTries`, no-op here, see src/pl-trie.jl); `free` is a node id.
+"A chunk of trie nodes (pl-trie.h `trie_node_chunk`)."
+mutable struct trie_node_chunk
+    next::Union{Nothing, trie_node_chunk}               # next (older) chunk of the trie
+    free::Int                                           # free node ids, linked through `parent` (newest chunk only); 0: none
+    flags::UInt16                                       # CHUNK_*
+    scans::UInt16                                       # # atom-GC scans that found it full
+    bytes::UInt32                                       # allocated bytes
+    size::UInt32                                        # allocated nodes
+    used::UInt32                                        # used nodes
+    live::UInt32                                        # nodes in use
+    nfree::UInt32                                       # free nodes (newest chunk only)
+    sweep_at::UInt32                                    # sweep at nfree (newest chunk only)
+end
+
+# PORT: pl-trie.h trie_node
+# DIVERGES (audit D-0453 Q3): `parent` and `children` are integers: a node id in `trie.nodes` (0 is NULL), and for
+# `children` 0 (none), `(id<<1)|1` (a single child: upstream's TRIE_SINGLE_CHILD tag) or `bid<<1` (the block `trie.blocks[bid]`).
+# `chunk` is the chunk the node was allocated in (upstream finds it from `flags>>TN_CHUNK_INDEX_SHIFT`).
+"A node of a trie (pl-trie.h `trie_node`)."
+mutable struct trie_node
+    value::word                                         # value
+    key::word                                           # key
+    parent::Int                                         # the parent's id (0: the root); the free list's link of a freed chunk node
+    children::Int                                       # trie_children
+    flags::UInt32                                       # TN_*
+    chunk::Union{Nothing, trie_node_chunk}              # the chunk of a TN_CHUNKED node
+end
+
+# PORT: pl-indirect.h indirect_table
+# DIVERGES (audit D-0453 Q3): upstream hashes the bytes of the interned indirect (MurmurHash) and compares header and data;
+# here the table holds the values (`values[i]` is upstream's indirect number `i`; the handle is `consTagged(i, tagex)`, as
+# `create_indirect`) in buckets by `gnd_key` (`nothing`: bucket 0), compared with `gnd_equal`. No reference counts
+# (a trie never releases a single indirect; the table dies with `clear_nodes`).
+"The interned indirects of a trie (pl-indirect.h `indirect_table`)."
+mutable struct indirect_table{T}
+    const values::Vector{T}                             # the indirect values, number 1.. = index 1..
+    const buckets::Dict{UInt64, Vector{Int}}            # gnd_key (0 for `nothing`) -> indexes in `values`
+end
+
+# PORT: pl-trie.h trie
+# DIVERGES (audit D-0453 Q3, Q5): `nodes` is the arena of the trie's nodes, id 1 the root (upstream embeds `root`); `blocks`
+# the arena of children blocks (an id >= 1); `free_ids` and `free_blocks` the slots of freed nodes and blocks; no `alloc_pool`,
+# `tid` or `mem.lingering` (TRIE_CONCURRENT, owner TH1); `mem.chunks` is `chunks`; `serial` is the trie's number in
+# `gd.tries` (the blob's payload). `data.worklist`/`IDG`/`predicate` are `Any` slots that TB0/TB1 own; `data.variant` is a node id.
+# `magic`, `references`, `node_count`, `value_count`, `flags` are `Int`/`UInt32`.
+"A trie of terms `T` (pl-trie.h `struct trie`)."
+mutable struct trie{T}
+    symbol::word                                        # the associated symbol (0: none yet)
+    magic::Int32                                        # TRIE_MAGIC
+    references::Int                                     # access count
+    node_count::Int                                     # # nodes
+    value_count::Int                                    # # nodes with a value
+    flags::UInt32                                       # misc flags
+    nodes::Vector{trie_node}                            # root (id 1) and the other nodes
+    blocks::Vector{Union{Nothing, trie_children_block}} # the children blocks
+    free_ids::Vector{Int}                               # node ids to reuse
+    free_blocks::Vector{Int}                            # block ids to reuse
+    indirects::Union{Nothing, indirect_table{T}}        # indirect values
+    clause::word                                        # compiled representation (TR4: always 0 here)
+    chunks::Union{Nothing, trie_node_chunk}             # node chunks
+    lookups::Int                                        # stats.lookups
+    gen_call::Int                                       # stats.gen_call
+    worklist::Any                                       # data.worklist (TB0)
+    variant::Int                                        # data.variant: a node id of the variant trie (TB0)
+    IDG::Any                                            # data.IDG (TB0)
+    predicate::Any                                      # data.predicate (TB0)
+    serial::Int                                         # the trie's number in `gd.tries` (0: not registered)
+end
+
 # PORT: pl-incl.h ClauseChoice
 "A clause choice of terms `T` (pl-incl.h `ClauseChoice`)."
 const ClauseChoice{T} = clause_choice{ClauseRef{T}}
