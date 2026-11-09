@@ -3041,7 +3041,43 @@ _manifest_tr1(T) = begin
         (LK.map_trie_node, Tuple{TR, Int, typeof(_manifest_trie_map)}, false),
         (LK.stat_node, Tuple{LK.trie_stats, TR, Int}, false),
         (LK.stat_trie, Tuple{TR}, false),
-        (LK.trie_table_size, Tuple{TR}, false)
+        (LK.trie_table_size, Tuple{TR}, false),
+        # TR1 B1: the values of the nodes (`release_value` takes the trie since B1), the recorded value `variantRecords` compares
+        (LK.release_value, Tuple{TR, UInt64}, false),
+        (LK.variantRecords, Tuple{LK.record{T}, LK.record{T}}, false),
+        (LK.new_record_value!, Tuple{TR, LK.record{T}}, false),
+        (LK.record_of_value, Tuple{TR, UInt64}, false),
+        (LK.erase_value!, Tuple{TR, UInt64}, false),
+        (LK.intern_value, Tuple{LD, TR, Int}, false),
+        (LK.equal_value, Tuple{TR, UInt64, UInt64}, false),
+        (LK.unify_value, Tuple{LD, TR, Int, UInt64}, false),
+        (LK.put_trie_value, Tuple{LD, TR, Int, Int}, false),
+        (LK.set_trie_value_word, Tuple{TR, Int, UInt64}, false),
+        (LK.set_trie_value, Tuple{LD, TR, Int, Int}, false),
+        (LK.trie_release_value, Tuple{TR, UInt64}, false),
+        (LK.trie_delete, Tuple{TR, Int, Bool}, false),
+        (LK.get_trie_nodes, Tuple{GD, LD, Int}, false),
+        (LK.trie_lookup, Tuple{LD, TR, Int, Int, Bool, Union{Nothing, Vector{Int}}}, false),
+        # TR1 B2: unifying a term with the keys of a node
+        (LK.ukey_state, Tuple{TR, Int}, false),
+        (LK.find_var!, Tuple{LK.ukey_state{T}, Int}, false),
+        (LK.unify_key, Tuple{LD, LK.ukey_state{T}, UInt64}, false),
+        (LK.unify_trie_term, Tuple{LD, TR, Int, Int}, false),
+        # TR1 B3: the predicates and the function trie_insert
+        (
+            LK.trie_insert,
+            Tuple{GD, LD, Int, Int, Int, Bool, Union{Nothing, LK.size_abstract}},
+            false
+        ),
+        (LK.trie_node_handle, Tuple{TR, Int}, false),
+        [
+            (f, Tuple{LD, Int, Int, LK.control_t{T}}, false) for f in (
+                LK.pl_trie_new1_va, LK.pl_is_trie1_va, LK.pl_trie_destroy1_va,
+                LK.pl_trie_insert2_va, LK.pl_trie_insert3_va, LK.pl_trie_insert4_va,
+                LK.pl_trie_insert_abstract3_va, LK.pl_trie_update3_va, LK.pl_trie_lookup3_va,
+                LK.pl_trie_delete3_va, LK.pl_trie_term2_va
+            )
+        ]...
     )
 end
 
@@ -3931,7 +3967,6 @@ const _DISPATCH_MANIFEST_TUPLE = (
     (LK.single_child_code, Tuple{Int}, false),
     (LK.children_block_id, Tuple{Int}, false),
     (LK.block_code, Tuple{Int}, false),
-    (LK.release_value, Tuple{UInt64}, false),
     (LK.child_hash, Tuple{UInt64, Int}, false),
     (LK.block_size, Tuple{Int, Int}, false),
     (LK.sizeof_block, Tuple{LK.trie_children_block}, false),
@@ -3942,6 +3977,7 @@ const _DISPATCH_MANIFEST_TUPLE = (
     (LK.block_append, Tuple{LK.trie_children_block, UInt64, Int}, false),
     (LK.block_copy, Tuple{LK.trie_children_block, LK.trie_children_block, Bool}, false),
     (LK.is_indirect_word, Tuple{UInt64}, false),                   # TR1 A2b
+    (LK.isRecord, Tuple{UInt64}, false),                            # TR1 B1
     # the template database and the boot-image readers (LB4 b1)
     _manifest_gd_template(_M1)...,
     _manifest_gd_template(_M2)...,
