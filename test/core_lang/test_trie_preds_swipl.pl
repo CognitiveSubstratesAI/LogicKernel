@@ -245,3 +245,6 @@ t74(R) :- trie_new(T), findall(I, ( between(1, 50, I), trie_insert(T, f(a, I), I
 t75(R) :- trie_new(T), trie_insert(T, k, f(1, 2)),
     ( trie_lookup(T, k, f(1, Z)) -> R1 = Z ; R1 = no ), ( trie_lookup(T, k, f(2, _)) -> R2 = yes ; R2 = no ),
     ( trie_lookup(T, k, g(_, _)) -> R3 = yes ; R3 = no ), ( trie_lookup(T, k, f(_, _, _)) -> R4 = yes ; R4 = no ), R = [R1, R2, R3, R4].
+
+% t76: the type name of the trie blob (blob/2 reads the name of its PL_blob_t, `trie`; nothing else reads it)
+t76(R) :- trie_new(T), ( blob(T, Ty) -> R = Ty ; R = none ).

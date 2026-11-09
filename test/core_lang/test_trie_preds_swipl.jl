@@ -167,7 +167,7 @@ const _F = _ea("false")
     names = _trie_names()
     expected = String.(readlines(_TRIE_OUT))
     # not a vacuous agreement: the .out has a line per row, and the rows' own evidence is in it
-    @test length(names) >= 76
+    @test length(names) >= 77
     @test length(expected) == length(names) + 1 && expected[1] == "ok"
     @test all(i -> startswith(expected[i + 1], names[i] * " "), eachindex(names))
     @test count(l -> occursin(_codes("permission_error"), l), expected) >= 10
@@ -258,6 +258,7 @@ end
     @test row("t45") == _er("t45", _atoms("v", "v"))
     @test row("t46") == _er("t46", _atoms("v", "w", "no"))
     @test row("t75") == _er("t75", _el([_ei(2), _ea("no"), _ea("no"), _ea("no")]))
+    @test row("t76") == _er("t76", _ea("trie"))                                          # blob(T, Type): the blob type is named `trie` (swipl's)
     # insert/4 and trie_term/2
     @test row("t47") == _er("t47", _ea("a"))
     @test startswith(row("t48"), _head("t48") * "c[45]/2(" * _ei(13) * ",c[91,124,93]/2(" * _ea("a") * ",")
