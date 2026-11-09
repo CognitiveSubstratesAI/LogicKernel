@@ -1,17 +1,43 @@
-# ORIGINAL: TR1's mutant list — no swipl-devel counterpart.   DRAFT (written at the 150k cap by an agent that could not run python or commit
-# outside evidence/): NOT YET VERIFIED. The next agent (1) runs a throwaway `python3 -I` script counting each `old` in its file
-# (must be EXACTLY 1, `new` != `old`), fixes the failures, (2) pins the test lines marked "~" (read the row), (3) moves this file to
-# tools/mutants/TRIE1.py with the header of tools/mutants/PIN1.py (verdict policy, DEFERRED KILL, TARGETS per D-0238), commits on wip/tr1.
-# Rows named by test line are at HEAD 2724a48e of wip/tr1: TW = test/core_lang/test_trie_swipl.jl, TP = test/core_lang/test_trie_preds_swipl.jl.
-# BOOT PATH: TR1-N1/N2 (initTries!, its call in pl-setup.jl) are boot-path: the warm daemon cannot judge them; only `tools/mutate_ci.py one` does (PIN1 part 2, D-0451).
-# Mutants with NO connected row yet (candidates for a new kill row, listed in the hand-back): TR1-C6 (live 2 -> capacity 2), TR1-S2 (the second sweep
-#  condition nfree > node_count), TR1-P3 (prune_trie's mask), TR1-V3 (release_value in trie_insert), TR1-V4 (value_count), TR1-V6 (trie_new's TRIE_CONCURRENT).
-# Equivalents: TR1-A4 (clamp >=), TR1-S4 (sweep_at >=), TR1-X1 (cyclic check depth: see the bounded TR1-X2 for the kill), TR1-W2 (tab.wild loop of a keyed value),
-#  TR1-K3 (trie_term's magic test), TR1-D2 (clear_node CN_ALL chunked branch).
+# ORIGINAL: TR1's mutant list — no swipl-devel counterpart.
+# tools/mutants/TRIE1.py — the mutation battery of TR1, the trie of pl-trie.c ported into src/pl-trie.jl (the trie and its children blocks, node
+# allocation (individual nodes, chunks), the sweep of the chunks, prune/clear/walk/stat, the indirect table, the lookup (ground, indirect,
+# variant, abstracted, cyclic, attributed-variable, the flat lookup/insert), the trie blob and its errors, and the eleven predicates TR1
+# registers: is_trie/1, trie_new/1, trie_destroy/1, trie_insert/2,3,4, `$trie_insert_abstract`/3, trie_update/3, trie_lookup/3, trie_delete/3,
+# trie_term/2) plus the one call that boots it (src/pl-setup.jl). The list pins what is there at the gate of TR1. Run ONCE, in CI
+# (.github/workflows/mutation.yml; locally: tools/mutate.sh run). Format: tools/mutate_drive.py's (as PIN1.py, HF1.py): `id`, `file`, `old`
+# (must occur EXACTLY once), `new`, optional `equivalent` and `targets`.
+# Each id names its KILL, the assertion that must fail (file:line at the commit that counts the lists, see the last line):
+#   TW = test/core_lang/test_trie_swipl.jl (white-box rows on LK.* internals), TP = test/core_lang/test_trie_preds_swipl.jl (the predicate rows:
+#   the answers are swipl's, from test_trie_preds_swipl.out, and the `row("tN")` kill rows by name), TB = test/db/test_boot_image_swipl.jl.
+# TARGETS (audit D-0238): every test file that runs the mutated code and can see its effect: TW and TP for every mutant (the trie code is under
+#   both: TW calls the internals, TP the predicates on the booted database); TR1-N3 and TR1-N4 (a dropped registration) also TB, whose
+#   boot-module predicate rows count the foreign rows the kernel lacks (`_BI_KERNEL_MISSING_FOREIGN`, TB:161). The `TARGETS` variable is the union
+#   (mutate_ci.py plan reads it).
+# VERDICTS: the CI mutation battery runs one fresh process per mutant and its verdicts are authoritative. TR1-N1 and TR1-N2 are BOOT-PATH
+#   mutants (`initTries!` and its call in src/pl-setup.jl:266 run while the database boots, before any test row; `PL_global_data{T}()` copies a
+#   template built once per process, src/gd_template.jl): the warm daemon cannot judge them, only `tools/mutate_ci.py one` (one process per
+#   mutant) or the CI battery does (audit D-0451 item 1, as PIN1 part 2).
+# TIMEOUT: TR1-L1 is the bounded form of the cyclic check, `(compounds == 1000 && add && is_acyclic_cells(ld, l)) || compounds == 5000`: an acyclic
+#   term of depth 1000 is flagged (TW:1038 fails) and the cyclic term still stops, at 5000 compounds, instead of looping. A timeout is NO
+#   verdict, never caught: no mutant of this list may run unbounded.
+# DEFERRED KILL (audit D-0374 item 2): a row declared `equivalent="DEFERRED KILL: ..."` has no killing assertion yet — no test file reads what
+#   the mutant changes (a finding for a test step, not invented here). It must SURVIVE the battery; when a test step adds the row, the declaration goes.
+#   * TR1-V6 (trie_new/1 without TRIE_CONCURRENT): owner TR2, or a TR1 row that sets ld.GD (TW cannot call pl_trie_new1_va: `_query_gd(ld)`
+#     needs ld.GD from a running query, src/pl-comp.jl:4161).
+#   * TR1-V11 (trie_delete/3 does not prune) and TR1-V12 (trie_lookup/3 answers an inner node): owner TR2 ($trie_property / trie_gen read the
+#     arena after a delete) or a TW row that sets ld.GD (the foreign is pl_trie_delete3_va, src/pl-trie.jl:1999); V12 alone is unreachable while deletes prune.
+#   (C6, S2, P3, V3, V4 were DEFERRED in the draft: the rows added after it kill them, TW:348, 542, 632, 1273/1276; B6 by the row t76, TP:261.)
+# EQUIVALENT mutants (declared with their reason, file:line in the `equivalent` text): TR1-A4 (the chunk-size clamp at the maximum), TR1-S4
+#   (sweep_at at kept*2 == the minimum), TR1-X1 (the cyclic check one compound later; the bounded TR1-L1 is its kill), TR1-W2b (the tab.wild loop
+#   of a keyed value, by the gnd_value_key contract), TR1-K3 (trie_term/2's magic test: the range test refuses a destroyed trie's handle),
+#   TR1-D2 (clear_node's CN_ALL chunked branch: clear_nodes resets what it frees).
+# Every `old` was counted EXACTLY once in its file by a python3 -I script at f504d2c2 (the last commit of src/pl-trie.jl and src/pl-setup.jl; the 112
+#   mutants, no Julia ran); `new` != `old`; no duplicate
+#   id. RE-FIT any `old` that `tools/warm.sh fmt` rewraps.
 TW = "test/core_lang/test_trie_swipl.jl"
 TP = "test/core_lang/test_trie_preds_swipl.jl"
-TB = "test/db/test_boot_image_swipl.jl"      # the boot module's predicate rows: a dropped registration changes the foreign-row count (check _BI_KERNEL_MISSING_FOREIGN, ~line 160: TR1 registers 11 system predicates swipl has as foreign rows: the 389 may need a re-count, the dispatcher's gate decides)
-TARGETS = [TW, TP, TB]
+TB = "test/db/test_boot_image_swipl.jl"
+TARGETS = [TW, TP, TB]                       # the union of every mutant's targets (mutate_ci.py plan reads TARGETS)
 F = "src/pl-trie.jl"
 SETUP = "src/pl-setup.jl"
 TT = [TW, TP]
@@ -25,7 +51,7 @@ def m(id, old, new, targets=TT, file=F, eq=None):
 
 
 MUTANTS = [
-    # ---- children (TW _tr_children_rows 192-286, _tr_compaction_rows 292-377)
+    # ---- children (TW _tr_children_rows 192-299, _tr_compaction_rows 301-401)
     m("TR1-C1 single child coded id<<1 (KILL TW children rows: `root.children == 5`)",
       "single_child_code(id::Int)::Int = (id << 1) | 1", "single_child_code(id::Int)::Int = id << 1"),
     m("TR1-C2 block coded (bid<<1)|1 (KILL TW `root.children == 2`, `root.children == LK.block_code(1)`)",
@@ -54,9 +80,9 @@ MUTANTS = [
       "        b.var_mask |= vn < VMASKBITS ? UInt32(1) << (vn - 1) : VMASK_SCAN\n", "        b.var_mask |= vn < VMASKBITS ? UInt32(1) << (vn) : VMASK_SCAN\n"),
     m("TR1-C14 update_var_mask: the attvar bit is vn (KILL TW:383)",
       "        b.attvar_mask |= vn < VMASKBITS ? UInt32(1) << (vn - 1) : VMASK_SCAN\n", "        b.attvar_mask |= vn < VMASKBITS ? UInt32(1) << (vn) : VMASK_SCAN\n"),
-    m("TR1-C15 child_hash: shift 63-bits, a slot past the index (KILL TW:260: child_hash(_tk(12345), 6) is 43, 86 under the mutant, not < 64; TW:266-269: the 9 keys of the 5-bit index hash past slot 32, a BoundsError)",
+    m("TR1-C15 child_hash: shift 63-bits, a slot past the index (KILL TW:260: child_hash(_tk(12345), 6) is 43, 86 under the mutant, not < 64)",
       ">> (64 - bits))", ">> (63 - bits))"),
-    m("TR1-C16 block_find: the probe does not wrap (KILL TW:268-269: keys 36 and 73 both start at slot 31 of a 32-slot index, so 73 lives at slot 1 and get_child(trw, 1, _tk(73)) reads past the index: a BoundsError)",
+    m("TR1-C16 block_find: the probe does not wrap (KILL TW:269: keys 36 and 73 share slot 31 of 32, get_child(trw, 1, _tk(73)) probes past the index)",
       "            b.entries[pos].key == key && return pos\n            h = (h + 1) & mask\n",
       "            b.entries[pos].key == key && return pos\n            h = h + 1\n"),
     m("TR1-C17 next_child!: a dead entry is returned (KILL TW `_tr_keys` after a delete, `!(_tk(15) in _tr_keys(tr, 1))`)",
@@ -65,7 +91,7 @@ MUTANTS = [
       "        return b.count == b.dead\n", "        return b.count == 0\n"),
     m("TR1-C19 get_child: a single child answers whatever the key (KILL TW children rows: `get_child(tr, 1, _tk(11)) == 0`)",
       "        return tr.nodes[child].key == key ? child : 0\n", "        return child\n"),
-    # ---- allocation (TW 385-520)
+    # ---- allocation (TW _tr_concurrent_rows 403, _tr_chunk_rows 444, _tr_sweep_rows 506-551)
     m("TR1-A1 retire_block: never lingers (KILL TW:421, `tr.lingering == [1]`)",
       "    if (tr.flags & TRIE_CONCURRENT) != 0\n        push!(tr.lingering, bid)\n", "    if false\n        push!(tr.lingering, bid)\n"),
     m("TR1-A2 free_lingering_blocks: flag test inverted (KILL TW:432-436 and TW:422)",
@@ -139,7 +165,7 @@ MUTANTS = [
       "n.value != 0 && (n.flags & TN_PRIMARY) != 0 && (stats.values += 1)", "n.value != 0 && (stats.values += 1)"),
     m("TR1-T4 trie_table_size: the root is not a node (KILL TW:744, 753)",
       "= SIZEOF_TRIE + tr.node_count * SIZEOF_TRIE_NODE", "= SIZEOF_TRIE + (tr.node_count - 1) * SIZEOF_TRIE_NODE"),
-    # ---- the indirect table (TW 735-803)
+    # ---- the indirect table (TW _tr_indirect_rows 774-818, _tr_wildcard_rows 820-847)
     m("TR1-I1 a float handle is tagged STRING (KILL TW:778)",
       "    k == NUM_FLOAT && return TAGEX_INDIRECT_FLOAT\n", "    k == NUM_FLOAT && return TAGEX_INDIRECT_STRING\n"),
     m("TR1-I2 intern_indirect: a keyed value is never found again (KILL TW:779, one handle for equal values)",
@@ -154,7 +180,7 @@ MUTANTS = [
       "            false && return consTagged(i, indirect_tagex(tab.values[i]))\n"),
     m("TR1-I4 trie_intern_indirect without add makes a table (KILL TW:807, tr.indirects === nothing)",
       "        add || return word(0)\n        tab = new_indirect_table(T)\n", "        tab = new_indirect_table(T)\n"),
-    # ---- lookup (TW 810-1040)
+    # ---- lookup (TW _tr_lookup_*_rows 849-1080, _tr_insert_flat_rows 1082, _tr_lookup_flat_rows 1137)
     m("TR1-L1 the cyclic check, bounded: an acyclic term of depth 1000 is flagged (KILL TW:1038, rc2 == 1; the cyclic term still stops at 5000 compounds: no hang)",
       "                if compounds == 1000 && add && !is_acyclic_cells(ld, l)\n", "                if (compounds == 1000 && add && is_acyclic_cells(ld, l)) || compounds == 5000\n"),
     m("TR1-X1 the cyclic check at depth 1001 (EQUIVALENT: an infinite term reaches 1001 too, a finite one is acyclic at either depth: same rc, same pruned trie; the bounded kill of the check is TR1-L1)",
@@ -186,7 +212,7 @@ MUTANTS = [
       "            (nvars += 1) > FLAT_MAX_VARS && return (TRIE_LOOKUP_NOT_FLAT, 0)\n", "            (nvars += 1) >= FLAT_MAX_VARS && return (TRIE_LOOKUP_NOT_FLAT, 0)\n"),
     m("TR1-F6 trie_insert_flat: the cells are not restored (KILL TW:1097, the general lookup then sees numbered variables)",
       "    for p in vars\n        ld.gstack[p] = word(0)\n    end\n", "    for p in vars\n        nothing\n    end\n"),
-    # ---- blobs and errors (TW 1157-1220)
+    # ---- blobs and errors (TW _tr_blob_rows 1196, _tr_error_rows 1236)
     m("TR1-B1 trie_symbol makes a new blob each time (KILL TW:1203)",
       "    tr.symbol != 0 && return tr.symbol\n", "    nothing\n"),
     m("TR1-B2 symbol_trie names a destroyed trie (KILL TW:1224)",
@@ -208,7 +234,7 @@ MUTANTS = [
       "    PL_extension(\"trie_term\", 2, pl_trie_term2_va, PL_FA_VARARGS),\n", "", targets=TARGETS),
     m("TR1-N4 trie_update/3 is not registered (KILL TP:231-245 t30-t34, TB)",
       "    PL_extension(\"trie_update\", 3, pl_trie_update3_va, PL_FA_VARARGS),\n", "", targets=TARGETS),
-    # ---- values and the predicates (TP 166-329; the rows are swipl's answers)
+    # ---- values and the predicates (TP 166-340; the rows are swipl's answers; TW _tr_value_rows 1264)
     m("TR1-V1 trie_insert: a first value makes a SET (ISMAP/ISSET swapped) (KILL TP:213 t14, TP:220 t16, TP:221 t17)",
       "        tr.flags |= Value != 0 ? TRIE_ISMAP : TRIE_ISSET\n", "        tr.flags |= Value != 0 ? TRIE_ISSET : TRIE_ISMAP\n"),
     m("TR1-V2 trie_insert: the permission_error(insert, trie) is dropped (KILL TP:213 t14, TP:221 t17)",
@@ -263,7 +289,7 @@ MUTANTS = [
       "    if isRecord(v1) && isRecord(v2)\n", "    if isRecord(v1) || isRecord(v2)\n"),
     m("TR1-V22 unify_value: the reserved value is read as a plain atom (KILL TP:248 t36, TP:225 t18: the set value)",
       "        v = value == ATOM_trienode ? mk_reserved_symbol(T, :trienode) :\n", "        v = false ? mk_reserved_symbol(T, :trienode) :\n"),
-    # ---- unify_key (TP 253-273 t41-t52, t71-t73)
+    # ---- unify_key (TP t41-t52, t71-t73; TW _tr_unify_rows 1283)
     m("TR1-U1 unify_key: a repeated variable is not unified (KILL TW:1296: f(X, X) against f(1, 2) must answer (false, 0))",
       "                unify_ptrs_cells(ld, p, st.vars[index]) || return BOOLEX_FALSE\n", "                unify_ptrs_cells(ld, p, st.vars[index])\n"),
     m("TR1-U2 unify_key: a POP key pops one too many (KILL TP:263 t48, TP:264 t50)",
