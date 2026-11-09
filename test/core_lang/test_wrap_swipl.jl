@@ -149,6 +149,8 @@ _el(items::Vector{String}) =
     foldr((x, acc) -> "c[91,124,93]/2($x,$acc)", items; init="nil")
 _ec(f::String, args::String...) = "c" * _codes(f) * "/$(length(args))(" * join(args, ",") * ")"
 _er(name::String, answer::String) = "$name " * _ec(name, answer)
+_ed(xs::String...) = foldl((a, b) -> _ec("-", a, b), xs)        # `X1-X2-...-Xn` (left nested, as `-` is yfx)
+_ep(m::String, n::String, a::Integer) = _ec(":", _ea(m), _ec("/", _ea(n), _ei(a)))   # `m:n/a`
 
 @testset "WRAP1: wrappers, closures and their predicates == swipl's answers (the .out), through a program" begin
     names = _wrap_names()
@@ -250,6 +252,74 @@ end
             _el([_ea("w")])
         )
     )
+    # '$wrapped_implementation'/3: the goal as seen from the wrapper `Name` (the answers of the predicate and the wrappers inside it),
+    # a name without wrapper fails, a nullary predicate: Y-L2-Y2-L1-Q-Z = [a,b]-[w1]-[a,b]-[]-none-true
+    @test row("t6") == _er(
+        "t6",
+        _ed(
+            _el([_ea("a"), _ea("b")]),
+            _el([_ea("w1")]),
+            _el([_ea("a"), _ea("b")]),
+            "nil",
+            _ea("none"),
+            _ea("true")
+        )
+    )
+    # '$closure_predicate'/2 gives `user:p7/1` and `m7:p7m/1` (GP_QUALIFY | GP_NAMEARITY), and a type error for a non-closure
+    @test row("t7") == _er(
+        "t7",
+        _ec(
+            "-",
+            _el([_ep("user", "p7", 1), _ep("m7", "p7m", 1)]),
+            _ec("type_error", _ea("closure"), _ea("foo"))
+        )
+    )
+    # exceptions through a wrapper: outside, caught by the wrapper, rethrown
+    @test row("t9") == _er(
+        "t9",
+        _ed(
+            _ea("oops"),
+            _ea("succeeded"),
+            _ec("again", _ea("oops_c")),
+            _el([_ec("caught", _ea("oops_b")), _ec("rethrow", _ea("oops_c"))])
+        )
+    )
+    # a wrapper that fails, one that never calls the wrapped goal, a wrapped goal that fails
+    @test row("t10") == _er(
+        "t10",
+        _ed(_ea("no"), _ea("yes"), _ea("no"), _el([_ea("skipped"), _ea("before")]))
+    )
+    # an undefined wrapped predicate: the existence error names the WRAPPED predicate, the wrapper never ran
+    @test row("t11") == _er(
+        "t11",
+        _ec(
+            "-",
+            _ec("existence_error", _ea("procedure"), _ec("/", _ea("undef11"), _ei(1))),
+            "nil"
+        )
+    )
+    # call/1 of the closure compound runs, call/2 of it is a type error `callable`
+    @test row("t13") == _er("t13", _el([_ea("callable")]))
+    # current_predicate_wrapper/4 lists the names (outermost first), `wrapped(_)` is no property, an unwrap shortens the list
+    @test row("t16") == _er(
+        "t16",
+        _ed(_el([_ea("w2"), _ea("w1")]), "nil", _el([_ea("w2")]))
+    )
+    # a wrapped two-clause predicate with `[]` and `[_|_]` first arguments (S_LIST through the wrapped supervisor's side table)
+    @test row("t19") == _er(
+        "t19",
+        _ec("-", _ec("-", _ea("nil"), _ea("cons")), _el([_ea("w"), _ea("w")]))
+    )
+    # unwrap_predicate/2 retracts the wrapper's clause: the clauses of `$wrap$p20` left after the first and the second unwrap
+    @test row("t20") == _er("t20", _ec("-", _ei(1), _ei(0)))
+    # a clause reference is a blob but no closure: a type error `callable` for call/1 of it, of a compound named by it, and with call/2
+    @test row("t21") == _er(
+        "t21", _ed(_ea("callable"), _ea("callable"), _ea("callable"))
+    )
+    # NO ROW YET (DEFERRED, owner WRAP1-test, blocked on DBG1): the frame S_CALLWRAPPER runs the wrapper clause in must report the WRAPPER's
+    # predicate. swipl 10.1.20 answers `wrap_predicate(p(_), w, W, (prolog_current_frame(F), prolog_frame_attribute(F, predicate_indicator, PI),
+    # lg(PI), W)), p(_)` with PI = '$wrap$p'/1 (user module: unqualified), but the kernel has no prolog_frame_attribute/3
+    # (docs/r2_owners.tsv:121, owner DBG1): the row is written when DBG1 lands.
     # the printed form of a closure
     @test occursin(_codes("call(<closure>(p15/1)(7))"), row("t15"))
     @test occursin(_codes("call(<closure>(m15:p15m/1)(8))"), row("t15"))
@@ -369,4 +439,47 @@ end
         proc3 = LK.get_procedure_resolve_head(gd, ld, put(head("wb_nowhere")), 0)
         @test proc3 !== nothing && !LK.isDefinedProcedure(gd, proc3)
     end
+end
+
+# A QUERY opened on a wrapped non-deterministic foreign predicate (the program rows t18 reach `deep_backtrack`: the retry comes
+# from a later frame; a query on between/3 itself retries through `shallow_backtrack` with the foreign frame as `FR`,
+# test/core_lang/test_between_swipl.jl). The wrapper is the bare closure `W` (a last call: its frame takes the closure's place, so
+# the retry's `FR` is the foreign frame): both retry sites re-derive the foreign supervisor by `innermost_supervisor`
+# (src/pl-wam.jl, the lines marked WRAP1), not by `DEF.codes` (the wrapper's code).
+@testset "WRAP1: a query on a wrapped between/3 retries through the foreign supervisor (shallow_backtrack)" begin
+    f = tempname() * ".pl"
+    write(f, "wb_nd(ok) :- wrap_predicate(system:between(_, _, _), n1, W, W).\n")
+    gd, ld, st = _wt_load(_WT, f)
+    rm(f)
+    @test st == "ok"
+    @test _wt_row(gd, ld, "wb_nd") == "wb_nd " * _ec("wb_nd", _ea("ok"))
+    proc = LK.isCurrentProcedure(sym_key(lk_sym(_WT, :between)), 3, LK.MODULE_system(gd))
+    @test proc !== nothing
+    d = proc.definition
+    @test LK.isCallWrapper(d.codes[LK.skipWrapperPrefix(d.codes)])          # wrapped: its supervisor is the wrapper's
+    pvm = LK.PutVarMap()
+    fid = LK.PL_open_foreign_frame(ld)
+    a = LK.PL_new_term_refs(ld, 3)
+    LK.putSlotValue!(ld, a + 1, mk_gnd(_WT, Int64(1)), pvm)
+    LK.putSlotValue!(ld, a + 2, mk_gnd(_WT, Int64(3)), pvm)
+    LK.putSlotValue!(ld, a + 3, mk_var(_WT, LK.fresh_var_keys!(1)), pvm)
+    qid = LK.PL_open_query(
+        gd, ld, nothing, LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS, proc, a
+    )
+    got = Any[]
+    rcs = Int[]
+    while length(got) < 10
+        rc = LK.PL_next_solution(gd, ld, qid)
+        push!(rcs, rc)
+        (rc == LK.PL_S_TRUE || rc == LK.PL_S_LAST) || break
+        push!(got, lk_value(lk_answers(ld, a + 2)[1]))
+        rc == LK.PL_S_LAST && break
+    end
+    LK.PL_close_query(ld, qid)
+    LK.PL_close_foreign_frame(ld, fid)
+    codes, _ = LK.innermost_supervisor(gd, d)                               # after the first call: S_WRAP made it
+    @test codes !== d.codes && codes[1] == LK.I_FOPENNDET                   # the foreign supervisor, inside the wrapper
+    @test got == [1, 2, 3]
+    @test !(LK.PL_S_EXCEPTION in rcs)
+    @test LK.live_states(ld) == 0
 end

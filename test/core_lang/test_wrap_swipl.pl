@@ -236,3 +236,38 @@ t18(R) :-
     ( Ok == wrapped -> findall(X, between(1, 3, X), Xs), unwrap_predicate(system:between/3, w) ; Xs = none ),
     logs(L),
     R = Ok-Xs-L.
+
+% t19: a wrapped two-clause predicate whose first arguments are `[]` and `[_|_]` (the supervisor tests them with S_LIST: its
+% operands index the wrapped supervisor's side table, as S_TRUSTME's); both clauses are reached through the wrapper
+p19([], nil).
+p19([_|_], cons).
+t19(R) :-
+    logs(_),
+    wrap_predicate(p19(_, _), w, W, (lg(w), W)),
+    p19([], A),
+    p19([x], B),
+    logs(L),
+    R = A-B-L.
+
+% t20: unwrap_predicate/2 retracts the wrapper's clause: the `$wrap$p20` clauses left after each unwrap (both wrappers' clauses
+% live in the one predicate `$wrap$p20`)
+p20(1).
+t20(R) :-
+    wrap_predicate(p20(_), w1, W1, (lg(w1), W1)),
+    wrap_predicate(p20(_), w2, W2, (lg(w2), W2)),
+    unwrap_predicate(p20/1, w2),
+    ( predicate_property('$wrap$p20'(_), number_of_clauses(N1)) -> true ; N1 = none ),
+    unwrap_predicate(p20/1, w1),
+    ( predicate_property('$wrap$p20'(_), number_of_clauses(N0)) -> true ; N0 = none ),
+    R = N1-N0.
+
+% t21: a goal whose name is a blob that is NOT a closure (a clause reference): a type error, as an atom (call/1), as a compound
+% (call/1) and as a compound with call/2's extra argument; only the error's type is recorded (the culprit's text is an address)
+t21(R) :-
+    assertz(z21(1), Ref),
+    compound_name_arguments(G, Ref, [x]),
+    catch(call(Ref), error(type_error(T1, _), _), true),
+    catch(call(G), error(type_error(T2, _), _), true),
+    catch(call(G, y), error(type_error(T3, _), _), true),
+    erase(Ref),
+    R = T1-T2-T3.
