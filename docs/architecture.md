@@ -7256,6 +7256,53 @@ run when this block was written; every claim is UNVERIFIED until the gate.
 
 Tests: test/core_lang/test_wrap_swipl.jl (+ .pl/.out), pins from the oracle swipl 10.1.20 (18168e62). Mutation list: tools/mutants/WRAP1.py is a LATER step.
 
+## TAB1 TR1 — tries: pl-trie.c's trie, its children blocks, node allocation, the indirect table, the lookups and the trie blob (part A; swipl-devel 18168e62, edit-only: NOTHING was parsed, loaded or run when this block was written, the gate decides)
+
+UPSTREAM: swipl-devel 18168e629eab — `src/pl-trie.c`, `src/pl-trie.h`, `src/pl-indirect.c` (the indirect table), `src/pl-indirect.h` (`indirect_table`), `src/pl-tabling.c` (`tbl_release_node`, a refusal) and `src/pl-termwalk.c`
+(the `AC_TERM_WALK_POP` agenda). Ledger line (PIN1): pl-trie.c is a FIRST port at the pin, no earlier pin; the `# UPSTREAM:` lines of src/pl-trie.jl (pl-trie.c, pl-trie.h, pl-indirect.c, pl-tabling.c) and of src/pl-incl.jl
+(pl-trie.h, pl-indirect.h) cite 18168e62. Design and line ranges: lk-channel evidence/TAB1/tr1_state.md and tr1_partA_status.md (audit D-0453 Q3, Q5).
+
+Part A is the algorithm file and its records; part B (the PRED_IMPLs `trie_new/1`, `trie_destroy/1`, `is_trie/1`, `trie_insert/2,3,4`, `trie_update/3`, `trie_delete/3`, `'$trie_insert_abstract'/3`, `trie_lookup/3`,
+`trie_term/2`, `unify_trie_term`/`unify_key`, the value helpers and the registration table) is NOT here yet.
+- **Ported:** src/pl-incl.jl (TN_*, TRIE_*, TRIE_LOOKUP_*, TAGEX_* of the tries, `trie_child`, `trie_children_block`, `trie_node_chunk`, `trie_node`, `indirect_table`, `trie`); src/pl-trie.jl (`trie_create`, `trie_destroy`, `trie_empty`,
+  `trie_empty_take`, `trie_clean`, the children and blocks, node allocation in both modes, `clear_node`, `prune_node`, `prune_trie`, `insert_child`, `follow_node`, `prune_error`, the indirect table, `trie_lookup_abstract`,
+  `trie_lookup_flat`, `trie_insert_flat`, `is_ground_trie_node`, `map_trie_node`, `stat_node`, `stat_trie`, `trie_table_size`, the trie blob and `get_trie`); src/pl-termwalk.jl (`cell_agenda_P`: `initCellAgenda_P`, `nextCellAgenda_P!`,
+  `pushWorkCellAgenda_P!`, `pushWorkCellAgenda_P0!`, `clearCellAgenda_P!`); src/pl-global.jl (`tries`) and src/pl-setup.jl (`initTries!` before `initWrap!`, pl-setup.c:149).
+- **DIVERGES (representation only unless said), each owner TR1 unless named:**
+  1. **Arena ids** (audit D-0453 Q3): a node, a children block and a node chunk are Julia records; a node is named by its id in `trie.nodes` (id 1 the root, 0 upstream's NULL), a block by its id in `trie.blocks`, and
+     `trie_node.children` holds `0` (none), `(id<<1)|1` (a single child, upstream's TRIE_SINGLE_CHILD tag) or `bid<<1` (a block): `single_child_code`, `children_block_id`, `block_code` (src/pl-trie.jl:110-114; records
+     src/pl-incl.jl:1353-1445). The positions in a block are 1-based, `block_find` returns 0 where upstream returns -1 (src/pl-trie.jl:268), `child_hash` is the 64-bit multiplicative hash on `UInt64`. A freed chunk node stays in the arena on the head
+     chunk's free list (linked through `parent` as upstream), a freed individual node's id goes on `trie.free_ids` (src/pl-trie.jl:612, :672).
+  2. **No atom reference counts and no atom-GC** (audit D-0453 Q5): `acquire_key`, `release_key`, `mark_new_key`, `register_chunk_keys`, `release_chunk_keys`, `markAtomsInTries`, `freeZombieTrieChunks` and the global chunk
+     list (`link_chunk`, `unlink_chunk`, `gprev`, `gnext`, CHUNK_ZOMBIE handling) are left out; `CHUNK_ZOMBIE` and `CHUNK_REGISTERED` are declared and never set (src/pl-trie.jl:55-60). The chunk bookkeeping that stays
+     (`used`, `live`, `free`, `nfree`, `sweep_at`, `bytes`) is what the free-list discipline and `stat_trie`'s sizes need. Removal condition: an atom-GC step.
+  3. **No locks** (owner TH1): `lock_children` and `unlock_children` are left out; `TRIE_CONCURRENT` (src/pl-incl.jl:1307) is kept because it decides how nodes are allocated (individually, no chunks: `trie_new/1` sets it) and whether a replaced
+     block lingers (`trie.lingering`, freed by `free_lingering_blocks`, src/pl-trie.jl:376, :387).
+  4. **Refusals by name** (`TrieRefusal(what, owner)`, src/pl-trie.jl:95, a thrown record): `tbl_release_node` (owner TB1, reached only for TRIE_ISTABLE and TRIE_ISVARIANT tries, :152); `trie_discard_nodes`, `trie_restore_nodes`, a TRIE_DISCARDED
+     trie in `trie_ensure_nodes` and a compiled clause in `trie_discard_clause` (owner TR4, :164-181); an attributed variable in `trie_lookup_abstract` (owner TR3, :1119: the lookup restores what it numbered, prunes what it added, then throws,
+     where swipl without O_TRIE_ATTVAR returns TRIE_LOOKUP_CONTAINS_ATTVAR); O_PLMT regions (`acquire_trie`, `release_trie`, `tid`, the alloc pool; owner TH1). `release_value` is a no-op (atoms are not counted; record and trie-pointer values are part B / TB1).
+  5. **`get_trie_from_node` is left out**: a node does not point to its trie, so `prune_node` takes the trie as an argument (src/pl-trie.jl:794), as every function that upstream gives a node.
+  6. **`initTries!` registers the blob only** (src/pl-trie.jl:1367): the mutex stripes are TH1, the procedure lookups at the end of upstream's `initTries` are TR2 and TB1. The blob (`trie_blob`, :1360, NOCOPY, not unique) has no
+     release, write, save or load slots; a trie is a record in `gd.tries` and the blob's payload is its serial (as `closure_refs`).
+  7. **The indirect table** (pl-indirect.c; `indirect_table`, src/pl-incl.jl:1412, functions src/pl-trie.jl:~903-975): upstream hashes the bytes of an interned float, bigint or string (MurmurHash) and compares header and data; the table here
+     holds the VALUES in a per-trie vector, found through buckets keyed by `gnd_key` and compared with `gnd_equal` (the type's identity, so equal values intern to one handle and `1` and `1.0` do not), and a value whose `gnd_key` is `nothing`
+     is a WILDCARD held in the `wild` field: a lookup of any value also searches `wild`, and a lookup of a wildcard searches every value (`indirect_table.wild`). The handle is `consTagged(index, tagex)` with the tagex by `number_kind`
+     (float, string, else integer); `extern_indirect` returns the value, not a global-stack indirect; no reference counts (a trie never releases a single indirect; `destroy_indirect_table` drops the table).
+  8. **The lookups on locations** (src/pl-trie.jl:992-1270): `trie_lookup_abstract(ld, tr, node, k, add, abstraction, vars)` and `trie_lookup_flat` take locations (a global position, or `-i` for slot `i`), not `Word*`, dereferenced by
+     `trie_deref` (its own dereference: a numbered-variable cell is final); the abstraction parameter is named `abstraction` because `abstract` is a Julia keyword; the results are TUPLES, `(rc, node)` for `trie_lookup_abstract` and `trie_insert_flat`,
+     `(rc, start, node)` for `trie_lookup_flat` (`rc` 1, 0, or the TRIE_* code; upstream returns the int and fills `*nodep`/`*startp`). `vars` is a `Vector{Int}` of locations (a slot's variable is never unbound, so position 0 writes nothing).
+     `trie_lookup_flat` takes the databases because the names of the module and of the predicate are read from them. `map_trie_node`'s function returns `nothing` to go on, `stat_trie` returns the statistics (upstream fills `*stats`).
+  9. **`stat_trie` counts upstream's bytes**, from `SIZEOF_TRIE_NODE` = 40, `SIZEOF_TRIE` = 152, `SIZEOF_TRIE_CHILD` = 16, `SIZEOF_TRIE_CHILDREN_BLOCK` = 32 and the chunk header 72 (a C file copying the pl-trie.h structs measured them), not what the records take.
+  10. **`trie{T}` has three `Nothing`-typed slots** (`worklist`, `IDG`, `predicate`, src/pl-incl.jl:1440-1447): TB0 owns their record types and widens them at its merge (each carries a `# TB0-MERGE:` comment naming the type), a field typed `Any` fails the gate of nonconcrete fields.
+  11. **`cell_agenda_P`** (src/pl-termwalk.jl:203, `nextCellAgenda_P!` :228): upstream's `term_agenda_P` (`AC_TERM_WALK_POP`) on the cells, with the POP count as the second result of `nextCellAgenda_P!`; the src/pl-termwalk.jl header names the variant.
+- **Left out / not here (each to its owner):** the PRED_IMPLs and value helpers (TR1 part B); compiled tries and clauses, `trie_discard_nodes` (TR4); attributed variables in keys (TR3); `tbl_release_node`, trie-pointer and record values (TB1); the procedure lookups and the mutex stripes (TR2, TH1);
+  the unwrapped `get_trie_from_node` (item 5).
+- **ORIGINAL (no upstream counterpart):** `TrieRefusal`, the arena helpers (`block_at`, `new_node_slot!`, `free_block`), `trie_deref`, `indirect_tagex`, `is_indirect_word`, `trie_stats`'s `mutable struct`, the LK-only white-box rows of
+  test/core_lang/test_trie_swipl.jl.
+- **Mermaid graph:** the code graph above is GENERATED (tools/port_check.jl `code_graph`, `--write-inventory`, checked everywhere): the node `pl_trie` and its edges come with the next regeneration at the gate; docs/port_inventory.md likewise.
+
+Tests: test/core_lang/test_trie_swipl.jl (white-box rows, part A; the swipl-compared rows are part B). Manifest: `_manifest_tr1` in test/static_analysis_manifest.jl.
+
 ## AUTOLOAD1 (A1, A4, Q3) — `ld` in trapUndefined, the `autoload` flag setter, the loud boot-session error (R2, audit D-0387 item 3, edit-only: nothing was compiled when this was written; the gate decides)
 
 UPSTREAM: swipl-devel cbf4e1896275 — pl-proc.c (`trapUndefined`, :3008-3063), pl-wam.c (`getProcDefinedDefinition`, :1731-1741),
