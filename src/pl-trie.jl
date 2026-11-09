@@ -1818,3 +1818,259 @@ function unify_trie_term(
     end
     return (true, parent)
 end
+
+# ---- THE PREDICATES (pl-trie.c PRED_IMPLs of TR1) (part B) ----
+
+# PORT: pl-trie.c trie_insert
+# DIVERGES: the database and the local data are arguments; `Value` is a term reference or 0 (upstream's NULL); the result is
+# `(inserted, node id)` (upstream: the bool and `*nodep`); `abstraction` is the `size_abstract` or `nothing`; the permission errors
+# are `PL_error` with `ERR_PERMISSION`; `acquire_key` (the reference count of an atom) is a no-op, see the file header, and a new
+# record that equals the old value is erased as upstream does (`PL_erase`).
+"""
+    trie_insert(gd, ld, Trie, Key, Value, update, abstraction) -> (inserted, node)
+
+Add the term `Key` with the optional `Value` (0: none) to the trie `Trie` and give the node; with `update` an existing different value
+is replaced, else it is a permission error (pl-trie.c).
+"""
+function trie_insert(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, Trie::term_t, Key::term_t, Value::term_t,
+    update::Bool, abstraction::Union{Nothing, size_abstract}
+)::Tuple{Bool, Int} where {T}
+    tr = get_trie_nodes(gd, ld, Trie)
+    tr === nothing && return (false, 0)
+
+    if (tr.flags & (TRIE_ISMAP | TRIE_ISSET)) == 0
+        tr.flags |= Value != 0 ? TRIE_ISMAP : TRIE_ISSET
+    elseif (Value != 0 && (tr.flags & TRIE_ISMAP) == 0) ||
+           (Value == 0 && (tr.flags & TRIE_ISSET) == 0)
+        PL_error(ld, "", 0, "", ERR_PERMISSION, mk_sym(T, :insert), mk_sym(T, :trie), Trie)
+        return (false, 0)
+    end
+
+    rc, nid = trie_lookup_abstract(ld, tr, 0, -(Key + 1), true, abstraction, nothing)
+    rc == 1 || return (trie_error(ld, rc, Key), 0)
+
+    val = intern_value(ld, tr, Value)
+    n = tr.nodes[nid]
+    if n.value != 0
+        if update
+            if !equal_value(tr, n.value, val)
+                old = n.value
+                n.value = val
+                n.flags |= TN_PRIMARY
+                release_value(tr, old)
+                trie_discard_clause(tr)
+            elseif isRecord(val)
+                erase_value!(tr, val)
+            end
+            return (true, nid)
+        else
+            if !equal_value(tr, n.value, val)
+                PL_error(
+                    ld, "", 0, "", ERR_PERMISSION, mk_sym(T, :modify), mk_sym(T, :trie_key), Key
+                )
+            end
+            isRecord(val) && erase_value!(tr, val)
+            return (false, nid)
+        end
+    end
+    n.value = val
+    n.flags |= TN_PRIMARY
+    tr.value_count += 1
+    trie_discard_clause(tr)
+    return (true, nid)
+end
+
+# ORIGINAL: the node handle `trie_insert/4` gives and `trie_term/2` takes. Upstream's handle is the node POINTER
+# (`PL_unify_pointer`); the kernel has no `PL_unify_pointer` and a node is an id in `tr.nodes`, so the handle is the integer
+# `(trie's serial << 32) | node id`.
+"The integer handle of node `nid` of `tr` (`trie_insert/4`, `trie_term/2`)."
+trie_node_handle(tr::trie{T}, nid::Int)::Int where {T} = (tr.serial << 32) | nid
+
+# PORT: pl-trie.c trie_new as pl_trie_new1_va
+# (PRED_IMPL("trie_new", 1, trie_new, 0))
+# DIVERGES: the symbol is not registered and unregistered (`PL_unregister_atom`): a trie lives as long as `gd.tries`.
+"`trie_new(-Trie)`: create a new trie (pl-trie.c)."
+function pl_trie_new1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    gd = _query_gd(ld)
+    tr = trie_create(T)
+    tr.flags |= TRIE_CONCURRENT
+    return unify_trie(gd, ld, PL__t0, tr) ? FTRUE : FFALSE
+end
+
+# PORT: pl-trie.c is_trie as pl_is_trie1_va
+# (PRED_IMPL("is_trie", 1, is_trie, 0))
+# DIVERGES: `get_trie_noex` is `PL_get_blob` with the type test.
+"`is_trie(@Trie)`: `Trie` is a trie that was not destroyed (pl-trie.c)."
+function pl_is_trie1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    gd = _query_gd(ld)
+    tr = get_trie_noex(gd, ld, PL__t0)
+    return (tr !== nothing && tr.magic == TRIE_MAGIC) ? FTRUE : FFALSE
+end
+
+# PORT: pl-trie.c trie_destroy as pl_trie_destroy1_va
+# (PRED_IMPL("trie_destroy", 1, trie_destroy, 0))
+"`trie_destroy(+Trie)`: destroy `Trie` and its nodes (pl-trie.c)."
+function pl_trie_destroy1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    gd = _query_gd(ld)
+    tr = get_trie(gd, ld, PL__t0)
+    tr === nothing && return FFALSE
+    tr.magic = TRIE_CMAGIC
+    trie_empty(tr)
+    return FTRUE
+end
+
+# PORT: pl-trie.c trie_insert as pl_trie_insert3_va
+# (PRED_IMPL("trie_insert", 3, trie_insert, 0))
+"`trie_insert(+Trie, +Key, +Value)`: add `Key` with `Value`; fails when it is there with that value, permission error when with another (pl-trie.c)."
+function pl_trie_insert3_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    gd = _query_gd(ld)
+    A1, A2, A3 = PL__t0, PL__t0 + 1, PL__t0 + 2
+    rc, _ = trie_insert(gd, ld, A1, A2, A3, false, nothing)
+    return rc ? FTRUE : FFALSE
+end
+
+# PORT: pl-trie.c trie_insert as pl_trie_insert2_va
+# (PRED_IMPL("trie_insert", 2, trie_insert, 0))
+"`trie_insert(+Trie, +Key)`: add `Key` to the set; fails when it is there (pl-trie.c)."
+function pl_trie_insert2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    gd = _query_gd(ld)
+    A1, A2 = PL__t0, PL__t0 + 1
+    rc, _ = trie_insert(gd, ld, A1, A2, 0, false, nothing)
+    return rc ? FTRUE : FFALSE
+end
+
+# PORT: pl-trie.c trie_insert_abstract as pl_trie_insert_abstract3_va
+# (PRED_IMPL("$trie_insert_abstract", 3, trie_insert_abstract, 0))
+"`'\$trie_insert_abstract'(+Trie, +Size, +Key)`: insert the size-abstracted version of `Key` (pl-trie.c)."
+function pl_trie_insert_abstract3_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    gd = _query_gd(ld)
+    A1, A2, A3 = PL__t0, PL__t0 + 1, PL__t0 + 2
+    sz = PL_get_size_ex(ld, A2)
+    sz === nothing && return FFALSE
+    rc, _ = trie_insert(gd, ld, A1, A3, 0, false, size_abstract(1, sz))
+    return rc ? FTRUE : FFALSE
+end
+
+# PORT: pl-trie.c trie_update as pl_trie_update3_va
+# (PRED_IMPL("trie_update", 3, trie_update, 0))
+"`trie_update(+Trie, +Key, +Value)`: as `trie_insert/3` but replace the value of `Key` (pl-trie.c)."
+function pl_trie_update3_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    gd = _query_gd(ld)
+    A1, A2, A3 = PL__t0, PL__t0 + 1, PL__t0 + 2
+    rc, _ = trie_insert(gd, ld, A1, A2, A3, true, nothing)
+    return rc ? FTRUE : FFALSE
+end
+
+# PORT: pl-trie.c trie_insert as pl_trie_insert4_va
+# (PRED_IMPL("trie_insert", 4, trie_insert, 0))
+# DIVERGES: the handle is the integer `trie_node_handle` (upstream: `PL_unify_pointer`).
+"`trie_insert(+Trie, +Term, +Value, -Handle)`: add `Term` and unify `Handle` with a handle of its node (pl-trie.c)."
+function pl_trie_insert4_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    gd = _query_gd(ld)
+    A1, A2, A3, A4 = PL__t0, PL__t0 + 1, PL__t0 + 2, PL__t0 + 3
+    rc, nid = trie_insert(gd, ld, A1, A2, A3, false, nothing)
+    rc || return FFALSE
+    tr = get_trie_noex(gd, ld, A1)::trie{T}
+    return PL_unify_integer(ld, A4, trie_node_handle(tr, nid)) ? FTRUE : FFALSE
+end
+
+# PORT: pl-trie.c trie_delete as pl_trie_delete3_va
+# (PRED_IMPL("trie_delete", 3, trie_delete, 0))
+"`trie_delete(+Trie, +Key, ?Value)`: remove `Key` if its value unifies with `Value` (pl-trie.c)."
+function pl_trie_delete3_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    gd = _query_gd(ld)
+    A1, A2, A3 = PL__t0, PL__t0 + 1, PL__t0 + 2
+    tr = get_trie_nodes(gd, ld, A1)
+    tr === nothing && return FFALSE
+
+    rc, nid = trie_lookup(ld, tr, 0, -(A2 + 1), false, nothing)
+    if rc == 1
+        v = tr.nodes[nid].value
+        if v != 0 && unify_value(ld, tr, A3, v)
+            trie_delete(tr, nid, true)
+            return FTRUE
+        end
+        return FFALSE
+    end
+    return trie_error(ld, rc, A2) ? FTRUE : FFALSE
+end
+
+# PORT: pl-trie.c trie_lookup as pl_trie_lookup3_va
+# (PRED_IMPL("trie_lookup", 3, trie_lookup, 0))
+"`trie_lookup(+Trie, +Key, -Value)`: `Value` is the value of `Key` in `Trie` (pl-trie.c)."
+function pl_trie_lookup3_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    gd = _query_gd(ld)
+    A1, A2, A3 = PL__t0, PL__t0 + 1, PL__t0 + 2
+    tr = get_trie_nodes(gd, ld, A1)
+    tr === nothing && return FFALSE
+
+    rc, nid = trie_lookup(ld, tr, 0, -(A2 + 1), false, nothing)
+    if rc == 1
+        v = tr.nodes[nid].value
+        return (v != 0 && unify_value(ld, tr, A3, v)) ? FTRUE : FFALSE
+    end
+    return trie_error(ld, rc, A2) ? FTRUE : FFALSE
+end
+
+# PORT: pl-trie.c trie_term as pl_trie_term2_va
+# (PRED_IMPL("trie_term", 2, trie_term, 0))
+# DIVERGES: the handle is the integer of `trie_node_handle`, read with `PL_get_int64_ex` (upstream: `PL_get_pointer_ex`); a
+# handle naming no live trie or no node is an `existence_error(trie_node, Handle)` (upstream dereferences the pointer).
+"`trie_term(+Handle, -Term)`: retrieve the term of a handle `trie_insert/4` returned (pl-trie.c)."
+function pl_trie_term2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    gd = _query_gd(ld)
+    A1, A2 = PL__t0, PL__t0 + 1
+    h = PL_get_int64_ex(ld, A1)
+    h === nothing && return FFALSE
+    serial = h >> 32
+    nid = h & 0xffffffff
+    tr = (1 <= serial <= length(gd.tries)) ? gd.tries[serial] : nothing
+    if tr === nothing || tr.magic != TRIE_MAGIC || !(1 <= nid <= length(tr.nodes))
+        PL_error(ld, ERR_EXISTENCE, mk_sym(T, :trie_node), A1)
+        return FFALSE
+    end
+    rc, _ = unify_trie_term(ld, tr, nid, A2)
+    return rc ? FTRUE : FFALSE
+end
+
+# PORT: pl-trie.c BeginPredDefs as PL_predicates_from_trie
+# DIVERGES: the entries TR1 ports only. `trie_gen/2,3`, `$trie_gen_node/3`, `$trie_property/2`, `trie_insert_insert/lookup_gen/
+# lookup_delete` are deferred to TR2, `$trie_compile/2` and `trie_gen_compiled/2,3` to TR4; the registration order of upstream's
+# table is kept for the entries here.
+"pl-trie.c's registration table (`BeginPredDefs(trie)`): the ported entries."
+const PL_predicates_from_trie = (
+    PL_extension("is_trie", 1, pl_is_trie1_va, PL_FA_VARARGS),
+    PL_extension("trie_new", 1, pl_trie_new1_va, PL_FA_VARARGS),
+    PL_extension("trie_destroy", 1, pl_trie_destroy1_va, PL_FA_VARARGS),
+    PL_extension("trie_insert", 2, pl_trie_insert2_va, PL_FA_VARARGS),
+    PL_extension("trie_insert", 3, pl_trie_insert3_va, PL_FA_VARARGS),
+    PL_extension("trie_insert", 4, pl_trie_insert4_va, PL_FA_VARARGS),
+    PL_extension("\$trie_insert_abstract", 3, pl_trie_insert_abstract3_va, PL_FA_VARARGS),
+    PL_extension("trie_update", 3, pl_trie_update3_va, PL_FA_VARARGS),
+    PL_extension("trie_lookup", 3, pl_trie_lookup3_va, PL_FA_VARARGS),
+    PL_extension("trie_delete", 3, pl_trie_delete3_va, PL_FA_VARARGS),
+    PL_extension("trie_term", 2, pl_trie_term2_va, PL_FA_VARARGS),
+)
