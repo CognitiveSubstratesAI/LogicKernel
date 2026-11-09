@@ -1417,12 +1417,26 @@ mutable struct indirect_table{T}
     const wild::Vector{Int}                             # indexes in `values` of the values whose gnd_key is `nothing` (WILDCARDS)
 end
 
+# MOVED up from "recorded terms" below (TAB1 TR1): `trie{T}` holds the records of its values, a field type must be defined before it.
+# PORT: pl-incl.h record
+# DIVERGES: the code a vector (upstream: the bytes after the struct); `values`, the indirects the code
+# names (`PL_REC_VALUE`, src/pl-rec.jl). NOT KEPT: `size` (the vector's), `flags` and `references`
+# (their readers — the recorded database, erase, `PL_duplicate_record` — are not ported).
+"A term stored outside the stacks (pl-incl.h `struct record`): see `compileTermToHeap`."
+struct record{T}
+    gsize::Int                                          # Global stack size
+    nvars::Int                                          # # variables in the term
+    code::Vector{UInt8}                                 # (the code)
+    values::Vector{T}                                   # (the indirects)
+end
+
 # PORT: pl-trie.h trie
 # DIVERGES (audit D-0453 Q3, Q5): `nodes` is the arena of the trie's nodes, id 1 the root (upstream embeds `root`); `blocks`
 # the arena of children blocks (an id >= 1); `free_ids` and `free_blocks` the slots of freed nodes and blocks; no `alloc_pool`,
 # `tid` (owner TH1); `mem.lingering` is `lingering` (block ids, TRIE_CONCURRENT tries), `mem.chunks` is `chunks`; `serial` is the trie's number in
 # `gd.tries` (the blob's payload). `data.worklist`/`IDG`/`predicate` are `Nothing` slots that TB0/TB1 own and widen (a field typed `Any` fails the gate of nonconcrete fields); `data.variant` is a node id.
-# `magic`, `references`, `node_count`, `value_count`, `flags` are `Int`/`UInt32`.
+# `magic`, `references`, `node_count`, `value_count`, `flags` are `Int`/`UInt32`. `records`/`free_records` (part B): a node value that is
+# neither an atom nor a tagged integer is a `record` (upstream: a pointer, `isRecord(w)` = low two bits 0); here the word is `index << 2`, the index into `records`.
 "A trie of terms `T` (pl-trie.h `struct trie`)."
 mutable struct trie{T}
     symbol::word                                        # the associated symbol (0: none yet)
@@ -1449,6 +1463,8 @@ mutable struct trie{T}
     # TB0-MERGE: `predicate` becomes `Union{Nothing, definition{T}}` (the Definition; `definition{T}` is declared in pl-incl.jl before `trie`)
     predicate::Nothing                                  # data.predicate
     serial::Int                                         # the trie's number in `gd.tries` (0: not registered)
+    records::Vector{Union{Nothing, record{T}}}          # the recorded values of the nodes (a value word `index << 2`), `nothing`: a free slot
+    free_records::Vector{Int}                           # slots of `records` to reuse
 end
 
 # PORT: pl-incl.h ClauseChoice
@@ -2210,18 +2226,6 @@ mutable struct CVT_result
 end
 
 # ── recorded terms (pl-incl.h) and the bags of findall/3 (pl-bag.c), since V9g-b ─────────────────
-# PORT: pl-incl.h record
-# DIVERGES: the code a vector (upstream: the bytes after the struct); `values`, the indirects the code
-# names (`PL_REC_VALUE`, src/pl-rec.jl). NOT KEPT: `size` (the vector's), `flags` and `references`
-# (their readers — the recorded database, erase, `PL_duplicate_record` — are not ported).
-"A term stored outside the stacks (pl-incl.h `struct record`): see `compileTermToHeap`."
-struct record{T}
-    gsize::Int                                          # Global stack size
-    nvars::Int                                          # # variables in the term
-    code::Vector{UInt8}                                 # (the code)
-    values::Vector{T}                                   # (the indirects)
-end
-
 # ── the recorded database (pl-incl.h), since R2's D2 ─────────────────────────────────────────────
 # PORT: pl-incl.h RL_DIRTY
 "A record list has erased records still linked (pl-incl.h `RL_DIRTY`): `cleanRecordList` when no `recorded/3` runs over it."

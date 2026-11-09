@@ -129,7 +129,8 @@ function trie_create(::Type{T})::trie{T} where {T}
         UInt64(0), TRIE_MAGIC, 0, 1, 0, UInt32(0),             # symbol, magic, references, node_count (the root), value_count, flags
         trie_node[root], Union{Nothing, trie_children_block}[], Int[], Int[],
         nothing, UInt64(0), nothing, Int[],                     # indirects, clause, chunks, lingering
-        0, 0, nothing, 0, nothing, nothing, 0                   # lookups, gen_call, worklist, variant, IDG, predicate, serial
+        0, 0, nothing, 0, nothing, nothing, 0,                  # lookups, gen_call, worklist, variant, IDG, predicate, serial
+        Union{Nothing, record{T}}[], Int[]                      # records, free_records
     )
 end
 
@@ -153,10 +154,14 @@ tbl_release_node(tr::trie{T}, nid::Int) where {T} =
     throw(TrieRefusal("tbl_release_node", "TB1"))
 
 # PORT: pl-trie.c release_value
-# DIVERGES: a no-op. Upstream unregisters an atom (no atom reference counts here), erases a record and releases the answer
-# trie of a variant table node; the value helpers (records, `isTriePtrValue`) are part B and TB1's.
-"Release the value `value` of a node (pl-trie.c `release_value`); a no-op here, see above."
-release_value(value::word)::Nothing = nothing
+# DIVERGES: the trie is an argument (a record is a slot of `tr.records`, see `isRecord`); upstream unregisters an atom (no atom
+# reference counts here: nothing to do), erases a record (`erase_value!`) and releases the answer trie of a variant table node
+# (`isTriePtrValue`: TB1, no such value exists before it).
+"Release the value `value` of a node of `tr` (pl-trie.c `release_value`): a record is erased, an atom or integer needs nothing."
+function release_value(tr::trie{T}, value::word)::Nothing where {T}
+    isRecord(value) && erase_value!(tr, value)
+    return nothing
+end
 
 # PORT: pl-trie.c trie_discard_clause
 # DIVERGES: a trie has no compiled clause before TR4, so `trie.clause` is always 0; a clause is refused by name (owner TR4).
@@ -194,6 +199,10 @@ function clear_nodes(tr::trie{T}, vt::Union{Nothing, Function})::Nothing where {
     empty!(tr.free_ids)
     empty!(tr.blocks)
     empty!(tr.free_blocks)
+    if vt === nothing                                           # (a taker keeps the records of the values it took)
+        empty!(tr.records)
+        empty!(tr.free_records)
+    end
     tr.node_count = 1
     return nothing
 end
@@ -757,7 +766,7 @@ function clear_node(
         else
             release_node(tr, nid)
         end
-        n.value != 0 && release_value(n.value)
+        n.value != 0 && release_value(tr, n.value)
         if (flags & CN_DEALLOC) != 0
             tr.node_count -= 1
             if (flags & CN_ALL) == 0 || (n.flags & TN_CHUNKED) == 0
@@ -1464,3 +1473,180 @@ function trie_trie_error(
     PL_put_atom(ld, t, a)
     return trie_error(ld, rc, t)
 end
+
+# ---- THE VALUES (isRecord, intern_value, equal_value, unify_value, put_trie_value, set_trie_value, trie_delete) (part B) ----
+
+# PORT: pl-trie.c isRecord
+# DIVERGES: upstream tells a record (a pointer) from an atom or a tagged integer by the low two bits of the word being 0 (an atom
+# and an integer have a nonzero tag there); a record is a slot of `tr.records` here and its word is `index << 2` (index >= 1), so the
+# same test holds. 0 is "no value" and is never asked.
+"Whether the node value word `w` is a record (pl-trie.c `isRecord`)."
+@inline isRecord(w::word)::Bool = (w & word(0x3)) == 0
+
+# ORIGINAL: the recorded value `r` kept in `tr` (upstream keeps the pointer in the node); its value word.
+"Keep the record `r` in `tr`; its value word `index << 2`."
+function new_record_value!(tr::trie{T}, r::record{T})::word where {T}
+    if isempty(tr.free_records)
+        push!(tr.records, r)
+        idx = length(tr.records)
+    else
+        idx = pop!(tr.free_records)
+        tr.records[idx] = r
+    end
+    return word(idx) << 2
+end
+
+# ORIGINAL: the record a value word `w` stands for.
+"The record of the value word `w` of `tr` (an `isRecord` word)."
+function record_of_value(tr::trie{T}, w::word)::record{T} where {T}
+    r = tr.records[Int(w >> 2)]
+    r === nothing && error("record_of_value: the record of value word $w is erased")
+    return r
+end
+
+# ORIGINAL: upstream's `PL_erase(word2ptr(record_t, value))` of a node value; the slot is free again.
+"Erase the record of the value word `w` of `tr` (`PL_erase`)."
+function erase_value!(tr::trie{T}, w::word)::Nothing where {T}
+    idx = Int(w >> 2)
+    if tr.records[idx] !== nothing
+        tr.records[idx] = nothing
+        push!(tr.free_records, idx)
+    end
+    return nothing
+end
+
+# PORT: pl-trie.c intern_value
+# DIVERGES: the database's `ld` and the trie are arguments (a record lives in `tr.records`); `value` 0 is upstream's NULL (a set: the
+# reserved atom `trienode`, the atom word the reserved symbol has in every database); the dereference is `trie_deref`.
+"The value word for the term `value` (0: none): an atom or a tagged integer is its own word, anything else a record of `tr` (pl-trie.c)."
+function intern_value(ld::PL_local_data{T}, tr::trie{T}, value::term_t)::word where {T}
+    if value != 0
+        _, w = trie_deref(ld, -(value + 1))
+        (isAtomW(w) || isTaggedIntW(w)) && return w
+        return new_record_value!(tr, PL_record(ld, value))
+    end
+    return _atom_word!(ld, mk_reserved_symbol(T, :trienode))
+end
+
+# PORT: pl-trie.c equal_value
+# DIVERGES: the trie is an argument (it holds the records); `variantRecords` compares the codes.
+"Whether the node values `v1` and `v2` of `tr` are equal: the same word, or two variant records (pl-trie.c)."
+function equal_value(tr::trie{T}, v1::word, v2::word)::Bool where {T}
+    v1 == v2 && return true
+    if isRecord(v1) && isRecord(v2)
+        return variantRecords(record_of_value(tr, v1), record_of_value(tr, v2))
+    end
+    return false
+end
+
+# PORT: pl-trie.c unify_value
+# DIVERGES: the value of a variant table node (`isTriePtrValue`: an answer trie, owner TB1) is not met before TB1 and is not
+# handled; the reserved atom `trienode` is the reserved symbol (its symbol is not cached by a database that never made the word).
+"Unify the term reference `t` with the node value `value` of `tr` (pl-trie.c)."
+function unify_value(ld::PL_local_data{T}, tr::trie{T}, t::term_t, value::word)::Bool where {T}
+    if !isRecord(value)
+        v = value == ATOM_trienode ? mk_reserved_symbol(T, :trienode) :
+            (isAtomW(value) ? _atom_value(ld, value) : _value_term(ld, value))
+        return PL_unify_atomic(ld, t, v)
+    end
+    t2 = PL_new_term_ref(ld)
+    return PL_recorded(ld, record_of_value(tr, value), t2) && PL_unify(ld, t, t2)
+end
+
+# PORT: pl-trie.c put_trie_value
+# DIVERGES: the node is a node id of `tr`; `*valTermRef(t) = node->value` is the slot's word.
+"Put the value of node `nid` of `tr` into the term reference `t` (pl-trie.c)."
+function put_trie_value(ld::PL_local_data{T}, tr::trie{T}, t::term_t, nid::Int)::Bool where {T}
+    v = tr.nodes[nid].value
+    if !isRecord(v)
+        ld.slots[t + 1] = v
+        return true
+    end
+    return PL_recorded(ld, record_of_value(tr, v), t)
+end
+
+# PORT: pl-trie.c set_trie_value_word
+# DIVERGES: node id; `acquire_key` (the reference count of an atom) is a no-op, see the file header.
+"Give node `nid` of `tr` the value word `val`; whether the value changed (pl-trie.c)."
+function set_trie_value_word(tr::trie{T}, nid::Int, val::word)::Bool where {T}
+    n = tr.nodes[nid]
+    if n.value != 0
+        if !equal_value(tr, n.value, val)
+            old = n.value
+            n.value = val
+            n.flags |= TN_PRIMARY
+            release_value(tr, old)
+            trie_discard_clause(tr)
+            return true
+        else
+            return false
+        end
+    else
+        n.value = val
+        n.flags |= TN_PRIMARY
+        tr.value_count += 1
+        trie_discard_clause(tr)
+        return true
+    end
+end
+
+# PORT: pl-trie.c set_trie_value
+# DIVERGES: the local data is an argument and the node a node id; a new record that equals the old value is erased as upstream
+# does (`PL_erase`).
+"Set the value of node `nid` of `tr` to the term `value`; true (pl-trie.c)."
+function set_trie_value(
+    ld::PL_local_data{T}, tr::trie{T}, nid::Int, value::term_t
+)::Bool where {T}
+    val = intern_value(ld, tr, value)
+    if !set_trie_value_word(tr, nid, val) && isRecord(val)
+        erase_value!(tr, val)
+    end
+    return true
+end
+
+# PORT: pl-trie.c trie_release_value
+"Release the value `value` of a node of `tr` (pl-trie.c): see `release_value`."
+trie_release_value(tr::trie{T}, value::word) where {T} = release_value(tr, value)
+
+# PORT: pl-trie.c trie_delete
+# DIVERGES: node id; `prune_node` takes the trie.
+"Delete the value of node `nid` of `tr`: with `prune` the branch leading to it is pruned up to the next node still in use (pl-trie.c)."
+function trie_delete(tr::trie{T}, nid::Int, prune::Bool)::Nothing where {T}
+    n = tr.nodes[nid]
+    if n.value != 0
+        (n.flags & TN_PRIMARY) != 0 && (tr.value_count -= 1)
+        n.flags &= ~(TN_PRIMARY | TN_SECONDARY)
+        if prune && tr.references == 0
+            prune_node(tr, nid)
+        else
+            release_node(tr, nid)
+            v = n.value
+            if v != 0
+                n.value = 0
+                release_value(tr, v)
+            end
+        end
+        trie_discard_clause(tr)
+    end
+    return nothing
+end
+
+# PORT: pl-trie.c get_trie_nodes
+# DIVERGES: the database and local data are arguments; `trie_restore_nodes` (a discarded trie) is refused by name, owner TR4.
+"The trie in `t` with its nodes present, or `nothing` after the error (pl-trie.c)."
+function get_trie_nodes(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, t::term_t
+)::Union{Nothing, trie{T}} where {T}
+    tr = get_trie(gd, ld, t)
+    tr === nothing && return nothing
+    trie_ensure_nodes(tr) || return nothing
+    return tr
+end
+
+# PORT: pl-trie.h trie_lookup
+# DIVERGES: the result is `(rc, node id)`, see `trie_lookup_abstract`.
+"As `trie_lookup_abstract` with no abstraction (pl-trie.h)."
+trie_lookup(
+    ld::PL_local_data{T}, tr::trie{T}, node::Int, k::Int, add::Bool,
+    vars::Union{Nothing, Vector{Int}}
+) where {T} = trie_lookup_abstract(ld, tr, node, k, add, nothing, vars)
