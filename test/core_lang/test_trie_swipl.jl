@@ -530,6 +530,17 @@ function _tr_sweep_rows(::Type{T}) where {T}
         id = tr.nodes[id].parent
     end
     @test length(free_listed) == 1085 && isempty(intersect(free_listed, tr.free_ids))
+
+    # no sweep while nfree <= node_count: 3000 leaves under the root (the chunks are 23, 49, 100, 203 and 7 of 407, the newest holds 175),
+    # the newest 1024 destroyed: nfree reaches sweep_at (1024) while node_count is 1977, so nothing is swept (a sweep would drop the two
+    # chunks that are free from end to end)
+    tr, ids = _tr_fan(T, 3000)
+    @test [Int(c.size) for c in _tr_chunks(tr)] == [407, 407, 407, 407, 407, 407, 407, 203, 100, 49, 23] && Int(tr.chunks.used) == 175
+    for k in 3000:-1:1977
+        LK.destroy_node(tr, ids[k])
+    end
+    @test tr.node_count == 3001 - 1024 && Int(tr.chunks.nfree) == 1024 && Int(tr.chunks.sweep_at) == 1024
+    @test length(_tr_chunks(tr)) == 11 && isempty(tr.free_ids)
     return nothing
 end
 
@@ -609,6 +620,16 @@ function _tr_prune_rows(::Type{T}) where {T}
     tr.nodes[y3].flags |= LK.TN_PRIMARY
     LK.prune_trie(tr, 1)
     @test tr.node_count == 3 && _tr_keys(tr, 1) == [_tk(3)] && _tr_keys(tr, y1) == [_tk(5)]
+    # a leaf with TN_SECONDARY or TN_PINNED is kept as one with TN_PRIMARY is (root - a - {b, c})
+    tr = LK.trie_create(T)
+    pa = LK.insert_child(tr, 1, _tk(10))
+    pb = LK.insert_child(tr, pa, _tk(20))
+    pc = LK.insert_child(tr, pa, _tk(30))
+    tr.nodes[pb].flags |= LK.TN_SECONDARY
+    tr.nodes[pc].flags |= LK.TN_PINNED
+    leaves = Int[]
+    LK.prune_trie(tr, 1, id -> push!(leaves, id))
+    @test sort(leaves) == [pb, pc] && tr.node_count == 4 && _tr_keys(tr, pa) == [_tk(20), _tk(30)]
 
     # trie_single_value_node: value_count 1 and a chain of single children down to the value
     tr = LK.trie_create(T)
@@ -1236,4 +1257,26 @@ end
 
 @testset "trie errors: trie_error, trie_trie_error" begin
     _tr_error_rows(_TT)
+end
+
+# ---- THE VALUE OF A NODE (trie_insert) ----
+
+function _tr_value_rows(::Type{T}) where {T}
+    s(n) = lk_sym(T, n)
+    # slots: the key k, the values f(a) and f(b) (a record each: neither an atom nor a tagged integer)
+    gd, ld, t = _tr_engine(T, T[s(:k), _trx(T, :f, s(:a)), _trx(T, :f, s(:b))])
+    tr = LK.trie_create(T)
+    tref = LK.PL_new_term_ref(ld)
+    @test LK.unify_trie(gd, ld, tref, tr)
+    # a first value: one value counted, one record kept
+    ok, nid = LK.trie_insert(gd, ld, tref, t + 1, t + 2, false, nothing)
+    @test ok && nid != 0 && tr.value_count == 1 && length(tr.records) == 1 && isempty(tr.free_records)
+    # an update with a different value: the old record is erased and its slot is free again, the count stays
+    ok, nid2 = LK.trie_insert(gd, ld, tref, t + 1, t + 3, true, nothing)
+    @test ok && nid2 == nid && tr.value_count == 1 && tr.free_records == [1] && tr.records[1] === nothing && tr.records[2] !== nothing
+    return nothing
+end
+
+@testset "trie values: trie_insert counts the value, an update releases the old record" begin
+    _tr_value_rows(_TT)
 end
