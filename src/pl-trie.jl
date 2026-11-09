@@ -1,5 +1,7 @@
 # UPSTREAM: swipl-devel src/pl-trie.c @ 18168e629eab
 # UPSTREAM: swipl-devel src/pl-trie.h @ 18168e629eab
+# UPSTREAM: swipl-devel src/pl-indirect.c @ 18168e629eab
+# UPSTREAM: swipl-devel src/pl-tabling.c @ 18168e629eab
 # CLASS: code
 # COPYRIGHT: Copyright (c)  2016-2025, VU University Amsterdam
 # COPYRIGHT: CWI, Amsterdam

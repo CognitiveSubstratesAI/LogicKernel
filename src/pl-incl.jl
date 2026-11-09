@@ -20,6 +20,8 @@
 # UPSTREAM: swipl-devel src/pl-tabling.c @ 18168e629eab
 # UPSTREAM: swipl-devel src/pl-allocpool.h @ 18168e629eab
 # UPSTREAM: swipl-devel src/pl-wrap.h @ 18168e629eab
+# UPSTREAM: swipl-devel src/pl-trie.h @ 18168e629eab
+# UPSTREAM: swipl-devel src/pl-indirect.h @ 18168e629eab
 # CLASS: code
 # COPYRIGHT: Copyright (c)  1985-2026, University of Amsterdam,
 # COPYRIGHT: VU University Amsterdam
