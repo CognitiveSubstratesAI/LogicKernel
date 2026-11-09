@@ -1650,3 +1650,171 @@ trie_lookup(
     ld::PL_local_data{T}, tr::trie{T}, node::Int, k::Int, add::Bool,
     vars::Union{Nothing, Vector{Int}}
 ) where {T} = trie_lookup_abstract(ld, tr, node, k, add, nothing, vars)
+
+# ---- UNIFYING A TERM WITH THE KEYS OF A NODE (ukey_state, unify_key, unify_trie_term) (part B) ----
+
+# ORIGINAL (pl-trie.c `ukey_state`, `varinfo`): the state `unify_key` steps. Upstream keeps the argument stack on the engine's
+# (`pushArgumentStack`, `aTop`, `a_offset`); the state OWNS its stack here (`astack`: the `(next location, write mode)` pairs upstream
+# packs into one word with the `uwrite` bit), so no `destroy_ukey_state` is needed. `ptr` is a location: a global position, or `-(t+1)`
+# for the slot of the term reference `t`; `vars` holds the location of numbered variable `i` at index `i` (0: not seen yet; upstream's
+# `varinfo.address`, the attribute location of `TAGEX_TRIE_ATTVAR` is TR3's).
+"The state of unifying a term with a sequence of trie keys: the location in the term, the mode, the argument stack and the variables."
+mutable struct ukey_state{T}
+    tr::trie{T}
+    ptr::Int                                                    # where we are in the term (a location)
+    write::Bool                                                 # umode == uwrite
+    astack::Vector{Tuple{Int, Bool}}                            # the argument stack: (location, write mode) to return to
+    vars::Vector{Int}                                           # the location of the numbered variables, 0: unset
+end
+
+# PORT: pl-trie.c init_ukey_state
+# DIVERGES: the state is made, not initialised in place; `reinit` belongs to the retry loop `unify_trie_term` does not have.
+"A new `ukey_state` for `tr` at location `p`, in read mode (pl-trie.c `init_ukey_state`)."
+ukey_state(tr::trie{T}, p::Int) where {T} =
+    ukey_state{T}(tr, p, false, Tuple{Int, Bool}[], Int[])
+
+# PORT: pl-trie.c find_var
+# DIVERGES: the index is a position in `vars`, grown with 0 (an unseen variable) up to it; returned as the index.
+"Make sure the numbered variable `index` (1..) of `st` has an entry (pl-trie.c `find_var`)."
+@inline function find_var!(st::ukey_state, index::Int)::Int
+    index > length(st.vars) && resize!(st.vars, index)
+    return index
+end
+
+# PORT: pl-trie.c unify_key
+# DIVERGES: the argument stack is the state's (`astack`); a functor key allocates with `allocGlobalNoShift` and returns
+# GLOBAL_OVERFLOW when the stack limit is reached (the caller raises it: no `Undo` and no retry, the stacks grow on demand); a
+# variable cell is bound with `_bind_const!` (which trails below the mark bar); an attributed variable met where a functor key must
+# make a compound, and the keys `TAGEX_TRIE_ATTVAR` and `TAGEX_TRIE_ATTVAR_END` (upstream's O_TRIE_ATTVAR branches), are a named
+# refusal, owner TR3 (an attributed variable met by an atom or integer key is bound by `bindConst`, which wakes it as `h_const` does);
+# an indirect key is `extern_indirect` of the trie's table, written by `_vword_at!` in write mode and unified by `_unify_const_loc`
+# in read mode (upstream compares `equalIndirect`); the first occurrence of a variable in read mode records the dereferenced cell
+# where it is one, so that a later write-mode `makeRefG` has a global position.
+"""
+    unify_key(ld, st, key) -> boolex_t
+
+Take one step in unifying a term with a sequence of trie keys: `st.ptr` is where we are in the term and `key` the key of the next node.
+`BOOLEX_TRUE`, `BOOLEX_FALSE` or `GLOBAL_OVERFLOW` (pl-trie.c).
+"""
+function unify_key(ld::PL_local_data{T}, st::ukey_state{T}, key::word)::boolex_t where {T}
+    p = st.ptr
+    tx = tagex(key)
+    if tx == TAGEX_TRIE_RESERVED                                # a pop key
+        popn = IS_TRIE_KEY_POP(key)
+        @assert popn > 0 "unify_key: a reserved key that pops nothing"
+        e = st.astack[end - popn + 1]
+        resize!(st.astack, length(st.astack) - popn)
+        st.ptr, st.write = e
+        return BOOLEX_TRUE
+    elseif isFunctor(key)
+        arity = arityFunctor(ld.functors, key)
+        push!(st.astack, (p > 0 ? p + 1 : p, st.write))
+        if st.write
+            t = allocGlobalNoShift(ld, arity + 1)
+            t == 0 && return GLOBAL_OVERFLOW
+            ld.gstack[t] = key
+            ld.gstack[p] = consPtr(t, TAG_COMPOUND | STG_GLOBAL)
+            st.ptr = t + 1
+            return BOOLEX_TRUE
+        end
+        pp, w = trie_deref(ld, p)
+        if isVar(w)
+            st.write = true
+            t = allocGlobalNoShift(ld, arity + 1)
+            t == 0 && return GLOBAL_OVERFLOW
+            ld.gstack[t] = key
+            _bind_const!(ld, pp, consPtr(t, TAG_COMPOUND | STG_GLOBAL))
+            st.ptr = t + 1
+            return BOOLEX_TRUE
+        elseif isAttVar(w)
+            throw(TrieRefusal("unify_key (an attributed variable)", "TR3"))
+        elseif _is_gcompound(w)
+            f = valPtr(w)
+            if ld.gstack[f] == key
+                st.ptr = f + 1
+                return BOOLEX_TRUE
+            end
+        end
+        return BOOLEX_FALSE
+    elseif tx == TAGEX_VAR                                      # a numbered variable
+        index = find_var!(st, Int(valTagged(key)))
+        if st.write
+            if st.vars[index] == 0
+                ld.gstack[p] = word(0)                          # setVar
+                st.vars[index] = p
+            else
+                ld.gstack[p] = makeRefG(st.vars[index])
+            end
+        else
+            pp, _ = trie_deref(ld, p)
+            if st.vars[index] == 0
+                st.vars[index] = pp > 0 ? pp : p
+            else
+                unify_ptrs_cells(ld, p, st.vars[index]) || return BOOLEX_FALSE
+            end
+        end
+    elseif tx == TAGEX_INDIRECT_INT || tx == TAGEX_INDIRECT_STRING || tx == TAGEX_INDIRECT_FLOAT
+        v = extern_indirect(st.tr.indirects::indirect_table{T}, key)
+        if st.write
+            _vword_at!(ld, v, p)
+        else
+            _unify_const_loc(ld, p, v) || return BOOLEX_FALSE
+        end
+    elseif isAtomW(key) || isTaggedIntW(key)
+        if st.write
+            ld.gstack[p] = key
+        else
+            pp, w = trie_deref(ld, p)
+            if isVar(w) || isAttVar(w)
+                bindConst(ld, pp, key)
+            elseif w != key
+                return BOOLEX_FALSE
+            end
+        end
+    elseif tx == TAGEX_TRIE_ATTVAR || tx == TAGEX_TRIE_ATTVAR_END
+        throw(TrieRefusal("unify_key (an attributed variable key)", "TR3"))
+    else
+        error("unify_key: not a trie key: $key")
+    end
+    st.ptr = p > 0 ? p + 1 : p
+    return BOOLEX_TRUE
+end
+
+# PORT: pl-trie.c unify_trie_term
+# DIVERGES: the trie `tr` and the node id `nid` are arguments (upstream finds the trie from the node, `get_trie_from_node`); the
+# result is `(rc, parent)` where `parent` is the node the walk stopped at (0: none; upstream's `*parent`); the keys are a `Vector`
+# (no 256-word fast buffer); there is no retry loop: a GLOBAL_OVERFLOW is raised by `raiseStackOverflow` (no `Mark`, `Undo` or
+# `makeMoreStackSpace`: the stacks grow on demand), and the state owns its argument stack.
+"""
+    unify_trie_term(ld, tr, nid, term) -> (rc, parent)
+
+Unify the term reference `term` with the term the keys from the root of `tr` to node `nid` represent; for a secondary node
+(`TN_SECONDARY`) only the keys up to the nearest primary node, which is `parent` (pl-trie.c).
+"""
+function unify_trie_term(
+    ld::PL_local_data{T}, tr::trie{T}, nid::Int, term::term_t
+)::Tuple{Bool, Int} where {T}
+    keys = word[]
+    parent = 0
+    is_secondary = (tr.nodes[nid].flags & TN_SECONDARY) != 0
+    n = nid
+    while tr.nodes[n].parent != 0
+        nd = tr.nodes[n]
+        if is_secondary && (nd.flags & TN_PRIMARY) != 0
+            parent = n
+            break
+        end
+        push!(keys, nd.key)
+        n = nd.parent
+    end
+
+    st = ukey_state(tr, -(term + 1))
+    for i in length(keys):-1:1
+        rcu = unify_key(ld, st, keys[i])
+        if rcu != BOOLEX_TRUE
+            rcu == BOOLEX_FALSE && return (false, parent)
+            return (raiseStackOverflow(ld, rcu), parent)
+        end
+    end
+    return (true, parent)
+end
