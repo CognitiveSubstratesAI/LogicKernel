@@ -98,13 +98,12 @@ _tk(k::Integer)::UInt64 = LK.consTagged(k, LK.TAG_ATOM | LK.STG_STATIC)
 "The numbered trie variable key `n`."
 _trvar(n::Int) = LK.consTagged(n, LK.TAGEX_VAR)
 
-"The formal of the pending exception as `(functor word, name of the first argument)`, or `nothing` without one."
+"The formal of the pending exception as `(name of its functor, name of its first argument)`, or `nothing` without one."
 function _tr_formal(ld)
     ld.exception_term == 0 && return nothing
-    _, b, _ = LK._deref_loc(ld, -(ld.exception_term + 1))               # error(Formal, _)
-    _, f, _ = LK._deref_loc(ld, LK.valPtr(b) + 1)
-    _, a1, _ = LK._deref_loc(ld, LK.valPtr(f) + 1)
-    return (ld.gstack[LK.valPtr(f)], lk_name(LK._atom_value(ld, a1)))
+    ball = lk_answer(ld, ld.exception_term)                 # error(Formal, Context)
+    formal = child(ball, 2)
+    return (lk_name(child(formal, 1)), lk_name(child(formal, 2)))
 end
 
 # ---- LIFE ----
@@ -801,4 +800,422 @@ end
 
 @testset "indirect table: a value without a grounded key is a wildcard" begin
     _tr_wildcard_rows(_TW)
+end
+
+# ---- LOOKUP (the engine's cells) ----
+# Setup: `_tr_engine(T, vs)` puts `vs[i]` into slot `t + i` (term reference `t + i - 1`), whose location is `-(t + i)`.
+# Small integers are TAGGED words (`consInt`, never interned); floats, strings and big integers are indirects (a handle
+# `consTagged(index, TAGEX_INDIRECT_*)` of the trie's own table, numbered in the order the lookup meets them).
+
+function _tr_lookup_ground_rows(::Type{T}) where {T}
+    s(n) = lk_sym(T, n)
+    # f(a, g(b, 1), h(x, i(y))): one key per cell in depth-first order; a POP(n) key where a compound's arguments end and the walk goes on;
+    # the ends at the top (h and i and f together) give no key
+    term = _trx(T, :f, s(:a), _trx(T, :g, s(:b), lk_gnd(T, Int64(1))), _trx(T, :h, s(:x), _trx(T, :i, s(:y))))
+    term2 = _trx(T, :f, s(:a), _trx(T, :g, s(:b), lk_gnd(T, Int64(2))), _trx(T, :h, s(:x), _trx(T, :i, s(:y))))
+    # slots: the term, the atom a, the integer 7, a term differing in one integer, the term again (a separate copy)
+    gd, ld, t = _tr_engine(T, T[term, s(:a), lk_gnd(T, Int64(7)), term2, term])
+    loc = -(t + 1)
+    tr = LK.trie_create(T)
+    @test LK.trie_lookup_abstract(ld, tr, 0, loc, false, nothing, nothing) == (0, 0)     # not there, nothing added
+    @test tr.node_count == 1 && tr.lookups == 1
+    rc, nid = LK.trie_lookup_abstract(ld, tr, 0, loc, true, nothing, nothing)
+    @test rc == 1 && nid != 0 && tr.node_count == 11 && tr.lookups == 2
+    expected = UInt64[
+        _trf(ld, T, :f, 3), _trw(ld, T, :a), _trf(ld, T, :g, 2), _trw(ld, T, :b), LK.consInt(1), LK.TRIE_KEY_POP(1),
+        _trf(ld, T, :h, 2), _trw(ld, T, :x), _trf(ld, T, :i, 1), _trw(ld, T, :y),
+    ]
+    @test _tr_path(tr, nid) == expected
+    @test LK.is_ground_trie_node(tr, nid)
+    @test LK.trie_lookup_abstract(ld, tr, 0, loc, false, nothing, nothing) == (1, nid) && tr.node_count == 11
+    # a differing integer in the middle: no node, nothing added
+    @test LK.trie_lookup_abstract(ld, tr, 0, -(t + 4), false, nothing, nothing) == (0, 0) && tr.node_count == 11
+    # another copy of the term (other cells) finds the same node
+    @test LK.trie_lookup_abstract(ld, tr, 0, -(t + 5), false, nothing, nothing) == (1, nid)
+    # an atom and a small integer alone: the key is the cell's word
+    ra, na = LK.trie_lookup_abstract(ld, tr, 0, -(t + 2), true, nothing, nothing)
+    ri, ni = LK.trie_lookup_abstract(ld, tr, 0, -(t + 3), true, nothing, nothing)
+    @test ra == 1 && ri == 1 && tr.nodes[na].key == _trw(ld, T, :a) && tr.nodes[ni].key == LK.consInt(7) && na != ni
+    @test tr.nodes[na].parent == 1 && tr.nodes[ni].parent == 1 && tr.node_count == 13
+    # the variables vector, given or not: a ground term leaves it empty
+    vs = Int[]
+    @test LK.trie_lookup_abstract(ld, tr, 0, loc, false, nothing, vs) == (1, nid) && isempty(vs)
+    return nothing
+end
+
+@testset "trie lookup: a ground term, the keys in order, the POP keys, an atom, an integer" begin
+    _tr_lookup_ground_rows(_TT)
+end
+
+function _tr_lookup_indirect_rows(::Type{T}) where {T}
+    s(n) = lk_sym(T, n)
+    big = BigInt(2)^100
+    mk(f4, f5) = _trx(T, :p, lk_gnd(T, 2.5), lk_gnd(T, "s"), lk_gnd(T, big), f4, f5)
+    # slots: the term, 2.5 alone, the term again; then the term with 1.0 in place of 1, with 1 in place of 1.0, and with an unknown float
+    gd, ld, t = _tr_engine(
+        T, T[
+            mk(lk_gnd(T, Int64(1)), lk_gnd(T, 1.0)), lk_gnd(T, 2.5), mk(lk_gnd(T, Int64(1)), lk_gnd(T, 1.0)),
+            mk(lk_gnd(T, 1.0), lk_gnd(T, 1.0)), mk(lk_gnd(T, Int64(1)), lk_gnd(T, Int64(1))), mk(lk_gnd(T, Int64(1)), lk_gnd(T, 2.0)),
+        ]
+    )
+    tr = LK.trie_create(T)
+    rc, nid = LK.trie_lookup_abstract(ld, tr, 0, -(t + 1), true, nothing, nothing)
+    # the handles are numbered in the order the lookup meets the values; the small integer 1 is no indirect, the float 1.0 is
+    h(i, tx) = LK.consTagged(i, tx)
+    @test rc == 1 && tr.node_count == 7
+    @test _tr_path(tr, nid) == UInt64[
+        _trf(ld, T, :p, 5), h(1, LK.TAGEX_INDIRECT_FLOAT), h(2, LK.TAGEX_INDIRECT_STRING), h(3, LK.TAGEX_INDIRECT_INT),
+        LK.consInt(1), h(4, LK.TAGEX_INDIRECT_FLOAT),
+    ]
+    @test tr.indirects !== nothing && length(tr.indirects.values) == 4
+    @test lk_eq(LK.extern_indirect(tr.indirects, h(3, LK.TAGEX_INDIRECT_INT)), lk_gnd(T, big))
+    # an indirect alone, and its handle is the one already made
+    r2, n2 = LK.trie_lookup_abstract(ld, tr, 0, -(t + 2), true, nothing, nothing)
+    @test r2 == 1 && tr.nodes[n2].key == h(1, LK.TAGEX_INDIRECT_FLOAT) && length(tr.indirects.values) == 4
+    # another copy of the values: found by value (the handles belong to the trie)
+    @test LK.trie_lookup_abstract(ld, tr, 0, -(t + 3), false, nothing, nothing) == (1, nid)
+    # 1 is not 1.0 (SWI's identity): the integer in the place of the float, the float in the place of the integer
+    nodes = tr.node_count
+    @test LK.trie_lookup_abstract(ld, tr, 0, -(t + 4), false, nothing, nothing) == (0, 0)
+    @test LK.trie_lookup_abstract(ld, tr, 0, -(t + 5), false, nothing, nothing) == (0, 0)
+    @test LK.trie_lookup_abstract(ld, tr, 0, -(t + 6), false, nothing, nothing) == (0, 0)      # a float no table holds: no handle, no node
+    @test tr.node_count == nodes && length(tr.indirects.values) == 4                              # a lookup without `add` interns nothing
+    return nothing
+end
+
+@testset "trie lookup: indirect values by handle, 1 is not 1.0" begin
+    _tr_lookup_indirect_rows(_TT)
+end
+
+function _tr_lookup_variant_rows(::Type{T}) where {T}
+    s(n) = lk_sym(T, n)
+    X, Y = _trv(T, 1), _trv(T, 2)
+    P, Q = _trv(T, 7), _trv(T, 8)
+    # slots 1-2: f(X,X,Y), g(X,h(X)); slots 3-7: f(P,P,Q) (a variant), f(P,Q,Q), f(P,Q,P), f(P,P,P), f(P,P,a); each put has its own variables
+    gd, ld, t = _tr_engine(
+        T, T[
+            _trx(T, :f, X, X, Y), _trx(T, :g, X, _trx(T, :h, X)), _trx(T, :f, P, P, Q), _trx(T, :f, P, Q, Q), _trx(T, :f, P, Q, P),
+            _trx(T, :f, P, P, P), _trx(T, :f, P, P, s(:a)),
+        ]
+    )
+    tr = LK.trie_create(T)
+    vars = Int[]
+    rc, n1 = LK.trie_lookup_abstract(ld, tr, 0, -(t + 1), true, nothing, vars)
+    @test rc == 1 && _tr_path(tr, n1) == UInt64[_trf(ld, T, :f, 3), _trvar(1), _trvar(1), _trvar(2)]
+    @test !LK.is_ground_trie_node(tr, n1)
+    # the variables are numbered by their first occurrence, handed back as their cells, and the cells are restored (unbound)
+    @test length(vars) == 2 && vars[1] != vars[2] && all(p -> p > 0 && ld.gstack[p] == 0, vars)
+    # g(X, h(X)): the second X is the same variable; the ends of h and of g come together: no POP key
+    r2, n2 = LK.trie_lookup_abstract(ld, tr, 0, -(t + 2), true, nothing, nothing)
+    @test r2 == 1 && _tr_path(tr, n2) == UInt64[_trf(ld, T, :g, 2), _trvar(1), _trf(ld, T, :h, 1), _trvar(1)]
+    # a variant (other variables, other engine) is found; a non-variant is not, and adds nothing
+    nodes = tr.node_count
+    @test LK.trie_lookup_abstract(ld, tr, 0, -(t + 3), false, nothing, nothing) == (1, n1)
+    for i in 4:7
+        @test LK.trie_lookup_abstract(ld, tr, 0, -(t + i), false, nothing, nothing) == (0, 0)
+    end
+    @test tr.node_count == nodes
+    # with `add` the other shapes are made: f(P,Q,Q) is [V1, V2, V2]
+    r6, n6 = LK.trie_lookup_abstract(ld, tr, 0, -(t + 4), true, nothing, nothing)
+    @test r6 == 1 && n6 != n1 && _tr_path(tr, n6) == UInt64[_trf(ld, T, :f, 3), _trvar(1), _trvar(2), _trvar(2)]
+    # a bare variable is the key V1 and its cell is restored
+    gd3, ld3, t3 = _tr_engine(T, T[X])
+    tr3 = LK.trie_create(T)
+    vs3 = Int[]
+    r7, n7 = LK.trie_lookup_abstract(ld3, tr3, 0, -(t3 + 1), true, nothing, vs3)
+    @test r7 == 1 && _tr_path(tr3, n7) == UInt64[_trvar(1)] && length(vs3) == 1 && ld3.gstack[vs3[1]] == 0
+    return nothing
+end
+
+@testset "trie lookup: variants, the numbering of the variables, the cells restored" begin
+    _tr_lookup_variant_rows(_TT)
+end
+
+function _tr_lookup_abstract_rows(::Type{T}) where {T}
+    s(n) = lk_sym(T, n)
+    gd, ld, t = _tr_engine(
+        T, T[_trx(T, :f, _trx(T, :g, s(:a))), s(:a), _trx(T, :f, s(:a)), _trx(T, :f, _trx(T, :g, _trx(T, :h, s(:a)))), _trx(T, :f, _trx(T, :g, s(:a)), s(:b))]
+    )
+    # size_abstract(from_depth, size): the compounds below depth `from_depth` are limited to `size`; the rest becomes a variable and rc is TRIE_ABSTRACTED
+    tr = LK.trie_create(T)
+    vars = Int[]
+    rc, nid = LK.trie_lookup_abstract(ld, tr, 0, -(t + 1), true, LK.size_abstract(1, 0), vars)
+    @test rc == LK.TRIE_ABSTRACTED && LK.TRIE_ABSTRACTED == 2 && nid != 0
+    @test _tr_path(tr, nid) == UInt64[_trf(ld, T, :f, 1), _trvar(1)]
+    @test length(vars) == 1 && LK._is_gcompound(ld.gstack[vars[1]])          # the compound g(a) itself stays: only a variable cell is overwritten
+    # from depth 0 the term itself is abstracted: the key is just V1, the variable "cell" is the slot's location
+    tr = LK.trie_create(T)
+    vars = Int[]
+    rc, nid = LK.trie_lookup_abstract(ld, tr, 0, -(t + 3), true, LK.size_abstract(0, 0), vars)
+    @test rc == LK.TRIE_ABSTRACTED && _tr_path(tr, nid) == UInt64[_trvar(1)] && vars == [-(t + 3)]
+    # an atom is no compound: abstraction leaves it, rc 1
+    tr = LK.trie_create(T)
+    rc, nid = LK.trie_lookup_abstract(ld, tr, 0, -(t + 2), true, LK.size_abstract(0, 0), nothing)
+    @test rc == 1 && _tr_path(tr, nid) == UInt64[_trw(ld, T, :a)]
+    # size 1 below depth 1: g is kept, h(a) below it goes (the ends of g and of f come together: no POP key)
+    tr = LK.trie_create(T)
+    rc, nid = LK.trie_lookup_abstract(ld, tr, 0, -(t + 4), true, LK.size_abstract(1, 1), nothing)
+    @test rc == LK.TRIE_ABSTRACTED && _tr_path(tr, nid) == UInt64[_trf(ld, T, :f, 1), _trf(ld, T, :g, 1), _trvar(1)]
+    # atomic arguments are not limited: f(g(a), b) at (1, 0) is [f/2, V1, b]
+    tr = LK.trie_create(T)
+    rc, nid = LK.trie_lookup_abstract(ld, tr, 0, -(t + 5), true, LK.size_abstract(1, 0), nothing)
+    @test rc == LK.TRIE_ABSTRACTED && _tr_path(tr, nid) == UInt64[_trf(ld, T, :f, 2), _trvar(1), _trw(ld, T, :b)]
+    # a term within the limit is not abstracted, and with no abstraction nothing is
+    tr = LK.trie_create(T)
+    rc, nid = LK.trie_lookup_abstract(ld, tr, 0, -(t + 1), true, LK.size_abstract(1, 1), nothing)
+    @test rc == 1 && _tr_path(tr, nid) == UInt64[_trf(ld, T, :f, 1), _trf(ld, T, :g, 1), _trw(ld, T, :a)]
+    return nothing
+end
+
+@testset "trie lookup: size_abstract, TRIE_ABSTRACTED" begin
+    _tr_lookup_abstract_rows(_TT)
+end
+
+function _tr_lookup_cyclic_rows(::Type{T}) where {T}
+    s(n) = lk_sym(T, n)
+    X = _trv(T, 1)
+    # X = f(X): a cyclic term (needs one variable map for the two puts, and the unification that closes the cycle)
+    gd, ld, t = _tr_engine(T, T[X, _trx(T, :f, X)]; shared=true)
+    @test LK.do_unify_cells(ld, -(t + 1), -(t + 2)) == LK.BOOLEX_TRUE
+    tr = LK.trie_create(T)
+    rc, nid = LK.trie_lookup_abstract(ld, tr, 0, -(t + 2), true, nothing, nothing)
+    @test (rc, nid) == (LK.TRIE_LOOKUP_CYCLIC, 0) && LK.TRIE_LOOKUP_CYCLIC == -11
+    # the 999 f/1 nodes made before the check (at the 1000th compound) are pruned again with the error key
+    @test tr.node_count == 1 && tr.nodes[1].children == 0
+    # trie_error: a type error on the culprit, false
+    cul = LK.PL_new_term_ref(ld)
+    LK.PL_put_atom(ld, cul, s(:foo))
+    @test LK.trie_error(ld, rc, cul) == false
+    @test _tr_formal(ld) == (:type_error, :acyclic_term)
+    LK.PL_clear_exception(ld)
+    # an acyclic term 1001 deep passes the same check: f(f(...f(a)...))
+    deep = s(:a)
+    for _ in 1:1001
+        deep = _trx(T, :f, deep)
+    end
+    gd2, ld2, t2 = _tr_engine(T, T[deep])
+    tr2 = LK.trie_create(T)
+    rc2, n2 = LK.trie_lookup_abstract(ld2, tr2, 0, -(t2 + 1), true, nothing, nothing)
+    @test rc2 == 1 && n2 != 0 && tr2.node_count == 1 + 1001 + 1 && tr2.nodes[n2].key == _trw(ld2, T, :a)
+    return nothing
+end
+
+@testset "trie lookup: a cyclic term, trie_error" begin
+    _tr_lookup_cyclic_rows(_TT)
+end
+
+function _tr_lookup_attvar_rows(::Type{T}) where {T}
+    # an attributed variable: refused by name (owner TR3); the variables numbered so far are restored and what the lookup added is pruned
+    s(n) = lk_sym(T, n)
+    Z, Y = _trv(T, 1), _trv(T, 2)
+    gd, ld, t = _tr_engine(T, T[_trx(T, :f, Z, Y)])
+    w = ld.slots[t + 1]
+    zc, _ = LK.trie_deref(ld, LK.valPtr(w) + 1)
+    yc, _ = LK.trie_deref(ld, LK.valPtr(w) + 2)
+    LK.put_new_attvar(ld, yc, LK._atom_word!(ld, s(:a)), (LK.DU_VALUE, LK.consInt(Int64(1)), 0))
+    tr = LK.trie_create(T)
+    err = try
+        LK.trie_lookup_abstract(ld, tr, 0, -(t + 1), true, nothing, nothing)
+        nothing
+    catch e
+        e
+    end
+    @test err isa LK.TrieRefusal && err.owner == "TR3"
+    @test ld.gstack[zc] == 0 && tr.node_count == 1
+    # without `add` the refusal also comes, once the lookup reaches the attributed variable (the keys before it are in the trie)
+    LK.follow_node_add(tr, LK.follow_node_add(tr, 1, _trf(ld, T, :f, 2)), _trvar(1))
+    err = try
+        LK.trie_lookup_abstract(ld, tr, 0, -(t + 1), false, nothing, nothing)
+        nothing
+    catch e
+        e
+    end
+    @test err isa LK.TrieRefusal && err.owner == "TR3" && ld.gstack[zc] == 0 && tr.node_count == 3
+    return nothing
+end
+
+@testset "trie lookup: an attributed variable is refused by name (TR3), the cells restored" begin
+    _tr_lookup_attvar_rows(_TT)
+end
+
+# ---- trie_insert_flat / trie_lookup_flat ----
+
+function _tr_insert_flat_rows(::Type{T}) where {T}
+    s(n) = lk_sym(T, n)
+    X, Z = _trv(T, 1), _trv(T, 2)
+    vs = T[
+        _trx(T, :p, s(:a), X, X, lk_gnd(T, Int64(1))), s(:foo), lk_gnd(T, Int64(3)), _trx(T, :p, _trx(T, :q, s(:a))), Z,
+        _trx(T, :p, lk_gnd(T, 2.5), s(:a)), _trx(T, :p, X),
+    ]
+    gd, ld, t = _tr_engine(T, vs)
+    loc(i) = -(t + i)
+    tr = LK.trie_create(T)
+    rc, n1 = LK.trie_insert_flat(ld, tr, loc(1))
+    @test rc == 1 && tr.node_count == 6 && tr.lookups == 1
+    @test _tr_path(tr, n1) == UInt64[_trf(ld, T, :p, 4), _trw(ld, T, :a), _trvar(1), _trvar(1), LK.consInt(1)]
+    @test LK.trie_insert_flat(ld, tr, loc(1)) == (1, n1) && tr.node_count == 6          # again: the same node
+    # the cells were restored: the general lookup of the same term finds the same node (it numbers the variables itself)
+    @test LK.trie_lookup_abstract(ld, tr, 0, loc(1), false, nothing, nothing) == (1, n1)
+    # an atom
+    ra, na = LK.trie_insert_flat(ld, tr, loc(2))
+    @test ra == 1 && _tr_path(tr, na) == UInt64[_trw(ld, T, :foo)] && tr.node_count == 7
+    # not flat: an integer alone, a compound argument, a variable alone: nothing added
+    @test LK.trie_insert_flat(ld, tr, loc(3)) == (LK.TRIE_LOOKUP_NOT_FLAT, 0)
+    @test LK.trie_insert_flat(ld, tr, loc(4)) == (LK.TRIE_LOOKUP_NOT_FLAT, 0)
+    @test LK.trie_insert_flat(ld, tr, loc(5)) == (LK.TRIE_LOOKUP_NOT_FLAT, 0) && LK.TRIE_LOOKUP_NOT_FLAT == -12
+    @test tr.node_count == 7
+    # an indirect argument, by handle
+    rf, nf = LK.trie_insert_flat(ld, tr, loc(6))
+    @test rf == 1 && _tr_path(tr, nf) == UInt64[_trf(ld, T, :p, 2), LK.consTagged(1, LK.TAGEX_INDIRECT_FLOAT), _trw(ld, T, :a)]
+    @test tr.indirects !== nothing && length(tr.indirects.values) == 1
+    @test LK.trie_lookup_abstract(ld, tr, 0, loc(6), false, nothing, nothing) == (1, nf)
+    # a single variable
+    rv, nv = LK.trie_insert_flat(ld, tr, loc(7))
+    @test rv == 1 && _tr_path(tr, nv) == UInt64[_trf(ld, T, :p, 1), _trvar(1)]
+
+    # FLAT_MAX_VARS = 32 distinct variables are flat (arguments past FLAT_MAX_ARGS = 16 are dereferenced in the second pass); 33 are not
+    @test LK.FLAT_MAX_VARS == 32 && LK.FLAT_MAX_ARGS == 16
+    v32 = T[_trv(T, i) for i in 1:32]
+    v33 = T[_trv(T, i) for i in 1:33]
+    mixed = T[fill(s(:a), 16)..., _trv(T, 1), lk_gnd(T, 2.5)]
+    gd2, ld2, t2 = _tr_engine(T, T[_trx(T, :p, v32...), _trx(T, :p, v33...), _trx(T, :p, mixed...)])
+    tr2 = LK.trie_create(T)
+    r32, n32 = LK.trie_insert_flat(ld2, tr2, -(t2 + 1))
+    @test r32 == 1 && tr2.node_count == 1 + 1 + 32
+    @test _tr_path(tr2, n32) == UInt64[_trf(ld2, T, :p, 32), (_trvar(i) for i in 1:32)...]
+    @test LK.trie_insert_flat(ld2, tr2, -(t2 + 2)) == (LK.TRIE_LOOKUP_NOT_FLAT, 0) && tr2.node_count == 34
+    rm, nm = LK.trie_insert_flat(ld2, tr2, -(t2 + 3))
+    @test rm == 1 && _tr_path(tr2, nm) == UInt64[
+        _trf(ld2, T, :p, 18), fill(_trw(ld2, T, :a), 16)..., _trvar(1), LK.consTagged(1, LK.TAGEX_INDIRECT_FLOAT),
+    ]
+    return nothing
+end
+
+@testset "trie insert_flat: flat terms, NOT_FLAT, the argument limits" begin
+    _tr_insert_flat_rows(_TT)
+end
+
+function _tr_lookup_flat_rows(::Type{T}) where {T}
+    s(n) = lk_sym(T, n)
+    X = _trv(T, 1)
+    # slots: a, X, X, 2.5, g(b), 7, b, 8.5
+    gd, ld, t = _tr_engine(T, T[s(:a), X, X, lk_gnd(T, 2.5), _trx(T, :g, s(:b)), lk_gnd(T, Int64(7)), s(:b), lk_gnd(T, 8.5)]; shared=true)
+    loc(i) = -(t + i)
+    user = LK.MODULE_user(gd)
+    def = LK.lookupProcedure(s(:p), 2, user).definition
+    colon = _trf(ld, T, :(:), 2)
+    mname = LK._atom_word!(ld, gd.modules[def.module_].atom)
+    pf = _trf(ld, T, :p, 2)
+    tr = LK.trie_create(T)
+    # no `:`/2 child yet: (0, start 0, node 0)
+    @test LK.trie_lookup_flat(gd, ld, tr, 0, def, [loc(1), loc(2)], Int[]) == (0, 0, 0)
+    ncol = LK.follow_node_add(tr, 1, colon)
+    @test LK.trie_lookup_flat(gd, ld, tr, 0, def, [loc(1), loc(2)], Int[]) == (0, 0, 0)       # no module child
+    nmod = LK.follow_node_add(tr, ncol, mname)
+    @test LK.trie_lookup_flat(gd, ld, tr, 0, def, [loc(1), loc(2)], Int[]) == (0, 0, 0)       # no p/2 child
+    base = LK.follow_node_add(tr, nmod, pf)
+    walk(start, keys...) = foldl((n, k) -> LK.follow_node_add(tr, n, k), keys; init=start)
+    a, b = _trw(ld, T, :a), _trw(ld, T, :b)
+    n1 = walk(base, a, _trvar(1))
+    n2 = walk(base, _trvar(1), _trvar(1))
+    hf = LK.trie_intern_indirect(tr, lk_gnd(T, 2.5), true)
+    n3 = walk(base, hf, b)
+    n4 = walk(base, LK.consInt(7), _trvar(1))
+    # p(a, X) -> [a, V1]: the variable's cell is handed back in `vars` and stays unbound
+    vars = Int[]
+    l0 = tr.lookups
+    @test LK.trie_lookup_flat(gd, ld, tr, 0, def, [loc(1), loc(2)], vars) == (1, base, n1)
+    @test tr.lookups == l0 + 1 && length(vars) == 1 && vars[1] > 0 && ld.gstack[vars[1]] == 0
+    # p(X, X) -> [V1, V1]: one variable, the same number twice
+    vars = Int[]
+    @test LK.trie_lookup_flat(gd, ld, tr, 0, def, [loc(2), loc(3)], vars) == (1, base, n2) && length(vars) == 1
+    # an indirect argument is found by value, an unknown one is not (nothing is interned)
+    @test LK.trie_lookup_flat(gd, ld, tr, 0, def, [loc(4), loc(7)], Int[]) == (1, base, n3)
+    @test LK.trie_lookup_flat(gd, ld, tr, 0, def, [loc(8), loc(7)], Int[]) == (0, base, 0) && length(tr.indirects.values) == 1
+    # a tagged integer and a variable
+    @test LK.trie_lookup_flat(gd, ld, tr, 0, def, [loc(6), loc(2)], Int[]) == (1, base, n4)
+    # missing: a child of a (an integer, no V1 variable path)
+    @test LK.trie_lookup_flat(gd, ld, tr, 0, def, [loc(1), loc(6)], Int[]) == (0, base, 0)
+    # not flat: a compound argument
+    @test LK.trie_lookup_flat(gd, ld, tr, 0, def, [loc(5), loc(1)], Int[]) == (LK.TRIE_LOOKUP_NOT_FLAT, base, 0)
+    # from a start node: only the arguments are followed
+    @test LK.trie_lookup_flat(gd, ld, tr, base, def, [loc(1), loc(2)], Int[]) == (1, base, n1)
+    # arity 0: `:`/2, the module, the name
+    def0 = LK.lookupProcedure(s(:q), 0, user).definition
+    @test LK.trie_lookup_flat(gd, ld, tr, 0, def0, Int[], Int[]) == (0, nmod, 0)
+    nq = LK.follow_node_add(tr, nmod, _trw(ld, T, :q))
+    @test LK.trie_lookup_flat(gd, ld, tr, 0, def0, Int[], Int[]) == (1, nmod, nq)
+    return nothing
+end
+
+@testset "trie lookup_flat: M:Head of a predicate, variables, indirects, NOT_FLAT" begin
+    _tr_lookup_flat_rows(_TT)
+end
+
+# ---- THE BLOB REGISTRY ----
+
+function _tr_blob_rows(::Type{T}) where {T}
+    s(n) = lk_sym(T, n)
+    gd, ld, t = _tr_engine(T, T[lk_sym(T, :a)])
+    n0 = length(gd.tries)
+    tr = LK.trie_create(T)
+    w = LK.trie_symbol(gd, tr)
+    @test tr.symbol == w && tr.serial == n0 + 1 && gd.tries[tr.serial] === tr && length(gd.tries) == n0 + 1
+    @test LK.trie_symbol(gd, tr) == w && length(gd.tries) == n0 + 1                  # created once
+    tr2 = LK.trie_create(T)
+    w2 = LK.trie_symbol(gd, tr2)
+    @test w2 != w && tr2.serial == n0 + 2
+    @test LK.symbol_trie(gd, w) === tr && LK.symbol_trie(gd, w2) === tr2
+    @test LK.symbol_trie(gd, _trw(ld, T, :foo)) === nothing && LK.trie_of_word(gd, _trw(ld, T, :foo)) === nothing
+
+    # unify_trie / get_trie / get_trie_noex on a term reference
+    ref = LK.PL_new_term_ref(ld)
+    @test LK.unify_trie(gd, ld, ref, tr)
+    @test LK.get_trie(gd, ld, ref) === tr && LK.get_trie_noex(gd, ld, ref) === tr && ld.exception_term == 0
+    @test LK.unify_trie(gd, ld, ref, tr) && !LK.unify_trie(gd, ld, ref, tr2)           # the same blob, not the other
+    # a term that is no trie: get_trie raises type_error(trie, _), get_trie_noex says nothing and raises nothing
+    atm = LK.PL_new_term_ref(ld)
+    LK.PL_put_atom(ld, atm, s(:foo))
+    @test LK.get_trie_noex(gd, ld, atm) === nothing && ld.exception_term == 0
+    @test LK.get_trie(gd, ld, atm) === nothing
+    @test _tr_formal(ld) == (:type_error, :trie)
+    LK.PL_clear_exception(ld)
+    # a destroyed trie: symbol_trie and get_trie refuse it (existence_error(trie, _)); get_trie_noex still names it
+    LK.trie_destroy(tr)
+    @test tr.magic == LK.TRIE_CMAGIC && LK.symbol_trie(gd, w) === nothing && LK.trie_of_word(gd, w) === tr
+    @test LK.get_trie_noex(gd, ld, ref) === tr && ld.exception_term == 0
+    @test LK.get_trie(gd, ld, ref) === nothing
+    @test _tr_formal(ld) == (:existence_error, :trie)
+    LK.PL_clear_exception(ld)
+    return nothing
+end
+
+@testset "trie blobs: trie_symbol, symbol_trie, get_trie, get_trie_noex" begin
+    _tr_blob_rows(_TT)
+end
+
+function _tr_error_rows(::Type{T}) where {T}
+    s(n) = lk_sym(T, n)
+    gd, ld, t = _tr_engine(T, T[lk_sym(T, :a)])
+    cul = LK.PL_new_term_ref(ld)
+    LK.PL_put_atom(ld, cul, s(:foo))
+    # CONTAINS_ATTVAR: type_error(free_of_attvar, Culprit); CYCLIC: type_error(acyclic_term, Culprit); every other rc: false, no exception
+    @test !LK.trie_error(ld, LK.TRIE_LOOKUP_CONTAINS_ATTVAR, cul) && _tr_formal(ld) == (:type_error, :free_of_attvar)
+    LK.PL_clear_exception(ld)
+    @test !LK.trie_error(ld, LK.TRIE_LOOKUP_CYCLIC, cul) && _tr_formal(ld) == (:type_error, :acyclic_term)
+    LK.PL_clear_exception(ld)
+    for rc in (0, 1, LK.TRIE_ABSTRACTED, LK.TRIE_LOOKUP_NOT_FLAT)
+        @test !LK.trie_error(ld, rc, cul) && ld.exception_term == 0
+    end
+    @test LK.TRIE_LOOKUP_CONTAINS_ATTVAR == -10
+    # trie_trie_error: the same with the trie's symbol as the culprit
+    tr = LK.trie_create(T)
+    @test !LK.trie_trie_error(gd, ld, LK.TRIE_LOOKUP_CYCLIC, tr) && _tr_formal(ld) == (:type_error, :acyclic_term)
+    LK.PL_clear_exception(ld)
+    @test !LK.trie_trie_error(gd, ld, 1, tr) && ld.exception_term == 0
+    return nothing
+end
+
+@testset "trie errors: trie_error, trie_trie_error" begin
+    _tr_error_rows(_TT)
 end
