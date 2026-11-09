@@ -52,7 +52,7 @@ end
 function _tr_fan(::Type{T}, n::Int; flags::UInt32=UInt32(0)) where {T}
     tr = LK.trie_create(T)
     tr.flags = flags
-    ids = Int[LK.insert_child(tr, 1, UInt64(k)) for k in 1:n]
+    ids = Int[LK.insert_child(tr, 1, _tk(k)) for k in 1:n]
     return tr, ids
 end
 
@@ -92,6 +92,9 @@ _trf(ld, ::Type{T}, name::Symbol, arity::Int) where {T} =
 _trx(::Type{T}, name::Symbol, args::T...) where {T} = mk_expr(T, T[lk_sym(T, name), args...])
 "The variable `n` (a caller's)."
 _trv(::Type{T}, n::Int) where {T} = lk_var(T, UInt64(n))
+"An opaque child key for the number `k`: an atom-tagged word (tagex TAG_ATOM|STG_STATIC), never a variable, attributed-variable or reserved key
+(`update_var_mask` / `is_ground_trie_node` read `tagex(key) = key & 0x1f`: a plain small integer such as 32 or 33 would be TAGEX_VAR / TAGEX_TRIE_ATTVAR)."
+_tk(k::Integer)::UInt64 = LK.consTagged(k, LK.TAG_ATOM | LK.STG_STATIC)
 "The numbered trie variable key `n`."
 _trvar(n::Int) = LK.consTagged(n, LK.TAGEX_VAR)
 
@@ -115,8 +118,8 @@ function _tr_life_rows(::Type{T}) where {T}
     @test tr.nodes[1].parent == 0 && tr.nodes[1].children == 0 && tr.nodes[1].key == 0 && tr.nodes[1].value == 0
 
     # a referenced trie is not emptied (pl-trie.c empty_trie: `references == 0`), and trie_empty_take does not call the taker
-    LK.insert_child(tr, 1, UInt64(5))
-    LK.insert_child(tr, 1, UInt64(6))
+    LK.insert_child(tr, 1, _tk(5))
+    LK.insert_child(tr, 1, _tk(6))
     tr.references = 1
     @test !LK.empty_trie(tr, nothing)
     LK.trie_empty(tr)
@@ -191,85 +194,86 @@ function _tr_children_rows(::Type{T}) where {T}
     tr = LK.trie_create(T)
     root = tr.nodes[1]
     @test LK.is_leaf_trie_node(tr, 1) && !LK.trie_has_children(root)
-    @test LK.get_child(tr, 1, UInt64(10)) == 0 && _tr_keys(tr, 1) == UInt64[]
+    @test LK.get_child(tr, 1, _tk(10)) == 0 && _tr_keys(tr, 1) == UInt64[]
 
     # the first child is a single child: children == (id << 1) | 1
-    c1 = LK.insert_child(tr, 1, UInt64(10))
-    @test c1 == 2 && tr.nodes[c1].parent == 1 && tr.nodes[c1].key == 10
+    c1 = LK.insert_child(tr, 1, _tk(10))
+    @test c1 == 2 && tr.nodes[c1].parent == 1 && tr.nodes[c1].key == _tk(10)
     @test root.children == 5 && root.children == LK.single_child_code(c1)
     @test LK.is_single_child(root.children) && LK.single_child(root.children) == c1
     @test isempty(tr.blocks)
-    @test LK.get_child(tr, 1, UInt64(10)) == c1 && LK.get_child(tr, 1, UInt64(11)) == 0
-    @test !LK.is_leaf_trie_node(tr, 1) && _tr_keys(tr, 1) == [10]
+    @test LK.get_child(tr, 1, _tk(10)) == c1 && LK.get_child(tr, 1, _tk(11)) == 0
+    @test !LK.is_leaf_trie_node(tr, 1) && _tr_keys(tr, 1) == [_tk(10)]
 
     # the second makes a block of capacity 2
-    c2 = LK.insert_child(tr, 1, UInt64(11))
+    c2 = LK.insert_child(tr, 1, _tk(11))
     @test c2 == 3 && !LK.is_single_child(root.children) && root.children == 2 && root.children == LK.block_code(1)
     b = tr.blocks[1]
     @test b.count == 2 && b.capacity == 2 && b.dead == 0 && b.index_bits == 0 && isempty(b.index)
-    @test b.entries == [LK.trie_child(UInt64(10), c1), LK.trie_child(UInt64(11), c2)]
+    @test b.entries == [LK.trie_child(_tk(10), c1), LK.trie_child(_tk(11), c2)]
     @test b.var_mask == 0 && b.attvar_mask == 0
-    @test LK.block_find(b, UInt64(11)) == 2 && LK.block_find(b, UInt64(10)) == 1 && LK.block_find(b, UInt64(12)) == 0
+    @test LK.block_find(b, _tk(11)) == 2 && LK.block_find(b, _tk(10)) == 1 && LK.block_find(b, _tk(12)) == 0
 
     # the third doubles it: the new block is made before the old one is freed, so the old slot is free afterwards
-    c3 = LK.insert_child(tr, 1, UInt64(12))
+    c3 = LK.insert_child(tr, 1, _tk(12))
     @test root.children == LK.block_code(2) && tr.blocks[1] === nothing && tr.free_blocks == [1]
     b = tr.blocks[2]
     @test b.count == 3 && b.capacity == 4 && b.index_bits == 0
-    @test b.entries[1:3] == [LK.trie_child(UInt64(10), c1), LK.trie_child(UInt64(11), c2), LK.trie_child(UInt64(12), c3)]
-    LK.insert_child(tr, 1, UInt64(13))                 # fills it
+    @test b.entries[1:3] == [LK.trie_child(_tk(10), c1), LK.trie_child(_tk(11), c2), LK.trie_child(_tk(12), c3)]
+    LK.insert_child(tr, 1, _tk(13))                 # fills it
     @test root.children == LK.block_code(2) && tr.blocks[2].count == 4
     # the fifth: capacity 8, and it reuses the freed slot 1
-    LK.insert_child(tr, 1, UInt64(14))
+    LK.insert_child(tr, 1, _tk(14))
     @test root.children == LK.block_code(1) && tr.blocks[2] === nothing && tr.free_blocks == [2]
     @test tr.blocks[1].capacity == 8 && tr.blocks[1].count == 5 && tr.blocks[1].index_bits == 0
     for k in 15:17
-        LK.insert_child(tr, 1, UInt64(k))
+        LK.insert_child(tr, 1, _tk(k))
     end
     @test tr.blocks[1].count == 8 && tr.blocks[1].capacity == 8 && root.children == LK.block_code(1)
     # the ninth: capacity 16 > TRIE_LINEAR_MAX, so an index of 1 << (MSB(16) + 1) = 32 slots
-    LK.insert_child(tr, 1, UInt64(18))
+    LK.insert_child(tr, 1, _tk(18))
     b = _tr_block(tr, 1)
     @test b.capacity == 16 && b.count == 9 && b.index_bits == 5 && length(b.index) == 32
     @test count(!=(0), b.index) == 9 && sort(Int.(filter(!=(0), b.index))) == collect(1:9)
     @test LK.TRIE_LINEAR_MAX == 8
     # up to 17 children: capacity 32, 64 index slots
     for k in 19:26
-        LK.insert_child(tr, 1, UInt64(k))
+        LK.insert_child(tr, 1, _tk(k))
     end
     b = _tr_block(tr, 1)
     @test b.capacity == 32 && b.count == 17 && b.index_bits == 6 && length(b.index) == 64
-    @test _tr_keys(tr, 1) == UInt64.(10:26)
-    ids = Dict(k => LK.get_child(tr, 1, UInt64(k)) for k in 10:26)
-    @test all(k -> ids[k] != 0 && tr.nodes[ids[k]].key == k && tr.nodes[ids[k]].parent == 1, 10:26)
-    @test LK.get_child(tr, 1, UInt64(9)) == 0 && LK.get_child(tr, 1, UInt64(27)) == 0
+    @test _tr_keys(tr, 1) == _tk.(10:26)
+    ids = Dict(k => LK.get_child(tr, 1, _tk(k)) for k in 10:26)
+    @test all(k -> ids[k] != 0 && tr.nodes[ids[k]].key == _tk(k) && tr.nodes[ids[k]].parent == 1, 10:26)
+    @test LK.get_child(tr, 1, _tk(9)) == 0 && LK.get_child(tr, 1, _tk(27)) == 0
 
     # a colliding hash: two keys of one slot are both found (open addressing, linear probing)
-    h = LK.child_hash(UInt64(10), 6)
-    k2 = UInt64(1000)
-    while LK.child_hash(k2, 6) != h || k2 in UInt64.(10:26)
-        k2 += 1
+    h = LK.child_hash(_tk(10), 6)
+    n2 = 1000
+    while LK.child_hash(_tk(n2), 6) != h || n2 in 10:26
+        n2 += 1
     end
+    k2 = _tk(n2)
     c27 = LK.insert_child(tr, 1, k2)
     b = _tr_block(tr, 1)
-    @test b.count == 18 && LK.get_child(tr, 1, k2) == c27 && LK.get_child(tr, 1, UInt64(10)) == ids[10]
-    @test LK.block_find(b, k2) == 18 && LK.block_find(b, UInt64(10)) == 1
-    @test all(0 .<= [LK.child_hash(UInt64(k), 6) for k in (1, 10, 77, 12345)] .< 64)
+    @test b.count == 18 && LK.get_child(tr, 1, k2) == c27 && LK.get_child(tr, 1, _tk(10)) == ids[10]
+    @test LK.block_find(b, k2) == 18 && LK.block_find(b, _tk(10)) == 1
+    @test all(0 .<= [LK.child_hash(_tk(k), 6) for k in (1, 10, 77, 12345)] .< 64)
 
     # a dead entry: the key stays in the block, the child is 0, the others are intact
     @test !LK.delete_child(tr, 1, ids[15], false)
     b = _tr_block(tr, 1)
-    @test b.dead == 1 && b.count == 18 && LK.block_find(b, UInt64(15)) > 0
-    @test LK.get_child(tr, 1, UInt64(15)) == 0 && LK.get_child(tr, 1, UInt64(16)) == ids[16]
-    @test !(UInt64(15) in _tr_keys(tr, 1)) && length(_tr_keys(tr, 1)) == 17
+    @test b.dead == 1 && b.count == 18 && LK.block_find(b, _tk(15)) > 0
+    @test LK.get_child(tr, 1, _tk(15)) == 0 && LK.get_child(tr, 1, _tk(16)) == ids[16]
+    @test !(_tk(15) in _tr_keys(tr, 1)) && length(_tr_keys(tr, 1)) == 17
     @test !LK.is_leaf_trie_node(tr, 1)
     LK.destroy_node(tr, ids[15])
     @test tr.free_ids == [ids[15]]
     # ... which is revived by the same key: no new entry, `dead` back to 0, and the freed node id is reused
-    n15 = LK.insert_child(tr, 1, UInt64(15))
+    n15 = LK.insert_child(tr, 1, _tk(15))
     b = _tr_block(tr, 1)
-    @test n15 == ids[15] && b.dead == 0 && b.count == 18 && LK.get_child(tr, 1, UInt64(15)) == n15
-    @test b.entries[LK.block_find(b, UInt64(15))] == LK.trie_child(UInt64(15), n15) && tr.nodes[n15].parent == 1
+    @test n15 == ids[15] && b.dead == 0 && b.count == 18 && LK.get_child(tr, 1, _tk(15)) == n15
+    @test b.entries[LK.block_find(b, _tk(15))] == LK.trie_child(_tk(15), n15) && tr.nodes[n15].parent == 1
     @test isempty(tr.free_ids)
 
     # a single child deleted: no children, the node is a leaf, delete_child says it is empty
@@ -277,7 +281,7 @@ function _tr_children_rows(::Type{T}) where {T}
     @test LK.delete_child(tr1, 1, i1[1], true) && tr1.nodes[1].children == 0 && LK.is_leaf_trie_node(tr1, 1)
     # a delete of a node that is not the single child changes nothing and says it is not empty
     tr1, i1 = _tr_fan(T, 1)
-    other = LK.new_trie_node(tr1, UInt64(99))
+    other = LK.new_trie_node(tr1, _tk(99))
     @test !LK.delete_child(tr1, 1, other, true) && tr1.nodes[1].children == LK.single_child_code(i1[1])
     return nothing
 end
@@ -295,7 +299,7 @@ function _tr_compaction_rows(::Type{T}) where {T}
     @test tr.nodes[1].children == LK.block_code(bid) && tr.blocks[bid].dead == 2
     @test !LK.delete_child(tr, 1, ids[3], true)
     @test tr.nodes[1].children == LK.single_child_code(ids[4]) && tr.blocks[bid] === nothing && tr.free_blocks == [1, 2]
-    @test LK.get_child(tr, 1, UInt64(4)) == ids[4] && LK.get_child(tr, 1, UInt64(1)) == 0
+    @test LK.get_child(tr, 1, _tk(4)) == ids[4] && LK.get_child(tr, 1, _tk(1)) == 0
 
     # 2 children: the second delete makes dead == count: empty, no children
     tr, ids = _tr_fan(T, 2)
@@ -313,8 +317,8 @@ function _tr_compaction_rows(::Type{T}) where {T}
     LK.delete_child(tr, 1, ids[5], true)
     b = _tr_block(tr, 1)
     @test b.capacity == 4 && b.count == 3 && b.dead == 0 && b.index_bits == 0
-    @test _tr_keys(tr, 1) == UInt64.(6:8) && tr.blocks[bid] === nothing
-    @test [LK.get_child(tr, 1, UInt64(k)) for k in 6:8] == ids[6:8]
+    @test _tr_keys(tr, 1) == _tk.(6:8) && tr.blocks[bid] === nothing
+    @test [LK.get_child(tr, 1, _tk(k)) for k in 6:8] == ids[6:8]
 
     # 16 children, 9 deleted: 9*2 > 16 gives 7 live in a block of capacity 8 (the next power of two >= live)
     tr, ids = _tr_fan(T, 16)
@@ -324,7 +328,7 @@ function _tr_compaction_rows(::Type{T}) where {T}
     @test tr.blocks[LK.children_block_id(tr.nodes[1].children)].capacity == 16
     LK.delete_child(tr, 1, ids[9], true)
     b = _tr_block(tr, 1)
-    @test b.capacity == 8 && b.count == 7 && b.dead == 0 && b.index_bits == 0 && _tr_keys(tr, 1) == UInt64.(10:16)
+    @test b.capacity == 8 && b.count == 7 && b.dead == 0 && b.index_bits == 0 && _tr_keys(tr, 1) == _tk.(10:16)
 
     # without `compact`, the delete leaves the block; compact_children applies the same threshold
     tr, ids = _tr_fan(T, 4)
@@ -356,19 +360,19 @@ function _tr_compaction_rows(::Type{T}) where {T}
     b = _tr_block(tr, 1)
     @test b.var_mask == (UInt32(1) << 2) | (UInt32(1) << 30) | LK.VMASK_SCAN && LK.VMASK_SCAN == UInt32(1) << 31
     LK.insert_child(tr, 1, LK.consTagged(2, LK.TAGEX_TRIE_ATTVAR))
-    LK.insert_child(tr, 1, UInt64(77))                 # a plain key (grows the block to 8, copying the masks)
+    LK.insert_child(tr, 1, _tk(77))                 # a plain key (grows the block to 8, copying the masks)
     b = _tr_block(tr, 1)
     @test b.capacity == 8 && b.var_mask == (UInt32(1) << 2) | (UInt32(1) << 30) | LK.VMASK_SCAN
     @test b.attvar_mask == UInt32(1) << 1
     @test LK.VMASKBITS == 32
     # 8 children [V3, V31, p1..p6]: delete V31 and 4 plain ones: the new block is built by block_append, so V31's bit is gone
     tr = LK.trie_create(T)
-    ids = Int[LK.insert_child(tr, 1, k) for k in (_trvar(3), _trvar(31), UInt64.(101:106)...)]
+    ids = Int[LK.insert_child(tr, 1, k) for k in (_trvar(3), _trvar(31), _tk.(101:106)...)]
     for i in 2:6
         LK.delete_child(tr, 1, ids[i], true)
     end
     b = _tr_block(tr, 1)
-    @test b.count == 3 && b.var_mask == UInt32(1) << 2 && _tr_keys(tr, 1) == [_trvar(3), UInt64(105), UInt64(106)]
+    @test b.count == 3 && b.var_mask == UInt32(1) << 2 && _tr_keys(tr, 1) == [_trvar(3), _tk(105), _tk(106)]
     @test ids[1] == LK.get_child(tr, 1, _trvar(3))
     return nothing
 end
@@ -384,25 +388,25 @@ function _tr_concurrent_rows(::Type{T}) where {T}
     tr = LK.trie_create(T)
     tr.flags = LK.TRIE_CONCURRENT
     for k in 1:40
-        LK.new_trie_node(tr, UInt64(k))
+        LK.new_trie_node(tr, _tk(k))
     end
     @test tr.chunks === nothing && tr.node_count == 41 && length(tr.nodes) == 41
     @test all(n -> n.chunk === nothing && (n.flags & LK.TN_CHUNKED) == 0, tr.nodes)
     LK.free_trie_node(tr, 7)
     @test tr.free_ids == [7]
-    nid = LK.new_trie_node(tr, UInt64(500))
-    @test nid == 7 && isempty(tr.free_ids) && tr.nodes[7].key == 500 && tr.nodes[7].parent == 0 && tr.node_count == 42
+    nid = LK.new_trie_node(tr, _tk(500))
+    @test nid == 7 && isempty(tr.free_ids) && tr.nodes[7].key == _tk(500) && tr.nodes[7].parent == 0 && tr.node_count == 42
     @test LK.alloc_trie_node(tr) == (0, nothing, false)
 
     tr, ids = _tr_fan(T, 2; flags=LK.TRIE_CONCURRENT)
     @test tr.lingering == [] && tr.free_blocks == []
-    LK.insert_child(tr, 1, UInt64(3))                  # the block of 2 is replaced by one of 4: it lingers
+    LK.insert_child(tr, 1, _tk(3))                  # the block of 2 is replaced by one of 4: it lingers
     @test tr.lingering == [1] && tr.blocks[1] !== nothing && tr.free_blocks == [] && LK.children_block_id(tr.nodes[1].children) == 2
     LK.free_lingering_blocks(tr)
     @test isempty(tr.lingering) && tr.blocks[1] === nothing && tr.free_blocks == [1]
     # compaction retires the block the same way
     for k in 4:8
-        LK.insert_child(tr, 1, UInt64(k))
+        LK.insert_child(tr, 1, _tk(k))
     end
     @test LK.children_block_id(tr.nodes[1].children) == 1 && tr.lingering == [2]       # 4 -> 8 took the freed slot 1
     # trie_destroy frees the lingering blocks too
@@ -424,33 +428,33 @@ function _tr_chunk_rows(::Type{T}) where {T}
     tr = LK.trie_create(T)
     ids = Int[]
     for k in 1:8
-        push!(ids, LK.new_trie_node(tr, UInt64(k)))
+        push!(ids, LK.new_trie_node(tr, _tk(k)))
     end
     # the first TRIE_SINGLE_NODES (8) nodes are individual
     @test tr.chunks === nothing && tr.node_count == 9 && ids == collect(2:9) && LK.TRIE_SINGLE_NODES == 8
     @test all(n -> n.chunk === nothing && (n.flags & LK.TN_CHUNKED) == 0, tr.nodes)
     # the ninth starts the first chunk: 1024 bytes, (1024 - 72) / 40 = 23 nodes
-    n9 = LK.new_trie_node(tr, UInt64(9))
+    n9 = LK.new_trie_node(tr, _tk(9))
     c = tr.chunks
     @test c !== nothing && c.bytes == 1024 && c.size == 23 && c.used == 1 && c.live == 1 && c.next === nothing
     @test c.free == 0 && c.nfree == 0 && c.sweep_at == 1024 && c.flags == 0
     @test (tr.nodes[n9].flags & LK.TN_CHUNKED) != 0 && tr.nodes[n9].chunk === c && (tr.nodes[n9].flags >> LK.TN_CHUNK_INDEX_SHIFT) == 0
     @test LK.OFFSETOF_TRIE_NODE_CHUNK_NODES == 72 && LK.SIZEOF_TRIE_NODE == 40 && LK.TRIE_CHUNK_MIN == 1024 && LK.TRIE_CHUNK_MAX == 16384
-    n10 = LK.new_trie_node(tr, UInt64(10))
+    n10 = LK.new_trie_node(tr, _tk(10))
     @test (tr.nodes[n10].flags >> LK.TN_CHUNK_INDEX_SHIFT) == 1 && c.used == 2 && c.live == 2
     first_chunk_ids = [n9, n10]
     for k in 11:31                                     # the chunk is full at 23 nodes
-        push!(first_chunk_ids, LK.new_trie_node(tr, UInt64(k)))
+        push!(first_chunk_ids, LK.new_trie_node(tr, _tk(k)))
     end
     @test length(first_chunk_ids) == 23 && tr.chunks === c && c.used == 23 && c.live == 23
     # the 24th starts the second: 2048 bytes, 49 nodes, the first chunk behind it, the sweep threshold inherited
-    LK.new_trie_node(tr, UInt64(32))
+    LK.new_trie_node(tr, _tk(32))
     c2 = tr.chunks
     @test c2 !== c && c2.bytes == 2048 && c2.size == 49 && c2.next === c && c2.used == 1 && c2.live == 1 && c2.sweep_at == 1024
     @test c.live == 23
     # the node count it gives up to the sixth chunk: 23 + 49 + 100 + 203 + 407 + 1 chunked nodes
-    for k in 33:(31 + 49 + 100 + 203 + 407 + 1 - 24 + 24)
-        LK.new_trie_node(tr, UInt64(k))
+    for k in 33:791
+        LK.new_trie_node(tr, _tk(k))
     end
     cs = _tr_chunks(tr)
     @test [Int(c.bytes) for c in cs] == [16384, 16384, 8192, 4096, 2048, 1024]
@@ -467,10 +471,10 @@ function _tr_chunk_rows(::Type{T}) where {T}
     @test head.free == f2 && head.nfree == 2 && tr.nodes[f2].parent == f1 && cs[end].live == 21 && isempty(tr.free_ids)
     # the next new node takes the newest freed id: its chunk and its index in the chunk stay
     used_before = head.used
-    r = LK.new_trie_node(tr, UInt64(777))
+    r = LK.new_trie_node(tr, _tk(777))
     @test r == f2 && head.free == f1 && head.nfree == 1 && cs[end].live == 22 && head.used == used_before
-    @test tr.nodes[r].key == 777 && tr.nodes[r].chunk === cs[end] && (tr.nodes[r].flags & LK.TN_CHUNKED) != 0 && (tr.nodes[r].flags >> LK.TN_CHUNK_INDEX_SHIFT) == 1
-    r2 = LK.new_trie_node(tr, UInt64(778))
+    @test tr.nodes[r].key == _tk(777) && tr.nodes[r].chunk === cs[end] && (tr.nodes[r].flags & LK.TN_CHUNKED) != 0 && (tr.nodes[r].flags >> LK.TN_CHUNK_INDEX_SHIFT) == 1
+    r2 = LK.new_trie_node(tr, _tk(778))
     @test r2 == f1 && head.free == 0 && head.nfree == 0 && cs[end].live == 23 && (tr.nodes[r2].flags >> LK.TN_CHUNK_INDEX_SHIFT) == 0
     # an individual node freed goes to free_ids, not to the chunk
     LK.free_trie_node(tr, 5)
@@ -487,7 +491,7 @@ function _tr_sweep_rows(::Type{T}) where {T}
     tr = LK.trie_create(T)
     nid = 1
     for k in 1:1500
-        nid = LK.insert_child(tr, nid, UInt64(k))
+        nid = LK.insert_child(tr, nid, _tk(k))
     end
     @test tr.node_count == 1501
     cs = _tr_chunks(tr)
@@ -521,21 +525,21 @@ end
 function _tr_prune_rows(::Type{T}) where {T}
     # a chain root - a - b - c: pruning from c takes the whole branch
     tr = LK.trie_create(T)
-    a = LK.insert_child(tr, 1, UInt64(10))
-    b = LK.insert_child(tr, a, UInt64(20))
-    c = LK.insert_child(tr, b, UInt64(30))
-    @test _tr_path(tr, c) == UInt64[10, 20, 30] && tr.node_count == 4
+    a = LK.insert_child(tr, 1, _tk(10))
+    b = LK.insert_child(tr, a, _tk(20))
+    c = LK.insert_child(tr, b, _tk(30))
+    @test _tr_path(tr, c) == _tk.([10, 20, 30]) && tr.node_count == 4
     LK.prune_node(tr, c)
     @test tr.node_count == 1 && tr.nodes[1].children == 0 && sort(tr.free_ids) == [a, b, c] && tr.free_ids == [c, b, a]
     # a flag on b stops it: only c goes
     for fl in (LK.TN_PRIMARY, LK.TN_SECONDARY, LK.TN_PINNED)
         tr = LK.trie_create(T)
-        a = LK.insert_child(tr, 1, UInt64(10))
-        b = LK.insert_child(tr, a, UInt64(20))
-        c = LK.insert_child(tr, b, UInt64(30))
+        a = LK.insert_child(tr, 1, _tk(10))
+        b = LK.insert_child(tr, a, _tk(20))
+        c = LK.insert_child(tr, b, _tk(30))
         tr.nodes[b].flags |= fl
         LK.prune_node(tr, c)
-        @test tr.node_count == 3 && tr.nodes[b].children == 0 && LK.get_child(tr, a, UInt64(20)) == b && LK.get_child(tr, b, UInt64(30)) == 0
+        @test tr.node_count == 3 && tr.nodes[b].children == 0 && LK.get_child(tr, a, _tk(20)) == b && LK.get_child(tr, b, _tk(30)) == 0
         @test tr.free_ids == [c]
         # the node itself carrying the flag is not pruned at all
         LK.prune_node(tr, b)
@@ -543,11 +547,11 @@ function _tr_prune_rows(::Type{T}) where {T}
     end
     # a branch point: pruning c leaves b findable; pruning b afterwards takes a as well
     tr = LK.trie_create(T)
-    a = LK.insert_child(tr, 1, UInt64(10))
-    b = LK.insert_child(tr, a, UInt64(20))
-    c = LK.insert_child(tr, a, UInt64(30))
+    a = LK.insert_child(tr, 1, _tk(10))
+    b = LK.insert_child(tr, a, _tk(20))
+    c = LK.insert_child(tr, a, _tk(30))
     LK.prune_node(tr, c)
-    @test tr.node_count == 3 && LK.get_child(tr, a, UInt64(20)) == b && LK.get_child(tr, a, UInt64(30)) == 0 && _tr_keys(tr, a) == [20]
+    @test tr.node_count == 3 && LK.get_child(tr, a, _tk(20)) == b && LK.get_child(tr, a, _tk(30)) == 0 && _tr_keys(tr, a) == [_tk(20)]
     LK.prune_node(tr, b)
     @test tr.node_count == 1 && tr.nodes[1].children == 0
     # the root is never pruned
@@ -555,44 +559,44 @@ function _tr_prune_rows(::Type{T}) where {T}
     @test tr.node_count == 1
     # prune_error: adds the error key under the node and prunes it, so a node with no flags goes too
     tr = LK.trie_create(T)
-    a = LK.insert_child(tr, 1, UInt64(10))
+    a = LK.insert_child(tr, 1, _tk(10))
     tr.nodes[a].flags |= LK.TN_PRIMARY
-    b = LK.insert_child(tr, a, UInt64(20))
+    b = LK.insert_child(tr, a, _tk(20))
     LK.prune_error(tr, b)
-    @test tr.node_count == 3 && LK.get_child(tr, b, LK.TRIE_ERROR_VAL) == 0 && LK.get_child(tr, a, UInt64(20)) == b
+    @test tr.node_count == 3 && LK.get_child(tr, b, LK.TRIE_ERROR_VAL) == 0 && LK.get_child(tr, a, _tk(20)) == b
     # (the error key is a reserved key, `is_trie_key_pop` of it is 0)
     @test LK.IS_TRIE_KEY_POP(LK.TRIE_ERROR_VAL) == 0 && LK.IS_TRIE_KEY_POP(LK.TRIE_KEY_ABSENT) == 0 && LK.TRIE_ERROR_VAL != LK.TRIE_KEY_ABSENT
-    @test LK.IS_TRIE_KEY_POP(LK.TRIE_KEY_POP(1)) == 1 && LK.IS_TRIE_KEY_POP(LK.TRIE_KEY_POP(7)) == 7 && LK.IS_TRIE_KEY_POP(_trvar(11)) == 0 && LK.IS_TRIE_KEY_POP(UInt64(5)) == 0
+    @test LK.IS_TRIE_KEY_POP(LK.TRIE_KEY_POP(1)) == 1 && LK.IS_TRIE_KEY_POP(LK.TRIE_KEY_POP(7)) == 7 && LK.IS_TRIE_KEY_POP(_trvar(11)) == 0 && LK.IS_TRIE_KEY_POP(_tk(5)) == 0
 
     # prune_trie: the branches that end in no value go, with the callback on each leaf it meets (root - a - {b, c}, c a value)
     tr = LK.trie_create(T)
-    a = LK.insert_child(tr, 1, UInt64(10))
-    b = LK.insert_child(tr, a, UInt64(20))
-    c = LK.insert_child(tr, a, UInt64(30))
+    a = LK.insert_child(tr, 1, _tk(10))
+    b = LK.insert_child(tr, a, _tk(20))
+    c = LK.insert_child(tr, a, _tk(30))
     tr.nodes[c].flags |= LK.TN_PRIMARY
     leaves = Int[]
     LK.prune_trie(tr, 1, id -> push!(leaves, id))
     @test sort(leaves) == [b, c] && tr.node_count == 3
-    @test LK.get_child(tr, a, UInt64(30)) == c && LK.get_child(tr, a, UInt64(20)) == 0 && _tr_keys(tr, a) == [30]
+    @test LK.get_child(tr, a, _tk(30)) == c && LK.get_child(tr, a, _tk(20)) == 0 && _tr_keys(tr, a) == [_tk(30)]
     # a trie with no value at all is emptied down to the root
     tr, _ = _tr_fan(T, 5)
     LK.prune_trie(tr, 1)
     @test tr.node_count == 1 && tr.nodes[1].children == 0
     # a deeper one: the root has a chain and a fan; the chain (no value) goes, the value branch stays
     tr = LK.trie_create(T)
-    x1 = LK.insert_child(tr, 1, UInt64(1))
-    x2 = LK.insert_child(tr, x1, UInt64(2))
-    y1 = LK.insert_child(tr, 1, UInt64(3))
-    y2 = LK.insert_child(tr, y1, UInt64(4))
-    y3 = LK.insert_child(tr, y1, UInt64(5))
+    x1 = LK.insert_child(tr, 1, _tk(1))
+    x2 = LK.insert_child(tr, x1, _tk(2))
+    y1 = LK.insert_child(tr, 1, _tk(3))
+    y2 = LK.insert_child(tr, y1, _tk(4))
+    y3 = LK.insert_child(tr, y1, _tk(5))
     tr.nodes[y3].flags |= LK.TN_PRIMARY
     LK.prune_trie(tr, 1)
-    @test tr.node_count == 3 && _tr_keys(tr, 1) == [3] && _tr_keys(tr, y1) == [5]
+    @test tr.node_count == 3 && _tr_keys(tr, 1) == [_tk(3)] && _tr_keys(tr, y1) == [_tk(5)]
 
     # trie_single_value_node: value_count 1 and a chain of single children down to the value
     tr = LK.trie_create(T)
-    a = LK.insert_child(tr, 1, UInt64(10))
-    b = LK.insert_child(tr, a, UInt64(20))
+    a = LK.insert_child(tr, 1, _tk(10))
+    b = LK.insert_child(tr, a, _tk(20))
     tr.nodes[b].value = UInt64(5)
     @test LK.trie_single_value_node(tr) == 0           # value_count is 0
     tr.value_count = 1
@@ -600,7 +604,7 @@ function _tr_prune_rows(::Type{T}) where {T}
     tr.value_count = 2
     @test LK.trie_single_value_node(tr) == 0
     tr.value_count = 1
-    LK.insert_child(tr, a, UInt64(21))                 # a branch before the value
+    LK.insert_child(tr, a, _tk(21))                 # a branch before the value
     tr.nodes[b].value = UInt64(0)
     tr.nodes[a].value = UInt64(0)
     tr2, ids = _tr_fan(T, 2)
@@ -621,11 +625,11 @@ end
 function _tr_clear_rows(::Type{T}) where {T}
     tr = LK.trie_create(T)
     for k in 1:40
-        LK.insert_child(tr, 1, UInt64(k))
+        LK.insert_child(tr, 1, _tk(k))
     end
-    deep = LK.get_child(tr, 1, UInt64(5))
+    deep = LK.get_child(tr, 1, _tk(5))
     for k in 1:12
-        deep = LK.insert_child(tr, deep, UInt64(100 + k))
+        deep = LK.insert_child(tr, deep, _tk(100 + k))
     end
     @test tr.node_count == 53 && tr.chunks !== nothing && !isempty(tr.blocks)
     tr.nodes[3].value = UInt64(7)
@@ -641,8 +645,8 @@ function _tr_clear_rows(::Type{T}) where {T}
     @test tr.node_count == 1 && length(tr.nodes) == 1 && tr.chunks === nothing && tr.indirects === nothing && tr.value_count == 0
     @test isempty(tr.blocks) && isempty(tr.free_ids) && isempty(tr.free_blocks) && tr.nodes[1].children == 0
     # the trie is usable again afterwards
-    n = LK.insert_child(tr, 1, UInt64(1))
-    @test n == 2 && tr.node_count == 2 && LK.get_child(tr, 1, UInt64(1)) == 2
+    n = LK.insert_child(tr, 1, _tk(1))
+    @test n == 2 && tr.node_count == 2 && LK.get_child(tr, 1, _tk(1)) == 2
     # trie_clear_nodes (no taker): the nodes go, the flag-less trie's individual nodes too
     LK.trie_clear_nodes(tr)
     @test tr.node_count == 1 && length(tr.nodes) == 1
@@ -662,9 +666,9 @@ end
 
 function _tr_walk_rows(::Type{T}) where {T}
     tr = LK.trie_create(T)
-    a = LK.insert_child(tr, 1, UInt64(10))
-    b = LK.insert_child(tr, 1, UInt64(11))
-    c = LK.insert_child(tr, a, UInt64(12))
+    a = LK.insert_child(tr, 1, _tk(10))
+    b = LK.insert_child(tr, 1, _tk(11))
+    c = LK.insert_child(tr, a, _tk(12))
     visited = Int[]
     @test LK.map_trie_node(tr, 1, (t, id) -> (push!(visited, id); nothing)) === nothing
     @test visited == [1, a, c, b]                      # pre-order, children in order
@@ -675,10 +679,10 @@ function _tr_walk_rows(::Type{T}) where {T}
 
     # is_ground_trie_node: a variable key or an attributed-variable key anywhere on the path
     tr = LK.trie_create(T)
-    g1 = LK.insert_child(tr, 1, UInt64(5))
-    g2 = LK.insert_child(tr, g1, UInt64(6))
+    g1 = LK.insert_child(tr, 1, _tk(5))
+    g2 = LK.insert_child(tr, g1, _tk(6))
     v1 = LK.insert_child(tr, g1, _trvar(1))
-    v2 = LK.insert_child(tr, v1, UInt64(7))
+    v2 = LK.insert_child(tr, v1, _tk(7))
     t1 = LK.insert_child(tr, g1, LK.consTagged(1, LK.TAGEX_TRIE_ATTVAR))
     @test LK.is_ground_trie_node(tr, 1) && LK.is_ground_trie_node(tr, g1) && LK.is_ground_trie_node(tr, g2)
     @test !LK.is_ground_trie_node(tr, v1) && !LK.is_ground_trie_node(tr, v2) && !LK.is_ground_trie_node(tr, t1)
@@ -711,9 +715,9 @@ function _tr_stat_rows(::Type{T}) where {T}
     @test LK.trie_table_size(tr) == 152 + 31 * 40
     # a block of 2 (not hashed) and a single child are counted as well
     tr = LK.trie_create(T)
-    a = LK.insert_child(tr, 1, UInt64(1))
-    LK.insert_child(tr, 1, UInt64(2))
-    LK.insert_child(tr, a, UInt64(3))
+    a = LK.insert_child(tr, 1, _tk(1))
+    LK.insert_child(tr, 1, _tk(2))
+    LK.insert_child(tr, a, _tk(3))
     st = LK.stat_trie(tr)
     @test (st.nodes, st.hashes, st.values) == (4, 0, 0) && st.bytes == 112 + 40 * 4 + (32 + 2 * 16)
     # a TRIE_CONCURRENT trie has no chunks: every node is counted at 40
