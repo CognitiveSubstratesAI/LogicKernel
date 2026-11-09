@@ -468,6 +468,13 @@ function pl_wrapped_implementation3_va(
     return FFALSE
 end
 
+# PORT: pl-wrap.c write_closure
+# DIVERGES: returns the text and the writer (`writeAtom`, src/pl-write.jl) puts it out through `PutToken`, where upstream
+# `Sfprintf`s to the stream; the database is an argument (upstream: `PL_blob_data`, then `predicateName(&c->def)`).
+"The text a closure blob is written as: `<closure>(m:p/1)` (pl-wrap.c)."
+write_closure(gd::PL_global_data{T}, c::closure{T}) where {T} =
+    "<closure>(" * _autoload_predicate_name(gd, c.def) * ")"       # Sfprintf(s, "<closure>(%s)", predicateName(&c->def))
+
 # PORT: pl-wrap.c closure_predicate as pl_closure_predicate2_va
 # (PRED_IMPL("$closure_predicate", 2, closure_predicate, 0))
 # DIVERGES: the blob test is `closure_of_word` of the atom's handle (upstream: `PL_get_blob` and the type pointer).

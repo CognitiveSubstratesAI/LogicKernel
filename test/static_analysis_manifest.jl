@@ -2707,6 +2707,7 @@ function _manifest_index(T)
         (LK.supervisor_crefs, Tuple{GD, D, Vector{LK.code}}, false),
         (LK.innermost_supervisor, Tuple{GD, D}, false),
         (LK.get_procedure_resolve_head, Tuple{GD, LD, Int, Int}, false),
+        (LK.write_closure, Tuple{GD, LK.closure{T}}, false),
         # AUTOLOAD1 A4 — the autoload flag (pl-prologflag.c setAutoload, propagateAutoload; pl-fli.c PL_set_prolog_flag)
         (LK.setAutoload, Tuple{LD, T}, false),
         (LK.propagateAutoload, Tuple{GD, LD, Int}, false),

@@ -7243,7 +7243,7 @@ run when this block was written; every claim is UNVERIFIED until the gate.
      `closure.supervisor_crefs`), where upstream's operands are the clause references. `unwrap_predicate/2` installs both code and table back. ORIGINAL, no upstream counterpart.
   3. A non-deterministic foreign predicate that is wrapped retries (`shallow_backtrack`, `deep_backtrack`, src/pl-wam.jl:5361, :5476) in `innermost_supervisor(gd, DEF)` (src/pl-wrap.jl:207):
      the kernel re-derives a foreign frame's code by `DEF.codes`, which for a wrapped predicate is the wrapper; upstream's choice point holds the code pointer. ORIGINAL.
-  4. `write_closure` (src/pl-write.jl:876) writes through `PutToken` (a token break, as the other blobs' hook) where upstream's `Sfprintf` writes raw; it closes TAB1-min DIVERGES item 4.
+  4. `write_closure` (src/pl-wrap.jl, called from `writeAtom`, src/pl-write.jl:876) writes through `PutToken` (a token break, as the other blobs' hook) where upstream's `Sfprintf` writes raw; it closes TAB1-min DIVERGES item 4.
   5. `get_procedure_resolve_head` (src/pl-wrap.jl:341) is `get_procedure`'s `GP_RESOLVE` arm without `GP_NAMEARITY` (a head), which the kernel's `get_procedure` has only for `GP_DEFINE`. ORIGINAL.
   6. `$wrapped_predicate/2` builds `Name-ClauseRef` with `PL_unify_functor`/`PL_unify_arg` where upstream uses `PL_unify_term`; `$wrapped_implementation/3` builds the goal by `unify_wrapped`.
 - **NOT done (owner WRAP1b):** the 2-argument `freeCodesDefinition!` refusal (docs/r2_owners.tsv row 271; TAB1-min DIVERGES item 3): `setDynamicDefinition!` (~10 callers in four files),
