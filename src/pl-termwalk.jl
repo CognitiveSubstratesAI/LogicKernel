@@ -11,7 +11,9 @@
 #   * `AC_TERM_WALK` (`ac_term_agenda`), which pl-termhash.c uses — a pre-order walk of every
 #     subterm, compound arguments left to right;
 #   * `AC_TERM_WALK_LR` (`term_agendaLR`) — the arguments of TWO compounds in step, which
-#     pl-prims.c's `do_unify` walks: on the CELLS (`cell_agendaLR`, below).
+#     pl-prims.c's `do_unify` walks: on the CELLS (`cell_agendaLR`, below);
+#   * `AC_TERM_WALK_POP` (`term_agenda_P`) — one-sided like the plain one, and it also reports where each compound
+#     ends (a pop count), which pl-trie.c's `trie_lookup_abstract` needs: on the CELLS (`cell_agenda_P`, last section).
 #
 # DIVERGES (`ac_term_agenda`, on terms): a C agenda walks a `Word*` into a compound's argument array;
 # here a node is the compound, the child index of its next argument and how many are left (see

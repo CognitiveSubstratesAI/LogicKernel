@@ -1439,10 +1439,13 @@ mutable struct trie{T}
     lingering::Vector{Int}                              # ids of replaced children blocks of a TRIE_CONCURRENT trie, freed by free_lingering_blocks
     lookups::Int                                        # stats.lookups
     gen_call::Int                                       # stats.gen_call
-    worklist::Nothing                                   # data.worklist (TB0 widens the type to its record: `Any` fails the nonconcrete-fields gate)
+    # TB0-MERGE: `worklist` becomes `Union{Nothing, tbl_worklist{T}}` (TB0's `worklist{T, tbl_component{T}}`, pl-incl.jl; `Any` fails the nonconcrete-fields gate)
+    worklist::Nothing                                   # data.worklist
     variant::Int                                        # data.variant: a node id of the variant trie (TB0)
-    IDG::Nothing                                        # data.IDG (TB0 widens the type)
-    predicate::Nothing                                  # data.predicate (TB0 widens the type)
+    # TB0-MERGE: `IDG` becomes `Union{Nothing, <the IDG node record>}`: TB0 leaves `idg_node`/`idg_mdep`/`idg_mono` to TB6 (pl-incl.jl notes), so it stays `Nothing` until TB6
+    IDG::Nothing                                        # data.IDG
+    # TB0-MERGE: `predicate` becomes `Union{Nothing, definition{T}}` (the Definition; `definition{T}` is declared in pl-incl.jl before `trie`)
+    predicate::Nothing                                  # data.predicate
     serial::Int                                         # the trie's number in `gd.tries` (0: not registered)
 end
 

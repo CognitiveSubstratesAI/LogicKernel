@@ -6,12 +6,14 @@
 # COPYRIGHT: SWI-Prolog Solutions b.v.
 # allow-new-artifact: a 1:1 port of swipl-devel src/pl-trie.c (the upstream file was read at the pin; the design and the line ranges are in evidence/TAB1/tr1_partA_status.md and tr1_state.md)
 # PIN1 ledger (V10.1.20): pl-trie.c at 18168e62 (the first port: no earlier pin).
-# TRIES (pl-trie.c), TAB1 step TR1, part A2a: the trie, its children blocks, its node allocation and its life. This file holds,
-# in the order of pl-trie.c: the reserved keys, the trie blob (`trie_blob`, `initTries!`, `trie_symbol`, `symbol_trie`,
-# `get_trie`, `trie_error`), `trie_create`, `trie_destroy`, `trie_empty`, `trie_empty_take`, `trie_clean`, the children
-# (`get_child`, `next_child!`, `is_leaf_trie_node`, `trie_single_value_node`), the blocks (`block_find` ... `delete_child`),
-# the node allocation and the chunks, `clear_node`, `prune_node`, `prune_trie`, `insert_child`, `follow_node`, `prune_error`.
-# Part A2b (the lookup and the indirect table) follows.
+# TRIES (pl-trie.c), TAB1 step TR1, part A: the trie, its children blocks, its node allocation and its life, the indirect table,
+# the lookup and the statistics. This file holds, in the order of pl-trie.c: the reserved keys, `trie_create`, `trie_destroy`,
+# `trie_empty`, `trie_empty_take`, `trie_clean`, the children (`get_child`, `next_child!`, `is_leaf_trie_node`,
+# `trie_single_value_node`), the blocks (`block_find` ... `delete_child`), the node allocation and the chunks, `clear_node`,
+# `prune_node`, `prune_trie`, `insert_child`, `follow_node`, `prune_error`, the indirect table (`new_indirect_table`,
+# `intern_indirect`, `trie_intern_indirect`), the lookup (`trie_lookup_abstract`, `trie_lookup_flat`, `trie_insert_flat`), the
+# walk and the statistics (`is_ground_trie_node`, `map_trie_node`, `stat_trie`, `trie_table_size`), and the trie blob
+# (`trie_blob`, `initTries!`, `trie_symbol`, `symbol_trie`, `get_trie`, `trie_error`). The PRED_IMPLs and the value helpers are part B.
 #
 # REPRESENTATION (DIVERGES, audit D-0453 Q3, owner TR1): a node, a children block and a node chunk are Julia records; a node
 # is named by its id in `trie.nodes` (id 1 is the root; 0 is upstream's NULL), a block by its id in `trie.blocks`, and
