@@ -36,3 +36,15 @@ Derivation read at :200-250: `missing_foreign = count(k -> o1[k][1][2] == '1', l
 
 ## Daemon status
 No daemon was started or used. Not an engine step.
+
+## FINALIZE DONE (agent 2), commits on wip/tr1 (never pushed, no Julia run)
+- 23dab189 TW line numbers remapped (hunks +9/+9/+11/+10/+52; 67 lines; 17 read back).
+- 164d6219 ids of C6, C15, C16, S2, P3, V3, V4, V21, U1, U3 name their kill rows (C6, S2, P3, V3, V4 no longer DEFERRED).
+- 60d1f8e9 TP row t76 (`trie_new(T), blob(T, Ty)`: swipl's answer `trie`, from the pin build 10.1.20 with the DRIVER text) in test_trie_preds_swipl.{pl,out,jl}: kills B6 (TP .jl:261). NOT RUN on the kernel: next gate, three term types.
+- 358dcb8b equivalents with real file:line (A4, S4, X1, W2b, K3, D2), V6/V11/V12 DEFERRED, V18 kill TP:208.
+- 917730bf PIN1-style header, TARGETS rule, section ranges. List: 112 mutants, 0 failures, 6 equivalents, 3 DEFERRED KILL (V6, V11, V12).
+## _BI_KERNEL_MISSING_FOREIGN (test/db/test_boot_image_swipl.jl:161): COUNTED, NOT EDITED
+All 11 registrations (src/pl-trie.jl:2067-2077) are foreign rows (flags 01100000) of module `system` in test/db/test_boot_image_swipl_rows.out:
+is_trie/1, trie_new/1, trie_destroy/1, trie_insert/2,3,4, $trie_insert_abstract/3, trie_update/3, trie_lookup/3, trie_delete/3, trie_term/2.
+So 389 becomes 378 (add "(389 before TR1 registered the eleven trie predicates)" to the comment at :161); _BI_KERNEL_ONLY stays empty;
+the foreign rows still lacking are TR2/TR4's (trie_gen/2,3, $trie_gen_node/3, $trie_property/2, $trie_compile/2).
