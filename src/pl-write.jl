@@ -1,11 +1,11 @@
-# UPSTREAM: swipl-devel src/pl-write.c @ cbf4e1896275
-# UPSTREAM: swipl-devel src/pl-incl.h @ cbf4e1896275
+# UPSTREAM: swipl-devel src/pl-write.c @ 18168e629eab
+# UPSTREAM: swipl-devel src/pl-incl.h @ 18168e629eab
 # CLASS: code
 # COPYRIGHT: Copyright (c)  1985-2026, University of Amsterdam
 # COPYRIGHT: VU University Amsterdam
 # COPYRIGHT: CWI, Amsterdam
 # COPYRIGHT: SWI-Prolog Solutions b.v.
-#
+# PIN1 ledger (V10.1.20): re-cite only, no code change (cbf4e189..18168e62 compared, D-0447 Q1) — pl-incl.h: access-only (d755bdc4) ported; ATOM_RESERVE_BATCH is pl-incl.jl:460 (commit 5); the PLFLAG_EPILOG comma is no value.
 # THE WRITER (R1e). Since R1c the NaN helpers the reader needs to read `1.5NaN`: a NaN's payload
 # is written as the float whose exponent field is replaced (`NaN_value`), and read back by putting
 # the NaN exponent into it (`make_nan`). Since R1d the quoting rules the parser asks of a quoted

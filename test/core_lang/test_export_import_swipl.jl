@@ -339,6 +339,37 @@ t_f5(R) :- findall(X, mw_wq(X), R).
 # swipl 10.1.19's line (live below); the kernel's answer is the same line since PR1b (no longer a pinned difference)
 const _MX_F5_SWIPL = "t_f5 c[116,95,102,53]/1(c[91,124,93]/2(i9,nil))"
 
+# F6 (PIN1 step C, b94d7de5): abolishing an IMPORTED predicate makes a fresh definition with share count 1 (upstream `newDefinition`;
+# it was 0). The count is seen through `fixExport`: mgd imports the abolished (undefined) mgm:gp/1, so the fresh definition has two
+# sharers, then mgd imports mgq's defined gp/1 over it; `import` unshares the undefined one and, with a sharer left (count > 0),
+# `fixExport` re-points EVERY procedure of it, mgm's own included, to mgq's definition, so mgm:gp(X) answers [1]. With the count at 0 the
+# unshare ended below 1, no fixup ran, and mgm:gp/1 stayed undefined.
+const _MX_F6_PROGRAM = raw"""
+:- assertz(mgq:gp(1)).
+:- mgq:export(gp/1).
+t_f6(R) :-
+    mgm:import(mgq:gp/1),
+    abolish(mgm:gp/1),
+    mgm:export(gp/1),
+    mgd:import(mgm:gp/1),
+    mgd:import(mgq:gp/1),
+    catch(findall(X, mgm:gp(X), R), error(E, _), R = raised(E)).
+:- assertz(mgq:gz).
+:- mgq:export(gz/0).
+t_f7(R) :-                                  % the same with an arity-0 predicate (no argument info in its definition)
+    mgm:import(mgq:gz/0),
+    abolish(mgm:gz/0),
+    mgm:export(gz/0),
+    mgd:import(mgm:gz/0),
+    mgd:import(mgq:gz/0),
+    catch(findall(x, mgm:gz, R), error(E, _), R = raised(E)).
+"""
+# swipl 10.1.20 (18168e62, with b94d7de5)'s line, live below
+const _MX_F6_SWIPL = [
+    "t_f6 c[116,95,102,54]/1(c[91,124,93]/2(i1,nil))",
+    "t_f7 c[116,95,102,55]/1(c[91,124,93]/2(a[120],nil))"
+]
+
 "The program and cases as one file; the case predicates' names."
 function _mx_file()::Tuple{String, Vector{String}}
     names = ["t_$(id)" for (id, _) in _MX_CASES]
@@ -458,6 +489,29 @@ end
     @test res[1] == ["ok", _MX_F5_SWIPL]
 end
 
+@testset "F6: abolishing an imported predicate: share count 1 (b94d7de5)" begin
+    f = joinpath(mktempdir(), "mx_f6.pl")
+    write(f, _MX_F6_PROGRAM)
+    @test all(startswith.(_MX_F6_SWIPL, ["t_f6 ", "t_f7 "]))
+    # UNVERIFIED on the kernel: gate decides
+    res, gd, _ = _mx_kernel(f, ["t_f6", "t_f7"])
+    @test res == ["ok"; _MX_F6_SWIPL]
+    # white box (swipl cannot be asked the count): after the row mgm's procedure was re-pointed to mgq's definition by fixExport, which
+    # ran only because the abolished link's definition still had a sharer; the fresh definition a bare abolish makes starts at 1
+    shared(m, n, a) = LK.isCurrentProcedure(
+        sym_key(_mxs(n)), a, LK.isCurrentModule(gd.modules, _mxs(m))
+    ).definition.shared
+    proc(m, n, a) = LK.isCurrentProcedure(
+        sym_key(_mxs(n)), a, LK.isCurrentModule(gd.modules, _mxs(m))
+    )
+    @test proc("mgm", "gp", 1).definition === proc("mgq", "gp", 1).definition
+    @test proc("mgd", "gp", 1).definition === proc("mgq", "gp", 1).definition
+    @test shared("mgq", "gp", 1) == 3                    # mgq's own, mgd's import, mgm's after fixExport
+    @test shared("mgm", "gp", 1) == 3
+    @test proc("mgm", "gz", 0).definition === proc("mgq", "gz", 0).definition   # the arity-0 row: the same
+    @test shared("mgq", "gz", 0) == 3
+end
+
 @testset "the pins are swipl's (live, when swipl is on PATH)" begin
     swipl = get(ENV, "LOGICKERNEL_NO_SWIPL", "") == "1" ? nothing : Sys.which("swipl")
     # the pinned table is the driver's whole output (the inert-testset guard: an assertion either way)
@@ -470,5 +524,8 @@ end
         f5 = joinpath(mktempdir(), "mx_f5.pl")
         write(f5, _MX_F5_PROGRAM)
         @test _mx_swipl_lines(f5, ["t_f5"]) == ["ok", _MX_F5_SWIPL]
+        f6 = joinpath(mktempdir(), "mx_f6.pl")
+        write(f6, _MX_F6_PROGRAM)
+        @test _mx_swipl_lines(f6, ["t_f6", "t_f7"]) == ["ok"; _MX_F6_SWIPL]
     end
 end

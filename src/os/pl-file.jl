@@ -1,15 +1,15 @@
-# UPSTREAM: swipl-devel src/os/pl-file.c @ cbf4e1896275
-# UPSTREAM: swipl-devel src/os/pl-file.h @ cbf4e1896275
-# UPSTREAM: swipl-devel src/pl-global.h @ cbf4e1896275
-# UPSTREAM: swipl-devel src/pl-incl.h @ cbf4e1896275
-# UPSTREAM: swipl-devel src/os/pl-stream.c @ cbf4e1896275
-# UPSTREAM: swipl-devel src/pl-privitf.c @ cbf4e1896275
-# UPSTREAM: swipl-devel src/os/pl-prologflag.c @ cbf4e1896275
+# UPSTREAM: swipl-devel src/os/pl-file.c @ 18168e629eab
+# UPSTREAM: swipl-devel src/os/pl-file.h @ 18168e629eab
+# UPSTREAM: swipl-devel src/pl-global.h @ 18168e629eab
+# UPSTREAM: swipl-devel src/pl-incl.h @ 18168e629eab
+# UPSTREAM: swipl-devel src/os/pl-stream.c @ 18168e629eab
+# UPSTREAM: swipl-devel src/pl-privitf.c @ 18168e629eab
+# UPSTREAM: swipl-devel src/os/pl-prologflag.c @ 18168e629eab
 # CLASS: code
 # COPYRIGHT: Copyright (c)  2011-2024, University of Amsterdam
 # COPYRIGHT: VU University Amsterdam
 # COPYRIGHT: SWI-Prolog Solutions b.v.
-#
+# PIN1 ledger (V10.1.20): re-cite only, no code change (cbf4e189..18168e62 compared, D-0447 Q1) — pl-incl.h: access-only (d755bdc4) ported; ATOM_RESERVE_BATCH is pl-incl.jl:460 (commit 5); the PLFLAG_EPILOG comma is no value; pl-prologflag.c: flags validate_api and the tabling restraint flags ported, 1412ce49 ported. Also re-cited: pl-file.c: set_eof_action, newline mode (cd67bb35, dfc1c55d, 4f259069) ported; shareStandardStream (87fc7589) is owner TH1 (docs/architecture.md, deferred owners); pl-global.h: the unported fields are the tabling fields (TAB1 row cfile:pl-tabling.c), LD->profile (PROF1) and LD->atoms.reserved (ATOM1), owners in docs/architecture.md (deferred owners); pl-stream.c: Sshare (87fc7589) is owner TH1 (docs/architecture.md, deferred owners).
 # THE STREAM TABLE, the part the loader needs (R1f): the file name an open stream reads, which
 # upstream keeps in the stream's context (`getStreamContext(s)->filename`) and the reader puts in a
 # term's source location and a syntax error's `file(…)`. Since R1e's write/1 family (decision 2a,

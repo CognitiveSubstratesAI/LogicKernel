@@ -1,11 +1,11 @@
-# UPSTREAM: swipl-devel src/pl-modul.c @ cbf4e1896275
-# UPSTREAM: swipl-devel src/pl-incl.h @ cbf4e1896275
+# UPSTREAM: swipl-devel src/pl-modul.c @ 18168e629eab
+# UPSTREAM: swipl-devel src/pl-incl.h @ 18168e629eab
 # CLASS: code
 # COPYRIGHT: Copyright (c)  1985-2024, University of Amsterdam
 # COPYRIGHT: VU University Amsterdam
 # COPYRIGHT: CWI, Amsterdam
 # COPYRIGHT: SWI-Prolog Solutions b.v.
-#
+# PIN1 ledger (V10.1.20): re-cite only, no code change (cbf4e189..18168e62 compared, D-0447 Q1) — pl-incl.h: access-only (d755bdc4) ported; ATOM_RESERVE_BATCH is pl-incl.jl:460 (commit 5); the PLFLAG_EPILOG comma is no value.
 # What the kernel takes from SWI-Prolog's modules (pl-modul.c): the module table and the modules in
 # it — `system`, `user`, a `$`-module, any other a name asks for (MOD1; since V5c the table had only
 # `system` and `user`) — looking a module up by name; the super modules (`add_import_module/3`,

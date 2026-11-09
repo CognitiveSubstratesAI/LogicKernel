@@ -106,3 +106,48 @@ t86(R) :- rep(5000, L), res(delete_file(L), R).
 t87(R) :- res(delete_file(lk_y1_nonempty_dir), R).
 t88(R) :- res(delete_file(lk_y1_victim), R1), res(delete_file(lk_y1_victim), R2), R = R1-R2.
 t89(R) :- res(delete_file(lk_y1_emptydir), R).
+% PIN1 step C (D-0447 item 4): the statistics keys of 10.1.20, `shared_table_space_used`, `erased_clauses`, `erased_clause_space`.
+% `settle` moves the database generation past every erasure and runs clause GC twice, so a row compares the DELTA of the
+% two erased-clause keys from a settled state (what the machine had erased before the row is not the row's business):
+% a retract, an erase, an abolish and a retractall each raise the count by the clauses erased and the space by more than
+% 8 bytes a clause (swipl: 112; the kernel counts its own bytes, so only the order is pinned), and
+% clause GC returns both; a clause an open query still reads (t94) is not collected until that query is cut.
+% Not here: a re-consult (the kernel refuses it until LB6b) and the absolute space (swipl's bytes are its own).
+:- dynamic ef/1, eg/1, eh/1.
+est(E, S) :- statistics(erased_clauses, E), statistics(erased_clause_space, S).
+settle :- assertz(eh(1)), garbage_collect_clauses, assertz(eh(2)), garbage_collect_clauses.
+edelta(E0, S0, R) :- est(E1, S1), D is E1-E0, ( S1 - S0 > 8*D -> U = up ; U = noup ), R = D-U.
+eback(E0, S0, B) :- settle, est(E2, S2), ( E2 =:= E0, S2 =:= S0 -> B = back ; B = no(E0, E2, S0, S2) ).
+t90(R) :- settle, est(E0, S0), assertz(ef(1)), assertz(ef(2)), assertz(ef(3)), retract(ef(1)), edelta(E0, S0, D), eback(E0, S0, B), R = [D, B].
+t91(R) :- settle, est(E0, S0), assertz(ef(1), Ref), assertz(ef(2)), erase(Ref), edelta(E0, S0, D), eback(E0, S0, B), R = [D, B].
+t92(R) :- settle, est(E0, S0), assertz(eg(1)), assertz(eg(2)), assertz(eg(3)), abolish(eg/1), edelta(E0, S0, D), eback(E0, S0, B), R = [D, B].
+t93(R) :- settle, est(E0, S0), retractall(ef(_)), settle, est(E0b, S0b), assertz(ef(1)), assertz(ef(2)), retractall(ef(_)), edelta(E0b, S0b, D), eback(E0, S0, B), R = [E0b-S0b, D, B].
+t94(R) :- settle, est(E0, S0), assertz(ef(1)), assertz(ef(2)), ef(_), retract(ef(1)), settle, edelta(E0, S0, D), !, eback(E0, S0, B), R = [D, B].
+t95(R) :- settle, est(E0, S0), R = E0-S0.
+t96(R) :- findall(K-V, ( member(K, [shared_table_space_used, table_space_used]), statistics(K, V) ), R).
+t97(R) :- res(statistics(erased_clauses, [_]), R).
+t98(R) :- res(statistics(shared_table_space_used, [_]), R).
+t99(R) :- mem(K, [shared_table_space_used, erased_clauses, erased_clause_space]), stat(K, T), R = K-T.
+% PIN1 step C (D-0447 item 5): the attributes `erased_clauses` and `erased_clause_space` of `$get_predicate_attribute`/3
+% (pl-proc.c, 10.1.20). Each FAILS for a foreign predicate and for a definition with no erased clause, else answers the
+% count and the bytes of the erased clauses clause GC has not yet returned. `eas` pins the count exactly and the space by
+% its relations only: more than 8 bytes a clause and no more than the `size` of the predicate, which counts them (swipl:
+% 112 bytes a clause; the kernel counts its own bytes). A row that erases from a `settle`d state runs on a predicate of its own.
+:- dynamic ea1/1, ea2/1, ea3/1, ea4/1, ea5/1, ea6/1, ea7/1.
+eas(H, R) :-
+    ( '$get_predicate_attribute'(H, erased_clauses, E) -> true ; E = none ),
+    (   '$get_predicate_attribute'(H, erased_clause_space, S)
+    ->  (   integer(E), S > 8*E, '$get_predicate_attribute'(H, size, Z), S =< Z -> SS = ok ; SS = bad(S) )
+    ;   SS = none
+    ),
+    R = E-SS.
+t100(R) :- settle, assertz(ea1(1)), assertz(ea1(2)), eas(ea1(_), R).
+t101(R) :- settle, assertz(ea2(1)), assertz(ea2(2)), assertz(ea2(3)), retract(ea2(1)), eas(ea2(_), R1), findall(X, ea2(X), L), R = R1-L.
+t102(R) :- settle, assertz(ea3(1)), assertz(ea3(2)), retract(ea3(1)), eas(ea3(_), R1), retract(ea3(2)), eas(ea3(_), R2), settle, eas(ea3(_), R3), R = [R1, R2, R3].
+t103(R) :- settle, assertz(ea4(1)), assertz(ea4(2)), assertz(ea4(3)), abolish(ea4/1), eas(ea4(_), R1), settle, eas(ea4(_), R2), R = R1-R2.
+t104(R) :- settle, assertz(ea5(1)), assertz(ea5(2)), ea5(_), retract(ea5(1)), settle, eas(ea5(_), R1), !, settle, eas(ea5(_), R2), R = R1-R2.
+t105(R) :- settle, assertz(ea6(1), Ref), assertz(ea6(2)), erase(Ref), eas(ea6(_), R1), res('$get_predicate_attribute'(ea6(_), erased_clauses, 2), R2), res('$get_predicate_attribute'(ea6(_), erased_clauses, 1), R3), R = [R1, R2, R3].
+t106(R) :- eas(system:atom_length(_, _), R).
+t107(R) :- eas(ea_no_such(_), R).
+t108(R) :- eas(ea7(_), R).
+t109(R) :- settle, assertz(ea7(1)), retract(ea7(1)), settle, eas(ea7(_), R).

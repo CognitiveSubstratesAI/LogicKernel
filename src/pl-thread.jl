@@ -1,10 +1,10 @@
-# UPSTREAM: swipl-devel src/pl-thread.c @ cbf4e1896275
+# UPSTREAM: swipl-devel src/pl-thread.c @ 18168e629eab
 # CLASS: code
 # COPYRIGHT: Copyright (c)  1999-2026, University of Amsterdam,
 # COPYRIGHT: VU University Amsterdam
 # COPYRIGHT: CWI, Amsterdam
 # COPYRIGHT: SWI-Prolog Solutions b.v.
-#
+# PIN1 ledger (V10.1.20): re-cite only, no code change (cbf4e189..18168e62 compared, D-0447 Q1) — pl-thread.c: no hunk of the diff touches the ported functions (hunks: freePrologThread, system_thread_id, detach_engine, `$thread_local_predicate_size`, the predicate table), the rest is the TH1 row (cfile:pl-thread.c).
 # PREDICATE REFERENCES — the slice of SWI-Prolog's pl-thread.c that records which predicates an
 # ongoing enumeration (retract/1, clause/2, a call) references and at which generation, so that
 # clause garbage collection keeps every clause those enumerations can still see. The rest of

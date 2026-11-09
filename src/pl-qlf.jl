@@ -1,4 +1,4 @@
-# UPSTREAM: swipl-devel src/pl-qlf.c @ cbf4e1896275
+# UPSTREAM: swipl-devel src/pl-qlf.c @ 18168e629eab
 # CLASS: code
 # COPYRIGHT: Copyright (c)  1985-2025, University of Amsterdam
 # COPYRIGHT: VU University Amsterdam

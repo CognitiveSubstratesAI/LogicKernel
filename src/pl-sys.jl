@@ -1,5 +1,5 @@
-# UPSTREAM: swipl-devel src/pl-sys.c @ cbf4e1896275
-# UPSTREAM: swipl-devel src/os/pl-ctype.c @ cbf4e1896275
+# UPSTREAM: swipl-devel src/pl-sys.c @ 18168e629eab
+# UPSTREAM: swipl-devel src/os/pl-ctype.c @ 18168e629eab
 # CLASS: code
 # COPYRIGHT: Copyright (c)  1985-2023, University of Amsterdam
 # COPYRIGHT: SWI-Prolog Solutions b.v.

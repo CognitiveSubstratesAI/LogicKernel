@@ -5,7 +5,7 @@
 %   printf ':- lb4b2c_main.\n' > SCRATCH/main.pl
 %   swipl --home=PLBASE -q -o SCRATCH/boot.prc -b PLBASE/boot/init.pl test_boot_clauses_swipl_rows.pl SCRATCH/main.pl \
 %     > test_boot_clauses_swipl_rows.out
-% (swipl 10.1.19-1-gcbf4e189, 2026-11-02, two runs byte-identical, stderr empty). `-O` is left out because the
+% (swipl 10.1.20-1-g18168e62, 2026-11-06, regenerated at the V10.1.20 pin, two runs byte-identical, stderr empty). `-O` is left out because the
 % kernel's boot does not apply it (src/pl-qlf.jl boot_global_data: `optimise` stays false, handoff flag F3), and
 % `optimise` changes clause bodies (expand.pl:1368-1370 simplify/4, init.pl:4118): the pin is for the kernel's
 % current configuration. The boot runs with autoload false (pl-qlf.c:4797) and an undefined predicate is fatal

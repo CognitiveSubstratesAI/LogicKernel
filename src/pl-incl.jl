@@ -1,29 +1,29 @@
-# UPSTREAM: swipl-devel src/pl-incl.h @ cbf4e1896275
-# UPSTREAM: swipl-devel src/pl-data.h @ cbf4e1896275
-# UPSTREAM: swipl-devel src/pl-global.h @ cbf4e1896275
-# UPSTREAM: swipl-devel src/pl-builtin.h @ cbf4e1896275
-# UPSTREAM: swipl-devel src/SWI-Prolog.h @ cbf4e1896275
-# UPSTREAM: swipl-devel src/pl-bag.c @ cbf4e1896275
-# UPSTREAM: swipl-devel src/pl-gmp.h @ cbf4e1896275
-# UPSTREAM: swipl-devel src/pl-arith.c @ cbf4e1896275
-# UPSTREAM: swipl-devel src/pl-proc.c @ cbf4e1896275
-# UPSTREAM: swipl-devel src/pl-op.c @ cbf4e1896275
-# UPSTREAM: swipl-devel src/os/pl-prologflag.h @ cbf4e1896275
-# UPSTREAM: swipl-devel src/os/pl-prologflag.c @ cbf4e1896275
-# UPSTREAM: swipl-devel src/pl-rec.h @ cbf4e1896275
-# UPSTREAM: swipl-devel src/pl-rec.c @ cbf4e1896275
-# UPSTREAM: swipl-devel src/pl-event.h @ cbf4e1896275
-# UPSTREAM: swipl-devel src/pl-event.c @ cbf4e1896275
-# UPSTREAM: swipl-devel src/pl-copyterm.h @ cbf4e1896275
-# UPSTREAM: swipl-devel src/pl-gvar.c @ cbf4e1896275
-# UPSTREAM: swipl-devel src/pl-tabling.h @ cbf4e1896275
-# UPSTREAM: swipl-devel src/pl-wrap.h @ cbf4e1896275
+# UPSTREAM: swipl-devel src/pl-incl.h @ 18168e629eab
+# UPSTREAM: swipl-devel src/pl-data.h @ 18168e629eab
+# UPSTREAM: swipl-devel src/pl-global.h @ 18168e629eab
+# UPSTREAM: swipl-devel src/pl-builtin.h @ 18168e629eab
+# UPSTREAM: swipl-devel src/SWI-Prolog.h @ 18168e629eab
+# UPSTREAM: swipl-devel src/pl-bag.c @ 18168e629eab
+# UPSTREAM: swipl-devel src/pl-gmp.h @ 18168e629eab
+# UPSTREAM: swipl-devel src/pl-arith.c @ 18168e629eab
+# UPSTREAM: swipl-devel src/pl-proc.c @ 18168e629eab
+# UPSTREAM: swipl-devel src/pl-op.c @ 18168e629eab
+# UPSTREAM: swipl-devel src/os/pl-prologflag.h @ 18168e629eab
+# UPSTREAM: swipl-devel src/os/pl-prologflag.c @ 18168e629eab
+# UPSTREAM: swipl-devel src/pl-rec.h @ 18168e629eab
+# UPSTREAM: swipl-devel src/pl-rec.c @ 18168e629eab
+# UPSTREAM: swipl-devel src/pl-event.h @ 18168e629eab
+# UPSTREAM: swipl-devel src/pl-event.c @ 18168e629eab
+# UPSTREAM: swipl-devel src/pl-copyterm.h @ 18168e629eab
+# UPSTREAM: swipl-devel src/pl-gvar.c @ 18168e629eab
+# UPSTREAM: swipl-devel src/pl-tabling.h @ 18168e629eab
+# UPSTREAM: swipl-devel src/pl-wrap.h @ 18168e629eab
 # CLASS: code
 # COPYRIGHT: Copyright (c)  1985-2026, University of Amsterdam,
 # COPYRIGHT: VU University Amsterdam
 # COPYRIGHT: CWI, Amsterdam
 # COPYRIGHT: SWI-Prolog Solutions b.v.
-#
+# PIN1 ledger (V10.1.20): re-cite only, no code change (cbf4e189..18168e62 compared, D-0447 Q1) — pl-data.h: access-only (d755bdc4), ported; pl-gmp.h: access-only (d755bdc4); pl-arith.c: access-only (d755bdc4) and the ported backports 1582e8b3, a8e64f93; pl-proc.c: ported (b94d7de5 commit 3, 38281d6b commit 2, ea1b569b backport); pl-op.c: the ported backport 1772f406; pl-prologflag.c: flags validate_api and the tabling restraint flags ported, 1412ce49 ported; pl-rec.c: access-only (d755bdc4); pl-gvar.c: access-only (d755bdc4); pl-tabling.h: no TP_*/table_props line changed, the struct hunks are the TAB1 row (cfile:pl-tabling.c). Also re-cited: pl-global.h: the unported fields are the tabling fields (TAB1 row cfile:pl-tabling.c), LD->profile (PROF1) and LD->atoms.reserved (ATOM1), owners in docs/architecture.md (deferred owners); SWI-Prolog.h: PLVERSION ported; PL_get_arg_values, PL_get_list_slice are owner FLI1 (docs/architecture.md, deferred owners).
 # THE SHARED DECLARATIONS the clause store and its indexes are built from: SWI-Prolog's structs
 # `arg_info`, `clause`, `clause_ref`, `clause_bucket`, `clause_index`, `clause_list`, `definition`
 # and `clause_choice`, with their field names, and the constants and word layout they use.
@@ -396,7 +396,10 @@ tagex(w::word)::word = w & (TAG_MASK | STG_MASK)
 "True when the key `w` is a functor (pl-data.h)."
 isFunctor(w::word)::Bool = tagex(w) == (TAG_ATOM | STG_GLOBAL)
 # PORT: pl-incl.h MK_ATOM
-"The atom word of atom number `n` (pl-incl.h)."
+"""
+The atom word of atom number `n` (pl-incl.h). At V10.1.20 upstream's body is `consTagged(n, TAGEX_ATOM)`
+(`(n << LMASK_BITS) | (TAG_ATOM | STG_STATIC)`, pl-data.h): the same word, structure only, d755bdc4.
+"""
 MK_ATOM(n::UInt64)::word = (n << 7) | TAG_ATOM | STG_STATIC
 # PORT: pl-data.h indexAtom
 "The index of atom word `w` in the atom table (pl-data.h)."
@@ -431,17 +434,31 @@ nameFunctor(functors, w::word)::UInt64 = valueFunctor(functors, w).name
 MK_FUNCTOR(n::UInt64, a::UInt64)::word =
     (((n << F_ARITY_BITS) | a) << LMASK_BITS) | TAG_ATOM | STG_GLOBAL
 # PORT: pl-incl.h PLMINTAGGEDINT
-"The smallest integer a word holds tagged — inline, `STG_INLINE` (pl-incl.h; 64-bit words)."
+"""
+The smallest integer a word holds tagged — inline, `STG_INLINE` (pl-incl.h; 64-bit words). Upstream's body at V10.1.20
+is `1 << (TAGGED_INT_BITS-1)` with `TAGGED_INT_BITS = WORDBITSIZE-LMASK_BITS` (pl-data.h): the same value, structure only.
+"""
 const PLMINTAGGEDINT = -(Int64(1) << (64 - LMASK_BITS - 1))
 # PORT: pl-incl.h PLMAXTAGGEDINT
 "The largest integer a word holds tagged (pl-incl.h)."
 const PLMAXTAGGEDINT = -PLMINTAGGEDINT - 1
 # PORT: pl-incl.h PLMINTAGGEDINT32
-"The smallest integer a 32-bit word holds tagged (pl-incl.h)."
-const PLMINTAGGEDINT32 = -(Int64(1) << (32 - LMASK_BITS - 1))
+"""
+The smallest integer a 32-bit word holds tagged (pl-incl.h): the range of old 32-bit versions, FIXED at `1<<24` since
+V10.1.20 (`term_hash/2` values depend on it); it is `32 - LMASK_BITS - 1` for `LMASK_BITS = 7`.
+"""
+const PLMINTAGGEDINT32 = -(Int64(1) << 24)
 # PORT: pl-incl.h PLMAXTAGGEDINT32
 "The largest integer a 32-bit word holds tagged (pl-incl.h); `variant_hash/2` masks with it."
 const PLMAXTAGGEDINT32 = -PLMINTAGGEDINT32 - 1
+# PORT: pl-incl.h ATOM_RESERVE_BATCH
+"""
+Atom slots a thread reserves at once (pl-incl.h, V10.1.20). Read by pl-atom.c's `reserveAtom` and pl-global.h's
+`LD->atoms.reserved`; the kernel's `reserveAtom` (src/pl-atom.jl) takes one slot at a time, so nothing reads it yet
+(pl-atom.c at V10.1.20: step C of PIN1). Pinned at 64 by test/core_lang/test_atom_table.jl (a mutant of the value is killed there); DEFERRED KILL, owner ATOM1:
+a mutant of a reader of it has nothing to mutate until ATOM1 ports `reserveAtomSlots` (fde0211d), the constant's first reader.
+"""
+const ATOM_RESERVE_BATCH = 64
 
 # ── the words of the stacks (pl-data.h; L1b stage C1) ───────────────────────────────────────────
 # The rest of pl-data.h's word layout, for the stacks that hold words from stage C2 on (the
@@ -2271,6 +2288,10 @@ const PLFLAG_AGC_CLOSE_STREAMS = 35
 # PORT: pl-incl.h PLFLAG_EPILOG
 "Mask bit: swipl-win (pl-incl.h); the flag `epilog`."
 const PLFLAG_EPILOG = 36
+# PORT: pl-incl.h PLFLAG_VALIDATE_API
+# (enum plflag, swipl-devel V10.1.20 src/pl-incl.h:2936)
+"Mask bit: validate the arguments of the PL_*() functions (pl-incl.h); the flag `validate_api`."
+const PLFLAG_VALIDATE_API = 37
 
 # PORT: pl-incl.h prologFlagMask
 # DIVERGES: the mask is one 64-bit word (bit `flag-1`), where upstream's is two `unsigned int`s and the macro

@@ -1,13 +1,13 @@
-# UPSTREAM: swipl-devel src/pl-wam.c @ cbf4e1896275
-# UPSTREAM: swipl-devel src/pl-vmi.c @ cbf4e1896275
-# UPSTREAM: swipl-devel src/pl-incl.h @ cbf4e1896275
-# UPSTREAM: swipl-devel src/pl-gc.c @ cbf4e1896275
+# UPSTREAM: swipl-devel src/pl-wam.c @ 18168e629eab
+# UPSTREAM: swipl-devel src/pl-vmi.c @ 18168e629eab
+# UPSTREAM: swipl-devel src/pl-incl.h @ 18168e629eab
+# UPSTREAM: swipl-devel src/pl-gc.c @ 18168e629eab
 # CLASS: code
 # COPYRIGHT: Copyright (c)  1985-2025, University of Amsterdam
 # COPYRIGHT: VU University Amsterdam
 # COPYRIGHT: CWI, Amsterdam
 # COPYRIGHT: SWI-Prolog Solutions b.v.
-#
+# PIN1 ledger (V10.1.20): structure only, d755bdc4 — pl-gc.c, pl-wam.c (also the fix 7b9d8ba1, already ported): cell-tag access behind pl-data.h macros, no change of value, order, error or side effect. Also re-cited: pl-vmi.c: access-only (d755bdc4), backport 7b9d8ba1 ported; the S_TABLED/S_TRIE_GEN/T_DELAY hunks are TAB1 rows (refusal S_TABLED, vmi:S_TRIE_GEN, vmi:T_DELAY); pl-incl.h: access-only (d755bdc4) ported; ATOM_RESERVE_BATCH is pl-incl.jl:460 (commit 5); the PLFLAG_EPILOG comma is no value.
 # THE VIRTUAL MACHINE (pl-wam.c): the local stack's operations — creating a choice point, moving a
 # last call's arguments into its frame, foreign frames (V3) — and, since V4a, the query API
 # (`PL_open_query`, `PL_next_solution`, `PL_cut_query`, `PL_close_query`, `PL_exception`) and the run

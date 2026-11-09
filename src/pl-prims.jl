@@ -1,12 +1,12 @@
-# UPSTREAM: swipl-devel src/pl-prims.c @ cbf4e1896275
-# UPSTREAM: swipl-devel src/pl-incl.h @ cbf4e1896275
-# UPSTREAM: swipl-devel src/pl-prims.h @ cbf4e1896275
+# UPSTREAM: swipl-devel src/pl-prims.c @ 18168e629eab
+# UPSTREAM: swipl-devel src/pl-incl.h @ 18168e629eab
+# UPSTREAM: swipl-devel src/pl-prims.h @ 18168e629eab
 # CLASS: code
 # COPYRIGHT: Copyright (c)  1985-2024, University of Amsterdam
 # COPYRIGHT: VU University Amsterdam
 # COPYRIGHT: CWI, Amsterdam
 # COPYRIGHT: SWI-Prolog Solutions b.v.
-#
+# PIN1 ledger (V10.1.20): re-cite only, no code change (cbf4e189..18168e62 compared, D-0447 Q1) — pl-prims.c: ported (statistics keys 7675aa45 e776534b 38281d6b commit 1, backport 8b24de91; compareAtoms 2db0c03a unreachable in the kernel, architecture.md); pl-incl.h: access-only (d755bdc4) ported; ATOM_RESERVE_BATCH is pl-incl.jl:460 (commit 5); the PLFLAG_EPILOG comma is no value.
 # THE STANDARD ORDER OF TERMS — SWI-Prolog's `compareStandard` and the chain under it, under the
 # same names: compareStandard → compare_std → compare_fast → do_compare → compare_primitives /
 # compare_functors, and the leaf comparisons compareAtoms, compareStrings, compare_neq_floats,
@@ -4055,6 +4055,26 @@ function _statistics_database(gd::PL_global_data{T})::NTuple{3, Int} where {T}
     return (predicates, clauses, codes)
 end
 
+# ORIGINAL (PIN1, D-0447 item 4): `GD->clauses.erased` and `GD->clauses.erased_size`, the erased clauses not yet freed and
+# their bytes. The kernel keeps no global counter: every definition counts its own erased clauses
+# (`impl_clauses.erased_clauses`, raised by `retract_clause!` and `removeClausesPredicate!`, lowered by `cleanDefinition!`),
+# and a definition with any is in `gd.procedures_dirty` (`registerDirtyDefinition!`, left only by
+# `maybeUnregisterDirtyDefinition!` once the count is 0), so the sum over the dirty definitions is the global number.
+# Upstream lowers the global count when the last reference to an unlinked clause goes (`release_clause`), the kernel's
+# per-definition count when clause GC unlinks it: the two meet whenever no unlinked clause is still referenced, which the
+# kernel (no lingering references) never has.
+"The `(erased clauses, their bytes)` of the database `gd`: the sum over its dirty definitions (see above)."
+function _statistics_erased(gd::PL_global_data{T})::NTuple{2, Int} where {T}
+    count = 0
+    space = 0
+    for def in keys(gd.procedures_dirty)
+        (def.flags & P_FOREIGN) == 0 || continue
+        count += Int(def.impl_clauses.erased_clauses)
+        space += sizeof_erased_clauses(def)
+    end
+    return (count, space)
+end
+
 # PORT: pl-prims.c qp_statistics
 # DIVERGES: the key is its Symbol; the values are written to `v` (four at most) and their number is
 # returned, -1 for an unknown key, as upstream's. `memory`/`core` are `[UsedMemory(), FreeMemory()]`: 0 and
@@ -4138,7 +4158,10 @@ end
 # and `functor_space` 0 (no byte accounting of the tables), `threads` 1 and `threads_created` 1 (the
 # one thread; upstream's O_PLMT counters give the same at startup), `engines` and `engines_created` 0,
 # `thread_cputime` 0.0, `threads_peak` 0; `table_space_used`, `indexes_created`, `indexes_destroyed`,
-# `warnings` and `errors` 0 (not counted); the garbage collector, atom and clause collector and stack shift
+# `warnings` and `errors` 0 (not counted); `shared_table_space_used` 0 (upstream reads the shared node pool's size and
+# 0 without one: tables and their pools are TAB1's, and no table exists here); `erased_clauses` and `erased_clause_space`
+# are the sums over the dirty definitions (`_statistics_erased`: upstream's `GD->clauses.erased` and `erased_size`, the
+# space counted as `sizeof_predicate` counts a clause, not upstream's bytes); the garbage collector, atom and clause collector and stack shift
 # counters 0. `predicates`, `clauses`, `modules` and `codes` are counted from the tables
 # (`_statistics_database`), `stack` is the three stacks' sizes, `cputime` and `self_cputime` are
 # `LD->statistics.user_cputime` as `statistics/2` last set it.
@@ -4212,9 +4235,14 @@ function swi_statistics(ld::PL_local_data{T}, key::Symbol, v::number)::Int where
         key === :global_shifts ||
         key === :local_shifts || key === :trail_shifts || key === :engines ||
         key === :engines_created || key === :threads_peak || key === :table_space_used ||
+        key === :shared_table_space_used ||
         key === :indexes_created || key === :indexes_destroyed || key === :warnings ||
         key === :errors
         v.i = 0
+    elseif key === :erased_clauses              # GD->clauses.erased (a sum, `_statistics_erased`)
+        v.i = _statistics_erased(_query_gd(ld))[1]
+    elseif key === :erased_clause_space         # GD->clauses.erased_size
+        v.i = _statistics_erased(_query_gd(ld))[2]
     elseif key === :heapused                    # heap usage
         v.i = programSpace(ld)
     elseif key === :threads || key === :threads_created

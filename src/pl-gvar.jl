@@ -1,9 +1,9 @@
-# UPSTREAM: swipl-devel src/pl-gvar.c @ cbf4e1896275
+# UPSTREAM: swipl-devel src/pl-gvar.c @ 18168e629eab
 # CLASS: code
 # COPYRIGHT: Copyright (c)  2004-2024, University of Amsterdam
 # COPYRIGHT: VU University Amsterdam
 # COPYRIGHT: SWI-Prolog Solutions b.v.
-#
+# PIN1 ledger (V10.1.20): structure only, d755bdc4 — pl-gvar.c: cell-tag access behind pl-data.h macros, no change of value, order, error or side effect.
 # GLOBAL VARIABLES (pl-gvar.c): `b_setval/2`, `b_getval/2`, `nb_setval/2`, `nb_linkval/2`,
 # `nb_getval/2`, `nb_current/2` and `nb_delete/1`. A global variable is an entry of the thread's table
 # (`LD->gvar.nb_vars`, here `ld.gvar_nb_vars`: atom word -> the value's word). A value on the global

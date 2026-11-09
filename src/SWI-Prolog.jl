@@ -1,9 +1,9 @@
-# UPSTREAM: swipl-devel src/SWI-Prolog.h @ cbf4e1896275
+# UPSTREAM: swipl-devel src/SWI-Prolog.h @ 18168e629eab
 # CLASS: code
 # COPYRIGHT: Copyright (c)  2008-2026, University of Amsterdam
 # COPYRIGHT: VU University Amsterdam
 # COPYRIGHT: SWI-Prolog Solutions b.v.
-#
+# PIN1 ledger (V10.1.20): re-cite only, no code change (cbf4e189..18168e62 compared, D-0447 Q1) — SWI-Prolog.h: PLVERSION ported; PL_get_arg_values, PL_get_list_slice are owner FLI1 (docs/architecture.md, deferred owners).
 # What the kernel takes from SWI-Prolog's public C interface header (SWI-Prolog.h): the flags a
 # query is opened with and the codes `PL_next_solution` returns (decision 1); since V5a2 the types
 # and the registration record of the foreign interface (decision 5). Not ported: the flags
@@ -11,6 +11,8 @@
 # codes `PL_S_YIELD_DEBUG`, `PL_S_YIELD`. Since HALT1: `PL_Q_EXCEPT_HALT` and the halt flags `PL_CLEANUP_*`,
 # `PL_HALT_WITH_EXCEPTION`. `PL_Q_ALLOW_YIELD` is declared (since CONT1) for `I_YIELD`'s test; no query opens
 # with it until the engines (TH1).
+# Since PIN1 (V10.1.20) the header also declares `PL_get_arg_values()` and `PL_get_list_slice()`: refused by name,
+# neither is registered; the deferred step FLI1 owns them (docs/architecture.md, PIN1 step C).
 
 # PORT: SWI-Prolog.h PL_Q_DEBUG
 "Query flag: `true`, for backward compatibility; opened as `PL_Q_NORMAL` (SWI-Prolog.h)."

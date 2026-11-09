@@ -1,12 +1,12 @@
-# UPSTREAM: swipl-devel src/pl-comp.c @ cbf4e1896275
-# UPSTREAM: swipl-devel src/pl-comp.h @ cbf4e1896275
-# UPSTREAM: swipl-devel src/pl-incl.h @ cbf4e1896275
+# UPSTREAM: swipl-devel src/pl-comp.c @ 18168e629eab
+# UPSTREAM: swipl-devel src/pl-comp.h @ 18168e629eab
+# UPSTREAM: swipl-devel src/pl-incl.h @ 18168e629eab
 # CLASS: code
 # COPYRIGHT: Copyright (c)  1985-2026, University of Amsterdam
 # COPYRIGHT: VU University Amsterdam
 # COPYRIGHT: CWI, Amsterdam
 # COPYRIGHT: SWI-Prolog Solutions b.v.
-#
+# PIN1 ledger (V10.1.20): structure only, d755bdc4 — pl-comp.c (also the backports ea1b569b and 627ecb5d, already ported): cell-tag access behind pl-data.h macros, no change of value, order, error or side effect. Also re-cited: pl-incl.h: access-only (d755bdc4) ported; ATOM_RESERVE_BATCH is pl-incl.jl:460 (commit 5); the PLFLAG_EPILOG comma is no value.
 # THE CLAUSE COMPILER, HEAD SIDE — SWI-Prolog's pl-comp.c as far as compiling the head of a clause:
 # the variable analysis of HEAD AND BODY (`analyse_variables!`, `analyseVariables2!` — the body's
 # control structures, the branches of `;` and the goal of `\+`, with the control functors of the

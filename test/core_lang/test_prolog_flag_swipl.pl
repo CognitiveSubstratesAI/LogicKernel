@@ -1,5 +1,5 @@
 % test/core_lang/test_prolog_flag_swipl.pl -- the rows of test_prolog_flag_swipl.jl (R2 F1a: current_prolog_flag/2 and
-% '$current_prolog_flag'/5, the read side of pl-prologflag.c). The kernel and swipl 10.1.19 consult THIS FILE and enumerate every
+% '$current_prolog_flag'/5, the read side of pl-prologflag.c). The kernel and swipl 10.1.20 consult THIS FILE and enumerate every
 % solution of every t_<id>/1; the answers are compared as lines. test_prolog_flag_swipl.out is swipl's output for it, kept beside it.
 %
 % Nothing here is an expected value: a row is a QUESTION, and the answer is swipl's. The hand-written parts are the questions and,
@@ -62,8 +62,10 @@ fk(linux).
 fk(max_answers_for_subgoal_action).
 fk(max_arity).
 fk(max_char_code).
+fk(max_incomplete_subgoals_action).
 fk(max_procedure_arity).
 fk(max_rational_size_action).
+fk(max_scc_subgoals_action).
 fk(max_table_answer_size_action).
 fk(max_table_subgoal_size_action).
 fk(max_tagged_integer).
@@ -109,6 +111,7 @@ fk(unknown).
 fk(unknown_option).
 fk(unload_foreign_libraries).
 fk(user_flags).
+fk(validate_api).
 fk(var_prefix).
 fk(var_tag).
 fk(verbose_autoload).
@@ -212,6 +215,8 @@ t_e33(R) :- cat(current_prolog_flag(user:character_escapes, _), R).
 t_e34(R) :- cat(current_prolog_flag(user:back_quotes, _), R).
 t_e35(R) :- cat(current_prolog_flag(user:rational_syntax, _), R).
 t_e36(R) :- cat(current_prolog_flag(user:access_level, _), R).
+t_e37(R) :- cat(current_prolog_flag(max_incomplete_subgoals, _), R).
+t_e38(R) :- cat(current_prolog_flag(max_scc_subgoals, _), R).
 
 % ---- '$current_prolog_flag'/5: the scope, access and type arguments
 t_s01(R) :- cat('$current_prolog_flag'(iso, _, _, _, _), R).

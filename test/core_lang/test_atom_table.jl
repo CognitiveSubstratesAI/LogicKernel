@@ -3,7 +3,7 @@
 #   * THE DATA: src/pl-atom.jl's generated region is exactly what tools/gen_atoms.jl makes of
 #     src/ATOMS AT THE PIN (`git show <commit>:src/ATOMS`) wherever a checkout is found; without
 #     one, the test asserts there is none, so it cannot skip silently;
-#   * the built-ins: 1056 atoms (`defatom` writes `ATOM("")` first, then the 1055 `A` lines),
+#   * the built-ins: 1066 atoms (`defatom` writes `ATOM("")` first, then the 1065 `A` lines),
 #     index 1 the empty atom, `.` registered as `[|]`, every built-in found again by lookup;
 #   * lookup: one atom per (bytes, length, type) — the character 0 is part of the text, so `a\0b`,
 #     `a`, `""` and `"\0"` are four atoms (a C-string comparison would merge them);
@@ -13,6 +13,8 @@
 #     distinct, the built-ins unmoved;
 #   * the reserved symbols: `[]` is a `reserved_symbol`, so the text atom `'[]'` is another atom;
 #     the blob types' ranks (text 1, then wide text, reserved 0).
+#   * ATOM_RESERVE_BATCH is upstream's 64 (a literal pin; DEFERRED KILL, owner ATOM1: no code reads it), and a non-unique blob
+#     is never in the hash table (PIN1 step C commit 5, fde0211d).
 # NOT HERE, with stage C (when terms are read through the table): the swipl differentials of the
 # L1 plan's A list (`[] == '[]'`, the standard order by text, the character 0 in atom built-ins) and
 # the BLOB atoms of grounded host values.
@@ -32,6 +34,29 @@ _at_bytes(s::AbstractString) = Vector{UInt8}(codeunits(s))
 "The atom a word names in `atoms`."
 _at_atom(atoms, w::UInt64) = LK.atomValue(atoms, w)
 
+"How many atoms the hash table's chains hold."
+function _at_chained(atoms)
+    n = 0
+    for a in atoms.table.table
+        while a !== nothing
+            n += 1
+            a = a.next
+        end
+    end
+    return n
+end
+
+"Is the atom word `w` on a chain of the hash table?"
+function _at_inchain(atoms, w::UInt64)
+    for a in atoms.table.table
+        while a !== nothing
+            a.atom == w && return true
+            a = a.next
+        end
+    end
+    return false
+end
+
 if isdir(joinpath(_AT_CHECKOUT, ".git"))
     @testset "src/pl-atom.jl's built-in atoms are src/ATOMS at the pin (tools/gen_atoms.jl)" begin
         m = Module(:GenAtomsCheck)
@@ -47,7 +72,7 @@ if isdir(joinpath(_AT_CHECKOUT, ".git"))
         src = read(`git -C $_AT_CHECKOUT show $commit:src/ATOMS`, String)
         fs = Base.invokelatest(m.parse_functors, src)
         @test length(fs) == 336 && all(f -> f[1] in ids, fs)
-        @test count(l -> startswith(l, 'A'), split(src, '\n')) == 1055 == length(texts) - 1
+        @test count(l -> startswith(l, 'A'), split(src, '\n')) == 1065 == length(texts) - 1
         # the generator refuses an escape it does not handle, and reads `\\` as one backslash
         @test_throws ErrorException Base.invokelatest(m.c_unescape, "a\\nb", "fixture")
         @test Base.invokelatest(m.c_unescape, "\\\\=", "fixture") == "\\="
@@ -59,13 +84,13 @@ else
     end
 end
 
-@testset "the built-in atoms: 1056, index 1 the empty atom, `.` as `[|]`" begin
+@testset "the built-in atoms: 1066, index 1 the empty atom, `.` as `[|]`" begin
     atoms = _at_table()
-    @test length(LK._BUILTIN_ATOMS) == 1056 == length(LK._BUILTIN_ATOM_IDS)
+    @test length(LK._BUILTIN_ATOMS) == 1066 == length(LK._BUILTIN_ATOM_IDS)
     @test LK._BUILTIN_ATOMS[1] == "" && LK._BUILTIN_ATOM_IDS[1] == ""
     @test LK._BUILTIN_ATOMS[2] == "UTF-8" && LK._BUILTIN_ATOM_IDS[2] == "UTF_8"
-    @test atoms.highest == 1057 && atoms.builtin == 1057 && atoms.no_hole_before == 1057
-    @test atoms.statistics_atoms == 1056        # no atom made at start-up beyond the built-ins
+    @test atoms.highest == 1067 && atoms.builtin == 1067 && atoms.no_hole_before == 1067
+    @test atoms.statistics_atoms == 1066        # no atom made at start-up beyond the built-ins
     dot = LK.builtin_atom("dot")
     @test _at_atom(atoms, dot).name == _at_bytes("[|]")          # SWI-7: not "."
     @test LK.lookupAtom(atoms, _at_bytes("[|]")) == dot
@@ -173,6 +198,32 @@ end
     @test all(i -> LK.lookupAtom(atoms, _at_bytes("atom_$i")) == ws[i], 1:20_000)
     @test all(i -> LK.fetchAtomArray(atoms, i) === builtins[i], eachindex(builtins))
     @test LK.lookupAtom(atoms, _at_bytes("text")) == LK.builtin_atom("text")
+end
+
+@testset "ATOM_RESERVE_BATCH is upstream's 64; a non-unique blob is never in the table (fde0211d)" begin
+    # PIN, DEFERRED KILL (owner ATOM1): pl-incl.h:1431 `#define ATOM_RESERVE_BATCH 64` at swipl-devel 18168e62 (fde0211d, "Threads
+    # reserve atom slots in batches of ATOM_RESERVE_BATCH (64)"). A C constant: no swipl answers it, so this is a literal. NO kernel code
+    # reads it (reserveAtom takes one slot at a time; the batch is pl-atom.c's reserveAtomSlots, ATOM1): a mutant of the value is killed
+    # HERE; a mutant of a reader (reserveAtom taking BATCH slots) is DEFERRED KILL, owner ATOM1: there is no reader to mutate yet.
+    @test LK.ATOM_RESERVE_BATCH == 64
+    # lookupBlob for a non-unique blob (pl-atom.c, fde0211d: "other blobs are not in the table"): the table is neither searched nor
+    # extended, so the same bytes give a NEW atom each time, `new` is true each time, and no bucket chain holds it. The kernel's
+    # version of the one-thread half of fde0211d: the table lookup and insert are skipped for it; (upstream also skips the rehash
+    # trigger for it, `statistics_atoms` * 2 > buckets: the kernel's lookupBlob checks it for every blob type: ATOM1.)
+    atoms = _at_table()
+    ntype = LK.PL_blob_t(UInt32(0), "lk_nonunique")                 # neither PL_BLOB_UNIQUE nor PL_BLOB_TEXT
+    LK.PL_register_blob_type(atoms, ntype)                          # registering makes the type's NAME a (text) atom: chained
+    before = _at_chained(atoms)
+    w1, new1 = LK.lookupBlob(atoms, _at_bytes("same bytes"), 10, ntype)
+    w2, new2 = LK.lookupBlob(atoms, _at_bytes("same bytes"), 10, ntype)
+    @test new1 && new2 && w1 != w2
+    @test _at_chained(atoms) == before && !_at_inchain(atoms, w1) && !_at_inchain(atoms, w2)
+    @test _at_atom(atoms, w1).type === ntype &&
+        _at_atom(atoms, w2).name == _at_bytes("same bytes")
+    # a unique blob of the same bytes is its own atom, and IS found again (the control: the walk above sees chained atoms)
+    wt, newt = LK.lookupBlob(atoms, _at_bytes("same bytes"), 10, LK.text_atom)
+    @test newt && wt != w1 && wt != w2 && _at_inchain(atoms, wt)
+    @test LK.lookupBlob(atoms, _at_bytes("same bytes"), 10, LK.text_atom) == (wt, false)
 end
 
 @testset "the reserved symbols: `[]` is not the text atom '[]'" begin

@@ -1,10 +1,10 @@
-# UPSTREAM: swipl-devel src/pl-dict.c @ cbf4e1896275
-# UPSTREAM: swipl-devel src/pl-dict.h @ cbf4e1896275
-# UPSTREAM: swipl-devel src/SWI-Prolog.h @ cbf4e1896275
+# UPSTREAM: swipl-devel src/pl-dict.c @ 18168e629eab
+# UPSTREAM: swipl-devel src/pl-dict.h @ 18168e629eab
+# UPSTREAM: swipl-devel src/SWI-Prolog.h @ 18168e629eab
 # CLASS: code
 # COPYRIGHT: Copyright (c)  2013-2026, VU University Amsterdam
 # COPYRIGHT: SWI-Prolog Solutions b.v.
-#
+# PIN1 ledger (V10.1.20): structure only, d755bdc4 — pl-dict.c: cell-tag access behind pl-data.h macros, no change of value, order, error or side effect. Also re-cited: SWI-Prolog.h: PLVERSION ported; PL_get_arg_values, PL_get_list_slice are owner FLI1 (docs/architecture.md, deferred owners).
 # DICTS (pl-dict.c): the six predicates boot/init.pl calls — `is_dict/1,2`, `dict_create/3`, `put_dict/3`,
 # `select_dict/3` and `get_dict/3` — with the helpers each pulls in. A dict is a compound with the functor
 # `dict`/(2N+1) (the reserved atom `ATOM_dict`) and the layout of pl-dict.c's header:

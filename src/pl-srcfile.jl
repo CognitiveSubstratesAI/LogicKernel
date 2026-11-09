@@ -1,9 +1,9 @@
-# UPSTREAM: swipl-devel src/pl-srcfile.c @ cbf4e1896275
+# UPSTREAM: swipl-devel src/pl-srcfile.c @ 18168e629eab
 # CLASS: code
 # COPYRIGHT: Copyright (c)  2014-2026, VU University Amsterdam
 # COPYRIGHT: CWI, Amsterdam
 # COPYRIGHT: SWI-Prolog Solutions b.v.
-#
+# PIN1 ledger (V10.1.20): re-cite only, no code change (cbf4e189..18168e62 compared, D-0447 Q1) — pl-srcfile.c: c6087acb already the kernel behaviour (commit 4).
 # SOURCE FILES (R1f): the administration consulting a file keeps — the source-file record of each
 # loaded file (`lookupSourceFile`, numbered as upstream numbers them), the procedures a file defines
 # (`addProcedureSourceFile`), adding a clause on behalf of a file (`assertProcedureSource`), the
@@ -798,9 +798,9 @@ end
 
 # PORT: pl-srcfile.c source_file_property as pl_source_file_property3_va
 # (PRED_IMPL("$source_file_property", 3, source_file_property, 0)) — pl-srcfile.c:702-733
-# DIVERGES: `reloading` is false (no reload context). `loaded` of a file that is not known: upstream reads
-# through a NULL `sf` (H10, loader_boot design); the port FAILS there, as the neighbouring properties
-# answer their empty value.
+# DIVERGES: `reloading` is false (no reload context). `loaded` of a file that is not known: c6087acb (swipl 10.1.20,
+# `sf && sf->ltime != 0.0 ? unify : false`) fails there, as does `sf === nothing || sf.ltime == 0.0` here (H10, 10.1.19 read
+# through the NULL `sf`; rows f22/f23 of test_source_file_swipl.jl).
 "`'\$source_file_property'(+File, +Property, -Value)` (pl-srcfile.c)."
 function pl_source_file_property3_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}

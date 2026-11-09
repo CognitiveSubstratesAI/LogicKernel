@@ -1,12 +1,12 @@
-# UPSTREAM: swipl-devel src/pl-inline.h @ cbf4e1896275
-# UPSTREAM: swipl-devel src/pl-incl.h @ cbf4e1896275
-# UPSTREAM: swipl-devel src/pl-data.h @ cbf4e1896275
-# UPSTREAM: swipl-devel src/pl-gvar.c @ cbf4e1896275
+# UPSTREAM: swipl-devel src/pl-inline.h @ 18168e629eab
+# UPSTREAM: swipl-devel src/pl-incl.h @ 18168e629eab
+# UPSTREAM: swipl-devel src/pl-data.h @ 18168e629eab
+# UPSTREAM: swipl-devel src/pl-gvar.c @ 18168e629eab
 # CLASS: code
 # COPYRIGHT: Copyright (c)  2008-2024, University of Amsterdam
 # COPYRIGHT: CWI, Amsterdam
 # COPYRIGHT: SWI-Prolog Solutions b.v.
-#
+# PIN1 ledger (V10.1.20): structure only, d755bdc4 — pl-inline.h, pl-data.h, pl-gvar.c: cell-tag access behind pl-data.h macros, no change of value, order, error or side effect. Also re-cited: pl-incl.h: access-only (d755bdc4) ported; ATOM_RESERVE_BATCH is pl-incl.jl:460 (commit 5); the PLFLAG_EPILOG comma is no value.
 # SWI-Prolog's inline helpers the clause store uses: the bit scan behind bucket counts, the
 # cleaning of hashed index keys, clause visibility in a generation, and the database generation —
 # and the binding primitives the unifier (src/pl-prims.jl) is built on: the trail's entries, `Mark`

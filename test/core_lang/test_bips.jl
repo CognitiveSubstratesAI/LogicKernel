@@ -1,4 +1,4 @@
-# UPSTREAM: swipl-devel tests/core_lang/test_bips.pl @ cbf4e1896275
+# UPSTREAM: swipl-devel tests/core_lang/test_bips.pl @ 18168e629eab
 # CLASS: code
 # COPYRIGHT: Copyright (C): Ulrich Neumerkel
 #

@@ -1,4 +1,4 @@
-# UPSTREAM: swipl-devel src/os/pl-codelist.c @ cbf4e1896275
+# UPSTREAM: swipl-devel src/os/pl-codelist.c @ 18168e629eab
 # CLASS: code
 # COPYRIGHT: Copyright (c)  2011-2014, University of Amsterdam
 #

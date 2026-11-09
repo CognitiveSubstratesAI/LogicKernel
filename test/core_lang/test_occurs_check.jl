@@ -1,4 +1,4 @@
-# UPSTREAM: swipl-devel tests/core_lang/test_occurs_check.pl @ cbf4e1896275
+# UPSTREAM: swipl-devel tests/core_lang/test_occurs_check.pl @ 18168e629eab
 # CLASS: code
 # COPYRIGHT: Copyright (C): 2007-2024, University of Amsterdam
 # COPYRIGHT: SWI-Prolog Solutions b.v.

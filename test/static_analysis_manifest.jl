@@ -2050,6 +2050,7 @@ function _manifest_index(T)
         (LK._size_stack, Tuple{LD, Symbol}, false),
         (LK._room_stack, Tuple{LD, Symbol}, false), (LK.programSpace, Tuple{LD}, false),
         (LK._statistics_database, Tuple{LK.PL_global_data{T}}, false),
+        (LK._statistics_erased, Tuple{LK.PL_global_data{T}}, false),
         (
             LK.PL_error,
             Tuple{LD, String, Int, String, LK.PL_error_code, T, T, Int, Int},
@@ -2271,6 +2272,7 @@ function _manifest_index(T)
         (LK.unify_meta_pattern, Tuple{LD, PR, Int}, false),
         (LK.num_visible_clauses, Tuple{GD, D, Bool}, false),
         (LK.sizeof_predicate, Tuple{D}, false),
+        (LK.sizeof_erased_clauses, Tuple{D}, false),
         (
             LK.pl_get_predicate_attribute3_va,
             Tuple{LD, Int, Int, LK.foreign_context{T}},

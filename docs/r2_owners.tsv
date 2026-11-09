@@ -209,6 +209,8 @@ flag:table_compile_threshold	TAB1	seed: table_* flag
 flag:table_drop_intermediate	TAB1	seed: table_* flag
 flag:table_monotonic	TAB1	seed: table_* flag
 flag:table_space	TAB1	seed: table_* flag
+cfile:pl-tabling.c	TAB1	PIN1 step C (D-0447 item 1): every pl-tabling.c row without an exact key, and the UNPORTED tabling groups of V10.1.20 (evidence/PIN1/step_c/part2_notes.md T0-T5; no key kind names a group): T1 IDG edge sets and node layout (pl-idgset.c/h, 211bb969 9f5da524 c77a0bff 99827823; `$idg_thread_summary/3`, `$idg_thread_space/2`, `$idg_predicate_edges/3` are new); T2 trie and table memory (737686d3 fc7e0010 2125e711 486dc81d; T_DELAY flag); T3 reclaim and abolish (259429a2 30bdfd4f c9c81eeb c7037709); T4 answers and WFS (10205aec 14ba39be 9dcabe86 6aee153d); T5 diagnostics (780caea7 610742f9 0e201521; `$tbl_sdg/3`, `$tbl_incomplete/3`); S_TABLED stays the named refusal
+cfile:pl-thread.c	TH1	PIN1 step C (D-0447 item 3): every pl-thread.c row without an exact key; `$thread_local_predicate_size/3` is new at V10.1.20 (pl-thread.c, O_ENGINES; thread-local predicates are TH1's)
 kfile:pl-qlf.jl	LB3	seed: the QLF refusal sites
 refusal:src/pl-wam.jl::PL_next_solution_guarded::the VM instruction I_YIELD in an engine (pl-vmi.c:2419)	TH1	the named refusal of the branch (its body is the owner's step)
 refusal:src/pl-wam.jl::PL_next_solution_guarded::the dtbl_reset6 branch of I_RESET (pl-vmi.c:5762)	TAB1	the named refusal of the branch (its body is the owner's step)

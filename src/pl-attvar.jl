@@ -1,10 +1,10 @@
-# UPSTREAM: swipl-devel src/pl-attvar.c @ cbf4e1896275
-# UPSTREAM: swipl-devel src/pl-attvar.h @ cbf4e1896275
+# UPSTREAM: swipl-devel src/pl-attvar.c @ 18168e629eab
+# UPSTREAM: swipl-devel src/pl-attvar.h @ 18168e629eab
 # CLASS: code
 # COPYRIGHT: Copyright (c)  2004-2025, University of Amsterdam
 # COPYRIGHT: VU University Amsterdam
 # COPYRIGHT: SWI-Prolog Solutions b.v.
-#
+# PIN1 ledger (V10.1.20): structure only, d755bdc4 — pl-attvar.c (also the fix d4621369, already ported): cell-tag access behind pl-data.h macros, no change of value, order, error or side effect.
 # PORTED FROM pl-attvar.c, exactly these: `saveWakeup`, `restoreWakeup` and the helper
 # `restore_exception` — the SAVE/RESTORE of the pending exception around foreign code that must run
 # with none pending. From pl-attvar.h, `varBindConst` (L1c: the VM's `bindConst` of a global cell) and,

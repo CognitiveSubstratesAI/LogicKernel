@@ -1,9 +1,9 @@
-# UPSTREAM: swipl-devel src/pl-index.c @ cbf4e1896275
+# UPSTREAM: swipl-devel src/pl-index.c @ 18168e629eab
 # CLASS: code
 # COPYRIGHT: Copyright (c)  1985-2025, University of Amsterdam
 # COPYRIGHT: VU University Amsterdam
 # COPYRIGHT: SWI-Prolog Solutions b.v.
-#
+# PIN1 ledger (V10.1.20): structure only, d755bdc4 — pl-index.c: cell-tag access behind pl-data.h macros, no change of value, order, error or side effect.
 # JUST-IN-TIME CLAUSE INDEXING — SWI-Prolog's pl-index.c, transliterated function by function under
 # upstream's names (`!` appended where a function mutates an argument), in upstream's order, with
 # upstream's control flow, constants and `float` arithmetic (Float32 here, so every speedup and

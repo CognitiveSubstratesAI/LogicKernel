@@ -1,10 +1,10 @@
-# UPSTREAM: swipl-devel src/pl-rec.c @ cbf4e1896275
+# UPSTREAM: swipl-devel src/pl-rec.c @ 18168e629eab
 # CLASS: code
 # COPYRIGHT: Copyright (c)  1985-2024, University of Amsterdam
 # COPYRIGHT: VU University Amsterdam
 # COPYRIGHT: CWI, Amsterdam
 # COPYRIGHT: SWI-Prolog Solutions b.v.
-#
+# PIN1 ledger (V10.1.20): structure only, d755bdc4 — pl-rec.c: cell-tag access behind pl-data.h macros, no change of value, order, error or side effect.
 # RECORDED TERMS (pl-rec.c), exactly these (and, since R2 F1a, the C interface over them, pl-fli.c's
 # `PL_record`, `PL_recorded`, `PL_erase` and `PL_duplicate_record`, src/pl-fli.jl): `compileTermToHeap` — a term taken off the stacks, so
 # that it survives backtracking — and `copyRecordToGlobal` — the term put back, its variables

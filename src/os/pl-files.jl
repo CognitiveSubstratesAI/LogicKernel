@@ -1,12 +1,12 @@
-# UPSTREAM: swipl-devel src/os/pl-files.c @ cbf4e1896275
-# UPSTREAM: swipl-devel src/os/pl-files.h @ cbf4e1896275
-# UPSTREAM: swipl-devel src/os/pl-file.c @ cbf4e1896275
+# UPSTREAM: swipl-devel src/os/pl-files.c @ 18168e629eab
+# UPSTREAM: swipl-devel src/os/pl-files.h @ 18168e629eab
+# UPSTREAM: swipl-devel src/os/pl-file.c @ 18168e629eab
 # CLASS: code
 # COPYRIGHT: Copyright (c)  2011-2023, University of Amsterdam
 # COPYRIGHT: VU University Amsterdam
 # COPYRIGHT: CWI, Amsterdam
 # COPYRIGHT: SWI-Prolog Solutions b.v.
-#
+# PIN1 ledger (V10.1.20): re-cite only, no code change (cbf4e189..18168e62 compared, D-0447 Q1) — pl-file.c: set_eof_action, newline mode (cd67bb35, dfc1c55d, 4f259069) ported; shareStandardStream (87fc7589) is owner TH1 (docs/architecture.md, deferred owners).
 # FILES (pl-files.c), since Y1: the file name a term holds (`PL_get_file_name`) and delete_file/1; since LB2b
 # the file helpers (LastModifiedFile, SizeFile, AccessFile, ExistsFile, ExistsDirectory, ReadLink, DeRefLink,
 # SameFile, RenameFile, MarkExecutable) and, as the groups land, the predicates of upstream's table.

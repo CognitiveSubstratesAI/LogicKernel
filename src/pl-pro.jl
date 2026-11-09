@@ -1,10 +1,10 @@
-# UPSTREAM: swipl-devel src/pl-pro.c @ cbf4e1896275
-# UPSTREAM: swipl-devel src/pl-fli.c @ cbf4e1896275
+# UPSTREAM: swipl-devel src/pl-pro.c @ 18168e629eab
+# UPSTREAM: swipl-devel src/pl-fli.c @ 18168e629eab
 # CLASS: code
 # COPYRIGHT: Copyright (c)  1985-2022, University of Amsterdam
 # COPYRIGHT: VU University Amsterdam
 # COPYRIGHT: CWI, Amsterdam
-#
+# PIN1 ledger (V10.1.20): structure only, d755bdc4 — pl-pro.c: cell-tag access behind pl-data.h macros, no change of value, order, error or side effect. Also re-cited: pl-fli.c: access-only (d755bdc4), the validate_api flag ported; PL_get_arg_values, PL_get_list_slice and the validateAPI gate are owner FLI1 (docs/architecture.md, deferred owners).
 # PORTED FROM pl-pro.c, exactly these: `callProlog` — calling a goal from foreign code, in a query
 # of its own — and `sig_atomic/1`, its first caller: boot/init.pl's `setup_call_cleanup/3` and
 # `setup_call_catcher_cleanup/4` run their Setup goal through it, as once/1; and (BOOTPRED3)

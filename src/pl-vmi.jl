@@ -1,12 +1,12 @@
-# UPSTREAM: swipl-devel src/pl-vmi.c @ cbf4e1896275
-# UPSTREAM: swipl-devel src/pl-incl.h @ cbf4e1896275
-# UPSTREAM: swipl-devel src/pl-codetable.c @ cbf4e1896275
+# UPSTREAM: swipl-devel src/pl-vmi.c @ 18168e629eab
+# UPSTREAM: swipl-devel src/pl-incl.h @ 18168e629eab
+# UPSTREAM: swipl-devel src/pl-codetable.c @ 18168e629eab
 # CLASS: code
 # COPYRIGHT: Copyright (c)  2008-2025, University of Amsterdam
 # COPYRIGHT: VU University Amsterdam
 # COPYRIGHT: CWI, Amsterdam
 # COPYRIGHT: SWI-Prolog Solutions b.v.
-#
+# PIN1 ledger (V10.1.20): re-cite only, no code change (cbf4e189..18168e62 compared, D-0447 Q1) — pl-vmi.c: access-only (d755bdc4), backport 7b9d8ba1 ported; the S_TABLED/S_TRIE_GEN/T_DELAY hunks are TAB1 rows (refusal S_TABLED, vmi:S_TRIE_GEN, vmi:T_DELAY); pl-incl.h: access-only (d755bdc4) ported; ATOM_RESERVE_BATCH is pl-incl.jl:460 (commit 5); the PLFLAG_EPILOG comma is no value.
 # THE VIRTUAL MACHINE INSTRUCTIONS the kernel compiles clauses to — the subset of SWI-Prolog's
 # pl-vmi.c that src/pl-comp.jl emits: the head instructions, and since V2 the body instructions of
 # plain goals, the calls and the last-call (LCO) block, and since V4a the supervisors and the top

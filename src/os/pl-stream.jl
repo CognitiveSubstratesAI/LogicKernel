@@ -1,12 +1,12 @@
-# UPSTREAM: swipl-devel src/os/pl-stream.c @ cbf4e1896275
-# UPSTREAM: swipl-devel src/os/SWI-Stream.h @ cbf4e1896275
-# UPSTREAM: swipl-devel src/os/pl-file.c @ cbf4e1896275
+# UPSTREAM: swipl-devel src/os/pl-stream.c @ 18168e629eab
+# UPSTREAM: swipl-devel src/os/SWI-Stream.h @ 18168e629eab
+# UPSTREAM: swipl-devel src/os/pl-file.c @ 18168e629eab
 # CLASS: code
 # COPYRIGHT: Copyright (c)  2011-2026, University of Amsterdam
 # COPYRIGHT: VU University Amsterdam
 # COPYRIGHT: CWI, Amsterdam
 # COPYRIGHT: SWI-Prolog Solutions b.v.
-#
+# PIN1 ledger (V10.1.20): re-cite only, no code change (cbf4e189..18168e62 compared, D-0447 Q1) — pl-stream.c: Sshare (87fc7589) is owner TH1 (docs/architecture.md, deferred owners); pl-file.c: set_eof_action, newline mode (cd67bb35, dfc1c55d, 4f259069) ported; shareStandardStream (87fc7589) is owner TH1 (docs/architecture.md, deferred owners).
 # THE STREAM LAYER (since R1c; decided by the user, 2026-10-07: the IOSTREAM subset the reader and
 # the writer call, over a Julia IO, UTF-8, with memory streams and the position record): an
 # `IOSTREAM` with upstream's buffer discipline — the undo area before the buffer that

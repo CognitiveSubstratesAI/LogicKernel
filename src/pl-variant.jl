@@ -1,7 +1,7 @@
-# UPSTREAM: swipl-devel src/pl-variant.c @ cbf4e1896275
+# UPSTREAM: swipl-devel src/pl-variant.c @ 18168e629eab
 # CLASS: code
 # COPYRIGHT: Copyright (c)  2011-2016, Kuniaki Mukai
-#
+# PIN1 ledger (V10.1.20): structure only, d755bdc4 — pl-variant.c: cell-tag access behind pl-data.h macros, no change of value, order, error or side effect.
 # VARIANT CHECKING — `=@=`: two terms are variants when they are equal up to a consistent,
 # one-to-one renaming of their variables. SWI-Prolog's pl-variant.c, ported: the same argument
 # agenda (`argPairs`, `push_args`, `next_arg`), the same two-way variable correspondence (a left

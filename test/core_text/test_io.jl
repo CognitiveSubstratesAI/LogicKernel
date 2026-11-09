@@ -1,4 +1,4 @@
-# UPSTREAM: swipl-devel tests/core_text/test_io.pl @ cbf4e1896275
+# UPSTREAM: swipl-devel tests/core_text/test_io.pl @ 18168e629eab
 # CLASS: code
 # COPYRIGHT: Copyright (c)  2011-2015, University of Amsterdam
 # COPYRIGHT: VU University Amsterdam

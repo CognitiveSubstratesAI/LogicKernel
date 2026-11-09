@@ -1,9 +1,9 @@
-# UPSTREAM: swipl-devel src/pl-list.c @ cbf4e1896275
+# UPSTREAM: swipl-devel src/pl-list.c @ 18168e629eab
 # CLASS: code
 # COPYRIGHT: Copyright (c)  1985-2024, University of Amsterdam
 # COPYRIGHT: VU University Amsterdam
 # COPYRIGHT: SWI-Prolog Solutions b.v.
-#
+# PIN1 ledger (V10.1.20): structure only, d755bdc4 — pl-list.c: cell-tag access behind pl-data.h macros, no change of value, order, error or side effect.
 # LISTS (pl-list.c): `is_list/1`, `'$length'/2` — the "length is known" path of boot/init.pl's
 # length/2 — and the sorts, `sort/2`, `msort/2` and `keysort/2`, over Richard O'Keefe's natural
 # merge sort (`nat_sort`), ported line for line: it takes the runs the list already has, so a

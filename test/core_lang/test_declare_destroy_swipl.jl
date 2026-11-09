@@ -467,7 +467,7 @@ end
     m5 = LK.isCurrentModule(gd.modules, _mbs("mns5"))
     p5 = m5.procedures[(sym_key(_mbs("sup_s")), 1)]
     @test p5.definition.module_ == m5.index && p5.definition !== ss.definition
-    @test p5.definition.shared == 0                         # upstream's memset leaves it 0
+    @test p5.definition.shared == 1                         # upstream's newDefinition (b94d7de5; its memset left 0)
     mtd8 = LK.isCurrentModule(gd.modules, _mbs("mtd8"))     # f04 destroyed it, f05 declared it again as temporary
     @test mtd8 !== nothing && sym_key(mtd8.class) == sym_key(_mbs("temporary"))
 end

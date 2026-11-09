@@ -4,7 +4,7 @@
 #     consults the program and enumerates the answers of every `t_<id>/1`, swipl does the same through a driver, and the lines
 #     are compared. EVERY expected value is swipl's own answer (the driver runs live). `@FILE@` in a goal is the program's path
 #     (the source file's name in both systems), so the two systems ask about the same file;
-#   * WHITE-BOX: what swipl cannot be asked — `'$source_file_property'(+Unknown, loaded, -V)` (H10: swipl dies on it), the module
+#   * WHITE-BOX: what swipl cannot be asked — the module
 #     list of a source file, the refusal of a reconsult (LB6), and system mode (H5: `access_level`, the P_LOCKED / HIDE_CHILDS
 #     bits of a predicate defined in system mode, `isStaticSystemProcedure`).
 # NOT HERE: `nth_clause/3` and `'$get_clause_attribute'/3` rows (test/db/test_nth_clause_swipl.jl), the module sites
@@ -130,6 +130,15 @@ const _CASES = [
     ("f19", "( '\$source_file_property'('@FILE@', load_count, 2) -> R = yes ; R = no )"),
     ("f20", "( '\$source_file_property'('@FILE@', resource, true) -> R = yes ; R = no )"),
     ("f21", "'\$source_file_property'('@FILE@', number_of_clauses, V), V > 20, R = many"),
+    # f22/f23: `loaded` of a file that is not known FAILS (swipl 10.1.20, c6087acb: `sf && sf->ltime != 0.0 ? unify : false`; 10.1.19 read through the NULL sf and died)
+    (
+        "f22",
+        "( '\$source_file_property'('/no/such/file', loaded, V) -> R = V ; R = fails )"
+    ),
+    (
+        "f23",
+        "( '\$source_file_property'('/no/such/file', loaded, 0.0) -> R = yes ; R = no )"
+    ),
     # ---- '$set_source_file'/3
     (
         "g01",
@@ -462,6 +471,8 @@ _swipl() = get(ENV, "LOGICKERNEL_NO_SWIPL", "") == "1" ? nothing : Sys.which("sw
         # not a vacuous agreement: each kind of answer is in swipl's own lines, and the order is the reverse one
         @test any(l -> startswith(l, "t_s01 ") && occursin(_codes("same"), l), sw)
         @test any(l -> startswith(l, "t_s02 ") && occursin(_codes("fails"), l), sw)            # not transparent
+        @test any(l -> startswith(l, "t_f22 ") && occursin(_codes("fails"), l), sw)           # c6087acb: unknown file, `loaded` fails
+        @test any(l -> startswith(l, "t_f23 ") && occursin(_codes("no"), l), sw)
         @test any(l -> startswith(l, "t_p01 ") && occursin(_codes("baz"), l), sw)
         p01 = first(filter(l -> startswith(l, "t_p01 "), sw))
         @test findfirst(_codes("baz"), p01) !== nothing &&
@@ -533,7 +544,8 @@ _v() = mk_var(_TL, LK.fresh_var_keys!(1))
     @test sf2.system && sf2.from_state && sf2.resource
 end
 
-@testset "'\$source_file_property'(+Unknown, loaded, -V) fails (H10: swipl dies on it); the others answer their empty value" begin
+# `loaded` of an unknown file: swipl 10.1.20 (c6087acb) fails too, rows f22/f23 compare it live; the line below keeps the structural check
+@testset "'\$source_file_property'(+Unknown, loaded, -V) fails (rows f22/f23, c6087acb); the others answer their empty value" begin
     gd, ld, f = _loaded("foo(1).\n")
     for (prop, want) in (
         ("load_count", 0),

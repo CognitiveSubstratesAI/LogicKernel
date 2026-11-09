@@ -1,14 +1,14 @@
-# UPSTREAM: swipl-devel src/os/pl-prologflag.c @ cbf4e1896275
-# UPSTREAM: swipl-devel src/os/pl-prologflag.h @ cbf4e1896275
-# UPSTREAM: swipl-devel src/pl-fli.c @ cbf4e1896275
-# UPSTREAM: swipl-devel src/pl-incl.h @ cbf4e1896275
-# UPSTREAM: swipl-devel src/pl-read.c @ cbf4e1896275
-# UPSTREAM: swipl-devel src/pl-tabling.c @ cbf4e1896275
+# UPSTREAM: swipl-devel src/os/pl-prologflag.c @ 18168e629eab
+# UPSTREAM: swipl-devel src/os/pl-prologflag.h @ 18168e629eab
+# UPSTREAM: swipl-devel src/pl-fli.c @ 18168e629eab
+# UPSTREAM: swipl-devel src/pl-incl.h @ 18168e629eab
+# UPSTREAM: swipl-devel src/pl-read.c @ 18168e629eab
+# UPSTREAM: swipl-devel src/pl-tabling.c @ 18168e629eab
 # CLASS: code
 # COPYRIGHT: Copyright (c)  2011-2026, University of Amsterdam
 # COPYRIGHT: VU University Amsterdam
 # COPYRIGHT: SWI-Prolog Solutions b.v.
-#
+# PIN1 ledger (V10.1.20): re-cite only, no code change (cbf4e189..18168e62 compared, D-0447 Q1) — pl-prologflag.c: flags validate_api and the tabling restraint flags ported, 1412ce49 ported; pl-incl.h: access-only (d755bdc4) ported; ATOM_RESERVE_BATCH is pl-incl.jl:460 (commit 5); the PLFLAG_EPILOG comma is no value; pl-read.c: access-only (d755bdc4) and the ported backport 7f8024cc; pl-tabling.c: the ported bodies are text-identical at the pin, the unported groups T1-T5 are the TAB1 row (cfile:pl-tabling.c, docs/r2_owners.tsv), S_TABLED stays the named refusal. Also re-cited: pl-fli.c: access-only (d755bdc4), the validate_api flag ported; PL_get_arg_values, PL_get_list_slice and the validateAPI gate are owner FLI1 (docs/architecture.md, deferred owners).
 # PROLOG FLAGS (pl-prologflag.c). Since R1e's write_term/2,3: `setBackQuotes` and (read_term_from_atom/3)
 # `setDoubleQuotes`. Since R2 F1a (design evidence/r2/design/flags_rest.md): the flag TABLE
 # (`GD->prolog_flag.table`, src/pl-incl.jl's `prolog_flag_table`), `setPrologFlag`, `initPrologFlags`
@@ -413,7 +413,9 @@ function _tbl_restraint_unlimited(key::T)::Bool where {T}
     name = sym_text(key)
     return name == "max_table_subgoal_size" ||
            name == "max_table_answer_size" ||
-           name == "max_answers_for_subgoal"
+           name == "max_answers_for_subgoal" ||
+           name == "max_incomplete_subgoals" ||
+           name == "max_scc_subgoals"
 end
 
 # PORT: pl-prologflag.c unify_prolog_flag_value
@@ -1446,7 +1448,11 @@ function tbl_is_restraint_flag(k::T)::Bool where {T}
            name == "max_answers_for_subgoal" ||
            name == "max_table_subgoal_size_action" ||
            name == "max_table_answer_size_action" ||
-           name == "max_answers_for_subgoal_action"
+           name == "max_answers_for_subgoal_action" ||
+           name == "max_incomplete_subgoals" ||
+           name == "max_incomplete_subgoals_action" ||
+           name == "max_scc_subgoals" ||
+           name == "max_scc_subgoals_action"
 end
 
 # PORT: pl-prologflag.c check_flag_write_access
@@ -1910,8 +1916,8 @@ end
 const UNICODE_SYNTAX_VERSION = "17.0.0"
 
 # ORIGINAL: the version of the system the pin names (src/pl-version.h `PLVERSION`: major*10000+minor*100+patch).
-"The SWI-Prolog version the port follows, as the flag `version` has it: 10.1.19 is 100119 (pl-version.h `PLVERSION`)."
-const PLVERSION = 100119
+"The SWI-Prolog version the port follows, as the flag `version` has it: 10.1.20 is 100120 (pl-version.h `PLVERSION`)."
+const PLVERSION = 100120
 
 # ORIGINAL: upstream's `compiled_at` is the C compiler's `__DATE__ ", " __TIME__` (the `#elif defined(__DATE__) &&
 # defined(__TIME__)` branch, pl-prologflag.c:2785-2787, which every C compiler satisfies, so a build without cmake's
@@ -1931,6 +1937,11 @@ function _init_tabling_flags!(gd::PL_global_data{T})::Nothing where {T}
     setPrologFlag(gd, "max_table_subgoal_size", FT_INTEGER, -1)
     setPrologFlag(gd, "max_table_answer_size", FT_INTEGER, -1)
     setPrologFlag(gd, "max_answers_for_subgoal", FT_INTEGER, -1)
+    # the four flags of the incomplete-subgoal and SCC tripwires: swipl-devel V10.1.20 src/pl-tabling.c:12709-12712 (initTabling)
+    setPrologFlag(gd, "max_incomplete_subgoals_action", FT_ATOM, "error")
+    setPrologFlag(gd, "max_incomplete_subgoals", FT_INTEGER, -1)
+    setPrologFlag(gd, "max_scc_subgoals_action", FT_ATOM, "error")
+    setPrologFlag(gd, "max_scc_subgoals", FT_INTEGER, -1)
     setPrologFlag(gd, "table_monotonic", FT_ATOM, "eager")
     return nothing
 end
@@ -1999,8 +2010,8 @@ end
 const SO_EXT = Sys.iswindows() ? "dll" : "so"
 
 # Not a port of C code: the value of cmake/GitVersion.cmake's GIT_VERSION, which pl-version.c setGITVersion reads.
-"The `version_git` flag: `git describe --match \"V*\"` of the pin cbf4e1896275 with the `V` cut (cmake/GitVersion.cmake)."
-const GIT_VERSION = "10.1.19-1-gcbf4e189"
+"The `version_git` flag: `git describe --match \"V*\"` of the pin 18168e629eab with the `V` cut (cmake/GitVersion.cmake)."
+const GIT_VERSION = "10.1.20-1-g18168e62"
 
 # PORT: pl-prologflag.c initPrologFlags as initPrologFlags!
 # DIVERGES: the database is the argument and the flags go to its table, in upstream's order. The order of the
@@ -2125,6 +2136,11 @@ function initPrologFlags!(gd::PL_global_data{T})::Nothing where {T}
     setPrologFlag(gd, "occurs_check", FT_ATOM, "false")
     setPrologFlag(gd, "incomparable", FT_ATOM, "arbitrary")
     setPrologFlag(gd, "shift_check", FT_BOOL, false, PLFLAG_SHIFT_CHECK)
+    # Upstream pl-prologflag.c:2695-2700 at swipl-devel V10.1.20: `#if O_VALIDATE_API ... setPrologFlag("validate_api", FT_BOOL,
+    # !GD->cmdline.optimise, PLFLAG_VALIDATE_API)`. Differs (representation only): the kernel is the build WITH `O_VALIDATE_API`
+    # (the reference oracle is one, `validate_api` is `true`); `validateAPI()` (pl-fli.h:138) is read by no kernel code yet, so the
+    # bit only carries the flag's value. (owner: FLI, PIN1 red list)
+    setPrologFlag(gd, "validate_api", FT_BOOL, !gd.cmdline.optimise, PLFLAG_VALIDATE_API)
     setPrologFlag(gd, "access_level", FT_ATOM, "user")
     setPrologFlag(gd, "double_quotes", FT_ATOM, "string")
     setPrologFlag(gd, "back_quotes", FT_ATOM, "codes")
@@ -2193,14 +2209,14 @@ function initPrologFlags!(gd::PL_global_data{T})::Nothing where {T}
             mk_expr(
                 T,
                 T[
-                    mk_sym(T, :swi), mk_gnd(T, 10), mk_gnd(T, 1), mk_gnd(T, 19), mk_nil(T)
+                    mk_sym(T, :swi), mk_gnd(T, 10), mk_gnd(T, 1), mk_gnd(T, 20), mk_nil(T)
                 ]
             )
         )
         setPrologFlag(gd, ld, "version_data", FT_TERM | FF_READONLY, t)
     end
     # Port of pl-version.c setGITVersion (:41-48), called at the end of the version flags (pl-prologflag.c:2930). DIVERGES: `GIT_VERSION` is
-    # cmake/GitVersion.cmake's `git describe --match "V*"` of the pin with the `V` cut, as a build of the pin gets it: `V10.1.19-1-gcbf4e189`.
+    # cmake/GitVersion.cmake's `git describe --match "V*"` of the pin with the `V` cut, as a build of the pin gets it: `V10.1.20-1-g18168e62`.
     # `cmake_build_type` (:46) is the build's own and stays deferred.
     setPrologFlag(gd, "version_git", FT_ATOM | FF_READONLY, GIT_VERSION)
     _set_argv_prolog_flag!(gd, ld, "os_argv", ["swipl"])

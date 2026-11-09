@@ -1,11 +1,11 @@
-# UPSTREAM: swipl-devel src/pl-proc.c @ cbf4e1896275
-# UPSTREAM: swipl-devel src/pl-proc.h @ cbf4e1896275
+# UPSTREAM: swipl-devel src/pl-proc.c @ 18168e629eab
+# UPSTREAM: swipl-devel src/pl-proc.h @ 18168e629eab
 # CLASS: code
 # COPYRIGHT: Copyright (c)  1985-2025, University of Amsterdam
 # COPYRIGHT: VU University Amsterdam
 # COPYRIGHT: CWI, Amsterdam
 # COPYRIGHT: SWI-Prolog Solutions b.v.
-#
+# PIN1 ledger (V10.1.20): re-cite only, no code change (cbf4e189..18168e62 compared, D-0447 Q1) — pl-proc.c: ported (b94d7de5 commit 3, 38281d6b commit 2, ea1b569b backport).
 # PREDICATES AND THEIR CLAUSE LISTS — SWI-Prolog's pl-proc.c, as far as the clause database goes:
 # allocating a predicate (`lookupProcedure`); the checks `assert_term` (src/pl-comp.jl) makes
 # before it compiles a clause (`get_head_functor`, `checkModifySystemProc`, since V9c); adding a
@@ -1126,7 +1126,8 @@ end
 
 # PORT: pl-proc.c abolishProcedure
 # DIVERGES: no locks, statistics or code-size accounting, no `lingerDefinition` (Julia's garbage collector); the fresh
-# definition of an imported link has `shared` 0, as upstream's `memset`; `proc`'s module is given as `m`.
+# definition of an imported link has `shared` 1, as upstream's `newDefinition` (b94d7de5; it was 0, a definition another
+# module imported then lost its sharer's count); `proc`'s module is given as `m`.
 "Abolish `proc` of module `m`: an imported link is removed, a foreign predicate made normal, else its clauses erased (pl-proc.c)."
 function abolishProcedure!(
     gd::PL_global_data{T}, ld::PL_local_data{T}, proc::Procedure{T}, m::module_t{T}
@@ -1142,7 +1143,7 @@ function abolishProcedure!(
         cd = m.code_data
         ndef = Definition{T}(
             def.functor_name, def.arity, clauses, UInt64(0), def.name, cd.virgin,
-            ClauseRef{T}[], cd, 0, m.index, 0           # memset: shared 0
+            ClauseRef{T}[], cd, 0, m.index, 1           # newDefinition: shared 1
         )
         proc.definition = ndef
         resetProcedure!(proc, true)
@@ -2819,11 +2820,29 @@ function sizeof_predicate(def::Definition{T})::Int where {T}
     return size
 end
 
+# ORIGINAL (PIN1, D-0447 item 4): upstream keeps `GD->clauses.erased_size` as a running total (ATOMIC_ADD/SUB at erase and at
+# `release_clause`) and has no function that sums it; the kernel keeps no global total, so this is the per-definition piece
+# of `_statistics_erased`: each erased clause still in the list as `sizeof_predicate` counts a clause, 8 bytes a word.
+"The size in bytes of the erased clauses `def` still lists, those clause GC has not yet unlinked (pl-proc.c)."
+function sizeof_erased_clauses(def::Definition{T})::Int where {T}
+    size = 0
+    c = def.impl_clauses.first_clause
+    while c !== nothing
+        cl = c.clause::Clause{T}
+        if (cl.flags & CL_ERASED) != 0
+            size += 8 * (sizeofClause(length(cl.codes)) + SIZEOF_CREF_CLAUSE)
+        end
+        c = c.next
+    end
+    return size
+end
+
 # PORT: pl-proc.c get_predicate_attribute as pl_get_predicate_attribute3_va
 # (PRED_IMPL("$get_predicate_attribute", 3, get_predicate_attribute, PL_FA_TRANSPARENT))
 # DIVERGES: `indexed` is refused by name (`NotPortedError`: its value is a Prolog dict per index and dicts are NOT PORTED);
 # `last_modified_generation` is the module's (`last_modified`, `setLastModifiedPredicate!`'s rise: the definition has no such
 # field; pl-proc.c:3642-3645 reads `def->last_modified`); `size` is `sizeof_predicate`, the kernel's own count (pl-proc.c:3657-3659);
+# `erased_clause_space` is `sizeof_erased_clauses`, the kernel's own bytes (swipl: 112 a clause);
 # the tabling keys (`tbl_is_predicate_attribute`) are `tbl_get_predicate_attribute`'s (src/pl-tabling.jl), which fails for a
 # definition without `tabling` properties, as upstream does; the `P_TRANSACT` branch (3639-3641) is left to a transactions step.
 "`'\$get_predicate_attribute'(:Head, +Key, -Value)`: a property of the predicate `Head` names (pl-proc.c)."
@@ -2915,6 +2934,14 @@ function pl_get_predicate_attribute3_va(
         end
     elseif k == sym_key(mk_sym(T, :size))
         return PL_unify_integer(ld, value, sizeof_predicate(def)) ? FTRUE : FFALSE
+    elseif k == sym_key(mk_sym(T, :erased_clauses)) ||
+        k == sym_key(mk_sym(T, :erased_clause_space))
+        (def.flags & P_FOREIGN) != 0 && return FFALSE
+        clist.erased_clauses == 0 && return FFALSE
+        if k == sym_key(mk_sym(T, :erased_clauses))
+            return PL_unify_int64(ld, value, Int(clist.erased_clauses)) ? FTRUE : FFALSE
+        end
+        return PL_unify_int64(ld, value, sizeof_erased_clauses(def)) ? FTRUE : FFALSE
     elseif k == sym_key(mk_sym(T, :primary_index))
         clist.pindex_verified || update_primary_index!(def, gd.reload_generation)
         if !clist.unindexed

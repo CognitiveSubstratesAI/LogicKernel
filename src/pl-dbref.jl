@@ -1,5 +1,5 @@
-# UPSTREAM: swipl-devel src/pl-dbref.c @ cbf4e1896275
-# UPSTREAM: swipl-devel src/pl-dbref.h @ cbf4e1896275
+# UPSTREAM: swipl-devel src/pl-dbref.c @ 18168e629eab
+# UPSTREAM: swipl-devel src/pl-dbref.h @ 18168e629eab
 # CLASS: code
 # COPYRIGHT: Copyright (c)  2010-2019, VU University Amsterdam
 # COPYRIGHT: CWI, Amsterdam

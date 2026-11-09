@@ -2,8 +2,8 @@
 # test/core_lang/test_sys_swipl.jl — getenv/2, setenv/2, unsetenv/1, get_time/1, sleep/1, statistics/2 and delete_file/1,
 # through a PROGRAM (the pattern of test/core_lang/test_between_swipl.jl): test_sys_swipl.pl holds the rows, each a predicate
 # `tN(R)`; the kernel consults the program and enumerates every solution of every tN/1, and its lines are compared with
-# test_sys_swipl.out — swipl 10.1.19's own, printed by the driver below (`ok`, then one line per row: its name and
-# every solution). When `swipl` is on PATH the .out is checked against a live run as well, so it cannot go stale.
+# test_sys_swipl.out — swipl 10.1.20's own (the first 90 rows read the same in 10.1.19), printed by the driver below
+# (`ok`, then one line per row: its name and every solution). When `swipl` is on PATH the .out is checked against a live run as well, so it cannot go stale.
 # The values the machine decides — the time, the CPU, the stacks, the environment — are compared by TYPE or by an
 # order in the rows themselves; the error rows are swipl's formal term AND context, the message of `errno` included.
 # The program works in a fresh directory that holds the files delete_file/1 removes (lk_y1_victim, lk_y1_emptydir) and
@@ -58,7 +58,9 @@ function _sys_prepare()
 end
 
 # the kernel's lines: `ok` (the program loaded), then each row's name and solutions
-function kernel_lines(path::String, names::Vector{String})::Vector{String}
+function kernel_lines(
+    path::String, names::Vector{String}; after::Function=(gd, name) -> nothing
+)::Vector{String}
     gd = LK.PL_global_data{_TL}()
     ld = LK.PL_local_data{_TL}(gd)
     st, ball = LK.load_file!(gd, ld, path)
@@ -99,6 +101,7 @@ function kernel_lines(path::String, names::Vector{String})::Vector{String}
         end
         LK.PL_close_query(ld, qid)
         LK.PL_close_foreign_frame(ld, fid)
+        after(gd, name)
         push!(out, "$name" * join(" " .* sols))
     end
     return out
@@ -190,4 +193,68 @@ end
         sw = _in_prepared_dir(d -> swipl_lines(_SYS_PL, names))
         @test sw == expected                                       # the .out is swipl's, still
     end
+end
+
+# PIN1 step C (D-0447 item 4, condition a): `statistics(erased_clauses, _)` and `(erased_clause_space, _)` are SUMS over
+# `gd.procedures_dirty`, so they are the database's erased clauses only if every erase path registers its definition. The
+# invariant, read after each row of a program that erases by every path the kernel has (retract/1, erase/1, abolish/1,
+# retractall/1; clause GC) and leaves what it erased erased: a definition with erased clauses is in the table AND carries
+# P_DIRTYREG, a definition in the table carries P_DIRTYREG, and the number the statistic reads is the number of erased
+# clauses the definitions hold. A re-consult erases by `removeClausesPredicate!` through `unloadFile`/`endReconsult`, which
+# are LB6b's (`startConsult` refuses it, see src/pl-srcfile.jl): the row for it comes with that step.
+const _ERASE_PL = """
+:- dynamic wf/1, wg/1, wh/1.
+w0(ok).
+w1(ok) :- assertz(wf(1)), assertz(wf(2)), retract(wf(1)).
+w2(ok) :- assertz(wf(5), Ref), erase(Ref).
+w3(ok) :- assertz(wg(1)), assertz(wg(2)), abolish(wg/1).
+w4(ok) :- retractall(wf(_)).
+w5(ok) :- assertz(wh(1)), garbage_collect_clauses, assertz(wh(2)), garbage_collect_clauses.
+"""
+
+function _dirty_registration(gd)
+    seen = Base.IdSet{Any}()
+    erased = 0
+    unregistered = 0
+    stale = 0
+    for m in gd.modules, (_, proc) in m.procedures
+        def = proc.definition
+        def in seen && continue
+        push!(seen, def)
+        (def.flags & LK.P_FOREIGN) != 0 && continue
+        n = Int(def.impl_clauses.erased_clauses)
+        erased += n
+        reg = (def.flags & LK.P_DIRTYREG) != 0
+        n > 0 && !(reg && haskey(gd.procedures_dirty, def)) && (unregistered += 1)
+        !reg && haskey(gd.procedures_dirty, def) && (stale += 1)
+    end
+    return (erased=erased, unregistered=unregistered, stale=stale,
+        statistic=LK._statistics_erased(gd)[1], dirty=length(gd.procedures_dirty))
+end
+
+@testset "PIN1: every erase path registers its definition (the sum behind erased_clauses)" begin
+    f = tempname() * ".pl"
+    write(f, _ERASE_PL)
+    seen = Dict{String, Any}()
+    lines = kernel_lines(
+        f,
+        ["w0", "w1", "w2", "w3", "w4", "w5"];
+        after=(gd, name) -> (seen[name] = _dirty_registration(gd))
+    )
+    rm(f)
+    @test lines[1] == "ok"
+    @test all(l -> occursin(_codes("ok"), l), lines[2:end])        # every row answered `ok`
+    for name in ("w0", "w1", "w2", "w3", "w4")                     # an erasure is registered, and counted (w0: the boot's own)
+        r = seen[name]
+        @test r.unregistered == 0 && r.stale == 0
+        @test r.erased > 0                                         # not vacuous: the row left something erased
+        @test r.statistic == r.erased
+    end
+    # each row adds to what the rows before left erased (nothing runs clause GC between them): retract/1 one clause, erase/1
+    # one, abolish/1 its two, retractall/1 the one left
+    @test [seen[n].erased - seen["w0"].erased for n in ("w1", "w2", "w3", "w4")] ==
+        [1, 2, 4, 5]
+    r = seen["w5"]                                                 # clause GC: nothing erased, nothing registered
+    @test r.erased == 0 && r.statistic == 0 && r.unregistered == 0 && r.stale == 0 &&
+        r.dirty == 0
 end

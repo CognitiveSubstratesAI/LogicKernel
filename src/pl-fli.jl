@@ -1,11 +1,11 @@
-# UPSTREAM: swipl-devel src/pl-fli.c @ cbf4e1896275
-# UPSTREAM: swipl-devel src/pl-fli.h @ cbf4e1896275
+# UPSTREAM: swipl-devel src/pl-fli.c @ 18168e629eab
+# UPSTREAM: swipl-devel src/pl-fli.h @ 18168e629eab
 # CLASS: code
 # COPYRIGHT: Copyright (c)  1996-2026, University of Amsterdam
 # COPYRIGHT: VU University Amsterdam
 # COPYRIGHT: CWI, Amsterdam
 # COPYRIGHT: SWI-Prolog Solutions b.v.
-#
+# PIN1 ledger (V10.1.20): re-cite only, no code change (cbf4e189..18168e62 compared, D-0447 Q1) — pl-fli.c: access-only (d755bdc4), the validate_api flag ported; PL_get_arg_values, PL_get_list_slice and the validateAPI gate are owner FLI1 (docs/architecture.md, deferred owners); pl-fli.h: the validate_api flag ported; the validateAPI macros are owner FLI1 (docs/architecture.md, deferred owners).
 # THE TERM REFERENCES of SWI-Prolog's foreign language interface (pl-fli.c): a `term_t` is a
 # position on the local stack (src/pl-incl.jl § the local stack), allocated at `lTop` inside the
 # innermost foreign frame, which counts them. Since V5a2, the `PL_*` functions the first built-ins

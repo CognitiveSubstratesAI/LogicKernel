@@ -1,5 +1,5 @@
-# UPSTREAM: swipl-devel src/os/pl-option.c @ cbf4e1896275
-# UPSTREAM: swipl-devel src/os/pl-option.h @ cbf4e1896275
+# UPSTREAM: swipl-devel src/os/pl-option.c @ 18168e629eab
+# UPSTREAM: swipl-devel src/os/pl-option.h @ 18168e629eab
 # CLASS: code
 # COPYRIGHT: Copyright (c)  2011-2024, University of Amsterdam
 # COPYRIGHT: VU University Amsterdam

@@ -487,43 +487,5 @@ ok "ci_api: the token is not in the output" 0 "$(printf '%s' "$got" | grep -c "$
 ok "ci_api: no temp file is left behind" 0 "$(ls "$W/tmpd" | wc -l)"
 ok "ci_api: the token is stored in no file under tools/" 0 "$(grep -rIlF "$FAKETOK" "$ROOT/tools" | wc -l)"
 
-# ---------------------------------------------------------------- fetch_sync_from.sh (audit D-0444 item 1)
-# A throwaway "upstream" of two commits; CI's checkout is a depth-1 clone of the TIP, so the parent (the previous pin) is
-# missing until the helper fetches it. Both sides: a sync-from line (the commit appears) and none (a clean no-op).
-FS="$W/fs"; mkdir -p "$FS"
-git init -q "$FS/up"
-git -C "$FS/up" config user.email t@example.invalid; git -C "$FS/up" config user.name t
-git -C "$FS/up" config uploadpack.allowAnySHA1InWant true
-echo one > "$FS/up/f"; git -C "$FS/up" add f; git -C "$FS/up" commit -q -m one
-OLD="$(git -C "$FS/up" rev-parse HEAD)"
-echo two > "$FS/up/f"; git -C "$FS/up" commit -q -am two
-git clone -q --depth 1 "file://$FS/up" "$FS/co"
-ok "fetch_sync_from: the depth-1 checkout lacks the previous pin" absent "$(git -C "$FS/co" cat-file -e "$OLD^{commit}" 2>/dev/null && echo present || echo absent)"
-printf 'version: 1\ncommit: abc\n' > "$FS/v_none"
-got="$("$ROOT/tools/fetch_sync_from.sh" "$FS/co" "$FS/v_none" 2>&1)"; rc=$?
-ok "fetch_sync_from: no sync-from line, exit 0" 0 "$rc"
-has "fetch_sync_from: no sync-from line, says nothing to fetch" "$got" "nothing to fetch"
-ok "fetch_sync_from: no sync-from line, the commit is still absent" absent "$(git -C "$FS/co" cat-file -e "$OLD^{commit}" 2>/dev/null && echo present || echo absent)"
-"$ROOT/tools/fetch_sync_from.sh" "$FS/nonexistent" "$FS/v_none" >/dev/null 2>&1
-ok "fetch_sync_from: no sync-from line needs no checkout at all" 0 "$?"
-printf 'version: 1\ncommit: abc\nsync-from:   %s  \n' "$OLD" > "$FS/v_sync"
-got="$("$ROOT/tools/fetch_sync_from.sh" "$FS/co" "$FS/v_sync" 2>&1)"; rc=$?
-ok "fetch_sync_from: a sync-from line, exit 0" 0 "$rc"
-ok "fetch_sync_from: a sync-from line, the previous pin is now readable" 0 "$(git -C "$FS/co" cat-file -e "$OLD:f" 2>/dev/null; echo $?)"
-has "fetch_sync_from: a sync-from line, names the commit" "$got" "$OLD is in"
-printf 'version: 1\nsync-from: %s\n' "0000000000000000000000000000000000000001" > "$FS/v_bad"
-"$ROOT/tools/fetch_sync_from.sh" "$FS/co" "$FS/v_bad" >/dev/null 2>&1
-ok "fetch_sync_from: a commit upstream lacks fails the step" 1 "$([ $? -ne 0 ] && echo 1 || echo 0)"
-# the workflows: every `.upstream/swipl-devel` checkout is followed at once by the fetch step (six checkouts in three files)
-for wf in CI evidence mutation; do
-    f="$ROOT/.github/workflows/$wf.yml"
-    n_co="$(grep -c 'path: \.upstream/swipl-devel' "$f")"
-    n_st="$(grep -c 'run: tools/fetch_sync_from.sh' "$f")"
-    ok "fetch_sync_from: $wf.yml has a fetch step per checkout" "$n_co" "$n_st"
-    ok "fetch_sync_from: $wf.yml has checkouts (non-empty side)" 1 "$([ "$n_co" -gt 0 ] && echo 1 || echo 0)"
-    ok "fetch_sync_from: $wf.yml puts the step right after the checkout" "$n_co" \
-        "$(grep -A8 'path: \.upstream/swipl-devel' "$f" | grep -c 'run: tools/fetch_sync_from.sh')"
-done
-
 echo "tools/test_ci_tools.sh: $pass passed, $fail failed"
 [ "$fail" -eq 0 ]

@@ -1,12 +1,12 @@
-# UPSTREAM: swipl-devel src/pl-wrap.c @ cbf4e1896275
-# UPSTREAM: swipl-devel src/pl-wrap.h @ cbf4e1896275
+# UPSTREAM: swipl-devel src/pl-wrap.c @ 18168e629eab
+# UPSTREAM: swipl-devel src/pl-wrap.h @ 18168e629eab
 # CLASS: code
 # COPYRIGHT: Copyright (c)  2019-2025, University of Amsterdam
 # COPYRIGHT: VU University Amsterdam
 # COPYRIGHT: CWI, Amsterdam
 # COPYRIGHT: SWI-Prolog Solutions b.v.
 # allow-new-artifact: a 1:1 port of swipl-devel src/pl-wrap.c (the upstream file was read at the pin; capability search in evidence/TAB1MIN/handoff.md)
-#
+# PIN1 ledger (V10.1.20): structure only, d755bdc4 — pl-wrap.c: cell-tag access behind pl-data.h macros, no change of value, order, error or side effect.
 # WRAPPING PREDICATES (pl-wrap.c), TAB1-min step T4: what `'$wrap_predicate'/5` (boot/syspred.pl:1717-1732) needs while a
 # `:- table` directive LOADS. A wrapped predicate P gets a new supervisor that calls a clause of `'$wrap$P'`; the
 # clause calls `call(Closure, Arg ...)`, `Closure` being a blob that holds a copy of P's definition. This file holds

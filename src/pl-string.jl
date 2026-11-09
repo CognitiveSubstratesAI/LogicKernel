@@ -1,17 +1,17 @@
-# UPSTREAM: swipl-devel src/pl-string.c @ cbf4e1896275
-# UPSTREAM: swipl-devel src/pl-prims.c @ cbf4e1896275
-# UPSTREAM: swipl-devel src/pl-privitf.c @ cbf4e1896275
-# UPSTREAM: swipl-devel src/pl-error.c @ cbf4e1896275
-# UPSTREAM: swipl-devel src/os/pl-text.c @ cbf4e1896275
-# UPSTREAM: swipl-devel src/os/pl-text.h @ cbf4e1896275
-# UPSTREAM: swipl-devel src/os/pl-utf8.h @ cbf4e1896275
-# UPSTREAM: swipl-devel src/os/pl-file.c @ cbf4e1896275
+# UPSTREAM: swipl-devel src/pl-string.c @ 18168e629eab
+# UPSTREAM: swipl-devel src/pl-prims.c @ 18168e629eab
+# UPSTREAM: swipl-devel src/pl-privitf.c @ 18168e629eab
+# UPSTREAM: swipl-devel src/pl-error.c @ 18168e629eab
+# UPSTREAM: swipl-devel src/os/pl-text.c @ 18168e629eab
+# UPSTREAM: swipl-devel src/os/pl-text.h @ 18168e629eab
+# UPSTREAM: swipl-devel src/os/pl-utf8.h @ 18168e629eab
+# UPSTREAM: swipl-devel src/os/pl-file.c @ 18168e629eab
 # CLASS: code
 # COPYRIGHT: Copyright (c)  2013-2022, University of Amsterdam
 # COPYRIGHT: VU University Amsterdam
 # COPYRIGHT: CWI, Amsterdam
 # COPYRIGHT: SWI-Prolog Solutions b.v.
-#
+# PIN1 ledger (V10.1.20): re-cite only, no code change (cbf4e189..18168e62 compared, D-0447 Q1) — pl-prims.c: ported (statistics keys 7675aa45 e776534b 38281d6b commit 1, backport 8b24de91; compareAtoms 2db0c03a unreachable in the kernel, architecture.md). Also re-cited: pl-file.c: set_eof_action, newline mode (cd67bb35, dfc1c55d, 4f259069) ported; shareStandardStream (87fc7589) is owner TH1 (docs/architecture.md, deferred owners).
 # STRING PREDICATES (pl-string.c), since T2 (R2): the strings as text — atom_string/2, string_codes/2,
 # string_chars/2, text_to_string/2, string_code/3, get_string_code/3, split_string/4, string_bytes/3,
 # read_string/3,5 and open_string/2. Also here, from pl-prims.c, because the design names them in T2:

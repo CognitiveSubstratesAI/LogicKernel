@@ -75,7 +75,7 @@ const _BC_UNDEFINED = _BcKey[
     ("\$syspreds", "use_foreign_library_noi", 1),
     ("\$syspreds", "ensure_shlib", 0)
 ]
-# rewritten: (the clauses of the kernel's configuration, their hash). The hash is SWIPL'S: swipl 10.1.19 encodes, with
+# rewritten: (the clauses of the kernel's configuration, their hash). The hash is SWIPL'S: swipl 10.1.20 encodes, with
 # this file's driver (lb4b2c_enc/2, lb4b2c_hash/3), the clause texts the kernel's configuration compiles at the pin
 # (the unconditional and `:- else` branches, read with term_string/2); where swipl has the same clause, its clause/2
 # encoding is identical (checked for all three: evidence/LB4B2/rw.pl, 2026-11-03).
@@ -167,7 +167,7 @@ end
     end
 end
 
-# swipl's -O rows differ from the oracle's (no -O) in these many predicates, all in `$tabling` (2026-11-02, the pin)
+# swipl's -O rows differ from the oracle's (no -O) in these many predicates, all in `$tabling` (2026-11-06, the pin; 33 at V10.1.19 too)
 const _BC_OPTIMISE_DIFFER = 33
 
 @testset "T2 oracle: swipl's boot prints the same rows again (and -O changes 33 \$tabling rows)" begin

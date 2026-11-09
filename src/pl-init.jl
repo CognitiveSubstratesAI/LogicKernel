@@ -1,11 +1,11 @@
 # allow-new-artifact: pl-init.c mirror, HALT1
-# UPSTREAM: swipl-devel src/pl-init.c @ cbf4e1896275
+# UPSTREAM: swipl-devel src/pl-init.c @ 18168e629eab
 # CLASS: code
 # COPYRIGHT: Copyright (c)  2012-2026, University of Amsterdam
 # COPYRIGHT: VU University Amsterdam
 # COPYRIGHT: CWI, Amsterdam
 # COPYRIGHT: SWI-Prolog Solutions b.v.
-#
+# PIN1 ledger (V10.1.20): re-cite only, no code change (cbf4e189..18168e62 compared, D-0447 Q1) — pl-init.c: c9196b38 stopProfiler, owner PROF1 (docs/architecture.md, deferred owners).
 # PORTED FROM pl-init.c: `PL_cleanup`, the clean-up `halt/1` ends with (HALT1), in a reduced form (below); and,
 # from R2 LB7, the command line and the start-up of the Prolog part: `parseCommandLineOptions` and its helpers,
 # `usage`, `defaultSystemInitFile`, the option records' defaults (`initDefaultOptions`) and the tail of
@@ -637,7 +637,7 @@ end
     apply_options_to_flags!(gd, ld)
 
 Write the command-line options (`gd.options`, `gd.cmdline`) into the Prolog flags and the masks they feed: `optimise`,
-`generate_debug_info`, `debug_on_interrupt`, `signals` (flags and mask bits), `verbose` (for `-q`), `on_error`, `on_warning`,
+`generate_debug_info`, `debug_on_interrupt`, `signals`, `validate_api` (flags and mask bits), `verbose` (for `-q`), `on_error`, `on_warning`,
 `packs`, `table_space`, `stack_limit`, `os_argv` and `argv`.
 """
 function apply_options_to_flags!(
@@ -654,7 +654,9 @@ function apply_options_to_flags!(
             PLFLAG_DEBUG_ON_INTERRUPT,
             truePrologFlag(ld, PLFLAG_DEBUG_ON_INTERRUPT)
         ),
-        ("signals", PLFLAG_SIGNALS, truePrologFlag(ld, PLFLAG_SIGNALS))
+        ("signals", PLFLAG_SIGNALS, truePrologFlag(ld, PLFLAG_SIGNALS)),
+        # `validate_api` is `!GD->cmdline.optimise` (swipl-devel V10.1.20 pl-prologflag.c:2695-2698): initPrologFlags! has run before the options
+        ("validate_api", PLFLAG_VALIDATE_API, !cmd.optimise)
     )
         setPrologFlag(gd, name, FT_BOOL, val, bit)
         val ? setPrologFlagMask!(ld, bit) : clearPrologFlagMask!(ld, bit)

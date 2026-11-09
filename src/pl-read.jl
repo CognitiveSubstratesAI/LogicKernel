@@ -1,10 +1,10 @@
-# UPSTREAM: swipl-devel src/pl-read.c @ cbf4e1896275
+# UPSTREAM: swipl-devel src/pl-read.c @ 18168e629eab
 # CLASS: code
 # COPYRIGHT: Copyright (c)  1985-2026, University of Amsterdam
 # COPYRIGHT: VU University Amsterdam
 # COPYRIGHT: CWI, Amsterdam
 # COPYRIGHT: SWI-Prolog Solutions b.v.
-#
+# PIN1 ledger (V10.1.20): structure only, d755bdc4 — pl-read.c (also the backport 7f8024cc, already ported): cell-tag access behind pl-data.h macros, no change of value, order, error or side effect.
 # THE READER (R1; decided by the user, 2026-10-07: SWI-7's default syntax only, refused constructs
 # an explicit error). Since R1c the SCANNER: the Unicode classifiers over the map (src/pl-umap.jl),
 # the raw read of one term's text from a stream (comments dropped, positions kept, `raw_read`), the

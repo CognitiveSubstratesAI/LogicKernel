@@ -1,8 +1,8 @@
-# UPSTREAM: swipl-devel src/pl-cont.c @ cbf4e1896275
+# UPSTREAM: swipl-devel src/pl-cont.c @ 18168e629eab
 # CLASS: code
 # COPYRIGHT: Copyright (c)  2016-2025, VU University Amsterdam
 # COPYRIGHT: SWI-Prolog Solutions b.v.
-#
+# PIN1 ledger (V10.1.20): structure only, d755bdc4 — pl-cont.c: cell-tag access behind pl-data.h macros, no change of value, order, error or side effect.
 # What the kernel takes from SWI-Prolog's delimited continuations (pl-cont.c): `shift/1` collects the
 # environments between the shifting frame and the `reset/3` frame it matches as a list of
 # `'$cont$'(Module, Clause, PC, Slot...)` terms (`put_continuation`, `put_environment`), unifies the

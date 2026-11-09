@@ -1,11 +1,11 @@
-# UPSTREAM: swipl-devel src/pl-gc.c @ cbf4e1896275
-# UPSTREAM: swipl-devel src/pl-gc.h @ cbf4e1896275
+# UPSTREAM: swipl-devel src/pl-gc.c @ 18168e629eab
+# UPSTREAM: swipl-devel src/pl-gc.h @ 18168e629eab
 # CLASS: code
 # COPYRIGHT: Copyright (c)  1985-2024, University of Amsterdam
 # COPYRIGHT: VU University Amsterdam
 # COPYRIGHT: CWI, Amsterdam
 # COPYRIGHT: SWI-Prolog Solutions b.v.
-#
+# PIN1 ledger (V10.1.20): structure only, d755bdc4 — pl-gc.c: cell-tag access behind pl-data.h macros, no change of value, order, error or side effect.
 # What the kernel takes from SWI-Prolog's garbage collector (pl-gc.c, pl-gc.h): finding the
 # generations the predicates are being executed in, for clause GC, growing the local stack, and
 # (since V9f) `clearUninitialisedVarsFrame`. Stack garbage collection and stack shifting are not

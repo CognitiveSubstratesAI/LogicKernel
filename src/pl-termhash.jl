@@ -1,11 +1,11 @@
-# UPSTREAM: swipl-devel src/pl-termhash.c @ cbf4e1896275
-# UPSTREAM: swipl-devel src/pl-termhash.h @ cbf4e1896275
+# UPSTREAM: swipl-devel src/pl-termhash.c @ 18168e629eab
+# UPSTREAM: swipl-devel src/pl-termhash.h @ 18168e629eab
 # CLASS: code
 # COPYRIGHT: Copyright (c)  2010-2023, University of Amsterdam
 # COPYRIGHT: VU University Amsterdam
 # COPYRIGHT: SWI-Prolog Solutions b.v.
 # COPYRIGHT: Copyright (c) 2002, Dr Brian Gladman, Worcester, UK.   All rights reserved.
-#
+# PIN1 ledger (V10.1.20): structure only, d755bdc4 — pl-termhash.c: cell-tag access behind pl-data.h macros, no change of value, order, error or side effect.
 # TERM HASHING — SWI-Prolog's `term_hash/2`, `variant_sha1/2` and `variant_hash/2`:
 #   * term_hash: a 32-bit MurmurHash of a GROUND term, the same for identical (`==`) terms; no hash
 #     for a term with variables.

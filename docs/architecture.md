@@ -565,7 +565,9 @@ ported files' headers to either.
     in upstream's units or here; four cases were added and all eight rerun.
 * **Backport list (upstream fixes newer than the pin `cbf4e189`)** (D-0175 item 2: port upstream's fixes,
   not our own; each entry names its upstream commit in the `# PORT:` line of the function it fixes):
-  * `c6087acb` (Q6) — pending: LB2.
+  * `c6087acb` (Q6, `pl-srcfile.c source_file_property`) — **already equal, taken by PIN1 step C (PIN1, 18168e62):** `'$source_file_property'(+Unknown, loaded, -V)`
+    FAILS in swipl 10.1.20 (`sf && sf->ltime != 0.0 ? unify : false`; 10.1.19 read through the NULL `sf`) and in the kernel
+    (pl-srcfile.jl `sf === nothing || sf.ltime == 0.0`, written so since LB2). Rows f22, f23 of test_source_file_swipl.jl compare it live.
   * **The eight of 2026-10-29 (BP2, audit D-0221), each its own commit, one gate:** the pin file lists them as `backports:`; the
     oracle is the pin with them cherry-picked (`tools/build_oracle.sh`, committer fixed; `oracle:` names the result, version_git
     `10.1.19-9-ge0323664`, and both pin checks read it). The next full sync absorbs them.
@@ -1134,6 +1136,7 @@ graph LR
     pl_prims --> os_pl_os
     pl_prims --> os_pl_file
     pl_prims --> pl_setup
+    pl_prims --> pl_proc
     pl_prims --> pl_read
     pl_prims --> pl_string
     pl_ressymbol --> term_interface
@@ -2010,7 +2013,7 @@ or platform, with the step that owns the rest. The upstream side is the committe
 to its generator, here and in CI. The history of this block in git is the burn-down.
 
 <!-- BEGIN GENERATED R2 status by tools/port_check.jl --write-inventory — do not hand-edit -->
-Generated from `docs/r2_upstream.tsv` (swipl-devel `cbf4e189`: 1034 definitions), `docs/r2_owners.tsv` and the kernel's `src/`.
+Generated from `docs/r2_upstream.tsv` (swipl-devel `18168e62`: 1042 definitions), `docs/r2_owners.tsv` and the kernel's `src/`.
 A row is **done** (registered, defined or marked in the kernel), **refused** (the kernel raises the refusal on purpose), **missing**,
 or **platform** (a Windows or macOS definition: out of the count). **NO OWNER** counts missing and refused rows no step owns yet.
 
@@ -6105,7 +6108,7 @@ What LB2 adds so far (pl-srcfile.c, pl-file.c, pl-incl.h, pl-proc.c; written edi
   `sf.procedures` is a vector with the newest LAST, so `'$source_file_predicates'/2` walks it in reverse to answer upstream's newest-first
   list; a partly bound list with a bound element (`unify_definition`'s bound-head branch) and a RE-consult (`startConsult` with
   `count > 1`, `startReconsultFile`) refuse by name, step LB6; `reloading` is always false.
-  `'$source_file_property'(+Unknown, loaded, -V)` **fails** (upstream reads through a NULL pointer; H10).
+  `'$source_file_property'(+Unknown, loaded, -V)` **fails**, as swipl 10.1.20 does since `c6087acb` (10.1.19 read through a NULL pointer; H10, no longer a difference).
 - **KNOWN DIFFERENCE, TEMPORARY (owner LB6, audit D-0248): `releaseSourceFile` only counts.** Upstream (pl-srcfile.c:376-395) destroys a
   source file whose last reference goes when it has no procedures, no modules, is not a system file and has no current procedure. So an EMPTY file
   consulted once (`'$start_consult'(F, 0), '$end_consult'(F)`) keeps a record in the kernel: `load_count` 1 and `'$time_source_file'/3` (hence
@@ -7658,3 +7661,39 @@ UPSTREAM: os/pl-file.c `closeStream` :1503-1521 (`s == Sinput`; `s == Soutput ||
   `Sopen_string`, `Sopenmem`, `Sopen_julia_io`) and `open/3` in each mode, and asserts the flag and both predicates are false; the three standard streams do carry it.
   Mutants CS-14..CS-19 make each constructor static and remove the flag test. A new stream constructor must not set `SIO_STATIC`.
 - Rows: test/files/test_open_close_swipl.jl cs01-cs10 (swipl 10.1.19's pinned answers) and the white-box testsets; mutants tools/mutants/CLOSESTREAM.py (19).
+
+## PIN1 step C — deferred owners of the V10.1.20 hunks the kernel does not take (swipl-devel 18168e62; audit D-0446 item 3, D-0447 items 1-3; edit-only: nothing was compiled or run when this was written, the gate decides)
+
+UPSTREAM: pl-tabling.c, pl-tabling.h, pl-idgset.c/h (new), pl-thread.c, os/pl-stream.c (`Sshare`), pl-prof.c, pl-init.c (`stopProfiler`), pl-fli.c, pl-fli.h and SWI-Prolog.h, cbf4e189 to 18168e62.
+The table of every hunk: evidence/PIN1/step_c/decomposition.tsv and part2_notes.md. Nothing below changes behaviour: each item is the owner of a hunk group the kernel does not port at the pin.
+
+- **Tabling (owner TAB1; TRIE1 for the trie half).** The groups the kernel leaves to TAB1 (pl-tabling.c 250 net hunks): T1 the IDG edge sets and the node layout (`TablePP` replaced by `idg_set`, pl-idgset.c/h,
+  node 120 to 80 bytes; new `'$idg_thread_summary'/3`, `'$idg_thread_space'/2`, `'$idg_predicate_edges'/3`); T2 trie and table memory (node 48 to 40 bytes, trie 168 to 152, the atom only on demand; the `T_DELAY` flag);
+  T3 reclaim and abolish (bulk abolish, IDG leaks, a thread race); T4 answers and WFS (a single answer is not compiled, deleted answers are pruned, a WFS loop fix; pl-vmi.c `S_TABLED`/`S_TRIE_GEN`);
+  T5 diagnostics and tripwires (new `'$tbl_sdg'/3`, `'$tbl_incomplete'/3`). The ported bodies (`tbl_trienode`, `tbl_is_trienode`, `clear_table_props`, `tbl_reset_tabling_attributes`,
+  `get_predicate_table_props`, `tbl_get_predicate_attribute`, `get_size_or_inf`, `tbl_set_incremental_predicate`, `set_bool_attr`, `tbl_set_predicate_attribute`) are text-identical at the pin; `tbl_is_restraint_flag`
+  gained 4 names (done, pl-prologflag.jl). `S_TABLED` stays the named refusal at pl-wam.jl:5068 (docs/r2_owners.tsv). The row of the groups: `cfile:pl-tabling.c` in docs/r2_owners.tsv.
+- **Threads (owner TH1).** `'$thread_local_predicate_size'/3` (pl-thread.c, O_ENGINES), `Sshare` (os/pl-stream.c, 87fc7589), the thread-contention hunks of pl-atom.c (fde0211d; for one thread only
+  non-unique blobs are not looked up and `no_hole_before` is set to the index, ATOM1 for that part). The row: `cfile:pl-thread.c`.
+- **Atom batch reservation (owner ATOM1; PIN1 step C commit 5, fde0211d).** `ATOM_RESERVE_BATCH` (pl-incl.h:1431, 64) is ported in pl-incl.jl and PINNED by test/core_lang/test_atom_table.jl (a literal: the oracle cannot answer a C constant);
+  no kernel code reads it, so a mutant of its VALUE (63, 0, 128) is killed by the pin row alone, and a mutant of a READER of the value is `DEFERRED KILL, owner ATOM1` (not equivalent: ATOM1 ports `reserveAtomSlots`/`claimAtomSlot`/`releaseReservedAtoms`, a one-thread kernel gains no speed, and the constant then has a reader to mutate).
+  The one-thread half of the same commit: `lookupBlob` already skips the table lookup and insert for a non-unique blob (white-box row in the same file); it still checks the rehash trigger for every blob type (upstream only inside the unique branch,
+  so non-unique blobs no longer cause a rehash), `reserveAtom` sets `no_hole_before` to index+1 after the hole scan (upstream: index): ATOM1 (no mutants of these here).
+- **Profiler (new deferred owner PROF1).** pl-prof.c (638 lines added): `'$prof_exact_ok'/1`, `'$prof_clock_cost'/1`, `'$prof_statistics'/8` (was /7); pl-init.c `stopProfiler` (c9196b38); the `LD->profile` fields of
+  pl-global.h. No kernel code and no step before PROF1. Only library/prolog_profile.pl calls these, and the R2 scan does not read it.
+- **FLI (new deferred step FLI1).** `PL_get_arg_values()` and `PL_get_list_slice()` (SWI-Prolog.h, pl-fli.h, pl-fli.c; a2e0b6aa 8a5d5265 6d364967) are REFUSED BY NAME: the kernel registers neither
+  (SWI-Prolog.jl, "Not ported"). The C API is not reachable from `swipl -g`, so no swipl-compared row exists; FLI1 owes the port and its white-box rows. The `validateAPI` gate of pl-fli.c is not
+  decided here (decomposition question 3; PIN1 V5 is a DEFERRED KILL).
+- **Why only some of this is a row of docs/r2_owners.tsv.** The R2 status makes a row only for a predicate that a boot or library file the scan reads calls (tools/r2_status.jl `r2_pred_rows`); an owner line whose
+  key names no such row is `R2-OWNER-STALE` (port_check). None of the nine new predicates (`'$thread_local_predicate_size'/3`, the five tabling ones, the three profiler ones) is called by a scanned file, so a `pred:`
+  line for them would be stale at once: the two `cfile:` rows (TAB1, TH1) hold the names in their notes, PROF1 and FLI1 have no row kind that fits and live here. When a scanned file starts to call one of them, its
+  `pred:` line is added. The generated owner table above (R2 status block) is regenerated at the gate: `cfile:pl-tabling.c` and `cfile:pl-thread.c` give an owner to rows that showed NO OWNER.
+- **Header re-cites at 18168e62 (PIN1 step C commits 6 and 7; D-0447 Q1; `sync-from:` removed by commit 7).** 19 Julia files had `# UPSTREAM:` lines moved cbf4e189 to 18168e62 with no code change, only for the upstream files whose whole diff cbf4e189..18168e62
+  is ported or has an owner row in docs/r2_owners.tsv: pl-data.h, pl-incl.h (ATOM_RESERVE_BATCH is pl-incl.jl:460), pl-arith.c, pl-gmp.h, pl-gvar.c, pl-rec.c, pl-op.c, pl-read.c, pl-proc.c, pl-prims.c, pl-srcfile.c, ATOMS, os/pl-prologflag.c (all ported:
+  the changed lines minus d755bdc4 minus the named commits are empty), pl-tabling.c, pl-tabling.h, pl-vmi.c (TAB1 rows `cfile:pl-tabling.c`, the S_TABLED refusal, `vmi:S_TRIE_GEN`, `vmi:T_DELAY`) and pl-thread.c (`cfile:pl-thread.c`, TH1).
+  The other 13 Julia files (19 `# UPSTREAM:` lines) were re-cited by PIN1 step C commit 7 (D-0447 Q1, D-0448 item 1) on THIS section as their owner record, one ledger line per file, no code change: pl-atom.c (fde0211d, owner ATOM1: the batch slot reservation,
+  and with it the rehash trigger for non-unique blobs, `no_hole_before`, `claimAtomSlot`, `releaseReservedAtoms`, the `collectAtoms` mark test and the `rehashAtoms` skip of a reserved slot), pl-global.h (the tabling fields are the TAB1 row `cfile:pl-tabling.c`, `LD->profile`
+  is PROF1, `LD->atoms.reserved` is ATOM1), pl-init.c (`stopProfiler`, PROF1), pl-fli.c, pl-fli.h, SWI-Prolog.h (`PL_get_arg_values`, `PL_get_list_slice`, the `validateAPI` macros: FLI1; the rest of these three files is access-only d755bdc4 or the ported `validate_api` flag and PLVERSION),
+  os/pl-file.c and os/pl-stream.c (`Sshare` and `shareStandardStream`, 87fc7589: TH1; the other hunks cd67bb35, dfc1c55d, 4f259069 are ported). Each file's hunks were compared as in commit 6: the changed lines minus d755bdc4 minus the named commits leave only the groups listed here.
+  No `# UPSTREAM:` line cites cbf4e189 any more, so the `sync-from:` line of tools/SWIPL_VERSION, tools/fetch_sync_from.sh, its steps in CI.yml, evidence.yml and mutation.yml and its section of tools/test_ci_tools.sh are removed, and with them the
+  empty test/sync_expected_mismatch.jl (test/test_gate_split.jl holds that file to exist exactly while `sync-from:` does). tools/port_check.jl still reads an optional `sync-from:` line (a later sync writes it again and restores the fetch step and the list from this commit's parent; test/test_port_check.jl feeds it a fixture pin).

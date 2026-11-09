@@ -1,11 +1,11 @@
-# UPSTREAM: swipl-devel src/pl-alloc.c @ cbf4e1896275
-# UPSTREAM: swipl-devel src/pl-gc.h @ cbf4e1896275
+# UPSTREAM: swipl-devel src/pl-alloc.c @ 18168e629eab
+# UPSTREAM: swipl-devel src/pl-gc.h @ 18168e629eab
 # CLASS: code
 # COPYRIGHT: Copyright (c)  1985-2024, University of Amsterdam
 # COPYRIGHT: VU University Amsterdam
 # COPYRIGHT: CWI, Amsterdam
 # COPYRIGHT: SWI-Prolog Solutions b.v.
-#
+# PIN1 ledger (V10.1.20): structure only, d755bdc4 — pl-alloc.c: cell-tag access behind pl-data.h macros, no change of value, order, error or side effect.
 # What the kernel takes from SWI-Prolog's memory management (pl-alloc.c): raising a stack overflow
 # as a Prolog error with the spare stack enabled (since V5d), and growing the argument stack.
 

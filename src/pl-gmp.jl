@@ -1,12 +1,12 @@
-# UPSTREAM: swipl-devel src/pl-gmp.c @ cbf4e1896275
-# UPSTREAM: swipl-devel src/pl-gmp.h @ cbf4e1896275
-# UPSTREAM: swipl-devel src/pl-inline.h @ cbf4e1896275
+# UPSTREAM: swipl-devel src/pl-gmp.c @ 18168e629eab
+# UPSTREAM: swipl-devel src/pl-gmp.h @ 18168e629eab
+# UPSTREAM: swipl-devel src/pl-inline.h @ 18168e629eab
 # CLASS: code
 # COPYRIGHT: Copyright (c)  2005-2024, University of Amsterdam
 # COPYRIGHT: VU University Amsterdam
 # COPYRIGHT: CWI, Amsterdam
 # COPYRIGHT: SWI-Prolog Solutions b.v.
-#
+# PIN1 ledger (V10.1.20): structure only, d755bdc4 — pl-gmp.c, pl-gmp.h, pl-inline.h: cell-tag access behind pl-data.h macros, no change of value, order, error or side effect.
 # The number core of SWI-Prolog's arithmetic (pl-gmp.c), V6c: a term read as a `number`
 # (src/pl-incl.jl) and a `number` written as a term; promotion between the number types; comparison.
 #

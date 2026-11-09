@@ -1,9 +1,9 @@
-# UPSTREAM: swipl-devel src/pl-copyterm.c @ cbf4e1896275
+# UPSTREAM: swipl-devel src/pl-copyterm.c @ 18168e629eab
 # CLASS: code
 # COPYRIGHT: Copyright (c)  2011-2026, University of Amsterdam
 # COPYRIGHT: CWI, Amsterdam
 # COPYRIGHT: SWI-Prolog Solutions b.v.
-#
+# PIN1 ledger (V10.1.20): structure only, d755bdc4 — pl-copyterm.c: cell-tag access behind pl-data.h macros, no change of value, order, error or side effect.
 # COPYING TERMS — SWI-Prolog's `copy_term/2`, `copy_term_nat/2` and `duplicate_term/2`, with attributed
 # variables (AV6; `copy_term/3` is R2's).
 #

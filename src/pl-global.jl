@@ -1,14 +1,14 @@
-# UPSTREAM: swipl-devel src/pl-global.h @ cbf4e1896275
-# UPSTREAM: swipl-devel src/pl-incl.h @ cbf4e1896275
-# UPSTREAM: swipl-devel src/pl-init.h @ cbf4e1896275
-# UPSTREAM: swipl-devel src/pl-variant.c @ cbf4e1896275
-# UPSTREAM: swipl-devel src/os/pl-file.c @ cbf4e1896275
+# UPSTREAM: swipl-devel src/pl-global.h @ 18168e629eab
+# UPSTREAM: swipl-devel src/pl-incl.h @ 18168e629eab
+# UPSTREAM: swipl-devel src/pl-init.h @ 18168e629eab
+# UPSTREAM: swipl-devel src/pl-variant.c @ 18168e629eab
+# UPSTREAM: swipl-devel src/os/pl-file.c @ 18168e629eab
 # CLASS: code
 # COPYRIGHT: Copyright (c)  1997-2025, University of Amsterdam
 # COPYRIGHT: VU University Amsterdam
 # COPYRIGHT: CWI, Amsterdam
 # COPYRIGHT: SWI-Prolog Solutions b.v.
-#
+# PIN1 ledger (V10.1.20): structure only, d755bdc4 — pl-variant.c: cell-tag access behind pl-data.h macros, no change of value, order, error or side effect. Also re-cited: pl-incl.h: access-only (d755bdc4) ported; ATOM_RESERVE_BATCH is pl-incl.jl:460 (commit 5); the PLFLAG_EPILOG comma is no value. Also re-cited: pl-global.h: the unported fields are the tabling fields (TAB1 row cfile:pl-tabling.c), LD->profile (PROF1) and LD->atoms.reserved (ATOM1), owners in docs/architecture.md (deferred owners); pl-file.c: set_eof_action, newline mode (cd67bb35, dfc1c55d, 4f259069) ported; shareStandardStream (87fc7589) is owner TH1 (docs/architecture.md, deferred owners).
 # THE GLOBAL AND THREAD-LOCAL DATA the clause database reads — the fields of SWI-Prolog's
 # `struct PL_global_data` (GD) and `struct PL_local_data` (LD) that the ported code uses.
 #

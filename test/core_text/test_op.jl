@@ -1,4 +1,4 @@
-# UPSTREAM: swipl-devel tests/core_text/test_op.pl @ cbf4e1896275
+# UPSTREAM: swipl-devel tests/core_text/test_op.pl @ 18168e629eab
 # CLASS: code
 # COPYRIGHT: Copyright (c)  2009-2021, University of Amsterdam
 # COPYRIGHT: SWI-Prolog Solutions b.v.
