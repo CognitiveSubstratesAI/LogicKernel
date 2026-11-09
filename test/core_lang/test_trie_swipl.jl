@@ -1263,8 +1263,8 @@ end
 
 function _tr_value_rows(::Type{T}) where {T}
     s(n) = lk_sym(T, n)
-    # slots: the key k, the values f(a) and f(b) (a record each: neither an atom nor a tagged integer)
-    gd, ld, t = _tr_engine(T, T[s(:k), _trx(T, :f, s(:a)), _trx(T, :f, s(:b))])
+    # slots: the key k, the values f(a) and f(b) (a record each: neither an atom nor a tagged integer), the atom z
+    gd, ld, t = _tr_engine(T, T[s(:k), _trx(T, :f, s(:a)), _trx(T, :f, s(:b)), s(:z)])
     tr = LK.trie_create(T)
     tref = LK.PL_new_term_ref(ld)
     @test LK.unify_trie(gd, ld, tref, tr)
@@ -1274,9 +1274,33 @@ function _tr_value_rows(::Type{T}) where {T}
     # an update with a different value: the old record is erased and its slot is free again, the count stays
     ok, nid2 = LK.trie_insert(gd, ld, tref, t + 1, t + 3, true, nothing)
     @test ok && nid2 == nid && tr.value_count == 1 && tr.free_records == [1] && tr.records[1] === nothing && tr.records[2] !== nothing
+    # an update of a record by an atom: the two are not equal (equal_value compares two records only), the record goes
+    ok, nid3 = LK.trie_insert(gd, ld, tref, t + 1, t + 4, true, nothing)
+    @test ok && nid3 == nid && tr.value_count == 1 && tr.free_records == [1, 2] && all(isnothing, tr.records)
+    return nothing
+end
+
+function _tr_unify_rows(::Type{T}) where {T}
+    # slots: f(X, X), f(1, 2), f(3, 3): the keys of the node are f/2, V1, V1 (a repeated variable)
+    gd, ld, t = _tr_engine(
+        T, T[
+            _trx(T, :f, _trv(T, 1), _trv(T, 1)), _trx(T, :f, lk_gnd(T, Int64(1)), lk_gnd(T, Int64(2))),
+            _trx(T, :f, lk_gnd(T, Int64(3)), lk_gnd(T, Int64(3)))
+        ]
+    )
+    tr = LK.trie_create(T)
+    rc, nid = LK.trie_lookup_abstract(ld, tr, 0, -(t + 1), true, nothing, nothing)
+    @test rc == 1 && nid != 0
+    # the second occurrence of the variable is unified with the first: 1 and 2 do not unify, 3 and 3 do
+    @test LK.unify_trie_term(ld, tr, nid, t + 2) == (false, 0)
+    @test LK.unify_trie_term(ld, tr, nid, t + 3) == (true, 0)
     return nothing
 end
 
 @testset "trie values: trie_insert counts the value, an update releases the old record" begin
     _tr_value_rows(_TT)
+end
+
+@testset "trie keys: a repeated variable key is unified with its first occurrence" begin
+    _tr_unify_rows(_TT)
 end
