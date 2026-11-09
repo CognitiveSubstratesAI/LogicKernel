@@ -259,6 +259,15 @@ function _tr_children_rows(::Type{T}) where {T}
     @test LK.block_find(b, k2) == 18 && LK.block_find(b, _tk(10)) == 1
     @test all(0 .<= [LK.child_hash(_tk(k), 6) for k in (1, 10, 77, 12345)] .< 64)
 
+    # a probe that runs off the end of the index wraps to slot 0: keys 36 and 73 both start at slot 31 of a 32-slot index, so the second is
+    # stored at slot 0 (index_entry) and a lookup that does not wrap reads past the index (block_find)
+    trw = LK.trie_create(T)
+    @test LK.child_hash(_tk(36), 5) == 31 && LK.child_hash(_tk(73), 5) == 31
+    idw = [LK.insert_child(trw, 1, _tk(k)) for k in (36, 73, 1, 2, 3, 4, 5, 6, 7)]
+    bw = _tr_block(trw, 1)
+    @test bw.index_bits == 5 && bw.count == 9 && bw.index[32] == 1 && bw.index[1] == 2
+    @test LK.get_child(trw, 1, _tk(73)) == idw[2] && LK.get_child(trw, 1, _tk(36)) == idw[1]
+
     # a dead entry: the key stays in the block, the child is 0, the others are intact
     @test !LK.delete_child(tr, 1, ids[15], false)
     b = _tr_block(tr, 1)
@@ -328,6 +337,15 @@ function _tr_compaction_rows(::Type{T}) where {T}
     LK.delete_child(tr, 1, ids[9], true)
     b = _tr_block(tr, 1)
     @test b.capacity == 8 && b.count == 7 && b.dead == 0 && b.index_bits == 0 && _tr_keys(tr, 1) == _tk.(10:16)
+
+    # 5 children, 3 deleted: 3*2 > 5 gives 2 live in a block of capacity 2 (the capacity loop starts at 2)
+    tr, ids = _tr_fan(T, 5)
+    LK.delete_child(tr, 1, ids[1], true)
+    LK.delete_child(tr, 1, ids[2], true)
+    @test tr.blocks[LK.children_block_id(tr.nodes[1].children)].capacity == 8
+    LK.delete_child(tr, 1, ids[3], true)
+    b = _tr_block(tr, 1)
+    @test b.capacity == 2 && b.count == 2 && b.dead == 0 && _tr_keys(tr, 1) == _tk.(4:5)
 
     # without `compact`, the delete leaves the block; compact_children applies the same threshold
     tr, ids = _tr_fan(T, 4)
