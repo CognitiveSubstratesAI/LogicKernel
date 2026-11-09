@@ -10,8 +10,8 @@
 #   * the name atom of the registration (D1-4): `PL_register_blob_type` looks `type.name` up when the name atom is 0
 #     (pl-atom.jl:2312), and "clause" is the built-in ATOM_clause either way;
 #   * `record_clause`'s assertion that the clause is not erased (D1-37): the clause was added by the call before it;
-#   * erase/1 ignoring `retractClauseDefinition!`'s result (D1-54): that result is false only for an already erased clause, which
-#     `PL_get_dbref` has turned away before.
+# (D1-54, erase/1 ignoring `retractClauseDefinition!`'s result, was declared equivalent and was NOT: the result is also false when an event listener
+# vetoes the retract (src/pl-proc.jl:756-758); row ev1v07 of test_event_swipl.jl tells it apart, and that file is in the mutant's targets since MUTREFIT D1f, D-0452 item 4a.)
 # D1-56 (erase/1's test of the reference type) is killed since D2: `PL_get_dbref` answers a record reference too, rows r65 and r67 of
 # test/db/test_record_swipl.jl run the record branch of erase/1 (D-0252).
 # D-0230 item 1 adds D1-70…D1-98 (clause/3, '$clause'/4, '$rule'/3: unify_definition's bound branch, decompile_bindings!, clause_ndet's
@@ -20,7 +20,9 @@
 # are settable and row sf80 of test/core_lang/test_set_flag_swipl.jl kills it (D-0291 item 2c). D1-90/D1-91 (the garbage third/fourth argument of clause/2) may
 # survive in a quiet test: a survivor is then reported, not declared equivalent.
 # D-0230 piece (d) adds D1-100...D1-119 (instance/2 and fixup_ssu, pl-rec.c; rows n01-n20). Declared EQUIVALENT with their code reasons:
-# D1-117 (GOAL_CLAUSE: no goal clause has a reference) and D1-118 (visibleClause: CL_ERASED is set with generation_erased); D1-119
+# D1-117 (GOAL_CLAUSE: no frame under reset/3 runs a goal clause, so none is captured by shift/1; reason on the mutant). D1-118 (visibleClause) was declared
+# equivalent and was NOT, since LB6a: a reload erases the old clauses at the reload generation WITHOUT CL_ERASED (pl-srcfile.jl:286), so during a reload only the
+# visibility test turns an old clause's reference away; the D1-118 testset of test_clause_ref_swipl.jl kills it (MUTREFIT D1f, D-0452 item 4b). D1-119
 # (the reference type) is killed since D2 by rows r73/r75 of test/db/test_record_swipl.jl (D-0252).
 # Not run yet: a survivor among D1-105...D1-109 (the reference arithmetic) is reported, not declared equivalent.
 # D-0238 item 4: every test file that exercises the mutated code, not only the step's own file. T: the files that make or erase a
@@ -30,6 +32,7 @@ T = ["test/db/test_clause_ref_swipl.jl", "test/db/test_assert_swipl.jl", "test/d
      "test/db/test_retractall_swipl.jl", "test/core_lang/test_blob.jl", "test/files/test_load_swipl.jl"]
 T8 = T + ["test/db/test_clause_swipl.jl", "test/core_lang/test_module_path.jl"]
 TARGETS = T8
+TEV = "test/core_lang/test_event_swipl.jl"   # D1-54: a listener's veto makes retractClauseDefinition! answer false (pl-proc.jl:756-758), row ev1v07
 TREC = "test/db/test_record_swipl.jl"      # D2: record references reach erase/1 and instance/2 (D1-56, D1-119)
 B = "src/pl-dbref.jl"
 K = "src/pl-comp.jl"
@@ -229,12 +232,11 @@ MUTANTS = [
     dict(id="D1-53 the permission error has the caller as context", file=R, targets=T,
          old='''ld, "erase", 1, "", ERR_PERMISSION,''',
          new='''ld, "", 0, "", ERR_PERMISSION,'''),
-    dict(id="D1-54 erase/1 ignores the result of the retract", file=R, targets=T,
+    dict(id="D1-54 erase/1 ignores the result of the retract (KILL row ev1v07 of test_event_swipl.jl: a listener vetoes the retract)", file=R,
+         targets=T + [TEV],
          old='''    return retractClauseDefinition!(gd, ld, def, clause, true) ? FTRUE : FFALSE''',
          new='''    retractClauseDefinition!(gd, ld, def, clause, true)
-    return FTRUE''',
-         equivalent="retractClauseDefinition! answers false only for a clause that is already erased (src/pl-proc.jl retract_clause!), "
-                    "which PL_get_dbref has turned away (src/pl-dbref.jl)"),
+    return FTRUE'''),
     dict(id="D1-55 erase/1 does not retract", file=R, targets=T,
          old='''    return retractClauseDefinition!(gd, ld, def, clause, true) ? FTRUE : FFALSE''',
          new='''    return FTRUE'''),
@@ -453,15 +455,18 @@ end'''),
     dict(id="D1-117 instance/2 answers a goal clause", file=R, targets=T,
          old='''    if (clause.flags & GOAL_CLAUSE) != 0 || !visibleClause(ld, clause, generation)''',
          new='''    if !visibleClause(ld, clause, generation)''',
-         equivalent="no goal clause has a reference: PL_unify_clref/PL_put_clref are called only for the clauses assert/2, asserta/2, assertz/2, "
-                    "'$record_clause'/4 and clause/3 hand out (src/pl-comp.jl:3445, 3719, 3793, 3807, 3845), and a goal clause is a heap Clause "
-                    "that no definition holds (src/pl-comp.jl:3089-3096, compileGoalClause)"),
-    dict(id="D1-118 instance/2 does not test that the clause is visible", file=R, targets=T,
+         equivalent="no goal clause reaches instance/2: the only reader that hands out a goal clause's blob is put_environment (src/pl-cont.jl:132, "
+                    "lookup_clref of the frame's clause, the `$cont$` of shift/1), and every frame between shift/1 and its reset/3 has FR_INRESET (set by "
+                    "reset/3 at src/pl-wam.jl:3353; setNextFrameFlags, src/pl-incl.jl:1761, FR_CLEAR_FLAGS does not clear it), so a control construct or "
+                    "call/N (N > 8) there runs through '$meta_call'/1, never a goal clause (src/pl-wam.jl:3761-3763, pl-vmi.c:5529-5535); a callback "
+                    "clears the flag (src/pl-wam.jl:2086) but shift/1 cannot pass a callback. The other PL_unify_clref/PL_put_clref callers hand out "
+                    "only the clauses assert/2, asserta/2, assertz/2, '$record_clause'/4 and clause/3 make (src/pl-comp.jl:3445, 3719, 3793, 3807, 3845). "
+                    "Probed against swipl 10.1.20 and the kernel, rows n21, n22 of test_clause_ref_swipl.jl and 16 variants (call/1 of a conjunction, a disjunction, "
+                    "an if-then-else, catch/3, forall/2, \\+, in a predicate body): the same answers, the continuation holds a '$meta_call'/3 system clause, never a goal clause"),
+    dict(id="D1-118 instance/2 does not test that the clause is visible (KILL the D1-118 testset of test_clause_ref_swipl.jl: a reload has erased the old clause)",
+         file=R, targets=T,
          old='''    if (clause.flags & GOAL_CLAUSE) != 0 || !visibleClause(ld, clause, generation)''',
-         new='''    if (clause.flags & GOAL_CLAUSE) != 0''',
-         equivalent="PL_get_dbref has turned an erased clause away (src/pl-dbref.jl:161), and retractClauseDefinition! sets CL_ERASED in the "
-                    "same step as generation_erased (src/pl-proc.jl:505-516); every referenced clause was created before the foreign frame "
-                    "(its reference exists), so created <= generation holds: single thread, no transaction"),
+         new='''    if (clause.flags & GOAL_CLAUSE) != 0'''),
     dict(id="D1-119 instance/2 does not test the reference's type (KILL r73, r75 of test_record_swipl.jl)", file=R,
          targets=T + [TREC],
          old='''    if type != DB_REF_CLAUSE                                    # RECORD: the instance branch of a record''',

@@ -289,6 +289,16 @@ const _CASES = [
         "n20",
         "assertz((e(X) => d(X)), Ref), '\$rule'(H, Rule, Ref), instance(Ref, T), R = H-Rule-T"
     ),
+    # D1-117 (MUTREFIT D1f, audit D-0452 item 4c): the clause blobs a captured continuation holds (`'$cont$'`'s second argument, pl-cont.c put_environment ->
+    # lookup_clref) through instance/2; `call/1` of a conjunction runs a goal clause or a system clause, the plain goal the row's own clause
+    (
+        "n21",
+        "reset(call((shift(x), true)), B, C), C = call_continuation(L), findall(I, (member(K, L), arg(2, K, Ref), ( instance(Ref, T) -> I = T ; I = no )), R0), R = B-R0"
+    ),
+    (
+        "n22",
+        "reset((shift(x), true), B, C), C = call_continuation(L), findall(I, (member(K, L), arg(2, K, Ref), ( instance(Ref, T) -> I = T ; I = no )), R0), R = B-R0"
+    ),
     # LAST: nothing follows (the program's last row)
     ("z01", "assertz(d(1), Ref), blob(Ref, T), R = T")
 ]
@@ -481,6 +491,13 @@ _swipl() = get(ENV, "LOGICKERNEL_NO_SWIPL", "") == "1" ? nothing : Sys.which("sw
         )   # `X>0` is gone
         @test count(l -> startswith(l, "t_n06 ") && count("c[92,61,61]/2", l) == 2, sw) == 1                   # `X\\==3` twice
         @test any(l -> startswith(l, "t_n12 ") && occursin(_codes("no"), l), sw)                              # an erased clause
+        # D1-117's probe rows: the clause blob a continuation holds is a system clause (`'$meta_call'/3`), instance/2 gives it as a clause term
+        @test count(
+            l ->
+                any(startswith(l, "t_$n ") for n in ("n21", "n22")) &&
+                occursin(_codes("\$meta_call"), l),
+            sw
+        ) == 2
         @test startswith(last(sw), "t_z01 ")
     end
 end
@@ -703,4 +720,77 @@ end
     @test cl isa LK.Clause{_TL} && (cl.flags & LK.DBREF_CLAUSE) != 0
     @test cl.predicate ===
         LK.isCurrentProcedure(sym_key(_tls("p")), 2, LK.MODULE_user(gd)).definition
+end
+
+# D1-118 (MUTREFIT D1f, audit D-0452 item 4b): instance/2 of a clause that a RELOAD has erased at the reload generation. Since LB6a `visibleClause` reads the
+# reload generation, and `startReconsultFile` sets `generation_erased` on the file's old clauses WITHOUT CL_ERASED (pl-srcfile.c:933-935), so
+# PL_get_dbref still hands the clause over; only the visibility test of pl-rec.c instance/2 turns it away. The kernel's Prolog level cannot reconsult yet
+# (LB6b: `load_file!` refuses the second consult), so the reload is started by hand, as test_reload_blocks_swipl.jl does; swipl's own answer comes from
+# a live swipl that really reconsults the file, with a directive at the TOP of the reloaded file (it runs before the clause is re-added and matched to the old one).
+const _RL_FILE = "p(1).\np(2) :- true.\n"
+const _RL_SWIPL = raw"""
+:- dynamic held/1, seen/1.
+probe(Tag) :- held(R), ( instance(R, _) -> S = yes ; S = no ), assertz(seen(Tag-S)).
+write_file(F, Text) :- open(F, write, S), write(S, Text), close(S).
+main(F) :-
+    write_file(F, 'p(1).\np(2) :- true.\n'),
+    consult(F), clause(p(1), true, R), assertz(held(R)),
+    probe(before),
+    write_file(F, ':- ( user:held(R), ( instance(R, _) -> S = yes ; S = no ) -> assertz(user:seen(during-S)) ; true ).\np(1).\np(2) :- true.\n'),
+    consult(F),
+    probe(after),
+    forall(seen(S), ( print(S), nl )).
+"""
+
+@testset "D1-118: instance/2 of an old clause during a reload is false (visibleClause reads the reload generation); true before and after, == live swipl" begin
+    gd = LK.PL_global_data{_TL}()
+    ld = LK.PL_local_data{_TL}(gd)
+    d = realpath(mktempdir())
+    f = joinpath(d, "r.pl")
+    write(f, _RL_FILE)
+    st, _ = LK.load_file!(gd, ld, f)
+    @test st === :ok
+    sf = LK.lookupSourceFile(gd, lk_sym(_TL, Symbol(f)), false)
+    @test sf !== nothing
+    v() = mk_var(_TL, LK.fresh_var_keys!(1))
+    p1 = mk_expr(_TL, _TL[_tls("p"), lk_gnd(_TL, 1)])
+    st, a = kcall(gd, ld, "clause", _TL[p1, _tls("true"), v()])
+    @test st === :true && is_blob(a[3]) && blob_type(a[3]) === :clause
+    ref = a[3]
+    old = LK.clause_clref(gd, ref)::LK.Clause{_TL}
+    # before the reload: the clause is live and instance/2 answers it
+    @test old.generation_erased == LK.GEN_MAX && (old.flags & LK.CL_ERASED) == 0
+    st, a = kcall(gd, ld, "instance", _TL[ref, v()])
+    @test st === :true
+    inst_before = enc(a[2])
+    @test occursin("c" * _codes(":-") * "/2(", inst_before)
+    # during the reload: erased at the reload generation but not CL_ERASED, so PL_get_dbref still gives the clause; the visibility test turns it away
+    @test LK.startReconsultFile(gd, ld, sf)
+    st_during = :unset
+    try
+        @test gd.reload_generation != LK.GEN_INVALID &&
+            old.generation_erased == gd.reload_generation
+        @test (old.flags & LK.CL_ERASED) == 0
+        st_during, _ = kcall(gd, ld, "instance", _TL[ref, v()])
+    finally
+        gd.reload_generation = LK.GEN_INVALID      # what endReconsult (LB6b) does to the two values startReconsultFile writes
+        ld.reload_nesting = 0
+    end
+    @test st_during === :false
+    # the reload over: visible again
+    st, a = kcall(gd, ld, "instance", _TL[ref, v()])
+    @test st === :true && enc(a[2]) == inst_before
+    # swipl really reconsults the file: the same three verdicts
+    if _swipl() === nothing
+        @info "D1-118 RELOAD DIFFERENTIAL NOT RUN: `swipl` is not on PATH here. It runs in tools/run_tests.sh and CI."
+    else
+        sw = joinpath(d, "sw.pl")
+        write(
+            sw,
+            _RL_SWIPL * ":- initialization((main('" * joinpath(d, "s.pl") * "'), halt)).\n"
+        )
+        out = read(pipeline(`swipl -q $sw`; stderr=devnull), String)
+        @test Set(split(chomp(out), '\n'; keepempty=false)) ==
+            Set(["before-yes", "during-no", "after-yes"])
+    end
 end
