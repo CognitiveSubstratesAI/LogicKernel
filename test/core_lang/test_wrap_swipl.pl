@@ -5,28 +5,31 @@
 % test's driver prints them (`ok`, then one line per row: its name and every solution). A row never encodes a closure blob (a
 % blob has no stable text): it records the NAMES, the order of the calls, and the results of the wrapped goals. Every row
 % wraps predicates of its own (a wrapper stays for the rest of the run).
-:- dynamic seen/1, log/1.
+:- dynamic log/1.
 
 lg(X) :- assertz(log(X)).
 logs(L) :- findall(X, log(X), L), retractall(log(_)).
 
-% t0: wrap + call of a two-clause predicate; the wrapper runs once per call and sees the bound argument
+% t0: wrap + call of a two-clause predicate; the wrapper runs once per solution and sees the bound argument. (A wrapper
+% records through lg/1, a user predicate: swipl 10.1.20 loses an `assertz/1` written directly in a wrapper's body when the
+% wrapped predicate runs inside findall/3, and runs the unqualified catch/3 recovery of a wrapper in module `system` under
+% an outer catch/3: unexplained, probed only, no row of its own.)
 p0(1).
 p0(2).
 t0(R) :-
-    retractall(seen(_)),
-    wrap_predicate(p0(X), w, W, (W, assertz(seen(X)))),
+    logs(_),
+    wrap_predicate(p0(X), w, W, (W, lg(X))),
     findall(Y, p0(Y), Ys),
-    findall(S, seen(S), Ss),
+    logs(Ss),
     R = Ys-Ss.
 
 % t1: the same over a SINGLE-clause predicate (S_TRUSTME of the wrapped supervisor, not the wrapper's)
 p1(5).
 t1(R) :-
-    retractall(seen(_)),
-    wrap_predicate(p1(X), w, W, (W, assertz(seen(X)))),
+    logs(_),
+    wrap_predicate(p1(X), w, W, (W, lg(X))),
     findall(Y, p1(Y), Ys),
-    findall(S, seen(S), Ss),
+    logs(Ss),
     R = Ys-Ss.
 
 % t2: nested wraps: the last registered runs outermost
