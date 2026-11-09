@@ -3733,7 +3733,7 @@ function PL_next_solution_guarded(
     mc_k, mc_w, _ = mc_loc                          # goal = *a
     mc_gloc = 0                                     # (the goal's location: a goal clause, f3b-3)
     mc_arity = 0
-    mc_clo::Union{Nothing, closure{T}} = nothing    # closure *clsp = NULL
+    mc_clo = nothing                                # closure *clsp = NULL (a closure{T} when the goal is a closure's)
     if mc_k == DU_WORD && isAtomW(mc_w)             # isAtom(goal)
         mc_name = _atom_value(ld, mc_w)
         # ison(ap->type, PL_BLOB_TEXT) || goal == ATOM_nil
