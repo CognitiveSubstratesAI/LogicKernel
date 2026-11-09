@@ -2646,6 +2646,15 @@ function _manifest_index(T)
             (f, Tuple{LD, Int, Int, LK.control_t{T}}, false) for f in
             (LK.pl_tbl_trienode1_va, LK.pl_tbl_is_trienode1_va, LK.pl_c_wrap_predicate5_va)
         ]...,
+        # WRAP1 — unwrap_predicate/2, '$wrapped_predicate'/2, '$wrapped_implementation'/3, '$closure_predicate'/2 (src/pl-wrap.jl)
+        [
+            (f, Tuple{LD, Int, Int, LK.control_t{T}}, false) for f in (
+                LK.pl_unwrap_predicate2_va,
+                LK.pl_wrapped_predicate2_va,
+                LK.pl_wrapped_implementation3_va,
+                LK.pl_closure_predicate2_va
+            )
+        ]...,
         # T2: the tabling properties of a predicate (src/pl-tabling.jl)
         (LK.tbl_reset_tabling_attributes!, Tuple{D}, false),
         (LK.get_predicate_table_props!, Tuple{D}, false),
@@ -2694,6 +2703,10 @@ function _manifest_index(T)
         (LK.unify_wrapped, Tuple{LD, Int, T, Int}, false),
         (LK.wrapper_vmi, Tuple{D, T}, false),
         (LK.freeCodesDefinition!, Tuple{GD, D, Bool}, false),
+        # WRAP1: the side table of the running supervisor, the innermost supervisor, GP_RESOLVE of a head (src/pl-wrap.jl)
+        (LK.supervisor_crefs, Tuple{GD, D, Vector{LK.code}}, false),
+        (LK.innermost_supervisor, Tuple{GD, D}, false),
+        (LK.get_procedure_resolve_head, Tuple{GD, LD, Int, Int}, false),
         # AUTOLOAD1 A4 — the autoload flag (pl-prologflag.c setAutoload, propagateAutoload; pl-fli.c PL_set_prolog_flag)
         (LK.setAutoload, Tuple{LD, T}, false),
         (LK.propagateAutoload, Tuple{GD, LD, Int}, false),
