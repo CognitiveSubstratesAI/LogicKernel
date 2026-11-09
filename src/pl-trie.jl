@@ -895,3 +895,117 @@ function prune_error(tr::trie{T}, nid::Int)::Nothing where {T}
     prune_node(tr, follow_node(tr, nid, TRIE_ERROR_VAL, true))
     return nothing
 end
+
+# ---- THE TRIE BLOB (trie_symbol, symbol_trie, get_trie, trie_error) ----
+
+# PORT: pl-trie.c trie_blob
+# DIVERGES: no `release`, `write`, `save` or `load` slots (`PL_blob_t` has none): atom-GC does not exist here, so a trie lives
+# as long as `gd.tries` (`trie_destroy/1` empties it); the written form `<trie>(0x...)` is the term layer's blob form.
+"The blob type of a trie (pl-trie.c `trie_blob`): not unique (one atom per trie, made by `trie_symbol`), non-text, named `trie`."
+const trie_blob = PL_blob_t(PL_BLOB_NOCOPY, "trie")
+
+# PORT: pl-trie.c initTries
+# DIVERGES: the database's atom table is the argument; called by the database's constructor in pl-setup.c's order. Only the
+# blob registration: the mutex stripes are O_PLMT (owner TH1) and the procedure lookups at the end of upstream's function belong
+# to the steps that port those predicates (TR2, TB1).
+"Register the trie blob type in `atoms` (pl-trie.c `initTries`)."
+function initTries!(atoms::atoms_t)::Nothing
+    PL_register_blob_type(atoms, trie_blob)
+    return nothing
+end
+
+# ORIGINAL: the payload of a trie blob (upstream: the pointer to the trie, `PL_BLOB_NOCOPY` data).
+"The 8 bytes of a trie blob: the trie's number in `gd.tries`, little-endian."
+_trie_bytes(serial::Int)::Vector{UInt8} = collect(reinterpret(UInt8, Int64[serial]))
+
+# ORIGINAL: upstream's `PL_blob_data(symbol, NULL, &type)` of a trie blob with its type test, as `closure_of_word`.
+"The trie the blob atom word `w` names, whatever its magic, or `nothing` when `w` is no trie blob."
+function trie_of_word(gd::PL_global_data{T}, w::word)::Union{Nothing, trie{T}} where {T}
+    at = atomValue(gd.atoms, w)
+    at.type === trie_blob || return nothing
+    serial = reinterpret(Int64, at.name[1:8])[1]
+    return gd.tries[Int(serial)]
+end
+
+# PORT: pl-trie.c trie_symbol
+# DIVERGES: the database is an argument; the trie gets its number in `gd.tries` with its first symbol; the result is the atom
+# WORD (`unify_trie` makes the blob term of it).
+"The atom (handle) of `tr`, created on first use (pl-trie.c)."
+function trie_symbol(gd::PL_global_data{T}, tr::trie{T})::word where {T}
+    tr.symbol != 0 && return tr.symbol
+    push!(gd.tries, tr)
+    tr.serial = length(gd.tries)
+    bytes = _trie_bytes(tr.serial)
+    w, _ = lookupBlob(gd.atoms, bytes, length(bytes), trie_blob)
+    tr.symbol = w
+    return w
+end
+
+# PORT: pl-trie.c symbol_trie
+# DIVERGES: the atom word is the argument; `nothing` is NULL.
+"The live trie the atom word `symbol` names, or `nothing` (pl-trie.c)."
+function symbol_trie(gd::PL_global_data{T}, symbol::word)::Union{Nothing, trie{T}} where {T}
+    t = trie_of_word(gd, symbol)
+    (t !== nothing && t.magic == TRIE_MAGIC) && return t
+    return nothing
+end
+
+# PORT: pl-trie.c unify_trie
+"Unify the term reference `t` with the symbol of `tr` (pl-trie.c)."
+function unify_trie(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, t::term_t, tr::trie{T}
+)::Bool where {T}
+    a = _blob_term!(gd.atoms, gd.atom_symbols, T, trie_symbol(gd, tr))
+    return PL_unify_atomic(ld, t, a)
+end
+
+# PORT: pl-trie.c get_trie
+# DIVERGES: returns the trie or `nothing` after the error (upstream: a Bool and `*tp`); the database and the local data
+# are arguments.
+"The trie in `t`; else raise `type_error(trie, T)`, or `existence_error(trie, T)` for a destroyed one, and `nothing` (pl-trie.c)."
+function get_trie(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, t::term_t
+)::Union{Nothing, trie{T}} where {T}
+    a = PL_get_atom(ld, t)
+    tr = (a === nothing || !is_blob(a)) ? nothing : trie_of_word(gd, blob_handle(a))
+    if tr !== nothing
+        tr.magic == TRIE_MAGIC && return tr
+        PL_error(ld, ERR_EXISTENCE, mk_sym(T, :trie), t)
+    else
+        PL_type_error(ld, "trie", t)
+    end
+    return nothing
+end
+
+# PORT: pl-trie.c get_trie_noex
+# DIVERGES: returns the trie or `nothing` (upstream: a Bool and `*tp`).
+"The trie in `t`, whatever its magic, or `nothing`; no error (pl-trie.c)."
+function get_trie_noex(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, t::term_t
+)::Union{Nothing, trie{T}} where {T}
+    a = PL_get_atom(ld, t)
+    (a === nothing || !is_blob(a)) && return nothing
+    return trie_of_word(gd, blob_handle(a))
+end
+
+# PORT: pl-trie.c trie_error
+"Raise the error for the lookup result `rc` on `culprit`; false (pl-trie.c)."
+function trie_error(ld::PL_local_data{T}, rc::Int, culprit::term_t)::Bool where {T}
+    if rc == TRIE_LOOKUP_CONTAINS_ATTVAR
+        return PL_type_error(ld, "free_of_attvar", culprit)
+    elseif rc == TRIE_LOOKUP_CYCLIC
+        return PL_type_error(ld, "acyclic_term", culprit)
+    end
+    return false
+end
+
+# PORT: pl-trie.c trie_trie_error
+"As `trie_error` with the symbol of `tr` as the culprit (pl-trie.c)."
+function trie_trie_error(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, rc::Int, tr::trie{T}
+)::Bool where {T}
+    t = PL_new_term_ref(ld)
+    a = _blob_term!(gd.atoms, gd.atom_symbols, T, trie_symbol(gd, tr))
+    PL_put_atom(ld, t, a)
+    return trie_error(ld, rc, t)
+end
