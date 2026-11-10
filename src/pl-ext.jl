@@ -96,7 +96,7 @@ const _PRED_TABLES = (
     PL_predicates_from_strings,
     PL_predicates_from_error, PL_predicates_from_event,
     PL_predicates_from_termhash, PL_predicates_from_trie, PL_predicates_from_tabling,
-    PL_predicates_from_wrap, PL_predicates_from_transaction
+    PL_predicates_from_wrap, PL_predicates_from_transaction, PL_predicates_from_undo
 )
 const _FOREIGN_VA = (
     PL_predicates_from_atom..., PL_predicates_from_arith..., PL_predicates_from_bag...,
@@ -116,7 +116,7 @@ const _FOREIGN_VA = (
     PL_predicates_from_error..., PL_predicates_from_event...,
     PL_predicates_from_termhash..., PL_predicates_from_trie...,
     PL_predicates_from_tabling...,
-    PL_predicates_from_wrap..., PL_predicates_from_transaction...
+    PL_predicates_from_wrap..., PL_predicates_from_transaction..., PL_predicates_from_undo...
 )
 const _FOREIGN_DET = foreigns
 

@@ -73,6 +73,7 @@ include("pl-pro.jl")           # swipl-devel src/pl-pro.c — callProlog, sig_at
 include("pl-init.jl")          # swipl-devel src/pl-init.c — PL_cleanup, the clean-up halt/1 ends with (HALT1)
 include("pl-event.jl")         # swipl-devel src/pl-event.c — event lists, prolog_listen/2,3, prolog_unlisten/2, callEventHook
 include("pl-transaction.jl")  # swipl-devel src/pl-transaction.c — transactions: commit, discard, $transaction/2,3, $snapshot/1 (TX1)
+include("pl-undo.jl")         # swipl-devel src/pl-undo.c — undo/1: goals run when a trailed assignment is undone (TX1e)
 include("pl-mutex.jl")         # swipl-devel src/pl-mutex.c — with_mutex/2 (the single-thread form)
 include("pl-bag.jl")           # swipl-devel src/pl-bag.c — the bags of findall/3
 include("pl-gvar.jl")          # swipl-devel src/pl-gvar.c — global variables: b_setval, nb_setval, nb_current …

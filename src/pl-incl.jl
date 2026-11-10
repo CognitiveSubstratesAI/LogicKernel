@@ -1858,10 +1858,14 @@ const WAKEUP_STATE_SKIP_EXCEPTION = UInt32(0x4)
 const WAKEUP_KEEP_URGENT_EXCEPTION = UInt32(0x8)
 
 # PORT: pl-incl.h ALERT_WAKEUP
-# NOT PORTED: the other `ALERT_*` bits (signals, GC, profiling, the debugger, buffered output,
-# `ALERT_UNDO`, …) — nothing here sets them; `LD->alerted` carries the wakeup bit only.
+# NOT PORTED: the other `ALERT_*` bits (signals, GC, profiling, the debugger, buffered output, …) — nothing here
+# sets them; `LD->alerted` carries the wakeup bit and, since TX1e, the undo bit.
 "Alert bit: the wakeup list is not empty (pl-incl.h `ALERT_WAKEUP`)."
 const ALERT_WAKEUP = Int32(0x040)
+
+# PORT: pl-incl.h ALERT_UNDO
+"Alert bit: undo goals are scheduled (pl-incl.h `ALERT_UNDO`)."
+const ALERT_UNDO = Int32(0x200)
 
 # PORT: pl-incl.h wakeup_state
 # DIVERGES: an immutable value `saveWakeup` returns, where upstream fills the caller's struct;
