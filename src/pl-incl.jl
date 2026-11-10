@@ -1430,43 +1430,6 @@ struct record{T}
     values::Vector{T}                                   # (the indirects)
 end
 
-# PORT: pl-trie.h trie
-# DIVERGES (audit D-0453 Q3, Q5): `nodes` is the arena of the trie's nodes, id 1 the root (upstream embeds `root`); `blocks`
-# the arena of children blocks (an id >= 1); `free_ids` and `free_blocks` the slots of freed nodes and blocks; no `alloc_pool`,
-# `tid` (owner TH1); `mem.lingering` is `lingering` (block ids, TRIE_CONCURRENT tries), `mem.chunks` is `chunks`; `serial` is the trie's number in
-# `gd.tries` (the blob's payload). `data.worklist`/`IDG`/`predicate` are `Nothing` slots that TB0/TB1 own and widen (a field typed `Any` fails the gate of nonconcrete fields); `data.variant` is a node id.
-# `magic`, `references`, `node_count`, `value_count`, `flags` are `Int`/`UInt32`. `records`/`free_records` (part B): a node value that is
-# neither an atom nor a tagged integer is a `record` (upstream: a pointer, `isRecord(w)` = low two bits 0); here the word is `index << 2`, the index into `records`.
-"A trie of terms `T` (pl-trie.h `struct trie`)."
-mutable struct trie{T}
-    symbol::word                                        # the associated symbol (0: none yet)
-    magic::Int32                                        # TRIE_MAGIC
-    references::Int                                     # access count
-    node_count::Int                                     # # nodes
-    value_count::Int                                    # # nodes with a value
-    flags::UInt32                                       # misc flags
-    nodes::Vector{trie_node}                            # root (id 1) and the other nodes
-    blocks::Vector{Union{Nothing, trie_children_block}} # the children blocks
-    free_ids::Vector{Int}                               # node ids to reuse
-    free_blocks::Vector{Int}                            # block ids to reuse
-    indirects::Union{Nothing, indirect_table{T}}        # indirect values
-    clause::word                                        # compiled representation (TR4: always 0 here)
-    chunks::Union{Nothing, trie_node_chunk}             # node chunks
-    lingering::Vector{Int}                              # ids of replaced children blocks of a TRIE_CONCURRENT trie, freed by free_lingering_blocks
-    lookups::Int                                        # stats.lookups
-    gen_call::Int                                       # stats.gen_call
-    # TB0-MERGE: `worklist` becomes `Union{Nothing, tbl_worklist{T}}` (TB0's `worklist{T, tbl_component{T}}`, pl-incl.jl; `Any` fails the nonconcrete-fields gate)
-    worklist::Nothing                                   # data.worklist
-    variant::Int                                        # data.variant: a node id of the variant trie (TB0)
-    # TB0-MERGE: `IDG` becomes `Union{Nothing, <the IDG node record>}`: TB0 leaves `idg_node`/`idg_mdep`/`idg_mono` to TB6 (pl-incl.jl notes), so it stays `Nothing` until TB6
-    IDG::Nothing                                        # data.IDG
-    # TB0-MERGE: `predicate` becomes `Union{Nothing, definition{T}}` (the Definition; `definition{T}` is declared in pl-incl.jl before `trie`)
-    predicate::Nothing                                  # data.predicate
-    serial::Int                                         # the trie's number in `gd.tries` (0: not registered)
-    records::Vector{Union{Nothing, record{T}}}          # the recorded values of the nodes (a value word `index << 2`), `nothing`: a free slot
-    free_records::Vector{Int}                           # slots of `records` to reuse
-end
-
 # PORT: pl-incl.h ClauseChoice
 "A clause choice of terms `T` (pl-incl.h `ClauseChoice`)."
 const ClauseChoice{T} = clause_choice{ClauseRef{T}}
@@ -2862,6 +2825,42 @@ tbl_component{T}() where {T} = tbl_component{T}(
 # ORIGINAL: the worklist type of a term type `T`, the alias that closes the cycle `worklist` -> `tbl_component` -> `worklist_set`.
 "A worklist of a term type `T` (pl-tabling.h `struct worklist`, its `component` a `tbl_component{T}`)."
 const tbl_worklist{T} = worklist{T, tbl_component{T}}
+
+# MOVED after `tbl_worklist` (TAB1 TR1 rebased on TB0): `trie{T}.worklist` is a `tbl_worklist{T}`, a field type must be defined before it.
+# PORT: pl-trie.h trie
+# DIVERGES (audit D-0453 Q3, Q5): `nodes` is the arena of the trie's nodes, id 1 the root (upstream embeds `root`); `blocks`
+# the arena of children blocks (an id >= 1); `free_ids` and `free_blocks` the slots of freed nodes and blocks; no `alloc_pool` (only a table's trie has one: TB1 adds the field and the charges at the allocation sites
+# of src/pl-trie.jl; `trie_new/1` passes NULL, pl-trie.c:2496; TB0's `alloc_pool` and src/pl-allocpool.jl exist), no `tid` (owner TH1); `mem.lingering` is `lingering` (block ids, TRIE_CONCURRENT tries), `mem.chunks` is `chunks`; `serial` is the trie's number in
+# `gd.tries` (the blob's payload). `data.worklist` and `data.predicate` are TB0's types (the struct sits after `tbl_worklist` for that), `data.IDG` is a `Nothing` slot TB6 widens (a field typed `Any` fails the gate of nonconcrete fields); `data.variant` is a node id.
+# `magic`, `references`, `node_count`, `value_count`, `flags` are `Int`/`UInt32`. `records`/`free_records` (part B): a node value that is
+# neither an atom nor a tagged integer is a `record` (upstream: a pointer, `isRecord(w)` = low two bits 0); here the word is `index << 2`, the index into `records`.
+"A trie of terms `T` (pl-trie.h `struct trie`)."
+mutable struct trie{T}
+    symbol::word                                        # the associated symbol (0: none yet)
+    magic::Int32                                        # TRIE_MAGIC
+    references::Int                                     # access count
+    node_count::Int                                     # # nodes
+    value_count::Int                                    # # nodes with a value
+    flags::UInt32                                       # misc flags
+    nodes::Vector{trie_node}                            # root (id 1) and the other nodes
+    blocks::Vector{Union{Nothing, trie_children_block}} # the children blocks
+    free_ids::Vector{Int}                               # node ids to reuse
+    free_blocks::Vector{Int}                            # block ids to reuse
+    indirects::Union{Nothing, indirect_table{T}}        # indirect values
+    clause::word                                        # compiled representation (TR4: always 0 here)
+    chunks::Union{Nothing, trie_node_chunk}             # node chunks
+    lingering::Vector{Int}                              # ids of replaced children blocks of a TRIE_CONCURRENT trie, freed by free_lingering_blocks
+    lookups::Int                                        # stats.lookups
+    gen_call::Int                                       # stats.gen_call
+    worklist::Union{Nothing, tbl_worklist{T}}           # data.worklist (TB0's worklist; nothing: NULL)
+    variant::Int                                        # data.variant: a node id of the variant trie (TB0)
+    # `IDG` stays `Nothing` until TB6: TB0 leaves `idg_node`/`idg_mdep`/`idg_mono` to TB6 (the notes above `alloc_pool`), a field typed `Any` fails the nonconcrete-fields gate
+    IDG::Nothing                                        # data.IDG
+    predicate::Union{Nothing, definition{T}}            # data.predicate
+    serial::Int                                         # the trie's number in `gd.tries` (0: not registered)
+    records::Vector{Union{Nothing, record{T}}}          # the recorded values of the nodes (a value word `index << 2`), `nothing`: a free slot
+    free_records::Vector{Int}                           # slots of `records` to reuse
+end
 
 # PORT: pl-tabling.h tbl_status
 # DIVERGES: the three ints are `Bool`s; the chain `prev` of saved states is `Union{Nothing, tbl_status{T}}`.

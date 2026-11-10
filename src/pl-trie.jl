@@ -121,7 +121,7 @@ block_code(bid::Int)::Int = bid << 1
 # ---- THE TRIE (trie_create, trie_destroy, trie_empty) ----
 
 # PORT: pl-trie.c trie_create
-# DIVERGES: the term type is the argument and there is no allocation pool (`alloc_pool`, TH1); the root is node 1.
+# DIVERGES: the term type is the argument and there is no allocation pool (`alloc_pool`: TB1 adds it, `trie_new/1` passes NULL; src/pl-allocpool.jl is TB0's); the root is node 1.
 "A new, empty trie of terms `T` (pl-trie.c)."
 function trie_create(::Type{T})::trie{T} where {T}
     root = trie_node(UInt64(0), UInt64(0), 0, 0, UInt32(0), nothing)
