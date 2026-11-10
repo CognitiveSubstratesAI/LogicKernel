@@ -1280,6 +1280,16 @@ end
 ld_transaction{T}() where {T} =
     ld_transaction{T}(gen_t(0), gen_t(0), GEN_INFINITE, gen_t(0), gen_t(0), UInt32(0), 0, nothing, nothing, nothing)
 
+# PORT: pl-transaction.c current_transaction
+# DIVERGES: the redo state of `current_transaction/1` is a record of the local data's pool (`ld.transaction_enums`,
+# `foreign_state_pool`), its index the `REDO_PTR` context, where upstream's context is the `tr_stack` pointer itself; the record
+# holds that stack level. A pool record is REUSED: the first redo sets `stack` again.
+"The state of `current_transaction/1` between answers: the stack level whose goal is answered next (pl-transaction.c)."
+mutable struct tr_enum{T}
+    stack::Union{Nothing, tr_stack{T}}
+end
+tr_enum{T}() where {T} = tr_enum{T}(nothing)
+
 # PORT: pl-wrap.h closure
 # DIVERGES (since TAB1-min; audit D-0388 item 5, Q1 (a), owner WRAP1): upstream's `struct closure` holds a COPY of the
 # whole `struct definition` in a blob, with the `impl` union's `wrapped` member (`predicate`, `supervisor`) overlaying the

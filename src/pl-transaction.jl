@@ -19,7 +19,7 @@
 #     tables; `transaction_visible_clause` always looks the clause up in the tables where upstream skips that when
 #     `tr_erased_no` is 0, the same answer.
 #   * the mutex argument of `$transaction/3` — no mutex table (the kernel has one thread, pl-mutex.jl).
-#   * `current_transaction/1` and the debug predicate `pred_generations/1` — open items of TX1 (see the handoff).
+#   * the debug predicate `pred_generations/1` (`O_DEBUG`): the oracle's release build has none (see `PL_predicates_from_transaction`).
 
 # allow-new-artifact: a port of src/pl-transaction.c, read with git show at the pin 18168e629eab (the reference corpus is the pin)
 
@@ -545,13 +545,87 @@ function pl_transaction_updates1_va(
     end
 end
 
+# PORT: pl-transaction.c current_transaction as pl_current_transaction1_va
+# (PRED_IMPL("current_transaction", 1, current_transaction, PL_FA_NONDETERMINISTIC|PL_FA_TRANSPARENT), pl-transaction.c:707-768)
+# DIVERGES: the redo context is the index of a record of `ld.transaction_enums` (`tr_enum`), freed at the last answer, at a failure and at
+# `FRG_CUTTED` (upstream's `default: return true` frees nothing: its context is the stack pointer). `Mark(fli_context->mark)` is `Mark(ld)`
+# taken before the loop, as no binding is made between that and the first unification.
+"`current_transaction(-Goal)`: the goals of the running transactions, the innermost first (pl-transaction.c); a goal qualified with the context module is given unqualified."
+function pl_current_transaction1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1 = PL__t0
+    gd = _query_gd(ld)
+    pool = ld.transaction_enums
+    ctl = PL_foreign_control(PL__ctx)
+    m0 = if ld.environment_frame != 0                           # Module m0 = contextModule(environment_frame)
+        contextModule(gd, ld, ld.environment_frame)
+    else
+        MODULE_user(gd).index
+    end
+
+    k = 0
+    stack = nothing
+    id0 = 0
+    if ctl == FRG_FIRST_CALL
+        ld.transaction.id == 0 && return FFALSE                 # if ( !LD->transaction.id ) return false
+        id0 = ld.transaction.id
+        stack = ld.transaction.stack
+    elseif ctl == FRG_REDO
+        k = PL_foreign_context_address(PL__ctx)                 # stack = CTX_PTR
+        stack = pool.states[k].stack
+        id0 = (stack::tr_stack{T}).id
+    else
+        free_foreign_state!(pool, PL_foreign_context_address(PL__ctx))
+        return FTRUE                                            # default: return true
+    end
+
+    id = PL_new_term_ref(ld)
+    m = Mark(ld)                                                # Mark(fli_context->mark)
+    while true
+        ok, mm = PL_strip_module(gd, ld, id0, 0, id)
+        if !ok
+            k != 0 && free_foreign_state!(pool, k)
+            return FFALSE
+        end
+        rc = mm == m0 ? PL_unify(ld, A1, id) : PL_unify(ld, A1, id0)
+
+        if rc
+            if stack !== nothing
+                if k == 0
+                    k = alloc_foreign_state!(pool)
+                end
+                pool.states[k].stack = stack
+                return PL_retry_address(k)                      # ForeignRedoPtr(stack)
+            else
+                k != 0 && free_foreign_state!(pool, k)
+                return FTRUE
+            end
+        end
+        Undo!(ld, m)                                            # Undo(fli_context->mark)
+
+        if stack !== nothing
+            id0 = stack.id
+            stack = stack.parent
+        else
+            k != 0 && free_foreign_state!(pool, k)
+            return FFALSE
+        end
+    end
+end
+
 # PORT: pl-transaction.c BeginPredDefs as PL_predicates_from_transaction
-# DIVERGES: NOT PORTED (TX1 open items): `current_transaction/1` (nondeterministic) and the `O_DEBUG` `pred_generations/1`.
+# DIVERGES: the `O_DEBUG` predicate `pred_generations/1` has no registration (`#ifdef O_DEBUG`, pl-transaction.c:805-837): swipl 10.1.20, the
+# oracle, is a release build without it (`existence_error(procedure, pred_generations/1)`), and so is the kernel's registration table.
 # `META` is `PL_FA_TRANSPARENT`.
-"pl-transaction.c's registration table (`BeginPredDefs(transaction)`): `\$transaction/2,3`, `\$snapshot/1`, `transaction_updates/1`."
+"pl-transaction.c's registration table (`BeginPredDefs(transaction)`): `\$transaction/2,3`, `\$snapshot/1`, `current_transaction/1`, `transaction_updates/1`."
 const PL_predicates_from_transaction = (
     PL_extension("\$transaction", 2, pl_transaction2_va, PL_FA_VARARGS | PL_FA_TRANSPARENT),
     PL_extension("\$transaction", 3, pl_transaction3_va, PL_FA_VARARGS | PL_FA_TRANSPARENT),
     PL_extension("\$snapshot", 1, pl_snapshot1_va, PL_FA_VARARGS | PL_FA_TRANSPARENT),
+    PL_extension(
+        "current_transaction", 1, pl_current_transaction1_va,
+        PL_FA_VARARGS | PL_FA_NONDETERMINISTIC | PL_FA_TRANSPARENT
+    ),
     PL_extension("transaction_updates", 1, pl_transaction_updates1_va, PL_FA_VARARGS)
 )
