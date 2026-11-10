@@ -1140,8 +1140,9 @@ isRealMark(m::mark)::Bool = m.trailtop != NOT_A_MARK
 # PORT: pl-incl.h Undo
 # DIVERGES: since L1b stage D the body of upstream's `Undo` WITH O_DESTRUCTIVE_ASSIGNMENT, pl-wam.c's
 # `__do_undo`: newest first, an address entry resets its cell, a value entry steps down to its address entry and restores the old value saved on the global stack
-# (`*tt->address = trailVal(p)`; `TrailAssignment!` pushes them since group F). NOT
-# PORTED: `push_undo` (no undo hooks). Since AV1 the attributed variables' chain is cut back to the
+# (`*tt->address = trailVal(p)`; `TrailAssignment!` pushes them since group F). Since TX1e a value entry for the FIRST global cell
+# (`gBase` upstream, `ld.undo_list` here) calls `push_undo` BEFORE the cell is restored (pl-wam.c:1612-1613 at the pin): the undo
+# goals on the list being undone are scheduled (src/pl-undo.jl). Since AV1 the attributed variables' chain is cut back to the
 # new top first (`reclaim_attvars`, src/pl-wam.jl). Since e5 `frozen_bar` is kept:
 # `gTop = max(frozen_bar, m.globaltop)`. Marks nest: undoing to a mark above the trail's or the global stack's top is a misuse,
 # asserted; so is undoing to a `NoMark`, which upstream never does.
@@ -1156,6 +1157,7 @@ function Undo!(ld::PL_local_data, m::mark)::Nothing
             _untrail!(ld, e)                    # setVar(*p)
         else
             a = pop!(ld.trail)                  # tt--
+            _trail_pos(a) == ld.undo_list && push_undo(ld, ld.undo_list)  # if ( tt->address == gBase ) push_undo(tt->address)
             ld.gstack[_trail_pos(a)] = ld.gstack[trailValP(e)]     # *tt->address = trailVal(p)
         end
     end
