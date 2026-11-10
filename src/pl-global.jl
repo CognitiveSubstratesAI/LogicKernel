@@ -743,7 +743,8 @@ function _bare_local_data(gd::PL_global_data{T}) where {T}
             0,
             _TOP_POSITION,
             false,
-            GEN_INVALID
+            GEN_INVALID,
+            nothing
         ),
         word[], T[], 0, 0, STACK_LIMIT_DEFAULT, 0, 0, 0, 0, 0, 0, localFrame{T}[], 0,
         choice{T}[], 0,

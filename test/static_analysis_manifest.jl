@@ -559,6 +559,9 @@ function _manifest_index(T)
         (LK.visibleClauseCNT, Tuple{C, UInt64, UInt64}, true),
         (LK.visibleClause, Tuple{LD, C, UInt64}, true),
         (LK.visibleClauseCNT, Tuple{LD, C, UInt64}, true),
+        # TX1c: the forms with the transaction state
+        (LK.visibleClause, Tuple{C, UInt64, UInt64, Union{Nothing, LK.ld_transaction{T}}}, true),
+        (LK.visibleClauseCNT, Tuple{C, UInt64, UInt64, Union{Nothing, LK.ld_transaction{T}}}, true),
         (LK.ISDEADCI, Tuple{CI}, true), (LK.ISDEADCI, Tuple{Nothing}, true),
         (LK.next_clause_unindexed!, Tuple{CTX}, true),
         (LK.next_clause_primary_index!, Tuple{CTX}, true),
@@ -593,7 +596,7 @@ function _manifest_index(T)
         (LK._argv_is_var, Tuple{AC, Int}, false),
         (LK._descend_first_clause!, Tuple{AF, Int, CL, CTX}, false),
         (LK._descend_first_clause!, Tuple{AC, Int, CL, CTX}, false),
-        (LK._index_context!, Tuple{LK.index_context{T}, UInt64, D, CH, UInt64}, true),
+        (LK._index_context!, Tuple{LK.index_context{T}, UInt64, D, CH, UInt64, LK.ld_transaction{T}}, true),
         (LK.realize_clause_index!, Tuple{CI}, false),
         (LK.newClauseIndexTable, Tuple{HH, Bool, CTX}, false),
         (LK.newClauseListRef, Tuple{Type{T}, UInt64}, false),
@@ -676,6 +679,10 @@ function _manifest_index(T)
         (LK.current_generation, Tuple{GD, D}, true),
         (LK.next_generation!, Tuple{GD, D}, true), (LK.max_generation, Tuple{D}, true),
         (LK.setGenerationFrame, Tuple{GD, D}, true),
+        # TX1c: the forms with the transaction state (pl-inline.h)
+        (LK.current_generation, Tuple{GD, LD, D}, true),
+        (LK.next_generation!, Tuple{GD, LD, D}, true), (LK.max_generation, Tuple{LD, D}, true),
+        (LK.setGenerationFrame, Tuple{GD, LD, D}, true),
         # src/pl-thread.jl, src/pl-gc.jl
         (LK.cgcActivatePredicate!, Tuple{GD, D, UInt64}, false),
         (LK.pushPredicateAccessObj!, Tuple{LD, GD, D}, false),
@@ -726,6 +733,7 @@ function _manifest_index(T)
         (LK.unify_export_list, Tuple{LD, Int, MOD}, false),
         (LK.module_code_size, Tuple{MOD}, false), (LK.sizeof_module, Tuple{MOD}, false),
         (LK.setLastModifiedPredicate!, Tuple{GD, D, UInt64}, false),
+        (LK.setLastModifiedPredicate!, Tuple{GD, LD, D, UInt64, UInt32}, false),        # TX1c
         (LK.lookupModule, Tuple{GD, T}, false),
         (LK.inheritUnknown, Tuple{GD, MOD}, true),
         (LK.stripModuleName_cells, Tuple{LD, Int}, false),        # L1e e2c: on the cells
@@ -1413,6 +1421,8 @@ function _manifest_index(T)
         (LK.add_ssu_clause, Tuple{LD, D, C}, false),
         (LK.PL_error, Tuple{LD, LK.PL_error_code, D}, false),        # ERR_PERMISSION_SSU_DEF
         (LK.retract_clause!, Tuple{GD, C, UInt64}, false),
+        (LK.retract_clause!, Tuple{GD, LD, C, UInt64}, false),                          # TX1c
+        (LK.retract_clause!, Tuple{GD, Nothing, C, UInt64}, false),
         (LK.retractClauseDefinition!, Tuple{GD, D, C, Bool}, false),
         (LK.find_prev, Tuple{D, CR, CR}, true), (LK.find_prev, Tuple{D, Nothing, CR}, true),
         (LK.cleanDefinition!, Tuple{D, DDI, UInt64}, false),
@@ -2273,6 +2283,7 @@ function _manifest_index(T)
         (LK.unify_meta_argument, Tuple{LD, Int, D, Int}, false),
         (LK.unify_meta_pattern, Tuple{LD, PR, Int}, false),
         (LK.num_visible_clauses, Tuple{GD, D, Bool}, false),
+        (LK.num_visible_clauses, Tuple{GD, LD, D, Bool}, false),                        # TX1c
         (LK.sizeof_predicate, Tuple{D}, false),
         (LK.sizeof_erased_clauses, Tuple{D}, false),
         (

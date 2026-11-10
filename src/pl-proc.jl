@@ -515,8 +515,9 @@ newClauseRef(clause::Clause{T}, key::word) where {T} =
     ClauseRef{T}(nothing, key, clause, nothing)
 
 # PORT: pl-proc.c setLastModifiedPredicate as setLastModifiedPredicate!
-# DIVERGES: only the module's `last_modified` (the definition has no such field), no wakeup of waiting threads, no
-# transaction generations (`gen < GEN_TRANSACTION_BASE` always).
+# DIVERGES: only the module's `last_modified` (the definition has no such field), no wakeup of waiting threads. The form with `ld`
+# and `flags` is upstream's (pl-proc.c:1340-1357): a generation of the transaction's space (`>= GEN_TRANSACTION_BASE`) is recorded
+# in the transaction (`transaction_set_last_modified`); the form without them is for a generation of the global space only.
 "Record that a clause of `def` was added or erased at generation `gen`: the module's `last_modified` rises to it (pl-proc.c)."
 function setLastModifiedPredicate!(
     gd::PL_global_data{T}, def::Definition{T}, gen::gen_t
@@ -524,6 +525,16 @@ function setLastModifiedPredicate!(
     m = gd.modules[def.module_]
     if m.last_modified < gen
         m.last_modified = gen
+    end
+    return nothing
+end
+function setLastModifiedPredicate!(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, def::Definition{T}, gen::gen_t, flags::UInt32
+)::Nothing where {T}
+    if gen < GEN_TRANSACTION_BASE
+        setLastModifiedPredicate!(gd, def, gen)
+    else
+        transaction_set_last_modified(ld, def, gen, flags)
     end
     return nothing
 end
@@ -638,7 +649,7 @@ function _assertDefinition!(
 )::Union{Nothing, ClauseRef{T}} where {T}
     key = argKey(Code(clause, 1), Int(def.impl_clauses.primary_index))
     cref = newClauseRef(clause, key)
-    clause.generation_created = max_generation(def)    # invisible while it is linked in
+    clause.generation_created = ld === nothing ? max_generation(def) : max_generation(ld, def)   # invisible while it is linked in
     clause.generation_erased = gen_t(1)
     cl = def.impl_clauses
     if cl.last_clause === nothing
@@ -670,22 +681,42 @@ function _assertDefinition!(
         freeCodesDefinition!(gd, def, true)
     end
     addClauseToIndexes!(def, clause, where_)
-    gd._generation += 1                                 # PL_LOCK(L_GENERATION)
-    clause.generation_created = gd._generation
-    clause.generation_erased = max_generation(def)
-    if def.events !== nothing && ld !== nothing &&                    # def->events && !(LD->transaction.flags&TR_BULK) (no transactions)
-        !predicate_update_event(
-            gd,
-            ld,
-            def,
-            mk_sym(T, where_ === CL_START ? :asserta : :assertz),
-            clause,
-            UInt32(0)
-        )
-        retractClauseDefinition!(gd, def, clause, false)              # error: retractClauseDefinition(def, clause, false)
+    if ld !== nothing && ld.transaction.generation != 0 && (def.flags & P_TRANSACT) != 0
+        tr = ld.transaction
+        if tr.generation < tr.gen_max
+            tr.generation += 1
+            clause.generation_created = tr.generation
+            clause.generation_erased = max_generation(ld, def)
+        else
+            PL_error(ld, ERR_REPRESENTATION, mk_sym(T, :transaction_generations))   # PL_representation_error("transaction_generations")
+            retractClauseDefinition!(gd, ld, def, clause, false)      # goto error
+            return nothing
+        end
+    else
+        gd._generation += 1                             # PL_LOCK(L_GENERATION)
+        clause.generation_created = gd._generation
+        clause.generation_erased = ld === nothing ? max_generation(def) : max_generation(ld, def)
+    end
+    if ld === nothing
+        setLastModifiedPredicate!(gd, def, clause.generation_created)   # setLastModifiedPredicate(def, …created, TWF_ASSERT)
+        return cref
+    end
+    if def.events !== nothing && (ld.transaction.flags & TR_BULK) == 0 &&   # def->events && !(LD->transaction.flags&TR_BULK)
+       !predicate_update_event(
+        gd,
+        ld,
+        def,
+        mk_sym(T, where_ === CL_START ? :asserta : :assertz),
+        clause,
+        UInt32(0)
+    )
+        retractClauseDefinition!(gd, ld, def, clause, false)          # error: retractClauseDefinition(def, clause, false)
         return nothing
     end
-    setLastModifiedPredicate!(gd, def, clause.generation_created)     # setLastModifiedPredicate(def, …created, TWF_ASSERT)
+    setLastModifiedPredicate!(gd, ld, def, clause.generation_created, TWF_ASSERT)
+    if ld.transaction.generation != 0 && clause.generation_created >= ld.transaction.gen_base
+        transaction_assert_clause(ld, clause, where_)
+    end
     return cref
 end
 
@@ -700,20 +731,35 @@ assertProcedure!(
 ) where {T} = assertDefinition!(gd, ld, proc.definition, clause, where_)
 
 # PORT: pl-proc.c retract_clause
-# DIVERGES: no transactions, statistics, breakpoints or incremental-tabling notification.
+# DIVERGES: no statistics, breakpoints or incremental-tabling notification. `ld` is `nothing` where there is no local data (the
+# tests' database builders, `retractClauseDefinition!` without `ld`): then no transaction runs and `setLastModifiedPredicate!` takes
+# the global generation. The transaction branch (pl-proc.c:1652-1664) gives the clause its erase generation from the transaction's
+# space for a predicate with P_TRANSACT; `GEN_TR_DISCARD_ASSERT` (a discarded transaction's clause) does not set the last-modified
+# mark (pl-proc.c:1701).
 """
-    retract_clause!(gd, clause, generation) -> Bool
+    retract_clause!(gd, ld, clause, generation) -> Bool
 
 Retract `clause`: it becomes invisible from `generation` on — or, given 0, from a new generation
-of the database. False when it was already retracted (pl-proc.c).
+of the database (the transaction's, inside one). False when it was already retracted (pl-proc.c).
 """
 function retract_clause!(
-    gd::PL_global_data{T}, clause::Clause{T}, generation::gen_t
+    gd::PL_global_data{T}, ld::Union{Nothing, PL_local_data{T}}, clause::Clause{T},
+    generation::gen_t
 )::Bool where {T}
     def = clause.predicate
     if generation != 0
         if clause.generation_erased > generation
             clause.generation_erased = generation
+        end
+    elseif ld !== nothing && ld.transaction.generation != 0 && (def.flags & P_TRANSACT) != 0
+        tr = ld.transaction
+        if tr.generation < tr.gen_max
+            if clause.generation_erased >= tr.generation
+                tr.generation += 1
+                clause.generation_erased = tr.generation
+            end
+        else
+            return PL_error(ld, ERR_REPRESENTATION, mk_sym(T, :transaction_generations))
         end
     else
         if clause.generation_erased >= gd._generation  # PL_LOCK(L_GENERATION)
@@ -733,31 +779,50 @@ function retract_clause!(
         def.impl_clauses.number_of_rules -= 0x00000001
     end
     registerDirtyDefinition!(gd, def)
-    setLastModifiedPredicate!(gd, def, clause.generation_erased)      # …, TWF_RETRACT
+    if generation != GEN_TR_DISCARD_ASSERT
+        if ld === nothing
+            setLastModifiedPredicate!(gd, def, clause.generation_erased)      # …, TWF_RETRACT
+        else
+            setLastModifiedPredicate!(gd, ld, def, clause.generation_erased, TWF_RETRACT)
+        end
+    end
     return true
 end
+"`retract_clause!` without local data: no transaction (pl-proc.c)."
+retract_clause!(gd::PL_global_data{T}, clause::Clause{T}, generation::gen_t)::Bool where {T} =
+    retract_clause!(gd, nothing, clause, generation)
 
 # PORT: pl-proc.c retractClauseDefinition
-# DIVERGES: no transactions or breakpoints; the database and the local data are arguments. The method without `ld` raises no
+# DIVERGES: no breakpoints; the database and the local data are arguments. The method without `ld` raises no
 # update event (`notify` is kept for the signature: the tests' database builders, which have no local data).
 "Retract `clause` of `def` (pl-proc.c) without telling the listeners of `def`."
 retractClauseDefinition!(
     gd::PL_global_data{T}, def::Definition{T}, clause::Clause{T}, notify::Bool
-) where {T} = retract_clause!(gd, clause, gen_t(0))
+) where {T} = retract_clause!(gd, nothing, clause, gen_t(0))
 
 # PORT: pl-proc.c retractClauseDefinition
-# DIVERGES: as above; the update event (pl-proc.c:1706-1712) is raised, with `ld` to run the listeners in.
+# DIVERGES: as above; the update event (pl-proc.c:1706-1712) is raised, with `ld` to run the listeners in, unless the transaction is
+# a bulk one (TR_BULK); inside a transaction (P_TRANSACT) the retract is first offered to `transaction_retract_clause` (pl-proc.c:1714-1721).
 "Retract `clause` of `def` (pl-proc.c): erase/1, retract/1 and retractall/1 come through here; false when a listener raised."
 function retractClauseDefinition!(
     gd::PL_global_data{T}, ld::PL_local_data{T}, def::Definition{T}, clause::Clause{T},
     notify::Bool
 )::Bool where {T}
-    if def.events !== nothing && notify &&                      # def->events && notify && !(LD->transaction.flags&TR_BULK)
-        !predicate_update_event(gd, ld, def, mk_sym(T, :retract), clause, UInt32(0))
+    if def.events !== nothing && notify && (ld.transaction.flags & TR_BULK) == 0 &&
+       !predicate_update_event(gd, ld, def, mk_sym(T, :retract), clause, UInt32(0))
         return false
     end
 
-    return retract_clause!(gd, clause, gen_t(0))
+    if ld.transaction.generation != 0 && (def.flags & P_TRANSACT) != 0
+        rc = transaction_retract_clause(gd, ld, clause)
+        if rc == 1
+            return true
+        end
+        if rc < 0
+            return false
+        end
+    end
+    return retract_clause!(gd, ld, clause, gen_t(0))
 end
 
 # PORT: pl-proc.c find_prev
@@ -1218,7 +1283,7 @@ function pl_retract!(
                         sink(clause) || return nothing  # FRG_CUTTED
                         first_call = false              # FRG_REDO
                     else
-                        gen = setGenerationFrame(gd, def)
+                        gen = setGenerationFrame(gd, ld, def)
                     end
                 end
                 ld.exception_term != 0 && return nothing   # if ( PL_exception(0) ) break
@@ -2821,6 +2886,30 @@ function num_visible_clauses(
 
     return count
 end
+"`num_visible_clauses` for the local data `ld`: the transaction's generation inside a transaction (pl-proc.c)."
+function num_visible_clauses(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, def::Definition{T}, rules::Bool
+)::Int where {T}
+    count = Int(
+        rules ? def.impl_clauses.number_of_rules : def.impl_clauses.number_of_clauses
+    )
+
+    if count > 0 && (gd.reload_generation != GEN_INVALID || (def.flags & P_DYNAMIC) != 0)
+        gen = current_generation(gd, ld, def)
+
+        count = 0
+        c = def.impl_clauses.first_clause
+        while c !== nothing
+            cl = c.clause::Clause{T}
+            if !(rules && (cl.flags & UNIT_CLAUSE) != 0) && visibleClause(ld, cl, gen)
+                count += 1
+            end
+            c = c.next
+        end
+    end
+
+    return count
+end
 
 # PORT: pl-proc.c sizeof_predicate
 # DIVERGES: the kernel's own count, not upstream's byte count (`sizeof(*def)` and the C structs of the supervisor and the
@@ -2937,17 +3026,21 @@ function pl_get_predicate_attribute3_va(
         end
     elseif k == sym_key(mk_sym(T, :number_of_clauses))
         (def.flags & P_FOREIGN) != 0 && return FFALSE
-        num_clauses = num_visible_clauses(gd, def, false)
+        num_clauses = num_visible_clauses(gd, ld, def, false)
         num_clauses == 0 && (def.flags & P_DYNAMIC) == 0 && return FFALSE
         return PL_unify_int64(ld, value, num_clauses) ? FTRUE : FFALSE
     elseif k == sym_key(mk_sym(T, :last_modified_generation))
         (def.flags & P_FOREIGN) != 0 && return FFALSE
-        g = Int(gd.modules[def.module_].last_modified)
+        g = if (def.flags & P_TRANSACT) != 0 && ld.transaction.generation != 0     # pl-proc.c:3696-3697
+            Int(transaction_last_modified_predicate(ld, def, gd.modules[def.module_].last_modified))
+        else
+            Int(gd.modules[def.module_].last_modified)
+        end
         return PL_unify_int64(ld, value, g) ? FTRUE : FFALSE
     elseif k == sym_key(mk_sym(T, :number_of_rules))
         (def.flags & P_FOREIGN) != 0 && return FFALSE
         clist.number_of_clauses == 0 && (def.flags & P_DYNAMIC) == 0 && return FFALSE
-        return if PL_unify_integer(ld, value, num_visible_clauses(gd, def, true))
+        return if PL_unify_integer(ld, value, num_visible_clauses(gd, ld, def, true))
             FTRUE
         else
             FFALSE
