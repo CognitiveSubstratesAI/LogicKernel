@@ -66,6 +66,7 @@ const ROOT = abspath(joinpath(@__DIR__, ".."))
 # be the pinned one, checked here, where they run (tools/swipl_pin.jl). tools/warm.sh hands the
 # daemon its caller's PATH and checks it there too.
 include(joinpath(@__DIR__, "swipl_pin.jl"))
+include(joinpath(@__DIR__, "warm_idle.jl"))
 let why = swipl_pin_refusal(ROOT)
     why === nothing || error("warm lane: REFUSED to start — ", why)
 end
@@ -146,16 +147,38 @@ function _serve()
     # the machine then lacked. With no request for LOGICKERNEL_WARM_IDLE_S seconds (3600; set by
     # tools/warm.sh) it exits by itself. The clock runs from the END of the last request, so a long
     # one — a bench, a mutation driver's — is never cut short.
+    # THE HOLD (audit D-0461 item 3a): with LOGICKERNEL_WARM_IDLE_HOLD_QUEUE=1 (default off) it does NOT
+    # exit while a gate branch is queued in LOGICKERNEL_WARM_QUEUE_FILE, up to LOGICKERNEL_WARM_IDLE_HOLD_MAX_S
+    # (tools/warm_idle.jl: the rule and why). The queue is read at most every 30 s, and only once idle.
     idle_s = parse(Int, get(ENV, "LOGICKERNEL_WARM_IDLE_S", "3600"))
+    hold = get(ENV, "LOGICKERNEL_WARM_IDLE_HOLD_QUEUE", "") == "1"
+    queue_file = get(
+        ENV, "LOGICKERNEL_WARM_QUEUE_FILE", joinpath(homedir(), "code", "gate_queue.txt")
+    )
+    hold_max_s = parse(Int, get(ENV, "LOGICKERNEL_WARM_IDLE_HOLD_MAX_S", "43200"))
+    queue, queue_read, hold_logged = String[], -Inf, false
     last_request = time()
     while true
-        if time() - last_request > idle_s
-            rm(joinpath(DIR, "ready"); force=true)
-            println(
-                "WARM LANE IDLE EXIT: no request for $(idle_s) s (LOGICKERNEL_WARM_IDLE_S)"
-            )
-            flush(stdout)
-            exit(0)
+        t = time()
+        if t - last_request > idle_s
+            if hold && t - queue_read >= 30
+                queue, queue_read = idle_hold_queue(queue_file), t
+            end
+            if idle_exit_due(t, last_request, idle_s, hold, queue, hold_max_s)
+                rm(joinpath(DIR, "ready"); force=true)
+                println(
+                    "WARM LANE IDLE EXIT: no request for $(idle_s) s (LOGICKERNEL_WARM_IDLE_S)"
+                )
+                flush(stdout)
+                exit(0)
+            elseif !hold_logged
+                held = join(queue, ", ")
+                println(
+                    "WARM LANE IDLE HOLD: idle $(idle_s) s, held for queued gate: $held"
+                )
+                flush(stdout)
+                hold_logged = true
+            end
         end
         if isfile(SEQF) && isfile(INF)
             n = strip(read(SEQF, String))
@@ -224,6 +247,7 @@ function _serve()
                 write(STATUSF, string(status))      # BEFORE `done`
                 write(DONE, n)
                 last_request = time()
+                hold_logged = false
             end
         end
         sleep(0.1)

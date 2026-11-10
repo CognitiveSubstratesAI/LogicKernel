@@ -558,6 +558,57 @@ SH
     unset LOGICKERNEL_SHARED_BUDGET
 }
 
+# THE IDLE HOLD, no daemon (TOOLS a, audit D-0461 item 3a): tools/warm_idle.jl's `check` command judges what the
+# daemon's idle loop asks — `exit` or `stay` — on a PLANTED queue file and planted times (idle limit 3600 s, last
+# request at 0). The hold is off by default; on, a queued gate branch (a non-blank, non-comment line) keeps the
+# daemon; an empty, comment-only or MISSING queue is the old idle exit; the ceiling ends a hold; `stop` is untouched.
+_idlehold_cases() {
+    local julia wi="$ROOT/tools/warm_idle.jl" q="$T/gate_queue.txt" got
+    julia="$(command -v julia)" || { echo "  (idlehold: no julia on PATH — skipped)"; return 0; }
+    # idle NOW HOLD QUEUE_FILE MAX_S — what warm_idle.jl says for a daemon whose last request was at 0
+    idle() { "$julia" --startup-file=no "$wi" check "$1" 0 3600 "$2" "$3" "$4" 2> /dev/null; }
+    printf 'gate/wr2b\n' > "$q"
+    [ "$(idle 4000 0 "$q" 43200)" = exit ]; check "idlehold: hold OFF, a queued gate — the old idle exit" 0 $?
+    [ "$(idle 3000 0 "$q" 43200)" = stay ]; check "idlehold: …and before the idle limit nothing exits" 0 $?
+    [ "$(idle 4000 1 "$q" 43200)" = stay ]; check "idlehold: hold ON, a queued gate — the daemon STAYS" 0 $?
+    [ "$(idle 3600 1 "$T/none.txt" 43200)" = stay ]; check "idlehold: …idleness EQUAL to the limit is not yet idle (as before)" 0 $?
+    : > "$q"
+    [ "$(idle 4000 1 "$q" 43200)" = exit ]; check "idlehold: hold ON, an EMPTY queue — falls back to the idle exit" 0 $?
+    printf '# gate/old\n\n   \n' > "$q"
+    [ "$(idle 4000 1 "$q" 43200)" = exit ]; check "idlehold: …a queue of comments and blank lines is empty" 0 $?
+    [ "$(idle 4000 1 "$T/none.txt" 43200)" = exit ]; check "idlehold: a MISSING queue file is an empty queue" 0 $?
+    mkdir -p "$T/qdir"
+    [ "$(idle 4000 1 "$T/qdir" 43200)" = exit ]; check "idlehold: …and so is an unreadable one (a directory)" 0 $?
+    printf '# landed\n\ngate/tb0   # TB0, queued\n' > "$q"
+    [ "$(idle 4000 1 "$q" 43200)" = stay ]; check "idlehold: a gate line among comments, with a trailing note — STAYS" 0 $?
+    [ "$(idle 50000 1 "$q" 43200)" = exit ]; check "idlehold: the CEILING (12 h past the last request) ends a hold on a stale queue" 0 $?
+    [ "$(idle 43200 1 "$q" 43200)" = stay ]; check "idlehold: …exactly at the ceiling it still stays" 0 $?
+    [ "$(idle 500000 1 "$q" 0)" = stay ]; check "idlehold: …a ceiling of 0 means none" 0 $?
+    "$julia" --startup-file=no "$wi" check 1 > /dev/null 2>&1; check "idlehold: a malformed call is refused (exit 2)" 2 $?
+    # warm.sh and the daemon are wired to it
+    has "idlehold: warm.sh start passes the setting to the daemon" "$ROOT/tools/warm.sh" 'LOGICKERNEL_WARM_IDLE_HOLD_QUEUE="\${LOGICKERNEL_WARM_IDLE_HOLD_QUEUE:-0}"' 1
+    has "…and the queue file" "$ROOT/tools/warm.sh" 'LOGICKERNEL_WARM_QUEUE_FILE="${LOGICKERNEL_WARM_QUEUE_FILE:-' 1
+    has "…and the ceiling" "$ROOT/tools/warm.sh" 'LOGICKERNEL_WARM_IDLE_HOLD_MAX_S="${LOGICKERNEL_WARM_IDLE_HOLD_MAX_S:-43200}"' 1
+    has "idlehold: the daemon's loop asks idle_exit_due" "$ROOT/tools/warm_session.jl" 'if idle_exit_due(' 1
+    has "…and reads LOGICKERNEL_WARM_IDLE_HOLD_QUEUE" "$ROOT/tools/warm_session.jl" 'get(ENV, "LOGICKERNEL_WARM_IDLE_HOLD_QUEUE"' 1
+    has "…default OFF in start" "$ROOT/tools/warm.sh" 'LOGICKERNEL_WARM_IDLE_HOLD_QUEUE:-0' 1
+    # `stop` is the manual stop whatever the hold says: it stops the unit, it never reads the queue
+    sed -n '/^_stop() {/,/^}/p' "$ROOT/tools/warm.sh" > "$T/stopfn"
+    has "idlehold: stop() does not read the hold or the queue" "$T/stopfn" 'HOLD\|QUEUE' 0
+    has "…and stops the unit" "$T/stopfn" 'systemctl --user stop "\$UNIT"' 1
+    # `status` names the setting the daemon was started with: _idle_setting against a stub systemctl
+    mkdir -p "$T/stubbin"
+    printf '#!/bin/sh\necho "%s"\n' "\$STUB_ENV" > "$T/stubbin/systemctl"; chmod +x "$T/stubbin/systemctl"
+    printf 'UNIT=u\n' > "$T/idleset.sh"; sed -n '/^_idle_setting() {/,/^}/p' "$ROOT/tools/warm.sh" >> "$T/idleset.sh"
+    echo '_idle_setting' >> "$T/idleset.sh"
+    PATH="$T/stubbin:$PATH" STUB_ENV="LOGICKERNEL_WARM_IDLE_S=3600 LOGICKERNEL_WARM_IDLE_HOLD_QUEUE=1 LOGICKERNEL_WARM_QUEUE_FILE=/q/gate_queue.txt LOGICKERNEL_WARM_IDLE_HOLD_MAX_S=100 PATH=/secret" \
+        bash "$T/idleset.sh" > "$T/is1" 2>&1
+    has "idlehold: status says HELD, with the queue file and the ceiling" "$T/is1" "HELD while a gate branch is queued in /q/gate_queue.txt (ceiling 100 s)" 1
+    has "…and prints nothing of the rest of the environment" "$T/is1" "secret" 0
+    PATH="$T/stubbin:$PATH" STUB_ENV="LOGICKERNEL_WARM_IDLE_S=3600 LOGICKERNEL_WARM_IDLE_HOLD_QUEUE=0" bash "$T/idleset.sh" > "$T/is2" 2>&1
+    has "idlehold: status with the hold off says so" "$T/is2" "idle exit after 3600 s (queue hold off)" 1
+}
+
 # THE DAEMON LANES, no daemon (WARM3, D-0283 item 6, D-0276 item 4): `warm.sh lane-plan` prints the lane a start
 # would take beside FAKE other daemons (LOGICKERNEL_WARM_OTHERS_FAKE, one line each as `_other_daemons` prints them)
 # and a faked MemAvailable (LOGICKERNEL_WARM_MEMAVAIL_KB), starting nothing; the Manifest.toml copy runs on planted
@@ -729,6 +780,7 @@ _lanes_cases() {
     seed "$R/plain"; check "manifest: a directory that is no worktree of the repository — refused (exit 1)" 1 $?
     env GITHUB_ACTIONS=true "$W" manifest-seed "$R/wt" > "$T/ms" 2>&1; check "manifest: on a GitHub runner — nothing done (exit 0)" 0 $?
     [ ! -e "$R/wt/Manifest.toml" ]; check "manifest: …no file written there" 0 $?
+    _idlehold_cases
 }
 
 _cap_cases() {

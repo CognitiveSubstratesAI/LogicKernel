@@ -140,6 +140,19 @@ file) — so evidence is a process that started clean. The daemon follows Revise
 * a checkout COPY (parallel mutation proofs) runs its own daemon with `LOGICKERNEL_WARM_DEPOT`: a
   depot of its own and a normal load, since `stale_load` would take the original's cache and watch
   ITS `src/` (the "not watching" guard refused exactly that, measured);
+* **The idle exit and its hold** (user 2026-10-14; the hold: audit D-0461 item 3a, 2026-11-09): a daemon
+  with no request for `LOGICKERNEL_WARM_IDLE_S` (3600 s) exits by itself — a fresh daemon costs about
+  1900 s more than a warm one (start 317 s, JET 423 s against 14 s, the first test file's JIT 150-230 s;
+  evidence/TOOLS/profile_summary.md), so lanes that wait between gates can ask for a HOLD:
+  `LOGICKERNEL_WARM_IDLE_HOLD_QUEUE=1` at `start` (default 0: nothing changes) keeps the daemon alive while a
+  gate branch is queued. The queue is an explicit file, `LOGICKERNEL_WARM_QUEUE_FILE` (default
+  `~/code/gate_queue.txt`, written by the dispatcher: one `gate/<name>` per line, `#` comments and blank lines
+  ignored, a line deleted when the branch lands) — not `lanes.conf`, whose rows are free text. A missing or
+  empty queue is the old idle exit; a hold ends anyway `LOGICKERNEL_WARM_IDLE_HOLD_MAX_S` (43200 s) after the
+  last request, so a stale line cannot pin ~3.9 GB for days; the queue is read at most every 30 s, only once
+  idle. `warm.sh stop` is untouched, `warm.sh status` prints the setting the daemon was started with, and
+  the daemon's log says `WARM LANE IDLE HOLD` once per idle spell. The rule is `tools/warm_idle.jl`, judged
+  without a daemon by test_warm.sh's `lanes` mode;
 * **The warm client's timeout** (audit D-0206 item 4b): a send waits 1800 s; a `file` run of
   test/test_static_analysis.jl alone waits 3600 s (`_file_timeout` in tools/warm.sh; the file takes
   32 min since SSU1), and an explicit `WARM_TIMEOUT_S` wins. test/test_gate_split.jl fails when the
@@ -880,7 +893,7 @@ fixed it or a public issue exists.
 | `test/core_lang/test_termhash.jl` | SHA-1 against FIPS 180 and Julia's SHA stdlib, the kept `hash_compile` defect, digests identical in another process, digest equality ⇔ `=@=` on interface-only shapes | — |
 | `test/core_lang/test_variant_swipl.jl` | live differential: `=@=` and the digests on 2000 random hard pairs vs swipl | — |
 | `tools/bench.jl` | the per-chunk performance report: each primitive against swipl on the same terms (three runs, one process), then a profile of the worst; and three diagnostic reports, each instead of the timing run (user, 2026-10-13), full output under `.warm/bench/`: `--descend[=A,B]` — Cthulhu's typed view of the hot functions with only the non-concrete types shown (the run loop, where Cthulhu's view fails on the `@goto` body, through `code_typed`: the variables and used call results that are not concrete); `--code` — the run loop's `code_llvm` and `code_native`, counted (dynamic calls, allocations, boxes, jump tables, bounds checks); `--flame[=CASE]` — a profile of the case, saved, and ProfileView's flame graph where there is a display. Cthulhu and ProfileView come from the global environment; neither is a dependency | — |
-| `tools/warm.sh`, `tools/warm_session.jl`, `tools/test_warm.sh` | the warm lane — a Revise daemon for iteration (never evidence), and its own tests | — |
+| `tools/warm.sh`, `tools/warm_session.jl`, `tools/warm_idle.jl`, `tools/test_warm.sh` | the warm lane — a Revise daemon for iteration (never evidence), its idle exit and the queue hold on it, and its own tests | — |
 | `tools/worker.jl`, `tools/lib_evidence.sh`, `tools/test_evidence.sh` | the sharded evidence run — fresh workers, the coordinator's verdict, and their own tests | — |
 | `tools/swipl_pin.jl` | the pinned-swipl check a worker and the warm daemon make WHERE THEY RUN | — |
 | `tools/gen_umap.jl` | generates src/pl-umap.jl's tables from swipl-devel's src/pl-umap.c, byte for byte (`--check`: exit 1 if stale); test/charset/test_umap_swipl.jl checks it wherever a checkout is found | — |

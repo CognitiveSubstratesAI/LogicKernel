@@ -11,7 +11,16 @@
 #                                                          # others, 12 GB free (D-0276 item 4, below);
 #                                                          # a daemon exits after LOGICKERNEL_WARM_IDLE_S
 #                                                          # (3600) with no request; all of them share
-#                                                          # lk-warm.slice (tools/lib_evidence.sh)
+#                                                          # lk-warm.slice (tools/lib_evidence.sh);
+#                                                          # LOGICKERNEL_WARM_IDLE_HOLD_QUEUE=1 (default 0,
+#                                                          # read at `start`): it does NOT exit while a gate
+#                                                          # branch is queued, one `gate/<name>` per line in
+#                                                          # LOGICKERNEL_WARM_QUEUE_FILE (default
+#                                                          # ~/code/gate_queue.txt, the dispatcher's; a missing
+#                                                          # file = empty queue) and falls back to the idle exit
+#                                                          # when it is empty; at most
+#                                                          # LOGICKERNEL_WARM_IDLE_HOLD_MAX_S (43200) past the
+#                                                          # last request; `stop` is unaffected (tools/warm_idle.jl)
 #   tools/warm.sh file test/core_lang/test_unify.jl [impl]   # one test file, REAL exit code: a term-
 #                                                            # generic file on every implementation
 #                                                            # (or just `impl`), swipl REQUIRED;
@@ -359,6 +368,9 @@ _start() {
     systemd-run --user --unit="$UNIT" --collect --quiet $slice -p MemoryMax="${LOGICKERNEL_TEST_MEM_MAX:-8G}" \
         -p MemorySwapMax=0 --working-directory="$ROOT" -E "PATH=$PATH" "${copy_env[@]}" \
         -E JULIA_REVISE=manual -E LOGICKERNEL_WARM_IDLE_S="${LOGICKERNEL_WARM_IDLE_S:-3600}" \
+        -E LOGICKERNEL_WARM_IDLE_HOLD_QUEUE="${LOGICKERNEL_WARM_IDLE_HOLD_QUEUE:-0}" \
+        -E LOGICKERNEL_WARM_QUEUE_FILE="${LOGICKERNEL_WARM_QUEUE_FILE:-$HOME/code/gate_queue.txt}" \
+        -E LOGICKERNEL_WARM_IDLE_HOLD_MAX_S="${LOGICKERNEL_WARM_IDLE_HOLD_MAX_S:-43200}" \
         /bin/bash -c "exec '$julia' --project=. --threads=\"\${JULIA_TEST_THREADS:-4}\" --heap-size-hint=${LOGICKERNEL_WARM_HEAP_HINT:-6G} tools/warm_session.jl >> '$DIR/session.log' 2>&1" ||
         { echo "warm lane: systemd-run failed" >&2; return 1; }
     local deadline=$(( $(date +%s) + ${WARM_START_TIMEOUT_S:-600} ))
@@ -370,6 +382,26 @@ _start() {
     done
     _struct_snapshot > "$DIR/structs"               # what this daemon loaded (`_struct_gate`)
     echo "warm lane: ready (unit $UNIT, pid $(cat "$DIR/ready"))"
+}
+
+# _idle_setting — a line naming the idle exit the running daemon was STARTED with (`start` passes it as unit
+# environment; ONLY the three named variables are read from it, never the whole environment).
+_idle_setting() {
+    local props v idle="" hold="" file="" max=""
+    props="$(systemctl --user show "$UNIT" -p Environment --value 2>/dev/null)"
+    for v in $props; do
+        case "$v" in
+            LOGICKERNEL_WARM_IDLE_S=*) idle="${v#*=}" ;;
+            LOGICKERNEL_WARM_IDLE_HOLD_QUEUE=*) hold="${v#*=}" ;;
+            LOGICKERNEL_WARM_QUEUE_FILE=*) file="${v#*=}" ;;
+            LOGICKERNEL_WARM_IDLE_HOLD_MAX_S=*) max="${v#*=}" ;;
+        esac
+    done
+    if [ "$hold" = 1 ]; then
+        echo "warm lane: idle exit after ${idle:-3600} s, HELD while a gate branch is queued in ${file:-?} (ceiling ${max:-43200} s)"
+    else
+        echo "warm lane: idle exit after ${idle:-3600} s (queue hold off)"
+    fi
 }
 
 _stop() {
@@ -1364,7 +1396,11 @@ case "$cmd" in
         ;;
     manifest-seed) _manifest_seed "${1:-$ROOT}"; exit $? ;;   # copy a sibling worktree's Manifest.toml (tests pass a root)
     restart) _restart ;;
-    status) if _running; then echo "warm lane: running (unit $UNIT, pid $(cat "$DIR/ready"), rss $(_gb "$(_daemon_rss_kb)") GB)"; else echo "warm lane: not running"; exit 3; fi ;;
+    status)
+        if _running; then
+            echo "warm lane: running (unit $UNIT, pid $(cat "$DIR/ready"), rss $(_gb "$(_daemon_rss_kb)") GB)"
+            _idle_setting                                  # the second line: the idle exit this daemon was started with
+        else echo "warm lane: not running"; exit 3; fi ;;
     send) _send "${1:-}" ;;
     branch-gate-files) _branch_gate_files ;;     # the files a branch-gate would run (no daemon)
     branch-gate-plan) _branch_gate_plan ;;       # … within its time budget (no daemon)
