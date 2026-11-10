@@ -4157,8 +4157,9 @@ end
 # (upstream's `succeed` and -1). `c_stack` is 0 (`CStackSize()` has no answer for a Julia task), `atom_space`
 # and `functor_space` 0 (no byte accounting of the tables), `threads` 1 and `threads_created` 1 (the
 # one thread; upstream's O_PLMT counters give the same at startup), `engines` and `engines_created` 0,
-# `thread_cputime` 0.0, `threads_peak` 0; `table_space_used`, `indexes_created`, `indexes_destroyed`,
-# `warnings` and `errors` 0 (not counted); `shared_table_space_used` 0 (upstream reads the shared node pool's size and
+# `thread_cputime` 0.0, `threads_peak` 0; `indexes_created`, `indexes_destroyed`,
+# `warnings` and `errors` 0 (not counted); `table_space_used` is the size of `ld.tabling.node_pool` (0 without one, since TAB1 TB0: the pool is charged by
+# the trie nodes, TR1); `shared_table_space_used` 0 (upstream reads the shared node pool's size and
 # 0 without one: tables and their pools are TAB1's, and no table exists here); `erased_clauses` and `erased_clause_space`
 # are the sums over the dirty definitions (`_statistics_erased`: upstream's `GD->clauses.erased` and `erased_size`, the
 # space counted as `sizeof_predicate` counts a clause, not upstream's bytes); the garbage collector, atom and clause collector and stack shift
@@ -4234,11 +4235,14 @@ function swi_statistics(ld::PL_local_data{T}, key::Symbol, v::number)::Int where
         key === :agc_gained || key === :cgc || key === :cgc_gained ||
         key === :global_shifts ||
         key === :local_shifts || key === :trail_shifts || key === :engines ||
-        key === :engines_created || key === :threads_peak || key === :table_space_used ||
+        key === :engines_created || key === :threads_peak ||
         key === :shared_table_space_used ||
         key === :indexes_created || key === :indexes_destroyed || key === :warnings ||
         key === :errors
         v.i = 0
+    elseif key === :table_space_used            # LD->tabling.node_pool->size, 0 without a pool (pl-prims.c:6260; TAB1 TB0)
+        pool = ld.tabling.node_pool
+        v.i = pool === nothing ? 0 : pool.size
     elseif key === :erased_clauses              # GD->clauses.erased (a sum, `_statistics_erased`)
         v.i = _statistics_erased(_query_gd(ld))[1]
     elseif key === :erased_clause_space         # GD->clauses.erased_size

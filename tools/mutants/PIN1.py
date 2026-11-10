@@ -10,7 +10,7 @@
 #   TAT = test/core_lang/test_atom_table.jl.
 #   TP:260 is the oracle differential (`t_defaults`, `t_enum_*`, `t_missing`, `t_e37`, `t_e38` of test_prolog_flag_swipl.pl against swipl on PATH:
 #   the V10.1.20 oracle must be on PATH or the testset is `@test true`); TP:292/294 the key-set differential (oracle too); TP:305 oracle too;
-#   TP:534, 545, 547, 637 and TS:601, TL7:369, TAT:208 need no oracle.
+#   TP:534, 545, 547, 637 and TS:599, TL7:369, TAT:208 need no oracle.
 # VERDICTS (2026-11-09, audit D-0451 item 1): the 19 kill rows below are FRESH-PROCESS verdicts (`tools/mutate_ci.py one`, one process per mutant, reference type);
 # the warm daemon cannot judge a mutant of boot-path code (`PL_global_data{T}()` copies the template built once per process, src/gd_template.jl): V1-V4 survive
 # there and I5/T3/T4 are caught there by a template a revised module left poisoned. The CI mutation battery runs fresh processes and decides.
@@ -19,8 +19,8 @@
 #   * PIN1-V5: apply_options_to_flags!'s `validate_api` entry (src/pl-init.jl:659): test_lb7_swipl.jl's `lb7_flagnames` (line 52) lacks `validate_api`,
 #     so neither the `-O` row f02 (TL7:402) nor any row reads it after the options are applied.
 #   * PIN1-I5: the size flags' -1 default: `unify_prolog_flag_value` (pl-prologflag.jl:486, `_tbl_restraint_unlimited`) answers false before `f.i` is read, and TP:305 only asks `!== nothing`.
-#   * PIN1-T3, PIN1-T4: set_prolog_flag/2 on `max_incomplete_subgoals_action` / `max_scc_subgoals_action`: `_SF_REFUSED` (TS:576-587) names no
-#     `*_action` flag, not the three of the old pin either.
+#   * PIN1-T3, PIN1-T4: set_prolog_flag/2 on `max_incomplete_subgoals_action` / `max_scc_subgoals_action`: `_SF_REFUSED` (TS:576-585, since TAB1 TB0; run at TS:593-601, the @test_throws at TS:599) names no
+#     `*_action` flag, not the three of the old pin either. TB0 (wip/tb0) shifts src/os/pl-prologflag.jl by +17 lines above `tbl_is_restraint_flag` (now :1461, the refusal at :1534-1535); I5's lines (:412, :486, TP:302-305) did not move.
 # OWNERS (audit D-0446 item 2, PIN1 step C; D-0451 item 2): the step that gives the flag or constant its consumer. V5 = FLI1 (the validateAPI gate); I5, T3, T4 = TAB1 (restraint
 # checks and tripwire actions); the reader of ATOM_RESERVE_BATCH = ATOM1 (R1, R2 are PLAIN mutants of the VALUE, killed by the literal row of test_atom_table.jl; a mutant of a READER of the constant has nothing to mutate until ATOM1 ports `reserveAtomSlots`, fde0211d: that gap is ATOM1's, not a row of this list). None of V5, I5, T3, T4 has a flag: row in docs/r2_owners.tsv (the flags are set, so a row would be R2-OWNER-STALE):
 # the owner is named here and in docs/architecture.md (PIN1 step C).
@@ -97,7 +97,7 @@ MUTANTS = [
          new="    nothing\n"),
     dict(id="PIN1-I5 max_scc_subgoals starts as 0, not -1 (no row: DEFERRED KILL, the unlimited reader answers before the value)",
          file=P, targets=TF,
-         equivalent="DEFERRED KILL: owner TAB1 (the restraint check of tabling reads the size flags; docs/r2_owners.tsv has no flag: row for max_scc_subgoals, TAB1 named by PIN1 step C); unify_prolog_flag_value answers false for the unlimited sizes at src/os/pl-prologflag.jl:486 (_tbl_restraint_unlimited, defined :412, lists max_scc_subgoals) before it reads f.i, and no test reads the table's `i` of max_scc_subgoals: test_prolog_flag_swipl.jl:302-305 asks only `current_prolog_flag(gd, k) !== nothing` and TP:637 only counts keys",
+         equivalent="DEFERRED KILL: owner TAB1 (the restraint check of tabling reads the size flags; docs/r2_owners.tsv has no flag: row for max_scc_subgoals, TAB1 named by PIN1 step C); unify_prolog_flag_value answers false for the unlimited sizes at src/os/pl-prologflag.jl:486 (_tbl_restraint_unlimited, defined :412, lists max_scc_subgoals) before it reads f.i, (lines re-read at wip/tb0 6d4bc882: unchanged by TB0) and no test reads the table's `i` of max_scc_subgoals: test_prolog_flag_swipl.jl:302-305 asks only `current_prolog_flag(gd, k) !== nothing` and TP:637 only counts keys",
          old='    setPrologFlag(gd, "max_scc_subgoals", FT_INTEGER, -1)\n',
          new='    setPrologFlag(gd, "max_scc_subgoals", FT_INTEGER, 0)\n'),
     # ── _tbl_restraint_unlimited (pl-tabling.c tbl_get_restraint_flag: the sizes answer nothing at (size_t)-1) ──
@@ -118,22 +118,22 @@ MUTANTS = [
          old="    elseif _tbl_restraint_unlimited(key)\n        return false\n",
          new="    elseif false\n        return false\n"),
     # ── tbl_is_restraint_flag (pl-tabling.c:11693): set_prolog_flag/2 refuses them as NotPortedError ──
-    dict(id="PIN1-T1 max_incomplete_subgoals is no restraint flag: set_prolog_flag/2 is not refused (KILL TS:601: row (max_incomplete_subgoals, 5) of _SF_REFUSED)",
+    dict(id="PIN1-T1 max_incomplete_subgoals is no restraint flag: set_prolog_flag/2 is not refused (KILL TS:599: row (max_incomplete_subgoals, 5) of _SF_REFUSED)",
          file=P, targets=[TS, TP],
          old='           name == "max_incomplete_subgoals" ||\n           name == "max_incomplete_subgoals_action" ||\n',
          new='           name == "max_incomplete_subgoals_action" ||\n'),
-    dict(id="PIN1-T2 max_scc_subgoals is no restraint flag: set_prolog_flag/2 is not refused (KILL TS:601: row (max_scc_subgoals, 5) of _SF_REFUSED)",
+    dict(id="PIN1-T2 max_scc_subgoals is no restraint flag: set_prolog_flag/2 is not refused (KILL TS:599: row (max_scc_subgoals, 5) of _SF_REFUSED)",
          file=P, targets=[TS, TP],
          old='           name == "max_scc_subgoals" ||\n           name == "max_scc_subgoals_action"\nend\n',
          new='           name == "max_scc_subgoals_action"\nend\n'),
     dict(id="PIN1-T3 max_incomplete_subgoals_action is no restraint flag (no row: DEFERRED KILL, _SF_REFUSED names no *_action flag)",
          file=P, targets=[TS, TP],
-         equivalent="DEFERRED KILL: owner TAB1 (the tripwire action of tabling reads max_incomplete_subgoals_action; no flag: row in docs/r2_owners.tsv, TAB1 named by PIN1 step C); test_set_flag_swipl.jl:576-587 (_SF_REFUSED, run at TS:595-601) holds no `*_action` flag, none of the three of the old pin either, and neither TS nor TP sets max_incomplete_subgoals_action: the refusal at src/os/pl-prologflag.jl:1517 (tbl_is_restraint_flag, defined :1444) is never reached for it",
+         equivalent="DEFERRED KILL: owner TAB1 (the tripwire action of tabling reads max_incomplete_subgoals_action; no flag: row in docs/r2_owners.tsv, TAB1 named by PIN1 step C); test_set_flag_swipl.jl:576-585 (_SF_REFUSED, run at TS:593-601, the @test_throws at TS:599) holds no `*_action` flag, none of the three of the old pin either, and neither TS nor TP sets max_incomplete_subgoals_action: the refusal at src/os/pl-prologflag.jl:1534-1535 (tbl_is_restraint_flag, defined :1461) is never reached for it",
          old='           name == "max_incomplete_subgoals_action" ||\n           name == "max_scc_subgoals" ||\n',
          new='           name == "max_scc_subgoals" ||\n'),
     dict(id="PIN1-T4 max_scc_subgoals_action is no restraint flag (no row: DEFERRED KILL, _SF_REFUSED names no *_action flag)",
          file=P, targets=[TS, TP],
-         equivalent="DEFERRED KILL: owner TAB1 (as PIN1-T3); no row sets max_scc_subgoals_action: test_set_flag_swipl.jl:576-587 (_SF_REFUSED) names none, so the refusal at src/os/pl-prologflag.jl:1517 is never reached for it",
+         equivalent="DEFERRED KILL: owner TAB1 (as PIN1-T3); no row sets max_scc_subgoals_action: test_set_flag_swipl.jl:576-585 (_SF_REFUSED, @test_throws at TS:599) names none, so the refusal at src/os/pl-prologflag.jl:1534-1535 is never reached for it",
          old='           name == "max_scc_subgoals" ||\n           name == "max_scc_subgoals_action"\nend\n',
          new='           name == "max_scc_subgoals"\nend\n'),
     # ── ATOM_RESERVE_BATCH (pl-incl.h:1431: 64) ──

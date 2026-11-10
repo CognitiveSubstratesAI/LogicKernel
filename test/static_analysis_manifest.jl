@@ -2652,6 +2652,36 @@ function _manifest_index(T)
         (LK.tbl_set_incremental_predicate, Tuple{GD, D, Bool}, false),
         (LK.set_bool_attr, Tuple{LD, D, UInt32, Int}, false),
         (LK.tbl_set_predicate_attribute, Tuple{LD, D, T, Int}, false),
+        # TAB1 TB0: the allocation pool, the freed-object lists, initTabling!, setMonotonicMode (src/pl-allocpool.jl, src/pl-tabling.jl)
+        (LK.alloc_from_pool, Tuple{LD, LK.alloc_pool, Int}, false),
+        (LK.alloc_from_pool, Tuple{LD, Nothing, Int}, false),
+        (
+            LK.tbl_free_list,
+            Tuple{LK.tbl_free_objects{T}, Val{LK.TBL_FREE_COMPONENT}},
+            false
+        ),
+        (
+            LK.tbl_free_list,
+            Tuple{LK.tbl_free_objects{T}, Val{LK.TBL_FREE_WORKLIST_SET}},
+            false
+        ),
+        (LK.tbl_free_list, Tuple{LK.tbl_free_objects{T}, Val{LK.TBL_FREE_WORKLIST}}, false),
+        (LK.tbl_free_list, Tuple{LK.tbl_free_objects{T}, Val{LK.TBL_FREE_CLUSTER}}, false),
+        (LK.tbl_alloc, Tuple{LD, Val{LK.TBL_FREE_COMPONENT}}, false),
+        (LK.tbl_alloc, Tuple{LD, Val{LK.TBL_FREE_WORKLIST_SET}}, false),
+        (LK.tbl_alloc, Tuple{LD, Val{LK.TBL_FREE_WORKLIST}}, false),
+        (LK.tbl_alloc, Tuple{LD, Val{LK.TBL_FREE_CLUSTER}}, false),
+        (LK.tbl_free, Tuple{LD, Val{LK.TBL_FREE_COMPONENT}, LK.tbl_component{T}}, false),
+        (
+            LK.tbl_free,
+            Tuple{LD, Val{LK.TBL_FREE_WORKLIST_SET}, LK.worklist_set{LK.tbl_worklist{T}}},
+            false
+        ),
+        (LK.tbl_free, Tuple{LD, Val{LK.TBL_FREE_WORKLIST}, LK.tbl_worklist{T}}, false),
+        (LK.tbl_free, Tuple{LD, Val{LK.TBL_FREE_CLUSTER}, LK.cluster{T}}, false),
+        (LK.free_tbl_free_objects, Tuple{LD, Bool}, false),
+        (LK.initTabling!, Tuple{LD}, false),
+        (LK.setMonotonicMode, Tuple{LD, T}, false),
         # T4/T5: the closure blob and the wrapper supervisors (src/pl-wrap.jl, src/pl-supervisor.jl)
         (LK.closure_of_word, Tuple{GD, UInt64}, false),
         (LK.unify_closure, Tuple{GD, LD, Int, D, Vector{LK.code}, Vector{CR}}, false),
@@ -3752,6 +3782,14 @@ const _DISPATCH_MANIFEST_TUPLE = (
     (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_wrap)}, false),
     (LK.table_props, Tuple{}, false),
     (LK.clear_table_props!, Tuple{LK.table_props}, false),
+    # TAB1 TB0: pl-allocpool.c (src/pl-allocpool.jl) and the sentinel tests of pl-tabling.c (src/pl-tabling.jl); they name no term type
+    (LK.new_alloc_pool, Tuple{String, Int}, false),
+    (LK.free_alloc_pool, Tuple{LK.alloc_pool}, false),
+    (LK.free_to_pool, Tuple{LK.alloc_pool, Int}, false),
+    (LK.free_to_pool, Tuple{Nothing, Int}, false),
+    (LK.WL_IS_SPECIAL, Tuple{Int}, true),
+    (LK.WL_IS_WORKLIST, Tuple{Int}, true),
+    (LK.DL_IS_DELAY_LIST, Tuple{Int}, true),
     (LK._closure_bytes, Tuple{Int}, false),
     (LK.initWrap!, Tuple{LK.atoms_t}, false),
     (LK.isCallWrapper, Tuple{LK.code}, false),

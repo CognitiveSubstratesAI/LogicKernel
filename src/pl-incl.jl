@@ -17,6 +17,8 @@
 # UPSTREAM: swipl-devel src/pl-copyterm.h @ 18168e629eab
 # UPSTREAM: swipl-devel src/pl-gvar.c @ 18168e629eab
 # UPSTREAM: swipl-devel src/pl-tabling.h @ 18168e629eab
+# UPSTREAM: swipl-devel src/pl-tabling.c @ 18168e629eab
+# UPSTREAM: swipl-devel src/pl-allocpool.h @ 18168e629eab
 # UPSTREAM: swipl-devel src/pl-wrap.h @ 18168e629eab
 # CLASS: code
 # COPYRIGHT: Copyright (c)  1985-2026, University of Amsterdam,
@@ -2372,3 +2374,259 @@ mutable struct gvar_enum
     next::Int                                       # the next name to look at
 end
 gvar_enum() = gvar_enum(UInt64[], 1)
+
+# ── pl-allocpool.h and the table state of pl-tabling.h (TAB1 TB0) ───────────────────────────────────
+# DIVERGES (representation, for the whole block; docs/architecture.md TB0): a `trie_node *` is an `Int` node id and a
+# `trie *` an `Int` index into the database's trie table (0: NULL), shared with TR1's trie (audit D-0453 Q3: an arena
+# and integer ids, upstream's names and order kept); the special pointers `WL_GROUND`, `WL_DYNAMIC`, `DV_DELETED` and
+# `DL_UNDEFINED` of pl-tabling.c are not pointers here (pl-tabling.jl); a `buffer` is a typed `Vector`; a bit-field is
+# a `Bool`; a `size_t` is an `Int` (`(size_t)-1`, no limit, is -1) as `table_props`. NOT PORTED here, each to its owner:
+# the IDG structs `idg_node`, `idg_mdep`, `idg_mono` (they hold pl-idgset.h's `idg_set`: TB6), the `tbl_trail` structs
+# of the transactions (TB9) and `trie_array`/`node_array` with `TRIE_ARRAY_PREALLOCATED` (TB1, with `start_nodes`).
+
+# PORT: pl-global.h TABLE_COMPILE_THRESHOLD
+"The default of the flag `table_compile_threshold` (pl-global.h `TABLE_COMPILE_THRESHOLD`)."
+const TABLE_COMPILE_THRESHOLD = 32
+
+# PORT: pl-allocpool.h alloc_pool
+# DIVERGES: the pool is freed by Julia's collector, so `freed` only records that `free_alloc_pool` ran; `name` is a `String`.
+"A memory pool with a limit (pl-allocpool.h `struct alloc_pool`): the table space charges its trie nodes to one."
+mutable struct alloc_pool
+    size::Int                                           # Current allocation
+    limit::Int                                          # Limit
+    name::String                                        # for appropriate error
+    freed::Bool                                         # Pool is freed
+end
+alloc_pool(name::String, limit::Int) = alloc_pool(0, limit, name, false)
+
+# PORT: pl-tabling.h cluster_type as CLUSTER_ANSWERS
+# DIVERGES: Int constants, not an `@enum` (the repo's precedent, `RECORDA`: an enum needs a `_enum_hash` manifest entry).
+"`cluster.type`: the cluster holds answers (pl-tabling.h `CLUSTER_ANSWERS`)."
+const CLUSTER_ANSWERS = 0
+# PORT: pl-tabling.h cluster_type as CLUSTER_SUSPENSIONS
+"`cluster.type`: the cluster holds suspensions (pl-tabling.h `CLUSTER_SUSPENSIONS`)."
+const CLUSTER_SUSPENSIONS = 1
+
+# PORT: pl-tabling.h DELAY_MAGIC
+"The magic of a delay structure (pl-tabling.h `DELAY_MAGIC`)."
+const DELAY_MAGIC = 0x67e9124d
+# PORT: pl-tabling.h WORKLIST_MAGIC
+"`worklist.magic` (pl-tabling.h `WORKLIST_MAGIC`)."
+const WORKLIST_MAGIC = 0x67e9124e
+# PORT: pl-tabling.h COMPONENT_MAGIC
+"`tbl_component.magic` (pl-tabling.h `COMPONENT_MAGIC`)."
+const COMPONENT_MAGIC = 0x67e9124f
+# PORT: pl-tabling.h TF_MONOTONIC_LAZY
+"`LD->tabling.flags`: monotonic tabling is lazy, set by `table_monotonic = lazy` (pl-tabling.h `TF_MONOTONIC_LAZY`)."
+const TF_MONOTONIC_LAZY = UInt32(0x0001)
+
+# PORT: pl-tabling.h scc_status as SCC_ACTIVE
+# DIVERGES: Int constants, not an `@enum` (as `CLUSTER_ANSWERS`).
+"`tbl_component.status`: the SCC is being evaluated (pl-tabling.h `SCC_ACTIVE`)."
+const SCC_ACTIVE = 0
+# PORT: pl-tabling.h scc_status as SCC_MERGED
+"`tbl_component.status`: the SCC was merged into its parent (pl-tabling.h `SCC_MERGED`)."
+const SCC_MERGED = 1
+# PORT: pl-tabling.h scc_status as SCC_COMPLETED
+"`tbl_component.status`: the SCC is complete (pl-tabling.h `SCC_COMPLETED`)."
+const SCC_COMPLETED = 2
+# PORT: pl-tabling.h scc_neg_status as SCC_NEG_NONE
+"`tbl_component.neg_status`: no negative nodes (pl-tabling.h `SCC_NEG_NONE`)."
+const SCC_NEG_NONE = 0
+# PORT: pl-tabling.h scc_neg_status as SCC_NEG_DELAY
+"`tbl_component.neg_status`: negative nodes, to be delayed (pl-tabling.h `SCC_NEG_DELAY`)."
+const SCC_NEG_DELAY = 1
+# PORT: pl-tabling.h scc_neg_status as SCC_NEG_SIMPLIFY
+"`tbl_component.neg_status`: negative nodes, to be simplified (pl-tabling.h `SCC_NEG_SIMPLIFY`)."
+const SCC_NEG_SIMPLIFY = 2
+
+# PORT: pl-tabling.c sindex_key
+"A key of a suspension at a path of its skeleton (pl-tabling.c `struct sindex_key`)."
+struct sindex_key
+    path::UInt32
+    key::UInt32
+end
+
+# PORT: pl-tabling.c suspension
+# DIVERGES: `record_t` is the kernel's `record{T}`; `keys` is a vector (upstream: a malloc'ed array, NULL for none).
+"A suspended consumer (pl-tabling.c `struct suspension`): its dependency/5 term, its call-subsumption filter and its index keys."
+struct suspension{T}
+    term::record{T}                                     # dependency/5 term with TNOT flag
+    instance::Union{Nothing, record{T}}                 # Filter for call subsumption
+    keys::Vector{sindex_key}                            # Index to find filter candidates
+end
+
+# PORT: pl-tabling.c sindex_path
+# DIVERGES: `heads` (a `Table`, key -> member + 1) is a `Dict`.
+"One path of a suspension cluster's index (pl-tabling.c `struct sindex_path`)."
+mutable struct sindex_path
+    path::UInt32
+    heads::Dict{UInt32, Int}                            # key -> last member with that key, plus 1
+    all::Int                                            # last member under the path, or -1
+end
+
+# PORT: pl-tabling.c sindex_cursor
+# DIVERGES: `link` is the vector `sindex_table.prev` or `.prev_all` it points into (empty: NULL).
+"A chain of an answer's candidates and the next member on it (pl-tabling.c `struct sindex_cursor`)."
+mutable struct sindex_cursor
+    at::Int                                             # next member on the chain, or -1
+    link::Vector{Int}                                   # member -> previous member on the chain
+end
+
+# PORT: pl-tabling.c sindex_table
+# DIVERGES: `allocated` is `length(prev)`, so the field is not kept; `paths[]` is a vector.
+"The index of a suspension cluster on a few key paths (pl-tabling.c `struct sindex_table`)."
+mutable struct sindex_table
+    prev::Vector{Int}                                   # member -> previous with its key, or unkeyed
+    prev_all::Vector{Int}                               # member -> previous member under its path
+    unkeyed::Int                                        # last member no path keys, or -1
+    built::Int                                          # members when the paths were chosen
+    cursors::Vector{sindex_cursor}                      # npaths+1, after paths
+    npaths::Int
+    paths::Vector{sindex_path}                          # in the order chosen
+end
+
+# PORT: pl-tabling.c answer
+"An answer, a point into the answer trie (pl-tabling.c `struct answer`): the trie node's id."
+struct answer
+    node::Int                                           # Point into answer trie
+end
+
+# PORT: pl-tabling.h cluster
+# DIVERGES: `members` (a `buffer` of `trie_node *` or of `suspension`, by `type`) is two vectors, one of them empty.
+"An answer or suspension cluster of a worklist (pl-tabling.h `struct cluster`)."
+mutable struct cluster{T}
+    type::Int                                           # CLUSTER_*
+    next::Union{Nothing, cluster{T}}
+    prev::Union{Nothing, cluster{T}}
+    answers::Vector{Int}                                # members of a CLUSTER_ANSWERS: trie_node ids
+    suspensions::Vector{suspension{T}}                  # members of a CLUSTER_SUSPENSIONS
+    sindex::Union{Nothing, sindex_table}                # Suspensions by key paths, or NULL
+    sindex_tried::Int                                   # Size at which no key split them
+    paired::Bool                                        # Suspensions met an answer cluster
+end
+cluster{T}(type::Int) where {T} =
+    cluster{T}(type, nothing, nothing, Int[], suspension{T}[], nothing, 0, false)
+
+# PORT: pl-tabling.h delay
+"One condition of a delay list (pl-tabling.h `struct delay`): the answer trie's index and the node in it (0 for a negative one)."
+struct delay
+    variant::Int                                        # Answer trie
+    answer::Int                                         # Answer in there (0 for negative)
+end
+
+# PORT: pl-tabling.h delay_set
+"One conjunction of a delay info (pl-tabling.h `struct delay_set`)."
+mutable struct delay_set
+    offset::Int                                         # offset in delays
+    size::Int                                           # size of the conjunction
+    active::UInt32                                      # active members of conjunction
+end
+
+# PORT: pl-tabling.h delay_info
+"The conditions under which an answer holds (pl-tabling.h `struct delay_info`)."
+mutable struct delay_info
+    variant::Int                                        # Variant trie node
+    has_share_records::UInt32                           # We have variable sharing records
+    delay_sets::Vector{delay_set}                       # The disjunctive conditions
+    delays::Vector{delay}                               # Store for the delays
+end
+delay_info() = delay_info(0, UInt32(0), delay_set[], delay[])
+
+# PORT: pl-tabling.h delay_usage
+"The conditional answers one variant is a condition of (pl-tabling.h `struct delay_usage`)."
+mutable struct delay_usage
+    answers::Vector{Int}                                # trie_node ids of conditional answers
+end
+
+# PORT: pl-tabling.h worklist
+# DIVERGES: `C` is the type of `component` (`tbl_component{T}`, alias `tbl_worklist{T}` below) only to break the cycle
+# worklist -> tbl_component -> worklist_set -> worklist; `delays`, `pos_undefined` are typed vectors (`pos_undefined`
+# holds trie node ids); `predicate` is `Union{Nothing, definition{T}}`, `table` an index into the trie table.
+"The worklist of a table under evaluation (pl-tabling.h `struct worklist`): its answer and suspension clusters."
+mutable struct worklist{T, C}
+    head::Union{Nothing, cluster{T}}                    # answer and dependency clusters
+    tail::Union{Nothing, cluster{T}}
+    riac::Union{Nothing, cluster{T}}                    # rightmost inner answer cluster
+    free_clusters::Union{Nothing, cluster{T}}           # clusters to reuse
+    magic::Int                                          # WORKLIST_MAGIC
+    ground::Bool                                        # Ground call (early completion)
+    executing::Bool                                     # $tbl_wkl_work/3 in progress
+    in_global_wl::Bool                                  # already in global worklist
+    negative::Bool                                      # this is a suspended negation
+    neg_delayed::Bool                                   # Negative node was delayed
+    has_answers::Bool                                   # At least one unconditional answer
+    answer_completed::Bool                              # Is answer completed
+    depend_abolish::Bool                                # Scheduled for depending abolish
+    needs_answer_gc::Bool                               # Contains garbage answers
+    undefined::Int                                      # #undefined answers
+    component::Union{Nothing, C}                        # component I belong to
+    table::Int                                          # My answer table (a trie index)
+    predicate::Union{Nothing, definition{T}}            # Predicate we are associated with
+    delays::Vector{delay}                               # Delayed answers
+    pos_undefined::Vector{Int}                          # Positive undefined (trie node ids)
+end
+worklist{T, C}() where {T, C} = worklist{T, C}(
+    nothing, nothing, nothing, nothing, WORKLIST_MAGIC, false, false, false, false,
+    false, false,
+    false, false, false, 0, nothing, 0, nothing, delay[], Int[]
+)
+
+# PORT: pl-tabling.h worklist_set
+"A set of worklists (pl-tabling.h `struct worklist_set`); `W` is `worklist{T, tbl_component{T}}`."
+mutable struct worklist_set{W}
+    members::Vector{W}
+end
+worklist_set{W}() where {W} = worklist_set{W}(W[])
+
+# PORT: pl-tabling.h component_set
+"A set of components (pl-tabling.h `struct component_set`); `C` is `tbl_component{T}`."
+mutable struct component_set{C}
+    members::Vector{C}
+end
+component_set{C}() where {C} = component_set{C}(C[])
+
+# PORT: pl-tabling.h tbl_component
+# DIVERGES: `drop` (an anonymous struct) is flattened to `drop_symbol`, `drop_size`, `drop_gen_calls`, `drop_recompute`;
+# `leader` is a trie index; `children` and `merged` are `component_set`s.
+"A strongly connected component of the tabling evaluation (pl-tabling.h `struct tbl_component`)."
+mutable struct tbl_component{T}
+    magic::Int                                          # COMPONENT_MAGIC
+    status::Int                                         # SCC_*
+    neg_status::Int                                     # SCC_NEG_*
+    simplifications::Int                                # # simplifications
+    parent::Union{Nothing, tbl_component{T}}
+    children::Union{Nothing, component_set{tbl_component{T}}}    # Child components
+    merged::Union{Nothing, component_set{tbl_component{T}}}      # Child components
+    worklist::Union{Nothing, worklist_set{worklist{T, tbl_component{T}}}}           # Worklist of current query
+    created_worklists::Union{Nothing, worklist_set{worklist{T, tbl_component{T}}}}  # Worklists created
+    delay_worklists::Union{Nothing, worklist_set{worklist{T, tbl_component{T}}}}    # Worklists in need for delays
+    leader::Int                                         # Leading variant (a trie index)
+    inferences::Int64                                   # At creation; cost when complete
+    drop_symbol::Union{Nothing, T}                      # drop.symbol: Registered leader if droppable
+    drop_size::Int                                      # drop.size: Memory of the table
+    drop_gen_calls::UInt64                              # drop.gen_calls: gen_call at completion
+    drop_recompute::Int64                               # drop.recompute: Cost to recompute if dropped
+end
+# ORIGINAL: upstream's `tbl_alloc` hands out zeroed memory (`PL_malloc` + the caller's init); a new component is `COMPONENT_MAGIC`
+# with every other field NULL or 0.
+tbl_component{T}() where {T} = tbl_component{T}(
+    COMPONENT_MAGIC, SCC_ACTIVE, SCC_NEG_NONE, 0, nothing, nothing, nothing, nothing,
+    nothing, nothing, 0, 0,
+    nothing, 0, UInt64(0), 0
+)
+# ORIGINAL: the worklist type of a term type `T`, the alias that closes the cycle `worklist` -> `tbl_component` -> `worklist_set`.
+"A worklist of a term type `T` (pl-tabling.h `struct worklist`, its `component` a `tbl_component{T}`)."
+const tbl_worklist{T} = worklist{T, tbl_component{T}}
+
+# PORT: pl-tabling.h tbl_status
+# DIVERGES: the three ints are `Bool`s; the chain `prev` of saved states is `Union{Nothing, tbl_status{T}}`.
+"The tabling status saved across a `break/0` or an event hook (pl-tabling.h `struct tbl_status`)."
+mutable struct tbl_status{T}
+    scc::Union{Nothing, tbl_component{T}}               # The SCC we are working on
+    prev::Union{Nothing, tbl_status{T}}                 # Older saved status
+    hsc::Bool                                           # We have an active SCC
+    iac::Bool                                           # We are in answer completion
+    iap::Bool                                           # We are in assert propagation
+end
+tbl_status{T}() where {T} = tbl_status{T}(nothing, nothing, false, false, false)

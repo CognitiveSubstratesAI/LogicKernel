@@ -16,6 +16,172 @@
 # the worklists, the answer tables and `start_tabling/3` are TAB1 (NOT STARTED). Since TAB1-min step T2 the file also holds the
 # `tabled` attribute bits of a predicate (`def->tabling`, pl-tabling.c:10162-10393): clear, get, set, reset.
 
+# TAB1 TB0 (the table state, in the order of pl-tabling.c): the constants of its file-level macros, the freed-object lists
+# (`tbl_alloc`, `tbl_free`, `free_tbl_free_objects`), `initTabling!`, `setMonotonicMode`. The structs are in src/pl-incl.jl and
+# src/pl-global.jl; `answer_delay_infos` is `gd.tabling_answer_delay_infos`. NOT PORTED, each to its owner: `node_delayinfo`,
+# `set_node_delayinfo` (they read and set the node flag `TN_DELAYINFO` of TR1's trie node: TB4), `fast_ret_functor` and
+# `cleanupTabling` (which clears it: TB3; its other half is the `O_PLMT` shared tables: TH1), `start_node_ids` (TB1), the IDG
+# macros `IDG_CHANGED_*` (TB6), `wkl_step_state` and `TBL_ANSWER_*` (TB2/TB3, with the code that uses them).
+
+# PORT: pl-tabling.c WL_GROUND
+# DIVERGES: a sentinel INTEGER, upstream a pointer `(worklist *)0x21`: where a trie node's value says "ground", the kernel's
+# node value (TR1) holds this number; `WL_IS_SPECIAL` tests its bit 0 as upstream does.
+"The worklist value of a table with a ground call, a sentinel and no worklist (pl-tabling.c `WL_GROUND`)."
+const WL_GROUND = 0x21
+# PORT: pl-tabling.c WL_DYNAMIC
+"The worklist value of a table of a dynamic predicate, a sentinel and no worklist (pl-tabling.c `WL_DYNAMIC`)."
+const WL_DYNAMIC = 0x41
+
+# PORT: pl-tabling.c WL_IS_SPECIAL
+"Whether the worklist value `wl` is a sentinel (pl-tabling.c `WL_IS_SPECIAL`): its bit 0 is set."
+WL_IS_SPECIAL(wl::Integer)::Bool = (Int(wl) & 0x1) != 0
+
+# PORT: pl-tabling.c WL_IS_WORKLIST
+"Whether the worklist value `wl` names a worklist (pl-tabling.c `WL_IS_WORKLIST`): neither NULL (0) nor a sentinel."
+WL_IS_WORKLIST(wl::Integer)::Bool = wl != 0 && !WL_IS_SPECIAL(wl)
+
+# PORT: pl-tabling.c WLFS_FREE_NONE
+"`worklist_free` mode: free nothing (pl-tabling.c `WLFS_FREE_NONE`)."
+const WLFS_FREE_NONE = 0x0000
+# PORT: pl-tabling.c WLFS_KEEP_COMPLETE
+"`worklist_free` mode: keep the complete tables (pl-tabling.c `WLFS_KEEP_COMPLETE`)."
+const WLFS_KEEP_COMPLETE = 0x0001
+# PORT: pl-tabling.c WLFS_FREE_ALL
+"`worklist_free` mode: free every table (pl-tabling.c `WLFS_FREE_ALL`)."
+const WLFS_FREE_ALL = 0x0002
+# PORT: pl-tabling.c WLFS_DISCARD_INCOMPLETE
+"`worklist_free` mode: discard the incomplete tables (pl-tabling.c `WLFS_DISCARD_INCOMPLETE`)."
+const WLFS_DISCARD_INCOMPLETE = 0x0004
+
+# PORT: pl-tabling.c DV_DELETED
+# DIVERGES: the sentinel is an INTEGER trie index (upstream `(trie*)0x1`), TR1's index 0 being NULL and 1 never a real table
+# when the sentinel is stored: the owners (TB4) read the field through this constant.
+"The `delay.variant` of a deleted delay, a sentinel (pl-tabling.c `DV_DELETED`)."
+const DV_DELETED = 1
+# PORT: pl-tabling.c DL_UNDEFINED
+"The delay list of an answer that is undefined, a sentinel (pl-tabling.c `DL_UNDEFINED`)."
+const DL_UNDEFINED = 1
+# PORT: pl-tabling.c DL_IS_DELAY_LIST
+"Whether `dl` (0: none) is a delay list, not `DL_UNDEFINED` (pl-tabling.c `DL_IS_DELAY_LIST`)."
+DL_IS_DELAY_LIST(dl::Integer)::Bool = dl != 0 && dl != DL_UNDEFINED
+
+# PORT: pl-tabling.c CAND_UNDECIDED
+"`wkl_step_state.candidates`: a new answer, its candidates not looked up (pl-tabling.c `CAND_UNDECIDED`)."
+const CAND_UNDECIDED = 0
+# PORT: pl-tabling.c CAND_ALL
+"`wkl_step_state.candidates`: visit every suspension (pl-tabling.c `CAND_ALL`)."
+const CAND_ALL = 1
+# PORT: pl-tabling.c CAND_KEYED
+"`wkl_step_state.candidates`: visit the members the index cursors are on (pl-tabling.c `CAND_KEYED`)."
+const CAND_KEYED = 2
+
+# PORT: pl-tabling.c TBL_FREE_COMPONENT
+"The kind of the freed objects of a component (pl-tabling.c `TBL_FREE_COMPONENT`)."
+const TBL_FREE_COMPONENT = 0
+# PORT: pl-tabling.c TBL_FREE_WORKLIST_SET
+"The kind of the freed objects of a worklist set (pl-tabling.c `TBL_FREE_WORKLIST_SET`)."
+const TBL_FREE_WORKLIST_SET = 1
+# PORT: pl-tabling.c TBL_FREE_WORKLIST
+"The kind of the freed objects of a worklist (pl-tabling.c `TBL_FREE_WORKLIST`)."
+const TBL_FREE_WORKLIST = 2
+# PORT: pl-tabling.c TBL_FREE_CLUSTER
+"The kind of the freed objects of a cluster (pl-tabling.c `TBL_FREE_CLUSTER`)."
+const TBL_FREE_CLUSTER = 3
+# PORT: pl-tabling.c TBL_FREE_KINDS
+"The number of kinds of freed objects (pl-tabling.c `TBL_FREE_KINDS`)."
+const TBL_FREE_KINDS = 4
+# PORT: pl-tabling.c TBL_FREE_MAX
+"The most freed objects of one kind a thread keeps (pl-tabling.c `TBL_FREE_MAX`)."
+const TBL_FREE_MAX = 16
+
+# ORIGINAL (TAB1 TB0): the vector of `ld.tabling.free_objects` of a kind, `kind` a `Val` of a `TBL_FREE_*` so that the answer's
+# type is known; upstream indexes `list[kind]`.
+tbl_free_list(fo::tbl_free_objects, ::Val{TBL_FREE_COMPONENT}) = fo.component
+tbl_free_list(fo::tbl_free_objects, ::Val{TBL_FREE_WORKLIST_SET}) = fo.worklist_set
+tbl_free_list(fo::tbl_free_objects, ::Val{TBL_FREE_WORKLIST}) = fo.worklist
+tbl_free_list(fo::tbl_free_objects, ::Val{TBL_FREE_CLUSTER}) = fo.cluster
+
+# PORT: pl-tabling.c tbl_alloc
+# DIVERGES: the object is not allocated here: the caller builds a new one (`nothing` is upstream's `PL_malloc`, the caller's
+# memset) when the list of its kind has none to reuse, and a reused one is reset by the caller, as upstream's (its first word
+# was the link). `kind` is a `Val` of a `TBL_FREE_*`; `count[kind]` is the vector's length.
+"A freed object of `kind` to reuse, or `nothing` (pl-tabling.c `tbl_alloc`)."
+function tbl_alloc(ld::PL_local_data{T}, kind::Val) where {T}
+    list = tbl_free_list(ld.tabling.free_objects, kind)
+    isempty(list) && return nothing
+
+    return pop!(list)
+end
+
+# PORT: pl-tabling.c tbl_free
+# DIVERGES: as `tbl_alloc`; the object is dropped for Julia's collector (`PL_free`) when it is not kept.
+"Keep the freed object `p` of `kind` for reuse unless `TBL_FREE_MAX` are kept already or the thread is closing (pl-tabling.c `tbl_free`)."
+function tbl_free(ld::PL_local_data{T}, kind::Val, p)::Nothing where {T}
+    fo = ld.tabling.free_objects
+    list = tbl_free_list(fo, kind)
+    if length(list) < TBL_FREE_MAX && !fo.closed
+        push!(list, p)
+    end
+
+    return nothing
+end
+
+# PORT: pl-tabling.c free_tbl_free_objects
+# DIVERGES: as `tbl_alloc`; the lists are emptied.
+"Drop the freed objects of every kind; `closed` also stops `tbl_free` keeping any (pl-tabling.c `free_tbl_free_objects`)."
+function free_tbl_free_objects(ld::PL_local_data{T}, closed::Bool)::Nothing where {T}
+    fo = ld.tabling.free_objects
+    empty!(fo.component)
+    empty!(fo.worklist_set)
+    empty!(fo.worklist)
+    empty!(fo.cluster)
+    closed && (fo.closed = true)
+
+    return nothing
+end
+
+# PORT: pl-tabling.c initTabling
+# DIVERGES: only the part that is state of one thread: the restraints (`LD->tabling.restraint.*`: `error` and unlimited) and
+# `in_assert_propagation`; `answer_delay_infos` is made with the database (src/pl-setup.jl, `newHTablePP(64)`), the ten
+# Prolog flags are `_init_tabling_flags!` (src/os/pl-prologflag.jl), `initIDGReaders()` and the `O_PLMT` shared mutex and
+# condition variable are TB6 and TH1.
+"Set the restraints of the thread to their defaults, `error` and unlimited (pl-tabling.c `initTabling`)."
+function initTabling!(ld::PL_local_data{T})::Nothing where {T}
+    r = ld.tabling.restraint
+    err = mk_sym(T, :error)
+    r.max_table_subgoal_size_action = err
+    r.max_table_subgoal_size = -1
+    r.max_table_answer_size_action = err
+    r.max_table_answer_size = -1
+    r.max_answers_for_subgoal_action = err
+    r.max_answers_for_subgoal = -1
+    r.max_incomplete_subgoals_action = err
+    r.max_incomplete_subgoals = -1
+    r.max_scc_subgoals_action = err
+    r.max_scc_subgoals = -1
+    ld.tabling.in_assert_propagation = false
+
+    return nothing
+end
+
+# PORT: pl-tabling.c setMonotonicMode
+# DIVERGES: the atom is `a`'s `sym_key` against `eager` and `lazy`; the error is `PL_error`'s with the culprit `a` put in a term.
+"Set the flag `table_monotonic`: `eager` clears and `lazy` sets `TF_MONOTONIC_LAZY`, else `domain_error(table_monotonic, A)` (pl-tabling.c)."
+function setMonotonicMode(ld::PL_local_data{T}, a::T)::Bool where {T}
+    k = sym_key(a)
+    if k == sym_key(mk_sym(T, :eager))
+        ld.tabling.flags &= ~TF_MONOTONIC_LAZY
+    elseif k == sym_key(mk_sym(T, :lazy))
+        ld.tabling.flags |= TF_MONOTONIC_LAZY
+    else
+        value = PL_new_term_ref(ld)
+        PL_put_atom(ld, value, a)
+        return PL_error(ld, ERR_DOMAIN, mk_sym(T, :table_monotonic), value)
+    end
+
+    return true
+end
+
 # ORIGINAL (TAB1MIN): pl-atom.ih `ATOM_trienode` (generated from src/ATOMS): the reserved atom `trienode` (src/pl-ressymbol.jl retypes it).
 "The atom word of the reserved symbol `trienode` (pl-atom.ih `ATOM_trienode`): the same in every database."
 const ATOM_trienode = builtin_atom("trienode")

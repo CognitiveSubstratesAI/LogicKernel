@@ -52,6 +52,7 @@ include("pl-wam.jl")           # swipl-devel src/pl-wam.c — the local stack's 
 include("pl-fli.jl")           # swipl-devel src/pl-fli.c — term references; raising an exception
 include("pl-attvar.jl")        # swipl-devel src/pl-attvar.c — saveWakeup/restoreWakeup: the pending exception set aside
 include("pl-error.jl")         # swipl-devel src/pl-error.c — error terms (the occurs-check error)
+include("pl-allocpool.jl")     # swipl-devel src/pl-allocpool.c — the allocation pool the table_space flag and the trie nodes charge (TAB1 TB0)
 include("pl-dbref.jl")         # swipl-devel src/pl-dbref.c — database references: clause blobs (D1)
 include("pl-gmp.jl")           # swipl-devel src/pl-gmp.c — numbers: read, written, promoted, compared
 include("pl-arith.jl")         # swipl-devel src/pl-arith.c — evaluation, is/2, the comparisons

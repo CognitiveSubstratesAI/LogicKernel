@@ -175,6 +175,7 @@ mutable struct PL_global_data{T}
     const cmdline::pl_cmdline_t                                 # cmdline: the arguments and the -O/--no-packs switches (R2 LB7)
     defaults_home::Union{Nothing, String}                       # defaults.home: the home directory, `$cmd_option_val(home, _)` (R2 LB7; nothing = NULL)
     const ld_table::LDTable                                     # the local data a wrapped stream names by number (IOSTREAM.wrapped; src/os/pl-stream.jl, R2 TOP1b E; owner TH1)
+    tabling_answer_delay_infos::Dict{Int, delay_info}           # (pl-tabling.c static `answer_delay_infos`: trie node id -> delay_info; TAB1 TB0)
 end
 # DIVERGES: `atoms` is upstream's `GD->atoms` as a struct of its own (src/pl-atom.jl), one table per
 # database, built first as upstream's `initAtoms` runs first; `functors` likewise `GD->functors` with
@@ -355,6 +356,73 @@ mutable struct ld_statistics
 end
 ld_statistics() = ld_statistics(0, 0, 0, 0, WallTime(), 0.0, 0.0, 0.0, 0.0)
 
+# PORT: pl-global.h tabling as tbl_restraint
+# DIVERGES: the anonymous `LD->tabling.restraint` struct is its own type; a `size_t` is an `Int` (`(size_t)-1`, no limit, is -1).
+# The defaults are upstream's `initTabling` (pl-tabling.c:12696-12706): `error` for the five actions, no limit for the five
+# sizes; the kernel builds the LD per database, so they are the constructor's values (src/pl-tabling.jl `initTabling!`).
+"The tabling restraints of one thread (pl-global.h `LD->tabling.restraint`): the five limits and their actions."
+mutable struct tbl_restraint{T}
+    max_table_subgoal_size_action::T
+    max_table_subgoal_size::Int
+    max_table_answer_size_action::T
+    max_table_answer_size::Int
+    max_answers_for_subgoal_action::T
+    max_answers_for_subgoal::Int
+    max_incomplete_subgoals_action::T
+    max_incomplete_subgoals::Int
+    max_scc_subgoals_action::T
+    max_scc_subgoals::Int
+end
+function tbl_restraint{T}() where {T}
+    err = mk_sym(T, :error)
+    return tbl_restraint{T}(err, -1, err, -1, err, -1, err, -1, err, -1)
+end
+
+# PORT: pl-global.h tabling as tbl_free_objects
+# DIVERGES: the freed objects of each `TBL_FREE_*` kind are a typed vector (upstream links them through their first word and
+# counts them in `count[]`, which is the vector's length): not observable.
+"The freed tabling objects one thread keeps for reuse (pl-global.h `LD->tabling.free_objects`; pl-tabling.c `tbl_alloc`)."
+mutable struct tbl_free_objects{T}
+    component::Vector{tbl_component{T}}                         # list[TBL_FREE_COMPONENT]
+    worklist_set::Vector{worklist_set{tbl_worklist{T}}}         # list[TBL_FREE_WORKLIST_SET]
+    worklist::Vector{tbl_worklist{T}}                           # list[TBL_FREE_WORKLIST]
+    cluster::Vector{cluster{T}}                                 # list[TBL_FREE_CLUSTER]
+    closed::Bool                                                # Thread is terminating
+end
+tbl_free_objects{T}() where {T} = tbl_free_objects{T}(
+    tbl_component{T}[], worklist_set{tbl_worklist{T}}[], tbl_worklist{T}[],
+    cluster{T}[], false
+)
+
+# PORT: pl-global.h tabling as ld_tabling
+# DIVERGES: only the private, single-thread fields; NOT PORTED, each to its owner (docs/architecture.md TB0):
+# `start_nodes` (`node_array`) and `variant_table` as an index (TB1: the variant table), `idg_registry` (TB6). `variant_table`
+# is the index of the variant trie in the database's trie table (0: none). `flags` holds the `TF_*` bits,
+# `delay_list` and `idg_current` are term references (0: none). `node_pool` is the pool `table_space` sets (`nothing`: NULL).
+"The tabling state of one thread (pl-global.h `LD->tabling`)."
+mutable struct ld_tabling{T}
+    component::Union{Nothing, tbl_component{T}}                 # active component
+    saved_status::Union{Nothing, tbl_status{T}}                 # Hidden components (break, ...)
+    incomplete_tables::Int                                      # # tables in created_worklists
+    active_components::Int                                      # # components with SCC_ACTIVE
+    variant_table::Int                                          # Variant --> table (a trie index; 0: none)
+    node_pool::Union{Nothing, alloc_pool}                       # Node allocation pool for tries
+    dyn_orphan_events::Int                                      # Dynamic nodes that lost a dependent
+    concurrent_idg_nodes::Int                                   # Private IDG nodes with shared children
+    has_scheduling_component::Bool                              # A leader was created
+    in_answer_completion::Bool                                  # Running answer completion
+    in_assert_propagation::Bool                                 # Running propagate_assert/1
+    flags::UInt32                                               # Global flags (TF_*)
+    delay_list::Int                                             # Global delay list (a term_t; 0: none)
+    idg_current::Int                                            # Current node in IDG (a term_t; 0: none)
+    free_objects::tbl_free_objects{T}                           # Freed objects (TBL_FREE_*)
+    restraint::tbl_restraint{T}                                 # the restraints
+end
+ld_tabling{T}() where {T} = ld_tabling{T}(
+    nothing, nothing, 0, 0, 0, nothing, 0, 0, false, false, false, UInt32(0), 0, 0,
+    tbl_free_objects{T}(), tbl_restraint{T}()
+)
+
 # PORT: pl-global.h PL_local_data
 # DIVERGES: `index_ctx` is scratch upstream declares on the C stack in each firstClause/nextClause.
 # Since L1f (f3) every variable is a cell on `gstack`, the global stack (`gTop`), bound by overwriting
@@ -447,6 +515,8 @@ ld_statistics() = ld_statistics(0, 0, 0, 0, WallTime(), 0.0, 0.0, 0.0, 0.0)
 # (src/os/pl-file.jl); of upstream's readers `PL_write_prompt` (clears it once a prompt is written), `PL_prompt_next` and `resetProlog`
 # are ported since R2 TOP1, but `Sread_user`, `wrapIO` and `Sread_terminal` (pl-file.c, pl-os.c) are TOP1b's pieces E-G, which wait for the
 # audit's ruling on where the stream handle's local data lives. Removal condition: those pieces port the readers.
+# Since TAB1 TB0: `tabling` (`LD->tabling`, `ld_tabling` above: the private tabling state, the restraints, the freed objects), and
+# `table_flags_compile_threshold`, `table_flags_drop_intermediate` (`LD->table_flags`, nesting flattened), appended last.
 # Since R2 TOP1b A: `break_level` (`LD->break_level`, pl-setup.c:199: -1 outside a toplevel; `currentBreakLevel`, src/pl-pro.jl), appended last.
 # Since R2 F1c: `debugstatus_skiplevel`, `debugstatus_tracing`, `debugstatus_debugging`, `debugstatus_showContext` (`LD->_debugstatus`, pl-incl.h
 # `pl_debugstatus_t`; the flags `debug`, `debugger_show_context`: src/os/pl-prologflag.jl, `debugmode`, `tracemode`: src/pl-trace.jl).
@@ -610,6 +680,9 @@ mutable struct PL_local_data{T} <: AbstractLocalData
     in_print_message::Int                                       # in_print_message: inside printMessage() (R2 LB4 b2)
     reload_nesting::Int                                         # reload.nesting: how deeply is reconsult nested
     break_level::Int                                            # break_level: the toplevel's nesting, -1 outside one (R2 TOP1b)
+    tabling::ld_tabling{T}                                      # tabling: the tabling state of this thread (TAB1 TB0)
+    table_flags_compile_threshold::Int                          # table_flags.compile_threshold: flag table_compile_threshold
+    table_flags_drop_intermediate::Int                          # table_flags.drop_intermediate: flag table_drop_intermediate
 end
 function PL_local_data{T}(gd::PL_global_data{T}) where {T}
     ld = _bare_local_data(gd)
@@ -720,10 +793,14 @@ function _bare_local_data(gd::PL_global_data{T}) where {T}
         nothing,                                # autoload.loop: NULL
         0,                                      # in_print_message: not inside printMessage() (pl-pro.c:82)
         0,                                      # reload.nesting (the generation is gd.reload_generation)
-        -1                                      # break_level: no toplevel runs (pl-setup.c:199)
+        -1,                                     # break_level: no toplevel runs (pl-setup.c:199)
+        ld_tabling{T}(),                        # tabling: no component, no pool; the restraints at initTabling's defaults (TAB1 TB0)
+        TABLE_COMPILE_THRESHOLD,                # table_flags.compile_threshold (pl-prologflag.c:2587)
+        0                                       # table_flags.drop_intermediate (pl-prologflag.c:2589)
     )
     allocStacks!(ld)                            # the initial local stack, its spare reserved
     emptyStacks!(ld)
+    initTabling!(ld)                            # the restraints at their defaults (pl-tabling.c initTabling; TAB1 TB0)
     return ld
 end
 

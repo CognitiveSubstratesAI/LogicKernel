@@ -1397,7 +1397,7 @@ function set_flag_value(
         elseif name == "autoload"
             setAutoload(ld, a) || return false
         elseif name == "table_monotonic"
-            _flag_not_ported(k, "setMonotonicMode (tabling)")
+            setMonotonicMode(ld, a) || return false
         elseif name == "theme"
             _flag_not_ported(k, "setTheme (the theme of the messages)")
         end
@@ -1410,11 +1410,28 @@ function set_flag_value(
         if name == "agc_margin"
             _flag_not_ported(k, "GD->atoms.margin (atom garbage collection)")
         elseif name == "table_space"
-            _flag_not_ported(k, "LD->tabling.node_pool (tabling)")
+            # DIVERGES: `i > SIZE_MAX` cannot happen for an `Int64`; `shared_table_space` is TH1's (the kernel has no such flag).
+            if i < 0
+                PL_error(ld, ERR_REPRESENTATION, mk_sym(T, :size_t))
+                return false
+            end
+            if ld.tabling.node_pool === nothing
+                ld.tabling.node_pool = new_alloc_pool("private_table_space", Int(i))
+            else
+                ld.tabling.node_pool.limit = Int(i)
+            end
         elseif name == "table_compile_threshold"
-            _flag_not_ported(k, "LD->table_flags.compile_threshold (tabling)")
+            if i < 0
+                PL_error(ld, ERR_REPRESENTATION, mk_sym(T, :size_t))
+                return false
+            end
+            ld.table_flags_compile_threshold = Int(i)
         elseif name == "table_drop_intermediate"
-            _flag_not_ported(k, "LD->table_flags.drop_intermediate (tabling)")
+            if i < 0
+                PL_error(ld, ERR_REPRESENTATION, mk_sym(T, :size_t))
+                return false
+            end
+            ld.table_flags_drop_intermediate = Int(i)
         elseif name == "stack_limit"
             _flag_not_ported(k, "set_stack_limit")
         elseif name == "string_stack_tripwire"
@@ -1926,9 +1943,9 @@ const PLVERSION = 100120
 "The time the kernel was compiled, laid out as the C compiler's `__DATE__`, `__TIME__` (the flag `compiled_at`)."
 const COMPILED_AT = Libc.strftime("%b %e %Y, %T", time())
 
-# ORIGINAL (design D3, D4): initTabling's flags (src/pl-tabling.c:11346-11352 at the pin, with the two of
-# `initPrologFlags` for the tabling thresholds); pl-tabling.c is not ported, so they are defined here, at
-# their defaults, in upstream's order.
+# ORIGINAL (design D3, D4): initTabling's flags (pl-tabling.c:12696-12706 at the pin, with the two of
+# `initPrologFlags` for the tabling thresholds, pl-prologflag.c:2587-2592); `initTabling!` (src/pl-tabling.jl) is the
+# thread's part of it, so the flags are defined here, at their defaults, in upstream's order.
 "Define the Prolog flags of the tabling restraints (pl-tabling.c `initTabling`)."
 function _init_tabling_flags!(gd::PL_global_data{T})::Nothing where {T}
     setPrologFlag(gd, "max_table_subgoal_size_action", FT_ATOM, "error")
