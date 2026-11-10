@@ -52,6 +52,61 @@ function get_text_status(r::Union{Nothing, PL_chars_t})::Int
     return r.encoding === ENC_UNKNOWN ? GT_ISVAR : GT_TRUE
 end
 
+# ORIGINAL: the `case_write` branch of pl-text.c `PL_get_text` (the `CVT_WRITE`, `CVT_WRITEQ` and
+# `CVT_WRITE_CANONICAL` conversions) as a function of its own, a `try` cannot hold `@goto`'s label.
+# DIVERGES: the stream layer writes UTF-8 only (ENC1 refusals in src/os/pl-stream.jl), so the text is
+# written as UTF-8 and returned as a non-canonical `PL_chars_t` (as an atom's text is), where upstream
+# tries ISO Latin-1 and then `ENC_WCHAR` (`ENC_UTF8` only under `REP_UTF8`): the code points are the
+# same; the numbervars frame is ended on an `NV_ERROR`, where upstream's `goto error` leaves it open.
+"The text the term `l` is written as under `flags`' `CVT_WRITE*` (write, writeq or write_canonical's), or `nothing`."
+function _get_text_write(
+    ld::PL_local_data{T}, l::term_t, flags::UInt32
+)::Union{Nothing, PL_chars_t} where {T}
+    gd = _query_gd(ld)
+    wflags = if (flags & CVT_WRITEQ) != 0
+        PL_WRT_QUOTED | PL_WRT_NUMBERVARS
+    elseif (flags & CVT_WRITE_CANONICAL) != 0
+        PL_WRT_QUOTED | PL_WRT_QUOTE_NON_ASCII | PL_WRT_IGNOREOPS | PL_WRT_VARNAMES |
+        PL_WRT_NODOTINATOM | PL_WRT_BRACETERMS
+    else
+        PL_WRT_NUMBERVARS
+    end
+
+    result = nothing
+    savedf = BEGIN_NUMBERVARS(ld, true)
+    try
+        options = nv_options{T}(
+            mk_sym(T, Symbol("\$VAR")),                 # FUNCTOR_isovar1
+            0, AV_SKIP,
+            is_acyclic_cells(ld, -(l + 1)) ? 1 : 0,      # PL_is_acyclic(l)
+            false
+        )
+        if numberVars(ld, l, options, 0) != NV_ERROR
+            bufp = Ref{Union{Nothing, Vector{UInt8}}}(nothing)
+            size = Ref(0)
+            fd = Sopenmem(bufp, size, "w")
+            fd === nothing && error("PL_get_text: Sopenmem")
+            fd.encoding = ENC_UTF8
+            if PL_write_term(gd, ld, fd, l, 1200, wflags) &&
+                Sputcode(0, fd) >= 0 &&                  # Sputcode(EOS, fd)
+                Sflush(fd) >= 0
+                b = bufp[]
+                bytes = UInt8[]
+                if b !== nothing
+                    n = size[]
+                    n > 0 && b[n] == 0x00 && (n -= 1)    # text->length = size-1
+                    bytes = b[1:n]
+                end
+                result = PL_chars_t(bytes, length(String(copy(bytes))), ENC_UTF8, false)
+            end
+            Sclose(fd)
+        end
+    finally
+        END_NUMBERVARS(ld, true, savedf)
+    end
+    return result
+end
+
 # PORT: pl-text.c PL_get_text
 # DIVERGES: returns the text, or `nothing` where upstream returns false (the error raised under
 # `CVT_EXCEPTION`, as upstream); an atom's or a string's text is its UTF-8 (see `PL_chars_t`); a
@@ -61,9 +116,8 @@ end
 # paths). `get_text_t` is the result's shape (`GT_FALSE`: `nothing`; `GT_TRUE`: the text; `GT_ISVAR`,
 # only under `CVT_VARNOFAIL` (T1): a text still in its `PL_init_text` state, `encoding ===
 # ENC_UNKNOWN`, which is what upstream leaves of `text` — `get_text_status` reads the three apart).
-# NOT PORTED, as no caller passes them yet: `CVT_VARIABLE` (`varName`), the write
-# conversions (`CVT_WRITE`, `CVT_WRITEQ`, `CVT_WRITE_CANONICAL`: the writer, R1e) — refused where
-# reached, the refusal's culprit the atom `write`; no buffer rings (`BUF_*`).
+# NOT PORTED, as no caller passes it yet: `CVT_VARIABLE` (`varName`); no buffer rings (`BUF_*`). The
+# write conversions (`CVT_WRITE`, `CVT_WRITEQ`, `CVT_WRITE_CANONICAL`) are `_get_text_write` (WR2).
 """
 The text term reference `l` holds, as `flags` (`CVT_*`) allow it (pl-text.c): an atom, a string,
 an integer or a rational (`CVT_XINTEGER`: hexadecimal), a code or character list; `nothing` when
@@ -141,13 +195,9 @@ function PL_get_text(
         @goto error
     elseif (flags & (CVT_WRITE | CVT_WRITE_CANONICAL | CVT_WRITEQ)) != 0
         @label case_write
-        throw(
-            NotPortedError{T}(
-                mk_sym(T, :write),
-                "PL_get_text: CVT_WRITE, CVT_WRITEQ, CVT_WRITE_CANONICAL",
-                "R1e (the writer)"
-            )
-        )
+        r = _get_text_write(ld, l, flags)
+        r !== nothing && return r
+        @goto error
     else
         @goto error
     end

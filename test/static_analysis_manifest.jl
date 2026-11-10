@@ -1079,6 +1079,7 @@ function _manifest_index(T)
         (LK.pl_term_string2_va, Tuple{LD, Int64, Int64, LK.foreign_context{T}}, false),
         (LK.unquoted_atom, Tuple{T}, false),
         (LK.PL_get_text, Tuple{LD, Int64, UInt32}, false),
+        (LK._get_text_write, Tuple{LD, Int64, UInt32}, false),   # WR2: CVT_WRITE*
         (LK.codes_or_chars_to_buffer, Tuple{LD, Int64, Bool}, false),
         (LK._cvt_arg, Tuple{LD, UInt8, LK.word, Int, Bool}, false),             # f3b-5a
         # R1e — the writer's core (src/pl-write.jl): quoting, the token layer, atoms, strings,
@@ -1107,6 +1108,7 @@ function _manifest_index(T)
         (LK.writeString, Tuple{Int64, LK.write_options{T}}, false),
         (LK.writeMPZ, Tuple{BigInt, LK.write_options{T}}, false),
         (LK.writeNumber, Tuple{Int64, LK.write_options{T}}, false),
+        (LK._write_number_format, Tuple{Int64, T, String, LK.write_options{T}}, false),   # WR2
         (LK.varName, Tuple{LD, Int64}, false),
         (LK.writePrimitive, Tuple{Int64, LK.write_options{T}}, false),
         (LK.writeNumberVar, Tuple{Int64, LK.write_options{T}}, false),

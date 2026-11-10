@@ -22,7 +22,8 @@
 # Since R1e's floats, `format_float` (`~h`). Since R1e's write/1 family (the end of this file):
 # write/1,2, writeq/1,2, writeln/1,2, print/1,2, write_term/2,3 and their options, nl/0,1, over
 # the standard streams (src/os/pl-file.jl); since R1e's canonical write_canonical/1,2
-# (`numberVars`). Never: attributed variables, dicts, blobs other than the reserved symbols.
+# (`numberVars`). Since WR2: write_term/2,3's `integer_format`/`float_format` (through `do_format`) and
+# `blobs(portray)` (`writeAtom`). Never: attributed variables, dicts, blobs other than the reserved symbols.
 
 # PORT: pl-write.c NaN_value
 # DIVERGES: the exponent field is replaced on the bits (`reinterpret`), where upstream writes it
@@ -859,17 +860,21 @@ end
 # DIVERGES: an atom is a symbol: a reserved symbol is written by its blob type's `write`
 # (`writeReservedSymbol`), a wide text atom by its `write_ex` (`writeUCSAtom`), a single-byte one
 # here — so, as upstream, only the last can return `TRUE_WITH_SPACE`. No released blobs, no other
-# blob types. NOT PORTED: `PL_WRT_BLOB_PORTRAY` (write_term/2,3's `blobs(portray)`, R1e): refused
-# (`NotPortedError`) where it would call portray/1.
+# blob types. `PL_WRT_BLOB_PORTRAY` (write_term/2,3's `blobs(portray)`): a symbol that is no text
+# atom (`is_reserved_symbol` or `is_blob`, where upstream tests `PL_BLOB_TEXT`) is offered to
+# portray/1 (WR2).
 "Write the atom `a`: 0, 1, or `TRUE_WITH_SPACE` (pl-write.c)."
 function writeAtom(a::T, options::write_options{T})::Int where {T}
     if _ison(options, PL_WRT_BLOB_PORTRAY) && (is_reserved_symbol(a) || is_blob(a)) &&
-        !is_nil(a)
-        throw(
-            NotPortedError{T}(
-                a, "writing a blob with portray/1 (blobs(portray))", "R1e (write_term/2,3)"
-            )
-        )
+        options.gd.halt_cleaning <= CLN_PROLOG && !is_nil(a)
+        ld = options.ld
+        fid = PL_open_foreign_frame(ld)
+        av = PL_new_term_ref(ld)
+        PL_put_atom(ld, av, a)
+        rc = callPortray(av, 1200, options)
+        PL_close_foreign_frame(ld, fid)
+        rc == 1 && return 1
+        rc == 0 || return 0                         # error
     end
 
     if is_blob(a)                                   # atom->type->write (a blob type's)
@@ -988,19 +993,20 @@ function separate_number(s::IOSTREAM, negative::Bool, fmt::String)::Bool
 end
 
 # PORT: pl-write.c writeNumber
-# DIVERGES: a number is written as `do_format` writes it with the default formats: an integer's
-# decimal digits (`~d`), a float's `format_float(f, 3, 'e')` (`~h`, since R1e's floats); another
-# format — write_term/2,3's `integer_format` and `float_format` options, since R1e's write/1
-# family — is refused (`NotPortedError`: `do_format`, format/2's, is not ported). The number is
-# its value read on the word (`_wr_value`), where upstream asks `PL_get_number`.
+# DIVERGES: with the default formats a number is written as `do_format` writes it, directly: an
+# integer's decimal digits (`~d`), a float's `format_float(f, 3, 'e')` (`~h`, since R1e's floats) —
+# the hot path, where upstream always calls `do_format`; another format (write_term/2,3's
+# `integer_format` and `float_format` options) goes to `do_format` as upstream's does (WR2), its
+# text built as `PL_get_text` builds one. The number is its value read on the word (`_wr_value`),
+# where upstream asks `PL_get_number`; the module is its index (`options.m.index`).
 "Write the number term reference `t0` holds (pl-write.c): an integer, or a rational as `NrD` (`N/D` for `RAT_NATURAL`)."
 function writeNumber(t0::term_t, options::write_options{T})::Bool where {T}
     t = _wr_value(options.ld, t0)                   # PL_get_number(t, &n)
     k = number_kind(t)
     if k === NUM_INTEGER
-        options.integer_format == "~d" || throw(
-            NotPortedError{T}(t, "integer_format other than ~d", "R1e (write_term/2,3)")
-        )
+        if options.integer_format != "~d"           # get_atom_text(integer_format, &fmt)
+            return _write_number_format(t0, t, options.integer_format, options)
+        end
         if integer_is_int64(t)
             v = int64_value(t)
             separate_number(options.out, v < 0, options.integer_format) || return false
@@ -1021,12 +1027,27 @@ function writeNumber(t0::term_t, options::write_options{T})::Bool where {T}
         return writeMPZ(denominator(q), options)
     end
     # V_FLOAT: do_format(out, "~h", 1, t, module) — format_float(f, 3, 'e'), its default `~h`
-    options.float_format == "~h" || throw(
-        NotPortedError{T}(t, "float_format other than ~h", "R1e (write_term/2,3)")
-    )
+    if options.float_format != "~h"                 # get_atom_text(float_format, &fmt)
+        return _write_number_format(t0, t, options.float_format, options)
+    end
     f = float_value(t)
     separate_number(options.out, signbit(f), options.float_format) || return false
     return PutString(format_float(f, 3, 'e'), options.out)
+end
+
+# ORIGINAL: the non-default-format arm of pl-write.c `writeNumber` (V_INTEGER, V_MPZ, V_FLOAT) as a function of its own.
+"Write the number `t` (term reference `t0`) through the format text `fmt` (`separate_number`, then `do_format` with the one argument; pl-write.c `writeNumber`)."
+function _write_number_format(
+    t0::term_t, t::T, fmt::String, options::write_options{T}
+)::Bool where {T}
+    negative = if number_kind(t) === NUM_INTEGER
+        (integer_is_int64(t) ? int64_value(t) < 0 : bigint_value(t) < 0)
+    else
+        signbit(float_value(t))
+    end
+    separate_number(options.out, negative, fmt) || return false
+    txt = PL_chars_t(Vector{UInt8}(codeunits(fmt)), length(fmt), ENC_UTF8, false)
+    return do_format(options.ld, options.out, txt, 1, t0, options.m.index)
 end
 
 # PORT: pl-write.c varName
@@ -1288,13 +1309,13 @@ function leavePortray(ld::PL_local_data{T})::Nothing where {T}
 end
 
 # PORT: pl-write.c callPortray
-# DIVERGES: no halt state (`GD->halt.cleaning`: the kernel has no halt, so no callback is ever
-# refused for it); the procedures are looked up in `user` at each call — `lookupProcedure`, as
+# DIVERGES: the procedures are looked up in `user` at each call — `lookupProcedure`, as
 # `_PL_predicate` does the first time — where upstream caches them in `GD->procedures`. `Scurout`
 # is the current-output slot of the standard streams (src/os/pl-file.jl).
 "Call `user:portray/1`, or the `portray_goal` through `call/3`, on term reference `arg`: 1 (it wrote it), 0 (not defined, or it failed), -1 (error) (pl-write.c)."
 function callPortray(arg::term_t, prec::Int, options::write_options{T})::Int where {T}
     gd = options.gd
+    gd.halt_cleaning > CLN_PROLOG && return 0        # avoid dangerous callbacks
     if options.portray_goal != 0
         pred = lookupProcedure(mk_sym(T, :call), 3, MODULE_user(gd))   # _PL_predicate("call", 3, "user", …)
     else

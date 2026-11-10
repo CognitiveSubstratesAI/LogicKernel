@@ -267,7 +267,7 @@ const _WF_GOALS = [
     # upstream's tests/core_text/test_write.pl `variable_names` units of c1d618a1 (a variable name
     # with a code point above 0xffff — a surrogate pair where wchar_t is 16 bits; the kernel walks
     # code points). Its third unit, `float_format('\\U0001D431~w')`, needs a float_format other
-    # than `~h`: not ported (R1e).
+    # than `~h`: ported since WR2, its row is t63 of test_wr2_swipl.pl.
     "write_term(a(A), [variable_names(['X\\x1D431\\'=A]), quoted(true)])",
     "print('\$VAR'('X\\x1D431\\'))",
     "write_term([1,2,3,4,5,6,7,8,9,10,11,12], [max_depth(3)])",

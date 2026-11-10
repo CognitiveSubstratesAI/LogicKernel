@@ -249,7 +249,6 @@ refusal:src/os/pl-os.jl::expandVars::expandVars: ~user (getpwnam)	LB5-LB7	~user 
 refusal:src/os/pl-stream.jl::put_code::put_code: encoding $enc	ENC1	put_code in an encoding other than UTF-8 (pl-stream.c Sputcode); R1 decision
 refusal:src/os/pl-stream.jl::Scanrepresent::Scanrepresent: encoding $enc	ENC1	Scanrepresent in an encoding other than UTF-8 (pl-stream.c); R1 decision
 refusal:src/os/pl-stream.jl::Sgetcode::Sgetcode: encoding $enc	ENC1	Sgetcode in an encoding other than UTF-8 (pl-stream.c); R1 decision
-refusal:src/os/pl-text.jl::PL_get_text::PL_get_text: CVT_WRITE, CVT_WRITEQ, CVT_WRITE_CANONICAL	WR2	PL_get_text with CVT_WRITE/CVT_WRITEQ/CVT_WRITE_CANONICAL (pl-text.c); the writer exists now, no kernel caller passes the flags
 refusal:src/os/pl-text.jl::PL_canonicalise_text::PL_canonicalise_text of $enc	ENC1	PL_canonicalise_text of a text in another encoding (pl-text.c); branch without a kernel caller
 refusal:src/os/pl-text.jl::text_error::text_error of $rc	ENC1	text_error of a code other than the code-point error (pl-text.c); branch without a kernel caller
 refusal:src/os/pl-text.jl::PL_mb_text::PL_mb_text to a target other than REP_UTF8	ENC1	PL_mb_text to a target other than REP_UTF8 (pl-text.c wctobuffer, PL_demote_text); no kernel caller
@@ -274,7 +273,4 @@ refusal:src/pl-string.jl::PL_text_recode::PL_text_recode to $encoding	ENC1	PL_te
 refusal:src/pl-string.jl::pl_string_bytes3_va::string_bytes/3 with the encoding text	ENC1	string_bytes/3 with the text (ENC_ANSI) encoding (pl-string.c); with CT1's locale
 refusal:src/pl-supervisor.jl::freeCodesDefinition!::freeCodesDefinition! of a wrapped predicate needs the databa	WRAP1	freeCodesDefinition of a wrapped predicate (pl-supervisor.c), needs the database; wrap closures are WRAP1
 refusal:src/pl-wam.jl::PL_next_solution_guarded::the VM instruction $(codeTable(thiscode).name)	TAB1	dispatch fallthrough for a VM instruction without a body (pl-vmi.c); each missing instruction has its own vmi: row, the last family (T_*, S_TABLED) removes this site
-refusal:src/pl-write.jl::writeAtom::writing a blob with portray/1 (blobs(portray))	WR2	writeAtom blobs(portray) (pl-write.c writeBlob/portray); R1e residual
-refusal:src/pl-write.jl::writeNumber::integer_format other than ~d	WR2	integer_format other than ~d (pl-write.c writeNumber); R1e residual
-refusal:src/pl-write.jl::writeNumber::float_format other than ~h	WR2	float_format other than ~h (pl-write.c format_float); R1e residual
 refusal:src/pl-write.jl::writePrimitive::writing a grounded value SWI has no type for	WR2	writePrimitive of a grounded value SWI has no type for; a representation guard of the kernel, permanent until the blob writer takes it

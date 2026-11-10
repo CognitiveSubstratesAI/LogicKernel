@@ -571,7 +571,7 @@ ported files' headers to either.
     (the constant on the left, two variables both met first) and one case per clause-entry
     point, under default flags AND `optimise`; tests/core_text/test_write.pl's two
     `variable_names` units (a name with a code point above 0xffff) in the write differential;
-    its `float_format_non_bmp` unit needs a `float_format` other than `~h` (not ported).
+    its `float_format_non_bmp` unit needs a `float_format` other than `~h` (ported since WR2).
   * **Mutation-proved, the fix lines:** 8 of 8 caught by test_firstvar_swipl.jl — `alwaysFirstVar`
     without the mark, without `C_VAR`, and each of the six guards of `compileBodyEQ`/`NEQ`. The
     first run caught 4: the `const == Var` and `Var1 == Var2` guards had no case of their shape,
@@ -1839,6 +1839,7 @@ graph LR
     pl_write --> pl_proc
     pl_write --> pl_op
     pl_write --> pl_read
+    pl_write --> os_pl_fmt
     pl_sys --> term_interface
     pl_sys --> default_term
     pl_sys --> os_pl_ctype
@@ -2046,10 +2047,10 @@ or **platform** (a Windows or macOS definition: out of the count). **NO OWNER** 
 | category | done | refused | missing | platform | NO OWNER |
 |---|---:|---:|---:|---:|---:|
 | predicates (C-defined, reached by the boot) | 277 | 0 | 145 | 3 | 1 |
-| refusal sites | 0 | 77 | 0 | 0 | 3 |
+| refusal sites | 0 | 73 | 0 | 0 | 3 |
 | Prolog flags | 65 | 15 | 20 | 0 | 35 |
 | VM instructions | 169 | 0 | 64 | 0 | 0 |
-| **total** | 511 | 92 | 229 | 3 | 39 |
+| **total** | 511 | 88 | 229 | 3 | 39 |
 
 #### The boot and library files
 
@@ -2104,7 +2105,6 @@ Predicate rows each file's calls reach (a predicate several files call counts in
 | TRIE1 | 7 | 7 | 0 | `$trie_gen_node/3`, `$trie_property/2`, `is_trie/1`, `trie_gen/2`, `trie_gen/3`, `trie_lookup/3`, `trie_term/2` |
 | LB5-LB7 | 6 | 2 | 4 | `$activate_static_extension/1`, `$clause_term_position/3`, `refusal iri_hook $what ('\$iri':iri_hook/4 of in…`, `refusal what`, `refusal format_predicate/2 (GD->format.predicate…`, `refusal expandVars: ~user (getpwnam)` |
 | ZIP1 | 6 | 6 | 0 | `$rc_handle/1`, `zip_clone/2`, `zip_close_/2`, `zip_file_info_/3`, `zipper_goto/2`, `zipper_open_current/3` |
-| WR2 | 5 | 0 | 5 | `refusal PL_get_text: CVT_WRITE, CVT_WRITEQ, CVT_…`, `refusal writing a blob with portray/1 (blobs(por…`, `refusal float_format other than ~h`, `refusal integer_format other than ~d`, `refusal writing a grounded value SWI has no type…` |
 | WRAP1 | 5 | 2 | 3 | `$wrapped_implementation/3`, `unwrap_predicate/2`, `refusal freeCodesDefinition! of a wrapped predic…`, `refusal the VM instruction S_CALLWRAPPER (callin…`, `refusal the VM instruction S_WRAP (calling a wra…` |
 | CT1 | 4 | 2 | 2 | `char_type/2`, `code_type/2`, `refusal open/4's locale(Locale) option`, `refusal set_stream/2's locale(Locale)` |
 | REFUSED | 4 | 4 | 0 | `B_SMALLINTW`, `B_THROW`, `H_SMALLINTW`, `L_SMALLINTW` |
@@ -2124,6 +2124,7 @@ Predicate rows each file's calls reach (a predicate several files call counts in
 | SRC2 | 1 | 1 | 0 | `$unload_file/1` |
 | TAI1 | 1 | 1 | 0 | `format_time/3` |
 | TB6 | 1 | 1 | 0 | `S_INCR_DYNAMIC` |
+| WR2 | 1 | 0 | 1 | `refusal writing a grounded value SWI has no type…` |
 | NO OWNER | 39 | 21 | 18 | `apple_current_locale_identifier/1`, `flag ci_set_flag (pl-index.c)`, `flag set_arith_flag (pl-arith.c)`, `flag tbl_set_restraint_flag (tabling restraints)`, `flag agc_margin`, `flag app_name`, `flag apple`, `flag apple_universal_binary`, … +31 |
 
 #### Missing and refused per category
@@ -2134,7 +2135,7 @@ xychart-beta
     x-axis ["predicates", "refusal sites", "flags", "VM instructions"]
     y-axis "rows" 0 --> 150
     bar [145, 0, 20, 64]
-    line [0, 77, 15, 0]
+    line [0, 73, 15, 0]
 ```
 
 <!-- END GENERATED R2 status -->
@@ -3060,8 +3061,8 @@ src/os/pl-text.jl, src/pl-prims.jl). Decided by the user (2026-10-07: "floats Ry
   kernel's `put_number` since R1c): a payload in a NaN's text does not survive a read, in either
   system. `writeNaN`'s payload text is reached only from a host value and is checked at the function
   (`1.5000000000000002NaN`, `1.75NaN`, `1.571111111111111NaN`).
-* **Refused, explicitly (`NotPortedError`):** a `float_format` other than `~h` (write_term/2,3's
-  option, with the rest of R1e).
+* **`float_format` other than `~h`** (write_term/2,3's option) is written since WR2: `writeNumber`
+  routes it to `do_format` as upstream does (the default `~h` stays the direct `format_float` call).
 * **Gates:** test/core_text/test_float_write_swipl.jl (new) — THE FLOAT DIFFERENTIAL: `format_float`
   against swipl 10.1.16's write/1 on **500,943 floats, 0 diverging**: 400,000 random bit patterns
   (every finite float equally likely by its bits — subnormals, both exponent extremes), 100,000
@@ -3210,8 +3211,8 @@ IO (with the rest of R1e); 3a — print/1 as swipl's with portray/1 undefined, p
   a frame pool in the options, reused; the token layer takes the stream and the flags where
   upstream takes the options; a variable is written `_<key>` (upstream: `_<stack offset>`; no test
   compares the number — the differential renames both sides' variables by first occurrence); an
-  integer is written by `~d`'s rule directly (`do_format` is not ported; `integer_format` is
-  write_term's option); a compound whose head is no symbol (the kernel's `$expr/n`) is written
+  integer is written by `~d`'s rule directly (the hot path: DIVERGES, pl-write.jl `writeNumber`;
+  another `integer_format` goes to `do_format`, WR2); a compound whose head is no symbol (the kernel's `$expr/n`) is written
   `'$expr'(Child, …)`; no `var_prefix` (always off); no stream lock or acquire/release.
 * **Refused, explicitly (`NotPortedError`):** a float (`format_float`, R1e's floats — the rest of
   R1e; written since R1e (floats)); a CYCLIC term (decision 4a: `PL_factorize_term`'s `@(Template, Substitutions)`;
@@ -3219,9 +3220,28 @@ IO (with the rest of R1e); 3a — print/1 as swipl's with portray/1 undefined, p
   pl-wam.c's `TrailAssignment`, `restore_shared_functors`, `reunify_acyclic_substitutions`), tested
   first, so no write walks a cycle — `X = f(X)`, a cycle through two lists, a cyclic exception
   ball (V5d); with `cycles(false)` the domain error, as upstream; user:portray/1 defined (above;
-  called since group F, D-0123);
-  `blobs(portray)`; an atom holding the character 0 (term_to_atom/2 of a string with one: the
+  called since group F, D-0123); an atom holding the character 0 (term_to_atom/2 of a string with one: the
   term interface's atoms cannot hold it; term_string/2 can); a grounded value SWI has no type for.
+* **DIVERGES (WR2, src/os/pl-text.jl:62 `_get_text_write`, PL_get_text's `case_write`):** the stream layer
+  writes UTF-8 only (ENC1 refusals in src/os/pl-stream.jl), so the `CVT_WRITE*` text is written as UTF-8
+  and returned as a non-canonical `PL_chars_t` (as an atom's text is); upstream tries ISO Latin-1, then
+  `ENC_WCHAR` (`ENC_UTF8` only under `REP_UTF8`): the code points are the same, a representation-only
+  difference. The numbervars frame is also ended on an `NV_ERROR`, where upstream's `goto error` skips it.
+  No src/ caller passes `CVT_WRITE*` at the pin and swipl cannot answer `PL_get_text`: the rows of
+  test/core_text/test_wr2_swipl.jl compare it with the Prolog equivalents swipl computes (equivalent-based
+  rows, each kind's evaluated goal named in the test header). The flag-to-option mapping, at the pin
+  (swipl-devel 18168e629eab): src/os/pl-text.c:372-373 `CVT_WRITEQ` -> `PL_WRT_QUOTED|PL_WRT_NUMBERVARS`;
+  :374-377 `CVT_WRITE_CANONICAL` -> `PL_WRT_QUOTED|PL_WRT_QUOTE_NON_ASCII|PL_WRT_IGNOREOPS|PL_WRT_VARNAMES|
+  PL_WRT_NODOTINATOM|PL_WRT_BRACETERMS`; :378-379 `CVT_WRITE` -> `PL_WRT_NUMBERVARS`; :382-389
+  `BEGIN_NUMBERVARS(true)` and `numberVars` with `'$VAR'/1`, `AV_SKIP`, `singletons = PL_is_acyclic(l)`,
+  `numbered_check = false`. The equivalents are `write/1` (src/pl-write.c:3145), `writeq/1` (:3155) and
+  `write_canonical/1` (:3177-3194: the same numbering, the same flags plus `PL_WRT_PATTERN_SYNTAX_SOLO`).
+* **DIVERGES (WR2, owner ENC1): no non-ASCII `CVT_WRITE_CANONICAL` row.** The only oracle for the flag is
+  `write_canonical/1`, which differs from the C flags by `PL_WRT_PATTERN_SYNTAX_SOLO` (src/pl-write.c:3192)
+  and writes over the stream's own encoding, while `case_write` negotiates ISO Latin-1 then `ENC_WCHAR`
+  (src/os/pl-text.c:363-370); the kernel's stream layer is UTF-8 only until ENC1, so test_wr2_swipl.jl
+  holds ASCII canonical rows only (non-ASCII text is covered for `CVT_WRITE`/`CVT_WRITEQ`). ENC1 owns the
+  row when the stream layer takes encodings.
 * **NOT PORTED (the rest of R1e):** `format_float` and the float differential (since R1e (floats):
   ported); write/1,
   writeq/1, print/1, write_canonical/1, writeln/1, write_term/2,3 with `PL_scan_options` and their
@@ -3331,7 +3351,7 @@ explicit error, term positions refused until needed.
   so `bind_variables`, `check_singletons`, `instantiate_template` (their options) and
   `parse_quasi_quotations` (none is ever collected); term positions; atom locks (`Unlock`,
   `rd->locked`: no atom GC); `$code_class/2`, `$is_named_var/1`, `$qq_open/2`; `PL_get_text`'s
-  `CVT_VARIABLE`, `CVT_WRITE*`, `CVT_VARNOFAIL`. `$` is no operator: swipl's `op(1, fx, $)` comes
+  `CVT_VARIABLE`, `CVT_VARNOFAIL` (`CVT_WRITE*`: ported since WR2). `$` is no operator: swipl's `op(1, fx, $)` comes
   from boot/topvars.pl (R1b noted it, as boot/init.pl's), which the kernel does not load until R2
   — never a misread: without it a `$` that takes an operand is two operands in a row (pinned).
 * **Gates:** test/core_text/test_read_term_swipl.jl (new): `term_to_atom/2` against swipl on a
