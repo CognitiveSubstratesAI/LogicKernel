@@ -1201,6 +1201,85 @@ const ClauseIndex{T} = clause_index{ClauseRef{T}}
 "A predicate of terms `T` (pl-incl.h `Definition`)."
 const Definition{T} = definition{T}
 
+# ── transactions: the data (TX1a; the code is src/pl-transaction.jl) ────────────────────────────
+# PORT: pl-transaction.h TR_TRANSACTION
+"The `flags` of a transaction: a transaction (commits when its goal succeeds; pl-transaction.h)."
+const TR_TRANSACTION = UInt32(0x0001)
+# PORT: pl-transaction.h TR_SNAPSHOT
+"The `flags` of a transaction: a snapshot (always discarded; pl-transaction.h)."
+const TR_SNAPSHOT = UInt32(0x0002)
+# PORT: pl-transaction.h TR_BULK
+"The `flags` of a transaction: the update events are raised at commit, in generation order (pl-transaction.h)."
+const TR_BULK = UInt32(0x0004)
+# PORT: pl-transaction.h GEN_TR_ASSERT_ERASE
+"The generation of a clause asserted and erased in a transaction that commits (pl-transaction.h)."
+const GEN_TR_ASSERT_ERASE = gen_t(2)
+# PORT: pl-transaction.h GEN_TR_DISCARD_ASSERT
+"The generation of a clause asserted in a transaction that is discarded (pl-transaction.h)."
+const GEN_TR_DISCARD_ASSERT = gen_t(3)
+# PORT: pl-transaction.h GEN_TR_DISCARD_ASSERT_ERASE
+"The generation of a clause asserted and erased in a transaction that is discarded (pl-transaction.h)."
+const GEN_TR_DISCARD_ASSERT_ERASE = gen_t(4)
+# PORT: pl-incl.h GEN_TRANSACTION_SIZE
+"The size of the generation range one transaction reserves, 2^32 (pl-incl.h)."
+const GEN_TRANSACTION_SIZE = gen_t(0x0000000100000000)
+# PORT: pl-thread.h TWF_ASSERT
+"`setLastModifiedPredicate`'s flag: a clause was added (pl-thread.h)."
+const TWF_ASSERT = UInt32(0x0001)
+# PORT: pl-thread.h TWF_RETRACT
+"`setLastModifiedPredicate`'s flag: a clause was retracted (pl-thread.h)."
+const TWF_RETRACT = UInt32(0x0002)
+
+# PORT: pl-transaction.c tr_gen_t
+# DIVERGES: `UInt64`, upstream's `uintptr_t`: the value of an entry of the changed-clauses table (`GEN_ASSERTA`, `GEN_ASSERTZ`,
+# `GEN_NESTED_RETRACT`, or the local offset of the erased generation) and of the changed-predicates table (the local offset of
+# the last modification, shifted left by two, with the `TWF_*` flags in the low bits).
+"The value of an entry of a transaction's tables (pl-transaction.c `tr_gen_t`)."
+const tr_gen_t = UInt64
+# PORT: pl-transaction.c GEN_ASSERTA
+"The table value of a clause asserted at the start of its predicate in this transaction (pl-transaction.c)."
+const GEN_ASSERTA = typemax(tr_gen_t) - tr_gen_t(2)
+# PORT: pl-transaction.c GEN_ASSERTZ
+"The table value of a clause asserted at the end of its predicate in this transaction (pl-transaction.c)."
+const GEN_ASSERTZ = typemax(tr_gen_t) - tr_gen_t(3)
+# PORT: pl-transaction.c GEN_NESTED_RETRACT
+"The table value of a clause an enclosing transaction asserted and this one retracted (pl-transaction.c)."
+const GEN_NESTED_RETRACT = typemax(tr_gen_t) - tr_gen_t(4)
+
+# PORT: pl-transaction.c tr_stack
+# DIVERGES: NOT PORTED, owner TAB1 TB9: `table_trail` (the parent's changes to tables). `clauses` and `predicates` are `Dict`s,
+# upstream's `TablePW` (a pointer-to-word hash table: `Dict` keeps the insertion order where upstream's order is the
+# pointer hash's, which no result depends on: the one that does, `transaction_updates`, sorts by generation).
+"One level of the transaction stack: what the enclosing transaction had when a nested one started (pl-transaction.c)."
+mutable struct tr_stack{T}
+    parent::Union{Nothing, tr_stack{T}}                     # parent transaction
+    gen_nest::gen_t                                         # Saved nesting generation
+    generation::gen_t                                       # Parent generation
+    clauses::Union{Nothing, Dict{Clause{T}, tr_gen_t}}      # Parent changed clauses
+    predicates::Union{Nothing, Dict{Definition{T}, tr_gen_t}}   # Parent changed predicates
+    id::Int                                                 # Parent goal (a term_t; 0: none)
+    flags::UInt32                                           # TR_* flags
+end
+
+# PORT: pl-global.h transaction as ld_transaction
+# DIVERGES: NOT PORTED, owner TAB1 TB9: `table_trail`. `id` is a `term_t` (0: none). `gen_base` is `GEN_INFINITE` outside a
+# transaction (`initPrologLocalData`: pl-setup.c:204).
+"The transaction state of one thread (pl-global.h `LD->transaction`)."
+mutable struct ld_transaction{T}
+    generation::gen_t                                       # Current generation (0: no transaction)
+    gen_start::gen_t                                        # Start generation
+    gen_base::gen_t                                         # Start of my generation space
+    gen_max::gen_t                                          # Highest generation (the end of my space)
+    gen_nest::gen_t                                         # Nesting generation
+    flags::UInt32                                           # TR_* flags
+    id::Int                                                 # Identifier of the transaction goal (a term_t; 0: none)
+    clauses::Union{Nothing, Dict{Clause{T}, tr_gen_t}}      # Clauses that were changed
+    predicates::Union{Nothing, Dict{Definition{T}, tr_gen_t}}   # Predicates that were changed
+    stack::Union{Nothing, tr_stack{T}}                      # Stack of nested transactions
+end
+ld_transaction{T}() where {T} =
+    ld_transaction{T}(gen_t(0), gen_t(0), GEN_INFINITE, gen_t(0), gen_t(0), UInt32(0), 0, nothing, nothing, nothing)
+
 # PORT: pl-wrap.h closure
 # DIVERGES (since TAB1-min; audit D-0388 item 5, Q1 (a), owner WRAP1): upstream's `struct closure` holds a COPY of the
 # whole `struct definition` in a blob, with the `impl` union's `wrapped` member (`predicate`, `supervisor`) overlaying the

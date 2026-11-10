@@ -1,0 +1,345 @@
+# UPSTREAM: swipl-devel src/pl-transaction.c @ 18168e629eab
+# CLASS: code
+# COPYRIGHT: Copyright (c)  2020-2024, University of Amsterdam
+# COPYRIGHT: VU University Amsterdam
+# COPYRIGHT: CWI, Amsterdam
+# COPYRIGHT: SWI-Prolog Solutions b.v.
+#
+# PORTED FROM pl-transaction.c (TX1): the transaction state's operations (TX1a: retract and assert inside a transaction,
+# visibility, the last-modified table, commit, discard, the merge of a nested transaction's tables, the list of updates)
+# and the Prolog connection (TX1b: `$transaction/2,3`, `$snapshot/1`, `transaction_updates/1`). The data structures
+# (`tr_stack`, `ld_transaction`, the `TR_*` flags and the `GEN_*` marks) are in src/pl-incl.jl, where `index_context` can
+# name them. The generation space: 1..GEN_TRANSACTION_BASE is globally visible; a thread starting a transaction takes
+# the 2^32 generations from GEN_TRANSACTION_BASE+TID*GEN_TRANSACTION_SIZE (pl-transaction.c:68-100).
+#
+# NOT PORTED, each to its owner (docs/architecture.md TX1):
+#   * `table_trail`, `transaction_commit_tables`, `transaction_rollback_tables`, `merge_tabling_trail` — the tables' share of
+#     a transaction: TAB1 TB9.
+#   * `acquire_clause`/`release_clause`/`tr_erased_no` — no reference counts: a clause the tables hold stays alive in the
+#     tables; `transaction_visible_clause` always looks the clause up in the tables where upstream skips that when
+#     `tr_erased_no` is 0, the same answer.
+#   * the mutex argument of `$transaction/3` — no mutex table (the kernel has one thread, pl-mutex.jl).
+#   * `current_transaction/1` and the debug predicate `pred_generations/1` — open items of TX1 (see the handoff).
+
+# allow-new-artifact: a port of src/pl-transaction.c, read with git show at the pin 18168e629eab (the reference corpus is the pin)
+
+# PORT: pl-transaction.c IS_ASSERT_GEN
+"True for the table values of a clause asserted in the transaction (pl-transaction.c)."
+IS_ASSERT_GEN(g::tr_gen_t)::Bool = g == GEN_ASSERTA || g == GEN_ASSERTZ
+
+# PORT: pl-transaction.c tr_clause_table
+# DIVERGES: the table of `tr` is made on demand as upstream's, without `free_symbol` (`release_clause`: no reference counts).
+"The changed-clauses table of the transaction `tr`, made when it has none (pl-transaction.c)."
+function tr_clause_table(tr::ld_transaction{T})::Dict{Clause{T}, tr_gen_t} where {T}
+    t = tr.clauses
+    if t === nothing
+        t = Dict{Clause{T}, tr_gen_t}()
+        tr.clauses = t
+    end
+    return t
+end
+
+# PORT: pl-transaction.c transaction_retract_clause
+# DIVERGES: `rc` is 1 (true), 0 (false) or -1 (an error: upstream's `PL_representation_error` is raised in `ld`); no
+# `acquire_clause` or `ATOMIC_INC(&clause->tr_erased_no)`; `next_generation(clause->predicate)` is `next_generation!`'s
+# transaction branch: the generation after the transaction's own, or 0 when its space is used up.
+"""
+    transaction_retract_clause(gd, ld, clause) -> Int
+
+Record in the transaction that `clause` is retracted (pl-transaction.c): 1 when the transaction keeps the record and the
+caller is done; 0 when the clause was asserted by this very transaction and the caller retracts it as any clause; -1
+when the generation space of the transaction is used up (the error is raised).
+"""
+function transaction_retract_clause(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, clause::Clause{T}
+)::Int where {T}
+    tr = ld.transaction
+    if clause.generation_created < tr.gen_base
+        lgen = next_generation!(gd, ld, clause.predicate) - tr.gen_base
+        tr_clause_table(tr)[clause] = lgen                  # addHTablePW(tr_clause_table(), clause, lgen)
+        return 1
+    elseif clause.generation_created <= tr.gen_nest
+        egen = next_generation!(gd, ld, clause.predicate)
+        if egen == 0
+            PL_error(ld, ERR_REPRESENTATION, mk_sym(T, :transaction_generations))   # PL_representation_error("transaction_generations")
+            return -1
+        end
+        clause.generation_erased = egen
+        tr_clause_table(tr)[clause] = GEN_NESTED_RETRACT
+        return 1
+    end
+    return 0
+end
+
+# PORT: pl-transaction.c transaction_assert_clause
+"Record in the transaction that `clause` was asserted at `where_` (pl-transaction.c)."
+function transaction_assert_clause(
+    ld::PL_local_data{T}, clause::Clause{T}, where_::Union{Int, ClauseRef{T}}
+)::Bool where {T}
+    lgen = where_ === CL_START ? GEN_ASSERTA : GEN_ASSERTZ
+    tr_clause_table(ld.transaction)[clause] = lgen
+    return true
+end
+
+# PORT: pl-transaction.c transaction_visible_clause
+# DIVERGES: takes the transaction state, not the thread's: `index_context` holds it for the searches (src/pl-index.jl); no
+# `tr_erased_no` test (see the header). The table value `lgen+gen_base` wraps in 64 bits as upstream's `GEN_NESTED_RETRACT`
+# does (`Base.:+` on `UInt64` wraps).
+"True when `cl` is visible to generation `gen` of the transaction `tr` (pl-transaction.c)."
+function transaction_visible_clause(
+    tr::ld_transaction{T}, cl::Clause{T}, gen::gen_t
+)::Bool where {T}
+    if cl.generation_created <= tr.gen_start && cl.generation_erased > tr.gen_start
+        tbl = tr.clauses
+        stack = tr.stack
+        while true
+            if tbl !== nothing
+                lgen = get(tbl, cl, tr_gen_t(0))
+                if lgen != 0 && !IS_ASSERT_GEN(lgen)
+                    if lgen + tr.gen_base <= gen
+                        return false
+                    end
+                end
+            end
+            stack === nothing && break
+            tbl = stack.clauses
+            stack = stack.parent
+        end
+        return true
+    end
+    return false
+end
+
+# PORT: pl-transaction.c LGEN
+"A global generation as an offset from the transaction's base (pl-transaction.c `LGEN`)."
+LGEN(tr::ld_transaction, gen::gen_t)::tr_gen_t = gen - tr.gen_base
+# PORT: pl-transaction.c LGEN_FLAGS_VAL
+"The value of a changed-predicates entry: the local generation, shifted left by two, with the flags (pl-transaction.c)."
+LGEN_FLAGS_VAL(tr::ld_transaction, gen::gen_t, flags::UInt32)::tr_gen_t =
+    (LGEN(tr, gen) << 2) | tr_gen_t(flags)
+# PORT: pl-transaction.c VAL_LGEN
+"The local generation of a changed-predicates entry (pl-transaction.c)."
+VAL_LGEN(ptr::tr_gen_t)::tr_gen_t = ptr >> 2
+# PORT: pl-transaction.c VAL_GEN_FLAGS
+"The `TWF_*` flags of a changed-predicates entry (pl-transaction.c)."
+VAL_GEN_FLAGS(ptr::tr_gen_t)::UInt32 = UInt32(ptr & 0x3)
+# PORT: pl-transaction.c VAL_ADD_FLAGS
+"A changed-predicates entry with `flags` added (pl-transaction.c)."
+VAL_ADD_FLAGS(ptr::tr_gen_t, flags::UInt32)::tr_gen_t = ptr | tr_gen_t(flags)
+
+# PORT: pl-transaction.c transaction_last_modified_predicate
+# DIVERGES: the definition has no `last_modified` (src/pl-proc.jl `setLastModifiedPredicate!`): `last_modified` is the one of
+# its module, which the caller passes.
+"The last modification of `def` as seen inside the transaction (pl-transaction.c): `last_modified` is the global one."
+function transaction_last_modified_predicate(
+    ld::PL_local_data{T}, def::Definition{T}, last_modified::gen_t
+)::gen_t where {T}
+    tr = ld.transaction
+    table = tr.predicates
+    if table !== nothing
+        lgen = get(table, def, tr_gen_t(0))
+        if lgen != 0
+            return tr.gen_start + VAL_LGEN(lgen)
+        end
+    end
+    return last_modified > tr.gen_start ? tr.gen_start : last_modified
+end
+
+# PORT: pl-transaction.c transaction_set_last_modified
+"Record that `def` was modified at transaction generation `gen` (pl-transaction.c)."
+function transaction_set_last_modified(
+    ld::PL_local_data{T}, def::Definition{T}, gen::gen_t, flags::UInt32
+)::Nothing where {T}
+    tr = ld.transaction
+    table = tr.predicates
+    if table === nothing
+        table = Dict{Definition{T}, tr_gen_t}()
+        tr.predicates = table
+    end
+    lgen0 = get(table, def, tr_gen_t(0))
+    oflags = VAL_GEN_FLAGS(lgen0)
+    table[def] = LGEN_FLAGS_VAL(tr, gen, oflags | flags)
+    return nothing
+end
+
+# PORT: pl-transaction.c set_modified
+"Give every predicate the transaction changed the generation `gen` of the commit as its last modification (pl-transaction.c)."
+function set_modified(gd::PL_global_data{T}, ld::PL_local_data{T}, gen::gen_t)::Nothing where {T}
+    tr = ld.transaction
+    table = tr.predicates
+    if table !== nothing
+        for (def, v) in table
+            setLastModifiedPredicate!(gd, ld, def, gen, VAL_GEN_FLAGS(v))
+        end
+        tr.predicates = nothing
+    end
+    return nothing
+end
+
+# PORT: pl-transaction.c retract_clause_gen
+"Lower the erased generation of `clause` to `generation` (pl-transaction.c)."
+function retract_clause_gen(clause::Clause{T}, generation::gen_t)::Nothing where {T}
+    if clause.generation_erased > generation
+        clause.generation_erased = generation
+    end
+    return nothing
+end
+
+# PORT: pl-transaction.c transaction_commit
+# DIVERGES: no `L_GENERATION` lock and no `MEMORY_RELEASE` (one thread); the debug messages are not kept; the branches
+# for `GEN_NESTED_RETRACT` and the erased clause do the same here (no `tr_erased_no` to decrement).
+"Make the changes of the outermost transaction global, from one new generation of the database on (pl-transaction.c)."
+function transaction_commit(gd::PL_global_data{T}, ld::PL_local_data{T})::Bool where {T}
+    tr = ld.transaction
+    clauses = tr.clauses
+    if clauses !== nothing
+        gen_commit = global_generation(gd) + 1
+        for (cl, lgen) in clauses
+            if IS_ASSERT_GEN(lgen)
+                if (cl.flags & CL_ERASED) == 0
+                    cl.generation_erased = GEN_MAX
+                    cl.generation_created = gen_commit
+                else
+                    cl.generation_erased = GEN_TR_ASSERT_ERASE
+                    cl.generation_created = GEN_TR_ASSERT_ERASE
+                end
+            else
+                retract_clause_gen(cl, gen_commit)
+            end
+        end
+        gd._generation = gen_commit
+
+        for (cl, lgen) in clauses
+            if !IS_ASSERT_GEN(lgen)
+                retract_clause!(gd, ld, cl, cl.generation_erased)
+            end
+        end
+
+        set_modified(gd, ld, gen_commit)
+        tr.clauses = nothing
+    end
+    return true
+end
+
+# PORT: pl-transaction.c transaction_discard
+# DIVERGES: the debug messages are not kept; `predicate_update_event` takes `gd` and `ld` and the action as the atom of its name.
+"Undo the changes of the (innermost) transaction, raising the rollback events of the predicates that have listeners (pl-transaction.c)."
+function transaction_discard(gd::PL_global_data{T}, ld::PL_local_data{T})::Bool where {T}
+    rc = true
+    tr = ld.transaction
+    clauses = tr.clauses
+    if clauses !== nothing
+        for (cl, lgen) in clauses
+            def = cl.predicate
+            action = nothing
+            if IS_ASSERT_GEN(lgen)
+                if (cl.flags & CL_ERASED) == 0
+                    cl.generation_erased = GEN_TR_DISCARD_ASSERT
+                    cl.generation_created = GEN_TR_DISCARD_ASSERT
+                    retract_clause!(gd, ld, cl, cl.generation_created)
+                    action = lgen == GEN_ASSERTA ? :asserta : :assertz
+                else
+                    cl.generation_erased = GEN_TR_DISCARD_ASSERT_ERASE
+                    cl.generation_created = GEN_TR_DISCARD_ASSERT_ERASE
+                end
+            elseif lgen == GEN_NESTED_RETRACT
+                cl.generation_erased = tr.gen_max
+                action = :retract
+            else
+                action = :retract
+            end
+
+            if def.events !== nothing && action !== nothing && (tr.flags & TR_BULK) == 0
+                if !predicate_update_event(gd, ld, def, mk_sym(T, action), cl, P_EVENT_ROLLBACK)
+                    rc = false
+                end
+            end
+        end
+        tr.clauses = nothing
+        tr.predicates = nothing
+    end
+    return rc
+end
+
+# PORT: pl-transaction.c merge_clause_tables
+# DIVERGES: no reference counts: a clause new in the outer table and one already there are both stored.
+"Merge the changed clauses of a nested transaction into its parent's table (pl-transaction.c)."
+function merge_clause_tables(
+    into::Dict{Clause{T}, tr_gen_t}, from::Dict{Clause{T}, tr_gen_t}
+)::Nothing where {T}
+    for (cl, v) in from
+        into[cl] = v
+    end
+    return nothing
+end
+
+# PORT: pl-transaction.c merge_pred_tables
+"Merge the changed predicates of a nested transaction into its parent's table, adding the flags it had (pl-transaction.c)."
+function merge_pred_tables(
+    into::Dict{Definition{T}, tr_gen_t}, from::Dict{Definition{T}, tr_gen_t}
+)::Nothing where {T}
+    for (def, lgen) in from
+        lgen0 = get(into, def, tr_gen_t(0))
+        oflags = VAL_GEN_FLAGS(lgen0)
+        into[def] = VAL_ADD_FLAGS(lgen, oflags)
+    end
+    return nothing
+end
+
+# PORT: pl-transaction.c tr_update
+"An update of the transaction: the clause and the action, a symbol: `asserta`, `assertz` or `erased` (pl-transaction.c)."
+struct tr_update{T}
+    clause::Clause{T}
+    update::Symbol
+end
+
+# PORT: pl-transaction.c update_gen
+"The generation an update was made at (pl-transaction.c)."
+update_gen(u::tr_update)::gen_t =
+    u.update === :erased ? u.clause.generation_erased : u.clause.generation_created
+
+# PORT: pl-transaction.c cmp_updates
+"Order two updates by their generation (pl-transaction.c)."
+cmp_updates(u1::tr_update, u2::tr_update)::Bool = update_gen(u1) < update_gen(u2)
+
+# PORT: pl-transaction.c is_trie_clause
+# DIVERGES: false for every clause: the clauses of `trie_gen_compiled/2,3` are TAB1's (the kernel has no such predicate
+# yet); TAB1 TB9 gives it upstream's test.
+"True when `cl` is a clause that stands for a trie (pl-transaction.c)."
+is_trie_clause(gd::PL_global_data{T}, cl::Clause{T})::Bool where {T} = false
+
+# PORT: pl-transaction.c transaction_updates
+# DIVERGES: returns the updates, sorted by generation, where upstream fills a `Buffer`; `sort!` is stable where `qsort` is not,
+# which no result sees: the generations of the updates are different.
+"The updates (asserts and erases) of the transaction, in the order they were made (pl-transaction.c)."
+function transaction_updates(gd::PL_global_data{T}, ld::PL_local_data{T})::Vector{tr_update{T}} where {T}
+    b = tr_update{T}[]
+    clauses = ld.transaction.clauses
+    if clauses !== nothing
+        for (cl, lgen) in clauses
+            if IS_ASSERT_GEN(lgen)
+                if (cl.flags & CL_ERASED) == 0
+                    push!(b, tr_update{T}(cl, lgen == GEN_ASSERTA ? :asserta : :assertz))
+                end
+            elseif !is_trie_clause(gd, cl)
+                push!(b, tr_update{T}(cl, :erased))
+            end
+        end
+        sort!(b; lt = cmp_updates)
+    end
+    return b
+end
+
+# PORT: pl-transaction.c announce_updates
+"Raise the update events of the listed updates in order; false when a listener raised (pl-transaction.c)."
+function announce_updates(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, updates::Vector{tr_update{T}}
+)::Bool where {T}
+    for u in updates
+        def = u.clause.predicate
+        if !predicate_update_event(gd, ld, def, mk_sym(T, u.update), u.clause, UInt32(0))
+            return false
+        end
+    end
+    return true
+end
