@@ -241,7 +241,7 @@ jobs:
     # first run after a pin move builds. Before, the job ran inside the official image of a
     # RELEASE, some commits away from the ported source (and before that swipl came from the devel
     # PPA, which moved under a port: 10.1.17, 2026-10-04, run 37218978326).
-    timeout-minutes: 75
+    timeout-minutes: 120
     permissions:
       contents: read
       actions: write
