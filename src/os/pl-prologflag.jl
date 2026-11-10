@@ -1499,8 +1499,8 @@ end
 # PORT: pl-prologflag.c set_prolog_flag_unlocked
 # DIVERGES: no thread-local table (`FF_LOCAL`, `copy_prolog_flag`, `register_local_flag`): the table is the global
 # one. The module is its record. A flag that lives outside the table is refused by name (design D4): the arithmetic
-# flags (`set_arith_flag`, pl-arith.c), the clause-indexing flags (`ci_set_flag`, pl-index.c) and the tabling
-# restraints (`tbl_set_restraint_flag`, pl-tabling.c). A creation that `check_create_flag` refuses returns at once
+# flags (`set_arith_flag`, pl-arith.c) and the clause-indexing flags (`ci_set_flag`, pl-index.c); the tabling restraints are
+# set by `tbl_set_restraint_flag` (pl-tabling.c, TAB1 TB8). A creation that `check_create_flag` refuses returns at once
 # (upstream's code continues below the `if` chain).
 "Set, or with `FF_ISCREATE`/`FF_NOCREATE` create, the flag `k` to the value of the term `value`; the flag, `PSEUDO_FLAG`, or `nothing` after an error (pl-prologflag.c)."
 function set_prolog_flag_unlocked(
