@@ -343,3 +343,215 @@ function announce_updates(
     end
     return true
 end
+
+
+# ── the Prolog connection (TX1b) ────────────────────────────────────────────────────────────────
+
+# PORT: pl-transaction.c transaction
+# DIVERGES: `constraint` is 0 for upstream's NULL and `lock` is not examined (no mutex table, see the header); NOT PORTED,
+# owner TAB1 TB9: `transaction_commit_tables`, `transaction_rollback_tables`, `merge_tabling_trail`. The outermost transaction
+# does not set `LD->transaction.flags` (upstream's does not either, pl-transaction.c:620-630): `bulk(true)` there only
+# makes the commit announce the updates. The thread id of the generation space is 1 (`int tid = 1`, the form of the
+# source without threads; swipl's main thread is 1 too).
+"""
+    transaction(gd, ld, goal, constraint, lock, flags) -> Bool
+
+Run `goal` in a transaction (pl-transaction.c): nested inside the running one when there is one, else in a new generation
+space. `flags` is `TR_TRANSACTION` (commit when `goal` — and `constraint`, when not 0 — succeed), `TR_SNAPSHOT` (always
+discard), with `TR_BULK` (raise the update events when the transaction commits, in generation order).
+"""
+function transaction(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, goal::term_t, constraint::term_t,
+    lock::term_t, flags::UInt32
+)::Bool where {T}
+    tr = ld.transaction
+    updates = tr_update{T}[]
+
+    if tr.generation != 0                                   # nested transaction
+        parent = tr_stack{T}(
+            tr.stack, tr.gen_nest, tr.generation, tr.clauses, tr.predicates, tr.id, tr.flags
+        )
+
+        tr.clauses = nothing
+        tr.predicates = nothing
+        tr.id = goal
+        tr.stack = parent
+        tr.gen_nest = tr.generation
+        tr.flags = flags
+        rc = callProlog(gd, ld, 0, goal, PL_Q_PASS_EXCEPTION)
+        if rc && constraint != 0
+            rc = callProlog(gd, ld, 0, constraint, PL_Q_PASS_EXCEPTION)
+        end
+        discard = true                                      # (the `nested_discard:` label)
+        if rc && (flags & TR_TRANSACTION) != 0
+            discard = false
+            if tr.predicates !== nothing
+                if parent.predicates !== nothing
+                    merge_pred_tables(parent.predicates, tr.predicates)
+                else
+                    parent.predicates = tr.predicates
+                end
+            end
+
+            if tr.clauses !== nothing
+                if parent.clauses !== nothing
+                    if (flags & TR_BULK) != 0
+                        updates = transaction_updates(gd, ld)
+                        if !announce_updates(gd, ld, updates)
+                            discard = true                  # goto nested_discard
+                        end
+                    end
+                    if !discard
+                        merge_clause_tables(parent.clauses, tr.clauses)
+                    end
+                else
+                    parent.clauses = tr.clauses
+                end
+            end
+        end
+        if discard
+            rc = transaction_discard(gd, ld) && rc
+            tr.generation = parent.generation
+        end
+        tr.gen_nest = parent.gen_nest
+        tr.clauses = parent.clauses
+        tr.predicates = parent.predicates
+        tr.stack = parent.parent
+        tr.id = parent.id
+        tr.flags = parent.flags
+    else
+        tid = gen_t(1)                                      # int tid = 1: no threads
+        tr.gen_start = global_generation(gd)
+        tr.gen_base = GEN_TRANSACTION_BASE + tid * GEN_TRANSACTION_SIZE
+        tr.gen_max = tr.gen_base + GEN_TRANSACTION_SIZE - gen_t(6)
+        tr.generation = tr.gen_base
+        tr.id = goal
+        rc = callProlog(gd, ld, 0, goal, PL_Q_PASS_EXCEPTION)
+        if rc && (flags & TR_TRANSACTION) != 0
+            if constraint != 0
+                tr.gen_start = global_generation(gd)
+                rc = callProlog(gd, ld, 0, constraint, PL_Q_PASS_EXCEPTION)
+            end
+            if rc && (flags & TR_BULK) != 0
+                updates = transaction_updates(gd, ld)
+                rc = announce_updates(gd, ld, updates)
+            end
+            if rc
+                rc = transaction_commit(gd, ld)             # transaction_commit_tables() && transaction_commit()
+            else
+                tr.generation = 0                           # avoid recording the rollback
+                transaction_discard(gd, ld)
+            end
+        else
+            tr.generation = 0                               # avoid recording the rollback
+            rc = transaction_discard(gd, ld) && rc
+        end
+        tr.id = 0
+        tr.generation = 0
+        tr.gen_max = 0
+        tr.gen_base = GEN_INFINITE
+        tr.gen_start = 0
+        tr.flags = 0
+    end
+
+    return rc
+end
+
+# PORT: pl-transaction.c transaction_options
+"The options of `\$transaction/2`: `bulk(Bool)` (pl-transaction.c)."
+const transaction_options = (PL_option_t(:bulk, OPT_BOOL),)
+
+# PORT: pl-transaction.c pl_transaction2
+# (PRED_IMPL("$transaction", 2, transaction, PL_FA_TRANSPARENT), pl-transaction.c:677-691)
+"`'\$transaction'(:Goal, +Options)`: run `Goal` in a transaction, `bulk(true)` raising the events at the commit (pl-transaction.c)."
+function pl_transaction2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2 = PL__t0, PL__t0 + 1
+    flags = TR_TRANSACTION
+
+    vals = PL_scan_options(ld, A2, 0, "transaction_option", transaction_options)
+    vals === nothing && return FFALSE
+    if vals[1] === true
+        flags |= TR_BULK
+    end
+
+    return transaction(_query_gd(ld), ld, A1, 0, 0, flags) ? FTRUE : FFALSE
+end
+
+# PORT: pl-transaction.c pl_transaction3
+# (PRED_IMPL("$transaction", 3, transaction, PL_FA_TRANSPARENT), pl-transaction.c:692-697)
+"`'\$transaction'(:Goal, :Constraint, +Mutex)`: run `Goal` and then `Constraint` in a transaction (pl-transaction.c)."
+function pl_transaction3_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2, A3 = PL__t0, PL__t0 + 1, PL__t0 + 2
+
+    return transaction(_query_gd(ld), ld, A1, A2, A3, TR_TRANSACTION) ? FTRUE : FFALSE
+end
+
+# PORT: pl-transaction.c pl_snapshot1
+# (PRED_IMPL("$snapshot", 1, snapshot, PL_FA_TRANSPARENT), pl-transaction.c:699-704)
+"`'\$snapshot'(:Goal)`: run `Goal` in a transaction that is always discarded (pl-transaction.c)."
+function pl_snapshot1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1 = PL__t0
+
+    return transaction(_query_gd(ld), ld, A1, 0, 0, TR_SNAPSHOT) ? FTRUE : FFALSE
+end
+
+# PORT: pl-transaction.c add_update
+"Add `action(ClauseRef)` to the open list `tail` (pl-transaction.c)."
+function add_update(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, cl::Clause{T}, action::Symbol,
+    tail::term_t, head::term_t, tmp::term_t
+)::Bool where {T}
+    return PL_put_clref(gd, ld, tmp, cl) &&
+           PL_cons_functor(ld, tmp, _err_functor(ld, action, 1), tmp) &&
+           PL_unify_list(ld, tail, head, tail) &&
+           PL_unify(ld, head, tmp)
+end
+
+# PORT: pl-transaction.c pl_transaction_updates1
+# (PRED_IMPL("transaction_updates", 1, transaction_updates, 0), pl-transaction.c:770-796)
+"`transaction_updates(-Updates)`: the clause references the running transaction changed, as `asserta/1`, `assertz/1` and `erased/1` terms in order (pl-transaction.c)."
+function pl_transaction_updates1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1 = PL__t0
+    gd = _query_gd(ld)
+
+    if ld.transaction.generation == 0
+        return FFALSE                                       # error?
+    end
+
+    if ld.transaction.clauses !== nothing
+        tail = PL_copy_term_ref(ld, A1)
+        head = PL_new_term_ref(ld)
+        tmp = PL_new_term_ref(ld)
+        rc = true
+
+        for u in transaction_updates(gd, ld)
+            if !add_update(gd, ld, u.clause, u.update, tail, head, tmp)
+                rc = false
+                break
+            end
+        end
+
+        return rc && PL_unify_nil(ld, tail) ? FTRUE : FFALSE
+    else
+        return PL_unify_nil(ld, A1) ? FTRUE : FFALSE
+    end
+end
+
+# PORT: pl-transaction.c BeginPredDefs as PL_predicates_from_transaction
+# DIVERGES: NOT PORTED (TX1 open items): `current_transaction/1` (nondeterministic) and the `O_DEBUG` `pred_generations/1`.
+# `META` is `PL_FA_TRANSPARENT`.
+"pl-transaction.c's registration table (`BeginPredDefs(transaction)`): `\$transaction/2,3`, `\$snapshot/1`, `transaction_updates/1`."
+const PL_predicates_from_transaction = (
+    PL_extension("\$transaction", 2, pl_transaction2_va, PL_FA_VARARGS | PL_FA_TRANSPARENT),
+    PL_extension("\$transaction", 3, pl_transaction3_va, PL_FA_VARARGS | PL_FA_TRANSPARENT),
+    PL_extension("\$snapshot", 1, pl_snapshot1_va, PL_FA_VARARGS | PL_FA_TRANSPARENT),
+    PL_extension("transaction_updates", 1, pl_transaction_updates1_va, PL_FA_VARARGS)
+)
