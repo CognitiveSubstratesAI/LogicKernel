@@ -396,12 +396,14 @@ function _trie_atom(gd::PL_global_data{T}, tr::trie{T})::T where {T}
 end
 
 # PORT: pl-tabling.c unify_restraint
-# DIVERGES: a `size_t` is an `Int`: `(size_t)-1` is -1 and `PL_unify_uint64` is `PL_unify_int64`.
+# DIVERGES: a `size_t` is an `Int`: `(size_t)-1` is -1; `PL_unify_uint64` of a non-negative value is `unify_int64_ex(t, i, true)`
+# (pl-fli.c:3750-3755): a bound `t` that is no integer raises `type_error(integer, t)` (swipl 10.1.20:
+# `current_prolog_flag(max_answers_for_subgoal, a)`).
 "Unify `t` with the limit `val`: fail for no limit, -1 (pl-tabling.c)."
 function unify_restraint(ld::PL_local_data{T}, t::term_t, val::Int)::Bool where {T}
     val == -1 && return false
 
-    return PL_unify_int64(ld, t, val)
+    return unify_int64_ex(ld, t, val, true)
 end
 
 # PORT: pl-tabling.c tbl_get_restraint_flag
@@ -705,11 +707,270 @@ function drop_intermediate_tables(ld::PL_local_data{T}, root::tbl_component{T}):
     return nothing
 end
 
+# TAB1 TB8 part 2: `'$tbl_sdg'/3` and `'$tbl_incomplete'/3` (pl-tabling.c:9526-9820 at the pin). The graph is built from the
+# live objects: the components, tables and edges are insertion-ordered vectors with an `IdDict` as their index (upstream's
+# `pair_map` iterates by hash: its tests `msort`), the handle of a worklist or a component is TB2's `tbl_pointer!`.
+
+# PORT: pl-tabling.c sdg_atom
+# DIVERGES: the enum and the `sdg_atoms[]` array are the symbols `null`, `positive`, `negative`, `pending`, `executing`,
+# `delays`; `sdg_init` is not needed (`mk_sym` interns on first use, the functors are looked up where they are built).
+
+# ORIGINAL (TAB1 TB8): upstream's `PL_put_pointer(t, obj)` (pl-fli.c) for a worklist or a component, 0 for NULL: the handle of
+# TB2's `tbl_pointer!`.
+"Put the handle of the worklist or component `obj` (0 for none) into `t` (pl-fli.c `PL_put_pointer`)."
+function _tbl_put_pointer(
+    ld::PL_local_data{T}, t::term_t, obj::Union{Nothing, tbl_worklist{T}, tbl_component{T}}
+)::Bool where {T}
+    return PL_put_int64(ld, t, obj === nothing ? 0 : tbl_pointer!(ld, obj))
+end
+
+# PORT: pl-tabling.c sdg_push_root
+# DIVERGES: the stack is a `Vector` (no `segstack`, no `outOfCore`).
+"Push the root of the component `c` on `stack` (pl-tabling.c `sdg_push_root`)."
+function sdg_push_root(stack::Vector{tbl_component{T}}, c::tbl_component{T})::Nothing where {T}
+    up = c.parent
+    while up !== nothing
+        c = up
+        up = c.parent
+    end
+    push!(stack, c)
+
+    return nothing
+end
+
+# PORT: pl-tabling.c sdg_collect
+# DIVERGES: `components` and `tables` are insertion-ordered vectors with an `IdDict` for the lookup (upstream: two `pair_map`s,
+# the count of a component being how often it was met); `c->children` is `component_set.members`; a table is a worklist whose
+# `table` is not 0.
+"Collect the active components below the roots on `stack` in `components` and their incomplete worklists in `tables` (pl-tabling.c)."
+function sdg_collect(
+    stack::Vector{tbl_component{T}}, components::Vector{tbl_component{T}}, seen::IdDict{tbl_component{T}, Bool},
+    tables::Vector{tbl_worklist{T}}, tindex::IdDict{tbl_worklist{T}, Int}
+)::Nothing where {T}
+    while !isempty(stack)
+        c = pop!(stack)
+
+        c.status == SCC_ACTIVE || continue          # merged or completed
+        haskey(seen, c) && continue                 # a root seen twice
+        seen[c] = true
+        push!(components, c)
+        children = c.children
+        if children !== nothing
+            for ch in children.members
+                push!(stack, ch)
+            end
+        end
+
+        for wl in worklist_set_to_array(c.created_worklists, T)
+            if wl.table != 0 && !haskey(tindex, wl)
+                push!(tables, wl)
+                tindex[wl] = length(tables)
+            end
+        end
+    end
+
+    return nothing
+end
+
+# PORT: pl-tabling.c sdg_count_edges
+# DIVERGES: `tables` is the index of the tables (`tindex`, worklist -> position), `edges` the counts by (caller, callee, negative)
+# with their order in `eorder`; the caller is the worklist `tbl_get_pointer` finds for the handle (upstream: a pointer, accepted
+# only when it is in `tables`); `UNTNOT(sp->term)` is `sp.term`, the sign `IS_TNOT`'s field `is_tnot`.
+"Count the suspensions on the callee `wl` by caller in `edges` (pl-tabling.c `sdg_count_edges`)."
+function sdg_count_edges(
+    ld::PL_local_data{T}, wl::tbl_worklist{T}, tindex::IdDict{tbl_worklist{T}, Int},
+    edges::Dict{Tuple{Int, Int, Bool}, Int}, eorder::Vector{Tuple{Int, Int, Bool}}
+)::Bool where {T}
+    fid = PL_open_foreign_frame(ld)
+    t = PL_new_term_ref(ld)
+    a = PL_new_term_ref(ld)
+    dependency = mk_sym(T, :dependency)
+
+    c = wl.head
+    while c !== nothing
+        if c.type == CLUSTER_SUSPENSIONS
+            for sp in c.suspensions
+                if !PL_recorded(ld, sp.term, t)
+                    PL_close_foreign_frame(ld, fid)
+
+                    return false
+                end
+                if PL_is_functor(ld, t, dependency, 5) && _PL_get_arg(ld, 4, t, a)
+                    caller = tbl_get_pointer(ld, a)
+                    if caller isa tbl_worklist{T} && haskey(tindex, caller)
+                        key = (tindex[caller], tindex[wl], sp.is_tnot)
+                        if haskey(edges, key)
+                            edges[key] += 1
+                        else
+                            edges[key] = 1
+                            push!(eorder, key)
+                        end
+                    end
+                end
+                PL_rewind_foreign_frame(ld, fid)
+            end
+        end
+        c = c.next
+    end
+
+    PL_close_foreign_frame(ld, fid)
+
+    return true
+end
+
+# PORT: pl-tabling.c sdg_unify_table
+# DIVERGES: the flags are consed in upstream's order (delays, executing, pending, negative), so the list reads [negative, pending,
+# executing, delays]; the variant is read from the variant table of the thread (`atrie->data.variant` is a node of it).
+"Unify `t` with table(Trie, Variant, SCC, Answers, Flags) of the worklist `wl` (pl-tabling.c `sdg_unify_table`)."
+function sdg_unify_table(ld::PL_local_data{T}, t::term_t, wl::tbl_worklist{T})::Bool where {T}
+    gd = _query_gd(ld)
+    atrie = wl_table(ld, wl)
+    av = PL_new_term_refs(ld, 6)
+    flag = av + 5
+
+    PL_put_atom(ld, av + 0, _trie_atom(gd, atrie)) || return false
+    if atrie.variant != 0
+        vtrie = gd.tries[ld.tabling.variant_table]
+        unify_trie_term(ld, vtrie, atrie.variant, av + 1)[1] || return false
+    end
+    _tbl_put_pointer(ld, av + 2, wl.component) || return false
+    PL_put_int64(ld, av + 3, atrie.value_count) || return false
+    PL_put_nil(ld, av + 4)
+    flags = (
+        (!isempty(wl.delays), :delays), (wl.executing, :executing), (wl.in_global_wl, :pending), (wl.negative, :negative),
+    )
+    for (on, name) in flags
+        if on
+            PL_put_atom(ld, flag, mk_sym(T, name)) && PL_cons_list(ld, av + 4, flag, av + 4) || return false
+        end
+    end
+    table5 = lookupFunctorDef(ld.functors, _atom_word!(ld, mk_sym(T, :table)), 5)
+
+    return PL_cons_functor_v(ld, av + 0, table5, av) && PL_unify(ld, t, av + 0)
+end
+
+# PORT: pl-tabling.c tbl_sdg as pl_tbl_sdg3_va
+# (pl-tabling.c:9667-9785 at the pin: PRED_IMPL("$tbl_sdg", 3, tbl_sdg, 0))
+# DIVERGES: the single thread is the calling one; the components, tables and edges come in the order they are met (see above).
+"`'\$tbl_sdg'(-Components, -Tables, -Edges)`: the subgoal dependency graph of the calling thread (pl-tabling.c)."
+function pl_tbl_sdg3_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2, A3 = PL__t0, PL__t0 + 1, PL__t0 + 2
+    stack = tbl_component{T}[]
+    components = tbl_component{T}[]
+    seen = IdDict{tbl_component{T}, Bool}()
+    tables = tbl_worklist{T}[]
+    tindex = IdDict{tbl_worklist{T}, Int}()
+    edges = Dict{Tuple{Int, Int, Bool}, Int}()
+    eorder = Tuple{Int, Int, Bool}[]
+    tail = PL_new_term_ref(ld)
+    head = PL_new_term_ref(ld)
+    av = PL_new_term_refs(ld, 4)
+    gd = _query_gd(ld)
+
+    active = ld.tabling.component
+    active !== nothing && sdg_push_root(stack, active)
+    s = ld.tabling.saved_status
+    while s !== nothing
+        root = s.scc
+        root !== nothing && sdg_push_root(stack, root)
+        s = s.prev
+    end
+    sdg_collect(stack, components, seen, tables, tindex)
+
+    for wl in tables
+        sdg_count_edges(ld, wl, tindex, edges, eorder) || return FFALSE
+    end
+
+    PL_put_term(ld, tail, A1)
+    scc3 = lookupFunctorDef(ld.functors, _atom_word!(ld, mk_sym(T, :scc)), 3)
+    for c in components
+        parent = c.parent
+        (
+            PL_unify_list(ld, tail, head, tail) &&
+                _tbl_put_pointer(ld, av + 0, c) &&
+                (parent !== nothing ? _tbl_put_pointer(ld, av + 1, parent) : PL_put_atom(ld, av + 1, mk_sym(T, :null))) &&
+                (
+                    c.leader != 0 ? PL_put_atom(ld, av + 2, _trie_atom(gd, gd.tries[c.leader])) :
+                    PL_put_atom(ld, av + 2, mk_sym(T, :null))
+                ) &&
+                PL_cons_functor_v(ld, av + 0, scc3, av) &&
+                PL_unify(ld, head, av + 0)
+        ) || return FFALSE
+    end
+    PL_unify_nil(ld, tail) || return FFALSE
+
+    PL_put_term(ld, tail, A2)
+    for wl in tables
+        (PL_unify_list(ld, tail, head, tail) && sdg_unify_table(ld, head, wl)) || return FFALSE
+    end
+    PL_unify_nil(ld, tail) || return FFALSE
+
+    PL_put_term(ld, tail, A3)
+    edge4 = lookupFunctorDef(ld.functors, _atom_word!(ld, mk_sym(T, :edge)), 4)
+    for key in eorder
+        caller = tables[key[1]]
+        callee = tables[key[2]]
+        (
+            PL_unify_list(ld, tail, head, tail) &&
+                PL_put_atom(ld, av + 0, _trie_atom(gd, wl_table(ld, caller))) &&
+                PL_put_atom(ld, av + 1, _trie_atom(gd, wl_table(ld, callee))) &&
+                PL_put_atom(ld, av + 2, mk_sym(T, key[3] ? :negative : :positive)) &&
+                PL_put_int64(ld, av + 3, edges[key]) &&
+                PL_cons_functor_v(ld, av + 0, edge4, av) &&
+                PL_unify(ld, head, av + 0)
+        ) || return FFALSE
+    end
+
+    return PL_unify_nil(ld, tail) ? FTRUE : FFALSE
+end
+
+# ORIGINAL (TAB1 TB8): upstream's `PL_get_thread_id_ex(t, &tid)` (pl-thread.c); the kernel has the one thread `main` (thread id 1).
+# swipl 10.1.20: `main` and 1 are the thread, another atom or integer raises `existence_error(thread, X)`, a variable
+# `instantiation_error`, any other term `type_error(thread, X)`.
+"Whether `t` names the one thread, `main` or 1; else raise the error of `PL_get_thread_id_ex` (pl-thread.c)."
+function _tbl_get_thread_id_ex(ld::PL_local_data{T}, t::term_t)::Bool where {T}
+    a = PL_get_atom(ld, t)
+    if a !== nothing
+        _tbl_is(a, :main) && return true
+
+        return PL_error(ld, ERR_EXISTENCE, mk_sym(T, :thread), t)
+    end
+    i = PL_get_int64(ld, t)
+    if i !== nothing
+        i == 1 && return true
+
+        return PL_error(ld, ERR_EXISTENCE, mk_sym(T, :thread), t)
+    end
+
+    return PL_error(ld, ERR_TYPE, mk_sym(T, :thread), t)
+end
+
+# PORT: pl-tabling.c tbl_incomplete as pl_tbl_incomplete3_va
+# (pl-tabling.c:9787-9820 at the pin: PRED_IMPL("$tbl_incomplete", 3, tbl_incomplete, 0))
+# DIVERGES: the single thread (the `#else` of `O_PLMT`): the counters of the calling thread; `PL_unify_uint64` of a count is
+# `unify_int64_ex(t, i, true)`.
+"`'\$tbl_incomplete'(+Thread, -Tables, -SCCs)`: the number of incomplete tables and of active components of `Thread` (pl-tabling.c)."
+function pl_tbl_incomplete3_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2, A3 = PL__t0, PL__t0 + 1, PL__t0 + 2
+    _tbl_get_thread_id_ex(ld, A1) || return FFALSE
+    tables = ld.tabling.incomplete_tables
+    sccs = ld.tabling.active_components
+
+    return (unify_int64_ex(ld, A2, tables, true) && unify_int64_ex(ld, A3, sccs, true)) ? FTRUE : FFALSE
+end
+
 # PORT: pl-tabling.c BeginPredDefs as PL_predicates_from_tabling
 # DIVERGES: the ported entries, in upstream's order (upstream's table has the other `$tbl_*` predicates; `$tbl_trienode`
-# and `$tbl_is_trienode` sit between `$tbl_destroy_table/1` and `$tbl_delay_list/1`).
+# and `$tbl_is_trienode` sit between `$tbl_destroy_table/1` and `$tbl_delay_list/1`; `$tbl_sdg/3` and `$tbl_incomplete/3` sit after
+# `$tbl_worklist_data/2` and before `$tbl_wkl_table/2`: the stack puts them there).
 "pl-tabling.c's registration table (`BeginPredDefs(tabling)`): the ported entries."
 const PL_predicates_from_tabling = (
     PL_extension("\$tbl_trienode", 1, pl_tbl_trienode1_va, PL_FA_VARARGS),
-    PL_extension("\$tbl_is_trienode", 1, pl_tbl_is_trienode1_va, PL_FA_VARARGS)
+    PL_extension("\$tbl_is_trienode", 1, pl_tbl_is_trienode1_va, PL_FA_VARARGS),
+    PL_extension("\$tbl_sdg", 3, pl_tbl_sdg3_va, PL_FA_VARARGS),
+    PL_extension("\$tbl_incomplete", 3, pl_tbl_incomplete3_va, PL_FA_VARARGS)
 )
