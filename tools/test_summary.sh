@@ -149,7 +149,7 @@ has "bench rc 0, case rows but no raw-numbers line is NO VERDICT" "$out" 'NO VER
 
 # ---------------------------------------------------------------- warm.sh --summary (isolated copy of the tools)
 mkdir -p "$W/tree/tools" "$W/tree/test"
-cp "$ROOT"/tools/warm.sh "$ROOT"/tools/lib_evidence.sh "$ROOT"/tools/summarize_log.sh "$W/tree/tools/"
+cp "$ROOT"/tools/warm.sh "$ROOT"/tools/lib_evidence.sh "$ROOT"/tools/lib_julia.sh "$ROOT"/tools/WARM_JULIA_VERSION "$ROOT"/tools/summarize_log.sh "$W/tree/tools/"   # warm.sh sources lib_julia.sh and reads the pin file
 out="$("$W/tree/tools/warm.sh" file test/test_nothing.jl --summary)"
 rc=$?
 ok "warm.sh file --summary exits with the command's own status (2: no such file)" "2" "$rc"
@@ -163,7 +163,7 @@ has "the plain run still prints its message" "$plain" 'no such file'
 
 # ---------------------------------------------------------------- bench.sh --summary (a fake pgrep: a julia runs)
 mkdir -p "$W/bin" "$W/tree2/tools"
-cp "$ROOT"/tools/bench.sh "$ROOT"/tools/summarize_log.sh "$W/tree2/tools/"
+cp "$ROOT"/tools/bench.sh "$ROOT"/tools/lib_julia.sh "$ROOT"/tools/WARM_JULIA_VERSION "$ROOT"/tools/summarize_log.sh "$W/tree2/tools/"   # bench.sh sources lib_julia.sh and reads the pin file
 printf '#!/usr/bin/env bash\n[ "$1" = "-a" ] && echo "999 julia fake" ; exit 0\n' > "$W/bin/pgrep"
 chmod +x "$W/bin/pgrep"
 out="$(PATH="$W/bin:$PATH" "$W/tree2/tools/bench.sh" --summary)"
