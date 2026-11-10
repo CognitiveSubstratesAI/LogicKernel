@@ -101,7 +101,6 @@ pred:$undo/1	TX1	seed: missing_c_preds.tsv
 pred:$unload_file/1	SRC2	seed: missing_c_preds.tsv
 pred:$urgent_exception/3	P3	seed: missing_c_preds.tsv
 pred:$visible/2	DBG1	seed: missing_c_preds.tsv
-pred:$wrapped_implementation/3	WRAP1	seed: missing_c_preds.tsv
 pred:\=@=/2	Q10	seed: missing_c_preds.tsv
 pred:char_type/2	CT1	seed: missing_c_preds.tsv
 pred:code_type/2	CT1	seed: missing_c_preds.tsv
@@ -142,7 +141,6 @@ pred:trie_lookup/3	TRIE1	seed: missing_c_preds.tsv
 pred:trie_term/2	TRIE1	seed: missing_c_preds.tsv
 pred:trim_heap/0	Q10	seed: missing_c_preds.tsv
 pred:trim_stacks/0	Q10	seed: missing_c_preds.tsv
-pred:unwrap_predicate/2	WRAP1	seed: missing_c_preds.tsv
 pred:zip_clone/2	ZIP1	seed: missing_c_preds.tsv
 pred:zip_close_/2	ZIP1	seed: missing_c_preds.tsv
 pred:zip_file_info_/3	ZIP1	seed: missing_c_preds.tsv
@@ -219,8 +217,6 @@ kfile:pl-qlf.jl	LB3	seed: the QLF refusal sites
 refusal:src/pl-wam.jl::PL_next_solution_guarded::the VM instruction I_YIELD in an engine (pl-vmi.c:2419)	TH1	the named refusal of the branch (its body is the owner's step)
 refusal:src/pl-wam.jl::PL_next_solution_guarded::the dtbl_reset6 branch of I_RESET (pl-vmi.c:5762)	TAB1	the named refusal of the branch (its body is the owner's step)
 refusal:src/pl-wam.jl::PL_next_solution_guarded::the dtbl_reset6 branch of I_EXITRESET (pl-vmi.c:5806)	TAB1	the named refusal of the branch (its body is the owner's step)
-refusal:src/pl-wam.jl::PL_next_solution_guarded::the VM instruction S_WRAP (calling a wrapped predicate from 	WRAP1	the named refusal of the instruction (its body is the owner's step)
-refusal:src/pl-wam.jl::PL_next_solution_guarded::the VM instruction S_CALLWRAPPER (calling a wrapped predicat	WRAP1	the named refusal of the instruction (its body is the owner's step)
 refusal:src/pl-wam.jl::PL_next_solution_guarded::the VM instruction S_TABLED (calling a tabled predicate)	TAB1	the named refusal of the instruction (its body is the owner's step)
 refusal:src/os/pl-files.jl::get_file_name::PL_get_file_name flag PL_FILE_SEARCH (system:absolute_file_n	LB4	the first boot: absolute_file_name/3 of init.pl runs through PL_get_file_name(PL_FILE_SEARCH)
 refusal:src/os/pl-files.jl::_iri_hook_refused::iri_hook $what (`\$iri`:iri_hook/4 of init.pl)	LB5-LB7	off the load path: serves http:// style IRIs; the library ring
