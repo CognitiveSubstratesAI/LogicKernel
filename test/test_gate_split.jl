@@ -3006,6 +3006,8 @@ MUTANTS = [
         # the checkout and the analysis tools, in the baseline and the mutant job each
         @test count("'mutate_suite'", mut) == 4 &&
             count("path: .upstream/swipl-devel", mut) == 2
+        # one static-analysis part as a target (tools/mutate_sa_part.sh, JETGW) needs the tools too
+        @test count("'mutate_sa_part'", mut) == 2
         @test occursin("LOGICKERNEL_UPSTREAM_SWIPL_DEVEL:", mut)
         suite = joinpath(_GS_ROOT, "tools", "mutate_suite.sh")
         @test isfile(suite) && (filemode(suite) & 0o111) != 0

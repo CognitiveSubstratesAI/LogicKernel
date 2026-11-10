@@ -319,7 +319,7 @@ end
 function S_read(s::IOSTREAM, mem::Vector{UInt8}, from::Int, size::Int)::Int
     w = s.wrapped
     if w !== nothing && w.user_read
-        return Sread_user(w.table[w.ld], s, w, mem, from, size)
+        return Sread_user(w.table[w.ld], s, w, mem, from, size)::Int   # (the barrier: src/os/pl-file.jl `Sread_user`)
     end
     return S_read_wrapped(s, mem, from, size)
 end

@@ -3163,6 +3163,18 @@ const _DISPATCH_MANIFEST_TUPLE = (
     _manifest_index(_M2)...,
     _index_entry_points(_M1)...,
     _index_entry_points(_M3)...,
+    # JETGW (audit D-0462): `Sread_user` behind `S_read`'s inference barrier, on the term types `_manifest_index` (DefaultTerm
+    # only) does not cover; with it `PL_write_prompt`, whose one caller it is (src/os/pl-file.jl)
+    (
+        LK.Sread_user,
+        Tuple{LK.PL_local_data{_M1}, LK.IOSTREAM, LK.wrappedIO, Vector{UInt8}, Int, Int},
+        false
+    ),
+    (
+        LK.Sread_user,
+        Tuple{LK.PL_local_data{_M3}, LK.IOSTREAM, LK.wrappedIO, Vector{UInt8}, Int, Int},
+        false
+    ),
     # LB3: the entries of its block (_index_entry_points) that name no term type; there they would be listed once per type
     (LK.cond_true, Tuple{LK.condc}, false),
     (LK.condc, Tuple{}, false),

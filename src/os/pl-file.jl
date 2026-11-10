@@ -3050,6 +3050,14 @@ end
 "The flags `wrapIO` clears on the stream it wraps and `closeWrappedIO` restores (pl-file.c)."
 const WRAP_CLEAR_FLAGS = SIO_FILE
 
+# ORIGINAL (audit D-0462): an inference barrier at `S_read`'s one call of `Sread_user`, whose argument is the registry
+# entry (`Union{Nothing, AbstractLocalData}`). Upstream's callee is a function pointer unknown at compile time
+# (`(*wio->wrapped_functions->read)(...)`, swipl-devel 18168e62 src/os/pl-file.c:6039); here the abstract call matches
+# TWO methods (the one on `PL_local_data{T}` and the fallback on the union), more than `@max_methods 1` allows, so
+# inference gives up on the call and does not infer `Sread_user`'s body with the term type free. The call stays the one
+# runtime dispatch it was (`JET_DISPATCH_ALLOWED`); the body is analysed per term type by its own manifest entries.
+Base.Experimental.@max_methods 1 function Sread_user end
+
 # PORT: pl-file.c Sread_user
 # (swipl-devel cbf4e189, src/os/pl-file.c:5987-6007)
 # DIVERGES: `handle` is the record `wio` and `buf` is `mem` from `from`, `Sttymode(wio->wrapped_stream)` has the stream
@@ -3082,9 +3090,12 @@ function Sread_user(
     return rc
 end
 
-# (the local data was freed meanwhile: no engine to prompt for, a read error)
+# (the local data was freed meanwhile: no engine to prompt for, a read error). The argument is the union, not `Nothing`
+# alone: a second method under the abstract call is the barrier above; a `PL_local_data{T}` takes the method above (more
+# specific), so only `nothing` reaches this one at run time.
 Sread_user(
-    ::Nothing, ::IOSTREAM, ::wrappedIO, ::Vector{UInt8}, ::Int, ::Int
+    ::Union{Nothing, AbstractLocalData}, ::IOSTREAM, ::wrappedIO, ::Vector{UInt8}, ::Int,
+    ::Int
 )::Int = -1
 
 # PORT: pl-file.c closeWrappedIO

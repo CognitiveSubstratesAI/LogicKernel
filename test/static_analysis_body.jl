@@ -457,6 +457,23 @@ end
             )
             fixture = JET.get_reports(JET.report_opt(_sa_dispatches, (Vector{Real},)))
             @test !isempty(fixture) && !any(_sa_dispatch_allowed, fixture)
+            # THE BARRIER (audit D-0462): inference does not enter `Sread_user` from the allowed call (`@max_methods 1` and
+            # the fallback on the union, src/os/pl-file.jl), so nothing behind it is inferred with the term type free. JET's
+            # default skips the frames that cannot be compiled but not the inlineable ones (WR2's tree: 44 reports under
+            # `query_answers`, all in that subtree); with the skip off, `S_read`'s analysis still holds the one allowed report.
+            rs = _sa_opt_reports(f, tt; skip_noncompileable_calls=false)
+            length(rs) == 1 ||
+                foreach(
+                    r -> println(stderr, "  S_read, every frame: ", _sa_describe(r)), rs
+                )
+            @test length(rs) == 1 && _sa_dispatch_allowed(only(rs))
+            # what the barrier hides is checked on each concrete term type: `Sread_user` is a dispatch entry per type
+            for T in (_M1, _M2, _M3)
+                tt_T = Tuple{
+                    LK.PL_local_data{T}, LK.IOSTREAM, LK.wrappedIO, Vector{UInt8}, Int, Int
+                }
+                @test any(e -> e[1] === LK.Sread_user && e[2] == tt_T, _SA_DISPATCH)
+            end
         end
 
     _sa_part("controls") && @testset "controls: each gate fails on a planted defect" begin

@@ -55,8 +55,9 @@ env:
   # …and a missing analysis tool too: test/test_static_analysis.jl SKIPS GREEN without JET, Aqua and
   # AllocCheck, so every mutant of a battery targeting it "survived" a target that ran nothing (Tooling2,
   # 2026-10-20: four survivors in 1 s against a 1 s baseline; caught locally). The tools are installed
-  # below when the battery's targets name that file; a mutant's own `targets` naming it without them
-  # fails closed (NO VERDICT).
+  # below when the battery's targets name that file, or tools/mutate_sa_part.sh (one part of it; JETGW,
+  # 2026-11-10: its baseline was NO VERDICT, `using JET` failed); a mutant's own `targets` naming it
+  # without them fails closed (NO VERDICT).
   LOGICKERNEL_REQUIRE_TOOLS: '1'
   # A WHOLE-SUITE target (tools/mutate_suite.sh) runs test/test_vendored_plunit.jl and
   # test/test_vendored_swipl.jl, which in CI FAIL without swipl-devel checked out at the pin (CI.yml's
@@ -114,8 +115,8 @@ jobs:
           ref: ${{ steps.pin.outputs.commit }}
           path: .upstream/swipl-devel
           submodules: true
-      - name: Install the analysis tools (the targets name test/test_static_analysis.jl or the whole suite)
-        if: ${{ contains(format('{0} {1}', inputs.targets, needs.plan.outputs.targets), 'test_static_analysis') || contains(format('{0} {1}', inputs.targets, needs.plan.outputs.targets), 'mutate_suite') }}
+      - name: Install the analysis tools (the targets name test/test_static_analysis.jl, one part of it or the whole suite)
+        if: ${{ contains(format('{0} {1}', inputs.targets, needs.plan.outputs.targets), 'test_static_analysis') || contains(format('{0} {1}', inputs.targets, needs.plan.outputs.targets), 'mutate_sa_part') || contains(format('{0} {1}', inputs.targets, needs.plan.outputs.targets), 'mutate_suite') }}
         run: |
           julia -e 'using Pkg; Pkg.add([
             PackageSpec(url="https://github.com/JuliaDebug/LoweredCodeUtils.jl", rev="master"),
@@ -163,8 +164,8 @@ jobs:
           ref: ${{ steps.pin.outputs.commit }}
           path: .upstream/swipl-devel
           submodules: true
-      - name: Install the analysis tools (the targets name test/test_static_analysis.jl or the whole suite)
-        if: ${{ contains(format('{0} {1}', inputs.targets, needs.plan.outputs.targets), 'test_static_analysis') || contains(format('{0} {1}', inputs.targets, needs.plan.outputs.targets), 'mutate_suite') }}
+      - name: Install the analysis tools (the targets name test/test_static_analysis.jl, one part of it or the whole suite)
+        if: ${{ contains(format('{0} {1}', inputs.targets, needs.plan.outputs.targets), 'test_static_analysis') || contains(format('{0} {1}', inputs.targets, needs.plan.outputs.targets), 'mutate_sa_part') || contains(format('{0} {1}', inputs.targets, needs.plan.outputs.targets), 'mutate_suite') }}
         run: |
           julia -e 'using Pkg; Pkg.add([
             PackageSpec(url="https://github.com/JuliaDebug/LoweredCodeUtils.jl", rev="master"),
