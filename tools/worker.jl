@@ -29,6 +29,17 @@ if get(ENV, "LOGICKERNEL_REQUIRE_SWIPL", "") == "1"
         end
     end
 end
+# the Julia pin (tools/lib_julia.sh hands the version in LOGICKERNEL_JULIA_PIN): a process of another VERSION refuses
+let want = get(ENV, "LOGICKERNEL_JULIA_PIN", "")
+    if !isempty(want) && string(VERSION) != want
+        write(joinpath(WDIR, "rc"), "7")
+        println(
+            stderr,
+            "worker: REFUSED — this is Julia $(VERSION), the pin (tools/WARM_JULIA_VERSION) is $want"
+        )
+        exit(7)
+    end
+end
 using Test, LogicKernel
 println("worker: depot ", first(DEPOT_PATH))            # the evidence depot (tools/lib_evidence.sh)
 # Pre-warm what the static-analysis gate loads (from the global environment); absent ones are the

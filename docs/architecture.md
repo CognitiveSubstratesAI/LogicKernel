@@ -84,6 +84,21 @@ machine can do nothing else meanwhile. So the gate for `main` is CI's:
 `tools/build_oracle.sh`, cached by pinned commit + build flags, put on PATH and checked to be that
 build — used by CI.yml, evidence.yml and mutation.yml alike.
 
+**LogicKernel's local paths run one Julia: the version in `tools/WARM_JULIA_VERSION`, whatever the machine
+default is** (audit D-0465: the daemons, the Pkg.test-way runs and the local mutation runs ran 1.13.2 while CI's
+`'1.13'` resolved to 1.13.3). `tools/lib_julia.sh` puts the bin directory of that version (juliaup's install
+under `~/.julia/juliaup`) first on PATH; `tools/warm.sh`, `run_tests.sh`, `pkgtest_way.sh`, `bench.sh`,
+`prepush.sh`, `mutate.sh`, `mutate_ci.py`, `mutate_sa_part.sh`, `mutate_suite.sh` and the fuzzer's test all go
+through it (`tools/julia_pin.sh run CMD…` starts anything else, e.g. `tools/fuzz.jl`, under the pin). It FAILS
+LOUDLY (exit 7): the pinned version is not installed (the message says `juliaup add <ver>`), the `julia` found
+prints another version, or a running daemon records another one (`.warm/julia_version`, written by
+`tools/warm_session.jl`; `warm.sh status` prints `julia <ver>`, and every command that uses the daemon refuses a
+mismatch until it is restarted). `LOGICKERNEL_JULIA_PIN_OFF=1` switches the pin off FOR TESTS ONLY, says so, and
+is refused in the pre-push bundle, `warm.sh branch-gate|preflight|evidence` and every mutation path. CI is not
+touched: setup-julia resolves its own version, and `tools/lib_evidence.sh` WARNs when the pin and CI's
+resolved version differ. A bump is a one-line commit of `tools/WARM_JULIA_VERSION` (with a dated note in its
+comment); `juliaup default` is the machine's setting and is never read or changed by the tools.
+
 **The mutation battery runs once per step, at its close, in CI** (`.github/workflows/mutation.yml`,
 started by hand with the step's list, `tools/mutants/<step>.py`): a baseline job, ONE JOB PER MUTANT
 (`fail-fast: false`), and a verdict table in the last job's summary. `tools/mutate_ci.py` applies

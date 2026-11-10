@@ -69,14 +69,16 @@ _oracle_pool_stats() { printf '%s/.warm/pool/oracle_stats' "$1"; }
 # failed. The release list: julialang's public versions.json (curl, 10 s, nothing sent), else juliaup's own
 # version db. Both sides non-empty, or it says it could not decide. Returns 0 always.
 _check_julia_ci() {
-    local spec have want db
+    local spec have want db pin
     spec=$(grep -hE '^\s+version:\s' "$1"/.github/workflows/*.yml 2>/dev/null |
         grep -v '\${{' | sed -E "s/^\s+version:\s*['\"]?([^'\" #]+).*/\1/" | grep -vx min | sort -u)
     if [ -z "$spec" ] || [ "$(printf '%s\n' "$spec" | wc -l)" -ne 1 ]; then
         echo "$2: WARN: CI's Julia version spec is not one value (.github/workflows/*.yml: '${spec//$'\n'/ }') — local vs CI not checked" >&2
         return 0
     fi
-    have=$(julia --version 2>/dev/null | sed -E 's/^julia version //')
+    # the PIN (tools/WARM_JULIA_VERSION, tools/lib_julia.sh) is what every local path runs; without one, the PATH's julia
+    pin=$(sed -nE 's/^[[:space:]]*([0-9]+\.[0-9]+\.[0-9]+)[[:space:]]*(#.*)?$/\1/p' "$1/tools/WARM_JULIA_VERSION" 2>/dev/null | head -1)
+    have=${pin:-$(julia --version 2>/dev/null | sed -E 's/^julia version //')}
     want=$(curl -s -m 10 https://julialang-s3.julialang.org/bin/versions.json 2>/dev/null | python3 -I -c '
 import json, sys
 spec = sys.argv[1]
@@ -97,7 +99,11 @@ print(c.get("Version", "").split("+")[0])' "$db" "$spec")
     if [ -z "$have" ] || [ -z "$want" ]; then
         echo "$2: WARN: could not decide local Julia (${have:-none}) vs CI's '$spec' (${want:-unresolved}) — check by hand" >&2
     elif [ "$have" != "$want" ]; then
-        echo "$2: WARN: local Julia is $have but CI resolves '$spec' to $want — a local pass is not CI's (juliaup add $want; juliaup default $want, between gates)" >&2
+        if [ -n "$pin" ]; then
+            echo "$2: WARN: the Julia pin (tools/WARM_JULIA_VERSION) is $have but CI resolves '$spec' to $want — a local pass is not CI's: juliaup add $want, then bump the pin (a one-line commit with a dated note)" >&2
+        else
+            echo "$2: WARN: local Julia is $have but CI resolves '$spec' to $want — a local pass is not CI's (juliaup add $want; juliaup default $want, between gates)" >&2
+        fi
     fi
     return 0
 }
@@ -273,6 +279,7 @@ _spawn_worker() {
         -p MemoryMax="${LOGICKERNEL_WORKER_MEM_MAX:-5G}" -p MemorySwapMax=0 \
         --working-directory="$root" -E "PATH=$PATH" -E "JULIA_DEPOT_PATH=$(_evidence_depot_path "$root")" \
         -E JULIA_PKG_PRECOMPILE_AUTO=0 -E LOGICKERNEL_REQUIRE_TOOLS=1 -E LOGICKERNEL_REQUIRE_SWIPL=1 \
+        ${LOGICKERNEL_JULIA_PIN:+-E LOGICKERNEL_JULIA_PIN=$LOGICKERNEL_JULIA_PIN} \
         ${LOGICKERNEL_WORKER_IDLE_S:+-E LOGICKERNEL_WORKER_IDLE_S=$LOGICKERNEL_WORKER_IDLE_S} \
         ${LOGICKERNEL_ORACLE_PIN:+-E LOGICKERNEL_ORACLE_PIN=$LOGICKERNEL_ORACLE_PIN} \
         ${LOGICKERNEL_ORACLE_STATS:+-E LOGICKERNEL_ORACLE_STATS=$LOGICKERNEL_ORACLE_STATS} \

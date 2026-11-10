@@ -10,6 +10,9 @@
 # project instantiated (the tooling job has both).
 set -uo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+# shellcheck source=/dev/null
+. "$ROOT/tools/lib_julia.sh"
+_julia_pin_apply "$ROOT" test_fuzz.sh || exit $?   # the fuzzer runs the pinned Julia (D-0466); its stub PATHs below link THAT julia
 T="$(mktemp -d)"
 trap 'rm -rf "$T"' EXIT
 pass=0 fail=0

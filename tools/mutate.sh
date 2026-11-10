@@ -69,6 +69,9 @@ TOOLS="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MAIN="${MUTATE_ROOT:-$(cd "$TOOLS/.." && pwd)}"
 # shellcheck source=/dev/null
 . "$TOOLS/lib_evidence.sh"
+# shellcheck source=/dev/null
+. "$TOOLS/lib_julia.sh"
+_julia_pin_apply "$TOOLS/.." mutate.sh gate || exit $?   # a mutation run never runs another patch than CI's (D-0465, D-0466)
 WT="$(_mutants_dir)"
 WT0="$WT"                                       # the base of the parallel workers' worktrees (-1 … -N)
 

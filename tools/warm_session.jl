@@ -70,6 +70,13 @@ include(joinpath(@__DIR__, "warm_idle.jl"))
 let why = swipl_pin_refusal(ROOT)
     why === nothing || error("warm lane: REFUSED to start — ", why)
 end
+# the Julia pin (tools/lib_julia.sh hands the version in LOGICKERNEL_JULIA_PIN): a process of another VERSION refuses
+let want = get(ENV, "LOGICKERNEL_JULIA_PIN", "")
+    isempty(want) || string(VERSION) == want ||
+        error(
+            "warm lane: REFUSED to start — this is Julia $(VERSION), the pin (tools/WARM_JULIA_VERSION) is $want"
+        )
+end
 # THE DAEMON SERVES ITS OWN CHECKOUT (user, 2026-10-16): one daemon per checkout by construction (the
 # unit is named by a hash of ROOT; requests go through ROOT/.warm) — but which LogicKernel `using`
 # loaded is the environment's choice: a Manifest path to another checkout would serve one tree's
@@ -140,6 +147,10 @@ function _serve()
     rm(STATUSF; force=true)
     seen = isfile(SEQF) ? strip(read(SEQF, String)) : ""
     mtimes = _src_mtimes()
+    # the daemon's Julia, on record: `warm.sh status` prints it and every command that uses the daemon compares it with
+    # tools/WARM_JULIA_VERSION (tools/lib_julia.sh; exit 7)
+    write(joinpath(DIR, "julia_version"), string(VERSION))
+    println("WARM LANE julia VERSION $(VERSION)")
     write(joinpath(DIR, "ready"), string(getpid()))
     println("WARM LANE READY (LogicKernel, pid $(getpid()))")
     flush(stdout)

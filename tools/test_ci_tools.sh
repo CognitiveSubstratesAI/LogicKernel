@@ -487,5 +487,114 @@ ok "ci_api: the token is not in the output" 0 "$(printf '%s' "$got" | grep -c "$
 ok "ci_api: no temp file is left behind" 0 "$(ls "$W/tmpd" | wc -l)"
 ok "ci_api: the token is stored in no file under tools/" 0 "$(grep -rIlF "$FAKETOK" "$ROOT/tools" | wc -l)"
 
+# ---------------------------------------------------------------- the local Julia pin (tools/lib_julia.sh, audit D-0465/D-0466)
+# A throwaway HOME holds juliaup-shaped installs whose `julia` is a STUB that prints a version: no real Julia starts.
+# GITHUB_ACTIONS is unset for these (CI itself skips the pin by design: the "CI: no pin" case sets it).
+LIBJ="$ROOT/tools/lib_julia.sh"
+mkjulia() {   # mkjulia HOME VERSION PRINTS — an install of VERSION whose julia prints "julia version PRINTS"
+    mkdir -p "$1/.julia/juliaup/julia-$2+0.x64.linux.gnu/bin"
+    printf '#!/bin/sh\necho "julia version %s"\n' "$3" > "$1/.julia/juliaup/julia-$2+0.x64.linux.gnu/bin/julia"
+    chmod +x "$1/.julia/juliaup/julia-$2+0.x64.linux.gnu/bin/julia"
+}
+mkjulia "$W/jh" 1.13.3 1.13.3                   # the pinned one, installed
+mkjulia "$W/jh" 1.13.5 1.13.2                   # an install whose binary prints another version
+mkdir -p "$W/jh/default" "$W/jfix/tools" "$W/jfix2/tools" "$W/jfix3/tools" "$W/jfix4/tools" "$W/jempty"
+printf '#!/bin/sh\necho "julia version 1.13.2"\n' > "$W/jh/default/julia"; chmod +x "$W/jh/default/julia"
+printf '1.13.3  # a comment\n' > "$W/jfix/tools/WARM_JULIA_VERSION"
+printf '1.13.4\n' > "$W/jfix2/tools/WARM_JULIA_VERSION"                       # not installed
+printf '1.13.5\n' > "$W/jfix3/tools/WARM_JULIA_VERSION"                       # installed, prints 1.13.2
+printf '# no version here\n' > "$W/jfix4/tools/WARM_JULIA_VERSION"
+pinrun() {   # pinrun HOME ROOT [ENV=V…] -- ARGS… — _julia_pin_apply ARGS in a clean bash; prints rc, PATH head, the exported pin
+    local h="$1" r="$2"; shift 2
+    local ev=()
+    while [ "$1" != -- ]; do ev+=("$1"); shift; done; shift
+    env -u GITHUB_ACTIONS -u LOGICKERNEL_JULIA_PIN_OFF -u LOGICKERNEL_JULIA_PIN_GATE -u LOGICKERNEL_JULIA_PIN "${ev[@]}" HOME="$h" \
+        PATH="$h/default:/usr/bin:/bin" LIBJ="$LIBJ" R="$r" \
+        bash -c '. "$LIBJ"; _julia_pin_apply "$R" who "$@"; echo "rc=$? first=${PATH%%:*} pin=${LOGICKERNEL_JULIA_PIN:-none} gate=${LOGICKERNEL_JULIA_PIN_GATE:-0}"' _ "$@" 2>&1 | tr '\n' ' '
+}
+out="$(pinrun "$W/jh" "$W/jfix" --)"
+has "julia pin: the pinned install goes first on PATH and is exported" "$out" "rc=0 first=$W/jh/.julia/juliaup/julia-1.13.3\\+0.x64.linux.gnu/bin pin=1.13.3 gate=0"
+out="$(pinrun "$W/jh" "$W/jfix2" --)"
+has "julia pin: not installed — the juliaup add hint" "$out" "REFUSED — Julia 1.13.4 .* is not installed: juliaup add 1.13.4"
+has "julia pin: not installed — rc 7" "$out" "rc=7 "
+out="$(pinrun "$W/jh" "$W/jfix3" --)"
+has "julia pin: the julia found prints another version — refused, both versions named" "$out" "REFUSED — the julia found first prints '1.13.2', the pin is 1.13.5"
+has "julia pin: …rc 7 and no pin exported" "$out" "rc=7 .* pin=none"
+out="$(pinrun "$W/jh" "$W/jfix4" --)"
+has "julia pin: a pin file without a version — refused (exit 7)" "$out" "REFUSED — tools/WARM_JULIA_VERSION is missing or holds no X.Y.Z version"
+has "julia pin: …rc 7" "$out" "rc=7 "
+out="$(pinrun "$W/jh" "$W/nonesuch" --)"
+has "julia pin: no pin file — refused (exit 7)" "$out" "REFUSED — tools/WARM_JULIA_VERSION is missing.*rc=7 "
+out="$(pinrun "$W/jh" "$W/jfix" LOGICKERNEL_JULIA_PIN_OFF=1 --)"
+has "julia pin: the test override works outside a gate and says so" "$out" "NOTICE — LOGICKERNEL_JULIA_PIN_OFF=1: the Julia pin is OFF, running '1.13.2'.*rc=0 first=$W/jh/default pin=none"
+out="$(pinrun "$W/jh" "$W/jfix" LOGICKERNEL_JULIA_PIN_OFF=1 -- gate)"
+has "julia pin: the override is REFUSED in a gate path (exit 7)" "$out" "REFUSED — LOGICKERNEL_JULIA_PIN_OFF=1 is for tests only.*rc=7 .* gate=1"
+out="$(pinrun "$W/jh" "$W/jfix" LOGICKERNEL_JULIA_PIN_OFF=1 LOGICKERNEL_JULIA_PIN_GATE=1 --)"
+has "julia pin: …and in a child of a gate path (the gate flag is inherited)" "$out" "REFUSED — LOGICKERNEL_JULIA_PIN_OFF=1 is for tests only.*rc=7"
+out="$(env -u LOGICKERNEL_JULIA_PIN_OFF GITHUB_ACTIONS=true HOME="$W/jempty" PATH="/usr/bin:/bin" LIBJ="$LIBJ" R="$W/jfix2" bash -c '. "$LIBJ"; _julia_pin_apply "$R" who gate; echo "rc=$? path=$PATH"' 2>&1)"
+has "julia pin: CI (GITHUB_ACTIONS=true) applies no pin — setup-julia's version runs" "$out" "^rc=0 path=/usr/bin:/bin$"
+want="$(env -u GITHUB_ACTIONS bash -c '. "$1"; _julia_pin_want "$2"' _ "$LIBJ" "$ROOT")"
+has "julia pin: tools/WARM_JULIA_VERSION holds one X.Y.Z (a trailing comment is allowed)" "$want" '^1\.13\.[0-9]+$'
+ok "julia pin: _julia_pid_version has no install path for a plain process" "" "$(bash -c '. "$1"; _julia_pid_version $$' _ "$LIBJ")"
+# the command line and every entry point (a stub HOME, never a real Julia)
+JP="$ROOT/tools/julia_pin.sh"
+mkjulia "$W/jhreal" "$want" "$want"
+out="$(env -u GITHUB_ACTIONS -u LOGICKERNEL_JULIA_PIN_OFF HOME="$W/jh" "$JP" want)"
+ok "julia_pin.sh want: prints the pin file's version" "$want" "$out"
+out="$(env -u GITHUB_ACTIONS -u LOGICKERNEL_JULIA_PIN_OFF HOME="$W/jhreal" PATH="$W/jh/default:/usr/bin:/bin" "$JP" path gate)"; rc=$?
+ok "julia_pin.sh path gate: exit 0" 0 "$rc"
+has "julia_pin.sh path gate: the pinned install first on the printed PATH" "$out" "^$W/jhreal/.julia/juliaup/julia-$want\\+0.x64.linux.gnu/bin:"
+out="$(env -u GITHUB_ACTIONS -u LOGICKERNEL_JULIA_PIN_OFF HOME="$W/jhreal" PATH="$W/jh/default:/usr/bin:/bin" "$JP" run julia --version)"
+ok "julia_pin.sh run: the stub of the pinned install runs, not the default one" "julia version $want" "$out"
+env -u GITHUB_ACTIONS LOGICKERNEL_JULIA_PIN_OFF=1 HOME="$W/jhreal" "$JP" run gate true > /dev/null 2>&1; rc=$?
+ok "julia_pin.sh run gate: the override is refused (exit 7)" 7 "$rc"
+env -u GITHUB_ACTIONS -u LOGICKERNEL_JULIA_PIN_OFF HOME="$W/jempty" "$JP" path > /dev/null 2>&1; rc=$?
+ok "julia_pin.sh path: the pin not installed — exit 7" 7 "$rc"
+# every GATE entry point refuses LOGICKERNEL_JULIA_PIN_OFF=1 (exit 7; prepush: 3 'nothing was run'), before it starts anything
+gate_refuses() {   # gate_refuses NAME WANT_RC CMD…
+    local name="$1" want_rc="$2" o r
+    shift 2
+    # (the stub julia first on PATH: were the refusal missing, the entry point would meet a stub, not a real Julia or a daemon)
+    o="$(env -u GITHUB_ACTIONS LOGICKERNEL_JULIA_PIN_OFF=1 HOME="$W/jhreal" PATH="$W/jh/default:$PATH" "$@" 2>&1 < /dev/null)"; r=$?
+    ok "$name: LOGICKERNEL_JULIA_PIN_OFF=1 is refused (exit $want_rc)" "$want_rc" "$r"
+    has "$name: …and the message says why" "$o" "LOGICKERNEL_JULIA_PIN_OFF=1 is for tests only"
+}
+gate_refuses "warm.sh branch-gate" 7 "$ROOT/tools/warm.sh" branch-gate
+gate_refuses "warm.sh preflight" 7 "$ROOT/tools/warm.sh" preflight
+gate_refuses "warm.sh evidence" 7 "$ROOT/tools/warm.sh" evidence
+gate_refuses "prepush.sh" 3 "$ROOT/tools/prepush.sh" S1
+gate_refuses "mutate.sh" 7 "$ROOT/tools/mutate.sh" status
+gate_refuses "mutate_ci.py baseline" 7 python3 -I "$ROOT/tools/mutate_ci.py" baseline 10 tools/WARM_JULIA_VERSION
+gate_refuses "mutate_ci.py one" 7 python3 -I "$ROOT/tools/mutate_ci.py" one tools/mutants/AV1.py AV1-M1 10 tools/WARM_JULIA_VERSION
+gate_refuses "mutate_sa_part.sh" 7 "$ROOT/tools/mutate_sa_part.sh"
+gate_refuses "mutate_suite.sh" 7 "$ROOT/tools/mutate_suite.sh"
+env -u GITHUB_ACTIONS LOGICKERNEL_JULIA_PIN_OFF=1 LOGICKERNEL_JULIA_PIN_GATE=1 HOME="$W/jhreal" PATH="$W/jh/default:$PATH" "$ROOT/tools/run_tests.sh" tools/WARM_JULIA_VERSION > /dev/null 2>&1 < /dev/null; rc=$?
+ok "run_tests.sh under a gate (the inherited flag): the override is refused (exit 7)" 7 "$rc"
+# the paths that are not gates: the pin is applied and a missing install refuses (exit 7) before anything starts
+for c in start check pool; do
+    env -u GITHUB_ACTIONS -u LOGICKERNEL_JULIA_PIN_OFF HOME="$W/jempty" "$ROOT/tools/warm.sh" "$c" > /dev/null 2>&1 < /dev/null; rc=$?
+    ok "warm.sh $c: the pin not installed — refused (exit 7)" 7 "$rc"
+done
+mkdir -p "$W/pkgout"
+env -u GITHUB_ACTIONS -u LOGICKERNEL_JULIA_PIN_OFF HOME="$W/jempty" LOGICKERNEL_PKGTEST_WAY_OUT="$W/pkgout" "$ROOT/tools/pkgtest_way.sh" "$ROOT/tools/WARM_JULIA_VERSION" > /dev/null 2>&1; rc=$?
+ok "pkgtest_way.sh: the pin not installed — refused (exit 7), no Julia started" 7 "$rc"
+env -u GITHUB_ACTIONS -u LOGICKERNEL_JULIA_PIN_OFF HOME="$W/jempty" "$ROOT/tools/bench.sh" > /dev/null 2>&1 < /dev/null; rc=$?
+ok "bench.sh: the pin not installed — refused (exit 7)" 7 "$rc"
+env -u GITHUB_ACTIONS -u LOGICKERNEL_JULIA_PIN_OFF HOME="$W/jempty" "$ROOT/tools/warm.sh" status > /dev/null 2>&1; rc=$?
+[ "$rc" != 7 ] && rc=not7
+ok "warm.sh status: needs no Julia, never refused for the pin" not7 "$rc"
+# the WARN of tools/lib_evidence.sh compares the PIN with what CI resolves
+mkdir -p "$W/wfix/.github/workflows" "$W/wfix/tools" "$W/wh/.julia/juliaup"
+printf 'jobs:\n  a:\n    steps:\n      - uses: julia-actions/setup-julia@v2\n        with:\n          version: '"'1.13'"'\n' > "$W/wfix/.github/workflows/x.yml"
+printf '{"AvailableChannels": {"1.13": {"Version": "1.13.3+0.x64.linux.gnu"}}}\n' > "$W/wh/.julia/juliaup/versiondb-x86_64-unknown-linux-musl.json"
+warnrun() {   # warnrun PINTEXT — _check_julia_ci with a pin file holding PINTEXT; CI "resolves" to 1.13.3 (the db; curl is the failing fake)
+    printf '%s\n' "$1" > "$W/wfix/tools/WARM_JULIA_VERSION"
+    env HOME="$W/wh" PATH="$W/bin:/usr/bin:/bin" LIBE="$ROOT/tools/lib_evidence.sh" R="$W/wfix" bash -c '. "$LIBE"; _check_julia_ci "$R" who; echo "rc=$?"' 2>&1
+}
+out="$(warnrun 1.13.2)"
+has "WARN: a pin older than CI's resolved version is named, with the bump advice" "$out" "who: WARN: the Julia pin \\(tools/WARM_JULIA_VERSION\\) is 1.13.2 but CI resolves '1.13' to 1.13.3.*bump the pin"
+out="$(warnrun 1.13.3)"
+hasnt "WARN: a pin equal to CI's resolved version says nothing" "$out" "WARN"
+
 echo "tools/test_ci_tools.sh: $pass passed, $fail failed"
 [ "$fail" -eq 0 ]

@@ -33,6 +33,11 @@ out="${LOGICKERNEL_PKGTEST_WAY_OUT:-$ROOT/.warm/pkgtest_way}"
 mkdir -p "$out"
 base="$out/$(basename "$f" .jl)"
 J="${LOGICKERNEL_PKGTEST_WAY_JULIA:-julia}"
+if [ -z "${LOGICKERNEL_PKGTEST_WAY_JULIA:-}" ]; then   # (the seam replaces julia itself: nothing to pin)
+    # shellcheck source=/dev/null
+    . "$ROOT/tools/lib_julia.sh"
+    _julia_pin_apply "$ROOT" pkgtest_way || exit $?   # the local Julia pin (tools/WARM_JULIA_VERSION); exit 7 refuses
+fi
 mem="${LOGICKERNEL_INERT_MEM_MAX:-3G}"
 # ONE AT A TIME: a second run waits for the first (fd 9 is closed for the test process below)
 lock="${LOGICKERNEL_PKGTEST_WAY_LOCK:-$ROOT/.warm/pkgtest_way.lock}"

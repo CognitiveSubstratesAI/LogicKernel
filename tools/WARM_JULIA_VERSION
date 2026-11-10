@@ -1,0 +1,1 @@
+1.13.3   # the Julia every local LogicKernel path runs (tools/lib_julia.sh); CI's '1.13' resolved to 1.13.3 on 2026-11-10 (run 42782932519)

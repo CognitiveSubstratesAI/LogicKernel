@@ -2725,6 +2725,9 @@ MUTANTS = [
                 cmd = setenv(
                     `bash $mutate run-parallel $args`,
                     "MUTATE_ROOT" => fixture, "PATH" => ENV["PATH"],
+                    # (the Julia pin, tools/lib_julia.sh: mutate.sh finds the pinned install through HOME, and CI's
+                    # runner skips the pin through GITHUB_ACTIONS: setenv REPLACES the environment)
+                    [k => ENV[k] for k in ("HOME", "GITHUB_ACTIONS") if haskey(ENV, k)]...,
                     [String(k) => String(v) for (k, v) in env]...
                 )
                 return run(pipeline(ignorestatus(cmd); stdout=devnull, stderr=devnull)).exitcode

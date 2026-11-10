@@ -43,6 +43,20 @@ OUT = "mutation-out"
 BLOCKING = ("SURVIVED", "TIMEOUT", "INVALID", "BADMATCH", "EQUIVALENT REFUTED", "NO VERDICT")
 
 
+def pin_julia():
+    """The LOCAL Julia pin (audit D-0465, D-0466; tools/lib_julia.sh): put the Julia of tools/WARM_JULIA_VERSION first
+    on PATH for every target, or exit 7 (not installed / another version / LOGICKERNEL_JULIA_PIN_OFF=1, which a
+    mutation path never accepts). In CI (GITHUB_ACTIONS=true) setup-julia's own version runs: nothing to do."""
+    if os.environ.get("GITHUB_ACTIONS") == "true":
+        return
+    sh = os.path.join(os.path.dirname(os.path.abspath(__file__)), "julia_pin.sh")
+    r = subprocess.run([sh, "path", "gate"], capture_output=True, text=True)
+    if r.returncode != 0:
+        sys.stderr.write(r.stderr)
+        sys.exit(r.returncode)
+    os.environ["PATH"] = r.stdout.strip()
+
+
 def load(path, only):
     # CISTATUS (audit D-0262): the first argument is the mutant list as a PATH in the repository
     # (the workflow input `mutants`: tools/mutants/<step>.py), never a bare step name — three
@@ -239,4 +253,6 @@ if __name__ == "__main__":
     commands = {"plan": plan, "baseline": baseline, "one": one, "collect": collect, "annotate": annotate}
     if len(sys.argv) < 2 or sys.argv[1] not in commands:
         sys.exit("usage: mutate_ci.py plan|baseline|one|collect|annotate … (see the header)")
+    if sys.argv[1] in ("baseline", "one"):      # the commands that start a Julia
+        pin_julia()
     sys.exit(commands[sys.argv[1]](sys.argv[2:]))

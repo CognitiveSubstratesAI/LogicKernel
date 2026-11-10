@@ -88,6 +88,8 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 DIR="$ROOT/.warm"
 # shellcheck source=/dev/null
 . "$ROOT/tools/lib_evidence.sh"
+# shellcheck source=/dev/null
+. "$ROOT/tools/lib_julia.sh"                            # the local Julia pin (tools/WARM_JULIA_VERSION)
 UNIT="logickernel-warm-$(printf '%s' "$ROOT" | md5sum | cut -c1-8)"   # one daemon per checkout
 
 _running() { systemctl --user is-active --quiet "$UNIT" && [ -f "$DIR/ready" ]; }
@@ -367,6 +369,7 @@ _start() {
     # shellcheck disable=SC2086                          # $slice: empty without user systemd
     systemd-run --user --unit="$UNIT" --collect --quiet $slice -p MemoryMax="${LOGICKERNEL_TEST_MEM_MAX:-8G}" \
         -p MemorySwapMax=0 --working-directory="$ROOT" -E "PATH=$PATH" "${copy_env[@]}" \
+        ${LOGICKERNEL_JULIA_PIN:+-E LOGICKERNEL_JULIA_PIN=$LOGICKERNEL_JULIA_PIN} \
         -E JULIA_REVISE=manual -E LOGICKERNEL_WARM_IDLE_S="${LOGICKERNEL_WARM_IDLE_S:-3600}" \
         -E LOGICKERNEL_WARM_IDLE_HOLD_QUEUE="${LOGICKERNEL_WARM_IDLE_HOLD_QUEUE:-0}" \
         -E LOGICKERNEL_WARM_QUEUE_FILE="${LOGICKERNEL_WARM_QUEUE_FILE:-$HOME/code/gate_queue.txt}" \
@@ -380,8 +383,31 @@ _start() {
         [ "$(date +%s)" -ge "$deadline" ] && { echo "warm lane: not ready after ${WARM_START_TIMEOUT_S:-600}s" >&2; return 1; }
         sleep 1
     done
+    _julia_daemon_check || return $?                # the daemon's recorded VERSION is the pin (else REFUSED, exit 7)
     _struct_snapshot > "$DIR/structs"               # what this daemon loaded (`_struct_gate`)
     echo "warm lane: ready (unit $UNIT, pid $(cat "$DIR/ready"))"
+}
+
+# _daemon_julia — the Julia VERSION the running daemon records at its start (.warm/julia_version, tools/warm_session.jl);
+# a daemon that predates the record: the version of the install its process runs from (/proc/<pid>/exe); empty when unknown
+_daemon_julia() {
+    local v
+    v="$({ tr -d '[:space:]' < "$DIR/julia_version"; } 2> /dev/null)"
+    [ -n "$v" ] || v="$(_julia_pin_version_of_pid_safe "$(cat "$DIR/ready" 2> /dev/null)")"
+    printf '%s' "$v"
+}
+_julia_pin_version_of_pid_safe() { [ -n "${1:-}" ] && _julia_pid_version "$1"; return 0; }
+# _julia_daemon_check — the running daemon's Julia against the pin (exit 7 and a message on a mismatch). Nothing to
+# compare when the pin is not applied (LOGICKERNEL_JULIA_PIN unset: CI, or the tests-only override outside a gate).
+_julia_daemon_check() {
+    [ -n "${LOGICKERNEL_JULIA_PIN:-}" ] || return 0
+    local have
+    have="$(_daemon_julia)"
+    if [ "$have" != "$LOGICKERNEL_JULIA_PIN" ]; then
+        echo "warm lane: REFUSED — the warm daemon runs Julia '${have:-unknown}', the pin (tools/WARM_JULIA_VERSION) is $LOGICKERNEL_JULIA_PIN: restart it (tools/warm.sh restart starts it under the pinned Julia); a gate never runs on another patch" >&2
+        return 7
+    fi
+    return 0
 }
 
 # _idle_setting — a line naming the idle exit the running daemon was STARTED with (`start` passes it as unit
@@ -1360,6 +1386,19 @@ case "${1:-}" in
 esac
 
 cmd="${1:-status}"; shift || true
+# THE LOCAL JULIA PIN (tools/lib_julia.sh): everything that starts or talks to a Julia runs tools/WARM_JULIA_VERSION, found
+# first on PATH here (the daemon and the workers inherit it), or REFUSES (exit 7). A GATE path (branch-gate, preflight,
+# evidence) also refuses LOGICKERNEL_JULIA_PIN_OFF=1. A running daemon that was started under another version is refused
+# by every command that uses it (`stop` and `restart` are how it is replaced).
+case "$cmd" in
+    status | lane-plan | manifest-seed | branch-gate-files | branch-gate-plan | fmt-pin | stop) ;;
+    branch-gate | preflight | evidence) _julia_pin_apply "$ROOT" "warm.sh $cmd" gate || exit $? ;;
+    *) _julia_pin_apply "$ROOT" "warm.sh $cmd" || exit $? ;;
+esac
+case "$cmd" in
+    send | file | static | check | fmt | inventory | preflight | branch-gate)
+        _running && { _julia_daemon_check || exit $?; } ;;
+esac
 case "$cmd" in
     status | lane-plan | manifest-seed) ;;
     preflight | evidence | locked | branch-gate)
@@ -1400,6 +1439,10 @@ case "$cmd" in
         if _running; then
             echo "warm lane: running (unit $UNIT, pid $(cat "$DIR/ready"), rss $(_gb "$(_daemon_rss_kb)") GB)"
             _idle_setting                                  # the second line: the idle exit this daemon was started with
+            _st_jv="$(_daemon_julia)"                      # the third: the Julia it runs, against the pin
+            _st_pin="$(_julia_pin_want "$ROOT")"
+            if [ -z "$_st_pin" ] || [ "$_st_jv" = "$_st_pin" ]; then echo "julia ${_st_jv:-unknown}"
+            else echo "julia ${_st_jv:-unknown} (pin $_st_pin: MISMATCH — restart the daemon)"; fi
         else echo "warm lane: not running"; exit 3; fi ;;
     send) _send "${1:-}" ;;
     branch-gate-files) _branch_gate_files ;;     # the files a branch-gate would run (no daemon)

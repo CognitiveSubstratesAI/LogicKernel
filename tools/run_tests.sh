@@ -102,6 +102,9 @@ export LOGICKERNEL_REQUIRE_SWIPL=1
 # sharded run's workers check it again where they run (tools/worker.jl).
 # shellcheck source=/dev/null
 . "$ROOT/tools/lib_evidence.sh"
+# shellcheck source=/dev/null
+. "$ROOT/tools/lib_julia.sh"
+_julia_pin_apply "$ROOT" run_tests.sh || exit $?   # every local path runs tools/WARM_JULIA_VERSION (a gate run inherits the gate flag)
 _check_swipl_pin "$ROOT" run_tests.sh || exit 1
 _check_julia_ci "$ROOT" run_tests.sh             # local Julia vs CI's resolved version: a WARN (D-0026)
 # 🔴 THE ORACLE'S ANSWERS ARE CACHED (user, 2026-10-12): while the pin is fixed swipl's answer to a

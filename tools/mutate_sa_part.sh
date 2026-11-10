@@ -12,6 +12,9 @@
 set -u
 part="${1:-jet_allowlist}"
 cd "$(dirname "$0")/.." || exit 2
+# shellcheck source=/dev/null
+. tools/lib_julia.sh
+_julia_pin_apply "$PWD" mutate_sa_part gate || exit $?   # the local Julia pin (a mutation path: the override is refused)
 k="$(awk '/^const _SA_PARTS = \(/ { on = 1; next } on && /^\)/ { exit } on' test/static_analysis_body.jl |
     tr -d ' \n' | tr ',' '\n' | grep -n -x "\"$part\"" | cut -d: -f1)"
 [ -n "$k" ] || { echo "mutate_sa_part: no part \"$part\" in _SA_PARTS"; exit 2; }

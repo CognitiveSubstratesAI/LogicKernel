@@ -30,6 +30,9 @@ if [ "$_sm_on" = 1 ]; then
     "$ROOT/tools/summarize_log.sh" bench "$_sm_log" "$_sm_rc" "$(( $(date +%s) - _sm_t0 ))"
     exit "$_sm_rc"
 fi
+# shellcheck source=/dev/null
+. "$ROOT/tools/lib_julia.sh"
+_julia_pin_apply "$ROOT" bench.sh || exit $?    # the local Julia pin: numbers are CI-comparable only on the version CI runs
 SECS="${BENCH_GATE_SECONDS:-10}"
 MIN_IDLE="${BENCH_GATE_MIN_IDLE:-0.90}"
 

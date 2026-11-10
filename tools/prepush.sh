@@ -21,7 +21,8 @@
 # It never creates, touches or deletes a gate marker, never passes --no-verify, never pushes, never
 # edits a file itself (only the warm.sh steps it names do), and reads no environment value.
 # Exit status: 0 all passed; 1 the first failed step (named on the "prepush: FAILED at <step>" line);
-# 3 the warm lane is not up, or the pinned gitleaks is not installed (tools/install_gitleaks.sh); 64 usage.
+# 3 the warm lane is not up, the pinned gitleaks is not installed (tools/install_gitleaks.sh), or the Julia pin
+# (tools/WARM_JULIA_VERSION, tools/lib_julia.sh) is not met / overridden by LOGICKERNEL_JULIA_PIN_OFF=1; 64 usage.
 # Seams for tools/test_ci_tools.sh: LOGICKERNEL_PREPUSH_WARM=<program> stands for tools/warm.sh,
 # LOGICKERNEL_PREPUSH_REPO=<dir> for the repository root, LOGICKERNEL_PREPUSH_SECRETS=<program> for
 # tools/secret_scan.sh.
@@ -32,6 +33,10 @@ SECRETS="${LOGICKERNEL_PREPUSH_SECRETS:-$(cd "$(dirname "$0")" && pwd)/secret_sc
 STEP="${1:-}"
 case "$STEP" in '' | *[!A-Za-z0-9._-]*) echo "usage: tools/prepush.sh <STEP>" >&2; exit 64 ;; esac
 cd "$ROOT" || exit 64
+# shellcheck source=/dev/null
+. "$(cd "$(dirname "$0")" && pwd)/lib_julia.sh"      # (this script's own tools/, not the REPO seam's)
+# the pre-push bundle is a gate path: the pinned Julia first on PATH for every step, the override REFUSED (D-0465, D-0466)
+_julia_pin_apply "$(cd "$(dirname "$0")/.." && pwd)" prepush gate || { echo "prepush: nothing was run."; exit 3; }
 BASE="origin/main"
 # the terms of D-0164, assembled from pieces so this file does not match its own grep
 TERMS164='seg''ment|SIG''SEGV|cra''sh|abo''rt|invalid term''_t|dies ''of'

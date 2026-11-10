@@ -14,6 +14,9 @@
 # output, every slice's, in slice order), else the first other non-zero exit, else 0 — and 0 only
 # when EVERY slice ran (a slice with no exit file is a failure, 2).
 set -u
+# shellcheck source=/dev/null
+. "$(dirname "${BASH_SOURCE[0]:-$0}")/lib_julia.sh"
+_julia_pin_apply "$(dirname "${BASH_SOURCE[0]:-$0}")/.." mutate_suite.sh gate || exit $?   # the local Julia pin (gate path)
 groups="${MUTATE_SUITE_GROUPS:-2}" shards="${MUTATE_SUITE_SA:-2}" procs="${MUTATE_SUITE_PROCS:-3}"
 out="$(mktemp -d "${TMPDIR:-/tmp}/mutate_suite_XXXXXX")"
 trap 'rm -rf "$out"' EXIT
