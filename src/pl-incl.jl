@@ -2722,6 +2722,95 @@ mutable struct ld_coverage{T}
 end
 ld_coverage{T}() where {T} = ld_coverage{T}(nothing, 0, foreign_state_pool{cov_data_state{T}}())
 
+# ── pl-prof.h and pl-prof.c's structs (lane F, PROF1) ──────────────────────────────────────────────────
+# DIVERGES (representation, for the whole block): a `call_node *` is an `Int` index into `ld.profile.node_table` (0: NULL), the
+# `PL_POINTER` a node is handed to Prolog as (`'$prof_node'(Ptr)`); a freed node leaves `nothing` in its slot, so a stale pointer
+# is a `type_error(profile_node, _)` where upstream reads freed memory. The counters (`uint64_t`) are `Int`: a nanosecond count
+# of a profiled run does not reach 2^63. The one profile type is the default one (`prof_default_type`: a `Definition` handle), so
+# a node's `type` is its index in the type table (`PROF_TYPE_DEFAULT`); `PL_register_profile_type` (foreign types hold C function
+# pointers) is a named refusal in src/pl-prof.jl.
+const PROF_INACTIVE = 0         # prof_status: Profiler is inactive
+const PROF_CPU = 1              # Profile CPU time
+const PROF_WALL = 2             # Profile wall time
+const PROF_WALL_EXACT = 3       # Measure wall time at the ports
+const PROF_CPU_EXACT = 4        # Idem, scaled to thread CPU time
+const PROFC_FALSE = 0           # prof_control
+const PROFC_TRUE = 1
+const PROFC_CLASSIC = 2
+const PROFNODE_MAGIC = Int(0x7ae38f24)
+const PROFTYPE_MAGIC = Int(0x639a2fb1)
+const MAX_PROF_TYPES = 10
+const PROF_TYPE_DEFAULT = 1                     # the index of `prof_default_type` in `types`
+const DEFAULT_SAMPLE_PERIOD = 5000              # usecs: 200 samples/sec
+
+PROF_IS_CPU(m::Int)::Bool = m == PROF_CPU || m == PROF_CPU_EXACT
+PROF_IS_EXACT(m::Int)::Bool = m == PROF_WALL_EXACT || m == PROF_CPU_EXACT
+
+# PORT: pl-prof.c call_node
+"A node of the dynamic call tree (pl-prof.c `struct call_node`); the links are indexes into `ld.profile.node_table`."
+mutable struct call_node{T}
+    magic::Int                                  # PROFNODE_MAGIC
+    parent::Int
+    handle::Union{Nothing, Definition{T}}       # handle to procedure-id
+    type::Int
+    calls::Int                                  # Calls from the parent
+    fails::Int                                  # fails back to choicepoint
+    exits::Int                                  # exits to the parent
+    recur::Int                                  # recursive calls
+    ticks::Int                                  # time-statistics (nsec)
+    sibling_ticks::Int                          # ticks in a siblings
+    raw::Int                                    # PROF_*_EXACT: prof_clock() units
+    win_next::Int                               # PROF_CPU_EXACT: window chain
+    in_window::Bool                             # in LD->profile.clock.win_nodes
+    next::Int                                   # next in siblings chain
+    siblings::Int                               # my offspring
+end
+call_node{T}(handle::Union{Nothing, Definition{T}}, type::Int) where {T} =
+    call_node{T}(PROFNODE_MAGIC, 0, handle, type, 0, 0, 0, 0, 0, 0, 0, 0, false, 0, 0)
+
+# PORT: pl-global.h profile (the `clock` struct inside it)
+"The `PROF_*_EXACT` clock of a thread's profile (pl-global.h `LD->profile.clock`)."
+mutable struct ld_profile_clock
+    last::Int                                   # prof_clock() at last switch
+    start::Int                                  # prof_clock() at start
+    start_ns::Int                               # monotonic nsec at start
+    raw::Int                                    # unconverted ticks total
+    accounting::Int                             # unconverted accounting ticks
+    win_start::Int                              # prof_clock() at window start
+    win_length::Int                             # window length in prof_clock() units
+    long_interval::Int                          # close window after this interval
+    win_cpu::Int                                # thread CPU nsec at window start
+    win_accounting::Int                         # accounting in this window
+    win_nodes::Int                              # nodes charged in this window
+end
+ld_profile_clock() = ld_profile_clock(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+
+# PORT: pl-global.h profile
+"The profiler fields of a thread's local data (pl-global.h `LD->profile`; the field order is upstream's)."
+mutable struct ld_profile{T}
+    accounting::Bool                            # we are accounting
+    sum_ok::Bool                                # siblings are counted
+    active::Int                                 # profiler is on (prof_status)
+    mode::Int                                   # mode that collected the data (prof_status)
+    ports_control::Int                          # which port counts are generated? (prof_control)
+    sample_period::Int                          # profile sample period (usecs.)
+    current::Int                                # `current' node
+    roots::Int                                  # list of root-nodes
+    samples::Int                                # profile samples
+    ticks::Int                                  # profile ticks total (nsec)
+    accounting_ticks::Int                       # Ticks in profCall() and friends
+    nodes::Int                                  # #Recorded nodes
+    time_at_last_tick::Int                      # nsec since time_at_start
+    time_at_start::Float64                      # Time at last start
+    time::Float64                               # recorded CPU time
+    clock::ld_profile_clock                     # PROF_*_EXACT clock
+    node_table::Vector{Union{Nothing, call_node{T}}}   # the nodes a pointer indexes (ORIGINAL: `malloc`'d memory upstream)
+end
+ld_profile{T}() where {T} = ld_profile{T}(
+    false, false, PROF_INACTIVE, PROF_INACTIVE, PROFC_FALSE, 0, 0, 0, 0, 0, 0, 0, 0, 0.0, 0.0,
+    ld_profile_clock(), Union{Nothing, call_node{T}}[]
+)
+
 # ── pl-allocpool.h and the table state of pl-tabling.h (TAB1 TB0) ───────────────────────────────────
 # DIVERGES (representation, for the whole block; docs/architecture.md TB0): a `trie_node *` is an `Int` node id and a
 # `trie *` an `Int` index into the database's trie table (0: NULL), shared with TR1's trie (audit D-0453 Q3: an arena
