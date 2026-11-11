@@ -101,6 +101,7 @@ t66(R) :- err(zipper_open_current(foo, _, [type(text)]), R).
 t67(R) :- err(zipper_open_current(foo, _, [encoding(octet)]), R).
 t68(R) :- err(zipper_open_current(foo, _, [encoding(text)]), R).
 t69(R) :- err(( current_output(S), zipper_open_current(S, _, []) ), R).
+t70(R) :- err(zipper_open_current(foo, _, [encoding(utf8)]), R).
 
 % KERNEL-ONLY rows (no row in the .out): '$rc_handle'/1 fails here, the kernel opens no resource database; swipl 10.1.20 (the pin) SUCCEEDS
 % with the zipper blob of its boot archive (`'$rc_handle'(H), blob(H, zipper)` is true).
