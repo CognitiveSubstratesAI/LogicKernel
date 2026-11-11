@@ -2380,7 +2380,8 @@ const VMI_RUN = (
     :I_FCALLDET2, :I_FCALLDET3, :I_FCALLDET4, :I_FCALLDET5, :I_FCALLDET6, :I_FCALLDET7,
     :I_FCALLDET8, :I_FCALLDET9, :I_FCALLDET10, :I_FEXITDET, :I_VAR, :I_NONVAR, :I_INTEGER,
     :I_RATIONAL, :I_FLOAT, :I_NUMBER, :I_ATOMIC, :I_ATOM, :I_STRING, :I_COMPOUND,
-    :I_CALLABLE, :A_ADD_FC, :B_UNIFY_FIRSTVAR, :B_UNIFY_VAR, :B_UNIFY_EXIT, :B_UNIFY_FF,
+    :I_CALLABLE, :A_ADD_FC, :A_ENTER, :A_INTEGER, :A_MPZ, :A_MPQ, :A_DOUBLE, :A_VAR, :A_VAR0,
+    :A_VAR1, :A_VAR2, :B_UNIFY_FIRSTVAR, :B_UNIFY_VAR, :B_UNIFY_EXIT, :B_UNIFY_FF,
     :B_UNIFY_VF, :B_UNIFY_FV, :B_UNIFY_VV, :B_UNIFY_FC, :B_UNIFY_VC, :B_EQ_VV, :B_EQ_VC,
     :B_NEQ_VV, :B_NEQ_VC, :C_VAR, :I_FAIL, :I_TRUE, :C_JMP, :C_OR, :C_VAR_N,
     :C_IFTHENELSE, :C_IFTHEN, :C_CUT, :C_FASTCOND, :C_FASTCUT, :C_END, :C_NOT, :C_FAIL,
@@ -2996,6 +2997,12 @@ function PL_next_solution_guarded(
     tz_table::Bool = false                          # t_attvarz's istable (TR4)
     tk_c::word = word(0)                            # t_const's constant word (TR4)
     ts_st::Int = _TS_NEXT                           # the status an outlined T_* body returned (T27)
+    ar_base::Int = 0                                # A_ENTER's top of the arithmetic stack (AR_THROW_EXCEPTION's base)
+    ar_femode::Int = FE_TONEAREST                   # A_ENTER's rounding mode (AR_END, AR_THROW_EXCEPTION put it back)
+    av_off::Int = 0                                 # a_var_n's offset
+    afn_fn::Int = 0                                 # common_an's function index
+    afn_an::Int = 0                                 # common_an's argument count
+    ac_what::Int = 0                                # a_cmp's comparison (LT .. EQ)
 
     if qid == 0                                    # PL_open_query() failed
         return 0
@@ -5978,6 +5985,128 @@ function PL_next_solution_guarded(
     @LOAD_REGISTERS(QID)
     af_rc || @goto b_throw                              # THROW_EXCEPTION
     setSlotValue!(ld, varFrameP(ld.frames[FR].base, Int(PCc[PC - 3])) + 1, af_w)  # rp: may have shifted
+    @goto next_instruction
+
+    # ── arithmetic on the arithmetic stack (pl-vmi.c A_*), V8/AR1 ────────────────────────────────
+    # The arithmetic stack is the local data's pool of numbers (`_number_alloc!`, pl-arith.jl); the
+    # last number pushed is `ld.arith_numbers[ld.arith_top]`. DIVERGES (file-wide for these arms):
+    # `AR_BEGIN`/`AR_END`/`AR_CLEANUP` hold no GMP context (Julia's GC frees a `BigInt`); what is left
+    # of them is the rounding mode (the header of pl-arith.jl): `A_ENTER` keeps the mode found in
+    # `ar_femode` and the top of the stack in `ar_base`, every end of an evaluation (`a_cmp`, `A_IS`,
+    # `A_FIRSTVAR_IS`, `ar_throw`) puts the mode back, `ar_throw` also cuts the stack to `ar_base`
+    # (upstream's `resetArithStack()` cuts it to the stack's base, below a caller's numbers too).
+    # NOT PORTED: `A_INTEGERW` (`CODES_PER_WORD` is 1 here: upstream asserts it is not executed).
+
+    # PORT: pl-vmi.c AR_THROW_EXCEPTION as ar_throw
+    # DIVERGES: a shared label (upstream's macro): stack and rounding mode as above, then `b_throw`.
+    @label ar_throw
+    ld.arith_top = ar_base                              # resetArithStack()
+    fegetround() != ar_femode && fesetround(ar_femode)  # AR_CLEANUP()
+    @goto b_throw                                       # THROW_EXCEPTION
+
+    # PORT: pl-vmi.c A_ENTER
+    # DIVERGES: the mode the `float_rounding` flag names is set here, where `evalExpression` sets it
+    # (pl-arith.jl `evalExpression_cells`); `AR_END` puts the mode found back.
+    @label A_ENTER
+    ar_base = ld.arith_top
+    ar_femode = fegetround()                            # __PL_ar_ctx.femode, kept
+    ar_mode = Int(ld.arith_f_flags & FLT_ROUND_MASK)
+    ar_mode != Int(FLT_ROUND_NEAREST) && set_rounding(ar_mode)
+    @goto next_instruction
+
+    # PORT: pl-vmi.c A_INTEGER
+    @label A_INTEGER
+    ai_n = _number_alloc!(ld)                           # allocArithStack()
+    ai_n.i = reinterpret(Int64, PCc[PC])                # (scode) *PC++
+    ai_n.type = V_INTEGER
+    PC += 1
+    @goto next_instruction
+
+    # PORT: pl-vmi.c A_MPZ
+    # DIVERGES: the operand is a literal (src/pl-vmi.jl), the integer as a value term: `get_rational`.
+    @label A_MPZ
+    get_rational(PCl[PCc[PC]], _number_alloc!(ld))      # get_mpz_from_code()
+    PC += 1
+    @goto next_instruction
+
+    # PORT: pl-vmi.c A_MPQ
+    # DIVERGES: as `A_MPZ`: the rational as a value term.
+    @label A_MPQ
+    get_rational(PCl[PCc[PC]], _number_alloc!(ld))      # get_mpq_from_code()
+    PC += 1
+    @goto next_instruction
+
+    # PORT: pl-vmi.c A_DOUBLE
+    # DIVERGES: the operand is a literal, the float as a value term: `get_number` (`cpDoubleData`).
+    @label A_DOUBLE
+    get_number(PCl[PCc[PC]], _number_alloc!(ld))
+    PC += 1
+    @goto next_instruction
+
+    # PORT: pl-vmi.c A_VAR
+    @label A_VAR
+    av_off = Int(PCc[PC])
+    PC += 1
+    @goto a_var_n
+
+    # PORT: pl-vmi.c A_VAR0
+    @label A_VAR0
+    av_off = Int(VAROFFSET(0))
+    @goto a_var_n
+
+    # PORT: pl-vmi.c A_VAR1
+    @label A_VAR1
+    av_off = Int(VAROFFSET(1))
+    @goto a_var_n
+
+    # PORT: pl-vmi.c A_VAR2
+    @label A_VAR2
+    av_off = Int(VAROFFSET(2))
+    @goto a_var_n
+
+    # PORT: pl-vmi.c a_var_n
+    # DIVERGES: on the WORDS (`_deref_loc`): a tagged integer, a value-table integer or rational and a float are
+    # pushed without a term (`get_rational`); anything else is evaluated (`evalExpression_cells` on a
+    # fresh term reference, as `A_ADD_FC`'s slow path) into the number pushed. `lTop` is raised past
+    # the argument `is/2` has written (`B_VAR`), as upstream's `argFrameP(lTop, 1)`, so the term
+    # reference does not overwrite it.
+    @label a_var_n
+    av_vi = varFrameP(ld.frames[FR].base, av_off) + 1
+    av_k, av_w, _ = _deref_loc(ld, -av_vi)              # deRef2(p, p2)
+    if av_k == DU_VALUE
+        if isTaggedIntW(av_w)                           # isTaggedInt(*p2): speedup common case a bit
+            av_n = _number_alloc!(ld)
+            av_n.i = valInt(av_w)
+            av_n.type = V_INTEGER
+            @goto next_instruction
+        end
+        av_v = _indirect_value(ld, av_w)
+        av_nk = number_kind(av_v)
+        if av_nk === NUM_INTEGER || av_nk === NUM_RATIONAL   # TAG_INTEGER
+            get_rational(av_v, _number_alloc!(ld))
+            @goto next_instruction
+        elseif av_nk === NUM_FLOAT                      # TAG_FLOAT
+            av_n = _number_alloc!(ld)
+            av_n.f = float_value(av_v)
+            av_n.type = V_FLOAT
+            @goto next_instruction
+        end
+    end
+    av_lsafe = ld.lTop                                  # intptr_t lsafe
+    @SAVE_REGISTERS(QID)
+    setLTop!(ld, argFrameP(ld.lTop, 1))                 # for is/2
+    av_rc = false
+    av_n = _number_alloc!(ld)                           # the result, pushed (pushArithStack(&result))
+    av_fid = PL_open_foreign_frame(ld)
+    if av_fid != 0
+        av_t = new_term_ref(ld)                         # consTermRef(p)
+        _slot_copy!(ld, av_t + 1, av_vi)
+        av_rc = evalExpression_cells(ld, av_t, av_n)
+        PL_close_foreign_frame(ld, av_fid)
+    end
+    setLTop!(ld, av_lsafe)
+    @LOAD_REGISTERS(QID)
+    av_rc || @goto ar_throw                             # AR_THROW_EXCEPTION
     @goto next_instruction
 
     # ── supervisors (pl-vmi.c) ────────────────────────────────────────────────────────────────────
