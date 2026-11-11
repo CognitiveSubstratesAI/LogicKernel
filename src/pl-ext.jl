@@ -76,7 +76,7 @@ const foreigns = (
 
 # The PRED_DEF tables, in `initBuildIns`' order (pl-ext.c:501-574: arith, bag, comp, list, module, prims, variant,
 # copyterm, prologflag, trace, pro, read, wic (LB3), file (S1), files, glob (LB2b), ctype (CT1a: setlocale/3), proc, srcfile (LB2), write, system, op, rec (D1: erase/1; D2: the recorded database), attvar — AV2, Y1; gvar — G1; dict — BOOTPRED (pl-ext.c:536-574: locale and debug, between gvar and dict, are left out); term,
-# termhash and bisim, between op and attvar upstream, are not ported; strings (T2), tabling and wrap, then ctype_pred (CT1b: char_type/2, code_type/2, in src/os/pl-ctype-pred.jl) are appended last); and the two dispatch tables. A comment, not a docstring,
+# termhash and bisim, between op and attvar upstream, are not ported; strings (T2), tabling and wrap, then ctype_pred (CT1b: char_type/2, code_type/2, in src/os/pl-ctype-pred.jl), then tai (TAI1: stamp_date_time/3, date_time_stamp/2, format_time/3,4, in src/os/pl-tai.jl) are appended last); and the two dispatch tables. A comment, not a docstring,
 # as for every module-level constant the global-state lint reads.
 const _PRED_TABLES = (
     PL_predicates_from_atom, PL_predicates_from_arith, PL_predicates_from_bag,
@@ -97,7 +97,8 @@ const _PRED_TABLES = (
     PL_predicates_from_error, PL_predicates_from_event,
     PL_predicates_from_termhash, PL_predicates_from_trie, PL_predicates_from_tabling,
     PL_predicates_from_wrap, PL_predicates_from_alloc, PL_predicates_from_setup,
-    PL_predicates_from_ctype_pred
+    PL_predicates_from_ctype_pred,
+    PL_predicates_from_tai
 )
 const _FOREIGN_VA = (
     PL_predicates_from_atom..., PL_predicates_from_arith..., PL_predicates_from_bag...,
@@ -118,7 +119,8 @@ const _FOREIGN_VA = (
     PL_predicates_from_termhash..., PL_predicates_from_trie...,
     PL_predicates_from_tabling...,
     PL_predicates_from_wrap..., PL_predicates_from_alloc..., PL_predicates_from_setup...,
-    PL_predicates_from_ctype_pred...
+    PL_predicates_from_ctype_pred...,
+    PL_predicates_from_tai...
 )
 const _FOREIGN_DET = foreigns
 
@@ -172,7 +174,7 @@ end
 
 # DIVERGES: a Julia helper for `initBuildIns!`'s REG_PLIST sequence, in upstream's order with one running
 # dispatch index `first`. A recursive walk (`Base.tail`) specialises per table; a `map` over a tuple of 32
-# or more entries (`_PRED_TABLES` has 38) takes Base's `Any32` method, whose result is not inferred (JET).
+# or more entries (`_PRED_TABLES` has 39) takes Base's `Any32` method, whose result is not inferred (JET).
 "Register the tables `tables` in order, the first at dispatch index `first + 1`; returns the next free index."
 function _register_tables!(gd::PL_global_data{T}, first::Int, ::Tuple{})::Int where {T}
     return first

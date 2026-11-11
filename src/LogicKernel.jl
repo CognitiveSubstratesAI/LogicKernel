@@ -90,6 +90,7 @@ include("os/pl-fmt.jl")        # swipl-devel src/os/pl-fmt.c — format/2,3, for
 include("pl-dwim.jl")          # swipl-devel src/pl-dwim.c — dwim_match/3, '$dwim_predicate'/2 (DWIM1)
 include("os/pl-ctype-pred.jl") # swipl-devel src/os/pl-ctype.c — char_type/2, code_type/2 (CT1b; needs the FLI, so loaded after the kernel)
 include("os/pl-libtai.jl")    # swipl-devel src/libtai/ — the calendar-time and leap-second pieces pl-tai.c uses (TAI1)
+include("os/pl-tai.jl")       # swipl-devel src/os/pl-tai.c — stamp_date_time/3, date_time_stamp/2 (TAI1; needs the FLI, so loaded after the kernel)
 include("pl-ext.jl")           # swipl-devel src/pl-ext.c — registering the built-ins; their dispatch
 include("gd_template.jl")       # ORIGINAL — the template database: a copy of a booted PL_global_data{T} per new database (LB4 b1, dormant)
 include("boot_image.jl")       # ORIGINAL — the readers of a booted database: T1 predicates, T3 source files (LB4 b1-3)

@@ -2064,6 +2064,24 @@ function _manifest_index(T)
                 LK.pl_string_upper2_va, LK.pl_normalize_space2_va
             )
         ]...,
+        # TAI1 — stamp_date_time/3, date_time_stamp/2 (src/os/pl-tai.jl; pl-tai.c)
+        [
+            (f, Tuple{LD, Int, Int, LK.foreign_context{T}}, false) for f in (
+                LK.pl_stamp_date_time3_va, LK.pl_date_time_stamp2_va
+            )
+        ]...,
+        (LK.get_taia, Tuple{LD, Int, Vector{UInt64}}, false),
+        (LK.get_tz_arg, Tuple{LD, Int, Int, Int, LK.ftm}, false),
+        [
+            (f, Tuple{LD, Int, Int, Int}, false) for f in (LK.get_int_arg, LK.get_voff_arg, LK.get_dst_arg)
+        ]...,
+        (LK.get_v_float_arg, Tuple{LD, Int, Int, Int, Base.RefValue{Bool}, Float64}, false),
+        (LK.get_v_int_arg, Tuple{LD, Int, Int, Int, Base.RefValue{Bool}, Int}, false),
+        (LK._get_date9, Tuple{LD, Int, Int, LK.ftm}, false),
+        (LK._ftm_fixup, Tuple{LD, Int, Int, LK.ftm, Bool}, false),
+        (LK.get_ftm, Tuple{LD, Int}, false),
+        (LK._unify_date9, Tuple{LD, Int, Int, Int, Int, Int, Int, Float64, Int, String, String}, false),
+        (LK._atom_is, Tuple{T, String}, false),
         # DWIM1 — dwim_match/3 and '$dwim_predicate'/2 (pl-dwim.c)
         (LK.pl_dwim_match, Tuple{LD, Int, Int, Int}, false),
         (LK.pl_dwim_predicate, Tuple{LD, Int, Int, LK.foreign_context{T}}, false),
@@ -4112,6 +4130,20 @@ const _DISPATCH_MANIFEST_TUPLE = (
     (LK.leapsecs_init, Tuple{}, false),
     (LK.leapsecs_add, Tuple{Vector{UInt64}, UInt64, Bool}, false),
     (LK.leapsecs_sub, Tuple{Vector{UInt64}, UInt64}, false),
+    # TAI1 — pl-tai.jl: the broken-down time, the confined libc calls, the zone (no term type)
+    (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_tai)}, false),
+    (LK.cal_ftm, Tuple{LK.ftm, Int, Vector{UInt64}}, false),
+    (LK.PL_localtime_r, Tuple{Int, LK.CTm}, false),
+    (LK._c_mktime, Tuple{LK.CTm}, false),
+    (LK._c_strftime, Tuple{String, LK.CTm}, false),
+    (LK._c_asctime_r, Tuple{LK.CTm}, false),
+    (LK._c_mbstowcs, Tuple{Vector{UInt8}, Int}, false),
+    (LK.do_tzset, Tuple{}, false),
+    (LK.tz_offset, Tuple{}, false),
+    (LK.tz_name, Tuple{Int}, false),
+    (LK.tz_name_as_atom, Tuple{Int}, false),
+    (LK._c_int64, Tuple{Float64}, false),
+    (LK._c_int32, Tuple{Float64}, false),
     # DWIM1 — the C-string comparison of pl-dwim.c (NUL-terminated byte vectors; no term type: outside the per-type block)
     (LK._dwim_streq, Tuple{Vector{UInt8}, Int, Vector{UInt8}, Int}, false),
     (LK._dwim_strlen, Tuple{Vector{UInt8}, Int}, false),
