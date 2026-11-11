@@ -3848,6 +3848,7 @@ const _DISPATCH_MANIFEST_TUPLE = (
     (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_error)}, false),
     (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_event)}, false),
     (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_termhash)}, false),
+    (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_bisim)}, false),
     # TAB1-min: the registration tables of src/pl-tabling.jl and src/pl-wrap.jl, and the term-type-independent helpers
     (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_tabling)}, false),
     (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_wrap)}, false),
