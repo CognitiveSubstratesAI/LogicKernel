@@ -1956,6 +1956,9 @@ function _manifest_index(T)
         (LK.double_in_int64_range, Tuple{Float64}, true),
         (LK.toIntegerNumber, Tuple{LD, LK.number, Int}, false),
         (LK.ar_sign_i, Tuple{LK.number}, true),
+        (LK._succ_body, Tuple{LD, Int, Int, LK.number, LK.number, LK.number}, false),
+        (LK.var_or_integer, Tuple{LD, Int, LK.number, Int, Int}, false),
+        (LK.get_mpz, Tuple{LD, Int, LK.number}, false),
         (LK.shift_to_far, Tuple{LD, LK.number, LK.number, Int}, false),
         (LK.MSB64, Tuple{Int64}, true),
         (LK.ar_shift, Tuple{LD, LK.number, LK.number, LK.number, Int}, false),
@@ -2058,7 +2061,10 @@ function _manifest_index(T)
         [
             (f, Tuple{LD, Int, Int, LK.foreign_context{T}}, false) for f in (
                 LK.pl_is2_va, LK.pl_lt2_va, LK.pl_gt2_va, LK.pl_leq2_va, LK.pl_geq2_va,
-                LK.pl_neq2_va, LK.pl_eq2_va, LK.pl_between3_va
+                LK.pl_neq2_va, LK.pl_eq2_va, LK.pl_between3_va, LK.pl_succ2_va, LK.pl_plus3_va,
+                LK.pl_bounded_number3_va, LK.pl_divmod4_va,
+                LK.pl_nth_integer_root_and_remainder4_va, LK.pl_rational3_va,
+                LK.pl_float_parts4_va, LK.pl_float_class2_va
             )
         ]...,
         # NF1 — the non-deterministic foreign calls: the return values, the context, the state pool
@@ -5668,6 +5674,7 @@ const _DISPATCH_MANIFEST_TUPLE = (
     (LK.cmp_q_z, Tuple{Rational{BigInt}, BigInt}, false),
     (LK.cmpReals, Tuple{LK.number, LK.number}, false),
     (LK.intNumber, Tuple{LK.number}, true), (LK.ar_even, Tuple{LK.number}, false),
+    (LK._mpz_rootrem, Tuple{BigInt, Int}, false),
     (LK.ar_smallint, Tuple{LK.number}, false), (LK.pow64, Tuple{Int64, Int64}, true),
     (LK.mpz_to_int64, Tuple{BigInt}, false), (LK.mpz_to_uint64, Tuple{BigInt}, false),
     (LK.mpz_root, Tuple{BigInt, UInt64}, false),

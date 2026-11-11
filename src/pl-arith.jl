@@ -2857,6 +2857,350 @@ function pl_between3_va(
     return rc ? FTRUE : FFALSE
 end
 
+# ── succ/2, plus/3, bounded_number/3 and the bignum built-ins (pl-arith.c) ───────────────────────
+# PORT: pl-arith.c succ as pl_succ2_va
+# DIVERGES: "tagged" is `PLMINTAGGEDINT..PLMAXTAGGEDINT` of the kernel; the numbers are the local
+# data's pooled ones (`_number_alloc!`). As upstream, an integer first argument beyond the tagged
+# range falls through to the second argument's branch, which finds the number just unified.
+# (PRED_IMPL("succ", 2, succ, 0))
+"`succ/2` (pl-arith.c): `A2` is `A1+1`, both non-negative integers; at least one is bound."
+function pl_succ2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2 = PL__t0, PL__t0 + 1
+    i1 = _number_alloc!(ld)
+    i2 = _number_alloc!(ld)
+    one = _number_alloc!(ld)
+    rc = _succ_body(ld, A1, A2, i1, i2, one)
+    _number_free!(ld, 3)                                    # clearInteger(&i1, &i2, &one)
+    return rc ? FTRUE : FFALSE
+end
+
+# PORT: pl-arith.c succ as _succ_body
+# DIVERGES: the body of upstream's `succ`, so the pooled numbers are released once, by the caller.
+"The body of `succ/2` on the numbers `i1`, `i2`, `one` of the caller (pl-arith.c)."
+function _succ_body(
+    ld::PL_local_data{T}, A1::term_t, A2::term_t, i1::number, i2::number, one::number
+)::Bool where {T}
+    one.type = V_INTEGER
+    one.i = 1
+    rc = false
+
+    if PL_get_number(ld, A1, i1) && intNumber(i1)           # isInteger(*p1)
+        if i1.type === V_INTEGER && 0 <= i1.i <= PLMAXTAGGEDINT    # isTaggedInt: v >= 0 && ++v >= 0
+            return PL_unify_int64(ld, A2, i1.i + 1)
+        end
+        if ar_sign_i(i1) < 0
+            return PL_error(ld, ERR_DOMAIN, mk_sym(T, :not_less_than_zero), A1)
+        end
+        rc = pl_ar_add(ld, i1, one, i2) && PL_unify_number(ld, A2, i2)
+    elseif !PL_is_variable(ld, A1)                          # !canBind(*p1)
+        return PL_error(ld, ERR_TYPE, mk_sym(T, :integer), A1)
+    end
+
+    if PL_get_number(ld, A2, i2) && intNumber(i2)           # isInteger(*p2)
+        if i2.type === V_INTEGER && PLMINTAGGEDINT <= i2.i <= PLMAXTAGGEDINT    # isTaggedInt(*p2)
+            i2.i > 0 && return PL_unify_int64(ld, A1, i2.i - 1)
+            i2.i == 0 && return false
+        end
+        sgn = ar_sign_i(i2)
+        if sgn == 1
+            rc = ar_minus(ld, i2, one, i1) && PL_unify_number(ld, A1, i1)
+        elseif sgn == 0
+            return false
+        else
+            return PL_error(ld, ERR_DOMAIN, mk_sym(T, :not_less_than_zero), A2)
+        end
+    elseif !PL_is_variable(ld, A2)                          # !canBind(*p2)
+        return PL_error(ld, ERR_TYPE, mk_sym(T, :integer), A2)
+    else
+        return PL_error(ld, ERR_INSTANTIATION)
+    end
+
+    return rc
+end
+
+# PORT: pl-arith.c var_or_integer
+# DIVERGES: returns the new mask, or -1 after the type error (upstream: a `bool` and `*mask`).
+"Read `t` into `n` if it is an integer, ored into `mask` as `which`; a variable is kept (pl-arith.c)."
+function var_or_integer(
+    ld::PL_local_data{T}, t::term_t, n::number, which::Int, mask::Int
+)::Int where {T}
+    if PL_get_number(ld, t, n) && intNumber(n)              # isInteger(*p): get_integer(*p, n)
+        return mask | which
+    end
+    PL_is_variable(ld, t) && return mask                    # canBind(*p)
+    PL_error(ld, ERR_TYPE, mk_sym(T, :integer), t)
+    return -1
+end
+
+# PORT: pl-arith.c plus as pl_plus3_va
+# DIVERGES: the numbers are the local data's pooled ones.
+# (PRED_IMPL("plus", 3, plus, 0))
+"`plus/3` (pl-arith.c): `A3` is `A1+A2`, any two of the three being integers."
+function pl_plus3_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2, A3 = PL__t0, PL__t0 + 1, PL__t0 + 2
+    m = _number_alloc!(ld)
+    n = _number_alloc!(ld)
+    o = _number_alloc!(ld)
+    mask = 0
+
+    mask = var_or_integer(ld, A1, m, 1, mask)
+    mask >= 0 && (mask = var_or_integer(ld, A2, n, 2, mask))
+    mask >= 0 && (mask = var_or_integer(ld, A3, o, 4, mask))
+    if mask < 0
+        _number_free!(ld, 3)
+        return FFALSE
+    end
+
+    if mask == 7 || mask == 3                              # +, +, + and +, +, -
+        pl_ar_add(ld, m, n, o)
+        rc = PL_unify_number(ld, A3, o)
+    elseif mask == 5                                        # +, -, +
+        ar_minus(ld, o, m, n)
+        rc = PL_unify_number(ld, A2, n)
+    elseif mask == 6                                        # -, +, +
+        ar_minus(ld, o, n, m)
+        rc = PL_unify_number(ld, A1, m)
+    else
+        _number_free!(ld, 3)
+        return PL_error(ld, ERR_INSTANTIATION) ? FTRUE : FFALSE
+    end
+
+    _number_free!(ld, 3)                                    # clearInteger(&m, &n, &o)
+    return rc ? FTRUE : FFALSE
+end
+
+# PORT: pl-arith.c bounded_number as pl_bounded_number3_va
+# DIVERGES: the numbers are the local data's pooled ones; `nexttoward(x, ±INFINITY)` is
+# `nextfloat`/`prevfloat`. The type error names `A1`, as upstream's (not the number's argument `A3`).
+# (PRED_IMPL("bounded_number", 3, bounded_number, 0))
+"`bounded_number/3` (pl-arith.c): `Low < Num < High`, a bound unbound taking its neighbour of `Num`."
+function pl_bounded_number3_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2, A3 = PL__t0, PL__t0 + 1, PL__t0 + 2
+    n = _number_alloc!(ld)
+    lo = _number_alloc!(ld)
+    hi = _number_alloc!(ld)
+
+    if PL_get_number(ld, A3, n)
+        if n.type === V_INTEGER || n.type === V_MPZ
+            cpNumber(lo, n)
+            cpNumber(hi, n)
+            ar_add_si(ld, lo, Int64(-1))
+            ar_add_si(ld, hi, Int64(1))
+        else
+            n.type === V_MPQ && promoteToFloatNumber(ld, n)
+            # V_FLOAT
+            if isfinite(n.f)
+                lo.type = V_FLOAT
+                lo.f = prevfloat(n.f)                       # nexttoward(f, -INFINITY)
+                hi.type = V_FLOAT
+                hi.f = nextfloat(n.f)                       # nexttoward(f, INFINITY)
+            else
+                _number_free!(ld, 3)
+                return FFALSE
+            end
+        end
+
+        rc =
+            (
+                PL_get_number(ld, A1, lo) ? cmpNumbers(ld, lo, n) == CMPEX_LESS :
+                PL_unify_number(ld, A1, lo)
+            ) && (
+                PL_get_number(ld, A2, hi) ? cmpNumbers(ld, n, hi) == CMPEX_LESS :
+                PL_unify_number(ld, A2, hi)
+            )
+    else
+        rc = PL_error(ld, ERR_TYPE, mk_sym(T, :number), A1)
+    end
+    _number_free!(ld, 3)                                    # clearNumber(&n, &lo, &hi)
+    return rc ? FTRUE : FFALSE
+end
+
+# PORT: pl-arith.c get_mpz
+"Read the integer `t` holds into `n` as a `V_MPZ`; `type_error(integer, T)` otherwise (pl-arith.c)."
+function get_mpz(ld::PL_local_data{T}, t::term_t, n::number)::Bool where {T}
+    if PL_get_number(ld, t, n) && intNumber(n)              # isInteger(*p): get_integer(*p, n)
+        promoteToMPZNumber(n)
+        return true
+    end
+    return PL_type_error(ld, "integer", t)
+end
+
+# PORT: pl-arith.c divmod as pl_divmod4_va
+# DIVERGES: the numbers are the local data's pooled ones; `mpz_fdiv_qr` is `fldmod` on `BigInt`.
+# (PRED_IMPL("divmod", 4, divmod, 0))
+"`divmod/4` (pl-arith.c): `Q` is `div(N, D)` and `R` is `mod(N, D)` of two integers."
+function pl_divmod4_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2, A3, A4 = PL__t0, PL__t0 + 1, PL__t0 + 2, PL__t0 + 3
+    N = _number_alloc!(ld)
+    D = _number_alloc!(ld)
+    rc = false
+
+    if get_mpz(ld, A1, N) && get_mpz(ld, A2, D)
+        if !iszero(D.mpz)                                   # mpz_sgn(D) != 0
+            Q = _number_alloc!(ld)
+            R = _number_alloc!(ld)
+            Q.type = V_MPZ
+            R.type = V_MPZ
+            Q.mpz, R.mpz = fldmod(N.mpz, D.mpz)             # mpz_fdiv_qr
+            rc = PL_unify_number(ld, A3, Q) && PL_unify_number(ld, A4, R)
+            _number_free!(ld, 2)                            # clearNumber(&R), clearNumber(&Q)
+        else
+            rc = PL_error(ld, "divmod", 2, "", ERR_DIV_BY_ZERO)
+        end
+    end
+
+    _number_free!(ld, 2)                                    # clearNumber(&N), clearNumber(&D)
+    return rc ? FTRUE : FFALSE
+end
+
+# PORT: pl-gmp.c mpz_rootrem as _mpz_rootrem
+# DIVERGES: GMP's `mpz_rootrem` has no Julia wrapper: the truncated `k`-th root by Newton's
+# iteration on `BigInt` (the root of a negative `n` is the negated root of `-n`, GMP's sign rule),
+# the remainder `n - root^k`. A `k` at least the bit length of `n` gives the root 1 (or 0) at once.
+"`(root, rem)` of `mpz_rootrem(n, k)`: `root = trunc(n^(1/k))`, `rem = n - root^k`, for `k >= 1`."
+function _mpz_rootrem(n::BigInt, k::Int)::Tuple{BigInt, BigInt}
+    neg = n < 0
+    a = neg ? -n : n
+    root = if a < 2 || k == 1
+        a
+    else
+        bits = ndigits(a; base = 2)
+        if k >= bits                                        # a < 2^bits <= 2^k
+            BigInt(1)
+        else
+            x = BigInt(1) << cld(bits, k)                   # a power of two above the root
+            while true
+                y = div((k - 1) * x + div(a, x^(k - 1)), k)
+                y >= x && break
+                x = y
+            end
+            x
+        end
+    end
+    neg && (root = -root)
+    return root, n - root^k
+end
+
+# PORT: pl-arith.c nth_integer_root_and_remainder as pl_nth_integer_root_and_remainder4_va
+# DIVERGES: the numbers are the local data's pooled ones; the root is `_mpz_rootrem`.
+# (PRED_IMPL("nth_integer_root_and_remainder", 4, nth_integer_root_and_remainder, 0))
+"`nth_integer_root_and_remainder/4` (pl-arith.c): the truncated `I`-th root of `N` and the rest."
+function pl_nth_integer_root_and_remainder4_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2, A3, A4 = PL__t0, PL__t0 + 1, PL__t0 + 2, PL__t0 + 3
+    N = _number_alloc!(ld)
+    rc = false
+
+    I = PL_get_long_ex(ld, A1)
+    if I !== nothing && get_mpz(ld, A2, N)
+        if I >= 1
+            if N.mpz < 0 && I % 2 == 0
+                rc = PL_error(ld, ERR_AR_UNDEF)
+            else
+                root = _number_alloc!(ld)
+                rem = _number_alloc!(ld)
+                root.type = V_MPZ
+                rem.type = V_MPZ
+                root.mpz, rem.mpz = _mpz_rootrem(N.mpz, I)  # mpz_rootrem
+                rc = PL_unify_number(ld, A3, root) && PL_unify_number(ld, A4, rem)
+                _number_free!(ld, 2)                        # clearNumber(&root), clearNumber(&rem)
+            end
+        else
+            rc = PL_domain_error(ld, "not_less_than_one", A1)
+        end
+    end
+
+    _number_free!(ld, 1)                                    # clearNumber(&N)
+    return rc ? FTRUE : FFALSE
+end
+
+# PORT: pl-arith.c rational as pl_rational3_va
+# DIVERGES: on the numbers (`PL_get_number`) where upstream tests the word (`isRational`); the
+# numerator and denominator are `BigInt`s of the rational.
+# (PRED_IMPL("rational", 3, rational, 0))
+"`rational/3` (pl-arith.c): the numerator and denominator of a rational; an integer is `N/1`."
+function pl_rational3_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2, A3 = PL__t0, PL__t0 + 1, PL__t0 + 2
+    n = _number_alloc!(ld)
+    rc = false
+
+    if PL_get_number(ld, A1, n) && n.type !== V_FLOAT       # isRational(*p)
+        if n.type === V_MPQ                                 # isMPQNum(*p)
+            num = _number_alloc!(ld)
+            den = _number_alloc!(ld)
+            num.type = V_MPZ
+            den.type = V_MPZ
+            num.mpz = numerator(n.mpq)                      # mpz_set(num, mpq_numref(n))
+            den.mpz = denominator(n.mpq)                    # mpz_set(den, mpq_denref(n))
+            rc = PL_unify_number(ld, A2, num) && PL_unify_number(ld, A3, den)
+            _number_free!(ld, 2)                            # clearNumber(&num), clearNumber(&den)
+        else
+            rc = PL_unify(ld, A1, A2) && PL_unify_integer(ld, A3, 1)
+        end
+    end
+
+    _number_free!(ld, 1)
+    return rc ? FTRUE : FFALSE
+end
+
+# PORT: pl-arith.c float_parts as pl_float_parts4_va
+# DIVERGES: `frexp` is Julia's (`frexp(Inf)` is `(Inf, 0)`, as glibc's).
+# (PRED_IMPL("float_parts", 4, float_parts, 0))
+"`float_parts/4` (pl-arith.c): the mantissa, the base (always 2) and the exponent of a float."
+function pl_float_parts4_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2, A3, A4 = PL__t0, PL__t0 + 1, PL__t0 + 2, PL__t0 + 3
+    d = PL_get_float_ex(ld, A1)
+    if d !== nothing
+        m, e = frexp(d)
+        rc = PL_unify_float(ld, A2, m) && PL_unify_integer(ld, A3, 2) &&
+            PL_unify_integer(ld, A4, Int(e))
+        return rc ? FTRUE : FFALSE
+    end
+    return FFALSE
+end
+
+# PORT: pl-arith.c float_class as pl_float_class2_va
+# DIVERGES: `fpclassify` is `isnan`, `isinf`, `iszero`, `issubnormal`.
+# (PRED_IMPL("float_class", 2, float_class, 0))
+"`float_class/2` (pl-arith.c): `nan`, `infinite`, `zero`, `subnormal` or `normal`, of a float."
+function pl_float_class2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2 = PL__t0, PL__t0 + 1
+    n = _number_alloc!(ld)
+    if PL_get_number(ld, A1, n) && n.type === V_FLOAT       # isFloat(*p)
+        f = n.f
+        _number_free!(ld, 1)
+        a = if isnan(f)
+            :nan
+        elseif isinf(f)
+            :infinite
+        elseif iszero(f)
+            :zero
+        elseif issubnormal(f)
+            :subnormal
+        else
+            :normal
+        end
+        return PL_unify_atom(ld, A2, mk_sym(T, a)) ? FTRUE : FFALSE
+    end
+    _number_free!(ld, 1)
+    return PL_type_error(ld, "float", A1) ? FTRUE : FFALSE
+end
+
 # ── the arithmetic flags (pl-arith.c; R2 F1a) ───────────────────────────────────────────────────
 # PORT: pl-arith.c initArith
 # DIVERGES: only its Prolog flags (the rest of `initArith` — the function table, the NaN, the signal
@@ -2977,5 +3321,16 @@ const PL_predicates_from_arith = (
     PL_extension(">=", 2, pl_geq2_va, PL_FA_ISO | PL_FA_VARARGS),
     PL_extension("=\\=", 2, pl_neq2_va, PL_FA_ISO | PL_FA_VARARGS),
     PL_extension("=:=", 2, pl_eq2_va, PL_FA_ISO | PL_FA_VARARGS),
-    PL_extension("between", 3, pl_between3_va, PL_FA_NONDETERMINISTIC | PL_FA_VARARGS)
+    PL_extension("succ", 2, pl_succ2_va, PL_FA_VARARGS),
+    PL_extension("plus", 3, pl_plus3_va, PL_FA_VARARGS),
+    PL_extension("between", 3, pl_between3_va, PL_FA_NONDETERMINISTIC | PL_FA_VARARGS),
+    PL_extension("bounded_number", 3, pl_bounded_number3_va, PL_FA_VARARGS),
+    PL_extension("float_class", 2, pl_float_class2_va, PL_FA_VARARGS),
+    PL_extension("float_parts", 4, pl_float_parts4_va, PL_FA_VARARGS),
+    PL_extension("divmod", 4, pl_divmod4_va, PL_FA_VARARGS),
+    PL_extension(
+        "nth_integer_root_and_remainder", 4, pl_nth_integer_root_and_remainder4_va,
+        PL_FA_VARARGS
+    ),
+    PL_extension("rational", 3, pl_rational3_va, PL_FA_VARARGS)
 )
