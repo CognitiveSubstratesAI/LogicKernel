@@ -4,7 +4,9 @@
 # COPYRIGHT: VU University Amsterdam
 # COPYRIGHT: SWI-Prolog Solutions b.v.
 #
-# CHARACTER TYPES AS PREDICATES (pl-ctype.c), CT1b: `char_type/2` and `code_type/2` and the class tests they run.
+# CHARACTER TYPES AS PREDICATES (pl-ctype.c), CT1b: `char_type/2` and `code_type/2` and the class tests they run;
+# CT1c: `downcase_atom/2`, `upcase_atom/2`, `string_lower/2`, `string_upper/2`, `normalize_space/2` and the locale's
+# encoding (`init_locale`, `enc_from_locale`).
 # The ASCII table, the locale categories and `setlocale/3`'s data are in src/os/pl-ctype.jl and src/pl-sys.jl; this
 # file holds the part of pl-ctype.c that needs the FLI, which is loaded after that file. UNTESTED: written without
 # a compile (CT1b writer, edit-only).
@@ -507,12 +509,228 @@ function pl_code_type2_va(
     return do_char_type(ld, PL__t0, PL__t0 + 1, PL__ctx, :code)
 end
 
+# ── the text half of pl-ctype.c (CT1c): the case predicates and normalize_space/2 ───────────────────
+
+# PORT: pl-ctype.c get_chr_from_text
+# DIVERGES: the text is its vector of code points (`_text_code_points`, which reads every encoding the kernel's texts
+# come in), so the two encodings upstream switches on (and the UTF-16 lead of a 2-byte `wchar_t`) are decoded before
+# this is called; `index` is 1-based. Returns the character and the next index: -1 and `index` at the end.
+"The character of `cps` at `index` and the next index, `-1` at the end of the text (pl-ctype.c)."
+function get_chr_from_text(cps::Vector{Int}, index::Int)::Tuple{Int, Int}
+    index > length(cps) && return (-1, index)
+    return (cps[index], index + 1)
+end
+
+# PORT: pl-ctype.c modify_case_atom
+# DIVERGES: `modify_case_latin_1_to_wide` is not a function of its own: the Latin-1 text whose mapping leaves Latin-1
+# (the characters 0xB5 and 0xFF upcase to 0x39C and 0x178) is made one text of the mapped code points, and
+# `PL_unify_text` canonicalises it, which is the demotion or widening upstream does by hand. The text is UTF-8 in
+# `PL_chars_t`; its code points are read with `_text_code_points`. `down` and `text_type` are as upstream's.
+"Unify `out` with the text of `in_` mapped to lower (`down`) or upper case, as an atom or a string `text_type` (pl-ctype.c)."
+function modify_case_atom(
+    ld::PL_local_data{T}, in_::term_t, out::term_t, down::Bool, text_type::Int
+)::foreign_t where {T}
+    tin = PL_get_text(ld, in_, CVT_ATOMIC | CVT_EXCEPTION)
+    tin === nothing && return FFALSE
+    cin = _text_code_points(tin)
+
+    tout = PL_get_text(ld, out, CVT_ATOMIC)
+    if tout !== nothing
+        cout = _text_code_points(tout)
+        i1 = 1
+        i2 = 1
+        while true
+            ci, i1 = get_chr_from_text(cin, i1)
+            co, i2 = get_chr_from_text(cout, i2)
+
+            (ci == -1 || co == -1) && return ci == co ? FTRUE : FFALSE
+
+            if down
+                co != ftolower(ci) && return FFALSE
+            else
+                co != ftoupper(ci) && return FFALSE
+            end
+        end
+    elseif PL_is_variable(ld, out)
+        bytes = UInt8[]
+        sizehint!(bytes, length(cin))
+        for c in cin
+            utf8_put_char(bytes, down ? ftolower(c) : ftoupper(c))
+        end
+        res = PL_chars_t(bytes, length(cin), ENC_UTF8, false)
+        return PL_unify_text(ld, out, 0, res, text_type) ? FTRUE : FFALSE
+    else
+        PL_error(
+            ld, ERR_TYPE, mk_sym(T, text_type == PL_STRING ? :string : :atom), out
+        )
+        return FFALSE
+    end
+end
+
+# PORT: pl-ctype.c downcase_atom as pl_downcase_atom2_va
+# (PRED_IMPL("downcase_atom", 2, downcase_atom, 0))
+"`downcase_atom(+AnyCase, -LowerCase)`: the atom of the text of `AnyCase` in lower case (pl-ctype.c)."
+function pl_downcase_atom2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    return modify_case_atom(ld, PL__t0, PL__t0 + 1, true, PL_ATOM)
+end
+
+# PORT: pl-ctype.c upcase_atom as pl_upcase_atom2_va
+# (PRED_IMPL("upcase_atom", 2, upcase_atom, 0))
+"`upcase_atom(+AnyCase, -UpperCase)`: the atom of the text of `AnyCase` in upper case (pl-ctype.c)."
+function pl_upcase_atom2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    return modify_case_atom(ld, PL__t0, PL__t0 + 1, false, PL_ATOM)
+end
+
+# PORT: pl-ctype.c string_lower as pl_string_lower2_va
+# (PRED_IMPL("string_lower", 2, string_lower, 0))
+"`string_lower(+String, -LowerCase)`: the string of the text of `String` in lower case (pl-ctype.c)."
+function pl_string_lower2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    return modify_case_atom(ld, PL__t0, PL__t0 + 1, true, PL_STRING)
+end
+
+# PORT: pl-ctype.c string_upper as pl_string_upper2_va
+# (PRED_IMPL("string_upper", 2, string_upper, 0))
+"`string_upper(+String, -UpperCase)`: the string of the text of `String` in upper case (pl-ctype.c)."
+function pl_string_upper2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    return modify_case_atom(ld, PL__t0, PL__t0 + 1, false, PL_STRING)
+end
+
+# PORT: pl-ctype.c skip_separators
+# DIVERGES: the text is its code points and `i` is a 1-based position, returned (upstream updates `*i`).
+"The position after the white space of `cps` that starts at `i` (pl-ctype.c)."
+function skip_separators(cps::Vector{Int}, i::Int)::Int
+    while true
+        c, at = get_chr_from_text(cps, i)
+        c == -1 && return i
+        if f_is_space(c)
+            i = at
+        else
+            return i
+        end
+    end
+end
+
+# PORT: pl-ctype.c copy_non_separators
+# DIVERGES: the text is its code points; returns whether the writes succeeded and the position reached (upstream
+# updates `*i`).
+"Write the characters of `cps` from `i` to the next white space to `out`: success and the position after them (pl-ctype.c)."
+function copy_non_separators(
+    out::IOSTREAM, cps::Vector{Int}, i::Int
+)::Tuple{Bool, Int}
+    while true
+        c, at = get_chr_from_text(cps, i)
+        c == -1 && return (true, i)
+        if !f_is_space(c)
+            i = at
+            Sputcode(c, out) < 0 && return (false, i)
+        else
+            return (true, i)
+        end
+    end
+end
+
+# PORT: pl-ctype.c write_normalize_space
+"Write the text of `in_` to `out`, its white space squeezed into single spaces and trimmed (pl-ctype.c)."
+function write_normalize_space(ld::PL_local_data{T}, out::IOSTREAM, in_::term_t)::Bool where {T}
+    tin = PL_get_text(ld, in_, CVT_ATOMIC | CVT_EXCEPTION)
+    tin === nothing && return false
+    cps = _text_code_points(tin)
+
+    i = 1
+    end_ = length(cps) + 1                                  # upstream's `end = tin.length`, 0-based
+    i = skip_separators(cps, i)
+    while i < end_
+        _, i = copy_non_separators(out, cps, i)
+        i = skip_separators(cps, i)
+        if i < end_
+            Sputcode(Int(' '), out) < 0 && return false
+        end
+    end
+    return true
+end
+
+# PORT: pl-ctype.c normalize_space as pl_normalize_space2_va
+# (PRED_IMPL("normalize_space", 2, normalize_space, 0))
+"`normalize_space(+Out, +Input)`: write `Input` with its white space normalised to `Out`, an atom(A), string(S), codes(Cs), chars(Cs) or a stream (pl-ctype.c)."
+function pl_normalize_space2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    ctx = redir_context()
+    rc = setupOutputRedirect(ld, PL__t0, ctx, false)
+    if rc
+        rc = write_normalize_space(ld, ctx.stream::IOSTREAM, PL__t0 + 1)
+        if rc
+            rc = closeOutputRedirect(ld, ctx)
+        else
+            discardOutputRedirect(ld, ctx)
+        end
+    end
+    return rc ? FTRUE : FFALSE
+end
+
+# ── the locale half (pl-ctype.c init_locale, enc_from_locale) ───────────────────────────────────────
+
+# PORT: pl-ctype.c enc_map
+"The encodings a locale's codeset names, by name (pl-ctype.c)."
+const enc_map = (
+    ("UTF-8", ENC_UTF8), ("utf8", ENC_UTF8), ("ISO8859-1", ENC_ISO_LATIN_1),
+    ("ISO8859_1", ENC_ISO_LATIN_1), ("iso88591", ENC_ISO_LATIN_1),
+    ("iso_8859_1", ENC_ISO_LATIN_1)
+)
+
+# PORT: pl-ctype.c enc_from_locale
+# DIVERGES: `strcasecmp` is a comparison of the lower-cased names (the names are ASCII).
+"The stream encoding of the locale name `enc` (`en_US.UTF-8` gives `ENC_UTF8`), `ENC_ANSI` for a codeset not in `enc_map` (pl-ctype.c)."
+function enc_from_locale(enc::String)::IOENC
+    dot = findfirst('.', enc)
+    ext = dot === nothing ? enc : enc[(dot + 1):end]
+    for (name, encoding) in enc_map
+        lowercase(ext) == lowercase(name) && return encoding
+    end
+    return ENC_ANSI                                         # text encoding
+end
+
+# PORT: pl-ctype.c init_locale
+# DIVERGES: the Windows branch (`.UTF-8` for LC_CTYPE) is not written: no Windows platform. Not called at boot: a
+# text stream of this kernel is UTF-8 whatever the locale says (src/os/pl-stream.jl), and the process locale is the
+# host's until `setlocale/3` changes it. `setlocale(3)` is `_libc_setlocale` (src/pl-sys.jl); upstream's DEBUG
+# messages for a failed LC_TIME or LC_COLLATE are dropped.
+"Set the process locale from the environment and answer the encoding of its LC_CTYPE (pl-ctype.c)."
+function init_locale()::IOENC
+    rc = ENC_UNKNOWN
+    cur, _ = _libc_setlocale(LC_CTYPE, "")
+    if cur !== nothing
+        enc, _ = _libc_setlocale(LC_CTYPE, nothing)
+        enc !== nothing && (rc = enc_from_locale(enc))
+    else
+        rc = ENC_ISO_LATIN_1
+    end
+
+    _libc_setlocale(LC_TIME, "")
+    _libc_setlocale(LC_COLLATE, "")
+    return rc
+end
+
 # PORT: pl-ctype.c BeginPredDefs as PL_predicates_from_ctype_pred
 # DIVERGES: upstream's one `ctype` table (`PL_predicates_from_ctype`, src/pl-sys.jl holds `setlocale/3`'s entry) is
 # split in two, as this file loads after src/pl-sys.jl; this table is appended last in `_PRED_TABLES`
-# (src/pl-ext.jl), so the dispatch indices of the earlier tables stay as they were.
+# (src/pl-ext.jl), so the dispatch indices of the earlier tables stay as they were. CT1b: char_type/2, code_type/2;
+# CT1c: the case predicates and normalize_space/2.
 "pl-ctype.c's registration table (`BeginPredDefs(ctype)`), the part this file ports."
 const PL_predicates_from_ctype_pred = (
     PL_extension("char_type", 2, pl_char_type2_va, PL_FA_NONDETERMINISTIC | PL_FA_VARARGS),
     PL_extension("code_type", 2, pl_code_type2_va, PL_FA_NONDETERMINISTIC | PL_FA_VARARGS),
+    PL_extension("downcase_atom", 2, pl_downcase_atom2_va, PL_FA_VARARGS),
+    PL_extension("upcase_atom", 2, pl_upcase_atom2_va, PL_FA_VARARGS),
+    PL_extension("string_lower", 2, pl_string_lower2_va, PL_FA_VARARGS),
+    PL_extension("string_upper", 2, pl_string_upper2_va, PL_FA_VARARGS),
+    PL_extension("normalize_space", 2, pl_normalize_space2_va, PL_FA_VARARGS),
 )

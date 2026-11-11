@@ -8,8 +8,9 @@
 # The character types of ASCII (since R1c): `_PL_char_types`, the reader's table for code points
 # below 0x80, and the `is*` macros over it; `isBlankW`, which answers for every code point through
 # the Unicode map's classes (src/pl-umap.jl). `char_type/2` and `code_type/2` (CT1b) are written in
-# src/os/pl-ctype-pred.jl, which needs the FLI and so loads later; `setlocale/3` is in src/pl-sys.jl.
-# `initEncoding` is not written here (a text stream is UTF-8, src/os/pl-stream.jl).
+# src/os/pl-ctype-pred.jl, which needs the FLI and so loads later, with the case predicates, `normalize_space/2` and
+# the locale's encoding (CT1c); `setlocale/3` is in src/pl-sys.jl. `initEncoding`, `initUnicodeAtoms` and `initCharTypes`
+# are not written (a text stream is UTF-8, src/os/pl-stream.jl; `init_locale` is in pl-ctype-pred.jl, not called at boot).
 
 # PORT: pl-ctype.h CT
 "Control character (pl-ctype.h)."

@@ -2055,6 +2055,15 @@ function _manifest_index(T)
         (LK.do_char_type, Tuple{LD, Int, Int, LK.foreign_context{T}, Symbol}, false),
         (LK.pl_char_type2_va, Tuple{LD, Int, Int, LK.foreign_context{T}}, false),
         (LK.pl_code_type2_va, Tuple{LD, Int, Int, LK.foreign_context{T}}, false),
+        # CT1c — downcase_atom/2, upcase_atom/2, string_lower/2, string_upper/2, normalize_space/2
+        (LK.modify_case_atom, Tuple{LD, Int, Int, Bool, Int}, false),
+        (LK.write_normalize_space, Tuple{LD, LK.IOSTREAM, Int}, false),
+        [
+            (f, Tuple{LD, Int, Int, LK.foreign_context{T}}, false) for f in (
+                LK.pl_downcase_atom2_va, LK.pl_upcase_atom2_va, LK.pl_string_lower2_va,
+                LK.pl_string_upper2_va, LK.pl_normalize_space2_va
+            )
+        ]...,
         # DWIM1 — dwim_match/3 and '$dwim_predicate'/2 (pl-dwim.c)
         (LK.pl_dwim_match, Tuple{LD, Int, Int, Int}, false),
         (LK.pl_dwim_predicate, Tuple{LD, Int, Int, LK.foreign_context{T}}, false),
@@ -4085,6 +4094,12 @@ const _DISPATCH_MANIFEST_TUPLE = (
     (LK._ct_test, Tuple{Int64, Int64}, true),
     (LK._ct_reverse, Tuple{Int64, Int64}, true),
     (LK.advanceGen, Tuple{LK.generator}, false),
+    # CT1c — the text half: the case predicates' code-point walk, normalize_space/2's skippers, the locale's encoding
+    (LK.get_chr_from_text, Tuple{Vector{Int64}, Int64}, false),
+    (LK.skip_separators, Tuple{Vector{Int64}, Int64}, false),
+    (LK.copy_non_separators, Tuple{LK.IOSTREAM, Vector{Int64}, Int64}, false),
+    (LK.enc_from_locale, Tuple{String}, false),
+    (LK.init_locale, Tuple{}, false),
     (LK._ct_encode, Tuple{LK.generator}, false),
     (LK._ct_decode, Tuple{Int64}, false),
     (LK._libc_setlocale, Tuple{Cint, Union{Nothing, String}}, false),
