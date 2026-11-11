@@ -15,6 +15,8 @@ V = "src/pl-variant.jl"
 S = "src/pl-sys.jl"
 O = "src/os/pl-os.jl"
 E = "src/pl-error.jl"
+SU = "src/pl-setup.jl"
+AL = "src/pl-alloc.jl"
 MUTANTS = [
     # ---- pl-variant.c: \=@=
     dict(id="Q10-1 `\\=@=` succeeds for variants (KILL vr01, vr03, vr07: the answer flips)", file=V, targets=TVC,
@@ -74,4 +76,90 @@ end
     dict(id="Q10-14 the shell is not found (KILL sh01-sh20 that run: the spawn error is raised as a system_error)", file=O, targets=TQ,
          old='''    return a === nothing ? "/bin/sh" : sym_text(a)''',
          new='''    return a === nothing ? "/bin/nosuchsh" : "/bin/nosuchsh"'''),
+    dict(id="Q10-15 thread_idle ignores a failed How (KILL ti04, ti05: no type_error)", file=AL, targets=TQ,
+         old='''    how === nothing && return FFALSE
+''',
+         new='''    how === nothing && return FTRUE
+'''),
+    dict(id="Q10-16 thread_idle always succeeds (KILL ti06, ti13: a failing goal)", file=AL, targets=TQ,
+         old='''    return rc ? FTRUE : FFALSE
+end
+
+# PORT: pl-alloc.c BeginPredDefs''',
+         new='''    return FTRUE
+end
+
+# PORT: pl-alloc.c BeginPredDefs'''),
+    dict(id="Q10-17 the ignored state is reported as throw (KILL os15, os28)", file=SU, targets=TQ,
+         old='''PL_unify_atom(ld, old, mk_sym(T, :ignore)) || return FFALSE''',
+         new='''PL_unify_atom(ld, old, mk_sym(T, :throw)) || return FFALSE'''),
+    dict(id="Q10-18 an unchanged state fails (KILL os22, os23, os27)", file=SU, targets=TQ,
+         old='''    rc == 0 && return FTRUE                             # no change''',
+         new='''    rc == 0 && return FFALSE                            # no change'''),
+    dict(id="Q10-19 debug records no handler token (KILL os16, os17)", file=SU, targets=TQ,
+         old='''            sh.handler = SIGH_INTERRUPT
+''',
+         new='''            sh.handler = SIGH_NONE
+'''),
+    dict(id="Q10-20 throw is prepared without the throw flag (KILL os15, os16)", file=SU, targets=TQ,
+         old='''sh = prepareSignal!(handlers, sign, PLSIG_THROW | PLSIG_SYNC)''',
+         new='''sh = prepareSignal!(handlers, sign, PLSIG_SYNC)'''),
+    dict(id="Q10-21 default keeps the state (KILL os18, os21, os27)", file=SU, targets=TQ,
+         old='''        sh.flags = 0
+        sh.handler = SIGH_NONE
+''',
+         new='''        sh.flags = sh.flags
+        sh.handler = SIGH_NONE
+'''),
+    dict(id="Q10-22 the trail spare is set one too high (KILL ss27, ss28)", file=SU, targets=TQ,
+         old='''            ld.trail_def_spare = v
+''',
+         new='''            ld.trail_def_spare = v + 1
+'''),
+    dict(id="Q10-23 low is not stored (KILL ss23, ss24)", file=SU, targets=TQ,
+         old='''        stack.small = v
+''',
+         new='''        stack.small = stack.small
+'''),
+    dict(id="Q10-24 factor is not stored (KILL ss25, ss26)", file=SU, targets=TQ,
+         old='''        stack.factor = v
+''',
+         new='''        stack.factor = stack.factor
+'''),
+    dict(id="Q10-25 the limit is reported in words (KILL ss17, ss18)", file=SU, targets=TQ,
+         old='''limit = ld.stacks_limit * 8 ''',
+         new='''limit = ld.stacks_limit * 1 '''),
+    dict(id="Q10-26 the bad-property domain names another type (KILL ss21)", file=SU, targets=TQ,
+         old='''mk_sym(T, :stack_parameter), prop)''',
+         new='''mk_sym(T, :stack_parameters), prop)'''),
+    dict(id="Q10-27 the unknown-stack error names another type (KILL ss19, ss20)", file=SU, targets=TQ,
+         old='''PL_error(ld, ERR_EXISTENCE, mk_sym(T, :stack), name)''',
+         new='''PL_error(ld, ERR_EXISTENCE, mk_sym(T, :stacks), name)'''),
+    dict(id="Q10-28 the local stack's min_free is 256 (KILL ss04)", file=SU, targets=TQ,
+         old='''        stack_params_t(0, 0, LOCAL_MARGIN, 0),''',
+         new='''        stack_params_t(0, 0, 256, 0),'''),
+    dict(id="Q10-29 SIGHUP has no handler record (KILL os01)", file=SU, targets=TQ,
+         old='''    _signal_install!(handlers, 1, SIGH_HUP, PLSIG_SYNC)     # PL_signal(SIGHUP|PL_SIGSYNC, hupHandler)''',
+         new='''    nothing'''),
+    dict(id="Q10-30 pipe is thrown, not ignored (KILL os01)", file=SU, targets=TQ,
+         old='''(13, PLSIG_IGNORE)''',
+         new='''(13, PLSIG_THROW)'''),
+    dict(id="Q10-31 the meta-argument error names another type (KILL os13)", file=SU, targets=TQ,
+         old='''PL_error(ld, ERR_TYPE, mk_sym(T, :meta_argument), arg)''',
+         new='''PL_error(ld, ERR_TYPE, mk_sym(T, :meta_arguments), arg)'''),
+    dict(id="Q10-32 a signal name is not looked up (KILL os05, os06, os29)", file=SU, targets=TQ + ["test/core_lang/test_halt_swipl.jl"],
+         old='''            sign = signal_index(sym_text(na))
+''',
+         new='''            sign = -1
+'''),
+    dict(id="Q10-33 trim_stacks does not trim", file=SU, targets=TQ,
+         old='''    trimStacks!(ld, true)                               # trimStacks(true)
+''',
+         new='''    nothing
+''',
+         equivalent="no row can see a trim: the stacks of the rows are never near their limits, and `trimStacks!` changes no Prolog-visible state"),
+    dict(id="Q10-34 thread_idle is not transparent", file=AL, targets=TQ,
+         old='''PL_extension("thread_idle", 2, pl_thread_idle2_va, PL_FA_TRANSPARENT | PL_FA_VARARGS)''',
+         new='''PL_extension("thread_idle", 2, pl_thread_idle2_va, PL_FA_VARARGS)''',
+         equivalent="every ti row names its goal's module or runs in user, where the context module is user either way"),
 ]

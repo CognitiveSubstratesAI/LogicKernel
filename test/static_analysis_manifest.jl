@@ -1664,6 +1664,22 @@ function _manifest_index(T)
         # group F (D-0123): callPortray calls Prolog (src/pl-fli.jl)
         (LK.PL_call_predicate, Tuple{GD, LD, Nothing, UInt32, LK.Procedure{T}, Int}, false),
         (LK.pl_sig_atomic1_va, Tuple{LD, Int, Int, LK.control_t{T}}, false),
+        # Q10 (lane C): pl-alloc.c trim_heap/thread_idle, pl-setup.c $on_signal/4, $set_prolog_stack/4, trim_stacks/0 and the signal tables
+        (LK.pl_trim_heap0_va, Tuple{LD, Int, Int, LK.control_t{T}}, false),
+        (LK.pl_thread_idle2_va, Tuple{LD, Int, Int, LK.control_t{T}}, false),
+        (LK.pl_on_signal4_va, Tuple{LD, Int, Int, LK.control_t{T}}, false),
+        (LK.pl_set_prolog_stack4_va, Tuple{LD, Int, Int, LK.control_t{T}}, false),
+        (LK.pl_trim_stacks0_va, Tuple{LD, Int, Int, LK.control_t{T}}, false),
+        (LK.get_meta_arg, Tuple{LD, Int, Int, Int}, false),
+        (LK.signal_name, Tuple{Int}, false),
+        (LK.SIGNAL_INDEX, Tuple{Int}, false),
+        (LK.IS_VALID_SIGNAL, Tuple{Int}, false),
+        (LK.IS_VSIG, Tuple{Int}, false),
+        (LK.prepareSignal!, Tuple{Vector{LK.sig_handler{T}}, Int, Int}, false),
+        (LK.unprepareSignal!, Tuple{Vector{LK.sig_handler{T}}, Int}, false),
+        (LK._signal_install!, Tuple{Vector{LK.sig_handler{T}}, Int, Int, Int}, false),
+        (LK.initSignals!, Tuple{Type{T}}, false),
+        (LK.initStackParams, Tuple{}, false),
         # V9g-b — the bags: recorded terms (src/pl-rec.jl), findall/3's bag (src/pl-bag.jl), the
         # sorts and '$length'/2 (src/pl-list.jl), what bagof/3 and setof/3 call of pl-prims.c, the
         # list and functor unifiers (src/pl-fli.jl), the boot clauses (src/pl-ext.jl)
@@ -4154,6 +4170,8 @@ const _DISPATCH_MANIFEST_TUPLE = (
     # TAB1-min: the registration tables of src/pl-tabling.jl and src/pl-wrap.jl, and the term-type-independent helpers
     (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_tabling)}, false),
     (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_wrap)}, false),
+    (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_alloc)}, false),   # Q10
+    (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_setup)}, false),   # Q10
     (LK.table_props, Tuple{}, false),
     (LK.clear_table_props!, Tuple{LK.table_props}, false),
     # TAB1 TB0: pl-allocpool.c (src/pl-allocpool.jl) and the sentinel tests of pl-tabling.c (src/pl-tabling.jl); they name no term type

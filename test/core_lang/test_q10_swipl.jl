@@ -1,6 +1,6 @@
 # ORIGINAL: a LIVE differential of Q10's built-ins (`\=@=/2`, `shell/2`, `current_blob/2`, `$put_token/2`, `$on_signal/4`,
 # `$set_prolog_stack/4`, `trim_heap/0`, `trim_stacks/0`, `thread_idle/2`) against swipl at the pin — Q10's rows
-# test/core_lang/test_q10_swipl.jl — vr01-sh20 against swipl 10.1.20 (the pin 18168e62):
+# test/core_lang/test_q10_swipl.jl — vr01-os30 against swipl 10.1.20 (the pin 18168e62):
 #   * A PROGRAM consulted by the kernel's loader and cases `t_<id>(R)` run in order in one database, each wrapped in
 #     `catch(Goal, error(SsuE, _), R = raised(SsuE))`; the driver is test_style_check_swipl.jl's (`enc`oded answers).
 #   * Every answer line is swipl's, PINNED (the pin's swipl, ~/.local/swipl-pin1-18168e62/bin/swipl, two identical runs, 2026-11-11); with
@@ -85,6 +85,14 @@ end
 # the program the rows run against
 const _QX_PROGRAM = raw"""
 q_a(1).
+q_handler(_).
+q_get(S, R) :- '$on_signal'(S, _, user:R, user:R).
+q_set(S, New, Old) :- '$on_signal'(S, _, user:Old, user:New).
+q_sig(S, N, R) :-
+    '$on_signal'(S, N, user:O, user:O),
+    ( O = '$foreign_function'(P), integer(P) -> R = foreign ; R = O ).
+q_sigs(S, Max, []) :- S > Max, !.
+q_sigs(S, Max, [S-R|T]) :- q_sig(S, _, R), S1 is S+1, q_sigs(S1, Max, T).
 """
 
 const _QX_CASES = [
@@ -127,7 +135,91 @@ const _QX_CASES = [
     ("sh17", "shell('exit 2', 2), R = ok"),   # the status given
     ("sh18", "shell('exit 7 # \\u00e9', R)"),   # a non-ASCII character in a comment
     ("sh19", "shell(42, R)"),   # a number as the command: the shell cannot find 42
-    ("sh20", "shell('exit 5', R), integer(R)")    # an integer status
+    ("sh20", "shell('exit 5', R), integer(R)"),   # an integer status
+    ("ti01", "thread_idle(true, short), R = ok"),   # short
+    ("ti02", "thread_idle(true, long), R = ok"),   # long
+    ("ti03", "thread_idle(true, other), R = ok"),   # an atom that is neither
+    ("ti04", "thread_idle(true, 1), R = ok"),   # a non-atom How
+    ("ti05", "thread_idle(true, _), R = ok"),   # an unbound How
+    ("ti06", "( thread_idle(fail, short) -> R = yes ; R = no )"),   # a failing goal
+    ("ti07", "thread_idle(throw(error(q10_err, _)), short)"),   # a throwing goal
+    ("ti08", "thread_idle(X = 1, short), R = X"),   # the goal's bindings stay
+    ("ti09", "thread_idle(q_a(X), long), R = X"),   # a program predicate
+    ("ti10", "thread_idle(user:q_a(X), long), R = X"),   # a module-qualified goal
+    ("ti11", "thread_idle(_, short)"),   # an unbound goal
+    ("ti12", "thread_idle(true, short(a))"),   # a compound How
+    ("ti13", "thread_idle(q_a(2), short) -> R = yes ; R = no"),   # a goal that fails after a successful How
+    ("th01", "trim_heap, R = ok"),   # trim_heap succeeds
+    ("th02", "trim_stacks, R = ok"),   # trim_stacks succeeds
+    ("th03", "trim_stacks, trim_heap, trim_stacks, R = ok"),   # repeated
+    ("ss01", "'\$set_prolog_stack'(local, low, O, O), R = O"),   # local low
+    ("ss02", "'\$set_prolog_stack'(local, factor, O, O), R = O"),   # local factor
+    ("ss03", "'\$set_prolog_stack'(local, spare, O, O), R = O"),   # local spare
+    ("ss04", "'\$set_prolog_stack'(local, min_free, O, O), R = O"),   # local min_free
+    ("ss05", "'\$set_prolog_stack'(global, low, O, O), R = O"),   # global low
+    ("ss06", "'\$set_prolog_stack'(global, factor, O, O), R = O"),   # global factor
+    ("ss07", "'\$set_prolog_stack'(global, spare, O, O), R = O"),   # global spare
+    ("ss08", "'\$set_prolog_stack'(global, min_free, O, O), R = O"),   # global min_free
+    ("ss09", "'\$set_prolog_stack'(trail, low, O, O), R = O"),   # trail low
+    ("ss10", "'\$set_prolog_stack'(trail, factor, O, O), R = O"),   # trail factor
+    ("ss11", "'\$set_prolog_stack'(trail, spare, O, O), R = O"),   # trail spare
+    ("ss12", "'\$set_prolog_stack'(trail, min_free, O, O), R = O"),   # trail min_free
+    ("ss13", "'\$set_prolog_stack'(argument, low, O, O), R = O"),   # argument low
+    ("ss14", "'\$set_prolog_stack'(argument, factor, O, O), R = O"),   # argument factor
+    ("ss15", "'\$set_prolog_stack'(argument, spare, O, O), R = O"),   # argument spare
+    ("ss16", "'\$set_prolog_stack'(argument, min_free, O, O), R = O"),   # argument min_free
+    ("ss17", "'\$set_prolog_stack'(local, limit, O, O), R = O"),   # limit read (the deprecation warning goes to stderr)
+    ("ss18", "'\$set_prolog_stack'(argument, limit, O, O), R = O"),   # limit read through another stack
+    ("ss19", "'\$set_prolog_stack'(foo, low, O, O)"),   # an unknown stack
+    ("ss20", "'\$set_prolog_stack'(1, low, O, O)"),   # a non-atom stack
+    ("ss21", "'\$set_prolog_stack'(local, foo, O, O)"),   # an unknown property
+    ("ss22", "'\$set_prolog_stack'(local, 1, O, O)"),   # a non-atom property
+    ("ss23", "'\$set_prolog_stack'(global, low, O1, 40000), '\$set_prolog_stack'(global, low, O2, O2), R = O1-O2"),   # low set and read back
+    ("ss24", "'\$set_prolog_stack'(global, low, O1, 32768), '\$set_prolog_stack'(global, low, O2, O2), R = O1-O2"),   # low restored
+    ("ss25", "'\$set_prolog_stack'(trail, factor, O1, 4), '\$set_prolog_stack'(trail, factor, O2, O2), R = O1-O2"),   # factor set and read back
+    ("ss26", "'\$set_prolog_stack'(trail, factor, O1, 3), '\$set_prolog_stack'(trail, factor, O2, O2), R = O1-O2"),   # factor restored
+    ("ss27", "'\$set_prolog_stack'(trail, spare, O1, 300), '\$set_prolog_stack'(trail, spare, O2, O2), R = O1-O2"),   # trail spare set and read back
+    ("ss28", "'\$set_prolog_stack'(trail, spare, O1, 256), '\$set_prolog_stack'(trail, spare, O2, O2), R = O1-O2"),   # trail spare restored
+    ("ss29", "'\$set_prolog_stack'(global, spare, O1, 600), '\$set_prolog_stack'(global, spare, O2, O2), R = O1-O2"),   # global spare set and read back
+    ("ss30", "'\$set_prolog_stack'(global, spare, O1, 512), '\$set_prolog_stack'(global, spare, O2, O2), R = O1-O2"),   # global spare restored
+    ("ss31", "'\$set_prolog_stack'(argument, min_free, O1, 300), '\$set_prolog_stack'(argument, min_free, O2, O2), R = O1-O2"),   # argument min_free set and read back
+    ("ss32", "'\$set_prolog_stack'(argument, min_free, O1, 256), '\$set_prolog_stack'(argument, min_free, O2, O2), R = O1-O2"),   # argument min_free restored
+    ("ss33", "'\$set_prolog_stack'(global, low, O, -1)"),   # a negative size
+    ("ss34", "'\$set_prolog_stack'(global, factor, O, a)"),   # a non-integer factor
+    ("ss35", "'\$set_prolog_stack'(trail, spare, O, foo)"),   # a non-integer spare
+    ("ss36", "( '\$set_prolog_stack'(global, factor, 99, 3) -> R = yes ; R = no )"),   # the old value does not unify
+    ("ss37", "'\$set_prolog_stack'(local, limit, O, foo)"),   # a limit that is no size
+    ("ss38", "'\$set_prolog_stack'(trail, min_free, O1, 300), '\$set_prolog_stack'(trail, min_free, O2, O2), '\$set_prolog_stack'(trail, min_free, _, O1), R = O1-O2"),   # trail min_free set, read back, restored
+    ("os01", "q_sigs(1, 64, L), R = L"),   # the state of signals 1..64 (a foreign handler reports as foreign)
+    ("os02", "q_sig(0, _, R)"),   # signal 0
+    ("os03", "q_sig(65, _, R)"),   # signal 65
+    ("os04", "'\$on_signal'(40, N, user:O, user:O), R = N-O"),   # name and state of a free signal
+    ("os05", "'\$on_signal'(S, hup, user:O, user:O), R = S"),   # hup by name
+    ("os06", "'\$on_signal'(S, 'SIGHUP', user:O, user:O), R = S"),   # SIGHUP by name
+    ("os07", "'\$on_signal'(S, 'prolog:gc', user:O, user:O), R = S"),   # a virtual signal by name
+    ("os08", "'\$on_signal'(S, foo, user:O, user:O), R = S"),   # an unknown name
+    ("os09", "'\$on_signal'(S, N, user:O, user:O), R = S"),   # no signal and no name
+    ("os10", "'\$on_signal'(1.5, N, user:O, user:O), R = N"),   # a float signal
+    ("os11", "( '\$on_signal'(15, foo, user:O, user:O) -> R = yes ; R = no )"),   # a name that is not the signal's
+    ("os12", "'\$on_signal'(40, _, O, user:ignore)"),   # an old argument that is no M:T
+    ("os13", "'\$on_signal'(40, _, user:O, foo)"),   # a new argument that is no M:T
+    ("os14", "q_set(40, ignore, O1), q_get(40, O2), R = O1-O2"),   # default to ignore
+    ("os15", "q_set(40, throw, O1), q_get(40, O2), R = O1-O2"),   # ignore to throw
+    ("os16", "q_set(40, debug, O1), q_get(40, O2), R = O1-O2"),   # throw to debug
+    ("os17", "q_set(40, q_handler, O1), q_get(40, O2), R = O1-O2"),   # debug to a predicate
+    ("os18", "q_set(40, default, O1), q_get(40, O2), R = O1-O2"),   # a predicate back to default
+    ("os19", "q_set(41, q_handler, O1), '\$on_signal'(41, _, lists:O2, lists:O2), R = O1-O2"),   # a predicate read back in another module
+    ("os20", "'\$on_signal'(41, _, user:O1, q10_mod:q_other), '\$on_signal'(41, _, user:O2, user:O2), R = O1-O2"),   # a predicate of another module
+    ("os21", "q_set(41, throw, O1), q_get(41, O2), q_set(41, default, O3), R = O1-O2-O3"),   # a predicate to throw to default
+    ("os22", "q_set(42, default, O1), q_get(42, O2), R = O1-O2"),   # default to default: no change
+    ("os23", "q_get(15, O), q_set(15, O, _), q_get(15, O2), ( O == O2 -> R = same ; R = diff )"),   # a reported foreign handler restored
+    ("os24", "q_set(42, '\$foreign_function'(a), _)"),   # a foreign function that is no pointer
+    ("os25", "q_set(42, 3, _)"),   # a new state that is an integer
+    ("os26", "q_set(42, f(x), _)"),   # a new state that is a compound
+    ("os27", "q_set(42, ignore, _), q_set(42, ignore, O), q_set(42, default, _), R = O"),   # ignore twice, then default
+    ("os28", "q_set(42, throw, _), q_set(42, ignore, O), q_get(42, O2), q_set(42, default, _), R = O-O2"),   # throw to ignore
+    ("os29", "'\$on_signal'(S, 'SIGTERM', user:O, user:O), R = S"),   # SIGTERM by name
+    ("os30", "'\$on_signal'(S, 'SIGfoo', user:O, user:O), R = S")    # an unknown SIG name
 ]
 
 # the driver's whole output, one line per case after `ok`, from swipl at the pin
@@ -172,7 +264,91 @@ const _QX_PINNED = [
     "t_sh17 c[116,95,115,104,49,55]/1(a[111,107])",
     "t_sh18 c[116,95,115,104,49,56]/1(i7)",
     "t_sh19 c[116,95,115,104,49,57]/1(i127)",
-    "t_sh20 c[116,95,115,104,50,48]/1(i5)"
+    "t_sh20 c[116,95,115,104,50,48]/1(i5)",
+    "t_ti01 c[116,95,116,105,48,49]/1(a[111,107])",
+    "t_ti02 c[116,95,116,105,48,50]/1(a[111,107])",
+    "t_ti03 c[116,95,116,105,48,51]/1(a[111,107])",
+    "t_ti04 c[116,95,116,105,48,52]/1(c[114,97,105,115,101,100]/1(c[116,121,112,101,95,101,114,114,111,114]/2(a[97,116,111,109],i1)))",
+    "t_ti05 c[116,95,116,105,48,53]/1(c[114,97,105,115,101,100]/1(a[105,110,115,116,97,110,116,105,97,116,105,111,110,95,101,114,114,111,114]))",
+    "t_ti06 c[116,95,116,105,48,54]/1(a[110,111])",
+    "t_ti07 c[116,95,116,105,48,55]/1(c[114,97,105,115,101,100]/1(a[113,49,48,95,101,114,114]))",
+    "t_ti08 c[116,95,116,105,48,56]/1(i1)",
+    "t_ti09 c[116,95,116,105,48,57]/1(i1)",
+    "t_ti10 c[116,95,116,105,49,48]/1(i1)",
+    "t_ti11 c[116,95,116,105,49,49]/1(c[114,97,105,115,101,100]/1(a[105,110,115,116,97,110,116,105,97,116,105,111,110,95,101,114,114,111,114]))",
+    "t_ti12 c[116,95,116,105,49,50]/1(c[114,97,105,115,101,100]/1(c[116,121,112,101,95,101,114,114,111,114]/2(a[97,116,111,109],c[115,104,111,114,116]/1(a[97]))))",
+    "t_ti13 c[116,95,116,105,49,51]/1(a[110,111])",
+    "t_th01 c[116,95,116,104,48,49]/1(a[111,107])",
+    "t_th02 c[116,95,116,104,48,50]/1(a[111,107])",
+    "t_th03 c[116,95,116,104,48,51]/1(a[111,107])",
+    "t_ss01 c[116,95,115,115,48,49]/1(i0)",
+    "t_ss02 c[116,95,115,115,48,50]/1(i0)",
+    "t_ss03 c[116,95,115,115,48,51]/1(i1553)",
+    "t_ss04 c[116,95,115,115,48,52]/1(i1041)",
+    "t_ss05 c[116,95,115,115,48,53]/1(i32768)",
+    "t_ss06 c[116,95,115,115,48,54]/1(i3)",
+    "t_ss07 c[116,95,115,115,48,55]/1(i512)",
+    "t_ss08 c[116,95,115,115,48,56]/1(i256)",
+    "t_ss09 c[116,95,115,115,48,57]/1(i32768)",
+    "t_ss10 c[116,95,115,115,49,48]/1(i3)",
+    "t_ss11 c[116,95,115,115,49,49]/1(i256)",
+    "t_ss12 c[116,95,115,115,49,50]/1(i256)",
+    "t_ss13 c[116,95,115,115,49,51]/1(i0)",
+    "t_ss14 c[116,95,115,115,49,52]/1(i0)",
+    "t_ss15 c[116,95,115,115,49,53]/1(i0)",
+    "t_ss16 c[116,95,115,115,49,54]/1(i256)",
+    "t_ss17 c[116,95,115,115,49,55]/1(i1073741824)",
+    "t_ss18 c[116,95,115,115,49,56]/1(i1073741824)",
+    "t_ss19 c[116,95,115,115,49,57]/1(c[114,97,105,115,101,100]/1(c[101,120,105,115,116,101,110,99,101,95,101,114,114,111,114]/2(a[115,116,97,99,107],a[102,111,111])))",
+    "t_ss20 c[116,95,115,115,50,48]/1(c[114,97,105,115,101,100]/1(c[101,120,105,115,116,101,110,99,101,95,101,114,114,111,114]/2(a[115,116,97,99,107],i1)))",
+    "t_ss21 c[116,95,115,115,50,49]/1(c[114,97,105,115,101,100]/1(c[100,111,109,97,105,110,95,101,114,114,111,114]/2(a[115,116,97,99,107,95,112,97,114,97,109,101,116,101,114],a[102,111,111])))",
+    "t_ss22 c[116,95,115,115,50,50]/1(c[114,97,105,115,101,100]/1(c[116,121,112,101,95,101,114,114,111,114]/2(a[97,116,111,109],i1)))",
+    "t_ss23 c[116,95,115,115,50,51]/1(c[45]/2(i32768,i40000))",
+    "t_ss24 c[116,95,115,115,50,52]/1(c[45]/2(i40000,i32768))",
+    "t_ss25 c[116,95,115,115,50,53]/1(c[45]/2(i3,i4))",
+    "t_ss26 c[116,95,115,115,50,54]/1(c[45]/2(i4,i3))",
+    "t_ss27 c[116,95,115,115,50,55]/1(c[45]/2(i256,i300))",
+    "t_ss28 c[116,95,115,115,50,56]/1(c[45]/2(i300,i256))",
+    "t_ss29 c[116,95,115,115,50,57]/1(c[45]/2(i512,i600))",
+    "t_ss30 c[116,95,115,115,51,48]/1(c[45]/2(i600,i512))",
+    "t_ss31 c[116,95,115,115,51,49]/1(c[45]/2(i256,i300))",
+    "t_ss32 c[116,95,115,115,51,50]/1(c[45]/2(i300,i256))",
+    "t_ss33 c[116,95,115,115,51,51]/1(c[114,97,105,115,101,100]/1(c[100,111,109,97,105,110,95,101,114,114,111,114]/2(a[110,111,116,95,108,101,115,115,95,116,104,97,110,95,122,101,114,111],i-1)))",
+    "t_ss34 c[116,95,115,115,51,52]/1(c[114,97,105,115,101,100]/1(c[116,121,112,101,95,101,114,114,111,114]/2(a[105,110,116,101,103,101,114],a[97])))",
+    "t_ss35 c[116,95,115,115,51,53]/1(c[114,97,105,115,101,100]/1(c[116,121,112,101,95,101,114,114,111,114]/2(a[105,110,116,101,103,101,114],a[102,111,111])))",
+    "t_ss36 c[116,95,115,115,51,54]/1(a[110,111])",
+    "t_ss37 c[116,95,115,115,51,55]/1(c[114,97,105,115,101,100]/1(c[116,121,112,101,95,101,114,114,111,114]/2(a[105,110,116,101,103,101,114],a[102,111,111])))",
+    "t_ss38 c[116,95,115,115,51,56]/1(c[45]/2(i256,i300))",
+    "t_os01 c[116,95,111,115,48,49]/1(c[91,124,93]/2(c[45]/2(i1,a[102,111,114,101,105,103,110]),c[91,124,93]/2(c[45]/2(i2,a[100,101,102,97,117,108,116]),c[91,124,93]/2(c[45]/2(i3,a[102,111,114,101,105,103,110]),c[91,124,93]/2(c[45]/2(i4,a[102,111,114,101,105,103,110]),c[91,124,93]/2(c[45]/2(i5,a[100,101,102,97,117,108,116]),c[91,124,93]/2(c[45]/2(i6,a[102,111,114,101,105,103,110]),c[91,124,93]/2(c[45]/2(i7,a[102,111,114,101,105,103,110]),c[91,124,93]/2(c[45]/2(i8,a[116,104,114,111,119]),c[91,124,93]/2(c[45]/2(i9,a[100,101,102,97,117,108,116]),c[91,124,93]/2(c[45]/2(i10,a[100,101,102,97,117,108,116]),c[91,124,93]/2(c[45]/2(i11,a[100,101,102,97,117,108,116]),c[91,124,93]/2(c[45]/2(i12,a[102,111,114,101,105,103,110]),c[91,124,93]/2(c[45]/2(i13,a[105,103,110,111,114,101]),c[91,124,93]/2(c[45]/2(i14,a[116,104,114,111,119]),c[91,124,93]/2(c[45]/2(i15,a[102,111,114,101,105,103,110]),c[91,124,93]/2(c[45]/2(i16,a[100,101,102,97,117,108,116]),c[91,124,93]/2(c[45]/2(i17,a[100,101,102,97,117,108,116]),c[91,124,93]/2(c[45]/2(i18,a[100,101,102,97,117,108,116]),c[91,124,93]/2(c[45]/2(i19,a[100,101,102,97,117,108,116]),c[91,124,93]/2(c[45]/2(i20,a[100,101,102,97,117,108,116]),c[91,124,93]/2(c[45]/2(i21,a[100,101,102,97,117,108,116]),c[91,124,93]/2(c[45]/2(i22,a[100,101,102,97,117,108,116]),c[91,124,93]/2(c[45]/2(i23,a[100,101,102,97,117,108,116]),c[91,124,93]/2(c[45]/2(i24,a[116,104,114,111,119]),c[91,124,93]/2(c[45]/2(i25,a[116,104,114,111,119]),c[91,124,93]/2(c[45]/2(i26,a[116,104,114,111,119]),c[91,124,93]/2(c[45]/2(i27,a[100,101,102,97,117,108,116]),c[91,124,93]/2(c[45]/2(i28,a[100,101,102,97,117,108,116]),c[91,124,93]/2(c[45]/2(i29,a[100,101,102,97,117,108,116]),c[91,124,93]/2(c[45]/2(i30,a[100,101,102,97,117,108,116]),c[91,124,93]/2(c[45]/2(i31,a[102,111,114,101,105,103,110]),c[91,124,93]/2(c[45]/2(i32,a[102,111,114,101,105,103,110]),c[91,124,93]/2(c[45]/2(i33,a[102,111,114,101,105,103,110]),c[91,124,93]/2(c[45]/2(i34,a[102,111,114,101,105,103,110]),c[91,124,93]/2(c[45]/2(i35,a[102,111,114,101,105,103,110]),c[91,124,93]/2(c[45]/2(i36,a[102,111,114,101,105,103,110]),c[91,124,93]/2(c[45]/2(i37,a[102,111,114,101,105,103,110]),c[91,124,93]/2(c[45]/2(i38,a[102,111,114,101,105,103,110]),c[91,124,93]/2(c[45]/2(i39,a[100,101,102,97,117,108,116]),c[91,124,93]/2(c[45]/2(i40,a[100,101,102,97,117,108,116]),c[91,124,93]/2(c[45]/2(i41,a[100,101,102,97,117,108,116]),c[91,124,93]/2(c[45]/2(i42,a[100,101,102,97,117,108,116]),c[91,124,93]/2(c[45]/2(i43,a[100,101,102,97,117,108,116]),c[91,124,93]/2(c[45]/2(i44,a[100,101,102,97,117,108,116]),c[91,124,93]/2(c[45]/2(i45,a[100,101,102,97,117,108,116]),c[91,124,93]/2(c[45]/2(i46,a[100,101,102,97,117,108,116]),c[91,124,93]/2(c[45]/2(i47,a[100,101,102,97,117,108,116]),c[91,124,93]/2(c[45]/2(i48,a[100,101,102,97,117,108,116]),c[91,124,93]/2(c[45]/2(i49,a[100,101,102,97,117,108,116]),c[91,124,93]/2(c[45]/2(i50,a[100,101,102,97,117,108,116]),c[91,124,93]/2(c[45]/2(i51,a[100,101,102,97,117,108,116]),c[91,124,93]/2(c[45]/2(i52,a[100,101,102,97,117,108,116]),c[91,124,93]/2(c[45]/2(i53,a[100,101,102,97,117,108,116]),c[91,124,93]/2(c[45]/2(i54,a[100,101,102,97,117,108,116]),c[91,124,93]/2(c[45]/2(i55,a[100,101,102,97,117,108,116]),c[91,124,93]/2(c[45]/2(i56,a[100,101,102,97,117,108,116]),c[91,124,93]/2(c[45]/2(i57,a[100,101,102,97,117,108,116]),c[91,124,93]/2(c[45]/2(i58,a[100,101,102,97,117,108,116]),c[91,124,93]/2(c[45]/2(i59,a[100,101,102,97,117,108,116]),c[91,124,93]/2(c[45]/2(i60,a[100,101,102,97,117,108,116]),c[91,124,93]/2(c[45]/2(i61,a[100,101,102,97,117,108,116]),c[91,124,93]/2(c[45]/2(i62,a[100,101,102,97,117,108,116]),c[91,124,93]/2(c[45]/2(i63,a[100,101,102,97,117,108,116]),c[91,124,93]/2(c[45]/2(i64,a[100,101,102,97,117,108,116]),nil)))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))",
+    "t_os02 c[116,95,111,115,48,50]/1(c[114,97,105,115,101,100]/1(c[116,121,112,101,95,101,114,114,111,114]/2(a[115,105,103,110,97,108],i0)))",
+    "t_os03 c[116,95,111,115,48,51]/1(c[114,97,105,115,101,100]/1(c[116,121,112,101,95,101,114,114,111,114]/2(a[115,105,103,110,97,108],i65)))",
+    "t_os04 c[116,95,111,115,48,52]/1(c[45]/2(a[117,110,107,110,111,119,110],a[100,101,102,97,117,108,116]))",
+    "t_os05 c[116,95,111,115,48,53]/1(i1)",
+    "t_os06 c[116,95,111,115,48,54]/1(i1)",
+    "t_os07 c[116,95,111,115,48,55]/1(i33)",
+    "t_os08 c[116,95,111,115,48,56]/1(c[114,97,105,115,101,100]/1(c[100,111,109,97,105,110,95,101,114,114,111,114]/2(a[115,105,103,110,97,108],a[102,111,111])))",
+    "t_os09 c[116,95,111,115,48,57]/1(c[114,97,105,115,101,100]/1(a[105,110,115,116,97,110,116,105,97,116,105,111,110,95,101,114,114,111,114]))",
+    "t_os10 c[116,95,111,115,49,48]/1(c[114,97,105,115,101,100]/1(c[116,121,112,101,95,101,114,114,111,114]/2(a[115,105,103,110,97,108],f1.5)))",
+    "t_os11 c[116,95,111,115,49,49]/1(a[110,111])",
+    "t_os12 c[116,95,111,115,49,50]/1(c[114,97,105,115,101,100]/1(a[105,110,115,116,97,110,116,105,97,116,105,111,110,95,101,114,114,111,114]))",
+    "t_os13 c[116,95,111,115,49,51]/1(c[114,97,105,115,101,100]/1(c[116,121,112,101,95,101,114,114,111,114]/2(a[109,101,116,97,95,97,114,103,117,109,101,110,116],a[102,111,111])))",
+    "t_os14 c[116,95,111,115,49,52]/1(c[45]/2(a[100,101,102,97,117,108,116],a[105,103,110,111,114,101]))",
+    "t_os15 c[116,95,111,115,49,53]/1(c[45]/2(a[105,103,110,111,114,101],a[116,104,114,111,119]))",
+    "t_os16 c[116,95,111,115,49,54]/1(c[45]/2(a[116,104,114,111,119],a[100,101,98,117,103]))",
+    "t_os17 c[116,95,111,115,49,55]/1(c[45]/2(a[100,101,98,117,103],a[113,95,104,97,110,100,108,101,114]))",
+    "t_os18 c[116,95,111,115,49,56]/1(c[45]/2(a[113,95,104,97,110,100,108,101,114],a[100,101,102,97,117,108,116]))",
+    "t_os19 c[116,95,111,115,49,57]/1(c[45]/2(a[100,101,102,97,117,108,116],c[58]/2(a[117,115,101,114],a[113,95,104,97,110,100,108,101,114])))",
+    "t_os20 c[116,95,111,115,50,48]/1(c[45]/2(a[113,95,104,97,110,100,108,101,114],c[58]/2(a[113,49,48,95,109,111,100],a[113,95,111,116,104,101,114])))",
+    "t_os21 c[116,95,111,115,50,49]/1(c[45]/2(c[45]/2(c[58]/2(a[113,49,48,95,109,111,100],a[113,95,111,116,104,101,114]),a[116,104,114,111,119]),a[116,104,114,111,119]))",
+    "t_os22 c[116,95,111,115,50,50]/1(c[45]/2(a[100,101,102,97,117,108,116],a[100,101,102,97,117,108,116]))",
+    "t_os23 c[116,95,111,115,50,51]/1(a[115,97,109,101])",
+    "t_os24 c[116,95,111,115,50,52]/1(c[114,97,105,115,101,100]/1(c[100,111,109,97,105,110,95,101,114,114,111,114]/2(a[115,105,103,110,97,108,95,104,97,110,100,108,101,114],c[36,102,111,114,101,105,103,110,95,102,117,110,99,116,105,111,110]/1(a[97]))))",
+    "t_os25 c[116,95,111,115,50,53]/1(c[114,97,105,115,101,100]/1(c[116,121,112,101,95,101,114,114,111,114]/2(a[115,105,103,110,97,108,95,104,97,110,100,108,101,114],i3)))",
+    "t_os26 c[116,95,111,115,50,54]/1(c[114,97,105,115,101,100]/1(c[116,121,112,101,95,101,114,114,111,114]/2(a[115,105,103,110,97,108,95,104,97,110,100,108,101,114],c[102]/1(a[120]))))",
+    "t_os27 c[116,95,111,115,50,55]/1(a[105,103,110,111,114,101])",
+    "t_os28 c[116,95,111,115,50,56]/1(c[45]/2(a[116,104,114,111,119],a[105,103,110,111,114,101]))",
+    "t_os29 c[116,95,111,115,50,57]/1(i15)",
+    "t_os30 c[116,95,111,115,51,48]/1(c[114,97,105,115,101,100]/1(c[100,111,109,97,105,110,95,101,114,114,111,114]/2(a[115,105,103,110,97,108],a[83,73,71,102,111,111])))"
 ]
 
 # the kernel's lines where they differ from swipl's (see the header)
@@ -233,7 +409,7 @@ function _qx_kernel(path::String, names::Vector{String})
     return out, gd, ld
 end
 
-@testset "the Q10 built-ins as swipl's (vr01-sh20)" begin
+@testset "the Q10 built-ins as swipl's (vr01-os30)" begin
     f, names = _qx_file()
     kl, _, _ = _qx_kernel(f, names)
     @test length(kl) == length(_QX_PINNED)
@@ -251,9 +427,11 @@ end
     for (id, _) in _QX_CASES
         @test any(l -> startswith(l, "t_$id "), _QX_PINNED)
     end
-    @test count(l -> occursin("c" * _qx_codes("raised"), l), _QX_PINNED) == 3      # sh05, sh06, sh11
-    @test count(l -> occursin("a" * _qx_codes("yes"), l), _QX_PINNED) >= 9          # the \\=@= rows that answer yes
+    @test count(l -> startswith(l, "t_sh") && occursin("c" * _qx_codes("raised"), l), _QX_PINNED) == 3      # sh05, sh06, sh11
+    @test count(l -> startswith(l, "t_vr") && occursin("a" * _qx_codes("yes"), l), _QX_PINNED) >= 9          # the \\=@= rows that answer yes
     @test any(l -> startswith(l, "t_sh11 ") && occursin(_qx_codes("signal"), l), _QX_PINNED)   # a child killed by signal 9
+    @test any(l -> startswith(l, "t_ss17 ") && occursin("i1073741824", l), _QX_PINNED)         # the stack limit, 1 GiB in bytes
+    @test any(l -> startswith(l, "t_os01 ") && occursin("a" * _qx_codes("foreign"), l) && occursin("a" * _qx_codes("throw"), l), _QX_PINNED)
 end
 
 @testset "the pins are swipl's (live, when swipl is on PATH)" begin

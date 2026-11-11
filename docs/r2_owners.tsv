@@ -41,11 +41,9 @@ pred:$leash/2	DBG1	seed: missing_c_preds.tsv
 pred:$mono_idg_changed/2	TAB1	seed: missing_c_preds.tsv
 pred:$mono_reeval_done/3	TAB1	seed: missing_c_preds.tsv
 pred:$mono_reeval_prepare/2	TAB1	seed: missing_c_preds.tsv
-pred:$on_signal/4	Q10	seed: missing_c_preds.tsv
 pred:$put_token/2	Q10	seed: missing_c_preds.tsv
 pred:$rc_handle/1	ZIP1	seed: missing_c_preds.tsv
 pred:$seek_list/4	P2	seed: missing_c_preds.tsv
-pred:$set_prolog_stack/4	Q10	seed: missing_c_preds.tsv
 pred:$sig_unblock/0	TH1	seed: missing_c_preds.tsv
 pred:$snapshot/1	TX1	seed: missing_c_preds.tsv
 pred:$suspend_findall_bag/0	Q10	seed: missing_c_preds.tsv
@@ -111,15 +109,12 @@ pred:succ/2	AR1	seed: missing_c_preds.tsv
 pred:thread_create/3	TH1	seed: missing_c_preds.tsv
 pred:thread_exit/1	TH1	seed: missing_c_preds.tsv
 pred:thread_get_message/2	TH1	seed: missing_c_preds.tsv
-pred:thread_idle/2	Q10	seed: missing_c_preds.tsv
 pred:thread_join/2	TH1	seed: missing_c_preds.tsv
 pred:thread_property/2	TH1	seed: missing_c_preds.tsv
 pred:thread_send_message/2	TH1	seed: missing_c_preds.tsv
 pred:thread_statistics/3	TH1	seed: missing_c_preds.tsv
 pred:trace/0	DBG1	seed: missing_c_preds.tsv
 pred:tracing/0	DBG1	seed: missing_c_preds.tsv
-pred:trim_heap/0	Q10	seed: missing_c_preds.tsv
-pred:trim_stacks/0	Q10	seed: missing_c_preds.tsv
 pred:zip_clone/2	ZIP1	seed: missing_c_preds.tsv
 pred:zip_close_/2	ZIP1	seed: missing_c_preds.tsv
 pred:zip_file_info_/3	ZIP1	seed: missing_c_preds.tsv
@@ -222,3 +217,5 @@ refusal:src/pl-string.jl::pl_string_bytes3_va::string_bytes/3 with the encoding 
 refusal:src/pl-supervisor.jl::freeCodesDefinition!::freeCodesDefinition! of a wrapped predicate needs the databa	WRAP1	freeCodesDefinition of a wrapped predicate (pl-supervisor.c), needs the database; wrap closures are WRAP1
 refusal:src/pl-wam.jl::PL_next_solution_guarded::the VM instruction $(codeTable(thiscode).name)	TAB1	dispatch fallthrough for a VM instruction without a body (pl-vmi.c); each missing instruction has its own vmi: row, the last instruction (S_TABLED) removes this site
 refusal:src/pl-write.jl::writePrimitive::writing a grounded value SWI has no type for	WR2	writePrimitive of a grounded value SWI has no type for; a representation guard of the kernel, permanent until the blob writer takes it
+refusal:src/pl-setup.jl::pl_on_signal4_va::a foreign handler function of the signal	TH1	a handler function pointer of C: the kernel's handler tokens are re-installed, any other pointer is refused by name
+refusal:src/pl-setup.jl::pl_set_prolog_stack4_va::set_stack_limit (a changed stack limit)	R2 F1b	the `limit` property reads and accepts an equal value only, as set_prolog_flag(stack_limit, ...) is refused
