@@ -1321,68 +1321,331 @@ function ar_cputime(r::number)::Bool
     return true
 end
 
-# The random source: upstream seeds a GMP `gmp_randstate_t` (a Mersenne twister, `init_random`) in the
-# LOCAL DATA on first use (`LD->arith.random`); here SplitMix64 on `ld.random_state`, seeded on first use.
-# A seed (`set_random/1`, `random_property/1`) is a later step, so the stream is not comparable to
-# swipl's under any seed: the tests check the range and the errors.
-# DIVERGES: the generator (above).
+# The random source: upstream's `LD->arith.random` is a GMP `gmp_randstate_t`, the Mersenne twister
+# (`gmp_randinit_mt`, GMP's randmt.c: `randseed_mt`, `__gmp_mt_recalc_buffer`, `__gmp_mt_getnext`,
+# `randget_mt`) that `init_random` makes and `seed_random` seeds. Here the state is `ld.random_state`,
+# a `Vector{UInt32}` of the generator's struct (`mt[624]`, then `mti`; empty until `init_random`), and
+# the GMP generator is written out as named pieces, so that a seed gives swipl's stream and
+# `random_property(state(S))` shows swipl's state number (the struct's bytes as one integer, the same
+# 20032 bits).
+# DIVERGES: the struct is a `Vector{UInt32}`, not GMP's allocation; the state integer's padding word
+# above `mti` is zero.
 
-# `init_random` and `mt_rand_u32` of pl-arith.c, in one
-"The next 64 random bits (`init_random` on first use, then `mt_rand_u32` twice)."
-function _random_u64(ld::PL_local_data)::UInt64
-    if ld.random_state == 0                                 # init_random()
-        ld.random_state =
-            (UInt64(time_ns()) ⊻ (UInt64(Libc.getpid()) << 40) ⊻ 0x853c49e6748fea9b) | 1
+const MT_N = 624
+const MT_M = 397
+const MT_MATRIX_A = 0x9908b0df
+const MT_WARM_UP = 2000                                     # randmt.c WARM_UP
+const MT_LIMBS = 313                                        # the struct's size in 64-bit limbs
+
+# PORT: randmt.c mangle_seed (GMP)
+# One reduction step of GMP's `mangle_seed`: `r` modulo 2^19937 - 20023, as upstream's inner loop.
+function _mt_reduce(r::BigInt)::BigInt
+    while true
+        t = r >> 19937                                      # mpz_tdiv_q_2exp(t, r, 19937)
+        iszero(t) && return r
+        r = (r & ((BigInt(1) << 19937) - 1)) + t * 20023    # mpz_tdiv_r_2exp, mpz_addmul_ui
     end
-    z = ld.random_state += 0x9e3779b97f4a7c15
-    z = (z ⊻ (z >> 30)) * 0xbf58476d1ce4e5b9
-    z = (z ⊻ (z >> 27)) * 0x94d049bb133111eb
-    return z ⊻ (z >> 31)
 end
 
-# GMP's `mpz_urandomm` by rejection: `nbits` random bits until the number is below `n`.
-"A random integer in `[0, n)` for `n > 0` (GMP `mpz_urandomm`)."
-function _mpz_urandomm(ld::PL_local_data, n::BigInt)::BigInt
-    nbits = ndigits(n; base=2)
-    nwords = cld(nbits, 32)
+# PORT: randmt.c mangle_seed (GMP)
+"`b^1074888996` modulo 2^19937 - 20023, GMP's mangling of a seed (randmt.c `mangle_seed`)."
+function _mt_mangle_seed(b::BigInt)::BigInt
+    r = b
+    e = UInt64(0x40118124)
+    bit = UInt64(0x20000000)
     while true
-        x = BigInt(0)
-        for _ in 1:nwords
-            x = (x << 32) | BigInt(UInt32(_random_u64(ld) >> 32))
+        r = _mt_reduce(r * r)
+        while (e & bit) != 0
+            e ⊻= bit
+            r = _mt_reduce(r * b)
         end
-        x >>= nwords * 32 - nbits
-        x < n && return x
+        bit >>= 1
+        bit == 0 && return r
+    end
+end
+
+# PORT: randmt.c __gmp_mt_recalc_buffer (GMP)
+"Refill the twister's 624 words (`__gmp_mt_recalc_buffer`); `mt` is 1-based here."
+function _mt_recalc_buffer!(mt::Vector{UInt32})::Nothing
+    for kk in 0:(MT_N - MT_M - 1)
+        y = (mt[kk + 1] & 0x80000000) | (mt[kk + 2] & 0x7fffffff)
+        mt[kk + 1] = mt[kk + MT_M + 1] ⊻ (y >> 1) ⊻ ((y & 1) != 0 ? MT_MATRIX_A : UInt32(0))
+    end
+    for kk in (MT_N - MT_M):(MT_N - 2)
+        y = (mt[kk + 1] & 0x80000000) | (mt[kk + 2] & 0x7fffffff)
+        mt[kk + 1] = mt[kk + (MT_M - MT_N) + 1] ⊻ (y >> 1) ⊻
+            ((y & 1) != 0 ? MT_MATRIX_A : UInt32(0))
+    end
+    y = (mt[MT_N] & 0x80000000) | (mt[1] & 0x7fffffff)
+    mt[MT_N] = mt[MT_M] ⊻ (y >> 1) ⊻ ((y & 1) != 0 ? MT_MATRIX_A : UInt32(0))
+    return nothing
+end
+
+# PORT: randmt.c randseed_mt (GMP)
+"`gmp_randseed` on the twister (randmt.c `randseed_mt`): `mt` is reseeded from the integer `seed`."
+function _mt_randseed!(mt::Vector{UInt32}, seed::BigInt)::Nothing
+    length(mt) == MT_N + 1 || resize!(mt, MT_N + 1)
+    modulus = (BigInt(1) << 19937) - 20027                  # mpz_setbit(mod, 19937); mpz_sub_ui
+    seed1 = mod(seed, modulus) + 2                          # mpz_mod, mpz_add_ui
+    seed1 = _mt_mangle_seed(seed1)
+    if ((seed1 >> 19936) & 1) != 0                          # the last bit goes to bit 31 of mt[0]
+        mt[1] = 0x80000000
+        seed1 -= BigInt(1) << 19936                         # mpz_clrbit
+    else
+        mt[1] = UInt32(0)
+    end
+    for i in 1:(MT_N - 1)                                   # mpz_export into mt[1..N-1], zero filled
+        mt[i + 1] = UInt32(seed1 & 0xffffffff)
+        seed1 >>= 32
+    end
+    for _ in 1:(MT_WARM_UP ÷ MT_N)
+        _mt_recalc_buffer!(mt)
+    end
+    mt[MT_N + 1] = UInt32(MT_WARM_UP % MT_N)                # p->mti
+    return nothing
+end
+
+# PORT: randmt.c __gmp_mt_getnext (GMP)
+"The next tempered 32 bits of the twister (`__gmp_mt_getnext`)."
+function _mt_getnext!(mt::Vector{UInt32})::UInt32
+    if mt[MT_N + 1] >= MT_N
+        _mt_recalc_buffer!(mt)
+        mt[MT_N + 1] = 0
+    end
+    y = mt[Int(mt[MT_N + 1]) + 1]
+    mt[MT_N + 1] += 1
+    y ⊻= y >> 11
+    y ⊻= (y << 7) & 0x9d2c5680
+    y ⊻= (y << 15) & 0xefc60000
+    y ⊻= y >> 18
+    return y
+end
+
+# PORT: randmt.c randget_mt (GMP)
+"`nbits` random bits as an integer (GMP `_gmp_rand` on the twister: whole limbs as two words, low word first; a partial limb keeps its low bits)."
+function _mt_randget!(mt::Vector{UInt32}, nbits::Int)::BigInt
+    nlimbs, rbits = divrem(nbits, 64)
+    limbs = Vector{UInt64}(undef, nlimbs)
+    for i in 1:nlimbs
+        lo = UInt64(_mt_getnext!(mt))
+        limbs[i] = lo | (UInt64(_mt_getnext!(mt)) << 32)
+    end
+    top = UInt64(0)
+    if rbits != 0
+        if rbits < 32
+            top = UInt64(_mt_getnext!(mt)) & ((UInt64(1) << rbits) - 1)
+        else
+            lo = UInt64(_mt_getnext!(mt))
+            hi = UInt64(_mt_getnext!(mt)) & ((UInt64(1) << (rbits - 32)) - 1)
+            top = lo | (hi << 32)
+        end
+    end
+    # the limbs were drawn low limb first, the partial limb last (GMP fills dest[0..] upwards)
+    x = BigInt(top)
+    for i in nlimbs:-1:1
+        x = (x << 64) | BigInt(limbs[i])
+    end
+    return x
+end
+
+# ORIGINAL: GMP `gmp_randseed_ui`'s seed integer
+# (the seed of `set_random(seed(N))` for a small integer is an `unsigned long`)
+"The `unsigned long` `i` as seed integer (`(unsigned long)n.value.i`)."
+_ulong_seed(i::Int64)::BigInt = BigInt(reinterpret(UInt64, i))
+
+# PORT: pl-arith.c seed_from_dev
+"Seed the generator from a character device (`/dev/urandom`, `/dev/random`): true when 16 bytes or more were read."
+function seed_from_dev(ld::PL_local_data, dev::String)::Bool
+    io = try
+        open(dev, "r")                                      # open(dev, O_RDONLY)
+    catch e
+        (e isa SystemError || e isa Base.IOError) || rethrow()
+        return false
+    end
+    done = false
+    try
+        if Base.Filesystem.ischardev(stat(io))              # fstat, S_ISCHR
+            buf = Vector{UInt8}(undef, 128)                 # RAND_SEED_LEN
+            rd = readbytes!(io, buf, 128)
+            if rd >= 16                                     # MIN_RAND_SEED_LEN
+                seed = BigInt(0)                            # mpz_import(seed, rd, 1, 1, 0, 0, seedarray)
+                for i in 1:rd
+                    seed = (seed << 8) | buf[i]
+                end
+                _mt_randseed!(ld.random_state, seed)
+                done = true
+            end
+        end
+    finally
+        close(io)
+    end
+    return done
+end
+
+# PORT: pl-arith.c seed_random
+# DIVERGES: `seed_from_crypt_context` is the Windows arm (nothing here: false).
+"Seed the generator from the system (pl-arith.c `seed_random`): the devices, else the wall clock."
+function seed_random(ld::PL_local_data)::Nothing
+    if !seed_from_dev(ld, "/dev/urandom") && !seed_from_dev(ld, "/dev/random")
+        key = reinterpret(UInt64, WallTime())               # key ^= u.l[i]: one long per double
+        _mt_randseed!(ld.random_state, BigInt(key))         # gmp_randseed_ui
+    end
+    return nothing
+end
+
+# PORT: pl-arith.c init_random
+"Make the generator on first use (pl-arith.c `init_random`): `gmp_randinit_mt` (seed 5489), then `seed_random`."
+function init_random(ld::PL_local_data)::Nothing
+    if isempty(ld.random_state)
+        resize!(ld.random_state, MT_N + 1)
+        _mt_randseed!(ld.random_state, BigInt(5489))        # gmp_randinit_mt: gmp_randseed_ui(5489)
+        seed_random(ld)
+    end
+    return nothing
+end
+
+# PORT: mpz/urandomm.c mpz_urandomm (GMP)
+"A random integer in `[0, n)` for `n > 0` (GMP `mpz_urandomm`): `nbits` random bits until below `n`, 80 tries at most."
+function _mpz_urandomm(ld::PL_local_data, n::BigInt)::BigInt
+    pow2 = count_ones(n) == 1                               # POW2_P of the limbs
+    nbits = ndigits(n; base=2) - (pow2 ? 1 : 0)
+    nbits == 0 && return BigInt(0)                          # n == 1
+    count = 80                                              # MAX_URANDOMM_ITER
+    while true
+        rp = _mt_randget!(ld.random_state, nbits)
+        rp < n && return rp
+        count -= 1
+        count == 0 && return rp - n                         # too many iterations: result mod n
     end
 end
 
 # PORT: pl-arith.c ar_random
-# DIVERGES: the generator (see `_random_u64`); `V_INTEGER` takes upstream's `O_BF` branch (a mask of
-# `msb(n)+1` bits, redrawn while not below `n`), which answers a small integer, where the GMP branch
-# promotes to `V_MPZ` and answers the same value.
+# DIVERGES: the argument is not promoted in place (`promoteToMPZNumber(n1)`): a `V_INTEGER` takes the
+# `V_MPZ` branch with its value as a `BigInt`; the result is `V_MPZ` as upstream's.
 "`random/1` (pl-arith.c `ar_random`): a random integer in `[0, n)`."
 function ar_random(ld::PL_local_data{T}, n1::number, r::number)::Bool where {T}
     toIntegerNumber(ld, n1, TOINT_CONVERT_FLOAT) ||
         return PL_error(ld, "random", 1, "", ERR_AR_TYPE, mk_sym(T, :integer), n1)
     ar_sign_i(n1) <= 0 && return mustBePositive(ld, "random", 1, n1)
-    if n1.type === V_INTEGER
-        msb = MSB64(n1.i)
-        mask = (UInt64(1) << (msb + 1)) - 1
-        rnd = UInt64(0)
-        while true
-            rnd = _random_u64(ld) >> 32                     # mt_rand_u32
-            if msb > 32
-                rnd |= (_random_u64(ld) >> 32) << 32
-            end
-            rnd &= mask
-            rnd >= UInt64(n1.i) || break
-        end
-        r.type = V_INTEGER
-        r.i = Int64(rnd)
-        return true
-    end
-    r.type = V_MPZ                                          # V_MPZ
-    r.mpz = _mpz_urandomm(ld, n1.mpz)
+    init_random(ld)
+    n = n1.type === V_INTEGER ? BigInt(n1.i) : n1.mpz       # promoteToMPZNumber(n1)
+    r.type = V_MPZ
+    r.mpz = _mpz_urandomm(ld, n)                            # mpz_urandomm
     return true
+end
+
+# ORIGINAL: upstream's `PL_get_number` answers `V_MPZ` for an integer beyond the tagged range
+# (`max_tagged_integer`, 2^56-1 at the pin); the kernel's term layer holds every `Int64` as `V_INTEGER`
+# (`get_rational`). `set_random/1` takes the two as upstream takes the `V_MPZ`.
+"Whether `n` is a `V_INTEGER` past the tagged range (an upstream `V_MPZ`)."
+_is_big_int64(n::number)::Bool =
+    n.type === V_INTEGER && !(PLMINTAGGEDINT <= n.i <= PLMAXTAGGEDINT)
+
+# ORIGINAL: the value of an integer `number` as a `BigInt`
+"The value of the integer `n` (`V_INTEGER` or `V_MPZ`) as a `BigInt`."
+_number_bigint(n::number)::BigInt = n.type === V_INTEGER ? BigInt(n.i) : n.mpz
+
+# PORT: pl-arith.c set_random as pl_set_random1_va
+# DIVERGES: a `V_INTEGER` past the tagged range takes the `V_MPZ` arms (see `_is_big_int64`); a state (`state(S)`) is copied into the struct as `mpz_set` into the seed limbs does,
+# but a number of more than 313 limbs is a `domain_error(random_state, S)` (GMP would reallocate the
+# seed under the generator's struct); the struct has no padding word to copy into.
+# (PRED_IMPL("set_random", 1, set_random, 0))
+"`set_random/1` (pl-arith.c): `seed(random)`, `seed(Int)` or `state(Int)` of the random generator."
+function pl_set_random1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1 = PL__t0
+    init_random(ld)
+    na = PL_get_name_arity(ld, A1)
+    if na !== nothing && na[2] == 1
+        name = na[1]
+        arg = PL_new_term_ref(ld)
+        _PL_get_arg(ld, 1, A1, arg)
+        if name == mk_sym(T, :seed)
+            a = PL_get_atom(ld, arg)
+            if a !== nothing && a == mk_sym(T, :random)
+                seed_random(ld)
+                return FTRUE
+            end
+            n = _number_alloc!(ld)
+            if !PL_get_number(ld, arg, n)
+                _number_free!(ld, 1)
+                return PL_error(
+                    ld, "", 0, "integer or 'random'", ERR_TYPE, mk_sym(T, :seed), arg
+                ) ? FTRUE : FFALSE
+            end
+            rc = if n.type === V_INTEGER && PLMINTAGGEDINT <= n.i <= PLMAXTAGGEDINT
+                _mt_randseed!(ld.random_state, _ulong_seed(n.i))    # gmp_randseed_ui
+                true
+            elseif n.type === V_INTEGER || n.type === V_MPZ
+                _mt_randseed!(ld.random_state, _number_bigint(n))   # gmp_randseed
+                true
+            else
+                PL_error(ld, ERR_TYPE, mk_sym(T, :seed), arg)
+            end
+            _number_free!(ld, 1)
+            return rc ? FTRUE : FFALSE
+        elseif name == mk_sym(T, :state)
+            n = _number_alloc!(ld)
+            if !PL_get_number(ld, arg, n) || !(n.type === V_MPZ || _is_big_int64(n))
+                _number_free!(ld, 1)
+                return PL_error(ld, ERR_TYPE, mk_sym(T, :state), arg) ? FTRUE : FFALSE
+            end
+            rc = _mt_set_state!(ld.random_state, _number_bigint(n))  # mpz_set(state[0]._mp_seed, n)
+            _number_free!(ld, 1)                                    # clearNumber(&n)
+            return rc || PL_domain_error(ld, "random_state", arg) ? FTRUE : FFALSE
+        else
+            return PL_error(ld, ERR_DOMAIN, mk_sym(T, :random_option), A1) ? FTRUE : FFALSE
+        end
+    else
+        return PL_error(ld, ERR_TYPE, mk_sym(T, :random_option), A1) ? FTRUE : FFALSE
+    end
+end
+
+# ORIGINAL: `mpz_set(LD->arith.random.state[0]._mp_seed, n)` of set_random/1's `state(S)`
+"Copy the limbs of `n` over the start of the generator's struct (as `mpz_set`); false when `n` has more than 313 limbs."
+function _mt_set_state!(mt::Vector{UInt32}, n::BigInt)::Bool
+    m = abs(n)
+    nlimbs = cld(ndigits(m; base=2), 64)
+    nlimbs > MT_LIMBS && return false
+    for i in 0:(min(2 * nlimbs, MT_N + 1) - 1)              # the struct's words; the padding word is not kept
+        mt[i + 1] = UInt32((m >> (32 * i)) & 0xffffffff)
+    end
+    return true
+end
+
+# ORIGINAL: the struct's bytes as one integer, `random_property(state(S))`'s `mpz_set(seed, _mp_seed)`
+"The generator's struct as one integer: `mt[0]` the lowest word, `mti` above `mt[623]`, a zero padding word."
+function _mt_get_state(mt::Vector{UInt32})::BigInt
+    x = BigInt(0)
+    for i in (MT_N + 1):-1:1
+        x = (x << 32) | BigInt(mt[i])
+    end
+    return x
+end
+
+# PORT: pl-arith.c random_property as pl_random_property1_va
+# (PRED_IMPL("random_property", 1, random_property, 0))
+"`random_property/1` (pl-arith.c): `state(S)`, the generator's state as an integer."
+function pl_random_property1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1 = PL__t0
+    init_random(ld)
+    na = PL_get_name_arity(ld, A1)
+    if na !== nothing && na[2] == 1
+        arg = PL_new_term_ref(ld)
+        _PL_get_arg(ld, 1, A1, arg)
+        if na[1] == mk_sym(T, :state)
+            seed = _number_alloc!(ld)
+            seed.type = V_MPZ
+            seed.mpz = _mt_get_state(ld.random_state)
+            rc = PL_unify_number(ld, arg, seed)
+            _number_free!(ld, 1)                            # clearNumber(&seed)
+            return rc ? FTRUE : FFALSE
+        end
+    end
+    return FFALSE
 end
 
 # ── ** and ^ (pl-arith.c ar_pow) ─────────────────────────────────────────────────────────────────
@@ -2177,13 +2440,18 @@ function ar_eval(n1::number, r::number)::Bool
 end
 
 # PORT: pl-arith.c ar_random_float
-# DIVERGES: the generator (see `_random_u64`): 64 random bits as the fraction `mpf_urandomb`
-# returns, truncated to a double by `mpf_get_d` (53 bits), redrawn while 0.0.
+# DIVERGES: `mpf_urandomb(rop, state, 64)` is the 64 random bits as the fraction `x * 2^-64`, and
+# `mpf_get_d` truncates it to 53 significant bits (computed here on the integer), as the O_GMP arm.
 "`random_float/0` (pl-arith.c `ar_random_float`): a random float in the open interval (0.0, 1.0)."
 function ar_random_float(ld::PL_local_data, r::number)::Bool
+    init_random(ld)
     while true
-        i = _random_u64(ld)                                 # mpf_urandomb(rop, state, 64)
-        r.f = Float64(i >> 11) * 0x1.0p-53                  # mpf_get_d: truncates
+        x = UInt64(_mt_randget!(ld.random_state, 64))       # mpf_urandomb(rop, state, 64)
+        bl = 64 - leading_zeros(x)
+        if bl > 53
+            x = (x >> (bl - 53)) << (bl - 53)               # mpf_get_d truncates
+        end
+        r.f = ldexp(Float64(x), -64)
         r.f == 0.0 || break
     end
     r.type = V_FLOAT
@@ -3332,5 +3600,7 @@ const PL_predicates_from_arith = (
         "nth_integer_root_and_remainder", 4, pl_nth_integer_root_and_remainder4_va,
         PL_FA_VARARGS
     ),
-    PL_extension("rational", 3, pl_rational3_va, PL_FA_VARARGS)
+    PL_extension("rational", 3, pl_rational3_va, PL_FA_VARARGS),
+    PL_extension("set_random", 1, pl_set_random1_va, PL_FA_VARARGS),
+    PL_extension("random_property", 1, pl_random_property1_va, PL_FA_VARARGS)
 )
