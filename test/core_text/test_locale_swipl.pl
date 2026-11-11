@@ -102,3 +102,16 @@ t10(R) :- findall(N-Ps, ( member(N, ["C", "POSIX", 'C', 'POSIX']), locale_create
     lc_res(( locale_create(_, "C", [alias(lc10), thousands_sep(',')]), locale_property(lc10, thousands_sep(S)) ), R2), lc_destroy(lc10),
     lc_res(( locale_create(_, "C", [alias(lc10), grouping([2])]), locale_property(lc10, grouping(G)) ), R3), lc_destroy(lc10),
     R = [R0, R1, R2, R3, S, G].
+% setlocale/3 refreshes the default locale (updateLocale, pl-ctype.c): LC_NUMERIC and LC_ALL do, the other categories do not. A host without
+% en_US.UTF-8 cannot set it: the row then answers `ok` for that category (the .out is the same on every host).
+lc_def(Ps) :- findall(P, locale_property(default, P), Ps).
+lc_base([alias(default), decimal_point('.')]).
+lc_us([alias(default), decimal_point('.'), thousands_sep(','), grouping([repeat(3)])]).
+lc_upd(Cat, Want, R) :-
+    ( catch(setlocale(Cat, Old, 'en_US.UTF-8'), error(_, _), fail)
+    -> lc_def(Ps), setlocale(Cat, _, Old), lc_def(Ps2), lc_base(B),
+       ( Ps == Want, Ps2 == B -> R = ok ; R = bad(Ps, Ps2) )
+    ;  R = ok ).
+t11(R) :- setlocale(numeric, _, 'C'), lc_base(B), lc_us(U), lc_def(P0),
+    lc_upd(numeric, U, R1), lc_upd(all, U, R2), lc_upd(ctype, B, R3), lc_upd(time, B, R4), lc_upd(messages, B, R5), lc_upd(collate, B, R6),
+    lc_def(P1), R = [P0, R1, R2, R3, R4, R5, R6, P1].

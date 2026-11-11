@@ -168,6 +168,7 @@ end
     @test occursin(_codes("repeat"), expected[findfirst(startswith("t0 "), expected)])
     @test occursin(_codes("lc7b"), expected[findfirst(startswith("t7 "), expected)])
     @test occursin(_codes("default"), expected[findfirst(startswith("t8 "), expected)])      # the initial current locale's alias
+    @test !occursin(_codes("bad"), expected[findfirst(startswith("t11 "), expected)])         # setlocale/3 refreshes the default locale (or the host has no en_US.UTF-8)
 
     kl = kernel_lines(_TL, _LCS_PL, names)
     @test length(kl) == length(expected)
