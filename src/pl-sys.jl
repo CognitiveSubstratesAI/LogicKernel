@@ -172,8 +172,8 @@ end
 # PORT: pl-ctype.c setlocale as pl_setlocale3_va
 # (PRED_IMPL("setlocale", 3, setlocale, 0))
 # DIVERGES: the old locale is an atom of its UTF-8 text; no `CMP_ERROR` from the comparison (the kernel's compare
-# raises nothing, src/pl-prims.jl); a failed query (libc answers NULL) fails. LEFT to the port of pl-locale.c:
-# `updateLocale(category, locale)`, which updates the default locale object (`O_LOCALE`: locale_create/3 and its rows).
+# raises nothing, src/pl-prims.jl); a failed query (libc answers NULL) fails. `updateLocale` (src/os/pl-locale.jl) is
+# called as upstream does, with the gd of the local data.
 "`setlocale(+Category, -Old, +New)`: unify `Old` with the locale of `Category` and set it to `New` unless `Old` equals `New`; an unbound `New` only queries (pl-ctype.c)."
 function pl_setlocale3_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
@@ -206,6 +206,7 @@ function pl_setlocale3_va(
                 end
             end
 
+            updateLocale(ld.GD::PL_global_data{T}, lcp.category, locale)   # pl-ctype.c:944-946: also when `Old` equals `New`
             return FTRUE
         end
     end

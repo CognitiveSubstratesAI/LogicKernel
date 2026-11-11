@@ -2091,6 +2091,57 @@ function _manifest_index(T)
         (LK.fmt_not_implemented, Tuple{LD, Int}, false),
         (LK.format_time, Tuple{LD, LK.IOSTREAM, Vector{Int}, LK.ftm, Bool, Vector{UInt64}}, false),
         (LK._atom_is, Tuple{T, String}, false),
+        # CT1 LOCALE — locale_create/3, locale_property/2, locale_destroy/1, set_locale/1, current_locale/1 (src/os/pl-locale.jl; pl-locale.c)
+        [
+            (f, Tuple{LD, Int, Int, LK.foreign_context{T}}, false) for f in (
+                LK.pl_locale_property2_va, LK.pl_locale_create3_va, LK.pl_locale_destroy1_va,
+                LK.pl_set_locale1_va, LK.pl_current_locale1_va
+            )
+        ]...,
+        (LK.init_locale_strings!, Tuple{LK.PL_locale_rec{T}, Nothing}, false),
+        (LK.init_locale_strings!, Tuple{LK.PL_locale_rec{T}, NTuple{3, Vector{UInt8}}}, false),
+        (LK.fill_locale_from_name!, Tuple{LK.PL_locale_rec{T}, String}, false),
+        (LK.new_locale, Tuple{Type{T}, Nothing}, false),
+        (LK.new_locale, Tuple{Type{T}, LK.PL_locale_rec{T}}, false),
+        [
+            (f, Tuple{LK.PL_locale_rec{T}}, false) for f in (
+                LK.free_locale_strings!, LK.free_locale, LK.acquireLocale, LK.releaseLocale,
+                LK.acquire_locale_ref, LK.free_locale_symbol
+            )
+        ]...,
+        (LK.update_locale, Tuple{LK.PL_locale_rec{T}, Cint, Nothing}, false),
+        (LK.update_locale, Tuple{LK.PL_locale_rec{T}, Cint, String}, false),
+        (LK._loc_atoms_equal, Tuple{T, T}, false),
+        (LK._locale_table_index, Tuple{LK.PL_global_data{T}, T}, false),
+        (LK._locale_lookup, Tuple{LK.PL_global_data{T}, T}, false),
+        (LK._alias_locale_table!, Tuple{LK.PL_global_data{T}, LK.PL_locale_rec{T}, T}, false),
+        (LK.alias_locale, Tuple{LK.PL_global_data{T}, LD, LK.PL_locale_rec{T}, T}, false),
+        (LK._locale_blob_ref, Tuple{LK.PL_global_data{T}, T}, false),
+        (LK._locale_serial!, Tuple{LK.PL_global_data{T}, LK.PL_locale_rec{T}}, false),
+        (LK.unifyLocale, Tuple{LK.PL_global_data{T}, LD, Int, LK.PL_locale_rec{T}, Bool}, false),
+        [
+            (f, Tuple{LK.PL_global_data{T}, LD, Int}, false) for f in (LK.getLocale, LK.getLocaleEx)
+        ]...,
+        [
+            (f, Tuple{LD, LK.PL_locale_rec{T}, Int}, false) for f in (
+                LK.locale_alias_property, LK.locale_decimal_point_property,
+                LK.locale_thousands_sep_property, LK.locale_grouping_property
+            )
+        ]...,
+        (LK._lprop_call, Tuple{LD, Int, LK.PL_locale_rec{T}, Int}, false),
+        (LK._locale_get_prop_def, Tuple{LD, Int}, false),
+        (LK.advance_lstate, Tuple{LK.PL_global_data{T}, Int, Int, Int, Int}, false),
+        (LK.free_lstate, Tuple{LK.PL_global_data{T}, Int, Int}, false),
+        [
+            (f, Tuple{LD, Int}, false) for f in (
+                LK.get_atom_arg, LK.set_chars, LK.get_group_size_ex, LK.set_grouping
+            )
+        ]...,
+        (LK._locale_text_string, Tuple{LK.PL_chars_t}, false),
+        (LK.initLocale!, Tuple{LK.PL_global_data{T}}, false),
+        (LK.updateLocale, Tuple{LK.PL_global_data{T}, Cint, Nothing}, false),
+        (LK.updateLocale, Tuple{LK.PL_global_data{T}, Cint, String}, false),
+        (LK.cleanupLocale, Tuple{LK.PL_global_data{T}}, false),
         # DWIM1 — dwim_match/3 and '$dwim_predicate'/2 (pl-dwim.c)
         (LK.pl_dwim_match, Tuple{LD, Int, Int, Int}, false),
         (LK.pl_dwim_predicate, Tuple{LD, Int, Int, LK.foreign_context{T}}, false),
@@ -4141,6 +4192,16 @@ const _DISPATCH_MANIFEST_TUPLE = (
     (LK.leapsecs_sub, Tuple{Vector{UInt64}, UInt64}, false),
     # TAI1 — pl-tai.jl: the broken-down time, the confined libc calls, the zone (no term type)
     (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_tai)}, false),
+    # CT1 LOCALE — pl-locale.jl: the strings of a locale, libc's localeconv, the retry state (no term type)
+    (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_locale)}, false),
+    (LK.ls_to_wcs, Tuple{Vector{UInt8}, String}, false),
+    (LK._read_lconv, Tuple{}, false),
+    (LK._c_string_bytes, Tuple{Ptr{UInt8}}, false),
+    (LK._locale_ref_bytes, Tuple{Int}, false),
+    (LK._grouping_at, Tuple{Vector{Int}, Int}, false),
+    (LK._lenc, Tuple{Int, Int, Int, Int}, false),
+    (LK._ldec, Tuple{Int}, false),
+    (LK._cstr, Tuple{String}, false),
     (LK.cal_ftm, Tuple{LK.ftm, Int, Vector{UInt64}}, false),
     (LK.PL_localtime_r, Tuple{Int, LK.CTm}, false),
     (LK._c_mktime, Tuple{LK.CTm}, false),

@@ -290,6 +290,8 @@ end
 # in the blob's payload, src/pl-wrap.jl).
 # Since TAB1 TR1: `tries` (the tries a `trie` blob names, as `closure_refs`; pl-trie.c `trie_symbol` makes the blob with the
 # `struct trie` as its data, here the trie's number in `tries` is the 8-byte payload, src/pl-trie.jl).
+# Since CT1 LOCALE: `locale`, `GD->locale` (pl-global.h:482-484: the locale table and the default locale; `current` is `LD->locale.current`,
+# pl-global.h:906, kept here, see `locale_state`), appended LAST; filled by `initLocale!` (src/os/pl-locale.jl).
 # Since R2's LB2b: `paths_CWDdir`, `GD->paths.CWDdir` (pl-global.h), the working directory `PL_cwd` caches and `ChDir` sets (src/os/pl-os.jl).
 # Since R2 LB6a: `reload_generation`, DIVERGES (representation, owner TH1): upstream's `LD->reload.generation` is per thread; the kernel has one thread,
 # so ONE copy lives here and nothing keeps a second in the local data (audit D-0416 item 3). `startReconsultFile` writes it and `endReconsult` (LB6b)
