@@ -78,6 +78,13 @@ t35(R) :- clause(cvf(1), true, C), '$cov_reset', '$cov_add'(clause(C), 3, 4), '$
 t36(R) :- clause(cvf(1), true, C), '$cov_reset', '$cov_add'(clause(C), 3, 4), '$cov_reset', '$cov_add'(clause(C), 1, 1),
     '$cov_data'(clause(C), E, X), R = r(E, X).
 
+% an answer needs one count not zero; a site whose clause was erased is not an answer; a pc offset outside the table is no key
+t37(R) :- clause(cvf(1), true, C), '$cov_reset', '$cov_add'(clause(C), 3, 0), findall(E-X, '$cov_data'(_, E, X), L), R = L.
+t38(R) :- assertz(zz(9), C), '$cov_reset', '$cov_add'(call_site(C, 1), 1, 1), erase(C),
+    findall(E-X, '$cov_data'(_, E, X), L), R = L.
+t39(R) :- clause(cvf(1), true, C), '$cov_reset', '$cov_add'(call_site(C, 1), 1, 1),
+    ( '$cov_data'(call_site(C, -2), _, _) -> R = found ; R = failed ).
+
 % pass 2: the collection is active twice (the driver runs '$cov_start'/1 twice; the kernel's test sets the count to 2),
 % the rows are cumulative: each starts where the one before left the count
 w0(R) :- '$cov_active'(R).
@@ -89,5 +96,8 @@ w5(R) :- err('$cov_reset', R).
 w6(R) :- '$cov_stop'(1), ( '$cov_active'(_) -> R = active ; R = failed ).
 w7(R) :- err('$cov_reset', R).
 
-% a row only the kernel runs ('$cov_start'/1 is a named refusal there; swipl would succeed)
+% rows only the kernel runs ('$cov_start'/1 is a named refusal there; swipl would succeed)
 tcs(R) :- '$cov_start'(R).
+% ... and the pc offsets outside 0..2^32-2 of a call site (the table key's low half): a named refusal in the kernel
+tcp(R) :- clause(cvf(1), true, C), '$cov_add'(call_site(C, -2), 1, 1), R = ok.
+tcq(R) :- clause(cvf(1), true, C), '$cov_add'(call_site(C, 4294967295), 1, 1), R = ok.

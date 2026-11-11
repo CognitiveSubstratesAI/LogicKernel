@@ -3,7 +3,7 @@
 # test/core_lang/test_coverage_swipl.jl — through a PROGRAM: test_coverage_swipl.pl holds the rows, each a predicate `tN(R)` or `wN(R)`;
 # the kernel consults it and enumerates every solution of every row, and its lines are compared with test_coverage_swipl.out — swipl
 # 10.1.20's own (the pin's), printed by the driver below. When `swipl` is on PATH the .out is checked against a live run as well.
-# Pass 1 (rows t0-t36) runs on a clean state: the inactive answers, the order of '$cov_add'/3's checks, clause and call sites read back
+# Pass 1 (rows t0-t39) runs on a clean state: the inactive answers, the order of '$cov_add'/3's checks, clause and call sites read back
 # by the ground lookup and the enumeration, the type and clause restrictions of a pattern, the reset. Pass 2 (rows w0-w7) runs with the
 # collection ACTIVE TWICE: swipl's driver starts it twice, the kernel's `setup` sets `ld.coverage.active = 2`; the rows are cumulative
 # ('$cov_stop'/1's nesting, the permission error of '$cov_reset'/0 while active). `'$cov_start'/1` is a named refusal in the kernel
@@ -166,7 +166,7 @@ _cv_count(lines, word) = sum(l -> length(findall(_codes(word), l)), lines; init=
     names = vcat(names1, names2)
     expected = String.(readlines(_CV_OUT))
     # not a vacuous agreement: the .out has `ok` and a line per row, and the rows' own evidence is in it
-    @test names1 == ["t$i" for i in 0:36] && names2 == ["w$i" for i in 0:7]
+    @test names1 == ["t$i" for i in 0:39] && names2 == ["w$i" for i in 0:7]
     @test length(expected) == length(names) + 1 && expected[1] == "ok"
     @test all(i -> startswith(expected[i + 1], names[i] * " "), eachindex(names))
     body = expected[2:end]
@@ -203,4 +203,12 @@ end
     kl, ld = kernel_run(_TL, _CV_PL, ["tcs"])
     @test kl == ["ok", "tcs notported"]
     @test ld.coverage.active == 0 && ld.coverage.data === nothing
+end
+
+# a call site's pc offset outside 0..2^32-2 has no table key here (src/pl-incl.jl): a named refusal, swipl accepts it
+@testset "COVERAGE: a pc offset outside the key is refused by name" begin
+    for row in ("tcp", "tcq")
+        kl, ld = kernel_run(_TL, _CV_PL, [row])
+        @test kl == ["ok", "$row notported"]
+    end
 end
