@@ -1003,8 +1003,7 @@ end
 # (`Sopen_file`), a failure's error from its errno (`ERR_FILE_OPERATION`); `pipe(Command)` is `Sopen_pipe` (lane D: a
 # `/bin/sh -c` child; `PL_clear_exception` and `REP_FN` of the command text are unwritten). Unwritten, each raising
 # `NotPortedError` BEFORE a file is opened: IRIs (`iri_hook`),
-# the `lock` option (no `flock`), the `locale` option (`PL_locale`), the `unicode_atoms` option
-# (`atom_to_unicode_atoms_ex`, F1's) and the encoding ENC_ANSI (named refusal; UTF-16 and wchar_t are ported, ENC1).
+# the `lock` option (no `flock`), the `locale` option (`PL_locale`) and the encoding ENC_ANSI (named refusal; UTF-16 and wchar_t are ported, ENC1).
 # `locale`'s default is the `encoding` flag's (`LD->encoding`): UTF-8.
 "Open the file `file` as `mode` and `options` say (pl-file.c); the stream, or `nothing` after raising the error."
 function openStream(
@@ -1022,6 +1021,7 @@ function openStream(
     close_on_abort = true
     bom = -1
     create = 0
+    unicode_atoms_opt = nothing
 
     if options != 0
         vals = PL_scan_options(ld, options, 0, "stream_option", open4_options)
@@ -1048,13 +1048,7 @@ function openStream(
         if vals[13] !== nothing
             throw(NotPortedError{T}(type, "open/4's locale(Locale) option", "PL_locale"))
         end
-        if vals[14] !== nothing
-            throw(
-                NotPortedError{T}(
-                    type, "open/4's unicode_atoms(Mode) option", "F1 (the flags)"
-                )
-            )
-        end
+        unicode_atoms_opt = _opt_atom(T, vals[14])
     end
 
     mname = PL_get_atom_ex(ld, mode)                            # MODE
@@ -1220,6 +1214,16 @@ function openStream(
             freeStream(ld, s)
             return nothing
         end
+    end
+
+    if unicode_atoms_opt !== nothing
+        mode = _atom_to_unicode_atoms(ld, unicode_atoms_opt)
+        if mode === nothing
+            Sclose(s)
+            freeStream(ld, s)
+            return nothing
+        end
+        s.unicode_atoms = mode
     end
 
     return s
@@ -3800,9 +3804,10 @@ function _PL_permission_error(
     )
 end
 
-# ORIGINAL: pl-prologflag.c `atom_to_unicode_atoms_ex`'s `domain_error(unicode_atoms, V)` checks, for the
-# modes `set_stream/2` sets. `nfc` needs the unicode normalisation hook (`ensure_unicode_normalize_hook`, F1's
-# flags) and is REFUSED (`NotPortedError`), as `open/4`'s `unicode_atoms` option is.
+# PORT: pl-prologflag.c atom_to_unicode_atoms_ex
+# DIVERGES: `ensure_hook` is always true and the hook always there: the kernel's normaliser is Julia's
+# `Unicode.normalize(s, :NFC)` (Base's Unicode stdlib), so `nfc` loads nothing and cannot raise the hook's
+# `existence_error` (the pin autoloads library(unicode) for it).
 "The `Sunicode_atoms_t` the atom `val` names, else `nothing` after raising `domain_error(unicode_atoms, V)`."
 function _atom_to_unicode_atoms(
     ld::PL_local_data{T}, val::T
@@ -3810,9 +3815,7 @@ function _atom_to_unicode_atoms(
     _sym_is(val, :accept) && return S_UATOMS_ACCEPT
     _sym_is(val, :error) && return S_UATOMS_ERROR
     _sym_is(val, :reject) && return S_UATOMS_REJECT
-    _sym_is(val, :nfc) && throw(
-        NotPortedError{T}(val, "set_stream/2's unicode_atoms(nfc)", "F1 (the flags)")
-    )
+    _sym_is(val, :nfc) && return S_UATOMS_NFC
     v = PL_new_term_ref(ld)
     PL_put_atom(ld, v, val)
     PL_error(ld, "", 0, "", ERR_DOMAIN, mk_sym(T, :unicode_atoms), v)
@@ -3834,7 +3837,7 @@ end
 #  - `locale(L)` (file:2395-2404, `getLocaleEx`, `Ssetlocale`): REFUSED (`NotPortedError`), as open/4's `locale`;
 #  - `close_on_exec(B)` (file:2455-2458, `setCloseOnExec`): the stream has no descriptor (`Sfileno(s) < 0`), upstream's
 #    own `permission_error(close_on_exec, stream, S)` of that case;
-#  - `unicode_atoms(nfc)` is refused (the normalisation hook, F1's flags); `buffer_size(N)` on an input stream
+#  - `buffer_size(N)` on an input stream
 #    that holds more than N buffered bytes stops in `S__setbuf`'s `@assert` (upstream seeks back).
 # `LD->encoding` is UTF-8 (the flag table is F1's); `file_name` accepts an atom or a string (`CVT_ATOM|CVT_STRING`).
 "Set the attribute `aname` of the stream `s` to the term `a`; `stream` is the user's term (pl-file.c)."

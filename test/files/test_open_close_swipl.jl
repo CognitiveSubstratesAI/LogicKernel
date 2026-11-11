@@ -697,7 +697,7 @@ end
         for (mode, o) in (
             (:write, "[lock(write)]"), (:write, "[lock(shared)]"),
             (:write, "[locale(foo)]"),
-            (:write, "[unicode_atoms(nfc)]"), (:write, "[encoding(text)]")
+            (:write, "[encoding(text)]")
         )
             ldx = LK.PL_local_data{_TL}(gd)             # a refusal leaves its query open: a local data each
             st, _ = kcall(gd, ldx, "open", _TL[f, _tls(mode), v(), opts(o)])
