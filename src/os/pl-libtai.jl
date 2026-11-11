@@ -16,8 +16,10 @@
 #
 # DIVERGES (all of it): a C out-parameter is a return value (`caltime_tai` returns the `UInt64`, `caltime_utc` and
 # `caldate_frommjd` return `(wday, yday)`; the NULL pointer variants of `pwday`/`pyday` are not written: pl-tai.c always
-# passes both). `leapsecs` is the module-level vector `_LEAPSECS` read by `leapsecs_read` from the file C reads
-# (`/etc/leapsecs.dat`, absent on most hosts: no leap seconds).
+# passes both). The leap-second table is a value, not module state (tools/lint_globals.jl refuses module-level mutable
+# state): `leapsecs_init()` reads `/etc/leapsecs.dat` (the file C reads) and answers the table, uncached, and every
+# function that consults it takes it as its first argument; an unreadable or missing file is an empty table (in C a
+# read failure makes `leapsecs_add` and `leapsecs_sub` do nothing, which an empty table does as well).
 
 # PORT: libtai/caldate.h struct caldate
 "A calendar date (libtai `struct caldate`): `year` (long), `month` 1-12 and `day` 1-31 (int)."
@@ -138,26 +140,17 @@ end
 
 # ── the leap-second table (leapsecs_*.c) ─────────────────────────────────────────────────────────
 
-# PORT: libtai/leapsecs_read.c leapsecs
-"The leap-second table (libtai `leapsecs`, `leapsecs_num` is its length): TAI seconds, ascending."
-const _LEAPSECS = Ref{Vector{UInt64}}(UInt64[])
-# PORT: libtai/leapsecs_init.c flaginit
-"True once `leapsecs_init` has read its file."
-const _LEAPSECS_INIT = Ref(false)
-
 # PORT: libtai/leapsecs_read.c leapsecs_read
-# DIVERGES: `open`/`fstat`/`read` is `read(file)`; a missing file (ENOENT) empties the table and answers 0, any other
-# failure answers -1, as in C. The entries are `tai_unpack`ed: 8 bytes, big endian; a trailing partial entry is dropped.
-"Read the leap-second table from `file`: 0 on success (a missing file is an empty table), -1 on another failure (libtai leapsecs_read.c)."
-function leapsecs_read(file::String)::Int
+# DIVERGES: `open`/`fstat`/`read` is `read(file)`, and the table is the answer, not the global `leapsecs`. A file that
+# cannot be read gives an empty table (C: -1 for a failure other than ENOENT, which leaves `leapsecs_add` and
+# `leapsecs_sub` with nothing to do, as an empty table does). The entries are `tai_unpack`ed: 8 bytes, big endian; a
+# trailing partial entry is dropped.
+"The leap-second table `file` holds: TAI second counts, ascending; empty when the file is missing or unreadable (libtai leapsecs_read.c)."
+function leapsecs_read(file::String)::Vector{UInt64}
     bytes = try
         read(file)
-    catch e
-        if e isa SystemError && e.errnum == Libc.ENOENT
-            _LEAPSECS[] = UInt64[]
-            return 0
-        end
-        return -1
+    catch
+        return UInt64[]
     end
     n = length(bytes) ÷ 8
     t = Vector{UInt64}(undef, n)
@@ -168,25 +161,19 @@ function leapsecs_read(file::String)::Int
         end
         t[i] = u
     end
-    _LEAPSECS[] = t
-    return 0
+    return t
 end
 
 # PORT: libtai/leapsecs_init.c leapsecs_init
-"Read `/etc/leapsecs.dat` once: 0, or -1 if it cannot be read (libtai leapsecs_init.c)."
-function leapsecs_init()::Int
-    _LEAPSECS_INIT[] && return 0
-    leapsecs_read("/etc/leapsecs.dat") == -1 && return -1
-    _LEAPSECS_INIT[] = true
-    return 0
-end
+# DIVERGES: not cached (no `flaginit`), and the table is the answer (see the header).
+"The leap-second table of `/etc/leapsecs.dat` (libtai leapsecs_init.c)."
+leapsecs_init()::Vector{UInt64} = leapsecs_read("/etc/leapsecs.dat")
 
 # PORT: libtai/leapsecs_add.c leapsecs_add
-"Add the leap seconds before the TAI second count `x` to it; `hit` leaves a second that is itself a leap second (libtai leapsecs_add.c)."
-function leapsecs_add(x::UInt64, hit::Bool)::UInt64
-    leapsecs_init() == -1 && return x
+"Add the leap seconds of `leapsecs` before the TAI second count `x` to it; `hit` leaves a second that is itself a leap second (libtai leapsecs_add.c)."
+function leapsecs_add(leapsecs::Vector{UInt64}, x::UInt64, hit::Bool)::UInt64
     u = x
-    for l in _LEAPSECS[]
+    for l in leapsecs
         u < l && break
         if !hit || (u > l)
             u += UInt64(1)
@@ -196,12 +183,11 @@ function leapsecs_add(x::UInt64, hit::Bool)::UInt64
 end
 
 # PORT: libtai/leapsecs_sub.c leapsecs_sub
-"Subtract the leap seconds from the TAI second count `x`: `(count, 1)` when `x` is a leap second itself, else `(count, 0)` (libtai leapsecs_sub.c)."
-function leapsecs_sub(x::UInt64)::Tuple{UInt64, Int}
-    leapsecs_init() == -1 && return (x, 0)
+"Subtract the leap seconds of `leapsecs` from the TAI second count `x`: `(count, 1)` when `x` is a leap second itself, else `(count, 0)` (libtai leapsecs_sub.c)."
+function leapsecs_sub(leapsecs::Vector{UInt64}, x::UInt64)::Tuple{UInt64, Int}
     u = x
     s = 0
-    for l in _LEAPSECS[]
+    for l in leapsecs
         u < l && break
         s += 1
         u == l && return (u - (s % UInt64), 1)
@@ -212,19 +198,19 @@ end
 # ── calendar time and TAI (caltime_*.c) ──────────────────────────────────────────────────────────
 
 # PORT: libtai/caltime_tai.c caltime_tai
-"The TAI second count of the calendar time `ct` (libtai caltime_tai.c); the sum wraps as the C `uint64_t` one does."
-function caltime_tai(ct::caltime)::UInt64
+"The TAI second count of the calendar time `ct`, leap seconds from `leapsecs` (libtai caltime_tai.c); the sum wraps as the C `uint64_t` one does."
+function caltime_tai(ct::caltime, leapsecs::Vector{UInt64})::UInt64
     day = caldate_mjd(ct.date)
     s = ct.hour * 60 + ct.minute
     s = (s - ct.offset) * 60 + ct.second
     x = (day % UInt64) * UInt64(86400) + UInt64(4611686014920671114) + (s % UInt64)
-    return leapsecs_add(x, ct.second == 60)
+    return leapsecs_add(leapsecs, x, ct.second == 60)
 end
 
 # PORT: libtai/caltime_utc.c caltime_utc
-"Fill `ct` with the UTC calendar time of the TAI second count `t` (the offset becomes 0) and answer `(weekday, yearday)` (libtai caltime_utc.c)."
-function caltime_utc(ct::caltime, t::UInt64)::Tuple{Int, Int}
-    t2, leap = leapsecs_sub(t)
+"Fill `ct` with the UTC calendar time of the TAI second count `t`, leap seconds from `leapsecs` (the offset becomes 0) and answer `(weekday, yearday)` (libtai caltime_utc.c)."
+function caltime_utc(ct::caltime, t::UInt64, leapsecs::Vector{UInt64})::Tuple{Int, Int}
+    t2, leap = leapsecs_sub(leapsecs, t)
     u = t2
     u += UInt64(58486)
     s = Int(u % UInt64(86400))

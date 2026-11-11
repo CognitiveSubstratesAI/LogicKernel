@@ -5,8 +5,8 @@
 # battery, not yet run; every `old` was checked to occur exactly once in its file at the lane-E worktree (a text count, no Julia, UNTESTED
 # code). The `old` strings are in the repo's formatted style BEFORE `tools/warm.sh fmt`: RE-FIT any that fmt rewraps.
 # NOT LISTED (each with its reason):
-#   * `leapsecs_init` (`leapsecs_read("/etc/leapsecs.dat") == -1 && return -1`, `_LEAPSECS_INIT[] = true`): it reads the HOST's file; the tests set
-#     the table and the flag themselves, so no row reaches it.
+#   * `leapsecs_init()`'s file name (`leapsecs_read("/etc/leapsecs.dat")`): it reads the HOST's file, which is absent on the oracle host, so
+#     no row can tell the name from another missing one.
 # TARGETS (audit D-0238): `git grep -l -E "format_time|stamp_date_time|date_time_stamp|caltime|caldate|leapsecs" -- test` names the files that
 # exercise the mutated code: the two files above and nothing else (the manifest only names the functions).
 TS = [
@@ -57,10 +57,10 @@ MUTANTS = [
          file=L, targets=TS,
          old='u = (u << 8) | UInt64(bytes[(i - 1) * 8 + k])',
          new='u = (u << 8) | UInt64(bytes[(i - 1) * 8 + 9 - k])'),
-    dict(id="TAI1-L11 leapsecs_read: a missing file is an error (KILL the answer 0 for the missing file)",
+    dict(id="TAI1-L11 leapsecs_read: a trailing partial entry is read (KILL the half-written entry of the file)",
          file=L, targets=TS,
-         old='e.errnum == Libc.ENOENT',
-         new='e.errnum != Libc.ENOENT'),
+         old='n = length(bytes) ÷ 8',
+         new='n = cld(length(bytes), 8)'),
     dict(id="TAI1-L12 leapsecs_add: `hit` is inverted (KILL leapsecs_add(x0, true))",
          file=L, targets=TS,
          old='if !hit || (u > l)',
@@ -71,8 +71,8 @@ MUTANTS = [
          new='u == l && return (u - (s % UInt64), 0)'),
     dict(id="TAI1-L14 caltime_tai: the 60th second is never a hit (KILL caltime_tai of a leap second)",
          file=L, targets=TS,
-         old='return leapsecs_add(x, ct.second == 60)',
-         new='return leapsecs_add(x, false)'),
+         old='return leapsecs_add(leapsecs, x, ct.second == 60)',
+         new='return leapsecs_add(leapsecs, x, false)'),
     dict(id="TAI1-L15 caltime_tai: the epoch constant is one off (KILL caltime_tai(1970-01-01) = TAI_UTC_OFFSET)",
          file=L, targets=TS,
          old='UInt64(4611686014920671114)',
