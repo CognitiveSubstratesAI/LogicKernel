@@ -29,7 +29,9 @@ function enc(t::_TL, seen::Vector{UInt64}=UInt64[])::String
         v isa AbstractString && return "s" * _codes(String(v))
         v isa Integer && return "i$v"
         v isa Rational && return "q$(numerator(v))r$(denominator(v))"
-        v isa AbstractFloat && return "f$(v)"
+        # the kernel's own float writer (write/1 and ~w: format_float(f, 3, 'e'), pl-write.c format_float) = the pin's
+        # format("f~w"): Julia's string(::Float64) prints 1.7976931348623157e308 where swipl prints ...e+308 (HARNESS-DIFFERS)
+        v isa AbstractFloat && return "f" * LK.format_float(Float64(v), 3, 'e')
         return "?$(typeof(v))"
     end
     h = child(t, 1)
