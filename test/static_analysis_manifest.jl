@@ -730,7 +730,9 @@ function _manifest_index(T)
         (LK.inheritUnknown, Tuple{GD, MOD}, true),
         (LK.stripModuleName_cells, Tuple{LD, Int}, false),        # L1e e2c: on the cells
         (LK.stripModule_cells, Tuple{GD, LD, Int}, false),
-        (LK._random_u64, Tuple{LD}, false), (LK._mpz_urandomm, Tuple{LD, BigInt}, false),   # arith-b
+        (LK._mpz_urandomm, Tuple{LD, BigInt}, false),               # arith-b, arith-c (GMP's)
+        (LK.seed_from_dev, Tuple{LD, String}, false), (LK.seed_random, Tuple{LD}, false),
+        (LK.init_random, Tuple{LD}, false),
         (LK._is_colon2_word, Tuple{LD, UInt8, UInt64}, false),
         (LK._slot_link_loc!, Tuple{LD, Int, Tuple{UInt8, UInt64, Int}}, false),
         (LK.PL_strip_module_ex, Tuple{GD, LD, Int, Int, Int}, false),
@@ -2017,7 +2019,8 @@ function _manifest_index(T)
                 LK.pl_neq2_va, LK.pl_eq2_va, LK.pl_between3_va, LK.pl_succ2_va, LK.pl_plus3_va,
                 LK.pl_bounded_number3_va, LK.pl_divmod4_va,
                 LK.pl_nth_integer_root_and_remainder4_va, LK.pl_rational3_va,
-                LK.pl_float_parts4_va, LK.pl_float_class2_va
+                LK.pl_float_parts4_va, LK.pl_float_class2_va, LK.pl_set_random1_va,
+                LK.pl_random_property1_va
             )
         ]...,
         # NF1 — the non-deterministic foreign calls: the return values, the context, the state pool
@@ -3812,6 +3815,15 @@ const _DISPATCH_MANIFEST_TUPLE = (
     (LK.cmpReals, Tuple{LK.number, LK.number}, false),
     (LK.intNumber, Tuple{LK.number}, true), (LK.ar_even, Tuple{LK.number}, false),
     (LK._mpz_rootrem, Tuple{BigInt, Int}, false),
+    (LK._mt_reduce, Tuple{BigInt}, false), (LK._mt_mangle_seed, Tuple{BigInt}, false),
+    (LK._mt_recalc_buffer!, Tuple{Vector{UInt32}}, false),
+    (LK._mt_randseed!, Tuple{Vector{UInt32}, BigInt}, false),
+    (LK._mt_getnext!, Tuple{Vector{UInt32}}, false),
+    (LK._mt_randget!, Tuple{Vector{UInt32}, Int}, false),
+    (LK._ulong_seed, Tuple{Int64}, false), (LK._is_big_int64, Tuple{LK.number}, false),
+    (LK._number_bigint, Tuple{LK.number}, false),
+    (LK._mt_set_state!, Tuple{Vector{UInt32}, BigInt}, false),
+    (LK._mt_get_state, Tuple{Vector{UInt32}}, false),
     (LK.ar_smallint, Tuple{LK.number}, false), (LK.pow64, Tuple{Int64, Int64}, true),
     (LK.mpz_to_int64, Tuple{BigInt}, false), (LK.mpz_to_uint64, Tuple{BigInt}, false),
     (LK.mpz_root, Tuple{BigInt, UInt64}, false),

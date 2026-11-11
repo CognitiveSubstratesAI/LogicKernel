@@ -591,7 +591,7 @@ mutable struct PL_local_data{T} <: AbstractLocalData
     vt_ids::Vector{Int32}                                       # =@='s node numbers, by position (L1d step 8a)
     vt_nodes::Vector{vt_node}                                   # … its node buffer (VARIANT_BUFFER)
     vt_agenda::vt_pairs                                         # … its argPairs
-    random_state::UInt64                                        # LD->arith.random: the generator (0: not seeded; arith-b)
+    random_state::Vector{UInt32}                                # LD->arith.random: GMP's Mersenne twister, mt[624] then mti (empty: not initialised; arith-c)
     frozen_bar::Int                                             # LD->frozen_bar: the frozen part of the global stack (0: none; e5)
     index_ctx::index_context{T}                                 # firstClause/nextClause scratch
     slots::Vector{word}                                         # stacks.local: the cells' WORDS
@@ -726,7 +726,7 @@ function _bare_local_data(gd::PL_global_data{T}) where {T}
         cell_agenda(0, 0, NTuple{2, Int}[]), Bool[], Int[],      # the walks on cells (L1d step 5)
         UInt8[], Int[], Int[], cell_agendaLR(0, 0, 0, 0, NTuple{4, Int}[]),   # copy_term on cells (L1d step 6)
         Int32[], vt_node[], vt_pairs(0, 0, 0, 0, NTuple{4, Int}[]),        # =@= on cells (L1d step 8a)
-        UInt64(0),                                                 # random/1's state (arith-b)
+        UInt32[],                                                  # random/1's state: gmp_randstate_t (arith-c)
         0,                                                         # frozen_bar (e5)
         # idle until a search resets it (`_index_context!`): any predicate will do
         index_context{T}(
