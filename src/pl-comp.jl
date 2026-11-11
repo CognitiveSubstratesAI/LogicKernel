@@ -5127,11 +5127,11 @@ function mark_bvar_access(clause::Clause{T})::Union{Nothing, BitVector} where {T
     while pc <= length(codes)
         c = codes[pc]
         info = codeTable(c)
-        if c == B_VAR0
+        if c == B_VAR0 || c == A_VAR0
             max = add_bvar_access!(bits, 0, max)
-        elseif c == B_VAR1
+        elseif c == B_VAR1 || c == A_VAR1
             max = add_bvar_access!(bits, 1, max)
-        elseif c == B_VAR2
+        elseif c == B_VAR2 || c == A_VAR2
             max = add_bvar_access!(bits, 2, max)
         elseif c == B_UNIFY_FF || c == B_UNIFY_FV || c == B_UNIFY_VF
             max = add_bvar_access!(bits, VARNUM(codes[pc + 1]), max)
@@ -5256,9 +5256,11 @@ end
 # under construction is a frame closed at its `B_POP`, with the `B_RFUNCTOR`/`B_RLIST` chain of its
 # last argument (as `decompile_head!`); returns nothing — there is no stack to overflow, so no
 # `*_OVERFLOW` and no retry loop (`decompileBody`'s). `end_` is an instruction, `code(typemax)` for
-# upstream's `(code)-1`; `until` is an index, 0 for NULL. NOT PORTED: `D_BREAK` (no debugger), the
-# arithmetic instructions but `A_ADD_FC`. Since MOD3a `I_CALLM`/`I_DEPARTM` decompile to `M:Goal`
-# (pl-comp.c:6842-6851), since MOD3b `I_CALLATM`/`I_DEPARTATM`/`I_CALLATMV`/`I_DEPARTATMV` to
+# upstream's `(code)-1`; `until` is an index, 0 for NULL. NOT PORTED: `D_BREAK` (no debugger); the
+# arithmetic instructions are the cases of upstream's merged `case` labels (`A_INTEGER` with
+# `B_SMALLINT`: the operand is the raw integer, no tagged word; `A_DOUBLE`/`A_MPZ`/`A_MPQ` with
+# `B_FLOAT`/`B_MPZ`: the operand is a literal; `A_INTEGERW` is never emitted).
+# Since MOD3a `I_CALLM`/`I_DEPARTM` decompile to `M:Goal` (pl-comp.c:6842-6851), since MOD3b `I_CALLATM`/`I_DEPARTATM`/`I_CALLATMV`/`I_DEPARTATMV` to
 # `Goal@M` or `PM:Goal@M` (pl-comp.c:6801-6840), and `I_CONTEXT` here "should never happen" (c:6792-6794;
 # `decompile!` takes it).
 """
@@ -5281,7 +5283,7 @@ function decompileBodyNoShift!(
             di.pc -= 1
             break
         end
-        if op == I_NOP || op == I_CHP
+        if op == A_ENTER || op == I_NOP || op == I_CHP
             continue
         elseif op == B_ATOM || op == H_ATOM
             _dpush!(di, _word_of!(ld, lits[atom_literal(codes[di.pc])]))
@@ -5289,9 +5291,12 @@ function decompileBodyNoShift!(
         elseif op == B_SMALLINT || op == H_SMALLINT
             _dpush!(di, _word_of!(ld, mk_gnd(T, valInt(codes[di.pc]))))  # the tagged word's integer (L1d step 4)
             di.pc += 1
+        elseif op == A_INTEGER                                  # `consInt(*PC++)`: the operand is the raw integer
+            _dpush!(di, _word_of!(ld, mk_gnd(T, reinterpret(Int64, codes[di.pc]))))
+            di.pc += 1
         elseif op == B_FLOAT || op == B_MPZ || op == B_MPQ ||
             op == B_STRING || op == H_FLOAT || op == H_MPZ ||
-            op == H_MPQ ||
+            op == H_MPQ || op == A_DOUBLE || op == A_MPZ || op == A_MPQ ||
             op == H_STRING
             _dpush!(di, _word_of!(ld, lits[codes[di.pc]]))
             di.pc += 1
@@ -5299,15 +5304,33 @@ function decompileBodyNoShift!(
             _dpush!(di, ld.atom_nil_w)
         elseif op == B_ARGVAR || op == B_ARGFIRSTVAR || op == B_FIRSTVAR ||
             op == B_UNIFY_VAR || op == B_UNIFY_FIRSTVAR || op == B_VAR ||
-            op == H_FIRSTVAR || op == H_VAR
+            op == H_FIRSTVAR || op == H_VAR || op == A_VAR || op == A_ROUNDTOWARDS_V
             _dvar!(di, nested, codes[di.pc])
             di.pc += 1
-        elseif op == B_VAR0
+        elseif op == B_VAR0 || op == A_VAR0
             _dvar!(di, nested, VAROFFSET(0))
-        elseif op == B_VAR1
+        elseif op == B_VAR1 || op == A_VAR1
             _dvar!(di, nested, VAROFFSET(1))
-        elseif op == B_VAR2
+        elseif op == B_VAR2 || op == A_VAR2
             _dvar!(di, nested, VAROFFSET(2))
+        elseif op == A_ROUNDTOWARDS_A                           # `float_rounding_name(*PC++)`
+            _dpush!(di, _atom_word!(ld, float_rounding_name(T, Int(codes[di.pc]))))
+            di.pc += 1
+        elseif op == A_ADD || op == A_MUL                       # BUILD_TERM_REV(FUNCTOR_plus2/star2)
+            build_term!(di, mk_sym(T, op == A_ADD ? Symbol("+") : Symbol("*")), 2, 1)
+        elseif op == A_FUNC0 || op == A_FUNC1 || op == A_FUNC2 || op == A_FUNC
+            fname, farity = functorArithFunction(Int(codes[di.pc]))
+            di.pc += op == A_FUNC ? 2 : 1                       # A_FUNC: the arity operand follows
+            build_term!(di, mk_sym(T, fname), farity, 1)        # BUILD_TERM_REV(functorArithFunction(*PC++))
+        elseif A_LT <= op <= A_FIRSTVAR_IS                      # f_common, and A_FIRSTVAR_IS's variable first
+            if op == A_FIRSTVAR_IS
+                w = pop!(di.argp)                               # ARGP[0] = ARGP[-1]; ARGP[-1] = makeVarRef(index)
+                push!(di.argp, makeVarRef(codes[di.pc]))
+                push!(di.argp, w)
+                di.pc += 1
+            end
+            build_term!(di, mk_sym(T, _arith_goal_name(op)), 2)
+            pushed += 1
         elseif op == B_UNIFY_FF || op == B_UNIFY_FV || op == B_UNIFY_VV
             push!(di.argp, makeVarRef(codes[di.pc]))
             push!(di.argp, makeVarRef(codes[di.pc + 1]))
@@ -5555,14 +5578,6 @@ function decompileBodyNoShift!(
             end
         elseif op == I_EXIT || op == I_EXITCATCH || op == I_EXITRESET  # (I_EXITRESET: LB4 b2)
         # break (out of upstream's switch): nothing
-        elseif A_ENTER <= op <= A_FIRSTVAR_IS                   # the arithmetic instructions (AR1)
-            throw(
-                NotPortedError{T}(
-                    mk_sym(T, codeTable(op).name),
-                    "decompile A_*: the arithmetic instructions (pl-comp.c:6452-6725)",
-                    "AR1 decompile"
-                )
-            )
         else
             error(
                 "Decompiler: unknown instruction in clause body: $(codeTable(op).name)"
@@ -5588,6 +5603,19 @@ function _type_test_name(op::code)::Symbol
         op == instruction && return Symbol(name)
     end
     error("_type_test_name: $(codeTable(op).name) is not a type test")
+end
+
+# PORT: pl-comp.c decompileBodyNoShift (the `f_common` functors of the arithmetic comparisons)
+"The name of the goal the arithmetic instruction `op` (`A_LT` .. `A_FIRSTVAR_IS`) decompiles to (pl-comp.c)."
+function _arith_goal_name(op::code)::Symbol
+    op == A_LT && return Symbol("<")                           # FUNCTOR_smaller2
+    op == A_LE && return Symbol("=<")                          # FUNCTOR_smaller_equal2
+    op == A_GT && return Symbol(">")                           # FUNCTOR_larger2
+    op == A_GE && return Symbol(">=")                          # FUNCTOR_larger_equal2
+    op == A_EQ && return Symbol("=:=")                         # FUNCTOR_ar_equals2
+    op == A_NE && return Symbol("=\\=")                        # FUNCTOR_ar_not_equal2
+    (op == A_IS || op == A_FIRSTVAR_IS) && return :is          # FUNCTOR_is2
+    error("_arith_goal_name: $(codeTable(op).name) is not an arithmetic goal")
 end
 
 # PORT: pl-comp.c decompileBody
