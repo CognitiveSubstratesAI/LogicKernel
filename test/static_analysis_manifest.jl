@@ -3544,6 +3544,42 @@ _manifest_bisim_plain() = (
     (LK.fill_pred, Tuple{LK.bs_graph}, false)
 )
 
+# LANE F — pl-coverage.c (src/pl-coverage.jl): the '$cov_*' predicates and the coverage records (the structs are in src/pl-incl.jl).
+# `'$cov_start'/1` is a named refusal: its entry only checks that it infers. The functions that take the local data or a
+# record of a payload type are checked for every payload type; the ones on plain integers, once, below.
+_manifest_coverage(T) = begin
+    LD = LK.PL_local_data{T}
+    GD = LK.PL_global_data{T}
+    COV = LK.coverage{T}
+    OBJ = LK.cov_obj{T}
+    ST = LK.cov_data_state{T}
+    (
+        (LK.newCoverageData, Tuple{Type{T}}, false),
+        (LK.share_coverage_data, Tuple{Union{Nothing, COV}}, false),
+        (LK.unshare_coverage_data, Tuple{COV}, false),
+        (LK.pc_call_site, Tuple{GD, COV, LK.Clause{T}, Int}, false),
+        (LK.clause_site, Tuple{GD, Union{Nothing, COV}, LK.Clause{T}}, false),
+        (LK.unify_cov, Tuple{GD, LD, Int, OBJ}, false),
+        (LK.free_state, Tuple{ST}, false),
+        (LK.is_candidate, Tuple{ST, OBJ}, false),
+        (LK.free_coverage_data, Tuple{LD}, false),
+        (LK.cov_obj{T}, Tuple{Int, T, Int, Int, Int, Int}, false),
+        (LK.coverage{T}, Tuple{LK.Table, Vector{OBJ}, Int, Int}, false),
+        (LK.cov_data_state{T}, Tuple{}, false),
+        (LK.ld_coverage{T}, Tuple{}, false),
+        [
+            (f, Tuple{LD, Int, Int, LK.control_t{T}}, false) for f in (
+                LK.pl_cov_data3_va, LK.pl_cov_add3_va, LK.pl_cov_reset0_va, LK.pl_cov_start1_va,
+                LK.pl_cov_stop1_va, LK.pl_cov_active1_va
+            )
+        ]...
+    )
+end
+_manifest_coverage_plain() = (
+    (LK.free_cov_symbol, Tuple{UInt64, UInt64}, false),
+    (LK._cov_key, Tuple{Int, Int}, false)
+)
+
 # LB2b — locating files: os/pl-files.c, os/pl-glob.c and the file-name helpers of os/pl-os.c
 # (src/os/pl-files.jl, src/os/pl-glob.jl, src/os/pl-os.jl). The methods that take the local data (`ld`) are
 # checked for every payload type; the ones on plain strings, integers and byte vectors once, below.
@@ -3804,6 +3840,10 @@ const _DISPATCH_MANIFEST_TUPLE = (
     _manifest_bisim(_M2)...,
     _manifest_bisim(_M3)...,
     _manifest_bisim_plain()...,
+    _manifest_coverage(_M1)...,
+    _manifest_coverage(_M2)...,
+    _manifest_coverage(_M3)...,
+    _manifest_coverage_plain()...,
     _MANIFEST_LB2B_FREE...,
     _MANIFEST_TR2_FREE...,
     _manifest_lb7(_M1)...,
@@ -4512,6 +4552,7 @@ const _DISPATCH_MANIFEST_TUPLE = (
     (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_wrap)}, false),
     (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_alloc)}, false),   # Q10
     (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_setup)}, false),   # Q10
+    (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_coverage)}, false),
     (LK.table_props, Tuple{}, false),
     (LK.clear_table_props!, Tuple{LK.table_props}, false),
     # TAB1 TB0: pl-allocpool.c (src/pl-allocpool.jl) and the sentinel tests of pl-tabling.c (src/pl-tabling.jl); they name no term type
