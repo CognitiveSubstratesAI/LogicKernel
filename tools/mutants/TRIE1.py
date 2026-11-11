@@ -30,7 +30,8 @@
 # EQUIVALENT mutants (declared with their reason, file:line in the `equivalent` text): TR1-A4 (the chunk-size clamp at the maximum), TR1-S4
 #   (sweep_at at kept*2 == the minimum), TR1-X1 (the cyclic check one compound later; the bounded TR1-L1 is its kill), TR1-W2b (the tab.wild loop
 #   of a keyed value, by the gnd_value_key contract), TR1-K3 (trie_term/2's magic test: the range test refuses a destroyed trie's handle),
-#   TR1-D2 (clear_node's CN_ALL chunked branch: clear_nodes resets what it frees).
+#   TR1-D2 (clear_node's CN_ALL chunked branch: clear_nodes resets what it frees),
+#   TR1-V22 (unify_value's reserved-value branch: the atom branch reads the same reserved symbol, src/pl-atom.jl:2317-2326).
 # Every `old` was counted EXACTLY once in its file by a python3 -I script at f504d2c2 (the last commit of src/pl-trie.jl and src/pl-setup.jl; the 112
 #   mutants, no Julia ran); `new` != `old`; no duplicate
 #   id. RE-FIT any `old` that `tools/warm.sh fmt` rewraps.
@@ -39,7 +40,8 @@ TP = "test/core_lang/test_trie_preds_swipl.jl"
 TB = "test/db/test_boot_image_swipl.jl"
 TG = "test/core_lang/test_trie_gen_swipl.jl"            # TAB1 stack: trie_gen (TR2) inserts and walks through the code TR1 mutates
 TA = "test/core_lang/test_trie_attvar_swipl.jl"         # TAB1 stack: the attvar rows (TR3) insert, look up and enumerate
-TARGETS = [TW, TP, TB, TG, TA]                       # the union of every mutant's targets (mutate_ci.py plan reads TARGETS)
+CR = "test/db/test_clause_ref_swipl.jl"          # the unbooted-database rank testset sees the boot path (initTries!, its call): TR1-N1, TR1-N2
+TARGETS = [TW, TP, TB, TG, TA, CR]                       # the union of every mutant's targets (mutate_ci.py plan reads TARGETS)
 F = "src/pl-trie.jl"
 SETUP = "src/pl-setup.jl"
 TT = [TW, TP, TG, TA]
@@ -212,7 +214,7 @@ MUTANTS = [
       "        i <= FLAT_MAX_ARGS && push!(args, (p, aw))\n", "        i < FLAT_MAX_ARGS && push!(args, (p, aw))\n"),
     m("TR1-F5 trie_insert_flat: 32 variables are not flat (KILL TW:1123)",
       "            (nvars += 1) > FLAT_MAX_VARS && return (TRIE_LOOKUP_NOT_FLAT, 0)\n", "            (nvars += 1) >= FLAT_MAX_VARS && return (TRIE_LOOKUP_NOT_FLAT, 0)\n"),
-    m("TR1-F6 trie_insert_flat: the cells are not restored (KILL TW:1097, the general lookup then sees numbered variables)",
+    m("TR1-F6 trie_insert_flat: the cells are not restored (KILL TW _tr_insert_flat_rows, the raw-cell row after the lookup row: the argument cells are plain unbound variables again. The lookup row after it does not see the mutant: a numbered cell is the key V1 it stands for, the same path)",
       "    for p in vars\n        ld.gstack[p] = word(0)\n    end\n", "    for p in vars\n        nothing\n    end\n"),
     # ---- blobs and errors (TW _tr_blob_rows 1196, _tr_error_rows 1236)
     m("TR1-B1 trie_symbol makes a new blob each time (KILL TW:1203)",
@@ -228,10 +230,10 @@ MUTANTS = [
     m("TR1-B6 the trie blob has another name (KILL TP:t76, test/core_lang/test_trie_preds_swipl.jl:261: blob(T, Type) answers `trie`, swipl's)",
       "const trie_blob = PL_blob_t(PL_BLOB_NOCOPY, \"trie\")", "const trie_blob = PL_blob_t(PL_BLOB_NOCOPY, \"trie2\")"),
     # ---- boot path (judged only by tools/mutate_ci.py one)
-    m("TR1-N1 BOOT PATH initTries! registers nothing (KILL TP:206, every trie_new: a blob of an unregistered type)",
-      "    PL_register_blob_type(atoms, trie_blob)\n    return nothing\n", "    return nothing\n"),
-    m("TR1-N2 BOOT PATH the database does not call initTries! (KILL TP:206)",
-      "initTries!(atoms)", "nothing", file=SETUP),
+    m("TR1-N1 BOOT PATH initTries! registers nothing (KILL CR: the unbooted-database rank testset, `treg !== nothing`; TP:206 runs on the booted template and cannot see it)",
+      "    PL_register_blob_type(atoms, trie_blob)\n    return nothing\n", "    return nothing\n", targets=[CR]),
+    m("TR1-N2 BOOT PATH the database does not call initTries! (KILL CR: the unbooted-database rank testset, `treg !== nothing`; TP:206 runs on the booted template and cannot see it)",
+      "initTries!(atoms)", "nothing", file=SETUP, targets=[CR]),
     m("TR1-N3 trie_term/2 is not registered (KILL TP:262 t47, TB: the foreign-row count)",
       "    PL_extension(\"trie_term\", 2, pl_trie_term2_va, PL_FA_VARARGS),\n", "", targets=TARGETS),
     m("TR1-N4 trie_update/3 is not registered (KILL TP:231-245 t30-t34, TB)",
@@ -289,8 +291,9 @@ MUTANTS = [
       "    return _atom_word!(ld, mk_reserved_symbol(T, :trienode))\n", "    return UInt64(0)\n"),
     m("TR1-V21 equal_value: a record is compared with anything (KILL TW:1279: the update of a record by an atom is no equal value, the record is released)",
       "    if isRecord(v1) && isRecord(v2)\n", "    if isRecord(v1) || isRecord(v2)\n"),
-    m("TR1-V22 unify_value: the reserved value is read as a plain atom (KILL TP:248 t36, TP:225 t18: the set value)",
-      "        v = if value == ATOM_trienode\n", "        v = if false\n"),
+    m("TR1-V22 unify_value: the reserved value is read as a plain atom (EQUIVALENT: `_atom_value` reads the symbol recorded for ATOM_trienode, the reserved symbol itself; probed, booted and unbooted)",
+      "        v = if value == ATOM_trienode\n", "        v = if false\n",
+      eq="the else branch reads the symbol recorded for ATOM_trienode, the reserved symbol itself (src/pl-atom.jl:2317-2326, src/pl-setup.jl:263, src/pl-trie.jl:1577)"),
     # ---- unify_key (TP t41-t52, t71-t73; TW _tr_unify_rows 1283)
     m("TR1-U1 unify_key: a repeated variable is not unified (KILL TW:1296: f(X, X) against f(1, 2) must answer (false, 0))",
       "                unify_ptrs_cells(ld, p, st.vars[index]) || return BOOLEX_FALSE\n", "                unify_ptrs_cells(ld, p, st.vars[index])\n"),

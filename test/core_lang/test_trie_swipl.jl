@@ -1371,6 +1371,10 @@ function _tr_insert_flat_rows(::Type{T}) where {T}
     @test LK.trie_insert_flat(ld, tr, loc(1)) == (1, n1) && tr.node_count == 6          # again: the same node
     # the cells were restored: the general lookup of the same term finds the same node (it numbers the variables itself)
     @test LK.trie_lookup_abstract(ld, tr, 0, loc(1), false, nothing, nothing) == (1, n1)
+    # the cells are plain unbound variables again, read raw (swipl cannot answer this: the lookup above gives the same node with
+    # numbered cells too, a numbered cell being the key V1 it stands for; pl-trie.c trie_insert_flat's last loop `setVar(*vars[i])`)
+    _, cw = LK.trie_deref(ld, loc(1))
+    @test all(i -> LK.isVar(LK.trie_deref(ld, LK.valPtr(cw) + i)[2]), (2, 3))
     # an atom
     ra, na = LK.trie_insert_flat(ld, tr, loc(2))
     @test ra == 1 && _tr_path(tr, na) == UInt64[_trw(ld, T, :foo)] && tr.node_count == 7
