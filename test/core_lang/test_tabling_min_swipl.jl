@@ -472,23 +472,26 @@ end
 "Whether `def`'s supervisor is a wrapper: the first instruction after the prefix is a wrapper opcode."
 _tm_wrapped(def) = LK.isCallWrapper(def.codes[LK.skipWrapperPrefix(def.codes)])
 
-"Call `name/1` of the user module once with a fresh variable; the Julia exception the run loop raised, or `nothing`."
-function _tm_call_error(gd, ld, name::String)
+"Call `name/1` of the user module once with a fresh variable; `(PL_next_solution's result, the Julia exception the run loop raised)`: `(-1, e)` on an exception."
+function _tm_call_result(gd, ld, name::String)
     proc = LK.isCurrentProcedure(sym_key(_tms(name)), 1, LK.MODULE_user(gd))
     @assert proc !== nothing
     fid = LK.PL_open_foreign_frame(ld)
     a = LK.PL_new_term_refs(ld, 1)
     LK.putSlotValue!(ld, a + 1, mk_var(_TM, LK.fresh_var_keys!(1)), LK.PutVarMap())
     qid = LK.PL_open_query(gd, ld, nothing, LK.PL_Q_NORMAL, proc, a)
-    err = try
-        LK.PL_next_solution(gd, ld, qid)
-        nothing
+    rc, err = try
+        (LK.PL_next_solution(gd, ld, qid), nothing)
     catch e
-        e
+        (-1, e)
     end
+    LK.PL_close_query(ld, qid)                  # a solution leaves the query open (PL_S_TRUE, PL_S_LAST): close it
     LK.PL_close_foreign_frame(ld, fid)
-    return err
+    return rc, err
 end
+
+"Call `name/1` of the user module once with a fresh variable; the Julia exception the run loop raised, or `nothing`."
+_tm_call_error(gd, ld, name::String) = _tm_call_result(gd, ld, name)[2]
 
 @testset "tabling minimum as swipl's (tmt, tma, tmw, tmc)" begin
     f, names = _tm_file()
@@ -608,24 +611,24 @@ end
         @test !LK._shared_supervisor(cd, LK.code[LK.S_WRAP, LK.I_EXIT])
         c01 = LK.closure_of_word(gd, d01.codes[wi + 2])::LK.closure
         @test c01.def.codes === cd.wrapper
-        # the run loop executes them as named refusals (not as unknown instructions): the owner is named
+        # the run loop dispatches all three (S_WRAP and S_CALLWRAPPER run since WRAP1; S_TABLED stays a named TAB1 refusal, not an unknown instruction)
         for nm in (:S_WRAP, :S_CALLWRAPPER, :S_TABLED)
             @test nm in LK.VMI_RUN
         end
-        e = _tm_call_error(gd, ld, "tm_w02")                      # wrapped by tmw02: S_CALLWRAPPER
-        @test e isa LK.NotPortedError && occursin("S_CALLWRAPPER", e.what) &&
-            e.step == "WRAP1"
+        # WRAP1 (T3 pinned S_CALLWRAPPER and S_WRAP as NotPortedError refusals owned by WRAP1): the run loop now runs both, so those
+        # two rows flipped to the behaviour, swipl's (the refusal-flip rule; the expected answers are swipl's, see the oracle probe
+        # below and test/core_lang/test_wrap_swipl.jl, which is the differential for the two opcodes).
+        # tm_w02 is wrapped by tmw02 with the wrapper clause `$wrap$tm_w02(_) :- true`: S_CALLWRAPPER runs it, the call succeeds
+        # (swipl 10.1.20: `tm_w02(X)` succeeds, X unbound).
+        rc, e = _tm_call_result(gd, ld, "tm_w02")
+        @test e === nothing && (rc == LK.PL_S_TRUE || rc == LK.PL_S_LAST)
         @test ld.query == 0 && ld.nqueries == 0
         e = _tm_call_error(gd, ld, "tm_c05")                      # the `table` wrapper of a variant tabled predicate: S_TABLED
         @test e isa LK.NotPortedError && occursin("S_TABLED", e.what) && e.step == "TAB1"
         @test ld.query == 0 && ld.nqueries == 0
-        d03 = _tm_def(gd, "tm_w03")                               # S_WRAP is a closure copy's supervisor: enter it by hand
-        saved = d03.codes
-        d03.codes = d03.code_data.wrapper
-        e = _tm_call_error(gd, ld, "tm_w03")
-        d03.codes = saved
-        @test e isa LK.NotPortedError && occursin("S_WRAP", e.what) && e.step == "WRAP1"
-        @test ld.query == 0 && ld.nqueries == 0
+        # S_WRAP is a closure copy's supervisor, entered through a closure's blob (`call(Closure)`): it is no longer entered by
+        # hand on a plain definition (the copy's `impl_foreign_function` indexes `gd.closure_refs`); the rows are
+        # test/core_lang/test_wrap_swipl.jl's (t0, t1, t8 and the white-box rows).
         # the first declared instruction outside the dispatch stays an unknown-instruction refusal (test/foreign/test_query.jl)
         @test !(:I_NOP in LK.VMI_RUN)
     end

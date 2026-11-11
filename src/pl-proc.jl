@@ -1703,15 +1703,35 @@ function setThreadLocalDefinition!(
     return PL_error(ld, ERR_MODIFY_STATIC_PROC, def, "predicate is thread-local")   # local --> static
 end
 
+# PORT: pl-proc.c setClausableDefinition
+# DIVERGES: `ld` and the database `gd` are arguments (upstream reads `LD`); the refusal is `PL_error(ld, ERR_MODIFY_STATIC_PROC, def, "")`
+# as `setThreadLocalDefinition!` raises it (upstream's `ERR_MODIFY_STATIC_PREDICATE` carries no message).
+"Set (`val`) or clear `P_CLAUSABLE` on `def`; setting it on a predicate with clauses is refused under `protect_static_code` (pl-proc.c)."
+function setClausableDefinition!(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, def::Definition{T}, val::Bool
+)::Bool where {T}
+    if val
+        if truePrologFlag(ld, PLFLAG_PROTECT_STATIC_CODE) &&
+            hasClausesDefinition(gd, def) !== nothing
+            return PL_error(ld, ERR_MODIFY_STATIC_PROC, def, "")
+        end
+        def.flags |= P_CLAUSABLE
+    else
+        def.flags &= ~P_CLAUSABLE
+    end
+    return true
+end
+
 # PORT: pl-proc.c setAttrDefinition
-# DIVERGES: `P_CLAUSABLE` and `P_DET` (their own setters) are refused; `ld` is an argument (the thread-local setter raises).
+# DIVERGES: `P_DET` (its own setter) is refused; `ld` is an argument (the thread-local setter raises).
 "Set (or clear) attribute `attr` of `def` (pl-proc.c)."
 function setAttrDefinition(
     ld::PL_local_data{T}, def::Definition{T}, attr::UInt64, val::Bool
 )::Bool where {T}
     attr == P_DYNAMIC && return setDynamicDefinition!(def, val)
     attr == P_THREAD_LOCAL && return setThreadLocalDefinition!(ld, def, val)
-    (attr == P_CLAUSABLE || attr == P_DET) && throw(
+    attr == P_CLAUSABLE && return setClausableDefinition!(_query_gd(ld), ld, def, val)
+    attr == P_DET && throw(
         NotPortedError{T}(def.name, "setAttrDefinition: attribute $attr", "not ported")
     )
     if val

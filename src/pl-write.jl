@@ -878,6 +878,13 @@ function writeAtom(a::T, options::write_options{T})::Int where {T}
     end
 
     if is_blob(a)                                   # atom->type->write (a blob type's)
+        # WRAP1: the blob type's `write` hook of a closure is `write_closure` (src/pl-wrap.jl): `<closure>(m:p/1)`, written
+        # through `PutToken` (a token break, as the other blobs'), where upstream's `Sfprintf` writes raw.
+        wc = closure_of_word(options.gd, blob_handle(a))
+        if wc !== nothing
+            str = write_closure(options.gd, wc)
+            return PutToken(str, options.out, 0) != 0 && Sferror(options.out) == 0 ? 1 : 0
+        end
         # DIVERGES: no payload and no per-type `write` hook: `<type>(0x<handle>)`, the shape of a
         # stream's `write` (pl-file.c `write_stream_ref`); upstream's default (`writeBlob`) prints the
         # payload as `<#hex>`.

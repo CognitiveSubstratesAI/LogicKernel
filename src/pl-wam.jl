@@ -3720,7 +3720,8 @@ function PL_next_solution_guarded(
     # so is `Goal@Module`, after `checkCallAtContextInstantiation`. Since CONT1 a control construct or `call/N`
     # (N > 8) under a frame with `FR_INRESET` (the body of `reset/3`) is called through `'$meta_call'/1`
     # (`mcall_cont`, pl-vmi.c:5529-5535), as upstream does, where it is compiled to a temporary clause
-    # elsewhere. Closures (`_PL_closure_blob`) are left to the closure step; the `mcall_cont` trap of an
+    # elsewhere. Since WRAP1 a closure (`_PL_closure_blob`: an atom goal, or for `call/1` a compound goal named by it) sets
+    # `mc_clo` and its copy of the definition is the callee (pl-vmi.c:5488-5520, :5661-5663); the `mcall_cont` trap of an
     # undefined procedure is the supervisor's `S_VIRGIN`, as for `I_CALL`.
     @label i_metacall_common
     mc_nb = ld.frames[NFR].base
@@ -3732,10 +3733,15 @@ function PL_next_solution_guarded(
     mc_k, mc_w, _ = mc_loc                          # goal = *a
     mc_gloc = 0                                     # (the goal's location: a goal clause, f3b-3)
     mc_arity = 0
+    mc_clo = nothing                                # closure *clsp = NULL (a closure{T} when the goal is a closure's)
     if mc_k == DU_WORD && isAtomW(mc_w)             # isAtom(goal)
         mc_name = _atom_value(ld, mc_w)
         # ison(ap->type, PL_BLOB_TEXT) || goal == ATOM_nil
-        (isTextAtom(mc_name) || is_nil(mc_name)) || @goto call_type_error
+        if !(isTextAtom(mc_name) || is_nil(mc_name))
+            # else if ( ap->type == &_PL_closure_blob ): clsp = (closure*)ap->name
+            mc_clo = closure_of_word(gd, mc_w)
+            mc_clo === nothing && @goto call_type_error
+        end
     elseif mc_k == DU_WORD                          # isTerm(goal)
         mc_f = ld.gstack[valPtr(mc_w)]              # functor = word2functor(gt->definition)
         mc_fn = nameFunctor(ld.functors, mc_f)      # fd = valueFunctor(functor)
@@ -3745,8 +3751,12 @@ function PL_next_solution_guarded(
         if mc_call0 && mc_arity == 2 && sym_key(mc_name) == gd.functors_control.colon
             @goto call_type_error                   # is_call0 && functor == FUNCTOR_colon2
         end
-        # !isCallableAtom(fd->name): no closures here
-        (isTextAtom(mc_name) || is_nil(mc_name)) || @goto call_type_error
+        if !(isTextAtom(mc_name) || is_nil(mc_name))   # !isCallableAtom(fd->name)
+            # is_call0 && ap->type == &_PL_closure_blob: clsp = (closure*)ap->name; else a type error
+            mc_call0 || @goto call_type_error
+            mc_clo = closure_of_word(gd, _atom_word!(ld, mc_name))
+            mc_clo === nothing && @goto call_type_error
+        end
         mc_arity + mc_callargs > MAXARITY && @goto max_arity_overflow
         if mc_call0 &&
             (
@@ -3838,8 +3848,13 @@ function PL_next_solution_guarded(
     for mc_i in 1:mc_arity                          # ARGP = argFrameP(NFR, 0)
         _slot_from_cell!(ld, argFrameP(mc_nb, mc_i - 1) + 1, valPtr(mc_w) + mc_i)  # linkValI
     end
-    mc_proc = resolveProcedure(gd, mc_name, mc_arity + mc_callargs, gd.modules[mc_mi])
-    DEF = mc_proc.definition
+    # assert(clsp != NULL || functor >= 0); if ( clsp ) DEF = &clsp->def; else DEF = resolveProcedure(...)->definition
+    if mc_clo === nothing
+        mc_proc = resolveProcedure(gd, mc_name, mc_arity + mc_callargs, gd.modules[mc_mi])
+        DEF = mc_proc.definition
+    else
+        DEF = mc_clo.def                            # DEF = &clsp->def (the copy; S_WRAP switches to the wrapped one)
+    end
     @goto mcall_cont
 
     # PORT: pl-vmi.c I_CALLATM
@@ -4947,7 +4962,8 @@ function PL_next_solution_guarded(
     # PORT: pl-vmi.c S_TRUSTME
     # DIVERGES: the operand indexes the supervisor's clause-reference table (`codes_crefs`).
     @label S_TRUSTME
-    tc_cref = DEF.codes_crefs[Int(PCc[PC])]         # code2ptr(ClauseRef, *PC++)
+    # (WRAP1: after `S_WRAP` the running supervisor is the closure's, so its table is found by `supervisor_crefs`)
+    tc_cref = supervisor_crefs(gd, DEF, PCc)[Int(PCc[PC])]   # code2ptr(ClauseRef, *PC++)
     PC += 1
     ARGP = argp_t{T}(ARGP_SLOT, argFrameP(ld.frames[FR].base, 0), ph)
     @goto TRUST_CLAUSE
@@ -4982,7 +4998,7 @@ function PL_next_solution_guarded(
         if _is_gcompound(sl_w)
             sl_f = ld.gstack[valPtr(sl_w)]
             if sl_f == dot_f                        # isList(*k)
-                tc_cref = DEF.codes_crefs[Int(PCc[PC + 2])]
+                tc_cref = supervisor_crefs(gd, DEF, PCc)[Int(PCc[PC + 2])]
                 PC += 3
                 @goto TRUST_CLAUSE
             elseif nameFunctor(ld.functors, sl_f) == ld.atom_dexpr &&
@@ -4992,7 +5008,7 @@ function PL_next_solution_guarded(
                 @goto S_STATIC
             end
         elseif sl_w == nil_w                        # isNil(*k)
-            tc_cref = DEF.codes_crefs[Int(PCc[PC + 1])]
+            tc_cref = supervisor_crefs(gd, DEF, PCc)[Int(PCc[PC + 1])]
             PC += 3
             @goto TRUST_CLAUSE
         end
@@ -5040,30 +5056,38 @@ function PL_next_solution_guarded(
     # (pl-vmi.c:3560-3578 at the pin; TAB1-min T3.) The supervisor of a closure's copy of a wrapped predicate: take the wrapped
     # predicate's own supervisor (creating it when it is still `S_VIRGIN`) and continue in it with the frame's predicate set to
     # the wrapped one.
-    # DIVERGES: the body is a named refusal. Installing a wrapper (`'$c_wrap_predicate'/5`) never enters it; entering it needs a
-    # call through the closure (the closure branch of `I_CALL1`/`I_CALLN`, pl-vmi.c:5482-5520), which is deferred with it.
-    # Removal condition: a wrapped goal is called (owner WRAP1).
+    # DIVERGES: the closure is found by the copy's `impl_foreign_function` (its number in `gd.closure_refs`, set by
+    # `unify_closure`), where upstream reads the `impl.wrapped` member of the union in place; `createSupervisor` returns the code and its
+    # side table, both stored in the closure (`supervisor`, `supervisor_crefs`).
     @label S_WRAP
-    throw(
-        NotPortedError{T}(
-            DEF.name,
-            "the VM instruction S_WRAP (calling a wrapped predicate from a closure)",
-            "WRAP1"
-        )
-    )
+    sw_c = gd.closure_refs[Int(DEF.impl_foreign_function)]::closure{T}
+    sw_codes = sw_c.supervisor                      # Code codes = DEF->impl.wrapped.supervisor
+    if sw_codes[1] == S_VIRGIN                      # codes[0] == encode(S_VIRGIN)
+        sw_codes, sw_crefs = createSupervisor(gd, sw_c.predicate)
+        sw_c.supervisor = sw_codes                  # DEF->impl.wrapped.supervisor = codes
+        sw_c.supervisor_crefs = sw_crefs
+    end
+    DEF = sw_c.predicate                            # DEF = DEF->impl.wrapped.predicate
+    setFramePredicate(ld.frames[FR], DEF)
+    setGenerationFrame(gd, ld, FR)
+    PCc = sw_codes                                  # PC = codes
+    PCl = gd.no_literals
+    PC = 1
+    @goto next_instruction
 
     # PORT: pl-vmi.c S_CALLWRAPPER
     # (pl-vmi.c:3624-3632 at the pin; TAB1-min T3.) The supervisor `'$c_wrap_predicate'/5` installs on a wrapped predicate: run the
     # wrapper clause the first operand names (`TRUST_CLAUSE`), with the frame's predicate set to that clause's predicate.
-    # DIVERGES: the body is a named refusal (a wrapped predicate is never called before WRAP1); the operands (the clause
-    # reference, the closure atom, the wrapper's name) are laid out as `wrapper_vmi`'s caller writes them (src/pl-wrap.jl).
+    # DIVERGES: the first operand indexes the running supervisor's side table (`supervisor_crefs`, as `S_TRUSTME`'s); the
+    # other two operands (the closure atom, the wrapper's name) are laid out as `wrapper_vmi`'s caller writes them
+    # (src/pl-wrap.jl) and skipped.
     @label S_CALLWRAPPER
-    throw(
-        NotPortedError{T}(
-            DEF.name, "the VM instruction S_CALLWRAPPER (calling a wrapped predicate)",
-            "WRAP1"
-        )
-    )
+    tc_cref = supervisor_crefs(gd, DEF, PCc)[Int(PCc[PC])]   # ClauseRef cref = code2ptr(ClauseRef, *PC)
+    PC += 3
+    ARGP = argp_t{T}(ARGP_SLOT, argFrameP(ld.frames[FR].base, 0), ph)
+    DEF = (tc_cref.clause::Clause{T}).predicate     # FR->predicate = DEF = cref->value.clause->predicate
+    setFramePredicate(ld.frames[FR], DEF)
+    @goto TRUST_CLAUSE
 
     # PORT: pl-vmi.c S_TABLED
     # (pl-vmi.c:3644-3665 at the pin; TAB1-min T3.) The supervisor of the `table` wrapper of a variant tabled predicate: when its
@@ -5334,7 +5358,7 @@ function PL_next_solution_guarded(
             sb_def = ld.frames[FR].predicate::Definition{T}
             if (sb_def.flags & P_FOREIGN) != 0
                 DEF = sb_def
-                PCc = DEF.codes
+                PCc = innermost_supervisor(gd, DEF)[1]  # (WRAP1) a wrapped foreign predicate retries in the foreign supervisor
                 PCl = gd.no_literals
             else
                 sb_jclause = (ld.frames[FR].clause::ClauseRef{T}).clause::Clause{T}
@@ -5449,7 +5473,7 @@ function PL_next_solution_guarded(
     if db_c.type == CHP_JUMP
         # NOT PORTED: `*TrieOffset = BFR->value.jump.trie_offset` (compiled tries only: tabling)
         if (DEF.flags & P_FOREIGN) != 0             # (NF1) an index into the supervisor
-            PCc = DEF.codes
+            PCc = innermost_supervisor(gd, DEF)[1]  # (WRAP1) a wrapped foreign predicate retries in the foreign supervisor
             PCl = gd.no_literals
         else
             db_jclause = (ld.frames[FR].clause::ClauseRef{T}).clause::Clause{T}

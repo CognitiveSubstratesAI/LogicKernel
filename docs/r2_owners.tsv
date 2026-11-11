@@ -95,13 +95,10 @@ pred:$tbl_wkl_work/6	TAB1	seed: missing_c_preds.tsv
 pred:$tnot_implementation/2	TAB1	seed: missing_c_preds.tsv
 pred:$transaction/2	TX1	seed: missing_c_preds.tsv
 pred:$transaction/3	TX1	seed: missing_c_preds.tsv
-pred:$trie_gen_node/3	TRIE1	seed: missing_c_preds.tsv
-pred:$trie_property/2	TRIE1	seed: missing_c_preds.tsv
 pred:$undo/1	TX1	seed: missing_c_preds.tsv
 pred:$unload_file/1	SRC2	seed: missing_c_preds.tsv
 pred:$urgent_exception/3	P3	seed: missing_c_preds.tsv
 pred:$visible/2	DBG1	seed: missing_c_preds.tsv
-pred:$wrapped_implementation/3	WRAP1	seed: missing_c_preds.tsv
 pred:\=@=/2	Q10	seed: missing_c_preds.tsv
 pred:char_type/2	CT1	seed: missing_c_preds.tsv
 pred:code_type/2	CT1	seed: missing_c_preds.tsv
@@ -113,7 +110,6 @@ pred:get/1	S2a	seed: missing_c_preds.tsv
 pred:get/2	S2a	seed: missing_c_preds.tsv
 pred:get_flag/2	FL1	seed: missing_c_preds.tsv
 pred:is_engine/1	TH1	seed: missing_c_preds.tsv
-pred:is_trie/1	TRIE1	seed: missing_c_preds.tsv
 pred:message_queue_create/1	TH1	seed: missing_c_preds.tsv
 pred:message_queue_destroy/1	TH1	seed: missing_c_preds.tsv
 pred:notrace/0	DBG1	seed: missing_c_preds.tsv
@@ -136,13 +132,8 @@ pred:thread_send_message/2	TH1	seed: missing_c_preds.tsv
 pred:thread_statistics/3	TH1	seed: missing_c_preds.tsv
 pred:trace/0	DBG1	seed: missing_c_preds.tsv
 pred:tracing/0	DBG1	seed: missing_c_preds.tsv
-pred:trie_gen/2	TRIE1	seed: missing_c_preds.tsv
-pred:trie_gen/3	TRIE1	seed: missing_c_preds.tsv
-pred:trie_lookup/3	TRIE1	seed: missing_c_preds.tsv
-pred:trie_term/2	TRIE1	seed: missing_c_preds.tsv
 pred:trim_heap/0	Q10	seed: missing_c_preds.tsv
 pred:trim_stacks/0	Q10	seed: missing_c_preds.tsv
-pred:unwrap_predicate/2	WRAP1	seed: missing_c_preds.tsv
 pred:zip_clone/2	ZIP1	seed: missing_c_preds.tsv
 pred:zip_close_/2	ZIP1	seed: missing_c_preds.tsv
 pred:zip_file_info_/3	ZIP1	seed: missing_c_preds.tsv
@@ -184,9 +175,9 @@ vmi:S_INCR_DYNAMIC	TB6	pl-vmi.c:3522, the incremental dynamic predicate supervis
 vmi:S_THREAD_LOCAL	TH1	pl-vmi.c:3499, the thread-local definition supervisor: thread-local predicates are TH1's (src/pl-proc.jl:1684, src/pl-supervisor.jl:20-21)
 vmi:S_TRIE_GEN	TAB1	seed: VM-instruction family
 vmi:T_ATOM	TAB1	seed: VM-instruction family
-vmi:T_ATTVARA	TAB1	seed: VM-instruction family
-vmi:T_ATTVARZ	TAB1	seed: VM-instruction family
-vmi:T_ATTVARZT	TAB1	seed: VM-instruction family
+vmi:T_ATTVARA	TAB1	seed: VM-instruction family; the compiled-trie attvar keys (pl-vmi.c :6396-6477, pl-trie.c :4472-4920) are TR4's; TR3 ported the attvar keys of trie_lookup_abstract and unify_key
+vmi:T_ATTVARZ	TAB1	seed: VM-instruction family; compiled-trie attvar key: TR4 (see T_ATTVARA)
+vmi:T_ATTVARZT	TAB1	seed: VM-instruction family; compiled-trie attvar key: TR4 (see T_ATTVARA)
 vmi:T_CHECKWAKEUP	TAB1	seed: VM-instruction family
 vmi:T_DELAY	TAB1	seed: VM-instruction family
 vmi:T_FLOAT	TAB1	seed: VM-instruction family
@@ -200,9 +191,9 @@ vmi:T_STRING	TAB1	seed: VM-instruction family
 vmi:T_TRIE_GEN2	TAB1	seed: VM-instruction family
 vmi:T_TRIE_GEN3	TAB1	seed: VM-instruction family
 vmi:T_TRY_ATOM	TAB1	seed: VM-instruction family
-vmi:T_TRY_ATTVARA	TAB1	seed: VM-instruction family
-vmi:T_TRY_ATTVARZ	TAB1	seed: VM-instruction family
-vmi:T_TRY_ATTVARZT	TAB1	seed: VM-instruction family
+vmi:T_TRY_ATTVARA	TAB1	seed: VM-instruction family; compiled-trie attvar key: TR4 (see T_ATTVARA)
+vmi:T_TRY_ATTVARZ	TAB1	seed: VM-instruction family; compiled-trie attvar key: TR4 (see T_ATTVARA)
+vmi:T_TRY_ATTVARZT	TAB1	seed: VM-instruction family; compiled-trie attvar key: TR4 (see T_ATTVARA)
 vmi:T_TRY_FLOAT	TAB1	seed: VM-instruction family
 vmi:T_TRY_FUNCTOR	TAB1	seed: VM-instruction family
 vmi:T_TRY_MPZ	TAB1	seed: VM-instruction family
@@ -214,13 +205,10 @@ vmi:T_VALUE	TAB1	seed: VM-instruction family
 vmi:T_VAR	TAB1	seed: VM-instruction family
 cfile:pl-tabling.c	TAB1	PIN1 step C (D-0447 item 1): every pl-tabling.c row without an exact key, and the UNPORTED tabling groups of V10.1.20 (evidence/PIN1/step_c/part2_notes.md T0-T5; no key kind names a group): T1 IDG edge sets and node layout (pl-idgset.c/h, 211bb969 9f5da524 c77a0bff 99827823; `$idg_thread_summary/3`, `$idg_thread_space/2`, `$idg_predicate_edges/3` are new); T2 trie and table memory (737686d3 fc7e0010 2125e711 486dc81d; T_DELAY flag); T3 reclaim and abolish (259429a2 30bdfd4f c9c81eeb c7037709); T4 answers and WFS (10205aec 14ba39be 9dcabe86 6aee153d); T5 diagnostics (780caea7 610742f9 0e201521; `$tbl_sdg/3`, `$tbl_incomplete/3`); S_TABLED stays the named refusal
 cfile:pl-thread.c	TH1	PIN1 step C (D-0447 item 3): every pl-thread.c row without an exact key; `$thread_local_predicate_size/3` is new at V10.1.20 (pl-thread.c, O_ENGINES; thread-local predicates are TH1's)
-cfile:pl-trie.c	TRIE1	TAB1 plan (audit D-0453 item 1): every pl-trie.c row without an exact key. pl-trie.c has 19 trie predicates at the pin 18168e62 (BeginPredDefs(trie), :5196-5219): TR1 trie_new/1, trie_destroy/1, is_trie/1, trie_insert/2,3,4, trie_update/3, trie_delete/3, `$trie_insert_abstract/3`, trie_lookup/3, trie_term/2; TR2 trie_gen/2,3, `$trie_gen_node/3`, `$trie_property/2`, trie_insert_insert/3, trie_lookup_gen/3, trie_lookup_delete/3 (these three only under O_NESTED_TRIES, :5213: no file at the pin defines it, the pin build has no such predicate); TR4 `$trie_compile/2`, trie_gen_compiled/2,3 (made by initTries, :5233-5243); the named step ports each, the TRIE1 paragraph of docs/architecture.md lists them; the exact pred: rows below stay (7 of the 19)
 kfile:pl-qlf.jl	LB3	seed: the QLF refusal sites
 refusal:src/pl-wam.jl::PL_next_solution_guarded::the VM instruction I_YIELD in an engine (pl-vmi.c:2419)	TH1	the named refusal of the branch (its body is the owner's step)
 refusal:src/pl-wam.jl::PL_next_solution_guarded::the dtbl_reset6 branch of I_RESET (pl-vmi.c:5762)	TAB1	the named refusal of the branch (its body is the owner's step)
 refusal:src/pl-wam.jl::PL_next_solution_guarded::the dtbl_reset6 branch of I_EXITRESET (pl-vmi.c:5806)	TAB1	the named refusal of the branch (its body is the owner's step)
-refusal:src/pl-wam.jl::PL_next_solution_guarded::the VM instruction S_WRAP (calling a wrapped predicate from 	WRAP1	the named refusal of the instruction (its body is the owner's step)
-refusal:src/pl-wam.jl::PL_next_solution_guarded::the VM instruction S_CALLWRAPPER (calling a wrapped predicat	WRAP1	the named refusal of the instruction (its body is the owner's step)
 refusal:src/pl-wam.jl::PL_next_solution_guarded::the VM instruction S_TABLED (calling a tabled predicate)	TAB1	the named refusal of the instruction (its body is the owner's step)
 refusal:src/os/pl-files.jl::get_file_name::PL_get_file_name flag PL_FILE_SEARCH (system:absolute_file_n	LB4	the first boot: absolute_file_name/3 of init.pl runs through PL_get_file_name(PL_FILE_SEARCH)
 refusal:src/os/pl-files.jl::_iri_hook_refused::iri_hook $what (`\$iri`:iri_hook/4 of init.pl)	LB5-LB7	off the load path: serves http:// style IRIs; the library ring

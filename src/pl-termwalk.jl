@@ -11,7 +11,9 @@
 #   * `AC_TERM_WALK` (`ac_term_agenda`), which pl-termhash.c uses — a pre-order walk of every
 #     subterm, compound arguments left to right;
 #   * `AC_TERM_WALK_LR` (`term_agendaLR`) — the arguments of TWO compounds in step, which
-#     pl-prims.c's `do_unify` walks: on the CELLS (`cell_agendaLR`, below).
+#     pl-prims.c's `do_unify` walks: on the CELLS (`cell_agendaLR`, below);
+#   * `AC_TERM_WALK_POP` (`term_agenda_P`) — one-sided like the plain one, and it also reports where each compound
+#     ends (a pop count), which pl-trie.c's `trie_lookup_abstract` needs: on the CELLS (`cell_agenda_P`, last section).
 #
 # DIVERGES (`ac_term_agenda`, on terms): a C agenda walks a `Word*` into a compound's argument array;
 # here a node is the compound, the child index of its next argument and how many are left (see
@@ -188,5 +190,78 @@ end
         a.loc = start
         a.size = amount
     end
+    return nothing
+end
+
+# ── AC_TERM_WALK_POP ──────────────────────────────────────────────────────────────
+
+# PORT: pl-termwalk.c term_agenda_P as cell_agenda_P
+# DIVERGES: as `cell_agenda` (locations, a count, the segstack a vector). `aNode_P` is the triple (location, size, depth);
+# `depth` counts the compounds that end when `size` reaches 0 (the POP markers `nextTermAgenda_P` returns). Used by
+# `trie_lookup_abstract` (src/pl-trie.jl).
+"A one-sided cell agenda that reports where compounds end (pl-termwalk.c `term_agenda_P`, `AC_TERM_WALK_POP`)."
+mutable struct cell_agenda_P
+    loc::Int                            # work.location
+    size::Int                           # work.size
+    depth::Int                          # work.depth
+    const stack::Vector{NTuple{3, Int}} # stack
+end
+
+# PORT: pl-termwalk.c initTermAgenda_P as initCellAgenda_P
+# DIVERGES: a function returning a new agenda (upstream initialises a struct in place).
+"A new agenda over `size` cells from location `loc` (pl-termwalk.c `initTermAgenda_P`)."
+initCellAgenda_P(size::Int, loc::Int)::cell_agenda_P =
+    cell_agenda_P(loc, size, 0, NTuple{3, Int}[])
+
+# PORT: pl-termwalk.c clearTermAgenda_P as clearCellAgenda_P!
+"Discard agenda `a`'s pending work (pl-termwalk.c `clearTermAgenda_P`)."
+function clearCellAgenda_P!(a::cell_agenda_P)::Nothing
+    empty!(a.stack)
+    a.size = 0
+    a.depth = 0
+    return nothing
+end
+
+# PORT: pl-termwalk.c nextTermAgenda_P as nextCellAgenda_P!
+# DIVERGES: the result is the pair `(location, popn)`: `(l, 0)` the next cell, not dereferenced (the caller does `deRef`);
+# `(0, n)` upstream's `AC_TERM_POP(n)`, n compounds ended (`IS_AC_TERM_POP`); `(0, 0)` upstream's NULL, the agenda is done.
+"The next location of agenda `a`, or the number of compounds that ended, or `(0, 0)` when done (pl-termwalk.c)."
+@inline function nextCellAgenda_P!(a::cell_agenda_P)::Tuple{Int, Int}
+    while a.size == 0
+        popn = a.depth
+        if popn > 0
+            a.depth = 0
+            return (0, popn)                            # return AC_TERM_POP(popn)
+        end
+        isempty(a.stack) && return (0, 0)               # !popSegStack
+        a.loc, a.size, a.depth = pop!(a.stack)
+    end
+    a.size -= 1
+    l = a.loc
+    a.loc = l + 1
+    return (l, 0)
+end
+
+# PORT: pl-termwalk.c pushWorkAgenda_P as pushWorkCellAgenda_P!
+"Walk the `amount` cells from global position `start` next; when they are done a POP is reported (pl-termwalk.c)."
+@inline function pushWorkCellAgenda_P!(a::cell_agenda_P, amount::Int, start::Int)::Nothing
+    if a.size > 0
+        push!(a.stack, (a.loc, a.size, a.depth))
+        a.depth = 1
+    else
+        a.depth += 1
+    end
+    a.loc = start
+    a.size = amount
+    return nothing
+end
+
+# PORT: pl-termwalk.c pushWorkAgenda_P0 as pushWorkCellAgenda_P0!
+"As `pushWorkCellAgenda_P!`, but never merges with the POP of the last argument (pl-termwalk.c)."
+@inline function pushWorkCellAgenda_P0!(a::cell_agenda_P, amount::Int, start::Int)::Nothing
+    push!(a.stack, (a.loc, a.size, a.depth))
+    a.depth = 1
+    a.loc = start
+    a.size = amount
     return nothing
 end

@@ -294,10 +294,9 @@ const _TL_CASES = [
 #   L2 `'$syspreds':'$foreign_predicate_source'/2` undefined (pl-proc.c:4146 @ cbf4e189; called by syspred.pl's
 #      '$foreign_source_location'/3 when a message carries a location): owner PR1 (docs/r2_owners.tsv).
 #   L3 (re-measured at the LB4 b2 gate, 2026-11-04: the boot now loads boot/tabling.pl whole) `:- dynamic(p/1 as incremental)`:
-#      '$tabling':unwrap_monotonic/1 calls `prolog_wrap:unwrap_predicate/2` (pl-wrap.c), which is undefined: the
-#      directive raises existence_error(procedure, prolog_wrap:unwrap_predicate/2) where swipl answers `ok`, and the
-#      loader prints undefined_export(prolog_wrap, unwrap_predicate/2) (the export of the module whose predicate is
-#      missing). Owner WRAP1 (docs/r2_owners.tsv, pred:unwrap_predicate/2).
+#      '$tabling':unwrap_monotonic/1 calls `prolog_wrap:unwrap_predicate/2` (pl-wrap.c): FLIPPED by WRAP1 (src/pl-wrap.jl registers
+#      `unwrap_predicate/2`): the case "incremental" is now equal to swipl's lines (`ok`, no undefined_export line; no pin;
+#      refusal-flip rule). Before: existence_error(procedure, prolog_wrap:unwrap_predicate/2) and undefined_export.
 #   L4 `initialization(main)`: swipl autoloads library(main)'s main/0, which calls the undefined main/1 and prints an
 #      initialization_error (line 2: existence_error(procedure, main/1), context system:catch/3). Since DWIM1 the kernel's report of
 #      an undefined procedure no longer raises (L1), and its line 1 is `ok`; main/0 runs, and set_signals calls
@@ -439,19 +438,6 @@ const _TL_KNOWN_DIFFS = Dict{String, Vector{Tuple{Int, String, String}}}(
         "error c[105,110,105,116,105,97,108,105,122,97,116,105,111,110,95,101,114,114,111,114]/3(c[58]/2(a[117,115,101,114],a[109,97,105,110]),c[101,114,114,111,114]/2(c[101,120,105,115,116,101,110,99,101,95,101,114,114,111,114]/2(a[112,114,111,99,101,100,117,114,101],c[58]/2(a[36,115,121,115,112,114,101,100,115],c[47]/2(a[36,111,110,95,115,105,103,110,97,108],i4))),c[99,111,110,116,101,120,116]/2(c[58]/2(a[36,115,121,115,112,114,101,100,115],c[47]/2(a[111,110,95,115,105,103,110,97,108],i3)),V0)),c[58]/2(a<path>,i1))",
         "error c[105,110,105,116,105,97,108,105,122,97,116,105,111,110,95,101,114,114,111,114]/3(c[58]/2(a[117,115,101,114],a[109,97,105,110]),c[101,114,114,111,114]/2(c[101,120,105,115,116,101,110,99,101,95,101,114,114,111,114]/2(a[112,114,111,99,101,100,117,114,101],c[47]/2(a[109,97,105,110],i1)),c[99,111,110,116,101,120,116]/2(c[58]/2(a[115,121,115,116,101,109],c[47]/2(a[99,97,116,99,104],i3)),V0)),c[58]/2(a<path>,i1))"
     )
-    ],
-    # L3 (unwrap_predicate/2: owner WRAP1)
-    "incremental" => [
-        (
-            1,
-            "exc c[101,114,114,111,114]/2(c[101,120,105,115,116,101,110,99,101,95,101,114,114,111,114]/2(a[112,114,111,99,101,100,117,114,101],c[58]/2(a[112,114,111,108,111,103,95,119,114,97,112],c[47]/2(a[117,110,119,114,97,112,95,112,114,101,100,105,99,97,116,101],i2))),c[99,111,110,116,101,120,116]/2(c[58]/2(a[36,116,97,98,108,105,110,103],c[47]/2(a[117,110,119,114,97,112,95,109,111,110,111,116,111,110,105,99],i1)),V0))",
-            "ok"
-        ),
-        (
-            2,
-            "error c[117,110,100,101,102,105,110,101,100,95,101,120,112,111,114,116]/2(a[112,114,111,108,111,103,95,119,114,97,112],c[47]/2(a[117,110,119,114,97,112,95,112,114,101,100,105,99,97,116,101],i2))",
-            "—"
-        )
     ]
 )
 

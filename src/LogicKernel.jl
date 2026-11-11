@@ -79,6 +79,7 @@ include("pl-list.jl")          # swipl-devel src/pl-list.c — is_list/1, '$leng
 include("pl-dict.jl")          # swipl-devel src/pl-dict.c — is_dict/1,2, dict_create/3, put_dict/3, select_dict/3, get_dict/3
 include("pl-tabling.jl")       # swipl-devel src/pl-tabling.c — '$tbl_trienode'/1, '$tbl_is_trienode'/1 (TAB1-min)
 include("pl-wrap.jl")          # swipl-devel src/pl-wrap.c — the closure blob, '$c_wrap_predicate'/5 (TAB1-min)
+include("pl-trie.jl")          # swipl-devel src/pl-trie.c — the trie, its children blocks, node chunks and blob (TAB1 TR1)
 include("pl-op.jl")            # swipl-devel src/pl-op.c — the operator tables, op/3
 include("pl-write.jl")         # swipl-devel src/pl-write.c — the NaN helpers and the quoting rules the reader needs
 include("pl-sys.jl")           # swipl-devel src/pl-sys.c — getenv/2, setenv/2, unsetenv/1, get_time/1, sleep/1 (Y1)

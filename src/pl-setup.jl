@@ -263,6 +263,7 @@ function setupProlog(::Type{T})::PL_global_data{T} where {T}
     registerBuiltinAtomSymbols!(atoms, syms)   # (the built-in atoms' symbols: upstream's a->name, pl-atom.c:1977)
     functors = initFunctors!(functors_t())     # initFunctors (after the atoms, as upstream's)
     initDBRef!(atoms)                          # initDBRef (setup:146): the clause blob type (D1)
+    initTries!(atoms)                          # initTries (setup:149): the trie blob type (TAB1 TR1)
     initWrap!(atoms)                           # initWrap (setup:152): the closure blob type (TAB1-min)
     dexpr = first(lookupBlob(atoms, Vector{UInt8}(codeunits("\$expr")), 5, reserved_symbol))
     dot2 = lookupFunctorDef(functors, _atom_word!(atoms, syms, mk_sym(T, Symbol("[|]"))), 2)
@@ -320,6 +321,7 @@ function setupProlog(::Type{T})::PL_global_data{T} where {T}
         Int[],                                  # halt_exited
         event_hooks{T}(),                       # event.hook: no listener yet (R2 EV1)
         closure{T}[],                           # closure_refs: no closure has a reference yet (TAB1-min)
+        trie{T}[],                              # tries: no trie has a handle yet (TAB1 TR1)
         "",                                     # paths.CWDdir: none until the first PL_cwd (R2 LB2b)
         dc_proc,                                # procedures_print_message2: set by initBuildIns!
         dc_proc,                                # procedures_reset3: set by initBuildIns!

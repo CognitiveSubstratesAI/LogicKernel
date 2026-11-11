@@ -21,7 +21,7 @@
 # `S_THREAD_LOCAL` — none of their subsystems exists. Since TAB1-min (T3/T4/T5) the wrapper supervisors
 # (`S_CALLWRAPPER`, `S_TABLED`; src/pl-wrap.jl) are installed by `'$c_wrap_predicate'/5` and kept by `freeCodesDefinition!`;
 # `S_WRAP` and the shared `wrapper` block (`PL_code_data.wrapper`) belong to the closure's copy of the wrapped predicate;
-# the run loop refuses all three by name until a wrapped goal is called (WRAP1, TAB1).
+# since WRAP1 the run loop runs `S_WRAP` and `S_CALLWRAPPER`, and refuses `S_TABLED` by name (TAB1).
 
 # PORT: pl-supervisor.c initSupervisors
 # DIVERGES: returns the database's shared blocks (one `PL_code_data` per database). Each is

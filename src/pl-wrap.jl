@@ -21,11 +21,13 @@
 # `[<prefix>, S_CALLWRAPPER-or-S_TABLED, 1, <closure atom word>, <wrapper name atom word>]` with the side table
 # `codes_crefs = [<wrapper clause ref>]` (operand 1 indexes it, as `S_TRUSTME`'s in src/pl-supervisor.jl). The kernel keeps no
 # `PL_register_atom` counts on the two atoms (atoms live for ever here), so `unregisterWrappedSupervisor` of upstream is
-# a no-op and the blob's `release`/`acquire`/`save`/`load` hooks are not slots of `PL_blob_t`. The written
-# form `<closure>(m:p/1)` of `write_closure` needs a blob write hook in the writer: it prints as the term layer's blob
-# form (a DIVERGES row in docs/architecture.md; WRAP1's).
-# Left out (WRAP1 / TAB1): `wrapped_predicate/2`, `unwrap_predicate/2`, `$wrapped_implementation/3`, `$closure_predicate/2`
-# (pl-wrap.c:406-556): none of them runs at load time.
+# a no-op and the blob's `release`/`acquire`/`save`/`load` hooks are not slots of `PL_blob_t`. The written form
+# `<closure>(m:p/1)` of `write_closure` is a hook in the writer (`writeAtom`, src/pl-write.jl), which finds the closure by
+# `closure_of_word` (a DIVERGES row in docs/architecture.md). The closure's definition (the copy) carries the closure's
+# number in `impl_foreign_function` (WRAP1: upstream's `impl.closure` is a member of the `impl` union).
+# Since WRAP1 the file also holds `unwrap_predicate/2`, `$wrapped_predicate/2`, `$wrapped_implementation/3` and
+# `$closure_predicate/2` (pl-wrap.c:406-556), and the two helpers `supervisor_crefs` and `innermost_supervisor` the
+# kernel's side-table representation of supervisor operands needs.
 
 # PORT: pl-wrap.c _PL_closure_blob as closure_blob
 # DIVERGES: no `release`, `write`, `acquire`, `save` or `load` slots (`PL_blob_t` has none): see the file header.
@@ -77,6 +79,10 @@ function unify_closure(
     cdef.events = def.events
     c = closure{T}(cdef, def, supervisor, supervisor_crefs)    # impl.wrapped.predicate / .supervisor
     push!(gd.closure_refs, c)
+    # DIVERGES (WRAP1, docs/architecture.md): upstream's `impl` union holds `impl.closure` (the `wrapped` member) in the
+    # copy, so `impl.any.defined` is true for a closure definition; here the copy's `impl_foreign_function` is the closure's
+    # number in `gd.closure_refs`, which `_impl_any_defined` reads (`!= 0`) and `S_WRAP` uses to find the closure.
+    cdef.impl_foreign_function = length(gd.closure_refs)
     bytes = _closure_bytes(length(gd.closure_refs))
     w, _ = lookupBlob(gd.atoms, bytes, length(bytes), closure_blob)   # PL_unify_blob(t, &c, sizeof(c), &_PL_closure_blob)
     a = _blob_term!(gd.atoms, gd.atom_symbols, T, w)
@@ -170,6 +176,51 @@ function find_wrapper(
         i = skipWrapperPrefix(codes)
     end
     return nothing
+end
+
+# ORIGINAL (WRAP1; upstream's supervisor operands hold the clause reference itself, `code2ptr(ClauseRef, *PC)`)
+# DIVERGES: a supervisor operand here indexes a side table (`definition.codes_crefs`, `closure.supervisor_crefs`), and after
+# `S_WRAP` the frame's predicate is the wrapped one while the supervisor that runs is the closure's, not `def.codes`. This
+# finds the side table of the running supervisor `codes`: `def.codes_crefs` when `codes === def.codes` (the hot path: no
+# wrapper), else the table of the wrapper-chain member (from `def.codes` inward) whose `supervisor` is `codes`.
+"The clause-reference side table of the supervisor `codes` running for `def` (a wrapped predicate: the closure's)."
+function supervisor_crefs(
+    gd::PL_global_data{T}, def::Definition{T}, codes::Vector{code}
+)::Vector{ClauseRef{T}} where {T}
+    codes === def.codes && return def.codes_crefs
+    cur = def.codes
+    i = skipWrapperPrefix(cur)
+    while isCallWrapper(cur[i])
+        c = closure_of_word(gd, cur[i + 2])::closure{T}
+        c.supervisor === codes && return c.supervisor_crefs
+        cur = c.supervisor
+        i = skipWrapperPrefix(cur)
+    end
+    error(
+        "supervisor_crefs: the running supervisor of ",
+        def.name,
+        " is not in its wrapper chain"
+    )
+end
+
+# ORIGINAL (WRAP1; upstream's choice point holds the code pointer itself, `ch->value.PC`)
+# DIVERGES: the kernel re-derives the code of a `P_FOREIGN` frame's retry as `DEF.codes` (src/pl-wam.jl, `shallow_backtrack`
+# and `deep_backtrack`); for a wrapped foreign predicate `DEF.codes` is the wrapper supervisor, so this returns the innermost
+# supervisor (the one `S_WRAP` ran, holding the foreign call) and its crefs.
+"The innermost supervisor of `def` under its wrapper chain: `(codes, crefs)`; `def`'s own when it has no wrapper."
+function innermost_supervisor(
+    gd::PL_global_data{T}, def::Definition{T}
+)::Tuple{Vector{code}, Vector{ClauseRef{T}}} where {T}
+    codes = def.codes
+    crefs = def.codes_crefs
+    i = skipWrapperPrefix(codes)
+    while isCallWrapper(codes[i])
+        c = closure_of_word(gd, codes[i + 2])::closure{T}
+        codes = c.supervisor
+        crefs = c.supervisor_crefs
+        i = skipWrapperPrefix(codes)
+    end
+    return codes, crefs
 end
 
 # PORT: pl-wrap.c assert_wrapper
@@ -286,12 +337,191 @@ function pl_c_wrap_predicate5_va(
     return FFALSE
 end
 
+# ORIGINAL (WRAP1): the `get_procedure(descr, &proc, h, GP_RESOLVE)` of pl-proc.c:741-790 WITHOUT `GP_NAMEARITY` (the term is a
+# HEAD: `strip module`, `get_head_functor`), as `get_procedure` (src/pl-proc.jl) does for `GP_DEFINE`; the file's two callers
+# (`$wrapped_predicate/2`, `$wrapped_implementation/3`) need `GP_RESOLVE`, the kernel has it only with `GP_NAMEARITY`
+# (`get_procedure_resolve_namearity`). `h` (when not 0) receives the stripped head; an undefined procedure is created.
+"The procedure a dynamic call to the head in `descr` runs (created undefined when none is visible), or `nothing`; the stripped head into `h`."
+function get_procedure_resolve_head(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, descr::term_t, h::term_t
+)::Union{Nothing, Procedure{T}} where {T}
+    head = h == 0 ? PL_new_term_ref(ld) : h
+    ok, mi = PL_strip_module(gd, ld, descr, 0, head)
+    ok || return nothing
+    name, arity = get_head_functor(ld, head, 0)
+    arity < 0 && return nothing
+    return resolveProcedure(gd, name, arity, gd.modules[mi])
+end
+
+# PORT: pl-wrap.c uwrap_predicate as pl_unwrap_predicate2_va
+# (PRED_IMPL("unwrap_predicate", 2, uwrap_predicate, PL_FA_TRANSPARENT))
+# DIVERGES: the code pointer `cp` is the pair (`holder`, `codes`/`crefs`): `holder === nothing` is `&def->codes`, else the
+# closure whose `supervisor` (`&cls->def.impl.wrapped.supervisor`) it is; the splice assigns code AND side table.
+"`unwrap_predicate(:PI, ?Name)`: remove the wrapper named `Name` (an unbound `Name`: the outermost) from the predicate (pl-wrap.c)."
+function pl_unwrap_predicate2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    gd = _query_gd(ld)
+    A1, A2 = PL__t0, PL__t0 + 1
+    proc = get_procedure_resolve_namearity(gd, ld, A1)          # GP_NAMEARITY|GP_RESOLVE
+    proc === nothing && return FFALSE
+    def = proc.definition
+    holder = nothing                                            # Code *cp = &def->codes
+    codes = def.codes
+    crefs = def.codes_crefs
+    cw = skipWrapperPrefix(codes)
+    while isCallWrapper(codes[cw])
+        cref = crefs[Int(codes[cw + 1])]                        # code2ptr(ClauseRef, cw[1])
+        cl = cref.clause::Clause{T}
+        c = closure_of_word(gd, codes[cw + 2])::closure{T}      # PL_blob_data(aref, NULL, NULL)
+        wname = _atom_value(ld, codes[cw + 3])
+        if !PL_unify_atom(ld, A2, wname)
+            holder = c                                          # cp = &cls->def.impl.wrapped.supervisor
+            codes = c.supervisor
+            crefs = c.supervisor_crefs
+            cw = skipWrapperPrefix(codes)
+            continue
+        end
+
+        retractClauseDefinition!(gd, cl.predicate, cl, false)
+        if holder === nothing                                   # *cp = cls->def.impl.wrapped.supervisor
+            def.codes = c.supervisor
+            def.codes_crefs = c.supervisor_crefs
+        else
+            holder.supervisor = c.supervisor
+            holder.supervisor_crefs = c.supervisor_crefs
+        end
+
+        freeSupervisor(def, codes, true)
+
+        return FTRUE
+    end
+
+    return FFALSE
+end
+
+# PORT: pl-wrap.c wrapped_predicate as pl_wrapped_predicate2_va
+# (PRED_IMPL("wrapped_predicate", 2, wrapped_predicate, PL_FA_TRANSPARENT); PRED_DEF name `$wrapped_predicate`)
+# DIVERGES: the `Name-ClauseRef` pairs are unified through `PL_unify_functor`/`PL_unify_arg` where upstream uses `PL_unify_term`.
+"`'\$wrapped_predicate'(:Head, -Wrappers)`: the list `[Name-ClauseRef ...]` of the wrappers of `Head`, the outermost first (pl-wrap.c)."
+function pl_wrapped_predicate2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    gd = _query_gd(ld)
+    A1, A2 = PL__t0, PL__t0 + 1
+    proc = get_procedure_resolve_head(gd, ld, A1, 0)            # get_procedure(A1, &proc, 0, GP_RESOLVE)
+    proc === nothing && return FFALSE
+    def = proc.definition
+    codes = def.codes
+    crefs = def.codes_crefs
+    cw = skipWrapperPrefix(codes)
+
+    if isCallWrapper(codes[cw])
+        tail = PL_copy_term_ref(ld, A2)
+        head = PL_new_term_ref(ld)
+        ct = PL_new_term_ref(ld)
+        nt = PL_new_term_ref(ld)
+
+        while true
+            c = closure_of_word(gd, codes[cw + 2])::closure{T}  # PL_blob_data(codes[2], NULL, NULL)
+            cref = crefs[Int(codes[cw + 1])]                    # code2ptr(ClauseRef, codes[1])
+
+            PL_put_clref(gd, ld, ct, cref.clause::Clause{T}) || return FFALSE
+            PL_unify_list(ld, tail, head, tail) || return FFALSE
+            PL_put_atom(ld, nt, _atom_value(ld, codes[cw + 3]))
+            PL_unify_functor(ld, head, mk_sym(T, :-), 2) || return FFALSE   # PL_FUNCTOR, FUNCTOR_minus2
+            PL_unify_arg(ld, 1, head, nt) || return FFALSE      # PL_ATOM, code2atom(codes[3])
+            PL_unify_arg(ld, 2, head, ct) || return FFALSE      # PL_TERM, ct
+
+            codes = c.supervisor                                # c->def.impl.wrapped.supervisor
+            crefs = c.supervisor_crefs
+            cw = skipWrapperPrefix(codes)
+            isCallWrapper(codes[cw]) || return PL_unify_nil(ld, tail) ? FTRUE : FFALSE
+        end
+    end
+
+    return FFALSE
+end
+
+# PORT: pl-wrap.c wrapped_implementation as pl_wrapped_implementation3_va
+# (PRED_IMPL("$wrapped_implementation", 3, wrapped_implementation, PL_FA_TRANSPARENT))
+# DIVERGES: the goal `Closure(Args...)` (or the atom `Closure` of arity 0) is `unify_wrapped`'s (the FLI-built compound),
+# where upstream allocates it on the global stack and unifies `A3` with it.
+"`'\$wrapped_implementation'(:Goal, +Name, -Wrapped)`: calling `Wrapped` calls the predicate of `Goal` as seen from the wrapper `Name` (pl-wrap.c)."
+function pl_wrapped_implementation3_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    gd = _query_gd(ld)
+    A1, A2, A3 = PL__t0, PL__t0 + 1, PL__t0 + 2
+    head = PL_new_term_ref(ld)
+
+    wname = PL_get_atom_ex(ld, A2)
+    wname === nothing && return FFALSE
+    proc = get_procedure_resolve_head(gd, ld, A1, head)
+    proc === nothing && return FFALSE
+    def = proc.definition
+
+    found = find_wrapper(gd, def, _atom_word!(ld, wname))
+    if found !== nothing
+        codes, _, i = found
+        aref = _atom_value(ld, codes[i + 2])                    # atom_t aref = codes[2]
+        # arity > 0: p[0] = lookupFunctorDef(aref, arity), the head's arguments linked; else PL_unify_atom(A3, aref)
+        return unify_wrapped(ld, A3, aref, head) ? FTRUE : FFALSE
+    end
+
+    return FFALSE
+end
+
+# PORT: pl-wrap.c write_closure
+# DIVERGES: returns the text and the writer (`writeAtom`, src/pl-write.jl) puts it out through `PutToken`, where upstream
+# `Sfprintf`s to the stream; the database is an argument (upstream: `PL_blob_data`, then `predicateName(&c->def)`).
+"The text a closure blob is written as: `<closure>(m:p/1)` (pl-wrap.c)."
+write_closure(gd::PL_global_data{T}, c::closure{T}) where {T} =
+    "<closure>(" * _autoload_predicate_name(gd, c.def) * ")"       # Sfprintf(s, "<closure>(%s)", predicateName(&c->def))
+
+# PORT: pl-wrap.c closure_predicate as pl_closure_predicate2_va
+# (PRED_IMPL("$closure_predicate", 2, closure_predicate, 0))
+# DIVERGES: the blob test is `closure_of_word` of the atom's handle (upstream: `PL_get_blob` and the type pointer).
+"`'\$closure_predicate'(+Closure, -PI)`: the predicate `Closure` (a closure blob) calls, as `Module:Name/Arity` (pl-wrap.c)."
+function pl_closure_predicate2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    gd = _query_gd(ld)
+    A1, A2 = PL__t0, PL__t0 + 1
+    a = PL_get_atom(ld, A1)
+    if a !== nothing && is_blob(a)
+        c = closure_of_word(gd, blob_handle(a))
+        if c !== nothing
+            return if unify_definition(
+                gd, ld, MODULE_user(gd), A2, c.def, 0, GP_QUALIFY | GP_NAMEARITY
+            )
+                FTRUE
+            else
+                FFALSE
+            end
+        end
+    end
+
+    return PL_type_error(ld, "closure", A1) ? FTRUE : FFALSE
+end
+
 # PORT: pl-wrap.c BeginPredDefs as PL_predicates_from_wrap
-# DIVERGES: the ported entry only (upstream's table also lists `unwrap_predicate/2`, `$wrapped_predicate/2`,
-# `$wrapped_implementation/3` and `$closure_predicate/2`: left to WRAP1).
-"pl-wrap.c's registration table (`BeginPredDefs(wrap)`): the ported entries."
+# DIVERGES: none in the table (upstream's order: `META` is PL_FA_TRANSPARENT; `$closure_predicate/2` has no flags).
+"pl-wrap.c's registration table (`BeginPredDefs(wrap)`)."
 const PL_predicates_from_wrap = (
     PL_extension(
         "\$c_wrap_predicate", 5, pl_c_wrap_predicate5_va, PL_FA_TRANSPARENT | PL_FA_VARARGS
     ),
+    PL_extension(
+        "unwrap_predicate", 2, pl_unwrap_predicate2_va, PL_FA_TRANSPARENT | PL_FA_VARARGS
+    ),
+    PL_extension(
+        "\$wrapped_predicate", 2, pl_wrapped_predicate2_va,
+        PL_FA_TRANSPARENT | PL_FA_VARARGS
+    ),
+    PL_extension(
+        "\$wrapped_implementation", 3, pl_wrapped_implementation3_va,
+        PL_FA_TRANSPARENT | PL_FA_VARARGS
+    ),
+    PL_extension("\$closure_predicate", 2, pl_closure_predicate2_va, PL_FA_VARARGS)
 )

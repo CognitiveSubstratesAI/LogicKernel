@@ -95,7 +95,8 @@ const _PRED_TABLES = (
     PL_predicates_from_attvar, PL_predicates_from_gvar, PL_predicates_from_dict,
     PL_predicates_from_strings,
     PL_predicates_from_error, PL_predicates_from_event,
-    PL_predicates_from_termhash, PL_predicates_from_tabling, PL_predicates_from_wrap
+    PL_predicates_from_termhash, PL_predicates_from_trie, PL_predicates_from_tabling,
+    PL_predicates_from_wrap
 )
 const _FOREIGN_VA = (
     PL_predicates_from_atom..., PL_predicates_from_arith..., PL_predicates_from_bag...,
@@ -113,7 +114,8 @@ const _FOREIGN_VA = (
     PL_predicates_from_op..., PL_predicates_from_rec..., PL_predicates_from_attvar...,
     PL_predicates_from_gvar..., PL_predicates_from_dict..., PL_predicates_from_strings...,
     PL_predicates_from_error..., PL_predicates_from_event...,
-    PL_predicates_from_termhash..., PL_predicates_from_tabling...,
+    PL_predicates_from_termhash..., PL_predicates_from_trie...,
+    PL_predicates_from_tabling...,
     PL_predicates_from_wrap...
 )
 const _FOREIGN_DET = foreigns
@@ -168,7 +170,7 @@ end
 
 # DIVERGES: a Julia helper for `initBuildIns!`'s REG_PLIST sequence, in upstream's order with one running
 # dispatch index `first`. A recursive walk (`Base.tail`) specialises per table; a `map` over a tuple of 32
-# or more entries (`_PRED_TABLES` has 35) takes Base's `Any32` method, whose result is not inferred (JET).
+# or more entries (`_PRED_TABLES` has 37) takes Base's `Any32` method, whose result is not inferred (JET).
 "Register the tables `tables` in order, the first at dispatch index `first + 1`; returns the next free index."
 function _register_tables!(gd::PL_global_data{T}, first::Int, ::Tuple{})::Int where {T}
     return first

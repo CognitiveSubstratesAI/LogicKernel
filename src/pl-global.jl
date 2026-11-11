@@ -163,6 +163,7 @@ mutable struct PL_global_data{T}
 
     const event_hook::event_hooks{T}                            # event.hook: the event lists (R2 EV1)
     const closure_refs::Vector{closure{T}}                      # (pl-wrap.c: the closure a closure blob names, by its number in the payload; TAB1-min)
+    const tries::Vector{trie{T}}                                # (pl-trie.c: the trie a trie blob names, by its number in the payload; TAB1 TR1)
     paths_CWDdir::String                                        # paths.CWDdir: the cached working directory, '/'-terminated ("" = none; paths.CWDlen is its byte length; R2 LB2b)
     procedures_print_message2::Procedure{T}                     # procedures.print_message2: print_message/2, printMessage's (R2 LB4 b2)
     procedures_reset3::Procedure{T}                             # procedures.reset3: reset/3 (R2 CONT1)
@@ -216,6 +217,8 @@ end
 # src/pl-setup.jl's `setupProlog`.
 # Since TAB1-min: `closure_refs` (the closures a `closure` blob names, as `clause_refs`; pl-wrap.c keeps the `struct closure`
 # in the blob's payload, src/pl-wrap.jl).
+# Since TAB1 TR1: `tries` (the tries a `trie` blob names, as `closure_refs`; pl-trie.c `trie_symbol` makes the blob with the
+# `struct trie` as its data, here the trie's number in `tries` is the 8-byte payload, src/pl-trie.jl).
 # Since R2's LB2b: `paths_CWDdir`, `GD->paths.CWDdir` (pl-global.h), the working directory `PL_cwd` caches and `ChDir` sets (src/os/pl-os.jl).
 # Since R2 LB6a: `reload_generation`, DIVERGES (representation, owner TH1): upstream's `LD->reload.generation` is per thread; the kernel has one thread,
 # so ONE copy lives here and nothing keeps a second in the local data (audit D-0416 item 3). `startReconsultFile` writes it and `endReconsult` (LB6b)
@@ -518,6 +521,8 @@ ld_tabling{T}() where {T} = ld_tabling{T}(
 # Since TAB1 TB0: `tabling` (`LD->tabling`, `ld_tabling` above: the private tabling state, the restraints, the freed objects), and
 # `table_flags_compile_threshold`, `table_flags_drop_intermediate` (`LD->table_flags`, nesting flattened), appended last.
 # Since R2 TOP1b A: `break_level` (`LD->break_level`, pl-setup.c:199: -1 outside a toplevel; `currentBreakLevel`, src/pl-pro.jl), appended last.
+# Since TR2: `trie_gens`, the pool of trie_gen/2,3's states (`trie_gen_state`, pl-incl.jl; upstream keeps them on the C stack, then `allocForeignState`), appended last;
+# `trie_gen_force_epoch` (ORIGINAL, a test switch; a module-level `Ref` would be shared state, which the lint refuses), appended after it.
 # Since R2 F1c: `debugstatus_skiplevel`, `debugstatus_tracing`, `debugstatus_debugging`, `debugstatus_showContext` (`LD->_debugstatus`, pl-incl.h
 # `pl_debugstatus_t`; the flags `debug`, `debugger_show_context`: src/os/pl-prologflag.jl, `debugmode`, `tracemode`: src/pl-trace.jl).
 # (the input context stack is LB3's `input_context_stack`, which `'\$push_input_context'/1` shares; src/os/pl-file.jl).
@@ -683,6 +688,8 @@ mutable struct PL_local_data{T} <: AbstractLocalData
     tabling::ld_tabling{T}                                      # tabling: the tabling state of this thread (TAB1 TB0)
     table_flags_compile_threshold::Int                          # table_flags.compile_threshold: flag table_compile_threshold
     table_flags_drop_intermediate::Int                          # table_flags.drop_intermediate: flag table_drop_intermediate
+    trie_gens::foreign_state_pool{trie_gen_state{T}}            # (trie_gen/2,3's REDO_PTR states, TR2)
+    trie_gen_force_epoch::Bool                                  # ORIGINAL test switch: check_epoch! starts a new epoch at every call (TR2)
 end
 function PL_local_data{T}(gd::PL_global_data{T}) where {T}
     ld = _bare_local_data(gd)
@@ -796,7 +803,9 @@ function _bare_local_data(gd::PL_global_data{T}) where {T}
         -1,                                     # break_level: no toplevel runs (pl-setup.c:199)
         ld_tabling{T}(),                        # tabling: no component, no pool; the restraints at initTabling's defaults (TAB1 TB0)
         TABLE_COMPILE_THRESHOLD,                # table_flags.compile_threshold (pl-prologflag.c:2587)
-        0                                       # table_flags.drop_intermediate (pl-prologflag.c:2589)
+        0,                                      # table_flags.drop_intermediate (pl-prologflag.c:2589)
+        foreign_state_pool{trie_gen_state{T}}(), # trie_gen/2,3's states: none (TR2)
+        false                                   # trie_gen_force_epoch: off (TR2)
     )
     allocStacks!(ld)                            # the initial local stack, its spare reserved
     emptyStacks!(ld)
