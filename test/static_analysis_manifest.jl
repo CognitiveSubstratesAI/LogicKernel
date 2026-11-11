@@ -2013,6 +2013,10 @@ function _manifest_index(T)
             Tuple{LD, Int, LK.number, LK.number, LK.number, LK.number},
             false
         ),
+        (LK.indexArithFunction, Tuple{Type{T}, UInt64, Int}, false),
+        (LK.functorArithFunction, Tuple{Int}, false),
+        (LK.FunctionFromIndex, Tuple{Int}, false),
+        (LK.ar_func_n, Tuple{LD, Int, Int}, false),
         (LK.getCharExpression, Tuple{LD, T, LK.number}, false),
         (LK._len_not_one, Tuple{LD, T}, false),
         (LK._len_not_one_cells, Tuple{LD, Tuple{UInt8, LK.word, Int}}, false),

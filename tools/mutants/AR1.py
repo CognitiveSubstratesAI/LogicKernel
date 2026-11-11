@@ -12,6 +12,7 @@ TR = ["test/core_lang/test_arith_random_swipl.jl", "test/core_lang/test_arith_sw
 TB = ["test/core_lang/test_arith_round_swipl.jl", "test/core_lang/test_arith_swipl.jl", "test/core_lang/test_prolog_flag_swipl.jl"]  # group (b): directed rounding
 TBF = TB + ["test/core_lang/test_set_flag_swipl.jl"]
 TC = ["test/core_lang/test_arith_curfn_swipl.jl"]  # group (c): current_arithmetic_function/1 (the only test that calls it)
+TD1 = TC  # group (d1): the function-index helpers: the white-box testset of the curfn test; (d2/d3) add the compile test below
 TARGETS = TL + TR + TBF + TC
 A = "src/pl-arith.jl"
 MUTANTS = [
@@ -310,4 +311,25 @@ MUTANTS = [
     dict(id='AR1-C7 current_arithmetic_function: the redo starts at the entry after the next (KILL t1, t8)', file=A, targets=TC,
          old='i = PL_foreign_context(PL__ctx)',
          new='i = PL_foreign_context(PL__ctx) + 1'),
+    dict(id='AR1-D1 indexArithFunction: the index is 1-based (KILL the d1 white-box inverse rows)', file=A, targets=TD1,
+         old='return isCurrentArithFunction(T, name, arity) - 1',
+         new='return isCurrentArithFunction(T, name, arity)'),
+    dict(id='AR1-D2 functorArithFunction: the entry after the index (KILL the d1 inverse rows)', file=A, targets=TD1,
+         old='return ar_funcdefs[i + 1]',
+         new='return ar_funcdefs[i + 2]'),
+    dict(id='AR1-D3 FunctionFromIndex: the entry is the index itself (KILL the FunctionFromIndex row and ar_func_n)', file=A, targets=TD1,
+         old='return index + 1',
+         new='return index'),
+    dict(id='AR1-D4 ar_func_n: the arguments are popped without the result record (KILL the d1 stack-depth rows)', file=A, targets=TD1,
+         old='ld.arith_top -= argc + 1',
+         new='ld.arith_top -= argc'),
+    dict(id='AR1-D5 ar_func_n: the result is not moved to the place of the first argument (KILL 10 - 3 == 7)', file=A, targets=TD1,
+         old='dst === r || moveNumber(dst, r)',
+         new='dst === r || nothing'),
+    dict(id='AR1-D6 ar_func_n: the binary function gets its arguments swapped (KILL 10 - 3 == 7)', file=A, targets=TD1,
+         old='rval = _ar_call2(ld, k, a0, ld.arith_numbers[top - 1], r)',
+         new='rval = _ar_call2(ld, k, ld.arith_numbers[top - 1], a0, r)'),
+    dict(id='AR1-D7 current_arithmetic_function: the enumeration reads the entry at the wrong index (KILL t1..t8)', file=A, targets=TC,
+         old='f, a = functorArithFunction(i)',
+         new='f, a = functorArithFunction(i == 0 ? 1 : i)'),
 ]
