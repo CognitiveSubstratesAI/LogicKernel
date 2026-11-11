@@ -3897,6 +3897,45 @@ function set_arith_flag(ld::PL_local_data{T}, val::term_t, key::T)::Bool where {
     return true
 end
 
+# PORT: pl-arith.c current_arithmetic_function as pl_current_arithmetic_function1_va
+# DIVERGES: the functor is `(name, arity)` and the table is `ar_funcdefs` (its entries are ported ones, in the
+# kernel's order, where upstream's `GD->arith.functions` is indexed by the functor's index: the ORDER of the
+# solutions differs, the SET is the same); `i` is the 0-based position in the table, `functorArithFunction(i)`
+# is `ar_funcdefs[i+1]`, and `GD->arith.functions[i]` being set is every position (no empty slot). The redo
+# context is `PL_retry` (`ForeignRedoInt`).
+# (PRED_IMPL("current_arithmetic_function", 1, current_arithmetic_function, PL_FA_NONDETERMINISTIC))
+"`current_arithmetic_function/1` (pl-arith.c): true if `Term` is evaluable; enumerates the evaluable functors for a variable."
+function pl_current_arithmetic_function1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    head = PL__t0
+    i = 0
+    ctl = PL_foreign_control(PL__ctx)
+    if ctl == FRG_FIRST_CALL
+        if PL_is_variable(ld, head)
+            i = 0
+        else
+            fd = PL_get_functor(ld, head)
+            fd === nothing &&
+                return PL_error(ld, ERR_TYPE, mk_sym(T, :callable), head) ? FTRUE : FFALSE
+            return isCurrentArithFunction(T, sym_key(fd[1]), fd[2]) != 0 ? FTRUE : FFALSE
+        end
+    elseif ctl == FRG_REDO
+        i = PL_foreign_context(PL__ctx)                 # (int)CTX_INT
+    else                                                # FRG_CUTTED
+        return FTRUE
+    end
+
+    while i < length(ar_funcdefs)
+        f, a = ar_funcdefs[i + 1]                       # functorArithFunction(i)
+        if PL_unify_functor(ld, head, mk_sym(T, f), a)
+            return PL_retry(i + 1)                      # ForeignRedoInt(i+1)
+        end
+        i += 1
+    end
+    return FFALSE
+end
+
 # PORT: pl-arith.c PL_eval_expression_to_int64_ex
 # DIVERGES: returns the value or `nothing` (upstream: `int *` result and `int64_t *val`), the error raised.
 "Evaluate the expression term `t` to an `Int64` (pl-arith.c): `type_error(integer_expression, T)` for a non-integer, `int_overflow` past 64 bits."
@@ -3943,6 +3982,10 @@ const PL_predicates_from_arith = (
     PL_extension("bounded_number", 3, pl_bounded_number3_va, PL_FA_VARARGS),
     PL_extension("float_class", 2, pl_float_class2_va, PL_FA_VARARGS),
     PL_extension("float_parts", 4, pl_float_parts4_va, PL_FA_VARARGS),
+    PL_extension(
+        "current_arithmetic_function", 1, pl_current_arithmetic_function1_va,
+        PL_FA_NONDETERMINISTIC | PL_FA_VARARGS
+    ),
     PL_extension("divmod", 4, pl_divmod4_va, PL_FA_VARARGS),
     PL_extension(
         "nth_integer_root_and_remainder", 4, pl_nth_integer_root_and_remainder4_va,
