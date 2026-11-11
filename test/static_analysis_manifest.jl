@@ -3216,6 +3216,27 @@ _manifest_prof_plain() = (
     (LK._llround, Tuple{Float64}, false),
 )
 
+# LANE F — pl-zip.c (src/pl-zip.jl): the argument checks of the zip predicates, every minizip call a named refusal (ZIP1): the
+# refusals' entries only check that they infer. Checked for every payload type; `rc_strerror`, once.
+_manifest_zip(T) = begin
+    LD = LK.PL_local_data{T}
+    (
+        (LK.get_zipper, Tuple{LD, Int}, false),
+        (LK.zip_open_archive, Tuple{LD, String, Int}, false),
+        (LK.zip_open_archive_mem, Tuple{LD, Vector{UInt8}, Int}, false),
+        (LK.SopenZIP, Tuple{LD, LK.zipper, String, Int}, false),
+        [
+            (f, Tuple{LD, Int, Int, LK.control_t{T}}, false) for f in (
+                LK.pl_zip_open_stream3_va, LK.pl_zip_clone2_va, LK.pl_zip_close2_va,
+                LK.pl_zip_lock1_va, LK.pl_zip_unlock1_va,
+                LK.pl_zipper_open_new_file_in_zip4_va, LK.pl_zipper_goto2_va,
+                LK.pl_zipper_open_current3_va, LK.pl_zip_file_info3_va, LK.pl_rc_handle1_va
+            )
+        ]...
+    )
+end
+_manifest_zip_plain() = ((LK.rc_strerror, Tuple{Int}, false),)
+
 # LB2b — locating files: os/pl-files.c, os/pl-glob.c and the file-name helpers of os/pl-os.c
 # (src/os/pl-files.jl, src/os/pl-glob.jl, src/os/pl-os.jl). The methods that take the local data (`ld`) are
 # checked for every payload type; the ones on plain strings, integers and byte vectors once, below.
@@ -3482,6 +3503,10 @@ const _DISPATCH_MANIFEST_TUPLE = (
     _manifest_prof(_M2)...,
     _manifest_prof(_M3)...,
     _manifest_prof_plain()...,
+    _manifest_zip(_M1)...,
+    _manifest_zip(_M2)...,
+    _manifest_zip(_M3)...,
+    _manifest_zip_plain()...,
     _MANIFEST_LB2B_FREE...,
     _manifest_lb7(_M1)...,
     _manifest_lb7(_M2)...,
@@ -4088,6 +4113,7 @@ const _DISPATCH_MANIFEST_TUPLE = (
     (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_wrap)}, false),
     (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_coverage)}, false),
     (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_profile)}, false),
+    (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_zip)}, false),
     (LK.table_props, Tuple{}, false),
     (LK.clear_table_props!, Tuple{LK.table_props}, false),
     # TAB1 TB0: pl-allocpool.c (src/pl-allocpool.jl) and the sentinel tests of pl-tabling.c (src/pl-tabling.jl); they name no term type

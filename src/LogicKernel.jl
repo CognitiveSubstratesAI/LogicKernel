@@ -69,6 +69,7 @@ include("os/pl-glob.jl")       # swipl-devel src/os/pl-glob.c — wildcard_match
 include("os/pl-cstack.jl")     # swipl-devel src/os/pl-cstack.c — the C-stack fallbacks, named refusals (lane F)
 include("os/pl-table.jl")      # swipl-devel src/os/pl-table.c — the lock-free hash tables, word -> word (lane F; bucket order)
 include("os/pl-file.jl")       # swipl-devel src/os/pl-file.c — the file an open stream reads (the loader); the output redirect, with_output_to/2 (O1B)
+include("pl-zip.jl")          # swipl-devel src/pl-zip.c — zip archives: the argument checks, minizip refused by name (lane F, ZIP1)
 include("pl-setup.jl")         # swipl-devel src/pl-setup.c — emptying the stacks of a new LD
 include("pl-proc.jl")          # swipl-devel src/pl-proc.c — predicates, assert, retract, clause GC
 include("pl-srcfile.jl")       # swipl-devel src/pl-srcfile.c — source files: consulting a file (first load)
