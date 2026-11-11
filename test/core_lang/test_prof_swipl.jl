@@ -271,3 +271,142 @@ end
     LK.freeProfileData(ld)
     @test ld.profile.nodes == 0 && LK.prof_node_at(ld, a) === nothing
 end
+
+# ── the call tree's builders (pl-prof.c's second half: profCall, profResumeParent, profExit, profFail, lookback): kernel-only, no caller in
+# the VM, so the testsets drive them. The nodes are indexes (1 = the first node made); `_nc` reads (calls, exits, fails, recur) of one.
+function _pf_env(::Type{T}, ports::Int) where {T}
+    gd = LK.PL_global_data{T}()
+    ld = LK.PL_local_data{T}(gd)
+    st, _ = LK.load_file!(gd, ld, _PF_PL)
+    @assert st === :ok
+    defof(name) = LK.isCurrentProcedure(sym_key(_tls(T, name)), 1, LK.MODULE_user(gd)).definition
+    ld.profile.ports_control = ports
+    return gd, ld, defof("pf"), defof("pg")
+end
+_nc(ld, i) = (n = LK.prof_node_at(ld, i); (n.calls, n.exits, n.fails, n.recur))
+
+@testset "PROF: the tree builders, ports_control FALSE (no exits or fails counted)" begin
+    gd, ld, pf, pg = _pf_env(_TL, LK.PROFC_FALSE)
+    @test LK.profCall(ld, pf) == 1 && ld.profile.current == 1 && ld.profile.roots == 1 && ld.profile.nodes == 1
+    @test LK.profCall(ld, pf) == 1 && _nc(ld, 1) == (1, 0, 0, 1)                 # direct recursion: the same node, `recur`
+    @test LK.profCall(ld, pg) == 2 && ld.profile.current == 2
+    @test LK.prof_node_at(ld, 2).parent == 1 && LK.prof_node_at(ld, 1).siblings == 2
+    LK.profExit(ld, 2)
+    @test ld.profile.current == 1 && _nc(ld, 2) == (1, 0, 0, 0)                  # FALSE: the exit is not counted
+    @test LK.profCall(ld, pg) == 2 && _nc(ld, 2) == (2, 0, 0, 0) && ld.profile.nodes == 2   # the sibling is found again
+    LK.profFail(ld, 1)
+    @test ld.profile.current == 1 && _nc(ld, 2)[3] == 0                          # FALSE: the fail is not counted
+    @test !ld.profile.accounting && ld.profile.samples == 0                      # not exact: no clock, no sample
+end
+
+@testset "PROF: the tree builders, ports_control TRUE: exits and fails" begin
+    gd, ld, pf, pg = _pf_env(_TL, LK.PROFC_TRUE)
+    @test LK.profCall(ld, pf) == 1 && LK.profCall(ld, pg) == 2
+    LK.profExit(ld, 2)
+    @test ld.profile.current == 1 && _nc(ld, 2) == (1, 1, 0, 0) && _nc(ld, 1) == (1, 0, 0, 0)
+    LK.profExit(ld, 1)                                                           # the exit of a root: resumes nothing
+    @test ld.profile.current == 0 && _nc(ld, 1) == (1, 1, 0, 0)
+    @test LK.profCall(ld, pf) == 1 && _nc(ld, 1) == (2, 1, 0, 0) && ld.profile.nodes == 2   # a root is found again
+    @test LK.profCall(ld, pg) == 2 && _nc(ld, 2) == (2, 1, 0, 0)
+    LK.profFail(ld, 1)                                                           # 2 failed back to its parent's choicepoint
+    @test ld.profile.current == 1 && _nc(ld, 2) == (2, 1, 1, 0) && _nc(ld, 1)[3] == 0
+    LK.profFail(ld, 0)                                                           # 1 failed with no choicepoint left
+    @test ld.profile.current == 0 && _nc(ld, 1) == (2, 1, 1, 0)
+end
+
+@testset "PROF: the siblings and the roots are chains: a node is found behind others" begin
+    gd, ld, pf, pg = _pf_env(_TL, LK.PROFC_TRUE)
+    t0 = LK.isCurrentProcedure(sym_key(_tls(_TL, "t0")), 1, LK.MODULE_user(gd)).definition
+    @test LK.profCall(ld, pf) == 1 && LK.profCall(ld, pg) == 2
+    LK.profExit(ld, 2)
+    @test LK.profCall(ld, t0) == 3 && LK.prof_node_at(ld, 3).next == 2 && LK.prof_node_at(ld, 1).siblings == 3
+    LK.profExit(ld, 3)
+    @test LK.profCall(ld, pg) == 2 && _nc(ld, 2) == (2, 1, 0, 0) && ld.profile.nodes == 3     # found behind t0
+    LK.profExit(ld, 2)
+    LK.profExit(ld, 1)
+    @test ld.profile.current == 0
+    @test LK.profCall(ld, pg) == 4 && LK.prof_node_at(ld, 4).next == 1 && ld.profile.roots == 4 && ld.profile.nodes == 4
+    LK.profExit(ld, 4)
+    @test LK.profCall(ld, pf) == 1 && _nc(ld, 1) == (2, 1, 0, 0) && ld.profile.nodes == 4    # a root found behind another
+end
+
+@testset "PROF: accounting is on between begin and end" begin
+    gd, ld, pf, pg = _pf_env(_TL, LK.PROFC_TRUE)
+    @test !ld.profile.accounting
+    LK.prof_accounting_begin(ld)
+    @test ld.profile.accounting && ld.profile.samples == 0
+    LK.prof_accounting_end(ld)
+    @test !ld.profile.accounting
+end
+
+@testset "PROF: the tree builders, ports_control CLASSIC: exits and fails counted as TRUE" begin
+    gd, ld, pf, pg = _pf_env(_TL, LK.PROFC_CLASSIC)
+    @test LK.profCall(ld, pf) == 1 && LK.profCall(ld, pg) == 2
+    LK.profExit(ld, 2)
+    @test _nc(ld, 2) == (1, 1, 0, 0) && ld.profile.current == 1
+    LK.profFail(ld, 0)
+    @test _nc(ld, 1)[3] == 1 && ld.profile.current == 0
+end
+
+@testset "PROF: indirect recursion is folded unless ports_control is TRUE" begin
+    # pf -> pg -> pf -> pg: under CLASSIC the second pg is the first one again (its recursion counted), under TRUE a node of its own
+    gd, ld, pf, pg = _pf_env(_TL, LK.PROFC_CLASSIC)
+    @test LK.profCall(ld, pf) == 1 && LK.profCall(ld, pg) == 2
+    @test LK.profCall(ld, pf) == 3 && LK.prof_node_at(ld, 3).parent == 2         # the root 1 has no parent: no fold yet
+    @test LK.profCall(ld, pg) == 2 && ld.profile.current == 2 && _nc(ld, 2) == (1, 0, 0, 1) && ld.profile.nodes == 3
+    gd, ld, pf, pg = _pf_env(_TL, LK.PROFC_TRUE)
+    @test LK.profCall(ld, pf) == 1 && LK.profCall(ld, pg) == 2 && LK.profCall(ld, pf) == 3
+    @test LK.profCall(ld, pg) == 4 && ld.profile.current == 4 && ld.profile.nodes == 4
+    @test LK.prof_node_at(ld, 4).parent == 3 && _nc(ld, 2) == (1, 0, 0, 0)
+end
+
+@testset "PROF: a predicate with P_NOPROFILE leaves the tree alone; a stale node pointer is ignored" begin
+    gd, ld, pf, pg = _pf_env(_TL, LK.PROFC_TRUE)
+    pg.flags |= LK.P_NOPROFILE
+    @test LK.profCall(ld, pg) == 0 && ld.profile.nodes == 0 && ld.profile.current == 0 && ld.profile.roots == 0
+    @test LK.profCall(ld, pf) == 1
+    @test LK.profCall(ld, pg) == 1 && ld.profile.nodes == 1 && ld.profile.current == 1   # the current node, nothing made
+    @test LK.profCall(ld, pf) == 1 && _nc(ld, 1) == (1, 0, 0, 1)
+    LK.profResumeParent(ld, 99)                                                  # not a node: ignored whole
+    LK.profExit(ld, 99)
+    LK.profExit(ld, 0)
+    @test ld.profile.current == 1 && _nc(ld, 1) == (1, 0, 0, 1)
+    LK.profResumeParent(ld, 0)                                                   # a null node is a node-less parent: valid
+    @test ld.profile.current == 0 && _nc(ld, 1) == (1, 1, 0, 1)
+end
+
+@testset "PROF: lookback walks the parent chain; profSetHandle" begin
+    gd, ld, pf, pg = _pf_env(_TL, LK.PROFC_TRUE)
+    @test LK.profCall(ld, pf) == 1 && LK.profCall(ld, pg) == 2 && LK.profCall(ld, pf) == 3
+    @test LK.lookback(ld, 3, 1) && LK.lookback(ld, 3, 3) && LK.lookback(ld, 2, 1)
+    @test !LK.lookback(ld, 1, 3) && !LK.lookback(ld, 1, 2) && !LK.lookback(ld, 0, 1) && !LK.lookback(ld, 3, 0)
+    LK.profFailToCP(ld, 3, 1)                                                    # 3 and 2 failed, 1 is the common ancestor
+    @test _nc(ld, 3)[3] == 1 && _nc(ld, 2)[3] == 1 && _nc(ld, 1)[3] == 0
+    LK.profFailToCP(ld, 1, 1)                                                    # already there: nothing fails
+    @test _nc(ld, 1)[3] == 0
+    n = LK.prof_node_at(ld, 3)
+    LK.profSetHandle(n, pg)
+    @test n.handle === pg
+end
+
+@testset "PROF: the exact modes run up to the clock and are refused there, by name" begin
+    for mode in (LK.PROF_WALL_EXACT, LK.PROF_CPU_EXACT)
+        gd, ld, pf, pg = _pf_env(_TL, LK.PROFC_TRUE)
+        ld.profile.active = mode
+        @test_throws LK.NotPortedError LK.profCall(ld, pf)
+        @test ld.profile.samples == 1 && ld.profile.nodes == 0               # the sample was counted, the clock refused first
+        @test_throws LK.NotPortedError LK.prof_accounting_end(ld)
+        @test_throws LK.NotPortedError LK.prof_charge(ld, 0, true)
+    end
+    gd, ld, pf, pg = _pf_env(_TL, LK.PROFC_TRUE)
+    ld.profile.active = LK.PROF_CPU
+    @test LK.profCall(ld, pf) == 1 && ld.profile.samples == 0                    # a sampled mode never reads the clock here
+    for f in (LK.prof_clock, LK.prof_mono_ns, LK.prof_thread_cpu_ns, LK.prof_clock_per_ns, LK.thread_prof_ticks, LK.prof_convert_clock)
+        @test_throws LK.NotPortedError f(ld)
+    end
+    @test_throws LK.NotPortedError LK.prof_close_window(ld, 0, nothing, 0)
+    @test_throws LK.NotPortedError LK.PL_register_profile_type(ld, "x")
+    @test_throws LK.NotPortedError LK.PL_prof_call(ld, 0, 0)
+    @test_throws LK.NotPortedError LK.PL_prof_exit(ld, 0)
+    @test LK._llround(2.5) == 3 && LK._llround(-2.5) == -3 && LK._llround(2.4) == 2 && LK._llround(0.5) == 1
+end
