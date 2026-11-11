@@ -759,7 +759,8 @@ end
 # `table_monotonic`, `agc_margin`, `string_stack_tripwire`, `heartbeat`, `encoding`, `unicode_atoms`,
 # `theme`, `incomparable` (`LD->prolog_flag.incomparable_error`), `var_tag`
 # (the VARTAG_* bits of `m->flags`, which the kernel's `module_t` has not), the ci_* and tabling restraint flags (pseudo-flags of pl-index.c and pl-tabling.c, whose state is
-# constants here), the arithmetic flags (`set_arith_flag`, pl-arith.c) and `file_name_case_handling`.
+# constants here), the arithmetic LIMITS (`max_rational_size`, `max_integer_size`: set_arith_flag refuses a value other than
+# `infinite`, AR1) and `file_name_case_handling`.
 # `on_error`/`on_warning` are checked and stored (the `halt`/`status` actions belong to the toplevel).
 "Refuse setting the flag `key`: its upstream side effect `effect` is not ported (design D4; R2 F1b)."
 function _flag_not_ported(key::T, effect::String) where {T}
@@ -1513,8 +1514,8 @@ end
 
 # PORT: pl-prologflag.c set_prolog_flag_unlocked
 # DIVERGES: no thread-local table (`FF_LOCAL`, `copy_prolog_flag`, `register_local_flag`): the table is the global
-# one. The module is its record. A flag that lives outside the table is refused by name (design D4): the arithmetic
-# flags (`set_arith_flag`, pl-arith.c), the clause-indexing flags (`ci_set_flag`, pl-index.c) and the tabling
+# one. The module is its record. A flag that lives outside the table is set by its owner (`set_arith_flag`,
+# pl-arith.c: the limits are a named refusal there) or refused by name (design D4): the clause-indexing flags (`ci_set_flag`, pl-index.c) and the tabling
 # restraints (`tbl_set_restraint_flag`, pl-tabling.c). A creation that `check_create_flag` refuses returns at once
 # (upstream's code continues below the `if` chain).
 "Set, or with `FF_ISCREATE`/`FF_NOCREATE` create, the flag `k` to the value of the term `value`; the flag, `PSEUDO_FLAG`, or `nothing` after an error (pl-prologflag.c)."
@@ -1533,7 +1534,7 @@ function set_prolog_flag_unlocked(
 
         tbl_is_restraint_flag(k) &&
             _flag_not_ported(k, "tbl_set_restraint_flag (tabling restraints)")
-        is_arith_flag(k) && _flag_not_ported(k, "set_arith_flag (pl-arith.c)")
+        is_arith_flag(k) && return set_arith_flag(ld, value, k) ? PSEUDO_FLAG : nothing
         ci_is_flag(k) && _flag_not_ported(k, "ci_set_flag (pl-index.c)")
 
         if (flags & FF_ISCREATE) != 0 && (flags & FF_SHARED) != 0 && f.index == 0
