@@ -2780,6 +2780,66 @@ function _ar_call3(
     return ar_powm(ld, a0, a1, a2, r)
 end
 
+# ── virtual machine support (pl-arith.c, `#if O_COMPILE_ARITH`) ──────────────────────────────────
+# PORT: pl-arith.c indexArithFunction
+# DIVERGES: the function is `name/arity` (the name's key and the arity), as `isCurrentArithFunction`'s;
+# the index is the 0-based position in `ar_funcdefs` (what the code word of `A_FUNC0` .. `A_FUNC` holds),
+# -1 when there is no such function, as upstream's.
+"The index of the arithmetic function `name/arity` in `ar_funcdefs`, 0-based, -1 for none (pl-arith.c)."
+function indexArithFunction(::Type{T}, name::UInt64, arity::Int)::Int where {T}
+    return isCurrentArithFunction(T, name, arity) - 1
+end
+
+# PORT: pl-arith.c functorArithFunction
+# DIVERGES: the functor is `(name, arity)` (the kernel has no functor table), the entry at the 0-based
+# index `i` of `ar_funcdefs` (`fetchFunctorArray(i)->functor` upstream).
+"The functor `(name, arity)` of the arithmetic function at 0-based index `i` (pl-arith.c)."
+function functorArithFunction(i::Int)::Tuple{Symbol, Int}
+    return ar_funcdefs[i + 1]
+end
+
+# PORT: pl-arith.c FunctionFromIndex
+# DIVERGES: upstream returns the function pointer `GD->arith.functions[index]`; here the entry's 1-based
+# position in `ar_funcdefs`, which `_ar_call0` .. `_ar_call3` call by the entry's name.
+"The `ar_funcdefs` entry of the 0-based function index `index` (pl-arith.c)."
+function FunctionFromIndex(index::Int)::Int
+    return index + 1
+end
+
+# PORT: pl-arith.c ar_func_n
+# DIVERGES: the arithmetic stack is the local data's pool of numbers (`_number_alloc!`; the arguments
+# are the top `argc` of it, the LAST one pushed is the first argument: `a0 = arith_numbers[arith_top]`
+# as `_evalExpression_walk`'s). The result is computed in a pool record above the arguments, then moved
+# to the place of the first one (`popArgvArithStack`, `pushArithStack`). `sysError` is a Julia `error`.
+# `clearNumber` has nothing to clear: the values are immutable.
+"`A_FUNC0` .. `A_FUNC`: run function `findex` on the top `argc` numbers of the arithmetic stack, push the result (pl-arith.c)."
+function ar_func_n(ld::PL_local_data, findex::Int, argc::Int)::Bool
+    k = FunctionFromIndex(findex)
+    r = _number_alloc!(ld)                                  # number result
+    top = ld.arith_top - 1                                  # the last argument pushed
+    rval = false
+    if argc > 0
+        a0 = ld.arith_numbers[top]
+        if argc == 1
+            rval = _ar_call1(ld, k, a0, r)
+        elseif argc == 2
+            rval = _ar_call2(ld, k, a0, ld.arith_numbers[top - 1], r)
+        elseif argc == 3
+            rval = _ar_call3(ld, k, a0, ld.arith_numbers[top - 1], ld.arith_numbers[top - 2], r)
+        else
+            error("Too many arguments to arithmetic function")    # sysError
+        end
+    else
+        rval = _ar_call0(ld, k, r)
+    end
+    ld.arith_top -= argc + 1                                # popArgvArithStack(argc), and `result`
+    if rval
+        dst = _number_alloc!(ld)                            # pushArithStack(&result)
+        dst === r || moveNumber(dst, r)
+    end
+    return rval
+end
+
 # ── characters (pl-arith.c) ──────────────────────────────────────────────────────────────────────
 # PORT: pl-arith.c getCharExpression
 # DIVERGES: the `TAG_STRING` branch, on a value-table string's stored value `p` (its one caller,
@@ -3901,7 +3961,7 @@ end
 # DIVERGES: the functor is `(name, arity)` and the table is `ar_funcdefs` (its entries are ported ones, in the
 # kernel's order, where upstream's `GD->arith.functions` is indexed by the functor's index: the ORDER of the
 # solutions differs, the SET is the same); `i` is the 0-based position in the table, `functorArithFunction(i)`
-# is `ar_funcdefs[i+1]`, and `GD->arith.functions[i]` being set is every position (no empty slot). The redo
+# is the function of that name, and `GD->arith.functions[i]` being set is every position (no empty slot). The redo
 # context is `PL_retry` (`ForeignRedoInt`).
 # (PRED_IMPL("current_arithmetic_function", 1, current_arithmetic_function, PL_FA_NONDETERMINISTIC))
 "`current_arithmetic_function/1` (pl-arith.c): true if `Term` is evaluable; enumerates the evaluable functors for a variable."
@@ -3927,7 +3987,7 @@ function pl_current_arithmetic_function1_va(
     end
 
     while i < length(ar_funcdefs)
-        f, a = ar_funcdefs[i + 1]                       # functorArithFunction(i)
+        f, a = functorArithFunction(i)
         if PL_unify_functor(ld, head, mk_sym(T, f), a)
             return PL_retry(i + 1)                      # ForeignRedoInt(i+1)
         end

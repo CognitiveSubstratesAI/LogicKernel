@@ -166,3 +166,46 @@ end
         @test sw == expected                                       # the .out is swipl's, still
     end
 end
+
+# (d1) the function-index helpers of pl-arith.c's `#if O_COMPILE_ARITH` block and `ar_func_n`, white-box (UNTESTED: written without a compile)
+@testset "AR1 (d1): indexArithFunction / functorArithFunction / FunctionFromIndex / ar_func_n" begin
+    gd = LK.PL_global_data{_TL}()
+    ld = LK.PL_local_data{_TL}(gd)
+    key(nm) = LK.sym_key(LK.mk_sym(_TL, nm))
+    nf = length(LK.ar_funcdefs)
+    @test nf == 79
+    for i in 0:(nf - 1)                                     # the index and the functor are each other's inverse
+        nm, ar = LK.functorArithFunction(i)
+        @test LK.indexArithFunction(_TL, key(nm), ar) == i
+        @test LK.FunctionFromIndex(i) == i + 1
+    end
+    @test LK.indexArithFunction(_TL, key(:foo), 2) == -1    # no such function
+    @test LK.indexArithFunction(_TL, key(:+), 3) == -1      # right name, wrong arity
+    # the arguments are pushed right to left: the LAST pushed is the first argument
+    b = ld.arith_top
+    function push_i(v::Int)
+        n = LK._number_alloc!(ld)
+        n.i = v
+        n.type = LK.V_INTEGER
+        return n
+    end
+    push_i(3)
+    push_i(10)                                              # 10 - 3
+    @test LK.ar_func_n(ld, LK.indexArithFunction(_TL, key(:-), 2), 2)
+    @test ld.arith_top == b + 1
+    @test ld.arith_numbers[b + 1].type === LK.V_INTEGER && ld.arith_numbers[b + 1].i == 7
+    push_i(9)                                               # -(9), above the 7
+    @test LK.ar_func_n(ld, LK.indexArithFunction(_TL, key(:-), 1), 1)
+    @test ld.arith_top == b + 2 && ld.arith_numbers[b + 2].i == -9
+    @test LK.ar_func_n(ld, LK.indexArithFunction(_TL, key(:pi), 0), 0)
+    @test ld.arith_top == b + 3 && ld.arith_numbers[b + 3].type === LK.V_FLOAT
+    @test ld.arith_numbers[b + 3].f == Float64(pi)
+    LK._number_free!(ld, 3)
+    @test ld.arith_top == b
+    # a function that raises answers false and leaves the stack without its arguments: 1 // 0
+    push_i(0)
+    push_i(1)
+    @test !LK.ar_func_n(ld, LK.indexArithFunction(_TL, key(:(//)), 2), 2)
+    @test ld.arith_top == b
+    LK.PL_clear_exception(ld)
+end
