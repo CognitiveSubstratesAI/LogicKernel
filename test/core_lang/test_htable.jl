@@ -156,8 +156,9 @@ end
     @test LK.PL_add_hash_table(ld, ht, UInt64(5), UInt64(50), LK.PL_HT_NEW) == UInt64(50)
     @test length(ld.messages) == n0                  # a new name: no warning
     @test LK.PL_add_hash_table(ld, ht, UInt64(5), UInt64(51), LK.PL_HT_NEW) == UInt64(50)    # updateHTable: the previous value
-    @test length(ld.messages) == n0 + 1
-    @test occursin("Race condition detected", String(lk_name(ld.messages[end][2])))
+    @test length(ld.messages) == n0 + 2             # the warning, then print_backtrace_named's fallback message
+    @test occursin("Race condition detected", String(lk_name(ld.messages[end - 1][2])))
+    @test occursin("C-stack dumps are not supported", String(lk_name(ld.messages[end][2])))
     @test LK.lookupHTable(ht, UInt64(5)) == UInt64(51)
     @test LK.PL_add_hash_table(ld, ht, UInt64(5), UInt64(52), LK.PL_HT_UPDATE) == UInt64(51)
     @test LK.PL_add_hash_table(ld, ht, UInt64(5), UInt64(53), 0) == UInt64(52)               # no flag: add keeps the old value

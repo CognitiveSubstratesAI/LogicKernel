@@ -397,10 +397,9 @@ function addHTable(ht::Table, name::UInt64, value::UInt64)::UInt64
 end
 
 # PORT: pl-table.c addNewHTable
-# DIVERGES: upstream's duplicate-add branch ("Race condition detected") prints the warning, a C backtrace
-# (`save_backtrace`/`print_backtrace_named`, os/pl-cstack.c: unwinding the C stack has no Julia equivalent, see
-# src/os/pl-cstack.jl) and updates. The warning text is collected on the local data's messages as the other
-# `Sdprintf`s are (`_qlf_Sdprintf!`); no backtrace is printed.
+# DIVERGES: the warning text is collected on the local data's messages as the other `Sdprintf`s are (`_qlf_Sdprintf!`); the C backtrace
+# upstream prints after it (`save_backtrace`/`print_backtrace_named`, os/pl-cstack.c) is the fallback of src/os/pl-cstack.jl: no
+# backtrace, one message that C-stack dumps are not supported.
 "Add `name` -> `value`, a name the table must not have; a name it has is warned about and updated."
 function addNewHTable(
     ld::PL_local_data{T}, ht::Table, name::UInt64, value::UInt64
@@ -414,6 +413,8 @@ function addNewHTable(
             "WARNING: Race condition detected.  Please report at:\n" *
             "WARNING:   https://github.com/SWI-Prolog/swipl-devel/issues\n"
         )
+        save_backtrace("addNewHTable")
+        print_backtrace_named(ld, "addNewHTable")
         return updateHTable(ht, name, value)
     end
 end

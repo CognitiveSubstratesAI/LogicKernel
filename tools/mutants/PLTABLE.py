@@ -46,7 +46,7 @@ MUTANTS = [
          file=TAB, targets=[TH],
          old="    kvs.accesses += 1                               # ATOMIC_INC(&kvs->accesses)\n",
          new="    kvs.accesses += 0\n"),
-    dict(id="PLTABLE-11 addNewHTable never warns (KILL TH 'addNewHTable warns', `length(ld.messages) == n0 + 1`)",
+    dict(id="PLTABLE-11 addNewHTable never warns (KILL TH 'addNewHTable warns', `length(ld.messages) == n0 + 2`)",
          file=TAB, targets=[TH],
          old="    new = addHTable(ht, name, value)\n    if new == value\n",
          new="    new = addHTable(ht, name, value)\n    if true\n"),
