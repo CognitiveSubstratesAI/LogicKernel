@@ -2153,6 +2153,8 @@ end
 # PORT: pl-file.c peek_string as pl_peek_string3_va
 # (PRED_IMPL("peek_string", 3, peek_string, 0)) — pl-file.c:3373-3425 (pin 18168e62)
 # DIVERGES: the pending bytes are copied (`peek_pending_text`); no lock to release, no `PL_STRINGS_MARK`.
+# DIVERGES: the pin's UTF-16 path fails its own assertion (PL_unify_text_range, canonical) or answers
+# representation_error(code_point) after a read to the end: no oracle row exists; the kernel decodes UTF-16 correctly.
 "`peek_string(+Stream, +Len, -String)`: `String` is the next `Len` characters of `Stream`, or all it has, without reading them (pl-file.c)."
 function pl_peek_string3_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
