@@ -228,7 +228,7 @@ end
         ),
         _row("k8", _a("failed")),
         _row("k9", _c("s", "i4", "i15", "i0", "f0.0", "i3", "i0", _a("false"), _a("false"))),
-        _row("k10", "i0"),
+        _row("k10", _c("r", "i0", "i0", "i0", "i0")),
         _row("k11", _c("err", _c("type_error", _a("profile_node"), _pn(1)))),
         _row("k12", _a("failed")),
     ]
@@ -242,6 +242,9 @@ end
         @test kl == ["ok", "$row notported"]
         @test ld.profile.active == LK.PROF_INACTIVE
     end
+    # profiler/2 without '$profile'/4 gives the sample period its default before the refusal
+    kl, ld = kernel_run(_TL, _PF_PL, ["kr0"])
+    @test ld.profile.sample_period == LK.DEFAULT_SAMPLE_PERIOD
     # '$profile'/4 sets its options and resets the data before it starts: rate 100 is a 10000 usec period, ports `false`
     kl, ld = kernel_run(_TL, _PF_PL, ["kr3"])
     @test ld.profile.sample_period == 10000 && ld.profile.ports_control == LK.PROFC_FALSE

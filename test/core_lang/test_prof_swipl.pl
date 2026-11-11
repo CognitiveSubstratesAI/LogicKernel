@@ -80,7 +80,7 @@ k7(R) :- '$prof_procedure_data'(pg/1, T, S, C, Rd, E, Cr, Ce), Cr = [node(Id, Cy
 k8(R) :- err('$prof_procedure_data'(err/2, _, _, _, _, _, _, _), R).
 k9(R) :- '$prof_statistics'(S, T, A, Time, N, P, Po, M), R = s(S, T, A, Time, N, P, Po, M).
 % after reset_profiler: no node, nothing counted
-k10(R) :- reset_profiler, '$prof_statistics'(_, _, _, _, N, _, _, _), R = N.
+k10(R) :- reset_profiler, '$prof_statistics'(S, T, A, _, N, _, _, _), R = r(S, T, A, N).
 k11(R) :- err('$prof_node'('$prof_node'(1), _, _, _, _, _, _, _), R).
 k12(R) :- err('$prof_sibling_of'(_, -), R).
 
