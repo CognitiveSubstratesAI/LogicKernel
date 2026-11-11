@@ -6825,6 +6825,34 @@ evidence/P2/gen_rows.py). Mutants: tools/mutants/P2.py.
 Tests: test/core_lang/test_p2b_swipl.jl (rows q01-q37 and q40-q59; pins from swipl 10.1.19, two byte-identical runs; generator
 evidence/F6/gen_p2b.py). Mutants: tools/mutants/P2B.py (29). The generated R2 table above regenerates at the gate.
 
+## ZIP1 — pl-zip.c: the zip predicates as the pin answers a non-zipper, named refusals at the first minizip call (R2; lane F relay ZIP1b, edit-only, UNTESTED: nothing was compiled)
+
+pl-zip.c @ 18168e62 (1495 lines) drives minizip (a zip reader and writer over zlib's deflate) behind ten predicates. The kernel has no
+zip library and no deflate, so no zipper can be made. src/pl-zip.jl keeps what runs BEFORE the first minizip call and refuses by name there.
+
+- **The ten predicates** (`PL_predicates_from_zip`, registered beside the profiler table in src/pl-ext.jl): `zip_open_stream/3`, `zip_clone/2`,
+  `zip_close_/2`, `zip_lock/1`, `zip_unlock/1`, `zipper_open_new_file_in_zip/4`, `zipper_goto/2`, `zipper_open_current/3`, `zip_file_info_/3`,
+  `'$rc_handle'/1`. Six carry an owner row of the boot scan (docs/r2_owners.tsv); the other four are not called by a boot file.
+- **`get_zipper`**: a term is a zipper only as a blob of the `zipper` type; none is made, so every term raises `type_error(zipper, T)` (the
+  instantiation error for an unbound one). `zip_clone`, `zip_close_`, `zip_lock`, `zip_unlock`, `zipper_goto` and `zip_file_info_` therefore
+  give the pin's answer for a non-zipper argument (differential rows); the code after the call is the named refusal.
+- **Options before the archive**: `zip_open_stream/3` reads `close_parent(Bool)` and the stream (`term_stream_handle`, `SH_ERRORS`), then
+  refuses at `zipOpen2_64` (an output stream) or `unzOpen2_64`; `zipper_open_current/3` reads type, encoding, bom, release, reposition,
+  checks encoding and type, reads the zipper, then refuses at `unzOpenCurrentFile`.
+- **DIVERGES** (the header of src/pl-zip.jl): (1) `struct zipper end` is constructed by nothing; (2) `zipper_open_new_file_in_zip/4` refuses at entry,
+  its options `extra`, `comment` (`OPT_STRING`) and `time` (`OPT_DOUBLE`) are types `PL_scan_options` does not read; (3) `'$rc_handle'/1` fails, the
+  kernel opens no resource database (`GD->resources.DB` has no twin); the pin's swipl answers a zipper blob (its boot zip), so the row is
+  kernel-only; (4) the stream is read without `PL_get_stream`'s lock.
+- **Named refusals** (13 sites, rows `refusal:src/pl-zip.jl::...` of docs/r2_owners.tsv, owner ZIP1): the ten predicates above except
+  `'$rc_handle'/1` (`zip_open_stream/3` has two), `zip_open_archive`, `zip_open_archive_mem`, `SopenZIP`.
+- **Ported**: `rc_strerror`, `zip_open_stream_options`, `zipopen3_options`, the RC_* flags of pl-zip.h. **Left out** as unreachable without a
+  zipper (pl-zip.c line ranges): the lock and state machine `zown` ... `zrelease` (102-224), the minizip file functions (235-449), the blob hooks
+  (452-555), `unify_zipper`, the entry streams (732-840), `zset_time`/`zget_time` (842-875), the mapping `map_file`/`unmap_file` (1207-1322),
+  `zip_close_archive`, `zipper_file`, `initZip`.
+
+Tests: test/core_lang/test_zip1_swipl.jl (differential rows `t*` against the pin's swipl, two byte-identical runs; kernel-only rows `k*`;
+refusal rows `kr*`). Mutants: tools/mutants/ZIP1.py. The generated R2 table above regenerates at the gate.
+
 ## RD1 — pl-read.c's stream readers: `read_term/2,3`, `read/1,2`, `$raw_read/1,2`, `$is_named_var/1` (R2)
 
 What RD1 registers (edit-only when written: nothing was compiled; the gate decides). The predicates that read a term from a
