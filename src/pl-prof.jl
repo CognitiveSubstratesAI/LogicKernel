@@ -660,6 +660,376 @@ function pl_prof_clock_cost1_va(
     _prof_refuse(ld, Symbol("\$prof_clock_cost"), "the cost of reading the exact clock (`prof_clock()`: the TSC or the monotonic clock)")
 end
 
+# ── SECOND HALF of pl-prof.c: the dynamic call tree's builders (the VM's call, exit and fail ports) and the charge functions ──────
+#
+# `profCall`, `profResumeParent`, `profExit`, `profFail` and `prof_call` are the data part: they build the tree and count calls,
+# exits, fails and recursion, as upstream. They have NO CALLER in this kernel (its VM has no profiling hooks); a test drives them.
+# The charge functions read a clock (`prof_clock`, `prof_mono_ns`, `prof_thread_cpu_ns`, `prof_clock_per_ns`, pl-prof.c:57-153, 274-400):
+# those four are named refusals (PROF1), the arithmetic around them is ported as written, so an exact mode (reachable only by a test
+# setting `ld.profile.active`) runs up to the clock and refuses there.
+
+# DIVERGES: upstream's `prof_clock()` reads the TSC or the OS monotonic clock (pl-prof.c:57-153): named refusal.
+"The exact clock's reading, refused by name (pl-prof.c `prof_clock`)."
+function prof_clock(ld::PL_local_data{T})::Int where {T}
+    _prof_refuse(ld, :prof_clock, "reading the exact clock (the TSC or the monotonic clock)")
+end
+
+# DIVERGES: upstream's `prof_mono_ns()` is the OS monotonic clock in nsec: named refusal.
+"The monotonic time in nsec, refused by name (pl-prof.c `prof_mono_ns`)."
+function prof_mono_ns(ld::PL_local_data{T})::Int where {T}
+    _prof_refuse(ld, :prof_mono_ns, "reading the OS monotonic clock")
+end
+
+# DIVERGES: upstream's `prof_thread_cpu_ns()` is the thread's CPU time (pl-prof.c:278): named refusal.
+"The thread's CPU time in nsec, refused by name (pl-prof.c `prof_thread_cpu_ns`)."
+function prof_thread_cpu_ns(ld::PL_local_data{T})::Int where {T}
+    _prof_refuse(ld, :prof_thread_cpu_ns, "reading the thread CPU clock")
+end
+
+# DIVERGES: upstream's `prof_clock_per_ns()` calibrates `prof_clock()` units against nsec (pl-prof.c:379): named refusal.
+"The `prof_clock()` units per nsec, refused by name (pl-prof.c `prof_clock_per_ns`)."
+function prof_clock_per_ns(ld::PL_local_data{T})::Float64 where {T}
+    _prof_refuse(ld, :prof_clock_per_ns, "calibrating the exact clock")
+end
+
+# DIVERGES: upstream's `thread_prof_ticks()` reads the profiled thread's CPU or wall clock (pl-prof.c:632): named refusal.
+"The ticks since the last tick, refused by name (pl-prof.c `thread_prof_ticks`)."
+function thread_prof_ticks(ld::PL_local_data{T})::Int where {T}
+    _prof_refuse(ld, :thread_prof_ticks, "reading the profiled thread's clock")
+end
+
+# ORIGINAL: C's `llround` (half away from zero) on a double.
+_llround(x::Float64)::Int = round(Int, x, RoundNearestTiesAway)
+
+# PORT: pl-prof.c prof_close_window
+# DIVERGES: `lnode` is the node or `nothing` (a NULL pointer); the window's node chain holds node indexes.
+"Close the CPU-exact accounting window: charge the CPU time to the nodes that ran in it (pl-prof.c)."
+function prof_close_window(
+    ld::PL_local_data{T}, now::Int, lnode::Union{Nothing, call_node{T}}, ldelta::Int
+)::Nothing where {T}
+    p = ld.profile
+    cpu = prof_thread_cpu_ns(ld)
+    dcpu = cpu - p.clock.win_cpu
+    raw = now - p.clock.win_start - ldelta
+    scale = 0.0                                         # nsec per prof_clock() unit
+
+    dcpu < 0 && (dcpu = 0)
+    if lnode !== nothing
+        per_ns = prof_clock_per_ns(ld)
+        short_ns = Float64(raw) / per_ns
+
+        if Float64(dcpu) >= short_ns
+            long_ns = Float64(dcpu) - short_ns
+            max_ns = Float64(ldelta) / per_ns
+
+            long_ns > max_ns && (long_ns = max_ns)
+            lnode.ticks += _llround(long_ns)
+            scale = 1.0 / per_ns
+        else                                            # short intervals were preempted
+            scale = Float64(dcpu) / Float64(raw)
+        end
+    else
+        scale = raw != 0 ? Float64(dcpu) / Float64(raw) : 0.0
+    end
+
+    n = p.clock.win_nodes
+    while n != 0
+        nn = prof_node_at(ld, n)::call_node{T}
+        nxt = nn.win_next
+        nn.ticks += _llround(Float64(nn.raw) * scale)
+        nn.raw = 0
+        nn.win_next = 0
+        nn.in_window = false
+        n = nxt
+    end
+    p.accounting_ticks += _llround(Float64(p.clock.win_accounting) * scale)
+    p.ticks += dcpu
+
+    p.clock.win_nodes = 0
+    p.clock.win_accounting = 0
+    p.clock.win_start = now
+    p.clock.win_cpu = cpu
+    return nothing
+end
+
+# PORT: pl-prof.c prof_charge
+# DIVERGES: `node` is a node pointer (an index; 0 = NULL, as upstream's `node && node->magic != PROFNODE_MAGIC` -> NULL).
+"Charge the time since the last clock reading to the node at `ptr` or, if `accounting`, to the profiler's accounting (pl-prof.c)."
+function prof_charge(ld::PL_local_data{T}, ptr::Int, accounting::Bool)::Nothing where {T}
+    p = ld.profile
+    now = prof_clock(ld)
+    delta = now - p.clock.last
+
+    delta < 0 && (delta = 0)                            # unsynchronised counters?
+    p.clock.last = now
+    node = prof_node_at(ld, ptr)                        # nothing when 0 or not a live node
+
+    if p.active == PROF_CPU_EXACT
+        if delta >= p.clock.long_interval && node !== nothing && !accounting
+            prof_close_window(ld, now, node, delta)
+            return nothing
+        end
+        if accounting
+            p.clock.win_accounting += delta
+        elseif node !== nothing
+            if !node.in_window
+                node.in_window = true
+                node.win_next = p.clock.win_nodes
+                p.clock.win_nodes = ptr
+            end
+            node.raw += delta
+        end
+        if now - p.clock.win_start >= p.clock.win_length
+            prof_close_window(ld, now, nothing, 0)
+        end
+    else
+        p.clock.raw += delta
+        if accounting
+            p.clock.accounting += delta
+        elseif node !== nothing
+            node.raw += delta
+        end
+    end
+    return nothing
+end
+
+# PORT: pl-prof.c prof_accounting_begin
+"Start counting the profiler's own work (pl-prof.c)."
+function prof_accounting_begin(ld::PL_local_data{T})::Nothing where {T}
+    if PROF_IS_EXACT(ld.profile.active)
+        ld.profile.samples += 1
+        prof_charge(ld, ld.profile.current, false)
+    end
+    ld.profile.accounting = true
+    return nothing
+end
+
+# PORT: pl-prof.c prof_accounting_end
+"Stop counting the profiler's own work (pl-prof.c)."
+function prof_accounting_end(ld::PL_local_data{T})::Nothing where {T}
+    if PROF_IS_EXACT(ld.profile.active)
+        prof_charge(ld, 0, true)
+    end
+    ld.profile.accounting = false
+    return nothing
+end
+
+# PORT: pl-prof.c prof_convert_clock
+"Convert the `prof_clock()` counts collected since activation to nsec (pl-prof.c); refused at the monotonic clock."
+function prof_convert_clock(ld::PL_local_data{T})::Nothing where {T}
+    p = ld.profile
+    ns = prof_mono_ns(ld) - p.clock.start_ns
+    raw = p.clock.last - p.clock.start
+    scale = raw != 0 ? Float64(ns) / Float64(raw) : 0.0
+    n = p.roots
+
+    while n != 0                                        # depth-first walk of the tree
+        nn = prof_node_at(ld, n)::call_node{T}
+        nn.ticks += _llround(Float64(nn.raw) * scale)
+        nn.raw = 0
+        if nn.siblings != 0
+            n = nn.siblings
+        else
+            while n != 0 && (prof_node_at(ld, n)::call_node{T}).next == 0
+                n = (prof_node_at(ld, n)::call_node{T}).parent
+            end
+            if n != 0
+                n = (prof_node_at(ld, n)::call_node{T}).next
+            end
+        end
+    end
+
+    p.ticks += _llround(Float64(p.clock.raw) * scale)
+    p.accounting_ticks += _llround(Float64(p.clock.accounting) * scale)
+    p.clock.raw = 0
+    p.clock.accounting = 0
+    return nothing
+end
+
+# PORT: pl-prof.c prof_call
+# DIVERGES: file-wide 1 and 5 (`handle` is a `Definition` or `nothing`; the node pointer is an index; no `allocHeapOrHalt`); returns the pointer.
+"A call was made from the current node to `handle`: build the dynamic call tree and return the node's pointer (pl-prof.c)."
+function prof_call(
+    ld::PL_local_data{T}, handle::Union{Nothing, Definition{T}}, type::Int
+)::Int where {T}
+    p = ld.profile
+    node = p.current
+
+    prof_accounting_begin(ld)
+
+    if node == 0                                        # root-node of the profile
+        n = p.roots
+        while n != 0
+            nn = prof_node_at(ld, n)::call_node{T}
+            if nn.handle === handle
+                nn.calls += 1
+                p.current = n
+                prof_accounting_end(ld)
+                return n
+            end
+            n = nn.next
+        end
+
+        ptr = new_call_node!(ld, handle, type)
+        nn = prof_node_at(ld, ptr)::call_node{T}
+        nn.calls += 1
+        nn.next = p.roots
+        p.roots = ptr
+        p.current = ptr
+        prof_accounting_end(ld)
+        return ptr
+    end
+
+    cur = prof_node_at(ld, node)::call_node{T}
+    if cur.handle === handle                            # straight recursion
+        cur.recur += 1
+        prof_accounting_end(ld)
+        return node
+    elseif p.ports_control != PROFC_TRUE
+        parent = cur.handle
+
+        n = cur.parent
+        while n != 0
+            nn = prof_node_at(ld, n)::call_node{T}
+            if nn.handle === handle && nn.parent != 0 &&
+                (prof_node_at(ld, nn.parent)::call_node{T}).handle === parent
+                nn.recur += 1
+                p.current = n
+                prof_accounting_end(ld)
+                return n
+            end
+            n = nn.parent
+        end
+    end
+
+    s = cur.siblings
+    while s != 0
+        sn = prof_node_at(ld, s)::call_node{T}
+        if sn.handle === handle
+            p.current = s
+            sn.calls += 1
+            prof_accounting_end(ld)
+            return s
+        end
+        s = sn.next
+    end
+
+    ptr = new_call_node!(ld, handle, type)
+    nn = prof_node_at(ld, ptr)::call_node{T}
+    nn.parent = p.current
+    nn.calls += 1
+    nn.next = cur.siblings
+    cur.siblings = ptr
+    p.current = ptr
+    prof_accounting_end(ld)
+    return ptr
+end
+
+# PORT: pl-prof.c profCall
+# DIVERGES: file-wide 5 (`acquireModulePtr`: no module reference count).
+"A call to `def`: the node's pointer (the current node's, for a predicate not profiled; pl-prof.c)."
+function profCall(ld::PL_local_data{T}, def::Definition{T})::Int where {T}
+    (def.flags & P_NOPROFILE) != 0 && return ld.profile.current
+    return prof_call(ld, def, PROF_TYPE_DEFAULT)
+end
+
+# PORT: pl-prof.c profResumeParent
+"Exit, resuming execution in the node at `node` (a stale pointer is ignored; pl-prof.c)."
+function profResumeParent(ld::PL_local_data{T}, node::Int)::Nothing where {T}
+    if node != 0 && prof_node_at(ld, node) === nothing  # node && node->magic != PROFNODE_MAGIC
+        return nothing
+    end
+
+    prof_accounting_begin(ld)
+
+    if ld.profile.ports_control != PROFC_FALSE
+        n = ld.profile.current
+        while n != 0 && n != node
+            nn = prof_node_at(ld, n)::call_node{T}
+            nn.exits += 1
+            n = nn.parent
+        end
+    end
+    ld.profile.current = node
+
+    prof_accounting_end(ld)
+    return nothing
+end
+
+# PORT: pl-prof.c profExit
+"Exit to the parent of `node`: every node from the current one back to `node` has exited (pl-prof.c)."
+function profExit(ld::PL_local_data{T}, node::Int)::Nothing where {T}
+    nn = prof_node_at(ld, node)
+    nn === nothing && return nothing
+    profResumeParent(ld, nn.parent)
+    return nothing
+end
+
+# PORT: pl-prof.c lookback
+"Is `to_node` on the parent chain of `from_node`? (pl-prof.c)"
+function lookback(ld::PL_local_data{T}, from_node::Int, to_node::Int)::Bool where {T}
+    node = from_node
+    while node != 0
+        node == to_node && return true
+        node = (prof_node_at(ld, node)::call_node{T}).parent
+    end
+    return false
+end
+
+# PORT: pl-prof.c profFailToCP
+# DIVERGES: a node that is no live node ends the walk (upstream reads its `parent` from freed memory).
+"Fail every node from `current` back to a common ancestor with `cp_node` (pl-prof.c)."
+function profFailToCP(ld::PL_local_data{T}, current::Int, cp_node::Int)::Nothing where {T}
+    while current != 0 && !lookback(ld, cp_node, current)
+        n = prof_node_at(ld, current)
+        n === nothing && break
+        n.fails += 1
+        current = n.parent
+    end
+    return nothing
+end
+
+# PORT: pl-prof.c profFail
+"Fail to the choicepoint's node: the nodes of the branch from the current one back to the common ancestor have failed (pl-prof.c)."
+function profFail(ld::PL_local_data{T}, cp_node::Int)::Nothing where {T}
+    prof_accounting_begin(ld)
+
+    if ld.profile.ports_control != PROFC_FALSE
+        profFailToCP(ld, ld.profile.current, cp_node)
+    end
+    ld.profile.current = cp_node
+
+    prof_accounting_end(ld)
+    return nothing
+end
+
+# PORT: pl-prof.c profSetHandle
+"Set the handle of a node (pl-prof.c)."
+function profSetHandle(node::call_node{T}, handle::Union{Nothing, Definition{T}})::Nothing where {T}
+    node.handle = handle
+    return nothing
+end
+
+# PORT: pl-prof.c PL_register_profile_type
+# DIVERGES: refused by name: a foreign profile type is a table of C function pointers (identify, get, acquire, release); the type table
+# of this kernel holds the default type only (file-wide 1).
+"Register a foreign profile type: refused by name (PROF1; pl-prof.c:1847)."
+function PL_register_profile_type(ld::PL_local_data{T}, name::String)::Bool where {T}
+    _prof_refuse(ld, :PL_register_profile_type, "a foreign profile type (C function pointers)")
+end
+
+# PORT: pl-prof.c PL_prof_call
+"The foreign call into the profile tree: refused by name (PROF1; pl-prof.c:1868): its handle is a C pointer."
+function PL_prof_call(ld::PL_local_data{T}, handle::Int, type::Int)::Int where {T}
+    _prof_refuse(ld, :PL_prof_call, "a foreign profile handle (a C `void *` of a foreign type)")
+end
+
+# PORT: pl-prof.c PL_prof_exit
+"The foreign exit from the profile tree: refused by name (PROF1; pl-prof.c:1875)."
+function PL_prof_exit(ld::PL_local_data{T}, node::Int)::Nothing where {T}
+    _prof_refuse(ld, :PL_prof_exit, "a foreign profile node (a C `void *`)")
+end
+
 # PORT: pl-prof.c BeginPredDefs as PL_predicates_from_profile
 "pl-prof.c's registration table (`BeginPredDefs(profile)`, under `O_PROFILE`; the pin's swipl has it)."
 const PL_predicates_from_profile = (
