@@ -461,6 +461,14 @@ struct SubClauseNames
     atom_dshift::UInt64                         # FUNCTOR_dshift1's name
     atom_dshift_for_copy::UInt64                # FUNCTOR_dshift_for_copy1's name
     atom_arg::UInt64                            # FUNCTOR_arg3's name
+    atom_star::UInt64                           # FUNCTOR_star2's name: `*` (compileArithArgument)
+    atom_roundtoward::UInt64                    # FUNCTOR_roundtoward2's name
+    atom_ar_equals::UInt64                      # FUNCTOR_ar_equals2's name: `=:=`
+    atom_ar_not_equal::UInt64                   # FUNCTOR_ar_not_equal2's name: `=\=`
+    atom_smaller::UInt64                        # FUNCTOR_smaller2's name: `<`
+    atom_larger::UInt64                         # FUNCTOR_larger2's name: `>`
+    atom_smaller_equal::UInt64                  # FUNCTOR_smaller_equal2's name: `=<`
+    atom_larger_equal::UInt64                   # FUNCTOR_larger_equal2's name: `>=`
 end
 
 "The names compileSubClause treats specially, for term type `T` (see `SubClauseNames`)."
@@ -490,7 +498,10 @@ function _subclause_names(::Type{T})::SubClauseNames where {T}
         _arith_functors(T), _name_key(T, "is"), _name_key(T, "+"), _name_key(T, "-"),
         _name_key(T, "="), _name_key(T, "=="), _name_key(T, "\\=="),
         _name_key(T, "\$call_continuation"), _name_key(T, "\$shift"),
-        _name_key(T, "\$shift_for_copy"), _name_key(T, "arg")
+        _name_key(T, "\$shift_for_copy"), _name_key(T, "arg"),
+        _name_key(T, "*"), _name_key(T, "roundtoward"), _name_key(T, "=:="),
+        _name_key(T, "=\\="), _name_key(T, "<"), _name_key(T, ">"), _name_key(T, "=<"),
+        _name_key(T, ">=")
     )
 end
 
