@@ -178,7 +178,7 @@ MUTANTS = [
     m("TR1-T3 stat_node: every value counted (KILL TW:749-751, values == 1)",
       "n.value != 0 && (n.flags & TN_PRIMARY) != 0 && (stats.values += 1)", "n.value != 0 && (stats.values += 1)"),
     m("TR1-T4 trie_table_size: the root is not a node (KILL TW:744, 753)",
-      "return SIZEOF_TRIE + tr.node_count * SIZEOF_TRIE_NODE", "return SIZEOF_TRIE + (tr.node_count - 1) * SIZEOF_TRIE_NODE"),
+      "    size = SIZEOF_TRIE + tr.node_count * SIZEOF_TRIE_NODE\n", "    size = SIZEOF_TRIE + (tr.node_count - 1) * SIZEOF_TRIE_NODE\n"),
     # ---- the indirect table (TW _tr_indirect_rows 774-818, _tr_wildcard_rows 820-847)
     m("TR1-I1 a float handle is tagged STRING (KILL TW:778)",
       "    k == NUM_FLOAT && return TAGEX_INDIRECT_FLOAT\n", "    k == NUM_FLOAT && return TAGEX_INDIRECT_STRING\n"),
@@ -260,7 +260,7 @@ MUTANTS = [
     m("TR1-V3 trie_insert update: the old record is not released (KILL TW:1276 and TW:1279: tr.free_records == [1] after the update, [1, 2] after the third)",
       "                n.flags |= TN_PRIMARY\n                release_value(tr, old)\n", "                n.flags |= TN_PRIMARY\n"),
     m("TR1-V4 trie_insert: value_count is not counted (KILL TW:1273, 1276, 1279: tr.value_count == 1)",
-      "    tr.value_count += 1\n    trie_discard_clause(tr)\n    return (true, nid)\n", "    trie_discard_clause(tr)\n    return (true, nid)\n"),
+      "    tr.value_count += 1\n    trie_discard_clause(gd, tr)\n    return (true, nid)\n", "    trie_discard_clause(gd, tr)\n    return (true, nid)\n"),
     m("TR1-V5 trie_insert: a new value does not get TN_PRIMARY (KILL TP:250-252 t38-t40: deleting a key below a value node prunes the value node)",
       "    n.value = val\n    n.flags |= TN_PRIMARY\n    tr.value_count += 1\n", "    n.value = val\n    tr.value_count += 1\n"),
     m("TR1-V6 trie_new/1 without TRIE_CONCURRENT (DEFERRED KILL: TW cannot call pl_trie_new1_va)",
@@ -275,7 +275,7 @@ MUTANTS = [
     m("TR1-V10 trie_insert: an existing key is inserted again (KILL TP:220 t16, TP:222 t17: the second insert fails)",
       "            return (false, nid)\n", "            return (true, nid)\n"),
     m("TR1-V11 trie_delete/3 does not prune (DEFERRED KILL: no row reads the arena after a delete)",
-      "            trie_delete(tr, nid, true)\n", "            trie_delete(tr, nid, false)\n",
+      "            trie_delete(gd, tr, nid, true)\n", "            trie_delete(gd, tr, nid, false)\n",
       eq="DEFERRED KILL: owner TR2 ($trie_property / trie_gen) or a TW row that sets ld.GD: t69/t74 (TP:319-320) only count answers, an unpruned node has value 0 and `v != 0` (src/pl-trie.jl:2033) hides it, reinserting works the same; the call is in pl_trie_delete3_va (:1999, :2011)"),
     # TR1-V12 was declared a deferred kill (src/pl-trie.jl:2033 `v != 0` matters only for a node with value 0); the battery of 61d5e365 (run 43007822749)
     # REFUTED the claim: a program row of test_trie_preds_swipl.jl:174 (the .out answers) is an Error During Test under the mutant. Listed as a kill.
@@ -291,9 +291,9 @@ MUTANTS = [
       "tr === nothing || tr.magic != TRIE_MAGIC || ", "tr === nothing || ",
       eq="src/pl-trie.jl:2053 (pl_trie_term2_va): trie_destroy empties the trie (trie_empty -> empty_trie :216-223 -> clear_nodes :193-207, `resize!(tr.nodes, 1)` at :198; no TR1 code raises tr.references, TB1's), so the handle of a destroyed trie (nid >= 2: trie_insert/4 never hands out the root) fails `1 <= nid <= length(tr.nodes)`; row kd7 (test/core_lang/test_trie_preds_swipl.jl:374) runs it"),
     m("TR1-V16 trie_destroy/1 does not mark (KILL TP:211 t4: the second destroy raises existence_error; TP t3)",
-      "    tr.magic = TRIE_CMAGIC\n    trie_empty(tr)\n    return FTRUE\n", "    trie_empty(tr)\n    return FTRUE\n"),
+      "    tr.magic = TRIE_CMAGIC\n    trie_empty(gd, tr)\n    return FTRUE\n", "    trie_empty(gd, tr)\n    return FTRUE\n"),
     m("TR1-V17 trie_destroy (the function) does not mark (KILL TW:1224 and TW life rows tr2.magic == TRIE_CMAGIC)",
-      "    tr.magic = TRIE_CMAGIC\n    trie_empty(tr)\n    free_lingering_blocks(tr)\n", "    trie_empty(tr)\n    free_lingering_blocks(tr)\n"),
+      "    tr.magic = TRIE_CMAGIC\n    trie_empty(gd, tr)\n    free_lingering_blocks(tr)\n", "    trie_empty(gd, tr)\n    free_lingering_blocks(tr)\n"),
     m("TR1-V18 is_trie/1: a destroyed trie is a trie (KILL TP:208, t3 `no`)",
       "    return (tr !== nothing && tr.magic == TRIE_MAGIC) ? FTRUE : FFALSE\n", "    return tr !== nothing ? FTRUE : FFALSE\n"),
     m("TR1-V19 $trie_insert_abstract: from depth 0 (KILL TP:277 t56)",

@@ -813,6 +813,7 @@ struct PL_code_data
     multifile::Vector{code}     # S_MULTIFILE
     staticp::Vector{code}       # S_STATIC
     wrapper::Vector{code}       # S_WRAP: the supervisor of a closure's copy of a wrapped predicate (TAB1-min)
+    trie_gen::Vector{code}      # S_TRIE_GEN: trie_gen_compiled/2,3 (TR4)
 end
 
 # ── event lists (pl-event.h, pl-copyterm.h), since R2's EV1 ─────────────────────────────────────────
@@ -1723,7 +1724,7 @@ end
 # where upstream embeds the struct and hands out a pointer to it (user, 2026-10-05). `newChoice`
 # resets it. `value.jump.pc` (since V9d, `C_OR`; `value.pc` before 10.1.19) is a field of its own,
 # `value_pc`: an index into the code of the frame's clause, where upstream holds an address; set by
-# `setJumpChoice!`. NOT PORTED: `value.jump.trie_offset` (compiled tries only: tabling). The union's `foreign` member
+# `setJumpChoice!`. `trie_offset` is `value.jump.trie_offset` (TR4: the TrieOffset word a T_TRY_* choice point saves). The union's `foreign` member
 # arrives with the non-deterministic built-ins (V9). `prof_node` is not kept (no profiler) but
 # counts in `SIZEOF_CHOICE`. `unlinked` (since V9d, `*->`) marks a record `C_SOFTCUT` took out of
 # the chain: upstream leaves such a choice point's struct on the local stack, unreachable, until
@@ -1738,6 +1739,7 @@ mutable struct choice{T}
     frame::Int                              # Frame I am related to (an index)
     const value_clause::ClauseChoice{T}     # value.clause — Next candidate clause
     value_pc::Int                           # value.pc — where a CHP_JUMP continues (an index)
+    trie_offset::word                       # value.jump.trie_offset — TrieOffset of a T_TRY_* choice (TR4)
     unlinked::Bool                          # (taken out of the chain by C_SOFTCUT: see below)
 end
 
@@ -2835,6 +2837,8 @@ const tbl_worklist{T} = worklist{T, tbl_component{T}}
 # `gd.tries` (the blob's payload). `data.worklist` and `data.predicate` are TB0's types (the struct sits after `tbl_worklist` for that), `data.IDG` is a `Nothing` slot TB6 widens (a field typed `Any` fails the gate of nonconcrete fields); `data.variant` is a node id.
 # `magic`, `references`, `node_count`, `value_count`, `flags` are `Int`/`UInt32`. `records`/`free_records` (part B): a node value that is
 # neither an atom nor a tagged integer is a `record` (upstream: a pointer, `isRecord(w)` = low two bits 0); here the word is `index << 2`, the index into `records`.
+# `clause_cref` (TR4, after `clause`) is the reference `assertDefinition!` gave the compiled clause: upstream's `clause_clref(dbref)` returns
+# that reference, the kernel's returns the clause, so `compile_trie` keeps it for S_TRIE_GEN's TRUST_CLAUSE (audit D-0487 item 2).
 "A trie of terms `T` (pl-trie.h `struct trie`)."
 mutable struct trie{T}
     symbol::word                                        # the associated symbol (0: none yet)
@@ -2848,12 +2852,13 @@ mutable struct trie{T}
     free_ids::Vector{Int}                               # node ids to reuse
     free_blocks::Vector{Int}                            # block ids to reuse
     indirects::Union{Nothing, indirect_table{T}}        # indirect values
-    clause::word                                        # compiled representation (TR4: always 0 here)
+    clause::word                                        # compiled representation: its clause blob's atom word, `fail`, or 0
+    clause_cref::Union{Nothing, ClauseRef{T}}           # (TR4: the reference assertDefinition! gave the compiled clause; nothing: none)
     chunks::Union{Nothing, trie_node_chunk}             # node chunks
     lingering::Vector{Int}                              # ids of replaced children blocks of a TRIE_CONCURRENT trie, freed by free_lingering_blocks
     lookups::Int                                        # stats.lookups
     gen_call::Int                                       # stats.gen_call
-    worklist::Union{Nothing, tbl_worklist{T}}           # data.worklist (TB0's worklist; nothing: NULL)
+    worklist::Union{Nothing, Int, tbl_worklist{T}}      # data.worklist (TB0's worklist; nothing: NULL; an Int: the sentinel WL_GROUND / WL_DYNAMIC, TB1)
     variant::Int                                        # data.variant: a node id of the variant trie (TB0)
     # `IDG` stays `Nothing` until TB6: TB0 leaves `idg_node`/`idg_mdep`/`idg_mono` to TB6 (the notes above `alloc_pool`), a field typed `Any` fails the nonconcrete-fields gate
     IDG::Nothing                                        # data.IDG
@@ -2861,6 +2866,7 @@ mutable struct trie{T}
     serial::Int                                         # the trie's number in `gd.tries` (0: not registered)
     records::Vector{Union{Nothing, record{T}}}          # the recorded values of the nodes (a value word `index << 2`), `nothing`: a free slot
     free_records::Vector{Int}                           # slots of `records` to reuse
+    registry::Vector{trie{T}}                           # the database's trie table `gd.tries`, shared by reference (TB1: `release_node` has no `gd`, a TriePtr value names a trie by number)
 end
 
 # ── trie_gen/2,3: the enumeration state (pl-trie.c :3260-3360), since TR2 ─────────────────────────────────────────────────────────

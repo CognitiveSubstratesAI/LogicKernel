@@ -110,6 +110,7 @@ end
 # ---- LIFE ----
 
 function _tr_life_rows(::Type{T}) where {T}
+    gd = LK.PL_global_data{T}()                 # the database trie_discard_clause takes (TR4)
     tr = LK.trie_create(T)
     @test tr.magic == LK.TRIE_MAGIC
     @test tr.node_count == 1 && length(tr.nodes) == 1 && tr.value_count == 0
@@ -123,9 +124,9 @@ function _tr_life_rows(::Type{T}) where {T}
     LK.insert_child(tr, 1, _tk(5))
     LK.insert_child(tr, 1, _tk(6))
     tr.references = 1
-    @test !LK.empty_trie(tr, nothing)
-    LK.trie_empty(tr)
-    @test !LK.trie_empty_take(tr, v -> error("no value is taken from a trie in use"))
+    @test !LK.empty_trie(gd, tr, nothing)
+    LK.trie_empty(gd, tr)
+    @test !LK.trie_empty_take(gd, tr, v -> error("no value is taken from a trie in use"))
     @test tr.node_count == 3 && length(tr.nodes) == 3
     # an unreferenced one hands every value to the taker, and the arenas are reset
     tr.references = 0
@@ -133,57 +134,68 @@ function _tr_life_rows(::Type{T}) where {T}
     tr.nodes[3].flags |= LK.TN_PRIMARY
     tr.value_count = 1
     taken = UInt64[]
-    @test LK.trie_empty_take(tr, v -> push!(taken, v))
+    @test LK.trie_empty_take(gd, tr, v -> push!(taken, v))
     @test taken == [UInt64(9)]
     @test tr.node_count == 1 && length(tr.nodes) == 1 && tr.value_count == 0
     @test isempty(tr.blocks) && isempty(tr.free_ids) && isempty(tr.free_blocks) &&
         tr.nodes[1].children == 0
     # empty_trie clears the discard flags
     tr.flags = LK.TRIE_DISCARDABLE | LK.TRIE_ISSET
-    @test LK.empty_trie(tr, nothing)
+    @test LK.empty_trie(gd, tr, nothing)
     @test tr.flags == LK.TRIE_ISSET
 
     # trie_destroy: marks, empties
     tr2, _ = _tr_fan(T, 3)
-    LK.trie_destroy(tr2)
+    LK.trie_destroy(gd, tr2)
     @test tr2.magic == LK.TRIE_CMAGIC && tr2.node_count == 1 && length(tr2.nodes) == 1
     # a destroyed trie still in use keeps its nodes until it is cleaned up
     tr3, _ = _tr_fan(T, 2)
     tr3.references = 1
-    LK.trie_destroy(tr3)
+    LK.trie_destroy(gd, tr3)
     @test tr3.magic == LK.TRIE_CMAGIC && tr3.node_count == 3
-    LK.trie_clean(tr3)
+    LK.trie_clean(gd, tr3)
     @test tr3.node_count == 3
     tr3.references = 0
-    LK.trie_clean(tr3)
+    LK.trie_clean(gd, tr3)
     @test tr3.node_count == 1
     # trie_clean leaves a live trie alone
     tr4, _ = _tr_fan(T, 2)
-    LK.trie_clean(tr4)
+    LK.trie_clean(gd, tr4)
     @test tr4.magic == LK.TRIE_MAGIC && tr4.node_count == 3
-    # trie_discard_clause: no clause, no refusal; a clause is refused by name (owner TR4)
-    @test LK.trie_discard_clause(tr4) === nothing
+    # trie_discard_clause: no clause, nothing to do; a clause word without a kept reference (as `fail`) is cleared, no retract
+    @test LK.trie_discard_clause(gd, tr4) === nothing && tr4.clause == 0
     tr4.clause = UInt64(1)
-    @test_throws LK.TrieRefusal LK.trie_discard_clause(tr4)
-    tr4.clause = UInt64(0)
+    @test LK.trie_discard_clause(gd, tr4) === nothing && tr4.clause == 0 &&
+        tr4.clause_cref === nothing
     # trie_ensure_nodes: true unless discarded, whose restore is refused by name
     @test LK.trie_ensure_nodes(tr4)
     tr4.flags = LK.TRIE_DISCARDED
     @test_throws LK.TrieRefusal LK.trie_ensure_nodes(tr4)
-    # a node of a table / variant trie that reaches tbl_release_node is refused by name (owner TB1)
+    # a node of a variant trie reaches tbl_release_node (TB1: release_variant_table_node): no value, nothing to release; a value that
+    # is no trie pointer (a symbol: the shared tables) is refused by name (owner TH1)
     tr5, ids = _tr_fan(T, 1)
     tr5.flags = LK.TRIE_ISVARIANT
+    @test LK.release_node(tr5, ids[1]) === nothing
+    tr5.nodes[ids[1]].value = UInt64(4)
     err = try
         LK.release_node(tr5, ids[1])
         nothing
     catch e
         e
     end
-    @test err isa LK.TrieRefusal && err.owner == "TB1"
+    @test err isa LK.NotPortedError && err.step == "TH1"
+    tr5.nodes[ids[1]].value = UInt64(0)
+    # an answer trie (TRIE_ISTABLE): a node with TN_DELAYINFO is refused by name (owner TB4)
     tr5.flags = LK.TRIE_ISTABLE
     LK.release_node(tr5, ids[1])                       # TN_DELAYINFO not set: nothing to release
     tr5.nodes[ids[1]].flags |= LK.TN_DELAYINFO
-    @test_throws LK.TrieRefusal LK.release_node(tr5, ids[1])
+    err = try
+        LK.release_node(tr5, ids[1])
+        nothing
+    catch e
+        e
+    end
+    @test err isa LK.NotPortedError && err.step == "TB4"
     return nothing
 end
 
@@ -428,6 +440,7 @@ end
 # ---- ALLOCATION ----
 
 function _tr_concurrent_rows(::Type{T}) where {T}
+    gd = LK.PL_global_data{T}()                 # the database trie_destroy takes (TR4)
     # TRIE_CONCURRENT: every node individual (no chunks), a replaced block lingers
     tr = LK.trie_create(T)
     tr.flags = LK.TRIE_CONCURRENT
@@ -456,7 +469,7 @@ function _tr_concurrent_rows(::Type{T}) where {T}
     end
     @test LK.children_block_id(tr.nodes[1].children) == 1 && tr.lingering == [2]       # 4 -> 8 took the freed slot 1
     # trie_destroy frees the lingering blocks too
-    LK.trie_destroy(tr)
+    LK.trie_destroy(gd, tr)
     @test isempty(tr.lingering) && isempty(tr.blocks) && tr.node_count == 1
     # a trie without the flag: free_lingering_blocks does nothing
     tr, _ = _tr_fan(T, 3)
@@ -719,6 +732,7 @@ end
 end
 
 function _tr_clear_rows(::Type{T}) where {T}
+    gd = LK.PL_global_data{T}()                 # the database empty_trie takes (TR4)
     tr = LK.trie_create(T)
     for k in 1:40
         LK.insert_child(tr, 1, _tk(k))
@@ -736,7 +750,7 @@ function _tr_clear_rows(::Type{T}) where {T}
     tr.value_count = 3
     tr.indirects = LK.new_indirect_table(T)
     vals = UInt64[]
-    @test LK.empty_trie(tr, v -> push!(vals, v))
+    @test LK.empty_trie(gd, tr, v -> push!(vals, v))
     @test sort(vals) == UInt64[7, 9, 11]
     @test tr.node_count == 1 && length(tr.nodes) == 1 && tr.chunks === nothing &&
         tr.indirects === nothing && tr.value_count == 0
@@ -1530,7 +1544,7 @@ function _tr_blob_rows(::Type{T}) where {T}
     @test _tr_formal(ld) == (:type_error, :trie)
     LK.PL_clear_exception(ld)
     # a destroyed trie: symbol_trie and get_trie refuse it (existence_error(trie, _)); get_trie_noex still names it
-    LK.trie_destroy(tr)
+    LK.trie_destroy(gd, tr)
     @test tr.magic == LK.TRIE_CMAGIC && LK.symbol_trie(gd, w) === nothing &&
         LK.trie_of_word(gd, w) === tr
     @test LK.get_trie_noex(gd, ld, ref) === tr && ld.exception_term == 0
@@ -1631,4 +1645,47 @@ end
 
 @testset "trie keys: a repeated variable key is unified with its first occurrence" begin
     _tr_unify_rows(_TT)
+end
+
+# ---- THE KEPT CLAUSE REFERENCE (trie_discard_clause) ----
+
+"A set trie with one path (one opaque atom key) and a value, compiled by `compile_trie` into trie_gen_compiled/2: `(trie, kept clause reference)`."
+function _tr_compiled_one(gd, ld, ::Type{T}) where {T}
+    tr = LK.trie_create(T)
+    n = LK.insert_child(tr, 1, _tk(1))
+    tr.nodes[n].value = UInt64(5)        # a tagged integer (low bits 101): not a record, not a trie pointer (tag 7: release_value would look it up)
+    tr.nodes[n].flags |= LK.TN_PRIMARY
+    tr.value_count = 1
+    dbref = LK.compile_trie(gd, ld, gd.procedures_trie_gen_compiled2.definition, tr)
+    @test dbref != 0 && tr.clause == dbref && tr.clause_cref !== nothing
+    return tr, tr.clause_cref
+end
+
+# The invariant behind `cl = cref.clause::Clause{T}` in `trie_discard_clause` (src/pl-trie.jl): the reference a trie keeps holds its clause for
+# the trie's whole life. swipl-devel 18168e62 src/pl-trie.c:283 reads `cref->value.clause` and dereferences it with no test (only `if (cref)`
+# at :282): the pin has no defined behaviour for a reference without a clause, so there is no swipl answer to pin: this row asserts the
+# kernel's invariant (a defined-behaviour gap in the pin, an assertion in the kernel). White-box.
+function _tr_discard_clause_rows(::Type{T}) where {T}
+    gd, ld, _ = _tr_engine(T, T[lk_sym(T, :k)])
+    tr, cref = _tr_compiled_one(gd, ld, T)
+    cl = cref.clause
+    @test cl isa LK.Clause{T} && cref.clauses === nothing     # a clause cell, not an index list cell
+    @test (cl.flags & LK.CL_ERASED) == 0                      # live while the trie holds it
+    # trie_destroy reaches trie_discard_clause: the clause is retracted, the reference still holds it (no TypeError)
+    LK.trie_destroy(gd, tr)
+    @test tr.clause == 0 && tr.clause_cref === nothing
+    @test (cl.flags & LK.CL_ERASED) != 0                      # the retract ran on that clause (kills TR4-D3, TR4-D4, TR4-D5)
+    @test cref.clause === cl                                  # an erased clause stays in its reference, as at the pin
+    # a halt in progress (`gd.halt_cleaning` not CLN_NORMAL): the word and the reference are dropped, nothing is retracted
+    tr2, cref2 = _tr_compiled_one(gd, ld, T)
+    cl2 = cref2.clause
+    gd.halt_cleaning = LK.CLN_DATA
+    LK.trie_discard_clause(gd, tr2)
+    gd.halt_cleaning = LK.CLN_NORMAL
+    @test (cl2.flags & LK.CL_ERASED) == 0 && tr2.clause == 0 && tr2.clause_cref === nothing
+    return nothing
+end
+
+@testset "trie_discard_clause: the kept reference holds a live clause (white-box)" begin
+    _tr_discard_clause_rows(_TT)
 end

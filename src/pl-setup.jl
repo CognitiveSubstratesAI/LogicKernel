@@ -329,14 +329,18 @@ function setupProlog(::Type{T})::PL_global_data{T} where {T}
         dc_proc,                                # procedures_call_continuation1: set by initBuildIns!
         dc_proc,                                # procedures_dmeta_call1: set by initBuildIns!
         dc_proc,                                # procedures_findall_loop4: set by findReset
+        dc_proc,                                # procedures_trie_gen_compiled2: set by initTries!(gd) (TR4)
+        dc_proc,                                # procedures_trie_gen_compiled3: set by initTries!(gd) (TR4)
         GEN_INVALID,                            # reload_generation: no file is being reloaded (R2 LB6a)
         initDefaultOptions!(pl_options_t()),    # options: pl-init.c initDefaultOptions, before the command line is read (R2 LB7)
         pl_cmdline_t(),                         # cmdline: no arguments, packs on, no -O (R2 LB7)
         nothing,                                # defaults_home: set with the `home` flag by initPrologFlags!
         LDTable(),                              # ld_table: no wrapped stream yet (R2 TOP1b E)
-        Dict{Int, delay_info}()                 # tabling_answer_delay_infos: initTabling's newHTablePP(64) (pl-tabling.c:12696; TAB1 TB0)
+        Dict{Int, delay_info}(),                # tabling_answer_delay_infos: initTabling's newHTablePP(64) (pl-tabling.c:12696; TAB1 TB0)
+        0                                       # tabling_start_node_ids: no start node id handed out (pl-tabling.c:12348; TAB1 TB1)
     )
     initPrologFlags!(gd)                        # setup:136 (src/os/pl-prologflag.jl): before the built-ins (:158), whose boot clauses read the mask
+    initTries!(gd)                              # initTries (setup:149), its tail: trie_gen_compiled/2,3 (TR4, src/pl-trie.jl)
     initBuildIns!(gd)                           # setup:158 (src/pl-ext.jl)
     initOperators!(gd)                          # setup:164 (src/pl-op.jl)
     return gd

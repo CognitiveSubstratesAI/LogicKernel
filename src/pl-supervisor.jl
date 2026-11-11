@@ -17,16 +17,16 @@
 # is passed in where upstream reads `global_generation()`.
 #
 # Since V5a2, the deterministic foreign supervisors (`createForeignSupervisor`). Left out: the
-# non-deterministic ones (`I_FOPENNDET` …, V9), the tabling supervisors (`S_INCR_DYNAMIC`, `S_TRIE_GEN`) and
-# `S_THREAD_LOCAL` — none of their subsystems exists. Since TAB1-min (T3/T4/T5) the wrapper supervisors
+# non-deterministic ones (`I_FOPENNDET` …, V9), the tabling supervisor `S_INCR_DYNAMIC` and
+# `S_THREAD_LOCAL` — none of their subsystems exists (`S_TRIE_GEN`, compiled tries, is in since TR4). Since TAB1-min (T3/T4/T5) the wrapper supervisors
 # (`S_CALLWRAPPER`, `S_TABLED`; src/pl-wrap.jl) are installed by `'$c_wrap_predicate'/5` and kept by `freeCodesDefinition!`;
 # `S_WRAP` and the shared `wrapper` block (`PL_code_data.wrapper`) belong to the closure's copy of the wrapped predicate;
 # since WRAP1 the run loop runs `S_WRAP` and `S_CALLWRAPPER`, and refuses `S_TABLED` by name (TAB1).
 
 # PORT: pl-supervisor.c initSupervisors
 # DIVERGES: returns the database's shared blocks (one `PL_code_data` per database). Each is
-# upstream's `[I, I_EXIT]` without the length word; `incr_dynamic`, `thread_local` and `trie_gen` are
-# left out (see above); `wrapper` is TAB1-min's (T3).
+# upstream's `[I, I_EXIT]` without the length word; `incr_dynamic` and `thread_local` are
+# left out (see above); `wrapper` is TAB1-min's (T3), `trie_gen` TR4's (the supervisor of trie_gen_compiled/2,3).
 "The shared supervisor code blocks, each `[I, I_EXIT]` (pl-supervisor.c `initSupervisors`)."
 function initSupervisors()::PL_code_data
     return PL_code_data(
@@ -36,7 +36,8 @@ function initSupervisors()::PL_code_data
         code[S_DYNAMIC, I_EXIT],            # MAKE_SV1(dynamic, S_DYNAMIC)
         code[S_MULTIFILE, I_EXIT],          # MAKE_SV1(multifile, S_MULTIFILE)
         code[S_STATIC, I_EXIT],             # MAKE_SV1(staticp, S_STATIC)
-        code[S_WRAP, I_EXIT]                # MAKE_SV1(wrapper, S_WRAP)
+        code[S_WRAP, I_EXIT],               # MAKE_SV1(wrapper, S_WRAP)
+        code[S_TRIE_GEN, I_EXIT]            # MAKE_SV1(trie_gen, S_TRIE_GEN) (TR4)
     )
 end
 
@@ -44,7 +45,7 @@ end
 function _shared_supervisor(cd::PL_code_data, codes::Vector{code})::Bool
     return codes === cd.exit || codes === cd.virgin || codes === cd.undef ||
            codes === cd.dynamic || codes === cd.multifile || codes === cd.staticp ||
-           codes === cd.wrapper
+           codes === cd.wrapper || codes === cd.trie_gen
 end
 
 # PORT: pl-supervisor.c freeSupervisor

@@ -156,7 +156,7 @@ function _grow_pool!(
             pool,
             choice{T}(
                 0, CHP_JUMP, 0, mark(0, 0, 0), 0, ClauseChoice{T}(nothing, word(0)), 0,
-                false
+                word(0), false
             )
         )
     end

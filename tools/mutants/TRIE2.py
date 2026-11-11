@@ -155,7 +155,7 @@ MUTANTS = [
     m("TR2-R3 $trie_gen_node/3 is deterministic (KILL D t17: one answer instead of two)",
       "\"\\$trie_gen_node\", 3, pl_trie_gen_node3_va, PL_FA_NONDETERMINISTIC | PL_FA_VARARGS", "\"\\$trie_gen_node\", 3, pl_trie_gen_node3_va, PL_FA_VARARGS", targets=TR),
     m("TR2-R4 $trie_property/2 is not registered (KILL D t14, t19: undefined; TB the foreign-row count)",
-      "    PL_extension(\"\\$trie_property\", 2, pl_trie_property2_va, PL_FA_VARARGS)\n", "", targets=TR),
+      "    PL_extension(\"\\$trie_property\", 2, pl_trie_property2_va, PL_FA_VARARGS),\n", "", targets=TR),
     # ---- DEFERRED KILL and EQUIVALENT
     # TR2-K1 and TR2-K2 were declared deferred kills (no row asked a constant of a block holding a variable key); the battery of 61d5e365 (run
     # 43007826638) REFUTED the claim: a program row of test_trie_gen_swipl.jl:180 (the .out answers) fails under each. Listed as kills.

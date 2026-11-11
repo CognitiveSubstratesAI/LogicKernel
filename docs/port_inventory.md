@@ -196,8 +196,8 @@ how many of the upstream file's functions are ported.
 | swipl-devel `src/pl-sys.c` | code | `18168e629eab` | `src/pl-sys.jl` | 6 | 3 |
 | swipl-devel `src/pl-tabling.c` | code | `18168e629eab` | `src/os/pl-prologflag.jl` | 1 | 1 |
 | swipl-devel `src/pl-tabling.c` | code | `18168e629eab` | `src/pl-incl.jl` | 6 | 4 |
-| swipl-devel `src/pl-tabling.c` | code | `18168e629eab` | `src/pl-tabling.jl` | 36 | 15 |
-| swipl-devel `src/pl-tabling.c` | code | `18168e629eab` | `src/pl-trie.jl` | 1 | 1 |
+| swipl-devel `src/pl-tabling.c` | code | `18168e629eab` | `src/pl-tabling.jl` | 84 | 41 |
+| swipl-devel `src/pl-tabling.c` | code | `18168e629eab` | `src/pl-trie.jl` | 0 | 0 |
 | swipl-devel `src/pl-tabling.h` | code | `18168e629eab` | `src/pl-incl.jl` | 30 | 7 |
 | swipl-devel `src/pl-termhash.c` | code | `18168e629eab` | `src/pl-termhash.jl` | 37 | 9 |
 | swipl-devel `src/pl-termhash.h` | code | `18168e629eab` | `src/pl-termhash.jl` | 3 | 1 |
@@ -206,14 +206,16 @@ how many of the upstream file's functions are ported.
 | swipl-devel `src/pl-trace.c` | code | `18168e629eab` | `src/pl-trace.jl` | 11 | 7 |
 | swipl-devel `src/pl-trace.h` | code | `18168e629eab` | `src/pl-trace.jl` | 1 | 0 |
 | swipl-devel `src/pl-trie.c` | code | `18168e629eab` | `src/pl-incl.jl` | 7 | 4 |
-| swipl-devel `src/pl-trie.c` | code | `18168e629eab` | `src/pl-trie.jl` | 140 | 73 |
+| swipl-devel `src/pl-trie.c` | code | `18168e629eab` | `src/pl-tabling.jl` | 1 | 0 |
+| swipl-devel `src/pl-trie.c` | code | `18168e629eab` | `src/pl-trie.jl` | 161 | 83 |
 | swipl-devel `src/pl-trie.h` | code | `18168e629eab` | `src/pl-incl.jl` | 36 | 1 |
-| swipl-devel `src/pl-trie.h` | code | `18168e629eab` | `src/pl-trie.jl` | 5 | 2 |
+| swipl-devel `src/pl-trie.h` | code | `18168e629eab` | `src/pl-tabling.jl` | 4 | 2 |
+| swipl-devel `src/pl-trie.h` | code | `18168e629eab` | `src/pl-trie.jl` | 6 | 2 |
 | swipl-devel `src/pl-umap.c` | code | `18168e629eab` | `src/pl-umap.jl` | 6 | 3 |
 | swipl-devel `src/pl-variant.c` | code | `18168e629eab` | `src/pl-global.jl` | 2 | 2 |
 | swipl-devel `src/pl-variant.c` | code | `18168e629eab` | `src/pl-variant.jl` | 16 | 6 |
-| swipl-devel `src/pl-vmi.c` | code | `18168e629eab` | `src/pl-vmi.jl` | 169 | 0 |
-| swipl-devel `src/pl-vmi.c` | code | `18168e629eab` | `src/pl-wam.jl` | 195 | 128 |
+| swipl-devel `src/pl-vmi.c` | code | `18168e629eab` | `src/pl-vmi.jl` | 197 | 0 |
+| swipl-devel `src/pl-vmi.c` | code | `18168e629eab` | `src/pl-wam.jl` | 235 | 147 |
 | swipl-devel `src/pl-wam.c` | code | `18168e629eab` | `src/pl-wam.jl` | 54 | 43 |
 | swipl-devel `src/pl-wrap.c` | code | `18168e629eab` | `src/pl-wrap.jl` | 18 | 18 |
 | swipl-devel `src/pl-wrap.h` | code | `18168e629eab` | `src/pl-incl.jl` | 1 | 0 |
@@ -346,7 +348,7 @@ checkout is pulled.
 | swipl-devel `src/pl-string.c` | `18168e629eab` | 15 | 18 | 9 | src/pl-string.jl |
 | swipl-devel `src/pl-supervisor.c` | `18168e629eab` | 16 | 28 | 9 | src/pl-supervisor.jl |
 | swipl-devel `src/pl-sys.c` | `18168e629eab` | 6 | 7 | 3 | src/pl-sys.jl |
-| swipl-devel `src/pl-tabling.c` | `18168e629eab` | 16 | 452 | 13 | src/os/pl-prologflag.jl, src/pl-incl.jl, src/pl-tabling.jl, src/pl-trie.jl |
+| swipl-devel `src/pl-tabling.c` | `18168e629eab` | 41 | 452 | 32 | src/os/pl-prologflag.jl, src/pl-incl.jl, src/pl-tabling.jl, src/pl-trie.jl |
 | swipl-devel `src/pl-tabling.h` | `18168e629eab` | 0 | 0 | 0 | src/pl-incl.jl |
 | swipl-devel `src/pl-termhash.c` | `18168e629eab` | 12 | 16 | 3 | src/pl-termhash.jl |
 | swipl-devel `src/pl-termhash.h` | `18168e629eab` | 0 | 0 | 0 | src/pl-termhash.jl |
@@ -354,11 +356,11 @@ checkout is pulled.
 | swipl-devel `src/pl-thread.c` | `18168e629eab` | 7 | 268 | 5 | src/pl-thread.jl |
 | swipl-devel `src/pl-trace.c` | `18168e629eab` | 11 | 77 | 7 | src/pl-trace.jl |
 | swipl-devel `src/pl-trace.h` | `18168e629eab` | 0 | 0 | 0 | src/pl-trace.jl |
-| swipl-devel `src/pl-trie.c` | `18168e629eab` | 109 | 171 | 68 | src/pl-incl.jl, src/pl-trie.jl |
-| swipl-devel `src/pl-trie.h` | `18168e629eab` | 1 | 5 | 1 | src/pl-incl.jl, src/pl-trie.jl |
+| swipl-devel `src/pl-trie.c` | `18168e629eab` | 128 | 171 | 76 | src/pl-incl.jl, src/pl-tabling.jl, src/pl-trie.jl |
+| swipl-devel `src/pl-trie.h` | `18168e629eab` | 5 | 5 | 2 | src/pl-incl.jl, src/pl-tabling.jl, src/pl-trie.jl |
 | swipl-devel `src/pl-umap.c` | `18168e629eab` | 4 | 8 | 3 | src/pl-umap.jl |
 | swipl-devel `src/pl-variant.c` | `18168e629eab` | 9 | 17 | 5 | src/pl-global.jl, src/pl-variant.jl |
-| swipl-devel `src/pl-vmi.c` | `18168e629eab` | 169 | 243 | 91 | src/pl-vmi.jl, src/pl-wam.jl |
+| swipl-devel `src/pl-vmi.c` | `18168e629eab` | 197 | 243 | 101 | src/pl-vmi.jl, src/pl-wam.jl |
 | swipl-devel `src/pl-wam.c` | `18168e629eab` | 50 | 98 | 41 | src/pl-wam.jl |
 | swipl-devel `src/pl-wrap.c` | `18168e629eab` | 13 | 21 | 13 | src/pl-wrap.jl |
 | swipl-devel `src/pl-wrap.h` | `18168e629eab` | 0 | 0 | 0 | src/pl-incl.jl, src/pl-wrap.jl |
@@ -378,7 +380,7 @@ checkout is pulled.
 | swipl-devel `tests/db/test_db.pl` | `18168e629eab` | 2 | 10 | 0 | test/db/test_db.jl |
 | swipl-devel `tests/db/test_jit.pl` | `18168e629eab` | 16 | 21 | 0 | test/db/test_jit.jl |
 | swipl-devel `tests/rational/test_ieee754.pl` | `18168e629eab` | 0 | 15 | 0 | test/rational/test_ieee754.jl |
-| **total** | | **2196** | **5354** | **1315** | |
+| **total** | | **2272** | **5354** | **1353** | |
 <!-- END GENERATED coverage -->
 
 ### Not ported: unreachable upstream
@@ -732,36 +734,36 @@ marker exists in `src/pl-vmi.jl` (declaration only — no instruction executes y
 
 | instruction | pl-vmi.c | operands | needed by | kernel |
 |---|---|---|---|---|
-| `S_TRIE_GEN` | 5931 | — |  |  |
-| `T_TRIE_GEN2` | 6101 | — |  |  |
-| `T_TRIE_GEN3` | 6134 | — |  |  |
-| `T_VALUE` | 6169 | — |  |  |
-| `T_DELAY` | 6192 | CA1_TRIE_NODE |  |  |
-| `T_TRY_FUNCTOR` | 6216 | CA1_JUMP,CA1_FUNC |  |  |
-| `T_FUNCTOR` | 6221 | CA1_FUNC |  |  |
-| `T_POP` | 6274 | — |  |  |
-| `T_POPN` | 6284 | CA1_INTEGER |  |  |
-| `T_TRY_VAR` | 6304 | CA1_JUMP,CA1_INTEGER |  |  |
-| `T_VAR` | 6309 | CA1_INTEGER |  |  |
-| `T_TRY_ATTVARA` | 6356 | CA1_JUMP,CA1_INTEGER |  |  |
-| `T_ATTVARA` | 6361 | CA1_INTEGER |  |  |
-| `T_TRY_ATTVARZ` | 6449 | CA1_JUMP,CA1_INTEGER |  |  |
-| `T_ATTVARZ` | 6454 | CA1_INTEGER |  |  |
-| `T_TRY_ATTVARZT` | 6460 | CA1_JUMP,CA1_INTEGER |  |  |
-| `T_ATTVARZT` | 6465 | CA1_INTEGER |  |  |
-| `T_TRY_FLOAT` | 6471 | CA1_JUMP,CA1_FLOAT |  |  |
-| `T_FLOAT` | 6476 | CA1_FLOAT |  |  |
-| `T_TRY_MPZ` | 6519 | CA1_JUMP,CA1_MPZ |  |  |
-| `T_MPZ` | 6524 | CA1_MPZ |  |  |
-| `T_TRY_STRING` | 6530 | CA1_JUMP,CA1_STRING |  |  |
-| `T_STRING` | 6535 | CA1_STRING |  |  |
-| `T_TRY_ATOM` | 6562 | CA1_JUMP,CA1_DATA |  |  |
-| `T_ATOM` | 6568 | CA1_DATA |  |  |
-| `T_TRY_SMALLINT` | 6576 | CA1_JUMP,CA1_INTEGER |  |  |
-| `T_SMALLINT` | 6582 | CA1_INTEGER |  |  |
+| `S_TRIE_GEN` | 5931 | — |  | declared |
+| `T_TRIE_GEN2` | 6101 | — |  | declared |
+| `T_TRIE_GEN3` | 6134 | — |  | declared |
+| `T_VALUE` | 6169 | — |  | declared |
+| `T_DELAY` | 6192 | CA1_TRIE_NODE |  | declared |
+| `T_TRY_FUNCTOR` | 6216 | CA1_JUMP,CA1_FUNC |  | declared |
+| `T_FUNCTOR` | 6221 | CA1_FUNC |  | declared |
+| `T_POP` | 6274 | — |  | declared |
+| `T_POPN` | 6284 | CA1_INTEGER |  | declared |
+| `T_TRY_VAR` | 6304 | CA1_JUMP,CA1_INTEGER |  | declared |
+| `T_VAR` | 6309 | CA1_INTEGER |  | declared |
+| `T_TRY_ATTVARA` | 6356 | CA1_JUMP,CA1_INTEGER |  | declared |
+| `T_ATTVARA` | 6361 | CA1_INTEGER |  | declared |
+| `T_TRY_ATTVARZ` | 6449 | CA1_JUMP,CA1_INTEGER |  | declared |
+| `T_ATTVARZ` | 6454 | CA1_INTEGER |  | declared |
+| `T_TRY_ATTVARZT` | 6460 | CA1_JUMP,CA1_INTEGER |  | declared |
+| `T_ATTVARZT` | 6465 | CA1_INTEGER |  | declared |
+| `T_TRY_FLOAT` | 6471 | CA1_JUMP,CA1_FLOAT |  | declared |
+| `T_FLOAT` | 6476 | CA1_FLOAT |  | declared |
+| `T_TRY_MPZ` | 6519 | CA1_JUMP,CA1_MPZ |  | declared |
+| `T_MPZ` | 6524 | CA1_MPZ |  | declared |
+| `T_TRY_STRING` | 6530 | CA1_JUMP,CA1_STRING |  | declared |
+| `T_STRING` | 6535 | CA1_STRING |  | declared |
+| `T_TRY_ATOM` | 6562 | CA1_JUMP,CA1_DATA |  | declared |
+| `T_ATOM` | 6568 | CA1_DATA |  | declared |
+| `T_TRY_SMALLINT` | 6576 | CA1_JUMP,CA1_INTEGER |  | declared |
+| `T_SMALLINT` | 6582 | CA1_INTEGER |  | declared |
 | `T_TRY_SMALLINTW` | 6589 | CA1_JUMP,CA1_WORD |  |  |
 | `T_SMALLINTW` | 6595 | CA1_WORD |  |  |
-| `T_CHECKWAKEUP` | 6624 | — |  |  |
+| `T_CHECKWAKEUP` | 6624 | — |  | declared |
 
 </details>
 

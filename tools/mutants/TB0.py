@@ -227,9 +227,9 @@ MUTANTS = [
     # ── pl-tabling.jl: the sentinels and modes of pl-tabling.c:283-300 ──
     dict(id="TB0-K1 WL_GROUND is even, so it is no sentinel (KILL TT:287 `WL_IS_SPECIAL(WL_GROUND)`; TT:302 `(WL_GROUND, WL_DYNAMIC) == (0x21, 0x41)`)",
          file=TAB, targets=[TT],
-         old="const WL_GROUND = 0x21\n",
-         new="const WL_GROUND = 0x20\n"),
-    dict(id="TB0-K3 DL_UNDEFINED is 0, the NULL delay list (KILL TT:301 `(DV_DELETED, DL_UNDEFINED) == (1, 1)`, row R9; TT:289 follows the constant and does not see it)",
+         old="const WL_GROUND = Int(0x21)\n",
+         new="const WL_GROUND = Int(0x20)\n"),
+    dict(id="TB0-K3 DL_UNDEFINED is 0, the NULL delay list (KILL TT:301 `(DV_DELETED, DL_UNDEFINED) == (-1, 1)`, row R9; TT:289 follows the constant and does not see it)",
          file=TAB, targets=[TT],
          old="const DL_UNDEFINED = 1\n",
          new="const DL_UNDEFINED = 0\n"),

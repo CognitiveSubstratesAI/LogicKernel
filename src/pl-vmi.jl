@@ -641,6 +641,97 @@ const I_SHIFT = code(167)
 # PORT: pl-vmi.c I_SHIFTCP
 "`'\$shift_for_copy'(Ball)` on a variable already seen: `I_SHIFT` for a copied continuation (pl-vmi.c). Compiled since LB4 b2; run: CONT1."
 const I_SHIFTCP = code(168)
+# TR4 (compiled tries): `S_TRIE_GEN` (pl-vmi.c:5937) and the `T_*` family (pl-vmi.c:6134-6660) in pl-vmi.c's order. `T_SMALLINTW`/
+# `T_TRY_SMALLINTW` are not declared, as `H_SMALLINTW` (`CODES_PER_WORD == 1`: compile_trie never emits them, pl-trie.c:4645).
+# OPERANDS (DIVERGES): `T_FUNCTOR`'s is the functor word and `T_ATOM`'s the atom word, as upstream's (a trie clause is never
+# decompiled or indexed, so no literal is packed in, unlike `H_FUNCTOR`/`H_ATOM`); `T_SMALLINT`'s the tagged word, as
+# `H_SMALLINT`'s; `T_FLOAT`/`T_MPZ`/`T_STRING` carry ONE word, the index of the value in the clause's literal table, as `H_FLOAT`
+# (upstream: the double, or a `VM_DYNARGC` block); `T_DELAY`'s is the node handle `trie_node_handle` (upstream: the node pointer);
+# a `T_TRY_*`'s first operand is the else offset, as upstream's (`CA1_JUMP`, filled by `fixup_else`).
+# PORT: pl-vmi.c S_TRIE_GEN
+"Supervisor of `trie_gen_compiled/2,3`: compile the trie in the first argument on demand and run its clause in the same frame (pl-vmi.c; TR4)."
+const S_TRIE_GEN = code(169)
+# PORT: pl-vmi.c T_TRIE_GEN2
+"First instruction of a compiled trie of `trie_gen_compiled/2`: set up the trie state of the frame (pl-vmi.c; TR4)."
+const T_TRIE_GEN2 = code(170)
+# PORT: pl-vmi.c T_TRIE_GEN3
+"First instruction of a compiled trie of `trie_gen_compiled/3`: set up the trie state of the frame (pl-vmi.c; TR4)."
+const T_TRIE_GEN3 = code(171)
+# PORT: pl-vmi.c T_VALUE
+"Continue with the value of a compiled trie map: unwind the argument stack, the term is argument 2 (pl-vmi.c; TR4)."
+const T_VALUE = code(172)
+# PORT: pl-vmi.c T_DELAY
+"Push the condition of a conditional answer of a compiled trie on the delay list; operand the node handle (pl-vmi.c; TR4 declares it, the body is TB4's)."
+const T_DELAY = code(173)
+# PORT: pl-vmi.c T_TRY_FUNCTOR
+"`T_FUNCTOR` with an alternative: a CHP_JUMP choice point to the else operand (pl-vmi.c; TR4)."
+const T_TRY_FUNCTOR = code(174)
+# PORT: pl-vmi.c T_FUNCTOR
+"Unify the current trie position with a compound of the functor operand and descend into it (pl-vmi.c; TR4)."
+const T_FUNCTOR = code(175)
+# PORT: pl-vmi.c T_POP
+"Leave the current compound of a compiled trie (pl-vmi.c; TR4)."
+const T_POP = code(176)
+# PORT: pl-vmi.c T_POPN
+"Leave N compounds of a compiled trie (pl-vmi.c; TR4)."
+const T_POPN = code(177)
+# PORT: pl-vmi.c T_TRY_VAR
+"`T_VAR` with an alternative (pl-vmi.c; TR4)."
+const T_TRY_VAR = code(178)
+# PORT: pl-vmi.c T_VAR
+"Unify the current trie position with trie variable N (pl-vmi.c; TR4)."
+const T_VAR = code(179)
+# PORT: pl-vmi.c T_TRY_ATTVARA
+"`T_ATTVARA` with an alternative (pl-vmi.c; TR4)."
+const T_TRY_ATTVARA = code(180)
+# PORT: pl-vmi.c T_ATTVARA
+"Start attributed trie variable N: create it on its first occurrence and descend into its attributes (pl-vmi.c; TR4)."
+const T_ATTVARA = code(181)
+# PORT: pl-vmi.c T_TRY_ATTVARZ
+"`T_ATTVARZ` with an alternative (pl-vmi.c; TR4)."
+const T_TRY_ATTVARZ = code(182)
+# PORT: pl-vmi.c T_ATTVARZ
+"End attributed trie variable N: bind the position it stands for (pl-vmi.c `t_attvarz`, istable false; TR4)."
+const T_ATTVARZ = code(183)
+# PORT: pl-vmi.c T_TRY_ATTVARZT
+"`T_ATTVARZT` with an alternative (pl-vmi.c; TR4)."
+const T_TRY_ATTVARZT = code(184)
+# PORT: pl-vmi.c T_ATTVARZT
+"`T_ATTVARZ` for a table's trie: a trailed assignment instead of `assignAttVar` (pl-vmi.c `t_attvarz`, istable true; TR4)."
+const T_ATTVARZT = code(185)
+# PORT: pl-vmi.c T_TRY_FLOAT
+"`T_FLOAT` with an alternative (pl-vmi.c; TR4)."
+const T_TRY_FLOAT = code(186)
+# PORT: pl-vmi.c T_FLOAT
+"Unify the current trie position with the float of the literal operand (pl-vmi.c; TR4)."
+const T_FLOAT = code(187)
+# PORT: pl-vmi.c T_TRY_MPZ
+"`T_MPZ` with an alternative (pl-vmi.c; TR4)."
+const T_TRY_MPZ = code(188)
+# PORT: pl-vmi.c T_MPZ
+"Unify the current trie position with the big integer (or other indirect) of the literal operand (pl-vmi.c; TR4)."
+const T_MPZ = code(189)
+# PORT: pl-vmi.c T_TRY_STRING
+"`T_STRING` with an alternative (pl-vmi.c; TR4)."
+const T_TRY_STRING = code(190)
+# PORT: pl-vmi.c T_STRING
+"Unify the current trie position with the string of the literal operand (pl-vmi.c; TR4)."
+const T_STRING = code(191)
+# PORT: pl-vmi.c T_TRY_ATOM
+"`T_ATOM` with an alternative (pl-vmi.c; TR4)."
+const T_TRY_ATOM = code(192)
+# PORT: pl-vmi.c T_ATOM
+"Unify the current trie position with the atom word operand (pl-vmi.c `t_const`; TR4)."
+const T_ATOM = code(193)
+# PORT: pl-vmi.c T_TRY_SMALLINT
+"`T_SMALLINT` with an alternative (pl-vmi.c; TR4)."
+const T_TRY_SMALLINT = code(194)
+# PORT: pl-vmi.c T_SMALLINT
+"Unify the current trie position with the tagged integer operand (pl-vmi.c `t_const`; TR4)."
+const T_SMALLINT = code(195)
+# PORT: pl-vmi.c T_CHECKWAKEUP
+"Run the wakeup goals of a compiled trie's answer before `I_EXIT` (pl-vmi.c; TR4)."
+const T_CHECKWAKEUP = code(196)
 
 # PORT: pl-incl.h code_info
 # DIVERGES: `arguments` counts the kernel's operand WORDS — a literal is one (see above), where
@@ -826,7 +917,35 @@ const _CODE_TABLE = (
     code_info(:I_EXITRESET, 0x00, 0, (0x00, 0x00, 0x00, 0x00)),
     code_info(:I_CALLCONT, 0x00, 1, (CA1_VAR, 0x00, 0x00, 0x00)),
     code_info(:I_SHIFT, 0x00, 1, (CA1_VAR, 0x00, 0x00, 0x00)),
-    code_info(:I_SHIFTCP, 0x00, 1, (CA1_VAR, 0x00, 0x00, 0x00))
+    code_info(:I_SHIFTCP, 0x00, 1, (CA1_VAR, 0x00, 0x00, 0x00)),
+    code_info(:S_TRIE_GEN, 0x00, 0, (0x00, 0x00, 0x00, 0x00)),
+    code_info(:T_TRIE_GEN2, 0x00, 0, (0x00, 0x00, 0x00, 0x00)),
+    code_info(:T_TRIE_GEN3, 0x00, 0, (0x00, 0x00, 0x00, 0x00)),
+    code_info(:T_VALUE, 0x00, 0, (0x00, 0x00, 0x00, 0x00)),
+    code_info(:T_DELAY, 0x00, 1, (CA1_TRIE_NODE, 0x00, 0x00, 0x00)),
+    code_info(:T_TRY_FUNCTOR, 0x00, 2, (CA1_JUMP, CA1_FUNC, 0x00, 0x00)),
+    code_info(:T_FUNCTOR, 0x00, 1, (CA1_FUNC, 0x00, 0x00, 0x00)),
+    code_info(:T_POP, 0x00, 0, (0x00, 0x00, 0x00, 0x00)),
+    code_info(:T_POPN, 0x00, 1, (CA1_INTEGER, 0x00, 0x00, 0x00)),
+    code_info(:T_TRY_VAR, 0x00, 2, (CA1_JUMP, CA1_INTEGER, 0x00, 0x00)),
+    code_info(:T_VAR, 0x00, 1, (CA1_INTEGER, 0x00, 0x00, 0x00)),
+    code_info(:T_TRY_ATTVARA, 0x00, 2, (CA1_JUMP, CA1_INTEGER, 0x00, 0x00)),
+    code_info(:T_ATTVARA, 0x00, 1, (CA1_INTEGER, 0x00, 0x00, 0x00)),
+    code_info(:T_TRY_ATTVARZ, 0x00, 2, (CA1_JUMP, CA1_INTEGER, 0x00, 0x00)),
+    code_info(:T_ATTVARZ, 0x00, 1, (CA1_INTEGER, 0x00, 0x00, 0x00)),
+    code_info(:T_TRY_ATTVARZT, 0x00, 2, (CA1_JUMP, CA1_INTEGER, 0x00, 0x00)),
+    code_info(:T_ATTVARZT, 0x00, 1, (CA1_INTEGER, 0x00, 0x00, 0x00)),
+    code_info(:T_TRY_FLOAT, 0x00, 2, (CA1_JUMP, CA1_FLOAT, 0x00, 0x00)),
+    code_info(:T_FLOAT, 0x00, 1, (CA1_FLOAT, 0x00, 0x00, 0x00)),
+    code_info(:T_TRY_MPZ, 0x00, 2, (CA1_JUMP, CA1_MPZ, 0x00, 0x00)),
+    code_info(:T_MPZ, 0x00, 1, (CA1_MPZ, 0x00, 0x00, 0x00)),
+    code_info(:T_TRY_STRING, 0x00, 2, (CA1_JUMP, CA1_STRING, 0x00, 0x00)),
+    code_info(:T_STRING, 0x00, 1, (CA1_STRING, 0x00, 0x00, 0x00)),
+    code_info(:T_TRY_ATOM, 0x00, 2, (CA1_JUMP, CA1_DATA, 0x00, 0x00)),
+    code_info(:T_ATOM, 0x00, 1, (CA1_DATA, 0x00, 0x00, 0x00)),
+    code_info(:T_TRY_SMALLINT, 0x00, 2, (CA1_JUMP, CA1_INTEGER, 0x00, 0x00)),
+    code_info(:T_SMALLINT, 0x00, 1, (CA1_INTEGER, 0x00, 0x00, 0x00)),
+    code_info(:T_CHECKWAKEUP, 0x00, 0, (0x00, 0x00, 0x00, 0x00))
 )
 
 # PORT: pl-codetable.c codeTable

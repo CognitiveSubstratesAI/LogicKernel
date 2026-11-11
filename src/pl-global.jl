@@ -171,12 +171,15 @@ mutable struct PL_global_data{T}
     procedures_call_continuation1::Procedure{T}                 # procedures.call_continuation1: call_continuation/1 (R2 CONT1)
     procedures_dmeta_call1::Procedure{T}                        # procedures.dmeta_call1: '$meta_call'/1 (R2 CONT1)
     procedures_findall_loop4::Procedure{T}                      # procedures.findall_loop4: '$bags':findall_loop/4, looked up by findReset (R2 CONT1)
+    procedures_trie_gen_compiled2::Procedure{T}                 # procedures.trie_gen_compiled2: system:trie_gen_compiled/2, set by initTries! (TR4)
+    procedures_trie_gen_compiled3::Procedure{T}                 # procedures.trie_gen_compiled3: system:trie_gen_compiled/3, set by initTries! (TR4)
     reload_generation::gen_t                                    # reload.generation: GEN_INVALID (0) unless a file is being reloaded (R2 LB6a; DIVERGES, owner TH1: LD->reload.generation, kept here)
     const options::pl_options_t                                 # options: the command-line options, `$cmd_option_val/2`'s table (R2 LB7)
     const cmdline::pl_cmdline_t                                 # cmdline: the arguments and the -O/--no-packs switches (R2 LB7)
     defaults_home::Union{Nothing, String}                       # defaults.home: the home directory, `$cmd_option_val(home, _)` (R2 LB7; nothing = NULL)
     const ld_table::LDTable                                     # the local data a wrapped stream names by number (IOSTREAM.wrapped; src/os/pl-stream.jl, R2 TOP1b E; owner TH1)
     tabling_answer_delay_infos::Dict{Int, delay_info}           # (pl-tabling.c static `answer_delay_infos`: trie node id -> delay_info; TAB1 TB0)
+    tabling_start_node_ids::Int                                 # (pl-tabling.c static `start_node_ids`: the last start-node id handed out, 0: none; TAB1 TB1)
 end
 # DIVERGES: `atoms` is upstream's `GD->atoms` as a struct of its own (src/pl-atom.jl), one table per
 # database, built first as upstream's `initAtoms` runs first; `functors` likewise `GD->functors` with
@@ -399,7 +402,7 @@ tbl_free_objects{T}() where {T} = tbl_free_objects{T}(
 
 # PORT: pl-global.h tabling as ld_tabling
 # DIVERGES: only the private, single-thread fields; NOT PORTED, each to its owner (docs/architecture.md TB0):
-# `start_nodes` (`node_array`) and `variant_table` as an index (TB1: the variant table), `idg_registry` (TB6). `variant_table`
+# `idg_registry` (TB6); `start_nodes` (`node_array`, TB1) is a nullable `Vector{Int}` of node ids by `start_id` (no blocks: DIVERGES, no concurrent readers). `variant_table`
 # is the index of the variant trie in the database's trie table (0: none). `flags` holds the `TF_*` bits,
 # `delay_list` and `idg_current` are term references (0: none). `node_pool` is the pool `table_space` sets (`nothing`: NULL).
 "The tabling state of one thread (pl-global.h `LD->tabling`)."
@@ -410,6 +413,7 @@ mutable struct ld_tabling{T}
     active_components::Int                                      # # components with SCC_ACTIVE
     variant_table::Int                                          # Variant --> table (a trie index; 0: none)
     node_pool::Union{Nothing, alloc_pool}                       # Node allocation pool for tries
+    start_nodes::Union{Nothing, Vector{Int}}                    # Predicate start nodes in it (a node_array: node ids by start_id, 0: none; TB1)
     dyn_orphan_events::Int                                      # Dynamic nodes that lost a dependent
     concurrent_idg_nodes::Int                                   # Private IDG nodes with shared children
     has_scheduling_component::Bool                              # A leader was created
@@ -422,7 +426,8 @@ mutable struct ld_tabling{T}
     restraint::tbl_restraint{T}                                 # the restraints
 end
 ld_tabling{T}() where {T} = ld_tabling{T}(
-    nothing, nothing, 0, 0, 0, nothing, 0, 0, false, false, false, UInt32(0), 0, 0,
+    nothing, nothing, 0, 0, 0, nothing, nothing, 0, 0, false, false, false, UInt32(0),
+    0, 0,
     tbl_free_objects{T}(), tbl_restraint{T}()
 )
 
@@ -728,7 +733,9 @@ function _bare_local_data(gd::PL_global_data{T}) where {T}
             gen_t(0),
             Definition{T}(
                 UInt64(0), 0, ClauseList{T}(), UInt64(0), e, code[], ClauseRef{T}[],
-                PL_code_data(code[], code[], code[], code[], code[], code[], code[]), 0, 0,
+                PL_code_data(
+                    code[], code[], code[], code[], code[], code[], code[], code[]
+                ), 0, 0,
                 0
             ),
             nothing,

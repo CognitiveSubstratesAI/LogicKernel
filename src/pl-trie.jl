@@ -31,8 +31,9 @@
 # discipline and the sizes the oracle observes (`stat_trie`) need. No write locking: `lock_children` and `unlock_children`
 # are left out (single-threaded, owner TH1); the TRIE_CONCURRENT flag is kept because it decides how nodes are allocated
 # (individually, no chunks: `trie_new/1` sets it) and whether a replaced block lingers (`trie.lingering`).
-# Refused by name: `tbl_release_node` (owner TB1), the discarded nodes of a compiled trie (`trie_discard_nodes`,
-# `trie_restore_nodes`, `trie_ensure_nodes`, a clause: owner TR4), O_PLMT regions (owner TH1).
+# Refused by name: the discarded nodes of a compiled trie (`trie_discard_nodes`,
+# `trie_restore_nodes`, `trie_ensure_nodes`: owner TR4), O_PLMT regions (owner TH1). The compiled clause is TR4's
+# (`compile_trie`, `trie_discard_clause`, the database an argument of every function that can discard it).
 
 # PORT: pl-trie.c RESERVED_TRIE_VAL
 "A reserved trie key `n` (pl-trie.c `RESERVED_TRIE_VAL`)."
@@ -129,9 +130,10 @@ function trie_create(::Type{T})::trie{T} where {T}
     return trie{T}(
         UInt64(0), TRIE_MAGIC, 0, 1, 0, UInt32(0),             # symbol, magic, references, node_count (the root), value_count, flags
         trie_node[root], Union{Nothing, trie_children_block}[], Int[], Int[],
-        nothing, UInt64(0), nothing, Int[],                     # indirects, clause, chunks, lingering
+        nothing, UInt64(0), nothing, nothing, Int[],            # indirects, clause, clause_cref, chunks, lingering
         0, 0, nothing, 0, nothing, nothing, 0,                  # lookups, gen_call, worklist, variant, IDG, predicate, serial
-        Union{Nothing, record{T}}[], Int[]                      # records, free_records
+        Union{Nothing, record{T}}[], Int[],                     # records, free_records
+        trie{T}[]                                               # registry (TB1: set to `gd.tries` by variant_table / get_answer_table)
     )
 end
 
@@ -151,34 +153,58 @@ function release_node(tr::trie{T}, nid::Int)::Nothing where {T}
     return nothing
 end
 
-# PORT: pl-tabling.c tbl_release_node
-# DIVERGES: refused by name, owner TB1 (the tabling data of a node: the delay information, the variant table's answer trie).
-# Reached only by a trie that is TRIE_ISTABLE (a node with TN_DELAYINFO) or TRIE_ISVARIANT: none exists before TB1.
-"Release the tabling data of a node (pl-tabling.c): refused by name, owner TB1."
-tbl_release_node(tr::trie{T}, nid::Int) where {T} =
-    throw(TrieRefusal("tbl_release_node", "TB1"))
+# `tbl_release_node` (pl-tabling.c) is TB1's, src/pl-tabling.jl.
 
 # PORT: pl-trie.c release_value
 # DIVERGES: the trie is an argument (a record is a slot of `tr.records`, see `isRecord`); upstream unregisters an atom (no atom
 # reference counts here: nothing to do), erases a record (`erase_value!`) and releases the answer trie of a variant table node
-# (`isTriePtrValue`: TB1, no such value exists before it).
-"Release the value `value` of a node of `tr` (pl-trie.c `release_value`): a record is erased, an atom or integer needs nothing."
+# (`isTriePtrValue`, TB1: `release_trie_value`, the trie is found by number in `tr.registry`; no atom-GC, so a trie with a symbol stays).
+"Release the value `value` of a node of `tr` (pl-trie.c `release_value`): a record is erased, a trie pointer destroys a symbol-less answer trie, an atom or integer needs nothing."
 function release_value(tr::trie{T}, value::word)::Nothing where {T}
-    isRecord(value) && erase_value!(tr, value)
+    if isRecord(value)
+        erase_value!(tr, value)
+    elseif isTriePtrValue(value)
+        t = valueTriePtr(tr.registry, value)
+        t.symbol == 0 && table_trie_destroy(t)      # no database at hand: see `table_trie_empty` (src/pl-tabling.jl)
+    end
     return nothing
 end
 
 # PORT: pl-trie.c trie_discard_clause
-# DIVERGES: a trie has no compiled clause before TR4, so `trie.clause` is always 0; a clause is refused by name (owner TR4).
-"Discard the clause of a trie (pl-trie.c); refused by name (owner TR4) when there is one."
-function trie_discard_clause(tr::trie{T})::Nothing where {T}
-    tr.clause == 0 || throw(TrieRefusal("trie_discard_clause (a compiled clause)", "TR4"))
+# (swipl-devel 18168e62, src/pl-trie.c:273-291) DIVERGES: the database is an argument (TR4: every caller passes it on); no
+# `COMPARE_AND_SWAP_ATOM` (one thread) and no `PL_unregister_atom` (no atom GC); the reference is the one `compile_trie` kept
+# (`clause_cref`), upstream's `clause_clref(dbref)` (none for `fail`); the retract is the method without `ld`, as upstream's
+# `notify` is false (no update event).
+"Discard the compiled clause of `tr`, if any: clear `tr.clause` and retract the clause from trie_gen_compiled/2,3 (pl-trie.c)."
+function trie_discard_clause(gd::PL_global_data{T}, tr::trie{T})::Nothing where {T}
+    dbref = tr.clause
+    if dbref != 0
+        cref = tr.clause_cref
+        tr.clause = word(0)                                     # COMPARE_AND_SWAP_ATOM(&trie->clause, dbref, 0)
+        tr.clause_cref = nothing
+        if gd.halt_cleaning == CLN_NORMAL                       # otherwise reclaims clause
+            if cref !== nothing                                 # ClauseRef cref = clause_clref(dbref)
+                cl = cref.clause::Clause{T}                     # cref->value.clause
+                set_trie_clause_general_undefined(cl)           # TBD: only if undefined
+                retractClauseDefinition!(gd, cl.predicate::Definition{T}, cl, false)
+            end
+        end
+    end
     return nothing
 end
 
 # PORT: pl-trie.c trie_discard_nodes
 "Discard the nodes of a compiled trie (pl-trie.c): refused by name, owner TR4."
 trie_discard_nodes(tr::trie{T}) where {T} = throw(TrieRefusal("trie_discard_nodes", "TR4"))
+
+# PORT: pl-trie.h trie_maybe_discard_nodes
+"Discard the nodes of a compiled trie if this is allowed (pl-trie.h:340); see `trie_discard_nodes`."
+function trie_maybe_discard_nodes(tr::trie{T})::Nothing where {T}
+    if (tr.flags & TRIE_DISCARDABLE) != 0 && tr.clause != 0 && tr.references == 0
+        trie_discard_nodes(tr)
+    end
+    return nothing
+end
 
 # PORT: pl-trie.c trie_restore_nodes
 "Restore the nodes of a discarded trie from its clause (pl-trie.c): refused by name, owner TR4."
@@ -218,8 +244,10 @@ trie_clear_nodes(tr::trie{T}) where {T} = clear_nodes(tr, nothing)
 
 # PORT: pl-trie.c empty_trie
 "Empty `tr` unless it is in use; whether it was emptied (pl-trie.c `empty_trie`)."
-function empty_trie(tr::trie{T}, vt::Union{Nothing, Function})::Bool where {T}
-    trie_discard_clause(tr)
+function empty_trie(
+    gd::PL_global_data{T}, tr::trie{T}, vt::Union{Nothing, Function}
+)::Bool where {T}
+    trie_discard_clause(gd, tr)
     if tr.references == 0
         clear_nodes(tr, vt)
         tr.value_count = 0
@@ -231,32 +259,34 @@ end
 
 # PORT: pl-trie.c trie_empty
 "Empty `tr` (pl-trie.c)."
-function trie_empty(tr::trie{T})::Nothing where {T}
-    empty_trie(tr, nothing)
+function trie_empty(gd::PL_global_data{T}, tr::trie{T})::Nothing where {T}
+    empty_trie(gd, tr, nothing)
     return nothing
 end
 
 # PORT: pl-trie.c trie_empty_take
 # DIVERGES: `take` is a function of the value (upstream: a function and a context pointer).
 "As `trie_empty`, but pass each value to `take(value)`, which takes over its reference; false if `tr` is in use (pl-trie.c)."
-function trie_empty_take(tr::trie{T}, take::Function)::Bool where {T}
-    return empty_trie(tr, take)
+function trie_empty_take(
+    gd::PL_global_data{T}, tr::trie{T}, take::Function
+)::Bool where {T}
+    return empty_trie(gd, tr, take)
 end
 
 # PORT: pl-trie.c trie_destroy
 # DIVERGES: nothing frees the record (Julia's garbage collector); the trie stays in `gd.tries` (no atom-GC), marked destroyed.
 "Destroy `tr`: mark it destroyed, empty it and free its lingering blocks (pl-trie.c)."
-function trie_destroy(tr::trie{T})::Nothing where {T}
+function trie_destroy(gd::PL_global_data{T}, tr::trie{T})::Nothing where {T}
     tr.magic = TRIE_CMAGIC
-    trie_empty(tr)
+    trie_empty(gd, tr)
     free_lingering_blocks(tr)
     return nothing
 end
 
 # PORT: pl-trie.c trie_clean
 "Empty `tr` if it is destroyed (pl-trie.c)."
-function trie_clean(tr::trie{T})::Nothing where {T}
-    tr.magic == TRIE_CMAGIC && trie_empty(tr)
+function trie_clean(gd::PL_global_data{T}, tr::trie{T})::Nothing where {T}
+    tr.magic == TRIE_CMAGIC && trie_empty(gd, tr)
     return nothing
 end
 
@@ -1404,9 +1434,16 @@ function stat_trie(tr::trie{T})::trie_stats where {T}
 end
 
 # PORT: pl-trie.c trie_table_size
-"The bytes upstream's answer trie `tr` takes, for an estimate of the memory abolishing it frees (pl-trie.c): no clause before TR4."
+# DIVERGES: the clause's size is `sizeofClause` (positions) in bytes, 8 per position; its reference is the one `compile_trie`
+# kept (`clause_cref`), upstream's `clause_clref(dbref)`.
+"The bytes upstream's answer trie `tr` takes, with its compiled clause, for an estimate of the memory abolishing it frees (pl-trie.c)."
 function trie_table_size(tr::trie{T})::Int where {T}
-    return SIZEOF_TRIE + tr.node_count * SIZEOF_TRIE_NODE
+    size = SIZEOF_TRIE + tr.node_count * SIZEOF_TRIE_NODE
+    cref = tr.clause_cref                                       # (dbref=atrie->clause) && dbref != ATOM_fail: clause_clref(dbref)
+    if cref !== nothing
+        size += 8 * sizeofClause(length(cref.clause.codes))     # sizeofClause(cref->value.clause->code_size)
+    end
+    return size
 end
 
 # ---- THE TRIE BLOB (trie_symbol, symbol_trie, get_trie, trie_error) ----
@@ -1418,12 +1455,32 @@ end
 const trie_blob = PL_blob_t(PL_BLOB_NOCOPY, "trie")
 
 # PORT: pl-trie.c initTries
-# DIVERGES: the database's atom table is the argument; called by the database's constructor in pl-setup.c's order. Only the
-# blob registration: the mutex stripes are O_PLMT (owner TH1) and the procedure lookups at the end of upstream's function belong
-# to the steps that port those predicates (TR2, TB1).
+# DIVERGES: two methods, as the database is made in two halves: this one, with the database's atom table, registers the blob
+# type, called by the database's constructor in pl-setup.c's order; the method with `gd` is the tail (the two procedures of
+# trie_gen_compiled/2,3), called by `setupProlog` once the database exists. The mutex stripes are O_PLMT (owner TH1).
 "Register the trie blob type in `atoms` (pl-trie.c `initTries`)."
 function initTries!(atoms::atoms_t)::Nothing
     PL_register_blob_type(atoms, trie_blob)
+    return nothing
+end
+
+# PORT: pl-trie.c initTries
+# (swipl-devel 18168e62, src/pl-trie.c:5233-5243: the tail) `PL_predicate(..., "system")` is the system module's
+# `lookupProcedure`, as `initBuildIns!`'s LOOKUPPROC.
+"Make system:trie_gen_compiled/2,3 run the shared `S_TRIE_GEN` supervisor (pl-trie.c `initTries`, its tail)."
+function initTries!(gd::PL_global_data{T})::Nothing where {T}
+    m = MODULE_system(gd)
+    proc = lookupProcedure(mk_sym(T, :trie_gen_compiled), 2, m)   # PL_predicate("trie_gen_compiled", 2, "system")
+    def = proc.definition
+    def.flags |= P_LOCKED_SUPERVISOR | P_VOLATILE
+    def.codes = gd.code_data.trie_gen                           # SUPERVISOR(trie_gen)
+    gd.procedures_trie_gen_compiled2 = proc
+
+    proc = lookupProcedure(mk_sym(T, :trie_gen_compiled), 3, m)   # PL_predicate("trie_gen_compiled", 3, "system")
+    def = proc.definition
+    def.flags |= P_LOCKED_SUPERVISOR | P_VOLATILE
+    def.codes = gd.code_data.trie_gen                           # SUPERVISOR(trie_gen)
+    gd.procedures_trie_gen_compiled3 = proc
     return nothing
 end
 
@@ -1446,8 +1503,10 @@ end
 "The atom (handle) of `tr`, created on first use (pl-trie.c)."
 function trie_symbol(gd::PL_global_data{T}, tr::trie{T})::word where {T}
     tr.symbol != 0 && return tr.symbol
-    push!(gd.tries, tr)
-    tr.serial = length(gd.tries)
+    if tr.serial == 0                       # TB1's `trie_serial!` registers a table's trie without a symbol first
+        push!(gd.tries, tr)
+        tr.serial = length(gd.tries)
+    end
     bytes = _trie_bytes(tr.serial)
     w, _ = lookupBlob(gd.atoms, bytes, length(bytes), trie_blob)
     tr.symbol = w
@@ -1589,12 +1648,15 @@ function equal_value(tr::trie{T}, v1::word, v2::word)::Bool where {T}
 end
 
 # PORT: pl-trie.c unify_value
-# DIVERGES: the value of a variant table node (`isTriePtrValue`: an answer trie, owner TB1) is not met before TB1 and is not
-# handled; the reserved atom `trienode` is the reserved symbol (its symbol is not cached by a database that never made the word).
+# DIVERGES: the value of a variant table node (`isTriePtrValue`, TB1) is unified with the symbol of the answer trie it names (found
+# by number in `tr.registry`); the reserved atom `trienode` is the reserved symbol (its symbol is not cached by a database that
+# never made the word).
 "Unify the term reference `t` with the node value `value` of `tr` (pl-trie.c)."
 function unify_value(
     ld::PL_local_data{T}, tr::trie{T}, t::term_t, value::word
 )::Bool where {T}
+    isTriePtrValue(value) &&
+        return unify_trie(_query_gd(ld), ld, t, valueTriePtr(tr.registry, value))
     if !isRecord(value)
         v = if value == ATOM_trienode
             mk_reserved_symbol(T, :trienode)
@@ -1624,7 +1686,9 @@ end
 # PORT: pl-trie.c set_trie_value_word
 # DIVERGES: node id; `acquire_key` (the reference count of an atom) is a no-op, see the file header.
 "Give node `nid` of `tr` the value word `val`; whether the value changed (pl-trie.c)."
-function set_trie_value_word(tr::trie{T}, nid::Int, val::word)::Bool where {T}
+function set_trie_value_word(
+    gd::PL_global_data{T}, tr::trie{T}, nid::Int, val::word
+)::Bool where {T}
     n = tr.nodes[nid]
     if n.value != 0
         if !equal_value(tr, n.value, val)
@@ -1632,7 +1696,7 @@ function set_trie_value_word(tr::trie{T}, nid::Int, val::word)::Bool where {T}
             n.value = val
             n.flags |= TN_PRIMARY
             release_value(tr, old)
-            trie_discard_clause(tr)
+            trie_discard_clause(gd, tr)
             return true
         else
             return false
@@ -1641,20 +1705,20 @@ function set_trie_value_word(tr::trie{T}, nid::Int, val::word)::Bool where {T}
         n.value = val
         n.flags |= TN_PRIMARY
         tr.value_count += 1
-        trie_discard_clause(tr)
+        trie_discard_clause(gd, tr)
         return true
     end
 end
 
 # PORT: pl-trie.c set_trie_value
-# DIVERGES: the local data is an argument and the node a node id; a new record that equals the old value is erased as upstream
+# DIVERGES: the database and the local data are arguments and the node a node id; a new record that equals the old value is erased as upstream
 # does (`PL_erase`).
 "Set the value of node `nid` of `tr` to the term `value`; true (pl-trie.c)."
 function set_trie_value(
-    ld::PL_local_data{T}, tr::trie{T}, nid::Int, value::term_t
+    gd::PL_global_data{T}, ld::PL_local_data{T}, tr::trie{T}, nid::Int, value::term_t
 )::Bool where {T}
     val = intern_value(ld, tr, value)
-    if !set_trie_value_word(tr, nid, val) && isRecord(val)
+    if !set_trie_value_word(gd, tr, nid, val) && isRecord(val)
         erase_value!(tr, val)
     end
     return true
@@ -1665,9 +1729,11 @@ end
 trie_release_value(tr::trie{T}, value::word) where {T} = release_value(tr, value)
 
 # PORT: pl-trie.c trie_delete
-# DIVERGES: node id; `prune_node` takes the trie.
+# DIVERGES: the database is an argument (for `trie_discard_clause`); node id; `prune_node` takes the trie.
 "Delete the value of node `nid` of `tr`: with `prune` the branch leading to it is pruned up to the next node still in use (pl-trie.c)."
-function trie_delete(tr::trie{T}, nid::Int, prune::Bool)::Nothing where {T}
+function trie_delete(
+    gd::PL_global_data{T}, tr::trie{T}, nid::Int, prune::Bool
+)::Nothing where {T}
     n = tr.nodes[nid]
     if n.value != 0
         (n.flags & TN_PRIMARY) != 0 && (tr.value_count -= 1)
@@ -1682,7 +1748,7 @@ function trie_delete(tr::trie{T}, nid::Int, prune::Bool)::Nothing where {T}
                 release_value(tr, v)
             end
         end
-        trie_discard_clause(tr)
+        trie_discard_clause(gd, tr)
     end
     return nothing
 end
@@ -1967,7 +2033,7 @@ function trie_insert(
                 n.value = val
                 n.flags |= TN_PRIMARY
                 release_value(tr, old)
-                trie_discard_clause(tr)
+                trie_discard_clause(gd, tr)
             elseif isRecord(val)
                 erase_value!(tr, val)
             end
@@ -1986,7 +2052,7 @@ function trie_insert(
     n.value = val
     n.flags |= TN_PRIMARY
     tr.value_count += 1
-    trie_discard_clause(tr)
+    trie_discard_clause(gd, tr)
     return (true, nid)
 end
 
@@ -2033,7 +2099,7 @@ function pl_trie_destroy1_va(
     tr = get_trie(gd, ld, PL__t0)
     tr === nothing && return FFALSE
     tr.magic = TRIE_CMAGIC
-    trie_empty(tr)
+    trie_empty(gd, tr)
     return FTRUE
 end
 
@@ -2117,7 +2183,7 @@ function pl_trie_delete3_va(
     if rc == 1
         v = tr.nodes[nid].value
         if v != 0 && unify_value(ld, tr, A3, v)
-            trie_delete(tr, nid, true)
+            trie_delete(gd, tr, nid, true)
             return FTRUE
         end
         return FFALSE
@@ -2945,10 +3011,487 @@ end
 # `trie_lookup_delete/3` (pl-trie.c :5213-5216) are inside `#if O_NESTED_TRIES`, and that macro is defined nowhere at the pin, so the
 # build has no such predicates (`predicate_property(system:H, defined)` fails for all three): nothing is ported or registered for them.
 
+# ---- COMPILED TRIES (compile_trie and its emitters, pl-trie.c :4462-5190 at 18168e62) ----
+
+# PORT: pl-trie.c trie_compile_state
+# DIVERGES: ONE pass into growing vectors. Upstream compiles twice, a sizing pass and a pass into a buffer of the size it found
+# (`sizing`, `elses`, `grow_codes`, `start_trie_code`, `clean_trie_compile_state`, :4483-4565, a C memory device); the kernel takes
+# the non-sizing branch of `add_else`/`fixup_else` only. `codes` is the clause's code, `literals` its literal table (the operands of
+# T_FLOAT/T_MPZ/T_STRING, see the OPERANDS note in src/pl-vmi.jl); `try_` is upstream's `try`; `tr` is upstream's `trie`; `else_loc`
+# is a 0-based code index as upstream's `entriesCodes` (0: none; code 0 is always T_TRIE_GEN2/3, never an else slot).
+"The state of compiling a trie into a clause (pl-trie.c `trie_compile_state`)."
+mutable struct trie_compile_state{T}
+    tr::trie{T}                                                 # the trie we are compiling
+    try_::Bool                                                  # try (alternatives follow)
+    last_is_fail::Bool                                          # the last instruction is I_FAIL
+    has_attvars::Bool                                           # the trie holds attributed variables
+    else_loc::Int                                               # the else chain (0-based code index, 0: none)
+    maxvar::Int                                                 # the highest variable number
+    codes::Vector{code}                                         # the code
+    literals::Vector{T}                                         # the literal table of the code
+end
+
+# PORT: pl-trie.c init_trie_compile_state
+"A new compile state for `tr` (pl-trie.c `init_trie_compile_state`)."
+init_trie_compile_state(tr::trie{T}) where {T} =
+    trie_compile_state{T}(tr, false, false, false, 0, 0, code[], T[])
+
+# PORT: pl-trie.c add_vmi
+"Add the instruction `c` (pl-trie.c `add_vmi`)."
+add_vmi!(st::trie_compile_state, c::code)::Nothing = (push!(st.codes, c); nothing)
+
+# PORT: pl-trie.c add_vmi_d
+"Add the instruction `c` with the operand `d` (pl-trie.c `add_vmi_d`)."
+function add_vmi_d!(st::trie_compile_state, c::code, d::code)::Nothing
+    push!(st.codes, c)
+    push!(st.codes, d)
+    return nothing
+end
+
+# PORT: pl-trie.c add_vmi_w
+# DIVERGES: a word and a code are both 64 bits (CODES_PER_WORD == 1): `add_vmi_d`.
+"Add the instruction `c` with the word operand `d` (pl-trie.c `add_vmi_w`)."
+add_vmi_w!(st::trie_compile_state, c::code, d::word)::Nothing = add_vmi_d!(st, c, code(d))
+
+# PORT: pl-trie.c add_else
+"Add the else slot of a T_TRY_* instruction and push it on the else chain; `fixup_else!` fills it (pl-trie.c `add_else`)."
+function add_else!(st::trie_compile_state)::Nothing
+    el = length(st.codes)                                       # entriesCodes(state), 0-based
+    push!(st.codes, code(st.else_loc))
+    st.else_loc = el
+    return nothing
+end
+
+# PORT: pl-trie.c add_vmi_else_d
+"Add the T_TRY_* instruction `c`, its else slot and the operand `d` (pl-trie.c `add_vmi_else_d`)."
+function add_vmi_else_d!(st::trie_compile_state, c::code, d::code)::Nothing
+    push!(st.codes, c)
+    add_else!(st)
+    push!(st.codes, d)
+    return nothing
+end
+
+# PORT: pl-trie.c add_vmi_else_w
+"Add the T_TRY_* instruction `c`, its else slot and the word operand `d` (pl-trie.c `add_vmi_else_w`)."
+add_vmi_else_w!(st::trie_compile_state, c::code, d::word)::Nothing =
+    add_vmi_else_d!(st, c, code(d))
+
+# PORT: pl-trie.c fixup_else
+"Fill the innermost open else slot with the distance to the end of the code and pop it (pl-trie.c `fixup_else`)."
+function fixup_else!(st::trie_compile_state)::Nothing
+    pc = length(st.codes)                                       # entriesCodes(state)
+    el = st.else_loc
+    st.else_loc = Int(st.codes[el + 1])                         # state->else_loc = base[el]
+    st.codes[el + 1] = code(pc - el - 1)                        # base[el] = pc-el-1
+    return nothing
+end
+
+# ORIGINAL: the kernel's operand of T_FLOAT/T_MPZ/T_STRING: the index of the value in the clause's literal table (1-based, as H_FLOAT's
+# `PCl[PCc[PC]]`), where upstream writes the indirect's header and data inline in the code.
+"Add `v` to the literal table of the code and give its index."
+function add_literal!(st::trie_compile_state{T}, v::T)::code where {T}
+    push!(st.literals, v)
+    return code(length(st.literals))
+end
+
+# PORT: pl-trie.c add_indirect
+# DIVERGES: the operand is the literal index of the value `v` (`add_literal!`), not the indirect's header and data.
+"Add the instruction `op` with the indirect value `v` (pl-trie.c `add_indirect`)."
+add_indirect!(st::trie_compile_state{T}, op::code, v::T) where {T} =
+    add_vmi_d!(st, op, add_literal!(st, v))
+
+# PORT: pl-trie.c add_smallint
+# DIVERGES: CODES_PER_WORD == 1, so always `c1` (`c2`, the W form, is never emitted: the kernel declares no T_SMALLINTW); the operand
+# is the TAGGED word `w` (as H_SMALLINT's, see the OPERANDS note in src/pl-vmi.jl), where upstream writes `valInt(w)`.
+"Add the small integer `w` with the instruction `c1` (pl-trie.c `add_smallint`)."
+add_smallint!(st::trie_compile_state, c1::code, c2::code, w::word)::Nothing =
+    add_vmi_d!(st, c1, code(w))
+
+# PORT: pl-trie.c add_vmi_else_i
+# DIVERGES: as `add_smallint!`: always `c1`, the operand is the tagged word.
+"Add the T_TRY_* small-integer instruction `c1`, its else slot and the integer `w` (pl-trie.c `add_vmi_else_i`)."
+function add_vmi_else_i!(st::trie_compile_state, c1::code, c2::code, w::word)::Nothing
+    push!(st.codes, c1)
+    add_else!(st)
+    push!(st.codes, code(w))
+    return nothing
+end
+
+# PORT: pl-trie.c compile_trie_value
+# DIVERGES: the value is the term reference `t` (upstream: a dereferenced `Word`), walked from its location `-(t+1)` with the cell
+# agenda and `trie_deref` (as `trie_lookup_abstract`); `attvars` is upstream's `attvar_mark` buffer as `(compound depth, location)`
+# pairs; a variable of a slot (position 0) is not written (a slot is never unbound); an indirect is the value
+# `_indirect_value` gives (`add_indirect!`); the cell of an attributed variable is restored with `consPtr(ap, TAG_ATTVAR|STG_GLOBAL)`
+# (`consAttVar`). The `index > maxvar` test of an attributed variable stores `var_number` (sic, :4749): copied as is.
+"Translate the map value at the term reference `t` into T_* instructions (pl-trie.c `compile_trie_value`)."
+function compile_trie_value(
+    ld::PL_local_data{T}, t::term_t, st::trie_compile_state{T}
+)::Bool where {T}
+    var_number = 0
+    voffset = st.maxvar
+    varb = Int[]
+    rc = 1
+    compounds = 0
+    attvars::Union{Nothing, Vector{Tuple{Int, Int}}} = nothing  # upstream's attvar_mark buffer
+    avm = 0                                                     # the index of the last mark (0: avm == NULL)
+
+    agenda = initCellAgenda_P(1, -(t + 1))
+    while true
+        l, popn = nextCellAgenda_P!(agenda)
+        l == 0 && popn == 0 && break
+        if popn > 0
+            compounds -= popn
+            popn == 1 ? add_vmi!(st, T_POP) : add_vmi_d!(st, T_POPN, code(popn))
+            if avm != 0 && (attvars::Vector{Tuple{Int, Int}})[avm][1] == compounds
+                index = Int(
+                    valTagged(ld.gstack[(attvars::Vector{Tuple{Int, Int}})[avm][2]])
+                )
+                add_vmi_d!(st, T_ATTVARZ, code(index))
+            end
+            continue
+        end
+        p, w = trie_deref(ld, l)
+        if tag(w) == TAG_VAR
+            if isVar(w)
+                var_number += 1
+                index = var_number + voffset
+                index > st.maxvar && (st.maxvar = index)
+                push!(varb, p)
+                p > 0 && (ld.gstack[p] = consTagged(index, TAGEX_VAR))
+            else
+                index = Int(valTagged(w))
+            end
+            add_vmi_d!(st, T_VAR, code(index))
+        elseif isAttVar(w)
+            if tagex(w) != TAGEX_TRIE_ATTVAR
+                ap = valPtr(w)                                  # valPAttVar(w)
+                var_number += 1
+                index = var_number + voffset
+                index > st.maxvar && (st.maxvar = var_number)   # sic (:4749)
+                st.has_attvars = true
+                push!(varb, p)
+                push!(varb, ap)
+                ld.gstack[p] = consTagged(index, TAGEX_TRIE_ATTVAR)
+                add_vmi_d!(st, T_ATTVARA, code(index))
+                attvars === nothing && (attvars = Tuple{Int, Int}[])
+                push!(attvars::Vector{Tuple{Int, Int}}, (compounds, p))
+                avm = length(attvars::Vector{Tuple{Int, Int}})
+                compounds += 1
+                pushWorkCellAgenda_P0!(agenda, 1, ap)
+            else                                                # a shared attvar
+                add_vmi_d!(st, T_ATTVARA, code(valTagged(w)))
+            end
+        elseif _is_gcompound(w)
+            f = valPtr(w)
+            fd = ld.gstack[f]
+            arity = arityFunctor(ld.functors, fd)
+            compounds += 1
+            if compounds == 1000 && !is_acyclic_cells(ld, l)
+                rc = TRIE_LOOKUP_CYCLIC
+                break
+            end
+            add_vmi_d!(st, T_FUNCTOR, code(fd))
+            pushWorkCellAgenda_P!(agenda, arity, f + 1)
+        elseif is_indirect_word(w)
+            v = _indirect_value(ld, w)
+            tx = indirect_tagex(v)
+            op = if tx == TAGEX_INDIRECT_FLOAT
+                T_FLOAT
+            elseif tx == TAGEX_INDIRECT_STRING
+                T_STRING
+            else
+                T_MPZ
+            end
+            add_indirect!(st, op, v)
+        elseif isAtomW(w)                                       # TBD: register
+            add_vmi_d!(st, T_ATOM, code(w))
+        elseif isTaggedIntW(w)
+            add_smallint!(st, T_SMALLINT, T_SMALLINT, w)
+        else
+            error("compile_trie_value: no trie value word: $w")
+        end
+    end
+    clearCellAgenda_P!(agenda)
+
+    i = 1                                                       # restore the variables (an attvar's entry is followed by its attributes')
+    while i <= length(varb)
+        vp = varb[i]
+        if vp > 0
+            c = ld.gstack[vp]
+            if tag(c) == TAG_VAR
+                ld.gstack[vp] = word(0)                         # setVar(*vp)
+            elseif tagex(c) == TAGEX_TRIE_ATTVAR
+                i += 1
+                ld.gstack[vp] = consPtr(varb[i], TAG_ATTVAR | STG_GLOBAL)  # consAttVar(ap)
+            end
+        end
+        i += 1
+    end
+
+    rc != 1 && return trie_error(ld, rc, t)
+    return true
+end
+
+# PORT: pl-trie.c compile_trie_node
+# DIVERGES: the node is its id `n` in `st.tr` (the root is 1) and `goto next` is the `while` loop; an indirect key's value is
+# `extern_indirect` of the trie's table, the operand its literal index (upstream inlines the header and data, :4925-4955); a
+# conditional answer (`answer_is_conditional`, pl-tabling.c, the delay information of TB4) is a named refusal, owner TB4
+# (upstream emits `T_DELAY` with the node; the kernel's operand would be `trie_node_handle(tr, n)`).
+"Compile the node `n` of the trie and everything below it (pl-trie.c `compile_trie_node`)."
+function compile_trie_node(
+    ld::PL_local_data{T}, n::Int, st::trie_compile_state{T}
+)::Bool where {T}
+    tr = st.tr
+    while true                                                  # next:
+        node = tr.nodes[n]
+        children = node.children
+        if n != 1                                               # n == &state->trie->root: goto children
+            key = node.key
+            tx = tagex(key)
+            if tx == TAGEX_TRIE_RESERVED                        # RESERVED_TRIE_VAL
+                popn = IS_TRIE_KEY_POP(key)
+                @assert popn > 0 "compile_trie_node: a reserved key that pops nothing"
+                popn == 1 ? add_vmi!(st, T_POP) : add_vmi_d!(st, T_POPN, code(popn))
+            elseif isFunctor(key)                               # functor
+                if st.try_
+                    add_vmi_else_d!(st, T_TRY_FUNCTOR, code(key))
+                else
+                    add_vmi_d!(st, T_FUNCTOR, code(key))
+                end
+            elseif tx == TAGEX_VAR || tx == TAGEX_TRIE_ATTVAR || tx == TAGEX_TRIE_ATTVAR_END
+                tx == TAGEX_VAR || (st.has_attvars = true)      # FALLTHROUGH
+                index = Int(valTagged(key))
+                index > st.maxvar && (st.maxvar = index)
+                istable = (tr.flags & TRIE_ISTABLE) != 0
+                if st.try_
+                    c = if tx == TAGEX_VAR
+                        T_TRY_VAR
+                    elseif tx == TAGEX_TRIE_ATTVAR
+                        T_TRY_ATTVARA
+                    elseif istable
+                        T_TRY_ATTVARZT
+                    else
+                        T_TRY_ATTVARZ
+                    end
+                    add_vmi_else_d!(st, c, code(index))
+                else
+                    c = if tx == TAGEX_VAR
+                        T_VAR
+                    elseif tx == TAGEX_TRIE_ATTVAR
+                        T_ATTVARA
+                    elseif istable
+                        T_ATTVARZT
+                    else
+                        T_ATTVARZ
+                    end
+                    add_vmi_d!(st, c, code(index))
+                end
+            elseif tx == TAGEX_INDIRECT_INT || tx == TAGEX_INDIRECT_STRING ||
+                tx == TAGEX_INDIRECT_FLOAT
+                v = extern_indirect(tr.indirects::indirect_table{T}, key)
+                lit = add_literal!(st, v)
+                if tx == TAGEX_INDIRECT_INT
+                    if st.try_
+                        add_vmi_else_d!(st, T_TRY_MPZ, lit)
+                    else
+                        add_vmi_d!(st, T_MPZ, lit)
+                    end
+                elseif tx == TAGEX_INDIRECT_STRING
+                    if st.try_
+                        add_vmi_else_d!(st, T_TRY_STRING, lit)
+                    else
+                        add_vmi_d!(st, T_STRING, lit)
+                    end
+                else
+                    if st.try_
+                        add_vmi_else_d!(st, T_TRY_FLOAT, lit)
+                    else
+                        add_vmi_d!(st, T_FLOAT, lit)
+                    end
+                end
+            elseif isAtomW(key)
+                if st.try_
+                    add_vmi_else_d!(st, T_TRY_ATOM, code(key))
+                else
+                    add_vmi_d!(st, T_ATOM, code(key))
+                end
+            elseif isTaggedIntW(key)
+                if st.try_
+                    add_vmi_else_i!(st, T_TRY_SMALLINT, T_TRY_SMALLINT, key)
+                else
+                    add_smallint!(st, T_SMALLINT, T_SMALLINT, key)
+                end
+            else
+                error("compile_trie_node: no trie key: $key")   # assert(0)
+            end
+        end
+
+        # children:
+        if children != 0 && (node.flags & (TN_PRIMARY | TN_SECONDARY)) == 0
+            if is_single_child(children)
+                st.try_ = false
+                n = single_child(children)
+                continue                                        # goto next
+            end
+            it = init_child_iter(n)
+            nxt, _ = next_child!(tr, it)
+            nxt == 0 && return true                             # empty path
+            while true
+                n = nxt
+                nxt, _ = next_child!(tr, it)
+                st.try_ = nxt != 0
+                st.try_ || break                                # goto next
+                compile_trie_node(ld, n, st) || return false
+                fixup_else!(st)
+            end
+            continue
+        end
+
+        if node.value != 0                                      # what if we have none?
+            (node.flags & TN_DELAYINFO) != 0 &&                 # answer_is_conditional(n)
+                throw(
+                    TrieRefusal("compile_trie_node (a conditional answer: T_DELAY)", "TB4")
+                )
+            if (tr.flags & TRIE_ISMAP) != 0
+                add_vmi!(st, T_VALUE)
+                v = node.value
+                if !isRecord(v)
+                    if isAtomW(v)
+                        add_vmi_d!(st, T_ATOM, code(v))
+                    else
+                        add_smallint!(st, T_SMALLINT, T_SMALLINT, v)
+                    end
+                else
+                    t2 = PL_new_term_ref(ld)
+                    PL_recorded(ld, record_of_value(tr, v), t2) || return false
+                    compile_trie_value(ld, t2, st) || return false
+                    PL_reset_term_refs(ld, t2)
+                end
+            end
+            add_vmi!(st, T_CHECKWAKEUP)
+            add_vmi!(st, I_EXIT)
+            st.last_is_fail = false
+        else
+            add_vmi!(st, I_FAIL)
+            st.last_is_fail = true
+        end
+        return true
+    end
+end
+
+# PORT: pl-trie.c fixup_last_fail
+"Make sure the code ends with I_EXIT (pl-trie.c `fixup_last_fail`)."
+function fixup_last_fail!(st::trie_compile_state)::Bool
+    st.last_is_fail && add_vmi!(st, I_EXIT)
+    return true
+end
+
+# PORT: pl-trie.c create_trie_clause
+# DIVERGES: the clause is made from the state's code and literals (no buffer to take over); created at generation 0 and never
+# erased as `initVM`'s clause, the generations are set by `assertDefinition!`; no `forAtomsInClause` registration (no atom GC) and
+# no `GD->statistics.codes/clauses` counts (the kernel keeps no `GD->statistics` struct, src/pl-global.jl:343).
+"The unit clause of `def` holding the compiled trie code of `st` (pl-trie.c `create_trie_clause`)."
+function create_trie_clause(
+    def::Definition{T}, st::trie_compile_state{T}
+)::Clause{T} where {T}
+    nvars = clsize_t(TRIE_VAR_OFFSET + st.maxvar)
+    return Clause{T}(
+        def,                            # cl->predicate = def
+        gen_t(0),
+        ~gen_t(0),
+        nvars,                          # cl->variables = cl->prolog_vars (2: pseudo arity)
+        nvars,                          # cl->prolog_vars = TRIE_VAR_OFFSET + maxvar
+        UNIT_CLAUSE,                    # set(cl, UNIT_CLAUSE): no body
+        st.codes,
+        st.literals,
+        Procedure{T}[],
+        UInt32(0), UInt32(0), UInt32(0)  # no source
+    )
+end
+
+# PORT: pl-trie.c compile_trie_code
+"Compile `tr` with the generator instruction `gen` into `st` (pl-trie.c `compile_trie_code`)."
+function compile_trie_code(
+    ld::PL_local_data{T}, tr::trie{T}, gen::code, st::trie_compile_state{T}
+)::Bool where {T}
+    add_vmi!(st, gen)
+    return compile_trie_node(ld, 1, st) && fixup_last_fail!(st)
+end
+
+# PORT: pl-trie.c compile_trie
+# DIVERGES: the database `gd` and the local data are arguments; one pass (see `trie_compile_state`); no `COMPARE_AND_SWAP_ATOM`
+# and no retry (one thread); the result is an atom word: the clause blob's (`blob_handle` of `lookup_clref`'s term), or `fail` /
+# `error`; 0 when `assertDefinition!` refuses the clause (upstream returns its `dbref`, still 0, then).
+"The clause reference atom of the compiled form of `tr` as a clause of `def` (`fail` for an empty trie), made once (pl-trie.c)."
+function compile_trie(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, def::Definition{T}, tr::trie{T}
+)::word where {T}
+    dbref = tr.clause
+    dbref != 0 && return dbref
+    if tr.value_count == 0
+        dbref = _atom_word!(ld, mk_sym(T, :fail))
+        tr.clause = dbref
+        return dbref
+    end
+    gen = def.arity == 2 ? T_TRIE_GEN2 : T_TRIE_GEN3
+    st = init_trie_compile_state(tr)
+    fid = PL_open_foreign_frame(ld)
+    if compile_trie_code(ld, tr, gen, st)
+        cl = create_trie_clause(def, st)
+        cref = assertDefinition!(gd, ld, def, cl, CL_END)
+        if cref !== nothing
+            dbref = blob_handle(lookup_clref(gd, cl))
+            tr.clause = dbref
+            tr.clause_cref = cref                                # (kept for S_TRIE_GEN's TRUST_CLAUSE)
+        end
+    else
+        dbref = _atom_word!(ld, mk_sym(T, :error))
+    end
+    PL_close_foreign_frame(ld, fid)
+    @assert st.else_loc == 0 "compile_trie: an open else slot"
+    return dbref
+end
+
+# PORT: pl-trie.c trie_compile as pl_trie_compile2_va
+# (PRED_IMPL("$trie_compile", 2, trie_compile, 0); swipl-devel 18168e62, src/pl-trie.c:5154-5169)
+# DIVERGES: `compile_trie` returns 0 when `assertDefinition!` refused the clause and raised; then this fails with the error
+# pending (upstream unifies `A2` with the still-zero `dbref`).
+"`'\$trie_compile'(+Trie, -ClauseRef)`: compile `Trie` into a clause of trie_gen_compiled/2,3, `fail` when empty (pl-trie.c)."
+function pl_trie_compile2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    gd = _query_gd(ld)
+    A1, A2 = PL__t0, PL__t0 + 1
+    tr = get_trie(gd, ld, A1)
+    if tr !== nothing
+        proc = if (tr.flags & TRIE_ISMAP) != 0
+            gd.procedures_trie_gen_compiled3
+        else
+            gd.procedures_trie_gen_compiled2
+        end
+        clref = compile_trie(gd, ld, proc.definition, tr)
+        clref == 0 && return FFALSE
+        return PL_unify_atomic(ld, A2, _atom_value(ld, clref)) ? FTRUE : FFALSE
+    end
+    return FFALSE
+end
+
+# PORT: pl-trie.c set_trie_clause_general_undefined
+"Clear the node operand of every T_DELAY of the trie clause `cl` (pl-trie.c `set_trie_clause_general_undefined`)."
+function set_trie_clause_general_undefined(cl::Clause{T})::Nothing where {T}
+    PC = Code(cl, 1)
+    ep = length(cl.codes)
+    while PC.pc <= ep
+        decode(PC) == T_DELAY && (cl.codes[PC.pc + 1] = code(0))   # PC[1] = ptr2code(NULL)
+        PC = stepPC(PC)
+    end
+    return nothing
+end
+
 # PORT: pl-trie.c BeginPredDefs as PL_predicates_from_trie
-# DIVERGES: the entries TR1 and TR2 port; `$trie_compile/2` and `trie_gen_compiled/2,3` are TR4's (supervisors); the registration order of
-# upstream's table is kept for the entries here. Not registered, as not defined at the pin: `trie_insert_insert/3`, `trie_lookup_gen/3` and
-# `trie_lookup_delete/3` (O_NESTED_TRIES, see above).
+# DIVERGES: the entries TR1, TR2 and TR4 port (`$trie_compile/2`; `trie_gen_compiled/2,3` are no foreign predicates: their supervisor
+# is `S_TRIE_GEN`, set by `initTries!(gd)`); the registration order of upstream's table is kept for the entries here. Not registered,
+# as not defined at the pin: `trie_insert_insert/3`, `trie_lookup_gen/3` and `trie_lookup_delete/3` (O_NESTED_TRIES, see above).
 "pl-trie.c's registration table (`BeginPredDefs(trie)`): the ported entries."
 const PL_predicates_from_trie = (
     PL_extension("is_trie", 1, pl_is_trie1_va, PL_FA_VARARGS),
@@ -2967,5 +3510,6 @@ const PL_predicates_from_trie = (
     PL_extension(
         "\$trie_gen_node", 3, pl_trie_gen_node3_va, PL_FA_NONDETERMINISTIC | PL_FA_VARARGS
     ),
-    PL_extension("\$trie_property", 2, pl_trie_property2_va, PL_FA_VARARGS)
+    PL_extension("\$trie_property", 2, pl_trie_property2_va, PL_FA_VARARGS),
+    PL_extension("\$trie_compile", 2, pl_trie_compile2_va, PL_FA_VARARGS)
 )

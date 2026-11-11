@@ -933,7 +933,7 @@ fixed it or a public issue exists.
 | `docs/release-notes/v0.1.0-pre.1.md` | the release notes of v0.1.0-pre.1, byte for byte the annotated tag's message (SHA-256 b50689ee…0f4bd) | — |
 | `src/pl-event.jl` | EV1 (R2): the event lists of pl-event.c over the 12-row `PL_events` table (`event_type`, `event_location`; a list is a vector, the `fastheap_term` of a closure is its record): registration (`prolog_listen/2,3`: `as(first|last)`, `name(Name)`, an event name or a predicate indicator, module-qualified callable closures), `prolog_unlisten/2`, `destroy_event_list!`, and the calling side (`callEventHook`, `PL_call_event_hook(_va)`, `call_event_list`, `predicate_update_event`, `retractall_event`, `table_answer_event`, `delayEvent(s)`, `sendDelayedEvents`); table `PL_predicates_from_event` (src/pl-ext.jl). Wired raise sites: assert, retract, retractall `start`/`end`, the erase of a record, the clause GC's erase, the destroy of a pristine abolish; the rest is deferred (section EV1) | `src/pl-event.c`, `src/pl-event.h` |
 | `src/pl-allocpool.jl` | TAB1 TB0 (R2): pl-allocpool.c whole, the counted allocation pool behind the flag `table_space`: `new_alloc_pool`, `free_alloc_pool`, `alloc_from_pool` (charges `bytes`, `resource_error(Name)` past the limit), `free_to_pool`; the struct `alloc_pool` is in src/pl-incl.jl; counts only, Julia's collector frees (section TAB1 TB0) | `src/pl-allocpool.c` |
-| `src/pl-tabling.jl` | TAB1-min (R2): the load-time slice of pl-tabling.c that boot/tabling.pl's `:- table` expansion asks for: `'$tbl_trienode'/1`, `'$tbl_is_trienode'/1` (the reserved symbol `trienode`), the tabling properties of a predicate (`table_props`, `definition.tabling`: `tbl_get_predicate_attribute`, `tbl_set_predicate_attribute`, `tbl_set_incremental_predicate`, `tbl_reset_tabling_attributes!`) behind the `tabled`, `tabled_variant`, `incremental`, `monotonic`, `tshared`, `opaque`, `lazy`, `abstract`, `subgoal_abstract`, `answer_abstract` and `max_answers` keys of `'$set_predicate_attribute'/3` and `'$get_predicate_attribute'/3`; table `PL_predicates_from_tabling` (src/pl-ext.jl). The tries, worklists and `start_tabling/3` are TAB1 (section TAB1-min) Since TAB1 TB0 the constants and sentinels of pl-tabling.c (`WL_*`, `WLFS_*`, `DV_DELETED`, `DL_UNDEFINED`, `CAND_*`, `TBL_FREE_*`), the freed-object lists (`tbl_alloc`, `tbl_free`, `free_tbl_free_objects`), `initTabling!` (the restraints) and `setMonotonicMode` (section TAB1 TB0) | `src/pl-tabling.c` |
+| `src/pl-tabling.jl` | TAB1-min (R2): the load-time slice of pl-tabling.c that boot/tabling.pl's `:- table` expansion asks for: `'$tbl_trienode'/1`, `'$tbl_is_trienode'/1` (the reserved symbol `trienode`), the tabling properties of a predicate (`table_props`, `definition.tabling`: `tbl_get_predicate_attribute`, `tbl_set_predicate_attribute`, `tbl_set_incremental_predicate`, `tbl_reset_tabling_attributes!`) behind the `tabled`, `tabled_variant`, `incremental`, `monotonic`, `tshared`, `opaque`, `lazy`, `abstract`, `subgoal_abstract`, `answer_abstract` and `max_answers` keys of `'$set_predicate_attribute'/3` and `'$get_predicate_attribute'/3`; table `PL_predicates_from_tabling` (src/pl-ext.jl). The tries, worklists and `start_tabling/3` are TAB1 (section TAB1-min) Since TAB1 TB0 the constants and sentinels of pl-tabling.c (`WL_*`, `WLFS_*`, `DV_DELETED`, `DL_UNDEFINED`, `CAND_*`, `TBL_FREE_*`), the freed-object lists (`tbl_alloc`, `tbl_free`, `free_tbl_free_objects`), `initTabling!` (the restraints) and `setMonotonicMode` (section TAB1 TB0). Since TAB1 TB1 the start-node cache, the pointers to tries, `variant_table`, the answer table (`get_answer_table`, `reset_answer_table`), the status family and the 13 `$tbl_*` predicates over them (section TAB1 TB1) | `src/pl-tabling.c`, `src/pl-trie.c`, `src/pl-trie.h` |
 | `src/pl-wrap.jl` | TAB1-min (R2): pl-wrap.c's closure blob (`closure_blob`, a record in `gd.closure_refs`), `'$c_wrap_predicate'/5` installing a wrapper supervisor (`S_CALLWRAPPER` or `S_TABLED` over the predicate's own supervisor), `find_wrapper`, `assert_wrapper`, `unify_wrapped`, `wrapper_vmi`, `skipWrapperPrefix`, `isCallWrapper`, `resetWrappedSupervisor` (called by `freeCodesDefinition!`, src/pl-supervisor.jl); table `PL_predicates_from_wrap`. `wrapped_predicate/2`, `unwrap_predicate/2`, `$wrapped_implementation/3` and `$closure_predicate/2` are left to WRAP1 (section TAB1-min) | `src/pl-wrap.c`, `src/pl-wrap.h` |
 | `src/pl-trie.jl` | TAB1 TR1 (part A): pl-trie.c's trie as arenas of records (`trie{T}`, `trie_node`, `trie_children_block`, `trie_node_chunk` in src/pl-incl.jl): `trie_create`, `trie_destroy`, `trie_empty`, `trie_empty_take`, `trie_clean`, the children and blocks (`get_child`, `next_child!`, `add_child`, `delete_child`, `compact_children`), node allocation in both modes (individual nodes under TRIE_CONCURRENT, chunks otherwise), `clear_node`, `prune_node`, `prune_trie`, `insert_child`, `follow_node`, the indirect table (pl-indirect.c: `intern_indirect`, `trie_intern_indirect`), the lookups `trie_lookup_abstract`, `trie_lookup_flat`, `trie_insert_flat`, `is_ground_trie_node`, `map_trie_node`, `stat_trie`, `trie_table_size`, and the trie blob (`trie_blob`, `initTries!`, `trie_symbol`, `symbol_trie`, `get_trie`, `trie_error`). The PRED_IMPLs and the value helpers are part B; the DIVERGES are in section TAB1 TR1 | `src/pl-trie.c`, `src/pl-trie.h`, `src/pl-indirect.c`, `src/pl-tabling.c` |
 | `src/gd_template.jl` | LB4 b1 (R2): the template database (ORIGINAL): `copy_global_data`, generated field by field from `PL_global_data` (the stream tables an empty copy of the same shape, every other field one deep copy that keeps the identities inside the database), the per-process, per-term-type registry (`gd_template`, `PL_global_data_from_template`, `reset_gd_templates!`, `gd_template_built`); no constructor calls it until b2 | — |
@@ -1334,6 +1334,7 @@ graph LR
     pl_wam --> pl_fli
     pl_wam --> pl_attvar
     pl_wam --> pl_error
+    pl_wam --> pl_dbref
     pl_wam --> pl_gmp
     pl_wam --> pl_arith
     pl_wam --> os_pl_prologflag
@@ -1344,6 +1345,7 @@ graph LR
     pl_wam --> pl_trace
     pl_wam --> pl_event
     pl_wam --> pl_wrap
+    pl_wam --> pl_trie
     pl_wam --> pl_write
     pl_wam --> pl_read
     pl_wam --> pl_ext
@@ -1665,6 +1667,7 @@ graph LR
     pl_supervisor --> os_pl_text
     pl_supervisor --> pl_proc
     pl_supervisor --> pl_wrap
+    pl_supervisor --> pl_trie
     pl_trace --> term_interface
     pl_trace --> default_term
     pl_trace --> pl_incl
@@ -1801,14 +1804,21 @@ graph LR
     pl_tabling --> pl_incl
     pl_tabling --> SWI_Prolog
     pl_tabling --> pl_atom
+    pl_tabling --> pl_funct
     pl_tabling --> pl_global
+    pl_tabling --> pl_inline
     pl_tabling --> pl_prims
     pl_tabling --> pl_comp
+    pl_tabling --> pl_variant
     pl_tabling --> pl_fli
     pl_tabling --> pl_error
+    pl_tabling --> pl_allocpool
     pl_tabling --> pl_arith
     pl_tabling --> os_pl_text
+    pl_tabling --> pl_proc
     pl_tabling --> pl_supervisor
+    pl_tabling --> pl_wrap
+    pl_tabling --> pl_trie
     pl_wrap --> term_interface
     pl_wrap --> default_term
     pl_wrap --> pl_incl
@@ -1833,6 +1843,7 @@ graph LR
     pl_trie --> SWI_Prolog
     pl_trie --> pl_atom
     pl_trie --> pl_termwalk
+    pl_trie --> pl_vmi
     pl_trie --> pl_funct
     pl_trie --> pl_global
     pl_trie --> pl_inline
@@ -1844,9 +1855,11 @@ graph LR
     pl_trie --> pl_fli
     pl_trie --> pl_attvar
     pl_trie --> pl_error
+    pl_trie --> pl_dbref
     pl_trie --> pl_arith
     pl_trie --> os_pl_text
     pl_trie --> os_pl_file
+    pl_trie --> pl_proc
     pl_trie --> pl_tabling
     pl_trie --> pl_read
     pl_trie --> pl_string
@@ -2101,11 +2114,11 @@ or **platform** (a Windows or macOS definition: out of the count). **NO OWNER** 
 
 | category | done | refused | missing | platform | NO OWNER |
 |---|---:|---:|---:|---:|---:|
-| predicates (C-defined, reached by the boot) | 286 | 0 | 136 | 3 | 1 |
-| refusal sites | 0 | 71 | 0 | 0 | 3 |
+| predicates (C-defined, reached by the boot) | 298 | 0 | 124 | 3 | 1 |
+| refusal sites | 0 | 73 | 0 | 0 | 3 |
 | Prolog flags | 65 | 15 | 20 | 0 | 35 |
-| VM instructions | 169 | 0 | 64 | 0 | 0 |
-| **total** | 520 | 86 | 220 | 3 | 39 |
+| VM instructions | 197 | 0 | 36 | 0 | 0 |
+| **total** | 560 | 88 | 180 | 3 | 39 |
 
 #### The boot and library files
 
@@ -2119,8 +2132,8 @@ Predicate rows each file's calls reach (a predicate several files call counts in
 | `boot/expand.pl` | loaded | 55 | 0 | 0 |
 | `boot/dcg.pl` | loaded | 20 | 0 | 0 |
 | `boot/license.pl` | loaded | 5 | 0 | 0 |
-| `boot/syspred.pl` | loaded | 84 | 29 | 0 |
-| `boot/messages.pl` | loaded | 77 | 8 | 1 |
+| `boot/syspred.pl` | loaded | 85 | 28 | 0 |
+| `boot/messages.pl` | loaded | 78 | 7 | 1 |
 | `boot/toplevel.pl` | loaded | 86 | 13 | 2 |
 | `boot/attvar.pl` | loaded | 29 | 0 | 0 |
 | `boot/bags.pl` | loaded | 21 | 1 | 0 |
@@ -2135,7 +2148,7 @@ Predicate rows each file's calls reach (a predicate several files call counts in
 | `boot/packs.pl` | loaded | 23 | 0 | 0 |
 | `boot/dicts.pl` | loaded | 18 | 4 | 0 |
 | `boot/engines.pl` | loaded | 6 | 4 | 0 |
-| `boot/tabling.pl` | loaded | 74 | 65 | 0 |
+| `boot/tabling.pl` | loaded | 86 | 53 | 0 |
 | `boot/topvars.pl` | loaded | 36 | 1 | 0 |
 | `boot/threads.pl` | skipped (conditional) | 0 | 0 | 0 |
 | `library/debug.pl` | loaded | 23 | 2 | 0 |
@@ -2148,7 +2161,7 @@ Predicate rows each file's calls reach (a predicate several files call counts in
 
 | owner | rows | missing | refused | which (first 8) |
 |---|---:|---:|---:|---|
-| TAB1 | 98 | 93 | 5 | `$idg_add_edge/1`, `$idg_add_mono_dyn_dep/3`, `$idg_add_monotonic_dep/3`, `$idg_changed/1`, `$idg_false_edge/3`, `$idg_falsecount/2`, `$idg_forced/1`, `$idg_mono_affects/3`, … +90 |
+| TAB1 | 56 | 51 | 5 | `$idg_add_edge/1`, `$idg_add_mono_dyn_dep/3`, `$idg_add_monotonic_dep/3`, `$idg_changed/1`, `$idg_false_edge/3`, `$idg_falsecount/2`, `$idg_forced/1`, `$idg_mono_affects/3`, … +48 |
 | AR1 | 28 | 27 | 1 | `succ/2`, `A_ADD`, `A_DOUBLE`, `A_ENTER`, `A_EQ`, `A_FIRSTVAR_IS`, `A_FUNC`, `A_FUNC0`, … +20 |
 | TH1 | 20 | 18 | 2 | `$engine_create/3`, `$gc_clear/1`, `$gc_stop/0`, `$gc_wait/1`, `$sig_unblock/0`, `engine_next/2`, `is_engine/1`, `message_queue_create/1`, … +12 |
 | ENC1 | 16 | 0 | 16 | `refusal set_stream/2's unicode_atoms(nfc)`, `refusal open/4's unicode_atoms(Mode) option`, `refusal string("open/4 with the stream encoding …`, `refusal Scanrepresent: encoding $enc`, `refusal Sgetcode: encoding $enc`, `refusal put_code: encoding $enc`, `refusal PL_canonicalise_text of $enc`, `refusal PL_mb_text of $(text.encoding)`, … +8 |
@@ -2158,9 +2171,9 @@ Predicate rows each file's calls reach (a predicate several files call counts in
 | P3 | 10 | 9 | 1 | `$depth_limit/3`, `$depth_limit_except/3`, `$depth_limit_false/3`, `$depth_limit_true/5`, `$inference_limit/2`, `$inference_limit_except/3`, `$inference_limit_false/1`, `$inference_limit_true/3`, … +2 |
 | RD2 | 8 | 0 | 8 | `refusal raw_read2: reading past the end of a str…`, `refusal raw_read2: the comments(C) read option`, `refusal raw_read2: the comments(C) read option`, `refusal read_clause's $what option`, `refusal read_clause's process_comment(true) or u…`, `refusal read_term's $what option`, `refusal read: a blob <type>(…)`, `refusal read: a quasi-quotation {\|Syntax\|\|Quotat…` |
 | LB5-LB7 | 6 | 2 | 4 | `$activate_static_extension/1`, `$clause_term_position/3`, `refusal iri_hook $what ('\$iri':iri_hook/4 of in…`, `refusal what`, `refusal format_predicate/2 (GD->format.predicate…`, `refusal expandVars: ~user (getpwnam)` |
+| REFUSED | 6 | 6 | 0 | `B_SMALLINTW`, `B_THROW`, `H_SMALLINTW`, `L_SMALLINTW`, `T_SMALLINTW`, `T_TRY_SMALLINTW` |
 | ZIP1 | 6 | 6 | 0 | `$rc_handle/1`, `zip_clone/2`, `zip_close_/2`, `zip_file_info_/3`, `zipper_goto/2`, `zipper_open_current/3` |
 | CT1 | 4 | 2 | 2 | `char_type/2`, `code_type/2`, `refusal open/4's locale(Locale) option`, `refusal set_stream/2's locale(Locale)` |
-| REFUSED | 4 | 4 | 0 | `B_SMALLINTW`, `B_THROW`, `H_SMALLINTW`, `L_SMALLINTW` |
 | S2a | 4 | 4 | 0 | `get/1`, `get/2`, `put/1`, `put/2` |
 | S2b | 4 | 0 | 4 | `refusal a stream pair`, `refusal open(pipe(Command), …)`, `refusal open/4's lock(Lock) option (advisory fil…`, `refusal closing a stream pair` |
 | TX1 | 4 | 4 | 0 | `$snapshot/1`, `$transaction/2`, `$transaction/3`, `$undo/1` |
@@ -2176,6 +2189,8 @@ Predicate rows each file's calls reach (a predicate several files call counts in
 | PR1b | 1 | 0 | 1 | `refusal indexed(L): the Prolog dict of an index …` |
 | SRC2 | 1 | 1 | 0 | `$unload_file/1` |
 | TAI1 | 1 | 1 | 0 | `format_time/3` |
+| TB2-TB9 | 1 | 0 | 1 | `refusal what` |
+| TB4 | 1 | 0 | 1 | `refusal the VM instruction T_DELAY (a conditiona…` |
 | TB6 | 1 | 1 | 0 | `S_INCR_DYNAMIC` |
 | WR2 | 1 | 0 | 1 | `refusal writing a grounded value SWI has no type…` |
 | WRAP1 | 1 | 0 | 1 | `refusal freeCodesDefinition! of a wrapped predic…` |
@@ -2188,8 +2203,8 @@ xychart-beta
     title "R2: missing (bars) and refused (line) rows"
     x-axis ["predicates", "refusal sites", "flags", "VM instructions"]
     y-axis "rows" 0 --> 150
-    bar [136, 0, 20, 64]
-    line [0, 71, 15, 0]
+    bar [124, 0, 20, 36]
+    line [0, 73, 15, 0]
 ```
 
 <!-- END GENERATED R2 status -->
@@ -7230,7 +7245,7 @@ written, every claim below is UNVERIFIED until the gate). TB0 is the state the l
 - **DIVERGES (representation only; each with its place):**
   1. A `trie *` is an `Int` index into the database's trie table and a `trie_node *` an `Int` node id, 0 for NULL, shared with TR1's trie (audit D-0453 Q3): src/pl-incl.jl:2378-2392
      (the block header), `delay.variant`/`.answer`, `delay_info.variant`, `answer.node`, `delay_usage.answers`, `worklist.table`, `tbl_component.leader`, `ld_tabling.variant_table`.
-  2. The pointer sentinels `WL_GROUND` (0x21), `WL_DYNAMIC` (0x41), `DV_DELETED` (1) and `DL_UNDEFINED` (1) are INTEGERS: src/pl-tabling.jl:30-33, :60, :63; `WL_IS_SPECIAL`
+  2. The pointer sentinels `WL_GROUND` (0x21), `WL_DYNAMIC` (0x41), `DV_DELETED` (-1: every table trie has a serial >= 1, TB1) and `DL_UNDEFINED` (1) are INTEGERS: src/pl-tabling.jl:30-33, :60, :63; `WL_IS_SPECIAL`
      (:37), `WL_IS_WORKLIST` and `DL_IS_DELAY_LIST` test them as upstream's macros do. Owners of the code that stores them: TB1/TB3/TB4.
   3. The enums `cluster_type`, `scc_status`, `scc_neg_status` (and `WLFS_*`, `CAND_*`, `TBL_FREE_*`) are `Int` constants, not an `@enum` (an `@enum` needs a `_enum_hash` manifest entry; the
      repo's precedent is `RECORDA`): src/pl-incl.jl:2405-2432, src/pl-tabling.jl:39-95. A value out of range is therefore not refused by the type.
@@ -7257,6 +7272,53 @@ written, every claim below is UNVERIFIED until the gate). TB0 is the state the l
 Tests: test/core_lang/test_tabling_state_swipl.jl (pins from the 10.1.20 oracle, a live comparison when swipl is on PATH, white-box rows for the pool, the free lists, the restraint
 defaults, the `TF_*` bits and the sentinels); test/core_lang/test_set_flag_swipl.jl (four flags un-refused from `_SF_REFUSED`, 15 left); manifest rows in test/static_analysis_manifest.jl.
 
+## TAB1 TB1 — the variant tables: `variant_table`, the answer tables, the status family, the `$tbl_*` predicates over them (R2, swipl-devel 18168e62)
+
+What TB1 adds (pin `18168e629eab`, oracle swipl 10.1.20; written edit-only on branch wip/tb1, in three parts: NOTHING was compiled or run when this block was written, every claim below
+is UNVERIFIED until the gate). A table that already exists can be found and asked about; a new one cannot be made yet (the create path is TB2).
+- **UPSTREAM:** `src/pl-tabling.c` (src/pl-tabling.jl): `variant_table` (:2583), `reset_answer_table` (:2642), `release_variant_table_node` (:2679), `is_variant_trie`, `trie_ret_arity`,
+  `ret_functor`, `unify_trie_ret` (:2951-3021), `release_answer_node` and `tbl_release_node` (:3024-3045), `pred_max_table_subgoal_size`, `get_answer_table` with the `AT_*` flags (:3056-3228),
+  `unify_fresh`, `complete_or_invalid_status`, `unify_complete_or_invalid`, `unify_table_status`, `table_status`, `table_is_incomplete`, `unify_skeleton` (:4189-4390), `tbl_variant_table`
+  (:5977-6020), `is_tabled`, `tbl_implementation` (:7302-7342), the node cache `new_node_array`, `start_node_id`, `start_node_array`, `get_start_node`, `set_start_node` (:12348-12437), and
+  `pl-trie.h`'s `isTriePtrValue`, `triePtrValue`, `valueTriePtr` and `pl-trie.c`'s `value_trie`. The 13 predicates: `$tbl_variant_table/6`, `$tbl_abstract_table/6`,
+  `$tbl_moded_variant_table/6`, `$tbl_existing_variant_table/5`, `$tbl_local_variant_table/1`, `$tbl_global_variant_table/1`, `$tbl_variant_table/1`, `$tbl_table_status/2,4`,
+  `$tbl_table_pi/2`, `$tnot_implementation/2`, `$tbl_implementation/2`, `$is_answer_trie/2` (registered in `PL_predicates_from_tabling`, src/pl-ext.jl needs no edit).
+- **DIVERGES (representation and single-thread; each with its place in src/pl-tabling.jl, nothing here changes an answer):**
+  1. A trie reference is the trie's serial in `gd.tries` (0: none); `ld.tabling.variant_table` is that serial. EVERY table trie is registered at creation (the variant table by
+     `trie_symbol`, an answer trie by TB1's `trie_serial!`), so a table trie's serial is 1 or more and `DV_DELETED` is -1 (audit D-0475 item 5, option A).
+  2. The node value of a private variant-table node is a trie POINTER VALUE `(serial << 3) | 7` (`TRIE_PTR_TAG`, pl-trie.h:201-211): `isTriePtrValue`, `triePtrValue`, `valueTriePtr`. The
+     trie needs to find an answer trie from the variant table alone, so `trie.registry` (a field of TR1's `trie`) is `gd.tries` shared by reference; `release_variant_table_node` reads it.
+  3. A `node_array` is a growable `Vector{Int}` of node ids indexed by `start_id` (no blocks, no concurrent readers); `start_node_ids` is the counter `gd.tabling_start_node_ids` and the cache
+     is `ld.tabling.start_nodes` (struct change: src/pl-global.jl, src/pl-setup.jl).
+  4. No return-functor cache (`fast_ret_functor` is TB3's): `ret_functor` looks the functor up each time. `unify_trie_ret` builds the `ret/N` term with `PL_unify`; an attributed variable
+     in the call (`O_TRIE_ATTVAR`) is TR3's.
+  5. Only private tables: `variant_table(ld, true)`, `AT_SHARED` and a shared tabled predicate are refused by name (owner TH1); `claim_answer_table` and `clref` do not exist, so a complete table
+     is always unified as its symbol and `unify_table_status` (`O_PLMT`, TR4). `$tbl_global_variant_table/1` always fails (there is no shared table); `$tbl_variant_table/1` is deterministic
+     (it names the local table; upstream is nondeterministic over the local and the shared one).
+  6. `get_answer_table` does not retry after a stack overflow (the kernel stacks grow): the retry loop of pl-tabling.c:3085-3228 is a single pass.
+- **Refused by name, each with its owner** (`tbl_refuse`, a `NotPortedError` whose third field is the owner; `refusal:src/pl-tabling.jl::tbl_refuse::what` in docs/r2_owners.tsv): the create
+  path (`unify_fresh` with `create`, `$tbl_variant_table/6` and its two siblings) and a table with a worklist (`reset_answer_table`, `unify_table_status`) TB2; delay info on an answer node
+  (`release_answer_node`) TB4; an IDG node (`complete_or_invalid_status`, `is_answer_trie`, `idg_init_variant`, `idg_add_edge` inlined as their guards) TB6; a monotonic predicate
+  (`inner_is_monotonic`) TB7; the subgoal-size tripwire (`tbl_pred_tripwire`) TB8; a tracked table (`tt_abolish_table`) TB9; shared tables and a symbol value TH1. NOT TB1 (owner TB5):
+  `abolish_table`, `empty_variant_table`, `clear_variant_table`, `reset_table_bulk`, `destroy_answer_trie`, `delayed_destroy_table` and the orphan code (pl-tabling.c:2700-2950, :4472-4690).
+- **Merge with TR1 (APPLIED on the stack, batch 2: TR1's stub `tbl_release_node` is gone):** `trie.worklist` widens by `Int` (`trie.predicate` was already `Union{Nothing, definition{T}}` from TB0); `trie.registry` is new (the last field, `trie_create` passes `trie{T}[]`);
+  `trie_symbol` registers a trie only when its serial is 0; `release_value` and `unify_value` gain the pointer-value branch (a table node's value is a pointer value, not a symbol: release destroys a symbol-less answer trie, unify gives its symbol). test_trie_swipl.jl's release_node rows now read TB1's answers (a symbol value: `NotPortedError` owner TH1; a node with delay information: owner TB4), and the manifest keeps one `tbl_release_node` entry (TB1's). TR4 (stacked after) threads the database through `trie_empty`/`trie_destroy`/`trie_delete` (for `trie_discard_clause`); `release_node` and `release_value` have none, so TB1's table releases use `table_trie_empty` / `table_trie_destroy` (src/pl-tabling.jl: `empty_trie` / `trie_destroy` without the discard; a table trie with a compiled clause is refused by name, owner TB3, which threads the database through the release chain).
+- **Pinned from the oracle:** 55 rows (6 before any table exists, 49 after) of test/core_lang/test_tabling_variant_swipl.jl (swipl 10.1.20, two identical runs). Two pinned calls end swipl itself and have no row (an unbound variant to
+  `$tbl_existing_variant_table/5`, `$tbl_table_pi/2` of the variant table); the kernel raises or fails there by its own code, untested.
+- **To verify at the gate (unverified by construction):** the compile of the 830 lines (handoff2 lists the likely first failures); `trie_lookup_abstract`'s return `(rc, node)` and the location
+  `-(t + 1)`; the rows of tvl06 (`trie_gen/3` over the variant table needs `unify_value`'s pointer-value branch, TR1 edit 5); the `permission_error` indicator of tvn03-tvn07 (swipl prints
+  `tv_q/1` without the module).
+- **DIVERGES (TAB1 stack, batch 2; dispatcher decision, interim form; owner TB3):** since TR4 `trie_empty`, `trie_destroy`, `trie_delete`, `trie_clean`, `empty_trie` and `set_trie_value_word` take the
+  database (`trie_discard_clause` retracts the compiled clause through it), upstream's `trie_empty`/`trie_destroy` take no such argument (the C code reaches the database through the process-wide state). The release chain
+  that TB1's table code runs (`reset_answer_table` -> `release_node`/`release_value`/`clear_node` -> `tbl_release_node`) is TR1's and passes no database, so TB1 calls `table_trie_empty(atrie)` and
+  `table_trie_destroy(atrie)` (src/pl-tabling.jl): `empty_trie`/`trie_destroy` without the discard, and a named refusal (`tbl_refuse`, owner TB3) when `atrie.clause != 0`. No table trie holds a compiled clause
+  before TB3 (`tbl_complete_answer_clause` compiles answer tries), so the refusal cannot fire until then. Follow-up, owner TB3: thread `gd` through `release_node`, `release_value`, `clear_node`, `clear_nodes`,
+  `destroy_node` and `prune_node`, then delete the two functions and call `trie_empty(gd, ..)`/`trie_destroy(gd, ..)` as upstream does (this touches TR1's mutant `old` texts in tools/mutants/TRIE1.py).
+- **ORIGINAL (no upstream counterpart):** `tbl_refuse`, `trie_serial!`, the field `trie.registry`, `gd.tabling_start_node_ids`.
+
+Tests: test/core_lang/test_tabling_variant_swipl.jl (the pins above, the white-box state of the two tables the test makes with `get_answer_table(AT_CREATE)` and `TRIE_COMPLETE`, a live comparison
+when swipl is on PATH); the `DV_DELETED` row of test/core_lang/test_tabling_state_swipl.jl; manifest rows in test/static_analysis_manifest.jl; mutants in tools/mutants/TB1.py.
+
 ## TRIE1 — the 19 trie predicates of pl-trie.c and the TAB1 step that ports each (audit D-0453 items 1 and 3, owner rows in docs/r2_owners.tsv; edit-only, nothing was compiled)
 
 TAB1 ports pl-trie.c whole (audit D-0453), in three steps; the owner of every pl-trie.c row is TRIE1 (`cfile:pl-trie.c`). `BeginPredDefs(trie)` of the pin 18168e62
@@ -7266,7 +7328,7 @@ TAB1 ports pl-trie.c whole (audit D-0453), in three steps; the owner of every pl
 |---|---|---|
 | TR1 (trie core) | `trie_new/1`, `is_trie/1`, `trie_destroy/1`, `trie_insert/3`, `trie_insert/2`, `$trie_insert_abstract/3`, `trie_update/3`, `trie_insert/4`, `trie_delete/3`, `trie_lookup/3`, `trie_term/2` (11) | written on wip/tr1, in the TR1 gate |
 | TR2 (enumeration, properties, nested tries) | `trie_gen/3`, `trie_gen/2`, `$trie_gen_node/3`, `$trie_property/2`, `trie_insert_insert/3`, `trie_lookup_gen/3`, `trie_lookup_delete/3` (7) | after TR1 |
-| TR4 (compiled tries) | `$trie_compile/2` (pl-trie.c:5155), and the system predicates `trie_gen_compiled/2,3` that `initTries` creates (:5233-5243, not in the table) | after TR3 |
+| TR4 (compiled tries) | `$trie_compile/2` (pl-trie.c:5155), and the system predicates `trie_gen_compiled/2,3` that `initTries` creates (:5233-5243, not in the table) | written on wip/tr4 (edit-only), after TR3 |
 
 Seven of the 19 have an exact `pred:` row (`is_trie/1`, `trie_lookup/3`, `trie_term/2`, `trie_gen/2`, `trie_gen/3`, `$trie_gen_node/3`, `$trie_property/2`: they are called by a scanned
 boot or library file); TR1 removes the first three, TR2 the other four. The other 12 (`trie_new/1`, `trie_insert/2`, `trie_insert/3`, `trie_insert/4`, `trie_update/3`, `trie_delete/3`, `trie_destroy/1`,
@@ -7331,7 +7393,7 @@ Part A is the algorithm file and its records; part B (the PRED_IMPLs `trie_new/1
      (`used`, `live`, `free`, `nfree`, `sweep_at`, `bytes`) is what the free-list discipline and `stat_trie`'s sizes need. Removal condition: an atom-GC step.
   3. **No locks** (owner TH1): `lock_children` and `unlock_children` are left out; `TRIE_CONCURRENT` (src/pl-incl.jl:1307) is kept because it decides how nodes are allocated (individually, no chunks: `trie_new/1` sets it) and whether a replaced
      block lingers (`trie.lingering`, freed by `free_lingering_blocks`, src/pl-trie.jl:376, :387).
-  4. **Refusals by name** (`TrieRefusal(what, owner)`, src/pl-trie.jl:95, a thrown record): `tbl_release_node` (owner TB1, reached only for TRIE_ISTABLE and TRIE_ISVARIANT tries, :152); `trie_discard_nodes`, `trie_restore_nodes`, a TRIE_DISCARDED
+  4. **Refusals by name** (`TrieRefusal(what, owner)`, src/pl-trie.jl:95, a thrown record): `tbl_release_node` (owner TB1: was a stub here, now TB1's code in src/pl-tabling.jl, see the TAB1 TB1 section); `trie_discard_nodes`, `trie_restore_nodes`, a TRIE_DISCARDED
      trie in `trie_ensure_nodes` and a compiled clause in `trie_discard_clause` (owner TR4, :164-181); (an attributed variable in `trie_lookup_abstract` is no refusal since TR3: item 18); O_PLMT regions (`acquire_trie`, `release_trie`, `tid`, the alloc pool; owner TH1). `release_value` erases a record value (item 12) and does nothing for an atom (not counted; the trie-pointer values are TB1).
   5. **`get_trie_from_node` is left out**: a node does not point to its trie, so `prune_node` takes the trie as an argument (src/pl-trie.jl:794), as every function that upstream gives a node.
   6. **`initTries!` registers the blob only** (src/pl-trie.jl:1367): the mutex stripes are TH1, the procedure lookups at the end of upstream's `initTries` are TR2 and TB1. The blob (`trie_blob`, :1360, NOCOPY, not unique) has no
@@ -7394,6 +7456,51 @@ and src/pl-incl.jl cite 18168e62. Design: lk-channel evidence/TRIE2/handoff.md; 
 
 Tests: test/core_lang/test_trie_gen_swipl.jl (30 rows t0-t29 against swipl 10.1.20 through the .pl driver and the .out file, the kill rows, the `ld.trie_gen_force_epoch` rerun, `ld.trie_gens.live == 0` after each row). Manifest: `_manifest_tr1` and
 `_MANIFEST_TR2_FREE` in test/static_analysis_manifest.jl.
+
+## TAB1 TR4 — compiled tries: compile_trie, the T_* instructions, S_TRIE_GEN, trie_gen_compiled/2,3 and `$trie_compile`/2 (swipl-devel 18168e62; edit-only: NOTHING was compiled or run when this was written, the gate decides)
+
+UPSTREAM: swipl-devel 18168e629eab, `src/pl-trie.c` (the compile block :4462-5190, `initTries` :5233-5243, `trie_compile` :5155), `src/pl-trie.h` (`trie_maybe_discard_nodes`),
+`src/pl-vmi.c` (`S_TRIE_GEN` :5937, `T_TRIE_GEN2` :6134 to `T_CHECKWAKEUP`, the macros `TrieVarP`, `TrieCurrentP`, `TrieSaveState`, `TrieNextArg`, `TriePushArgP`, `TriePopArgP`, `UnwindTrieArgP`, `TRIE_TRY`),
+`src/pl-incl.h` (`choice.value.jump.trie_offset`). Ledger line (PIN1): a FIRST port at the pin. Design and states: lk-channel evidence/TRIE4/handoff.md to handoff5.md.
+
+- **Ported:** src/pl-trie.jl (`trie_compile_state` and its emitters `add_vmi!`, `add_vmi_d!`, `add_vmi_w!`, `add_else!`, `add_vmi_else_d!`, `add_vmi_else_w!`, `fixup_else!`, `add_indirect!`, `add_smallint!`,
+  `add_vmi_else_i!`; `compile_trie_value`, `compile_trie_node`, `fixup_last_fail!`, `create_trie_clause`, `compile_trie_code`, `compile_trie`, `set_trie_clause_general_undefined`, `trie_discard_clause` (whole body),
+  `trie_maybe_discard_nodes`, `pl_trie_compile2_va`, `initTries!(gd)` for the supervisor tail); src/pl-vmi.jl (28 declarations `S_TRIE_GEN`, `T_TRIE_GEN2`, `T_TRIE_GEN3`, `T_VALUE`, `T_DELAY`, the `T_TRY_*`/`T_*` pairs,
+  `T_CHECKWAKEUP`); src/pl-wam.jl (their bodies in `PL_next_solution_guarded` and the helpers `_trie_*`); src/pl-incl.jl (`choice.trie_offset`, `PL_code_data.trie_gen`), src/pl-global.jl
+  (`procedures_trie_gen_compiled2/3`), src/pl-supervisor.jl (`code[S_TRIE_GEN, I_EXIT]` and `_shared_supervisor`).
+- **DIVERGES (representation only unless said), owner TR4:**
+  1. **The four trie state words live in GLOBAL cells** (src/pl-wam.jl `_trie_state_cell`): upstream keeps `TrieTermP`, `TrieOffset`, `TrieArgStackP`, `TrieSavedP` in frame cells and trails them
+     (`TrailAssignment`); a kernel frame slot is not trailed, so T_TRIE_GEN2/3 allocate four global cells, the frame slot `TRIE_ARGS+i` holds a reference to cell `i`, and `TrieSaveState` trails the cell with
+     `TrailAssignment!`. The variables of the clause (`TrieVarP`) are likewise slots holding a reference to a fresh global cell (T_VAR binds that cell, the variable `*vp` stands for).
+  2. **One pass, no sizing pass** (`trie_compile_state`): upstream sizes the code first, then fills a buffer (`elses`, `grow_codes`, `start_trie_code`, `clean_trie_compile_state`: a C-memory device); the kernel
+     pushes onto a growing `Vector{code}` and `sizing` is always false. `else_loc == 0` means "no else chain" (code 0 is always `T_TRIE_GEN2/3`).
+  3. **Operands:** T_FUNCTOR and T_ATOM hold the functor and atom WORD as upstream; T_SMALLINT the tagged word (as H_SMALLINT; `T_SMALLINTW`/`T_TRY_SMALLINTW` are not declared, `CODES_PER_WORD == 1`,
+     refused rows like `H_SMALLINTW`); T_FLOAT, T_MPZ and T_STRING hold ONE word, a 1-based index into `clause.literals` (the compiler's literal table, as H_FLOAT), where upstream inlines the header and the data;
+     `T_DELAY`'s operand is `trie_node_handle(tr, nid)` (0 = NULL after `set_trie_clause_general_undefined`).
+  4. **`trie.clause_cref`** (src/pl-incl.jl, after `clause`): `compile_trie` keeps the `ClauseRef` that `assertDefinition!` returns (coordinator ruling D-0487 item 2); `S_TRIE_GEN` reads it for a trie
+     (`_trie_clause_cref(tr)`), `trie_discard_clause(gd, tr)` retracts through it (`retractClauseDefinition!(gd, def, cl, false)`, the `ld`-less method) when `gd.halt_cleaning == CLN_NORMAL`. Upstream finds the
+     reference through `clause_clref`. Every function that reaches `trie_discard_clause` therefore takes `gd` first (`empty_trie`, `trie_empty`, `trie_empty_take`, `trie_destroy`, `trie_clean`,
+     `set_trie_value_word`, `set_trie_value`, `trie_delete`).
+  5. **A detached `ClauseRef` for a clause passed as the first argument** (`S_TRIE_GEN`, the clause-blob path): `trie_gen_compiled(Clause, K)` after `'$trie_compile'(T, Clause)` knows no trie, so the run uses
+     `ClauseRef{T}(nothing, word(0), cl, nothing)` (the I_CALLN idiom); a clause the trie has discarded since still answers what the trie held when it was compiled (the same as swipl, row t40 of
+     test_trie_compiled_swipl). Alternative left open: a gd table clause -> reference. Open question to the coordinator, recommendation: keep.
+  6. **`T_DELAY` is a named refusal** (owner TB4; docs/r2_owners.tsv `refusal:` row): `compile_trie_node` refuses a conditional answer by name, so no clause holds the instruction. `tbl_single_answer` is
+     TB3's: `S_TRIE_GEN` refuses a table's answer trie (`TRIE_ISTABLE`, arity 2) by name, a plain trie skips it as upstream's test is false for it. An attributed variable in a key is refused by name (TR3).
+  7. **`lTop`**: `setLTop!(ld, argFrameP(base, DEF.arity))` before `compile_trie` and before the type error's foreign frame (upstream `lTop = (LocalFrame)ARGP`); a `compile_trie` that returns 0 raises, as ATOM_error.
+  8. **No CAS, no retry** in `compile_trie` (single thread, owner TH1); no atom registration (`forAtomsInClause`) in `create_trie_clause`.
+  9. **The kernel-prolog list of the boot image is EMPTY** (test/db/test_boot_image_swipl.jl): `trie_gen_compiled/2,3` are made by `initTries!(gd)` (`lookupProcedure`, flags `P_LOCKED_SUPERVISOR | P_VOLATILE`,
+     `codes = gd.code_data.trie_gen`), the kernel-foreign count constant is 373 (374 before `'$trie_compile'/2` was registered). The generated R2 blocks are not hand-edited; they follow the next regeneration.
+  10. **Upstream behaviour the kernel does not copy (named):** swipl at the pin overflows the local stack on `trie_gen_compiled(foo, _)` (neither trie nor clause) and fails an internal check on `trie_gen_compiled/2` of a
+     clause reference of a trie with non-true values; the kernel raises `type_error(trie_or_clause, X)` (kernel-only testset KD-1; the defect is in the private register, by SHA only).
+  11. **Key-only clause of a map trie (KD-4, t39/t53-t55):** `trie_gen_compiled/2` on a MAP trie compiles T_TRIE_GEN2 and T_VALUE (pl-trie.c:5012-5013, :5120); T_VALUE sets `TrieOffset` 2, so the value code reads
+     the global cell after `+(Key)` (pl-vmi.c:6202). The kernel reads a functor word there as upstream's `deRef2` does (`_trie_deref_current`, src/pl-wam.jl; rows t39, t53-t55). For an ATOM or small-integer key that cell is
+     above `gTop`: swipl at the pin reads whatever an earlier term left (it answered `[]` once and `[a]` once for the same keys), the kernel reads the term's own functor word, so a non-variable value finds no answer.
+     No row can pin it (named DIVERGES in `_trie_deref_current`; test/core_lang/test_trie_compiled_swipl.jl header, KD-4).
+- **Left out / not here (each to its owner):** conditional answers (TB4), a table's answer trie (TB3/TB6), attributed variables in keys (TR3), `trie_restore_nodes` (refused by name).
+- **Mermaid graph:** the code graph is GENERATED (tools/port_check.jl); the nodes come with the next regeneration at the gate.
+
+Tests: test/core_lang/test_trie_compiled_swipl.{jl,pl,out} (47 swipl-pinned rows; t42-t46 run once TR2 is stacked), test/core_lang/test_trie_swipl.jl (white-box rows), test/db/test_boot_image_swipl.jl,
+test/core_lang/test_cont_boot_swipl.jl. Manifest: `_manifest_tr4` in test/static_analysis_manifest.jl. Mutants: tools/mutants/TRIE4.py.
 
 ## AUTOLOAD1 (A1, A4, Q3) — `ld` in trapUndefined, the `autoload` flag setter, the loud boot-session error (R2, audit D-0387 item 3, edit-only: nothing was compiled when this was written; the gate decides)
 
@@ -7667,7 +7774,7 @@ cbf4e189.
   `system:trigger_first/2` (the AV8 stand-in `_boot_when!`, src/pl-ext.jl, which defined them natively where swipl has them in
   library/when.pl, not in the boot image); WHEN2 removed the stand-in, `_BI_KERNEL_ONLY` is empty.
 - **trie_gen_compiled/2,3** (T1 missing_prolog): system predicates with supervisor code that pl-trie.c:4975-4987
-  (initTries) creates; deferred with the trie step (docs/r2_owners.tsv: trie_gen/2,3 -> TRIE1).
+  (initTries) creates; made by TR4's `initTries!(gd)` (see the TAB1 TR4 section); the two rows are in the boot image, the kernel-prolog list is empty.
 - **T4 and dwim**: test_boot_messages passes with `_BM_KNOWN` empty, before and after DWIM1 (src/pl-dwim.jl registers
   `'$dwim_predicate'/2`, pl-ext.c:156 -> pl-dwim.c:200, and `dwim_match/3`, pl-ext.c:155 -> pl-dwim.c:179): the guard's rows
   need no pin for it, and a message whose translation reaches the predicate now finds it.
