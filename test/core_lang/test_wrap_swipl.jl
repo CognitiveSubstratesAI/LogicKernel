@@ -163,14 +163,21 @@ _ep(m::String, n::String, a::Integer) = _ec(":", _ea(m), _ec("/", _ea(n), _ei(a)
 # a LOOP inside PL_next_solution (constant memory, no stack overflow, no resource error: measured, the CI time limit), which no
 # test line can interrupt. So the check runs FIRST, on a program that only CREATES a closure (`wrap_predicate/4` calls nothing
 # wrapped), and every testset that calls a wrapped predicate runs only when it holds; else the testset below fails at once.
-const _COPIES_OK = let
-    f = tempname() * ".pl"
-    write(f, "cp_p(1).\ncp_w(ok) :- wrap_predicate(cp_p(_), n1, W, W).\n")
-    gd, ld, st = _wt_load(_WT, f)
-    rm(f)
-    st == "ok" && _wt_row(gd, ld, "cp_w") == _er("cp_w", _ea("ok")) &&
-        !isempty(gd.closure_refs) &&
-        all(c -> LK._impl_any_defined(c.def), gd.closure_refs)
+const _COPIES_OK = try
+    let
+        f = tempname() * ".pl"
+        write(f, "cp_p(1).\ncp_w(ok) :- wrap_predicate(cp_p(_), n1, W, W).\n")
+        gd, ld, st = _wt_load(_WT, f)
+        rm(f)
+        st == "ok" && _wt_row(gd, ld, "cp_w") == _er("cp_w", _ea("ok")) &&
+            !isempty(gd.closure_refs) &&
+            all(c -> LK._impl_any_defined(c.def), gd.closure_refs)
+    end
+catch
+    # A mutant that makes the guard program itself throw (WRAP1-M3b, M15c, M17: an assertion, a
+    # BoundsError, a supervisor error) must FAIL the guard testset below (a verdict: caught), not
+    # stop the file at load (NO VERDICT, "does not load", which blocks the battery).
+    false
 end
 @testset "WRAP1 guard: a closure's copy is a defined predicate (else no row that calls a wrapped predicate runs)" begin
     @test _COPIES_OK
