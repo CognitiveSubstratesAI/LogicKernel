@@ -157,7 +157,25 @@ _er(name::String, answer::String) = "$name " * _ec(name, answer)
 _ed(xs::String...) = foldl((a, b) -> _ec("-", a, b), xs)        # `X1-X2-...-Xn` (left nested, as `-` is yfx)
 _ep(m::String, n::String, a::Integer) = _ec(":", _ea(m), _ec("/", _ea(n), _ei(a)))   # `m:n/a`
 
-@testset "WRAP1: wrappers, closures and their predicates == swipl's answers (the .out), through a program" begin
+# GUARD of every testset that CALLS a wrapped predicate or a closure (WRAP1-M15b). The closure's number is the copy's definition
+# (`impl_foreign_function`, src/pl-wrap.jl: `_impl_any_defined` reads it); a copy without one is an undefined predicate, and a
+# call of the wrapped predicate then goes `trapUndefined` -> `autoImport` -> the wrapped predicate -> its wrapper -> the copy ...
+# a LOOP inside PL_next_solution (constant memory, no stack overflow, no resource error: measured, the CI time limit), which no
+# test line can interrupt. So the check runs FIRST, on a program that only CREATES a closure (`wrap_predicate/4` calls nothing
+# wrapped), and every testset that calls a wrapped predicate runs only when it holds; else the testset below fails at once.
+const _COPIES_OK = let
+    f = tempname() * ".pl"
+    write(f, "cp_p(1).\ncp_w(ok) :- wrap_predicate(cp_p(_), n1, W, W).\n")
+    gd, ld, st = _wt_load(_WT, f)
+    rm(f)
+    st == "ok" && _wt_row(gd, ld, "cp_w") == _er("cp_w", _ea("ok")) &&
+        !isempty(gd.closure_refs) && all(c -> LK._impl_any_defined(c.def), gd.closure_refs)
+end
+@testset "WRAP1 guard: a closure's copy is a defined predicate (else no row that calls a wrapped predicate runs)" begin
+    @test _COPIES_OK
+end
+
+_COPIES_OK && @testset "WRAP1: wrappers, closures and their predicates == swipl's answers (the .out), through a program" begin
     names = _wrap_names()
     expected = String.(readlines(_WRAP_OUT))
     # not a vacuous agreement: the .out has a line per row, and the rows' own evidence is in it
@@ -191,7 +209,7 @@ end
 
 # The kill rows: the answers of single rows, built from pieces here and equal to the .out's (swipl's); each fails on its own
 # when the one thing it names breaks, so a mutant shows as a named verdict and not only as a changed line of the file.
-@testset "WRAP1 kill rows: each row's answer, by name" begin
+_COPIES_OK && @testset "WRAP1 kill rows: each row's answer, by name" begin
     names = _wrap_names()
     gd, ld, st = _wt_load(_WT, _WRAP_PL)
     @test st == "ok"
@@ -369,7 +387,7 @@ function _wb_closure(gd::LK.PL_global_data{T}, codes::Vector{LK.code}) where {T}
     return LK.closure_of_word(gd, codes[i + 2])::LK.closure{T}
 end
 
-@testset "WRAP1 white-box: closures, supervisor_crefs, innermost_supervisor, unwrap" begin
+_COPIES_OK && @testset "WRAP1 white-box: closures, supervisor_crefs, innermost_supervisor, unwrap" begin
     f = tempname() * ".pl"
     write(f, _WB_PL)
     gd, ld, st = _wt_load(_WT, f)
