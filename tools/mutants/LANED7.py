@@ -102,4 +102,10 @@ MUTANTS = [
     dict(id="LD7-31 open/4: a failed pipe open raises nothing (KILL: d327)", file=F, targets=TL,
          old='        s, errno = Sopen_pipe(text_string(txt), String(how))\n        if s === nothing\n            PL_error(\n                ld, "", 0, Base.Libc.strerror(errno), ERR_FILE_OPERATION, mk_sym(T, :open),\n                mk_sym(T, :source_sink), file, errno\n            )\n',
          new='        s, errno = Sopen_pipe(text_string(txt), String(how))\n        if s === nothing\n'),
+    dict(id="LD7-32 open/4: the lock option is ignored (KILL: the lock refusal testset)", file=F, targets=TL,
+         old='        throw(\n            NotPortedError{T}(\n                lock, "open/4\'s lock(Lock) option (advisory file locks)", "no flock"\n            )\n        )\n',
+         new=''),
+    dict(id="LD7-33 open/4: an unknown lock is not a domain error (KILL: d342, d343)", file=F, targets=TL,
+         old='            PL_error(ld, ERR_DOMAIN, mk_sym(T, :lock), l)\n            return nothing\n',
+         new='            return nothing\n'),
 ]

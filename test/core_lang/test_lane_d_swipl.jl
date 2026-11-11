@@ -447,7 +447,9 @@ const _LD_CASES = [
     ("d338", raw"open(pipe('printf abc'), read, S), seek(S, 1, current, X), get_char(S, C), close(S), R = X-C"),
     ("d339", raw"open(pipe('printf abc'), read, S), get_char(S, _), get_char(S, _), cerr(seek(S, 1, bof, X), R0), get_char(S, C), close(S), R = R0-X-C"),
     ("d340", raw"open(pipe('printf abc'), read, S, [reposition(false)]), cerr(seek(S, 0, bof, _), R0), close(S), R = R0"),
-    ("d341", raw"open(pipe('printf abc'), read, S), cerr(set_stream_position(S, '$stream_position'(5, 1, 5, 5)), R0), close(S), R = R0")
+    ("d341", raw"open(pipe('printf abc'), read, S), cerr(set_stream_position(S, '$stream_position'(5, 1, 5, 5)), R0), close(S), R = R0"),
+    ("d342", raw"outfile(F), cerr(open(F, write, _, [lock(foo)]), R0), R = R0"),
+    ("d343", raw"cerr(open(pipe('true'), read, _, [lock(foo)]), R0), R = R0")
 ]
 
 # swipl 10.1.20-1-g18168e629's answers to the program and cases above (the driver's lines; evidence/S2/lane_d_rows.out)
@@ -789,7 +791,9 @@ const _LD_PINNED = [
     "t_d338 c[116,95,100,51,51,56]/1(c[45]/2(i1,a[98]))",
     "t_d339 c[116,95,100,51,51,57]/1(c[45]/2(c[45]/2(a[111,107],i1),a[98]))",
     "t_d340 c[116,95,100,51,52,48]/1(c[114,97,105,115,101,100]/1(c[112,101,114,109,105,115,115,105,111,110,95,101,114,114,111,114]/3(a[114,101,112,111,115,105,116,105,111,110],a[115,116,114,101,97,109],a[60,115,116,114,101,97,109,62])))",
-    "t_d341 c[116,95,100,51,52,49]/1(c[114,97,105,115,101,100]/1(c[112,101,114,109,105,115,115,105,111,110,95,101,114,114,111,114]/3(a[114,101,112,111,115,105,116,105,111,110],a[115,116,114,101,97,109],a[60,115,116,114,101,97,109,62])))"
+    "t_d341 c[116,95,100,51,52,49]/1(c[114,97,105,115,101,100]/1(c[112,101,114,109,105,115,115,105,111,110,95,101,114,114,111,114]/3(a[114,101,112,111,115,105,116,105,111,110],a[115,116,114,101,97,109],a[60,115,116,114,101,97,109,62])))",
+    "t_d342 c[116,95,100,51,52,50]/1(c[114,97,105,115,101,100]/1(c[100,111,109,97,105,110,95,101,114,114,111,114]/2(a[108,111,99,107],a[102,111,111])))",
+    "t_d343 c[116,95,100,51,52,51]/1(c[114,97,105,115,101,100]/1(c[100,111,109,97,105,110,95,101,114,114,111,114]/2(a[108,111,99,107],a[102,111,111])))"
 ]
 
 const _LD_DATA = "abc\nxyz\nlast line\n"
@@ -861,7 +865,7 @@ end
         @test k == p
     end
     # not vacuous: the pins hold raised errors, `failed` rows, and answers, so the comparison can pass and can fail
-    @test count(l -> occursin("c[114,97,105,115,101,100]", l), _LD_PINNED) == 107     # raised(…)
+    @test count(l -> occursin("c[114,97,105,115,101,100]", l), _LD_PINNED) == 109     # raised(…)
     @test count(l -> endswith(l, "/1(a[102,97,105,108,101,100])"), _LD_PINNED) == 13   # failed
     @test count(l -> endswith(l, "/1(a[111,107])"), _LD_PINNED) == 14                 # ok
 end
@@ -903,6 +907,17 @@ end
     # not vacuous: the neighbouring predicates that ARE ported answer (rows d310-d312)
     @test !_ld_refuses("noprotocol")
     @test !_ld_refuses("\\+ protocolling(_)")
+end
+
+# open/4's lock(Lock) option: pl-file.c:4290-4310 (the `l`/`L` + `r`/`w` letters of `how`), pl-stream.c Sopen_file's fcntl(F_SETLK[W]). The kernel
+# has no fcntl locks (Sopen_file answers EINVAL for `l`/`L`), the option is a named refusal after its domain check (rows d342, d343).
+# Slock/Sunlock/StryLock/Sshare (pl-stream.c:345-395, thread mutex and the `locks` count) have no twin: one thread, DIVERGES comments say so.
+@testset "named refusals: open/4's lock(Lock) option (pl-file.c:4290-4310)" begin
+    @test _ld_refuses("open('/dev/null', read, _, [lock(read)])")
+    @test _ld_refuses("open('/dev/null', read, _, [lock(shared)])")
+    @test _ld_refuses("open('/dev/null', write, _, [lock(write)])")
+    @test _ld_refuses("open('/dev/null', write, _, [lock(exclusive)])")
+    @test !_ld_refuses("open('/dev/null', read, S, [lock(none)]), close(S)")
 end
 
 @testset "the pins are swipl's (live, when swipl is on PATH)" begin
