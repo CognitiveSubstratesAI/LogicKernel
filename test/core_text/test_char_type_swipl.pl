@@ -16,8 +16,8 @@ t1(R) :- ct_codes(Cs), ct_cls0(Ts), member(C, Cs), char_code(Ch, C), findall(T, 
 t2(R) :- ct_codes(Cs), ct_cls1(Ns), member(C, Cs),
     findall(T, ( member(N, Ns), T =.. [N, _], code_type(C, T) ), L), R = C-L.
 t3(R) :- ct_codes(Cs), ct_cls1(Ns), member(C, Cs), char_code(Ch, C),
-    findall(T, ( member(N, Ns), T =.. [N, _], char_type(Ch, T) ), L0), maplist(ct_codes_of, L0, L), R = C-L.
-ct_codes_of(T, N-V) :- T =.. [N, X], ( atom(X) -> char_code(X, V) ; V = X ).
+    findall(N-V, ( member(N, Ns), T =.. [N, X], char_type(Ch, T), ( atom(X) -> char_code(X, V) ; V = X ) ), L),
+    R = C-L.
 % the reverse mappings: the characters that have a given value
 t4(R) :- member(Q, [to_lower, to_upper, upper, lower]), member(V, [0'a, 0'A, 0'5, 0x3b1, 0x391]),
     T =.. [Q, V], findall(X, code_type(X, T), L), R = Q-V-L.
