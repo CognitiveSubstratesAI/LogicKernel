@@ -160,7 +160,7 @@ end
     @test any(l -> occursin(_codes("end_of_file"), l), expected)
     @test any(l -> occursin(_codes("xdigit"), l), expected)                   # the arity-1 classes are answered
     t0 = expected[findfirst(startswith("t0 "), expected)]
-    @test count(==('c'), t0) > 100                                            # sixteen characters, long class lists
+    @test count(==('c'), t0) > 100                                            # seventeen characters, long class lists
     t8 = expected[findfirst(startswith("t8 "), expected)]
     @test occursin("i71386", t8)                                              # a full enumeration reaches the high planes
 

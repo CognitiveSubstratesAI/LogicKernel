@@ -3,7 +3,7 @@
 % test_char_type_swipl.out holds swipl 10.1.20's answers to them, as the test's driver prints them (`ok`, then one line per
 % row: its name and every solution). The characters are named by code, so the rows do not depend on the source encoding.
 % No row reads the locale (the classes are the Unicode map's, as the pin's swipl answers them).
-ct_codes([0'a, 0'Z, 0'5, 0' , 0'_, 0'., 0'(, 0'", 0'\n, 0xe9, 0x3b1, 0x660, 0x20ac, 0x2028, 0, 0x7f]).
+ct_codes([0'a, 0'Z, 0'5, 0' , 0'_, 0'., 0'(, 0'", 0'\n, 0xe9, 0x3b1, 0x660, 0x20ac, 0x2028, 0, 0x7f, 0'`]).
 ct_cls0([alnum, alpha, csym, csymf, prolog_var_start, prolog_atom_start, prolog_identifier_continue, decimal,
          prolog_symbol, prolog_solo, pattern_syntax, ascii, white, cntrl, digit, print, graph, lower, upper, punct,
          space, end_of_line, prolog_end_of_line, prolog_layout, newline, period, quote]).
