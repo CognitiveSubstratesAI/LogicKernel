@@ -3170,6 +3170,28 @@ _manifest_prof(T) = begin
         (LK.node_sum{T}, Tuple{}, false),
         (LK.prof_ref{T}, Tuple{Int, Union{Nothing, DEF}, Int, Int, Int, Int, Int, Int, Int}, false),
         (LK.ld_profile{T}, Tuple{}, false),
+        # the second half of pl-prof.c: the clocks (named refusals), the charge functions and the tree builders
+        (LK.prof_clock, Tuple{LD}, false),
+        (LK.prof_mono_ns, Tuple{LD}, false),
+        (LK.prof_thread_cpu_ns, Tuple{LD}, false),
+        (LK.prof_clock_per_ns, Tuple{LD}, false),
+        (LK.thread_prof_ticks, Tuple{LD}, false),
+        (LK.prof_close_window, Tuple{LD, Int, Union{Nothing, NODE}, Int}, false),
+        (LK.prof_charge, Tuple{LD, Int, Bool}, false),
+        (LK.prof_accounting_begin, Tuple{LD}, false),
+        (LK.prof_accounting_end, Tuple{LD}, false),
+        (LK.prof_convert_clock, Tuple{LD}, false),
+        (LK.prof_call, Tuple{LD, Union{Nothing, DEF}, Int}, false),
+        (LK.profCall, Tuple{LD, DEF}, false),
+        (LK.profResumeParent, Tuple{LD, Int}, false),
+        (LK.profExit, Tuple{LD, Int}, false),
+        (LK.profFail, Tuple{LD, Int}, false),
+        (LK.lookback, Tuple{LD, Int, Int}, false),
+        (LK.profFailToCP, Tuple{LD, Int, Int}, false),
+        (LK.profSetHandle, Tuple{NODE, Union{Nothing, DEF}}, false),
+        (LK.PL_register_profile_type, Tuple{LD, String}, false),
+        (LK.PL_prof_call, Tuple{LD, Int, Int}, false),
+        (LK.PL_prof_exit, Tuple{LD, Int}, false),
         [
             (f, Tuple{LD, Int, Int, LK.control_t{T}}, false) for f in (
                 LK.pl_prof_sibling_of2_va, LK.pl_prof_node8_va, LK.pl_prof_procedure_data8_va,
@@ -3181,6 +3203,7 @@ _manifest_prof(T) = begin
 end
 _manifest_prof_plain() = (
     (LK.ld_profile_clock, Tuple{}, false),
+    (LK._llround, Tuple{Float64}, false),
 )
 
 # LB2b — locating files: os/pl-files.c, os/pl-glob.c and the file-name helpers of os/pl-os.c
