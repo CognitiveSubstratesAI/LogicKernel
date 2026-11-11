@@ -264,9 +264,45 @@ const PL_WRT_PATTERN_SYNTAX_SOLO = Int(0x8000000)
 # PORT: SWI-Prolog.h PL_WRT_PORTABLE
 "Write flags: ignore operators, but write `(a,b)` with the comma (SWI-Prolog.h)."
 const PL_WRT_PORTABLE = PL_WRT_IGNOREOPS | PL_WRT_INFIX_COMMA
+# PORT: SWI-Prolog.h PL_CTYPE_ALNUM
+"Character class: alpha or numeric (SWI-Prolog.h `PL_ctype_flags`)."
+const PL_CTYPE_ALNUM = Int(0x0001)
+# PORT: SWI-Prolog.h PL_CTYPE_ALPHA
+"Character class: Unicode Alphabetic (SWI-Prolog.h `PL_ctype_flags`)."
+const PL_CTYPE_ALPHA = Int(0x0002)
+# PORT: SWI-Prolog.h PL_CTYPE_BLANK
+"Character class: space, but within a line (SWI-Prolog.h `PL_ctype_flags`)."
+const PL_CTYPE_BLANK = Int(0x0004)
+# PORT: SWI-Prolog.h PL_CTYPE_CNTRL
+"Character class: control or format character (SWI-Prolog.h `PL_ctype_flags`)."
+const PL_CTYPE_CNTRL = Int(0x0008)
+# PORT: SWI-Prolog.h PL_CTYPE_DIGIT
+"Character class: ASCII 0-9, as POSIX demands (SWI-Prolog.h `PL_ctype_flags`)."
+const PL_CTYPE_DIGIT = Int(0x0010)
+# PORT: SWI-Prolog.h PL_CTYPE_EOL
+"Character class: Unicode line terminator (SWI-Prolog.h `PL_ctype_flags`)."
+const PL_CTYPE_EOL = Int(0x0020)
+# PORT: SWI-Prolog.h PL_CTYPE_GRAPH
+"Character class: printable, not white space (SWI-Prolog.h `PL_ctype_flags`)."
+const PL_CTYPE_GRAPH = Int(0x0040)
+# PORT: SWI-Prolog.h PL_CTYPE_LOWER
+"Character class: Unicode Lowercase (SWI-Prolog.h `PL_ctype_flags`)."
+const PL_CTYPE_LOWER = Int(0x0080)
+# PORT: SWI-Prolog.h PL_CTYPE_PRINT
+"Character class: graph or white space (SWI-Prolog.h `PL_ctype_flags`)."
+const PL_CTYPE_PRINT = Int(0x0100)
+# PORT: SWI-Prolog.h PL_CTYPE_PUNCT
+"Character class: printable, not alnum or space (SWI-Prolog.h `PL_ctype_flags`)."
+const PL_CTYPE_PUNCT = Int(0x0200)
 # PORT: SWI-Prolog.h PL_CTYPE_SPACE
 "Character class: Unicode White_Space (SWI-Prolog.h `PL_ctype_flags`)."
 const PL_CTYPE_SPACE = 0x0400
+# PORT: SWI-Prolog.h PL_CTYPE_STERM
+"Character class: Unicode Sentence_Terminal (SWI-Prolog.h `PL_ctype_flags`)."
+const PL_CTYPE_STERM = Int(0x0800)
+# PORT: SWI-Prolog.h PL_CTYPE_UPPER
+"Character class: Unicode Uppercase (SWI-Prolog.h `PL_ctype_flags`)."
+const PL_CTYPE_UPPER = Int(0x1000)
 # PORT: SWI-Prolog.h PL_FA_NONDETERMINISTIC
 "Registration flag: non-deterministic (SWI-Prolog.h)."
 const PL_FA_NONDETERMINISTIC = 0x04

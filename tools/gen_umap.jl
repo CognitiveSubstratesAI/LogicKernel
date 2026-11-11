@@ -81,7 +81,35 @@ function parse_umap(path::AbstractString)
         x in eachmatch(r"\{\s*0x([0-9a-f]+),\s*0x([0-9a-f]+),\s*(true|false)\s*\}", tm[1])
     ]
     length(pairs) == parse(Int, pz[1]) || error("pl_pair_table: $(length(pairs)) entries")
-    return (; mapsize, cats, ctypes, uflags, uctype, c2f, ucbits, bases, pairs)
+    cdm = match(r"static const int case_deltas\[PL_CASE_DELTAS\] =\s*\{([^}]*)\};"s, src)
+    cdm === nothing && error("case_deltas not found")
+    deltas = [parse(Int, x[1]) for x in eachmatch(r"(-?\d+)", cdm[1])]
+    crm = match(r"static const pl_case_run pl_case_runs\[PL_CASE_RUNS\] =\s*\{(.*?)\n\};"s, src)
+    crm === nothing && error("pl_case_runs not found")
+    runs = [
+        (
+            parse(Int, x[1]; base=16),
+            parse(Int, x[2]),
+            parse(Int, x[3]),
+            parse(Int, x[4]),
+            parse(Int, x[5]),
+            parse(Int, x[6]),
+        )
+        for
+        x in eachmatch(
+            r"\{\s*0x([0-9a-f]+),\s*(\d+),\s*\{\s*(\d+),\s*(\d+)\},\s*\{\s*(\d+),\s*(\d+)\}\s*\}",
+            crm[1]
+        )
+    ]
+    ctm = match(r"static const int pl_case_titles\[PL_CASE_TITLES\]\[2\] =\s*\{(.*?)\n\};"s, src)
+    ctm === nothing && error("pl_case_titles not found")
+    titles = [
+        (parse(Int, x[1]; base=16), parse(Int, x[2]; base=16))
+        for x in eachmatch(r"\{0x([0-9a-f]+),0x([0-9a-f]+)\}", ctm[1])
+    ]
+    (length(deltas) == 179 && length(runs) == 290 && length(titles) == 58) ||
+        error("the case tables: $(length(deltas)), $(length(runs)), $(length(titles)) entries")
+    return (; mapsize, cats, ctypes, uflags, uctype, c2f, ucbits, bases, pairs, deltas, runs, titles)
 end
 
 "Write one two-level map: its pages as `_<name>_pages` and its index as `<name>`, both Strings."
@@ -194,6 +222,42 @@ function write_umap(io::IO, u)
     for (i, (c, m, o)) in enumerate(u.pairs)
         (i - 1) % 4 == 0 && print(io, "\n    ")
         print(io, "(", c, ", ", m, ", ", o, "), ")
+    end
+    println(io, "\n)")
+    println(io)
+    println(io, "const PL_CASE_RUNS = ", length(u.runs))
+    println(io, "const PL_CASE_DELTAS = ", length(u.deltas))
+    println(io, "const PL_CASE_TITLES = ", length(u.titles))
+    println(io)
+    println(io, "# The deltas of the simple case mapping (pl-umap.c `case_deltas`).")
+    print(io, "const case_deltas = (")
+    for (i, d) in enumerate(u.deltas)
+        (i - 1) % 8 == 0 && print(io, "\n    ")
+        print(io, d, ", ")
+    end
+    println(io, "\n)")
+    println(io)
+    println(
+        io,
+        "# The runs of the simple case mapping: (start, count, upper0, upper1, lower0, lower1), the four"
+    )
+    println(io, "# indexes 0-based into `case_deltas` (pl-umap.c `pl_case_runs`).")
+    print(io, "const pl_case_runs = (")
+    for (i, r) in enumerate(u.runs)
+        (i - 1) % 4 == 0 && print(io, "\n    ")
+        print(io, "(", join(r, ", "), "), ")
+    end
+    println(io, "\n)")
+    println(io)
+    println(
+        io,
+        "# The code points whose titlecase differs from their uppercase: (code, title) (pl-umap.c"
+    )
+    println(io, "# `pl_case_titles`).")
+    print(io, "const pl_case_titles = (")
+    for (i, (c, t)) in enumerate(u.titles)
+        (i - 1) % 4 == 0 && print(io, "\n    ")
+        print(io, "(", c, ", ", t, "), ")
     end
     println(io, "\n)")
     println(io, "#! format: on")
