@@ -6508,8 +6508,15 @@ function PL_next_solution_guarded(
         dropRecords!(ld, db_c.base)                 # the popped choice point and all above it
         @goto deep_backtrack                        # goto next_choice
     end
+    # The pin's switch ends after `CHP_DEBUG` (pl-vmi.c:7036) and the next lines are
+    # `assert(0); SOLUTION_RETURN(false)` (pl-vmi.c:7037-7038): a type outside `choice_type`
+    # (pl-incl.h:1836-1840) is unreachable there; here it is refused (CONT1 row).
     throw(
-        NotPortedError{T}(DEF.name, "backtracking into a $(db_c.type) choice point", "V9")
+        NotPortedError{T}(
+            DEF.name,
+            "backtracking into a $(db_c.type) choice point (pl-vmi.c:7037-7038, assert(0))",
+            "V9"
+        )
     )
 
     # ── exceptions (pl-vmi.c) ─────────────────────────────────────────────────────────────────────
