@@ -578,7 +578,7 @@ const _SF_REFUSED = [
     ("incomparable", "error"), ("encoding", "utf8"), ("unicode_atoms", "error"),
     ("theme", "dark"), ("agc_margin", "100"),
     ("heartbeat", "0"),
-    ("float_overflow", "infinity")
+    ("max_integer_size", "2000")
 ]
 
 @testset "the flags refused by name raise NotPortedError (design D4)" begin

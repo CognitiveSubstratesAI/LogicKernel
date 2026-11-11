@@ -1946,7 +1946,7 @@ end
 # PORT: pl-arith.c ar_pow
 # DIVERGES: the `gotos` are the helpers `_ar_pow_*`; `n2` is not negated in place for a negative
 # rational exponent (the root searches use its absolute numerator, and `_ar_pow_doreal_mpq` the
-# exponent as given); the rounding modes are FE_TONEAREST only (see there); `prefer_rationals` is the
+# exponent as given); the directed rounding modes are the arms of `_ar_pow_doreal_mpq` and the `cr_*` functions; `prefer_rationals` is the
 # mask bit `PLFLAG_RATIONAL` (since R2 F1a; a constant, false, before). The size checks raise `int_too_big` as everywhere (the interim).
 "`**/2` and `^/2` (pl-arith.c `ar_pow`): `n1` to the power `n2`; an integer for integers, else a float or a rational."
 function ar_pow(ld::PL_local_data, n1::number, n2::number, r::number)::Bool
@@ -2644,11 +2644,9 @@ end
 # PORT: pl-arith.c ar_funcdefs
 # DIVERGES: the entries ported, `(name, arity)`; see the file header. arith-a's and arith-b's keep
 # upstream's relative order; arith-c's are APPENDED, so the scan of `isCurrentArithFunction` reaches
-# the earlier (hotter) ones as soon as before. `roundtoward/2` is the one upstream entry NOT PORTED:
-# it sets the hardware rounding mode (`fesetround`) around the evaluation of its first argument,
-# which `evalExpression` handles on its own (`set_roundtoward`), and the kernel has no other mode
-# than to nearest (see the file header) — a call is `type_error(evaluable, roundtoward/2)`, where
-# swipl evaluates it.
+# the earlier (hotter) ones as soon as before. `roundtoward/2` is the last entry, as upstream's: its
+# second argument (the mode) is read by `set_roundtoward` in the walk of `evalExpression_cells`, the
+# function `ar_roundtoward` puts the mode found there back (see the file header).
 # `integer` and `round` share `ar_integer`, `ceil` and `ceiling` share `ar_ceil`, `atan/2` and
 # `atan2/2` share `ar_atan2` and `^` and `**` share `ar_pow`, as upstream's.
 "pl-arith.c's `ar_funcdefs[]`: the arithmetic functions, the ported entries."
@@ -2668,7 +2666,7 @@ const ar_funcdefs = (
     (:cmpr, 2), (:maxr, 2), (:minr, 2), (:lcm, 2), (:random_float, 0), (:nexttoward, 2),
     (:sinh, 1), (:cosh, 1), (:tanh, 1), (:asinh, 1), (:acosh, 1), (:atanh, 1), (:lgamma, 1),
     (:erf, 1), (:erfc, 1), (:log10, 1), (:epsilon, 0), (:inf, 0), (:nan, 0), (:lsb, 1),
-    (:popcount, 1), (:getbit, 2), (:powm, 3), (:eval, 1)
+    (:popcount, 1), (:getbit, 2), (:powm, 3), (:eval, 1), (:roundtoward, 2)
 )
 
 # The names of `ar_funcdefs` that are not Julia syntax, as symbols compared in `_ar_call2`/`_ar_call1`.
@@ -2718,6 +2716,7 @@ function _ar_call2(ld::PL_local_data, k::Int, a0::number, a1::number, r::number)
     f === :minr && return ar_minr(a0, a1, r)
     f === :lcm && return ar_lcm(ld, a0, a1, r)
     f === :nexttoward && return ar_nexttoward(ld, a0, a1, r)
+    f === :roundtoward && return ar_roundtoward(ld, a0, a1, r)
     return ar_getbit(ld, a0, a1, r)                         # :getbit
 end
 function _ar_call1(ld::PL_local_data, k::Int, a0::number, r::number)::Bool
@@ -2861,6 +2860,45 @@ function _ar_type_error_cells(
     return rc
 end
 
+# PORT: pl-arith.c set_roundtoward
+# DIVERGES: the mode cell is a LOCATION (`c`, the compound's argument cell), dereferenced by `_deref_loc`;
+# `ERR_PTR_DOMAIN`/`ERR_PTR_TYPE` are `ERR_DOMAIN`/`ERR_TYPE` on the word (`pushWordAsTermRef`). The atom
+# is compared by its key (`sym_key`), where upstream compares atom handles.
+"Set the rounding mode the atom in the argument cell `c` names; the mode in force before goes to `old` (pl-arith.c)."
+function set_roundtoward(ld::PL_local_data{T}, c::Int, old::number)::Bool where {T}
+    loc = _deref_loc(ld, c)                                 # deRef(p)
+    old.type = V_INTEGER
+    old.i = Int64(fegetround())
+    k, w, _ = loc
+    if k == DU_WORD && isAtomW(w)
+        key = sym_key(_atom_value(ld, w))
+        if key == sym_key(mk_sym(T, :to_nearest))
+            fesetround(FE_TONEAREST)
+        elseif key == sym_key(mk_sym(T, :to_positive))
+            fesetround(FE_UPWARD)
+        elseif key == sym_key(mk_sym(T, :to_negative))
+            fesetround(FE_DOWNWARD)
+        elseif key == sym_key(mk_sym(T, :to_zero))
+            fesetround(FE_TOWARDZERO)
+        else                                                # isAtom(*p): ERR_PTR_DOMAIN, ATOM_round
+            rc = PL_error(ld, ERR_DOMAIN, mk_sym(T, :round), pushWordAsTermRef(ld, loc))
+            popTermRef(ld)
+            return rc
+        end
+        return true
+    end
+    return _ar_type_error_cells(ld, :atom, loc)             # ERR_PTR_TYPE, ATOM_atom
+end
+
+# PORT: pl-arith.c ar_roundtoward
+"`roundtoward/2` (pl-arith.c): the value of its first argument; the mode found by `set_roundtoward` (`n2`) goes back."
+function ar_roundtoward(ld::PL_local_data, n1::number, n2::number, r::number)::Bool
+    cpNumber(r, n1)
+    @assert n2.type === V_INTEGER
+    fesetround(Int(n2.i))
+    return true
+end
+
 # PORT: pl-arith.c evalExpression as evalExpression_cells
 # DIVERGES (L1d; the workspace's L1_plan/stageL1d_design.md §3e): upstream's WORD walk on LOCATIONS
 # (`_deref_loc`'s: a global position, or `-i` for slot `i`) — `term_stack` holds them with the
@@ -2869,13 +2907,15 @@ end
 # FUNCTOR word, applying it to the pooled numbers (`ld.arith_numbers`, upstream's `arg_stack`). A
 # leaf is read on its word: a tagged integer by `valInt`, a value-table word by its stored number (a
 # string through `getCharExpression`), an atom by its symbol — no export; an export is made only for
-# an error's culprit. Not ported: `roundtoward/2` and signals; the ported functions only
+# an error's culprit. Not ported: signals; the ported functions only
 # (`isCurrentArithFunction`, by the name's key). A kernel-only `$expr/n` compound (Q-AR5) is
 # evaluated as the term walk evaluates it — its arguments after the head (argument 1), the last
 # first, each on the cells, then `'$expr'/(n-1)` is not evaluable (f3b-4: no export). An error's
-# culprit is its word (`pushWordAsTermRef`, f3b-4).
+# culprit is its word (`pushWordAsTermRef`, f3b-4). `roundtoward(Expr, Mode)`: `set_roundtoward`
+# reads the mode (the second argument) when the compound is entered and pushes the mode found,
+# `ar_roundtoward` puts it back after `Expr` (upstream's `FUNCTOR_roundtoward2` arm, as written).
 "Evaluate the expression `expr` refers to into `result` on the CELLS (pl-arith.c `evalExpression`); false after raising."
-function evalExpression_cells(
+function _evalExpression_walk(
     ld::PL_local_data{T}, expr::term_t, result::number
 )::Bool where {T}
     stack = ld.arith_cells                                  # term_stack
@@ -2949,7 +2989,7 @@ function evalExpression_cells(
             a = PL_new_term_ref(ld)                         # its arguments after the head (argument
             for i in arity:-1:2                             # 1), the last first, then not evaluable
                 _slot_link_loc!(ld, a + 1, _deref_loc(ld, c + i))
-                evalExpression_cells(ld, a, _number_alloc!(ld)) || @goto error
+                _evalExpression_walk(ld, a, _number_alloc!(ld)) || @goto error
             end
             PL_error(ld, ERR_NOT_EVALUABLE, (mk_sym(T, Symbol("\$expr")), arity - 1))
             @goto error
@@ -2966,7 +3006,14 @@ function evalExpression_cells(
                     @goto error
                 end
             end
-            p = c + arity                                   # p = &term->arguments[arity-1]
+            if arity == 2 && sym_first_byte(_atom_value(ld, nameFunctor(ld.functors, f))) == 0x72 &&
+               sym_text(_atom_value(ld, nameFunctor(ld.functors, f))) == "roundtoward"
+                crnd = _number_alloc!(ld)                   # number crnd, pushed on arg_stack
+                set_roundtoward(ld, c + 2, crnd) || @goto error
+                p = c + 1                                   # p = &term->arguments[0]
+            else
+                p = c + arity                               # p = &term->arguments[arity-1]
+            end
             walk_ref = false
             n = n_tmp
             @goto read_p
@@ -3032,6 +3079,27 @@ function evalExpression_cells(
     resize!(stack, sbase)                                   # clearSegStack(&term_stack)
     ld.arith_top = mark                                     # popSegStack(&arg_stack, …)
     return false
+end
+
+# PORT: pl-arith.c evalExpression
+# DIVERGES: the rounding mode is scoped to ONE evaluation (see the file header): the mode the
+# `float_rounding` flag names is set for the walk, and the mode found at the entry is put back in a
+# `finally`, also after an error (upstream leaves the hardware mode set by `roundtoward/2` after an
+# error in its first argument: measured at the pin, a later `Y is 1/3.0` answers 0.33333333333333337
+# for the rest of the process). The scope is here, not in `valueExpression`: pl-wam.jl calls this
+# function directly.
+"Evaluate the expression `expr` refers to into `result` on the CELLS (pl-arith.c `evalExpression`); false after raising."
+function evalExpression_cells(
+    ld::PL_local_data{T}, expr::term_t, result::number
+)::Bool where {T}
+    entry = fegetround()
+    mode = Int(ld.arith_f_flags & FLT_ROUND_MASK)
+    mode != Int(FLT_ROUND_NEAREST) && set_rounding(mode)
+    try
+        return _evalExpression_walk(ld, expr, result)
+    finally
+        fegetround() != entry && fesetround(entry)
+    end
 end
 
 # PORT: pl-arith.c valueExpression
@@ -3671,7 +3739,7 @@ end
 # DIVERGES: returns the Boolean (upstream an int). `max_rational_size` and `max_integer_size` are
 # `(size_t)-1` — unlimited, the only value they have here — so they fall to the end and fail, as upstream's
 # do when unlimited; `max_rational_size_action` is `error`, its only value (`LD->arith.rat`, not ported);
-# `float_rounding` names the mode of `arith_f_flags` (the kernel only has `to_nearest`).
+# `float_rounding` names the mode of `arith_f_flags`.
 "Unify `val` with the value of the arithmetic flag `k` (pl-arith.c); false if the flag has no value."
 function get_arith_flag(ld::PL_local_data{T}, val::term_t, k::T)::Bool where {T}
     name = sym_text(k)
@@ -3704,6 +3772,124 @@ function get_arith_flag(ld::PL_local_data{T}, val::term_t, k::T)::Bool where {T}
         return false
     end
     return PL_unify_atom(ld, val, mk_sym(T, a))
+end
+
+# PORT: pl-arith.c float_rounding_names
+"The names of the rounding modes, indexed by the `FLT_ROUND_*` values (upstream's table, whose entry 0 is unused)."
+const float_rounding_names = (:to_nearest, :to_positive, :to_negative, :to_zero)
+# PORT: pl-arith.c rounding_mode
+"The `FE_*` mode of each `FLT_ROUND_*` value (upstream's table, whose entry 0 is unused)."
+const rounding_mode = (FE_TONEAREST, FE_UPWARD, FE_DOWNWARD, FE_TOWARDZERO)
+
+# PORT: pl-arith.c atom_to_rounding
+# DIVERGES: returns the mode, 0 for an atom that names none (upstream: a Boolean and `int *m`); the atom
+# is compared by its key.
+"The `FLT_ROUND_*` value the atom `a` names, 0 if it names none (pl-arith.c)."
+function atom_to_rounding(a::T)::Int where {T}
+    key = sym_key(a)
+    for i in 1:4
+        key == sym_key(mk_sym(T, float_rounding_names[i])) && return i
+    end
+    return 0
+end
+
+# PORT: pl-arith.c float_rounding_name
+# DIVERGES: the atom is made for the term type (`mk_sym`), upstream returns its table entry.
+"The atom naming the rounding mode `i`, an `FLT_ROUND_*` value (pl-arith.c)."
+function float_rounding_name(::Type{T}, i::Int)::T where {T}
+    @assert 1 <= i <= 4
+    return mk_sym(T, float_rounding_names[i])
+end
+
+# PORT: pl-arith.c set_rounding
+"Set the hardware rounding mode to the `FLT_ROUND_*` value `mode` (pl-arith.c)."
+function set_rounding(mode::Int)::Nothing
+    fesetround(rounding_mode[mode])
+    return nothing
+end
+
+# PORT: pl-arith.c set_restraint
+# DIVERGES: returns the value or `nothing` after raising (upstream: `size_t *valp` and an int); the
+# value is a `UInt64`, `typemax(UInt64)` for `infinite` (upstream's `(size_t)-1`).
+"The limit `t` holds, `infinite` or a size not below `min` (pl-arith.c); `nothing` after raising."
+function set_restraint(ld::PL_local_data{T}, t::term_t, min::Int)::Union{Nothing, UInt64} where {T}
+    inf = PL_get_atom(ld, t)
+    if inf !== nothing && sym_key(inf) == sym_key(mk_sym(T, :infinite))
+        return typemax(UInt64)
+    end
+    v = PL_get_size_ex(ld, t)
+    v === nothing && return nothing
+    return UInt64(max(v, min))
+end
+
+# PORT: pl-arith.c set_restraint_action
+# DIVERGES: returns the atom or `nothing` after raising (upstream: `atom_t *valp` and an int).
+"The action atom `t` holds for `key` (pl-arith.c): `error`, and `float` for `max_rational_size_action`; `nothing` after raising."
+function set_restraint_action(ld::PL_local_data{T}, t::term_t, key::T)::Union{Nothing, T} where {T}
+    act = PL_get_atom_ex(ld, t)
+    act === nothing && return nothing
+    sym_key(act) == sym_key(mk_sym(T, :error)) && return act
+    if sym_key(key) == sym_key(mk_sym(T, :max_rational_size_action)) &&
+       sym_key(act) == sym_key(mk_sym(T, :float))
+        return act
+    end
+    PL_domain_error(ld, "max_rational_size_action", t)
+    return nothing
+end
+
+# The float flag `bit` of `arith_f_flags`: cleared by `error`, set by the atom `on` (set_arith_flag's `clear`/`set`);
+# false for any other atom (upstream's `goto dom`).
+function _set_float_flag(ld::PL_local_data{T}, a::T, bit::UInt32, on::Symbol)::Bool where {T}
+    key = sym_key(a)
+    if key == sym_key(mk_sym(T, :error))
+        ld.arith_f_flags &= ~bit
+    elseif key == sym_key(mk_sym(T, on))
+        ld.arith_f_flags |= bit
+    else
+        return false
+    end
+    return true
+end
+
+# PORT: pl-arith.c set_arith_flag
+# DIVERGES: (1) `float_rounding` sets the bits of `arith_f_flags` and NOT the hardware (upstream's
+# `set_rounding(i)`): `evalExpression_cells` applies the mode for one evaluation (see the file header).
+# (2) The three limits (`max_rational_size`, `max_rational_size_action`, `max_integer_size`) are validated as
+# upstream does; the number layer is unbounded, so `infinite` and `error` (the state it has) are accepted and any
+# other value is a named refusal (`NotPortedError`) — upstream keeps it in `LD->arith.rat` and `LD->gmp`.
+"Set the arithmetic flag `key` to the value of `val` (pl-arith.c); false after raising or for a key that is no arithmetic flag."
+function set_arith_flag(ld::PL_local_data{T}, val::term_t, key::T)::Bool where {T}
+    name = sym_text(key)
+    if name == "max_rational_size" || name == "max_integer_size"
+        v = set_restraint(ld, val, name == "max_integer_size" ? 1000 : 0)
+        v === nothing && return false
+        v == typemax(UInt64) && return true                 # unlimited: the state it has
+        throw(NotPortedError{T}(key, "LD->arith.rat / LD->gmp.max_integer_size: a limit on the numbers", "AR1"))
+    end
+    if name == "max_rational_size_action"
+        act = set_restraint_action(ld, val, key)
+        act === nothing && return false
+        sym_key(act) == sym_key(mk_sym(T, :error)) && return true      # the state it has
+        throw(NotPortedError{T}(key, "LD->arith.rat.max_rational_size_action: float", "AR1"))
+    end
+    a = PL_get_atom_ex(ld, val)
+    a === nothing && return false
+    if name == "float_overflow"
+        _set_float_flag(ld, a, FLT_OVERFLOW, :infinity) || return PL_domain_error(ld, "flag_value", val)
+    elseif name == "float_zero_div"
+        _set_float_flag(ld, a, FLT_ZERO_DIV, :infinity) || return PL_domain_error(ld, "flag_value", val)
+    elseif name == "float_undefined"
+        _set_float_flag(ld, a, FLT_UNDEFINED, :nan) || return PL_domain_error(ld, "flag_value", val)
+    elseif name == "float_underflow"
+        _set_float_flag(ld, a, FLT_UNDERFLOW, :ignore) || return PL_domain_error(ld, "flag_value", val)
+    elseif name == "float_rounding"
+        i = atom_to_rounding(a)
+        i == 0 && return PL_domain_error(ld, "flag_value", val)
+        ld.arith_f_flags = (ld.arith_f_flags & ~FLT_ROUND_MASK) | UInt32(i)
+    else
+        return false
+    end
+    return true
 end
 
 # PORT: pl-arith.c PL_eval_expression_to_int64_ex

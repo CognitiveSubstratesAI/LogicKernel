@@ -19,7 +19,7 @@
 #     tagged range (±2^56). That changes the storage only: the values, and every operation on them,
 #     are the same.
 #   * The rounding mode is the hardware's, as upstream's (`fegetround`/`fesetround`, below): `roundtoward/2` and the
-#     `float_rounding` flag set it for the duration of an evaluation (`valueExpression`'s scope, pl-arith.jl), so
+#     `float_rounding` flag set it for the duration of an evaluation (`evalExpression_cells`'s scope, pl-arith.jl), so
 #     the `fegetround()` switches of `mpz_to_double` and `mpz_fdiv` keep all four branches.
 
 # ── reading a term (pl-gmp.h, pl-gmp.c) ──────────────────────────────────────────────────────────
