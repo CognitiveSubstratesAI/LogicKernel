@@ -104,3 +104,67 @@ end
     @test rc != LKV.PL_S_FALSE && rc != LKV.PL_S_EXCEPTION
     @test ld.arith_top == 2 && ld.arith_numbers[1].i == 20 && ld.arith_numbers[2].i == 10
 end
+
+# the 0-based function index the compile side writes (`indexArithFunction`, AR1 d1)
+_vfi(name, arity) = LKV.indexArithFunction(_VT, sym_key(_vs(name)), arity)
+
+@testset "AR1 d2b (functions): A_FUNC0, A_FUNC1, A_FUNC2, A_FUNC, A_ADD, A_MUL, A_ROUNDTOWARDS_A, A_ROUNDTOWARDS_V" begin
+    gd = LKV.PL_global_data{_VT}()
+    ld = LKV.PL_local_data{_VT}(gd)
+    args3 = _VT[_vg(0), _vg(0), _vg(0)]
+    run(body, lits=_VT[], args=args3; top0=0) = _vrun(gd, ld, LKV.code[body...], lits, args; top0=top0)
+    ok(rc) = rc != LKV.PL_S_FALSE && rc != LKV.PL_S_EXCEPTION
+    st = ld.arith_numbers
+    # 10 - 3: the arguments are pushed right to left (the first argument is the LAST pushed): 7, one number left
+    rc, _ = run(LKV.code[LKV.A_ENTER, LKV.A_INTEGER, _vi(3), LKV.A_INTEGER, _vi(10), LKV.A_FUNC2, LKV.code(_vfi(:-, 2))])
+    @test ok(rc) && ld.arith_top == 1 && st[1].type === LKV.V_INTEGER && st[1].i == 7
+    # -(9), pi, abs(-4) through the general A_FUNC with its argument count
+    rc, _ = run(LKV.code[LKV.A_ENTER, LKV.A_INTEGER, _vi(9), LKV.A_FUNC1, LKV.code(_vfi(:-, 1))])
+    @test ok(rc) && ld.arith_top == 1 && st[1].i == -9
+    rc, _ = run(LKV.code[LKV.A_ENTER, LKV.A_FUNC0, LKV.code(_vfi(:pi, 0))])
+    @test ok(rc) && ld.arith_top == 1 && st[1].type === LKV.V_FLOAT && st[1].f == Float64(pi)
+    rc, _ = run(LKV.code[LKV.A_ENTER, LKV.A_INTEGER, _vi(-4), LKV.A_FUNC, LKV.code(_vfi(:abs, 1)), LKV.code(1)])
+    @test ok(rc) && ld.arith_top == 1 && st[1].i == 4
+    rc, _ = run(LKV.code[LKV.A_ENTER, LKV.A_INTEGER, _vi(3), LKV.A_INTEGER, _vi(10), LKV.A_FUNC, LKV.code(_vfi(:-, 2)), LKV.code(2)])
+    @test ok(rc) && ld.arith_top == 1 && st[1].i == 7
+    # an error in a function: 1 // 0 — the stack is cut to A_ENTER's top, the query raises
+    for top0 in (0, 2)
+        rc, _ = run(LKV.code[LKV.A_ENTER, LKV.A_INTEGER, _vi(0), LKV.A_INTEGER, _vi(1), LKV.A_FUNC2, LKV.code(_vfi(:(//), 2))]; top0=top0)
+        @test rc == LKV.PL_S_EXCEPTION && ld.arith_top == top0
+    end
+    # A_ADD and A_MUL: small and past 64 bits; a float overflow raises (A_ADD)
+    rc, _ = run(LKV.code[LKV.A_ENTER, LKV.A_INTEGER, _vi(3), LKV.A_INTEGER, _vi(4), LKV.A_ADD])
+    @test ok(rc) && ld.arith_top == 1 && st[1].type === LKV.V_INTEGER && st[1].i == 7
+    rc, _ = run(LKV.code[LKV.A_ENTER, LKV.A_INTEGER, _vi(typemax(Int64)), LKV.A_INTEGER, _vi(1), LKV.A_ADD])
+    @test ok(rc) && ld.arith_top == 1 && st[1].type === LKV.V_MPZ && st[1].mpz == big(typemax(Int64)) + 1
+    rc, _ = run(LKV.code[LKV.A_ENTER, LKV.A_INTEGER, _vi(6), LKV.A_INTEGER, _vi(7), LKV.A_MUL])
+    @test ok(rc) && ld.arith_top == 1 && st[1].i == 42
+    rc, _ = run(LKV.code[LKV.A_ENTER, LKV.A_INTEGER, _vi(typemax(Int64)), LKV.A_INTEGER, _vi(2), LKV.A_MUL])
+    @test ok(rc) && ld.arith_top == 1 && st[1].type === LKV.V_MPZ && st[1].mpz == big(typemax(Int64)) * 2
+    for (op, lit_codes) in ((LKV.A_ADD, nothing),)
+        rc, _ = run(LKV.code[LKV.A_ENTER, LKV.A_DOUBLE, LKV.code(1), LKV.A_DOUBLE, LKV.code(1), op], _VT[_vg(1.0e308)]; top0=2)
+        @test rc == LKV.PL_S_EXCEPTION && ld.arith_top == 2
+    end
+    # roundtoward(1.0/3, to_positive) with the mode in the code (FLT_ROUND_TO_POS = 2): the next float up,
+    # and the hardware mode is back to nearest after the evaluation; also after an error inside it
+    lits = _VT[_vg(3.0), _vg(1.0)]
+    third = LKV.code[LKV.A_DOUBLE, LKV.code(1), LKV.A_DOUBLE, LKV.code(2), LKV.A_FUNC2, LKV.code(_vfi(:/, 2))]
+    rt = LKV.code(_vfi(:roundtoward, 2))
+    rc, _ = run(LKV.code[LKV.A_ENTER, LKV.A_ROUNDTOWARDS_A, LKV.code(2), third..., LKV.A_FUNC2, rt], lits)
+    @test ok(rc) && ld.arith_top == 1 && st[1].type === LKV.V_FLOAT && st[1].f == nextfloat(1.0 / 3)
+    @test LKV.fegetround() == LKV.FE_TONEAREST
+    rc, _ = run(LKV.code[LKV.A_ENTER, LKV.A_ROUNDTOWARDS_A, LKV.code(2), LKV.A_INTEGER, _vi(0), LKV.A_INTEGER, _vi(1), LKV.A_FUNC2, LKV.code(_vfi(:(//), 2))])
+    @test rc == LKV.PL_S_EXCEPTION && LKV.fegetround() == LKV.FE_TONEAREST
+    # the mode in a variable (A_ROUNDTOWARDS_V): an atom that names one, then one that names none, then a non-atom
+    rc, _ = run(LKV.code[LKV.A_ENTER, LKV.A_ROUNDTOWARDS_V, LKV.VAROFFSET(0), third..., LKV.A_FUNC2, rt], lits, _VT[_vs(:to_positive), _vg(0), _vg(0)])
+    @test ok(rc) && ld.arith_top == 1 && st[1].f == nextfloat(1.0 / 3)
+    @test LKV.fegetround() == LKV.FE_TONEAREST
+    rc, _ = run(LKV.code[LKV.A_ENTER, LKV.A_ROUNDTOWARDS_V, LKV.VAROFFSET(0), third..., LKV.A_FUNC2, rt], lits, _VT[_vs(:to_zero), _vg(0), _vg(0)])
+    @test ok(rc) && st[1].f == 1.0 / 3                          # toward zero: the nearest here
+    for (bad, formal) in ((_vs(:foo), "domain_error"), (_vg(1), "type_error"), (_vv(), "instantiation_error"))
+        rc, out = run(LKV.code[LKV.A_ENTER, LKV.A_ROUNDTOWARDS_V, LKV.VAROFFSET(0), third..., LKV.A_FUNC2, rt], lits, _VT[bad, _vg(0), _vg(0)])
+        @test rc == LKV.PL_S_EXCEPTION && ld.arith_top == 0
+        @test sym_text(child(child(out, 2), 1)) == formal
+        @test LKV.fegetround() == LKV.FE_TONEAREST
+    end
+end
