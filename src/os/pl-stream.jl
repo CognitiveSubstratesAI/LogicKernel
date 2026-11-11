@@ -230,7 +230,10 @@ end
 mutable struct Sjulia_io
     io::Union{IOStream, IOBuffer, Base.TTY, Base.PipeEndpoint}
     close_io::Bool                                     # close the IO with the stream
+    proc::Union{Nothing, Base.Process}                 # the child of `Sopen_pipe` (`popen`), waited for at close (`pclose`)
 end
+Sjulia_io(io::Union{IOStream, IOBuffer, Base.TTY, Base.PipeEndpoint}, close_io::Bool) =
+    Sjulia_io(io, close_io, nothing)
 
 # ORIGINAL (R2 TOP1b E): the thread-local `LD` of upstream (pl-global.h `LD`/`GLOBAL_LD`) is found by thread; the kernel has
 # one thread and `PL_local_data{T}` is defined AFTER this file (it holds `IOSTREAM`s), so a stream names its local
@@ -1668,6 +1671,8 @@ end
 "Close the IO if the stream owns it."
 function Sclose_julia_io(h::Sjulia_io)::Int
     h.close_io && close(h.io)
+    proc = h.proc
+    proc === nothing || wait(proc)                          # pclose(): the exit status is not looked at, as upstream
     return 0
 end
 
@@ -1689,6 +1694,46 @@ function Sopen_julia_io(
     s = Snew(Sjulia_io(io, close_io), flags, Siofunctions)
     s.newline = SIO_NL_POSIX
     return s
+end
+
+# ── pipes (pl-stream.c Sopen_pipe), lane D ──────────────────────────────────────────────────────
+
+# PORT: pl-stream.c Sopen_pipe (+ Sread_pipe, Swrite_pipe, Sclose_pipe, Scontrol_pipe, `Spipefunctions`) — pl-stream.c:3967-4072 (pin 18168e62)
+# DIVERGES: the child is Julia's (`open(Cmd(["/bin/sh", "-c", command]), …)`) in place of `popen`, its pipe end a `Sjulia_io` of
+# `Siofunctions` (`Sjulia_io.proc` is `pclose`'s child); a `r` child reads `/dev/null` for its stdin, a `w` child shares the process's
+# stdout; no seek function (a pipe: `S_has_seek` is false, so `Sseek64` sets ESPIPE), `SIO_GETFILENO` has no twin. The type string:
+# upstream's `popen` takes `type[0]` (`r` or `w`: another first character is EINVAL here as `popen` gives), and its `assert(0)` on a
+# character other than `r`, `w`, `b` is EINVAL here. Returns `(stream, errno)` as `Sopen_file` does.
+"Open a `/bin/sh -c command` child as a stream: `type` is `r` or `w`, then `b` for binary; the stream and 0, or `nothing` and the errno (pl-stream.c)."
+function Sopen_pipe(command::String, type::String)::Tuple{Union{Nothing, IOSTREAM}, Int}
+    isempty(type) && return (nothing, EINVAL)
+    mode = type[1]
+    (mode == 'r' || mode == 'w') || return (nothing, EINVAL)
+    flags = SIO_RECORDPOS | SIO_FBUF | SIO_TEXT
+    for c in type
+        if c == 'r'
+            flags |= SIO_INPUT
+        elseif c == 'w'
+            flags |= SIO_OUTPUT
+        elseif c == 'b'
+            flags &= ~SIO_TEXT
+        else
+            return (nothing, EINVAL)
+        end
+    end
+
+    proc = try
+        cmd = Cmd(["/bin/sh", "-c", command])
+        mode == 'r' ? open(cmd, "r", devnull) : open(cmd, "w", stdout)
+    catch e
+        e isa ArgumentError && return (nothing, EINVAL)
+        e isa Base.IOError || rethrow()
+        return (nothing, Int(-e.code))
+    end
+    io = mode == 'r' ? proc.out : proc.in
+    io isa Base.PipeEndpoint || error("Sopen_pipe: the child's pipe end is a ", typeof(io))
+    s = Snew(Sjulia_io(io, true, proc), flags, Siofunctions)
+    return (s, 0)
 end
 
 # ── files (pl-stream.c Sopen_file), since R2's S1 ───────────────────────────────────────────────

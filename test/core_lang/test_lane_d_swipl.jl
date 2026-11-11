@@ -424,7 +424,30 @@ const _LD_CASES = [
     ("d314", raw"with_tty_raw(R = yes)"),
     ("d315", raw"( with_tty_raw(fail) -> R = yes ; R = no )"),
     ("d316", raw"with_tty_raw(member(R, [a, b]))"),
-    ("d317", raw"with_tty_raw(atom_length(_, _))")
+    ("d317", raw"with_tty_raw(atom_length(_, _))"),
+    ("d319", raw"open(pipe('printf abc'), read, S), get_char(S, C1), get_char(S, C2), close(S), R = C1-C2"),
+    ("d320", raw"open(pipe('printf abc'), read, S), get_char(S, _), cerr(seek(S, 0, bof, X), R0), close(S), R = R0-X"),
+    ("d321", raw"open(pipe('printf abc'), read, S, [reposition(false)]), get_char(S, _), cerr(seek(S, 0, current, _), R0), close(S), R = R0"),
+    ("d322", raw"open(pipe('printf abc'), read, S), cerr(seek(S, 0, bof, _), R0), close(S), R = R0"),
+    ("d323", raw"open(pipe('printf abc'), read, S), cerr('$size_stream'(S, _), R0), close(S), R = R0"),
+    ("d324", raw"open(pipe('cat > /dev/null'), write, S), format(S, \"abc\", []), close(S), R = ok"),
+    ("d325", raw"open(pipe('printf A'), read, S, [type(binary)]), get_byte(S, B), close(S), R = B"),
+    ("d326", raw"cerr(open(pipe(f(x)), read, _), R0), R = R0"),
+    ("d327", raw"cerr(open(pipe('true'), append, _), R0), R = R0"),
+    ("d328", raw"open(pipe('exit 3'), read, S), get_char(S, C), close(S), R = C"),
+    ("d329", raw"open(pipe('printf abc'), read, S), ( stream_property(S, file_name(F)) -> R0 = F ; R0 = nofile ), close(S), R = R0"),
+    ("d330", raw"open(pipe('printf abc'), read, S), stream_property(S, reposition(B)), close(S), R = B"),
+    ("d331", raw"open(pipe('printf abc'), read, S), '$stream_property'(S, position(P)), close(S), R = P"),
+    ("d332", raw"open(pipe('printf \"a\\nb\"'), read, S), get_char(S, _), get_char(S, _), get_char(S, _), '$stream_property'(S, position(P)), close(S), R = P"),
+    ("d333", raw"open(pipe('printf abc'), read, S), fill_buffer(S), read_pending_codes(S, L, []), close(S), R = L"),
+    ("d334", raw"open(pipe('printf abc'), read, S), peek_string(S, 2, X), get_char(S, C), close(S), R = X-C"),
+    ("d335", raw"open(pipe('printf abc'), read, S), wo(O), copy_stream_data(S, O), close(S), close(O), outtext(T), R = T"),
+    ("d336", raw"open(pipe('printf abc'), read, S), cerr(seek(S, 100, bof, _), R0), close(S), R = R0"),
+    ("d337", raw"open(pipe('printf abc'), read, S), cerr(seek(S, 0, eof, _), R0), close(S), R = R0"),
+    ("d338", raw"open(pipe('printf abc'), read, S), seek(S, 1, current, X), get_char(S, C), close(S), R = X-C"),
+    ("d339", raw"open(pipe('printf abc'), read, S), get_char(S, _), get_char(S, _), cerr(seek(S, 1, bof, X), R0), get_char(S, C), close(S), R = R0-X-C"),
+    ("d340", raw"open(pipe('printf abc'), read, S, [reposition(false)]), cerr(seek(S, 0, bof, _), R0), close(S), R = R0"),
+    ("d341", raw"open(pipe('printf abc'), read, S), cerr(set_stream_position(S, '$stream_position'(5, 1, 5, 5)), R0), close(S), R = R0")
 ]
 
 # swipl 10.1.20-1-g18168e629's answers to the program and cases above (the driver's lines; evidence/S2/lane_d_rows.out)
@@ -743,7 +766,30 @@ const _LD_PINNED = [
     "t_d314 c[116,95,100,51,49,52]/1(a[121,101,115])",
     "t_d315 c[116,95,100,51,49,53]/1(a[110,111])",
     "t_d316 c[116,95,100,51,49,54]/1(a[97])",
-    "t_d317 c[116,95,100,51,49,55]/1(c[114,97,105,115,101,100]/1(a[105,110,115,116,97,110,116,105,97,116,105,111,110,95,101,114,114,111,114]))"
+    "t_d317 c[116,95,100,51,49,55]/1(c[114,97,105,115,101,100]/1(a[105,110,115,116,97,110,116,105,97,116,105,111,110,95,101,114,114,111,114]))",
+    "t_d319 c[116,95,100,51,49,57]/1(c[45]/2(a[97],a[98]))",
+    "t_d320 c[116,95,100,51,50,48]/1(c[45]/2(a[111,107],i0))",
+    "t_d321 c[116,95,100,51,50,49]/1(c[114,97,105,115,101,100]/1(c[112,101,114,109,105,115,115,105,111,110,95,101,114,114,111,114]/3(a[114,101,112,111,115,105,116,105,111,110],a[115,116,114,101,97,109],a[60,115,116,114,101,97,109,62])))",
+    "t_d322 c[116,95,100,51,50,50]/1(a[111,107])",
+    "t_d323 c[116,95,100,51,50,51]/1(c[114,97,105,115,101,100]/1(c[105,111,95,101,114,114,111,114]/2(a[114,101,97,100],a[60,115,116,114,101,97,109,62])))",
+    "t_d324 c[116,95,100,51,50,52]/1(a[111,107])",
+    "t_d325 c[116,95,100,51,50,53]/1(i65)",
+    "t_d326 c[116,95,100,51,50,54]/1(c[114,97,105,115,101,100]/1(c[116,121,112,101,95,101,114,114,111,114]/2(a[97,116,111,109],c[102]/1(a[120]))))",
+    "t_d327 c[116,95,100,51,50,55]/1(c[114,97,105,115,101,100]/1(c[101,120,105,115,116,101,110,99,101,95,101,114,114,111,114]/2(a[115,111,117,114,99,101,95,115,105,110,107],c[112,105,112,101]/1(a[116,114,117,101]))))",
+    "t_d328 c[116,95,100,51,50,56]/1(a[101,110,100,95,111,102,95,102,105,108,101])",
+    "t_d329 c[116,95,100,51,50,57]/1(a[110,111,102,105,108,101])",
+    "t_d330 c[116,95,100,51,51,48]/1(a[102,97,108,115,101])",
+    "t_d331 c[116,95,100,51,51,49]/1(c[36,115,116,114,101,97,109,95,112,111,115,105,116,105,111,110]/4(i0,i1,i0,i0))",
+    "t_d332 c[116,95,100,51,51,50]/1(c[36,115,116,114,101,97,109,95,112,111,115,105,116,105,111,110]/4(i3,i2,i1,i3))",
+    "t_d333 c[116,95,100,51,51,51]/1(c[91,124,93]/2(i97,c[91,124,93]/2(i98,c[91,124,93]/2(i99,nil))))",
+    "t_d334 c[116,95,100,51,51,52]/1(c[45]/2(s[97,98],a[97]))",
+    "t_d335 c[116,95,100,51,51,53]/1(a[97,98,99])",
+    "t_d336 c[116,95,100,51,51,54]/1(c[114,97,105,115,101,100]/1(c[112,101,114,109,105,115,115,105,111,110,95,101,114,114,111,114]/3(a[114,101,112,111,115,105,116,105,111,110],a[115,116,114,101,97,109],a[60,115,116,114,101,97,109,62])))",
+    "t_d337 c[116,95,100,51,51,55]/1(c[114,97,105,115,101,100]/1(c[112,101,114,109,105,115,115,105,111,110,95,101,114,114,111,114]/3(a[114,101,112,111,115,105,116,105,111,110],a[115,116,114,101,97,109],a[60,115,116,114,101,97,109,62])))",
+    "t_d338 c[116,95,100,51,51,56]/1(c[45]/2(i1,a[98]))",
+    "t_d339 c[116,95,100,51,51,57]/1(c[45]/2(c[45]/2(a[111,107],i1),a[98]))",
+    "t_d340 c[116,95,100,51,52,48]/1(c[114,97,105,115,101,100]/1(c[112,101,114,109,105,115,115,105,111,110,95,101,114,114,111,114]/3(a[114,101,112,111,115,105,116,105,111,110],a[115,116,114,101,97,109],a[60,115,116,114,101,97,109,62])))",
+    "t_d341 c[116,95,100,51,52,49]/1(c[114,97,105,115,101,100]/1(c[112,101,114,109,105,115,115,105,111,110,95,101,114,114,111,114]/3(a[114,101,112,111,115,105,116,105,111,110],a[115,116,114,101,97,109],a[60,115,116,114,101,97,109,62])))"
 ]
 
 const _LD_DATA = "abc\nxyz\nlast line\n"
@@ -815,9 +861,9 @@ end
         @test k == p
     end
     # not vacuous: the pins hold raised errors, `failed` rows, and answers, so the comparison can pass and can fail
-    @test count(l -> occursin("c[114,97,105,115,101,100]", l), _LD_PINNED) == 98      # raised(…)
+    @test count(l -> occursin("c[114,97,105,115,101,100]", l), _LD_PINNED) == 107     # raised(…)
     @test count(l -> endswith(l, "/1(a[102,97,105,108,101,100])"), _LD_PINNED) == 13   # failed
-    @test count(l -> endswith(l, "/1(a[111,107])"), _LD_PINNED) == 12                 # ok
+    @test count(l -> endswith(l, "/1(a[111,107])"), _LD_PINNED) == 14                 # ok
 end
 
 "Whether the kernel REFUSES `goal` (a `NotPortedError` out of the foreign predicate), the goal run in a fresh database."

@@ -1000,8 +1000,9 @@ end
 
 # PORT: pl-file.c openStream
 # DIVERGES: returns the stream, or `nothing` with the error raised; the file is opened by Julia
-# (`Sopen_file`), a failure's error from its errno (`ERR_FILE_OPERATION`). NOT PORTED, each raising
-# `NotPortedError` BEFORE a file is opened: `pipe(Command)` files (`Sopen_pipe`), IRIs (`iri_hook`),
+# (`Sopen_file`), a failure's error from its errno (`ERR_FILE_OPERATION`); `pipe(Command)` is `Sopen_pipe` (lane D: a
+# `/bin/sh -c` child; `PL_clear_exception` and `REP_FN` of the command text are unwritten). Unwritten, each raising
+# `NotPortedError` BEFORE a file is opened: IRIs (`iri_hook`),
 # the `lock` option (no `flock`), the `locale` option (`PL_locale`), the `unicode_atoms` option
 # (`atom_to_unicode_atoms_ex`, F1's) and the encodings the stream layer refuses (ANSI, UTF-16, wchar_t).
 # `locale`'s default is the `encoding` flag's (`LD->encoding`): UTF-8.
@@ -1155,20 +1156,36 @@ function openStream(
         return nothing
     end
 
+    local s::Union{Nothing, IOSTREAM}
     if PL_is_functor(ld, file, mk_sym(T, :pipe), 1)             # FILE
-        throw(NotPortedError{T}(mk_sym(T, :pipe), "open(pipe(Command), …)", "Sopen_pipe"))
+        a = PL_new_term_ref(ld)
+        _PL_get_arg(ld, 1, file, a)
+        txt = PL_get_text(ld, a, CVT_ATOM | CVT_STRING)
+        if txt === nothing
+            PL_error(ld, ERR_TYPE, mk_sym(T, :atom), a)
+            return nothing
+        end
+        s, errno = Sopen_pipe(text_string(txt), String(how))
+        if s === nothing
+            PL_error(
+                ld, "", 0, Base.Libc.strerror(errno), ERR_FILE_OPERATION, mk_sym(T, :open),
+                mk_sym(T, :source_sink), file, errno
+            )
+            return nothing
+        end
+    else
+        path = PL_get_file_name(ld, file, 0)
+        path === nothing && return nothing
+        s, errno = Sopen_file(path, String(how))
+        if s === nothing
+            PL_error(                                           # error:
+                ld, "", 0, Base.Libc.strerror(errno), ERR_FILE_OPERATION, mk_sym(T, :open),
+                mk_sym(T, :source_sink), file, errno
+            )
+            return nothing
+        end
+        setFileNameStream(gd, s, mk_sym(T, Symbol(path)))
     end
-    path = PL_get_file_name(ld, file, 0)
-    path === nothing && return nothing
-    s, errno = Sopen_file(path, String(how))
-    if s === nothing
-        PL_error(                                               # error:
-            ld, "", 0, Base.Libc.strerror(errno), ERR_FILE_OPERATION, mk_sym(T, :open),
-            mk_sym(T, :source_sink), file, errno
-        )
-        return nothing
-    end
-    setFileNameStream(gd, s, mk_sym(T, Symbol(path)))
 
     s.encoding = enc
     fnewline == -1 || (s.newline = fnewline & 0x3)

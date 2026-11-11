@@ -7,6 +7,7 @@ TL = ["test/core_lang/test_lane_d_swipl.jl"]
 TARGETS = TL
 F = "src/os/pl-file.jl"
 T = "src/os/pl-text.jl"
+G = "src/os/pl-stream.jl"
 MUTANTS = [
     dict(id="LD7-1 peek_string: the length compare is strict (KILL: d254-d260 where the text has exactly Len characters)", file=F, targets=TL,
          old='            if text.length >= len\n                rc = PL_unify_text_range',
@@ -80,4 +81,25 @@ MUTANTS = [
     dict(id="LD7-24 the registration of protocol/1 is gone (KILL: the refusal testset: an unknown procedure is not a NotPortedError)", file=F, targets=TL,
          old='    PL_extension("protocol", 1, pl_protocol1_va, PL_FA_VARARGS),\n',
          new=''),
+    dict(id="LD7-25 Sopen_pipe: a binary pipe stays text (KILL: d325)", file=G, targets=TL,
+         old='        elseif c == \'b\'\n            flags &= ~SIO_TEXT\n        else\n            return (nothing, EINVAL)\n        end\n    end\n\n    proc = try',
+         new='        elseif c == \'b\'\n            flags |= SIO_TEXT\n        else\n            return (nothing, EINVAL)\n        end\n    end\n\n    proc = try'),
+    dict(id="LD7-26 Sopen_pipe: append is accepted as a first character (KILL: d327)", file=G, targets=TL,
+         old="    (mode == 'r' || mode == 'w') || return (nothing, EINVAL)\n",
+         new="    nothing\n"),
+    dict(id="LD7-27 Sopen_pipe: the write child reads the pipe's other end (KILL: d324)", file=G, targets=TL,
+         old="    io = mode == 'r' ? proc.out : proc.in\n",
+         new="    io = mode == 'r' ? proc.out : proc.out\n"),
+    dict(id="LD7-28 Sclose_julia_io: the child is not waited for (no row sees it: equivalent for the rows)", file=G, targets=TL, eq=True,
+         old='    proc === nothing || wait(proc)',
+         new='    proc === nothing || nothing'),
+    dict(id="LD7-29 S_has_seek: a pipe seeks as a file (KILL: d336, d337, d340: ESPIPE becomes a Julia error)", file=G, targets=TL,
+         old='        return h isa Sjulia_io && h.io isa IOStream\n    end\n    return false\nend\n',
+         new='        return h isa Sjulia_io\n    end\n    return false\nend\n'),
+    dict(id="LD7-30 open/4: a non-atom pipe command is not a type error (KILL: d326)", file=F, targets=TL,
+         old='            PL_error(ld, ERR_TYPE, mk_sym(T, :atom), a)\n            return nothing\n        end\n        s, errno = Sopen_pipe',
+         new='            return nothing\n        end\n        s, errno = Sopen_pipe'),
+    dict(id="LD7-31 open/4: a failed pipe open raises nothing (KILL: d327)", file=F, targets=TL,
+         old='        s, errno = Sopen_pipe(text_string(txt), String(how))\n        if s === nothing\n            PL_error(\n                ld, "", 0, Base.Libc.strerror(errno), ERR_FILE_OPERATION, mk_sym(T, :open),\n                mk_sym(T, :source_sink), file, errno\n            )\n',
+         new='        s, errno = Sopen_pipe(text_string(txt), String(how))\n        if s === nothing\n'),
 ]
