@@ -503,6 +503,13 @@ function _manifest_index(T)
         (LK.isAtom, Tuple{T}, true), (LK.isTaggedInt, Tuple{T}, true),
         # V6c2 — arithmetic in a body (src/pl-comp.jl, pl-funct.jl)
         (LK.compileSimpleAddition, Tuple{LD, LK.SubClauseNames, T, CInfo}, false),
+        # AR1 d3 — arithmetic compiled inline under `optimise` (src/pl-comp.jl)
+        (LK.compileArith!, Tuple{LD, LK.SubClauseNames, CInfo, T}, false),
+        (LK.compileArithArgument!, Tuple{LD, LK.SubClauseNames, CInfo, T}, false),
+        (LK.arithVarOffset, Tuple{LD, CInfo, T}, false),
+        (LK._arith_type_error!, Tuple{LD, CInfo, String, Symbol, T}, false),
+        (LK._arith_char, Tuple{LD, CInfo, T}, false),
+        (LK._arith_char_constant, Tuple{LD, CInfo, T}, false),
         (LK.canBind, Tuple{T}, true), (LK.isTextAtom, Tuple{T}, true),
         (LK.isCallableAtom, Tuple{T}, true),
         (LK.isRational, Tuple{T}, true), (LK.isFloat, Tuple{T}, true),
