@@ -155,7 +155,7 @@ _zp_count(lines, word) = sum(l -> length(findall(_codes(word), l)), lines; init=
     names = _zp_names("t")
     expected = String.(readlines(_ZP_OUT))
     # not a vacuous agreement: the .out has `ok` and a line per row, and the rows' evidence
-    @test names == ["t$i" for i in 0:69]
+    @test names == ["t$i" for i in 0:70]
     @test length(expected) == length(names) + 1 && expected[1] == "ok"
     @test all(i -> startswith(expected[i + 1], names[i] * " "), eachindex(names))
     body = expected[2:end]
