@@ -2973,9 +2973,14 @@ _index_entry_points(T) = (
             LK.pl_peek_byte1_va, LK.pl_skip1_va, LK.pl_get1_va, LK.pl_get2_va,
             LK.pl_put2_va, LK.pl_put1_va, LK.pl_put_byte2_va, LK.pl_put_byte1_va,
             LK.pl_get_byte2_va, LK.pl_get_byte1_va, LK.pl_byte_count2_va,
-            LK.pl_character_count2_va, LK.pl_set_input1_va, LK.pl_set_output1_va
+            LK.pl_character_count2_va, LK.pl_set_input1_va, LK.pl_set_output1_va,
+            LK.pl_see1_va, LK.pl_seen0_va, LK.pl_seeing1_va, LK.pl_tell1_va,
+            LK.pl_append1_va, LK.pl_telling1_va, LK.pl_told0_va
         )
     ]...,
+    (LK.do_tell, Tuple{LK.PL_local_data{T}, Int, T}, false),
+    (LK.findStreamFromFile, Tuple{LK.PL_global_data{T}, T, Int}, false),
+    (LK.setStreamContextFlag, Tuple{LK.PL_global_data{T}, LK.IOSTREAM, Int}, false),
     (LK.get_nonblank, Tuple{LK.PL_local_data{T}, Int, Int}, false),
     (LK.put_byte, Tuple{LK.PL_local_data{T}, Int, Int}, false),
     (LK.get_byte2, Tuple{LK.PL_local_data{T}, Int, Int}, false),

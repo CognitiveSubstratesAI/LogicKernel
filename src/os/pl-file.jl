@@ -707,6 +707,7 @@ function freeStream(ld::PL_local_data, s::IOSTREAM)::Nothing
     if s.context != 0
         gd.stream_table[s.context] = nothing        # deleteHTablePP(streamContext, s)
         delete!(gd.stream_alias_names, s.context)
+        delete!(gd.stream_context_flags, s.context)   # ctx->flags
     end
     delete!(gd.stream_filenames, s)                 # ctx->filename
 
@@ -1333,12 +1334,42 @@ function pop_input_context(ld::PL_local_data{T})::Bool where {T}
     end
 end
 
+# PORT: pl-file.c IO_TELL
+"The stream-context flag of a stream opened by tell/1 (pl-file.c)."
+const IO_TELL = 0x001
+# PORT: pl-file.c IO_SEE
+"The stream-context flag of a stream opened by see/1 (pl-file.c)."
+const IO_SEE = 0x002
+
+# ORIGINAL: upstream's `set(getStreamContext(s), flag)`; the flags are `PL_global_data.stream_context_flags`, by the
+# stream's context number (upstream: `stream_context.flags`).
+"Set the stream-context flag `flag` of `s`, making the stream known first (pl-file.c `set(getStreamContext(s), flag)`)."
+function setStreamContextFlag(gd::PL_global_data, s::IOSTREAM, flag::Int)::Nothing
+    ctx = getStreamContext(gd, s)
+    gd.stream_context_flags[ctx] = get(gd.stream_context_flags, ctx, 0) | flag
+    return nothing
+end
+
+# PORT: pl-file.c findStreamFromFile
+# DIVERGES: `newTableEnumPP(streamContext)` is the live entries of `PL_global_data.stream_table`, in the order the
+# streams got their context (upstream: hash-table order); `ison(ctx, flags)` is a read of `stream_context_flags`.
+"The stream that reads or writes the file named `name` and carries the context flag `flags`, or `nothing` (pl-file.c)."
+function findStreamFromFile(gd::PL_global_data{T}, name::T, flags::Int)::Union{Nothing, IOSTREAM} where {T}
+    for s in gd.stream_table
+        s === nothing && continue
+        fn = fileNameStream(gd, s)
+        if fn !== nothing && sym_key(fn) == sym_key(name) &&
+           (get(gd.stream_context_flags, s.context, 0) & flags) != 0
+            return s
+        end
+    end
+    return nothing
+end
+
 # PORT: pl-file.c pl_see
 # (swipl-devel cbf4e189, src/os/pl-file.c:4446-4485)
-# DIVERGES: `findStreamFromFile(a, IO_SEE)` finds no stream: the kernel registers no see/1 (see/tell are
-# S1/O1's), so the only `pl_see` caller is `compileFile` (src/pl-qlf.jl), whose `pl_seen` closes the stream
-# it opened before the next file; for the same reason `set(getStreamContext(s), IO_SEE)` records no flag
-# (`getStreamContext` makes the stream known, its only effect read here). No lock (no threads).
+# DIVERGES: `findStreamFromFile` is `findStreamFromFile(gd, a, IO_SEE)` (above); `set(getStreamContext(s), IO_SEE)` is
+# `setStreamContextFlag`. No lock (no threads).
 "Make the stream alias, `user` or the file the atom `f` names the current input, opening the file for reading (pl-file.c)."
 function pl_see(ld::PL_local_data{T}, f::term_t)::Bool where {T}
     gd = _query_gd(ld)
@@ -1354,14 +1385,18 @@ function pl_see(ld::PL_local_data{T}, f::term_t)::Bool where {T}
         ld.IO_streams[SNO_CURRENT_INPUT + 1] = Suser_input(ld)   # Scurin = Suser_input
         return true
     end
-    # findStreamFromFile(a, IO_SEE): no stream (see above)
+    s = findStreamFromFile(gd, a, IO_SEE)
+    if s !== nothing
+        ld.IO_streams[SNO_CURRENT_INPUT + 1] = s    # Scurin = s
+        return true
+    end
 
     mode = PL_new_term_ref(ld)
     PL_put_atom(ld, mode, mk_sym(T, :read))         # PL_put_atom(mode, ATOM_read)
     s = openStream(ld, f, mode, 0)
     s === nothing && return false
 
-    getStreamContext(gd, s)                         # set(getStreamContext(s), IO_SEE)
+    setStreamContextFlag(gd, s, IO_SEE)             # set(getStreamContext(s), IO_SEE)
     push_input_context(ld, mk_sym(T, :see))         # push_input_context(ATOM_see)
     ld.IO_streams[SNO_CURRENT_INPUT + 1] = s        # Scurin = s
     return true
@@ -1381,6 +1416,118 @@ function pl_seen(ld::PL_local_data{T})::Bool where {T}
     s !== nothing && return closeStream(ld, s)
 
     return symbol_no_stream(ld, mk_sym(T, :current_input))
+end
+
+# PORT: pl-file.c see as pl_see1_va
+# (PRED_IMPL("see", 1, see, 0)) — pl-file.c:4546-4549 (pin 18168e62)
+"`see(+SrcDest)`: make a stream, alias, `user` or the file named the current input (pl-file.c)."
+function pl_see1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    return pl_see(ld, PL__t0) ? FTRUE : FFALSE
+end
+
+# PORT: pl-file.c seen as pl_seen0_va
+# (PRED_IMPL("seen", 0, seen, 0)) — pl-file.c:4552-4555 (pin 18168e62)
+"`seen`: close the current input and restore the one before the `see/1` (pl-file.c)."
+function pl_seen0_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    return pl_seen(ld) ? FTRUE : FFALSE
+end
+
+# PORT: pl-file.c seeing as pl_seeing1_va
+# (PRED_IMPL("seeing", 1, seeing, 0)) — pl-file.c:4558-4566 (pin 18168e62)
+"`seeing(-SrcDest)`: `user` for the user's input, else the current input stream (pl-file.c)."
+function pl_seeing1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    if Scurin(ld) === Suser_input(ld)
+        return PL_unify_atom(ld, PL__t0, mk_sym(T, :user)) ? FTRUE : FFALSE
+    end
+    return PL_unify_stream(ld, PL__t0, Scurin(ld)::IOSTREAM) ? FTRUE : FFALSE
+end
+
+# PORT: pl-file.c do_tell
+# DIVERGES: no lock (no threads: `PL_LOCK(L_SEETELL)`); `m` is the open mode atom (`ATOM_write` or `ATOM_append`);
+# `findStreamFromFile` and `set(getStreamContext(s), IO_TELL)` as `pl_see`.
+"Make a stream, alias, `user` or the file `f` names the current output, opening the file in mode `m` (pl-file.c)."
+function do_tell(ld::PL_local_data{T}, f::term_t, m::T)::Bool where {T}
+    gd = _query_gd(ld)
+    a = PL_get_atom_ex(ld, f)
+    a === nothing && return false
+
+    s = get_stream_handle(ld, a, SH_UNLOCKED)
+    if s !== nothing
+        setStandardStream(ld, SNO_CURRENT_OUTPUT, s)
+        return true
+    end
+    if sym_key(a) == sym_key(mk_sym(T, :user))      # a == ATOM_user
+        setStandardStream(ld, SNO_CURRENT_OUTPUT, Suser_output(ld)::IOSTREAM)
+        return true
+    end
+    s = findStreamFromFile(gd, a, IO_TELL)
+    if s !== nothing
+        setStandardStream(ld, SNO_CURRENT_OUTPUT, s)
+        return true
+    end
+
+    mode = PL_new_term_ref(ld)
+    PL_put_atom(ld, mode, m)                        # PL_put_atom(mode, m)
+    s = openStream(ld, f, mode, 0)
+    s === nothing && return false
+
+    setStreamContextFlag(gd, s, IO_TELL)            # set(getStreamContext(s), IO_TELL)
+    pushOutputContext(ld, s)
+    return true
+end
+
+# PORT: pl-file.c tell as pl_tell1_va
+# (PRED_IMPL("tell", 1, tell, 0)) — pl-file.c:4611-4614 (pin 18168e62)
+"`tell(+SrcDest)`: make a stream, alias, `user` or the file named the current output, opened for writing (pl-file.c)."
+function pl_tell1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    return do_tell(ld, PL__t0, mk_sym(T, :write)) ? FTRUE : FFALSE
+end
+
+# PORT: pl-file.c append as pl_append1_va
+# (PRED_IMPL("append", 1, append, 0)) — pl-file.c:4616-4619 (pin 18168e62)
+"`append(+File)`: as `tell/1`, the file opened for appending (pl-file.c)."
+function pl_append1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    return do_tell(ld, PL__t0, mk_sym(T, :append)) ? FTRUE : FFALSE
+end
+
+# PORT: pl-file.c telling as pl_telling1_va
+# (PRED_IMPL("telling", 1, telling, 0)) — pl-file.c:4621-4629 (pin 18168e62)
+"`telling(-SrcDest)`: `user` for the user's output, else the current output stream (pl-file.c)."
+function pl_telling1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    if Scurout(ld) === Suser_output(ld)
+        return PL_unify_atom(ld, PL__t0, mk_sym(T, :user)) ? FTRUE : FFALSE
+    end
+    return PL_unify_stream(ld, PL__t0, Scurout(ld)::IOSTREAM) ? FTRUE : FFALSE
+end
+
+# PORT: pl-file.c told as pl_told0_va
+# (PRED_IMPL("told", 0, told, 0)) — pl-file.c:4631-4645 (pin 18168e62)
+"`told`: close the current output and restore the one before the `tell/1` (pl-file.c)."
+function pl_told0_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    cur = Scurout(ld)
+    s = cur === nothing ? nothing : getStream(cur)  # getStream(Scurout)
+
+    popOutputContext(ld)
+
+    s !== nothing && (s.flags & SIO_NOFEOF) != 0 && return FTRUE
+
+    s !== nothing && return closeStream(ld, s) ? FTRUE : FFALSE
+
+    return symbol_no_stream(ld, mk_sym(T, :current_output)) ? FTRUE : FFALSE
 end
 
 # ── prompts (pl-file.c) ─────────────────────────────────────────────────────────────────────────
@@ -3236,7 +3383,7 @@ end
 
 # PORT: pl-file.c BeginPredDefs as PL_predicates_from_file
 # DIVERGES: the entries of the predicates the kernel has ported (LB5: current_input/1, current_output/1, line_count/2,
-# line_position/2, tab/1,2, at_end_of_stream/0,1, get_code/1,2, put_code/1,2 and its alias put_char/1,2; S1: open/3,4 and close/1,2; S2a: prompt/2, prompt1/1, get_char/2, peek_char/2, flush_output/1, skip/2, ttyflush/0, is_stream/1, get_single_char/1, '\$alias_stream'/2, the input context trio and '\$stream_property'/2, '\$stream_properties'/2, '\$streams_properties'/2 and set_stream/2; lane D (UNTESTED): set_input/1, set_output/1, get_char/1, get_byte/1,2, peek_char/1, peek_code/1,2, peek_byte/1,2, put_byte/1,2, flush_output/0, put/1,2, skip/1, get/1,2, get0/1,2 (upstream's alias of get_code), byte_count/2, character_count/2; LB2:
+# line_position/2, tab/1,2, at_end_of_stream/0,1, get_code/1,2, put_code/1,2 and its alias put_char/1,2; S1: open/3,4 and close/1,2; S2a: prompt/2, prompt1/1, get_char/2, peek_char/2, flush_output/1, skip/2, ttyflush/0, is_stream/1, get_single_char/1, '\$alias_stream'/2, the input context trio and '\$stream_property'/2, '\$stream_properties'/2, '\$streams_properties'/2 and set_stream/2; lane D (UNTESTED): set_input/1, set_output/1, get_char/1, get_byte/1,2, peek_char/1, peek_code/1,2, peek_byte/1,2, put_byte/1,2, flush_output/0, put/1,2, skip/1, get/1,2, get0/1,2 (upstream's alias of get_code), byte_count/2, character_count/2, see/1, seen/0, seeing/1, tell/1, append/1, telling/1, told/0; LB2:
 # source_location/2 and '$set_source_location'/2, upstream's order file:6396-6397); `PRED_DEF` ors in `PL_FA_VARARGS`.
 "pl-file.c's registration table (`BeginPredDefs(file)`): the ported entries."
 const PL_predicates_from_file = (
@@ -3244,6 +3391,13 @@ const PL_predicates_from_file = (
     PL_extension("open", 3, pl_open3_va, PL_FA_ISO | PL_FA_VARARGS),
     PL_extension("close", 1, pl_close1_va, PL_FA_ISO | PL_FA_VARARGS),
     PL_extension("close", 2, pl_close2_va, PL_FA_ISO | PL_FA_VARARGS),
+    PL_extension("see", 1, pl_see1_va, PL_FA_VARARGS),
+    PL_extension("seen", 0, pl_seen0_va, PL_FA_VARARGS),
+    PL_extension("seeing", 1, pl_seeing1_va, PL_FA_VARARGS),
+    PL_extension("tell", 1, pl_tell1_va, PL_FA_VARARGS),
+    PL_extension("append", 1, pl_append1_va, PL_FA_VARARGS),
+    PL_extension("telling", 1, pl_telling1_va, PL_FA_VARARGS),
+    PL_extension("told", 0, pl_told0_va, PL_FA_VARARGS),
     PL_extension("set_input", 1, pl_set_input1_va, PL_FA_ISO | PL_FA_VARARGS),
     PL_extension("set_output", 1, pl_set_output1_va, PL_FA_ISO | PL_FA_VARARGS),
     PL_extension("get_char", 2, pl_get_char2_va, PL_FA_ISO | PL_FA_VARARGS),
