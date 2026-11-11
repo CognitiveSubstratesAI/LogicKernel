@@ -1240,3 +1240,228 @@ function build_factorized(
     end
     return (skel, subst)
 end
+
+# ── PREDICATES ──────────────────────────────────────────────────────────────────────────────────
+
+# ORIGINAL: upstream's `for(;;) { ...; if ( gTop + need > gMax ) rc = GLOBAL_OVERFLOW; ...; makeMoreStackSpace }`
+# retry loop, reduced: the global stack grows on demand, so the request is checked against the limit
+# (`ensureGlobalSpace`, which raises the overflow) and granted at once; the graph's locations stay valid. Returns the
+# position of the `need` cells, 0 with an exception raised.
+"`need` fresh global cells for a result, or 0 after raising the overflow."
+function _bs_alloc(ld::PL_local_data, need::Int)::Int
+    ensureGlobalSpace(ld, need) || return 0
+    base = allocGlobalNoShift(ld, need)
+    if base == 0
+        raiseStackOverflow(ld, GLOBAL_OVERFLOW)
+        return 0
+    end
+    return base
+end
+
+# ORIGINAL: `FUNCTOR_isovar1`, `FUNCTOR_automaton1`, ATOM_map functors, looked up per call.
+@inline _bs_functor(ld::PL_local_data{T}, name::Symbol, arity::Int)::word where {T} =
+    lookupFunctorDef(ld.functors, _atom_word!(ld, mk_sym(T, name)), arity)
+
+# PORT: pl-bisim.c term_minimal
+function pl_term_minimal2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2 = PL__t0, PL__t0 + 1
+    result = PL_new_term_ref(ld)
+    b = bs_node[]
+    g = bs_graph()
+    term_quotient(ld, -(A1 + 1), g, b, word(0), true) || return FFALSE
+    g.nodes == 0 && return PL_unify(ld, A2, A1) ? FTRUE : FFALSE    # nothing to share
+    base = _bs_alloc(ld, minimal_size(ld, g))
+    base == 0 && return FFALSE
+    ld.slots[result + 1] = build_minimal(ld, g, base)               # *valTermRef(result) = w
+    return PL_unify(ld, A2, result) ? FTRUE : FFALSE
+end
+
+# PORT: pl-bisim.c term_canonical_form
+# DIVERGES: returns `(ok, attvars)` where upstream writes `*attvars`.
+function term_canonical_form(ld::PL_local_data{T}, t::term_t, form::term_t)::Tuple{Bool, Bool} where {T}
+    result = PL_new_term_ref(ld)
+    b = bs_node[]
+    g = bs_graph()
+    term_quotient(ld, -(t + 1), g, b, word(0), true) || return (false, false)
+    attvars = g.attvars
+    g.nodes == 0 && return (PL_unify(ld, form, t), attvars)         # no cells: the term is its own form
+    canonicalise(ld, g)
+    base = _bs_alloc(ld, canonical_size(ld, g))
+    base == 0 && return (false, attvars)
+    ld.slots[result + 1] = build_canonical(ld, g, base)
+    return (PL_unify(ld, form, result), attvars)
+end
+
+# PORT: pl-bisim.c term_canonical_form_pred
+function pl_term_canonical_form2_va(ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T})::foreign_t where {T}
+    ok, _ = term_canonical_form(ld, PL__t0, PL__t0 + 1)
+    return ok ? FTRUE : FFALSE
+end
+
+# PORT: pl-bisim.c do_term_factorized
+function do_term_factorized(
+    ld::PL_local_data{T}, t::term_t, skeleton::term_t, substitution::term_t, opaque::word, minimal::Bool
+)::Bool where {T}
+    skel = PL_new_term_ref(ld)
+    subst = PL_new_term_ref(ld)
+    b = bs_node[]
+    g = bs_graph()
+    term_quotient(ld, -(t + 1), g, b, opaque, minimal) || return false
+    if g.nodes == 0                                         # no cells: nothing to factor out
+        return PL_unify(ld, skeleton, t) && PL_unify_nil(ld, substitution)
+    end
+    canonicalise(ld, g)
+    name_classes(ld, g)
+    base = _bs_alloc(ld, factorized_size(ld, g))
+    base == 0 && return false
+    s, e = build_factorized(ld, g, base)
+    ld.slots[skel + 1] = s
+    ld.slots[subst + 1] = e
+    return PL_unify(ld, skeleton, skel) && PL_unify(ld, substitution, subst)
+end
+
+# PORT: pl-bisim.c factorized_options
+const factorized_options = (PL_option_t(:minimal, OPT_BOOL), PL_option_t(:dollar_var, OPT_BOOL))
+
+# PORT: pl-bisim.c term_factorized
+function pl_term_factorized3_va(ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T})::foreign_t where {T}
+    ok = do_term_factorized(ld, PL__t0, PL__t0 + 1, PL__t0 + 2, _bs_functor(ld, Symbol("\$VAR"), 1), true)
+    return ok ? FTRUE : FFALSE
+end
+
+# PORT: pl-bisim.c term_factorized4
+# DIVERGES: the options' values are returned by `PL_scan_options` (`nothing`: the default, true).
+function pl_term_factorized4_va(ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T})::foreign_t where {T}
+    vals = PL_scan_options(ld, PL__t0 + 3, 0, "factorize_option", factorized_options)
+    vals === nothing && return FFALSE
+    minimal = vals[1] === nothing ? true : (vals[1]::Bool)
+    dollar_var = vals[2] === nothing ? true : (vals[2]::Bool)
+    opaque = dollar_var ? _bs_functor(ld, Symbol("\$VAR"), 1) : word(0)
+    return do_term_factorized(ld, PL__t0, PL__t0 + 1, PL__t0 + 2, opaque, minimal) ? FTRUE : FFALSE
+end
+
+# PORT: pl-bisim.c term_to_automaton
+function term_to_automaton(ld::PL_local_data{T}, Tt::term_t, A::term_t)::Bool where {T}
+    result = PL_new_term_ref(ld)
+    b = bs_node[]
+    g = bs_graph()
+    term_quotient(ld, -(Tt + 1), g, b, word(0), false) || return false
+    if g.nodes == 0                                         # a leaf: one state, holding it
+        f = PL_new_term_ref(ld)                             # PL_unify_term(A, PL_FUNCTOR, FUNCTOR_automaton1, PL_TERM, T)
+        PL_cons_functor(ld, f, _bs_functor(ld, :automaton, 1), Tt)
+        return PL_unify(ld, A, f)
+    end
+    canonicalise(ld, g)
+    base = _bs_alloc(ld, automaton_size(ld, g))
+    base == 0 && return false
+    ld.slots[result + 1] = build_automaton_result(ld, g, base)
+    return PL_unify(ld, A, result)
+end
+
+# PORT: pl-bisim.c automaton_to_term
+function automaton_to_term(ld::PL_local_data{T}, A::term_t, Tt::term_t)::Bool where {T}
+    result = PL_new_term_ref(ld)
+    f = get_automaton(ld, A)
+    f === nothing && return false
+    b = bs_node[]
+    g = bs_graph()
+    aut = bs_automaton()
+    automaton_quotient(ld, f, g, b, aut, false) || return false
+    aut.error == AUT_OK || return automaton_error(ld, A, aut)
+    if aut.state[1] < 0                                     # the start state is a sink
+        ld.slots[result + 1] = _bs_leaf_word(ld, g.leafp[-aut.state[1]])
+    else
+        base = _bs_alloc(ld, minimal_size(ld, g))
+        base == 0 && return false
+        ld.slots[result + 1] = build_minimal(ld, g, base)
+    end
+    return PL_unify(ld, Tt, result)
+end
+
+# PORT: pl-bisim.c term_automaton
+function pl_term_automaton2_va(ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T})::foreign_t where {T}
+    A1, A2 = PL__t0, PL__t0 + 1
+    k, _, _ = _deref_loc(ld, -(A2 + 1))                     # p = valTermRef(A2); deRef(p)
+    ok = (k == DU_CELL || k == DU_ATTVAR) ? term_to_automaton(ld, A1, A2) : automaton_to_term(ld, A2, A1)
+    return ok ? FTRUE : FFALSE
+end
+
+# PORT: pl-bisim.c minimal_automaton_size
+function minimal_automaton_size(ld::PL_local_data, g::bs_graph, aut::bs_automaton, sink::Bool, map::Bool)::Int
+    need = sink ? 2 : automaton_size(ld, g)
+    map && (need += 1 + aut.states)
+    return need
+end
+
+# PORT: pl-bisim.c build_minimal_automaton
+# DIVERGES: `base` is a global position; returns `(min, map)` (`map` 0 when not asked for).
+function build_minimal_automaton(
+    ld::PL_local_data{T}, g::bs_graph, aut::bs_automaton, sink::Bool, base::Int, wantmap::Bool
+)::Tuple{word, word} where {T}
+    p = base
+    min = word(0)
+    map = word(0)
+    if sink                         # the start state is a sink: the automaton denotes a leaf
+        ld.gstack[p] = _bs_functor(ld, :automaton, 1)
+        ld.gstack[p + 1] = _bs_leaf_word(ld, g.leafp[-aut.state[1]])
+        min = _bs_compound(p)
+        p += 2
+    else
+        min = build_automaton_result(ld, g, p)
+        p += automaton_size(ld, g)
+    end
+    if wantmap
+        if sink
+            ld.gstack[p] = _bs_functor(ld, :map, aut.states)
+            for i in 0:(aut.states - 1)
+                ld.gstack[p + 1 + i] = _bs_int_word(ld, aut.state[i + 1] == aut.state[1] ? 1 : 0)
+            end
+            map = _bs_compound(p)
+        else
+            map = build_map(ld, g, aut, p)
+        end
+    end
+    return (min, map)
+end
+
+# PORT: pl-bisim.c do_automaton_minimal
+function do_automaton_minimal(ld::PL_local_data{T}, A::term_t, Min::term_t, Map::Union{Nothing, term_t})::Bool where {T}
+    rmin = PL_new_term_ref(ld)
+    rmap = Map === nothing ? 0 : PL_new_term_ref(ld)
+    f = get_automaton(ld, A)
+    f === nothing && return false
+    b = bs_node[]
+    g = bs_graph()
+    aut = bs_automaton()
+    automaton_quotient(ld, f, g, b, aut, true) || return false
+    aut.error == AUT_OK || return automaton_error(ld, A, aut)
+    sink = aut.state[1] < 0
+    sink || canonicalise(ld, g)
+    base = _bs_alloc(ld, minimal_automaton_size(ld, g, aut, sink, Map !== nothing))
+    base == 0 && return false
+    m, mp = build_minimal_automaton(ld, g, aut, sink, base, Map !== nothing)
+    ld.slots[rmin + 1] = m
+    Map === nothing || (ld.slots[rmap + 1] = mp)
+    return PL_unify(ld, Min, rmin) && (Map === nothing || PL_unify(ld, Map, rmap))
+end
+
+# PORT: pl-bisim.c automaton_minimal / automaton_minimal3
+function pl_automaton_minimal2_va(ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T})::foreign_t where {T}
+    return do_automaton_minimal(ld, PL__t0, PL__t0 + 1, nothing) ? FTRUE : FFALSE
+end
+function pl_automaton_minimal3_va(ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T})::foreign_t where {T}
+    return do_automaton_minimal(ld, PL__t0, PL__t0 + 1, PL__t0 + 2) ? FTRUE : FFALSE
+end
+
+# PORT: pl-bisim.c BeginPredDefs as PL_predicates_from_bisim
+const PL_predicates_from_bisim = (
+    PL_extension("term_minimal", 2, pl_term_minimal2_va, PL_FA_VARARGS),
+    PL_extension("\$term_canonical_form", 2, pl_term_canonical_form2_va, PL_FA_VARARGS),
+    PL_extension("term_factorized", 3, pl_term_factorized3_va, PL_FA_VARARGS),
+    PL_extension("term_factorized", 4, pl_term_factorized4_va, PL_FA_VARARGS),
+    PL_extension("term_automaton", 2, pl_term_automaton2_va, PL_FA_VARARGS),
+    PL_extension("automaton_minimal", 2, pl_automaton_minimal2_va, PL_FA_VARARGS),
+    PL_extension("automaton_minimal", 3, pl_automaton_minimal3_va, PL_FA_VARARGS)
+)
