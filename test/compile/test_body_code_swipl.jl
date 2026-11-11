@@ -1086,7 +1086,48 @@ const _BC_ARITH_O = [
     ("e+inf: two A_FUNC0, a call of two", _bf("ia26", _bv(1)),
         _bconj(_bf("is", _bv(2), _bf("+", _bs("e"), _bs("inf"))), _bf("q", _bv(2), _bv(1))),
         "i_enter a_enter a_func0($(_hF("inf", 0))) a_func0($(_hF("e", 0))) a_add " *
-        "a_firstvar_is(1) b_var1 b_var0 i_depart($(_bP("q", 2))) i_exit")
+        "a_firstvar_is(1) b_var1 b_var0 i_depart($(_bP("q", 2))) i_exit"),
+    ("A+B+C: A_VAR2", _bf("ib1", _bv(1), _bv(2), _bv(3)),
+        _bconj(
+            _bf("is", _bv(4), _bf("+", _bf("+", _bv(1), _bv(2)), _bv(3))),
+            _bf("q", _bv(4))),
+        "i_enter a_enter a_var2 a_var1 a_var0 a_add a_add a_firstvar_is(3) " * _ba_tail(3)),
+    ("A*B*C", _bf("ib8", _bv(1), _bv(2), _bv(3)),
+        _bconj(
+            _bf("is", _bv(4), _bf("*", _bf("*", _bv(1), _bv(2)), _bv(3))),
+            _bf("q", _bv(4))),
+        "i_enter a_enter a_var2 a_var1 a_var0 a_mul a_mul a_firstvar_is(3) " * _ba_tail(3)),
+    ("+A: a unary plus is A_FUNC1", _bf("ib2", _bv(1)),
+        _bconj(_bf("is", _bv(2), _bf("+", _bv(1))), _bf("q", _bv(2))),
+        "i_enter a_enter a_var0 a_func1($(_hF("+", 1))) a_firstvar_is(1) " * _ba_tail(1)),
+    ("[0]+A", _bf("ib3", _bv(1)),
+        _bconj(_bf("is", _bv(2), _bf("+", _blist(_bg(0)), _bv(1))), _bf("q", _bv(2))),
+        "i_enter a_enter a_var0 a_integer(i:0) a_add a_firstvar_is(1) " * _ba_tail(1)),
+    ("[0x10ffff]+A", _bf("ib4", _bv(1)),
+        _bconj(_bf("is", _bv(2), _bf("+", _blist(_bg(1114111)), _bv(1))), _bf("q", _bv(2))),
+        "i_enter a_enter a_var0 a_integer(i:1114111) a_add a_firstvar_is(1) " *
+        _ba_tail(1)),
+    ("a rational: A_MPQ", _bf("ib6", _bv(1)),
+        _bconj(_bf("is", _bv(2), _bf("*", _bg(1 // big(3)), _bv(1))), _bf("q", _bv(2))),
+        "i_enter a_enter a_var0 a_mpq(q:1/3) a_mul a_firstvar_is(1) " * _ba_tail(1)),
+    ("2^56-1 is inline", _bf("ic1", _bv(1)),
+        _bconj(_bf("is", _bv(2), _bf("*", _bg(2^56 - 1), _bv(1))), _bf("q", _bv(2))),
+        "i_enter a_enter a_var0 a_integer(i:72057594037927935) a_mul a_firstvar_is(1) " *
+        _ba_tail(1)),
+    ("2^56 is a_mpz", _bf("ic2", _bv(1)),
+        _bconj(_bf("is", _bv(2), _bf("*", _bg(big(2)^56), _bv(1))), _bf("q", _bv(2))),
+        "i_enter a_enter a_var0 a_mpz(i:72057594037927936) a_mul a_firstvar_is(1) " *
+        _ba_tail(1)),
+    ("-2^56 is inline", _bf("ic3", _bv(1)),
+        _bconj(_bf("is", _bv(2), _bf("*", _bg(-(2^56)), _bv(1))), _bf("q", _bv(2))),
+        "i_enter a_enter a_var0 a_integer(i:-72057594037927936) a_mul a_firstvar_is(1) " *
+        _ba_tail(1)),
+    ("-2^56-1 is a_mpz", _bf("ic4", _bv(1)),
+        _bconj(
+            _bf("is", _bv(2), _bf("*", _bg(-(big(2)^56) - 1), _bv(1))),
+            _bf("q", _bv(2))),
+        "i_enter a_enter a_var0 a_mpz(i:-72057594037927937) a_mul a_firstvar_is(1) " *
+        _ba_tail(1))
 ]
 
 @testset "arithmetic under optimise compiles inline as the pin does (AR1 d3, compileArith)" begin
@@ -1131,10 +1172,8 @@ end
         _bnames!(body)
         user = LK.MODULE_user(_BGD)
         name, ar = _bfunctor(head)
-        cl = LK.compileClause(
-            _BGD, ld, head, body, LK.lookupProcedure(name, ar, user), user
-        )
-        (cl === nothing && ld.exception_term != 0) || return nothing
+        LK.compileClause(_BGD, ld, head, body, LK.lookupProcedure(name, ar, user), user)
+        ld.exception_term != 0 || return nothing           # raised, or left pending
         return child(lk_answer(ld, ld.exception_term), 2)
     end
     cases = [
@@ -1161,7 +1200,17 @@ end
             _bf("is", _bv(1), _bf("+", _blist(_bs("a"), _bs("b")), _bg(1))),
             _bf("type_error", _bs("character"), _blist(_bs("a"), _bs("b")))),
         ("a void right side", _bf("pe9", _bv(1)), _bf("<", _bv(1), _bv(2)),
-            _bs("instantiation_error"))
+            _bs("instantiation_error")),
+        ("a code point past 0x10ffff", _bf("pe10", _bv(1)),
+            _bf("is", _bv(1), _bf("+", _blist(_bg(1114112)), _bg(1))),
+            _bf("type_error", _bs("character"), _bg(1114112))),
+        # the operand of roundtoward/2 fails: the error stays pending, as the pin's
+        ("roundtoward of an unknown function", _bf("pe11", _bv(1)),
+            _bf("is", _bv(1),
+                _bf("roundtoward", _bf("nofunc", _bg(1)), _bs("to_positive"))),
+            _bf("type_error", _bs("evaluable"), _bf("nofunc", _bg(1)))),
+        ("*/1 is no function", _bf("pe12", _bv(1)), _bf("is", _bv(1), _bf("*", _bv(1))),
+            _bf("type_error", _bs("evaluable"), _bf("*", _bv(9))))
     ]
     for (name, h, b, formal) in cases
         formal_got = arith_error(h, b)
