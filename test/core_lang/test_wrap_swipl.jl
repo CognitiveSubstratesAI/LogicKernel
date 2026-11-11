@@ -447,19 +447,27 @@ end
     # before either ran (virgin supervisor, empty side table), so it cannot see the side table.
     @testset "unwrap of the inner wrapper after both wrappers ran" begin
         @test ok(_ea("ok"), "wb_r7")
-        @test ok(_el([_ei(1)]), "wb_r8")
         d = _wb_def(gd, "wb_u")
         c2 = _wb_closure(gd, d.codes)
         c1 = _wb_closure(gd, c2.supervisor)
-        @test c1.supervisor[1] != LK.S_VIRGIN
-        @test length(c1.supervisor_crefs) >= 1
-        saved_codes, saved_crefs = c1.supervisor, c1.supervisor_crefs
-        @test ok(_ea("ok"), "wb_r9")                           # unwrap_predicate(wb_u/1, n1)
-        @test _wb_closure(gd, d.codes) === c2
-        @test c2.supervisor === saved_codes
-        @test c2.supervisor_crefs === saved_crefs
-        @test LK.supervisor_crefs(gd, d, c2.supervisor) === c2.supervisor_crefs
-        @test ok(_el([_ei(1)]), "wb_r10")                      # runs on, through n2 only
+        # BOUND: a closure's copy without a number (`_impl_any_defined` false) is an undefined predicate: a call of the
+        # wrapped predicate resolves it (`trapUndefined`, `autoImport`) to the wrapped predicate itself, whose wrapper calls
+        # the closure again, round and round until the stack overflows (WRAP1-M15b ran into the CI time limit). The rows
+        # that call `wb_u` run only when both copies are defined; else this row fails at once.
+        defined = LK._impl_any_defined(c1.def) && LK._impl_any_defined(c2.def)
+        @test defined
+        if defined
+            @test ok(_el([_ei(1)]), "wb_r8")
+            @test c1.supervisor[1] != LK.S_VIRGIN
+            @test length(c1.supervisor_crefs) >= 1
+            saved_codes, saved_crefs = c1.supervisor, c1.supervisor_crefs
+            @test ok(_ea("ok"), "wb_r9")                       # unwrap_predicate(wb_u/1, n1)
+            @test _wb_closure(gd, d.codes) === c2
+            @test c2.supervisor === saved_codes
+            @test c2.supervisor_crefs === saved_crefs
+            @test LK.supervisor_crefs(gd, d, c2.supervisor) === c2.supervisor_crefs
+            @test ok(_el([_ei(1)]), "wb_r10")                  # runs on, through n2 only
+        end
     end
 
     @testset "get_procedure_resolve_head" begin
@@ -499,31 +507,38 @@ end
     @test proc !== nothing
     d = proc.definition
     @test LK.isCallWrapper(d.codes[LK.skipWrapperPrefix(d.codes)])          # wrapped: its supervisor is the wrapper's
-    pvm = LK.PutVarMap()
-    fid = LK.PL_open_foreign_frame(ld)
-    a = LK.PL_new_term_refs(ld, 3)
-    LK.putSlotValue!(ld, a + 1, mk_gnd(_WT, Int64(1)), pvm)
-    LK.putSlotValue!(ld, a + 2, mk_gnd(_WT, Int64(3)), pvm)
-    LK.putSlotValue!(ld, a + 3, mk_var(_WT, LK.fresh_var_keys!(1)), pvm)
-    qid = LK.PL_open_query(
-        gd, ld, nothing, LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS, proc, a
-    )
-    got = Any[]
-    rcs = Int[]
-    while length(got) < 10
-        rc = LK.PL_next_solution(gd, ld, qid)
-        push!(rcs, rc)
-        (rc == LK.PL_S_TRUE || rc == LK.PL_S_LAST) || break
-        push!(got, lk_value(lk_answers(ld, a + 2)[1]))
-        rc == LK.PL_S_LAST && break
+    # BOUND (WRAP1-M15b: the CI time limit): a closure's copy without a number is an undefined predicate that resolves, on a call,
+    # to the wrapped predicate itself (`autoImport`), whose wrapper calls the closure again until the stack overflows. The query
+    # opens only when the closure's copy is defined; else this row fails at once.
+    ci = findlast(c -> c.predicate === d, gd.closure_refs)
+    @test ci !== nothing && LK._impl_any_defined(gd.closure_refs[ci].def)
+    if ci !== nothing && LK._impl_any_defined(gd.closure_refs[ci].def)
+        pvm = LK.PutVarMap()
+        fid = LK.PL_open_foreign_frame(ld)
+        a = LK.PL_new_term_refs(ld, 3)
+        LK.putSlotValue!(ld, a + 1, mk_gnd(_WT, Int64(1)), pvm)
+        LK.putSlotValue!(ld, a + 2, mk_gnd(_WT, Int64(3)), pvm)
+        LK.putSlotValue!(ld, a + 3, mk_var(_WT, LK.fresh_var_keys!(1)), pvm)
+        qid = LK.PL_open_query(
+            gd, ld, nothing, LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS, proc, a
+        )
+        got = Any[]
+        rcs = Int[]
+        while length(got) < 10
+            rc = LK.PL_next_solution(gd, ld, qid)
+            push!(rcs, rc)
+            (rc == LK.PL_S_TRUE || rc == LK.PL_S_LAST) || break
+            push!(got, lk_value(lk_answers(ld, a + 2)[1]))
+            rc == LK.PL_S_LAST && break
+        end
+        LK.PL_close_query(ld, qid)
+        LK.PL_close_foreign_frame(ld, fid)
+        codes, _ = LK.innermost_supervisor(gd, d)                               # after the first call: S_WRAP made it
+        @test codes !== d.codes && codes[1] == LK.I_FOPENNDET                   # the foreign supervisor, inside the wrapper
+        @test got == [1, 2, 3]
+        @test !(LK.PL_S_EXCEPTION in rcs)
+        @test LK.live_states(ld) == 0
     end
-    LK.PL_close_query(ld, qid)
-    LK.PL_close_foreign_frame(ld, fid)
-    codes, _ = LK.innermost_supervisor(gd, d)                               # after the first call: S_WRAP made it
-    @test codes !== d.codes && codes[1] == LK.I_FOPENNDET                   # the foreign supervisor, inside the wrapper
-    @test got == [1, 2, 3]
-    @test !(LK.PL_S_EXCEPTION in rcs)
-    @test LK.live_states(ld) == 0
 end
 
 # A QUERY opened on the CLOSURE of a wrapped between/3 (the copy `S_WRAP` runs; a C caller of `PL_call_predicate` on a closure
@@ -543,27 +558,33 @@ end
     i = findlast(c -> c.predicate === d, gd.closure_refs)
     @test i !== nothing
     cproc = LK.procedure(gd.closure_refs[i].def, UInt32(0), UInt32(0))      # a procedure on the closure's copy
-    pvm = LK.PutVarMap()
-    fid = LK.PL_open_foreign_frame(ld)
-    a = LK.PL_new_term_refs(ld, 3)
-    LK.putSlotValue!(ld, a + 1, mk_gnd(_WT, Int64(1)), pvm)
-    LK.putSlotValue!(ld, a + 2, mk_gnd(_WT, Int64(3)), pvm)
-    LK.putSlotValue!(ld, a + 3, mk_var(_WT, LK.fresh_var_keys!(1)), pvm)
-    qid = LK.PL_open_query(
-        gd, ld, nothing, LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS, cproc, a
-    )
-    got = Any[]
-    rcs = Int[]
-    while length(got) < 10
-        rc = LK.PL_next_solution(gd, ld, qid)
-        push!(rcs, rc)
-        (rc == LK.PL_S_TRUE || rc == LK.PL_S_LAST) || break
-        push!(got, lk_value(lk_answers(ld, a + 2)[1]))
-        rc == LK.PL_S_LAST && break
+    # BOUND: a copy without a number (`_impl_any_defined` false) resolves, on a call, to the wrapped predicate itself (`autoImport`),
+    # whose wrapper calls the closure again without end until the stack overflows (WRAP1-M15b: the CI time limit). The query
+    # opens only on a defined copy; else this row fails at once.
+    @test LK._impl_any_defined(cproc.definition)
+    if LK._impl_any_defined(cproc.definition)
+        pvm = LK.PutVarMap()
+        fid = LK.PL_open_foreign_frame(ld)
+        a = LK.PL_new_term_refs(ld, 3)
+        LK.putSlotValue!(ld, a + 1, mk_gnd(_WT, Int64(1)), pvm)
+        LK.putSlotValue!(ld, a + 2, mk_gnd(_WT, Int64(3)), pvm)
+        LK.putSlotValue!(ld, a + 3, mk_var(_WT, LK.fresh_var_keys!(1)), pvm)
+        qid = LK.PL_open_query(
+            gd, ld, nothing, LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS, cproc, a
+        )
+        got = Any[]
+        rcs = Int[]
+        while length(got) < 10
+            rc = LK.PL_next_solution(gd, ld, qid)
+            push!(rcs, rc)
+            (rc == LK.PL_S_TRUE || rc == LK.PL_S_LAST) || break
+            push!(got, lk_value(lk_answers(ld, a + 2)[1]))
+            rc == LK.PL_S_LAST && break
+        end
+        LK.PL_close_query(ld, qid)
+        LK.PL_close_foreign_frame(ld, fid)
+        @test got == [1, 2, 3]
+        @test !(LK.PL_S_EXCEPTION in rcs)
+        @test LK.live_states(ld) == 0
     end
-    LK.PL_close_query(ld, qid)
-    LK.PL_close_foreign_frame(ld, fid)
-    @test got == [1, 2, 3]
-    @test !(LK.PL_S_EXCEPTION in rcs)
-    @test LK.live_states(ld) == 0
 end
