@@ -8,7 +8,7 @@
 #
 # THE OPERATING-SYSTEM LAYER (pl-os.c), since Y1: the clocks (`CpuTime`, `WallTime`),
 # the process environment (`getenv3`, `Setenv`, `Unsetenv`) and `Pause`, which getenv/2, setenv/2,
-# unsetenv/1, get_time/1, sleep/1 (src/pl-sys.jl) and statistics/2 (src/pl-prims.jl) call.
+# unsetenv/1, get_time/1, sleep/1, shell/2 (`System`, src/pl-sys.jl) and statistics/2 (src/pl-prims.jl) call.
 #
 # The C library is called with `ccall`, as upstream calls it (`clock_gettime`, `setenv`, `unsetenv`): for
 # the nanosecond clocks Julia does not give, and for the exact `errno` upstream reports. Each is on
@@ -17,7 +17,7 @@
 # Since R2 LB2b: the file-name functions at the end of the file (`canonicaliseFileName`, `AbsoluteFile`, `PL_cwd`, `ChDir`, …).
 # Since R2 TOP1b: the terminal mode a stream records (`TTY_COOKED`, `TTY_RAW`, `TTY_SAVE`, `Sttymode`, `Sset_ttymode`); the kernel
 # has no ttys, so only the `SIO_RAW` flag moves (`PushTty`/`PopTty` stay out, see src/pl-read.jl's note).
-# NOT PORTED: the rest of pl-os.c (`System`, the signals, the tmp-file
+# Unwritten: the rest of pl-os.c (the signals, the tmp-file
 # registry `DeleteTemporaryFile` needs: no tmp_file/2 yet), the Windows and HAVE_TIMES branches, the
 # `mitigate_spectre` flag's `clock_jitter` (the flag table, F1).
 
@@ -131,6 +131,47 @@ function Pause(t::Float64)::Bool
     t < 9.223372036854775807e18 || return true                  # NaN, ±Inf, too big: EINVAL
     sleep(min(t, 1.0e15))
     return true
+end
+
+# PORT: pl-os.c prog_shell
+# DIVERGES: `ld` is an argument and the flag is read from the database (`_query_gd`); the text of the atom is its
+# `String` (`PL_get_chars(…, CVT_ATOM|REP_MB)`, UTF-8). `POSIX_SHELL` is `/bin/sh` (the flag's default, src/os/pl-prologflag.jl).
+"The shell `System` runs a command with: the flag `posix_shell`, else `/bin/sh` (pl-os.c)."
+function prog_shell(ld::PL_local_data{T})::String where {T}
+    a = PL_current_prolog_flag(_query_gd(ld), mk_sym(T, :posix_shell), :atom)
+    return a === nothing ? "/bin/sh" : sym_text(a)
+end
+
+# PORT: pl-os.c System
+# (the `__unix__` branch, pl-os.c:2917-3033)
+# DIVERGES: `fork`/`execve`/`waitpid` are Julia's `run` of the command `shell -c cmd` with the environment variable
+# `PROLOGCHILD=yes` (`Setenv("PROLOGCHILD", "yes")` in the child), the child's descriptors 0, 1 and 2 being the process's own
+# (`Base.stdin`, `Base.stdout`, `Base.stderr`: the kernel's user streams are Julia IOs without a descriptor, where upstream
+# dup2()s `Sfileno(Suser_input|output|error)`); `argv[0]` is the full path of the shell, not its `BaseName`. Unwritten: the
+# controlling-terminal hand-over (`O_ADOPT_CTTY`), `PL_cleanup_fork`, ignoring SIGINT and resetting SIGTSTP while waiting
+# (the kernel has no signal handlers), `ERR_SHELL_FAILED` (a failed wait: Julia's `run` has none). A spawn that fails raises
+# `system_error` with the text of `errno`, as upstream's failed `fork`.
+"""
+    System(ld, cmd) -> Int
+
+Run `cmd` through the shell and wait for it (pl-os.c): the exit status; a child killed by a signal raises
+`shell(signal(Sig), Cmd)` and answers 1.
+"""
+function System(ld::PL_local_data{T}, cmd::String)::Int where {T}
+    shell = prog_shell(ld)
+    c = addenv(Cmd(String[shell, "-c", cmd]), "PROLOGCHILD" => "yes")
+    p = try
+        run(pipeline(ignorestatus(c); stdin=Base.stdin, stdout=Base.stdout, stderr=Base.stderr))
+    catch e
+        e isa Base.IOError || rethrow()
+        PL_error(ld, "shell", 2, MSG_ERRNO, ERR_SYSCALL, "fork", -Int(e.code))
+        return 1
+    end
+    if p.termsignal == 0                                        # WIFEXITED(status)
+        return Int(p.exitcode)                                  # WEXITSTATUS(status)
+    end
+    PL_shell_signalled_error(ld, cmd, Int(p.termsignal))        # WIFSIGNALED(status)
+    return 1
 end
 
 # ── file names (pl-os.c), since R2 LB2b ──────────────────────────────────────────────────────────

@@ -143,6 +143,26 @@ function PL_existence_error3(
     return _PL_error_close!(ld, caller, fid, except, formal, swi, "", 0, "")
 end
 
+# PORT: pl-error.c PL_error as PL_shell_signalled_error
+# (the `ERR_SHELL_SIGNALLED` branch, pl-error.c:723-733; raised by `System`, pl-os.c, for shell/2)
+# DIVERGES: a function of its own, not a `PL_error` code (`ERR_SHELL_SIGNALLED` is not in the enum: one caller, `System`),
+# `cmd` the text of the command (upstream: a term reference holding that atom), the context `shell/2` with no message.
+# `ERR_SHELL_FAILED` (a failed wait) is unwritten: Julia's `run` raises no wait error, the failed spawn is `ERR_SYSCALL "fork"`.
+"Raise `error(shell(signal(Sig), Cmd), context(shell/2, _))` (pl-error.c `ERR_SHELL_SIGNALLED`); `false`."
+function PL_shell_signalled_error(
+    ld::PL_local_data{T}, cmd::String, sig::Int
+)::Bool where {T}
+    h = _PL_error_open(ld)
+    h === nothing && return false
+    caller, fid, except, formal, swi = h
+    s = new_term_ref(ld)
+    PL_cons_functor(ld, s, _err_functor(ld, :signal, 1), _err_int(ld, sig))
+    PL_cons_functor(
+        ld, formal, _err_functor(ld, :shell, 2), s, _err_atom(ld, mk_sym(T, Symbol(cmd)))
+    )
+    return _PL_error_close!(ld, caller, fid, except, formal, swi, "shell", 2, "")
+end
+
 # ORIGINAL (f3b-4): upstream's predefined `FUNCTOR_<name><arity>` — the functor word of `name/arity`.
 "The functor word of `name/arity` (upstream's `FUNCTOR_…` constants)."
 @inline _err_functor(ld::PL_local_data{T}, name::Symbol, arity::Int) where {T} =

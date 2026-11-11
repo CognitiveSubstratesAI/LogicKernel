@@ -1841,7 +1841,7 @@ function _manifest_index(T)
                 LK.pl_can_compare2_va,
                 LK.pl_std_lt2_va, LK.pl_std_leq2_va, LK.pl_std_gt2_va, LK.pl_std_geq2_va,   # (L1d-1)
                 LK.pl_unifiable3_va, LK.pl_throw1_va,
-                LK.pl_variant2_va, LK.pl_prolog_current_choice1_va,
+                LK.pl_variant2_va, LK.pl_not_variant2_va, LK.pl_prolog_current_choice1_va,
                 LK.pl_copy_term2_va, LK.pl_copy_term_nat2_va, LK.pl_duplicate_term2_va,
                 # V6b: the type checks and \\== (src/pl-prims.jl)
                 LK.pl_nonvar1_va, LK.pl_var1_va, LK.pl_integer1_va, LK.pl_float1_va,
@@ -2025,7 +2025,7 @@ function _manifest_index(T)
         [
             (f, Tuple{LD, Int, Int, LK.foreign_context{T}}, false) for f in (
                 LK.pl_getenv2_va, LK.pl_setenv2_va, LK.pl_unsetenv1_va, LK.pl_get_time1_va,
-                LK.pl_sleep1_va, LK.pl_statistics2_va, LK.pl_delete_file1_va
+                LK.pl_sleep1_va, LK.pl_statistics2_va, LK.pl_delete_file1_va, LK.pl_shell2_va    # (Q10)
             )
         ]...,
         (LK._sys_chars, Tuple{LD, Int}, false),
@@ -2039,6 +2039,8 @@ function _manifest_index(T)
         (LK._dwim_get_functor, Tuple{LD, Int}, false),
         (LK._dwim_stringAtom, Tuple{T}, false),
         (LK.Setenv, Tuple{LD, String, String}, false),
+        (LK.System, Tuple{LD, String}, false), (LK.prog_shell, Tuple{LD}, false),      # (Q10) shell/2
+        (LK.PL_shell_signalled_error, Tuple{LD, String, Int}, false),
         (LK.Unsetenv, Tuple{LD, String}, false),
         (LK.get_file_name, Tuple{LD, Int, Int}, false),
         (LK.PL_get_file_name, Tuple{LD, Int, Int}, false),

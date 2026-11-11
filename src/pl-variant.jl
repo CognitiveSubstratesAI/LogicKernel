@@ -406,7 +406,22 @@ function pl_variant2_va(
     return is_variant_ptr_cells(ld, -(A1 + 1), -(A2 + 1)) ? FTRUE : FFALSE    # valTermRef (L1d 8a)
 end
 
+# PORT: pl-variant.c not_variant as pl_not_variant2_va
+# (PRED_IMPL("\\=@=", 2, not_variant, 0), pl-variant.c:529-537 at the pin)
+"`\\=@=/2` (pl-variant.c): the arguments are not variants; fails, not true, when the check raised."
+function pl_not_variant2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2 = PL__t0, PL__t0 + 1
+    if is_variant_ptr_cells(ld, -(A1 + 1), -(A2 + 1))       # valTermRef (L1d 8a)
+        return FFALSE
+    end
+    return PL_exception(ld, 0) == 0 ? FTRUE : FFALSE        # false: is_variant_ptr() raised
+end
+
 # PORT: pl-variant.c BeginPredDefs as PL_predicates_from_variant
-# DIVERGES: the ported entry only (upstream's table also has `\=@=`, var:544-546).
-"pl-variant.c's registration table (`BeginPredDefs(variant)`): the ported entry."
-const PL_predicates_from_variant = (PL_extension("=@=", 2, pl_variant2_va, PL_FA_VARARGS),)
+"pl-variant.c's registration table (`BeginPredDefs(variant)`): `=@=` and `\\=@=`."
+const PL_predicates_from_variant = (
+    PL_extension("=@=", 2, pl_variant2_va, PL_FA_VARARGS),
+    PL_extension("\\=@=", 2, pl_not_variant2_va, PL_FA_VARARGS),
+)
