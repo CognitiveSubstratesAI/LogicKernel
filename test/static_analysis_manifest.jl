@@ -474,6 +474,7 @@ function _manifest_index(T)
         (LK.build_term!, Tuple{LK.decompileInfo{T}, T, Int}, false),
         (LK.decompileBodyNoShift!, Tuple{LK.decompileInfo{T}, UInt64, Int}, false),
         (LK._type_test_name, Tuple{UInt64}, false),
+        (LK._arith_goal_name, Tuple{UInt64}, false),
         (LK.decompileBody!, Tuple{LD, LK.decompileInfo{T}, Int, UInt64, Int}, false),
         (LK.decompile!, Tuple{LD, C, Int, Int}, false),
         (LK.decompile!, Tuple{LD, C, Int, Int, Int}, false),   # D1: bindings
