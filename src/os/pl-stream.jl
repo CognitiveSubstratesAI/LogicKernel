@@ -205,6 +205,7 @@ IOPOS() = IOPOS(0, 0, 0, 0, 0)
     Sstringfunctions
     Siofunctions
     Sstderrfunctions       # pl-file.c's: write to the stream it copies and flush it (R2 TOP1b F)
+    Snullfunctions         # pl-file.c's `nullFunctions` (open_null_stream/1): write is a no-op, read is at the end (lane D)
 end
 
 # PORT: pl-stream.c memfile
@@ -331,6 +332,7 @@ function S_read_wrapped(s::IOSTREAM, mem::Vector{UInt8}, from::Int, size::Int)::
         return Sread_memfile(h, mem, from, size)
     s.functions == Siofunctions && h isa Sjulia_io &&
         return Sread_julia_io(h, mem, from, size)
+    s.functions == Snullfunctions && return Sread_null(mem, from, size)
     return Sread_string(s, mem, from, size)
 end
 
@@ -343,6 +345,7 @@ function S_write(s::IOSTREAM, mem::Vector{UInt8}, from::Int, size::Int)::Int
         return Swrite_julia_io(h, mem, from, size)
     s.functions == Sstderrfunctions && h isa IOSTREAM &&
         return Swrite_stderr(h, mem, from, size)
+    s.functions == Snullfunctions && return Swrite_null(mem, from, size)
     return Swrite_string(s, mem, from, size)
 end
 
@@ -359,6 +362,7 @@ function S_close_wrapped(s::IOSTREAM)::Int
     s.functions == Smemfunctions && h isa memfile && return Sclose_memfile(h)
     s.functions == Siofunctions && h isa Sjulia_io && return Sclose_julia_io(h)
     s.functions == Sstderrfunctions && return 0                 # (`close` is NULL)
+    s.functions == Snullfunctions && return Sclose_null()
     h isa IOSTREAM && return Sclose_string(h)
     return -1
 end

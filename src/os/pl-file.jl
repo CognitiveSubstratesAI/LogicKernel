@@ -1530,6 +1530,44 @@ function pl_told0_va(
     return symbol_no_stream(ld, mk_sym(T, :current_output)) ? FTRUE : FFALSE
 end
 
+# ── NULL-STREAM (pl-file.c, pin 18168e62:4646-4713) ─────────────────────────────────────────────
+
+# PORT: pl-file.c Swrite_null
+# DIVERGES: `buf` is `mem` from `from`; no handle (`Snullfunctions` streams hold `nothing`).
+"The write function of a null stream: every byte is taken (pl-file.c)."
+Swrite_null(mem::Vector{UInt8}, from::Int, size::Int)::Int = size
+
+# PORT: pl-file.c Sread_null
+# DIVERGES: as `Swrite_null`.
+"The read function of a null stream: always at the end (pl-file.c)."
+Sread_null(mem::Vector{UInt8}, from::Int, size::Int)::Int = 0
+
+# PORT: pl-file.c Sseek_null
+# DIVERGES: the stream layer has no seek dispatch yet (`Sseek64`, S2b: no `S_seek64`), so nothing calls this until it has; written
+# as upstream has it (a seek to an absolute position answers it, the other whences -1).
+"The seek function of a null stream (pl-file.c)."
+function Sseek_null(offset::Int, whence::Int)::Int
+    whence == SIO_SEEK_SET && return offset
+    return -1
+end
+
+# PORT: pl-file.c Sclose_null
+# DIVERGES: as `Swrite_null`.
+"The close function of a null stream (pl-file.c)."
+Sclose_null()::Int = 0
+
+# PORT: pl-file.c open_null_stream as pl_open_null_stream1_va
+# (PRED_IMPL("open_null_stream", 1, open_null_stream, 0)) — pl-file.c:4698-4710 (pin 18168e62)
+"`open_null_stream(-Stream)`: a text output stream that discards what is written to it (pl-file.c)."
+function pl_open_null_stream1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    sflags = SIO_NBUF | SIO_RECORDPOS | SIO_OUTPUT | SIO_TEXT
+    s = Snew(nothing, sflags, Snullfunctions)
+    s.encoding = ENC_UTF8
+    return PL_unify_stream_or_alias(ld, PL__t0, s) ? FTRUE : FFALSE
+end
+
 # ── prompts (pl-file.c) ─────────────────────────────────────────────────────────────────────────
 
 # PORT: pl-file.c prompt as pl_prompt2_va
@@ -3383,7 +3421,7 @@ end
 
 # PORT: pl-file.c BeginPredDefs as PL_predicates_from_file
 # DIVERGES: the entries of the predicates the kernel has ported (LB5: current_input/1, current_output/1, line_count/2,
-# line_position/2, tab/1,2, at_end_of_stream/0,1, get_code/1,2, put_code/1,2 and its alias put_char/1,2; S1: open/3,4 and close/1,2; S2a: prompt/2, prompt1/1, get_char/2, peek_char/2, flush_output/1, skip/2, ttyflush/0, is_stream/1, get_single_char/1, '\$alias_stream'/2, the input context trio and '\$stream_property'/2, '\$stream_properties'/2, '\$streams_properties'/2 and set_stream/2; lane D (UNTESTED): set_input/1, set_output/1, get_char/1, get_byte/1,2, peek_char/1, peek_code/1,2, peek_byte/1,2, put_byte/1,2, flush_output/0, put/1,2, skip/1, get/1,2, get0/1,2 (upstream's alias of get_code), byte_count/2, character_count/2, see/1, seen/0, seeing/1, tell/1, append/1, telling/1, told/0; LB2:
+# line_position/2, tab/1,2, at_end_of_stream/0,1, get_code/1,2, put_code/1,2 and its alias put_char/1,2; S1: open/3,4 and close/1,2; S2a: prompt/2, prompt1/1, get_char/2, peek_char/2, flush_output/1, skip/2, ttyflush/0, is_stream/1, get_single_char/1, '\$alias_stream'/2, the input context trio and '\$stream_property'/2, '\$stream_properties'/2, '\$streams_properties'/2 and set_stream/2; lane D (UNTESTED): set_input/1, set_output/1, get_char/1, get_byte/1,2, peek_char/1, peek_code/1,2, peek_byte/1,2, put_byte/1,2, flush_output/0, put/1,2, skip/1, get/1,2, get0/1,2 (upstream's alias of get_code), byte_count/2, character_count/2, see/1, seen/0, seeing/1, tell/1, append/1, telling/1, told/0, open_null_stream/1; LB2:
 # source_location/2 and '$set_source_location'/2, upstream's order file:6396-6397); `PRED_DEF` ors in `PL_FA_VARARGS`.
 "pl-file.c's registration table (`BeginPredDefs(file)`): the ported entries."
 const PL_predicates_from_file = (
@@ -3391,6 +3429,7 @@ const PL_predicates_from_file = (
     PL_extension("open", 3, pl_open3_va, PL_FA_ISO | PL_FA_VARARGS),
     PL_extension("close", 1, pl_close1_va, PL_FA_ISO | PL_FA_VARARGS),
     PL_extension("close", 2, pl_close2_va, PL_FA_ISO | PL_FA_VARARGS),
+    PL_extension("open_null_stream", 1, pl_open_null_stream1_va, PL_FA_VARARGS),
     PL_extension("see", 1, pl_see1_va, PL_FA_VARARGS),
     PL_extension("seen", 0, pl_seen0_va, PL_FA_VARARGS),
     PL_extension("seeing", 1, pl_seeing1_va, PL_FA_VARARGS),

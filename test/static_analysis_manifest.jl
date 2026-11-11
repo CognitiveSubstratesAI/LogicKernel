@@ -2975,9 +2975,13 @@ _index_entry_points(T) = (
             LK.pl_get_byte2_va, LK.pl_get_byte1_va, LK.pl_byte_count2_va,
             LK.pl_character_count2_va, LK.pl_set_input1_va, LK.pl_set_output1_va,
             LK.pl_see1_va, LK.pl_seen0_va, LK.pl_seeing1_va, LK.pl_tell1_va,
-            LK.pl_append1_va, LK.pl_telling1_va, LK.pl_told0_va
+            LK.pl_append1_va, LK.pl_telling1_va, LK.pl_told0_va, LK.pl_open_null_stream1_va
         )
     ]...,
+    (LK.Swrite_null, Tuple{Vector{UInt8}, Int, Int}, false),
+    (LK.Sread_null, Tuple{Vector{UInt8}, Int, Int}, false),
+    (LK.Sseek_null, Tuple{Int, Int}, false),
+    (LK.Sclose_null, Tuple{}, false),
     (LK.do_tell, Tuple{LK.PL_local_data{T}, Int, T}, false),
     (LK.findStreamFromFile, Tuple{LK.PL_global_data{T}, T, Int}, false),
     (LK.setStreamContextFlag, Tuple{LK.PL_global_data{T}, LK.IOSTREAM, Int}, false),
@@ -4366,7 +4370,9 @@ const JET_DISPATCH_FAMILY = [
     (LK.S_close, Tuple{LK.IOSTREAM}, 0),
     (LK.S_read_wrapped, Tuple{LK.IOSTREAM, Vector{UInt8}, Int, Int}, 0),
     (LK.S_close_wrapped, Tuple{LK.IOSTREAM}, 0),
-    (LK.Swrite_stderr, Tuple{LK.IOSTREAM, Vector{UInt8}, Int, Int}, 0)
+    (LK.Swrite_stderr, Tuple{LK.IOSTREAM, Vector{UInt8}, Int, Int}, 0),
+    (LK.Swrite_null, Tuple{Vector{UInt8}, Int, Int}, 0),
+    (LK.Sread_null, Tuple{Vector{UInt8}, Int, Int}, 0)
 ]
 
 # `is_ground(t)` with an untyped argument is the interface's FALLBACK for implementations without a
