@@ -46,6 +46,7 @@ include("pl-rec.jl")           # swipl-devel src/pl-rec.c — recorded terms: co
 include("pl-termhash.jl")      # swipl-devel src/pl-termhash.c — term_hash, variant_sha1/hash
 include("pl-bisim.jl")         # swipl-devel src/pl-bisim.c — term_factorized, term_minimal, term_automaton (lane F)
 include("pl-coverage.jl")      # swipl-devel src/pl-coverage.c — the '$cov_*' predicates (lane F)
+include("pl-prof.jl")          # swipl-devel src/pl-prof.c — the profiler's call tree and '$prof_*' predicates (lane F; collection refuses by name, PROF1)
 include("pl-thread.jl")        # swipl-devel src/pl-thread.c — predicate references
 include("pl-gc.jl")            # swipl-devel src/pl-gc.c — generations in use, for clause GC; growing the local stack
 include("pl-cont.jl")          # swipl-devel src/pl-cont.c — shift/1: collecting the continuation of a reset/3
