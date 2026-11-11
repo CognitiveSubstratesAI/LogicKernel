@@ -874,3 +874,369 @@ function get_automaton(ld::PL_local_data{T}, A::term_t)::Union{Nothing, Int} whe
     PL_type_error(ld, "compound", A)
     return nothing
 end
+
+# ── CANONICAL NUMBERING ─────────────────────────────────────────────────────────────────────────
+# The quotient is unique but the numbers on it are not; two terms that are =@= must come out with the same
+# numbers, or the answer is no use as a key. So: walk the quotient depth first from the root (node 0), arguments
+# left to right, and number each class the first time it is reached; variables the first time the class holding
+# them is reached, left to right. Both depend on nothing but the shape of the quotient.
+
+# ORIGINAL: upstream's `consCompound(p)` (pl-data.h) for a global position.
+@inline _bs_compound(p::Int)::word = consPtr(p, TAG_COMPOUND | STG_GLOBAL)
+
+# PORT: pl-bisim.c canonicalise
+# DIVERGES: returns true always (no MEMORY_OVERFLOW; the arrays are Vectors, not pooled).
+"Number the classes, variables and leaves canonically from the root; sets `reached`, `reached_leaves` (pl-bisim.c)."
+function canonicalise(ld::PL_local_data, g::bs_graph)::Bool
+    top = 0
+    next = 1
+    vnext = 1
+    lnext = 1
+    g.canon = zeros(Int, g.classes)
+    g.vnum = zeros(Int, g.vars + 1)
+    g.lnum = zeros(Int, g.leaves + 1)
+    stack = zeros(Int, g.edges + 2)
+
+    stack[top + 1] = g.class[1]                             # the root cell is node 0
+    top += 1
+    while top > 0
+        top -= 1
+        c = stack[top + 1]
+        g.canon[c + 1] != 0 && continue
+        g.canon[c + 1] = next
+        next += 1
+
+        rep = g.order[g.class_start[c + 1] + 1]
+        arity = arityFunctor(ld.functors, g.node[rep + 1].functor)
+
+        for j in 0:(arity - 1)                              # variables, left to right
+            ch = g.child[g.arg[rep + 1] + j + 1]
+            if ch < 0
+                leaf = -ch - 1
+                if leaf < g.vars && g.vnum[leaf + 1] == 0
+                    g.vnum[leaf + 1] = vnext
+                    vnext += 1
+                end
+                if g.lnum[leaf + 1] == 0
+                    g.lnum[leaf + 1] = lnext
+                    lnext += 1
+                end
+            end
+        end
+        for j in (arity - 1):-1:0                           # push right to left: they come off left to right
+            ch = g.child[g.arg[rep + 1] + j + 1]
+            if ch >= 0
+                stack[top + 1] = g.class[ch + 1]
+                top += 1
+            end
+        end
+    end
+
+    # Every class of a term is reachable from its root; an automaton may name states its start state cannot reach,
+    # and those keep canon[c] == 0.
+    g.reached = next - 1
+    g.reached_leaves = lnext - 1
+    return true
+end
+
+# ── BUILD THE RESULT ────────────────────────────────────────────────────────────────────────────
+
+# PORT: pl-bisim.c canonical_size
+"The global cells `build_canonical` writes (pl-bisim.c)."
+function canonical_size(ld::PL_local_data, g::bs_graph)::Int
+    need = 3 * g.classes + 2 * g.vars
+    for c in 0:(g.classes - 1)
+        rep = g.order[g.class_start[c + 1] + 1]
+        need += 1 + arityFunctor(ld.functors, g.node[rep + 1].functor)
+    end
+    return need
+end
+
+# PORT: pl-bisim.c build_canonical
+# DIVERGES: `base` is a global position, the result the form's word; the arrays are Vectors.
+"""
+Write the quotient out as a ground, acyclic term at global position `base`: a list of the classes in canonical
+order, each the class's functor applied to its arguments, a cell argument the canonical number of its class, a
+variable `'\$VAR'(N)`, anything else the leaf itself (pl-bisim.c). Returns the word of the list.
+"""
+function build_canonical(ld::PL_local_data{T}, g::bs_graph, base::Int)::word where {T}
+    p = base
+    ccell = zeros(Int, g.classes)
+    bycanon = zeros(Int, g.classes)
+    vcell = zeros(Int, g.vars)
+    isovar1 = lookupFunctorDef(ld.functors, _atom_word!(ld, mk_sym(T, Symbol("\$VAR"))), 1)
+
+    for i in 0:(g.classes - 1)
+        bycanon[g.canon[i + 1]] = i
+    end
+
+    for i in 0:(g.classes - 1)                              # hand out the cells
+        rep = g.order[g.class_start[bycanon[i + 1] + 1] + 1]
+        ccell[i + 1] = p
+        p += 1 + arityFunctor(ld.functors, g.node[rep + 1].functor)
+    end
+    for i in 0:(g.vars - 1)
+        vcell[i + 1] = p
+        p += 2
+    end
+
+    for i in 0:(g.classes - 1)
+        rep = g.order[g.class_start[bycanon[i + 1] + 1] + 1]
+        arity = arityFunctor(ld.functors, g.node[rep + 1].functor)
+
+        ld.gstack[ccell[i + 1]] = g.node[rep + 1].functor
+        for j in 0:(arity - 1)
+            ch = g.child[g.arg[rep + 1] + j + 1]
+            if ch >= 0
+                ld.gstack[ccell[i + 1] + 1 + j] = _bs_int_word(ld, g.canon[g.class[ch + 1] + 1])
+            else
+                leaf = -ch - 1
+                if leaf < g.vars
+                    ld.gstack[ccell[i + 1] + 1 + j] = _bs_compound(vcell[g.vnum[leaf + 1]])
+                else
+                    ld.gstack[ccell[i + 1] + 1 + j] = ld.gstack[g.leafp[leaf + 1]]
+                end
+            end
+        end
+    end
+
+    for i in 0:(g.vars - 1)
+        ld.gstack[vcell[i + 1]] = isovar1
+        ld.gstack[vcell[i + 1] + 1] = _bs_int_word(ld, i + 1)
+    end
+
+    form = g.classes > 0 ? _bs_compound(p) : ld.atom_nil_w
+    for i in 0:(g.classes - 1)                              # the list holding them together
+        ld.gstack[p] = ld.functor_dot2
+        ld.gstack[p + 1] = _bs_compound(ccell[i + 1])
+        ld.gstack[p + 2] = i + 1 < g.classes ? _bs_compound(p + 3) : ld.atom_nil_w
+        p += 3
+    end
+    return form
+end
+
+# PORT: pl-bisim.c minimal_size
+"The global cells the quotient needs: one functor plus its arguments for every class (pl-bisim.c)."
+function minimal_size(ld::PL_local_data, g::bs_graph)::Int
+    need = 0
+    for c in 0:(g.classes - 1)
+        rep = g.order[g.class_start[c + 1] + 1]
+        need += 1 + arityFunctor(ld.functors, g.node[rep + 1].functor)
+    end
+    return need
+end
+
+# PORT: pl-bisim.c build_minimal
+# DIVERGES: `base` is a global position, the result the word denoting the class of the root.
+"Write the quotient at global position `base`, one cell per class (pl-bisim.c); the word of the root's class."
+function build_minimal(ld::PL_local_data, g::bs_graph, base::Int)::word
+    p = base
+    cell = zeros(Int, g.classes)
+
+    for c in 0:(g.classes - 1)                              # hand out the cells
+        rep = g.order[g.class_start[c + 1] + 1]
+        cell[c + 1] = p
+        p += 1 + arityFunctor(ld.functors, g.node[rep + 1].functor)
+    end
+
+    for c in 0:(g.classes - 1)
+        rep = g.order[g.class_start[c + 1] + 1]
+        arity = arityFunctor(ld.functors, g.node[rep + 1].functor)
+
+        ld.gstack[cell[c + 1]] = g.node[rep + 1].functor
+        for j in 0:(arity - 1)
+            ch = g.child[g.arg[rep + 1] + j + 1]
+            if ch >= 0                                      # a cell: point at its class
+                ld.gstack[cell[c + 1] + 1 + j] = _bs_compound(cell[g.class[ch + 1] + 1])
+            else                                            # a leaf: take it as it stands
+                ld.gstack[cell[c + 1] + 1 + j] = _bs_leaf_word(ld, g.leafp[-ch])
+            end
+        end
+    end
+
+    return _bs_compound(cell[g.class[1] + 1])
+end
+
+# PORT: pl-bisim.c automaton_size
+"The global cells `build_automaton_result` writes (pl-bisim.c)."
+function automaton_size(ld::PL_local_data, g::bs_graph)::Int
+    need = 1 + g.reached + g.reached_leaves
+    for c in 0:(g.classes - 1)
+        if g.canon[c + 1] != 0
+            rep = g.order[g.class_start[c + 1] + 1]
+            need += 1 + arityFunctor(ld.functors, g.node[rep + 1].functor)
+        end
+    end
+    return need
+end
+
+# PORT: pl-bisim.c build_automaton_result
+# DIVERGES: `base` is a global position, the result the automaton's word.
+"""
+Write the quotient out as an automaton at `base`: argument I is the colour of state I; a class its functor applied to
+the numbers of the states its arguments go to, a leaf a state holding the leaf (pl-bisim.c). State 1 is the root;
+a state it could not reach is left out.
+"""
+function build_automaton_result(ld::PL_local_data{T}, g::bs_graph, base::Int)::word where {T}
+    states = g.reached + g.reached_leaves
+    a = base
+    p = base + 1 + states
+
+    ld.gstack[a] = lookupFunctorDef(ld.functors, _atom_word!(ld, mk_sym(T, :automaton)), states)
+
+    for c in 0:(g.classes - 1)
+        g.canon[c + 1] == 0 && continue                     # the root cannot reach it
+
+        rep = g.order[g.class_start[c + 1] + 1]
+        arity = arityFunctor(ld.functors, g.node[rep + 1].functor)
+
+        ld.gstack[a + g.canon[c + 1]] = _bs_compound(p)
+        ld.gstack[p] = g.node[rep + 1].functor
+        for j in 0:(arity - 1)
+            ch = g.child[g.arg[rep + 1] + j + 1]
+            ld.gstack[p + 1 + j] = _bs_int_word(
+                ld, ch >= 0 ? g.canon[g.class[ch + 1] + 1] : g.reached + g.lnum[-ch]
+            )
+        end
+        p += 1 + arity
+    end
+
+    for i in 0:(g.leaves - 1)                               # the sinks
+        if g.lnum[i + 1] != 0
+            ld.gstack[a + g.reached + g.lnum[i + 1]] = _bs_leaf_word(ld, g.leafp[i + 1])
+        end
+    end
+
+    return _bs_compound(a)
+end
+
+# PORT: pl-bisim.c build_map
+# DIVERGES: `base` is a global position, the result the map's word.
+"What became of each state of the input: the number of the state it collapsed into, 0 if unreachable (pl-bisim.c)."
+function build_map(
+    ld::PL_local_data{T}, g::bs_graph, aut::bs_automaton, base::Int
+)::word where {T}
+    m = base
+    ld.gstack[m] = lookupFunctorDef(ld.functors, _atom_word!(ld, mk_sym(T, :map)), aut.states)
+    for i in 0:(aut.states - 1)
+        st = aut.state[i + 1]
+        if st >= 0
+            to = g.canon[g.class[st + 1] + 1]
+        else
+            to = g.lnum[-st] != 0 ? g.reached + g.lnum[-st] : 0
+        end
+        ld.gstack[m + 1 + i] = _bs_int_word(ld, to)
+    end
+    return _bs_compound(m)
+end
+
+# ── FACTORIZED FORM ─────────────────────────────────────────────────────────────────────────────
+# A class needs a name when it is used more than once, counting the root as a use: exactly enough to break every
+# cycle, so the skeleton stays finite. A class used once is written where it is used.
+
+# PORT: pl-bisim.c name_classes
+"Count the uses of each class and how many need a name (pl-bisim.c)."
+function name_classes(ld::PL_local_data, g::bs_graph)::Bool
+    g.uses = zeros(Int, g.classes)
+    g.uses[g.class[1] + 1] += 1                             # the root is a use
+
+    for c in 0:(g.classes - 1)
+        rep = g.order[g.class_start[c + 1] + 1]
+        arity = arityFunctor(ld.functors, g.node[rep + 1].functor)
+        for j in 0:(arity - 1)
+            ch = g.child[g.arg[rep + 1] + j + 1]
+            ch >= 0 && (g.uses[g.class[ch + 1] + 1] += 1)
+        end
+    end
+
+    g.named = 0
+    for c in 0:(g.classes - 1)
+        g.uses[c + 1] > 1 && (g.named += 1)
+    end
+    return true
+end
+
+# PORT: pl-bisim.c factorized_size
+"The global cells `build_factorized` writes (pl-bisim.c)."
+function factorized_size(ld::PL_local_data, g::bs_graph)::Int
+    need = g.named * (1 + 3 + 3)                            # variable, =/2, list cell
+    for c in 0:(g.classes - 1)
+        rep = g.order[g.class_start[c + 1] + 1]
+        need += 1 + arityFunctor(ld.functors, g.node[rep + 1].functor)
+    end
+    return need
+end
+
+# PORT: pl-bisim.c build_factorized
+# DIVERGES: `base` is a global position; returns `(skeleton word, substitution word)`; `classes == 0` (upstream's
+# false) cannot happen: the callers answer a term with no cells before. A fresh variable is a cell holding 0.
+"""
+Write one cell per class at `base`; a class used once is where it is used, a named class a fresh variable and its cell
+the right hand side of an equation, in canonical order (pl-bisim.c).
+"""
+function build_factorized(
+    ld::PL_local_data{T}, g::bs_graph, base::Int
+)::Tuple{word, word} where {T}
+    p = base
+    root = g.class[1]
+    cell = zeros(Int, g.classes)
+    var = zeros(Int, g.classes)                             # 0: no variable (upstream NULL)
+    bycanon = zeros(Int, g.classes)
+    equals2 = lookupFunctorDef(ld.functors, _atom_word!(ld, mk_sym(T, :(=))), 2)
+
+    for c in 0:(g.classes - 1)
+        bycanon[g.canon[c + 1]] = c
+    end
+
+    for c in 0:(g.classes - 1)                              # hand out the cells
+        rep = g.order[g.class_start[c + 1] + 1]
+        cell[c + 1] = p
+        p += 1 + arityFunctor(ld.functors, g.node[rep + 1].functor)
+    end
+    for i in 0:(g.classes - 1)                              # and a variable per named class
+        cc = bycanon[i + 1]
+        if g.uses[cc + 1] > 1
+            var[cc + 1] = p
+            p += 1
+            ld.gstack[var[cc + 1]] = word(0)                # setVar
+        end
+    end
+
+    for c in 0:(g.classes - 1)
+        rep = g.order[g.class_start[c + 1] + 1]
+        arity = arityFunctor(ld.functors, g.node[rep + 1].functor)
+
+        ld.gstack[cell[c + 1]] = g.node[rep + 1].functor
+        for j in 0:(arity - 1)
+            ch = g.child[g.arg[rep + 1] + j + 1]
+            if ch >= 0
+                d = g.class[ch + 1]
+                ld.gstack[cell[c + 1] + 1 + j] =
+                    var[d + 1] != 0 ? makeRefG(var[d + 1]) : _bs_compound(cell[d + 1])
+            else
+                ld.gstack[cell[c + 1] + 1 + j] = _bs_leaf_word(ld, g.leafp[-ch])
+            end
+        end
+    end
+
+    skel = var[root + 1] != 0 ? makeRefG(var[root + 1]) : _bs_compound(cell[root + 1])
+
+    subst = ld.atom_nil_w                                   # the equations, canonical order
+    for i in (g.classes - 1):-1:0
+        cc = bycanon[i + 1]
+        if var[cc + 1] != 0
+            eq = p
+            ld.gstack[eq] = equals2
+            ld.gstack[eq + 1] = makeRefG(var[cc + 1])
+            ld.gstack[eq + 2] = _bs_compound(cell[cc + 1])
+            p += 3
+
+            ld.gstack[p] = ld.functor_dot2
+            ld.gstack[p + 1] = _bs_compound(eq)
+            ld.gstack[p + 2] = subst
+            subst = _bs_compound(p)
+            p += 3
+        end
+    end
+    return (skel, subst)
+end
