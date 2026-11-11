@@ -381,10 +381,12 @@ if _CB_CI || isdir(joinpath(_CB_UP, ".git"))
             @test kern == tbl                            # the live table is the one the text declares
             first_row = Int(LK.B_ARG_CF) + 1
             tail = kern[first_row:end]
-            # B_ARG_CF .. I_SHIFTCP is 13 since TB6's S_INCR_DYNAMIC :3522, then TR4's S_TRIE_GEN .. T_CHECKWAKEUP (28): 13 + 28 = 41
-            # (D-0083, internal identity: TR4 alone gave 12 + 28 = 40, TB6 alone 13; the merge of both is 41)
-            @test length(tail) == 41
+            # B_ARG_CF .. I_SHIFTCP is 13 since TB6's S_INCR_DYNAMIC :3522, with AR1 (d)'s 25 A_* between S_TABLED and I_RESET, then TR4's S_TRIE_GEN .. T_CHECKWAKEUP (28): 13 + 25 + 28 = 66
+            # (D-0083, internal identity: TR4 alone gave 12 + 28 = 40, TB6 alone 13, AR1 (d) alone 12 + 25 + 28 = 65; the merge of the three is 66)
+            @test length(tail) == 66
             @test first(tail) == :B_ARG_CF && last(tail) == :T_CHECKWAKEUP
+            @test findfirst(==(:A_ENTER), tail) == findfirst(==(:S_TABLED), tail) + 1
+            @test findfirst(==(:I_RESET), tail) == findfirst(==(:A_FIRSTVAR_IS), tail) + 1
             @test all(n -> n in up, tail)                 # every tail name is a VMI() entry of the pin
             @test tail == filter(n -> n in Set(tail), up) # the same names, upstream's order
             codes = [getfield(LK, n) for n in tail]
