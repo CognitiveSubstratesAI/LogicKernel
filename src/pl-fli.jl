@@ -1108,10 +1108,106 @@ function pl_blob2_va(
     return PL_unify_atom(ld, A2, mk_sym(T, Symbol(name))) ? FTRUE : FFALSE
 end
 
+# PORT: pl-atom.c current_blob
+# DIVERGES: placed after the FLI it calls (pl-atom.jl is loaded before `PL_local_data`); `type` is always a
+# term reference: upstream's `type == NULL` call is `current_atom/1`'s, whose branches (the text-only
+# filter) belong to that predicate's step. `call` and `state` are `PL_foreign_control` and
+# `PL_foreign_context` of the call; the answer is the foreign return value (upstream returns an `atom_t` that
+# stands for it). The type of an atom is its blob type's NAME, compared as text (upstream compares the name
+# atoms); a type given as a blob or `[]` names no type (no blob type has an empty name, so `tname` = ""
+# matches none). The atoms enumerated are those of the database's table that carry an interface symbol
+# (`atomSymbol`, recorded when the atom first got a word from a symbol, `_atom_word!`: the only atoms a
+# Prolog term can hold); an atom that has none is skipped. NOT PORTED: the atom GC (`bump_atom_references`,
+# `PL_unregister_atom`, `ATOM_garbage_collected`, `CHK_ATOM_GARBAGE_COLLECTED`): with no AGC an atom of the
+# table is never freed under the enumeration, so the walk takes no reference.
+"""
+The worker of `current_blob/2`: enumerate the atoms of the table by index, `state` the next index to try
+(pl-atom.c).
+"""
+function current_blob(
+    ld::PL_local_data{T}, a::term_t, type::term_t, call::Int, state::Int
+)::foreign_t where {T}
+    index = 0
+    if call == FRG_FIRST_CALL
+        name = PL_is_blob(ld, a)
+        if name !== nothing
+            return PL_unify_atom(ld, type, mk_sym(T, Symbol(name))) ? FTRUE : FFALSE
+        end
+        PL_is_variable(ld, a) || return FFALSE
+        index = 1
+    elseif call == FRG_REDO
+        index = state
+    else
+        return FTRUE                                        # FRG_CUTTED
+    end
+
+    have_type = false
+    tname = ""
+    if !PL_is_variable(ld, type)
+        tn = PL_get_atom_ex(ld, type)
+        tn === nothing && return FFALSE
+        have_type = true
+        tname = (is_blob(tn) || is_reserved_symbol(tn)) ? "" : sym_text(tn)
+    end
+
+    atoms = ld.atoms
+    i = MSB(index)
+    last = false
+    while !last
+        upto = 2 << i
+        high = atoms.highest
+        b = atoms.array[i + 1]
+        if upto >= high
+            upto = high
+            last = true
+        end
+
+        if b === nothing
+            index = max(index, upto)
+        else
+            while index < upto
+                at = b[index - (1 << i) + 1]
+                btype = at.type
+                if ATOM_IS_VALID(at.references) && btype !== ATOM_TYPE_INVALID &&
+                   (!have_type || tname == btype.name)
+                    sym = atomSymbol(ld.atom_symbols, index)
+                    if sym !== nothing
+                        if !have_type
+                            PL_unify_atom(ld, type, mk_sym(T, Symbol(btype.name))) ||
+                                return FFALSE
+                        end
+                        PL_unify_atom(ld, a, sym) || return FFALSE
+                        return PL_retry(index + 1)          # ForeignRedoInt(index+1)
+                    end
+                end
+                index += 1
+            end
+        end
+        i += 1
+    end
+
+    return FFALSE
+end
+
+# PORT: pl-atom.c current_blob as pl_current_blob2_va
+# (PRED_IMPL("current_blob", 2, current_blob, PL_FA_NONDETERMINISTIC))
+"`current_blob(?Blob, ?Type)` (pl-atom.c): `Blob` is an atom of blob type `Type`, on backtracking every one."
+function pl_current_blob2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2 = PL__t0, PL__t0 + 1
+    return current_blob(ld, A1, A2, PL_foreign_control(PL__ctx), PL_foreign_context(PL__ctx))
+end
+
 # ORIGINAL: pl-atom.c BeginPredDefs(atom) as PL_predicates_from_atom
-# DIVERGES: the entries ported (`blob/2`).
+# DIVERGES: the entries ported (`current_blob/2`, `blob/2`), in upstream's order.
 "pl-atom.c's registration table (`BeginPredDefs(atom)`): the ported entries."
-const PL_predicates_from_atom = (PL_extension("blob", 2, pl_blob2_va, PL_FA_VARARGS),)
+const PL_predicates_from_atom = (
+    PL_extension(
+        "current_blob", 2, pl_current_blob2_va, PL_FA_NONDETERMINISTIC | PL_FA_VARARGS
+    ),
+    PL_extension("blob", 2, pl_blob2_va, PL_FA_VARARGS)
+)
 
 # PORT: pl-fli.h PL_is_atomic
 # DIVERGES: on the WORDS (L1e e2): an atom word or a value word (`isAtomic(w)`: neither a variable nor a

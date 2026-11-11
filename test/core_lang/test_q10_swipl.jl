@@ -1,6 +1,6 @@
 # ORIGINAL: a LIVE differential of Q10's built-ins (`\=@=/2`, `shell/2`, `current_blob/2`, `$put_token/2`, `$on_signal/4`,
 # `$set_prolog_stack/4`, `trim_heap/0`, `trim_stacks/0`, `thread_idle/2`) against swipl at the pin — Q10's rows
-# test/core_lang/test_q10_swipl.jl — vr01-pt23 against swipl 10.1.20 (the pin 18168e62):
+# test/core_lang/test_q10_swipl.jl — vr01-cb20 against swipl 10.1.20 (the pin 18168e62):
 #   * A PROGRAM consulted by the kernel's loader and cases `t_<id>(R)` run in order in one database, each wrapped in
 #     `catch(Goal, error(SsuE, _), R = raised(SsuE))`; the driver is test_style_check_swipl.jl's (`enc`oded answers).
 #   * Every answer line is swipl's, PINNED (the pin's swipl, ~/.local/swipl-pin1-18168e62/bin/swipl, two identical runs, 2026-11-11); with
@@ -241,7 +241,27 @@ const _QX_CASES = [
     ("pt20", "with_output_to(string(S), (current_output(O), '\$put_token'(O, 'a b'), '\$put_token'(O, c))), R = S"),   # only the first and last character of the text matter
     ("pt21", "with_output_to(string(S), (current_output(O), '\$put_token'(O, '\\''), '\$put_token'(O, '\\''))), R = S"),   # two quote characters
     ("pt22", "with_output_to(string(S), (current_output(O), '\$put_token'(O, '('), '\$put_token'(O, a))), R = S"),   # a punctuation token, then a letter
-    ("pt23", "with_output_to(string(S), (current_output(O), '\$put_token'(O, abc))), '\$put_token'(user_error, ''), R = S")    # the stream alias user_error with an empty text
+    ("pt23", "with_output_to(string(S), (current_output(O), '\$put_token'(O, abc))), '\$put_token'(user_error, ''), R = S"),   # the stream alias user_error with an empty text
+    ("cb01", "current_blob(foo, T), R = T"),   # a text atom: its type
+    ("cb02", "current_blob([], T), R = T"),   # the empty list: reserved_symbol
+    ("cb03", "( current_blob(\"s\", T) -> R = T ; R = no )"),   # a string is no blob
+    ("cb04", "( current_blob(f(x), T) -> R = T ; R = no )"),   # a compound is no blob
+    ("cb05", "( current_blob(1, T) -> R = T ; R = no )"),   # a number is no blob
+    ("cb06", "( current_blob(foo, text) -> R = yes ; R = no )"),   # an atom and its type
+    ("cb07", "( current_blob(foo, stream) -> R = yes ; R = no )"),   # an atom and another type
+    ("cb08", "( current_blob(foo, 1) -> R = yes ; R = no )"),   # an atom and a type that is no atom
+    ("cb09", "current_blob(_, 1)"),   # a variable blob and a type that is no atom
+    ("cb10", "current_blob(_, \"text\")"),   # a variable blob and a string type
+    ("cb11", "open_null_stream(S), ( current_blob(S2, stream), S2 == S -> R = yes ; R = no ), close(S)"),   # a stream is enumerated as a stream blob
+    ("cb12", "findall(X, current_blob(X, reserved_symbol), L), ( memberchk([], L) -> R = yes ; R = no )"),   # the reserved symbols include []
+    ("cb13", "findall(T, current_blob(_, T), Ts), sort(Ts, S), ( memberchk(text, S), memberchk(reserved_symbol, S) -> R = ok ; R = missing )"),   # the types enumerated include text and reserved_symbol
+    ("cb14", "atom_codes(A, \"q10_cb_atom_zz\"), ( current_blob(B, text), B == A -> R = yes ; R = no )"),   # a new text atom is enumerated
+    ("cb15", "( current_blob(X, q10_no_such_type) -> R = X ; R = no )"),   # a type no atom has
+    ("cb16", "( current_blob(X, text), ! ), atom(X), R = ok"),   # cut after the first solution
+    ("cb17", "( current_blob(X, T), X == [] -> R = T ; R = none )"),   # the type found from the atom
+    ("cb18", "atom_codes(A, [0'q, 0x20ac]), current_blob(A, T), R = T"),   # a text atom with a wide character: ucs_text
+    ("cb19", "atom_codes(A, [0'q, 0x20ac, 0'z]), ( current_blob(B, ucs_text), B == A -> R = yes ; R = no )"),   # a wide atom is enumerated by its type
+    ("cb20", "( current_blob(_, []) -> R = yes ; R = no )")    # the empty list as the type
 ]
 
 # the driver's whole output, one line per case after `ok`, from swipl at the pin
@@ -392,7 +412,27 @@ const _QX_PINNED = [
     "t_pt20 c[116,95,112,116,50,48]/1(s[97,32,98,32,99])",
     "t_pt21 c[116,95,112,116,50,49]/1(s[39,32,39])",
     "t_pt22 c[116,95,112,116,50,50]/1(s[40,97])",
-    "t_pt23 c[116,95,112,116,50,51]/1(s[97,98,99])"
+    "t_pt23 c[116,95,112,116,50,51]/1(s[97,98,99])",
+    "t_cb01 c[116,95,99,98,48,49]/1(a[116,101,120,116])",
+    "t_cb02 c[116,95,99,98,48,50]/1(a[114,101,115,101,114,118,101,100,95,115,121,109,98,111,108])",
+    "t_cb03 c[116,95,99,98,48,51]/1(a[110,111])",
+    "t_cb04 c[116,95,99,98,48,52]/1(a[110,111])",
+    "t_cb05 c[116,95,99,98,48,53]/1(a[110,111])",
+    "t_cb06 c[116,95,99,98,48,54]/1(a[121,101,115])",
+    "t_cb07 c[116,95,99,98,48,55]/1(a[110,111])",
+    "t_cb08 c[116,95,99,98,48,56]/1(a[110,111])",
+    "t_cb09 c[116,95,99,98,48,57]/1(c[114,97,105,115,101,100]/1(c[116,121,112,101,95,101,114,114,111,114]/2(a[97,116,111,109],i1)))",
+    "t_cb10 c[116,95,99,98,49,48]/1(c[114,97,105,115,101,100]/1(c[116,121,112,101,95,101,114,114,111,114]/2(a[97,116,111,109],s[116,101,120,116])))",
+    "t_cb11 c[116,95,99,98,49,49]/1(a[121,101,115])",
+    "t_cb12 c[116,95,99,98,49,50]/1(a[121,101,115])",
+    "t_cb13 c[116,95,99,98,49,51]/1(a[111,107])",
+    "t_cb14 c[116,95,99,98,49,52]/1(a[121,101,115])",
+    "t_cb15 c[116,95,99,98,49,53]/1(a[110,111])",
+    "t_cb16 c[116,95,99,98,49,54]/1(a[111,107])",
+    "t_cb17 c[116,95,99,98,49,55]/1(a[114,101,115,101,114,118,101,100,95,115,121,109,98,111,108])",
+    "t_cb18 c[116,95,99,98,49,56]/1(a[117,99,115,95,116,101,120,116])",
+    "t_cb19 c[116,95,99,98,49,57]/1(a[121,101,115])",
+    "t_cb20 c[116,95,99,98,50,48]/1(a[110,111])"
 ]
 
 # the kernel's lines where they differ from swipl's (see the header)
@@ -453,7 +493,7 @@ function _qx_kernel(path::String, names::Vector{String})
     return out, gd, ld
 end
 
-@testset "the Q10 built-ins as swipl's (vr01-pt23)" begin
+@testset "the Q10 built-ins as swipl's (vr01-cb20)" begin
     f, names = _qx_file()
     kl, _, _ = _qx_kernel(f, names)
     @test length(kl) == length(_QX_PINNED)
@@ -479,6 +519,10 @@ end
     @test any(l -> startswith(l, "t_pt03 ") && occursin("s" * _qx_codes("+ +"), l), _QX_PINNED)       # and between two symbol characters
     @test any(l -> startswith(l, "t_pt09 ") && occursin("a" * _qx_codes("encoding"), l), _QX_PINNED)  # a wide text: representation_error(encoding)
     @test any(l -> startswith(l, "t_pt10 ") && occursin("s[233]", l), _QX_PINNED)                    # the Latin-1 byte 233 as the character 233
+    @test any(l -> startswith(l, "t_cb01 ") && occursin("a" * _qx_codes("text"), l), _QX_PINNED)          # the type of a text atom
+    @test any(l -> startswith(l, "t_cb02 ") && occursin("a" * _qx_codes("reserved_symbol"), l), _QX_PINNED)   # and of []
+    @test any(l -> startswith(l, "t_cb11 ") && occursin("a" * _qx_codes("yes"), l), _QX_PINNED)      # the enumeration finds a stream blob
+    @test any(l -> startswith(l, "t_cb18 ") && occursin("a" * _qx_codes("ucs_text"), l), _QX_PINNED) # a wide text atom has its own type
     @test any(l -> startswith(l, "t_os01 ") && occursin("a" * _qx_codes("foreign"), l) && occursin("a" * _qx_codes("throw"), l), _QX_PINNED)
 end
 

@@ -18,6 +18,7 @@ E = "src/pl-error.jl"
 SU = "src/pl-setup.jl"
 AL = "src/pl-alloc.jl"
 W = "src/pl-write.jl"
+F = "src/pl-fli.jl"
 MUTANTS = [
     # ---- pl-variant.c: \=@=
     dict(id="Q10-1 `\\=@=` succeeds for variants (KILL vr01, vr03, vr07: the answer flips)", file=V, targets=TVC,
@@ -201,4 +202,28 @@ end
          new='''        return true
     end''',
          equivalent="no row puts a token on a stream that carries an error: a memory stream written by with_output_to/2 has none, so `streamStatus` is true"),
+    dict(id="Q10-43 the type of an atom is not unified (KILL cb07, cb08)", file=F, targets=TQ,
+         old='''            return PL_unify_atom(ld, type, mk_sym(T, Symbol(name))) ? FTRUE : FFALSE
+        end
+        PL_is_variable(ld, a) || return FFALSE''',
+         new='''            return FTRUE
+        end
+        PL_is_variable(ld, a) || return FFALSE'''),
+    dict(id="Q10-44 a bound non-atom is enumerated over (KILL cb03, cb04, cb05)", file=F, targets=TQ,
+         old='''        PL_is_variable(ld, a) || return FFALSE
+        index = 1''',
+         new='''        index = 1'''),
+    dict(id="Q10-45 the given type does not filter (KILL cb15, cb11)", file=F, targets=TQ,
+         old='''(!have_type || tname == btype.name)''',
+         new='''true'''),
+    dict(id="Q10-46 the enumeration is deterministic after its first answer (KILL cb13, cb14)", file=F, targets=TQ,
+         old='''                        return PL_retry(index + 1)          # ForeignRedoInt(index+1)''',
+         new='''                        return FTRUE'''),
+    dict(id="Q10-47 current_blob/2 is registered deterministic (KILL cb13, cb14)", file=F, targets=TQ,
+         old='''"current_blob", 2, pl_current_blob2_va, PL_FA_NONDETERMINISTIC | PL_FA_VARARGS''',
+         new='''"current_blob", 2, pl_current_blob2_va, PL_FA_VARARGS'''),
+    dict(id="Q10-48 an unbound type is not unified with the type found (KILL cb17)", file=F, targets=TQ,
+         old='''                            PL_unify_atom(ld, type, mk_sym(T, Symbol(btype.name))) ||
+                                return FFALSE''',
+         new='''                            nothing'''),
 ]

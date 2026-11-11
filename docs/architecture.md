@@ -5798,6 +5798,8 @@ What BLOB adds (pl-atom.c blob types, seen through the term interface; `is_blob`
   blob is its handle (`_blob_term!`, `_atom_word!` in pl-inline.jl): no text, no lookup.
 - **`blob/2`** (pl-atom.c `PRED_IMPL("blob", 2, ...)`, as `pl_blob2_va` in pl-fli.jl, which `PL_is_blob` it calls): `stream`, `clause`,
   `mutex`, `text`, `reserved_symbol` (`[]`); it fails on a number and a string.
+- **`current_blob/2`** (pl-atom.c, `current_blob` in pl-fli.jl): the first-call branch is `blob/2`'s; with a variable blob it walks the
+  atom table by index (`ForeignRedoInt(index+1)`), skipping the atoms that hold no interface symbol (no Prolog term can hold one); no AGC.
 - **Standard order** (pl-prims.c `compareAtoms`): by `type->rank`: numbers, strings, then the blob types in registration order
   (stream, clause, mutex: ranks -3, -2, -1), then `[]` (0), then text atoms (>= 1). Verified against swipl 10.1.19 (78 live rows).
 - **Term hash** (pl-termhash.c): a blob hashes the TYPE name, as `[]` (`reserved_symbol`) and `'[]'` (`text`) hash apart.
