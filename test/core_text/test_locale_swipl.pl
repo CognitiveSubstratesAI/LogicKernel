@@ -14,7 +14,7 @@ t0(R) :- lc_mk(lc0, [decimal_point(','), thousands_sep('.'), grouping([3,repeat(
 % the grouping forms, read back
 lc_grp(G, G-R) :- lc_res(lc_mk(lc1, [decimal_point('.'), thousands_sep(','), grouping(G)]), R0),
     ( R0 == true -> findall(P, locale_property(lc1, grouping(P)), R), lc_destroy(lc1) ; R = R0 ).
-t1(R) :- findall(X, ( member(G, [[3,3,3], [repeat(3)], [2,3], [3], [1,repeat(2)], [3,3], [], [3,2,repeat(1)], [4,4,4,4,4,4,4,4], [126],
+t1(R) :- findall(X, ( member(G, [[3,3,3], [repeat(3)], [2,3], [3], [1,repeat(2)], [3,3], [], [3,2,repeat(1)], [3,repeat(3)], [2,2,repeat(2)], [4,4,4,4,4,4,4,4], [126],
                                   [1,2,3,4,5,6,7,8], [1,2,3,4,5,6,7,8,9]]), lc_grp(G, X) ), R).
 % group sizes and grouping shapes that are errors
 t2(R) :- findall(G-E, ( member(G, [[0], [127], [128], [-1], [a], [1.5], x, [3|_], [3|x], [repeat(0)], [repeat(a)], [repeat(3),4], [repeat(_)], [_]]),
@@ -31,15 +31,16 @@ t4(R) :- lc_mk(lc4, [decimal_point(',')]),
     R = [R1, R2, R3, Ps, R4, R5, R6].
 % the second argument: a name, an alias (a copy), a locale blob (a copy), the errors
 t5(R) :- lc_mk(lc5, [decimal_point(','), thousands_sep('.'), grouping([3,repeat(2)])]),
-    lc_res(( locale_create(L1, lc5, [alias(lc5b)]), locale_property(L1, decimal_point(D1)), locale_property(L1, thousands_sep(T1)),
+    lc_res(( locale_create(L1, lc5, [alias(lc5b)]), ( L1 == lc5b -> K1 = alias ; K1 = other ), locale_property(L1, decimal_point(D1)), locale_property(L1, thousands_sep(T1)),
              locale_property(L1, grouping(G1)), locale_property(L1, alias(A1)) ), R1),
     lc_res(( locale_property(B, alias(lc5)), locale_create(L2, B, [alias(lc5c), thousands_sep(x)]), locale_property(L2, decimal_point(D2)),
              locale_property(L2, thousands_sep(T2)), locale_property(L2, grouping(G2)) ), R2),
-    lc_res(locale_create(_, nosuch, []), R3), lc_res(locale_create(_, 'xx_NOPE.nonexist', []), R4), lc_res(locale_create(_, 1, []), R5),
+    lc_res(locale_create(_, nosuch, []), R3), lc_res(locale_create(_, 'xx_NOPE.nonexist', []), R4), lc_res(locale_create(_, 'xx_NOPE.nonexist', []), R4b),
+    lc_res(( locale_create(_, "default", [alias(lc5e)]), locale_property(lc5e, decimal_point(D5)) ), R14), lc_res(locale_create(_, 'xx_NOPE.nonexist', []), R4c), lc_res(locale_create(_, 1, []), R5),
     lc_res(locale_create(_, _, []), R6), lc_res(locale_create(_, f(x), []), R7),    lc_res(locale_create(_, [], []), R9), lc_res(locale_create(_, "C", foo), R10), lc_res(locale_create(_, "C", [a|_]), R11),
     lc_res(locale_create(_, "C", _), R12), lc_res(locale_create(a, "C", []), R13),
-    lc_destroy(lc5), lc_destroy(lc5b), lc_destroy(lc5c),
-    R = [R1-D1-T1-G1-A1, R2-D2-T2-G2, R3, R4, R5, R6, R7, R9, R10, R11, R12, R13].
+    lc_destroy(lc5), lc_destroy(lc5b), lc_destroy(lc5c), lc_destroy(lc5e),
+    R = [R1-K1-D1-T1-G1-A1, R2-D2-T2-G2, R3, R4, R4b, R4c, R5, R6, R7, R9, R14-D5, R10, R11, R12, R13].
 % locale_property/2 on a bound locale (the alias, a blob), by property, and the errors
 t6(R) :- lc_mk(lc6, [decimal_point(','), thousands_sep('.'), grouping([3,repeat(2)])]),
     findall(P, locale_property(lc6, P), Ps),
@@ -58,8 +59,11 @@ t6(R) :- lc_mk(lc6, [decimal_point(','), thousands_sep('.'), grouping([3,repeat(
     lc_res(locale_property(lc6, decimal_point), R12), lc_res(locale_property(_, foo(x)), R13), lc_res(locale_property(_, 1), R14),
     lc_res(locale_property(_, alias(nosuch)), R15), lc_res(locale_property(_, alias(1)), R16), lc_res(locale_property(lc6, alias(nosuch)), R17),
     findall(A3, ( locale_property(L3, alias(lc6)), locale_property(L3, alias(A3)) ), A3s),
+    lc_res(locale_property(lc6, grouping([3,repeat(2)|x])), R18), lc_res(locale_property(lc6, grouping([3,repeat(2),4])), R19),
+    lc_res(locale_property(lc6, decimal_point(a, b)), R20),
+    lc_res(( locale_property(B3, alias(lc6)), locale_property(B4, alias(lc6)), B3 == B4, ( B3 == lc6 -> fail ; true ) ), R21),
     lc_destroy(lc6),
-    R = [Ps, Ds, Ts, Gs, As, R1, R2, R3, R4, Ps2, X5, R5, R6, R7, R8, R9, R10, R11, R12, R13, R14, R15, R16, R17, A3s].
+    R = [Ps, Ds, Ts, Gs, As, R1, R2, R3, R4, Ps2, X5, R5, R6, R7, R8, R9, R10, R11, R12, R13, R14, R15, R16, R17, A3s, R18, R19, R20, R21].
 % locale_property/2 with the locale unbound and a given property: the alias of a locale found by it, a locale found
 % by its decimal_point among the ones this row makes (a filter on the aliases of the row, never the other locales)
 t7(R) :- lc_mk(lc7a, [decimal_point(':'), thousands_sep('_'), grouping([2])]),
@@ -72,8 +76,10 @@ t7(R) :- lc_mk(lc7a, [decimal_point(':'), thousands_sep('_'), grouping([2])]),
     findall(A, ( locale_property(L, alias(A)), sub_atom(A, 0, _, _, lc7) ), L6a), msort(L6a, L6),
     findall(A-P, ( locale_property(L, P), locale_property(L, alias(A)), sub_atom(A, 0, _, _, lc7) ), L7a), msort(L7a, L7),
     findall(A-D, ( locale_property(L, decimal_point(D)), locale_property(L, alias(A)), sub_atom(A, 0, _, _, lc7) ), L8a), msort(L8a, L8),
+    findall(A, ( locale_property(L, grouping([2,repeat(127)])), locale_property(L, alias(A)), sub_atom(A, 0, _, _, lc7) ), L9),
+    findall(A, ( locale_property(L, thousands_sep(_)), locale_property(L, alias(A)), sub_atom(A, 0, _, _, lc7) ), L10a), msort(L10a, L10),
     lc_destroy(lc7a), lc_destroy(lc7b),
-    R = [L1, L2, L3, L4, L5, L6, L7, L8].
+    R = [L1, L2, L3, L4, L5, L6, L7, L8, L9, L10].
 % set_locale/1 and current_locale/1
 t8(R) :- lc_mk(lc8, [decimal_point(','), thousands_sep('.'), grouping([3])]),
     current_locale(C0), locale_property(C0, alias(A0)),
@@ -90,18 +96,30 @@ t8(R) :- lc_mk(lc8, [decimal_point(','), thousands_sep('.'), grouping([3])]),
     lc_destroy(lc8), lc_destroy(lc8b),
     R = [A0, R1, E1, Ps1, R2, R3, R4, R5, R6, R7, R8, R9, R10, R11, R12, E3, R13, Ts8, R14, E4].
 % locale_destroy/1: the errors, and what a destroyed alias is
-t9(R) :- lc_mk(lc9, [decimal_point(',')]),
+t9(R) :- lc_mk(lc9, [decimal_point(',')]), locale_property(B, alias(lc9)),
     lc_res(locale_destroy(nosuch), R1), lc_res(locale_destroy(1), R2), lc_res(locale_destroy(_), R3), lc_res(locale_destroy(f(x)), R4),
     lc_res(locale_destroy(lc9), R5), lc_res(locale_destroy(lc9), R6),
     lc_res(set_locale(lc9), R7), lc_res(locale_create(_, lc9, []), R8),
     lc_res(( locale_property(L, alias(lc9)) ), R9), lc_res(locale_property(lc9, alias(_)), R10),
-    R = [R1, R2, R3, R4, R5, R6, R7, R8, R9, R10, L].
+    findall(P, locale_property(B, P), Pb), lc_res(locale_destroy(B), R11), findall(P, locale_property(B, P), Pb2),
+    lc_res(( locale_create(_, B, [alias(lc9c)]), locale_property(lc9c, decimal_point(D2)) ), R12), lc_destroy(lc9c),
+    R = [R1, R2, R3, R4, R5, R6, R7, R8, R9, R10, L, Pb, R11, Pb2, R12-D2].
 % a locale made from a name: the "C" and "POSIX" locales' numeric conventions (an empty thousands_sep or grouping is no property)
+% a name that exists on most hosts: where it does not, the answer is ok (the .out is the same on every host)
+lc_en(R) :- ( catch(locale_create(_, 'en_US.UTF-8', [alias(lc10)]), error(existence_error(locale, _), _), fail)
+    -> lc_props(lc10, Pu), lc_destroy(lc10),
+       ( Pu == [alias(lc10), decimal_point('.'), thousands_sep(','), grouping([repeat(3)])] -> R = ok ; R = bad(Pu) )
+    ; R = ok ).
 t10(R) :- findall(N-Ps, ( member(N, ["C", "POSIX", 'C', 'POSIX']), locale_create(_, N, [alias(lc10)]), lc_props(lc10, Ps), lc_destroy(lc10) ), R0),
     lc_res(( locale_create(_, "C", [alias(lc10)]), locale_property(lc10, thousands_sep(_)) ), R1), lc_destroy(lc10),
     lc_res(( locale_create(_, "C", [alias(lc10), thousands_sep(',')]), locale_property(lc10, thousands_sep(S)) ), R2), lc_destroy(lc10),
     lc_res(( locale_create(_, "C", [alias(lc10), grouping([2])]), locale_property(lc10, grouping(G)) ), R3), lc_destroy(lc10),
-    R = [R0, R1, R2, R3, S, G].
+    lc_res(( locale_create(_, "C", [alias(lc10), decimal_point('')]), lc_props(lc10, Pe) ), R4), lc_destroy(lc10),
+    lc_res(( locale_create(Lb, "C", []), findall(P, locale_property(Lb, P), Pb) ), R5),
+    lc_res(( locale_create(_, "C", [alias(lc10), decimal_point('a\000\b')]), locale_property(lc10, decimal_point(Dn)) ), R6), lc_destroy(lc10),
+    lc_res(( locale_create(_, 'C', [alias(lc10), grouping([1,2])]), locale_property(lc10, alias(A10)) ), R7), lc_destroy(lc10),
+    lc_en(R8),
+    R = [R0, R1, R2, R3, S, G, R4-Pe, R5-Pb, R6-Dn, R7-A10, R8].
 % setlocale/3 refreshes the default locale (updateLocale, pl-ctype.c): LC_NUMERIC and LC_ALL do, the other categories do not. A host without
 % en_US.UTF-8 cannot set it: the row then answers `ok` for that category (the .out is the same on every host).
 lc_def(Ps) :- findall(P, locale_property(default, P), Ps).
