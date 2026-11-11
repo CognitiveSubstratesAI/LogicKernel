@@ -2975,7 +2975,8 @@ _index_entry_points(T) = (
             LK.pl_get_byte2_va, LK.pl_get_byte1_va, LK.pl_byte_count2_va,
             LK.pl_character_count2_va, LK.pl_set_input1_va, LK.pl_set_output1_va,
             LK.pl_see1_va, LK.pl_seen0_va, LK.pl_seeing1_va, LK.pl_tell1_va,
-            LK.pl_append1_va, LK.pl_telling1_va, LK.pl_told0_va, LK.pl_open_null_stream1_va
+            LK.pl_append1_va, LK.pl_telling1_va, LK.pl_told0_va, LK.pl_open_null_stream1_va,
+            LK.pl_stream_pair3_va
         )
     ]...,
     (LK.Swrite_null, Tuple{Vector{UInt8}, Int, Int}, false),

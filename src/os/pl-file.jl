@@ -27,7 +27,7 @@
 # a `stream_ref` (the stream's number in the table), written `<stream>(0x…)`; `close/1,2`
 # (`pl_close`) closes a stream by blob or alias; closing frees the stream's table entry and aliases
 # (`freeStream`, which upstream runs as the close hook). NOT PORTED: the rest of the stream table —
-# input streams for read/1, `stream_pair/3` (a pair blob), the
+# input streams for read/1, the
 # current-stream predicates, `open_null_stream/1`, `see/tell`, `with_output_to/2` and the output
 # redirection (O1); no locks (no threads), no atom/stream garbage collection (a blob is never
 # freed: a closed stream's blob stays a blob, its stream gone from the table).
@@ -74,6 +74,10 @@ const SNO_CURRENT_OUTPUT = 4
 # PORT: pl-file.h SNO_PROTOCOL
 "The index of `protocol` among the standard streams (pl-file.h)."
 const SNO_PROTOCOL = 5
+
+# PORT: pl-file.c SH_NOPAIR
+"Stream lookup flag: a stream pair is ambiguous (pl-file.c)."
+const SH_NOPAIR = Int(0x20)
 
 # PORT: pl-file.h ST_FALSE
 "`stream_type_check` off (pl-file.h)."
@@ -307,8 +311,10 @@ end
 # PORT: pl-file.c get_stream_handle
 # DIVERGES: a stream blob's payload names the stream by its number in the database's stream table (see
 # the file's header); a blob of a stream closed meanwhile is no stream (`existence_error`), its entry
-# being gone from the table (upstream: `s->erased`). A pair (both `read` and `write`) is NOT PORTED
-# (`stream_pair/3`). The alias table is the standard streams' names and the user aliases; returns the
+# being gone from the table (upstream: `s->erased`). A pair (both `read` and `write`) selects its
+# output stream for `SH_OUTPUT`, its input stream for `SH_INPUT`, else (`SH_NOPAIR`) the flag
+# `error_ambiguous_stream_pair` decides between `type_error(stream, Pair)` and a warning message and the
+# input stream; no `assert` on the reference counts. The alias table is the standard streams' names and the user aliases; returns the
 # stream or `nothing`; no locks, so `SH_UNLOCKED` and `SH_TRYLOCK` are all one. NOT PORTED: the
 # standard stream restored when its stream was closed (`restoreStandardStream` — the closers keep
 # the standard streams open, see `closeStream`). A standard name whose stream is NULL is
@@ -321,10 +327,35 @@ function get_stream_handle(
     gd = _query_gd(ld)
     ref = _stream_ref_of(ld, a)
     if ref !== nothing                              # type == &stream_blob
-        (ref.read != 0 && ref.write != 0) && throw(
-            NotPortedError{T}(a, "a stream pair", "stream_pair/3 (not ported)")
-        )
-        s = _stream_of(gd, ref.read != 0 ? ref.read : ref.write)
+        local sn::Int
+        if ref.read != 0
+            if ref.write != 0
+                if (flags & SH_OUTPUT) != 0
+                    sn = ref.write
+                elseif (flags & SH_INPUT) != 0
+                    sn = ref.read
+                elseif (flags & SH_NOPAIR) != 0
+                    if truePrologFlag(ld, PLFLAG_ERROR_AMBIGUOUS_STREAM_PAIR)
+                        symbol_stream_pair_not_allowed(ld, a)   # the error, false
+                        return nothing
+                    else
+                        t = PL_new_term_ref(ld)
+                        setSlotValue!(ld, t + 1, a)             # PL_put_atom(t, a)
+                        printMessage(
+                            ld, :warning, _message_term(ld, :ambiguous_stream_pair, t)
+                        ) || return nothing
+                        sn = ref.read
+                    end
+                else
+                    sn = ref.read
+                end
+            else
+                sn = ref.read
+            end
+        else
+            sn = ref.write
+        end
+        s = _stream_of(gd, sn)
         if s === nothing || s.erased                # if ( s->erased ) goto noent
             (flags & SH_ERRORS) != 0 && symbol_no_stream(ld, a)
             return nothing
@@ -573,7 +604,7 @@ end
 # PORT: pl-file.c stream_ref
 # DIVERGES: `read` and `write` are the NUMBERS of the streams in the database's stream table
 # (`getStreamContext`; 0 for NULL), where upstream holds the `IOSTREAM *`s: a Julia stream is no
-# pointer. A pair (both set) is NOT PORTED.
+# pointer. A pair has both set (`stream_pair/3`).
 "The data of a stream blob (pl-file.c `stream_ref`): the streams it reads and writes, by table number (0: none)."
 struct stream_ref
     read::Int
@@ -731,6 +762,59 @@ end
 # DIVERGES: no lock.
 "The stream `s` if it is open, else `nothing` (pl-file.c)."
 getStream(s::IOSTREAM)::Union{Nothing, IOSTREAM} = s.magic == SIO_MAGIC ? s : nothing
+
+# PORT: pl-file.c stream_pair as pl_stream_pair3_va
+# (PRED_IMPL("stream_pair", 3, stream_pair, 0)) — pl-file.c:1266-1330 (pin 18168e62)
+# DIVERGES: the pair's blob holds the streams' table numbers (`stream_ref`); no reference counts
+# (`acquire_stream_ref` is a hook the kernel has no twin of: no atom GC), no lock to release. A blob is unique
+# by payload, so the same two streams give the same pair.
+"`stream_pair(?Pair, ?Read, ?Write)`: split a pair into its streams, or make a pair of two (pl-file.c)."
+function pl_stream_pair3_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2, A3 = PL__t0, PL__t0 + 1, PL__t0 + 2
+
+    if !PL_is_variable(ld, A1)
+        a = PL_get_atom(ld, A1)
+        ref = a === nothing ? nothing : _stream_ref_of(ld, a)
+        gd = _query_gd(ld)
+        if ref !== nothing                                  # type == &stream_blob
+            rc = true
+            rs = ref.read != 0 ? _stream_of(gd, ref.read) : nothing
+            if rs !== nothing && !rs.erased
+                rc = rc && PL_unify_stream_or_alias(ld, A2, rs)
+            end
+            ws = ref.write != 0 ? _stream_of(gd, ref.write) : nothing
+            if ws !== nothing && !ws.erased
+                rc = rc && PL_unify_stream_or_alias(ld, A3, ws)
+            end
+            return rc ? FTRUE : FFALSE
+        else
+            if a !== nothing
+                s = get_stream_handle(ld, a, SH_ERRORS | SH_ALIAS | SH_UNLOCKED)
+                if s !== nothing
+                    rc = if (s.flags & SIO_INPUT) != 0
+                        PL_unify_stream_or_alias(ld, A2, s)
+                    else
+                        PL_unify_stream_or_alias(ld, A3, s)
+                    end
+                    return rc ? FTRUE : FFALSE
+                end
+            end
+
+            rc = PL_error(ld, "", 0, "", ERR_TYPE, mk_sym(T, :stream_pair), A1)
+            return rc ? FTRUE : FFALSE
+        end
+    end
+
+    in = getInputStream(ld, A2, S_DONTCARE)
+    in === nothing && return FFALSE
+    out = getOutputStream(ld, A3, S_DONTCARE)
+    out === nothing && return FFALSE
+    gd = _query_gd(ld)
+    pair = stream_ref(getStreamContext(gd, in), getStreamContext(gd, out))
+    return PL_unify_atom(ld, A1, _stream_blob_term(ld, pair)) ? FTRUE : FFALSE
+end
 
 # PORT: pl-file.c unify_stream_ref
 "Unify term reference `t` with the blob of the stream `s` (pl-file.c)."
@@ -1215,7 +1299,8 @@ function do_close(
 end
 
 # PORT: pl-file.c pl_close
-# DIVERGES: a pair is NOT PORTED.
+# DIVERGES: a stream the blob's number no longer names in the table is upstream's `erased` stream (a pair's closed
+# half is skipped, as there); no `assert` on the reference counts.
 "Close the stream (blob or alias) term reference `stream` holds (pl-file.c)."
 function pl_close(ld::PL_local_data{T}, stream::term_t, force::Bool)::Bool where {T}
     a = PL_get_atom(ld, stream)
@@ -1224,11 +1309,20 @@ function pl_close(ld::PL_local_data{T}, stream::term_t, force::Bool)::Bool where
     gd = _query_gd(ld)
     ref = _stream_ref_of(ld, a)
     if ref !== nothing                                          # close(Stream[pair], ...)
-        (ref.read != 0 && ref.write != 0) && throw(
-            NotPortedError{T}(a, "closing a stream pair", "stream_pair/3 (not ported)")
-        )
-        s = _stream_of(gd, ref.read != 0 ? ref.read : ref.write)
-        rc = do_close(ld, s === nothing ? nothing : getStream(s), force)
+        rc = true
+        if ref.read != 0 && ref.write != 0
+            ws = _stream_of(gd, ref.write)
+            if ws !== nothing && !ws.erased
+                rc = do_close(ld, getStream(ws), force)
+            end
+            rs = _stream_of(gd, ref.read)
+            if rs !== nothing && !rs.erased
+                rc = do_close(ld, getStream(rs), force) && rc
+            end
+        else
+            s = _stream_of(gd, ref.read != 0 ? ref.read : ref.write)
+            rc = do_close(ld, s === nothing ? nothing : getStream(s), force)
+        end
 
         if !rc && ld.exception_term == 0
             rc = PL_error(
@@ -1842,14 +1936,14 @@ end
 
 # PORT: pl-file.c getStreamWithPosition
 # DIVERGES: returns the stream or `nothing` (upstream: `bool` and `IOSTREAM **sp`); `PL_get_stream(stream, &s, 0)` is
-# `term_stream_handle(SH_ERRORS)` (no `SH_NOPAIR`: a stream pair is refused by name); no lock to release. `PL_get_stream`
+# `term_stream_handle(SH_ERRORS|SH_NOPAIR)` (`PL_get_stream_from_blob`: no input or output flag asks for NOPAIR); no lock to release. `PL_get_stream`
 # passes its own flags (0) to `not_a_stream`, so a non-atom argument is `domain_error(stream, X)`, not `stream_or_alias`
 # (swipl 10.1.19: `line_count(1, N)`); `get_stream_handle` never reads `SH_ALIAS` for an atom's lookup.
 "The stream `stream` names if it records a position, else `permission_error(property, position, Stream)` (pl-file.c)."
 function getStreamWithPosition(
     ld::PL_local_data{T}, stream::term_t
 )::Union{Nothing, IOSTREAM} where {T}
-    s = term_stream_handle(ld, stream, SH_ERRORS)
+    s = term_stream_handle(ld, stream, SH_ERRORS | SH_NOPAIR)
     s === nothing && return nothing
     if s.position === nothing
         _PL_permission_error(ld, :property, :position, stream)     # non-ISO
@@ -3311,8 +3405,8 @@ end
 
 # PORT: pl-file.c set_stream as pl_set_stream2_va
 # (PRED_IMPL("set_stream", 2, set_stream, 0)) — pl-file.c:2520-2594
-# DIVERGES: a stream pair is NOT PORTED (`get_stream_handle` refuses it by name); `PL_get_stream_handle` is
-# `term_stream_handle(SH_ERRORS|SH_ALIAS)` (no `SH_NOPAIR`); no lock to release.
+# DIVERGES: `PL_get_stream_handle` is `term_stream_handle(SH_ERRORS|SH_ALIAS)` (reached for no blob: a pair is split
+# above, by the attribute's `SS_NOPAIR`, so `SH_NOPAIR` is moot); no lock to release.
 "`set_stream(+Stream, +Attribute)`: set the attribute of the stream (pl-file.c)."
 function pl_set_stream2_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
@@ -3430,6 +3524,7 @@ const PL_predicates_from_file = (
     PL_extension("close", 1, pl_close1_va, PL_FA_ISO | PL_FA_VARARGS),
     PL_extension("close", 2, pl_close2_va, PL_FA_ISO | PL_FA_VARARGS),
     PL_extension("open_null_stream", 1, pl_open_null_stream1_va, PL_FA_VARARGS),
+    PL_extension("stream_pair", 3, pl_stream_pair3_va, PL_FA_VARARGS),
     PL_extension("see", 1, pl_see1_va, PL_FA_VARARGS),
     PL_extension("seen", 0, pl_seen0_va, PL_FA_VARARGS),
     PL_extension("seeing", 1, pl_seeing1_va, PL_FA_VARARGS),
