@@ -3857,6 +3857,11 @@ end
 # (2) The three limits (`max_rational_size`, `max_rational_size_action`, `max_integer_size`) are validated as
 # upstream does; the number layer is unbounded, so `infinite` and `error` (the state it has) are accepted and any
 # other value is a named refusal (`NotPortedError`) — upstream keeps it in `LD->arith.rat` and `LD->gmp`.
+# Pin 18168e62 src/pl-arith.c: the limit arms are set_arith_flag 5183-5194 (`max_rational_size` -> `LD->arith.rat.max_rational_size`,
+# `max_rational_size_action` -> `LD->arith.rat.max_rational_size_action`, `max_integer_size` -> `LD->gmp.max_integer_size`), set_restraint
+# 5110-5124 (`infinite` stores `(size_t)-1`, else PL_get_size_ex, values below `min` raised to `min`), set_restraint_action 5128-5140; the
+# boot state is `(size_t)-1`, `(size_t)-1` and `error` (pl-arith.c 5022-5024, flags 5026-5028): the states this kernel has, so those
+# are the no-ops. The refusal sites are listed in docs/r2_owners.tsv (owner AR1).
 "Set the arithmetic flag `key` to the value of `val` (pl-arith.c); false after raising or for a key that is no arithmetic flag."
 function set_arith_flag(ld::PL_local_data{T}, val::term_t, key::T)::Bool where {T}
     name = sym_text(key)

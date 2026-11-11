@@ -7621,7 +7621,7 @@ os/pl-option.c (`get_optval`'s `OPT_INT64`). Sizing: evidence/R2/lb5_sizing.md o
   are the twin of `current_output/1` in one upstream function and upstream's aliases of `put_code`. (4) Rows lb010-lb011 pin swipl's answer for
   `open(..., [record_position(false)])` (`ok-1`, `ok-0`); the kernel's stream may answer `permission_error` there: UNVERIFIED, judged by the gate.
   (5) The /0 forms that read the process's standard input (`at_end_of_stream/0`, `get_code/1`) have no row.
-- **Left out of this step** (the dispatcher's ruling, D-0388 and the writer handoff): `succ/2` (pl-arith.c:274-355), `peek_string/3`, `seek/4`, `set_stream_position/2`
+- **Left out of this step** (the dispatcher's ruling, D-0388 and the writer handoff; `succ/2` (pl-arith.c:274-355) is written since AR1, src/pl-arith.jl `pl_succ2_va`): `peek_string/3`, `seek/4`, `set_stream_position/2`
   (these two need `Sseek64`/`Stell64`: the stream layer has none), `with_tty_raw/1`, `nb_set_dict/3` and `del_dict/4` (they wait for pl-dict).
 
 Tests: test/core_lang/test_lb5_swipl.jl (ORIGINAL; rows lb001-lb110 from swipl 10.1.19 under `LC_ALL=C.UTF-8`, two byte-identical runs, generator
