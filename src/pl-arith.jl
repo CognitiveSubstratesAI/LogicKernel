@@ -1183,17 +1183,20 @@ _libm_acos(x::Float64)::Float64 = ccall((:acos, LIBM), Float64, (Float64,), x)
 # `cr_atan` of pl-arith.c
 "`atan(x)` of the C library (pl-arith.c `cr_atan`, FE_TONEAREST)."
 _libm_atan(x::Float64)::Float64 = ccall((:atan, LIBM), Float64, (Float64,), x)
-# `cr_atan2` of pl-arith.c
+# PORT: pl-arith.c cr_atan2 as _libm_atan2
+# DIVERGES: FE_TONEAREST only; the directed-rounding arms (`fegetround`, `nexttoward` of the result) wait for `roundtoward/2` (AR1).
 "`atan2(y, x)` of the C library (pl-arith.c `cr_atan2`, FE_TONEAREST)."
 _libm_atan2(y::Float64, x::Float64)::Float64 =
     ccall((:atan2, LIBM), Float64, (Float64, Float64), y, x)
-# `cr_exp` of pl-arith.c
+# PORT: pl-arith.c cr_exp as _libm_exp
+# DIVERGES: FE_TONEAREST only; the directed-rounding arms (`fegetround`, `nexttoward` of the result) wait for `roundtoward/2` (AR1).
 "`exp(x)` of the C library (pl-arith.c `cr_exp`, FE_TONEAREST)."
 _libm_exp(x::Float64)::Float64 = ccall((:exp, LIBM), Float64, (Float64,), x)
 # `cr_log` of pl-arith.c
 "`log(x)` of the C library (pl-arith.c `cr_log`, FE_TONEAREST)."
 _libm_log(x::Float64)::Float64 = ccall((:log, LIBM), Float64, (Float64,), x)
-# `cr_pow` of pl-arith.c
+# PORT: pl-arith.c cr_pow as _libm_pow
+# DIVERGES: FE_TONEAREST only; the directed-rounding arms (`fegetround`, `nexttoward` of the result) wait for `roundtoward/2` (AR1).
 "`pow(b, e)` of the C library (pl-arith.c `cr_pow`, FE_TONEAREST)."
 _libm_pow(b::Float64, e::Float64)::Float64 =
     ccall((:pow, LIBM), Float64, (Float64, Float64), b, e)
@@ -1707,6 +1710,8 @@ end
 # `sinh` & co. of the C library (`cr_sinh` & co. of pl-arith.c, FE_TONEAREST)
 "`sinh(x)` of the C library (pl-arith.c `cr_sinh`, FE_TONEAREST)."
 _libm_sinh(x::Float64)::Float64 = ccall((:sinh, LIBM), Float64, (Float64,), x)
+# PORT: pl-arith.c cr_cosh as _libm_cosh
+# DIVERGES: FE_TONEAREST only; the directed-rounding arms (`fegetround`, `nexttoward` of the result) wait for `roundtoward/2` (AR1).
 "`cosh(x)` of the C library (pl-arith.c `cr_cosh`, FE_TONEAREST)."
 _libm_cosh(x::Float64)::Float64 = ccall((:cosh, LIBM), Float64, (Float64,), x)
 "`tanh(x)` of the C library (pl-arith.c `cr_tanh`, FE_TONEAREST)."
@@ -1718,6 +1723,8 @@ _libm_asinh(x::Float64)::Float64 = ccall((:asinh, LIBM), Float64, (Float64,), x)
 _libm_acosh(x::Float64)::Float64 = ccall((:acosh, LIBM), Float64, (Float64,), x)
 "`atanh(x)` of the C library: a NaN beyond ±1 (Julia's `atanh` throws)."
 _libm_atanh(x::Float64)::Float64 = ccall((:atanh, LIBM), Float64, (Float64,), x)
+# PORT: pl-arith.c cr_erf as _libm_erf
+# DIVERGES: FE_TONEAREST only; the directed-rounding arms (`fegetround`, `nexttoward` of the result) wait for `roundtoward/2` (AR1).
 "`erf(x)` of the C library (pl-arith.c `cr_erf`, FE_TONEAREST)."
 _libm_erf(x::Float64)::Float64 = ccall((:erf, LIBM), Float64, (Float64,), x)
 # PORT: pl-arith.c cr_erfc as _libm_erfc
