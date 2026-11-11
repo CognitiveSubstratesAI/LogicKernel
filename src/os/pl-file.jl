@@ -3382,15 +3382,26 @@ function stream_eof_action_prop(ld::PL_local_data, s::IOSTREAM, prop::term_t)::B
 end
 
 # PORT: pl-file.c stream_reposition_prop
-# DIVERGES: the stream layer has no `seek`/`control` function pair and no file descriptor to `fstat`: a stream over
-# a file (a Julia `IOStream`) stands in for "has a seek function and `S_ISREG(fstat(fd))`", every other stream
-# (memory, string, terminal, pipe) is `false` (upstream: the same for a pipe or tty, a memory file has no fd).
+# DIVERGES: the stream layer has no `seek`/`control` function pair and no file descriptor to `fstat`. The pin's `Scontrol_memfile`
+# answers `SIO_GETREPOSITION` true: a memory stream (`open_string/2`, `with_output_to/2`: `Smemfunctions`) is `reposition(true)`, as
+# the pin says (rows d173-d175 seek in one). A stream over a file (a Julia `IOStream`) stands in for "has a seek function and
+# `S_ISREG(fstat(fd))`": `isfile(stat(io))`, so `/dev/null` is false as upstream's. The null stream (`Snullfunctions`: the kernel's
+# has a seek, upstream's `nullFunctions` has none: false), a string stream, a terminal and a pipe are `false`.
 "`reposition(Bool)` of `s`: whether it can be repositioned (pl-file.c)."
 function stream_reposition_prop(ld::PL_local_data, s::IOSTREAM, prop::term_t)::Bool
     val = false
     if s.magic == SIO_MAGIC
         h = s.handle
-        val = s.functions == Siofunctions && h isa Sjulia_io && h.io isa IOStream
+        if s.functions == Smemfunctions
+            val = true                                      # Scontrol_memfile: SIO_GETREPOSITION
+        elseif s.functions == Siofunctions && h isa Sjulia_io && h.io isa IOStream
+            val = try
+                isfile(stat(h.io))                          # S_ISREG(fstat(fd))
+            catch e
+                e isa Union{SystemError, Base.IOError, ArgumentError} || rethrow()
+                false
+            end
+        end
     end
     return PL_unify_bool(ld, prop, val)
 end
