@@ -28,7 +28,7 @@ _vi(i::Integer) = reinterpret(LKV.code, Int64(i))
 
 """
 Run `h(args...)` with the clause body replaced by `codes` (between I_ENTER and I_EXIT) and its literals by `lits`: the
-return code and the exception term's printed form when there is one.
+return code and, when there is an exception, its term, else (an answer) the arguments as the query left them.
 """
 function _vrun(gd, ld, body::Vector{LKV.code}, lits::Vector{_VT}, args::Vector{_VT}; top0::Int=0)
     _vn[] += 1
@@ -57,7 +57,13 @@ function _vrun(gd, ld, body::Vector{LKV.code}, lits::Vector{_VT}, args::Vector{_
         gd, ld, nothing, LKV.PL_Q_CATCH_EXCEPTION | LKV.PL_Q_EXT_STATUS, pr, a
     )
     rc = LKV.PL_next_solution(gd, ld, qid)
-    out = rc == LKV.PL_S_EXCEPTION ? lk_answer(ld, LKV.PL_exception(ld, qid)) : nothing
+    out = if rc == LKV.PL_S_EXCEPTION
+        lk_answer(ld, LKV.PL_exception(ld, qid))
+    elseif rc != LKV.PL_S_FALSE                         # an answer: the arguments as the query left them
+        _VT[lk_answer(ld, a + k - 1) for k in 1:length(args)]
+    else
+        nothing
+    end
     LKV.PL_close_query(ld, qid)
     LKV.PL_close_foreign_frame(ld, fid)
     return rc, out
@@ -167,4 +173,103 @@ _vfi(name, arity) = LKV.indexArithFunction(_VT, sym_key(_vs(name)), arity)
         @test sym_text(child(child(out, 2), 1)) == formal
         @test LKV.fegetround() == LKV.FE_TONEAREST
     end
+end
+
+@testset "AR1 d2b (comparisons): A_LT, A_LE, A_GT, A_GE, A_EQ, A_NE" begin
+    gd = LKV.PL_global_data{_VT}()
+    ld = LKV.PL_local_data{_VT}(gd)
+    args3 = _VT[_vg(0), _vg(0), _vg(0)]
+    run(body, lits=_VT[], args=args3; top0=0) = _vrun(gd, ld, LKV.code[body...], lits, args; top0=top0)
+    ok(rc) = rc != LKV.PL_S_FALSE && rc != LKV.PL_S_EXCEPTION
+    ops = (
+        (LKV.A_LT, <), (LKV.A_LE, <=), (LKV.A_GT, >), (LKV.A_GE, >=), (LKV.A_EQ, ==), (LKV.A_NE, !=),
+    )
+    # a comparison pops both numbers (the left one was pushed FIRST) and succeeds or fails the query
+    for (op, f) in ops, (x, y) in ((3, 4), (4, 4), (5, 4)), top0 in (0, 2)
+        rc, _ = run(LKV.code[LKV.A_ENTER, LKV.A_INTEGER, _vi(x), LKV.A_INTEGER, _vi(y), op]; top0=top0)
+        @test (rc != LKV.PL_S_EXCEPTION) && (ok(rc) == f(x, y)) && ld.arith_top == top0
+    end
+    # two floats; a float and an integer (through ar_compare); an integer past 64 bits; a NaN (unordered, unequal)
+    lits = _VT[_vg(1.5), _vg(2.5), _vg(2.0), _vg(big(2)^80), _vg(NaN)]
+    for (op, f) in ops
+        rc, _ = run(LKV.code[LKV.A_ENTER, LKV.A_DOUBLE, LKV.code(1), LKV.A_DOUBLE, LKV.code(2), op], lits)
+        @test (rc != LKV.PL_S_EXCEPTION) && (ok(rc) == f(1.5, 2.5)) && ld.arith_top == 0
+        rc, _ = run(LKV.code[LKV.A_ENTER, LKV.A_DOUBLE, LKV.code(3), LKV.A_DOUBLE, LKV.code(3), op], lits)
+        @test (rc != LKV.PL_S_EXCEPTION) && (ok(rc) == f(2.0, 2.0)) && ld.arith_top == 0
+        rc, _ = run(LKV.code[LKV.A_ENTER, LKV.A_INTEGER, _vi(2), LKV.A_DOUBLE, LKV.code(3), op], lits)
+        @test (rc != LKV.PL_S_EXCEPTION) && (ok(rc) == f(2, 2.0)) && ld.arith_top == 0
+        rc, _ = run(LKV.code[LKV.A_ENTER, LKV.A_DOUBLE, LKV.code(2), LKV.A_INTEGER, _vi(3), op], lits)
+        @test (rc != LKV.PL_S_EXCEPTION) && (ok(rc) == f(2.5, 3)) && ld.arith_top == 0
+        rc, _ = run(LKV.code[LKV.A_ENTER, LKV.A_MPZ, LKV.code(4), LKV.A_INTEGER, _vi(5), op], lits)
+        @test (rc != LKV.PL_S_EXCEPTION) && (ok(rc) == f(big(2)^80, 5)) && ld.arith_top == 0
+        rc, _ = run(LKV.code[LKV.A_ENTER, LKV.A_DOUBLE, LKV.code(5), LKV.A_DOUBLE, LKV.code(5), op], lits)
+        @test (rc != LKV.PL_S_EXCEPTION) && (ok(rc) == f(NaN, NaN)) && ld.arith_top == 0
+        rc, _ = run(LKV.code[LKV.A_ENTER, LKV.A_DOUBLE, LKV.code(5), LKV.A_INTEGER, _vi(1), op], lits)
+        @test (rc != LKV.PL_S_EXCEPTION) && (ok(rc) == f(NaN, 1)) && ld.arith_top == 0
+    end
+    # AR_END puts the rounding mode back: A_ROUNDTOWARDS_A (mode 2) leaves its number below the two compared
+    for (op, want) in ((LKV.A_LT, true), (LKV.A_GT, false))
+        rc, _ = run(LKV.code[LKV.A_ENTER, LKV.A_ROUNDTOWARDS_A, LKV.code(2), LKV.A_INTEGER, _vi(1), LKV.A_INTEGER, _vi(2), op])
+        @test (rc != LKV.PL_S_EXCEPTION) && ok(rc) == want
+        @test ld.arith_top == 1 && LKV.fegetround() == LKV.FE_TONEAREST
+    end
+end
+
+@testset "AR1 d2b (is): A_IS, A_FIRSTVAR_IS" begin
+    gd = LKV.PL_global_data{_VT}()
+    ld = LKV.PL_local_data{_VT}(gd)
+    run(body, lits=_VT[], args=_VT[_vg(0), _vv(), _vg(0)]; top0=0) = _vrun(gd, ld, LKV.code[body...], lits, args; top0=top0)
+    ok(rc) = rc != LKV.PL_S_FALSE && rc != LKV.PL_S_EXCEPTION
+    st = ld.arith_numbers
+    # X is 4 + 3, written `B_VAR1, A_ENTER, <expression>, A_IS` (the variable first: it goes to the argument cell of is/2)
+    sum7 = LKV.code[LKV.B_VAR1, LKV.A_ENTER, LKV.A_INTEGER, _vi(4), LKV.A_INTEGER, _vi(3), LKV.A_ADD, LKV.A_IS]
+    rc, out = run(sum7)                                         # unbound: bound to 7
+    @test ok(rc) && ld.arith_top == 0 && lk_eq(out[2], _vg(7))
+    rc, out = run(sum7; top0=2)                                 # pops exactly the result
+    @test ok(rc) && ld.arith_top == 2 && lk_eq(out[2], _vg(7))
+    rc, _ = run(sum7, _VT[], _VT[_vg(0), _vg(7), _vg(0)])       # bound to the same integer: succeeds, ...
+    @test ok(rc) && ld.arith_top == 0
+    rc, _ = run(sum7, _VT[], _VT[_vg(0), _vg(8), _vg(0)])       # ... to another one: the body fails
+    @test rc == LKV.PL_S_FALSE && ld.arith_top == 0
+    rc, _ = run(sum7, _VT[], _VT[_vg(0), _vg(7.0), _vg(0)])     # 7 is not 7.0 (SWI's identity)
+    @test rc == LKV.PL_S_FALSE && ld.arith_top == 0
+    rc, _ = run(sum7, _VT[], _VT[_vg(0), _vf(:f, _vg(7)), _vg(0)])   # a compound never matches
+    @test rc == LKV.PL_S_FALSE && ld.arith_top == 0
+    # a float, an integer past 64 bits and a rational result, each bound and then compared
+    lits = _VT[_vg(2.5), _vg(big(2)^80), _vg(big(7) // big(9))]
+    for (code, lit, other) in (
+        (LKV.A_DOUBLE, _vg(2.5), _vg(2.0)), (LKV.A_MPZ, _vg(big(2)^80), _vg(big(2)^81)),
+        (LKV.A_MPQ, _vg(big(7) // big(9)), _vg(big(8) // big(9))),
+    )
+        k = code == LKV.A_DOUBLE ? 1 : code == LKV.A_MPZ ? 2 : 3
+        body = LKV.code[LKV.B_VAR1, LKV.A_ENTER, code, LKV.code(k), LKV.A_IS]
+        rc, out = run(body, lits)
+        @test ok(rc) && lk_eq(out[2], lit)
+        rc, _ = run(body, lits, _VT[_vg(0), lit, _vg(0)])
+        @test ok(rc)
+        rc, _ = run(body, lits, _VT[_vg(0), other, _vg(0)])
+        @test rc == LKV.PL_S_FALSE
+    end
+    # AR_END: the rounding mode is back after the binding and after the failure
+    for arg in (_vv(), _vg(99))
+        rc, _ = run(
+            LKV.code[LKV.B_VAR1, LKV.A_ENTER, LKV.A_ROUNDTOWARDS_A, LKV.code(2), LKV.A_INTEGER, _vi(4), LKV.A_INTEGER, _vi(3), LKV.A_ADD, LKV.A_IS],
+            _VT[], _VT[_vg(0), arg, _vg(0)],
+        )
+        @test (ok(rc) || rc == LKV.PL_S_FALSE) && ld.arith_top == 1 && LKV.fegetround() == LKV.FE_TONEAREST
+    end
+    # A_FIRSTVAR_IS: the result goes to the variable's slot (here the third argument's); A_VAR2 reads it back
+    fv(expr) = LKV.code[LKV.A_ENTER, expr..., LKV.A_FIRSTVAR_IS, LKV.VAROFFSET(2), LKV.A_ENTER, LKV.A_VAR2]
+    rc, _ = run(fv(LKV.code[LKV.A_INTEGER, _vi(4), LKV.A_INTEGER, _vi(3), LKV.A_ADD]))
+    @test ok(rc) && ld.arith_top == 1 && st[1].type === LKV.V_INTEGER && st[1].i == 7
+    rc, _ = run(fv(LKV.code[LKV.A_DOUBLE, LKV.code(1)]), lits)
+    @test ok(rc) && ld.arith_top == 1 && st[1].type === LKV.V_FLOAT && st[1].f == 2.5
+    rc, _ = run(fv(LKV.code[LKV.A_MPZ, LKV.code(2)]), lits)
+    @test ok(rc) && ld.arith_top == 1 && st[1].type === LKV.V_MPZ && st[1].mpz == big(2)^80
+    rc, _ = run(fv(LKV.code[LKV.A_MPQ, LKV.code(3)]), lits)
+    @test ok(rc) && ld.arith_top == 1 && st[1].type === LKV.V_MPQ && st[1].mpq == big(7) // big(9)
+    rc, _ = run(      # the mode is back (A_ROUNDTOWARDS_A's number stays below)
+        LKV.code[LKV.A_ENTER, LKV.A_ROUNDTOWARDS_A, LKV.code(2), LKV.A_INTEGER, _vi(4), LKV.A_INTEGER, _vi(3), LKV.A_ADD, LKV.A_FIRSTVAR_IS, LKV.VAROFFSET(2)],
+    )
+    @test ok(rc) && ld.arith_top == 1 && LKV.fegetround() == LKV.FE_TONEAREST
 end

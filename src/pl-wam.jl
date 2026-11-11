@@ -2317,7 +2317,7 @@ const VMI_RUN = (
     :I_RATIONAL, :I_FLOAT, :I_NUMBER, :I_ATOMIC, :I_ATOM, :I_STRING, :I_COMPOUND,
     :I_CALLABLE, :A_ADD_FC, :A_ENTER, :A_INTEGER, :A_MPZ, :A_MPQ, :A_DOUBLE, :A_VAR, :A_VAR0,
     :A_VAR1, :A_VAR2, :A_FUNC0, :A_FUNC1, :A_FUNC2, :A_FUNC, :A_ROUNDTOWARDS_A, :A_ROUNDTOWARDS_V,
-    :A_ADD, :A_MUL, :B_UNIFY_FIRSTVAR, :B_UNIFY_VAR, :B_UNIFY_EXIT, :B_UNIFY_FF,
+    :A_ADD, :A_MUL, :A_LT, :A_LE, :A_GT, :A_GE, :A_EQ, :A_NE, :A_IS, :A_FIRSTVAR_IS, :B_UNIFY_FIRSTVAR, :B_UNIFY_VAR, :B_UNIFY_EXIT, :B_UNIFY_FF,
     :B_UNIFY_VF, :B_UNIFY_FV, :B_UNIFY_VV, :B_UNIFY_FC, :B_UNIFY_VC, :B_EQ_VV, :B_EQ_VC,
     :B_NEQ_VV, :B_NEQ_VC, :C_VAR, :I_FAIL, :I_TRUE, :C_JMP, :C_OR, :C_VAR_N,
     :C_IFTHENELSE, :C_IFTHEN, :C_CUT, :C_FASTCOND, :C_FASTCUT, :C_END, :C_NOT, :C_FAIL,
@@ -5850,6 +5850,106 @@ function PL_next_solution_guarded(
         @goto next_instruction
     end
     @goto ar_throw                                      # AR_THROW_EXCEPTION
+
+    # PORT: pl-vmi.c A_LT
+    @label A_LT
+    ac_what = LT
+    @goto a_cmp
+
+    # PORT: pl-vmi.c A_LE
+    @label A_LE
+    ac_what = LE
+    @goto a_cmp
+
+    # PORT: pl-vmi.c A_GT
+    @label A_GT
+    ac_what = GT
+    @goto a_cmp
+
+    # PORT: pl-vmi.c A_GE
+    @label A_GE
+    ac_what = GE
+    @goto a_cmp
+
+    # PORT: pl-vmi.c A_EQ
+    @label A_EQ
+    ac_what = EQ
+    @goto a_cmp
+
+    # PORT: pl-vmi.c A_NE
+    @label A_NE
+    ac_what = NE
+    @goto a_cmp
+
+    # PORT: pl-vmi.c CMP_FAST as a_cmp
+    # PORT: pl-vmi.c CMP
+    # PORT: pl-vmi.c a_cmp_out
+    # DIVERGES: the macros `CMP`/`CMP_FAST` are one shared label with the comparison in `ac_what`
+    # (the `LT .. NE` of pl-arith.jl): equal types `V_INTEGER`/`V_FLOAT` compare directly (a NaN: `<`, `==`
+    # false, `!=` true, as C's), anything else through `ar_compare`; the two numbers are the top two of
+    # the pool, `n1` below `n2` (`n1` was pushed first, the left operand). `a_cmp_out`: pop both,
+    # `AR_END` puts the rounding mode back, success goes on, failure is `FASTCOND_FAILED`.
+    @label a_cmp
+    ac_top = ld.arith_top                               # argvArithStack(2) + 1
+    ac_n1 = ld.arith_numbers[ac_top - 1]                # Number n1 = argvArithStack(2)
+    ac_n2 = ld.arith_numbers[ac_top]                    # Number n2 = n1 + 1
+    if ac_n1.type === V_INTEGER && ac_n2.type === V_INTEGER
+        ac_i1 = ac_n1.i
+        ac_i2 = ac_n2.i
+        ac_rc =
+            ac_what == LT ? ac_i1 < ac_i2 :
+            ac_what == LE ? ac_i1 <= ac_i2 :
+            ac_what == GT ? ac_i1 > ac_i2 :
+            ac_what == GE ? ac_i1 >= ac_i2 :
+            ac_what == EQ ? ac_i1 == ac_i2 : ac_i1 != ac_i2
+    elseif ac_n1.type === V_FLOAT && ac_n2.type === V_FLOAT
+        ac_f1 = ac_n1.f
+        ac_f2 = ac_n2.f
+        ac_rc =
+            ac_what == LT ? ac_f1 < ac_f2 :
+            ac_what == LE ? ac_f1 <= ac_f2 :
+            ac_what == GT ? ac_f1 > ac_f2 :
+            ac_what == GE ? ac_f1 >= ac_f2 :
+            ac_what == EQ ? ac_f1 == ac_f2 : ac_f1 != ac_f2
+    else
+        ac_rc = ar_compare(ld, ac_n1, ac_n2, ac_what)
+    end
+    _number_free!(ld, 2)                                # popArgvArithStack(2)
+    fegetround() != ar_femode && fesetround(ar_femode)  # AR_END()
+    ac_rc && @goto next_instruction
+    @FASTCOND_FAILED
+
+    # PORT: pl-vmi.c A_IS
+    # DIVERGES: the left operand's cell is the slot `B_VAR` wrote (`argFrameP(lTop, 0)`), read on the
+    # WORDS: the number is made a term (`put_number`, no global stack to ensure) and unified with it by
+    # `_unify_const_loc`, which binds an unbound or attributed variable and compares anything else by SWI's
+    # identity (a compound fails); upstream's own branches for a bound left operand (`get_rational`
+    # and `cmpNumbers` for a rational, the bit comparison of a float, else false) are that comparison.
+    # `put_number` cannot fail or raise here (no `rc`, no `THROW_EXCEPTION`).
+    @label A_IS
+    ais_n = ld.arith_numbers[ld.arith_top]              # Number n = argvArithStack(1)
+    ais_pos = argFrameP(ld.lTop, 0)
+    ARGP = argp_t{T}(ARGP_SLOT, ais_pos, ph)            # ARGP = argFrameP(lTop, 0)
+    ais_c = put_number(T, ais_n)                        # put_number(&c, n)
+    _number_free!(ld, 1)                                # popArgvArithStack(1)
+    fegetround() != ar_femode && fesetround(ar_femode)  # AR_END()
+    if _unify_const_loc(ld, -(ais_pos + 1), ais_c)      # deRef2(ARGP, k); canBind(*k): bindConst(k, c)
+        (ld.alerted & ALERT_WAKEUP) != 0 && @goto check_wakeup   # CHECK_WAKEUP
+        @goto next_instruction
+    end
+    @goto shallow_backtrack                             # BODY_FAILED
+
+    # PORT: pl-vmi.c A_FIRSTVAR_IS
+    # DIVERGES: `put_number` returns the term (as `A_IS`: no `rc`, no `THROW_EXCEPTION`); the first
+    # variable's slot is set (`*varFrameP(FR, *PC++) = w`).
+    @label A_FIRSTVAR_IS
+    afv_n = ld.arith_numbers[ld.arith_top]              # Number n = argvArithStack(1)
+    afv_w = put_number(T, afv_n)                        # put_number(&w, n)
+    _number_free!(ld, 1)                                # popArgvArithStack(1)
+    fegetround() != ar_femode && fesetround(ar_femode)  # AR_END()
+    setSlotValue!(ld, varFrameP(ld.frames[FR].base, Int(PCc[PC])) + 1, afv_w)   # *varFrameP(FR, *PC++) = w
+    PC += 1
+    @goto next_instruction
 
     # ── supervisors (pl-vmi.c) ────────────────────────────────────────────────────────────────────
     # PORT: pl-vmi.c S_VIRGIN
