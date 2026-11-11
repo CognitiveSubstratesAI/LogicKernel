@@ -3598,6 +3598,60 @@ _manifest_coverage_plain() = (
     (LK._cov_key, Tuple{Int, Int}, false)
 )
 
+# LANE F — pl-prof.c (src/pl-prof.jl): the profiler's call tree, its readers and the '$prof_*' predicates (the structs are in
+# src/pl-incl.jl). `startProfiler`, `activateProfiler`, `stopProfiler` (active), `'$prof_exact_ok'/1` and `'$prof_clock_cost'/1`
+# are named refusals (PROF1): their entries only check that they infer. Checked for every payload type; `ld_profile_clock`, once.
+_manifest_prof(T) = begin
+    LD = LK.PL_local_data{T}
+    GD = LK.PL_global_data{T}
+    DEF = LK.Definition{T}
+    NODE = LK.call_node{T}
+    SUM = LK.node_sum{T}
+    REF = LK.prof_ref{T}
+    (
+        (LK._prof_refuse, Tuple{LD, Symbol, String}, false),
+        (LK.new_call_node!, Tuple{LD, Union{Nothing, DEF}, Int}, false),
+        (LK.prof_node_at, Tuple{LD, Int}, false),
+        (LK.get_prof_status, Tuple{LD, Int}, false),
+        (LK.prof_status_atom, Tuple{Type{T}, Int}, false),
+        (LK.get_node, Tuple{LD, Int}, false),
+        (LK.unify_node, Tuple{LD, Int, Int}, false),
+        (LK.identify_def, Tuple{GD, LD, Int, DEF}, false),
+        (LK.unify_node_id, Tuple{GD, LD, Int, NODE}, false),
+        (LK.node_redos, Tuple{NODE}, false),
+        (LK.add_parent_ref!, Tuple{SUM, NODE, Int, Union{Nothing, DEF}, Int, Int}, false),
+        (LK.add_recursive_ref!, Tuple{SUM, Int, Int}, false),
+        (LK.add_sibling_ref!, Tuple{SUM, NODE, Int}, false),
+        (LK.sumProfile, Tuple{LD, NODE, DEF, SUM, Int}, false),
+        (LK.unify_relatives, Tuple{GD, LD, Int, Vector{REF}}, false),
+        (LK.get_def, Tuple{GD, LD, Int}, false),
+        (LK.get_handle, Tuple{GD, LD, Int}, false),
+        (LK.collectSiblingsNode, Tuple{LD, NODE}, false),
+        (LK.collectSiblingsTime, Tuple{LD}, false),
+        (LK.freeProfileNode, Tuple{LD, Int}, false),
+        (LK.freeProfileData, Tuple{LD}, false),
+        (LK.stopProfiler, Tuple{LD}, false),
+        (LK.activateProfiler, Tuple{LD, Int}, false),
+        (LK.startProfiler, Tuple{LD, Int}, false),
+        (LK.resetProfiler, Tuple{LD}, false),
+        (LK.profile!, Tuple{LD, Int}, false),
+        (LK.call_node{T}, Tuple{Union{Nothing, DEF}, Int}, false),
+        (LK.node_sum{T}, Tuple{}, false),
+        (LK.prof_ref{T}, Tuple{Int, Union{Nothing, DEF}, Int, Int, Int, Int, Int, Int, Int}, false),
+        (LK.ld_profile{T}, Tuple{}, false),
+        [
+            (f, Tuple{LD, Int, Int, LK.control_t{T}}, false) for f in (
+                LK.pl_prof_sibling_of2_va, LK.pl_prof_node8_va, LK.pl_prof_procedure_data8_va,
+                LK.pl_prof_statistics8_va, LK.pl_reset_profiler0_va, LK.pl_profiler2_va, LK.pl_profile4_va,
+                LK.pl_prof_exact_ok1_va, LK.pl_prof_clock_cost1_va
+            )
+        ]...
+    )
+end
+_manifest_prof_plain() = (
+    (LK.ld_profile_clock, Tuple{}, false),
+)
+
 # LB2b — locating files: os/pl-files.c, os/pl-glob.c and the file-name helpers of os/pl-os.c
 # (src/os/pl-files.jl, src/os/pl-glob.jl, src/os/pl-os.jl). The methods that take the local data (`ld`) are
 # checked for every payload type; the ones on plain strings, integers and byte vectors once, below.
@@ -3866,6 +3920,10 @@ const _DISPATCH_MANIFEST_TUPLE = (
     _manifest_coverage(_M2)...,
     _manifest_coverage(_M3)...,
     _manifest_coverage_plain()...,
+    _manifest_prof(_M1)...,
+    _manifest_prof(_M2)...,
+    _manifest_prof(_M3)...,
+    _manifest_prof_plain()...,
     _MANIFEST_LB2B_FREE...,
     _MANIFEST_TR2_FREE...,
     _manifest_lb7(_M1)...,
@@ -4575,6 +4633,7 @@ const _DISPATCH_MANIFEST_TUPLE = (
     (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_alloc)}, false),   # Q10
     (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_setup)}, false),   # Q10
     (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_coverage)}, false),
+    (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_profile)}, false),
     (LK.table_props, Tuple{}, false),
     (LK.clear_table_props!, Tuple{LK.table_props}, false),
     # TAB1 TB0: pl-allocpool.c (src/pl-allocpool.jl) and the sentinel tests of pl-tabling.c (src/pl-tabling.jl); they name no term type

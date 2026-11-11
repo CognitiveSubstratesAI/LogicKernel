@@ -59,12 +59,12 @@ end
 function get_prof_status(ld::PL_local_data{T}, t::term_t)::Union{Nothing, Int} where {T}
     a = PL_get_atom_ex(ld, t)
     a === nothing && return nothing
-    s = sym_name(a)
-    s === :false && return PROF_INACTIVE
-    (s === :true || s === :cputime) && return PROF_CPU
-    s === :walltime && return PROF_WALL
-    s === :exact_walltime && return PROF_WALL_EXACT
-    s === :exact_cputime && return PROF_CPU_EXACT
+    k = sym_key(a)
+    k == sym_key(mk_sym(T, :false)) && return PROF_INACTIVE
+    (k == sym_key(mk_sym(T, :true)) || k == sym_key(mk_sym(T, :cputime))) && return PROF_CPU
+    k == sym_key(mk_sym(T, :walltime)) && return PROF_WALL
+    k == sym_key(mk_sym(T, :exact_walltime)) && return PROF_WALL_EXACT
+    k == sym_key(mk_sym(T, :exact_cputime)) && return PROF_CPU_EXACT
     PL_domain_error(ld, "profile_status", t)
     return nothing
 end
@@ -90,7 +90,7 @@ function get_node(ld::PL_local_data{T}, t::term_t)::Union{Nothing, Int} where {T
             return ptr
         end
     end
-    PL_error(ld, ERR_TYPE, mk_sym(T, :profile_node), t)
+    PL_type_error(ld, "profile_node", t)               # PL_error(NULL, 0, NULL, ERR_TYPE, ATOM_profile_node, t)
     return nothing
 end
 
@@ -127,7 +127,7 @@ function pl_prof_sibling_of2_va(
             return FFALSE
         else
             a = PL_get_atom(ld, A2)
-            if a !== nothing && sym_name(a) === :(-)
+            if a !== nothing && sym_key(a) == sym_key(mk_sym(T, :(-)))
                 sibling = ld.profile.roots
             else
                 p = get_node(ld, A2)
@@ -618,8 +618,9 @@ function pl_profile4_va(
 
     ports_opt = PL_get_atom_ex(ld, A3)
     ports_opt === nothing && return FFALSE
-    s = sym_name(ports_opt)
-    ld.profile.ports_control = s === :false ? PROFC_FALSE : s === :true ? PROFC_TRUE : PROFC_CLASSIC
+    pk = sym_key(ports_opt)
+    ld.profile.ports_control =
+        pk == sym_key(mk_sym(T, :false)) ? PROFC_FALSE : pk == sym_key(mk_sym(T, :true)) ? PROFC_TRUE : PROFC_CLASSIC
 
     ld.profile.sample_period = DEFAULT_SAMPLE_PERIOD
     rate = PL_get_float_ex(ld, A4)
@@ -654,3 +655,17 @@ function pl_prof_clock_cost1_va(
 )::foreign_t where {T}
     _prof_refuse(ld, Symbol("\$prof_clock_cost"), "the cost of reading the exact clock (`prof_clock()`: the TSC or the monotonic clock)")
 end
+
+# PORT: pl-prof.c BeginPredDefs as PL_predicates_from_profile
+"pl-prof.c's registration table (`BeginPredDefs(profile)`, under `O_PROFILE`; the pin's swipl has it)."
+const PL_predicates_from_profile = (
+    PL_extension("\$profile", 4, pl_profile4_va, PL_FA_TRANSPARENT | PL_FA_VARARGS),
+    PL_extension("profiler", 2, pl_profiler2_va, PL_FA_VARARGS),
+    PL_extension("\$prof_exact_ok", 1, pl_prof_exact_ok1_va, PL_FA_VARARGS),
+    PL_extension("\$prof_clock_cost", 1, pl_prof_clock_cost1_va, PL_FA_VARARGS),
+    PL_extension("reset_profiler", 0, pl_reset_profiler0_va, PL_FA_VARARGS),
+    PL_extension("\$prof_node", 8, pl_prof_node8_va, PL_FA_VARARGS),
+    PL_extension("\$prof_sibling_of", 2, pl_prof_sibling_of2_va, PL_FA_NONDETERMINISTIC | PL_FA_VARARGS),
+    PL_extension("\$prof_procedure_data", 8, pl_prof_procedure_data8_va, PL_FA_TRANSPARENT | PL_FA_VARARGS),
+    PL_extension("\$prof_statistics", 8, pl_prof_statistics8_va, PL_FA_VARARGS)
+)
