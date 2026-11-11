@@ -244,7 +244,7 @@ const ERR_TEXT_INVALID_CODE_POINT = -5
 # PORT: pl-text.c PL_canonicalise_text
 # DIVERGES: an `ENC_WCHAR` text is its code points as native 4-byte `pl_wchar_t`s in `text.text`,
 # as upstream's buffer is; the demotion of an all-Latin-1 wide text (`PL_demote_text`) is inline.
-# NOT PORTED: `ENC_UTF16LE`/`BE` and `ENC_ANSI` (no caller produces them) — refused by name.
+# NOT PORTED: `ENC_ANSI` and `ENC_ASCII` (upstream asserts on the second) — refused by name.
 """
     PL_canonicalise_text(text) -> true or ERR_TEXT_*
 
@@ -297,6 +297,15 @@ function PL_canonicalise_text(text::PL_chars_t)::Int
                 end
                 text.canonical = true
             end
+        elseif enc === ENC_UTF16LE || enc === ENC_UTF16BE
+            # `text.length` is in bytes; `utf16_to_text` (src/pl-string.jl) decodes; its `length` counts units, the
+            # canonical text's is the code points (a pair is one)
+            r = utf16_to_text(text)
+            r isa Int && return r
+            text.text = r.text
+            text.encoding = r.encoding
+            text.length = r.encoding === ENC_WCHAR ? length(r.text) ÷ 4 : length(r.text)
+            text.canonical = true
         else
             throw(
                 NotPortedError{Nothing}(
@@ -479,6 +488,8 @@ end
 function text_error(ld::PL_local_data{T}, rc::Int)::Bool where {T}
     rc == ERR_TEXT_INVALID_CODE_POINT &&
         return PL_error(ld, ERR_REPRESENTATION, mk_sym(T, :code_point))   # PL_representation_error("code_point")
+    (rc == ERR_TEXT_ILLEGAL_UTF16 || rc == ERR_TEXT_INCOMPLETE_MULTIBYTE_SEQUENCE) &&
+        return string_bytes_text_error(ld, rc)          # the two UTF-16 codes (src/pl-string.jl)
     throw(
         NotPortedError{Nothing}(
             nothing, "text_error of $rc",
