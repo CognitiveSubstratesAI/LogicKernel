@@ -2381,7 +2381,8 @@ const VMI_RUN = (
     :I_FCALLDET8, :I_FCALLDET9, :I_FCALLDET10, :I_FEXITDET, :I_VAR, :I_NONVAR, :I_INTEGER,
     :I_RATIONAL, :I_FLOAT, :I_NUMBER, :I_ATOMIC, :I_ATOM, :I_STRING, :I_COMPOUND,
     :I_CALLABLE, :A_ADD_FC, :A_ENTER, :A_INTEGER, :A_MPZ, :A_MPQ, :A_DOUBLE, :A_VAR, :A_VAR0,
-    :A_VAR1, :A_VAR2, :B_UNIFY_FIRSTVAR, :B_UNIFY_VAR, :B_UNIFY_EXIT, :B_UNIFY_FF,
+    :A_VAR1, :A_VAR2, :A_FUNC0, :A_FUNC1, :A_FUNC2, :A_FUNC, :A_ROUNDTOWARDS_A, :A_ROUNDTOWARDS_V,
+    :A_ADD, :A_MUL, :B_UNIFY_FIRSTVAR, :B_UNIFY_VAR, :B_UNIFY_EXIT, :B_UNIFY_FF,
     :B_UNIFY_VF, :B_UNIFY_FV, :B_UNIFY_VV, :B_UNIFY_FC, :B_UNIFY_VC, :B_EQ_VV, :B_EQ_VC,
     :B_NEQ_VV, :B_NEQ_VC, :C_VAR, :I_FAIL, :I_TRUE, :C_JMP, :C_OR, :C_VAR_N,
     :C_IFTHENELSE, :C_IFTHEN, :C_CUT, :C_FASTCOND, :C_FASTCUT, :C_END, :C_NOT, :C_FAIL,
@@ -6108,6 +6109,113 @@ function PL_next_solution_guarded(
     @LOAD_REGISTERS(QID)
     av_rc || @goto ar_throw                             # AR_THROW_EXCEPTION
     @goto next_instruction
+
+    # PORT: pl-vmi.c A_FUNC0
+    @label A_FUNC0
+    afn_fn = Int(PCc[PC])
+    PC += 1
+    afn_an = 0
+    @goto common_an
+
+    # PORT: pl-vmi.c A_FUNC1
+    @label A_FUNC1
+    afn_fn = Int(PCc[PC])
+    PC += 1
+    afn_an = 1
+    @goto common_an
+
+    # PORT: pl-vmi.c A_FUNC2
+    @label A_FUNC2
+    afn_fn = Int(PCc[PC])
+    PC += 1
+    afn_an = 2
+    @goto common_an
+
+    # PORT: pl-vmi.c A_FUNC
+    @label A_FUNC
+    afn_fn = Int(PCc[PC])                               # the function's index (`indexArithFunction`)
+    afn_an = Int(PCc[PC + 1])                           # #args
+    PC += 2
+    @goto common_an
+
+    # PORT: pl-vmi.c common_an
+    # DIVERGES: `ar_func_n` (pl-arith.jl) works on the pooled stack and moves the result to the place
+    # of the first argument.
+    @label common_an
+    @SAVE_REGISTERS(QID)
+    afn_rc = ar_func_n(ld, afn_fn, afn_an)
+    @LOAD_REGISTERS(QID)
+    afn_rc || @goto ar_throw                            # AR_THROW_EXCEPTION
+    @goto next_instruction
+
+    # PORT: pl-vmi.c A_ROUNDTOWARDS_A
+    # DIVERGES: the mode found is the number pushed (`fegetround()`, a raw `FE_*` value `ar_roundtoward`
+    # puts back); the operand is the `FLT_ROUND_*` value `set_rounding` takes.
+    @label A_ROUNDTOWARDS_A
+    art_n = _number_alloc!(ld)
+    art_n.i = Int64(fegetround())                       # n->value.i = ctx.femode = fegetround()
+    art_n.type = V_INTEGER
+    set_rounding(Int(PCc[PC]))                          # set_rounding(mode)
+    PC += 1
+    @goto next_instruction
+
+    # PORT: pl-vmi.c A_ROUNDTOWARDS_V
+    # DIVERGES: the variable is read on the words. Where upstream throws with no exception pending
+    # (an assertion fails in the pin, 18168e62: `roundtoward(E, M)` compiled with `optimise`, `M` bound to
+    # a non-mode), the error is raised as `set_roundtoward` raises it: `domain_error(round, M)` for an
+    # atom, else `type_error(atom, M)` (an unbound `M`: instantiation).
+    @label A_ROUNDTOWARDS_V
+    arv_loc = _deref_loc(ld, -(varFrameP(ld.frames[FR].base, Int(PCc[PC])) + 1))   # deRef(p)
+    PC += 1
+    arv_atom = arv_loc[1] == DU_WORD && isAtomW(arv_loc[2])
+    arv_m = arv_atom ? atom_to_rounding(_atom_value(ld, arv_loc[2])) : 0   # atom_to_rounding(word2atom(*p), &rm)
+    if arv_m != 0
+        art_n = _number_alloc!(ld)
+        art_n.i = Int64(fegetround())                   # n->value.i = ctx.femode = fegetround()
+        art_n.type = V_INTEGER
+        set_rounding(arv_m)
+        @goto next_instruction
+    end
+    @SAVE_REGISTERS(QID)                                # the error's context is this frame's predicate
+    if arv_atom
+        PL_error(ld, ERR_DOMAIN, mk_sym(T, :round), pushWordAsTermRef(ld, arv_loc))
+    else
+        PL_error(ld, ERR_TYPE, mk_sym(T, :atom), pushWordAsTermRef(ld, arv_loc))
+    end
+    popTermRef(ld)
+    @LOAD_REGISTERS(QID)
+    @goto ar_throw                                      # resetArithStack(); THROW_EXCEPTION
+
+    # PORT: pl-vmi.c A_ADD
+    # DIVERGES: the operands are the top two of the pool: `argv+1` the last pushed, `argv` below it; the
+    # result is computed in a record above them, then moved to the place of `argv`.
+    @label A_ADD
+    aa_top = ld.arith_top                               # argvArithStack(2) + 1
+    @SAVE_REGISTERS(QID)
+    aa_r = _number_alloc!(ld)                           # number r
+    aa_rc = pl_ar_add(ld, ld.arith_numbers[aa_top], ld.arith_numbers[aa_top - 1], aa_r)
+    @LOAD_REGISTERS(QID)
+    if aa_rc
+        moveNumber(ld.arith_numbers[aa_top - 1], aa_r)  # popArgvArithStack(2); pushArithStack(&r)
+        ld.arith_top = aa_top - 1
+        @goto next_instruction
+    end
+    @goto ar_throw                                      # AR_THROW_EXCEPTION
+
+    # PORT: pl-vmi.c A_MUL
+    # DIVERGES: as `A_ADD`.
+    @label A_MUL
+    am_top = ld.arith_top                               # argvArithStack(2) + 1
+    @SAVE_REGISTERS(QID)
+    am_r = _number_alloc!(ld)                           # number r
+    am_rc = ar_mul(ld, ld.arith_numbers[am_top], ld.arith_numbers[am_top - 1], am_r)
+    @LOAD_REGISTERS(QID)
+    if am_rc
+        moveNumber(ld.arith_numbers[am_top - 1], am_r)  # popArgvArithStack(2); pushArithStack(&r)
+        ld.arith_top = am_top - 1
+        @goto next_instruction
+    end
+    @goto ar_throw                                      # AR_THROW_EXCEPTION
 
     # ── supervisors (pl-vmi.c) ────────────────────────────────────────────────────────────────────
     # PORT: pl-vmi.c S_VIRGIN
