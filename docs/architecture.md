@@ -6868,6 +6868,19 @@ paths with (`atomic_list_concat/2,3`, `sub_atom/5`) and boot/messages.pl its mes
 Tests: test/core_lang/test_p2_swipl.jl (rows p01-p70; pins from swipl 10.1.19, two byte-identical runs; generator
 evidence/P2/gen_rows.py). Mutants: tools/mutants/P2.py.
 
+**P2b** (lane F relay F6, edit-only, UNTESTED: nothing was compiled): the two predicates of the P2 owner rows that the list above left to R3.
+
+- **`'$seek_list'/4`** (src/pl-prims.jl `pl_seek_list4_va`): skips up to `Count` cells of `List` on the cells' locations (as `skip_list_cells`);
+  `RestCount` is the count left, `Rest` the dereferenced tail. DIVERGES: upstream's `PL_handle_signals()` at every 1024th cell has no twin.
+- **`sub_atom_icasechk/3`** (`pl_sub_atom_icasechk3_va`, `_icasechk_search`, `_c_char`, `_pl_tolower`): the narrow loop (both texts ISO Latin-1,
+  upstream's `char *` pair) compares with swipl's `toLower(c) = c + 'a' - 'A'` for EVERY character on SIGNED bytes (so a needle `@` matches a
+  haystack space and a needle NUL the byte 0xE0: rows q08, q17, q35); the wide loop (`pl_wchar_t *`) lowers with `PL_tolower` (Julia's
+  `lowercase(::Char)` stands in for src/pl-umap.c's table). A text that is not Latin-1 or no text at all goes to the wide loop, which raises as upstream.
+- Registered in `PL_predicates_from_prims` beside `'$skip_list'/3`; the two owner rows left docs/r2_owners.tsv.
+
+Tests: test/core_lang/test_p2b_swipl.jl (rows q01-q37 and q40-q59; pins from swipl 10.1.19, two byte-identical runs; generator
+evidence/F6/gen_p2b.py). Mutants: tools/mutants/P2B.py (29). The generated R2 table above regenerates at the gate.
+
 ## RD1 — pl-read.c's stream readers: `read_term/2,3`, `read/1,2`, `$raw_read/1,2`, `$is_named_var/1` (R2)
 
 What RD1 registers (edit-only when written: nothing was compiled; the gate decides). The predicates that read a term from a

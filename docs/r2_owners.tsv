@@ -42,7 +42,6 @@ pred:$mono_idg_changed/2	TAB1	seed: missing_c_preds.tsv
 pred:$mono_reeval_done/3	TAB1	seed: missing_c_preds.tsv
 pred:$mono_reeval_prepare/2	TAB1	seed: missing_c_preds.tsv
 pred:$rc_handle/1	ZIP1	seed: missing_c_preds.tsv
-pred:$seek_list/4	P2	seed: missing_c_preds.tsv
 pred:$sig_unblock/0	TH1	seed: missing_c_preds.tsv
 pred:$snapshot/1	TX1	seed: missing_c_preds.tsv
 pred:$suspend_findall_bag/0	Q10	seed: missing_c_preds.tsv
@@ -102,7 +101,6 @@ pred:put/1	S2a	seed: missing_c_preds.tsv
 pred:put/2	S2a	seed: missing_c_preds.tsv
 pred:set_flag/2	FL1	seed: missing_c_preds.tsv
 pred:set_thread/2	TH1	seed: missing_c_preds.tsv
-pred:sub_atom_icasechk/3	P2	seed: missing_c_preds.tsv
 pred:succ/2	AR1	seed: missing_c_preds.tsv
 pred:thread_create/3	TH1	seed: missing_c_preds.tsv
 pred:thread_exit/1	TH1	seed: missing_c_preds.tsv
