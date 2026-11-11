@@ -507,6 +507,7 @@ ld_tabling{T}() where {T} = ld_tabling{T}(
 # global variables: atom word -> value word) and `.grefs` (how many hold a value on the global stack, which
 # `_release_frozen!` then keeps), and `gvar_enums`, the pool of nb_current/2's states (src/pl-gvar.jl). Since R2 D2: `recorded_states`, the pool of recorded/2,3's states
 # (`recorded_state`, pl-incl.jl).
+# Since lane F (pl-prof.c): `profile` (`LD->profile`: the profiler state; src/pl-incl.jl `ld_profile`), placed after `statistics` as pl-global.h does.
 # Since lane F (pl-coverage.c): `coverage` (`LD->coverage`: `data`, `active`; src/pl-incl.jl `ld_coverage`).
 # Since R2 PR1: `cur_pred_enums` and `cur_enums`, the pools of `'$c_current_predicate'/2`'s and `current_predicate/1`'s states
 # (`cur_pred_enum`, `cur_enum`, pl-incl.jl). Since R2 O1B: `IO_output_stack` (`LD->IO.output_stack`: the output context stack
@@ -653,6 +654,7 @@ mutable struct PL_local_data{T} <: AbstractLocalData
     prolog_flag_mask::UInt64                                    # prolog_flag.mask: the bits truePrologFlag reads (R2 F1a)
     prolog_flag_enums::foreign_state_pool{prolog_flag_enum}     # (current_prolog_flag/2's REDO_PTR states, R2 F1a)
     statistics::ld_statistics                                   # statistics: inferences, clocks (Y1)
+    profile::ld_profile{T}                                      # profile: the profiler's state and call tree (lane F, PROF1; pl-global.h puts it after statistics and gmp)
     prolog_flag_access_level::Int                               # prolog_flag.access_level: ACCESS_LEVEL_USER or _SYSTEM (R2 LB2)
     module_enums::foreign_state_pool{module_enum}               # ('\$current_module'/2's REDO_PTR states, MOD6)
     gvar_nb_vars::Dict{UInt64, UInt64}                          # gvar.nb_vars: atom word -> value word (R2 G1)
@@ -769,6 +771,7 @@ function _bare_local_data(gd::PL_global_data{T}) where {T}
         gd.prolog_flag.mask,                    # prolog_flag.mask: the database's (pl-thread.c copies the creating thread's)
         foreign_state_pool{prolog_flag_enum}(),  # current_prolog_flag/2's states: none
         ld_statistics(),                        # statistics: no inference yet, started now (Y1)
+        ld_profile{T}(),                        # profile: inactive, no node (pl-global.c: zero)
         ACCESS_LEVEL_USER,                      # access_level: `user` (pl-init.c:1666 sets it after the boot; swipl starts `system`, LB3's path)
         foreign_state_pool{module_enum}(),      # '$current_module'/2's states: none
         Dict{UInt64, UInt64}(),                 # gvar.nb_vars: no global variable (pl-gvar.c: NULL)
