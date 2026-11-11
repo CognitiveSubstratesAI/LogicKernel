@@ -1270,6 +1270,14 @@ function _manifest_index(T)
         (LK.initArith!, Tuple{GD}, false),
         (LK.is_arith_flag, Tuple{T}, false),
         (LK.get_arith_flag, Tuple{LD, Int64, T}, false),
+        # arith-c (AR1): set_arith_flag and its helpers, the rounding-mode tables
+        (LK.set_arith_flag, Tuple{LD, Int64, T}, false),
+        (LK._set_float_flag, Tuple{LD, T, UInt32, Symbol}, false),
+        (LK.set_restraint, Tuple{LD, Int64, Int}, false),
+        (LK.set_restraint_action, Tuple{LD, Int64, T}, false),
+        (LK.atom_to_rounding, Tuple{T}, false),
+        (LK.float_rounding_name, Tuple{Type{T}, Int}, false),
+        (LK.set_rounding, Tuple{Int}, true),
         (LK.PL_unify_bool, Tuple{LD, Int64, Bool}, false),
         (LK.PL_unify_float, Tuple{LD, Int64, Float64}, false),
         (LK.PL_record, Tuple{LD, Int64}, false),
@@ -2035,7 +2043,10 @@ function _manifest_index(T)
         ]...,
         [
             (f, Tuple{LD, LK.number, LK.number, LK.number}, false) for
-            f in (LK.ar_nexttoward, LK.ar_rdiv, LK.ar_cmpr, LK.ar_lcm, LK.ar_getbit)
+            f in (
+                LK.ar_nexttoward, LK.ar_rdiv, LK.ar_cmpr, LK.ar_lcm, LK.ar_getbit,
+                LK.ar_roundtoward
+            )
         ]...,
         (LK.ar_powm, Tuple{LD, LK.number, LK.number, LK.number, LK.number}, false),
         (LK.ar_random_float, Tuple{LD, LK.number}, false),
@@ -2056,6 +2067,8 @@ function _manifest_index(T)
         (LK.arithChar_cells, Tuple{LD, Int}, false),
         (LK.getCharExpression_cells, Tuple{LD, Int, LK.number}, false),
         (LK.evalExpression_cells, Tuple{LD, Int, LK.number}, false),
+        (LK._evalExpression_walk, Tuple{LD, Int, LK.number}, false),
+        (LK.set_roundtoward, Tuple{LD, Int, LK.number}, false),
         (LK._ar_type_error_cells, Tuple{LD, Symbol, Tuple{UInt8, LK.word, Int}}, false),
         (LK.valueExpression, Tuple{LD, Int, LK.number}, false),
         (LK.ar_compare, Tuple{LD, LK.number, LK.number, Int}, false),
@@ -5640,6 +5653,25 @@ const _DISPATCH_MANIFEST_TUPLE = (
     (LK._libm_atan2, Tuple{Float64, Float64}, true),
     (LK._libm_pow, Tuple{Float64, Float64}, true),
     (LK.ar_pi, Tuple{LK.number}, true), (LK.ar_e, Tuple{LK.number}, true),
+    # arith-c (AR1): the hardware rounding mode, the libm calls and the cr_* macros over them
+    (LK.fegetround, Tuple{}, true), (LK.fesetround, Tuple{Int}, true),
+    (LK.nexttoward, Tuple{Float64, Float64}, true),
+    [
+        (f, Tuple{Float64}, true) for f in (
+            LK._c_sin, LK._c_cos, LK._c_tan, LK._c_asin, LK._c_acos, LK._c_atan, LK._c_exp,
+            LK._c_log, LK._c_sinh, LK._c_cosh, LK._c_tanh, LK._c_erf, LK._c_log10, LK._c_lgamma
+        )
+    ]...,
+    (LK._c_atan2, Tuple{Float64, Float64}, true), (LK._c_pow, Tuple{Float64, Float64}, true),
+    [
+        (LK.CR_FUNC, Tuple{typeof(f), Float64}, true) for f in (
+            LK._c_log, LK._c_log10, LK._c_tan, LK._c_asin, LK._c_acos, LK._c_atan,
+            LK._c_sinh, LK._c_lgamma
+        )
+    ]...,
+    [
+        (LK.CR_FUNC_1, Tuple{typeof(f), Float64}, true) for f in (LK._c_sin, LK._c_cos, LK._c_tanh)
+    ]...,
     (LK.ar_cputime, Tuple{LK.number}, false), (LK.CpuTime, Tuple{Int}, false),
     # Y1 — the OS layer (src/os/pl-os.jl, src/os/pl-files.jl, src/pl-thread.jl), the text helper, the counters
     (LK._clock_gettime, Tuple{Cint}, false), (LK.WallTime, Tuple{}, false),
