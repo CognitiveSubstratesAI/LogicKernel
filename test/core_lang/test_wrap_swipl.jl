@@ -347,6 +347,11 @@ wb_r3(ok) :- wrap_predicate(wb_q(_), n1, W, W), wrap_predicate(wb_q(_), n2, V, V
 wb_r4(Ys) :- findall(Y, wb_q(Y), Ys).
 wb_r5(ok) :- unwrap_predicate(wb_q/1, n2).
 wb_r6(Ys) :- findall(Y, wb_q(Y), Ys).
+wb_u(1).
+wb_r7(ok) :- wrap_predicate(wb_u(_), n1, W, W), wrap_predicate(wb_u(_), n2, V, V).
+wb_r8(Ys) :- findall(Y, wb_u(Y), Ys).
+wb_r9(ok) :- unwrap_predicate(wb_u/1, n1).
+wb_r10(Ys) :- findall(Y, wb_u(Y), Ys).
 """
 
 function _wb_def(gd::LK.PL_global_data{T}, name::String, arity::Int=1) where {T}
@@ -433,6 +438,28 @@ end
         @test ok(_el([_ei(1), _ei(2)]), "wb_r6")               # still runs, through n1 only
         codes, crefs = LK.innermost_supervisor(gd, d)
         @test codes === c1.supervisor && crefs === c1.supervisor_crefs
+    end
+
+    # unwrap of the INNER wrapper, after both ran (each closure holds a real supervisor; the side table
+    # of a SINGLE clause predicate is non-empty): the outer closure takes over the inner one's code AND
+    # its side table (pl-wrap.c: `*cp = cls->def.impl.wrapped.supervisor`), through
+    # `holder.supervisor_crefs` of unwrap_predicate/2. The program row t4 unwraps the inner wrapper
+    # before either ran (virgin supervisor, empty side table), so it cannot see the side table.
+    @testset "unwrap of the inner wrapper after both wrappers ran" begin
+        @test ok(_ea("ok"), "wb_r7")
+        @test ok(_el([_ei(1)]), "wb_r8")
+        d = _wb_def(gd, "wb_u")
+        c2 = _wb_closure(gd, d.codes)
+        c1 = _wb_closure(gd, c2.supervisor)
+        @test c1.supervisor[1] != LK.S_VIRGIN
+        @test length(c1.supervisor_crefs) >= 1
+        saved_codes, saved_crefs = c1.supervisor, c1.supervisor_crefs
+        @test ok(_ea("ok"), "wb_r9")                           # unwrap_predicate(wb_u/1, n1)
+        @test _wb_closure(gd, d.codes) === c2
+        @test c2.supervisor === saved_codes
+        @test c2.supervisor_crefs === saved_crefs
+        @test LK.supervisor_crefs(gd, d, c2.supervisor) === c2.supervisor_crefs
+        @test ok(_el([_ei(1)]), "wb_r10")                      # runs on, through n2 only
     end
 
     @testset "get_procedure_resolve_head" begin

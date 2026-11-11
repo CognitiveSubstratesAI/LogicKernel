@@ -208,7 +208,7 @@ MUTANTS = [
          file=WRP, targets=[W],
          old="            holder.supervisor = c.supervisor\n",
          new="\n"),
-    dict(id="WRAP1-M9d unwrap of an inner wrapper gives the outer one an empty side table (BoundsError; KILL W: t4 :210)",
+    dict(id="WRAP1-M9d unwrap of an inner wrapper gives the outer one an empty side table (BoundsError; KILL W: the white-box testset 'unwrap of the inner wrapper after both wrappers ran', `c2.supervisor_crefs === saved_crefs`; row t4 unwraps before the inner wrapper ran: empty side table)",
          file=WRP, targets=[W],
          old="            holder.supervisor_crefs = c.supervisor_crefs\n",
          new="            holder.supervisor_crefs = ClauseRef{T}[]\n"),
