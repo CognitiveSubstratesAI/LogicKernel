@@ -240,7 +240,11 @@ _swipl() = get(ENV, "LOGICKERNEL_NO_SWIPL", "") == "1" ? nothing : Sys.which("sw
         # the PCs past the code are domain errors (every row has them: the range is 0..60); a PC inside a `\\+` is another
         @test all(l -> !startswith(l, "t_c") || occursin(_codes("-"), l), sw)       # every construct row holds PC-Pos pairs
         @test count(l -> occursin(_codes("not in clause executable code"), l), sw) >= 25
-        @test any(l -> startswith(l, "t_c08 ") && occursin(_codes("not a possible continuation"), l), sw)
+        @test count(l -> startswith(l, "t_") && occursin(_codes("exit"), l), sw) == 27   # 25 construct rows + e01 + e02
+        @test count(l -> occursin(_codes("not a possible continuation"), l), sw) == 4
+        for id in ("c08", "c16", "c20", "c22")
+            @test any(l -> startswith(l, "t_$(id) ") && occursin(_codes("not a possible continuation"), l), sw)
+        end
         @test any(l -> startswith(l, "t_e03 ") && occursin(_codes("db_reference"), l), sw)
         @test any(l -> startswith(l, "t_e04 ") && occursin(_codes("integer"), l), sw)
         @test any(l -> startswith(l, "t_e05 ") && occursin(_codes("program_counter"), l), sw)
