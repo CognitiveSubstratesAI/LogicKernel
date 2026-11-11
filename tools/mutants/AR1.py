@@ -11,7 +11,8 @@ TL = ["test/core_lang/test_arith_preds_swipl.jl"]
 TR = ["test/core_lang/test_arith_random_swipl.jl", "test/core_lang/test_arith_swipl.jl"]  # group 2: set_random/1, random_property/1, random/1, random_float/0
 TB = ["test/core_lang/test_arith_round_swipl.jl", "test/core_lang/test_arith_swipl.jl", "test/core_lang/test_prolog_flag_swipl.jl"]  # group (b): directed rounding
 TBF = TB + ["test/core_lang/test_set_flag_swipl.jl"]
-TARGETS = TL + TR + TBF
+TC = ["test/core_lang/test_arith_curfn_swipl.jl"]  # group (c): current_arithmetic_function/1 (the only test that calls it)
+TARGETS = TL + TR + TBF + TC
 A = "src/pl-arith.jl"
 MUTANTS = [
     dict(id="AR1-S1 succ: the tagged fast path answers one too many (KILL t0, t17)", file=A, targets=TL,
@@ -288,4 +289,25 @@ MUTANTS = [
     dict(id='AR1-B24 atom_to_rounding: the index is off by one (KILL the white-box atom_to_rounding test and the flag rows)', file=A, targets=TB,
          old='key == sym_key(mk_sym(T, float_rounding_names[i])) && return i',
          new='key == sym_key(mk_sym(T, float_rounding_names[i])) && return i == 4 ? 4 : i + 1'),
+    dict(id='AR1-C1 current_arithmetic_function: the redo skips every second entry (KILL t1..t8, t136, t137: the set)', file=A, targets=TC,
+         old='return PL_retry(i + 1)',
+         new='return PL_retry(i + 2)'),
+    dict(id='AR1-C2 current_arithmetic_function: the scan stops one entry short, roundtoward/2 is not listed (KILL t1, t2, t5, t37)', file=A, targets=TC,
+         old='while i < length(ar_funcdefs)',
+         new='while i < length(ar_funcdefs) - 1'),
+    dict(id='AR1-C3 current_arithmetic_function: a bound head answers the opposite (KILL t9..t140)', file=A, targets=TC,
+         old='return isCurrentArithFunction(T, sym_key(fd[1]), fd[2]) != 0 ? FTRUE : FFALSE',
+         new='return isCurrentArithFunction(T, sym_key(fd[1]), fd[2]) == 0 ? FTRUE : FFALSE'),
+    dict(id='AR1-C4 current_arithmetic_function: the enumeration unifies the arity plus one (KILL t3..t7, t112..t116)', file=A, targets=TC,
+         old='PL_unify_functor(ld, head, mk_sym(T, f), a)',
+         new='PL_unify_functor(ld, head, mk_sym(T, f), a + 1)'),
+    dict(id='AR1-C5 current_arithmetic_function: a variable head is taken for a bound one (KILL t1, t8 and every enumerating row)', file=A, targets=TC,
+         old='if PL_is_variable(ld, head)',
+         new='if !PL_is_variable(ld, head)'),
+    dict(id='AR1-C6 current_arithmetic_function: a non-callable head raises another type (KILL t95..t101, t109, t110)', file=A, targets=TC,
+         old='return PL_error(ld, ERR_TYPE, mk_sym(T, :callable), head) ? FTRUE : FFALSE',
+         new='return PL_error(ld, ERR_TYPE, mk_sym(T, :atom), head) ? FTRUE : FFALSE'),
+    dict(id='AR1-C7 current_arithmetic_function: the redo starts at the entry after the next (KILL t1, t8)', file=A, targets=TC,
+         old='i = PL_foreign_context(PL__ctx)',
+         new='i = PL_foreign_context(PL__ctx) + 1'),
 ]
