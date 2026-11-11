@@ -630,7 +630,10 @@ mutable struct PL_local_data{T} <: AbstractLocalData
     attvar_tail::Int                                            # attvar.tail: its tail
     attvar_attvars::Int                                         # attvar.attvars: the newest link cell (0: NULL)
     attvar_call_residue_vars_count::Int                         # attvar.call_residue_vars_count (AV9)
-    alerted::Int32                                              # alerted: ALERT_* (only ALERT_WAKEUP is ported, AV3)
+    alerted::Int32                                              # alerted: ALERT_* (ALERT_WAKEUP, AV3; the two limit bits, P3)
+    depth_info_limit::Int                                       # depth_info.limit (P3): DEPTH_NO_LIMIT when none
+    depth_info_reached::Int                                     # depth_info.reached
+    inference_limit_limit::Int                                  # inference_limit.limit (LD, P3): INFERENCE_NO_LIMIT when none
     tmp_h::Int                                                  # tmp.h: the first of TMP_PTR_SIZE consecutive references
     tmp_top::Int                                                # tmp.top
     tmp_cells::Int                                              # (tmp.h[0]'s PERMANENT cell; tmp.h[i]'s +i, as exception_cells)
@@ -756,6 +759,8 @@ function _bare_local_data(gd::PL_global_data{T}) where {T}
         0, 0, 0,                                # attvar: head, tail (set by emptyStacks!), attvars: none
         0,                                      # attvar.call_residue_vars_count (AV9)
         Int32(0),                               # alerted: nothing
+        DEPTH_NO_LIMIT, 0,                      # depth_info: limit (pl-setup.c: DEPTH_NO_LIMIT), reached
+        INFERENCE_NO_LIMIT,                     # inference_limit.limit (pl-setup.c: INFERENCE_NO_LIMIT)
         0, 0, 0,                                # tmp: set by emptyStacks!
         false, false, false, 0,
         ClauseChoice{T}(nothing, word(0)), e,

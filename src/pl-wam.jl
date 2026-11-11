@@ -200,14 +200,16 @@ end
 end
 
 # PORT: pl-wam.c updateAlerted
-# DIVERGES: the wakeup bit only — `alerted` carries no other (`ALERT_WAKEUP`, src/pl-incl.jl); no
-# compare-and-swap (one engine per thread, no signal sets `alerted` here). `slow_unify` is not a field
+# DIVERGES: the wakeup bit and, since P3, the depth and inference limit bits — `alerted` carries no other (src/pl-incl.jl);
+# no compare-and-swap (one engine per thread, no signal sets `alerted` here). `slow_unify` is not a field
 # here (`_slow_unify` reads the flag, src/pl-wam.jl), so it is not refreshed.
-# NOT PORTED: the other masks (signals, profiling, exit requests, depth and inference limits, the
+# NOT PORTED: the other masks (signals, profiling, exit requests, the
 # debugger, string buffers, `UNDO_SCHEDULED`, coverage).
-"Recompute `ld.alerted` from the engine's state: `ALERT_WAKEUP` while the wakeup list is not empty (pl-wam.c)."
+"Recompute `ld.alerted` from the engine's state: `ALERT_WAKEUP` while the wakeup list is not empty, the limit bits while a limit is set (pl-wam.c)."
 function updateAlerted(ld::PL_local_data)::Nothing
     mask = Int32(0)
+    ld.depth_info_limit != DEPTH_NO_LIMIT && (mask |= ALERT_DEPTHLIMIT)         # if ( ld->depth_info.limit != DEPTH_NO_LIMIT )
+    ld.inference_limit_limit != INFERENCE_NO_LIMIT && (mask |= ALERT_INFERENCELIMIT)   # inference_limit.limit != INFERENCE_NO_LIMIT
     # ld->stacks.local.base && !isVar(*valTermRef(ld->attvar.head)): the head made by the stacks' set-up
     (ld.attvar_head != 0 && ld.gstack[_attvar_head_cell(ld)] != 0) && (mask |= ALERT_WAKEUP)
     ld.alerted = mask
@@ -2501,6 +2503,8 @@ end
 const DET_EXIT = PL_Q_DETERMINISTIC | PL_Q_EXT_STATUS
 
 # PORT: pl-wam.c PL_open_query
+# P3: a `PL_Q_NODEBUG` query saves the depth limit and lifts it (`O_LIMIT_DEPTH`; `restore_after_query` puts it back), so a
+# hook run from inside `call_with_depth_limit/3` is not counted.
 # DIVERGES: the query is a record at `lTop`, with its CHP_TOP choice point and its top frame and
 # frame as records at upstream's offsets (since V3; src/pl-incl.jl); its handle is its position
 # (decision 1). It records its database in `ld.GD` (since V9c), which a built-in reads where
@@ -2597,6 +2601,9 @@ function PL_open_query(
 
     if (flags & PL_Q_NODEBUG) != 0
         f.flags |= FR_HIDE_CHILDS
+        q.saved_depth_limit = ld.depth_info_limit           # qf->saved_depth_limit   = LD->depth_info.limit
+        q.saved_depth_reached = ld.depth_info_reached       # qf->saved_depth_reached = LD->depth_info.reached
+        ld.depth_info_limit = DEPTH_NO_LIMIT                # LD->depth_info.limit    = DEPTH_NO_LIMIT
     end
     f.predicate = def
     f.clause = nothing
@@ -2649,7 +2656,7 @@ end
 
 # PORT: pl-wam.c restore_after_query
 # DIVERGES: lowering `lTop` drops the query's records and everything above them (decision 3). Not
-# ported: the debugger state `PL_Q_NODEBUG` restores. `updateAlerted` since AV3 (the wakeup bit).
+# ported: the debugger state `PL_Q_NODEBUG` restores, but the depth limit (P3). `updateAlerted` since AV3 (the wakeup bit).
 "Restore the state the query was opened in (pl-wam.c)."
 function restore_after_query(ld::PL_local_data{T}, qf::Int)::Nothing where {T}
     q = ld.queries[qf]
@@ -2664,6 +2671,10 @@ function restore_after_query(ld::PL_local_data{T}, qf::Int)::Nothing where {T}
     ld.environment_frame = q.saved_environment
     _reset_argument_stack!(ld, q)
     lowerLTop!(ld, q.saved_ltop)
+    if (q.flags & PL_Q_NODEBUG) != 0                # if ( ison(qf, PL_Q_NODEBUG) ) …
+        ld.depth_info_limit = q.saved_depth_limit   #   LD->depth_info.limit   = qf->saved_depth_limit
+        ld.depth_info_reached = q.saved_depth_reached   # LD->depth_info.reached = qf->saved_depth_reached
+    end
     updateAlerted(ld)
     return nothing
 end
@@ -4300,7 +4311,8 @@ function PL_next_solution_guarded(
 
     # ── calls (pl-vmi.c) ──────────────────────────────────────────────────────────────────────────
     # PORT: pl-vmi.c I_ENTER
-    # DIVERGES: the `LD->alerted` test (since AV3) reads the field, which carries the wakeup bit only.
+    # DIVERGES: the `LD->alerted` test (since AV3) reads the field, which carries the wakeup bit and the two limit bits (P3:
+    # the limits are handled in `depart_alerted`; `i_enter_alerted` tests the wakeup bit only).
     @label I_ENTER
     ARGP = argp_t{T}(ARGP_SLOT, argFrameP(ld.lTop, 0), ph)
     ld.alerted != 0 && @goto i_enter_alerted        # if ( unlikely(LD->alerted) )
@@ -4371,9 +4383,8 @@ function PL_next_solution_guarded(
     @goto depart_or_retry_continue
 
     # PORT: pl-vmi.c depart_or_retry_continue
-    # DIVERGES: NOT PORTED: the profiler's node, and the `LD->alerted` test
-    # with its helper `depart_alerted` (signals, undo hooks, depth and inference limits, the
-    # debugger).
+    # DIVERGES: NOT PORTED: the profiler's node. The `LD->alerted` test goes to `depart_alerted` for the two limit bits only
+    # (P3; signals, undo hooks and the debugger are not ported).
     @label depart_or_retry_continue
     # ORIGINAL (L1f f2, audit D-0029 D1 (a), D-0032): a catch-all once per call and per retried clause,
     # here where every call meets (normal_call, I_DEPART's and L_NOLCO's frame reuse, the query's first
@@ -4391,6 +4402,57 @@ function PL_next_solution_guarded(
     end
     setGenerationFrame(gd, ld, FR)
     ld.statistics.inferences += 1                   # LD->statistics.inferences++ (Y1)
+    (ld.alerted & (ALERT_DEPTHLIMIT | ALERT_INFERENCELIMIT)) != 0 && @goto depart_alerted   # if ( unlikely(LD->alerted) )
+    PCc = DEF.codes
+    PCl = gd.no_literals
+    PC = 1
+    @goto next_instruction
+
+    # PORT: pl-vmi.c depart_alerted
+    # (pl-vmi.c:1935-2027 at the pin, the part that is ported: the depth limit and the inference limit; P3)
+    #     lTop = (LocalFrame) argFrameP(FR, DEF->functor->arity);
+    #     PC = DEF->codes;
+    #     ... { size_t depth = levelFrame(FR);
+    #           if ( depth > LD->depth_info.reached ) LD->depth_info.reached = depth;
+    #           if ( depth > LD->depth_info.limit )
+    #           { if ( debugstatus.debugging ) newChoice(CHP_DEBUG, FR);
+    #             FRAME_FAILED; } }
+    #         if ( LD->statistics.inferences >= LD->inference_limit.limit )
+    #         { lTop = (LocalFrame) argFrameP(FR, DEF->functor->arity);
+    #           SAVE_REGISTERS(QID); raiseInferenceLimitException(); LOAD_REGISTERS(QID);
+    #           if ( exception_term ) THROW_EXCEPTION; }
+    #     PC = DEF->codes; NEXT_INSTRUCTION;
+    # and, at its start, the autoloader's early exit:
+    #     if ( DEF->codes[0] == encode(S_VIRGIN) && !DEF->impl.any.defined && isoff(DEF, PROC_DEFINED) )
+    #     { PC = DEF->codes; NEXT_INSTRUCTION; }
+    # DIVERGES: NOT PORTED: the signals, `getProcDefinedDefinition`, the undo hooks, the profiler and the coverage and debugger
+    # ports (none is ported). `levelFrame(FR)` is the frame's `UInt32` level, compared as `Int`.
+    @label depart_alerted
+    setLTop!(ld, argFrameP(ld.frames[FR].base, DEF.arity))      # lTop = argFrameP(FR, DEF->functor->arity)
+    PCc = DEF.codes
+    PCl = gd.no_literals
+    PC = 1
+    if PCc[1] == S_VIRGIN && !_impl_any_defined(DEF) && (DEF.flags & PROC_DEFINED) == 0
+        @goto next_instruction                      # we need the autoloader and get back
+    end
+    da_depth = Int(levelFrame(ld.frames[FR]))                   # size_t depth = levelFrame(FR)
+    if da_depth > ld.depth_info_reached
+        ld.depth_info_reached = da_depth
+    end
+    if da_depth > ld.depth_info_limit
+        if ld.debugstatus_debugging
+            newChoice(ld, CHP_DEBUG, FR)
+        end
+        @goto deep_backtrack                        # FRAME_FAILED
+    end
+    if ld.statistics.inferences >= ld.inference_limit_limit
+        @SAVE_REGISTERS(QID)
+        raiseInferenceLimitException(gd, ld)
+        @LOAD_REGISTERS(QID)
+        if ld.exception_term != 0
+            @goto b_throw                           # THROW_EXCEPTION
+        end
+    end
     PCc = DEF.codes
     PCl = gd.no_literals
     PC = 1

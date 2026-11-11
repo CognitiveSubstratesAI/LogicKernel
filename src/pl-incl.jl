@@ -1770,9 +1770,28 @@ const WAKEUP_KEEP_URGENT_EXCEPTION = UInt32(0x8)
 
 # PORT: pl-incl.h ALERT_WAKEUP
 # NOT PORTED: the other `ALERT_*` bits (signals, GC, profiling, the debugger, buffered output,
-# `ALERT_UNDO`, …) — nothing here sets them; `LD->alerted` carries the wakeup bit only.
+# `ALERT_UNDO`, …) — nothing here sets them; `LD->alerted` carries the wakeup bit and, since P3, the two limit bits.
 "Alert bit: the wakeup list is not empty (pl-incl.h `ALERT_WAKEUP`)."
 const ALERT_WAKEUP = Int32(0x040)
+
+# PORT: pl-incl.h ALERT_DEPTHLIMIT
+"Alert bit: a depth limit is set (pl-incl.h `ALERT_DEPTHLIMIT`; P3, `call_with_depth_limit/3`)."
+const ALERT_DEPTHLIMIT = Int32(0x010)
+
+# PORT: pl-incl.h ALERT_INFERENCELIMIT
+"Alert bit: an inference limit is set (pl-incl.h `ALERT_INFERENCELIMIT`; P3, `call_with_inference_limit/3`)."
+const ALERT_INFERENCELIMIT = Int32(0x020)
+
+# PORT: pl-incl.h DEPTH_NO_LIMIT
+# DIVERGES: upstream's is `(size_t)-1`; the kernel's depth fields are `Int` (a frame's level is far below `typemax(Int)`), so
+# the highest value is `typemax(Int)`. `$depth_limit/3` reads its limit through `PL_get_size_ex`, which refuses a size beyond
+# `Int` with `representation_error(size_t)` where upstream accepts up to `2^64-1` and refuses with `depth_limit`.
+"The depth limit that never fires (pl-incl.h `DEPTH_NO_LIMIT`)."
+const DEPTH_NO_LIMIT = typemax(Int)
+
+# PORT: pl-incl.h INFERENCE_NO_LIMIT
+"The inference limit that never fires (pl-incl.h `INFERENCE_NO_LIMIT`: INT64_MAX)."
+const INFERENCE_NO_LIMIT = typemax(Int)
 
 # PORT: pl-incl.h wakeup_state
 # DIVERGES: an immutable value `saveWakeup` returns, where upstream fills the caller's struct;
@@ -1940,6 +1959,8 @@ mutable struct queryFrame{T}
     saved_environment::Int          # Parent local-frame (an index)
     top_frame::Int                  # The (dummy) top local frame (an index)
     frame::Int                      # The initial frame (an index)
+    saved_depth_limit::Int          # LD->depth_info.limit a PL_Q_NODEBUG query replaced (P3)
+    saved_depth_reached::Int        # LD->depth_info.reached (P3)
     fndet_context::foreign_context{T}   # (the run loop's FNDET_CONTEXT; see foreign_context)
 end
 

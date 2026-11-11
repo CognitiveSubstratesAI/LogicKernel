@@ -2465,6 +2465,22 @@ function _manifest_index(T)
         ]...,
         # Q10 — '$style_check'/2 (src/pl-prims.jl)
         (LK.pl_style_check2_va, Tuple{LD, Int, Int, LK.foreign_context{T}}, false),
+        # P3 — call_with_depth_limit/3, call_with_inference_limit/3 (`$depth_limit*`, `$inference_limit*`) and `$urgent_exception/3`
+        (LK.pl_depth_limit3_va, Tuple{LD, Int, Int, LK.foreign_context{T}}, false),
+        (LK.pl_depth_limit_true5_va, Tuple{LD, Int, Int, LK.foreign_context{T}}, false),
+        (LK.pl_depth_limit_false3_va, Tuple{LD, Int, Int, LK.foreign_context{T}}, false),
+        (LK.pl_depth_limit_except3_va, Tuple{LD, Int, Int, LK.foreign_context{T}}, false),
+        (LK.pl_inference_limit2_va, Tuple{LD, Int, Int, LK.foreign_context{T}}, false),
+        (LK.pl_inference_limit_true3_va, Tuple{LD, Int, Int, LK.foreign_context{T}}, false),
+        (LK.pl_inference_limit_false1_va, Tuple{LD, Int, Int, LK.foreign_context{T}}, false),
+        (LK.pl_inference_limit_except3_va, Tuple{LD, Int, Int, LK.foreign_context{T}}, false),
+        (LK.pl_urgent_exception3_va, Tuple{LD, Int, Int, LK.foreign_context{T}}, false),
+        (LK.unify_det, Tuple{LD, Int}, false),
+        (LK.unify_depth, Tuple{LD, Int, Int}, false),
+        (LK.get_depth, Tuple{LD, Int}, false),
+        (LK.get_inference_limit, Tuple{LD, Int}, false),
+        (LK.unify_inference_limit, Tuple{LD, Int, Int}, false),
+        (LK.raiseInferenceLimitException, Tuple{GD, LD}, false),
         # RD1: pl-read.c's stream readers (read_term/2,3, $is_named_var/1, read/1,2, $raw_read/1,2)
         (LK.pl_read_term3_va, Tuple{LD, Int64, Int64, LK.foreign_context{T}}, false),
         (LK.pl_read_term2_va, Tuple{LD, Int64, Int64, LK.foreign_context{T}}, false),
