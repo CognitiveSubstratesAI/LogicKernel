@@ -2869,9 +2869,17 @@ _index_entry_points(T) = (
         (f, Tuple{LK.PL_local_data{T}, Int, Int, LK.foreign_context{T}}, false) for
         f in (
             LK.pl_atomic_list_concat3_va, LK.pl_atomic_list_concat2_va,
-            LK.pl_atomics_to_string3_va, LK.pl_atomics_to_string2_va, LK.pl_sub_atom5_va
+            LK.pl_atomics_to_string3_va, LK.pl_atomics_to_string2_va, LK.pl_sub_atom5_va,
+            LK.pl_seek_list4_va, LK.pl_sub_atom_icasechk3_va                  # P2b
         )
     ]...,
+    (LK._c_char, Tuple{Int}, false),                                          # P2b
+    (LK._pl_tolower, Tuple{Int}, false),
+    (
+        LK._icasechk_search,
+        Tuple{LK.PL_chars_t, LK.PL_chars_t, Int, Bool, Bool},
+        false
+    ),
     (
         LK.atomic_list_concat,
         Tuple{LK.PL_local_data{T}, Int, Int, Int, Int},

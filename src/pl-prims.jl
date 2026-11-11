@@ -3988,6 +3988,142 @@ function pl_skip_list3_va(
     end
 end
 
+# ── '$seek_list'/4 and sub_atom_icasechk/3 (pl-prims.c), since P2b (R2): the last two predicates of
+# the P2 owner rows. `'$seek_list'` is what boot/init.pl's length/2 and the list library call to skip
+# a counted prefix; `sub_atom_icasechk` is the case-insensitive containment test of the library.
+
+# PORT: pl-prims.c seek_list as pl_seek_list4_va
+# (PRED_IMPL("$seek_list", 4, seek_list, 0))
+# DIVERGES: on a LOCATION (`valTermRef(A2)` is `-(A2 + 1)`, a list cell's tail is `valPtr(w) + 2`, as
+# `skip_list_cells`); no signals: upstream's `PL_handle_signals()` at every 1024th cell (it can only
+# fail on a cancelled run) has no twin (the kernel has no signal queue).
+"""
+`'\$seek_list'(+Count, +List, -RestCount, -Rest)` (pl-prims.c): `Rest` is the tail of `List` after
+`Count` cells, or after the cells it has when it has fewer; `RestCount` is the count left over.
+"""
+function pl_seek_list4_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2, A3, A4 = PL__t0, PL__t0 + 1, PL__t0 + 2, PL__t0 + 3
+
+    sz = PL_get_int64_ex(ld, A1)                            # PL_get_int64_ex(A1, &size)
+    sz === nothing && return FFALSE
+    tail = -(A2 + 1)                                        # tail = valTermRef(A2)
+    while sz > 0
+        k, w, p = _deref_loc(ld, tail)                      # deRef(tail)
+        if _is_list_word(ld, k, w)                          # isList(*tail)
+            tail = valPtr(w) + 2                            # tail = TailList(tail)
+            sz -= 1
+        else
+            tail = p > 0 ? p : tail                         # the dereferenced location
+            break
+        end
+    end
+
+    return if (unify_ptrs_cells(ld, -(A4 + 1), tail) && PL_unify_int64(ld, A3, sz))
+        FTRUE
+    else
+        FFALSE
+    end
+end
+
+# ORIGINAL (P2b): upstream's `char` of the narrow path is signed on the platforms swipl is built for: a
+# byte above 127 reads as its value less 256, as `*q != toLower(*s)` of pl-prims.c compares them.
+"The byte `b` as a signed C `char` (the narrow path of pl-prims.c `sub_atom_icasechk`)."
+_c_char(b::Int)::Int = b > 127 ? b - 256 : b
+
+# ORIGINAL (P2b): `PL_tolower` (src/pl-read.c, the Unicode simple case mapping of src/pl-umap.c).
+# DIVERGES: Julia's `lowercase(::Char)` (its simple Unicode case mapping) stands in for the table, as
+# src/os/pl-os.jl's `utf8_path_lwr` does.
+"The lowercase of the code point `c` (src/pl-read.c `PL_tolower`)."
+_pl_tolower(c::Int)::Int = c <= 0x10FFFF ? Int(lowercase(Char(c))) : c
+
+# PORT: pl-prims.c sub_atom_icasechk (the two search loops)
+# DIVERGES: `nt` and `ht` carry no `::PL_chars_t` annotation: src/os/pl-text.jl, which defines the type, is
+# included after this file; the body asserts it. The two loops of the predicate, over `char *` and over `pl_wchar_t *`, are one function over the
+# canonical texts `nt` (needle) and `ht` (haystack) and the 0-based unit index; `narrow` selects the
+# loop of the `char *` text, where a needle character matches a haystack character equal to it or whose
+# `toLower` (`c + 'a' - 'A'`, pl-ctype.h, for EVERY character: swipl's own, as `sub_atom_icasechk(' ',
+# S, '@')` shows) equals it. Returns the offset of the match, -1 when none.
+"The offset where `nt` occurs in `ht` from `offset` on (only at `offset` with `has_offset`), or -1 (pl-prims.c)."
+function _icasechk_search(nt, ht, offset::Int, has_offset::Bool, narrow::Bool)::Int
+    nt = nt::PL_chars_t
+    ht = ht::PL_chars_t
+    l1 = nt.length
+    l2 = ht.length
+    s2 = offset                                             # s2 = haystack + offset
+    while s2 <= l2 - l1                                     # s2 <= es - l1
+        q = 0
+        s = s2
+        while q < l1 && s < l2                              # q < eq && s < es
+            qc = text_get_char(nt, q)
+            sc = text_get_char(ht, s)
+            if narrow
+                qs = _c_char(qc)
+                ss = _c_char(sc)
+                (qs != ss && qs != toLower(ss)) && break
+            else
+                (qc != sc && qc != _pl_tolower(sc)) && break
+            end
+            q += 1
+            s += 1
+        end
+        q == l1 && return s2                                # q == eq: found
+        has_offset && break
+        s2 += 1
+    end
+    return -1
+end
+
+# PORT: pl-prims.c sub_atom_icasechk as pl_sub_atom_icasechk3_va
+# (PRED_IMPL("sub_atom_icasechk", 3, sub_atom_icasechk, 0))
+# DIVERGES: the `PL_get_nchars(CVT_ALL|BUF_STACK)` pair (no exception, ISO Latin-1 only) is
+# `PL_get_text` and `PL_canonicalise_text`: the narrow loop runs when both texts are ISO Latin-1,
+# else the `PL_get_wchars(CVT_ALL|CVT_EXCEPTION)` pair raises as upstream's (the needle first).
+"""
+`sub_atom_icasechk(+Haystack, ?Start, +Needle)` (pl-prims.c): `Needle` occurs in `Haystack` at `Start`,
+ignoring the case of the haystack's letters; a variable `Start` is unified with the first such offset.
+"""
+function pl_sub_atom_icasechk3_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    haystack, start, needle = PL__t0, PL__t0 + 1, PL__t0 + 2
+
+    if PL_is_variable(ld, start)
+        has_offset = false
+        offset = 0
+    else
+        o = PL_get_size_ex(ld, start)
+        o === nothing && return FFALSE
+        has_offset = true
+        offset = o
+    end
+
+    nt = PL_get_text(ld, needle, CVT_ALL)                   # PL_get_nchars(needle, …)
+    ht = nt === nothing ? nothing : PL_get_text(ld, haystack, CVT_ALL)   # PL_get_nchars(haystack, …)
+    if nt !== nothing && ht !== nothing
+        if PL_canonicalise_text(nt) == 1 && PL_canonicalise_text(ht) == 1
+            if nt.encoding === ENC_ISO_LATIN_1 && ht.encoding === ENC_ISO_LATIN_1
+                found = _icasechk_search(nt, ht, offset, has_offset, true)
+                found < 0 && return FFALSE
+                has_offset && return FTRUE
+                return PL_unify_integer(ld, start, found) ? FTRUE : FFALSE
+            end
+        end
+    end
+
+    nw = PL_get_text(ld, needle, CVT_ALL | CVT_EXCEPTION)   # PL_get_wchars(needle, …)
+    nw === nothing && return FFALSE
+    PL_canonicalise_text_ex(ld, nw) || return FFALSE
+    hw = PL_get_text(ld, haystack, CVT_ALL | CVT_EXCEPTION)
+    hw === nothing && return FFALSE
+    PL_canonicalise_text_ex(ld, hw) || return FFALSE
+    found = _icasechk_search(nw, hw, offset, has_offset, false)
+    found < 0 && return FFALSE
+    has_offset && return FTRUE                              # found:
+    return PL_unify_integer(ld, start, found) ? FTRUE : FFALSE
+end
+
 # ── statistics/2 (pl-prims.c), since Y1 ─────────────────────────────────────────────────────────
 # `statistics(+Key, -Value)`: the keys of C-Prolog and SWI-Prolog (`swi_statistics`, one number), then
 # the Quintus/SICStus ones (`qp_statistics`, a list). The counters are `LD->statistics` (the local
@@ -4738,6 +4874,8 @@ const PL_predicates_from_prims = (
     PL_extension("nb_linkarg", 3, pl_nb_linkarg3_va, PL_FA_VARARGS),
     PL_extension("\$style_check", 2, pl_style_check2_va, PL_FA_VARARGS),     # (Q10)
     PL_extension("\$skip_list", 3, pl_skip_list3_va, PL_FA_VARARGS),
+    PL_extension("\$seek_list", 4, pl_seek_list4_va, PL_FA_VARARGS),            # (P2b)
+    PL_extension("sub_atom_icasechk", 3, pl_sub_atom_icasechk3_va, PL_FA_VARARGS),
     PL_extension("throw", 1, pl_throw1_va, PL_FA_ISO | PL_FA_VARARGS),
     PL_extension("halt", 1, pl_halt1_va, PL_FA_VARARGS)       # (HALT1: the last entry, as upstream's table)
 )
