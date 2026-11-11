@@ -636,5 +636,68 @@ out="$(wbrun "$W/wb/swbin" 1)"; rc=$?
 ok "warm battery, oracle required and present: exit 0, baseline green" "0 0" "$rc $(wb_baseline_exit)"
 has "…and the mutant ran" "$out" "WB-1 SURVIVED"
 
+# ---------------------------------------------------------------- tools/pkgtest_costs.py, the log-based mode (D-0536 item 4)
+# CANNED job logs in the runner's format (a timestamp prefix, `  [unit] <file> [<type>]  X s  (compiling Y s)  N passed, M
+# broken`): `logs DIR` sums the seconds per file over the term types, leaves the static analysis out of the table, reports
+# the compile share on stderr; `fetch-logs RUN` reads the jobs and logs through tools/ci_api.sh's fixture seam
+PC="$ROOT/tools/pkgtest_costs.py"
+mkdir -p "$W/pc/logs" "$W/pc/fx/777"
+{
+    echo '2026-11-10T12:00:00.0000000Z Run: julia --project test/runtests.jl'
+    echo '2026-11-10T12:00:09.1000000Z   [unit] core_lang/test_a.jl [reference]  3.5 s  (compiling 2.5 s)  10 passed, 0 broken'
+    echo '2026-11-10T12:00:12.1000000Z   [unit] core_lang/test_a.jl [alt]  2.5 s  (compiling 1.5 s)  10 passed, 0 broken'
+    echo '2026-11-10T12:00:14.1000000Z   [unit] test_static_analysis.jl [reference]  100.0 s  (compiling 90.0 s)  5 passed, 0 broken'
+    echo '2026-11-10T12:00:15.1000000Z a line that is no unit: 3 s (compiling 1 s)'
+} > "$W/pc/logs/g1.log"
+{
+    echo '2026-11-10T12:10:00.0000000Z   [unit] test_b.jl [reference]  4.0 s  (compiling 3.0 s)  7 passed, 1 broken'
+    echo '2026-11-10T12:10:05.0000000Z   [unit] test_b.jl [mutable]  1.0 s  (compiling 0.0 s)  7 passed, 1 broken'
+} > "$W/pc/logs/g2.log"
+out="$(python3 -I "$PC" logs "$W/pc/logs" 2> "$W/pc/err")"; rc=$?
+ok "pkgtest_costs logs: exit 0" 0 "$rc"
+has "…a file's seconds are summed over its term types" "$out" $'^core_lang/test_a.jl\t6.0$'
+has "…and over a second log's units" "$out" $'^test_b.jl\t5.0$'
+hasnt "…the static analysis is in no table row" "$out" "^test_static_analysis"
+ok "…two entries and no more" 2 "$(printf '%s\n' "$out" | grep -c $'\t')"
+# (unit time 3.5+2.5+100+4+1 = 111 s, compiling 2.5+1.5+90+3+0 = 97 s: 87 %: the static analysis counts in the share)
+has "…the compile share is reported, whole units counted" "$(cat "$W/pc/err")" "111 s of unit time, 97 s compiling \\(87 %\\)"
+# the table is the one `parse` makes of the notice with the same entries: one validator, one format
+printf 'core_lang/test_a.jl=6.0;test_b.jl=5.0\n' > "$W/pc/notice.txt"
+want="$(python3 -I "$PC" parse "$W/pc/notice.txt" | grep $'\t')"
+same "…rows equal the rows parse makes of the matching notice" "$want" "$(printf '%s\n' "$out" | grep $'\t')"
+# both sides of the guards: a log with no unit line, a directory with no log, a missing directory
+printf 'no unit here\n' > "$W/pc/logs/g3.log"
+python3 -I "$PC" logs "$W/pc/logs" > /dev/null 2>&1; rc=$?
+ok "pkgtest_costs logs: a log without a unit line is invalid (exit 1)" 1 "$rc"
+mkdir -p "$W/pc/empty"
+python3 -I "$PC" logs "$W/pc/empty" > /dev/null 2>&1; rc=$?
+ok "pkgtest_costs logs: a directory without a log is invalid (exit 1)" 1 "$rc"
+python3 -I "$PC" logs "$W/pc/nodir" > /dev/null 2>&1; rc=$?
+ok "pkgtest_costs logs: no such directory is a usage error (exit 2)" 2 "$rc"
+# fetch-logs: the run's jobs, three of them named like CI's (two groups and the gather), the logs saved by job id
+MID=$'\xc2\xb7'
+jobsjson() {   # jobsjson CONCLUSION_OF_GROUP_2 [GROUP2_NAME]
+    printf '{"total_count":3,"jobs":[{"id":1001,"name":"Julia 1 %s files 1/2","conclusion":"success"},{"id":1002,"name":"%s","conclusion":"%s"},{"id":1003,"name":"Julia 1 - ubuntu-24.04","conclusion":"success"}]}\n' \
+        "$MID" "${2:-Julia 1 $MID files 2/2}" "$1"
+}
+cp "$W/pc/logs/g1.log" "$W/pc/fx/777/1001.log"
+cp "$W/pc/logs/g2.log" "$W/pc/fx/777/1002.log"
+jobsjson success > "$W/pc/fx/777/jobs_1.json"
+out="$(LOGICKERNEL_CI_FIXTURE_DIR="$W/pc/fx" python3 -I "$PC" fetch-logs 777 2> "$W/pc/err")"; rc=$?
+ok "pkgtest_costs fetch-logs: exit 0" 0 "$rc"
+has "…the groups' units are summed (a)" "$out" $'^core_lang/test_a.jl\t6.0$'
+has "…the groups' units are summed (b)" "$out" $'^test_b.jl\t5.0$'
+has "…and it says which run" "$out" "Measured: run 777"
+jobsjson failure > "$W/pc/fx/777/jobs_1.json"
+LOGICKERNEL_CI_FIXTURE_DIR="$W/pc/fx" python3 -I "$PC" fetch-logs 777 > /dev/null 2>&1; rc=$?
+ok "pkgtest_costs fetch-logs: a failed group is invalid (exit 1)" 1 "$rc"
+jobsjson success "Julia 1 $MID files 1/2" > "$W/pc/fx/777/jobs_1.json"
+LOGICKERNEL_CI_FIXTURE_DIR="$W/pc/fx" python3 -I "$PC" fetch-logs 777 > /dev/null 2>&1; rc=$?
+ok "pkgtest_costs fetch-logs: group 2 missing is invalid (exit 1)" 1 "$rc"
+jobsjson success > "$W/pc/fx/777/jobs_1.json"
+rm "$W/pc/fx/777/1002.log"
+LOGICKERNEL_CI_FIXTURE_DIR="$W/pc/fx" python3 -I "$PC" fetch-logs 777 > /dev/null 2>&1; rc=$?
+ok "pkgtest_costs fetch-logs: an unreadable log is exit 2" 2 "$rc"
+
 echo "tools/test_ci_tools.sh: $pass passed, $fail failed"
 [ "$fail" -eq 0 ]
