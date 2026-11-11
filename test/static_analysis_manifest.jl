@@ -2998,6 +2998,83 @@ _manifest_table_plain() = (
     (LK.PL_advance_hash_table_enum, Tuple{LK.TableEnum}, false)
 )
 
+# LANE F — pl-bisim.c (src/pl-bisim.jl): the bisimulation quotient (term_factorized/3,4, term_minimal/2, term_automaton/2,
+# automaton_minimal/2,3, '$term_canonical_form'/2). Locations, node ids and counts are `Int`, words `UInt64`, `term_t` `Int`.
+# The functions that take the local data are checked for every payload type; the ones on the graph alone, once, below.
+_manifest_bisim(T) = begin
+    LD = LK.PL_local_data{T}
+    G = LK.bs_graph
+    B = Vector{LK.bs_node}
+    AU = LK.bs_automaton
+    (
+        (LK.build_graph, Tuple{LD, Int, B, UInt64}, false),
+        (LK.restore_graph, Tuple{LD, B}, false),
+        (LK.cmp_leaf, Tuple{LD, LK.leaf_order, Int, Int}, false),
+        (LK.leaf_number, Tuple{LD, G, LK.leaf_order, Int}, false),
+        (LK.number_leaves, Tuple{LD, G, Vector{Int}, Int}, false),
+        (LK.split_colours, Tuple{LD, G}, false),
+        (LK.fill_edges, Tuple{LD, G, Vector{Int}}, false),
+        (LK.alloc_graph, Tuple{LD, G, B, Int}, false),
+        (LK.setup_graph, Tuple{LD, G, B}, false),
+        (LK.term_quotient, Tuple{LD, Int, G, B, UInt64, Bool}, false),
+        (LK._bs_int_word, Tuple{LD, Int}, false),
+        (LK._bs_leaf_word, Tuple{LD, Int}, false),
+        (LK.fill_edges_automaton, Tuple{LD, Int, G, AU}, false),
+        (LK.build_automaton, Tuple{LD, Int, G, B, AU}, false),
+        (LK.resolve_states, Tuple{LD, G, AU, Vector{Int}}, false),
+        (LK.automaton_quotient, Tuple{LD, Int, G, B, AU, Bool}, false),
+        (LK.automaton_error, Tuple{LD, Int, AU}, false),
+        (LK.get_automaton, Tuple{LD, Int}, false),
+        (LK.canonicalise, Tuple{LD, G}, false),
+        (LK.canonical_size, Tuple{LD, G}, false),
+        (LK.build_canonical, Tuple{LD, G, Int}, false),
+        (LK.minimal_size, Tuple{LD, G}, false),
+        (LK.build_minimal, Tuple{LD, G, Int}, false),
+        (LK.automaton_size, Tuple{LD, G}, false),
+        (LK.build_automaton_result, Tuple{LD, G, Int}, false),
+        (LK.build_map, Tuple{LD, G, AU, Int}, false),
+        (LK.name_classes, Tuple{LD, G}, false),
+        (LK.factorized_size, Tuple{LD, G}, false),
+        (LK.build_factorized, Tuple{LD, G, Int}, false),
+        (LK._bs_alloc, Tuple{LD, Int}, false),
+        (LK._bs_functor, Tuple{LD, Symbol, Int}, false),
+        (LK.term_canonical_form, Tuple{LD, Int, Int}, false),
+        (LK.do_term_factorized, Tuple{LD, Int, Int, Int, UInt64, Bool}, false),
+        (LK.term_to_automaton, Tuple{LD, Int, Int}, false),
+        (LK.automaton_to_term, Tuple{LD, Int, Int}, false),
+        (LK.minimal_automaton_size, Tuple{LD, G, AU, Bool, Bool}, false),
+        (LK.build_minimal_automaton, Tuple{LD, G, AU, Bool, Int, Bool}, false),
+        (LK.do_automaton_minimal, Tuple{LD, Int, Int, Nothing}, false),
+        (LK.do_automaton_minimal, Tuple{LD, Int, Int, Int}, false),
+        [
+            (f, Tuple{LD, Int, Int, LK.foreign_context{T}}, false) for f in (
+                LK.pl_term_minimal2_va, LK.pl_term_canonical_form2_va, LK.pl_term_factorized3_va,
+                LK.pl_term_factorized4_va, LK.pl_term_automaton2_va, LK.pl_automaton_minimal2_va,
+                LK.pl_automaton_minimal3_va
+            )
+        ]...
+    )
+end
+_manifest_bisim_plain() = (
+    (LK.bs_node, Tuple{Int, UInt64}, false),
+    (Core.kwcall, Tuple{NamedTuple{(), Tuple{}}, Type{LK.bs_graph}}, false),
+    (Core.kwcall, Tuple{NamedTuple{(), Tuple{}}, Type{LK.bs_automaton}}, false),
+    (LK.leaf_order, Tuple{Bool}, false),
+    (LK.bs_colour, Tuple{UInt64, Int}, false),
+    (LK.bs_colour_lt, Tuple{LK.bs_colour, LK.bs_colour}, true),
+    (LK._bs_scalar_cmp, Tuple{Int, Int}, true),
+    (LK._bs_compound, Tuple{Int}, true),
+    (LK.child_class, Tuple{LK.bs_graph, Int}, false),
+    (LK.colour_nodes, Tuple{LK.bs_graph}, false),
+    (LK.group_signature, Tuple{LK.bs_graph, Int, Int, Int}, false),
+    (LK.new_class, Tuple{LK.bs_graph, Int, Int}, false),
+    (LK.enqueue, Tuple{LK.bs_graph, Int}, false),
+    (LK.mark_member, Tuple{LK.bs_graph, Int, Vector{Int}, Int}, false),
+    (LK.refine, Tuple{LK.bs_graph}, false),
+    (LK.identity_partition, Tuple{LK.bs_graph}, false),
+    (LK.fill_pred, Tuple{LK.bs_graph}, false)
+)
+
 # LB2b — locating files: os/pl-files.c, os/pl-glob.c and the file-name helpers of os/pl-os.c
 # (src/os/pl-files.jl, src/os/pl-glob.jl, src/os/pl-os.jl). The methods that take the local data (`ld`) are
 # checked for every payload type; the ones on plain strings, integers and byte vectors once, below.
@@ -3248,6 +3325,10 @@ const _DISPATCH_MANIFEST_TUPLE = (
     _manifest_table(_M2)...,
     _manifest_table(_M3)...,
     _manifest_table_plain()...,
+    _manifest_bisim(_M1)...,
+    _manifest_bisim(_M2)...,
+    _manifest_bisim(_M3)...,
+    _manifest_bisim_plain()...,
     _MANIFEST_LB2B_FREE...,
     _manifest_lb7(_M1)...,
     _manifest_lb7(_M2)...,
