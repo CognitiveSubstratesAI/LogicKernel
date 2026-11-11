@@ -363,7 +363,7 @@ _start() {
     # failed there ("the coverage block needs every upstream checkout the headers name") while every local
     # run passed — and a local daemon read ~/dev-zone's swipl-devel instead of the one the caller named.
     local _uv
-    for _uv in $(compgen -e | grep '^LOGICKERNEL_UPSTREAM_' || :); do
+    for _uv in $(_daemon_pass_names); do
         copy_env+=(-E "$_uv=${!_uv}")
     done
     # shellcheck disable=SC2086                          # $slice: empty without user systemd
@@ -387,6 +387,14 @@ _start() {
     _struct_snapshot > "$DIR/structs"               # what this daemon loaded (`_struct_gate`)
     echo "warm lane: ready (unit $UNIT, pid $(cat "$DIR/ready"))"
 }
+
+# _daemon_pass_names — the NAMES of the variables a daemon unit is handed from its caller's environment (a unit gets only
+# what it is passed): the upstream checkouts (`LOGICKERNEL_UPSTREAM_<REPO>`) and the workflow's REQUIRE switches
+# (`LOGICKERNEL_REQUIRE_SWIPL`, `LOGICKERNEL_REQUIRE_TOOLS`, …; audit D-0536 item 2): the suites' own required-checks
+# (a missing oracle or analysis tool is an ERROR, never a skipped test) must fire in the warm daemon as they do in a
+# fresh process, or the warm battery's baseline would be green over skipped tests. Names only, and only those that are
+# SET (exported); `warm.sh daemon-env` prints them with their values (a test seam, no daemon).
+_daemon_pass_names() { compgen -e | grep -E '^LOGICKERNEL_(UPSTREAM|REQUIRE)_' || :; }
 
 # _daemon_julia — the Julia VERSION the running daemon records at its start (.warm/julia_version, tools/warm_session.jl);
 # a daemon that predates the record: the version of the install its process runs from (/proc/<pid>/exe); empty when unknown
@@ -1391,7 +1399,7 @@ cmd="${1:-status}"; shift || true
 # evidence) also refuses LOGICKERNEL_JULIA_PIN_OFF=1. A running daemon that was started under another version is refused
 # by every command that uses it (`stop` and `restart` are how it is replaced).
 case "$cmd" in
-    status | lane-plan | manifest-seed | branch-gate-files | branch-gate-plan | fmt-pin | stop) ;;
+    status | lane-plan | daemon-env | manifest-seed | branch-gate-files | branch-gate-plan | fmt-pin | stop) ;;
     branch-gate | preflight | evidence) _julia_pin_apply "$ROOT" "warm.sh $cmd" gate || exit $? ;;
     *) _julia_pin_apply "$ROOT" "warm.sh $cmd" || exit $? ;;
 esac
@@ -1400,7 +1408,7 @@ case "$cmd" in
         _running && { _julia_daemon_check || exit $?; } ;;
 esac
 case "$cmd" in
-    status | lane-plan | manifest-seed) ;;
+    status | lane-plan | daemon-env | manifest-seed) ;;
     preflight | evidence | locked | branch-gate)
         if [ "$cmd" = branch-gate ]; then
             _bg_br="$(git -C "$ROOT" symbolic-ref --quiet --short HEAD 2> /dev/null)"
@@ -1432,6 +1440,10 @@ case "$cmd" in
         _lane_plan "$_lp_others"; _lp_rc=$?
         [ "$_lp_rc" -eq 0 ] && echo "lane: $LANE slice $(_lane_slice_name "$LANE") mem $(_lane_mem_max "$LANE")"
         exit "$_lp_rc"
+        ;;
+    daemon-env)                                        # what a start hands the daemon from the caller's environment (a TEST SEAM)
+        for _de in $(_daemon_pass_names); do printf '%s=%s\n' "$_de" "${!_de}"; done
+        exit 0
         ;;
     manifest-seed) _manifest_seed "${1:-$ROOT}"; exit $? ;;   # copy a sibling worktree's Manifest.toml (tests pass a root)
     restart) _restart ;;

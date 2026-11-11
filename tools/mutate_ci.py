@@ -23,6 +23,8 @@
 #                                                 marked `"fresh": True` runs in a fresh process, as `one` does it (a declared
 #                                                 escape hatch for a mutant the warm daemon decides differently). IDS (the
 #                                                 environment, space-separated) selects like `plan`'s ID arguments.
+#                                                 LOGICKERNEL_REQUIRE_SWIPL=1 with no swipl on PATH: exit 1 before any target, baseline.json RED
+#                                                 (D-0536 item 2; tools/warm.sh hands the daemon the LOGICKERNEL_REQUIRE_* variables).
 #   mutate_ci.py check-baseline                   exit 1 unless mutation-out/baseline.json (shard 1's) is there and green
 #   mutate_ci.py collect MUTANTS.py COUNT [ID…]   the verdict table (stdout, verdicts.md); exit 0/1
 #   mutate_ci.py annotate                         verdicts.md as notice annotations (stdout): a check
@@ -43,6 +45,7 @@
 import json
 import os
 import runpy
+import shutil
 import signal
 import subprocess
 import sys
@@ -261,6 +264,16 @@ def run_mutant(m, name, targets, run, driver):
     return record
 
 
+def oracle_missing():
+    """Why the warm shape must not run (audit D-0536 item 2), or "": LOGICKERNEL_REQUIRE_SWIPL=1 (the workflow's switch:
+    a missing oracle is an error, never a skipped differential) and no `swipl` on PATH. The suites' own required-checks
+    fire in the daemon too (tools/warm.sh hands it the LOGICKERNEL_REQUIRE_* variables), but a daemon started without them
+    would skip those tests GREEN: this is the wrapper's own check, before any target, so the baseline is RED."""
+    if os.environ.get("LOGICKERNEL_REQUIRE_SWIPL") == "1" and shutil.which("swipl") is None:
+        return "LOGICKERNEL_REQUIRE_SWIPL=1 but swipl is not on PATH: every differential would be skipped"
+    return ""
+
+
 def warm(argv):
     path, k, n, limit, targets = argv[0], int(argv[1]), int(argv[2]), int(argv[3]), argv[4:]
     if not 1 <= k <= n:
@@ -271,6 +284,12 @@ def warm(argv):
     root, impl = os.getcwd(), os.environ.get("MUTATE_IMPL", "reference")
     warm_run = lambda tgts: _run_targets(tgts, warm_run1(limit, root, impl), root)
     fresh_run = lambda tgts: run_targets(tgts, limit)
+    why = oracle_missing()
+    if why:                                             # RED before any target: a skipped test is a failure in the warm shape
+        print("::error title=oracle::%s: no verdict counts" % why)
+        if k == 1:
+            write("baseline", {"name": "baseline", "exit": 2, "seconds": 0, "driver": "warm"}, why + "\n")
+        return 1
     if k == 1:                                          # the unmutated tree first, on the warm daemon (D-0374: red voids the battery)
         t0 = time.time()
         rc, log, _ = warm_run(targets)
