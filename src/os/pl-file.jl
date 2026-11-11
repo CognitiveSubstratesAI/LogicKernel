@@ -2140,6 +2140,110 @@ function pl_read_pending_chars3_va(
     return read_pending_input(ld, PL__t0, PL__t0 + 1, PL__t0 + 2, true) ? FTRUE : FFALSE
 end
 
+# ORIGINAL: the `PL_chars_t` upstream's `peek_string` fills from the stream's buffer (text.text.t = s->bufp, length in bytes):
+# a copy of the pending bytes, in the stream's encoding. DIVERGES: for `ENC_WCHAR` the length is in units (upstream passes
+# the byte count, which `PL_canonicalise_text` would read as units, past the buffer).
+"The pending bytes of `s`'s buffer as a text not yet canonical, in `s`'s encoding."
+function peek_pending_text(s::IOSTREAM)::PL_chars_t
+    bytes = s.mem[s.bufp:(s.limitp - 1)]
+    n = length(bytes)
+    return PL_chars_t(bytes, s.encoding == ENC_WCHAR ? n ÷ 4 : n, s.encoding, false)
+end
+
+# PORT: pl-file.c peek_string as pl_peek_string3_va
+# (PRED_IMPL("peek_string", 3, peek_string, 0)) — pl-file.c:3373-3425 (pin 18168e62)
+# DIVERGES: the pending bytes are copied (`peek_pending_text`); no lock to release, no `PL_STRINGS_MARK`.
+"`peek_string(+Stream, +Len, -String)`: `String` is the next `Len` characters of `Stream`, or all it has, without reading them (pl-file.c)."
+function pl_peek_string3_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2, A3 = PL__t0, PL__t0 + 1, PL__t0 + 2
+
+    len = PL_get_size_ex(ld, A2)
+    len === nothing && return FFALSE
+
+    s = getInputStream(ld, A1, S_DONTCARE)
+    s === nothing && return FFALSE
+
+    while true
+        if s.limitp > s.bufp
+            text = peek_pending_text(s)
+
+            PL_canonicalise_text_ex(ld, text) || return FFALSE
+            if text.length >= len
+                rc = PL_unify_text_range(ld, A3, text, 0, len, PL_STRING)
+                return rc ? FTRUE : FFALSE
+            end
+        end
+
+        if s.limitp - s.bufp == s.bufsize
+            Ssetbuffer(s, nothing, s.bufsize * 2)
+        end
+
+        if S__fillbuf(s) < 0
+            Sferror(s) != 0 && return streamStatus(ld, s) ? FTRUE : FFALSE
+
+            s.flags &= ~SIO_FEOF
+
+            text = peek_pending_text(s)
+            rc = PL_canonicalise_text_ex(ld, text) && PL_unify_text(ld, A3, 0, text, PL_STRING)
+            return rc ? FTRUE : FFALSE
+        end
+        s.bufp -= 1
+    end
+end
+
+# PORT: pl-file.c copy_stream_data
+# DIVERGES: `len` is 0 for no length (upstream: a NULL `term_t`); no `PL_handle_signals` every 4096 characters, no locks.
+"Copy the characters of the input stream `in` to the output stream `out`, at most the integer `len` (0: all) (pl-file.c)."
+function copy_stream_data(
+    ld::PL_local_data{T}, in::term_t, out::term_t, len::term_t
+)::Bool where {T}
+    i = getInputStream(ld, in, S_DONTCARE)
+    i === nothing && return false
+    o = getOutputStream(ld, out, S_DONTCARE)
+    o === nothing && return false
+
+    if len == 0
+        while (c = Sgetcode(i)) != EOF
+            if Sputcode(c, o) < 0
+                return streamStatus(ld, o)
+            end
+        end
+    else
+        n = PL_get_int64_ex(ld, len)
+        n === nothing && return false
+
+        while n > 0 && (c = Sgetcode(i)) != EOF
+            n -= 1
+            Sputcode(c, o) < 0 && break
+        end
+    end
+
+    rc = streamStatus(ld, o)
+    rc = streamStatus(ld, i) && rc
+
+    return rc
+end
+
+# PORT: pl-file.c copy_stream_data3 as pl_copy_stream_data3_va
+# (PRED_IMPL("copy_stream_data", 3, copy_stream_data3, 0)) — pl-file.c:6338-6342 (pin 18168e62)
+"`copy_stream_data(+StreamIn, +StreamOut, +Len)`: copy `Len` characters from `StreamIn` to `StreamOut` (pl-file.c)."
+function pl_copy_stream_data3_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    return copy_stream_data(ld, PL__t0, PL__t0 + 1, PL__t0 + 2) ? FTRUE : FFALSE
+end
+
+# PORT: pl-file.c copy_stream_data2 as pl_copy_stream_data2_va
+# (PRED_IMPL("copy_stream_data", 2, copy_stream_data2, 0)) — pl-file.c:6344-6348 (pin 18168e62)
+"`copy_stream_data(+StreamIn, +StreamOut)`: copy all characters from `StreamIn` to `StreamOut` (pl-file.c)."
+function pl_copy_stream_data2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    return copy_stream_data(ld, PL__t0, PL__t0 + 1, 0) ? FTRUE : FFALSE
+end
+
 # ── prompts (pl-file.c) ─────────────────────────────────────────────────────────────────────────
 
 # PORT: pl-file.c prompt as pl_prompt2_va
@@ -4009,6 +4113,9 @@ const PL_predicates_from_file = (
     PL_extension("fill_buffer", 1, pl_fill_buffer1_va, PL_FA_VARARGS),
     PL_extension("read_pending_codes", 3, pl_read_pending_codes3_va, PL_FA_VARARGS),
     PL_extension("read_pending_chars", 3, pl_read_pending_chars3_va, PL_FA_VARARGS),
+    PL_extension("peek_string", 3, pl_peek_string3_va, PL_FA_VARARGS),
+    PL_extension("copy_stream_data", 3, pl_copy_stream_data3_va, PL_FA_VARARGS),
+    PL_extension("copy_stream_data", 2, pl_copy_stream_data2_va, PL_FA_VARARGS),
     PL_extension("\$size_stream", 2, pl_dsize_stream2_va, PL_FA_VARARGS),
     PL_extension("see", 1, pl_see1_va, PL_FA_VARARGS),
     PL_extension("seen", 0, pl_seen0_va, PL_FA_VARARGS),
