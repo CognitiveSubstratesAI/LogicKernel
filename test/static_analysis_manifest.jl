@@ -4103,6 +4103,15 @@ const _DISPATCH_MANIFEST_TUPLE = (
     (LK._ct_encode, Tuple{LK.generator}, false),
     (LK._ct_decode, Tuple{Int64}, false),
     (LK._libc_setlocale, Tuple{Cint, Union{Nothing, String}}, false),
+    # TAI1 — the libtai pieces (src/os/pl-libtai.jl): calendar dates and times, the leap-second table (no term type)
+    (LK.caldate_mjd, Tuple{LK.caldate}, false),
+    (LK.caldate_frommjd, Tuple{LK.caldate, Int64}, false),
+    (LK.caltime_tai, Tuple{LK.caltime}, false),
+    (LK.caltime_utc, Tuple{LK.caltime, UInt64}, false),
+    (LK.leapsecs_read, Tuple{String}, false),
+    (LK.leapsecs_init, Tuple{}, false),
+    (LK.leapsecs_add, Tuple{UInt64, Bool}, false),
+    (LK.leapsecs_sub, Tuple{UInt64}, false),
     # DWIM1 — the C-string comparison of pl-dwim.c (NUL-terminated byte vectors; no term type: outside the per-type block)
     (LK._dwim_streq, Tuple{Vector{UInt8}, Int, Vector{UInt8}, Int}, false),
     (LK._dwim_strlen, Tuple{Vector{UInt8}, Int}, false),
