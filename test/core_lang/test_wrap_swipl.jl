@@ -169,43 +169,46 @@ const _COPIES_OK = let
     gd, ld, st = _wt_load(_WT, f)
     rm(f)
     st == "ok" && _wt_row(gd, ld, "cp_w") == _er("cp_w", _ea("ok")) &&
-        !isempty(gd.closure_refs) && all(c -> LK._impl_any_defined(c.def), gd.closure_refs)
+        !isempty(gd.closure_refs) &&
+        all(c -> LK._impl_any_defined(c.def), gd.closure_refs)
 end
 @testset "WRAP1 guard: a closure's copy is a defined predicate (else no row that calls a wrapped predicate runs)" begin
     @test _COPIES_OK
 end
 
-_COPIES_OK && @testset "WRAP1: wrappers, closures and their predicates == swipl's answers (the .out), through a program" begin
-    names = _wrap_names()
-    expected = String.(readlines(_WRAP_OUT))
-    # not a vacuous agreement: the .out has a line per row, and the rows' own evidence is in it
-    @test length(names) >= 19
-    @test length(expected) == length(names) + 1 && expected[1] == "ok"
-    @test all(i -> startswith(expected[i + 1], names[i] * " "), eachindex(names))
-    @test any(
-        l -> occursin(_codes("type_error"), l) && occursin(_codes("closure"), l), expected
-    )     # '$closure_predicate'/2
-    @test any(
-        l -> occursin(_codes("existence_error"), l) && occursin(_codes("undef11"), l),
-        expected
-    ) # the WRAPPED predicate
-    @test any(l -> occursin(_cm("<closure>(p15/1)(7)"), l), expected)                              # write_closure
-    @test any(l -> occursin(_cm("<closure>(m15:p15m/1)(8)"), l), expected)                         # ... with a module
-    @test !any(l -> occursin(r"export-error|undefined| exception$", l), expected)
+_COPIES_OK &&
+    @testset "WRAP1: wrappers, closures and their predicates == swipl's answers (the .out), through a program" begin
+        names = _wrap_names()
+        expected = String.(readlines(_WRAP_OUT))
+        # not a vacuous agreement: the .out has a line per row, and the rows' own evidence is in it
+        @test length(names) >= 19
+        @test length(expected) == length(names) + 1 && expected[1] == "ok"
+        @test all(i -> startswith(expected[i + 1], names[i] * " "), eachindex(names))
+        @test any(
+            l -> occursin(_codes("type_error"), l) && occursin(_codes("closure"), l),
+            expected
+        )     # '$closure_predicate'/2
+        @test any(
+            l -> occursin(_codes("existence_error"), l) && occursin(_codes("undef11"), l),
+            expected
+        ) # the WRAPPED predicate
+        @test any(l -> occursin(_cm("<closure>(p15/1)(7)"), l), expected)                              # write_closure
+        @test any(l -> occursin(_cm("<closure>(m15:p15m/1)(8)"), l), expected)                         # ... with a module
+        @test !any(l -> occursin(r"export-error|undefined| exception$", l), expected)
 
-    kl = kernel_lines(_WRAP_PL, names)
-    @test length(kl) == length(expected)
-    for i in eachindex(kl)
-        @test (i, kl[i]) == (i, expected[i])
-    end
+        kl = kernel_lines(_WRAP_PL, names)
+        @test length(kl) == length(expected)
+        for i in eachindex(kl)
+            @test (i, kl[i]) == (i, expected[i])
+        end
 
-    swipl = get(ENV, "LOGICKERNEL_NO_SWIPL", "") == "1" ? nothing : Sys.which("swipl")
-    if swipl === nothing
-        @info "WRAP DIFFERENTIAL NOT RUN LIVE: `swipl` is not on PATH here (the .out was checked). It runs in tools/run_tests.sh and CI."
-    else
-        @test swipl_lines(_WRAP_PL, names) == expected             # the .out is swipl's, still
+        swipl = get(ENV, "LOGICKERNEL_NO_SWIPL", "") == "1" ? nothing : Sys.which("swipl")
+        if swipl === nothing
+            @info "WRAP DIFFERENTIAL NOT RUN LIVE: `swipl` is not on PATH here (the .out was checked). It runs in tools/run_tests.sh and CI."
+        else
+            @test swipl_lines(_WRAP_PL, names) == expected             # the .out is swipl's, still
+        end
     end
-end
 
 # The kill rows: the answers of single rows, built from pieces here and equal to the .out's (swipl's); each fails on its own
 # when the one thing it names breaks, so a mutant shows as a named verdict and not only as a changed line of the file.
@@ -387,126 +390,135 @@ function _wb_closure(gd::LK.PL_global_data{T}, codes::Vector{LK.code}) where {T}
     return LK.closure_of_word(gd, codes[i + 2])::LK.closure{T}
 end
 
-_COPIES_OK && @testset "WRAP1 white-box: closures, supervisor_crefs, innermost_supervisor, unwrap" begin
-    f = tempname() * ".pl"
-    write(f, _WB_PL)
-    gd, ld, st = _wt_load(_WT, f)
-    rm(f)
-    @test st == "ok"
-    ok(n, name) = _wt_row(gd, ld, name) == "$name " * _ec(name, n)
+_COPIES_OK &&
+    @testset "WRAP1 white-box: closures, supervisor_crefs, innermost_supervisor, unwrap" begin
+        f = tempname() * ".pl"
+        write(f, _WB_PL)
+        gd, ld, st = _wt_load(_WT, f)
+        rm(f)
+        @test st == "ok"
+        ok(n, name) = _wt_row(gd, ld, name) == "$name " * _ec(name, n)
 
-    @testset "a wrapped single-clause predicate" begin
-        @test ok(_ea("ok"), "wb_r1")
-        d = _wb_def(gd, "wb_p")
-        i = LK.skipWrapperPrefix(d.codes)
-        @test d.codes[i] == LK.S_CALLWRAPPER
-        c = _wb_closure(gd, d.codes)
-        @test c.predicate === d
-        # the closure's number: `impl_foreign_function` of its definition is its index in `gd.closure_refs` (what
-        # `_impl_any_defined` reads, and S_WRAP finds the closure by)
-        @test c.def.impl_foreign_function == findfirst(x -> x === c, gd.closure_refs)
-        @test c.def.impl_foreign_function != 0
-        @test LK._impl_any_defined(c.def)
-        # `<closure>` of its blob: the wrapper names it, `closure_of_word` finds it again
-        @test LK.closure_of_word(gd, d.codes[i + 2]) === c
-        # before the first call the wrapped supervisor is the virgin one; S_WRAP creates the real one (and stores both parts)
-        @test c.supervisor === d.code_data.virgin
-        @test LK.supervisor_crefs(gd, d, d.codes) === d.codes_crefs
-        @test ok(_el([_ei(1)]), "wb_r2")
-        @test c.supervisor !== d.code_data.virgin
-        @test c.supervisor[1] != LK.S_VIRGIN
-        @test length(c.supervisor_crefs) >= 1                  # the single clause of wb_p is in the CLOSURE's table ...
-        @test c.supervisor_crefs !== d.codes_crefs             # ... which is not the wrapper's table
-        @test LK.supervisor_crefs(gd, d, c.supervisor) === c.supervisor_crefs
-        @test LK.supervisor_crefs(gd, d, d.codes) === d.codes_crefs
-        @test_throws ErrorException LK.supervisor_crefs(gd, d, LK.code[LK.S_VIRGIN])
-        codes, crefs = LK.innermost_supervisor(gd, d)
-        @test codes === c.supervisor && crefs === c.supervisor_crefs
-    end
+        @testset "a wrapped single-clause predicate" begin
+            @test ok(_ea("ok"), "wb_r1")
+            d = _wb_def(gd, "wb_p")
+            i = LK.skipWrapperPrefix(d.codes)
+            @test d.codes[i] == LK.S_CALLWRAPPER
+            c = _wb_closure(gd, d.codes)
+            @test c.predicate === d
+            # the closure's number: `impl_foreign_function` of its definition is its index in `gd.closure_refs` (what
+            # `_impl_any_defined` reads, and S_WRAP finds the closure by)
+            @test c.def.impl_foreign_function == findfirst(x -> x === c, gd.closure_refs)
+            @test c.def.impl_foreign_function != 0
+            @test LK._impl_any_defined(c.def)
+            # `<closure>` of its blob: the wrapper names it, `closure_of_word` finds it again
+            @test LK.closure_of_word(gd, d.codes[i + 2]) === c
+            # before the first call the wrapped supervisor is the virgin one; S_WRAP creates the real one (and stores both parts)
+            @test c.supervisor === d.code_data.virgin
+            @test LK.supervisor_crefs(gd, d, d.codes) === d.codes_crefs
+            @test ok(_el([_ei(1)]), "wb_r2")
+            @test c.supervisor !== d.code_data.virgin
+            @test c.supervisor[1] != LK.S_VIRGIN
+            @test length(c.supervisor_crefs) >= 1                  # the single clause of wb_p is in the CLOSURE's table ...
+            @test c.supervisor_crefs !== d.codes_crefs             # ... which is not the wrapper's table
+            @test LK.supervisor_crefs(gd, d, c.supervisor) === c.supervisor_crefs
+            @test LK.supervisor_crefs(gd, d, d.codes) === d.codes_crefs
+            @test_throws ErrorException LK.supervisor_crefs(gd, d, LK.code[LK.S_VIRGIN])
+            codes, crefs = LK.innermost_supervisor(gd, d)
+            @test codes === c.supervisor && crefs === c.supervisor_crefs
+        end
 
-    @testset "a predicate without wrapper" begin
-        p = _wb_def(gd, "wb_plain")
-        @test LK.supervisor_crefs(gd, p, p.codes) === p.codes_crefs
-        @test_throws ErrorException LK.supervisor_crefs(gd, p, LK.code[LK.S_VIRGIN])
-        codes, crefs = LK.innermost_supervisor(gd, p)
-        @test codes === p.codes && crefs === p.codes_crefs
-    end
+        @testset "a predicate without wrapper" begin
+            p = _wb_def(gd, "wb_plain")
+            @test LK.supervisor_crefs(gd, p, p.codes) === p.codes_crefs
+            @test_throws ErrorException LK.supervisor_crefs(gd, p, LK.code[LK.S_VIRGIN])
+            codes, crefs = LK.innermost_supervisor(gd, p)
+            @test codes === p.codes && crefs === p.codes_crefs
+        end
 
-    @testset "two wrappers, then unwrap of the outer one" begin
-        @test ok(_ea("ok"), "wb_r3")
-        @test ok(_el([_ei(1), _ei(2)]), "wb_r4")
-        d = _wb_def(gd, "wb_q")
-        c2 = _wb_closure(gd, d.codes)                          # the last registered: outermost
-        @test c2.supervisor !== d.code_data.virgin             # the supervisor of c2 is the n1 wrapper
-        c1 = _wb_closure(gd, c2.supervisor)
-        @test c1.predicate === d && c2.predicate === d
-        @test LK.supervisor_crefs(gd, d, d.codes) === d.codes_crefs
-        @test LK.supervisor_crefs(gd, d, c2.supervisor) === c2.supervisor_crefs
-        @test LK.supervisor_crefs(gd, d, c1.supervisor) === c1.supervisor_crefs
-        @test c1.supervisor[1] != LK.S_VIRGIN                  # S_WRAP created the real supervisor
-        codes, crefs = LK.innermost_supervisor(gd, d)
-        @test codes === c1.supervisor && crefs === c1.supervisor_crefs
-        saved_codes, saved_crefs = c2.supervisor, c2.supervisor_crefs
-        @test ok(_ea("ok"), "wb_r5")                           # unwrap_predicate(wb_q/1, n2)
-        # unwrap installs BOTH the code and its side table back
-        @test d.codes === saved_codes
-        @test d.codes_crefs === saved_crefs
-        @test LK.supervisor_crefs(gd, d, d.codes) === d.codes_crefs
-        @test _wb_closure(gd, d.codes) === c1
-        @test ok(_el([_ei(1), _ei(2)]), "wb_r6")               # still runs, through n1 only
-        codes, crefs = LK.innermost_supervisor(gd, d)
-        @test codes === c1.supervisor && crefs === c1.supervisor_crefs
-    end
-
-    # unwrap of the INNER wrapper, after both ran (each closure holds a real supervisor; the side table
-    # of a SINGLE clause predicate is non-empty): the outer closure takes over the inner one's code AND
-    # its side table (pl-wrap.c: `*cp = cls->def.impl.wrapped.supervisor`), through
-    # `holder.supervisor_crefs` of unwrap_predicate/2. The program row t4 unwraps the inner wrapper
-    # before either ran (virgin supervisor, empty side table), so it cannot see the side table.
-    @testset "unwrap of the inner wrapper after both wrappers ran" begin
-        @test ok(_ea("ok"), "wb_r7")
-        d = _wb_def(gd, "wb_u")
-        c2 = _wb_closure(gd, d.codes)
-        c1 = _wb_closure(gd, c2.supervisor)
-        # BOUND: a closure's copy without a number (`_impl_any_defined` false) is an undefined predicate: a call of the
-        # wrapped predicate resolves it (`trapUndefined`, `autoImport`) to the wrapped predicate itself, whose wrapper calls
-        # the closure again, round and round until the stack overflows (WRAP1-M15b ran into the CI time limit). The rows
-        # that call `wb_u` run only when both copies are defined; else this row fails at once.
-        defined = LK._impl_any_defined(c1.def) && LK._impl_any_defined(c2.def)
-        @test defined
-        if defined
-            @test ok(_el([_ei(1)]), "wb_r8")
-            @test c1.supervisor[1] != LK.S_VIRGIN
-            @test length(c1.supervisor_crefs) >= 1
-            saved_codes, saved_crefs = c1.supervisor, c1.supervisor_crefs
-            @test ok(_ea("ok"), "wb_r9")                       # unwrap_predicate(wb_u/1, n1)
-            @test _wb_closure(gd, d.codes) === c2
-            @test c2.supervisor === saved_codes
-            @test c2.supervisor_crefs === saved_crefs
+        @testset "two wrappers, then unwrap of the outer one" begin
+            @test ok(_ea("ok"), "wb_r3")
+            @test ok(_el([_ei(1), _ei(2)]), "wb_r4")
+            d = _wb_def(gd, "wb_q")
+            c2 = _wb_closure(gd, d.codes)                          # the last registered: outermost
+            @test c2.supervisor !== d.code_data.virgin             # the supervisor of c2 is the n1 wrapper
+            c1 = _wb_closure(gd, c2.supervisor)
+            @test c1.predicate === d && c2.predicate === d
+            @test LK.supervisor_crefs(gd, d, d.codes) === d.codes_crefs
             @test LK.supervisor_crefs(gd, d, c2.supervisor) === c2.supervisor_crefs
-            @test ok(_el([_ei(1)]), "wb_r10")                  # runs on, through n2 only
+            @test LK.supervisor_crefs(gd, d, c1.supervisor) === c1.supervisor_crefs
+            @test c1.supervisor[1] != LK.S_VIRGIN                  # S_WRAP created the real supervisor
+            codes, crefs = LK.innermost_supervisor(gd, d)
+            @test codes === c1.supervisor && crefs === c1.supervisor_crefs
+            saved_codes, saved_crefs = c2.supervisor, c2.supervisor_crefs
+            @test ok(_ea("ok"), "wb_r5")                           # unwrap_predicate(wb_q/1, n2)
+            # unwrap installs BOTH the code and its side table back
+            @test d.codes === saved_codes
+            @test d.codes_crefs === saved_crefs
+            @test LK.supervisor_crefs(gd, d, d.codes) === d.codes_crefs
+            @test _wb_closure(gd, d.codes) === c1
+            @test ok(_el([_ei(1), _ei(2)]), "wb_r6")               # still runs, through n1 only
+            codes, crefs = LK.innermost_supervisor(gd, d)
+            @test codes === c1.supervisor && crefs === c1.supervisor_crefs
+        end
+
+        # unwrap of the INNER wrapper, after both ran (each closure holds a real supervisor; the side table
+        # of a SINGLE clause predicate is non-empty): the outer closure takes over the inner one's code AND
+        # its side table (pl-wrap.c: `*cp = cls->def.impl.wrapped.supervisor`), through
+        # `holder.supervisor_crefs` of unwrap_predicate/2. The program row t4 unwraps the inner wrapper
+        # before either ran (virgin supervisor, empty side table), so it cannot see the side table.
+        @testset "unwrap of the inner wrapper after both wrappers ran" begin
+            @test ok(_ea("ok"), "wb_r7")
+            d = _wb_def(gd, "wb_u")
+            c2 = _wb_closure(gd, d.codes)
+            c1 = _wb_closure(gd, c2.supervisor)
+            # BOUND: a closure's copy without a number (`_impl_any_defined` false) is an undefined predicate: a call of the
+            # wrapped predicate resolves it (`trapUndefined`, `autoImport`) to the wrapped predicate itself, whose wrapper calls
+            # the closure again, round and round until the stack overflows (WRAP1-M15b ran into the CI time limit). The rows
+            # that call `wb_u` run only when both copies are defined; else this row fails at once.
+            defined = LK._impl_any_defined(c1.def) && LK._impl_any_defined(c2.def)
+            @test defined
+            if defined
+                @test ok(_el([_ei(1)]), "wb_r8")
+                @test c1.supervisor[1] != LK.S_VIRGIN
+                @test length(c1.supervisor_crefs) >= 1
+                saved_codes, saved_crefs = c1.supervisor, c1.supervisor_crefs
+                @test ok(_ea("ok"), "wb_r9")                       # unwrap_predicate(wb_u/1, n1)
+                @test _wb_closure(gd, d.codes) === c2
+                @test c2.supervisor === saved_codes
+                @test c2.supervisor_crefs === saved_crefs
+                @test LK.supervisor_crefs(gd, d, c2.supervisor) === c2.supervisor_crefs
+                @test ok(_el([_ei(1)]), "wb_r10")                  # runs on, through n2 only
+            end
+        end
+
+        @testset "get_procedure_resolve_head" begin
+            head(name) =
+                mk_expr(
+                    _WT, _WT[lk_sym(_WT, Symbol(name)), mk_var(_WT, LK.fresh_var_keys!(1))]
+                )
+            put(v) =
+                (
+                    t=LK.PL_new_term_ref(ld);
+                    LK.putSlotValue!(ld, t + 1, v, LK.PutVarMap());
+                    t
+                )
+            d = _wb_def(gd, "wb_q")
+            h = LK.PL_new_term_ref(ld)
+            proc = LK.get_procedure_resolve_head(gd, ld, put(head("wb_q")), h)
+            @test proc !== nothing && proc.definition === d
+            @test LK.PL_get_name_arity(ld, h)[2] == 1               # the stripped head
+            # module-qualified: the same procedure
+            q = mk_expr(
+                _WT, _WT[lk_sym(_WT, Symbol(":")), lk_sym(_WT, :user), head("wb_q")]
+            )
+            proc2 = LK.get_procedure_resolve_head(gd, ld, put(q), 0)
+            @test proc2 !== nothing && proc2.definition === d
+            # an undefined head: GP_RESOLVE creates the procedure, undefined
+            proc3 = LK.get_procedure_resolve_head(gd, ld, put(head("wb_nowhere")), 0)
+            @test proc3 !== nothing && !LK.isDefinedProcedure(gd, proc3)
         end
     end
-
-    @testset "get_procedure_resolve_head" begin
-        head(name) =
-            mk_expr(_WT, _WT[lk_sym(_WT, Symbol(name)), mk_var(_WT, LK.fresh_var_keys!(1))])
-        put(v) =
-            (t=LK.PL_new_term_ref(ld); LK.putSlotValue!(ld, t + 1, v, LK.PutVarMap()); t)
-        d = _wb_def(gd, "wb_q")
-        h = LK.PL_new_term_ref(ld)
-        proc = LK.get_procedure_resolve_head(gd, ld, put(head("wb_q")), h)
-        @test proc !== nothing && proc.definition === d
-        @test LK.PL_get_name_arity(ld, h)[2] == 1               # the stripped head
-        # module-qualified: the same procedure
-        q = mk_expr(_WT, _WT[lk_sym(_WT, Symbol(":")), lk_sym(_WT, :user), head("wb_q")])
-        proc2 = LK.get_procedure_resolve_head(gd, ld, put(q), 0)
-        @test proc2 !== nothing && proc2.definition === d
-        # an undefined head: GP_RESOLVE creates the procedure, undefined
-        proc3 = LK.get_procedure_resolve_head(gd, ld, put(head("wb_nowhere")), 0)
-        @test proc3 !== nothing && !LK.isDefinedProcedure(gd, proc3)
-    end
-end
 
 # A QUERY opened on a wrapped non-deterministic foreign predicate. The wrapper body `W` is a call of a variable goal
 # (`I_USERCALL0`, not a last call), so the foreign frame is a CHILD of the query's frame: the retry's `FR` is the wrapper's

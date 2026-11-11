@@ -47,10 +47,12 @@ SETUP = "src/pl-setup.jl"
 TT = [TW, TP, TG, TA]
 
 
-def m(id, old, new, targets=TT, file=F, eq=None):
+def m(id, old, new, targets=TT, file=F, eq=None, hang=False):
     d = dict(id=id, file=file, old=old, new=new, targets=targets)
     if eq:
         d["equivalent"] = eq
+    if hang:
+        d["expect"] = "hang"            # a loop inside ONE call that no row can bound: "caught (hang)" past LIMIT_S
     return d
 
 
@@ -155,8 +157,16 @@ MUTANTS = [
       "        tr.value_count = 0\n", "        nothing\n"),
     m("TR1-D4 trie_single_value_node: value_count is not asked (KILL TW:639/643)",
       "    tr.value_count != 1 && return 0\n", "    nothing\n"),
-    m("TR1-D5 trie_single_value_node: a block child is followed (KILL TW:651)",
-      "        is_single_child(c) || return 0\n", "        nothing\n"),
+    # TR1-D5 is a DECLARED HANG (audit D-0524 item 1, D-0541 item 4). (a) the kill row is TW:651 (_tr_prune_rows, a block child is not a single child);
+    # (b) the spin site is src/pl-trie.jl:367 `while tr.nodes[n].value == 0` in trie_single_value_node, called straight from test_trie_swipl.jl:709
+    # (`@test LK.trie_single_value_node(tr2) == 0`): with the guard gone the block code `bid<<1` reads as a single child, `single_child(c)` is node 1,
+    # and the walk goes root to root for ever inside ONE Julia call (no allocation, no yield: a row cannot interrupt it). (c) PROGRESS, not a wall
+    # limit (the unmutated TW needs 632 s locally, compile included): the unmutated reference prints the testset summary of the prune rows about
+    # 35 s after load; the mutant produces no such line by 3 x 35 s, and the SIGQUIT stack at 200 s is ONE frame, constant (trie_single_value_node
+    # at :367 under _tr_prune_rows at TW:709, no Prolog engine): evidence/TAB1/timeout_d5_handoff.md, timeout_d5_d5_stack.txt, timeout_d5_ref_tw_timing.txt.
+    # (d) the engine stop (a bounded walk that throws) is NOT adopted: fidelity, the pin's loop is the plain `while`.
+    m("TR1-D5 trie_single_value_node: a block child is followed (KILL TW:651; HANG at src/pl-trie.jl:367, declared: see the comment above)",
+      "        is_single_child(c) || return 0\n", "        nothing\n", hang=True),
     m("TR1-W1 map_trie_node: the stop value is ignored (KILL TW:714)",
       "        rc === nothing || return rc\n        children == 0 && return nothing\n", "        children == 0 && return nothing\n"),
     m("TR1-W2 is_ground_trie_node: an attvar key is ground (KILL TW:726, !is_ground(t1))",
@@ -267,9 +277,10 @@ MUTANTS = [
     m("TR1-V11 trie_delete/3 does not prune (DEFERRED KILL: no row reads the arena after a delete)",
       "            trie_delete(tr, nid, true)\n", "            trie_delete(tr, nid, false)\n",
       eq="DEFERRED KILL: owner TR2 ($trie_property / trie_gen) or a TW row that sets ld.GD: t69/t74 (TP:319-320) only count answers, an unpruned node has value 0 and `v != 0` (src/pl-trie.jl:2033) hides it, reinserting works the same; the call is in pl_trie_delete3_va (:1999, :2011)"),
-    m("TR1-V12 trie_lookup/3: an inner node answers (DEFERRED KILL: unreachable while deletes prune)",
-      "        return (v != 0 && unify_value(ld, tr, A3, v)) ? FTRUE : FFALSE\n", "        return unify_value(ld, tr, A3, v) ? FTRUE : FFALSE\n",
-      eq="DEFERRED KILL: owner TR2 ($trie_property / trie_gen) or a TW row that sets ld.GD: src/pl-trie.jl:2033 `v != 0` matters only for a node with value 0, and a complete term key is never an inner node; such a node exists only after an unpruned delete (V11), so V12 alone cannot be seen through TP"),
+    # TR1-V12 was declared a deferred kill (src/pl-trie.jl:2033 `v != 0` matters only for a node with value 0); the battery of 61d5e365 (run 43007822749)
+    # REFUTED the claim: a program row of test_trie_preds_swipl.jl:174 (the .out answers) is an Error During Test under the mutant. Listed as a kill.
+    m("TR1-V12 trie_lookup/3: an inner node answers (KILL TP:174, the program rows; found by the battery of 61d5e365)",
+      "        return (v != 0 && unify_value(ld, tr, A3, v)) ? FTRUE : FFALSE\n", "        return unify_value(ld, tr, A3, v) ? FTRUE : FFALSE\n"),
     m("TR1-V13 trie_node_handle shifts 31 (KILL TP:262 t47, TP:263 t48)",
       "(tr.serial << 32) | nid", "(tr.serial << 31) | nid"),
     m("TR1-V14 trie_term/2: the node id is not masked (KILL TP:262 t47)",

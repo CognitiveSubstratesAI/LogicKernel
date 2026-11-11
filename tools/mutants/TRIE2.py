@@ -40,10 +40,12 @@ TT = [TG, TW, TP, TA]
 TR = [TG, TB]
 
 
-def m(id, old, new, targets=TT, file=F, eq=None):
+def m(id, old, new, targets=TT, file=F, eq=None, hang=False):
     d = dict(id=id, file=file, old=old, new=new, targets=targets)
     if eq:
         d["equivalent"] = eq
+    if hang:
+        d["expect"] = "hang"            # a loop inside ONE call that no row can bound: "caught (hang)" past LIMIT_S
     return d
 
 
@@ -65,8 +67,16 @@ MUTANTS = [
     m("TR2-C7 the single-child fast path of descent_node! also runs while pruning (KILL D t7, t6: the cursor is not advanced over the child key)",
       "if is_single_child(children) && !c.prune\n", "if is_single_child(children)\n"),
     # ---- the choice stack and its branches
-    m("TR2-S1 pop_choice! does not lower the path (KILL D t0: the path keeps the choices above, unify_trie_path! reads them)",
-      "    st.nch = chi - 1\n    return nothing\n", "    st.nch = chi\n    return nothing\n"),
+    # TR2-S1 is a DECLARED HANG (audit D-0524 item 1, D-0541 item 4). (a) the kill row is D t0 (test_trie_gen_swipl.jl, kernel_lines); (b) the spin site is
+    # src/pl-trie.jl:2810 `while st.nch != 0` in trie_gen_raw (`nid = st.choices[st.nch].child`), inside the foreign call pl_trie_gen3_va (:2880) from
+    # `_tp_row` (test_trie_gen_swipl.jl:78) under PL_next_solution: the leaf is examined again and again because pop_choice! keeps the path, in ONE
+    # foreign call that no row or findnsols can stop. (c) PROGRESS, not a wall limit (a wall limit cannot tell a hang from a slow mutant): the
+    # unmutated reference prints the D testset's rows and its summary; the mutant produces none, and the SIGQUIT stack at 900 s is one constant chain
+    # (trie_gen_raw :2810, trie_gen :2871, pl_trie_gen3_va :2880, _fcall_va pl-ext.jl:262, PL_next_solution_guarded pl-wam.jl:5231, _tp_row TG:78):
+    # evidence/TAB1/timeout_d5_handoff.md section 2, timeout_d5_s1_stack.txt. (d) the engine stop (a `next_choice! == 0 && break` at the three exits)
+    # is NOT adopted: fidelity, the pin's loop is the plain `while`.
+    m("TR2-S1 pop_choice! does not lower the path (KILL D t0; HANG at src/pl-trie.jl:2810, declared: see the comment above)",
+      "    st.nch = chi - 1\n    return nothing\n", "    st.nch = chi\n    return nothing\n", hang=True),
     m("TR2-S2 add_branch! keeps the prune flag of a reused branch (KILL D t13, t29 expected: a branch reused after a non-pruning one restores a stale cursor)",
       "    br = st.branches[nb]\n    br.cursor.prune = false\n    return br\n", "    br = st.branches[nb]\n    return br\n"),
     m("TR2-S3 advance_node! (CH_ENUM) does not store the key (KILL D t0: the next child is taken with the key of the last)",
@@ -147,12 +157,12 @@ MUTANTS = [
     m("TR2-R4 $trie_property/2 is not registered (KILL D t14, t19: undefined; TB the foreign-row count)",
       "    PL_extension(\"\\$trie_property\", 2, pl_trie_property2_va, PL_FA_VARARGS)\n", "", targets=TR),
     # ---- DEFERRED KILL and EQUIVALENT
-    m("TR2-K1 add_choice!: the variable keys are tried first of all, the constant never (DEFERRED KILL: no row has a stored variable and a constant query in one block without the scan bit)",
-      "            br.novar = k\n", "            br.novar = word(0)\n",
-      eq="DEFERRED KILL: no row of test_trie_gen_swipl.jl (t5, t28 query with variables only; t13 reaches the scan path) asks a constant of a block holding a variable key; a row `trie_insert(T, f(X, Y), 1), trie_insert(T, f(a, b), 2), trie_gen(T, f(a, b))` kills it"),
-    m("TR2-K2 advance_node! (CH_VARS): the equal constant key is not tried first (DEFERRED KILL: as TR2-K1)",
-      "        if br.novar != 0\n", "        if false\n",
-      eq="DEFERRED KILL: as TR2-K1 (the same block shape)"),
+    # TR2-K1 and TR2-K2 were declared deferred kills (no row asked a constant of a block holding a variable key); the battery of 61d5e365 (run
+    # 43007826638) REFUTED the claim: a program row of test_trie_gen_swipl.jl:180 (the .out answers) fails under each. Listed as kills.
+    m("TR2-K1 add_choice!: the variable keys are tried first of all, the constant never (KILL TG:180, the program rows; found by the battery of 61d5e365)",
+      "            br.novar = k\n", "            br.novar = word(0)\n"),
+    m("TR2-K2 advance_node! (CH_VARS): the equal constant key is not tried first (KILL TG:180, as TR2-K1)",
+      "        if br.novar != 0\n", "        if false\n"),
     m("TR2-Q1 skip of a nonvar query: the cut is a continuation (a cut that does not cut; output equivalent)",
       "        return false                                    # cut\n", "        @goto stepped                                   # cut\n",
       eq="src/pl-trie.jl:2325 align_pruning_key! (`return false  # cut`): pruning less changes no answer: unify_trie_path! (:2596) decides every leaf, so a path that is not cut is found and refused there; only the work differs"),
