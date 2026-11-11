@@ -215,7 +215,8 @@ function pl_setlocale3_va(
 end
 
 # PORT: pl-ctype.c BeginPredDefs as PL_predicates_from_ctype
-# DIVERGES: the ported entries (upstream's table also has char_type/2, code_type/2, downcase_atom/2, ...).
+# DIVERGES: the entries written here: `setlocale/3`. The rest of upstream's table is in `PL_predicates_from_ctype_pred`
+# (src/os/pl-ctype-pred.jl, loaded after this file): char_type/2, code_type/2.
 "pl-ctype.c's registration table (`BeginPredDefs(ctype)`): the ported entries."
 const PL_predicates_from_ctype = (
     PL_extension("setlocale", 3, pl_setlocale3_va, PL_FA_VARARGS),
