@@ -108,4 +108,13 @@ MUTANTS = [
     dict(id="LD7-33 open/4: an unknown lock is not a domain error (KILL: d342, d343)", file=F, targets=TL,
          old='            PL_error(ld, ERR_DOMAIN, mk_sym(T, :lock), l)\n            return nothing\n',
          new='            return nothing\n'),
+    dict(id="LD7-34 reposition: a memory stream is not repositionable (KILL: d344, d346)", file=F, targets=TL,
+         old='            val = true                                      # Scontrol_memfile: SIO_GETREPOSITION\n',
+         new='            val = false\n'),
+    dict(id="LD7-35 reposition: any file IOStream is repositionable (KILL: d347: /dev/null)", file=F, targets=TL,
+         old='                isfile(stat(h.io))                          # S_ISREG(fstat(fd))\n',
+         new='                true\n'),
+    dict(id="LD7-36 reposition: a regular file is not repositionable (KILL: d349)", file=F, targets=TL,
+         old='                isfile(stat(h.io))                          # S_ISREG(fstat(fd))\n',
+         new='                false\n'),
 ]

@@ -449,7 +449,13 @@ const _LD_CASES = [
     ("d340", raw"open(pipe('printf abc'), read, S, [reposition(false)]), cerr(seek(S, 0, bof, _), R0), close(S), R = R0"),
     ("d341", raw"open(pipe('printf abc'), read, S), cerr(set_stream_position(S, '$stream_position'(5, 1, 5, 5)), R0), close(S), R = R0"),
     ("d342", raw"outfile(F), cerr(open(F, write, _, [lock(foo)]), R0), R = R0"),
-    ("d343", raw"cerr(open(pipe('true'), read, _, [lock(foo)]), R0), R = R0")
+    ("d343", raw"cerr(open(pipe('true'), read, _, [lock(foo)]), R0), R = R0"),
+    ("d344", raw"open_string(\"abc\", S), stream_property(S, reposition(B)), close(S), R = B"),
+    ("d345", raw"open_null_stream(S), stream_property(S, reposition(B)), close(S), R = B"),
+    ("d346", raw"with_output_to(string(_), (current_output(O), stream_property(O, reposition(B)))), R = B"),
+    ("d347", raw"open('/dev/null', read, S), stream_property(S, reposition(B)), close(S), R = B"),
+    ("d348", raw"open(pipe('true'), read, S), stream_property(S, reposition(B)), close(S), R = B"),
+    ("d349", raw"wo(S), stream_property(S, reposition(B)), close(S), R = B"),
 ]
 
 # swipl 10.1.20-1-g18168e629's answers to the program and cases above (the driver's lines; evidence/S2/lane_d_rows.out)
@@ -793,7 +799,13 @@ const _LD_PINNED = [
     "t_d340 c[116,95,100,51,52,48]/1(c[114,97,105,115,101,100]/1(c[112,101,114,109,105,115,115,105,111,110,95,101,114,114,111,114]/3(a[114,101,112,111,115,105,116,105,111,110],a[115,116,114,101,97,109],a[60,115,116,114,101,97,109,62])))",
     "t_d341 c[116,95,100,51,52,49]/1(c[114,97,105,115,101,100]/1(c[112,101,114,109,105,115,115,105,111,110,95,101,114,114,111,114]/3(a[114,101,112,111,115,105,116,105,111,110],a[115,116,114,101,97,109],a[60,115,116,114,101,97,109,62])))",
     "t_d342 c[116,95,100,51,52,50]/1(c[114,97,105,115,101,100]/1(c[100,111,109,97,105,110,95,101,114,114,111,114]/2(a[108,111,99,107],a[102,111,111])))",
-    "t_d343 c[116,95,100,51,52,51]/1(c[114,97,105,115,101,100]/1(c[100,111,109,97,105,110,95,101,114,114,111,114]/2(a[108,111,99,107],a[102,111,111])))"
+    "t_d343 c[116,95,100,51,52,51]/1(c[114,97,105,115,101,100]/1(c[100,111,109,97,105,110,95,101,114,114,111,114]/2(a[108,111,99,107],a[102,111,111])))",
+    "t_d344 c[116,95,100,51,52,52]/1(a[116,114,117,101])",
+    "t_d345 c[116,95,100,51,52,53]/1(a[102,97,108,115,101])",
+    "t_d346 c[116,95,100,51,52,54]/1(a[116,114,117,101])",
+    "t_d347 c[116,95,100,51,52,55]/1(a[102,97,108,115,101])",
+    "t_d348 c[116,95,100,51,52,56]/1(a[102,97,108,115,101])",
+    "t_d349 c[116,95,100,51,52,57]/1(a[116,114,117,101])",
 ]
 
 const _LD_DATA = "abc\nxyz\nlast line\n"
