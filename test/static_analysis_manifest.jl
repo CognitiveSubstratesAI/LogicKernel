@@ -2081,6 +2081,15 @@ function _manifest_index(T)
         (LK._ftm_fixup, Tuple{LD, Int, Int, LK.ftm, Bool}, false),
         (LK.get_ftm, Tuple{LD, Int}, false),
         (LK._unify_date9, Tuple{LD, Int, Int, Int, Int, Int, Int, Float64, Int, String, String}, false),
+        [
+            (f, Tuple{LD, Int, Int, LK.foreign_context{T}}, false) for f in (
+                LK.pl_format_time3_va, LK.pl_format_time4_va
+            )
+        ]...,
+        (LK.pl_format_time, Tuple{LD, Int, Int, Int, Bool}, false),
+        (LK.fmt_domain_error, Tuple{LD, String, Int}, false),
+        (LK.fmt_not_implemented, Tuple{LD, Int}, false),
+        (LK.format_time, Tuple{LD, LK.IOSTREAM, Vector{Int}, LK.ftm, Bool, Vector{UInt64}}, false),
         (LK._atom_is, Tuple{T, String}, false),
         # DWIM1 — dwim_match/3 and '$dwim_predicate'/2 (pl-dwim.c)
         (LK.pl_dwim_match, Tuple{LD, Int, Int, Int}, false),
@@ -4144,6 +4153,17 @@ const _DISPATCH_MANIFEST_TUPLE = (
     (LK.tz_name_as_atom, Tuple{Int}, false),
     (LK._c_int64, Tuple{Float64}, false),
     (LK._c_int32, Tuple{Float64}, false),
+    # TAI1 — format_time/3,4: the ISO week arithmetic, the output macros, the libc strftime path (no term type)
+    (LK.iso_week_days, Tuple{Int, Int}, false),
+    (LK.__isleap, Tuple{Int}, false),
+    (LK._out1digit, Tuple{LK.IOSTREAM, Int}, false),
+    (LK._out2digits, Tuple{LK.IOSTREAM, Int}, false),
+    (LK._out3digits, Tuple{LK.IOSTREAM, Int}, false),
+    (LK._out2digits_spc, Tuple{LK.IOSTREAM, Int}, false),
+    (LK._out_string, Tuple{LK.IOSTREAM, String}, false),
+    (LK.foutstra, Tuple{Vector{UInt8}, LK.IOSTREAM}, false),
+    (LK._strftime_out, Tuple{LK.IOSTREAM, Int, LK.ftm, Vector{UInt64}}, false),
+    (LK._fmt_cps, Tuple{String}, false),
     # DWIM1 — the C-string comparison of pl-dwim.c (NUL-terminated byte vectors; no term type: outside the per-type block)
     (LK._dwim_streq, Tuple{Vector{UInt8}, Int, Vector{UInt8}, Int}, false),
     (LK._dwim_strlen, Tuple{Vector{UInt8}, Int}, false),

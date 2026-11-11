@@ -553,10 +553,375 @@ function pl_date_time_stamp2_va(
     return PL_unify_float(ld, PL__t0 + 1, tb.stamp) ? FTRUE : FFALSE
 end
 
+# ── format_time/3,4 (pl-tai.c: the error helpers, the output macros, format_time, pl_format_time) ──────
+
+# PORT: pl-tai.c iso_week_days
+# (ISO_WEEK_START_WDAY 1 Monday, ISO_WEEK1_WDAY 4 Thursday, YDAY_MINIMUM -366)
+"The days from the first day of the first ISO week of the year to the year day `yday` with week day `wday` (pl-tai.c)."
+function iso_week_days(yday::Int, wday::Int)::Int
+    big_enough_multiple_of_7 = (div(366, 7) + 2) * 7        # (-YDAY_MINIMUM / 7 + 2) * 7
+    return (yday - (yday - wday + 4 + big_enough_multiple_of_7) % 7 + 4 - 1)
+end
+
+# ORIGINAL: glibc's `__isleap`, which pl-tai.c's %G, %g and %V use.
+"1 when `y` is a leap year, else 0 (glibc `__isleap`)."
+__isleap(y::Int)::Int = (y % 4 == 0 && (y % 100 != 0 || y % 400 == 0)) ? 1 : 0
+
+# PORT: pl-tai.c fmt_domain_error
+"`domain_error(key, value)`: always false (pl-tai.c)."
+function fmt_domain_error(ld::PL_local_data{T}, key::String, value::Int)::Bool where {T}
+    t = PL_new_term_ref(ld)
+    PL_put_integer(ld, t, value)
+    return PL_error(ld, ERR_DOMAIN, mk_sym(T, Symbol(key)), t)
+end
+
+# PORT: pl-tai.c fmt_not_implemented
+# DIVERGES: the key is `%` and the low byte of `c` (`(char)c`), or `%` alone when that byte is 0 (the C string ends there).
+"`existence_error(format, '%C')`: always false (pl-tai.c)."
+function fmt_not_implemented(ld::PL_local_data{T}, c::Int)::Bool where {T}
+    t = PL_new_term_ref(ld)
+    b = c & 0xff
+    key = b == 0 ? "%" : "%" * string(Char(b))
+    PL_put_atom(ld, t, mk_sym(T, Symbol(key)))
+    return PL_error(ld, ERR_EXISTENCE, mk_sym(T, :format), t)
+end
+
+# ORIGINAL: the output macros of pl-tai.c (OUT1DIGIT, OUT2DIGITS, OUT3DIGITS, OUT2DIGITS_SPC, OUTSTR, OUTNUMBER, foutstra),
+# as functions over the stream. C's `/` and `%` truncate: `÷` and `%` here.
+"`Sputcode('0'+val%10)`."
+function _out1digit(fd::IOSTREAM, val::Int)::Nothing
+    Sputcode(Int('0') + val % 10, fd)
+    return nothing
+end
+
+"`OUT2DIGITS`."
+function _out2digits(fd::IOSTREAM, val::Int)::Nothing
+    Sputcode(Int('0') + (val ÷ 10) % 10, fd)
+    Sputcode(Int('0') + val % 10, fd)
+    return nothing
+end
+
+"`OUT3DIGITS`."
+function _out3digits(fd::IOSTREAM, val::Int)::Nothing
+    Sputcode(Int('0') + (val ÷ 100) % 10, fd)
+    Sputcode(Int('0') + (val ÷ 10) % 10, fd)
+    Sputcode(Int('0') + val % 10, fd)
+    return nothing
+end
+
+"`OUT2DIGITS_SPC`: a space for a leading zero."
+function _out2digits_spc(fd::IOSTREAM, val::Int)::Nothing
+    Sputcode((val ÷ 10 == 0 ? Int(' ') : Int('0') + (val ÷ 10) % 10), fd)
+    Sputcode(Int('0') + val % 10, fd)
+    return nothing
+end
+
+"`OUTSTR`, `OUTNUMBER`: the text `s`, one `Sputcode` per character."
+function _out_string(fd::IOSTREAM, s::String)::Nothing
+    for ch in s
+        Sputcode(Int(ch), fd)
+    end
+    return nothing
+end
+
+# PORT: pl-tai.c foutstra
+"Write the multibyte `bytes` (at most 255 wide characters, in the process's locale; nothing for an invalid sequence)."
+function foutstra(bytes::Vector{UInt8}, fd::IOSTREAM)::Nothing
+    cps = _c_mbstowcs(bytes, 255)
+    cps === nothing && return nothing
+    for c in cps
+        Sputcode(c, fd)
+    end
+    return nothing
+end
+
+# ORIGINAL: pl-tai.c's `case_b:` block (strftime of `%c`), as a function: the directive `c` through libc's strftime.
+"`%c` (and `%x`, `%X`, `%p`, `%P`, the non-POSIX names) through libc's strftime, written with `foutstra` (pl-tai.c)."
+function _strftime_out(fd::IOSTREAM, c::Int, tb::ftm, leapsecs::Vector{UInt64})::Nothing
+    cal_ftm(tb, HAS_STAMP | HAS_WYDAY, leapsecs)
+    bytes = _c_strftime("%" * string(Char(c)), tb.tm)
+    foutstra(bytes, fd)
+    return nothing
+end
+
+# PORT: pl-tai.c abbred_weekday, weekday, abbred_month, month
+# DIVERGES: underscore-prefixed, the module's names `weekday`/`month` stay free.
+const _abbred_weekday = ("Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat")
+const _weekday = ("Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday")
+const _abbred_month = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
+const _month = (
+    "January", "February", "March", "April", "May", "June", "July", "August", "September",
+    "October", "November", "December",
+)
+
+"The code points of the literal format `s` (a sub-format of pl-tai.c: L\"%m/%d/%y\")."
+_fmt_cps(s::String)::Vector{Int} = Int[Int(ch) for ch in s]
+
+# PORT: pl-tai.c format_time
+# DIVERGES: `format` is a vector of code points ended by the caller (C reads a NUL: `0` past the end here); the leap-second
+# table is an argument (cal_ftm); `%Z` writes the zone name's text; the `%f` buffer has no 64-byte limit. `%a`... with
+# `posix` use the C-locale tables, else strftime. A directive `%<digits>f` carries `arg` (NOARG = -1).
+"Write `format` (code points) with the directives of `format_time/3` for `tb` to `fd`; false with an error raised for an unknown directive (pl-tai.c)."
+function format_time(
+    ld::PL_local_data{T}, fd::IOSTREAM, format::Vector{Int}, tb::ftm, posix::Bool,
+    leapsecs::Vector{UInt64}
+)::Bool where {T}
+    n = length(format)
+    i = 1
+    while i <= n
+        c = format[i]
+        i += 1
+        if c != Int('%')
+            Sputcode(c, fd)
+            continue
+        end
+        arg = -1                                            # NOARG
+        altO = false
+        while true                                          # fmt_next:
+            c = i <= n ? format[i] : 0
+            i += 1
+            cc = c < 0x80 ? Char(c) : '\u0080'
+            if cc == 'a' || cc == 'A' || cc == 'b' || cc == 'B'
+                if posix
+                    cal_ftm(tb, HAS_STAMP | HAS_WYDAY, leapsecs)
+                    s = if cc == 'a'
+                        _abbred_weekday[Int(tb.tm.tm_wday) + 1]
+                    elseif cc == 'A'
+                        _weekday[Int(tb.tm.tm_wday) + 1]
+                    elseif cc == 'b'
+                        _abbred_month[Int(tb.tm.tm_mon) + 1]
+                    else
+                        _month[Int(tb.tm.tm_mon) + 1]
+                    end
+                    _out_string(fd, s)
+                else
+                    _strftime_out(fd, c, tb, leapsecs)
+                end
+            elseif cc == 'c' || cc == 'p' || cc == 'P' || cc == 'x' || cc == 'X'
+                _strftime_out(fd, c, tb, leapsecs)
+            elseif cc == 'C'
+                year = Int(tb.tm.tm_year) + 1900
+                if year >= 0 && year < 10000
+                    _out2digits(fd, year ÷ 100)
+                else
+                    return fmt_domain_error(ld, "%C", year)
+                end
+            elseif cc == 'd'
+                _out2digits(fd, Int(tb.tm.tm_mday))
+            elseif cc == 'D'
+                format_time(ld, fd, _fmt_cps("%m/%d/%y"), tb, posix, leapsecs)
+            elseif cc == 'e'
+                _out2digits_spc(fd, Int(tb.tm.tm_mday))
+            elseif cc == 'E'
+                return fmt_not_implemented(ld, c)
+            elseif cc == 'F'
+                format_time(ld, fd, _fmt_cps("%Y-%m-%d"), tb, posix, leapsecs)
+            elseif cc == 'G' || cc == 'g' || cc == 'V'
+                cal_ftm(tb, HAS_STAMP | HAS_WYDAY, leapsecs)
+                year = Int(tb.tm.tm_year) + 1900
+                days = iso_week_days(Int(tb.tm.tm_yday), Int(tb.tm.tm_wday))
+                if days < 0
+                    year -= 1
+                    days = iso_week_days(
+                        Int(tb.tm.tm_yday) + (365 + __isleap(year)), Int(tb.tm.tm_wday)
+                    )
+                else
+                    d = iso_week_days(
+                        Int(tb.tm.tm_yday) - (365 + __isleap(year)), Int(tb.tm.tm_wday)
+                    )
+                    if 0 <= d                               # this ISO week belongs to the next year
+                        year += 1
+                        days = d
+                    end
+                end
+                if cc == 'g'
+                    _out2digits(fd, (year % 100 + 100) % 100)
+                elseif cc == 'G'
+                    _out_string(fd, string(year))
+                else
+                    _out2digits(fd, days ÷ 7 + 1)
+                end
+            elseif cc == 'h'                                # equivalent to %b (SU): strftime even when posix
+                _strftime_out(fd, Int('b'), tb, leapsecs)
+            elseif cc == 'H'
+                _out2digits(fd, Int(tb.tm.tm_hour))
+            elseif cc == 'I'
+                hour = Int(tb.tm.tm_hour) % 12
+                hour == 0 && (hour = 12)
+                _out2digits(fd, hour)
+            elseif cc == 'j'
+                cal_ftm(tb, HAS_WYDAY, leapsecs)
+                _out3digits(fd, Int(tb.tm.tm_yday) + 1)
+            elseif cc == 'k'
+                _out2digits_spc(fd, Int(tb.tm.tm_hour))
+            elseif cc == 'l'
+                hour = Int(tb.tm.tm_hour) % 12
+                hour == 0 && (hour = 12)
+                _out2digits_spc(fd, hour)
+            elseif cc == 'm'
+                _out2digits(fd, Int(tb.tm.tm_mon) + 1)
+            elseif cc == 'M'
+                _out2digits(fd, Int(tb.tm.tm_min))
+            elseif cc == 'n'
+                Sputcode(Int('\n'), fd)
+            elseif cc == 'O' || cc == ':'
+                if i <= n && format[i] == Int('z')
+                    altO = true
+                    continue                                # goto fmt_next
+                end
+                return fmt_not_implemented(ld, c)
+            elseif cc == 'r'
+                format_time(ld, fd, _fmt_cps("%I:%M:%S %p"), tb, posix, leapsecs)
+            elseif cc == 'R'
+                format_time(ld, fd, _fmt_cps("%H:%M"), tb, posix, leapsecs)
+            elseif cc == 'f'                                # microseconds
+                digits = (arg == -1 ? 6 : arg)
+                if digits > 0
+                    cal_ftm(tb, HAS_STAMP, leapsecs)
+                    fbuf = _fmt_c_printf_float(tb.stamp, Int('f'), digits)
+                    e = lastindex(fbuf) + 1
+                    while e > 1 && '0' <= fbuf[prevind(fbuf, e)] <= '9'
+                        e = prevind(fbuf, e)
+                    end
+                    _out_string(fd, fbuf[e:end])
+                end
+            elseif cc == 's'                                # seconds since 1970
+                cal_ftm(tb, HAS_STAMP, leapsecs)
+                _out_string(fd, _fmt_c_printf_float(tb.stamp, Int('f'), 0))
+            elseif cc == 'S'
+                _out2digits(fd, Int(tb.tm.tm_sec))
+            elseif cc == 't'
+                Sputcode(Int('\t'), fd)
+            elseif cc == 'T'
+                format_time(ld, fd, _fmt_cps("%H:%M:%S"), tb, posix, leapsecs)
+            elseif cc == 'u'                                # 1..7 weekday, mon=1
+                cal_ftm(tb, HAS_WYDAY, leapsecs)
+                _out1digit(fd, (Int(tb.tm.tm_wday) - 1 + 7) % 7 + 1)
+            elseif cc == 'U'                                # 00..53 week number
+                cal_ftm(tb, HAS_WYDAY, leapsecs)
+                yday = Int(tb.tm.tm_yday)
+                wday = Int(tb.tm.tm_wday)
+                _out2digits(fd, (yday - (yday - wday + 7) % 7 + 7) ÷ 7)
+            elseif cc == 'w'                                # 0..6 weekday
+                cal_ftm(tb, HAS_WYDAY, leapsecs)
+                _out1digit(fd, Int(tb.tm.tm_wday))
+            elseif cc == 'W'                                # 00..53 monday-based week number
+                cal_ftm(tb, HAS_WYDAY, leapsecs)
+                yday = Int(tb.tm.tm_yday)
+                wday = Int(tb.tm.tm_wday)
+                _out2digits(fd, (yday - (yday - wday + 8) % 7 + 7) ÷ 7)
+            elseif cc == 'y'
+                _out2digits(fd, (Int(tb.tm.tm_year) + 1900) % 100)
+            elseif cc == 'Y'
+                _out_string(fd, string(Int(tb.tm.tm_year) + 1900))
+            elseif cc == 'z'                                # time zone as offset
+                mins = (-tb.utcoff) ÷ 60
+                if mins >= 0
+                    Sputcode(Int('+'), fd)
+                else
+                    mins = -mins
+                    Sputcode(Int('-'), fd)
+                end
+                _out2digits(fd, mins ÷ 60)
+                altO && Sputcode(Int(':'), fd)
+                _out2digits(fd, mins % 60)
+            elseif cc == 'Z'                                # time zone as name
+                if tb.tzname !== nothing
+                    _out_string(fd, tb.tzname)
+                else
+                    name = tz_name(Int(tb.tm.tm_isdst))
+                    name === nothing || foutstra(Vector{UInt8}(codeunits(name)), fd)
+                end
+            elseif cc == '+'
+                cal_ftm(tb, HAS_WYDAY, leapsecs)
+                abuf = _c_asctime_r(tb.tm)
+                foutstra(abuf[1:min(24, length(abuf))], fd)   # buf[24] = EOS
+            elseif cc == '%'
+                Sputcode(Int('%'), fd)
+            elseif '0' <= cc <= '9'
+                arg = (arg == -1 ? Int(cc) - Int('0') : arg * 10 + (Int(cc) - Int('0')))
+                continue                                    # goto fmt_next
+            else
+                return fmt_not_implemented(ld, c)
+            end
+            break
+        end
+    end
+    return true
+end
+
+# PORT: pl-tai.c pl_format_time
+# DIVERGES: the `(int64_t)unixt == ut64` test is dropped (a 64-bit `time_t` holds every `int64_t`), so upstream's `caltime_utc`
+# else-branch is unreachable and not ported; the leap-second table is read once here and passed down.
+"`format_time(+Out, +Format, +Time)` and the `posix` variant: `Time` a stamp or a `date/9`/`date/3` term (pl-tai.c)."
+function pl_format_time(
+    ld::PL_local_data{T}, out::term_t, format::term_t, time::term_t, posix::Bool
+)::Bool where {T}
+    text = PL_get_text(ld, format, CVT_ATOM | CVT_STRING | CVT_LIST | CVT_EXCEPTION)
+    text === nothing && return false
+    fmt = _text_code_points(text)
+    z = findfirst(==(0), fmt)                               # a wchar_t string ends at its first NUL
+    z === nothing || (fmt = fmt[1:(z - 1)])
+
+    leapsecs = leapsecs_init()
+    tb = ftm()
+    ta = get_taia(ld, time, leapsecs)
+    if ta !== nothing
+        tsec, _, argsec = ta
+        tb.stamp = argsec
+        tai, _ = leapsecs_sub(leapsecs, tsec)
+        unixt = (tai % Int) - TAI_UTC_OFFSET
+        tb.utcoff = tz_offset()
+        PL_localtime_r(unixt, tb.tm)
+        tb.sec = Float64(tb.tm.tm_sec) + modf(tb.stamp)[1]
+        if tb.tm.tm_isdst > 0
+            tb.utcoff -= 3600
+            tb.isdst = 1
+        end
+        tb.tzname = tz_name_as_atom(Int(tb.tm.tm_isdst))
+        tb.flags = HAS_STAMP | HAS_WYDAY
+    else
+        tb2 = get_ftm(ld, time)
+        tb2 === nothing && return false
+        tb = tb2
+    end
+
+    ctx = redir_context()
+    setupOutputRedirect(ld, out, ctx, false) || return false
+    if format_time(ld, ctx.stream::IOSTREAM, fmt, tb, posix, leapsecs)
+        return closeOutputRedirect(ld, ctx)                 # takes care of I/O errors
+    end
+    discardOutputRedirect(ld, ctx)
+    return false
+end
+
+# PORT: pl-tai.c format_time3 (PRED_IMPL("format_time", 3, format_time3, 0))
+"`format_time(+Out, +Format, +StampOrDateTime)` (pl-tai.c)."
+function pl_format_time3_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    return pl_format_time(ld, PL__t0, PL__t0 + 1, PL__t0 + 2, false) ? FTRUE : FFALSE
+end
+
+# PORT: pl-tai.c format_time4 (PRED_IMPL("format_time", 4, format_time4, 0))
+"`format_time(+Out, +Format, +StampOrDateTime, +Locale)`: only `posix` (pl-tai.c)."
+function pl_format_time4_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    locale = PL_get_atom_ex(ld, PL__t0 + 3)
+    locale === nothing && return FFALSE
+    if _atom_is(locale, "posix")
+        return pl_format_time(ld, PL__t0, PL__t0 + 1, PL__t0 + 2, true) ? FTRUE : FFALSE
+    end
+    return PL_error(ld, ERR_DOMAIN, mk_sym(T, :locale), PL__t0 + 3) ? FTRUE : FFALSE
+end
+
 # PORT: pl-tai.c BeginPredDefs
 # DIVERGES: appended last in `_PRED_TABLES` (src/pl-ext.jl), so the dispatch indices of the earlier tables stay as they were.
 "pl-tai.c's registration table (`BeginPredDefs(tai)`)."
 const PL_predicates_from_tai = (
     PL_extension("stamp_date_time", 3, pl_stamp_date_time3_va, PL_FA_VARARGS),
     PL_extension("date_time_stamp", 2, pl_date_time_stamp2_va, PL_FA_VARARGS),
+    PL_extension("format_time", 3, pl_format_time3_va, PL_FA_VARARGS),
+    PL_extension("format_time", 4, pl_format_time4_va, PL_FA_VARARGS),
 )
