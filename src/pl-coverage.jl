@@ -57,7 +57,7 @@ function unshare_coverage_data(cov::coverage{T})::Nothing where {T}
     cov.references -= 1                                 # ATOMIC_DEC(&cov->references) == 0
     if cov.references == 0
         destroyHTable(cov.table)
-        empty!(cov.objs)                                # free(cov)
+        # free(cov): the objects stay with `cov.objs` (an open cov_data enumeration holds them) until it is collected
     end
     return nothing
 end
@@ -140,8 +140,8 @@ function pl_cov_add3_va(
 
     enter = PL_get_int64_ex(ld, A2)
     enter === nothing && return FFALSE
-    exit = PL_get_int64_ex(ld, A3)
-    exit === nothing && return FFALSE
+    leave = PL_get_int64_ex(ld, A3)
+    leave === nothing && return FFALSE
 
     if PL_is_functor(ld, A1, mk_sym(T, :call_site), 2)
         _PL_get_arg(ld, 2, A1, tmp)
@@ -173,7 +173,7 @@ function pl_cov_add3_va(
 
     if obj !== nothing
         obj.enter += enter                              # ATOMIC_ADD(&obj->enter, enter)
-        obj.exits += exit
+        obj.exits += leave
     end
 
     return FTRUE
@@ -264,7 +264,6 @@ function pl_cov_data3_va(
             end
 
             if cl !== nothing && pc_offset != -1
-                cref = lookup_clref(gd, cl)
                 (pc_offset < 0 || pc_offset >= Int(COV_KEY_CLAUSE)) && return FFALSE   # no such key (file-wide 1)
                 v = lookupHTable(cov.table, _cov_key(gd.clause_serials[cl], pc_offset))
                 v == NULL_VALUE && return FFALSE
@@ -277,16 +276,15 @@ function pl_cov_data3_va(
 
             idx = alloc_foreign_state!(pool)
             st = pool.states[idx]
-            st.serial = cl === nothing ? 0 : (lookup_clref(gd, cl); gd.clause_serials[cl])
+            st.serial = cl === nothing ? 0 : gd.clause_serials[cl]
             st.type = COV_PC
         elseif PL_is_functor(ld, A1, mk_sym(T, :clause), 1)
             if ground_cells(ld, -(A1 + 1)) == 0         # PL_is_ground(A1)
                 a = PL_new_term_ref(ld)
                 if _PL_get_arg(ld, 1, A1, a)
-                    rc, cl = PL_get_clref(gd, ld, a)
-                    rc == 0 && return FFALSE
-                    lookup_clref(gd, cl::Clause{T})
-                    v = lookupHTable(cov.table, _cov_key(gd.clause_serials[cl], Int(COV_KEY_CLAUSE)))
+                    rc2, cl2 = PL_get_clref(gd, ld, a)
+                    rc2 == 0 && return FFALSE
+                    v = lookupHTable(cov.table, _cov_key(gd.clause_serials[cl2::Clause{T}], Int(COV_KEY_CLAUSE)))
                     v == NULL_VALUE && return FFALSE
                     obj = cov.objs[Int(v)]
                     return (PL_unify_int64(ld, A2, obj.enter) && PL_unify_int64(ld, A3, obj.exits)) ? FTRUE : FFALSE
@@ -315,6 +313,11 @@ function pl_cov_data3_va(
     end
 
     fid = PL_open_foreign_frame(ld)
+    if fid == 0
+        free_state(st)
+        free_foreign_state!(pool, idx)
+        return FFALSE
+    end
     while st.e !== nothing
         found, _, value = advanceTableEnum(st.e::TableEnum)
         found || break
