@@ -45,6 +45,7 @@ include("pl-copyterm.jl")      # swipl-devel src/pl-copyterm.c — copy_term/2, 
 include("pl-rec.jl")           # swipl-devel src/pl-rec.c — recorded terms: compileTermToHeap, copyRecordToGlobal
 include("pl-termhash.jl")      # swipl-devel src/pl-termhash.c — term_hash, variant_sha1/hash
 include("pl-bisim.jl")         # swipl-devel src/pl-bisim.c — term_factorized, term_minimal, term_automaton (lane F)
+include("pl-coverage.jl")      # swipl-devel src/pl-coverage.c — the '$cov_*' predicates (lane F)
 include("pl-thread.jl")        # swipl-devel src/pl-thread.c — predicate references
 include("pl-gc.jl")            # swipl-devel src/pl-gc.c — generations in use, for clause GC; growing the local stack
 include("pl-cont.jl")          # swipl-devel src/pl-cont.c — shift/1: collecting the continuation of a reset/3

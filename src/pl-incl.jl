@@ -2440,10 +2440,10 @@ const COV_CLAUSE = 1
 const COV_PC = 2
 # PORT: pl-coverage.h COV_TRACK_THREADS
 "Coverage flag: activate in child threads (pl-coverage.h)."
-const COV_TRACK_THREADS = 0x0001
+const COV_TRACK_THREADS = 1
 # ORIGINAL: the low 32 bits of a clause site's table key (a pc offset never has them all set).
 "The low 32 bits of the table key of a clause site (see the block's DIVERGES)."
-const COV_KEY_CLAUSE = 0xFFFFFFFF
+const COV_KEY_CLAUSE = 4294967295
 
 # PORT: pl-coverage.c cov_obj
 # DIVERGES: see the block; `cref` is the clause blob's term (`lookup_clref`'s result), `serial` the clause's number (the

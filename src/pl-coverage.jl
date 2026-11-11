@@ -74,7 +74,7 @@ function pc_call_site(
     gd::PL_global_data{T}, cov::coverage{T}, cl::Clause{T}, offset::Int
 )::cov_obj{T} where {T}
     cref = lookup_clref(gd, cl)                         # lookup_clref(cl): the clause gets its number here
-    if offset < 0 || offset >= Int(COV_KEY_CLAUSE)
+    if offset < 0 || offset >= COV_KEY_CLAUSE
         throw(NotPortedError{T}(cref, "a coverage call site at pc offset $offset (outside 0..2^32-2)", "COV1"))
     end
     serial = gd.clause_serials[cl]
@@ -103,7 +103,7 @@ function clause_site(
     cov === nothing && return nothing
     cref = lookup_clref(gd, cl)
     serial = gd.clause_serials[cl]
-    key = _cov_key(serial, Int(COV_KEY_CLAUSE))
+    key = _cov_key(serial, COV_KEY_CLAUSE)
     v = lookupHTable(cov.table, key)                    # lookupHTablePP(cov->table, cl)
     if v == NULL_VALUE
         push!(cov.objs, cov_obj{T}(COV_CLAUSE, cref, serial, -1, 0, 0))
@@ -264,7 +264,7 @@ function pl_cov_data3_va(
             end
 
             if cl !== nothing && pc_offset != -1
-                (pc_offset < 0 || pc_offset >= Int(COV_KEY_CLAUSE)) && return FFALSE   # no such key (file-wide 1)
+                (pc_offset < 0 || pc_offset >= COV_KEY_CLAUSE) && return FFALSE   # no such key (file-wide 1)
                 v = lookupHTable(cov.table, _cov_key(gd.clause_serials[cl], pc_offset))
                 v == NULL_VALUE && return FFALSE
                 obj = cov.objs[Int(v)]
@@ -284,7 +284,7 @@ function pl_cov_data3_va(
                 if _PL_get_arg(ld, 1, A1, a)
                     rc2, cl2 = PL_get_clref(gd, ld, a)
                     rc2 == 0 && return FFALSE
-                    v = lookupHTable(cov.table, _cov_key(gd.clause_serials[cl2::Clause{T}], Int(COV_KEY_CLAUSE)))
+                    v = lookupHTable(cov.table, _cov_key(gd.clause_serials[cl2::Clause{T}], COV_KEY_CLAUSE))
                     v == NULL_VALUE && return FFALSE
                     obj = cov.objs[Int(v)]
                     return (PL_unify_int64(ld, A2, obj.enter) && PL_unify_int64(ld, A3, obj.exits)) ? FTRUE : FFALSE
@@ -359,7 +359,7 @@ end
 # PORT: pl-coverage.c cov_reset as pl_cov_reset0_va
 # (PRED_IMPL("$cov_reset", 0, cov_reset, 0))
 # DIVERGES: `PL_unify_thread_id(ex, PL_thread_self())` is the one thread's id `main` (src/pl-thread.jl `pl_thread_self`).
-"`'\\\$cov_reset'`: reclaim the collected coverage data; a permission error while the collection is active (pl-coverage.c)."
+"`'\$cov_reset'`: reclaim the collected coverage data; a permission error while the collection is active (pl-coverage.c)."
 function pl_cov_reset0_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
 )::foreign_t where {T}
@@ -378,7 +378,7 @@ end
 # DIVERGES: A NAMED REFUSAL (the file header): upstream unifies the nesting, makes the data, clears the run mode and counts
 # `LD->coverage.active` up; with no `Coverage()` hooks in the VM nothing would be collected after that. Nothing changes
 # before the refusal.
-"`'\\\$cov_start'(-Nesting)`: refused by name, the VM has no coverage hooks (pl-coverage.c)."
+"`'\$cov_start'(-Nesting)`: refused by name, the VM has no coverage hooks (pl-coverage.c)."
 function pl_cov_start1_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
 )::foreign_t where {T}
@@ -393,7 +393,7 @@ end
 
 # PORT: pl-coverage.c cov_stop as pl_cov_stop1_va
 # (PRED_IMPL("$cov_stop", 1, cov_stop, 0))
-"`'\\\$cov_stop'(+Nesting)`: leave one nesting level of the collection; fails when it is not active (pl-coverage.c)."
+"`'\$cov_stop'(+Nesting)`: leave one nesting level of the collection; fails when it is not active (pl-coverage.c)."
 function pl_cov_stop1_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
 )::foreign_t where {T}
@@ -420,7 +420,7 @@ end
 
 # PORT: pl-coverage.c cov_active as pl_cov_active1_va
 # (PRED_IMPL("$cov_active", 1, cov_active, 0))
-"`'\\\$cov_active'(-Nesting)`: the nesting of the active collection; fails when it is not active (pl-coverage.c)."
+"`'\$cov_active'(-Nesting)`: the nesting of the active collection; fails when it is not active (pl-coverage.c)."
 function pl_cov_active1_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
 )::foreign_t where {T}
