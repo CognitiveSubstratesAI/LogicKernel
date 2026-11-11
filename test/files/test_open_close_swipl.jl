@@ -692,13 +692,12 @@ end
             @assert st === :true
             return a[1]
         end
-        # swipl opens these (a pipe, a lock, a locale, utf16le, `text`); the kernel
-        # refuses them BY NAME, before it opens a file (nothing is created)
+        # swipl opens these (a lock, a locale, `text`); the kernel refuses them BY NAME, before it opens a
+        # file (nothing is created). utf16le and wchar_t are ported (ENC1), a pipe is `Sopen_pipe` (lane D)
         for (mode, o) in (
             (:write, "[lock(write)]"), (:write, "[lock(shared)]"),
             (:write, "[locale(foo)]"),
-            (:write, "[unicode_atoms(nfc)]"), (:write, "[encoding(utf16le)]"),
-            (:write, "[encoding(text)]"), (:write, "[encoding(wchar_t)]")
+            (:write, "[unicode_atoms(nfc)]"), (:write, "[encoding(text)]")
         )
             ldx = LK.PL_local_data{_TL}(gd)             # a refusal leaves its query open: a local data each
             st, _ = kcall(gd, ldx, "open", _TL[f, _tls(mode), v(), opts(o)])
@@ -706,7 +705,7 @@ end
         end
         pipe = mk_expr(_TL, _TL[_tls(:pipe), lk_gnd(_TL, "true")])
         st, _ = kcall(gd, LK.PL_local_data{_TL}(gd), "open", _TL[pipe, _tls(:read), v()])
-        @test st === :notported
+        @test st === :true                              # Sopen_pipe: `/bin/sh -c true`
         @test !ispath(joinpath(dir, "f1"))
     finally
         rm(dir; recursive=true, force=true)

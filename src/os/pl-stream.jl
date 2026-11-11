@@ -19,8 +19,8 @@
 # `mem` (`buffer == 0` for upstream's NULL buffer); the function table is `functions`, an enum over
 # the three function sets, and `handle` their record, where upstream holds function pointers and a
 # `void *`. NOT PORTED: locks and threads, timeouts, `tee`, filter streams (`upstream`,
-# `downstream`), locales, ENC_ANSI, ENC_UTF16* and ENC_WCHAR (refused where a stream would use
-# them), the pending exception (`Sset_exception`), close hooks (pl-file.c's `freeStream`, the one
+# `downstream`), locales, ENC_ANSI (refused by name where a stream would use it; ENC1 ported
+# ENC_UTF16BE/LE and ENC_WCHAR), the pending exception (`Sset_exception`), close hooks (pl-file.c's `freeStream`, the one
 # hook upstream registers, is called by the kernel's closers instead: src/os/pl-file.jl), `Sfprintf`
 # and the other formatted output. Since R2's S1: the stream's `context` (an index into the
 # database's table of the streams Prolog knows, 0: none) and `erased` (closed while a reference is
@@ -834,8 +834,37 @@ function reperror(c::Int, s::IOSTREAM)::Int
     return -1
 end
 
+# PORT: pl-stream.c put_usc2
+"Write the 16-bit unit `c` to `s`, big endian when `be` (pl-stream.c): 0, or -1 on error."
+function put_usc2(c::Int, s::IOSTREAM, be::Bool)::Int
+    if be
+        (put_byte(c >> 8, s) < 0 || put_byte(c & 0xff, s) < 0) && return -1
+    else
+        (put_byte(c & 0xff, s) < 0 || put_byte(c >> 8, s) < 0) && return -1
+    end
+    return 0
+end
+
+# PORT: pl-stream.c put_utf16
+"Write `c` to `s` as UTF-16, a surrogate pair above 0xffff (pl-stream.c): 0, or -1 on error."
+function put_utf16(c::Int, s::IOSTREAM, be::Bool)::Int
+    if c > 0xffff
+        c1, c2 = utf16_encode(c)
+        (
+            put_usc2(c1, s, s.encoding == ENC_UTF16BE) < 0 ||
+                put_usc2(c2, s, s.encoding == ENC_UTF16BE) < 0
+        ) && return -1
+    elseif IS_UTF16_SURROGATE(c)
+        reperror(c, s) < 0 && return -1
+    else
+        put_usc2(c, s, s.encoding == ENC_UTF16BE) < 0 && return -1
+    end
+    return 0
+end
+
 # PORT: pl-stream.c put_code
-# DIVERGES: ENC_ANSI, ENC_UTF16* and ENC_WCHAR are refused (not ported).
+# DIVERGES: ENC_ANSI is a named refusal (the locale's `wcrtomb`, no multibyte state in the kernel's streams);
+# `ENC_WCHAR` is the 4-byte native `wchar_t` (SIZEOF_WCHAR_T is 4 on Linux, upstream's `#else` arm).
 "Write character `c` to `s` in its encoding: `c`, or -1 on error (pl-stream.c)."
 function put_code(c::Int, s::IOSTREAM)::Int
     IS_UTF16_SURROGATE(c) && return reperror(c, s)
@@ -862,12 +891,20 @@ function put_code(c::Int, s::IOSTREAM)::Int
                 put_byte(Int(b), s) < 0 && return -1
             end
         end
+    elseif enc == ENC_UTF16BE
+        put_utf16(c, s, true) < 0 && return -1
+    elseif enc == ENC_UTF16LE
+        put_utf16(c, s, false) < 0 && return -1
+    elseif enc == ENC_WCHAR
+        for b in reinterpret(UInt8, [UInt32(c)])        # the native bytes of a `pl_wchar_t`
+            put_byte(Int(b), s) < 0 && return -1
+        end
     elseif enc == ENC_UNKNOWN
         return -1
     else
         throw(
             NotPortedError{Nothing}(
-                nothing, "put_code: encoding $enc", "UTF-8 only (R1, user 2026-10-07)"
+                nothing, "put_code: encoding $enc", "ENC_ANSI is the locale's wcrtomb (platform conversion)"
             )
         )
     end
@@ -905,13 +942,48 @@ function Scanrepresent(c::Int, s::IOSTREAM)::Int
     end
     throw(
         NotPortedError{Nothing}(
-            nothing, "Scanrepresent: encoding $enc", "UTF-8 only (R1, user 2026-10-07)"
+            nothing, "Scanrepresent: encoding $enc", "ENC_ANSI is the locale's wcrtomb (platform conversion)"
         )
     )
 end
 
+# PORT: pl-stream.c get_ucs2
+"Read one 16-bit unit from `s`, big endian when `be`: -1 at end of file (pl-stream.c)."
+function get_ucs2(s::IOSTREAM, be::Bool)::Int
+    c1 = get_byte(s)
+    c1 == EOF && return -1
+    c2 = get_byte(s)
+    if c2 == EOF
+        Sseterr(s, SIO_WARN, "EOF in unicode character")
+        return UTF8_MALFORMED_REPLACEMENT
+    end
+    return be ? (c1 << 8) + c2 : (c2 << 8) + c1
+end
+
+# PORT: pl-stream.c get_utf16
+"Read one UTF-16 character from `s`, joining a surrogate pair (pl-stream.c): -1 at end of file."
+function get_utf16(s::IOSTREAM, be::Bool)::Int
+    c = get_ucs2(s, be)
+    if IS_UTF16_LEAD(c)
+        c2 = get_ucs2(s, be)
+        if c2 == EOF
+            Sseterr(s, SIO_WARN, "EOF in unicode character")
+            return UTF8_MALFORMED_REPLACEMENT
+        elseif !IS_UTF16_TRAIL(c2)
+            Sseterr(s, SIO_WARN, "Illegal UTF-16 continuation")
+            return UTF8_MALFORMED_REPLACEMENT
+        end
+        return utf16_decode(c, c2)
+    elseif IS_UTF16_TRAIL(c)
+        Sseterr(s, SIO_WARN, "Lone UTF-16 trail surrogate")
+        return UTF8_MALFORMED_REPLACEMENT
+    end
+    return c
+end
+
 # PORT: pl-stream.c Sgetcode
-# DIVERGES: ENC_ANSI, ENC_UTF16* and ENC_WCHAR are refused (not ported); no `tee`.
+# DIVERGES: ENC_ANSI is a named refusal (the locale's `mbrtowc`); `ENC_WCHAR` is the 4-byte native
+# `wchar_t` (upstream's `#else` arm); no `tee`.
 "The next character of `s` in its encoding, or -1 at end of file (pl-stream.c)."
 function Sgetcode(s::IOSTREAM)::Int
     while true                                  # retry:
@@ -953,10 +1025,31 @@ function Sgetcode(s::IOSTREAM)::Int
                     end
                 end
             end
+        elseif enc == ENC_UTF16BE
+            c = get_utf16(s, true)
+        elseif enc == ENC_UTF16LE
+            c = get_utf16(s, false)
+        elseif enc == ENC_WCHAR
+            wb = UInt8[0, 0, 0, 0]
+            c = 0
+            for n in 1:4
+                c1 = get_byte(s)
+                if c1 == EOF
+                    if n == 1
+                        c = -1
+                    else
+                        Sseterr(s, SIO_WARN, "EOF in UCS character")
+                        c = UTF8_MALFORMED_REPLACEMENT
+                    end
+                    break
+                end
+                wb[n] = UInt8(c1)
+            end
+            c == 0 && (c = Int(reinterpret(Int32, wb)[1]))  # `chr`: the native `pl_wchar_t`
         else
             throw(
                 NotPortedError{Nothing}(
-                    nothing, "Sgetcode: encoding $enc", "UTF-8 only (R1, user 2026-10-07)"
+                    nothing, "Sgetcode: encoding $enc", "ENC_ANSI is the locale's mbrtowc (platform conversion)"
                 )
             )
         end
@@ -1399,9 +1492,7 @@ const bomdefs = (
 )
 
 # PORT: pl-stream.c ScheckBOM
-# DIVERGES: a mark whose encoding the stream layer refuses (UTF-16, `put_code`'s and `Sgetcode`'s
-# NotPortedError) is recognised and skipped all the same, as upstream; the error is raised at the
-# first read. -1 where upstream sets `errno = EINVAL` (a non-buffered stream).
+# DIVERGES: -1 where upstream sets `errno = EINVAL` (a non-buffered stream).
 "Detect a byte order mark at the start of the input stream `s`, switch to its encoding and skip it: 0, or -1 (pl-stream.c)."
 function ScheckBOM(s::IOSTREAM)::Int
     (s.flags & SIO_NBUF) != 0 && return -1                  # errno = EINVAL

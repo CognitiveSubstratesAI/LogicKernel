@@ -1004,7 +1004,7 @@ end
 # `/bin/sh -c` child; `PL_clear_exception` and `REP_FN` of the command text are unwritten). Unwritten, each raising
 # `NotPortedError` BEFORE a file is opened: IRIs (`iri_hook`),
 # the `lock` option (no `flock`), the `locale` option (`PL_locale`), the `unicode_atoms` option
-# (`atom_to_unicode_atoms_ex`, F1's) and the encodings the stream layer refuses (ANSI, UTF-16, wchar_t).
+# (`atom_to_unicode_atoms_ex`, F1's) and the encoding ENC_ANSI (named refusal; UTF-16 and wchar_t are ported, ENC1).
 # `locale`'s default is the `encoding` flag's (`LD->encoding`): UTF-8.
 "Open the file `file` as `mode` and `options` say (pl-file.c); the stream, or `nothing` after raising the error."
 function openStream(
@@ -1108,11 +1108,11 @@ function openStream(
     ebom = stream_encoding_options(ld, type, encoding, bom)
     ebom === nothing && return nothing
     enc, bom = ebom
-    if enc == ENC_ANSI || enc == ENC_UTF16BE || enc == ENC_UTF16LE || enc == ENC_WCHAR
+    if enc == ENC_ANSI                  # DIVERGES: the locale's multibyte conversion is not ported (named refusal)
         throw(
             NotPortedError{T}(
                 type, string("open/4 with the stream encoding ", enc),
-                "UTF-8 only (R1, user 2026-10-07)"
+                "ENC_ANSI is the locale's mbrtowc/wcrtomb (platform conversion)"
             )
         )
     end
@@ -4513,8 +4513,8 @@ redir_context() = redir_context(
 )
 
 # PORT: pl-file.c setupOutputRedirect
-# DIVERGES: the memory stream is UTF-8 (upstream `ENC_WCHAR`, which this kernel's stream layer refuses:
-# the R1 UTF-8 rule); `to` is 0 for the current output.
+# DIVERGES: the memory stream is UTF-8 (upstream `ENC_WCHAR`; the stream layer ports it since ENC1, but the
+# redirect's readers below take the UTF-8 bytes); `to` is 0 for the current output.
 """
     setupOutputRedirect(ld, to, ctx, redir) -> Bool
 

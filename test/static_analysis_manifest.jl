@@ -3730,6 +3730,10 @@ const _DISPATCH_MANIFEST_TUPLE = (
     (LK.Sfpasteof, Tuple{LK.IOSTREAM}, true),
     (LK.Sgetc, Tuple{LK.IOSTREAM}, false),
     (LK.Sgetcode, Tuple{LK.IOSTREAM}, false),
+    # ENC1: the UTF-16 encodings (pl-stream.c put_usc2, put_utf16, get_ucs2, get_utf16)
+    (LK.put_usc2, Tuple{Int64, LK.IOSTREAM, Bool}, false),
+    (LK.put_utf16, Tuple{Int64, LK.IOSTREAM, Bool}, false),
+    (LK.get_ucs2, Tuple{LK.IOSTREAM, Bool}, false), (LK.get_utf16, Tuple{LK.IOSTREAM, Bool}, false),
     (LK.SkipAtomIdCont, Tuple{Vector{UInt8}, Int64}, true),
     (LK.SkipVarIdCont, Tuple{Vector{UInt8}, Int64}, true),
     (LK.Snew, Tuple{LK.memfile, UInt32, LK.IOFUNCTIONS}, false),
