@@ -1316,11 +1316,39 @@ function _tr_lookup_attvar_more_rows(::Type{T}) where {T}
     return nothing
 end
 
+function _tr_unify_attvar_write_rows(::Type{T}) where {T}
+    # f(Y, Y) with Y attributed, unified with a FREE variable (unify_trie_term: write mode, pl-trie.c unify_key under TAG_ATTVAR|STG_STATIC): the first
+    # occurrence stores `makeRefG(&gp[1])` (the new attvar's link cell) in its argument cell, a later occurrence in write mode stores `makeRefG(vi->attributes)`,
+    # the SAME word - not a reference to the first argument cell (that would chain through it). No Prolog predicate sees the chain: the raw cells are compared.
+    s(n) = lk_sym(T, n)
+    Y = _trv(T, 1)
+    gd, ld, t = _tr_engine(T, T[_trx(T, :f, Y, Y), _trv(T, 2)])
+    w = ld.slots[t + 1]
+    yc, _ = LK.trie_deref(ld, LK.valPtr(w) + 1)
+    LK.put_new_attvar(
+        ld, yc, LK._atom_word!(ld, s(:a)), (LK.DU_VALUE, LK.consInt(Int64(1)), 0)
+    )
+    tr = LK.trie_create(T)
+    rc, nid = LK.trie_lookup_abstract(ld, tr, 0, -(t + 1), true, nothing, nothing)
+    @test rc == 1
+    # (`unify_trie_term` takes a term reference: slot `t + 2` is the reference `t + 1`)
+    @test LK.unify_trie_term(ld, tr, nid, t + 1) == (true, 0)
+    _, cw = LK.trie_deref(ld, -(t + 2))
+    @test LK._is_gcompound(cw)
+    c = LK.valPtr(cw)
+    p1, w1 = LK.trie_deref(ld, c + 1)
+    p2, w2 = LK.trie_deref(ld, c + 2)
+    @test LK.isAttVar(w1) && LK.isAttVar(w2) && p1 == p2                  # one attributed variable in both arguments
+    @test ld.gstack[c + 1] == ld.gstack[c + 2]                            # both cells hold the same reference (no chain through the first argument)
+    return nothing
+end
+
 @testset "trie lookup: an attributed variable (TR3): its keys, the pair in vars, the cells restored" begin
     _tr_lookup_attvar_rows(_TT)
     _tr_lookup_attvar_value_rows(_TT)
     _tr_lookup_attvar_shared_rows(_TT)
     _tr_lookup_attvar_more_rows(_TT)
+    _tr_unify_attvar_write_rows(_TT)
 end
 
 # ---- trie_insert_flat / trie_lookup_flat ----

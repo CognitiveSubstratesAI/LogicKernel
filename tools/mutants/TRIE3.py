@@ -10,7 +10,7 @@
 #   lookup: an attributed variable (TR3)", TW:1046-1159), TP = test/core_lang/test_trie_preds_swipl.jl (rows t77-t86, answers swipl's, from its .out;
 #   kill rows `row("t77")`.. TP:331-340), TA = test/core_lang/test_trie_attvar_swipl.jl (rows a1-a17 and the kill rows `row("aN")` TA:184-189; the g rows
 #   run once TR2 is stacked), TM = test/core_lang/test_tabling_min_swipl.jl (the lookup is on the tabling path; audit D-0238).
-# TARGETS (audit D-0238): the trie_lookup_abstract mutants: TW, TP, TA, TM; the unify_key mutants: TP, TA, TM (TW's unify rows have no attvar key),
+# TARGETS (audit D-0238): the trie_lookup_abstract mutants: TW, TP, TA, TM; the unify_key mutants: TP, TA, TM (TW's unify rows have no attvar key, except `_tr_unify_attvar_write_rows`, which TR3-U6 needs: U6 runs TT),
 #   (each mutant carries its own `targets`). The `TARGETS` variable is the union (mutate_ci.py plan reads it).
 # TIMEOUT: none of these can loop: each mutates a key, a counter or an index inside a walk bounded by the term.
 # EQUIVALENT mutants (declared with their reason, file:line in the `equivalent` text): TR3-U1 and TR3-U2 (the write mode of an attvar's fresh cells).
@@ -92,9 +92,9 @@ MUTANTS = [
       "            st.attrs[index] = gp + 1\n", "            st.attrs[index] = gp + 2\n", targets=UT),
     m("TR3-U5 the first occurrence does not record the variable's location (KILL TP:336 t82, TA:185 a5: the second occurrence is a first again)",
       "            st.vars[index] = p\n            st.attrs[index] = gp + 1\n", "            st.attrs[index] = gp + 1\n", targets=UT),
-    m("TR3-U6 a later occurrence in write mode refers to the term's location (KILL TP:336 t82, TA:185 a5: A == B)",
+    m("TR3-U6 a later occurrence in write mode refers to the term's location (KILL TW `_tr_unify_attvar_write_rows`: the two argument cells of f(Y, Y) built by unify_trie_term hold the same reference; no Prolog row sees a reference chain, TP t82 and TA a5 reach the line and survive it)",
       "            ld.gstack[p] = makeRefG(st.attrs[index])\n        else\n            unify_ptrs_cells(ld, st.vars[index], p) || return BOOLEX_FALSE\n",
-      "            ld.gstack[p] = makeRefG(st.vars[index])\n        else\n            unify_ptrs_cells(ld, st.vars[index], p) || return BOOLEX_FALSE\n", targets=UT),
+      "            ld.gstack[p] = makeRefG(st.vars[index])\n        else\n            unify_ptrs_cells(ld, st.vars[index], p) || return BOOLEX_FALSE\n", targets=TT),
     m("TR3-U7 a later occurrence in read mode is not unified (KILL TA:187 a17: f(X, X) against f(2, 3) must fail)",
       "            unify_ptrs_cells(ld, st.vars[index], p) || return BOOLEX_FALSE\n        end\n    elseif tx == TAGEX_TRIE_ATTVAR_END\n",
       "            unify_ptrs_cells(ld, st.vars[index], p)\n        end\n    elseif tx == TAGEX_TRIE_ATTVAR_END\n", targets=UT),
