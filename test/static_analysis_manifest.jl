@@ -874,6 +874,8 @@ function _manifest_index(T)
         ),
         (LK.bidi_override_error, Tuple{Int64, LK.read_data{T}}, false),
         (LK.check_no_bidi_override, Tuple{Int64, Int64, LK.read_data{T}}, false),
+        # ENC1: unicode_atoms (pl-read.c checkASCII)
+        (LK.checkASCII, Tuple{LK.read_data{T}, Int64, Int64, String}, false),
         (LK.clearBuffer, Tuple{LK.read_data{T}}, false),
         (LK.ensure_space, Tuple{Int64, LK.read_data{T}, Bool}, false),
         (LK.errorWarning, Tuple{String, Nothing, LK.read_data{T}}, false),
@@ -3906,6 +3908,10 @@ const _DISPATCH_MANIFEST_TUPLE = (
     (LK.skip_decimal_separator, Tuple{Vector{UInt8}, Int64, Int64}, false),
     (LK.skip_decimals, Tuple{Vector{UInt8}, Int64, Int64}, true),
     (LK.skip_digit_separator, Tuple{Vector{UInt8}, Int64, Int64}, false),
+    # ENC1: unicode_atoms (pl-read.c atom_text_has_non_ascii, atom_text_not_in_nfc; the NFC normaliser hook is Julia's)
+    (LK.atom_text_has_non_ascii, Tuple{Vector{UInt8}, Int64, Int64}, false),
+    (LK.atom_text_not_in_nfc, Tuple{Vector{UInt8}, Int64, Int64}, false),
+    (LK._normalize_hook, Tuple{String}, false),
     (LK.special_float, Tuple{Vector{UInt8}, Int64, Int64, LK.number}, false),
     (LK.starts_1dot, Tuple{Vector{UInt8}, Int64}, true),
     (LK.str_number_error, Tuple{LK.strnumstat}, true),

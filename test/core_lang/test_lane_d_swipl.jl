@@ -111,6 +111,7 @@ rout(S) :- outfile(F), open(F, read, S).
 wenc(Enc, Codes) :- outfile(F), open(F, write, W, [encoding(Enc)]), forall(member(C, Codes), put_code(W, C)), close(W).
 renc(Enc, L) :- outfile(F), open(F, read, S, [encoding(Enc)]), rall(S, L), close(S).
 wbytes(Bs) :- wb(W), forall(member(B, Bs), put_byte(W, B)), close(W).
+rua(Mode, Cs, T) :- wenc(utf8, Cs), outfile(F), open(F, read, S, [encoding(utf8), unicode_atoms(Mode)]), call_cleanup(read(S, T), close(S)).
 """
 
 # (id, goal), run IN ORDER
@@ -491,7 +492,42 @@ const _LD_CASES = [
     ("d379", raw"outfile(F), open(F, write, W, [encoding(utf16be)]), cerr(put_code(W, 0xD800), R0), catch(close(W), _, true), R = R0"),
     ("d380", raw"outfile(F), cerr(open(F, read, _, [type(binary), encoding(utf16be)]), R)"),
     ("d381", raw"wenc(utf16be, [0'a, 10, 0'b]), outfile(F), open(F, read, S, [encoding(utf16be)]), read_pending_codes(S, L, []), '$stream_property'(S, position(P)), close(S), R = L-P"),
-    ("d382", raw"wenc(utf16le, [0x1F600, 0'z]), outfile(F), open(F, read, S, [encoding(utf16le)]), get_char(S, A), peek_char(S, B), close(S), atom_codes(A, Ac), R = Ac-B")
+    ("d382", raw"wenc(utf16le, [0x1F600, 0'z]), outfile(F), open(F, read, S, [encoding(utf16le)]), get_char(S, A), peek_char(S, B), close(S), atom_codes(A, Ac), R = Ac-B"),
+    ("d383", raw"rua(accept, [102,40,102,101,0x301,41,46], T), R = T"),
+    ("d384", raw"rua(accept, [102,40,102,0xE9,41,46], T), R = T"),
+    ("d385", raw"cerr(rua(error, [102,40,102,101,0x301,41,46], T), R0), R = R0"),
+    ("d386", raw"cerr(rua(error, [102,40,102,0xE9,41,46], T), R0), R = R0-T"),
+    ("d387", raw"cerr(rua(error, [102,40,0x1E0D,0x307,41,46], _), R0), R = R0"),
+    ("d388", raw"cerr(rua(error, [102,40,0x4E2D,41,46], T), R0), R = R0-T"),
+    ("d389", raw"cerr(rua(error, [102,40,102,101,41,46], T), R0), R = R0-T"),
+    ("d390", raw"cerr(rua(error, [102,40,0x3A9,0x301,41,46], T), R0), R = R0-T"),
+    ("d391", raw"cerr(rua(reject, [102,40,102,0xE9,41,46], _), R0), R = R0"),
+    ("d392", raw"cerr(rua(reject, [102,40,102,101,0x301,41,46], _), R0), R = R0"),
+    ("d393", raw"cerr(rua(reject, [102,40,0x4E2D,41,46], _), R0), R = R0"),
+    ("d394", raw"cerr(rua(reject, [102,40,102,101,41,46], T), R0), R = R0-T"),
+    ("d395", raw"cerr(rua(reject, [102,40,0x3A9,0x301,41,46], T), R0), R = R0-T"),
+    ("d396", raw"wenc(utf8, [97,46]), outfile(F), cerr(open(F, read, _, [unicode_atoms(bogus)]), R0), R = R0"),
+    ("d397", raw"wenc(utf8, [97,46]), outfile(F), open(F, read, S, [encoding(utf8)]), cerr(read_term(S, _, [unicode_atoms(bogus)]), R0), close(S), R = R0"),
+    ("d398", raw"wenc(utf8, [97,46]), outfile(F), open(F, read, S, [encoding(utf8)]), cerr(read_clause(S, _, [unicode_atoms(bogus)]), R0), close(S), R = R0"),
+    ("d399", raw"wenc(utf8, [97,46]), outfile(F), open(F, read, S, [encoding(utf8)]), cerr(set_stream(S, unicode_atoms(bogus)), R0), close(S), R = R0"),
+    ("d400", raw"wenc(utf8, [97,46]), outfile(F), open(F, read, S, [encoding(utf8)]), cerr(read_term(S, _, [unicode_atoms(1)]), R0), close(S), R = R0"),
+    ("d401", raw"wenc(utf8, [97,46]), outfile(F), open(F, read, S, [encoding(utf8)]), cerr(read_term(S, _, [unicode_atoms(_)]), R0), close(S), R = R0"),
+    ("d402", raw"wenc(utf8, [102,40,102,101,0x301,41,46]), outfile(F), open(F, read, S, [encoding(utf8)]), cerr(read_term(S, _, [unicode_atoms(error)]), R0), close(S), R = R0"),
+    ("d403", raw"wenc(utf8, [102,40,102,0xE9,41,46]), outfile(F), open(F, read, S, [encoding(utf8)]), read_term(S, T, [unicode_atoms(error)]), close(S), R = T"),
+    ("d404", raw"wenc(utf8, [102,40,102,101,0x301,41,46]), outfile(F), open(F, read, S, [encoding(utf8)]), cerr(read_clause(S, _, [unicode_atoms(error), syntax_errors(error)]), R0), close(S), R = R0"),
+    ("d405", raw"wenc(utf8, [102,40,102,0xE9,41,46]), outfile(F), open(F, read, S, [encoding(utf8)]), cerr(read_clause(S, _, [unicode_atoms(reject), syntax_errors(error)]), R0), close(S), R = R0"),
+    ("d406", raw"wenc(utf8, [102,40,102,101,0x301,41,46]), outfile(F), open(F, read, S, [encoding(utf8)]), set_stream(S, unicode_atoms(error)), cerr(read(S, _), R0), close(S), R = R0"),
+    ("d407", raw"wenc(utf8, [102,40,102,0xE9,41,46]), outfile(F), open(F, read, S, [encoding(utf8)]), set_stream(S, unicode_atoms(reject)), cerr(read(S, _), R0), close(S), R = R0"),
+    ("d408", raw"wenc(utf8, [102,40,102,0xE9,41,46]), outfile(F), open(F, read, S, [encoding(utf8)]), set_stream(S, unicode_atoms(accept)), read(S, T), close(S), R = T"),
+    ("d409", raw"wenc(utf8, [102,40,102,0xE9,41,46]), outfile(F), open(F, read, S, [encoding(utf8), unicode_atoms(reject)]), cerr(read_term(S, _, [unicode_atoms(accept)]), R0), close(S), R = R0"),
+    ("d410", raw"wenc(utf8, [102,40,102,0xE9,41,46]), outfile(F), open(F, read, S, [encoding(utf8), unicode_atoms(accept)]), cerr(read_term(S, _, [unicode_atoms(reject)]), R0), close(S), R = R0"),
+    ("d411", raw"'$style_check'(O, 32), cerr(rua(accept, [102,40,102,0xE9,41,46], T), R0), '$style_check'(_, O), R = R0-T"),
+    ("d412", raw"'$style_check'(O, 32), cerr(rua(accept, [102,40,102,101,0x301,41,46], T), R0), '$style_check'(_, O), R = R0-T"),
+    ("d413", raw"'$style_check'(O, 32), cerr(rua(accept, [102,40,0x3A9,0x301,41,46], T), R0), '$style_check'(_, O), R = R0-T"),
+    ("d414", raw"'$style_check'(O, 32), cerr(rua(reject, [102,40,102,0xE9,41,46], _), R0), '$style_check'(_, O), R = R0"),
+    ("d415", raw"'$style_check'(O, 32), cerr(rua(error, [102,40,102,101,0x301,41,46], _), R0), '$style_check'(_, O), R = R0"),
+    ("d416", raw"wenc(utf8, [102,40,0xD7,41,46]), outfile(F), open(F, read, S, [encoding(utf8)]), cerr(read_term(S, T, [unicode_atoms(reject)]), R0), close(S), R = R0-T"),
+    ("d417", raw"wenc(utf8, [102,40,0xD7,41,46]), outfile(F), open(F, read, S, [encoding(utf8)]), cerr(read_term(S, T, [unicode_atoms(error)]), R0), close(S), R = R0-T")
 ]
 
 # swipl 10.1.20-1-g18168e629's answers to the program and cases above (the driver's lines; evidence/S2/lane_d_rows.out)
@@ -873,21 +909,58 @@ const _LD_PINNED = [
     "t_d379 c[116,95,100,51,55,57]/1(c[114,97,105,115,101,100]/1(c[116,121,112,101,95,101,114,114,111,114]/2(a[99,104,97,114,97,99,116,101,114,95,99,111,100,101],i55296)))",
     "t_d380 c[116,95,100,51,56,48]/1(c[114,97,105,115,101,100]/1(c[100,111,109,97,105,110,95,101,114,114,111,114]/2(a[101,110,99,111,100,105,110,103],a[117,116,102,49,54,98,101])))",
     "t_d381 c[116,95,100,51,56,49]/1(c[45]/2(c[91,124,93]/2(i97,c[91,124,93]/2(i10,c[91,124,93]/2(i98,nil))),c[36,115,116,114,101,97,109,95,112,111,115,105,116,105,111,110]/4(i3,i2,i1,i6)))",
-    "t_d382 c[116,95,100,51,56,50]/1(c[45]/2(c[91,124,93]/2(i128512,nil),a[122]))"
+    "t_d382 c[116,95,100,51,56,50]/1(c[45]/2(c[91,124,93]/2(i128512,nil),a[122]))",
+    "t_d383 c[116,95,100,51,56,51]/1(c[102]/1(a[102,101,769]))",
+    "t_d384 c[116,95,100,51,56,52]/1(c[102]/1(a[102,233]))",
+    "t_d385 c[116,95,100,51,56,53]/1(c[114,97,105,115,101,100]/1(c[115,121,110,116,97,120,95,101,114,114,111,114]/1(a[110,111,110,95,110,102,99,95,97,116,111,109])))",
+    "t_d386 c[116,95,100,51,56,54]/1(c[45]/2(a[111,107],c[102]/1(a[102,233])))",
+    "t_d387 c[116,95,100,51,56,55]/1(c[114,97,105,115,101,100]/1(c[115,121,110,116,97,120,95,101,114,114,111,114]/1(a[110,111,110,95,110,102,99,95,97,116,111,109])))",
+    "t_d388 c[116,95,100,51,56,56]/1(c[45]/2(a[111,107],c[102]/1(a[20013])))",
+    "t_d389 c[116,95,100,51,56,57]/1(c[45]/2(a[111,107],c[102]/1(a[102,101])))",
+    "t_d390 c[116,95,100,51,57,48]/1(c[45]/2(a[111,107],c[102]/1(V0)))",
+    "t_d391 c[116,95,100,51,57,49]/1(c[114,97,105,115,101,100]/1(c[115,121,110,116,97,120,95,101,114,114,111,114]/1(a[110,111,110,95,97,115,99,105,105,95,97,116,111,109])))",
+    "t_d392 c[116,95,100,51,57,50]/1(c[114,97,105,115,101,100]/1(c[115,121,110,116,97,120,95,101,114,114,111,114]/1(a[110,111,110,95,97,115,99,105,105,95,97,116,111,109])))",
+    "t_d393 c[116,95,100,51,57,51]/1(c[114,97,105,115,101,100]/1(c[115,121,110,116,97,120,95,101,114,114,111,114]/1(a[110,111,110,95,97,115,99,105,105,95,97,116,111,109])))",
+    "t_d394 c[116,95,100,51,57,52]/1(c[45]/2(a[111,107],c[102]/1(a[102,101])))",
+    "t_d395 c[116,95,100,51,57,53]/1(c[45]/2(a[111,107],c[102]/1(V0)))",
+    "t_d396 c[116,95,100,51,57,54]/1(c[114,97,105,115,101,100]/1(c[100,111,109,97,105,110,95,101,114,114,111,114]/2(a[117,110,105,99,111,100,101,95,97,116,111,109,115],a[98,111,103,117,115])))",
+    "t_d397 c[116,95,100,51,57,55]/1(c[114,97,105,115,101,100]/1(c[100,111,109,97,105,110,95,101,114,114,111,114]/2(a[117,110,105,99,111,100,101,95,97,116,111,109,115],a[98,111,103,117,115])))",
+    "t_d398 c[116,95,100,51,57,56]/1(c[114,97,105,115,101,100]/1(c[100,111,109,97,105,110,95,101,114,114,111,114]/2(a[117,110,105,99,111,100,101,95,97,116,111,109,115],a[98,111,103,117,115])))",
+    "t_d399 c[116,95,100,51,57,57]/1(c[114,97,105,115,101,100]/1(c[100,111,109,97,105,110,95,101,114,114,111,114]/2(a[117,110,105,99,111,100,101,95,97,116,111,109,115],a[98,111,103,117,115])))",
+    "t_d400 c[116,95,100,52,48,48]/1(c[114,97,105,115,101,100]/1(c[116,121,112,101,95,101,114,114,111,114]/2(a[97,116,111,109],i1)))",
+    "t_d401 c[116,95,100,52,48,49]/1(c[114,97,105,115,101,100]/1(a[105,110,115,116,97,110,116,105,97,116,105,111,110,95,101,114,114,111,114]))",
+    "t_d402 c[116,95,100,52,48,50]/1(c[114,97,105,115,101,100]/1(c[115,121,110,116,97,120,95,101,114,114,111,114]/1(a[110,111,110,95,110,102,99,95,97,116,111,109])))",
+    "t_d403 c[116,95,100,52,48,51]/1(c[102]/1(a[102,233]))",
+    "t_d404 c[116,95,100,52,48,52]/1(c[114,97,105,115,101,100]/1(c[115,121,110,116,97,120,95,101,114,114,111,114]/1(a[110,111,110,95,110,102,99,95,97,116,111,109])))",
+    "t_d405 c[116,95,100,52,48,53]/1(c[114,97,105,115,101,100]/1(c[115,121,110,116,97,120,95,101,114,114,111,114]/1(a[110,111,110,95,97,115,99,105,105,95,97,116,111,109])))",
+    "t_d406 c[116,95,100,52,48,54]/1(c[114,97,105,115,101,100]/1(c[115,121,110,116,97,120,95,101,114,114,111,114]/1(a[110,111,110,95,110,102,99,95,97,116,111,109])))",
+    "t_d407 c[116,95,100,52,48,55]/1(c[114,97,105,115,101,100]/1(c[115,121,110,116,97,120,95,101,114,114,111,114]/1(a[110,111,110,95,97,115,99,105,105,95,97,116,111,109])))",
+    "t_d408 c[116,95,100,52,48,56]/1(c[102]/1(a[102,233]))",
+    "t_d409 c[116,95,100,52,48,57]/1(a[111,107])",
+    "t_d410 c[116,95,100,52,49,48]/1(c[114,97,105,115,101,100]/1(c[115,121,110,116,97,120,95,101,114,114,111,114]/1(a[110,111,110,95,97,115,99,105,105,95,97,116,111,109])))",
+    "t_d411 c[116,95,100,52,49,49]/1(c[45]/2(a[111,107],c[102]/1(a[102,233])))",
+    "t_d412 c[116,95,100,52,49,50]/1(c[45]/2(a[111,107],c[102]/1(a[102,101,769])))",
+    "t_d413 c[116,95,100,52,49,51]/1(c[45]/2(a[111,107],c[102]/1(V0)))",
+    "t_d414 c[116,95,100,52,49,52]/1(c[114,97,105,115,101,100]/1(c[115,121,110,116,97,120,95,101,114,114,111,114]/1(a[110,111,110,95,97,115,99,105,105,95,97,116,111,109])))",
+    "t_d415 c[116,95,100,52,49,53]/1(c[114,97,105,115,101,100]/1(c[115,121,110,116,97,120,95,101,114,114,111,114]/1(a[110,111,110,95,110,102,99,95,97,116,111,109])))",
+    "t_d416 c[116,95,100,52,49,54]/1(c[45]/2(a[111,107],c[102]/1(a[215])))",
+    "t_d417 c[116,95,100,52,49,55]/1(c[45]/2(a[111,107],c[102]/1(a[215])))"
 ]
 
 const _LD_DATA = "abc\nxyz\nlast line\n"
 
 "The data file's text, and the program and cases as one file in `dir` (the data and output paths substituted); the case predicates' names."
-function _ld_file(dir::String)::Tuple{String, Vector{String}}
+function _ld_file(
+        dir::String, cases::Vector{Tuple{String, String}}=_LD_CASES
+    )::Tuple{String, Vector{String}}
     data = joinpath(dir, "data.txt")
     write(data, _LD_DATA)
     prog = replace(replace(_LD_PROGRAM, "@DATA@" => data), "@OUT@" => joinpath(dir, "out.txt"))
-    names = ["t_$(id)" for (id, _) in _LD_CASES]
+    names = ["t_$(id)" for (id, _) in cases]
     text =
         prog * join([
             "t_$(id)(R) :- catch(($g), error(SsuE, _), ( nb(SsuE, SsuF), R = raised(SsuF) )).\n" for
-            (id, g) in _LD_CASES
+            (id, g) in cases
         ])
     f = joinpath(dir, "lane_d.pl")
     write(f, text)
@@ -945,9 +1018,9 @@ end
         @test k == p
     end
     # not vacuous: the pins hold raised errors, `failed` rows, and answers, so the comparison can pass and can fail
-    @test count(l -> occursin("c[114,97,105,115,101,100]", l), _LD_PINNED) == 111     # raised(…)
+    @test count(l -> occursin("c[114,97,105,115,101,100]", l), _LD_PINNED) == 130     # raised(…)
     @test count(l -> endswith(l, "/1(a[102,97,105,108,101,100])"), _LD_PINNED) == 13   # failed
-    @test count(l -> endswith(l, "/1(a[111,107])"), _LD_PINNED) == 14                 # ok
+    @test count(l -> endswith(l, "/1(a[111,107])"), _LD_PINNED) == 15                 # ok
 end
 
 "Whether the kernel REFUSES `goal` (a `NotPortedError` out of the foreign predicate), the goal run in a fresh database."
@@ -1024,4 +1097,54 @@ end
     @test !_ld_refuses("open('/dev/null', read, S), set_stream(S, encoding(utf16be)), get_code(S, _), close(S)")
     @test !_ld_refuses("open('/dev/null', read, S, [encoding(utf16be)]), close(S)")
     @test !_ld_refuses("open('/dev/null', read, S, [encoding(wchar_t)]), close(S)")
+end
+
+# unicode_atoms(nfc) (pl-read.c atom_to_unicode_atoms_ex, get_token `functor:` -> normalize_hook): KERNEL-ONLY rows. The pin's swipl 18168e62 is
+# built WITHOUT the library(unicode) package, so its answer to every nfc row is existence_error(source_sink, library(unicode)) (the first time) or
+# existence_error(hook, unicode_normalize) (afterwards): no composed answer to pin. The kernel's hook is Julia's NFC normaliser (DIVERGES in
+# src/pl-read.jl `_normalize_hook`); each expectation below is the Unicode NFC of the input, written by hand. Quoted atoms never reach the switch
+# (the pin's error-mode rows d385/d386 and the code: only `functor:`), so a quoted decomposed atom stays decomposed under nfc.
+const _LD_NFC_DE = "[102,40,102,101,0x301,41,46]"   # f(fe + U+0301)
+const _LD_NFC_OPEN = "outfile(F), open(F, read, S, [encoding(utf8)])"
+const _LD_NFC_CASES = Tuple{String, String}[
+    ("n01", "rua(nfc, $(_LD_NFC_DE), T), R = T"),
+    ("n02", "rua(nfc, [102,40,102,0xE9,41,46], T), R = T"),
+    ("n03", "rua(nfc, [102,40,0x1E0B,0x323,41,46], T), R = T"),
+    ("n04", "rua(nfc, [102,40,102,101,41,46], T), R = T"),
+    ("n05", "wenc(utf8, $(_LD_NFC_DE)), outfile(F), open(F, read, S, [encoding(utf8), unicode_atoms(nfc)]), read(S, T), close(S), R = T"),
+    ("n06", "wenc(utf8, $(_LD_NFC_DE)), $(_LD_NFC_OPEN), read_term(S, T, [unicode_atoms(nfc)]), close(S), R = T"),
+    ("n07", "wenc(utf8, $(_LD_NFC_DE)), $(_LD_NFC_OPEN), read_clause(S, T, [unicode_atoms(nfc)]), close(S), R = T"),
+    ("n08", "wenc(utf8, $(_LD_NFC_DE)), $(_LD_NFC_OPEN), set_stream(S, unicode_atoms(nfc)), read(S, T), close(S), R = T"),
+    ("n09", "wenc(utf8, [102,40,39,102,101,0x301,39,41,46]), $(_LD_NFC_OPEN), read_term(S, T, [unicode_atoms(nfc)]), close(S), R = T"),
+    ("n10", "wenc(utf8, $(_LD_NFC_DE)), $(_LD_NFC_OPEN), read_term(S, T, [unicode_atoms(nfc)]), read(S, E), close(S), R = T-E"),
+    # error mode on a combining mark that NFC keeps (KA + VOWEL SIGN U): the kernel's exact test says in NFC; the pin (no hook) says non_nfc_atom
+    ("n11", "rua(error, [102,40,102,0x915,0x941,41,46], T), R = T"),
+]
+const _LD_NFC_EXPECT = Dict(
+    "n01" => "c[102]/1(a[102,233])",
+    "n02" => "c[102]/1(a[102,233])",
+    "n03" => "c[102]/1(a[7693,775])",
+    "n04" => "c[102]/1(a[102,101])",
+    "n05" => "c[102]/1(a[102,233])",
+    "n06" => "c[102]/1(a[102,233])",
+    "n07" => "c[102]/1(a[102,233])",
+    "n08" => "c[102]/1(a[102,233])",
+    "n09" => "c[102]/1(a[102,101,769])",
+    "n10" => "c[45]/2(c[102]/1(a[102,233]),a[101,110,100,95,111,102,95,102,105,108,101])",
+    "n11" => "c[102]/1(a[102,2325,2369])"
+)
+
+@testset "unicode_atoms(nfc): the kernel's NFC rewrite (kernel-only rows, the pin has no library(unicode))" begin
+    f, names = _ld_file(mktempdir(), _LD_NFC_CASES)
+    kl = _ld_kernel(f, names)
+    @test kl[1] == "ok"
+    @test length(kl) == length(_LD_NFC_CASES) + 1
+    for ((id, _), k) in zip(_LD_NFC_CASES, kl[2:end])
+        want = "t_$id c[" * join(codeunits("t_$id"), ",") * "]/1(" * _LD_NFC_EXPECT[id] * ")"
+        k == want || println(stderr, "  ours  ", k, "\n  want  ", want)
+        @test k == want
+    end
+    # not vacuous: the composed answers differ from the decomposed input (n01 against the accept row d383) and the quoted atom stays as written
+    @test _LD_NFC_EXPECT["n01"] != "c[102]/1(a[102,101,769])"
+    @test _LD_NFC_EXPECT["n09"] == "c[102]/1(a[102,101,769])"
 end
