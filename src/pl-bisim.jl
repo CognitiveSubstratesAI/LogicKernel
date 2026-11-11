@@ -675,3 +675,202 @@ function term_quotient(
     end
     return true
 end
+
+# ── THE AUTOMATON ───────────────────────────────────────────────────────────────────────────────
+# An automaton is a compound whose argument I is the colour of state I, and state 1 is the start state. A colour
+# that is a compound gives the state one successor per argument (the number of the state it goes to); a colour that
+# is not a compound makes the state a sink holding that value. State ids are argument positions: no functor word is
+# overwritten here, so there is no `restore_graph` to match. A deterministic transition system: `refine` relies on it.
+
+"No error in the automaton (pl-bisim.c `AUT_OK`)."
+const AUT_OK = 0
+"A successor is unbound (pl-bisim.c `AUT_INSTANTIATION`)."
+const AUT_INSTANTIATION = 1
+"A successor is not an integer (pl-bisim.c `AUT_NOT_INTEGER`)."
+const AUT_NOT_INTEGER = 2
+"A successor is out of range (pl-bisim.c `AUT_NO_STATE`)."
+const AUT_NO_STATE = 3
+
+# PORT: pl-bisim.c bs_automaton
+# DIVERGES: `error` is an `Int` (the `aut_error` constants above).
+"An automaton read into node ids (pl-bisim.c `bs_automaton`)."
+Base.@kwdef mutable struct bs_automaton
+    states::Int = 0                 # the arity of the automaton
+    state::Vector{Int} = Int[]      # [states] node id, or -(leaf+1)
+    sinks::Int = 0                  # how many states are sinks
+    error::Int = AUT_OK
+    at::Int = 0                     # the state it is in, 1..states
+    arg::Int = 0                    # which of its arguments, 1..
+end
+
+# ORIGINAL: the Prolog integer `n` as a cell's word, whatever the term type tags (upstream `consInt`).
+@inline _bs_int_word(ld::PL_local_data{T}, n::Int)::word where {T} = _gnd_word!(ld, mk_gnd(T, Int64(n)))
+
+# ORIGINAL: `makeRefG(a) if canBind(*a) else *a` for the leaf at location `a` (a cell of the term, not a slot).
+@inline function _bs_leaf_word(ld::PL_local_data, a::Int)::word
+    w = ld.gstack[a]
+    return (isVar(w) || isAttVar(w)) ? makeRefG(a) : w
+end
+
+# PORT: pl-bisim.c fill_edges_automaton
+# DIVERGES: `f` is the position of the automaton's functor word (upstream's `w`, a pointer to the compound's
+# cell); a successor's integer is read as `PL_get_integer` does on the words (a type that tags no integer keeps it
+# in the value table: `_untagged_int`).
+"Fill `g.arg`/`g.child` from the automaton at `f`; false and `aut.error` set when a successor is not a state (pl-bisim.c)."
+function fill_edges_automaton(
+    ld::PL_local_data{T}, f::Int, g::bs_graph, aut::bs_automaton
+)::Bool where {T}
+    e = 0
+    for i in 0:(aut.states - 1)
+        k, w, _ = _deref_loc(ld, f + 1 + i)                 # c = &f->arguments[i]; deRef(c)
+        aut.state[i + 1] < 0 && continue                    # a sink: no successors
+        node = aut.state[i + 1]
+        cf = valPtr(w)                                      # cf = valueTerm(*c)
+        arity = arityFunctor(ld.functors, g.node[node + 1].functor)
+        g.arg[node + 1] = e
+
+        for j in 0:(arity - 1)
+            ka, wa, _ = _deref_loc(ld, cf + 1 + j)          # a = &cf->arguments[j]; deRef(a)
+            aut.at = i + 1
+            aut.arg = j + 1
+
+            if !(ka == DU_VALUE && (isTaggedIntW(wa) || isInteger(_indirect_value(ld, wa))))   # !isInteger(*a)
+                aut.error = (ka == DU_CELL || ka == DU_ATTVAR) ? AUT_INSTANTIATION : AUT_NOT_INTEGER
+                return false
+            end
+            kv = isTaggedIntW(wa) ? valInt(wa) : _untagged_int(ld, wa)
+            if kv === nothing || kv < 1 || kv > aut.states  # a bignum is out of range too
+                aut.error = AUT_NO_STATE
+                return false
+            end
+            g.child[e + 1] = aut.state[kv]                  # aut->state[k-1]
+            e += 1
+        end
+    end
+    g.arg[g.nodes + 1] = e
+    aut.error = AUT_OK
+    return true
+end
+
+# PORT: pl-bisim.c build_automaton
+# DIVERGES: `f` is the functor word's position; returns `(rc, leaf, nleaf)` with `rc` `BS_OK` or `BS_GRAPH_OVERFLOW`
+# (no MEMORY_OVERFLOW); a malformed automaton is `BS_OK` with `aut.error` set, as upstream's `true`.
+"Turn the automaton at functor position `f` into a graph (pl-bisim.c)."
+function build_automaton(
+    ld::PL_local_data{T}, f::Int, g::bs_graph, b::Vector{bs_node}, aut::bs_automaton
+)::Tuple{Int, Vector{Int}, Int} where {T}
+    aut.states = arityFunctor(ld.functors, ld.gstack[f])
+    aut.state = zeros(Int, aut.states)
+    nsink = 0
+
+    # Hand the node ids out in state order, so that state 1 is node 0 if it is not a sink: build_minimal() and
+    # canonicalise() root at node 0, which is how the start state stays the start state.
+    for i in 0:(aut.states - 1)
+        k, w, _ = _deref_loc(ld, f + 1 + i)
+        if !(k == DU_WORD && _is_gcompound(w))              # !isTerm(*c)
+            k == DU_ATTVAR && (g.attvars = true)
+            nsink += 1
+            aut.state[i + 1] = -nsink
+            continue
+        end
+        cf = valPtr(w)
+        push!(b, bs_node(cf, ld.gstack[cf]))
+        aut.state[i + 1] = length(b) - 1
+    end
+    aut.sinks = nsink
+
+    rc, leaf = alloc_graph(ld, g, b, nsink)
+    rc == BS_OK || return (rc, leaf, 0)
+
+    nsink = 0
+    for i in 0:(aut.states - 1)                             # the sinks, in the same order
+        if aut.state[i + 1] < 0
+            _, _, pc = _deref_loc(ld, f + 1 + i)
+            nsink += 1
+            leaf[nsink] = pc
+        end
+    end
+
+    fill_edges_automaton(ld, f, g, aut) || return (BS_OK, leaf, nsink)   # aut.error says what is wrong
+    fill_pred(g)
+    return (BS_OK, leaf, nsink)
+end
+
+# PORT: pl-bisim.c resolve_states
+"Rewrite the leaf placeholders left in `aut.state` the way `number_leaves` did for `g.child` (pl-bisim.c)."
+function resolve_states(
+    ld::PL_local_data{T}, g::bs_graph, aut::bs_automaton, leaf::Vector{Int}
+)::Bool where {T}
+    ctx = leaf_order(false)
+    for i in 1:aut.states
+        if aut.state[i] < 0
+            aut.state[i] = -(leaf_number(ld, g, ctx, leaf[-aut.state[i]]) + 1)
+        end
+    end
+    return !ctx.failed
+end
+
+# PORT: pl-bisim.c automaton_quotient
+# DIVERGES: `f` is the functor word's position; `g`, `aut` are fresh (upstream's memsets); returns Bool, with
+# `aut.error` for an automaton that does not parse.
+"`term_quotient` for an automaton at functor position `f` (pl-bisim.c)."
+function automaton_quotient(
+    ld::PL_local_data{T}, f::Int, g::bs_graph, b::Vector{bs_node}, aut::bs_automaton, minimal::Bool
+)::Bool where {T}
+    rc, leaf, nleaf = build_automaton(ld, f, g, b, aut)
+    if rc == BS_GRAPH_OVERFLOW
+        return PL_error(ld, ERR_REPRESENTATION, mk_sym(T, :int))
+    end
+
+    if aut.error == AUT_OK
+        number_leaves(ld, g, leaf, nleaf) || return false
+        resolve_states(ld, g, aut, leaf) || return false
+
+        if g.nodes > 0
+            if !minimal
+                identity_partition(g)
+            else
+                colour_nodes(g)
+                split_colours(ld, g)
+                refine(g)
+            end
+        end
+    end
+    return true
+end
+
+# PORT: pl-bisim.c automaton_error
+"Raise the error `aut.error` names for the automaton `A`, once the graph is gone (pl-bisim.c)."
+function automaton_error(ld::PL_local_data{T}, A::term_t, aut::bs_automaton)::Bool where {T}
+    s = PL_new_term_ref(ld)
+    x = PL_new_term_ref(ld)
+    (_PL_get_arg(ld, aut.at, A, s) && _PL_get_arg(ld, aut.arg, s, x)) || return false
+
+    aut.error == AUT_INSTANTIATION && return PL_error(ld, ERR_INSTANTIATION)
+    aut.error == AUT_NOT_INTEGER && return PL_type_error(ld, "integer", x)
+    aut.error == AUT_NO_STATE && return PL_error(ld, ERR_EXISTENCE, mk_sym(T, :state), x)
+    @assert false                                           # AUT_OK: assert(0)
+    return false
+end
+
+# PORT: pl-bisim.c get_automaton
+# DIVERGES: returns the position of the compound's functor word, or `nothing` after raising (upstream's `*wp` is
+# the pointer to the compound's cell).
+"Check that `A` is an automaton and answer where its functor word is (pl-bisim.c): only the arity matters."
+function get_automaton(ld::PL_local_data{T}, A::term_t)::Union{Nothing, Int} where {T}
+    k, w, _ = _deref_loc(ld, -(A + 1))                      # w = valTermRef(A); deRef(w)
+    if k == DU_WORD && _is_gcompound(w)
+        f = valPtr(w)
+        if arityFunctor(ld.functors, ld.gstack[f]) == 0
+            PL_domain_error(ld, "automaton", A)
+            return nothing
+        end
+        return f
+    end
+    if k == DU_CELL || k == DU_ATTVAR                       # canBind(*w)
+        PL_error(ld, ERR_INSTANTIATION)
+        return nothing
+    end
+    PL_type_error(ld, "compound", A)
+    return nothing
+end
