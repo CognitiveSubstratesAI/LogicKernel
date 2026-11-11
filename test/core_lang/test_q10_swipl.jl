@@ -1,6 +1,6 @@
 # ORIGINAL: a LIVE differential of Q10's built-ins (`\=@=/2`, `shell/2`, `current_blob/2`, `$put_token/2`, `$on_signal/4`,
 # `$set_prolog_stack/4`, `trim_heap/0`, `trim_stacks/0`, `thread_idle/2`) against swipl at the pin — Q10's rows
-# test/core_lang/test_q10_swipl.jl — vr01-os30 against swipl 10.1.20 (the pin 18168e62):
+# test/core_lang/test_q10_swipl.jl — vr01-pt23 against swipl 10.1.20 (the pin 18168e62):
 #   * A PROGRAM consulted by the kernel's loader and cases `t_<id>(R)` run in order in one database, each wrapped in
 #     `catch(Goal, error(SsuE, _), R = raised(SsuE))`; the driver is test_style_check_swipl.jl's (`enc`oded answers).
 #   * Every answer line is swipl's, PINNED (the pin's swipl, ~/.local/swipl-pin1-18168e62/bin/swipl, two identical runs, 2026-11-11); with
@@ -219,7 +219,29 @@ const _QX_CASES = [
     ("os27", "q_set(42, ignore, _), q_set(42, ignore, O), q_set(42, default, _), R = O"),   # ignore twice, then default
     ("os28", "q_set(42, throw, _), q_set(42, ignore, O), q_get(42, O2), q_set(42, default, _), R = O-O2"),   # throw to ignore
     ("os29", "'\$on_signal'(S, 'SIGTERM', user:O, user:O), R = S"),   # SIGTERM by name
-    ("os30", "'\$on_signal'(S, 'SIGfoo', user:O, user:O), R = S")    # an unknown SIG name
+    ("os30", "'\$on_signal'(S, 'SIGfoo', user:O, user:O), R = S"),   # an unknown SIG name
+    ("pt01", "with_output_to(string(S), (current_output(O), '\$put_token'(O, ab))), R = S"),   # one atom
+    ("pt02", "with_output_to(string(S), (current_output(O), '\$put_token'(O, ab), '\$put_token'(O, cd))), R = S"),   # two alphanumeric tokens: a space between
+    ("pt03", "with_output_to(string(S), (current_output(O), '\$put_token'(O, +), '\$put_token'(O, +))), R = S"),   # two symbol-char tokens: a space between
+    ("pt04", "with_output_to(string(S), (current_output(O), '\$put_token'(O, ab), '\$put_token'(O, '+'))), R = S"),   # alphanumeric then symbol: none
+    ("pt05", "with_output_to(string(S), (current_output(O), '\$put_token'(O, ''), '\$put_token'(O, ab))), R = S"),   # the empty atom writes nothing
+    ("pt06", "with_output_to(string(S), (current_output(O), '\$put_token'(O, \"abc\"))), R = S"),   # a string
+    ("pt07", "with_output_to(string(S), (current_output(O), '\$put_token'(O, _))), R = S"),   # an unbound token
+    ("pt08", "with_output_to(string(S), (current_output(O), '\$put_token'(O, 42))), R = S"),   # an integer token
+    ("pt09", "with_output_to(string(S), (current_output(O), '\$put_token'(O, '\\u00e9\\u20ac'))), R = S"),   # a text that is not ISO Latin-1
+    ("pt10", "with_output_to(string(S), (current_output(O), '\$put_token'(O, '\\u00e9'))), R = S"),   # an ISO Latin-1 character above 127
+    ("pt11", "with_output_to(string(S), (current_output(O), '\$put_token'(O, a), '\$put_token'(O, '\\u00e9'))), R = S"),   # a letter, then a Latin-1 letter
+    ("pt12", "'\$put_token'(_, ab)"),   # an unbound stream
+    ("pt13", "'\$put_token'(q10_no_stream, ab)"),   # an atom that is no stream
+    ("pt15", "with_output_to(string(S), (current_output(O), '\$put_token'(O, 1), '\$put_token'(O, 2))), R = S"),   # two digit tokens
+    ("pt16", "with_output_to(string(S), (current_output(O), put_char(O, x), '\$put_token'(O, y))), R = S"),   # after a character put by put_char/2
+    ("pt17", "with_output_to(string(S), (current_output(O), '\$put_token'(O, a), nl(O), '\$put_token'(O, b))), R = S"),   # after a newline
+    ("pt18", "with_output_to(string(S), (current_output(O), '\$put_token'(O, []))), R = S"),   # the empty list
+    ("pt19", "with_output_to(string(S), (current_output(O), '\$put_token'(O, [0'a]))), R = S"),   # a code list
+    ("pt20", "with_output_to(string(S), (current_output(O), '\$put_token'(O, 'a b'), '\$put_token'(O, c))), R = S"),   # only the first and last character of the text matter
+    ("pt21", "with_output_to(string(S), (current_output(O), '\$put_token'(O, '\\''), '\$put_token'(O, '\\''))), R = S"),   # two quote characters
+    ("pt22", "with_output_to(string(S), (current_output(O), '\$put_token'(O, '('), '\$put_token'(O, a))), R = S"),   # a punctuation token, then a letter
+    ("pt23", "with_output_to(string(S), (current_output(O), '\$put_token'(O, abc))), '\$put_token'(user_error, ''), R = S")    # the stream alias user_error with an empty text
 ]
 
 # the driver's whole output, one line per case after `ok`, from swipl at the pin
@@ -348,7 +370,29 @@ const _QX_PINNED = [
     "t_os27 c[116,95,111,115,50,55]/1(a[105,103,110,111,114,101])",
     "t_os28 c[116,95,111,115,50,56]/1(c[45]/2(a[116,104,114,111,119],a[105,103,110,111,114,101]))",
     "t_os29 c[116,95,111,115,50,57]/1(i15)",
-    "t_os30 c[116,95,111,115,51,48]/1(c[114,97,105,115,101,100]/1(c[100,111,109,97,105,110,95,101,114,114,111,114]/2(a[115,105,103,110,97,108],a[83,73,71,102,111,111])))"
+    "t_os30 c[116,95,111,115,51,48]/1(c[114,97,105,115,101,100]/1(c[100,111,109,97,105,110,95,101,114,114,111,114]/2(a[115,105,103,110,97,108],a[83,73,71,102,111,111])))",
+    "t_pt01 c[116,95,112,116,48,49]/1(s[97,98])",
+    "t_pt02 c[116,95,112,116,48,50]/1(s[97,98,32,99,100])",
+    "t_pt03 c[116,95,112,116,48,51]/1(s[43,32,43])",
+    "t_pt04 c[116,95,112,116,48,52]/1(s[97,98,43])",
+    "t_pt05 c[116,95,112,116,48,53]/1(s[97,98])",
+    "t_pt06 c[116,95,112,116,48,54]/1(s[97,98,99])",
+    "t_pt07 c[116,95,112,116,48,55]/1(c[114,97,105,115,101,100]/1(a[105,110,115,116,97,110,116,105,97,116,105,111,110,95,101,114,114,111,114]))",
+    "t_pt08 c[116,95,112,116,48,56]/1(c[114,97,105,115,101,100]/1(c[116,121,112,101,95,101,114,114,111,114]/2(a[115,116,114,105,110,103],i42)))",
+    "t_pt09 c[116,95,112,116,48,57]/1(c[114,97,105,115,101,100]/1(c[114,101,112,114,101,115,101,110,116,97,116,105,111,110,95,101,114,114,111,114]/1(a[101,110,99,111,100,105,110,103])))",
+    "t_pt10 c[116,95,112,116,49,48]/1(s[233])",
+    "t_pt11 c[116,95,112,116,49,49]/1(s[97,32,233])",
+    "t_pt12 c[116,95,112,116,49,50]/1(c[114,97,105,115,101,100]/1(a[105,110,115,116,97,110,116,105,97,116,105,111,110,95,101,114,114,111,114]))",
+    "t_pt13 c[116,95,112,116,49,51]/1(c[114,97,105,115,101,100]/1(c[101,120,105,115,116,101,110,99,101,95,101,114,114,111,114]/2(a[115,116,114,101,97,109],a[113,49,48,95,110,111,95,115,116,114,101,97,109])))",
+    "t_pt15 c[116,95,112,116,49,53]/1(c[114,97,105,115,101,100]/1(c[116,121,112,101,95,101,114,114,111,114]/2(a[115,116,114,105,110,103],i1)))",
+    "t_pt16 c[116,95,112,116,49,54]/1(s[120,32,121])",
+    "t_pt17 c[116,95,112,116,49,55]/1(s[97,10,98])",
+    "t_pt18 c[116,95,112,116,49,56]/1(c[114,97,105,115,101,100]/1(c[116,121,112,101,95,101,114,114,111,114]/2(a[115,116,114,105,110,103],nil)))",
+    "t_pt19 c[116,95,112,116,49,57]/1(c[114,97,105,115,101,100]/1(c[116,121,112,101,95,101,114,114,111,114]/2(a[115,116,114,105,110,103],c[91,124,93]/2(i97,nil))))",
+    "t_pt20 c[116,95,112,116,50,48]/1(s[97,32,98,32,99])",
+    "t_pt21 c[116,95,112,116,50,49]/1(s[39,32,39])",
+    "t_pt22 c[116,95,112,116,50,50]/1(s[40,97])",
+    "t_pt23 c[116,95,112,116,50,51]/1(s[97,98,99])"
 ]
 
 # the kernel's lines where they differ from swipl's (see the header)
@@ -409,7 +453,7 @@ function _qx_kernel(path::String, names::Vector{String})
     return out, gd, ld
 end
 
-@testset "the Q10 built-ins as swipl's (vr01-os30)" begin
+@testset "the Q10 built-ins as swipl's (vr01-pt23)" begin
     f, names = _qx_file()
     kl, _, _ = _qx_kernel(f, names)
     @test length(kl) == length(_QX_PINNED)
@@ -431,6 +475,10 @@ end
     @test count(l -> startswith(l, "t_vr") && occursin("a" * _qx_codes("yes"), l), _QX_PINNED) >= 9          # the \\=@= rows that answer yes
     @test any(l -> startswith(l, "t_sh11 ") && occursin(_qx_codes("signal"), l), _QX_PINNED)   # a child killed by signal 9
     @test any(l -> startswith(l, "t_ss17 ") && occursin("i1073741824", l), _QX_PINNED)         # the stack limit, 1 GiB in bytes
+    @test any(l -> startswith(l, "t_pt02 ") && occursin("s" * _qx_codes("ab cd"), l), _QX_PINNED)     # the space between two alphanumeric tokens
+    @test any(l -> startswith(l, "t_pt03 ") && occursin("s" * _qx_codes("+ +"), l), _QX_PINNED)       # and between two symbol characters
+    @test any(l -> startswith(l, "t_pt09 ") && occursin("a" * _qx_codes("encoding"), l), _QX_PINNED)  # a wide text: representation_error(encoding)
+    @test any(l -> startswith(l, "t_pt10 ") && occursin("s[233]", l), _QX_PINNED)                    # the Latin-1 byte 233 as the character 233
     @test any(l -> startswith(l, "t_os01 ") && occursin("a" * _qx_codes("foreign"), l) && occursin("a" * _qx_codes("throw"), l), _QX_PINNED)
 end
 

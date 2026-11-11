@@ -41,7 +41,6 @@ pred:$leash/2	DBG1	seed: missing_c_preds.tsv
 pred:$mono_idg_changed/2	TAB1	seed: missing_c_preds.tsv
 pred:$mono_reeval_done/3	TAB1	seed: missing_c_preds.tsv
 pred:$mono_reeval_prepare/2	TAB1	seed: missing_c_preds.tsv
-pred:$put_token/2	Q10	seed: missing_c_preds.tsv
 pred:$rc_handle/1	ZIP1	seed: missing_c_preds.tsv
 pred:$seek_list/4	P2	seed: missing_c_preds.tsv
 pred:$sig_unblock/0	TH1	seed: missing_c_preds.tsv

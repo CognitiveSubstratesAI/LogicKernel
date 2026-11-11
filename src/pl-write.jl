@@ -642,6 +642,31 @@ function PutToken(str::String, s::IOSTREAM, flags::Int)::Int
     return 1
 end
 
+# PORT: pl-write.c PutStringN
+# DIVERGES: a byte vector (upstream's `const char *` and `length`): each byte is written as a character (the
+# `unsigned char` loop), so an ISO Latin-1 text above 127 is the code point of that value.
+"Write the bytes of `bytes` to `s`, each as a character (pl-write.c)."
+function PutStringN(bytes::Vector{UInt8}, s::IOSTREAM)::Bool
+    for b in bytes
+        Sputcode(Int(b), s) == EOF && return false
+    end
+    return true
+end
+
+# PORT: pl-write.c PutTokenN
+# DIVERGES: the text is a byte vector, `options->out` and `options->flags` are the arguments (`$put_token/2`
+# makes its `write_options` with the stream only, so the flags are 0).
+"Write the ISO Latin-1 token `bytes` to `s`, a space before it where needed: 0, 1, or `TRUE_WITH_SPACE` (pl-write.c)."
+function PutTokenN(bytes::Vector{UInt8}, s::IOSTREAM, flags::Int)::Int
+    if !isempty(bytes)
+        rc = PutOpenToken(Int(bytes[1]), s, flags)
+        rc == 0 && return 0
+        PutStringN(bytes, s) || return 0
+        return rc
+    end
+    return 1
+end
+
 # PORT: pl-write.c PutVarName
 # DIVERGES: no var_prefix (`out_var_prefix` is 0), so no `PutVarPrefix` before the name.
 "Write the name of an unbound variable, `_123` (pl-write.c)."
@@ -2582,9 +2607,40 @@ function pl_write_size4_va(
     return write_size(ld, A1, A2, A3, A4) ? FTRUE : FFALSE
 end
 
+# PORT: pl-write.c put_token
+# DIVERGES: `PL_get_stream_handle` is `term_stream_handle(SH_ERRORS|SH_ALIAS)` (no `SH_NOPAIR`: `get_stream_handle`
+# refuses a stream pair by name); `PL_get_nchars(A2, …, CVT_ATOM|CVT_STRING|CVT_EXCEPTION)` is `PL_get_text` and
+# `PL_canonicalise_text_ex`, then the refusal of a wide text, `representation_error(encoding)` for ISO Latin-1 as
+# upstream's `PL_mb_text`; no lock to release, `PL_release_stream` is `streamStatus` (an error on the stream is raised).
+"`\$put_token(+Stream, +Token)`: write the atom or string `Token` as a token: a space first where it would join the last one (pl-write.c)."
+function put_token(ld::PL_local_data{T}, A1::term_t, A2::term_t)::Bool where {T}
+    out = term_stream_handle(ld, A1, SH_ERRORS | SH_ALIAS)          # PL_get_stream_handle(A1, &out)
+    out === nothing && return false
+    txt = PL_get_text(ld, A2, CVT_ATOM | CVT_STRING | CVT_EXCEPTION)
+    txt === nothing && return false
+    PL_canonicalise_text_ex(ld, txt) || return false
+    txt.encoding === ENC_WCHAR && return text_representation_error(ld, ENC_ISO_LATIN_1)
+
+    if PutTokenN(txt.text, out, 0) != 0
+        return streamStatus(ld, out)                                # PL_release_stream(out)
+    end
+
+    streamStatus(ld, out)                                           # PL_release_stream(out)
+    return false
+end
+
+# PORT: pl-write.c put_token as pl_put_token2_va
+# (PRED_IMPL("$put_token", 2, put_token, 0))
+function pl_put_token2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2 = PL__t0, PL__t0 + 1
+    return put_token(ld, A1, A2) ? FTRUE : FFALSE
+end
+
 # PORT: pl-write.c BeginPredDefs as PL_predicates_from_write
 # DIVERGES: the entries of the predicates the kernel has ported, in upstream's order
-# (write:3423-3432). Left to a later step: `$put_token/2`, `$put_quoted/4`, `$needs_quotes/1`.
+# (write:3423-3432). Left to a later step: `$put_quoted/4`, `$needs_quotes/1`.
 "pl-write.c's registration table (`BeginPredDefs(write)`): the ported entries."
 const PL_predicates_from_write = (
     PL_extension(
@@ -2595,5 +2651,6 @@ const PL_predicates_from_write = (
     ),
     PL_extension("nl", 0, pl_nl0_va, PL_FA_ISO | PL_FA_VARARGS),
     PL_extension("nl", 1, pl_nl1_va, PL_FA_ISO | PL_FA_VARARGS),
+    PL_extension("\$put_token", 2, pl_put_token2_va, PL_FA_VARARGS),
     PL_extension("write_size", 4, pl_write_size4_va, PL_FA_TRANSPARENT | PL_FA_VARARGS)
 )

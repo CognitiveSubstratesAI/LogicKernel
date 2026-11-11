@@ -17,6 +17,7 @@ O = "src/os/pl-os.jl"
 E = "src/pl-error.jl"
 SU = "src/pl-setup.jl"
 AL = "src/pl-alloc.jl"
+W = "src/pl-write.jl"
 MUTANTS = [
     # ---- pl-variant.c: \=@=
     dict(id="Q10-1 `\\=@=` succeeds for variants (KILL vr01, vr03, vr07: the answer flips)", file=V, targets=TVC,
@@ -162,4 +163,42 @@ end
          old='''PL_extension("thread_idle", 2, pl_thread_idle2_va, PL_FA_TRANSPARENT | PL_FA_VARARGS)''',
          new='''PL_extension("thread_idle", 2, pl_thread_idle2_va, PL_FA_VARARGS)''',
          equivalent="every ti row names its goal's module or runs in user, where the context module is user either way"),
+    dict(id="Q10-35 PutStringN writes the first byte only (KILL pt01)", file=W, targets=TQ,
+         old='''function PutStringN(bytes::Vector{UInt8}, s::IOSTREAM)::Bool
+    for b in bytes''',
+         new='''function PutStringN(bytes::Vector{UInt8}, s::IOSTREAM)::Bool
+    for b in bytes[1:min(end, 1)]'''),
+    dict(id="Q10-36 PutTokenN never asks for a space (KILL pt02, pt03, pt15)", file=W, targets=TQ,
+         old='''        rc = PutOpenToken(Int(bytes[1]), s, flags)
+        rc == 0 && return 0
+        PutStringN(bytes, s) || return 0''',
+         new='''        rc = 1
+        rc == 0 && return 0
+        PutStringN(bytes, s) || return 0'''),
+    dict(id="Q10-37 a wide text is not refused (KILL pt09)", file=W, targets=TQ,
+         old='''    txt.encoding === ENC_WCHAR && return text_representation_error(ld, ENC_ISO_LATIN_1)''',
+         new='''    nothing'''),
+    dict(id="Q10-38 a string is no token text (KILL pt06)", file=W, targets=TQ,
+         old='''    txt = PL_get_text(ld, A2, CVT_ATOM | CVT_STRING | CVT_EXCEPTION)
+    txt === nothing && return false
+    PL_canonicalise_text_ex(ld, txt) || return false''',
+         new='''    txt = PL_get_text(ld, A2, CVT_ATOM | CVT_EXCEPTION)
+    txt === nothing && return false
+    PL_canonicalise_text_ex(ld, txt) || return false'''),
+    dict(id="Q10-39 the stream is not looked up by alias (KILL pt23, pt13)", file=W, targets=TQ,
+         old='''term_stream_handle(ld, A1, SH_ERRORS | SH_ALIAS)          # PL_get_stream_handle(A1, &out)''',
+         new='''term_stream_handle(ld, A1, SH_ERRORS)                     # PL_get_stream_handle(A1, &out)'''),
+    dict(id="Q10-40 the predicate is registered under another name (KILL pt01 and every pt row)", file=W, targets=TQ,
+         old='''PL_extension("\\$put_token", 2, pl_put_token2_va, PL_FA_VARARGS)''',
+         new='''PL_extension("\\$put_tokens", 2, pl_put_token2_va, PL_FA_VARARGS)'''),
+    dict(id="Q10-41 the text is not canonicalised (KILL pt10, pt11)", file=W, targets=TQ,
+         old='''    PL_canonicalise_text_ex(ld, txt) || return false
+    txt.encoding === ENC_WCHAR''',
+         new='''    txt.encoding === ENC_WCHAR'''),
+    dict(id="Q10-42 the stream status of a written token is not read", file=W, targets=TQ,
+         old='''        return streamStatus(ld, out)                                # PL_release_stream(out)
+    end''',
+         new='''        return true
+    end''',
+         equivalent="no row puts a token on a stream that carries an error: a memory stream written by with_output_to/2 has none, so `streamStatus` is true"),
 ]

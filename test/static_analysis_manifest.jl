@@ -2676,6 +2676,9 @@ function _manifest_index(T)
         (LK.PL_eval_expression_to_int64_ex, Tuple{LD, Int64}, false),
         (LK.write_size, Tuple{LD, Int64, Int64, Int64, Int64}, false),
         (LK.pl_write_size4_va, Tuple{LD, Int64, Int64, LK.foreign_context{T}}, false),
+        # Q10 — '$put_token'/2 (src/pl-write.jl)
+        (LK.put_token, Tuple{LD, Int64, Int64}, false),
+        (LK.pl_put_token2_va, Tuple{LD, Int64, Int64, LK.foreign_context{T}}, false),
         # TAB1-min — '$tbl_trienode'/1, '$tbl_is_trienode'/1 (src/pl-tabling.jl) and '$c_wrap_predicate'/5 (src/pl-wrap.jl)
         [
             (f, Tuple{LD, Int, Int, LK.control_t{T}}, false) for f in
@@ -3965,6 +3968,8 @@ const _DISPATCH_MANIFEST_TUPLE = (
     (LK.needSpace, Tuple{Int64, LK.IOSTREAM, Int64}, false),
     (LK.PutOpenToken, Tuple{Int64, LK.IOSTREAM, Int64}, false),
     (LK.PutToken, Tuple{String, LK.IOSTREAM, Int64}, false),
+    (LK.PutStringN, Tuple{Vector{UInt8}, LK.IOSTREAM}, false),
+    (LK.PutTokenN, Tuple{Vector{UInt8}, LK.IOSTREAM, Int64}, false),
     (LK.PutCloseBrace, Tuple{LK.IOSTREAM}, false),
     (LK.unicode_quoted_escape, Tuple{Int64}, false),
     (LK.putQuoted, Tuple{Int64, Int64, Int64, LK.IOSTREAM}, false),
