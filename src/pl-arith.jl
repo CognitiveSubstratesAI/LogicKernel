@@ -28,8 +28,13 @@
 #     (`_number_alloc!`, `_number_free!`, a stack discipline), so the Int64 path allocates nothing
 #     but its result term.
 #   * `AR_CTX`/`AR_BEGIN`/`AR_END`/`AR_CLEANUP` (GMP memory tracking and the float rounding mode)
-#     have nothing to do: Julia's GC frees a `BigInt`, and only `roundtoward/2`, not ported, sets the
-#     rounding mode.
+#     have nothing to do for the memory: Julia's GC frees a `BigInt`. The rounding mode is the hardware's
+#     (`fegetround`/`fesetround`, src/pl-gmp.jl), held ONLY for the duration of one evaluation:
+#     `evalExpression_cells` sets the mode `float_rounding` names, `roundtoward/2` sets another inside it,
+#     and a `finally` puts the mode found at the entry back (upstream leaves the mode it set after an
+#     error in `roundtoward/2`'s first argument and after `set_prolog_flag(float_rounding, M)`: swipl's
+#     hardware mode is the process's, here it would be the Julia runtime's). Float operations outside an
+#     evaluation (reading and printing floats, the VM's own arithmetic) run to nearest.
 #   * The flags: `LD->arith.f.flags` at upstream's default (`float_overflow`, `float_zero_div` and
 #     `float_undefined` = error, `float_underflow` = ignore); `prefer_rationals` and `iso` are bits of
 #     the mask (`truePrologFlag`), false, as their defaults. Nothing sets a flag yet (no
@@ -85,16 +90,16 @@ end
 
 # ── float checks (pl-arith.c) ────────────────────────────────────────────────────────────────────
 # PORT: pl-arith.h FLT_ROUND_NEAREST
-"Round to nearest (pl-arith.h), the rounding the kernel has."
+"Round to nearest (pl-arith.h), the default."
 const FLT_ROUND_NEAREST = UInt32(0x0001)
 # PORT: pl-arith.h FLT_ROUND_TO_POS
-"Round toward positive infinity (pl-arith.h); the kernel does not round this way, the flag names it."
+"Round toward positive infinity (pl-arith.h)."
 const FLT_ROUND_TO_POS = UInt32(0x0002)
 # PORT: pl-arith.h FLT_ROUND_TO_NEG
-"Round toward negative infinity (pl-arith.h); the kernel does not round this way, the flag names it."
+"Round toward negative infinity (pl-arith.h)."
 const FLT_ROUND_TO_NEG = UInt32(0x0003)
 # PORT: pl-arith.h FLT_ROUND_TO_ZERO
-"Round toward zero (pl-arith.h); the kernel does not round this way, the flag names it."
+"Round toward zero (pl-arith.h)."
 const FLT_ROUND_TO_ZERO = UInt32(0x0004)
 # PORT: pl-arith.h FLT_ROUND_MASK
 "The rounding mode's bits in `arith.f.flags` (pl-arith.h)."
@@ -1157,7 +1162,8 @@ end
 
 # ── arith-b: powers, transcendental functions, constants and system (pl-arith.c) ──────────────────
 # The C library functions, from glibc's libm — the library `swipl` calls (`USE_CRMATH` is off by
-# default, so `cr_sin` & co. are plain libm calls in FE_TONEAREST mode, the only mode the kernel has).
+# default, so `cr_sin` & co. are the libm call in FE_TONEAREST mode, rounded outwards by `nexttoward` as
+# the rounding mode says: `CR_FUNC` and its kin below).
 # Julia's own `sin`, `exp`, `^`, ... are other implementations and differ from glibc's in the last
 # digit for about 1 argument in 100 (measured), and its `sqrt`, `asin`, ... throw where C returns a
 # NaN, so each is called through `ccall`.
@@ -1165,41 +1171,146 @@ end
 "The C math library the evaluable functions call (glibc's soname)."
 const LIBM = "libm.so.6"
 
-# `cr_sin` of pl-arith.c
-"`sin(x)` of the C library (pl-arith.c `cr_sin`, FE_TONEAREST)."
-_libm_sin(x::Float64)::Float64 = ccall((:sin, LIBM), Float64, (Float64,), x)
-# `cr_cos` of pl-arith.c
-"`cos(x)` of the C library (pl-arith.c `cr_cos`, FE_TONEAREST)."
-_libm_cos(x::Float64)::Float64 = ccall((:cos, LIBM), Float64, (Float64,), x)
-# `cr_tan` of pl-arith.c
-"`tan(x)` of the C library (pl-arith.c `cr_tan`, FE_TONEAREST)."
-_libm_tan(x::Float64)::Float64 = ccall((:tan, LIBM), Float64, (Float64,), x)
-# `cr_asin` of pl-arith.c
-"`asin(x)` of the C library (pl-arith.c `cr_asin`, FE_TONEAREST)."
-_libm_asin(x::Float64)::Float64 = ccall((:asin, LIBM), Float64, (Float64,), x)
-# `cr_acos` of pl-arith.c
-"`acos(x)` of the C library (pl-arith.c `cr_acos`, FE_TONEAREST)."
-_libm_acos(x::Float64)::Float64 = ccall((:acos, LIBM), Float64, (Float64,), x)
-# `cr_atan` of pl-arith.c
-"`atan(x)` of the C library (pl-arith.c `cr_atan`, FE_TONEAREST)."
-_libm_atan(x::Float64)::Float64 = ccall((:atan, LIBM), Float64, (Float64,), x)
-# PORT: pl-arith.c cr_atan2 as _libm_atan2
-# DIVERGES: FE_TONEAREST only; the directed-rounding arms (`fegetround`, `nexttoward` of the result) wait for `roundtoward/2` (AR1).
-"`atan2(y, x)` of the C library (pl-arith.c `cr_atan2`, FE_TONEAREST)."
-_libm_atan2(y::Float64, x::Float64)::Float64 =
+# The raw libm calls the `cr_*` functions wrap (`sin(in)` inside upstream's macro, in FE_TONEAREST mode).
+_c_sin(x::Float64)::Float64 = ccall((:sin, LIBM), Float64, (Float64,), x)
+_c_cos(x::Float64)::Float64 = ccall((:cos, LIBM), Float64, (Float64,), x)
+_c_tan(x::Float64)::Float64 = ccall((:tan, LIBM), Float64, (Float64,), x)
+_c_asin(x::Float64)::Float64 = ccall((:asin, LIBM), Float64, (Float64,), x)
+_c_acos(x::Float64)::Float64 = ccall((:acos, LIBM), Float64, (Float64,), x)
+_c_atan(x::Float64)::Float64 = ccall((:atan, LIBM), Float64, (Float64,), x)
+_c_atan2(y::Float64, x::Float64)::Float64 =
     ccall((:atan2, LIBM), Float64, (Float64, Float64), y, x)
-# PORT: pl-arith.c cr_exp as _libm_exp
-# DIVERGES: FE_TONEAREST only; the directed-rounding arms (`fegetround`, `nexttoward` of the result) wait for `roundtoward/2` (AR1).
-"`exp(x)` of the C library (pl-arith.c `cr_exp`, FE_TONEAREST)."
-_libm_exp(x::Float64)::Float64 = ccall((:exp, LIBM), Float64, (Float64,), x)
-# `cr_log` of pl-arith.c
-"`log(x)` of the C library (pl-arith.c `cr_log`, FE_TONEAREST)."
-_libm_log(x::Float64)::Float64 = ccall((:log, LIBM), Float64, (Float64,), x)
-# PORT: pl-arith.c cr_pow as _libm_pow
-# DIVERGES: FE_TONEAREST only; the directed-rounding arms (`fegetround`, `nexttoward` of the result) wait for `roundtoward/2` (AR1).
-"`pow(b, e)` of the C library (pl-arith.c `cr_pow`, FE_TONEAREST)."
-_libm_pow(b::Float64, e::Float64)::Float64 =
+_c_exp(x::Float64)::Float64 = ccall((:exp, LIBM), Float64, (Float64,), x)
+_c_log(x::Float64)::Float64 = ccall((:log, LIBM), Float64, (Float64,), x)
+_c_pow(b::Float64, e::Float64)::Float64 =
     ccall((:pow, LIBM), Float64, (Float64, Float64), b, e)
+_c_sinh(x::Float64)::Float64 = ccall((:sinh, LIBM), Float64, (Float64,), x)
+_c_cosh(x::Float64)::Float64 = ccall((:cosh, LIBM), Float64, (Float64,), x)
+_c_tanh(x::Float64)::Float64 = ccall((:tanh, LIBM), Float64, (Float64,), x)
+_c_erf(x::Float64)::Float64 = ccall((:erf, LIBM), Float64, (Float64,), x)
+_c_log10(x::Float64)::Float64 = ccall((:log10, LIBM), Float64, (Float64,), x)
+# `lgamma` keeps the sign in the global `signgam`, which nothing reads here
+_c_lgamma(x::Float64)::Float64 = ccall((:lgamma, LIBM), Float64, (Float64,), x)
+
+# PORT: pl-arith.c CR_FUNC
+# DIVERGES: the macro's body as a function of the libm call `f` (a function value, specialised), for `log`, `log10`,
+# `tan`, `asin`, `acos`, `atan`, `sinh` and `lgamma` — `cr_log` & co. are `_libm_log` & co.
+"The `cr_` function of `f` with no limit on its result (pl-arith.c `CR_FUNC`): `f` to nearest, then one neighbour outwards."
+function CR_FUNC(f::F, x::Float64)::Float64 where {F}
+    roundMode = fegetround()
+    roundMode != FE_TONEAREST && fesetround(FE_TONEAREST)
+    result = f(x)
+    if isfinite(result)
+        if roundMode == FE_UPWARD
+            result = nexttoward(result, Inf)
+        elseif roundMode == FE_DOWNWARD
+            result = nexttoward(result, -Inf)
+        elseif roundMode == FE_TOWARDZERO
+            result = nexttoward(result, 0.0)
+        end
+    end
+    roundMode != FE_TONEAREST && fesetround(roundMode)
+    return result
+end
+
+# PORT: pl-arith.c CR_FUNC_1
+# DIVERGES: as `CR_FUNC`, for `sin`, `cos` and `tanh`: the result is bounded by 1.0 in absolute value.
+"The `cr_` function of `f` with `abs(result) =< 1.0` (pl-arith.c `CR_FUNC_1`)."
+function CR_FUNC_1(f::F, x::Float64)::Float64 where {F}
+    roundMode = fegetround()
+    roundMode != FE_TONEAREST && fesetround(FE_TONEAREST)
+    result = f(x)
+    if isfinite(result)
+        if roundMode == FE_UPWARD
+            result = (result < 1.0) ? nexttoward(result, Inf) : 1.0
+        elseif roundMode == FE_DOWNWARD
+            result = (result > -1.0) ? nexttoward(result, -Inf) : -1.0
+        elseif roundMode == FE_TOWARDZERO
+            result = nexttoward(result, 0.0)
+        end
+    end
+    roundMode != FE_TONEAREST && fesetround(roundMode)
+    return result
+end
+
+# PORT: pl-arith.c CR_FUNC as _libm_log
+"`log(x)` of the C library (pl-arith.c `cr_log`)."
+_libm_log(x::Float64)::Float64 = CR_FUNC(_c_log, x)
+# PORT: pl-arith.c CR_FUNC as _libm_log10
+"`log10(x)` of the C library (pl-arith.c `cr_log10`)."
+_libm_log10(x::Float64)::Float64 = CR_FUNC(_c_log10, x)
+# PORT: pl-arith.c CR_FUNC_1 as _libm_sin
+"`sin(x)` of the C library (pl-arith.c `cr_sin`)."
+_libm_sin(x::Float64)::Float64 = CR_FUNC_1(_c_sin, x)
+# PORT: pl-arith.c CR_FUNC_1 as _libm_cos
+"`cos(x)` of the C library (pl-arith.c `cr_cos`)."
+_libm_cos(x::Float64)::Float64 = CR_FUNC_1(_c_cos, x)
+# PORT: pl-arith.c CR_FUNC as _libm_tan
+"`tan(x)` of the C library (pl-arith.c `cr_tan`)."
+_libm_tan(x::Float64)::Float64 = CR_FUNC(_c_tan, x)
+# PORT: pl-arith.c CR_FUNC as _libm_asin
+"`asin(x)` of the C library (pl-arith.c `cr_asin`)."
+_libm_asin(x::Float64)::Float64 = CR_FUNC(_c_asin, x)
+# PORT: pl-arith.c CR_FUNC as _libm_acos
+"`acos(x)` of the C library (pl-arith.c `cr_acos`)."
+_libm_acos(x::Float64)::Float64 = CR_FUNC(_c_acos, x)
+# PORT: pl-arith.c CR_FUNC as _libm_atan
+"`atan(x)` of the C library (pl-arith.c `cr_atan`)."
+_libm_atan(x::Float64)::Float64 = CR_FUNC(_c_atan, x)
+# PORT: pl-arith.c cr_atan2 as _libm_atan2
+"`atan2(y, x)` of the C library (pl-arith.c `cr_atan2`): one neighbour outwards, the result finite (|result| =< pi)."
+function _libm_atan2(y::Float64, x::Float64)::Float64
+    roundMode = fegetround()
+    roundMode != FE_TONEAREST && fesetround(FE_TONEAREST)
+    result = _c_atan2(y, x)                                 # abs(result) =< pi
+    if roundMode == FE_UPWARD
+        result = nexttoward(result, Inf)
+    elseif roundMode == FE_DOWNWARD
+        result = nexttoward(result, -Inf)
+    elseif roundMode == FE_TOWARDZERO
+        result = nexttoward(result, 0.0)
+    end
+    roundMode != FE_TONEAREST && fesetround(roundMode)
+    return result
+end
+# PORT: pl-arith.c cr_exp as _libm_exp
+"`exp(x)` of the C library (pl-arith.c `cr_exp`): the lower limit of the result is 0.0."
+function _libm_exp(x::Float64)::Float64
+    roundMode = fegetround()
+    roundMode != FE_TONEAREST && fesetround(FE_TONEAREST)
+    result = _c_exp(x)
+    if roundMode == FE_UPWARD
+        if x != -Inf
+            result = nexttoward(result, Inf)
+        end
+    elseif roundMode == FE_DOWNWARD || roundMode == FE_TOWARDZERO
+        if result != Inf
+            result = nexttoward(result, 0.0)
+        end
+    end
+    roundMode != FE_TONEAREST && fesetround(roundMode)
+    return result
+end
+# PORT: pl-arith.c cr_pow as _libm_pow
+"`pow(b, e)` of the C library (pl-arith.c `cr_pow`): the lower limit of the result is 0.0."
+function _libm_pow(b::Float64, e::Float64)::Float64
+    roundMode = fegetround()
+    roundMode != FE_TONEAREST && fesetround(FE_TONEAREST)
+    result = _c_pow(b, e)
+    if !isnan(result)
+        if roundMode == FE_UPWARD
+            result = (e == -Inf) ? 0.0 : nexttoward(result, Inf)
+        elseif roundMode == FE_DOWNWARD
+            result = (e == -Inf) ? 0.0 : nexttoward(result, -Inf)
+        elseif roundMode == FE_TOWARDZERO
+            if result != Inf
+                result = nexttoward(result, 0.0)
+            end
+        end
+    end
+    roundMode != FE_TONEAREST && fesetround(roundMode)
+    return result
+end
 # `sqrt` is not redefined by `O_ROUND_UP_DOWN`: C's own, correctly rounded by IEEE.
 "`sqrt(x)` of the C library: a NaN for a negative argument (Julia's `sqrt` throws)."
 _libm_sqrt(x::Float64)::Float64 = ccall((:sqrt, LIBM), Float64, (Float64,), x)
@@ -1295,19 +1406,17 @@ function ar_log(ld::PL_local_data, n1::number, r::number)::Bool
 end
 
 # PORT: pl-arith.c ar_pi
-# DIVERGES: round to nearest only, so `fegetround() == FE_UPWARD` never holds.
-"`pi/0` (pl-arith.c `ar_pi`): `M_PI`."
+"`pi/0` (pl-arith.c `ar_pi`): `M_PI`, the next float up when rounding upward."
 function ar_pi(r::number)::Bool
-    r.f = Float64(π)                                        # M_PI
+    r.f = (fegetround() == FE_UPWARD) ? nexttoward(Float64(π), Inf) : Float64(π)    # M_PI
     r.type = V_FLOAT
     return true
 end
 
 # PORT: pl-arith.c ar_e
-# DIVERGES: round to nearest only, as `ar_pi`.
-"`e/0` (pl-arith.c `ar_e`): `M_E`."
+"`e/0` (pl-arith.c `ar_e`): `M_E`, the next float up when rounding upward."
 function ar_e(r::number)::Bool
-    r.f = Float64(ℯ)                                        # M_E
+    r.f = (fegetround() == FE_UPWARD) ? nexttoward(Float64(ℯ), Inf) : Float64(ℯ)    # M_E
     r.type = V_FLOAT
     return true
 end
@@ -1735,16 +1844,37 @@ const MAX_RATIONAL_SIZE_ACTION = true
 # once `maybe_real_mpq` made them floats): `|n1| ** n2` as floats, negated when `n1` is negative and
 # the numerator of `n2` odd. `n2` is the exponent as given (upstream negates a negative numerator for
 # the root searches and restores it here).
-# DIVERGES: `fegetround()` is always FE_TONEAREST, so `roundMode1` and `roundMode2` are that mode and
-# the `fesetround` calls have nothing to do.
+# "Difficult to keep rounding modes straight": `pow` switches between monotonic increasing and decreasing with the
+# signs of the base and the exponent, and the float of the exponent and `pow` round independently — `roundMode1`
+# is the mode of `pow`, `roundMode2` the mode of the conversion of the exponent.
 function _ar_pow_doreal_mpq(ld::PL_local_data, n1::number, n2::number, r::number)::Bool
+    roundMode = fegetround()
     neg_res = n1.f < 0.0 && isodd(numerator(n2.mpq))        # mpz_get_ui(numer) & 1
+    roundMode1 = roundMode
+    if neg_res                                              # pow monotonic increasing or decreasing
+        if roundMode == FE_UPWARD
+            roundMode1 = FE_DOWNWARD
+        elseif roundMode == FE_DOWNWARD
+            roundMode1 = FE_UPWARD
+        end
+    end
     n1.f = abs(n1.f)
-    promoteToFloatNumber(ld, n2) || return false
-    r.f = _libm_pow(n1.f, n2.f)
+    roundMode2 = roundMode1
+    if n1.f < 1.0                                           # pow monotonic increasing or decreasing
+        if roundMode1 == FE_UPWARD
+            roundMode2 = FE_DOWNWARD
+        elseif roundMode1 == FE_DOWNWARD
+            roundMode2 = FE_UPWARD
+        end
+    end
+    fesetround(roundMode2)
+    promoteToFloatNumber(ld, n2) || return false            # using roundMode as set
+    roundMode1 != roundMode2 && fesetround(roundMode1)
+    r.f = _libm_pow(n1.f, n2.f)                             # using roundMode1
     if neg_res
         r.f = -r.f
     end
+    roundMode1 != roundMode && fesetround(roundMode)
     r.type = V_FLOAT
     return check_float(ld, r)
 end
@@ -1968,17 +2098,32 @@ function ar_pow(ld::PL_local_data, n1::number, n2::number, r::number)::Bool
 end
 
 # ── arith-c: rationals, the order of reals, bits, the remaining float functions (pl-arith.c) ──────
-# The last entries of `ar_funcdefs[]` but `roundtoward/2` (NOT PORTED, see `ar_funcdefs`). The C
+# The last entries of `ar_funcdefs[]` (`roundtoward/2` among them, last). The C
 # library functions are called through `ccall`, as arith-b's.
-# `sinh` & co. of the C library (`cr_sinh` & co. of pl-arith.c, FE_TONEAREST)
-"`sinh(x)` of the C library (pl-arith.c `cr_sinh`, FE_TONEAREST)."
-_libm_sinh(x::Float64)::Float64 = ccall((:sinh, LIBM), Float64, (Float64,), x)
+# PORT: pl-arith.c CR_FUNC as _libm_sinh
+"`sinh(x)` of the C library (pl-arith.c `cr_sinh`)."
+_libm_sinh(x::Float64)::Float64 = CR_FUNC(_c_sinh, x)
 # PORT: pl-arith.c cr_cosh as _libm_cosh
-# DIVERGES: FE_TONEAREST only; the directed-rounding arms (`fegetround`, `nexttoward` of the result) wait for `roundtoward/2` (AR1).
-"`cosh(x)` of the C library (pl-arith.c `cr_cosh`, FE_TONEAREST)."
-_libm_cosh(x::Float64)::Float64 = ccall((:cosh, LIBM), Float64, (Float64,), x)
-"`tanh(x)` of the C library (pl-arith.c `cr_tanh`, FE_TONEAREST)."
-_libm_tanh(x::Float64)::Float64 = ccall((:tanh, LIBM), Float64, (Float64,), x)
+"`cosh(x)` of the C library (pl-arith.c `cr_cosh`): the lower limit of the result is 1.0."
+function _libm_cosh(x::Float64)::Float64
+    roundMode = fegetround()
+    roundMode != FE_TONEAREST && fesetround(FE_TONEAREST)
+    result = _c_cosh(x)
+    if !isnan(result)
+        if roundMode == FE_UPWARD
+            result = nexttoward(result, Inf)
+        elseif roundMode == FE_DOWNWARD || roundMode == FE_TOWARDZERO
+            if result != Inf
+                result = (result > 1.0) ? nexttoward(result, 0.0) : 1.0
+            end
+        end
+    end
+    roundMode != FE_TONEAREST && fesetround(roundMode)
+    return result
+end
+# PORT: pl-arith.c CR_FUNC_1 as _libm_tanh
+"`tanh(x)` of the C library (pl-arith.c `cr_tanh`)."
+_libm_tanh(x::Float64)::Float64 = CR_FUNC_1(_c_tanh, x)
 # `asinh`, `acosh` and `atanh` are not redefined by `O_ROUND_UP_DOWN`: C's own
 "`asinh(x)` of the C library (pl-arith.c `ar_asinh`, C's own: the same as Julia's but for the last digit)."
 _libm_asinh(x::Float64)::Float64 = ccall((:asinh, LIBM), Float64, (Float64,), x)
@@ -1987,19 +2132,31 @@ _libm_acosh(x::Float64)::Float64 = ccall((:acosh, LIBM), Float64, (Float64,), x)
 "`atanh(x)` of the C library: a NaN beyond ±1 (Julia's `atanh` throws)."
 _libm_atanh(x::Float64)::Float64 = ccall((:atanh, LIBM), Float64, (Float64,), x)
 # PORT: pl-arith.c cr_erf as _libm_erf
-# DIVERGES: FE_TONEAREST only; the directed-rounding arms (`fegetround`, `nexttoward` of the result) wait for `roundtoward/2` (AR1).
-"`erf(x)` of the C library (pl-arith.c `cr_erf`, FE_TONEAREST)."
-_libm_erf(x::Float64)::Float64 = ccall((:erf, LIBM), Float64, (Float64,), x)
+"`erf(x)` of the C library (pl-arith.c `cr_erf`): bounded by +/- 1.0."
+function _libm_erf(x::Float64)::Float64
+    roundMode = fegetround()
+    roundMode != FE_TONEAREST && fesetround(FE_TONEAREST)
+    result = _c_erf(x)                                      # abs(result) =< 1.0
+    if !isnan(result) && !isinf(x)
+        if roundMode == FE_UPWARD
+            result = (result < 1.0) ? nexttoward(result, Inf) : 1.0
+        elseif roundMode == FE_DOWNWARD
+            result = (result > -1.0) ? nexttoward(result, -Inf) : -1.0
+        elseif roundMode == FE_TOWARDZERO
+            result = nexttoward(result, 0.0)
+        end
+    end
+    roundMode != FE_TONEAREST && fesetround(roundMode)
+    return result
+end
 # PORT: pl-arith.c cr_erfc as _libm_erfc
 # The build without CORE-MATH, the pin's: `return 1.0 - cr_erf(in)` — not the C library's erfc, so a large
 # argument loses its low bits and erfc(6.0) is 0.0, as swipl's (the oracle's rows).
 "`erfc(x)` as upstream computes it without CORE-MATH (pl-arith.c `cr_erfc`): `1.0 - erf(x)`."
 _libm_erfc(x::Float64)::Float64 = 1.0 - _libm_erf(x)
-"`log10(x)` of the C library (pl-arith.c `cr_log10`, FE_TONEAREST)."
-_libm_log10(x::Float64)::Float64 = ccall((:log10, LIBM), Float64, (Float64,), x)
-# `lgamma` keeps the sign in the global `signgam`, which nothing reads here
-"`lgamma(x)` of the C library (pl-arith.c `cr_lgamma`, FE_TONEAREST)."
-_libm_lgamma(x::Float64)::Float64 = ccall((:lgamma, LIBM), Float64, (Float64,), x)
+# PORT: pl-arith.c CR_FUNC as _libm_lgamma
+"`lgamma(x)` of the C library (pl-arith.c `cr_lgamma`)."
+_libm_lgamma(x::Float64)::Float64 = CR_FUNC(_c_lgamma, x)
 
 # PORT: pl-arith.c ar_sinh
 "`sinh/1` (pl-arith.c `ar_sinh`, UNAIRY_FLOAT_FUNCTION)."
