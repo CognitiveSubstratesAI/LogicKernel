@@ -2945,6 +2945,59 @@ _index_entry_points(T) = (
     (LK.symbol_stream_pair_not_allowed, Tuple{LK.PL_local_data{T}, T}, false)
 )
 
+# LANE F — os/pl-table.c (src/os/pl-table.jl): the hash tables, word -> word. Every function takes the table, its maps,
+# `UInt64` keys and values and `Int` indexes (no term type): listed once, below; the two that take the local data
+# (`addNewHTable`'s duplicate warning) are checked for every payload type.
+_manifest_table(T) = begin
+    LD = LK.PL_local_data{T}
+    (
+        (LK.addNewHTable, Tuple{LD, LK.Table, UInt64, UInt64}, false),
+        (LK.PL_add_hash_table, Tuple{LD, LK.Table, UInt64, UInt64, Int}, false)
+    )
+end
+_manifest_table_plain() = (
+    (LK.symbol, Tuple{UInt64, UInt64}, false),
+    (LK.KVS, Tuple{Int, Bool, Int, Nothing, Nothing, Vector{LK.symbol}}, false),
+    (LK.Table, Tuple{Int, Bool, Nothing, Nothing, LK.KVS}, false),
+    (LK.TableEnum, Tuple{LK.Table, LK.KVS, Int}, false),
+    (LK._htable_kvs_in_use, Tuple{LK.KVS}, true),
+    (LK.htable_name, Tuple{LK.KVS, Int}, true),
+    (LK.htable_value, Tuple{LK.KVS, Int}, true),
+    (LK.htable_cas_name, Tuple{LK.KVS, Int, UInt64, UInt64}, false),
+    (LK.htable_cas_value, Tuple{LK.KVS, Int, UInt64, UInt64}, false),
+    (LK.htable_cas_new_kvs, Tuple{LK.KVS, LK.KVS}, false),
+    (LK.htable_cas_cleanup, Tuple{LK.Table, Bool, Bool}, false),
+    (LK.htable_alloc_kvs, Tuple{Int}, false),
+    (LK.htable_free_kvs, Tuple{LK.KVS}, false),
+    (LK.htable_free_all_kvs, Tuple{LK.Table}, false),
+    (LK.htable_maybe_free_kvs, Tuple{LK.Table}, false),
+    (LK.htable_copy_kvs, Tuple{LK.Table, LK.KVS, LK.KVS}, false),
+    (LK.htable_resize, Tuple{LK.Table, LK.KVS}, false),
+    (LK.htable_get, Tuple{LK.Table, LK.KVS, UInt64}, false),
+    (LK.htable_put, Tuple{LK.Table, LK.KVS, UInt64, UInt64, Int}, false),
+    (LK.htable_iter, Tuple{LK.Table, LK.KVS, Int}, false),
+    (LK.newHTable, Tuple{Int}, false),
+    (LK.destroyHTable, Tuple{LK.Table}, false),
+    (LK.lookupHTable, Tuple{LK.Table, UInt64}, false),
+    (LK.addHTable, Tuple{LK.Table, UInt64, UInt64}, false),
+    (LK.updateHTable, Tuple{LK.Table, UInt64, UInt64}, false),
+    (LK.deleteHTable, Tuple{LK.Table, UInt64}, false),
+    (LK.clearHTable, Tuple{LK.Table}, false),
+    (LK.copyHTable, Tuple{LK.Table}, false),
+    (LK.newTableEnum, Tuple{LK.Table}, false),
+    (LK.freeTableEnum, Tuple{LK.TableEnum}, false),
+    (LK.advanceTableEnum, Tuple{LK.TableEnum}, false),
+    (LK.sizeofTable, Tuple{LK.Table}, true),
+    (LK.PL_new_hash_table, Tuple{Int, Nothing}, false),
+    (LK.PL_free_hash_table, Tuple{LK.Table}, false),
+    (LK.PL_lookup_hash_table, Tuple{LK.Table, UInt64}, false),
+    (LK.PL_del_hash_table, Tuple{LK.Table, UInt64}, false),
+    (LK.PL_clear_hash_table, Tuple{LK.Table}, false),
+    (LK.PL_new_hash_table_enum, Tuple{LK.Table}, false),
+    (LK.PL_free_hash_table_enum, Tuple{LK.TableEnum}, false),
+    (LK.PL_advance_hash_table_enum, Tuple{LK.TableEnum}, false)
+)
+
 # LB2b — locating files: os/pl-files.c, os/pl-glob.c and the file-name helpers of os/pl-os.c
 # (src/os/pl-files.jl, src/os/pl-glob.jl, src/os/pl-os.jl). The methods that take the local data (`ld`) are
 # checked for every payload type; the ones on plain strings, integers and byte vectors once, below.
@@ -3191,6 +3244,10 @@ const _DISPATCH_MANIFEST_TUPLE = (
     _manifest_lb2b(_M1)...,
     _manifest_lb2b(_M2)...,
     _manifest_lb2b(_M3)...,
+    _manifest_table(_M1)...,
+    _manifest_table(_M2)...,
+    _manifest_table(_M3)...,
+    _manifest_table_plain()...,
     _MANIFEST_LB2B_FREE...,
     _manifest_lb7(_M1)...,
     _manifest_lb7(_M2)...,
