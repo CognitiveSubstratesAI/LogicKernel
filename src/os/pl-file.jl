@@ -1637,8 +1637,8 @@ Swrite_null(mem::Vector{UInt8}, from::Int, size::Int)::Int = size
 Sread_null(mem::Vector{UInt8}, from::Int, size::Int)::Int = 0
 
 # PORT: pl-file.c Sseek_null
-# DIVERGES: the stream layer has no seek dispatch yet (`Sseek64`, S2b: no `S_seek64`), so nothing calls this until it has; written
-# as upstream has it (a seek to an absolute position answers it, the other whences -1).
+# DIVERGES: `S_seek64` (pl-stream.jl) calls this where upstream's function set holds it as the `seek` pointer, with the offset
+# as an `Int`; a seek to an absolute position answers it, the other whences -1, as upstream.
 "The seek function of a null stream (pl-file.c)."
 function Sseek_null(offset::Int, whence::Int)::Int
     whence == SIO_SEEK_SET && return offset
@@ -1660,6 +1660,172 @@ function pl_open_null_stream1_va(
     s = Snew(nothing, sflags, Snullfunctions)
     s.encoding = ENC_UTF8
     return PL_unify_stream_or_alias(ld, PL__t0, s) ? FTRUE : FFALSE
+end
+
+# ── seek and set_stream_position (pl-file.c) ────────────────────────────────────────────────────
+
+# PORT: pl-file.c getRepositionableStream
+# DIVERGES: returns the stream or `nothing` (upstream: `bool` and `IOSTREAM **sp`); "has a `seek` function" is `S_has_seek`
+# (the kernel's function sets are names, not pointer tables); no lock to release.
+"The stream `stream` names (an atom), if it records a position and can seek, else `permission_error(reposition, stream, S)`."
+function getRepositionableStream(
+    ld::PL_local_data{T}, stream::term_t
+)::Union{Nothing, IOSTREAM} where {T}
+    a = PL_get_atom(ld, stream)
+    if a === nothing
+        not_a_stream(ld, stream, SH_ALIAS)
+        return nothing
+    end
+    s = get_stream_handle(ld, a, SH_ERRORS)
+    s === nothing && return nothing
+    if s.position === nothing || !S_has_seek(s)
+        _PL_permission_error(ld, :reposition, :stream, stream)
+        return nothing
+    end
+    return s
+end
+
+# PORT: pl-file.c set_stream_position as pl_set_stream_position2_va
+# (PRED_IMPL("set_stream_position", 2, set_stream_position, PL_FA_ISO)) — pl-file.c:5611-5650 (pin 18168e62)
+"`set_stream_position(+Stream, +Pos)`: re-position `Stream` to `'\$stream_position'(Char, Line, LinePos, Byte)` (pl-file.c)."
+function pl_set_stream_position2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    stream, pos = PL__t0, PL__t0 + 1
+    a = PL_new_term_ref(ld)
+
+    s = getRepositionableStream(ld, stream)
+    s === nothing && return FFALSE
+
+    charno = lineno = linepos = byteno = nothing
+    if PL_is_functor(ld, pos, mk_sym(T, Symbol("\$stream_position")), 4) &&
+        _PL_get_arg(ld, 1, pos, a)
+        charno = PL_get_int64(ld, a)
+        _PL_get_arg(ld, 2, pos, a) && (lineno = PL_get_long(ld, a))
+        _PL_get_arg(ld, 3, pos, a) && (linepos = PL_get_long(ld, a))
+        _PL_get_arg(ld, 4, pos, a) && (byteno = PL_get_int64(ld, a))
+    end
+    if charno === nothing || lineno === nothing || linepos === nothing || byteno === nothing
+        rc = PL_error(
+            ld, "stream_position", 3, "", ERR_DOMAIN, mk_sym(T, :stream_position), pos
+        )
+        return rc ? FTRUE : FFALSE
+    end
+
+    if Sseek64(s, Int64(byteno), SIO_SEEK_SET) != 0
+        PL_error(
+            ld, "", 0, MSG_ERRNO, ERR_FILE_OPERATION, mk_sym(T, :reposition),
+            mk_sym(T, :stream), stream, s.io_errno
+        )
+        return FFALSE
+    end
+
+    p = s.position::IOPOS
+    p.byteno = byteno
+    p.charno = charno
+    p.lineno = lineno
+    p.linepos = linepos
+    Sresetesc(p)
+
+    return FTRUE
+end
+
+# PORT: pl-file.c seek as pl_seek4_va
+# (PRED_IMPL("seek", 4, seek, 0)) — pl-file.c:5655-5707 (pin 18168e62)
+# DIVERGES: `errno` is the stream's `io_errno` (see `Sseek64`); the message of the permission error is `strerror` of it,
+# read before `Sclearerr` clears it (the sentinel `MSG_ERRNO` is only understood by `ERR_FILE_OPERATION`).
+"`seek(+Stream, +Offset, +Method, -NewLocation)`: move `Stream`'s position (`bof`, `current`, `eof`), in units of its encoding (pl-file.c)."
+function pl_seek4_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    stream, offset, method, newloc = PL__t0, PL__t0 + 1, PL__t0 + 2, PL__t0 + 3
+
+    m = PL_get_atom_ex(ld, method)
+    m === nothing && return FFALSE
+
+    if _sym_is(m, :bof)
+        whence = SIO_SEEK_SET
+    elseif _sym_is(m, :current)
+        whence = SIO_SEEK_CUR
+    elseif _sym_is(m, :eof)
+        whence = SIO_SEEK_END
+    else
+        rc = PL_error(ld, "seek", 4, "", ERR_DOMAIN, mk_sym(T, :seek_method), method)
+        return rc ? FTRUE : FFALSE
+    end
+
+    off = PL_get_int64(ld, offset)
+    if off === nothing
+        rc = PL_error(ld, "seek", 4, "", ERR_DOMAIN, mk_sym(T, :integer), offset)
+        return rc ? FTRUE : FFALSE
+    end
+
+    s = term_stream_handle(ld, stream, SH_ERRORS | SH_ALIAS | SH_NOPAIR)    # PL_get_stream_handle
+    s === nothing && return FFALSE
+
+    unit = Sunit_size(s)
+
+    off *= unit
+    if Sseek64(s, Int64(off), whence) < 0
+        if s.io_errno == EINVAL
+            PL_error(
+                ld, "seek", 4, "offset out of range", ERR_DOMAIN, mk_sym(T, :position), offset
+            )
+        else
+            PL_error(
+                ld, "seek", 4, Base.Libc.strerror(s.io_errno), ERR_PERMISSION,
+                mk_sym(T, :reposition), mk_sym(T, :stream), stream
+            )
+        end
+        Sclearerr(s)
+        return FFALSE
+    end
+
+    new = Stell64(s)
+    new = div(new, unit)
+
+    return PL_unify_int64(ld, newloc, Int(new)) ? FTRUE : FFALSE
+end
+
+# PORT: pl-file.c set_end_of_stream as pl_set_end_of_stream1_va
+# (PRED_IMPL("set_end_of_stream", 1, set_end_of_stream, 0)) — pl-file.c:2634-2664 (pin 18168e62)
+# DIVERGES: `Sfileno(s) >= 0` + `ftruncate(fileno, Stell64(s))` is a stream over a file's Julia IO (`IOStream`) and
+# `truncate(io, Stell64(s))`, the IO's own buffer flushed first; every other stream "is not a file". `PL_get_stream(A1, &s,
+# SIO_OUTPUT)` reads its own flags (`SIO_OUTPUT` has no `SH_ALIAS` bit: a non-atom is `domain_error(stream, X)`).
+"`set_end_of_stream(+Stream)`: truncate the file of the output stream `Stream` at its current position (pl-file.c)."
+function pl_set_end_of_stream1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1 = PL__t0
+    a = PL_get_atom(ld, A1)
+    if a === nothing
+        not_a_stream(ld, A1, Int(SIO_OUTPUT))
+        return FFALSE
+    end
+    s = get_stream_handle(ld, a, SH_ERRORS | SH_ALIAS | SH_OUTPUT)
+    s === nothing && return FFALSE
+
+    h = s.handle
+    if s.functions == Siofunctions && h isa Sjulia_io && h.io isa IOStream
+        io = h.io::IOStream
+        try
+            flush(io)
+            truncate(io, Stell64(s))
+        catch e
+            e isa SystemError || rethrow()
+            rc = PL_error(
+                ld, "", 0, Base.Libc.strerror(e.errnum), ERR_FILE_OPERATION,
+                mk_sym(T, :set_end_of_stream), mk_sym(T, :stream), A1, e.errnum
+            )
+            return rc ? FTRUE : FFALSE
+        end
+        return FTRUE
+    end
+    rc = PL_error(
+        ld, "", 0, "not a file", ERR_PERMISSION, mk_sym(T, :set_end_of_stream),
+        mk_sym(T, :stream), A1
+    )
+    return rc ? FTRUE : FFALSE
 end
 
 # ── prompts (pl-file.c) ─────────────────────────────────────────────────────────────────────────
@@ -3515,7 +3681,7 @@ end
 
 # PORT: pl-file.c BeginPredDefs as PL_predicates_from_file
 # DIVERGES: the entries of the predicates the kernel has ported (LB5: current_input/1, current_output/1, line_count/2,
-# line_position/2, tab/1,2, at_end_of_stream/0,1, get_code/1,2, put_code/1,2 and its alias put_char/1,2; S1: open/3,4 and close/1,2; S2a: prompt/2, prompt1/1, get_char/2, peek_char/2, flush_output/1, skip/2, ttyflush/0, is_stream/1, get_single_char/1, '\$alias_stream'/2, the input context trio and '\$stream_property'/2, '\$stream_properties'/2, '\$streams_properties'/2 and set_stream/2; lane D (UNTESTED): set_input/1, set_output/1, get_char/1, get_byte/1,2, peek_char/1, peek_code/1,2, peek_byte/1,2, put_byte/1,2, flush_output/0, put/1,2, skip/1, get/1,2, get0/1,2 (upstream's alias of get_code), byte_count/2, character_count/2, see/1, seen/0, seeing/1, tell/1, append/1, telling/1, told/0, open_null_stream/1; LB2:
+# line_position/2, tab/1,2, at_end_of_stream/0,1, get_code/1,2, put_code/1,2 and its alias put_char/1,2; S1: open/3,4 and close/1,2; S2a: prompt/2, prompt1/1, get_char/2, peek_char/2, flush_output/1, skip/2, ttyflush/0, is_stream/1, get_single_char/1, '\$alias_stream'/2, the input context trio and '\$stream_property'/2, '\$stream_properties'/2, '\$streams_properties'/2 and set_stream/2; lane D (UNTESTED): set_input/1, set_output/1, get_char/1, get_byte/1,2, peek_char/1, peek_code/1,2, peek_byte/1,2, put_byte/1,2, flush_output/0, put/1,2, skip/1, get/1,2, get0/1,2 (upstream's alias of get_code), byte_count/2, character_count/2, see/1, seen/0, seeing/1, tell/1, append/1, telling/1, told/0, open_null_stream/1, stream_pair/3, set_stream_position/2, seek/4, set_end_of_stream/1; LB2:
 # source_location/2 and '$set_source_location'/2, upstream's order file:6396-6397); `PRED_DEF` ors in `PL_FA_VARARGS`.
 "pl-file.c's registration table (`BeginPredDefs(file)`): the ported entries."
 const PL_predicates_from_file = (
@@ -3525,6 +3691,9 @@ const PL_predicates_from_file = (
     PL_extension("close", 2, pl_close2_va, PL_FA_ISO | PL_FA_VARARGS),
     PL_extension("open_null_stream", 1, pl_open_null_stream1_va, PL_FA_VARARGS),
     PL_extension("stream_pair", 3, pl_stream_pair3_va, PL_FA_VARARGS),
+    PL_extension("set_stream_position", 2, pl_set_stream_position2_va, PL_FA_ISO | PL_FA_VARARGS),
+    PL_extension("seek", 4, pl_seek4_va, PL_FA_VARARGS),
+    PL_extension("set_end_of_stream", 1, pl_set_end_of_stream1_va, PL_FA_VARARGS),
     PL_extension("see", 1, pl_see1_va, PL_FA_VARARGS),
     PL_extension("seen", 0, pl_seen0_va, PL_FA_VARARGS),
     PL_extension("seeing", 1, pl_seeing1_va, PL_FA_VARARGS),

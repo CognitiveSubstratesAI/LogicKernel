@@ -2976,13 +2976,15 @@ _index_entry_points(T) = (
             LK.pl_character_count2_va, LK.pl_set_input1_va, LK.pl_set_output1_va,
             LK.pl_see1_va, LK.pl_seen0_va, LK.pl_seeing1_va, LK.pl_tell1_va,
             LK.pl_append1_va, LK.pl_telling1_va, LK.pl_told0_va, LK.pl_open_null_stream1_va,
-            LK.pl_stream_pair3_va
+            LK.pl_stream_pair3_va, LK.pl_set_stream_position2_va, LK.pl_seek4_va,
+            LK.pl_set_end_of_stream1_va
         )
     ]...,
     (LK.Swrite_null, Tuple{Vector{UInt8}, Int, Int}, false),
     (LK.Sread_null, Tuple{Vector{UInt8}, Int, Int}, false),
     (LK.Sseek_null, Tuple{Int, Int}, false),
     (LK.Sclose_null, Tuple{}, false),
+    (LK.getRepositionableStream, Tuple{LK.PL_local_data{T}, Int}, false),
     (LK.do_tell, Tuple{LK.PL_local_data{T}, Int, T}, false),
     (LK.findStreamFromFile, Tuple{LK.PL_global_data{T}, T, Int}, false),
     (LK.setStreamContextFlag, Tuple{LK.PL_global_data{T}, LK.IOSTREAM, Int}, false),
@@ -3729,6 +3731,11 @@ const _DISPATCH_MANIFEST_TUPLE = (
     (LK.Sunreference, Tuple{LK.IOSTREAM}, false),
     (LK.Sacquire, Tuple{LK.IOSTREAM}, false), (LK.Srelease, Tuple{LK.IOSTREAM}, false),
     (LK.Ssize, Tuple{LK.IOSTREAM}, false),
+    # R2 S2b — the seek layer (pl-stream.c): Sunit_size, S_has_seek, Sseek_julia_io, S_seek64, Sseek64, Stell64
+    (LK.Sunit_size, Tuple{LK.IOSTREAM}, false), (LK.S_has_seek, Tuple{LK.IOSTREAM}, false),
+    (LK.Sseek_julia_io, Tuple{LK.Sjulia_io, Int64, Int}, false),
+    (LK.S_seek64, Tuple{LK.IOSTREAM, Int64, Int}, false),
+    (LK.Sseek64, Tuple{LK.IOSTREAM, Int64, Int}, false), (LK.Stell64, Tuple{LK.IOSTREAM}, false),
     (LK.ScheckBOM, Tuple{LK.IOSTREAM}, false), (LK.SwriteBOM, Tuple{LK.IOSTREAM}, false),
     (LK._current_umask, Tuple{}, false),
     (LK._open_julia_file, Tuple{String, Char, Int64}, false),
@@ -4373,7 +4380,8 @@ const JET_DISPATCH_FAMILY = [
     (LK.S_close_wrapped, Tuple{LK.IOSTREAM}, 0),
     (LK.Swrite_stderr, Tuple{LK.IOSTREAM, Vector{UInt8}, Int, Int}, 0),
     (LK.Swrite_null, Tuple{Vector{UInt8}, Int, Int}, 0),
-    (LK.Sread_null, Tuple{Vector{UInt8}, Int, Int}, 0)
+    (LK.Sread_null, Tuple{Vector{UInt8}, Int, Int}, 0),
+    (LK.S_seek64, Tuple{LK.IOSTREAM, Int64, Int}, 0)
 ]
 
 # `is_ground(t)` with an untyped argument is the interface's FALLBACK for implementations without a
