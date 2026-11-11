@@ -2964,6 +2964,21 @@ _index_entry_points(T) = (
             LK.pl_set_stream2_va, LK.pl_set_prolog_IO3_va
         )
     ]...,
+    # lane D: the S2a/S2b Edinburgh and byte stream predicates (src/os/pl-file.jl; pl-file.c)
+    [
+        (f, Tuple{LK.PL_local_data{T}, Int, Int, LK.foreign_context{T}}, false) for
+        f in (
+            LK.pl_flush_output0_va, LK.pl_get_char1_va, LK.pl_peek_char1_va,
+            LK.pl_peek_code2_va, LK.pl_peek_code1_va, LK.pl_peek_byte2_va,
+            LK.pl_peek_byte1_va, LK.pl_skip1_va, LK.pl_get1_va, LK.pl_get2_va,
+            LK.pl_put2_va, LK.pl_put1_va, LK.pl_put_byte2_va, LK.pl_put_byte1_va,
+            LK.pl_get_byte2_va, LK.pl_get_byte1_va, LK.pl_byte_count2_va,
+            LK.pl_character_count2_va, LK.pl_set_input1_va, LK.pl_set_output1_va
+        )
+    ]...,
+    (LK.get_nonblank, Tuple{LK.PL_local_data{T}, Int, Int}, false),
+    (LK.put_byte, Tuple{LK.PL_local_data{T}, Int, Int}, false),
+    (LK.get_byte2, Tuple{LK.PL_local_data{T}, Int, Int}, false),
     (LK.prompt1, Tuple{LK.PL_local_data{T}, T}, false),
     (LK.flush_output, Tuple{LK.PL_local_data{T}, Int}, false),
     (LK.PL_unify_char, Tuple{LK.PL_local_data{T}, Int, Int, Symbol}, false),

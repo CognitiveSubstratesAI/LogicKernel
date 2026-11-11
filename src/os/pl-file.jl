@@ -1601,6 +1601,15 @@ function pl_flush_output1_va(
     return flush_output(ld, PL__t0) ? FTRUE : FFALSE
 end
 
+# PORT: pl-file.c flush_output as pl_flush_output0_va
+# (PRED_IMPL("flush_output", 0, flush_output, PL_FA_ISO)) — pl-file.c:5550-5555 (pin 18168e62)
+"`flush_output`: flush the current output (pl-file.c)."
+function pl_flush_output0_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    return flush_output(ld, 0) ? FTRUE : FFALSE
+end
+
 # ── current_input/1, current_output/1, line_count/2, line_position/2, tab/1,2 (pl-file.c) ──────
 
 # ORIGINAL: pl-file.c `is_stream_blob`'s `PL_blob_data(a, NULL, &type); type == &stream_blob`, through `_stream_ref_of`.
@@ -1686,6 +1695,58 @@ function pl_line_position2_va(
     s === nothing && return FFALSE
     n = (s.position::IOPOS).linepos
     return PL_unify_integer(ld, PL__t0 + 1, n) ? FTRUE : FFALSE
+end
+
+# PORT: pl-file.c byte_count as pl_byte_count2_va
+# (PRED_IMPL("byte_count", 2, byte_count, 0)) — pl-file.c:5782-5795 (pin 18168e62)
+"`byte_count(+Stream, -Count)`: the byte position of `Stream` (pl-file.c)."
+function pl_byte_count2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    s = getStreamWithPosition(ld, PL__t0)
+    s === nothing && return FFALSE
+    n = (s.position::IOPOS).byteno
+    return PL_unify_integer(ld, PL__t0 + 1, n) ? FTRUE : FFALSE
+end
+
+# PORT: pl-file.c character_count as pl_character_count2_va
+# (PRED_IMPL("character_count", 2, character_count, 0)) — pl-file.c:5798-5811 (pin 18168e62)
+"`character_count(+Stream, -Count)`: the character position of `Stream` (pl-file.c)."
+function pl_character_count2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    s = getStreamWithPosition(ld, PL__t0)
+    s === nothing && return FFALSE
+    n = (s.position::IOPOS).charno
+    return PL_unify_integer(ld, PL__t0 + 1, n) ? FTRUE : FFALSE
+end
+
+# PORT: pl-file.c set_input as pl_set_input1_va
+# (PRED_IMPL("set_input", 1, set_input, PL_FA_ISO)) — pl-file.c:5709-5721 (pin 18168e62)
+"`set_input(+Stream)`: make `Stream` the current input (pl-file.c)."
+function pl_set_input1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    s = getInputStream(ld, PL__t0, S_DONTCARE)
+    if s !== nothing
+        setStandardStream(ld, SNO_CURRENT_INPUT, s)
+        return FTRUE
+    end
+    return FFALSE
+end
+
+# PORT: pl-file.c set_output as pl_set_output1_va
+# (PRED_IMPL("set_output", 1, set_output, PL_FA_ISO)) — pl-file.c:5724-5736 (pin 18168e62)
+"`set_output(+Stream)`: make `Stream` the current output (pl-file.c)."
+function pl_set_output1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    s = getOutputStream(ld, PL__t0, S_DONTCARE)
+    if s !== nothing
+        setStandardStream(ld, SNO_CURRENT_OUTPUT, s)
+        return FTRUE
+    end
+    return FFALSE
 end
 
 # PORT: pl-file.c tab
@@ -1885,14 +1946,24 @@ function pl_get_char2_va(
     return get_char2(ld, PL__t0, PL__t0 + 1) ? FTRUE : FFALSE
 end
 
+# PORT: pl-file.c get_char1 as pl_get_char1_va
+# (PRED_IMPL("get_char", 1, get_char1, 0)) — pl-file.c:3724-3728 (pin 18168e62)
+"`get_char(-Char)`: read the next character of the current input; `end_of_file` at its end (pl-file.c)."
+function pl_get_char1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    return get_char2(ld, 0, PL__t0) ? FTRUE : FFALSE
+end
+
 # PORT: pl-file.c peek
-# DIVERGES: only the `:char` and `:code` forms (`how == PL_BYTE`'s `Sgetc`/`Sungetc` branch is S2b's with the byte
-# predicates); no locks (`releaseStream`).
+# DIVERGES: `how` is `:char`, `:code` or `:byte` (upstream: `PL_CHAR`, `PL_CODE`, `PL_BYTE`); `IOPOS pos = s->posbuf` is a
+# field-by-field copy, as `s.posbuf` is the object `s.position` points at (`getSingleChar` does the same); no locks
+# (`releaseStream`).
 "Peek the next character of the input stream `stream` names and unify it with `chr` as `how` asks (pl-file.c)."
 function peek(
     ld::PL_local_data{T}, stream::term_t, chr::term_t, how::Symbol
 )::Bool where {T}
-    s = getInputStream(ld, stream, S_TEXT)
+    s = getInputStream(ld, stream, how === :byte ? S_BINARY : S_TEXT)
     s === nothing && return false
     if (s.flags & SIO_NBUF) != 0 || (s.bufsize != 0 && s.bufsize < UNDO_SIZE)   # PL_MB_LEN_MAX
         PL_error(
@@ -1901,7 +1972,16 @@ function peek(
         )
         return false
     end
-    c = Speekcode(s)
+    if how === :byte
+        p = s.posbuf
+        oldpos = IOPOS(p.byteno, p.charno, p.lineno, p.linepos, p.esc_state)    # IOPOS pos = s->posbuf
+        c = Sgetc(s)
+        c != EOF && Sungetc(c, s)
+        p.byteno, p.charno, p.lineno, p.linepos, p.esc_state = oldpos.byteno,
+        oldpos.charno, oldpos.lineno, oldpos.linepos, oldpos.esc_state          # s->posbuf = pos
+    else
+        c = Speekcode(s)
+    end
     Sferror(s) != 0 && return streamStatus(ld, s)
     return PL_unify_char(ld, chr, c, how)
 end
@@ -1913,6 +1993,51 @@ function pl_peek_char2_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
 )::foreign_t where {T}
     return peek(ld, PL__t0, PL__t0 + 1, :char) ? FTRUE : FFALSE
+end
+
+# PORT: pl-file.c peek_char1 as pl_peek_char1_va
+# (PRED_IMPL("peek_char", 1, peek_char1, 0)) — pl-file.c:6002-6006 (pin 18168e62)
+"`peek_char(-Char)`: the next character of the current input without reading it (pl-file.c)."
+function pl_peek_char1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    return peek(ld, 0, PL__t0, :char) ? FTRUE : FFALSE
+end
+
+# PORT: pl-file.c peek_code2 as pl_peek_code2_va
+# (PRED_IMPL("peek_code", 2, peek_code2, 0)) — pl-file.c:5981-5985 (pin 18168e62)
+"`peek_code(+Stream, -Code)`: the next character code of `Stream` without reading it (pl-file.c)."
+function pl_peek_code2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    return peek(ld, PL__t0, PL__t0 + 1, :code) ? FTRUE : FFALSE
+end
+
+# PORT: pl-file.c peek_code1 as pl_peek_code1_va
+# (PRED_IMPL("peek_code", 1, peek_code1, 0)) — pl-file.c:5988-5992 (pin 18168e62)
+"`peek_code(-Code)`: the next character code of the current input without reading it (pl-file.c)."
+function pl_peek_code1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    return peek(ld, 0, PL__t0, :code) ? FTRUE : FFALSE
+end
+
+# PORT: pl-file.c peek_byte2 as pl_peek_byte2_va
+# (PRED_IMPL("peek_byte", 2, peek_byte2, 0)) — pl-file.c:5967-5971 (pin 18168e62)
+"`peek_byte(+Stream, -Byte)`: the next byte of the binary stream `Stream` without reading it (pl-file.c)."
+function pl_peek_byte2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    return peek(ld, PL__t0, PL__t0 + 1, :byte) ? FTRUE : FFALSE
+end
+
+# PORT: pl-file.c peek_byte1 as pl_peek_byte1_va
+# (PRED_IMPL("peek_byte", 1, peek_byte1, 0)) — pl-file.c:5974-5978 (pin 18168e62)
+"`peek_byte(-Byte)`: the next byte of the current (binary) input without reading it (pl-file.c)."
+function pl_peek_byte1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    return peek(ld, 0, PL__t0, :byte) ? FTRUE : FFALSE
 end
 
 # PORT: pl-file.c skip
@@ -1937,6 +2062,148 @@ function pl_skip2_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
 )::foreign_t where {T}
     return skip(ld, PL__t0, PL__t0 + 1) ? FTRUE : FFALSE
+end
+
+# PORT: pl-file.c skip1 as pl_skip1_va
+# (PRED_IMPL("skip", 1, skip1, 0)) — pl-file.c:3582-3587 (pin 18168e62)
+"`skip(+Code)`: read the current input up to and including `Code` (pl-file.c)."
+function pl_skip1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    return skip(ld, 0, PL__t0) ? FTRUE : FFALSE
+end
+
+# PORT: pl-file.c get_nonblank
+# DIVERGES: no lock (`releaseStream`).
+"Read the next non-blank character code of the text input stream `in` names (0: the current input) and unify it with `chr`; -1 at the end (pl-file.c)."
+function get_nonblank(ld::PL_local_data, in::term_t, chr::term_t)::Bool
+    s = getTextInputStream(ld, in)
+    if s !== nothing
+        while true
+            c = Sgetcode(s)
+
+            if c == EOF
+                PL_unify_integer(ld, chr, -1) || return false
+                return streamStatus(ld, s)
+            end
+
+            isBlankW(c) || return PL_unify_integer(ld, chr, c)
+        end
+    end
+
+    return false
+end
+
+# PORT: pl-file.c get1 as pl_get1_va
+# (PRED_IMPL("get", 1, get1, 0)) — pl-file.c:3547-3552 (pin 18168e62)
+"`get(-Code)`: the next non-blank character code of the current input (pl-file.c)."
+function pl_get1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    return get_nonblank(ld, 0, PL__t0) ? FTRUE : FFALSE
+end
+
+# PORT: pl-file.c get2 as pl_get2_va
+# (PRED_IMPL("get", 2, get2, 0)) — pl-file.c:3555-3560 (pin 18168e62)
+"`get(+Stream, -Code)`: the next non-blank character code of `Stream` (pl-file.c)."
+function pl_get2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    return get_nonblank(ld, PL__t0, PL__t0 + 1) ? FTRUE : FFALSE
+end
+
+# PORT: pl-file.c put2 as pl_put2_va
+# (PRED_IMPL("put", 2, put2, 0)) — pl-file.c:3504-3509 (pin 18168e62)
+"`put(+Stream, +Char)`: Edinburgh name of `put_code/2` (pl-file.c)."
+function pl_put2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    return put_code(ld, PL__t0, PL__t0 + 1) ? FTRUE : FFALSE
+end
+
+# PORT: pl-file.c put1 as pl_put1_va
+# (PRED_IMPL("put", 1, put1, 0)) — pl-file.c:3512-3517 (pin 18168e62)
+"`put(+Char)`: Edinburgh name of `put_code/1` (pl-file.c)."
+function pl_put1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    return put_code(ld, 0, PL__t0) ? FTRUE : FFALSE
+end
+
+# PORT: pl-file.c put_byte
+# DIVERGES: no lock; the three-argument form (`ld` first) is distinct from pl-stream.jl's `put_byte(c, s)`
+# (pl-stream.c put_byte), as `put_code` is from `put_code(c, s)`.
+"Write the byte `byte` to the binary output stream `stream` names (0: the current output) (pl-file.c)."
+function put_byte(ld::PL_local_data{T}, stream::term_t, byte::term_t)::Bool where {T}
+    c = PL_get_integer(ld, byte)
+    if c === nothing || c < 0 || c > 255
+        PL_error(ld, ERR_TYPE, mk_sym(T, :byte), byte)
+        return false
+    end
+    s = getOutputStream(ld, stream, S_BINARY)       # getBinaryOutputStream
+    s === nothing && return false
+
+    Sputc(c, s)
+
+    return streamStatus(ld, s)
+end
+
+# PORT: pl-file.c put_byte2 as pl_put_byte2_va
+# (PRED_IMPL("put_byte", 2, put_byte2, 0); the table entry has PL_FA_ISO) — pl-file.c:3455-3460 (pin 18168e62)
+"`put_byte(+Stream, +Byte)`: write a byte to the binary stream `Stream` (pl-file.c)."
+function pl_put_byte2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    return put_byte(ld, PL__t0, PL__t0 + 1) ? FTRUE : FFALSE
+end
+
+# PORT: pl-file.c put_byte1 as pl_put_byte1_va
+# (PRED_IMPL("put_byte", 1, put_byte1, 0); the table entry has PL_FA_ISO) — pl-file.c:3463-3468 (pin 18168e62)
+"`put_byte(+Byte)`: write a byte to the current (binary) output (pl-file.c)."
+function pl_put_byte1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    return put_byte(ld, 0, PL__t0) ? FTRUE : FFALSE
+end
+
+# PORT: pl-file.c get_byte2
+# DIVERGES: `PL_get_char(chr, &c, true)` (eof accepted) is written out as in `get_code2`: `-1` and `end_of_file`
+# make the call fail without the type error; no lock.
+"Read the next byte of the binary input stream `in` names (0: the current input) and unify it with `chr`; -1 at the end (pl-file.c)."
+function get_byte2(ld::PL_local_data{T}, in::term_t, chr::term_t)::Bool where {T}
+    s = getInputStream(ld, in, S_BINARY)            # getBinaryInputStream
+    if s !== nothing
+        c = Sgetc(s)
+
+        PL_unify_integer(ld, chr, c) && return streamStatus(ld, s)
+
+        Sferror(s) != 0 && return streamStatus(ld, s)
+
+        i = PL_get_integer(ld, chr)
+        a = PL_get_atom(ld, chr)
+        (i == -1 || (a !== nothing && sym_key(a) == sym_key(mk_sym(T, :end_of_file)))) &&
+            return false
+        PL_get_char(ld, chr)                        # set type-error
+    end
+    return false
+end
+
+# PORT: pl-file.c get_byte2 as pl_get_byte2_va
+# (PRED_IMPL("get_byte", 2, get_byte2, 0); the table entry has PL_FA_ISO) — pl-file.c:3645-3650 (pin 18168e62)
+"`get_byte(+Stream, -Byte)`: read the next byte of the binary stream `Stream`; -1 at its end (pl-file.c)."
+function pl_get_byte2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    return get_byte2(ld, PL__t0, PL__t0 + 1) ? FTRUE : FFALSE
+end
+
+# PORT: pl-file.c get_byte1 as pl_get_byte1_va
+# (PRED_IMPL("get_byte", 1, get_byte1, 0); the table entry has PL_FA_ISO) — pl-file.c:3653-3658 (pin 18168e62)
+"`get_byte(-Byte)`: read the next byte of the current (binary) input (pl-file.c)."
+function pl_get_byte1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    return get_byte2(ld, 0, PL__t0) ? FTRUE : FFALSE
 end
 
 # PORT: pl-file.c Sgetcode_intr
@@ -2969,7 +3236,7 @@ end
 
 # PORT: pl-file.c BeginPredDefs as PL_predicates_from_file
 # DIVERGES: the entries of the predicates the kernel has ported (LB5: current_input/1, current_output/1, line_count/2,
-# line_position/2, tab/1,2, at_end_of_stream/0,1, get_code/1,2, put_code/1,2 and its alias put_char/1,2; S1: open/3,4 and close/1,2; S2a: prompt/2, prompt1/1, get_char/2, peek_char/2, flush_output/1, skip/2, ttyflush/0, is_stream/1, get_single_char/1, '\$alias_stream'/2, the input context trio and '\$stream_property'/2, '\$stream_properties'/2, '\$streams_properties'/2 and set_stream/2; LB2:
+# line_position/2, tab/1,2, at_end_of_stream/0,1, get_code/1,2, put_code/1,2 and its alias put_char/1,2; S1: open/3,4 and close/1,2; S2a: prompt/2, prompt1/1, get_char/2, peek_char/2, flush_output/1, skip/2, ttyflush/0, is_stream/1, get_single_char/1, '\$alias_stream'/2, the input context trio and '\$stream_property'/2, '\$stream_properties'/2, '\$streams_properties'/2 and set_stream/2; lane D (UNTESTED): set_input/1, set_output/1, get_char/1, get_byte/1,2, peek_char/1, peek_code/1,2, peek_byte/1,2, put_byte/1,2, flush_output/0, put/1,2, skip/1, get/1,2, get0/1,2 (upstream's alias of get_code), byte_count/2, character_count/2; LB2:
 # source_location/2 and '$set_source_location'/2, upstream's order file:6396-6397); `PRED_DEF` ors in `PL_FA_VARARGS`.
 "pl-file.c's registration table (`BeginPredDefs(file)`): the ported entries."
 const PL_predicates_from_file = (
@@ -2977,9 +3244,31 @@ const PL_predicates_from_file = (
     PL_extension("open", 3, pl_open3_va, PL_FA_ISO | PL_FA_VARARGS),
     PL_extension("close", 1, pl_close1_va, PL_FA_ISO | PL_FA_VARARGS),
     PL_extension("close", 2, pl_close2_va, PL_FA_ISO | PL_FA_VARARGS),
+    PL_extension("set_input", 1, pl_set_input1_va, PL_FA_ISO | PL_FA_VARARGS),
+    PL_extension("set_output", 1, pl_set_output1_va, PL_FA_ISO | PL_FA_VARARGS),
     PL_extension("get_char", 2, pl_get_char2_va, PL_FA_ISO | PL_FA_VARARGS),
+    PL_extension("get_char", 1, pl_get_char1_va, PL_FA_ISO | PL_FA_VARARGS),
+    PL_extension("get_byte", 2, pl_get_byte2_va, PL_FA_ISO | PL_FA_VARARGS),
+    PL_extension("get_byte", 1, pl_get_byte1_va, PL_FA_ISO | PL_FA_VARARGS),
     PL_extension("peek_char", 2, pl_peek_char2_va, PL_FA_ISO | PL_FA_VARARGS),
+    PL_extension("peek_char", 1, pl_peek_char1_va, PL_FA_ISO | PL_FA_VARARGS),
+    PL_extension("peek_code", 2, pl_peek_code2_va, PL_FA_ISO | PL_FA_VARARGS),
+    PL_extension("peek_code", 1, pl_peek_code1_va, PL_FA_ISO | PL_FA_VARARGS),
+    PL_extension("peek_byte", 2, pl_peek_byte2_va, PL_FA_ISO | PL_FA_VARARGS),
+    PL_extension("peek_byte", 1, pl_peek_byte1_va, PL_FA_ISO | PL_FA_VARARGS),
+    PL_extension("put_byte", 2, pl_put_byte2_va, PL_FA_ISO | PL_FA_VARARGS),
+    PL_extension("put_byte", 1, pl_put_byte1_va, PL_FA_ISO | PL_FA_VARARGS),
+    PL_extension("flush_output", 0, pl_flush_output0_va, PL_FA_ISO | PL_FA_VARARGS),
     PL_extension("flush_output", 1, pl_flush_output1_va, PL_FA_ISO | PL_FA_VARARGS),
+    PL_extension("put", 2, pl_put2_va, PL_FA_VARARGS),
+    PL_extension("put", 1, pl_put1_va, PL_FA_VARARGS),
+    PL_extension("skip", 1, pl_skip1_va, PL_FA_VARARGS),
+    PL_extension("get", 1, pl_get1_va, PL_FA_VARARGS),
+    PL_extension("get", 2, pl_get2_va, PL_FA_VARARGS),
+    PL_extension("get0", 2, pl_get_code2_va, PL_FA_VARARGS),
+    PL_extension("get0", 1, pl_get_code1_va, PL_FA_VARARGS),
+    PL_extension("byte_count", 2, pl_byte_count2_va, PL_FA_VARARGS),
+    PL_extension("character_count", 2, pl_character_count2_va, PL_FA_VARARGS),
     PL_extension("current_input", 1, pl_current_input1_va, PL_FA_ISO | PL_FA_VARARGS),
     PL_extension("current_output", 1, pl_current_output1_va, PL_FA_ISO | PL_FA_VARARGS),
     PL_extension("line_count", 2, pl_line_count2_va, PL_FA_VARARGS),
