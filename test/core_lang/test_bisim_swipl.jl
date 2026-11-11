@@ -5,7 +5,7 @@
 # own (the pin's), printed by the driver below. When `swipl` is on PATH the .out is checked against a live run as well.
 # Rows t0-t17 are term_factorized/3,4 (cyclic terms, shared and equal subterms, '$VAR' left alone, both options and their errors),
 # t18-t24 term_minimal/2, t25-t31 '$term_canonical_form'/2, t32-t45 term_automaton/2 both ways, t46-t60 automaton_minimal/2,3,
-# t61-t71 the errors (instantiation, type, domain, existence of a state). UNTESTED when written: nothing compiled (lane F, pl-bisim).
+# t61-t71 the errors (instantiation, type, domain, existence of a state), t72-t73 the option defaults of term_factorized/4. UNTESTED when written: nothing compiled (lane F, pl-bisim).
 using Test, LogicKernel
 const LK = LogicKernel
 
@@ -154,7 +154,7 @@ _bs_count(lines, word) = sum(l -> length(findall(_codes(word), l)), lines; init=
     names = _bs_names()
     expected = String.(readlines(_BS_OUT))
     # not a vacuous agreement: the .out has a line per row, and the rows' own evidence is in it
-    @test length(names) == 72 && names == ["t$i" for i in 0:71]
+    @test length(names) == 74 && names == ["t$i" for i in 0:73]
     @test length(expected) == length(names) + 1 && expected[1] == "ok"
     @test all(i -> startswith(expected[i + 1], names[i] * " "), eachindex(names))
     body = expected[2:end]

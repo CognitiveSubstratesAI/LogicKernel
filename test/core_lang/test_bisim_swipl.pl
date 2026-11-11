@@ -91,3 +91,7 @@ t68(R) :- err(term_automaton(_, foo), R).
 t69(R) :- err(term_automaton(_, automaton(f(x), a)), R).
 t70(R) :- err(term_automaton(_, automaton(f(9), a)), R).
 t71(R) :- compound_name_arguments(A, automaton, []), err(term_automaton(_, A), R).
+
+% the option defaults of term_factorized/4: minimal(true) and dollar_var(true) when the other is given
+t72(R) :- T = f('$VAR'(1), '$VAR'(1), g(a), g(a)), term_factorized(T, S, Sub, [minimal(true)]), R = r(S, Sub).
+t73(R) :- T = f(g(a), g(a), '$VAR'(1), '$VAR'(1)), term_factorized(T, S, Sub, [dollar_var(true)]), R = r(S, Sub).
