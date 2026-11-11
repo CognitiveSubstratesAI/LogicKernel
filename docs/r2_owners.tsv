@@ -44,7 +44,6 @@ pred:$mono_reeval_done/3	TAB1	seed: missing_c_preds.tsv
 pred:$mono_reeval_prepare/2	TAB1	seed: missing_c_preds.tsv
 pred:$on_signal/4	Q10	seed: missing_c_preds.tsv
 pred:$put_token/2	Q10	seed: missing_c_preds.tsv
-pred:$rc_handle/1	ZIP1	seed: missing_c_preds.tsv
 pred:$set_prolog_stack/4	Q10	seed: missing_c_preds.tsv
 pred:$sig_unblock/0	TH1	seed: missing_c_preds.tsv
 pred:$snapshot/1	TX1	seed: missing_c_preds.tsv
@@ -141,11 +140,6 @@ pred:trie_term/2	TRIE1	seed: missing_c_preds.tsv
 pred:trim_heap/0	Q10	seed: missing_c_preds.tsv
 pred:trim_stacks/0	Q10	seed: missing_c_preds.tsv
 pred:unwrap_predicate/2	WRAP1	seed: missing_c_preds.tsv
-pred:zip_clone/2	ZIP1	seed: missing_c_preds.tsv
-pred:zip_close_/2	ZIP1	seed: missing_c_preds.tsv
-pred:zip_file_info_/3	ZIP1	seed: missing_c_preds.tsv
-pred:zipper_goto/2	ZIP1	seed: missing_c_preds.tsv
-pred:zipper_open_current/3	ZIP1	seed: missing_c_preds.tsv
 vmi:A_ADD	AR1	seed: VM-instruction family
 vmi:A_DOUBLE	AR1	seed: VM-instruction family
 vmi:A_ENTER	AR1	seed: VM-instruction family
@@ -272,3 +266,17 @@ refusal:src/pl-string.jl::pl_string_bytes3_va::string_bytes/3 with the encoding 
 refusal:src/pl-supervisor.jl::freeCodesDefinition!::freeCodesDefinition! of a wrapped predicate needs the databa	WRAP1	freeCodesDefinition of a wrapped predicate (pl-supervisor.c), needs the database; wrap closures are WRAP1
 refusal:src/pl-wam.jl::PL_next_solution_guarded::the VM instruction $(codeTable(thiscode).name)	TAB1	dispatch fallthrough for a VM instruction without a body (pl-vmi.c); each missing instruction has its own vmi: row, the last family (T_*, S_TABLED) removes this site
 refusal:src/pl-write.jl::writePrimitive::writing a grounded value SWI has no type for	WR2	writePrimitive of a grounded value SWI has no type for; a representation guard of the kernel, permanent until the blob writer takes it
+# ZIP1 (src/pl-zip.jl): the named refusals at the first minizip call; the 6 pred: rows of ZIP1 are registered now
+refusal:src/pl-zip.jl::pl_zip_open_stream3_va::zipOpen2_64: a zip writer needs minizip and deflate (pl-zip.	ZIP1	the named refusal of pl_zip_open_stream3_va (pl-zip.c, minizip); no zip reader or writer in the kernel (docs/architecture.md ZIP1)
+refusal:src/pl-zip.jl::pl_zip_open_stream3_va::unzOpen2_64: a zip reader needs minizip and inflate (pl-zip.	ZIP1	the named refusal of pl_zip_open_stream3_va (pl-zip.c, minizip); no zip reader or writer in the kernel (docs/architecture.md ZIP1)
+refusal:src/pl-zip.jl::pl_zip_clone2_va::unzClone of a zipper's reader (pl-zip.c:667)	ZIP1	the named refusal of pl_zip_clone2_va (pl-zip.c, minizip); no zip reader or writer in the kernel (docs/architecture.md ZIP1)
+refusal:src/pl-zip.jl::pl_zip_close2_va::zipClose and unzClose of a zipper (pl-zip.c:479)	ZIP1	the named refusal of pl_zip_close2_va (pl-zip.c, minizip); no zip reader or writer in the kernel (docs/architecture.md ZIP1)
+refusal:src/pl-zip.jl::pl_zip_lock1_va::zlock: the lock of a zipper (pl-zip.c:127)	ZIP1	the named refusal of pl_zip_lock1_va (pl-zip.c, minizip); no zip reader or writer in the kernel (docs/architecture.md ZIP1)
+refusal:src/pl-zip.jl::pl_zip_unlock1_va::zunlock: the lock of a zipper (pl-zip.c:142)	ZIP1	the named refusal of pl_zip_unlock1_va (pl-zip.c, minizip); no zip reader or writer in the kernel (docs/architecture.md ZIP1)
+refusal:src/pl-zip.jl::pl_zipper_open_new_file_in_zip4_va::a zip entry writer: options extra, comment, time; deflate (p	ZIP1	the named refusal of pl_zipper_open_new_file_in_zip4_va (pl-zip.c, minizip); no zip reader or writer in the kernel (docs/architecture.md ZIP1)
+refusal:src/pl-zip.jl::pl_zipper_goto2_va::unzGoToFirstFile, unzGoToNextFile, unzLocateFile (pl-zip.c:9	ZIP1	the named refusal of pl_zipper_goto2_va (pl-zip.c, minizip); no zip reader or writer in the kernel (docs/architecture.md ZIP1)
+refusal:src/pl-zip.jl::pl_zipper_open_current3_va::unzOpenCurrentFile: an entry reader needs inflate (pl-zip.c:	ZIP1	the named refusal of pl_zipper_open_current3_va (pl-zip.c, minizip); no zip reader or writer in the kernel (docs/architecture.md ZIP1)
+refusal:src/pl-zip.jl::pl_zip_file_info3_va::unzGetCurrentFileInfo64 of a zipper (pl-zip.c:1158)	ZIP1	the named refusal of pl_zip_file_info3_va (pl-zip.c, minizip); no zip reader or writer in the kernel (docs/architecture.md ZIP1)
+refusal:src/pl-zip.jl::zip_open_archive::zip_open_archive: unzOpen2_64 and zipOpen2_64 of a file (pl-	ZIP1	the named refusal of zip_open_archive (pl-zip.c, minizip); no zip reader or writer in the kernel (docs/architecture.md ZIP1)
+refusal:src/pl-zip.jl::zip_open_archive_mem::zip_open_archive_mem: unzOpen2_64 of a memory region (pl-zip	ZIP1	the named refusal of zip_open_archive_mem (pl-zip.c, minizip); no zip reader or writer in the kernel (docs/architecture.md ZIP1)
+refusal:src/pl-zip.jl::SopenZIP::SopenZIP: a stream on a zip entry (pl-zip.c:1429)	ZIP1	the named refusal of SopenZIP (pl-zip.c, minizip); no zip reader or writer in the kernel (docs/architecture.md ZIP1)
