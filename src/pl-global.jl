@@ -102,6 +102,34 @@ Base.@kwdef mutable struct pl_cmdline_t
     optimise::Bool = false                       # optimise: -O
 end
 
+# PORT: pl-incl.h sig_handler
+# DIVERGES: `handler` is a TOKEN naming a handler function (the `SIGH_*` constants of src/pl-setup.jl; 0: none), where
+# upstream holds a C function pointer: the kernel installs no OS handler and calls no C function, the token is what
+# `$on_signal/4` reports as `'$foreign_function'(Token)`. `predicate` is the Prolog handler or `nothing` (NULL).
+# `flags` and `saved_handler` are upstream's (`PLSIG_*`, src/pl-setup.jl; the saved OS handler is always 0 here).
+"A signal's handler record (pl-incl.h `sig_handler`): `GD->signals.handlers[]`."
+mutable struct sig_handler{T}
+    saved_handler::Int                  # handler_t saved_handler: the OS handler before ours (0: none)
+    handler::Int                        # handler_t handler: a handler token (0: none)
+    predicate::Union{Nothing, Procedure{T}}   # predicate_t predicate: the Prolog handler
+    flags::Int                          # unsigned int flags: PLSIG_*
+end
+sig_handler{T}() where {T} = sig_handler{T}(0, 0, nothing, 0)
+
+# PORT: pl-incl.h Stack (small, factor, min_free)
+# DIVERGES (representation, owner TH1): upstream keeps these per stack in `LD->stacks.<stack>`; the kernel has one engine, so ONE
+# record per stack lives in the database (`GD.stacks_params`: local, global, trail, argument), as `reload_generation` does.
+# `small`, `factor` and `min_free` (here in WORDS, upstream's bytes divided by `sizeof(word)`, what `$set_prolog_stack/4` reports)
+# are recorded and reported; the kernel's stacks grow by doubling (src/pl-gc.jl) and do not read them. `def_spare` is the
+# argument stack's only: the other three stacks' is in the local data (`local_def_spare`, `global_def_spare`, `trail_def_spare`).
+"One stack's tuning parameters (pl-incl.h `struct stack`: `small`, `factor`, `min_free`, and the argument stack's `def_spare`)."
+mutable struct stack_params_t
+    small::Int                          # size_t small: stack size below which GC is not started
+    factor::Int                         # int factor: GC growth factor
+    min_free::Int                       # size_t min_free, in words
+    def_spare::Int                      # the argument stack's def_spare, in words (the others': see above)
+end
+
 # PORT: pl-global.h PL_global_data
 """
     PL_global_data{T}()
@@ -180,6 +208,8 @@ mutable struct PL_global_data{T}
     const ld_table::LDTable                                     # the local data a wrapped stream names by number (IOSTREAM.wrapped; src/os/pl-stream.jl, R2 TOP1b E; owner TH1)
     tabling_answer_delay_infos::Dict{Int, delay_info}           # (pl-tabling.c static `answer_delay_infos`: trie node id -> delay_info; TAB1 TB0)
     tabling_start_node_ids::Int                                 # (pl-tabling.c static `start_node_ids`: the last start-node id handed out, 0: none; TAB1 TB1)
+    signals_handlers::Vector{sig_handler{T}}                    # signals.handlers: how Prolog receives signals, by `SIGNAL_INDEX` (Q10; initSignals! in src/pl-setup.jl)
+    stacks_params::Vector{stack_params_t}                       # stacks.<stack>.small/factor/min_free: local, global, trail, argument (Q10; DIVERGES, owner TH1)
 end
 # DIVERGES: `atoms` is upstream's `GD->atoms` as a struct of its own (src/pl-atom.jl), one table per
 # database, built first as upstream's `initAtoms` runs first; `functors` likewise `GD->functors` with
@@ -230,6 +260,8 @@ end
 # through `ld.GD`. TH1 moves the field into the local data when a thread has a local data of its own.
 # Since R2's LB7: `options` and `cmdline`, `GD->options` and `GD->cmdline` (pl-global.h, the records above), and `defaults_home`,
 # `GD->defaults.home` (`systemDefaults.home`, pl-init.c); the other members of `GD->defaults` are build constants (pl-init.c `initDefaults`).
+# Since Q10: `signals_handlers` (`GD->signals.handlers`, the handler records `$on_signal/4` reads and writes) and `stacks_params` (the stacks'
+# `small`, `factor` and `min_free`, `$set_prolog_stack/4`'s): both filled by `setupProlog` (src/pl-setup.jl).
 
 # PORT: pl-incl.h cleanup_status as CLN_NORMAL
 # DIVERGES: the enum's values as `Int` constants (`halt_cleaning` is an `Int`), pl-incl.h:1054-1060.
