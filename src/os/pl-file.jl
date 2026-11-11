@@ -2246,6 +2246,65 @@ function pl_copy_stream_data2_va(
     return copy_stream_data(ld, PL__t0, PL__t0 + 1, 0) ? FTRUE : FFALSE
 end
 
+# ── protocol (pl-file.c) ────────────────────────────────────────────────────────────────────────
+
+# DIVERGES (the group): the protocol stream is unwritten: a stream has no `tee` field (src/os/pl-stream.jl), so `Sprotocol` stays NULL
+# (`ld.IO_streams[SNO_PROTOCOL + 1] === nothing`, set in the standard streams' set-up above). With `Sprotocol` NULL upstream's
+# `noprotocol` does nothing and `protocolling` fails: those two are the ports; `protocol/1` and `protocola/1` (openProtocol
+# installs `tee` on the three standard streams) are REFUSED (`NotPortedError`), as the rest of the `tee` is.
+
+# PORT: pl-file.c noprotocol as pl_noprotocol0_va
+# (PRED_IMPL("noprotocol", 0, noprotocol, 0)) — pl-file.c:2128-2130 (pin 18168e62); static noprotocol(): 2102-2125
+# DIVERGES: `Sprotocol` is always NULL here (see the group note): the body of `noprotocol()` upstream is its `if (Sprotocol && ...)` arm.
+"`noprotocol`: stop protocolling; true (nothing is protocolled: no `tee`)."
+function pl_noprotocol0_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    ld.IO_streams[SNO_PROTOCOL + 1] === nothing || error("noprotocol: a protocol stream without `tee`")
+    return FTRUE
+end
+
+# PORT: pl-file.c protocolling as pl_protocolling1_va
+# (PRED_IMPL("protocolling", 1, protocolling, 0)) — pl-file.c:3759-3774 (pin 18168e62)
+# DIVERGES: `Sprotocol` is always NULL here (see the group note): only upstream's final `return false` is reachable.
+"`protocolling(-File)`: fails, as upstream does when no protocol is on (pl-file.c)."
+function pl_protocolling1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    ld.IO_streams[SNO_PROTOCOL + 1] === nothing || error("protocolling: a protocol stream without `tee`")
+    return FFALSE
+end
+
+# PORT: pl-file.c openProtocol
+# DIVERGES: REFUSED (`NotPortedError`): `Suser_input->tee = s` and the other two `tee`s are unwritten (a stream has no `tee`).
+"`protocol`'s and `protocola`'s common body: refused (pl-file.c `openProtocol`, pl-file.c:2080-2098)."
+function openProtocol(ld::PL_local_data{T}, f::term_t, appnd::Bool)::Bool where {T}
+    throw(
+        NotPortedError{T}(
+            mk_sym(T, appnd ? :protocola : :protocol),
+            appnd ? "protocola/1" : "protocol/1", "tee (the streams' protocol copy)"
+        )
+    )
+end
+
+# PORT: pl-file.c protocol as pl_protocol1_va
+# (PRED_IMPL("protocol", 1, protocol, 0)) — pl-file.c:3746-3750 (pin 18168e62)
+"`protocol(+File)`: REFUSED (`NotPortedError`), see `openProtocol`."
+function pl_protocol1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    return openProtocol(ld, PL__t0, false) ? FTRUE : FFALSE
+end
+
+# PORT: pl-file.c protocola as pl_protocola1_va
+# (PRED_IMPL("protocola", 1, protocola, 0)) — pl-file.c:3752-3756 (pin 18168e62)
+"`protocola(+File)`: REFUSED (`NotPortedError`), see `openProtocol`."
+function pl_protocola1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    return openProtocol(ld, PL__t0, true) ? FTRUE : FFALSE
+end
+
 # ── prompts (pl-file.c) ─────────────────────────────────────────────────────────────────────────
 
 # PORT: pl-file.c prompt as pl_prompt2_va
@@ -4118,6 +4177,10 @@ const PL_predicates_from_file = (
     PL_extension("peek_string", 3, pl_peek_string3_va, PL_FA_VARARGS),
     PL_extension("copy_stream_data", 3, pl_copy_stream_data3_va, PL_FA_VARARGS),
     PL_extension("copy_stream_data", 2, pl_copy_stream_data2_va, PL_FA_VARARGS),
+    PL_extension("protocol", 1, pl_protocol1_va, PL_FA_VARARGS),
+    PL_extension("protocola", 1, pl_protocola1_va, PL_FA_VARARGS),
+    PL_extension("noprotocol", 0, pl_noprotocol0_va, PL_FA_VARARGS),
+    PL_extension("protocolling", 1, pl_protocolling1_va, PL_FA_VARARGS),
     PL_extension("\$size_stream", 2, pl_dsize_stream2_va, PL_FA_VARARGS),
     PL_extension("see", 1, pl_see1_va, PL_FA_VARARGS),
     PL_extension("seen", 0, pl_seen0_va, PL_FA_VARARGS),
@@ -4606,6 +4669,30 @@ function pl_with_output_to2_va(
     return FFALSE
 end
 
+# PORT: pl-file.c with_tty_raw as pl_with_tty_raw1_va
+# (PRED_IMPL("with_tty_raw", 1, with_tty_raw, PL_FA_TRANSPARENT)) — pl-file.c:1988-2012 (pin 18168e62)
+# DIVERGES: when `user_input` is a terminal (`SIO_ISATTY`) upstream's `PushTty(stream, &buf, TTY_RAW)` is REFUSED
+# (`NotPortedError`: no tty modes, pl-os.c); on any other `user_input` upstream does no tty change either, and the goal runs
+# as upstream does (`callProlog(NULL, A1, PL_Q_PASS_EXCEPTION, NULL)`). No lock to release (`releaseStream`).
+"`with_tty_raw(:Goal)`: call `Goal` once with `user_input` in raw mode: refused on a terminal, a plain call otherwise (pl-file.c)."
+function pl_with_tty_raw1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    stream = Suser_input(ld)
+    if stream === nothing || stream.magic != SIO_MAGIC
+        return symbol_no_stream(ld, mk_sym(T, :user_input)) ? FTRUE : FFALSE
+    end
+    save = (stream.flags & SIO_ISATTY) != 0
+
+    Sflush(stream)
+    if save
+        throw(NotPortedError{T}(mk_sym(T, :user_input), "with_tty_raw/1 on a terminal", "PushTty (pl-os.c tty modes)"))
+    end
+
+    rval = callProlog(_query_gd(ld), ld, 0, PL__t0, PL_Q_PASS_EXCEPTION)
+    return rval ? FTRUE : FFALSE
+end
+
 # PORT: pl-file.c tellString
 """
     tellString(ld, bufp, sizep, enc) -> Bool
@@ -4647,5 +4734,8 @@ end
 const PL_predicates_from_redirect = (
     PL_extension(
         "with_output_to", 2, pl_with_output_to2_va, PL_FA_VARARGS | PL_FA_TRANSPARENT
+    ),
+    PL_extension(
+        "with_tty_raw", 1, pl_with_tty_raw1_va, PL_FA_VARARGS | PL_FA_TRANSPARENT
     ),
 )

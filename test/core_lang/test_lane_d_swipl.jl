@@ -417,7 +417,14 @@ const _LD_CASES = [
     ("d306", raw"ro(S), rall(S, _), wo(O), copy_stream_data(S, O), close(S), close(O), outtext(T), R = T"),
     ("d307", raw"ro(S), wo(O), copy_stream_data(S, O, 5), copy_stream_data(S, O, 5), close(S), close(O), outtext(T), R = T"),
     ("d308", raw"ro(S), open_string(\"zz\", O0), cerr(copy_stream_data(S, O0), R0), close(S), R = R0"),
-    ("d309", raw"open_string(\"hello\", S), wo(O), copy_stream_data(S, O, 3), close(S), close(O), outtext(T), R = T")
+    ("d309", raw"open_string(\"hello\", S), wo(O), copy_stream_data(S, O, 3), close(S), close(O), outtext(T), R = T"),
+    ("d310", raw"noprotocol, R = yes"),
+    ("d311", raw"noprotocol, noprotocol, R = twice"),
+    ("d312", raw"( protocolling(F) -> R = F ; R = none )"),
+    ("d314", raw"with_tty_raw(R = yes)"),
+    ("d315", raw"( with_tty_raw(fail) -> R = yes ; R = no )"),
+    ("d316", raw"with_tty_raw(member(R, [a, b]))"),
+    ("d317", raw"with_tty_raw(atom_length(_, _))")
 ]
 
 # swipl 10.1.20-1-g18168e629's answers to the program and cases above (the driver's lines; evidence/S2/lane_d_rows.out)
@@ -729,7 +736,14 @@ const _LD_PINNED = [
     "t_d306 c[116,95,100,51,48,54]/1(a[])",
     "t_d307 c[116,95,100,51,48,55]/1(a[97,98,99,10,120,121,122,10,108,97])",
     "t_d308 c[116,95,100,51,48,56]/1(c[114,97,105,115,101,100]/1(c[112,101,114,109,105,115,115,105,111,110,95,101,114,114,111,114]/3(a[119,114,105,116,101],a[115,116,114,101,97,109],a[60,115,116,114,101,97,109,62])))",
-    "t_d309 c[116,95,100,51,48,57]/1(a[104,101,108])"
+    "t_d309 c[116,95,100,51,48,57]/1(a[104,101,108])",
+    "t_d310 c[116,95,100,51,49,48]/1(a[121,101,115])",
+    "t_d311 c[116,95,100,51,49,49]/1(a[116,119,105,99,101])",
+    "t_d312 c[116,95,100,51,49,50]/1(a[110,111,110,101])",
+    "t_d314 c[116,95,100,51,49,52]/1(a[121,101,115])",
+    "t_d315 c[116,95,100,51,49,53]/1(a[110,111])",
+    "t_d316 c[116,95,100,51,49,54]/1(a[97])",
+    "t_d317 c[116,95,100,51,49,55]/1(c[114,97,105,115,101,100]/1(a[105,110,115,116,97,110,116,105,97,116,105,111,110,95,101,114,114,111,114]))"
 ]
 
 const _LD_DATA = "abc\nxyz\nlast line\n"
@@ -801,9 +815,48 @@ end
         @test k == p
     end
     # not vacuous: the pins hold raised errors, `failed` rows, and answers, so the comparison can pass and can fail
-    @test count(l -> occursin("c[114,97,105,115,101,100]", l), _LD_PINNED) == 65      # raised(…)
-    @test count(l -> endswith(l, "/1(a[102,97,105,108,101,100])"), _LD_PINNED) == 8   # failed
-    @test count(l -> endswith(l, "/1(a[111,107])"), _LD_PINNED) == 11                 # ok
+    @test count(l -> occursin("c[114,97,105,115,101,100]", l), _LD_PINNED) == 98      # raised(…)
+    @test count(l -> endswith(l, "/1(a[102,97,105,108,101,100])"), _LD_PINNED) == 13   # failed
+    @test count(l -> endswith(l, "/1(a[111,107])"), _LD_PINNED) == 12                 # ok
+end
+
+"Whether the kernel REFUSES `goal` (a `NotPortedError` out of the foreign predicate), the goal run in a fresh database."
+function _ld_refuses(goal::String)::Bool
+    dir = mktempdir()
+    f = joinpath(dir, "refuse.pl")
+    write(f, "t_refuse(_) :- $goal.\n")
+    gd = LK.PL_global_data{_LD}()
+    ld = LK.PL_local_data{_LD}(gd)
+    st, _, _ = LK.load_file!(gd, ld, f)
+    st === :ok || return false
+    proc = LK.isCurrentProcedure(sym_key(_lds("t_refuse")), 1, LK.MODULE_user(gd))
+    proc === nothing && return false
+    fid = LK.PL_open_foreign_frame(ld)
+    a = LK.PL_new_term_refs(ld, 1)
+    LK.putSlotValue!(ld, a + 1, mk_var(_LD, LK.fresh_var_keys!(1)), LK.PutVarMap())
+    qid = LK.PL_open_query(gd, ld, nothing, LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS, proc, a)
+    refused = try
+        LK.PL_next_solution(gd, ld, qid)
+        false
+    catch e
+        e isa LK.NotPortedError || rethrow()
+        true
+    end
+    LK.PL_close_query(ld, qid)
+    LK.PL_close_foreign_frame(ld, fid)
+    return refused
+end
+
+# Named refusals (NotPortedError): swipl answers these (its `tee` copies the standard streams into the protocol file), the kernel has no
+# `tee`: no pin to compare, the refusal itself is the row. Each goal names the pin's file:line (pin 18168e62).
+@testset "named refusals: protocol/1, protocola/1 (pl-file.c:3747, 3753: openProtocol 2080)" begin
+    @test _ld_refuses("protocol('/dev/null')")
+    @test _ld_refuses("protocola('/dev/null')")
+    # the same refusal raises before the file is touched: a goal that cannot be a file is refused too
+    @test _ld_refuses("protocol(_)")
+    # not vacuous: the neighbouring predicates that ARE ported answer (rows d310-d312)
+    @test !_ld_refuses("noprotocol")
+    @test !_ld_refuses("\\+ protocolling(_)")
 end
 
 @testset "the pins are swipl's (live, when swipl is on PATH)" begin

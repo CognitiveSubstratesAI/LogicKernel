@@ -1650,6 +1650,7 @@ function _manifest_index(T)
         (LK.closeOutputRedirect, Tuple{LD, LK.redir_context}, false),
         (LK.discardOutputRedirect, Tuple{LD, LK.redir_context}, false),
         (LK.pl_with_output_to2_va, Tuple{LD, Int, Int, LK.control_t{T}}, false),
+        (LK.pl_with_tty_raw1_va, Tuple{LD, Int, Int, LK.control_t{T}}, false),
         (
             LK.tellString,
             Tuple{
@@ -2979,7 +2980,8 @@ _index_entry_points(T) = (
             LK.pl_stream_pair3_va, LK.pl_set_stream_position2_va, LK.pl_seek4_va,
             LK.pl_set_end_of_stream1_va, LK.pl_fill_buffer1_va, LK.pl_dsize_stream2_va,
             LK.pl_read_pending_codes3_va, LK.pl_read_pending_chars3_va, LK.pl_peek_string3_va,
-            LK.pl_copy_stream_data3_va, LK.pl_copy_stream_data2_va
+            LK.pl_copy_stream_data3_va, LK.pl_copy_stream_data2_va, LK.pl_protocol1_va,
+            LK.pl_protocola1_va, LK.pl_noprotocol0_va, LK.pl_protocolling1_va
         )
     ]...,
     (LK.Swrite_null, Tuple{Vector{UInt8}, Int, Int}, false),
@@ -2995,6 +2997,7 @@ _index_entry_points(T) = (
     (LK.read_pending_input, Tuple{LK.PL_local_data{T}, Int, Int, Int, Bool}, false),
     (LK.peek_pending_text, Tuple{LK.IOSTREAM}, false),
     (LK.copy_stream_data, Tuple{LK.PL_local_data{T}, Int, Int, Int}, false),
+    (LK.openProtocol, Tuple{LK.PL_local_data{T}, Int, Bool}, false),
     (LK.do_tell, Tuple{LK.PL_local_data{T}, Int, T}, false),
     (LK.findStreamFromFile, Tuple{LK.PL_global_data{T}, T, Int}, false),
     (LK.setStreamContextFlag, Tuple{LK.PL_global_data{T}, LK.IOSTREAM, Int}, false),
