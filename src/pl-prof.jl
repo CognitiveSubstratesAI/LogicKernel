@@ -25,8 +25,9 @@
 #      the profiler being startable by none.
 #   3. `resetProfiler`'s `prof_clear_stacks` (a walk of the VM's frames clearing `fr->prof_node`) has no twin: no frame of this
 #      VM carries a profile node.
-#   4. `get_def`: `get_procedure(..., GP_FIND|GP_NAMEARITY|GP_TYPE_QUIET)` is `get_procedure_namearity` (src/pl-proc.jl), whose
-#      type errors are not quiet: a term that is no indicator fails here after its error is cleared.
+#   4. `get_def`: `get_procedure(..., GP_FIND|GP_NAMEARITY|GP_TYPE_QUIET)` is `get_procedure_namearity` (src/pl-proc.jl), which has no
+#      quiet flag; GP_TYPE_QUIET only silences the "no Name/Arity" error in upstream's get_functor (pl-proc.c:661), so `get_def`
+#      checks for `/`/2 or `//`/2 first and fails without an error, every other error (bad name, arity) is raised as upstream.
 #   5. MEMORY: no `allocHeap`, no `releaseModule` (`prof_release_def`: no module GC), the `prof_ref` chains are vectors
 #      (new references are pushed at the end and unified from the end, upstream's order of `r->next = callers; callers = r`).
 
@@ -377,11 +378,14 @@ end
 function get_def(
     gd::PL_global_data{T}, ld::PL_local_data{T}, t::term_t
 )::Union{Nothing, Definition{T}} where {T}
-    proc = get_procedure_namearity(gd, ld, t, MODULE_user(gd), GP_FIND | GP_NAMEARITY)
-    if proc === nothing
-        PL_clear_exception(ld)                          # GP_TYPE_QUIET
-        return nothing
+    head = PL_new_term_ref(ld)
+    ok, _ = PL_strip_module(gd, ld, t, MODULE_user(gd).index, head)
+    ok || return nothing
+    if !(PL_is_functor(ld, head, mk_sym(T, :/), 2) || PL_is_functor(ld, head, mk_sym(T, :(//)), 2))
+        return nothing                                  # GP_TYPE_QUIET: no indicator at all fails without an error
     end
+    proc = get_procedure_namearity(gd, ld, t, MODULE_user(gd), GP_FIND | GP_NAMEARITY)
+    proc === nothing && return nothing                  # a bad name or arity keeps its error, as upstream's get_functor
     return proc.definition
 end
 
