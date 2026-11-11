@@ -3414,6 +3414,24 @@ _manifest_tr4(T) = begin
     )
 end
 
+# LANE F — os/pl-cstack.c (src/os/pl-cstack.jl): the C-stack fallbacks. The functions that print or raise take the local data or the
+# term type; the ones with an empty body take a string (or nothing) and are listed once, plain.
+_manifest_cstack(T) = begin
+    LD = LK.PL_local_data{T}
+    (
+        (LK.print_backtrace, Tuple{LD, Int}, false),
+        (LK.print_backtrace_named, Tuple{LD, String}, false),
+        (LK.sigCrashHandler, Tuple{Type{T}, Int}, false),
+        (LK.CStackSize, Tuple{LD}, false)
+    )
+end
+_manifest_cstack_plain() = (
+    (LK.save_backtrace, Tuple{String}, false),
+    (LK.btrace_destroy, Tuple{Nothing}, false),
+    (LK.print_c_backtrace, Tuple{String}, false),
+    (LK.initBackTrace, Tuple{}, false)
+)
+
 # LANE F — os/pl-table.c (src/os/pl-table.jl): the hash tables, word -> word. Every function takes the table, its maps,
 # `UInt64` keys and values and `Int` indexes (no term type): listed once, below; the two that take the local data
 # (`addNewHTable`'s duplicate warning) are checked for every payload type.
@@ -3832,6 +3850,10 @@ const _DISPATCH_MANIFEST_TUPLE = (
     _manifest_tr4(_M1)...,
     _manifest_tr4(_M2)...,
     _manifest_tr4(_M3)...,
+    _manifest_cstack(_M1)...,
+    _manifest_cstack(_M2)...,
+    _manifest_cstack(_M3)...,
+    _manifest_cstack_plain()...,
     _manifest_table(_M1)...,
     _manifest_table(_M2)...,
     _manifest_table(_M3)...,
