@@ -2033,7 +2033,7 @@ function _manifest_index(T)
                 LK.pl_bounded_number3_va, LK.pl_divmod4_va,
                 LK.pl_nth_integer_root_and_remainder4_va, LK.pl_rational3_va,
                 LK.pl_float_parts4_va, LK.pl_float_class2_va, LK.pl_set_random1_va,
-                LK.pl_random_property1_va
+                LK.pl_random_property1_va, LK.pl_current_arithmetic_function1_va
             )
         ]...,
         # NF1 — the non-deterministic foreign calls: the return values, the context, the state pool
