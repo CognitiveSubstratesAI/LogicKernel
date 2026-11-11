@@ -84,6 +84,8 @@ t38(R) :- assertz(zz(9), C), '$cov_reset', '$cov_add'(call_site(C, 1), 1, 1), er
     findall(E-X, '$cov_data'(_, E, X), L), R = L.
 t39(R) :- clause(cvf(1), true, C), '$cov_reset', '$cov_add'(call_site(C, 1), 1, 1),
     ( '$cov_data'(call_site(C, -2), _, _) -> R = found ; R = failed ).
+% both counts wrong: the enter count is checked first
+t40(R) :- err('$cov_add'(clause(_), a, b), R).
 
 % pass 2: the collection is active twice (the driver runs '$cov_start'/1 twice; the kernel's test sets the count to 2),
 % the rows are cumulative: each starts where the one before left the count
