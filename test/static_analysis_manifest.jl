@@ -3176,6 +3176,8 @@ _manifest_prof(T) = begin
         (LK.prof_thread_cpu_ns, Tuple{LD}, false),
         (LK.prof_clock_per_ns, Tuple{LD}, false),
         (LK.thread_prof_ticks, Tuple{LD}, false),
+        (LK.prof_clock_cost_ns, Tuple{LD}, false),
+        (LK.precise_thread_cpu_clock, Tuple{LD}, false),
         (LK.prof_close_window, Tuple{LD, Int, Union{Nothing, NODE}, Int}, false),
         (LK.prof_charge, Tuple{LD, Int, Bool}, false),
         (LK.prof_accounting_begin, Tuple{LD}, false),

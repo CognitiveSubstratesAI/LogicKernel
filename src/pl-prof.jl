@@ -640,24 +640,44 @@ function pl_profile4_va(
     return rc ? FTRUE : FFALSE
 end
 
+const PROF_EXACT_MAX_CLOCK_NS = 40.0    # auto: max cost of prof_clock()
+
+# PORT: pl-prof.c prof_clock_cost_ns
+# DIVERGES: refused by name: the cost is MEASURED, 3 runs of 1000 `prof_clock()` reads timed with `prof_mono_ns()` (pl-prof.c:349-373).
+"The cost of one `prof_clock()` in nsec, refused by name: there is no clock to time (PROF1)."
+function prof_clock_cost_ns(ld::PL_local_data{T})::Float64 where {T}
+    _prof_refuse(ld, :prof_clock_cost_ns, "the cost of reading the exact clock (`prof_clock()`: the TSC or the monotonic clock)")
+end
+
+# PORT: pl-prof.c precise_thread_cpu_clock
+# DIVERGES: refused by name: it probes `prof_thread_cpu_ns()` for 2 changes within 3 ms (pl-prof.c:295-345); the result is (ok, why).
+"Is the thread CPU clock precise? Refused by name: there is no thread CPU clock to probe (PROF1)."
+function precise_thread_cpu_clock(ld::PL_local_data{T})::Tuple{Bool, String} where {T}
+    _prof_refuse(ld, :precise_thread_cpu_clock, "probing the thread CPU clock (`prof_thread_cpu_ns()`, 2 changes within 3 ms)")
+end
+
 # PORT: pl-prof.c prof_exact_ok as pl_prof_exact_ok1_va
 # (PRED_IMPL("$prof_exact_ok", 1, prof_exact_ok, 0))
-"`'\$prof_exact_ok'(+Clock)`: the atom check, then refused by name (`prof_clock_cost_ns` reads the TSC; pl-prof.c:349-379)."
+"`'\$prof_exact_ok'(+Clock)`: the atom check, then the clock's cost, then (for `cpu`) the CPU clock's precision: both named refusals (pl-prof.c:903)."
 function pl_prof_exact_ok1_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
 )::foreign_t where {T}
     clock = PL_get_atom_ex(ld, PL__t0)
     clock === nothing && return FFALSE
-    _prof_refuse(ld, Symbol("\$prof_exact_ok"), "the cost of the exact clock (`prof_clock()`: the TSC or the monotonic clock) and the thread CPU clock")
+    prof_clock_cost_ns(ld) > PROF_EXACT_MAX_CLOCK_NS && return FFALSE
+    if sym_key(clock) == sym_key(mk_sym(T, :cpu))
+        return precise_thread_cpu_clock(ld)[1] ? FTRUE : FFALSE
+    end
+    return FTRUE
 end
 
 # PORT: pl-prof.c prof_clock_cost as pl_prof_clock_cost1_va
 # (PRED_IMPL("$prof_clock_cost", 1, prof_clock_cost, 0))
-"`'\$prof_clock_cost'(-Nsec)`: refused by name, there is no `prof_clock()` to time (pl-prof.c:349)."
+"`'\$prof_clock_cost'(-Nsec)`: the clock's cost, a named refusal (pl-prof.c:924)."
 function pl_prof_clock_cost1_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
 )::foreign_t where {T}
-    _prof_refuse(ld, Symbol("\$prof_clock_cost"), "the cost of reading the exact clock (`prof_clock()`: the TSC or the monotonic clock)")
+    return PL_unify_float(ld, PL__t0, prof_clock_cost_ns(ld)) ? FTRUE : FFALSE
 end
 
 # ── SECOND HALF of pl-prof.c: the dynamic call tree's builders (the VM's call, exit and fail ports) and the charge functions ──────
