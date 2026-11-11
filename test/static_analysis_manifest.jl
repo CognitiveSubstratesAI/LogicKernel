@@ -2977,7 +2977,7 @@ _index_entry_points(T) = (
             LK.pl_see1_va, LK.pl_seen0_va, LK.pl_seeing1_va, LK.pl_tell1_va,
             LK.pl_append1_va, LK.pl_telling1_va, LK.pl_told0_va, LK.pl_open_null_stream1_va,
             LK.pl_stream_pair3_va, LK.pl_set_stream_position2_va, LK.pl_seek4_va,
-            LK.pl_set_end_of_stream1_va
+            LK.pl_set_end_of_stream1_va, LK.pl_fill_buffer1_va, LK.pl_dsize_stream2_va
         )
     ]...,
     (LK.Swrite_null, Tuple{Vector{UInt8}, Int, Int}, false),

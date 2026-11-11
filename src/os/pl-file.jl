@@ -1828,6 +1828,55 @@ function pl_set_end_of_stream1_va(
     return rc ? FTRUE : FFALSE
 end
 
+# ── buffer and size (pl-file.c) ─────────────────────────────────────────────────────────────────
+
+# PORT: pl-file.c fill_buffer as pl_fill_buffer1_va
+# (PRED_IMPL("fill_buffer", 1, fill_buffer, 0)) — pl-file.c:5910-5928 (pin 18168e62)
+# DIVERGES: `s->bufp--` is `s.bufp -= 1` on the index into `s.mem`; no lock to release.
+"`fill_buffer(+Stream)`: fill the buffer of the input stream `Stream` (pl-file.c)."
+function pl_fill_buffer1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    stream = PL__t0
+    s = getInputStream(ld, stream, S_DONTCARE)
+    if s !== nothing
+        if (s.flags & SIO_NBUF) != 0
+            _PL_permission_error(ld, :fill_buffer, :stream, stream)
+            return FFALSE
+        end
+
+        if (s.flags & SIO_FEOF) == 0
+            if S__fillbuf(s) < 0
+                return streamStatus(ld, s) ? FTRUE : FFALSE      # PL_release_stream(s)
+            end
+
+            s.bufp -= 1
+        end
+        return streamStatus(ld, s) ? FTRUE : FFALSE              # PL_release_stream(s)
+    end
+
+    return FFALSE
+end
+
+# PORT: pl-file.c size_stream as pl_dsize_stream2_va
+# (PRED_IMPL("$size_stream", 2, size_stream, 0)) — pl-file.c:6262-6279 (pin 18168e62)
+# DIVERGES: `PL_get_stream_handle` is `term_stream_handle(SH_ERRORS|SH_ALIAS)`; `Ssize` knows a file's size only (see there).
+"`'\$size_stream'(+Stream, -Size)`: the size in bytes of the data object `Stream` reads or writes (pl-file.c)."
+function pl_dsize_stream2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2 = PL__t0, PL__t0 + 1
+    s = term_stream_handle(ld, A1, SH_ERRORS | SH_ALIAS)         # PL_get_stream_handle
+    s === nothing && return FFALSE
+    sz = Ssize(s)
+    streamStatus(ld, s) || return FFALSE                        # PL_release_stream(s)
+
+    sz >= 0 && return PL_unify_int64(ld, A2, Int(sz)) ? FTRUE : FFALSE
+
+    _PL_permission_error(ld, :reposition, :stream, A1)
+    return FFALSE
+end
+
 # ── prompts (pl-file.c) ─────────────────────────────────────────────────────────────────────────
 
 # PORT: pl-file.c prompt as pl_prompt2_va
@@ -3694,6 +3743,8 @@ const PL_predicates_from_file = (
     PL_extension("set_stream_position", 2, pl_set_stream_position2_va, PL_FA_ISO | PL_FA_VARARGS),
     PL_extension("seek", 4, pl_seek4_va, PL_FA_VARARGS),
     PL_extension("set_end_of_stream", 1, pl_set_end_of_stream1_va, PL_FA_VARARGS),
+    PL_extension("fill_buffer", 1, pl_fill_buffer1_va, PL_FA_VARARGS),
+    PL_extension("\$size_stream", 2, pl_dsize_stream2_va, PL_FA_VARARGS),
     PL_extension("see", 1, pl_see1_va, PL_FA_VARARGS),
     PL_extension("seen", 0, pl_seen0_va, PL_FA_VARARGS),
     PL_extension("seeing", 1, pl_seeing1_va, PL_FA_VARARGS),

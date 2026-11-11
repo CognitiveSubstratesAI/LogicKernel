@@ -1149,8 +1149,8 @@ function Srelease(s::IOSTREAM)::Bool
 end
 
 # PORT: pl-stream.c Ssize
-# DIVERGES: the size of a file stream's Julia IO only (upstream asks the function set's `control`
-# `SIO_GETSIZE`, else seeks to the end); -1 for any other stream.
+# DIVERGES: the function set's `control` `SIO_GETSIZE` is `filesize` of a file's Julia IO (`IOStream`); any other stream with a
+# seek function is measured by seeking to its end and back (upstream's second branch); one without sets `ESPIPE` as upstream.
 "The size of the data object `s` reads or writes, or -1 (pl-stream.c)."
 function Ssize(s::IOSTREAM)::Int64
     h = s.handle
@@ -1158,6 +1158,21 @@ function Ssize(s::IOSTREAM)::Int64
         io = h.io
         io isa IOStream && return Int64(filesize(io))
     end
+    if S_has_seek(s)
+        here = Stell64(s)
+        local enddata::Int64
+        if Sseek64(s, Int64(0), SIO_SEEK_END) == 0
+            enddata = Stell64(s)
+        else
+            enddata = Int64(-1)
+        end
+        Sseek64(s, here, SIO_SEEK_SET)
+
+        return enddata
+    end
+
+    s.io_errno = ESPIPE
+    S__seterror(s)
     return Int64(-1)
 end
 
