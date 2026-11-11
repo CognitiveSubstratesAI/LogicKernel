@@ -171,6 +171,12 @@ end
 end
 
 # white box: the hardware mode helpers and the scope of one evaluation
+# The limit flags (rows t397..t407, t432..t434 of the .pl): `infinite` (max_rational_size, max_integer_size) and `error`
+# (max_rational_size_action) are the boot state of the pin (pl-arith.c 5022-5024: (size_t)-1, (size_t)-1, ATOM_error), so setting them
+# is a no-op here; any other VALID value (a size, or `float` for the action) would be stored in LD->arith.rat / LD->gmp (set_arith_flag
+# pl-arith.c 5183-5194, set_restraint 5110-5124, set_restraint_action 5128-5140): the kernel's numbers are unbounded, so that is the
+# named refusal NotPortedError("AR1") of set_arith_flag (listed in docs/r2_owners.tsv). The refusal itself is tested in
+# test_set_flag_swipl.jl (_SF_REFUSED: max_integer_size 2000, ...).
 @testset "AR1: fegetround/fesetround, the mode scope of evalExpression_cells" begin
     @test LK.fegetround() == LK.FE_TONEAREST
     for m in (LK.FE_UPWARD, LK.FE_DOWNWARD, LK.FE_TOWARDZERO, LK.FE_TONEAREST)
