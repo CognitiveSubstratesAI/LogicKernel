@@ -86,7 +86,7 @@ MUTANTS = [
     # ---- the answer
     m("TR2-A1 unify_trie_path! leaves out the last key (KILL D t0: every answer misses its last key)",
       "    for i in 1:st.nch\n        rc = unify_key(", "    for i in 1:(st.nch - 1)\n        rc = unify_key("),
-    m("TR2-A2 trie_gen_raw: a deleted leaf is answered (KILL K t11: f(3) is deleted between two answers and stays in the result)",
+    m("TR2-A2 trie_gen_raw: a deleted leaf is answered (KILL K t30, t31: the leaf the state is positioned on is deleted at the first answer and stays in the result; t11 deletes a leaf further ahead, which next_choice! skips itself)",
       "if (n.flags & st.vflags) == 0 ", "if false "),
     m("TR2-A3 trie_gen_raw: the Value is not unified (KILL K t3: `trie_gen(T, f(2), K)` answers every key; D t18)",
       "if (Value == 0 || unify_value(ld, trs, Value, n.value)) &&", "if (true || unify_value(ld, trs, Value, n.value)) &&"),
@@ -98,7 +98,7 @@ MUTANTS = [
       "if next_choice!(ld, st, true) != 0      # Key is bound to the answer", "if next_choice!(ld, st, false) != 0      # Key is bound to the answer"),
     m("TR2-A7 trie_gen_raw: the first leaf is not descended to (KILL D t0: the first answer is an inner node)",
       "chi != 0 && (chi = descent_node!(ld, st, st.cur, chi))", "chi != 0 && (chi = chi)"),
-    m("TR2-A8 trie_gen_raw: a redo does not take this activation's Key (KILL D t2, t3 expected: the Key is the reference of the first call)",
+    m("TR2-A8 trie_gen_raw: a redo does not take this activation's Key (KILL the white-box testset `a redo of trie_gen/2 keeps the Key reference of its own activation` in TG: it redoes by hand with another pair of references; through the VM the reference never changes, so no answer row sees it)",
       "        st.key = Key                                    # this activation's reference\n", ""),
     m("TR2-A9 trie_gen_raw counts no call (KILL K t20: gen_call_count is 0 after a trie_gen)",
       "        trf.gen_call += 1 ", "        trf.gen_call += 0 "),

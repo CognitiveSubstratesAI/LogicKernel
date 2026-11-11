@@ -81,3 +81,27 @@ t28(R) :- trie_new(T), trie_insert(T, f(X), x), trie_insert(T, f(a), a), trie_in
     findall(Q-V, ( trie_gen(T, f(Q), V) ), R).
 t29(R) :- mk(T, [h(1, 2, 3), h(1, 2, 4), h(1, 5, 3), h(6, 2, 3)]),
     findall(a(A, B, C), trie_gen(T, h(A, B, C)), R0), findall(C, trie_gen(T, h(1, _, C)), R1), R = R0-R1.
+% t30/t31: the leaf the enumeration is POSITIONED on is deleted between two answers (t11 deletes one further ahead, which next_choice! skips by itself)
+t30(R) :- mk(T, [f(1), f(2), f(3), f(4)]),
+    findall(K, ( trie_gen(T, K), ( K == f(1) -> trie_delete(T, f(2), _) ; true ) ), R).
+t31(R) :- mk(T, [f(1), f(2), f(3), f(4)]),
+    findall(K, ( trie_gen(T, K), ( K == f(1) -> trie_delete(T, f(2), _), trie_delete(T, f(3), _) ; true ) ), R).
+
+% a trie for the white-box rows of the .jl (not a `tN(R)` row: it names a blob, which no row encodes)
+wb_trie(T) :- mk(T, [f(1), f(2), f(3)]).
+% t32/t33: two concrete query arguments equal to the same constant, a stored variable key beside the constant (the replay of an advanced choice, R)
+t32(R) :- trie_new(T), trie_insert(T, f(_, a), 1), trie_insert(T, f(a, a), 2),
+    findall(V, trie_gen(T, f(a, a), V), R).
+t33(R) :- trie_new(T), trie_insert(T, f(a, a), 1), trie_insert(T, f(_, a), 2), trie_insert(T, f(b, a), 3),
+    findall(V, trie_gen(T, f(a, a), V), R).
+% t34-t37: the det flag (call_cleanup) of the answer after which only deleted leaves are left
+t34(R) :- mk(T, [f(1), f(2), f(3)]),
+    findall(K-D, ( call_cleanup(trie_gen(T, K), D = det), ( K == f(1) -> trie_delete(T, f(3), _) ; true ) ), R).
+t35(R) :- mk(T, [f(1), f(2), f(3)]),
+    findall(K-D, ( call_cleanup(trie_gen(T, f(X)), D = det), K = f(X), ( K == f(1) -> trie_delete(T, f(3), _) ; true ) ), R).
+t36(R) :- mk(T, [f(a, 1), f(a, 2), f(b, 1), f(b, 2)]),
+    findall(K-D, ( call_cleanup(trie_gen(T, K), D = det), ( K == f(a, 1) -> trie_delete(T, f(b, 2), _), trie_delete(T, f(a, 2), _) ; true ) ), R).
+t37(R) :- mk(T, [f(a, 1), f(a, 2), f(b, 1), f(b, 2)]),
+    findall(K-D, ( K = f(_, 2), call_cleanup(trie_gen(T, K), D = det), ( K == f(a, 2) -> trie_delete(T, f(b, 2), _) ; true ) ), R).
+% t38: a variable first argument, a constant second: the choice over the first argument is advanced to a key that differs from the constant
+t38(R) :- mk(T, [f(a, b), f(c, b), f(d, e)]), findall(X, trie_gen(T, f(X, b)), R).

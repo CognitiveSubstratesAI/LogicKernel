@@ -197,6 +197,9 @@ end
     @test kl["t4"] == _row("t4", _ea("no"))                                           # an empty trie has no answer
     @test kl["t11"] ==
         _row("t11", _el([_ec("f", _ei(1)), _ec("f", _ei(2)), _ec("f", _ei(4))]))   # a node deleted between answers
+    @test kl["t30"] ==
+        _row("t30", _el([_ec("f", _ei(1)), _ec("f", _ei(3)), _ec("f", _ei(4))]))   # the leaf the state is positioned on is deleted
+    @test kl["t31"] == _row("t31", _el([_ec("f", _ei(1)), _ec("f", _ei(4))]))     # two leaves ahead deleted
     @test kl["t12"] ==
         _row("t12", _el([_ec("f", _ei(1)), _ec("f", _ei(2)), _ec("f", _ei(9))]))   # a node inserted between answers
     @test kl["t15"] == _row("t15", _ec("-", _ei(500), _ei(250000)))                    # half deleted: 500 answers
@@ -235,4 +238,43 @@ end
         _tp_row(gd, ld, name)
         @test ld.trie_gens.live == 0
     end
+end
+
+# White box: a redo takes THIS activation's Key (pl-trie.c trie_gen_raw: `state->query = ...` on every retry). Through the VM the reference
+# of a redo is always the first call's (the frame's argument slots), so no answer can tell; the record of the state holds it. swipl cannot
+# answer this (the record is the engine's); the row calls trie_gen/2 by hand, the redo with ANOTHER pair of references.
+@testset "TR2: a redo of trie_gen/2 keeps the Key reference of its own activation (white box)" begin
+    gd, ld, st = _tp_load(_TP, _TRIE_PL)
+    @test st == "ok"
+    proc = LK.isCurrentProcedure(sym_key(lk_sym(_TP, :wb_trie)), 1, LK.MODULE_user(gd))
+    @test proc !== nothing && LK.isDefinedProcedure(gd, proc)
+    fid = LK.PL_open_foreign_frame(ld)
+    a = LK.PL_new_term_refs(ld, 1)
+    LK.putSlotValue!(ld, a + 1, mk_var(_TP, LK.fresh_var_keys!(1)), LK.PutVarMap())
+    qid = LK.PL_open_query(gd, ld, nothing, LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS, proc, a)
+    @test LK.PL_next_solution(gd, ld, qid) in (LK.PL_S_TRUE, LK.PL_S_LAST)   # `a` holds the trie
+    b = LK.PL_new_term_refs(ld, 2)
+    LK.PL_put_term(ld, b, a)
+    LK.PL_put_variable(ld, b + 1)
+    ctx = LK.foreign_context{_TP}(LK.FRG_FIRST_CALL, UInt(0), nothing)
+    rc = LK.pl_trie_gen2_va(ld, b, 2, ctx)
+    @test rc != LK.FTRUE && rc != LK.FFALSE                # a retry word: more leaves follow
+    @test enc(lk_answer(ld, b + 1)) == _ec("f", _ei(1))
+    k = LK.PL_foreign_context_address(LK.foreign_context{_TP}(LK.FRG_REDO, rc, nothing))
+    @test ld.trie_gens.states[k].key == b + 1
+    c = LK.PL_new_term_refs(ld, 2)                         # the redo's references: another pair
+    LK.PL_put_term(ld, c, a)
+    LK.PL_put_variable(ld, c + 1)
+    ctx.control = LK.FRG_REDO
+    ctx.context = rc
+    rc2 = LK.pl_trie_gen2_va(ld, c, 2, ctx)
+    @test rc2 != LK.FTRUE && rc2 != LK.FFALSE
+    @test enc(lk_answer(ld, c + 1)) == _ec("f", _ei(2))
+    @test ld.trie_gens.states[k].key == c + 1              # this activation's reference, not the first call's
+    ctx.control = LK.FRG_CUTTED
+    ctx.context = rc2
+    @test LK.pl_trie_gen2_va(ld, c, 2, ctx) == LK.FTRUE
+    @test ld.trie_gens.live == 0
+    LK.PL_close_query(ld, qid)
+    LK.PL_close_foreign_frame(ld, fid)
 end
