@@ -2071,15 +2071,29 @@ const _BC_DEC_DECOMPILED = Dict{String, String}(
         # mark_bvar_access reads A_VAR0..2 as it reads B_VAR0..2 (pl-comp.c:5736-5745): a unification
         # moved into the head (`X = f(a)`, then an arithmetic goal on X) comes back as a goal; the pin's
         # code is h_functor(f/1) h_atom(a) h_pop i_enter a_enter a_var0 a_integer(3) a_lt i_exit
-        mh = _bf("dmv", _bv(1))
-        mv = _bclause(
-            mh, _bconj(_bf("=", _bv(1), _bf("f", _bs("a"))), _bf("<", _bv(1), _bg(3)));
+        # (the same for slots 1, 2 and 3: A_VAR1, A_VAR2, and A_VAR(3), whose operand is a CA1_VAR)
+        for (n, want) in (
+            ("dmv", "':-'(dmv(A),','('='(A,f(a)),'<'(A,3)))"),
+            ("dmv1", "':-'(dmv1(_,A),','('='(A,f(a)),'<'(A,3)))"),
+            ("dmv2", "':-'(dmv2(_,_,A),','('='(A,f(a)),'<'(A,3)))"),
+            ("dmv3", "':-'(dmv3(_,_,_,A),','('='(A,f(a)),'<'(A,3)))")
+        )
+            k = n == "dmv" ? 1 : parse(Int, n[4:end]) + 1           # the moved argument's slot
+            mh = _bf(n, [_bv(i) for i in 1:k]...)
+            mv = _bclause(
+                mh,
+                _bconj(_bf("=", _bv(k), _bf("f", _bs("a"))), _bf("<", _bv(k), _bg(3)));
+                ld=lda
+            )
+            @test mv.flags & LK.CL_HEAD_TERMS != 0
+            @test _bnorm(_bc_text(_bdecompile(mv, mh)...)) == want
+        end
+        mv0 = _bclause(
+            _bf("dmv", _bv(1)),
+            _bconj(_bf("=", _bv(1), _bf("f", _bs("a"))), _bf("<", _bv(1), _bg(3)));
             ld=lda
         )
-        @test mv.flags & LK.CL_HEAD_TERMS != 0
-        @test any(startswith("a_var0"), _bc_kernel(mv))
-        @test _bnorm(_bc_text(_bdecompile(mv, mh)...)) ==
-              "':-'(dmv(A),','('='(A,f(a)),'<'(A,3)))"
+        @test any(startswith("a_var0"), _bc_kernel(mv0))
     end
     @testset "clause/2 with a body (pl_clause!)" begin
         gd = LK.PL_global_data{_B}()
