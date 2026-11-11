@@ -332,4 +332,10 @@ MUTANTS = [
     dict(id='AR1-D7 current_arithmetic_function: the enumeration reads the entry at the wrong index (KILL t1..t8)', file=A, targets=TC,
          old='f, a = functorArithFunction(i)',
          new='f, a = functorArithFunction(i == 0 ? 1 : i)'),
+    dict(id='AR1-D8 A_LT is numbered one up (KILL the opcode-order row: the tail is consecutive, in the order of the pin)', file="src/pl-vmi.jl", targets=["test/core_lang/test_cont_boot_swipl.jl"],
+         old='const A_LT = code(181)',
+         new='const A_LT = code(182)'),
+    dict(id='AR1-D9 A_FIRSTVAR_IS declares no operand (KILL the code-table rows and every clause that uses it)', file="src/pl-vmi.jl", targets=["test/core_lang/test_cont_boot_swipl.jl", "test/core_lang/test_arith_compile_swipl.jl"],
+         old='code_info(:A_FIRSTVAR_IS, VIF_BREAK, 1, (CA1_FVAR, 0x00, 0x00, 0x00))',
+         new='code_info(:A_FIRSTVAR_IS, VIF_BREAK, 0, (0x00, 0x00, 0x00, 0x00))'),
 ]
