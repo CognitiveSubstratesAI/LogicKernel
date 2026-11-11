@@ -2977,7 +2977,8 @@ _index_entry_points(T) = (
             LK.pl_see1_va, LK.pl_seen0_va, LK.pl_seeing1_va, LK.pl_tell1_va,
             LK.pl_append1_va, LK.pl_telling1_va, LK.pl_told0_va, LK.pl_open_null_stream1_va,
             LK.pl_stream_pair3_va, LK.pl_set_stream_position2_va, LK.pl_seek4_va,
-            LK.pl_set_end_of_stream1_va, LK.pl_fill_buffer1_va, LK.pl_dsize_stream2_va
+            LK.pl_set_end_of_stream1_va, LK.pl_fill_buffer1_va, LK.pl_dsize_stream2_va,
+            LK.pl_read_pending_codes3_va, LK.pl_read_pending_chars3_va
         )
     ]...,
     (LK.Swrite_null, Tuple{Vector{UInt8}, Int, Int}, false),
@@ -2985,6 +2986,12 @@ _index_entry_points(T) = (
     (LK.Sseek_null, Tuple{Int, Int}, false),
     (LK.Sclose_null, Tuple{}, false),
     (LK.getRepositionableStream, Tuple{LK.PL_local_data{T}, Int}, false),
+    (LK.Sread_pending, Tuple{LK.IOSTREAM, Vector{UInt8}, Int, Int}, false),
+    (LK.re_buffer, Tuple{LK.IOSTREAM, Vector{UInt8}, Int, Int}, false),
+    (LK.skip_cr, Tuple{LK.IOSTREAM}, false),
+    (LK.get_ucs2, Tuple{Vector{UInt8}, Int, Bool}, false),
+    (LK.unify_diff_list, Tuple{LK.PL_local_data{T}, Int, Int, Vector{Int}, Bool}, false),
+    (LK.read_pending_input, Tuple{LK.PL_local_data{T}, Int, Int, Int, Bool}, false),
     (LK.do_tell, Tuple{LK.PL_local_data{T}, Int, T}, false),
     (LK.findStreamFromFile, Tuple{LK.PL_global_data{T}, T, Int}, false),
     (LK.setStreamContextFlag, Tuple{LK.PL_global_data{T}, LK.IOSTREAM, Int}, false),

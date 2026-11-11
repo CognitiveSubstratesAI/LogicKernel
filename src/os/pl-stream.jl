@@ -1339,6 +1339,54 @@ function Stell64(s::IOSTREAM)::Int64
     end
 end
 
+# ── pending input (pl-stream.c) ─────────────────────────────────────────────────────────────────
+
+# PORT: SWI-Stream.h SIO_RP_BLOCK
+"`Sread_pending` flag: wait for new input (SWI-Stream.h)."
+const SIO_RP_BLOCK = 1
+
+# PORT: SWI-Stream.h SIO_RP_NOPOS
+"`Sread_pending` flag: do not update the position (SWI-Stream.h)."
+const SIO_RP_NOPOS = 2
+
+# PORT: pl-stream.c Sread_pending
+# DIVERGES: `buf` is a byte vector, filled from its first element; the stream's buffer is the indices into `s.mem`.
+"""
+Read the bytes pending in `s`'s buffer, at most `limit`, into `buf`: how many, or a negative number on error, 0 at end of
+file (pl-stream.c). `SIO_RP_BLOCK` fills the buffer first when it is empty; `SIO_RP_NOPOS` leaves the position alone.
+"""
+function Sread_pending(s::IOSTREAM, buf::Vector{UInt8}, limit::Int, flags::Int)::Int
+    done = 0
+
+    if s.bufp >= s.limitp && (flags & SIO_RP_BLOCK) != 0
+        c = S__fillbuf(s)
+
+        if c < 0
+            (s.flags & SIO_FEOF) != 0 && Sfpasteof(s) != 1 && return 0
+            return c
+        end
+
+        buf[1] = UInt8(c)
+        limit -= 1
+        done = 1
+    end
+
+    n = s.limitp - s.bufp
+    n > limit && (n = limit)
+    copyto!(buf, done + 1, s.mem, s.bufp, n)
+    p = s.position
+    if p !== nothing && (flags & SIO_RP_NOPOS) == 0
+        for k in 1:(done + n)
+            update_linepos(s, Int(buf[k]))
+            p.charno += 1
+        end
+    end
+
+    s.bufp += n
+
+    return done + n
+end
+
 # PORT: pl-stream.c bomdefs
 "The byte order marks `ScheckBOM` recognises: the encoding they announce and their bytes (pl-stream.c)."
 const bomdefs = (

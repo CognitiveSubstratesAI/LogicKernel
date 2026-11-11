@@ -1877,6 +1877,269 @@ function pl_dsize_stream2_va(
     return FFALSE
 end
 
+# ── pending input (pl-file.c) ───────────────────────────────────────────────────────────────────
+
+# PORT: pl-file.c MAX_PENDING
+"The most bytes `read_pending_codes/3` and `read_pending_chars/3` take from the buffer at once (pl-file.c)."
+const MAX_PENDING = SIO_BUFSIZE
+
+# PORT: pl-file.c re_buffer
+# DIVERGES: `from` is an index into `buf` (a byte vector), the memory move is `copyto!` within `s.mem`.
+"Put the `len` bytes of `buf` from index `from` back as the pending input of `s` (pl-file.c)."
+function re_buffer(s::IOSTREAM, buf::Vector{UInt8}, from::Int, len::Int)::Nothing
+    if s.bufp < s.limitp
+        pending = s.limitp - s.bufp
+
+        copyto!(s.mem, s.buffer, s.mem, s.bufp, pending)
+        s.bufp = s.buffer
+        s.limitp = s.bufp + pending
+    else
+        s.bufp = s.limitp = s.buffer
+    end
+
+    copyto!(s.mem, s.bufp, buf, from, len)
+    s.limitp = s.bufp + len
+    return nothing
+end
+
+# PORT: pl-file.c skip_cr
+"Whether a carriage return read from the text stream `s` is dropped: a DOS newline mode (detected on the first) (pl-file.c)."
+function skip_cr(s::IOSTREAM)::Bool
+    if (s.flags & SIO_TEXT) != 0
+        if s.newline == SIO_NL_DETECT
+            s.newline = SIO_NL_DOS
+            return true
+        elseif s.newline == SIO_NL_DOS
+            return true
+        end
+    end
+    return false
+end
+
+# PORT: pl-file.c get_ucs2
+# DIVERGES: `i` is the 1-based index of the first byte of the unit in `us`.
+"The UCS-2 unit at index `i` of `us`, big or little endian (pl-file.c)."
+function get_ucs2(us::Vector{UInt8}, i::Int, be::Bool)::Int
+    if be
+        return (Int(us[i]) << 8) + Int(us[i + 1])
+    else
+        return (Int(us[i + 1]) << 8) + Int(us[i])
+    end
+end
+
+# ORIGINAL: pl-file.c's `allocList`, `addSmallIntList`, `addCharList`, `unifyDiffList` build the list on the global stack
+# in place, with a hole for the tail; the codes are collected, then `PL_unify_text` (ENC_WCHAR units) builds the list ending
+# in a fresh tail term, which is unified with `tail`.
+"Unify `list` with the list of the code points `codes` (as codes, or one-character atoms if `chars`), whose end unifies with `tail`."
+function unify_diff_list(
+    ld::PL_local_data{T}, list::term_t, tail::term_t, codes::Vector{Int}, chars::Bool
+)::Bool where {T}
+    bytes = Vector{UInt8}(undef, 4 * length(codes))
+    for (k, c) in enumerate(codes)
+        u = UInt32(c)
+        bytes[4k - 3] = UInt8(u & 0xff)
+        bytes[4k - 2] = UInt8((u >> 8) & 0xff)
+        bytes[4k - 1] = UInt8((u >> 16) & 0xff)
+        bytes[4k] = UInt8((u >> 24) & 0xff)
+    end
+    text = PL_chars_t(bytes, length(codes), ENC_WCHAR, true)
+    hole = PL_new_term_ref(ld)
+    hole == 0 && return false
+    PL_unify_text(ld, list, hole, text, chars ? PL_CHAR_LIST : PL_CODE_LIST) || return false
+    return PL_unify(ld, tail, hole)
+end
+
+# PORT: pl-file.c read_pending_input
+# DIVERGES: the pending bytes are copied to a `Vector{UInt8}`; the list is built by `unify_diff_list`; `ENC_ANSI` is a named
+# refusal (no multibyte state in the kernel's streams); no lock to release.
+"The pending input of a stream as the difference list `list`-`tail` of codes or chars (pl-file.c)."
+function read_pending_input(
+    ld::PL_local_data{T}, input::term_t, list::term_t, tail::term_t, chars::Bool
+)::Bool where {T}
+    s = getInputStream(ld, input, S_DONTCARE)
+    s === nothing && return false
+
+    buf = Vector{UInt8}(undef, MAX_PENDING)
+    off0 = Stell64(s)
+
+    if Sferror(s) != 0
+        return streamStatus(ld, s)
+    end
+
+    n = Sread_pending(s, buf, MAX_PENDING, SIO_RP_NOPOS)
+    n < 0 && return streamStatus(ld, s)                   # should not happen
+    if n == 0                                             # end-of-file
+        return streamStatus(ld, s) && PL_unify(ld, list, tail) && PL_unify_nil(ld, list)
+    end
+    p = s.position
+    pos0 = p === nothing ? IOPOS() : IOPOS(p.byteno, p.charno, p.lineno, p.linepos, p.esc_state)
+
+    codes = Int[]
+    failed = false
+    enc = s.encoding
+
+    if enc == ENC_OCTET || enc == ENC_ISO_LATIN_1 || enc == ENC_ASCII
+        for i in 1:n
+            c = Int(buf[i])
+
+            c == Int('\r') && skip_cr(s) && continue
+
+            p !== nothing && S__fupdatefilepos_getc(s, c)
+
+            push!(codes, c)
+        end
+        p !== nothing && (p.byteno = pos0.byteno + n)
+    elseif enc == ENC_ANSI
+        throw(
+            NotPortedError{Nothing}(
+                nothing, "read_pending_codes/3 on an ENC_ANSI stream", "no multibyte state in the kernel's streams"
+            )
+        )
+    elseif enc == ENC_UTF8
+        us = 1
+        es = n + 1
+        count = 0
+
+        while us < es && !failed
+            b0 = Int(buf[us])
+            if (b0 & 0x80) == 0
+                count += 1
+                us += 1
+            else
+                ex = UTF8_FBN(b0)
+
+                if ex >= 0
+                    ec = us + ex + 1
+
+                    if ec <= es
+                        count += 1
+                        us = ec
+                    else                                  # incomplete multi-byte
+                        break
+                    end
+                else
+                    Sseterr(s, SIO_WARN, "Illegal multibyte Sequence")
+                    failed = true
+                end
+            end
+        end
+
+        if !failed
+            us = 1
+            for _ in 1:count
+                _, us, c = _PL__utf8_code_point(buf, us, es)
+                c == Int('\r') && skip_cr(s) && continue
+                p !== nothing && S__fupdatefilepos_getc(s, c)
+
+                push!(codes, c)
+            end
+            p !== nothing && (p.byteno = pos0.byteno + (us - 1))
+
+            re_buffer(s, buf, us, es - us)
+        end
+    elseif enc == ENC_UTF16BE || enc == ENC_UTF16LE
+        be = enc == ENC_UTF16BE
+        count = 0
+        us = 1
+        es = n + 1
+        done = 0
+
+        while us + 2 <= es && !failed
+            c = get_ucs2(buf, us, be)
+            us += 2
+            if IS_UTF16_LEAD(c)
+                if us + 2 <= es
+                    c2 = get_ucs2(buf, us, be)
+
+                    if IS_UTF16_TRAIL(c2)
+                        count += 1
+                        us += 2
+                    else
+                        Sseterr(s, SIO_WARN, "Illegal UTF-16 surrogate pair")
+                        failed = true
+                    end
+                end
+            else
+                count += 1
+            end
+        end
+
+        if !failed
+            us = 1
+            for _ in 1:count
+                c = get_ucs2(buf, us, be)
+                us += 2
+                done += 2
+                c == Int('\r') && skip_cr(s) && continue
+
+                if IS_UTF16_LEAD(c)
+                    c2 = get_ucs2(buf, us, be)
+
+                    done += 2
+                    us += 2
+                    c = utf16_decode(c, c2)
+                end
+
+                p !== nothing && S__fupdatefilepos_getc(s, c)
+
+                push!(codes, c)
+            end
+
+            p !== nothing && (p.byteno = pos0.byteno + done)
+            re_buffer(s, buf, 1 + done, n - done)
+        end
+    elseif enc == ENC_WCHAR
+        count = n ÷ 4
+
+        for i in 1:count
+            c = Int(buf[4i - 3]) | (Int(buf[4i - 2]) << 8) | (Int(buf[4i - 1]) << 16) | (Int(buf[4i]) << 24)
+
+            c == Int('\r') && skip_cr(s) && continue
+            p !== nothing && S__fupdatefilepos_getc(s, c)
+
+            push!(codes, c)
+        end
+
+        done = count * 4
+        p !== nothing && (p.byteno = pos0.byteno + done)
+        re_buffer(s, buf, 1 + done, n - done)
+    else                                                  # ENC_UNKNOWN
+        error("read_pending_input: unknown encoding $enc")      # assert(0)
+    end
+
+    if !failed && unify_diff_list(ld, list, tail, codes, chars)
+        return true
+    end
+
+    Sseek64(s, off0, SIO_SEEK_SET)                        # TBD: error?
+    if p !== nothing
+        p.byteno = pos0.byteno
+        p.charno = pos0.charno
+        p.lineno = pos0.lineno
+        p.linepos = pos0.linepos
+        p.esc_state = pos0.esc_state
+    end
+    return false
+end
+
+# PORT: pl-file.c read_pending_codes as pl_read_pending_codes3_va
+# (PRED_IMPL("read_pending_codes", 3, read_pending_codes, 0)) — pl-file.c:3351-3356 (pin 18168e62)
+"`read_pending_codes(+StreamIn, -Codes, ?Tail)`: the codes pending in the buffer of `StreamIn`, as a difference list (pl-file.c)."
+function pl_read_pending_codes3_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    return read_pending_input(ld, PL__t0, PL__t0 + 1, PL__t0 + 2, false) ? FTRUE : FFALSE
+end
+
+# PORT: pl-file.c read_pending_chars as pl_read_pending_chars3_va
+# (PRED_IMPL("read_pending_chars", 3, read_pending_chars, 0)) — pl-file.c:3358-3363 (pin 18168e62)
+"`read_pending_chars(+StreamIn, -Chars, ?Tail)`: the characters pending in the buffer of `StreamIn`, as a difference list (pl-file.c)."
+function pl_read_pending_chars3_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    return read_pending_input(ld, PL__t0, PL__t0 + 1, PL__t0 + 2, true) ? FTRUE : FFALSE
+end
+
 # ── prompts (pl-file.c) ─────────────────────────────────────────────────────────────────────────
 
 # PORT: pl-file.c prompt as pl_prompt2_va
@@ -3744,6 +4007,8 @@ const PL_predicates_from_file = (
     PL_extension("seek", 4, pl_seek4_va, PL_FA_VARARGS),
     PL_extension("set_end_of_stream", 1, pl_set_end_of_stream1_va, PL_FA_VARARGS),
     PL_extension("fill_buffer", 1, pl_fill_buffer1_va, PL_FA_VARARGS),
+    PL_extension("read_pending_codes", 3, pl_read_pending_codes3_va, PL_FA_VARARGS),
+    PL_extension("read_pending_chars", 3, pl_read_pending_chars3_va, PL_FA_VARARGS),
     PL_extension("\$size_stream", 2, pl_dsize_stream2_va, PL_FA_VARARGS),
     PL_extension("see", 1, pl_see1_va, PL_FA_VARARGS),
     PL_extension("seen", 0, pl_seen0_va, PL_FA_VARARGS),
