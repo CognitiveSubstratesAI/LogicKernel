@@ -7877,6 +7877,15 @@ setlocale, 0)`, with `lccats`) is ported ahead of the rest of that file.
   LANG=C, LANG unset, LC_ALL set); the locales named are C, POSIX, '' and C.utf8, and every row puts the locale and its
   environment variables back. Mutants: tools/mutants/CT1A.py.
 
+## CT1b / CT1c — the rest of pl-ctype.c: `char_type/2`, `code_type/2`, the case predicates, `normalize_space/2` (edit-only, UNTESTED, nothing compiled)
+
+- **src/os/pl-ctype-pred.jl** (loaded after pl-dwim.jl; its table `PL_predicates_from_ctype_pred` is the LAST of `_PRED_TABLES` and `_FOREIGN_VA`, so the
+  dispatch indices of the earlier tables stay): CT1b `char_type/2`, `code_type/2` with the class tests and the enumeration; CT1c `downcase_atom/2`,
+  `upcase_atom/2`, `string_lower/2`, `string_upper/2` (all `modify_case_atom`), `normalize_space/2` (`write_normalize_space` through the output redirect),
+  `enc_from_locale`, `init_locale` (the last two are written, not called at boot: a text stream here is UTF-8).
+- **Rows:** test/core_text/test_char_type_swipl.jl (t0-t41) and test/core_text/test_ctype_text_swipl.jl (t0-t33, plus a unit test of `enc_from_locale`);
+  swipl 10.1.20's answers, identical in two runs. Mutants: tools/mutants/CT1B.py, CT1C.py.
+
 ## CONT1 — continuations at run time: `reset/3`, `shift/1`, `shift_for_copy/1`, `call_continuation/1` (R2, audit D-0402 item 2d; pl-cont.c, pl-vmi.c, pl-gc.c at swipl-devel cbf4e1896275)
 
 What CONT1 adds (written edit-only on top of LB4 b2's declarations and compile side; nothing was compiled or run when this was written):
