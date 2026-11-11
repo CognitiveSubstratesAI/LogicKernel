@@ -126,11 +126,11 @@ MUTANTS = [
          old="    tc_cref = supervisor_crefs(gd, DEF, PCc)[Int(PCc[PC])]   # ClauseRef cref = code2ptr(ClauseRef, *PC)\n",
          new="    tc_cref = supervisor_crefs(gd, DEF, PCc)[Int(PCc[PC + 2])]   # ClauseRef cref = code2ptr(ClauseRef, *PC)\n"),
     # ── the retry sites of a wrapped non-deterministic foreign predicate (shallow_backtrack, deep_backtrack): innermost_supervisor ──
-    dict(id="WRAP1-M14a shallow_backtrack retries a wrapped foreign predicate in the wrapper's code (a loop, bounded; KILL W: the query on a wrapped between/3, `got == [1, 2, 3]`)",
+    dict(id="WRAP1-M14a shallow_backtrack retries a wrapped foreign predicate in the wrapper's code (a loop, bounded; KILL W: the testset 'a query on the closure of a wrapped between/3 retries ... (shallow_backtrack)', `got == [1, 2, 3]`: the query's frame is the foreign frame, `FR == ch.frame`)",
          file=WAM, targets=[W],
          old="                DEF = sb_def\n                PCc = innermost_supervisor(gd, DEF)[1]  # (WRAP1) a wrapped foreign predicate retries in the foreign supervisor\n",
          new="                DEF = sb_def\n                PCc = innermost_supervisor(gd, DEF)[1] === DEF.codes ? DEF.codes : (" + BOUND + "; DEF.codes)  # (WRAP1) a wrapped foreign predicate retries in the foreign supervisor\n"),
-    dict(id="WRAP1-M14b deep_backtrack retries a wrapped foreign predicate in the wrapper's code (a loop, bounded; KILL W: t18 :245, named row t18)",
+    dict(id="WRAP1-M14b deep_backtrack retries a wrapped foreign predicate in the wrapper's code (a loop, bounded; KILL W: t18, named row t18, and the testset 'a query on a wrapped between/3 retries ... (deep_backtrack)': the retry's FR is the wrapper's frame)",
          file=WAM, targets=[W],
          old="        if (DEF.flags & P_FOREIGN) != 0             # (NF1) an index into the supervisor\n            PCc = innermost_supervisor(gd, DEF)[1]  # (WRAP1) a wrapped foreign predicate retries in the foreign supervisor\n",
          new="        if (DEF.flags & P_FOREIGN) != 0             # (NF1) an index into the supervisor\n            PCc = innermost_supervisor(gd, DEF)[1] === DEF.codes ? DEF.codes : (" + BOUND + "; DEF.codes)  # (WRAP1) a wrapped foreign predicate retries in the foreign supervisor\n"),

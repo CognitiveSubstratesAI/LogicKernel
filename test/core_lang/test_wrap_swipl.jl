@@ -482,12 +482,13 @@ end
     end
 end
 
-# A QUERY opened on a wrapped non-deterministic foreign predicate (the program rows t18 reach `deep_backtrack`: the retry comes
-# from a later frame; a query on between/3 itself retries through `shallow_backtrack` with the foreign frame as `FR`,
-# test/core_lang/test_between_swipl.jl). The wrapper is the bare closure `W` (a last call: its frame takes the closure's place, so
-# the retry's `FR` is the foreign frame): both retry sites re-derive the foreign supervisor by `innermost_supervisor`
-# (src/pl-wam.jl, the lines marked WRAP1), not by `DEF.codes` (the wrapper's code).
-@testset "WRAP1: a query on a wrapped between/3 retries through the foreign supervisor (shallow_backtrack)" begin
+# A QUERY opened on a wrapped non-deterministic foreign predicate. The wrapper body `W` is a call of a variable goal
+# (`I_USERCALL0`, not a last call), so the foreign frame is a CHILD of the query's frame: the retry's `FR` is the wrapper's
+# frame, not the foreign one, and it goes through `deep_backtrack` (src/pl-wam.jl, the WRAP1 line of the `P_FOREIGN` branch:
+# the site of WRAP1-M14b). `shallow_backtrack`'s foreign branch (WRAP1-M14a) needs `FR == ch.frame`: a query opened on the
+# CLOSURE of the wrapped predicate (the next testset). Both sites re-derive the foreign supervisor by `innermost_supervisor`,
+# not by `DEF.codes` (the wrapper's code).
+@testset "WRAP1: a query on a wrapped between/3 retries through the foreign supervisor (deep_backtrack)" begin
     f = tempname() * ".pl"
     write(f, "wb_nd(ok) :- wrap_predicate(system:between(_, _, _), n1, W, W).\n")
     gd, ld, st = _wt_load(_WT, f)
@@ -520,6 +521,48 @@ end
     LK.PL_close_foreign_frame(ld, fid)
     codes, _ = LK.innermost_supervisor(gd, d)                               # after the first call: S_WRAP made it
     @test codes !== d.codes && codes[1] == LK.I_FOPENNDET                   # the foreign supervisor, inside the wrapper
+    @test got == [1, 2, 3]
+    @test !(LK.PL_S_EXCEPTION in rcs)
+    @test LK.live_states(ld) == 0
+end
+
+# A QUERY opened on the CLOSURE of a wrapped between/3 (the copy `S_WRAP` runs; a C caller of `PL_call_predicate` on a closure
+# gets this): its frame becomes the wrapped predicate's foreign frame, so the retry arrives at `shallow_backtrack` with
+# `FR == ch.frame` and a `P_FOREIGN` predicate, whose code the kernel re-derives by `innermost_supervisor` (WRAP1-M14a), not by
+# `DEF.codes` (the wrapper's code, as the wrapped predicate's definition holds it).
+@testset "WRAP1: a query on the closure of a wrapped between/3 retries through the foreign supervisor (shallow_backtrack)" begin
+    f = tempname() * ".pl"
+    write(f, "wb_nd(ok) :- wrap_predicate(system:between(_, _, _), n1, W, W).\n")
+    gd, ld, st = _wt_load(_WT, f)
+    rm(f)
+    @test st == "ok"
+    @test _wt_row(gd, ld, "wb_nd") == "wb_nd " * _ec("wb_nd", _ea("ok"))
+    proc = LK.isCurrentProcedure(sym_key(lk_sym(_WT, :between)), 3, LK.MODULE_system(gd))
+    @test proc !== nothing
+    d = proc.definition
+    i = findlast(c -> c.predicate === d, gd.closure_refs)
+    @test i !== nothing
+    cproc = LK.procedure(gd.closure_refs[i].def, UInt32(0), UInt32(0))      # a procedure on the closure's copy
+    pvm = LK.PutVarMap()
+    fid = LK.PL_open_foreign_frame(ld)
+    a = LK.PL_new_term_refs(ld, 3)
+    LK.putSlotValue!(ld, a + 1, mk_gnd(_WT, Int64(1)), pvm)
+    LK.putSlotValue!(ld, a + 2, mk_gnd(_WT, Int64(3)), pvm)
+    LK.putSlotValue!(ld, a + 3, mk_var(_WT, LK.fresh_var_keys!(1)), pvm)
+    qid = LK.PL_open_query(
+        gd, ld, nothing, LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS, cproc, a
+    )
+    got = Any[]
+    rcs = Int[]
+    while length(got) < 10
+        rc = LK.PL_next_solution(gd, ld, qid)
+        push!(rcs, rc)
+        (rc == LK.PL_S_TRUE || rc == LK.PL_S_LAST) || break
+        push!(got, lk_value(lk_answers(ld, a + 2)[1]))
+        rc == LK.PL_S_LAST && break
+    end
+    LK.PL_close_query(ld, qid)
+    LK.PL_close_foreign_frame(ld, fid)
     @test got == [1, 2, 3]
     @test !(LK.PL_S_EXCEPTION in rcs)
     @test LK.live_states(ld) == 0
