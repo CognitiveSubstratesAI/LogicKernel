@@ -5555,6 +5555,14 @@ function decompileBodyNoShift!(
             end
         elseif op == I_EXIT || op == I_EXITCATCH || op == I_EXITRESET  # (I_EXITRESET: LB4 b2)
         # break (out of upstream's switch): nothing
+        elseif A_ENTER <= op <= A_FIRSTVAR_IS                   # the arithmetic instructions (AR1)
+            throw(
+                NotPortedError{T}(
+                    mk_sym(T, codeTable(op).name),
+                    "decompile A_*: the arithmetic instructions (pl-comp.c:6452-6725)",
+                    "AR1 decompile"
+                )
+            )
         else
             error(
                 "Decompiler: unknown instruction in clause body: $(codeTable(op).name)"

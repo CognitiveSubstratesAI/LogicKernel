@@ -1993,6 +1993,25 @@ const _BC_DEC_DECOMPILED = Dict{String, String}(
         @test !dc(d1, _bs("d1"), _bs("true"))
         @test !dc(fact, _bf("df", _bv(9003)), _bs("a"))
     end
+    # The decompile of the arithmetic instructions is a named refusal until AR1's decompile
+    # piece (pl-comp.c:6452-6725): the kernel answers NotPortedError (pinned; swipl decompiles
+    # the clause to its source). That piece replaces this testset by the decompiled-source rows.
+    @testset "decompiling an optimise-compiled arithmetic clause is a named refusal" begin
+        lda = LK.PL_local_data{_B}(_BGD)
+        LK.setPrologFlagMask!(lda, LK.PLFLAG_OPTIMISE)
+        h = _bf("dar", _bv(1))
+        cl = _bclause(h, _bf("<", _bv(1), _bg(3)); ld=lda)
+        @test any(startswith("a_enter"), _bc_kernel(cl))
+        @test_throws LK.NotPortedError _bdecompile(cl, h)
+        err = try
+            _bdecompile(cl, h)
+            nothing
+        catch e
+            e
+        end
+        @test err isa LK.NotPortedError
+        @test err !== nothing && occursin("pl-comp.c:6452-6725", err.what)
+    end
     @testset "clause/2 with a body (pl_clause!)" begin
         gd = LK.PL_global_data{_B}()
         user = LK.MODULE_user(gd)
