@@ -283,8 +283,8 @@ const _LD_CASES = [
     ("d170", raw"ro(S), get_code(S, _), get_code(S, _), seek(S, -1, current, N), get_code(S, C), close(S), R = N-C"),
     ("d171", raw"ro(S), set_stream(S, encoding(unicode_be)), seek(S, 2, bof, _), '$stream_property'(S, position(P)), close(S), R = P"),
     ("d172", raw"ro(S), seek(S, 1, bof, _), get_code(S, _), '$stream_property'(S, position(P)), close(S), R = P"),
-    ("d173", raw"open_string("abc", S), seek(S, 1, bof, N), get_code(S, C), close(S), R = N-C"),
-    ("d174", raw"open_string("abc", S), seek(S, -1, eof, N), get_code(S, C), close(S), R = N-C"),
+    ("d173", raw"open_string(\"abc\", S), seek(S, 1, bof, N), get_code(S, C), close(S), R = N-C"),
+    ("d174", raw"open_string(\"abc\", S), seek(S, -1, eof, N), get_code(S, C), close(S), R = N-C"),
     ("d175", raw"with_output_to(string(X), (current_output(O), write(abc), seek(O, 1, bof, N), write(z))), R = X-N"),
     ("d176", raw"ro(S), get_code(S, _), seek(S, 100, bof, N), get_code(S, C), close(S), R = N-C"),
     ("d177", raw"ro(S), set_stream(S, record_position(false)), cerr(set_stream_position(S, '$stream_position'(0, 1, 0, 0)), R0), close(S), R = R0"),
@@ -299,7 +299,7 @@ const _LD_CASES = [
     ("d186", raw"wo(S), write(S, abcd), '$size_stream'(S, N), close(S), R = N"),
     ("d187", raw"wo(S), write(S, abcd), flush_output(S), '$size_stream'(S, N), close(S), R = N"),
     ("d188", raw"open_null_stream(S), '$size_stream'(S, N), close(S), R = N"),
-    ("d189", raw"open_string("abc", S), '$size_stream'(S, N), close(S), R = N"),
+    ("d189", raw"open_string(\"abc\", S), '$size_stream'(S, N), close(S), R = N"),
     ("d190", raw"ro(S), cerr('$size_stream'(S, 5), R0), close(S), R = R0"),
     ("d191", raw"cerr('$size_stream'(foo, _), R)"),
     ("d192", raw"cerr('$size_stream'(_, _), R)"),
@@ -318,9 +318,9 @@ const _LD_CASES = [
     ("d205", raw"cerr(fill_buffer(foo), R)"),
     ("d206", raw"cerr(fill_buffer(_), R)"),
     ("d207", raw"ro(S), close(S), cerr(fill_buffer(S), R)"),
-    ("d208", raw"open_string("abc", S), fill_buffer(S), get_code(S, C), close(S), R = C"),
+    ("d208", raw"open_string(\"abc\", S), fill_buffer(S), get_code(S, C), close(S), R = C"),
     ("d209", raw"ra(S, fbal), fill_buffer(fbal), get_code(fbal, C), close(S), R = C"),
-    ("d210", raw"open_string("abc", S), get_code(S, _), '$size_stream'(S, N), get_code(S, C), close(S), R = N-C"),
+    ("d210", raw"open_string(\"abc\", S), get_code(S, _), '$size_stream'(S, N), get_code(S, C), close(S), R = N-C"),
     ("d211", raw"ro(S), get_code(S, _), '$size_stream'(S, N), get_code(S, C), close(S), R = N-C")
 ]
 
