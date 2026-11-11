@@ -20,6 +20,7 @@ on:
   push:
     branches:
       - 'gate/**'
+      - 'perf/ci-**'          # GATESPEED scratch branches (audit D-0529/D-0530)
   workflow_dispatch:
   schedule:
     - cron: '17 2 * * *'              # nightly, 02:17 UTC
@@ -80,6 +81,18 @@ jobs:
         with:
           version: '1.13'
       - uses: julia-actions/cache@9353db09a0f2bbbdec6f41791918c75d37391b36  # v3.5.0
+        with:
+          cache-name: julia-cache;lk-shared;julia=1.13
+          include-matrix: 'false'
+      # AUDIT D-0535 item 1: the shared depot cache holds the registry, packages, artifacts and the compiled caches of the
+      # DEPENDENCIES only. The package under test's OWN compiled cache (compiled/<julia>/LogicKernel*) is dropped right
+      # after the restore (a stale precompiled copy could keep a mutant from taking effect) ...
+      - name: No restored compiled LogicKernel (the shared cache is dependencies only)
+        run: |
+          for d in "$HOME"/.julia/compiled/v*/LogicKernel*; do
+              [ -e "$d" ] && { echo "dropping the restored $d"; rm -rf "$d"; }
+          done
+          true
       # (no analysis tools: the static analysis is in no file group — the `static_analysis` jobs)
       # THE HOME TREE (LB4 b2): every database is a copy of the BOOTED one, which reads HOME/boot/init.pl; `home/` is
       # generated and git-ignored, so a fresh checkout has none (Evidence 42021496734: 664 failing tests, "build the home
@@ -123,6 +136,14 @@ jobs:
         with:
           name: evidence-${{ matrix.term }}-g${{ matrix.group }}
           path: evidence-out/
+      # ... and again at the job's end, BEFORE the cache action's post step saves the depot: it never enters the key
+      - name: No compiled LogicKernel in the shared cache
+        if: ${{ always() }}
+        run: |
+          for d in "$HOME"/.julia/compiled/v*/LogicKernel*; do
+              [ -e "$d" ] && { echo "dropping $d before the cache save"; rm -rf "$d"; }
+          done
+          true
 
   # THE STATIC ANALYSIS IN SHARDS (D-0059): every SA_SHARDS-th manifest entry from the k-th, and the
   # k-th of every SA_SHARDS of its one-off gates (Aqua in exactly one), with the tools REQUIRED
@@ -149,6 +170,18 @@ jobs:
         with:
           version: '1.13'
       - uses: julia-actions/cache@9353db09a0f2bbbdec6f41791918c75d37391b36  # v3.5.0
+        with:
+          cache-name: julia-cache;lk-shared;julia=1.13
+          include-matrix: 'false'
+      # AUDIT D-0535 item 1: the shared depot cache holds the registry, packages, artifacts and the compiled caches of the
+      # DEPENDENCIES only. The package under test's OWN compiled cache (compiled/<julia>/LogicKernel*) is dropped right
+      # after the restore (a stale precompiled copy could keep a mutant from taking effect) ...
+      - name: No restored compiled LogicKernel (the shared cache is dependencies only)
+        run: |
+          for d in "$HOME"/.julia/compiled/v*/LogicKernel*; do
+              [ -e "$d" ] && { echo "dropping the restored $d"; rm -rf "$d"; }
+          done
+          true
       # The analysis tools, as CI.yml's `analysis` job installs them (JET, LoweredCodeUtils and Aqua
       # from master, as a set)
       # PINNED to commit SHAs (D-0562 item 4), no longer rev="master": the master commits current at run 43082794128
@@ -189,6 +222,14 @@ jobs:
         with:
           name: evidence-sa-${{ matrix.shard }}
           path: evidence-out/
+      # ... and again at the job's end, BEFORE the cache action's post step saves the depot: it never enters the key
+      - name: No compiled LogicKernel in the shared cache
+        if: ${{ always() }}
+        run: |
+          for d in "$HOME"/.julia/compiled/v*/LogicKernel*; do
+              [ -e "$d" ] && { echo "dropping $d before the cache save"; rm -rf "$d"; }
+          done
+          true
 
   # ONE GATHER PER TERM TYPE, under the type's own name (main's ruleset requires `reference`, `alt`
   # and `alt_interned`): the type's file groups all green, and together every unit of the type

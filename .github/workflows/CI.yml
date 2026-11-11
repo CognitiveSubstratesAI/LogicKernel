@@ -8,6 +8,8 @@ on:
       # jobs — `analysis` below is skipped, it is that same suite in one job. `main` is then
       # fast-forwarded to the commit CI judged (tools/githooks/pre-push refuses anything else).
       - 'gate/**'
+      # GATESPEED scratch branches (audit D-0529/D-0530): perf/ci-<name> runs the gate's jobs, never lands
+      - 'perf/ci-**'
     tags: ['*']
   pull_request:
   workflow_dispatch:
@@ -96,6 +98,18 @@ jobs:
           version: ${{ matrix.version }}
           arch: ${{ matrix.arch }}
       - uses: julia-actions/cache@9353db09a0f2bbbdec6f41791918c75d37391b36  # v3.5.0
+        with:
+          cache-name: julia-cache;lk-shared;julia=1.13
+          include-matrix: 'false'
+      # AUDIT D-0535 item 1: the shared depot cache holds the registry, packages, artifacts and the compiled caches of the
+      # DEPENDENCIES only. The package under test's OWN compiled cache (compiled/<julia>/LogicKernel*) is dropped right
+      # after the restore (a stale precompiled copy could keep a mutant from taking effect) ...
+      - name: No restored compiled LogicKernel (the shared cache is dependencies only)
+        run: |
+          for d in "$HOME"/.julia/compiled/v*/LogicKernel*; do
+              [ -e "$d" ] && { echo "dropping the restored $d"; rm -rf "$d"; }
+          done
+          true
       # THE HOME TREE (LB4 b2): every database is a copy of the BOOTED one, which reads HOME/boot/init.pl; `home/` is
       # generated and git-ignored, so a fresh checkout has none (Evidence 42021496734: 664 failing tests, "build the home
       # tree first"). tools/build_home.jl links the tracked vendor/ and packages/plunit: no network, no packages, about a second.
@@ -185,6 +199,14 @@ jobs:
           RES: ${{ steps.upload_results.outcome }}
         run: |
           echo "::warning title=Codecov upload failed::coverage $COV, test results $RES — the tests gate this job; see the upload step's log for Codecov's error"
+      # ... and again at the job's end, BEFORE the cache action's post step saves the depot: it never enters the key
+      - name: No compiled LogicKernel in the shared cache
+        if: ${{ always() }}
+        run: |
+          for d in "$HOME"/.julia/compiled/v*/LogicKernel*; do
+              [ -e "$d" ] && { echo "dropping $d before the cache save"; rm -rf "$d"; }
+          done
+          true
 
   pkgtest:
     name: Julia ${{ matrix.version }} - ${{ matrix.os }}
@@ -232,7 +254,7 @@ jobs:
   # LoweredCodeUtils from master), so local and CI analyse with the same versions.
   analysis:
     name: Static analysis + live swipl differential
-    if: ${{ !startsWith(github.ref_name, 'gate/') }}
+    if: ${{ !startsWith(github.ref_name, 'gate/') && !startsWith(github.ref_name, 'perf/ci-') }}
     runs-on: ubuntu-24.04
     # THE ORACLE IS A BUILD OF THE PINNED COMMIT (user, 2026-10-11): tools/SWIPL_VERSION names one
     # swipl-devel commit — the one the ported files cite — and `swipl` here is built from exactly
@@ -273,6 +295,18 @@ jobs:
         with:
           version: '1.13'
       - uses: julia-actions/cache@9353db09a0f2bbbdec6f41791918c75d37391b36  # v3.5.0
+        with:
+          cache-name: julia-cache;lk-shared;julia=1.13
+          include-matrix: 'false'
+      # AUDIT D-0535 item 1: the shared depot cache holds the registry, packages, artifacts and the compiled caches of the
+      # DEPENDENCIES only. The package under test's OWN compiled cache (compiled/<julia>/LogicKernel*) is dropped right
+      # after the restore (a stale precompiled copy could keep a mutant from taking effect) ...
+      - name: No restored compiled LogicKernel (the shared cache is dependencies only)
+        run: |
+          for d in "$HOME"/.julia/compiled/v*/LogicKernel*; do
+              [ -e "$d" ] && { echo "dropping the restored $d"; rm -rf "$d"; }
+          done
+          true
       # JET, LoweredCodeUtils and JuliaInterpreter release together: install the tools from master as
       # a set. A pin on one of them (2026-10-03, LoweredCodeUtils v3.9.1 while JET lagged) breaks as
       # soon as the others move on — JET 0.12.3 then REQUIRED LoweredCodeUtils 3.10 (run 37139741792).
@@ -296,6 +330,14 @@ jobs:
       - run: julia --project=. -e 'using Pkg; Pkg.instantiate()'
       - name: Run the suite with every gate required
         run: julia --project=. test/runtests.jl
+      # ... and again at the job's end, BEFORE the cache action's post step saves the depot: it never enters the key
+      - name: No compiled LogicKernel in the shared cache
+        if: ${{ always() }}
+        run: |
+          for d in "$HOME"/.julia/compiled/v*/LogicKernel*; do
+              [ -e "$d" ] && { echo "dropping $d before the cache save"; rm -rf "$d"; }
+          done
+          true
 
   format:
     name: Format (Blue)
@@ -428,7 +470,19 @@ jobs:
         with:
           version: '1.13'
       - uses: julia-actions/cache@9353db09a0f2bbbdec6f41791918c75d37391b36  # v3.5.0
+        with:
+          cache-name: julia-cache;lk-shared;julia=1.13
+          include-matrix: 'false'
         if: steps.changed.outputs.run == 'true'
+      # AUDIT D-0535 item 1: the shared depot cache holds the registry, packages, artifacts and the compiled caches of the
+      # DEPENDENCIES only. The package under test's OWN compiled cache (compiled/<julia>/LogicKernel*) is dropped right
+      # after the restore (a stale precompiled copy could keep a mutant from taking effect) ...
+      - name: No restored compiled LogicKernel (the shared cache is dependencies only)
+        run: |
+          for d in "$HOME"/.julia/compiled/v*/LogicKernel*; do
+              [ -e "$d" ] && { echo "dropping the restored $d"; rm -rf "$d"; }
+          done
+          true
       # the warm lane's preflight runs the formatter and the fast static pre-check in the daemon:
       # the same tools, the same versions as `analysis` and `format`. And REVISE: the daemon loads
       # it from the default environment (tools/warm_session.jl), and without it no src edit
@@ -543,6 +597,14 @@ jobs:
         with:
           name: warm-${{ matrix.shard }}
           path: warm-out/
+      # ... and again at the job's end, BEFORE the cache action's post step saves the depot: it never enters the key
+      - name: No compiled LogicKernel in the shared cache
+        if: ${{ always() }}
+        run: |
+          for d in "$HOME"/.julia/compiled/v*/LogicKernel*; do
+              [ -e "$d" ] && { echo "dropping $d before the cache save"; rm -rf "$d"; }
+          done
+          true
 
   tooling_gather:
     name: Tooling suites (warm lane, evidence, oracle cache)
