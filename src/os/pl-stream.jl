@@ -1161,6 +1161,169 @@ function Ssize(s::IOSTREAM)::Int64
     return Int64(-1)
 end
 
+# ── seek (pl-stream.c) ──────────────────────────────────────────────────────────────────────────
+
+# ORIGINAL: Linux's `ESPIPE` (illegal seek), the value `Sseek64` records where the stream has no seek function.
+const ESPIPE = 29
+
+# PORT: pl-stream.c Sunit_size
+# DIVERGES: `sizeof(wchar_t)` is 4 (Linux); the enum has no other member to assert on.
+"The size in bytes of one unit of the stream's encoding (pl-stream.c)."
+function Sunit_size(s::IOSTREAM)::Int
+    enc = s.encoding
+    (enc == ENC_UTF16BE || enc == ENC_UTF16LE) && return 2
+    enc == ENC_WCHAR && return 4
+    return 1
+end
+
+# ORIGINAL: whether the stream's function set has a `seek` or `seek64` (upstream tests the function pointers):
+# the memory functions, the null functions and a file's Julia IO; the string, stderr, terminal and pipe functions have none.
+"Whether the stream's function set can seek."
+function S_has_seek(s::IOSTREAM)::Bool
+    f = s.functions
+    (f == Smemfunctions || f == Snullfunctions) && return true
+    if f == Siofunctions
+        h = s.handle
+        return h isa Sjulia_io && h.io isa IOStream
+    end
+    return false
+end
+
+# PORT: pl-stream.c Sseek_file64 as Sseek_julia_io
+# DIVERGES: on a file's Julia IO (`IOStream`) in place of `lseek()`: -1 for a negative result, as the system call's EINVAL.
+"Move the file's position (`SIO_SEEK_SET`, `SIO_SEEK_CUR`, `SIO_SEEK_END`): the new position, or -1 (pl-stream.c)."
+function Sseek_julia_io(h::Sjulia_io, pos::Int64, whence::Int)::Int64
+    io = h.io
+    io isa IOStream || return Int64(-1)
+    try
+        if whence == SIO_SEEK_SET
+            target = pos
+        elseif whence == SIO_SEEK_CUR
+            target = Int64(position(io)) + pos
+        elseif whence == SIO_SEEK_END
+            target = Int64(filesize(io)) + pos
+        else
+            return Int64(-1)
+        end
+        target < 0 && return Int64(-1)
+        seek(io, target)
+        return target
+    catch e
+        e isa Union{SystemError, Base.IOError, ArgumentError} || rethrow()
+        return Int64(-1)
+    end
+end
+
+# ORIGINAL: `(*s->functions->seek64)(s->handle, pos, whence)`: the function set's seek, on its handle; -1 for a set with none.
+"Seek as the stream's own function set does: the new position, or -1."
+function S_seek64(s::IOSTREAM, pos::Int64, whence::Int)::Int64
+    h = s.handle
+    s.functions == Smemfunctions && h isa memfile && return Sseek_memfile64(h, pos, whence)
+    s.functions == Siofunctions && h isa Sjulia_io && return Sseek_julia_io(h, pos, whence)
+    s.functions == Snullfunctions && return Int64(Sseek_null(Int(pos), whence))
+    return Int64(-1)
+end
+
+# PORT: pl-stream.c Sseek64
+# DIVERGES: `errno` is the stream's `io_errno`, set here before the error is recorded (`ESPIPE`: no seek function; `EINVAL`
+# for the seek that failed or the stream layer that cannot say more); the position `s.position` is `s.posbuf` or `nothing`.
+"""
+Re-position the stream to byte `pos` (`whence`): 0, or -1 (pl-stream.c). First tries to move the read pointer in the
+buffer; else flushes, drops the buffer and asks the function set.
+"""
+function Sseek64(s::IOSTREAM, pos::Int64, whence::Int)::Int
+    update = false
+    if (s.flags & SIO_INPUT) != 0 && s.limitp > s.buffer           # something there
+        now = Stell64(s)
+
+        if now != -1
+            nbufp = -1
+            newpos = Int64(-1)
+
+            if whence == SIO_SEEK_CUR
+                nbufp = s.bufp + pos
+                newpos = now + pos
+            elseif whence == SIO_SEEK_SET
+                nbufp = s.bufp + (pos - now)
+                newpos = pos
+            else
+                newpos = -1                                        # should not happen
+            end
+
+            if nbufp >= s.buffer && nbufp < s.limitp
+                s.bufp = Int(nbufp)
+
+                pos = newpos
+                update = true
+            end
+        end
+    end
+
+    if !update
+        if !S_has_seek(s)
+            s.io_errno = ESPIPE
+            S__seterror(s)
+            return -1
+        end
+
+        Sflush(s)
+
+        s.bufp = s.buffer
+        (s.flags & SIO_INPUT) != 0 && (s.limitp = s.buffer)
+
+        if whence == SIO_SEEK_CUR
+            pos += Stell64(s)
+            whence = SIO_SEEK_SET
+        end
+
+        pos = S_seek64(s, pos, whence)
+
+        if pos < 0
+            s.io_errno = EINVAL
+            S__seterror(s)
+            return -1
+        end
+    end
+
+    s.flags &= ~(SIO_FEOF | SIO_FEOF2)                             # not on eof of file anymore
+
+    p = s.position
+    if p !== nothing
+        s.flags |= (SIO_NOLINENO | SIO_NOLINEPOS)                  # no update this
+        Sresetesc(p)
+        p.byteno = pos
+        p.charno = div(pos, Sunit_size(s))                         # compatibility
+    end
+
+    return 0
+end
+
+# PORT: pl-stream.c Stell64
+# DIVERGES: as `Sseek64`, `errno` is `s.io_errno` (`EINVAL`: neither a position nor a seek function).
+"The current position in the file in bytes, or -1 (pl-stream.c)."
+function Stell64(s::IOSTREAM)::Int64
+    p = s.position
+    if p !== nothing
+        return p.byteno
+    elseif S_has_seek(s)
+        pos = S_seek64(s, Int64(0), SIO_SEEK_CUR)
+
+        if s.buffer != 0                                           # open
+            off = Int64(s.bufp - s.buffer)
+
+            (s.flags & SIO_INPUT) != 0 && (off -= s.limitp - s.buffer)
+
+            pos += off
+        end
+
+        return pos
+    else
+        s.io_errno = EINVAL
+        S__seterror(s)
+        return -1
+    end
+end
+
 # PORT: pl-stream.c bomdefs
 "The byte order marks `ScheckBOM` recognises: the encoding they announce and their bytes (pl-stream.c)."
 const bomdefs = (
