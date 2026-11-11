@@ -96,3 +96,9 @@ t9(R) :- lc_mk(lc9, [decimal_point(',')]),
     lc_res(set_locale(lc9), R7), lc_res(locale_create(_, lc9, []), R8),
     lc_res(( locale_property(L, alias(lc9)) ), R9), lc_res(locale_property(lc9, alias(_)), R10),
     R = [R1, R2, R3, R4, R5, R6, R7, R8, R9, R10, L].
+% a locale made from a name: the "C" and "POSIX" locales' numeric conventions (an empty thousands_sep or grouping is no property)
+t10(R) :- findall(N-Ps, ( member(N, ["C", "POSIX", 'C', 'POSIX']), locale_create(_, N, [alias(lc10)]), lc_props(lc10, Ps), lc_destroy(lc10) ), R0),
+    lc_res(( locale_create(_, "C", [alias(lc10)]), locale_property(lc10, thousands_sep(_)) ), R1), lc_destroy(lc10),
+    lc_res(( locale_create(_, "C", [alias(lc10), thousands_sep(',')]), locale_property(lc10, thousands_sep(S)) ), R2), lc_destroy(lc10),
+    lc_res(( locale_create(_, "C", [alias(lc10), grouping([2])]), locale_property(lc10, grouping(G)) ), R3), lc_destroy(lc10),
+    R = [R0, R1, R2, R3, S, G].
