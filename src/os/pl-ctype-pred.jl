@@ -167,7 +167,7 @@ const CTF = (
     prolog_identifier_continue = 7, decimal = 8, ff_decimal = 9, prolog_symbol = 10,
     prolog_solo = 11, pattern_syntax = 12, ascii = 13, white = 14, cntrl = 15, digit = 16,
     print = 17, graph = 18, lower = 19, upper = 20, punct = 21, space = 22, eof = 23, eol = 24,
-    prolog_end_of_line = 25, prolog_layout = 26, newline = 27, period = 28, quote = 29,
+    prolog_end_of_line = 25, prolog_layout = 26, newline = 27, period = 28, quote_class = 29,
     fupper = 30, flower = 31, ftoupper = 32, ftolower = 33, fparen = 34, rparen = 35,
     quote_close = 36, quote_open = 37, fdigit = 38, rdigit = 39, fxdigit = 40, rxdigit = 41,
     fwidth = 42
@@ -217,7 +217,7 @@ const char_types = (
     char_type("prolog_layout", CTF.prolog_layout, 0, 0, 0),
     char_type("newline", CTF.newline, 0, 0, 0),
     char_type("period", CTF.period, 0, 0, 0),
-    char_type("quote", CTF.quote, 0, 0, 0),
+    char_type("quote", CTF.quote_class, 0, 0, 0),
     char_type("lower", CTF.fupper, CTF.flower, 1, CTX_CHAR),
     char_type("upper", CTF.flower, CTF.fupper, 1, CTX_CHAR),
     char_type("to_lower", CTF.ftoupper, CTF.ftolower, 1, CTX_CHAR),
@@ -260,7 +260,7 @@ function _ct_test(id::Int, chr::Int)::Int
     id == CTF.prolog_layout && return Int(unicode_separator(chr))
     id == CTF.newline && return Int(isnl(chr))
     id == CTF.period && return Int(f_is_sterm(chr))
-    id == CTF.quote && return Int(f_is_quote(chr))
+    id == CTF.quote_class && return Int(f_is_quote(chr))
     id == CTF.fupper && return fupper(chr)
     id == CTF.flower && return flower(chr)
     id == CTF.ftoupper && return ftoupper(chr)
