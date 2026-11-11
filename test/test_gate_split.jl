@@ -2965,12 +2965,13 @@ MUTANTS = [
             builds += count("julia tools/build_home.jl", text)
         end
         @test isempty(found)
-        # nine Julia jobs, counted by python3 -I over the same files with the same rule (CI.yml: test, analysis,
-        # format, tooling; evidence.yml: evidence, static_analysis; mutation.yml: baseline, mutant; fuzz.yml:
-        # fuzz); a new Julia job moves this number and has to be added here on purpose
-        @test examined == 9
+        # eight Julia jobs, counted by python3 -I over the same files with the same rule (CI.yml: test, analysis,
+        # format, tooling; evidence.yml: evidence, static_analysis; mutation.yml: shard (GATESPEED: the warm-daemon
+        # shards replaced the baseline and mutant jobs); fuzz.yml: fuzz); a new Julia job moves this number and has
+        # to be added here on purpose
+        @test examined == 8
         # one build step in every job but the exempt ones: the job count and the step count tell each other
-        @test builds == examined - length(_GS_HOME_EXEMPT) == 8
+        @test builds == examined - length(_GS_HOME_EXEMPT) == 7
         # every exemption names a Julia job that exists (a stale one would hide a job added under its name)
         @test all(in(seen), keys(_GS_HOME_EXEMPT))
         @test all(!isempty, values(_GS_HOME_EXEMPT))
@@ -3007,11 +3008,12 @@ MUTANTS = [
     # test/test_vendored_plunit.jl fails in CI without it, and the battery's baseline with it
     @testset "the mutation lane checks swipl-devel out for a whole-suite target" begin
         mut = read(joinpath(_GS_ROOT, ".github", "workflows", "mutation.yml"), String)
-        # the checkout and the analysis tools, in the baseline and the mutant job each
-        @test count("'mutate_suite'", mut) == 4 &&
-            count("path: .upstream/swipl-devel", mut) == 2
+        # the checkout and the analysis tools, in the shard job (the one job that runs targets since GATESPEED:
+        # the `Baseline (unmutated)` job only reads shard 1's record)
+        @test count("'mutate_suite'", mut) == 2 &&
+            count("path: .upstream/swipl-devel", mut) == 1
         # one static-analysis part as a target (tools/mutate_sa_part.sh, JETGW) needs the tools too
-        @test count("'mutate_sa_part'", mut) == 2
+        @test count("'mutate_sa_part'", mut) == 1
         @test occursin("LOGICKERNEL_UPSTREAM_SWIPL_DEVEL:", mut)
         suite = joinpath(_GS_ROOT, "tools", "mutate_suite.sh")
         @test isfile(suite) && (filemode(suite) & 0o111) != 0
