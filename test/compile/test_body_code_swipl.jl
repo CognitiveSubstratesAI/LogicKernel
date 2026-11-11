@@ -1164,7 +1164,7 @@ end
 # the formal of the ball, as the pin's swipl 10.1.20 raises it for `assertz` (probed, optimise on;
 # a variable culprit of a type_error becomes instantiation_error in PL_error, as pl-error.c)
 @testset "arithmetic under optimise raises as the pin does (AR1 d3)" begin
-    "The ball's formal of compiling `head :- body` under `optimise`; `nothing` if it compiled."
+    "`(clause or nothing, the ball's formal or nothing)` of compiling `head :- body`."
     function arith_error(head, body)
         ld = LK.PL_local_data{_B}(_BGD)
         LK.setPrologFlagMask!(ld, LK.PLFLAG_OPTIMISE)
@@ -1172,9 +1172,11 @@ end
         _bnames!(body)
         user = LK.MODULE_user(_BGD)
         name, ar = _bfunctor(head)
-        LK.compileClause(_BGD, ld, head, body, LK.lookupProcedure(name, ar, user), user)
-        ld.exception_term != 0 || return nothing           # raised, or left pending
-        return child(lk_answer(ld, ld.exception_term), 2)
+        cl = LK.compileClause(
+            _BGD, ld, head, body, LK.lookupProcedure(name, ar, user), user
+        )
+        ld.exception_term != 0 || return (cl, nothing)
+        return (cl, child(lk_answer(ld, ld.exception_term), 2))
     end
     cases = [
         ("a void variable", _bs("pe1"), _bf("<", _bv(1), _bg(3)),
@@ -1213,8 +1215,10 @@ end
             _bf("type_error", _bs("evaluable"), _bf("*", _bv(9))))
     ]
     for (name, h, b, formal) in cases
-        formal_got = arith_error(h, b)
+        cl, formal_got = arith_error(h, b)
         @test formal_got !== nothing && LK.is_variant_ptr(formal_got, formal)
+        # the clause is refused, except that of roundtoward/2's operand: swallowed, the error stays
+        @test (cl === nothing) == (name != "roundtoward of an unknown function")
     end
 end
 
