@@ -587,6 +587,7 @@ ld_tabling{T}() where {T} = ld_tabling{T}(
 # global variables: atom word -> value word) and `.grefs` (how many hold a value on the global stack, which
 # `_release_frozen!` then keeps), and `gvar_enums`, the pool of nb_current/2's states (src/pl-gvar.jl). Since R2 D2: `recorded_states`, the pool of recorded/2,3's states
 # (`recorded_state`, pl-incl.jl).
+# Since lane F (pl-coverage.c): `coverage` (`LD->coverage`: `data`, `active`; src/pl-incl.jl `ld_coverage`).
 # Since R2 PR1: `cur_pred_enums` and `cur_enums`, the pools of `'$c_current_predicate'/2`'s and `current_predicate/1`'s states
 # (`cur_pred_enum`, `cur_enum`, pl-incl.jl). Since R2 O1B: `IO_output_stack` (`LD->IO.output_stack`: the output context stack
 # of `with_output_to/2` and `format/3`'s redirect, src/os/pl-file.jl).
@@ -770,6 +771,7 @@ mutable struct PL_local_data{T} <: AbstractLocalData
     table_flags_drop_intermediate::Int                          # table_flags.drop_intermediate: flag table_drop_intermediate
     trie_gens::foreign_state_pool{trie_gen_state{T}}            # (trie_gen/2,3's REDO_PTR states, TR2)
     trie_gen_force_epoch::Bool                                  # ORIGINAL test switch: check_epoch! starts a new epoch at every call (TR2)
+    coverage::ld_coverage{T}                                    # coverage: the data and the active count; '$cov_data'/3's states (lane F)
 end
 function PL_local_data{T}(gd::PL_global_data{T}) where {T}
     ld = _bare_local_data(gd)
@@ -889,7 +891,8 @@ function _bare_local_data(gd::PL_global_data{T}) where {T}
         TABLE_COMPILE_THRESHOLD,                # table_flags.compile_threshold (pl-prologflag.c:2587)
         0,                                      # table_flags.drop_intermediate (pl-prologflag.c:2589)
         foreign_state_pool{trie_gen_state{T}}(), # trie_gen/2,3's states: none (TR2)
-        false                                   # trie_gen_force_epoch: off (TR2)
+        false,                                  # trie_gen_force_epoch: off (TR2)
+        ld_coverage{T}()                        # coverage: no data, not active (pl-global.c: zero)
     )
     allocStacks!(ld)                            # the initial local stack, its spare reserved
     emptyStacks!(ld)

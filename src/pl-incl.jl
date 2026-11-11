@@ -23,6 +23,8 @@
 # UPSTREAM: swipl-devel src/pl-trie.c @ 18168e629eab
 # UPSTREAM: swipl-devel src/pl-trie.h @ 18168e629eab
 # UPSTREAM: swipl-devel src/pl-indirect.h @ 18168e629eab
+# UPSTREAM: swipl-devel src/os/pl-table.h @ 18168e629eab
+# UPSTREAM: swipl-devel src/pl-coverage.h @ 18168e629eab
 # CLASS: code
 # COPYRIGHT: Copyright (c)  1985-2026, University of Amsterdam,
 # COPYRIGHT: VU University Amsterdam
@@ -2605,6 +2607,120 @@ mutable struct gvar_enum
     next::Int                                       # the next name to look at
 end
 gvar_enum() = gvar_enum(UInt64[], 1)
+
+# ── pl-table.h's structs (moved here from src/os/pl-table.jl: `ld_coverage` holds a `Table`) ─────────────────────────────
+
+# PORT: pl-table.h struct symbol
+"One entry of a key-value map: `name` and `value` (pl-table.h `struct symbol`)."
+struct symbol
+    name::UInt64
+    value::UInt64
+end
+
+# PORT: pl-table.h struct kvs
+# DIVERGES: `entries` is a vector (index `i` of upstream is `entries[i + 1]`), `resizing` a `Bool`, the `next`
+# and `prev` pointers `nothing` for NULL.
+"A map of key-value pairs of one size (pl-table.h `struct kvs`): the tables of a resize form a chain."
+mutable struct KVS
+    len::Int                        # size of key-value map
+    resizing::Bool                  # true while resizing
+    accesses::Int                   # number of accesses
+    next::Union{Nothing, KVS}       # next map
+    prev::Union{Nothing, KVS}       # last map
+    entries::Vector{symbol}         # array of hash symbols
+end
+
+# PORT: pl-table.h struct table
+# DIVERGES: `copy_symbol` and `free_symbol` are Julia callables (or `nothing`). `copy_symbol(n, v)` RETURNS the
+# value to store (upstream's `void (*)(table_key_t n, table_value_t *v)` rewrites `*v`); `free_symbol(n, v)` is
+# `void (*)(table_key_t n, table_value_t v)`. Both are called through an inference barrier: a hook is a run-time
+# value of an abstract type, as a C function pointer is.
+"A (numeric) hash table, word -> word (pl-table.h `struct table`)."
+mutable struct Table
+    size::Int                                       # # symbols in the table
+    cleanup::Bool                                   # true when KVS cleanup in progress
+    copy_symbol::Union{Nothing, Function}
+    free_symbol::Union{Nothing, Function}
+    kvs::KVS                                        # map of key-value pairs
+end
+
+# PORT: pl-table.h struct table_enum
+"An enumerator of a table (pl-table.h `struct table_enum`): its map and the index of the next entry."
+mutable struct TableEnum
+    table::Table                    # Table we are working on
+    kvs::KVS                        # kvs we are iterating over
+    idx::Int                        # Index of current symbol-chain
+end
+
+# ── pl-coverage.h / pl-coverage.c: the coverage data (lane F) ────────────────────────────────────────────────────────────
+# DIVERGES (representation, for the whole block): upstream's table (`TablePP`) maps a `Code` pointer (a call site) or a
+# `Clause` pointer (a clause) to a malloc'ed `cov_obj`. Here the key is the clause SERIAL (`gd.clause_serials[clause]`,
+# the number `lookup_clref` gives a clause on its first reference, src/pl-dbref.jl) in the high 32 bits and the pc OFFSET
+# into the clause's code in the low 32 bits (`COV_KEY_CLAUSE` (0xFFFFFFFF) for a clause site), and the value is the 1-based
+# index of the `cov_obj` in `coverage.objs`, which owns the objects. A table's enumeration order is its bucket order as
+# upstream's, over keys of another kind (upstream's are addresses: the order is not a kernel-independent fact either way).
+
+# PORT: pl-coverage.c cov_obj_type
+"`cov_obj_type` COV_ANY: any site (a `\$cov_data` pattern that does not say)."
+const COV_ANY = 0
+# PORT: pl-coverage.c cov_obj_type
+"`cov_obj_type` COV_CLAUSE: a clause's enter and exit."
+const COV_CLAUSE = 1
+# PORT: pl-coverage.c cov_obj_type
+"`cov_obj_type` COV_PC: a call site (a pc in a clause)."
+const COV_PC = 2
+# PORT: pl-coverage.h COV_TRACK_THREADS
+"Coverage flag: activate in child threads (pl-coverage.h)."
+const COV_TRACK_THREADS = 0x0001
+# ORIGINAL: the low 32 bits of a clause site's table key (a pc offset never has them all set).
+"The low 32 bits of the table key of a clause site (see the block's DIVERGES)."
+const COV_KEY_CLAUSE = 0xFFFFFFFF
+
+# PORT: pl-coverage.c cov_obj
+# DIVERGES: see the block; `cref` is the clause blob's term (`lookup_clref`'s result), `serial` the clause's number (the
+# key's high half), `pc` the OFFSET into the clause's code (upstream's `Code` pointer; -1 for a clause site).
+"One site's counters (pl-coverage.c `cov_obj`)."
+mutable struct cov_obj{T}
+    type::Int                       # COV_CLAUSE or COV_PC
+    cref::T                         # the clause blob
+    serial::Int                     # the clause's number
+    pc::Int                         # offset into the clause's code; -1 for a clause site
+    enter::Int                      # the site was entered
+    exits::Int                      # the site was exited
+end
+
+# PORT: pl-coverage.h coverage
+# DIVERGES: see the block (`table` holds indexes into `objs`); `references` and `flags` as upstream.
+"The coverage data of a thread (pl-coverage.h `struct coverage`): sites to counters."
+mutable struct coverage{T}
+    table::Table                    # call-sites --> data
+    objs::Vector{cov_obj{T}}        # the objects the table's values index
+    references::Int                 # # threads using this
+    flags::Int                      # COV_*
+end
+
+# PORT: pl-coverage.c cov_data_state
+# DIVERGES: a record of `ld.coverage.states`, its index the `REDO_PTR` context. `cref` (a blob atom upstream) is the
+# clause's serial (0: none); `e` is the table's enumerator (`nothing`: freed); `objs` is the coverage's object vector
+# the table's values index (held here: a `$cov_reset` between two answers does not take it away, as upstream's enumerator
+# holds its map); `saved` has no field (the pool).
+"The state of `'\$cov_data'/3` between answers (pl-coverage.c `struct cov_data_state`)."
+mutable struct cov_data_state{T}
+    type::Int                       # COV_ANY, COV_CLAUSE or COV_PC
+    e::Union{Nothing, TableEnum}    # the enumerator over the table
+    serial::Int                     # the clause the answers are restricted to (0: any)
+    objs::Vector{cov_obj{T}}        # the objects the enumerated values index
+end
+cov_data_state{T}() where {T} = cov_data_state{T}(COV_ANY, nothing, 0, cov_obj{T}[])
+
+# PORT: pl-global.h coverage
+"The coverage fields of a thread's local data (pl-global.h `LD->coverage`), and the pool of `'\$cov_data'/3`'s states."
+mutable struct ld_coverage{T}
+    data::Union{Nothing, coverage{T}}               # Data for the coverage collection
+    active::Int                                     # This thread is recording
+    states::foreign_state_pool{cov_data_state{T}}   # ('$cov_data'/3's REDO_PTR states)
+end
+ld_coverage{T}() where {T} = ld_coverage{T}(nothing, 0, foreign_state_pool{cov_data_state{T}}())
 
 # ── pl-allocpool.h and the table state of pl-tabling.h (TAB1 TB0) ───────────────────────────────────
 # DIVERGES (representation, for the whole block; docs/architecture.md TB0): a `trie_node *` is an `Int` node id and a

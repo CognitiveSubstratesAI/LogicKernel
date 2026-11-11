@@ -42,47 +42,9 @@ const PL_HT_NEW = 1
 # PORT: SWI-Prolog.h PL_HT_UPDATE
 const PL_HT_UPDATE = 2
 
-# PORT: pl-table.h struct symbol
-"One entry of a key-value map: `name` and `value` (pl-table.h `struct symbol`)."
-struct symbol
-    name::UInt64
-    value::UInt64
-end
-
-# PORT: pl-table.h struct kvs
-# DIVERGES: `entries` is a vector (index `i` of upstream is `entries[i + 1]`), `resizing` a `Bool`, the `next`
-# and `prev` pointers `nothing` for NULL.
-"A map of key-value pairs of one size (pl-table.h `struct kvs`): the tables of a resize form a chain."
-mutable struct KVS
-    len::Int                        # size of key-value map
-    resizing::Bool                  # true while resizing
-    accesses::Int                   # number of accesses
-    next::Union{Nothing, KVS}       # next map
-    prev::Union{Nothing, KVS}       # last map
-    entries::Vector{symbol}         # array of hash symbols
-end
-
-# PORT: pl-table.h struct table
-# DIVERGES: `copy_symbol` and `free_symbol` are Julia callables (or `nothing`). `copy_symbol(n, v)` RETURNS the
-# value to store (upstream's `void (*)(table_key_t n, table_value_t *v)` rewrites `*v`); `free_symbol(n, v)` is
-# `void (*)(table_key_t n, table_value_t v)`. Both are called through an inference barrier: a hook is a run-time
-# value of an abstract type, as a C function pointer is.
-"A (numeric) hash table, word -> word (pl-table.h `struct table`)."
-mutable struct Table
-    size::Int                                       # # symbols in the table
-    cleanup::Bool                                   # true when KVS cleanup in progress
-    copy_symbol::Union{Nothing, Function}
-    free_symbol::Union{Nothing, Function}
-    kvs::KVS                                        # map of key-value pairs
-end
-
-# PORT: pl-table.h struct table_enum
-"An enumerator of a table (pl-table.h `struct table_enum`): its map and the index of the next entry."
-mutable struct TableEnum
-    table::Table                    # Table we are working on
-    kvs::KVS                        # kvs we are iterating over
-    idx::Int                        # Index of current symbol-chain
-end
+# ORIGINAL: the four structs of pl-table.h (`symbol`, `KVS`, `Table`, `TableEnum`) are defined in src/pl-incl.jl (include order:
+# `ld_coverage`, a field of the local data, holds a `Table`, and src/pl-global.jl comes before this file); their
+# `# PORT: pl-table.h` markers and DIVERGES lines moved with them.
 
 # ORIGINAL: pl-thread.c `pl_kvs_in_use(kvs)`, true when a thread's `access.kvs` is `kvs`. The kernel has one
 # engine and no engine holds a map across a call (`acquire_kvs`'s `#else` form): false. TH1 replaces this body.
