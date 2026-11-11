@@ -1,6 +1,6 @@
 # ORIGINAL: lane D (D-0501): the Edinburgh and byte stream predicates of pl-file.c against swipl 10.1.20 (pin 18168e62); UNTESTED when written (nothing compiled)
 # test/core_lang/test_lane_d_swipl.jl — set_input/1, set_output/1, get/1,2, get0/1,2, get_char/1, get_byte/1,2, skip/1, put/1,2, put_byte/1,2,
-# peek_byte/1,2, peek_code/1,2, peek_char/1, byte_count/2, character_count/2, flush_output/0 and (d070-d097) see/1, seen/0, seeing/1, tell/1, append/1, telling/1, told/0 (pl-file.c, pin lines 3455-3658, 5550, 5709-5811, 5967-6006).
+# peek_byte/1,2, peek_code/1,2, peek_char/1, byte_count/2, character_count/2, flush_output/0 and (d070-d097) and open_null_stream/1 (d098-d108) see/1, seen/0, seeing/1, tell/1, append/1, telling/1, told/0 (pl-file.c, pin lines 3455-3658, 5550, 5709-5811, 5967-6006).
 #   * The harness is test_s2a_swipl.jl's: a PROGRAM consulted by the kernel's loader (helper clauses over a data file and an output file) and cases
 #     `t_<id>(R)` run IN ORDER in one database, each wrapped in `catch(Goal, error(F, _), R = raised(F))` (a stream blob in F becomes '<stream>').
 #   * Every answer line is swipl's, PINNED (swipl 10.1.20-1-g18168e629, two byte-identical runs, 2026-11-11, evidence/S2/lane_d_rows.out); with `swipl` on
@@ -207,7 +207,18 @@ const _LD_CASES = [
     ("d094", raw"outfile(F), open(F, write, _, [alias(lane_d_al)]), tell(lane_d_al), write(q), told, outtext(T), R = T"),
     ("d095", raw"ra(_, lane_d_a2), see(lane_d_a2), get_code(C), seen, R = C"),
     ("d096", raw"outfile(F), tell(F), write(a), told, tell(F), write(b), told, outtext(T), R = T"),
-    ("d097", raw"datafile(F), ro(S), get_code(S, _), see(F), get_code(C), seen, catch(close(S), _, true), R = C")
+    ("d097", raw"datafile(F), ro(S), get_code(S, _), see(F), get_code(C), seen, catch(close(S), _, true), R = C"),
+    ("d098", raw"open_null_stream(S), write(S, hello), character_count(S, N), close(S), R = N"),
+    ("d099", raw"open_null_stream(S), write(S, ab), nl(S), write(S, cde), line_count(S, L), line_position(S, P), close(S), R = L-P"),
+    ("d100", raw"open_null_stream(S), ( blob(S, stream) -> R0 = yes ; R0 = no ), close(S), R = R0"),
+    ("d101", raw"open_null_stream(S), cerr(get_char(S, _), R0), close(S), R = R0"),
+    ("d102", raw"open_null_stream(S), '$stream_property'(S, encoding(E)), close(S), R = E"),
+    ("d103", raw"open_null_stream(S), write(S, 'é€'), character_count(S, N), byte_count(S, B), close(S), R = N-B"),
+    ("d104", raw"open_null_stream(S), '$stream_property'(S, mode(M)), close(S), R = M"),
+    ("d105", raw"open_null_stream(S), sp(S, buffer(_), R0), close(S), R = R0"),
+    ("d106", raw"cerr(open_null_stream(foo), R)"),
+    ("d107", raw"open_null_stream(S), close(S), cerr(write(S, x), R0), R = R0"),
+    ("d108", raw"open_null_stream(S), put_byte(S, 65) -> R = ok ; R = failed")
 ]
 
 # swipl 10.1.20-1-g18168e629's answers to the program and cases above (the driver's lines; evidence/S2/lane_d_rows.out)
@@ -309,7 +320,18 @@ const _LD_PINNED = [
     "t_d094 c[116,95,100,48,57,52]/1(a[113])",
     "t_d095 c[116,95,100,48,57,53]/1(i97)",
     "t_d096 c[116,95,100,48,57,54]/1(a[98])",
-    "t_d097 c[116,95,100,48,57,55]/1(i97)"
+    "t_d097 c[116,95,100,48,57,55]/1(i97)",
+    "t_d098 c[116,95,100,48,57,56]/1(i5)",
+    "t_d099 c[116,95,100,48,57,57]/1(c[45]/2(i2,i3))",
+    "t_d100 c[116,95,100,49,48,48]/1(a[121,101,115])",
+    "t_d101 c[116,95,100,49,48,49]/1(c[114,97,105,115,101,100]/1(c[112,101,114,109,105,115,115,105,111,110,95,101,114,114,111,114]/3(a[114,101,97,100],a[115,116,114,101,97,109],a[60,115,116,114,101,97,109,62])))",
+    "t_d102 c[116,95,100,49,48,50]/1(a[117,116,102,56])",
+    "t_d103 c[116,95,100,49,48,51]/1(c[45]/2(i2,i5))",
+    "t_d104 c[116,95,100,49,48,52]/1(a[119,114,105,116,101])",
+    "t_d105 c[116,95,100,49,48,53]/1(c[98,117,102,102,101,114]/1(a[102,97,108,115,101]))",
+    "t_d106 c[116,95,100,49,48,54]/1(c[114,97,105,115,101,100]/1(c[117,110,105,110,115,116,97,110,116,105,97,116,105,111,110,95,101,114,114,111,114]/1(a[102,111,111])))",
+    "t_d107 c[116,95,100,49,48,55]/1(c[114,97,105,115,101,100]/1(c[101,120,105,115,116,101,110,99,101,95,101,114,114,111,114]/2(a[115,116,114,101,97,109],a[60,115,116,114,101,97,109,62])))",
+    "t_d108 c[116,95,100,49,48,56]/1(c[114,97,105,115,101,100]/1(c[112,101,114,109,105,115,115,105,111,110,95,101,114,114,111,114]/3(a[111,117,116,112,117,116],a[116,101,120,116,95,115,116,114,101,97,109],a[60,115,116,114,101,97,109,62])))"
 ]
 
 const _LD_DATA = "abc\nxyz\nlast line\n"
@@ -372,7 +394,7 @@ function _ld_kernel(path::String, names::Vector{String})
     return out
 end
 
-@testset "Edinburgh and byte stream predicates as swipl's (d001-d097)" begin
+@testset "Edinburgh and byte stream predicates as swipl's (d001-d108)" begin
     f, names = _ld_file(mktempdir())
     kl = _ld_kernel(f, names)
     @test length(kl) == length(_LD_PINNED)
@@ -381,7 +403,7 @@ end
         @test k == p
     end
     # not vacuous: the pins hold raised errors, `failed` rows, and answers, so the comparison can pass and can fail
-    @test count(l -> occursin("c[114,97,105,115,101,100]", l), _LD_PINNED) == 34      # raised(…)
+    @test count(l -> occursin("c[114,97,105,115,101,100]", l), _LD_PINNED) == 38      # raised(…)
     @test count(l -> endswith(l, "/1(a[102,97,105,108,101,100])"), _LD_PINNED) == 7   # failed
     @test count(l -> endswith(l, "/1(a[111,107])"), _LD_PINNED) == 6                  # ok
 end
