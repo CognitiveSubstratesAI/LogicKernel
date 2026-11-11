@@ -1,6 +1,6 @@
 # ORIGINAL: lane D (D-0501): the Edinburgh and byte stream predicates of pl-file.c against swipl 10.1.20 (pin 18168e62); UNTESTED when written (nothing compiled)
 # test/core_lang/test_lane_d_swipl.jl — set_input/1, set_output/1, get/1,2, get0/1,2, get_char/1, get_byte/1,2, skip/1, put/1,2, put_byte/1,2,
-# peek_byte/1,2, peek_code/1,2, peek_char/1, byte_count/2, character_count/2, flush_output/0 and (d070-d097) and open_null_stream/1 (d098-d108) and stream_pair/3 (d109-d127) see/1, seen/0, seeing/1, tell/1, append/1, telling/1, told/0 (pl-file.c, pin lines 3455-3658, 5550, 5709-5811, 5967-6006).
+# peek_byte/1,2, peek_code/1,2, peek_char/1, byte_count/2, character_count/2, flush_output/0 and (d070-d097) and open_null_stream/1 (d098-d108) and stream_pair/3 (d109-d127) and seek/4, set_stream_position/2, set_end_of_stream/1 (d128-d184) see/1, seen/0, seeing/1, tell/1, append/1, telling/1, told/0 (pl-file.c, pin lines 3455-3658, 5550, 5709-5811, 5967-6006).
 #   * The harness is test_s2a_swipl.jl's: a PROGRAM consulted by the kernel's loader (helper clauses over a data file and an output file) and cases
 #     `t_<id>(R)` run IN ORDER in one database, each wrapped in `catch(Goal, error(F, _), R = raised(F))` (a stream blob in F becomes '<stream>').
 #   * Every answer line is swipl's, PINNED (swipl 10.1.20-1-g18168e629, two byte-identical runs, 2026-11-11, evidence/S2/lane_d_rows.out); with `swipl` on
@@ -237,7 +237,64 @@ const _LD_CASES = [
     ("d124", raw"ro(I), wo(O), stream_pair(P, I, O), close(P), cerr(close(P), R0), R = R0"),
     ("d125", raw"ro(I), wo(O), stream_pair(P, I, O), close(I), cerr(get_code(P, _), R0), close(O), R = R0"),
     ("d126", raw"ro(I), wo(O), stream_pair(P, I, O), close(I), put_char(P, z), close(P), outtext(T), R = T"),
-    ("d127", raw"ro(I), wo(O), stream_pair(P, I, O), get_code(I, _), get_code(I, _), get_code(I, _), get_code(I, _), line_count(P, N), close(P), R = N")
+    ("d127", raw"ro(I), wo(O), stream_pair(P, I, O), get_code(I, _), get_code(I, _), get_code(I, _), get_code(I, _), line_count(P, N), close(P), R = N"),
+    ("d128", raw"ro(S), seek(S, 4, bof, N), get_code(S, C), close(S), R = N-C"),
+    ("d129", raw"ro(S), get_code(S, _), seek(S, 2, current, N), get_code(S, C), close(S), R = N-C"),
+    ("d130", raw"ro(S), seek(S, -2, eof, N), get_code(S, C), close(S), R = N-C"),
+    ("d131", raw"ro(S), seek(S, 0, eof, N), get_code(S, C), close(S), R = N-C"),
+    ("d132", raw"cerr(seek(foo, 0, bof, _), R)"),
+    ("d133", raw"ro(S), cerr(seek(S, 0, bad, _), R0), close(S), R = R0"),
+    ("d134", raw"ro(S), cerr(seek(S, foo, bof, _), R0), close(S), R = R0"),
+    ("d135", raw"ro(S), cerr(seek(S, -1, bof, _), R0), close(S), R = R0"),
+    ("d136", raw"ro(S), seek(S, 3, bof, N), close(S), R = N"),
+    ("d137", raw"open_null_stream(S), seek(S, 5, bof, N), close(S), R = N"),
+    ("d138", raw"open_null_stream(S), cerr(seek(S, 1, current, _), R0), close(S), R = R0"),
+    ("d139", raw"wo(S), write(S, hello), seek(S, 1, bof, N), write(S, 'E'), close(S), outtext(T), R = N-T"),
+    ("d140", raw"ro(S), seek(S, 1, bof, _), line_count(S, L), line_position(S, P), close(S), R = L-P"),
+    ("d141", raw"ro(S), get_code(S, _), seek(S, 5, bof, _), '$stream_property'(S, position(P)), close(S), R = P"),
+    ("d142", raw"ro(S), rall(S, _), seek(S, 0, bof, _), get_code(S, C), close(S), R = C"),
+    ("d143", raw"ro(S), seek(S, 100, bof, N), get_code(S, C), close(S), R = N-C"),
+    ("d144", raw"rb(S), seek(S, 1, bof, N), get_byte(S, B), close(S), R = N-B"),
+    ("d145", raw"ro(S), set_stream(S, encoding(unicode_be)), seek(S, 2, bof, N), close(S), R = N"),
+    ("d146", raw"ro(S), seek(S, 1, bof, N), seek(S, 1, current, M), close(S), R = N-M"),
+    ("d147", raw"cerr(seek(_, 0, bof, _), R)"),
+    ("d148", raw"cerr(seek(user_input, 0, _, _), R)"),
+    ("d149", raw"cerr(seek(user_input, _, bof, _), R)"),
+    ("d150", raw"ro(S), cerr(seek(S, 1, bof, 99), R0), close(S), R = R0"),
+    ("d151", raw"ro(S), get_code(S, _), get_code(S, _), '$stream_property'(S, position(P)), get_code(S, _), set_stream_position(S, P), get_code(S, C), close(S), R = C"),
+    ("d152", raw"ro(S), cerr(set_stream_position(S, foo), R0), close(S), R = R0"),
+    ("d153", raw"ro(S), cerr(set_stream_position(S, '$stream_position'(a, 1, 0, 0)), R0), close(S), R = R0"),
+    ("d154", raw"cerr(set_stream_position(_, '$stream_position'(0, 1, 0, 0)), R)"),
+    ("d155", raw"ro(S), set_stream_position(S, '$stream_position'(4, 2, 0, 4)), line_count(S, L), get_code(S, C), close(S), R = L-C"),
+    ("d156", raw"open_null_stream(S), cerr(set_stream_position(S, '$stream_position'(0, 1, 0, 0)), R0), close(S), R = R0"),
+    ("d157", raw"ro(S), set_stream_position(S, '$stream_position'(100, 3, 4, 100)), '$stream_property'(S, position(P)), close(S), R = P"),
+    ("d158", raw"wo(S), write(S, abc), '$stream_property'(S, position(P)), write(S, def), set_stream_position(S, P), write(S, 'X'), close(S), outtext(T), R = T"),
+    ("d159", raw"ro(S), cerr(set_stream_position(S, '$stream_position'(1, 1, 1)), R0), close(S), R = R0"),
+    ("d160", raw"ro(S), close(S), cerr(set_stream_position(S, '$stream_position'(0, 1, 0, 0)), R0), R = R0"),
+    ("d161", raw"wo(S), write(S, abcdef), seek(S, 3, bof, _), set_end_of_stream(S), close(S), outtext(T), R = T"),
+    ("d162", raw"wo(S), write(S, abc), set_end_of_stream(S), close(S), outtext(T), R = T"),
+    ("d163", raw"ro(S), cerr(set_end_of_stream(S), R0), close(S), R = R0"),
+    ("d164", raw"open_null_stream(S), cerr(set_end_of_stream(S), R0), close(S), R = R0"),
+    ("d165", raw"cerr(set_end_of_stream(foo), R)"),
+    ("d166", raw"cerr(set_end_of_stream(_), R)"),
+    ("d167", raw"cerr(set_end_of_stream(1), R)"),
+    ("d168", raw"wo(S), write(S, abcdef), flush_output(S), seek(S, 2, bof, _), set_end_of_stream(S), write(S, 'Z'), close(S), outtext(T), R = T"),
+    ("d169", raw"ro(S), get_code(S, _), seek(S, 5, bof, N), get_code(S, C), close(S), R = N-C"),
+    ("d170", raw"ro(S), get_code(S, _), get_code(S, _), seek(S, -1, current, N), get_code(S, C), close(S), R = N-C"),
+    ("d171", raw"ro(S), set_stream(S, encoding(unicode_be)), seek(S, 2, bof, _), '$stream_property'(S, position(P)), close(S), R = P"),
+    ("d172", raw"ro(S), seek(S, 1, bof, _), get_code(S, _), '$stream_property'(S, position(P)), close(S), R = P"),
+    ("d173", raw"open_string("abc", S), seek(S, 1, bof, N), get_code(S, C), close(S), R = N-C"),
+    ("d174", raw"open_string("abc", S), seek(S, -1, eof, N), get_code(S, C), close(S), R = N-C"),
+    ("d175", raw"with_output_to(string(X), (current_output(O), write(abc), seek(O, 1, bof, N), write(z))), R = X-N"),
+    ("d176", raw"ro(S), get_code(S, _), seek(S, 100, bof, N), get_code(S, C), close(S), R = N-C"),
+    ("d177", raw"ro(S), set_stream(S, record_position(false)), cerr(set_stream_position(S, '$stream_position'(0, 1, 0, 0)), R0), close(S), R = R0"),
+    ("d178", raw"ro(S), set_stream(S, record_position(false)), get_code(S, _), get_code(S, _), seek(S, -1, current, N), get_code(S, C), close(S), R = N-C"),
+    ("d179", raw"ro(S), set_stream(S, record_position(false)), get_code(S, _), seek(S, 100, bof, N), get_code(S, C), close(S), R = N-C"),
+    ("d180", raw"ro(S), set_stream(S, record_position(false)), get_code(S, _), get_code(S, _), seek(S, 0, current, N), close(S), R = N"),
+    ("d181", raw"wo(S), write(S, abcdef), set_stream(S, record_position(false)), seek(S, 2, bof, N), write(S, z), close(S), outtext(T), R = N-T"),
+    ("d182", raw"wo(S), write(S, abcdef), set_stream(S, record_position(false)), seek(S, 0, current, N), close(S), R = N"),
+    ("d183", raw"ro(S), set_stream_position(S, '$stream_position'(1, 3, 7, 4)), get_code(S, C), '$stream_property'(S, position(P)), close(S), R = C-P"),
+    ("d184", raw"cerr(set_stream_position(1, '$stream_position'(0, 1, 0, 0)), R)")
 ]
 
 # swipl 10.1.20-1-g18168e629's answers to the program and cases above (the driver's lines; evidence/S2/lane_d_rows.out)
@@ -369,7 +426,64 @@ const _LD_PINNED = [
     "t_d124 c[116,95,100,49,50,52]/1(a[111,107])",
     "t_d125 c[116,95,100,49,50,53]/1(c[114,97,105,115,101,100]/1(c[101,120,105,115,116,101,110,99,101,95,101,114,114,111,114]/2(a[115,116,114,101,97,109],a[60,115,116,114,101,97,109,62])))",
     "t_d126 c[116,95,100,49,50,54]/1(a[122])",
-    "t_d127 c[116,95,100,49,50,55]/1(i2)"
+    "t_d127 c[116,95,100,49,50,55]/1(i2)",
+    "t_d128 c[116,95,100,49,50,56]/1(c[45]/2(i4,i120))",
+    "t_d129 c[116,95,100,49,50,57]/1(c[45]/2(i3,i10))",
+    "t_d130 c[116,95,100,49,51,48]/1(c[45]/2(i16,i101))",
+    "t_d131 c[116,95,100,49,51,49]/1(c[45]/2(i18,i-1))",
+    "t_d132 c[116,95,100,49,51,50]/1(c[114,97,105,115,101,100]/1(c[101,120,105,115,116,101,110,99,101,95,101,114,114,111,114]/2(a[115,116,114,101,97,109],a[102,111,111])))",
+    "t_d133 c[116,95,100,49,51,51]/1(c[114,97,105,115,101,100]/1(c[100,111,109,97,105,110,95,101,114,114,111,114]/2(a[115,101,101,107,95,109,101,116,104,111,100],a[98,97,100])))",
+    "t_d134 c[116,95,100,49,51,52]/1(c[114,97,105,115,101,100]/1(c[100,111,109,97,105,110,95,101,114,114,111,114]/2(a[105,110,116,101,103,101,114],a[102,111,111])))",
+    "t_d135 c[116,95,100,49,51,53]/1(c[114,97,105,115,101,100]/1(c[100,111,109,97,105,110,95,101,114,114,111,114]/2(a[112,111,115,105,116,105,111,110],i-1)))",
+    "t_d136 c[116,95,100,49,51,54]/1(i3)",
+    "t_d137 c[116,95,100,49,51,55]/1(i5)",
+    "t_d138 c[116,95,100,49,51,56]/1(a[111,107])",
+    "t_d139 c[116,95,100,49,51,57]/1(c[45]/2(i1,a[104,69,108,108,111]))",
+    "t_d140 c[116,95,100,49,52,48]/1(c[45]/2(i1,i0))",
+    "t_d141 c[116,95,100,49,52,49]/1(c[36,115,116,114,101,97,109,95,112,111,115,105,116,105,111,110]/4(i5,i1,i1,i5))",
+    "t_d142 c[116,95,100,49,52,50]/1(i97)",
+    "t_d143 c[116,95,100,49,52,51]/1(c[45]/2(i100,i-1))",
+    "t_d144 c[116,95,100,49,52,52]/1(c[45]/2(i1,i98))",
+    "t_d145 c[116,95,100,49,52,53]/1(i2)",
+    "t_d146 c[116,95,100,49,52,54]/1(c[45]/2(i1,i2))",
+    "t_d147 c[116,95,100,49,52,55]/1(c[114,97,105,115,101,100]/1(a[105,110,115,116,97,110,116,105,97,116,105,111,110,95,101,114,114,111,114]))",
+    "t_d148 c[116,95,100,49,52,56]/1(c[114,97,105,115,101,100]/1(a[105,110,115,116,97,110,116,105,97,116,105,111,110,95,101,114,114,111,114]))",
+    "t_d149 c[116,95,100,49,52,57]/1(c[114,97,105,115,101,100]/1(a[105,110,115,116,97,110,116,105,97,116,105,111,110,95,101,114,114,111,114]))",
+    "t_d150 c[116,95,100,49,53,48]/1(a[102,97,105,108,101,100])",
+    "t_d151 c[116,95,100,49,53,49]/1(i99)",
+    "t_d152 c[116,95,100,49,53,50]/1(c[114,97,105,115,101,100]/1(c[100,111,109,97,105,110,95,101,114,114,111,114]/2(a[115,116,114,101,97,109,95,112,111,115,105,116,105,111,110],a[102,111,111])))",
+    "t_d153 c[116,95,100,49,53,51]/1(c[114,97,105,115,101,100]/1(c[100,111,109,97,105,110,95,101,114,114,111,114]/2(a[115,116,114,101,97,109,95,112,111,115,105,116,105,111,110],c[36,115,116,114,101,97,109,95,112,111,115,105,116,105,111,110]/4(a[97],i1,i0,i0))))",
+    "t_d154 c[116,95,100,49,53,52]/1(c[114,97,105,115,101,100]/1(a[105,110,115,116,97,110,116,105,97,116,105,111,110,95,101,114,114,111,114]))",
+    "t_d155 c[116,95,100,49,53,53]/1(c[45]/2(i2,i120))",
+    "t_d156 c[116,95,100,49,53,54]/1(a[111,107])",
+    "t_d157 c[116,95,100,49,53,55]/1(c[36,115,116,114,101,97,109,95,112,111,115,105,116,105,111,110]/4(i100,i3,i4,i100))",
+    "t_d158 c[116,95,100,49,53,56]/1(a[97,98,99,88,101,102])",
+    "t_d159 c[116,95,100,49,53,57]/1(c[114,97,105,115,101,100]/1(c[100,111,109,97,105,110,95,101,114,114,111,114]/2(a[115,116,114,101,97,109,95,112,111,115,105,116,105,111,110],c[36,115,116,114,101,97,109,95,112,111,115,105,116,105,111,110]/3(i1,i1,i1))))",
+    "t_d160 c[116,95,100,49,54,48]/1(c[114,97,105,115,101,100]/1(c[101,120,105,115,116,101,110,99,101,95,101,114,114,111,114]/2(a[115,116,114,101,97,109],a[60,115,116,114,101,97,109,62])))",
+    "t_d161 c[116,95,100,49,54,49]/1(a[97,98,99])",
+    "t_d162 c[116,95,100,49,54,50]/1(a[97,98,99])",
+    "t_d163 c[116,95,100,49,54,51]/1(c[114,97,105,115,101,100]/1(c[112,101,114,109,105,115,115,105,111,110,95,101,114,114,111,114]/3(a[119,114,105,116,101],a[115,116,114,101,97,109],a[60,115,116,114,101,97,109,62])))",
+    "t_d164 c[116,95,100,49,54,52]/1(c[114,97,105,115,101,100]/1(c[112,101,114,109,105,115,115,105,111,110,95,101,114,114,111,114]/3(a[115,101,116,95,101,110,100,95,111,102,95,115,116,114,101,97,109],a[115,116,114,101,97,109],a[60,115,116,114,101,97,109,62])))",
+    "t_d165 c[116,95,100,49,54,53]/1(c[114,97,105,115,101,100]/1(c[101,120,105,115,116,101,110,99,101,95,101,114,114,111,114]/2(a[115,116,114,101,97,109],a[102,111,111])))",
+    "t_d166 c[116,95,100,49,54,54]/1(c[114,97,105,115,101,100]/1(a[105,110,115,116,97,110,116,105,97,116,105,111,110,95,101,114,114,111,114]))",
+    "t_d167 c[116,95,100,49,54,55]/1(c[114,97,105,115,101,100]/1(c[100,111,109,97,105,110,95,101,114,114,111,114]/2(a[115,116,114,101,97,109],i1)))",
+    "t_d168 c[116,95,100,49,54,56]/1(a[97,98,90])",
+    "t_d169 c[116,95,100,49,54,57]/1(c[45]/2(i5,i121))",
+    "t_d170 c[116,95,100,49,55,48]/1(c[45]/2(i1,i98))",
+    "t_d171 c[116,95,100,49,55,49]/1(c[36,115,116,114,101,97,109,95,112,111,115,105,116,105,111,110]/4(i2,i1,i0,i4))",
+    "t_d172 c[116,95,100,49,55,50]/1(c[36,115,116,114,101,97,109,95,112,111,115,105,116,105,111,110]/4(i2,i1,i1,i2))",
+    "t_d173 c[116,95,100,49,55,51]/1(c[45]/2(i1,i98))",
+    "t_d174 c[116,95,100,49,55,52]/1(c[114,97,105,115,101,100]/1(c[100,111,109,97,105,110,95,101,114,114,111,114]/2(a[112,111,115,105,116,105,111,110],i-1)))",
+    "t_d175 c[116,95,100,49,55,53]/1(c[45]/2(s[97,122,99],i1))",
+    "t_d176 c[116,95,100,49,55,54]/1(c[45]/2(i100,i-1))",
+    "t_d177 c[116,95,100,49,55,55]/1(c[114,97,105,115,101,100]/1(c[112,101,114,109,105,115,115,105,111,110,95,101,114,114,111,114]/3(a[114,101,112,111,115,105,116,105,111,110],a[115,116,114,101,97,109],a[60,115,116,114,101,97,109,62])))",
+    "t_d178 c[116,95,100,49,55,56]/1(c[45]/2(i1,i98))",
+    "t_d179 c[116,95,100,49,55,57]/1(c[45]/2(i100,i-1))",
+    "t_d180 c[116,95,100,49,56,48]/1(i2)",
+    "t_d181 c[116,95,100,49,56,49]/1(c[45]/2(i2,a[97,98,122,100,101,102]))",
+    "t_d182 c[116,95,100,49,56,50]/1(i6)",
+    "t_d183 c[116,95,100,49,56,51]/1(c[45]/2(i120,c[36,115,116,114,101,97,109,95,112,111,115,105,116,105,111,110]/4(i2,i3,i8,i5)))",
+    "t_d184 c[116,95,100,49,56,52]/1(c[114,97,105,115,101,100]/1(c[100,111,109,97,105,110,95,101,114,114,111,114]/2(a[115,116,114,101,97,109,95,111,114,95,97,108,105,97,115],i1)))"
 ]
 
 const _LD_DATA = "abc\nxyz\nlast line\n"
@@ -441,9 +555,9 @@ end
         @test k == p
     end
     # not vacuous: the pins hold raised errors, `failed` rows, and answers, so the comparison can pass and can fail
-    @test count(l -> occursin("c[114,97,105,115,101,100]", l), _LD_PINNED) == 45      # raised(…)
-    @test count(l -> endswith(l, "/1(a[102,97,105,108,101,100])"), _LD_PINNED) == 7   # failed
-    @test count(l -> endswith(l, "/1(a[111,107])"), _LD_PINNED) == 9                  # ok
+    @test count(l -> occursin("c[114,97,105,115,101,100]", l), _LD_PINNED) == 65      # raised(…)
+    @test count(l -> endswith(l, "/1(a[102,97,105,108,101,100])"), _LD_PINNED) == 8   # failed
+    @test count(l -> endswith(l, "/1(a[111,107])"), _LD_PINNED) == 11                 # ok
 end
 
 @testset "the pins are swipl's (live, when swipl is on PATH)" begin
