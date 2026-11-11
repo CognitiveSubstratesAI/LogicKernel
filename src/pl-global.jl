@@ -130,6 +130,43 @@ mutable struct stack_params_t
     def_spare::Int                      # the argument stack's def_spare, in words (the others': see above)
 end
 
+# PORT: pl-locale.h LOCALE_MAGIC
+"`PL_locale.magic` of a live locale (pl-locale.h)."
+const LOCALE_MAGIC = 37838743
+
+# PORT: pl-locale.h PL_locale
+# DIVERGES: named `PL_locale_rec` (src/os/pl-fmt.jl's `PL_locale` is the three-string view format/2 reads). `decimal_point`
+# and `thousands_sep` are `String`s (upstream's `wchar_t *`); `grouping` is upstream's `char *` as the group sizes then a
+# 0 (a `CHAR_MAX` entry: no more groups); `alias` and `symbol` are `nothing` for upstream's 0. `serial` has no upstream
+# field: the number of the locale in `gd.locale.refs`, the payload of its blob (0 until the first blob is made), as the
+# clause and record blobs of src/pl-dbref.jl.
+"A locale object: its alias, blob handle, reference count and the numeric conventions (pl-locale.h `PL_locale`)."
+mutable struct PL_locale_rec{T}
+    alias::Union{Nothing, T}                    # alias: named alias (if any)
+    symbol::Union{Nothing, T}                   # symbol: blob handle
+    magic::Int                                  # magic: LOCALE_MAGIC
+    references::Int                             # references: reference count
+    decimal_point::String                       # decimal_point: radix character
+    thousands_sep::String                       # thousands_sep: separator for digit groups left of the radix
+    grouping::Vector{Int}                       # grouping: the group sizes, ended by 0
+    serial::Int                                 # (the number in gd.locale.refs, the blob's payload)
+end
+
+# PORT: pl-global.h PL_global_data locale
+# DIVERGES: `GD->locale.localeTable` is a vector of the aliased locales in creation order (upstream's hash table has no
+# order the rows can rely on); `refs` has no upstream twin (the locales a locale blob names, by number); `current` is
+# `LD->locale.current` (pl-global.h:906) kept in the database, as `reload_generation` is (the kernel runs one thread, owner
+# TH1 moves it into the local data).
+"The locale state of the database: the locale table, the system default and the current locale (pl-global.h)."
+mutable struct locale_state{T}
+    const refs::Vector{PL_locale_rec{T}}        # (the locales a locale blob names)
+    const table::Vector{PL_locale_rec{T}}       # locale.localeTable: name --> locale
+    default_locale::Union{Nothing, PL_locale_rec{T}}    # locale.default_locale: system wide default
+    current::Union{Nothing, PL_locale_rec{T}}   # (LD->locale.current)
+end
+locale_state{T}() where {T} =
+    locale_state{T}(PL_locale_rec{T}[], PL_locale_rec{T}[], nothing, nothing)
+
 # PORT: pl-global.h PL_global_data
 """
     PL_global_data{T}()
@@ -210,6 +247,7 @@ mutable struct PL_global_data{T}
     tabling_start_node_ids::Int                                 # (pl-tabling.c static `start_node_ids`: the last start-node id handed out, 0: none; TAB1 TB1)
     signals_handlers::Vector{sig_handler{T}}                    # signals.handlers: how Prolog receives signals, by `SIGNAL_INDEX` (Q10; initSignals! in src/pl-setup.jl)
     stacks_params::Vector{stack_params_t}                       # stacks.<stack>.small/factor/min_free: local, global, trail, argument (Q10; DIVERGES, owner TH1)
+    const locale::locale_state{T}                               # locale: the locale table, the default and the current locale (pl-locale.c; CT1 LOCALE)
 end
 # DIVERGES: `atoms` is upstream's `GD->atoms` as a struct of its own (src/pl-atom.jl), one table per
 # database, built first as upstream's `initAtoms` runs first; `functors` likewise `GD->functors` with

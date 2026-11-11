@@ -574,12 +574,14 @@ function setupProlog(::Type{T})::PL_global_data{T} where {T}
         Dict{Int, delay_info}(),                # tabling_answer_delay_infos: initTabling's newHTablePP(64) (pl-tabling.c:12696; TAB1 TB0)
         0,                                      # tabling_start_node_ids: no start node id handed out (pl-tabling.c:12348; TAB1 TB1)
         initSignals!(T),                        # signals_handlers: setup:122 initSignals (Q10)
-        initStackParams()                       # stacks_params: init_stack's small/factor/min_free (Q10)
+        initStackParams(),                      # stacks_params: init_stack's small/factor/min_free (Q10)
+        locale_state{T}()                       # locale: empty until initLocale! (below)
     )
     initPrologFlags!(gd)                        # setup:136 (src/os/pl-prologflag.jl): before the built-ins (:158), whose boot clauses read the mask
     initTries!(gd)                              # initTries (setup:149), its tail: trie_gen_compiled/2,3 (TR4, src/pl-trie.jl)
     initBuildIns!(gd)                           # setup:158 (src/pl-ext.jl)
     initOperators!(gd)                          # setup:164 (src/pl-op.jl)
+    initLocale!(gd)                             # setup:176 (src/os/pl-locale.jl): after initIO, the locale blob type and the default locale
     return gd
 end
 
