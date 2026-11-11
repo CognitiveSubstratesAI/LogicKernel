@@ -106,7 +106,8 @@ const _PRED_TABLES = (
     PL_predicates_from_locale,
     PL_predicates_from_coverage,
     PL_predicates_from_profile,
-    PL_predicates_from_zip
+    PL_predicates_from_zip,
+    PL_predicates_from_load, PL_predicates_from_apple
 )
 const _FOREIGN_VA = (
     PL_predicates_from_atom..., PL_predicates_from_arith..., PL_predicates_from_bag...,
@@ -134,7 +135,8 @@ const _FOREIGN_VA = (
     PL_predicates_from_locale...,
     PL_predicates_from_coverage...,
     PL_predicates_from_profile...,
-    PL_predicates_from_zip...
+    PL_predicates_from_zip...,
+    PL_predicates_from_load..., PL_predicates_from_apple...
 )
 const _FOREIGN_DET = foreigns
 

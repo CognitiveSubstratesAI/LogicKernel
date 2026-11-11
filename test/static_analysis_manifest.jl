@@ -4700,6 +4700,17 @@ _manifest_lb7(T) = begin
         (LK.not_breakable, Tuple{LD, T, LK.Clause{T}, Int}, false),
         (LK._pc_add, Tuple{PCd, Int}, false),
         (LK._pc_word, Tuple{PCd, Int}, false),
+        # pl-load.c's `$activate_static_extension/1` (src/pl-load.jl) and pl-apple.c's apple_current_locale_identifier/1 (src/os/pl-apple.jl): refusals by name
+        (
+            LK.pl_activate_static_extension1_va,
+            Tuple{LD, Int, Int, LK.control_t{T}},
+            false
+        ),
+        (
+            LK.pl_apple_current_locale_identifier1_va,
+            Tuple{LD, Int, Int, LK.control_t{T}},
+            false
+        ),
         (LK.memarea_limit, Tuple{LD, String}, false),
         (
             LK.parseCommandLineOptions,
@@ -5675,6 +5686,9 @@ const _DISPATCH_MANIFEST_TUPLE = (
     (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_coverage)}, false),
     (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_profile)}, false),
     (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_zip)}, false),
+    # LB5-LB7: the registration tables of src/pl-load.jl and src/os/pl-apple.jl
+    (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_load)}, false),
+    (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_apple)}, false),
     (LK.table_props, Tuple{}, false),
     (LK.clear_table_props!, Tuple{LK.table_props}, false),
     # TAB1 TB5: the sort of the taken table values (src/pl-tabling.jl); it names no term type
