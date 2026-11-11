@@ -107,6 +107,10 @@ outtext(T) :- outfile(F), open(F, read, S), rall(S, Cs), close(S), atom_codes(T,
 rbyt(S, L) :- get_byte(S, C), ( C == -1 -> L = [] ; L = [C|T], rbyt(S, T) ).
 outbytes(L) :- outfile(F), open(F, read, S, [type(binary)]), rbyt(S, L), close(S).
 drain(S) :- get_byte(S, C), ( C == -1 -> true ; drain(S) ).
+rout(S) :- outfile(F), open(F, read, S).
+wenc(Enc, Codes) :- outfile(F), open(F, write, W, [encoding(Enc)]), forall(member(C, Codes), put_code(W, C)), close(W).
+renc(Enc, L) :- outfile(F), open(F, read, S, [encoding(Enc)]), rall(S, L), close(S).
+wbytes(Bs) :- wb(W), forall(member(B, Bs), put_byte(W, B)), close(W).
 """
 
 # (id, goal), run IN ORDER
@@ -456,6 +460,38 @@ const _LD_CASES = [
     ("d347", raw"open('/dev/null', read, S), stream_property(S, reposition(B)), close(S), R = B"),
     ("d348", raw"open(pipe('true'), read, S), stream_property(S, reposition(B)), close(S), R = B"),
     ("d349", raw"wo(S), stream_property(S, reposition(B)), close(S), R = B"),
+    ("d351", raw"wenc(utf16be, [0'a, 0x1F600, 0'b]), outbytes(L), R = L"),
+    ("d352", raw"wenc(utf16le, [0'a, 0x1F600, 0'b]), outbytes(L), R = L"),
+    ("d353", raw"wenc(wchar_t, [0'a, 0x1F600]), outbytes(L), R = L"),
+    ("d354", raw"wenc(unicode_be, [0'a, 0x20AC]), outbytes(L), R = L"),
+    ("d355", raw"wenc(unicode_le, [0'a, 0x20AC]), renc(unicode_le, L), R = L"),
+    ("d356", raw"wenc(utf16be, [0'a, 0x1F600, 0xFFFF, 0'b]), renc(utf16be, L), R = L"),
+    ("d357", raw"wenc(utf16le, [0x1F600, 0x10FFFF, 0x20AC]), renc(utf16le, L), R = L"),
+    ("d358", raw"wenc(wchar_t, [0'a, 0x1F600, 0x10FFFF]), renc(wchar_t, L), R = L"),
+    ("d359", raw"outfile(F), open(F, write, W, [encoding(utf16be), bom(true)]), put_code(W, 0'a), close(W), outbytes(L), R = L"),
+    ("d360", raw"outfile(F), open(F, write, W, [encoding(utf16le), bom(true)]), put_code(W, 0'a), close(W), outbytes(L), R = L"),
+    ("d361", raw"wbytes([0xFF, 0xFE, 0x61, 0, 0x3D, 0xD8, 0x00, 0xDE]), rout(S), rall(S, L), sp(S, encoding(_), E), has(S, bom(true), H), close(S), R = L-E-H"),
+    ("d362", raw"wbytes([0xFE, 0xFF, 0, 0x61, 0xD8, 0x3D, 0xDE, 0x00]), rout(S), rall(S, L), sp(S, encoding(_), E), close(S), R = L-E"),
+    ("d363", raw"wbytes([0xEF, 0xBB, 0xBF, 0x61, 0xC3, 0xA9]), rout(S), rall(S, L), sp(S, encoding(_), E), close(S), R = L-E"),
+    ("d364", raw"wbytes([0xFF, 0xFE, 0x61, 0]), renc(iso_latin_1, L), R = L"),
+    ("d365", raw"wbytes([0xDC, 0, 0, 0x61]), outfile(F), open(F, read, S, [encoding(utf16be)]), get_code(S, A), get_code(S, B), close(S), R = A-B"),
+    ("d366", raw"wbytes([0xD8, 0, 0, 0x61]), outfile(F), open(F, read, S, [encoding(utf16be)]), get_code(S, A), get_code(S, B), close(S), R = A-B"),
+    ("d367", raw"wbytes([0xD8, 0]), outfile(F), open(F, read, S, [encoding(utf16be)]), get_code(S, A), get_code(S, B), close(S), R = A-B"),
+    ("d368", raw"wbytes([0, 0x61, 0]), outfile(F), open(F, read, S, [encoding(utf16be)]), get_code(S, A), get_code(S, B), get_code(S, C), close(S), R = [A, B, C]"),
+    ("d369", raw"wbytes([0x61, 0, 0]), outfile(F), open(F, read, S, [encoding(wchar_t)]), get_code(S, A), get_code(S, B), close(S), R = A-B"),
+    ("d370", raw"outfile(F), open(F, write, W, [encoding(utf16be)]), atom_codes(A, [233, 0x1F600]), writeq(W, A), close(W), outbytes(L), R = L"),
+    ("d371", raw"outfile(F), open(F, write, W, [encoding(utf16le)]), atom_codes(X, [0'x, 0x1F600]), format(W, 'foo(bar, ~q).~n', [X]), close(W), open(F, read, S, [encoding(utf16le)]), read(S, T), close(S), R = T"),
+    ("d372", raw"wo(W), put_code(W, 0'a), set_stream(W, encoding(utf16be)), put_code(W, 0'b), put_code(W, 0x20AC), close(W), outbytes(L), R = L"),
+    ("d373", raw"wenc(utf16be, [0x1F600, 0'a]), outfile(F), open(F, read, S, [encoding(utf16be)]), peek_code(S, A), get_code(S, B), peek_code(S, C), close(S), R = [A, B, C]"),
+    ("d374", raw"wenc(utf16be, [0x1F600, 0'a]), outfile(F), open(F, read, S, [encoding(utf16be)]), get_code(S, _), byte_count(S, B), character_count(S, C), get_code(S, _), byte_count(S, B2), close(S), R = [B, C, B2]"),
+    ("d375", raw"outfile(F), open(F, write, W, [encoding(utf16be)]), sp(W, encoding(_), E1), close(W), open(F, write, W2, [encoding(unicode_le)]), sp(W2, encoding(_), E2), close(W2), open(F, write, W3, [encoding(wchar_t)]), sp(W3, encoding(_), E3), close(W3), R = [E1, E2, E3]"),
+    ("d376", raw"outfile(F), open(F, write, W, [encoding(utf16le)]), atom_codes(C, [0x1F600]), put_char(W, C), nl(W), close(W), outbytes(L), R = L"),
+    ("d377", raw"outfile(F), open(F, write, W, [encoding(utf16le), newline(dos)]), put_code(W, 0'a), nl(W), close(W), outbytes(L), R = L"),
+    ("d378", raw"wenc(utf16be, [0'a, 0'b, 0'c]), outfile(F), open(F, read, S, [encoding(utf16be)]), seek(S, 4, bof, N), get_code(S, C), close(S), R = N-C"),
+    ("d379", raw"outfile(F), open(F, write, W, [encoding(utf16be)]), cerr(put_code(W, 0xD800), R0), catch(close(W), _, true), R = R0"),
+    ("d380", raw"outfile(F), cerr(open(F, read, _, [type(binary), encoding(utf16be)]), R)"),
+    ("d381", raw"wenc(utf16be, [0'a, 10, 0'b]), outfile(F), open(F, read, S, [encoding(utf16be)]), read_pending_codes(S, L, []), '$stream_property'(S, position(P)), close(S), R = L-P"),
+    ("d382", raw"wenc(utf16le, [0x1F600, 0'z]), outfile(F), open(F, read, S, [encoding(utf16le)]), get_char(S, A), peek_char(S, B), close(S), atom_codes(A, Ac), R = Ac-B")
 ]
 
 # swipl 10.1.20-1-g18168e629's answers to the program and cases above (the driver's lines; evidence/S2/lane_d_rows.out)
@@ -806,6 +842,38 @@ const _LD_PINNED = [
     "t_d347 c[116,95,100,51,52,55]/1(a[102,97,108,115,101])",
     "t_d348 c[116,95,100,51,52,56]/1(a[102,97,108,115,101])",
     "t_d349 c[116,95,100,51,52,57]/1(a[116,114,117,101])",
+    "t_d351 c[116,95,100,51,53,49]/1(c[91,124,93]/2(i0,c[91,124,93]/2(i97,c[91,124,93]/2(i216,c[91,124,93]/2(i61,c[91,124,93]/2(i222,c[91,124,93]/2(i0,c[91,124,93]/2(i0,c[91,124,93]/2(i98,nil)))))))))",
+    "t_d352 c[116,95,100,51,53,50]/1(c[91,124,93]/2(i97,c[91,124,93]/2(i0,c[91,124,93]/2(i61,c[91,124,93]/2(i216,c[91,124,93]/2(i0,c[91,124,93]/2(i222,c[91,124,93]/2(i98,c[91,124,93]/2(i0,nil)))))))))",
+    "t_d353 c[116,95,100,51,53,51]/1(c[91,124,93]/2(i97,c[91,124,93]/2(i0,c[91,124,93]/2(i0,c[91,124,93]/2(i0,c[91,124,93]/2(i0,c[91,124,93]/2(i246,c[91,124,93]/2(i1,c[91,124,93]/2(i0,nil)))))))))",
+    "t_d354 c[116,95,100,51,53,52]/1(c[91,124,93]/2(i0,c[91,124,93]/2(i97,c[91,124,93]/2(i32,c[91,124,93]/2(i172,nil)))))",
+    "t_d355 c[116,95,100,51,53,53]/1(c[91,124,93]/2(i97,c[91,124,93]/2(i8364,nil)))",
+    "t_d356 c[116,95,100,51,53,54]/1(c[91,124,93]/2(i97,c[91,124,93]/2(i128512,c[91,124,93]/2(i65535,c[91,124,93]/2(i98,nil)))))",
+    "t_d357 c[116,95,100,51,53,55]/1(c[91,124,93]/2(i128512,c[91,124,93]/2(i1114111,c[91,124,93]/2(i8364,nil))))",
+    "t_d358 c[116,95,100,51,53,56]/1(c[91,124,93]/2(i97,c[91,124,93]/2(i128512,c[91,124,93]/2(i1114111,nil))))",
+    "t_d359 c[116,95,100,51,53,57]/1(c[91,124,93]/2(i254,c[91,124,93]/2(i255,c[91,124,93]/2(i0,c[91,124,93]/2(i97,nil)))))",
+    "t_d360 c[116,95,100,51,54,48]/1(c[91,124,93]/2(i255,c[91,124,93]/2(i254,c[91,124,93]/2(i97,c[91,124,93]/2(i0,nil)))))",
+    "t_d361 c[116,95,100,51,54,49]/1(c[45]/2(c[45]/2(c[91,124,93]/2(i97,c[91,124,93]/2(i128512,nil)),c[101,110,99,111,100,105,110,103]/1(a[117,116,102,49,54,108,101])),a[121,101,115]))",
+    "t_d362 c[116,95,100,51,54,50]/1(c[45]/2(c[91,124,93]/2(i97,c[91,124,93]/2(i128512,nil)),c[101,110,99,111,100,105,110,103]/1(a[117,116,102,49,54,98,101])))",
+    "t_d363 c[116,95,100,51,54,51]/1(c[45]/2(c[91,124,93]/2(i97,c[91,124,93]/2(i233,nil)),c[101,110,99,111,100,105,110,103]/1(a[117,116,102,56])))",
+    "t_d364 c[116,95,100,51,54,52]/1(c[91,124,93]/2(i255,c[91,124,93]/2(i254,c[91,124,93]/2(i97,c[91,124,93]/2(i0,nil)))))",
+    "t_d365 c[116,95,100,51,54,53]/1(c[45]/2(i65533,i97))",
+    "t_d366 c[116,95,100,51,54,54]/1(c[45]/2(i65533,i-1))",
+    "t_d367 c[116,95,100,51,54,55]/1(c[45]/2(i65533,i-1))",
+    "t_d368 c[116,95,100,51,54,56]/1(c[91,124,93]/2(i97,c[91,124,93]/2(i65533,c[91,124,93]/2(i-1,nil))))",
+    "t_d369 c[116,95,100,51,54,57]/1(c[45]/2(i65533,i-1))",
+    "t_d370 c[116,95,100,51,55,48]/1(c[91,124,93]/2(i0,c[91,124,93]/2(i39,c[91,124,93]/2(i0,c[91,124,93]/2(i233,c[91,124,93]/2(i216,c[91,124,93]/2(i61,c[91,124,93]/2(i222,c[91,124,93]/2(i0,c[91,124,93]/2(i0,c[91,124,93]/2(i39,nil)))))))))))",
+    "t_d371 c[116,95,100,51,55,49]/1(c[102,111,111]/2(a[98,97,114],a[120,128512]))",
+    "t_d372 c[116,95,100,51,55,50]/1(c[91,124,93]/2(i97,c[91,124,93]/2(i0,c[91,124,93]/2(i98,c[91,124,93]/2(i32,c[91,124,93]/2(i172,nil))))))",
+    "t_d373 c[116,95,100,51,55,51]/1(c[91,124,93]/2(i128512,c[91,124,93]/2(i128512,c[91,124,93]/2(i97,nil))))",
+    "t_d374 c[116,95,100,51,55,52]/1(c[91,124,93]/2(i4,c[91,124,93]/2(i1,c[91,124,93]/2(i6,nil))))",
+    "t_d375 c[116,95,100,51,55,53]/1(c[91,124,93]/2(c[101,110,99,111,100,105,110,103]/1(a[117,116,102,49,54,98,101]),c[91,124,93]/2(c[101,110,99,111,100,105,110,103]/1(a[117,116,102,49,54,108,101]),c[91,124,93]/2(c[101,110,99,111,100,105,110,103]/1(a[119,99,104,97,114,95,116]),nil))))",
+    "t_d376 c[116,95,100,51,55,54]/1(c[91,124,93]/2(i61,c[91,124,93]/2(i216,c[91,124,93]/2(i0,c[91,124,93]/2(i222,c[91,124,93]/2(i10,c[91,124,93]/2(i0,nil)))))))",
+    "t_d377 c[116,95,100,51,55,55]/1(c[91,124,93]/2(i97,c[91,124,93]/2(i0,c[91,124,93]/2(i13,c[91,124,93]/2(i0,c[91,124,93]/2(i10,c[91,124,93]/2(i0,nil)))))))",
+    "t_d378 c[116,95,100,51,55,56]/1(c[45]/2(i4,i-1))",
+    "t_d379 c[116,95,100,51,55,57]/1(c[114,97,105,115,101,100]/1(c[116,121,112,101,95,101,114,114,111,114]/2(a[99,104,97,114,97,99,116,101,114,95,99,111,100,101],i55296)))",
+    "t_d380 c[116,95,100,51,56,48]/1(c[114,97,105,115,101,100]/1(c[100,111,109,97,105,110,95,101,114,114,111,114]/2(a[101,110,99,111,100,105,110,103],a[117,116,102,49,54,98,101])))",
+    "t_d381 c[116,95,100,51,56,49]/1(c[45]/2(c[91,124,93]/2(i97,c[91,124,93]/2(i10,c[91,124,93]/2(i98,nil))),c[36,115,116,114,101,97,109,95,112,111,115,105,116,105,111,110]/4(i3,i2,i1,i6)))",
+    "t_d382 c[116,95,100,51,56,50]/1(c[45]/2(c[91,124,93]/2(i128512,nil),a[122]))"
 ]
 
 const _LD_DATA = "abc\nxyz\nlast line\n"
@@ -877,7 +945,7 @@ end
         @test k == p
     end
     # not vacuous: the pins hold raised errors, `failed` rows, and answers, so the comparison can pass and can fail
-    @test count(l -> occursin("c[114,97,105,115,101,100]", l), _LD_PINNED) == 109     # raised(…)
+    @test count(l -> occursin("c[114,97,105,115,101,100]", l), _LD_PINNED) == 111     # raised(…)
     @test count(l -> endswith(l, "/1(a[102,97,105,108,101,100])"), _LD_PINNED) == 13   # failed
     @test count(l -> endswith(l, "/1(a[111,107])"), _LD_PINNED) == 14                 # ok
 end
@@ -941,4 +1009,19 @@ end
         f, names = _ld_file(mktempdir())
         @test _ld_swipl_lines(f, names) == _LD_PINNED
     end
+end
+
+# ENC_ANSI (open/4 encoding(text), pl-file.c encoding_names `text`; pl-stream.c put_code/Sgetcode ENC_ANSI arms: wcrtomb/mbrtowc under the
+# C library's locale): a named refusal, swipl answers it from the locale (ENC1). The UTF-16 and wchar_t encodings are PORTED (rows d351-d382).
+@testset "named refusal: open/4 with encoding(text) (ENC_ANSI, locale conversion)" begin
+    @test _ld_refuses("open('/dev/null', read, S, [encoding(text)]), close(S)")
+    @test _ld_refuses("open('/dev/null', write, S, [encoding(text)]), close(S)")
+    # set_stream/2 reaches the same encoding on an open stream: the refusal is then put_code's and Sgetcode's
+    @test _ld_refuses("open('/dev/null', write, S), set_stream(S, encoding(text)), put_code(S, 0'a), close(S)")
+    @test _ld_refuses("open('/dev/null', read, S), set_stream(S, encoding(text)), get_code(S, _), close(S)")
+    # not vacuous: the ported neighbours are accepted
+    @test !_ld_refuses("open('/dev/null', write, S), set_stream(S, encoding(utf16le)), put_code(S, 0'a), close(S)")
+    @test !_ld_refuses("open('/dev/null', read, S), set_stream(S, encoding(utf16be)), get_code(S, _), close(S)")
+    @test !_ld_refuses("open('/dev/null', read, S, [encoding(utf16be)]), close(S)")
+    @test !_ld_refuses("open('/dev/null', read, S, [encoding(wchar_t)]), close(S)")
 end
