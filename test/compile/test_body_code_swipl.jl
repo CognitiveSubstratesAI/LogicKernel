@@ -1813,6 +1813,47 @@ function _bdecompile(cl::LK.Clause{_B}, head::_B)::Tuple{_B, _B}
     return (dh, db)
 end
 
+# The decompiled arithmetic clauses of `_BC_ARITH_O` (keyed by the head's name): the pin's swipl
+# 10.1.20, `clause/3` after `assertz` under optimise, in `ix_text`'s form.
+const _BC_ARITH_DECOMPILED = Dict{String, String}(
+    "ia1" => "':-'(ia1(A,B),'<'(A,B))",
+    "ia2" => "':-'(ia2(A),'=:='(A,3))",
+    "ia3" => "':-'(ia3(A),'=\\='(A,1.5))",
+    "ia4" => "':-'(ia4(A),'>'(A,100000000000000000000))",
+    "ia5" => "':-'(ia5(A,B),'=<'(A,'+'(B,1)))",
+    "ia6" => "':-'(ia6(A,B),'>='(A,'*'(B,2)))",
+    "ia7" => "':-'(ia7(A,B,C),is(C,'-'(A,B)))",
+    "ia8" => "':-'(ia8(A),is(A,'-'(5,3)))",
+    "ia9" => "':-'(ia9(A),','(is(B,'*'(A,2)),q(B)))",
+    "ia10" => "':-'(ia10(A,B),','(is(C,'+'(A,B)),q(C)))",
+    "ia11" => "':-'(ia11(A,B),','(is(C,'+'(sqrt(A),max(B,3))),q(C)))",
+    "ia12" => "':-'(ia12(A,B),','(is(C,powm(A,B,3)),q(C)))",
+    "ia13" => "':-'(ia13(A),','(is(B,'+'(pi,A)),q(B)))",
+    "ia14" => "':-'(ia14(A),','(is(B,roundtoward('/'(A,2),to_positive)),q(B)))",
+    "ia15" => "':-'(ia15(A,B),','(is(C,roundtoward('+'(A,1.0),B)),q(C)))",
+    "ia16" => "':-'(ia16(A),','(is(B,'+'(97,A)),q(B)))",
+    "ia17" => "':-'(ia17(A),','(is(B,'+'(97,A)),q(B)))",
+    "ia18" => "':-'(ia18(_,_,_,A),','(is(B,'+'(A,1.5)),q(B)))",
+    "ia19" => "':-'(ia19(A),is(A,'+'(1,2)))",
+    "ia20" => "':-'(ia20(A),','(is(B,A),q(B)))",
+    "ia21" => "':-'(ia21(A),','(is(B,'-'(A)),q(B)))",
+    "ia22" => "':-'(ia22(A),','(is(B,'+'(A,1)),q(B)))",
+    "ia23" => "':-'(ia23(A),','(is(B,'*'(12345678901234567890,A)),q(B)))",
+    "ia24" => "':-'(ia24(A),','(is(B,'+'(A,0.1)),','(is(C,'*'(B,B)),q(C))))",
+    "ia25" => "':-'(ia25(A,B),','(is(C,'+'('+'(min(A,B),abs(A)),B)),q(C)))",
+    "ia26" => "':-'(ia26(A),','(is(B,'+'(e,inf)),q(B,A)))",
+    "ib1" => "':-'(ib1(A,B,C),','(is(D,'+'('+'(A,B),C)),q(D)))",
+    "ib8" => "':-'(ib8(A,B,C),','(is(D,'*'('*'(A,B),C)),q(D)))",
+    "ib2" => "':-'(ib2(A),','(is(B,'+'(A)),q(B)))",
+    "ib3" => "':-'(ib3(A),','(is(B,'+'(0,A)),q(B)))",
+    "ib4" => "':-'(ib4(A),','(is(B,'+'(1114111,A)),q(B)))",
+    "ib6" => "':-'(ib6(A),','(is(B,'*'(1r3,A)),q(B)))",
+    "ic1" => "':-'(ic1(A),','(is(B,'*'(72057594037927935,A)),q(B)))",
+    "ic2" => "':-'(ic2(A),','(is(B,'*'(72057594037927936,A)),q(B)))",
+    "ic3" => "':-'(ic3(A),','(is(B,'*'(-72057594037927936,A)),q(B)))",
+    "ic4" => "':-'(ic4(A),','(is(B,'*'(-72057594037927937,A)),q(B)))"
+)
+
 # What `decompile!` rebuilds from each cell's code, variables renamed in order (`_bnorm`): pinned,
 # so the jobs without swipl check the decompiler too. Each is a variant of swipl's clause/2 (below).
 const _BC_OR_DECOMPILED = Dict{String, String}(
@@ -1993,24 +2034,52 @@ const _BC_DEC_DECOMPILED = Dict{String, String}(
         @test !dc(d1, _bs("d1"), _bs("true"))
         @test !dc(fact, _bf("df", _bv(9003)), _bs("a"))
     end
-    # The decompile of the arithmetic instructions is a named refusal until AR1's decompile
-    # piece (pl-comp.c:6452-6725): the kernel answers NotPortedError (pinned; swipl decompiles
-    # the clause to its source). That piece replaces this testset by the decompiled-source rows.
-    @testset "decompiling an optimise-compiled arithmetic clause is a named refusal" begin
+    # The decompile of the arithmetic instructions (AR1 A7; pl-comp.c:6452-6725, `mark_bvar_access`
+    # 5736-5745): clause/2 of a clause compiled under `optimise` is the source again, the operands
+    # in the order they were written (a function's operands were compiled right to left), a string
+    # or `[C]` operand as its code. The texts: the pin's swipl 10.1.20 (18168e62), `clause/3` of the
+    # `assertz`'d clause with `set_prolog_flag(optimise, true)`, written as `ix_text` writes them.
+    @testset "the decompiler rebuilds the arithmetic instructions (AR1 A7)" begin
         lda = LK.PL_local_data{_B}(_BGD)
         LK.setPrologFlagMask!(lda, LK.PLFLAG_OPTIMISE)
-        h = _bf("dar", _bv(1))
-        cl = _bclause(h, _bf("<", _bv(1), _bg(3)); ld=lda)
-        @test any(startswith("a_enter"), _bc_kernel(cl))
-        @test_throws LK.NotPortedError _bdecompile(cl, h)
-        err = try
-            _bdecompile(cl, h)
-            nothing
-        catch e
-            e
+        decs = [
+            _bdecompile(_bclause(h, b; ld=lda), h) for (_, h, b, _) in _BC_ARITH_O
+        ]
+        for (k, (_, h, _, _)) in enumerate(_BC_ARITH_O)
+            name = lk_atom_text(_bfunctor(h)[1])
+            got = _bnorm(_bc_text(decs[k]...))
+            want = get(_BC_ARITH_DECOMPILED, name, "")
+            got == want || println(stderr, "  ", name, "\n    ours  ", got, "\n    pin   ", want)
+            @test !isempty(want)
+            @test got == want
         end
-        @test err isa LK.NotPortedError
-        @test err !== nothing && occursin("pl-comp.c:6452-6725", err.what)
+        @test length(_BC_ARITH_DECOMPILED) == length(_BC_ARITH_O)
+        if _BC_SWIPL_BIN !== nothing
+            shows = [
+                "bc_decomp(($(_bc_text(h, b))), ($(_bc_text(dh, db))))" for
+                ((_, h, b, _), (dh, db)) in zip(_BC_ARITH_O, decs)
+            ]
+            theirs = _bc_swipl(shows; prelude="set_prolog_flag(optimise, true)")
+            @test length(theirs) == length(shows)
+            for k in eachindex(shows)
+                k <= length(theirs) || break
+                theirs[k] == ["same"] ||
+                    println(stderr, "  -O ", _BC_ARITH_O[k][1], "\n    swipl ", theirs[k])
+                @test theirs[k] == ["same"]
+            end
+        end
+        # mark_bvar_access reads A_VAR0..2 as it reads B_VAR0..2 (pl-comp.c:5736-5745): a unification
+        # moved into the head (`X = f(a)`, then an arithmetic goal on X) comes back as a goal; the pin's
+        # code is h_functor(f/1) h_atom(a) h_pop i_enter a_enter a_var0 a_integer(3) a_lt i_exit
+        mh = _bf("dmv", _bv(1))
+        mv = _bclause(
+            mh, _bconj(_bf("=", _bv(1), _bf("f", _bs("a"))), _bf("<", _bv(1), _bg(3)));
+            ld=lda
+        )
+        @test mv.flags & LK.CL_HEAD_TERMS != 0
+        @test any(startswith("a_var0"), _bc_kernel(mv))
+        @test _bnorm(_bc_text(_bdecompile(mv, mh)...)) ==
+              "':-'(dmv(A),','('='(A,f(a)),'<'(A,3)))"
     end
     @testset "clause/2 with a body (pl_clause!)" begin
         gd = LK.PL_global_data{_B}()
