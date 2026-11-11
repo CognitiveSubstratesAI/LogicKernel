@@ -522,16 +522,22 @@ end
 
 # MUTREFIT D1f D1-3 (initDBRef! registers nothing) survived the testset above: `PL_global_data{_TL}()` copies the BOOTED template, and the boot's own
 # clause references register `clause_blob` lazily (src/pl-atom.jl lookupBlob), so it was registered anyway, only later (rank, below closure's).
-# The unbooted database has made no clause reference: initDBRef! (pl-setup.c:146) must have registered record, then clause, and initWrap!
-# (:152) closure after them (each later type ranks one lower: stream < clause < record in swipl 10.1.19, D-0230 item 2).
-@testset "initDBRef! registers the clause blob type in a fresh database, before any clause reference: record, clause, closure ranks (pl-setup.c:146)" begin
+# The unbooted database has made no clause reference: initDBRef! (pl-setup.c:146) must have registered record, then clause, initTries!
+# (:149) the trie after them and initWrap! (:152) closure after that (each later type ranks one lower: stream < clause < record in swipl
+# 10.1.19, D-0230 item 2). TAB1 TR1 added the trie registration between clause and closure, as pl-setup.c does (pin 18168e62): the
+# pre-TAB1 expectation "closure directly below clause" was an internal-identity expectation that changed by design (D-0083). swipl cannot
+# be asked for a blob type's registration order (the standard order of blobs is observable only per live blob), so this pins the
+# order the pin's pl-setup.c gives.
+@testset "initDBRef! registers the clause blob type in a fresh database, before any clause reference: record, clause, trie, closure ranks (pl-setup.c:146-152)" begin
     gd = LK.setupProlog(_TL)       # the unbooted database: no boot clause has made a reference
     @test isempty(gd.clause_refs) && isempty(gd.clause_serials)
     rreg = LK._blob_registration(gd.atoms, LK.record_blob)
     creg = LK._blob_registration(gd.atoms, LK.clause_blob)
+    treg = LK._blob_registration(gd.atoms, LK.trie_blob)
     wreg = LK._blob_registration(gd.atoms, LK.closure_blob)
-    @test rreg !== nothing && creg !== nothing && wreg !== nothing
-    @test creg.rank == rreg.rank - 1 && wreg.rank == creg.rank - 1
+    @test rreg !== nothing && creg !== nothing && treg !== nothing && wreg !== nothing
+    @test creg.rank == rreg.rank - 1 && treg.rank == creg.rank - 1 &&
+        wreg.rank == treg.rank - 1
     @test creg.atom_name == LK.builtin_atom("clause")
 end
 
