@@ -4685,7 +4685,21 @@ const _MANIFEST_LB2B_FREE = (
 _manifest_lb7(T) = begin
     GD = LK.PL_global_data{T}
     LD = LK.PL_local_data{T}
+    PCd = LK.Code{T}
     (
+        # pl-comp.c's `'$clause_term_position'/3` and its helpers (src/pl-comp.jl, LB5-LB7)
+        (
+            LK.pl_clause_term_position3_va,
+            Tuple{LD, Int, Int, LK.foreign_context{T}},
+            false
+        ),
+        (LK.find_code1, Tuple{PCd, UInt64, UInt64}, false),
+        (LK.find_if_then_end, Tuple{PCd, PCd}, false),
+        (LK.add_node, Tuple{LD, Int, Int}, false),
+        (LK.add_1_if_not_at_end, Tuple{LD, PCd, PCd, Int}, false),
+        (LK.not_breakable, Tuple{LD, T, LK.Clause{T}, Int}, false),
+        (LK._pc_add, Tuple{PCd, Int}, false),
+        (LK._pc_word, Tuple{PCd, Int}, false),
         (LK.memarea_limit, Tuple{LD, String}, false),
         (
             LK.parseCommandLineOptions,
