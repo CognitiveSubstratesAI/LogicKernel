@@ -24,7 +24,13 @@
 # DEFERRED KILL (audit D-0374 item 2): a row declared `equivalent="DEFERRED KILL: ..."` has no killing assertion yet (no test reads what the mutant changes); it must
 #   SURVIVE the battery and its owner step adds the row:
 #   * TR4-N21 (a value-less compiled leaf: `I_FAIL`, `last_is_fail`): owner TR2 (delete prunes, as TR1-V11);
-#   * TR4-N23 (the TN_PRIMARY/TN_SECONDARY test) and TR4-S5 (the TRIE_ISTABLE branch of S_TRIE_GEN): owner TB3 (a table's answer trie).
+#   * TR4-N23 (the TN_PRIMARY/TN_SECONDARY test): owner TB3 (a table's answer trie);
+#   * TR4-S5 (the TRIE_ISTABLE branch of S_TRIE_GEN, the `arity == 2` test): ONE owner, TB6 (audit D-0563 item 4), by the C site: pl-vmi.c:5958-5959 (at the pin 18168e62)
+#     takes `trie_gen_single` only if `tbl_single_answer(t)` (pl-tabling.c:6270-6278) holds, and that needs `atrie->data.IDG`, which only `idg_init_variant`
+#     (pl-tabling.c:8296-8318, a TP_MONOTONIC|TP_INCREMENTAL predicate) sets; a table without an IDG node goes on to `compile_trie` (:5965), which is answer
+#     retrieval and needs no row for the `arity == 2` test. The killing row is therefore an incremental table's answer trie with one answer, through
+#     trie_gen_compiled/2 and /3: the IDG, TB6. Test files that reach the mutated line: TC only (git grep of `trie_gen_compiled` over test/: no other file runs
+#     S_TRIE_GEN on a table's trie; TB6's row adds its own test file to TARGETS).
 #   (TR4-D3, the retract of the discarded clause, is no longer deferred: the row `_tr_discard_clause_rows` of TW reads the erased flag of the clause: it kills TR4-D3, TR4-D4, TR4-D5.)
 #   Drafted and left out of this list as not worth a CI slot: the attributed-variable choices and `compounds -= popn` (TR3), TN_DELAYINFO and the `error` atom
 #   (TB4, TR2), the empty-children path and trie_table_size of a compiled trie (TR2, TB3): each has the same owner and the same reason as a row above.
@@ -180,9 +186,9 @@ MUTANTS = [
     m("TR4-S4 S_TRIE_GEN: an empty trie is not left at once (EQUIVALENT: compile_trie answers `fail`, the next line backtracks)",
       "            stg_tr.value_count == 0 && @goto deep_backtrack # FRAME_FAILED\n", "            nothing\n", file=W,
       eq="src/pl-trie.jl:2467-2471: compile_trie answers `fail` for value_count == 0, and src/pl-wam.jl:3646 `stg_w == stg_fail && @goto deep_backtrack` leaves the frame the same way (t4, t5 see no difference)"),
-    m("TR4-S5 S_TRIE_GEN: the answer-trie refusal is taken for arity 3 (DEFERRED KILL: TB3)",
+    m("TR4-S5 S_TRIE_GEN: the answer-trie refusal is taken for arity 3 (DEFERRED KILL: TB6, the only owner)",
       "            if DEF.arity == 2 && (stg_tr.flags & TRIE_ISTABLE) != 0", "            if DEF.arity == 3 && (stg_tr.flags & TRIE_ISTABLE) != 0", file=W,
-      eq="DEFERRED KILL: owner TB3: a TRIE_ISTABLE trie is made by the tabling layer; trie_new/1 makes none (the TB3 step brings the row)"),
+      eq="DEFERRED KILL: owner TB6 (the one owner): the refusal stands for `tbl_single_answer` (pl-tabling.c:6270-6278), true only with `atrie->data.IDG` (idg_init_variant, pl-tabling.c:8296-8318); a TRIE_ISTABLE trie is made by the tabling layer, trie_new/1 makes none (the TB6 step brings the row)"),
     # ---- T_TRIE_GEN2/3 (t_trie_gen), T_VALUE
     m("TR4-G1 T_TRIE_GEN2 builds +/2 (KILL TC t0: the key is unified with the wrong argument)",
       "    _slot_new_var!(ld, argFrameP(tg_base, 2) + 1)  # setVar(argFrame(FR, 2))\n    tg_ar = 1", "    _slot_new_var!(ld, argFrameP(tg_base, 2) + 1)  # setVar(argFrame(FR, 2))\n    tg_ar = 2", file=W),

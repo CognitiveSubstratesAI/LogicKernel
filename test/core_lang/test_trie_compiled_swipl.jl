@@ -171,138 +171,169 @@ function _has_trie_gen(gd::LK.PL_global_data{T}) where {T}
 end
 const _TR2_ROWS = ["t42", "t43", "t44", "t45", "t46"]   # runs once TR2 is stacked
 
-@testset "TR4: trie_gen_compiled/2,3, '\$trie_compile'/2 == swipl's answers (the .out), through a program" begin
-    names = _trc_names()
-    expected = String.(readlines(_TRC_OUT))
-    @test length(names) >= 40
-    @test length(expected) == length(names) + 1 && expected[1] == "ok"
-    @test all(i -> startswith(expected[i + 1], names[i] * " "), eachindex(names))
-    @test !any(l -> occursin(r"export-error|undefined| exception$", l), expected)
-    @test !any(l -> occursin(r"0x[0-9a-f]{6}", l), expected)
-    @test all(n -> n in names, _TR2_ROWS)
-    @test count(l -> occursin(_codes("type_error"), l), expected) >= 1
-    @test count(l -> occursin(_codes("existence_error"), l), expected) >= 1
-    @test any(l -> occursin(_codes("instantiation_error"), l), expected)
-
-    gd0 = LK.PL_global_data{_TP}()
-    has2 = _has_trie_gen(gd0)
-    run_names = has2 ? names : filter(n -> !(n in _TR2_ROWS), names)
-    kl = kernel_lines(_TRC_PL, run_names)
-    exp_run = [
-        expected[1];
-        [expected[i + 1] for i in eachindex(names) if names[i] in run_names]
-    ]
-    @test length(kl) == length(exp_run)
-    for i in eachindex(kl)
-        @test (i, kl[i]) == (i, exp_run[i])
+# GUARD of every testset that CALLS trie_gen_compiled/2,3 (TR4-I1, the M15b pattern of test_wrap_swipl.jl). These two predicates hold
+# supervisor code only: `initTries!(gd)` (src/pl-trie.jl) gives each the shared `S_TRIE_GEN` supervisor and locks it. A predicate without it keeps
+# `S_VIRGIN`; the definition holds no clause, so `S_VIRGIN` (src/pl-wam.jl) calls `setDefaultSupervisor`, which answers `true` for a locked
+# supervisor and installs nothing, and the VM runs `S_VIRGIN` again: a LOOP inside PL_next_solution (no stack growth, no error), which no test
+# line can interrupt. So the check runs FIRST, on the database alone (it reads the two definitions and calls neither predicate), and
+# every testset that calls them runs only when it holds; else the testset below fails at once.
+const _SUPERVISOR_OK = try
+    let
+        gd = LK.PL_global_data{_TP}()
+        m = LK.MODULE_system(gd)
+        all(2:3) do a
+            p = LK.isCurrentProcedure(sym_key(lk_sym(_TP, :trie_gen_compiled)), a, m)
+            p !== nothing && p.definition.codes === gd.code_data.trie_gen &&
+                (p.definition.flags & LK.P_LOCKED_SUPERVISOR) != 0
+        end
     end
-    has2 ||
-        @info "TRIE-COMPILED: the rows $(join(_TR2_ROWS, ", ")) need trie_gen/2 (TR2): not run in the kernel (runs once TR2 is stacked)"
-
-    swipl = get(ENV, "LOGICKERNEL_NO_SWIPL", "") == "1" ? nothing : Sys.which("swipl")
-    if swipl === nothing
-        @info "TRIE-COMPILED DIFFERENTIAL NOT RUN LIVE: `swipl` is not on PATH here (the .out was checked). It runs in tools/run_tests.sh and CI."
-    else
-        @test swipl_lines(_TRC_PL, names) == expected
-    end
+catch
+    # A mutant that makes the guard itself throw must FAIL the guard testset below (a verdict: caught), not stop the file at load.
+    false
 end
+@testset "TR4 guard: trie_gen_compiled/2,3 carry the shared S_TRIE_GEN supervisor, locked (else no row that calls them runs)" begin
+    @test _SUPERVISOR_OK
+end
+
+_SUPERVISOR_OK &&
+    @testset "TR4: trie_gen_compiled/2,3, '\$trie_compile'/2 == swipl's answers (the .out), through a program" begin
+        names = _trc_names()
+        expected = String.(readlines(_TRC_OUT))
+        @test length(names) >= 40
+        @test length(expected) == length(names) + 1 && expected[1] == "ok"
+        @test all(i -> startswith(expected[i + 1], names[i] * " "), eachindex(names))
+        @test !any(l -> occursin(r"export-error|undefined| exception$", l), expected)
+        @test !any(l -> occursin(r"0x[0-9a-f]{6}", l), expected)
+        @test all(n -> n in names, _TR2_ROWS)
+        @test count(l -> occursin(_codes("type_error"), l), expected) >= 1
+        @test count(l -> occursin(_codes("existence_error"), l), expected) >= 1
+        @test any(l -> occursin(_codes("instantiation_error"), l), expected)
+
+        gd0 = LK.PL_global_data{_TP}()
+        has2 = _has_trie_gen(gd0)
+        run_names = has2 ? names : filter(n -> !(n in _TR2_ROWS), names)
+        kl = kernel_lines(_TRC_PL, run_names)
+        exp_run = [
+            expected[1];
+            [expected[i + 1] for i in eachindex(names) if names[i] in run_names]
+        ]
+        @test length(kl) == length(exp_run)
+        for i in eachindex(kl)
+            @test (i, kl[i]) == (i, exp_run[i])
+        end
+        has2 ||
+            @info "TRIE-COMPILED: the rows $(join(_TR2_ROWS, ", ")) need trie_gen/2 (TR2): not run in the kernel (runs once TR2 is stacked)"
+
+        swipl = get(ENV, "LOGICKERNEL_NO_SWIPL", "") == "1" ? nothing : Sys.which("swipl")
+        if swipl === nothing
+            @info "TRIE-COMPILED DIFFERENTIAL NOT RUN LIVE: `swipl` is not on PATH here (the .out was checked). It runs in tools/run_tests.sh and CI."
+        else
+            @test swipl_lines(_TRC_PL, names) == expected
+        end
+    end
 
 # The kill rows: single rows, each fails on its own when the one thing it names breaks.
-@testset "TR4 kill rows: answers of single rows" begin
-    names = filter(n -> !(n in _TR2_ROWS), _trc_names())
-    kl = Dict(zip(["ok"; names], kernel_lines(_TRC_PL, names)))
-    @test kl["t0"] == _row(
-        "t0", _el([_ec("f", _ei(1)), _ec("f", _ei(2)), _ec("g", _ea("a")), _ea("b")])
-    )   # key-only: the four shapes
-    @test kl["t2"] == _row("t2", _el([_ei(1), _ei(2)]))                                 # a pattern prunes the other functor
-    @test kl["t3"] == _row("t3", _el([_ec("f", _ea("a")), _ec("f", _ea("c"))]))          # a bound Value: the leaves with it
-    @test kl["t4"] == _row("t4", _ea("no"))                                             # an empty trie
-    @test kl["t5"] == _row("t5", _ea("no"))
-    @test kl["t12"] ==
-        _row("t12", _el([_ei(-1), _ei(0), _ei(1), _ei(-7), _ea("x"), _ea("y"), _ei(7)]))   # T_SMALLINT / T_ATOM
-    @test kl["t16"] == _row(
-        "t16",
-        _ec("-", _el([_ec("f", _ei(1)), _ec("f", _ei(2))]),
-            _el([_ec("f", _ei(1)), _ec("f", _ei(2)), _ec("f", _ei(3))]))
-    )   # an insert discards the clause
-    @test kl["t17"] == _row(
-        "t17",
-        _ec("-", _el([_ec("f", _ei(1)), _ec("f", _ei(2)), _ec("f", _ei(3))]),
-            _el([_ec("f", _ei(1)), _ec("f", _ei(3))]))
-    )                    # a delete discards it too
-    @test kl["t18"] == _row("t18", _ec("-", _ei(50), _ei(1275)))
-    @test kl["t19"] == _row("t19", _ec("-", _ei(1000), _ei(500500)))                      # 1000 keys: the long code
-    @test kl["t20"] == _row("t20", _ea("clause"))                                       # '$trie_compile' answers a clause
-    @test kl["t21"] == _row("t21", _ea("isfail"))                                       # and the atom fail for an empty trie
-    @test kl["t29"] == _row("t29", _ec("-", _ec("-", _ea("isfail"), _ea("no")), _ea("no")))   # fail as the first argument: failure
-    @test kl["t23"] == _row("t23", _el([_ei(1), _ei(2)]))                               # a clause as the first argument
-    @test kl["t39"] == _row("t39", "nil")                                               # key-only on non-true values: no answer
-    @test kl["t53"] == _row("t53", _el([_ec("f", _ei(1))]))                             # a variable value takes the key's functor word
-    @test kl["t54"] == _row("t54", _el([_ea("a")]))                                     # ... and the cell above gTop
-    @test kl["t55"] == _row("t55", _el([_ec("f", _ei(5))]))                             # functor, float, string, small int: no match
-    @test kl["t40"] == _row(
-        "t40", _ec("-", _el([_ec("f", _ei(1))]), _el([_ec("f", _ei(1)), _ec("f", _ei(2))]))
-    )   # the discarded clause still answers
-    @test kl["t41"] ==
-        _row("t41", _ec("-", _el([_ec("-", _ec("f", _ei(1)), _ea("a"))]), "nil"))
-    @test kl["t47"] == _row("t47", _ea("shared"))                                       # T_VAR in a value: the repeated variable is one variable
-    @test kl["t48"] == _row(
-        "t48",
-        _el([
-            _ec(
-                "-",
-                _ec("f", _ei(1)),
-                _ec("a", _ec("b", _ec("c", _ec("d", _ei(1)))), _ei(2))
-            ),
-            _ec(
-                "-",
-                _ec("f", _ei(2)),
-                _ec("a", _ec("b", _ec("c", _ec("d", _ei(2)))), _ei(3))
-            )])
-    )   # a deep value: T_POP/T_POPN
-    @test kl["t49"] == _row(
-        "t49",
-        _el([
-            _ec(
-                "-",
-                _ec("f", _ei(1)),
-                _ec("w", "s[115,116,114]", "f2.5", "i100000000000000000000", _ea("x"))
-            )
-        ])
-    )   # indirects in a value
-    @test kl["t50"] == _row("t50", _el([_ei(1)]))                                       # T_CHECKWAKEUP: the hook runs for each answer
-    @test kl["t51"] == _row("t51", _ea("same"))                                         # a clause reference is made once
-    @test kl["t52"] == _row(
-        "t52",
-        _el([
-            _ec("f", _ea("a"), _ec("g", _ei(1)), _ea("c")),
-            _ec("f", _ea("a"), _ec("g", _ei(2)), _ea("c"))
-        ])
-    )   # a compound at a non-first argument
-    @test kl["t36"] ==
-        _row("t36", _el([_ec("-", _ei(1), _ei(1)), _ec("-", _ei(2), _ei(2))]))   # a shared variable in the call
-end
+_SUPERVISOR_OK &&
+    @testset "TR4 kill rows: answers of single rows" begin
+        names = filter(n -> !(n in _TR2_ROWS), _trc_names())
+        kl = Dict(zip(["ok"; names], kernel_lines(_TRC_PL, names)))
+        @test kl["t0"] == _row(
+            "t0", _el([_ec("f", _ei(1)), _ec("f", _ei(2)), _ec("g", _ea("a")), _ea("b")])
+        )   # key-only: the four shapes
+        @test kl["t2"] == _row("t2", _el([_ei(1), _ei(2)]))                                 # a pattern prunes the other functor
+        @test kl["t3"] == _row("t3", _el([_ec("f", _ea("a")), _ec("f", _ea("c"))]))          # a bound Value: the leaves with it
+        @test kl["t4"] == _row("t4", _ea("no"))                                             # an empty trie
+        @test kl["t5"] == _row("t5", _ea("no"))
+        @test kl["t12"] ==
+            _row(
+            "t12", _el([_ei(-1), _ei(0), _ei(1), _ei(-7), _ea("x"), _ea("y"), _ei(7)])
+        )   # T_SMALLINT / T_ATOM
+        @test kl["t16"] == _row(
+            "t16",
+            _ec("-", _el([_ec("f", _ei(1)), _ec("f", _ei(2))]),
+                _el([_ec("f", _ei(1)), _ec("f", _ei(2)), _ec("f", _ei(3))]))
+        )   # an insert discards the clause
+        @test kl["t17"] == _row(
+            "t17",
+            _ec("-", _el([_ec("f", _ei(1)), _ec("f", _ei(2)), _ec("f", _ei(3))]),
+                _el([_ec("f", _ei(1)), _ec("f", _ei(3))]))
+        )                    # a delete discards it too
+        @test kl["t18"] == _row("t18", _ec("-", _ei(50), _ei(1275)))
+        @test kl["t19"] == _row("t19", _ec("-", _ei(1000), _ei(500500)))                      # 1000 keys: the long code
+        @test kl["t20"] == _row("t20", _ea("clause"))                                       # '$trie_compile' answers a clause
+        @test kl["t21"] == _row("t21", _ea("isfail"))                                       # and the atom fail for an empty trie
+        @test kl["t29"] ==
+            _row("t29", _ec("-", _ec("-", _ea("isfail"), _ea("no")), _ea("no")))   # fail as the first argument: failure
+        @test kl["t23"] == _row("t23", _el([_ei(1), _ei(2)]))                               # a clause as the first argument
+        @test kl["t39"] == _row("t39", "nil")                                               # key-only on non-true values: no answer
+        @test kl["t53"] == _row("t53", _el([_ec("f", _ei(1))]))                             # a variable value takes the key's functor word
+        @test kl["t54"] == _row("t54", _el([_ea("a")]))                                     # ... and the cell above gTop
+        @test kl["t55"] == _row("t55", _el([_ec("f", _ei(5))]))                             # functor, float, string, small int: no match
+        @test kl["t40"] == _row(
+            "t40",
+            _ec("-", _el([_ec("f", _ei(1))]), _el([_ec("f", _ei(1)), _ec("f", _ei(2))]))
+        )   # the discarded clause still answers
+        @test kl["t41"] ==
+            _row("t41", _ec("-", _el([_ec("-", _ec("f", _ei(1)), _ea("a"))]), "nil"))
+        @test kl["t47"] == _row("t47", _ea("shared"))                                       # T_VAR in a value: the repeated variable is one variable
+        @test kl["t48"] == _row(
+            "t48",
+            _el([
+                _ec(
+                    "-",
+                    _ec("f", _ei(1)),
+                    _ec("a", _ec("b", _ec("c", _ec("d", _ei(1)))), _ei(2))
+                ),
+                _ec(
+                    "-",
+                    _ec("f", _ei(2)),
+                    _ec("a", _ec("b", _ec("c", _ec("d", _ei(2)))), _ei(3))
+                )])
+        )   # a deep value: T_POP/T_POPN
+        @test kl["t49"] == _row(
+            "t49",
+            _el([
+                _ec(
+                    "-",
+                    _ec("f", _ei(1)),
+                    _ec("w", "s[115,116,114]", "f2.5", "i100000000000000000000", _ea("x"))
+                )
+            ])
+        )   # indirects in a value
+        @test kl["t50"] == _row("t50", _el([_ei(1)]))                                       # T_CHECKWAKEUP: the hook runs for each answer
+        @test kl["t51"] == _row("t51", _ea("same"))                                         # a clause reference is made once
+        @test kl["t52"] == _row(
+            "t52",
+            _el([
+                _ec("f", _ea("a"), _ec("g", _ei(1)), _ea("c")),
+                _ec("f", _ea("a"), _ec("g", _ei(2)), _ea("c"))
+            ])
+        )   # a compound at a non-first argument
+        @test kl["t36"] ==
+            _row("t36", _el([_ec("-", _ei(1), _ei(1)), _ec("-", _ei(2), _ei(2))]))   # a shared variable in the call
+    end
 
 # KD-1: the first argument is neither a trie nor a clause — the kernel's answer (swipl overflows its stack here: NO swipl answer).
-@testset "TR4 KD-1: trie_gen_compiled/2,3 on a non-trie raises type_error(trie_or_clause, X)" begin
-    prog = """
-    ek(G, R) :- catch(( G -> R = true ; R = false ), error(E, _), ( E = type_error(A, B) -> R = te(A, B) ; E = instantiation_error -> R = inst ; R = other )).
-    k1(R) :- ek(trie_gen_compiled(foo, _), R).
-    k2(R) :- ek(trie_gen_compiled(foo, _, _), R).
-    k3(R) :- ek(trie_gen_compiled(_, _), R).
-    k4(R) :- ek(trie_gen_compiled(1, _), R).
-    """
-    mktempdir() do d
-        f = joinpath(d, "kd1.pl")
-        write(f, prog)
-        kl = kernel_lines(f, ["k1", "k2", "k3", "k4"])
-        @test kl[1] == "ok"
-        @test kl[2] ==
-            "k1 c[107,49]/1(c[116,101]/2(a[116,114,105,101,95,111,114,95,99,108,97,117,115,101],a[102,111,111]))"
-        @test kl[3] ==
-            "k2 c[107,50]/1(c[116,101]/2(a[116,114,105,101,95,111,114,95,99,108,97,117,115,101],a[102,111,111]))"
-        @test kl[4] == "k3 c[107,51]/1(a[105,110,115,116])"
-        @test kl[5] ==
-            "k4 c[107,52]/1(c[116,101]/2(a[116,114,105,101,95,111,114,95,99,108,97,117,115,101],i1))"
+_SUPERVISOR_OK &&
+    @testset "TR4 KD-1: trie_gen_compiled/2,3 on a non-trie raises type_error(trie_or_clause, X)" begin
+        prog = """
+        ek(G, R) :- catch(( G -> R = true ; R = false ), error(E, _), ( E = type_error(A, B) -> R = te(A, B) ; E = instantiation_error -> R = inst ; R = other )).
+        k1(R) :- ek(trie_gen_compiled(foo, _), R).
+        k2(R) :- ek(trie_gen_compiled(foo, _, _), R).
+        k3(R) :- ek(trie_gen_compiled(_, _), R).
+        k4(R) :- ek(trie_gen_compiled(1, _), R).
+        """
+        mktempdir() do d
+            f = joinpath(d, "kd1.pl")
+            write(f, prog)
+            kl = kernel_lines(f, ["k1", "k2", "k3", "k4"])
+            @test kl[1] == "ok"
+            @test kl[2] ==
+                "k1 c[107,49]/1(c[116,101]/2(a[116,114,105,101,95,111,114,95,99,108,97,117,115,101],a[102,111,111]))"
+            @test kl[3] ==
+                "k2 c[107,50]/1(c[116,101]/2(a[116,114,105,101,95,111,114,95,99,108,97,117,115,101],a[102,111,111]))"
+            @test kl[4] == "k3 c[107,51]/1(a[105,110,115,116])"
+            @test kl[5] ==
+                "k4 c[107,52]/1(c[116,101]/2(a[116,114,105,101,95,111,114,95,99,108,97,117,115,101],i1))"
+        end
     end
-end

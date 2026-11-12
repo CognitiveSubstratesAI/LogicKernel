@@ -276,12 +276,17 @@ jobs:
       # JET, LoweredCodeUtils and JuliaInterpreter release together: install the tools from master as
       # a set. A pin on one of them (2026-10-03, LoweredCodeUtils v3.9.1 while JET lagged) breaks as
       # soon as the others move on — JET 0.12.3 then REQUIRED LoweredCodeUtils 3.10 (run 37139741792).
+      # PINNED to commit SHAs (D-0562 item 4), no longer rev="master": the master commits current at run 43082794128
+      # (22ffe000, installs 2026-11-11 19:01-19:20Z) and unchanged through 22:31Z (run 43111726877): JET
+      # 6f20b0f0 (Project.toml 0.13.1, committed 2026-11-05T05:17Z), LoweredCodeUtils 6f5c109b (3.10.2, 2026-10-29T18:17Z),
+      # Aqua 84f9eb4f (1.0.0-DEV, 2026-11-03T15:48Z); read via the GitHub commits API (until=) and raw Project.toml.
+      # Move the three TOGETHER, deliberately, with the reason in the commit.
       - name: Install the analysis tools into the default environment
         run: |
           julia -e 'using Pkg; Pkg.add([
-            PackageSpec(url="https://github.com/JuliaDebug/LoweredCodeUtils.jl", rev="master"),
-            PackageSpec(url="https://github.com/aviatesk/JET.jl", rev="master"),
-            PackageSpec(url="https://github.com/JuliaTesting/Aqua.jl", rev="master"),
+            PackageSpec(url="https://github.com/JuliaDebug/LoweredCodeUtils.jl", rev="6f5c109b054a9f5c04aa042e6fe958fd4cd4f6b7"),
+            PackageSpec(url="https://github.com/aviatesk/JET.jl", rev="6f20b0f01761ef66a9d4846f7f0ed2346fd5ff1e"),
+            PackageSpec(url="https://github.com/JuliaTesting/Aqua.jl", rev="84f9eb4f4f947ec96c40e8b1274d5b7865a7ecfd"),
             PackageSpec(name="AllocCheck")])'
       # THE HOME TREE (LB4 b2): every database is a copy of the BOOTED one, which reads HOME/boot/init.pl; `home/` is
       # generated and git-ignored, so a fresh checkout has none (Evidence 42021496734: 664 failing tests, "build the home
@@ -429,13 +434,18 @@ jobs:
       # it from the default environment (tools/warm_session.jl), and without it no src edit
       # hot-reloads — MEASURED on this job's first run (7d1437f): 15 test_warm.sh cases red, every
       # one that plants an edit and expects the daemon to see it.
+      # PINNED to commit SHAs (D-0562 item 4), no longer rev="master": the master commits current at run 43082794128
+      # (22ffe000, installs 2026-11-11 19:01-19:20Z) and unchanged through 22:31Z (run 43111726877): JET
+      # 6f20b0f0 (Project.toml 0.13.1, committed 2026-11-05T05:17Z), LoweredCodeUtils 6f5c109b (3.10.2, 2026-10-29T18:17Z),
+      # Aqua 84f9eb4f (1.0.0-DEV, 2026-11-03T15:48Z); read via the GitHub commits API (until=) and raw Project.toml.
+      # Move the three TOGETHER, deliberately, with the reason in the commit.
       - name: Install the analysis tools, the formatter and Revise into the default environment
         if: steps.changed.outputs.run == 'true'
         run: |
           julia -e 'using Pkg; Pkg.add([
-            PackageSpec(url="https://github.com/JuliaDebug/LoweredCodeUtils.jl", rev="master"),
-            PackageSpec(url="https://github.com/aviatesk/JET.jl", rev="master"),
-            PackageSpec(url="https://github.com/JuliaTesting/Aqua.jl", rev="master"),
+            PackageSpec(url="https://github.com/JuliaDebug/LoweredCodeUtils.jl", rev="6f5c109b054a9f5c04aa042e6fe958fd4cd4f6b7"),
+            PackageSpec(url="https://github.com/aviatesk/JET.jl", rev="6f20b0f01761ef66a9d4846f7f0ed2346fd5ff1e"),
+            PackageSpec(url="https://github.com/JuliaTesting/Aqua.jl", rev="84f9eb4f4f947ec96c40e8b1274d5b7865a7ecfd"),
             PackageSpec(name="AllocCheck"),
             PackageSpec(name="JuliaFormatter", version="2.14.0"),
             PackageSpec(name="Revise")])'

@@ -131,7 +131,7 @@ jobs:
   static_analysis:
     name: static analysis ${{ matrix.shard }}/8
     runs-on: ubuntu-24.04   # pinned: CI.yml's note above `jobs:`
-    timeout-minutes: 60
+    timeout-minutes: 120    # STOPGAP (audit D-0563): 60 until T27; back to 60 when the shards are under 30 min again
     strategy:
       fail-fast: false
       matrix:
@@ -151,12 +151,17 @@ jobs:
       - uses: julia-actions/cache@9353db09a0f2bbbdec6f41791918c75d37391b36  # v3.5.0
       # The analysis tools, as CI.yml's `analysis` job installs them (JET, LoweredCodeUtils and Aqua
       # from master, as a set)
+      # PINNED to commit SHAs (D-0562 item 4), no longer rev="master": the master commits current at run 43082794128
+      # (22ffe000, installs 2026-11-11 19:01-19:20Z) and unchanged through 22:31Z (run 43111726877): JET
+      # 6f20b0f0 (Project.toml 0.13.1, committed 2026-11-05T05:17Z), LoweredCodeUtils 6f5c109b (3.10.2, 2026-10-29T18:17Z),
+      # Aqua 84f9eb4f (1.0.0-DEV, 2026-11-03T15:48Z); read via the GitHub commits API (until=) and raw Project.toml.
+      # Move the three TOGETHER, deliberately, with the reason in the commit.
       - name: Install the analysis tools into the default environment
         run: |
           julia -e 'using Pkg; Pkg.add([
-            PackageSpec(url="https://github.com/JuliaDebug/LoweredCodeUtils.jl", rev="master"),
-            PackageSpec(url="https://github.com/aviatesk/JET.jl", rev="master"),
-            PackageSpec(url="https://github.com/JuliaTesting/Aqua.jl", rev="master"),
+            PackageSpec(url="https://github.com/JuliaDebug/LoweredCodeUtils.jl", rev="6f5c109b054a9f5c04aa042e6fe958fd4cd4f6b7"),
+            PackageSpec(url="https://github.com/aviatesk/JET.jl", rev="6f20b0f01761ef66a9d4846f7f0ed2346fd5ff1e"),
+            PackageSpec(url="https://github.com/JuliaTesting/Aqua.jl", rev="84f9eb4f4f947ec96c40e8b1274d5b7865a7ecfd"),
             PackageSpec(name="AllocCheck")])'
       # THE HOME TREE (LB4 b2): every database is a copy of the BOOTED one, which reads HOME/boot/init.pl; `home/` is
       # generated and git-ignored, so a fresh checkout has none (Evidence 42021496734: 664 failing tests, "build the home

@@ -115,13 +115,15 @@ jobs:
           ref: ${{ steps.pin.outputs.commit }}
           path: .upstream/swipl-devel
           submodules: true
+      # PINNED to commit SHAs (D-0562 item 4), no longer rev="master": the same three commits as CI.yml and evidence.yml
+      # (JET 6f20b0f0, LoweredCodeUtils 6f5c109b, Aqua 84f9eb4f). Move the three TOGETHER, in every workflow that installs them, with the reason.
       - name: Install the analysis tools (the targets name test/test_static_analysis.jl, one part of it or the whole suite)
         if: ${{ contains(format('{0} {1}', inputs.targets, needs.plan.outputs.targets), 'test_static_analysis') || contains(format('{0} {1}', inputs.targets, needs.plan.outputs.targets), 'mutate_sa_part') || contains(format('{0} {1}', inputs.targets, needs.plan.outputs.targets), 'mutate_suite') }}
         run: |
           julia -e 'using Pkg; Pkg.add([
-            PackageSpec(url="https://github.com/JuliaDebug/LoweredCodeUtils.jl", rev="master"),
-            PackageSpec(url="https://github.com/aviatesk/JET.jl", rev="master"),
-            PackageSpec(url="https://github.com/JuliaTesting/Aqua.jl", rev="master"),
+            PackageSpec(url="https://github.com/JuliaDebug/LoweredCodeUtils.jl", rev="6f5c109b054a9f5c04aa042e6fe958fd4cd4f6b7"),
+            PackageSpec(url="https://github.com/aviatesk/JET.jl", rev="6f20b0f01761ef66a9d4846f7f0ed2346fd5ff1e"),
+            PackageSpec(url="https://github.com/JuliaTesting/Aqua.jl", rev="84f9eb4f4f947ec96c40e8b1274d5b7865a7ecfd"),
             PackageSpec(name="AllocCheck")])'
       # THE HOME TREE (LB4 b2): every database is a copy of the BOOTED one, which reads HOME/boot/init.pl; `home/` is
       # generated and git-ignored, so a fresh checkout has none (Evidence 42021496734: 664 failing tests, "build the home
@@ -164,13 +166,15 @@ jobs:
           ref: ${{ steps.pin.outputs.commit }}
           path: .upstream/swipl-devel
           submodules: true
+      # PINNED to commit SHAs (D-0562 item 4), no longer rev="master": the same three commits as CI.yml and evidence.yml
+      # (JET 6f20b0f0, LoweredCodeUtils 6f5c109b, Aqua 84f9eb4f). Move the three TOGETHER, in every workflow that installs them, with the reason.
       - name: Install the analysis tools (the targets name test/test_static_analysis.jl, one part of it or the whole suite)
         if: ${{ contains(format('{0} {1}', inputs.targets, needs.plan.outputs.targets), 'test_static_analysis') || contains(format('{0} {1}', inputs.targets, needs.plan.outputs.targets), 'mutate_sa_part') || contains(format('{0} {1}', inputs.targets, needs.plan.outputs.targets), 'mutate_suite') }}
         run: |
           julia -e 'using Pkg; Pkg.add([
-            PackageSpec(url="https://github.com/JuliaDebug/LoweredCodeUtils.jl", rev="master"),
-            PackageSpec(url="https://github.com/aviatesk/JET.jl", rev="master"),
-            PackageSpec(url="https://github.com/JuliaTesting/Aqua.jl", rev="master"),
+            PackageSpec(url="https://github.com/JuliaDebug/LoweredCodeUtils.jl", rev="6f5c109b054a9f5c04aa042e6fe958fd4cd4f6b7"),
+            PackageSpec(url="https://github.com/aviatesk/JET.jl", rev="6f20b0f01761ef66a9d4846f7f0ed2346fd5ff1e"),
+            PackageSpec(url="https://github.com/JuliaTesting/Aqua.jl", rev="84f9eb4f4f947ec96c40e8b1274d5b7865a7ecfd"),
             PackageSpec(name="AllocCheck")])'
       # THE HOME TREE (LB4 b2): every database is a copy of the BOOTED one, which reads HOME/boot/init.pl; `home/` is
       # generated and git-ignored, so a fresh checkout has none (Evidence 42021496734: 664 failing tests, "build the home

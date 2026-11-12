@@ -29,7 +29,7 @@
 #     IDG, TB8 the tripwires): no TB1 row reaches a refusal (the rows are the branches TB1 ports).
 #   * ROWS TB1's own test could add (the dispatcher decides whether TB1 or the owner does): a literal row `@test LK.TRIE_PTR_TAG == 0x7` (TB1-R2: the tag is
 #     consumed by `isTriePtrValue` and `triePtrValue` alike, so a changed value is invisible to a round trip), `@test variants.registry === gd.tries` and
-#     `ld.tabling.node_pool.name == "private_table_space"` after a lookup (TB1-V3, V5), a table of TWO variables (`tv_r(_, _)`: skeleton `ret(V0, V1)`, and
+#     `ld.tabling.node_pool.name == "private_table_space"` after a lookup (TB1-V5; TB1-V3 is a kill, CI 43111712333), a table of TWO variables (`tv_r(_, _)`: skeleton `ret(V0, V1)`, and
 #     `tv_r(X, X)`: `ret(V0)`) for `unify_trie_ret`'s argument loop (TB1-T3), `$tbl_variant_table/6`, `$tbl_abstract_table/6`, `$tbl_moded_variant_table/6`
 #     on an EXISTING complete table (they find it and answer without the refused create path: TB1-P7), and the node count of the variant table after a failed
 #     lookup (`$tbl_existing_variant_table` must not create a node: TB1-G9).
@@ -90,13 +90,12 @@ MUTANTS = [
          file=TAB, targets=[TV],
          old="        t.flags |= TRIE_ISVARIANT\n",
          new="        t.flags |= UInt32(0)\n"),
-    dict(id="TB1-V3 the variant table keeps no registry (no row reads it: TV:350 reads the answer tries' registry only)",
+    dict(id="TB1-V3 the variant table keeps no registry (KILL: the TV testset 'variant tables as swipl's' (TV:327) ends in an exception, `Error During Test`; CI battery 43111712333 "
+            "caught it that way. A trie value that is a pointer to a trie is read through the owning trie's `registry` (`valueTriePtr(tr.registry, w)`, src/pl-trie.jl:167 and :1659; "
+            "src/pl-tabling.jl:624): with the default empty registry the read fails. Declared EQUIVALENT before the first run: that was wrong)",
          file=TAB, targets=[TV],
          old="        t.registry = gd.tries\n        ld.tabling.variant_table = t.serial\n",
-         new="        ld.tabling.variant_table = t.serial\n",
-         equivalent="DEFERRED KILL: owner TB5 (abolish: `release_variant_table_node` reads `variant_table.registry`, src/pl-tabling.jl:563; reached only by TB5 and the "
-                    "trie's release_node): TV:350 `atrie.registry === gd.tries` is the answer tries', the variant table's registry is read by no TB1 row (row to add: "
-                    "`@test variants.registry === gd.tries` next to TV:345)"),
+         new="        ld.tabling.variant_table = t.serial\n"),
     dict(id="TB1-V4 the variant table is not registered (`trie_symbol` dropped): its serial is 0 (KILL tvb04: `gd.tries[ld.tabling.variant_table]`, index 0, BoundsError; TV:346)",
          file=TAB, targets=[TV],
          old="        trie_symbol(gd, t)\n",

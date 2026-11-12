@@ -1890,6 +1890,7 @@ echo "pkgtest-way: PASS stub"
             end
         sa_counts(k) =
             "shard\t$k\t2\nparts\taqua,controls\npart\t$(k == 1 ? "aqua" : "controls")\n" *
+            "partsecs\t$(k == 1 ? "aqua" : "controls")\t12.5\npartsecs\tdispatch\t3.0\n" *
             "dispatch\t$(k == 1 ? 3 : 2)\t5\nalloc\t1\t2\n"
         "The tool's exit, output and unit_costs.tsv over planted files: `edit(files)` changes the good set."
         function vrun(
