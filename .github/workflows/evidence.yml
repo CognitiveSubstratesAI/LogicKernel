@@ -35,7 +35,7 @@ permissions:
 
 env:
   FILE_GROUPS: '2'
-  SA_SHARDS: '8'
+  SA_SHARDS: '9'
 
 jobs:
   evidence:
@@ -150,18 +150,18 @@ jobs:
   # (e7f817d's rule per shard: a missing tool is an error, never a skip). No oracle and no upstream
   # checkout: the analysis needs neither. No coverage: it analyses code, it runs almost none.
   static_analysis:
-    name: static analysis ${{ matrix.shard }}/8
+    name: static analysis ${{ matrix.shard }}/9
     runs-on: ubuntu-24.04   # pinned: CI.yml's note above `jobs:`
-    timeout-minutes: 120    # STOPGAP (audit D-0563): 60 until T27; back to 60 when the shards are under 30 min again
+    timeout-minutes: 75     # audit D-0597: every shard is <= 35 min now (T27, and 9 shards: Aqua and jet_allowlist, parts 1 and 9 of _SA_PARTS, no longer share shard 1)
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4, 5, 6, 7, 8]
+        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9]
     env:
       JULIA_NUM_THREADS: '4'
       LOGICKERNEL_REQUIRE_TOOLS: '1'
       LOGICKERNEL_TERM_ONLY: reference
-      LOGICKERNEL_SA_SHARD: ${{ matrix.shard }}/8      # /SA_SHARDS
+      LOGICKERNEL_SA_SHARD: ${{ matrix.shard }}/9      # /SA_SHARDS
       LOGICKERNEL_UNITS_OUT: ${{ github.workspace }}/evidence-out/units_sa_${{ matrix.shard }}.tsv
       LOGICKERNEL_SA_COUNTS_OUT: ${{ github.workspace }}/evidence-out/sa_${{ matrix.shard }}.tsv
     steps:

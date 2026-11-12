@@ -2868,6 +2868,46 @@ MUTANTS = [
             @test !isfile(joinpath(out, "par2", "verdicts.tsv"))
         end
     end
+    # THE MAIN-PUSH ANALYSIS IS SPLIT (audit D-0593 item 2, GATESPEED): the job that ran the whole suite and the static
+    # analysis in ONE process (67.8 min, run 43189476500) is nine static-analysis shards (the same SA_SHARDS as
+    # evidence.yml) plus the live swipl differential on each term type, and the OLD NAME stays on a gather (main's
+    # ruleset matches required checks by job name). Each leg must still be there for the gather to mean the old job.
+    @testset "CI.yml: the old analysis job name is a gather over the SA shards and the live differential" begin
+        ci = read(joinpath(_GS_ROOT, ".github", "workflows", "CI.yml"), String)
+        ev = read(joinpath(_GS_ROOT, ".github", "workflows", "evidence.yml"), String)
+        @test occursin(
+            "name: Static analysis + live swipl differential\n    needs: [analysis_sa, analysis_swipl]",
+            ci
+        )
+        @test occursin("name: Static analysis \${{ matrix.shard }}/9", ci)
+        @test occursin("shard: [1, 2, 3, 4, 5, 6, 7, 8, 9]", ci)
+        @test occursin(raw"LOGICKERNEL_SA_SHARD: ${{ matrix.shard }}/9", ci)
+        m = match(r"SA_SHARDS: '(\d+)'", ev)
+        @test m !== nothing && m.captures[1] == "9"       # the same shard count as Evidence
+        # audit D-0597: Evidence's static-analysis matrix lists the same nine, its time limit is 75 min, and Aqua and
+        # jet_allowlist (parts 1 and 9 of `_SA_PARTS`, part j runs in shard (j-1)%N+1) no longer share a shard
+        @test occursin("shard: [1, 2, 3, 4, 5, 6, 7, 8, 9]", ev)
+        @test occursin("name: static analysis \${{ matrix.shard }}/9", ev)
+        @test occursin(raw"LOGICKERNEL_SA_SHARD: ${{ matrix.shard }}/9", ev)
+        @test occursin("timeout-minutes: 75     # audit D-0597", ev)
+        body = read(joinpath(_GS_ROOT, "test", "static_analysis_body.jl"), String)
+        pm = match(r"const _SA_PARTS = \((.*?)\)\n"s, body)
+        @test pm !== nothing
+        parts = if pm === nothing
+            String[]
+        else
+            [String(x.captures[1]) for x in eachmatch(r"\"(\w+)\"", pm.captures[1])]
+        end
+        ja, aq = findfirst(==("jet_allowlist"), parts), findfirst(==("aqua"), parts)
+        @test ja !== nothing && aq !== nothing && length(parts) == 9
+        @test ja !== nothing && aq !== nothing && (ja - 1) % 9 != (aq - 1) % 9
+        # the differential: every file on each type, never the static analysis (the shards' unit)
+        @test occursin("name: Live swipl differential · \${{ matrix.term }}", ci)
+        @test occursin("term: [reference, alt, alt_interned]", ci)
+        @test occursin("LOGICKERNEL_FILE_GROUP: 1/1", ci)
+        @test occursin(raw"LOGICKERNEL_TERM_ONLY: ${{ matrix.term }}", ci)
+        @test occursin("LOGICKERNEL_REQUIRE_SWIPL: '1'", ci)
+    end
     # THE RUNNER IMAGE IS PINNED (CI.yml's note above `jobs:`): no job, no matrix entry on a moving
     # `-latest` image; the oracle's cache key names the image. The scan must see every `runs-on`.
     @testset "the CI runner images are pinned, never -latest" begin
@@ -2965,13 +3005,14 @@ MUTANTS = [
             builds += count("julia tools/build_home.jl", text)
         end
         @test isempty(found)
-        # eight Julia jobs, counted by python3 -I over the same files with the same rule (CI.yml: test, analysis,
+        # nine Julia jobs, counted by python3 -I over the same files with the same rule (CI.yml: test, analysis_swipl,
+        # analysis_sa (GATESPEED: the old `analysis` job split in two; `analysis` itself is now a gather without Julia),
         # format, tooling; evidence.yml: evidence, static_analysis; mutation.yml: shard (GATESPEED: the warm-daemon
         # shards replaced the baseline and mutant jobs); fuzz.yml: fuzz); a new Julia job moves this number and has
         # to be added here on purpose
-        @test examined == 8
+        @test examined == 9
         # one build step in every job but the exempt ones: the job count and the step count tell each other
-        @test builds == examined - length(_GS_HOME_EXEMPT) == 7
+        @test builds == examined - length(_GS_HOME_EXEMPT) == 8
         # every exemption names a Julia job that exists (a stale one would hide a job added under its name)
         @test all(in(seen), keys(_GS_HOME_EXEMPT))
         @test all(!isempty, values(_GS_HOME_EXEMPT))
