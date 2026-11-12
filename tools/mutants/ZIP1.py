@@ -253,6 +253,6 @@ MUTANTS = [
          old="PL_predicates_from_profile...,\n    PL_predicates_from_zip...\n)",
          new="PL_predicates_from_profile...\n)"),
     dict(id="ZIP1-T-ext2 the zip table is no registration table (KILL every row)", file=X, targets=T,
-         old="PL_predicates_from_profile, PL_predicates_from_zip\n)",
+         old="PL_predicates_from_profile,\n    PL_predicates_from_zip\n)",
          new="PL_predicates_from_profile\n)"),
 ]
