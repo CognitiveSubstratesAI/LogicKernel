@@ -120,24 +120,48 @@ const _DL_CASES = [
     ("dl05", raw"call_with_depth_limit(dl_nonlast(5), 3, R)"),   # exceeded
     ("dl06", raw"findall(X-R, call_with_depth_limit(dl_nd(X), 5, R), R0), R = R0"),   # answers on redo
     ("dl07", raw"\+ call_with_depth_limit(fail, 10, _), R = failed"),   # the goal fails inside the limit
-    ("dl08", raw"catch(call_with_depth_limit(dl_ex, 5, _), B, true), call_with_depth_limit(dl_nonlast(5), 100, R2), R = B-R2"),   # an exception passes, the limit is restored
+    (
+        "dl08",
+        raw"catch(call_with_depth_limit(dl_ex, 5, _), B, true), call_with_depth_limit(dl_nonlast(5), 100, R2), R = B-R2"
+    ),   # an exception passes, the limit is restored
     ("dl09", raw"call_with_depth_limit(dl_nonlast(5), 3, R1), dl_nonlast(50), R = R1-ok"),   # no limit after an exceeded one
-    ("dl10", raw"call_with_depth_limit(call_with_depth_limit(dl_nonlast(3), 10, R1), 20, R2), R = R1-R2"),   # nested, both within
-    ("dl11", raw"call_with_depth_limit(call_with_depth_limit(dl_nonlast(8), 3, R1), 20, R2), R = R1-R2"),   # nested, the inner exceeded
-    ("dl12", raw"call_with_depth_limit(call_with_depth_limit(dl_nonlast(8), 20, R1), 3, R2), R = R1-R2"),   # nested, the outer exceeded
+    (
+        "dl10",
+        raw"call_with_depth_limit(call_with_depth_limit(dl_nonlast(3), 10, R1), 20, R2), R = R1-R2"
+    ),   # nested, both within
+    (
+        "dl11",
+        raw"call_with_depth_limit(call_with_depth_limit(dl_nonlast(8), 3, R1), 20, R2), R = R1-R2"
+    ),   # nested, the inner exceeded
+    (
+        "dl12",
+        raw"call_with_depth_limit(call_with_depth_limit(dl_nonlast(8), 20, R1), 3, R2), R = R1-R2"
+    ),   # nested, the outer exceeded
     ("dl13", raw"call_with_depth_limit(true, inf, R)"),   # inf is no size
     ("dl14", raw"call_with_depth_limit(true, -1, R)"),   # a negative limit
     ("dl15", raw"call_with_depth_limit(true, foo, R)"),   # no integer
     ("dl16", raw"call_with_depth_limit(true, _, R)"),   # unbound
-    ("dl17", raw"setup_call_cleanup(true, call_with_depth_limit(dl_a(0), 5, _), Det = yes), R = Det"),   # deterministic: the cleanup runs at the exit
-    ("dl18", raw"setup_call_cleanup(true, call_with_depth_limit(dl_nd(_), 5, _), Det = yes), R = Det"),   # a choice point is left
+    (
+        "dl17",
+        raw"setup_call_cleanup(true, call_with_depth_limit(dl_a(0), 5, _), Det = yes), R = Det"
+    ),   # deterministic: the cleanup runs at the exit
+    (
+        "dl18",
+        raw"setup_call_cleanup(true, call_with_depth_limit(dl_nd(_), 5, _), Det = yes), R = Det"
+    ),   # a choice point is left
     ("dl19", raw"call_with_depth_limit(true, 9223372036854775807, R)"),   # KNOWN DIFFERENCE 2^63-1
     ("dl20", raw"call_with_depth_limit(true, 9223372036854775808, R)"),   # KNOWN DIFFERENCE 2^63
     ("dl21", raw"call_with_depth_limit(format(atom(A), '~p', [dl_pt]), 6, R0), R = A-R0"),   # a PL_Q_NODEBUG query (the portray hook) runs without the limit
     ("dl22", raw"findall(X-R, call_with_depth_limit(dl_nd3(X), 4, R), R0), R = R0"),   # a redo into a deeper clause: the limit is installed again
-    ("dl23", raw"call_with_depth_limit((format(atom(A), '~p', [dl_pt]), dl_nonlast(50)), 6, R0), R = A-R0"),   # the limit is back after a PL_Q_NODEBUG query
+    (
+        "dl23",
+        raw"call_with_depth_limit((format(atom(A), '~p', [dl_pt]), dl_nonlast(50)), 6, R0), R = A-R0"
+    ),   # the limit is back after a PL_Q_NODEBUG query
     ("dl24", raw"\+ call_with_depth_limit(fail, 10, _), dl_nonlast(50), R = ok"),   # no limit after a failed goal
-    ("dl25", raw"catch(call_with_depth_limit(dl_ex, 5, _), _, true), dl_nonlast(50), R = ok"),   # no limit after an exception
+    (
+        "dl25",
+        raw"catch(call_with_depth_limit(dl_ex, 5, _), _, true), dl_nonlast(50), R = ok"
+    ),   # no limit after an exception
     ("dl26", raw"call_with_depth_limit(true, 5, _), dl_nonlast(50), R = ok"),   # no limit after a successful goal
     ("il01", raw"call_with_inference_limit(true, 1000, R)"),   # the limit is not reached
     ("il02", raw"findall(X-R, call_with_inference_limit(dl_nd(X), 1000, R), R0), R = R0"),   # true, then ! on the last
@@ -150,14 +174,29 @@ const _DL_CASES = [
     ("il09", raw"call_with_inference_limit(true, 1.5, R)"),   # no integer
     ("il10", raw"catch(call_with_inference_limit(dl_ex, 1000, _), B, true), R = B"),   # an exception passes
     ("il11", raw"call_with_inference_limit(dl_loop, 100, R1), dl_chain(2000), R = R1-ok"),   # no limit after an exceeded one
-    ("il12", raw"call_with_inference_limit(call_with_inference_limit(dl_loop, 100, R1), 100000, R2), R = R1-R2"),   # nested, the inner exceeded
-    ("il13", raw"call_with_inference_limit(call_with_inference_limit(dl_loop, 100000, R1), 100, R2), R = R1-R2"),   # nested, the outer exceeded
+    (
+        "il12",
+        raw"call_with_inference_limit(call_with_inference_limit(dl_loop, 100, R1), 100000, R2), R = R1-R2"
+    ),   # nested, the inner exceeded
+    (
+        "il13",
+        raw"call_with_inference_limit(call_with_inference_limit(dl_loop, 100000, R1), 100, R2), R = R1-R2"
+    ),   # nested, the outer exceeded
     ("il14", raw"findall(X-R, call_with_inference_limit(dl_nd2(X), 1000, R), R0), R = R0"),   # a redo into a looping clause
     ("il15", raw"\+ call_with_inference_limit(fail, 1000, _), R = failed"),   # the goal fails inside the limit
-    ("il16", raw"setup_call_cleanup(true, call_with_inference_limit(dl_a(0), 1000, _), Det = yes), R = Det"),   # deterministic
-    ("il17", raw"setup_call_cleanup(true, call_with_inference_limit(dl_nd(_), 1000, _), Det = yes), R = Det"),   # a choice point is left
+    (
+        "il16",
+        raw"setup_call_cleanup(true, call_with_inference_limit(dl_a(0), 1000, _), Det = yes), R = Det"
+    ),   # deterministic
+    (
+        "il17",
+        raw"setup_call_cleanup(true, call_with_inference_limit(dl_nd(_), 1000, _), Det = yes), R = Det"
+    ),   # a choice point is left
     ("il18", raw"call_with_inference_limit(true, 0, R)"),   # limit 0: the overhead is allowed
-    ("il19", raw"call_with_inference_limit(call_with_inference_limit(dl_chain(1000), 100000, R1), 100, R2), R = R1-R2"),   # the lower outer limit stays: it fires inside the inner call
+    (
+        "il19",
+        raw"call_with_inference_limit(call_with_inference_limit(dl_chain(1000), 100000, R1), 100, R2), R = R1-R2"
+    ),   # the lower outer limit stays: it fires inside the inner call
     ("il20", raw"\+ call_with_inference_limit(fail, 100, _), dl_chain(2000), R = ok"),   # no limit after a failed goal
     ("il21", raw"call_with_inference_limit(dl_chain(5), 5, R)"),   # the boundary, one short
     ("il22", raw"call_with_inference_limit(dl_chain(5), 6, R)"),   # the boundary, exact
@@ -165,7 +204,10 @@ const _DL_CASES = [
     ("ue01", raw"'$urgent_exception'(foo, error(type_error(a, b), _), R)"),   # error beats other
     ("ue02", raw"'$urgent_exception'(error(type_error(a, b), _), foo, R)"),   # error against other
     ("ue03", raw"'$urgent_exception'(a, b, R)"),   # equal: the first
-    ("ue04", raw"'$urgent_exception'(error(type_error(a, b), _), error(resource_error(r), _), R)"),   # resource beats error
+    (
+        "ue04",
+        raw"'$urgent_exception'(error(type_error(a, b), _), error(resource_error(r), _), R)"
+    ),   # resource beats error
     ("ue05", raw"'$urgent_exception'(error(resource_error(r), _), time_limit_exceeded, R)"),   # timeout beats resource
     ("ue06", raw"'$urgent_exception'(time_limit_exceeded, unwind(foo), R)"),   # unwind beats timeout
     ("ue07", raw"'$urgent_exception'(unwind(abort), unwind(foo), R)"),   # abort beats unwind
@@ -327,7 +369,8 @@ end
     @test _DL_PINNED[2:end] != [_dl_expected(p) for p in _DL_PINNED[2:end]]     # the known differences change something
     @test length(_DL_KERNEL_DIFF) == 2
     @test any(l -> startswith(l, "t_ue03 ") && endswith(l, "(a[97])"), _DL_PINNED)  # the first of two equal balls
-    @test any(l -> startswith(l, "t_ue09 "), _DL_PINNED) && any(l -> startswith(l, "t_ue10 "), _DL_PINNED)
+    @test any(l -> startswith(l, "t_ue09 "), _DL_PINNED) &&
+        any(l -> startswith(l, "t_ue10 "), _DL_PINNED)
 end
 
 @testset "the pins are swipl's (live, when swipl is on PATH)" begin
@@ -340,4 +383,3 @@ end
         @test _dl_swipl_lines(f, names) == _DL_PINNED
     end
 end
-

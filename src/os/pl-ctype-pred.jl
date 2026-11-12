@@ -163,14 +163,14 @@ end
 # ORIGINAL (CT1b): the numbers that stand for upstream's function pointers in `char_types`: the class tests, then the
 # reverse mappings (0: none), as `_ct_test` and `_ct_reverse` read them.
 const CTF = (
-    alnum = 1, alpha = 2, csym = 3, csymf = 4, prolog_var_start = 5, prolog_atom_start = 6,
-    prolog_identifier_continue = 7, decimal = 8, ff_decimal = 9, prolog_symbol = 10,
-    prolog_solo = 11, pattern_syntax = 12, ascii = 13, white = 14, cntrl = 15, digit = 16,
-    print = 17, graph = 18, lower = 19, upper = 20, punct = 21, space = 22, eof = 23, eol = 24,
-    prolog_end_of_line = 25, prolog_layout = 26, newline = 27, period = 28, quote_class = 29,
-    fupper = 30, flower = 31, ftoupper = 32, ftolower = 33, fparen = 34, rparen = 35,
-    quote_close = 36, quote_open = 37, fdigit = 38, rdigit = 39, fxdigit = 40, rxdigit = 41,
-    fwidth = 42
+    alnum=1, alpha=2, csym=3, csymf=4, prolog_var_start=5, prolog_atom_start=6,
+    prolog_identifier_continue=7, decimal=8, ff_decimal=9, prolog_symbol=10,
+    prolog_solo=11, pattern_syntax=12, ascii=13, white=14, cntrl=15, digit=16,
+    print=17, graph=18, lower=19, upper=20, punct=21, space=22, eof=23, eol=24,
+    prolog_end_of_line=25, prolog_layout=26, newline=27, period=28, quote_class=29,
+    fupper=30, flower=31, ftoupper=32, ftolower=33, fparen=34, rparen=35,
+    quote_close=36, quote_open=37, fdigit=38, rdigit=39, fxdigit=40, rxdigit=41,
+    fwidth=42
 )
 
 # PORT: pl-ctype.c char_type
@@ -314,7 +314,8 @@ end
 # ORIGINAL (CT1b): the generator as the integer `PL_retry` carries: `current + 1` (0 ..= UNICODE_MAX + 1) in the low
 # 22 bits, the class index (1 ..= 37) in the next 8, the enumeration flags above.
 "The generator `gen` as the context integer of `PL_retry`."
-_ct_encode(gen::generator)::Int = (gen.current + 1) | (gen.class << 22) | (gen.do_enum << 30)
+_ct_encode(gen::generator)::Int =
+    (gen.current + 1) | (gen.class << 22) | (gen.do_enum << 30)
 
 # ORIGINAL (CT1b): the inverse of `_ct_encode`.
 "The generator that the context integer `v` of a `PL_retry` encodes."
@@ -392,7 +393,8 @@ function do_char_type(
             ch = _ct_get_char_ex(ld, chr)
             ch === nothing && return FFALSE
             c = ch
-            c == -1 && return PL_unify_atom(ld, class, mk_sym(T, :end_of_file)) ? FTRUE : FFALSE
+            c == -1 &&
+                return PL_unify_atom(ld, class, mk_sym(T, :end_of_file)) ? FTRUE : FFALSE
         end
 
         if (do_enum & ENUM_CLASS) == 0
@@ -512,11 +514,13 @@ end
 # ── the text half of pl-ctype.c (CT1c): the case predicates and normalize_space/2 ───────────────────
 
 # PORT: pl-ctype.c get_chr_from_text
+# DIVERGES (name): pl-fmt.c has a static function of the same name (src/os/pl-fmt.jl, 0-based, returns the code); both are
+# methods of one Julia module and the signatures agree, so this one is `ctype_get_chr_from_text`.
 # DIVERGES: the text is its vector of code points (`_text_code_points`, which reads every encoding the kernel's texts
 # come in), so the two encodings upstream switches on (and the UTF-16 lead of a 2-byte `wchar_t`) are decoded before
 # this is called; `index` is 1-based. Returns the character and the next index: -1 and `index` at the end.
 "The character of `cps` at `index` and the next index, `-1` at the end of the text (pl-ctype.c)."
-function get_chr_from_text(cps::Vector{Int}, index::Int)::Tuple{Int, Int}
+function ctype_get_chr_from_text(cps::Vector{Int}, index::Int)::Tuple{Int, Int}
     index > length(cps) && return (-1, index)
     return (cps[index], index + 1)
 end
@@ -540,8 +544,8 @@ function modify_case_atom(
         i1 = 1
         i2 = 1
         while true
-            ci, i1 = get_chr_from_text(cin, i1)
-            co, i2 = get_chr_from_text(cout, i2)
+            ci, i1 = ctype_get_chr_from_text(cin, i1)
+            co, i2 = ctype_get_chr_from_text(cout, i2)
 
             (ci == -1 || co == -1) && return ci == co ? FTRUE : FFALSE
 
@@ -608,7 +612,7 @@ end
 "The position after the white space of `cps` that starts at `i` (pl-ctype.c)."
 function skip_separators(cps::Vector{Int}, i::Int)::Int
     while true
-        c, at = get_chr_from_text(cps, i)
+        c, at = ctype_get_chr_from_text(cps, i)
         c == -1 && return i
         if f_is_space(c)
             i = at
@@ -626,7 +630,7 @@ function copy_non_separators(
     out::IOSTREAM, cps::Vector{Int}, i::Int
 )::Tuple{Bool, Int}
     while true
-        c, at = get_chr_from_text(cps, i)
+        c, at = ctype_get_chr_from_text(cps, i)
         c == -1 && return (true, i)
         if !f_is_space(c)
             i = at
@@ -639,7 +643,9 @@ end
 
 # PORT: pl-ctype.c write_normalize_space
 "Write the text of `in_` to `out`, its white space squeezed into single spaces and trimmed (pl-ctype.c)."
-function write_normalize_space(ld::PL_local_data{T}, out::IOSTREAM, in_::term_t)::Bool where {T}
+function write_normalize_space(
+    ld::PL_local_data{T}, out::IOSTREAM, in_::term_t
+)::Bool where {T}
     tin = PL_get_text(ld, in_, CVT_ATOMIC | CVT_EXCEPTION)
     tin === nothing && return false
     cps = _text_code_points(tin)
@@ -732,5 +738,5 @@ const PL_predicates_from_ctype_pred = (
     PL_extension("upcase_atom", 2, pl_upcase_atom2_va, PL_FA_VARARGS),
     PL_extension("string_lower", 2, pl_string_lower2_va, PL_FA_VARARGS),
     PL_extension("string_upper", 2, pl_string_upper2_va, PL_FA_VARARGS),
-    PL_extension("normalize_space", 2, pl_normalize_space2_va, PL_FA_VARARGS),
+    PL_extension("normalize_space", 2, pl_normalize_space2_va, PL_FA_VARARGS)
 )

@@ -46,7 +46,9 @@ end
 
 # PORT: pl-coverage.c share_coverage_data
 "Count one more user of `cov` (a `nothing` is passed through); `cov` (pl-coverage.c)."
-function share_coverage_data(cov::Union{Nothing, coverage{T}})::Union{Nothing, coverage{T}} where {T}
+function share_coverage_data(
+    cov::Union{Nothing, coverage{T}}
+)::Union{Nothing, coverage{T}} where {T}
     cov === nothing || (cov.references += 1)           # ATOMIC_INC(&cov->references)
     return cov
 end
@@ -75,7 +77,13 @@ function pc_call_site(
 )::cov_obj{T} where {T}
     cref = lookup_clref(gd, cl)                         # lookup_clref(cl): the clause gets its number here
     if offset < 0 || offset >= COV_KEY_CLAUSE
-        throw(NotPortedError{T}(cref, "a coverage call site at pc offset $offset (outside 0..2^32-2)", "COV1"))
+        throw(
+            NotPortedError{T}(
+                cref,
+                "a coverage call site at pc offset $offset (outside 0..2^32-2)",
+                "COV1"
+            )
+        )
     end
     serial = gd.clause_serials[cl]
     key = _cov_key(serial, offset)
@@ -190,7 +198,8 @@ function unify_cov(
         clause_clref(gd, obj.cref) === nothing && return false     # clause_clref(cov->cref) == NULL
         r = PL_new_term_ref(ld)
         PL_cons_functor(
-            ld, r, _err_functor(ld, :call_site, 2), _err_atom(ld, obj.cref), _err_int(ld, obj.pc)
+            ld, r, _err_functor(ld, :call_site, 2), _err_atom(ld, obj.cref),
+            _err_int(ld, obj.pc)
         )
         return PL_unify(ld, t, r)
     elseif obj.type == COV_CLAUSE
@@ -268,10 +277,14 @@ function pl_cov_data3_va(
                 v = lookupHTable(cov.table, _cov_key(gd.clause_serials[cl], pc_offset))
                 v == NULL_VALUE && return FFALSE
                 obj = cov.objs[Int(v)]
-                return (
+                return if (
                     unify_cov(gd, ld, A1, obj) && PL_unify_int64(ld, A2, obj.enter) &&
                     PL_unify_int64(ld, A3, obj.exits)
-                ) ? FTRUE : FFALSE
+                )
+                    FTRUE
+                else
+                    FFALSE
+                end
             end
 
             idx = alloc_foreign_state!(pool)
@@ -284,10 +297,20 @@ function pl_cov_data3_va(
                 if _PL_get_arg(ld, 1, A1, a)
                     rc2, cl2 = PL_get_clref(gd, ld, a)
                     rc2 == 0 && return FFALSE
-                    v = lookupHTable(cov.table, _cov_key(gd.clause_serials[cl2::Clause{T}], COV_KEY_CLAUSE))
+                    v = lookupHTable(
+                        cov.table,
+                        _cov_key(gd.clause_serials[cl2::Clause{T}], COV_KEY_CLAUSE)
+                    )
                     v == NULL_VALUE && return FFALSE
                     obj = cov.objs[Int(v)]
-                    return (PL_unify_int64(ld, A2, obj.enter) && PL_unify_int64(ld, A3, obj.exits)) ? FTRUE : FFALSE
+                    return if (
+                        PL_unify_int64(ld, A2, obj.enter) &&
+                        PL_unify_int64(ld, A3, obj.exits)
+                    )
+                        FTRUE
+                    else
+                        FFALSE
+                    end
                 else
                     return FFALSE
                 end
@@ -323,7 +346,7 @@ function pl_cov_data3_va(
         found || break
         obj = st.objs[Int(value)]
         if is_candidate(st, obj) && unify_cov(gd, ld, A1, obj) &&
-           PL_unify_int64(ld, A2, obj.enter) && PL_unify_int64(ld, A3, obj.exits)
+            PL_unify_int64(ld, A2, obj.enter) && PL_unify_int64(ld, A3, obj.exits)
             PL_close_foreign_frame(ld, fid)
             return PL_retry_address(idx)                # ForeignRedoPtr(save_state(state))
         elseif ld.exception_term != 0                   # PL_exception(0)
@@ -365,10 +388,23 @@ function pl_cov_reset0_va(
 )::foreign_t where {T}
     if ld.coverage.active != 0
         ex = PL_new_term_ref(ld)
-        return (
+        return if (
             PL_unify_atom(ld, ex, mk_sym(T, :main)) &&
-            PL_error(ld, "", 0, "", ERR_PERMISSION, mk_sym(T, :clean_coverage_data), mk_sym(T, :thread), ex)
-        ) ? FTRUE : FFALSE
+            PL_error(
+                ld,
+                "",
+                0,
+                "",
+                ERR_PERMISSION,
+                mk_sym(T, :clean_coverage_data),
+                mk_sym(T, :thread),
+                ex
+            )
+        )
+            FTRUE
+        else
+            FFALSE
+        end
     end
     return free_coverage_data(ld) ? FTRUE : FFALSE
 end

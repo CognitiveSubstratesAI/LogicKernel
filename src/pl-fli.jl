@@ -1169,7 +1169,7 @@ function current_blob(
                 at = b[index - (1 << i) + 1]
                 btype = at.type
                 if ATOM_IS_VALID(at.references) && btype !== ATOM_TYPE_INVALID &&
-                   (!have_type || tname == btype.name)
+                    (!have_type || tname == btype.name)
                     sym = atomSymbol(ld.atom_symbols, index)
                     if sym !== nothing
                         if !have_type
@@ -1196,7 +1196,9 @@ function pl_current_blob2_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
 )::foreign_t where {T}
     A1, A2 = PL__t0, PL__t0 + 1
-    return current_blob(ld, A1, A2, PL_foreign_control(PL__ctx), PL_foreign_context(PL__ctx))
+    return current_blob(
+        ld, A1, A2, PL_foreign_control(PL__ctx), PL_foreign_context(PL__ctx)
+    )
 end
 
 # ORIGINAL: pl-atom.c BeginPredDefs(atom) as PL_predicates_from_atom

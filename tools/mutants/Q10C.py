@@ -34,8 +34,8 @@ MUTANTS = [
          new='''    if is_variant_ptr_cells(ld, -(A1 + 1), -(A1 + 1))       # valTermRef (L1d 8a)
         return FFALSE'''),
     dict(id="Q10-3 `\\=@=` is not registered (KILL vr01-vr20: the procedure is undefined)", file=V, targets=TQ,
-         old='''    PL_extension("\\\\=@=", 2, pl_not_variant2_va, PL_FA_VARARGS),''',
-         new='''    '''),
+         old='    PL_extension("\\\\=@=", 2, pl_not_variant2_va, PL_FA_VARARGS)',
+         new='    '),
     dict(id="Q10-4 `\\=@=` ignores a raised exception (equivalent)", file=V, targets=TQ,
          old='''    return PL_exception(ld, 0) == 0 ? FTRUE : FFALSE        # false: is_variant_ptr() raised''',
          new='''    return FTRUE''',

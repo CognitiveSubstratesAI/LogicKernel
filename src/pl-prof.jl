@@ -32,7 +32,9 @@
 #      (new references are pushed at the end and unified from the end, upstream's order of `r->next = callers; callers = r`).
 
 # ORIGINAL: the refusal every collection entry point raises (step PROF1).
-function _prof_refuse(ld::PL_local_data{T}, culprit::Symbol, what::String)::Union{} where {T}
+function _prof_refuse(
+    ld::PL_local_data{T}, culprit::Symbol, what::String
+)::Union{} where {T}
     throw(NotPortedError{T}(mk_sym(T, culprit), what, "PROF1"))
 end
 
@@ -48,7 +50,9 @@ end
 
 # ORIGINAL: `n->magic == PROFNODE_MAGIC` on a pointer: the node at `ptr`, or `nothing` (0, out of range, freed).
 "The live call node a pointer indexes, or `nothing`."
-function prof_node_at(ld::PL_local_data{T}, ptr::Int)::Union{Nothing, call_node{T}} where {T}
+function prof_node_at(
+    ld::PL_local_data{T}, ptr::Int
+)::Union{Nothing, call_node{T}} where {T}
     (ptr < 1 || ptr > length(ld.profile.node_table)) && return nothing
     n = ld.profile.node_table[ptr]
     (n === nothing || n.magic != PROFNODE_MAGIC) && return nothing
@@ -153,7 +157,9 @@ end
 function identify_def(
     gd::PL_global_data{T}, ld::PL_local_data{T}, t::term_t, handle::Definition{T}
 )::Bool where {T}
-    return unify_definition(gd, ld, MODULE_user(gd), t, handle, 0, GP_QUALIFY | GP_NAMEARITY)
+    return unify_definition(
+        gd, ld, MODULE_user(gd), t, handle, 0, GP_QUALIFY | GP_NAMEARITY
+    )
 end
 
 # PORT: pl-prof.c unify_node_id
@@ -176,7 +182,7 @@ function pl_prof_node8_va(
     ptr === nothing && return FFALSE
     n = prof_node_at(ld, ptr)::call_node{T}
     collectSiblingsTime(ld)
-    return (
+    return if (
         unify_node_id(gd, ld, PL__t0 + 1, n) &&
         PL_unify_int64(ld, PL__t0 + 2, n.calls) &&
         PL_unify_int64(ld, PL__t0 + 3, n.exits + n.fails - n.calls) &&
@@ -184,7 +190,11 @@ function pl_prof_node8_va(
         PL_unify_int64(ld, PL__t0 + 5, n.recur) &&
         PL_unify_int64(ld, PL__t0 + 6, n.ticks) &&
         PL_unify_int64(ld, PL__t0 + 7, n.sibling_ticks)
-    ) ? FTRUE : FFALSE
+    )
+        FTRUE
+    else
+        FFALSE
+    end
 end
 
 # PORT: pl-prof.h DEF_SPONTANEOUS / DEF_RECURSIVE (pl-prof.c: `(Definition)0` and `(Definition)1`)
@@ -231,7 +241,8 @@ end
 # PORT: pl-prof.c add_parent_ref
 "Add the node `self` to the callers of `sum`: `handle` (`kind`) its parent (pl-prof.c)."
 function add_parent_ref!(
-    sum::node_sum{T}, self::call_node{T}, kind::Int, handle::Union{Nothing, Definition{T}}, type::Int, cycle::Int
+    sum::node_sum{T}, self::call_node{T}, kind::Int, handle::Union{Nothing, Definition{T}},
+    type::Int, cycle::Int
 )::Nothing where {T}
     sum.calls += self.calls
     sum.redos += node_redos(self)
@@ -250,7 +261,17 @@ function add_parent_ref!(
 
     push!(
         sum.callers,
-        prof_ref{T}(kind, handle, type, cycle, self.ticks, self.sibling_ticks, self.calls, node_redos(self), self.exits)
+        prof_ref{T}(
+            kind,
+            handle,
+            type,
+            cycle,
+            self.ticks,
+            self.sibling_ticks,
+            self.calls,
+            node_redos(self),
+            self.exits
+        )
     )
     return nothing
 end
@@ -264,13 +285,17 @@ function add_recursive_ref!(sum::node_sum{T}, count::Int, cycle::Int)::Nothing w
             return nothing
         end
     end
-    push!(sum.callers, prof_ref{T}(PROF_REF_RECURSIVE, nothing, 0, cycle, 0, 0, count, 0, 0))
+    push!(
+        sum.callers, prof_ref{T}(PROF_REF_RECURSIVE, nothing, 0, cycle, 0, 0, count, 0, 0)
+    )
     return nothing
 end
 
 # PORT: pl-prof.c add_sibling_ref
 "Add the node `sibling` to the callees of `sum` (pl-prof.c)."
-function add_sibling_ref!(sum::node_sum{T}, sibling::call_node{T}, cycle::Int)::Nothing where {T}
+function add_sibling_ref!(
+    sum::node_sum{T}, sibling::call_node{T}, cycle::Int
+)::Nothing where {T}
     for r in sum.callees
         if r.kind == PROF_REF_DEF && r.handle === sibling.handle && r.cycle == cycle
             r.calls += sibling.calls
@@ -284,7 +309,8 @@ function add_sibling_ref!(sum::node_sum{T}, sibling::call_node{T}, cycle::Int)::
     push!(
         sum.callees,
         prof_ref{T}(
-            PROF_REF_DEF, sibling.handle, sibling.type, cycle, sibling.ticks, sibling.sibling_ticks,
+            PROF_REF_DEF, sibling.handle, sibling.type, cycle, sibling.ticks,
+            sibling.sibling_ticks,
             sibling.calls, node_redos(sibling), sibling.exits
         )
     )
@@ -295,7 +321,8 @@ end
 # DIVERGES: file-wide 2 (`PL_handle_signals`, which can only fail on an aborted run, has no twin).
 "Sum the procedure `handle` over the subtree of the node `n`: the number of nodes of it (pl-prof.c)."
 function sumProfile(
-    ld::PL_local_data{T}, n::call_node{T}, handle::Definition{T}, sum::node_sum{T}, seen::Int
+    ld::PL_local_data{T}, n::call_node{T}, handle::Definition{T}, sum::node_sum{T},
+    seen::Int
 )::Int where {T}
     count = 0
 
@@ -381,7 +408,10 @@ function get_def(
     head = PL_new_term_ref(ld)
     ok, _ = PL_strip_module(gd, ld, t, MODULE_user(gd).index, head)
     ok || return nothing
-    if !(PL_is_functor(ld, head, mk_sym(T, :/), 2) || PL_is_functor(ld, head, mk_sym(T, :(//)), 2))
+    if !(
+        PL_is_functor(ld, head, mk_sym(T, :/), 2) ||
+        PL_is_functor(ld, head, mk_sym(T, :(//)), 2)
+    )
         return nothing                                  # GP_TYPE_QUIET: no indicator at all fails without an error
     end
     proc = get_procedure_namearity(gd, ld, t, MODULE_user(gd), GP_FIND | GP_NAMEARITY)
@@ -392,7 +422,8 @@ end
 # PORT: pl-prof.c get_handle
 # DIVERGES: file-wide 1: the type table holds the default type only.
 "The profile handle `t` names, offered to every registered type in turn (pl-prof.c)."
-get_handle(gd::PL_global_data{T}, ld::PL_local_data{T}, t::term_t) where {T} = get_def(gd, ld, t)
+get_handle(gd::PL_global_data{T}, ld::PL_local_data{T}, t::term_t) where {T} =
+    get_def(gd, ld, t)
 
 # PORT: pl-prof.c prof_procedure_data as pl_prof_procedure_data8_va
 # (PRED_IMPL("$prof_procedure_data", 8, prof_procedure_data, PL_FA_TRANSPARENT))
@@ -416,7 +447,7 @@ function pl_prof_procedure_data8_va(
 
     count == 0 && return FFALSE                         # nothing known about this one
 
-    return (
+    return if (
         PL_unify_int64(ld, PL__t0 + 1, sum.ticks) &&
         PL_unify_int64(ld, PL__t0 + 2, sum.sibling_ticks) &&
         PL_unify_int64(ld, PL__t0 + 3, sum.calls) &&
@@ -424,7 +455,11 @@ function pl_prof_procedure_data8_va(
         PL_unify_int64(ld, PL__t0 + 5, sum.exits) &&
         unify_relatives(gd, ld, PL__t0 + 6, sum.callers) &&
         unify_relatives(gd, ld, PL__t0 + 7, sum.callees)
-    ) ? FTRUE : FFALSE
+    )
+        FTRUE
+    else
+        FFALSE
+    end
 end
 
 # PORT: pl-prof.c prof_statistics as pl_prof_statistics8_va
@@ -434,8 +469,14 @@ function pl_prof_statistics8_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
 )::foreign_t where {T}
     p = ld.profile
-    ports = p.ports_control == PROFC_FALSE ? :false : p.ports_control == PROFC_TRUE ? :true : :classic
-    return (
+    ports = if p.ports_control == PROFC_FALSE
+        :false
+    elseif p.ports_control == PROFC_TRUE
+        :true
+    else
+        :classic
+    end
+    return if (
         PL_unify_int64(ld, PL__t0, p.samples) &&
         PL_unify_int64(ld, PL__t0 + 1, p.ticks) &&
         PL_unify_int64(ld, PL__t0 + 2, p.accounting_ticks) &&
@@ -444,7 +485,11 @@ function pl_prof_statistics8_va(
         PL_unify_integer(ld, PL__t0 + 5, p.sample_period) &&
         PL_unify_atom(ld, PL__t0 + 6, mk_sym(T, ports)) &&
         PL_unify_atom(ld, PL__t0 + 7, prof_status_atom(T, p.mode))
-    ) ? FTRUE : FFALSE
+    )
+        FTRUE
+    else
+        FFALSE
+    end
 end
 
 # PORT: pl-prof.c collectSiblingsNode
@@ -518,7 +563,11 @@ end
 "Stop the profiler: true when it is not running (pl-prof.c)."
 function stopProfiler(ld::PL_local_data{T})::Bool where {T}
     if ld.profile.active != PROF_INACTIVE
-        _prof_refuse(ld, :stopProfiler, "stopping a running profiler (`ThreadCPUTime`, `prof_charge`, `setitimer`: the profiler cannot be started)")
+        _prof_refuse(
+            ld,
+            :stopProfiler,
+            "stopping a running profiler (`ThreadCPUTime`, `prof_charge`, `setitimer`: the profiler cannot be started)"
+        )
     end
     return true
 end
@@ -526,7 +575,11 @@ end
 # PORT: pl-prof.c activateProfiler
 "Mark the profiler active: refused by name, the profiler's clocks and signals have no equivalent (pl-prof.c:549-630)."
 function activateProfiler(ld::PL_local_data{T}, active::Int)::Bool where {T}
-    _prof_refuse(ld, :activateProfiler, "activating the profiler (the thread CPU clock, the TSC, `GD->profile.thread`)")
+    _prof_refuse(
+        ld,
+        :activateProfiler,
+        "activating the profiler (the thread CPU clock, the TSC, `GD->profile.thread`)"
+    )
 end
 
 # PORT: pl-prof.c startProfiler
@@ -536,7 +589,11 @@ function startProfiler(ld::PL_local_data{T}, how::Int)::Bool where {T}
     if !PROF_IS_EXACT(how) && ld.profile.sample_period == 0         # profiler/2 without $profile/4
         ld.profile.sample_period = DEFAULT_SAMPLE_PERIOD
     end
-    _prof_refuse(ld, :startProfiler, "starting the profiler (SIGPROF/SIGALRM, `setitimer`, the exact clocks)")
+    _prof_refuse(
+        ld,
+        :startProfiler,
+        "starting the profiler (SIGPROF/SIGALRM, `setitimer`, the exact clocks)"
+    )
 end
 
 # PORT: pl-prof.c resetProfiler
@@ -624,13 +681,20 @@ function pl_profile4_va(
     ports_opt === nothing && return FFALSE
     pk = sym_key(ports_opt)
     ld.profile.ports_control =
-        pk == sym_key(mk_sym(T, :false)) ? PROFC_FALSE : pk == sym_key(mk_sym(T, :true)) ? PROFC_TRUE : PROFC_CLASSIC
+        if pk == sym_key(mk_sym(T, :false))
+            PROFC_FALSE
+        elseif pk == sym_key(mk_sym(T, :true))
+            PROFC_TRUE
+        else
+            PROFC_CLASSIC
+        end
 
     ld.profile.sample_period = DEFAULT_SAMPLE_PERIOD
     rate = PL_get_float_ex(ld, A4)
     rate === nothing && return FFALSE
     x = 1000000 / rate::Float64
-    ld.profile.sample_period = (isfinite(x) && x >= 0 && x < 4294967296.0) ? Int(trunc(x)) : 0
+    ld.profile.sample_period =
+        (isfinite(x) && x >= 0 && x < 4294967296.0) ? Int(trunc(x)) : 0
 
     resetProfiler(ld)
     startProfiler(ld, val) || return FFALSE
@@ -646,14 +710,22 @@ const PROF_EXACT_MAX_CLOCK_NS = 40.0    # auto: max cost of prof_clock()
 # DIVERGES: refused by name: the cost is MEASURED, 3 runs of 1000 `prof_clock()` reads timed with `prof_mono_ns()` (pl-prof.c:349-373).
 "The cost of one `prof_clock()` in nsec, refused by name: there is no clock to time (PROF1)."
 function prof_clock_cost_ns(ld::PL_local_data{T})::Float64 where {T}
-    _prof_refuse(ld, :prof_clock_cost_ns, "the cost of reading the exact clock (`prof_clock()`: the TSC or the monotonic clock)")
+    _prof_refuse(
+        ld,
+        :prof_clock_cost_ns,
+        "the cost of reading the exact clock (`prof_clock()`: the TSC or the monotonic clock)"
+    )
 end
 
 # PORT: pl-prof.c precise_thread_cpu_clock
 # DIVERGES: refused by name: it probes `prof_thread_cpu_ns()` for 2 changes within 3 ms (pl-prof.c:295-345); the result is (ok, why).
 "Is the thread CPU clock precise? Refused by name: there is no thread CPU clock to probe (PROF1)."
 function precise_thread_cpu_clock(ld::PL_local_data{T})::Tuple{Bool, String} where {T}
-    _prof_refuse(ld, :precise_thread_cpu_clock, "probing the thread CPU clock (`prof_thread_cpu_ns()`, 2 changes within 3 ms)")
+    _prof_refuse(
+        ld,
+        :precise_thread_cpu_clock,
+        "probing the thread CPU clock (`prof_thread_cpu_ns()`, 2 changes within 3 ms)"
+    )
 end
 
 # PORT: pl-prof.c prof_exact_ok as pl_prof_exact_ok1_va
@@ -691,7 +763,9 @@ end
 # DIVERGES: upstream's `prof_clock()` reads the TSC or the OS monotonic clock (pl-prof.c:57-153): named refusal.
 "The exact clock's reading, refused by name (pl-prof.c `prof_clock`)."
 function prof_clock(ld::PL_local_data{T})::Int where {T}
-    _prof_refuse(ld, :prof_clock, "reading the exact clock (the TSC or the monotonic clock)")
+    _prof_refuse(
+        ld, :prof_clock, "reading the exact clock (the TSC or the monotonic clock)"
+    )
 end
 
 # DIVERGES: upstream's `prof_mono_ns()` is the OS monotonic clock in nsec: named refusal.
@@ -1025,7 +1099,9 @@ end
 
 # PORT: pl-prof.c profSetHandle
 "Set the handle of a node (pl-prof.c)."
-function profSetHandle(node::call_node{T}, handle::Union{Nothing, Definition{T}})::Nothing where {T}
+function profSetHandle(
+    node::call_node{T}, handle::Union{Nothing, Definition{T}}
+)::Nothing where {T}
     node.handle = handle
     return nothing
 end
@@ -1035,13 +1111,17 @@ end
 # of this kernel holds the default type only (file-wide 1).
 "Register a foreign profile type: refused by name (PROF1; pl-prof.c:1847)."
 function PL_register_profile_type(ld::PL_local_data{T}, name::String)::Bool where {T}
-    _prof_refuse(ld, :PL_register_profile_type, "a foreign profile type (C function pointers)")
+    _prof_refuse(
+        ld, :PL_register_profile_type, "a foreign profile type (C function pointers)"
+    )
 end
 
 # PORT: pl-prof.c PL_prof_call
 "The foreign call into the profile tree: refused by name (PROF1; pl-prof.c:1868): its handle is a C pointer."
 function PL_prof_call(ld::PL_local_data{T}, handle::Int, type::Int)::Int where {T}
-    _prof_refuse(ld, :PL_prof_call, "a foreign profile handle (a C `void *` of a foreign type)")
+    _prof_refuse(
+        ld, :PL_prof_call, "a foreign profile handle (a C `void *` of a foreign type)"
+    )
 end
 
 # PORT: pl-prof.c PL_prof_exit
@@ -1059,7 +1139,17 @@ const PL_predicates_from_profile = (
     PL_extension("\$prof_clock_cost", 1, pl_prof_clock_cost1_va, PL_FA_VARARGS),
     PL_extension("reset_profiler", 0, pl_reset_profiler0_va, PL_FA_VARARGS),
     PL_extension("\$prof_node", 8, pl_prof_node8_va, PL_FA_VARARGS),
-    PL_extension("\$prof_sibling_of", 2, pl_prof_sibling_of2_va, PL_FA_NONDETERMINISTIC | PL_FA_VARARGS),
-    PL_extension("\$prof_procedure_data", 8, pl_prof_procedure_data8_va, PL_FA_TRANSPARENT | PL_FA_VARARGS),
+    PL_extension(
+        "\$prof_sibling_of",
+        2,
+        pl_prof_sibling_of2_va,
+        PL_FA_NONDETERMINISTIC | PL_FA_VARARGS
+    ),
+    PL_extension(
+        "\$prof_procedure_data",
+        8,
+        pl_prof_procedure_data8_va,
+        PL_FA_TRANSPARENT | PL_FA_VARARGS
+    ),
     PL_extension("\$prof_statistics", 8, pl_prof_statistics8_va, PL_FA_VARARGS)
 )

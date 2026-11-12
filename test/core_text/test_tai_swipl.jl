@@ -157,8 +157,12 @@ end
     @test !any(l -> endswith(l, " exception"), expected)                      # errors are caught by the rows, none escapes
     @test count(l -> occursin(_codes("type_error"), l), expected) >= 4
     @test count(l -> occursin(_codes("domain_error"), l), expected) >= 1
-    @test occursin(_codes("instantiation_error"), expected[findfirst(startswith("t5 "), expected)])
-    @test occursin("i2023,i11,i14,i22,i13,f20.5", expected[findfirst(startswith("t1 "), expected)])   # 1700000000.5 in UTC
+    @test occursin(
+        _codes("instantiation_error"), expected[findfirst(startswith("t5 "), expected)]
+    )
+    @test occursin(
+        "i2023,i11,i14,i22,i13,f20.5", expected[findfirst(startswith("t1 "), expected)]
+    )   # 1700000000.5 in UTC
 
     kl = kernel_lines(_TL, _TAI_PL, names)
     @test length(kl) == length(expected)

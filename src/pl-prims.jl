@@ -4827,10 +4827,15 @@ function pl_depth_limit3_va(
 
     levels = PL_get_size_ex(ld, A1)
     levels === nothing && return FFALSE
-    if unify_depth(ld, A2, ld.depth_info_limit) && unify_depth(ld, A3, ld.depth_info_reached)
+    if unify_depth(ld, A2, ld.depth_info_limit) &&
+        unify_depth(ld, A3, ld.depth_info_reached)
         newlimit = clevel + levels + 1                      # 1 for the catch/3
         if newlimit < clevel
-            return PL_error(ld, ERR_REPRESENTATION, mk_sym(T, :depth_limit)) ? FTRUE : FFALSE
+            return if PL_error(ld, ERR_REPRESENTATION, mk_sym(T, :depth_limit))
+                FTRUE
+            else
+                FFALSE
+            end
         end
         ld.depth_info_limit = newlimit
         ld.depth_info_reached = clevel
@@ -4853,7 +4858,9 @@ on redo install the limit again and fail into the goal (pl-prims.c).
 function pl_depth_limit_true5_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
 )::foreign_t where {T}
-    limit, olimit, oreached, res, cut = PL__t0, PL__t0 + 1, PL__t0 + 2, PL__t0 + 3, PL__t0 + 4
+    limit, olimit, oreached, res, cut = PL__t0,
+    PL__t0 + 1, PL__t0 + 2, PL__t0 + 3,
+    PL__t0 + 4
     ctl = PL_foreign_control(PL__ctx)
 
     if ctl == FRG_FIRST_CALL
@@ -4909,7 +4916,8 @@ function pl_depth_limit_false3_va(
     ld.depth_info_reached = or
     updateAlerted(ld)
 
-    exceeded && return PL_unify_atom(ld, A3, mk_sym(T, :depth_limit_exceeded)) ? FTRUE : FFALSE
+    exceeded &&
+        return PL_unify_atom(ld, A3, mk_sym(T, :depth_limit_exceeded)) ? FTRUE : FFALSE
     return FFALSE
 end
 
@@ -5070,7 +5078,9 @@ end
 The inference limit was reached in the frame `environment_frame`: lift the limit and raise `inference_limit_exceeded`, unless the
 frame is one of the limit wrapper's own predicates (the limit is then kept) or an exception is being processed (pl-prims.c).
 """
-function raiseInferenceLimitException(gd::PL_global_data{T}, ld::PL_local_data{T})::Nothing where {T}
+function raiseInferenceLimitException(
+    gd::PL_global_data{T}, ld::PL_local_data{T}
+)::Nothing where {T}
     def = ld.frames[ld.environment_frame].predicate
     ld.exception_processing && return nothing
     olimit = ld.inference_limit_limit                       # Do not throw here
@@ -5242,7 +5252,9 @@ const PL_predicates_from_prims = (
         PL_FA_NONDETERMINISTIC | PL_FA_VARARGS
     ),
     PL_extension("\$inference_limit_false", 1, pl_inference_limit_false1_va, PL_FA_VARARGS),
-    PL_extension("\$inference_limit_except", 3, pl_inference_limit_except3_va, PL_FA_VARARGS),
+    PL_extension(
+        "\$inference_limit_except", 3, pl_inference_limit_except3_va, PL_FA_VARARGS
+    ),
     PL_extension("\$urgent_exception", 3, pl_urgent_exception3_va, PL_FA_VARARGS),     # (P3)
     PL_extension("\$skip_list", 3, pl_skip_list3_va, PL_FA_VARARGS),
     PL_extension("\$seek_list", 4, pl_seek_list4_va, PL_FA_VARARGS),            # (P2b)

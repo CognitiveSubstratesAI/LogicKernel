@@ -2,7 +2,7 @@
 # test/core_lang/test_cstack.jl — the fallback block of os/pl-cstack.c (`#ifndef BTRACE_DONE`). UNTESTED when written (lane F, edit-only,
 # nothing compiled). The expected values are the fallback's own: empty bodies return nothing, the two printers add one message with
 # upstream's text, sigCrashHandler and CStackSize are named refusals (NotPortedError, step CSTACK1).
-# TERM TYPES PER CHUNK: print_backtrace(_named), sigCrashHandler and CStackSize take the local data or the type; every type in CI.
+# TERM TYPES PER CHUNK: REFERENCE — print_backtrace(_named), sigCrashHandler and CStackSize take the local data or the type; every type in CI and at milestones.
 using Test, LogicKernel
 const LK = LogicKernel
 
@@ -23,12 +23,18 @@ end
     @test LK.print_backtrace(ld, 1) === nothing
     @test length(ld.messages) == n0 + 1
     @test ld.messages[end][1] == :error
-    @test occursin("C-stack dumps are not supported on this platform", String(lk_name(ld.messages[end][2])))
+    @test occursin(
+        "C-stack dumps are not supported on this platform",
+        String(lk_name(ld.messages[end][2]))
+    )
     @test occursin("pl-cstack.c:943", String(lk_name(ld.messages[end][2])))
     @test LK.print_backtrace_named(ld, "why") === nothing
     @test length(ld.messages) == n0 + 2
     @test occursin("pl-cstack.c:949", String(lk_name(ld.messages[end][2])))
-    @test occursin("C-stack dumps are not supported on this platform", String(lk_name(ld.messages[end][2])))
+    @test occursin(
+        "C-stack dumps are not supported on this platform",
+        String(lk_name(ld.messages[end][2]))
+    )
 end
 
 @testset "pl-cstack.c: sigCrashHandler and CStackSize are named refusals" begin

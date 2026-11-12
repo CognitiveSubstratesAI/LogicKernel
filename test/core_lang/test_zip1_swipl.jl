@@ -285,7 +285,7 @@ end
     ]
     @test all(e -> e.flags == LK.PL_FA_VARARGS, LK.PL_predicates_from_zip)
     @test [(o.name, o.type) for o in LK.zip_open_stream_options] ==
-          [(:close_parent, LK.OPT_BOOL)]
+        [(:close_parent, LK.OPT_BOOL)]
     @test [(o.name, o.type) for o in LK.zipopen3_options] == [
         (:type, LK.OPT_ATOM), (:encoding, LK.OPT_ATOM), (:bom, LK.OPT_BOOL),
         (:release, LK.OPT_BOOL), (:reposition, LK.OPT_BOOL)

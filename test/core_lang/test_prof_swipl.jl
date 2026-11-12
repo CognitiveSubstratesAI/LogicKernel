@@ -45,7 +45,10 @@ const _PF_OUT = joinpath(@__DIR__, "test_prof_swipl.out")
 
 # the rows' names, in the order of the program (`t` for the swipl rows, `k` for the kernel-only tree rows, `kr` for the refusals)
 _pf_names(prefix::String) =
-    unique([String(m[1]) for m in eachmatch(Regex("^(" * prefix * "\\d+)\\(R\\) :-", "m"), read(_PF_PL, String))])
+    unique([
+        String(m[1]) for
+        m in eachmatch(Regex("^(" * prefix * "\\d+)\\(R\\) :-", "m"), read(_PF_PL, String))
+    ])
 # the kernel's lines: `ok` (the program loaded), then each row's name and solutions; `setup` runs after the load, before the rows.
 # Returns the lines and the run's local data (the last row's query stays open after a named refusal: the data is thrown away).
 function kernel_run(
@@ -107,7 +110,9 @@ function kernel_run(
     end
     return out, ld
 end
-kernel_lines(::Type{T}, path::String, names::Vector{String}, setup::Function=(gd, ld) -> nothing) where {T} =
+kernel_lines(
+    ::Type{T}, path::String, names::Vector{String}, setup::Function=(gd, ld) -> nothing
+) where {T} =
     first(kernel_run(T, path, names, setup))
 
 # the driver swipl runs to print its lines (the .out is its output)
@@ -140,7 +145,11 @@ fz_run(File, Ns) :-
 function swipl_lines(path::String, names::Vector{String})::Vector{String}
     out = mktempdir() do d
         f = joinpath(d, "drv.pl")
-        write(f, DRIVER * ":- initialization((fz_run('$path', [" * join(names, ",") * "]), halt)).\n")
+        write(
+            f,
+            DRIVER * ":- initialization((fz_run('$path', [" * join(names, ",") *
+            "]), halt)).\n"
+        )
         read(pipeline(`swipl -q $f`; stderr=devnull), String)
     end
     return String.(split(chomp(out), '\n'; keepempty=false))
@@ -157,12 +166,28 @@ _pf_count(lines, word) = sum(l -> length(findall(_codes(word), l)), lines; init=
     @test length(expected) == length(names) + 1 && expected[1] == "ok"
     @test all(i -> startswith(expected[i + 1], names[i] * " "), eachindex(names))
     body = expected[2:end]
-    for w in ("type_error", "instantiation_error", "domain_error", "profile_status", "profile_node", "failed", "true")
+    for w in (
+        "type_error",
+        "instantiation_error",
+        "domain_error",
+        "profile_status",
+        "profile_node",
+        "failed",
+        "true"
+    )
         @test _pf_count(body, w) >= 1
     end
     kl, ld = kernel_run(_TL, _PF_PL, names)
     @test length(kl) == length(expected)
-    for w in ("type_error", "instantiation_error", "domain_error", "profile_status", "profile_node", "failed", "true")
+    for w in (
+        "type_error",
+        "instantiation_error",
+        "domain_error",
+        "profile_status",
+        "profile_node",
+        "failed",
+        "true"
+    )
         @test _pf_count(kl[2:min(end, length(expected))], w) == _pf_count(body, w)
     end
     for i in eachindex(kl)
@@ -185,7 +210,8 @@ _row(name, sols...) = name * join(" " .* [_c(name, s) for s in sols])
 _pn(k) = _c("\$prof_node", "i$k")
 
 function _pf_tree!(gd::LK.PL_global_data{T}, ld::LK.PL_local_data{T}) where {T}
-    defof(name) = LK.isCurrentProcedure(sym_key(_tls(T, name)), 1, LK.MODULE_user(gd)).definition
+    defof(name) =
+        LK.isCurrentProcedure(sym_key(_tls(T, name)), 1, LK.MODULE_user(gd)).definition
     a = LK.new_call_node!(ld, defof("pf"), LK.PROF_TYPE_DEFAULT)
     b = LK.new_call_node!(ld, defof("pg"), LK.PROF_TYPE_DEFAULT)
     c = LK.new_call_node!(ld, defof("pg"), LK.PROF_TYPE_DEFAULT)
@@ -216,21 +242,28 @@ end
             "k6",
             _c(
                 "d", "i5", "i10", "i3", "i1", "i2",
-                _c("[|]", _c("node", _a("<spontaneous>"), "i0", "i5", "i10", "i3", "i1", "i2"), "nil"),
+                _c(
+                    "[|]",
+                    _c("node", _a("<spontaneous>"), "i0", "i5", "i10", "i3", "i1", "i2"),
+                    "nil"
+                ),
                 _a("pg"), "i0", "i10", "i0", "i3", "i0", "i3"
             )
         ),
         _row(
             "k7",
             _c(
-                "d", "i10", "i0", "i3", "i0", "i3", "nil", _a("pf"), "i0", "i10", "i0", "i3", "i0", "i3"
+                "d", "i10", "i0", "i3", "i0", "i3", "nil", _a("pf"), "i0", "i10", "i0",
+                "i3", "i0", "i3"
             )
         ),
         _row("k8", _a("failed")),
-        _row("k9", _c("s", "i4", "i15", "i0", "f0.0", "i3", "i0", _a("false"), _a("false"))),
+        _row(
+            "k9", _c("s", "i4", "i15", "i0", "f0.0", "i3", "i0", _a("false"), _a("false"))
+        ),
         _row("k10", _c("r", "i0", "i0", "i0", "i0")),
         _row("k11", _c("err", _c("type_error", _a("profile_node"), _pn(1)))),
-        _row("k12", _a("failed")),
+        _row("k12", _a("failed"))
     ]
     @test kl == exp
 end
@@ -266,7 +299,8 @@ end
     @test LK.node_redos(n) == 0
     # a freed tree leaves no live node
     a = LK.new_call_node!(ld, nothing, LK.PROF_TYPE_DEFAULT)
-    @test LK.prof_node_at(ld, a) !== nothing && LK.prof_node_at(ld, 0) === nothing && LK.prof_node_at(ld, a + 1) === nothing
+    @test LK.prof_node_at(ld, a) !== nothing && LK.prof_node_at(ld, 0) === nothing &&
+        LK.prof_node_at(ld, a + 1) === nothing
     ld.profile.roots = a
     LK.freeProfileData(ld)
     @test ld.profile.nodes == 0 && LK.prof_node_at(ld, a) === nothing
@@ -279,15 +313,17 @@ function _pf_env(::Type{T}, ports::Int) where {T}
     ld = LK.PL_local_data{T}(gd)
     st, _ = LK.load_file!(gd, ld, _PF_PL)
     @assert st === :ok
-    defof(name) = LK.isCurrentProcedure(sym_key(_tls(T, name)), 1, LK.MODULE_user(gd)).definition
+    defof(name) =
+        LK.isCurrentProcedure(sym_key(_tls(T, name)), 1, LK.MODULE_user(gd)).definition
     ld.profile.ports_control = ports
     return gd, ld, defof("pf"), defof("pg")
 end
-_nc(ld, i) = (n = LK.prof_node_at(ld, i); (n.calls, n.exits, n.fails, n.recur))
+_nc(ld, i) = (n=LK.prof_node_at(ld, i); (n.calls, n.exits, n.fails, n.recur))
 
 @testset "PROF: the tree builders, ports_control FALSE (no exits or fails counted)" begin
     gd, ld, pf, pg = _pf_env(_TL, LK.PROFC_FALSE)
-    @test LK.profCall(ld, pf) == 1 && ld.profile.current == 1 && ld.profile.roots == 1 && ld.profile.nodes == 1
+    @test LK.profCall(ld, pf) == 1 && ld.profile.current == 1 && ld.profile.roots == 1 &&
+        ld.profile.nodes == 1
     @test LK.profCall(ld, pf) == 1 && _nc(ld, 1) == (1, 0, 0, 1)                 # direct recursion: the same node, `recur`
     @test LK.profCall(ld, pg) == 2 && ld.profile.current == 2
     @test LK.prof_node_at(ld, 2).parent == 1 && LK.prof_node_at(ld, 1).siblings == 2
@@ -303,7 +339,8 @@ end
     gd, ld, pf, pg = _pf_env(_TL, LK.PROFC_TRUE)
     @test LK.profCall(ld, pf) == 1 && LK.profCall(ld, pg) == 2
     LK.profExit(ld, 2)
-    @test ld.profile.current == 1 && _nc(ld, 2) == (1, 1, 0, 0) && _nc(ld, 1) == (1, 0, 0, 0)
+    @test ld.profile.current == 1 && _nc(ld, 2) == (1, 1, 0, 0) &&
+        _nc(ld, 1) == (1, 0, 0, 0)
     LK.profExit(ld, 1)                                                           # the exit of a root: resumes nothing
     @test ld.profile.current == 0 && _nc(ld, 1) == (1, 1, 0, 0)
     @test LK.profCall(ld, pf) == 1 && _nc(ld, 1) == (2, 1, 0, 0) && ld.profile.nodes == 2   # a root is found again
@@ -319,13 +356,15 @@ end
     t0 = LK.isCurrentProcedure(sym_key(_tls(_TL, "t0")), 1, LK.MODULE_user(gd)).definition
     @test LK.profCall(ld, pf) == 1 && LK.profCall(ld, pg) == 2
     LK.profExit(ld, 2)
-    @test LK.profCall(ld, t0) == 3 && LK.prof_node_at(ld, 3).next == 2 && LK.prof_node_at(ld, 1).siblings == 3
+    @test LK.profCall(ld, t0) == 3 && LK.prof_node_at(ld, 3).next == 2 &&
+        LK.prof_node_at(ld, 1).siblings == 3
     LK.profExit(ld, 3)
     @test LK.profCall(ld, pg) == 2 && _nc(ld, 2) == (2, 1, 0, 0) && ld.profile.nodes == 3     # found behind t0
     LK.profExit(ld, 2)
     LK.profExit(ld, 1)
     @test ld.profile.current == 0
-    @test LK.profCall(ld, pg) == 4 && LK.prof_node_at(ld, 4).next == 1 && ld.profile.roots == 4 && ld.profile.nodes == 4
+    @test LK.profCall(ld, pg) == 4 && LK.prof_node_at(ld, 4).next == 1 &&
+        ld.profile.roots == 4 && ld.profile.nodes == 4
     LK.profExit(ld, 4)
     @test LK.profCall(ld, pf) == 1 && _nc(ld, 1) == (2, 1, 0, 0) && ld.profile.nodes == 4    # a root found behind another
 end
@@ -353,7 +392,8 @@ end
     gd, ld, pf, pg = _pf_env(_TL, LK.PROFC_CLASSIC)
     @test LK.profCall(ld, pf) == 1 && LK.profCall(ld, pg) == 2
     @test LK.profCall(ld, pf) == 3 && LK.prof_node_at(ld, 3).parent == 2         # the root 1 has no parent: no fold yet
-    @test LK.profCall(ld, pg) == 2 && ld.profile.current == 2 && _nc(ld, 2) == (1, 0, 0, 1) && ld.profile.nodes == 3
+    @test LK.profCall(ld, pg) == 2 && ld.profile.current == 2 &&
+        _nc(ld, 2) == (1, 0, 0, 1) && ld.profile.nodes == 3
     gd, ld, pf, pg = _pf_env(_TL, LK.PROFC_TRUE)
     @test LK.profCall(ld, pf) == 1 && LK.profCall(ld, pg) == 2 && LK.profCall(ld, pf) == 3
     @test LK.profCall(ld, pg) == 4 && ld.profile.current == 4 && ld.profile.nodes == 4
@@ -363,7 +403,8 @@ end
 @testset "PROF: a predicate with P_NOPROFILE leaves the tree alone; a stale node pointer is ignored" begin
     gd, ld, pf, pg = _pf_env(_TL, LK.PROFC_TRUE)
     pg.flags |= LK.P_NOPROFILE
-    @test LK.profCall(ld, pg) == 0 && ld.profile.nodes == 0 && ld.profile.current == 0 && ld.profile.roots == 0
+    @test LK.profCall(ld, pg) == 0 && ld.profile.nodes == 0 && ld.profile.current == 0 &&
+        ld.profile.roots == 0
     @test LK.profCall(ld, pf) == 1
     @test LK.profCall(ld, pg) == 1 && ld.profile.nodes == 1 && ld.profile.current == 1   # the current node, nothing made
     @test LK.profCall(ld, pf) == 1 && _nc(ld, 1) == (1, 0, 0, 1)
@@ -379,7 +420,8 @@ end
     gd, ld, pf, pg = _pf_env(_TL, LK.PROFC_TRUE)
     @test LK.profCall(ld, pf) == 1 && LK.profCall(ld, pg) == 2 && LK.profCall(ld, pf) == 3
     @test LK.lookback(ld, 3, 1) && LK.lookback(ld, 3, 3) && LK.lookback(ld, 2, 1)
-    @test !LK.lookback(ld, 1, 3) && !LK.lookback(ld, 1, 2) && !LK.lookback(ld, 0, 1) && !LK.lookback(ld, 3, 0)
+    @test !LK.lookback(ld, 1, 3) && !LK.lookback(ld, 1, 2) && !LK.lookback(ld, 0, 1) &&
+        !LK.lookback(ld, 3, 0)
     LK.profFailToCP(ld, 3, 1)                                                    # 3 and 2 failed, 1 is the common ancestor
     @test _nc(ld, 3)[3] == 1 && _nc(ld, 2)[3] == 1 && _nc(ld, 1)[3] == 0
     LK.profFailToCP(ld, 1, 1)                                                    # already there: nothing fails
@@ -401,12 +443,20 @@ end
     gd, ld, pf, pg = _pf_env(_TL, LK.PROFC_TRUE)
     ld.profile.active = LK.PROF_CPU
     @test LK.profCall(ld, pf) == 1 && ld.profile.samples == 0                    # a sampled mode never reads the clock here
-    for f in (LK.prof_clock, LK.prof_mono_ns, LK.prof_thread_cpu_ns, LK.prof_clock_per_ns, LK.thread_prof_ticks, LK.prof_convert_clock)
+    for f in (
+        LK.prof_clock,
+        LK.prof_mono_ns,
+        LK.prof_thread_cpu_ns,
+        LK.prof_clock_per_ns,
+        LK.thread_prof_ticks,
+        LK.prof_convert_clock
+    )
         @test_throws LK.NotPortedError f(ld)
     end
     @test_throws LK.NotPortedError LK.prof_close_window(ld, 0, nothing, 0)
     @test_throws LK.NotPortedError LK.PL_register_profile_type(ld, "x")
     @test_throws LK.NotPortedError LK.PL_prof_call(ld, 0, 0)
     @test_throws LK.NotPortedError LK.PL_prof_exit(ld, 0)
-    @test LK._llround(2.5) == 3 && LK._llround(-2.5) == -3 && LK._llround(2.4) == 2 && LK._llround(0.5) == 1
+    @test LK._llround(2.5) == 3 && LK._llround(-2.5) == -3 && LK._llround(2.4) == 2 &&
+        LK._llround(0.5) == 1
 end

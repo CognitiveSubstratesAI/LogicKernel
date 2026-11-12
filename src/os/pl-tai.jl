@@ -73,7 +73,8 @@ ftm() = ftm(CTm(), 0.0, 0, nothing, 0, 0.0, 0)
 # ORIGINAL: C's `(int64_t)x` of a double on x86-64 (`cvttsd2si`): truncation; NaN and out of range give INT64_MIN.
 "`(int64_t)x` as the x86-64 hardware does it."
 function _c_int64(x::Float64)::Int
-    (isfinite(x) && x >= -9.223372036854775808e18 && x < 9.223372036854775808e18) || return typemin(Int)
+    (isfinite(x) && x >= -9.223372036854775808e18 && x < 9.223372036854775808e18) ||
+        return typemin(Int)
     return unsafe_trunc(Int, x)
 end
 # ORIGINAL: C's `(int)x` of a double on x86-64: truncation; NaN and out of range give INT_MIN.
@@ -101,7 +102,8 @@ _c_mktime(tm::CTm)::Int = ccall((:mktime, LIBC), Int64, (Ref{CTm},), tm)
 function _c_strftime(fmt::String, tm::CTm)::Vector{UInt8}
     buf = zeros(UInt8, 256)
     ccall(
-        (:strftime, LIBC), Csize_t, (Ptr{UInt8}, Csize_t, Cstring, Ref{CTm}), buf, 256, fmt, tm
+        (:strftime, LIBC), Csize_t, (Ptr{UInt8}, Csize_t, Cstring, Ref{CTm}), buf, 256, fmt,
+        tm
     )
     n = findfirst(==(0x00), buf)
     return buf[1:(n - 1)]
@@ -169,7 +171,7 @@ end
 
 # ORIGINAL: the text of an atom for a comparison with a name (a blob has none).
 "Is the atom `a` the symbol `name`?"
-_atom_is(a::T, name::String)::Bool where {T} = !is_blob(a) && sym_text(a) == name
+_atom_is(a::T, name::String) where {T} = (!is_blob(a) && sym_text(a) == name)::Bool
 
 # PORT: pl-tai.c get_taia
 # DIVERGES: the `taia` is the tuple `(sec, nano, seconds)`: its TAI second count, its nanoseconds and the float `*seconds`;
@@ -193,7 +195,9 @@ end
 
 # PORT: pl-tai.c get_tz_arg
 "Argument `i` of the date term `t` as the zone name: variable or `-` leave `tb.tzname` unset (pl-tai.c)."
-function get_tz_arg(ld::PL_local_data{T}, i::Int, t::term_t, a::term_t, tb::ftm)::Bool where {T}
+function get_tz_arg(
+    ld::PL_local_data{T}, i::Int, t::term_t, a::term_t, tb::ftm
+)::Bool where {T}
     _PL_get_arg(ld, i, t, a)
     if !PL_is_variable(ld, a)
         name = PL_get_atom_ex(ld, a)
@@ -440,7 +444,8 @@ end
 # per argument in order. `PL_INT` takes the low 32 bits of a long (a C vararg read as int), `offset` is cut so.
 "Unify `t` with `date(Y, M, D, H, Mn, Sec, Off, TZ, DST)` (pl-tai.c stamp_date_time)."
 function _unify_date9(
-    ld::PL_local_data{T}, t::term_t, year::Int, month::Int, day::Int, hour::Int, minute::Int,
+    ld::PL_local_data{T}, t::term_t, year::Int, month::Int, day::Int, hour::Int,
+    minute::Int,
     sec::Float64, offset::Int, tz::String, dst::String
 )::Bool where {T}
     PL_unify_functor(ld, t, mk_sym(T, :date), 9) || return false
@@ -530,10 +535,14 @@ function pl_stamp_date_time3_va(
             sec = Float64(ct.second) + Float64(nano) / 1e9
         end
 
-        return _unify_date9(
+        return if _unify_date9(
             ld, A2, ct.date.year, ct.date.month, ct.date.day, ct.hour, ct.minute, sec,
             utcoffset, tzatom, dstatom
-        ) ? FTRUE : FFALSE
+        )
+            FTRUE
+        else
+            FFALSE
+        end
     end
 
     # time_stamp
@@ -647,11 +656,15 @@ end
 # PORT: pl-tai.c abbred_weekday, weekday, abbred_month, month
 # DIVERGES: underscore-prefixed, the module's names `weekday`/`month` stay free.
 const _abbred_weekday = ("Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat")
-const _weekday = ("Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday")
-const _abbred_month = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
+const _weekday = (
+    "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"
+)
+const _abbred_month = (
+    "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
+)
 const _month = (
     "January", "February", "March", "April", "May", "June", "July", "August", "September",
-    "October", "November", "December",
+    "October", "November", "December"
 )
 
 "The code points of the literal format `s` (a sub-format of pl-tai.c: L\"%m/%d/%y\")."
@@ -923,5 +936,5 @@ const PL_predicates_from_tai = (
     PL_extension("stamp_date_time", 3, pl_stamp_date_time3_va, PL_FA_VARARGS),
     PL_extension("date_time_stamp", 2, pl_date_time_stamp2_va, PL_FA_VARARGS),
     PL_extension("format_time", 3, pl_format_time3_va, PL_FA_VARARGS),
-    PL_extension("format_time", 4, pl_format_time4_va, PL_FA_VARARGS),
+    PL_extension("format_time", 4, pl_format_time4_va, PL_FA_VARARGS)
 )

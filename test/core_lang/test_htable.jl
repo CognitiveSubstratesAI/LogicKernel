@@ -5,7 +5,7 @@
 #     the bucket order of the keys used here is computable by hand;
 #   - an insert reprobes (`stride 1`) from its bucket; a map of `len` buckets resizes when an insert has reprobed
 #     `10 + (len >> 2)` times; the new length is `len << 1`, or `len << 2` once the table holds half its buckets (htable_resize).
-# TERM TYPES PER CHUNK: only the duplicate-add warning (`addNewHTable`) takes the local data; every type in CI.
+# TERM TYPES PER CHUNK: REFERENCE — only the duplicate-add warning (`addNewHTable`) takes the local data; every type in CI and at milestones.
 using Test, LogicKernel
 const LK = LogicKernel
 
@@ -54,7 +54,8 @@ end
     for k in (UInt64(1), UInt64(17), UInt64(2))     # 17 collides with 1 (bucket 1), takes bucket 2; 2 then takes bucket 3
         LK.updateHTable(ht, k, k * 10)
     end
-    @test _ht_entries(ht) == [(UInt64(1), UInt64(10)), (UInt64(17), UInt64(170)), (UInt64(2), UInt64(20))]
+    @test _ht_entries(ht) ==
+        [(UInt64(1), UInt64(10)), (UInt64(17), UInt64(170)), (UInt64(2), UInt64(20))]
     ht2 = LK.newHTable(16)
     for k in UInt64(8):-1:UInt64(1)                  # inserted in reverse: still bucket order
         LK.updateHTable(ht2, k, k + 100)
@@ -77,8 +78,10 @@ end
     b1.prev = a1
     LK.htable_free_kvs(a1)
     @test b1.prev === nothing
-    @test LK.htable_cas_name(b1, 0, UInt64(0), UInt64(7)) && LK.htable_name(b1, 0) == UInt64(7)
-    @test !LK.htable_cas_name(b1, 0, UInt64(0), UInt64(8)) && LK.htable_name(b1, 0) == UInt64(7)
+    @test LK.htable_cas_name(b1, 0, UInt64(0), UInt64(7)) &&
+        LK.htable_name(b1, 0) == UInt64(7)
+    @test !LK.htable_cas_name(b1, 0, UInt64(0), UInt64(8)) &&
+        LK.htable_name(b1, 0) == UInt64(7)
     c1 = LK.htable_alloc_kvs(4)
     @test !LK.htable_cas_new_kvs(a1, c1) && a1.next === b1                       # a map that has a next one keeps it
     @test LK.htable_cas_new_kvs(c1, a1) && c1.next === a1                        # one that has none takes the new one

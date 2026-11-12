@@ -423,5 +423,5 @@ end
 "pl-variant.c's registration table (`BeginPredDefs(variant)`): `=@=` and `\\=@=`."
 const PL_predicates_from_variant = (
     PL_extension("=@=", 2, pl_variant2_va, PL_FA_VARARGS),
-    PL_extension("\\=@=", 2, pl_not_variant2_va, PL_FA_VARARGS),
+    PL_extension("\\=@=", 2, pl_not_variant2_va, PL_FA_VARARGS)
 )

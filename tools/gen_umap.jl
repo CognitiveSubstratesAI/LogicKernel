@@ -84,7 +84,9 @@ function parse_umap(path::AbstractString)
     cdm = match(r"static const int case_deltas\[PL_CASE_DELTAS\] =\s*\{([^}]*)\};"s, src)
     cdm === nothing && error("case_deltas not found")
     deltas = [parse(Int, x[1]) for x in eachmatch(r"(-?\d+)", cdm[1])]
-    crm = match(r"static const pl_case_run pl_case_runs\[PL_CASE_RUNS\] =\s*\{(.*?)\n\};"s, src)
+    crm = match(
+        r"static const pl_case_run pl_case_runs\[PL_CASE_RUNS\] =\s*\{(.*?)\n\};"s, src
+    )
     crm === nothing && error("pl_case_runs not found")
     runs = [
         (
@@ -93,7 +95,7 @@ function parse_umap(path::AbstractString)
             parse(Int, x[3]),
             parse(Int, x[4]),
             parse(Int, x[5]),
-            parse(Int, x[6]),
+            parse(Int, x[6])
         )
         for
         x in eachmatch(
@@ -101,15 +103,32 @@ function parse_umap(path::AbstractString)
             crm[1]
         )
     ]
-    ctm = match(r"static const int pl_case_titles\[PL_CASE_TITLES\]\[2\] =\s*\{(.*?)\n\};"s, src)
+    ctm = match(
+        r"static const int pl_case_titles\[PL_CASE_TITLES\]\[2\] =\s*\{(.*?)\n\};"s, src
+    )
     ctm === nothing && error("pl_case_titles not found")
     titles = [
         (parse(Int, x[1]; base=16), parse(Int, x[2]; base=16))
         for x in eachmatch(r"\{0x([0-9a-f]+),0x([0-9a-f]+)\}", ctm[1])
     ]
     (length(deltas) == 179 && length(runs) == 290 && length(titles) == 58) ||
-        error("the case tables: $(length(deltas)), $(length(runs)), $(length(titles)) entries")
-    return (; mapsize, cats, ctypes, uflags, uctype, c2f, ucbits, bases, pairs, deltas, runs, titles)
+        error(
+            "the case tables: $(length(deltas)), $(length(runs)), $(length(titles)) entries"
+        )
+    return (;
+        mapsize,
+        cats,
+        ctypes,
+        uflags,
+        uctype,
+        c2f,
+        ucbits,
+        bases,
+        pairs,
+        deltas,
+        runs,
+        titles
+    )
 end
 
 "Write one two-level map: its pages as `_<name>_pages` and its index as `<name>`, both Strings."

@@ -69,7 +69,7 @@ function _read_lconv()::NTuple{3, Vector{UInt8}}
     return (
         _c_string_bytes(unsafe_load(p, 1)),
         _c_string_bytes(unsafe_load(p, 2)),
-        _c_string_bytes(unsafe_load(p, 3)),
+        _c_string_bytes(unsafe_load(p, 3))
     )
 end
 
@@ -107,7 +107,9 @@ end
 # note: glibc leaves it 0 for a name it has failed to find before); the `#else` branch is NOT PORTED. The thread's locale is
 # set by `uselocale` between two ccalls without a yield, so no other OS thread can run this task in between.
 "Fill `l` with the LC_NUMERIC conventions of the locale `lname` (\"\": the environment) without changing the process locale; `(false, errno)` when libc has no such locale (pl-locale.c)."
-function fill_locale_from_name!(l::PL_locale_rec{T}, lname::String)::Tuple{Bool, Int} where {T}
+function fill_locale_from_name!(
+    l::PL_locale_rec{T}, lname::String
+)::Tuple{Bool, Int} where {T}
     Base.Libc.errno(0)
     loc = ccall(
         (:newlocale, LIBC), Ptr{Cvoid}, (Cint, Cstring, Ptr{Cvoid}),
@@ -127,7 +129,9 @@ end
 # PORT: pl-locale.c new_locale
 # DIVERGES: the type is the argument; `PL_malloc` is Julia's allocation.
 "A new locale with no references: a copy of `proto`, or the conventions of the environment (pl-locale.c)."
-function new_locale(::Type{T}, proto::Union{Nothing, PL_locale_rec{T}})::PL_locale_rec{T} where {T}
+function new_locale(
+    ::Type{T}, proto::Union{Nothing, PL_locale_rec{T}}
+)::PL_locale_rec{T} where {T}
     l = PL_locale_rec{T}(nothing, nothing, LOCALE_MAGIC, 0, "", "", Int[0], 0)
     if proto !== nothing
         l.decimal_point = proto.decimal_point                   # wcsdup(proto->decimal_point)
@@ -163,7 +167,9 @@ end
 
 # PORT: pl-locale.c update_locale
 "Refresh the numeric conventions of `l` after `setlocale/3` changed LC_NUMERIC or LC_ALL (pl-locale.c)."
-function update_locale(l::PL_locale_rec{T}, category::Cint, locale::Union{Nothing, String})::Nothing where {T}
+function update_locale(
+    l::PL_locale_rec{T}, category::Cint, locale::Union{Nothing, String}
+)::Nothing where {T}
     if category == LC_NUMERIC || category == LC_ALL
         free_locale_strings!(l)
         init_locale_strings!(l, _read_lconv())
@@ -212,7 +218,9 @@ end
 
 # ORIGINAL: `lookupHTableWP(GD->locale.localeTable, alias)`.
 "The locale named `alias`, or `nothing`."
-function _locale_lookup(gd::PL_global_data{T}, alias::T)::Union{Nothing, PL_locale_rec{T}} where {T}
+function _locale_lookup(
+    gd::PL_global_data{T}, alias::T
+)::Union{Nothing, PL_locale_rec{T}} where {T}
     i = _locale_table_index(gd, alias)
     return i == 0 ? nothing : gd.locale.table[i]
 end
@@ -221,7 +229,9 @@ end
 # DIVERGES: split in two: this is the success branch (`addNewHTableWP`, `l->alias`, `l->references++`), false when the alias is
 # taken; `alias_locale` raises the error. `PL_register_atom` has no twin (no atom GC).
 "Enter `l` in the table under `alias`; false when the alias is taken, with nothing changed (pl-locale.c)."
-function _alias_locale_table!(gd::PL_global_data{T}, l::PL_locale_rec{T}, alias::T)::Bool where {T}
+function _alias_locale_table!(
+    gd::PL_global_data{T}, l::PL_locale_rec{T}, alias::T
+)::Bool where {T}
     _locale_table_index(gd, alias) == 0 || return false
     push!(gd.locale.table, l)                                   # addNewHTableWP(GD->locale.localeTable, alias, l)
     l.alias = alias
@@ -267,7 +277,9 @@ _locale_ref_bytes(serial::Int)::Vector{UInt8} = collect(reinterpret(UInt8, Int64
 
 # ORIGINAL: upstream's `((locale_ref*)PL_blob_data(a, NULL, &bt))->data` with the type test `bt == &locale_blob`.
 "The locale the blob `a` names, or `nothing` when `a` is no locale blob."
-function _locale_blob_ref(gd::PL_global_data{T}, a::T)::Union{Nothing, PL_locale_rec{T}} where {T}
+function _locale_blob_ref(
+    gd::PL_global_data{T}, a::T
+)::Union{Nothing, PL_locale_rec{T}} where {T}
     is_blob(a) || return nothing
     at = atomValue(gd.atoms, blob_handle(a))
     at.type === locale_blob || return nothing
@@ -356,7 +368,9 @@ end
 
 # PORT: pl-locale.c locale_alias_property
 "`locale_property(Locale, alias(Name))` (pl-locale.c)."
-function locale_alias_property(ld::PL_local_data{T}, l::PL_locale_rec{T}, prop::term_t)::Bool where {T}
+function locale_alias_property(
+    ld::PL_local_data{T}, l::PL_locale_rec{T}, prop::term_t
+)::Bool where {T}
     la = l.alias
     la === nothing && return false
     return PL_unify_atom(ld, prop, la)
@@ -364,14 +378,18 @@ end
 
 # PORT: pl-locale.c locale_decimal_point_property
 "`locale_property(Locale, decimal_point(Atom))` (pl-locale.c)."
-function locale_decimal_point_property(ld::PL_local_data{T}, l::PL_locale_rec{T}, prop::term_t)::Bool where {T}
+function locale_decimal_point_property(
+    ld::PL_local_data{T}, l::PL_locale_rec{T}, prop::term_t
+)::Bool where {T}
     isempty(l.decimal_point) && return false
     return PL_unify_atom(ld, prop, mk_sym(T, Symbol(l.decimal_point)))      # PL_unify_wchars(prop, PL_ATOM, ...)
 end
 
 # PORT: pl-locale.c locale_thousands_sep_property
 "`locale_property(Locale, thousands_sep(Atom))` (pl-locale.c)."
-function locale_thousands_sep_property(ld::PL_local_data{T}, l::PL_locale_rec{T}, prop::term_t)::Bool where {T}
+function locale_thousands_sep_property(
+    ld::PL_local_data{T}, l::PL_locale_rec{T}, prop::term_t
+)::Bool where {T}
     isempty(l.thousands_sep) && return false
     return PL_unify_atom(ld, prop, mk_sym(T, Symbol(l.thousands_sep)))
 end
@@ -382,7 +400,9 @@ _grouping_at(g::Vector{Int}, i::Int)::Int = i <= length(g) ? g[i] : 0
 
 # PORT: pl-locale.c locale_grouping_property
 "`locale_property(Locale, grouping(List))` (pl-locale.c)."
-function locale_grouping_property(ld::PL_local_data{T}, l::PL_locale_rec{T}, prop::term_t)::Bool where {T}
+function locale_grouping_property(
+    ld::PL_local_data{T}, l::PL_locale_rec{T}, prop::term_t
+)::Bool where {T}
     g = l.grouping
     if _grouping_at(g, 1) != 0                                  # l->grouping && l->grouping[0]
         tail = PL_copy_term_ref(ld, prop)
@@ -420,12 +440,15 @@ end
 # PORT: pl-locale.c lprop_list
 "The properties of a locale, in upstream's order."
 const lprop_list = (
-    tprop(:alias, 1), tprop(:decimal_point, 2), tprop(:thousands_sep, 3), tprop(:grouping, 4),
+    tprop(:alias, 1), tprop(:decimal_point, 2), tprop(:thousands_sep, 3),
+    tprop(:grouping, 4)
 )
 
 # ORIGINAL: the call `LDFUNCP(*state->p->function)(state->l, arg)` on the function number `p.fn`.
 "Run the property function number `fn` of `lprop_list` on the locale `l` and the argument `arg`."
-function _lprop_call(ld::PL_local_data{T}, fn::Int, l::PL_locale_rec{T}, arg::term_t)::Bool where {T}
+function _lprop_call(
+    ld::PL_local_data{T}, fn::Int, l::PL_locale_rec{T}, arg::term_t
+)::Bool where {T}
     fn == 1 && return locale_alias_property(ld, l, arg)
     fn == 2 && return locale_decimal_point_property(ld, l, arg)
     fn == 3 && return locale_thousands_sep_property(ld, l, arg)
@@ -587,13 +610,15 @@ function pl_locale_property2_va(
         l = e != 0 ? gd.locale.table[x] : gd.locale.refs[x]
         if _lprop_call(ld, lprop_list[p].fn, l, arg)
             if ep != 0
-                PL_unify_functor(ld, property, mk_sym(T, lprop_list[p].functor), 1) || (free_lstate(gd, x, e); return FFALSE)
+                PL_unify_functor(ld, property, mk_sym(T, lprop_list[p].functor), 1) ||
+                    (free_lstate(gd, x, e); return FFALSE)
                 a = PL_new_term_ref(ld)
                 _PL_get_arg(ld, 1, property, a)                 # PL_unify_term(property, PL_FUNCTOR, f, PL_TERM, arg)
                 PL_unify(ld, a, arg) || (free_lstate(gd, x, e); return FFALSE)
             end
             if e != 0
-                unifyLocale(gd, ld, locale, l, true) || (free_lstate(gd, x, e); return FFALSE)
+                unifyLocale(gd, ld, locale, l, true) ||
+                    (free_lstate(gd, x, e); return FFALSE)
             end
 
             more, x, p = advance_lstate(gd, x, e, ep, p)
@@ -624,7 +649,8 @@ end
 
 # ORIGINAL: a text of any encoding as a `String` (`text_string` refuses a wide text).
 "The text `txt` holds as a `String`, from its code points."
-_locale_text_string(txt::PL_chars_t)::String = String(Char[Char(c) for c in _text_code_points(txt)])
+_locale_text_string(txt::PL_chars_t)::String =
+    String(Char[Char(c) for c in _text_code_points(txt)])
 
 # PORT: pl-locale.c set_chars
 # DIVERGES: returns the new text or `nothing` (after the type error), where upstream stores it in `*valp`.
@@ -651,7 +677,9 @@ end
 # PORT: pl-locale.c set_grouping
 # DIVERGES: returns the grouping as `Int`s ended by 0 (the C string), or `nothing` after the error.
 "The grouping of the list `t`: group sizes, the last possibly `repeat(Size)` (pl-locale.c)."
-function set_grouping(ld::PL_local_data{T}, t::term_t)::Union{Nothing, Vector{Int}} where {T}
+function set_grouping(
+    ld::PL_local_data{T}, t::term_t
+)::Union{Nothing, Vector{Int}} where {T}
     s = Int[]
     tail = PL_copy_term_ref(ld, t)
     head = PL_new_term_ref(ld)
@@ -878,9 +906,11 @@ end
 # DIVERGES: appended last in `_PRED_TABLES` (src/pl-ext.jl), so the dispatch indices of the earlier tables stay as they were.
 "pl-locale.c's registration table (`BeginPredDefs(locale)`)."
 const PL_predicates_from_locale = (
-    PL_extension("locale_property", 2, pl_locale_property2_va, PL_FA_NONDETERMINISTIC | PL_FA_VARARGS),
+    PL_extension(
+        "locale_property", 2, pl_locale_property2_va, PL_FA_NONDETERMINISTIC | PL_FA_VARARGS
+    ),
     PL_extension("locale_create", 3, pl_locale_create3_va, PL_FA_VARARGS),
     PL_extension("locale_destroy", 1, pl_locale_destroy1_va, PL_FA_VARARGS),
     PL_extension("set_locale", 1, pl_set_locale1_va, PL_FA_VARARGS),
-    PL_extension("current_locale", 1, pl_current_locale1_va, PL_FA_VARARGS),
+    PL_extension("current_locale", 1, pl_current_locale1_va, PL_FA_VARARGS)
 )

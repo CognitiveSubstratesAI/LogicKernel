@@ -36,10 +36,8 @@ MUTANTS = [
          old='''        newlimit = clevel + levels + 1                      # 1 for the catch/3''',
          new='''        newlimit = clevel + levels                          # 1 for the catch/3'''),
     dict(id="P3-4 a wrapped sum is no error (KILL dl19: the kernel's pinned representation_error(depth_limit))", file=P, targets=TD,
-         old='''        if newlimit < clevel
-            return PL_error(ld, ERR_REPRESENTATION, mk_sym(T, :depth_limit)) ? FTRUE : FFALSE''',
-         new='''        if false
-            return PL_error(ld, ERR_REPRESENTATION, mk_sym(T, :depth_limit)) ? FTRUE : FFALSE'''),
+         old='        if newlimit < clevel\n            return if PL_error(ld, ERR_REPRESENTATION, mk_sym(T, :depth_limit))',
+         new='        if false\n            return if PL_error(ld, ERR_REPRESENTATION, mk_sym(T, :depth_limit))'),
     dict(id="P3-5 the reached depth of a new limit starts at 0 (KILL dl03, dl04: R = reached - clevel - 1)", file=P, targets=TD,
          old='''        ld.depth_info_limit = newlimit
         ld.depth_info_reached = clevel''',

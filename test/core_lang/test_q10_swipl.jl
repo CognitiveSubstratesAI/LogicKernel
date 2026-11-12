@@ -174,22 +174,55 @@ const _QX_CASES = [
     ("ss20", "'\$set_prolog_stack'(1, low, O, O)"),   # a non-atom stack
     ("ss21", "'\$set_prolog_stack'(local, foo, O, O)"),   # an unknown property
     ("ss22", "'\$set_prolog_stack'(local, 1, O, O)"),   # a non-atom property
-    ("ss23", "'\$set_prolog_stack'(global, low, O1, 40000), '\$set_prolog_stack'(global, low, O2, O2), R = O1-O2"),   # low set and read back
-    ("ss24", "'\$set_prolog_stack'(global, low, O1, 32768), '\$set_prolog_stack'(global, low, O2, O2), R = O1-O2"),   # low restored
-    ("ss25", "'\$set_prolog_stack'(trail, factor, O1, 4), '\$set_prolog_stack'(trail, factor, O2, O2), R = O1-O2"),   # factor set and read back
-    ("ss26", "'\$set_prolog_stack'(trail, factor, O1, 3), '\$set_prolog_stack'(trail, factor, O2, O2), R = O1-O2"),   # factor restored
-    ("ss27", "'\$set_prolog_stack'(trail, spare, O1, 300), '\$set_prolog_stack'(trail, spare, O2, O2), R = O1-O2"),   # trail spare set and read back
-    ("ss28", "'\$set_prolog_stack'(trail, spare, O1, 256), '\$set_prolog_stack'(trail, spare, O2, O2), R = O1-O2"),   # trail spare restored
-    ("ss29", "'\$set_prolog_stack'(global, spare, O1, 600), '\$set_prolog_stack'(global, spare, O2, O2), R = O1-O2"),   # global spare set and read back
-    ("ss30", "'\$set_prolog_stack'(global, spare, O1, 512), '\$set_prolog_stack'(global, spare, O2, O2), R = O1-O2"),   # global spare restored
-    ("ss31", "'\$set_prolog_stack'(argument, min_free, O1, 300), '\$set_prolog_stack'(argument, min_free, O2, O2), R = O1-O2"),   # argument min_free set and read back
-    ("ss32", "'\$set_prolog_stack'(argument, min_free, O1, 256), '\$set_prolog_stack'(argument, min_free, O2, O2), R = O1-O2"),   # argument min_free restored
+    (
+        "ss23",
+        "'\$set_prolog_stack'(global, low, O1, 40000), '\$set_prolog_stack'(global, low, O2, O2), R = O1-O2"
+    ),   # low set and read back
+    (
+        "ss24",
+        "'\$set_prolog_stack'(global, low, O1, 32768), '\$set_prolog_stack'(global, low, O2, O2), R = O1-O2"
+    ),   # low restored
+    (
+        "ss25",
+        "'\$set_prolog_stack'(trail, factor, O1, 4), '\$set_prolog_stack'(trail, factor, O2, O2), R = O1-O2"
+    ),   # factor set and read back
+    (
+        "ss26",
+        "'\$set_prolog_stack'(trail, factor, O1, 3), '\$set_prolog_stack'(trail, factor, O2, O2), R = O1-O2"
+    ),   # factor restored
+    (
+        "ss27",
+        "'\$set_prolog_stack'(trail, spare, O1, 300), '\$set_prolog_stack'(trail, spare, O2, O2), R = O1-O2"
+    ),   # trail spare set and read back
+    (
+        "ss28",
+        "'\$set_prolog_stack'(trail, spare, O1, 256), '\$set_prolog_stack'(trail, spare, O2, O2), R = O1-O2"
+    ),   # trail spare restored
+    (
+        "ss29",
+        "'\$set_prolog_stack'(global, spare, O1, 600), '\$set_prolog_stack'(global, spare, O2, O2), R = O1-O2"
+    ),   # global spare set and read back
+    (
+        "ss30",
+        "'\$set_prolog_stack'(global, spare, O1, 512), '\$set_prolog_stack'(global, spare, O2, O2), R = O1-O2"
+    ),   # global spare restored
+    (
+        "ss31",
+        "'\$set_prolog_stack'(argument, min_free, O1, 300), '\$set_prolog_stack'(argument, min_free, O2, O2), R = O1-O2"
+    ),   # argument min_free set and read back
+    (
+        "ss32",
+        "'\$set_prolog_stack'(argument, min_free, O1, 256), '\$set_prolog_stack'(argument, min_free, O2, O2), R = O1-O2"
+    ),   # argument min_free restored
     ("ss33", "'\$set_prolog_stack'(global, low, O, -1)"),   # a negative size
     ("ss34", "'\$set_prolog_stack'(global, factor, O, a)"),   # a non-integer factor
     ("ss35", "'\$set_prolog_stack'(trail, spare, O, foo)"),   # a non-integer spare
     ("ss36", "( '\$set_prolog_stack'(global, factor, 99, 3) -> R = yes ; R = no )"),   # the old value does not unify
     ("ss37", "'\$set_prolog_stack'(local, limit, O, foo)"),   # a limit that is no size
-    ("ss38", "'\$set_prolog_stack'(trail, min_free, O1, 300), '\$set_prolog_stack'(trail, min_free, O2, O2), '\$set_prolog_stack'(trail, min_free, _, O1), R = O1-O2"),   # trail min_free set, read back, restored
+    (
+        "ss38",
+        "'\$set_prolog_stack'(trail, min_free, O1, 300), '\$set_prolog_stack'(trail, min_free, O2, O2), '\$set_prolog_stack'(trail, min_free, _, O1), R = O1-O2"
+    ),   # trail min_free set, read back, restored
     ("os01", "q_sigs(1, 64, L), R = L"),   # the state of signals 1..64 (a foreign handler reports as foreign)
     ("os02", "q_sig(0, _, R)"),   # signal 0
     ("os03", "q_sig(65, _, R)"),   # signal 65
@@ -208,40 +241,100 @@ const _QX_CASES = [
     ("os16", "q_set(40, debug, O1), q_get(40, O2), R = O1-O2"),   # throw to debug
     ("os17", "q_set(40, q_handler, O1), q_get(40, O2), R = O1-O2"),   # debug to a predicate
     ("os18", "q_set(40, default, O1), q_get(40, O2), R = O1-O2"),   # a predicate back to default
-    ("os19", "q_set(41, q_handler, O1), '\$on_signal'(41, _, lists:O2, lists:O2), R = O1-O2"),   # a predicate read back in another module
-    ("os20", "'\$on_signal'(41, _, user:O1, q10_mod:q_other), '\$on_signal'(41, _, user:O2, user:O2), R = O1-O2"),   # a predicate of another module
+    (
+        "os19",
+        "q_set(41, q_handler, O1), '\$on_signal'(41, _, lists:O2, lists:O2), R = O1-O2"
+    ),   # a predicate read back in another module
+    (
+        "os20",
+        "'\$on_signal'(41, _, user:O1, q10_mod:q_other), '\$on_signal'(41, _, user:O2, user:O2), R = O1-O2"
+    ),   # a predicate of another module
     ("os21", "q_set(41, throw, O1), q_get(41, O2), q_set(41, default, O3), R = O1-O2-O3"),   # a predicate to throw to default
     ("os22", "q_set(42, default, O1), q_get(42, O2), R = O1-O2"),   # default to default: no change
-    ("os23", "q_get(15, O), q_set(15, O, _), q_get(15, O2), ( O == O2 -> R = same ; R = diff )"),   # a reported foreign handler restored
+    (
+        "os23",
+        "q_get(15, O), q_set(15, O, _), q_get(15, O2), ( O == O2 -> R = same ; R = diff )"
+    ),   # a reported foreign handler restored
     ("os24", "q_set(42, '\$foreign_function'(a), _)"),   # a foreign function that is no pointer
     ("os25", "q_set(42, 3, _)"),   # a new state that is an integer
     ("os26", "q_set(42, f(x), _)"),   # a new state that is a compound
     ("os27", "q_set(42, ignore, _), q_set(42, ignore, O), q_set(42, default, _), R = O"),   # ignore twice, then default
-    ("os28", "q_set(42, throw, _), q_set(42, ignore, O), q_get(42, O2), q_set(42, default, _), R = O-O2"),   # throw to ignore
+    (
+        "os28",
+        "q_set(42, throw, _), q_set(42, ignore, O), q_get(42, O2), q_set(42, default, _), R = O-O2"
+    ),   # throw to ignore
     ("os29", "'\$on_signal'(S, 'SIGTERM', user:O, user:O), R = S"),   # SIGTERM by name
     ("os30", "'\$on_signal'(S, 'SIGfoo', user:O, user:O), R = S"),   # an unknown SIG name
     ("pt01", "with_output_to(string(S), (current_output(O), '\$put_token'(O, ab))), R = S"),   # one atom
-    ("pt02", "with_output_to(string(S), (current_output(O), '\$put_token'(O, ab), '\$put_token'(O, cd))), R = S"),   # two alphanumeric tokens: a space between
-    ("pt03", "with_output_to(string(S), (current_output(O), '\$put_token'(O, +), '\$put_token'(O, +))), R = S"),   # two symbol-char tokens: a space between
-    ("pt04", "with_output_to(string(S), (current_output(O), '\$put_token'(O, ab), '\$put_token'(O, '+'))), R = S"),   # alphanumeric then symbol: none
-    ("pt05", "with_output_to(string(S), (current_output(O), '\$put_token'(O, ''), '\$put_token'(O, ab))), R = S"),   # the empty atom writes nothing
-    ("pt06", "with_output_to(string(S), (current_output(O), '\$put_token'(O, \"abc\"))), R = S"),   # a string
+    (
+        "pt02",
+        "with_output_to(string(S), (current_output(O), '\$put_token'(O, ab), '\$put_token'(O, cd))), R = S"
+    ),   # two alphanumeric tokens: a space between
+    (
+        "pt03",
+        "with_output_to(string(S), (current_output(O), '\$put_token'(O, +), '\$put_token'(O, +))), R = S"
+    ),   # two symbol-char tokens: a space between
+    (
+        "pt04",
+        "with_output_to(string(S), (current_output(O), '\$put_token'(O, ab), '\$put_token'(O, '+'))), R = S"
+    ),   # alphanumeric then symbol: none
+    (
+        "pt05",
+        "with_output_to(string(S), (current_output(O), '\$put_token'(O, ''), '\$put_token'(O, ab))), R = S"
+    ),   # the empty atom writes nothing
+    (
+        "pt06",
+        "with_output_to(string(S), (current_output(O), '\$put_token'(O, \"abc\"))), R = S"
+    ),   # a string
     ("pt07", "with_output_to(string(S), (current_output(O), '\$put_token'(O, _))), R = S"),   # an unbound token
     ("pt08", "with_output_to(string(S), (current_output(O), '\$put_token'(O, 42))), R = S"),   # an integer token
-    ("pt09", "with_output_to(string(S), (current_output(O), '\$put_token'(O, '\\u00e9\\u20ac'))), R = S"),   # a text that is not ISO Latin-1
-    ("pt10", "with_output_to(string(S), (current_output(O), '\$put_token'(O, '\\u00e9'))), R = S"),   # an ISO Latin-1 character above 127
-    ("pt11", "with_output_to(string(S), (current_output(O), '\$put_token'(O, a), '\$put_token'(O, '\\u00e9'))), R = S"),   # a letter, then a Latin-1 letter
+    (
+        "pt09",
+        "with_output_to(string(S), (current_output(O), '\$put_token'(O, '\\u00e9\\u20ac'))), R = S"
+    ),   # a text that is not ISO Latin-1
+    (
+        "pt10",
+        "with_output_to(string(S), (current_output(O), '\$put_token'(O, '\\u00e9'))), R = S"
+    ),   # an ISO Latin-1 character above 127
+    (
+        "pt11",
+        "with_output_to(string(S), (current_output(O), '\$put_token'(O, a), '\$put_token'(O, '\\u00e9'))), R = S"
+    ),   # a letter, then a Latin-1 letter
     ("pt12", "'\$put_token'(_, ab)"),   # an unbound stream
     ("pt13", "'\$put_token'(q10_no_stream, ab)"),   # an atom that is no stream
-    ("pt15", "with_output_to(string(S), (current_output(O), '\$put_token'(O, 1), '\$put_token'(O, 2))), R = S"),   # two digit tokens
-    ("pt16", "with_output_to(string(S), (current_output(O), put_char(O, x), '\$put_token'(O, y))), R = S"),   # after a character put by put_char/2
-    ("pt17", "with_output_to(string(S), (current_output(O), '\$put_token'(O, a), nl(O), '\$put_token'(O, b))), R = S"),   # after a newline
+    (
+        "pt15",
+        "with_output_to(string(S), (current_output(O), '\$put_token'(O, 1), '\$put_token'(O, 2))), R = S"
+    ),   # two digit tokens
+    (
+        "pt16",
+        "with_output_to(string(S), (current_output(O), put_char(O, x), '\$put_token'(O, y))), R = S"
+    ),   # after a character put by put_char/2
+    (
+        "pt17",
+        "with_output_to(string(S), (current_output(O), '\$put_token'(O, a), nl(O), '\$put_token'(O, b))), R = S"
+    ),   # after a newline
     ("pt18", "with_output_to(string(S), (current_output(O), '\$put_token'(O, []))), R = S"),   # the empty list
-    ("pt19", "with_output_to(string(S), (current_output(O), '\$put_token'(O, [0'a]))), R = S"),   # a code list
-    ("pt20", "with_output_to(string(S), (current_output(O), '\$put_token'(O, 'a b'), '\$put_token'(O, c))), R = S"),   # only the first and last character of the text matter
-    ("pt21", "with_output_to(string(S), (current_output(O), '\$put_token'(O, '\\''), '\$put_token'(O, '\\''))), R = S"),   # two quote characters
-    ("pt22", "with_output_to(string(S), (current_output(O), '\$put_token'(O, '('), '\$put_token'(O, a))), R = S"),   # a punctuation token, then a letter
-    ("pt23", "with_output_to(string(S), (current_output(O), '\$put_token'(O, abc))), '\$put_token'(user_error, ''), R = S"),   # the stream alias user_error with an empty text
+    (
+        "pt19",
+        "with_output_to(string(S), (current_output(O), '\$put_token'(O, [0'a]))), R = S"
+    ),   # a code list
+    (
+        "pt20",
+        "with_output_to(string(S), (current_output(O), '\$put_token'(O, 'a b'), '\$put_token'(O, c))), R = S"
+    ),   # only the first and last character of the text matter
+    (
+        "pt21",
+        "with_output_to(string(S), (current_output(O), '\$put_token'(O, '\\''), '\$put_token'(O, '\\''))), R = S"
+    ),   # two quote characters
+    (
+        "pt22",
+        "with_output_to(string(S), (current_output(O), '\$put_token'(O, '('), '\$put_token'(O, a))), R = S"
+    ),   # a punctuation token, then a letter
+    (
+        "pt23",
+        "with_output_to(string(S), (current_output(O), '\$put_token'(O, abc))), '\$put_token'(user_error, ''), R = S"
+    ),   # the stream alias user_error with an empty text
     ("cb01", "current_blob(foo, T), R = T"),   # a text atom: its type
     ("cb02", "current_blob([], T), R = T"),   # the empty list: reserved_symbol
     ("cb03", "( current_blob(\"s\", T) -> R = T ; R = no )"),   # a string is no blob
@@ -252,15 +345,30 @@ const _QX_CASES = [
     ("cb08", "( current_blob(foo, 1) -> R = yes ; R = no )"),   # an atom and a type that is no atom
     ("cb09", "current_blob(_, 1)"),   # a variable blob and a type that is no atom
     ("cb10", "current_blob(_, \"text\")"),   # a variable blob and a string type
-    ("cb11", "open_null_stream(S), ( current_blob(S2, stream), S2 == S -> R = yes ; R = no ), close(S)"),   # a stream is enumerated as a stream blob
-    ("cb12", "findall(X, current_blob(X, reserved_symbol), L), ( memberchk([], L) -> R = yes ; R = no )"),   # the reserved symbols include []
-    ("cb13", "findall(T, current_blob(_, T), Ts), sort(Ts, S), ( memberchk(text, S), memberchk(reserved_symbol, S) -> R = ok ; R = missing )"),   # the types enumerated include text and reserved_symbol
-    ("cb14", "atom_codes(A, \"q10_cb_atom_zz\"), ( current_blob(B, text), B == A -> R = yes ; R = no )"),   # a new text atom is enumerated
+    (
+        "cb11",
+        "open_null_stream(S), ( current_blob(S2, stream), S2 == S -> R = yes ; R = no ), close(S)"
+    ),   # a stream is enumerated as a stream blob
+    (
+        "cb12",
+        "findall(X, current_blob(X, reserved_symbol), L), ( memberchk([], L) -> R = yes ; R = no )"
+    ),   # the reserved symbols include []
+    (
+        "cb13",
+        "findall(T, current_blob(_, T), Ts), sort(Ts, S), ( memberchk(text, S), memberchk(reserved_symbol, S) -> R = ok ; R = missing )"
+    ),   # the types enumerated include text and reserved_symbol
+    (
+        "cb14",
+        "atom_codes(A, \"q10_cb_atom_zz\"), ( current_blob(B, text), B == A -> R = yes ; R = no )"
+    ),   # a new text atom is enumerated
     ("cb15", "( current_blob(X, q10_no_such_type) -> R = X ; R = no )"),   # a type no atom has
     ("cb16", "( current_blob(X, text), ! ), atom(X), R = ok"),   # cut after the first solution
     ("cb17", "( current_blob(X, T), X == [] -> R = T ; R = none )"),   # the type found from the atom
     ("cb18", "atom_codes(A, [0'q, 0x20ac]), current_blob(A, T), R = T"),   # a text atom with a wide character: ucs_text
-    ("cb19", "atom_codes(A, [0'q, 0x20ac, 0'z]), ( current_blob(B, ucs_text), B == A -> R = yes ; R = no )"),   # a wide atom is enumerated by its type
+    (
+        "cb19",
+        "atom_codes(A, [0'q, 0x20ac, 0'z]), ( current_blob(B, ucs_text), B == A -> R = yes ; R = no )"
+    ),   # a wide atom is enumerated by its type
     ("cb20", "( current_blob(_, []) -> R = yes ; R = no )")    # the empty list as the type
 ]
 
@@ -511,19 +619,45 @@ end
     for (id, _) in _QX_CASES
         @test any(l -> startswith(l, "t_$id "), _QX_PINNED)
     end
-    @test count(l -> startswith(l, "t_sh") && occursin("c" * _qx_codes("raised"), l), _QX_PINNED) == 3      # sh05, sh06, sh11
-    @test count(l -> startswith(l, "t_vr") && occursin("a" * _qx_codes("yes"), l), _QX_PINNED) >= 9          # the \\=@= rows that answer yes
+    @test count(
+        l -> startswith(l, "t_sh") && occursin("c" * _qx_codes("raised"), l), _QX_PINNED
+    ) == 3      # sh05, sh06, sh11
+    @test count(
+        l -> startswith(l, "t_vr") && occursin("a" * _qx_codes("yes"), l), _QX_PINNED
+    ) >= 9          # the \\=@= rows that answer yes
     @test any(l -> startswith(l, "t_sh11 ") && occursin(_qx_codes("signal"), l), _QX_PINNED)   # a child killed by signal 9
     @test any(l -> startswith(l, "t_ss17 ") && occursin("i1073741824", l), _QX_PINNED)         # the stack limit, 1 GiB in bytes
-    @test any(l -> startswith(l, "t_pt02 ") && occursin("s" * _qx_codes("ab cd"), l), _QX_PINNED)     # the space between two alphanumeric tokens
-    @test any(l -> startswith(l, "t_pt03 ") && occursin("s" * _qx_codes("+ +"), l), _QX_PINNED)       # and between two symbol characters
-    @test any(l -> startswith(l, "t_pt09 ") && occursin("a" * _qx_codes("encoding"), l), _QX_PINNED)  # a wide text: representation_error(encoding)
+    @test any(
+        l -> startswith(l, "t_pt02 ") && occursin("s" * _qx_codes("ab cd"), l), _QX_PINNED
+    )     # the space between two alphanumeric tokens
+    @test any(
+        l -> startswith(l, "t_pt03 ") && occursin("s" * _qx_codes("+ +"), l), _QX_PINNED
+    )       # and between two symbol characters
+    @test any(
+        l -> startswith(l, "t_pt09 ") && occursin("a" * _qx_codes("encoding"), l),
+        _QX_PINNED
+    )  # a wide text: representation_error(encoding)
     @test any(l -> startswith(l, "t_pt10 ") && occursin("s[233]", l), _QX_PINNED)                    # the Latin-1 byte 233 as the character 233
-    @test any(l -> startswith(l, "t_cb01 ") && occursin("a" * _qx_codes("text"), l), _QX_PINNED)          # the type of a text atom
-    @test any(l -> startswith(l, "t_cb02 ") && occursin("a" * _qx_codes("reserved_symbol"), l), _QX_PINNED)   # and of []
-    @test any(l -> startswith(l, "t_cb11 ") && occursin("a" * _qx_codes("yes"), l), _QX_PINNED)      # the enumeration finds a stream blob
-    @test any(l -> startswith(l, "t_cb18 ") && occursin("a" * _qx_codes("ucs_text"), l), _QX_PINNED) # a wide text atom has its own type
-    @test any(l -> startswith(l, "t_os01 ") && occursin("a" * _qx_codes("foreign"), l) && occursin("a" * _qx_codes("throw"), l), _QX_PINNED)
+    @test any(
+        l -> startswith(l, "t_cb01 ") && occursin("a" * _qx_codes("text"), l), _QX_PINNED
+    )          # the type of a text atom
+    @test any(
+        l -> startswith(l, "t_cb02 ") && occursin("a" * _qx_codes("reserved_symbol"), l),
+        _QX_PINNED
+    )   # and of []
+    @test any(
+        l -> startswith(l, "t_cb11 ") && occursin("a" * _qx_codes("yes"), l), _QX_PINNED
+    )      # the enumeration finds a stream blob
+    @test any(
+        l -> startswith(l, "t_cb18 ") && occursin("a" * _qx_codes("ucs_text"), l),
+        _QX_PINNED
+    ) # a wide text atom has its own type
+    @test any(
+        l ->
+            startswith(l, "t_os01 ") && occursin("a" * _qx_codes("foreign"), l) &&
+            occursin("a" * _qx_codes("throw"), l),
+        _QX_PINNED
+    )
 end
 
 @testset "the pins are swipl's (live, when swipl is on PATH)" begin
@@ -536,4 +670,3 @@ end
         @test _qx_swipl_lines(f, names) == _QX_PINNED
     end
 end
-

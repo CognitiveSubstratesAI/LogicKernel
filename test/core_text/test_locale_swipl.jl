@@ -163,7 +163,9 @@ end
     @test count(l -> occursin(_codes("type_error"), l), expected) >= 4
     @test count(l -> occursin(_codes("permission_error"), l), expected) >= 1
     @test count(l -> occursin(_codes("representation_error"), l), expected) >= 1
-    @test occursin(_codes("digit_group_size"), expected[findfirst(startswith("t2 "), expected)])
+    @test occursin(
+        _codes("digit_group_size"), expected[findfirst(startswith("t2 "), expected)]
+    )
     @test occursin(_codes("digit_groups"), expected[findfirst(startswith("t1 "), expected)])
     @test occursin(_codes("repeat"), expected[findfirst(startswith("t0 "), expected)])
     @test occursin(_codes("lc7b"), expected[findfirst(startswith("t7 "), expected)])

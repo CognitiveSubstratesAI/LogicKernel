@@ -286,15 +286,18 @@ const SIGH_MAX = 12
 # DIVERGES: the entries of the `signames` table that follow the OS signals (`prolog:atom_gc` …), here a table of their own; the
 # kernel's numbers are `SIG_PROLOG_OFFSET + VSIG_*`. `SIG_TUNE_GC` has no entry upstream either.
 const SIGNAMES_VIRTUAL = (
-    ("prolog:atom_gc", SIG_ATOM_GC), ("prolog:gc", SIG_GC), ("prolog:thread_signal", SIG_THREAD_SIGNAL),
-    ("prolog:clause_gc", SIG_CLAUSE_GC), ("prolog:abort", SIG_PLABORT), ("prolog:halt", SIG_PLHALT)
+    ("prolog:atom_gc", SIG_ATOM_GC), ("prolog:gc", SIG_GC),
+    ("prolog:thread_signal", SIG_THREAD_SIGNAL),
+    ("prolog:clause_gc", SIG_CLAUSE_GC), ("prolog:abort", SIG_PLABORT),
+    ("prolog:halt", SIG_PLHALT)
 )
 
 # PORT: pl-setup.c signames (the flags column)
 # DIVERGES: the OS signals that start with a flag, `(number, flags)`: `fpe`, `alrm`, `xcpu`, `xfsz`, `vtalrm` throw, `pipe` is
 # ignored (the other columns are 0).
 const SIGNAMES_FLAGS = (
-    (8, PLSIG_THROW), (13, PLSIG_IGNORE), (14, PLSIG_THROW), (24, PLSIG_THROW), (25, PLSIG_THROW), (26, PLSIG_THROW)
+    (8, PLSIG_THROW), (13, PLSIG_IGNORE), (14, PLSIG_THROW), (24, PLSIG_THROW),
+    (25, PLSIG_THROW), (26, PLSIG_THROW)
 )
 
 # PORT: pl-setup.c signal_index
@@ -589,7 +592,9 @@ end
 # DIVERGES: the call `get_meta_arg(arg, m, t)` the predicate makes with `t` the same reference as `arg` reads the argument first,
 # then overwrites `t`, as `_PL_get_arg` does here (`valPtr(w)` is taken before the slot is written).
 "Split the `Module:Term` term reference `arg` into `m` and `t`, or raise `type_error(meta_argument, Arg)` (pl-setup.c)."
-function get_meta_arg(ld::PL_local_data{T}, arg::term_t, m::term_t, t::term_t)::Bool where {T}
+function get_meta_arg(
+    ld::PL_local_data{T}, arg::term_t, m::term_t, t::term_t
+)::Bool where {T}
     if PL_is_functor(ld, arg, mk_sym(T, :(:)), 2)
         _PL_get_arg(ld, 1, arg, m)
         _PL_get_arg(ld, 2, arg, t)
@@ -656,7 +661,11 @@ function pl_on_signal4_va(
         if PL_unify_atom(ld, mold, modname)
             PL_unify_atom(ld, old, def.name) || return FFALSE
         else
-            PL_unify(ld, old, _message_term(ld, :(:), _err_atom(ld, modname), _err_atom(ld, def.name))) ||
+            PL_unify(
+                ld,
+                old,
+                _message_term(ld, :(:), _err_atom(ld, modname), _err_atom(ld, def.name))
+            ) ||
                 return FFALSE
         end
     elseif sh.handler != SIGH_NONE
@@ -664,7 +673,8 @@ function pl_on_signal4_va(
             PL_unify_atom(ld, old, mk_sym(T, :debug)) || return FFALSE
         else
             PL_unify(
-                ld, old, _message_term(ld, Symbol("\$foreign_function"), _err_int(ld, sh.handler))
+                ld, old,
+                _message_term(ld, Symbol("\$foreign_function"), _err_int(ld, sh.handler))
             ) || return FFALSE
         end
     end
@@ -710,7 +720,13 @@ function pl_on_signal4_va(
                 sh.predicate = nothing
                 return FTRUE
             end
-            throw(NotPortedError{T}(mk_sym(T, Symbol("\$foreign_function")), "a foreign handler function of the signal", "TH1"))
+            throw(
+                NotPortedError{T}(
+                    mk_sym(T, Symbol("\$foreign_function")),
+                    "a foreign handler function of the signal",
+                    "TH1"
+                )
+            )
         end
 
         return PL_error(ld, ERR_DOMAIN, mk_sym(T, :signal_handler), new) ? FTRUE : FFALSE
@@ -801,11 +817,22 @@ function pl_set_prolog_stack4_va(
         newlimit = PL_get_size_ex(ld, value)
         newlimit === nothing && return FFALSE
         newlimit == limit && return FTRUE
-        throw(NotPortedError{T}(mk_sym(T, :limit), "set_stack_limit (a changed stack limit)", "R2 F1b"))
+        throw(
+            NotPortedError{T}(
+                mk_sym(T, :limit), "set_stack_limit (a changed stack limit)", "R2 F1b"
+            )
+        )
     end
     if key == sym_key(mk_sym(T, :spare))
-        spare = which == 1 ? ld.local_def_spare : which == 2 ? ld.global_def_spare :
-            which == 3 ? ld.trail_def_spare : stack.def_spare
+        spare = if which == 1
+            ld.local_def_spare
+        elseif which == 2
+            ld.global_def_spare
+        elseif which == 3
+            ld.trail_def_spare
+        else
+            stack.def_spare
+        end
         PL_unify_int64(ld, old, spare) || return FFALSE
         v = PL_get_size_ex(ld, value)
         v === nothing && return FFALSE

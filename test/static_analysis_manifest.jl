@@ -2041,7 +2041,8 @@ function _manifest_index(T)
         [
             (f, Tuple{LD, Int, Int, LK.foreign_context{T}}, false) for f in (
                 LK.pl_getenv2_va, LK.pl_setenv2_va, LK.pl_unsetenv1_va, LK.pl_get_time1_va,
-                LK.pl_sleep1_va, LK.pl_statistics2_va, LK.pl_delete_file1_va, LK.pl_shell2_va    # (Q10)
+                LK.pl_sleep1_va, LK.pl_statistics2_va, LK.pl_delete_file1_va,
+                LK.pl_shell2_va    # (Q10)
             )
         ]...,
         (LK._sys_chars, Tuple{LD, Int}, false),
@@ -2073,14 +2074,19 @@ function _manifest_index(T)
         (LK.get_taia, Tuple{LD, Int, Vector{UInt64}}, false),
         (LK.get_tz_arg, Tuple{LD, Int, Int, Int, LK.ftm}, false),
         [
-            (f, Tuple{LD, Int, Int, Int}, false) for f in (LK.get_int_arg, LK.get_voff_arg, LK.get_dst_arg)
+            (f, Tuple{LD, Int, Int, Int}, false) for
+            f in (LK.get_int_arg, LK.get_voff_arg, LK.get_dst_arg)
         ]...,
         (LK.get_v_float_arg, Tuple{LD, Int, Int, Int, Base.RefValue{Bool}, Float64}, false),
         (LK.get_v_int_arg, Tuple{LD, Int, Int, Int, Base.RefValue{Bool}, Int}, false),
         (LK._get_date9, Tuple{LD, Int, Int, LK.ftm}, false),
         (LK._ftm_fixup, Tuple{LD, Int, Int, LK.ftm, Bool}, false),
         (LK.get_ftm, Tuple{LD, Int}, false),
-        (LK._unify_date9, Tuple{LD, Int, Int, Int, Int, Int, Int, Float64, Int, String, String}, false),
+        (
+            LK._unify_date9,
+            Tuple{LD, Int, Int, Int, Int, Int, Int, Float64, Int, String, String},
+            false
+        ),
         [
             (f, Tuple{LD, Int, Int, LK.foreign_context{T}}, false) for f in (
                 LK.pl_format_time3_va, LK.pl_format_time4_va
@@ -2089,17 +2095,26 @@ function _manifest_index(T)
         (LK.pl_format_time, Tuple{LD, Int, Int, Int, Bool}, false),
         (LK.fmt_domain_error, Tuple{LD, String, Int}, false),
         (LK.fmt_not_implemented, Tuple{LD, Int}, false),
-        (LK.format_time, Tuple{LD, LK.IOSTREAM, Vector{Int}, LK.ftm, Bool, Vector{UInt64}}, false),
+        (
+            LK.format_time,
+            Tuple{LD, LK.IOSTREAM, Vector{Int}, LK.ftm, Bool, Vector{UInt64}},
+            false
+        ),
         (LK._atom_is, Tuple{T, String}, false),
         # CT1 LOCALE — locale_create/3, locale_property/2, locale_destroy/1, set_locale/1, current_locale/1 (src/os/pl-locale.jl; pl-locale.c)
         [
             (f, Tuple{LD, Int, Int, LK.foreign_context{T}}, false) for f in (
-                LK.pl_locale_property2_va, LK.pl_locale_create3_va, LK.pl_locale_destroy1_va,
+                LK.pl_locale_property2_va, LK.pl_locale_create3_va,
+                LK.pl_locale_destroy1_va,
                 LK.pl_set_locale1_va, LK.pl_current_locale1_va
             )
         ]...,
         (LK.init_locale_strings!, Tuple{LK.PL_locale_rec{T}, Nothing}, false),
-        (LK.init_locale_strings!, Tuple{LK.PL_locale_rec{T}, NTuple{3, Vector{UInt8}}}, false),
+        (
+            LK.init_locale_strings!,
+            Tuple{LK.PL_locale_rec{T}, NTuple{3, Vector{UInt8}}},
+            false
+        ),
         (LK.fill_locale_from_name!, Tuple{LK.PL_locale_rec{T}, String}, false),
         (LK.new_locale, Tuple{Type{T}, Nothing}, false),
         (LK.new_locale, Tuple{Type{T}, LK.PL_locale_rec{T}}, false),
@@ -2114,13 +2129,22 @@ function _manifest_index(T)
         (LK._loc_atoms_equal, Tuple{T, T}, false),
         (LK._locale_table_index, Tuple{LK.PL_global_data{T}, T}, false),
         (LK._locale_lookup, Tuple{LK.PL_global_data{T}, T}, false),
-        (LK._alias_locale_table!, Tuple{LK.PL_global_data{T}, LK.PL_locale_rec{T}, T}, false),
+        (
+            LK._alias_locale_table!,
+            Tuple{LK.PL_global_data{T}, LK.PL_locale_rec{T}, T},
+            false
+        ),
         (LK.alias_locale, Tuple{LK.PL_global_data{T}, LD, LK.PL_locale_rec{T}, T}, false),
         (LK._locale_blob_ref, Tuple{LK.PL_global_data{T}, T}, false),
         (LK._locale_serial!, Tuple{LK.PL_global_data{T}, LK.PL_locale_rec{T}}, false),
-        (LK.unifyLocale, Tuple{LK.PL_global_data{T}, LD, Int, LK.PL_locale_rec{T}, Bool}, false),
+        (
+            LK.unifyLocale,
+            Tuple{LK.PL_global_data{T}, LD, Int, LK.PL_locale_rec{T}, Bool},
+            false
+        ),
         [
-            (f, Tuple{LK.PL_global_data{T}, LD, Int}, false) for f in (LK.getLocale, LK.getLocaleEx)
+            (f, Tuple{LK.PL_global_data{T}, LD, Int}, false) for
+            f in (LK.getLocale, LK.getLocaleEx)
         ]...,
         [
             (f, Tuple{LD, LK.PL_locale_rec{T}, Int}, false) for f in (
@@ -2584,8 +2608,16 @@ function _manifest_index(T)
         (LK.pl_depth_limit_except3_va, Tuple{LD, Int, Int, LK.foreign_context{T}}, false),
         (LK.pl_inference_limit2_va, Tuple{LD, Int, Int, LK.foreign_context{T}}, false),
         (LK.pl_inference_limit_true3_va, Tuple{LD, Int, Int, LK.foreign_context{T}}, false),
-        (LK.pl_inference_limit_false1_va, Tuple{LD, Int, Int, LK.foreign_context{T}}, false),
-        (LK.pl_inference_limit_except3_va, Tuple{LD, Int, Int, LK.foreign_context{T}}, false),
+        (
+            LK.pl_inference_limit_false1_va,
+            Tuple{LD, Int, Int, LK.foreign_context{T}},
+            false
+        ),
+        (
+            LK.pl_inference_limit_except3_va,
+            Tuple{LD, Int, Int, LK.foreign_context{T}},
+            false
+        ),
         (LK.pl_urgent_exception3_va, Tuple{LD, Int, Int, LK.foreign_context{T}}, false),
         (LK.unify_det, Tuple{LD, Int}, false),
         (LK.unify_depth, Tuple{LD, Int, Int}, false),
@@ -3076,7 +3108,8 @@ _index_entry_points(T) = (
         (f, Tuple{LK.PL_local_data{T}, Int, Int, LK.foreign_context{T}}, false) for
         f in (
             LK.pl_atomic_list_concat3_va, LK.pl_atomic_list_concat2_va,
-            LK.pl_atomics_to_string3_va, LK.pl_atomics_to_string2_va, LK.pl_sub_atom5_va,
+            LK.pl_atomics_to_string3_va, LK.pl_atomics_to_string2_va,
+            LK.pl_sub_atom5_va,
             LK.pl_seek_list4_va, LK.pl_sub_atom_icasechk3_va                  # P2b
         )
     ]...,
@@ -3543,8 +3576,10 @@ _manifest_bisim(T) = begin
         (LK.do_automaton_minimal, Tuple{LD, Int, Int, Int}, false),
         [
             (f, Tuple{LD, Int, Int, LK.foreign_context{T}}, false) for f in (
-                LK.pl_term_minimal2_va, LK.pl_term_canonical_form2_va, LK.pl_term_factorized3_va,
-                LK.pl_term_factorized4_va, LK.pl_term_automaton2_va, LK.pl_automaton_minimal2_va,
+                LK.pl_term_minimal2_va, LK.pl_term_canonical_form2_va,
+                LK.pl_term_factorized3_va,
+                LK.pl_term_factorized4_va, LK.pl_term_automaton2_va,
+                LK.pl_automaton_minimal2_va,
                 LK.pl_automaton_minimal3_va
             )
         ]...
@@ -3595,7 +3630,8 @@ _manifest_coverage(T) = begin
         (LK.ld_coverage{T}, Tuple{}, false),
         [
             (f, Tuple{LD, Int, Int, LK.control_t{T}}, false) for f in (
-                LK.pl_cov_data3_va, LK.pl_cov_add3_va, LK.pl_cov_reset0_va, LK.pl_cov_start1_va,
+                LK.pl_cov_data3_va, LK.pl_cov_add3_va, LK.pl_cov_reset0_va,
+                LK.pl_cov_start1_va,
                 LK.pl_cov_stop1_va, LK.pl_cov_active1_va
             )
         ]...
@@ -3645,7 +3681,11 @@ _manifest_prof(T) = begin
         (LK.profile!, Tuple{LD, Int}, false),
         (LK.call_node{T}, Tuple{Union{Nothing, DEF}, Int}, false),
         (LK.node_sum{T}, Tuple{}, false),
-        (LK.prof_ref{T}, Tuple{Int, Union{Nothing, DEF}, Int, Int, Int, Int, Int, Int, Int}, false),
+        (
+            LK.prof_ref{T},
+            Tuple{Int, Union{Nothing, DEF}, Int, Int, Int, Int, Int, Int, Int},
+            false
+        ),
         (LK.ld_profile{T}, Tuple{}, false),
         # the second half of pl-prof.c: the clocks (named refusals), the charge functions and the tree builders
         (LK.prof_clock, Tuple{LD}, false),
@@ -3673,8 +3713,10 @@ _manifest_prof(T) = begin
         (LK.PL_prof_exit, Tuple{LD, Int}, false),
         [
             (f, Tuple{LD, Int, Int, LK.control_t{T}}, false) for f in (
-                LK.pl_prof_sibling_of2_va, LK.pl_prof_node8_va, LK.pl_prof_procedure_data8_va,
-                LK.pl_prof_statistics8_va, LK.pl_reset_profiler0_va, LK.pl_profiler2_va, LK.pl_profile4_va,
+                LK.pl_prof_sibling_of2_va, LK.pl_prof_node8_va,
+                LK.pl_prof_procedure_data8_va,
+                LK.pl_prof_statistics8_va, LK.pl_reset_profiler0_va, LK.pl_profiler2_va,
+                LK.pl_profile4_va,
                 LK.pl_prof_exact_ok1_va, LK.pl_prof_clock_cost1_va
             )
         ]...
@@ -3682,7 +3724,7 @@ _manifest_prof(T) = begin
 end
 _manifest_prof_plain() = (
     (LK.ld_profile_clock, Tuple{}, false),
-    (LK._llround, Tuple{Float64}, false),
+    (LK._llround, Tuple{Float64}, false)
 )
 
 # LANE F — pl-zip.c (src/pl-zip.jl): the argument checks of the zip predicates, every minizip call a named refusal (ZIP1): the
@@ -3699,7 +3741,8 @@ _manifest_zip(T) = begin
                 LK.pl_zip_open_stream3_va, LK.pl_zip_clone2_va, LK.pl_zip_close2_va,
                 LK.pl_zip_lock1_va, LK.pl_zip_unlock1_va,
                 LK.pl_zipper_open_new_file_in_zip4_va, LK.pl_zipper_goto2_va,
-                LK.pl_zipper_open_current3_va, LK.pl_zip_file_info3_va, LK.pl_rc_handle1_va
+                LK.pl_zipper_open_current3_va, LK.pl_zip_file_info3_va,
+                LK.pl_rc_handle1_va
             )
         ]...
     )
