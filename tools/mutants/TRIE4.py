@@ -59,8 +59,13 @@ def m(id, old, new, targets=TT, file=F, eq=None):
     return d
 
 
-def try_entry(label):
-    """(old, new) of a T_TRY_* entry in src/pl-wam.jl: the choice point resumes one code too far."""
+def try_entry(label, outlined=False):
+    """(old, new) of a T_TRY_* entry in src/pl-wam.jl: the choice point resumes one code too far. An outlined entry (T27) passes
+    `tt_skip` to `_vmi_t_try!`, which makes the choice point at `PC + tt_skip`."""
+    if outlined:
+        head = (f"    @label {label}\n    tt_skip = Int(PCc[PC])                          # intptr_t skip = *PC++\n    PC += 1\n"
+                f"    ts_st = _vmi_t_try!(ld, QID, FR, ARGP, PCc, PCl, PC, tt_skip)")
+        return head, head.replace("PC, tt_skip)", "PC, tt_skip + 1)")
     head = (f"    @label {label}\n    tt_skip = Int(PCc[PC])                          # intptr_t skip = *PC++\n    PC += 1\n"
             f"    @ENSURE_LOCAL_SPACE(SIZEOF_CHOICE)\n    _trie_try!(ld, FR, PC + tt_skip)")
     return head, head.replace("PC + tt_skip", "PC + tt_skip + 1")
@@ -202,11 +207,11 @@ MUTANTS = [
       "    @label T_VALUE\n    _trie_unwind_argp!(ld, FR)                      # UnwindTrieArgP()", "    @label T_VALUE\n    nothing                                         # UnwindTrieArgP()", file=W),
     # ---- the T_TRY_* entries: the jump distance of the choice point (the label's lines are unique)
     m("TR4-Y1 T_TRY_FUNCTOR: the choice point resumes one code too far (KILL TC t0: f(2) after f(1))",
-      *try_entry("T_TRY_FUNCTOR"), file=W),
+      *try_entry("T_TRY_FUNCTOR", outlined=True), file=W),
     m("TR4-Y2 T_TRY_VAR: the choice point resumes one code too far (KILL TC t6, t34)",
-      *try_entry("T_TRY_VAR"), file=W),
+      *try_entry("T_TRY_VAR", outlined=True), file=W),
     m("TR4-Y3 T_TRY_ATOM: the choice point resumes one code too far (KILL TC t11, t12)",
-      *try_entry("T_TRY_ATOM"), file=W),
+      *try_entry("T_TRY_ATOM", outlined=True), file=W),
     # ---- T_FUNCTOR, T_POP, T_POPN, T_VAR, T_STRING, t_const, T_CHECKWAKEUP
     m("TR4-F1 T_FUNCTOR: any compound matches (KILL TC t2, t30: f(X) against g(a))",
       "        if ld.gstack[valPtr(tf_w)] == tf_f          # if ( term->definition == f )", "        if true                                     # if ( term->definition == f )", file=W),

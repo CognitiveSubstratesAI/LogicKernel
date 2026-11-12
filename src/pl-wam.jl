@@ -256,11 +256,15 @@ end
 # reference to cell `i`. Upstream trails the frame cells themselves (`TrailAssignment`); a slot of the kernel is not trailed, a
 # global cell is (`TrailAssignment!`). The cells are older than every T_TRY_* choice point of the clause.
 "The global cell of the trie state word `i` (0: TrieTermP, 1: TrieOffset, 2: TrieArgStackP, 3: TrieSavedP) of frame `fr`."
-@inline _trie_state_cell(ld::PL_local_data, fr::Int, i::Int)::Int =
+Base.@constprop :none @inline _trie_state_cell(
+    ld::PL_local_data, @nospecialize(fr::Int), @nospecialize(i::Int)
+)::Int =
     unRef(ld.slots[argFrameP(ld.frames[fr].base, TRIE_ARGS + i) + 1])
 
 "Restore the TrieOffset word of the trie frame `fr` from a choice point (pl-vmi.c:6694, :6865: `*TrieOffset = ...trie_offset`)."
-@inline function _trie_set_offset!(ld::PL_local_data, fr::Int, w::word)::Nothing
+@inline Base.@constprop :none function _trie_set_offset!(
+    ld::PL_local_data, @nospecialize(fr::Int), @nospecialize(w::word)
+)::Nothing
     ld.gstack[_trie_state_cell(ld, fr, 1)] = w
     return nothing
 end
@@ -270,13 +274,17 @@ end
 # unbound variable, so T_TRIE_GEN2/3 give each such slot a reference to a fresh global cell (`_slot_new_var!`) and the
 # instructions read and bind that cell, the variable `*vp` stands for.
 "The global cell of the trie clause variable `n` (1..) of frame `fr` (pl-vmi.c `TrieVarP`)."
-@inline _trie_var_cell(ld::PL_local_data, fr::Int, n::Int)::Int =
+Base.@constprop :none @inline _trie_var_cell(
+    ld::PL_local_data, @nospecialize(fr::Int), @nospecialize(n::Int)
+)::Int =
     unRef(ld.slots[argFrameP(ld.frames[fr].base, TRIE_VAR_OFFSET - 1 + n) + 1])
 
 # PORT: pl-vmi.c TrieCurrentP as _trie_current
 # DIVERGES: a global POSITION; `argTermP(*TrieTermP, valInt(*TrieOffset)-1)` is `valPtr + valInt` (the functor cell first).
 "The global position of the current location of the trie frame `fr` (pl-vmi.c `TrieCurrentP`)."
-@inline function _trie_current(ld::PL_local_data, fr::Int)::Int
+@inline Base.@constprop :none function _trie_current(
+    ld::PL_local_data, @nospecialize(fr::Int)
+)::Int
     t = ld.gstack[_trie_state_cell(ld, fr, 0)]
     isRef(t) && return unRef(t)                     # isRef(*TrieTermP) ? unRef(*TrieTermP)
     return valPtr(t) + Int(valInt(ld.gstack[_trie_state_cell(ld, fr, 1)]))
@@ -295,7 +303,9 @@ end
 # functor word, so a non-variable value finds no match. The reason: reading a stack cell above the top has no defined value in the
 # kernel's stack. Documented in docs/architecture.md (TAB1 TR4, item 11); no row can pin it.
 "The current location of the trie frame `fr`, dereferenced (pl-vmi.c `deRef2(TrieCurrentP, k)`): `(kind, word, position)`."
-@inline function _trie_deref_current(ld::PL_local_data, fr::Int)::Tuple{UInt8, word, Int}
+@inline Base.@constprop :none function _trie_deref_current(
+    ld::PL_local_data, @nospecialize(fr::Int)
+)::Tuple{UInt8, word, Int}
     p = _trie_current(ld, fr)
     p > ld.gTop &&                                  # past `+(Key)` and above gTop
         return (DU_WORD, ld.gstack[valPtr(ld.gstack[_trie_state_cell(ld, fr, 0)])], p)
@@ -307,7 +317,9 @@ end
 # PORT: pl-vmi.c TrieSaveState as _trie_save_state!
 # DIVERGES: `(void*)BFR > (void*)FR` compares the records' positions; `consTermRef(BFR)` is the choice point's position.
 "Trail TrieTermP, TrieArgStackP and TrieSavedP once per choice point younger than the trie frame `fr` (pl-vmi.c `TrieSaveState`)."
-function _trie_save_state!(ld::PL_local_data, fr::Int)::Nothing
+Base.@constprop :none function _trie_save_state!(
+    ld::PL_local_data, @nospecialize(fr::Int)
+)::Nothing
     b = ld.BFR
     if b != 0 && ld.choices[b].base > ld.frames[fr].base
         id = consInt(ld.choices[b].base)            # consInt(consTermRef(BFR))
@@ -324,7 +336,9 @@ end
 
 # PORT: pl-vmi.c TrieNextArg as _trie_next_arg!
 "Step the TrieOffset word of the trie frame `fr` to the next argument (pl-vmi.c `TrieNextArg`)."
-@inline function _trie_next_arg!(ld::PL_local_data, fr::Int)::Nothing
+@inline Base.@constprop :none function _trie_next_arg!(
+    ld::PL_local_data, @nospecialize(fr::Int)
+)::Nothing
     o = _trie_state_cell(ld, fr, 1)
     ld.gstack[o] = consInt(Int(valInt(ld.gstack[o])) + 1)  # *TrieOffset = consInt(valInt(*TrieOffset)+1)
     return nothing
@@ -343,7 +357,9 @@ end
 # PORT: pl-vmi.c TriePushArgP as _trie_push_argp!
 # DIVERGES: the four cells from `allocGlobalCells!` (`gTop += 4`); no `gMax` assert (the stacks grow on demand).
 "Push TrieTermP, TrieOffset and TrieArgStackP of the trie frame `fr` as a `'\$targp'/3` cell (pl-vmi.c `TriePushArgP`)."
-function _trie_push_argp!(ld::PL_local_data, fr::Int)::Nothing
+Base.@constprop :none function _trie_push_argp!(
+    ld::PL_local_data, @nospecialize(fr::Int)
+)::Nothing
     t = _trie_state_cell(ld, fr, 0)
     @assert _is_gcompound(ld.gstack[t]) "TriePushArgP: TrieTermP is no compound"   # assert(isTerm(*TrieTermP))
     _trie_save_state!(ld, fr)
@@ -359,7 +375,9 @@ end
 
 # PORT: pl-vmi.c TriePopArgP as _trie_pop_argp!
 "Pop TrieTermP, TrieOffset and TrieArgStackP of the trie frame `fr` from its `'\$targp'/3` cell (pl-vmi.c `TriePopArgP`)."
-function _trie_pop_argp!(ld::PL_local_data, fr::Int)::Nothing
+Base.@constprop :none function _trie_pop_argp!(
+    ld::PL_local_data, @nospecialize(fr::Int)
+)::Nothing
     s = _trie_state_cell(ld, fr, 2)
     a = valPtr(ld.gstack[s])                        # _astack = valPtr(*TrieArgStackP)
     @assert ld.gstack[a] == _functor_targp3(ld) "TriePopArgP: no '\$targp'/3 cell"
@@ -371,7 +389,9 @@ end
 
 # PORT: pl-vmi.c UnwindTrieArgP as _trie_unwind_argp!
 "Unwind the `'\$targp'/3` stack of the trie frame `fr` to the outer term (pl-vmi.c `UnwindTrieArgP`)."
-function _trie_unwind_argp!(ld::PL_local_data, fr::Int)::Nothing
+Base.@constprop :none function _trie_unwind_argp!(
+    ld::PL_local_data, @nospecialize(fr::Int)
+)::Nothing
     s = _trie_state_cell(ld, fr, 2)
     if ld.gstack[s] != ld.atom_nil_w                # if ( *TrieArgStackP != ATOM_nil )
         _trie_save_state!(ld, fr)
@@ -391,7 +411,9 @@ end
 # PORT: pl-vmi.c TRIE_TRY as _trie_try!
 # DIVERGES: the choice point's `value.pc` is an index into the clause's code (as `C_OR`'s); `skip` is read by the caller.
 "Create the CHP_JUMP choice point of a T_TRY_* instruction of the trie frame `fr`, resuming at `pc` (pl-vmi.c `TRIE_TRY`)."
-function _trie_try!(ld::PL_local_data, fr::Int, pc::Int)::Nothing
+Base.@constprop :none function _trie_try!(
+    ld::PL_local_data, @nospecialize(fr::Int), @nospecialize(pc::Int)
+)::Nothing
     ch = newChoice(ld, CHP_JUMP, fr)                # ch = newChoice(CHP_JUMP, FR)
     setJumpChoice!(ld, ch, pc)                      # ch->value.jump.pc = PC+skip
     ld.choices[ch].trie_offset = ld.gstack[_trie_state_cell(ld, fr, 1)]    # ch->value.jump.trie_offset = *TrieOffset
@@ -1952,6 +1974,299 @@ macro ENSURE_GLOBAL_SPACE(n)
     )
 end
 
+# ── the T_* instruction bodies, outlined from the run loop (T27, audit D-0563) ───────────────────
+# ORIGINAL (T27): the code each of pl-vmi.c's compiled-trie instructions runs (:6134-6662 at 18168e62) is a `@noinline` function,
+# each called from its own label of `PL_next_solution_guarded`; the labels, their order, their `# PORT:` markers and the operand
+# reads (`*PC++`) stay in the run loop. MEASURED (evidence/EVID/sa3_diag3.md): JET's time on the run loop grows with the
+# statements of that one function, and the ~27 T_* bodies inline cost x1.53 of the static analysis. Each body is moved as it
+# was — its statements, its variable names, the run loop's register names (`QID`, `FR`, `ARGP`, `PCc`, `PCl`, `PC`) as
+# arguments where a macro of the loop reads them — and returns the exit it took as a status the loop's `t_status` label
+# dispatches on: `_TS_NEXT` (`next_instruction`, or the label's own successor), `_TS_UNIFY_BACKTRACK` (CLAUSE_FAILED),
+# `_TS_THROW` (THROW_EXCEPTION). The `@ENSURE_*_SPACE` macros keep their `@goto b_throw`: a body using one ends with that label.
+# DIVERGES (representation): `@SAVE_REGISTERS`/`@LOAD_REGISTERS` inside a body load the registers into the body's arguments,
+# not the loop's locals; they are the values saved (nothing between writes a query's `registers_*` but its own
+# `_save_registers!`, and positions are indices: no stack shift moves them), so the loop's `FR`, `ARGP`, `PCc`, `PCl` and
+# `PC` are what `LOAD_REGISTERS` would have given it.
+const _TS_NEXT = 0
+const _TS_UNIFY_BACKTRACK = 1
+const _TS_THROW = 2
+
+# ORIGINAL (T27): pl-vmi.c TRIE_TRY's T_TRY_* head (:6249, :6389, :6482, :6493, :6504, :6552, :6563, :6595, :6609 at 18168e62), outlined.
+# `tt_skip` is `*PC++`, read by the label; `PC` is the loop's after that read.
+"The body of a T_TRY_* instruction: `ENSURE_LOCAL_SPACE(SIZEOF_CHOICE)` and `TRIE_TRY` (pl-vmi.c); a `_TS_*` status."
+@noinline Base.@constprop :none function _vmi_t_try!(
+    ld::PL_local_data{T},
+    @nospecialize(QID::Int),
+    @nospecialize(FR::Int),
+    ARGP::argp_t{T},
+    @nospecialize(PCc::Vector{code}),
+    PCl::Vector{T},
+    @nospecialize(PC::Int),
+    @nospecialize(tt_skip::Int)
+)::Int where {T}
+    @ENSURE_LOCAL_SPACE(SIZEOF_CHOICE)
+    _trie_try!(ld, FR, PC + tt_skip)                # TRIE_TRY
+    return _TS_NEXT
+    @label b_throw                                  # ENSURE_LOCAL_SPACE's THROW_EXCEPTION
+    return _TS_THROW
+end
+
+# ORIGINAL (T27): the body pl-vmi.c T_TRIE_GEN2 and T_TRIE_GEN3 share (:6134-6199 at 18168e62; the run loop's `t_trie_gen`),
+# outlined; `tg_base` is the frame's position, `tg_ar` the arity of `+/n`, `nil_w` the run loop's word of `[]`. Its notes are
+# at the labels T_TRIE_GEN2 and t_trie_gen.
+"The body of T_TRIE_GEN2/3 (pl-vmi.c) for the trie frame `FR`: a `_TS_*` status."
+@noinline Base.@constprop :none function _vmi_t_trie_gen!(
+    ld::PL_local_data{T},
+    @nospecialize(QID::Int),
+    @nospecialize(FR::Int),
+    ARGP::argp_t{T},
+    @nospecialize(PCc::Vector{code}),
+    PCl::Vector{T},
+    @nospecialize(PC::Int),
+    @nospecialize(tg_base::Int),
+    @nospecialize(tg_ar::Int),
+    @nospecialize(nil_w::word)
+)::Int where {T}
+    tg_nvars =
+        Int(((ld.frames[FR].clause::ClauseRef{T}).clause::Clause{T}).prolog_vars) -
+        TRIE_VAR_OFFSET
+    @ENSURE_GLOBAL_SPACE(4 + tg_nvars + 1 + tg_ar)
+    tg_s = allocGlobalCells!(ld, 4)                 # the four state cells
+    ld.gstack[tg_s] = nil_w                         # *TrieTermP = ATOM_nil
+    ld.gstack[tg_s + 1] = consInt(1)                # *TrieOffset = consInt(1)
+    ld.gstack[tg_s + 2] = nil_w                     # *TrieArgStackP = ATOM_nil
+    ld.gstack[tg_s + 3] = consInt(-1)               # *TrieSavedP = consInt(-1)
+    for tg_i in 0:3
+        ld.slots[argFrameP(tg_base, TRIE_ARGS + tg_i) + 1] = makeRefG(tg_s + tg_i)
+    end
+    for tg_i in 1:tg_nvars                          # for( ; nvars-- > 0; vp++) setVar(*vp)
+        _slot_new_var!(ld, argFrameP(tg_base, TRIE_VAR_OFFSET - 1 + tg_i) + 1)
+    end
+    tg_ap = _alloc_compound!(ld, _functor_plus(ld, tg_ar), tg_ar)  # ap[0] = FUNCTOR_plus1/2; setVar(ap[1..])
+    for tg_i in 1:tg_ar                             # unify_ptrs(&ap[i], argFrameP(FR, i), 0)
+        unify_ptrs_cells(ld, tg_ap + tg_i, -(argFrameP(tg_base, tg_i) + 1))
+    end
+    ld.gstack[tg_s] = consPtr(tg_ap, TAG_COMPOUND | STG_GLOBAL)    # *TrieTermP = consCompound(ap)
+    return _TS_NEXT                     # (next_instruction)
+    @label b_throw                                  # ENSURE_GLOBAL_SPACE's THROW_EXCEPTION
+    return _TS_THROW
+end
+
+# ORIGINAL (T27): the body of pl-vmi.c T_FUNCTOR (:6254-6304 at 18168e62), outlined; `tf_f` is the operand `f`, read by the
+# label. Its port notes are at the label T_FUNCTOR.
+"The body of T_FUNCTOR (pl-vmi.c) for the trie frame `FR` and the functor word `tf_f`: a `_TS_*` status."
+@noinline Base.@constprop :none function _vmi_t_functor!(
+    ld::PL_local_data{T},
+    @nospecialize(QID::Int),
+    @nospecialize(FR::Int),
+    ARGP::argp_t{T},
+    @nospecialize(PCc::Vector{code}),
+    PCl::Vector{T},
+    @nospecialize(PC::Int),
+    @nospecialize(tf_f::word)
+)::Int where {T}
+    tf_k, tf_w, tf_p = _trie_deref_current(ld, FR)  # deRef2(TrieCurrentP, p)
+    if tf_k == DU_CELL || tf_k == DU_ATTVAR         # if ( canBind(*p) )
+        tf_ar = arityFunctor(ld.functors, tf_f)
+        @ENSURE_GLOBAL_SPACE(1 + tf_ar + 4 + 6)     # 4 extra for the '$targp'/3 cell
+        tf_ap = allocGlobalCells!(ld, 1 + tf_ar)    # ap = gTop; gTop += 1+arity
+        tf_c = consPtr(tf_ap, TAG_COMPOUND | STG_GLOBAL)   # c = consCompound(ap)
+        _trie_push_argp!(ld, FR)                    # TriePushArgP()
+        ld.gstack[_trie_state_cell(ld, FR, 0)] = tf_c      # *TrieTermP = c
+        ld.gstack[_trie_state_cell(ld, FR, 1)] = consInt(1)   # *TrieOffset = consInt(1)
+        ld.gstack[tf_ap] = tf_f                     # *ap++ = f; the arguments are unbound (allocGlobalCells!)
+        bindConst(ld, tf_p, tf_c)                   # bindConst(p, c)
+        return _TS_NEXT                     # (next_instruction)
+    end
+    if tf_k == DU_WORD && _is_gcompound(tf_w)       # if ( isTerm(*p) )
+        if ld.gstack[valPtr(tf_w)] == tf_f          # if ( term->definition == f )
+            @ENSURE_GLOBAL_SPACE(4)
+            _trie_push_argp!(ld, FR)                # TriePushArgP()
+            ld.gstack[_trie_state_cell(ld, FR, 0)] = tf_w      # *TrieTermP = *p
+            ld.gstack[_trie_state_cell(ld, FR, 1)] = consInt(1)   # *TrieOffset = consInt(1)
+            return _TS_NEXT                     # (next_instruction)
+        end
+    end
+    return _TS_UNIFY_BACKTRACK                      # CLAUSE_FAILED
+    @label b_throw                                  # ENSURE_GLOBAL_SPACE's THROW_EXCEPTION
+    return _TS_THROW
+end
+
+# ORIGINAL (T27): the body of pl-vmi.c T_POPN (:6317-6334 at 18168e62), outlined; `tpn_n` is the operand `n`, read by the label.
+"The body of T_POPN (pl-vmi.c) for the trie frame `FR`: pop `tpn_n` argument-stack entries and step to the next argument."
+@noinline Base.@constprop :none function _vmi_t_popn!(
+    ld::PL_local_data, @nospecialize(FR::Int), @nospecialize(tpn_n::Int)
+)::Nothing
+    _trie_save_state!(ld, FR)                       # TrieSaveState()
+    while tpn_n > 0                                 # while(n-->0) TriePopArgP()
+        _trie_pop_argp!(ld, FR)
+        tpn_n -= 1
+    end
+    _trie_next_arg!(ld, FR)                         # TrieNextArg()
+    return nothing                                  # (next_instruction)
+end
+
+# ORIGINAL (T27): the body of pl-vmi.c T_VAR (:6342-6380 at 18168e62), outlined; `tv_n` is the operand `offset`, read by the
+# label (the run loop read it inside `TrieVarP`). Its port notes are at the label T_VAR.
+"The body of T_VAR (pl-vmi.c) for the trie frame `FR`: a `_TS_*` status."
+@noinline Base.@constprop :none function _vmi_t_var!(
+    ld::PL_local_data{T},
+    @nospecialize(QID::Int),
+    @nospecialize(FR::Int),
+    ARGP::argp_t{T},
+    @nospecialize(PCc::Vector{code}),
+    PCl::Vector{T},
+    @nospecialize(PC::Int),
+    @nospecialize(tv_n::Int)
+)::Int where {T}
+    tv_v = _trie_var_cell(ld, FR, tv_n)             # Word vp = TrieVarP(offset)
+    if isVar(ld.gstack[tv_v])                       # if ( isVar(*vp) )
+        _bind_const!(ld, tv_v, _link_val_loc!(ld, _trie_deref_current(ld, FR)))
+    else
+        @SAVE_REGISTERS(QID)
+        tv_ok = unify_ptrs_cells(ld, tv_v, _trie_current(ld, FR))   # unify_ptrs(vp, TrieCurrentP, ALLOW_GC)
+        @LOAD_REGISTERS(QID)
+        if !tv_ok
+            ld.exception_term != 0 && return _TS_THROW  # THROW_EXCEPTION
+            return _TS_UNIFY_BACKTRACK              # CLAUSE_FAILED
+        end
+    end
+    _trie_next_arg!(ld, FR)                         # TrieNextArg()
+    return _TS_NEXT                     # (next_instruction)
+end
+
+# ORIGINAL (T27): the body of pl-vmi.c T_ATTVARA (:6394-6448 at 18168e62), outlined; `ta_n` is the operand `offset`, read by the
+# label. Its port notes are at the label T_ATTVARA.
+"The body of T_ATTVARA (pl-vmi.c) for the trie frame `FR`: a `_TS_*` status."
+@noinline Base.@constprop :none function _vmi_t_attvara!(
+    ld::PL_local_data{T},
+    @nospecialize(QID::Int),
+    @nospecialize(FR::Int),
+    ARGP::argp_t{T},
+    @nospecialize(PCc::Vector{code}),
+    PCl::Vector{T},
+    @nospecialize(PC::Int),
+    @nospecialize(ta_n::Int)
+)::Int where {T}
+    @ENSURE_GLOBAL_SPACE(6 + 4 + 6)
+    ta_v = _trie_var_cell(ld, FR, ta_n)             # Word vp = TrieVarP(offset)
+    if isVar(ld.gstack[ta_v])                       # first encounter
+        ta_gp = allocGlobalCells!(ld, 6)            # gp = gTop; gTop += 6
+        register_attvar(ld, ta_gp)                  # register_attvar(gp)
+        ld.gstack[ta_gp + 1] = consPtr(ta_gp + 5, TAG_ATTVAR | STG_GLOBAL)    # gp[1] = consAttVar(&gp[5])
+        ld.gstack[ta_gp + 2] = _functor_att3(ld)    # gp[2] = FUNCTOR_att3
+        ld.gstack[ta_gp + 3] = _link_val_loc!(ld, _deref_loc(ld, _trie_current(ld, FR)))   # gp[3] = linkValI(TrieCurrentP)
+        ld.gstack[ta_gp + 4] = makeRefG(ta_gp + 1)  # gp[4] = makeRefG(&gp[1]); setVar(gp[5])
+        ta_tuple = consPtr(ta_gp + 2, TAG_COMPOUND | STG_GLOBAL)   # tuple = consCompound(&gp[2])
+        _bind_const!(ld, ta_v, ta_tuple)            # Trail(vp, tuple)
+        _trie_push_argp!(ld, FR)                    # TriePushArgP()
+        ld.gstack[_trie_state_cell(ld, FR, 0)] = ta_tuple  # *TrieTermP = tuple
+        ld.gstack[_trie_state_cell(ld, FR, 1)] = consInt(3)   # *TrieOffset = consInt(3)
+        ta_k, _, ta_p = _deref_loc(ld, ta_gp + 3)   # deRef2(&gp[3], p)
+        ta_k == DU_CELL && _bind_const!(ld, ta_p, makeRefG(ta_gp + 1))   # if ( isVar(*p) ) Trail(p, makeRefG(&gp[1]))
+    else                                            # 2nd or later encounter
+        ta_vi = valPtr(ld.gstack[ta_v])             # Functor vi = valueTerm(*vp)
+        @assert ld.gstack[ta_vi] == _functor_att3(ld) "T_ATTVARA: the variable holds no att/3"
+        ta_cur = _trie_current(ld, FR)
+        if isVar(ld.gstack[ta_cur])                 # if ( isVar(*TrieCurrentP) )
+            _bind_const!(ld, ta_cur, ld.gstack[ta_vi + 2])  # Trail(TrieCurrentP, vi->arguments[1])
+        else
+            @SAVE_REGISTERS(QID)
+            ta_ok = unify_ptrs_cells(ld, ta_vi + 1, ta_cur)  # unify_ptrs(&vi->arguments[0], TrieCurrentP, ALLOW_GC)
+            @LOAD_REGISTERS(QID)
+            if !ta_ok
+                ld.exception_term != 0 && return _TS_THROW  # THROW_EXCEPTION
+                return _TS_UNIFY_BACKTRACK          # CLAUSE_FAILED
+            end
+        end
+        _trie_next_arg!(ld, FR)                     # TrieNextArg()
+    end
+    return _TS_NEXT                                 # (next_instruction)
+    @label b_throw                                  # ENSURE_GLOBAL_SPACE's THROW_EXCEPTION
+    return _TS_THROW
+end
+
+# ORIGINAL (T27): the body of pl-vmi.c t_attvarz (:6451-6479 at 18168e62), outlined; `tz_n` is the operand `offset`, read by
+# the label, `tz_table` the helper's argument `istable`. Its port notes are at the label t_attvarz.
+"The body of t_attvarz (pl-vmi.c) for the trie frame `FR`: a `_TS_*` status."
+@noinline Base.@constprop :none function _vmi_t_attvarz!(
+    ld::PL_local_data{T},
+    @nospecialize(FR::Int),
+    @nospecialize(tz_n::Int),
+    @nospecialize(tz_table::Bool)
+)::Int where {T}
+    tz_vi = valPtr(ld.gstack[_trie_var_cell(ld, FR, tz_n)])   # Functor vi = valueTerm(*vp)
+    @assert ld.gstack[tz_vi] == _functor_att3(ld) "t_attvarz: the variable holds no att/3"
+    _, _, tz_p2 = _deref_loc(ld, tz_vi + 1)         # deRef2(&vi->arguments[0], p2)
+    _, _, tz_av = _deref_loc(ld, tz_vi + 2)         # deRef2(&vi->arguments[1], av)
+    if tz_p2 != tz_av                               # read mode
+        if !isVar(ld.gstack[tz_p2])
+            if tz_table
+                TrailAssignment!(ld, tz_p2)         # TrailAssignment(p2)
+                ld.gstack[tz_p2] = ld.gstack[tz_vi + 2]     # *p2 = vi->arguments[1]: a reference
+            else
+                assignAttVar(ld, unRef(ld.gstack[tz_vi + 2]), _deref_loc(ld, tz_p2))  # assignAttVar(unRef(vi->arguments[1]), p2)
+            end
+        else
+            _bind_const!(ld, tz_p2, ld.gstack[tz_vi + 2])   # Trail(p2, vi->arguments[1])
+        end
+    end
+    return _TS_NEXT                                 # (next_instruction)
+end
+
+# ORIGINAL (T27): the body of pl-vmi.c T_FLOAT (:6509-6549 at 18168e62), outlined; it reads the operand at `PC` where the body
+# did, the label steps `PC` past it on `_TS_NEXT`. Its port notes are at the label T_FLOAT.
+"The body of T_FLOAT (pl-vmi.c) for the trie frame `FR`: a `_TS_*` status."
+@noinline Base.@constprop :none function _vmi_t_float!(
+    ld::PL_local_data{T},
+    @nospecialize(FR::Int),
+    @nospecialize(PCc::Vector{code}),
+    PCl::Vector{T},
+    @nospecialize(PC::Int)
+)::Int where {T}
+    tk_k, tk_w, tk_p = _trie_deref_current(ld, FR)  # deRef2(TrieCurrentP, k)
+    (tk_k == DU_WORD && isFunctor(tk_w)) && return _TS_UNIFY_BACKTRACK    # past `+(Key)`: no float, no indirect, no variable
+    _unify_const_loc(ld, tk_p, PCl[PCc[PC]]) || return _TS_UNIFY_BACKTRACK   # CLAUSE_FAILED
+    _trie_next_arg!(ld, FR)                         # TrieNextArg()
+    return _TS_NEXT                                 # (next_instruction)
+end
+
+# ORIGINAL (T27): the body of pl-vmi.c T_STRING (:6568-6592 at 18168e62), outlined; it reads the operand at `PC` where the body
+# did, the label steps `PC` past it on `_TS_NEXT`. Its port notes are at the label T_STRING.
+"The body of T_STRING (pl-vmi.c) for the trie frame `FR`: a `_TS_*` status."
+@noinline Base.@constprop :none function _vmi_t_string!(
+    ld::PL_local_data{T},
+    @nospecialize(FR::Int),
+    @nospecialize(PCc::Vector{code}),
+    PCl::Vector{T},
+    @nospecialize(PC::Int)
+)::Int where {T}
+    tk_k, tk_w, tk_p = _trie_deref_current(ld, FR)  # deRef2(TrieCurrentP, k)
+    (tk_k == DU_WORD && isFunctor(tk_w)) && return _TS_UNIFY_BACKTRACK    # past `+(Key)`: no float, no indirect, no variable
+    _unify_const_loc(ld, tk_p, PCl[PCc[PC]]) || return _TS_UNIFY_BACKTRACK   # CLAUSE_FAILED
+    _trie_next_arg!(ld, FR)                         # TrieNextArg()
+    return _TS_NEXT                                 # (next_instruction)
+end
+
+# ORIGINAL (T27): the body of pl-vmi.c t_const (:6640-6654 at 18168e62), outlined; `tk_c` is the helper's argument `c`. Its port
+# notes are at the label t_const.
+"The body of t_const (pl-vmi.c) for the trie frame `FR` and the constant word `tk_c`: a `_TS_*` status."
+@noinline Base.@constprop :none function _vmi_t_const!(
+    ld::PL_local_data{T}, @nospecialize(FR::Int), @nospecialize(tk_c::word)
+)::Int where {T}
+    tk_k, tk_w, tk_p = _trie_deref_current(ld, FR)  # deRef2(TrieCurrentP, k)
+    if (tk_k == DU_WORD || tk_k == DU_VALUE) && tk_w == tk_c   # if ( *k == c )
+        _trie_next_arg!(ld, FR)                     # TrieNextArg()
+        return _TS_NEXT                             # (next_instruction)
+    end
+    if tk_k == DU_CELL || tk_k == DU_ATTVAR         # if ( canBind(*k) )
+        bindConst(ld, tk_p, tk_c)                   # bindConst(k, c)
+        _trie_next_arg!(ld, FR)                     # TrieNextArg()
+        return _TS_NEXT                             # (next_instruction)
+    end
+    return _TS_UNIFY_BACKTRACK                      # CLAUSE_FAILED
+end
+
 # The run loop's dispatch (ORIGINAL), as a SORTED BRANCH TREE over the opcodes — decision 1's
 # fallback. MEASURED 2026-10-05: LLVM makes no single jump table of an if/elseif chain over them; it
 # makes four partial ones, broken wherever neighbouring arms share a target, so `S_LIST` was reached
@@ -2549,8 +2864,9 @@ function PL_next_solution_guarded(
     tg_ar::Int = 0                                  # t_trie_gen's arity of `+/n` (TR4)
     tz_table::Bool = false                          # t_attvarz's istable (TR4)
     tk_c::word = word(0)                            # t_const's constant word (TR4)
+    ts_st::Int = _TS_NEXT                           # the status an outlined T_* body returned (T27)
 
-    if qid == 0                                     # PL_open_query() failed
+    if qid == 0                                    # PL_open_query() failed
         return 0
     end
 
@@ -3715,27 +4031,8 @@ function PL_next_solution_guarded(
 
     # ORIGINAL (TR4): the body T_TRIE_GEN2 and T_TRIE_GEN3 share (upstream repeats it), for `+/tg_ar`.
     @label t_trie_gen
-    tg_nvars =
-        Int(((ld.frames[FR].clause::ClauseRef{T}).clause::Clause{T}).prolog_vars) -
-        TRIE_VAR_OFFSET
-    @ENSURE_GLOBAL_SPACE(4 + tg_nvars + 1 + tg_ar)
-    tg_s = allocGlobalCells!(ld, 4)                 # the four state cells
-    ld.gstack[tg_s] = nil_w                         # *TrieTermP = ATOM_nil
-    ld.gstack[tg_s + 1] = consInt(1)                # *TrieOffset = consInt(1)
-    ld.gstack[tg_s + 2] = nil_w                     # *TrieArgStackP = ATOM_nil
-    ld.gstack[tg_s + 3] = consInt(-1)               # *TrieSavedP = consInt(-1)
-    for tg_i in 0:3
-        ld.slots[argFrameP(tg_base, TRIE_ARGS + tg_i) + 1] = makeRefG(tg_s + tg_i)
-    end
-    for tg_i in 1:tg_nvars                          # for( ; nvars-- > 0; vp++) setVar(*vp)
-        _slot_new_var!(ld, argFrameP(tg_base, TRIE_VAR_OFFSET - 1 + tg_i) + 1)
-    end
-    tg_ap = _alloc_compound!(ld, _functor_plus(ld, tg_ar), tg_ar)  # ap[0] = FUNCTOR_plus1/2; setVar(ap[1..])
-    for tg_i in 1:tg_ar                             # unify_ptrs(&ap[i], argFrameP(FR, i), 0)
-        unify_ptrs_cells(ld, tg_ap + tg_i, -(argFrameP(tg_base, tg_i) + 1))
-    end
-    ld.gstack[tg_s] = consPtr(tg_ap, TAG_COMPOUND | STG_GLOBAL)    # *TrieTermP = consCompound(ap)
-    @goto next_instruction
+    ts_st = _vmi_t_trie_gen!(ld, QID, FR, ARGP, PCc, PCl, PC, tg_base, tg_ar, nil_w)  # the body (T27: outlined)
+    @goto t_status
 
     # PORT: pl-vmi.c T_VALUE
     # (pl-vmi.c:6202-6208 at the pin.) Go to the value argument of `+(Key, Value)`.
@@ -3759,8 +4056,8 @@ function PL_next_solution_guarded(
     @label T_TRY_FUNCTOR
     tt_skip = Int(PCc[PC])                          # intptr_t skip = *PC++
     PC += 1
-    @ENSURE_LOCAL_SPACE(SIZEOF_CHOICE)
-    _trie_try!(ld, FR, PC + tt_skip)                # TRIE_TRY
+    ts_st = _vmi_t_try!(ld, QID, FR, ARGP, PCc, PCl, PC, tt_skip)  # ENSURE_LOCAL_SPACE(SIZEOF_CHOICE); TRIE_TRY
+    ts_st == _TS_NEXT || @goto t_status
     @goto T_FUNCTOR
 
     # PORT: pl-vmi.c T_FUNCTOR
@@ -3771,29 +4068,8 @@ function PL_next_solution_guarded(
     @label T_FUNCTOR
     tf_f = word(PCc[PC])                            # functor_t f = (functor_t) *PC++
     PC += 1
-    tf_k, tf_w, tf_p = _trie_deref_current(ld, FR)  # deRef2(TrieCurrentP, p)
-    if tf_k == DU_CELL || tf_k == DU_ATTVAR         # if ( canBind(*p) )
-        tf_ar = arityFunctor(ld.functors, tf_f)
-        @ENSURE_GLOBAL_SPACE(1 + tf_ar + 4 + 6)     # 4 extra for the '$targp'/3 cell
-        tf_ap = allocGlobalCells!(ld, 1 + tf_ar)    # ap = gTop; gTop += 1+arity
-        tf_c = consPtr(tf_ap, TAG_COMPOUND | STG_GLOBAL)   # c = consCompound(ap)
-        _trie_push_argp!(ld, FR)                    # TriePushArgP()
-        ld.gstack[_trie_state_cell(ld, FR, 0)] = tf_c      # *TrieTermP = c
-        ld.gstack[_trie_state_cell(ld, FR, 1)] = consInt(1)   # *TrieOffset = consInt(1)
-        ld.gstack[tf_ap] = tf_f                     # *ap++ = f; the arguments are unbound (allocGlobalCells!)
-        bindConst(ld, tf_p, tf_c)                   # bindConst(p, c)
-        @goto next_instruction
-    end
-    if tf_k == DU_WORD && _is_gcompound(tf_w)       # if ( isTerm(*p) )
-        if ld.gstack[valPtr(tf_w)] == tf_f          # if ( term->definition == f )
-            @ENSURE_GLOBAL_SPACE(4)
-            _trie_push_argp!(ld, FR)                # TriePushArgP()
-            ld.gstack[_trie_state_cell(ld, FR, 0)] = tf_w      # *TrieTermP = *p
-            ld.gstack[_trie_state_cell(ld, FR, 1)] = consInt(1)   # *TrieOffset = consInt(1)
-            @goto next_instruction
-        end
-    end
-    @goto unify_backtrack                           # CLAUSE_FAILED
+    ts_st = _vmi_t_functor!(ld, QID, FR, ARGP, PCc, PCl, PC, tf_f)   # the body (T27: outlined)
+    @goto t_status
 
     # PORT: pl-vmi.c T_POP
     # (pl-vmi.c:6307-6314 at the pin.)
@@ -3808,20 +4084,15 @@ function PL_next_solution_guarded(
     @label T_POPN
     tpn_n = Int(PCc[PC])                            # intptr_t n = (intptr_t)*PC++
     PC += 1
-    _trie_save_state!(ld, FR)                       # TrieSaveState()
-    while tpn_n > 0                                 # while(n-->0) TriePopArgP()
-        _trie_pop_argp!(ld, FR)
-        tpn_n -= 1
-    end
-    _trie_next_arg!(ld, FR)                         # TrieNextArg()
+    _vmi_t_popn!(ld, FR, tpn_n)                     # the body (T27: outlined)
     @goto next_instruction
 
     # PORT: pl-vmi.c T_TRY_VAR
     @label T_TRY_VAR
     tt_skip = Int(PCc[PC])                          # intptr_t skip = *PC++
     PC += 1
-    @ENSURE_LOCAL_SPACE(SIZEOF_CHOICE)
-    _trie_try!(ld, FR, PC + tt_skip)                # TRIE_TRY
+    ts_st = _vmi_t_try!(ld, QID, FR, ARGP, PCc, PCl, PC, tt_skip)  # ENSURE_LOCAL_SPACE(SIZEOF_CHOICE); TRIE_TRY
+    ts_st == _TS_NEXT || @goto t_status
     @goto T_VAR
 
     # PORT: pl-vmi.c T_VAR
@@ -3829,28 +4100,17 @@ function PL_next_solution_guarded(
     # DIVERGES: the variable is a global cell (`_trie_var_cell`); `Trail(vp, linkValI(TrieCurrentP))` is `_bind_const!` of the
     # word `_link_val_loc!` gives the dereferenced location (a reference to an unbound cell, else its value word).
     @label T_VAR
-    tv_v = _trie_var_cell(ld, FR, Int(PCc[PC]))     # Word vp = TrieVarP(offset)
+    tv_n = Int(PCc[PC])                             # intptr_t offset = (intptr_t)*PC++
     PC += 1
-    if isVar(ld.gstack[tv_v])                       # if ( isVar(*vp) )
-        _bind_const!(ld, tv_v, _link_val_loc!(ld, _trie_deref_current(ld, FR)))
-    else
-        @SAVE_REGISTERS(QID)
-        tv_ok = unify_ptrs_cells(ld, tv_v, _trie_current(ld, FR))   # unify_ptrs(vp, TrieCurrentP, ALLOW_GC)
-        @LOAD_REGISTERS(QID)
-        if !tv_ok
-            ld.exception_term != 0 && @goto b_throw # THROW_EXCEPTION
-            @goto unify_backtrack                   # CLAUSE_FAILED
-        end
-    end
-    _trie_next_arg!(ld, FR)                         # TrieNextArg()
-    @goto next_instruction
+    ts_st = _vmi_t_var!(ld, QID, FR, ARGP, PCc, PCl, PC, tv_n)   # the body (T27: outlined)
+    @goto t_status
 
     # PORT: pl-vmi.c T_TRY_ATTVARA
     @label T_TRY_ATTVARA
     tt_skip = Int(PCc[PC])                          # intptr_t skip = *PC++
     PC += 1
-    @ENSURE_LOCAL_SPACE(SIZEOF_CHOICE)
-    _trie_try!(ld, FR, PC + tt_skip)                # TRIE_TRY
+    ts_st = _vmi_t_try!(ld, QID, FR, ARGP, PCc, PCl, PC, tt_skip)  # ENSURE_LOCAL_SPACE(SIZEOF_CHOICE); TRIE_TRY
+    ts_st == _TS_NEXT || @goto t_status
     @goto T_ATTVARA
 
     # PORT: pl-vmi.c T_ATTVARA
@@ -3862,40 +4122,8 @@ function PL_next_solution_guarded(
     @label T_ATTVARA
     ta_n = Int(PCc[PC])                             # intptr_t offset = (intptr_t)*PC++
     PC += 1
-    @ENSURE_GLOBAL_SPACE(6 + 4 + 6)
-    ta_v = _trie_var_cell(ld, FR, ta_n)             # Word vp = TrieVarP(offset)
-    if isVar(ld.gstack[ta_v])                       # first encounter
-        ta_gp = allocGlobalCells!(ld, 6)            # gp = gTop; gTop += 6
-        register_attvar(ld, ta_gp)                  # register_attvar(gp)
-        ld.gstack[ta_gp + 1] = consPtr(ta_gp + 5, TAG_ATTVAR | STG_GLOBAL)    # gp[1] = consAttVar(&gp[5])
-        ld.gstack[ta_gp + 2] = _functor_att3(ld)    # gp[2] = FUNCTOR_att3
-        ld.gstack[ta_gp + 3] = _link_val_loc!(ld, _deref_loc(ld, _trie_current(ld, FR)))   # gp[3] = linkValI(TrieCurrentP)
-        ld.gstack[ta_gp + 4] = makeRefG(ta_gp + 1)  # gp[4] = makeRefG(&gp[1]); setVar(gp[5])
-        ta_tuple = consPtr(ta_gp + 2, TAG_COMPOUND | STG_GLOBAL)   # tuple = consCompound(&gp[2])
-        _bind_const!(ld, ta_v, ta_tuple)            # Trail(vp, tuple)
-        _trie_push_argp!(ld, FR)                    # TriePushArgP()
-        ld.gstack[_trie_state_cell(ld, FR, 0)] = ta_tuple  # *TrieTermP = tuple
-        ld.gstack[_trie_state_cell(ld, FR, 1)] = consInt(3)   # *TrieOffset = consInt(3)
-        ta_k, _, ta_p = _deref_loc(ld, ta_gp + 3)   # deRef2(&gp[3], p)
-        ta_k == DU_CELL && _bind_const!(ld, ta_p, makeRefG(ta_gp + 1))   # if ( isVar(*p) ) Trail(p, makeRefG(&gp[1]))
-    else                                            # 2nd or later encounter
-        ta_vi = valPtr(ld.gstack[ta_v])             # Functor vi = valueTerm(*vp)
-        @assert ld.gstack[ta_vi] == _functor_att3(ld) "T_ATTVARA: the variable holds no att/3"
-        ta_cur = _trie_current(ld, FR)
-        if isVar(ld.gstack[ta_cur])                 # if ( isVar(*TrieCurrentP) )
-            _bind_const!(ld, ta_cur, ld.gstack[ta_vi + 2])  # Trail(TrieCurrentP, vi->arguments[1])
-        else
-            @SAVE_REGISTERS(QID)
-            ta_ok = unify_ptrs_cells(ld, ta_vi + 1, ta_cur)  # unify_ptrs(&vi->arguments[0], TrieCurrentP, ALLOW_GC)
-            @LOAD_REGISTERS(QID)
-            if !ta_ok
-                ld.exception_term != 0 && @goto b_throw     # THROW_EXCEPTION
-                @goto unify_backtrack               # CLAUSE_FAILED
-            end
-        end
-        _trie_next_arg!(ld, FR)                     # TrieNextArg()
-    end
-    @goto next_instruction
+    ts_st = _vmi_t_attvara!(ld, QID, FR, ARGP, PCc, PCl, PC, ta_n)   # the body (T27: outlined)
+    @goto t_status
 
     # PORT: pl-vmi.c t_attvarz
     # (pl-vmi.c:6451-6479 at the pin.) The end of an attributed variable's attributes: in read mode the target location is bound
@@ -3904,30 +4132,15 @@ function PL_next_solution_guarded(
     @label t_attvarz
     tz_n = Int(PCc[PC])                             # intptr_t offset = (intptr_t)*PC++
     PC += 1
-    tz_vi = valPtr(ld.gstack[_trie_var_cell(ld, FR, tz_n)])   # Functor vi = valueTerm(*vp)
-    @assert ld.gstack[tz_vi] == _functor_att3(ld) "t_attvarz: the variable holds no att/3"
-    _, _, tz_p2 = _deref_loc(ld, tz_vi + 1)         # deRef2(&vi->arguments[0], p2)
-    _, _, tz_av = _deref_loc(ld, tz_vi + 2)         # deRef2(&vi->arguments[1], av)
-    if tz_p2 != tz_av                               # read mode
-        if !isVar(ld.gstack[tz_p2])
-            if tz_table
-                TrailAssignment!(ld, tz_p2)         # TrailAssignment(p2)
-                ld.gstack[tz_p2] = ld.gstack[tz_vi + 2]     # *p2 = vi->arguments[1]: a reference
-            else
-                assignAttVar(ld, unRef(ld.gstack[tz_vi + 2]), _deref_loc(ld, tz_p2))  # assignAttVar(unRef(vi->arguments[1]), p2)
-            end
-        else
-            _bind_const!(ld, tz_p2, ld.gstack[tz_vi + 2])   # Trail(p2, vi->arguments[1])
-        end
-    end
-    @goto next_instruction
+    ts_st = _vmi_t_attvarz!(ld, FR, tz_n, tz_table) # the body (T27: outlined)
+    @goto t_status
 
     # PORT: pl-vmi.c T_TRY_ATTVARZ
     @label T_TRY_ATTVARZ
     tt_skip = Int(PCc[PC])                          # intptr_t skip = *PC++
     PC += 1
-    @ENSURE_LOCAL_SPACE(SIZEOF_CHOICE)
-    _trie_try!(ld, FR, PC + tt_skip)                # TRIE_TRY
+    ts_st = _vmi_t_try!(ld, QID, FR, ARGP, PCc, PCl, PC, tt_skip)  # ENSURE_LOCAL_SPACE(SIZEOF_CHOICE); TRIE_TRY
+    ts_st == _TS_NEXT || @goto t_status
     @goto T_ATTVARZ
 
     # PORT: pl-vmi.c T_ATTVARZ
@@ -3939,8 +4152,8 @@ function PL_next_solution_guarded(
     @label T_TRY_ATTVARZT
     tt_skip = Int(PCc[PC])                          # intptr_t skip = *PC++
     PC += 1
-    @ENSURE_LOCAL_SPACE(SIZEOF_CHOICE)
-    _trie_try!(ld, FR, PC + tt_skip)                # TRIE_TRY
+    ts_st = _vmi_t_try!(ld, QID, FR, ARGP, PCc, PCl, PC, tt_skip)  # ENSURE_LOCAL_SPACE(SIZEOF_CHOICE); TRIE_TRY
+    ts_st == _TS_NEXT || @goto t_status
     @goto T_ATTVARZT
 
     # PORT: pl-vmi.c T_ATTVARZT
@@ -3952,8 +4165,8 @@ function PL_next_solution_guarded(
     @label T_TRY_FLOAT
     tt_skip = Int(PCc[PC])                          # intptr_t skip = *PC++
     PC += 1
-    @ENSURE_LOCAL_SPACE(SIZEOF_CHOICE)
-    _trie_try!(ld, FR, PC + tt_skip)                # TRIE_TRY
+    ts_st = _vmi_t_try!(ld, QID, FR, ARGP, PCc, PCl, PC, tt_skip)  # ENSURE_LOCAL_SPACE(SIZEOF_CHOICE); TRIE_TRY
+    ts_st == _TS_NEXT || @goto t_status
     @goto T_FLOAT
 
     # PORT: pl-vmi.c T_FLOAT
@@ -3961,19 +4174,16 @@ function PL_next_solution_guarded(
     # DIVERGES: the operand is one word, the literal's index (as `H_FLOAT`'s), where upstream inlines the double; binding and
     # comparison by `_unify_const_loc` (`gnd_equal` is the bitwise comparison upstream makes).
     @label T_FLOAT
-    tk_k, tk_w, tk_p = _trie_deref_current(ld, FR)  # deRef2(TrieCurrentP, k)
-    (tk_k == DU_WORD && isFunctor(tk_w)) && @goto unify_backtrack    # past `+(Key)`: no float, no indirect, no variable
-    _unify_const_loc(ld, tk_p, PCl[PCc[PC]]) || @goto unify_backtrack   # CLAUSE_FAILED
-    PC += 1
-    _trie_next_arg!(ld, FR)                         # TrieNextArg()
-    @goto next_instruction
+    ts_st = _vmi_t_float!(ld, FR, PCc, PCl, PC)   # the body (T27: outlined)
+    ts_st == _TS_NEXT && (PC += 1)                  # the operand
+    @goto t_status
 
     # PORT: pl-vmi.c T_TRY_MPZ
     @label T_TRY_MPZ
     tt_skip = Int(PCc[PC])                          # intptr_t skip = *PC++
     PC += 1
-    @ENSURE_LOCAL_SPACE(SIZEOF_CHOICE)
-    _trie_try!(ld, FR, PC + tt_skip)                # TRIE_TRY
+    ts_st = _vmi_t_try!(ld, QID, FR, ARGP, PCc, PCl, PC, tt_skip)  # ENSURE_LOCAL_SPACE(SIZEOF_CHOICE); TRIE_TRY
+    ts_st == _TS_NEXT || @goto t_status
     @goto T_MPZ
 
     # PORT: pl-vmi.c T_MPZ
@@ -3984,8 +4194,8 @@ function PL_next_solution_guarded(
     @label T_TRY_STRING
     tt_skip = Int(PCc[PC])                          # intptr_t skip = *PC++
     PC += 1
-    @ENSURE_LOCAL_SPACE(SIZEOF_CHOICE)
-    _trie_try!(ld, FR, PC + tt_skip)                # TRIE_TRY
+    ts_st = _vmi_t_try!(ld, QID, FR, ARGP, PCc, PCl, PC, tt_skip)  # ENSURE_LOCAL_SPACE(SIZEOF_CHOICE); TRIE_TRY
+    ts_st == _TS_NEXT || @goto t_status
     @goto T_STRING
 
     # PORT: pl-vmi.c T_STRING
@@ -3993,19 +4203,16 @@ function PL_next_solution_guarded(
     # DIVERGES: as `T_FLOAT`: one operand word, the literal's index; `gnd_equal` compares kind and bits, as
     # `VM_equalIndirectFromCode` compares the header and the data.
     @label T_STRING
-    tk_k, tk_w, tk_p = _trie_deref_current(ld, FR)  # deRef2(TrieCurrentP, k)
-    (tk_k == DU_WORD && isFunctor(tk_w)) && @goto unify_backtrack    # past `+(Key)`: no float, no indirect, no variable
-    _unify_const_loc(ld, tk_p, PCl[PCc[PC]]) || @goto unify_backtrack   # CLAUSE_FAILED
-    PC += 1
-    _trie_next_arg!(ld, FR)                         # TrieNextArg()
-    @goto next_instruction
+    ts_st = _vmi_t_string!(ld, FR, PCc, PCl, PC)   # the body (T27: outlined)
+    ts_st == _TS_NEXT && (PC += 1)                  # the operand
+    @goto t_status
 
     # PORT: pl-vmi.c T_TRY_ATOM
     @label T_TRY_ATOM
     tt_skip = Int(PCc[PC])                          # intptr_t skip = *PC++
     PC += 1
-    @ENSURE_LOCAL_SPACE(SIZEOF_CHOICE)
-    _trie_try!(ld, FR, PC + tt_skip)                # TRIE_TRY
+    ts_st = _vmi_t_try!(ld, QID, FR, ARGP, PCc, PCl, PC, tt_skip)  # ENSURE_LOCAL_SPACE(SIZEOF_CHOICE); TRIE_TRY
+    ts_st == _TS_NEXT || @goto t_status
     @goto T_ATOM
 
     # PORT: pl-vmi.c T_ATOM
@@ -4019,8 +4226,8 @@ function PL_next_solution_guarded(
     @label T_TRY_SMALLINT
     tt_skip = Int(PCc[PC])                          # intptr_t skip = *PC++
     PC += 1
-    @ENSURE_LOCAL_SPACE(SIZEOF_CHOICE)
-    _trie_try!(ld, FR, PC + tt_skip)                # TRIE_TRY
+    ts_st = _vmi_t_try!(ld, QID, FR, ARGP, PCc, PCl, PC, tt_skip)  # ENSURE_LOCAL_SPACE(SIZEOF_CHOICE); TRIE_TRY
+    ts_st == _TS_NEXT || @goto t_status
     @goto T_SMALLINT
 
     # PORT: pl-vmi.c T_SMALLINT
@@ -4036,22 +4243,19 @@ function PL_next_solution_guarded(
     # DIVERGES: a helper label, its argument `tk_c`; `deRef2` is `_deref_loc`, `canBind` its unbound and attributed kinds; the
     # comparison is on the words (`*k == c`), as `unify_key`'s for an atom or small integer key.
     @label t_const
-    tk_k, tk_w, tk_p = _trie_deref_current(ld, FR)  # deRef2(TrieCurrentP, k)
-    if (tk_k == DU_WORD || tk_k == DU_VALUE) && tk_w == tk_c   # if ( *k == c )
-        _trie_next_arg!(ld, FR)                     # TrieNextArg()
-        @goto next_instruction
-    end
-    if tk_k == DU_CELL || tk_k == DU_ATTVAR         # if ( canBind(*k) )
-        bindConst(ld, tk_p, tk_c)                   # bindConst(k, c)
-        _trie_next_arg!(ld, FR)                     # TrieNextArg()
-        @goto next_instruction
-    end
-    @goto unify_backtrack                           # CLAUSE_FAILED
+    ts_st = _vmi_t_const!(ld, FR, tk_c)             # the body (T27: outlined)
+    @goto t_status
 
     # PORT: pl-vmi.c T_CHECKWAKEUP
     # (pl-vmi.c:6657-6662 at the pin.) `CHECK_WAKEUP` before the clause's exit.
     @label T_CHECKWAKEUP
     (ld.alerted & ALERT_WAKEUP) != 0 && @goto check_wakeup     # CHECK_WAKEUP
+    @goto next_instruction
+
+    # ORIGINAL (T27): the exit an outlined T_* body took (`_TS_*`, see `_vmi_t_try!`), to the label upstream's macro names.
+    @label t_status
+    ts_st == _TS_UNIFY_BACKTRACK && @goto unify_backtrack      # CLAUSE_FAILED
+    ts_st == _TS_THROW && @goto b_throw                        # THROW_EXCEPTION
     @goto next_instruction
 
     # ── single sided unification (pl-vmi.c), SSU2 ─────────────────────────────────────────────────

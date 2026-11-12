@@ -3211,11 +3211,11 @@ const _MANIFEST_TR2_FREE = (
 # TR4 — pl-trie.c compile_trie and its emitters (src/pl-trie.jl), the engine helpers of the T_* instructions (src/pl-wam.jl: the trie state
 # words in four global cells, the `'$targp'/3` argument stack, the TRIE_TRY choice point). Every function takes a trie, the compile state or
 # the local data, so each is checked for every payload type; none is type-free. The engine bodies themselves (S_TRIE_GEN, T_*) are labels of
-# PL_next_solution_guarded, reached by its entry.
+# PL_next_solution_guarded, reached by its entry; the T_* bodies outlined from it (T27, `_vmi_t_*`) are entries of their own, below.
 _manifest_tr4(T) = begin
     TR, GD, LD = LK.trie{T}, LK.PL_global_data{T}, LK.PL_local_data{T}
     ST, DEF, CL = LK.trie_compile_state{T}, LK.Definition{T}, LK.Clause{T}
-    C, W = LK.code, LK.word
+    C, W, ARGP = LK.code, LK.word, LK.argp_t{T}
     (
         (LK.initTries!, Tuple{GD}, false),
         (LK.trie_maybe_discard_nodes, Tuple{TR}, false),
@@ -3253,7 +3253,30 @@ _manifest_tr4(T) = begin
         (LK._trie_push_argp!, Tuple{LD, Int}, false),
         (LK._trie_pop_argp!, Tuple{LD, Int}, false),
         (LK._trie_unwind_argp!, Tuple{LD, Int}, false),
-        (LK._trie_try!, Tuple{LD, Int, Int}, false)
+        (LK._trie_try!, Tuple{LD, Int, Int}, false),
+        # the T_* bodies outlined from the run loop (T27): each called by its label of PL_next_solution_guarded
+        (LK._vmi_t_try!, Tuple{LD, Int, Int, ARGP, Vector{C}, Vector{T}, Int, Int}, false),
+        (
+            LK._vmi_t_trie_gen!,
+            Tuple{LD, Int, Int, ARGP, Vector{C}, Vector{T}, Int, Int, Int, W},
+            false
+        ),
+        (
+            LK._vmi_t_functor!,
+            Tuple{LD, Int, Int, ARGP, Vector{C}, Vector{T}, Int, W},
+            false
+        ),
+        (LK._vmi_t_popn!, Tuple{LD, Int, Int}, false),
+        (LK._vmi_t_var!, Tuple{LD, Int, Int, ARGP, Vector{C}, Vector{T}, Int, Int}, false),
+        (
+            LK._vmi_t_attvara!,
+            Tuple{LD, Int, Int, ARGP, Vector{C}, Vector{T}, Int, Int},
+            false
+        ),
+        (LK._vmi_t_attvarz!, Tuple{LD, Int, Int, Bool}, false),
+        (LK._vmi_t_float!, Tuple{LD, Int, Vector{C}, Vector{T}, Int}, false),
+        (LK._vmi_t_string!, Tuple{LD, Int, Vector{C}, Vector{T}, Int}, false),
+        (LK._vmi_t_const!, Tuple{LD, Int, W}, false)
     )
 end
 
