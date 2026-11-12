@@ -1,4 +1,5 @@
 # UPSTREAM: swipl-devel src/os/pl-tai.c @ 18168e629eab
+# UPSTREAM: swipl-devel src/os/pl-os.c @ 18168e629eab
 # CLASS: code
 # COPYRIGHT: Copyright (c)  2011-2021, University of Amsterdam
 # COPYRIGHT: VU University Amsterdam
@@ -54,7 +55,7 @@ mutable struct CTm
 end
 CTm() = CTm(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, Ptr{UInt8}(0))
 
-# PORT: pl-tai.c struct ftm
+# PORT: pl-tai.c ftm
 # DIVERGES: `tzname` is the text of the atom (or `nothing`), see the header.
 "A `floating` version of the system `struct tm` (pl-tai.c): `tm`, the float seconds, the UTC offset, the zone name, DST, the stamp and the `flags` of the fields filled."
 mutable struct ftm
@@ -109,7 +110,7 @@ function _c_strftime(fmt::String, tm::CTm)::Vector{UInt8}
     return buf[1:(n - 1)]
 end
 
-# PORT: pl-os.c PL_asctime_r
+# PORT: pl-os.c PL_asctime_r as _c_asctime_r
 # DIVERGES: libc's `asctime_r` through `ccall`; the 26 byte buffer is returned up to its NUL.
 "`asctime_r(tm, buf)`: `Www Mmm dd hh:mm:ss yyyy\\n` as bytes (pl-os.c)."
 function _c_asctime_r(tm::CTm)::Vector{UInt8}
@@ -470,7 +471,7 @@ function _unify_date9(
     return PL_unify_atom(ld, a, mk_sym(T, Symbol(dst)))
 end
 
-# PORT: pl-tai.c stamp_date_time
+# PORT: pl-tai.c stamp_date_time as pl_stamp_date_time3_va
 # (PRED_IMPL("stamp_date_time", 3, stamp_date_time, 0))
 # DIVERGES: the `unixt` representability test is dropped (a 64-bit `time_t` holds every `int64_t`).
 "`stamp_date_time(+Stamp, -DateTime, +TimeZone)`: `DateTime` is `date(Y,M,D,H,Mn,S,Off,TZ,DST)` for the time stamp, `TimeZone` `local`, `'UTC'` or an offset in seconds (pl-tai.c)."
@@ -550,7 +551,7 @@ function pl_stamp_date_time3_va(
     return FFALSE
 end
 
-# PORT: pl-tai.c date_time_stamp
+# PORT: pl-tai.c date_time_stamp as pl_date_time_stamp2_va
 # (PRED_IMPL("date_time_stamp", 2, date_time_stamp, 0))
 "`date_time_stamp(+DateTime, -Stamp)`: the time stamp of a `date/9` or `date/3` term (pl-tai.c)."
 function pl_date_time_stamp2_va(
@@ -653,15 +654,21 @@ function _strftime_out(fd::IOSTREAM, c::Int, tb::ftm, leapsecs::Vector{UInt64}):
     return nothing
 end
 
-# PORT: pl-tai.c abbred_weekday, weekday, abbred_month, month
+# PORT: pl-tai.c abbred_weekday as _abbred_weekday
 # DIVERGES: underscore-prefixed, the module's names `weekday`/`month` stay free.
 const _abbred_weekday = ("Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat")
+# PORT: pl-tai.c weekday as _weekday
+# DIVERGES: underscore-prefixed (see `_abbred_weekday`).
 const _weekday = (
     "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"
 )
+# PORT: pl-tai.c abbred_month as _abbred_month
+# DIVERGES: underscore-prefixed (see `_abbred_weekday`).
 const _abbred_month = (
     "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
 )
+# PORT: pl-tai.c month as _month
+# DIVERGES: underscore-prefixed (see `_abbred_weekday`).
 const _month = (
     "January", "February", "March", "April", "May", "June", "July", "August", "September",
     "October", "November", "December"
@@ -908,7 +915,8 @@ function pl_format_time(
     return false
 end
 
-# PORT: pl-tai.c format_time3 (PRED_IMPL("format_time", 3, format_time3, 0))
+# PORT: pl-tai.c format_time3 as pl_format_time3_va
+# (PRED_IMPL("format_time", 3, format_time3, 0))
 "`format_time(+Out, +Format, +StampOrDateTime)` (pl-tai.c)."
 function pl_format_time3_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
@@ -916,7 +924,8 @@ function pl_format_time3_va(
     return pl_format_time(ld, PL__t0, PL__t0 + 1, PL__t0 + 2, false) ? FTRUE : FFALSE
 end
 
-# PORT: pl-tai.c format_time4 (PRED_IMPL("format_time", 4, format_time4, 0))
+# PORT: pl-tai.c format_time4 as pl_format_time4_va
+# (PRED_IMPL("format_time", 4, format_time4, 0))
 "`format_time(+Out, +Format, +StampOrDateTime, +Locale)`: only `posix` (pl-tai.c)."
 function pl_format_time4_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
@@ -929,7 +938,7 @@ function pl_format_time4_va(
     return PL_error(ld, ERR_DOMAIN, mk_sym(T, :locale), PL__t0 + 3) ? FTRUE : FFALSE
 end
 
-# PORT: pl-tai.c BeginPredDefs
+# PORT: pl-tai.c BeginPredDefs as PL_predicates_from_tai
 # DIVERGES: appended last in `_PRED_TABLES` (src/pl-ext.jl), so the dispatch indices of the earlier tables stay as they were.
 "pl-tai.c's registration table (`BeginPredDefs(tai)`)."
 const PL_predicates_from_tai = (

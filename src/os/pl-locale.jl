@@ -1,4 +1,6 @@
 # UPSTREAM: swipl-devel src/os/pl-locale.c @ 18168e629eab
+# UPSTREAM: swipl-devel src/pl-thread.h @ 18168e629eab
+# UPSTREAM: swipl-devel src/pl-thread.c @ 18168e629eab
 # CLASS: code
 # COPYRIGHT: Copyright (c)  2013-2022, VU University Amsterdam
 # COPYRIGHT: SWI-Prolog Solutions b.v.
@@ -225,7 +227,7 @@ function _locale_lookup(
     return i == 0 ? nothing : gd.locale.table[i]
 end
 
-# PORT: pl-locale.c alias_locale
+# PORT: pl-locale.c alias_locale as _alias_locale_table!
 # DIVERGES: split in two: this is the success branch (`addNewHTableWP`, `l->alias`, `l->references++`), false when the alias is
 # taken; `alias_locale` raises the error. `PL_register_atom` has no twin (no atom GC).
 "Enter `l` in the table under `alias`; false when the alias is taken, with nothing changed (pl-locale.c)."
@@ -455,7 +457,7 @@ function _lprop_call(
     return locale_grouping_property(ld, l, arg)
 end
 
-# PORT: pl-thread.c get_prop_def
+# PORT: pl-thread.c get_prop_def as _locale_get_prop_def
 # DIVERGES: returns `(status, index)`: status 1 (found, the index in `lprop_list`), 0 (variable) or -1 (the error is raised);
 # written for `lprop_list` only (its other callers, the mutex and thread properties, are unwritten).
 "Find the property `t` names in `lprop_list` (pl-thread.c)."
@@ -533,7 +535,7 @@ function get_atom_arg(ld::PL_local_data{T}, t::term_t)::Union{Nothing, T} where 
     return PL_get_atom(ld, t2)
 end
 
-# PORT: pl-locale.c locale_property
+# PORT: pl-locale.c locale_property as pl_locale_property2_va
 # (PRED_IMPL("locale_property", 2, locale_property, PL_FA_NONDETERMINISTIC))
 # DIVERGES: the retry state is an `Int` (`_lenc`); see the header. The control flow is upstream's.
 "`locale_property(?Locale, ?Property)`, non-deterministic (pl-locale.c)."
@@ -709,7 +711,7 @@ function set_grouping(
     return nothing
 end
 
-# PORT: pl-locale.c locale_create
+# PORT: pl-locale.c locale_create as pl_locale_create3_va
 # (PRED_IMPL("locale_create", 3, locale_create, 0))
 # DIVERGES: a failed `newlocale` that left errno 0 is the not-found case (the pl-sys.jl `setlocale/3` note); a name with a
 # NUL is cut there as a C string; the options are read before the alias is entered, as upstream.
@@ -804,7 +806,7 @@ function pl_locale_create3_va(
     return unifyLocale(gd, ld, A1, nl, true) ? FTRUE : FFALSE
 end
 
-# PORT: pl-locale.c locale_destroy
+# PORT: pl-locale.c locale_destroy as pl_locale_destroy1_va
 # (PRED_IMPL("locale_destroy", 1, locale_destroy, 0))
 "`locale_destroy(+Locale)`: remove the alias, drop the reference (pl-locale.c)."
 function pl_locale_destroy1_va(
@@ -826,7 +828,7 @@ function pl_locale_destroy1_va(
     return FTRUE
 end
 
-# PORT: pl-locale.c set_locale
+# PORT: pl-locale.c set_locale as pl_set_locale1_va
 # (PRED_IMPL("set_locale", 1, set_locale, 0))
 # DIVERGES: the loop that sets the locale of the five standard streams (`Ssetlocale`) is NOT PORTED (see the header). As
 # upstream, the reference `getLocaleEx` acquired is not released when `l` is the current locale already.
@@ -845,7 +847,7 @@ function pl_set_locale1_va(
     return FTRUE
 end
 
-# PORT: pl-locale.c current_locale
+# PORT: pl-locale.c current_locale as pl_current_locale1_va
 # (PRED_IMPL("current_locale", 1, current_locale, 0))
 "`current_locale(-Locale)`: the current locale (pl-locale.c)."
 function pl_current_locale1_va(
@@ -902,7 +904,7 @@ end
 
 # ── the registration ─────────────────────────────────────────────────────────────────────────────────
 
-# PORT: pl-locale.c BeginPredDefs
+# PORT: pl-locale.c BeginPredDefs as PL_predicates_from_locale
 # DIVERGES: appended last in `_PRED_TABLES` (src/pl-ext.jl), so the dispatch indices of the earlier tables stay as they were.
 "pl-locale.c's registration table (`BeginPredDefs(locale)`)."
 const PL_predicates_from_locale = (

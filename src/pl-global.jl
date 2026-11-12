@@ -1,6 +1,7 @@
 # UPSTREAM: swipl-devel src/pl-global.h @ 18168e629eab
 # UPSTREAM: swipl-devel src/pl-incl.h @ 18168e629eab
 # UPSTREAM: swipl-devel src/pl-init.h @ 18168e629eab
+# UPSTREAM: swipl-devel src/os/pl-locale.h @ 18168e629eab
 # UPSTREAM: swipl-devel src/pl-variant.c @ 18168e629eab
 # UPSTREAM: swipl-devel src/os/pl-file.c @ 18168e629eab
 # CLASS: code
@@ -116,7 +117,7 @@ mutable struct sig_handler{T}
 end
 sig_handler{T}() where {T} = sig_handler{T}(0, 0, nothing, 0)
 
-# PORT: pl-incl.h Stack (small, factor, min_free)
+# PORT: pl-incl.h Stack as stack_params_t
 # DIVERGES (representation, owner TH1): upstream keeps these per stack in `LD->stacks.<stack>`; the kernel has one engine, so ONE
 # record per stack lives in the database (`GD.stacks_params`: local, global, trail, argument), as `reload_generation` does.
 # `small`, `factor` and `min_free` (here in WORDS, upstream's bytes divided by `sizeof(word)`, what `$set_prolog_stack/4` reports)
@@ -134,7 +135,7 @@ end
 "`PL_locale.magic` of a live locale (pl-locale.h)."
 const LOCALE_MAGIC = 37838743
 
-# PORT: pl-locale.h PL_locale
+# PORT: pl-locale.h PL_locale as PL_locale_rec
 # DIVERGES: named `PL_locale_rec` (src/os/pl-fmt.jl's `PL_locale` is the three-string view format/2 reads). `decimal_point`
 # and `thousands_sep` are `String`s (upstream's `wchar_t *`); `grouping` is upstream's `char *` as the group sizes then a
 # 0 (a `CHAR_MAX` entry: no more groups); `alias` and `symbol` are `nothing` for upstream's 0. `serial` has no upstream
@@ -152,7 +153,7 @@ mutable struct PL_locale_rec{T}
     serial::Int                                 # (the number in gd.locale.refs, the blob's payload)
 end
 
-# PORT: pl-global.h PL_global_data locale
+# PORT: pl-global.h locale as locale_state
 # DIVERGES: `GD->locale.localeTable` is a vector of the aliased locales in creation order (upstream's hash table has no
 # order the rows can rely on); `refs` has no upstream twin (the locales a locale blob names, by number); `current` is
 # `LD->locale.current` (pl-global.h:906) kept in the database, as `reload_generation` is (the kernel runs one thread, owner

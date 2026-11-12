@@ -8,10 +8,6 @@ pred:$activate_static_extension/1	LB5-LB7	seed: missing_c_preds.tsv
 pred:$call_no_catch/1	DBG1	seed: missing_c_preds.tsv
 pred:$can_yield/0	DBG1	seed: missing_c_preds.tsv
 pred:$clause_term_position/3	LB5-LB7	seed: missing_c_preds.tsv
-pred:$depth_limit/3	P3	seed: missing_c_preds.tsv
-pred:$depth_limit_except/3	P3	seed: missing_c_preds.tsv
-pred:$depth_limit_false/3	P3	seed: missing_c_preds.tsv
-pred:$depth_limit_true/5	P3	seed: missing_c_preds.tsv
 pred:$engine_create/3	TH1	seed: missing_c_preds.tsv
 pred:$foreign_predicate_source/2	PR1	seed: missing_c_preds.tsv
 pred:$gc_clear/1	TH1	seed: missing_c_preds.tsv
@@ -33,10 +29,6 @@ pred:$idg_mono_index_deps/4	TAB1	seed: missing_c_preds.tsv
 pred:$idg_mono_invalidate/1	TAB1	seed: missing_c_preds.tsv
 pred:$idg_reset_current/0	TAB1	seed: missing_c_preds.tsv
 pred:$idg_set_current/2	TAB1	seed: missing_c_preds.tsv
-pred:$inference_limit/2	P3	seed: missing_c_preds.tsv
-pred:$inference_limit_except/3	P3	seed: missing_c_preds.tsv
-pred:$inference_limit_false/1	P3	seed: missing_c_preds.tsv
-pred:$inference_limit_true/3	P3	seed: missing_c_preds.tsv
 pred:$leash/2	DBG1	seed: missing_c_preds.tsv
 pred:$mono_idg_changed/2	TAB1	seed: missing_c_preds.tsv
 pred:$mono_reeval_done/3	TAB1	seed: missing_c_preds.tsv
@@ -80,12 +72,8 @@ pred:$transaction/2	TX1	seed: missing_c_preds.tsv
 pred:$transaction/3	TX1	seed: missing_c_preds.tsv
 pred:$undo/1	TX1	seed: missing_c_preds.tsv
 pred:$unload_file/1	SRC2	seed: missing_c_preds.tsv
-pred:$urgent_exception/3	P3	seed: missing_c_preds.tsv
 pred:$visible/2	DBG1	seed: missing_c_preds.tsv
-pred:char_type/2	CT1	seed: missing_c_preds.tsv
-pred:code_type/2	CT1	seed: missing_c_preds.tsv
 pred:engine_next/2	TH1	seed: missing_c_preds.tsv
-pred:format_time/3	TAI1	seed: missing_c_preds.tsv
 pred:garbage_collect_atoms/0	Q10	seed: missing_c_preds.tsv
 pred:get/1	S2a	seed: missing_c_preds.tsv
 pred:get/2	S2a	seed: missing_c_preds.tsv

@@ -1,4 +1,6 @@
 # UPSTREAM: swipl-devel src/pl-setup.c @ 18168e629eab
+# UPSTREAM: swipl-devel src/pl-incl.h @ 18168e629eab
+# UPSTREAM: swipl-devel src/SWI-Prolog.h @ 18168e629eab
 # CLASS: code
 # COPYRIGHT: Copyright (c)  1985-2024, University of Amsterdam
 # COPYRIGHT: VU University Amsterdam
@@ -209,7 +211,7 @@ const MAXSIGNAL = 64
 # PORT: pl-incl.h NUM_SIGNALS
 "The number of signals (pl-incl.h)."
 const NUM_SIGNALS = MAXSIGNAL - MINSIGNAL + 1
-# PORT: pl-incl.h virtual_signum
+# PORT: pl-incl.h virtual_signum as SIG_ATOM_GC
 # DIVERGES: the `SIG_*` numbers (`SIG_PROLOG_OFFSET + VSIG_*`) as `Int` constants; `O_ATOMGC` and `O_ENGINES` are on.
 "Prolog signal: atom garbage collection (pl-incl.h `SIG_ATOM_GC`)."
 const SIG_ATOM_GC = SIG_PROLOG_OFFSET + 0
@@ -282,7 +284,7 @@ const SIGH_THREAD_SIGNAL = 12
 "The highest handler token."
 const SIGH_MAX = 12
 
-# PORT: pl-setup.c signames (the Prolog signals)
+# PORT: pl-setup.c signames as SIGNAMES_VIRTUAL
 # DIVERGES: the entries of the `signames` table that follow the OS signals (`prolog:atom_gc` …), here a table of their own; the
 # kernel's numbers are `SIG_PROLOG_OFFSET + VSIG_*`. `SIG_TUNE_GC` has no entry upstream either.
 const SIGNAMES_VIRTUAL = (
@@ -292,7 +294,7 @@ const SIGNAMES_VIRTUAL = (
     ("prolog:halt", SIG_PLHALT)
 )
 
-# PORT: pl-setup.c signames (the flags column)
+# PORT: pl-setup.c signames as SIGNAMES_FLAGS
 # DIVERGES: the OS signals that start with a flag, `(number, flags)`: `fpe`, `alrm`, `xcpu`, `xfsz`, `vtalrm` throw, `pipe` is
 # ignored (the other columns are 0).
 const SIGNAMES_FLAGS = (
@@ -412,7 +414,7 @@ function unprepareSignal!(handlers::Vector{sig_handler{T}}, sig::Int)::Nothing w
     return nothing
 end
 
-# PORT: pl-setup.c PL_signal (the part initSignals uses)
+# PORT: pl-setup.c PL_signal as _signal_install!
 # DIVERGES: `PL_signal(sig|flags, func)` is `PL_sigaction` with a handler function and no predicate: for a signal not yet prepared
 # (or one whose handler is another) it records `func` and prepares the signal with the flags; the kernel has no API entry point
 # for it, so this is the call `initSignals!` makes, on a handler token.

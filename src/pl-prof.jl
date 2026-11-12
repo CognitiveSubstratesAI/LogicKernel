@@ -31,7 +31,7 @@
 #   5. MEMORY: no `allocHeap`, no `releaseModule` (`prof_release_def`: no module GC), the `prof_ref` chains are vectors
 #      (new references are pushed at the end and unified from the end, upstream's order of `r->next = callers; callers = r`).
 
-# ORIGINAL: the refusal every collection entry point raises (step PROF1).
+# No upstream twin (kept as a comment, not a header line): the refusal every collection entry point raises (step PROF1).
 function _prof_refuse(
     ld::PL_local_data{T}, culprit::Symbol, what::String
 )::Union{} where {T}
@@ -197,10 +197,14 @@ function pl_prof_node8_va(
     end
 end
 
-# PORT: pl-prof.h DEF_SPONTANEOUS / DEF_RECURSIVE (pl-prof.c: `(Definition)0` and `(Definition)1`)
-# DIVERGES: the two special handles are the kinds of a reference, its `handle` being `nothing` then.
+# The kinds of a reference: a real definition, or one of the two special handles (pl-prof.c: `(Definition)0` and
+# `(Definition)1`); the `handle` of the last two is `nothing`. `PROF_REF_DEF` has no upstream twin.
 const PROF_REF_DEF = 0
+# PORT: pl-prof.c DEF_SPONTANEOUS as PROF_REF_SPONTANEOUS
+# DIVERGES: the special handle is a kind of a reference, its `handle` being `nothing` then.
 const PROF_REF_SPONTANEOUS = 1
+# PORT: pl-prof.c DEF_RECURSIVE as PROF_REF_RECURSIVE
+# DIVERGES: the special handle is a kind of a reference, its `handle` being `nothing` then.
 const PROF_REF_RECURSIVE = 2
 
 # PORT: pl-prof.c prof_ref

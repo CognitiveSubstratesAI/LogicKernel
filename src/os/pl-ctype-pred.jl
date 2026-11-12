@@ -1,8 +1,8 @@
-# UPSTREAM: swipl-devel src/os/pl-ctype.c @ 18168e629eab
-# CLASS: code
-# COPYRIGHT: Copyright (c)  2011-2026, University of Amsterdam
-# COPYRIGHT: VU University Amsterdam
-# COPYRIGHT: SWI-Prolog Solutions b.v.
+# ORIGINAL: the part of src/os/pl-ctype.c that needs the FLI (the character-type predicates and the case/space predicates),
+# split from src/os/pl-ctype.jl, which is loaded before the FLI. The file name has no upstream path of its own (a port of
+# pl-ctype.c lives at src/os/pl-ctype.jl), so it is ORIGINAL; each function keeps its `# PORT: pl-ctype.c <name>` marker.
+# Copyright of the upstream code: Copyright (c)  2011-2026, University of Amsterdam, VU University Amsterdam,
+# SWI-Prolog Solutions b.v. (src/os/pl-ctype.c at 18168e629eab).
 #
 # CHARACTER TYPES AS PREDICATES (pl-ctype.c), CT1b: `char_type/2` and `code_type/2` and the class tests they run;
 # CT1c: `downcase_atom/2`, `upcase_atom/2`, `string_lower/2`, `string_upper/2`, `normalize_space/2` and the locale's
@@ -513,7 +513,7 @@ end
 
 # ── the text half of pl-ctype.c (CT1c): the case predicates and normalize_space/2 ───────────────────
 
-# PORT: pl-ctype.c get_chr_from_text
+# PORT: pl-ctype.c get_chr_from_text as ctype_get_chr_from_text
 # DIVERGES (name): pl-fmt.c has a static function of the same name (src/os/pl-fmt.jl, 0-based, returns the code); both are
 # methods of one Julia module and the signatures agree, so this one is `ctype_get_chr_from_text`.
 # DIVERGES: the text is its vector of code points (`_text_code_points`, which reads every encoding the kernel's texts

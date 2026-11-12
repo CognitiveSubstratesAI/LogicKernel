@@ -4038,7 +4038,7 @@ _c_char(b::Int)::Int = b > 127 ? b - 256 : b
 "The lowercase of the code point `c` (src/pl-read.c `PL_tolower`)."
 _pl_tolower(c::Int)::Int = c <= 0x10FFFF ? Int(lowercase(Char(c))) : c
 
-# PORT: pl-prims.c sub_atom_icasechk (the two search loops)
+# PORT: pl-prims.c sub_atom_icasechk as _icasechk_search
 # DIVERGES: `nt` and `ht` carry no `::PL_chars_t` annotation: src/os/pl-text.jl, which defines the type, is
 # included after this file; the body asserts it. The two loops of the predicate, over `char *` and over `pl_wchar_t *`, are one function over the
 # canonical texts `nt` (needle) and `ht` (haystack) and the 0-based unit index; `narrow` selects the
