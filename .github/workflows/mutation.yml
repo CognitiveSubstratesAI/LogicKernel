@@ -1,5 +1,5 @@
-# The mutation battery of one step, in CI (user, 2026-10-13): since GATESPEED (audit D-0530) up to SIX SHARD JOBS on
-# the free standard runners, each running its slice of the list on a WARM DAEMON (tools/mutate_ci.py warm). Started by hand, at a
+# The mutation battery of one step, in CI (user, 2026-10-13): ONE JOB PER MUTANT, in parallel, on the
+# free standard runners — the battery that takes about an hour on one machine. Started by hand, at a
 # step's close, one of two ways:
 #   * a PUSH of the commit to the branch `mutants/<step>` — the list is then tools/mutants/<step>.py
 #     and the targets its own `TARGETS` (`git push origin <sha>:refs/heads/mutants/V9f`); no token
@@ -19,7 +19,6 @@ on:
   push:
     branches:
       - 'mutants/**'
-      - 'perf/bat-**'          # GATESPEED scratch battery: the list for perf/bat-<X> is tools/mutants/<X>.py
   workflow_dispatch:
     inputs:
       mutants:
@@ -84,27 +83,20 @@ jobs:
       matrix: ${{ steps.plan.outputs.matrix }}
       count: ${{ steps.plan.outputs.count }}
       targets: ${{ steps.plan.outputs.targets }}
-      shards: ${{ steps.plan.outputs.shards }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - id: plan
         run: python3 tools/mutate_ci.py plan "$MUTANTS" $IDS >> "$GITHUB_OUTPUT"
 
-  # SHARDS ON THE WARM DAEMON (GATESPEED, audit D-0530): N jobs (N = max(1, min(6, ceil(count/6)))), each with ONE
-  # setup (checkout, the shared depot cache, ONE instantiate), the warm daemon started once, and its slice of the
-  # list run through tools/mutate_ci.py `warm` (the local driver's loop: apply, Revise hot-reloads, run the targets
-  # in the daemon, restore). Shard 1 runs the UNMUTATED targets first (baseline.json), every shard ends with a
-  # closing baseline (a red one makes the shard's records NO VERDICT). A mutant marked `"fresh": True` in its list
-  # runs in a fresh process, as the one-job-per-mutant battery ran them (the escape hatch for a mutant the warm
-  # daemon decides differently from a fresh process).
-  shard:
-    name: Shard ${{ matrix.shard }}/${{ matrix.of }}
+  # The targets on the UNMUTATED tree. A mutant's "caught" means nothing against a red baseline
+  # (a guard is proved against a green one), so `verdicts` refuses the battery when this is red.
+  baseline:
+    name: Baseline (unmutated)
     needs: plan
     runs-on: ubuntu-24.04   # pinned: CI.yml's note above `jobs:`
-    timeout-minutes: 120
-    strategy:
-      fail-fast: false                # every shard gets its verdicts
-      matrix: ${{ fromJson(needs.plan.outputs.shards) }}
+    timeout-minutes: 90
+    env:
+      TARGETS: ${{ inputs.targets || needs.plan.outputs.targets }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - uses: ./.github/actions/oracle
@@ -137,8 +129,6 @@ jobs:
           submodules: true
       # PINNED to commit SHAs (D-0562 item 4), no longer rev="master": the same three commits as CI.yml and evidence.yml
       # (JET 6f20b0f0, LoweredCodeUtils 6f5c109b, Aqua 84f9eb4f). Move the three TOGETHER, in every workflow that installs them, with the reason.
-      # Revise is in the tools' own call (as CI.yml's Tooling job installs them: one resolve) when the targets
-      # name the static analysis; the warm daemon loads it from the DEFAULT environment (tools/warm_session.jl)
       - name: Install the analysis tools (the targets name test/test_static_analysis.jl, one part of it or the whole suite)
         if: ${{ contains(format('{0} {1}', inputs.targets, needs.plan.outputs.targets), 'test_static_analysis') || contains(format('{0} {1}', inputs.targets, needs.plan.outputs.targets), 'mutate_sa_part') || contains(format('{0} {1}', inputs.targets, needs.plan.outputs.targets), 'mutate_suite') }}
         run: |
@@ -146,53 +136,22 @@ jobs:
             PackageSpec(url="https://github.com/JuliaDebug/LoweredCodeUtils.jl", rev="6f5c109b054a9f5c04aa042e6fe958fd4cd4f6b7"),
             PackageSpec(url="https://github.com/aviatesk/JET.jl", rev="6f20b0f01761ef66a9d4846f7f0ed2346fd5ff1e"),
             PackageSpec(url="https://github.com/JuliaTesting/Aqua.jl", rev="84f9eb4f4f947ec96c40e8b1274d5b7865a7ecfd"),
-            PackageSpec(name="AllocCheck"),
-            PackageSpec(name="Revise")])'
-      - name: Revise in the default environment (the warm daemon hot-reloads each mutant through it)
-        run: julia -e 'using Pkg; Pkg.add(PackageSpec(name="Revise"))'
+            PackageSpec(name="AllocCheck")])'
       # THE HOME TREE (LB4 b2): every database is a copy of the BOOTED one, which reads HOME/boot/init.pl; `home/` is
       # generated and git-ignored, so a fresh checkout has none (Evidence 42021496734: 664 failing tests, "build the home
       # tree first"). tools/build_home.jl links the tracked vendor/ and packages/plunit: no network, no packages, about a second.
       - name: The home tree (tools/build_home.jl)
         run: julia tools/build_home.jl
       - run: julia --project=. -e 'using Pkg; Pkg.instantiate()'
-      # The warm daemon is a `systemd-run --user` unit (CI.yml's Tooling job, the same step): a runner has no user
-      # manager until lingering is enabled; the step fails if `systemd-run --user --scope` still does not work.
-      - name: A user systemd manager (the warm lane's units and scopes)
-        run: |
-          sudo loginctl enable-linger "$USER"
-          uid="$(id -u)"
-          echo "XDG_RUNTIME_DIR=/run/user/$uid" >> "$GITHUB_ENV"
-          echo "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$uid/bus" >> "$GITHUB_ENV"
-          export XDG_RUNTIME_DIR="/run/user/$uid" DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$uid/bus"
-          for _ in $(seq 60); do
-              systemctl --user is-system-running 2> /dev/null | grep -qE '^(running|degraded)$' && break
-              sleep 1
-          done
-          systemctl --user is-system-running || true
-          systemd-run --user --scope --quiet true
-      - name: Start the warm daemon
-        run: tools/warm.sh start
-      # Applies each mutant of the slice (its text must occur exactly once: else BADMATCH), runs the targets in
-      # the warm daemon, restores the file, writes mutation-out/<name>.json and the log. Exits 0 whatever the
-      # verdict: the verdict is DATA here, judged in one place (`verdicts`). `locked`: the lane is held for the run.
-      - name: Run the shard's mutants on the warm daemon
-        run: tools/warm.sh locked python3 tools/mutate_ci.py warm "$MUTANTS" "$SHARD" "$OF" "$LIMIT_S" $TARGETS
-        env:
-          SHARD: ${{ matrix.shard }}
-          OF: ${{ matrix.of }}
-          TARGETS: ${{ inputs.targets || needs.plan.outputs.targets }}
-      - name: The daemon's session log
-        if: ${{ !cancelled() }}
-        run: mkdir -p mutation-out && cp .warm/session.log "mutation-out/session-$SHARD.log" || true
-        env:
-          SHARD: ${{ matrix.shard }}
+      - name: Run the targets
+        run: python3 tools/mutate_ci.py baseline "$LIMIT_S" $TARGETS
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         if: ${{ !cancelled() }}
         with:
-          name: verdict-shard-${{ matrix.shard }}
+          name: verdict-baseline
           path: mutation-out/
-      # ... and again at the job's end, BEFORE the cache action's post step saves the depot: it never enters the key
+      # ... and again at the job's end, BEFORE the cache action's post step saves the depot: a mutated compiled LogicKernel
+      # never enters the shared key
       - name: No compiled LogicKernel in the shared cache
         if: ${{ always() }}
         run: |
@@ -201,28 +160,87 @@ jobs:
           done
           true
 
-  # The targets on the UNMUTATED tree. A mutant's "caught" means nothing against a red baseline (a guard is
-  # proved against a green one), so `verdicts` refuses the battery when this is red. The baseline itself runs
-  # FIRST inside shard 1, on the warm daemon; this job only reads its record from the artifact, so the job name,
-  # `Baseline (unmutated)`, stays what tools/battery_table.py, tools/ci_status.sh and the tests look for.
-  baseline:
-    name: Baseline (unmutated)
-    needs: [plan, shard]
-    if: ${{ !cancelled() }}
+  mutant:
+    name: ${{ matrix.name }}
+    needs: plan
     runs-on: ubuntu-24.04   # pinned: CI.yml's note above `jobs:`
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false                # every mutant gets its verdict
+      max-parallel: 20
+      matrix: ${{ fromJson(needs.plan.outputs.matrix) }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
+      - uses: ./.github/actions/oracle
+      - uses: julia-actions/setup-julia@da908477b5db94c10ffce8cfea9f2b3b9d5db687  # v3.0.3
         with:
-          pattern: verdict-shard-*
-          path: mutation-out
-          merge-multiple: true
-      - name: Shard 1's baseline record
-        run: python3 tools/mutate_ci.py check-baseline
+          version: '1.13'
+      - uses: julia-actions/cache@9353db09a0f2bbbdec6f41791918c75d37391b36  # v3.5.0
+        with:
+          cache-name: julia-cache;lk-shared;julia=1.13
+          include-matrix: 'false'
+      # AUDIT D-0535 item 1: the shared depot cache holds the registry, packages, artifacts and the compiled caches of the
+      # DEPENDENCIES only. The package under test's OWN compiled cache (compiled/<julia>/LogicKernel*) is dropped right
+      # after the restore (a stale precompiled copy could keep a mutant from taking effect) ...
+      - name: No restored compiled LogicKernel (the shared cache is dependencies only)
+        run: |
+          for d in "$HOME"/.julia/compiled/v*/LogicKernel*; do
+              [ -e "$d" ] && { echo "dropping the restored $d"; rm -rf "$d"; }
+          done
+          true
+      - name: The pinned swipl-devel commit (a whole-suite target, test/test_vendored_*.jl, or test_cont_boot_swipl.jl)
+        id: pin
+        if: ${{ contains(format('{0} {1}', inputs.targets, needs.plan.outputs.targets), 'mutate_suite') || contains(format('{0} {1}', inputs.targets, needs.plan.outputs.targets), 'test_vendored') || contains(format('{0} {1}', inputs.targets, needs.plan.outputs.targets), 'test_cont_boot') }}
+        run: echo "commit=$(sed -n 's/^commit:[[:space:]]*//p' tools/SWIPL_VERSION | tr -d '[:space:]')" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        if: ${{ steps.pin.outputs.commit != '' }}
+        with:
+          repository: SWI-Prolog/swipl-devel
+          ref: ${{ steps.pin.outputs.commit }}
+          path: .upstream/swipl-devel
+          submodules: true
+      # PINNED to commit SHAs (D-0562 item 4), no longer rev="master": the same three commits as CI.yml and evidence.yml
+      # (JET 6f20b0f0, LoweredCodeUtils 6f5c109b, Aqua 84f9eb4f). Move the three TOGETHER, in every workflow that installs them, with the reason.
+      - name: Install the analysis tools (the targets name test/test_static_analysis.jl, one part of it or the whole suite)
+        if: ${{ contains(format('{0} {1}', inputs.targets, needs.plan.outputs.targets), 'test_static_analysis') || contains(format('{0} {1}', inputs.targets, needs.plan.outputs.targets), 'mutate_sa_part') || contains(format('{0} {1}', inputs.targets, needs.plan.outputs.targets), 'mutate_suite') }}
+        run: |
+          julia -e 'using Pkg; Pkg.add([
+            PackageSpec(url="https://github.com/JuliaDebug/LoweredCodeUtils.jl", rev="6f5c109b054a9f5c04aa042e6fe958fd4cd4f6b7"),
+            PackageSpec(url="https://github.com/aviatesk/JET.jl", rev="6f20b0f01761ef66a9d4846f7f0ed2346fd5ff1e"),
+            PackageSpec(url="https://github.com/JuliaTesting/Aqua.jl", rev="84f9eb4f4f947ec96c40e8b1274d5b7865a7ecfd"),
+            PackageSpec(name="AllocCheck")])'
+      # THE HOME TREE (LB4 b2): every database is a copy of the BOOTED one, which reads HOME/boot/init.pl; `home/` is
+      # generated and git-ignored, so a fresh checkout has none (Evidence 42021496734: 664 failing tests, "build the home
+      # tree first"). tools/build_home.jl links the tracked vendor/ and packages/plunit: no network, no packages, about a second.
+      - name: The home tree (tools/build_home.jl)
+        run: julia tools/build_home.jl
+      - run: julia --project=. -e 'using Pkg; Pkg.instantiate()'
+      # Applies the mutant (its text must occur exactly once: else BADMATCH), runs the targets in
+      # fresh processes, writes mutation-out/<name>.json and the log. Exits 0 whatever the verdict:
+      # the verdict is DATA here, judged in one place (`verdicts`).
+      - name: Apply the mutant and run the targets
+        run: python3 tools/mutate_ci.py one "$MUTANTS" "$MUTANT" "$LIMIT_S" $TARGETS
+        env:
+          MUTANT: ${{ matrix.name }}
+          TARGETS: ${{ inputs.targets || needs.plan.outputs.targets }}
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        if: ${{ !cancelled() }}
+        with:
+          name: verdict-${{ matrix.name }}
+          path: mutation-out/
+      # ... and again at the job's end, BEFORE the cache action's post step saves the depot: a mutated compiled LogicKernel
+      # never enters the shared key
+      - name: No compiled LogicKernel in the shared cache
+        if: ${{ always() }}
+        run: |
+          for d in "$HOME"/.julia/compiled/v*/LogicKernel*; do
+              [ -e "$d" ] && { echo "dropping $d before the cache save"; rm -rf "$d"; }
+          done
+          true
 
   verdicts:
     name: Verdict table
-    needs: [plan, shard, baseline]
+    needs: [plan, baseline, mutant]
     if: ${{ !cancelled() }}
     runs-on: ubuntu-24.04   # pinned: CI.yml's note above `jobs:`
     steps:

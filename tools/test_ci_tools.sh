@@ -596,46 +596,6 @@ has "WARN: a pin older than CI's resolved version is named, with the bump advice
 out="$(warnrun 1.13.3)"
 hasnt "WARN: a pin equal to CI's resolved version says nothing" "$out" "WARN"
 
-# ---------------------------------------------------------------- the warm battery and the REQUIRE switches (D-0536 item 2)
-# (a) the daemon unit is handed the workflow's LOGICKERNEL_REQUIRE_* variables (and the upstream checkouts), and only those
-#     that are SET: `warm.sh daemon-env` prints what a start hands over (no daemon, no Julia)
-out="$(env -i PATH="$PATH" HOME="$HOME" LOGICKERNEL_REQUIRE_SWIPL=1 LOGICKERNEL_REQUIRE_TOOLS=1 LOGICKERNEL_UPSTREAM_PROBE=/p LOGICKERNEL_UNRELATED=x "$ROOT/tools/warm.sh" daemon-env 2>&1)"
-has "daemon-env: LOGICKERNEL_REQUIRE_SWIPL is handed to the daemon" "$out" "^LOGICKERNEL_REQUIRE_SWIPL=1$"
-has "daemon-env: LOGICKERNEL_REQUIRE_TOOLS is handed to the daemon" "$out" "^LOGICKERNEL_REQUIRE_TOOLS=1$"
-has "daemon-env: the upstream checkouts still are" "$out" "^LOGICKERNEL_UPSTREAM_PROBE=/p$"
-hasnt "daemon-env: another variable is not" "$out" "UNRELATED"
-out="$(env -i PATH="$PATH" HOME="$HOME" LOGICKERNEL_UPSTREAM_PROBE=/p "$ROOT/tools/warm.sh" daemon-env 2>&1)"
-hasnt "daemon-env: a REQUIRE variable that is not set is not invented" "$out" "REQUIRE"
-# (b) with the oracle required and swipl not on PATH the warm battery's BASELINE is RED (exit 1, baseline.json exit != 0,
-#     no mutant ran); with a swipl on PATH, or the oracle not required, it is green and the mutant runs. `sh:` targets: no
-#     Julia, no daemon (GITHUB_ACTIONS=true: the pin is CI's own)
-mkdir -p "$W/wb/nobin" "$W/wb/swbin" "$W/wb/run"
-ln -s "$(command -v python3)" "$W/wb/nobin/python3"
-ln -s "$(command -v bash)" "$W/wb/nobin/bash"
-printf '#!/bin/sh\nexit 0\n' > "$W/wb/swbin/swipl"
-chmod +x "$W/wb/swbin/swipl"
-ln -s "$(command -v python3)" "$W/wb/swbin/python3"
-ln -s "$(command -v bash)" "$W/wb/swbin/bash"
-printf 'x = 1\n' > "$W/wb/run/m.txt"
-printf 'MUTANTS = [{"id": "WB-1 swap", "file": "m.txt", "old": "x = 1", "new": "x = 2", "targets": ["sh:exit 0"]}]\n' > "$W/wb/run/list.py"
-wb_baseline_exit() { python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["exit"])' "$W/wb/out/mutation-out/baseline.json"; }
-wbrun() {   # wbrun BINDIR [REQUIRE_SWIPL] — the warm command, shard 1 of 1, in a fresh copy of the run directory
-    rm -rf "$W/wb/out" && cp -r "$W/wb/run" "$W/wb/out"
-    ( cd "$W/wb/out" && env -i HOME="$HOME" PATH="$1" GITHUB_ACTIONS=true ${2:+LOGICKERNEL_REQUIRE_SWIPL="$2"} \
-        python3 -I "$ROOT/tools/mutate_ci.py" warm list.py 1 1 20 "sh:exit 0" 2>&1 )
-}
-out="$(wbrun "$W/wb/nobin" 1)"; rc=$?
-ok "warm battery, oracle required but missing: exit 1" 1 "$rc"
-has "…the error names the oracle" "$out" "title=oracle::LOGICKERNEL_REQUIRE_SWIPL=1 but swipl is not on PATH"
-ok "…baseline.json is RED (exit 2)" 2 "$(wb_baseline_exit)"
-ok "…and no mutant ran" 0 "$(ls "$W/wb/out/mutation-out" | grep -c '^WB-1')"
-out="$(wbrun "$W/wb/nobin")"; rc=$?
-ok "warm battery, oracle not required: exit 0, baseline green" "0 0" "$rc $(wb_baseline_exit)"
-has "…and the mutant ran" "$out" "WB-1 SURVIVED"
-out="$(wbrun "$W/wb/swbin" 1)"; rc=$?
-ok "warm battery, oracle required and present: exit 0, baseline green" "0 0" "$rc $(wb_baseline_exit)"
-has "…and the mutant ran" "$out" "WB-1 SURVIVED"
-
 # ---------------------------------------------------------------- tools/pkgtest_costs.py, the log-based mode (D-0536 item 4)
 # CANNED job logs in the runner's format (a timestamp prefix, `  [unit] <file> [<type>]  X s  (compiling Y s)  N passed, M
 # broken`): `logs DIR` sums the seconds per file over the term types, leaves the static analysis out of the table, reports
