@@ -1,7 +1,7 @@
 # UPSTREAM: swipl-devel src/pl-prof.c @ 18168e629eab
 # UPSTREAM: swipl-devel src/pl-prof.h @ 18168e629eab
 # CLASS: code
-# COPYRIGHT: Copyright (c)  1985-2025, University of Amsterdam
+# COPYRIGHT: Copyright (c)  1985-2026, University of Amsterdam
 # COPYRIGHT: VU University Amsterdam
 # COPYRIGHT: SWI-Prolog Solutions b.v.
 # allow-new-artifact: a port of the pin's src/pl-prof.c, read from the pin (git show 18168e62) for this file

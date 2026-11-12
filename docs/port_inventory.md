@@ -201,8 +201,8 @@ how many of the upstream file's functions are ported.
 | swipl-devel `src/pl-proc.c` | code | `18168e629eab` | `src/pl-proc.jl` | 95 | 74 |
 | swipl-devel `src/pl-proc.h` | code | `18168e629eab` | `src/pl-proc.jl` | 1 | 0 |
 | swipl-devel `src/pl-prof.c` | code | `18168e629eab` | `src/pl-incl.jl` | 1 | 0 |
-| swipl-devel `src/pl-prof.c` | code | `18168e629eab` | `src/pl-prof.jl` | 53 | 22 |
-| swipl-devel `src/pl-prof.h` | code | `18168e629eab` | `src/pl-prof.jl` | 2 | 2 |
+| swipl-devel `src/pl-prof.c` | code | `18168e629eab` | `src/pl-prof.jl` | 55 | 24 |
+| swipl-devel `src/pl-prof.h` | code | `18168e629eab` | `src/pl-prof.jl` | 0 | 0 |
 | swipl-devel `src/pl-qlf.c` | code | `18168e629eab` | `src/pl-qlf.jl` | 35 | 12 |
 | swipl-devel `src/pl-read.c` | code | `18168e629eab` | `src/os/pl-prologflag.jl` | 2 | 2 |
 | swipl-devel `src/pl-read.c` | code | `18168e629eab` | `src/pl-read.jl` | 218 | 90 |
