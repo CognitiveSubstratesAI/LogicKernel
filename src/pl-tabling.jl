@@ -7586,13 +7586,30 @@ end
 # `map_trie_node` callbacks are closures over `ld` (upstream: the context pointer).
 
 # PORT: pl-tabling.c tt_has_modified_dependencies
-# (pl-tabling.c:7416-7438 at the pin)
-# DIVERGES: `LD->transaction.predicates` (the predicates modified in the open transaction) is TB9's; without a
-# transaction it is NULL and upstream's result is false, which is what this returns for every table.
-"Whether `atrie` depends on a dynamic predicate modified in the open transaction (pl-tabling.c); false: no transaction (TB9)."
+# (pl-tabling.c:7405-7438 at the pin)
+# DIVERGES: `LD->transaction.predicates` is a `Dict` keyed on the `Definition` (upstream's `TablePW` keyed on the pointer); a trie
+# without a predicate (`nothing`) names none.
+"Whether `atrie` depends on a dynamic predicate modified in the open transaction (pl-tabling.c)."
 function tt_has_modified_dependencies(ld::PL_local_data{T}, atrie::trie{T})::Bool where {T}
-    # if ( (n=atrie->data.IDG) && LD->transaction.predicates ): the second is NULL without a transaction (TB9)
-    return false
+    n = atrie.IDG
+    preds = ld.transaction.predicates
+    found = false
+
+    if n !== nothing && preds !== nothing
+        gd = _query_gd(ld)
+        en = idg_set_enum_init(n.dependent)
+        while (dep = idg_set_next(en)) !== nothing
+            strie = gd.tries[dep.atrie]
+            pred = strie.predicate
+
+            if _wl_is(strie, WL_DYNAMIC) && pred !== nothing && haskey(preds, pred)
+                found = true
+                break
+            end
+        end
+    end
+
+    return found
 end
 
 # PORT: pl-tabling.c tbl_reeval_wait as pl_tbl_reeval_wait2_va
