@@ -3221,7 +3221,11 @@ const RAT_BULK = Int(0x2)
 # PORT: pl-tabling.c reset_answer_table
 # DIVERGES: the worklist branch (an answer table with a worklist) is refused by name, owner TB5 (the abolish callers hold the
 # engine `ld` that `destroy_depending_worklists`, `destroy_delay_info_worklist` and `free_worklist` need; this function and the
-# release chain above it carry only `gd`; docs/architecture.md TAB1 TB2, "named refusal"); a sentinel (WL_GROUND, WL_DYNAMIC) is
+# release chain above it carry only `gd`; docs/architecture.md TAB1 TB2, "named refusal"). DISPATCHER RULING (option c): the callers
+# that hold `ld` (`destroy_answer_trie`, `abolish_table`) run the worklist branch and the IDG branch BEFORE `trie_delete`
+# (`reset_answer_table_worklist`, `reset_answer_table_idg`), so the chain finds neither; the refusals below stay for every other
+# path into the chain (`reset_table_bulk` with `ld` known to its caller `empty_variant_table`: left to TB6, with idg_registry_delete);
+# a sentinel (WL_GROUND, WL_DYNAMIC) is
 # `data.worklist = Int` and is made fresh again; the IDG node is refused by name, owner TB6 (`idg_reset`, `idg_destroy`,
 # `idg_destroy_private`), the tracked table (`tt_abolish_table`) owner TB9.
 "Make the answer table `atrie` fresh again: no worklist, not complete, no answers (pl-tabling.c)."
@@ -3687,9 +3691,45 @@ function reset_answer_table_worklist(
     return nothing
 end
 
+# PORT: pl-tabling.c reset_answer_table as reset_answer_table_idg
+# (pl-tabling.c:2654-2662 at the pin: the `(n=atrie->data.IDG)` branch.)
+# DIVERGES: the branch needs the engine (`idg_reset`, `idg_destroy` and `idg_destroy_private` take `ld`: the lingering sets and the
+# node pool are the thread's), which the release chain of `trie_delete` does not carry (`reset_answer_table`'s refusal, owner TB6).
+# The callers that hold `ld` (`destroy_answer_trie`, `abolish_table`) run the branch BEFORE `trie_delete`, as they do the worklist
+# branch (`reset_answer_table_worklist`); it sets `atrie.IDG = nothing`, so the chain finds no node. Upstream runs it inside the
+# chain, after the variant table's node is unlinked: the only observable difference is the order of those two steps. Any other path
+# into the chain with an IDG node (`tbl_release_node` from another `trie_delete`) keeps the refusal. A shared table is refused by
+# name, owner TH1 (`idg_reset` of a shared node is its concurrent-reader case).
+"The IDG branch of `reset_answer_table`: the node of `atrie` is reset (shared table) or destroyed (pl-tabling.c)."
+function reset_answer_table_idg(
+    ld::PL_local_data{T}, atrie::trie{T}, flags::Int
+)::Nothing where {T}
+    n = atrie.IDG
+    if n !== nothing
+        if (atrie.flags & TRIE_ISSHARED) != 0 && _query_gd(ld).halt_cleaning != CLN_DATA
+            tbl_refuse(
+                T,
+                :reset_answer_table_idg,
+                "reset_answer_table: the IDG node of a shared table (idg_reset)",
+                "TH1"
+            )
+        else
+            atrie.IDG = nothing
+            if (flags & RAT_BULK) != 0
+                idg_destroy_private(ld, n)
+            else
+                idg_destroy(ld, n)
+            end
+        end
+    end
+
+    return nothing
+end
+
 # PORT: pl-tabling.c destroy_answer_trie
 # (pl-tabling.c:4472-4492 at the pin.)
-# DIVERGES: the shared branch (`COMPLETE_WORKLIST(reset_answer_table)`) is refused by name, owner TH1.
+# DIVERGES: the shared branch (`COMPLETE_WORKLIST(reset_answer_table)`) is refused by name, owner TH1. The worklist and IDG branches of
+# `reset_answer_table` run before `trie_delete` (`reset_answer_table_worklist`, `reset_answer_table_idg`).
 "Delete the node of the answer trie `atrie` from its variant table; whether there was one (pl-tabling.c)."
 function destroy_answer_trie(ld::PL_local_data{T}, atrie::trie{T})::Bool where {T}
     if atrie.variant != 0
@@ -3699,9 +3739,9 @@ function destroy_answer_trie(ld::PL_local_data{T}, atrie::trie{T})::Bool where {
                 tbl_refuse(
                     T, :destroy_answer_trie, "destroy_answer_trie: a shared table", "TH1"
                 )
-            reset_answer_table_worklist(
-                ld, atrie, vtrie.magic == TRIE_CMAGIC ? RAT_CLEANUP : 0
-            )
+            rat_flags = vtrie.magic == TRIE_CMAGIC ? RAT_CLEANUP : 0
+            reset_answer_table_worklist(ld, atrie, rat_flags)
+            reset_answer_table_idg(ld, atrie, rat_flags)
             trie_delete(_query_gd(ld), vtrie, atrie.variant, true)
 
             return true
@@ -9113,6 +9153,8 @@ end
 
 # PORT: pl-tabling.c abolish_table
 # DIVERGES: the `O_PLMT` branch of a shared table is refused by name, owner TH1 (`take_trie`, `drop_trie`, the condition variable).
+# The worklist and IDG branches of `reset_answer_table` run before `trie_delete` (`reset_answer_table_worklist`,
+# `reset_answer_table_idg`: the release chain carries only `gd`), after `collect_dynamic_children` has read the node's dependents.
 "Abolish the table `atrie`: schedule it for when it completes if it is incomplete, else delete it from its variant table (pl-tabling.c)."
 function abolish_table(ld::PL_local_data{T}, atrie::trie{T})::Bool where {T}
     if _wl_is(atrie, WL_DYNAMIC)
@@ -9128,6 +9170,9 @@ function abolish_table(ld::PL_local_data{T}, atrie::trie{T})::Bool where {T}
                 tbl_refuse(T, :abolish_table, "abolish_table: a shared table (take_trie, drop_trie)", "TH1")
             if !delayed_destroy_table(atrie)
                 b = collect_dynamic_children(ld, atrie)
+                rat_flags = vtrie.magic == TRIE_CMAGIC ? RAT_CLEANUP : 0
+                reset_answer_table_worklist(ld, atrie, rat_flags)
+                reset_answer_table_idg(ld, atrie, rat_flags)
                 trie_delete(_query_gd(ld), vtrie, atrie.variant, true)
                 delete_orphan_dynamic_tables(ld, b)
             end

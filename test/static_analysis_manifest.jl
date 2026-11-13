@@ -2994,6 +2994,7 @@ function _manifest_index(T)
         ]...,
         (LK.unify_delay_info_dl, Tuple{LD, Int, LK.trie{T}, Int}, false),
         (LK.reset_answer_table_worklist, Tuple{LD, LK.trie{T}, Int}, false),
+        (LK.reset_answer_table_idg, Tuple{LD, LK.trie{T}, Int}, false),
         (LK._frame_arg_slot, Tuple{LD, Int, Int}, false),
         (LK.put_supervisor_goal, Tuple{LD, Int, D, Int, Bool}, false),
         (LK.complete_answer_clause, Tuple{LD, LK.trie{T}}, false),

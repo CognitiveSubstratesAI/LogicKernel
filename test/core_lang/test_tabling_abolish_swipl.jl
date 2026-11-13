@@ -488,6 +488,50 @@ end
     @test gd.tries[ld.tabling.variant_table].value_count == 3
 end
 
+# The IDG branch of `reset_answer_table` (pl-tabling.c:2654-2662) with the engine: `destroy_answer_trie` and `abolish_table` run it
+# (`reset_answer_table_idg`) BEFORE `trie_delete`, because the release chain carries only `gd` (DIVERGES, dispatcher ruling, option (c)).
+# LK-only white-box rows; the graph is built by hand as test_tabling_idg_swipl.jl's idg12 does. A caller that did not run the branch
+# would reach the chain's named refusal (NotPortedError) and fail these rows; an `idg_destroy` that left the edge would fail the
+# `dependent` rows. UNVERIFIED on the kernel (nothing was compiled when these rows were written): the gate decides.
+@testset "abolish: the IDG node goes with the table (reset_answer_table's IDG branch before trie_delete)" begin
+    gd, ld, st = _ab_load(_AB_COMMON * _AB_KERNEL, _AB_CASES[1:1], true)
+    @test st == "ok"
+    atries = _ab_tables!(gd, ld)
+    variants = gd.tries[ld.tabling.variant_table]
+    nodes = [LK.idg_new(ld, a) for a in atries]
+    @test all(n -> n !== nothing, nodes)
+    for (a, n) in zip(atries, nodes)
+        a.IDG = n
+    end
+    live(set) = begin
+        out = LK.idg_node{_AB}[]
+        e = LK.idg_set_enum_init(set)
+        while (p = LK.idg_set_next(e)) !== nothing
+            push!(out, p)
+        end
+        out
+    end
+    @test LK.idg_add_child(ld, nodes[1], nodes[2], 0, 0)       # nodes[2] depends on nodes[1]: it is in nodes[1].dependent
+    @test LK.idg_add_child(ld, nodes[1], nodes[3], 0, 0)
+    @test length(live(nodes[1].dependent)) == 2
+    @test variants.value_count == 3
+    # destroy_answer_trie: the node of atries[2] is destroyed with its table, its half of the edge leaves nodes[1].dependent
+    @test LK.destroy_answer_trie(ld, atries[2])
+    @test atries[2].IDG === nothing
+    @test variants.value_count == 2
+    @test length(live(nodes[1].dependent)) == 1
+    @test live(nodes[1].dependent)[1] === nodes[3]
+    # abolish_table: the same for atries[3]
+    @test LK.abolish_table(ld, atries[3])
+    @test atries[3].IDG === nothing
+    @test variants.value_count == 1
+    @test isempty(live(nodes[1].dependent))
+    # and the table that is the parent of no edge any more
+    @test LK.abolish_table(ld, atries[1])
+    @test atries[1].IDG === nothing
+    @test variants.value_count == 0
+end
+
 @testset "the abolish rows are not vacuous" begin
     @test _AB_PINNED[1] == "ok" && _AB_PINNED_U[1] == "ok"
     @test length(_AB_PINNED) == length(_AB_CASES) + 1
