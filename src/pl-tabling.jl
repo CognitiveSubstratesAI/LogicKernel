@@ -7197,13 +7197,13 @@ end
 
 # PORT: pl-tabling.c IDG_CHANGED_NODE
 "`idg_changed` flag: a normal node change (pl-tabling.c)."
-const IDG_CHANGED_NODE = 0x0001
+const IDG_CHANGED_NODE = 1
 # PORT: pl-tabling.c IDG_CHANGED_MONO
 "`idg_changed` flag: a monotonic node change (pl-tabling.c)."
-const IDG_CHANGED_MONO = 0x0002
+const IDG_CHANGED_MONO = 2
 # PORT: pl-tabling.c IDG_PROPAGATE_FORCE
 "`idg_propagate_change` flag: monotonic to incremental evaluation (pl-tabling.c)."
-const IDG_PROPAGATE_FORCE = 0x0004
+const IDG_PROPAGATE_FORCE = 4
 
 # PORT: pl-tabling.c idg_changed_loop
 "Walk the parents of `state.child` and on, raising (`IDG_CHANGED_NODE`) or lowering the falsecounts (pl-tabling.c)."
