@@ -14,8 +14,8 @@
 # A SITE MUTANT (G1GC2-S*) drops ALLOW_GC at one site: killed by the row of that site (R: `site in on_hits[i]` of `_G_REQ`), and by T when the site is the
 #   only line that names it. A site that other rows also record (copyRecordToGlobal: seven call sites, six rows) is killed by the row that reaches THAT call
 #   site only: g15 (bag), g16 (recorded/2, bound key), g21 (recorded/3, bound reference), g22 (instance/2), g23 (PL_recorded, through a trie).
-# EQUIVALENT until G1-6 (the collector): the re-check after a collection (the placeholder `garbageCollect` never returns BOOLEX_TRUE), and the redundant
-#   flag test in ensureGlobalSpace (considerGC tests the flag itself).
+# EQUIVALENT: only the redundant flag test in ensureGlobalSpace (considerGC tests the flag itself). The re-check after a collection (E5) and the hook call (E5B)
+#   were declared equivalent "until G1-6"; the collector now runs at a foreign safe point, so GD = test/core_lang/test_gc_driver.jl carries their kill row.
 # Every `old` is counted EXACTLY once in its file by `python3 -I ~/code/lk-t27-scratch/oldscan.py G1GC2`; no Julia ran.
 #   RE-FIT any `old` that `tools/warm.sh fmt` rewraps.
 GS = "test/core_lang/test_g1gc_safe_points.jl"
@@ -39,8 +39,9 @@ DC = "test/core_lang/test_dict_preds_swipl.jl"
 RC = "test/db/test_record_swipl.jl"
 CN = ["test/core_lang/test_cont_run_swipl.jl", "test/core_lang/test_cont_boot_swipl.jl"]
 UN = "test/core_lang/test_univ_cells.jl"
+GD = "test/core_lang/test_gc_driver.jl"          # the driver's gate: the collector at a foreign safe point (G1GC2-E5, E5B)
 HOOK = [GS] + STK + [GV] + FA + CT + [DC, RC] + CN + ATT
-TARGETS = HOOK + [UN]                            # the union of every mutant's targets (mutate_ci.py plan reads TARGETS)
+TARGETS = HOOK + [UN, GD]                            # the union of every mutant's targets (mutate_ci.py plan reads TARGETS)
 
 
 def m(id, old, new, targets, file, eq=None):
@@ -104,11 +105,16 @@ MUTANTS = [
       "if (flags & ALLOW_GC) != 0 && (ld.gc_force", "if (ld.gc_force",
       HOOK, AL,
       eq="src/pl-alloc.jl:ensureGlobalSpace: `considerGC` (src/pl-gc.jl) opens with `(flags & ALLOW_GC) == 0 && return false`, so a call without ALLOW_GC reaches it and leaves it with false, records nothing, and `fits` is not re-read (the re-check runs only after a collection that ran). The hook is called more often, with no effect; killing it needs a test that counts calls of considerGC, which the one-line flag test of H1 already guards"),
-    m("G1GC2-E5 ensureGlobalSpace: the re-check after a collection is dropped (the placeholder never collects; equivalent until G1-6)",
+    # G1GC2-E5 and E5B were declared EQUIVALENT ("the placeholder never collects"); since the G1-6c driver the collector RUNS at a foreign safe point
+    # (registers_fr == 0: functor/3, =../2, '$length'/2, or no query), so neither is an equivalent: both are killed, the `eq=` is gone (audit D-0644 item 2).
+    m("G1GC2-E5 ensureGlobalSpace: the re-check of `fits` after a collection that ran is dropped (KILL GD: `ensureGlobalSpace at a foreign safe point: a collection that gains room lets the call through the limit`, `r === true`, `!ld.outofstack`)",
+      "            fits = _stacks_in_use(ld, n) <= ld.stacks_limit || ld.exception_processing   # hasGlobalSpace(n) again (pl-gc.c:4714-4719)\n",
+      "            nothing   # hasGlobalSpace(n) again (pl-gc.c:4714-4719): dropped\n",
+      HOOK + [GD], AL),
+    m("G1GC2-E5B ensureGlobalSpace: the hook call is dropped, no collection at any safe point (KILL GS H: `ld.gc_safe_hits == [:probe_site]`; GD: the same testset, and `coll_on > 0` of the program row)",
       "        if considerGC(ld, flags, GC_GLOBAL_OVERFLOW, site)   # G1-GC safe point: garbageCollect(GC_GLOBAL_OVERFLOW)\n",
       "        if false   # G1-GC safe point: garbageCollect(GC_GLOBAL_OVERFLOW)\n",
-      HOOK, AL,
-      eq="src/pl-gc.jl:garbageCollect answers BOOLEX_FALSE, so considerGC never returns true and the body of the `if` (the re-read of `fits`) never runs. DEFERRED KILL: G1-6 fills garbageCollect; its test (a collection that gains room lets a call through the limit) kills this mutant, and the declaration goes then"),
+      HOOK + [GD], AL),
     # ---- a NEEDS-ROOT site made a safe point
     m("G1GC2-N1 bind_attvar_const passes ALLOW_GC (NEEDS-ROOT: it holds p and c across the call; KILL GS R: g20 records a site outside the table)",
       "ensureGlobalSpace(ld, 0) || return false                # if ( !hasGlobalSpace(0) )",

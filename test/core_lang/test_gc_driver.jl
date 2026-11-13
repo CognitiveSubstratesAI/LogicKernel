@@ -362,15 +362,56 @@ end
         db = _rdb(copy(prog))
         db.ld.gc_force = force
         out = Vector{Tuple{String, Bool}}[_rcall(db, _rf(n, _rv(90))) for n in names]
-        return out, copy(db.ld.gc_safe_hits), db.ld.gc.status.blocked, db.ld.gc.status.active
+        return out, copy(db.ld.gc_safe_hits), db.ld.gc.status.blocked, db.ld.gc.status.active, db.ld.gc.stats.totals.collections
     end
-    off, hits_off, b0, a0 = _run(false)
-    on, hits_on, b1, a1 = _run(true)
+    off, hits_off, b0, a0, coll_off = _run(false)
+    on, hits_on, b1, a1, coll_on = _run(true)
     @test all(a -> length(a) == 1 && !isempty(a[1][1]), off)
     @test on == off
     @test isempty(hits_off)
     @test !isempty(hits_on)                                       # the sites were reached
+    @test coll_on > 0 && coll_on >= coll_off                      # G1GC2-E5: a foreign safe point (registers_fr == 0) really collects: the totals of the statistics moved
     @test b0 == 0 && b1 == 0 && !a0 && !a1
+end
+
+# G1GC2-E5 (tools/mutants/G1GC2.py): `ensureGlobalSpace` reads `fits` AGAIN after a collection that ran (pl-gc.c:4714-4719, `hasGlobalSpace(n)` after `considerGC`).
+# The engine has no query, so `registers_fr == 0`: the foreign safe point of functor/3, =../2 and '$length'/2 (the driver's else arm), where the real collector runs.
+# The limit is set one word under what the request needs NOW, so the call fits only if the collection really freed room: the answer `true`, the statistics record,
+# the moved `gTop` and the independent reader's views are the observables; the control (a limit nothing could meet) answers false from the SAME code path.
+@testset "ensureGlobalSpace at a foreign safe point: a collection that gains room lets the call through the limit (G1GC2-E5)" begin
+    n = 4
+    ld, t, n0, dead_cells = _gd_heap()
+    before = _gd_views(ld, t, 2)
+    @test length(dead_cells) >= 10 && !isempty(before) && all(v -> _gd_nodes(v) >= 7, before)
+    @test ld.query == 0                                          # no query: registers_fr is not even read, the else arm of get_vmi_state
+    use0 = LK._stacks_in_use(ld, n)
+    gtop0 = ld.gTop
+    ld.stacks_limit = use0 - 1                                   # the request does not fit as the stacks are
+    @test !(LK._stacks_in_use(ld, n) <= ld.stacks_limit) && !ld.exception_processing
+    ld.gc_force = true
+    st = ld.gc.stats
+    i0, c0 = st.last_index, st.totals.collections
+    r = LK.ensureGlobalSpace(ld, n, LK.ALLOW_GC, :probe_regain)
+    @test ld.gc_safe_hits == [:probe_regain]                     # the hook was reached
+    @test st.last_index == LK.STAT_NEXT_INDEX(i0) && st.totals.collections == c0 + 1    # and collected: one record
+    rec = LK.last_gc_stats(st)
+    @test rec.global_before > 0 && rec.global_after < rec.global_before
+    @test ld.gTop <= gtop0 - length(dead_cells)                  # the dead term's cells are gone: the room that was gained
+    @test LK._stacks_in_use(ld, n) <= ld.stacks_limit            # fits now ...
+    @test r === true                                             # ... and the re-check says so (the mutant keeps the stale `fits` and raises)
+    @test !ld.exception_processing && !ld.outofstack
+    @test !isempty(_gd_views(ld, t, 2)) && _gd_views(ld, t, 2) == before
+
+    # the control: the SAME call with a limit no collection could meet collects, still does not fit, and raises the overflow
+    ld2, t2, _, dead2 = _gd_heap()
+    floor_use = LK._stacks_in_use(ld2, 0) - ld2.gTop - 1         # under the stacks even with an empty global stack
+    ld2.stacks_limit = floor_use
+    ld2.gc_force = true
+    st2 = ld2.gc.stats
+    c2 = st2.totals.collections
+    r2 = LK.ensureGlobalSpace(ld2, n, LK.ALLOW_GC, :probe_nogain)
+    @test ld2.gc_safe_hits == [:probe_nogain] && st2.totals.collections == c2 + 1
+    @test r2 === false && ld2.outofstack && ld2.exception_processing
 end
 
 @testset "clear_unused_stack writes nothing (a release build of swipl)" begin
