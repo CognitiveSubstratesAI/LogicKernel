@@ -728,8 +728,7 @@ end
 
 # PORT: pl-tabling.c free_worklist_set
 # (pl-tabling.c:924-955 at the pin)
-# DIVERGES: the reevaluation branch (`atrie->data.IDG->reevaluating`, `reset_reevaluation`) is TB6's: a named refusal;
-# `table_is_incomplete` and `destroy_answer_trie` are TB1's (pl-tabling.c:4368, :4472).
+# DIVERGES: `table_is_incomplete` and `destroy_answer_trie` are TB1's (pl-tabling.c:4368, :4472).
 "Free the set `wls`; `freewl` (WLFS_*) says which of its worklists are freed or their incomplete tables destroyed (pl-tabling.c `free_worklist_set`)."
 function free_worklist_set(
     ld::PL_local_data{T}, wls::worklist_set{tbl_worklist{T}}, freewl::Int
@@ -740,13 +739,10 @@ function free_worklist_set(
             if (freewl & WLFS_FREE_ALL) != 0 || (atrie.flags & TRIE_COMPLETE) != 0
                 free_worklist(ld, wl)
             elseif (freewl & WLFS_DISCARD_INCOMPLETE) != 0
-                if atrie.IDG !== nothing            # && atrie->data.IDG->reevaluating
-                    throw(
-                        NotPortedError{T}(
-                            mk_sym(T, :reset_reevaluation),
-                            "reset_reevaluation (pl-tabling.c:11375)", "TB6"
-                        )
-                    )
+                if atrie.IDG !== nothing && atrie.IDG.reevaluating   # atrie->data.IDG && atrie->data.IDG->reevaluating
+                    atrie.worklist = nothing        # atrie->data.worklist = NULL
+                    free_worklist(ld, wl)
+                    reset_reevaluation(ld, atrie)
                 elseif table_is_incomplete(atrie)
                     destroy_answer_trie(ld, atrie)
                 end
@@ -1413,42 +1409,40 @@ end
 
 # PORT: pl-tabling.c answer_nodes_discardable
 # (pl-tabling.c:3983-3995 at the pin)
-# DIVERGES: the IDG node (`atrie->data.IDG`) is TB6's: a table with one is refused by name; no table has one before TB6.
+# DIVERGES: `map_trie_node(&atrie->root, conditional_answer_node, NULL)` is `map_trie_node(atrie, 1, closure)`: the callback
+# answers the node id of a conditional answer, `nothing` for none (upstream: the node or NULL).
 "Whether the nodes of the complete answer trie `atrie` may be discarded once it is compiled (pl-tabling.c `answer_nodes_discardable`)."
 function answer_nodes_discardable(ld::PL_local_data{T}, atrie::trie{T})::Bool where {T}
     def = atrie.predicate
-    atrie.IDG === nothing || throw(
-        NotPortedError{T}(
-            mk_sym(T, :answer_nodes_discardable),
-            "answer_nodes_discardable: an IDG node (monotonic, map_trie_node)",
-            "TB6"
-        )
-    )
+    idg = atrie.IDG
     tp = def === nothing ? nothing : def.tabling
 
-    return (atrie.flags & (TRIE_ISMAP | TRIE_ISSHARED | TRIE_ISTRACKED)) == 0 &&   # !(idg && idg->monotonic)
+    return (atrie.flags & (TRIE_ISMAP | TRIE_ISSHARED | TRIE_ISTRACKED)) == 0 &&
+           !(idg !== nothing && idg.monotonic) &&
            tp !== nothing &&
            (tp.flags & TP_VARIANT) != 0 &&
-           (tp.flags & TP_MONOTONIC) == 0                                           # !(idg && map_trie_node(...))
+           (tp.flags & TP_MONOTONIC) == 0 &&
+           !(
+               idg !== nothing &&
+               map_trie_node(
+                   atrie, 1, (tr, nid) -> (c = conditional_answer_node(ld, tr, nid)) != 0 ? c : nothing
+               ) !== nothing
+           )
 end
 
 # PORT: pl-tabling.c complete_worklist
 # (pl-tabling.c:3997-4020 at the pin; COMPLETE_WORKLIST without O_PLMT: the code alone, pl-tabling.c:383)
-# DIVERGES: `tt_has_modified_dependencies` (an IDG node, pl-tabling.c:7416) is TB6's: a table with an IDG node is refused by
-# name; without one it is false.
+# DIVERGES: `tt_add_table` (the transaction's table list, TB9) is a named refusal; it is reached only when
+# `tt_has_modified_dependencies` is true, which needs an open transaction (the kernel has none).
 "Complete the worklist `wl`: freed when `destroy`, else kept without clusters; its answer trie is complete (pl-tabling.c `complete_worklist`)."
 function complete_worklist(
     ld::PL_local_data{T}, wl::tbl_worklist{T}, destroy::Bool
 )::Nothing where {T}
     atrie = wl_table(ld, wl)
 
-    atrie.IDG === nothing || throw(
-        NotPortedError{T}(
-            mk_sym(T, :tt_has_modified_dependencies),
-            "tt_has_modified_dependencies (pl-tabling.c:7416)",
-            "TB6"
-        )
-    )
+    if tt_has_modified_dependencies(ld, atrie)
+        throw(NotPortedError{T}(mk_sym(T, :tt_add_table), "tt_add_table (TT_TBL_INVALIDATE): transactions", "TB9"))
+    end
 
     if destroy
         free_worklist(ld, wl)
@@ -2306,23 +2300,31 @@ end
 
 # PORT: pl-tabling.c wls_reeval_complete
 # (pl-tabling.c:6226-6255 at the pin)
-# DIVERGES: the IDG node (`atrie->data.IDG`) is TB6's: `atrie.IDG` is `nothing` for every table until then, so neither loop
-# finds a re-evaluating node; a table with one is refused by name (`reeval_complete`, pl-tabling.c:11341, and the node's
-# `reevaluating` and `falsecount` are TB6's).
 "Finish the re-evaluation of the re-evaluated tables of the worklists `wls` (pl-tabling.c `wls_reeval_complete`)."
 function wls_reeval_complete(
     ld::PL_local_data{T}, wls::Vector{tbl_worklist{T}}
 )::Nothing where {T}
+    reevaluated = 0
+
     for wl in wls
         atrie = wl_table(ld, wl)
-        if atrie.IDG !== nothing                    # if ( (n=atrie->data.IDG) ) { if ( n->reevaluating ) ...
-            throw(
-                NotPortedError{T}(
-                    mk_sym(T, :reeval_complete),
-                    "reeval_complete (pl-tabling.c:11341)",
-                    "TB6"
-                )
-            )
+
+        if (n = atrie.IDG) !== nothing
+            if n.reevaluating
+                reeval_complete(ld, atrie)
+                reevaluated += 1
+            end
+        end
+    end
+
+    if reevaluated != 0
+        for wl in wls
+            atrie = wl_table(ld, wl)
+
+            if (n = atrie.IDG) !== nothing
+                n.reevaluating = false
+                @assert n.falsecount == 0
+            end
         end
     end
 
