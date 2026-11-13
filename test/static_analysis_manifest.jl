@@ -2920,7 +2920,18 @@ _index_entry_points(T) = (
     (LK.qlfVersion, Tuple{LK.PL_local_data{T}, LK.wic_state, String}, false),
     (LK.qlfIsCompatible, Tuple{LK.PL_local_data{T}, LK.wic_state, String}, false),
     (LK.open_qlf_file, Tuple{LK.PL_local_data{T}, String}, false),
-    (LK.qlfInfo, Tuple{LK.PL_local_data{T}, String, Int, Int, Int, Int, Int, Int}, false),
+    (LK.qlfInfo, Tuple{LK.PL_local_data{T}, String, Int, Int, Int, Int, Int, Int, Int}, false),
+    # QLF2: `$qlf_sources`: the index at the end of the file, the path translation, the source entries
+    (LK.PL_put_uint64, Tuple{LK.PL_local_data{T}, Int, UInt64}, false),
+    (LK.qlfGet4BytesInt, Tuple{LK.IOSTREAM}, false),
+    (LK.qlfGetString, Tuple{LK.IOSTREAM}, false),
+    (LK.pushPathTranslation, Tuple{LK.PL_local_data{T}, LK.wic_state, String, Int}, false),
+    (LK.popPathTranslation, Tuple{LK.PL_local_data{T}, LK.wic_state}, false),
+    (LK.qlfFixSourcePath, Tuple{LK.PL_local_data{T}, LK.wic_state, String}, false),
+    (LK.loadFileName, Tuple{LK.PL_local_data{T}, LK.wic_state}, false),
+    (LK.qlfLoadFileHash, Tuple{LK.wic_state}, false),
+    (LK.qlfSourceInfo, Tuple{LK.PL_local_data{T}, LK.wic_state, Int, Int}, false),
+    (LK.qlfFilesInfo, Tuple{LK.PL_local_data{T}, LK.wic_state, String, Int}, false),
     [
         (f, Tuple{LK.PL_local_data{T}, Int, Int, LK.control_t{T}}, false) for
         f in (

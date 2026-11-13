@@ -1249,6 +1249,18 @@ function PL_unify_uint64(ld::PL_local_data{T}, t::term_t, i::UInt64)::Bool where
     return rc
 end
 
+# PORT: pl-fli.c PL_put_uint64
+# DIVERGES: a value past `Int64` is put as a fresh variable unified (`PL_unify_uint64`) with the big integer, where
+# upstream builds the word with `put_uint64`; the term the reference holds is the same integer.
+"Make term reference `t` hold the unsigned integer `i`; a value above `typemax(Int64)` is a big integer (pl-fli.c)."
+function PL_put_uint64(ld::PL_local_data{T}, t::term_t, i::UInt64)::Bool where {T}
+    if reinterpret(Int64, i) >= 0                           # (int64_t)i >= 0
+        return PL_put_int64(ld, t, Int(i))
+    end
+    PL_put_variable(ld, t)
+    return PL_unify_uint64(ld, t, i)
+end
+
 # PORT: pl-fli.c get_float
 # DIVERGES: returns the value, or `nothing`, where upstream writes it through `f` and returns a Bool; the
 # number is read into a `number` (`PL_get_number`), not from the word.
