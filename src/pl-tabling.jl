@@ -9650,8 +9650,9 @@ function children_of_component(c::tbl_component{T}, b::Vector{tbl_component{T}})
 end
 
 # PORT: pl-tabling.c drop_intermediate_tables
-# DIVERGES: `LD->tabling.variant_table` is the trie numbered `ld.tabling.variant_table` (0: none); `symbol_trie` is
-# `trie_of_word` of the symbol's blob; `PL_unregister_atom` is left out (no atom GC); `table_is_incomplete` is TB1's.
+# DIVERGES: `LD->tabling.variant_table` is the trie numbered `ld.tabling.variant_table` (0: none); the symbol is a blob atom
+# (`symbol_trie` of its handle: the live trie or `nothing`); `trie_delete` takes the database; `PL_unregister_atom` is left
+# out (no atom GC); `table_is_incomplete` is TB1's.
 "Drop the intermediate answer tables of the completed components below `root` that are cheap to recompute (pl-tabling.c)."
 function drop_intermediate_tables(ld::PL_local_data{T}, root::tbl_component{T})::Nothing where {T}
     gd = _query_gd(ld)
@@ -9685,7 +9686,7 @@ function drop_intermediate_tables(ld::PL_local_data{T}, root::tbl_component{T}):
 
         if c.drop_symbol !== nothing
             sym = c.drop_symbol::T
-            atrie = is_blob(sym) ? trie_of_word(gd, blob_handle(sym)) : nothing
+            atrie = is_blob(sym) ? symbol_trie(gd, blob_handle(sym)) : nothing
 
             keep = (
                 atrie === nothing ||
@@ -9695,7 +9696,7 @@ function drop_intermediate_tables(ld::PL_local_data{T}, root::tbl_component{T}):
             )
             if !keep
                 if vtrie !== nothing && !table_is_incomplete(atrie::trie{T})
-                    trie_delete(vtrie, (atrie::trie{T}).variant, true)
+                    trie_delete(gd, vtrie, (atrie::trie{T}).variant, true)
                 end
             end
             c.drop_symbol = nothing
