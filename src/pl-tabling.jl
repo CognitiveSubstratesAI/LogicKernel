@@ -1432,8 +1432,6 @@ end
 
 # PORT: pl-tabling.c complete_worklist
 # (pl-tabling.c:3997-4020 at the pin; COMPLETE_WORKLIST without O_PLMT: the code alone, pl-tabling.c:383)
-# DIVERGES: `tt_add_table` (the transaction's table list, TB9) is a named refusal; it is reached only when
-# `tt_has_modified_dependencies` is true, which needs an open transaction (the kernel has none).
 "Complete the worklist `wl`: freed when `destroy`, else kept without clusters; its answer trie is complete (pl-tabling.c `complete_worklist`)."
 function complete_worklist(
     ld::PL_local_data{T}, wl::tbl_worklist{T}, destroy::Bool
@@ -1441,7 +1439,7 @@ function complete_worklist(
     atrie = wl_table(ld, wl)
 
     if tt_has_modified_dependencies(ld, atrie)
-        throw(NotPortedError{T}(mk_sym(T, :tt_add_table), "tt_add_table (TT_TBL_INVALIDATE): transactions", "TB9"))
+        tt_add_table(ld, atrie, TT_TBL_INVALIDATE)
     end
 
     if destroy
