@@ -1252,7 +1252,7 @@ const GEN_NESTED_RETRACT = typemax(tr_gen_t) - tr_gen_t(4)
 
 # PORT: pl-tabling.h TT_TBL_INVALIDATE
 "The flag of an entry of `tbl_trail.tables`: the table is invalidated when the transaction rolls back (pl-tabling.h)."
-const TT_TBL_INVALIDATE = 0x001
+const TT_TBL_INVALIDATE = 1
 # PORT: pl-tabling.h tbl_trail_type
 # DIVERGES: the enum `tbl_trail_type` is `Int` constants; only `TT_ANSWER` is a live action (the header's `TT_TABLE` has no user).
 "The type of an entry of `tbl_trail.actions`: a monotonic answer added in the transaction (pl-tabling.h `TT_ANSWER`)."
