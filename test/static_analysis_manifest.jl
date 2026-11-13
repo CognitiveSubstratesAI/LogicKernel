@@ -3454,6 +3454,48 @@ _manifest_gd_template(::Type{T}) where {T} = (
     (LK.registerBuiltinAtomSymbols!, Tuple{LK.atoms_t, LK.atom_symbols{T}}, false)
 )
 
+# G1-3a (src/pl-gcmark.jl, pl-gc.c's mark phase: the cell bits, mark_variable, the term-reference roots). Listed once: the
+# word-level helpers and the constructors name no term type. Not held allocation-free: the roots open frames, `error` builds
+# messages, and the AllocCheck gate for the mark phase is G1-3's own decision (the handoff).
+_manifest_g1gc3a(::Type{T}) where {T} = (
+    (LK.gc_mark_counts, Tuple{}, false),
+    (LK.vm_state, Tuple{}, false),
+    (LK.mark_state, Tuple{LK.vm_state}, false),
+    (LK.is_marked, Tuple{UInt64}, false),
+    (LK.is_first, Tuple{UInt64}, false),
+    (LK.set_marked, Tuple{UInt64}, false),
+    (LK.clear_marked, Tuple{UInt64}, false),
+    (LK.set_first, Tuple{UInt64}, false),
+    (LK.clear_first, Tuple{UInt64}, false),
+    (LK.gc_get_value, Tuple{UInt64}, false),
+    (LK.gc_set_value, Tuple{UInt64, UInt64}, false),
+    (LK._gc_get, Tuple{LK.PL_local_data{T}, Int}, false),
+    (LK._gc_set!, Tuple{LK.PL_local_data{T}, Int, UInt64}, false),
+    (LK._gc_ptr, Tuple{Int, UInt64}, false),
+    (LK._gc_unptr, Tuple{UInt64}, false),
+    (LK._gc_is_global_ref, Tuple{UInt64}, false),
+    (LK._gc_fli_slot, Tuple{LK.fliFrame, Int}, false),
+    (LK.domark, Tuple{LK.PL_local_data{T}, LK.gc_mark_counts, Int}, false),
+    (LK.gc_new_term_ref!, Tuple{LK.PL_local_data{T}, UInt64}, false),
+    (LK.mark_variable, Tuple{LK.PL_local_data{T}, LK.gc_mark_counts, Int}, false),
+    (LK.mark_local_variable, Tuple{LK.PL_local_data{T}, LK.gc_mark_counts, Int}, false),
+    (LK.mark_arguments, Tuple{LK.PL_local_data{T}, LK.gc_mark_counts, Int}, false),
+    (LK.mark_new_arguments, Tuple{LK.PL_local_data{T}, LK.gc_mark_counts, LK.vm_state}, false),
+    (LK.mark_trie_gen, Tuple{LK.PL_local_data{T}, LK.gc_mark_counts, Int}, false),
+    (LK.mark_term_refs, Tuple{LK.PL_local_data{T}, LK.gc_mark_counts}, false),
+    (LK.mark_foreign_frame, Tuple{LK.PL_local_data{T}, LK.gc_mark_counts, Int, Int}, false),
+    (LK.save_grefs, Tuple{LK.PL_local_data{T}}, false),
+    (LK.restore_grefs, Tuple{LK.PL_local_data{T}, Int}, false),
+    (LK.gvars_to_term_refs, Tuple{LK.PL_local_data{T}}, false),
+    (LK.term_refs_to_gvars, Tuple{LK.PL_local_data{T}, Int, Int}, false),
+    (LK.argument_stack_to_term_refs, Tuple{LK.PL_local_data{T}, LK.vm_state}, false),
+    (LK.term_refs_to_argument_stack, Tuple{LK.PL_local_data{T}, LK.vm_state, Int}, false),
+    (LK.count_need_protection_attvars, Tuple{LK.PL_local_data{T}}, false),
+    (LK.link_attvars, Tuple{LK.PL_local_data{T}}, false),
+    (LK.restore_attvars, Tuple{LK.PL_local_data{T}, Int}, false),
+    (LK.gc_clear_marks!, Tuple{LK.PL_local_data{T}}, false),
+)
+
 # CONT1 (pl-cont.c, pl-gc.c's liveness walker, pl-fli.c): the continuation builders and readers that name a term type (the
 # walker's own entries, which name none, are listed once in the tuple below). `is_last_call` only reads the code, so it is held
 # allocation-free (as `_slot_from_cell!`); every other function here builds a term, a frame or a message and is not.
@@ -3575,6 +3617,34 @@ _manifest_g1gc2(::Type{T}) where {T} = (
     (LK.garbageCollect, Tuple{LK.PL_local_data{T}, Int}, false),
     (LK.considerGC, Tuple{LK.PL_local_data{T}, Int, Int, Symbol}, false),
     (LK.copyRecordToGlobal, Tuple{LK.PL_local_data{T}, Int, LK.record{T}, Int}, false)
+)
+
+# G1-3b (src/pl-gcwalk.jl, pl-gc.c's mark phase: the collector's walk, early reset, the choicepoint/environment/query drivers).
+# Not held allocation-free: the drivers build error messages and the callback `vmi_state_of` is dynamic.
+_manifest_g1gc3b(::Type{T}) where {T} = (
+    (LK.gc_walk_state, Tuple{Int, Int, Int, Int}, false),
+    (LK.mark_frame_var_gc, Tuple{LK.PL_local_data{T}, LK.gc_mark_counts, LK.gc_walk_state, LK.code}, false),
+    (LK.clear_frame_var_gc, Tuple{LK.PL_local_data{T}, LK.gc_walk_state, LK.code}, false),
+    (LK.mark_argp_gc, Tuple{LK.PL_local_data{T}, LK.gc_mark_counts, LK.gc_walk_state}, false),
+    (
+        LK.walk_and_mark_gc,
+        Tuple{LK.PL_local_data{T}, LK.gc_mark_counts, LK.gc_walk_state, Vector{LK.code}, Int, LK.code},
+        false
+    ),
+    (LK.mergeTrailedAssignments, Tuple{LK.PL_local_data{T}, LK.gc_mark_counts, Int, Int, Int}, false),
+    (LK.early_reset_vars, Tuple{LK.PL_local_data{T}, LK.gc_mark_counts, LK.mark, Int}, false),
+    (LK.gc_slots_in_frame, Tuple{LK.PL_local_data{T}, Int, Int}, false),
+    (LK._gc_is_trie_gen, Tuple{LK.localFrame{T}}, false),
+    (LK.mark_alt_clauses, Tuple{LK.PL_local_data{T}, LK.gc_mark_counts, Int, LK.ClauseRef{T}}, false),
+    (LK.early_reset_choicepoint, Tuple{LK.PL_local_data{T}, LK.gc_mark_counts, LK.mark_state, Int}, false),
+    (LK.mark_environments, Tuple{LK.PL_local_data{T}, LK.gc_mark_counts, LK.mark_state, Int, Int}, false),
+    (LK.mark_choicepoints, Tuple{LK.PL_local_data{T}, LK.gc_mark_counts, LK.mark_state, Int}, false),
+    (LK.mark_query_stacks, Tuple{LK.PL_local_data{T}, LK.gc_mark_counts, LK.mark_state, Int, Int, Int}, false),
+    (LK.mark_stacks, Tuple{LK.PL_local_data{T}, LK.gc_mark_counts, LK.vm_state}, false),
+    (LK.mark_phase, Tuple{LK.PL_local_data{T}, LK.gc_mark_counts, LK.vm_state}, false),
+    (LK.unmark_environments, Tuple{LK.PL_local_data{T}, Int, UInt32}, false),
+    (LK.unmark_choicepoints, Tuple{LK.PL_local_data{T}, Int, UInt32}, false),
+    (LK.unmark_stacks, Tuple{LK.PL_local_data{T}, Int, Int, UInt32}, false)
 )
 
 const _DISPATCH_MANIFEST_TUPLE = (
@@ -4349,8 +4419,12 @@ const _DISPATCH_MANIFEST_TUPLE = (
     (LK.clear_frame_var, Tuple{LK.walk_state, LK.code}, true),
     (LK.clear_choice_mark, Tuple{LK.walk_state, LK.code}, true),
     (LK.mark_choice_mark, Tuple{LK.walk_state, LK.code}, true),
+    # G1-3b: the mark phase's walk and drivers (src/pl-gcwalk.jl)
+    _manifest_g1gc3b(_M2)...,
     # CONT1: the continuations' run side (src/pl-cont.jl, src/pl-gc.jl, src/pl-fli.jl)
     _manifest_cont(_M2)...,
+    # G1-3a: the mark phase (src/pl-gcmark.jl)
+    _manifest_g1gc3a(_M2)...,
     # G1-GC G1-2: the safe-point hook and the flagged global-space check, over each term type
     _manifest_g1gc2(_M1)...,
     _manifest_g1gc2(_M2)...,
