@@ -1211,20 +1211,7 @@ end
     end
 end
 
-# ENC_ANSI (open/4 encoding(text), pl-file.c encoding_names `text`; pl-stream.c put_code/Sgetcode ENC_ANSI arms: wcrtomb/mbrtowc under the
-# C library's locale): a named refusal, swipl answers it from the locale (ENC1). The UTF-16 and wchar_t encodings are PORTED (rows d351-d382).
-@testset "named refusal: open/4 with encoding(text) (ENC_ANSI, locale conversion)" begin
-    @test _ld_refuses("open('/dev/null', read, S, [encoding(text)]), close(S)")
-    @test _ld_refuses("open('/dev/null', write, S, [encoding(text)]), close(S)")
-    # set_stream/2 reaches the same encoding on an open stream: the refusal is then put_code's and Sgetcode's
-    @test _ld_refuses("open('/dev/null', write, S), set_stream(S, encoding(text)), put_code(S, 0'a), close(S)")
-    @test _ld_refuses("open('/dev/null', read, S), set_stream(S, encoding(text)), get_code(S, _), close(S)")
-    # not vacuous: the ported neighbours are accepted
-    @test !_ld_refuses("open('/dev/null', write, S), set_stream(S, encoding(utf16le)), put_code(S, 0'a), close(S)")
-    @test !_ld_refuses("open('/dev/null', read, S), set_stream(S, encoding(utf16be)), get_code(S, _), close(S)")
-    @test !_ld_refuses("open('/dev/null', read, S, [encoding(utf16be)]), close(S)")
-    @test !_ld_refuses("open('/dev/null', read, S, [encoding(wchar_t)]), close(S)")
-end
+# ENC_ANSI (open/4 encoding(text), put_code/Sgetcode/read_pending_codes under the C library's locale): rows in test/core_lang/test_enc_ansi_swipl.jl.
 
 # unicode_atoms(nfc) (pl-read.c atom_to_unicode_atoms_ex, get_token `functor:` -> normalize_hook): KERNEL-ONLY rows. The pin's swipl 18168e62 is
 # built WITHOUT the library(unicode) package, so its answer to every nfc row is existence_error(source_sink, library(unicode)) (the first time) or
