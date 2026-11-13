@@ -51,18 +51,6 @@ const PL_MB_LEN_MAX = 16
 "The words of a zeroed `mbstate_t`."
 const MBSTATE_WORDS = 2
 
-# ORIGINAL: pl-stream.c's `if ( !s->mbstate ) { malloc; memset 0 }` of put_code and Sgetcode (and pl-file.c's read_pending_input)
-# DIVERGES: the state is a `Vector{UInt64}`, collected by the GC (upstream frees it in Sclose_ and at shutdown, `free(s->mbstate)`).
-"The `mbstate_t` of `s`: made zeroed the first time (pl-stream.c)."
-function stream_mbstate!(s::IOSTREAM)::Vector{UInt64}
-    st = s.mbstate
-    if st === nothing
-        st = zeros(UInt64, MBSTATE_WORDS)
-        s.mbstate = st
-    end
-    return st
-end
-
 # ORIGINAL: libc's `wcrtomb(3)` under the process's `LC_CTYPE` (the kernel never calls `setlocale`: the embedder or CT1 does).
 # DIVERGES: the bytes are the answer (`nothing` for `(size_t)-1`, an unrepresentable character); `wchar_t` is a `Cint` (Linux).
 "The bytes that the wide character `c` is in the process's multibyte encoding, `nothing` when it has none; `st` is the state."
@@ -376,6 +364,18 @@ mutable struct IOSTREAM
         Smemfunctions,
         ENC_UNKNOWN, 0, SIO_NL_POSIX, 0, nothing, S_UATOMS_ACCEPT, 0, false, nothing, nothing
     )
+end
+
+# ORIGINAL: pl-stream.c's `if ( !s->mbstate ) { malloc; memset 0 }` of put_code and Sgetcode (and pl-file.c's read_pending_input)
+# DIVERGES: the state is a `Vector{UInt64}`, collected by the GC (upstream frees it in Sclose_ and at shutdown, `free(s->mbstate)`).
+"The `mbstate_t` of `s`: made zeroed the first time (pl-stream.c)."
+function stream_mbstate!(s::IOSTREAM)::Vector{UInt64}
+    st = s.mbstate
+    if st === nothing
+        st = zeros(UInt64, MBSTATE_WORDS)
+        s.mbstate = st
+    end
+    return st
 end
 
 # ── the function sets ───────────────────────────────────────────────────────────────────────────
