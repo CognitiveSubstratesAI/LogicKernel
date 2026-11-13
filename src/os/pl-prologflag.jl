@@ -403,21 +403,6 @@ function ci_get_flag(ld::PL_local_data{T}, t::term_t, key::T)::Bool where {T}
     return false
 end
 
-# ORIGINAL (pl-tabling.c `tbl_is_restraint_flag`, `tbl_get_restraint_flag`, `unify_restraint`): the tabling
-# restraints live in `LD->tabling.restraint`, which the kernel does not have (tabling is not ported). Their only
-# value is the default `initTabling` sets — `error` for the three `*_action` flags, `(size_t)-1`, unlimited, for
-# the three sizes — which nothing can change before `set_prolog_flag/2` (R2 F1b refuses to set them by name).
-# `unify_restraint` fails for `(size_t)-1`: the three sizes answer nothing, as upstream's do.
-"Whether the atom `key` names a tabling restraint flag whose value is unlimited, so that reading it fails (pl-tabling.c `tbl_get_restraint_flag`)."
-function _tbl_restraint_unlimited(key::T)::Bool where {T}
-    name = sym_text(key)
-    return name == "max_table_subgoal_size" ||
-           name == "max_table_answer_size" ||
-           name == "max_answers_for_subgoal" ||
-           name == "max_incomplete_subgoals" ||
-           name == "max_scc_subgoals"
-end
-
 # PORT: pl-prologflag.c unify_prolog_flag_value
 # DIVERGES: the database and the module (an index into its table) are arguments; the key is compared by its
 # text, where upstream compares atom handles. The per-module flags are the module record's (see the file
@@ -483,8 +468,8 @@ function unify_prolog_flag_value(
         return PL_unify_atom(ld, val, mk_sym(T, SYSTEM_MODE(ld) ? :system : :user))
     elseif name == "stack_limit"
         return PL_unify_int64(ld, val, ld.stacks_limit * 8)
-    elseif _tbl_restraint_unlimited(key)
-        return false
+    elseif tbl_is_restraint_flag(key)                   # pl-prologflag.c:2127
+        return tbl_get_restraint_flag(ld, val, key)
     elseif is_arith_flag(key)
         return get_arith_flag(ld, val, key)
     elseif ci_is_flag(key)
@@ -1514,8 +1499,8 @@ end
 # PORT: pl-prologflag.c set_prolog_flag_unlocked
 # DIVERGES: no thread-local table (`FF_LOCAL`, `copy_prolog_flag`, `register_local_flag`): the table is the global
 # one. The module is its record. A flag that lives outside the table is refused by name (design D4): the arithmetic
-# flags (`set_arith_flag`, pl-arith.c), the clause-indexing flags (`ci_set_flag`, pl-index.c) and the tabling
-# restraints (`tbl_set_restraint_flag`, pl-tabling.c). A creation that `check_create_flag` refuses returns at once
+# flags (`set_arith_flag`, pl-arith.c) and the clause-indexing flags (`ci_set_flag`, pl-index.c); the tabling restraints are
+# set by `tbl_set_restraint_flag` (pl-tabling.c, TAB1 TB8). A creation that `check_create_flag` refuses returns at once
 # (upstream's code continues below the `if` chain).
 "Set, or with `FF_ISCREATE`/`FF_NOCREATE` create, the flag `k` to the value of the term `value`; the flag, `PSEUDO_FLAG`, or `nothing` after an error (pl-prologflag.c)."
 function set_prolog_flag_unlocked(
@@ -1531,8 +1516,7 @@ function set_prolog_flag_unlocked(
         rc == 1 && return f
         rc == -1 && return nothing
 
-        tbl_is_restraint_flag(k) &&
-            _flag_not_ported(k, "tbl_set_restraint_flag (tabling restraints)")
+        tbl_is_restraint_flag(k) && return tbl_set_restraint_flag(ld, value, k) ? PSEUDO_FLAG : nothing   # pl-prologflag.c:1628
         is_arith_flag(k) && _flag_not_ported(k, "set_arith_flag (pl-arith.c)")
         ci_is_flag(k) && _flag_not_ported(k, "ci_set_flag (pl-index.c)")
 

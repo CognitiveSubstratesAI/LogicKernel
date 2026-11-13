@@ -9377,6 +9377,591 @@ function untable_definition_clauses(
     return nothing
 end
 
+# TAB1 TB8 (the restraint flags, the tripwires and the drop of intermediate tables; pl-tabling.c at 18168e629eab, in its order
+# at :6340-6440 and :11693-11975). `tripwire_answers_for_subgoal` (:11827) and `pred_max_table_answer_size` are TB3's. The
+# callers that TB1/TB2/TB3 refuse by name until this step stack: get_answer_table (`tbl_pred_tripwire`, TB1), tbl_add_answer_found
+# (`tbl_wl_tripwire`, `add_radial_restraint`, `generalise_answer_substitution`, `add_answer_count_restraint`, TB3),
+# `unify_table_status` (`tripwire_scc_subgoals`, TB1/TB2), `_unify_fresh_create` (`tripwire_incomplete_subgoals`, TB2),
+# table_complete_all (`droppable_table`, `drop_intermediate_tables`, TB2): evidence/TB8/handoff.md lists each replacement.
+
+# ORIGINAL (TAB1 TB8): whether the atom `a` is the atom `name`, by the atom's identity (`sym_key`), as upstream's `==` of atom handles.
+"Whether the atom `a` is `name` (upstream: the comparison of two atom handles)."
+_tbl_is(a::T, name::Symbol)::Bool where {T} = sym_key(a) == sym_key(mk_sym(T, name))
+
+# ORIGINAL (TAB1 TB8): the atom (the blob term) that names the trie `tr`, `PL_put_atom(t, trie_symbol(tr))`'s value.
+"The atom of the trie `tr`, made on first use (pl-trie.c `trie_symbol`)."
+function _trie_atom(gd::PL_global_data{T}, tr::trie{T})::T where {T}
+    return _blob_term!(gd.atoms, gd.atom_symbols, T, trie_symbol(gd, tr))
+end
+
+# PORT: pl-tabling.c unify_restraint
+# DIVERGES: a `size_t` is an `Int`: `(size_t)-1` is -1; `PL_unify_uint64` of a non-negative value is `unify_int64_ex(t, i, true)`
+# (pl-fli.c:3750-3755): a bound `t` that is no integer raises `type_error(integer, t)` (swipl 10.1.20:
+# `current_prolog_flag(max_answers_for_subgoal, a)`).
+"Unify `t` with the limit `val`: fail for no limit, -1 (pl-tabling.c)."
+function unify_restraint(ld::PL_local_data{T}, t::term_t, val::Int)::Bool where {T}
+    val == -1 && return false
+
+    return unify_int64_ex(ld, t, val, true)
+end
+
+# PORT: pl-tabling.c tbl_get_restraint_flag
+# DIVERGES: the key is compared by its atom (`_tbl_is`); upstream's -1 for a key that is no restraint flag (its caller tests
+# `tbl_is_restraint_flag` first) is `false`.
+"Unify `t` with the value of the restraint flag `key`; the three limits and the two others that are unlimited fail (pl-tabling.c)."
+function tbl_get_restraint_flag(ld::PL_local_data{T}, t::term_t, key::T)::Bool where {T}
+    r = ld.tabling.restraint
+    if _tbl_is(key, :max_table_subgoal_size_action)
+        return PL_unify_atom(ld, t, r.max_table_subgoal_size_action)
+    elseif _tbl_is(key, :max_table_answer_size_action)
+        return PL_unify_atom(ld, t, r.max_table_answer_size_action)
+    elseif _tbl_is(key, :max_answers_for_subgoal_action)
+        return PL_unify_atom(ld, t, r.max_answers_for_subgoal_action)
+    elseif _tbl_is(key, :max_table_subgoal_size)
+        return unify_restraint(ld, t, r.max_table_subgoal_size)
+    elseif _tbl_is(key, :max_table_answer_size)
+        return unify_restraint(ld, t, r.max_table_answer_size)
+    elseif _tbl_is(key, :max_answers_for_subgoal)
+        return unify_restraint(ld, t, r.max_answers_for_subgoal)
+    elseif _tbl_is(key, :max_incomplete_subgoals_action)
+        return PL_unify_atom(ld, t, r.max_incomplete_subgoals_action)
+    elseif _tbl_is(key, :max_incomplete_subgoals)
+        return unify_restraint(ld, t, r.max_incomplete_subgoals)
+    elseif _tbl_is(key, :max_scc_subgoals_action)
+        return PL_unify_atom(ld, t, r.max_scc_subgoals_action)
+    elseif _tbl_is(key, :max_scc_subgoals)
+        return unify_restraint(ld, t, r.max_scc_subgoals)
+    end
+
+    return false
+end
+
+# PORT: pl-tabling.c set_restraint_action
+# DIVERGES: the action is returned (`nothing` after the error or a failed `PL_get_atom_ex`); upstream stores it through `valp`.
+"The action atom `t` holds for the restraint `key`, or `nothing` after `domain_error(restraint_action, T)` (pl-tabling.c)."
+function set_restraint_action(ld::PL_local_data{T}, t::term_t, key::T)::Union{Nothing, T} where {T}
+    act = PL_get_atom_ex(ld, t)
+    act === nothing && return nothing
+
+    if _tbl_is(act, :error) || _tbl_is(act, :warning) || _tbl_is(act, :suspend)
+        return act
+    end
+
+    _tbl_is(act, :complete_soundly) && (act = mk_sym(T, :bounded_rationality))      # XSB compatibility
+
+    _tbl_is(key, :max_table_subgoal_size_action) && _tbl_is(act, :abstract) && return act
+    if _tbl_is(key, :max_table_answer_size_action) && (_tbl_is(act, :bounded_rationality) || _tbl_is(act, :fail))
+        return act
+    end
+    _tbl_is(key, :max_answers_for_subgoal_action) && _tbl_is(act, :bounded_rationality) && return act
+
+    PL_error(ld, ERR_DOMAIN, mk_sym(T, :restraint_action), t)
+
+    return nothing
+end
+
+# PORT: pl-tabling.c set_restraint
+# DIVERGES: the limit is returned (`nothing` after the error); upstream stores it through `valp`. `infinite` is -1 and a size
+# beyond `typemax(Int)` is `PL_get_size_ex`'s error.
+"The limit `t` holds: `infinite` is -1, else a size (pl-tabling.c)."
+function set_restraint(ld::PL_local_data{T}, t::term_t)::Union{Nothing, Int} where {T}
+    inf = PL_get_atom(ld, t)
+    (inf !== nothing && _tbl_is(inf, :infinite)) && return -1
+
+    return PL_get_size_ex(ld, t)
+end
+
+# PORT: pl-tabling.c tbl_set_restraint_flag
+# DIVERGES: the key is compared by its atom; upstream's -1 for a key that is no restraint flag (a truth value in C) cannot happen
+# (the caller tests `tbl_is_restraint_flag` first) and is `true` here.
+"Set the restraint flag `key` from `t`: the actions and limits of `LD->tabling.restraint` (pl-tabling.c)."
+function tbl_set_restraint_flag(ld::PL_local_data{T}, t::term_t, key::T)::Bool where {T}
+    r = ld.tabling.restraint
+    if _tbl_is(key, :max_table_subgoal_size_action)
+        a = set_restraint_action(ld, t, key)
+        a === nothing && return false
+        r.max_table_subgoal_size_action = a
+    elseif _tbl_is(key, :max_table_answer_size_action)
+        a = set_restraint_action(ld, t, key)
+        a === nothing && return false
+        r.max_table_answer_size_action = a
+    elseif _tbl_is(key, :max_answers_for_subgoal_action)
+        a = set_restraint_action(ld, t, key)
+        a === nothing && return false
+        r.max_answers_for_subgoal_action = a
+    elseif _tbl_is(key, :max_table_subgoal_size)
+        v = set_restraint(ld, t)
+        v === nothing && return false
+        r.max_table_subgoal_size = v
+    elseif _tbl_is(key, :max_table_answer_size)
+        v = set_restraint(ld, t)
+        v === nothing && return false
+        r.max_table_answer_size = v
+    elseif _tbl_is(key, :max_answers_for_subgoal)
+        v = set_restraint(ld, t)
+        v === nothing && return false
+        r.max_answers_for_subgoal = v
+    elseif _tbl_is(key, :max_incomplete_subgoals_action)
+        a = set_restraint_action(ld, t, key)
+        a === nothing && return false
+        r.max_incomplete_subgoals_action = a
+    elseif _tbl_is(key, :max_incomplete_subgoals)
+        v = set_restraint(ld, t)
+        v === nothing && return false
+        r.max_incomplete_subgoals = v
+    elseif _tbl_is(key, :max_scc_subgoals_action)
+        a = set_restraint_action(ld, t, key)
+        a === nothing && return false
+        r.max_scc_subgoals_action = a
+    elseif _tbl_is(key, :max_scc_subgoals)
+        v = set_restraint(ld, t)
+        v === nothing && return false
+        r.max_scc_subgoals = v
+    end
+
+    return true
+end
+
+# PORT: pl-tabling.c generalise_answer_substitution
+# DIVERGES: the functor of the compound is its name and arity (`PL_get_name_arity`); `*p == ATOM_ret` is `ret` read through
+# `PL_get_atom`.
+"Unify `gen` with the most general `ret/N` term that fits `spec`, for the answer count restraint (pl-tabling.c)."
+function generalise_answer_substitution(ld::PL_local_data{T}, spec::term_t, gen::term_t)::Bool where {T}
+    if PL_is_compound(ld, spec)
+        na = PL_get_name_arity(ld, spec)
+        na === nothing && return false
+
+        return PL_unify_functor(ld, gen, na[1], na[2])
+    end
+    a = PL_get_atom(ld, spec)
+    (a !== nothing && _tbl_is(a, :ret)) && return PL_unify_atom(ld, gen, a)
+
+    return PL_type_error(ld, "answer_substitution", spec)
+end
+
+# PORT: pl-tabling.c add_answer_count_restraint
+# DIVERGES: the predicate is looked up by `lookupProcedure` (upstream: `_PL_predicate`, cached in `GD->procedures`); the
+# database is `_query_gd(ld)`; the `DEBUG(MSG_TABLING_RESTRAINT)` print is left out.
+"Add the condition `answer_count_restraint` to the current delay list: call `system:answer_count_restraint/0` (pl-tabling.c)."
+function add_answer_count_restraint(ld::PL_local_data{T})::Bool where {T}
+    gd = _query_gd(ld)
+    pred = lookupProcedure(mk_sym(T, :answer_count_restraint), 0, MODULE_system(gd))
+
+    return PL_call_predicate(gd, ld, nothing, PL_Q_PASS_EXCEPTION, pred, 0)
+end
+
+# PORT: pl-tabling.c add_radial_restraint
+# DIVERGES: as `add_answer_count_restraint`, for `system:radial_restraint/0`.
+"Add the condition `radial_restraint` to the current delay list: call `system:radial_restraint/0` (pl-tabling.c)."
+function add_radial_restraint(ld::PL_local_data{T})::Bool where {T}
+    gd = _query_gd(ld)
+    pred = lookupProcedure(mk_sym(T, :radial_restraint), 0, MODULE_system(gd))
+
+    return PL_call_predicate(gd, ld, nothing, PL_Q_PASS_EXCEPTION, pred, 0)
+end
+
+# PORT: pl-tabling.c tbl_wl_tripwire
+# DIVERGES: `'$tabling':tripwire/3` is looked up by `lookupProcedure` (upstream: `_PL_predicate`, cached); the trie atom is
+# `_trie_atom`; the `DEBUG(MSG_TABLING_RESTRAINT)` print is left out.
+"Call `'\$tabling':tripwire(Wire, Action, Table)` for the answer table of the worklist `wl`: false if it fails or raises (pl-tabling.c)."
+function tbl_wl_tripwire(ld::PL_local_data{T}, wl::tbl_worklist{T}, action::T, wire::T)::Bool where {T}
+    gd = _query_gd(ld)
+    pred = lookupProcedure(mk_sym(T, :tripwire), 3, lookupModule(gd, mk_sym(T, Symbol("\$tabling"))))
+    av = PL_new_term_refs(ld, 3)
+
+    return (
+        PL_put_atom(ld, av, wire) &&
+        PL_put_atom(ld, av + 1, action) &&
+        PL_put_atom(ld, av + 2, _trie_atom(gd, wl_table(ld, wl))) &&
+        PL_call_predicate(gd, ld, nothing, PL_Q_PASS_EXCEPTION, pred, av)
+    )
+end
+
+# PORT: pl-tabling.c tbl_pred_tripwire
+# DIVERGES: as `tbl_wl_tripwire`; `unify_definition(MODULE_user, av+2, def, 0, GP_QUALIFY)` takes the database.
+"Call `'\$tabling':tripwire(Wire, Action, Pred)` for the predicate `def`: false if it fails or raises (pl-tabling.c)."
+function tbl_pred_tripwire(ld::PL_local_data{T}, def::Definition{T}, action::T, wire::T)::Bool where {T}
+    gd = _query_gd(ld)
+    pred = lookupProcedure(mk_sym(T, :tripwire), 3, lookupModule(gd, mk_sym(T, Symbol("\$tabling"))))
+    av = PL_new_term_refs(ld, 3)
+
+    return (
+        PL_put_atom(ld, av, wire) &&
+        PL_put_atom(ld, av + 1, action) &&
+        unify_definition(gd, ld, MODULE_user(gd), av + 2, def, 0, GP_QUALIFY) &&
+        PL_call_predicate(gd, ld, nothing, PL_Q_PASS_EXCEPTION, pred, av)
+    )
+end
+
+# PORT: pl-tabling.c tripwire_incomplete_subgoals
+# DIVERGES: a `Definition` that is `nothing` is NULL.
+"True unless the `max_incomplete_subgoals` limit is reached and its tripwire fails: the check before a table is created (pl-tabling.c)."
+function tripwire_incomplete_subgoals(ld::PL_local_data{T}, def::Union{Nothing, Definition{T}})::Bool where {T}
+    r = ld.tabling.restraint
+    limit = r.max_incomplete_subgoals
+
+    if limit != -1 && def !== nothing && ld.tabling.incomplete_tables == limit
+        return tbl_pred_tripwire(ld, def, r.max_incomplete_subgoals_action, mk_sym(T, :max_incomplete_subgoals))
+    end
+
+    return true
+end
+
+# PORT: pl-tabling.c tripwire_scc_subgoals
+"True unless a merge made the component of `wl` larger than `max_scc_subgoals` and its tripwire fails; `size0` is the size before (pl-tabling.c)."
+function tripwire_scc_subgoals(ld::PL_local_data{T}, wl::tbl_worklist{T}, size0::Int)::Bool where {T}
+    r = ld.tabling.restraint
+    limit = r.max_scc_subgoals
+
+    if limit != -1 && size0 <= limit && wls_size((wl.component::tbl_component{T}).created_worklists) > limit
+        return tbl_wl_tripwire(ld, wl, r.max_scc_subgoals_action, mk_sym(T, :max_scc_subgoals))
+    end
+
+    return true
+end
+
+# PORT: pl-tabling.c TABLE_DROP_MIN_SIZE
+"The smallest table (in bytes, `trie_table_size`) that `drop_intermediate_tables` drops (pl-tabling.c)."
+const TABLE_DROP_MIN_SIZE = 1024
+
+# PORT: pl-tabling.c droppable_table
+# DIVERGES: the local data is an argument (`trie_symbol` needs the database; TB2's call `droppable_table(c, leader)` becomes
+# `droppable_table(ld, c, leader)`); `PL_register_atom` is left out (no atom GC).
+"Register the answer trie `atrie` as the table of the component `c` that may be dropped when the component completes (pl-tabling.c)."
+function droppable_table(ld::PL_local_data{T}, c::tbl_component{T}, atrie::trie{T})::Nothing where {T}
+    c.drop_symbol = _trie_atom(_query_gd(ld), atrie)
+    c.drop_size = trie_table_size(atrie)
+    c.drop_gen_calls = UInt64(atrie.gen_call)
+
+    return nothing
+end
+
+# PORT: pl-tabling.c children_of_component
+# DIVERGES: the pre-order buffer is a `Vector`.
+"Append the completed children of the component `c` to `b` (pl-tabling.c)."
+function children_of_component(c::tbl_component{T}, b::Vector{tbl_component{T}})::Nothing where {T}
+    if c.children !== nothing
+        for ch in c.children.members
+            ch.status == SCC_COMPLETED && push!(b, ch)
+        end
+    end
+
+    return nothing
+end
+
+# PORT: pl-tabling.c drop_intermediate_tables
+# DIVERGES: `LD->tabling.variant_table` is the trie numbered `ld.tabling.variant_table` (0: none); `symbol_trie` is
+# `trie_of_word` of the symbol's blob; `PL_unregister_atom` is left out (no atom GC); `table_is_incomplete` is TB1's.
+"Drop the intermediate answer tables of the completed components below `root` that are cheap to recompute (pl-tabling.c)."
+function drop_intermediate_tables(ld::PL_local_data{T}, root::tbl_component{T})::Nothing where {T}
+    gd = _query_gd(ld)
+    factor = Int64(ld.table_flags_drop_intermediate)
+    vtrie = ld.tabling.variant_table != 0 ? gd.tries[ld.tabling.variant_table] : nothing   # private tables only
+
+    order = tbl_component{T}[root]                  # pre-order
+    i = 1
+    while i <= length(order)
+        children_of_component(order[i], order)
+        i += 1
+    end
+
+    count = length(order)
+    for k in count:-1:2                             # children first, not the root
+        c = order[k]
+        below = Int64(0)
+        recompute = Int64(0)
+        keep = true
+
+        if c.children !== nothing
+            for ch in c.children.members
+                if ch.status == SCC_COMPLETED
+                    below += ch.inferences
+                    recompute += ch.drop_recompute
+                end
+            end
+        end
+        own = c.inferences > below ? c.inferences - below : Int64(0)
+        recompute += own
+
+        if c.drop_symbol !== nothing
+            sym = c.drop_symbol::T
+            atrie = is_blob(sym) ? trie_of_word(gd, blob_handle(sym)) : nothing
+
+            keep = (
+                atrie === nothing ||
+                c.drop_size < TABLE_DROP_MIN_SIZE ||
+                UInt64(atrie.gen_call) > c.drop_gen_calls ||
+                recompute > factor * own
+            )
+            if !keep
+                if vtrie !== nothing && !table_is_incomplete(atrie::trie{T})
+                    trie_delete(vtrie, (atrie::trie{T}).variant, true)
+                end
+            end
+            c.drop_symbol = nothing
+        end
+        c.drop_recompute = keep ? Int64(0) : recompute
+    end
+
+    return nothing
+end
+
+# TAB1 TB8 part 2: `'$tbl_sdg'/3` and `'$tbl_incomplete'/3` (pl-tabling.c:9526-9820 at the pin). The graph is built from the
+# live objects: the components, tables and edges are insertion-ordered vectors with an `IdDict` as their index (upstream's
+# `pair_map` iterates by hash: its tests `msort`), the handle of a worklist or a component is TB2's `tbl_pointer!`.
+
+# PORT: pl-tabling.c sdg_atom
+# DIVERGES: the enum and the `sdg_atoms[]` array are the symbols `null`, `positive`, `negative`, `pending`, `executing`,
+# `delays`; `sdg_init` is not needed (`mk_sym` interns on first use, the functors are looked up where they are built).
+
+# ORIGINAL (TAB1 TB8): upstream's `PL_put_pointer(t, obj)` (pl-fli.c) for a worklist or a component, 0 for NULL: the handle of
+# TB2's `tbl_pointer!`.
+"Put the handle of the worklist or component `obj` (0 for none) into `t` (pl-fli.c `PL_put_pointer`)."
+function _tbl_put_pointer(
+    ld::PL_local_data{T}, t::term_t, obj::Union{Nothing, tbl_worklist{T}, tbl_component{T}}
+)::Bool where {T}
+    return PL_put_int64(ld, t, obj === nothing ? 0 : tbl_pointer!(ld, obj))
+end
+
+# PORT: pl-tabling.c sdg_push_root
+# DIVERGES: the stack is a `Vector` (no `segstack`, no `outOfCore`).
+"Push the root of the component `c` on `stack` (pl-tabling.c `sdg_push_root`)."
+function sdg_push_root(stack::Vector{tbl_component{T}}, c::tbl_component{T})::Nothing where {T}
+    up = c.parent
+    while up !== nothing
+        c = up
+        up = c.parent
+    end
+    push!(stack, c)
+
+    return nothing
+end
+
+# PORT: pl-tabling.c sdg_collect
+# DIVERGES: `components` and `tables` are insertion-ordered vectors with an `IdDict` for the lookup (upstream: two `pair_map`s,
+# the count of a component being how often it was met); `c->children` is `component_set.members`; a table is a worklist whose
+# `table` is not 0.
+"Collect the active components below the roots on `stack` in `components` and their incomplete worklists in `tables` (pl-tabling.c)."
+function sdg_collect(
+    stack::Vector{tbl_component{T}}, components::Vector{tbl_component{T}}, seen::IdDict{tbl_component{T}, Bool},
+    tables::Vector{tbl_worklist{T}}, tindex::IdDict{tbl_worklist{T}, Int}
+)::Nothing where {T}
+    while !isempty(stack)
+        c = pop!(stack)
+
+        c.status == SCC_ACTIVE || continue          # merged or completed
+        haskey(seen, c) && continue                 # a root seen twice
+        seen[c] = true
+        push!(components, c)
+        children = c.children
+        if children !== nothing
+            for ch in children.members
+                push!(stack, ch)
+            end
+        end
+
+        for wl in worklist_set_to_array(c.created_worklists, T)
+            if wl.table != 0 && !haskey(tindex, wl)
+                push!(tables, wl)
+                tindex[wl] = length(tables)
+            end
+        end
+    end
+
+    return nothing
+end
+
+# PORT: pl-tabling.c sdg_count_edges
+# DIVERGES: `tables` is the index of the tables (`tindex`, worklist -> position), `edges` the counts by (caller, callee, negative)
+# with their order in `eorder`; the caller is the worklist `tbl_get_pointer` finds for the handle (upstream: a pointer, accepted
+# only when it is in `tables`); `UNTNOT(sp->term)` is `sp.term`, the sign `IS_TNOT`'s field `is_tnot`.
+"Count the suspensions on the callee `wl` by caller in `edges` (pl-tabling.c `sdg_count_edges`)."
+function sdg_count_edges(
+    ld::PL_local_data{T}, wl::tbl_worklist{T}, tindex::IdDict{tbl_worklist{T}, Int},
+    edges::Dict{Tuple{Int, Int, Bool}, Int}, eorder::Vector{Tuple{Int, Int, Bool}}
+)::Bool where {T}
+    fid = PL_open_foreign_frame(ld)
+    t = PL_new_term_ref(ld)
+    a = PL_new_term_ref(ld)
+    dependency = mk_sym(T, :dependency)
+
+    c = wl.head
+    while c !== nothing
+        if c.type == CLUSTER_SUSPENSIONS
+            for sp in c.suspensions
+                if !PL_recorded(ld, sp.term, t)
+                    PL_close_foreign_frame(ld, fid)
+
+                    return false
+                end
+                if PL_is_functor(ld, t, dependency, 5) && _PL_get_arg(ld, 4, t, a)
+                    caller = tbl_get_pointer(ld, a)
+                    if caller isa tbl_worklist{T} && haskey(tindex, caller)
+                        key = (tindex[caller], tindex[wl], sp.is_tnot)
+                        if haskey(edges, key)
+                            edges[key] += 1
+                        else
+                            edges[key] = 1
+                            push!(eorder, key)
+                        end
+                    end
+                end
+                PL_rewind_foreign_frame(ld, fid)
+            end
+        end
+        c = c.next
+    end
+
+    PL_close_foreign_frame(ld, fid)
+
+    return true
+end
+
+# PORT: pl-tabling.c sdg_unify_table
+# DIVERGES: the flags are consed in upstream's order (delays, executing, pending, negative), so the list reads [negative, pending,
+# executing, delays]; the variant is read from the variant table of the thread (`atrie->data.variant` is a node of it).
+"Unify `t` with table(Trie, Variant, SCC, Answers, Flags) of the worklist `wl` (pl-tabling.c `sdg_unify_table`)."
+function sdg_unify_table(ld::PL_local_data{T}, t::term_t, wl::tbl_worklist{T})::Bool where {T}
+    gd = _query_gd(ld)
+    atrie = wl_table(ld, wl)
+    av = PL_new_term_refs(ld, 6)
+    flag = av + 5
+
+    PL_put_atom(ld, av + 0, _trie_atom(gd, atrie)) || return false
+    if atrie.variant != 0
+        vtrie = gd.tries[ld.tabling.variant_table]
+        unify_trie_term(ld, vtrie, atrie.variant, av + 1)[1] || return false
+    end
+    _tbl_put_pointer(ld, av + 2, wl.component) || return false
+    PL_put_int64(ld, av + 3, atrie.value_count) || return false
+    PL_put_nil(ld, av + 4)
+    flags = (
+        (!isempty(wl.delays), :delays), (wl.executing, :executing), (wl.in_global_wl, :pending), (wl.negative, :negative),
+    )
+    for (on, name) in flags
+        if on
+            PL_put_atom(ld, flag, mk_sym(T, name)) && PL_cons_list(ld, av + 4, flag, av + 4) || return false
+        end
+    end
+    table5 = lookupFunctorDef(ld.functors, _atom_word!(ld, mk_sym(T, :table)), 5)
+
+    return PL_cons_functor_v(ld, av + 0, table5, av) && PL_unify(ld, t, av + 0)
+end
+
+# PORT: pl-tabling.c tbl_sdg as pl_tbl_sdg3_va
+# (pl-tabling.c:9667-9785 at the pin: PRED_IMPL("$tbl_sdg", 3, tbl_sdg, 0))
+# DIVERGES: the single thread is the calling one; the components, tables and edges come in the order they are met (see above).
+"`'\$tbl_sdg'(-Components, -Tables, -Edges)`: the subgoal dependency graph of the calling thread (pl-tabling.c)."
+function pl_tbl_sdg3_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2, A3 = PL__t0, PL__t0 + 1, PL__t0 + 2
+    stack = tbl_component{T}[]
+    components = tbl_component{T}[]
+    seen = IdDict{tbl_component{T}, Bool}()
+    tables = tbl_worklist{T}[]
+    tindex = IdDict{tbl_worklist{T}, Int}()
+    edges = Dict{Tuple{Int, Int, Bool}, Int}()
+    eorder = Tuple{Int, Int, Bool}[]
+    tail = PL_new_term_ref(ld)
+    head = PL_new_term_ref(ld)
+    av = PL_new_term_refs(ld, 4)
+    gd = _query_gd(ld)
+
+    active = ld.tabling.component
+    active !== nothing && sdg_push_root(stack, active)
+    s = ld.tabling.saved_status
+    while s !== nothing
+        root = s.scc
+        root !== nothing && sdg_push_root(stack, root)
+        s = s.prev
+    end
+    sdg_collect(stack, components, seen, tables, tindex)
+
+    for wl in tables
+        sdg_count_edges(ld, wl, tindex, edges, eorder) || return FFALSE
+    end
+
+    PL_put_term(ld, tail, A1)
+    scc3 = lookupFunctorDef(ld.functors, _atom_word!(ld, mk_sym(T, :scc)), 3)
+    for c in components
+        parent = c.parent
+        (
+            PL_unify_list(ld, tail, head, tail) &&
+                _tbl_put_pointer(ld, av + 0, c) &&
+                (parent !== nothing ? _tbl_put_pointer(ld, av + 1, parent) : PL_put_atom(ld, av + 1, mk_sym(T, :null))) &&
+                (
+                    c.leader != 0 ? PL_put_atom(ld, av + 2, _trie_atom(gd, gd.tries[c.leader])) :
+                    PL_put_atom(ld, av + 2, mk_sym(T, :null))
+                ) &&
+                PL_cons_functor_v(ld, av + 0, scc3, av) &&
+                PL_unify(ld, head, av + 0)
+        ) || return FFALSE
+    end
+    PL_unify_nil(ld, tail) || return FFALSE
+
+    PL_put_term(ld, tail, A2)
+    for wl in tables
+        (PL_unify_list(ld, tail, head, tail) && sdg_unify_table(ld, head, wl)) || return FFALSE
+    end
+    PL_unify_nil(ld, tail) || return FFALSE
+
+    PL_put_term(ld, tail, A3)
+    edge4 = lookupFunctorDef(ld.functors, _atom_word!(ld, mk_sym(T, :edge)), 4)
+    for key in eorder
+        caller = tables[key[1]]
+        callee = tables[key[2]]
+        (
+            PL_unify_list(ld, tail, head, tail) &&
+                PL_put_atom(ld, av + 0, _trie_atom(gd, wl_table(ld, caller))) &&
+                PL_put_atom(ld, av + 1, _trie_atom(gd, wl_table(ld, callee))) &&
+                PL_put_atom(ld, av + 2, mk_sym(T, key[3] ? :negative : :positive)) &&
+                PL_put_int64(ld, av + 3, edges[key]) &&
+                PL_cons_functor_v(ld, av + 0, edge4, av) &&
+                PL_unify(ld, head, av + 0)
+        ) || return FFALSE
+    end
+
+    return PL_unify_nil(ld, tail) ? FTRUE : FFALSE
+end
+
+# ORIGINAL (TAB1 TB8): upstream's `PL_get_thread_id_ex(t, &tid)` (pl-thread.c); the kernel has the one thread `main` (thread id 1).
+# swipl 10.1.20: `main` and 1 are the thread, another atom or integer raises `existence_error(thread, X)`, a variable
+# `instantiation_error`, any other term `type_error(thread, X)`.
+"Whether `t` names the one thread, `main` or 1; else raise the error of `PL_get_thread_id_ex` (pl-thread.c)."
+function _tbl_get_thread_id_ex(ld::PL_local_data{T}, t::term_t)::Bool where {T}
+    a = PL_get_atom(ld, t)
+    if a !== nothing
+        _tbl_is(a, :main) && return true
+
+        return PL_error(ld, ERR_EXISTENCE, mk_sym(T, :thread), t)
+    end
+    i = PL_get_int64(ld, t)
+    if i !== nothing
+        i == 1 && return true
+
+        return PL_error(ld, ERR_EXISTENCE, mk_sym(T, :thread), t)
+    end
+
+    return PL_error(ld, ERR_TYPE, mk_sym(T, :thread), t)
+end
+
+# PORT: pl-tabling.c tbl_incomplete as pl_tbl_incomplete3_va
+# (pl-tabling.c:9787-9820 at the pin: PRED_IMPL("$tbl_incomplete", 3, tbl_incomplete, 0))
+# DIVERGES: the single thread (the `#else` of `O_PLMT`): the counters of the calling thread; `PL_unify_uint64` of a count is
+# `unify_int64_ex(t, i, true)`.
+"`'\$tbl_incomplete'(+Thread, -Tables, -SCCs)`: the number of incomplete tables and of active components of `Thread` (pl-tabling.c)."
+function pl_tbl_incomplete3_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2, A3 = PL__t0, PL__t0 + 1, PL__t0 + 2
+    _tbl_get_thread_id_ex(ld, A1) || return FFALSE
+    tables = ld.tabling.incomplete_tables
+    sccs = ld.tabling.active_components
+
+    return (unify_int64_ex(ld, A2, tables, true) && unify_int64_ex(ld, A3, sccs, true)) ? FTRUE : FFALSE
+end
+
 # PORT: pl-tabling.c BeginPredDefs as PL_predicates_from_tabling
 # (pl-tabling.c:12747-12789 at the pin for the entries below)
 # DIVERGES: the ported entries, in upstream's order (upstream's table has the other `$tbl_*` predicates; `$tbl_trienode`
@@ -9387,6 +9972,7 @@ end
 # TB7: `$idg_mono_empty_queue/2` fails on a stale dependency reference (upstream's failed `magic` test), as it does on any
 # non-pointer; the 16 monotonic entries follow `$tbl_reeval_wait/2` in upstream's order.
 # TB6's real `$idg_set_current/2` and `$idg_add_edge/1` replace TB4's minimal ports and sit in TB6's block after the TB4 entries.
+# TB8: `$tbl_sdg/3` and `$tbl_incomplete/3` sit after `$tbl_worklist_data/2` and before `$tbl_wkl_table/2`, as upstream's table has them.
 "pl-tabling.c's registration table (`BeginPredDefs(tabling)`): the ported entries."
 const PL_predicates_from_tabling = (
     PL_extension("\$tbl_wkl_negative", 1, pl_tbl_wkl_negative1_va, PL_FA_VARARGS),
@@ -9459,6 +10045,8 @@ const PL_predicates_from_tabling = (
     PL_extension("\$tbl_scc", 1, pl_tbl_scc1_va, PL_FA_VARARGS),
     PL_extension("\$tbl_scc_data", 2, pl_tbl_scc_data2_va, PL_FA_VARARGS),
     PL_extension("\$tbl_worklist_data", 2, pl_tbl_worklist_data2_va, PL_FA_VARARGS),
+    PL_extension("\$tbl_sdg", 3, pl_tbl_sdg3_va, PL_FA_VARARGS),
+    PL_extension("\$tbl_incomplete", 3, pl_tbl_incomplete3_va, PL_FA_VARARGS),
     PL_extension("\$tbl_wkl_table", 2, pl_tbl_wkl_table2_va, PL_FA_VARARGS),
     PL_extension("\$tbl_delay_list", 1, pl_tbl_delay_list1_va, PL_FA_VARARGS),
     PL_extension("\$tbl_set_delay_list", 1, pl_tbl_set_delay_list1_va, PL_FA_VARARGS),
