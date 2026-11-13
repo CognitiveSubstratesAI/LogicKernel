@@ -427,7 +427,7 @@ _pc_codes(vs) = sort!([
             tbl_marker = "# PORT: tabling.pl \$tbl_add as partsTblAdd\npartsTblAdd() = 2\n"
             function mixcase(
                 name; head=[orig, fake_part, tbl_part], body=[fake_marker, tbl_marker],
-                rel="src/parts.jl", upcol="—"
+                rel="src/parts.jl", upcol="—", pin=nothing
             )
                 root = joinpath(base, "parts_" * name)
                 _pc_good_files(root, sha)
@@ -442,6 +442,13 @@ _pc_codes(vs) = sort!([
                 )
                 _pc_write(root, rel, join(head, "\n") * "\n\n" * join(body, "\n") * "\n")
                 write_inventory(root; upstream_dirs=dirs)
+                if pin !== nothing
+                    mkpath(joinpath(root, "tools"))
+                    write(
+                        joinpath(root, "tools", "SWIPL_VERSION"),
+                        "version: 1.0.0\ncommit: $pin\n"
+                    )
+                end
                 r = port_check(root; upstream_dirs=dirs)
                 f = only(filter(f -> f.rel == rel, r.files))
                 return _pc_codes(r.violations), f
@@ -535,6 +542,39 @@ _pc_codes(vs) = sort!([
                 body=[fake_marker, "# PORT: tabling.pl \$tbl_add as partsTblAdd\n"]
             )
             @test length(f.markers) == 2 && got == [("MARKER-ORPHAN", "parts.jl")]
+            # FAIL (e), F1 of the diff read: the pin, repo and commit checks iterate the PARTS lines.
+            # A parts line citing a real commit that is not the pin (a dangling commit object on the
+            # fixture's tree: it exists, HEAD does not move), an unknown repo, a missing commit.
+            full = readchomp(`git -C $(dirs["swipl-devel"]) rev-parse $sha`)
+            tree = readchomp(`git -C $(dirs["swipl-devel"]) rev-parse $(sha * "^{tree}")`)
+            other = readchomp(
+                `git -C $(dirs["swipl-devel"]) commit-tree $tree -p $full -m other`
+            )
+            @test other != full
+            got, f = mixcase("pin_ok"; pin=full)
+            @test length(f.markers) == 2 && length(f.parts) == 2
+            @test got == []
+            got, f = mixcase(
+                "pin_wrong";
+                head=[orig, fake_part, tbl_part,
+                    "# UPSTREAM-PARTS: swipl-devel src/pl-fake.c @ $other"],
+                pin=full
+            )
+            @test length(f.markers) == 2 && length(f.parts) == 3
+            @test got == [("PIN-MISMATCH", "parts.jl")]
+            got, f = mixcase(
+                "unknown_repo";
+                head=[orig, fake_part, tbl_part, "# UPSTREAM-PARTS: nope x.c @ $sha"]
+            )
+            @test length(f.markers) == 2 && length(f.parts) == 3
+            @test got == [("UNKNOWN-REPO", "parts.jl")]
+            got, f = mixcase(
+                "commit_missing";
+                head=[orig, fake_part, tbl_part,
+                    "# UPSTREAM-PARTS: swipl-devel src/pl-fake.c @ 0123456"]
+            )
+            @test length(f.markers) == 2 && length(f.parts) == 3
+            @test got == [("COMMIT-MISSING", "parts.jl")]
         end
 
         @testset "M1: the generated code map is held to its generators" begin

@@ -24,7 +24,8 @@
 #     carry PORT markers when its header names those files, one line each (audit D-0609):
 #         # UPSTREAM-PARTS: swipl-devel <path> @ <commit>
 #     Each marker is then checked by name against one of those files like any port's; only the path
-#     check and the copyright check are skipped. `# UPSTREAM-PARTS:` with `# UPSTREAM:` is HEADER-BOTH.
+#     check, the copyright checks (COPYRIGHT-ABSENT, COPYRIGHT-MISMATCH) and CLASS-MISSING are skipped
+#     (an ORIGINAL header has no CLASS line). `# UPSTREAM-PARTS:` with `# UPSTREAM:` is HEADER-BOTH.
 #   * Directories exist only where swipl-devel has them: `src/<d>` for d in swipl-devel's src/
 #     subdirectories, `test/<area>` for its tests/ areas.
 #
