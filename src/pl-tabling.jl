@@ -9784,7 +9784,9 @@ end
 
 # ORIGINAL (TAB1 TB8): whether the atom `a` is the atom `name`, by the atom's identity (`sym_key`), as upstream's `==` of atom handles.
 "Whether the atom `a` is `name` (upstream: the comparison of two atom handles)."
-_tbl_is(a::T, name::Symbol)::Bool where {T} = sym_key(a) == sym_key(mk_sym(T, name))
+function _tbl_is(a::T, name::Symbol)::Bool where {T}
+    return sym_key(a) == sym_key(mk_sym(T, name))
+end
 
 # ORIGINAL (TAB1 TB8): the atom (the blob term) that names the trie `tr`, `PL_put_atom(t, trie_symbol(tr))`'s value.
 "The atom of the trie `tr`, made on first use (pl-trie.c `trie_symbol`)."
