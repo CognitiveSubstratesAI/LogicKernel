@@ -165,12 +165,14 @@ tw_ka(0, 1).
 tw_ka(1, 2).
 tw_kb(0, 10).
 tw_kb(10, 20).
-% twv: a continuation of TWO frames (tw_nb, then tw_na) between the tabled call and the clause: push_continuation_list order
+% twv: a continuation of TWO frames (tw_nb, then tw_na) between the tabled call and the clause: push_continuation_list order.
+% No exception on either order: tw_na tests `integer(Z)` itself, so the frame run FIRST decides the answer (resumed in order, tw_nb binds Z
+% and tw_na adds 1: 1,3,7,15,31; resumed reversed, tw_na sees Z unbound and answers `unbound`: 1 and unbound)
 :- table tw_n/1.
 tw_n(1).
 tw_n(Y) :- tw_na(Y).
-tw_na(Y) :- tw_nb(Z), Y is Z + 1.
-tw_nb(Z) :- tw_n(Z0), Z0 < 20, Z is Z0 * 2.
+tw_na(Y) :- tw_nb(Z), ( integer(Z) -> Y is Z + 1 ; Y = unbound ).
+tw_nb(Z) :- tw_n(Z0), integer(Z0), Z0 < 20, Z is Z0 * 2.
 % twq08: the leader cleanup reports an UNEXPECTED result (message tabling(unexpected_result(_, C))) for every catcher but exit and fail
 :- dynamic tw_seen/1.
 :- multifile user:message_hook/3.
@@ -284,7 +286,7 @@ end
     @test ans("twm07") != ans("twm05")          # the empty answer set of a fresh variant, the full closure
     # twk01: BOTH chains of the two suspensions of one cluster (0-1-2 through tw_ka, 0-10-20 through tw_kb), one extractor
     @test all(occursin(v, ans("twk01")) for v in ("i1,", "i2,", "i10,", "i20,"))
-    # twv01: the answers 1,3,7,15,31 pass through the two-frame continuation (tw_nb then tw_na), one extractor
+    # twv01: the answers 1,3,7,15,31 pass through the two-frame continuation (tw_nb then tw_na), one extractor; the reversed order answers 1 and unbound
     @test all(occursin(v, ans("twv01")) for v in ("i1,", "i3,", "i7,", "i15,", "i31,"))
     # twv02: an ORDINARY reset/3 of call_continuation/1: a non-list fails (`no`), the empty list succeeds (`yes`)
     @test ans("twv02") == "(c[114]/2(a[110,111],a[121,101,115]))" &&

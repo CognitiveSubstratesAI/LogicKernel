@@ -291,7 +291,7 @@ MUTANTS = [
          file=CONT, targets=[TW],
          old="        pref = ld.environment_frame                             # pref = consTermRef(environment_frame)\n",
          new="        pref = pfr                                              # pref = consTermRef(environment_frame)\n"),
-    dict(id="TB2-V8 push_continuation_list pushes the entries in list order, not the reverse (KILL twv01: the continuation of tw_n/1 has two frames, tw_nb and tw_na; reversed, `Y is Z + 1` runs with Z unbound, an instantiation error, the row reads `exception`; the one-frame continuations of twl/twm cannot see the order)",
+    dict(id="TB2-V8 push_continuation_list pushes the entries in list order, not the reverse (KILL twv01: the continuation of tw_n/1 has two frames, tw_nb and tw_na; reversed, tw_na runs first with Z unbound and takes its `Y = unbound` branch, no exception: the answers are 1 and unbound where swipl's are 1,3,7,15,31, the pin compare fails; the one-frame continuations of twl/twm cannot see the order)",
          file=CONT, targets=[TW],
          old="        cont = pushWordAsTermRef(ld, b[n])\n",
          new="        cont = pushWordAsTermRef(ld, b[length(b) - n + 1])\n"),
