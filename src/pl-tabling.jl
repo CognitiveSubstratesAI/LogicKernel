@@ -7691,6 +7691,91 @@ function tt_mono_status(ld::PL_local_data{T}, atrie::trie{T})::Int where {T}
     return status.global_clauses != 0 ? M_OLD_CLAUSES : M_NEW_CLAUSES
 end
 
+# ── TRANSACTION TABLES (pl-tabling.c:7440-7822, TAB1 TB9) ──────────────────────────────────────────────────────
+# DIVERGES (the block): upstream keeps a transaction's changes to tables in `LD->transaction.table_trail` (`tbl_trail`: the
+# affected tables, and a buffer of the monotonic answers added). The kernel's `tbl_trail` (src/pl-incl.jl) holds a `Vector` of
+# answers walked in reverse and a `Dict` keyed on the trie symbol atom word. A table is named by its symbol atom (the kernel
+# has no atom GC: `PL_register_atom`/`PL_unregister_atom` are left out), a trie in an action by its index in `gd.tries`. A
+# shared table (`TRIE_ISSHARED`) is TH1's: the lines 7405-7822 have no shared branch.
+
+# PORT: pl-tabling.c tt_free_table_symbol
+# DIVERGES: the `free_symbol` hook of `tt->tables` (it unregisters the atom): the kernel registers none, so it is empty.
+"The hook that releases the symbol of a table of the trail; nothing to release (pl-tabling.c)."
+function tt_free_table_symbol(k::word, v::Int)::Nothing
+    return nothing
+end
+
+# PORT: pl-tabling.c tt_trail
+"The transaction's trail of table changes, made on first use (pl-tabling.c)."
+function tt_trail(ld::PL_local_data{T})::tbl_trail where {T}
+    tt = ld.transaction.table_trail
+    if tt === nothing
+        tt = tbl_trail()
+        ld.transaction.table_trail = tt
+    end
+
+    return tt
+end
+
+# PORT: pl-tabling.c tbl_trail_free
+# DIVERGES: empties the trail (`discardBuffer`, `destroyHTable`); the memory is the collector's.
+"Release the trail `tt` (pl-tabling.c)."
+function tbl_trail_free(tt::tbl_trail)::Nothing
+    empty!(tt.actions)
+    for (k, v) in tt.tables
+        tt_free_table_symbol(k, v)
+    end
+    empty!(tt.tables)
+
+    return nothing
+end
+
+# PORT: pl-tabling.c tt_add_table
+"Record that the table `atrie` must be dealt with (`flags`: `TT_TBL_INVALIDATE`) when the transaction rolls back (pl-tabling.c)."
+function tt_add_table(ld::PL_local_data{T}, atrie::trie{T}, flags::Int)::Nothing where {T}
+    if ld.transaction.generation != 0
+        tt = tt_trail(ld)
+        symbol = trie_symbol(_query_gd(ld), atrie)
+
+        tt.tables[symbol] = flags
+    end
+
+    return nothing
+end
+
+# PORT: pl-tabling.c tt_alloc
+# DIVERGES: the size-suffixed record of the buffer is a `push!` of a `tbl_trail_answer` onto `tt.actions`.
+"Add the answer record of a monotonic answer to the trail (pl-tabling.c `tt_alloc`)."
+function tt_alloc(ld::PL_local_data{T}, atrie::trie{T}, node::Int)::Nothing where {T}
+    tt = tt_trail(ld)
+    push!(tt.actions, tbl_trail_answer(TT_ANSWER, trie_serial!(_query_gd(ld), atrie), node))
+
+    return nothing
+end
+
+# PORT: pl-tabling.c tt_add_answer
+# DIVERGES: `node` is a node id of `atrie`; `tt_alloc` is a function of the answer (see above).
+"A monotonic new answer `node` was added to `atrie`: record it unless the table is marked for reevaluation (pl-tabling.c)."
+function tt_add_answer(ld::PL_local_data{T}, atrie::trie{T}, node::Int)::Nothing where {T}
+    if ld.transaction.generation != 0
+        idg = atrie.IDG
+
+        if !(idg !== nothing && idg.tt_notrail)
+            tt = tt_trail(ld)
+
+            if !haskey(tt.tables, trie_symbol(_query_gd(ld), atrie))
+                tt_alloc(ld, atrie, node)
+
+                if (atrie.flags & TRIE_ISTRACKED) == 0
+                    atrie.flags |= TRIE_ISTRACKED
+                end
+            end
+        end
+    end
+
+    return nothing
+end
+
 # PORT: pl-tabling.c tbl_reeval_wait as pl_tbl_reeval_wait2_va
 # (pl-tabling.c:11100-11111 at the pin; table_status_reeval_wait :11062 is ported above, TB6b)
 "`'\$tbl_reeval_wait'(+Trie, -Status)`: the status of `Trie` (`dynamic`, `monotonic`, `complete`, `invalid`) (pl-tabling.c)."
