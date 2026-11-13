@@ -1203,7 +1203,6 @@ function _manifest_index(T)
         (LK.initClauseIndexing!, Tuple{GD}, false),
         (LK.ci_is_flag, Tuple{T}, false),
         (LK.ci_get_flag, Tuple{LD, Int64, T}, false),
-        (LK._tbl_restraint_unlimited, Tuple{T}, false),
         (
             LK.unify_prolog_flag_value,
             Tuple{GD, LD, Int64, T, LK.prolog_flag{T}, Int64},
@@ -2739,8 +2738,6 @@ function _manifest_index(T)
         (LK.delete_dynamic_table, Tuple{LD, LK.trie{T}}, false),
         (LK.delete_orphan_dynamic_tables, Tuple{LD, Vector{LK.trie{T}}}, false),
         (LK.sweep_orphan_dynamic_tables, Tuple{LD}, false),
-        (LK.droppable_table, Tuple{LK.tbl_component{T}, LK.trie{T}}, false),
-        (LK.drop_intermediate_tables, Tuple{LD, LK.tbl_component{T}}, false),
         (LK.unify_skeleton, Tuple{LD, LK.trie{T}, Int, Int}, false),
         (LK.tbl_variant_table, Tuple{LD, Int, Int, Int, Int, Int, Int, Int, Int}, false),
         (LK.is_tabled, Tuple{D}, false),
@@ -2894,8 +2891,6 @@ function _manifest_index(T)
         (LK.wkl_add_answer, Tuple{LD, LK.tbl_worklist{T}, Int}, false),
         (LK.wkl_add_suspension, Tuple{LD, LK.tbl_worklist{T}, Int, Bool, Int}, false),
         (LK._unify_fresh_create, Tuple{LD, Int, LK.trie{T}, D}, false),
-        (LK.tripwire_incomplete_subgoals, Tuple{LD, D}, false),
-        (LK.tripwire_scc_subgoals, Tuple{LD, LK.tbl_worklist{T}, Int}, false),
         (LK.get_scc, Tuple{LD, Int}, false),
         (LK.get_worklist, Tuple{LD, Int}, false),
         (LK.tnot_get_worklist, Tuple{LD, Int}, false),
@@ -3092,6 +3087,51 @@ function _manifest_index(T)
                 LK.pl_tbl_wkl_negative1_va,
                 LK.pl_tbl_wkl_is_false1_va
             )
+        ]...,
+        # TAB1 TB8: the restraint flags, the tripwires, droppable_table and drop_intermediate_tables, '$tbl_sdg'/3 and '$tbl_incomplete'/3 (src/pl-tabling.jl)
+        (LK._tbl_is, Tuple{T, Symbol}, false),
+        (LK._trie_atom, Tuple{GD, LK.trie{T}}, false),
+        (LK.unify_restraint, Tuple{LD, Int, Int}, false),
+        (LK.tbl_get_restraint_flag, Tuple{LD, Int, T}, false),
+        (LK.set_restraint_action, Tuple{LD, Int, T}, false),
+        (LK.set_restraint, Tuple{LD, Int}, false),
+        (LK.tbl_set_restraint_flag, Tuple{LD, Int, T}, false),
+        (LK.generalise_answer_substitution, Tuple{LD, Int, Int}, false),
+        (LK.add_answer_count_restraint, Tuple{LD}, false),
+        (LK.add_radial_restraint, Tuple{LD}, false),
+        (LK.tbl_wl_tripwire, Tuple{LD, LK.tbl_worklist{T}, T, T}, false),
+        (LK.tbl_pred_tripwire, Tuple{LD, D, T, T}, false),
+        (LK.tripwire_incomplete_subgoals, Tuple{LD, D}, false),
+        (LK.tripwire_incomplete_subgoals, Tuple{LD, Nothing}, false),
+        (LK.tripwire_scc_subgoals, Tuple{LD, LK.tbl_worklist{T}, Int}, false),
+        (LK.droppable_table, Tuple{LD, LK.tbl_component{T}, LK.trie{T}}, false),
+        (LK.children_of_component, Tuple{LK.tbl_component{T}, Vector{LK.tbl_component{T}}}, false),
+        (LK.drop_intermediate_tables, Tuple{LD, LK.tbl_component{T}}, false),
+        (LK._tbl_put_pointer, Tuple{LD, Int, LK.tbl_worklist{T}}, false),
+        (LK._tbl_put_pointer, Tuple{LD, Int, LK.tbl_component{T}}, false),
+        (LK._tbl_put_pointer, Tuple{LD, Int, Nothing}, false),
+        (LK.sdg_push_root, Tuple{Vector{LK.tbl_component{T}}, LK.tbl_component{T}}, false),
+        (
+            LK.sdg_collect,
+            Tuple{
+                Vector{LK.tbl_component{T}}, Vector{LK.tbl_component{T}}, IdDict{LK.tbl_component{T}, Bool},
+                Vector{LK.tbl_worklist{T}}, IdDict{LK.tbl_worklist{T}, Int}
+            },
+            false
+        ),
+        (
+            LK.sdg_count_edges,
+            Tuple{
+                LD, LK.tbl_worklist{T}, IdDict{LK.tbl_worklist{T}, Int}, Dict{Tuple{Int, Int, Bool}, Int},
+                Vector{Tuple{Int, Int, Bool}}
+            },
+            false
+        ),
+        (LK.sdg_unify_table, Tuple{LD, Int, LK.tbl_worklist{T}}, false),
+        (LK._tbl_get_thread_id_ex, Tuple{LD, Int}, false),
+        [
+            (f, Tuple{LD, Int, Int, LK.control_t{T}}, false) for f in
+            (LK.pl_tbl_sdg3_va, LK.pl_tbl_incomplete3_va)
         ]...,
         # T4/T5: the closure blob and the wrapper supervisors (src/pl-wrap.jl, src/pl-supervisor.jl)
         (LK.closure_of_word, Tuple{GD, UInt64}, false),
