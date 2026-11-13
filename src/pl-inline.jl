@@ -100,28 +100,35 @@ function visibleClause(
 end
 
 "`visibleClause` outside a transaction: no local data to read it from (pl-inline.h)."
-visibleClause(cl::Clause{T}, gen::gen_t, rgen::gen_t)::Bool where {T} =
-    visibleClause(cl, gen, rgen, nothing)
+function visibleClause(cl::Clause{T}, gen::gen_t, rgen::gen_t)::Bool where {T}
+    return visibleClause(cl, gen, rgen, nothing)
+end
 
 "`visibleClause` for the local data `ld`: `rgen` is `ld.GD.reload_generation` (pl-inline.h `LD->reload.generation`; the one copy is the database's, audit D-0416 item 3), `tr` is `ld.transaction`."
-visibleClause(ld, cl::Clause{T}, gen::gen_t)::Bool where {T} =
-    visibleClause(
+function visibleClause(ld, cl::Clause{T}, gen::gen_t)::Bool where {T}
+    return visibleClause(
         cl, gen, (ld.GD::PL_global_data).reload_generation, ld.transaction::ld_transaction{T}
     )
+end
 
 # PORT: pl-inline.h visibleClauseCNT
 # DIVERGES: the erased-skipped statistic is not kept.
 "`visibleClause`, counting the misses upstream (pl-inline.h)."
-visibleClauseCNT(
+function visibleClauseCNT(
     cl::Clause{T}, gen::gen_t, rgen::gen_t, tr::Union{Nothing, ld_transaction{T}}
-)::Bool where {T} = visibleClause(cl, gen, rgen, tr)
+)::Bool where {T}
+    return visibleClause(cl, gen, rgen, tr)
+end
 
 "`visibleClauseCNT` outside a transaction (pl-inline.h)."
-visibleClauseCNT(cl::Clause{T}, gen::gen_t, rgen::gen_t)::Bool where {T} =
-    visibleClause(cl, gen, rgen, nothing)
+function visibleClauseCNT(cl::Clause{T}, gen::gen_t, rgen::gen_t)::Bool where {T}
+    return visibleClause(cl, gen, rgen, nothing)
+end
 
 "`visibleClauseCNT` for the local data `ld` (pl-inline.h)."
-visibleClauseCNT(ld, cl::Clause{T}, gen::gen_t)::Bool where {T} = visibleClause(ld, cl, gen)
+function visibleClauseCNT(ld, cl::Clause{T}, gen::gen_t)::Bool where {T}
+    return visibleClause(ld, cl, gen)
+end
 
 # PORT: pl-inline.h global_generation
 "The generation of the database (pl-inline.h)."
