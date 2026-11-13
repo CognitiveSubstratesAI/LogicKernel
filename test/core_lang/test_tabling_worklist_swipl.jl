@@ -406,3 +406,32 @@ end
     @test follower!(wl3) == LK.FTRUE
     @test wl3.riac === a3 && !wl3.in_global_wl && c3.worklist === nothing
 end
+
+@testset "TB2K2 white-box: table_complete_all resets has_scheduling_component of the top component (TB2-Q3)" begin
+    # pl-tabling.c:6440-6533: `if (!c->parent) LD->tabling.has_scheduling_component = false`. A Prolog row cannot read it: the cleanup of
+    # '$tbl_leader'/5 frees the component at once (free_component resets the flag again, pl-tabling.jl:347-349), and completing a running
+    # leader's component from inside its own body crashes swipl itself (assertion in tbl_reset_add_answer). So the flag is read between
+    # the two, as the engine does: a top component that is active and has a leader trie, no worklists.
+    gd = LK.PL_global_data{_TW}()
+    ld = LK.PL_local_data{_TW}(gd)
+    tr = LK.trie_create(_TW)
+    LK.trie_serial!(gd, tr)
+    c = LK.tbl_component{_TW}()
+    c.leader = tr.serial
+    ld.tabling.component = c
+    ld.tabling.has_scheduling_component = true      # tbl_create_subcomponent: a leader was created
+    ld.tabling.active_components = 1                # the component is active
+    ld.table_flags_drop_intermediate = 0            # no drop step: the plain completion
+    @test c.parent === nothing && c.status == LK.SCC_ACTIVE && ld.tabling.has_scheduling_component   # the non-empty side
+    fid = LK.PL_open_foreign_frame(ld)
+    a = LK.PL_new_term_refs(ld, 3)
+    LK.PL_put_int64(ld, a, LK.tbl_pointer!(ld, c))
+    LK.PL_put_variable(ld, a + 1)
+    LK.PL_put_variable(ld, a + 2)
+    @test LK.table_complete_all(ld, a, a + 1, a + 2, 0)
+    @test c.status == LK.SCC_COMPLETED
+    @test LK.PL_unify_atom(ld, a + 1, _tws("final"))   # a top component is `final`, one with a parent `complete`
+    @test !ld.tabling.has_scheduling_component         # kills TB2-Q3
+    @test ld.tabling.active_components == 0
+    LK.PL_close_foreign_frame(ld, fid)
+end

@@ -195,7 +195,7 @@ MUTANTS = [
          file=TAB, targets=[TW],
          old="        (c.parent !== nothing && ld.tabling.component === c) &&\n            (ld.tabling.component = c.parent)\n",
          new="        nothing\n"),
-    dict(id="TB2-Q3 table_complete_all leaves `has_scheduling_component` set after the top component (KILL twl08: the second call of tw_path/2 takes the child branch of `tbl_create_subcomponent` with no current component; every row after the first one)",
+    dict(id="TB2-Q3 table_complete_all leaves `has_scheduling_component` set after the top component (KILL the white-box testset `TB2K2 white-box: table_complete_all ...` of TW: after completing an active top component `has_scheduling_component` is false; twl08 cannot see it: the `$tbl_leader/5` cleanup frees the component at once and `free_component` (pl-tabling.jl:347-349) resets the flag again)",
          file=TAB, targets=[TW],
          old="            ld.tabling.has_scheduling_component = false\n            ld.tabling.active_components == 0 && sweep_orphan_dynamic_tables(ld)\n",
          new="            ld.tabling.has_scheduling_component = true\n            ld.tabling.active_components == 0 && sweep_orphan_dynamic_tables(ld)\n"),
