@@ -180,6 +180,10 @@ tw_lf(R) :-
     once('$tabling':'$tbl_leader'(0, member(_, [1,2]), w, _, T)),
     findall(C, tw_seen(C), L2),
     R = L1-L2.
+% twq11: the component of an inner tabled goal has the outer component as its parent
+:- table tw_o1/1, tw_o2/1.
+tw_o1(R) :- tw_o2(R).
+tw_o2(R) :- '$tbl_scc'(S), '$tbl_scc_data'(S, scc(P, _, _, _, _)), ( P == null -> R = top ; R = nested ).
 """
 
 const _TW_CASES = [
@@ -214,7 +218,8 @@ const _TW_CASES = [
         "twv02",
         raw"tm_yn(reset(call_continuation(foo), _, _), R1), tm_yn(reset(call_continuation([]), _, _), R2), R = r(R1, R2)"
     ),
-    ("twq08", raw"tw_lf(R0), R = R0")
+    ("twq08", raw"tw_lf(R0), R = R0"),
+    ("twq11", raw"findall(R0, tw_o1(R0), L), R = L")
 ]
 
 const _TW_PINNED = [
@@ -238,7 +243,8 @@ const _TW_PINNED = [
     "t_twk01 c[116,95,116,119,107,48,49]/1(c[91,124,93]/2(i0,c[91,124,93]/2(i1,c[91,124,93]/2(i2,c[91,124,93]/2(i10,c[91,124,93]/2(i20,nil))))))",
     "t_twv01 c[116,95,116,119,118,48,49]/1(c[91,124,93]/2(i1,c[91,124,93]/2(i3,c[91,124,93]/2(i7,c[91,124,93]/2(i15,c[91,124,93]/2(i31,nil))))))",
     "t_twv02 c[116,95,116,119,118,48,50]/1(c[114]/2(a[110,111],a[121,101,115]))",
-    "t_twq08 c[116,95,116,119,113,48,56]/1(c[45]/2(nil,c[91,124,93]/2(a[33],nil)))"
+    "t_twq08 c[116,95,116,119,113,48,56]/1(c[45]/2(nil,c[91,124,93]/2(a[33],nil)))",
+    "t_twq11 c[116,95,116,119,113,49,49]/1(c[91,124,93]/2(a[110,101,115,116,101,100],nil))"
 ]
 
 @testset "tabled left and mutual recursion as swipl's (twl, twm)" begin
@@ -281,6 +287,8 @@ end
     @test ans("twv02") == "c[114]/2(a[110,111],a[121,101,115])" && ans("twv02") != ans("twv01")
     # twq08: the message hook saw NOTHING for the `fail` catcher (left of `-`) and the cut catcher `!` once (the positive control)
     @test ans("twq08") == "c[45]/2(nil,c[91,124,93]/2(a[33],nil))"
+    # twq11: the inner component (tw_o2 called from tw_o1) has a parent: exactly one answer, `nested` (not `top`)
+    @test ans("twq11") == "c[91,124,93]/2(a[110,101,115,116,101,100],nil)"
     @test occursin("i12", ans("twl05"))         # 3 x 4 pairs: the cycle a-b-c-a and the exit c-d
 end
 

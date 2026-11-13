@@ -229,7 +229,7 @@ MUTANTS = [
          file=TAB, targets=[TW],
          old="        cur.leader = leader.serial\n",
          new="        nothing\n"),
-    dict(id="TB2-Q11 a nested component has no parent (KILL twm03/twm05: the child is a second top component, `c.parent !== nothing` never holds; the white-box row too)",
+    dict(id="TB2-Q11 a nested component has no parent (KILL twq11: tw_o2/1, called from tw_o1/1, reads its own component's parent through `$tbl_scc_data/2`: swipl `nested`, the mutant has no parent and answers `top`; twm03/twm05 read only answers, which are the same with a second top component)",
          file=TAB, targets=[TW],
          old="        c.parent = p\n        tab.component = c\n",
          new="        tab.component = c\n"),
