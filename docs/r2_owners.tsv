@@ -183,18 +183,8 @@ refusal:src/pl-srcfile.jl::startConsult::consulting a file again (reconsult)	LB6
 refusal:src/pl-wam.jl::PL_next_solution_guarded::backtracking into a $(db_c.type) choice point	CONT1	backtracking into a non-clause choice point (pl-wam.c, the I_RESET/I_YIELD/foreign-redo frames)
 refusal:src/pl-write.jl::writeAttVar::write_term/2 attributes(portray): '\$attvar':portray_attvar/	AV10	attributes(portray) writeAttVar (pl-write.c, '$attvar':portray_attvar/1)
 # refusal sites, assignments proposed in evidence/R2/refusal_owners.md (new deferred step names ENC1, RD2, WR2 and the QUESTION rows): confirmed by the audit (D-0415 item 5: ENC1, RD2, WR2 are the names of deferred steps; indexed(L) is PR1b)
-refusal:src/os/pl-file.jl::openStream::string("open/4 with the stream encoding ", enc)	ENC1	open/4 encoding(text) = ENC_ANSI (pl-file.c openStream, the locale's mbrtowc/wcrtomb); named refusal; UTF-16BE/LE and wchar_t are ported (ENC1)
 refusal:src/os/pl-fmt.jl::pl_format_predicate2_va::format_predicate/2 (GD->format.predicates)	LB5-LB7	format_predicate/2 (pl-fmt.c); library-only (tty.pl directives), the D9 table stays empty
 refusal:src/os/pl-os.jl::expandVars::expandVars: ~user (getpwnam)	LB5-LB7	~user expansion (pl-os.c expandVars, getpwnam); off the load path, file_name_variables only
-refusal:src/os/pl-stream.jl::put_code::put_code: encoding $enc	ENC1	put_code in ENC_ANSI (pl-stream.c Sputcode, wcrtomb); named refusal; the Unicode encodings are ported (ENC1)
-refusal:src/os/pl-stream.jl::Scanrepresent::Scanrepresent: encoding $enc	ENC1	Scanrepresent in ENC_ANSI (pl-stream.c, wcrtomb); named refusal
-refusal:src/os/pl-stream.jl::Sgetcode::Sgetcode: encoding $enc	ENC1	Sgetcode in ENC_ANSI (pl-stream.c, mbrtowc); named refusal; the Unicode encodings are ported (ENC1)
-refusal:src/os/pl-text.jl::PL_canonicalise_text::PL_canonicalise_text of $enc	ENC1	PL_canonicalise_text of a text in another encoding (pl-text.c); branch without a kernel caller
-refusal:src/os/pl-text.jl::text_error::text_error of $rc	ENC1	text_error of a code other than the code-point error (pl-text.c); branch without a kernel caller
-refusal:src/os/pl-text.jl::PL_mb_text::PL_mb_text to a target other than REP_UTF8	ENC1	PL_mb_text to a target other than REP_UTF8 (pl-text.c wctobuffer, PL_demote_text); no kernel caller
-refusal:src/os/pl-text.jl::PL_mb_text::PL_mb_text of $(text.encoding)	ENC1	PL_mb_text of a text in another encoding (pl-text.c); branch without a kernel caller
-refusal:src/os/pl-text.jl::_text_string::the string of a text in $(text.encoding)	ENC1	string of a text in another encoding (pl-text.c); branch without a kernel caller
-refusal:src/os/pl-text.jl::_text_code_points::the code points of a text in $(text.encoding)	ENC1	code points of a text in another encoding (pl-text.c); branch without a kernel caller
 refusal:src/pl-comp.jl::assert_term!::assert_term: PL_CREATE_INCREMENTAL/THREAD_LOCAL	TAB1	assert_term PL_CREATE_INCREMENTAL (tabling); the PL_CREATE_THREAD_LOCAL half is TH1 (pl-comp.c assert_term)
 refusal:src/pl-modul.jl::set_module::set_module(program_space(N)): the module's code accounting	P3	set_module(program_space(N)) code accounting (pl-modul.c); resource-limit family, unreached by the boot
 refusal:src/pl-proc.jl::get_procedure::get_procedure: other than GP_DEFINE	PR1	generic get_procedure modes beyond GP_DEFINE (pl-proc.c); callers use the split get_procedure_* functions, PR1 residual
@@ -207,8 +197,6 @@ refusal:src/pl-read.jl::start_pframe::read: a quasi-quotation {|Syntax||Quotatio
 refusal:src/pl-read.jl::read_clause::read_clause's $what option	RD2	read_clause comments / var_prefix options (pl-read.c read_clause)
 refusal:src/pl-read.jl::read_clause::read_clause's process_comment(true) option	RD2	read_clause process_comment(true) option (pl-read.c); the unicode_atoms half is ported (ENC1)
 refusal:src/pl-read.jl::read_term_from_stream::read_term's $what option	RD2	read_term comments / var_prefix / quasi_quotations options (pl-read.c pl_read_term)
-refusal:src/pl-string.jl::PL_text_recode::PL_text_recode to $encoding	ENC1	PL_text_recode to ENC_ANSI, the locale encoding (pl-string.c); with CT1's locale
-refusal:src/pl-string.jl::pl_string_bytes3_va::string_bytes/3 with the encoding text	ENC1	string_bytes/3 with the text (ENC_ANSI) encoding (pl-string.c); with CT1's locale
 refusal:src/pl-supervisor.jl::freeCodesDefinition!::freeCodesDefinition! of a wrapped predicate needs the databa	WRAP1	freeCodesDefinition of a wrapped predicate (pl-supervisor.c), needs the database; wrap closures are WRAP1
 refusal:src/pl-wam.jl::PL_next_solution_guarded::the VM instruction $(codeTable(thiscode).name)	TAB1	dispatch fallthrough for a VM instruction without a body (pl-vmi.c); each missing instruction has its own vmi: row, the last instruction (S_TABLED) removes this site
 refusal:src/pl-write.jl::writePrimitive::writing a grounded value SWI has no type for	WR2	writePrimitive of a grounded value SWI has no type for; a representation guard of the kernel, permanent until the blob writer takes it
