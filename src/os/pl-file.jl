@@ -1002,8 +1002,8 @@ end
 # DIVERGES: returns the stream, or `nothing` with the error raised; the file is opened by Julia
 # (`Sopen_file`), a failure's error from its errno (`ERR_FILE_OPERATION`); `pipe(Command)` is `Sopen_pipe` (lane D: a
 # `/bin/sh -c` child; `PL_clear_exception` and `REP_FN` of the command text are unwritten). Unwritten, each raising
-# `NotPortedError` BEFORE a file is opened: IRIs (`iri_hook`),
-# the `lock` option (no `flock`), the `locale` option (`PL_locale`) and the encoding ENC_ANSI (named refusal; UTF-16 and wchar_t are ported, ENC1).
+# `NotPortedError` BEFORE a file is opened: IRIs (`iri_hook`), the `lock(Lock)` option is `Sopen_file`'s `l`/`L` flag (`fcntl`),
+# the `locale` option (`PL_locale`) and the encoding ENC_ANSI (named refusal; UTF-16 and wchar_t are ported, ENC1).
 # `locale`'s default is the `encoding` flag's (`LD->encoding`): UTF-8.
 "Open the file `file` as `mode` and `options` say (pl-file.c); the stream, or `nothing` after raising the error."
 function openStream(
@@ -1016,6 +1016,7 @@ function openStream(
     eof_action = mk_sym(T, :eof_code)
     buffer = mk_sym(T, :full)
     lock = mk_sym(T, :none)
+    wait = true
     newline = nothing
     encoding = nothing
     close_on_abort = true
@@ -1039,6 +1040,8 @@ function openStream(
         v === nothing || (buffer = v)
         v = _opt_atom(T, vals[7])
         v === nothing || (lock = v)
+        b8 = vals[8]
+        b8 isa Bool && (wait = b8)
         encoding = _opt_atom(T, vals[9])
         newline = _opt_atom(T, vals[10])
         b11 = vals[11]
@@ -1130,11 +1133,8 @@ function openStream(
             PL_error(ld, ERR_DOMAIN, mk_sym(T, :lock), l)
             return nothing
         end
-        throw(
-            NotPortedError{T}(
-                lock, "open/4's lock(Lock) option (advisory file locks)", "no flock"
-            )
-        )
+        push!(how, wait ? 'l' : 'L')
+        push!(how, (_sym_is(lock, :read) || _sym_is(lock, :shared)) ? 'r' : 'w')
     end
 
     if alias !== nothing &&

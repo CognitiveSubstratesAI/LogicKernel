@@ -3758,6 +3758,7 @@ const _DISPATCH_MANIFEST_TUPLE = (
     (LK.ScheckBOM, Tuple{LK.IOSTREAM}, false), (LK.SwriteBOM, Tuple{LK.IOSTREAM}, false),
     (LK._current_umask, Tuple{}, false),
     (LK._open_julia_file, Tuple{String, Char, Int64}, false),
+    (LK._fcntl_lock, Tuple{IOStream, Int64, Bool}, false),
     (LK.Sopen_file, Tuple{String, String}, false),
     (LK.Sopen_pipe, Tuple{String, String}, false),
     (LK.getStream, Tuple{LK.IOSTREAM}, false),

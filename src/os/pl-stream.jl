@@ -1877,13 +1877,31 @@ function _open_julia_file(
     return io
 end
 
+# PORT: pl-stream.c Sopen_file (the lock loop on `fcntl(fd, wait ? F_SETLKW : F_SETLK, &buf)`)
+# ORIGINAL: `struct flock` is built by hand (Linux LP64: `short l_type`, `short l_whence`, `off_t l_start`, `off_t l_len`,
+# `pid_t l_pid`: 32 bytes); `F_RDLCK` 0, `F_WRLCK` 1, `F_SETLK` 6, `F_SETLKW` 7, `SEEK_SET` 0. 0 or the errno; an
+# `EINTR` retries as upstream does (`PL_handle_signals` has no signal to handle here).
+"Lock the whole file of `io`, read (`lock == 1`) or write, waiting or not: 0 or the errno (pl-stream.c Sopen_file)."
+function _fcntl_lock(io::IOStream, lock::Int, wait::Bool)::Int
+    fdn = ccall(:jl_ios_fd, Clong, (Ptr{Cvoid},), io.ios) % Cint
+    buf = zeros(UInt8, 32)
+    buf[1] = lock == 1 ? 0x00 : 0x01                    # l_type: F_RDLCK, F_WRLCK (little endian short)
+    cmd = wait ? Cint(7) : Cint(6)                      # F_SETLKW, F_SETLK
+    while true
+        rc = GC.@preserve buf ccall(:fcntl, Cint, (Cint, Cint, Ptr{UInt8}), fdn, cmd, pointer(buf))
+        rc == 0 && return 0
+        e = Int(Base.Libc.errno())
+        e == 4 || return e                              # EINTR: try again
+    end
+end
+
 # PORT: pl-stream.c Sopen_file
 # DIVERGES: returns `(stream, errno)` — the stream, or `nothing` and the errno that upstream leaves
 # in `errno`; the file is Julia's (`open`, an `IOStream`), so a failure's errno is what Julia's
-# `SystemError` carries; a new file gets `mode` less the umask by a `chmod` after the open, and
-# upstream's advisory locks (`l`, `L`: `fcntl`) are refused as upstream's own no-locking branch
-# does (EINVAL). `how`: `r`, `w`, `a` or `u`, then `b` (binary), `r` (no position), `m` and three
-# octal digits (the mode of a new file).
+# `SystemError` carries; a new file gets `mode` less the umask by a `chmod` after the open; the
+# advisory lock (`l`, `L`: upstream's FCNTL_LOCKS branch) is `_fcntl_lock` on the descriptor of the
+# Julia file. `how`: `r`, `w`, `a` or `u`, then `b` (binary), `r` (no position), `lr`/`lw`/`Lr`/`Lw`
+# (a read or write lock; `L` fails instead of waiting), `m` and three octal digits (the mode of a new file).
 "Open the file `path` as `how` says: the stream and 0, or `nothing` and the errno (pl-stream.c)."
 function Sopen_file(path::String, how::String)::Tuple{Union{Nothing, IOSTREAM}, Int}
     isempty(how) && return (nothing, EINVAL)
@@ -1891,6 +1909,8 @@ function Sopen_file(path::String, how::String)::Tuple{Union{Nothing, IOSTREAM}, 
     flags = SIO_FILE | SIO_TEXT | SIO_RECORDPOS | SIO_FBUF
     enc = ENC_UNKNOWN
     mode = Int(0o666)
+    lock = 0                                                # lnone, lread = 1, lwrite = 2
+    wait = true
     i = 2
     while i <= lastindex(how)
         c = how[i]
@@ -1899,12 +1919,22 @@ function Sopen_file(path::String, how::String)::Tuple{Union{Nothing, IOSTREAM}, 
             enc = ENC_OCTET
         elseif c == 'r'                                     # no record
             flags &= ~SIO_RECORDPOS
+        elseif c == 'L' || c == 'l'                         # lock r: read, w: write
+            c == 'L' && (wait = false)
+            i += 1
+            if i <= lastindex(how) && how[i] == 'r'
+                lock = 1
+            elseif i <= lastindex(how) && how[i] == 'w'
+                lock = 2
+            else
+                return (nothing, EINVAL)
+            end
         elseif c == 'm'
             (i + 3 <= lastindex(how) && all(d -> '0' <= d <= '7', how[(i + 1):(i + 3)])) ||
                 return (nothing, EINVAL)
             mode = parse(Int, how[(i + 1):(i + 3)]; base=8)
             i += 3
-        else                                                # 'l', 'L' (locks: none) and the rest
+        else
             return (nothing, EINVAL)
         end
         i += 1
@@ -1924,6 +1954,13 @@ function Sopen_file(path::String, how::String)::Tuple{Union{Nothing, IOSTREAM}, 
 
     io = _open_julia_file(path, op, mode)
     io isa Int && return (nothing, io)
+    if lock != 0
+        lerr = _fcntl_lock(io, lock, wait)
+        if lerr != 0
+            close(io)
+            return (nothing, lerr)
+        end
+    end
     s = Snew(Sjulia_io(io, true), flags, Siofunctions)
     enc != ENC_UNKNOWN && (s.encoding = enc)
     return (s, 0)

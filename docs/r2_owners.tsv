@@ -173,7 +173,6 @@ refusal:src/os/pl-files.jl::_iri_hook_refused::iri_hook $what (`\$iri`:iri_hook/
 refusal:src/os/pl-files.jl::_tmp_file_refused::what	LB5-LB7	tmp_file/2 and $tmp_file_stream/4: boot, off the load path (lb5_sizing.md Ring Q)
 # refusal sites, assignments settled by an existing step list (D-0408 item 5, D-0414 item 3f): evidence/R2/refusal_owners.md has the upstream function of each
 refusal:src/os/pl-file.jl::openStream::open/4's locale(Locale) option	CT1	open/4 locale(Locale) option (pl-file.c openStream, PL_locale); the locale objects of pl-locale.c
-refusal:src/os/pl-file.jl::openStream::open/4's lock(Lock) option (advisory file locks)	S2b	open/4 lock(Lock) option (pl-file.c openStream, Sseterr/flock); stream-layer remainder
 refusal:src/os/pl-file.jl::set_stream::set_stream/2's locale(Locale)	CT1	set_stream/2 locale(Locale) (pl-file.c set_stream, PL_locale); with open/4's locale option
 refusal:src/pl-comp.jl::compileSubClause!::compileArith (optimise)	AR1	compileArith under the optimise flag (pl-comp.c O_COMPILE_ARITH); needs the A_* instructions (Q-AR3)
 refusal:src/pl-event.jl::PL_call_event_hook_va::the thread events (`unify_thread_id`)	TH1	thread events unify_thread_id (pl-event.c); threads flag is false
