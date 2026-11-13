@@ -7904,6 +7904,17 @@ function transaction_rollback_tables(ld::PL_local_data{T})::Bool where {T}
     return rc
 end
 
+# PORT: pl-tabling.c merge_tabling_trail
+# DIVERGES: the actions of `from` are appended in order and `from` is emptied (`discardBuffer`, `freeHeap`); its `tables` are
+# dropped, as upstream's are.
+"A nested transaction commits: append its trail's actions to the enclosing one's (pl-tabling.c)."
+function merge_tabling_trail(into::tbl_trail, from::tbl_trail)::Nothing
+    append!(into.actions, from.actions)
+    tbl_trail_free(from)
+
+    return nothing
+end
+
 # PORT: pl-tabling.c tbl_reeval_wait as pl_tbl_reeval_wait2_va
 # (pl-tabling.c:11100-11111 at the pin; table_status_reeval_wait :11062 is ported above, TB6b)
 "`'\$tbl_reeval_wait'(+Trie, -Status)`: the status of `Trie` (`dynamic`, `monotonic`, `complete`, `invalid`) (pl-tabling.c)."
