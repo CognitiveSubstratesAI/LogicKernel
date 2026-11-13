@@ -7776,6 +7776,49 @@ function tt_add_answer(ld::PL_local_data{T}, atrie::trie{T}, node::Int)::Nothing
     return nothing
 end
 
+# PORT: pl-tabling.c tt_abolish_table
+# DIVERGES: `atrie` is matched by its index in `gd.tries` (a trie not yet registered has no entry); the action list is walked
+# from the top (`reverse`) as upstream's buffer.
+"The table `atrie` is abolished: discard all answers the trail holds for it (pl-tabling.c)."
+function tt_abolish_table(ld::PL_local_data{T}, atrie::trie{T})::Nothing where {T}
+    tt = ld.transaction.table_trail
+
+    if tt !== nothing && atrie.serial != 0
+        for i in length(tt.actions):-1:1
+            ta = tt.actions[i]
+
+            if ta.type == TT_ANSWER
+                if ta.atrie == atrie.serial
+                    ta.atrie = 0
+                    ta.answer = 0
+                end
+            else
+                @assert false "tt_abolish_table: unknown trail action"
+            end
+        end
+    end
+
+    return nothing
+end
+
+# PORT: pl-tabling.c transaction_commit_tables
+"The outermost transaction commits: release the trail of table changes; true (pl-tabling.c)."
+function transaction_commit_tables(ld::PL_local_data{T})::Bool where {T}
+    tt = ld.transaction.table_trail
+
+    if tt !== nothing
+        ld.transaction.table_trail = nothing
+
+        for i in length(tt.actions):-1:1
+            tt.actions[i].type == TT_ANSWER || @assert false "transaction_commit_tables: unknown trail action"
+        end
+
+        tbl_trail_free(tt)
+    end
+
+    return true
+end
+
 # PORT: pl-tabling.c tbl_reeval_wait as pl_tbl_reeval_wait2_va
 # (pl-tabling.c:11100-11111 at the pin; table_status_reeval_wait :11062 is ported above, TB6b)
 "`'\$tbl_reeval_wait'(+Trie, -Status)`: the status of `Trie` (`dynamic`, `monotonic`, `complete`, `invalid`) (pl-tabling.c)."
