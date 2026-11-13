@@ -29,7 +29,15 @@
 TM = "test/core_lang/test_tabling_monotonic_swipl.jl"
 TI = "test/core_lang/test_tabling_idg_swipl.jl"
 TMIN = "test/core_lang/test_tabling_min_swipl.jl"
+TV = "test/core_lang/test_tabling_variant_swipl.jl"
+TW = "test/core_lang/test_tabling_worklist_swipl.jl"
+TA = "test/core_lang/test_tabling_answers_swipl.jl"
+TF = "test/core_lang/test_tabling_wfs_swipl.jl"
+AB = "test/core_lang/test_tabling_abolish_swipl.jl"
 TARGETS = [TM, TI, TMIN]
+# TB7M5 (the refusal sites lifted from the merged tree, audit D-0238): every file that reaches the lifted code through start_tabling, a tabled call or the
+# variant-table predicates. KILL ROWS: idg08-idg10 (swipl-pinned, TI), idg16-idg20 (white-box, TI), mono09 (swipl-pinned, TM), mono12 (white-box, TM).
+TARGETS5 = [TM, TI, TMIN, TV, TW, TA, TF, AB]
 TAB = "src/pl-tabling.jl"
 MUTANTS = [
     dict(id='TB7-ref-serial-stuck (KILL mono05/mono06: every dependency gets reference 0, the `$idg_edge` references collide (mdep_by_ref))',
@@ -275,4 +283,21 @@ MUTANTS = [
          file=TAB, targets=TARGETS,
          old='        (di = dtrie.IDG) !== nothing && di.force_reeval && return FFALSE\n',
          new='        (di = dtrie.IDG) !== nothing && !di.force_reeval && return FFALSE\n'),
+    # ── TB7M5: complete_or_invalid_status (pl-tabling.c:4263-4285) ──
+    dict(id='TB7M5-A1 complete_or_invalid_status: falsecount 0 counts as invalid (KILL idg16: the incremental node with nothing wrong is `complete`; idg08 at the stack)',
+         file=TAB, targets=TARGETS5,
+         old='        n.falsecount > 0 && return mk_sym(T, :invalid)\n',
+         new='        n.falsecount >= 0 && return mk_sym(T, :invalid)\n'),
+    dict(id='TB7M5-A2 complete_or_invalid_status: a reevaluating node is complete (KILL idg16: `fresh` for the reevaluating node)',
+         file=TAB, targets=TARGETS5,
+         old='        n.reevaluating && return mk_sym(T, :fresh)\n',
+         new='        n.reevaluating && return mk_sym(T, :complete)\n'),
+    dict(id='TB7M5-A3 complete_or_invalid_status: the eager monotonic node does not look at force_reeval (KILL idg16: force_reeval makes the monotonic node `invalid`)',
+         file=TAB, targets=TARGETS5,
+         old='        n.monotonic && !n.lazy && !n.force_reeval && return mk_sym(T, :complete)\n',
+         new='        n.monotonic && !n.lazy && return mk_sym(T, :complete)\n'),
+    dict(id='TB7M5-A4 complete_or_invalid_status: the lazy monotonic node ignores `create` (KILL idg16: with create the lazy node under propagation is `invalid`)',
+         file=TAB, targets=TARGETS5,
+         old='ld.tabling.in_assert_propagation && !create && return mk_sym(T, :complete)\n',
+         new='ld.tabling.in_assert_propagation && return mk_sym(T, :complete)\n'),
 ]

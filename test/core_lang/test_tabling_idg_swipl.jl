@@ -41,9 +41,15 @@ t_idg04(R) :- ti_tab(T), findall(S, '$idg_false_edge'(T, _, S), R0), '$idg_threa
 t_idg06(R) :- ti_tab(T), '$tbl_reeval_wait'(T, S0),
     findall(S, ('$idg_edge'(T, dependent, D), '$tbl_reeval_wait'(D, S)), L), R = r(S0, L).
 t_idg07(R) :- ti_tab(T), '$idg_set_falsecount'(T, 0), '$tbl_reeval_wait'(T, S0), '$idg_falsecount'(T, F), R = r(S0, F).
+t_idg08(R) :- '$tbl_variant_table'(0, user:ti_p(_), T, S, Sk, M), '$idg_falsecount'(T, F), '$is_answer_trie'(T, Ty),
+    ( Sk = ret(_) -> Sko = ret1 ; Sko = Sk ), ( var(M) -> Mo = unbound ; Mo = M ), R = r(S, F, Ty, Sko, Mo).
+t_idg09(R) :- ti_tab(T), '$idg_set_falsecount'(T, 2), '$tbl_variant_table'(0, user:ti_p(_), T2, S, _, _),
+    '$idg_falsecount'(T2, F), R = r(S, F).
+t_idg10(R) :- '$tbl_variant_table'(0, user:ti_p(_), T, S, _, _), '$idg_set_falsecount'(T, 0),
+    '$tbl_variant_table'(0, user:ti_p(_), T2, S2, _, _), ( T == T2 -> Same = same ; Same = other ), R = r(S, S2, Same).
 """
 
-const _TI_CASES = ["t_idg01", "t_idg05", "t_idg02", "t_idg03", "t_idg04", "t_idg06", "t_idg07"]
+const _TI_CASES = ["t_idg01", "t_idg05", "t_idg02", "t_idg03", "t_idg04", "t_idg06", "t_idg07", "t_idg08", "t_idg09", "t_idg10"]
 
 # swipl 10.1.20 (`ti_q(t_idg<NN>, A)`, in the order of `_TI_CASES`), two identical runs (md5 equal), 2026-11-10
 const _TI_PINNED = [
@@ -54,6 +60,9 @@ const _TI_PINNED = [
     "r([dynamic],3,2)",                     # idg04 after idg05: three nodes, two edges; only ti_d (invalidated) is a false edge
     "r(invalid,[dynamic,dynamic])",         # idg06: `\$tbl_reeval_wait` of the invalid ti_p table and of its two dynamic children
     "r(complete,0)",                        # idg07: `\$idg_set_falsecount(T, 0)` makes it complete again
+    "r(complete,0,incremental,ret1,unbound)",   # idg08 (TB7M5): `\$tbl_variant_table` of the complete incremental table: status, falsecount, type
+    "r(invalid,2)",                         # idg09 (TB7M5): falsecount 2: complete_or_invalid_status answers `invalid`
+    "r(invalid,complete,same)",             # idg10 (TB7M5): falsecount back to 0: the same table is `complete` again
 ]
 
 "The `~q` text of each case's answer, in order, from swipl at the pin."
@@ -345,4 +354,49 @@ end
     @test isempty(_ti_live(p.dependent)) && isempty(_ti_live(c.affected))
     @test LK.idg_registry_get(reg, c.registry_index) === nothing && reg.references == refs - 1
     @test LK.idg_registry_get(reg, p.registry_index) === p
+end
+
+# ── TB7M5 white-box rows: the refusal sites lifted from the merged tree (pl-tabling.c at the pin, cited per row) ────────────
+"The text of the status atom `complete_or_invalid_status` gives for `tr`: ONE extractor for both sides of every comparison."
+_ti_status(ld, tr, create::Bool)::String = sym_text(LK.complete_or_invalid_status(ld, tr, create))
+
+@testset "idg16: complete_or_invalid_status reads the IDG node (pl-tabling.c:4263-4285)" begin
+    gd, ld = _ti_wb()
+    plain = LK.trie_create(_TI)
+    @test _ti_status(ld, plain, true) == "complete"                                     # no IDG node: complete
+    tr, n = _ti_node(ld)
+    @test _ti_status(ld, tr, true) == "complete"                                        # an incremental node, nothing wrong
+    n.falsecount = 2
+    @test _ti_status(ld, tr, true) == "invalid"                                         # falsecount > 0
+    n.reevaluating = true
+    @test _ti_status(ld, tr, true) == "invalid"                                         # falsecount is asked before reevaluating
+    n.falsecount = 0
+    @test _ti_status(ld, tr, true) == "fresh"                                           # reevaluating
+    n.reevaluating = false
+
+    # monotonic and not lazy: complete whatever the counters say, unless a reevaluation is forced
+    n.monotonic = true
+    n.falsecount = 3
+    n.reevaluating = true
+    @test _ti_status(ld, tr, true) == "complete"
+    n.force_reeval = true
+    @test _ti_status(ld, tr, true) == "invalid"
+
+    # monotonic and lazy: complete only while the assert propagation runs and the call is not creating
+    n.force_reeval = false
+    n.lazy = true
+    @test !ld.tabling.in_assert_propagation
+    @test _ti_status(ld, tr, false) == "invalid"
+    ld.tabling.in_assert_propagation = true
+    @test _ti_status(ld, tr, false) == "complete"
+    @test _ti_status(ld, tr, true) == "invalid"
+    ld.tabling.in_assert_propagation = false
+
+    # a must-fail corruption: flipping one input changes the answer, so the rows above can fail
+    good = _ti_status(ld, tr, true)
+    n.falsecount = 0
+    n.reevaluating = false
+    n.monotonic = false
+    bad = _ti_status(ld, tr, true)
+    @test !isempty(good) && !isempty(bad) && good != bad
 end

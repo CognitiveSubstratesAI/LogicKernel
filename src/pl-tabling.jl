@@ -3553,18 +3553,19 @@ function unify_fresh(
 end
 
 # PORT: pl-tabling.c complete_or_invalid_status
-# DIVERGES: the IDG node (`atrie->data.IDG`, a monotonic or incremental table) is TB6's: refused by name when a table has one;
-# no table has one before TB6, so the answer is `complete`.
+# (pl-tabling.c:4263-4285 at the pin.)
+# DIVERGES: the IDG node (`atrie->data.IDG`, the TB6 node of a monotonic or incremental table) is read as `atrie.IDG`; the
+# status is the atom of the answer, `mk_sym(T, ...)` of the same names.
 "The status atom of a complete table: `complete`, `invalid` or `fresh` (pl-tabling.c)."
 function complete_or_invalid_status(
     ld::PL_local_data{T}, atrie::trie{T}, create::Bool
 )::T where {T}
-    atrie.IDG === nothing || tbl_refuse(
-        T,
-        :complete_or_invalid_status,
-        "complete_or_invalid_status: an IDG node (monotonic, falsecount, reevaluating)",
-        "TB6"
-    )
+    if (n = atrie.IDG) !== nothing
+        n.monotonic && !n.lazy && !n.force_reeval && return mk_sym(T, :complete)
+        n.monotonic && n.lazy && ld.tabling.in_assert_propagation && !create && return mk_sym(T, :complete)
+        n.falsecount > 0 && return mk_sym(T, :invalid)
+        n.reevaluating && return mk_sym(T, :fresh)
+    end
 
     return mk_sym(T, :complete)
 end
