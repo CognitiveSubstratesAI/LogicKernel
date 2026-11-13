@@ -9099,8 +9099,7 @@ end
 
 # PORT: pl-tabling.c tbl_monotonic_add_answer as pl_tbl_monotonic_add_answer2_va
 # (PRED_IMPL("$tbl_monotonic_add_answer", 2, tbl_monotonic_add_answer, 0), pl-tabling.c:10438-10492 at the pin)
-# DIVERGES: `tt_add_answer` (transaction) is omitted (owner TX1/TB9); the answer of an answer subsumption table (`TRIE_ISMAP`)
-# is queued as its node id; `atrie_answer_event` is the stub above (owner EV1).
+# DIVERGES: the answer of an answer subsumption table (`TRIE_ISMAP`) is queued as its node id; `atrie_answer_event` is the stub above (owner EV1).
 "`'\$tbl_monotonic_add_answer'(+Trie, +Answer)`: add an answer from monotonic propagation (pl-tabling.c)."
 function pl_tbl_monotonic_add_answer2_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
@@ -9127,6 +9126,7 @@ function pl_tbl_monotonic_add_answer2_va(
 
             if rc > 0
                 atrie.nodes[nid].value != 0 && return FFALSE
+                tt_add_answer(ld, atrie, nid)
                 set_trie_value_word(atrie, nid, ATOM_trienode)
 
                 mono_idg_changed(ld, atrie, nid) || return FFALSE
