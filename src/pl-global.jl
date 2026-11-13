@@ -402,7 +402,7 @@ tbl_free_objects{T}() where {T} = tbl_free_objects{T}(
 
 # PORT: pl-global.h tabling as ld_tabling
 # DIVERGES: only the private, single-thread fields; NOT PORTED, each to its owner (docs/architecture.md TB0):
-# `idg_registry` (TB6); `start_nodes` (`node_array`, TB1) is a nullable `Vector{Int}` of node ids by `start_id` (no blocks: DIVERGES, no concurrent readers). `variant_table`
+# `idg_registry` (TB6: `nothing` is NULL); `start_nodes` (`node_array`, TB1) is a nullable `Vector{Int}` of node ids by `start_id` (no blocks: DIVERGES, no concurrent readers). `variant_table`
 # is the index of the variant trie in the database's trie table (0: none). `flags` holds the `TF_*` bits,
 # `delay_list` and `idg_current` are term references (0: none). `node_pool` is the pool `table_space` sets (`nothing`: NULL).
 "The tabling state of one thread (pl-global.h `LD->tabling`)."
@@ -414,6 +414,7 @@ mutable struct ld_tabling{T}
     variant_table::Int                                          # Variant --> table (a trie index; 0: none)
     node_pool::Union{Nothing, alloc_pool}                       # Node allocation pool for tries
     start_nodes::Union{Nothing, Vector{Int}}                    # Predicate start nodes in it (a node_array: node ids by start_id, 0: none; TB1)
+    idg_registry::Union{Nothing, idg_registry{idg_node{T}}}     # IDG nodes of private tables (TB6; nothing: NULL)
     dyn_orphan_events::Int                                      # Dynamic nodes that lost a dependent
     concurrent_idg_nodes::Int                                   # Private IDG nodes with shared children
     has_scheduling_component::Bool                              # A leader was created
@@ -432,13 +433,23 @@ mutable struct ld_tabling{T}
     # DIVERGES (TAB1 TB2): the states of `'$tbl_wkl_work'/6` (upstream: `allocForeignState`, its address the REDO_PTR context)
     # are records of this pool, the index the context (as between/3's `between_states`).
     wkl_states::foreign_state_pool{wkl_step_state{T}}           # ('$tbl_wkl_work'/6's REDO_PTR states)
+    # DIVERGES (TAB1 TB6): the states of `'$idg_edge'/3` and `'$idg_false_edge'/3` (upstream: `allocForeignState`, its
+    # address the REDO_PTR context) are records of this pool, the index the context (as TB2's `wkl_states`).
+    idg_edge_states::foreign_state_pool{idg_edge_state{T}}      # (idg_edge_gen's REDO_PTR states)
+    # DIVERGES (TAB1 TB7): the monotonic dependency `idg_mdep *` that '$idg_edge'/3 hands to Prolog (PL_unify_pointer) and
+    # '$idg_mono_empty_queue'/2 takes back (PL_get_pointer_ex) is an integer reference here, never a Julia address: a stale
+    # reference finds nothing.  `mdep_ref_serial` is the last reference given out.
+    mdep_by_ref::Dict{Int, idg_mdep{T, idg_node{T}}}            # reference -> dependency
+    mdep_ref_of::IdDict{idg_mdep{T, idg_node{T}}, Int}          # dependency -> reference
+    mdep_ref_serial::Int
 end
 ld_tabling{T}() where {T} = ld_tabling{T}(
-    nothing, nothing, 0, 0, 0, nothing, nothing, 0, 0, false, false, false, UInt32(0),
+    nothing, nothing, 0, 0, 0, nothing, nothing, nothing, 0, 0, false, false, false, UInt32(0),
     0, 0,
     tbl_free_objects{T}(), tbl_restraint{T}(),
     Union{Nothing, tbl_worklist{T}, tbl_component{T}}[], Int[],
-    foreign_state_pool{wkl_step_state{T}}()
+    foreign_state_pool{wkl_step_state{T}}(), foreign_state_pool{idg_edge_state{T}}(),
+    Dict{Int, idg_mdep{T, idg_node{T}}}(), IdDict{idg_mdep{T, idg_node{T}}, Int}(), 0
 )
 
 # PORT: pl-global.h PL_local_data
@@ -744,7 +755,7 @@ function _bare_local_data(gd::PL_global_data{T}) where {T}
             Definition{T}(
                 UInt64(0), 0, ClauseList{T}(), UInt64(0), e, code[], ClauseRef{T}[],
                 PL_code_data(
-                    code[], code[], code[], code[], code[], code[], code[], code[]
+                    code[], code[], code[], code[], code[], code[], code[], code[], code[]
                 ), 0, 0,
                 0
             ),

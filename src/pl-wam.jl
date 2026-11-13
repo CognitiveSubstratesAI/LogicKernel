@@ -2360,7 +2360,8 @@ const VMI_RUN = (
     :T_TRY_ATTVARZT, :T_ATTVARZT,
     :T_TRY_FLOAT, :T_FLOAT, :T_TRY_MPZ, :T_MPZ, :T_TRY_STRING, :T_STRING, :T_TRY_ATOM,
     :T_ATOM,
-    :T_TRY_SMALLINT, :T_SMALLINT, :T_CHECKWAKEUP
+    :T_TRY_SMALLINT, :T_SMALLINT, :T_CHECKWAKEUP,
+    :S_INCR_DYNAMIC                                 # TAB1 TB6
 )
 
 "Jump to the label named after instruction `x`, one of those `table` names (a balanced tree of compares)."
@@ -5812,6 +5813,22 @@ function PL_next_solution_guarded(
     @label S_DYNAMIC
     # enterDefinition(DEF): (void)0 upstream (pl-incl.h:1347)
     @goto S_STATIC                                  # SEPARATE_VMI1; VMI_GOTO(S_STATIC)
+
+    # PORT: pl-vmi.c S_INCR_DYNAMIC
+    # (pl-vmi.c:3522-3553 at 18168e629eab; TAB1 TB6.) The supervisor of an incremental dynamic predicate: while a table with an
+    # IDG node is current, add the edge from it to this call's dynamic table (`'\$idg_add_dyncall'/1` in C), then `S_STATIC`.
+    # DIVERGES: the code between `SAVE_REGISTERS` and `LOAD_REGISTERS` is `incr_dynamic_call` (src/pl-tabling.jl), as
+    # `S_TABLED` calls `tbl_complete_answer_clause`; `idg_current` is the read of `LD->tabling.idg_current` and `symbol_trie`.
+    @label S_INCR_DYNAMIC
+    # enterDefinition(DEF): (void)0 upstream (pl-incl.h:1347)
+    if (sid_ctrie = idg_current(ld)) !== nothing && sid_ctrie.IDG !== nothing
+        setLTop!(ld, argFrameP(ld.frames[FR].base, DEF.arity))   # lTop = (LocalFrame)argFrameP(FR, DEF->functor->arity)
+        @SAVE_REGISTERS(QID)
+        incr_dynamic_call(ld, DEF, FR, sid_ctrie)
+        @LOAD_REGISTERS(QID)
+        ld.exception_term != 0 && @goto b_throw     # THROW_EXCEPTION
+    end
+    @goto S_STATIC                                  # VMI_GOTO(S_STATIC)
 
     # PORT: pl-vmi.c S_MULTIFILE
     @label S_MULTIFILE

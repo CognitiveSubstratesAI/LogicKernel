@@ -8223,6 +8223,42 @@ UPSTREAM: os/pl-file.c `closeStream` :1503-1521 (`s == Sinput`; `s == Soutput ||
   Mutants CS-14..CS-19 make each constructor static and remove the flag test. A new stream constructor must not set `SIO_STATIC`.
 - Rows: test/files/test_open_close_swipl.jl cs01-cs10 (swipl 10.1.19's pinned answers) and the white-box testsets; mutants tools/mutants/CLOSESTREAM.py (19).
 
+## TAB1 TB7 — monotonic tables: the MONOTONIC TABLING block of pl-tabling.c (pl-tabling.c:9883-11100, R2, swipl-devel 18168e62)
+
+What TB7 adds (pin `18168e629eab`, oracle swipl 10.1.20; written edit-only on branch wip/tb7r, stacked on wip/tb6: NOTHING was compiled or run, every claim below is
+UNVERIFIED until the gate). It is the part of the table machinery that keeps a `:- table _ as monotonic` table up to date when a monotonic dynamic predicate gets a clause:
+the dependency chains `idg_mdep`, the `mono_index` of a source node, the answer queues, the propagation, the reevaluation and the sixteen predicates around them.
+- **UPSTREAM files:** `src/pl-tabling.c` (src/pl-tabling.jl, the block `# ── MONOTONIC TABLING` before `PL_predicates_from_tabling`; the refusal sites of TB6 in `idg_destroy`,
+  `idg_destroy_private`, `idg_free_mdeps`, `idg_add_child`, `idg_edge_gen`, `idg_changed_loop` are replaced by calls into it); `src/pl-global.h` (`LD->tabling`: src/pl-global.jl
+  `ld_tabling{T}`). The structs `idg_mdep`, `idg_mono` and `idg_node` are TB6's and are not edited.
+- **Registered predicates** (src/pl-tabling.jl, `PL_predicates_from_tabling`, after `$tbl_reeval_wait/2`, upstream's order, pl-tabling.c:12823-12838): `$tbl_monotonic_add_answer/2`,
+  `$idg_add_monotonic_dep/3`, `$idg_add_mono_dyn_dep/3`, `$idg_mono_affects/3` (nondeterministic), `$idg_mono_affects_eager/3` (nondeterministic), `$idg_mono_affects_lazy/5`
+  (nondeterministic), `$idg_mono_index/2`, `$idg_mono_index_deps/4` (nondeterministic), `$tbl_propagate_start/1`, `$tbl_propagate_end/1`, `$tbl_collect_mono_dep/0`, `$mono_idg_changed/2`,
+  `$mono_reeval_prepare/2`, `$mono_reeval_done/3`, `$idg_mono_empty_queue/2`, `$idg_mono_invalidate/1`. The boot-image count of kernel foreign rows (test/db/test_boot_image_swipl.jl) falls 356 -> 340.
+- **Struct changes (restart of the warm daemon):** `ld_tabling{T}` gains three fields after `idg_edge_states` (src/pl-global.jl): `mdep_by_ref::Dict{Int, idg_mdep{T, idg_node{T}}}`,
+  `mdep_ref_of::IdDict{idg_mdep{T, idg_node{T}}, Int}`, `mdep_ref_serial::Int`; new `mono_scc_state{T}` (src/pl-tabling.jl, the SCC walk of `mono_scc_is_complete`).
+  `idg_free_mdeps` takes `ld` as its first argument (its manifest entry changed with it).
+- **DIVERGES (representation; each with its place):**
+  1. An `idg_mdep *` is an INTEGER reference (`mdep_ref!`, `mdep_of_ref`, `ld.tabling.mdep_by_ref`): the pointer upstream puts into a Prolog integer (`PL_unify_pointer`) is never an address;
+     a stale reference makes `$idg_mono_empty_queue/2` fail (upstream's failed `magic` test), `$idg_mono_index_deps/4` and `$idg_mono_affects*/3,5` read the table, not memory.
+  2. The chain of one edge (child -> parent) ends in the CHILD node (`next` is an `idg_node` there; upstream tells the two apart by `magic`); a freed dependency has `magic == 0`.
+  3. A queue entry (`mdep.queue::Vector{Int}`) is the id of a node of the child's answer trie (> 0) or, for the pseudo table of a dynamic predicate, a clause reference as `-serial` (< 0;
+     upstream: a node pointer or an atom word): `clref_serial`, `mono_answer_live`, `get_mono_answer`. Answers go to Prolog as node ids.
+  4. The `mono_index` trie of a node is a serial in `gd.tries` and stays there after `mono_index_release` (no atom GC). The variant hash is `variant_hash(...).murmur` of the cells exported
+     (src/pl-termhash.jl); the variant table is TB1's `variant_table`.
+  5. The transaction branches (`LD->transaction.generation`, `tt_add_table`, `tt_add_answer`, `tt_mono_status`, `tt_new_dep`, `tt_abolish_table`) are omitted: the kernel has no `ld.transaction`
+     (owner TX1/TB9; `prepare_reeval`'s `tt_add_table` stays the TB9 refusal). `Buffer`s are `Vector{Int}`, `TablePP`/`TablePW` are `Dict`/`IdDict`, `segstack` is a `Vector`.
+  6. `mono_reeval_done_node` counts the deleted leaves through a `Ref` and allocates a closure per call (not an allocation-free function; its manifest row says `false`).
+- **Named refusals, each with its owner:** `$idg_add_mono_dyn_dep/3` calls `get_procedure(gd, ld, A1, GP_FIND)`, which src/pl-proc.jl refuses for anything but `GP_DEFINE` (owner V9): the predicate
+  throws `NotPortedError` until V9, so a monotonic table over a monotonic DYNAMIC predicate cannot run on the kernel before then; `atrie_answer_event` refuses a tabled predicate with `events`
+  (`table_answer_event`, owner EV1).
+- **Stack-merge sites (other branches; evidence/TB7/handoff3.md):** wip/tb3 `prune_deleted_mdeps(ld, idg)` and `inner_is_monotonic(ld)`, wip/tb1 `tbl_variant_table`'s monotonic branch.
+- **To verify at the gate (unverified by construction):** the cross-branch names the block uses (TB1 `tbl_refuse`, `variant_table`, `unify_trie_term`; TB3 `wkl_mode_add_answer`, `WL_DYNAMIC`;
+  TB6 `table_is_incomplete`); the FLI forms (`PL_discard_foreign_frame`, `PL_new_term_refs`, `PL_put_variable`, `_err_functor(ld, :monotonic, 1)`); `variant_hash(t, HASH_MURMUR)` and `cell_export{T}()`;
+  `gd.clause_refs` indexing and the `CL_ERASED` flag; `trie_lookup(ld, tr, 0, k, add, nothing)`; `map_trie_node(atrie, 1, f)` visiting the root; the `@goto next` out of the `dep != 0`
+  block of `idg_edge_gen`; the rows of test/core_lang/test_tabling_monotonic_swipl.jl (all eight kernel answers) and the TB7 mutants (tools/mutants/TB7.py).
+- **Upstream defects:** see the private register.
+
 ## PIN1 step C — deferred owners of the V10.1.20 hunks the kernel does not take (swipl-devel 18168e62; audit D-0446 item 3, D-0447 items 1-3; edit-only: nothing was compiled or run when this was written, the gate decides)
 
 UPSTREAM: pl-tabling.c, pl-tabling.h, pl-idgset.c/h (new), pl-thread.c, os/pl-stream.c (`Sshare`), pl-prof.c, pl-init.c (`stopProfiler`), pl-fli.c, pl-fli.h and SWI-Prolog.h, cbf4e189 to 18168e62.

@@ -133,8 +133,8 @@ end
 # (audit D-0122 Q1 (a), a representation-only divergence: upstream assigns the two local-stack cells
 # themselves, pl-attvar.c:127 "on local stack!", and its own TBD, pl-wam.c:1565, names the global
 # stack); the others belong to subsystems not ported (`trim.dummy`, `attvar.gc_attvars` (G1), undo
-# hooks, tabling's `idg_current`; nor `destroyGlobalVars`); since TAB1 TB4 `tabling.delay_list` (`init_delay_list`, after the
-# attvar pair as upstream). So later term references
+# hooks; nor `destroyGlobalVars`); since TAB1 TB4 `tabling.delay_list` (`init_delay_list`, after the
+# attvar pair as upstream), since TB6 `tabling.idg_current` (one more reference and permanent cell, right after it as upstream). So later term references
 # lie at other absolute positions than in
 # swipl: compare DIFFERENCES between positions with swipl, never absolute ones.
 "Empty the local stack and the trail, then open the base foreign frame (pl-setup.c)."
@@ -179,6 +179,9 @@ function emptyStacks!(ld::PL_local_data{T})::Nothing where {T}
     ld.attvar_tail = PL_new_term_ref(ld)                       # LD->attvar.tail
     @assert unRef(ld.slots[ld.attvar_tail + 1]) == unRef(ld.slots[ld.attvar_head + 1]) + 1
     ld.tabling.delay_list = init_delay_list(ld)                # LD->tabling.delay_list = init_delay_list(); (pl-setup.c:1558, TAB1 TB4)
+    # TB6: the current IDG node (pl-setup.c:1559 `LD->tabling.idg_current = PL_new_term_ref()`, right after the delay list): its slot
+    # references a PERMANENT global cell, as the wakeup list's head, so `set_idg_current` trails a global cell (src/pl-tabling.jl).
+    ld.tabling.idg_current = PL_new_term_ref(ld)
     ld.tmp_h = PL_new_term_refs(ld, TMP_PTR_SIZE)              # for(i…) LD->tmp.h[i] = PL_new_term_ref()
     ld.tmp_top = 0                                             # LD->tmp.top = 0
     ld.tmp_cells = unRef(ld.slots[ld.tmp_h + 1])               # (PERMANENT, as the exception's: popTermRef)

@@ -24,8 +24,8 @@ _mb_aw(ld, n) = LK._atom_word!(ld, _mb_sym(n))
     # TMP_PTR_SIZE temporary handles (pl-setup.c; f3b-4 — was gTop == 4; AV1 — was 4 + TMP_PTR_SIZE,
     # D-0083). TAB1 TB4 (D-0083): `tabling.delay_list` (`init_delay_list`, pl-setup.c:1558) sits between the attvar pair and the
     # handles, 4 more permanent cells: its own reference's, the argument reference's (`[]`'s) and the compound `-([])` (functor,
-    # `[]`) — was 6 + TMP_PTR_SIZE.
-    @test ld.mark_bar == 0 && ld.gTop == 10 + LK.TMP_PTR_SIZE
+    # `[]`) — was 6 + TMP_PTR_SIZE. TAB1 TB6 (D-0083): `tabling.idg_current` (pl-setup.c:1559) is one more permanent cell (was 10 + TMP_PTR_SIZE).
+    @test ld.mark_bar == 0 && ld.gTop == 11 + LK.TMP_PTR_SIZE
     LK.allocGlobalCells!(ld, 3)
     m = LK.Mark(ld)
     @test ld.mark_bar == ld.gTop == m.globaltop

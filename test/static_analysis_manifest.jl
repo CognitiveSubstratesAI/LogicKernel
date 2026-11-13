@@ -2935,9 +2935,7 @@ function _manifest_index(T)
                 LK.pl_tbl_scc1_va,
                 LK.pl_tbl_scc_data2_va,
                 LK.pl_tbl_worklist_data2_va,
-                LK.pl_tbl_wkl_table2_va,
-                LK.pl_idg_set_current2_va,
-                LK.pl_idg_add_edge1_va
+                LK.pl_tbl_wkl_table2_va
             )
         ]...,
         # TAB1 TB3: the answers of a table, answer subsumption, the complete-table fast path (src/pl-tabling.jl; pl-tabling.c :4729-5554, :6269, :7061-7157, :12229-12636)
@@ -2975,7 +2973,6 @@ function _manifest_index(T)
         ),
         (LK.wkl_mode_add_answer, Tuple{LD, Nothing, LK.trie{T}, Int, Int}, false),
         (LK.tbl_unify_answer, Tuple{LD, LK.trie{T}, Int, Int}, false),
-        (LK.set_idg_current, Tuple{LD, LK.trie{T}}, false),
         (LK.idg_set_current_wl, Tuple{LD, Int}, false),
         (LK.unify_dependency, Tuple{LD, Int, Int, LK.tbl_worklist{T}, Int, Bool}, false),
         (LK.tbl_put_moded_args, Tuple{LD, LK.trie{T}, Int, Int}, false),
@@ -3626,6 +3623,199 @@ _manifest_tr4(T) = begin
     )
 end
 
+# TAB1 TB6 — the incremental dependency graph: pl-idgset.c (src/pl-idgset.jl) and the IDG blocks of pl-tabling.c
+# (src/pl-tabling.jl). The pointer type of the edge sets is the node, `idg_node{T}`, so the sets, blocks, registry and the
+# functions on them are checked for every payload type; the ones on integers and the no-op reader hooks once, below.
+_manifest_tb6(T) = begin
+    TR, D, LD = LK.trie{T}, LK.Definition{T}, LK.PL_local_data{T}
+    IN, ES = LK.idg_node{T}, LK.idg_edge_state{T}
+    SET, BLK, ENUM, REG = LK.idg_set{IN}, LK.idg_set_block{IN}, LK.idg_set_enum{IN}, LK.idg_registry{IN}
+    PL, LING = Union{Nothing, LK.alloc_pool}, Union{Nothing, IN}
+    CTX = Tuple{LD, IN}
+    (
+        # pl-idgset.c: blocks, sets, enumeration, the registry
+        (LK.hash_slot, Tuple{IN, Int}, false),
+        (LK.new_block, Tuple{LD, Type{IN}, Int, PL}, false),
+        (LK.free_block_now, Tuple{BLK, PL}, false),
+        (LK.free_block, Tuple{BLK, PL}, false),
+        (LK.retire_block, Tuple{BLK, LING, PL}, false),
+        (LK.idg_set_free_lingering, Tuple{IN, PL}, false),
+        (LK.index_insert, Tuple{BLK, IN, Int}, false),
+        (LK.find_pos, Tuple{BLK, IN}, false),
+        (LK.append, Tuple{BLK, IN}, false),
+        (LK.grow_block, Tuple{LD, BLK, PL}, false),
+        (LK.idg_set_add, Tuple{LD, SET, IN, LING, PL}, false),
+        (LK.idg_set_delete, Tuple{SET, IN, LING, PL}, false),
+        (LK.idg_set_contains, Tuple{SET, IN}, false),
+        (LK.idg_set_size, Tuple{SET}, false),
+        (LK.idg_set_sizeof, Tuple{SET}, false),
+        (LK.idg_set_lingering_sizeof, Tuple{Union{Nothing, BLK}}, false),
+        (LK.idg_set_clear, Tuple{SET, typeof(LK.idg_free_affected), CTX, LING, PL}, false),
+        (LK.idg_set_clear, Tuple{SET, typeof(LK.idg_free_dependent), CTX, LING, PL}, false),
+        (LK.idg_set_clear, Tuple{SET, typeof(LK.idg_free_mdeps_affected), CTX, LING, PL}, false),
+        (LK.idg_set_clear, Tuple{SET, Nothing, CTX, LING, PL}, false),
+        (LK.idg_set_clear, Tuple{SET, Nothing, Nothing, LING, PL}, false),
+        (LK.idg_set_enum_init, Tuple{SET}, false),
+        (LK.idg_set_is_empty, Tuple{SET}, false),
+        (LK.idg_set_next, Tuple{ENUM}, false),
+        (LK.idg_free_or_defer, Tuple{typeof(LK.free_block_now), BLK, PL}, false),
+        (LK.idg_free_or_defer, Tuple{typeof(LK.free_registry_now), REG, Nothing}, false),
+        (LK.idg_free_or_defer, Tuple{typeof(LK.idg_free_node), IN, PL}, false),
+        (LK.idg_registry_new, Tuple{Type{IN}}, false),
+        (LK.free_registry_now, Tuple{REG, Nothing}, false),
+        (LK.idg_registry_add, Tuple{LD, REG, IN, PL}, false),
+        (LK.idg_registry_delete, Tuple{REG, Int}, false),
+        (LK.idg_registry_release, Tuple{REG}, false),
+        (LK.idg_registry_release_n, Tuple{REG, Int}, false),
+        (LK.idg_registry_count, Tuple{REG}, false),
+        (LK.idg_registry_sizeof, Tuple{REG}, false),
+        (LK.idg_registry_get, Tuple{REG, Int}, false),
+        # pl-tabling.c: IDG construction, the current node, the dynamic-call edge
+        (LK.idg_pool, Tuple{LD, IN}, false),
+        (LK.idg_new, Tuple{LD, TR}, false),
+        (LK.idg_release_registry, Tuple{LD}, false),
+        (LK.idg_mono_deps, Tuple{IN}, false),
+        (LK.idg_mono_index, Tuple{IN}, false),
+        (LK.idg_mono_index_deps, Tuple{IN}, false),
+        (LK.idg_ensure_mono, Tuple{LD, IN}, false),
+        (LK.idg_lingering, Tuple{LD, IN}, false),
+        (LK.idg_mdeps, Tuple{IN, IN}, false),
+        (LK.idg_clean_affected, Tuple{LD, IN}, false),
+        (LK.idg_clean_dependent, Tuple{LD, IN}, false),
+        (LK.idg_reset, Tuple{LD, IN}, false),
+        (LK.idg_free_node, Tuple{IN, PL}, false),
+        (LK.idg_destroy, Tuple{LD, IN}, false),
+        (LK.idg_free_mdeps_affected, Tuple{IN, CTX}, false),
+        (LK.idg_destroy_private, Tuple{LD, IN}, false),
+        (LK.idg_free_mdeps, Tuple{LD, IN, IN}, false),
+        (LK.idg_free_affected, Tuple{IN, CTX}, false),
+        (LK.idg_free_dependent, Tuple{IN, CTX}, false),
+        (LK.idg_add_child, Tuple{LD, IN, IN, Int, Int}, false),
+        (LK.idg_init_variant, Tuple{LD, TR, Union{Nothing, D}, Int}, false),
+        (LK.set_idg_current, Tuple{LD, Union{Nothing, TR}}, false),
+        (LK.idg_current, Tuple{LD}, false),
+        (LK.idg_add_edge, Tuple{LD, TR, Union{Nothing, TR}}, false),
+        (LK.trie_for_dynamic_predicate, Tuple{LD, Union{Nothing, D}, TR, Int}, false),
+        (LK.idg_add_dyncall, Tuple{LD, Union{Nothing, D}, TR, Int}, false),
+        (LK.incr_dynamic_call, Tuple{LD, D, Int, TR}, false),
+        # pl-tabling.c: change propagation, edge enumeration, the summaries
+        (LK.idg_changed_loop, Tuple{LD, LK.idg_propagate_state{T}, Int}, false),
+        (LK.idg_propagate_change, Tuple{LD, IN, Int}, false),
+        (LK.change_incomplete_error, Tuple{LD, TR}, false),
+        (LK.idg_need_invalidated, Tuple{LD, IN}, false),
+        (LK.idg_changed, Tuple{LD, TR, Int}, false),
+        (LK.advance_idg_edge_state, Tuple{LD, ES}, false),
+        (LK.free_idg_edge_state, Tuple{LD, ES, Int}, false),
+        (LK.save_idg_edge_state, Tuple{LD, ES, Int}, false),
+        (
+            LK.idg_edge_gen,
+            Tuple{LD, Int, Int, Int, Int, Int, Int, Int, Int, LK.control_t{T}},
+            false
+        ),
+        (LK.table_status_reeval_wait, Tuple{LD, TR}, false),
+        (LK.idg_reader_registry, Tuple{LD, Int}, false),
+        (LK.idg_thread_summary, Tuple{LD, Int}, false),
+        (LK.pair_map_get, Tuple{LK.pair_map{T}, D, Union{Nothing, D}}, false),
+        (LK.unify_pred_pi, Tuple{LD, Int, D}, false),
+        # pl-tabling.c: reevaluation
+        (LK.tt_has_modified_dependencies, Tuple{LD, TR}, false),
+        (LK.reeval_prep_node, Tuple{LD, TR, Int}, false),
+        (LK.prepare_reeval, Tuple{LD, TR}, false),
+        (LK.reeval_complete_node, Tuple{LD, TR, Int}, false),
+        (LK.reeval_complete, Tuple{LD, TR}, false),
+        (LK.reset_evaluate_node, Tuple{LD, TR, Int}, false),
+        (LK.reset_reevaluation, Tuple{LD, TR}, false),
+        # the foreign predicates (PL_predicates_from_tabling: the `$idg_*` and `$tbl_reeval_*` predicates)
+        [
+            (f, Tuple{LD, Int, Int, LK.control_t{T}}, false) for f in (
+                LK.pl_idg_add_edge1_va, LK.pl_idg_set_current2_va, LK.pl_idg_add_dyncall1_va,
+                LK.pl_idg_set_current1_va, LK.pl_idg_reset_current0_va, LK.pl_idg_edge3_va,
+                LK.pl_idg_false_edge3_va, LK.pl_idg_changed1_va, LK.pl_idg_falsecount2_va,
+                LK.pl_idg_set_falsecount2_va, LK.pl_idg_forced1_va, LK.pl_idg_thread_summary3_va,
+                LK.pl_idg_thread_space2_va, LK.pl_idg_predicate_edges3_va, LK.pl_tbl_reeval_wait2_va,
+                LK.pl_tbl_reeval_prepare_top2_va, LK.pl_tbl_reeval_prepare2_va, LK.pl_tbl_reeval_abandon1_va
+            )
+        ]...
+    )
+end
+
+# TAB1 TB6: the functions of pl-idgset.c that name no term type (src/pl-idgset.jl); the reader hooks are no-ops without threads
+const _MANIFEST_TB6_FREE = (
+    (LK.sizeof_block, Tuple{Int, Int}, false),
+    (LK.initIDGReaders, Tuple{}, false),
+    (LK.idg_reader_enter, Tuple{}, false),
+    (LK.idg_reader_exit, Tuple{}, false),
+    (LK.reg_block, Tuple{Int}, false),
+    (LK.reg_block_size, Tuple{Int}, false),
+)
+
+# TAB1 TB7 — monotonic tabling: the MONOTONIC TABLING block of src/pl-tabling.jl (pl-tabling.c:9883-11100) and its sixteen
+# foreign predicates. The dependency chains are `idg_mdep{T, idg_node{T}}` (`LK.IdgMdep{T}`), so every function is checked for
+# every payload type. `idg_free_mdeps` gained its `ld` argument (its TB6 entry changed with it).
+_manifest_tb7(T) = begin
+    TR, LD, GD = LK.trie{T}, LK.PL_local_data{T}, LK.PL_global_data{T}
+    IN, MD = LK.idg_node{T}, LK.IdgMdep{T}
+    UMD = Union{Nothing, IN, MD}
+    (
+        # the dependency records: references, hashing, find, free
+        (LK.mono_trie_atom, Tuple{GD, TR}, false),
+        (LK.mdep_ref!, Tuple{LD, MD}, false),
+        (LK.mdep_of_ref, Tuple{LD, Int}, false),
+        (LK.mdep_hash, Tuple{LD, Int}, false),
+        (LK.new_mdep, Tuple{LD, Int, IN}, false),
+        (LK.find_dep, Tuple{LD, Union{IN, MD}, Int}, false),
+        (LK.free_mdep, Tuple{LD, MD}, false),
+        # the mono index of a source node
+        (LK.mono_index_key, Tuple{LD, IN, Int, Int}, false),
+        (LK.mono_index_find, Tuple{LD, IN, IN, Int}, false),
+        (LK.mono_index_insert, Tuple{LD, IN, IN, MD, Int}, false),
+        (LK.mono_index_build, Tuple{LD, IN}, false),
+        (LK.mono_index_release, Tuple{IN}, false),
+        (LK.mono_indexable, Tuple{GD, IN}, false),
+        # the answer queues
+        (LK.clref_serial, Tuple{GD, T}, false),
+        (LK.mono_answer_live, Tuple{GD, TR, Int}, false),
+        (LK.mdep_queue_answer, Tuple{MD, Int}, false),
+        (LK.mdep_unify_answers, Tuple{LD, TR, Int, MD}, false),
+        (LK.mdep_empty_queue, Tuple{MD, Int}, false),
+        (LK.mdep_empty_queues, Tuple{UMD}, false),
+        (LK.free_mdep_chain, Tuple{LD, IN, MD}, false),
+        (LK.idg_free_mdeps, Tuple{LD, IN, IN}, false),
+        # the edges
+        (LK.idg_add_child_dep, Tuple{LD, IN, IN, Int}, false),
+        (LK.idg_edge_dep_step, Tuple{LD, LK.idg_edge_state{T}, Int, Int, Int, Int, Int}, false),
+        (LK.idg_dependency_error_mono, Tuple{LD, TR, TR}, false),
+        (LK.idg_add_monotonic_edge, Tuple{LD, TR, TR, Int}, false),
+        # change propagation and reevaluation
+        (LK.mono_idg_changed, Tuple{LD, TR, Int}, false),
+        (LK.force_reeval, Tuple{LD, IN}, false),
+        (LK.mono_force_reeval, Tuple{LD, IN, IN}, false),
+        (LK.prune_deleted_mdeps, Tuple{LD, IN}, false),
+        (LK.mono_reeval_prep_node, Tuple{TR, Int}, false),
+        (LK.mono_reeval_done_node, Tuple{TR, Int, Base.RefValue{Int}}, false),
+        (LK.mdep_is_empty, Tuple{GD, TR, UMD}, false),
+        (LK.mono_scc_is_complete_loop, Tuple{LD, LK.mono_scc_state{T}}, false),
+        (LK.mono_scc_is_complete, Tuple{LD, IN}, false),
+        (LK.has_queued_answers, Tuple{LD, IN}, false),
+        (LK.invalid_dependencies, Tuple{LD, Int, IN}, false),
+        (LK.inner_is_monotonic, Tuple{LD}, false),
+        (LK.get_mono_answer, Tuple{LD, Int}, false),
+        (LK.mono_queue_answer, Tuple{LD, TR, Int}, false),
+        (LK.atrie_answer_event, Tuple{LD, TR, Int}, false),
+        # the foreign predicates (PL_predicates_from_tabling: the sixteen monotonic entries)
+        [
+            (f, Tuple{LD, Int, Int, LK.control_t{T}}, false) for f in (
+                LK.pl_tbl_monotonic_add_answer2_va, LK.pl_idg_add_monotonic_dep3_va, LK.pl_idg_add_mono_dyn_dep3_va,
+                LK.pl_idg_mono_affects3_va, LK.pl_idg_mono_affects_eager3_va, LK.pl_idg_mono_affects_lazy5_va,
+                LK.pl_idg_mono_index2_va, LK.pl_idg_mono_index_deps4_va, LK.pl_tbl_propagate_start1_va,
+                LK.pl_tbl_propagate_end1_va, LK.pl_tbl_collect_mono_dep0_va, LK.pl_mono_idg_changed2_va,
+                LK.pl_mono_reeval_prepare2_va, LK.pl_mono_reeval_done3_va, LK.pl_idg_mono_empty_queue2_va,
+                LK.pl_idg_mono_invalidate1_va
+            )
+        ]...
+    )
+end
+
 # LB2b — locating files: os/pl-files.c, os/pl-glob.c and the file-name helpers of os/pl-os.c
 # (src/os/pl-files.jl, src/os/pl-glob.jl, src/os/pl-os.jl). The methods that take the local data (`ld`) are
 # checked for every payload type; the ones on plain strings, integers and byte vectors once, below.
@@ -3878,6 +4068,13 @@ const _DISPATCH_MANIFEST_TUPLE = (
     _manifest_tr4(_M1)...,
     _manifest_tr4(_M2)...,
     _manifest_tr4(_M3)...,
+    _manifest_tb6(_M1)...,
+    _manifest_tb6(_M2)...,
+    _manifest_tb6(_M3)...,
+    _MANIFEST_TB6_FREE...,
+    _manifest_tb7(_M1)...,
+    _manifest_tb7(_M2)...,
+    _manifest_tb7(_M3)...,
     _MANIFEST_LB2B_FREE...,
     _MANIFEST_TR2_FREE...,
     _manifest_lb7(_M1)...,

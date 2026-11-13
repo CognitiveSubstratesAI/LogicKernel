@@ -1835,7 +1835,9 @@ const _BC_DEC_DECOMPILED = Dict{String, String}(
         # against swipl above is unchanged. TAB1 TB4 moved them again from ("_32", "_34"): emptyStacks makes `tabling.delay_list`
         # (`init_delay_list`, pl-setup.c:1558) — two term references and the compound `-([])`, 4 more permanent cells before every
         # later one, so each name grows by 8 (`varName` prints twice the offset; internal identity, D-0083).
-        @test cy[1][2:3] == ("_40", "_42")
+        # TAB1 TB6 moved them again from ("_40", "_42"): emptyStacks makes `tabling.idg_current` (pl-setup.c:1559), one more permanent
+        # cell before every later one, so each name grows by 2 (D-0083).
+        @test cy[1][2:3] == ("_42", "_44")
         if _BC_SWIPL_BIN !== nothing
             theirs = _bc_swipl([
                 "(assertz((cy :- q(Y, Z), r(Z, Y))), clause(cy, (q(A, B), _)), " *
