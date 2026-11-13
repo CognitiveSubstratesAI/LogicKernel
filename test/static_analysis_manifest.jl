@@ -2902,6 +2902,21 @@ _index_entry_points(T) = (
         false
     ),
     (LK._qlf_refused, Tuple{Type{T}, String, Int}, false),
+    # QLF1B: `$file_hash` (hashStreamContent, fileContentHash) and the QLF header predicates (`$qlf_versions`, `$qlf_is_compatible`)
+    (LK.PL_unify_uint64, Tuple{LK.PL_local_data{T}, Int, UInt64}, false),
+    (LK.hashStreamContent, Tuple{LK.IOSTREAM}, false),
+    (LK.fileContentHash, Tuple{String}, false),
+    (LK.wic_state, Tuple{String}, false),
+    (LK.Qgetc, Tuple{LK.IOSTREAM}, false),
+    (LK.zigzag_decode, Tuple{UInt64}, false),
+    (LK.qlfGetInt64, Tuple{LK.IOSTREAM}, false),
+    (LK.qlfGetInt32, Tuple{LK.IOSTREAM}, false),
+    (LK.getMagicString, Tuple{LK.IOSTREAM, Int}, false),
+    (LK.qlfError, Tuple{LK.PL_local_data{T}, LK.wic_state, String}, false),
+    (LK.qlfVersion, Tuple{LK.PL_local_data{T}, LK.wic_state, String}, false),
+    (LK.qlfIsCompatible, Tuple{LK.PL_local_data{T}, LK.wic_state, String}, false),
+    (LK.open_qlf_file, Tuple{LK.PL_local_data{T}, String}, false),
+    (LK.qlfInfo, Tuple{LK.PL_local_data{T}, String, Int, Int, Int, Int, Int, Int}, false),
     [
         (f, Tuple{LK.PL_local_data{T}, Int, Int, LK.control_t{T}}, false) for
         f in (
