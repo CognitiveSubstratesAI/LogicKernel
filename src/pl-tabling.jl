@@ -8588,7 +8588,6 @@ end
 
 # PORT: pl-tabling.c idg_add_child
 # (the `dep` branch, pl-tabling.c:8250-8318 at the pin)
-# DIVERGES: the tail with `LD->transaction.generation` (`parent->tt_new_dep`) is omitted (owner TX1/TB9).
 "The monotonic dependency `dep` of the edge `child` -> `parent`: found or created; false after an error (pl-tabling.c `idg_add_child`)."
 function idg_add_child_dep(
     ld::PL_local_data{T}, parent::idg_node{T}, child::idg_node{T}, dep::term_t
@@ -8620,6 +8619,16 @@ function idg_add_child_dep(
         m.deps[parent] = mdep
     elseif rc != 1
         return false                                    # resource error
+    end
+
+    if (mdep::IdgMdep{T}).lazy && ld.transaction.generation != 0
+        ctrie = gd.tries[child.atrie]
+        preds = ld.transaction.predicates
+        pred = ctrie.predicate
+
+        if _wl_is(ctrie, WL_DYNAMIC) && preds !== nothing && pred !== nothing && haskey(preds, pred)
+            parent.tt_new_dep = true
+        end
     end
 
     return true
