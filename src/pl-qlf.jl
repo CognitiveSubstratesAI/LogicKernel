@@ -13,7 +13,7 @@
 # THE STATE FILE IS NOT WRITTEN (LD2): `LD->qlf.write_state` stays NULL (`ld.qlf_write_state`, typed `Nothing`),
 # so the write steps (`qlfStartFile`, `qlfEndPart`, `addDirectiveWic`, `saveWicClause`, `writeWicHeader`,
 # `writeWicTrailer`) write nothing, and the seven write-side predicates take their NULL branch — upstream's
-# whole behaviour when no state is open. The other 15 predicates of the table read or write a QLF file and are
+# whole behaviour when no state is open. Of the other 15 predicates (QLF1, QLF1B) ten are real or take the NULL branch; five read a QLF body or write a state file and are
 # refused by name (`NotPortedError`). A message the C loop prints with `Sdprintf` is collected on the local
 # data's `messages` (`_qlf_Sdprintf!`), as printMessage's fallback branches are (src/pl-error.jl).
 
@@ -547,7 +547,7 @@ function pl_qlf_assert_clause2_va(
     return FTRUE
 end
 
-# The 14 predicates that read or write a QLF file are refused by name: calling one raises `NotPortedError` with
+# The 5 predicates that read a QLF body or write a state file (`$qlf_sources`, `$qlf_module`, `$qlf_load`, `$open_wic`, `$qlf_open`) are refused by name: calling one raises `NotPortedError` with
 # its indicator (LD2; the QLF reader and writer are not ported — the boot compiles from source).
 "Raise `NotPortedError` for the predicate `name/arity` of pl-qlf.c's table (refused by name, LD2)."
 function _qlf_refused(::Type{T}, name::String, arity::Int)::Union{} where {T}
@@ -957,8 +957,8 @@ function pl_unmap_id1_va(
 end
 
 # PORT: pl-qlf.c BeginPredDefs as PL_predicates_from_wic
-# DIVERGES: all 22 entries of the table, in upstream's order (pl-qlf.c:4953-4976): eight take the NULL-state branch
-# (`'\$add_directive_wic'/1` `PL_FA_TRANSPARENT`, as the table's flags), 14 are refused by name. `PRED_DEF` ors in
+# DIVERGES: all 22 entries of the table, in upstream's order (pl-qlf.c:4953-4976): seventeen take the NULL-state branch or run (QLF1, QLF1B: `$file_hash`, `$qlf_versions`, `$qlf_is_compatible`)
+# (`'\$add_directive_wic'/1` `PL_FA_TRANSPARENT`, as the table's flags), five are refused by name. `PRED_DEF` ors in
 # `PL_FA_VARARGS`.
 "pl-qlf.c's registration table (`BeginPredDefs(wic)`): the shells and the refused predicates."
 const PL_predicates_from_wic = (

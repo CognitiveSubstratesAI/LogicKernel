@@ -9,7 +9,7 @@
 #     two runs byte-identical (2026-10-31); with `swipl` on PATH the live answers are compared with the pins too.
 #   * White-box rows from the C code (kernel only: swipl's consult differs there): `'$:-'`, the nesting bound, an unmatched `:- endif`,
 #     `elif` (not a conditional), a missing file, a syntax error, a failing directive collected, `compileFileList` up to `-c`, the boot
-#     entry's state, the 22-entry registration table (eight shells, 14 refused by name).
+#     entry's state, the 22-entry registration table (seventeen no-state or running, five refused by name).
 using Test, LogicKernel
 const LK = LogicKernel
 
