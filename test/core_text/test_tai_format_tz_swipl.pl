@@ -26,7 +26,7 @@ t3(R) :- tz_in_c(t3a, Rs), member(R, Rs).
 % a date/9 or date/3 term that leaves the offset, zone or DST to the host
 t4(R) :- tz_dates(Ds), tz_family(['%Y-%m-%d %H:%M:%S %z %Z', '%j %u %U %W %V %G %s', '%f %+'], Ds, R).
 % far years: localtime_r's answers, %C of a year outside 0..9999
-t5(R) :- Ss = [1e11, 253402300800, -62135596800, -1e11, 1e17], member(F, ['%Y', '%C', '%y', '%G', '%V', '%s']), nth1(I, Ss, S),
+t5(R) :- Ss = [1e11, 253402300800, -62135596800, -1e11, 1e17, 67768036191676799, 67768036191676800], member(F, ['%Y', '%C', '%y', '%G', '%V', '%s']), nth1(I, Ss, S),
     tz_run(F, S, O), R = F-I-O.
 % the year is a C int: it wraps at 32 bits (observed on the pinned build)
 t6(R) :- member(D, [date(2147483647,12,31,0,0,0.0,0,'UTC',-), date(2147483647,1,1,0,0,0.0,0,'UTC',-),
@@ -60,3 +60,7 @@ t10(R) :- tz_dates([D|_]), tz_res(format_time(atom(A), 'ab%Qcd', D), R0), ( var(
 t11(R) :- member(D-F, [date(2020,1,1,0,0,0.0,0,'ÜTC',-)-'%Z', date(2020,1,1,0,0,0.0,0,'日本',-)-'%Z|%z', date(2020,1,1,0,0,0.0,0,'',-)-'[%Z]',
                        date(2020,1,1,0,0,0.0,0,'UTC',-)-'日本%Y', date(2020,6,1,0,0,0.0,_,-,-)-'%Z', date(2020,1,1,0,0,0.0,_,-,-)-'%Z']),
     tz_run(F, D, O), R = D-F-O.
+% the ISO year of the days around New Year, where glibc's __isleap of the neighbouring year decides (centuries, 4-year rule)
+t12(R) :- member(Y-M-Dy, [2101-1-1, 2101-1-2, 1800-12-29, 1800-12-31, 2200-12-30, 1502-12-31, 1508-12-30, 1521-1-1, 1510-1-2, 1701-1-1,
+                          2020-12-31, 2021-1-3, 2024-12-30, 2026-1-1, 2000-12-31, 2001-1-1, 1900-12-31, 1901-1-1]),
+    member(F, ['%G %V', '%g']), tz_run(F, date(Y,M,Dy,0,0,0.0,0,'UTC',-), O), R = Y-M-Dy-F-O.

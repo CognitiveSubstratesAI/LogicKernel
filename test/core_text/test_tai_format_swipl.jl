@@ -192,7 +192,7 @@ end
 
 @testset "TAI1: format_time/3,4 under a fixed host zone and locale == swipl's answers, through a program" begin
     expected = String.(readlines(_TAFZ_OUT))
-    @test length(_taf_names(_TAFZ_PL)) == 12
+    @test length(_taf_names(_TAFZ_PL)) == 13
     # the evidence the rows exist for: the zone names of both halves of the year, the C-locale %c, the wrapped year, the sinks
     @test occursin(_codes("CEST"), expected[findfirst(startswith("t0 "), expected)])
     @test occursin(_codes("CET"), expected[findfirst(startswith("t0 "), expected)])
