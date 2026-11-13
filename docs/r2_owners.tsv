@@ -224,3 +224,5 @@ refusal:src/pl-string.jl::pl_string_bytes3_va::string_bytes/3 with the encoding 
 refusal:src/pl-supervisor.jl::freeCodesDefinition!::freeCodesDefinition! of a wrapped predicate needs the databa	WRAP1	freeCodesDefinition of a wrapped predicate (pl-supervisor.c), needs the database; wrap closures are WRAP1
 refusal:src/pl-wam.jl::PL_next_solution_guarded::the VM instruction $(codeTable(thiscode).name)	TAB1	dispatch fallthrough for a VM instruction without a body (pl-vmi.c); each missing instruction has its own vmi: row, the last instruction (S_TABLED) removes this site
 refusal:src/pl-write.jl::writePrimitive::writing a grounded value SWI has no type for	WR2	writePrimitive of a grounded value SWI has no type for; a representation guard of the kernel, permanent until the blob writer takes it
+kfile:pl-gcmark.jl	G1-GC	G1-3: the named refusals of the mark phase (a local-stack reference and an inline indirect, words the kernel never builds); permanent unless the layout changes
+kfile:pl-gcwalk.jl	G1-GC	G1-3: the named refusal of a parent query inside the VM without a get_vmi_state callback (pl-gc.c:3725); G1-2 supplies the callback
