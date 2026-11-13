@@ -874,6 +874,8 @@ function _manifest_index(T)
         ),
         (LK.bidi_override_error, Tuple{Int64, LK.read_data{T}}, false),
         (LK.check_no_bidi_override, Tuple{Int64, Int64, LK.read_data{T}}, false),
+        # ENC1: unicode_atoms (pl-read.c checkASCII)
+        (LK.checkASCII, Tuple{LK.read_data{T}, Int64, Int64, String}, false),
         (LK.clearBuffer, Tuple{LK.read_data{T}}, false),
         (LK.ensure_space, Tuple{Int64, LK.read_data{T}, Bool}, false),
         (LK.errorWarning, Tuple{String, Nothing, LK.read_data{T}}, false),
@@ -932,6 +934,7 @@ function _manifest_index(T)
         (LK.unify_text_between, Tuple{LD, Int, LK.PL_chars_t, Int, Int, Int}, false),
         (LK.text_error, Tuple{LD, Int}, false),
         (LK.PL_canonicalise_text_ex, Tuple{LD, LK.PL_chars_t}, false),
+        (LK.PL_mb_text, Tuple{LD, LK.PL_chars_t, UInt32}, false),
         (LK.PL_error, Tuple{LD, String, Int, String, LK.PL_error_code, String}, false),
         (LK.codeToAtom, Tuple{Type{T}, Int}, false),
         (LK.ptr_to_location, Tuple{Int64, LK.read_data{T}}, false),
@@ -1650,6 +1653,7 @@ function _manifest_index(T)
         (LK.closeOutputRedirect, Tuple{LD, LK.redir_context}, false),
         (LK.discardOutputRedirect, Tuple{LD, LK.redir_context}, false),
         (LK.pl_with_output_to2_va, Tuple{LD, Int, Int, LK.control_t{T}}, false),
+        (LK.pl_with_tty_raw1_va, Tuple{LD, Int, Int, LK.control_t{T}}, false),
         (
             LK.tellString,
             Tuple{
@@ -2979,6 +2983,45 @@ _index_entry_points(T) = (
             LK.pl_set_stream2_va, LK.pl_set_prolog_IO3_va
         )
     ]...,
+    # lane D: the S2a/S2b Edinburgh and byte stream predicates (src/os/pl-file.jl; pl-file.c)
+    [
+        (f, Tuple{LK.PL_local_data{T}, Int, Int, LK.foreign_context{T}}, false) for
+        f in (
+            LK.pl_flush_output0_va, LK.pl_get_char1_va, LK.pl_peek_char1_va,
+            LK.pl_peek_code2_va, LK.pl_peek_code1_va, LK.pl_peek_byte2_va,
+            LK.pl_peek_byte1_va, LK.pl_skip1_va, LK.pl_get1_va, LK.pl_get2_va,
+            LK.pl_put2_va, LK.pl_put1_va, LK.pl_put_byte2_va, LK.pl_put_byte1_va,
+            LK.pl_get_byte2_va, LK.pl_get_byte1_va, LK.pl_byte_count2_va,
+            LK.pl_character_count2_va, LK.pl_set_input1_va, LK.pl_set_output1_va,
+            LK.pl_see1_va, LK.pl_seen0_va, LK.pl_seeing1_va, LK.pl_tell1_va,
+            LK.pl_append1_va, LK.pl_telling1_va, LK.pl_told0_va, LK.pl_open_null_stream1_va,
+            LK.pl_stream_pair3_va, LK.pl_set_stream_position2_va, LK.pl_seek4_va,
+            LK.pl_set_end_of_stream1_va, LK.pl_fill_buffer1_va, LK.pl_dsize_stream2_va,
+            LK.pl_read_pending_codes3_va, LK.pl_read_pending_chars3_va, LK.pl_peek_string3_va,
+            LK.pl_copy_stream_data3_va, LK.pl_copy_stream_data2_va, LK.pl_protocol1_va,
+            LK.pl_protocola1_va, LK.pl_noprotocol0_va, LK.pl_protocolling1_va
+        )
+    ]...,
+    (LK.Swrite_null, Tuple{Vector{UInt8}, Int, Int}, false),
+    (LK.Sread_null, Tuple{Vector{UInt8}, Int, Int}, false),
+    (LK.Sseek_null, Tuple{Int, Int}, false),
+    (LK.Sclose_null, Tuple{}, false),
+    (LK.getRepositionableStream, Tuple{LK.PL_local_data{T}, Int}, false),
+    (LK.Sread_pending, Tuple{LK.IOSTREAM, Vector{UInt8}, Int, Int}, false),
+    (LK.re_buffer, Tuple{LK.IOSTREAM, Vector{UInt8}, Int, Int}, false),
+    (LK.skip_cr, Tuple{LK.IOSTREAM}, false),
+    (LK.get_ucs2, Tuple{Vector{UInt8}, Int, Bool}, false),
+    (LK.unify_diff_list, Tuple{LK.PL_local_data{T}, Int, Int, Vector{Int}, Bool}, false),
+    (LK.read_pending_input, Tuple{LK.PL_local_data{T}, Int, Int, Int, Bool}, false),
+    (LK.peek_pending_text, Tuple{LK.IOSTREAM}, false),
+    (LK.copy_stream_data, Tuple{LK.PL_local_data{T}, Int, Int, Int}, false),
+    (LK.openProtocol, Tuple{LK.PL_local_data{T}, Int, Bool}, false),
+    (LK.do_tell, Tuple{LK.PL_local_data{T}, Int, T}, false),
+    (LK.findStreamFromFile, Tuple{LK.PL_global_data{T}, T, Int}, false),
+    (LK.setStreamContextFlag, Tuple{LK.PL_global_data{T}, LK.IOSTREAM, Int}, false),
+    (LK.get_nonblank, Tuple{LK.PL_local_data{T}, Int, Int}, false),
+    (LK.put_byte, Tuple{LK.PL_local_data{T}, Int, Int}, false),
+    (LK.get_byte2, Tuple{LK.PL_local_data{T}, Int, Int}, false),
     (LK.prompt1, Tuple{LK.PL_local_data{T}, T}, false),
     (LK.flush_output, Tuple{LK.PL_local_data{T}, Int}, false),
     (LK.PL_unify_char, Tuple{LK.PL_local_data{T}, Int, Int, Symbol}, false),
@@ -3705,6 +3748,10 @@ const _DISPATCH_MANIFEST_TUPLE = (
     (LK.Sfpasteof, Tuple{LK.IOSTREAM}, true),
     (LK.Sgetc, Tuple{LK.IOSTREAM}, false),
     (LK.Sgetcode, Tuple{LK.IOSTREAM}, false),
+    # ENC1: the UTF-16 encodings (pl-stream.c put_usc2, put_utf16, get_ucs2, get_utf16)
+    (LK.put_usc2, Tuple{Int64, LK.IOSTREAM, Bool}, false),
+    (LK.put_utf16, Tuple{Int64, LK.IOSTREAM, Bool}, false),
+    (LK.get_ucs2, Tuple{LK.IOSTREAM, Bool}, false), (LK.get_utf16, Tuple{LK.IOSTREAM, Bool}, false),
     (LK.SkipAtomIdCont, Tuple{Vector{UInt8}, Int64}, true),
     (LK.SkipVarIdCont, Tuple{Vector{UInt8}, Int64}, true),
     (LK.Snew, Tuple{LK.memfile, UInt32, LK.IOFUNCTIONS}, false),
@@ -3719,10 +3766,22 @@ const _DISPATCH_MANIFEST_TUPLE = (
     (LK.Sunreference, Tuple{LK.IOSTREAM}, false),
     (LK.Sacquire, Tuple{LK.IOSTREAM}, false), (LK.Srelease, Tuple{LK.IOSTREAM}, false),
     (LK.Ssize, Tuple{LK.IOSTREAM}, false),
+    # R2 S2b — the seek layer (pl-stream.c): Sunit_size, S_has_seek, Sseek_julia_io, S_seek64, Sseek64, Stell64
+    (LK.Sunit_size, Tuple{LK.IOSTREAM}, false), (LK.S_has_seek, Tuple{LK.IOSTREAM}, false),
+    (LK.Sseek_julia_io, Tuple{LK.Sjulia_io, Int64, Int}, false),
+    (LK.S_seek64, Tuple{LK.IOSTREAM, Int64, Int}, false),
+    (LK.Sseek64, Tuple{LK.IOSTREAM, Int64, Int}, false), (LK.Stell64, Tuple{LK.IOSTREAM}, false),
     (LK.ScheckBOM, Tuple{LK.IOSTREAM}, false), (LK.SwriteBOM, Tuple{LK.IOSTREAM}, false),
     (LK._current_umask, Tuple{}, false),
     (LK._open_julia_file, Tuple{String, Char, Int64}, false),
+    (LK._fcntl_lock, Tuple{IOStream, Int64, Bool}, false),
+    # ENC1: ENC_ANSI in the stream layer (libc's wcrtomb / mbrtowc / mbsnrtowcs under the stream's `mbstate_t`)
+    (LK.stream_mbstate!, Tuple{LK.IOSTREAM}, false),
+    (LK._wcrtomb, Tuple{Int64, Vector{UInt64}}, false),
+    (LK._mbrtowc, Tuple{Vector{UInt8}, Int64, Int64, Vector{UInt64}}, false),
+    (LK._mbsnrtowcs_count, Tuple{Vector{UInt8}, Int64, Vector{UInt64}}, false),
     (LK.Sopen_file, Tuple{String, String}, false),
+    (LK.Sopen_pipe, Tuple{String, String}, false),
     (LK.getStream, Tuple{LK.IOSTREAM}, false),
     (LK.stream_ref, Tuple{Int64, Int64}, false),
     (LK._stream_ref_bytes, Tuple{LK.stream_ref}, false),
@@ -3871,6 +3930,10 @@ const _DISPATCH_MANIFEST_TUPLE = (
     (LK.skip_decimal_separator, Tuple{Vector{UInt8}, Int64, Int64}, false),
     (LK.skip_decimals, Tuple{Vector{UInt8}, Int64, Int64}, true),
     (LK.skip_digit_separator, Tuple{Vector{UInt8}, Int64, Int64}, false),
+    # ENC1: unicode_atoms (pl-read.c atom_text_has_non_ascii, atom_text_not_in_nfc; the NFC normaliser hook is Julia's)
+    (LK.atom_text_has_non_ascii, Tuple{Vector{UInt8}, Int64, Int64}, false),
+    (LK.atom_text_not_in_nfc, Tuple{Vector{UInt8}, Int64, Int64}, false),
+    (LK._normalize_hook, Tuple{String}, false),
     (LK.special_float, Tuple{Vector{UInt8}, Int64, Int64, LK.number}, false),
     (LK.starts_1dot, Tuple{Vector{UInt8}, Int64}, true),
     (LK.str_number_error, Tuple{LK.strnumstat}, true),
@@ -3969,6 +4032,10 @@ const _DISPATCH_MANIFEST_TUPLE = (
     (LK.PL_concat_text, Tuple{Vector{LK.PL_chars_t}}, false),
     (LK.PL_mb_text, Tuple{LK.PL_chars_t, UInt32}, false),
     (LK._text_string, Tuple{LK.PL_chars_t}, false),
+    # ENC1: ENC_ANSI in the text layer (the Vector form of `_wctobuffer_all!`'s untyped second argument)
+    (LK._ansi_code_points, Tuple{Vector{UInt8}, Int64}, false),
+    (LK._mb_text, Tuple{LK.PL_chars_t, UInt32}, false),
+    (LK._wctobuffer_all!, Tuple{Vector{UInt8}, Vector{UInt8}}, false),
     (LK._text_code_points, Tuple{LK.PL_chars_t}, false),
     # generated by `@enum Kind` (Julia 1.13) — found by the coverage gate, not by reading; checked
     # rather than exempted because checking it costs nothing
@@ -4361,7 +4428,10 @@ const JET_DISPATCH_FAMILY = [
     (LK.S_close, Tuple{LK.IOSTREAM}, 0),
     (LK.S_read_wrapped, Tuple{LK.IOSTREAM, Vector{UInt8}, Int, Int}, 0),
     (LK.S_close_wrapped, Tuple{LK.IOSTREAM}, 0),
-    (LK.Swrite_stderr, Tuple{LK.IOSTREAM, Vector{UInt8}, Int, Int}, 0)
+    (LK.Swrite_stderr, Tuple{LK.IOSTREAM, Vector{UInt8}, Int, Int}, 0),
+    (LK.Swrite_null, Tuple{Vector{UInt8}, Int, Int}, 0),
+    (LK.Sread_null, Tuple{Vector{UInt8}, Int, Int}, 0),
+    (LK.S_seek64, Tuple{LK.IOSTREAM, Int64, Int}, 0)
 ]
 
 # `is_ground(t)` with an untyped argument is the interface's FALLBACK for implementations without a
