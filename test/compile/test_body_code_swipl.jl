@@ -1837,7 +1837,9 @@ const _BC_DEC_DECOMPILED = Dict{String, String}(
         # later one, so each name grows by 8 (`varName` prints twice the offset; internal identity, D-0083).
         # TAB1 TB6 moved them again from ("_40", "_42"): emptyStacks makes `tabling.idg_current` (pl-setup.c:1559), one more permanent
         # cell before every later one, so each name grows by 2 (D-0083).
-        @test cy[1][2:3] == ("_42", "_44")
+        # TX1e moved them again from ("_42", "_44"): emptyStacks makes the undo list's cell FIRST (`init_undo_list`, pl-setup.c:1557),
+        # one more permanent cell before every later one, so each name grows by 2 (D-0083).
+        @test cy[1][2:3] == ("_44", "_46")
         if _BC_SWIPL_BIN !== nothing
             theirs = _bc_swipl([
                 "(assertz((cy :- q(Y, Z), r(Z, Y))), clause(cy, (q(A, B), _)), " *
