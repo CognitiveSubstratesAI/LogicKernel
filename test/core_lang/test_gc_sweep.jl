@@ -433,7 +433,7 @@ end
 
 """
 The heap marked, its trail tagged, the deliberate bars set, the model taken, then `sweep_foreign`, `sweep_trail`, `sweep_stacks` in upstream's order.
-Returns the handles plus `st`, `sw`, `sn` (the stacks just before the sweep), `M`, `n0` (needs_relocation before the sweep) and `reach`.
+Returns the handles plus `st`, `sw`, `sn` (the stacks just before the sweep), `M`, `nr0` (needs_relocation before the sweep) and `reach`.
 """
 function _gs_run()
     H = _gs_heap()
@@ -459,7 +459,7 @@ function _gs_run()
     sn = _gs_snapshot(ld)
     M = _gs_model(ld, reach)
     sw = LK.gc_sweep_counts()
-    n0 = st.needs_relocation
+    nr0 = st.needs_relocation
     LK.sweep_foreign(ld, st, sw)
     LK.sweep_trail(ld, st, sw)
     LK.sweep_stacks(ld, st, sw, LK.vm_state())
@@ -470,7 +470,7 @@ function _gs_run()
             sw=sw,
             sn=sn,
             M=M,
-            n0=n0,
+            nr0=nr0,
             reach=reach,
             marks_agree=marks_agree,
             early_reset=early_reset
@@ -502,7 +502,7 @@ end
     tags = Set(_gs_orig_tag(sn, d) for h in keys(M.order) for d in M.order[h])
     @test length(tags) >= 3                                     # reference, compound/trail value/address: several tags
     @test _gs_problems(ld, sn, M) == String[]
-    @test _gs_counter_problems(R.st, R.sw, M, R.n0) == String[]
+    @test _gs_counter_problems(R.st, R.sw, M, R.nr0) == String[]
     @test R.st.local_marked == 0
     @test !any(LK.is_marked, view(ld.slots, 1:(ld.lTop)))       # no slot keeps its MARK bit
     vslot = R.t + 3                                             # the value-table word: marked, never chained
@@ -708,8 +708,8 @@ end
             end
             @test cl != 0
             fi = ld.choices[cl].frame
-            @test fi != 0 && ld.frames[fi].parent == 0
-            qf = LK.queryOfFrame(ld, fi)
+            @test fi != 0
+            qf = LK.gc_top_query(ld, fi)                    # the clause frame has the query's frame above it
             @test ld.queries[qf].parent == 0
             vm = LK.vm_state()
             vm.frame = fi
@@ -725,7 +725,15 @@ end
             se = ld.queries[qf].saved_environment
             se != 0 && push!(frames, se)
             roots = _gs_fli_roots(ld)
-            for f in unique(vcat(fi, frames))
+            function chain_of(f)                                # the frame and every parent above it
+                out = Int[]
+                while f != 0
+                    push!(out, f)
+                    f = ld.frames[f].parent
+                end
+                return out
+            end
+            for f in unique(vcat((chain_of(f0) for f0 in vcat(fi, frames))...))
                 append!(roots, _gs_frame_args(ld, f))
             end
             st = LK.gc_mark_counts()
@@ -743,11 +751,11 @@ end
                 (f != 0 && (ld.frames[f].flags & LK.FR_MARKED) != 0 && !(f in done)) ||
                     return nothing
                 push!(done, f)
-                ld.frames[f].parent == 0 || push!(M.bad, "frame $(f) has a parent")
                 base = LK.argFrameP(ld.frames[f].base, 0)
                 for i in 0:(ld.frames[f].predicate.arity - 1)
                     _gs_model_slot!(M, ld, reach, base + i + 1, true)
                 end
+                env!(M, ld.frames[f].parent)                # the parents are marked and swept with it
                 return nothing
             end
             function stacks!(M)
