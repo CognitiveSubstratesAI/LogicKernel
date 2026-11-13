@@ -3401,8 +3401,9 @@ end
 # DIVERGES: single thread: `shared` is false (the `O_PLMT` parts: the scope flags, `claim_answer_table`, the shared symbol, are
 # TH1; a call with `AT_SHARED` or a predicate with `TP_SHARED` is refused by name); `def` is not looked up when it is
 # `nothing` (upstream resolves the procedure of `t` only for the scope, which is the `O_PLMT` part). The size abstraction
-# `sa` has `size` -1 (none) as `typemax(Int)`. The tripwire `tbl_pred_tripwire` (TB8) is refused by name unless the action
-# is `abstract` and AT_ABSTRACT is set (that action needs no tripwire). The retry of upstream after a global stack overflow
+# `sa` has `size` -1 (none) as `typemax(Int)`. `goto retry` after a passed tripwire is the loop (the abstraction is lifted:
+# `size` `typemax(Int)`, `vars` emptied); `tbl_pred_tripwire` needs a `def` (upstream passes the pointer: a NULL `def` has no size
+# limit, so the lookup is never abstracted without one). The retry of upstream after a global stack overflow
 # (`Undo`, `makeMoreStackSpace`) is not needed: no stack overflows here. A moded trie's `value_count` and the node's value
 # are as upstream's; `clrefp` is the `O_PLMT` clause-reference protection (a trie clause is TR4): dropped.
 """
@@ -3437,28 +3438,36 @@ function get_answer_table(
     vars = Int[]
 
     sa = size_abstract(2, size == -1 ? typemax(Int) : size)
-    rc, nid = trie_lookup_abstract(
-        ld, variants, 0, -(t + 1), (flags & AT_CREATE) != 0, sa, vars
-    )
+    local rc::Int
+    local nid::Int
+    while true                                      # upstream's `retry:`
+        rc, nid = trie_lookup_abstract(
+            ld, variants, 0, -(t + 1), (flags & AT_CREATE) != 0, sa, vars
+        )
+        rc <= 0 && break
+
+        if rc == TRIE_ABSTRACTED
+            action = ld.tabling.restraint.max_table_subgoal_size_action
+            if sym_key(action) == sym_key(mk_sym(T, :abstract)) && (flags & AT_ABSTRACT) == 0
+                action = mk_sym(T, :error)
+            end
+            if sym_key(action) != sym_key(mk_sym(T, :abstract))
+                if def !== nothing && tbl_pred_tripwire(
+                        ld, def, action, mk_sym(T, :max_table_subgoal_size)
+                    )
+                    sa = size_abstract(2, typemax(Int))     # `sa.size = (size_t)-1`
+                    empty!(vars)                            # `emptyBuffer(&vars, (size_t)-1)`
+                    continue                                # `goto retry`
+                else
+                    return nothing
+                end
+            end
+        end
+        break
+    end
     if rc <= 0
         trie_error(ld, rc, t)
         return nothing
-    end
-
-    if rc == TRIE_ABSTRACTED
-        action = ld.tabling.restraint.max_table_subgoal_size_action
-        if sym_key(action) == sym_key(mk_sym(T, :abstract)) && (flags & AT_ABSTRACT) == 0
-            action = mk_sym(T, :error)
-        end
-        if sym_key(action) != sym_key(mk_sym(T, :abstract))
-            # tbl_pred_tripwire(def, action, max_table_subgoal_size): the restraint tripwire is TB8
-            tbl_refuse(
-                T,
-                :tbl_pred_tripwire,
-                "get_answer_table: the subgoal size tripwire (tbl_pred_tripwire)",
-                "TB8"
-            )
-        end
     end
 
     node = variants.nodes[nid]
