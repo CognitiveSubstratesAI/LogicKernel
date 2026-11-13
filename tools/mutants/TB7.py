@@ -36,7 +36,7 @@ TF = "test/core_lang/test_tabling_wfs_swipl.jl"
 AB = "test/core_lang/test_tabling_abolish_swipl.jl"
 TARGETS = [TM, TI, TMIN]
 # TB7M5 (the refusal sites lifted from the merged tree, audit D-0238): every file that reaches the lifted code through start_tabling, a tabled call or the
-# variant-table predicates. KILL ROWS: idg08-idg10 (swipl-pinned, TI), idg16-idg22 (white-box, TI), mono09 (swipl-pinned, TM).
+# variant-table predicates. KILL ROWS: idg08-idg10 (swipl-pinned, TI), idg16-idg27 (white-box, TI), mono09 (swipl-pinned, TM).
 TARGETS5 = [TM, TI, TMIN, TV, TW, TA, TF, AB]
 TAB = "src/pl-tabling.jl"
 MUTANTS = [
@@ -405,4 +405,34 @@ MUTANTS = [
          file=TAB, targets=TARGETS5,
          old="    (n.value != 0 && (n.flags & TN_IDG_DELETED) == 0) && return nid\n",
          new="    (n.value != 0) && return nid\n"),
+    # ── TB7M6: rows owed from TB7M4 (free_worklist_set, wls_reeval_complete, answer_nodes_discardable) ──
+    dict(id='TB7M6-F1 free_worklist_set does not reset the reevaluation (KILL idg25: the node stays reevaluating, not aborted, the table not complete)',
+         file=TAB, targets=TARGETS5,
+         old="                    free_worklist(ld, wl)\n                    reset_reevaluation(ld, atrie)\n",
+         new="                    free_worklist(ld, wl)\n"),
+    dict(id='TB7M6-F2 free_worklist_set does not clear the table\'s worklist before freeing (EQUIVALENT: free_worklist clears the pointer itself when it points back, src/pl-tabling.jl free_worklist `w === wl`)',
+         file=TAB, targets=TARGETS5,
+         equivalent="src/pl-tabling.jl free_worklist: `if w === wl; atrie.worklist = nothing`, so the table points at no worklist either way; upstream clears it first to avoid the `Oops` print of a trie that points elsewhere, which cannot happen for the worklist being freed",
+         old="                    atrie.worklist = nothing        # atrie->data.worklist = NULL\n",
+         new=""),
+    dict(id='TB7M6-W1 wls_reeval_complete never clears the reevaluating flags (KILL idg26: A stays reevaluating)',
+         file=TAB, targets=TARGETS5,
+         old="    if reevaluated != 0\n        for wl in wls\n",
+         new="    if reevaluated < 0\n        for wl in wls\n"),
+    dict(id='TB7M6-W2 wls_reeval_complete does not finish the reevaluating table (KILL idg26: stats_reevaluated stays 0)',
+         file=TAB, targets=TARGETS5,
+         old="                reeval_complete(ld, atrie)\n                reevaluated += 1\n",
+         new="                reevaluated += 1\n"),
+    dict(id='TB7M6-N1 answer_nodes_discardable discards the nodes of a monotonic table (KILL idg27: `!d()` for idg.monotonic)',
+         file=TAB, targets=TARGETS5,
+         old="           !(idg !== nothing && idg.monotonic) &&\n",
+         new=""),
+    dict(id='TB7M6-N2 answer_nodes_discardable never looks for a conditional answer (KILL idg27: `!d()` with an IDG node and a conditional answer)',
+         file=TAB, targets=TARGETS5,
+         old="               idg !== nothing &&\n               map_trie_node(\n",
+         new="               false &&\n               map_trie_node(\n"),
+    dict(id='TB7M6-N3 answer_nodes_discardable looks for a conditional answer in every table (KILL idg27: `d()` with a conditional answer and no IDG node)',
+         file=TAB, targets=TARGETS5,
+         old="               idg !== nothing &&\n               map_trie_node(\n",
+         new="               true &&\n               map_trie_node(\n"),
 ]

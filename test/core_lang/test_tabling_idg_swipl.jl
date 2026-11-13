@@ -772,3 +772,123 @@ end
     r2 = has_none()
     @test r1 != r2 && !r1 && r2
 end
+
+# ── TB7M6 rows owed from TB7M4: the IDG branches of free_worklist_set, wls_reeval_complete, answer_nodes_discardable ──────────
+"A worklist for `atrie` (its table, pointed at by the table), alone in a set."
+function _ti_wl_set(atrie)
+    wl = LK.tbl_worklist{_TI}()
+    wl.table = atrie.serial
+    atrie.worklist = wl
+    wls = LK.worklist_set{LK.tbl_worklist{_TI}}()
+    push!(wls.members, wl)
+    return wl, wls
+end
+
+"`free_worklist_set(ld, wls, freewl)` on one table: `(worklist freed, table points at none, node reevaluating, node aborted, table complete)`. ONE extractor for idg25."
+function _ti_fws(ld, atrie, n, freewl::Int)
+    wl, wls = _ti_wl_set(atrie)
+    LK.free_worklist_set(ld, wls, freewl)
+    return (wl.magic == 0, atrie.worklist === nothing, n.reevaluating, n.aborted, (atrie.flags & LK.TRIE_COMPLETE) != 0)
+end
+
+@testset "idg25: free_worklist_set resets a reevaluating table instead of destroying it (pl-tabling.c:924-955)" begin
+    gd, ld, def = _ti_db()
+    mk(v) = (t = _ti_table!(ld, def, true, v); n = LK.idg_new(ld, t)::_TIN; t.IDG = n; (t, n))
+
+    # an incomplete table whose node reevaluates: the worklist is freed and the reevaluation reset (the table is complete again, the next call restarts)
+    t1, n1 = mk(1)
+    t1.flags &= ~LK.TRIE_COMPLETE
+    n1.reevaluating = true
+    @test _ti_fws(ld, t1, n1, LK.WLFS_DISCARD_INCOMPLETE) == (true, true, false, true, true)
+
+    # a complete table: only its worklist is freed, the node is not touched
+    t2, n2 = mk(2)
+    n2.reevaluating = true
+    @test _ti_fws(ld, t2, n2, LK.WLFS_DISCARD_INCOMPLETE) == (true, true, true, false, true)
+
+    # freewl == 0 frees nothing
+    t3, n3 = mk(3)
+    t3.flags &= ~LK.TRIE_COMPLETE
+    n3.reevaluating = true
+    @test _ti_fws(ld, t3, n3, LK.WLFS_FREE_NONE) == (false, false, true, false, false)
+
+    # a must-fail corruption: the three states answer differently (non-empty, one extractor)
+    t4, n4 = mk(4)
+    t4.flags &= ~LK.TRIE_COMPLETE
+    n4.reevaluating = true
+    a = _ti_fws(ld, t4, n4, LK.WLFS_DISCARD_INCOMPLETE)
+    t5, n5 = mk(5)
+    t5.flags &= ~LK.TRIE_COMPLETE
+    n5.reevaluating = true
+    b = _ti_fws(ld, t5, n5, LK.WLFS_FREE_NONE)
+    @test !isempty(a) && !isempty(b) && a != b
+end
+
+@testset "idg26: wls_reeval_complete finishes the reevaluating tables, then clears every node (pl-tabling.c:6226-6255)" begin
+    gd, ld, def = _ti_db()
+    ta = _ti_table!(ld, def, true, 1)
+    na = LK.idg_new(ld, ta)::_TIN
+    ta.IDG = na
+    tb = _ti_table!(ld, def, true, 2)
+    nb = LK.idg_new(ld, tb)::_TIN
+    tb.IDG = nb
+    tc = _ti_table!(ld, def, true, 3)                                                      # no IDG node
+    wla, _ = _ti_wl_set(ta)
+    wlb, _ = _ti_wl_set(tb)
+    wlc, _ = _ti_wl_set(tc)
+    state() = (na.reevaluating, na.stats_reevaluated, nb.reevaluating, nb.stats_reevaluated)
+
+    # nothing reevaluates: nothing happens
+    LK.wls_reeval_complete(ld, [wla, wlb, wlc])
+    @test state() == (false, 0, false, 0)
+
+    # A reevaluates: reeval_complete runs for A only, then the flag goes
+    na.reevaluating = true
+    LK.wls_reeval_complete(ld, [wla, wlb, wlc])
+    @test state() == (false, 1, false, 0)
+
+    # the flag is cleared by the second loop, not by reeval_complete (idg14): a state where A is the only one and B is reevaluating too
+    na.reevaluating = true
+    nb.reevaluating = true
+    LK.wls_reeval_complete(ld, [wla, wlb])
+    @test state() == (false, 2, false, 1)
+
+    # a must-fail corruption: the states before and after differ
+    na.reevaluating = true
+    before = state()
+    LK.wls_reeval_complete(ld, [wla, wlb])
+    @test !isempty(before) && state() != before && before[1] && !state()[1]
+end
+
+@testset "idg27: answer_nodes_discardable asks the IDG node (pl-tabling.c:3983-3995)" begin
+    gd, ld, def = _ti_db()
+    tp = def.tabling::LK.table_props
+    saved = tp.flags
+    tp.flags = saved | LK.TP_VARIANT
+    t = _ti_table!(ld, def, true, 1)
+    t.predicate = def
+    d() = LK.answer_nodes_discardable(ld, t)
+    @test d()                                                                              # a plain variant table
+    cond() = (t.nodes[1].value = LK.word(7); LK.set_node_delayinfo(gd, t, 1, LK.DL_UNDEFINED_INFO))
+    uncond() = (t.nodes[1].value = LK.word(0); LK.set_node_delayinfo(gd, t, 1, nothing))
+    cond()
+    @test d()                                                                              # no IDG node: the caller verified there are no conditional answers
+    uncond()
+    n = LK.idg_new(ld, t)::_TIN
+    t.IDG = n
+    @test d()                                                                              # an incremental table qualifies
+    cond()
+    @test !d()                                                                             # an IDG node and a conditional answer: not discardable
+    uncond()
+    n.monotonic = true
+    @test !d()                                                                             # a monotonic table adds answers to the complete trie
+    n.monotonic = false
+    @test d()
+
+    # a must-fail corruption: the two states differ (non-empty, one extractor)
+    good = d()
+    n.monotonic = true
+    bad = d()
+    @test good && !bad
+    tp.flags = saved
+end
