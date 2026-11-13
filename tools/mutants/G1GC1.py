@@ -38,7 +38,7 @@ def m(id, old, new, targets, file=F, eq=None):
 MUTANTS = [
     # ---- the checker (CK)
     m("G1GC1-K1", "        allow_marks || _viol!(", "        true || _viol!(", TC),                                   # arg-cell MARK row
-    m("G1GC1-K2", "(w0 & BOTH_MASK) != 0 && !allow_marks && _viol!(", "false && !allow_marks && _viol!(", TC),   # functor-cell MARK row
+    m("G1GC1-K2", "(w0 & BOTH_MASK) != 0 && !allow_marks &&", "false && !allow_marks &&", TC),   # functor-cell MARK row
     m("G1GC1-K3", "function check_stacks!(ld::PL_local_data; allow_marks::Bool=false)::Int\n    r = _check_stacks(ld, allow_marks)",
       "function check_stacks!(ld::PL_local_data; allow_marks::Bool=false)::Int\n    r = _check_stacks(ld, false)", TC),
     m("G1GC1-K4", "function stack_violations(ld::PL_local_data; allow_marks::Bool=false)::Vector{String}\n    r = _check_stacks(ld, allow_marks)",
@@ -59,8 +59,8 @@ MUTANTS = [
     m("G1GC1-K15", "        if got != want", "        if false", TC),
     m("G1GC1-K16", "        if b <= prev", "        if false", TC),
     m("G1GC1-K17", "            p = _trail_pos(e)\n            if p < 1 || p > gtop", "            p = _trail_pos(e)\n            if p < 1", TC),
-    m("G1GC1-K18", "            if p < 1 || p > gtop\n                _viol!(r, \"trail\", string(\"trail[\", i, \"] = \", _hexw(e), \": saved value at \"",
-      "            if p < 1\n                _viol!(r, \"trail\", string(\"trail[\", i, \"] = \", _hexw(e), \": saved value at \"", TC),
+    m("G1GC1-K18", "            if p < 1 || p > gtop\n                _viol!(\n                    r,\n                    \"trail\",\n                    string(\n                        \"trail[\",\n                        i,\n                        \"] = \",\n                        _hexw(e),\n                        \": saved value at \"",
+      "            if p < 1\n                _viol!(\n                    r,\n                    \"trail\",\n                    string(\n                        \"trail[\",\n                        i,\n                        \"] = \",\n                        _hexw(e),\n                        \": saved value at \"", TC),
     m("G1GC1-K19", "            if i == 1 || isTrailVal(tr[i - 1])", "            if false", TC),
     m("G1GC1-K20", "            elseif i > 1 && !isTrailVal(tr[i - 1]) && p <= _trail_pos(tr[i - 1])", "            elseif false", TC),
     m("G1GC1-K21", "        if p < 1 || p > gtop\n            _viol!(r, \"attvar-chain\"", "        if p < 1\n            _viol!(r, \"attvar-chain\"", TC),
@@ -110,7 +110,7 @@ MUTANTS = [
     m("G1GC1-C8", "if ld.gc.inferences == ld.statistics.inferences && !ld.exception_processing", "if ld.gc.inferences == ld.statistics.inferences", TG),
     m("G1GC1-C9", "if ld.gc.inferences == ld.statistics.inferences && !ld.exception_processing", "if false", TG),
     m("G1GC1-C10", "pol.gced_size = used ", "pol.gced_size = 0 ", TG),
-    m("G1GC1-C11", "UInt64(s === :global ? GC_GLOBAL_REQUEST : GC_TRAIL_REQUEST)", "UInt64(s === :global ? GC_TRAIL_REQUEST : GC_GLOBAL_REQUEST)", TG),
+    m("G1GC1-C11", "s === :global ? GC_GLOBAL_REQUEST : GC_TRAIL_REQUEST", "s === :global ? GC_TRAIL_REQUEST : GC_GLOBAL_REQUEST", TG),
     m("G1GC1-B1", "function blockGC(ld::PL_local_data, flags::Int)::Nothing\n    if (flags & ALLOW_GC) == 0",
       "function blockGC(ld::PL_local_data, flags::Int)::Nothing\n    if (flags & ALLOW_GC) != 0", TG),
     m("G1GC1-B2", "function unblockGC(ld::PL_local_data, flags::Int)::Nothing\n    if (flags & ALLOW_GC) == 0",

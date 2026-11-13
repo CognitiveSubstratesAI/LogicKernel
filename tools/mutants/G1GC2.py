@@ -55,11 +55,11 @@ GC = "src/pl-gc.jl"
 AL = "src/pl-alloc.jl"
 
 
-def site(id, file, name, targets, kill):
+def site(id, file, name, targets, kill, end=")"):
     """Drop ALLOW_GC at the site `name` (its argument list `..., ALLOW_GC, :name)` becomes `..., 0, :name)`)."""
     return m(
         "G1GC2-%s %s passes no ALLOW_GC (KILL %s)" % (id, name, kill),
-        "ALLOW_GC, :%s)" % name, "0, :%s)" % name, targets, file,
+        "ALLOW_GC, :%s%s" % (name, end), "0, :%s%s" % (name, end), targets, file,
     )
 
 
@@ -134,7 +134,7 @@ MUTANTS = [
     site("S11", "src/pl-prims.jl", "compound_name_arguments3", [GS, UN], "GS R g11"),
     site("S12", "src/pl-list.jl", "length2", [GS], "GS R g12"),
     site("S13", "src/pl-gvar.jl", "setval", [GS, GV], "GS R g13, g14"),
-    site("S14", "src/pl-bag.jl", "collect_findall_bag", [GS] + FA, "GS R g15"),
+    site("S14", "src/pl-bag.jl", "collect_findall_bag", [GS] + FA, "GS R g15", end="\n        )"),   # the formatter wraps this call
     site("S15", "src/pl-copyterm.jl", "copy_term_refs", [GS] + CT, "GS R g17"),
     site("S16", "src/pl-cont.jl", "put_environment", [GS] + CN, "GS R g19"),
     site("S17", "src/pl-dict.jl", "get_dict_ex", [GS, DC], "GS R g18"),

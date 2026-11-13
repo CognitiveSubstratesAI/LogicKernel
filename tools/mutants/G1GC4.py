@@ -122,7 +122,7 @@ MUTANTS = [
       "    ts.top = dest",
       "    ts.top = dest + 1"),
     m("G1GC4-C10 gc_trail_no_chain: the default handler swallows the chain (KILL NH: `@test_throws LK.NotPortedError`)",
-      "    throw(NotPortedError(ld.placeholder, \"update_relocation_chain of a trail entry (pl-gc.c:2647)\", \"G1-5\"))",
+      "    throw(\n        NotPortedError(\n            ld.placeholder,\n            \"update_relocation_chain of a trail entry (pl-gc.c:2647)\",\n            \"G1-5\"\n        )\n    )",
       "    return nothing"),
     # ---- the sweep entry list
     m("G1GC4-W1 gc_trail_sweep_entries: only value entries are listed (KILL SW: the address entries of the model)",
