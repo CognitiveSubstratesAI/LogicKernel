@@ -539,40 +539,92 @@ function PL_canonicalise_text_ex(ld::PL_local_data{T}, text::PL_chars_t)::Bool w
     return text_error(ld, rc)
 end
 
+# ORIGINAL: pl-text.c `wctobuffer` over the characters of `cps`, then `wctobuffer(0, &mbs, b)`, on a zeroed `mbstate_t`
+# (the two loops of `PL_mb_text`'s `ENC_MB` target).
+# DIVERGES: the bytes go into the vector `b` (no `Buffer`); the NUL that ends upstream's buffer is dropped here (`sizeOfBuffer(b)-1`).
+"Append the multibyte bytes of the code points `cps` to `b`; -1, or the code point that has no representation."
+function _wctobuffer_all!(b::Vector{UInt8}, cps)::Int
+    st = zeros(UInt64, MBSTATE_WORDS)                   # memset(&mbs, 0, sizeof(mbs))
+    for c in cps
+        r = _wcrtomb(Int(c), st)
+        r === nothing && return Int(c)                  # wctobuffer: false, `norep = c`
+        append!(b, r)
+    end
+    r = _wcrtomb(0, st)                                 # wctobuffer(0, &mbs, b): the shift sequence and the NUL
+    if r !== nothing
+        append!(b, r)
+        pop!(b)                                         # the NUL: `text->length = sizeOfBuffer(b)-1`
+    end
+    return -1
+end
+
 # PORT: pl-text.c PL_mb_text
-# DIVERGES: only `REP_UTF8` (the one caller is `x_chars`); an `ENC_UTF8` text is the kernel's own
-# (`PL_get_text`) and is left as it is, its `length` in characters. NOT PORTED: `REP_MB` and ISO Latin-1
-# targets (`wctobuffer`, `PL_demote_text`: no caller), refused by name.
-"Recode the canonical `text` as UTF-8, its `length` then its bytes (pl-text.c `PL_mb_text`, `REP_UTF8`)."
-function PL_mb_text(text::PL_chars_t, flags::UInt32)::Bool
-    (flags & REP_UTF8) != 0 || throw(
-        NotPortedError{Nothing}(
-            nothing, "PL_mb_text to a target other than REP_UTF8", "no caller"
-        )
-    )
-    if text.encoding !== ENC_UTF8
-        b = UInt8[]
-        if text.encoding === ENC_ISO_LATIN_1
+# DIVERGES: the verdict is an `Int` (`_mb_text`: -1 done, -2 `PL_demote_text` failed, otherwise the character with no
+# representation, upstream's `norep`); an `ENC_UTF8` text is the kernel's own (`PL_get_text`) and is left as it is when
+# the target is UTF-8, its `length` in characters; any other source encoding is upstream's `assert(0)`, an `error()`.
+# The `ld` form raises what upstream's `rep_error` and `PL_demote_text` raise under `CVT_EXCEPTION`; the form without `ld`
+# (callers `x_chars`, `PL_text_recode`) gives only the verdict.
+"""
+    _mb_text(text, flags) -> Int
+
+Recode the canonical `text` to the target `flags` name (`REP_UTF8`: UTF-8, `REP_MB`: the locale's multibyte
+encoding, else ISO Latin-1), its `length` then in bytes (pl-text.c `PL_mb_text`).
+"""
+function _mb_text(text::PL_chars_t, flags::UInt32)::Int
+    target = (flags & REP_UTF8) != 0 ? ENC_UTF8 : (flags & REP_MB) != 0 ? ENC_ANSI : ENC_ISO_LATIN_1
+    text.encoding === target && return -1
+    b = UInt8[]
+    if text.encoding === ENC_ISO_LATIN_1
+        if target === ENC_UTF8
             for c in text.text
-                utf8_put_char(b, Int(c))                    # utf8tobuffer(*s, b)
-            end
-        elseif text.encoding === ENC_WCHAR
-            for i in 0:(text.length - 1)
-                utf8_put_char(b, _wchar_at(text, i))        # get_wchar(), utf8tobuffer(c, b)
+                utf8_put_char(b, Int(c))                # utf8tobuffer(*s, b)
             end
         else
-            throw(
-                NotPortedError{Nothing}(
-                    nothing, "PL_mb_text of $(text.encoding)", "no caller"
-                )
-            )
+            norep = _wctobuffer_all!(b, text.text)
+            norep == -1 || return norep
         end
-        text.length = length(b)                             # sizeOfBuffer(b)-1: the bytes
-        text.text = b
-        text.encoding = ENC_UTF8
-        text.canonical = false
+    elseif text.encoding === ENC_WCHAR
+        if target === ENC_ISO_LATIN_1
+            for i in 0:(text.length - 1)                # PL_demote_text(text, flags)
+                _wchar_at(text, i) > 0xff && return -2
+            end
+            text.text = UInt8[UInt8(_wchar_at(text, i)) for i in 0:(text.length - 1)]
+            text.encoding = ENC_ISO_LATIN_1
+            text.canonical = true
+            return -1
+        elseif target === ENC_UTF8
+            for i in 0:(text.length - 1)
+                utf8_put_char(b, _wchar_at(text, i))    # get_wchar(), utf8tobuffer(c, b)
+            end
+        else
+            norep = _wctobuffer_all!(b, (_wchar_at(text, i) for i in 0:(text.length - 1)))
+            norep == -1 || return norep
+        end
+    else
+        error("PL_mb_text of $(text.encoding)")         # assert(0)
     end
-    return true
+    text.length = length(b)
+    text.text = b
+    text.encoding = target
+    text.canonical = (target === ENC_ISO_LATIN_1)
+    return -1
+end
+
+"Recode the canonical `text` to the target of `flags` (pl-text.c `PL_mb_text`); false when a character has no representation."
+PL_mb_text(text::PL_chars_t, flags::UInt32)::Bool = _mb_text(text, flags) == -1
+
+"""
+Recode the canonical `text` to the target of `flags`; with `CVT_EXCEPTION` the failure is raised (pl-text.c `PL_mb_text`):
+`representation_error(encoding)` for a wide text that is not ISO Latin-1 and for a character the locale has no
+multibyte sequence for.
+"""
+function PL_mb_text(ld::PL_local_data{T}, text::PL_chars_t, flags::UInt32)::Bool where {T}
+    rc = _mb_text(text, flags)
+    rc == -1 && return true
+    (flags & CVT_EXCEPTION) == 0 && return false
+    rc == -2 && return text_representation_error(ld, ENC_ISO_LATIN_1)       # PL_demote_text's reperr
+    msg = "Cannot represent char U" * string(rc, base = 16, pad = 4) * " using current locale encoding"
+    return PL_error(ld, "", 0, msg, ERR_REPRESENTATION, mk_sym(T, :encoding))
 end
 
 # ORIGINAL (T1): the characters of `text` as a Julia `String` — the bytes the term interface holds an atom or
