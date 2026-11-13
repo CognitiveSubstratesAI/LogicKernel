@@ -194,7 +194,11 @@ end
     @test LK.check_stacks!(ld) > 0
 end
 
-@testset "mark_bar: NO_MARK_BAR is restored, a bar below the new top is kept, a bar above it is clamped" begin
+@testset "mark_bar: NO_MARK_BAR is restored; a bar is a HEIGHT relocated to its rank (the marked cells at or below it)" begin
+    # A bar is relocated through the saved bar of the foreign frame the collection opens (`gvars_to_term_refs`): `sweep_mark`
+    # gives it the new height of the highest MARKED cell at or below it (pl-gc.c sweep_global_mark), so the expectation is
+    # the RANK of the bar among the live cells, here computed from the build positions alone: every cell of the dropped
+    # term (`dead_cells`) lies below the bar and every other cell of the heap is live.
     # NO_MARK_BAR before and after
     ld, t, n0, dead_cells = _gd_heap()
     ld.mark_bar = LK.NO_MARK_BAR
@@ -209,21 +213,27 @@ end
     @test LK.garbageCollect(ld, _GD_GC) == LK.BOOLEX_TRUE
     @test ld.gTop > 1 && ld.mark_bar == 1
     @test _gd_views(ld, t, 2) == before
-    # a bar at the old top is clamped to the new, lower top
+    # a bar at the old top: its rank is the new top (every live cell is at or below it)
     ld, t, n0, dead_cells = _gd_heap()
     gtop0 = ld.gTop
     ld.mark_bar = gtop0
     before = _gd_views(ld, t, 2)
     @test LK.garbageCollect(ld, _GD_GC) == LK.BOOLEX_TRUE
     @test ld.gTop < gtop0
+    @test ld.gTop == gtop0 - length(dead_cells)                 # the model: the dead cells are exactly the dropped term's
+    @test ld.mark_bar == gtop0 - length(dead_cells)             # its rank: all dead cells are below it
     @test ld.mark_bar == ld.gTop && ld.mark_bar < gtop0
     @test _gd_views(ld, t, 2) == before
-    # a bar between the new and the old top is clamped as well
+    # a bar one cell below the old top: its rank is one below the new top (the top cell is live and above the bar)
     ld, t, n0, dead_cells = _gd_heap()
     gtop0 = ld.gTop
-    ld.mark_bar = gtop0 - 1
+    bar_in = gtop0 - 1
+    @test bar_in > last(dead_cells)                             # the dropped term lies wholly below the bar
+    ld.mark_bar = bar_in
     @test LK.garbageCollect(ld, _GD_GC) == LK.BOOLEX_TRUE
-    @test ld.mark_bar == min(gtop0 - 1, ld.gTop)
+    @test ld.gTop == gtop0 - length(dead_cells)
+    @test ld.mark_bar == bar_in - length(dead_cells)            # the rank (was `min(bar, gTop)`: a clamp is not what the collector does)
+    @test ld.mark_bar == ld.gTop - 1
     @test ld.mark_bar <= ld.gTop
     @test ld.gc.status.blocked == 0 && !ld.gc.status.active
 end
