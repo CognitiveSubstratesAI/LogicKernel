@@ -145,8 +145,8 @@ MUTANTS = [
          new="        nothing                                     # TRIE_COUNT_INC(variants, value_count)\n"),
     dict(id="TB1-G9 the lookup creates the variant node for every call, `AT_CREATE` not asked (a valueless node is left by tvv03-tvv06: no row counts the nodes)",
          file=TAB, targets=[TV],
-         old="    rc, nid = trie_lookup_abstract(\n        ld, variants, 0, -(t + 1), (flags & AT_CREATE) != 0, sa, vars\n    )",
-         new="    rc, nid = trie_lookup_abstract(\n        ld, variants, 0, -(t + 1), true, sa, vars\n    )",
+         old="        rc, nid = trie_lookup_abstract(\n            ld, variants, 0, -(t + 1), (flags & AT_CREATE) != 0, sa, vars\n        )",
+         new="        rc, nid = trie_lookup_abstract(\n            ld, variants, 0, -(t + 1), true, sa, vars\n        )",
          equivalent="DEFERRED KILL: owner TB5 (abolish empties the variant table and a node count is then read; TB1's own test could add the row, "
                     "`trie_property`-style node count of the variant table after tvv03): the node without a value answers `nothing` at src/pl-tabling.jl:738-739 "
                     "(`elseif (flags & AT_CREATE) != 0 ... else return nothing`), so tvv03-tvv06 still answer `no`, and the walk of tvl06/tvl07 (trie_gen over the "
