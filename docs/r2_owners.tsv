@@ -226,3 +226,4 @@ refusal:src/pl-wam.jl::PL_next_solution_guarded::the VM instruction $(codeTable(
 refusal:src/pl-write.jl::writePrimitive::writing a grounded value SWI has no type for	WR2	writePrimitive of a grounded value SWI has no type for; a representation guard of the kernel, permanent until the blob writer takes it
 kfile:pl-gcmark.jl	G1-GC	G1-3: the named refusals of the mark phase (a local-stack reference and an inline indirect, words the kernel never builds); permanent unless the layout changes
 kfile:pl-gcwalk.jl	G1-GC	G1-3: the named refusal of a parent query inside the VM without a get_vmi_state callback (pl-gc.c:3725); G1-2 supplies the callback
+kfile:pl-gcsweep.jl	G1-GC	G1-5: the named refusal of a parent query inside the VM without a get_vmi_state callback (sweep_stacks, pin pl-gc.c); G1-2 supplies the callback
