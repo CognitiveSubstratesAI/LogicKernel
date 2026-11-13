@@ -306,3 +306,38 @@ end
         @test _tw_swipl_lines(f, ["t_$id" for (id, _) in _TW_CASES]) == _TW_PINNED
     end
 end
+
+# TB2K2 white-box rows: what no Prolog row reads (the scheduling of a worklist on its component, the cluster order). The values are
+# upstream's code (pl-tabling.c wl_set_component :639-654, wkl_swap_clusters :4121-4138, tbl_wkl_make_follower :5305-5353), each cited at its row.
+# UNVERIFIED on the kernel: nothing was compiled when these rows were written.
+"A worklist of the clusters `kinds` (CLUSTER_ANSWERS / CLUSTER_SUSPENSIONS), linked in that order; `wl.riac` the rightmost answer cluster with a suspension cluster to its right."
+function _tw_wl_of(kinds::Vector{Int})
+    wl = LK.tbl_worklist{_TW}()
+    cs = [LK.cluster{_TW}(k) for k in kinds]
+    for c in cs
+        LK.wkl_append_right(wl, c)
+    end
+    return wl, cs
+end
+
+@testset "TB2K2 white-box: wl_set_component schedules a worklist with work, once (TB2-C7)" begin
+    gd = LK.PL_global_data{_TW}()
+    ld = LK.PL_local_data{_TW}(gd)
+    c = LK.tbl_component{_TW}()
+    wl, (acp, scp) = _tw_wl_of([LK.CLUSTER_ANSWERS, LK.CLUSTER_SUSPENSIONS])
+    wl.riac = acp
+    @test LK.wl_has_work(wl)                    # the non-empty side: an answer cluster left of a suspension cluster
+    @test !wl.in_global_wl
+    LK.wl_set_component(ld, wl, c)              # :639-654: `if (!wl->in_global_wl && wl_has_work(wl)) add_global_worklist(wl)`
+    @test wl.component === c && !wl.executing
+    @test wl.in_global_wl
+    @test c.worklist !== nothing && length(c.worklist.members) == 1 && c.worklist.members[1] === wl
+    LK.wl_set_component(ld, wl, c)              # already scheduled: not queued a second time
+    @test length(c.worklist.members) == 1
+    # a worklist with NO work is not scheduled (the other branch of the same condition)
+    c2 = LK.tbl_component{_TW}()
+    wl2, _ = _tw_wl_of([LK.CLUSTER_SUSPENSIONS, LK.CLUSTER_ANSWERS])
+    @test !LK.wl_has_work(wl2)
+    LK.wl_set_component(ld, wl2, c2)
+    @test wl2.component === c2 && !wl2.in_global_wl && c2.worklist === nothing
+end

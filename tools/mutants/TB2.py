@@ -64,7 +64,7 @@ MUTANTS = [
          file=TAB, targets=[TW],
          old="    wl.component = c\n    wl.executing = false\n",
          new="    wl.component = c\n    wl.executing = true\n"),
-    dict(id="TB2-C7 wl_set_component schedules only a worklist that is already scheduled, `in_global_wl` unnegated (KILL twm05/twm06: a merged worklist with work is never queued)",
+    dict(id="TB2-C7 wl_set_component schedules only a worklist that is already scheduled, `in_global_wl` unnegated (KILL the white-box testset `TB2K2 white-box: wl_set_component ...` of TW: an unscheduled worklist with work is queued on its component once, `wl.in_global_wl` and `c.worklist.members == [wl]`; the mutant never queues the unscheduled one and queues an already scheduled one a second time; no Prolog row reads the queue itself, the completion loop hides a duplicate)",
          file=TAB, targets=[TW],
          old="    if !wl.in_global_wl && wl_has_work(wl)\n",
          new="    if wl.in_global_wl && wl_has_work(wl)\n"),
