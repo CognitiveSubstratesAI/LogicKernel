@@ -692,12 +692,11 @@ end
             @assert st === :true
             return a[1]
         end
-        # swipl opens these (a lock, a locale, `text`); the kernel refuses them BY NAME, before it opens a
-        # file (nothing is created). utf16le and wchar_t are ported (ENC1), a pipe is `Sopen_pipe` (lane D)
+        # swipl opens this (a locale); the kernel refuses it BY NAME, before it opens a file (nothing is
+        # created). utf16le, wchar_t and `text` are ported (ENC1), a pipe is `Sopen_pipe` and lock(Lock) is
+        # `Sopen_file`'s l/L flag (lane D: rows l01-l12 of test_lane_d_swipl.jl)
         for (mode, o) in (
-            (:write, "[lock(write)]"), (:write, "[lock(shared)]"),
             (:write, "[locale(foo)]"),
-            (:write, "[encoding(text)]")
         )
             ldx = LK.PL_local_data{_TL}(gd)             # a refusal leaves its query open: a local data each
             st, _ = kcall(gd, ldx, "open", _TL[f, _tls(mode), v(), opts(o)])
