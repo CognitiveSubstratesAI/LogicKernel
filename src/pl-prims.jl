@@ -1772,7 +1772,7 @@ end
 # `Word`s and dereferences them here; the error built on the cells (`pushWordAsTermRef`, f3b-4). The
 # trail walk's value (`unify_with_occurs_check_cells`) is its word read before the Undo, where upstream
 # copies `*p2` into a fresh global cell above the restored top: here `PL_error`'s term references take
-# fresh global cells, which would overwrite it. NOT PORTED: `blockGC`/`unblockGC` (no stack GC until G1).
+# fresh global cells, which would overwrite it. `blockGC`/`unblockGC` are in src/pl-gc.jl now (G1-GC); this function does not call them, no collector runs here.
 "Fail (`OCCURS_CHECK_TRUE`) or raise the occurs-check error, as `Var = Term`, on the cells (pl-prims.c)."
 function failed_unify_with_occurs_check_cells(
     ld::PL_local_data{T}, t1::Tuple{UInt8, word, Int}, t2::Tuple{UInt8, word, Int},
