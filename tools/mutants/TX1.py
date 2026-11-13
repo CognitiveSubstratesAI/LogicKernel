@@ -4,32 +4,24 @@
 # `retract_clause!`, `retractClauseDefinition!`, `setLastModifiedPredicate!` (src/pl-proc.jl), `Undo!` (src/pl-inline.jl), `updateAlerted`,
 # `depart_or_retry_continue` and `deep_backtrack` (src/pl-wam.jl)). Run ONCE, in CI (.github/workflows/mutation.yml; locally: tools/mutate.sh run).
 # Format: tools/mutate_drive.py's (as TB0.py, PIN1.py): `id`, `file`, `old` (must occur EXACTLY once), `new`, optional `equivalent` and `targets`.
-# NOT RUN YET (written edit-only on wip/tx1, 2026-11-10, NOTHING compiled or run): every KILL below is read off the rows of wip/tx1 4d181afb
-# (test/core_lang/test_transaction_swipl.jl, 101 rows, ids below); the first hand-run replaces this header with the true verdicts. The kernel answers of the
-# rows are themselves unverified until the gate: a row that fails on the unmutated tree has no kill value.
+# NOT RUN YET (written edit-only on wip/tx1m, 2026-11-13, NOTHING compiled or run): every KILL below is read off the rows of test/core_lang/test_transaction_swipl.jl
+# (130 rows, ids below; the 29 txx rows pinned with the pinned swipl, two identical runs); the first hand-run replaces this header with the true verdicts.
+# The kernel answers of the rows are themselves unverified until the gate: a row that fails on the unmutated tree has no kill value.
 # KILL ROWS: TX = test/core_lang/test_transaction_swipl.jl. The row ids are the first element of `_TX_CASES` (TX:115-215): txc (commit and discard), txs (snapshot),
-#   txn (nested), txu (transaction_updates/1), txr (current_transaction/1), txd (undo/1), txe (update events). A row id names the whole row: its answer is
+#   txn (nested), txu (transaction_updates/1), txr (current_transaction/1), txd (undo/1), txe (update events), txx (the rows of the first battery, below). A row id names the whole row: its answer is
 #   compared with swipl 10.1.20's pinned one (`_TX_PINNED`), so any difference in the answer kills.
-# THREE CLASSES, each counted in handoff5.md: KILL (names its row); EQUIVALENT (`equivalent=` with the file:line reason); DEFERRED KILL (`equivalent="DEFERRED KILL: ..."`,
-#   audit D-0374 item 2: no row reads what the mutant changes; it must SURVIVE the battery; the row that kills it is named `txxNN` and OWED to the gate step, which
-#   writes it, pins it with swipl 10.1.20 and deletes the declaration). The owed rows, read off the code:
-#   txx01 `transaction((assertz(tx_p(1)), tx_yn(transaction((retract(tx_p(1)), fail)), Y), tx_all(tx_p, L))), R = r(Y, L)`   (nested retract of the parent's clause, rolled back)
-#   txx02 `transaction((assertz(tx_p(1)), transaction(retract(tx_p(1))), tx_all(tx_p, In))), R = In`                            (the parent reads after a nested retract of its clause)
-#   txx03 `assertz(tx_p(1)), retract(tx_p(1)), transaction(tx_all(tx_p, In)), R = In`                                           (a clause erased at the very generation the transaction starts at)
-#   txx04 `assertz(tx_p(1)), transaction((retract(tx_p(1)), transaction(tx_all(tx_p, In)))), R = In`                            (a nested transaction sees the parent's retract: the stack walk)
-#   txx05 `predicate_property(tx_p(_), last_modified_generation(G))` before and after a commit, a snapshot and a retract                    (the last-modified table)
-#   txx06 `assertz(tx_p(1)), findall(X, (tx_p(X), (X == 1 -> transaction(assertz(tx_p(2))) ; true)), L), R = L`                (the logical update view across a commit)
-#   txx07 `assertz(tx_p(1)), assertz(tx_p(2)), transaction(retract(tx_p(1))), predicate_property(tx_p(_), number_of_clauses(N)), R = N`  (the count after a commit)
-#   txx08 `transaction(assertz(tx_p(1))), tx_yn(transaction((assertz(tx_p(2)), fail)), Y), tx_all(tx_p, L), R = r(Y, L)`        (two outermost transactions in a row: no stale table)
-#   txx09 `tx_yn(transaction((assertz(tx_p(1)), fail)), _), predicate_property(tx_p(_), number_of_clauses(N)), R = N`           (the count after a discard)
-#   txx10 a listener that logs the WHOLE event term, with a discarded assertz, asserta and retract                                (`tx_ev` keeps functor(A) only, TX:105: `rollback(assertz)` and `rollback(asserta)` read alike)
-#   txx11 `transaction(transaction(findall(N/A, (current_transaction(G), functor(G, N, A)), L))), R = L` and the same after a nested transaction ended  (all answers of current_transaction/1 at depth 2)
-#   txx12 `transaction((transaction(user:assertz(tx_e(1)), [bulk(true)]), assertz(tx_e(2)))), tx_log(L), R = L`                (the flags are the parent's again after a nested bulk transaction)
-#   txx13 `transaction((assertz(tx_p(1)), transaction(true), retract(tx_p(1)), predicate_property(tx_p(_), number_of_clauses(N)))), R = N`  (gen_nest restored: an own clause is retracted as an own clause)
-#   txx14 `transaction((assertz(tx_p(1)), assertz(tx_p(2)), transaction(retract(tx_p(1))), transaction_updates(U), tx_kinds(U, As))), R = As`  (the updates are sorted by generation)
-#   txx15 `transaction(user:(transaction(user:(assertz(tx_e(1)), fail), [bulk(true)]) -> true ; true))`, and a nested bulk retract, with the listener of tx_e (no event in a bulk level)
-#   txx16 two queries: `( undo(tx_push(a)), fail ; R = x )`, THEN `tx_pushed(L)` in the next query                                  (the undo goals run at the backtrack, not at the next call)
-#   txx17 `catch(transaction(user:true, [bulk(true)]), _, true)` with a listener that raises, at the outer and at the nested commit  (announce_updates answers false)
+# TWO CLASSES: KILL (names its row or rows); EQUIVALENT (`equivalent=` with the file:line reason). TWO mutants stay DEFERRED KILL (`equivalent="DEFERRED KILL: ..."`,
+#   audit D-0374 item 2: no row can read what the mutant changes, it must SURVIVE the battery): N18 (owner ATOM1: atom GC) and N19 (owner TH1: thread destruction).
+# THE txx ROWS (a row id names the whole row; the goal is the second element of `_TX_CASES`):
+#   txx01 nested retract of the parent's last clause, then the nested level fails   (R2, D3)     txx02 the parent reads after a nested retract of its clause   (R4)
+#   txx03 a clause erased at the generation the transaction starts at   (V2)       txx04 a nested transaction after the parent's retract   (V5)
+#   txx05, txx05b, txx05c: predicate_property(.., last_modified_generation(G)) after a commit, a snapshot, a retract, inside a transaction, after a discard   (L3, L4, H13, H14)
+#   txx06 findall across a commit   (C1, H3)       txx07 the clause count after a commit   (C6)       txx08 two outermost transactions in a row   (C8)
+#   txx09 the clause count after a discard   (D1)   txx10 the whole rollback events of one discard, sorted   (D2)
+#   txx11, txx11b, txx11c current_transaction/1 at depth 2 (findnsols/4: findall never ends upstream) and after a nested level   (T13, P6, P7)
+#   txx12, txx12b flags after a bulk nested level   (T14)     txx13, txx13b gen_nest restored   (T15)     txx14, txx14b the updates sorted   (U7)
+#   txx15, txx15b, txx15c no event in a bulk level   (H11)    txx17a-e a listener that raises at the commit of a bulk outermost transaction   (T17)
+#   txx16 the white-box testset at the end of the file: the schedule is empty right after the backtrack   (E4)
 # TARGETS (audit D-0238): TX is the only file that runs a transaction or undo/1 (grepped 2026-11-10: `transaction(` and `undo(` in test/). The engine-hook mutants
 #   also list the database files that run the mutated function with no transaction (assert, retract, retractall, clause, event, update-view): TDB. The undo mutants
 #   list the two files that run `Undo!`/`updateAlerted`: test_trail_words.jl (TTR) and test_attvar_wakeup.jl (TAW). NOT listed: test_static_analysis.jl
@@ -60,18 +52,16 @@ MUTANTS = [
          equivalent="pl-proc.jl:686-687: `tr.generation += 1` precedes `clause.generation_created = tr.generation` and `tr.generation` starts AT gen_base (pl-transaction.jl, the outer branch), so no clause is created at gen_base itself: the first transaction clause has gen_base + 1",
          old="    if clause.generation_created < tr.gen_base\n",
          new="    if clause.generation_created <= tr.gen_base\n"),
-    dict(id="TX1-R2 transaction_retract_clause: the nested test is strict, `<` for `<=`: a clause created at the parent's last generation is retracted as an own clause (DEFERRED KILL txx01)",
+    dict(id="TX1-R2 transaction_retract_clause: the nested test is strict, `<` for `<=`: a clause created at the parent's last generation is retracted as an own clause (KILL txx01: the nested retract of the parent's last clause is not rolled back by the discard, [] for [1])",
          file=PT, targets=[TX],
-         equivalent="DEFERRED KILL: owner TX1 gate (row txx01): no row retracts, in a nested transaction that is then discarded, the clause the parent made last: txn06 (clause 1, parent's last is 2) and txn07 (a global clause) take the other branches; the commit gives the same visibility either way",
          old="    elseif clause.generation_created <= tr.gen_nest\n",
          new="    elseif clause.generation_created < tr.gen_nest\n"),
     dict(id="TX1-R3 transaction_retract_clause: the nested retract is recorded as an assert, GEN_ASSERTZ for GEN_NESTED_RETRACT (KILL txn06: the outer commit makes the retracted clause live again, [1, 2] for [2])",
          file=PT, targets=[TX],
          old="        tr_clause_table(tr)[clause] = GEN_NESTED_RETRACT\n",
          new="        tr_clause_table(tr)[clause] = GEN_ASSERTZ\n"),
-    dict(id="TX1-R4 transaction_retract_clause: the nested retract leaves the clause's erase generation (DEFERRED KILL txx02: the final answer after the commit is the same, only a read inside the parent sees it)",
+    dict(id="TX1-R4 transaction_retract_clause: the nested retract leaves the clause's erase generation (KILL txx02: the parent still reads the clause its nested level retracted, [1] for [])",
          file=PT, targets=[TX],
-         equivalent="DEFERRED KILL: owner TX1 gate (row txx02): txn06 reads after the outer commit, where retract_clause_gen (pl-transaction.jl, transaction_commit) lowers the erase generation of a GEN_NESTED_RETRACT entry anyway; no row reads the parent's view right after a nested retract of its own clause",
          old="        clause.generation_erased = egen\n        tr_clause_table(tr)[clause] = GEN_NESTED_RETRACT\n",
          new="        tr_clause_table(tr)[clause] = GEN_NESTED_RETRACT\n"),
     dict(id="TX1-R5 transaction_assert_clause: asserta and assertz marks swapped (KILL txu01: the update kinds [assertz, asserta] read [asserta, assertz]; txc11 too, the commit of asserta(0) keeps it live either way)",
@@ -83,9 +73,8 @@ MUTANTS = [
          file=PT, targets=[TX],
          old="    if cl.generation_created <= tr.gen_start && cl.generation_erased > tr.gen_start\n",
          new="    if cl.generation_created < tr.gen_start && cl.generation_erased > tr.gen_start\n"),
-    dict(id="TX1-V2 transaction_visible_clause: a clause erased AT the start generation is visible, `>=` for `>` (DEFERRED KILL txx03)",
+    dict(id="TX1-V2 transaction_visible_clause: a clause erased AT the start generation is visible, `>=` for `>` (KILL txx03: a clause erased at the very generation the transaction starts at stays visible, [1] for [])",
          file=PT, targets=[TX],
-         equivalent="DEFERRED KILL: owner TX1 gate (row txx03): no row retracts a global clause and starts a transaction with no generation in between (every txc/txn row retracts inside the transaction, or asserts first)",
          old="    if cl.generation_created <= tr.gen_start && cl.generation_erased > tr.gen_start\n",
          new="    if cl.generation_created <= tr.gen_start && cl.generation_erased >= tr.gen_start\n"),
     dict(id="TX1-V3 transaction_visible_clause: an assert mark hides the clause, the `!` of IS_ASSERT_GEN dropped (KILL txc23: the clause retracted in the transaction stays visible; txc22, txc04 too)",
@@ -96,9 +85,8 @@ MUTANTS = [
          file=PT, targets=[TX],
          old="                    if lgen + tr.gen_base <= gen\n",
          new="                    if lgen + tr.gen_base < gen\n"),
-    dict(id="TX1-V5 transaction_visible_clause: only the innermost table is read, the walk up the stack is cut (DEFERRED KILL txx04)",
+    dict(id="TX1-V5 transaction_visible_clause: only the innermost table is read, the walk up the stack is cut (KILL txx04: a nested transaction does not see its parent's retract of a global clause, [1] for [])",
          file=PT, targets=[TX],
-         equivalent="DEFERRED KILL: owner TX1 gate (row txx04): no row reads a global clause, inside a nested transaction, that the PARENT retracted (txn10 and txn14 read in the parent after the nested level ended)",
          old="            stack === nothing && break\n",
          new="            break\n"),
     # ── pl-transaction.jl: last-modified tables ──
@@ -112,20 +100,17 @@ MUTANTS = [
          equivalent="same reason as TX1-L1: the flags of a changed-predicates entry are read only by `set_modified`, which gives them to a function that drops them for a global generation (pl-proc.jl, `setLastModifiedPredicate!`)",
          old="        into[def] = VAL_ADD_FLAGS(lgen, oflags)\n",
          new="        into[def] = lgen\n"),
-    dict(id="TX1-L3 transaction_last_modified_predicate: the global last-modification is returned unchanged inside a transaction (DEFERRED KILL txx05)",
+    dict(id="TX1-L3 transaction_last_modified_predicate: the global last-modification is returned unchanged inside a transaction (KILL txx05b: inside a transaction the last-modified generation is the global one, eq for lt)",
          file=PT, targets=[TX],
-         equivalent="DEFERRED KILL: owner TX1 gate (row txx05): the only reader is the `last_modified_generation` property (pl-proc.jl:3015) and no row asks for it",
          old="    return last_modified > tr.gen_start ? tr.gen_start : last_modified\n",
          new="    return last_modified\n"),
-    dict(id="TX1-L4 transaction_commit: the predicates the transaction changed keep their old last-modification, set_modified is skipped (DEFERRED KILL txx05)",
+    dict(id="TX1-L4 transaction_commit: the predicates the transaction changed keep their old last-modification, set_modified is skipped (KILL txx05: the commit leaves the last-modified generation alone, eq for lt)",
          file=PT, targets=[TX],
-         equivalent="DEFERRED KILL: owner TX1 gate (row txx05): the module's `last_modified` has no reader a row uses",
          old="        set_modified(gd, ld, gen_commit)\n",
          new="        nothing\n"),
     # ── pl-transaction.jl: commit ──
-    dict(id="TX1-C1 transaction_commit: the commit generation is the current one, not the next (DEFERRED KILL txx06)",
+    dict(id="TX1-C1 transaction_commit: the commit generation is the current one, not the next (KILL txx06: a goal that started before the commit sees the committed clause, [1, 2] for [1])",
          file=PT, targets=[TX],
-         equivalent="DEFERRED KILL: owner TX1 gate (row txx06): the committed clauses become visible at once, a goal that started before the commit sees them only with the logical update view, and no row starts an enumeration across a commit",
          old="        gen_commit = global_generation(gd) + 1\n",
          new="        gen_commit = global_generation(gd)\n"),
     dict(id="TX1-C2 transaction_commit: a committed clause is created one generation too late, `gen_commit + 1` (KILL txc01: both clauses are invisible, [] for [1, 2])",
@@ -144,34 +129,29 @@ MUTANTS = [
          file=PT, targets=[TX],
          old="        gd._generation = gen_commit\n",
          new="        nothing\n"),
-    dict(id="TX1-C6 transaction_commit: the retracts are not applied, the second loop is inverted, `IS_ASSERT_GEN` for `!IS_ASSERT_GEN` (DEFERRED KILL txx07: the generation already hides a retracted clause; only the clause count and the dirty list change)",
+    dict(id="TX1-C6 transaction_commit: the retracts are not applied, the second loop is inverted, `IS_ASSERT_GEN` for `!IS_ASSERT_GEN` (KILL txx07: the commit of a retract leaves the clause count at 2, 2 for 1)",
          file=PT, targets=[TX],
-         equivalent="DEFERRED KILL: owner TX1 gate (row txx07): the first loop (retract_clause_gen) already gives the clause its erase generation, so every txc/txn row reads the same answer; `retract_clause!` here sets CL_ERASED and lowers `number_of_clauses`, which no row reads",
          old="            if !IS_ASSERT_GEN(lgen)\n                retract_clause!(gd, ld, cl, cl.generation_erased)\n",
          new="            if IS_ASSERT_GEN(lgen)\n                retract_clause!(gd, ld, cl, cl.generation_erased)\n"),
     dict(id="TX1-C7 retract_clause_gen: the erase generation is never lowered, `<` for `>` (KILL txc04: the retracted clause keeps GEN_MAX and stays visible, [1] for [])",
          file=PT, targets=[TX],
          old="    if clause.generation_erased > generation\n        clause.generation_erased = generation\n",
          new="    if clause.generation_erased < generation\n        clause.generation_erased = generation\n"),
-    dict(id="TX1-C8 transaction_commit: the changed-clauses table is kept after the commit (DEFERRED KILL txx08)",
+    dict(id="TX1-C8 transaction_commit: the changed-clauses table is kept after the commit (KILL txx08: a stale entry of the first transaction is discarded again by the second, [] for [1])",
          file=PT, targets=[TX],
-         equivalent="DEFERRED KILL: owner TX1 gate (row txx08): the next outermost transaction then re-discards the old entries, but every row starts with `tx_clean` (retractall of the rows' predicates), so a stale assert entry is already erased; a row with two transactions in a row and a failing second one reads it",
          old="        set_modified(gd, ld, gen_commit)\n        tr.clauses = nothing\n",
          new="        set_modified(gd, ld, gen_commit)\n"),
     # ── pl-transaction.jl: discard ──
-    dict(id="TX1-D1 transaction_discard: the retract of the discarded assert is skipped (DEFERRED KILL txx09: the erase generation already hides it)",
+    dict(id="TX1-D1 transaction_discard: the retract of the discarded assert is skipped (KILL txx09: the discarded assert is not retracted, the clause count is 1 for 0)",
          file=PT, targets=[TX],
-         equivalent="DEFERRED KILL: owner TX1 gate (row txx09): the lines above set both generations to GEN_TR_DISCARD_ASSERT, which hides the clause; `retract_clause!` only sets CL_ERASED and the clause count",
          old="                    retract_clause!(gd, ld, cl, cl.generation_created)\n",
          new="                    nothing\n"),
-    dict(id="TX1-D2 transaction_discard: the rollback event of an asserta is named assertz, the ternary swapped (DEFERRED KILL txx10)",
+    dict(id="TX1-D2 transaction_discard: the rollback event of an asserta is named assertz, the ternary swapped (KILL txx10: the whole event term is logged, rollback(asserta) reads rollback(assertz))",
          file=PT, targets=[TX],
-         equivalent="DEFERRED KILL: owner TX1 gate (row txx10): the listener of the rows, `tx_ev` (TX:105), logs `functor(A)` only, and the event term is `rollback(Action)`: the action is not read",
          old="                    action = lgen == GEN_ASSERTA ? :asserta : :assertz\n",
          new="                    action = lgen == GEN_ASSERTA ? :assertz : :asserta\n"),
-    dict(id="TX1-D3 transaction_discard: a nested retract is not restored, GEN_MAX for the transaction's gen_max (DEFERRED KILL txx01)",
+    dict(id="TX1-D3 transaction_discard: a nested retract is not restored, GEN_MAX for the transaction's gen_max (KILL txx01: a nested retract is not restored by the discard, [] for [1])",
          file=PT, targets=[TX],
-         equivalent="DEFERRED KILL: owner TX1 gate (row txx01): `cl.generation_erased = tr.gen_max` runs only for a GEN_NESTED_RETRACT entry (a clause the PARENT made, retracted by a nested transaction that is discarded); no row discards such a level",
          old="                cl.generation_erased = tr.gen_max\n",
          new="                cl.generation_erased = GEN_MAX\n"),
     dict(id="TX1-D4 transaction_discard: a bulk-flagged level raises the rollback events, the test inverted, `!= 0` for `== 0` (KILL txe06: the outermost transaction (flags 0) raises no rollback event, the log is empty)",
@@ -199,7 +179,7 @@ MUTANTS = [
          file=PT, targets=[TX],
          old="IS_ASSERT_GEN(g::tr_gen_t)::Bool = g == GEN_ASSERTA || g == GEN_ASSERTZ\n",
          new="IS_ASSERT_GEN(g::tr_gen_t)::Bool = g == GEN_ASSERTZ\n"),
-    dict(id="TX1-U4 transaction_updates: an assert later erased is still listed (KILL txu03: the update list has two entries, an assertz and an erased one, where swipl answers none... pinned [] )",
+    dict(id="TX1-U4 transaction_updates: an assert later erased is still listed (KILL txu03: an assertz and a retract of the same clause leave no update, [assertz] for [])",
          file=PT, targets=[TX],
          old="                if (cl.flags & CL_ERASED) == 0\n                    push!(b, tr_update{T}(cl, lgen == GEN_ASSERTA ? :asserta : :assertz))\n",
          new="                if true\n                    push!(b, tr_update{T}(cl, lgen == GEN_ASSERTA ? :asserta : :assertz))\n"),
@@ -211,9 +191,8 @@ MUTANTS = [
          file=PT, targets=[TX],
          old="            elseif !is_trie_clause(gd, cl)\n",
          new="            elseif is_trie_clause(gd, cl)\n"),
-    dict(id="TX1-U7 transaction_updates: the updates are not sorted (DEFERRED KILL txx14)",
+    dict(id="TX1-U7 transaction_updates: the updates are not sorted (KILL txx14, txx14b: the updates come out in insertion order, not by generation)",
          file=PT, targets=[TX],
-         equivalent="DEFERRED KILL: owner TX1 gate (row txx14): a Julia Dict iterates in insertion order and the generations of the entries rise with the insertion, except for a parent's clause a nested level retracted (its slot is the parent's, its erase generation the latest); txn06 does not ask for the updates",
          old="        sort!(b; lt = cmp_updates)\n",
          new="        nothing\n"),
     # ── pl-transaction.jl: transaction() ──
@@ -267,28 +246,24 @@ MUTANTS = [
          equivalent="pl-transaction.jl, the clause-state lines of `transaction_discard` (every clause the level made carries GEN_TR_DISCARD_ASSERT or its erase generation is restored to `tr.gen_max`), pl-proc.jl:685-687 and pl-inline.jl:171-180: `tr.generation` is read as the search generation and against `gen_max` only; a higher value shows the same clauses as the parent's lower one because nothing was made in the skipped range that survived the discard (the exhaustion at 2^32 is not reachable by a row)",
          old="            tr.generation = parent.generation\n",
          new="            nothing\n"),
-    dict(id="TX1-T13 transaction, nested: the parent's goal is not restored, `tr.id = parent.id` dropped (DEFERRED KILL txx11)",
+    dict(id="TX1-T13 transaction, nested: the parent's goal is not restored, `tr.id = parent.id` dropped (KILL txx11b, txx11c: after a nested level ended current_transaction/1 answers the wrong goal)",
          file=PT, targets=[TX],
-         equivalent="DEFERRED KILL: owner TX1 gate (row txx11): no row reads current_transaction/1 after a nested level ended (txr03, txr10 and txr11 read inside the innermost one; txr05 and txr06 at depth one and after the outer)",
          old="        tr.id = parent.id\n",
          new="        nothing\n"),
-    dict(id="TX1-T14 transaction, nested: the parent's flags are not restored, `tr.flags = parent.flags` dropped (DEFERRED KILL txx12)",
+    dict(id="TX1-T14 transaction, nested: the parent's flags are not restored, `tr.flags = parent.flags` dropped (KILL txx12, txx12b: after a bulk nested level the parent still has bulk flags, no event for its assertz)",
          file=PT, targets=[TX],
-         equivalent="DEFERRED KILL: owner TX1 gate (row txx12): the flags of a level are read only by the event tests of assert, retract and discard; no row asserts into a parent after a bulk nested level (txe09 reads the log before the parent's next change)",
          old="        tr.flags = parent.flags\n",
          new="        nothing\n"),
-    dict(id="TX1-T15 transaction, nested: gen_nest is not restored, `tr.gen_nest = parent.gen_nest` dropped (DEFERRED KILL txx13)",
+    dict(id="TX1-T15 transaction, nested: gen_nest is not restored, `tr.gen_nest = parent.gen_nest` dropped (KILL txx13, txx13b: gen_nest is stale, the parent retracts its own clause as a nested one and the clause count is 1 for 0)",
          file=PT, targets=[TX],
-         equivalent="DEFERRED KILL: owner TX1 gate (row txx13): a stale gen_nest makes the parent retract its OWN clause as a nested one (GEN_NESTED_RETRACT, no CL_ERASED); the visibility after the commit is the same either way, only `number_of_clauses` differs, and no row reads it",
          old="        tr.gen_nest = parent.gen_nest\n",
          new="        nothing\n"),
     dict(id="TX1-T16 transaction, nested: the constraint is not run (KILL txn11: `transaction(assertz(tx_p(2)), fail, tx_m)` inside an outer one succeeds, the answer is `yes`)",
          file=PT, targets=[TX],
          old="        if rc && constraint != 0\n            rc = callProlog(gd, ld, 0, constraint, PL_Q_PASS_EXCEPTION)\n        end\n        discard = true",
          new="        discard = true"),
-    dict(id="TX1-T17 transaction, outer: a listener that raises at the bulk commit is ignored, announce_updates' result dropped (DEFERRED KILL txx17)",
+    dict(id="TX1-T17 transaction, outer: a listener that raises at the bulk commit is ignored, announce_updates' result dropped (KILL txx17b: the exception of the listener at the bulk commit is ignored, the clause is kept)",
          file=PT, targets=[TX],
-         equivalent="DEFERRED KILL: owner TX1 gate (row txx17): no row installs a listener that raises or fails, so announce_updates never answers false",
          old="                rc = announce_updates(gd, ld, updates)\n",
          new="                announce_updates(gd, ld, updates)\n"),
     # ── pl-transaction.jl: the predicates ──
@@ -312,14 +287,12 @@ MUTANTS = [
          file=PT, targets=[TX],
          old="        rc = mm == m0 ? PL_unify(ld, A1, id) : PL_unify(ld, A1, id0)\n",
          new="        rc = PL_unify(ld, A1, id0)\n"),
-    dict(id="TX1-P6 current_transaction/1: only the innermost transaction is answered, no retry (DEFERRED KILL txx11)",
+    dict(id="TX1-P6 current_transaction/1: only the innermost transaction is answered, no retry (KILL txx11: only one answer, [transaction/1] for [findall/3, transaction/1, transaction/1])",
          file=PT, targets=[TX],
-         equivalent="DEFERRED KILL: owner TX1 gate (row txx11): every txr row takes the first answer (`once` in tx_cur) or runs at depth one (txr05), so a second answer is never asked for",
          old="                return PL_retry_address(k)                      # ForeignRedoPtr(stack)\n",
          new="                return FTRUE\n"),
-    dict(id="TX1-P7 current_transaction/1: the redo takes the innermost goal again, `ld.transaction.id` for `stack.id` (DEFERRED KILL txx11)",
+    dict(id="TX1-P7 current_transaction/1: the redo takes the innermost goal again, `ld.transaction.id` for `stack.id` (KILL txx11: the retry answers the innermost goal again, the second answer differs)",
          file=PT, targets=[TX],
-         equivalent="DEFERRED KILL: owner TX1 gate (row txx11): the line runs only to step to the next answer, which no row asks for",
          old="            id0 = stack.id\n            stack = stack.parent\n",
          new="            id0 = ld.transaction.id\n            stack = stack.parent\n"),
     # ── pl-undo.jl: the data and $undo/1 ──
@@ -417,9 +390,8 @@ MUTANTS = [
          file=PW, targets=TUNDO,
          old="    if ld.alerted != 0 && (ld.alerted & ALERT_UNDO) != 0 && UNDO_SCHEDULED(ld) &&  # depart_alerted: UNDO_SCHEDULED(LD)\n",
          new="    if false && (ld.alerted & ALERT_UNDO) != 0 && UNDO_SCHEDULED(ld) &&  # depart_alerted: UNDO_SCHEDULED(LD)\n"),
-    dict(id="TX1-E4 deep_backtrack: the hook after a backtrack is off (DEFERRED KILL txx16: the predicate-call hook runs the same goals before the next goal, so every row of one query reads the same pushes)",
+    dict(id="TX1-E4 deep_backtrack: the hook after a backtrack is off (KILL txx16 (white-box testset): the undo goals are not run at the backtrack, UNDO_SCHEDULED stays set)",
          file=PW, targets=TUNDO,
-         equivalent="DEFERRED KILL: owner TX1 gate (row txx16): every txd row asks `tx_pushed(L)`, a predicate call, after the backtrack, and the call hook (pl-wam.jl:3613) has run the goals by then; only a row whose next action is no call, or a second query, sees the difference",
          old="    if ld.alerted != 0 && UNDO_SCHEDULED(ld)\n        ld.lTop > db_c.base + SIZEOF_CHOICE",
          new="    if false\n        ld.lTop > db_c.base + SIZEOF_CHOICE"),
     # ── the engine hooks: assert, retract and the searches ──
@@ -432,9 +404,8 @@ MUTANTS = [
          equivalent="pl-incl.jl:1277: `ld_transaction{T}()` starts with `gen_base = GEN_INFINITE` and the end of `transaction` (pl-transaction.jl, outer branch) resets it to that, so `gen >= tr.gen_base` is false wherever `gen_base != 0` is, outside a transaction; inside one gen_base is never 0",
          old="    if tr !== nothing && tr.gen_base != 0 && gen >= tr.gen_base &&\n",
          new="    if tr !== nothing && gen >= tr.gen_base &&\n"),
-    dict(id="TX1-H3 visibleClause: the transaction's view is also taken for generations below the transaction's base, `gen >= tr.gen_base` dropped (DEFERRED KILL txx06)",
+    dict(id="TX1-H3 visibleClause: the transaction's view is also taken for generations below the transaction's base, `gen >= tr.gen_base` dropped (KILL txx06: an older enumeration sees the clause committed inside it, [1, 2] for [1])",
          file=PI, targets=TDB,
-         equivalent="DEFERRED KILL: owner TX1 gate (row txx06): the difference is an enumeration that started BEFORE the transaction and runs inside it (an older frame generation sees a clause the global view hides); no row asks for it",
          old="    if tr !== nothing && tr.gen_base != 0 && gen >= tr.gen_base &&\n",
          new="    if tr !== nothing && tr.gen_base != 0 &&\n"),
     dict(id="TX1-H4 firstClause!: the search does not read the transaction (KILL txc07: with the first global clause retracted the search of retractall finds none of the global clauses, [1, 2] kept or [] mis-read; txc04, txc22 too)",
@@ -449,7 +420,7 @@ MUTANTS = [
          file=PP, targets=TDB,
          old="\n    if ld !== nothing && ld.transaction.generation != 0 && (def.flags & P_TRANSACT) != 0\n        tr = ld.transaction\n        if tr.generation < tr.gen_max\n            tr.generation += 1\n            clause.generation_created",
          new="\n    if false\n        tr = ld.transaction\n        if tr.generation < tr.gen_max\n            tr.generation += 1\n            clause.generation_created"),
-    dict(id="TX1-H7 _assertDefinition!: the assert is not recorded in the transaction, transaction_assert_clause dropped (KILL txc02: the clause has no entry, the discard cannot erase it and it stays at an invisible generation... txc01: the commit does not publish it, [] for [1, 2])",
+    dict(id="TX1-H7 _assertDefinition!: the assert is not recorded in the transaction, transaction_assert_clause dropped (KILL txc02: the discard cannot erase the clause, [1] for []; txc01: the commit does not publish it, [] for [1, 2])",
          file=PP, targets=TDB,
          old="        transaction_assert_clause(ld, clause, where_)\n",
          new="        nothing\n"),
@@ -466,23 +437,20 @@ MUTANTS = [
          file=PP, targets=TDB,
          old="    if ld.transaction.generation != 0 && (def.flags & P_TRANSACT) != 0\n        rc = transaction_retract_clause(gd, ld, clause)\n",
          new="    if false\n        rc = transaction_retract_clause(gd, ld, clause)\n"),
-    dict(id="TX1-H11 retractClauseDefinition!: the retract event is raised in a bulk level too, the TR_BULK test dropped (DEFERRED KILL txx15)",
+    dict(id="TX1-H11 retractClauseDefinition!: the retract event is raised in a bulk level too, the TR_BULK test dropped (KILL txx15b, txx15c: a retract in a bulk level raises its event, [erased] in the log for [])",
          file=PP, targets=TDB,
-         equivalent="DEFERRED KILL: owner TX1 gate (row txx15): the rows' bulk levels only assert (txe03, txe08, txe09, txe10) or retractall at the outermost level, where `tr.flags` is 0 (txe12)",
          old="    if def.events !== nothing && notify && (ld.transaction.flags & TR_BULK) == 0 &&\n",
          new="    if def.events !== nothing && notify &&\n"),
     dict(id="TX1-H12 retract_clause!: the transaction branch is off, an own clause is erased at a global generation (KILL txc21: the global generation advances inside the transaction and the commit no longer matches the clause's erase generation, [1] or an error for [])",
          file=PP, targets=TDB,
          old="    elseif ld !== nothing && ld.transaction.generation != 0 && (def.flags & P_TRANSACT) != 0\n        tr = ld.transaction\n        if tr.generation < tr.gen_max\n            if clause.generation_erased >= tr.generation\n",
          new="    elseif false\n        tr = ld.transaction\n        if tr.generation < tr.gen_max\n            if clause.generation_erased >= tr.generation\n"),
-    dict(id="TX1-H13 setLastModifiedPredicate!: a transaction generation updates the module's last_modified, `true` for `gen < GEN_TRANSACTION_BASE` (DEFERRED KILL txx05)",
+    dict(id="TX1-H13 setLastModifiedPredicate!: a transaction generation updates the module's last_modified, `true` for `gen < GEN_TRANSACTION_BASE` (KILL txx05, txx05c: a transaction generation moves the module's last_modified, lt for eq)",
          file=PP, targets=TDB,
-         equivalent="DEFERRED KILL: owner TX1 gate (row txx05): the module's `last_modified` is read only by `last_modified_generation` (pl-proc.jl:3015) and the transaction table; no row reads either",
          old="    if gen < GEN_TRANSACTION_BASE\n        setLastModifiedPredicate!(gd, def, gen)\n",
          new="    if true\n        setLastModifiedPredicate!(gd, def, gen)\n"),
-    dict(id="TX1-H14 retract_clause!: the discard's retract also sets the last modification, the `GEN_TR_DISCARD_ASSERT` test dropped (DEFERRED KILL txx05)",
+    dict(id="TX1-H14 retract_clause!: the discard's retract also sets the last modification, the `GEN_TR_DISCARD_ASSERT` test dropped (KILL txx05c: a discard moves the last modification, lt for eq)",
          file=PP, targets=TDB,
-         equivalent="DEFERRED KILL: owner TX1 gate (row txx05): the effect is a module `last_modified` raised by a discarded clause's generation, which no row reads",
          old="    if generation != GEN_TR_DISCARD_ASSERT\n",
          new="    if true\n"),
 ]
