@@ -94,7 +94,7 @@ MUTANTS = [
          file=TAB, targets=[TW],
          old="        (p !== nothing && p.type == CLUSTER_ANSWERS) && (wl.riac = p)\n",
          new="        (p !== nothing && p.type == CLUSTER_ANSWERS) && (wl.riac = nothing)\n"),
-    dict(id="TB2-W5 wkl_swap_clusters leaves the tail at the suspension cluster (KILL twl01: a suspension added after the swap goes into the cluster LEFT of the answers and is never matched with them)",
+    dict(id="TB2-W5 wkl_swap_clusters leaves the tail at the suspension cluster (KILL the white-box testset `TB2K2 white-box: wkl_swap_clusters ...` of TW: after the swap `wl.tail === acp`; the mutant leaves `wl.tail === scp` (a suspension appended afterwards would go left of the answers); twl01 cannot see it, the completion loop recovers)",
          file=TAB, targets=[TW],
          old="    else\n        wl.tail = acp\n    end\n    scp.prev = a\n",
          new="    else\n        wl.tail = scp\n    end\n    scp.prev = a\n"),

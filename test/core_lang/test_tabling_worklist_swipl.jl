@@ -341,3 +341,22 @@ end
     LK.wl_set_component(ld, wl2, c2)
     @test wl2.component === c2 && !wl2.in_global_wl && c2.worklist === nothing
 end
+
+@testset "TB2K2 white-box: wkl_swap_clusters moves the answer cluster to the tail (TB2-W5)" begin
+    wl, (acp, scp) = _tw_wl_of([LK.CLUSTER_ANSWERS, LK.CLUSTER_SUSPENSIONS])
+    wl.riac = acp
+    @test wl.head === acp && wl.tail === scp    # the non-empty side: the list before the swap
+    LK.wkl_swap_clusters(wl, acp, scp)          # :4121-4138: the couple trades places, `wl->tail = acp` when nothing follows
+    @test wl.head === scp && wl.tail === acp
+    @test scp.next === acp && acp.prev === scp
+    @test acp.next === nothing && scp.prev === nothing
+    @test wl.riac === nothing                   # update_riac: no answer cluster is left of `acp`
+    # a cluster in front of and one behind the couple: both neighbours are re-linked, the tail stays
+    wl2, (x, a2, s2, z) = _tw_wl_of([
+        LK.CLUSTER_SUSPENSIONS, LK.CLUSTER_ANSWERS, LK.CLUSTER_SUSPENSIONS,
+        LK.CLUSTER_ANSWERS
+    ])
+    LK.wkl_swap_clusters(wl2, a2, s2)
+    @test wl2.head === x && wl2.tail === z
+    @test x.next === s2 && s2.next === a2 && a2.next === z && z.prev === a2 && a2.prev === s2
+end
