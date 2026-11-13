@@ -4334,7 +4334,7 @@ const _DISPATCH_MANIFEST_TUPLE = (
     # G1-3b: the mark phase's walk and drivers (src/pl-gcwalk.jl)
     _manifest_g1gc3b(_M2)...,
     # CONT1: the continuations' run side (src/pl-cont.jl, src/pl-gc.jl, src/pl-fli.jl)
-    _manifest_cont(_M2)...
+    _manifest_cont(_M2)...,
     # G1-3a: the mark phase (src/pl-gcmark.jl)
     _manifest_g1gc3a(_M2)...
 )
