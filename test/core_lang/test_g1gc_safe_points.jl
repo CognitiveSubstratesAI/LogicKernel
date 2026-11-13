@@ -76,6 +76,9 @@ const _G_REQ = Dict{String, Vector{Symbol}}(
     "g18" => [:get_dict_ex],
     "g19" => [:put_environment],
     "g20" => Symbol[],    # the wakeup of a frozen variable: bind_attvar_const passes no ALLOW_GC (table A, NEEDS-ROOT)
+    "g21" => [:copyRecordToGlobal],   # recorded/3 with a bound reference (pl-rec.jl, the first call site)
+    "g22" => [:copyRecordToGlobal],   # instance/2 of a record reference
+    "g23" => [:copyRecordToGlobal],   # PL_recorded through a trie value
 )
 
 # ── the table and the code, each through ONE extractor ──────────────────────────────────────────
@@ -281,7 +284,7 @@ end
     names = _g_names()
     expected = String.(readlines(_G_OUT))
     table = Set(Symbol(first(s)) for s in doc_sites(read(_G_DOC, String)))
-    @test length(names) == 20 && Set(keys(_G_REQ)) == Set(names)
+    @test length(names) == 23 && Set(keys(_G_REQ)) == Set(names)
     @test length(expected) == length(names) + 1 && expected[1] == "ok"
     @test all(i -> startswith(expected[i + 1], names[i] * " "), eachindex(names))
     @test !any(l -> occursin(r"export-error|undefined| exception$", l), expected)
@@ -333,5 +336,7 @@ end
     @test :univ2 in kh["g10"] && !(:functor3 in kh["g10"])
     @test :setval in kh["g13"] && :setval in kh["g14"]
     @test :copyRecordToGlobal in kh["g16"] && :copyRecordToGlobal in kh["g15"]
+    @test all(n -> :copyRecordToGlobal in kh[n], ["g21", "g22", "g23"])   # each caller of copyRecordToGlobal has its own row
+    @test kl["g21"] == "g21 c[103,50,49]/1(c[45]/2(a[103,49,103,99,95,107,50],c[102,111,111]/1(a[97])))"   # the key is unified from the reference
     @test !(:bind_attvar_const in kh["g20"])                           # NEEDS-ROOT: no ALLOW_GC at bind_attvar_const
 end

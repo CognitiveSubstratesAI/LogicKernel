@@ -41,3 +41,10 @@ g19_p :- shift(ball), true.
 g19(R) :- reset(g19_p, B, C), ( C == 0 -> K = done ; K = cont ), R = B-K.
 % not a safe point (bind_attvar_const keeps flags 0): the wakeup of a frozen variable must record nothing of its own
 g20(R) :- freeze(X, true), X = 1, R = X.
+% the other callers of copyRecordToGlobal (one row per call site of the kernel's pl-rec.jl and pl-trie.jl):
+% recorded/3 with a bound reference (the key is unified, not looked up)
+g21(R) :- recorda(g1gc_k2, foo(a), Ref), recorded(K, T, Ref), R = K-T.
+% instance/2 of a record reference
+g22(R) :- recorda(g1gc_k3, bar(_), Ref), instance(Ref, T), R = T.
+% PL_recorded: the value of a trie node is a record
+g23(R) :- trie_new(Tr), trie_insert(Tr, g1gc_k4, f(a, _)), trie_lookup(Tr, g1gc_k4, R).
