@@ -58,8 +58,8 @@ MUTANTS = [
          old="w == ATOM_trienode",
          new="w != ATOM_trienode"),
     dict(id="TAB1MIN-A2 `$tbl_trienode` builds the text atom `trienode`, not the reserved symbol (KILL tmt11, tmt03)", file=TB, targets=TM,
-         old="mk_reserved_symbol(T, :trienode)",
-         new="mk_sym(T, :trienode)"),
+         old="PL_unify_atom(ld, A1, mk_reserved_symbol(T, :trienode))",
+         new="PL_unify_atom(ld, A1, mk_sym(T, :trienode))"),
     # ── T2: pl-tabling.c set_bool_attr, tbl_get/set_predicate_attribute, get_size_or_inf, tbl_reset_tabling_attributes ──
     dict(id="TAB1MIN-B1 set_bool_attr sets the tabled bit, not the flag asked for (KILL tma04, tma11, tma12)", file=TB, targets=TM,
          old="props.flags |= flag",
@@ -136,8 +136,8 @@ MUTANTS = [
          old="c == S_CALLWRAPPER || c == S_TABLED",
          new="c == S_CALLWRAPPER"),
     dict(id="TAB1MIN-D4 resetWrappedSupervisor resets only the outermost closure (KILL tmc03)", file=WR, targets=SUP,
-         old="while isCallWrapper(codes[cw])",
-         new="if isCallWrapper(codes[cw])"),
+         old="    c = nothing\n    while isCallWrapper(codes[cw])",
+         new="    c = nothing\n    if isCallWrapper(codes[cw])"),
     dict(id="TAB1MIN-D5 resetWrappedSupervisor leaves the wrapped supervisor in place (KILL white-box c06 supervisor, tmc07)", file=WR, targets=SUP,
          old="c.supervisor = def0.code_data.virgin",
          new="nothing"),
@@ -154,8 +154,8 @@ MUTANTS = [
          old="if isCallWrapper(codes[skipWrapperPrefix(codes)])\n            throw(",
          new="if false\n            throw("),
     dict(id="TAB1MIN-D10 _assertDefinition! calls the 2-argument freeCodesDefinition!: a clause added to a wrapped predicate raises (KILL tmc01-tmc07: the program does not load)", file=PR, targets=TM,
-         old="freeCodesDefinition!(gd, def, true)",
-         new="freeCodesDefinition!(def, true)"),
+         old="== 0     # see (*) above\n        freeCodesDefinition!(gd, def, true)",
+         new="== 0     # see (*) above\n        freeCodesDefinition!(def, true)"),
     # ── T3: pl-vmi.c S_WRAP / S_CALLWRAPPER / S_TABLED, pl-supervisor.c MAKE_SV1(wrapper, S_WRAP), the run loop's named refusals ──
     # (every KILL names the white-box testset "wrapper opcodes and the wrapper block (T3, LK-only)", test/core_lang/test_tabling_min_swipl.jl:451-496)
     dict(id="TAB1MIN-E1 initSupervisors builds the wrapper block from S_TABLED (KILL test_tabling_min_swipl.jl:471 `cd.wrapper == code[S_WRAP, I_EXIT]`; :492 the entered block raises S_TABLED, not S_WRAP)", file=SV, targets=TM,
@@ -173,9 +173,14 @@ MUTANTS = [
     dict(id="TAB1MIN-E5 S_WRAP is declared with an operand (KILL test_tabling_min_swipl.jl:459 `iw.arguments == 0`)", file=VM, targets=TM,
          old="code_info(:S_WRAP, 0x00, 0,",
          new="code_info(:S_WRAP, 0x00, 1,"),
+    # E6: its `old`/`new` quote opcode NUMBERS (code(163), code(170)): left to tools/renumber_vmi.py (it rewrites mutant texts that quote an opcode number from the
+    # `_CODE_TABLE` order); do not hand-fix. 0 bad in oldscan is expected only after that script ran over the merged table.
     dict(id="TAB1MIN-E6 S_TABLED leaves a gap after S_CALLWRAPPER (KILL test_tabling_min_swipl.jl:455 `S_TABLED == S_CALLWRAPPER + 1`; the table lookup may fail at load first)", file=VM, targets=TM,
          old="const S_TABLED = code(163)",
          new="const S_TABLED = code(170)"),
+    # E7-E12 (written for the run loop's named refusals of S_WRAP/S_CALLWRAPPER/S_TABLED): batch 3 replaced those refusal bodies by the real S_WRAP, S_CALLWRAPPER
+    # and S_TABLED blocks (src/pl-wam.jl), so the `old` texts have no occurrence any more. This is NOT an opcode-number matter (renumber_vmi.py does not touch them):
+    # retire or re-fit each against the real blocks: left to the dispatcher with the batch-3 mutant lists (TB3 owns the S_TABLED block).
     dict(id="TAB1MIN-E7 S_WRAP's refusal names TAB1 (KILL test_tabling_min_swipl.jl:492 `e.step == \"WRAP1\"`)", file=WM, targets=TM,
          old='"the VM instruction S_WRAP (calling a wrapped predicate from a closure)",\n            "WRAP1"',
          new='"the VM instruction S_WRAP (calling a wrapped predicate from a closure)",\n            "TAB1"'),

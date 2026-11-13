@@ -63,8 +63,11 @@ DYN = [
     "test/db/test_reload_blocks_swipl.jl",
 ]
 TABL = [AB, TV]                           # the abolish code and the tables it deletes from
+TW = "test/core_lang/test_trie_swipl.jl"                     # TR1: trie_delete / release_value (G3, G4 moved to src/pl-trie.jl)
+TP = "test/core_lang/test_trie_preds_swipl.jl"                # TR1: the trie_* predicates that delete nodes
+TRIE = TABL + [TW, TP]
 TABLS = [AB, TV, TT]                      # the same, where it reads or writes `ld.tabling` or the freed objects
-TARGETS = [AB, TV, TT, TM, BI] + DYN      # every file a mutant lists (mutate_ci.py plan reads TARGETS)
+TARGETS = [AB, TV, TT, TM, BI, TW, TP] + DYN      # every file a mutant lists (mutate_ci.py plan reads TARGETS)
 TAB = "src/pl-tabling.jl"
 PROC = "src/pl-proc.jl"
 COMP = "src/pl-comp.jl"
@@ -114,8 +117,8 @@ MUTANTS = [
          new="        orphan_dynamic_table(atrie) && delete_dynamic_table(ld, atrie)\n\n        return false\n"),
     dict(id="TB5-A7 abolish_table does not delete the orphan children of the table (DEFERRED KILL, owner TB6: `collect_dynamic_children` is the empty vector before TB6, src/pl-tabling.jl collect_dynamic_children; TB6 adds the row: abolishing a table whose only dependent dynamic pseudo table has no other dependents deletes both)",
          file=TAB, targets=TABL,
-         old="                trie_delete(vtrie, atrie.variant, true)\n                delete_orphan_dynamic_tables(ld, b)\n",
-         new="                trie_delete(vtrie, atrie.variant, true)\n"),
+         old="                trie_delete(_query_gd(ld), vtrie, atrie.variant, true)\n                delete_orphan_dynamic_tables(ld, b)\n",
+         new="                trie_delete(_query_gd(ld), vtrie, atrie.variant, true)\n"),
     dict(id="TB5-A8 abolish_table treats every sentinel as the dynamic one, `_wl_is` ignores which (KILL abd01: the ground table ab_p(1) has `WL_GROUND`, is taken for a dynamic pseudo table and is not deleted; row R-F too)",
          file=TAB, targets=TABL,
          old="    return w isa Int && w == s\n",
@@ -140,8 +143,8 @@ MUTANTS = [
          new="function destroy_answer_trie(ld::PL_local_data{T}, atrie::trie{T})::Bool where {T}\n    if atrie.variant == 0\n"),
     dict(id="TB5-Y2 destroy_answer_trie deletes but answers false (KILL AB:473 `@test LK.destroy_answer_trie(ld, atries[1])`)",
          file=TAB, targets=TABL,
-         old="            trie_delete(vtrie, atrie.variant, true)\n\n            return true\n        end\n    end\n\n    return false\nend\n",
-         new="            trie_delete(vtrie, atrie.variant, true)\n\n            return false\n        end\n    end\n\n    return false\nend\n"),
+         old="            trie_delete(_query_gd(ld), vtrie, atrie.variant, true)\n\n            return true\n        end\n    end\n\n    return false\nend\n",
+         new="            trie_delete(_query_gd(ld), vtrie, atrie.variant, true)\n\n            return false\n        end\n    end\n\n    return false\nend\n"),
     dict(id="TB5-Y3 destroy_answer_trie answers true for a table that has no variant table (ADD-ROW R-A: after `clear_variant_table` `get_trie_from_node` is nothing, so `@test !LK.destroy_answer_trie(ld, atries[1])` is to be added at AB:484)",
          file=TAB, targets=TABL,
          old="            return true\n        end\n    end\n\n    return false\nend\n\n# PORT: pl-tabling.c delayed_destroy_table\n",
@@ -152,13 +155,13 @@ MUTANTS = [
          old="    vi == 0 && return nothing\n\n    return _query_gd(ld).tries[vi]\n",
          new="    return _query_gd(ld).tries[vi]\n"),
     dict(id="TB5-G3 release_trie_value destroys the trie that has a symbol, `symbol != 0` (KILL aba06 and abl05: `ab_tab(user:ab_p(1), T)` hands T to Prolog (it has a symbol), so after abolish `is_trie(T)` stays yes in swipl, here it is destroyed; abd03 too. Needs TR1's `release_value` to call release_trie_value: merge hazard b in docs/architecture.md TAB1 TB5)",
-         file=TAB, targets=TABL,
-         old="    atrie.symbol == 0 && trie_destroy(atrie)\n",
-         new="    atrie.symbol != 0 && trie_destroy(atrie)\n"),
+         file="src/pl-trie.jl", targets=TRIE,
+         old="        t.symbol == 0 && trie_destroy(gd, t)\n",
+         new="        t.symbol != 0 && trie_destroy(gd, t)\n"),
     dict(id="TB5-G4 release_trie_value never destroys a trie without a symbol (ADD-ROW R-A for the bulk path, `all(a -> a.magic == LK.TRIE_CMAGIC, atries)` after clear_variant_table; R-B for abolish_table's `trie_delete` path)",
-         file=TAB, targets=TABL,
-         old="    atrie.symbol == 0 && trie_destroy(atrie)\n",
-         new="    nothing\n"),
+         file="src/pl-trie.jl", targets=TRIE,
+         old="        t.symbol == 0 && trie_destroy(gd, t)\n",
+         new="        nothing\n"),
     # ── the orphan-dynamic functions (pl-tabling.c orphan_dynamic_table ... sweep): all before TB6 ──
     dict(id="TB5-O1 DYN_ORPHAN_SWEEP_MIN is 1, not 1024 (KILL AB:458 `LK.DYN_ORPHAN_SWEEP_MIN == 1024`; AB:470 too: with 5 events >= 1 and >= value_count 3 the sweep runs and resets the events to 0)",
          file=TAB, targets=[AB],
@@ -170,8 +173,8 @@ MUTANTS = [
          new="       ld.tabling.dyn_orphan_events <= vtrie.value_count\n"),
     dict(id="TB5-O3 the sweep does not reset the event count (ADD-ROW R-D: the events are 0 after a sweep that ran)",
          file=TAB, targets=[AB],
-         old="        ld.tabling.dyn_orphan_events = 0\n    end\n\n    return nothing\nend\n\n# PORT: pl-tabling.c abolish_table\n",
-         new="    end\n\n    return nothing\nend\n\n# PORT: pl-tabling.c abolish_table\n"),
+         old="        ld.tabling.dyn_orphan_events = 0\n    end\n\n    return nothing\nend\n\n# PORT: pl-tabling.c droppable_table\n",
+         new="    end\n\n    return nothing\nend\n\n# PORT: pl-tabling.c droppable_table\n"),
     dict(id="TB5-O4 the sweep has no `vi == 0` guard (ADD-ROW R-C: `sweep_orphan_dynamic_tables(ld) === nothing` with no variant table: `gd.tries[0]` is a BoundsError)",
          file=TAB, targets=[AB],
          old="    vi == 0 && return nothing\n    vtrie = gd.tries[vi]\n",
@@ -187,7 +190,7 @@ MUTANTS = [
          new="    nothing\n\n    return nothing\nend\n\n# PORT: pl-tabling.c sort_table_values\n"),
     dict(id="TB5-E2 reset_table_bulk keeps the answers: the reset is skipped (ADD-ROW R-A: `value_count`/`magic` of the answer tries after clear_variant_table; the reset flags `RAT_CLEANUP | RAT_BULK` are TB1's `reset_answer_table`)",
          file=TAB, targets=TABLS,
-         old="    reset_answer_table(atrie, Int(RAT_CLEANUP | RAT_BULK))\n",
+         old="    reset_answer_table(gd, atrie, Int(RAT_CLEANUP | RAT_BULK))\n",
          new="    nothing\n"),
     dict(id="TB5-E4 sort_table_values! does not sort (EQUIVALENT: the order of the resets and releases is not observable)",
          file=TAB, targets=TABLS,
@@ -196,13 +199,13 @@ MUTANTS = [
          new="    return nothing\nend\n"),
     dict(id="TB5-E5 empty_variant_table releases no value: the second loop is skipped (ADD-ROW R-A: tries without a symbol are destroyed, `a.magic == LK.TRIE_CMAGIC`)",
          file=TAB, targets=TABLS,
-         old="            isTriePtrValue(v) && release_trie_value(valueTriePtr(vtrie.registry, v))\n",
+         old="            isTriePtrValue(v) && release_value(gd, vtrie, v)\n",
          new="            isTriePtrValue(v) && nothing\n"),
     dict(id="TB5-E6 empty_variant_table releases a value that is no trie pointer without the test (EQUIVALENT: every value of a variant table is a trie pointer)",
          file=TAB, targets=TABLS,
          equivalent="src/pl-tabling.jl reset_table_bulk, first line `atrie = value_trie(gd, value)`: the loop above (`reset_table_bulk(gd, v)` for each taken value) already calls `value_trie` on every value unconditionally, which only works for a trie pointer value; so `isTriePtrValue(v)` is true for every `v` that reaches the release loop and the test is redundant",
-         old="            isTriePtrValue(v) && release_trie_value(valueTriePtr(vtrie.registry, v))\n",
-         new="            release_trie_value(valueTriePtr(vtrie.registry, v))\n"),
+         old="            isTriePtrValue(v) && release_value(gd, vtrie, v)\n",
+         new="            release_value(gd, vtrie, v)\n"),
     dict(id="TB5-E7 empty_variant_table does not reset the dynamic orphan event count (ADD-ROW R-D: `dyn_orphan_events = 5` before clear_variant_table, 0 after)",
          file=TAB, targets=TABLS,
          old="        ld.tabling.dyn_orphan_events = 0\n    else\n",
@@ -263,8 +266,8 @@ MUTANTS = [
          new="    free_tbl_free_objects(ld, true)\n"),
     dict(id="TB5-H4 clearThreadTablingData keeps the global worklist (DEFERRED KILL, owner TB2: `ld.tabling.component` is nothing before the evaluation core; the row: a clear inside no evaluation with a completed component list resets it)",
          file=TAB, targets=TABLS,
-         old="    reset_global_worklist(ld, c)\n",
-         new="    nothing\n"),
+         old="    c = ld.tabling.component\n    reset_global_worklist(ld, c)\n    reset_newly_created_worklists(",
+         new="    c = ld.tabling.component\n    nothing\n    reset_newly_created_worklists("),
     dict(id="TB5-H6 `$tbl_abolish_local_tables` runs inside an evaluation, the scheduling test is dropped (KILL abw01: the call answers yes where the pin is no; AB:425 `variants.value_count == 3`; abl01 holds)",
          file=TAB, targets=TABLS,
          old="    if !ld.tabling.has_scheduling_component\n        clearThreadTablingData(ld, false)\n",

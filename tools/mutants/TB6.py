@@ -155,8 +155,8 @@ MUTANTS = [
     # ── pl-tabling.jl: IDG QUERYING (pl-tabling.c:8562-8850) ──
     dict(id="TB6-Q2 `$idg_false_edge/3` walks the affected set, not the dependent set (KILL idg04: `r([dynamic],3,2)`, a table with no parents has no false edge)",
          file=TAB, targets=[TI],
-         old="                state.dir = mk_sym(T, :dependent)\n                state.set = self.dependent\n            else\n                tbl_refuse(",
-         new="                state.dir = mk_sym(T, :affected)\n                state.set = self.affected\n            else\n                tbl_refuse("),
+         old="            if status != 0                              # '$idg_false_edge'/3\n                state.lazy = false\n                state.dir = mk_sym(T, :dependent)\n                state.set = self.dependent\n",
+         new="            if status != 0                              # '$idg_false_edge'/3\n                state.lazy = false\n                state.dir = mk_sym(T, :affected)\n                state.set = self.affected\n"),
     dict(id="TB6-Q3 `$idg_false_edge/3` reports every dynamic or complete child, the once-only guard is off (KILL idg04: `[dynamic]` after idg05 added a second dynamic child)",
          file=TAB, targets=[TI],
          old="                    if state.dyn_or_complete\n                        @goto next\n",
@@ -253,8 +253,8 @@ MUTANTS = [
          new="    elseif (n.flags & TN_IDG_UNCONDITIONAL) == 0 && !answer_is_conditional(gd, atrie, nid)\n        nothing                                     # Got UNconditional\n"),
     dict(id="TB6-E20 reset_evaluate_node deletes an answer that is being enumerated (DEFERRED KILL TB2: an exception in the middle of a reevaluation of a table with answers)",
          file=TAB, targets=[TI, TW],
-         old="    if (atrie.nodes[nid].flags & TN_IDG_ADDED) != 0\n        trie_delete(atrie, nid, false)",
-         new="    if (atrie.nodes[nid].flags & TN_IDG_ADDED) == 0\n        trie_delete(atrie, nid, false)"),
+         old="    if (atrie.nodes[nid].flags & TN_IDG_ADDED) != 0\n        trie_delete(gd, atrie, nid, false)",
+         new="    if (atrie.nodes[nid].flags & TN_IDG_ADDED) == 0\n        trie_delete(gd, atrie, nid, false)"),
     # ── the supervisor, the opcode, the assert flag, the registrations ──
     dict(id="TB6-V1 S_INCR_DYNAMIC takes S_WRAP's code, 162 (KILL TC: the opcode-order row, the tail of the opcode table is 13 numbers in pl-vmi.c's order; WR: a wrapped predicate runs the incremental branch)",
          file=VMI, targets=[TC, WR],
