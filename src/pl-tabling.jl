@@ -3883,7 +3883,8 @@ end
 # DIVERGES: `clref` (the trie clause an O_PLMT build hands out for a complete table, `claim_answer_table`) is TR4's and is never
 # set here: the table is always unified as symbol and `unify_table_status`. The closure-less call (e.g. `start_tabling(0, ...)`)
 # gets its definition from `get_procedure_resolve` (src/pl-proc.jl, `get_procedure(variant, &proc, 0, GP_RESOLVE|GP_EXISTENCE_ERROR)`). `idg_init_variant`
-# and `idg_add_edge` (TB6) are called; `inner_is_monotonic` (TB7) is refused by name.
+# and `idg_add_edge` (TB6) and `inner_is_monotonic` (TB7) are called; the debug `assert(ison(environment_frame, FR_INRESET))` before the monotonic
+# answer is not kept.
 "The common part of `'\$tbl_variant_table'/6` and its siblings: find or create the answer table of `variant` (pl-tabling.c)."
 function tbl_variant_table(
     ld::PL_local_data{T}, closure::term_t, variant::term_t, Trie::term_t, abstract::term_t,
@@ -3903,14 +3904,10 @@ function tbl_variant_table(
     idg_init_variant(ld, atrie, def, variant) || return false   # `!idg_init_variant(atrie, def, variant) || !idg_add_edge(...)`
     idg_add_edge(ld, atrie, nothing) == 0 && return false   # `!idg_add_edge(atrie, NULL)`: -1 (no current node) goes on
 
-    if is_monotonic != 0 && def.tabling !== nothing &&
-        (def.tabling.flags & TP_MONOTONIC) != 0
-        tbl_refuse(
-            T,
-            :inner_is_monotonic,
-            "tbl_variant_table: a monotonic predicate (inner_is_monotonic)",
-            "TB7"
-        )
+    if is_monotonic != 0 && def.tabling !== nothing && (def.tabling.flags & TP_MONOTONIC) != 0 &&
+        (ld.tabling.in_assert_propagation || inner_is_monotonic(ld))
+        # assert(ison(environment_frame, FR_INRESET)): a debug assertion, not kept (the frame flag is the run loop's)
+        PL_unify_bool(ld, is_monotonic, true) || return false
     end
 
     return unify_trie(gd, ld, Trie, atrie) &&

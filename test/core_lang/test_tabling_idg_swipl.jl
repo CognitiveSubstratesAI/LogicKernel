@@ -521,3 +521,46 @@ end
     has(t) = t.IDG === nothing ? "plain" : "node"
     @test has(atrie) == "node" && has(ptab) == "plain" && has(atrie) != has(ptab)
 end
+
+@testset "idg19: tbl_variant_table unifies IsMono for a monotonic predicate under propagation or an inner monotonic table (inner_is_monotonic, pl-tabling.c:5977-6020, :10503-10515)" begin
+    gd, ld, def = _ti_db()
+    tp = def.tabling::LK.table_props
+    saved = tp.flags
+    atrie = _ti_table!(ld, def, false)
+    ctab = _ti_table!(ld, def, true)
+    ctab.predicate = def                                                                 # `dep->data.predicate`: the table that is being evaluated
+    c = LK.idg_new(ld, ctab)::_TIN
+    ctab.IDG = c
+
+    # not a monotonic predicate: IsMono stays unbound whatever the state
+    ld.tabling.in_assert_propagation = true
+    ok, st, mo = _ti_tvt(ld, def; mono=true)
+    @test ok && st == "complete" && mo == "unbound"
+    ld.tabling.in_assert_propagation = false
+
+    tp.flags = saved | LK.TP_MONOTONIC
+    # a monotonic predicate, outside propagation and no inner monotonic table (no scheduling component): unbound (swipl: mono09)
+    ok, st, mo = _ti_tvt(ld, def; mono=true)
+    @test ok && st == "complete" && mo == "unbound"
+    @test !LK.inner_is_monotonic(ld)
+    # no IsMono term asked (0): never unified
+    ld.tabling.in_assert_propagation = true
+    ok, st, mo = _ti_tvt(ld, def)
+    @test ok && mo == "unbound"
+    # assert propagation running: IsMono is true
+    ok, st, mo = _ti_tvt(ld, def; mono=true)
+    @test ok && st == "complete" && mo == "true"
+    ld.tabling.in_assert_propagation = false
+
+    # the inner tabled predicate (the current IDG node's table) is monotonic: IsMono is true
+    ld.tabling.has_scheduling_component = true
+    @test LK.set_idg_current(ld, ctab)
+    @test LK.inner_is_monotonic(ld)
+    ok, st, mo = _ti_tvt(ld, def; mono=true)
+    @test ok && st == "complete" && mo == "true"
+    ld.tabling.has_scheduling_component = false
+    @test !LK.inner_is_monotonic(ld)
+    ok, st, mo = _ti_tvt(ld, def; mono=true)
+    @test ok && mo == "unbound"                                                           # a must-fail corruption: the same call, one flag less
+    tp.flags = saved
+end

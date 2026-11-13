@@ -44,9 +44,11 @@ t_mono05(R) :- assertz(tm_l(c, d)), findall(X-Y, tm_c(X, Y), L0), sort(L0, L), l
 t_mono06(R) :- assertz(tm_i(0)), findall(X, tm_pi(X), L1), findall(X, tm_qi(X), L2), assertz(tm_i(10)), findall(X, tm_pi(X), L3a), sort(L3a, L3), findall(X, tm_qi(X), L4a), sort(L4a, L4), R = r(L1, L2, L3, L4).
 t_mono07(R) :- retractall(tm_i(_)), findall(X, tm_pi(X), L1), findall(X, tm_qi(X), L2), R = r(L1, L2).
 t_mono08(R) :- abolish_all_tables, findall(X, tm_p(X), L0), sort(L0, L), R = L.
+t_mono09(R) :- '$tbl_variant_table'(0, user:tm_p(_), T, S, Sk, M), '$is_answer_trie'(T, Ty),
+    ( var(M) -> Mo = unbound ; Mo = M ), ( Sk = ret(_) -> Sko = ret1 ; Sko = Sk ), R = r(S, Mo, Sko, Ty).
 """
 
-const _TI_CASES = ["t_mono01", "t_mono02", "t_mono03", "t_mono04", "t_mono05", "t_mono06", "t_mono07", "t_mono08"]
+const _TI_CASES = ["t_mono01", "t_mono02", "t_mono03", "t_mono04", "t_mono05", "t_mono06", "t_mono07", "t_mono08", "t_mono09"]
 
 # swipl 10.1.20 (`tm_q(t_mono<NN>, A)`, in order), two identical runs
 const _TI_PINNED = [
@@ -58,6 +60,7 @@ const _TI_PINNED = [
     "r([1],[2],[1,11],[2,12])",
     "r([],[])",
     "[1]",
+    "r(complete,unbound,ret1,monotonic(eager))",   # mono09 (TB7M5): `\$tbl_variant_table` of the complete monotonic table outside propagation: IsMono stays unbound
 ]
 
 "The `~q` text of each case's answer, in order, from swipl at the pin."
