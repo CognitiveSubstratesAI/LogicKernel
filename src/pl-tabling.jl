@@ -9266,6 +9266,41 @@ function sort_table_values!(values::Vector{word})::Nothing
     return nothing
 end
 
+# PORT: pl-tabling.c save_tabling_status
+# (pl-tabling.c:2539-2554 at the pin; used by `break/0` (pl-pro.c `pl_break1`) and the answer event hook (pl-event.c))
+# DIVERGES: `state` is a `tbl_status{T}` the caller allocates (upstream: a stack struct); `GET_LD` is the argument `ld`.
+"Save the tabling status of `ld` into `state` and start a fresh one: no component, no flags (pl-tabling.c)."
+function save_tabling_status(ld::PL_local_data{T}, state::tbl_status{T})::Nothing where {T}
+    tb = ld.tabling
+    state.scc = tb.component
+    state.hsc = tb.has_scheduling_component
+    state.iac = tb.in_answer_completion
+    state.iap = tb.in_assert_propagation
+    state.prev = tb.saved_status
+
+    tb.saved_status = state
+    tb.component = nothing
+    tb.has_scheduling_component = false
+    tb.in_answer_completion = false
+    tb.in_assert_propagation = false
+
+    return nothing
+end
+
+# PORT: pl-tabling.c restore_tabling_status
+# (pl-tabling.c:2557-2566 at the pin)
+"Restore the tabling status of `ld` from `state`, saved by `save_tabling_status` (pl-tabling.c)."
+function restore_tabling_status(ld::PL_local_data{T}, state::tbl_status{T})::Nothing where {T}
+    tb = ld.tabling
+    tb.component = state.scc
+    tb.has_scheduling_component = state.hsc
+    tb.in_answer_completion = state.iac
+    tb.in_assert_propagation = state.iap
+    tb.saved_status = state.prev
+
+    return nothing
+end
+
 # PORT: pl-tabling.c take_table_value
 # (pl-tabling.c:2804-2822 at the pin; the `trie_empty_take` callback of `empty_variant_table`)
 # DIVERGES: `values` is a growing vector (upstream: the `bulk_reset` buffer sized for all values, grown by `realloc`); the branch
