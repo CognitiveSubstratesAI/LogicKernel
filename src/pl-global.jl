@@ -528,6 +528,8 @@ ld_tabling{T}() where {T} = ld_tabling{T}(
 # Since R2 TOP1b A: `break_level` (`LD->break_level`, pl-setup.c:199: -1 outside a toplevel; `currentBreakLevel`, src/pl-pro.jl), appended last.
 # Since TR2: `trie_gens`, the pool of trie_gen/2,3's states (`trie_gen_state`, pl-incl.jl; upstream keeps them on the C stack, then `allocForeignState`), appended last;
 # `trie_gen_force_epoch` (ORIGINAL, a test switch; a module-level `Ref` would be shared state, which the lint refuses), appended after it.
+# Since G1-GC G1-2: `gc_force` (ORIGINAL, pl-vmi.c:238 FAKE_GC's model: every `ALLOW_GC` safe point runs `considerGC`) and `gc_safe_hits` (ORIGINAL: the
+# site names at which it fired while forced; docs/g1gc_safe_points.md), appended last.
 # Since R2 F1c: `debugstatus_skiplevel`, `debugstatus_tracing`, `debugstatus_debugging`, `debugstatus_showContext` (`LD->_debugstatus`, pl-incl.h
 # `pl_debugstatus_t`; the flags `debug`, `debugger_show_context`: src/os/pl-prologflag.jl, `debugmode`, `tracemode`: src/pl-trace.jl).
 # (the input context stack is LB3's `input_context_stack`, which `'\$push_input_context'/1` shares; src/os/pl-file.jl).
@@ -695,6 +697,8 @@ mutable struct PL_local_data{T} <: AbstractLocalData
     table_flags_drop_intermediate::Int                          # table_flags.drop_intermediate: flag table_drop_intermediate
     trie_gens::foreign_state_pool{trie_gen_state{T}}            # (trie_gen/2,3's REDO_PTR states, TR2)
     trie_gen_force_epoch::Bool                                  # ORIGINAL test switch: check_epoch! starts a new epoch at every call (TR2)
+    gc_force::Bool                                              # ORIGINAL (FAKE_GC's model, pl-vmi.c:238): every ALLOW_GC safe point runs the hook (G1-2)
+    gc_safe_hits::Vector{Symbol}                                # ORIGINAL: the sites at which the hook fired while `gc_force` (G1-2)
 end
 function PL_local_data{T}(gd::PL_global_data{T}) where {T}
     ld = _bare_local_data(gd)
@@ -812,7 +816,9 @@ function _bare_local_data(gd::PL_global_data{T}) where {T}
         TABLE_COMPILE_THRESHOLD,                # table_flags.compile_threshold (pl-prologflag.c:2587)
         0,                                      # table_flags.drop_intermediate (pl-prologflag.c:2589)
         foreign_state_pool{trie_gen_state{T}}(), # trie_gen/2,3's states: none (TR2)
-        false                                   # trie_gen_force_epoch: off (TR2)
+        false,                                  # trie_gen_force_epoch: off (TR2)
+        false,                                  # gc_force: off (G1-2)
+        Symbol[]                                # gc_safe_hits: none (G1-2)
     )
     allocStacks!(ld)                            # the initial local stack, its spare reserved
     emptyStacks!(ld)

@@ -1611,9 +1611,33 @@ const MINFOREIGNSIZE = 32
 "The space a call keeps free above `lTop`: a frame, its arguments and one choice point (pl-incl.h)."
 const LOCAL_MARGIN = SIZEOF_LOCALFRAME + MAXARITY + SIZEOF_CHOICE
 
+# PORT: pl-incl.h ALLOW_GC
+# G1-GC safe point: the flag of a call that may run the stack collector; passed only at the sites docs/g1gc_safe_points.md rules SAFE.
+"`ensureGlobalSpace` and friends may run the stack garbage collector (pl-incl.h)."
+const ALLOW_GC = 1
+
 # PORT: pl-incl.h ALLOW_SHIFT
 "`growLocalSpace` may grow the stacks (pl-incl.h)."
 const ALLOW_SHIFT = 2
+
+# PORT: pl-incl.h GC_GLOBAL_OVERFLOW
+"The reason bits of a collection (pl-incl.h `GC_*`): the global stack overflowed."
+const GC_GLOBAL_OVERFLOW = 0x1
+# PORT: pl-incl.h GC_GLOBAL_REQUEST
+"Reason: the global stack asked for more room (pl-incl.h)."
+const GC_GLOBAL_REQUEST = 0x100
+# PORT: pl-incl.h GC_TRAIL_OVERFLOW
+"Reason: the trail overflowed (pl-incl.h)."
+const GC_TRAIL_OVERFLOW = 0x10000
+# PORT: pl-incl.h GC_TRAIL_REQUEST
+"Reason: the trail asked for more room (pl-incl.h)."
+const GC_TRAIL_REQUEST = 0x1000000
+# PORT: pl-incl.h GC_EXCEPTION
+"Reason: a collection while an exception unwinds (pl-incl.h)."
+const GC_EXCEPTION = 0x100000000
+# PORT: pl-incl.h GC_USER
+"Reason: `garbage_collect/0` and friends (pl-incl.h)."
+const GC_USER = 0x10000000000
 
 # PORT: pl-incl.h FR_HIDE_CHILDS
 "Frame flag: the predicate's children are hidden, after `I_DEPART` (pl-incl.h)."
