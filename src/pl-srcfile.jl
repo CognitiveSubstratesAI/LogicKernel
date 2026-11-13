@@ -22,12 +22,28 @@
 "The magic generation a file being reloaded marks the clauses it may replace with (pl-srcfile.c `GEN_RELOAD`)."
 const GEN_RELOAD = GEN_MAX - gen_t(1)
 
+# PORT: pl-incl.h SF_MAGIC_DESTROYING
+"A source file being destroyed: its magic number (pl-incl.h)."
+const SF_MAGIC_DESTROYING = 0x14a3c910
+
 # PORT: pl-srcfile.c registerSourceFile as registerSourceFile!
-# DIVERGES: the files are a vector, and no hole is ever made in it (no source file is destroyed), so
-# the first free index is the next one; `no_hole_before` is kept as upstream keeps it.
+# DIVERGES (representation, LB6b): a hole of the files table — upstream's NULL slot of a destroyed file (`putSourceFileArray(sf->index, NULL)`) — is the
+# destroyed record itself, left in its slot with `magic` 0 (`unallocSourceFile`): the table's element type has no `Nothing` (the field `files_array` is a
+# `const` of the database). `indexToSourceFile` answers `nothing` for such a slot and this function reuses the first one at or after `no_hole_before`, as
+# upstream; with no hole it appends.
 "Give `sf` the first free index of the database's file table and enter it there (pl-srcfile.c)."
 function registerSourceFile!(gd::PL_global_data{T}, sf::SourceFile{T})::Nothing where {T}
     gd.files_no_hole_before == 0 && (gd.files_no_hole_before = 1)
+    index = gd.files_no_hole_before
+    while index <= length(gd.files_array)
+        if gd.files_array[index].magic != SF_MAGIC          # b[index] == NULL
+            sf.index = index
+            gd.files_array[index] = sf
+            gd.files_no_hole_before = index + 1
+            return nothing
+        end
+        index += 1
+    end
     push!(gd.files_array, sf)
     sf.index = length(gd.files_array)
     gd.files_no_hole_before = sf.index + 1
@@ -35,12 +51,14 @@ function registerSourceFile!(gd::PL_global_data{T}, sf::SourceFile{T})::Nothing 
 end
 
 # PORT: pl-srcfile.c indexToSourceFile
+# DIVERGES: a hole of the table is a destroyed record (see `registerSourceFile!`): `nothing` for it, as upstream's NULL slot.
 "The source file with index `index`, or `nothing` (pl-srcfile.c)."
 function indexToSourceFile(
     gd::PL_global_data{T}, index::Integer
 )::Union{Nothing, SourceFile{T}} where {T}
     (index > 0 && index <= length(gd.files_array)) || return nothing
-    return gd.files_array[index]
+    sf = gd.files_array[index]
+    return sf.magic == SF_MAGIC ? sf : nothing
 end
 
 # PORT: pl-srcfile.c lookupSourceFile_unlocked
@@ -90,15 +108,87 @@ function acquireSourceFileNo(gd::PL_global_data, index::Integer)::Nothing
     return nothing
 end
 
+# PORT: pl-srcfile.c destroySourceFile as destroySourceFile!
+# DIVERGES: the record leaves the name table and its slot of the file table becomes a hole (see `registerSourceFile!`); `unallocSourceFile` is its tail
+# (`magic` 0, the lists emptied); no `putSourceFileArray`, no mutex; the file's name is returned as upstream's `atom_t`, `nothing` for its 0.
+"Destroy the source file `sf`: drop it from the name table and the file table; its name, or `nothing` if it was no live file (pl-srcfile.c)."
+function destroySourceFile!(gd::PL_global_data{T}, sf::SourceFile{T})::Union{Nothing, T} where {T}
+    if sf.magic == SF_MAGIC
+        sf.magic = SF_MAGIC_DESTROYING
+        f = pop!(gd.files_table, sym_key(sf.name))              # deleteHTableWP(GD->files.table, sf->name)
+        @assert f === sf
+        name = sf.name
+        if gd.files_no_hole_before > sf.index
+            gd.files_no_hole_before = sf.index
+        end
+        sf.magic = 0                                            # unallocSourceFile
+        empty!(sf.procedures)
+        empty!(sf.modules)
+
+        return name
+    end
+    return nothing
+end
+
+# PORT: pl-srcfile.c clearSourceAdmin
+# DIVERGES: no `startCritical`/`endCritical` (no signals to block); no foreign frame is discarded beyond the one the call makes: the frame is opened and
+# discarded as upstream. The predicate is looked up in `system` (made if it has no procedure yet), as `_PL_predicate`.
+"Call `system:'\$clear_source_admin'(+Name)`, which removes the source administration the Prolog side keeps for the destroyed file `name` (pl-srcfile.c)."
+function clearSourceAdmin(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, sf_name::T
+)::Bool where {T}
+    rc = false
+
+    gd.halt_cleaning == CLN_DATA && return true
+
+    pred = lookupProcedure(
+        mk_sym(T, Symbol("\$clear_source_admin")), 1, MODULE_system(gd)
+    )                                                           # _PL_predicate(…, &GD->procedures.clear_source_admin1)
+
+    fid = PL_open_foreign_frame(ld)
+    name = PL_new_term_ref(ld)
+
+    PL_put_atom(ld, name, sf_name)
+    rc = PL_call_predicate(gd, ld, MODULE_system(gd), PL_Q_NODEBUG, pred, name)
+
+    PL_discard_foreign_frame(ld, fid)
+
+    return rc
+end
+
 # PORT: pl-srcfile.c releaseSourceFile
-# DIVERGES (TEMPORARY, until LB6: destroySourceFile; audit D-0248): an unreferenced, empty file is NOT destroyed
-# (`destroySourceFile` and `clearSourceAdmin` are not ported), so this only counts: an empty file consulted once
-# keeps load_count 1 and is listed by `$time_source_file` (swipl: no record; pinned in test_source_file_swipl.jl); a release with no reference — upstream
-# prints "Oops" and repairs the count — is raised as the internal error it is.
+# DIVERGES (TEMPORARY, until every caller has the database and the local data: audit D-0248, LB6b option B): this one-argument form only counts — an
+# unreferenced empty file is NOT destroyed; the three-argument form below is the loader path's (start/end consult, `$unload_file`, `$clause_from_source`,
+# the flush predicates) and is upstream's. A release with no reference — upstream prints "Oops" and repairs the count — is raised as the internal error it is.
 "Drop a reference to `sf` (pl-srcfile.c)."
 function releaseSourceFile(sf::SourceFile)::Bool
     sf.references <= 0 && error("releaseSourceFile: no reference to release (Oops)")
     sf.references -= UInt32(1)
+    return true
+end
+
+# PORT: pl-srcfile.c releaseSourceFile
+# DIVERGES: the database and the local data are arguments (`destroySourceFile!`, `clearSourceAdmin`); no lock; the Oops of a release with no reference is an
+# internal error (see the one-argument form); `PL_unregister_atom(name)` is not kept (no atom GC).
+"Drop a reference to `sf`; the last one of an empty file that is not a system file destroys it and clears the Prolog side's administration of it (pl-srcfile.c)."
+function releaseSourceFile(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, sf::SourceFile{T}
+)::Bool where {T}
+    sf.references <= 0 && error("releaseSourceFile: no reference to release (Oops)")
+    sf.references -= UInt32(1)
+    if sf.references == 0
+        name = nothing
+
+        if !sf.system && sf.current_procedure === nothing && isempty(sf.procedures) &&
+            isempty(sf.modules)
+            name = destroySourceFile!(gd, sf)
+        end
+
+        if name !== nothing
+            return clearSourceAdmin(gd, ld, name)
+        end
+    end
+
     return true
 end
 
@@ -861,7 +951,7 @@ function startConsult(
     acquireSourceFile(sf)
     sf.ltime = time()                               # WallTime()
     if (sf.count += 1) > 1                          # This is a re-consult
-        releaseSourceFile(sf)
+        releaseSourceFile(gd, ld, sf)
         throw(NotPortedError{T}(sf.name, "consulting a file again (reconsult)", "LB6"))
     end
     sf.current_procedure = nothing
@@ -876,7 +966,7 @@ function endConsult(
 )::Bool where {T}
     sf.current_procedure = nothing
     rc = endReconsult(gd, ld, sf)
-    releaseSourceFile(sf)
+    releaseSourceFile(gd, ld, sf)
     return rc
 end
 
@@ -1186,7 +1276,7 @@ function pl_start_consult2_va(
     sf.mtime = mtime
     sf.isfile = isfile
     startConsult(gd, ld, sf)
-    releaseSourceFile(sf)
+    releaseSourceFile(gd, ld, sf)
     return FTRUE
 end
 
@@ -1204,7 +1294,7 @@ function pl_fixup_reconsult1_va(
         sf = lookupSourceFile(gd, name, false)
         if sf !== nothing
             rc = endReconsult(gd, ld, sf)
-            releaseSourceFile(sf)
+            releaseSourceFile(gd, ld, sf)
             sf.current_procedure = nothing
         end
     end
@@ -1225,7 +1315,7 @@ function pl_end_consult1_va(
         sf = lookupSourceFile(gd, name, false)
         if sf !== nothing
             rc = endConsult(gd, ld, sf)
-            releaseSourceFile(sf)
+            releaseSourceFile(gd, ld, sf)
         end
     end
     return rc ? FTRUE : FFALSE
@@ -1289,7 +1379,7 @@ function pl_unload_file1_va(
             end
         end
 
-        releaseSourceFile(sf)
+        releaseSourceFile(gd, ld, sf)
         return rc ? FTRUE : FFALSE
     end
 
@@ -1325,7 +1415,7 @@ function pl_clause_from_source4_va(
     else
         sf = lookupSourceFile(gd, file_name, false)
         if sf === nothing
-            releaseSourceFile(of)
+            releaseSourceFile(gd, ld, of)
             return FFALSE
         end
         source_no = sf.index
@@ -1368,8 +1458,8 @@ function pl_clause_from_source4_va(
         rc = PL_unify_nil(ld, tail)
     end
 
-    releaseSourceFile(of)
-    sf === nothing || releaseSourceFile(sf)
+    releaseSourceFile(gd, ld, of)
+    sf === nothing || releaseSourceFile(gd, ld, sf)
 
     return rc ? FTRUE : FFALSE
 end
@@ -1395,7 +1485,7 @@ function flush_predicate(
             rc = flush_procedure!(gd, ld, sf, proc)
         end
     end
-    releaseSourceFile(sf)
+    releaseSourceFile(gd, ld, sf)
 
     return rc
 end
@@ -1433,7 +1523,7 @@ function pl_flushed_predicate1_va(
 
     flush_procedure!(gd, ld, sf, proc)
     rc = isDefinedProcedure(gd, proc)
-    releaseSourceFile(sf)
+    releaseSourceFile(gd, ld, sf)
 
     return rc ? FTRUE : FFALSE
 end
