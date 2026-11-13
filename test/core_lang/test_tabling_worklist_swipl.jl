@@ -287,7 +287,8 @@ end
     # twv01: the answers 1,3,7,15,31 pass through the two-frame continuation (tw_nb then tw_na), one extractor
     @test all(occursin(v, ans("twv01")) for v in ("i1,", "i3,", "i7,", "i15,", "i31,"))
     # twv02: an ORDINARY reset/3 of call_continuation/1: a non-list fails (`no`), the empty list succeeds (`yes`)
-    @test ans("twv02") == "c[114]/2(a[110,111],a[121,101,115])" && ans("twv02") != ans("twv01")
+    @test ans("twv02") == "c[114]/2(a[110,111],a[121,101,115])" &&
+        ans("twv02") != ans("twv01")
     # twq08: the message hook saw NOTHING for the `fail` catcher (left of `-`) and the cut catcher `!` once (the positive control)
     @test ans("twq08") == "c[45]/2(nil,c[91,124,93]/2(a[33],nil))"
     # twq11: the inner component (tw_o2 called from tw_o1) has a parent: exactly one answer, `nested` (not `top`)
@@ -334,7 +335,8 @@ end
     LK.wl_set_component(ld, wl, c)              # :639-654: `if (!wl->in_global_wl && wl_has_work(wl)) add_global_worklist(wl)`
     @test wl.component === c && !wl.executing
     @test wl.in_global_wl
-    @test c.worklist !== nothing && length(c.worklist.members) == 1 && c.worklist.members[1] === wl
+    @test c.worklist !== nothing && length(c.worklist.members) == 1 &&
+        c.worklist.members[1] === wl
     LK.wl_set_component(ld, wl, c)              # already scheduled: not queued a second time
     @test length(c.worklist.members) == 1
     # a worklist with NO work is not scheduled (the other branch of the same condition)
@@ -361,7 +363,8 @@ end
     ])
     LK.wkl_swap_clusters(wl2, a2, s2)
     @test wl2.head === x && wl2.tail === z
-    @test x.next === s2 && s2.next === a2 && a2.next === z && z.prev === a2 && a2.prev === s2
+    @test x.next === s2 && s2.next === a2 && a2.next === z && z.prev === a2 &&
+        a2.prev === s2
 end
 
 @testset "TB2K2 white-box: '\$tbl_wkl_make_follower' sets riac and schedules (TB2-P5, TB2-P6)" begin
@@ -401,7 +404,8 @@ end
     @test wl2.head === a1 && wl2.tail === s1 && a1.next === s1 && s1.next === nothing
     @test a1.answers == [11, 12, 21]
     @test wl2.riac === a1 && LK.wl_has_work(wl2)
-    @test wl2.in_global_wl && length(c2.worklist.members) == 1 && c2.worklist.members[1] === wl2
+    @test wl2.in_global_wl && length(c2.worklist.members) == 1 &&
+        c2.worklist.members[1] === wl2
     # answers only: no suspension cluster, so no work and no scheduling; riac is still the answer cluster
     c3 = LK.tbl_component{_TW}()
     wl3, (a3,) = _tw_wl_of([LK.CLUSTER_ANSWERS])
@@ -425,7 +429,8 @@ end
     ld.tabling.has_scheduling_component = true      # tbl_create_subcomponent: a leader was created
     ld.tabling.active_components = 1                # the component is active
     ld.table_flags_drop_intermediate = 0            # no drop step: the plain completion
-    @test c.parent === nothing && c.status == LK.SCC_ACTIVE && ld.tabling.has_scheduling_component   # the non-empty side
+    @test c.parent === nothing && c.status == LK.SCC_ACTIVE &&
+        ld.tabling.has_scheduling_component   # the non-empty side
     fid = LK.PL_open_foreign_frame(ld)
     a = LK.PL_new_term_refs(ld, 3)
     LK.PL_put_int64(ld, a, LK.tbl_pointer!(ld, c))
