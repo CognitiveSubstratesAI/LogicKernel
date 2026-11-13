@@ -20,7 +20,7 @@ MUTANTS = [
          new='''        if false
             PL_error(ld, ERR_MODIFY_STATIC_PROC, proc)'''),
     dict(id="RA3 a new predicate is not made dynamic", file=P, targets=T,
-         old='''        return setDynamicDefinition!(def, true) ? FTRUE : FFALSE      # nothing to retract''',
+         old='''        return setDynamicDefinition!(gd, def, true) ? FTRUE : FFALSE  # nothing to retract''',
          new='''        return FTRUE      # nothing to retract'''),
     dict(id="RA4 the plain head is not handed on", file=P, targets=T,
          old='''    PL_put_term(ld, h, head)                            # if ( h ) PL_put_term(h, head)''',
