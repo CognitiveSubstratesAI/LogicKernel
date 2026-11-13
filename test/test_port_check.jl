@@ -423,10 +423,17 @@ _pc_codes(vs) = sort!([
             fake_part = "# UPSTREAM-PARTS: swipl-devel src/pl-fake.c @ $sha"
             tbl_part = "# UPSTREAM-PARTS: swipl-devel boot/tabling.pl @ $sha"
             orig = "# ORIGINAL: fixture — a mix of two upstream files."
+            # pl-fake.c carries a copyright notice, so a file with it as a part carries these (F2)
+            cr1 = "# COPYRIGHT: Copyright (c)  2001-2026, Fixture University"
+            cr2 = "# COPYRIGHT: Fixture Lab b.v."
             fake_marker = "# PORT: pl-fake.c fooBar as partsFooBar\npartsFooBar() = 1\n"
             tbl_marker = "# PORT: tabling.pl \$tbl_add as partsTblAdd\npartsTblAdd() = 2\n"
+            # markers for the bad parts below, so that PARTS-UNUSED does not join their verdict
+            gone_marker = "# PORT: pl-gone.c goneFn as partsGone\npartsGone() = 3\n"
+            nope_marker = "# PORT: x.c xFn as partsX\npartsX() = 4\n"
             function mixcase(
-                name; head=[orig, fake_part, tbl_part], body=[fake_marker, tbl_marker],
+                name; head=[orig, cr1, cr2, fake_part, tbl_part],
+                body=[fake_marker, tbl_marker],
                 rel="src/parts.jl", upcol="—", pin=nothing
             )
                 root = joinpath(base, "parts_" * name)
@@ -457,27 +464,39 @@ _pc_codes(vs) = sort!([
             got, f = mixcase("pass")
             @test length(f.markers) == 2 && length(f.parts) == 2 && f.original
             @test got == []
-            # the path and copyright checks are skipped for a parts file (condition d): a CLASS: code
-            # with no COPYRIGHT, and with a COPYRIGHT line that is in no part, are both clean
+            # the path check and CLASS-MISSING are skipped for a parts file (condition d): a junk CLASS: is clean
             got, f = mixcase(
-                "pass_class"; head=[orig, "# CLASS: code", fake_part, tbl_part]
+                "pass_class"; head=[orig, "# CLASS: code", cr1, cr2, fake_part, tbl_part]
             )
-            @test length(f.markers) == 2 && f.class == "code" && isempty(f.copyright)
+            @test length(f.markers) == 2 && f.class == "code" && length(f.copyright) == 2
             @test got == []
+            # F2 of the PORTCHK review: the copyright check is PER PART. A COPYRIGHT line that is in no
+            # part is COPYRIGHT-MISMATCH (this case was clean while the check was skipped)
             got, f = mixcase(
-                "pass_copyright";
-                head=[
-                    orig,
-                    "# CLASS: code",
-                    "# COPYRIGHT: Copyright (c) 1999, Nobody",
-                    fake_part,
-                    tbl_part
-                ]
+                "copyright_wrong";
+                head=[orig, cr1, cr2, "# COPYRIGHT: Copyright (c) 1999, Nobody", fake_part,
+                    tbl_part]
             )
-            @test length(f.markers) == 2 && !isempty(f.copyright)
+            @test length(f.markers) == 2 && length(f.copyright) == 3
+            @test got == [("COPYRIGHT-MISMATCH", "parts.jl")]
+            # ... a part with a notice and NO COPYRIGHT line is COPYRIGHT-ABSENT: the relabel of a one-file
+            # port (`# ORIGINAL:` + one UPSTREAM-PARTS line) no longer skips the copyright check
+            got, f = mixcase("relabel"; head=[orig, fake_part, tbl_part])
+            @test length(f.markers) == 2 && length(f.parts) == 2 && isempty(f.copyright)
+            @test got == [("COPYRIGHT-ABSENT", "parts.jl")]
+            got, f = mixcase("relabel1"; head=[orig, fake_part], body=[fake_marker])
+            @test length(f.markers) == 1 && length(f.parts) == 1 && isempty(f.copyright)
+            @test got == [("COPYRIGHT-ABSENT", "parts.jl")]
+            # PASS: parts that carry no notice at all (libtai: public domain) need no COPYRIGHT line
+            got, f = mixcase("nocopy_parts"; head=[orig, tbl_part], body=[tbl_marker])
+            @test length(f.markers) == 1 && length(f.parts) == 1 && isempty(f.copyright)
             @test got == []
+            # F3: an UPSTREAM-PARTS line no PORT marker cites (a stale header after a rename)
+            got, f = mixcase("partsunused"; body=[fake_marker])
+            @test length(f.markers) == 1 && length(f.parts) == 2
+            @test got == [("PARTS-UNUSED", "parts.jl")]
             # FAIL (a): a marker naming a file the header does not list
-            got, f = mixcase("unlisted"; head=[orig, fake_part])
+            got, f = mixcase("unlisted"; head=[orig, cr1, cr2, fake_part])
             @test length(f.markers) == 2 && length(f.parts) == 1
             @test got == [("MARKER-FILE-UNKNOWN", "parts.jl")]
             # FAIL (a): a marker name that is not in the listed file at the pin
@@ -521,7 +540,8 @@ _pc_codes(vs) = sort!([
             got, f = mixcase(
                 "malformed";
                 head=[
-                    orig, fake_part, tbl_part, "# UPSTREAM-PARTS: swipl-devel src/pl-fake.c"
+                    orig, cr1, cr2, fake_part, tbl_part,
+                    "# UPSTREAM-PARTS: swipl-devel src/pl-fake.c"
                 ]
             )
             @test length(f.markers) == 2 && length(f.parts) == 2
@@ -530,12 +550,15 @@ _pc_codes(vs) = sort!([
                 "gone";
                 head=[
                     orig,
+                    cr1,
+                    cr2,
                     fake_part,
                     tbl_part,
                     "# UPSTREAM-PARTS: swipl-devel src/pl-gone.c @ $sha"
-                ]
+                ],
+                body=[fake_marker, tbl_marker, gone_marker]
             )
-            @test length(f.markers) == 2 && length(f.parts) == 3
+            @test length(f.markers) == 3 && length(f.parts) == 3
             @test got == [("UPSTREAM-FILE-MISSING", "parts.jl")]
             got, f = mixcase(
                 "orphan";
@@ -556,7 +579,7 @@ _pc_codes(vs) = sort!([
             @test got == []
             got, f = mixcase(
                 "pin_wrong";
-                head=[orig, fake_part, tbl_part,
+                head=[orig, cr1, cr2, fake_part, tbl_part,
                     "# UPSTREAM-PARTS: swipl-devel src/pl-fake.c @ $other"],
                 pin=full
             )
@@ -564,13 +587,15 @@ _pc_codes(vs) = sort!([
             @test got == [("PIN-MISMATCH", "parts.jl")]
             got, f = mixcase(
                 "unknown_repo";
-                head=[orig, fake_part, tbl_part, "# UPSTREAM-PARTS: nope x.c @ $sha"]
+                head=[orig, cr1, cr2, fake_part, tbl_part,
+                    "# UPSTREAM-PARTS: nope x.c @ $sha"],
+                body=[fake_marker, tbl_marker, nope_marker]
             )
-            @test length(f.markers) == 2 && length(f.parts) == 3
+            @test length(f.markers) == 3 && length(f.parts) == 3
             @test got == [("UNKNOWN-REPO", "parts.jl")]
             got, f = mixcase(
                 "commit_missing";
-                head=[orig, fake_part, tbl_part,
+                head=[orig, cr1, cr2, fake_part, tbl_part,
                     "# UPSTREAM-PARTS: swipl-devel src/pl-fake.c @ 0123456"]
             )
             @test length(f.markers) == 2 && length(f.parts) == 3

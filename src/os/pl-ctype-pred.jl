@@ -4,6 +4,9 @@
 # Copyright of the upstream code: Copyright (c)  2011-2026, University of Amsterdam, VU University Amsterdam,
 # SWI-Prolog Solutions b.v. (src/os/pl-ctype.c at 18168e629eab).
 # UPSTREAM-PARTS: swipl-devel src/os/pl-ctype.c @ 18168e629eab
+# COPYRIGHT: Copyright (c)  2011-2026, University of Amsterdam
+# COPYRIGHT: VU University Amsterdam
+# COPYRIGHT: SWI-Prolog Solutions b.v.
 #
 # CHARACTER TYPES AS PREDICATES (pl-ctype.c), CT1b: `char_type/2` and `code_type/2` and the class tests they run;
 # CT1c: `downcase_atom/2`, `upcase_atom/2`, `string_lower/2`, `string_upper/2`, `normalize_space/2` and the locale's

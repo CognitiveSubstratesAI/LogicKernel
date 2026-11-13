@@ -23,9 +23,12 @@
 #     An ORIGINAL file that is a MIX of several upstream files (no single upstream path is its own) may
 #     carry PORT markers when its header names those files, one line each (audit D-0609):
 #         # UPSTREAM-PARTS: swipl-devel <path> @ <commit>
-#     Each marker is then checked by name against one of those files like any port's; only the path
-#     check, the copyright checks (COPYRIGHT-ABSENT, COPYRIGHT-MISMATCH) and CLASS-MISSING are skipped
-#     (an ORIGINAL header has no CLASS line). `# UPSTREAM-PARTS:` with `# UPSTREAM:` is HEADER-BOTH.
+#     Each marker is then checked by name against one of those files like any port's; the path check
+#     and CLASS-MISSING are skipped (an ORIGINAL header has no CLASS line; a junk `# CLASS:` is unread).
+#     The copyright check is PER PART: a part that carries a copyright notice makes the file carry
+#     `# COPYRIGHT:` lines (COPYRIGHT-ABSENT) and each line must occur in some part (COPYRIGHT-MISMATCH);
+#     parts with no notice (libtai) need none. A parts line no PORT marker cites is PARTS-UNUSED.
+#     `# UPSTREAM-PARTS:` with `# UPSTREAM:` is HEADER-BOTH.
 #   * Directories exist only where swipl-devel has them: `src/<d>` for d in swipl-devel's src/
 #     subdirectories, `test/<area>` for its tests/ areas.
 #
@@ -922,6 +925,17 @@ function port_check(pkgroot::AbstractString;
             )
         defs = definitions(read(joinpath(root, f.rel), String), f.rel)
         bases = Set(basename(u.path) for u in ups)
+        if parts_file
+            # PARTS-UNUSED: a parts line no PORT marker of the file cites (a stale header after a rename)
+            cited = Set(m.upstream_base for m in f.markers)
+            for u in ups
+                basename(u.path) in cited || push!(
+                    v,
+                    "PARTS-UNUSED $(f.rel): UPSTREAM-PARTS $(u.path) is cited by no PORT marker of the file"
+                )
+            end
+        end
+        part_texts = String[]              # a parts file: the squashed text of every part read below
         for (k, m) in enumerate(f.markers)
             m.upstream_base in bases ||
                 push!(
@@ -963,6 +977,7 @@ function port_check(pkgroot::AbstractString;
                 continue
             end
             text = _git_show(dir, u.commit * ":" * u.path)
+            parts_file && push!(part_texts, _squash(text))
             if !parts_file && u === ups[1]
                 sq = _squash(text)
                 # A GENERATED first file carries no copyright notice at all (swipl-devel's
@@ -988,6 +1003,25 @@ function port_check(pkgroot::AbstractString;
                     push!(
                         v,
                         "UPSTREAM-NAME-MISSING $(f.rel):$(m.line): `$(m.name)` does not occur in $(u.path) @ $(u.commit)"
+                    )
+            end
+        end
+        if parts_file && !isempty(part_texts)
+            # The copyright check of a parts file is per part (F2 of the PORTCHK review): a part that
+            # carries a copyright notice makes the file carry `# COPYRIGHT:` lines, and each line must
+            # occur in SOME part. Parts with no notice at all (libtai, public domain) need none.
+            if isempty(f.copyright) && any(t -> occursin(r"copyright"i, t), part_texts)
+                push!(
+                    v,
+                    "COPYRIGHT-ABSENT $(f.rel): a part carries a copyright notice, the file must carry the upstream copyright line(s)"
+                )
+            end
+            for c in f.copyright
+                sc = _squash(c)
+                any(t -> occursin(sc, t), part_texts) ||
+                    push!(
+                        v,
+                        "COPYRIGHT-MISMATCH $(f.rel): `$c` is in none of the UPSTREAM-PARTS files"
                     )
             end
         end
