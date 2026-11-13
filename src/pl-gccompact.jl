@@ -348,25 +348,48 @@ end
 
 # ── the collect phase ───────────────────────────────────────────────────────────────────────────
 
+# ORIGINAL: the ONE place where the kernel's `needs_relocation` differs from upstream's. `mark_variable`
+# (pl-gcmark.jl) counts `needs_relocation += 1` for every marked referrer, a referrer of a value-table box
+# (ruling D1: the cell holds a vword, a table index) included, but no sweep or compaction ever chains a vword
+# (`_gcs_chainable`): upstream's `relocated_cells == needs_relocation` can only hold when those references are
+# subtracted. They are the marked cells (global, other than the box cells themselves, and slots) whose value is
+# a vword, counted BEFORE the sweeps clear the marks.
+"The number of marked referrers of a value-table box (marked non-box global cells and slots holding a vword)."
+function gc_vword_referrers(ld::PL_local_data{T})::Int where {T}
+    n = 0
+    for p in 1:ld.gTop
+        w = ld.gstack[p]
+        if is_marked(w) && _is_vword(gc_get_value(w)) && !_is_box(ld, p)
+            n += 1
+        end
+    end
+    for w in ld.slots
+        if is_marked(w) && _is_vword(gc_get_value(w))
+            n += 1
+        end
+    end
+    return n
+end
+
 # PORT: pl-gc.c collect_phase
 # DIVERGES: the three counters live in `sw` (`marks_swept`, `relocation_chains`, `relocation_cells`,
 # `relocated_cells`) and in `st` (`needs_relocation`); `saved_bar_at` is the SLOT POSITION of the saved frozen
 # bar `gvars_to_term_refs` returned (0 = NULL), swept by `sweep_frozen_bar`; the trail has been compacted
 # before this (`gc_trail_phase`), as upstream's `garbageCollect` does, so the trail chains are gone when the
-# sweep starts. The check `relocated_cells == needs_relocation` of upstream is NOT an error here: the mark
-# phase counts a reference to a value-table box (ruling D1) in `needs_relocation` and the sweep never chains
-# it, so the difference `needs_relocation - relocated_cells` (>= 0) is RETURNED for the caller to compare with
-# its own count of vword references; the other two checks are errors, as upstream's `sysError`.
+# sweep starts. The check `relocated_cells == needs_relocation` holds only after subtracting the references to
+# value-table boxes the mark phase counted and no chain holds (`gc_vword_referrers`, the one subtraction);
+# that count is RETURNED. The other checks are errors as upstream's `sysError`.
 """
     collect_phase(ld, st, sw, vm; vmi_state_of = nothing, saved_bar_at = 0) -> Int
 
 Sweep the foreign frames, the trail and the local stack, compact the global stack, unsweep the marks and
-check the counters (pl-gc.c). Returns `st.needs_relocation - sw.relocated_cells`.
+check the counters (pl-gc.c). Returns the number of references to value-table boxes (`gc_vword_referrers`).
 """
 function collect_phase(
     ld::PL_local_data{T}, st::gc_mark_counts, sw::gc_sweep_counts, vm::vm_state;
     vmi_state_of = nothing, saved_bar_at::Int = 0
 )::Int where {T}
+    nvword = gc_vword_referrers(ld)
     sweep_foreign(ld, st, sw)
     sweep_trail(ld, st, sw)
     sweep_stacks(ld, st, sw, vm; vmi_state_of = vmi_state_of)
@@ -376,7 +399,10 @@ function collect_phase(
     unswept == sw.marks_swept ||
         error("GC: marks_swept = $(sw.marks_swept) but marks_unswept = $(unswept)")
     sw.relocation_chains == 0 || error("GC: relocation chains = $(sw.relocation_chains)")
-    sw.relocated_cells == sw.relocation_cells ||
-        error("GC: relocation cells = $(sw.relocation_cells); relocated_cells = $(sw.relocated_cells)")
-    return st.needs_relocation - sw.relocated_cells
+    (sw.relocated_cells == sw.relocation_cells && sw.relocated_cells == st.needs_relocation - nvword) ||
+        error(
+            "GC: relocation cells = $(sw.relocation_cells); relocated_cells = $(sw.relocated_cells), " *
+            "needs_relocation = $(st.needs_relocation) (of which $(nvword) vword references)",
+        )
+    return nvword
 end
