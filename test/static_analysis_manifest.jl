@@ -3852,6 +3852,40 @@ _manifest_tb7(T) = begin
     )
 end
 
+# TB9 — the transaction tables of pl-tabling.c (src/pl-tabling.jl: `tt_*`, `lg_clauses`, `transaction_commit_tables`,
+# `transaction_rollback_tables`, `merge_tabling_trail`, `reset_answer_table_tracked`; the structs of src/pl-incl.jl). The methods that take the
+# local data are checked for every payload type; the ones on the trail and its records alone once, below (`_MANIFEST_TB9_FREE`). Every method
+# walks a Dict or a Vector of the trail or the tries, so none is held for AllocCheck (`false`); `tt_has_modified_dependencies` is in TB6's.
+_manifest_tb9(T) = begin
+    TR, LD = LK.trie{T}, LK.PL_local_data{T}
+    MD = LK.IdgMdep{T}
+    (
+        (LK.lg_clauses, Tuple{LD, MD, LK.mono_dep_status}, false),
+        (LK.tt_mono_status, Tuple{LD, TR}, false),
+        (LK.tt_trail, Tuple{LD}, false),
+        (LK.tt_add_table, Tuple{LD, TR, Int}, false),
+        (LK.tt_alloc, Tuple{LD, TR, Int}, false),
+        (LK.tt_add_answer, Tuple{LD, TR, Int}, false),
+        (LK.tt_abolish_table, Tuple{LD, TR}, false),
+        (LK.transaction_commit_tables, Tuple{LD}, false),
+        (LK.tt_rollback_answer, Tuple{LD, TR, Int}, false),
+        (LK.tt_rollback_tables, Tuple{LD, Dict{LK.word, Int}}, false),
+        (LK.tt_rollback_actions, Tuple{LD, Vector{LK.tbl_trail_answer}}, false),
+        (LK.transaction_rollback_tables, Tuple{LD}, false),
+        (LK.reset_answer_table_tracked, Tuple{LD, TR}, false),
+    )
+end
+
+# TB9: the entries of the trail that name no term type (listed once, not once per type)
+const _MANIFEST_TB9_FREE = (
+    (LK.mono_dep_status, Tuple{}, false),
+    (LK.tbl_trail, Tuple{}, false),
+    (LK.tbl_trail_answer, Tuple{Int, Int, Int}, false),
+    (LK.tbl_trail_free, Tuple{LK.tbl_trail}, false),
+    (LK.tt_free_table_symbol, Tuple{LK.word, Int}, false),
+    (LK.merge_tabling_trail, Tuple{LK.tbl_trail, LK.tbl_trail}, false),
+)
+
 # TX1 — pl-transaction.c and pl-undo.c (src/pl-transaction.jl, src/pl-undo.jl): the transaction state, the tables of changed
 # clauses and predicates, commit and discard, the updates, the predicates; the undo list, the undo blob and the scheduled goals.
 # The methods that take the local data, the global data, a clause or a definition are checked for every payload type; the ones
@@ -4181,6 +4215,10 @@ const _DISPATCH_MANIFEST_TUPLE = (
     _manifest_tb7(_M1)...,
     _manifest_tb7(_M2)...,
     _manifest_tb7(_M3)...,
+    _manifest_tb9(_M1)...,
+    _manifest_tb9(_M2)...,
+    _manifest_tb9(_M3)...,
+    _MANIFEST_TB9_FREE...,
     _MANIFEST_LB2B_FREE...,
     _MANIFEST_TR2_FREE...,
     _manifest_tx1(_M1)...,
