@@ -12,9 +12,10 @@
 # name them. The generation space: 1..GEN_TRANSACTION_BASE is globally visible; a thread starting a transaction takes
 # the 2^32 generations from GEN_TRANSACTION_BASE+TID*GEN_TRANSACTION_SIZE (pl-transaction.c:68-100).
 #
-# NOT PORTED, each to its owner (docs/architecture.md TX1):
-#   * `table_trail`, `transaction_commit_tables`, `transaction_rollback_tables`, `merge_tabling_trail` — the tables' share of
-#     a transaction: TAB1 TB9.
+# The tables' share of a transaction (`table_trail`, `transaction_commit_tables`, `transaction_rollback_tables`,
+# `merge_tabling_trail`) is in src/pl-tabling.jl (TAB1 TB9), where its pl-tabling.c functions are.
+#
+# Left to the named owners (docs/architecture.md TX1):
 #   * `acquire_clause`/`release_clause`/`tr_erased_no` — no reference counts: a clause the tables hold stays alive in the
 #     tables; `transaction_visible_clause` always looks the clause up in the tables where upstream skips that when
 #     `tr_erased_no` is 0, the same answer.
@@ -350,8 +351,10 @@ end
 # ── the Prolog connection (TX1b) ────────────────────────────────────────────────────────────────
 
 # PORT: pl-transaction.c transaction
-# DIVERGES: `constraint` is 0 for upstream's NULL and `lock` is not examined (no mutex table, see the header); NOT PORTED,
-# owner TAB1 TB9: `transaction_commit_tables`, `transaction_rollback_tables`, `merge_tabling_trail`. The outermost transaction
+# DIVERGES: `constraint` is 0 for upstream's NULL and `lock` is not examined (no mutex table, see the header). The tables'
+# trail (`table_trail`: TAB1 TB9) is saved, merged and rolled back where upstream does; when `announce_updates` fails after the
+# merge, `tr.table_trail` still names the merged trail, now empty (upstream's names the freed one): the parent's trail rolls
+# its answers back. The outermost transaction
 # does not set `LD->transaction.flags` (upstream's does not either, pl-transaction.c:620-630): `bulk(true)` there only
 # makes the commit announce the updates. The thread id of the generation space is 1 (`int tid = 1`, the form of the
 # source without threads; swipl's main thread is 1 too).
@@ -371,7 +374,7 @@ function transaction(
 
     if tr.generation != 0                                   # nested transaction
         parent = tr_stack{T}(
-            tr.stack, tr.gen_nest, tr.generation, tr.clauses, tr.predicates, tr.id, tr.flags
+            tr.stack, tr.gen_nest, tr.generation, tr.clauses, tr.predicates, tr.table_trail, tr.id, tr.flags
         )
 
         tr.clauses = nothing
@@ -380,6 +383,7 @@ function transaction(
         tr.stack = parent
         tr.gen_nest = tr.generation
         tr.flags = flags
+        tr.table_trail = nothing
         rc = callProlog(gd, ld, 0, goal, PL_Q_PASS_EXCEPTION)
         if rc && constraint != 0
             rc = callProlog(gd, ld, 0, constraint, PL_Q_PASS_EXCEPTION)
@@ -387,6 +391,13 @@ function transaction(
         discard = true                                      # (the `nested_discard:` label)
         if rc && (flags & TR_TRANSACTION) != 0
             discard = false
+            if tr.table_trail !== nothing
+                if parent.table_trail !== nothing
+                    merge_tabling_trail(parent.table_trail, tr.table_trail)
+                else
+                    parent.table_trail = tr.table_trail
+                end
+            end
             if tr.predicates !== nothing
                 if parent.predicates !== nothing
                     merge_pred_tables(parent.predicates, tr.predicates)
@@ -413,11 +424,13 @@ function transaction(
         end
         if discard
             rc = transaction_discard(gd, ld) && rc
+            rc = transaction_rollback_tables(ld) && rc
             tr.generation = parent.generation
         end
         tr.gen_nest = parent.gen_nest
         tr.clauses = parent.clauses
         tr.predicates = parent.predicates
+        tr.table_trail = parent.table_trail
         tr.stack = parent.parent
         tr.id = parent.id
         tr.flags = parent.flags
@@ -439,14 +452,16 @@ function transaction(
                 rc = announce_updates(gd, ld, updates)
             end
             if rc
-                rc = transaction_commit(gd, ld)             # transaction_commit_tables() && transaction_commit()
+                rc = transaction_commit_tables(ld) && transaction_commit(gd, ld)
             else
                 tr.generation = 0                           # avoid recording the rollback
                 transaction_discard(gd, ld)
+                transaction_rollback_tables(ld)
             end
         else
             tr.generation = 0                               # avoid recording the rollback
             rc = transaction_discard(gd, ld) && rc
+            rc = transaction_rollback_tables(ld) && rc
         end
         tr.id = 0
         tr.generation = 0
