@@ -97,16 +97,6 @@ refusal:src/pl-wam.jl::PL_next_solution_guarded::backtracking into a $(db_c.type
 # claim_answer_table, take_trie, drop_trie, new_trie_array, free_trie_array, register_waiting, unregister_waiting, thread_waits_for_trie, stat_deadlock, is_deadlock, wait_for_table_to_complete.
 # (c) cleanupTabling (pl-tabling.c:12717) has nothing observable in the kernel: it clears fast_ret_functor and, under O_PLMT, frees the shared variant table, the mutex, the condition variable and the node pool: no row.
 # The 2-argument `freeCodesDefinition!` keeps its refusal row below: pl-ext.jl and precompile_workload.jl call it where no database exists (boot), the callers with a database use the 3-argument method.
-refusal:src/os/pl-file.jl::openStream::string("open/4 with the stream encoding ", enc)	ENC1	open/4 encoding(text) = ENC_ANSI (pl-file.c openStream, the locale's mbrtowc/wcrtomb); named refusal; UTF-16BE/LE and wchar_t are ported (ENC1)
-refusal:src/os/pl-stream.jl::put_code::put_code: encoding $enc	ENC1	put_code in ENC_ANSI (pl-stream.c Sputcode, wcrtomb); named refusal; the Unicode encodings are ported (ENC1)
-refusal:src/os/pl-stream.jl::Scanrepresent::Scanrepresent: encoding $enc	ENC1	Scanrepresent in ENC_ANSI (pl-stream.c, wcrtomb); named refusal
-refusal:src/os/pl-stream.jl::Sgetcode::Sgetcode: encoding $enc	ENC1	Sgetcode in ENC_ANSI (pl-stream.c, mbrtowc); named refusal; the Unicode encodings are ported (ENC1)
-refusal:src/os/pl-text.jl::PL_canonicalise_text::PL_canonicalise_text of $enc	ENC1	PL_canonicalise_text of a text in another encoding (pl-text.c); branch without a kernel caller
-refusal:src/os/pl-text.jl::text_error::text_error of $rc	ENC1	text_error of a code other than the code-point error (pl-text.c); branch without a kernel caller
-refusal:src/os/pl-text.jl::PL_mb_text::PL_mb_text to a target other than REP_UTF8	ENC1	PL_mb_text to a target other than REP_UTF8 (pl-text.c wctobuffer, PL_demote_text); no kernel caller
-refusal:src/os/pl-text.jl::PL_mb_text::PL_mb_text of $(text.encoding)	ENC1	PL_mb_text of a text in another encoding (pl-text.c); branch without a kernel caller
-refusal:src/os/pl-text.jl::_text_string::the string of a text in $(text.encoding)	ENC1	string of a text in another encoding (pl-text.c); branch without a kernel caller
-refusal:src/os/pl-text.jl::_text_code_points::the code points of a text in $(text.encoding)	ENC1	code points of a text in another encoding (pl-text.c); branch without a kernel caller
 refusal:src/pl-comp.jl::assert_term!::assert_term: PL_CREATE_THREAD_LOCAL	TH1	assert_term PL_CREATE_THREAD_LOCAL (pl-comp.c assert_term, thread-local predicates are TH1's); PL_CREATE_INCREMENTAL is ported by TAB1 TB6 (tbl_set_incremental_predicate)
 refusal:src/pl-modul.jl::set_module::set_module(program_space(N)): the module's code accounting	REFUSED	refused by design (no step ports it): the kernel keeps no per-module code size (m->code_size, D-0149 MQ3), so a limit could be neither checked nor enforced; the pin's tests need no program_space (git grep 18168e62: only boot/syspred.pl:1231 module_property(program_space(_)), which fails without a limit, as the kernel's pl-modul.jl:1447); src/pl-modul.jl:405
 refusal:src/pl-proc.jl::pl_get_predicate_attribute3_va::indexed(L): the Prolog dict of an index property	PR1b	indexed(L) of pl_get_predicate_attribute (pl-proc.c, unify_index_property): predicate_property(P, X) enumeration reaches it via syspred.pl:874; PR1b (R2b list, D-0415 item 5), needs the dict builder; size it before the first boot decides whether it is needed
@@ -118,8 +108,6 @@ refusal:src/pl-read.jl::start_pframe::read: a quasi-quotation {|Syntax||Quotatio
 refusal:src/pl-read.jl::read_clause::read_clause's $what option	RD2	read_clause comments / var_prefix options (pl-read.c read_clause)
 refusal:src/pl-read.jl::read_clause::read_clause's process_comment(true) option	RD2	read_clause process_comment(true) option (pl-read.c); the unicode_atoms half is ported (ENC1)
 refusal:src/pl-read.jl::read_term_from_stream::read_term's $what option	RD2	read_term comments / var_prefix / quasi_quotations options (pl-read.c pl_read_term)
-refusal:src/pl-string.jl::PL_text_recode::PL_text_recode to $encoding	ENC1	PL_text_recode to ENC_ANSI, the locale encoding (pl-string.c); with CT1's locale
-refusal:src/pl-string.jl::pl_string_bytes3_va::string_bytes/3 with the encoding text	ENC1	string_bytes/3 with the text (ENC_ANSI) encoding (pl-string.c); with CT1's locale
 refusal:src/pl-supervisor.jl::freeCodesDefinition!::freeCodesDefinition! of a wrapped predicate needs the databa	WRAP1	freeCodesDefinition of a wrapped predicate (pl-supervisor.c), needs the database; wrap closures are WRAP1
 refusal:src/pl-wam.jl::PL_next_solution_guarded::the VM instruction $(codeTable(thiscode).name)	TAB1	dispatch fallthrough for a VM instruction without a body (pl-vmi.c); each missing instruction has its own vmi: row, the last instruction (S_TABLED) removes this site
 refusal:src/pl-write.jl::writePrimitive::writing a grounded value SWI has no type for	WR2	writePrimitive of a grounded value SWI has no type for; a representation guard of the kernel, permanent until the blob writer takes it
