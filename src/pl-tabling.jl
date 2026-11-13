@@ -5492,8 +5492,7 @@ end
 
 # PORT: pl-tabling.c update_delay_list_any
 # (pl-tabling.c:1342 at the pin)
-# DIVERGES: see the REPRESENTATION note above (FLI walk, no retry); `answer` is a node id of `wl`'s table. The IDG branch
-# (`wl->table->data.IDG->reevaluating`, :1365) is TB6's: `data.IDG` is `Nothing` until TB6 widens it.
+# DIVERGES: see the REPRESENTATION note above (FLI walk, no retry); `answer` is a node id of `wl`'s table.
 "Store the delay list (`delays` + the global one) of the new answer `answer` of `wl`'s table (pl-tabling.c); a `UDL_*`."
 function update_delay_list_any(
     ld::PL_local_data{T}, wl::tbl_worklist{T}, answer::Int, skel::term_t, delays::term_t
@@ -5512,8 +5511,11 @@ function update_delay_list_any(
             simplify_answer(ld, wl, answer, true)
         end
         # Incremental tabling
-        atrie.IDG !== nothing &&
-            tbl_refuse(T, :update_delay_list_any, "IDG reevaluation", "TB6")
+        if (idg = atrie.IDG) !== nothing && idg.reevaluating
+            if (atrie.nodes[answer].flags & TN_IDG_UNCONDITIONAL) == 0
+                simplify_answer(ld, wl, answer, true)
+            end
+        end
         wl.ground && return UDL_COMPLETE                        # early completion
         return UDL_TRUE
     else

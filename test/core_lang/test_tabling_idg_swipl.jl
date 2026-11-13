@@ -700,3 +700,48 @@ end
     @test !isempty(good) && !isempty(bad) && good == "zero" && bad == "proceeds" && good != bad
     tp.flags = saved
 end
+
+"""
+`update_delay_list_any(ld, wl, answer, skel, delays)` of the kernel for an empty delay list (the global one is empty too): `(the UDL_ status,
+the number of entries left in wl.delays)`. The entry (the dependent table, node 1) is dropped only when `simplify_answer` ran (`propagate_result`:
+the dependent answer has no delay info, so `delete_answer` removes it). ONE extractor for every row of idg23.
+"""
+function _ti_udl(ld, wl, answer::Int)
+    fid = LK.PL_open_foreign_frame(ld)
+    skel = LK.PL_new_term_ref(ld)
+    delays = LK.PL_new_term_ref(ld)
+    LK.PL_put_nil(ld, delays)
+    rc = LK.update_delay_list_any(ld, wl, answer, skel, delays)
+    LK.PL_close_foreign_frame(ld, fid)
+    return rc, length(wl.delays)
+end
+
+@testset "idg23: update_delay_list_any simplifies a re-derived unconditional answer while the table reevaluates (pl-tabling.c:1364-1370)" begin
+    gd, ld, def = _ti_db()
+    t1 = _ti_table!(ld, def, true, 1)                                                      # the table of the worklist
+    t2 = _ti_table!(ld, def, true, 2)                                                      # a table with an answer that waits on `t1`
+    n = LK.idg_new(ld, t1)::_TIN
+    t1.IDG = n
+    mkwl(ground::Bool) = (wl = LK.tbl_worklist{_TI}(); wl.table = t1.serial; wl.ground = ground;
+        push!(wl.delays, LK.delay(t2.serial, 1)); wl)               # node 1: the root, only its flags are read
+
+    # not reevaluating: the nil/nil branch only answers
+    @test _ti_udl(ld, mkwl(false), 1) == (LK.UDL_TRUE, 1)
+    @test _ti_udl(ld, mkwl(true), 1) == (LK.UDL_COMPLETE, 1)                               # early completion of a ground call
+
+    # reevaluating and the answer not marked TN_IDG_UNCONDITIONAL: the answer is simplified (true)
+    n.reevaluating = true
+    @test _ti_udl(ld, mkwl(false), 1) == (LK.UDL_TRUE, 0)
+    @test _ti_udl(ld, mkwl(true), 1) == (LK.UDL_COMPLETE, 0)
+
+    # reevaluating, the answer already unconditional in the previous evaluation: left alone
+    t1.nodes[1].flags |= LK.TN_IDG_UNCONDITIONAL
+    @test _ti_udl(ld, mkwl(false), 1) == (LK.UDL_TRUE, 1)
+    t1.nodes[1].flags &= ~LK.TN_IDG_UNCONDITIONAL
+
+    # a must-fail corruption: the same call with one input changed answers differently (non-empty, one extractor)
+    good = _ti_udl(ld, mkwl(false), 1)
+    n.reevaluating = false
+    bad = _ti_udl(ld, mkwl(false), 1)
+    @test good[2] != bad[2] && good[2] == 0 && bad[2] == 1
+end
