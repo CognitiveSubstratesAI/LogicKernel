@@ -3493,6 +3493,79 @@ _manifest_cont(::Type{T}) where {T} = (
     (LK.PL_cons_list_v, Tuple{LK.PL_local_data{T}, Int, Int, Int}, false)
 )
 
+# G1-GC piece 1 (pl-gc.c: the statistics, the scheduler, blockGC; the kernel's own stack checker, src/pl-gc.jl): every method of
+# the piece on one term type. The pure bit and index arithmetic is held allocation-free; everything that builds a report, a
+# term or a frame is not. `considerGarbageCollect` takes a Union{Nothing, Symbol}: one entry per member (AllocCheck wants a
+# concrete signature), as its default-argument method.
+# (the entries that name no term type: listed once, not once per type)
+const _MANIFEST_G1GC1_FREE = (
+    (LK.stack_report, Tuple{}, false),
+    (LK.StackInvariantError, Tuple{Vector{String}}, false),
+    (Base.showerror, Tuple{IOBuffer, LK.StackInvariantError}, false),
+    (LK._viol!, Tuple{LK.stack_report, String, String}, false),
+    (LK._hexw, Tuple{UInt64}, false),
+    (LK.gc_stat, Tuple{}, false),
+    (LK.gc_totals, Tuple{}, false),
+    (LK.gc_stats, Tuple{}, false),
+    (LK.pl_gc_status_t, Tuple{}, false),
+    (LK.pl_shift_status_t, Tuple{}, false),
+    (LK.gc_stack_policy, Tuple{Bool}, false),
+    (LK.ld_gc, Tuple{}, false),
+    (LK.STAT_NEXT_INDEX, Tuple{Int}, true),
+    (LK.STAT_PREV_INDEX, Tuple{Int}, true),
+    (LK.gc_percentage, Tuple{LK.gc_stat}, true),
+    (LK.last_gc_stats, Tuple{LK.gc_stats}, true),
+    (LK.gc_avg, Tuple{LK.gc_stats}, true),
+    (LK.gc_stat_aggregate!, Tuple{LK.gc_stats}, false)
+)
+
+_manifest_g1gc1(::Type{T}) where {T} = begin
+    LD = LK.PL_local_data{T}
+    SR = LK.stack_report
+    (
+        # the checker
+        (LK._functor_arity_checked, Tuple{LD, UInt64}, false),
+        (LK._check_global_word!, Tuple{SR, LD, Int, UInt64, Bool}, false),
+        (LK._check_global_cells!, Tuple{SR, LD, Bool}, false),
+        (LK._check_ref_chains!, Tuple{SR, LD}, false),
+        (LK._check_vbox!, Tuple{SR, LD}, false),
+        (LK._check_trail!, Tuple{SR, LD}, false),
+        (LK._check_attvar_chain!, Tuple{SR, LD}, false),
+        (LK._check_local_records!, Tuple{SR, LD}, false),
+        (LK._check_stacks, Tuple{LD, Bool}, false),
+        (LK.stack_violations, Tuple{LD}, false),
+        (
+            Core.kwcall,
+            Tuple{NamedTuple{(:allow_marks,), Tuple{Bool}}, typeof(LK.stack_violations), LD},
+            false
+        ),
+        (LK.check_stacks!, Tuple{LD}, false),
+        (
+            Core.kwcall,
+            Tuple{NamedTuple{(:allow_marks,), Tuple{Bool}}, typeof(LK.check_stacks!), LD},
+            false
+        ),
+        (LK.PL_check_stacks, Tuple{LD}, false),
+        # the virtual signals and the ring arithmetic
+        (LK.raiseGcSignal!, Tuple{LD, Int}, true),
+        (LK.pendingGcSignal, Tuple{LD, Int}, true),
+        (LK.clearGcSignal!, Tuple{LD, Int}, true),
+        # the statistics of a collection
+        (LK.gc_stat_start!, Tuple{LD, LK.gc_stats, UInt64}, false),
+        (LK.gc_stat_end!, Tuple{LD, LK.gc_stats}, false),
+        (LK.unify_gc_reason, Tuple{LD, Int, LK.gc_stat}, false),
+        (LK.unify_gc_stats, Tuple{LD, Int, Vector{LK.gc_stat}, Int}, false),
+        (LK.pl_dgc_statistics5_va, Tuple{LD, Int, Int, LK.control_t{T}}, false),
+        # the scheduler and the block counters
+        (LK.considerGarbageCollect, Tuple{LD}, false),
+        (LK.considerGarbageCollect, Tuple{LD, Nothing}, false),
+        (LK.considerGarbageCollect, Tuple{LD, Symbol}, false),
+        (LK.call_tune_gc_hook, Tuple{LD}, false),
+        (LK.blockGC, Tuple{LD, Int}, true),
+        (LK.unblockGC, Tuple{LD, Int}, true)
+    )
+end
+
 const _DISPATCH_MANIFEST_TUPLE = (
     _manifest_per_type(_M1)...,
     _manifest_per_type(_M2)...,
@@ -3534,6 +3607,10 @@ const _DISPATCH_MANIFEST_TUPLE = (
     _manifest_tr4(_M3)...,
     _MANIFEST_LB2B_FREE...,
     _MANIFEST_TR2_FREE...,
+    _MANIFEST_G1GC1_FREE...,
+    _manifest_g1gc1(_M1)...,
+    _manifest_g1gc1(_M2)...,
+    _manifest_g1gc1(_M3)...,
     _manifest_lb7(_M1)...,
     _manifest_lb7(_M2)...,
     _manifest_lb7(_M3)...,

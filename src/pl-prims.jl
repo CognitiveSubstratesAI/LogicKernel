@@ -1772,7 +1772,7 @@ end
 # `Word`s and dereferences them here; the error built on the cells (`pushWordAsTermRef`, f3b-4). The
 # trail walk's value (`unify_with_occurs_check_cells`) is its word read before the Undo, where upstream
 # copies `*p2` into a fresh global cell above the restored top: here `PL_error`'s term references take
-# fresh global cells, which would overwrite it. NOT PORTED: `blockGC`/`unblockGC` (no stack GC until G1).
+# fresh global cells, which would overwrite it. `blockGC`/`unblockGC` are in src/pl-gc.jl now (G1-GC); this function does not call them, no collector runs here.
 "Fail (`OCCURS_CHECK_TRUE`) or raise the occurs-check error, as `Var = Term`, on the cells (pl-prims.c)."
 function failed_unify_with_occurs_check_cells(
     ld::PL_local_data{T}, t1::Tuple{UInt8, word, Int}, t2::Tuple{UInt8, word, Int},
@@ -4078,8 +4078,9 @@ end
 # PORT: pl-prims.c qp_statistics
 # DIVERGES: the key is its Symbol; the values are written to `v` (four at most) and their number is
 # returned, -1 for an unknown key, as upstream's. `memory`/`core` are `[UsedMemory(), FreeMemory()]`: 0 and
-# -1, what swipl answers without `malloc` statistics. The garbage collectors, the stack shifts and the atom and
-# clause collectors have nothing to report.
+# -1, what swipl answers without `malloc` statistics. `runtime` excludes the stack collector's time (`ld.gc.stats.totals.time`, G1-GC G1-1;
+# upstream also takes off the atom collector's `GD->atoms.gc_time`: no atom GC here, D5), `garbage_collection` and `stack_shifts` read `ld.gc.stats` and
+# `ld.shift_status` (zero until a collection or a shift ran). The atom and clause collectors have nothing to report.
 """
     qp_statistics(ld, key, v) -> Int
 
@@ -4089,7 +4090,7 @@ does not know (pl-prims.c).
 function qp_statistics(ld::PL_local_data{T}, key::Symbol, v::Vector{Int64})::Int where {T}
     st = ld.statistics
     if key === :runtime                         # compatibility: exclude GC-time
-        v[1] = trunc(Int64, st.user_cputime * 1000.0)
+        v[1] = trunc(Int64, (st.user_cputime - ld.gc.stats.totals.time) * 1000.0)   # - GD->atoms.gc_time: no atom GC
         v[2] = v[1] - st.last_cputime
         st.last_cputime = v[1]
         return 2
@@ -4135,10 +4136,17 @@ function qp_statistics(ld::PL_local_data{T}, key::Symbol, v::Vector{Int64})::Int
         v[2] = 0
         return 2
     elseif key === :garbage_collection          # collections, gained, ms, after the last
-        v[1] = v[2] = v[3] = v[4] = 0
+        stats = ld.gc.stats                     # G1-GC G1-1
+        last = last_gc_stats(stats)
+        v[1] = stats.totals.collections
+        v[2] = stats.totals.trail_gained + stats.totals.global_gained
+        v[3] = trunc(Int64, stats.totals.time * 1000.0)
+        v[4] = last.trail_after + last.global_after
         return 4
     elseif key === :stack_shifts                # global shifts, local shifts, ms
-        v[1] = v[2] = v[3] = 0
+        v[1] = ld.shift_status.global_shifts    # G1-GC G1-1
+        v[2] = ld.shift_status.local_shifts
+        v[3] = trunc(Int64, ld.shift_status.time * 1000.0)
         return 3
     elseif key === :atoms
         v[1] = ld.atoms.statistics_atoms        # GD->statistics.atoms
@@ -4226,15 +4234,27 @@ function swi_statistics(ld::PL_local_data{T}, key::Symbol, v::number)::Int where
     elseif key === :epoch || key === :process_epoch
         v.type = V_FLOAT
         v.f = st.start_time
-    elseif key === :gctime || key === :agc_time || key === :cgc_time ||
-        key === :shift_time ||
-        key === :thread_cputime
+    elseif key === :gctime                      # LD->gc.stats.totals.time (G1-GC G1-1)
+        v.type = V_FLOAT
+        v.f = ld.gc.stats.totals.time
+    elseif key === :shift_time                  # LD->shift_status.time
+        v.type = V_FLOAT
+        v.f = ld.shift_status.time
+    elseif key === :agc_time || key === :cgc_time || key === :thread_cputime
         v.type = V_FLOAT
         v.f = 0.0
-    elseif key === :collections || key === :collected || key === :agc ||
-        key === :agc_gained || key === :cgc || key === :cgc_gained ||
-        key === :global_shifts ||
-        key === :local_shifts || key === :trail_shifts || key === :engines ||
+    elseif key === :collections                 # LD->gc.stats.totals.collections
+        v.i = ld.gc.stats.totals.collections
+    elseif key === :collected                   # trail_gained + global_gained
+        v.i = ld.gc.stats.totals.trail_gained + ld.gc.stats.totals.global_gained
+    elseif key === :global_shifts               # LD->shift_status.*
+        v.i = ld.shift_status.global_shifts
+    elseif key === :local_shifts
+        v.i = ld.shift_status.local_shifts
+    elseif key === :trail_shifts
+        v.i = ld.shift_status.trail_shifts
+    elseif key === :agc ||
+        key === :agc_gained || key === :cgc || key === :cgc_gained || key === :engines ||
         key === :engines_created || key === :threads_peak ||
         key === :shared_table_space_used ||
         key === :indexes_created || key === :indexes_destroyed || key === :warnings ||
