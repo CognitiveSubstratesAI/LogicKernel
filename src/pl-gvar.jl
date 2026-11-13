@@ -110,7 +110,7 @@ function gvar_setval(
     a === nothing && return false
     name = _atom_word!(ld, a)
 
-    ensureGlobalSpace(ld, 3) || return false        # also ensures trail for TrailAssignment()
+    ensureGlobalSpace(ld, 3, ALLOW_GC, :setval) || return false        # also ensures trail for TrailAssignment()   # G1-GC safe point: setval
 
     k, w, q = _deref_loc(ld, -(value + 1))          # p = valTermRef(value); deRef(p); w = *p
     if k == DU_CELL || k == DU_ATTVAR               # canBind(w)
