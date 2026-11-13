@@ -992,3 +992,344 @@ end
 function PL_check_stacks(ld::PL_local_data)::Bool
     return false
 end
+
+# ── the stack collector's statistics and scheduler (G1-GC, piece G1-1; pl-gc.c:524-703, :3834-3909, :4592-4606) ──
+# DIVERGES (D8, audit D-0634): the pinned build answers `current_prolog_flag(gc_thread, true)` (its collector thread, O_PLMT); the flag is read-only
+# `false` here (src/os/pl-prologflag.jl) and `enterGC`/`leaveGC` (pl-gc.c, O_PLMT only: they hold `LD->gc.active` against a thread suspended by the
+# collector thread) have no body here: one thread, nothing to hold. Everything below stays ZERO until G1-6's driver calls `gc_stat_start!` and
+# `gc_stat_end!` around a collection.
+
+# PORT: pl-fli.c PL_raise as raiseGcSignal!
+# DIVERGES: the kernel has no signal machinery; the pending virtual signals are the bits of `ld.gc.sig_pending` (bit `sig - SIG_PROLOG_OFFSET`),
+# and only the two collector signals (`SIG_GC`, `SIG_TUNE_GC`) are ever raised. The run loop's `ALERT_SIGNAL` check of a pending `SIG_GC` is G1-2's
+# (engine core). Upstream's `PL_raise` also wakes the engine (`updateAlerted`); there is none to wake. True, as upstream's.
+"Raise the virtual signal `sig` (`SIG_GC` or `SIG_TUNE_GC`): its bit of `ld.gc.sig_pending` (pl-fli.c `PL_raise`)."
+function raiseGcSignal!(ld::PL_local_data, sig::Int)::Bool
+    ld.gc.sig_pending |= UInt64(1) << (sig - SIG_PROLOG_OFFSET)
+    return true
+end
+
+# PORT: pl-fli.h PL_pending as pendingGcSignal
+# DIVERGES: see `raiseGcSignal!`.
+"Is the virtual signal `sig` pending (pl-fli.h `PL_pending`)?"
+pendingGcSignal(ld::PL_local_data, sig::Int)::Bool =
+    (ld.gc.sig_pending & (UInt64(1) << (sig - SIG_PROLOG_OFFSET))) != 0
+
+# PORT: pl-fli.c PL_clearsig as clearGcSignal!
+# DIVERGES: see `raiseGcSignal!`. True, as upstream's for a valid signal.
+"Clear the virtual signal `sig` (pl-fli.c `PL_clearsig`)."
+function clearGcSignal!(ld::PL_local_data, sig::Int)::Bool
+    ld.gc.sig_pending &= ~(UInt64(1) << (sig - SIG_PROLOG_OFFSET))
+    return true
+end
+
+# PORT: pl-gc.c STAT_NEXT_INDEX
+"The ring index after `i` in a window of `GC_STAT_WINDOW_SIZE` entries (0-based, pl-gc.c `STAT_NEXT_INDEX`)."
+STAT_NEXT_INDEX(i::Int)::Int = i + 1 == GC_STAT_WINDOW_SIZE ? 0 : i + 1
+
+# PORT: pl-gc.c STAT_PREV_INDEX
+"The ring index before `i` in a window of `GC_STAT_WINDOW_SIZE` entries (0-based, pl-gc.c `STAT_PREV_INDEX`)."
+STAT_PREV_INDEX(i::Int)::Int = i > 0 ? i - 1 : GC_STAT_WINDOW_SIZE - 1
+
+# PORT: pl-gc.c gc_percentage
+# DIVERGES (the decomposition's "*100" is wrong): a FRACTION, as upstream: `gc_time/(gc_time+prolog_time)`, 0.0 when no time was spent.
+"The fraction of the CPU time of the window `stat` spent collecting (pl-gc.c `gc_percentage`)."
+gc_percentage(stat::gc_stat)::Float64 =
+    stat.gc_time == 0.0 ? 0.0 : stat.gc_time / (stat.gc_time + stat.prolog_time)
+
+# PORT: pl-gc.c gc_stat_aggregate as gc_stat_aggregate!
+# DIVERGES: the arrays are 1-based vectors, `aggr_index` stays 0-based (`aggr[aggr_index + 1]`); `reason` is summed, not averaged, as upstream's.
+"Aggregate the last `GC_STAT_WINDOW_SIZE` collections into the next `aggr` entry: sums divided by the window size (pl-gc.c `gc_stat_aggregate`)."
+function gc_stat_aggregate!(stats::gc_stats)::Nothing
+    this = stats.aggr[stats.aggr_index + 1]
+    gb = 0
+    ga = 0
+    tb = 0
+    ta = 0
+    lo = 0
+    gt = 0.0
+    pt = 0.0
+    rs = UInt64(0)
+    for i in 1:GC_STAT_WINDOW_SIZE                          # memset(this, 0); then the sums
+        l = stats.last[i]
+        gb += l.global_before
+        ga += l.global_after
+        tb += l.trail_before
+        ta += l.trail_after
+        lo += l.local_used
+        gt += l.gc_time
+        pt += l.prolog_time
+        rs += l.reason
+    end
+    this.global_before = gb ÷ GC_STAT_WINDOW_SIZE
+    this.global_after = ga ÷ GC_STAT_WINDOW_SIZE
+    this.trail_before = tb ÷ GC_STAT_WINDOW_SIZE
+    this.trail_after = ta ÷ GC_STAT_WINDOW_SIZE
+    this.local_used = lo ÷ GC_STAT_WINDOW_SIZE
+    this.gc_time = gt / GC_STAT_WINDOW_SIZE
+    this.prolog_time = pt / GC_STAT_WINDOW_SIZE
+    this.reason = rs                                        # not divided
+    stats.aggr_index = STAT_NEXT_INDEX(stats.aggr_index)
+    return nothing
+end
+
+# PORT: pl-gc.c gc_stat_start as gc_stat_start!
+# DIVERGES: the stacks' sizes are `_used_stack` (bytes, src/pl-prims.jl); `stats` is `ld.gc.stats` or any `gc_stats` (the white-box tests' own).
+"Start the statistics of a collection: the sizes before, the CPU time spent since the last one; `reason` 0 takes the pending request (pl-gc.c `gc_stat_start`)."
+function gc_stat_start!(ld::PL_local_data, stats::gc_stats, reason::UInt64)::Nothing
+    this = stats.last[stats.last_index + 1]
+    cpu = ThreadCPUTime(CPU_USER)
+
+    if stats.last_index == 0 && this.global_before != 0
+        gc_stat_aggregate!(stats)
+    end
+
+    if reason == 0
+        reason = stats.request
+    end
+    stats.request = 0
+
+    this.reason = reason
+    this.global_before = _used_stack(ld, :global)
+    this.trail_before = _used_stack(ld, :trail)
+    this.local_used = _used_stack(ld, :local)
+    this.prolog_time = cpu - stats.thread_cpu
+    stats.thread_cpu = cpu
+    return nothing
+end
+
+# PORT: pl-gc.c gc_stat_end as gc_stat_end!
+# DIVERGES: `LD->stacks.global.gced_size` and `.trail.gced_size` are `ld.gc.global_policy.gced_size` and `ld.gc.trail_policy.gced_size`; `PL_raise(SIG_TUNE_GC)`
+# is `raiseGcSignal!` (a pending bit: the handler, `gc_tune_handler` pl-setup.c:838, is left to the signal owner).
+"End the statistics of a collection: the sizes after, the time it took, the totals; asks for `prolog:tune_gc/3` above 20% (pl-gc.c `gc_stat_end`)."
+function gc_stat_end!(ld::PL_local_data, stats::gc_stats)::gc_stat
+    this = stats.last[stats.last_index + 1]
+    cpu = ThreadCPUTime(CPU_USER)
+
+    this.global_after = _used_stack(ld, :global)
+    this.trail_after = _used_stack(ld, :trail)
+    this.gc_time = cpu - stats.thread_cpu
+    stats.thread_cpu = cpu
+    stats.last_index = STAT_NEXT_INDEX(stats.last_index)
+
+    ld.gc.global_policy.gced_size = this.global_after
+    ld.gc.trail_policy.gced_size = this.trail_after
+
+    stats.totals.global_gained += this.global_before - this.global_after
+    stats.totals.trail_gained += this.trail_before - this.trail_after
+    stats.totals.time += this.gc_time
+    stats.totals.collections += 1
+
+    if gc_percentage(this) > 0.2
+        raiseGcSignal!(ld, SIG_TUNE_GC)
+    end
+
+    return this
+end
+
+# PORT: pl-gc.c last_gc_stats
+"The statistics of the most recent collection (pl-gc.c `last_gc_stats`)."
+last_gc_stats(stats::gc_stats)::gc_stat = stats.last[STAT_PREV_INDEX(stats.last_index) + 1]
+
+# PORT: pl-gc.c gc_avg
+"The mean of `gc_percentage` over the `aggr` window (pl-gc.c `gc_avg`)."
+function gc_avg(stats::gc_stats)::Float64
+    d = 0.0
+    for i in 1:GC_STAT_WINDOW_SIZE
+        d += gc_percentage(stats.aggr[i])
+    end
+    d /= GC_STAT_WINDOW_SIZE
+    return d
+end
+
+# PORT: pl-gc.c unify_gc_reason
+# DIVERGES: `PL_unify_term(t, PL_FUNCTOR, FUNCTOR_gc6, PL_INT ...)` (not ported) is `PL_unify_functor` and one `PL_unify_arg` per integer, through a scratch
+# reference. The shift of `ur` is upstream's 36 although `GC_USER` is bit 40: copied as is (pl-gc.c:696).
+"Unify `t` with `gc(GlobalOverflow, GlobalRequest, TrailOverflow, TrailRequest, Exception, User)`, the bytes of the reason of `stat` (pl-gc.c `unify_gc_reason`)."
+function unify_gc_reason(ld::PL_local_data{T}, t::term_t, stat::gc_stat)::Bool where {T}
+    r = stat.reason
+    go = Int((r >> 0) & 0xff)
+    gr = Int((r >> 8) & 0xff)
+    to = Int((r >> 16) & 0xff)
+    tr = Int((r >> 24) & 0xff)
+    ex = Int((r >> 32) & 0xff)
+    ur = Int((r >> 36) & 0xff)
+
+    PL_unify_functor(ld, t, mk_sym(T, :gc), 6) || return false
+    tmp = PL_new_term_ref(ld)
+    PL_put_int64(ld, tmp, go) && PL_unify_arg(ld, 1, t, tmp) || return false
+    PL_put_int64(ld, tmp, gr) && PL_unify_arg(ld, 2, t, tmp) || return false
+    PL_put_int64(ld, tmp, to) && PL_unify_arg(ld, 3, t, tmp) || return false
+    PL_put_int64(ld, tmp, tr) && PL_unify_arg(ld, 4, t, tmp) || return false
+    PL_put_int64(ld, tmp, ex) && PL_unify_arg(ld, 5, t, tmp) || return false
+    PL_put_int64(ld, tmp, ur) && PL_unify_arg(ld, 6, t, tmp) || return false
+    return true
+end
+
+# PORT: pl-gc.c unify_gc_stats
+# DIVERGES: `PL_unify_term` (not ported): `gc_stats/8` is `PL_unify_functor` and one `PL_unify_arg` per argument through a scratch reference; the ring `index` is
+# 0-based as upstream's and `stats` a vector indexed `index + 1`.
+"Unify `t` with the list of the `gc_stats(Reason, GlobalBefore, GlobalAfter, TrailBefore, TrailAfter, Local, GcTime, GcPercentage)` of the entries of the ring `stats` that hold a collection, newest first (pl-gc.c `unify_gc_stats`)."
+function unify_gc_stats(
+    ld::PL_local_data{T}, t::term_t, stats::Vector{gc_stat}, index::Int
+)::Bool where {T}
+    tail = PL_copy_term_ref(ld, t)
+    head = PL_new_term_ref(ld)
+    rt = PL_new_term_ref(ld)
+    tmp = PL_new_term_ref(ld)
+
+    for i in 1:GC_STAT_WINDOW_SIZE
+        index = STAT_PREV_INDEX(index)
+        this = stats[index + 1]
+
+        if this.global_before != 0
+            PL_unify_list(ld, tail, head, tail) || return false
+            PL_put_variable(ld, rt) || return false
+            unify_gc_reason(ld, rt, this) || return false
+            PL_unify_functor(ld, head, mk_sym(T, :gc_stats), 8) || return false
+            PL_unify_arg(ld, 1, head, rt) || return false
+            PL_put_int64(ld, tmp, this.global_before) && PL_unify_arg(ld, 2, head, tmp) || return false
+            PL_put_int64(ld, tmp, this.global_after) && PL_unify_arg(ld, 3, head, tmp) || return false
+            PL_put_int64(ld, tmp, this.trail_before) && PL_unify_arg(ld, 4, head, tmp) || return false
+            PL_put_int64(ld, tmp, this.trail_after) && PL_unify_arg(ld, 5, head, tmp) || return false
+            PL_put_int64(ld, tmp, this.local_used) && PL_unify_arg(ld, 6, head, tmp) || return false
+            PL_put_float(ld, tmp, this.gc_time) && PL_unify_arg(ld, 7, head, tmp) || return false
+            PL_put_float(ld, tmp, gc_percentage(this)) && PL_unify_arg(ld, 8, head, tmp) || return false
+        end
+    end
+
+    return PL_unify_nil(ld, tail)
+end
+
+# PORT: pl-gc.c gc_statistics as pl_dgc_statistics5_va
+# (PRED_IMPL("$gc_statistics", 5, gc_statistics, 0), pl-gc.c:4592; `'$gc_statistics'(-Last, -Aggr, -LastPercentage, -AggrPercentage, -Average)`)
+"`'\$gc_statistics'(-Recent, -Aggregated, -LastFraction, -AggregatedFraction, -Average)` (pl-gc.c): the stack collector's statistics."
+function pl_dgc_statistics5_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2, A3, A4, A5 = PL__t0, PL__t0 + 1, PL__t0 + 2, PL__t0 + 3, PL__t0 + 4
+    stats = ld.gc.stats
+    last = last_gc_stats(stats)
+    aggr = stats.aggr[STAT_PREV_INDEX(stats.aggr_index) + 1]
+
+    return (
+        unify_gc_stats(ld, A1, stats.last, stats.last_index) &&
+        unify_gc_stats(ld, A2, stats.aggr, stats.aggr_index) &&
+        PL_unify_float(ld, A3, gc_percentage(last)) &&
+        PL_unify_float(ld, A4, gc_percentage(aggr)) &&
+        PL_unify_float(ld, A5, gc_avg(stats))
+    ) ? FTRUE : FFALSE
+end
+
+# PORT: pl-gc.c BeginPredDefs as PL_predicates_from_gc
+# DIVERGES: `$gc_statistics/5` only; `$check_stacks/1` (O_DEBUG or O_MAINTENANCE: not in a release build) and `gc_counts/1` (GC_COUNTING) are not
+# in the pinned build; `PRED_DEF` ors in `PL_FA_VARARGS`.
+"pl-gc.c's registration table (`BeginPredDefs(gc)`): the entries of a release build."
+const PL_predicates_from_gc = (
+    PL_extension("\$gc_statistics", 5, pl_dgc_statistics5_va, PL_FA_VARARGS),
+)
+
+# PORT: pl-gc.c considerGarbageCollect
+# DIVERGES: `Stack s` is `:global`, `:trail`, `:local` or `:combined` (`nothing` = NULL: the global and the trail, as `&GD->combined_stack`); the stacks are not
+# structs: sizes are `_used_stack` (bytes), the combined stack's size is `8 * ld.stacks_limit` (what `_room_stack` uses), and `gc`, `small`, `factor`,
+# `gced_size` are `ld.gc.global_policy` etc. `PL_raise(SIG_GC)` is `raiseGcSignal!` (a pending bit). The `DEBUG(MSG_GC_SCHEDULE, ...)` output is left out.
+# The (*) of upstream: while no inference ran since the last collection (`LD->gc.inferences`) nothing is requested, and the stack's `gced_size` follows its use.
+"Is a stack collection due (pl-gc.c `considerGarbageCollect`)? If so the request is recorded and `SIG_GC` raised; true when `SIG_GC` is pending."
+function considerGarbageCollect(ld::PL_local_data, s::Union{Nothing, Symbol}=nothing)::Bool
+    if truePrologFlag(ld, PLFLAG_GC)
+        if pendingGcSignal(ld, SIG_GC)
+            return true
+        end
+
+        if s === nothing || s === :combined
+            return considerGarbageCollect(ld, :global) || considerGarbageCollect(ld, :trail)
+        else
+            pol = s === :global ? ld.gc.global_policy : s === :trail ? ld.gc.trail_policy : ld.gc.local_policy
+            if pol.gc
+                used = _used_stack(ld, s)                       # amount in actual use
+                limit = 8 * ld.stacks_limit - _used_stack(ld, :local)
+                space = limit > used ? limit - used : 0
+                low = _used_stack(ld, :local) + pol.small
+
+                if s === :global
+                    low += _used_stack(ld, :trail)
+                else
+                    low += _used_stack(ld, :global) ÷ 8
+                end
+
+                if ld.gc.inferences == ld.statistics.inferences && !ld.exception_processing
+                    pol.gced_size = used                        # (*)
+                    return false
+                end
+
+                if used > pol.factor * pol.gced_size + low
+                    # request on the stack (MSG_GC_SCHEDULE)
+                elseif space < limit ÷ 8 && used > pol.gced_size + limit ÷ 32
+                    # request on low space (MSG_GC_SCHEDULE)
+                else
+                    return false
+                end
+
+                ld.gc.stats.request = UInt64(s === :global ? GC_GLOBAL_REQUEST : GC_TRAIL_REQUEST)
+
+                return raiseGcSignal!(ld, SIG_GC)
+            end
+        end
+    end
+
+    return false
+end
+
+# PORT: pl-gc.c call_tune_gc_hook
+# DIVERGES: `PROCEDURE_tune_gc3` is looked up as `prolog:tune_gc/3` on each call (upstream: `PL_predicate("tune_gc", 3, "prolog")` at pl-ext.c:385, the
+# same procedure); the database is the running query's (`_query_gd`). The caller, `gc_tune_handler` (pl-setup.c:838-840, on `SIG_TUNE_GC`), is left
+# to the signal owner; nothing in the kernel raises `SIG_TUNE_GC` before G1-6's driver calls `gc_stat_end!`.
+"Call `prolog:tune_gc(+GcTime, +LastFraction, +AggregatedFraction)` if the program defines it (pl-gc.c `call_tune_gc_hook`)."
+function call_tune_gc_hook(ld::PL_local_data{T})::Nothing where {T}
+    gd = _query_gd(ld)
+    proc = lookupProcedure(mk_sym(T, :tune_gc), 3, lookupModule(gd, mk_sym(T, :prolog)))
+
+    if isDefinedProcedure(gd, proc)
+        fid = PL_open_foreign_frame(ld)
+        if fid != 0
+            av = PL_new_term_refs(ld, 3)
+            stats = ld.gc.stats
+            last = last_gc_stats(stats)
+            aggr = stats.aggr[STAT_PREV_INDEX(stats.aggr_index) + 1]
+
+            if PL_unify_float(ld, av, last.gc_time) &&
+                PL_unify_float(ld, av + 1, gc_percentage(last)) &&
+                PL_unify_float(ld, av + 2, gc_percentage(aggr))
+                PL_call_predicate(gd, ld, nothing, PL_Q_NODEBUG | PL_Q_PASS_EXCEPTION, proc, av)
+            end
+
+            PL_close_foreign_frame(ld, fid)
+        end
+    end
+    return nothing
+end
+
+# PORT: pl-gc.c blockGC
+# DIVERGES: `gc_status` is `ld.gc.status` (pl-gc.c `#define gc_status LD->gc.status`).
+"Block the collector unless `flags` has `ALLOW_GC`, the shifter unless it has `ALLOW_SHIFT` (pl-gc.c `blockGC`)."
+function blockGC(ld::PL_local_data, flags::Int)::Nothing
+    if (flags & ALLOW_GC) == 0
+        ld.gc.status.blocked += 1
+    end
+    if (flags & ALLOW_SHIFT) == 0
+        ld.shift_status.blocked += 1
+    end
+    return nothing
+end
+
+# PORT: pl-gc.c unblockGC
+"Undo `blockGC` for the same `flags` (pl-gc.c `unblockGC`)."
+function unblockGC(ld::PL_local_data, flags::Int)::Nothing
+    if (flags & ALLOW_GC) == 0
+        ld.gc.status.blocked -= 1
+    end
+    if (flags & ALLOW_SHIFT) == 0
+        ld.shift_status.blocked -= 1
+    end
+    return nothing
+end
