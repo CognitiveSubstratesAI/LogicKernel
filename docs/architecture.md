@@ -8294,3 +8294,68 @@ The table of every hunk: evidence/PIN1/step_c/decomposition.tsv and part2_notes.
   os/pl-file.c and os/pl-stream.c (`Sshare` and `shareStandardStream`, 87fc7589: TH1; the other hunks cd67bb35, dfc1c55d, 4f259069 are ported). Each file's hunks were compared as in commit 6: the changed lines minus d755bdc4 minus the named commits leave only the groups listed here.
   No `# UPSTREAM:` line cites cbf4e189 any more, so the `sync-from:` line of tools/SWIPL_VERSION, tools/fetch_sync_from.sh, its steps in CI.yml, evidence.yml and mutation.yml and its section of tools/test_ci_tools.sh are removed, and with them the
   empty test/sync_expected_mismatch.jl (test/test_gate_split.jl holds that file to exist exactly while `sync-from:` does). tools/port_check.jl still reads an optional `sync-from:` line (a later sync writes it again and restores the fetch step and the list from this commit's parent; test/test_port_check.jl feeds it a fixture pin).
+
+## TAB1 TB6 — the incremental dependency graph: pl-idgset.c, the IDG of pl-tabling.c, reevaluation, `S_INCR_DYNAMIC` (R2, swipl-devel 18168e62)
+
+What TB6 adds (pin `18168e629eab`, oracle swipl 10.1.20; written edit-only by five agents on branch wip/tb6, off wip/stack1 4c1ef9fe: NOTHING was compiled or run when this block
+was written, every claim below is UNVERIFIED until the gate; the rows were pinned from swipl 10.1.20, the white-box rows from the C source). Evidence: evidence/TB6/handoff*.md.
+- **UPSTREAM files:** `src/pl-idgset.c` and `src/pl-idgset.h` (NEW src/pl-idgset.jl, the whole file, single-thread build); `src/pl-tabling.c` (src/pl-tabling.jl, four blocks:
+  IDG CONSTRUCTION :7824-8560, IDG QUERYING :8562-8850, IDG CHANGE PROPAGATION :8994-9203 with `$idg_changed/1`, `$idg_falsecount/2`, `$idg_set_falsecount/2`, `$idg_forced/1`
+  (:9826-9963), IDG REEVALUATION :7416-7438 and :11053-11430); `src/pl-tabling.h` (the structs `idg_node`, `idg_mdep`, `idg_mono`: src/pl-incl.jl); `src/pl-vmi.c` `S_INCR_DYNAMIC`
+  (:3522-3553), `src/pl-supervisor.c` `dynamicSupervisor` (:330-339), `src/pl-comp.c` `assert_term` (:4915-4920), `src/pl-global.h` (`PL_code_data.incr_dynamic`).
+- **Ports (18 predicates registered in `PL_predicates_from_tabling`, upstream order):** `$idg_add_dyncall/1`, `$idg_add_edge/1`, `$idg_set_current/1,2`, `$idg_reset_current/0`,
+  `$idg_edge/3` (NDET), `$idg_changed/1`, `$idg_thread_summary/3`, `$idg_thread_space/2`, `$idg_predicate_edges/3`, `$idg_falsecount/2`, `$idg_forced/1`, `$idg_set_falsecount/2`,
+  `$idg_false_edge/3` (NDET), `$tbl_reeval_wait/2`, `$tbl_reeval_prepare_top/2`, `$tbl_reeval_prepare/2`, `$tbl_reeval_abandon/1`; the supervisor `S_INCR_DYNAMIC`; the flag of
+  `assert_term` that makes a new procedure incremental (`tbl_set_incremental_predicate`). The boot-image kernel-foreign count of test/db/test_boot_image_swipl.jl moves 374 -> 356
+  (the TB6 registrations as foreign rows of `system`). docs/r2_owners.tsv lost the 10 `pred:` rows these register and the `vmi:S_INCR_DYNAMIC` row.
+- **NAMED REFUSALS (each `tbl_refuse(T, fname, what, owner)`, one owner row `refusal:src/pl-tabling.jl::tbl_refuse::what`):** monotonic tabling is TB7: a monotonic dependency
+  (`idg_mdeps`, `find_dep`, `new_mdep`, `mono_index_*`, `free_mdep_chain`), `force_reeval`/`mdep_empty_queues` of a monotonic parent in `idg_changed_loop`, `$idg_mono_affects*` in
+  `idg_edge_gen`; the 13 monotonic predicates (`$idg_mono_*`, `$idg_add_mono*`, `$mono_idg_changed/2`, `$mono_reeval_*`, `$tbl_collect_mono_dep/0`) are not registered and their rows in
+  docs/r2_owners.tsv now name TB7. Shared tables and threads are TH1: `idg_new` of a shared table, `idg_add_child` with a shared parent or child (`idg_dependency_error`),
+  `trie_for_dynamic_predicate` of a shared or thread-local predicate, `PL_get_thread_id_ex` in `idg_reader_registry` (only the main thread or 1 is accepted), and
+  `assert_term`'s `PL_CREATE_THREAD_LOCAL` (the owner row is now `refusal:src/pl-comp.jl::assert_term!::assert_term: PL_CREATE_THREAD_LOCAL`, TH1; it was a refusal of any flag).
+  `tt_add_table` (`prepare_reeval`) is TB9; `tt_has_modified_dependencies` answers false because no transaction can be open.
+- **Refusal sites of TB2/TB4/TB1/TB3 that TB6's code replaces AT THE STACK GATE (branch, function; none is edited on wip/tb6 itself):** wip/tb1 `reset_answer_table`
+  (`atrie.IDG === nothing || tbl_refuse(... TB6)` -> `idg_reset` / `idg_destroy`), `complete_or_invalid_status` (the IDG branches: falsecount, reevaluating), `tbl_variant_table`
+  (-> `idg_init_variant(ld, atrie, def, variant)` + `idg_add_edge(ld, atrie, nothing)`), `is_answer_trie` (`incremental`, `monotonic(How)`); wip/tb3 `set_idg_current` stub (DELETE:
+  TB6's `set_idg_current(ld, ::Union{Nothing,trie{T}})` replaces it) and `call_complete_table` (-> `idg_init_variant` + `idg_add_edge`); wip/tb2 `free_worklist_set`
+  (-> `reset_reevaluation`, pl-tabling.c:938-941), `wls_reeval_complete` (-> `reeval_complete` per reevaluating node, pl-tabling.c:6226-6255), `answer_nodes_discardable`,
+  `complete_worklist` (-> `tt_has_modified_dependencies`); wip/tb4 `update_delay_list_any` (-> the reevaluating branch, pl-tabling.c:1365-1368), the early-completion test, `add_answer`
+  (`TN_IDG_ADDED`), `table_has_no_answers`. The stack gate's conflicts are in `ld_tabling` (TB1 inserts `start_nodes`, TB2 appends `pointers`, `free_pointers`, `wkl_states`).
+- **DIVERGES (representation or placement; each with its place):**
+  1. **`S_INCR_DYNAMIC` renumbers the VM.** The opcode is `code(161)` in the pin's order (pl-vmi.c:3522, between `I_CUTCHP` and `S_WRAP`): src/pl-vmi.jl:621-623, the
+     `_CODE_TABLE` row before `S_WRAP`. `S_WRAP`, `S_CALLWRAPPER`, `S_TABLED`, `I_RESET`, `I_EXITRESET`, `I_CALLCONT`, `I_SHIFT`, `I_SHIFTCP` move from 161..168 to 162..169, and TR4's trie
+     opcodes (the T_* family) shift by one with them at the stack. The numbers are internal identity (no file, QLF or oracle row reads them: the only pin is the opcode-order row of
+     test/core_lang/test_cont_boot_swipl.jl, the tail length 12 -> 13: the D-0407 item 3 rule, the tail stays in pl-vmi.c's order; disclosed per D-0083). A `.qlf` or boot image
+     compiled before TB6 carries the old numbers (the images are rebuilt by the gate).
+  2. **The VM branch is a function.** The body of `S_INCR_DYNAMIC` between `SAVE_REGISTERS` and `LOAD_REGISTERS` is `incr_dynamic_call(ld, def, fr, ctrie)` (ORIGINAL, src/pl-tabling.jl;
+     as `S_TABLED` calls `tbl_complete_answer_clause`); the branch reads `LD->tabling.idg_current` through `idg_current(ld)` and `symbol_trie` (src/pl-wam.jl:4959-4973).
+     `put_supervisor_goal` is TB3's (the frame is an argument); the abstract-goal warning of `incr_dynamic_call` is a TB3 row (DEFERRED KILL in tools/mutants/TB6.py).
+  3. **Structs.** NEW `idg_set_block{P}`, `idg_set{P}`, `idg_set_enum{P}`, `idg_registry{P}`, `idg_mdep{T,N}`, `idg_mono{T,N}`, `idg_node{T}`, `idg_propagate_state{T}`, `idg_edge_state{T}`,
+     `pair_map{T}` (src/pl-incl.jl:2845-3065); the generic `P`/`N` close the cycle node -> set -> node as `worklist{T,C}` does. `trie{T}.IDG` was `Nothing`, now
+     `Union{Nothing, idg_node{T}}`. `ld_tabling{T}` gains `idg_registry` (after `node_pool`; `nothing`: NULL) and, as its LAST field, `idg_edge_states::foreign_state_pool{idg_edge_state{T}}`
+     (the records of `$idg_edge/3`'s REDO states, upstream's `allocForeignState` copies); `PL_code_data` gains `incr_dynamic::Vector{code}` after `dynamic` (pl-global.h:82; the constructor
+     call in src/pl-global.jl takes 8 arguments). A changed struct restarts the warm daemon at the gate.
+  4. **The sets are records, not tagged words.** `idg_set` is `single` / `block` / empty (both `nothing`) instead of pl-idgset.h's tagged pointer; an `idg_set_block` has `capacity`
+     slots and `entry_dead[i]` instead of the low-bit mark; the pointer hashed by `hash_slot` is `objectid(p)` (identity, as the address); the registry slot holds the node, `nothing`, or
+     (a free slot) the `Int` upstream keeps as a tagged word. `SIZEOF_IDG_SET_BLOCK` 24, `SIZEOF_IDG_NODE` 80, `SIZEOF_IDG_MONO` 24 (64-bit, `O_TRIE_STATS` on) are CHARGED to the table pool
+     (`alloc_from_pool`) and discharged (`free_to_pool`); memory is Julia's.
+  5. **Single-thread reader hooks.** `initIDGReaders`, `idg_reader_enter`, `idg_reader_exit` do nothing and `idg_free_or_defer` calls the function at once (`#ifndef O_PLMT`, the file header
+     of src/pl-idgset.jl); `COMPARE_AND_SWAP_PTR` and the barriers are plain stores; `lock_set`/`REG_LOCK` are empty. The deferred list `lingering` is the owning node's. The threads' readers are TH1's.
+  6. **Enumerations and summaries.** `idg_set_enum_init` and `idg_set_next` return their state (upstream fills `*offset` and the caller's struct); `idg_thread_summary` returns a named
+     tuple (nodes, edges, bytes); `$idg_predicate_edges/3` lists the `pair_map` in the order the pairs are first met (upstream: hash slot order, an order of addresses), parallel vectors keyed on `objectid`s.
+  7. **The current IDG node** `LD->tabling.idg_current` is a PERMANENT global cell made at setup (src/pl-setup.jl, as the wakeup list's head; pl-setup.c:1559); the old current symbol is
+     unified as `unify_trie` does. `idg_free_affected` and its siblings take `ctx` as a tuple `(ld, node)`; the `Sdprintf` of a backlink that is not found is `@warn`; the `DEBUG` prints are not kept.
+  8. **The variant trie** of `idg_init_variant` and `change_incomplete_error` is TB1's `variant_table(ld, shared)` (upstream finds it from the node); `WL_DYNAMIC` / `WL_GROUND` are TB1's sentinels in `trie.worklist`.
+- **UNPINNED OBSERVATION (not a TB6 row):** in swipl 10.1.20, after `$idg_add_dyncall(ti_d2(_))` on an incremental dynamic predicate, `assertz(ti_d2(1))` did NOT raise the falsecount of the
+  dependent table T. Nothing pins it and the port does not claim it either way; how assert reaches the dynamic table's IDG node is for a later check (the assert-side propagation, `$idg_changed/1`
+  called from the dynamic-predicate update path, is not a TB6 function).
+- **To verify at the gate (unverified by construction):** the 4 differential rows `idg01`-`idg04` and the 3 hand-built kernel rows `t_idg05`-`t_idg07` of test/core_lang/test_tabling_idg_swipl.jl
+  (the kernel rows need `start_tabling` of TB2/TB3: they gate on the stack); the white-box testsets `idg10`-`idg15` (edge sets, registry, edge halves, falsecount chain, reevaluation, `idg_destroy`;
+  values from the C source, NOT run: `_ti_node` calls `idg_new` on a fresh `PL_local_data` whose `node_pool` is `nothing`); `@goto`/`@label` across the loop of `idg_edge_gen`; the
+  `ld.tabling.idg_edge_states` `live_states` row (src/pl-fli.jl, not added); `tbl_refuse`, `get_answer_table`, `variant_table`, `table_status`, `put_supervisor_goal`, `destroy_delay_info`,
+  `simplify_answer` are other branches' and undefined on wip/tb6 alone.
+- **ORIGINAL (no upstream counterpart):** `incr_dynamic_call`, `idg_current`/`set_idg_current` (the global cell), the `idg_pool` helper, `reg_block`/`reg_block_size`, the `_manifest_tb6` rows.
+
+Tests: test/core_lang/test_tabling_idg_swipl.jl (pinned rows from swipl 10.1.20, two identical runs, and the white-box testsets); test/core_lang/test_cont_boot_swipl.jl (the opcode-order row);
+test/db/test_boot_image_swipl.jl (the kernel-foreign count); manifest rows `_manifest_tb6(T)` per term type in test/static_analysis_manifest.jl; mutants in tools/mutants/TB6.py.
