@@ -4208,10 +4208,10 @@ end
 
 # PORT: pl-tabling.c tbl_add_answer_found
 # (pl-tabling.c:4777-4883 at the pin.)
-# DIVERGES: nodes are ids; the restraint branches are TB8's and refused by name: the answer size tripwire `tbl_wl_tripwire` and
-# `add_radial_restraint` (an abstracted answer whose action is not `fail`), and the answer count restraint
-# (`generalise_answer_substitution`, `add_answer_count_restraint`, `tbl_wl_tripwire`). The IDG reevaluation branch is TB6's
-# (`IDG` is `nothing` until then). The `goto update_dl` / `add_anyway` labels are `@goto`s.
+# DIVERGES: nodes are ids; the restraint branches are TB8's: the answer size restraint (`add_radial_restraint`, `tbl_wl_tripwire`)
+# and the answer count restraint (`generalise_answer_substitution`, `add_answer_count_restraint`, `tbl_wl_tripwire`), TB8 replaced
+# TB2's named refusals. `kp = valTermRef(gen)` is the location `-(gen + 1)`; `trie_lookup` returning `true` is rc 1. The `goto
+# update_dl` / `add_anyway` labels are `@goto`s.
 "Continue `tbl_add_answer` after `trie_insert_flat` gave `rc` and `nid` (pl-tabling.c)."
 function tbl_add_answer_found(
     ld::PL_local_data{T}, wl::tbl_worklist{T}, answer::term_t, delays::term_t, rc::Int,
@@ -4265,16 +4265,37 @@ function tbl_add_answer_found(
             )
             return 0                                # return PL_permission_error("modify", "trie_key", answer)
         elseif (action = tripwire_answers_for_subgoal(ld, wl)) !== nothing
-            # ATOM_bounded_rationality: generalise_answer_substitution, add_answer_count_restraint; else tbl_wl_tripwire
-            tbl_refuse(
-                T,
-                :tbl_wl_tripwire,
-                "tbl_add_answer: the answer count restraint (max_answers, max_answers_for_subgoal)",
-                "TB8"
-            )
+            if sym_key(action) == sym_key(mk_sym(T, :bounded_rationality))
+                trie_delete(_query_gd(ld), atrie, nid, true)
+
+                gen = PL_new_term_ref(ld)
+                if gen == 0 || !generalise_answer_substitution(ld, answer, gen) ||
+                        !add_answer_count_restraint(ld)
+                    return 0
+                end
+
+                rc, nid = trie_lookup(ld, atrie, 0, -(gen + 1), true, nothing)
+                if rc == 1                          # rc == true
+                    set_trie_value_word(_query_gd(ld), atrie, nid, ATOM_trienode)
+                    update_delay_list(ld, wl, nid, answer, delays) == UDL_FALSE && return 0
+
+                    return TBL_ANSWER_COMPLETE
+                else
+                    return trie_error(ld, rc, gen) ? 1 : 0
+                end
+            elseif tbl_wl_tripwire(ld, wl, action, mk_sym(T, :max_answers_for_subgoal))
+                @goto add_anyway
+            else
+                trie_delete(_query_gd(ld), atrie, nid, true)
+                return 0
+            end
         else
+            @label add_anyway
             set_trie_value_word(_query_gd(ld), atrie, nid, ATOM_trienode)
-            # (idg = wl->table->data.IDG) && idg->reevaluating: TB6 (`IDG` is `nothing` until then)
+            if (idg = atrie.IDG) !== nothing && idg.reevaluating
+                atrie.nodes[nid].flags |= TN_IDG_ADDED
+                idg.new_answer = true
+            end
 
             @label update_dl
             udl = update_delay_list(ld, wl, nid, answer, delays)
