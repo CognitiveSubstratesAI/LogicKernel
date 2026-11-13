@@ -42,6 +42,16 @@ t16(R) :- after_throw(h1, R).
 t17(R) :- after_throw(h2, R).
 t18(R) :- after_throw(h3, R).
 t19(R) :- after_throw(h4, R).
+% the mode a row leaves behind: a row that ends with the flag's mode still set would show in the row after it (flag to_nearest: A_ENTER sets no mode)
+lead_is(Y) :- set_prolog_flag(float_rounding, to_positive), Y is 1/3.0.
+lead_fv(Y) :- set_prolog_flag(float_rounding, to_positive), Z is 1/3.0, Y = Z.
+lead_cmp :- set_prolog_flag(float_rounding, to_positive), 1/3.0 > 0.3333333333333333.
+t20(R) :- lead_is(Y), set_prolog_flag(float_rounding, to_nearest), Z is 1/3.0, R = Y-Z.
+t21(R) :- lead_fv(Y), set_prolog_flag(float_rounding, to_nearest), Z is 1/3.0, R = Y-Z.
+t22(R) :- lead_cmp, set_prolog_flag(float_rounding, to_nearest), Z is 1/3.0, R = Z.
+% the inner roundtoward's mode a variable bound at run time (A_ROUNDTOWARDS_V), the outer's mode back after it: the sum is under to_zero
+rtv(M, Y) :- Y is roundtoward(roundtoward(1/3.0, M) + 1/3.0, to_zero).
+t23(R) :- rtv(to_positive, Y), Z is 1/3.0, R = Y-Z.
 % KNOWN DIFFERENCES (not in the .out): the pin's AR_CLEANUP puts back the mode the LAST roundtoward found, which is the OUTER
 % roundtoward's mode when the error comes inside or after the inner one, so the mode of the outer stays set (a leak of the pin);
 % the kernel keeps the entry mode in `ar_femode` and puts it back at every end, so no mode leaks.
