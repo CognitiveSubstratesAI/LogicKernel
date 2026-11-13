@@ -789,8 +789,11 @@ function retract_clause!(
     return true
 end
 "`retract_clause!` without local data: no transaction (pl-proc.c)."
-retract_clause!(gd::PL_global_data{T}, clause::Clause{T}, generation::gen_t)::Bool where {T} =
-    retract_clause!(gd, nothing, clause, generation)
+function retract_clause!(
+    gd::PL_global_data{T}, clause::Clause{T}, generation::gen_t
+)::Bool where {T}
+    return retract_clause!(gd, nothing, clause, generation)
+end
 
 # PORT: pl-proc.c retractClauseDefinition
 # DIVERGES: no breakpoints; the database and the local data are arguments. The method without `ld` raises no
