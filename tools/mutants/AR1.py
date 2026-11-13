@@ -10,10 +10,11 @@
 TL = ["test/core_lang/test_arith_preds_swipl.jl"]
 TR = ["test/core_lang/test_arith_random_swipl.jl", "test/core_lang/test_arith_swipl.jl"]  # group 2: set_random/1, random_property/1, random/1, random_float/0
 TV2 = ['test/core_lang/test_arith_vmi_swipl.jl', 'test/core_lang/test_arith_wakeup_swipl.jl']  # the A_* run-loop exits: the white-box rows and the A_IS wakeup rows
-TB = ["test/core_lang/test_arith_round_swipl.jl", "test/core_lang/test_arith_swipl.jl", "test/core_lang/test_prolog_flag_swipl.jl"]  # group (b): directed rounding
+TB = ["test/core_lang/test_arith_round_swipl.jl", "test/core_lang/test_arith_swipl.jl", "test/core_lang/test_prolog_flag_swipl.jl", "test/core_lang/test_arith_roundopt_swipl.jl"]  # group (b): directed rounding (+ the compiled-under-optimise rows, D-0238)
 TBF = TB + ["test/core_lang/test_set_flag_swipl.jl"]
 TC = ["test/core_lang/test_arith_curfn_swipl.jl"]  # group (c): current_arithmetic_function/1 (the only test that calls it)
 TD1 = TC  # group (d1): the function-index helpers: the white-box testset of the curfn test; (d2/d3) add the compile test below
+TRO = ['test/core_lang/test_arith_roundopt_swipl.jl', 'test/core_lang/test_arith_vmi_swipl.jl', 'test/core_lang/test_arith_wakeup_swipl.jl']  # the rounding mode of the A_* arms under optimise: the roundopt rows (+ the VMI and wakeup rows that run the same arms)
 TD3 = ["test/compile/test_body_code_swipl.jl", "test/core_lang/test_arith_vmi_swipl.jl", "test/compile/test_decompile.jl"]  # d3 (compileArith!/compileArithArgument!): the clause-code rows, the VMI rows, and the decompile test (D-0238)
 TARGETS = TL + TR + TBF + TC + TD3
 A = "src/pl-arith.jl"
@@ -760,4 +761,34 @@ MUTANTS = [
     dict(id='AR1-E139 a_status: the wakeup the A_IS body asked for is not run (KILL the wakeup rows: the hook runs late or never)', file='src/pl-wam.jl', targets=TV2,
          old='    ts_st == _TS_CHECK_WAKEUP && @goto check_wakeup ',
          new='    ts_st == _TS_CHECK_WAKEUP && @goto next_instruction '),
+    dict(id='AR1-E140 A_ENTER does not set the mode the float_rounding flag names (KILL t0-t2, t10, t11, t14: the compiled is/2 and comparison round as to_nearest)', file='src/pl-wam.jl', targets=TRO,
+         old='    ar_mode != Int(FLT_ROUND_NEAREST) && set_rounding(ar_mode)\n',
+         new='    ar_mode != Int(FLT_ROUND_NEAREST) && false\n'),
+    dict(id="AR1-E141 A_ENTER reads to_nearest as the flag's mode (KILL t0-t2, t10, t11, t14)", file='src/pl-wam.jl', targets=TRO,
+         old='    ar_mode = Int(ld.arith_f_flags & FLT_ROUND_MASK)\n',
+         new='    ar_mode = Int(FLT_ROUND_NEAREST)\n'),
+    dict(id='AR1-E142 A_ROUNDTOWARDS_A sets to_nearest, not its operand (KILL t4, t5, t8, t9)', file='src/pl-wam.jl', targets=TRO,
+         old='    set_rounding(Int(PCc[PC]))                          # set_rounding(mode)\n',
+         new='    set_rounding(Int(FLT_ROUND_NEAREST))                # set_rounding(mode)\n'),
+    dict(id='AR1-E143 A_ROUNDTOWARDS_A pushes to_nearest as the mode found, so the outer mode is not back after it (KILL t9: the sum under to_zero ties to 0.6666666666666667)', file='src/pl-wam.jl', targets=TRO,
+         old='    art_n.i = Int64(fegetround())                       # n->value.i = ctx.femode = fegetround()\n    art_n.type = V_INTEGER\n    set_rounding(Int(PCc[PC]))',
+         new='    art_n.i = Int64(FE_TONEAREST)                       # n->value.i = ctx.femode = fegetround()\n    art_n.type = V_INTEGER\n    set_rounding(Int(PCc[PC]))'),
+    dict(id='AR1-E144 A_ROUNDTOWARDS_V sets to_nearest, not the mode of the variable (KILL t6, t7)', file='src/pl-wam.jl', targets=TRO,
+         old='        set_rounding(arv_m)\n',
+         new='        set_rounding(Int(FLT_ROUND_NEAREST))\n'),
+    dict(id='AR1-E145 A_ROUNDTOWARDS_V pushes to_nearest as the mode found (KILL t23: the sum under to_zero ties to 0.6666666666666667)', file='src/pl-wam.jl', targets=TRO,
+         old='        art_n.i = Int64(fegetround())                   # n->value.i = ctx.femode = fegetround()\n        art_n.type = V_INTEGER\n        set_rounding(arv_m)',
+         new='        art_n.i = Int64(FE_TONEAREST)                   # n->value.i = ctx.femode = fegetround()\n        art_n.type = V_INTEGER\n        set_rounding(arv_m)'),
+    dict(id="AR1-E146 _vmi_a_cmp!: AR_END does not put the mode back (KILL t22: the next row's 1/3.0 under the flag's to_nearest reads the leaked to_positive)", file='src/pl-wam.jl', targets=TRO,
+         old='    fegetround() != ar_femode && fesetround(ar_femode)  # AR_END()\n    ac_rc && return _TS_NEXT',
+         new='    ac_rc && return _TS_NEXT'),
+    dict(id='AR1-E147 _vmi_a_is!: AR_END does not put the mode back (KILL t20)', file='src/pl-wam.jl', targets=TRO,
+         old='    fegetround() != ar_femode && fesetround(ar_femode)  # AR_END()\n    if _unify_const_loc(ld, -(ais_pos + 1), ais_c)',
+         new='    if _unify_const_loc(ld, -(ais_pos + 1), ais_c)'),
+    dict(id='AR1-E148 _vmi_a_firstvar_is!: AR_END does not put the mode back (KILL t21)', file='src/pl-wam.jl', targets=TRO,
+         old='    fegetround() != ar_femode && fesetround(ar_femode)  # AR_END()\n    setSlotValue!(ld, varFrameP(ld.frames[FR].base, afv_slot) + 1, afv_w)',
+         new='    setSlotValue!(ld, varFrameP(ld.frames[FR].base, afv_slot) + 1, afv_w)'),
+    dict(id='AR1-E149 ar_throw: AR_CLEANUP does not put the mode back (KILL t15, t16: the 1/3.0 after the caught error reads the leaked to_positive)', file='src/pl-wam.jl', targets=TRO,
+         old='    fegetround() != ar_femode && fesetround(ar_femode)  # AR_CLEANUP()\n',
+         new='    # AR_CLEANUP() dropped\n'),
 ]
