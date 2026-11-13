@@ -584,12 +584,50 @@ function pl_qlf_sources2_va(
     _qlf_refused(T, "\$qlf_sources", 2)
 end
 
+# PORT: pl-qlf.c FNV1A_64_OFFSET, FNV1A_64_PRIME
+# (pl-qlf.c:1872-1873)
+"FNV-1a 64-bit offset basis and prime (pl-qlf.c): the content hash of a source file."
+const FNV1A_64_OFFSET = 0xcbf29ce484222325
+const FNV1A_64_PRIME = 0x00000100000001b3
+
+# PORT: pl-qlf.c hashStreamContent
+# (pl-qlf.c:1875-1891)
+# DIVERGES: the bytes come from an `Sgetc` loop on the binary stream, where upstream reads 4096-byte blocks with
+# `Sfread` (not ported); the hash is the same, FNV-1a 64 over the bytes in order.
+"FNV-1a 64 of the bytes `s` yields; 0 if the stream signals an error (pl-qlf.c)."
+function hashStreamContent(s::IOSTREAM)::UInt64
+    hash = FNV1A_64_OFFSET
+    while true
+        c = Sgetc(s)
+        c == EOF && break
+        hash = xor(hash, UInt64(c % UInt8))                 # hash ^= (uint64_t)(unsigned char)buf[i]
+        hash *= FNV1A_64_PRIME
+    end
+    return Sferror(s) != 0 ? UInt64(0) : hash
+end
+
+# PORT: pl-qlf.c fileContentHash
+# (pl-qlf.c:1892-1904)
+"The content hash of the file `name`, 0 if it cannot be opened or read (pl-qlf.c)."
+function fileContentHash(name::String)::UInt64
+    hash = UInt64(0)
+    s, _ = Sopen_file(name, "rbr")
+    if s !== nothing
+        hash = hashStreamContent(s)
+        Sclose(s)
+    end
+    return hash
+end
+
 # PORT: pl-qlf.c file_hash as pl_file_hash2_va
-# (PRED_IMPL("$file_hash", 2, file_hash, 0)) — refused by name
+# (PRED_IMPL("$file_hash", 2, file_hash, 0)) — pl-qlf.c:3708-3716
+"`'\$file_hash'(+File, -Hash)` (pl-qlf.c): Hash is the FNV-1a 64 hash of the content of File, 0 if it cannot be read."
 function pl_file_hash2_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
 )::foreign_t where {T}
-    _qlf_refused(T, "\$file_hash", 2)
+    name = PL_get_file_name(ld, PL__t0, Int(PL_FILE_ABSOLUTE))
+    name === nothing && return FFALSE                       # !PL_get_file_name(A1, &name, PL_FILE_ABSOLUTE)
+    return PL_unify_uint64(ld, PL__t0 + 1, fileContentHash(name)) ? FTRUE : FFALSE
 end
 
 # PORT: pl-qlf.c qlf_module as pl_qlf_module2_va
