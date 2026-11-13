@@ -20,6 +20,11 @@
 #   * Code with no upstream counterpart opens with  # ORIGINAL: <why>  and lives in the nearest SWI
 #     area: `src/` for source, `test/<SWI tests area>/` for its tests, `test/` root for package
 #     infrastructure — never at a path that shadows an upstream file, never in `boot/`.
+#     An ORIGINAL file that is a MIX of several upstream files (no single upstream path is its own) may
+#     carry PORT markers when its header names those files, one line each (audit D-0609):
+#         # UPSTREAM-PARTS: swipl-devel <path> @ <commit>
+#     Each marker is then checked by name against one of those files like any port's; only the path
+#     check and the copyright check are skipped. `# UPSTREAM-PARTS:` with `# UPSTREAM:` is HEADER-BOTH.
 #   * Directories exist only where swipl-devel has them: `src/<d>` for d in swipl-devel's src/
 #     subdirectories, `test/<area>` for its tests/ areas.
 #
@@ -28,7 +33,7 @@
 # suite run also checks existence:
 #   header present and unambiguous · class · known repo · the file at its mirrored path · directories
 #   that mirror swipl-devel (the snapshot below is itself verified against the checkout) · no PORT
-#   marker in an ORIGINAL file · each PORT names one of the file's upstream files and is followed by
+#   marker in an ORIGINAL file without UPSTREAM-PARTS · each PORT names one of the file's upstream files and is followed by
 #   a definition / @testset of exactly that name (found by PARSING) · every DIVERGES has a reason ·
 #   commit exists · upstream file exists at it · each PORT name occurs in it · each COPYRIGHT line
 #   occurs in it · every swipl-devel header cites THE PIN (tools/SWIPL_VERSION `commit:`; during a
@@ -64,6 +69,7 @@ const RX_UPSTREAM = r"^#\s*UPSTREAM:\s*(\S+)\s+(\S+)\s+@\s+([0-9a-f]{7,40})\s*$"
 const RX_CLASS = r"^#\s*CLASS:\s*(\S*)\s*$"
 const RX_COPYRIGHT = r"^#\s*COPYRIGHT:\s*(.*?)\s*$"
 const RX_ORIGINAL = r"^#\s*ORIGINAL:\s*(.*?)\s*$"
+const RX_UPSTREAM_PARTS = r"^#\s*UPSTREAM-PARTS:\s*(\S+)\s+(\S+)\s+@\s+([0-9a-f]{7,40})\s*$"
 const RX_PORT = r"^#\s*PORT:\s*(\S+)\s+(\S+)(?:\s+as\s+(\S+))?\s*$"
 const RX_PORT_ANY = r"^#\s*PORT:"
 const RX_DIVERGES = r"^#\s*DIVERGES:\s*(.*?)\s*$"
@@ -98,6 +104,7 @@ struct SourceFile
     original::Bool
     original_reason::String
     markers::Vector{PortMarker}
+    parts::Vector{UpstreamRef}       # `# UPSTREAM-PARTS:` lines: the upstream files an ORIGINAL mix ports from
 end
 
 "Default checkout for an upstream repo: `LOGICKERNEL_UPSTREAM_<REPO>` or `~/dev-zone/<repo>`."
@@ -262,6 +269,7 @@ function read_source(root::String, rel::String, violations::Vector{String})::Sou
     copyright = String[]
     original = false
     original_reason = ""
+    parts = UpstreamRef[]
     for l in eachline(IOBuffer(text))                # the header: leading comments/blank lines
         s = strip(l)
         isempty(s) && continue
@@ -272,6 +280,13 @@ function read_source(root::String, rel::String, violations::Vector{String})::Sou
             push!(
                 violations,
                 "MARKER-MALFORMED $rel: `$s` (want `# UPSTREAM: <repo> <path> @ <commit>`)"
+            )
+        elseif (m = match(RX_UPSTREAM_PARTS, s)) !== nothing
+            push!(parts, UpstreamRef(m[1], m[2], m[3]))
+        elseif occursin(r"^#\s*UPSTREAM-PARTS:", s)
+            push!(
+                violations,
+                "MARKER-MALFORMED $rel: `$s` (want `# UPSTREAM-PARTS: <repo> <path> @ <commit>`)"
             )
         elseif (m = match(RX_CLASS, s)) !== nothing
             class = m[1]
@@ -303,7 +318,9 @@ function read_source(root::String, rel::String, violations::Vector{String})::Sou
             end
         end
     end
-    return SourceFile(rel, ups, class, copyright, original, original_reason, markers)
+    return SourceFile(
+        rel, ups, class, copyright, original, original_reason, markers, parts
+    )
 end
 
 # ── upstream access (git, read-only) ─────────────────────────────────────────────────────────────
@@ -851,6 +868,8 @@ function port_check(pkgroot::AbstractString;
     for f in files
         if f.original && !isempty(f.upstreams)
             push!(v, "HEADER-BOTH $(f.rel): both ORIGINAL and UPSTREAM")
+        elseif !isempty(f.parts) && !isempty(f.upstreams)
+            push!(v, "HEADER-BOTH $(f.rel): both UPSTREAM-PARTS and UPSTREAM")
         elseif !f.original && isempty(f.upstreams)
             push!(
                 v,
@@ -861,7 +880,9 @@ function port_check(pkgroot::AbstractString;
             isempty(f.original_reason) && push!(v, "ORIGINAL-NO-REASON $(f.rel)")
             (startswith(f.rel, "boot/") || occursin(r"^src/pl-", f.rel)) &&
                 push!(v, "ORIGINAL-PORT-NAME $(f.rel): that path is reserved for ports")
-            isempty(f.markers) ||
+            # D-0609: an ORIGINAL file that is a mix of several upstream files names them in
+            # `# UPSTREAM-PARTS:` lines; its markers are then checked against those files below
+            isempty(f.markers) || !isempty(f.parts) ||
                 push!(
                     v, "ORIGINAL-HAS-PORT $(f.rel): a ported unit belongs in its port file"
                 )
@@ -874,29 +895,32 @@ function port_check(pkgroot::AbstractString;
                         )
                 end
             end
-            continue
+            isempty(f.parts) && continue
         end
-        isempty(f.upstreams) && continue
-        f.class in ("code", "design") ||
+        parts_file = f.original            # here an ORIGINAL file has UPSTREAM-PARTS
+        ups = parts_file ? f.parts : f.upstreams
+        isempty(ups) && continue
+        parts_file || f.class in ("code", "design") ||
             push!(v, "CLASS-MISSING $(f.rel): `# CLASS: code` or `design`")
-        f.class == "code" && isempty(f.copyright) &&
+        !parts_file && f.class == "code" && isempty(f.copyright) &&
             push!(
                 v,
                 "COPYRIGHT-ABSENT $(f.rel): a code port must carry the upstream copyright line(s)"
             )
-        for u in f.upstreams
+        for u in ups
             u.repo in PORT_REPOS || push!(
                 v,
                 "UNKNOWN-REPO $(f.rel): `$(u.repo)` (known: $(join(PORT_REPOS, ", ")))"
             )
         end
-        want = expected_path(f.upstreams[1].repo, f.upstreams[1].path)
-        f.rel == want || push!(
-            v,
-            "PATH-MISMATCH $(f.rel): a port of $(f.upstreams[1].repo) $(f.upstreams[1].path) must live at $want"
-        )
+        want = expected_path(ups[1].repo, ups[1].path)
+        parts_file || f.rel == want ||
+            push!(
+                v,
+                "PATH-MISMATCH $(f.rel): a port of $(ups[1].repo) $(ups[1].path) must live at $want"
+            )
         defs = definitions(read(joinpath(root, f.rel), String), f.rel)
-        bases = Set(basename(u.path) for u in f.upstreams)
+        bases = Set(basename(u.path) for u in ups)
         for (k, m) in enumerate(f.markers)
             m.upstream_base in bases ||
                 push!(
@@ -919,11 +943,11 @@ function port_check(pkgroot::AbstractString;
                 )
             end
         end
-        for u in f.upstreams
+        for u in ups
             why = pin_violation(pin, u)
             why === nothing || push!(v, "PIN-MISMATCH $(f.rel): $why")
         end
-        for u in f.upstreams
+        for u in ups
             u.repo in available || continue
             dir = upstream_dirs[u.repo]
             if !_git_ok(dir, "cat-file", "-e", u.commit * "^{commit}")
@@ -938,13 +962,13 @@ function port_check(pkgroot::AbstractString;
                 continue
             end
             text = _git_show(dir, u.commit * ":" * u.path)
-            if u === f.upstreams[1]
+            if !parts_file && u === ups[1]
                 sq = _squash(text)
                 # A GENERATED first file carries no copyright notice at all (swipl-devel's
                 # src/pl-umap.c, written by src/Unicode/prolog_syntax_map.pl): its lines are
                 # checked against the file's other upstreams — its generator — instead.
                 if !occursin(r"copyright"i, text)
-                    for u2 in f.upstreams[2:end]
+                    for u2 in ups[2:end]
                         _git_ok(dir, "cat-file", "-e", u2.commit * ":" * u2.path) &&
                             (sq *= _squash(_git_show(dir, u2.commit * ":" * u2.path)))
                     end
