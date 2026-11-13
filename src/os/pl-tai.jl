@@ -674,6 +674,11 @@ const _month = (
     "October", "November", "December"
 )
 
+# ORIGINAL: C's `int` arithmetic on the year (`tm_year+1900`, `year++`, `year--`) wraps at 32 bits on the pinned build (observed:
+# `%G` of year 2147483647 prints -2147483648); the Julia `Int` would not.
+"The 32-bit two's-complement wrap of `x` (C `int` arithmetic)."
+_wrap32(x::Int)::Int = Int(x % Int32)
+
 "The code points of the literal format `s` (a sub-format of pl-tai.c: L\"%m/%d/%y\")."
 _fmt_cps(s::String)::Vector{Int} = Int[Int(ch) for ch in s]
 
@@ -720,7 +725,7 @@ function format_time(
             elseif cc == 'c' || cc == 'p' || cc == 'P' || cc == 'x' || cc == 'X'
                 _strftime_out(fd, c, tb, leapsecs)
             elseif cc == 'C'
-                year = Int(tb.tm.tm_year) + 1900
+                year = _wrap32(Int(tb.tm.tm_year) + 1900)
                 if year >= 0 && year < 10000
                     _out2digits(fd, year ÷ 100)
                 else
@@ -738,10 +743,10 @@ function format_time(
                 format_time(ld, fd, _fmt_cps("%Y-%m-%d"), tb, posix, leapsecs)
             elseif cc == 'G' || cc == 'g' || cc == 'V'
                 cal_ftm(tb, HAS_STAMP | HAS_WYDAY, leapsecs)
-                year = Int(tb.tm.tm_year) + 1900
+                year = _wrap32(Int(tb.tm.tm_year) + 1900)
                 days = iso_week_days(Int(tb.tm.tm_yday), Int(tb.tm.tm_wday))
                 if days < 0
-                    year -= 1
+                    year = _wrap32(year - 1)
                     days = iso_week_days(
                         Int(tb.tm.tm_yday) + (365 + __isleap(year)), Int(tb.tm.tm_wday)
                     )
@@ -750,7 +755,7 @@ function format_time(
                         Int(tb.tm.tm_yday) - (365 + __isleap(year)), Int(tb.tm.tm_wday)
                     )
                     if 0 <= d                               # this ISO week belongs to the next year
-                        year += 1
+                        year = _wrap32(year + 1)
                         days = d
                     end
                 end
@@ -831,9 +836,9 @@ function format_time(
                 wday = Int(tb.tm.tm_wday)
                 _out2digits(fd, (yday - (yday - wday + 8) % 7 + 7) ÷ 7)
             elseif cc == 'y'
-                _out2digits(fd, (Int(tb.tm.tm_year) + 1900) % 100)
+                _out2digits(fd, _wrap32(Int(tb.tm.tm_year) + 1900) % 100)
             elseif cc == 'Y'
-                _out_string(fd, string(Int(tb.tm.tm_year) + 1900))
+                _out_string(fd, string(_wrap32(Int(tb.tm.tm_year) + 1900)))
             elseif cc == 'z'                                # time zone as offset
                 mins = (-tb.utcoff) ÷ 60
                 if mins >= 0
