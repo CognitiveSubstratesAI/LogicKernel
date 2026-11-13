@@ -263,3 +263,156 @@ tt_clean :- abolish_all_tables, retractall(d(_)).
 
 _tt_check_unit(_TT_MONO2)
 
+# upstream: tests/tabling/test_transact_mono_lazy.pl, unit `test_transact_mono_lazy_1`
+const _TT_LAZY1 = (
+    unit = "test_transact_mono_lazy_1",
+    program = raw"""
+:- dynamic d/1 as monotonic.
+:- table p/1 as (monotonic,lazy).
+p(X) :- d(X).
+tt_clean :- abolish_all_tables, retractall(d(_)).
+""",
+    cases = [
+        ("commit", raw"assertz(d(1)), tt_ex(p, A), transaction((assertz(d(2)), tt_ex(p, B))), tt_inv(p(_), V), tt_ex(p, C), R = r(A, B, V, C)"),   # upstream test(commit)
+        ("rollback", raw"assertz(d(1)), tt_ex(p, A), tt_yn(transaction((assertz(d(2)), tt_ex(p, B), tt_note(B), fail)), Y), nb_getval(tt_in, B1), tt_inv(p(_), V), tt_ex(p, C), R = r(A, Y, B1, V, C)"),   # upstream test(rollback)
+        ("sn1", raw"assertz(d(1)), tt_ex(p, A), snapshot((assertz(d(2)), tt_ex(p, B))), tt_inv(p(_), V), tt_ex(p, C), R = r(A, B, V, C)"),   # upstream test(snapshot (1: snapshots behave the same))
+        ("sn2", raw"assertz(d(1)), assertz(d(2)), snapshot(tt_ex(p, A)), tt_inv(p(_), V), tt_ex(p, C), R = r(A, V, C)"),   # upstream test(snapshot (2: evaluated inside, no dependency modified))
+        ("sn3", raw"assertz(d(1)), tt_ex(p, A), assertz(d(2)), snapshot((tt_inv(p(_), V0), tt_ex(p, B))), tt_inv(p(_), V1), tt_ex(p, C), R = r(A, V0, B, V1, C)"),   # upstream test(snapshot (3: re-evaluated inside, dependencies untouched in it))
+        ("sn4", raw"assertz(d(1)), assertz(d(2)), snapshot((tt_ex(p, A), assertz(d(3)), tt_ex(p, B))), tt_inv(p(_), V), tt_ex(p, C), R = r(A, B, V, C)"),   # upstream test(snapshot (4: evaluated inside, then updated))
+    ],
+    # swipl 10.1.20, `tt_q(t_<case>, A)` in order, two identical runs (evidence/TAB1/w3_verify.md)
+    pinned = [
+        "r([1],[1,2],valid,[1,2])",   # commit
+        "r([1],no,[1,2],valid,[1])",   # rollback
+        "r([1],[1,2],valid,[1])",   # sn1
+        "r([1,2],valid,[1,2])",   # sn2
+        "r([1],invalid,[1,2],valid,[1,2])",   # sn3
+        "r([1,2],[1,2,3],valid,[1,2])",   # sn4
+    ],
+    # hand-written from the assertions of the upstream test (expect/3, expect_valid/1, expect_invalid/1)
+    upstream = [
+        "r([1],[1,2],valid,[1,2])",   # commit
+        "r([1],no,[1,2],valid,[1])",   # rollback
+        "r([1],[1,2],valid,[1])",   # sn1
+        "r([1,2],valid,[1,2])",   # sn2
+        "r([1],invalid,[1,2],valid,[1,2])",   # sn3
+        "r([1,2],[1,2,3],valid,[1,2])",   # sn4
+    ],
+)
+
+_tt_check_unit(_TT_LAZY1)
+
+# upstream: tests/tabling/test_transact_mono_lazy.pl, unit `test_transact_mono_lazy_2`
+const _TT_LAZY2 = (
+    unit = "test_transact_mono_lazy_2",
+    program = raw"""
+:- dynamic d/1 as monotonic.
+:- table p/1 as (monotonic,lazy).
+p(X) :- d(X).
+tt_clean :- abolish_all_tables, retractall(d(_)).
+""",
+    cases = [
+        ("retract", raw"assertz(d(1)), assertz(d(2)), snapshot((tt_ex(p, A), retract(d(2)), tt_ex(p, B))), tt_inv(p(_), V), tt_ex(p, C), R = r(A, B, V, C)"),   # upstream test(retract)
+        ("outside_assert", raw"assertz(d(1)), tt_init(p(_)), assertz(d(2)), snapshot((tt_inv(p(_), V0), tt_ex(p, B))), tt_inv(p(_), V1), tt_ex(p, C), R = r(V0, B, V1, C)"),   # upstream test(outside_assert)
+        ("mixed_assert", raw"tt_init(p(_)), assertz(d(1)), tt_inv(p(_), V0), snapshot((assert(d(2)), tt_ex(p, B))), tt_inv(p(_), V1), tt_ex(p, C), R = r(V0, B, V1, C)"),   # upstream test(mixed_assert)
+    ],
+    # swipl 10.1.20, `tt_q(t_<case>, A)` in order, two identical runs (evidence/TAB1/w3_verify.md)
+    pinned = [
+        "r([1,2],[1],invalid,[1,2])",   # retract
+        "r(invalid,[1,2],valid,[1,2])",   # outside_assert
+        "r(invalid,[1,2],invalid,[1])",   # mixed_assert
+    ],
+    # hand-written from the assertions of the upstream test (expect/3, expect_valid/1, expect_invalid/1)
+    upstream = [
+        "r([1,2],[1],invalid,[1,2])",   # retract
+        "r(invalid,[1,2],valid,[1,2])",   # outside_assert
+        "r(invalid,[1,2],invalid,[1])",   # mixed_assert
+    ],
+)
+
+_tt_check_unit(_TT_LAZY2)
+
+# upstream: tests/tabling/test_transact_mono_lazy.pl, unit `test_transact_mono_lazy_3`
+const _TT_LAZY3 = (
+    unit = "test_transact_mono_lazy_3",
+    program = raw"""
+:- dynamic (da/1,db/1) as monotonic.
+:- table p/1 as (monotonic,lazy).
+p(X) :- da(A), db(B), X is A+B.
+tt_clean :- abolish_all_tables, retractall(da(_)), retractall(db(_)).
+""",
+    cases = [
+        ("outside_assert", raw"assertz(da(1)), assertz(db(10)), tt_init(p(_)), assertz(da(2)), snapshot((tt_inv(p(_), V0), assertz(db(100)), tt_ex(p, B))), tt_inv(p(_), V1), tt_ex(p, C), R = r(V0, B, V1, C)"),   # upstream test(outside_assert)
+    ],
+    # swipl 10.1.20, `tt_q(t_<case>, A)` in order, two identical runs (evidence/TAB1/w3_verify.md)
+    pinned = [
+        "r(invalid,[11,12,101,102],invalid,[11,12])",   # outside_assert
+    ],
+    # hand-written from the assertions of the upstream test (expect/3, expect_valid/1, expect_invalid/1)
+    upstream = [
+        "r(invalid,[11,12,101,102],invalid,[11,12])",   # outside_assert
+    ],
+)
+
+_tt_check_unit(_TT_LAZY3)
+
+# upstream: tests/tabling/test_transact_mono_lazy.pl, unit `test_transact_mono_lazy_4`
+const _TT_LAZY4 = (
+    unit = "test_transact_mono_lazy_4",
+    program = raw"""
+:- dynamic (da/1,db/1) as monotonic.
+:- table p/1 as (monotonic,lazy).
+p(X) :-
+    da(A),
+    (   A >= 10
+    ->  db(B),
+        X is A+B
+    ;   X = A
+    ).
+tt_clean :- abolish_all_tables, retractall(da(_)), retractall(db(_)).
+""",
+    cases = [
+        ("new_dependencies", raw"assertz(da(1)), tt_init(p(_)), assertz(da(10)), snapshot((tt_inv(p(_), V0), assertz(db(100)), tt_ex(p, B))), tt_inv(p(_), V1), tt_ex(p, C), R = r(V0, B, V1, C)"),   # upstream test(new_dependencies)
+    ],
+    # swipl 10.1.20, `tt_q(t_<case>, A)` in order, two identical runs (evidence/TAB1/w3_verify.md)
+    pinned = [
+        "r(invalid,[1,110],invalid,[1])",   # new_dependencies
+    ],
+    # hand-written from the assertions of the upstream test (expect/3, expect_valid/1, expect_invalid/1)
+    upstream = [
+        "r(invalid,[1,110],invalid,[1])",   # new_dependencies
+    ],
+)
+
+_tt_check_unit(_TT_LAZY4)
+
+# upstream: tests/tabling/test_transact_mono_lazy.pl, unit `test_transact_mono_lazy_5`
+const _TT_LAZY5 = (
+    unit = "test_transact_mono_lazy_5",
+    program = raw"""
+:- dynamic (da/1,db/1) as monotonic.
+:- table (p/1,q/1,r/1) as (monotonic,lazy).
+p(X) :- q(X).
+p(X) :- r(X).
+q(X) :- da(X).
+r(X) :- db(X), X < 10.
+tt_clean :- abolish_all_tables, retractall(da(_)), retractall(db(_)).
+""",
+    cases = [
+        ("already_forced_1", raw"tt_clean, tt_init(p(_)), snapshot((assert(db(11)), retract(db(11)), assert(da(1)), assert(da(2)), tt_ex(p, A))), tt_ex(p, C), R = r(A, C)"),   # upstream test(already_forced_1)
+        ("already_forced_2", raw"tt_clean, tt_init(p(_)), assert(db(11)), snapshot((assert(da(1)), assert(da(2)), tt_ex(p, A), retract(db(11)), tt_ex(p, B))), tt_ex(p, C), R = r(A, B, C)"),   # upstream test(already_forced_2)
+    ],
+    # swipl 10.1.20, `tt_q(t_<case>, A)` in order, two identical runs (evidence/TAB1/w3_verify.md)
+    pinned = [
+        "r([1,2],[])",   # already_forced_1
+        "r([1,2],[1,2],[])",   # already_forced_2
+    ],
+    # hand-written from the assertions of the upstream test (expect/3, expect_valid/1, expect_invalid/1)
+    upstream = [
+        "r([1,2],[])",   # already_forced_1
+        "r([1,2],[1,2],[])",   # already_forced_2
+    ],
+)
+
+_tt_check_unit(_TT_LAZY5)
+
