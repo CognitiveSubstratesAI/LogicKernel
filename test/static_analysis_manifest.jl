@@ -2072,6 +2072,27 @@ function _manifest_index(T)
         (LK.functorArithFunction, Tuple{Int}, false),
         (LK.FunctionFromIndex, Tuple{Int}, false),
         (LK.ar_func_n, Tuple{LD, Int, Int}, false),
+        # the A_* bodies outlined from the run loop (AR1, on T27's pattern): each called by its label of PL_next_solution_guarded
+        (
+            LK._vmi_a_var!,
+            Tuple{LD, Int, Int, ARGP, Vector{LK.code}, Vector{T}, Int, Int},
+            false
+        ),
+        (
+            LK._vmi_a_func!,
+            Tuple{LD, Int, Int, ARGP, Vector{LK.code}, Vector{T}, Int, Int, Int},
+            false
+        ),
+        (
+            LK._vmi_a_roundtowards_v!,
+            Tuple{LD, Int, Int, ARGP, Vector{LK.code}, Vector{T}, Int, Int},
+            false
+        ),
+        (LK._vmi_a_add!, Tuple{LD, Int, Int, ARGP, Vector{LK.code}, Vector{T}, Int}, false),
+        (LK._vmi_a_mul!, Tuple{LD, Int, Int, ARGP, Vector{LK.code}, Vector{T}, Int}, false),
+        (LK._vmi_a_cmp!, Tuple{LD, Int, Int}, false),
+        (LK._vmi_a_is!, Tuple{LD, Int, Int}, false),
+        (LK._vmi_a_firstvar_is!, Tuple{LD, Int, Int, Int}, false),
         (LK.getCharExpression, Tuple{LD, T, LK.number}, false),
         (LK._len_not_one, Tuple{LD, T}, false),
         (LK._len_not_one_cells, Tuple{LD, Tuple{UInt8, LK.word, Int}}, false),
