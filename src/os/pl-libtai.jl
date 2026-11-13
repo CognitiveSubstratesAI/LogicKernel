@@ -2,6 +2,16 @@
 # caldate_fmjd.c, caltime_tai.c, caltime_utc.c, leapsecs_init.c, leapsecs_read.c, leapsecs_add.c, leapsecs_sub.c, caldate.h,
 # caltime.h), so no single upstream path is this file's own; each function keeps its `# PORT: <file> <name>` marker.
 # Provenance: libtai 0.60, D. J. Bernstein (public domain), as vendored by SWI-Prolog at 18168e629eab.
+# UPSTREAM-PARTS: swipl-devel src/libtai/caldate.h @ 18168e629eab
+# UPSTREAM-PARTS: swipl-devel src/libtai/caltime.h @ 18168e629eab
+# UPSTREAM-PARTS: swipl-devel src/libtai/caldate_mjd.c @ 18168e629eab
+# UPSTREAM-PARTS: swipl-devel src/libtai/caldate_fmjd.c @ 18168e629eab
+# UPSTREAM-PARTS: swipl-devel src/libtai/caltime_tai.c @ 18168e629eab
+# UPSTREAM-PARTS: swipl-devel src/libtai/caltime_utc.c @ 18168e629eab
+# UPSTREAM-PARTS: swipl-devel src/libtai/leapsecs_init.c @ 18168e629eab
+# UPSTREAM-PARTS: swipl-devel src/libtai/leapsecs_read.c @ 18168e629eab
+# UPSTREAM-PARTS: swipl-devel src/libtai/leapsecs_add.c @ 18168e629eab
+# UPSTREAM-PARTS: swipl-devel src/libtai/leapsecs_sub.c @ 18168e629eab
 #
 # THE LIBTAI PIECES pl-tai.c NEEDS (TAI1): the calendar-date to Modified-Julian-Day conversions, the calendar-time to
 # TAI conversions and the leap-second table. A `struct tai` is its 64-bit second count here (a `UInt64`, as in C:
