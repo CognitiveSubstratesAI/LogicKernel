@@ -24,8 +24,9 @@
 #   * `gc_trail_sweep_entries(ld, ts)` lists, in upstream's order (newest first), the entries `sweep_trail`
 #     puts into relocation chains.
 # DIVERGES (order): upstream calls `tag_trail` BEFORE `mark_phase`; the kernel's early reset (pl-gcwalk.jl)
-# reads the UNTAGGED entries, so the kernel order is `gc_trail_begin!`, `mark_phase`, `tag_trail`,
-# `compact_trail`, the collect phase, `untag_trail`, `clean_attvar_chain`, `gc_trail_end!`. The two orders
+# reads the UNTAGGED entries and starts at the last entry (`mark_stacks`: `reset_entry = length(ld.trail)`),
+# so the kernel order is `mark_phase`, `gc_trail_begin!`, `tag_trail`, `compact_trail`, the collect phase,
+# `untag_trail`, `clean_attvar_chain`, `gc_trail_end!` (the sentinel is pushed after marking). The two orders
 # agree because nothing between the two upstream calls reads an entry in any other way than early reset,
 # and the relocation-chain heads of a mark's `trailtop` (`alien_into_relocation_chain`, G1-5) are made
 # after `tag_trail`, in the same pass that numbers the marks.
