@@ -61,14 +61,14 @@ end
 # when `flags & ALLOW_GC` and the area is full or `ld.gc_force` is set (the model of `FAKE_GC`, pl-vmi.c:238-251, never defined at the pin). Under
 # `gc_force` it records `site` in `ld.gc_safe_hits` and collects; otherwise only `considerGarbageCollect` decides. True iff a collection ran.
 "The safe-point hook: run the collector for `reason` at the audited `site` when `flags` allow it and one is due (or forced); true iff one ran."
-function considerGC(ld::PL_local_data, flags::Int, reason::Int, site::Symbol)::Bool
+function considerGC(ld::PL_local_data, flags::Int, reason::Integer, site::Symbol)::Bool
     (flags & ALLOW_GC) == 0 && return false                 # G1-GC safe point: only a site that passed ALLOW_GC
     if ld.gc_force                                          # G1-GC safe point: FAKE_GC's model
         push!(ld.gc_safe_hits, site)
     elseif !considerGarbageCollect(ld, nothing)             # considerGarbageCollect(NULL)
         return false
     end
-    return garbageCollect(ld, reason) == BOOLEX_TRUE        # garbageCollect(reason)
+    return garbageCollect(ld, Int(reason)) == BOOLEX_TRUE   # garbageCollect(reason): the GC_* constants are unsigned hex literals, `Int` here
 end
 
 # PORT: pl-gc.c growStacks as growStacks!
@@ -301,7 +301,7 @@ end
 # query is inside the VM and G1-2b's `vmi_state_of` callback is not wired (pl-gcdriver.jl); the answer is true either way.
 "`'\$garbage_collect'(+DebugLevel)`: run the stack garbage collector (pl-gc.c `garbageCollect(GC_USER)`); true either way."
 function pl_garbage_collect(ld::PL_local_data{T}, d::term_t)::foreign_t where {T}
-    garbageCollect(ld, GC_USER)
+    garbageCollect(ld, Int(GC_USER))
     return FTRUE
 end
 
