@@ -19,7 +19,7 @@
 # `mem` (`buffer == 0` for upstream's NULL buffer); the function table is `functions`, an enum over
 # the three function sets, and `handle` their record, where upstream holds function pointers and a
 # `void *`. NOT PORTED: locks and threads, timeouts, `tee`, filter streams (`upstream`,
-# `downstream`), locales, ENC_ANSI (refused by name where a stream would use it; ENC1 ported
+# `downstream`), locales (ENC_ANSI is the process's LC_CTYPE through libc: ENC1; so are
 # ENC_UTF16BE/LE and ENC_WCHAR), the pending exception (`Sset_exception`), close hooks (pl-file.c's `freeStream`, the one
 # hook upstream registers, is called by the kernel's closers instead: src/os/pl-file.jl), `Sfprintf`
 # and the other formatted output. Since R2's S1: the stream's `context` (an index into the
