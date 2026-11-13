@@ -1250,8 +1250,35 @@ const GEN_ASSERTZ = typemax(tr_gen_t) - tr_gen_t(3)
 "The table value of a clause an enclosing transaction asserted and this one retracted (pl-transaction.c)."
 const GEN_NESTED_RETRACT = typemax(tr_gen_t) - tr_gen_t(4)
 
+# PORT: pl-tabling.h TT_TBL_INVALIDATE
+"The flag of an entry of `tbl_trail.tables`: the table is invalidated when the transaction rolls back (pl-tabling.h)."
+const TT_TBL_INVALIDATE = 0x001
+# PORT: pl-tabling.h tbl_trail_type
+# DIVERGES: the enum `tbl_trail_type` is `Int` constants; only `TT_ANSWER` is a live action (the header's `TT_TABLE` has no user).
+"The type of an entry of `tbl_trail.actions`: a monotonic answer added in the transaction (pl-tabling.h `TT_ANSWER`)."
+const TT_ANSWER = 1
+# PORT: pl-tabling.h tbl_trail_answer
+# DIVERGES: `atrie` is the answer trie's index in `gd.tries` (a `trie *` is an `Int`, see `idg_node`; 0: NULL, set by
+# `tt_abolish_table`), `answer` a node id of that trie (0: NULL).
+"One monotonic answer added in a transaction (pl-tabling.h `struct tbl_trail_answer`)."
+mutable struct tbl_trail_answer
+    type::Int                                               # TT_ANSWER
+    atrie::Int                                              # the answer trie (index in gd.tries; 0: none)
+    answer::Int                                             # the answer node (a node id; 0: none)
+end
+# PORT: pl-tabling.h tbl_trail
+# DIVERGES: `actions` is a `Vector` of the (single) action type where upstream's `buffer` holds size-suffixed records, walked
+# from the top (the kernel walks `reverse`); `tables` maps the table's symbol atom word to its `TT_*` flags (`Dict`: insertion
+# order where upstream's is the hash's, which no result depends on).
+"What a transaction did to the tables: the affected tables and the answers it added (pl-tabling.h `struct tbl_trail`)."
+mutable struct tbl_trail
+    tables::Dict{word, Int}                                 # Affected tables (symbol atom -> TT_* flags)
+    actions::Vector{tbl_trail_answer}                       # Actions to undo
+end
+tbl_trail() = tbl_trail(Dict{word, Int}(), tbl_trail_answer[])
+
 # PORT: pl-transaction.c tr_stack
-# DIVERGES: NOT PORTED, owner TAB1 TB9: `table_trail` (the parent's changes to tables). `clauses` and `predicates` are `Dict`s,
+# DIVERGES: `table_trail` is the parent's changes to tables (TAB1 TB9). `clauses` and `predicates` are `Dict`s,
 # upstream's `TablePW` (a pointer-to-word hash table: `Dict` keeps the insertion order where upstream's order is the
 # pointer hash's, which no result depends on: the one that does, `transaction_updates`, sorts by generation).
 "One level of the transaction stack: what the enclosing transaction had when a nested one started (pl-transaction.c)."
@@ -1261,12 +1288,13 @@ mutable struct tr_stack{T}
     generation::gen_t                                       # Parent generation
     clauses::Union{Nothing, Dict{Clause{T}, tr_gen_t}}      # Parent changed clauses
     predicates::Union{Nothing, Dict{Definition{T}, tr_gen_t}}   # Parent changed predicates
+    table_trail::Union{Nothing, tbl_trail}                  # Parent changes to tables
     id::Int                                                 # Parent goal (a term_t; 0: none)
     flags::UInt32                                           # TR_* flags
 end
 
 # PORT: pl-global.h transaction as ld_transaction
-# DIVERGES: NOT PORTED, owner TAB1 TB9: `table_trail`. `id` is a `term_t` (0: none). `gen_base` is `GEN_INFINITE` outside a
+# DIVERGES: `table_trail` is `Nothing` (NULL) until the first table change of the transaction (TAB1 TB9). `id` is a `term_t` (0: none). `gen_base` is `GEN_INFINITE` outside a
 # transaction (`initPrologLocalData`: pl-setup.c:204).
 "The transaction state of one thread (pl-global.h `LD->transaction`)."
 mutable struct ld_transaction{T}
@@ -1279,10 +1307,11 @@ mutable struct ld_transaction{T}
     id::Int                                                 # Identifier of the transaction goal (a term_t; 0: none)
     clauses::Union{Nothing, Dict{Clause{T}, tr_gen_t}}      # Clauses that were changed
     predicates::Union{Nothing, Dict{Definition{T}, tr_gen_t}}   # Predicates that were changed
+    table_trail::Union{Nothing, tbl_trail}                  # Changes to tables (tabling)
     stack::Union{Nothing, tr_stack{T}}                      # Stack of nested transactions
 end
 ld_transaction{T}() where {T} =
-    ld_transaction{T}(gen_t(0), gen_t(0), GEN_INFINITE, gen_t(0), gen_t(0), UInt32(0), 0, nothing, nothing, nothing)
+    ld_transaction{T}(gen_t(0), gen_t(0), GEN_INFINITE, gen_t(0), gen_t(0), UInt32(0), 0, nothing, nothing, nothing, nothing)
 
 # PORT: pl-transaction.c current_transaction
 # DIVERGES: the redo state of `current_transaction/1` is a record of the local data's pool (`ld.transaction_enums`,
