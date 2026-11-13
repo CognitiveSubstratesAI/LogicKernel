@@ -8766,11 +8766,17 @@ function mono_idg_changed(ld::PL_local_data{T}, atrie::trie{T}, answer::Int)::Bo
 end
 
 # PORT: pl-tabling.c force_reeval
-# (pl-tabling.c:10415-10423 at the pin)
-# DIVERGES: the `LD->transaction.generation` branch (`tt_add_table`, `tt_abolish_table`) is omitted (owner TX1/TB9).
-"Mark the node `n` for forced re-evaluation (pl-tabling.c `force_reeval`)."
+# (pl-tabling.c:10415-10426 at the pin)
+"Mark the node `n` for forced re-evaluation; inside a transaction its table is listed and its trailed answers dropped (pl-tabling.c)."
 function force_reeval(ld::PL_local_data{T}, n::idg_node{T})::Nothing where {T}
     n.force_reeval = true
+
+    if ld.transaction.generation != 0
+        atrie = _query_gd(ld).tries[n.atrie]
+
+        tt_add_table(ld, atrie, TT_TBL_INVALIDATE)
+        tt_abolish_table(ld, atrie)                     # remove scheduled answers
+    end
 
     return nothing
 end
