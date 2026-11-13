@@ -33,7 +33,10 @@
 # it, `gm`, and the new top is `dest + 1`: the same number in 0-based arithmetic). A mark with no live
 # cell below it (height 0) joins no chain and stays 0. `trailtop` is a trail height likewise; its chain
 # (alien_into_relocation_chain at the sites marked `# G1-5:` in pl-gcmark.jl / pl-gcwalk.jl, and
-# compact_trail) is G1-4's: this file only provides the trail band of the addressing.
+# compact_trail) is G1-4's: this file only provides the trail band of the addressing. A trail height is an
+# entry COUNT: `alien_into_relocation_chain(.., STG_STATIC)` chains the entry at index count + 1 (the
+# sentinel of the newest mark), and after `update_relocation_chain` the owner reads the new count as
+# `valPtr(field) - 1` (unsweep_mark, G1-6).
 #
 # TRAIL (ruling D2, option (a)): the sweep expects the trail in upstream's TAGGED form (pl-gc.c `tag_trail`,
 # G1-4): an address entry is `consPtr(position, STG_GLOBAL)`, a value entry `consPtr(position,
@@ -212,8 +215,11 @@ function into_relocation_chain(ld::PL_local_data{T}, sw::gc_sweep_counts, curren
 end
 
 # PORT: pl-gc.c alien_into_relocation_chain
-# DIVERGES: the field at `a` holds a RAW position (a height) that names a cell of storage `orgst`; the
-# storage class of the referrer follows from `a`.
+# DIVERGES: the field at `a` holds a RAW height that names a cell of storage `orgst`; the storage class of
+# the referrer follows from `a`. A height of the GLOBAL stack names its last used cell (position = height);
+# a height of the TRAIL (`orgst == STG_STATIC`, a mark's `trailtop`) is an entry COUNT and names the entry
+# AFTER the last one (upstream's `tTop` is the first free place): the head is the entry at index count + 1
+# (G1-4's sentinel for the newest mark), and the field then holds a pointer to INDEX count + 1.
 """
     alien_into_relocation_chain(ld, sw, a, orgst)
 
@@ -221,7 +227,8 @@ Convert the raw position in the cell at `a` (a mark field, a slot) to a pointer 
 it into the relocation chain of the cell it names (pl-gc.c).
 """
 function alien_into_relocation_chain(ld::PL_local_data{T}, sw::gc_sweep_counts, a::Int, orgst::word)::Nothing where {T}
-    _gcs_set!(ld, a, consPtr(Int(_gcs_get(ld, a)), orgst))
+    raw = Int(_gcs_get(ld, a))
+    _gcs_set!(ld, a, consPtr(orgst == STG_STATIC ? raw + 1 : raw, orgst))
     into_relocation_chain(ld, sw, a, _gcs_stg(a))
     sw.alien_relocations += 1
     return nothing
