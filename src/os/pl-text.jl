@@ -54,7 +54,7 @@ end
 
 # ORIGINAL: the `case_write` branch of pl-text.c `PL_get_text` (the `CVT_WRITE`, `CVT_WRITEQ` and
 # `CVT_WRITE_CANONICAL` conversions) as a function of its own, a `try` cannot hold `@goto`'s label.
-# DIVERGES: the stream layer writes UTF-8 only (ENC1 refusals in src/os/pl-stream.jl), so the text is
+# DIVERGES: the memory stream written to is UTF-8 (src/os/pl-file.jl), so the text is
 # written as UTF-8 and returned as a non-canonical `PL_chars_t` (as an atom's text is), where upstream
 # tries ISO Latin-1 and then `ENC_WCHAR` (`ENC_UTF8` only under `REP_UTF8`): the code points are the
 # same; the numbervars frame is ended on an `NV_ERROR`, where upstream's `goto error` leaves it open.
