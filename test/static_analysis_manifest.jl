@@ -3107,6 +3107,36 @@ function _manifest_index(T)
         (LK.innermost_supervisor, Tuple{GD, D}, false),
         (LK.get_procedure_resolve_head, Tuple{GD, LD, Int, Int}, false),
         (LK.write_closure, Tuple{GD, LK.closure{T}}, false),
+        # TAB1 TB5: the abolish and reclaim of the tables (src/pl-tabling.jl); `_wl_is` is the sentinel test of a worklist slot; the
+        # database-carrying callers of freeCodesDefinition! (setDynamicDefinition!, resetProcedure!: src/pl-proc.jl) and their one body
+        (LK._wl_is, Tuple{LK.trie{T}, Int}, false),
+        (LK.get_trie_from_node, Tuple{LD, LK.trie{T}}, false),
+        (LK.release_trie_value, Tuple{LK.trie{T}}, false),
+        (LK.destroy_answer_trie, Tuple{LD, LK.trie{T}}, false),
+        (LK.delayed_destroy_table, Tuple{LK.trie{T}}, false),
+        (LK.orphan_dynamic_table, Tuple{LK.trie{T}}, false),
+        (LK.delete_dynamic_table, Tuple{LD, LK.trie{T}}, false),
+        (LK.collect_dynamic_children, Tuple{LK.trie{T}}, false),
+        (LK.delete_orphan_dynamic_tables, Tuple{LD, Vector{LK.trie{T}}}, false),
+        (LK.sweep_orphan_dynamic_tables, Tuple{LD}, false),
+        (LK.abolish_table, Tuple{LD, LK.trie{T}}, false),
+        (LK.destroy_delay_info_table, Tuple{GD}, false),
+        (LK.reset_table_bulk, Tuple{GD, UInt64}, false),
+        (LK.empty_variant_table, Tuple{LD, LK.trie{T}, Bool}, false),
+        (LK.clear_variant_table, Tuple{LD}, false),
+        (LK.clearThreadTablingData, Tuple{LD, Bool}, false),
+        (LK.untable_from_clause, Tuple{GD, LD, C}, false),
+        (LK.untable_definition_clauses, Tuple{GD, LD, D}, false),
+        [
+            (f, Tuple{LD, Int, Int, LK.control_t{T}}, false) for
+            f in (LK.pl_tbl_destroy_table1_va, LK.pl_tbl_abolish_local_tables0_va)
+        ]...,
+        (LK.setDynamicDefinition!, Tuple{GD, D, Bool}, false),
+        (LK._setDynamicDefinition!, Tuple{GD, D, Bool}, false),
+        (LK._setDynamicDefinition!, Tuple{Nothing, D, Bool}, false),
+        (LK.resetProcedure!, Tuple{GD, PR, Bool}, false),
+        (LK._resetProcedure!, Tuple{GD, PR, Bool}, false),
+        (LK._resetProcedure!, Tuple{Nothing, PR, Bool}, false),
         # AUTOLOAD1 A4 — the autoload flag (pl-prologflag.c setAutoload, propagateAutoload; pl-fli.c PL_set_prolog_flag)
         (LK.setAutoload, Tuple{LD, T}, false),
         (LK.propagateAutoload, Tuple{GD, LD, Int}, false),
@@ -4681,6 +4711,8 @@ const _DISPATCH_MANIFEST_TUPLE = (
     (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_wrap)}, false),
     (LK.table_props, Tuple{}, false),
     (LK.clear_table_props!, Tuple{LK.table_props}, false),
+    # TAB1 TB5: the sort of the taken table values (src/pl-tabling.jl); it names no term type
+    (LK.sort_table_values!, Tuple{Vector{UInt64}}, false),
     # TAB1 TB0: pl-allocpool.c (src/pl-allocpool.jl) and the sentinel tests of pl-tabling.c (src/pl-tabling.jl); they name no term type
     (LK.new_alloc_pool, Tuple{String, Int}, false),
     (LK.free_alloc_pool, Tuple{LK.alloc_pool}, false),
