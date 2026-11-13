@@ -9222,7 +9222,7 @@ end
 
 # PORT: pl-tabling.c mono_reeval_done as pl_mono_reeval_done3_va
 # (PRED_IMPL("$mono_reeval_done", 3, mono_reeval_done, 0), pl-tabling.c:10880-10955 at the pin)
-# DIVERGES: the `tt_new_dep` branch (`tt_add_table`) is omitted (owner TX1/TB9); the answer node of `mono_idg_changed` is an id.
+# DIVERGES: the answer node of `mono_idg_changed` is an id.
 "`'\$mono_reeval_done'(+ATrie, +SizeAtStart, -InvalidDependencies)`: done processing the queued answers of `ATrie` (pl-tabling.c)."
 function pl_mono_reeval_done3_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
@@ -9242,6 +9242,7 @@ function pl_mono_reeval_done3_va(
         deps_t = PL_new_term_ref(ld)
 
         idg.mono_reevaluating = false
+        idg.tt_new_dep && tt_add_table(ld, atrie, TT_TBL_INVALIDATE)
         ok, invalid_deps = invalid_dependencies(ld, deps_t, idg)
         ok || return FFALSE
 
