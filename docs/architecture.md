@@ -8086,3 +8086,12 @@ The table of every hunk: evidence/PIN1/step_c/decomposition.tsv and part2_notes.
   os/pl-file.c and os/pl-stream.c (`Sshare` and `shareStandardStream`, 87fc7589: TH1; the other hunks cd67bb35, dfc1c55d, 4f259069 are ported). Each file's hunks were compared as in commit 6: the changed lines minus d755bdc4 minus the named commits leave only the groups listed here.
   No `# UPSTREAM:` line cites cbf4e189 any more, so the `sync-from:` line of tools/SWIPL_VERSION, tools/fetch_sync_from.sh, its steps in CI.yml, evidence.yml and mutation.yml and its section of tools/test_ci_tools.sh are removed, and with them the
   empty test/sync_expected_mismatch.jl (test/test_gate_split.jl holds that file to exist exactly while `sync-from:` does). tools/port_check.jl still reads an optional `sync-from:` line (a later sync writes it again and restores the fetch step and the list from this commit's parent; test/test_port_check.jl feeds it a fixture pin).
+
+Known-difference checklist item (AR1, assumed until Shivaji rules; dispatcher decision of 2026-11-13): **the rounding mode a throw inside a
+NESTED `roundtoward` leaves behind.** The pin's `AR_CLEANUP` (pl-gmp.h, 18168e62) puts back the mode BEFORE the last `roundtoward` that ran, so
+after `catch(_ is roundtoward(roundtoward(1/0, to_zero), to_positive), _, true)` (the `is` in a compiled clause, `optimise` on) the process stays at
+to_positive while the `float_rounding` flag reads to_nearest, and a later `Y is 1/3.0` is 0.33333333333333337. The kernel sets the flag's mode per
+evaluation (`A_ENTER`) and restores the entry mode at every end, so it answers 0.3333333333333333; reproducing the leak needs a mode held between
+evaluations, which the model of src/pl-arith.jl's header excludes. Pinned both ways by rows k0/k1 of test/core_lang/test_arith_roundopt_swipl.jl
+(swipl's lines re-run live); the DIVERGES comment is at `ar_throw` in src/pl-wam.jl. A single roundtoward, or an error before the inner one ran,
+leaks nothing on the pin, and those rows (t15..t19) agree.
