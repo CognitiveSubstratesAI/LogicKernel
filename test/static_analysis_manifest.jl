@@ -2923,6 +2923,7 @@ _index_entry_points(T) = (
     (LK.qlfInfo, Tuple{LK.PL_local_data{T}, String, Int, Int, Int, Int, Int, Int, Int}, false),
     # QLF2: `$qlf_sources`: the index at the end of the file, the path translation, the source entries
     (LK.PL_put_uint64, Tuple{LK.PL_local_data{T}, Int, UInt64}, false),
+    (LK.PL_put_dict, Tuple{LK.PL_local_data{T}, Int, UInt64, Int, Vector{UInt64}, Int}, false),
     (LK.qlfGet4BytesInt, Tuple{LK.IOSTREAM}, false),
     (LK.qlfGetString, Tuple{LK.IOSTREAM}, false),
     (LK.pushPathTranslation, Tuple{LK.PL_local_data{T}, LK.wic_state, String, Int}, false),
