@@ -380,3 +380,290 @@ function early_reset_vars(
     end
     return te
 end
+
+# ── the alternative clauses, the choicepoints and the environments (pl-gc.c) ─────────────────────
+# PORT: pl-gc.c slotsInFrame as gc_slots_in_frame
+# DIVERGES: `pc` is the index into the frame's clause codes, 0 = NULL.
+"The number of slots of frame `fr` a collection must look at, resuming at `pc` (pl-gc.c `slotsInFrame`)."
+@inline function gc_slots_in_frame(ld::PL_local_data{T}, fr::Int, pc::Int)::Int where {T}
+    f = ld.frames[fr]
+    def = f.predicate::Definition{T}
+    if pc == 0 || (def.flags & P_FOREIGN) != 0 || f.clause === nothing
+        return def.arity
+    end
+    return Int((f.clause::ClauseRef{T}).clause.prolog_vars)
+end
+
+# PORT: pl-gc.c mark_alt_clauses
+# DIVERGES: `MARK_ALT_CLAUSES` is defined at the pin and the live arm is ported (audit D-0634 ruling D4,
+# not the `#else` arm that marks the arguments); the clause list is the chain of `cref.next`, a
+# `visibleClause` test at the frame's generation as upstream's, a reference without a single clause
+# (`cref.clause === nothing`: a clause list of a hash bucket) is stepped over.
+"""
+    mark_alt_clauses(ld, st, fr, cref)
+
+Mark the arguments of frame `fr` that the clauses from `cref` on (the choicepoint's alternatives) will
+read, by walking their heads (`GCM_ALTCLAUSE`) until every argument is marked (pl-gc.c).
+"""
+function mark_alt_clauses(
+    ld::PL_local_data{T}, st::gc_mark_counts, fr::Int, cref::Union{Nothing, ClauseRef{T}}
+)::Nothing where {T}
+    f = ld.frames[fr]
+    sp = argFrameP(f.base, 0)                           # Word sp = argFrameP(fr, 0)
+    argc = (f.predicate::Definition{T}).arity
+    unmarked = 0
+    for i in 0:(argc - 1)
+        is_marked(ld.slots[sp + i + 1]) || (unmarked += 1)
+    end
+    unmarked == 0 && return nothing
+    ws = gc_walk_state(fr, f.base, argc, GCM_ALTCLAUSE)
+    ws.unmarked = unmarked
+    ws.envtop = sp + argc
+    while cref !== nothing && ws.unmarked > 0           # for(; cref && state.unmarked > 0; cref=cref->next)
+        cl = cref.clause
+        if cl !== nothing && visibleClause(ld, cl, generationFrame(f))
+            walk_and_mark_gc(ld, st, ws, cl.codes, 1, I_EXIT)
+        end
+        ws.adepth = 0
+        ws.ARGP = sp
+        cref = cref.next
+    end
+    return nothing
+end
+
+# PORT: pl-gc.c early_reset_choicepoint
+# DIVERGES: the `top` upstream computes for `early_reset_vars` is not needed (see there); the
+# `needsRelocation`/`alien_into_relocation_chain` of the mark's trailtop belong to G1-5.
+"Early reset for the trail range of choicepoint `chi` (an index), after the foreign frames above it (pl-gc.c)."
+function early_reset_choicepoint(
+    ld::PL_local_data{T}, st::gc_mark_counts, ms::mark_state, chi::Int
+)::Nothing where {T}
+    ch = ld.choices[chi]
+    while ms.flictx != 0 && ld.fliframes[ms.flictx].base > ch.base  # (char*)state->flictx > (char*)ch
+        fli = ms.flictx
+        ms.reset_entry = mark_foreign_frame(ld, st, fli, ms.reset_entry)
+        ms.flictx = ld.fliframes[fli].parent
+    end
+    ms.reset_entry = early_reset_vars(ld, st, ch.mark, ms.reset_entry)
+    # G1-5: needsRelocation(&ch->mark.trailtop); alien_into_relocation_chain(&ch->mark.trailtop, STG_TRAIL, STG_LOCAL)
+    return nothing
+end
+
+# `fr->clause->value.clause->codes[0] == encode(T_TRIE_GEN2) || ... T_TRIE_GEN3` (pl-gc.c mark_environments)
+@inline function _gc_is_trie_gen(f::localFrame{T})::Bool where {T}
+    c1 = (f.clause::ClauseRef{T}).clause.codes[1]
+    return c1 == T_TRIE_GEN2 || c1 == T_TRIE_GEN3
+end
+
+# PORT: pl-gc.c mark_environments
+# DIVERGES: `pc` is an index into the frame's clause codes (0 = NULL); `vm_state` positions are as in
+# pl-gcmark.jl; the result is the QUERY index the walk reached (0 = NULL: the walk came from a
+# choicepoint, whose frames are not cleared). `wasFrame` is not checked.
+"""
+    mark_environments(ld, st, ms, fr, pc) -> Int
+
+Mark the variables of frame `fr` and of its parents that the continuation (resuming at `pc`) reads, and
+mark their frames; return the query frame the chain ends in (pl-gc.c).
+"""
+function mark_environments(
+    ld::PL_local_data{T}, st::gc_mark_counts, ms::mark_state, fr::Int, pc::Int
+)::Int where {T}
+    qf = 0
+    while fr != 0
+        f = ld.frames[fr]
+        pred = f.predicate::Definition{T}
+        ws = gc_walk_state(fr, f.base, pred.arity, 0)
+        if (f.flags & FR_MARKED) == 0
+            f.flags |= FR_MARKED
+            ws.flags = GCM_CLEAR
+        else
+            ws.flags = 0
+        end
+
+        if (pred.flags & P_FOREIGN) != 0 || pc == 0 || f.clause === nothing
+            mark_arguments(ld, st, fr)
+        elseif _gc_is_trie_gen(f)
+            mark_trie_gen(ld, st, fr)
+        else
+            cl = (f.clause::ClauseRef{T}).clause
+            ws.unmarked = gc_slots_in_frame(ld, fr, pc)
+            ws.envtop = argFrameP(f.base, ws.unmarked)
+            argp0 = 0
+            if fr == ms.vm.frame && pc == ms.vm.pc_start_vmi
+                argp0 = ms.vm.argp0
+                ws.ARGP = ms.vm.argp
+                ws.adepth = ms.vm.adepth
+                mark_new_arguments(ld, st, ms.vm)
+            end
+            walk_and_mark_gc(ld, st, ws, cl.codes, pc, I_EXIT)
+            if argp0 != 0 && !is_marked(ld.slots[argp0 + 1])        # see (**)
+                mark_local_variable(ld, st, -(argp0 + 1))
+            end
+            if (f.flags & FR_WATCHED) != 0                          # see (***)
+                slots = gc_slots_in_frame(ld, fr, pc)
+                sp = argFrameP(f.base, 0)
+                for i in 0:(slots - 1)
+                    is_marked(ld.slots[sp + i + 1]) || mark_local_variable(ld, st, -(sp + i + 1))
+                end
+            end
+        end
+
+        (ws.flags & GCM_CLEAR) == 0 && return 0                     # from choicepoint
+        if f.parent != 0
+            pc = f.programPointer.pc
+            fr = f.parent
+        else
+            qf = queryOfFrame(ld, fr)
+            se = ld.queries[qf].saved_environment
+            se != 0 && mark_arguments(ld, st, se)                   # (*)
+            break
+        end
+    end
+    return qf
+end
+
+# PORT: pl-gc.c mark_choicepoints
+"Mark what the choicepoints `ch` (an index) and their parents keep alive, with early reset of their trail ranges (pl-gc.c)."
+function mark_choicepoints(
+    ld::PL_local_data{T}, st::gc_mark_counts, ms::mark_state, ch::Int
+)::Nothing where {T}
+    while ch != 0
+        early_reset_choicepoint(ld, st, ms, ch)
+        c = ld.choices[ch]
+        if c.type == CHP_JUMP
+            mark_environments(ld, st, ms, c.frame, c.value_pc)
+        elseif c.type == CHP_CLAUSE
+            fr = c.frame
+            mark_alt_clauses(ld, st, fr, c.value_clause.cref)
+            f = ld.frames[fr]
+            if (f.flags & FR_MARKED) == 0
+                f.flags |= FR_MARKED
+                mark_environments(ld, st, ms, f.parent, f.programPointer.pc)
+            end
+        elseif c.type == CHP_DEBUG || c.type == CHP_CATCH
+            mark_environments(ld, st, ms, c.frame, 0)
+        end                                                         # CHP_TOP: nothing
+        ch = c.parent
+    end
+    return nothing
+end
+
+# PORT: pl-gc.c mark_query_stacks
+"Mark the environments and the choicepoints of one query; return its query index (pl-gc.c)."
+function mark_query_stacks(
+    ld::PL_local_data{T}, st::gc_mark_counts, ms::mark_state, fr::Int, ch::Int, pc::Int
+)::Int where {T}
+    qf = mark_environments(ld, st, ms, fr, pc)
+    mark_choicepoints(ld, st, ms, ch)
+    return qf
+end
+
+# PORT: pl-gc.c mark_stacks
+# DIVERGES: a parent query that is inside the VM (`registers.fr != 0`) needs the VM state of that query
+# (`get_vmi_state(pqf, &sub_state)`, pin pl-gc.c:3725), which G1-2 builds: it is passed as the callback
+# `vmi_state_of(ld, query_index) -> vm_state`, and without one this is a named refusal (a
+# NotPortedError naming G1-2). The statistics line (`MSG_GC_STATS`) is not kept.
+"""
+    mark_stacks(ld, st, vm; vmi_state_of=nothing)
+
+Mark the local stack from the safe point `vm` outward through the queries, the choicepoints and the
+foreign frames (pl-gc.c); the trail is walked once from the top by early reset.
+"""
+function mark_stacks(
+    ld::PL_local_data{T}, st::gc_mark_counts, vm::vm_state; vmi_state_of = nothing
+)::Nothing where {T}
+    ms = mark_state(vm)
+    ms.reset_entry = length(ld.trail)                   # state.reset_entry = tTop - 1
+    ms.flictx = ld.fli_context
+    st.trailcells_deleted = 0
+    fr = vm.frame
+    ch = vm.choice
+    pc = vm.pc_start_vmi
+    while fr != 0
+        qf = mark_query_stacks(ld, st, ms, fr, ch, pc)
+        qf == 0 && error("mark_stacks: the walk of frame $(fr) reached no query frame")
+        q = ld.queries[qf]
+        q.parent == 0 && break                          # same code in checkStacks()
+        pqf = q.parent
+        pq = ld.queries[pqf]
+        if pq.registers_fr != 0
+            vmi_state_of === nothing && throw(
+                NotPortedError(
+                    ld.placeholder, "get_vmi_state of a parent query (pl-gc.c:3725)", "G1-2"
+                ),
+            )
+            sub = vmi_state_of(ld, pqf)::vm_state
+            sub.choice = q.saved_bfr
+            ms.vm = sub
+            fr = pq.registers_fr
+            pc = sub.pc_start_vmi
+        else
+            fr = q.saved_environment
+            pc = 0
+        end
+        ch = q.saved_bfr
+    end
+    while ms.flictx != 0
+        ms.reset_entry = mark_foreign_frame(ld, st, ms.flictx, ms.reset_entry)
+        ms.flictx = ld.fliframes[ms.flictx].parent
+    end
+    return nothing
+end
+
+# PORT: pl-gc.c mark_phase
+# DIVERGES: the statistics and the `CHK_SECURE` checks are not kept; `st` is passed where upstream has the
+# `total_marked` global; the roots that upstream's caller (`garbageCollect`) converts to term references
+# before the mark phase (`gvars_to_term_refs`, `argument_stack_to_term_refs`, `link_attvars`) are made by
+# the caller of this function, as upstream's.
+"Mark phase: set the MARK bit of every cell of the global stack that is reachable (pl-gc.c); moves and frees nothing."
+function mark_phase(
+    ld::PL_local_data{T}, st::gc_mark_counts, vm::vm_state; vmi_state_of = nothing
+)::Nothing where {T}
+    st.total_marked = 0
+    mark_term_refs(ld, st)
+    mark_stacks(ld, st, vm; vmi_state_of = vmi_state_of)
+    return nothing
+end
+
+# ── unmarking the frames (pl-gc.c unmark_environments, unmark_choicepoints, unmark_stacks) ────────
+# PORT: pl-gc.c unmark_environments
+# DIVERGES: the debug counters `LD->gc._local_frames` are not kept; the marks of the CELLS are cleared by
+# the sweep (G1-5), these functions clear the frame flag `mask` (`FR_MARKED`, `FR_MARKED_PRED`) only.
+"Clear `mask` in the flags of frame `fr` and of its parents while set; return the query the chain ends in, or 0 (pl-gc.c)."
+function unmark_environments(ld::PL_local_data{T}, fr::Int, mask::UInt32)::Int where {T}
+    fr == 0 && return 0
+    while true
+        f = ld.frames[fr]
+        (f.flags & mask) == 0 && return 0
+        f.flags &= ~mask
+        f.parent != 0 || return queryOfFrame(ld, fr)    # Prolog --> C --> Prolog calls
+        fr = f.parent
+    end
+end
+
+# PORT: pl-gc.c unmark_choicepoints
+"Clear `mask` in the frames of the choicepoints `ch` and their parents (pl-gc.c)."
+function unmark_choicepoints(ld::PL_local_data{T}, ch::Int, mask::UInt32)::Nothing where {T}
+    while ch != 0
+        c = ld.choices[ch]
+        unmark_environments(ld, c.frame, mask)
+        ch = c.parent
+    end
+    return nothing
+end
+
+# PORT: pl-gc.c unmark_stacks
+"Clear `mask` in all the frames reachable from `fr` and `ch`, through the parent queries (pl-gc.c)."
+function unmark_stacks(ld::PL_local_data{T}, fr::Int, ch::Int, mask::UInt32)::Nothing where {T}
+    while fr != 0
+        qf = unmark_environments(ld, fr, mask)
+        qf == 0 && return nothing                       # (upstream asserts a query here)
+        unmark_choicepoints(ld, ch, mask)
+        q = ld.queries[qf]
+        q.parent == 0 && break
+        pq = ld.queries[q.parent]
+        fr = pq.registers_fr != 0 ? pq.registers_fr : q.saved_environment
+        ch = q.saved_bfr
+    end
+    return nothing
+end
