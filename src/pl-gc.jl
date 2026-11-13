@@ -1,5 +1,7 @@
 # UPSTREAM: swipl-devel src/pl-gc.c @ 18168e629eab
 # UPSTREAM: swipl-devel src/pl-gc.h @ 18168e629eab
+# UPSTREAM: swipl-devel src/pl-fli.c @ 18168e629eab
+# UPSTREAM: swipl-devel src/pl-fli.h @ 18168e629eab
 # CLASS: code
 # COPYRIGHT: Copyright (c)  1985-2024, University of Amsterdam
 # COPYRIGHT: VU University Amsterdam
@@ -493,18 +495,6 @@ function mark_active_environment(
 end
 
 # ── the stack invariant checker (G1-GC piece G1-9) ───────────────────────────────────────────────
-# PORT: pl-gc.c checkStacks as check_stacks!
-# DIVERGES: not a transliteration. Upstream's `checkStacks` (compiled under `O_DEBUG`/`O_MAINTENANCE` only, the
-# `HAVE_CHECK_STACKS` block of pl-gc.c:3912-4310) walks the frames from the VM state, `checkData`s every argument,
-# variable and foreign-frame term reference it reaches and sums a key; the kernel has no pointers to follow and its
-# words are its own (`pl-data.h` tags over POSITIONS, `ORIGINAL` value-table words), so this checks the INVARIANTS the
-# collector will rely on, over the kernel's representation, and reports every violation as text instead of asserting
-# the first: the cells of the global stack (tag, storage, range, compound heads and their arities, reference chains,
-# the value table's boxes, MARK/FIRST bits), the trail's entries, the attributed-variable chain, the frame, choice,
-# foreign-frame and query records. The local stack's WORDS are not scanned: a frame's variable cells hold stale words
-# until their first write (`clearUninitialisedVarsFrame`), which no invariant over the words can tell from a corrupt
-# one; the collector's own mark phase (G1-3) reads the live ones. The `key` upstream returns is the number of cells
-# checked here. The record pools are checked in their live ranges (`frames[1:nframes]`, …).
 """
     StackInvariantError(violations)
 
@@ -1174,6 +1164,17 @@ function stack_violations(ld::PL_local_data; allow_marks::Bool=false)::Vector{St
 end
 
 # PORT: pl-gc.c checkStacks as check_stacks!
+# DIVERGES: not a transliteration. Upstream's `checkStacks` (compiled under `O_DEBUG`/`O_MAINTENANCE` only, the
+# `HAVE_CHECK_STACKS` block of pl-gc.c:3912-4310) walks the frames from the VM state, `checkData`s every argument,
+# variable and foreign-frame term reference it reaches and sums a key; the kernel has no pointers to follow and its
+# words are its own (`pl-data.h` tags over POSITIONS, `ORIGINAL` value-table words), so this checks the INVARIANTS the
+# collector will rely on, over the kernel's representation, and reports every violation as text instead of asserting
+# the first: the cells of the global stack (tag, storage, range, compound heads and their arities, reference chains,
+# the value table's boxes, MARK/FIRST bits), the trail's entries, the attributed-variable chain, the frame, choice,
+# foreign-frame and query records. The local stack's WORDS are not scanned: a frame's variable cells hold stale words
+# until their first write (`clearUninitialisedVarsFrame`), which no invariant over the words can tell from a corrupt
+# one; the collector's own mark phase (G1-3) reads the live ones. The `key` upstream returns is the number of cells
+# checked here. The record pools are checked in their live ranges (`frames[1:nframes]`, …).
 """
     check_stacks!(ld; allow_marks=false) -> Int
 

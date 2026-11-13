@@ -1,5 +1,7 @@
 # UPSTREAM: swipl-devel src/pl-gc.c @ 18168e629eab
 # UPSTREAM: swipl-devel src/pl-data.h @ 18168e629eab
+# UPSTREAM: swipl-devel src/pl-incl.h @ 18168e629eab
+# UPSTREAM: swipl-devel src/pl-fli.c @ 18168e629eab
 # CLASS: code
 # COPYRIGHT: Copyright (c)  1985-2024, University of Amsterdam
 # COPYRIGHT: VU University Amsterdam
@@ -253,7 +255,7 @@ function mark_variable(
 end
 
 # ---- cells that hold a global-stack reference ----
-# PORT: pl-incl.h isGlobalRef
+# PORT: pl-incl.h isGlobalRef as _gc_is_global_ref
 # DIVERGES: a value-table word (`_is_vword`: a float/string/bigint, storage STG_RESERVED) is a global
 # reference too: its box cell lives on the global stack (ruling D1). The kernel's global words are a
 # reference, an attributed variable, a compound (`_is_gcompound`) and that vword; everything else (atom,
@@ -262,7 +264,7 @@ end
     (isRef(w) && storage(w) == STG_GLOBAL) || isAttVar(w) || _is_gcompound(w) ||
     _is_vword(w)
 
-# PORT: pl-fli.c PL_new_term_ref_noshift
+# PORT: pl-fli.c PL_new_term_ref_noshift as gc_new_term_ref!
 # DIVERGES: a new term reference holding the WORD `w` and NO fresh global cell: the collector must not
 # allocate on the global stack (the kernel's `PL_new_term_ref` makes a variable cell). The caller has
 # made room (`ensureLocalSpace`), as upstream's callers rely on `PL_open_foreign_frame`; a full local

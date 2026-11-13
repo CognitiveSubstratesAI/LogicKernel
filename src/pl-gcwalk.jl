@@ -27,11 +27,11 @@ const GCM_CLEAR = 1
 # PORT: pl-gc.c GCM_ALTCLAUSE
 "Walk mode flag: marking alternative clauses (pl-gc.c `GCM_ALTCLAUSE`)."
 const GCM_ALTCLAUSE = 2
-# PORT: pl-gc.c NO_ADEPTH
+# PORT: pl-gc.c NO_ADEPTH as GC_NO_ADEPTH
 "The `adepth` after a `B_UNIFY_VAR`/`B_UNIFY_FIRSTVAR`: never mark over ARGP (pl-gc.c `NO_ADEPTH`)."
 const GC_NO_ADEPTH = 1234567
 
-# PORT: pl-gc.c walk_state
+# PORT: pl-gc.c walk_state as gc_walk_state
 # DIVERGES: `GCM_ACTIVE`/`GCM_CHOICE` and the bit vectors `active`/`clear` belong to the ACTIVE walk of
 # pl-gc.jl (`walk_state`), so there are no bit vectors here and `clear_choice_mark`/`mark_choice_mark`
 # (which act under `GCM_CHOICE` only) are no-ops of this walk; `c0` (debug output) is not carried.
@@ -51,7 +51,7 @@ end
 gc_walk_state(frame::Int, base::Int, arity::Int, flags::Int) =
     gc_walk_state(frame, base, arity, flags, 0, 0, argFrameP(base, 0), 0)
 
-# PORT: pl-gc.c mark_frame_var
+# PORT: pl-gc.c mark_frame_var as mark_frame_var_gc
 # (the stack collector's branch; the `state->active` branch is `mark_frame_var` of pl-gc.jl)
 "Variable operand `v` is read: mark its slot if it is below `envtop` and not yet marked (pl-gc.c `mark_frame_var`)."
 @inline function mark_frame_var_gc(
@@ -65,7 +65,7 @@ gc_walk_state(frame::Int, base::Int, arity::Int, flags::Int) =
     return nothing
 end
 
-# PORT: pl-gc.c clear_frame_var
+# PORT: pl-gc.c clear_frame_var as clear_frame_var_gc
 # (the `state->flags & GCM_CLEAR` branch; the `state->clear` branch is `clear_frame_var` of pl-gc.jl)
 # DIVERGES: upstream makes the cell a variable (`setVar`); `_setVar!` of pl-gc.jl makes a FRESH variable
 # cell on the global stack, which the mark phase must not allocate, so the slot gets word 0 — the "never
@@ -81,7 +81,7 @@ end
     return nothing
 end
 
-# PORT: pl-gc.c mark_argp
+# PORT: pl-gc.c mark_argp as mark_argp_gc
 "In head-unification mode at depth 0, mark the argument ARGP names and step it (pl-gc.c `mark_argp`; `MARK_ALT_CLAUSES`)."
 @inline function mark_argp_gc(
     ld::PL_local_data{T}, st::gc_mark_counts, ws::gc_walk_state

@@ -3044,7 +3044,7 @@ mutable struct gc_stat
 end
 gc_stat() = gc_stat(0, 0, 0, 0, 0, 0.0, 0.0, UInt64(0))
 
-# PORT: pl-incl.h gc_stats
+# PORT: pl-incl.h gc_stats as gc_totals
 # DIVERGES: the anonymous `totals` struct is its own type (`gc_totals`); the arrays are vectors of GC_STAT_WINDOW_SIZE `gc_stat`s; the two ring
 # indexes stay 0-based as upstream (`last[last_index + 1]`).
 "The running totals of the stack collector (pl-incl.h `gc_stats.totals`)."

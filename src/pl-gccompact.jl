@@ -42,7 +42,7 @@
 
 # ── the join of the trail half and the sweep ────────────────────────────────────────────────────
 
-# ORIGINAL: the `update_relocation_chain` call of `compact_trail` (pl-gc.c:2720) as a NAMED callable type, so
+# KERNEL-ONLY (no upstream counterpart): the `update_relocation_chain` call of `compact_trail` (pl-gc.c:2720) as a NAMED callable type, so
 # that `compact_trail(ld, ts, gc_trail_chain(sw))` is one concrete specialisation (the manifest names it).
 # `compact_trail` calls `urc(ld, current, dest)` with plain 1-based trail indexes; the chains are addressed by
 # `GC_TRAIL_BASE + index` (pl-gcsweep.jl), and the head's value is restored into `ld.trail[current]`.

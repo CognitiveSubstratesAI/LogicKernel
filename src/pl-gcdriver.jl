@@ -239,7 +239,7 @@ function garbageCollect(
         st = gc_mark_counts()                       # needs_relocation = 0, total_marked = 0, ...
         attvars = link_attvars(ld)
         astack = argument_stack_to_term_refs(ld, vm)
-        gvars, saved_bar_at = gvars_to_term_refs(ld)
+        gvar_saves, saved_bar_at = gvars_to_term_refs(ld)
         grefs = save_grefs(ld)
         mark_phase(ld, st, vm; vmi_state_of=vmi_state_of)
 
@@ -253,7 +253,7 @@ function garbageCollect(
         clean_attvar_chain(ld)
         gc_trail_end!(ld, ts)
 
-        term_refs_to_gvars(ld, gvars, saved_bar_at)
+        term_refs_to_gvars(ld, gvar_saves, saved_bar_at)
         term_refs_to_argument_stack(ld, vm, astack)
         restore_attvars(ld, attvars)
 
