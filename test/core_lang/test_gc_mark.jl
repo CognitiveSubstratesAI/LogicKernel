@@ -339,6 +339,7 @@ end
     @test ld.trail[tr0 + 1] != 0 && ld.trail[tr0 + 2] != 0      # the pair is kept
     @test st.trailcells_deleted == 0
     @test st.total_marked == length(with)
+    @test !any(LK.is_first, view(ld.gstack, 1:(ld.gTop)))       # mergeTrailedAssignments cleared the FIRST bits it set
 end
 
 @testset "the argument stack and the choicepoints and frames of a live query are roots" begin
