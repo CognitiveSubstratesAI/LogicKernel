@@ -8,13 +8,14 @@
 # loaded file (`lookupSourceFile`, numbered as upstream numbers them), the procedures a file defines
 # (`addProcedureSourceFile`), adding a clause on behalf of a file (`assertProcedureSource`), the
 # start and end of a consult (`startConsult`, `endConsult`) and a predicate attribute set from a
-# file (`setAttrProcedureSource`). Since R2 LB6a the RELOAD half is here as code that nothing reaches yet:
-# the reload context (`startReconsultFile`, `reloadContext`), the clause matching (`find_clause`,
-# `keep_clause`, `equal_clause`, ...), the reload arms of `assertProcedureSource`, `setAttrProcedureSource`
-# and `setMetapredicateSource`, and the fixes applied at the end (`fix_attributes`, `fix_metapredicate`,
-# `fix_det`, `fix_ssu`, `check_ssu`). `startConsult` still refuses a second consult (`NotPortedError`): LB6b re-points it
-# and ports `endReconsult` with `delete_old_predicates`, `unloadFile` and `destroySourceFile`; the module files and the
-# locks are not here either. Since R2 LB2 the `$source_file…`/`$start_consult`/`$end_consult` predicates are here (below).
+# file (`setAttrProcedureSource`). Since R2 LB6a the RELOAD half is here: the reload context (`startReconsultFile`,
+# `reloadContext`), the clause matching (`find_clause`, `keep_clause`, `equal_clause`, ...), the reload arms of
+# `assertProcedureSource`, `setAttrProcedureSource` and `setMetapredicateSource`, and the fixes applied at the end (`fix_attributes`,
+# `fix_metapredicate`, `fix_det`, `fix_ssu`, `check_ssu`). Since R2 LB6b a second consult of a file reloads it (`startConsult`) and the end of it
+# is here: `endReconsult` with `delete_old_predicates!`, `end_reconsult_proc!`, `flush_procedure!`, `fix_module`, `unloadFile!`,
+# `destroySourceFile!` (on the loader path's `releaseSourceFile(gd, ld, sf)`), `$unload_file`, `$set_source_files`, `$clause_from_source`,
+# `$flush_predicate` and `$flushed_predicate`; the locks are not here. Since R2 LB2 the `$source_file…`/`$start_consult`/`$end_consult`
+# predicates are here (below).
 
 # PORT: pl-srcfile.c GEN_RELOAD
 # (swipl-devel cbf4e189, src/pl-srcfile.c:892-896)
@@ -159,7 +160,7 @@ end
 # PORT: pl-srcfile.c releaseSourceFile
 # DIVERGES (TEMPORARY, until every caller has the database and the local data: audit D-0248, LB6b option B): this one-argument form only counts — an
 # unreferenced empty file is NOT destroyed; the three-argument form below is the loader path's (start/end consult, `$unload_file`, `$clause_from_source`,
-# the flush predicates) and is upstream's. A release with no reference — upstream prints "Oops" and repairs the count — is raised as the internal error it is.
+# the flush predicates, the clause reclamation) and is upstream's. A release with no reference — upstream prints "Oops" and repairs the count — is raised as the internal error it is.
 "Drop a reference to `sf` (pl-srcfile.c)."
 function releaseSourceFile(sf::SourceFile)::Bool
     sf.references <= 0 && error("releaseSourceFile: no reference to release (Oops)")
@@ -358,8 +359,8 @@ end
 
 # PORT: pl-srcfile.c startReconsultFile
 # (swipl-devel cbf4e189, src/pl-srcfile.c:900-953)
-# DIVERGES: no `acquire_def`/`release_def`, no allocation failure (`PL_no_memory`); the database and the local data are arguments. Dead until LB6b
-# re-points `startConsult` (R2 LB6a): the rows call it directly.
+# DIVERGES: no `acquire_def`/`release_def`, no allocation failure (`PL_no_memory`); the database and the local data are arguments. Called by `startConsult`
+# for a file consulted before (R2 LB6b); the LB6a rows call it directly.
 "Start reloading `sf`: its clauses are marked erased at the reload generation, a reload context is made (pl-srcfile.c)."
 function startReconsultFile(
     gd::PL_global_data{T}, ld::PL_local_data{T}, sf::SourceFile{T}
@@ -952,18 +953,19 @@ function unloadFile!(
 end
 
 # PORT: pl-srcfile.c startConsult
-# DIVERGES: a RE-consult — the file was consulted before — is refused (`NotPortedError`): `startReconsultFile` exists since LB6a, but
-# `endReconsult` (delete_old_predicates, reconsultFinalizePredicate) comes with LB6b, which re-points this function (loader_boot H9). The database and the local
-# data are arguments (`startReconsultFile`; since LB6b they are used only by the re-pointed branch, which is the last commit of the step).
-"Start consulting the source file `sf` (pl-srcfile.c)."
+# DIVERGES: the database and the local data are arguments (`startReconsultFile`, the destroying `releaseSourceFile`). Since R2 LB6b a RE-consult starts
+# the reload (`startReconsultFile`), which `endConsult` ends.
+"Start consulting the source file `sf`; a file consulted before is reloaded (pl-srcfile.c)."
 function startConsult(
     gd::PL_global_data{T}, ld::PL_local_data{T}, sf::SourceFile{T}
 )::Bool where {T}
     acquireSourceFile(sf)
     sf.ltime = time()                               # WallTime()
     if (sf.count += 1) > 1                          # This is a re-consult
-        releaseSourceFile(gd, ld, sf)
-        throw(NotPortedError{T}(sf.name, "consulting a file again (reconsult)", "LB6"))
+        if !startReconsultFile(gd, ld, sf)
+            releaseSourceFile(gd, ld, sf)
+            return false
+        end
     end
     sf.current_procedure = nothing
     return true
@@ -1199,7 +1201,7 @@ end
 
 # PORT: pl-srcfile.c source_file_property as pl_source_file_property3_va
 # (PRED_IMPL("$source_file_property", 3, source_file_property, 0)) — pl-srcfile.c:702-733
-# DIVERGES: `reloading` is false (no reload context). `loaded` of a file that is not known: c6087acb (swipl 10.1.20,
+# DIVERGES: `loaded` of a file that is not known: c6087acb (swipl 10.1.20,
 # `sf && sf->ltime != 0.0 ? unify : false`) fails there, as does `sf === nothing || sf.ltime == 0.0` here (H10, 10.1.19 read
 # through the NULL `sf`; rows f22/f23 of test_source_file_swipl.jl).
 "`'\$source_file_property'(+File, +Property, -Value)` (pl-srcfile.c)."
@@ -1216,7 +1218,7 @@ function pl_source_file_property3_va(
     if _atom_is(ld, property, :load_count)
         rc = PL_unify_integer(ld, A3, sf === nothing ? 0 : sf.count)
     elseif _atom_is(ld, property, :reloading)
-        rc = PL_unify_bool(ld, A3, false)               # sf ? sf->reload != NULL : 0
+        rc = PL_unify_bool(ld, A3, sf !== nothing && sf.reload !== nothing)    # sf ? sf->reload != NULL : 0
     elseif _atom_is(ld, property, :number_of_clauses)
         rc = PL_unify_integer(ld, A3, sf === nothing ? 0 : Int(sf.number_of_clauses))
     elseif _atom_is(ld, property, :resource)
