@@ -3509,6 +3509,7 @@ _manifest_table_plain() = (
     (LK.htable_put, Tuple{LK.Table{Nothing, Nothing}, LK.KVS, UInt64, UInt64, Int}, false),
     (LK.htable_iter, Tuple{LK.Table{Nothing, Nothing}, LK.KVS, Int}, false),
     (LK.newHTable, Tuple{Int}, false),
+    (LK.newHTable, Tuple{Int, Nothing}, false),   # the one-hook form (copy_symbol only)
     (LK.newHTable, Tuple{Int, Nothing, typeof(LK.free_cov_symbol)}, false),   # a coverage table's hooks
     (LK.destroyHTable, Tuple{LK.Table{Nothing, Nothing}}, false),
     (LK.lookupHTable, Tuple{LK.Table{Nothing, Nothing}, UInt64}, false),
@@ -4538,6 +4539,9 @@ const _DISPATCH_MANIFEST_TUPLE = (
     (LK.advanceGen, Tuple{LK.generator}, false),
     # CT1c — the text half: the case predicates' code-point walk, normalize_space/2's skippers, the locale's encoding
     (LK.get_chr_from_text, Tuple{Vector{Int64}, Int64}, false),
+    (LK.ctype_get_chr_from_text, Tuple{Vector{Int64}, Int64}, false),
+    (LK.PROF_IS_CPU, Tuple{Int64}, false),
+    (LK.PROF_IS_EXACT, Tuple{Int64}, false),
     (LK.skip_separators, Tuple{Vector{Int64}, Int64}, false),
     (LK.copy_non_separators, Tuple{LK.IOSTREAM, Vector{Int64}, Int64}, false),
     (LK.enc_from_locale, Tuple{String}, false),
