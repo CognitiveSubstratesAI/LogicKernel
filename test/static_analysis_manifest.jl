@@ -3638,6 +3638,20 @@ _manifest_g1gc4(::Type{T}) where {T} = (
     (LK.clean_attvar_chain, Tuple{LK.PL_local_data{T}}, false)
 )
 
+# G1-6c: the driver of the collector (src/pl-gcdriver.jl); every entry AllocCheck-false (they build vectors, vm_state and error messages).
+# `garbageCollect` is NOT listed here: `_manifest_g1gc2` holds its `Tuple{LD, Int}` entry (the keyword method forwards to it); the callback
+# form of `gc_get_vmi_state` has a dynamic argument type and is left to the `Nothing` form.
+_manifest_g1gc6c(::Type{T}) where {T} = (
+    (LK.gc_get_vmi_state, Tuple{LK.PL_local_data{T}, Int, Nothing}, false),
+    (LK.gc_restore_vmi_state, Tuple{LK.PL_local_data{T}, LK.vm_state}, false),
+    (LK.gc_count_gvar_refs, Tuple{LK.PL_local_data{T}}, false),
+    (LK.gcEnsureSpace, Tuple{LK.PL_local_data{T}, LK.vm_state}, false),
+    (LK.clear_unused_stack, Tuple{LK.PL_local_data{T}}, false),
+    (LK.tight, Tuple{LK.PL_local_data{T}, Symbol}, false),
+    (LK.growStacks_tight!, Tuple{LK.PL_local_data{T}, Int}, false),
+    (LK.shiftTightStacks!, Tuple{LK.PL_local_data{T}}, false)
+)
+
 # G1-3b (src/pl-gcwalk.jl, pl-gc.c's mark phase: the collector's walk, early reset, the choicepoint/environment/query drivers).
 # Not held allocation-free: the drivers build error messages and the callback `vmi_state_of` is dynamic.
 _manifest_g1gc3b(::Type{T}) where {T} = (
@@ -4446,6 +4460,10 @@ const _DISPATCH_MANIFEST_TUPLE = (
     _manifest_g1gc3a(_M2)...,
     # G1-4: the trail half of the collector (src/pl-gctrail.jl)
     _manifest_g1gc4(_M2)...,
+    # G1-GC G1-6c: the driver of the collector (src/pl-gcdriver.jl)
+    _manifest_g1gc6c(_M1)...,
+    _manifest_g1gc6c(_M2)...,
+    _manifest_g1gc6c(_M3)...,
     # G1-GC G1-2: the safe-point hook and the flagged global-space check, over each term type
     _manifest_g1gc2(_M1)...,
     _manifest_g1gc2(_M2)...,
