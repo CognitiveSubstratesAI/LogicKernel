@@ -564,3 +564,50 @@ end
     @test ok && mo == "unbound"                                                           # a must-fail corruption: the same call, one flag less
     tp.flags = saved
 end
+
+"A symbol or a compound of symbols (`monotonic(eager)`) as text: ONE extractor for the types of `'\$is_answer_trie'`."
+_ti_txt(t)::String = kind(t) === SYM ? sym_text(t) :
+    sym_text(child(t, 1)) * "(" * join([_ti_txt(child(t, i)) for i in 2:nchildren(t)], ",") * ")"
+
+"The `Type` of `'\$is_answer_trie'(Trie, Type)` for `atrie` (`failed` when it fails)."
+function _ti_answer_trie_type(gd, ld, atrie)::String
+    ctx = LK.foreign_context{_TI}(LK.FRG_FIRST_CALL, UInt(0), nothing)
+    fid = LK.PL_open_foreign_frame(ld)
+    a = LK.PL_new_term_refs(ld, 2)
+    LK.putSlotValue!(ld, a + 1, mk_var(_TI, LK.fresh_var_keys!(1)), LK.PutVarMap())
+    LK.putSlotValue!(ld, a + 2, mk_var(_TI, LK.fresh_var_keys!(1)), LK.PutVarMap())
+    @assert LK.unify_trie(gd, ld, a, atrie)
+    rc = LK.pl_is_answer_trie2_va(ld, a, 2, ctx)
+    out = rc == LK.FTRUE ? _ti_txt(lk_answers(ld, (a + 2:a + 2)...)[1]) : "failed"
+    LK.PL_close_foreign_frame(ld, fid)
+    return out
+end
+
+@testset "idg20: '\$is_answer_trie' names the type of a table with an IDG node (pl-tabling.c:7372-7392)" begin
+    gd, ld, def = _ti_db()
+    tabs = [_ti_table!(ld, def, true, v) for v in 1:5]
+    typ(t) = _ti_answer_trie_type(gd, ld, t)
+    @test typ(tabs[1]) == "normal"                                                        # no node, no worklist sentinel
+    tabs[2].worklist = LK.WL_DYNAMIC
+    @test typ(tabs[2]) == "dynamic"
+    tabs[2].IDG = LK.idg_new(ld, tabs[2])::_TIN
+    @test typ(tabs[2]) == "dynamic"                                                       # dynamic comes before the node
+    tabs[3].IDG = LK.idg_new(ld, tabs[3])::_TIN
+    @test typ(tabs[3]) == "incremental"                                                   # a node, not monotonic
+    n4 = LK.idg_new(ld, tabs[4])::_TIN
+    n4.monotonic = true
+    tabs[4].IDG = n4
+    @test typ(tabs[4]) == "monotonic(eager)"
+    n5 = LK.idg_new(ld, tabs[5])::_TIN
+    n5.monotonic = true
+    n5.lazy = true
+    tabs[5].IDG = n5
+    @test typ(tabs[5]) == "monotonic(lazy)"
+    # `lazy` without `monotonic` does not make the table monotonic (the C tests `n->monotonic` first)
+    n5.monotonic = false
+    @test typ(tabs[5]) == "incremental"
+
+    # a must-fail corruption: the states differ, so the answers do (non-empty, one extractor): normal, dynamic, incremental (tables 3 and 5), monotonic(eager)
+    texts = [typ(t) for t in tabs]
+    @test all(!isempty, texts) && length(unique(texts)) == 4
+end

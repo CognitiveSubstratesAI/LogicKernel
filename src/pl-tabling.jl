@@ -4162,7 +4162,6 @@ end
 
 # PORT: pl-tabling.c is_answer_trie as pl_is_answer_trie2_va
 # (PRED_IMPL("$is_answer_trie", 2, is_answer_trie, 0))
-# DIVERGES: an IDG node (`monotonic(How)`, `incremental`) is TB6's, refused by name; no table has one before it.
 "`'\$is_answer_trie'(@Trie, -Type)`: `Trie` is an answer trie (possibly destroyed); its type (pl-tabling.c)."
 function pl_is_answer_trie2_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
@@ -4174,13 +4173,16 @@ function pl_is_answer_trie2_va(
         wl = atrie.worklist
         if wl isa Int && wl == WL_DYNAMIC
             return PL_unify_atom(ld, A2, mk_sym(T, :dynamic)) ? FTRUE : FFALSE
-        elseif atrie.IDG !== nothing
-            tbl_refuse(
-                T,
-                :is_answer_trie,
-                "is_answer_trie: an IDG node (monotonic(How), incremental)",
-                "TB6"
-            )
+        elseif (n = atrie.IDG) !== nothing
+            if n.monotonic
+                # PL_unify_term(A2, PL_FUNCTOR, FUNCTOR_monotonic1, PL_ATOM, n->lazy ? ATOM_lazy : ATOM_eager)
+                PL_unify_functor(ld, A2, mk_sym(T, :monotonic), 1) || return FFALSE
+                how = PL_new_term_ref(ld)
+                _PL_get_arg(ld, 1, A2, how)
+                return PL_unify_atom(ld, how, mk_sym(T, n.lazy ? :lazy : :eager)) ? FTRUE : FFALSE
+            end
+
+            return PL_unify_atom(ld, A2, mk_sym(T, :incremental)) ? FTRUE : FFALSE
         else
             return PL_unify_atom(ld, A2, mk_sym(T, :normal)) ? FTRUE : FFALSE
         end
