@@ -166,7 +166,7 @@ end
     names = _ro_names()
     expected = String.(readlines(_RO_OUT))
     # not a vacuous agreement: a line per row, the rows' own evidence is in it (a mode that rounds up, one that rounds down, the throw)
-    @test length(names) == 20
+    @test length(names) == 24
     @test length(expected) == length(names) + 1 && expected[1] == "ok"
     @test all(i -> startswith(expected[i + 1], names[i] * " "), eachindex(names))
     @test count(l -> occursin("f0.33333333333333337", l), expected) >= 6      # to_positive rounds 1/3.0 up
@@ -199,8 +199,19 @@ end
         cd = _ro_codes(gd, name, 1)
         @test cd !== nothing && (LK.A_ROUNDTOWARDS_A in cd)
     end
-    let cd = _ro_codes(gd, "rt", 2)
+    for name in ("rt", "rtv")
+        cd = _ro_codes(gd, name, 2)
         @test cd !== nothing && (LK.A_ROUNDTOWARDS_V in cd)
+    end
+    # the rows that follow a leaked mode: the compiled is/2 (A_IS: a head variable; A_FIRSTVAR_IS: a first occurrence) and a comparison
+    let cd = _ro_codes(gd, "lead_is", 1)
+        @test cd !== nothing && (LK.A_IS in cd)
+    end
+    let cd = _ro_codes(gd, "lead_fv", 1)
+        @test cd !== nothing && (LK.A_FIRSTVAR_IS in cd)
+    end
+    let cd = _ro_codes(gd, "lead_cmp", 0)
+        @test cd !== nothing && (LK.A_GT in cd)
     end
     for i in 0:6
         cd = _ro_codes(gd, "h$i", 0)
