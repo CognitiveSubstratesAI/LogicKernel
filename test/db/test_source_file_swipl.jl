@@ -5,10 +5,10 @@
 #     are compared. EVERY expected value is swipl's own answer (the driver runs live). `@FILE@` in a goal is the program's path
 #     (the source file's name in both systems), so the two systems ask about the same file;
 #   * WHITE-BOX: what swipl cannot be asked — the module
-#     list of a source file, the refusal of a reconsult (LB6), and system mode (H5: `access_level`, the P_LOCKED / HIDE_CHILDS
+#     list of a source file, the start of a reconsult by name and the destroying release (LB6b), and system mode (H5: `access_level`, the P_LOCKED / HIDE_CHILDS
 #     bits of a predicate defined in system mode, `isStaticSystemProcedure`).
 # NOT HERE: `nth_clause/3` and `'$get_clause_attribute'/3` rows (test/db/test_nth_clause_swipl.jl), the module sites
-# (`exportProcedureSource`, `setMetapredicateSource`: after MOD4, loader_boot.md §3.4 L3/L4), a reconsult (LB6).
+# (`exportProcedureSource`, `setMetapredicateSource`: after MOD4, loader_boot.md §3.4 L3/L4), the reload rows compared with swipl (test/db/test_reload_swipl.jl).
 using Test, LogicKernel
 
 const LK = LogicKernel
@@ -156,7 +156,7 @@ const _CASES = [
         "g10",
         "'\$set_source_file'('@FILE@', resource, on), '\$source_file_property'('@FILE@', resource, V), '\$set_source_file'('@FILE@', resource, off), R = V"
     ),
-    # ---- '$start_consult'/2, '$end_consult'/1, '$fixup_reconsult'/1 (each row its own file: a reconsult is LB6's)
+    # ---- '$start_consult'/2, '$end_consult'/1, '$fixup_reconsult'/1 (each row its own file: a reconsult is test/db/test_reload_swipl.jl's)
     (
         "c01",
         "'\$start_consult'('/no/such/a', 0), '\$source_file_property'('/no/such/a', load_count, V), R = V"
@@ -597,15 +597,39 @@ end
     @test st === :false
 end
 
-@testset "'\$start_consult'/2 refuses a reconsult by name (LB6)" begin
+# LB6b: a file consulted before is RELOADED by a second `$start_consult` (startConsult, `count > 1`). The values are swipl 10.1.19's (pin 18168e62, probed live
+# 2026-11-13: load a file `foo(1).`, then `'$start_consult'(F, 0)`, `'$fixup_reconsult'(F)`, `'$end_consult'(F)`, reading `'$source_file_property'/3` after each).
+"`'\$source_file_property'(f, prop, V)` as `(status, value)`."
+function _sfp(gd, ld, f::String, prop::String)
+    st, ans = kcall(gd, ld, "\$source_file_property", _TL[_tls(f), _tls(prop), _v()])
+    return st, st === :true ? ans[3] : nothing
+end
+
+@testset "'\$start_consult'/2 on a file consulted before starts a reload (LB6b)" begin
     gd, ld, f = _loaded("foo(1).\n")
-    e = try
-        kcall(gd, ld, "\$start_consult", _TL[_tls(f), lk_gnd(_TL, 0)])
-        nothing
-    catch ex
-        ex
-    end
-    @test e isa LK.NotPortedError && e.step == "LB6"
+    @test lk_value(_sfp(gd, ld, f, "load_count")[2]) == 1
+    @test sym_key(_sfp(gd, ld, f, "reloading")[2]) == sym_key(_tls("false"))
+    @test lk_value(_sfp(gd, ld, f, "number_of_clauses")[2]) == 1
+    # a second start: true; the count is 2 and the reload is running (swipl: load_count 2, reloading true, number_of_clauses 1)
+    st, _ = kcall(gd, ld, "\$start_consult", _TL[_tls(f), lk_gnd(_TL, 0)])
+    @test st === :true
+    @test lk_value(_sfp(gd, ld, f, "load_count")[2]) == 2
+    @test sym_key(_sfp(gd, ld, f, "reloading")[2]) == sym_key(_tls("true"))
+    @test lk_value(_sfp(gd, ld, f, "number_of_clauses")[2]) == 1
+    sf = LK.lookupSourceFile_unlocked(gd, _tls(f), false)
+    @test sf.reload !== nothing                                              # the reload context stands until the reload ends
+    # `$fixup_reconsult` ends it (swipl: reloading false, the clause the second pass did not meet is gone: number_of_clauses 0)
+    st, _ = kcall(gd, ld, "\$fixup_reconsult", _TL[_tls(f)])
+    @test st === :true
+    @test lk_value(_sfp(gd, ld, f, "load_count")[2]) == 2
+    @test sym_key(_sfp(gd, ld, f, "reloading")[2]) == sym_key(_tls("false"))
+    @test lk_value(_sfp(gd, ld, f, "number_of_clauses")[2]) == 0
+    @test sf.reload === nothing
+    st, _ = kcall(gd, ld, "\$end_consult", _TL[_tls(f)])
+    @test st === :true
+    @test lk_value(_sfp(gd, ld, f, "load_count")[2]) == 2                    # the file is still known (swipl: load_count 2)
+    @test lk_value(_sfp(gd, ld, f, "number_of_clauses")[2]) == 0
+    @test LK.lookupSourceFile_unlocked(gd, _tls(f), false) === sf && sf.magic == LK.SF_MAGIC     # not destroyed: it still has its predicate
 end
 
 @testset "system mode (H5): access_level, the lock of a predicate defined in it, isStaticSystemProcedure" begin
@@ -643,26 +667,33 @@ end
     @test st === :true && sym_key(ans[2]) == sym_key(_tls("user"))
 end
 
-# ---- KNOWN DIFFERENCE, TEMPORARY (owner step LB6, audit D-0248): releaseSourceFile does not destroy an unreferenced, empty file.
-# swipl 10.1.19 (live, 2026-10-29):  '$start_consult'('/no/such/d01', 0), '$end_consult'('/no/such/d01')  then
+# ---- LB6b (closes the KNOWN DIFFERENCE of audit D-0248): releaseSourceFile destroys an unreferenced, empty file.
+# swipl 10.1.19 (live, 2026-10-29, again with the pin 18168e62 on 2026-11-13):  '$start_consult'('/no/such/d01', 0), '$end_consult'('/no/such/d01')  then
 #   '$source_file_property'('/no/such/d01', load_count, V)  gives V = 0, and
-#   findall(F, '$time_source_file'(F, _, _), L)  has no '/no/such/d01' (so `source_file/1` does not list it either);
-# the kernel keeps the record: load_count 1 and the file is enumerated. These rows PIN THE KERNEL'S CURRENT ANSWER.
-# LB6: port destroySourceFile (files_array with holes), flip these rows to swipl's answers.
-@testset "KNOWN DIFFERENCE (until LB6: destroySourceFile): an empty file consulted once keeps its record" begin
-    gd = LK.setupProlog(_TL)       # the unbooted database: the booted copy's enumeration lists the boot's files first (LB4 b2)
+#   findall(F, '$time_source_file'(F, _, _), L)  has no '/no/such/d01' (so `source_file/1` does not list it either).
+# The destroy calls `system:'$clear_source_admin'/1` (boot/init.pl:876), so the rows run on the BOOTED database; its enumeration lists the boot's files first, so
+# the rows ask the whole enumeration and compare the file's presence.
+@testset "an empty file consulted once is destroyed at its end (LB6b: destroySourceFile)" begin
+    gd = LK.PL_global_data{_TL}()
     ld = LK.PL_local_data{_TL}(gd)
     f = _tls("/no/such/d01")
+    vs() = _TL[_v(), _v(), _v()]
     st, _ = kcall(gd, ld, "\$start_consult", _TL[f, lk_gnd(_TL, 0)])
     @test st === :true
+    n0, firsts0 = kenum(gd, ld, "\$time_source_file", vs(), 100_000)
+    @test n0 >= 1 && any(x -> sym_key(x) == sym_key(f), firsts0)                # started: enumerated (the precondition of the comparison below)
+    sf = LK.lookupSourceFile_unlocked(gd, f, false)
+    idx = sf.index
     st, _ = kcall(gd, ld, "\$end_consult", _TL[f])
     @test st === :true
     st, ans = kcall(gd, ld, "\$source_file_property", _TL[f, _tls("load_count"), _v()])
-    @test st === :true && lk_value(ans[3]) == 1                               # swipl: 0
-    st, ans = kcall(gd, ld, "\$time_source_file", _TL[f, _v(), _v()])
-    @test st === :true                                                        # swipl: fails (the file is gone)
-    st, ans = kcall(gd, ld, "\$time_source_file", _TL[_v(), _v(), _v()])
-    @test st === :true && sym_key(ans[1]) == sym_key(f)                       # the enumeration (source_file/1's base) lists it; swipl: not
+    @test st === :true && lk_value(ans[3]) == 0                                 # swipl: 0
+    st, _ = kcall(gd, ld, "\$time_source_file", _TL[f, _v(), _v()])
+    @test st === :false                                                         # swipl: fails (the file is gone)
+    n1, firsts1 = kenum(gd, ld, "\$time_source_file", vs(), 100_000)
+    @test n1 == n0 - 1 && !any(x -> sym_key(x) == sym_key(f), firsts1)          # the enumeration (source_file/1's base) lacks it
+    @test LK.lookupSourceFile_unlocked(gd, f, false) === nothing                # out of the name table
+    @test LK.indexToSourceFile(gd, idx) === nothing && sf.magic == 0            # its slot of the file table is a hole
 end
 
 # ---- white-box: the reference count stays balanced, and a file nothing has started (count 0) is not listed
@@ -670,8 +701,9 @@ end
     gd = LK.PL_global_data{_TL}()
     ld = LK.PL_local_data{_TL}(gd)
     f = _tls("/no/such/r01")
-    refs() = LK.lookupSourceFile_unlocked(gd, f, false).references
     st, _ = kcall(gd, ld, "\$start_consult", _TL[f, lk_gnd(_TL, 0)])
+    sf = LK.lookupSourceFile_unlocked(gd, f, false)
+    refs() = sf.references
     @test st === :true && refs() == 1                                         # startConsult's reference only
     for (name, args) in (
         ("\$source_file_property", _TL[f, _tls("load_count"), _v()]),
@@ -687,6 +719,7 @@ end
     @test st === :exception && refs() == 1
     st, _ = kcall(gd, ld, "\$end_consult", _TL[f])
     @test st === :true && refs() == 0
+    @test LK.lookupSourceFile_unlocked(gd, f, false) === nothing              # LB6b: the last reference of an empty file destroys it (the booted database runs `$clear_source_admin`)
     # a file that exists but has count 0 (looked up with create, never started) is neither listed nor asked for its predicates
     gd2 = LK.setupProlog(_TL)      # unbooted: the booted copy lists the boot's files, so '$time_source_file' succeeds there
     ld2 = LK.PL_local_data{_TL}(gd2)

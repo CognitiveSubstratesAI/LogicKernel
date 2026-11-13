@@ -751,17 +751,9 @@ end
         gd = LK.PL_global_data{_TL}()
         ld = LK.PL_local_data{_TL}(gd)
         @test LK.load_file!(gd, ld, path) === (:ok, nothing)
-        # KNOWN DIFFERENCE L6, pinned (LB4 b2 first boot; docs/architecture.md, LB4 b2 checklist): swipl reconsults the
-        # file (`(:ok, nothing)`, as the row expected); the kernel refuses, the reconsult is deferred (owner LB6;
-        # NotPortedError raised at src/pl-srcfile.jl:181, startConsult)
-        err6 = try
-            LK.load_file!(gd, ld, path)
-            nothing
-        catch e
-            e
-        end
-        @test err6 isa LK.NotPortedError && sym_text(err6.culprit) == abspath(path) &&
-            err6.what == "consulting a file again (reconsult)" && err6.step == "LB6"
+        # a reconsult: swipl consults the file again (`(:ok, nothing)`); since LB6b so does the kernel (`startConsult` reloads a file
+        # consulted before; was KNOWN DIFFERENCE L6: a NotPortedError, owner LB6)
+        @test LK.load_file!(gd, ld, path) === (:ok, nothing)
         p1, p2 = joinpath(d, "one.pl"), joinpath(d, "two.pl")
         write(p1, "s(1).\n")
         write(p2, "s(2).\n")

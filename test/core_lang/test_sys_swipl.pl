@@ -112,7 +112,7 @@ t89(R) :- res(delete_file(lk_y1_emptydir), R).
 % a retract, an erase, an abolish and a retractall each raise the count by the clauses erased and the space by more than
 % 8 bytes a clause (swipl: 112; the kernel counts its own bytes, so only the order is pinned), and
 % clause GC returns both; a clause an open query still reads (t94) is not collected until that query is cut.
-% Not here: a re-consult (the kernel refuses it until LB6b) and the absolute space (swipl's bytes are its own).
+% Not here: a re-consult (test/db/test_reload_swipl.jl's) and the absolute space (swipl's bytes are its own).
 :- dynamic ef/1, eg/1, eh/1.
 est(E, S) :- statistics(erased_clauses, E), statistics(erased_clause_space, S).
 settle :- assertz(eh(1)), garbage_collect_clauses, assertz(eh(2)), garbage_collect_clauses.

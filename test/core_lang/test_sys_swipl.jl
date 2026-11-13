@@ -200,8 +200,8 @@ end
 # invariant, read after each row of a program that erases by every path the kernel has (retract/1, erase/1, abolish/1,
 # retractall/1; clause GC) and leaves what it erased erased: a definition with erased clauses is in the table AND carries
 # P_DIRTYREG, a definition in the table carries P_DIRTYREG, and the number the statistic reads is the number of erased
-# clauses the definitions hold. A re-consult erases by `removeClausesPredicate!` through `unloadFile`/`endReconsult`, which
-# are LB6b's (`startConsult` refuses it, see src/pl-srcfile.jl): the row for it comes with that step.
+# clauses the definitions hold. A re-consult erases by `removeClausesPredicate!` through `unloadFile!`/`endReconsult` (LB6b:
+# `startConsult` reloads a file consulted before, src/pl-srcfile.jl); test/db/test_reload_swipl.jl runs those paths, this program does not.
 const _ERASE_PL = """
 :- dynamic wf/1, wg/1, wh/1.
 w0(ok).

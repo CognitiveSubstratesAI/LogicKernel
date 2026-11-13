@@ -1,6 +1,7 @@
 # ORIGINAL: R2's LB6a gate — the reconsult half of pl-srcfile.c (startReconsultFile, reloadContext, the reload arms of assertProcedureSource, setAttrProcedureSource and setMetapredicateSource, the clause matching, the reload visibility of pl-inline.h) as WHITE-BOX rows; upstream tests it through Prolog (test_reload.pl), which needs the second consult LB6b re-points.
-# test/db/test_reload_blocks_swipl.jl — LB6a's rows (evidence/LB6/plan.md section 3, audit D-0415). LB6a is dead code until LB6b's last commit re-points
-# `startConsult`, so these rows call the functions directly: `startReconsultFile`, `reloadContext`, `assertProcedureSource` on a reload that is set up by hand,
+# test/db/test_reload_blocks_swipl.jl — LB6a's rows (evidence/LB6/plan.md section 3, audit D-0415). LB6b's last commit re-pointed `startConsult` and wrote `endReconsult`;
+# these rows still call the functions directly, on a reload set up by hand (only r04b ends it with the real `endReconsult`; the other rows' subject is the state DURING a
+# reload and end it by `_rb_end!`, the two writes of the end; `endReconsult` itself is the subject of test/db/test_reload_swipl.jl): `startReconsultFile`, `reloadContext`, `assertProcedureSource` on a reload that is set up by hand,
 # `setAttrProcedureSource`, `setMetapredicateSource`, `fix_*`, `check_ssu`, `equal_clause`, `find_clause`/`advance_clause`, `visibleClause`, and the search
 # (`firstClause!`/`nextClause!`) and the database-only functions (`hasClausesDefinition`, `num_visible_clauses`, `getClauses`) while a reload runs.
 # The swipl-compared reload rows (exports, clause lists, `source_file_property` after a second consult) are LB6b's (test/db/test_reload_swipl.jl).
@@ -112,7 +113,7 @@ function _rb_args(ms::UInt8...)::Vector{LK.arg_info}
     return out
 end
 
-"What `endReconsult` (LB6b) does to the two values `startReconsultFile` writes."
+"What `endReconsult` does to the two values `startReconsultFile` writes (the cleanup of a row whose subject is the state during a reload; r04b calls the real `endReconsult`)."
 function _rb_end!(db::IxDB)::Nothing
     db.gd.reload_generation = LK.GEN_INVALID
     db.ld.reload_nesting = 0
@@ -235,7 +236,7 @@ end
         isempty(rl.modules) && rl.number_of_clauses == 0
     @test gd.reload_generation == LK.GEN_RELOAD
     @test ld.reload_nesting == 1
-    # nesting 2 after a second start (another file; the C counter, `endReconsult` decrements it in LB6b)
+    # nesting 2 after a second start (another file; the C counter, `endReconsult` decrements it: r04b)
     @test LK.startReconsultFile(gd, ld, sfB)
     @test ld.reload_nesting == 2 && sfB.reload !== nothing && sfB.reload !== rl
     # B's own clause is now marked, A's marks are untouched
@@ -248,9 +249,9 @@ end
 end
 
 # r04b (audit D-0416 item 3, LB6a Q6): two files reloading IN TURN: the generation after each. ONE source of truth: `gd.reload_generation`. `startReconsultFile` writes it
-# (it stands in for `LD->reload.generation`, owner TH1) and `endReconsult` (LB6b; here `_rb_end!`, the same write) clears it; the local data keeps NO copy (it has no such field),
-# and its readers (`visibleClause` with `ld`, `firstClause!`, `nextClause!`) reach the value through `ld.GD`. `endReconsult` does not exist before LB6b, so the row calls
-# `_rb_end!`, the helper that does what it does to these values.
+# (it stands in for `LD->reload.generation`, owner TH1) and `endReconsult` (LB6b) clears it; the local data keeps NO copy (it has no such field),
+# and its readers (`visibleClause` with `ld`, `firstClause!`, `nextClause!`) reach the value through `ld.GD`. The row ends each reload with the real `LK.endReconsult`
+# (the file has no procedure of its own, so the end has nothing to delete: the two writes are all it does here).
 @testset "r04b two files reloading in turn: the reload generation after each start and each end" begin
     db = IxDB{_RB}()
     gd, ld = db.gd, db.ld
@@ -272,7 +273,7 @@ end
     @test gd.reload_generation == LK.GEN_RELOAD && ld.reload_nesting == 1
     @test sfA.reload !== nothing && sfA.reload.reload_gen == gd.reload_generation
     @test !LK.visibleClause(ld, cl, g) && !LK.visibleClauseCNT(ld, cl, g)             # during A: the reload rule
-    _rb_end!(db)
+    @test LK.endReconsult(gd, ld, sfA)
     @test gd.reload_generation == LK.GEN_INVALID && ld.reload_nesting == 0
     @test LK.visibleClause(ld, cl, g) && LK.visibleClauseCNT(ld, cl, g)               # after A: the plain rule again
     # file B in turn: its own reload context, the generation is the reload generation again; ended, it is gone
@@ -281,7 +282,7 @@ end
     @test sfB.reload !== nothing && sfB.reload !== sfA.reload &&
         sfB.reload.reload_gen == gd.reload_generation
     @test !LK.visibleClause(ld, cl, g) && !LK.visibleClauseCNT(ld, cl, g)             # during B: the reload rule
-    _rb_end!(db)
+    @test LK.endReconsult(gd, ld, sfB)
     @test gd.reload_generation == LK.GEN_INVALID && ld.reload_nesting == 0
     @test LK.visibleClause(ld, cl, g) && LK.visibleClauseCNT(ld, cl, g)
 end
@@ -455,7 +456,7 @@ end
     cref = LK.assertProcedureSource(gd, ld, sf, proc, new3)
     @test cref !== nothing && cref.clause === olds[3]
     @test olds[3].generation_erased == LK.GEN_MAX
-    @test olds[2].generation_erased == LK.GEN_RELOAD                                   # skipped: endReconsult (LB6b) deletes it
+    @test olds[2].generation_erased == LK.GEN_RELOAD                                   # skipped: endReconsult deletes it
     @test reload.current_clause === nothing                                            # the list is exhausted
     @test _rb_same(_rb_list(def), [olds[1], new2, olds[2], olds[3]])
     @test sf.reload.number_of_clauses == 3 && reload.number_of_clauses == 3
