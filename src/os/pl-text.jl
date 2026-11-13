@@ -12,8 +12,8 @@
 # concatenating (`PL_concat_text`), and `CVT_VARNOFAIL`, for atom_length/2, the `x_chars` family and
 # atom_concat/3 (src/pl-prims.jl). NOT PORTED: the rest of pl-text.c (`PL_unify_text_units`,
 # `PL_text_unit_offset`, `PL_demote_text`, `PL_text_recode`, `PL_save_text`, `PL_from_stack_text`,
-# `PL_free_text`: Julia's GC owns the bytes; the encodings other than ISO Latin-1, UTF-8 and
-# `ENC_WCHAR`).
+# `PL_free_text`: Julia's GC owns the bytes). Encodings: ISO Latin-1, UTF-8, `ENC_WCHAR` and `ENC_ANSI` (the locale's multibyte
+# encoding, libc's `mbrtowc`/`wcrtomb`, since ENC1); `ENC_ASCII` and `ENC_UNKNOWN` are upstream's `assert(0)`, an `error()`.
 
 # PORT: pl-text.h PL_chars_t
 # DIVERGES: the text is a byte vector in its encoding — ISO Latin-1, or UTF-8 (ENC_UTF8) where
@@ -237,14 +237,40 @@ function Sopen_text(txt::PL_chars_t, mode::String)::Union{Nothing, IOSTREAM}
     return stream
 end
 
+# PORT: pl-text.h ERR_TEXT_ILLEGAL_UTF8
+"`text_error`'s code for an illegal UTF-8 sequence (pl-text.h); `PL_canonicalise_text` gives none at the pin."
+const ERR_TEXT_ILLEGAL_UTF8 = -1
+# PORT: pl-text.h ERR_TEXT_ILLEGAL_MULTIBYTE_SEQUENCE
+"`PL_canonicalise_text`'s error: an illegal multibyte sequence in an `ENC_ANSI` text (pl-text.h)."
+const ERR_TEXT_ILLEGAL_MULTIBYTE_SEQUENCE = -3
 # PORT: pl-text.h ERR_TEXT_INVALID_CODE_POINT
 "`PL_canonicalise_text`'s error: a code point that is not Unicode (pl-text.h)."
 const ERR_TEXT_INVALID_CODE_POINT = -5
 
+# ORIGINAL: the `mbrtowc` loop that `PL_canonicalise_text`, `PL_text_recode`, `PL_unify_text` and `_text_string` run over an `ENC_ANSI` text
+# DIVERGES: upstream's loop does `n -= rc` with `rc` a `size_t`: an incomplete sequence at the end (rc == (size_t)-2) wraps `n` (undefined; the
+# pinned build reads out of bounds there). The answer here is `nothing`, what `string_bytes/3` reports as `illegal_multibyte_sequence`.
+"The code points of the `n` bytes of the multibyte text `bytes` under the process's LC_CTYPE, `nothing` for an illegal or incomplete sequence or a NUL."
+function _ansi_code_points(bytes::Vector{UInt8}, n::Int)::Union{Nothing, Vector{Int}}
+    st = zeros(UInt64, MBSTATE_WORDS)                   # `memset(&mbs, 0, sizeof(mbs))`
+    cps = Int[]
+    i = 1
+    left = n
+    while left > 0
+        rc, wc = _mbrtowc(bytes, i, left, st)
+        (rc == -1 || rc == -2 || rc == 0) && return nothing
+        push!(cps, wc)
+        i += rc
+        left -= rc
+    end
+    return cps
+end
+
 # PORT: pl-text.c PL_canonicalise_text
 # DIVERGES: an `ENC_WCHAR` text is its code points as native 4-byte `pl_wchar_t`s in `text.text`,
 # as upstream's buffer is; the demotion of an all-Latin-1 wide text (`PL_demote_text`) is inline.
-# NOT PORTED: `ENC_ANSI` and `ENC_ASCII` (upstream asserts on the second) — refused by name.
+# `ENC_ANSI` is `_ansi_code_points` (libc's `mbrtowc` under the process's LC_CTYPE; an ANSI text's `length` counts bytes); `ENC_ASCII` and
+# `ENC_UNKNOWN` are upstream's `assert(0)`, an `error()`.
 """
     PL_canonicalise_text(text) -> true or ERR_TEXT_*
 
@@ -306,12 +332,20 @@ function PL_canonicalise_text(text::PL_chars_t)::Int
             text.encoding = r.encoding
             text.length = r.encoding === ENC_WCHAR ? length(r.text) ÷ 4 : length(r.text)
             text.canonical = true
+        elseif enc === ENC_ANSI
+            cps = _ansi_code_points(text.text, text.length)
+            cps === nothing && return ERR_TEXT_ILLEGAL_MULTIBYTE_SEQUENCE
+            if any(>(0xff), cps)
+                text.text = Vector{UInt8}(reinterpret(UInt8, UInt32.(cps)))
+                text.encoding = ENC_WCHAR
+            else
+                text.text = UInt8.(cps)
+                text.encoding = ENC_ISO_LATIN_1
+            end
+            text.length = length(cps)
+            text.canonical = true
         else
-            throw(
-                NotPortedError{Nothing}(
-                    nothing, "PL_canonicalise_text of $enc", "no caller"
-                )
-            )
+            error("PL_canonicalise_text of $enc")       # assert(0)
         end
     end
     return 1                                            # true
@@ -319,7 +353,7 @@ end
 
 # PORT: pl-text.c textToAtom
 # DIVERGES: the atom table is an argument (`GD->atoms`); a canonicalisation error returns 0 without
-# raising (`text_error` is NOT PORTED: no caller yet — stage C's boundary is the first).
+# raising (the callers here hold no `ld`; `text_error` is the `ld` form, below).
 """
     textToAtom(atoms, text) -> atom_t
 
@@ -482,20 +516,19 @@ function PL_concat_text(text::Vector{PL_chars_t})::PL_chars_t
 end
 
 # PORT: pl-text.c text_error
-# DIVERGES: `PL_canonicalise_text` gives only `ERR_TEXT_INVALID_CODE_POINT` (src/os/pl-text.jl): the other
-# codes (illegal UTF-8, UTF-16, multibyte sequences) are refused by name.
+# DIVERGES: an unknown code is upstream's `assert(0)`, an `error()`. `ERR_TEXT_ILLEGAL_UTF8` is given by no caller at the pin
+# (`PL_canonicalise_text` of UTF-8 has no error path), the other four are `PL_canonicalise_text`'s and `utf16_to_text`'s.
 "Raise the error for `PL_canonicalise_text`'s result `rc`; false (pl-text.c)."
 function text_error(ld::PL_local_data{T}, rc::Int)::Bool where {T}
+    rc == ERR_TEXT_ILLEGAL_UTF8 && return PL_syntax_error(ld, "illegal_utf8_sequence", nothing)
+    rc == ERR_TEXT_ILLEGAL_UTF16 && return PL_syntax_error(ld, "illegal_utf16_sequence", nothing)
+    rc == ERR_TEXT_ILLEGAL_MULTIBYTE_SEQUENCE &&
+        return PL_syntax_error(ld, "illegal_multibyte_sequence", nothing)
+    rc == ERR_TEXT_INCOMPLETE_MULTIBYTE_SEQUENCE &&
+        return PL_syntax_error(ld, "incomplete_multibyte_sequence", nothing)
     rc == ERR_TEXT_INVALID_CODE_POINT &&
         return PL_error(ld, ERR_REPRESENTATION, mk_sym(T, :code_point))   # PL_representation_error("code_point")
-    (rc == ERR_TEXT_ILLEGAL_UTF16 || rc == ERR_TEXT_INCOMPLETE_MULTIBYTE_SEQUENCE) &&
-        return string_bytes_text_error(ld, rc)          # the two UTF-16 codes (src/pl-string.jl)
-    throw(
-        NotPortedError{Nothing}(
-            nothing, "text_error of $rc",
-            "no caller (PL_canonicalise_text gives no such error)"
-        )
-    )
+    error("text_error: unknown code $rc")               # assert(0)
 end
 
 # PORT: pl-text.c PL_canonicalise_text_ex
