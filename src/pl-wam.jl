@@ -6241,6 +6241,15 @@ function PL_next_solution_guarded(
 
     # PORT: pl-vmi.c AR_THROW_EXCEPTION as ar_throw
     # DIVERGES: a shared label (upstream's macro): stack and rounding mode as above, then `b_throw`.
+    # DIVERGES (behavioural, corner case; assumed until Shivaji rules; dispatcher decision of 2026-11-13): the pin's AR_CLEANUP (pl-gmp.h
+    # :281-286 and :312-315 at 18168e62) puts back `__PL_ar_ctx.femode` when it is not FE_NOTSET, and `A_ROUNDTOWARDS_A/V` (pl-vmi.c
+    # :4009, :4026) store `fegetround()` into that field, the mode BEFORE the roundtoward that ran last; AR_END (:276-280, a no-op
+    # for the mode) restores nothing. So after an error thrown inside a NESTED roundtoward the pin leaves the OUTER roundtoward's
+    # mode set (probed: `_ is roundtoward(roundtoward(1/0, to_zero), to_positive)` caught, then `Y is 1/3.0` with the flag at
+    # to_nearest prints 0.33333333333333337; a single roundtoward, or an error before the inner one ran, leaks nothing). The kernel
+    # keeps the ENTRY mode in `ar_femode` (A_ENTER) and puts it back at every end, and A_ENTER sets the flag's mode per evaluation
+    # (the model of pl-arith.jl's header), so that leak is not reproduced: its answer is 0.3333333333333333. Pinned both ways by
+    # the rows k0/k1 of test/core_lang/test_arith_roundopt_swipl.jl; no change of the model.
     @label ar_throw
     ld.arith_top = ar_base                              # resetArithStack()
     fegetround() != ar_femode && fesetround(ar_femode)  # AR_CLEANUP()
