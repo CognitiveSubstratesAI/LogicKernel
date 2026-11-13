@@ -251,3 +251,132 @@ function walk_and_mark_gc(
         pc += 1 + codeTable(op).arguments           # for( ; ; PC += codeTable[op].arguments)
     end
 end
+
+# ── early reset of the trail (pl-gc.c early_reset_vars, mergeTrailedAssignments) ─────────────────
+# PORT: pl-gc.c mergeTrailedAssignments
+# DIVERGES: the cells marked FIRST are kept in a local `Vector{Int}` (upstream pushes them on
+# `LD->cycle.vstack`: `push_marked`/`popall_marked`), the trail is indexed 1.. (`te` is an index, the
+# pair of a trailed assignment is the address entry at `i-1` and the value entry at `i`), and a zeroed
+# entry is word 0, removed by the compaction (G1-5/6). `te[1]` of the last entry of the trail is read as
+# "no value entry".
+"""
+    mergeTrailedAssignments(ld, st, top, mark, assignments)
+
+If a location is trailed by `TrailAssignment()` more than once within one choicepoint's trail range
+`mark..top`, only the first entry is needed: delete the later pairs (pl-gc.c).
+"""
+function mergeTrailedAssignments(
+    ld::PL_local_data{T}, st::gc_mark_counts, top::Int, mark::Int, assignments::Int
+)::Nothing where {T}
+    trail = ld.trail
+    marked = Int[]                                      # LD->cycle.vstack
+    for te in mark:top
+        p = _trail_pos(trail[te])                       # Word p = valPtr(te->as_word)
+        if te + 1 <= length(trail) && isTrailVal(trail[te + 1])     # ttag(te[1].as_word) == TAG_TRAILVAL
+            assignments -= 1
+            if is_first(ld.gstack[p])
+                trail[te] = word(0)                     # te->as_word = 0
+                trail[te + 1] = word(0)                 # te[1].as_word = 0
+                st.trailcells_deleted += 2
+            else
+                ld.gstack[p] = set_first(ld.gstack[p])  # set_first(p)
+                push!(marked, p)                        # push_marked(p)
+            end
+        elseif p != 0 && is_first(ld.gstack[p])
+            trail[te] = word(0)
+            st.trailcells_deleted += 1
+        end
+    end
+    for p in marked                                     # popall_marked()
+        ld.gstack[p] = clear_first(ld.gstack[p])
+    end
+    assignments == 0 || error("mergeTrailedAssignments: $(assignments) assignments left")
+    return nothing
+end
+
+# PORT: pl-gc.c early_reset_vars
+# DIVERGES: heights where upstream has addresses: `gKeep` is the first free cell, `max(frozen_bar,
+# globaltop) + 1`, so upstream's `tard >= gKeep` is `tard > gk` and `tard > gKeep` is `tard > gk + 1`
+# (`gk` = `max(frozen_bar, globaltop)`); the kernel trails global cells only (no local variable is trailed:
+# G1-3a/the trail), so upstream's `tard >= top` ("above the local stack", with `top` the choicepoint's or
+# foreign frame's address) can never fire: the `top` parameter is dropped and those two arms are not
+# carried; the `gMax` bound is `gTop`. A cell that is reset gets word 0 (`setVar`). `te` is an index
+# into `ld.trail` and the result the index it stopped at (below the mark's `trailtop + 1`).
+# `needsRelocation` is G1-5's.
+"""
+    early_reset_vars(ld, st, m, te) -> Int
+
+Walk the trail from entry `te` down to the mark `m`'s `trailtop`: a trailed variable not marked is reset
+now and its entry deleted (zeroed), a trailed assignment whose cell is marked keeps its old value marked,
+duplicates within the range are merged (pl-gc.c). Returns the next entry to look at.
+"""
+function early_reset_vars(
+    ld::PL_local_data{T}, st::gc_mark_counts, m::mark, te::Int
+)::Int where {T}
+    trail = ld.trail
+    tm = m.trailtop + 1                                 # TrailEntry tm = m->trailtop.as_ptr
+    te0 = te
+    assignments = 0
+    gk = max(ld.frozen_bar, m.globaltop)                # gKeep = first free cell = gk + 1
+    while te >= tm                                      # for( ; te >= tm; te-- ): early reset of vars
+        e = trail[te]
+        if isTrailVal(e)
+            tard = _trail_pos(trail[te - 1])            # Word tard = valPtr(te[-1].as_word)
+            gp = trailValP(e)                           # Word gp = valPtr(te->as_word)
+            keep = false
+            if tard > gk                                # tard >= gKeep && tard < gMax
+                trail[te] = word(0)
+                te -= 1
+                trail[te] = word(0)
+                st.trailcells_deleted += 2
+            elseif is_marked(ld.gstack[tard])
+                keep = true
+            else
+                if isAttVar(ld.gstack[gp]) && ld.attvar_call_residue_vars_count != 0 &&
+                    ld.attvar_attvars != 0
+                    ld.gstack[tard] = _atom_word!(ld, mk_sym(T, :garbage_collected))   # see (*)
+                    domark(ld, st, tard)
+                    keep = true
+                else
+                    ld.gstack[tard] = clear_marked(ld.gstack[gp])  # *tard = *gp; clear_marked(tard)
+                    trail[te] = word(0)
+                    te -= 1
+                    trail[te] = word(0)
+                    st.trailcells_deleted += 2
+                end
+            end
+            if keep                                     # keep:
+                is_first(ld.gstack[gp]) && error("early_reset_vars: first-marked assignment value")
+                if !is_marked(ld.gstack[gp])
+                    mark_variable(ld, st, gp)
+                end
+                assignments += 1
+                te -= 1
+            end
+        else
+            tard = _trail_pos(e)                        # Word tard = valPtr(te->as_word)
+            # (tard >= top: above the local stack: never, see DIVERGES)
+            if tard > gk + 1                            # tard > gKeep && tard < gMax
+                if ld.attvar_attvars != 0 &&            # see (**)
+                    is_marked(ld.gstack[tard]) && isRef(ld.gstack[tard]) && te - 1 >= tm
+                    tard2 = _trail_pos(trail[te - 1])
+                    if is_marked(ld.gstack[tard2]) && isAttVar(ld.gstack[tard2])
+                        te -= 2                         # te--; continue (the for's te--)
+                        continue
+                    end
+                end
+                trail[te] = word(0)
+                st.trailcells_deleted += 1
+            elseif !is_marked(ld.gstack[tard])
+                ld.gstack[tard] = word(0)               # setVar(*tard)
+                trail[te] = word(0)
+                st.trailcells_deleted += 1
+            end
+        end
+        te -= 1
+    end
+    if assignments >= 1
+        mergeTrailedAssignments(ld, st, te0, tm, assignments)
+    end
+    return te
+end
