@@ -3883,8 +3883,7 @@ end
 # DIVERGES: `clref` (the trie clause an O_PLMT build hands out for a complete table, `claim_answer_table`) is TR4's and is never
 # set here: the table is always unified as symbol and `unify_table_status`. The closure-less call (e.g. `start_tabling(0, ...)`)
 # gets its definition from `get_procedure_resolve` (src/pl-proc.jl, `get_procedure(variant, &proc, 0, GP_RESOLVE|GP_EXISTENCE_ERROR)`). `idg_init_variant`
-# (TB6) is inlined as its guard: a predicate that is neither monotonic nor incremental needs nothing, else the name is refused (TB6);
-# `idg_add_edge` (TB6) is called; `inner_is_monotonic` (TB7) is refused by name.
+# and `idg_add_edge` (TB6) are called; `inner_is_monotonic` (TB7) is refused by name.
 "The common part of `'\$tbl_variant_table'/6` and its siblings: find or create the answer table of `variant` (pl-tabling.c)."
 function tbl_variant_table(
     ld::PL_local_data{T}, closure::term_t, variant::term_t, Trie::term_t, abstract::term_t,
@@ -3901,15 +3900,7 @@ function tbl_variant_table(
     atrie = get_answer_table(ld, def, variant, ret, flags)    # moded tabling needs the trie
     atrie === nothing && return false
 
-    if atrie.IDG === nothing && def.tabling !== nothing &&
-        (def.tabling.flags & (TP_MONOTONIC | TP_INCREMENTAL)) != 0
-        tbl_refuse(
-            T,
-            :idg_init_variant,
-            "tbl_variant_table: a monotonic or incremental table (idg_init_variant, idg_add_edge)",
-            "TB6"
-        )
-    end
+    idg_init_variant(ld, atrie, def, variant) || return false   # `!idg_init_variant(atrie, def, variant) || !idg_add_edge(...)`
     idg_add_edge(ld, atrie, nothing) == 0 && return false   # `!idg_add_edge(atrie, NULL)`: -1 (no current node) goes on
 
     if is_monotonic != 0 && def.tabling !== nothing &&

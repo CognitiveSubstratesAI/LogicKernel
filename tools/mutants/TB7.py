@@ -309,4 +309,13 @@ MUTANTS = [
          file=TAB, targets=TARGETS5,
          old="    idg_add_edge(ld, atrie, nothing) == 0 && return false   # `!idg_add_edge(atrie, NULL)`: -1 (no current node) goes on\n",
          new="    idg_add_edge(ld, atrie, nothing) != 0 && return false\n"),
+    # ── TB7M5: tbl_variant_table, idg_init_variant (pl-tabling.c:5977-6020, :8295) ──
+    dict(id='TB7M5-V3 tbl_variant_table does not give the table its IDG node (KILL idg18: `atrie.IDG isa idg_node`; idg08 at the stack)',
+         file=TAB, targets=TARGETS5,
+         old="    idg_init_variant(ld, atrie, def, variant) || return false   # `!idg_init_variant(atrie, def, variant) || !idg_add_edge(...)`\n",
+         new=""),
+    dict(id='TB7M5-V4 tbl_variant_table fails when idg_init_variant succeeded (KILL idg18: `ok` for every call)',
+         file=TAB, targets=TARGETS5,
+         old="    idg_init_variant(ld, atrie, def, variant) || return false   # `!idg_init_variant(atrie, def, variant) || !idg_add_edge(...)`\n",
+         new="    idg_init_variant(ld, atrie, def, variant) && return false\n"),
 ]

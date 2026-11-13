@@ -414,17 +414,17 @@ function _ti_db()
     return gd, ld, proc.definition
 end
 
-"The variant `user:ti_p(1)` (`ground`) or `user:ti_p(_)`."
-function _ti_variant(ground::Bool)
-    arg = ground ? lk_gnd(_TI, 1) : mk_var(_TI, LK.fresh_var_keys!(1))
+"The variant `user:ti_p(v)` (`ground`) or `user:ti_p(_)`."
+function _ti_variant(ground::Bool, v::Int=1)
+    arg = ground ? lk_gnd(_TI, v) : mk_var(_TI, LK.fresh_var_keys!(1))
     return mk_expr(_TI, _TI[_tis(":"), _tis("user"), mk_expr(_TI, _TI[_tis("ti_p"), arg])])
 end
 
 "The complete answer table of `ti_p(1)` (`ground`) or `ti_p(_)`, made as swipl's call of `ti_p/1` makes it, without an IDG node."
-function _ti_table!(ld, def, ground::Bool)
+function _ti_table!(ld, def, ground::Bool, v::Int=1)
     fid = LK.PL_open_foreign_frame(ld)
     t = LK.PL_new_term_refs(ld, 2)
-    LK.putSlotValue!(ld, t + 1, _ti_variant(ground), LK.PutVarMap())
+    LK.putSlotValue!(ld, t + 1, _ti_variant(ground, v), LK.PutVarMap())
     atrie = LK.get_answer_table(ld, def, t, t + 1, Int(LK.AT_CREATE))
     @assert atrie !== nothing
     atrie.flags |= LK.TRIE_COMPLETE
@@ -436,11 +436,11 @@ end
 `tbl_variant_table(closure 0, user:ti_p(_) or ti_p(1), -Trie, 0, -Status, -Ret, [-IsMono])` of the kernel as `'\$tbl_variant_table'/6` calls it;
 `(succeeded, status text, text of IsMono: `unbound` or its atom)`. One extractor for every row below.
 """
-function _ti_tvt(ld, def; ground::Bool=false, mono::Bool=false)
+function _ti_tvt(ld, def; ground::Bool=false, v::Int=1, mono::Bool=false)
     fid = LK.PL_open_foreign_frame(ld)
     t = LK.PL_new_term_refs(ld, 6)
     LK.putSlotValue!(ld, t + 1, lk_gnd(_TI, 0), LK.PutVarMap())                       # closure 0: no closure, the variant names the predicate
-    LK.putSlotValue!(ld, t + 2, _ti_variant(ground), LK.PutVarMap())
+    LK.putSlotValue!(ld, t + 2, _ti_variant(ground, v), LK.PutVarMap())
     for i in 3:6
         LK.putSlotValue!(ld, t + i, mk_var(_TI, LK.fresh_var_keys!(1)), LK.PutVarMap())
     end
@@ -484,4 +484,40 @@ end
     n.falsecount = 1
     ok, bad, _ = _ti_tvt(ld, def)
     @test ok && !isempty(bad) && bad == "invalid" && bad != st
+end
+
+@testset "idg18: tbl_variant_table gives the table of an incremental or monotonic predicate its IDG node (idg_init_variant, pl-tabling.c:8295-8325)" begin
+    gd, ld, def = _ti_db()
+    tp = def.tabling::LK.table_props
+    @test (tp.flags & LK.TP_INCREMENTAL) != 0 && (tp.flags & LK.TP_MONOTONIC) == 0
+
+    # an incremental predicate: the node is made, not monotonic, not lazy
+    atrie = _ti_table!(ld, def, false)
+    @test atrie.IDG === nothing
+    ok, st, _ = _ti_tvt(ld, def)
+    @test ok && st == "complete"
+    n = atrie.IDG
+    @test n isa _TIN && gd.tries[n.atrie] === atrie
+    @test !n.monotonic && !n.lazy
+    ok, st, _ = _ti_tvt(ld, def)                                                         # the second call keeps the node
+    @test ok && atrie.IDG === n
+
+    # a lazy monotonic predicate: the node says so
+    saved = tp.flags
+    tp.flags = saved | LK.TP_MONOTONIC | LK.TP_LAZY
+    mtab = _ti_table!(ld, def, true, 2)
+    ok, st, _ = _ti_tvt(ld, def; ground=true, v=2)
+    @test ok && st == "complete"
+    @test mtab.IDG isa _TIN && mtab.IDG.monotonic && mtab.IDG.lazy
+
+    # neither: the table keeps no node
+    tp.flags = saved & ~(LK.TP_INCREMENTAL | LK.TP_MONOTONIC | LK.TP_LAZY)
+    ptab = _ti_table!(ld, def, true, 3)
+    ok, st, _ = _ti_tvt(ld, def; ground=true, v=3)
+    @test ok && st == "complete" && ptab.IDG === nothing
+    tp.flags = saved
+
+    # a must-fail corruption: the two kinds of table differ in the one extractor (has a node or not)
+    has(t) = t.IDG === nothing ? "plain" : "node"
+    @test has(atrie) == "node" && has(ptab) == "plain" && has(atrie) != has(ptab)
 end
