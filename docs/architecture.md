@@ -1075,6 +1075,7 @@ graph LR
     pl_incl --> pl_inline
     pl_incl --> pl_comp
     pl_incl --> pl_variant
+    pl_incl --> pl_coverage
     pl_incl --> pl_arith
     pl_incl --> pl_wrap
     pl_incl --> pl_trie

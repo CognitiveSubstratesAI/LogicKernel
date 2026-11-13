@@ -370,9 +370,12 @@ function htable_iter(
 end
 
 # PORT: pl-table.c newHTable
-"A new, empty table of `len` buckets (`len` a power of 2)."
-function newHTable(len::Int)::Table
-    return Table(0, false, nothing, nothing, htable_alloc_kvs(len))
+# DIVERGES: the hooks are arguments (`nothing`: none), fixed for the table's life (see `Table`).
+"A new, empty table of `len` buckets (`len` a power of 2), with the hooks `copy_symbol` and `free_symbol`."
+function newHTable(
+    len::Int, copy_symbol::CS=nothing, free_symbol::FS=nothing
+)::Table{CS, FS} where {CS, FS}
+    return Table{CS, FS}(0, false, copy_symbol, free_symbol, htable_alloc_kvs(len))
 end
 
 # PORT: pl-table.c destroyHTable
@@ -421,7 +424,7 @@ function addNewHTable(
 end
 
 # PORT: pl-table.c updateHTable
-"Set `name` -> `value`; the previous value, or `value` when `name` had none."
+"Set `name` -> `value`; the value now there (`value`, as `htable_put` returns it, pl-table.c:415)."
 function updateHTable(ht::Table, name::UInt64, value::UInt64)::UInt64
     kvs = ht.kvs                                    # acquire_kvs(ht, kvs)
     return htable_put(ht, kvs, name, value, HTABLE_NORMAL)
@@ -458,7 +461,7 @@ function clearHTable(ht::Table)::Nothing
             kvs.entries[idx + 1] = symbol(kvs.entries[idx + 1].name, HTABLE_TOMBSTONE)
             fs = ht.free_symbol
             if fs !== nothing
-                Base.inferencebarrier(fs)(n, v)
+                fs(n, v)
             end
             ht.size -= 1
         end
@@ -472,11 +475,8 @@ end
 "A copy of `src_ht`: the same hooks, `copy_symbol` applied to each value, a map of the source's size."
 function copyHTable(src_ht::Table)::Table
     src_kvs = src_ht.kvs                            # acquire_kvs(src_ht, src_kvs)
-    dest_ht = newHTable(src_kvs.len)
+    dest_ht = newHTable(src_kvs.len, src_ht.copy_symbol, src_ht.free_symbol)   # the hooks, as `dest_ht->copy_symbol = ...`
     dest_kvs = dest_ht.kvs
-
-    dest_ht.copy_symbol = src_ht.copy_symbol
-    dest_ht.free_symbol = src_ht.free_symbol
 
     idx = 0
     while idx < src_kvs.len
@@ -495,7 +495,7 @@ function copyHTable(src_ht::Table)::Table
         if v != NULL_VALUE && v != HTABLE_TOMBSTONE
             cs = src_ht.copy_symbol
             if cs !== nothing
-                v = Base.inferencebarrier(cs)(n, v)::UInt64
+                v = cs(n, v)::UInt64
             end
 
             htable_put(dest_ht, dest_kvs, n, v, HTABLE_NORMAL)
@@ -507,10 +507,10 @@ end
 
 # PORT: pl-table.c newTableEnum
 "A new enumerator over the table's current map."
-function newTableEnum(ht::Table)::TableEnum
+function newTableEnum(ht::Table{CS, FS})::TableEnum{CS, FS} where {CS, FS}
     kvs = ht.kvs
     kvs.accesses += 1                               # ATOMIC_INC(&kvs->accesses)
-    return TableEnum(ht, kvs, 0)
+    return TableEnum{CS, FS}(ht, kvs, 0)
 end
 
 # PORT: pl-table.c freeTableEnum
@@ -543,10 +543,8 @@ end
 # PORT: pl-table.c PL_new_hash_table
 # DIVERGES: no `NEED_LD` (a call without an engine returns false): the callers are Julia code that holds one.
 "`PL_new_hash_table(size, free_symbol)`: a new table of `size` buckets whose entries `free_symbol(key, value)` releases."
-function PL_new_hash_table(size::Int, free_symbol::Union{Nothing, Function})::Table
-    ht = newHTable(size)
-    ht.free_symbol = free_symbol
-    return ht
+function PL_new_hash_table(size::Int, free_symbol::FS)::Table{Nothing, FS} where {FS}
+    return newHTable(size, nothing, free_symbol)
 end
 
 # PORT: pl-table.c PL_free_hash_table
@@ -587,7 +585,7 @@ end
 
 # PORT: pl-table.c PL_new_hash_table_enum
 "`PL_new_hash_table_enum(table)`: an enumerator."
-PL_new_hash_table_enum(table::Table)::TableEnum = newTableEnum(table)
+PL_new_hash_table_enum(table::Table{CS, FS}) where {CS, FS} = newTableEnum(table)
 
 # PORT: pl-table.c PL_free_hash_table_enum
 "`PL_free_hash_table_enum(e)`: release an enumerator."

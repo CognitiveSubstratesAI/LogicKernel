@@ -2633,23 +2633,33 @@ mutable struct KVS
 end
 
 # PORT: pl-table.h table as Table
-# DIVERGES: `copy_symbol` and `free_symbol` are Julia callables (or `nothing`). `copy_symbol(n, v)` RETURNS the
-# value to store (upstream's `void (*)(table_key_t n, table_value_t *v)` rewrites `*v`); `free_symbol(n, v)` is
-# `void (*)(table_key_t n, table_value_t v)`. Both are called through an inference barrier: a hook is a run-time
-# value of an abstract type, as a C function pointer is.
+# DIVERGES: `copy_symbol` and `free_symbol` are Julia callables (or `nothing`), the types `CS` and `FS` of the table: a
+# hook is fixed when the table is made (`newHTable(len, copy_symbol, free_symbol)`, `PL_new_hash_table`), not assigned
+# after as upstream's `t->free_symbol = ...` does, so each field is concrete and a hook call is a static call (the
+# precedent: `PL_extension{F}`, src/SWI-Prolog.jl). A table without hooks is a `Table{Nothing, Nothing}`.
+# `copy_symbol(n, v)` RETURNS the value to store (upstream's `void (*)(table_key_t n, table_value_t *v)` rewrites `*v`);
+# `free_symbol(n, v)` is `void (*)(table_key_t n, table_value_t v)`. Upstream's one runtime reset of a hook
+# (pl-prologflag.c:3030-3032, `t->free_symbol = NULL`) is not ported: the table made there is made again.
 "A (numeric) hash table, word -> word (pl-table.h `struct table`)."
-mutable struct Table
+mutable struct Table{CS, FS}
     size::Int                                       # # symbols in the table
     cleanup::Bool                                   # true when KVS cleanup in progress
-    copy_symbol::Union{Nothing, Function}
-    free_symbol::Union{Nothing, Function}
+    copy_symbol::CS                                 # `nothing` or the callable that copies a value
+    free_symbol::FS                                 # `nothing` or the callable that releases an entry
     kvs::KVS                                        # map of key-value pairs
 end
 
+# `free_cov_symbol` (pl-coverage.c), the free hook of a coverage table, declared here for the type of `coverage.table`;
+# its method is in src/pl-coverage.jl.
+function free_cov_symbol end
+
+"The table of a coverage record: `free_cov_symbol` is its only hook (pl-coverage.c)."
+const CovTable = Table{Nothing, typeof(free_cov_symbol)}
+
 # PORT: pl-table.h table_enum as TableEnum
 "An enumerator of a table (pl-table.h `struct table_enum`): its map and the index of the next entry."
-mutable struct TableEnum
-    table::Table                    # Table we are working on
+mutable struct TableEnum{CS, FS}
+    table::Table{CS, FS}            # Table we are working on
     kvs::KVS                        # kvs we are iterating over
     idx::Int                        # Index of current symbol-chain
 end
@@ -2695,7 +2705,7 @@ end
 # DIVERGES: see the block (`table` holds indexes into `objs`); `references` and `flags` as upstream.
 "The coverage data of a thread (pl-coverage.h `struct coverage`): sites to counters."
 mutable struct coverage{T}
-    table::Table                    # call-sites --> data
+    table::CovTable                 # call-sites --> data
     objs::Vector{cov_obj{T}}        # the objects the table's values index
     references::Int                 # # threads using this
     flags::Int                      # COV_*
@@ -2709,7 +2719,7 @@ end
 "The state of `'\$cov_data'/3` between answers (pl-coverage.c `struct cov_data_state`)."
 mutable struct cov_data_state{T}
     type::Int                       # COV_ANY, COV_CLAUSE or COV_PC
-    e::Union{Nothing, TableEnum}    # the enumerator over the table
+    e::Union{Nothing, TableEnum{Nothing, typeof(free_cov_symbol)}}   # the enumerator over the table
     serial::Int                     # the clause the answers are restricted to (0: any)
     objs::Vector{cov_obj{T}}        # the objects the enumerated values index
 end

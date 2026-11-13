@@ -123,6 +123,45 @@ const _TD_UNCHECKED_ALLOWED = Dict(
         "_current_umask (R2 S1): the C library's umask(2), read by setting it and putting it back, " *
         "so that a file open/4's create(Modes) option makes gets its mode less the umask, as " *
         "upstream's open(2) gives it; it passes and returns an unsigned integer only"
+    ),
+    "os/pl-tai.jl ccall" => (
+        6,
+        "TAI1: the six libc calls of pl-tai.c and pl-os.c, as upstream makes them, for the host's local time " *
+        "and zone (Julia has no wrapper for them): localtime_r (PL_localtime_r), mktime (_c_mktime), strftime " *
+        "(_c_strftime, a 256 byte buffer the call fills, read up to its NUL), asctime_r (_c_asctime_r, a 64 byte " *
+        "buffer, 26 are written), mbstowcs (_c_mbstowcs, an `Int32` buffer of max + 1 and a NUL-terminated copy " *
+        "of the text) and tzset (do_tzset); each is handed a `Ref{CTm}` (the glibc layout), a Cstring or a " *
+        "Julia vector that outlives the call, and returns an integer, or a pointer the caller reads at once"
+    ),
+    "os/pl-tai.jl unsafe_load" => (
+        2,
+        "tz_offset and tz_name (pl-tai.c): the C library's variables `timezone` (a `long`) and `tzname` (two " *
+        "`char *`), read through `cglobal` after `tzset` as upstream reads them (HAVE_VAR_TIMEZONE); " *
+        "`tzname` is read at index 1 or 2 only (`dst` is cut to 0 or 1), the array's two entries"
+    ),
+    "os/pl-tai.jl unsafe_string" => (
+        1,
+        "tz_name (pl-tai.c): copies the NUL-terminated zone name `tzname[dst]` points to, at once and " *
+        "only when the pointer is not NULL; libc's static string is read before any other call can change it"
+    ),
+    "os/pl-locale.jl ccall" => (
+        5,
+        "CT1 LOCALE: the C library's locale calls of pl-locale.c, as upstream makes them, to read the " *
+        "LC_NUMERIC conventions of a named locale without changing the process's locale (fill_locale_from_name): " *
+        "newlocale (a mask and a Cstring, Julia's conversion refuses a NUL), uselocale twice (set the " *
+        "thread's locale, put the old one back) and freelocale, each handed that handle, and localeconv " *
+        "(_read_lconv), which takes nothing and returns the pointer to libc's `struct lconv`, read at once"
+    ),
+    "os/pl-locale.jl unsafe_load" => (
+        3,
+        "_read_lconv: the first three fields of libc's `struct lconv` (decimal_point, thousands_sep, grouping: " *
+        "three `char *`, the first fields of the struct by the C standard), read through the pointer " *
+        "localeconv answers while the thread's locale is still the one asked for; never past index 3"
+    ),
+    "os/pl-locale.jl unsafe_string" => (
+        1,
+        "_c_string_bytes: copies one NUL-terminated string of that `struct lconv` into a Julia vector, at " *
+        "once and only when the pointer is not NULL (a NULL gives no bytes), as pl-locale.c's strdup does"
     )
 )
 

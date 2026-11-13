@@ -38,8 +38,7 @@ free_cov_symbol(name::UInt64, value::UInt64)::Nothing = nothing
 # DIVERGES: file-wide 2; the term type is the argument (the objects hold a clause blob of it).
 "A new, empty coverage record: a table of 1024 buckets, one reference, tracking child threads (pl-coverage.c)."
 function newCoverageData(::Type{T})::coverage{T} where {T}
-    t = newHTable(1024)
-    t.free_symbol = free_cov_symbol
+    t = newHTable(1024, nothing, free_cov_symbol)        # t->free_symbol = free_cov_symbol
     return coverage{T}(t, cov_obj{T}[], 1, COV_TRACK_THREADS)
 end
 

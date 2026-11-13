@@ -32,7 +32,7 @@ end
     @test LK.updateHTable(ht, UInt64(3), UInt64(30)) == UInt64(30)          # a new name: the new value
     @test LK.lookupHTable(ht, UInt64(3)) == UInt64(30)
     @test ht.size == 1
-    @test LK.updateHTable(ht, UInt64(3), UInt64(31)) == UInt64(30)          # an old name: the previous value
+    @test LK.updateHTable(ht, UInt64(3), UInt64(31)) == UInt64(31)          # an old name: the new value (htable_put's `return value`, pl-table.c:415)
     @test LK.lookupHTable(ht, UInt64(3)) == UInt64(31)
     @test ht.size == 1
     @test LK.addHTable(ht, UInt64(3), UInt64(99)) == UInt64(31)             # add keeps the existing association
@@ -128,13 +128,12 @@ end
 
 @testset "pl-table.c: clear, free_symbol, copy, copy_symbol" begin
     freed = Tuple{UInt64, UInt64}[]
-    ht = LK.PL_new_hash_table(16, (n, v) -> push!(freed, (n, v)))
+    ht = LK.newHTable(16, (n, v) -> v * 2, (n, v) -> push!(freed, (n, v)))   # the hooks are fixed at construction
     for k in UInt64(1):UInt64(3)
         LK.updateHTable(ht, k, k + 5)
     end
     LK.deleteHTable(ht, UInt64(2))
     @test isempty(freed)                             # a delete does not call free_symbol
-    ht.copy_symbol = (n, v) -> v * 2
     cp = LK.copyHTable(ht)
     @test cp.free_symbol === ht.free_symbol && cp.copy_symbol === ht.copy_symbol
     @test _ht_entries(cp) == [(UInt64(1), UInt64(12)), (UInt64(3), UInt64(16))]   # copy_symbol rewrote each live value
@@ -158,12 +157,12 @@ end
     n0 = length(ld.messages)
     @test LK.PL_add_hash_table(ld, ht, UInt64(5), UInt64(50), LK.PL_HT_NEW) == UInt64(50)
     @test length(ld.messages) == n0                  # a new name: no warning
-    @test LK.PL_add_hash_table(ld, ht, UInt64(5), UInt64(51), LK.PL_HT_NEW) == UInt64(50)    # updateHTable: the previous value
+    @test LK.PL_add_hash_table(ld, ht, UInt64(5), UInt64(51), LK.PL_HT_NEW) == UInt64(51)    # updateHTable answers the new value
     @test length(ld.messages) == n0 + 2             # the warning, then print_backtrace_named's fallback message
     @test occursin("Race condition detected", String(lk_name(ld.messages[end - 1][2])))
     @test occursin("C-stack dumps are not supported", String(lk_name(ld.messages[end][2])))
     @test LK.lookupHTable(ht, UInt64(5)) == UInt64(51)
-    @test LK.PL_add_hash_table(ld, ht, UInt64(5), UInt64(52), LK.PL_HT_UPDATE) == UInt64(51)
+    @test LK.PL_add_hash_table(ld, ht, UInt64(5), UInt64(52), LK.PL_HT_UPDATE) == UInt64(52)
     @test LK.PL_add_hash_table(ld, ht, UInt64(5), UInt64(53), 0) == UInt64(52)               # no flag: add keeps the old value
     @test LK.lookupHTable(ht, UInt64(5)) == UInt64(52)
 end

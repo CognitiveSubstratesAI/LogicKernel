@@ -76,13 +76,13 @@ ftm() = ftm(CTm(), 0.0, 0, nothing, 0, 0.0, 0)
 function _c_int64(x::Float64)::Int
     (isfinite(x) && x >= -9.223372036854775808e18 && x < 9.223372036854775808e18) ||
         return typemin(Int)
-    return unsafe_trunc(Int, x)
+    return trunc(Int, x)                                    # in range: the check above
 end
 # ORIGINAL: C's `(int)x` of a double on x86-64: truncation; NaN and out of range give INT_MIN.
 "`(int)x` as the x86-64 hardware does it."
 function _c_int32(x::Float64)::Int32
     (isfinite(x) && x > -2147483649.0 && x < 2147483648.0) || return typemin(Int32)
-    return unsafe_trunc(Int32, x)
+    return trunc(Int32, x)                                  # in range: the check above
 end
 
 # PORT: pl-os.c PL_localtime_r
