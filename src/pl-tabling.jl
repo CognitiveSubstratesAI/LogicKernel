@@ -8158,7 +8158,8 @@ end
 
 # PORT: pl-tabling.c mdep_unify_answers
 # (pl-tabling.c:10218-10252 at the pin)
-# DIVERGES: takes the trie `atrie` of the queued nodes (upstream: the node pointers); a node is unified as its id (an integer).
+# DIVERGES: takes the trie `atrie` of the queued nodes (upstream: the node pointers); a node is unified as its handle
+# `answer_ref(atrie.serial, a)` (an integer, upstream's `PL_unify_pointer(head, node)`), which `$tbl_node_answer/2` decodes.
 "Unify `t` with the list of the live answers queued on `mdep`; their number or -1 (pl-tabling.c `mdep_unify_answers`)."
 function mdep_unify_answers(
     ld::PL_local_data{T}, atrie::trie{T}, t::term_t, mdep::IdgMdep{T}
@@ -8179,7 +8180,7 @@ function mdep_unify_answers(
                 count += 1
             end
         elseif atrie.nodes[a].value != 0
-            if !PL_unify_list(ld, tail, head, tail) || !PL_unify_integer(ld, head, a)
+            if !PL_unify_list(ld, tail, head, tail) || !PL_unify_integer(ld, head, answer_ref(atrie.serial, a))
                 return -1
             end
             count += 1
@@ -8980,6 +8981,28 @@ function pl_idg_mono_invalidate1_va(
     return idg_changed(ld, atrie, IDG_CHANGED_NODE) ? FTRUE : FFALSE
 end
 
+# PORT: pl-tabling.c tbl_node_answer as pl_tbl_node_answer2_va
+# (PRED_IMPL("$tbl_node_answer", 2, tbl_node_answer, 0), pl-tabling.c:8957-8969 at the pin)
+# DIVERGES: the NodeRef "pointer" is the integer `answer_ref(serial, nid)` (upstream: the node's address), as for
+# `$tbl_force_truth_value/3`; a handle that names no trie or no node of it fails (upstream dereferences the address).
+"`'\$tbl_node_answer'(+NodeRef, -Answer)`: the answer of a trie node, `Primary/Moded` for a moded answer (pl-tabling.c)."
+function pl_tbl_node_answer2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1 = PL__t0
+    A2 = PL__t0 + 1
+    gd = _query_gd(ld)
+    ptr = PL_get_pointer_ex(ld, A1)                             # PL_get_pointer_ex(A1, &ptr): type_error(address, A1)
+    ptr === nothing && return FFALSE
+    ti = answer_ref_trie(ptr)
+    (ptr > 0 && 1 <= ti <= length(gd.tries)) || return FFALSE
+    atrie = gd.tries[ti]
+    nid = answer_ref_node(ptr)
+    (1 <= nid <= length(atrie.nodes)) || return FFALSE
+
+    return tbl_unify_answer(ld, atrie, nid, A2) ? FTRUE : FFALSE
+end
+
 # PORT: pl-tabling.c mono_idg_changed as pl_mono_idg_changed2_va
 # (PRED_IMPL("$mono_idg_changed", 2, mono_idg_changed, 0), pl-tabling.c:11052-11060 at the pin)
 "`'\$mono_idg_changed'(+ATrie, +Answer)`: a new answer for `ATrie`, a trie node or a clause reference (pl-tabling.c)."
@@ -9519,6 +9542,7 @@ const PL_predicates_from_tabling = (
     PL_extension("\$mono_reeval_done", 3, pl_mono_reeval_done3_va, PL_FA_VARARGS),
     PL_extension("\$idg_mono_empty_queue", 2, pl_idg_mono_empty_queue2_va, PL_FA_VARARGS),
     PL_extension("\$idg_mono_invalidate", 1, pl_idg_mono_invalidate1_va, PL_FA_VARARGS),
+    PL_extension("\$tbl_node_answer", 2, pl_tbl_node_answer2_va, PL_FA_VARARGS),
     PL_extension("\$tbl_destroy_table", 1, pl_tbl_destroy_table1_va, PL_FA_VARARGS),
     PL_extension("\$tbl_abolish_local_tables", 0, pl_tbl_abolish_local_tables0_va, PL_FA_VARARGS)
 )
