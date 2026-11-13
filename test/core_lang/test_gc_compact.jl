@@ -19,6 +19,8 @@ include(joinpath(@__DIR__, "..", "term_under_test.jl"))
 include(joinpath(@__DIR__, "..", "core_lang", "rules_common.jl"))
 
 
+_gc6_atom(ld, n) = LK._atom_word!(ld, _rs(n))
+
 "An engine with the values of `vs` (at least one) put into term references of an open foreign frame: `(ld, t, n0)` — `t` the first reference, `n0` the size of the value table before."
 function _gc6_engine(vs::Vector{_R})
     @assert !isempty(vs)
@@ -482,7 +484,9 @@ end
             W.sw.relocated_cells == W.sw.relocation_cells == 3
         got = reinterpret(UInt64, ld.fliframes[W.f].mark.globaltop)  # the head in the garbage was unwound at the number of live cells below it
         @test got == (UInt64(2) << LK.LMASK_BITS) | LK.STG_GLOBAL
-        @test all(==(UInt64(0)), ld.gstack[7:(n - 4)])          # the garbage run is a hole (zeroed), below the new top nothing of it is left
+        hole_top = head_top ? n - 5 : n - 4                     # the head ON the top cell n - 4 is unwound by the main scan, outside the hole
+        @test all(==(UInt64(0)), ld.gstack[7:hole_top])         # the garbage run is a hole (zeroed), below the new top nothing of it is left
+        @test !head_top || ld.gstack[n - 4] == _gc6_atom(ld, "w")   # the unwound head holds its original word again
         @test !any(w -> LK.is_marked(w) || LK.is_first(w), _gc6_cells(ld))
     end
     W2 = _gc6_wb(total=7)
@@ -613,8 +617,8 @@ end
             @test length(chs) >= 2
             cl = first(c for c in chs if ld.choices[c].type == LK.CHP_CLAUSE)
             fi = ld.choices[cl].frame
-            @test fi != 0 && ld.frames[fi].parent == 0
-            qf = LK.queryOfFrame(ld, fi)
+            @test fi != 0
+            qf = LK.gc_top_query(ld, fi)                    # the clause frame has the query's frame above it
             @test LK.unsweep_environments(ld, fi) == qf
             vm = LK.vm_state()
             vm.frame = fi
