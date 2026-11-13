@@ -3638,6 +3638,34 @@ _manifest_g1gc4(::Type{T}) where {T} = (
     (LK.clean_attvar_chain, Tuple{LK.PL_local_data{T}}, false)
 )
 
+# G1-6a/6b: the compaction of the collector (src/pl-gccompact.jl); every entry AllocCheck-false (they build vectors and error messages).
+# `gc_trail_chain` is a callable struct: its call method is reached through an INSTANCE, and `compact_trail` with it is its own specialisation.
+_manifest_g1gc6a(::Type{T}) where {T} = (
+    (LK.gc_trail_chain, Tuple{LK.gc_sweep_counts}, false),
+    (LK.gc_trail_chain(LK.gc_sweep_counts()), Tuple{LK.PL_local_data{T}, Int, Int}, false),
+    (LK.compact_trail, Tuple{LK.PL_local_data{T}, LK.gc_trail_state, LK.gc_trail_chain}, false),
+    (LK.gc_top_query, Tuple{LK.PL_local_data{T}, Int}, false),
+    (LK.gc_choice_indices, Tuple{LK.PL_local_data{T}, LK.vm_state}, false),
+    (LK.gc_alien_trailtops, Tuple{LK.PL_local_data{T}, LK.gc_mark_counts, LK.gc_sweep_counts, LK.vm_state}, false),
+    (LK.gc_check_trail_chains, Tuple{LK.gc_sweep_counts}, false),
+    (
+        LK.gc_trail_phase,
+        Tuple{LK.PL_local_data{T}, LK.gc_mark_counts, LK.gc_sweep_counts, LK.gc_trail_state, LK.vm_state},
+        false
+    ),
+    (LK.gc_tombstone_boxes!, Tuple{LK.PL_local_data{T}}, false),
+    (LK.gc_truncate_vtable!, Tuple{LK.PL_local_data{T}}, false),
+    (LK.downskip_combine_garbage, Tuple{LK.PL_local_data{T}, LK.gc_sweep_counts, Int, Int}, false),
+    (LK.compact_global, Tuple{LK.PL_local_data{T}, LK.gc_mark_counts, LK.gc_sweep_counts}, false),
+    (LK.unsweep_mark, Tuple{LK.PL_local_data{T}, Bool, Int}, false),
+    (LK.unsweep_foreign, Tuple{LK.PL_local_data{T}}, false),
+    (LK.unsweep_choicepoints, Tuple{LK.PL_local_data{T}, Int}, false),
+    (LK.unsweep_environments, Tuple{LK.PL_local_data{T}, Int}, false),
+    (LK.unsweep_stacks, Tuple{LK.PL_local_data{T}, LK.vm_state}, false),
+    (LK.gc_vword_referrers, Tuple{LK.PL_local_data{T}}, false),
+    (LK.collect_phase, Tuple{LK.PL_local_data{T}, LK.gc_mark_counts, LK.gc_sweep_counts, LK.vm_state}, false)
+)
+
 # G1-3b (src/pl-gcwalk.jl, pl-gc.c's mark phase: the collector's walk, early reset, the choicepoint/environment/query drivers).
 # Not held allocation-free: the drivers build error messages and the callback `vmi_state_of` is dynamic.
 _manifest_g1gc3b(::Type{T}) where {T} = (
@@ -4440,6 +4468,8 @@ const _DISPATCH_MANIFEST_TUPLE = (
     (LK.mark_choice_mark, Tuple{LK.walk_state, LK.code}, true),
     # G1-3b: the mark phase's walk and drivers (src/pl-gcwalk.jl)
     _manifest_g1gc3b(_M2)...,
+    # G1-6a/6b: the compaction of the collector (src/pl-gccompact.jl)
+    _manifest_g1gc6a(_M2)...,
     # CONT1: the continuations' run side (src/pl-cont.jl, src/pl-gc.jl, src/pl-fli.jl)
     _manifest_cont(_M2)...,
     # G1-3a: the mark phase (src/pl-gcmark.jl)
