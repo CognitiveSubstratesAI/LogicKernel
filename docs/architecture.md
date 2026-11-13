@@ -7987,6 +7987,46 @@ pl-global.h:892-899 (`LD->reload`). Plan and rulings: evidence/LB6/plan.md and h
 - **Left out of this step:** `endReconsult` and the rest of LB6b above; the wiring of `freeClause!` into clause reclamation; `untable_from_clause` (TAB1); breakpoints (DBG1); thread-local
   predicates and the per-thread reload generation (TH1). `tools/warm.sh inventory` regenerates docs/port_inventory.md and the R2 block of this file (function counts move; predicate and refusal counts do not).
 
+## LB6b — the end of a reconsult and the unload: `endReconsult`, `delete_old_predicates`, `reconsultFinalizePredicate`, `fix_module`, `unloadFile`, `destroySourceFile`, `$unload_file/1`, `$clause_from_source/4`, `$set_source_files/1`, `$flush_predicate/1`, `$flushed_predicate/1` (R2 loader_boot; edit-only: nothing was compiled when this was written; the gate decides)
+
+UPSTREAM: swipl-devel 18168e62 — pl-srcfile.c:355-415 (`acquireSourceFileNo`, `releaseSourceFileNo`, `releaseSourceFile`, `destroySourceFile`, `clearSourceAdmin`), 767-790
+(`$set_source_files/1`), 845-881 (`$unload_file/1`), 889-1405 (`startConsult`, `endConsult`, the reload bookkeeping of LB6a), 1406-1424 (`registerReloadModule`), 1500-1686
+(`delete_old_predicate`, `delete_old_predicates`, `delete_pending_clauses`, `end_reconsult_proc`, `endReconsult`, `flush_procedure`), 1820-1977 (`$clause_from_source/4`,
+`$flush_predicate/1`, `$flushed_predicate/1`), `unloadFile`, `delModuleSourceFile`, `delAllModulesSourceFile__unlocked`; pl-proc.c `reconsultFinalizePredicate` (1911-1965), `freeClause`,
+`unallocClause`. Plan: evidence/R2/lb67_sizing.md; state and decisions: evidence/R2/lb6b_handoff.md of the audit channel.
+
+- **What it is.** The second half of upstream's reload and the unload. A second `startConsult` of a file now calls `startReconsultFile` (the `NotPortedError` refusal is gone);
+  `endConsult` (and `$fixup_reconsult/1`, `$end_consult/1`) end the reload with `endReconsult`: the predicates the reload did not mention lose their clauses
+  (`delete_old_predicates!`, `delete_old_predicate!`), each predicate it met is finished (`end_reconsult_proc!`: `delete_pending_clauses!`, `fix_attributes`,
+  `reconsultFinalizePredicate!`, `check_ssu`), the exports of a reloaded module are fixed (`fix_module`), the file's clause count is the reload's, the reload generation is cleared at the
+  outermost end (`gd.reload_generation`), and clause reclamation runs. `unloadFile!` (with `delModuleSourceFile` and `delAllModulesSourceFile_unlocked!`) removes a file's clauses, procedures and
+  modules; `$unload_file/1` adds the system-file `permission_error`. The three-argument `releaseSourceFile(gd, ld, sf)` is upstream's: the last reference of an empty file that is not a
+  system file destroys it (`destroySourceFile!`: out of the name table, its slot a hole) and calls `system:'$clear_source_admin'/1` (`clearSourceAdmin`). `$set_source_files/1`,
+  `$clause_from_source/4`, `$flush_predicate/1`, `$flushed_predicate/1` (`flush_predicate`, `flush_procedure!`) and `PL_predicates_from_srcfile`'s 13 entries complete SRC2.
+- **Clause reclamation (a behaviour change of this step; audit question 2).** `cleanDefinition!` calls the new `freeClause!(gd, ld, c)` for each clause it unlinks, which gives the clause's
+  `source_no` and `owner_no` references back through `releaseSourceFileNo(gd, ld, i)`. `assert_term!` keeps one reference per clause: without the wiring a file whose clauses were
+  erased would keep them for ever and never be destroyed. Upstream frees at `free_lingering`; the kernel has no lingering list, so the release happens where the clause leaves the list, and
+  it can call `$clear_source_admin` (Prolog) inside clause reclamation, as upstream does. The tests' call `cleanDefinition!(def, ddi, start)` (no `gd`, no `ld`) does not release.
+- **DIVERGES (each in a comment at its site):**
+  - *representation (audit question 1):* a hole of `gd.files_array` is the destroyed record left in its slot with `magic == 0` (`registerSourceFile!` reuses the first such slot at or after
+    `files_no_hole_before`; `indexToSourceFile` answers `nothing` for it). The field stays `Vector{SourceFile}`: a `Union{Nothing,SourceFile}` would be a Tier-1 change of a const database
+    field with 16 reader sites. Switching later is one edit of src/pl-global.jl and the readers.
+  - *the one-argument `releaseSourceFile(sf)` (TEMPORARY) only counts*; the loader path uses the three-argument form. A release with no reference is an internal error here (upstream prints "Oops").
+  - *`$tabled/2`:* `delete_old_predicate!` and `delete_pending_clauses!` raise a NAMED refusal (`NotPortedError`, owner TAB1) for the clauses of `'$tabled'/2` (`untable_from_clause`).
+  - *the lists:* a file's procedures are a vector with the newest LAST (upstream's list has it first), so `delete_old_predicates!` walks oldest first; no observable difference.
+  - *arguments:* the database and the local data are arguments of `endReconsult`, `end_reconsult_proc!`, `flush_procedure!`, `unloadFile!`, `startConsult`, `endConsult`; no locks, no
+    `startCritical`; the debug messages are not kept. `flush_procedure!` takes a `Procedure`.
+- **Row changes.** The rows that pinned the refusal of a reconsult (test_source_file_swipl.jl, test_load_swipl.jl) and the D-0248 known difference now pin swipl's answers, probed on
+  the pinned binary: a second `$start_consult` is a reload (load_count 2, `reloading` true until `$fixup_reconsult`), the empty file of the destroy rows is gone from the table and the
+  enumeration (the booted database: the destroy calls `$clear_source_admin`).
+- **Tests / mutants.** test/db/test_reload_swipl.jl: scenarios S1-S7 (reconsult of a module and a user file, dynamic/multifile reload, unload, load-unload-load, the flush predicates, unload
+  of an unknown file) compared with swipl line by line, an inert branch without swipl (the kernel is compared with the pinned lines), and white-box testsets W1-W13
+  (`endReconsult`, `end_reconsult_proc!`, the delete functions, `unloadFile!`, the module unlinks, `$unload_file`, `$set_source_files`, `$clause_from_source`, `flush_procedure!`, the
+  destroy and hole reuse, clause reclamation with and without the destroy). tools/mutants/LB6B.py: 48 mutants (TARGETS follow D-0238: the new file, the reload-blocks, source-file,
+  loader and clause-reference files, and the index and system-predicate files for the reclamation wiring). Every row is UNVERIFIED on the kernel until the gate.
+- **Left out of this step:** `untable_from_clause` (TAB1); breakpoints (DBG1); thread-local predicates and the per-thread reload generation (TH1). `tools/warm.sh inventory` regenerates
+  docs/port_inventory.md and the R2 block of this file; neither is edited by hand.
+
 ## LB7 — the command line and the start-up of pl-init.c, `$cmd_option_val/2`, `$cmd_option_set/2`, `$usage/0` (R2 loader_boot; edit-only, the gate decides)
 
 swipl-devel cbf4e189 `src/pl-init.c` reads the command line before the Prolog part boots, and `boot/init.pl` asks for the result
