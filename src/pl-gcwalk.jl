@@ -23,10 +23,10 @@
 # ── the walk state (pl-gc.c walk_state, GCM_*) ───────────────────────────────────────────────────
 # PORT: pl-gc.c GCM_CLEAR
 "Walk mode flag: clear uninitialised data (pl-gc.c `GCM_CLEAR`)."
-const GCM_CLEAR = 0x1
+const GCM_CLEAR = 1
 # PORT: pl-gc.c GCM_ALTCLAUSE
 "Walk mode flag: marking alternative clauses (pl-gc.c `GCM_ALTCLAUSE`)."
-const GCM_ALTCLAUSE = 0x2
+const GCM_ALTCLAUSE = 2
 # PORT: pl-gc.c NO_ADEPTH
 "The `adepth` after a `B_UNIFY_VAR`/`B_UNIFY_FIRSTVAR`: never mark over ARGP (pl-gc.c `NO_ADEPTH`)."
 const GC_NO_ADEPTH = 1234567
