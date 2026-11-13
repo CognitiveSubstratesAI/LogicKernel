@@ -1432,8 +1432,6 @@ end
 
 # PORT: pl-tabling.c complete_worklist
 # (pl-tabling.c:3997-4020 at the pin; COMPLETE_WORKLIST without O_PLMT: the code alone, pl-tabling.c:383)
-# DIVERGES: `tt_add_table` (the transaction's table list, TB9) is a named refusal; it is reached only when
-# `tt_has_modified_dependencies` is true, which needs an open transaction (the kernel has none).
 "Complete the worklist `wl`: freed when `destroy`, else kept without clusters; its answer trie is complete (pl-tabling.c `complete_worklist`)."
 function complete_worklist(
     ld::PL_local_data{T}, wl::tbl_worklist{T}, destroy::Bool
@@ -1441,7 +1439,7 @@ function complete_worklist(
     atrie = wl_table(ld, wl)
 
     if tt_has_modified_dependencies(ld, atrie)
-        throw(NotPortedError{T}(mk_sym(T, :tt_add_table), "tt_add_table (TT_TBL_INVALIDATE): transactions", "TB9"))
+        tt_add_table(ld, atrie, TT_TBL_INVALIDATE)
     end
 
     if destroy
@@ -3187,7 +3185,7 @@ const RAT_BULK = Int(0x2)
 # path into the chain (`reset_table_bulk` now runs both branches itself, it holds `ld`);
 # a sentinel (WL_GROUND, WL_DYNAMIC) is
 # `data.worklist = Int` and is made fresh again; the IDG node is refused by name, owner TB6 (`idg_reset`, `idg_destroy`,
-# `idg_destroy_private`), the tracked table (`tt_abolish_table`) owner TB9.
+# `idg_destroy_private`); the tracked branch (`tt_abolish_table`) is `reset_answer_table_tracked`, run by the same callers.
 "Make the answer table `atrie` fresh again: no worklist, not complete, no answers (pl-tabling.c)."
 function reset_answer_table(
     gd::PL_global_data{T}, atrie::trie{T}, flags::Int
@@ -3215,7 +3213,7 @@ function reset_answer_table(
     (atrie.flags & TRIE_ISTRACKED) != 0 && tbl_refuse(
         T,
         :tt_abolish_table,
-        "reset_answer_table: a tracked table (tt_abolish_table)",
+        "reset_answer_table: a tracked table (tt_abolish_table), left to the callers that hold ld (reset_answer_table_tracked)",
         "TB9"
     )
 
@@ -3696,6 +3694,24 @@ function reset_answer_table_idg(
     return nothing
 end
 
+# PORT: pl-tabling.c reset_answer_table as reset_answer_table_tracked
+# (pl-tabling.c:2664-2665 at the pin: the `ison(atrie, TRIE_ISTRACKED)` branch.)
+# DIVERGES: `tt_abolish_table` needs the thread's transaction (`ld`), which the release chain of `trie_delete` does not carry
+# (`reset_answer_table`'s refusal below): the callers that hold `ld` (`destroy_answer_trie`, `abolish_table`, `reset_table_bulk`)
+# run the branch after the IDG branch and before `trie_delete`, the order of upstream's `reset_answer_table` (worklist, IDG,
+# `tt_abolish_table`, `trie_empty`). It CLEARS `TRIE_ISTRACKED` where upstream leaves it, so the chain finds the flag off: the table
+# is orphaned right after in each of the three callers, and the flag is read only by `answer_nodes_discardable` and
+# `reset_answer_table`.
+"The tracked branch of `reset_answer_table`: the transaction's trail forgets the answers of `atrie` (pl-tabling.c)."
+function reset_answer_table_tracked(ld::PL_local_data{T}, atrie::trie{T})::Nothing where {T}
+    if (atrie.flags & TRIE_ISTRACKED) != 0
+        tt_abolish_table(ld, atrie)
+        atrie.flags &= ~TRIE_ISTRACKED
+    end
+
+    return nothing
+end
+
 # PORT: pl-tabling.c destroy_answer_trie
 # (pl-tabling.c:4472-4492 at the pin.)
 # DIVERGES: the shared branch (`COMPLETE_WORKLIST(reset_answer_table)`) is refused by name, owner TH1. The worklist and IDG branches of
@@ -3712,6 +3728,7 @@ function destroy_answer_trie(ld::PL_local_data{T}, atrie::trie{T})::Bool where {
             rat_flags = vtrie.magic == TRIE_CMAGIC ? RAT_CLEANUP : 0
             reset_answer_table_worklist(ld, atrie, rat_flags)
             reset_answer_table_idg(ld, atrie, rat_flags)
+            reset_answer_table_tracked(ld, atrie)
             trie_delete(_query_gd(ld), vtrie, atrie.variant, true)
 
             return true
@@ -7144,13 +7161,13 @@ end
 
 # PORT: pl-tabling.c IDG_CHANGED_NODE
 "`idg_changed` flag: a normal node change (pl-tabling.c)."
-const IDG_CHANGED_NODE = 0x0001
+const IDG_CHANGED_NODE = 1
 # PORT: pl-tabling.c IDG_CHANGED_MONO
 "`idg_changed` flag: a monotonic node change (pl-tabling.c)."
-const IDG_CHANGED_MONO = 0x0002
+const IDG_CHANGED_MONO = 2
 # PORT: pl-tabling.c IDG_PROPAGATE_FORCE
 "`idg_propagate_change` flag: monotonic to incremental evaluation (pl-tabling.c)."
-const IDG_PROPAGATE_FORCE = 0x0004
+const IDG_PROPAGATE_FORCE = 4
 
 # PORT: pl-tabling.c idg_changed_loop
 "Walk the parents of `state.child` and on, raising (`IDG_CHANGED_NODE`) or lowering the falsecounts (pl-tabling.c)."
@@ -7545,18 +7562,338 @@ end
 # ── IDG REEVALUATION (pl-tabling.c:7416-7438, :11053-11430, TAB1 TB6) ─────────────────────────────────
 # DIVERGES (the block): the single-thread build: `claim_answer_table` of a shared table (`O_PLMT`, `TRIE_ISSHARED`) is
 # TH1's (a shared table is refused at `idg_new`), `COMPLETE_WORKLIST` is its `#else` (the code alone, pl-tabling.c:383);
-# the transactions (`LD->transaction.predicates`, `tt_add_table`) are TB9's: no transaction is open, so
-# `tt_has_modified_dependencies` is false. The `DEBUG` prints are not kept. A trie node is a node id of `atrie`; the
+# the transactions (`LD->transaction.predicates`, `tt_add_table`, TB9) are read from `ld.transaction`: outside a
+# transaction `tt_has_modified_dependencies` is false. The `DEBUG` prints are not kept. A trie node is a node id of `atrie`; the
 # `map_trie_node` callbacks are closures over `ld` (upstream: the context pointer).
 
 # PORT: pl-tabling.c tt_has_modified_dependencies
-# (pl-tabling.c:7416-7438 at the pin)
-# DIVERGES: `LD->transaction.predicates` (the predicates modified in the open transaction) is TB9's; without a
-# transaction it is NULL and upstream's result is false, which is what this returns for every table.
-"Whether `atrie` depends on a dynamic predicate modified in the open transaction (pl-tabling.c); false: no transaction (TB9)."
+# (pl-tabling.c:7405-7438 at the pin)
+# DIVERGES: `LD->transaction.predicates` is a `Dict` keyed on the `Definition` (upstream's `TablePW` keyed on the pointer); a trie
+# without a predicate (`nothing`) names none.
+"Whether `atrie` depends on a dynamic predicate modified in the open transaction (pl-tabling.c)."
 function tt_has_modified_dependencies(ld::PL_local_data{T}, atrie::trie{T})::Bool where {T}
-    # if ( (n=atrie->data.IDG) && LD->transaction.predicates ): the second is NULL without a transaction (TB9)
-    return false
+    n = atrie.IDG
+    preds = ld.transaction.predicates
+    found = false
+
+    if n !== nothing && preds !== nothing
+        gd = _query_gd(ld)
+        en = idg_set_enum_init(n.dependent)
+        while (dep = idg_set_next(en)) !== nothing
+            strie = gd.tries[dep.atrie]
+            pred = strie.predicate
+
+            if _wl_is(strie, WL_DYNAMIC) && pred !== nothing && haskey(preds, pred)
+                found = true
+                break
+            end
+        end
+    end
+
+    return found
+end
+
+# PORT: pl-tabling.c mono_dep_status
+"The tally `tt_mono_status` keeps over the dependencies of a lazy monotonic table (pl-tabling.c `mono_dep_status`)."
+mutable struct mono_dep_status
+    invalid_dep_tables::Int                             # dependent tables that are invalid
+    global_clauses::Int                                 # queued clauses older than the transaction
+    local_clauses::Int                                  # queued clauses made by the transaction
+end
+mono_dep_status() = mono_dep_status(0, 0, 0)
+
+# PORT: pl-tabling.c lg_clauses
+# DIVERGES: a queue entry is an `Int` (see the monotonic block note): `< 0` is a clause reference (`-` the clause's number in
+# `gd.clause_refs`), `> 0` the node of an answer, which a dynamic dependency never queues (upstream: `assert(0)`; skipped).
+"Count the live queued clauses of `mdep` older than the transaction and made inside it (pl-tabling.c)."
+function lg_clauses(ld::PL_local_data{T}, mdep::idg_mdep{T, idg_node{T}}, s::mono_dep_status)::Nothing where {T}
+    gd = _query_gd(ld)
+    tr = ld.transaction
+
+    for a in mdep.queue
+        a < 0 || continue                               # isAtom(*base): else assert(0)
+        cl = get(gd.clause_refs, -a, nothing)
+        cl === nothing && continue
+
+        if (cl.flags & CL_ERASED) == 0
+            created = cl.generation_created
+            if created < GEN_TRANSACTION_BASE
+                s.global_clauses += 1
+            elseif created >= tr.gen_base && created < tr.gen_max
+                s.local_clauses += 1
+            end
+        end
+    end
+
+    return nothing
+end
+
+# PORT: pl-tabling.c mono_status
+# DIVERGES: the enum `mono_status` is `Int` constants.
+"The result of `tt_mono_status`: a dependent table is invalid (pl-tabling.c `M_INVALID_DEPS`)."
+const M_INVALID_DEPS = 0
+"The result of `tt_mono_status`: all queued clauses are older than the transaction (pl-tabling.c `M_OLD_CLAUSES`)."
+const M_OLD_CLAUSES = 1
+"The result of `tt_mono_status`: queued clauses of both kinds (pl-tabling.c `M_MIXED_CLAUSES`)."
+const M_MIXED_CLAUSES = 2
+"The result of `tt_mono_status`: all queued clauses are from the transaction, or none is queued (pl-tabling.c `M_NEW_CLAUSES`)."
+const M_NEW_CLAUSES = 3
+
+# PORT: pl-tabling.c tt_mono_status
+# DIVERGES: the `DEBUG` prints are not kept.
+"How to deal with the lazy monotonic table `atrie` that is about to be reevaluated: an `M_*` value (pl-tabling.c)."
+function tt_mono_status(ld::PL_local_data{T}, atrie::trie{T})::Int where {T}
+    an = atrie.IDG
+    status = mono_dep_status()
+
+    if an !== nothing
+        gd = _query_gd(ld)
+        en = idg_set_enum_init(an.dependent)
+        while (dep = idg_set_next(en)) !== nothing
+            strie = gd.tries[dep.atrie]
+
+            if _wl_is(strie, WL_DYNAMIC)
+                mdep = idg_mdeps(dep, an)
+                mdep !== nothing && lg_clauses(ld, mdep, status)
+            elseif dep.falsecount > 0 || dep.force_reeval
+                status.invalid_dep_tables += 1
+            end
+
+            status.invalid_dep_tables != 0 && break
+        end
+    end
+
+    if status.invalid_dep_tables != 0
+        return M_INVALID_DEPS
+    elseif status.global_clauses != 0 && status.local_clauses != 0
+        return M_MIXED_CLAUSES
+    end
+
+    return status.global_clauses != 0 ? M_OLD_CLAUSES : M_NEW_CLAUSES
+end
+
+# ── TRANSACTION TABLES (pl-tabling.c:7440-7822, TAB1 TB9) ──────────────────────────────────────────────────────
+# DIVERGES (the block): upstream keeps a transaction's changes to tables in `LD->transaction.table_trail` (`tbl_trail`: the
+# affected tables, and a buffer of the monotonic answers added). The kernel's `tbl_trail` (src/pl-incl.jl) holds a `Vector` of
+# answers walked in reverse and a `Dict` keyed on the trie symbol atom word. A table is named by its symbol atom (the kernel
+# has no atom GC: `PL_register_atom`/`PL_unregister_atom` are left out), a trie in an action by its index in `gd.tries`. A
+# shared table (`TRIE_ISSHARED`) is TH1's: the lines 7405-7822 have no shared branch.
+
+# PORT: pl-tabling.c tt_free_table_symbol
+# DIVERGES: the `free_symbol` hook of `tt->tables` (it unregisters the atom): the kernel registers none, so it is empty.
+"The hook that releases the symbol of a table of the trail; nothing to release (pl-tabling.c)."
+function tt_free_table_symbol(k::word, v::Int)::Nothing
+    return nothing
+end
+
+# PORT: pl-tabling.c tt_trail
+"The transaction's trail of table changes, made on first use (pl-tabling.c)."
+function tt_trail(ld::PL_local_data{T})::tbl_trail where {T}
+    tt = ld.transaction.table_trail
+    if tt === nothing
+        tt = tbl_trail()
+        ld.transaction.table_trail = tt
+    end
+
+    return tt
+end
+
+# PORT: pl-tabling.c tbl_trail_free
+# DIVERGES: empties the trail (`discardBuffer`, `destroyHTable`); the memory is the collector's.
+"Release the trail `tt` (pl-tabling.c)."
+function tbl_trail_free(tt::tbl_trail)::Nothing
+    empty!(tt.actions)
+    for (k, v) in tt.tables
+        tt_free_table_symbol(k, v)
+    end
+    empty!(tt.tables)
+
+    return nothing
+end
+
+# PORT: pl-tabling.c tt_add_table
+"Record that the table `atrie` must be dealt with (`flags`: `TT_TBL_INVALIDATE`) when the transaction rolls back (pl-tabling.c)."
+function tt_add_table(ld::PL_local_data{T}, atrie::trie{T}, flags::Int)::Nothing where {T}
+    if ld.transaction.generation != 0
+        tt = tt_trail(ld)
+        symbol = trie_symbol(_query_gd(ld), atrie)
+
+        tt.tables[symbol] = flags
+    end
+
+    return nothing
+end
+
+# PORT: pl-tabling.c tt_alloc
+# DIVERGES: the size-suffixed record of the buffer is a `push!` of a `tbl_trail_answer` onto `tt.actions`.
+"Add the answer record of a monotonic answer to the trail (pl-tabling.c `tt_alloc`)."
+function tt_alloc(ld::PL_local_data{T}, atrie::trie{T}, node::Int)::Nothing where {T}
+    tt = tt_trail(ld)
+    push!(tt.actions, tbl_trail_answer(TT_ANSWER, trie_serial!(_query_gd(ld), atrie), node))
+
+    return nothing
+end
+
+# PORT: pl-tabling.c tt_add_answer
+# DIVERGES: `node` is a node id of `atrie`; `tt_alloc` is a function of the answer (see above).
+"A monotonic new answer `node` was added to `atrie`: record it unless the table is marked for reevaluation (pl-tabling.c)."
+function tt_add_answer(ld::PL_local_data{T}, atrie::trie{T}, node::Int)::Nothing where {T}
+    if ld.transaction.generation != 0
+        idg = atrie.IDG
+
+        if !(idg !== nothing && idg.tt_notrail)
+            tt = tt_trail(ld)
+
+            if !haskey(tt.tables, trie_symbol(_query_gd(ld), atrie))
+                tt_alloc(ld, atrie, node)
+
+                if (atrie.flags & TRIE_ISTRACKED) == 0
+                    atrie.flags |= TRIE_ISTRACKED
+                end
+            end
+        end
+    end
+
+    return nothing
+end
+
+# PORT: pl-tabling.c tt_abolish_table
+# DIVERGES: `atrie` is matched by its index in `gd.tries` (a trie not yet registered has no entry); the action list is walked
+# from the top (`reverse`) as upstream's buffer.
+"The table `atrie` is abolished: discard all answers the trail holds for it (pl-tabling.c)."
+function tt_abolish_table(ld::PL_local_data{T}, atrie::trie{T})::Nothing where {T}
+    tt = ld.transaction.table_trail
+
+    if tt !== nothing && atrie.serial != 0
+        for i in length(tt.actions):-1:1
+            ta = tt.actions[i]
+
+            if ta.type == TT_ANSWER
+                if ta.atrie == atrie.serial
+                    ta.atrie = 0
+                    ta.answer = 0
+                end
+            else
+                @assert false "tt_abolish_table: unknown trail action"
+            end
+        end
+    end
+
+    return nothing
+end
+
+# PORT: pl-tabling.c transaction_commit_tables
+"The outermost transaction commits: release the trail of table changes; true (pl-tabling.c)."
+function transaction_commit_tables(ld::PL_local_data{T})::Bool where {T}
+    tt = ld.transaction.table_trail
+
+    if tt !== nothing
+        ld.transaction.table_trail = nothing
+
+        for i in length(tt.actions):-1:1
+            tt.actions[i].type == TT_ANSWER || @assert false "transaction_commit_tables: unknown trail action"
+        end
+
+        tbl_trail_free(tt)
+    end
+
+    return true
+end
+
+# PORT: pl-tabling.c tt_rollback_answer
+# DIVERGES: `answer` is a node id of `atrie`; the `DEBUG` print is not kept.
+"Roll back a monotonic answer: a lazy table's queues are pruned of it first, then its node is deleted (pl-tabling.c)."
+function tt_rollback_answer(ld::PL_local_data{T}, atrie::trie{T}, answer::Int)::Nothing where {T}
+    idg = atrie.IDG
+
+    if idg !== nothing && idg.lazy
+        n = atrie.nodes[answer]
+        v = n.value
+
+        n.value = 0
+        prune_deleted_mdeps(ld, idg)
+        n.value = v
+    end
+
+    trie_delete(_query_gd(ld), atrie, answer, true)
+
+    return nothing
+end
+
+# PORT: pl-tabling.c tt_rollback_tables
+# DIVERGES: `affected` is the trail's `Dict`; a symbol that names no live trie (its table was destroyed) is skipped where
+# upstream dereferences the null trie.
+"Roll back the tables the transaction affected: invalidate each one that has an IDG node; false if that failed (pl-tabling.c)."
+function tt_rollback_tables(ld::PL_local_data{T}, affected::Dict{word, Int})::Bool where {T}
+    rc = true
+    gd = _query_gd(ld)
+
+    for (symbol, flags) in affected
+        atrie = symbol_trie(gd, symbol)
+        atrie === nothing && continue
+        n = atrie.IDG
+
+        if n !== nothing
+            fl = Int(IDG_CHANGED_NODE)
+
+            n.monotonic && (fl |= Int(IDG_CHANGED_MONO))
+            idg_changed(ld, atrie, fl) || (rc = false)          # can this happen?
+            if n.monotonic && !n.force_reeval
+                n.force_reeval = true
+            end
+        end
+    end
+
+    return rc
+end
+
+# PORT: pl-tabling.c tt_rollback_actions
+# DIVERGES: `b` is the trail's action `Vector`; the entries are walked from the top (`reverse`); an entry `tt_abolish_table`
+# cleared (`atrie` 0) is skipped.
+"Roll back the answers of the trail's actions, newest first; true (pl-tabling.c)."
+function tt_rollback_actions(ld::PL_local_data{T}, b::Vector{tbl_trail_answer})::Bool where {T}
+    gd = _query_gd(ld)
+
+    for i in length(b):-1:1
+        ta = b[i]
+
+        if ta.type == TT_ANSWER
+            ta.atrie != 0 && tt_rollback_answer(ld, gd.tries[ta.atrie], ta.answer)
+        else
+            @assert false "tt_rollback_actions: unknown trail action"
+        end
+    end
+
+    return true
+end
+
+# PORT: pl-tabling.c transaction_rollback_tables
+"A transaction rolls back: invalidate the affected tables, then delete the answers it added; false if either failed (pl-tabling.c)."
+function transaction_rollback_tables(ld::PL_local_data{T})::Bool where {T}
+    tt = ld.transaction.table_trail
+    rc = true
+
+    if tt !== nothing
+        ld.transaction.table_trail = nothing
+
+        rc = tt_rollback_tables(ld, tt.tables)
+        rc = tt_rollback_actions(ld, tt.actions) && rc
+
+        tbl_trail_free(tt)
+    end
+
+    return rc
+end
+
+# PORT: pl-tabling.c merge_tabling_trail
+# DIVERGES: the actions of `from` are appended in order and `from` is emptied (`discardBuffer`, `freeHeap`); its `tables` are
+# dropped, as upstream's are.
+"A nested transaction commits: append its trail's actions to the enclosing one's (pl-tabling.c)."
+function merge_tabling_trail(into::tbl_trail, from::tbl_trail)::Nothing
+    append!(into.actions, from.actions)
+    tbl_trail_free(from)
+
+    return nothing
 end
 
 # PORT: pl-tabling.c tbl_reeval_wait as pl_tbl_reeval_wait2_va
@@ -7614,7 +7951,7 @@ function prepare_reeval(ld::PL_local_data{T}, atrie::trie{T})::Bool where {T}
     atrie.flags &= ~TRIE_DISCARDABLE                # completion decides again
 
     if tt_has_modified_dependencies(ld, atrie)
-        tbl_refuse(T, :tt_add_table, "prepare_reeval: a table of the open transaction (tt_add_table)", "TB9")
+        tt_add_table(ld, atrie, TT_TBL_INVALIDATE)
     end
 
     idg.answer_count = atrie.value_count
@@ -7813,8 +8150,7 @@ end
 # of the CHILD's answer trie (> 0) or, for the pseudo table of a dynamic predicate, a clause reference as `-serial` (< 0;
 # upstream: a node pointer or an atom word). The `mono_index` trie of a node (a serial in `gd.tries`) stays in `gd.tries`
 # after `mono_index_release` (no atom GC). The transaction branches (`LD->transaction.generation`, `tt_add_table`,
-# `tt_add_answer`, `tt_mono_status`, `tt_new_dep`, `tt_abolish_table`) are omitted: the kernel has no `ld.transaction`
-# (owner TX1/TB9). `Buffer`s are `Vector{Int}`; `TablePP` is an `IdDict`/`Dict`.
+# `tt_add_answer`, `tt_mono_status`, `tt_new_dep`, `tt_abolish_table`) are ported (TB9: `ld.transaction`). `Buffer`s are `Vector{Int}`; `TablePP` is an `IdDict`/`Dict`.
 
 const IdgMdep{T} = idg_mdep{T, idg_node{T}}
 const FUNCTOR_minus2_name = Symbol("-")
@@ -8235,7 +8571,6 @@ end
 
 # PORT: pl-tabling.c idg_add_child
 # (the `dep` branch, pl-tabling.c:8250-8318 at the pin)
-# DIVERGES: the tail with `LD->transaction.generation` (`parent->tt_new_dep`) is omitted (owner TX1/TB9).
 "The monotonic dependency `dep` of the edge `child` -> `parent`: found or created; false after an error (pl-tabling.c `idg_add_child`)."
 function idg_add_child_dep(
     ld::PL_local_data{T}, parent::idg_node{T}, child::idg_node{T}, dep::term_t
@@ -8267,6 +8602,16 @@ function idg_add_child_dep(
         m.deps[parent] = mdep
     elseif rc != 1
         return false                                    # resource error
+    end
+
+    if (mdep::IdgMdep{T}).lazy && ld.transaction.generation != 0
+        ctrie = gd.tries[child.atrie]
+        preds = ld.transaction.predicates
+        pred = ctrie.predicate
+
+        if _wl_is(ctrie, WL_DYNAMIC) && preds !== nothing && pred !== nothing && haskey(preds, pred)
+            parent.tt_new_dep = true
+        end
     end
 
     return true
@@ -8404,11 +8749,17 @@ function mono_idg_changed(ld::PL_local_data{T}, atrie::trie{T}, answer::Int)::Bo
 end
 
 # PORT: pl-tabling.c force_reeval
-# (pl-tabling.c:10415-10423 at the pin)
-# DIVERGES: the `LD->transaction.generation` branch (`tt_add_table`, `tt_abolish_table`) is omitted (owner TX1/TB9).
-"Mark the node `n` for forced re-evaluation (pl-tabling.c `force_reeval`)."
+# (pl-tabling.c:10415-10426 at the pin)
+"Mark the node `n` for forced re-evaluation; inside a transaction its table is listed and its trailed answers dropped (pl-tabling.c)."
 function force_reeval(ld::PL_local_data{T}, n::idg_node{T})::Nothing where {T}
     n.force_reeval = true
+
+    if ld.transaction.generation != 0
+        atrie = _query_gd(ld).tries[n.atrie]
+
+        tt_add_table(ld, atrie, TT_TBL_INVALIDATE)
+        tt_abolish_table(ld, atrie)                     # remove scheduled answers
+    end
 
     return nothing
 end
@@ -8731,8 +9082,7 @@ end
 
 # PORT: pl-tabling.c tbl_monotonic_add_answer as pl_tbl_monotonic_add_answer2_va
 # (PRED_IMPL("$tbl_monotonic_add_answer", 2, tbl_monotonic_add_answer, 0), pl-tabling.c:10438-10492 at the pin)
-# DIVERGES: `tt_add_answer` (transaction) is omitted (owner TX1/TB9); the answer of an answer subsumption table (`TRIE_ISMAP`)
-# is queued as its node id; `atrie_answer_event` is the stub above (owner EV1).
+# DIVERGES: the answer of an answer subsumption table (`TRIE_ISMAP`) is queued as its node id; `atrie_answer_event` is the stub above (owner EV1).
 "`'\$tbl_monotonic_add_answer'(+Trie, +Answer)`: add an answer from monotonic propagation (pl-tabling.c)."
 function pl_tbl_monotonic_add_answer2_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
@@ -8759,6 +9109,7 @@ function pl_tbl_monotonic_add_answer2_va(
 
             if rc > 0
                 atrie.nodes[nid].value != 0 && return FFALSE
+                tt_add_answer(ld, atrie, nid)
                 set_trie_value_word(atrie, nid, ATOM_trienode)
 
                 mono_idg_changed(ld, atrie, nid) || return FFALSE
@@ -8816,7 +9167,6 @@ end
 
 # PORT: pl-tabling.c mono_reeval_prepare as pl_mono_reeval_prepare2_va
 # (PRED_IMPL("$mono_reeval_prepare", 2, mono_reeval_prepare, 0), pl-tabling.c:10556-10589 at the pin)
-# DIVERGES: the `LD->transaction.generation` branch (`tt_mono_status`, `tt_add_table`, `tt_notrail`) is omitted (owner TX1/TB9).
 "`'\$mono_reeval_prepare'(+ATrie, -Size)`: prepare `ATrie` for lazy monotonic updates (pl-tabling.c)."
 function pl_mono_reeval_prepare2_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
@@ -8827,6 +9177,18 @@ function pl_mono_reeval_prepare2_va(
         idg = atrie.IDG
 
         if idg !== nothing && idg.falsecount != 0 && idg.monotonic && idg.lazy
+            if ld.transaction.generation != 0
+                status = tt_mono_status(ld, atrie)
+
+                if status == M_INVALID_DEPS || status == M_MIXED_CLAUSES
+                    tt_add_table(ld, atrie, TT_TBL_INVALIDATE)
+                elseif status == M_OLD_CLAUSES
+                    idg.tt_notrail = true
+                elseif status == M_NEW_CLAUSES
+                    idg.tt_notrail = false
+                end
+            end
+
             idg.lazy_queued = false                     # trap that new answers are queued
             idg.mono_reevaluating = true
             idg.tt_new_dep = false                      # see idg_add_child()
@@ -8843,7 +9205,7 @@ end
 
 # PORT: pl-tabling.c mono_reeval_done as pl_mono_reeval_done3_va
 # (PRED_IMPL("$mono_reeval_done", 3, mono_reeval_done, 0), pl-tabling.c:10880-10955 at the pin)
-# DIVERGES: the `tt_new_dep` branch (`tt_add_table`) is omitted (owner TX1/TB9); the answer node of `mono_idg_changed` is an id.
+# DIVERGES: the answer node of `mono_idg_changed` is an id.
 "`'\$mono_reeval_done'(+ATrie, +SizeAtStart, -InvalidDependencies)`: done processing the queued answers of `ATrie` (pl-tabling.c)."
 function pl_mono_reeval_done3_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
@@ -8863,6 +9225,7 @@ function pl_mono_reeval_done3_va(
         deps_t = PL_new_term_ref(ld)
 
         idg.mono_reevaluating = false
+        idg.tt_new_dep && tt_add_table(ld, atrie, TT_TBL_INVALIDATE)
         ok, invalid_deps = invalid_dependencies(ld, deps_t, idg)
         ok || return FFALSE
 
@@ -9134,6 +9497,7 @@ function abolish_table(ld::PL_local_data{T}, atrie::trie{T})::Bool where {T}
                 rat_flags = vtrie.magic == TRIE_CMAGIC ? RAT_CLEANUP : 0
                 reset_answer_table_worklist(ld, atrie, rat_flags)
                 reset_answer_table_idg(ld, atrie, rat_flags)
+                reset_answer_table_tracked(ld, atrie)
                 trie_delete(_query_gd(ld), vtrie, atrie.variant, true)
                 delete_orphan_dynamic_tables(ld, b)
             end
@@ -9214,6 +9578,7 @@ function reset_table_bulk(
     end
     reset_answer_table_worklist(ld, atrie, Int(RAT_CLEANUP | RAT_BULK))
     reset_answer_table_idg(ld, atrie, Int(RAT_CLEANUP | RAT_BULK))
+    reset_answer_table_tracked(ld, atrie)
     reset_answer_table(gd, atrie, Int(RAT_CLEANUP | RAT_BULK))
     atrie.variant = 0
 
