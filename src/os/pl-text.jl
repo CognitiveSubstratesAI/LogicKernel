@@ -642,12 +642,14 @@ function _text_string(text::PL_chars_t)::String
         for i in 0:(text.length - 1)
             utf8_put_char(b, _wchar_at(text, i))
         end
+    elseif text.encoding === ENC_ANSI
+        cps = _ansi_code_points(text.text, text.length)
+        cps === nothing && error("the string of an ENC_ANSI text with an illegal multibyte sequence")
+        for c in cps
+            utf8_put_char(b, c)
+        end
     else
-        throw(
-            NotPortedError{Nothing}(
-                nothing, "the string of a text in $(text.encoding)", "no caller"
-            )
-        )
+        error("the string of a text in $(text.encoding)")       # assert(0)
     end
     return String(b)
 end
@@ -672,12 +674,12 @@ function _text_code_points(text::PL_chars_t)::Vector{Int}
             i, chr = utf8_get_char(b, i)
             push!(cps, chr)
         end
+    elseif text.encoding === ENC_ANSI
+        r = _ansi_code_points(text.text, text.length)
+        r === nothing && error("the code points of an ENC_ANSI text with an illegal multibyte sequence")
+        return r
     else
-        throw(
-            NotPortedError{Nothing}(
-                nothing, "the code points of a text in $(text.encoding)", "no caller"
-            )
-        )
+        error("the code points of a text in $(text.encoding)")  # assert(0)
     end
     return cps
 end
@@ -687,7 +689,8 @@ end
 # (`textToString`); a list is made cell by cell with `PL_unify_list` on a fresh reference and unified with
 # `term` at the end (upstream lays the cells out with `INIT_SEQ_STRING`/`EXTEND_SEQ_*` and unifies `l` with
 # `term` in `CLOSE_SEQ_STRING`: the same list, the same unification); `PL_STRING` and `PL_ATOM` canonicalise
-# `text` in place, as upstream. NOT PORTED: `ENC_ANSI` texts (no producer).
+# `text` in place, as upstream. An `ENC_ANSI` text is read with `mbrtowc` (`_ansi_code_points`); an illegal sequence in a list
+# is `representation_error(encoding)` ("cannot represent text in current locale"), in an atom or a string `text_error`.
 """
 Unify `term` with `text` made a `type`: `PL_ATOM`, `PL_STRING`, `PL_CODE_LIST` or `PL_CHAR_LIST` (pl-text.c). For
 a list, `tail` (a term reference, 0: none) is left holding the list's unbound end instead of `[]`.
@@ -696,7 +699,11 @@ function PL_unify_text(
     ld::PL_local_data{T}, term::term_t, tail::term_t, text::PL_chars_t, type::Int
 )::Bool where {T}
     if type == PL_ATOM
-        PL_canonicalise_text(text) == 1 || return false             # textToAtom(): 0
+        arc = PL_canonicalise_text(text)
+        if arc != 1
+            text_error(ld, arc)                                     # textToAtom(): text_error, 0
+            return false
+        end
         return PL_unify_atom(ld, term, _atom_from_text(T, _text_string(text)))
     elseif type == PL_STRING
         rc = PL_canonicalise_text(text)
@@ -711,7 +718,16 @@ function PL_unify_text(
                 return PL_unify_nil(ld, term)
             end
         else
-            cps = _text_code_points(text)
+            if text.encoding === ENC_ANSI
+                acps = _ansi_code_points(text.text, text.length)
+                acps === nothing && return PL_error(
+                    ld, "", 0, "cannot represent text in current locale",
+                    ERR_REPRESENTATION, mk_sym(T, :encoding)
+                )
+                cps = acps
+            else
+                cps = _text_code_points(text)
+            end
             l = PL_new_term_ref(ld)
             l == 0 && return false
             head = PL_new_term_ref(ld)
