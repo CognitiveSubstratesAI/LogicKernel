@@ -346,8 +346,11 @@ end
 # DIVERGES: only `PL_local_data.statistics` (the per-thread counters); `GD->statistics` has no struct here:
 # its `user_cputime` (the process's CPU time statistics/2 last read) is `process_cputime`, and its counts
 # of atoms, functors, predicates, clauses, modules and codes are read from the tables (src/pl-prims.jl
-# `swi_statistics`). `errors` and `warnings` are not counted. The field types are upstream's, `uint64_t`
-# as `Int64`. `start_time` is the creation of the local data (`WallTime()`, src/os/pl-os.jl).
+# `swi_statistics`). `GD->statistics.errors|warnings` (the process-wide message counts, which `statistics/2` reads) is
+# `errors|warnings` below: the kernel has one thread per database, so the thread's count (`LD->statistics.errors|warnings`,
+# which `thread_statistics/3` reads) and the process's agree; `$inc_message_count/1` (src/pl-error.jl) bumps them (R2 T25).
+# The field types are upstream's, `uint64_t` as `Int64`, `int` as `Int32`. `start_time` is the creation of the local data
+# (`WallTime()`, src/os/pl-os.jl).
 "The counters of `statistics/2` that belong to one thread (pl-global.h `LD->statistics`, Y1)."
 mutable struct ld_statistics
     inferences::Int64                                           # inferences in this thread
@@ -358,9 +361,11 @@ mutable struct ld_statistics
     last_walltime::Float64                                      # Last Wall time (m-secs since start)
     user_cputime::Float64                                       # User saved CPU time
     system_cputime::Float64                                     # Kernel saved CPU time
+    errors::Int32                                               # Printed error messages
+    warnings::Int32                                             # Printed warning messages
     process_cputime::Float64                                    # GD->statistics.user_cputime
 end
-ld_statistics() = ld_statistics(0, 0, 0, 0, WallTime(), 0.0, 0.0, 0.0, 0.0)
+ld_statistics() = ld_statistics(0, 0, 0, 0, WallTime(), 0.0, 0.0, 0.0, Int32(0), Int32(0), 0.0)
 
 # PORT: pl-global.h tabling as tbl_restraint
 # DIVERGES: the anonymous `LD->tabling.restraint` struct is its own type; a `size_t` is an `Int` (`(size_t)-1`, no limit, is -1).

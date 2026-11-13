@@ -3993,8 +3993,8 @@ end
 # the Quintus/SICStus ones (`qp_statistics`, a list). The counters are `LD->statistics` (the local
 # data's `statistics`, src/pl-global.jl `ld_statistics`); a counter the kernel has no source for answers
 # what a run with nothing to count answers — 0, as swipl's own at startup: the garbage collectors, the
-# stack shifts, the hash-table statistics, the message counts, the `threads` family of a process with its
-# one thread.
+# stack shifts, the hash-table statistics, the `threads` family of a process with its one thread. The message
+# counts `errors` and `warnings` are counted (`$inc_message_count/1`, src/pl-error.jl).
 
 # ORIGINAL (Y1): `usedStack(s)` of pl-incl.h for the kernel's three stacks, in bytes (a position is a word).
 "The bytes in use on the stack `which` (`:global`, `:local` or `:trail`) (pl-incl.h `usedStack`)."
@@ -4237,9 +4237,12 @@ function swi_statistics(ld::PL_local_data{T}, key::Symbol, v::number)::Int where
         key === :local_shifts || key === :trail_shifts || key === :engines ||
         key === :engines_created || key === :threads_peak ||
         key === :shared_table_space_used ||
-        key === :indexes_created || key === :indexes_destroyed || key === :warnings ||
-        key === :errors
+        key === :indexes_created || key === :indexes_destroyed
         v.i = 0
+    elseif key === :warnings                    # GD->statistics.warnings (pl-prims.c:6283; DIVERGES: the LD's count, one thread)
+        v.i = st.warnings
+    elseif key === :errors                      # GD->statistics.errors (pl-prims.c:6285)
+        v.i = st.errors
     elseif key === :table_space_used            # LD->tabling.node_pool->size, 0 without a pool (pl-prims.c:6260; TAB1 TB0)
         pool = ld.tabling.node_pool
         v.i = pool === nothing ? 0 : pool.size

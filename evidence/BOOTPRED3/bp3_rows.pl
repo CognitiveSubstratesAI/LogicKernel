@@ -38,6 +38,11 @@ t_bp3i09(R) :- catch(('$inc_message_count'([]), R = yes), error(SsuE, _), R = ra
 t_bp3i10(R) :- catch((findall(x, '$inc_message_count'(error), R)), error(SsuE, _), R = raised(SsuE)).
 t_bp3i11(R) :- catch((statistics(errors, E0), '$inc_message_count'(error), statistics(errors, E1), R is E1-E0), error(SsuE, _), R = raised(SsuE)).
 t_bp3i12(R) :- catch((statistics(warnings, E0), '$inc_message_count'(warning), statistics(warnings, E1), R is E1-E0), error(SsuE, _), R = raised(SsuE)).
+t_bp3i13(R) :- catch((statistics(errors, E0), '$inc_message_count'(warning), '$inc_message_count'(informational), '$inc_message_count'(foo), statistics(errors, E1), R is E1-E0), error(SsuE, _), R = raised(SsuE)).
+t_bp3i14(R) :- catch((statistics(errors, E0), '$inc_message_count'(error), '$inc_message_count'(error), '$inc_message_count'(error), statistics(errors, E1), R is E1-E0), error(SsuE, _), R = raised(SsuE)).
+t_bp3i15(R) :- catch((statistics(errors, E0), statistics(warnings, W0), '$inc_message_count'(error), '$inc_message_count'(warning), '$inc_message_count'(warning), statistics(errors, E1), statistics(warnings, W1), D1 is E1-E0, D2 is W1-W0, R = D1-D2), error(SsuE, _), R = raised(SsuE)).
+t_bp3i16(R) :- catch((statistics(errors, E0), statistics(warnings, W0), catch('$inc_message_count'(1), _, true), catch('$inc_message_count'(_), _, true), statistics(errors, E1), statistics(warnings, W1), D1 is E1-E0, D2 is W1-W0, R = D1-D2), error(SsuE, _), R = raised(SsuE)).
+t_bp3i17(R) :- catch(('$error_count'(E0, W0), '$inc_message_count'(error), '$inc_message_count'(warning), '$inc_message_count'(warning), '$error_count'(E1, W1), D1 is E1-E0, D2 is W1-W0, R = D1-D2), error(SsuE, _), R = raised(SsuE)).
 t_bp3n01(R) :- catch(('$notrace'(F, S), '$restore_trace'(F, S), R = F-S), error(SsuE, _), R = raised(SsuE)).
 t_bp3n02(R) :- catch(('$notrace'(F0, S0), '$notrace'(F, S), '$restore_trace'(F0, S0), R = F-S), error(SsuE, _), R = raised(SsuE)).
 t_bp3n03(R) :- catch(('$notrace'(F0, S0), '$restore_trace'(0, -1), '$notrace'(F, _), '$restore_trace'(F0, S0), R = F), error(SsuE, _), R = raised(SsuE)).

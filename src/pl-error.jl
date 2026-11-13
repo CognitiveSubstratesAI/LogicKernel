@@ -1111,9 +1111,9 @@ end
 
 # PORT: pl-error.c inc_message_count as pl_inc_message_count1_va
 # (PRED_IMPL("$inc_message_count", 1, inc_message_count, 0), pl-error.c:1457-1474 at the pin)
-# DIVERGES: `GD->statistics.errors|warnings` and `LD->statistics.errors|warnings` are not kept (`ld_statistics` has no
-# such field and statistics/2 answers 0 for `errors` and `warnings`, src/pl-prims.jl `swi_statistics`): the argument is
-# checked and every level answers true, as upstream's, but nothing is counted. A new field is a struct change.
+# DIVERGES: `GD->statistics.errors|warnings` (what `statistics/2` reads) and `LD->statistics.errors|warnings` (what
+# `thread_statistics/3` reads) are ONE pair of counters, `ld.statistics.errors|warnings` (src/pl-global.jl `ld_statistics`):
+# the kernel has one thread per database, so `ATOMIC_INC(&GD->...)` and `LD->...++` are the same increment.
 """
     '\$inc_message_count'(+Level)
 
@@ -1127,7 +1127,12 @@ function pl_inc_message_count1_va(
     a = PL_get_atom_ex(ld, A1)
 
     if a !== nothing
-        # `error` and `warning` bump the counters (kept nowhere here, see DIVERGES); other levels are ignored
+        st = ld.statistics
+        if sym_key(a) == sym_key(mk_sym(T, :error))     # if ( a == ATOM_error )
+            st.errors += Int32(1)                       #   ATOMIC_INC(&GD->statistics.errors); LD->statistics.errors++
+        elseif sym_key(a) == sym_key(mk_sym(T, :warning))   # else if ( a == ATOM_warning )
+            st.warnings += Int32(1)                     #   ATOMIC_INC(&GD->statistics.warnings); LD->statistics.warnings++
+        end                                             # else ignore other levels
         return FTRUE
     end
 

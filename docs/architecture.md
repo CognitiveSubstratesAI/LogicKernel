@@ -6999,8 +6999,10 @@ What BOOTPRED3 adds (swipl-devel pin `cbf4e1896275`, oracle swipl 10.1.19; writt
   part (boot/init.pl). `Tail` is `[]` when `Elem` was found, else the open tail of a partial `List`; a non-list is `type_error(list, Tail)`.
   The signal check at every 10000th cell is left out (no signal queue); the stack-use check beside it is kept (row bp3m16, 12000 cells).
 - **`'$inc_message_count'(+Level)`** (`pl_inc_message_count1_va`, src/pl-error.jl, pl-error.c:1457-1474; new table `PL_predicates_from_error`):
-  checks that `Level` is an atom, counts nothing. KNOWN DIFFERENCE: the kernel keeps no error/warning counters (`ld_statistics` has no
-  field, a struct change), so `statistics(errors, _)` stays 0 where swipl's counts (rows bp3i11, bp3i12).
+  checks that `Level` is an atom and counts `error` and `warning` (R2 T25): `ld_statistics.errors|warnings` (src/pl-global.jl, upstream's names,
+  `int` as `Int32`) is both `GD->statistics.errors|warnings` (what `statistics/2` reads, src/pl-prims.jl) and `LD->statistics.errors|warnings`
+  (what `thread_statistics/3` reads): one thread per database, so one pair of counters. `'$error_count'/2` (boot/init.pl:2555-2565) reads
+  them through `statistics/2` (the `threads` flag is false). Rows bp3i11-bp3i17 are swipl's answers.
 - **`'$notrace'(-Flags, -SkipLevel)`, `'$restore_trace'(+Flags, +SkipLevel)`** (src/pl-pro.jl, pl-pro.c:317-390, not pl-trace.c): the saved
   state is the tracing and debugging status, the last-call and VMI built-in flag bits (`NOTRACE_*`, 1/2/4/8) and the skip level (-1
   `SKIP_VERY_DEEP`, -2 `SKIP_REDO_IN_SKIP`). Since DBG1-SMALL (audit D-0431 item 2) they read and write the local data's

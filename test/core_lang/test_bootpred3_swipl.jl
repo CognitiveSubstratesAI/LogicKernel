@@ -6,7 +6,7 @@
 #   * Every answer line is swipl's, PINNED (swipl 10.1.19-1-gcbf4e189, lk-channel evidence/BOOTPRED3/bp3_rows.out on the branch);
 #     with `swipl` on PATH the live answers are compared with the pins too.
 #   * KNOWN DIFFERENCES, each a row whose pin is swipl's answer and whose kernel answer is pinned too (`_B3_KNOWN`, with swipl's in
-#     a comment): the message counters are not kernel state (src/pl-error.jl: rows bp3i11, bp3i12; the debugger state is since
+#     a comment): the message counters are kernel state since R2 T25 (rows bp3i11-bp3i17 are swipl's answers; the debugger state is since
 #     DBG1-SMALL: rows bp3n01, bp3n07, bp3n18 are swipl's answers; the listeners of prolog_listen/2,3 are kept since EV1: row bp3l33 is swipl's answer), and variant_sha1's DIGEST VALUES are not swipl's (pl-termhash.jl DIVERGES 1-2: row bp3v15; the other v-rows compare lengths,
 #     alphabet and variant equality, never a digest). A known row stops being one when its kernel line equals swipl's.
 using Test, LogicKernel
@@ -107,7 +107,7 @@ bp3_mk(N, [N|T]) :- N1 is N-1, bp3_mk(N1, T).
 # '$restore_trace'/2 (pl-pro.c:317-390); bp3l: prolog_listen/2,3 (pl-event.c:241-290); bp3v: variant_sha1/2 (pl-termhash.c:659-681).
 # The n-rows pass the last-call and VMI bits only (the tracing and debugging bits and the run mode have their rows in
 # test_notrace_swipl.jl); the skip level swipl reads first is 0 (rows bp3n01, bp3n07, bp3n18). The error and warning counters
-# are not kept by the kernel (src/pl-error.jl): bp3i01-bp3i10 check arguments, bp3i11 and bp3i12 read the counters. Listeners on
+# are kept since R2 T25 (src/pl-error.jl): bp3i01-bp3i10 check arguments, bp3i11-bp3i17 read the counters. Listeners on
 # a predicate have their rows in test_event_swipl.jl (EV1); a cyclic list has no row (the kernel has no cyclic terms).
 const _B3_CASES = [
     ("bp3m01", raw"'$memberchk'(b, [a,b,c], T), R = T"),
@@ -145,6 +145,28 @@ const _B3_CASES = [
     (
         "bp3i12",
         raw"statistics(warnings, E0), '$inc_message_count'(warning), statistics(warnings, E1), R is E1-E0"
+    ),
+    (
+        "bp3i13",
+        raw"statistics(errors, E0), '$inc_message_count'(warning), '$inc_message_count'(informational), '$inc_message_count'(foo), statistics(errors, E1), R is E1-E0"
+    ),
+    (
+        "bp3i14",
+        raw"statistics(errors, E0), '$inc_message_count'(error), '$inc_message_count'(error), '$inc_message_count'(error), statistics(errors, E1), R is E1-E0"
+    ),
+    (
+        "bp3i15",
+        raw"statistics(errors, E0), statistics(warnings, W0), '$inc_message_count'(error), '$inc_message_count'(warning), '$inc_message_count'(warning), statistics(errors, E1), statistics(warnings, W1), D1 is E1-E0, D2 is W1-W0, R = D1-D2"
+    ),
+    (
+        "bp3i16",
+        raw"statistics(errors, E0), statistics(warnings, W0), catch('$inc_message_count'(1), _, true), catch('$inc_message_count'(_), _, true), statistics(errors, E1), statistics(warnings, W1), D1 is E1-E0, D2 is W1-W0, R = D1-D2"
+    ),
+    # '$error_count'/2 (boot/init.pl:2555-2565) reads the counters: thread_statistics/3 in swipl (threads true), statistics/2
+    # in the single-thread kernel (threads false); the same answer. UNVERIFIED on the kernel: gate decides.
+    (
+        "bp3i17",
+        raw"'$error_count'(E0, W0), '$inc_message_count'(error), '$inc_message_count'(warning), '$inc_message_count'(warning), '$error_count'(E1, W1), D1 is E1-E0, D2 is W1-W0, R = D1-D2"
     ),
     ("bp3n01", raw"'$notrace'(F, S), '$restore_trace'(F, S), R = F-S"),
     (
@@ -296,6 +318,11 @@ const _B3_PINNED = [
     "t_bp3i10 c[116,95,98,112,51,105,49,48]/1(c[91,124,93]/2(a[120],nil))",
     "t_bp3i11 c[116,95,98,112,51,105,49,49]/1(i1)",
     "t_bp3i12 c[116,95,98,112,51,105,49,50]/1(i1)",
+    "t_bp3i13 c[116,95,98,112,51,105,49,51]/1(i0)",
+    "t_bp3i14 c[116,95,98,112,51,105,49,52]/1(i3)",
+    "t_bp3i15 c[116,95,98,112,51,105,49,53]/1(c[45]/2(i1,i2))",
+    "t_bp3i16 c[116,95,98,112,51,105,49,54]/1(c[45]/2(i0,i0))",
+    "t_bp3i17 c[116,95,98,112,51,105,49,55]/1(c[45]/2(i1,i2))",
     "t_bp3n01 c[116,95,98,112,51,110,48,49]/1(c[45]/2(i12,i0))",
     "t_bp3n02 c[116,95,98,112,51,110,48,50]/1(c[45]/2(i12,i-1))",
     "t_bp3n03 c[116,95,98,112,51,110,48,51]/1(i0)",
@@ -365,12 +392,8 @@ const _B3_PINNED = [
     "t_bp3v15 c[116,95,98,112,51,118,49,53]/1(a[99,101,101,55,49,101,98,99,49,100,48,50,51,97,102,49,51,49,101,51,52,54,49,98,51,50,50,101,52,50,53,49,98,50,101,53,97,53,49,48])"
 ]
 # KNOWN DIFFERENCE rows: the id of the driver line -> the kernel's exact line (swipl's is the pin above). Each swipl answer is quoted
-# in the comment; the counters' struct field retires them (EV1 retired row bp3l33, DBG1-SMALL rows bp3n01, bp3n07, bp3n18).
+# in the comment; the counters' struct field (R2 T25: `ld_statistics.errors|warnings`) retired rows bp3i11 and bp3i12 (EV1 retired row bp3l33, DBG1-SMALL rows bp3n01, bp3n07, bp3n18).
 const _B3_KNOWN = Dict{String, String}(
-    # no error counter is kept (src/pl-error.jl DIVERGES): swipl counts 1
-    "t_bp3i11" => "t_bp3i11 c[116,95,98,112,51,105,49,49]/1(i0)",
-    # no warning counter is kept (src/pl-error.jl DIVERGES): swipl counts 1
-    "t_bp3i12" => "t_bp3i12 c[116,95,98,112,51,105,49,50]/1(i0)",
     # the digest values are not swipl's (src/pl-termhash.jl DIVERGES 1-2): swipl's is cee71ebc1d023af131e3461b322e4251b2e5a510
     "t_bp3v15" => "t_bp3v15 c[116,95,98,112,51,118,49,53]/1(a[53,100,97,52,50,51,51,48,52,100,101,50,50,97,101,53,97,49,52,102,56,54,49,57,55,55,53,99,98,49,53,49,99,97,54,55,102,100,55,53])"
 )
@@ -478,6 +501,12 @@ end
     @test any(l -> startswith(l, "t_bp3m02") && !occursin(" ", l), _B3_PINNED)                # not found: fails
     @test any(l -> startswith(l, "t_bp3v01 ") && endswith(l, "(i40)"), _B3_PINNED)           # 40 hex digits
     @test any(l -> startswith(l, "t_bp3n01 "), _B3_PINNED)                                    # the saved state is read back
+    # the message counters (R2 T25): an error counts 1, three count 3, a warning is not an error, an invalid level counts nothing
+    @test any(l -> startswith(l, "t_bp3i11 ") && endswith(l, "(i1)"), _B3_PINNED)
+    @test any(l -> startswith(l, "t_bp3i14 ") && endswith(l, "(i3)"), _B3_PINNED)
+    @test any(l -> startswith(l, "t_bp3i13 ") && endswith(l, "(i0)"), _B3_PINNED)
+    @test any(l -> startswith(l, "t_bp3i15 ") && occursin("/2(i1,i2)", l), _B3_PINNED)
+    @test any(l -> startswith(l, "t_bp3i16 ") && occursin("/2(i0,i0)", l), _B3_PINNED)
 end
 
 @testset "the pins are swipl's (live, when swipl is on PATH)" begin
