@@ -7968,7 +7968,7 @@ function prepare_reeval(ld::PL_local_data{T}, atrie::trie{T})::Bool where {T}
     atrie.flags &= ~TRIE_DISCARDABLE                # completion decides again
 
     if tt_has_modified_dependencies(ld, atrie)
-        tbl_refuse(T, :tt_add_table, "prepare_reeval: a table of the open transaction (tt_add_table)", "TB9")
+        tt_add_table(ld, atrie, TT_TBL_INVALIDATE)
     end
 
     idg.answer_count = atrie.value_count
