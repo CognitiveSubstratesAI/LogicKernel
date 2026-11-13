@@ -103,9 +103,17 @@ function _qm_call(
     path::Union{String, _QM};
     bound::Union{Nothing, Tuple{_QM, Vector{_QM}}}=nothing,
     arg2::Union{Nothing, _QM}=nothing,
+    translated::Bool=false,
 )::Union{String, Exception}
     gd = LK.PL_global_data{_QM}()
     ld = LK.PL_local_data{_QM}(gd)
+    if translated        # a file that has moved tells `system:'\$translated_source'/2` (as test_qlf_swipl.jl's moved-file rows define it)
+        helper = joinpath(mktempdir(), "ts.pl")
+        write(helper, "'\$translated_source'(F, T) :- user:assertz(tr_seen(F-T)).\n")
+        gd.bootsession = true
+        LK.compileFile(gd, ld, nothing, helper) || return "helper failed"
+        gd.bootsession = false
+    end
     sysm = LK.MODULE_system(gd)
     proc(name, n) = LK.isCurrentProcedure(sym_key(_qms(name)), n, sysm)
     pm = proc("\$qlf_module", 2)
@@ -544,5 +552,26 @@ end
         r = _qm_call(flipped)
         @test r isa ErrorException
         @test r isa ErrorException && r.msg == "$flipped: QLF format error at index = $(hl + off + 1)"
+    end
+end
+
+@testset "'\$qlf_module'/2 of a QLF file that has moved: the F entry's name is translated (pushPathTranslation, qlfFixSourcePath)" begin
+    # UNVERIFIED on the kernel: gate decides. swipl 10.1.20 (evidence/R2/qlf3_verify.md section 4): saved as `/old/place#/moved.qlf`,
+    # loaded from a temporary directory `<dir>`, the source `/old/place#/x/mm.pl` is told as `<dir>/x/mm.pl`; the other pairs are as saved.
+    mktempdir() do d
+        body = hex2bytes("514d03846d6d46a62f6f6c642f706c616365232f782f6d6d2e706c724081000000000000f83f75864303887573657245040382708258")
+        moved = joinpath(d, "moved.qlf")
+        write(moved, vcat(_qm_hdr("/old/place#/moved.qlf"), body))
+        same = _qm_file(d, "same", 72, body)                    # saved under its own name: no translation, the saved path stays
+        cls = "c[45]/2(a[99,108,97,115,115],a[117,115,101,114])"
+        exps = "c[45]/2(a[101,120,112,111,114,116,115],c[91,124,93]/2(c[47]/2(a[112],i1),nil))"
+        mod = "c[45]/2(a[109,111,100,117,108,101],a[109,109])"
+        file(f) = _qm_enc(_qm_pair("file", _qms(f)))
+        want(f) = "true tag=a[35] | $cls | $exps | $(file(f)) | $mod"
+        r = _qm_call(moved; translated=true)
+        @test r == want(joinpath(d, "x", "mm.pl"))
+        r2 = _qm_call(same; translated=true)
+        @test r2 == want("/old/place#/x/mm.pl")
+        @test r isa String && r2 isa String && r != r2          # the translation is what tells them apart
     end
 end
