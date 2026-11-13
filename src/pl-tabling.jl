@@ -3227,7 +3227,7 @@ const RAT_BULK = Int(0x2)
 # path into the chain (`reset_table_bulk` now runs both branches itself, it holds `ld`);
 # a sentinel (WL_GROUND, WL_DYNAMIC) is
 # `data.worklist = Int` and is made fresh again; the IDG node is refused by name, owner TB6 (`idg_reset`, `idg_destroy`,
-# `idg_destroy_private`), the tracked table (`tt_abolish_table`) owner TB9.
+# `idg_destroy_private`); the tracked branch (`tt_abolish_table`) is `reset_answer_table_tracked`, run by the same callers.
 "Make the answer table `atrie` fresh again: no worklist, not complete, no answers (pl-tabling.c)."
 function reset_answer_table(
     gd::PL_global_data{T}, atrie::trie{T}, flags::Int
@@ -3255,7 +3255,7 @@ function reset_answer_table(
     (atrie.flags & TRIE_ISTRACKED) != 0 && tbl_refuse(
         T,
         :tt_abolish_table,
-        "reset_answer_table: a tracked table (tt_abolish_table)",
+        "reset_answer_table: a tracked table (tt_abolish_table), left to the callers that hold ld (reset_answer_table_tracked)",
         "TB9"
     )
 
@@ -3727,6 +3727,24 @@ function reset_answer_table_idg(
     return nothing
 end
 
+# PORT: pl-tabling.c reset_answer_table as reset_answer_table_tracked
+# (pl-tabling.c:2664-2665 at the pin: the `ison(atrie, TRIE_ISTRACKED)` branch.)
+# DIVERGES: `tt_abolish_table` needs the thread's transaction (`ld`), which the release chain of `trie_delete` does not carry
+# (`reset_answer_table`'s refusal below): the callers that hold `ld` (`destroy_answer_trie`, `abolish_table`, `reset_table_bulk`)
+# run the branch after the IDG branch and before `trie_delete`, the order of upstream's `reset_answer_table` (worklist, IDG,
+# `tt_abolish_table`, `trie_empty`). It CLEARS `TRIE_ISTRACKED` where upstream leaves it, so the chain finds the flag off: the table
+# is orphaned right after in each of the three callers, and the flag is read only by `answer_nodes_discardable` and
+# `reset_answer_table`.
+"The tracked branch of `reset_answer_table`: the transaction's trail forgets the answers of `atrie` (pl-tabling.c)."
+function reset_answer_table_tracked(ld::PL_local_data{T}, atrie::trie{T})::Nothing where {T}
+    if (atrie.flags & TRIE_ISTRACKED) != 0
+        tt_abolish_table(ld, atrie)
+        atrie.flags &= ~TRIE_ISTRACKED
+    end
+
+    return nothing
+end
+
 # PORT: pl-tabling.c destroy_answer_trie
 # (pl-tabling.c:4472-4492 at the pin.)
 # DIVERGES: the shared branch (`COMPLETE_WORKLIST(reset_answer_table)`) is refused by name, owner TH1. The worklist and IDG branches of
@@ -3743,6 +3761,7 @@ function destroy_answer_trie(ld::PL_local_data{T}, atrie::trie{T})::Bool where {
             rat_flags = vtrie.magic == TRIE_CMAGIC ? RAT_CLEANUP : 0
             reset_answer_table_worklist(ld, atrie, rat_flags)
             reset_answer_table_idg(ld, atrie, rat_flags)
+            reset_answer_table_tracked(ld, atrie)
             trie_delete(_query_gd(ld), vtrie, atrie.variant, true)
 
             return true
@@ -9492,6 +9511,7 @@ function abolish_table(ld::PL_local_data{T}, atrie::trie{T})::Bool where {T}
                 rat_flags = vtrie.magic == TRIE_CMAGIC ? RAT_CLEANUP : 0
                 reset_answer_table_worklist(ld, atrie, rat_flags)
                 reset_answer_table_idg(ld, atrie, rat_flags)
+                reset_answer_table_tracked(ld, atrie)
                 trie_delete(_query_gd(ld), vtrie, atrie.variant, true)
                 delete_orphan_dynamic_tables(ld, b)
             end
@@ -9572,6 +9592,7 @@ function reset_table_bulk(
     end
     reset_answer_table_worklist(ld, atrie, Int(RAT_CLEANUP | RAT_BULK))
     reset_answer_table_idg(ld, atrie, Int(RAT_CLEANUP | RAT_BULK))
+    reset_answer_table_tracked(ld, atrie)
     reset_answer_table(gd, atrie, Int(RAT_CLEANUP | RAT_BULK))
     atrie.variant = 0
 
