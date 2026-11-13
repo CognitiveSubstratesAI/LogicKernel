@@ -168,6 +168,18 @@ tw_n(1).
 tw_n(Y) :- tw_na(Y).
 tw_na(Y) :- tw_nb(Z), Y is Z + 1.
 tw_nb(Z) :- tw_n(Z0), Z0 < 20, Z is Z0 * 2.
+% twq08: the leader cleanup reports an UNEXPECTED result (message tabling(unexpected_result(_, C))) for every catcher but exit and fail
+:- dynamic tw_seen/1.
+:- multifile user:message_hook/3.
+user:message_hook(tabling(unexpected_result(_, C)), _, _) :- assertz(tw_seen(C)).
+tw_lf(R) :-
+    retractall(tw_seen(_)),
+    '$tbl_existing_variant_table'(0, user:tw_path(_, _), T, _, _),
+    ( '$tabling':'$tbl_leader'(0, fail, w, _, T) -> true ; true ),
+    findall(C, tw_seen(C), L1),
+    once('$tabling':'$tbl_leader'(0, member(_, [1,2]), w, _, T)),
+    findall(C, tw_seen(C), L2),
+    R = L1-L2.
 """
 
 const _TW_CASES = [
@@ -201,7 +213,8 @@ const _TW_CASES = [
     (
         "twv02",
         raw"tm_yn(reset(call_continuation(foo), _, _), R1), tm_yn(reset(call_continuation([]), _, _), R2), R = r(R1, R2)"
-    )
+    ),
+    ("twq08", raw"tw_lf(R0), R = R0")
 ]
 
 const _TW_PINNED = [
@@ -224,7 +237,8 @@ const _TW_PINNED = [
     "t_twm08 c[116,95,116,119,109,48,56]/1(c[114]/2(a[99,111,109,112,108,101,116,101],a[99,111,109,112,108,101,116,101]))",
     "t_twk01 c[116,95,116,119,107,48,49]/1(c[91,124,93]/2(i0,c[91,124,93]/2(i1,c[91,124,93]/2(i2,c[91,124,93]/2(i10,c[91,124,93]/2(i20,nil))))))",
     "t_twv01 c[116,95,116,119,118,48,49]/1(c[91,124,93]/2(i1,c[91,124,93]/2(i3,c[91,124,93]/2(i7,c[91,124,93]/2(i15,c[91,124,93]/2(i31,nil))))))",
-    "t_twv02 c[116,95,116,119,118,48,50]/1(c[114]/2(a[110,111],a[121,101,115]))"
+    "t_twv02 c[116,95,116,119,118,48,50]/1(c[114]/2(a[110,111],a[121,101,115]))",
+    "t_twq08 c[116,95,116,119,113,48,56]/1(c[45]/2(nil,c[91,124,93]/2(a[33],nil)))"
 ]
 
 @testset "tabled left and mutual recursion as swipl's (twl, twm)" begin
@@ -246,7 +260,7 @@ end
 @testset "the worklist rows are not vacuous" begin
     @test _TW_PINNED[1] == "ok"
     @test length(_TW_PINNED) == length(_TW_CASES) + 1
-    for pre in ("twl", "twm", "twk", "twv")
+    for pre in ("twl", "twm", "twk", "twv", "twq")
         ids = [id for (id, _) in _TW_CASES if startswith(id, pre)]
         @test !isempty(ids)
         @test length([l for l in _TW_PINNED if any(id -> startswith(l, "t_$id "), ids)]) ==
@@ -265,6 +279,8 @@ end
     @test all(occursin(v, ans("twv01")) for v in ("i1,", "i3,", "i7,", "i15,", "i31,"))
     # twv02: an ORDINARY reset/3 of call_continuation/1: a non-list fails (`no`), the empty list succeeds (`yes`)
     @test ans("twv02") == "c[114]/2(a[110,111],a[121,101,115])" && ans("twv02") != ans("twv01")
+    # twq08: the message hook saw NOTHING for the `fail` catcher (left of `-`) and the cut catcher `!` once (the positive control)
+    @test ans("twq08") == "c[45]/2(nil,c[91,124,93]/2(a[33],nil))"
     @test occursin("i12", ans("twl05"))         # 3 x 4 pairs: the cycle a-b-c-a and the exit c-d
 end
 

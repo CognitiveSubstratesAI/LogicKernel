@@ -216,7 +216,7 @@ MUTANTS = [
          file=TAB, targets=[TW],
          old="            c.status == SCC_COMPLETED && c.parent === nothing\n",
          new="            c.status == SCC_COMPLETED && c.parent !== nothing\n"),
-    dict(id="TB2-Q8 tbl_leader_finished reports a failing leader as an unexpected result, no `fail` catcher (KILL twl04: tw_path(d, _) fails, the cleanup prints tabling(unexpected_result) and the white-box component stays)",
+    dict(id="TB2-Q8 tbl_leader_finished reports a failing leader as an unexpected result, no `fail` catcher (KILL twq08: `'$tbl_leader'/5` called with the goal `fail` ends in the `fail` catcher, which swipl does not report; the mutant sends tabling(unexpected_result(_, fail)) to message_hook; tw_path(d, _) failing in twl04 happens AFTER the cleanup, whose catcher is `exit`, so twl04 cannot see it)",
          file=TAB, targets=[TW],
          old="    if a !== nothing &&\n        (sym_key(a) == sym_key(mk_sym(T, :exit)) || sym_key(a) == sym_key(mk_sym(T, :fail)))\n",
          new="    if a !== nothing &&\n        (sym_key(a) == sym_key(mk_sym(T, :exit)))\n"),
