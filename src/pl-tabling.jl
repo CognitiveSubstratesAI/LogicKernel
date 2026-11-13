@@ -5031,23 +5031,15 @@ end
 
 # PORT: pl-tabling.c call_complete_table
 # (pl-tabling.c:12321-12339 at the pin.)
-# DIVERGES: `idg_init_variant` and `idg_add_edge` are TB6's: both do nothing for a table that has no IDG node and whose
-# predicate is neither incremental nor monotonic (pl-tabling.c:8296, :8369), the only tables here; else refused by name.
-# `O_TRIE_STATS` is on: `gen_call` counts the private table.
+# DIVERGES: `O_TRIE_STATS` is on: `gen_call` counts the private table. The call to `idg_init_variant` passes `def` (never `nothing`
+# here), so its `variant` term is the unused 0, as upstream; `idg_add_edge(atrie, NULL)` returns 0 (failed), 1 or -1 (no current
+# node), and only 0 refuses the call, as `!idg_add_edge(...)` upstream does.
 "Register calling the complete table `atrie` and return `clref`, `fail` or `error` (atom words, pl-tabling.c)."
 function call_complete_table(
     ld::PL_local_data{T}, atrie::trie{T}, def::Definition{T}, clref::word
 )::word where {T}
-    if atrie.IDG !== nothing || (
-        def.tabling !== nothing &&
-        (def.tabling.flags & (TP_MONOTONIC | TP_INCREMENTAL)) != 0
-    )
-        tbl_refuse(
-            T,
-            :idg_init_variant,
-            "call_complete_table: an incremental or monotonic table (idg_init_variant, idg_add_edge)",
-            "TB6"
-        )
+    if !idg_init_variant(ld, atrie, def, 0) || idg_add_edge(ld, atrie, nothing) == 0
+        return _atom_word!(ld, mk_sym(T, PL_exception(ld, 0) != 0 ? :error : :fail))
     end
     atrie.gen_call += 1                             # atrie->stats.gen_call++
 

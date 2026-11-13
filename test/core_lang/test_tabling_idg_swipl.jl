@@ -611,3 +611,42 @@ end
     texts = [typ(t) for t in tabs]
     @test all(!isempty, texts) && length(unique(texts)) == 4
 end
+
+"""
+`call_complete_table(ld, atrie, def, clref)` of the kernel: `(the result: `clref` or `other`, the change of gen_call, `plain` or `node`)`.
+ONE extractor for every row of idg21.
+"""
+function _ti_call_complete(ld, atrie, def, clref)
+    g0 = atrie.gen_call
+    r = LK.call_complete_table(ld, atrie, def, clref)
+    return (r == clref ? "clref" : "other", atrie.gen_call - g0, atrie.IDG === nothing ? "plain" : "node")
+end
+
+@testset "idg21: call_complete_table registers the call of a complete table (idg_init_variant, idg_add_edge, pl-tabling.c:12328-12360)" begin
+    gd, ld, def = _ti_db()
+    tp = def.tabling::LK.table_props
+    saved = tp.flags
+    clref = LK.word(4242)
+    a = _ti_table!(ld, def, false)
+    @test _ti_call_complete(ld, a, def, clref) == ("clref", 1, "node")                   # an incremental predicate: the table gets its node; no current node (-1) is no failure
+    n = a.IDG::_TIN
+    @test _ti_call_complete(ld, a, def, clref) == ("clref", 1, "node") && a.IDG === n    # the second call keeps the node
+
+    # with a current node: the edge current -> table
+    ctab = _ti_table!(ld, def, true)
+    c = LK.idg_new(ld, ctab)::_TIN
+    ctab.IDG = c
+    @test LK.set_idg_current(ld, ctab)
+    b = _ti_table!(ld, def, true, 2)
+    @test _ti_call_complete(ld, b, def, clref) == ("clref", 1, "node")
+    @test _ti_live(c.dependent) == [b.IDG] && _ti_live(b.IDG.affected) == [c]
+
+    # a predicate that is neither incremental nor monotonic: no node, the call is counted
+    tp.flags = saved & ~(LK.TP_INCREMENTAL | LK.TP_MONOTONIC | LK.TP_LAZY)
+    p = _ti_table!(ld, def, true, 3)
+    @test _ti_call_complete(ld, p, def, clref) == ("clref", 1, "plain")
+    tp.flags = saved
+
+    # a must-fail corruption: the plain and the incremental table differ in the one extractor
+    @test _ti_call_complete(ld, p, def, clref) != _ti_call_complete(ld, b, def, clref)
+end

@@ -36,7 +36,7 @@ TF = "test/core_lang/test_tabling_wfs_swipl.jl"
 AB = "test/core_lang/test_tabling_abolish_swipl.jl"
 TARGETS = [TM, TI, TMIN]
 # TB7M5 (the refusal sites lifted from the merged tree, audit D-0238): every file that reaches the lifted code through start_tabling, a tabled call or the
-# variant-table predicates. KILL ROWS: idg08-idg10 (swipl-pinned, TI), idg16-idg20 (white-box, TI), mono09 (swipl-pinned, TM), mono12 (white-box, TM).
+# variant-table predicates. KILL ROWS: idg08-idg10 (swipl-pinned, TI), idg16-idg22 (white-box, TI), mono09 (swipl-pinned, TM).
 TARGETS5 = [TM, TI, TMIN, TV, TW, TA, TF, AB]
 TAB = "src/pl-tabling.jl"
 MUTANTS = [
@@ -352,4 +352,17 @@ MUTANTS = [
          file=TAB, targets=TARGETS5,
          old="            return PL_unify_atom(ld, A2, mk_sym(T, :incremental)) ? FTRUE : FFALSE\n",
          new="            return PL_unify_atom(ld, A2, mk_sym(T, :normal)) ? FTRUE : FFALSE\n"),
+    # ── TB7M6: call_complete_table (pl-tabling.c:12328-12360) ──
+    dict(id='TB7M6-C1 call_complete_table gives the table no IDG node (KILL idg21: `node` for an incremental predicate; idg08 at the stack)',
+         file=TAB, targets=TARGETS5,
+         old="    if !idg_init_variant(ld, atrie, def, 0) || idg_add_edge(ld, atrie, nothing) == 0\n",
+         new="    if idg_add_edge(ld, atrie, nothing) == 0\n"),
+    dict(id='TB7M6-C2 call_complete_table fails when there is no current node (KILL idg21: `clref` with no current node, -1 is no failure)',
+         file=TAB, targets=TARGETS5,
+         old="    if !idg_init_variant(ld, atrie, def, 0) || idg_add_edge(ld, atrie, nothing) == 0\n",
+         new="    if !idg_init_variant(ld, atrie, def, 0) || idg_add_edge(ld, atrie, nothing) != 1\n"),
+    dict(id='TB7M6-C3 call_complete_table adds no edge from the current node (KILL idg21: `c.dependent == [b.IDG]`)',
+         file=TAB, targets=TARGETS5,
+         old="    if !idg_init_variant(ld, atrie, def, 0) || idg_add_edge(ld, atrie, nothing) == 0\n",
+         new="    if !idg_init_variant(ld, atrie, def, 0)\n"),
 ]
