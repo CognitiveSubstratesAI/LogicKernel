@@ -197,7 +197,11 @@ const _TW_CASES = [
         raw"tw_status(user:tw_r1(_, _), S1), tw_status(user:tw_r2(_, _), S2), R = r(S1, S2)"
     ),
     ("twk01", raw"findall(X, tw_k(X), L0), msort(L0, L), R = L"),
-    ("twv01", raw"findall(Y, tw_n(Y), L0), msort(L0, L), R = L")
+    ("twv01", raw"findall(Y, tw_n(Y), L0), msort(L0, L), R = L"),
+    (
+        "twv02",
+        raw"tm_yn(reset(call_continuation(foo), _, _), R1), tm_yn(reset(call_continuation([]), _, _), R2), R = r(R1, R2)"
+    )
 ]
 
 const _TW_PINNED = [
@@ -219,7 +223,8 @@ const _TW_PINNED = [
     "t_twm07 c[116,95,116,119,109,48,55]/1(nil)",
     "t_twm08 c[116,95,116,119,109,48,56]/1(c[114]/2(a[99,111,109,112,108,101,116,101],a[99,111,109,112,108,101,116,101]))",
     "t_twk01 c[116,95,116,119,107,48,49]/1(c[91,124,93]/2(i0,c[91,124,93]/2(i1,c[91,124,93]/2(i2,c[91,124,93]/2(i10,c[91,124,93]/2(i20,nil))))))",
-    "t_twv01 c[116,95,116,119,118,48,49]/1(c[91,124,93]/2(i1,c[91,124,93]/2(i3,c[91,124,93]/2(i7,c[91,124,93]/2(i15,c[91,124,93]/2(i31,nil))))))"
+    "t_twv01 c[116,95,116,119,118,48,49]/1(c[91,124,93]/2(i1,c[91,124,93]/2(i3,c[91,124,93]/2(i7,c[91,124,93]/2(i15,c[91,124,93]/2(i31,nil))))))",
+    "t_twv02 c[116,95,116,119,118,48,50]/1(c[114]/2(a[110,111],a[121,101,115]))"
 ]
 
 @testset "tabled left and mutual recursion as swipl's (twl, twm)" begin
@@ -258,6 +263,8 @@ end
     @test all(occursin(v, ans("twk01")) for v in ("i1,", "i2,", "i10,", "i20,"))
     # twv01: the answers 1,3,7,15,31 pass through the two-frame continuation (tw_nb then tw_na), one extractor
     @test all(occursin(v, ans("twv01")) for v in ("i1,", "i3,", "i7,", "i15,", "i31,"))
+    # twv02: an ORDINARY reset/3 of call_continuation/1: a non-list fails (`no`), the empty list succeeds (`yes`)
+    @test ans("twv02") == "c[114]/2(a[110,111],a[121,101,115])" && ans("twv02") != ans("twv01")
     @test occursin("i12", ans("twl05"))         # 3 x 4 pairs: the cycle a-b-c-a and the exit c-d
 end
 

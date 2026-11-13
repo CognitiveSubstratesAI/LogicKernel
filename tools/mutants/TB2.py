@@ -263,7 +263,7 @@ MUTANTS = [
          old="        status = :active\n    elseif scc.status == SCC_MERGED\n",
          new="        status = :merged\n    elseif scc.status == SCC_MERGED\n"),
     # ── the engine hooks (pl-vmi.c:4823-5839, pl-wam.c:873-944, pl-cont.c:586-626) ──
-    dict(id="TB2-V1 I_RESET takes the dtbl_reset6 branch for every OTHER predicate, `!==` for `===` (KILL twl01 and test_cont_run_swipl.jl: an ordinary reset/3 pushes its continuation list as a tabling frame)",
+    dict(id="TB2-V1 I_RESET takes the dtbl_reset6 branch for every OTHER predicate, `!==` for `===` (KILL twv02: `reset(call_continuation(foo), _, _)` is an ORDINARY reset/3, the mutant pushes `foo` as a tabling continuation list and raises type_error(continuation, foo) where swipl fails; the tabled path alone is unchanged, it calls call_continuation/1 normally, so twl/twm cannot see it)",
          file=WAM, targets=[TW, TCR],
          old="    if ld.frames[FR].predicate === gd.procedures_dtbl_reset6.definition    # FR->predicate == PROCEDURE_dtbl_reset6->definition\n",
          new="    if ld.frames[FR].predicate !== gd.procedures_dtbl_reset6.definition    # FR->predicate == PROCEDURE_dtbl_reset6->definition\n"),
