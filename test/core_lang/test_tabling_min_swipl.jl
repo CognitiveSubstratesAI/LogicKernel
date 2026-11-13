@@ -114,6 +114,8 @@ tm_w13(1).
 tm_w13(2).
 tm_w14(1, 2).
 tm_w15(1, 2, 3).
+tm_d01(1).
+tm_d02(1).
 tm_c01(1).
 :- tm_wrap(tm_c01(_), n1, C, _), assertz(tm_ck(c01, C)).
 tm_c01(2).
@@ -326,6 +328,17 @@ const _TM_CASES = [
     (
         "tmc07",
         raw"tm_ck(c06, C0), tm_wrap(tm_c06(_), n1, C1, _), tm_same(C0, C1, S), tm_nc(tm_c06(_), A), tm_nc('$wrap$tm_c06'(_), B), R = r(S, A, B)"
+    ),
+    # tmd: a wrapped predicate made dynamic and abolished at run time (R2 WRAP1: setDynamicDefinition!(gd, ...) and
+    # resetProcedure!(gd, ...) reset the wrapped supervisor and keep the wrapper; pl-proc.c, pl-supervisor.c:108-129).
+    # UNVERIFIED on the kernel: gate decides.
+    (
+        "tmd01",
+        raw"tm_wrap(tm_d01(_), n1, C1, _), '$set_predicate_attribute'(user:tm_d01(_), dynamic, true), tm_wrap(tm_d01(_), n1, C2, _), tm_same(C1, C2, S), tm_get(tm_d01(_), dynamic, D), R = r(S, D)"
+    ),
+    (
+        "tmd02",
+        raw"tm_wrap(tm_d02(_), n1, C1, _), '$set_predicate_attribute'(user:tm_d02(_), dynamic, true), abolish(user:tm_d02/1), tm_wrap(tm_d02(_), n1, C2, _), tm_same(C1, C2, S), R = S"
     )
 ]
 
@@ -398,7 +411,9 @@ const _TM_PINNED = [
     "t_tmc04 c[116,95,116,109,99,48,52]/1(c[114]/2(i2,i1))",
     "t_tmc05 c[116,95,116,109,99,48,53]/1(c[114]/4(i1,i1,i2,i1))",
     "t_tmc06 c[116,95,116,109,99,48,54]/1(a[115,97,109,101])",
-    "t_tmc07 c[116,95,116,109,99,48,55]/1(c[114]/3(a[115,97,109,101],i2,i1))"
+    "t_tmc07 c[116,95,116,109,99,48,55]/1(c[114]/3(a[115,97,109,101],i2,i1))",
+    "t_tmd01 c[116,95,116,109,100,48,49]/1(c[114]/2(a[115,97,109,101],i1))",
+    "t_tmd02 c[116,95,116,109,100,48,50]/1(a[115,97,109,101])"
 ]
 
 function _tm_file()::Tuple{String, Vector{String}}
@@ -637,7 +652,7 @@ end
 @testset "the tabling minimum rows are not vacuous" begin
     @test _TM_PINNED[1] == "ok"
     @test length(_TM_PINNED) == length(_TM_CASES) + 1
-    for pre in ("tmt", "tma", "tmw", "tmc")
+    for pre in ("tmt", "tma", "tmw", "tmc", "tmd")
         ids = [id for (id, _) in _TM_CASES if startswith(id, pre)]
         @test !isempty(ids)
         @test length([l for l in _TM_PINNED if any(id -> startswith(l, "t_$id "), ids)]) ==
@@ -657,6 +672,8 @@ end
     @test occursin(_tm_codes("same"), ans("tmc02")) &&
         occursin(_tm_codes("same"), ans("tmc06"))   # the wrapper survived the clause adds (T5)
     @test ans("tmc03") != ans("tmc02")            # two layers: both found, but the layers differ
+    @test occursin(_tm_codes("same"), ans("tmd01")) &&
+        occursin(_tm_codes("same"), ans("tmd02"))   # the wrapper survived making the predicate dynamic and abolishing it (WRAP1)
 end
 
 @testset "the pins are swipl's (live, when swipl is on PATH)" begin

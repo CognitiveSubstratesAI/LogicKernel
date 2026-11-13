@@ -4146,7 +4146,7 @@ function assert_term!(
             PL_error(ld, ERR_MODIFY_STATIC_PROC, proc)
             return nothing                                      # derror: freeClause(clause)
         end
-        setDynamicDefinition!(def, true) || return nothing
+        setDynamicDefinition!(gd, def, true) || return nothing
     end
     cref = assertProcedure!(gd, ld, proc, clause, where_)
     cref === nothing && return nothing                          # (SSU1: add_ssu_clause refused it)
@@ -4362,7 +4362,7 @@ function pl_compile_predicates1_va(
             gd, ld, desc, MODULE_user(gd), GP_NAMEARITY | GP_FINDHERE | GP_EXISTENCE_ERROR
         )
         proc === nothing && return FFALSE
-        setDynamicDefinition!(proc.definition, false) || return FFALSE
+        setDynamicDefinition!(gd, proc.definition, false) || return FFALSE
     end
     return PL_get_nil_ex(ld, tail) ? FTRUE : FFALSE
 end

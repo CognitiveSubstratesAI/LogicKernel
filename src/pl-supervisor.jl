@@ -57,8 +57,10 @@ freeSupervisor(def::Definition, codes::Vector{code}, do_linger::Bool)::Nothing =
 # PORT: pl-supervisor.c freeCodesDefinition as freeCodesDefinition!
 # DIVERGES: the side table is left as it is: `S_VIRGIN` has no operand to read it. The WRAPPER branch needs the closure a
 # wrapper supervisor names, which is found in the database's table (`gd.closure_refs`): the method with `gd` is the whole
-# function, and the method without `gd` raises a named error for a wrapped predicate (the callers without a database are
-# `setDynamicDefinition!`, `resetProcedure!`, `setThreadLocalDefinition!`; threading `gd` through them is TAB1's).
+# function, and the method without `gd` raises a named error for a wrapped predicate. Since R2 WRAP1 every run-time caller
+# passes the database (`setDynamicDefinition!(gd, ...)`, `resetProcedure!(gd, ...)`, `setThreadLocalDefinition!` through `ld.GD`);
+# the methods of `setDynamicDefinition!` and `resetProcedure!` without `gd` stay for the callers that have none (tests, the
+# precompile workload), and refuse a wrapped predicate by name.
 "Reset `def`'s supervisor to the shared `S_VIRGIN`; a wrapped predicate keeps its wrapper and resets the wrapped supervisor (pl-supervisor.c `freeCodesDefinition`)."
 function freeCodesDefinition!(
     gd::PL_global_data{T}, def::Definition{T}, do_linger::Bool

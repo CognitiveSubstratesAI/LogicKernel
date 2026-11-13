@@ -24,6 +24,8 @@ tm_w13(1).
 tm_w13(2).
 tm_w14(1, 2).
 tm_w15(1, 2, 3).
+tm_d01(1).
+tm_d02(1).
 tm_c01(1).
 :- tm_wrap(tm_c01(_), n1, C, _), assertz(tm_ck(c01, C)).
 tm_c01(2).
@@ -114,3 +116,5 @@ t_tmc04(R) :- catch((tm_nc(tm_c04(_), A), tm_nc('$wrap$tm_c04'(_), B), R = r(A, 
 t_tmc05(R) :- catch((tm_get(tm_c05(_), tabled, T), tm_get(tm_c05(_), tabled_variant, V), tm_nc(tm_c05(_), A), tm_nc('$wrap$tm_c05'(_), B), R = r(T, V, A, B)), error(SsuE, _), R = raised(SsuE)).
 t_tmc06(R) :- catch((tm_ck(c05, C0), tm_wrap(tm_c05(_), table, C1, _), tm_same(C0, C1, R)), error(SsuE, _), R = raised(SsuE)).
 t_tmc07(R) :- catch((tm_ck(c06, C0), tm_wrap(tm_c06(_), n1, C1, _), tm_same(C0, C1, S), tm_nc(tm_c06(_), A), tm_nc('$wrap$tm_c06'(_), B), R = r(S, A, B)), error(SsuE, _), R = raised(SsuE)).
+t_tmd01(R) :- catch((tm_wrap(tm_d01(_), n1, C1, _), '$set_predicate_attribute'(user:tm_d01(_), dynamic, true), tm_wrap(tm_d01(_), n1, C2, _), tm_same(C1, C2, S), tm_get(tm_d01(_), dynamic, D), R = r(S, D)), error(SsuE, _), R = raised(SsuE)).
+t_tmd02(R) :- catch((tm_wrap(tm_d02(_), n1, C1, _), '$set_predicate_attribute'(user:tm_d02(_), dynamic, true), abolish(user:tm_d02/1), tm_wrap(tm_d02(_), n1, C2, _), tm_same(C1, C2, S), R = S), error(SsuE, _), R = raised(SsuE)).

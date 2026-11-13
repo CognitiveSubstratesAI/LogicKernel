@@ -154,8 +154,8 @@ MUTANTS = [
          old="if isCallWrapper(codes[skipWrapperPrefix(codes)])\n            throw(",
          new="if false\n            throw("),
     dict(id="TAB1MIN-D10 _assertDefinition! calls the 2-argument freeCodesDefinition!: a clause added to a wrapped predicate raises (KILL tmc01-tmc07: the program does not load)", file=PR, targets=TM,
-         old="freeCodesDefinition!(gd, def, true)",
-         new="freeCodesDefinition!(def, true)"),
+         old="freeCodesDefinition!(gd, def, true)\n",
+         new="freeCodesDefinition!(def, true)\n"),
     # ── T3: pl-vmi.c S_WRAP / S_CALLWRAPPER / S_TABLED, pl-supervisor.c MAKE_SV1(wrapper, S_WRAP), the run loop's named refusals ──
     # (every KILL names the white-box testset "wrapper opcodes and the wrapper block (T3, LK-only)", test/core_lang/test_tabling_min_swipl.jl:451-496)
     dict(id="TAB1MIN-E1 initSupervisors builds the wrapper block from S_TABLED (KILL test_tabling_min_swipl.jl:471 `cd.wrapper == code[S_WRAP, I_EXIT]`; :492 the entered block raises S_TABLED, not S_WRAP)", file=SV, targets=TM,

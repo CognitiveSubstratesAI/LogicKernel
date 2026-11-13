@@ -509,6 +509,27 @@ function setDynamicDefinition!(def::Definition, isdyn::Bool)::Bool
     return true
 end
 
+# PORT: pl-proc.c setDynamicDefinition
+# DIVERGES: the method with the database `gd` (R2 WRAP1): `freeCodesDefinition!(gd, ...)` is the whole function and resets
+# the supervisor a wrapper (`'$wrap_predicate'/5`, tabling) wraps; the method without it above refuses a wrapped predicate
+# by name and is for the callers that have no database (the tests, the precompile workload).
+"`setDynamicDefinition!(def, isdyn)` with the database: a wrapped predicate keeps its wrapper (pl-proc.c)."
+function setDynamicDefinition!(
+    gd::PL_global_data{T}, def::Definition{T}, isdyn::Bool
+)::Bool where {T}
+    if (isdyn && (def.flags & P_DYNAMIC) != 0) || (!isdyn && (def.flags & P_DYNAMIC) == 0)
+        return true
+    end
+    if isdyn                                            # static --> dynamic
+        def.flags |= P_DYNAMIC | P_TRANSACT
+        freeCodesDefinition!(gd, def, true)             # reset to S_VIRGIN
+    else                                                # dynamic --> static
+        def.flags &= ~(P_DYNAMIC | P_TRANSACT)
+        freeCodesDefinition!(gd, def, true)             # reset to S_VIRGIN
+    end
+    return true
+end
+
 # PORT: pl-proc.c newClauseRef
 "A clause reference to `clause` with index key `key` (pl-proc.c)."
 newClauseRef(clause::Clause{T}, key::word) where {T} =
@@ -1090,6 +1111,27 @@ function resetProcedure!(proc::Procedure{T}, isnew::Bool)::Nothing where {T}
     return nothing
 end
 
+# PORT: pl-proc.c resetProcedure
+# DIVERGES: the method with the database `gd` (R2 WRAP1), as `setDynamicDefinition!(gd, ...)`: a wrapped predicate keeps its
+# wrapper; the method without it above refuses a wrapped predicate by name.
+"`resetProcedure!(proc, isnew)` with the database: a wrapped predicate keeps its wrapper (pl-proc.c)."
+function resetProcedure!(
+    gd::PL_global_data{T}, proc::Procedure{T}, isnew::Bool
+)::Nothing where {T}
+    def = proc.definition
+    defined = def.impl_clauses.first_clause !== nothing || def.impl_foreign_function != 0
+    if (def.flags & P_DYNAMIC) != 0 || !defined
+        isnew = true
+    end
+    def.flags &= (SPY_ME | P_DIRTYREG)                  # flags0 ^ (flags0 & ~(SPY_ME|P_DIRTYREG))
+    def.impl_clauses.number_of_clauses = 0x00000000
+    destroy_event_list!(def)                            # if ( def->events ) destroy_event_list(&def->events) (EV1)
+    def.tabling === nothing || tbl_reset_tabling_attributes!(def)   # if ( def->tabling ) tbl_reset_tabling_attributes(def)
+    deleteIndexes!(def, def.impl_clauses, isnew)
+    freeCodesDefinition!(gd, def, !isnew)
+    return nothing
+end
+
 # PORT: pl-proc.c removeClausesPredicate
 # DIVERGES: no threads, statistics (`erased_size`, `erased`, `dirty`, `code_size`), debug registration (`registerRetracted`)
 # or final-cleanup branch (`CLN_DATA`); the database `gd` is an argument.
@@ -1146,13 +1188,13 @@ function abolishProcedure!(
             ClauseRef{T}[], cd, 0, m.index, 1           # newDefinition: shared 1
         )
         proc.definition = ndef
-        resetProcedure!(proc, true)
+        resetProcedure!(gd, proc, true)
         unshareDefinition(def)
     elseif (def.flags & P_FOREIGN) != 0                 # foreign: make normal
         def.impl_clauses.first_clause = nothing
         def.impl_clauses.last_clause = nothing
         def.impl_foreign_function = 0                   # (the union member of `first_clause`)
-        resetProcedure!(proc, true)
+        resetProcedure!(gd, proc, true)
     elseif (def.flags & P_THREAD_LOCAL) != 0
         return PL_error(
             ld, ERR_PERMISSION_PROC, mk_sym(T, :modify),
@@ -1160,8 +1202,8 @@ function abolishProcedure!(
         )
     else                                                # normal Prolog procedure
         removeClausesPredicate!(gd, def, 0, false)
-        setDynamicDefinition!(def, false)
-        resetProcedure!(proc, false)
+        setDynamicDefinition!(gd, def, false)
+        resetProcedure!(gd, proc, false)
     end
     return true
 end
@@ -1697,7 +1739,7 @@ function setThreadLocalDefinition!(
         def.impl_clauses.first_clause !== nothing &&
             return PL_error(ld, ERR_MODIFY_STATIC_PROC, def, "")
         def.flags |= P_DYNAMIC | P_TRANSACT | P_VOLATILE | P_THREAD_LOCAL
-        freeCodesDefinition!(def, true)                     # def->codes = SUPERVISOR(thread_local)
+        freeCodesDefinition!(_query_gd(ld), def, true)      # def->codes = SUPERVISOR(thread_local)
         return true
     end
     return PL_error(ld, ERR_MODIFY_STATIC_PROC, def, "predicate is thread-local")   # local --> static
@@ -1728,7 +1770,7 @@ end
 function setAttrDefinition(
     ld::PL_local_data{T}, def::Definition{T}, attr::UInt64, val::Bool
 )::Bool where {T}
-    attr == P_DYNAMIC && return setDynamicDefinition!(def, val)
+    attr == P_DYNAMIC && return setDynamicDefinition!(_query_gd(ld), def, val)
     attr == P_THREAD_LOCAL && return setThreadLocalDefinition!(ld, def, val)
     attr == P_CLAUSABLE && return setClausableDefinition!(_query_gd(ld), ld, def, val)
     attr == P_DET && throw(
@@ -2199,7 +2241,7 @@ function pl_retract1_va(
             if isDefinedProcedure(gd, proc)
                 return PL_error(ld, ERR_MODIFY_STATIC_PROC, proc) ? FTRUE : FFALSE
             end
-            setDynamicDefinition!(def, true)            # implicit
+            setDynamicDefinition!(gd, def, true)        # implicit
             return FFALSE                               # no clauses
         end
 
@@ -2321,7 +2363,7 @@ function pl_retractall1_va(
             PL_error(ld, ERR_MODIFY_STATIC_PROC, proc)
             return FFALSE
         end
-        return setDynamicDefinition!(def, true) ? FTRUE : FFALSE      # nothing to retract
+        return setDynamicDefinition!(gd, def, true) ? FTRUE : FFALSE  # nothing to retract
     end
     return pl_retractall!(gd, ld, def, thehead) ? FTRUE : FFALSE
 end
