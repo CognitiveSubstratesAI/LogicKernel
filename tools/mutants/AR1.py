@@ -9,6 +9,7 @@
 # call (pl_ar_add, ar_minus, PL_unify_number) are mutated by the lists that own them, with test_arith_swipl.jl as target.
 TL = ["test/core_lang/test_arith_preds_swipl.jl"]
 TR = ["test/core_lang/test_arith_random_swipl.jl", "test/core_lang/test_arith_swipl.jl"]  # group 2: set_random/1, random_property/1, random/1, random_float/0
+TV2 = ['test/core_lang/test_arith_vmi_swipl.jl', 'test/core_lang/test_arith_wakeup_swipl.jl']  # the A_* run-loop exits: the white-box rows and the A_IS wakeup rows
 TB = ["test/core_lang/test_arith_round_swipl.jl", "test/core_lang/test_arith_swipl.jl", "test/core_lang/test_prolog_flag_swipl.jl"]  # group (b): directed rounding
 TBF = TB + ["test/core_lang/test_set_flag_swipl.jl"]
 TC = ["test/core_lang/test_arith_curfn_swipl.jl"]  # group (c): current_arithmetic_function/1 (the only test that calls it)
@@ -743,13 +744,19 @@ MUTANTS = [
     dict(id='AR1-E134 mark_bvar_access: A_VAR2 is not a read (KILL the moved-unification row, slot 2)', file='src/pl-comp.jl', targets=TD3,
          old='elseif c == B_VAR2 || c == A_VAR2',
          new='elseif c == B_VAR2'),
-    dict(id='AR1-E135 a_status: an arithmetic error goes on (KILL the exception rows: A_ADD, A_VAR, common_an)', file='src/pl-wam.jl', targets=['test/core_lang/test_arith_vmi_swipl.jl'],
+    dict(id='AR1-E135 a_status: an arithmetic error goes on (KILL the exception rows: A_ADD, A_VAR, common_an)', file='src/pl-wam.jl', targets=TV2,
          old='    ts_st == _TS_AR_THROW && @goto ar_throw ',
          new='    ts_st == _TS_AR_THROW && @goto next_instruction '),
-    dict(id='AR1-E136 a_status: a failed A_IS goes on (KILL the bound-different rows)', file='src/pl-wam.jl', targets=['test/core_lang/test_arith_vmi_swipl.jl'],
+    dict(id='AR1-E136 a_status: a failed A_IS goes on (KILL the bound-different rows)', file='src/pl-wam.jl', targets=TV2,
          old='    ts_st == _TS_BODY_FAILED && @goto shallow_backtrack ',
          new='    ts_st == _TS_BODY_FAILED && @goto next_instruction '),
-    dict(id='AR1-E137 a_status: a failed comparison goes on (KILL every failing compare row)', file='src/pl-wam.jl', targets=['test/core_lang/test_arith_vmi_swipl.jl'],
+    dict(id='AR1-E137 a_status: a failed comparison goes on (KILL every failing compare row)', file='src/pl-wam.jl', targets=TV2,
          old='    if ts_st == _TS_FASTCOND_FAILED\n',
          new='    if ts_st == _TS_FASTCOND_FAILED && false\n'),
+    dict(id='AR1-E138 _vmi_a_is!: a binding that raised the wakeup bit does not ask for the wakeup (KILL every wakeup row of test_arith_wakeup_swipl)', file='src/pl-wam.jl', targets=TV2,
+         old='(ld.alerted & ALERT_WAKEUP) != 0 && return _TS_CHECK_WAKEUP',
+         new='(ld.alerted & ALERT_WAKEUP) != 0 && return _TS_NEXT'),
+    dict(id='AR1-E139 a_status: the wakeup the A_IS body asked for is not run (KILL the wakeup rows: the hook runs late or never)', file='src/pl-wam.jl', targets=TV2,
+         old='    ts_st == _TS_CHECK_WAKEUP && @goto check_wakeup ',
+         new='    ts_st == _TS_CHECK_WAKEUP && @goto next_instruction '),
 ]
