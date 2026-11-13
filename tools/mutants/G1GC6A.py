@@ -11,6 +11,8 @@
 #   TP = "gc_trail_phase" (the marks' trail counts, one chain per distinct trail height); CK = "gc_check_trail_chains";
 #   WB = "compact_global on a hand-marked heap" (run twice: the chain head INSIDE the garbage run, where downskip unwinds it, and ON its top cell, where the
 #     main scan does; the `total = 7` row); DS = "downskip_combine_garbage"; VT = "value table: tombstones"; UM = "unsweep_mark";
+#   NQ = "nested query: gc_choice_indices and unsweep_stacks continue" (a query opened inside another: the `q.parent == 0` break of gc_choice_indices, hence of
+#     gc_alien_trailtops's choice loop, and of unsweep_stacks; their `false && break` form is EQUIVALENT, a top query's saved_environment is 0 and ends the loop itself);
 #   LQ = "live query: unsweep_environments" (a running query with choicepoints); AT = "gc_alien_trailtops" (a NoMark frame); CO = "corruptions".
 # THE is_first ARMS OF UNMARKED CELLS (compact_global's `elseif is_first(w)` and downskip's `update_relocation_chain(ld, sw, cur, dest)`): in the kernel a relocation
 #   chain head is always a LIVE cell (sweep_global_mark chains the highest marked cell at or below a height), so those two arms run only for a chain made by
@@ -157,4 +159,11 @@ MUTANTS = [
     m("G1GC6A-W1 gc_choice_indices: only the first choicepoint is listed (KILL LQ: `gc_choice_indices == chs`)",
       "            push!(out, ch)\n            ch = ld.choices[ch].parent\n",
       "            push!(out, ch)\n            ch = 0\n"),
+    # ---- the walk into a PARENT query (a nested query row: for a top query `saved_environment == 0` ends the loop by itself, so only a nested query sees the break)
+    m("G1GC6A-W2 gc_choice_indices: the walk ends at a query that HAS a parent (KILL NQ: `gc_choice_indices == vcat(chs2, chs1)` of \"nested query: gc_choice_indices and unsweep_stacks continue ...\")",
+      "        q.parent == 0 && break\n        fr = q.saved_environment\n        ch = q.saved_bfr\n    end\n    return out\n",
+      "        q.parent != 0 && break\n        fr = q.saved_environment\n        ch = q.saved_bfr\n    end\n    return out\n"),
+    m("G1GC6A-U5 unsweep_stacks: the walk ends at a query that HAS a parent (KILL NQ: `unsweep_stacks(ld, vm) == length(chs2) + length(chs1)`)",
+      "        q.parent == 0 && break\n        fr = q.saved_environment\n        ch = q.saved_bfr\n    end\n    return n\n",
+      "        q.parent != 0 && break\n        fr = q.saved_environment\n        ch = q.saved_bfr\n    end\n    return n\n"),
 ]

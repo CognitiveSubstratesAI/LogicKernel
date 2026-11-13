@@ -571,6 +571,73 @@ end
     @test ran[] >= 1
 end
 
+# NQ: a NESTED query. `q.parent == 0` ends the walk of gc_choice_indices and unsweep_stacks (pl-gccompact.jl): for a top query `saved_environment` is 0, so the
+# loop ends by itself and a single-query row cannot see the `break`; a query opened while another is open (its parent) must be followed into the parent's choicepoints.
+# The nested query is opened by hand at the first answer of the outer one (a foreign callback's PL_open_query); `ld.environment_frame` is the outer query's frame, set
+# by hand when the engine left it 0, and put back with the nested query closed.
+@testset "nested query: gc_choice_indices and unsweep_stacks continue into the choicepoints of the parent query (q.parent != 0)" begin
+    clauses = Tuple{_R, Union{Nothing, _R}}[
+        (_rf("n", _rf("p", _rg(Int64(1)), _rg(2.25))), nothing),
+        (_rf("n", _rf("p", _rg(Int64(2)), _rg(3.25))), nothing),
+        (_rf("n", _rf("p", _rg(Int64(3)), _rg(4.25))), nothing),
+    ]
+    db = _rdb(clauses)
+    gd, ld = db.gd, db.ld
+    ran = Ref(0)
+    _rcall(
+        db, _rf("n", _rv(90));
+        at = (qid, k) -> begin
+            k == 1 || return nothing
+            ran[] += 1
+            qf1 = ld.query
+            chain(ch0) = (c = Int[]; ch = ch0; while ch != 0; push!(c, ch); ch = ld.choices[ch].parent; end; c)
+            chs1 = chain(ld.BFR)                                   # the outer query's choicepoints
+            @test length(chs1) >= 2 && ld.queries[qf1].parent == 0
+            env0 = ld.environment_frame
+            ld.environment_frame == 0 && (ld.environment_frame = ld.queries[qf1].frame)
+            fid2 = LK.PL_open_foreign_frame(ld)
+            args2 = LK.PL_new_term_refs(ld, 1)
+            LK.putSlotValue!(ld, args2 + 1, _rv(91), LK.PutVarMap())
+            qid2 = LK.PL_open_query(
+                gd, ld, nothing, LK.PL_Q_NORMAL | LK.PL_Q_EXT_STATUS, _rproc(db, _rf("n", _rv(1))), args2
+            )
+            @test qid2 != 0
+            @test LK.PL_next_solution(gd, ld, qid2) == LK.PL_S_TRUE
+            qf2 = ld.query
+            q2 = ld.queries[qf2]
+            @test qf2 != qf1 && q2.parent == qf1                   # the nested query's parent is the outer one
+            @test q2.saved_environment != 0 && q2.saved_bfr == chs1[1]
+            chs2 = chain(ld.BFR)                                   # the nested query's own choicepoints
+            @test length(chs2) >= 2 && isdisjoint(chs1, chs2)
+            cl = findfirst(c -> ld.choices[c].type == LK.CHP_CLAUSE, chs2)
+            @test cl !== nothing
+            fi2 = ld.choices[chs2[cl]].frame
+            @test fi2 != 0 && LK.gc_top_query(ld, fi2) == qf2
+            vm = LK.vm_state()
+            vm.frame = fi2
+            vm.choice = ld.BFR
+            vm.pc_start_vmi = 0
+            all_chs = vcat(chs2, chs1)
+            @test LK.gc_choice_indices(ld, vm) == all_chs          # NQ: the walk goes on into the parent's chain (G1GC6A-W2)
+            saved = [ld.choices[c].mark for c in all_chs]
+            for (j, c) in enumerate(all_chs)
+                enc(pos, stg) = reinterpret(Int, LK.consPtr(pos, stg))
+                ld.choices[c].mark = LK.mark(enc(j + 1, LK.STG_STATIC), enc(10 + j, LK.STG_GLOBAL), enc(20 + j, LK.STG_GLOBAL))
+            end
+            @test LK.unsweep_stacks(ld, vm) == length(chs2) + length(chs1)    # NQ: and so does unsweep_stacks (G1GC6A-U5)
+            @test all(j -> ld.choices[all_chs[j]].mark == LK.mark(j, 10 + j, 20 + j), eachindex(all_chs))
+            for (j, c) in enumerate(all_chs)
+                ld.choices[c].mark = saved[j]
+            end
+            LK.PL_close_query(ld, qid2)
+            LK.PL_close_foreign_frame(ld, fid2)
+            ld.environment_frame = env0
+            @test ld.query == qf1
+        end,
+    )
+    @test ran[] >= 1
+end
+
 @testset "corruptions of the comparison MUST FAIL" begin
     R = _gc6_run()
     ld, pre = R.ld, R.pre
