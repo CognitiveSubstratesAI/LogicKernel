@@ -622,6 +622,95 @@ function fix_metapredicate(gd::PL_global_data{T}, r::p_reload{T})::Nothing where
     return nothing
 end
 
+# Is `def` the `'$tabled'/2` predicate? (upstream's `def->functor->functor == FUNCTOR_dtabled2`)
+_is_dtabled2(def::Definition{T}) where {T} =
+    def.arity == 2 && def.functor_name == sym_key(mk_sym(T, Symbol("\$tabled")))
+
+# PORT: pl-srcfile.c delete_old_predicate
+# (swipl-devel 18168e62, src/pl-srcfile.c:1458-1498)
+# DIVERGES: the `'$tabled'/2` arm (`untable_from_clause` for each live clause, pl-srcfile.c:1465-1479) is a NAMED refusal (owner TAB1);
+# `removeClausesPredicate!` takes the database; the debug message is not kept.
+"Remove the clauses `sf` gave the predicate `proc`, which a reload of `sf` did not define again (pl-srcfile.c)."
+function delete_old_predicate!(
+    gd::PL_global_data{T}, sf::SourceFile{T}, proc::Procedure{T}
+)::Nothing where {T}
+    def = proc.definition
+
+    if _is_dtabled2(def)
+        throw(
+            NotPortedError{T}(
+                def.name, "untable_from_clause of the clauses of '\$tabled'/2 at the end of a reload (pl-srcfile.c:1465-1479)",
+                "TAB1"
+            )
+        )
+    end
+
+    removeClausesPredicate!(
+        gd, def, (def.flags & P_MULTIFILE) != 0 ? sf.index : 0, true
+    )                                                   # `deleted` is only for the debug message
+
+    if (def.flags & P_MULTIFILE) == 0
+        def.flags &= ~FILE_ASSIGNED
+        clear_meta_declaration(def)
+        freeCodesDefinition!(gd, def, true)
+    end
+    return nothing
+end
+
+# PORT: pl-srcfile.c delete_old_predicates
+# (swipl-devel 18168e62, src/pl-srcfile.c:1500-1526)
+# DIVERGES: the file's procedures are a vector with the newest LAST (upstream's list has it first), so the walk is oldest first: the clauses are
+# erased one predicate at a time in the other order (no observable difference: each predicate has its own list); `filter!` is upstream's
+# unlink of the cell.
+"At the end of a reload: for each procedure of `sf` the reload did not mention, delete its clauses and unlink it from the file (pl-srcfile.c)."
+function delete_old_predicates!(gd::PL_global_data{T}, sf::SourceFile{T})::Nothing where {T}
+    rl = sf.reload::sf_reload{T}
+    filter!(sf.procedures) do proc
+        if (proc.definition.flags & P_FOREIGN) == 0 && !haskey(rl.procedures, proc)
+            delete_old_predicate!(gd, sf, proc)
+            return false
+        end
+        return true
+    end
+    return nothing
+end
+
+# PORT: pl-srcfile.c delete_pending_clauses
+# (swipl-devel 18168e62, src/pl-srcfile.c:1528-1557)
+# DIVERGES: the `'$tabled'/2` arm (`untable_from_clause`, pl-srcfile.c:1547) is a NAMED refusal (owner TAB1); no `acquire_def`/`release_def`; the
+# debug message is not kept.
+"Mark erased, at the reload generation, the clauses of `def` the reload did not meet again: from `r.current_clause` to the end (pl-srcfile.c)."
+function delete_pending_clauses!(
+    sf::SourceFile{T}, def::Definition{T}, r::p_reload{T}
+)::Nothing where {T}
+    rl = sf.reload::sf_reload{T}
+    cref = r.current_clause
+    while cref !== nothing
+        c = cref.clause::Clause{T}
+        cref = cref.next
+
+        if !GLOBALLY_VISIBLE_CLAUSE(c, r.generation) || (c.flags & CL_ERASED) != 0
+            continue
+        end
+        if (r.predicate.flags & (P_MULTIFILE | P_DYNAMIC)) != 0 && c.owner_no != sf.index
+            continue
+        end
+
+        if _is_dtabled2(def)
+            throw(
+                NotPortedError{T}(
+                    def.name, "untable_from_clause at the end of a reload (pl-srcfile.c:1547)",
+                    "TAB1"
+                )
+            )
+        end
+
+        r.flags |= P_MODIFIED
+        c.generation_erased = rl.reload_gen
+    end
+    return nothing
+end
+
 # PORT: pl-srcfile.c startConsult
 # DIVERGES: a RE-consult — the file was consulted before — is refused (`NotPortedError`): `startReconsultFile` exists since LB6a, but
 # `endReconsult` (delete_old_predicates, reconsultFinalizePredicate) comes with LB6b, which re-points this function (loader_boot H9).
