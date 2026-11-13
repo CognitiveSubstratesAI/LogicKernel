@@ -41,7 +41,7 @@ function markPredicatesInEnvironments!(
 end
 
 # PORT: pl-gc.c makeMoreStackSpace
-# DIVERGES (since L1f f1b): no collector (`garbageCollect`, `ALLOW_GC`) and no global or trail stack to grow —
+# DIVERGES (since L1f f1b; the collector hook is G1-GC's `considerGC` above, wired at `ensureGlobalSpace`'s audited sites only): no collector (`garbageCollect`) and no global or trail stack to grow —
 # they grow on demand, so their callers (`allocGlobalNoShift`) were refused for the LIMIT, which growing
 # cannot pass: the overflow is raised and false returned, as upstream's when `growStacks` fails. Upstream's
 # first case — while an exception is processed, the stack's spare enabled — cannot arise: nothing is refused
@@ -50,6 +50,29 @@ end
 "Make room after `overflow`, or raise it and return false (pl-gc.c `makeMoreStackSpace`)."
 function makeMoreStackSpace(ld::PL_local_data, overflow::boolex_t, flags::Int)::Bool
     return raiseStackOverflow(ld, overflow)
+end
+
+# ── the stack collector's safe-point hook (G1-GC, piece G1-2; docs/g1gc_safe_points.md) ─────────────
+# (`considerGarbageCollect`, the scheduler, is G1-1's: below, with the statistics)
+
+# PORT: pl-gc.c garbageCollect
+# DIVERGES: G1-GC placeholder — there is no collector (G1-3 marks, G1-4 sweeps, G1-5 relocates, G1-6 drives it); it answers `BOOLEX_FALSE`, the
+# answer upstream gives while the collector is blocked (`gc_status.blocked`): nothing moved, nothing freed. `reason` is a `GC_*` word.
+"Run the stack garbage collector for `reason` (pl-gc.c `garbageCollect`); here it declines."
+garbageCollect(ld::PL_local_data, reason::Int)::boolex_t = BOOLEX_FALSE
+
+# ORIGINAL: the hook of a SAFE ALLOW_GC site (pl-gc.c:4707-4719 `f_ensureStackSpace`'s "consider, collect" half); `ensureGlobalSpace` calls it only
+# when `flags & ALLOW_GC` and the area is full or `ld.gc_force` is set (the model of `FAKE_GC`, pl-vmi.c:238-251, never defined at the pin). Under
+# `gc_force` it records `site` in `ld.gc_safe_hits` and collects; otherwise only `considerGarbageCollect` decides. True iff a collection ran.
+"The safe-point hook: run the collector for `reason` at the audited `site` when `flags` allow it and one is due (or forced); true iff one ran."
+function considerGC(ld::PL_local_data, flags::Int, reason::Int, site::Symbol)::Bool
+    (flags & ALLOW_GC) == 0 && return false                 # G1-GC safe point: only a site that passed ALLOW_GC
+    if ld.gc_force                                          # G1-GC safe point: FAKE_GC's model
+        push!(ld.gc_safe_hits, site)
+    elseif !considerGarbageCollect(ld, nothing)             # considerGarbageCollect(NULL)
+        return false
+    end
+    return garbageCollect(ld, reason) == BOOLEX_TRUE        # garbageCollect(reason)
 end
 
 # PORT: pl-gc.c growStacks as growStacks!

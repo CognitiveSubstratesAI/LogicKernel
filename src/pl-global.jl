@@ -546,6 +546,8 @@ ld_tabling{T}() where {T} = ld_tabling{T}(
 # Since R2 TOP1b A: `break_level` (`LD->break_level`, pl-setup.c:199: -1 outside a toplevel; `currentBreakLevel`, src/pl-pro.jl), appended last.
 # Since TR2: `trie_gens`, the pool of trie_gen/2,3's states (`trie_gen_state`, pl-incl.jl; upstream keeps them on the C stack, then `allocForeignState`), appended last;
 # `trie_gen_force_epoch` (ORIGINAL, a test switch; a module-level `Ref` would be shared state, which the lint refuses), appended after it.
+# Since G1-GC G1-2: `gc_force` (ORIGINAL, pl-vmi.c:238 FAKE_GC's model: every `ALLOW_GC` safe point runs `considerGC`) and `gc_safe_hits` (ORIGINAL: the
+# site names at which it fired while forced; docs/g1gc_safe_points.md), appended last.
 # Since G1-GC G1-1: `gc` (`LD->gc`: `ld_gc`, the statistics, the stacks' policies, the pending-signal bits) and `shift_status` (`LD->shift_status`,
 # `pl_shift_status_t`, pl-incl.jl), appended after G1-2's two.
 # Since R2 F1c: `debugstatus_skiplevel`, `debugstatus_tracing`, `debugstatus_debugging`, `debugstatus_showContext` (`LD->_debugstatus`, pl-incl.h

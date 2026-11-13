@@ -130,11 +130,11 @@ function pl_collect_findall_bag2_va(
         list = PL_copy_term_ref(ld, A2)
         answer = PL_new_term_ref(ld)
 
-        ensureGlobalSpace(ld, bag.gsize + bag.solutions * 3) || return FFALSE   # ensureGlobalSpace(space)
+        ensureGlobalSpace(ld, bag.gsize + bag.solutions * 3, ALLOW_GC, :collect_findall_bag) || return FFALSE   # ensureGlobalSpace(space)   # G1-GC safe point: collect_findall_bag
 
         while !isempty(bag.answers)                 # (rp=topOfSegStack(&bag->answers))
             r = bag.answers[end]
-            copyRecordToGlobal(ld, answer, r)
+            copyRecordToGlobal(ld, answer, r, ALLOW_GC)   # G1-GC safe point: copyRecordToGlobal
             PL_cons_list(ld, list, answer, list)
             pop!(bag.answers)                       # popTopOfSegStack(&bag->answers)
         end

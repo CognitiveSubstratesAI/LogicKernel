@@ -3566,6 +3566,17 @@ _manifest_g1gc1(::Type{T}) where {T} = begin
     )
 end
 
+# G1-GC piece G1-2 (the safe-point audit, docs/g1gc_safe_points.md): the global-space check with its `flags`/`site` form, the hook and the
+# collector's placeholders (src/pl-alloc.jl, src/pl-gc.jl) and copyRecordToGlobal's `flags` method (src/pl-rec.jl). The shorter forms
+# (default arguments) keep the entries above; these name the full methods the default-argument wrappers forward to.
+_manifest_g1gc2(::Type{T}) where {T} = (
+    (LK.ensureGlobalSpace, Tuple{LK.PL_local_data{T}, Int, Int, Symbol}, false),
+    # (`considerGarbageCollect`'s entries are G1-1's, `_manifest_g1gc1`: the scheduler is the one method)
+    (LK.garbageCollect, Tuple{LK.PL_local_data{T}, Int}, false),
+    (LK.considerGC, Tuple{LK.PL_local_data{T}, Int, Int, Symbol}, false),
+    (LK.copyRecordToGlobal, Tuple{LK.PL_local_data{T}, Int, LK.record{T}, Int}, false)
+)
+
 const _DISPATCH_MANIFEST_TUPLE = (
     _manifest_per_type(_M1)...,
     _manifest_per_type(_M2)...,
@@ -4339,7 +4350,11 @@ const _DISPATCH_MANIFEST_TUPLE = (
     (LK.clear_choice_mark, Tuple{LK.walk_state, LK.code}, true),
     (LK.mark_choice_mark, Tuple{LK.walk_state, LK.code}, true),
     # CONT1: the continuations' run side (src/pl-cont.jl, src/pl-gc.jl, src/pl-fli.jl)
-    _manifest_cont(_M2)...
+    _manifest_cont(_M2)...,
+    # G1-GC G1-2: the safe-point hook and the flagged global-space check, over each term type
+    _manifest_g1gc2(_M1)...,
+    _manifest_g1gc2(_M2)...,
+    _manifest_g1gc2(_M3)...
 )
 
 """

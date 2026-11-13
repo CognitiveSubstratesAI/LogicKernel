@@ -3095,7 +3095,7 @@ function pl_functor3_va(
     end
     name = PL_get_atom_ex(ld, A2)
     if name !== nothing
-        ensureGlobalSpace(ld, 1 + arity) || return FFALSE   # (L1f f2)
+        ensureGlobalSpace(ld, 1 + arity, ALLOW_GC, :functor3) || return FFALSE   # (L1f f2)   # G1-GC safe point: functor3
         return PL_unify_functor(ld, A1, name, arity) ? FTRUE : FFALSE
     end
 
@@ -3132,7 +3132,7 @@ function pl_compound_name_arity3_va(
     arity = PL_get_size_ex(ld, A3)
     arity === nothing && return FFALSE
 
-    ensureGlobalSpace(ld, 1 + arity) || return FFALSE
+    ensureGlobalSpace(ld, 1 + arity, ALLOW_GC, :compound_name_arity3) || return FFALSE   # G1-GC safe point: compound_name_arity3
     f = lookupFunctorDef(ld.functors, _atom_word!(ld, name), arity)   # PL_new_functor(name, arity)
     return PL_unify_compound(ld, A1, f) ? FTRUE : FFALSE
 end
@@ -3264,7 +3264,7 @@ function pl_univ2_va(
                 return PL_error(ld, ERR_TYPE, mk_sym(T, :list), list) ? FTRUE : FFALSE
             return PL_error(ld, ERR_INSTANTIATION) ? FTRUE : FFALSE
         end
-        ensureGlobalSpace(ld, arity + 1) || return FFALSE  # allocGlobal(arity+1) (L1f f2)
+        ensureGlobalSpace(ld, arity + 1, ALLOW_GC, :univ2) || return FFALSE  # allocGlobal(arity+1) (L1f f2)   # G1-GC safe point: univ2
         p = _alloc_compound!(
             ld, lookupFunctorDef(ld.functors, _atom_word!(ld, name), arity), arity
         )
@@ -3339,7 +3339,7 @@ function pl_compound_name_arguments3_va(
             return PL_error(ld, ERR_INSTANTIATION) ? FTRUE : FFALSE
         end
 
-        ensureGlobalSpace(ld, 1 + len) || return FFALSE
+        ensureGlobalSpace(ld, 1 + len, ALLOW_GC, :compound_name_arguments3) || return FFALSE   # G1-GC safe point: compound_name_arguments3
         f = lookupFunctorDef(ld.functors, _atom_word!(ld, name), len)   # PL_new_functor(name, len)
         PL_unify_compound(ld, t, f) || return FFALSE
 
