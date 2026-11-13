@@ -141,6 +141,7 @@ _heap(ld::LK.PL_local_data) =
     LK.allocGlobalCells!(ld, 5)
     before = _heap(ld)
     @test before[1] >= 5 && !isempty(before[2])                       # something on the heap to move
+    ld.gc.status.blocked = 1          # G1-6c: the collector is real now and would compact this heap; blocked it declines, as the placeholder did
     @test !ld.gc_force && isempty(ld.gc_safe_hits)
 
     # not forced: the hook may run (the area is full) but nothing is recorded (it records only under the flag)
@@ -157,12 +158,12 @@ _heap(ld::LK.PL_local_data) =
     @test LK.ensureGlobalSpace(ld, 4, LK.ALLOW_GC | LK.ALLOW_SHIFT, :probe_both)
     @test ld.gc_safe_hits == [:probe_site, :probe_both]               # ALLOW_GC among other bits: reached
 
-    # considerGC directly: the placeholder collector declines, the hook says so
+    # considerGC directly: the blocked collector declines, the hook says so
     @test !LK.considerGC(ld, LK.ALLOW_GC, LK.GC_USER, :probe_direct)
     @test ld.gc_safe_hits == [:probe_site, :probe_both, :probe_direct]
     @test !LK.considerGC(ld, 0, LK.GC_USER, :probe_none)
     @test length(ld.gc_safe_hits) == 3
-    @test LK.garbageCollect(ld, LK.GC_USER) == LK.BOOLEX_FALSE
+    @test LK.garbageCollect(ld, Int(LK.GC_USER)) == LK.BOOLEX_FALSE     # blocked: BOOLEX_FALSE
     @test !LK.considerGarbageCollect(ld)
 
     @test _heap(ld) == before                                          # nothing moved, nothing freed

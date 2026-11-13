@@ -55,24 +55,20 @@ end
 # ── the stack collector's safe-point hook (G1-GC, piece G1-2; docs/g1gc_safe_points.md) ─────────────
 # (`considerGarbageCollect`, the scheduler, is G1-1's: below, with the statistics)
 
-# PORT: pl-gc.c garbageCollect
-# DIVERGES: G1-GC placeholder — there is no collector (G1-3 marks, G1-4 sweeps, G1-5 relocates, G1-6 drives it); it answers `BOOLEX_FALSE`, the
-# answer upstream gives while the collector is blocked (`gc_status.blocked`): nothing moved, nothing freed. `reason` is a `GC_*` word.
-"Run the stack garbage collector for `reason` (pl-gc.c `garbageCollect`); here it declines."
-garbageCollect(ld::PL_local_data, reason::Int)::boolex_t = BOOLEX_FALSE
+# (`garbageCollect`, the driver, is G1-6c's: src/pl-gcdriver.jl)
 
 # ORIGINAL: the hook of a SAFE ALLOW_GC site (pl-gc.c:4707-4719 `f_ensureStackSpace`'s "consider, collect" half); `ensureGlobalSpace` calls it only
 # when `flags & ALLOW_GC` and the area is full or `ld.gc_force` is set (the model of `FAKE_GC`, pl-vmi.c:238-251, never defined at the pin). Under
 # `gc_force` it records `site` in `ld.gc_safe_hits` and collects; otherwise only `considerGarbageCollect` decides. True iff a collection ran.
 "The safe-point hook: run the collector for `reason` at the audited `site` when `flags` allow it and one is due (or forced); true iff one ran."
-function considerGC(ld::PL_local_data, flags::Int, reason::Int, site::Symbol)::Bool
+function considerGC(ld::PL_local_data, flags::Int, reason::Integer, site::Symbol)::Bool
     (flags & ALLOW_GC) == 0 && return false                 # G1-GC safe point: only a site that passed ALLOW_GC
     if ld.gc_force                                          # G1-GC safe point: FAKE_GC's model
         push!(ld.gc_safe_hits, site)
     elseif !considerGarbageCollect(ld, nothing)             # considerGarbageCollect(NULL)
         return false
     end
-    return garbageCollect(ld, reason) == BOOLEX_TRUE        # garbageCollect(reason)
+    return garbageCollect(ld, Int(reason)) == BOOLEX_TRUE   # garbageCollect(reason): the GC_* constants are unsigned hex literals, `Int` here
 end
 
 # PORT: pl-gc.c growStacks as growStacks!
@@ -300,11 +296,12 @@ end
 # PORT: pl-gc.c pl_garbage_collect
 # (FRG("$garbage_collect", 1, pl_garbage_collect, 0), pl-ext.c:168; pl-gc.c:4570-4584 at the pin. The
 # Prolog `garbage_collect/0` is boot/syspred.pl:1423-1424: `garbage_collect :- '$garbage_collect'(0).`)
-# DIVERGES: the body of `garbageCollect(GC_USER)` (pl-gc.c:4581) is not the kernel's — no stack garbage
-# collection, so the call has nothing to do and succeeds. The debug level argument `d` is read only
-# under `#if O_DEBUG` (pl-gc.c:4573-4579), which a release build of swipl does not define, so `d` is not examined.
-"`'\$garbage_collect'(+DebugLevel)`: run the stack garbage collector (pl-gc.c); here there is none, so it succeeds."
+# DIVERGES: the debug level argument `d` is read only under `#if O_DEBUG` (pl-gc.c:4573-4579), which a release build of swipl does
+# not define, so `d` is not examined. `garbageCollect(GC_USER)` (pl-gc.c:4581) DECLINES (no collection, no statistics record) when the
+# query is inside the VM and G1-2b's `vmi_state_of` callback is not wired (pl-gcdriver.jl); the answer is true either way.
+"`'\$garbage_collect'(+DebugLevel)`: run the stack garbage collector (pl-gc.c `garbageCollect(GC_USER)`); true either way."
 function pl_garbage_collect(ld::PL_local_data{T}, d::term_t)::foreign_t where {T}
+    garbageCollect(ld, Int(GC_USER))
     return FTRUE
 end
 
