@@ -22,8 +22,10 @@ _mb_aw(ld, n) = LK._atom_word!(ld, _mb_sym(n))
     # upstream puts on the local stack and L1a on the global one — so they lie above the bar
     # exception_bin, _printed, _tmp, _pending, attvar.head, attvar.tail (AV1), then upstream's
     # TMP_PTR_SIZE temporary handles (pl-setup.c; f3b-4 — was gTop == 4; AV1 — was 4 + TMP_PTR_SIZE,
-    # D-0083)
-    @test ld.mark_bar == 0 && ld.gTop == 6 + LK.TMP_PTR_SIZE
+    # D-0083). TAB1 TB4 (D-0083): `tabling.delay_list` (`init_delay_list`, pl-setup.c:1558) sits between the attvar pair and the
+    # handles, 4 more permanent cells: its own reference's, the argument reference's (`[]`'s) and the compound `-([])` (functor,
+    # `[]`) — was 6 + TMP_PTR_SIZE.
+    @test ld.mark_bar == 0 && ld.gTop == 10 + LK.TMP_PTR_SIZE
     LK.allocGlobalCells!(ld, 3)
     m = LK.Mark(ld)
     @test ld.mark_bar == ld.gTop == m.globaltop

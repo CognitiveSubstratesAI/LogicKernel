@@ -4494,7 +4494,8 @@ const _DISPATCH_MANIFEST_TUPLE = (
     (LK.WL_IS_WORKLIST, Tuple{Int}, true),
     (LK.DL_IS_DELAY_LIST, Tuple{Int}, true),
     # TAB1 TB4: the delay infos and delay sets of pl-tabling.c (src/pl-tabling.jl); the answer is (serial, node id), `answer_ref` its key
-    (LK.DL_IS_DELAY_LIST, Tuple{Union{Nothing, LK.delay_info}}, true),
+    (LK.DL_IS_DELAY_LIST, Tuple{Nothing}, true),            # a Union signature is no dispatch tuple (AllocCheck: Base.isdispatchtuple(sig)):
+    (LK.DL_IS_DELAY_LIST, Tuple{LK.delay_info}, true),      # one entry per member, as ISDEADCI above
     (LK.answer_ref, Tuple{Int, Int}, true),
     (LK.answer_ref_trie, Tuple{Int}, true),
     (LK.answer_ref_node, Tuple{Int}, true),

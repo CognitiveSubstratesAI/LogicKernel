@@ -98,7 +98,7 @@ end
     @test LK.unRef(h) == ld.exception_cells + 4 && LK.unRef(t) == ld.exception_cells + 5
     @test ld.gstack[LK.unRef(h)] == 0 && ld.gstack[LK.unRef(t)] == 0      # the list is empty
     @test ld.attvar_attvars == 0                                          # no attributed variable
-    @test ld.tmp_h == perm + 6
+    @test ld.tmp_h == perm + 8       # TAB1 TB4 (D-0083): `tabling.delay_list` and its argument's reference lie between (was perm + 6)
 end
 
 @testset "deRef: an attributed variable is DU_ATTVAR / DREF_ATTVAR with its cell; an unknown word raises" begin
