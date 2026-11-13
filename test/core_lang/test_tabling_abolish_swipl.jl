@@ -532,6 +532,33 @@ end
     @test variants.value_count == 0
 end
 
+# `clear_variant_table` -> `empty_variant_table` -> `reset_table_bulk` with IDG nodes (pl-tabling.c:2783-2795, :2885-2913): the thread's
+# registry is detached before the resets and released after (`idg_registry_release_n(registry, idg_nodes + 1)`), every node of the tables
+# is destroyed with its table, a node with `concurrent` set is unlinked first (`idg_unlink_concurrent_table`). LK-only white-box rows;
+# UNVERIFIED on the kernel (nothing was compiled when these rows were written): the gate decides.
+@testset "clear_variant_table: the IDG nodes of the tables go with them (reset_table_bulk, the registry)" begin
+    gd, ld, st = _ab_load(_AB_COMMON * _AB_KERNEL, _AB_CASES[1:1], true)
+    @test st == "ok"
+    atries = _ab_tables!(gd, ld)
+    nodes = [LK.idg_new(ld, a) for a in atries]
+    @test all(n -> n !== nothing, nodes)
+    for (a, n) in zip(atries, nodes)
+        a.IDG = n
+    end
+    @test LK.idg_add_child(ld, nodes[1], nodes[2], 0, 0)
+    reg = ld.tabling.idg_registry
+    @test reg !== nothing
+    @test all(n -> n.registry === reg, nodes)
+    nodes[2].concurrent = true
+    ld.tabling.concurrent_idg_nodes = 1
+    LK.clear_variant_table(ld)
+    @test ld.tabling.variant_table == 0
+    @test ld.tabling.idg_registry === nothing                  # detached before the resets
+    @test all(a -> a.IDG === nothing && a.variant == 0, atries)
+    @test ld.tabling.concurrent_idg_nodes == 0
+    @test ld.tabling.dyn_orphan_events == 0
+end
+
 @testset "the abolish rows are not vacuous" begin
     @test _AB_PINNED[1] == "ok" && _AB_PINNED_U[1] == "ok"
     @test length(_AB_PINNED) == length(_AB_CASES) + 1

@@ -3226,7 +3226,7 @@ const RAT_BULK = Int(0x2)
 # release chain above it carry only `gd`; docs/architecture.md TAB1 TB2, "named refusal"). DISPATCHER RULING (option c): the callers
 # that hold `ld` (`destroy_answer_trie`, `abolish_table`) run the worklist branch and the IDG branch BEFORE `trie_delete`
 # (`reset_answer_table_worklist`, `reset_answer_table_idg`), so the chain finds neither; the refusals below stay for every other
-# path into the chain (`reset_table_bulk` with `ld` known to its caller `empty_variant_table`: left to TB6, with idg_registry_delete);
+# path into the chain (`reset_table_bulk` now runs both branches itself, it holds `ld`);
 # a sentinel (WL_GROUND, WL_DYNAMIC) is
 # `data.worklist = Int` and is made fresh again; the IDG node is refused by name, owner TB6 (`idg_reset`, `idg_destroy`,
 # `idg_destroy_private`), the tracked table (`tt_abolish_table`) owner TB9.
@@ -9215,14 +9215,46 @@ function destroy_delay_info_table(gd::PL_global_data{T}) where {T}
     end
 end
 
+# PORT: pl-tabling.c idg_unlink_concurrent_table
+# (pl-tabling.c:2758-2772 at the pin)
+# DIVERGES: the `map_trie_node` callback `(tr, nid)` of the variant table `tr` (upstream: `(node, ctx)`); a closure over `ld`.
+"The `map_trie_node` callback that cleans the edges of an IDG node with concurrent readers, for each table of a variant table (pl-tabling.c)."
+function idg_unlink_concurrent_table(ld::PL_local_data{T}) where {T}
+    return function (tr, nid)
+        v = tr.nodes[nid].value
+        if v != 0
+            n = value_trie(_query_gd(ld), v).IDG
+            if n !== nothing && n.concurrent
+                idg_clean_affected(ld, n)
+                idg_clean_dependent(ld, n)
+            end
+        end
+
+        return nothing
+    end
+end
+
 # PORT: pl-tabling.c reset_table_bulk
-# DIVERGES: the IDG registry accounting (`br->registry`, `idg_registry_delete`) is TB6's: a table with an IDG node is refused by name
-# (`reset_answer_table` does it too).
-"Reset the answer table of a variant table `value` taken by the bulk teardown and forget its node (pl-tabling.c)."
-function reset_table_bulk(gd::PL_global_data{T}, value::word)::Nothing where {T}
+# (pl-tabling.c:2783-2795 at the pin; `bulk_reset *br` is its `registry` and the counter `idg_nodes`)
+# DIVERGES: `ld` is an argument (the worklist and IDG branches of `reset_answer_table` need it, see there: they run here, before
+# `reset_answer_table(gd, ...)`, which then finds neither); `br->registry` is `registry` and `br->idg_nodes` a `Ref`; the node's
+# registry is compared by identity (`===`), as upstream compares the pointers.
+"Reset the answer table of a variant table `value` taken by the bulk teardown, count or delete its IDG node and forget its node (pl-tabling.c)."
+function reset_table_bulk(
+    ld::PL_local_data{T}, value::word, registry::Union{Nothing, idg_registry{idg_node{T}}}, idg_nodes::Base.RefValue{Int}
+)::Nothing where {T}
+    gd = _query_gd(ld)
     atrie = value_trie(gd, value)
-    atrie.IDG === nothing ||
-        tbl_refuse(T, :reset_table_bulk, "reset_table_bulk: the IDG registry of the node (idg_registry_delete)", "TB6")
+    n = atrie.IDG
+    if n !== nothing
+        if n.registry === registry
+            idg_nodes[] += 1
+        else                                            # not expected
+            idg_registry_delete(n.registry::idg_registry{idg_node{T}}, n.registry_index)
+        end
+    end
+    reset_answer_table_worklist(ld, atrie, Int(RAT_CLEANUP | RAT_BULK))
+    reset_answer_table_idg(ld, atrie, Int(RAT_CLEANUP | RAT_BULK))
     reset_answer_table(gd, atrie, Int(RAT_CLEANUP | RAT_BULK))
     atrie.variant = 0
 
@@ -9242,19 +9274,26 @@ end
 # PORT: pl-tabling.c empty_variant_table
 # DIVERGES: one path for the private table: the values are taken by `trie_empty_take`, reset in creation order and released after
 # (upstream's malloc failure fallback is the second branch only when there are no values or the delay pass is done); the IDG
-# registry release (`idg_registry_release_n`) and `idg_unlink_concurrent_table` are TB6's (refused by name when
-# `concurrent_idg_nodes != 0`).
+# registry release (`idg_registry_release_n`) and `idg_unlink_concurrent_table` as upstream (the thread's registry is detached
+# before the resets and released after, the nodes of the table plus the thread's reference).
 "Empty the variant table `vtrie` that has no readers; `delays_done`: the delay info pass was done (pl-tabling.c)."
 function empty_variant_table(ld::PL_local_data{T}, vtrie::trie{T}, delays_done::Bool)::Nothing where {T}
     gd = _query_gd(ld)
     if !delays_done && vtrie.value_count > 0
-        ld.tabling.concurrent_idg_nodes != 0 &&
-            tbl_refuse(T, :idg_unlink_concurrent_table, "empty_variant_table: private IDG nodes with shared children", "TB6")
+        registry = ld.tabling.idg_registry
+        if ld.tabling.concurrent_idg_nodes != 0
+            map_trie_node(vtrie, 1, idg_unlink_concurrent_table(ld))
+        end
+        ld.tabling.idg_registry = nothing
+        idg_nodes = Ref(0)
         values = word[]
         trie_empty_take(gd, vtrie, w -> push!(values, w))
         sort_table_values!(values)                      # creation order
         for v in values
-            reset_table_bulk(gd, v)
+            reset_table_bulk(ld, v, registry, idg_nodes)
+        end
+        if registry !== nothing                         # the nodes' and the thread's
+            idg_registry_release_n(registry, idg_nodes[] + 1)
         end
         for v in values
             isTriePtrValue(v) && release_value(gd, vtrie, v)
