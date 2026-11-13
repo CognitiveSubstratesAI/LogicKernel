@@ -3,8 +3,8 @@
 # `max_scc_subgoals` (`tripwire_scc_subgoals`: `size0 <= limit`), the retry of `get_answer_table` after a passed tripwire (`goto retry`), the answer
 # count restraint of `tbl_add_answer` (`bounded_rationality`: `generalise_answer_substitution` + `add_answer_count_restraint`; a passed tripwire:
 # `add_anyway`), the answer size restraint (`bounded_rationality`: `add_radial_restraint`; `fail`; `error`) and the answer flag of an incremental
-# re-evaluation (`TN_IDG_ADDED`, `idg.new_answer`). tests/tabling/test_tabling.pl and the other upstream files set these flags only with the
-# action `error` below the limit or not at all, so these rows are ours: eleven programs `t_wb01..t_wb11`, each answer PINNED by running the exact
+# re-evaluation (`TN_IDG_ADDED`, `idg.new_answer`), and `'$tbl_sdg'/3` inside an evaluation with a COMPLETED child (`sdg_collect`). tests/tabling/test_tabling.pl and the other upstream files set these flags only with the
+# action `error` below the limit or not at all, so these rows are ours: twelve programs `t_wb01..t_wb12`, each answer PINNED by running the exact
 # program on swipl 10.1.20 (two byte-identical runs; evidence/TAB1/w1_verify.md, section W1d).
 #   * The `prolog:tripwire/2` hook (boot/tabling.pl `tripwire/3`: `prolog:tripwire(Wire, Context)` succeeding makes the tripwire pass) lets an
 #     evaluation go on past a limit without `print_message`: a row with `hooked/1` reads the wires that tripped.
@@ -93,6 +93,7 @@ end
 
 const _TW_PROGRAM = raw"""
 :- use_module(library(lists)).
+:- use_module(library(yall)).
 :- use_module(library(wfs)).
 :- dynamic tw/2, hook_on/0.
 prolog:tripwire(W, C) :- hook_on, assertz(tw(W, C)).
@@ -112,6 +113,28 @@ big(g(h(i))).
 dd(1).
 ii(X) :- dd(X).
 jj(X) :- ii(X).
+:- dynamic snapshot/1.
+take :- '$tbl_sdg'(Components, Tables, Edges), assertz(snapshot(sdg(Components, Tables, Edges))).
+:- table pa/0, pb/0.
+pa :- pb, take.
+pb.
+sdg(Goal, Components, Tables, Edges) :-
+    retractall(snapshot(_)), abolish_all_tables, ignore(Goal),
+    snapshot(sdg(Cs, Ts, Es)), !, retractall(snapshot(_)),
+    maplist(table_variant, Ts, Map),
+    maplist(component(Cs, Map), Cs, Components0),
+    maplist(table(Cs), Ts, Tables0),
+    maplist(edge(Map), Es, Edges0),
+    msort(Components0, Components), msort(Tables0, Tables), msort(Edges0, Edges).
+table_variant(table(Trie, Variant, _, _, _), Trie-V) :- strip(Variant, V).
+strip(_:G0, G) :- !, copy_term(G0, G), numbervars(G, 0, _).
+strip(G, G).
+component(Cs, Map, scc(SCC, _, Leader), Depth-L) :- depth(Cs, SCC, Depth), memberchk(Leader-L, Map).
+depth(Cs, SCC, Depth) :- memberchk(scc(SCC, Parent, _), Cs),
+    (   Parent == null -> Depth = 0 ; depth(Cs, Parent, Depth0), Depth is Depth0+1 ).
+table(Cs, table(_, Variant, SCC, Answers, Flags0), table(V, Depth, Answers, Flags)) :-
+    strip(Variant, V), depth(Cs, SCC, Depth), msort(Flags0, Flags).
+edge(Map, edge(From, To, Sign, Count), edge(F, T, Sign, Count)) :- memberchk(From-F, Map), memberchk(To-T, Map).
 with_limit(Flag, Limit, Action, Goal) :-
     atom_concat(Flag, '_action', ActionFlag),
     setup_call_cleanup(( set_prolog_flag(Flag, Limit), set_prolog_flag(ActionFlag, Action) ),
@@ -145,6 +168,8 @@ abolish_all_tables, with_limit(max_table_answer_size, 0, fail, findall(X, big(X)
 abolish_all_tables, catch(with_limit(max_table_answer_size, 0, error, findall(X, big(X), _)), E, true), ( nonvar(E) -> wire_of(E, R) ; R = no_error )"""),
     ("wb11", "an incremental table whose only answer is replaced: the re-evaluation sets new_answer, the dependent table follows", raw"""
 abolish_all_tables, findall(X, jj(X), L0), retract(dd(1)), assertz(dd(2)), findall(X, jj(X), L1), retract(dd(2)), assertz(dd(1)), R = L0-L1"""),
+    ("wb12", "the dependency graph inside an evaluation that has a COMPLETED child component: only the active component is listed (sdg_collect)", raw"""
+sdg(pa, Cs, Ts, Es), R = r(Cs, Ts, Es)"""),
 ]
 
 const _TW_PINNED = [
@@ -160,6 +185,7 @@ const _TW_PINNED = [
     "t_wb09 c[116,95,119,98,48,57]/1(c[91,124,93]/2(c[102]/3(a[97],a[98],a[99]),c[91,124,93]/2(a[97],nil)))",
     "t_wb10 c[116,95,119,98,49,48]/1(c[114,97,105,115,101,100]/2(a[109,97,120,95,116,97,98,108,101,95,97,110,115,119,101,114,95,115,105,122,101],a[116,114,105,101]))",
     "t_wb11 c[116,95,119,98,49,49]/1(c[45]/2(c[91,124,93]/2(i1,nil),c[91,124,93]/2(i2,nil)))",
+    "t_wb12 c[116,95,119,98,49,50]/1(c[114]/3(c[91,124,93]/2(c[45]/2(i0,a[112,97]),nil),c[91,124,93]/2(c[116,97,98,108,101]/4(a[112,97],i0,i0,c[91,124,93]/2(a[112,101,110,100,105,110,103],nil)),nil),nil))",
 ]
 
 "The program text with the cases appended."
