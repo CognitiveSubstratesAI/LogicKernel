@@ -34,7 +34,7 @@ function _ck_heap()
     return _ck_engine(
         _R[
             _rf("f", _rs("a"), X, _rf("g", X, _rg(Int64(3))), _rg(1.5), _rg(2.5)),
-            _rf("h", _rg("str"), _rints(1:5), X),
+            _rf("h", _rg("str"), _rints(1:5), X)
         ]
     )
 end
@@ -70,7 +70,7 @@ end
     clauses = Tuple{_R, Union{Nothing, _R}}[
         (_rf("n", _rg(Int64(1))), nothing), (_rf("n", _rg(Int64(2))), nothing),
         (_rf("n", _rg(Int64(3))), nothing),
-        (_rf("pair", X, _rf("p", X, Y)), _rf("n", X)),
+        (_rf("pair", X, _rf("p", X, Y)), _rf("n", X))
     ]
     db = _rdb(clauses)
     reports = Vector{String}[]
@@ -246,7 +246,7 @@ end
         Tuple{_R, Union{Nothing, _R}}[
             (_rf("n", _rg(Int64(1))), nothing), (_rf("n", _rg(Int64(2))), nothing),
             (_rf("n", _rg(Int64(3))), nothing),
-            (_rf("q", _rv(1)), _rf("n", _rv(1))),
+            (_rf("q", _rv(1)), _rf("n", _rv(1)))
         ]
     )
     ld = db.ld
@@ -274,7 +274,16 @@ end
             fr.base = 0
             frame_bad = _ck_fails(ld, "frame")
             fr.base = oldbase
-            push!(seen, (sound, mark_bad && thrown, trail_bad, frame_bad, isempty(LK.stack_violations(ld))))
+            push!(
+                seen,
+                (
+                    sound,
+                    mark_bad && thrown,
+                    trail_bad,
+                    frame_bad,
+                    isempty(LK.stack_violations(ld))
+                )
+            )
         end
     )
     @test length(seen) == 1

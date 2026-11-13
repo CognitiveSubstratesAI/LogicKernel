@@ -564,7 +564,13 @@ function _check_global_word!(
     if (w & BOTH_MASK) != 0
         allow_marks || _viol!(
             r, "gstack-mark",
-            string("global[", p, "] = ", _hexw(w0), ": MARK/FIRST bit set outside a collection")
+            string(
+                "global[",
+                p,
+                "] = ",
+                _hexw(w0),
+                ": MARK/FIRST bit set outside a collection"
+            )
         )
         w &= ~BOTH_MASK
     end
@@ -579,7 +585,16 @@ function _check_global_word!(
         if q < 1 || q > gtop
             _viol!(
                 r, "gstack-ref-range",
-                string("global[", p, "] = ", _hexw(w0), ": reference to ", q, " outside 1..", gtop)
+                string(
+                    "global[",
+                    p,
+                    "] = ",
+                    _hexw(w0),
+                    ": reference to ",
+                    q,
+                    " outside 1..",
+                    gtop
+                )
             )
         end
     elseif te == (TAG_ATTVAR | STG_GLOBAL)
@@ -596,7 +611,16 @@ function _check_global_word!(
         if q < 1 || q > gtop
             _viol!(
                 r, "gstack-compound",
-                string("global[", p, "] = ", _hexw(w0), ": compound at ", q, " outside 1..", gtop)
+                string(
+                    "global[",
+                    p,
+                    "] = ",
+                    _hexw(w0),
+                    ": compound at ",
+                    q,
+                    " outside 1..",
+                    gtop
+                )
             )
         else
             f = ld.gstack[q]
@@ -620,7 +644,13 @@ function _check_global_word!(
     elseif te == (TAG_ATOM | STG_GLOBAL)
         _viol!(
             r, "gstack-functor",
-            string("global[", p, "] = ", _hexw(w0), ": a functor word where an argument cell is expected")
+            string(
+                "global[",
+                p,
+                "] = ",
+                _hexw(w0),
+                ": a functor word where an argument cell is expected"
+            )
         )
     else
         _viol!(
@@ -647,21 +677,43 @@ function _check_global_cells!(
         w = w0 & ~BOTH_MASK
         r.cells += 1
         if isFunctor(w)                                     # a compound's head: its arguments follow
-            (w0 & BOTH_MASK) != 0 && !allow_marks && _viol!(
-                r, "gstack-mark",
-                string("global[", p, "] = ", _hexw(w0), ": MARK/FIRST bit set on a functor cell outside a collection")
-            )
+            (w0 & BOTH_MASK) != 0 && !allow_marks &&
+                _viol!(
+                    r, "gstack-mark",
+                    string(
+                        "global[",
+                        p,
+                        "] = ",
+                        _hexw(w0),
+                        ": MARK/FIRST bit set on a functor cell outside a collection"
+                    )
+                )
             n = _functor_arity_checked(ld, w)
             if n < 0
                 _viol!(
                     r, "gstack-functor-arity",
-                    string("global[", p, "] = ", _hexw(w0), ": functor not in the functor table")
+                    string(
+                        "global[",
+                        p,
+                        "] = ",
+                        _hexw(w0),
+                        ": functor not in the functor table"
+                    )
                 )
                 p += 1
             elseif p + n > gtop
                 _viol!(
                     r, "gstack-functor-arity",
-                    string("global[", p, "] = ", _hexw(w0), ": arity ", n, " runs past gTop = ", gtop)
+                    string(
+                        "global[",
+                        p,
+                        "] = ",
+                        _hexw(w0),
+                        ": arity ",
+                        n,
+                        " runs past gTop = ",
+                        gtop
+                    )
                 )
                 p += 1
             else
@@ -709,7 +761,13 @@ function _check_ref_chains!(r::stack_report, ld::PL_local_data)::Nothing
             if state[p] == 0x01
                 _viol!(
                     r, "gstack-ref-cycle",
-                    string("global[", p, "]: reference chain from ", start, " returns to a cell on it")
+                    string(
+                        "global[",
+                        p,
+                        "]: reference chain from ",
+                        start,
+                        " returns to a cell on it"
+                    )
                 )
                 break
             end
@@ -729,7 +787,11 @@ end
 function _check_vbox!(r::stack_report, ld::PL_local_data)::Nothing
     nv = length(ld.vtable)
     if length(ld.vbox) != nv
-        _viol!(r, "vbox", string("length(vbox) = ", length(ld.vbox), " but length(vtable) = ", nv))
+        _viol!(
+            r,
+            "vbox",
+            string("length(vbox) = ", length(ld.vbox), " but length(vtable) = ", nv)
+        )
         return nothing
     end
     gtop = ld.gTop
@@ -742,7 +804,11 @@ function _check_vbox!(r::stack_report, ld::PL_local_data)::Nothing
             continue
         end
         if b <= prev
-            _viol!(r, "vbox", string("vbox[", i, "] = ", b, " not above vbox[", i - 1, "] = ", prev))
+            _viol!(
+                r,
+                "vbox",
+                string("vbox[", i, "] = ", b, " not above vbox[", i - 1, "] = ", prev)
+            )
         end
         prev = b
         want = consPtr(i, TAG_COMPOUND | STG_RESERVED)
@@ -750,7 +816,8 @@ function _check_vbox!(r::stack_report, ld::PL_local_data)::Nothing
         if got != want
             _viol!(
                 r, "vbox",
-                string("global[", b, "] = ", _hexw(ld.gstack[b]), " is not the box word ", _hexw(want),
+                string("global[", b, "] = ", _hexw(ld.gstack[b]), " is not the box word ",
+                    _hexw(want),
                     " of value-table entry ", i)
             )
         end
@@ -769,10 +836,33 @@ function _check_trail!(r::stack_report, ld::PL_local_data)::Nothing
         if isTrailVal(e)
             p = trailValP(e)
             if i == 1 || isTrailVal(tr[i - 1])
-                _viol!(r, "trail", string("trail[", i, "] = ", _hexw(e), ": a value entry not above an address entry"))
+                _viol!(
+                    r,
+                    "trail",
+                    string(
+                        "trail[",
+                        i,
+                        "] = ",
+                        _hexw(e),
+                        ": a value entry not above an address entry"
+                    )
+                )
             end
             if p < 1 || p > gtop
-                _viol!(r, "trail", string("trail[", i, "] = ", _hexw(e), ": saved value at ", p, " outside 1..", gtop))
+                _viol!(
+                    r,
+                    "trail",
+                    string(
+                        "trail[",
+                        i,
+                        "] = ",
+                        _hexw(e),
+                        ": saved value at ",
+                        p,
+                        " outside 1..",
+                        gtop
+                    )
+                )
             elseif i > 1 && !isTrailVal(tr[i - 1]) && p <= _trail_pos(tr[i - 1])
                 _viol!(
                     r, "trail",
@@ -782,12 +872,30 @@ function _check_trail!(r::stack_report, ld::PL_local_data)::Nothing
             end
         else
             if _trail_stack(e) != TRAIL_GLOBAL
-                _viol!(r, "trail", string("trail[", i, "] = ", _hexw(e), ": stack code ", _trail_stack(e), " names no stack here"))
+                _viol!(
+                    r,
+                    "trail",
+                    string(
+                        "trail[",
+                        i,
+                        "] = ",
+                        _hexw(e),
+                        ": stack code ",
+                        _trail_stack(e),
+                        " names no stack here"
+                    )
+                )
                 continue
             end
             p = _trail_pos(e)
             if p < 1 || p > gtop
-                _viol!(r, "trail", string("trail[", i, "] = ", _hexw(e), ": cell ", p, " outside 1..", gtop))
+                _viol!(
+                    r,
+                    "trail",
+                    string(
+                        "trail[", i, "] = ", _hexw(e), ": cell ", p, " outside 1..", gtop
+                    )
+                )
             end
         end
     end
@@ -836,12 +944,16 @@ function _check_local_records!(
         _viol!(r, "lstack-top", string("lTop = ", ltop, " outside 0..", length(ld.slots)))
     end
     if ld.aTop < 0 || ld.aTop > length(ld.astack)
-        _viol!(r, "astack-top", string("aTop = ", ld.aTop, " outside 0..", length(ld.astack)))
+        _viol!(
+            r, "astack-top", string("aTop = ", ld.aTop, " outside 0..", length(ld.astack))
+        )
     end
     gtop = ld.gTop
     ntr = length(ld.trail)
     if ld.frozen_bar < 0 || ld.frozen_bar > gtop
-        _viol!(r, "frozen-bar", string("frozen_bar = ", ld.frozen_bar, " outside 0..", gtop))
+        _viol!(
+            r, "frozen-bar", string("frozen_bar = ", ld.frozen_bar, " outside 0..", gtop)
+        )
     end
     # the pools: live records in base order; a frame still being filled may lie at or above lTop
     nf = ld.nframes
@@ -852,15 +964,29 @@ function _check_local_records!(
     for i in 1:nf
         fr = ld.frames[i]
         r.cells += 1
-        fr.base < 1 && _viol!(r, "frame", string("frames[", i, "].base = ", fr.base, " is below the stack"))
-        i > 1 && fr.base <= ld.frames[i - 1].base && _viol!(
-            r, "frame", string("frames[", i, "].base = ", fr.base, " not above frames[", i - 1, "]")
+        fr.base < 1 && _viol!(
+            r,
+            "frame",
+            string("frames[", i, "].base = ", fr.base, " is below the stack")
         )
-        i < nf && fr.base >= ltop && _viol!(
-            r, "frame", string("frames[", i, "].base = ", fr.base, " at or above lTop = ", ltop)
-        )
+        i > 1 && fr.base <= ld.frames[i - 1].base &&
+            _viol!(
+                r, "frame",
+                string(
+                    "frames[", i, "].base = ", fr.base, " not above frames[", i - 1, "]"
+                )
+            )
+        i < nf && fr.base >= ltop &&
+            _viol!(
+                r, "frame",
+                string("frames[", i, "].base = ", fr.base, " at or above lTop = ", ltop)
+            )
         if isFrame(fr) && (fr.parent < 0 || fr.parent >= i)  # a killed frame's links are stale
-            _viol!(r, "frame", string("frames[", i, "].parent = ", fr.parent, ": not an older frame"))
+            _viol!(
+                r,
+                "frame",
+                string("frames[", i, "].parent = ", fr.parent, ": not an older frame")
+            )
         end
     end
     nc = ld.nchoices
@@ -871,11 +997,16 @@ function _check_local_records!(
     for i in 1:nc
         c = ld.choices[i]
         r.cells += 1
-        i > 1 && c.base <= ld.choices[i - 1].base && _viol!(
-            r, "choice", string("choices[", i, "].base = ", c.base, " not above choices[", i - 1, "]")
-        )
+        i > 1 && c.base <= ld.choices[i - 1].base &&
+            _viol!(
+                r, "choice",
+                string(
+                    "choices[", i, "].base = ", c.base, " not above choices[", i - 1, "]"
+                )
+            )
         c.base >= ltop && _viol!(
-            r, "choice", string("choices[", i, "].base = ", c.base, " at or above lTop = ", ltop)
+            r, "choice",
+            string("choices[", i, "].base = ", c.base, " at or above lTop = ", ltop)
         )
     end
     # the chain from BFR: older records, older marks, marks within the stacks
@@ -893,34 +1024,71 @@ function _check_local_records!(
                 break
             end
             if c.unlinked
-                _viol!(r, "choice", string("choices[", ch, "] is on the chain but marked unlinked"))
+                _viol!(
+                    r,
+                    "choice",
+                    string("choices[", ch, "] is on the chain but marked unlinked")
+                )
             end
             if c.frame < 0 || c.frame > nf
-                _viol!(r, "choice", string("choices[", ch, "].frame = ", c.frame, " outside 0..", nf))
+                _viol!(
+                    r,
+                    "choice",
+                    string("choices[", ch, "].frame = ", c.frame, " outside 0..", nf)
+                )
             end
             if c.mark.trailtop != NOT_A_MARK
                 if c.mark.globaltop < 0 || c.mark.globaltop > gtop
                     _viol!(
                         r, "choice-mark",
-                        string("choices[", ch, "].mark.globaltop = ", c.mark.globaltop, " above gTop = ", gtop)
+                        string(
+                            "choices[",
+                            ch,
+                            "].mark.globaltop = ",
+                            c.mark.globaltop,
+                            " above gTop = ",
+                            gtop
+                        )
                     )
                 end
                 if c.mark.trailtop < 0 || c.mark.trailtop > ntr
                     _viol!(
                         r, "choice-mark",
-                        string("choices[", ch, "].mark.trailtop = ", c.mark.trailtop, " above the trail's ", ntr)
+                        string(
+                            "choices[",
+                            ch,
+                            "].mark.trailtop = ",
+                            c.mark.trailtop,
+                            " above the trail's ",
+                            ntr
+                        )
                     )
                 end
                 if prev !== nothing && prev.mark.trailtop != NOT_A_MARK &&
-                    (c.mark.globaltop > prev.mark.globaltop || c.mark.trailtop > prev.mark.trailtop)
+                    (
+                        c.mark.globaltop > prev.mark.globaltop ||
+                        c.mark.trailtop > prev.mark.trailtop
+                    )
                     _viol!(
                         r, "choice-mark",
-                        string("choices[", ch, "]'s mark is above the newer choice point's")
+                        string(
+                            "choices[", ch, "]'s mark is above the newer choice point's"
+                        )
                     )
                 end
             end
             if c.parent < 0 || c.parent >= ch
-                _viol!(r, "choice", string("choices[", ch, "].parent = ", c.parent, ": not an older choice point"))
+                _viol!(
+                    r,
+                    "choice",
+                    string(
+                        "choices[",
+                        ch,
+                        "].parent = ",
+                        c.parent,
+                        ": not an older choice point"
+                    )
+                )
                 break
             end
             prev = c
@@ -929,17 +1097,34 @@ function _check_local_records!(
     end
     nfl = ld.nfliframes
     if nfl < 0 || nfl > length(ld.fliframes)
-        _viol!(r, "fliframe", string("nfliframes = ", nfl, " outside 0..", length(ld.fliframes)))
+        _viol!(
+            r,
+            "fliframe",
+            string("nfliframes = ", nfl, " outside 0..", length(ld.fliframes))
+        )
         nfl = 0
     end
     for i in 1:nfl
         f = ld.fliframes[i]
         r.cells += 1
-        i > 1 && f.base <= ld.fliframes[i - 1].base && _viol!(
-            r, "fliframe", string("fliframes[", i, "].base = ", f.base, " not above fliframes[", i - 1, "]")
-        )
+        i > 1 && f.base <= ld.fliframes[i - 1].base &&
+            _viol!(
+                r, "fliframe",
+                string(
+                    "fliframes[",
+                    i,
+                    "].base = ",
+                    f.base,
+                    " not above fliframes[",
+                    i - 1,
+                    "]"
+                )
+            )
         (f.parent < 0 || f.parent >= i) && _viol!(
-            r, "fliframe", string("fliframes[", i, "].parent = ", f.parent, ": not an older foreign frame")
+            r, "fliframe",
+            string(
+                "fliframes[", i, "].parent = ", f.parent, ": not an older foreign frame"
+            )
         )
         if f.mark.trailtop != NOT_A_MARK &&
             (f.mark.globaltop > gtop || f.mark.trailtop > ntr)
@@ -1208,13 +1393,20 @@ function unify_gc_stats(
             unify_gc_reason(ld, rt, this) || return false
             PL_unify_functor(ld, head, mk_sym(T, :gc_stats), 8) || return false
             PL_unify_arg(ld, 1, head, rt) || return false
-            PL_put_int64(ld, tmp, this.global_before) && PL_unify_arg(ld, 2, head, tmp) || return false
-            PL_put_int64(ld, tmp, this.global_after) && PL_unify_arg(ld, 3, head, tmp) || return false
-            PL_put_int64(ld, tmp, this.trail_before) && PL_unify_arg(ld, 4, head, tmp) || return false
-            PL_put_int64(ld, tmp, this.trail_after) && PL_unify_arg(ld, 5, head, tmp) || return false
-            PL_put_int64(ld, tmp, this.local_used) && PL_unify_arg(ld, 6, head, tmp) || return false
-            PL_put_float(ld, tmp, this.gc_time) && PL_unify_arg(ld, 7, head, tmp) || return false
-            PL_put_float(ld, tmp, gc_percentage(this)) && PL_unify_arg(ld, 8, head, tmp) || return false
+            PL_put_int64(ld, tmp, this.global_before) && PL_unify_arg(ld, 2, head, tmp) ||
+                return false
+            PL_put_int64(ld, tmp, this.global_after) && PL_unify_arg(ld, 3, head, tmp) ||
+                return false
+            PL_put_int64(ld, tmp, this.trail_before) && PL_unify_arg(ld, 4, head, tmp) ||
+                return false
+            PL_put_int64(ld, tmp, this.trail_after) && PL_unify_arg(ld, 5, head, tmp) ||
+                return false
+            PL_put_int64(ld, tmp, this.local_used) && PL_unify_arg(ld, 6, head, tmp) ||
+                return false
+            PL_put_float(ld, tmp, this.gc_time) && PL_unify_arg(ld, 7, head, tmp) ||
+                return false
+            PL_put_float(ld, tmp, gc_percentage(this)) && PL_unify_arg(ld, 8, head, tmp) ||
+                return false
         end
     end
 
@@ -1232,13 +1424,17 @@ function pl_dgc_statistics5_va(
     last = last_gc_stats(stats)
     aggr = stats.aggr[STAT_PREV_INDEX(stats.aggr_index) + 1]
 
-    return (
+    return if (
         unify_gc_stats(ld, A1, stats.last, stats.last_index) &&
         unify_gc_stats(ld, A2, stats.aggr, stats.aggr_index) &&
         PL_unify_float(ld, A3, gc_percentage(last)) &&
         PL_unify_float(ld, A4, gc_percentage(aggr)) &&
         PL_unify_float(ld, A5, gc_avg(stats))
-    ) ? FTRUE : FFALSE
+    )
+        FTRUE
+    else
+        FFALSE
+    end
 end
 
 # PORT: pl-gc.c BeginPredDefs as PL_predicates_from_gc
@@ -1264,7 +1460,13 @@ function considerGarbageCollect(ld::PL_local_data, s::Union{Nothing, Symbol}=not
         if s === nothing || s === :combined
             return considerGarbageCollect(ld, :global) || considerGarbageCollect(ld, :trail)
         else
-            pol = s === :global ? ld.gc.global_policy : s === :trail ? ld.gc.trail_policy : ld.gc.local_policy
+            pol = if s === :global
+                ld.gc.global_policy
+            elseif s === :trail
+                ld.gc.trail_policy
+            else
+                ld.gc.local_policy
+            end
             if pol.gc
                 used = _used_stack(ld, s)                       # amount in actual use
                 limit = 8 * ld.stacks_limit - _used_stack(ld, :local)
@@ -1290,7 +1492,9 @@ function considerGarbageCollect(ld::PL_local_data, s::Union{Nothing, Symbol}=not
                     return false
                 end
 
-                ld.gc.stats.request = UInt64(s === :global ? GC_GLOBAL_REQUEST : GC_TRAIL_REQUEST)
+                ld.gc.stats.request = UInt64(
+                    s === :global ? GC_GLOBAL_REQUEST : GC_TRAIL_REQUEST
+                )
 
                 return raiseGcSignal!(ld, SIG_GC)
             end
@@ -1320,7 +1524,9 @@ function call_tune_gc_hook(ld::PL_local_data{T})::Nothing where {T}
             if PL_unify_float(ld, av, last.gc_time) &&
                 PL_unify_float(ld, av + 1, gc_percentage(last)) &&
                 PL_unify_float(ld, av + 2, gc_percentage(aggr))
-                PL_call_predicate(gd, ld, nothing, PL_Q_NODEBUG | PL_Q_PASS_EXCEPTION, proc, av)
+                PL_call_predicate(
+                    gd, ld, nothing, PL_Q_NODEBUG | PL_Q_PASS_EXCEPTION, proc, av
+                )
             end
 
             PL_close_foreign_frame(ld, fid)

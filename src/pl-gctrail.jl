@@ -62,7 +62,9 @@ end
 # ORIGINAL: removes the sentinel `gc_trail_begin!` pushed (after `compact_trail` it sits at the new `top`).
 "Remove the sentinel word of `ts`; the last call of a collection."
 function gc_trail_end!(ld::PL_local_data{T}, ts::gc_trail_state)::Nothing where {T}
-    length(ld.trail) == ts.top || error("gc_trail_end!: the trail has $(length(ld.trail)) words, the sentinel is at $(ts.top)")
+    length(ld.trail) == ts.top || error(
+        "gc_trail_end!: the trail has $(length(ld.trail)) words, the sentinel is at $(ts.top)"
+    )
     pop!(ld.trail)
     ts.top = 0
     return nothing
@@ -85,7 +87,13 @@ function gc_trail_tag_entry(ld::PL_local_data{T}, e::word)::word where {T}
         return consPtr(trailValP(e), STG_GLOBAL | TAG_TRAILVAL)    # consPtr(p2, STG_GLOBAL|TAG_TRAILVAL)
     end
     if _trail_stack(e) != TRAIL_GLOBAL
-        throw(NotPortedError(ld.placeholder, "a trail entry for a local-stack variable (pl-gc.c tag_trail; the kernel trails global cells only)", "G1-4"))
+        throw(
+            NotPortedError(
+                ld.placeholder,
+                "a trail entry for a local-stack variable (pl-gc.c tag_trail; the kernel trails global cells only)",
+                "G1-4"
+            )
+        )
     end
     return consPtr(_trail_pos(e), STG_GLOBAL)                      # consPtr(te->address, stg)
 end
@@ -99,7 +107,13 @@ function gc_trail_untag_entry(ld::PL_local_data{T}, w::word)::word where {T}
         return tagTrailPtr(p)                                      # address = valPtr | mask
     end
     if (w & STG_MASK) != STG_GLOBAL
-        throw(NotPortedError(ld.placeholder, "a trail entry for a local-stack variable (pl-gc.c untag_trail; the kernel trails global cells only)", "G1-4"))
+        throw(
+            NotPortedError(
+                ld.placeholder,
+                "a trail entry for a local-stack variable (pl-gc.c untag_trail; the kernel trails global cells only)",
+                "G1-4"
+            )
+        )
     end
     return _trail_addr(p, TRAIL_GLOBAL)
 end
@@ -169,7 +183,9 @@ end
 # This is the data G1-5 consumes; the chain insertion itself (`needsRelocation`, `check_relocation`,
 # `into_relocation_chain(&te->as_word, STG_TRAIL)`) is G1-5's.
 "The indexes, newest first, of the tagged entries `sweep_trail` puts into relocation chains (the trail must be tagged)."
-function gc_trail_sweep_entries(ld::PL_local_data{T}, ts::gc_trail_state)::Vector{Int} where {T}
+function gc_trail_sweep_entries(
+    ld::PL_local_data{T}, ts::gc_trail_state
+)::Vector{Int} where {T}
     ts.tagged || error("gc_trail_sweep_entries: the trail is not tagged")
     out = Int[]
     for i in (ts.top - 1):-1:1                                     # for( ; te >= tBase; te-- )
@@ -188,7 +204,13 @@ end
 # that built one is refused by name instead of silently dropping the chain.
 "The default chain handler of `compact_trail`: a named refusal (the relocation chains are G1-5's)."
 function gc_trail_no_chain(ld::PL_local_data{T}, current::Int, dest::Int)::Nothing where {T}
-    throw(NotPortedError(ld.placeholder, "update_relocation_chain of a trail entry (pl-gc.c:2647)", "G1-5"))
+    throw(
+        NotPortedError(
+            ld.placeholder,
+            "update_relocation_chain of a trail entry (pl-gc.c:2647)",
+            "G1-5"
+        )
+    )
 end
 
 # PORT: pl-gc.c compact_trail
@@ -206,7 +228,7 @@ heads a relocation chain (FIRST bit) is handed to `urc(ld, current, dest)` first
 index of the sentinel in the shorter trail; the result is that index.
 """
 function compact_trail(
-    ld::PL_local_data{T}, ts::gc_trail_state, urc::F = gc_trail_no_chain
+    ld::PL_local_data{T}, ts::gc_trail_state, urc::F=gc_trail_no_chain
 )::Int where {T, F}
     ts.tagged || error("compact_trail: the trail must be tagged")
     trail = ld.trail

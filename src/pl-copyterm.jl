@@ -498,7 +498,8 @@ function copy_term_refs(
 )::Bool where {T}
     while true
         fid = PL_open_foreign_frame(ld)
-        ensureGlobalSpace(ld, 1, ALLOW_GC, :copy_term_refs) || (PL_close_foreign_frame(ld, fid); return false)   # G1-GC safe point: copy_term_refs
+        ensureGlobalSpace(ld, 1, ALLOW_GC, :copy_term_refs) ||
+            (PL_close_foreign_frame(ld, fid); return false)   # G1-GC safe point: copy_term_refs
         dest = allocGlobalCells!(ld, 1)                     # dest = allocGlobal(1); setVar(*dest)
         ld.slots[to + 1] = makeRefG(dest)                   # *valTermRef(to) = makeRefG(dest)
         rc = do_copy_term_cells(ld, -(from + 1), dest, options)

@@ -51,7 +51,9 @@ struct gc_trail_chain
     sw::gc_sweep_counts
 end
 
-function (h::gc_trail_chain)(ld::PL_local_data{T}, current::Int, dest::Int)::Nothing where {T}
+function (h::gc_trail_chain)(
+    ld::PL_local_data{T}, current::Int, dest::Int
+)::Nothing where {T}
     update_relocation_chain(ld, h.sw, GC_TRAIL_BASE + current, GC_TRAIL_BASE + dest)
     return nothing
 end
@@ -120,8 +122,11 @@ end
 "Check that every relocation chain made for a trail entry has been unwound (the check closing `compact_trail`)."
 function gc_check_trail_chains(sw::gc_sweep_counts)::Nothing
     sw.relocated_cells == sw.relocation_cells ||
-        error("GC: after compact_trail: relocation_cells = $(sw.relocation_cells); relocated_cells = $(sw.relocated_cells)")
-    sw.relocation_chains == 0 || error("GC: after compact_trail: relocation chains = $(sw.relocation_chains)")
+        error(
+            "GC: after compact_trail: relocation_cells = $(sw.relocation_cells); relocated_cells = $(sw.relocated_cells)"
+        )
+    sw.relocation_chains == 0 ||
+        error("GC: after compact_trail: relocation chains = $(sw.relocation_chains)")
     return nothing
 end
 
@@ -132,7 +137,8 @@ The trail step of a collection, between `tag_trail` and `collect_phase`: chain t
 `compact_trail` with the relocation-chain handler and check the counters. Returns the new sentinel index.
 """
 function gc_trail_phase(
-    ld::PL_local_data{T}, st::gc_mark_counts, sw::gc_sweep_counts, ts::gc_trail_state, vm::vm_state
+    ld::PL_local_data{T}, st::gc_mark_counts, sw::gc_sweep_counts, ts::gc_trail_state,
+    vm::vm_state
 )::Int where {T}
     gc_alien_trailtops(ld, st, sw, vm)
     top = compact_trail(ld, ts, gc_trail_chain(sw))
@@ -215,7 +221,9 @@ Compact the marked cells of the global stack to its bottom, keeping their order 
 unwinds the relocation chains and chains the downward references, the up phase moves the cells and chains the
 upward ones. Sets `ld.gTop` to `st.total_marked`.
 """
-function compact_global(ld::PL_local_data{T}, st::gc_mark_counts, sw::gc_sweep_counts)::Nothing where {T}
+function compact_global(
+    ld::PL_local_data{T}, st::gc_mark_counts, sw::gc_sweep_counts
+)::Nothing where {T}
     top = ld.gTop
     gc_tombstone_boxes!(ld)
     dest = st.total_marked                                      # the new position of the topmost marked cell
@@ -237,7 +245,9 @@ function compact_global(ld::PL_local_data{T}, st::gc_mark_counts, sw::gc_sweep_c
     end
     dest == 0 || error("GC: mismatch in down phase: dest = $(dest), expected 0")
     sw.relocation_cells == sw.relocated_cells ||
-        error("GC: after down phase: relocation_cells = $(sw.relocation_cells); relocated_cells = $(sw.relocated_cells)")
+        error(
+            "GC: after down phase: relocation_cells = $(sw.relocation_cells); relocated_cells = $(sw.relocated_cells)"
+        )
 
     dest = 1                                                    # scanning global stack upwards
     for current in 1:top
@@ -275,11 +285,13 @@ end
 function unsweep_mark(ld::PL_local_data{T}, isfli::Bool, i::Int)::Nothing where {T}
     m = isfli ? ld.fliframes[i].mark : ld.choices[i].mark
     tt = Int(valPtr(reinterpret(UInt64, m.trailtop))) - 1
-    tt >= 0 || error("GC: unsweep_mark: the trail top of mark $(i) was not relocated (field $(m.trailtop))")
+    tt >= 0 || error(
+        "GC: unsweep_mark: the trail top of mark $(i) was not relocated (field $(m.trailtop))"
+    )
     nm = mark(
         tt,
         Int(valPtr(reinterpret(UInt64, m.globaltop))),
-        Int(valPtr(reinterpret(UInt64, m.saved_bar))),
+        Int(valPtr(reinterpret(UInt64, m.saved_bar)))
     )
     if isfli
         ld.fliframes[i].mark = nm
@@ -387,22 +399,25 @@ check the counters (pl-gc.c). Returns the number of references to value-table bo
 """
 function collect_phase(
     ld::PL_local_data{T}, st::gc_mark_counts, sw::gc_sweep_counts, vm::vm_state;
-    vmi_state_of = nothing, saved_bar_at::Int = 0
+    vmi_state_of=nothing, saved_bar_at::Int=0
 )::Int where {T}
     nvword = gc_vword_referrers(ld)
     sweep_foreign(ld, st, sw)
     sweep_trail(ld, st, sw)
-    sweep_stacks(ld, st, sw, vm; vmi_state_of = vmi_state_of)
+    sweep_stacks(ld, st, sw, vm; vmi_state_of=vmi_state_of)
     saved_bar_at != 0 && sweep_frozen_bar(ld, st, sw, saved_bar_at)
     compact_global(ld, st, sw)
     unswept = unsweep_foreign(ld) + unsweep_stacks(ld, vm)
     unswept == sw.marks_swept ||
         error("GC: marks_swept = $(sw.marks_swept) but marks_unswept = $(unswept)")
     sw.relocation_chains == 0 || error("GC: relocation chains = $(sw.relocation_chains)")
-    (sw.relocated_cells == sw.relocation_cells && sw.relocated_cells == st.needs_relocation - nvword) ||
+    (
+        sw.relocated_cells == sw.relocation_cells &&
+        sw.relocated_cells == st.needs_relocation - nvword
+    ) ||
         error(
             "GC: relocation cells = $(sw.relocation_cells); relocated_cells = $(sw.relocated_cells), " *
-            "needs_relocation = $(st.needs_relocation) (of which $(nvword) vword references)",
+            "needs_relocation = $(st.needs_relocation) (of which $(nvword) vword references)"
         )
     return nvword
 end

@@ -84,13 +84,14 @@ end
 
 "A word that names a global cell (the kinds the collector follows)."
 _gc6_is_global(w::UInt64)::Bool =
-    (LK.isRef(w) && LK.storage(w) == LK.STG_GLOBAL) || LK.isAttVar(w) || LK._is_gcompound(w) || LK._is_vword(w)
+    (LK.isRef(w) && LK.storage(w) == LK.STG_GLOBAL) || LK.isAttVar(w) ||
+    LK._is_gcompound(w) || LK._is_vword(w)
 
 "The positions of the global cells whose MARK bit is set."
 _gc6_marked(ld)::Set{Int} = Set{Int}(p for p in 1:(ld.gTop) if LK.is_marked(ld.gstack[p]))
 
 "The stacks as they are: global cells, slots and the trail."
-_gc6_snapshot(ld) = (g = copy(ld.gstack), s = copy(ld.slots), tr = copy(ld.trail))
+_gc6_snapshot(ld) = (g=copy(ld.gstack), s=copy(ld.slots), tr=copy(ld.trail))
 
 "Put the stacks back as `sn` took them (the trail keeps its length)."
 function _gc6_restore!(ld, sn)
@@ -104,7 +105,10 @@ end
 "The words the frame at index `fi` holds in its argument slots (no gc bits)."
 function _gc6_frame_args(ld, fi::Int)::Vector{UInt64}
     f = ld.frames[fi]
-    return UInt64[ld.slots[LK.argFrameP(f.base, n) + 1] & LK.VALUE_MASK for n in 0:(f.predicate.arity - 1)]
+    return UInt64[
+        ld.slots[LK.argFrameP(f.base, n) + 1] & LK.VALUE_MASK for
+        n in 0:(f.predicate.arity - 1)
+    ]
 end
 
 "The trail in upstream's tagged form (pl-gc.c `tag_trail`, the test's own copy): 0 stays, an address entry becomes a GLOBAL pointer, a value entry one with TAG_TRAILVAL."
@@ -115,7 +119,8 @@ function _gc6_tag_trail!(ld)::Nothing
         if LK.isTrailVal(e)
             ld.trail[i] = LK.consPtr(LK.trailValP(e), LK.STG_GLOBAL | LK.TAG_TRAILVAL)
         else
-            LK._trail_stack(e) == LK.TRAIL_GLOBAL || error("_gc6_tag_trail!: a trail entry outside the global stack")
+            LK._trail_stack(e) == LK.TRAIL_GLOBAL ||
+                error("_gc6_tag_trail!: a trail entry outside the global stack")
             ld.trail[i] = LK.consPtr(LK._trail_pos(e), LK.STG_GLOBAL)
         end
     end
@@ -135,7 +140,7 @@ function _gc6_heap()
         _R[
             _rf("f", _rs("a"), X, _rf("g", X, _rg(Int64(3))), _rg(1234.5678)),
             _rf("h", _rg("gs-string"), _rints(1:5), X),
-            _rg(2.5),                                           # slot t + 3 holds a value-table word (ruling D1)
+            _rg(2.5)                                           # slot t + 3 holds a value-table word (ruling D1)
         ]
     )
     f0 = ld.fli_context
@@ -145,16 +150,25 @@ function _gc6_heap()
     tr = LK.PL_new_term_refs(ld, 3)
     ld.slots[tr + 1] = LK.makeRefG(c1)
     ld.slots[tr + 2] = LK.makeRefG(cv)
-    LK.putSlotValue!(ld, tr + 3, _rf("old", _rg(Int64(1)), _rf("older", _rg(Int64(2)))), LK.PutVarMap())
+    LK.putSlotValue!(
+        ld, tr + 3, _rf("old", _rg(Int64(1)), _rf("older", _rg(Int64(2)))), LK.PutVarMap()
+    )
     ld.gstack[cv] = ld.slots[tr + 3] & LK.VALUE_MASK
     ld.slots[tr + 3] = _gc6_atom(ld, "x")
     td = LK.PL_new_term_ref(ld)
-    LK.putSlotValue!(ld, td + 1, _rf("dead", _rg(Int64(1)), _rf("dead2", _rg(Int64(2)), _rints(1:4))), LK.PutVarMap())
+    LK.putSlotValue!(
+        ld,
+        td + 1,
+        _rf("dead", _rg(Int64(1)), _rf("dead2", _rg(Int64(2)), _rints(1:4))),
+        LK.PutVarMap()
+    )
     ld.slots[td + 1] = _gc6_atom(ld, "gone")
     LK.PL_open_foreign_frame(ld)
     f1 = ld.fli_context
     td2 = LK.PL_new_term_ref(ld)
-    LK.putSlotValue!(ld, td2 + 1, _rf("dead3", _rg(Int64(3)), _rg(3.75), _rints(1:6)), LK.PutVarMap())   # a dead box, NOT the last entry
+    LK.putSlotValue!(
+        ld, td2 + 1, _rf("dead3", _rg(Int64(3)), _rg(3.75), _rints(1:6)), LK.PutVarMap()
+    )   # a dead box, NOT the last entry
     ld.slots[td2 + 1] = _gc6_atom(ld, "gone")
     LK.PL_open_foreign_frame(ld)
     f2 = ld.fli_context
@@ -170,15 +184,31 @@ function _gc6_heap()
     LK.PL_open_foreign_frame(ld)
     f3 = ld.fli_context
     td3 = LK.PL_new_term_ref(ld)
-    LK.putSlotValue!(ld, td3 + 1, _rf("dead4", _rg(Int64(4)), _rg(4.5), _rints(1:7)), LK.PutVarMap())   # the LAST value-table entry, dead
+    LK.putSlotValue!(
+        ld, td3 + 1, _rf("dead4", _rg(Int64(4)), _rg(4.5), _rints(1:7)), LK.PutVarMap()
+    )   # the LAST value-table entry, dead
     ld.slots[td3 + 1] = _gc6_atom(ld, "gone")
     LK.PL_open_foreign_frame(ld)
     f4 = ld.fli_context
-    return (ld = ld, t = t, tl = tl, n0 = n0, f0 = f0, f1 = f1, f2 = f2, f3 = f3, f4 = f4, c1 = c1, c2 = c2, cv = cv, p = p)
+    return (
+        ld=ld,
+        t=t,
+        tl=tl,
+        n0=n0,
+        f0=f0,
+        f1=f1,
+        f2=f2,
+        f3=f3,
+        f4=f4,
+        c1=c1,
+        c2=c2,
+        cv=cv,
+        p=p
+    )
 end
 
 "The real marks of the engine as `(kind, index, mark)`: the foreign frames (`:f`) and the choicepoints from `BFR` (`:c`)."
-function _gc6_marks(ld; choices::Bool = false)
+function _gc6_marks(ld; choices::Bool=false)
     out = Tuple{Symbol, Int, LK.mark}[]
     fr = ld.fli_context
     while fr != 0
@@ -194,7 +224,8 @@ function _gc6_marks(ld; choices::Bool = false)
 end
 
 "The mark of `(kind, index)` as it is now."
-_gc6_mark_now(ld, kind::Symbol, i::Int)::LK.mark = kind === :f ? ld.fliframes[i].mark : ld.choices[i].mark
+_gc6_mark_now(ld, kind::Symbol, i::Int)::LK.mark =
+    kind === :f ? ld.fliframes[i].mark : ld.choices[i].mark
 
 """
 The heap marked, the trail begun and tagged, the deliberate bars set; returns the handles, `st`, the roots and the reachable set `reach`
@@ -214,15 +245,18 @@ function _gc6_prepare(H)
     m4 = ld.fliframes[H.f4].mark                                # the saved bar above every cell: the clamp row
     ld.fliframes[H.f4].mark = LK.mark(m4.trailtop, m4.globaltop, LK.NO_MARK_BAR)
     m3 = ld.fliframes[H.f3].mark                                # a low saved bar, inside the gap
-    ld.fliframes[H.f3].mark = LK.mark(m3.trailtop, m3.globaltop, ld.fliframes[H.f1].mark.globaltop)
+    ld.fliframes[H.f3].mark = LK.mark(
+        m3.trailtop, m3.globaltop, ld.fliframes[H.f1].mark.globaltop
+    )
     m0 = ld.fliframes[H.f0].mark                                # a height of 0: no cell below it
     ld.fliframes[H.f0].mark = LK.mark(m0.trailtop, m0.globaltop, 0)
-    return merge(H, (st = st, ts = ts, roots = roots, reach = reach))
+    return merge(H, (st=st, ts=ts, roots=roots, reach=reach))
 end
 
 "The stacks, the value table and the marks as they are now."
-_gc6_pre(ld) = (g = copy(ld.gstack), s = copy(ld.slots), tr = copy(ld.trail), gTop = ld.gTop, lTop = ld.lTop,
-    vbox = copy(ld.vbox), vtable = copy(ld.vtable), marks = _gc6_marks(ld))
+_gc6_pre(ld) =
+    (g=copy(ld.gstack), s=copy(ld.slots), tr=copy(ld.trail), gTop=ld.gTop, lTop=ld.lTop,
+        vbox=copy(ld.vbox), vtable=copy(ld.vtable), marks=_gc6_marks(ld))
 
 # ---- the independent model ----
 const _GC6_BITS = UInt64(0x1f)                                  # tag (3 bits) and storage (2 bits) of a word
@@ -256,66 +290,86 @@ _gc6_newh(live::Vector{Int}, h::Int)::Int = count(<=(h), live)
 _gc6_cells(ld)::Vector{UInt64} = ld.gstack[1:(ld.gTop)]
 
 "The cells the model expects: the live cells of `g` in order, references rewritten (the model side of the one comparison)."
-_gc6_expect_cells(g::Vector{UInt64}, live::Vector{Int}, rank::Dict{Int, Int})::Vector{UInt64} =
+_gc6_expect_cells(
+    g::Vector{UInt64}, live::Vector{Int}, rank::Dict{Int, Int}
+)::Vector{UInt64} =
     UInt64[_gc6_rewrite(g[p] & LK.VALUE_MASK, rank) for p in live]
 
 "The expected new count of a trail mark `c` (an entry count): the count less the deleted entries at indices `<= c`."
-_gc6_newcount(tr::Vector{UInt64}, c::Int)::Int = c - count(==(UInt64(0)), view(tr, 1:min(c, length(tr))))
+_gc6_newcount(tr::Vector{UInt64}, c::Int)::Int =
+    c - count(==(UInt64(0)), view(tr, 1:min(c, length(tr))))
 
 """
 Everything the collection must have done, against the model, as a list of problems (empty = none): the cells, the slots, the trail,
 the value table, the marks, and no gc bit left anywhere. `gcatom` (optional) is the word an unmarked global-reference slot may have become.
 """
-function _gc6_problems(ld, pre, live::Vector{Int}, rank::Dict{Int, Int}; gcatom = nothing)::Vector{String}
+function _gc6_problems(
+    ld, pre, live::Vector{Int}, rank::Dict{Int, Int}; gcatom=nothing
+)::Vector{String}
     bad = String[]
     want = _gc6_expect_cells(pre.g, live, rank)
     got = _gc6_cells(ld)
-    got == want || push!(bad, "cells differ: first at $(findfirst(i -> get(got, i, 0) != get(want, i, 1), 1:max(length(got), length(want)))) of $(length(got)) vs $(length(want))")
+    got == want || push!(
+        bad,
+        "cells differ: first at $(findfirst(i -> get(got, i, 0) != get(want, i, 1), 1:max(length(got), length(want)))) of $(length(got)) vs $(length(want))"
+    )
     ld.gTop == length(live) || push!(bad, "gTop $(ld.gTop) != live cells $(length(live))")
-    any(w -> LK.is_marked(w) || LK.is_first(w), got) && push!(bad, "a gc bit is left on the global stack")
+    any(w -> LK.is_marked(w) || LK.is_first(w), got) &&
+        push!(bad, "a gc bit is left on the global stack")
     for i in 1:(pre.lTop)
         w = pre.s[i]
         exp = LK.is_marked(w) ? _gc6_rewrite(w & LK.VALUE_MASK, rank) : w
         have = ld.slots[i]
-        (have == exp || (gcatom !== nothing && !LK.is_marked(w) && have == gcatom)) || push!(bad, "slot $(i): $(have) expected $(exp)")
+        (have == exp || (gcatom !== nothing && !LK.is_marked(w) && have == gcatom)) ||
+            push!(bad, "slot $(i): $(have) expected $(exp)")
         (LK.is_marked(have) || LK.is_first(have)) && push!(bad, "slot $(i) keeps a gc bit")
     end
     kept = UInt64[w for w in view(pre.tr, 1:(length(pre.tr) - 1)) if w != 0]
     wantt = vcat(UInt64[_gc6_rewrite_trail(w, rank) for w in kept], UInt64[0])
-    ld.trail == wantt || push!(bad, "trail differs: $(length(ld.trail)) entries, expected $(length(wantt))")
+    ld.trail == wantt ||
+        push!(bad, "trail differs: $(length(ld.trail)) entries, expected $(length(wantt))")
     wantb = Int[p == 0 ? 0 : get(rank, p, 0) for p in pre.vbox]
     while !isempty(wantb) && wantb[end] == 0
         pop!(wantb)
     end
     ld.vbox == wantb || push!(bad, "vbox $(ld.vbox), expected $(wantb)")
-    length(ld.vtable) == length(ld.vbox) || push!(bad, "vtable length $(length(ld.vtable)) != vbox length $(length(ld.vbox))")
+    length(ld.vtable) == length(ld.vbox) ||
+        push!(bad, "vtable length $(length(ld.vtable)) != vbox length $(length(ld.vbox))")
     for (i, b) in enumerate(ld.vbox)
         b == 0 && continue
         w = ld.gstack[b]
-        (LK._is_vword(w) && Int(w >> LK.LMASK_BITS) == i) || push!(bad, "box $(i) at $(b) is not its own vword")
-        i <= length(pre.vtable) && ld.vtable[i] === pre.vtable[i] || push!(bad, "value $(i) changed")
+        (LK._is_vword(w) && Int(w >> LK.LMASK_BITS) == i) ||
+            push!(bad, "box $(i) at $(b) is not its own vword")
+        i <= length(pre.vtable) && ld.vtable[i] === pre.vtable[i] ||
+            push!(bad, "value $(i) changed")
     end
     for (kind, i, m0) in pre.marks
-        exp = LK.mark(_gc6_newcount(pre.tr, m0.trailtop), _gc6_newh(live, m0.globaltop), _gc6_newh(live, min(m0.saved_bar, pre.gTop)))
-        _gc6_mark_now(ld, kind, i) == exp || push!(bad, "mark $(kind)$(i): $(_gc6_mark_now(ld, kind, i)), expected $(exp)")
+        exp = LK.mark(
+            _gc6_newcount(pre.tr, m0.trailtop),
+            _gc6_newh(live, m0.globaltop),
+            _gc6_newh(live, min(m0.saved_bar, pre.gTop))
+        )
+        _gc6_mark_now(ld, kind, i) == exp ||
+            push!(bad, "mark $(kind)$(i): $(_gc6_mark_now(ld, kind, i)), expected $(exp)")
     end
     return bad
 end
 
 "The heap prepared, `gc_trail_phase` run; with `collect = true` also `collect_phase` (mark_bar set to 5 before it). Returns the handles, `pre`, `mid`, counters."
-function _gc6_run(; collect::Bool = true)
+function _gc6_run(; collect::Bool=true)
     P = _gc6_prepare(_gc6_heap())
     ld = P.ld
     pre = _gc6_pre(ld)
     sw = LK.gc_sweep_counts()
     vm = LK.vm_state()
     top = LK.gc_trail_phase(ld, P.st, sw, P.ts, vm)
-    mid = (tr = copy(ld.trail), marks = _gc6_marks(ld), top = top, relocated = sw.relocated_cells, cells = sw.relocation_cells,
-        chains = sw.relocation_chains, alien = sw.alien_relocations)
+    mid = (tr=copy(ld.trail), marks=_gc6_marks(ld), top=top, relocated=sw.relocated_cells,
+        cells=sw.relocation_cells,
+        chains=sw.relocation_chains, alien=sw.alien_relocations)
     ld.mark_bar = 5
     nv = collect ? LK.collect_phase(ld, P.st, sw, vm) : -1
     live, rank = _gc6_live(pre.g, pre.gTop)
-    return merge(P, (pre = pre, mid = mid, sw = sw, nv = nv, live = live, rank = rank, vm = vm))
+    return merge(P, (pre=pre, mid=mid, sw=sw, nv=nv, live=live, rank=rank, vm=vm))
 end
 
 @testset "compaction: the cells, slots, trail, value table and marks equal the model" begin
@@ -343,14 +397,16 @@ end
     pre = R.pre
     boxpos = Set(p for p in pre.vbox if p != 0)
     n = count(p -> LK._is_vword(pre.g[p] & LK.VALUE_MASK) && !(p in boxpos), R.live)    # marked cells holding a vword (not the boxes)
-    n += count(w -> LK.is_marked(w) && LK._is_vword(w & LK.VALUE_MASK), view(pre.s, 1:(pre.lTop)))
+    n += count(
+        w -> LK.is_marked(w) && LK._is_vword(w & LK.VALUE_MASK), view(pre.s, 1:(pre.lTop))
+    )
     @test n >= 3                                                # compound arguments and slots: not vacuous
     @test R.nv == n
     @test R.st.needs_relocation - R.sw.relocated_cells == n
 end
 
 @testset "gc_trail_phase: deleted entries are gone, a mark's trailtop names the new count + 1" begin
-    R = _gc6_run(collect = false)
+    R = _gc6_run(collect=false)
     ld, pre, mid = R.ld, R.pre, R.mid
     zeroed = count(==(UInt64(0)), view(pre.tr, 1:(length(pre.tr) - 1)))
     kept = UInt64[w for w in view(pre.tr, 1:(length(pre.tr) - 1)) if w != 0]
@@ -384,7 +440,7 @@ end
 end
 
 "A hand-marked heap: every cell an atom; the cells `live` marked, a downward and an upward reference among them, a chain head inside the garbage run (`head_top`: ON its topmost cell n - 4, which the main scan meets before any run)."
-function _gc6_wb(; total::Union{Nothing, Int} = nothing, head_top::Bool = false)
+function _gc6_wb(; total::Union{Nothing, Int}=nothing, head_top::Bool=false)
     ld, t, n0 = _gc6_engine(_R[_rf("k", _rs("a"), _rv(1))])
     ld.gTop < 14 && LK.allocGlobalCells!(ld, 14 - ld.gTop)
     n = ld.gTop
@@ -405,29 +461,31 @@ function _gc6_wb(; total::Union{Nothing, Int} = nothing, head_top::Bool = false)
     LK.alien_into_relocation_chain(ld, sw, LK._gcs_mfield(true, f, 0), LK.STG_GLOBAL)
     st = LK.gc_mark_counts()
     st.total_marked = total === nothing ? length(live) : total
-    return (ld = ld, st = st, sw = sw, f = f, n = n, live = live, pre = _gc6_pre(ld))
+    return (ld=ld, st=st, sw=sw, f=f, n=n, live=live, pre=_gc6_pre(ld))
 end
 
 @testset "compact_global on a hand-marked heap: moves, chains, hole, tombstone-free" begin
     for head_top in (false, true)                               # the head inside the run (downskip unwinds it) and on its top cell (the main scan does)
-        W = _gc6_wb(head_top = head_top)
+        W = _gc6_wb(head_top=head_top)
         ld, n, live = W.ld, W.n, W.live
         @test n >= 14 && W.sw.relocation_chains == 1 && W.sw.relocation_cells == 1
         lv, rank = _gc6_live(W.pre.g, W.pre.gTop)
         @test lv == live
         want = _gc6_expect_cells(W.pre.g, live, rank)
         @test length(want) == 6   # the downward (live[5], cell n-1) and the upward (live[2], cell 4) references were rewritten (non-vacuous)
-        @test want[5] != (W.pre.g[n - 1] & LK.VALUE_MASK) && want[2] != (W.pre.g[4] & LK.VALUE_MASK)
+        @test want[5] != (W.pre.g[n - 1] & LK.VALUE_MASK) &&
+            want[2] != (W.pre.g[4] & LK.VALUE_MASK)
         LK.compact_global(ld, W.st, W.sw)
         @test _gc6_cells(ld) == want
         @test ld.gTop == 6
-        @test W.sw.relocation_chains == 0 && W.sw.relocated_cells == W.sw.relocation_cells == 3
+        @test W.sw.relocation_chains == 0 &&
+            W.sw.relocated_cells == W.sw.relocation_cells == 3
         got = reinterpret(UInt64, ld.fliframes[W.f].mark.globaltop)  # the head in the garbage was unwound at the number of live cells below it
         @test got == (UInt64(2) << LK.LMASK_BITS) | LK.STG_GLOBAL
         @test all(==(UInt64(0)), ld.gstack[7:(n - 4)])          # the garbage run is a hole (zeroed), below the new top nothing of it is left
         @test !any(w -> LK.is_marked(w) || LK.is_first(w), _gc6_cells(ld))
     end
-    W2 = _gc6_wb(total = 7)
+    W2 = _gc6_wb(total=7)
     @test_throws ErrorException LK.compact_global(W2.ld, W2.st, W2.sw)
 end
 
@@ -453,7 +511,8 @@ end
     @test sw.relocation_chains == 1
     @test LK.downskip_combine_garbage(ld, sw, base + 11, 5) == base
     @test sw.relocation_chains == 0 && sw.relocated_cells == 1
-    @test reinterpret(UInt64, ld.fliframes[f].mark.globaltop) == (UInt64(5) << LK.LMASK_BITS) | LK.STG_GLOBAL
+    @test reinterpret(UInt64, ld.fliframes[f].mark.globaltop) ==
+        (UInt64(5) << LK.LMASK_BITS) | LK.STG_GLOBAL
     @test all(==(UInt64(0)), ld.gstack[base:(base + 11)])
     n = ld.gTop                                                 # garbage down to the BOTTOM of the stack: the hole starts at position 1
     fill!(view(ld.gstack, 1:n), a)
@@ -471,7 +530,8 @@ end
     end
     before = copy(ld.vbox)
     @test LK.gc_tombstone_boxes!(ld) == 1
-    @test ld.vbox[mid] == 0 && ld.vbox[[i for i in 1:nb if i != mid]] == before[[i for i in 1:nb if i != mid]]
+    @test ld.vbox[mid] == 0 &&
+        ld.vbox[[i for i in 1:nb if i != mid]] == before[[i for i in 1:nb if i != mid]]
     @test LK.gc_tombstone_boxes!(ld) == 0                       # a tombstone is skipped (no cell 0), nothing more is dead
     LK.gc_truncate_vtable!(ld)
     @test length(ld.vbox) == nb && length(ld.vtable) == nb      # the last entry is live: nothing popped
@@ -490,7 +550,11 @@ end
     @test length(frs) >= 5
     for (j, fr) in enumerate(frs)
         enc(pos, stg) = reinterpret(Int, LK.consPtr(pos, stg))
-        ld.fliframes[fr].mark = LK.mark(enc(j + 1, LK.STG_STATIC), enc(10 + j, LK.STG_GLOBAL), enc(20 + j, LK.STG_GLOBAL))
+        ld.fliframes[fr].mark = LK.mark(
+            enc(j + 1, LK.STG_STATIC),
+            enc(10 + j, LK.STG_GLOBAL),
+            enc(20 + j, LK.STG_GLOBAL)
+        )
     end
     @test LK.unsweep_foreign(ld) == length(frs)
     for (j, fr) in enumerate(frs)
@@ -500,11 +564,16 @@ end
     @test_throws ErrorException LK.unsweep_mark(ld, true, frs[1])
     for (j, fr) in enumerate(frs)                               # heights again; one frame gets a NoMark: it is no real mark, left alone and not counted
         enc(pos, stg) = reinterpret(Int, LK.consPtr(pos, stg))
-        ld.fliframes[fr].mark = LK.mark(enc(j + 1, LK.STG_STATIC), enc(10 + j, LK.STG_GLOBAL), enc(20 + j, LK.STG_GLOBAL))
+        ld.fliframes[fr].mark = LK.mark(
+            enc(j + 1, LK.STG_STATIC),
+            enc(10 + j, LK.STG_GLOBAL),
+            enc(20 + j, LK.STG_GLOBAL)
+        )
     end
     ld.fliframes[frs[2]].mark = LK.NoMark()
     @test LK.unsweep_foreign(ld) == length(frs) - 1
-    @test ld.fliframes[frs[2]].mark == LK.NoMark() && ld.fliframes[frs[3]].mark == LK.mark(3, 13, 23)
+    @test ld.fliframes[frs[2]].mark == LK.NoMark() &&
+        ld.fliframes[frs[3]].mark == LK.mark(3, 13, 23)
 end
 
 @testset "gc_alien_trailtops chains the trail top of every real foreign-frame mark, not of a NoMark" begin
@@ -516,7 +585,8 @@ end
     sw = LK.gc_sweep_counts()
     LK.gc_alien_trailtops(ld, P.st, sw, LK.vm_state())
     @test sw.alien_relocations == nreal - 1
-    @test sw.relocation_cells == nreal - 1 && sw.relocated_cells == 0 && sw.relocation_chains >= 1
+    @test sw.relocation_cells == nreal - 1 && sw.relocated_cells == 0 &&
+        sw.relocation_chains >= 1
     @test ld.fliframes[P.f2].mark == LK.NoMark()
 end
 
@@ -524,14 +594,14 @@ end
     clauses = Tuple{_R, Union{Nothing, _R}}[
         (_rf("n", _rf("p", _rg(Int64(1)), _rg(2.25))), nothing),
         (_rf("n", _rf("p", _rg(Int64(2)), _rg(3.25))), nothing),
-        (_rf("n", _rf("p", _rg(Int64(3)), _rg(4.25))), nothing),
+        (_rf("n", _rf("p", _rg(Int64(3)), _rg(4.25))), nothing)
     ]
     db = _rdb(clauses)
     ld = db.ld
     ran = Ref(0)
     _rcall(
         db, _rf("n", _rv(90));
-        at = (qid, k) -> begin
+        at=(qid, k) -> begin
             k == 1 || return nothing
             ran[] += 1
             chs = Int[]
@@ -553,20 +623,34 @@ end
             saved = [ld.choices[c].mark for c in chs]
             for (j, c) in enumerate(chs)
                 enc(pos, stg) = reinterpret(Int, LK.consPtr(pos, stg))
-                ld.choices[c].mark = LK.mark(enc(j + 1, LK.STG_STATIC), enc(10 + j, LK.STG_GLOBAL), enc(20 + j, LK.STG_GLOBAL))
+                ld.choices[c].mark = LK.mark(
+                    enc(j + 1, LK.STG_STATIC),
+                    enc(10 + j, LK.STG_GLOBAL),
+                    enc(20 + j, LK.STG_GLOBAL)
+                )
             end
             @test LK.unsweep_choicepoints(ld, ld.BFR) == length(chs)
-            @test all(j -> ld.choices[chs[j]].mark == LK.mark(j, 10 + j, 20 + j), eachindex(chs))
+            @test all(
+                j -> ld.choices[chs[j]].mark == LK.mark(j, 10 + j, 20 + j),
+                eachindex(chs)
+            )
             for (j, c) in enumerate(chs)
                 enc(pos, stg) = reinterpret(Int, LK.consPtr(pos, stg))
-                ld.choices[c].mark = LK.mark(enc(j + 1, LK.STG_STATIC), enc(10 + j, LK.STG_GLOBAL), enc(20 + j, LK.STG_GLOBAL))
+                ld.choices[c].mark = LK.mark(
+                    enc(j + 1, LK.STG_STATIC),
+                    enc(10 + j, LK.STG_GLOBAL),
+                    enc(20 + j, LK.STG_GLOBAL)
+                )
             end
             @test LK.unsweep_stacks(ld, vm) == length(chs)
-            @test all(j -> ld.choices[chs[j]].mark == LK.mark(j, 10 + j, 20 + j), eachindex(chs))
+            @test all(
+                j -> ld.choices[chs[j]].mark == LK.mark(j, 10 + j, 20 + j),
+                eachindex(chs)
+            )
             for (j, c) in enumerate(chs)
                 ld.choices[c].mark = saved[j]
             end
-        end,
+        end
     )
     @test ran[] >= 1
 end
@@ -579,18 +663,26 @@ end
     clauses = Tuple{_R, Union{Nothing, _R}}[
         (_rf("n", _rf("p", _rg(Int64(1)), _rg(2.25))), nothing),
         (_rf("n", _rf("p", _rg(Int64(2)), _rg(3.25))), nothing),
-        (_rf("n", _rf("p", _rg(Int64(3)), _rg(4.25))), nothing),
+        (_rf("n", _rf("p", _rg(Int64(3)), _rg(4.25))), nothing)
     ]
     db = _rdb(clauses)
     gd, ld = db.gd, db.ld
     ran = Ref(0)
     _rcall(
         db, _rf("n", _rv(90));
-        at = (qid, k) -> begin
+        at=(qid, k) -> begin
             k == 1 || return nothing
             ran[] += 1
             qf1 = ld.query
-            chain(ch0) = (c = Int[]; ch = ch0; while ch != 0; push!(c, ch); ch = ld.choices[ch].parent; end; c)
+            chain(ch0) = (
+                c=Int[];
+                ch=ch0;
+                while ch != 0
+                    push!(c, ch)
+                    ch = ld.choices[ch].parent
+                end;
+                c
+            )
             chs1 = chain(ld.BFR)                                   # the outer query's choicepoints
             @test length(chs1) >= 2 && ld.queries[qf1].parent == 0
             env0 = ld.environment_frame
@@ -599,7 +691,8 @@ end
             args2 = LK.PL_new_term_refs(ld, 1)
             LK.putSlotValue!(ld, args2 + 1, _rv(91), LK.PutVarMap())
             qid2 = LK.PL_open_query(
-                gd, ld, nothing, LK.PL_Q_NORMAL | LK.PL_Q_EXT_STATUS, _rproc(db, _rf("n", _rv(1))), args2
+                gd, ld, nothing, LK.PL_Q_NORMAL | LK.PL_Q_EXT_STATUS,
+                _rproc(db, _rf("n", _rv(1))), args2
             )
             @test qid2 != 0
             @test LK.PL_next_solution(gd, ld, qid2) == LK.PL_S_TRUE
@@ -622,10 +715,17 @@ end
             saved = [ld.choices[c].mark for c in all_chs]
             for (j, c) in enumerate(all_chs)
                 enc(pos, stg) = reinterpret(Int, LK.consPtr(pos, stg))
-                ld.choices[c].mark = LK.mark(enc(j + 1, LK.STG_STATIC), enc(10 + j, LK.STG_GLOBAL), enc(20 + j, LK.STG_GLOBAL))
+                ld.choices[c].mark = LK.mark(
+                    enc(j + 1, LK.STG_STATIC),
+                    enc(10 + j, LK.STG_GLOBAL),
+                    enc(20 + j, LK.STG_GLOBAL)
+                )
             end
             @test LK.unsweep_stacks(ld, vm) == length(chs2) + length(chs1)    # NQ: and so does unsweep_stacks (G1GC6A-U5)
-            @test all(j -> ld.choices[all_chs[j]].mark == LK.mark(j, 10 + j, 20 + j), eachindex(all_chs))
+            @test all(
+                j -> ld.choices[all_chs[j]].mark == LK.mark(j, 10 + j, 20 + j),
+                eachindex(all_chs)
+            )
             for (j, c) in enumerate(all_chs)
                 ld.choices[c].mark = saved[j]
             end
@@ -633,7 +733,7 @@ end
             LK.PL_close_foreign_frame(ld, fid2)
             ld.environment_frame = env0
             @test ld.query == qf1
-        end,
+        end
     )
     @test ran[] >= 1
 end

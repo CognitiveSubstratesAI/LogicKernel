@@ -66,7 +66,8 @@ const GC_MFIELD_BASE = 1 << 41
 
 # the fields of a mark: 0 = globaltop, 1 = saved_bar, 2 = trailtop
 "The address of field `f` (0 globaltop, 1 saved_bar, 2 trailtop) of the mark of choicepoint (`isfli == false`) or foreign frame `i`."
-@inline _gcs_mfield(isfli::Bool, i::Int, f::Int)::Int = -(GC_MFIELD_BASE + 8 * i + (isfli ? 4 : 0) + f)
+@inline _gcs_mfield(isfli::Bool, i::Int, f::Int)::Int =
+    -(GC_MFIELD_BASE + 8 * i + (isfli ? 4 : 0) + f)
 
 @inline _gcs_is_mfield(a::Int)::Bool = a <= -GC_MFIELD_BASE
 
@@ -75,7 +76,13 @@ function _gcs_mf_get(ld::PL_local_data{T}, a::Int)::Int where {T}
     k = -a - GC_MFIELD_BASE
     f = k & 3
     m = (k & 4) != 0 ? ld.fliframes[k >> 3].mark : ld.choices[k >> 3].mark
-    return f == 0 ? m.globaltop : f == 1 ? m.saved_bar : m.trailtop
+    return if f == 0
+        m.globaltop
+    elseif f == 1
+        m.saved_bar
+    else
+        m.trailtop
+    end
 end
 
 function _gcs_mf_set!(ld::PL_local_data{T}, a::Int, v::Int)::Nothing where {T}
@@ -84,7 +91,13 @@ function _gcs_mf_set!(ld::PL_local_data{T}, a::Int, v::Int)::Nothing where {T}
     isfli = (k & 4) != 0
     i = k >> 3
     m = isfli ? ld.fliframes[i].mark : ld.choices[i].mark
-    nm = f == 0 ? mark(m.trailtop, v, m.saved_bar) : f == 1 ? mark(m.trailtop, m.globaltop, v) : mark(v, m.globaltop, m.saved_bar)
+    nm = if f == 0
+        mark(m.trailtop, v, m.saved_bar)
+    elseif f == 1
+        mark(m.trailtop, m.globaltop, v)
+    else
+        mark(v, m.globaltop, m.saved_bar)
+    end
     if isfli
         ld.fliframes[i].mark = nm
     else
@@ -120,20 +133,27 @@ end
 end
 
 # the storage class of the cell at address `a`
-@inline _gcs_stg(a::Int)::word = a < 0 ? STG_LOCAL : (a >= GC_TRAIL_BASE ? STG_STATIC : STG_GLOBAL)
+@inline _gcs_stg(a::Int)::word =
+    a < 0 ? STG_LOCAL : (a >= GC_TRAIL_BASE ? STG_STATIC : STG_GLOBAL)
 
 # PORT: pl-gc.c makePtr
 # DIVERGES: the storage class follows from the ADDRESS (`a` of the scheme above: global cell, slot or mark
 # field, trail entry); upstream finds it by asking which stack the pointer lies on.
 "The pointer word to the cell at address `a`, with tag `t` (pl-gc.c `makePtr`)."
 @inline function makePtr(a::Int, t::word)::word
-    return consPtr(a < 0 ? -a : (a >= GC_TRAIL_BASE ? a - GC_TRAIL_BASE : a), t | _gcs_stg(a))
+    return consPtr(
+        a < 0 ? -a : (a >= GC_TRAIL_BASE ? a - GC_TRAIL_BASE : a), t | _gcs_stg(a)
+    )
 end
 
 # the address a pointer word names (the inverse of makePtr)
 @inline function _gcs_unptr(w::word)::Int
     s = storage(w)
-    return s == STG_LOCAL ? -valPtr(w) : (s == STG_STATIC ? GC_TRAIL_BASE + valPtr(w) : valPtr(w))
+    return if s == STG_LOCAL
+        -valPtr(w)
+    else
+        (s == STG_STATIC ? GC_TRAIL_BASE + valPtr(w) : valPtr(w))
+    end
 end
 
 # PORT: pl-gc.c offset_word
@@ -153,7 +173,8 @@ end
 
 # ORIGINAL: the table index of the value-table box at position `p`, 0 when `p` is no box (the mark of a box
 # cell is the same bit as any other: compaction asks this for each cell it moves and re-points `vbox`).
-@inline gc_box_index(ld::PL_local_data, p::Int)::Int = _is_box(ld, p) ? valPtr(ld.gstack[p]) : 0
+@inline gc_box_index(ld::PL_local_data, p::Int)::Int =
+    _is_box(ld, p) ? valPtr(ld.gstack[p]) : 0
 
 # ---- the chains ----
 
@@ -166,7 +187,9 @@ end
 Unwind the relocation chain headed at cell `head`: every referrer gets `makePtr(dest, its tag)` and the
 head gets its original value back (pl-gc.c).
 """
-function update_relocation_chain(ld::PL_local_data{T}, sw::gc_sweep_counts, head::Int, dest::Int)::Nothing where {T}
+function update_relocation_chain(
+    ld::PL_local_data{T}, sw::gc_sweep_counts, head::Int, dest::Int
+)::Nothing where {T}
     current = head
     val = gc_get_value(_gcs_get(ld, current))
     while true
@@ -195,8 +218,12 @@ end
 Insert the referrer at address `current` (its word is a pointer to the head cell) into the relocation
 chain of that cell (pl-gc.c).
 """
-function into_relocation_chain(ld::PL_local_data{T}, sw::gc_sweep_counts, current::Int, stg::word)::Nothing where {T}
-    stg == _gcs_stg(current) || error("GC: into_relocation_chain: storage class does not match the address $(current)")
+function into_relocation_chain(
+    ld::PL_local_data{T}, sw::gc_sweep_counts, current::Int, stg::word
+)::Nothing where {T}
+    stg == _gcs_stg(current) || error(
+        "GC: into_relocation_chain: storage class does not match the address $(current)"
+    )
     cell = _gcs_get(ld, current)
     val = gc_get_value(cell)
     head = _gcs_unptr(val)                         # FIRST/MARK already gone
@@ -226,7 +253,9 @@ end
 Convert the raw position in the cell at `a` (a mark field, a slot) to a pointer of storage `orgst` and put
 it into the relocation chain of the cell it names (pl-gc.c).
 """
-function alien_into_relocation_chain(ld::PL_local_data{T}, sw::gc_sweep_counts, a::Int, orgst::word)::Nothing where {T}
+function alien_into_relocation_chain(
+    ld::PL_local_data{T}, sw::gc_sweep_counts, a::Int, orgst::word
+)::Nothing where {T}
     raw = Int(_gcs_get(ld, a))
     _gcs_set!(ld, a, consPtr(orgst == STG_STATIC ? raw + 1 : raw, orgst))
     into_relocation_chain(ld, sw, a, _gcs_stg(a))
@@ -273,7 +302,9 @@ end
 Sweep the global-top height held at address `a` to the position of the highest live cell below it and put
 it into that cell's relocation chain (pl-gc.c).
 """
-function sweep_global_mark(ld::PL_local_data{T}, st::gc_mark_counts, sw::gc_sweep_counts, a::Int)::Nothing where {T}
+function sweep_global_mark(
+    ld::PL_local_data{T}, st::gc_mark_counts, sw::gc_sweep_counts, a::Int
+)::Nothing where {T}
     m = _gcs_h_get(ld, a)
     gm = 0
     if m < 1
@@ -311,7 +342,9 @@ end
 # DIVERGES: the mark is named by (`isfli`, `i`): choicepoint `i` of `ld.choices` or foreign frame `i` of
 # `ld.fliframes`; `saved_bar` is clamped to `ld.gTop`, a height.
 "Sweep the global-top and the saved bar of a backtrack mark (pl-gc.c)."
-function sweep_mark(ld::PL_local_data{T}, st::gc_mark_counts, sw::gc_sweep_counts, isfli::Bool, i::Int)::Nothing where {T}
+function sweep_mark(
+    ld::PL_local_data{T}, st::gc_mark_counts, sw::gc_sweep_counts, isfli::Bool, i::Int
+)::Nothing where {T}
     sw.marks_swept += 1
     sweep_global_mark(ld, st, sw, _gcs_mfield(isfli, i, 0))
     sb = _gcs_mfield(isfli, i, 1)
@@ -324,7 +357,9 @@ end
 # to the bar's cell; `sb` is its slot POSITION) is swept as a mark's global-top height: `term_refs_to_gvars`
 # reads `valPtr` of the slot after compaction.
 "Sweep the saved frozen-bar slot at slot position `sb` (pl-gcmark.jl `gvars_to_term_refs`) like a mark's global top."
-function sweep_frozen_bar(ld::PL_local_data{T}, st::gc_mark_counts, sw::gc_sweep_counts, sb::Int)::Nothing where {T}
+function sweep_frozen_bar(
+    ld::PL_local_data{T}, st::gc_mark_counts, sw::gc_sweep_counts, sb::Int
+)::Nothing where {T}
     sb == 0 && return nothing
     sweep_global_mark(ld, st, sw, -(sb + 1))
     return nothing
@@ -333,7 +368,9 @@ end
 # ORIGINAL: the part of the sweep of one slot that upstream repeats in sweep_foreign, sweep_frame and
 # sweep_new_arguments: a MARKED slot loses its mark; one that references a global cell leaves `local_marked`
 # (`processLocal`) and, unless it is a value-table word (D1), joins that cell's chain.
-function _gcs_sweep_marked_slot(ld::PL_local_data{T}, st::gc_mark_counts, sw::gc_sweep_counts, idx::Int)::Nothing where {T}
+function _gcs_sweep_marked_slot(
+    ld::PL_local_data{T}, st::gc_mark_counts, sw::gc_sweep_counts, idx::Int
+)::Nothing where {T}
     w = ld.slots[idx]
     ld.slots[idx] = clear_marked(w)
     v = gc_get_value(w)
@@ -346,7 +383,9 @@ end
 
 # PORT: pl-gc.c sweep_foreign
 "Sweep the marks and the term references of the foreign frames, newest first (pl-gc.c)."
-function sweep_foreign(ld::PL_local_data{T}, st::gc_mark_counts, sw::gc_sweep_counts)::Nothing where {T}
+function sweep_foreign(
+    ld::PL_local_data{T}, st::gc_mark_counts, sw::gc_sweep_counts
+)::Nothing where {T}
     fr = ld.fli_context
     while fr != 0
         f = ld.fliframes[fr]
@@ -364,7 +403,9 @@ end
 # DIVERGES: the trail is expected in upstream's tagged form (header), walked by INDEX, newest first; there
 # are no local-stack trail entries, so the only entries that stay out of a chain are the deleted ones (0).
 "Put the trail entries (tagged form) that point into the global stack into the chains of the cells they name (pl-gc.c)."
-function sweep_trail(ld::PL_local_data{T}, st::gc_mark_counts, sw::gc_sweep_counts)::Nothing where {T}
+function sweep_trail(
+    ld::PL_local_data{T}, st::gc_mark_counts, sw::gc_sweep_counts
+)::Nothing where {T}
     for i in length(ld.trail):-1:1
         w = ld.trail[i]
         w == 0 && continue
@@ -380,7 +421,9 @@ end
 # DIVERGES: `fr` is an index into `ld.frames`; there is no atom GC (ruling D5), so no atom is volatile and an
 # unmarked slot is replaced only when it references the global stack (by `garbage_collected`).
 "Sweep the first `slots` argument/variable slots of frame `fr` (pl-gc.c)."
-function sweep_frame(ld::PL_local_data{T}, st::gc_mark_counts, sw::gc_sweep_counts, fr::Int, slots::Int)::Nothing where {T}
+function sweep_frame(
+    ld::PL_local_data{T}, st::gc_mark_counts, sw::gc_sweep_counts, fr::Int, slots::Int
+)::Nothing where {T}
     sp = argFrameP(ld.frames[fr].base, 0)
     for i in 0:(slots - 1)
         idx = sp + i + 1
@@ -398,7 +441,9 @@ end
 # DIVERGES: `pc` is an index into the frame's clause codes (0 = NULL); the result is the QUERY index the walk
 # reached (0 = NULL: a frame that was not marked ends it).
 "Sweep frame `fr` and its parents while they are marked; return the query the chain ends in, or 0 (pl-gc.c)."
-function sweep_environments(ld::PL_local_data{T}, st::gc_mark_counts, sw::gc_sweep_counts, fr::Int, pc::Int)::Int where {T}
+function sweep_environments(
+    ld::PL_local_data{T}, st::gc_mark_counts, sw::gc_sweep_counts, fr::Int, pc::Int
+)::Int where {T}
     fr == 0 && return 0
     while true
         f = ld.frames[fr]
@@ -416,7 +461,9 @@ end
 
 # PORT: pl-gc.c sweep_choicepoints
 "Sweep the environments and the marks of the choicepoints `ch` (an index) and their parents (pl-gc.c)."
-function sweep_choicepoints(ld::PL_local_data{T}, st::gc_mark_counts, sw::gc_sweep_counts, ch::Int)::Nothing where {T}
+function sweep_choicepoints(
+    ld::PL_local_data{T}, st::gc_mark_counts, sw::gc_sweep_counts, ch::Int
+)::Nothing where {T}
     while ch != 0
         c = ld.choices[ch]
         sweep_environments(ld, st, sw, c.frame, c.type == CHP_JUMP ? c.value_pc : 0)
@@ -428,12 +475,15 @@ end
 
 # PORT: pl-gc.c sweep_new_arguments
 "Sweep the `new_args` argument slots at `lNext` that the VMI had begun to build (pl-gc.c)."
-function sweep_new_arguments(ld::PL_local_data{T}, st::gc_mark_counts, sw::gc_sweep_counts, vm::vm_state)::Nothing where {T}
+function sweep_new_arguments(
+    ld::PL_local_data{T}, st::gc_mark_counts, sw::gc_sweep_counts, vm::vm_state
+)::Nothing where {T}
     if vm.lNext != 0
         sp = argFrameP(vm.lNext, 0)
         for i in 0:(vm.new_args - 1)
             idx = sp + i + 1
-            is_marked(ld.slots[idx]) || error("GC: sweep_new_arguments: argument slot $(idx) is not marked")
+            is_marked(ld.slots[idx]) ||
+                error("GC: sweep_new_arguments: argument slot $(idx) is not marked")
             _gcs_sweep_marked_slot(ld, st, sw, idx)
         end
     end
@@ -451,7 +501,8 @@ Sweep the local stack from the safe point `vm` outward through the queries, choi
 environments (pl-gc.c); every slot mark cell must be consumed (`st.local_marked == 0`).
 """
 function sweep_stacks(
-    ld::PL_local_data{T}, st::gc_mark_counts, sw::gc_sweep_counts, vm::vm_state; vmi_state_of = nothing
+    ld::PL_local_data{T}, st::gc_mark_counts, sw::gc_sweep_counts, vm::vm_state;
+    vmi_state_of=nothing
 )::Nothing where {T}
     fr = vm.frame
     ch = vm.choice
@@ -467,7 +518,11 @@ function sweep_stacks(
         pq = ld.queries[pqf]
         if pq.registers_fr != 0
             vmi_state_of === nothing && throw(
-                NotPortedError(ld.placeholder, "get_vmi_state of a parent query (pl-gc.c sweep_stacks)", "G1-2"),
+                NotPortedError(
+                    ld.placeholder,
+                    "get_vmi_state of a parent query (pl-gc.c sweep_stacks)",
+                    "G1-2"
+                )
             )
             sub = vmi_state_of(ld, pqf)::vm_state
             fr = pq.registers_fr

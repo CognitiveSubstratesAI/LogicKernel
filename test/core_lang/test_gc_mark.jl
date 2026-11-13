@@ -85,7 +85,8 @@ end
 
 "A word that names a global cell (the kinds the collector follows)."
 _gm_is_global(w::UInt64)::Bool =
-    (LK.isRef(w) && LK.storage(w) == LK.STG_GLOBAL) || LK.isAttVar(w) || LK._is_gcompound(w) || LK._is_vword(w)
+    (LK.isRef(w) && LK.storage(w) == LK.STG_GLOBAL) || LK.isAttVar(w) ||
+    LK._is_gcompound(w) || LK._is_vword(w)
 
 "The positions of the global cells whose MARK bit is set."
 _gm_marked(ld)::Set{Int} = Set{Int}(p for p in 1:(ld.gTop) if LK.is_marked(ld.gstack[p]))
@@ -108,7 +109,10 @@ end
 "The words the frame at index `fi` holds in its argument slots (no gc bits)."
 function _gm_frame_args(ld, fi::Int)::Vector{UInt64}
     f = ld.frames[fi]
-    return UInt64[ld.slots[LK.argFrameP(f.base, n) + 1] & LK.VALUE_MASK for n in 0:(f.predicate.arity - 1)]
+    return UInt64[
+        ld.slots[LK.argFrameP(f.base, n) + 1] & LK.VALUE_MASK for
+        n in 0:(f.predicate.arity - 1)
+    ]
 end
 
 "A heap with compounds, a shared variable, a nested compound, two floats and a string (the checker's heap)."
@@ -116,8 +120,10 @@ function _gm_heap()
     X = _rv(1)
     return _gm_engine(
         _R[
-            _rf("f", _rs("a"), X, _rf("g", X, _rg(Int64(3))), _rg(1234.5678), _rg(8765.4321)),
-            _rf("h", _rg("gm-string-A"), _rints(1:5), X),
+            _rf(
+                "f", _rs("a"), X, _rf("g", X, _rg(Int64(3))), _rg(1234.5678), _rg(8765.4321)
+            ),
+            _rf("h", _rg("gm-string-A"), _rints(1:5), X)
         ]
     )
 end
@@ -157,7 +163,12 @@ end
     g0 = ld.gTop
     pvm = LK.PutVarMap()
     t2 = LK.PL_new_term_ref(ld)
-    LK.putSlotValue!(ld, t2 + 1, _rf("dead", _rg(Int64(1)), _rf("dead2", _rg(Int64(2)), _rints(1:4))), pvm)
+    LK.putSlotValue!(
+        ld,
+        t2 + 1,
+        _rf("dead", _rg(Int64(1)), _rf("dead2", _rg(Int64(2)), _rints(1:4))),
+        pvm
+    )
     g1 = ld.gTop
     ld.slots[t2 + 1] = _gm_atom(ld, "gone")                     # the only root of the dead term dropped
     dead_cells = (g0 + 1):g1
@@ -263,7 +274,9 @@ end
     tt = LK.PL_new_term_refs(ld, 2)
     pvm = LK.PutVarMap()
     LK.putSlotValue!(ld, tt + 1, _rs("gm_key"), pvm)
-    LK.putSlotValue!(ld, tt + 2, _rf("val", _rg(Int64(5)), _rf("w", _rg(8.5), _rints(1:3))), pvm)
+    LK.putSlotValue!(
+        ld, tt + 2, _rf("val", _rg(Int64(5)), _rf("w", _rg(8.5), _rints(1:3))), pvm
+    )
     @test LK.gvar_setval(ld, tt, tt + 1, UInt32(0))             # nb_setval(gm_key, val(...)): a COPY on the global stack
     LK.PL_close_foreign_frame(ld, fid0)                         # the source term and the copy's temporary references are dead now
     @test !isempty(ld.gvar_nb_vars)
@@ -346,7 +359,7 @@ end
     clauses = Tuple{_R, Union{Nothing, _R}}[
         (_rf("n", _rf("p", _rg(Int64(1)), _rg(2.25))), nothing),
         (_rf("n", _rf("p", _rg(Int64(2)), _rg(3.25))), nothing),
-        (_rf("n", _rf("p", _rg(Int64(3)), _rg(4.25))), nothing),
+        (_rf("n", _rf("p", _rg(Int64(3)), _rg(4.25))), nothing)
     ]
     db = _rdb(clauses)
     ld = db.ld
@@ -398,7 +411,9 @@ end
             @test st.total_marked == length(model) == length(marked)
             @test isdisjoint(dead, marked)                      # dead cells are not marked
             @test (ld.frames[fi].flags & LK.FR_MARKED) != 0     # the walk flagged the frame
-            @test all(p -> (ld.gstack[p] & LK.VALUE_MASK) == (sn.g[p] & LK.VALUE_MASK), model)   # the reversal put the live words back
+            @test all(
+                p -> (ld.gstack[p] & LK.VALUE_MASK) == (sn.g[p] & LK.VALUE_MASK), model
+            )   # the reversal put the live words back
             # unmark: the frame flags, then (until the sweep exists) the cell bits
             LK.unmark_stacks(ld, fi, ld.BFR, LK.FR_MARKED)
             @test all(i -> (ld.frames[i].flags & LK.FR_MARKED) == 0, 1:(ld.nframes))
@@ -413,7 +428,11 @@ end
 end
 
 @testset "the argument stack's global entries are term references of the collection" begin
-    db = _rdb(Tuple{_R, Union{Nothing, _R}}[(_rf("n", _rg(Int64(1))), nothing), (_rf("n", _rg(Int64(2))), nothing)])
+    db = _rdb(
+        Tuple{_R, Union{Nothing, _R}}[
+            (_rf("n", _rg(Int64(1))), nothing), (_rf("n", _rg(Int64(2))), nothing)
+        ]
+    )
     ld = db.ld
     ran = Ref(0)
     ans = _rcall(
@@ -425,12 +444,20 @@ end
             a0 = ld.aTop
             fid = LK.PL_open_foreign_frame(ld)
             t = LK.PL_new_term_ref(ld)
-            LK.putSlotValue!(ld, t + 1, _rf("keep", _rg(Int64(7)), _rf("deep", _rg(8.125))), LK.PutVarMap())
+            LK.putSlotValue!(
+                ld,
+                t + 1,
+                _rf("keep", _rg(Int64(7)), _rf("deep", _rg(8.125))),
+                LK.PutVarMap()
+            )
             c = LK.allocGlobalCells!(ld, 1)
             ld.gstack[c] = ld.slots[t + 1] & LK.VALUE_MASK
             ld.slots[t + 1] = _gm_atom(ld, "gone")              # only the argument stack reaches the term now
             LK.pushArgumentStack(
-                ld, LK.argstack_entry{_R}(LK.argp_t{_R}(LK.ARGP_GLOBAL, c, ld.placeholder), false)
+                ld,
+                LK.argstack_entry{_R}(
+                    LK.argp_t{_R}(LK.ARGP_GLOBAL, c, ld.placeholder), false
+                )
             )
             roots = _gm_fli_roots(ld)
             for i in 1:(ld.aTop)
@@ -465,7 +492,7 @@ end
 @testset "mark_alt_clauses marks only the arguments the alternative clauses read" begin
     clauses = Tuple{_R, Union{Nothing, _R}}[
         (_rf("m", _rs("a"), _rf("p", _rg(Int64(1)))), nothing),
-        (_rf("m", _rs("b"), _rv(1)), nothing),                  # reads argument 1, ignores argument 2 (a void)
+        (_rf("m", _rs("b"), _rv(1)), nothing)                  # reads argument 1, ignores argument 2 (a void)
     ]
     db = _rdb(clauses)
     ld = db.ld

@@ -83,13 +83,14 @@ end
 
 "A word that names a global cell (the kinds the collector follows)."
 _gs_is_global(w::UInt64)::Bool =
-    (LK.isRef(w) && LK.storage(w) == LK.STG_GLOBAL) || LK.isAttVar(w) || LK._is_gcompound(w) || LK._is_vword(w)
+    (LK.isRef(w) && LK.storage(w) == LK.STG_GLOBAL) || LK.isAttVar(w) ||
+    LK._is_gcompound(w) || LK._is_vword(w)
 
 "The positions of the global cells whose MARK bit is set."
 _gs_marked(ld)::Set{Int} = Set{Int}(p for p in 1:(ld.gTop) if LK.is_marked(ld.gstack[p]))
 
 "The stacks as they are: global cells, slots and the trail."
-_gs_snapshot(ld) = (g = copy(ld.gstack), s = copy(ld.slots), tr = copy(ld.trail))
+_gs_snapshot(ld) = (g=copy(ld.gstack), s=copy(ld.slots), tr=copy(ld.trail))
 
 "Put the stacks back as `sn` took them (the trail keeps its length)."
 function _gs_restore!(ld, sn)
@@ -103,7 +104,10 @@ end
 "The words the frame at index `fi` holds in its argument slots (no gc bits)."
 function _gs_frame_args(ld, fi::Int)::Vector{UInt64}
     f = ld.frames[fi]
-    return UInt64[ld.slots[LK.argFrameP(f.base, n) + 1] & LK.VALUE_MASK for n in 0:(f.predicate.arity - 1)]
+    return UInt64[
+        ld.slots[LK.argFrameP(f.base, n) + 1] & LK.VALUE_MASK for
+        n in 0:(f.predicate.arity - 1)
+    ]
 end
 
 "The trail in upstream's tagged form (pl-gc.c `tag_trail`, the test's own copy): 0 stays, an address entry becomes a GLOBAL pointer, a value entry one with TAG_TRAILVAL."
@@ -114,7 +118,8 @@ function _gs_tag_trail!(ld)::Nothing
         if LK.isTrailVal(e)
             ld.trail[i] = LK.consPtr(LK.trailValP(e), LK.STG_GLOBAL | LK.TAG_TRAILVAL)
         else
-            LK._trail_stack(e) == LK.TRAIL_GLOBAL || error("_gs_tag_trail!: a trail entry outside the global stack")
+            LK._trail_stack(e) == LK.TRAIL_GLOBAL ||
+                error("_gs_tag_trail!: a trail entry outside the global stack")
             ld.trail[i] = LK.consPtr(LK._trail_pos(e), LK.STG_GLOBAL)
         end
     end
@@ -144,7 +149,16 @@ function _gs_word(ld, d)::UInt64
     d[1] === :g && return ld.gstack[d[2]]
     m = d[2] ? ld.fliframes[d[3]].mark : ld.choices[d[3]].mark
     f = d[4]
-    return reinterpret(UInt64, f == 0 ? m.globaltop : f == 1 ? m.saved_bar : m.trailtop)
+    return reinterpret(
+        UInt64,
+        if f == 0
+            m.globaltop
+        elseif f == 1
+            m.saved_bar
+        else
+            m.trailtop
+        end
+    )
 end
 
 "Store `w` at a descriptor (a mark field is rebuilt as a new `mark`)."
@@ -159,7 +173,13 @@ function _gs_setword!(ld, d, w::UInt64)::Nothing
         i = d[3]
         m = d[2] ? ld.fliframes[i].mark : ld.choices[i].mark
         v = reinterpret(Int, w)
-        nm = d[4] == 0 ? LK.mark(m.trailtop, v, m.saved_bar) : d[4] == 1 ? LK.mark(m.trailtop, m.globaltop, v) : LK.mark(v, m.globaltop, m.saved_bar)
+        nm = if d[4] == 0
+            LK.mark(m.trailtop, v, m.saved_bar)
+        elseif d[4] == 1
+            LK.mark(m.trailtop, m.globaltop, v)
+        else
+            LK.mark(v, m.globaltop, m.saved_bar)
+        end
         if d[2]
             ld.fliframes[i].mark = nm
         else
@@ -201,7 +221,22 @@ mutable struct _GSModel
     scan::Int
     wrote::Int
     fstop::Int
-    _GSModel() = new(Dict{Int, Vector{Any}}(), Dict{Tuple{Bool, Int, Int}, Int}(), Dict{Int, Int}(), Any[], Int[], String[], 0, 0, 0, 0, 0, 0, 0, 0)
+    _GSModel() = new(
+        Dict{Int, Vector{Any}}(),
+        Dict{Tuple{Bool, Int, Int}, Int}(),
+        Dict{Int, Int}(),
+        Any[],
+        Int[],
+        String[],
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+    )
 end
 
 function _gs_add!(M::_GSModel, head::Int, desc)::Nothing
@@ -211,7 +246,9 @@ function _gs_add!(M::_GSModel, head::Int, desc)::Nothing
 end
 
 "A height `h` held in a mark field: the highest reachable cell at or below it is the new height and the chain's head; the garbage between gets a filler."
-function _gs_model_field!(M::_GSModel, reach::Set{Int}, isfli::Bool, i::Int, fld::Int, h::Int)::Nothing
+function _gs_model_field!(
+    M::_GSModel, reach::Set{Int}, isfli::Bool, i::Int, fld::Int, h::Int
+)::Nothing
     gm = 0
     if h < 1
         gm = 0
@@ -266,7 +303,7 @@ function _gs_model_slot!(M::_GSModel, ld, reach::Set{Int}, idx::Int, env::Bool):
 end
 
 "The model of `sweep_foreign`, `sweep_trail` and (when `stacks` is given) `sweep_stacks`, from the state after the mark phase and the trail tagging."
-function _gs_model(ld, reach::Set{Int}; stacks = nothing)::_GSModel
+function _gs_model(ld, reach::Set{Int}; stacks=nothing)::_GSModel
     M = _GSModel()
     fr = ld.fli_context                                         # sweep_foreign: innermost frame first
     while fr != 0
@@ -296,7 +333,7 @@ function _gs_model(ld, reach::Set{Int}; stacks = nothing)::_GSModel
 end
 
 "The chains of the stacks as read back, against the model; ONE extractor for the rows and the corruption rows. `reversed = false` compares against the WRONG order."
-function _gs_problems(ld, sn, M::_GSModel; reversed::Bool = true)::Vector{String}
+function _gs_problems(ld, sn, M::_GSModel; reversed::Bool=true)::Vector{String}
     bad = String[]
     for h in sort!(collect(keys(M.order)))
         ord = M.order[h]
@@ -305,21 +342,27 @@ function _gs_problems(ld, sn, M::_GSModel; reversed::Bool = true)::Vector{String
         ch == want || push!(bad, "chain of cell $(h): $(ch), expected $(want)")
         LK.is_first(ld.gstack[h]) || push!(bad, "the head $(h) lost its FIRST bit")
         oldest = _gs_word(ld, first(ord))
-        (oldest & LK.VALUE_MASK) == (sn.g[h] & LK.VALUE_MASK) || push!(bad, "the oldest referrer of $(h) does not hold the head's value")
+        (oldest & LK.VALUE_MASK) == (sn.g[h] & LK.VALUE_MASK) ||
+            push!(bad, "the oldest referrer of $(h) does not hold the head's value")
     end
     nfirst = count(p -> LK.is_first(ld.gstack[p]), 1:(ld.gTop))
-    nfirst == length(M.order) || push!(bad, "$(nfirst) FIRST bits on the global stack, $(length(M.order)) heads")
+    nfirst == length(M.order) ||
+        push!(bad, "$(nfirst) FIRST bits on the global stack, $(length(M.order)) heads")
     return bad
 end
 
 "The counters of the sweep against the model."
 function _gs_counter_problems(st, sw, M::_GSModel, n0::Int)::Vector{String}
     bad = String[]
-    sw.relocation_chains == length(M.order) || push!(bad, "relocation_chains $(sw.relocation_chains) != $(length(M.order))")
-    sw.relocation_cells == M.cells || push!(bad, "relocation_cells $(sw.relocation_cells) != $(M.cells)")
-    sw.alien_relocations == M.alien || push!(bad, "alien_relocations $(sw.alien_relocations) != $(M.alien)")
+    sw.relocation_chains == length(M.order) ||
+        push!(bad, "relocation_chains $(sw.relocation_chains) != $(length(M.order))")
+    sw.relocation_cells == M.cells ||
+        push!(bad, "relocation_cells $(sw.relocation_cells) != $(M.cells)")
+    sw.alien_relocations == M.alien ||
+        push!(bad, "alien_relocations $(sw.alien_relocations) != $(M.alien)")
     sw.marks_swept == M.marks || push!(bad, "marks_swept $(sw.marks_swept) != $(M.marks)")
-    st.needs_relocation - n0 == M.needs || push!(bad, "needs_relocation grew by $(st.needs_relocation - n0) != $(M.needs)")
+    st.needs_relocation - n0 == M.needs ||
+        push!(bad, "needs_relocation grew by $(st.needs_relocation - n0) != $(M.needs)")
     return bad
 end
 
@@ -341,7 +384,7 @@ function _gs_heap()
         _R[
             _rf("f", _rs("a"), X, _rf("g", X, _rg(Int64(3))), _rg(1234.5678)),
             _rf("h", _rg("gs-string"), _rints(1:5), X),
-            _rg(2.5),                                           # slot t + 3 holds a value-table word (ruling D1)
+            _rg(2.5)                                           # slot t + 3 holds a value-table word (ruling D1)
         ]
     )
     f0 = ld.fli_context
@@ -351,11 +394,18 @@ function _gs_heap()
     tr = LK.PL_new_term_refs(ld, 3)
     ld.slots[tr + 1] = LK.makeRefG(c1)
     ld.slots[tr + 2] = LK.makeRefG(cv)
-    LK.putSlotValue!(ld, tr + 3, _rf("old", _rg(Int64(1)), _rf("older", _rg(Int64(2)))), LK.PutVarMap())
+    LK.putSlotValue!(
+        ld, tr + 3, _rf("old", _rg(Int64(1)), _rf("older", _rg(Int64(2)))), LK.PutVarMap()
+    )
     ld.gstack[cv] = ld.slots[tr + 3] & LK.VALUE_MASK            # the cell holds the old value
     ld.slots[tr + 3] = _gs_atom(ld, "x")                        # the direct root dropped
     td = LK.PL_new_term_ref(ld)                                 # a dead term: the garbage gap
-    LK.putSlotValue!(ld, td + 1, _rf("dead", _rg(Int64(1)), _rf("dead2", _rg(Int64(2)), _rints(1:4))), LK.PutVarMap())
+    LK.putSlotValue!(
+        ld,
+        td + 1,
+        _rf("dead", _rg(Int64(1)), _rf("dead2", _rg(Int64(2)), _rints(1:4))),
+        LK.PutVarMap()
+    )
     ld.slots[td + 1] = _gs_atom(ld, "gone")
     LK.PL_open_foreign_frame(ld)
     f1 = ld.fli_context                                         # F1: its height lies inside the gap
@@ -378,7 +428,7 @@ function _gs_heap()
     ld.slots[td3 + 1] = _gs_atom(ld, "gone")
     LK.PL_open_foreign_frame(ld)
     f4 = ld.fli_context                                         # F4: garbage above p again
-    return (ld = ld, t = t, n0 = n0, f0 = f0, f1 = f1, f2 = f2, f3 = f3, f4 = f4, c1 = c1, c2 = c2, cv = cv, p = p)
+    return (ld=ld, t=t, n0=n0, f0=f0, f1=f1, f2=f2, f3=f3, f4=f4, c1=c1, c2=c2, cv=cv, p=p)
 end
 
 """
@@ -401,7 +451,9 @@ function _gs_run()
     m4 = ld.fliframes[H.f4].mark                                # the saved bar above every cell: the clamp row
     ld.fliframes[H.f4].mark = LK.mark(m4.trailtop, m4.globaltop, LK.NO_MARK_BAR)
     m3 = ld.fliframes[H.f3].mark                                # a low saved bar, inside the gap
-    ld.fliframes[H.f3].mark = LK.mark(m3.trailtop, m3.globaltop, ld.fliframes[H.f1].mark.globaltop)
+    ld.fliframes[H.f3].mark = LK.mark(
+        m3.trailtop, m3.globaltop, ld.fliframes[H.f1].mark.globaltop
+    )
     m0 = ld.fliframes[H.f0].mark                                # a height of 0: no cell below it, no chain
     ld.fliframes[H.f0].mark = LK.mark(m0.trailtop, m0.globaltop, 0)
     sn = _gs_snapshot(ld)
@@ -411,13 +463,29 @@ function _gs_run()
     LK.sweep_foreign(ld, st, sw)
     LK.sweep_trail(ld, st, sw)
     LK.sweep_stacks(ld, st, sw, LK.vm_state())
-    return merge(H, (st = st, sw = sw, sn = sn, M = M, n0 = n0, reach = reach, marks_agree = marks_agree, early_reset = early_reset))
+    return merge(
+        H,
+        (
+            st=st,
+            sw=sw,
+            sn=sn,
+            M=M,
+            n0=n0,
+            reach=reach,
+            marks_agree=marks_agree,
+            early_reset=early_reset
+        )
+    )
 end
 
 "An engine with a few terms, for the reference tables (a value-table word among them)."
 function _gs_heap_pair()
     return _gs_engine(
-        _R[_rf("k", _rs("a"), _rg(1.5), _rf("m", _rg(Int64(2)), _rv(1))), _rg("gs-box-2"), _rints(1:4)]
+        _R[
+            _rf("k", _rs("a"), _rg(1.5), _rf("m", _rg(Int64(2)), _rv(1))),
+            _rg("gs-box-2"),
+            _rints(1:4)
+        ]
     )
 end
 
@@ -456,7 +524,10 @@ end
     bad = Int[p for (p, gm) in M.region if ld.gstack[p] != LK.consTagged(gm, LK.TAGEX_VAR)]
     @test bad == Int[]
     heads = Set(keys(M.order))
-    untouched = Int[p for p in 1:(ld.gTop) if !haskey(M.region, p) && !(p in heads) && ld.gstack[p] != sn.g[p]]
+    untouched = Int[
+        p for
+        p in 1:(ld.gTop) if !haskey(M.region, p) && !(p in heads) && ld.gstack[p] != sn.g[p]
+    ]
     @test untouched == Int[]                                    # no other cell was written
     @test count(p -> !haskey(M.region, p) && !(p in heads), 1:(ld.gTop)) > 10
     @test all(gm -> gm in R.reach, values(M.region))            # a filler names a live cell
@@ -477,7 +548,11 @@ end
     LK.gc_clear_marks!(ld)
     badg = Int[]
     for p in 1:(ld.gTop)
-        want = haskey(M.region, p) ? LK.consTagged(M.region[p], LK.TAGEX_VAR) : (sn.g[p] & LK.VALUE_MASK)
+        want = if haskey(M.region, p)
+            LK.consTagged(M.region[p], LK.TAGEX_VAR)
+        else
+            (sn.g[p] & LK.VALUE_MASK)
+        end
         ld.gstack[p] == want || push!(badg, p)
     end
     @test badg == Int[]
@@ -509,7 +584,9 @@ end
     end
     @test bad == Any[]
     @test checked == M.cells > 0
-    badh = Int[h for h in heads if (ld.gstack[h] & LK.VALUE_MASK) != (sn.g[h] & LK.VALUE_MASK)]
+    badh = Int[
+        h for h in heads if (ld.gstack[h] & LK.VALUE_MASK) != (sn.g[h] & LK.VALUE_MASK)
+    ]
     @test badh == Int[]                                         # the heads got their own value back
     @test !any(h -> LK.is_first(ld.gstack[h]), heads)
 end
@@ -527,7 +604,8 @@ end
     @test _gs_chain_word(ld, ld.trail[c + 1]) == Any[(:m, true, fr, 2)]
     @test sw.alien_relocations == 1 && sw.relocation_chains == 1 && sw.relocation_cells == 1
     LK.update_relocation_chain(ld, sw, LK.GC_TRAIL_BASE + c + 1, LK.GC_TRAIL_BASE + 3)
-    @test reinterpret(UInt64, ld.fliframes[fr].mark.trailtop) == LK.consPtr(3, LK.STG_STATIC)
+    @test reinterpret(UInt64, ld.fliframes[fr].mark.trailtop) ==
+        LK.consPtr(3, LK.STG_STATIC)
     @test ld.trail[c + 1] == 0                                  # the sentinel is itself again
     @test sw.relocation_chains == 0
 end
@@ -538,7 +616,7 @@ end
         (LK.GC_TRAIL_BASE + 7, LK.STG_STATIC),
         (-9, LK.STG_LOCAL),
         (LK._gcs_mfield(true, 3, 2), LK.STG_LOCAL),
-        (LK._gcs_mfield(false, 2, 1), LK.STG_LOCAL),
+        (LK._gcs_mfield(false, 2, 1), LK.STG_LOCAL)
     ]
     for (a, stg) in cases
         w = LK.makePtr(a, LK.TAG_COMPOUND)
@@ -547,7 +625,8 @@ end
         @test LK.tag(w) == LK.TAG_COMPOUND
     end
     @test length(cases) == 5
-    @test LK.offset_word(UInt64(0)) == 0 && LK.offset_word(LK.consPtr(77, LK.TAG_COMPOUND | LK.STG_GLOBAL)) == 0
+    @test LK.offset_word(UInt64(0)) == 0 &&
+        LK.offset_word(LK.consPtr(77, LK.TAG_COMPOUND | LK.STG_GLOBAL)) == 0
 
     ld, t, n0 = _gs_engine(_R[_rs("a"), _rg(2.5), _rg("gs-box")])
     base = LK.allocGlobalCells!(ld, 12)
@@ -589,21 +668,26 @@ end
     @test Int[p for p in 1:(ld2.gTop) if LK.is_downward_ref(ld2, p)] == downs
     boxes = Int[ld2.vbox[i] for i in (n02 + 1):length(ld2.vtable)]
     @test !isempty(boxes)
-    @test all(p -> LK._is_vword(ld2.gstack[p]) && !LK.is_upward_ref(ld2, p) && !LK.is_downward_ref(ld2, p), boxes)
+    @test all(
+        p ->
+            LK._is_vword(ld2.gstack[p]) && !LK.is_upward_ref(ld2, p) &&
+            !LK.is_downward_ref(ld2, p),
+        boxes
+    )
 end
 
 @testset "a live query: the environments and choicepoints are swept, an unmarked slot becomes garbage_collected" begin
     clauses = Tuple{_R, Union{Nothing, _R}}[
         (_rf("n", _rf("p", _rg(Int64(1)), _rg(2.25))), nothing),
         (_rf("n", _rf("p", _rg(Int64(2)), _rg(3.25))), nothing),
-        (_rf("n", _rf("p", _rg(Int64(3)), _rg(4.25))), nothing),
+        (_rf("n", _rf("p", _rg(Int64(3)), _rg(4.25))), nothing)
     ]
     db = _rdb(clauses)
     ld = db.ld
     ran = Ref(0)
     ans = _rcall(
         db, _rf("n", _rv(90));
-        at = (qid, k) -> begin
+        at=(qid, k) -> begin
             k == 1 || return nothing
             ran[] += 1
             sn0 = _gs_snapshot(ld)
@@ -656,7 +740,8 @@ end
             sn = _gs_snapshot(ld)
             done = Set{Int}()
             function env!(M, f)
-                (f != 0 && (ld.frames[f].flags & LK.FR_MARKED) != 0 && !(f in done)) || return nothing
+                (f != 0 && (ld.frames[f].flags & LK.FR_MARKED) != 0 && !(f in done)) ||
+                    return nothing
                 push!(done, f)
                 ld.frames[f].parent == 0 || push!(M.bad, "frame $(f) has a parent")
                 base = LK.argFrameP(ld.frames[f].base, 0)
@@ -670,16 +755,19 @@ end
                 c2 = ld.BFR
                 while c2 != 0
                     c = ld.choices[c2]
-                    c.type == LK.CHP_JUMP && push!(M.bad, "a CHP_JUMP choicepoint: its pc is not modelled")
+                    c.type == LK.CHP_JUMP &&
+                        push!(M.bad, "a CHP_JUMP choicepoint: its pc is not modelled")
                     env!(M, c.frame)
                     M.marks += 1
                     _gs_model_field!(M, reach, false, c2, 0, c.mark.globaltop)
-                    _gs_model_field!(M, reach, false, c2, 1, min(c.mark.saved_bar, ld.gTop))
+                    _gs_model_field!(
+                        M, reach, false, c2, 1, min(c.mark.saved_bar, ld.gTop)
+                    )
                     c2 = c.parent
                 end
                 return nothing
             end
-            M = _gs_model(ld, reach; stacks = stacks!)
+            M = _gs_model(ld, reach; stacks=stacks!)
             sw = LK.gc_sweep_counts()
             n0 = st.needs_relocation
             LK.sweep_foreign(ld, st, sw)
@@ -739,5 +827,5 @@ end
     @test any(s -> occursin("chain of cell $(h2)", s), bad)
     _gs_setword!(ld, newest, w2)
     @test _gs_problems(ld, sn, M) == String[]
-    @test !isempty(_gs_problems(ld, sn, M; reversed = false))   # the unreversed order is wrong
+    @test !isempty(_gs_problems(ld, sn, M; reversed=false))   # the unreversed order is wrong
 end

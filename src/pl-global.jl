@@ -378,7 +378,16 @@ mutable struct ld_gc
     local_policy::gc_stack_policy                               # ORIGINAL: `LD->stacks.local`'s policy
     sig_pending::UInt64                                         # ORIGINAL: the pending virtual signals, bit `sig - SIG_PROLOG_OFFSET`
 end
-ld_gc() = ld_gc(0, pl_gc_status_t(), 0, gc_stats(), gc_stack_policy(true), gc_stack_policy(true), gc_stack_policy(false), UInt64(0))
+ld_gc() = ld_gc(
+    0,
+    pl_gc_status_t(),
+    0,
+    gc_stats(),
+    gc_stack_policy(true),
+    gc_stack_policy(true),
+    gc_stack_policy(false),
+    UInt64(0)
+)
 
 # PORT: pl-global.h tabling as tbl_restraint
 # DIVERGES: the anonymous `LD->tabling.restraint` struct is its own type; a `size_t` is an `Int` (`(size_t)-1`, no limit, is -1).

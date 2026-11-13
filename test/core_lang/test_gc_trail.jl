@@ -21,7 +21,11 @@ include(joinpath(@__DIR__, "..", "core_lang", "rules_common.jl"))
 _gt_atom(ld, n) = LK._atom_word!(ld, _rs(n))
 
 "The model of one tagged entry: literal shifts (position at bit 7, STG_GLOBAL = 8, TAG_TRAILVAL = 1); 0 stays 0."
-_gt_tag_model(e::UInt64)::UInt64 = e == 0 ? UInt64(0) : ((e & 1) == 1 ? (((e >> 3) << 7) | 0x09) : (((e >> 3) << 7) | 0x08))
+_gt_tag_model(e::UInt64)::UInt64 = if e == 0
+    UInt64(0)
+else
+    ((e & 1) == 1 ? (((e >> 3) << 7) | 0x09) : (((e >> 3) << 7) | 0x08))
+end
 
 "The model of an untagged entry from a tagged word: position at bit 7, bit 0 the value tag."
 _gt_untag_model(w::UInt64)::UInt64 = (w & 1) == 1 ? (((w >> 7) << 3) | 1) : ((w >> 7) << 3)
@@ -42,7 +46,7 @@ function _gt_engine()
     LK.TrailAssignment!(ld, cv)                                 # the pair: the address entry, then the value entry
     ld.gstack[cv] = _gt_atom(ld, "new")
     LK._bind_const!(ld, c3, _gt_atom(ld, "three"))
-    return ld, (c1 = c1, c2 = c2, cv = cv, c3 = c3), tr0
+    return ld, (c1=c1, c2=c2, cv=cv, c3=c3), tr0
 end
 
 @testset "tag_trail and untag_trail: the model's tagged words, and the identity round trip" begin
@@ -58,7 +62,8 @@ end
     @test ld.trail == model                                     # entry for entry, sentinel left alone
     @test ts.values == count(LK.isTrailVal, orig) >= 1
     @test all(w -> w == 0 || LK.gc_trail_tagged_pos(w) >= 1, ld.trail)
-    @test [LK.gc_trail_tagged_isval(w) for w in ld.trail[1:(end - 1)]] == [LK.isTrailVal(e) for e in orig]
+    @test [LK.gc_trail_tagged_isval(w) for w in ld.trail[1:(end - 1)]] ==
+        [LK.isTrailVal(e) for e in orig]
     @test LK.gc_trail_tagged_pos(ld.trail[tr0 + 1]) == cells.c1
     # the gc bits are free in the tagged form: set MARK and FIRST on every entry, untag still gives the original
     for i in 1:(ts.top - 1)
@@ -197,11 +202,15 @@ end
     ts = LK.gc_trail_begin!(ld)
     LK.tag_trail(ld, ts)
     ld.trail[tr0 + 5] = (UInt64(7) << 7) | 0x10                 # STG_LOCAL (2 << 3), tag 0: not a global pointer, not a value
-    model = Int[i for i in (ts.top - 1):-1:1 if ld.trail[i] != 0 && ((ld.trail[i] & 1) == 1 || (ld.trail[i] & 0x18) == 0x08)]
+    model = Int[
+        i for i in (ts.top - 1):-1:1 if
+        ld.trail[i] != 0 && ((ld.trail[i] & 1) == 1 || (ld.trail[i] & 0x18) == 0x08)
+    ]
     got = LK.gc_trail_sweep_entries(ld, ts)
     @test !isempty(got) && !isempty(model)
     @test got == model
-    @test !(tr0 + 5 in got) && !(tr0 + 1 in got) && (tr0 + 3 in got) && issorted(got; rev = true)
+    @test !(tr0 + 5 in got) && !(tr0 + 1 in got) && (tr0 + 3 in got) &&
+        issorted(got; rev=true)
     @test_throws ErrorException LK.gc_trail_sweep_entries(ld, LK.gc_trail_state())   # untagged: refused
 end
 
@@ -228,7 +237,10 @@ end
     @test all(l -> (ld.gstack[avcell(l)] & 7) == 1, links)      # TAG_ATTVAR = 1
     ld.gstack[avcell(links[2])] = _gt_atom(ld, "bound")         # dead: bound, no trailed assignment
     ld.gstack[avcell(links[4])] = LK.set_marked(_gt_atom(ld, "kept"))   # bound, but kept by a trailed assignment (the mark)
-    dead_model = [l for l in links if (ld.gstack[avcell(l)] & 7) != 1 && (ld.gstack[avcell(l)] & LK.MARK_MASK) == 0]
+    dead_model = [
+        l for l in links if
+        (ld.gstack[avcell(l)] & 7) != 1 && (ld.gstack[avcell(l)] & LK.MARK_MASK) == 0
+    ]
     @test dead_model == [links[2]]
     @test LK.is_dead_attvar(ld, avcell(links[2]))
     @test !LK.is_dead_attvar(ld, avcell(links[1]))
@@ -264,8 +276,10 @@ end
     ld.gstack[ga] = ld.gstack[A]                                # the saved old values: attvar words
     ld.gstack[gb] = ld.gstack[B]
     ld.gstack[A] = _gt_atom(ld, "assigned")                     # A was assigned (no longer an attvar); B was not
-    push!(ld.trail, LK._trail_addr(A, LK.TRAIL_GLOBAL)); push!(ld.trail, LK.tagTrailPtr(ga))
-    push!(ld.trail, LK._trail_addr(B, LK.TRAIL_GLOBAL)); push!(ld.trail, LK.tagTrailPtr(gb))
+    push!(ld.trail, LK._trail_addr(A, LK.TRAIL_GLOBAL))
+    push!(ld.trail, LK.tagTrailPtr(ga))
+    push!(ld.trail, LK._trail_addr(B, LK.TRAIL_GLOBAL))
+    push!(ld.trail, LK.tagTrailPtr(gb))
     orig = copy(ld.trail)
     ts = LK.gc_trail_begin!(ld)
     LK.tag_trail(ld, ts)
@@ -309,7 +323,11 @@ end
     LK.tag_trail(ld3, ts3)
     ld3.trail[tr03 + 3] = LK.set_first(ld3.trail[tr03 + 3])
     seen3 = Tuple{Int, Int}[]
-    LK.compact_trail(ld3, ts3, (l, c, d) -> (push!(seen3, (c, d)); l.trail[c] = LK.clear_first(l.trail[c]); nothing))
+    LK.compact_trail(
+        ld3,
+        ts3,
+        (l, c, d) -> (push!(seen3, (c, d)); l.trail[c]=LK.clear_first(l.trail[c]); nothing)
+    )
     @test seen3 == [(tr03 + 3, tr03 + 2)]                       # one deleted entry before it: dest = current - 1
     @test seen3 != [(tr03 + 3, tr03 + 3)]                       # the uncompacted destination is wrong
 end

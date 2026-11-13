@@ -52,7 +52,8 @@ const _G_OUT = joinpath(@__DIR__, "test_g1gc_safe_points.out")
 const _G_DOC = joinpath(_G_ROOT, "docs", "g1gc_safe_points.md")
 
 # the rows' names, in the order of the program
-_g_names() = unique([String(m[1]) for m in eachmatch(r"^(g\d+)\(R\) :-"m, read(_G_PL, String))])
+_g_names() =
+    unique([String(m[1]) for m in eachmatch(r"^(g\d+)\(R\) :-"m, read(_G_PL, String))])
 
 # THE SITES THE ROWS MUST RECORD (the table's names): one or more per row. A row that reaches a site only through another
 # predicate lists that site too (g3 and g4 build their attvar with put_attr/3 first).
@@ -79,13 +80,16 @@ const _G_REQ = Dict{String, Vector{Symbol}}(
     "g20" => Symbol[],    # the wakeup of a frozen variable: bind_attvar_const passes no ALLOW_GC (table A, NEEDS-ROOT)
     "g21" => [:copyRecordToGlobal],   # recorded/3 with a bound reference (pl-rec.jl, the first call site)
     "g22" => [:copyRecordToGlobal],   # instance/2 of a record reference
-    "g23" => [:copyRecordToGlobal],   # PL_recorded through a trie value
+    "g23" => [:copyRecordToGlobal]   # PL_recorded through a trie value
 )
 
 # ── the table and the code, each through ONE extractor ──────────────────────────────────────────
 # the table's `SITE <name> <file> <upstream>` lines: (name, file)
 function doc_sites(text::String)::Vector{Tuple{String, String}}
-    return [(String(m[1]), String(m[2])) for m in eachmatch(r"^SITE (\w+) (\S+) (\S+)\s*$"m, text)]
+    return [
+        (String(m[1]), String(m[2])) for
+        m in eachmatch(r"^SITE (\w+) (\S+) (\S+)\s*$"m, text)
+    ]
 end
 
 # the code's sites: a line of `src` passing ALLOW_GC as an argument and marked `# G1-GC safe point: <name>`: (name, file)
@@ -313,8 +317,10 @@ end
         # THIS row, through the same reader for both runs and swipl's (`expected`, the .out): equal answers and a heap that did not grow is the claim; a
         # different answer would be a collector bug, not a tolerance (audit D-0644 item 2).
         @test (
-            i, on_lines[i + 1] == off_lines[i + 1] == expected[i + 1], !isempty(on_lines[i + 1]),
-            on_heap[i][1] <= off_heap[i][1], on_heap[i][2] <= off_heap[i][2], on_heap[i][3] <= off_heap[i][3],
+            i, on_lines[i + 1] == off_lines[i + 1] == expected[i + 1],
+            !isempty(on_lines[i + 1]),
+            on_heap[i][1] <= off_heap[i][1], on_heap[i][2] <= off_heap[i][2],
+            on_heap[i][3] <= off_heap[i][3]
         ) == (i, true, true, true, true, true)
     end
     @test on_coll > 0                                                 # the collector ran at the foreign sites, so the `<=` above is not vacuous
@@ -347,6 +353,7 @@ end
     @test :setval in kh["g13"] && :setval in kh["g14"]
     @test :copyRecordToGlobal in kh["g16"] && :copyRecordToGlobal in kh["g15"]
     @test all(n -> :copyRecordToGlobal in kh[n], ["g21", "g22", "g23"])   # each caller of copyRecordToGlobal has its own row
-    @test kl["g21"] == "g21 c[103,50,49]/1(c[45]/2(a[103,49,103,99,95,107,50],c[102,111,111]/1(a[97])))"   # the key is unified from the reference
+    @test kl["g21"] ==
+        "g21 c[103,50,49]/1(c[45]/2(a[103,49,103,99,95,107,50],c[102,111,111]/1(a[97])))"   # the key is unified from the reference
     @test !(:bind_attvar_const in kh["g20"])                           # NEEDS-ROOT: no ALLOW_GC at bind_attvar_const
 end

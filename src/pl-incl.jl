@@ -3068,7 +3068,8 @@ mutable struct gc_stats
     totals::gc_totals
 end
 gc_stats() = gc_stats(
-    [gc_stat() for _ in 1:GC_STAT_WINDOW_SIZE], [gc_stat() for _ in 1:GC_STAT_WINDOW_SIZE], 0, 0, 0.0, UInt64(0), gc_totals()
+    [gc_stat() for _ in 1:GC_STAT_WINDOW_SIZE],
+    [gc_stat() for _ in 1:GC_STAT_WINDOW_SIZE], 0, 0, 0.0, UInt64(0), gc_totals()
 )
 
 # PORT: pl-incl.h pl_gc_status_t
@@ -3101,4 +3102,5 @@ mutable struct gc_stack_policy
     gc::Bool                                                    # Can be GCed?
     policy::Int                                                 # GC_*_POLICY
 end
-gc_stack_policy(gc::Bool) = gc_stack_policy(0, gc ? SMALLSTACK : 0, gc ? 3 : 0, gc, gc ? GC_FAST_POLICY : 0)
+gc_stack_policy(gc::Bool) =
+    gc_stack_policy(0, gc ? SMALLSTACK : 0, gc ? 3 : 0, gc, gc ? GC_FAST_POLICY : 0)

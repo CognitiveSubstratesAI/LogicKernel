@@ -61,12 +61,14 @@ function _gd_views(ld, t::Int, n::Int)::Vector{Any}
 end
 
 "The number of nodes of a view."
-_gd_nodes(v)::Int = v[1] === :cmp ? 1 + sum(_gd_nodes, v[3]; init = 0) : 1
+_gd_nodes(v)::Int = v[1] === :cmp ? 1 + sum(_gd_nodes, v[3]; init=0) : 1
 
 "The stacks as they are: every word, the tops, the bar, the foreign-frame chain."
 _gd_snap(ld) = (
-    gtop = ld.gTop, g = copy(ld.gstack), s = copy(ld.slots), tr = copy(ld.trail), vbox = copy(ld.vbox),
-    nvt = length(ld.vtable), ltop = ld.lTop, bar = ld.mark_bar, fli = ld.fli_context, nf = ld.nframes,
+    gtop=ld.gTop, g=copy(ld.gstack), s=copy(ld.slots), tr=copy(ld.trail),
+    vbox=copy(ld.vbox),
+    nvt=length(ld.vtable), ltop=ld.lTop, bar=ld.mark_bar, fli=ld.fli_context,
+    nf=ld.nframes
 )
 
 "An engine with a DEAD term built first (its only root dropped) and the values of `vs` above it: `(ld, t, n0, dead_cells)`."
@@ -92,11 +94,13 @@ end
 
 "The standard heap of the rows: a dead term (a float, a string, nested compounds, a list) below two live roots sharing a variable."
 function _gd_heap()
-    dead = _rf("dead", _rg(Int64(1)), _rf("dead2", _rg(7.25), _rg("gd-dead-string")), _rints(1:6))
+    dead = _rf(
+        "dead", _rg(Int64(1)), _rf("dead2", _rg(7.25), _rg("gd-dead-string")), _rints(1:6)
+    )
     X = _rv(1)
     live = _R[
         _rf("f", _rs("a"), X, _rf("g", X, _rg(Int64(3))), _rg(1234.5678)),
-        _rf("h", _rg("gd-live"), _rints(1:5), X),
+        _rf("h", _rg("gd-live"), _rints(1:5), X)
     ]
     return _gd_engine(dead, live)
 end
@@ -144,7 +148,8 @@ const _GD_GC = Int(LK.GC_USER)
     @test LK.garbageCollect(ld, _GD_GC) == LK.BOOLEX_TRUE
     @test ld.gTop == gtop1
     @test _gd_views(ld, t, 2) == before
-    @test st.last_index == LK.STAT_NEXT_INDEX(LK.STAT_NEXT_INDEX(i0)) && st.totals.collections == c0 + 2
+    @test st.last_index == LK.STAT_NEXT_INDEX(LK.STAT_NEXT_INDEX(i0)) &&
+        st.totals.collections == c0 + 2
     # the comparison can fail: one live cell changed makes the views differ
     f = _gd_functor_cell(ld, ld.slots[t + 1])
     saved = ld.gstack[f + 1]
@@ -271,7 +276,7 @@ end
 const _GD_CLAUSES = Tuple{_R, Union{Nothing, _R}}[
     (_rf("n", _rf("p", _rg(Int64(1)), _rg(2.25))), nothing),
     (_rf("n", _rf("p", _rg(Int64(2)), _rg(3.25))), nothing),
-    (_rf("n", _rf("p", _rg(Int64(3)), _rg(4.25))), nothing),
+    (_rf("n", _rf("p", _rg(Int64(3)), _rg(4.25))), nothing)
 ]
 
 "Run `n(V)` and call `f(ld)` at the first answer (the query open): `(ld, answers, f's result)`."
@@ -279,7 +284,7 @@ function _gd_live_run(f)
     db = _rdb(copy(_GD_CLAUSES))
     ld = db.ld
     res = Ref{Any}(nothing)
-    ans = _rcall(db, _rf("n", _rv(90)); at = (qid, k) -> (k == 1 && (res[] = f(ld)); nothing))
+    ans = _rcall(db, _rf("n", _rv(90)); at=(qid, k) -> (k == 1 && (res[] = f(ld)); nothing))
     return ld, ans, res[]
 end
 
@@ -316,14 +321,22 @@ end
             st = ld.gc.stats
             i0, c0 = st.last_index, st.totals.collections
             r = LK.garbageCollect(ld, _GD_GC)
-            ok = r == LK.BOOLEX_FALSE && _gd_snap(ld) == sn && st.last_index == i0 && st.totals.collections == c0 &&
+            ok =
+                r == LK.BOOLEX_FALSE && _gd_snap(ld) == sn && st.last_index == i0 &&
+                st.totals.collections == c0 &&
                 ld.gc.status.blocked == 0 && !ld.gc.status.active
             nostate = LK.gc_get_vmi_state(ld, ld.query, nothing) === nothing
             sv = LK.vm_state()
             same = LK.gc_get_vmi_state(ld, ld.query, (l, qi) -> sv) === sv      # the callback's own object
             other = LK.gc_get_vmi_state(ld, 0, (l, qi) -> sv)                  # no query: the else arm, never the callback
             q.registers_fr = old
-            return (ok, nostate, same, other !== sv && other.lSave == ld.lTop && other.choice == ld.BFR && !other.save_argp && !other.in_body)
+            return (
+                ok,
+                nostate,
+                same,
+                other !== sv && other.lSave == ld.lTop && other.choice == ld.BFR &&
+                    !other.save_argp && !other.in_body
+            )
         end
     )
     @test res !== nothing && res == (true, true, true, true)
@@ -339,9 +352,10 @@ end
             st = ld.gc.stats
             i0, c0 = st.last_index, st.totals.collections
             cb = (l, qi) -> (called[] += 1; _gd_vm_of_clause(l))
-            r = LK.garbageCollect(ld, _GD_GC; vmi_state_of = cb)
+            r = LK.garbageCollect(ld, _GD_GC; vmi_state_of=cb)
             q.registers_fr = old
-            return (r == LK.BOOLEX_TRUE, st.last_index == LK.STAT_NEXT_INDEX(i0), st.totals.collections == c0 + 1,
+            return (r == LK.BOOLEX_TRUE, st.last_index == LK.STAT_NEXT_INDEX(i0),
+                st.totals.collections == c0 + 1,
                 ld.gc.status.blocked == 0 && !ld.gc.status.active)
         end
     )
@@ -353,16 +367,30 @@ end
 
 @testset "gc_force at the audited safe points of a small program: the answers are the same (the collector declines inside the VM without G1-2b's callback)" begin
     prog = Tuple{_R, Union{Nothing, _R}}[
-        (_rf("gd8", _rv(1)), _rconj(_rf("functor", _rv(2), _rs("foo"), _rg(3)), _rf("=", _rv(1), _rv(2)))),
-        (_rf("gd10", _rv(1)), _rconj(_rf("=..", _rv(2), _rlist(_rs("f"), _rs("a"), _rs("b"))), _rf("=", _rv(1), _rv(2)))),
-        (_rf("gd12", _rv(1)), _rconj(_rf("\$length", _rv(2), _rg(3)), _rf("=", _rv(1), _rv(2)))),
+        (
+            _rf("gd8", _rv(1)),
+            _rconj(_rf("functor", _rv(2), _rs("foo"), _rg(3)), _rf("=", _rv(1), _rv(2)))
+        ),
+        (
+            _rf("gd10", _rv(1)),
+            _rconj(
+                _rf("=..", _rv(2), _rlist(_rs("f"), _rs("a"), _rs("b"))),
+                _rf("=", _rv(1), _rv(2))
+            )
+        ),
+        (
+            _rf("gd12", _rv(1)),
+            _rconj(_rf("\$length", _rv(2), _rg(3)), _rf("=", _rv(1), _rv(2)))
+        )
     ]
     names = ["gd8", "gd10", "gd12"]
     function _run(force::Bool)
         db = _rdb(copy(prog))
         db.ld.gc_force = force
         out = Vector{Tuple{String, Bool}}[_rcall(db, _rf(n, _rv(90))) for n in names]
-        return out, copy(db.ld.gc_safe_hits), db.ld.gc.status.blocked, db.ld.gc.status.active, db.ld.gc.stats.totals.collections
+        return out,
+        copy(db.ld.gc_safe_hits), db.ld.gc.status.blocked, db.ld.gc.status.active,
+        db.ld.gc.stats.totals.collections
     end
     off, hits_off, b0, a0, coll_off = _run(false)
     on, hits_on, b1, a1, coll_on = _run(true)
@@ -382,7 +410,8 @@ end
     n = 4
     ld, t, n0, dead_cells = _gd_heap()
     before = _gd_views(ld, t, 2)
-    @test length(dead_cells) >= 10 && !isempty(before) && all(v -> _gd_nodes(v) >= 7, before)
+    @test length(dead_cells) >= 10 && !isempty(before) &&
+        all(v -> _gd_nodes(v) >= 7, before)
     @test ld.query == 0                                          # no query: registers_fr is not even read, the else arm of get_vmi_state
     use0 = LK._stacks_in_use(ld, n)
     gtop0 = ld.gTop
@@ -428,7 +457,8 @@ end
     vm = LK.gc_get_vmi_state(ld, 0, nothing)
     @test vm isa LK.vm_state
     @test vm.choice == ld.BFR && vm.lSave == ld.lTop && vm.frame == ld.environment_frame
-    @test !vm.save_argp && !vm.in_body && vm.pc == 0 && vm.pc_start_vmi == 0 && vm.adepth == 0 && vm.lNext == 0 && vm.new_args == 0
+    @test !vm.save_argp && !vm.in_body && vm.pc == 0 && vm.pc_start_vmi == 0 &&
+        vm.adepth == 0 && vm.lNext == 0 && vm.new_args == 0
     lt0 = ld.lTop
     # lSave below lTop: lowered; above: raised; equal: unchanged
     ld.lTop = lt0 + 5
@@ -519,7 +549,8 @@ end
 @testset "tight, growStacks_tight!, shiftTightStacks!: the formula of pl-gc.c tight() in positions" begin
     scratch() = _rdb(Tuple{_R, Union{Nothing, _R}}[]).ld
     ld = scratch()
-    @test LK.tight(ld, :local) == 0 && LK.tight(ld, :global) == 0 && LK.tight(ld, :trail) == 0
+    @test LK.tight(ld, :local) == 0 && LK.tight(ld, :global) == 0 &&
+        LK.tight(ld, :trail) == 0
     @test LK.GROW_TIGHT != 0
     size = ld.lMax + ld.local_spare
     gap = ld.local_def_spare - ld.local_spare

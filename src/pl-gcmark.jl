@@ -97,7 +97,8 @@ const VALUE_MASK = ~GC_MASK
     end
     return nothing
 end
-@inline _gc_ptr(a::Int, t::word)::word = consPtr(abs(a), t | (a < 0 ? STG_LOCAL : STG_GLOBAL))
+@inline _gc_ptr(a::Int, t::word)::word =
+    consPtr(abs(a), t | (a < 0 ? STG_LOCAL : STG_GLOBAL))
 @inline _gc_unptr(w::word)::Int = storage(w) == STG_LOCAL ? -valPtr(w) : valPtr(w)
 
 # PORT: pl-gc.c domark
@@ -118,7 +119,9 @@ end
 # storage, which the kernel never builds) is a named refusal; (3) `needsRelocation` is counted in
 # `st.needs_relocation` and consumed by G1-5; (4) forward/backward are a `mode` state machine.
 "Mark the cell at address `start` and everything reachable from it, by pointer reversal (pl-gc.c)."
-function mark_variable(ld::PL_local_data{T}, st::gc_mark_counts, start::Int)::Nothing where {T}
+function mark_variable(
+    ld::PL_local_data{T}, st::gc_mark_counts, start::Int
+)::Nothing where {T}
     is_marked(_gc_get(ld, start)) && error("GC: attempt to mark twice")
     if start < 0
         st.local_marked += 1                    # markLocal(start)
@@ -146,14 +149,22 @@ function mark_variable(ld::PL_local_data{T}, st::gc_mark_counts, start::Int)::No
                 mode = 2
             elseif isRef(val)
                 storage(val) == STG_GLOBAL ||
-                    throw(NotPortedError(ld.placeholder, "a local-stack reference in the mark phase (pl-gc.c mark_variable; the kernel stores none)", "G1-3"))
+                    throw(
+                        NotPortedError(
+                            ld.placeholder,
+                            "a local-stack reference in the mark phase (pl-gc.c mark_variable; the kernel stores none)",
+                            "G1-3"
+                        )
+                    )
                 nxt = unRef(val)                    # address pointing to
                 st.needs_relocation += 1
                 if is_first(ld.gstack[nxt])         # ref to choice point; we will get there some day anyway
                     mode = 2
                 else
                     val = gc_get_value(ld.gstack[nxt])      # invariant
-                    ld.gstack[nxt] = gc_set_value(ld.gstack[nxt], _gc_ptr(current, TAG_REFERENCE))
+                    ld.gstack[nxt] = gc_set_value(
+                        ld.gstack[nxt], _gc_ptr(current, TAG_REFERENCE)
+                    )
                     current = nxt                   # invariant
                 end
             elseif isAttVar(val)
@@ -163,7 +174,9 @@ function mark_variable(ld::PL_local_data{T}, st::gc_mark_counts, start::Int)::No
                     mode = 2
                 else
                     val = gc_get_value(ld.gstack[nxt])      # invariant
-                    ld.gstack[nxt] = gc_set_value(ld.gstack[nxt], _gc_ptr(current, TAG_ATTVAR))
+                    ld.gstack[nxt] = gc_set_value(
+                        ld.gstack[nxt], _gc_ptr(current, TAG_ATTVAR)
+                    )
                     current = nxt
                 end
             elseif _is_gcompound(val)
@@ -187,13 +200,22 @@ function mark_variable(ld::PL_local_data{T}, st::gc_mark_counts, start::Int)::No
                         nxt -= 1                    # last cell of term
                         val = gc_get_value(ld.gstack[nxt])  # invariant
                         # backwards pointer (NO ref!)
-                        ld.gstack[nxt] = gc_set_value(ld.gstack[nxt], _gc_ptr(current, TAG_COMPOUND))
+                        ld.gstack[nxt] = gc_set_value(
+                            ld.gstack[nxt], _gc_ptr(current, TAG_COMPOUND)
+                        )
                         current = nxt
                     end
                 end
-            elseif tagex(val) == (TAG_INTEGER | STG_GLOBAL) || tagex(val) == (TAG_STRING | STG_GLOBAL) ||
-                   tagex(val) == (TAG_FLOAT | STG_GLOBAL)
-                throw(NotPortedError(ld.placeholder, "an inline indirect on the global stack (D1: the kernel boxes values in the value table; pl-gc.c mark_variable)", "G1-3"))
+            elseif tagex(val) == (TAG_INTEGER | STG_GLOBAL) ||
+                tagex(val) == (TAG_STRING | STG_GLOBAL) ||
+                tagex(val) == (TAG_FLOAT | STG_GLOBAL)
+                throw(
+                    NotPortedError(
+                        ld.placeholder,
+                        "an inline indirect on the global stack (D1: the kernel boxes values in the value table; pl-gc.c mark_variable)",
+                        "G1-3"
+                    )
+                )
             else
                 mode = 2                            # atom, tagged integer, unbound (0)
             end
@@ -237,7 +259,8 @@ end
 # reference, an attributed variable, a compound (`_is_gcompound`) and that vword; everything else (atom,
 # tagged integer, SLOT_VALUE, 0) names no global cell.
 @inline _gc_is_global_ref(w::word)::Bool =
-    (isRef(w) && storage(w) == STG_GLOBAL) || isAttVar(w) || _is_gcompound(w) || _is_vword(w)
+    (isRef(w) && storage(w) == STG_GLOBAL) || isAttVar(w) || _is_gcompound(w) ||
+    _is_vword(w)
 
 # PORT: pl-fli.c PL_new_term_ref_noshift
 # DIVERGES: a new term reference holding the WORD `w` and NO fresh global cell: the collector must not
@@ -246,7 +269,8 @@ end
 # stack is an error here (upstream asserts a non-zero result).
 "A term reference holding `w` in the innermost foreign frame, without shifting and without allocating (pl-fli.c)."
 function gc_new_term_ref!(ld::PL_local_data, w::word)::Int
-    hasLocalSpace(ld, 1) || error("GC: no local space for a term reference (PL_new_term_ref_noshift)")
+    hasLocalSpace(ld, 1) ||
+        error("GC: no local space for a term reference (PL_new_term_ref_noshift)")
     t = ld.lTop
     ld.slots[t + 1] = w
     ld.lTop = t + 1
@@ -262,10 +286,18 @@ end
 # reference, an atom, a global compound, a tagged integer, a value-table word or SLOT_VALUE), so
 # upstream's `while ( isLocalRef(*p) )` chain is never entered; `a` is a (negative) slot address.
 "Mark the local cell at address `a` (a slot): what it references on the global stack, else the slot only (pl-gc.c)."
-function mark_local_variable(ld::PL_local_data{T}, st::gc_mark_counts, a::Int)::Nothing where {T}
+function mark_local_variable(
+    ld::PL_local_data{T}, st::gc_mark_counts, a::Int
+)::Nothing where {T}
     w = _gc_get(ld, a)
     if isRef(w) && storage(w) == STG_LOCAL
-        throw(NotPortedError(ld.placeholder, "a local-stack reference in mark_local_variable (pl-gc.c:1791; the kernel stores none)", "G1-3"))
+        throw(
+            NotPortedError(
+                ld.placeholder,
+                "a local-stack reference in mark_local_variable (pl-gc.c:1791; the kernel stores none)",
+                "G1-3"
+            )
+        )
     end
     if _gc_is_global_ref(w)
         mark_variable(ld, st, a)
@@ -277,7 +309,9 @@ end
 
 # PORT: pl-gc.c mark_arguments
 "Mark the arguments of the frame at index `fi` of `ld.frames` (pl-gc.c)."
-function mark_arguments(ld::PL_local_data{T}, st::gc_mark_counts, fi::Int)::Nothing where {T}
+function mark_arguments(
+    ld::PL_local_data{T}, st::gc_mark_counts, fi::Int
+)::Nothing where {T}
     fr = ld.frames[fi]
     for n in 0:(fr.predicate.arity - 1)
         a = -(argFrameP(fr.base, n) + 1)
@@ -289,7 +323,9 @@ end
 # PORT: pl-gc.c mark_new_arguments
 # DIVERGES: `lNext` is the POSITION of the frame being built (0 = NULL), arguments at `argFrameP(lNext, n)`.
 "Mark the `new_args` arguments of the frame being built at the safe point (pl-gc.c)."
-function mark_new_arguments(ld::PL_local_data{T}, st::gc_mark_counts, vm::vm_state)::Nothing where {T}
+function mark_new_arguments(
+    ld::PL_local_data{T}, st::gc_mark_counts, vm::vm_state
+)::Nothing where {T}
     if vm.lNext != 0
         for n in 0:(vm.new_args - 1)
             a = -(argFrameP(vm.lNext, n) + 1)
@@ -337,7 +373,9 @@ end
 # upstream's pointer names; the trail grows upwards in `ld.trail`). Upstream then puts the frame's
 # `mark.trailtop` into the relocation chain: that is the sweep's (G1-5).
 "Early-reset the variables trailed since foreign frame `fi` was opened and count its trail mark (pl-gc.c)."
-function mark_foreign_frame(ld::PL_local_data{T}, st::gc_mark_counts, fi::Int, te::Int)::Int where {T}
+function mark_foreign_frame(
+    ld::PL_local_data{T}, st::gc_mark_counts, fi::Int, te::Int
+)::Int where {T}
     f = ld.fliframes[fi]
     if isRealMark(f.mark)
         te = early_reset_vars(ld, st, f.mark, te)       # G1-3b
@@ -384,7 +422,8 @@ function gvars_to_term_refs(ld::PL_local_data{T})::Tuple{Int, Int} where {T}
     fid == 0 && error("GC: no local space for gvars_to_term_refs")
     if !isempty(ld.gvar_nb_vars)
         ks = collect(keys(ld.gvar_nb_vars))
-        ensureLocalSpace(ld, length(ks) + 2) || error("GC: no local space for the global variables")
+        ensureLocalSpace(ld, length(ks) + 2) ||
+            error("GC: no local space for the global variables")
         for k in ks
             w = ld.gvar_nb_vars[k]
             _gc_is_global_ref(w) && gc_new_term_ref!(ld, w)
@@ -405,7 +444,8 @@ end
 "Write the (relocated) term references back into the nb_ variables, restore the frozen bar, close the frame (pl-gc.c)."
 function term_refs_to_gvars(ld::PL_local_data{T}, fid::Int, sb::Int)::Nothing where {T}
     if sb != 0
-        ld.lTop == sb + 1 || error("GC: term_refs_to_gvars: the saved bar is not the top of the local stack")
+        ld.lTop == sb + 1 ||
+            error("GC: term_refs_to_gvars: the saved bar is not the top of the local stack")
         ld.frozen_bar = valPtr(ld.slots[sb + 1])
         ld.slots[sb + 1] = 0
         lowerLTop!(ld, sb)                              # lTop = saved_bar_at
@@ -419,7 +459,8 @@ function term_refs_to_gvars(ld::PL_local_data{T}, fid::Int, sb::Int)::Nothing wh
                 found += 1
             end
         end
-        found == f.size || error("GC: term_refs_to_gvars: $(found) values for a frame of $(f.size)")
+        found == f.size ||
+            error("GC: term_refs_to_gvars: $(found) values for a frame of $(f.size)")
     end
     PL_close_foreign_frame(ld, fid)
     return nothing
@@ -432,7 +473,8 @@ end
 "Turn the global entries of the argument stack into term references of a new foreign frame (pl-gc.c); 0 when `vm.save_argp` is off."
 function argument_stack_to_term_refs(ld::PL_local_data{T}, vm::vm_state)::Int where {T}
     vm.save_argp || return 0
-    ensureLocalSpace(ld, SIZEOF_FLIFRAME + ld.aTop + 4) || error("GC: no local space for argument_stack_to_term_refs")
+    ensureLocalSpace(ld, SIZEOF_FLIFRAME + ld.aTop + 4) ||
+        error("GC: no local space for argument_stack_to_term_refs")
     fid = open_foreign_frame(ld)
     pushArgumentStack(ld, argstack_entry{T}(ld.queries[ld.query].registers_argp, false))
     vm.uwrite_count = 0
@@ -452,7 +494,9 @@ end
 
 # PORT: pl-gc.c term_refs_to_argument_stack
 "Write the (relocated) term references back into the argument stack, pop the pushed `registers_argp`, close the frame (pl-gc.c)."
-function term_refs_to_argument_stack(ld::PL_local_data{T}, vm::vm_state, fid::Int)::Nothing where {T}
+function term_refs_to_argument_stack(
+    ld::PL_local_data{T}, vm::vm_state, fid::Int
+)::Nothing where {T}
     fid == 0 && return nothing
     f = ld.fliframes[fliFrameOfFid(ld, fid)]
     found = 0
@@ -464,11 +508,17 @@ function term_refs_to_argument_stack(ld::PL_local_data{T}, vm::vm_state, fid::In
             found += 1
             uw = tag(w) == TAG_ATTVAR
             uw && (uwc += 1)
-            ld.astack[i] = argstack_entry{T}(argp_t{T}(ARGP_GLOBAL, valPtr(w), e.argp.term), uw)
+            ld.astack[i] = argstack_entry{T}(
+                argp_t{T}(ARGP_GLOBAL, valPtr(w), e.argp.term), uw
+            )
         end
     end
-    found == f.size || error("GC: term_refs_to_argument_stack: $(found) references for a frame of $(f.size)")
-    uwc == vm.uwrite_count || error("GC: term_refs_to_argument_stack: $(uwc) UWRITE entries, saved $(vm.uwrite_count)")
+    found == f.size || error(
+        "GC: term_refs_to_argument_stack: $(found) references for a frame of $(f.size)"
+    )
+    uwc == vm.uwrite_count || error(
+        "GC: term_refs_to_argument_stack: $(uwc) UWRITE entries, saved $(vm.uwrite_count)"
+    )
     ld.queries[ld.query].registers_argp = ld.astack[ld.aTop].argp       # registers.argp = *--aTop
     ld.aTop -= 1
     PL_close_foreign_frame(ld, fid)

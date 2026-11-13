@@ -346,7 +346,8 @@ function early_reset_vars(
                 end
             end
             if keep                                     # keep:
-                is_first(ld.gstack[gp]) && error("early_reset_vars: first-marked assignment value")
+                is_first(ld.gstack[gp]) &&
+                    error("early_reset_vars: first-marked assignment value")
                 if !is_marked(ld.gstack[gp])
                     mark_variable(ld, st, gp)
                 end
@@ -503,7 +504,8 @@ function mark_environments(
                 slots = gc_slots_in_frame(ld, fr, pc)
                 sp = argFrameP(f.base, 0)
                 for i in 0:(slots - 1)
-                    is_marked(ld.slots[sp + i + 1]) || mark_local_variable(ld, st, -(sp + i + 1))
+                    is_marked(ld.slots[sp + i + 1]) ||
+                        mark_local_variable(ld, st, -(sp + i + 1))
                 end
             end
         end
@@ -570,7 +572,7 @@ Mark the local stack from the safe point `vm` outward through the queries, the c
 foreign frames (pl-gc.c); the trail is walked once from the top by early reset.
 """
 function mark_stacks(
-    ld::PL_local_data{T}, st::gc_mark_counts, vm::vm_state; vmi_state_of = nothing
+    ld::PL_local_data{T}, st::gc_mark_counts, vm::vm_state; vmi_state_of=nothing
 )::Nothing where {T}
     ms = mark_state(vm)
     ms.reset_entry = length(ld.trail)                   # state.reset_entry = tTop - 1
@@ -589,8 +591,9 @@ function mark_stacks(
         if pq.registers_fr != 0
             vmi_state_of === nothing && throw(
                 NotPortedError(
-                    ld.placeholder, "get_vmi_state of a parent query (pl-gc.c:3725)", "G1-2"
-                ),
+                    ld.placeholder, "get_vmi_state of a parent query (pl-gc.c:3725)",
+                    "G1-2"
+                )
             )
             sub = vmi_state_of(ld, pqf)::vm_state
             sub.choice = q.saved_bfr
@@ -617,11 +620,11 @@ end
 # the caller of this function, as upstream's.
 "Mark phase: set the MARK bit of every cell of the global stack that is reachable (pl-gc.c); moves and frees nothing."
 function mark_phase(
-    ld::PL_local_data{T}, st::gc_mark_counts, vm::vm_state; vmi_state_of = nothing
+    ld::PL_local_data{T}, st::gc_mark_counts, vm::vm_state; vmi_state_of=nothing
 )::Nothing where {T}
     st.total_marked = 0
     mark_term_refs(ld, st)
-    mark_stacks(ld, st, vm; vmi_state_of = vmi_state_of)
+    mark_stacks(ld, st, vm; vmi_state_of=vmi_state_of)
     return nothing
 end
 
@@ -654,7 +657,9 @@ end
 
 # PORT: pl-gc.c unmark_stacks
 "Clear `mask` in all the frames reachable from `fr` and `ch`, through the parent queries (pl-gc.c)."
-function unmark_stacks(ld::PL_local_data{T}, fr::Int, ch::Int, mask::UInt32)::Nothing where {T}
+function unmark_stacks(
+    ld::PL_local_data{T}, fr::Int, ch::Int, mask::UInt32
+)::Nothing where {T}
     while fr != 0
         qf = unmark_environments(ld, fr, mask)
         qf == 0 && return nothing                       # (upstream asserts a query here)

@@ -39,7 +39,9 @@ const GROW_TIGHT = 1
 # `vmi_state_of` callback; without one the answer is `nothing` and `garbageCollect` declines; (3) `state->frame
 # = environment_frame` and the argument position are the frame's index and its base position.
 "The `vm_state` of the safe point, `nothing` when the query is inside the VM and no `vmi_state_of` was given (pl-gc.c `get_vmi_state`)."
-function gc_get_vmi_state(ld::PL_local_data{T}, qi::Int, vmi_state_of)::Union{Nothing, vm_state} where {T}
+function gc_get_vmi_state(
+    ld::PL_local_data{T}, qi::Int, vmi_state_of
+)::Union{Nothing, vm_state} where {T}
     if qi != 0 && ld.queries[qi].registers_fr != 0
         vmi_state_of === nothing && return nothing
         return vmi_state_of(ld, qi)::vm_state
@@ -201,7 +203,7 @@ overflow code. `reason` is a `GC_*` word; `vmi_state_of(ld, query_index) -> vm_s
 query that is inside the VM (G1-2b), and the state of every parent query the walk meets.
 """
 function garbageCollect(
-    ld::PL_local_data{T}, reason::Int; vmi_state_of = nothing
+    ld::PL_local_data{T}, reason::Int; vmi_state_of=nothing
 )::boolex_t where {T}
     if ld.gc.status.blocked != 0 || !truePrologFlag(ld, PLFLAG_GC)
         return BOOLEX_FALSE
@@ -239,13 +241,13 @@ function garbageCollect(
         astack = argument_stack_to_term_refs(ld, vm)
         gvars, saved_bar_at = gvars_to_term_refs(ld)
         grefs = save_grefs(ld)
-        mark_phase(ld, st, vm; vmi_state_of = vmi_state_of)
+        mark_phase(ld, st, vm; vmi_state_of=vmi_state_of)
 
         ts = gc_trail_begin!(ld)                    # tTop->address = 0
         tag_trail(ld, ts)
         sw = gc_sweep_counts()
         gc_trail_phase(ld, st, sw, ts, vm)          # compact_trail()
-        collect_phase(ld, st, sw, vm; vmi_state_of = vmi_state_of, saved_bar_at = saved_bar_at)
+        collect_phase(ld, st, sw, vm; vmi_state_of=vmi_state_of, saved_bar_at=saved_bar_at)
         restore_grefs(ld, grefs)
         untag_trail(ld, ts)
         clean_attvar_chain(ld)
