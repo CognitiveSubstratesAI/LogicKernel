@@ -7598,8 +7598,8 @@ end
 # ── IDG REEVALUATION (pl-tabling.c:7416-7438, :11053-11430, TAB1 TB6) ─────────────────────────────────
 # DIVERGES (the block): the single-thread build: `claim_answer_table` of a shared table (`O_PLMT`, `TRIE_ISSHARED`) is
 # TH1's (a shared table is refused at `idg_new`), `COMPLETE_WORKLIST` is its `#else` (the code alone, pl-tabling.c:383);
-# the transactions (`LD->transaction.predicates`, `tt_add_table`) are TB9's: no transaction is open, so
-# `tt_has_modified_dependencies` is false. The `DEBUG` prints are not kept. A trie node is a node id of `atrie`; the
+# the transactions (`LD->transaction.predicates`, `tt_add_table`, TB9) are read from `ld.transaction`: outside a
+# transaction `tt_has_modified_dependencies` is false. The `DEBUG` prints are not kept. A trie node is a node id of `atrie`; the
 # `map_trie_node` callbacks are closures over `ld` (upstream: the context pointer).
 
 # PORT: pl-tabling.c tt_has_modified_dependencies
@@ -8186,8 +8186,7 @@ end
 # of the CHILD's answer trie (> 0) or, for the pseudo table of a dynamic predicate, a clause reference as `-serial` (< 0;
 # upstream: a node pointer or an atom word). The `mono_index` trie of a node (a serial in `gd.tries`) stays in `gd.tries`
 # after `mono_index_release` (no atom GC). The transaction branches (`LD->transaction.generation`, `tt_add_table`,
-# `tt_add_answer`, `tt_mono_status`, `tt_new_dep`, `tt_abolish_table`) are omitted: the kernel has no `ld.transaction`
-# (owner TX1/TB9). `Buffer`s are `Vector{Int}`; `TablePP` is an `IdDict`/`Dict`.
+# `tt_add_answer`, `tt_mono_status`, `tt_new_dep`, `tt_abolish_table`) are ported (TB9: `ld.transaction`). `Buffer`s are `Vector{Int}`; `TablePP` is an `IdDict`/`Dict`.
 
 const IdgMdep{T} = idg_mdep{T, idg_node{T}}
 const FUNCTOR_minus2_name = Symbol("-")

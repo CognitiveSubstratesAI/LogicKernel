@@ -2717,8 +2717,9 @@ gvar_enum() = gvar_enum(UInt64[], 1)
 # and integer ids, upstream's names and order kept); the special pointers `WL_GROUND`, `WL_DYNAMIC`, `DV_DELETED` and
 # `DL_UNDEFINED` of pl-tabling.c are not pointers here (pl-tabling.jl); a `buffer` is a typed `Vector`; a bit-field is
 # a `Bool`; a `size_t` is an `Int` (`(size_t)-1`, no limit, is -1) as `table_props`. NOT PORTED here, each to its owner:
-# the IDG structs `idg_node`, `idg_mdep`, `idg_mono` (they hold pl-idgset.h's `idg_set`: TB6, below), the `tbl_trail` structs
-# of the transactions (TB9) and `trie_array`/`node_array` with `TRIE_ARRAY_PREALLOCATED` (TB1, with `start_nodes`).
+# the IDG structs `idg_node`, `idg_mdep`, `idg_mono` (they hold pl-idgset.h's `idg_set`: TB6, below) and
+# `trie_array`/`node_array` with `TRIE_ARRAY_PREALLOCATED` (TB1, with `start_nodes`). The `tbl_trail` structs of the
+# transactions are above, before `tr_stack` (TB9).
 
 # PORT: pl-global.h TABLE_COMPILE_THRESHOLD
 "The default of the flag `table_compile_threshold` (pl-global.h `TABLE_COMPILE_THRESHOLD`)."
