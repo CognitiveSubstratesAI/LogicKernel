@@ -457,6 +457,13 @@ end
         t = _ea_t(UInt8[97, 0xe2, 0x82, 0xac], LK.ENC_ANSI)
         @test LK.PL_canonicalise_text(t) == 1
         @test t.encoding === LK.ENC_WCHAR && t.text == _ea_w([97, 0x20ac]) && t.length == 2 && t.canonical
+        # the boundary: U+00FF is still ISO Latin-1, U+0100 is the first wide code
+        t = _ea_t(UInt8[0xc3, 0xbf], LK.ENC_ANSI)
+        @test LK.PL_canonicalise_text(t) == 1
+        @test t.encoding === LK.ENC_ISO_LATIN_1 && t.text == UInt8[0xff] && t.length == 1 && t.canonical
+        t = _ea_t(UInt8[0xc4, 0x80], LK.ENC_ANSI)
+        @test LK.PL_canonicalise_text(t) == 1
+        @test t.encoding === LK.ENC_WCHAR && t.text == _ea_w([0x100]) && t.length == 1 && t.canonical
         t = _ea_t(UInt8[], LK.ENC_ANSI)
         @test LK.PL_canonicalise_text(t) == 1 && t.encoding === LK.ENC_ISO_LATIN_1 && t.length == 0 && t.canonical
         # an illegal sequence, an incomplete one and a NUL are ERR_TEXT_ILLEGAL_MULTIBYTE_SEQUENCE (rc == -1 or rc == 0; -2 is the DIVERGES)
@@ -537,6 +544,13 @@ end
         t = _ea_t(_ea_w([0x41, 0xe9]), LK.ENC_WCHAR, 2, true)
         @test LK._mb_text(t, UInt32(0)) == -1
         @test t.encoding === LK.ENC_ISO_LATIN_1 && t.text == UInt8[0x41, 0xe9] && t.length == 2 && t.canonical
+        # the demote boundary: 0xff demotes, 0x100 does not
+        t = _ea_t(_ea_w([0xff]), LK.ENC_WCHAR, 1, true)
+        @test LK._mb_text(t, UInt32(0)) == -1
+        @test t.encoding === LK.ENC_ISO_LATIN_1 && t.text == UInt8[0xff] && t.length == 1 && t.canonical
+        t = _ea_t(_ea_w([0x100]), LK.ENC_WCHAR, 1, true)
+        @test LK._mb_text(t, UInt32(0)) == -2
+        @test t.encoding === LK.ENC_WCHAR && t.text == _ea_w([0x100])
         t = _ea_t(_ea_w([0x41, 0x20ac]), LK.ENC_WCHAR, 2, true)
         @test LK._mb_text(t, UInt32(0)) == -2                       # PL_demote_text fails; the text is left as it was
         @test t.encoding === LK.ENC_WCHAR && t.text == _ea_w([0x41, 0x20ac])
