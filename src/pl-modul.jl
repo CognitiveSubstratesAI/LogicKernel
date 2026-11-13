@@ -1297,8 +1297,7 @@ function _text_summary(s::AbstractString, maxlen::Int)::String
 end
 
 # PORT: pl-modul.c declareModule
-# DIVERGES: `class` and `super` are atoms (the one caller, `'$declare_module'/6`, gets them with `PL_get_atom_ex`); the source file has no
-# `reload` (reconsult is not ported: `registerReloadModule` is not reached); the module's file is the source file's INDEX (0: none); the
+# DIVERGES: `class` and `super` are atoms (the one caller, `'$declare_module'/6`, gets them with `PL_get_atom_ex`); the module's file is the source file's INDEX (0: none); the
 # procedures are walked in the order of the module's table (Julia's), where upstream's follows its hash table (D-0149 item 1); the
 # procedures are abolished by `abolishProcedure!` (pl-proc.jl; PR1), as upstream's `abolishProcedure(proc, module)` (pl-modul.c:1338),
 # its result ignored there too; the warning `declare_module(M, abolish(PIs))` below names those that had clauses.
@@ -1338,25 +1337,29 @@ function declareModule(
     module_.line_no = line
     ld.modules_source = module_.index
 
-    for proc in values(module_.procedures)
-        def = proc.definition
+    if sf.reload !== nothing
+        registerReloadModule(sf, module_)
+    else
+        for proc in values(module_.procedures)
+            def = proc.definition
 
-        if (def.flags & (P_DYNAMIC | P_MULTIFILE | P_FOREIGN)) == 0
-            if def.module_ == module_.index && hasClausesDefinition(gd, def) !== nothing
-                if rdef == 0
-                    rdef = PL_new_term_ref(ld)
-                    rtail = PL_copy_term_ref(ld, rdef)
-                    tmp = PL_new_term_ref(ld)
+            if (def.flags & (P_DYNAMIC | P_MULTIFILE | P_FOREIGN)) == 0
+                if def.module_ == module_.index && hasClausesDefinition(gd, def) !== nothing
+                    if rdef == 0
+                        rdef = PL_new_term_ref(ld)
+                        rtail = PL_copy_term_ref(ld, rdef)
+                        tmp = PL_new_term_ref(ld)
+                    end
+
+                    PL_unify_list(ld, rtail, tmp, rtail)
+                    unify_definition(gd, ld, MODULE_user(gd), tmp, def, 0, GP_NAMEARITY)
                 end
-
-                PL_unify_list(ld, rtail, tmp, rtail)
-                unify_definition(gd, ld, MODULE_user(gd), tmp, def, 0, GP_NAMEARITY)
+                abolishProcedure!(gd, ld, proc, module_)
             end
-            abolishProcedure!(gd, ld, proc, module_)
         end
+        empty!(module_.public_)                             # clearHTableWP(module->public)
+        empty!(module_.public_order)
     end
-    empty!(module_.public_)                             # clearHTableWP(module->public)
-    empty!(module_.public_order)
     rc = setSuperModule(gd.modules, ld, module_, lookupModule(gd, super))
 
     if rdef != 0

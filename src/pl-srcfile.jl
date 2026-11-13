@@ -681,12 +681,52 @@ function unlinkSourceFileModule(sf::SourceFile{T}, m::module_t{T})::Nothing wher
     return nothing
 end
 
+# PORT: pl-srcfile.c registerReloadModule
+# (swipl-devel 18168e62, src/pl-srcfile.c:1406-1424)
+# DIVERGES: the table of the reload context is made with it (`sf_reload.modules` is never NULL); no allocation failure.
+"Note that the module `m` is (re)defined by the file `sf` being reloaded: it gets an `m_reload` record (pl-srcfile.c)."
+function registerReloadModule(sf::SourceFile{T}, m::module_t{T})::Nothing where {T}
+    rl = sf.reload
+    if rl !== nothing
+        haskey(rl.modules, m) ||
+            (rl.modules[m] = m_reload{T}(m, Dict{Tuple{UInt64, Int}, Procedure{T}}(), Tuple{UInt64, Int}[]))
+    end
+    return nothing
+end
+
 # PORT: pl-srcfile.c exportProcedureSource
-# DIVERGES: a source file has no `reload` (reconsult is not ported), so the recording of the exports of a module being
-# reloaded - the part of upstream that tests `sf->reload` - does not run; what is left is `exportProcedure`.
-"Export `proc` from module `m` while loading the source file `sf` (pl-srcfile.c)."
-exportProcedureSource(sf::SourceFile{T}, m::module_t{T}, proc::Procedure{T}) where {T} =
-    exportProcedure(m, proc)
+# (swipl-devel 18168e62, src/pl-srcfile.c:1426-1439)
+# DIVERGES: `r->public` is the record's own (empty) table from the start, so upstream's `if ( !r->public ) r->public = newHTableWP(8)` is not needed;
+# `updateHTableWP` is an update in place, with the key appended to `public_order` when it is new, as `exportProcedure` does the module's table.
+"Export `proc` from module `m` while loading the source file `sf`; during a reload the export is also recorded in the reload context (pl-srcfile.c)."
+function exportProcedureSource(
+    sf::SourceFile{T}, m::module_t{T}, proc::Procedure{T}
+) where {T}
+    rl = sf.reload
+    if rl !== nothing
+        r = get(rl.modules, m, nothing)
+        if r !== nothing
+            key = (proc.definition.functor_name, proc.definition.arity)
+            haskey(r.public_, key) || push!(r.public_order, key)
+            r.public_[key] = proc
+        end
+    end
+    return exportProcedure(m, proc)
+end
+
+# PORT: pl-srcfile.c fix_module
+# (swipl-devel 18168e62, src/pl-srcfile.c:1441-1455)
+# DIVERGES: no `LOCKMODULE`; the module's table is a Dict with its keys in `public_order`: a deleted key leaves both. The debug message is not kept.
+"At the end of a reload: drop from the public table of `m` every export the reloaded file did not make again (pl-srcfile.c)."
+function fix_module(m::module_t{T}, r::m_reload{T})::Nothing where {T}
+    for key in collect(keys(m.public_))
+        if !haskey(r.public_, key)                      # !r->public || !lookupHTableWP(r->public, n)
+            delete!(m.public_, key)
+            filter!(!=(key), m.public_order)
+        end
+    end
+    return nothing
+end
 
 # Is the atom `a` the atom named `s`?
 _atom_is(ld::PL_local_data{T}, a, s::Symbol) where {T} = sym_key(a) == sym_key(mk_sym(T, s))   # (`a`'s own type may be a subtype of `T`: an AltSym)
