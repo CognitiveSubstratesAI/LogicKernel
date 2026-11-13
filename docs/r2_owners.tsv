@@ -227,3 +227,4 @@ refusal:src/pl-write.jl::writePrimitive::writing a grounded value SWI has no typ
 kfile:pl-gcmark.jl	G1-GC	G1-3: the named refusals of the mark phase (a local-stack reference and an inline indirect, words the kernel never builds); permanent unless the layout changes
 kfile:pl-gcwalk.jl	G1-GC	G1-3: the named refusal of a parent query inside the VM without a get_vmi_state callback (pl-gc.c:3725); G1-2 supplies the callback
 kfile:pl-gctrail.jl	G1-GC	G1-4: the named refusals of the trail half (a trail entry for a local-stack variable, words the kernel never trails; the chain handler of compact_trail, update_relocation_chain, is G1-5)
+kfile:pl-gccompact.jl	G1-GC	G1-6: compact_global, downskip_combine_garbage, collect_phase, unsweep_*, the join of the trail half and the sweep (named refusals: none; the driver and the get_vmi_state callback are G1-6c's and G1-2's)
