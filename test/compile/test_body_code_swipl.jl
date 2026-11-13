@@ -1206,19 +1206,28 @@ end
         ("a code point past 0x10ffff", _bf("pe10", _bv(1)),
             _bf("is", _bv(1), _bf("+", _blist(_bg(1114112)), _bg(1))),
             _bf("type_error", _bs("character"), _bg(1114112))),
-        # the operand of roundtoward/2 fails: the error stays pending, as the pin's
+        # the operand of roundtoward/2 fails: the clause is refused, as the pin's assertz throws and adds nothing (probed, 10.1.20:
+        # `assertz((a(X) :- X is roundtoward(nofunc(1), to_positive)))` -> type_error(evaluable, nofunc(1)), 0 clauses): `ignore_error`
+        # is never read with a failed operand, every failure of compileArithArgument leaves through `exit` (pl-comp.c:4004-4119)
         ("roundtoward of an unknown function", _bf("pe11", _bv(1)),
             _bf("is", _bv(1),
                 _bf("roundtoward", _bf("nofunc", _bg(1)), _bs("to_positive"))),
             _bf("type_error", _bs("evaluable"), _bf("nofunc", _bg(1)))),
         ("*/1 is no function", _bf("pe12", _bv(1)), _bf("is", _bv(1), _bf("*", _bv(1))),
-            _bf("type_error", _bs("evaluable"), _bf("*", _bv(9))))
+            _bf("type_error", _bs("evaluable"), _bf("*", _bv(9)))),
+        # `[]` is no text atom: the else branch, no message (probed: type_error(evaluable, []), context(system:assertz/1, _))
+        ("[] is no function", _bf("pe13", _bv(1)),
+            _bf("is", _bv(1), _bf("+", mk_nil(_B), _bg(1))),
+            _bf("type_error", _bs("evaluable"), mk_nil(_B))),
+        # a rounding mode variable not seen before (arithVarOffset on the second operand of roundtoward/2)
+        ("a first-occurrence mode variable", _bf("pe14", _bv(1)),
+            _bf("is", _bv(2), _bf("roundtoward", _bv(1), _bv(3))),
+            _bs("instantiation_error"))
     ]
     for (name, h, b, formal) in cases
         cl, formal_got = arith_error(h, b)
         @test formal_got !== nothing && LK.is_variant_ptr(formal_got, formal)
-        # the clause is refused, except that of roundtoward/2's operand: swallowed, the error stays
-        @test (cl === nothing) == (name != "roundtoward of an unknown function")
+        @test cl === nothing
     end
 end
 
