@@ -408,7 +408,9 @@ end
     @test on == off
     @test isempty(hits_off)
     @test !isempty(hits_on)                                       # the sites were reached
-    @test coll_on > 0 && coll_on >= coll_off                      # G1GC2-E5: a foreign safe point (registers_fr == 0) really collects: the totals of the statistics moved
+    @info "gc_force program row" coll_on coll_off hits_on          # diagnostic only (D-0644: the two assertions below stay strict)
+    @test coll_on > 0                                             # G1GC2-E5: a foreign safe point (registers_fr == 0) really collects: the totals of the statistics moved
+    @test coll_on >= coll_off
     @test b0 == 0 && b1 == 0 && !a0 && !a1
 end
 

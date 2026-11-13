@@ -323,6 +323,7 @@ end
             on_heap[i][3] <= off_heap[i][3]
         ) == (i, true, true, true, true, true)
     end
+    @info "G1-GC safe-points row" on_coll hits_on=length(union(on_hits...))    # diagnostic only (D-0644: the assertions stay strict)
     @test on_coll > 0                                                 # the collector ran at the foreign sites, so the `<=` above is not vacuous
     @test !isempty(union(on_hits...))
 
