@@ -143,6 +143,17 @@ end
     @test _ck_fails(ld, "gstack-mark")
     ld.gstack[a] &= ~LK.FIRST_MASK
     @test isempty(LK.stack_violations(ld))
+    fp = _ck_functors(ld)[1]                                    # a MARK bit on a functor cell too
+    ld.gstack[fp] |= LK.MARK_MASK
+    @test _ck_fails(ld, "gstack-mark")
+    @test isempty(LK.stack_violations(ld; allow_marks=true))
+    ld.gstack[fp] &= ~LK.MARK_MASK
+    @test isempty(LK.stack_violations(ld))
+    top = ld.gTop                                               # a gTop beyond the stack
+    ld.gTop = length(ld.gstack) + 1
+    @test _ck_fails(ld, "gstack-top")
+    ld.gTop = top
+    @test isempty(LK.stack_violations(ld))
 end
 
 @testset "a trail entry beyond gTop is caught" begin
@@ -160,6 +171,12 @@ end
     pop!(ld.trail)
     push!(ld.trail, LK.tagTrailPtr(3))                           # a value entry with no address entry below it
     @test _ck_fails(ld, "trail")
+    empty!(ld.trail)
+    push!(ld.trail, LK._trail_addr(5, LK.TRAIL_GLOBAL))
+    push!(ld.trail, LK.tagTrailPtr(3))                           # its saved value not above its cell
+    @test _ck_fails(ld, "trail")
+    empty!(ld.trail)
+    @test isempty(LK.stack_violations(ld))
 end
 
 @testset "a value-table box out of order is caught" begin
@@ -172,6 +189,21 @@ end
     @test isempty(LK.stack_violations(ld))
     ld.vbox[end] = ld.gTop + 1                                   # a box beyond gTop
     @test _ck_fails(ld, "vbox")
+    ld = _ck_heap()
+    old = ld.gstack[ld.vbox[1]]                                  # a box cell that is no box word
+    ld.gstack[ld.vbox[1]] = UInt64(0)
+    @test _ck_fails(ld, "vbox")
+    ld.gstack[ld.vbox[1]] = old
+    @test isempty(LK.stack_violations(ld))
+    p1, p2 = ld.vbox[1], ld.vbox[2]                              # out of order, every box word its entry's own
+    ld.vbox[1], ld.vbox[2] = p2, p1
+    ld.gstack[p1], ld.gstack[p2] = ld.gstack[p2], ld.gstack[p1]
+    @test _ck_fails(ld, "vbox")
+    ld = _ck_heap()
+    push!(ld.vbox, 1)                                            # one box too many
+    @test _ck_fails(ld, "vbox")
+    pop!(ld.vbox)
+    @test isempty(LK.stack_violations(ld))
 end
 
 @testset "a functor whose arguments run past gTop is caught" begin
@@ -191,8 +223,10 @@ end
     a = _ck_functors(ld)[1] + 1
     ld.gstack[a] = UInt64(LK.TAG_COMPOUND)                       # compound tag, static storage: no cell holds it
     @test _ck_fails(ld, "gstack-tag")
+    ld.gstack[a] = LK.consPtr(length(ld.vtable) + 5, LK.TAG_COMPOUND | LK.STG_RESERVED)   # a value-table word past the table
+    @test _ck_fails(ld, "gstack-vword")
     ld.gstack[a] = ld.gstack[_ck_functors(ld)[end]]              # a functor word where an argument belongs
-    @test !isempty(LK.stack_violations(ld))
+    @test _ck_fails(ld, "gstack-functor")
     @test_throws LK.StackInvariantError LK.check_stacks!(ld)
 end
 
