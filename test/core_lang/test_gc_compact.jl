@@ -383,8 +383,8 @@ end
     @test_throws ErrorException LK.gc_check_trail_chains(sw)
 end
 
-"A hand-marked heap: every cell an atom; the cells `live` marked, a downward and an upward reference among them, a chain head inside the garbage run."
-function _gc6_wb(; total::Union{Nothing, Int} = nothing)
+"A hand-marked heap: every cell an atom; the cells `live` marked, a downward and an upward reference among them, a chain head inside the garbage run (`head_top`: ON its topmost cell n - 4, which the main scan meets before any run)."
+function _gc6_wb(; total::Union{Nothing, Int} = nothing, head_top::Bool = false)
     ld, t, n0 = _gc6_engine(_R[_rf("k", _rs("a"), _rv(1))])
     ld.gTop < 14 && LK.allocGlobalCells!(ld, 14 - ld.gTop)
     n = ld.gTop
@@ -400,7 +400,7 @@ function _gc6_wb(; total::Union{Nothing, Int} = nothing)
     end
     f = ld.fli_context
     m0 = ld.fliframes[f].mark
-    ld.fliframes[f].mark = LK.mark(m0.trailtop, 7, 0)           # a raw height naming the GARBAGE cell 7
+    ld.fliframes[f].mark = LK.mark(m0.trailtop, head_top ? n - 4 : 7, 0)   # a raw height naming a GARBAGE cell (7, or the top one n - 4)
     sw = LK.gc_sweep_counts()
     LK.alien_into_relocation_chain(ld, sw, LK._gcs_mfield(true, f, 0), LK.STG_GLOBAL)
     st = LK.gc_mark_counts()
@@ -409,22 +409,24 @@ function _gc6_wb(; total::Union{Nothing, Int} = nothing)
 end
 
 @testset "compact_global on a hand-marked heap: moves, chains, hole, tombstone-free" begin
-    W = _gc6_wb()
-    ld, n, live = W.ld, W.n, W.live
-    @test n >= 14 && W.sw.relocation_chains == 1 && W.sw.relocation_cells == 1
-    lv, rank = _gc6_live(W.pre.g, W.pre.gTop)
-    @test lv == live
-    want = _gc6_expect_cells(W.pre.g, live, rank)
-    @test length(want) == 6   # the downward (live[5], cell n-1) and the upward (live[2], cell 4) references were rewritten (non-vacuous)
-    @test want[5] != (W.pre.g[n - 1] & LK.VALUE_MASK) && want[2] != (W.pre.g[4] & LK.VALUE_MASK)
-    LK.compact_global(ld, W.st, W.sw)
-    @test _gc6_cells(ld) == want
-    @test ld.gTop == 6
-    @test W.sw.relocation_chains == 0 && W.sw.relocated_cells == W.sw.relocation_cells == 3
-    got = reinterpret(UInt64, ld.fliframes[W.f].mark.globaltop)  # the head in the garbage was unwound at the number of live cells below it
-    @test got == (UInt64(2) << LK.LMASK_BITS) | LK.STG_GLOBAL
-    @test all(==(UInt64(0)), ld.gstack[7:(n - 4)])              # the garbage run is a hole (zeroed), below the new top nothing of it is left
-    @test !any(w -> LK.is_marked(w) || LK.is_first(w), _gc6_cells(ld))
+    for head_top in (false, true)                               # the head inside the run (downskip unwinds it) and on its top cell (the main scan does)
+        W = _gc6_wb(head_top = head_top)
+        ld, n, live = W.ld, W.n, W.live
+        @test n >= 14 && W.sw.relocation_chains == 1 && W.sw.relocation_cells == 1
+        lv, rank = _gc6_live(W.pre.g, W.pre.gTop)
+        @test lv == live
+        want = _gc6_expect_cells(W.pre.g, live, rank)
+        @test length(want) == 6   # the downward (live[5], cell n-1) and the upward (live[2], cell 4) references were rewritten (non-vacuous)
+        @test want[5] != (W.pre.g[n - 1] & LK.VALUE_MASK) && want[2] != (W.pre.g[4] & LK.VALUE_MASK)
+        LK.compact_global(ld, W.st, W.sw)
+        @test _gc6_cells(ld) == want
+        @test ld.gTop == 6
+        @test W.sw.relocation_chains == 0 && W.sw.relocated_cells == W.sw.relocation_cells == 3
+        got = reinterpret(UInt64, ld.fliframes[W.f].mark.globaltop)  # the head in the garbage was unwound at the number of live cells below it
+        @test got == (UInt64(2) << LK.LMASK_BITS) | LK.STG_GLOBAL
+        @test all(==(UInt64(0)), ld.gstack[7:(n - 4)])          # the garbage run is a hole (zeroed), below the new top nothing of it is left
+        @test !any(w -> LK.is_marked(w) || LK.is_first(w), _gc6_cells(ld))
+    end
     W2 = _gc6_wb(total = 7)
     @test_throws ErrorException LK.compact_global(W2.ld, W2.st, W2.sw)
 end
@@ -453,6 +455,10 @@ end
     @test sw.relocation_chains == 0 && sw.relocated_cells == 1
     @test reinterpret(UInt64, ld.fliframes[f].mark.globaltop) == (UInt64(5) << LK.LMASK_BITS) | LK.STG_GLOBAL
     @test all(==(UInt64(0)), ld.gstack[base:(base + 11)])
+    n = ld.gTop                                                 # garbage down to the BOTTOM of the stack: the hole starts at position 1
+    fill!(view(ld.gstack, 1:n), a)
+    @test n >= 12 && LK.downskip_combine_garbage(ld, sw, n, 5) == 1
+    @test all(==(UInt64(0)), ld.gstack[1:n])
 end
 
 @testset "value table: tombstones for the dead boxes, the end of the table is truncated" begin
@@ -466,6 +472,7 @@ end
     before = copy(ld.vbox)
     @test LK.gc_tombstone_boxes!(ld) == 1
     @test ld.vbox[mid] == 0 && ld.vbox[[i for i in 1:nb if i != mid]] == before[[i for i in 1:nb if i != mid]]
+    @test LK.gc_tombstone_boxes!(ld) == 0                       # a tombstone is skipped (no cell 0), nothing more is dead
     LK.gc_truncate_vtable!(ld)
     @test length(ld.vbox) == nb && length(ld.vtable) == nb      # the last entry is live: nothing popped
     ld.vbox[nb] = 0                                             # the end is a tombstone, and the middle one is adjacent to it: both go
@@ -491,6 +498,26 @@ end
     end
     ld.fliframes[frs[1]].mark = LK.mark(5, 3, 2)                # raw heights: no chain left a pointer word in the field
     @test_throws ErrorException LK.unsweep_mark(ld, true, frs[1])
+    for (j, fr) in enumerate(frs)                               # heights again; one frame gets a NoMark: it is no real mark, left alone and not counted
+        enc(pos, stg) = reinterpret(Int, LK.consPtr(pos, stg))
+        ld.fliframes[fr].mark = LK.mark(enc(j + 1, LK.STG_STATIC), enc(10 + j, LK.STG_GLOBAL), enc(20 + j, LK.STG_GLOBAL))
+    end
+    ld.fliframes[frs[2]].mark = LK.NoMark()
+    @test LK.unsweep_foreign(ld) == length(frs) - 1
+    @test ld.fliframes[frs[2]].mark == LK.NoMark() && ld.fliframes[frs[3]].mark == LK.mark(3, 13, 23)
+end
+
+@testset "gc_alien_trailtops chains the trail top of every real foreign-frame mark, not of a NoMark" begin
+    P = _gc6_prepare(_gc6_heap())
+    ld = P.ld
+    nreal = length(_gc6_marks(ld))
+    @test nreal >= 5
+    ld.fliframes[P.f2].mark = LK.NoMark()
+    sw = LK.gc_sweep_counts()
+    LK.gc_alien_trailtops(ld, P.st, sw, LK.vm_state())
+    @test sw.alien_relocations == nreal - 1
+    @test sw.relocation_cells == nreal - 1 && sw.relocated_cells == 0 && sw.relocation_chains >= 1
+    @test ld.fliframes[P.f2].mark == LK.NoMark()
 end
 
 @testset "live query: unsweep_environments names the query, gc_choice_indices walks the choicepoints, unsweep_choicepoints decodes them" begin
