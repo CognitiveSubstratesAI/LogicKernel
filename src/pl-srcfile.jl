@@ -817,6 +817,39 @@ function flush_procedure!(
     return true
 end
 
+# PORT: pl-srcfile.c unloadFile
+# DIVERGES: the database and the local data are arguments (`removeClausesPredicate!`, the events); no lock; the debug messages are not kept; `freeList` is
+# `empty!`.
+"Unload the file `sf`: its clauses are removed, its procedures and modules unlinked; false if an event listener raised (pl-srcfile.c)."
+function unloadFile!(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, sf::SourceFile{T}
+)::Bool where {T}
+    deleted = 0
+
+    delayEvents(ld)
+    for proc in sf.procedures                           # remove the clauses
+        def = proc.definition
+
+        if (def.flags & (P_FOREIGN | P_THREAD_LOCAL)) == 0
+            deleted += removeClausesPredicate!(
+                gd, def, (def.flags & P_MULTIFILE) != 0 ? sf.index : 0, true
+            )
+        end
+
+        if (def.flags & P_MULTIFILE) == 0
+            def.flags &= ~FILE_ASSIGNED
+            clear_meta_declaration(def)
+        end
+    end
+    sf.number_of_clauses -= UInt32(deleted)
+
+    empty!(sf.procedures)
+    delAllModulesSourceFile_unlocked!(sf)
+    sf.isfile = false
+
+    return sendDelayedEvents(gd, ld, true) >= 0
+end
+
 # PORT: pl-srcfile.c startConsult
 # DIVERGES: a RE-consult — the file was consulted before — is refused (`NotPortedError`): `startReconsultFile` exists since LB6a, but
 # `endReconsult` (delete_old_predicates, reconsultFinalizePredicate) comes with LB6b, which re-points this function (loader_boot H9). The database and the local
@@ -877,6 +910,33 @@ function unlinkSourceFileModule(sf::SourceFile{T}, m::module_t{T})::Nothing wher
             return false
         end
         return true
+    end
+    return nothing
+end
+
+# PORT: pl-srcfile.c delModuleSourceFile
+# DIVERGES: `modules` is a vector; no lock.
+"Remove module `m` from the modules of `sf`; whether it was there (pl-srcfile.c)."
+function delModuleSourceFile(sf::SourceFile{T}, m::module_t{T})::Bool where {T}
+    i = findfirst(x -> x === m, sf.modules)
+    i === nothing && return false
+    deleteat!(sf.modules, i)
+    return true
+end
+
+# PORT: pl-srcfile.c delAllModulesSourceFile__unlocked as delAllModulesSourceFile_unlocked!
+# DIVERGES: `modules` is a vector and a module's file an index; no `L_MODULE` lock; the public table is cleared with its order list.
+"Unlink every module from `sf`; a module whose file is `sf` loses its file, its line and its public table (pl-srcfile.c)."
+function delAllModulesSourceFile_unlocked!(sf::SourceFile{T})::Nothing where {T}
+    mods = copy(sf.modules)
+    empty!(sf.modules)
+    for m in mods
+        if m.file == sf.index
+            m.file = 0
+            m.line_no = 0
+            empty!(m.public_)                       # clearHTableWP(m->public)
+            empty!(m.public_order)
+        end
     end
     return nothing
 end
@@ -1171,11 +1231,216 @@ function pl_end_consult1_va(
     return rc ? FTRUE : FFALSE
 end
 
+# PORT: pl-srcfile.c set_source_files as pl_set_source_files1_va
+# (PRED_IMPL("$set_source_files", 1, set_source_files, 0)) — pl-srcfile.c:767-790
+# DIVERGES: no lock; the table of files may have no hole today, `indexToSourceFile` still answers `nothing` for one, as upstream's `if ( f )`.
+"`'\$set_source_files'(+Property)` (pl-srcfile.c): `system` or `from_state`: mark every file loaded so far as from the state (and, for `system`, as system files)."
+function pl_set_source_files1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    gd = _query_gd(ld)
+    prop = PL_get_atom_ex(ld, PL__t0)
+    prop === nothing && return FFALSE
+    if _atom_is(ld, prop, :system) || _atom_is(ld, prop, :from_state)
+        n = highSourceFileIndex(gd)
+        for i in 1:(n - 1)
+            f = indexToSourceFile(gd, i)
+            if f !== nothing
+                _atom_is(ld, prop, :system) && (f.system = true)
+                f.from_state = true
+            end
+        end
+        return FTRUE
+    end
+    return PL_domain_error(ld, "source_property", PL__t0) ? FTRUE : FFALSE
+end
+
+# PORT: pl-srcfile.c unload_file as pl_unload_file1_va
+# (PRED_IMPL("$unload_file", 1, unload_file, 0)) — pl-srcfile.c:845-881
+# DIVERGES: the modules loop runs over `sf.modules` as upstream does after `unloadFile` (which has unlinked them all: the loop is then empty, as upstream's);
+# no lock.
+"`'\$unload_file'(+Name)` (pl-srcfile.c): remove all traces of the loaded file `Name`; a system file raises `permission_error(unload, file, Name)`."
+function pl_unload_file1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    gd = _query_gd(ld)
+    name = PL_get_atom_ex(ld, PL__t0)
+    name === nothing && return FFALSE
+
+    sf = lookupSourceFile(gd, name, false)
+    if sf !== nothing
+        if sf.system
+            rc = PL_error(
+                ld, "", 0, "", ERR_PERMISSION, mk_sym(T, :unload), mk_sym(T, :file), PL__t0
+            )
+        else
+            if unloadFile!(gd, ld, sf)
+                for m in copy(sf.modules)
+                    m.file = 0
+                    m.line_no = 0
+                    delModuleSourceFile(sf, m)
+                    empty!(m.public_)               # clearHTableWP(m->public)
+                    empty!(m.public_order)
+                    setSuperModule(gd.modules, ld, m, MODULE_user(gd))
+                end
+                rc = true
+            else
+                rc = false
+            end
+        end
+
+        releaseSourceFile(sf)
+        return rc ? FTRUE : FFALSE
+    end
+
+    return FTRUE
+end
+
+# PORT: pl-srcfile.c clause_from_source as pl_clause_from_source4_va
+# (PRED_IMPL("$clause_from_source", 4, clause_from_source, 0)) — pl-srcfile.c:1820-1904
+# DIVERGES: no lock, no `acquire_def`/`release_def`; the buffer of clauses is a vector. As upstream's code: a failed `PL_unify_list`/`PL_unify_clref` sets
+# `rc = false` and breaks, then `rc = PL_unify_nil(tail)` overwrites it.
+"`'\$clause_from_source'(+Owner, +File, +Line, -Clauses)` (pl-srcfile.c): the clauses of `File` (owned by `Owner`) that contain `Line`, those starting last at or before it."
+function pl_clause_from_source4_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    gd = _query_gd(ld)
+    owner, file, line, clauses = PL__t0, PL__t0 + 1, PL__t0 + 2, PL__t0 + 3
+    owner_name = PL_get_atom_ex(ld, owner)
+    owner_name === nothing && return FFALSE
+    file_name = PL_get_atom_ex(ld, file)
+    file_name === nothing && return FFALSE
+    ln = PL_get_integer_ex(ld, line)
+    ln === nothing && return FFALSE
+    of = lookupSourceFile(gd, owner_name, false)       # owner file
+    of === nothing && return FFALSE
+
+    sf = nothing                                       # source file
+    rc = false
+    buf = Clause{T}[]
+    c = nothing
+
+    if sym_key(file_name) == sym_key(owner_name)
+        source_no = of.index
+    else
+        sf = lookupSourceFile(gd, file_name, false)
+        if sf === nothing
+            releaseSourceFile(of)
+            return FFALSE
+        end
+        source_no = sf.index
+    end
+
+    for proc in of.procedures
+        def = proc.definition
+
+        if (def.flags & P_FOREIGN) == 0
+            cref = def.impl_clauses.first_clause
+            while cref !== nothing
+                cl = cref.clause::Clause{T}
+
+                if cl.source_no == source_no
+                    if ln >= Int(cl.line_no)
+                        if c === nothing || c.line_no < cl.line_no
+                            c = cl
+                            empty!(buf)
+                            push!(buf, cl)
+                        elseif c !== nothing && c.line_no == cl.line_no
+                            push!(buf, cl)
+                        end
+                    end
+                end
+                cref = cref.next
+            end
+        end
+    end
+
+    if !isempty(buf)                                    # TBD (upstream): leaves clauses unreferenced
+        tail = PL_copy_term_ref(ld, clauses)
+        head = PL_new_term_ref(ld)
+
+        for cl in buf
+            if !PL_unify_list(ld, tail, head, tail) || !PL_unify_clref(gd, ld, head, cl)
+                rc = false
+                break
+            end
+        end
+        rc = PL_unify_nil(ld, tail)
+    end
+
+    releaseSourceFile(of)
+    sf === nothing || releaseSourceFile(sf)
+
+    return rc ? FTRUE : FFALSE
+end
+
+# PORT: pl-srcfile.c flush_predicate
+# DIVERGES: the database is an argument; the functor is `(name, arity)` and the module an index (`get_functor`).
+"Finalize the definition of the predicate `pred` in the file being loaded: later changes to it are immediate (pl-srcfile.c); true if no file is being read."
+function flush_predicate(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, pred::term_t
+)::Bool where {T}
+    rc = false
+
+    if ReadingSource(ld)
+        sf = lookupSourceFile(gd, ld.read_source.file::T, true)::SourceFile{T}
+    else
+        return true                                     # not reading source; nothing to flush
+    end
+
+    name, arity, mi = get_functor(gd, ld, pred, ld.modules_source, 0, GF_PROCEDURE)
+    if arity >= 0
+        proc = isCurrentProcedure(sym_key(name), arity, gd.modules[mi])
+        if proc !== nothing
+            rc = flush_procedure!(gd, ld, sf, proc)
+        end
+    end
+    releaseSourceFile(sf)
+
+    return rc
+end
+
+# PORT: pl-srcfile.c flush_predicate as pl_flush_predicate1_va
+# (PRED_IMPL("$flush_predicate", 1, flush_predicate, 0)) — pl-srcfile.c:1938-1943
+"`'\$flush_predicate'(+Predicate)` (pl-srcfile.c): finalize the definition of `Predicate` with respect to the file being loaded."
+function pl_flush_predicate1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    return flush_predicate(_query_gd(ld), ld, PL__t0) ? FTRUE : FFALSE
+end
+
+# PORT: pl-srcfile.c flushed_predicate as pl_flushed_predicate1_va
+# (PRED_IMPL("$flushed_predicate", 1, flushed_predicate, 0)) — pl-srcfile.c:1951-1977
+# DIVERGES: the functor is `(name, arity)` and the module an index; `PL_get_functor` has no functor for the kernel's `\$expr/n` (a type error, as upstream's for a non-callable).
+"`'\$flushed_predicate'(:Head)` (pl-srcfile.c): true when the finalized definition of `Head` is defined."
+function pl_flushed_predicate1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    gd = _query_gd(ld)
+    head = PL_new_term_ref(ld)
+    ok, mi = PL_strip_module(gd, ld, PL__t0, ld.modules_source, head)
+    ok || return FFALSE
+    fd = PL_get_functor(ld, head)
+    fd === nothing && return PL_type_error(ld, "callable", PL__t0) ? FTRUE : FFALSE
+    proc = isCurrentProcedure(sym_key(fd[1]), fd[2], gd.modules[mi])
+    proc === nothing && return FFALSE
+
+    if ReadingSource(ld)
+        sf = lookupSourceFile(gd, ld.read_source.file::T, true)::SourceFile{T}
+    else
+        return isDefinedProcedure(gd, proc) ? FTRUE : FFALSE
+    end
+
+    flush_procedure!(gd, ld, sf, proc)
+    rc = isDefinedProcedure(gd, proc)
+    releaseSourceFile(sf)
+
+    return rc ? FTRUE : FFALSE
+end
+
 # PORT: pl-srcfile.c BeginPredDefs as PL_predicates_from_srcfile
-# DIVERGES: the entries of the predicates the kernel has ported, in upstream's order (pl-srcfile.c:1987-1999);
-# NOT HERE (LB6): `$clause_from_source`/4, `$unload_file`/1, `$set_source_files`/1, `$flush_predicate`/1,
-# `$flushed_predicate`/1. `PRED_DEF` ors in `PL_FA_VARARGS`.
-"pl-srcfile.c's registration table (`BeginPredDefs(srcfile)`): the ported entries."
+# DIVERGES: `PRED_DEF` ors in `PL_FA_VARARGS`. The entries are upstream's (pl-srcfile.c:1987-1999), in upstream's order.
+"pl-srcfile.c's registration table (`BeginPredDefs(srcfile)`)."
 const PL_predicates_from_srcfile = (
     PL_extension("\$source_file", 2, pl_source_file2_va, PL_FA_VARARGS),
     PL_extension(
@@ -1187,7 +1452,12 @@ const PL_predicates_from_srcfile = (
     ),
     PL_extension("\$source_file_property", 3, pl_source_file_property3_va, PL_FA_VARARGS),
     PL_extension("\$set_source_file", 3, pl_set_source_file3_va, PL_FA_VARARGS),
+    PL_extension("\$clause_from_source", 4, pl_clause_from_source4_va, PL_FA_VARARGS),
+    PL_extension("\$unload_file", 1, pl_unload_file1_va, PL_FA_VARARGS),
     PL_extension("\$start_consult", 2, pl_start_consult2_va, PL_FA_VARARGS),
     PL_extension("\$end_consult", 1, pl_end_consult1_va, PL_FA_VARARGS),
-    PL_extension("\$fixup_reconsult", 1, pl_fixup_reconsult1_va, PL_FA_VARARGS)
+    PL_extension("\$fixup_reconsult", 1, pl_fixup_reconsult1_va, PL_FA_VARARGS),
+    PL_extension("\$set_source_files", 1, pl_set_source_files1_va, PL_FA_VARARGS),
+    PL_extension("\$flush_predicate", 1, pl_flush_predicate1_va, PL_FA_VARARGS),
+    PL_extension("\$flushed_predicate", 1, pl_flushed_predicate1_va, PL_FA_VARARGS)
 )
