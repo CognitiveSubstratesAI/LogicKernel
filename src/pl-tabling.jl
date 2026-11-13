@@ -4228,17 +4228,14 @@ function tbl_add_answer_found(
     if rc > 0                                       # ok or abstracted
         if rc == TRIE_ABSTRACTED
             action = ld.tabling.restraint.max_table_answer_size_action
-            if sym_key(action) == sym_key(mk_sym(T, :fail))
+
+            if sym_key(action) == sym_key(mk_sym(T, :bounded_rationality))
+                add_radial_restraint(ld) || return 0
+            elseif sym_key(action) == sym_key(mk_sym(T, :fail)) ||
+                    !tbl_wl_tripwire(ld, wl, action, mk_sym(T, :max_table_answer_size))
                 trie_delete(_query_gd(ld), atrie, nid, true)
                 return 0
             end
-            # ATOM_bounded_rationality: add_radial_restraint(); else tbl_wl_tripwire(wl, action, max_table_answer_size)
-            tbl_refuse(
-                T,
-                :tbl_wl_tripwire,
-                "tbl_add_answer: the answer size restraint (tbl_wl_tripwire, add_radial_restraint)",
-                "TB8"
-            )
         end
 
         nd = atrie.nodes[nid]
