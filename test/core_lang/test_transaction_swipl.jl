@@ -1,7 +1,11 @@
 # ORIGINAL: a LIVE differential of transactions and undo (TX1; audit D-0479) against swipl at the pin (swipl-devel 18168e62,
 # 10.1.20): `transaction/1,2,3`, `snapshot/1`, `transaction_updates/1`, `current_transaction/1` (pl-transaction.c) and `undo/1`
 # (pl-undo.c, run by `'$run_undo'/1` of boot/syspred.pl). Groups: txc = commit and discard (transaction/1,2,3), txs = snapshot,
-# txn = nested transactions, txu = transaction_updates, txr = current_transaction, txd = undo, txe = update events.
+# txn = nested transactions, txu = transaction_updates, txr = current_transaction, txd = undo, txe = update events, txx = the rows
+# the mutant list TX1.py owed (nested retract of the parent's clause, the transaction's view of a clause erased at its start, the
+# last-modified generation, a read across a commit, two outermost transactions in a row, the WHOLE event term, current_transaction/1
+# at depth 2, the flags and gen_nest after a nested level, the updates' order, no event in a bulk level, a listener that raises at
+# the bulk commit); txx16 (undo goals run at the backtrack) is the white-box testset at the end.
 #   * Cases `t_<id>(R)` run in order in one database, each wrapped in `tx_clean, catch(Goal, error(SsuE, _), R = raised(SsuE))`
 #     (`tx_clean` empties the predicates `tx_p/1`, `tx_q/1`, `tx_e/1` and the two global variables the rows read); the driver is
 #     test_tabling_variant_swipl.jl's (`enc`oded answers: a row prints the answer of `t_<id>(R)`, or nothing when it fails).
@@ -15,6 +19,11 @@
 #     (3) a nested `bulk(true)` transaction whose parent has no changed clauses yet hands its clauses to the parent and raises
 #     no event at all, not even at the outer commit: txe08. (4) `current_transaction/1` repeats the parent goal at depth 2 and
 #     deeper (the redo context is never advanced): only depth 1 is enumerated here (txr05), deeper rows take the first answer.
+#   * txx rows: the rollback events of ONE discard come in the order of upstream's clause table (a hash of clause POINTERS; two runs of
+#     the same row differ), so the listener of txx10/txx12/txx15 (`tx_evf`, logged by `tx_flog`) sorts them; `current_transaction/1`
+#     at depth 2 repeats the parent's goal (quirk 4): txx11 takes three answers with findnsols/4, never `findall`.
+#     The listener `tx_evg` (txx17) raises from its At-th event on: a bulk outermost transaction raises the events in the goal and
+#     again at the commit (quirk 2), so At = 2 is a raise AT the commit (the transaction is discarded: `[]`, the exception comes out).
 #   * Rows left out: an undo goal that RAISES (`undo(1)`, `undo(_)`, `undo(throw(boom))`: the error comes out of the
 #     backtracking that runs the hook, `'$run_undo'/1` calls `'$urgent_exception'/3`): a named refusal of the kernel, owner P3.
 #   * UNVERIFIED on the kernel (nothing was compiled when these rows were written): every kernel answer; the gate decides.
@@ -99,16 +108,41 @@ end
 const _TX_PROGRAM = raw"""
 :- dynamic tx_p/1, tx_q/1, tx_e/1.
 tx_all(P, L) :- G =.. [P, X], findall(X, G, L).
-tx_log(L) :- nb_getval(tx_log, L0), reverse(L0, L).
+tx_rev(L, R) :- tx_rev(L, [], R).
+tx_rev([], R, R).
+tx_rev([X|Xs], A, R) :- tx_rev(Xs, [X|A], R).
+tx_log(L) :- nb_getval(tx_log, L0), tx_rev(L0, L).
 tx_push(X) :- nb_getval(tx_u, L), nb_setval(tx_u, [X|L]).
-tx_pushed(L) :- nb_getval(tx_u, L0), reverse(L0, L).
+tx_pushed(L) :- nb_getval(tx_u, L0), tx_rev(L0, L).
 tx_ev(A, _) :- functor(A, F, _), nb_getval(tx_log, L), nb_setval(tx_log, [F|L]).
 :- prolog_listen(tx_e/1, tx_ev).
 tx_clean :- retractall(tx_p(_)), retractall(tx_q(_)), retractall(tx_e(_)), nb_setval(tx_u, []), nb_setval(tx_log, []).
 tx_yn(G, R) :- ( call(G) -> R = yes ; R = no ).
 tx_cur(F) :- once(current_transaction(G)), functor(G, N, A), F = N/A.
 tx_kinds(U, As) :- findall(A, (member(X, U), functor(X, A, _)), As).
-:- nb_setval(tx_u, []), nb_setval(tx_log, []).
+% tx_f/1: a listener that logs the WHOLE event term as rollback(Action) / the action's functor (txx10, txx12, txx15); the
+% rollback events of one discard come in the order of upstream's clause table (a hash of the clause pointers: it differs from run to
+% run), so tx_flog sorts them and keeps the others in order.
+:- dynamic tx_f/1.
+tx_evf(A, _) :-
+    ( A =.. [rollback, X] -> ( compound(X) -> X =.. [F|_] ; F = X ), E = rollback(F) ; functor(A, E, _) ),
+    nb_getval(tx_full, L), nb_setval(tx_full, [E|L]).
+:- prolog_listen(tx_f/1, tx_evf).
+tx_fclean :- retractall(tx_f(_)), nb_setval(tx_full, []).
+tx_split([], [], []).
+tx_split([E|T], Rb, Ot) :- ( E = rollback(_) -> Rb = [E|Rb1], Ot = Ot1 ; Rb = Rb1, Ot = [E|Ot1] ), tx_split(T, Rb1, Ot1).
+tx_flog(L) :- nb_getval(tx_full, L0), tx_rev(L0, L1), tx_split(L1, Rb, Ot), msort(Rb, RbS), append(Ot, RbS, L).
+% tx_g/1: a listener that raises from its At-th event on, only while tx_gon is on (txx17: announce_updates at a bulk commit).
+:- dynamic tx_g/1.
+tx_evg(A, _) :-
+    functor(A, F, _),
+    (   ( F == rollback ; nb_getval(tx_gon, off) ) -> true
+    ;   nb_getval(tx_gn, N0), N is N0 + 1, nb_setval(tx_gn, N), nb_getval(tx_gat, At),
+        ( N >= At -> throw(tx_boom(N)) ; true )
+    ).
+:- prolog_listen(tx_g/1, tx_evg).
+tx_gclean(At) :- nb_setval(tx_gon, off), retractall(tx_g(_)), nb_setval(tx_gn, 0), nb_setval(tx_gat, At), nb_setval(tx_gon, on).
+:- nb_setval(tx_u, []), nb_setval(tx_log, []), nb_setval(tx_full, []), nb_setval(tx_gon, off), nb_setval(tx_gn, 0), nb_setval(tx_gat, 1).
 """
 
 const _TX_CASES = [
@@ -318,6 +352,35 @@ const _TX_PINNED = [
     "t_txe10 c[116,95,116,120,101,49,48]/1(c[114]/2(a[110,111],c[91,124,93]/2(a[97,115,115,101,114,116,122],c[91,124,93]/2(a[114,111,108,108,98,97,99,107],nil))))",
     "t_txe11 c[116,95,116,120,101,49,49]/1(c[114]/2(c[91,124,93]/2(a[97,115,115,101,114,116,122],nil),c[91,124,93]/2(a[97,115,115,101,114,116,122],c[91,124,93]/2(a[114,111,108,108,98,97,99,107],nil))))",
     "t_txe12 c[116,95,116,120,101,49,50]/1(c[91,124,93]/2(a[114,101,116,114,97,99,116,97,108,108],c[91,124,93]/2(a[114,101,116,114,97,99,116],c[91,124,93]/2(a[114,101,116,114,97,99,116,97,108,108],c[91,124,93]/2(a[101,114,97,115,101,100],nil)))))",
+    "t_txx01 c[116,95,116,120,120,48,49]/1(c[114]/2(a[110,111],c[91,124,93]/2(i1,nil)))",
+    "t_txx02 c[116,95,116,120,120,48,50]/1(nil)",
+    "t_txx03 c[116,95,116,120,120,48,51]/1(nil)",
+    "t_txx04 c[116,95,116,120,120,48,52]/1(nil)",
+    "t_txx05 c[116,95,116,120,120,48,53]/1(c[114]/3(a[108,116],a[101,113],a[108,116]))",
+    "t_txx05b c[116,95,116,120,120,48,53,98]/1(a[108,116])",
+    "t_txx05c c[116,95,116,120,120,48,53,99]/1(a[101,113])",
+    "t_txx06 c[116,95,116,120,120,48,54]/1(c[114]/2(c[91,124,93]/2(i1,nil),c[91,124,93]/2(i1,c[91,124,93]/2(i2,nil))))",
+    "t_txx07 c[116,95,116,120,120,48,55]/1(i1)",
+    "t_txx08 c[116,95,116,120,120,48,56]/1(c[114]/2(a[110,111],c[91,124,93]/2(i1,nil)))",
+    "t_txx09 c[116,95,116,120,120,48,57]/1(i0)",
+    "t_txx10 c[116,95,116,120,120,49,48]/1(c[114]/2(a[110,111],c[91,124,93]/2(a[97,115,115,101,114,116,122],c[91,124,93]/2(a[97,115,115,101,114,116,97],c[91,124,93]/2(a[114,101,116,114,97,99,116],c[91,124,93]/2(c[114,111,108,108,98,97,99,107]/1(a[97,115,115,101,114,116,97]),c[91,124,93]/2(c[114,111,108,108,98,97,99,107]/1(a[97,115,115,101,114,116,122]),c[91,124,93]/2(c[114,111,108,108,98,97,99,107]/1(a[114,101,116,114,97,99,116]),nil))))))))",
+    "t_txx11 c[116,95,116,120,120,49,49]/1(c[91,124,93]/2(c[47]/2(a[111,110,99,101],i1),c[91,124,93]/2(c[47]/2(a[116,114,97,110,115,97,99,116,105,111,110],i1),c[91,124,93]/2(c[47]/2(a[116,114,97,110,115,97,99,116,105,111,110],i1),nil))))",
+    "t_txx11b c[116,95,116,120,120,49,49,98]/1(c[47]/2(a[44],i2))",
+    "t_txx11c c[116,95,116,120,120,49,49,99]/1(c[91,124,93]/2(c[47]/2(a[44],i2),nil))",
+    "t_txx12 c[116,95,116,120,120,49,50]/1(c[91,124,93]/2(a[97,115,115,101,114,116,122],nil))",
+    "t_txx12b c[116,95,116,120,120,49,50,98]/1(c[114]/2(c[91,124,93]/2(a[97,115,115,101,114,116,122],nil),c[91,124,93]/2(a[97,115,115,101,114,116,122],nil)))",
+    "t_txx13 c[116,95,116,120,120,49,51]/1(i0)",
+    "t_txx13b c[116,95,116,120,120,49,51,98]/1(i0)",
+    "t_txx14 c[116,95,116,120,120,49,52]/1(c[91,124,93]/2(a[97,115,115,101,114,116,122],c[91,124,93]/2(a[101,114,97,115,101,100],nil)))",
+    "t_txx14b c[116,95,116,120,120,49,52,98]/1(c[91,124,93]/2(a[97,115,115,101,114,116,122],c[91,124,93]/2(a[97,115,115,101,114,116,97],c[91,124,93]/2(a[101,114,97,115,101,100],c[91,124,93]/2(a[97,115,115,101,114,116,122],nil)))))",
+    "t_txx15 c[116,95,116,120,120,49,53]/1(nil)",
+    "t_txx15b c[116,95,116,120,120,49,53,98]/1(c[114]/2(nil,c[91,124,93]/2(a[101,114,97,115,101,100],nil)))",
+    "t_txx15c c[116,95,116,120,120,49,53,99]/1(c[114]/2(c[91,124,93]/2(a[97,115,115,101,114,116,122],c[91,124,93]/2(a[101,114,97,115,101,100],nil)),c[91,124,93]/2(a[97,115,115,101,114,116,122],c[91,124,93]/2(a[101,114,97,115,101,100],nil))))",
+    "t_txx17a c[116,95,116,120,120,49,55,97]/1(c[114]/3(c[116,120,95,98,111,111,109]/1(i1),i1,nil))",
+    "t_txx17b c[116,95,116,120,120,49,55,98]/1(c[114]/3(c[116,120,95,98,111,111,109]/1(i2),i2,nil))",
+    "t_txx17c c[116,95,116,120,120,49,55,99]/1(c[114]/3(a[110,111],i2,nil))",
+    "t_txx17d c[116,95,116,120,120,49,55,100]/1(c[114]/2(i2,c[91,124,93]/2(i1,nil)))",
+    "t_txx17e c[116,95,116,120,120,49,55,101]/1(c[114]/3(c[116,120,95,98,111,111,109]/1(i3),i3,nil))",
 ]
 
 "The program text with the cases appended."
@@ -383,7 +446,7 @@ end
 @testset "the transaction rows are not vacuous" begin
     @test _TX_PINNED[1] == "ok"
     @test length(_TX_PINNED) == length(_TX_CASES) + 1
-    for pre in ("txc", "txs", "txn", "txu", "txr", "txd", "txe")
+    for pre in ("txc", "txs", "txn", "txu", "txr", "txd", "txe", "txx")
         ids = [id for (id, _) in _TX_CASES if startswith(id, pre)]
         @test !isempty(ids)
         @test length([l for l in _TX_PINNED if any(id -> l == "t_$id" || startswith(l, "t_$id "), ids)]) ==
@@ -404,6 +467,14 @@ end
     @test ans("txd01") != ans("txd02")          # two undo goals run newest first
     @test ans("txe03") != ans("txe04")          # bulk(true): the events again at the commit
     @test ans("txe08") != ans("txe09")          # a nested bulk(true) in a fresh outer raises no event (upstream quirk)
+    val(id) = (l = ans(id); l == "FAILS" ? l : l[(findfirst('(', l) + 1):(end - 1)])       # the answer without the `t_<id>/1(` wrapper
+    @test val("txx02") == "nil"                 # a nested retract of the parent's own clause: the parent no longer sees it
+    @test val("txx01") != val("txx02")          # ... and when that nested level is discarded the clause is back
+    @test val("txx05") == "c[114]/3(a[108,116],a[101,113],a[108,116])"      # r(lt, eq, lt): a commit and a retract move the last-modified generation, a snapshot does not
+    @test val("txx05c") == "a[101,113]"         # a discard leaves it as it was (eq)
+    @test val("txx17b") == "c[114]/3(c[116,120,95,98,111,111,109]/1(i2),i2,nil)"   # a listener that raises AT the commit: the exception, two events, no clause
+    @test val("txx17d") == "c[114]/2(i2,c[91,124,93]/2(i1,nil))"            # one that does not: the clause is kept
+    @test val("txx12") != val("txx15")          # the log after a bulk nested level (assertz) is not the log of a discarded bulk level (nothing)
 end
 
 @testset "the pins are swipl's (live, when swipl is on PATH)" begin
@@ -415,4 +486,25 @@ end
         write(f, _tx_text(_TX_PROGRAM, _TX_CASES))
         @test _tx_swipl_lines(f, ["t_$id" for (id, _) in _TX_CASES]) == _TX_PINNED
     end
+end
+
+# txx16 (WHITE-BOX, kernel only; pl-vmi.c b_failed's `LD->alerted` block): the undo goals run AT the backtrack, before the next goal.
+# Every txd row asks `tx_pushed(L)`, a predicate call, afterwards, and the call hook (depart_or_retry_continue) runs the goals by
+# then; here the query ends at `R = x` with no call in between, so the schedule must already be empty (and the goal pushed).
+@testset "undo goals run at the backtrack, not at the next call (txx16)" begin
+    gd, ld, st = _tx_load(_TX_PROGRAM * "tx_w16(R) :- ( undo(tx_push(a)), fail ; R = x ).\n")
+    @test st == "ok"
+    proc = LK.isCurrentProcedure(sym_key(_txs("tx_w16")), 1, LK.MODULE_user(gd))
+    @test proc !== nothing
+    fid = LK.PL_open_foreign_frame(ld)
+    a = LK.PL_new_term_refs(ld, 1)
+    LK.putSlotValue!(ld, a + 1, mk_var(_TX, LK.fresh_var_keys!(1)), LK.PutVarMap())
+    qid = LK.PL_open_query(gd, ld, nothing, LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS, proc, a)
+    rc = LK.PL_next_solution(gd, ld, qid)
+    @test rc == LK.PL_S_TRUE || rc == LK.PL_S_LAST
+    @test _tx_enc(only(lk_answers(ld, (a:a)...))) == "a[120]"        # R = x
+    @test !LK.UNDO_SCHEDULED(ld)                                      # the hook ran at the backtrack
+    LK.PL_close_query(ld, qid)
+    LK.PL_close_foreign_frame(ld, fid)
+    @test _tx_ask(gd, ld, "tx_pushed") == "tx_pushed c[91,124,93]/2(a[97],nil)"   # [a]
 end
