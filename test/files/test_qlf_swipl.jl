@@ -666,7 +666,7 @@ function _ql_call(gd, ld, name::String, args::Vector)::Symbol
     return r
 end
 
-@testset "the eight write-side predicates take the no-state branch; the 14 others are refused by name" begin
+@testset "the fourteen write-side predicates take the no-state branch; the 8 others are refused by name" begin
     # UNVERIFIED on the kernel: gate decides
     tbl = LK.PL_predicates_from_wic
     @test length(tbl) == 22
@@ -675,15 +675,16 @@ end
     shells = [
         ("\$qlf_start_module", 1), ("\$qlf_start_sub_module", 1), ("\$qlf_start_file", 1),
         ("\$qlf_end_part", 0), ("\$add_directive_wic", 1), ("\$qlf_assert_clause", 2),
-        ("\$import_wic", 3), ("\$qlf_include", 5)
+        ("\$import_wic", 3), ("\$qlf_include", 5),
+        # QLF1: their NULL-state branch is upstream's whole behaviour while no state can be opened (rows below)
+        ("\$qlf_current_source", 1), ("\$qlf_dependency", 1), ("\$qlf_close", 0),
+        ("\$close_wic", 0), ("\$map_id", 2), ("\$unmap_id", 1)
     ]
     refused = [
         ("\$qlf_versions", 6), ("\$qlf_is_compatible", 1), ("\$qlf_sources", 2),
         ("\$file_hash", 2),
-        ("\$qlf_module", 2), ("\$qlf_load", 2), ("\$qlf_current_source", 1),
-        ("\$qlf_dependency", 1),
-        ("\$qlf_open", 1), ("\$qlf_close", 0), ("\$open_wic", 2), ("\$close_wic", 0),
-        ("\$map_id", 2), ("\$unmap_id", 1)
+        ("\$qlf_module", 2), ("\$qlf_load", 2),
+        ("\$qlf_open", 1), ("\$open_wic", 2)
     ]
     @test Set(names) == Set(vcat(shells, refused))
     # registered after read_clause/3's table and before the file table's, in both dispatch tables
@@ -696,8 +697,11 @@ end
     @test all(e -> (e.flags & LK.PL_FA_VARARGS) != 0, tbl)
     gd = LK.PL_global_data{_QL}()
     ld = LK.PL_local_data{_QL}(gd)
+    # the six QLF1 rows have their own answers (below), not "true"
+    qlf1 = Set(["\$qlf_current_source", "\$qlf_dependency", "\$qlf_close", "\$close_wic",
+                "\$map_id", "\$unmap_id"])
     for (n, ar) in shells
-        n == "\$qlf_include" && continue
+        (n == "\$qlf_include" || n in qlf1) && continue
         args = _QL[mk_var(_QL, LK.fresh_var_keys!(1)) for _ in 1:ar]
         @test _ql_call(gd, ld, n, args) === :ok          # no argument is checked
     end
@@ -710,6 +714,20 @@ end
     @test _ql_call(gd, ld, "\$qlf_include", _QL[foo, foo, foo, foo, lk_gnd(_QL, 1.0)]) ===
         :exception
     @test _ql_call(gd, ld, "\$qlf_include", _QL[foo, foo, one, foo, foo]) === :fail     # PL_get_float is not the _ex form
+    # QLF1 (pl-qlf.c:4150-4217, 4251, 4361, 4423, 4462): the no-state answers; swipl's own, probed with no state open
+    # (swipl 10.1.20 18168e62 `$map_id`: permission_error(map, identifier, a); `$close_wic`, `$qlf_current_source`,
+    # `$qlf_dependency(a)` fail; `$qlf_close`, `$unmap_id(_)` succeed; `$qlf_dependency(1)` raises a type_error(atom, 1))
+    v1() = _QL[mk_var(_QL, LK.fresh_var_keys!(1))]
+    @test _ql_call(gd, ld, "\$qlf_current_source", v1()) === :fail
+    @test _ql_call(gd, ld, "\$qlf_dependency", _QL[foo]) === :fail
+    @test _ql_call(gd, ld, "\$qlf_dependency", _QL[one]) === :exception     # PL_get_atom_ex first
+    @test _ql_call(gd, ld, "\$qlf_dependency", v1()) === :exception
+    @test _ql_call(gd, ld, "\$qlf_close", _QL[]) === :ok
+    @test _ql_call(gd, ld, "\$close_wic", _QL[]) === :fail                  # not `true` as `$qlf_close/0`
+    @test _ql_call(gd, ld, "\$unmap_id", v1()) === :ok                      # the argument is not looked at
+    @test _ql_call(gd, ld, "\$unmap_id", _QL[one]) === :ok
+    @test _ql_call(gd, ld, "\$map_id", _QL[foo, foo]) === :exception        # permission_error(map, identifier, foo)
+    @test _ql_call(gd, ld, "\$map_id", _QL[one, one]) === :exception        # before either argument is read
     for (n, ar) in refused
         gd2 = LK.PL_global_data{_QL}()
         ld2 = LK.PL_local_data{_QL}(gd2)

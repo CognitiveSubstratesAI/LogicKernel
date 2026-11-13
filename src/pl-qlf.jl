@@ -609,19 +609,27 @@ function pl_qlf_load2_va(
 end
 
 # PORT: pl-qlf.c qlf_current_source as pl_qlf_current_source1_va
-# (PRED_IMPL("$qlf_current_source", 1, qlf_current_source, 0)) — refused by name
+# (PRED_IMPL("$qlf_current_source", 1, qlf_current_source, 0)) — pl-qlf.c:4150-4162
+# DIVERGES: the NULL state's branch only (QLF1): `(state=LD->qlf.write_state) && (sf = state->currentSource)` is false
+# and the predicate fails; no state can exist while `$open_wic`/`$qlf_open` are refused.
+"`'\$qlf_current_source'(-File)` (pl-qlf.c): the source file the state file is writing; with no state, false."
 function pl_qlf_current_source1_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
 )::foreign_t where {T}
-    _qlf_refused(T, "\$qlf_current_source", 1)
+    return FFALSE
 end
 
 # PORT: pl-qlf.c $qlf_dependency as pl_qlf_dependency1_va
-# (PRED_IMPL("$qlf_dependency", 1, $qlf_dependency, 0)) — refused by name
+# (PRED_IMPL("$qlf_dependency", 1, $qlf_dependency, 0)) — pl-qlf.c:4200-4217
+# DIVERGES: the NULL state's branch only (QLF1): `PL_get_atom_ex(A1, &file)` raises a type error for a non-atom,
+# else `(state=LD->qlf.write_state)` is NULL and the predicate fails. The writer (`sourceMark`, `'D'`,
+# `qlfSaveFileName`, `qlfSaveFileHash`) is unreachable until `$open_wic`/`$qlf_open` exist.
+"`'\$qlf_dependency'(+File)` (pl-qlf.c): record a dependency in the state file; with no state, false."
 function pl_qlf_dependency1_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
 )::foreign_t where {T}
-    _qlf_refused(T, "\$qlf_dependency", 1)
+    PL_get_atom_ex(ld, PL__t0) === nothing && return FFALSE        # PL_get_atom_ex(A1, &file)
+    return FFALSE                                                  # (state=LD->qlf.write_state): NULL
 end
 
 # PORT: pl-qlf.c qlf_open as pl_qlf_open1_va
@@ -633,11 +641,14 @@ function pl_qlf_open1_va(
 end
 
 # PORT: pl-qlf.c qlf_close as pl_qlf_close0_va
-# (PRED_IMPL("$qlf_close", 0, qlf_close, 0)) — refused by name
+# (PRED_IMPL("$qlf_close", 0, qlf_close, 0)) — pl-qlf.c:4251-4259
+# DIVERGES: the NULL state's branch only (QLF1): `if ( (state=LD->qlf.write_state) ) return qlfClose(state)` is not
+# taken and the predicate succeeds (`qlfClose`, pl-qlf.c:3776, is unreachable without a state).
+"`'\$qlf_close'` (pl-qlf.c): close the state file `'\$qlf_open'/1` opened; with no state, true."
 function pl_qlf_close0_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
 )::foreign_t where {T}
-    _qlf_refused(T, "\$qlf_close", 0)
+    return FTRUE
 end
 
 # PORT: pl-qlf.c open_wic as pl_open_wic2_va
@@ -649,27 +660,37 @@ function pl_open_wic2_va(
 end
 
 # PORT: pl-qlf.c close_wic as pl_close_wic0_va
-# (PRED_IMPL("$close_wic", 0, close_wic, 0)) — refused by name
+# (PRED_IMPL("$close_wic", 0, close_wic, 0)) — pl-qlf.c:4361-4373
+# DIVERGES: the NULL state's branch only (QLF1): the `if ( (state=LD->qlf.write_state) )` body (`writeWicTrailer`, pop,
+# free) is not taken and the predicate FAILS (upstream's `return false`), unlike `'\$qlf_close'/0`.
+"`'\$close_wic'` (pl-qlf.c): write the trailer of the state `'\$open_wic'/2` opened; with no state, false."
 function pl_close_wic0_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
 )::foreign_t where {T}
-    _qlf_refused(T, "\$close_wic", 0)
+    return FFALSE
 end
 
 # PORT: pl-qlf.c map_id as pl_map_id2_va
-# (PRED_IMPL("$map_id", 2, map_id, 0)) — refused by name
+# (PRED_IMPL("$map_id", 2, map_id, 0)) — pl-qlf.c:4423-4460
+# DIVERGES: the NULL state's branch only (QLF1): upstream's `else` raises `PL_permission_error("map", "identifier", A1)`
+# before looking at either argument; the id table (`get_id`, `idMap`, `freeMapping`) needs a state and is unreachable.
+"`'\$map_id'(+IdFrom, +IdTo)` (pl-qlf.c): map an identifier while saving a state; with no state, permission_error(map, identifier, IdFrom)."
 function pl_map_id2_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
 )::foreign_t where {T}
-    _qlf_refused(T, "\$map_id", 2)
+    PL_error(ld, "", 0, "", ERR_PERMISSION, mk_sym(T, :map), mk_sym(T, :identifier), PL__t0)
+    return FFALSE
 end
 
 # PORT: pl-qlf.c unmap_id as pl_unmap_id1_va
-# (PRED_IMPL("$unmap_id", 1, unmap_id, 0)) — refused by name
+# (PRED_IMPL("$unmap_id", 1, unmap_id, 0)) — pl-qlf.c:4462-4478
+# DIVERGES: the NULL state's branch only (QLF1): the `if ( (state=LD->qlf.write_state) )` body (`get_id`, `deleteHTable`)
+# is not taken and the predicate succeeds without looking at its argument.
+"`'\$unmap_id'(+IdFrom)` (pl-qlf.c): drop an identifier mapping of the state file; with no state, true."
 function pl_unmap_id1_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
 )::foreign_t where {T}
-    _qlf_refused(T, "\$unmap_id", 1)
+    return FTRUE
 end
 
 # PORT: pl-qlf.c BeginPredDefs as PL_predicates_from_wic
