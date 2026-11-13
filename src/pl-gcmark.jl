@@ -229,3 +229,304 @@ function mark_variable(ld::PL_local_data{T}, st::gc_mark_counts, start::Int)::No
         end
     end
 end
+
+# ---- cells that hold a global-stack reference ----
+# PORT: pl-incl.h isGlobalRef
+# DIVERGES: a value-table word (`_is_vword`: a float/string/bigint, storage STG_RESERVED) is a global
+# reference too: its box cell lives on the global stack (ruling D1). The kernel's global words are a
+# reference, an attributed variable, a compound (`_is_gcompound`) and that vword; everything else (atom,
+# tagged integer, SLOT_VALUE, 0) names no global cell.
+@inline _gc_is_global_ref(w::word)::Bool =
+    (isRef(w) && storage(w) == STG_GLOBAL) || isAttVar(w) || _is_gcompound(w) || _is_vword(w)
+
+# PORT: pl-fli.c PL_new_term_ref_noshift
+# DIVERGES: a new term reference holding the WORD `w` and NO fresh global cell: the collector must not
+# allocate on the global stack (the kernel's `PL_new_term_ref` makes a variable cell). The caller has
+# made room (`ensureLocalSpace`), as upstream's callers rely on `PL_open_foreign_frame`; a full local
+# stack is an error here (upstream asserts a non-zero result).
+"A term reference holding `w` in the innermost foreign frame, without shifting and without allocating (pl-fli.c)."
+function gc_new_term_ref!(ld::PL_local_data, w::word)::Int
+    hasLocalSpace(ld, 1) || error("GC: no local space for a term reference (PL_new_term_ref_noshift)")
+    t = ld.lTop
+    ld.slots[t + 1] = w
+    ld.lTop = t + 1
+    ld.fliframes[ld.fli_context].size += 1
+    return t
+end
+
+# the word of term reference `t` / of the k-th reference of the foreign frame `f`
+@inline _gc_fli_slot(f, k::Int)::Int = refFliP(f.base, k) + 1
+
+# PORT: pl-gc.c mark_local_variable
+# DIVERGES: the kernel stores no local-stack reference (no `isLocalRef` word: a slot holds 0, a global
+# reference, an atom, a global compound, a tagged integer, a value-table word or SLOT_VALUE), so
+# upstream's `while ( isLocalRef(*p) )` chain is never entered; `a` is a (negative) slot address.
+"Mark the local cell at address `a` (a slot): what it references on the global stack, else the slot only (pl-gc.c)."
+function mark_local_variable(ld::PL_local_data{T}, st::gc_mark_counts, a::Int)::Nothing where {T}
+    w = _gc_get(ld, a)
+    if isRef(w) && storage(w) == STG_LOCAL
+        throw(NotPortedError(ld.placeholder, "a local-stack reference in mark_local_variable (pl-gc.c:1791; the kernel stores none)", "G1-3"))
+    end
+    if _gc_is_global_ref(w)
+        mark_variable(ld, st, a)
+    else
+        _gc_set!(ld, a, set_marked(w))                  # ldomark(p)
+    end
+    return nothing
+end
+
+# PORT: pl-gc.c mark_arguments
+"Mark the arguments of the frame at index `fi` of `ld.frames` (pl-gc.c)."
+function mark_arguments(ld::PL_local_data{T}, st::gc_mark_counts, fi::Int)::Nothing where {T}
+    fr = ld.frames[fi]
+    for n in 0:(fr.predicate.arity - 1)
+        a = -(argFrameP(fr.base, n) + 1)
+        is_marked(_gc_get(ld, a)) || mark_local_variable(ld, st, a)
+    end
+    return nothing
+end
+
+# PORT: pl-gc.c mark_new_arguments
+# DIVERGES: `lNext` is the POSITION of the frame being built (0 = NULL), arguments at `argFrameP(lNext, n)`.
+"Mark the `new_args` arguments of the frame being built at the safe point (pl-gc.c)."
+function mark_new_arguments(ld::PL_local_data{T}, st::gc_mark_counts, vm::vm_state)::Nothing where {T}
+    if vm.lNext != 0
+        for n in 0:(vm.new_args - 1)
+            a = -(argFrameP(vm.lNext, n) + 1)
+            is_marked(_gc_get(ld, a)) || mark_local_variable(ld, st, a)
+        end
+    end
+    return nothing
+end
+
+# PORT: pl-gc.c mark_trie_gen
+"Mark the `prolog_vars` variables of the trie-generator frame at index `fi` (pl-gc.c)."
+function mark_trie_gen(ld::PL_local_data{T}, st::gc_mark_counts, fi::Int)::Nothing where {T}
+    fr = ld.frames[fi]
+    for n in 0:(fr.clause.clause.prolog_vars - 1)
+        a = -(argFrameP(fr.base, n) + 1)
+        is_marked(_gc_get(ld, a)) || mark_local_variable(ld, st, a)
+    end
+    return nothing
+end
+
+# PORT: pl-gc.c mark_term_refs
+"Mark every term reference of every foreign frame, innermost first (pl-gc.c)."
+function mark_term_refs(ld::PL_local_data{T}, st::gc_mark_counts)::Nothing where {T}
+    fr = ld.fli_context
+    while fr != 0
+        f = ld.fliframes[fr]
+        for k in 0:(f.size - 1)
+            a = -_gc_fli_slot(f, k)
+            w = _gc_get(ld, a)
+            if !is_marked(w)
+                if _gc_is_global_ref(w)
+                    mark_variable(ld, st, a)
+                else
+                    mark_local_variable(ld, st, a)
+                end
+            end
+        end
+        fr = f.parent
+    end
+    return nothing
+end
+
+# PORT: pl-gc.c mark_foreign_frame
+# DIVERGES: `fi` indexes `ld.fliframes`, `te` is the trail INDEX early reset has reached (the entry
+# upstream's pointer names; the trail grows upwards in `ld.trail`). Upstream then puts the frame's
+# `mark.trailtop` into the relocation chain: that is the sweep's (G1-5).
+"Early-reset the variables trailed since foreign frame `fi` was opened and count its trail mark (pl-gc.c)."
+function mark_foreign_frame(ld::PL_local_data{T}, st::gc_mark_counts, fi::Int, te::Int)::Int where {T}
+    f = ld.fliframes[fi]
+    if isRealMark(f.mark)
+        te = early_reset_vars(ld, st, f.mark, te)       # G1-3b
+        st.needs_relocation += 1                        # needsRelocation(&fr->mark.trailtop.as_word)
+        # G1-5: alien_into_relocation_chain(&fr->mark.trailtop.as_word, STG_TRAIL, STG_LOCAL)
+    end
+    return te
+end
+
+# ---- the roots the kernel turns into term references for the mark phase ----
+
+# PORT: pl-gc.c save_grefs
+# DIVERGES: the kernel has no `LD->attvar.gc_attvars` term reference (PL_local_data carries none): the
+# newest attvar link is held in a foreign frame of its own, returned as a handle (0: no attvars).
+"Save the newest link of the attvar chain in a term reference of a new foreign frame (pl-gc.c)."
+function save_grefs(ld::PL_local_data{T})::Int where {T}
+    ld.attvar_attvars == 0 && return 0
+    ensureLocalSpace(ld, SIZEOF_FLIFRAME + 3) || error("GC: no local space for save_grefs")
+    fid = open_foreign_frame(ld)
+    gc_new_term_ref!(ld, makeRefG(ld.attvar_attvars))
+    return fid
+end
+
+# PORT: pl-gc.c restore_grefs
+"Read the (relocated) attvar chain head back from `fid` and close its frame (pl-gc.c); runs before `term_refs_to_gvars`."
+function restore_grefs(ld::PL_local_data{T}, fid::Int)::Nothing where {T}
+    fid == 0 && return nothing
+    f = ld.fliframes[fliFrameOfFid(ld, fid)]
+    ld.attvar_attvars = unRef(gc_get_value(ld.slots[_gc_fli_slot(f, 0)]))
+    PL_close_foreign_frame(ld, fid)
+    return nothing
+end
+
+# PORT: pl-gc.c gvars_to_term_refs
+# DIVERGES: (1) the table is `ld.gvar_nb_vars`; its keys are collected once in a fixed order (the Dict is
+# not modified between the two passes, so `term_refs_to_gvars` sees the same order); (2) the pass does
+# not wait for `gvar_grefs > 0` and does not assert `grefs == found`: the count is a hint of the kernel's
+# bookkeeping, a value on the global stack is a root whatever it says; (3) the saved `frozen_bar` is a
+# raw slot above `lTop` (not counted in the frame's `size`), holding a global reference word; its
+# relocation is the sweep's (G1-5). Returns the frame handle and the SLOT POSITION of the saved bar (0: none).
+"Turn the global-stack values of the nb_ variables into term references of a new foreign frame; save the frozen bar (pl-gc.c)."
+function gvars_to_term_refs(ld::PL_local_data{T})::Tuple{Int, Int} where {T}
+    fid = PL_open_foreign_frame(ld)
+    fid == 0 && error("GC: no local space for gvars_to_term_refs")
+    if !isempty(ld.gvar_nb_vars)
+        ks = collect(keys(ld.gvar_nb_vars))
+        ensureLocalSpace(ld, length(ks) + 2) || error("GC: no local space for the global variables")
+        for k in ks
+            w = ld.gvar_nb_vars[k]
+            _gc_is_global_ref(w) && gc_new_term_ref!(ld, w)
+        end
+    end
+    sb = 0
+    if ld.frozen_bar != 0
+        hasLocalSpace(ld, 1) || error("GC: no local space for the frozen bar")
+        sb = ld.lTop
+        ld.slots[sb + 1] = consPtr(ld.frozen_bar, TAG_REFERENCE | STG_GLOBAL)
+        ld.lTop = sb + 1                                # lTop = (LocalFrame)(sb+1)
+        # G1-5: the sweep relocates this slot (upstream: a gc_wordptr on top of the local stack)
+    end
+    return (fid, sb)
+end
+
+# PORT: pl-gc.c term_refs_to_gvars
+"Write the (relocated) term references back into the nb_ variables, restore the frozen bar, close the frame (pl-gc.c)."
+function term_refs_to_gvars(ld::PL_local_data{T}, fid::Int, sb::Int)::Nothing where {T}
+    if sb != 0
+        ld.lTop == sb + 1 || error("GC: term_refs_to_gvars: the saved bar is not the top of the local stack")
+        ld.frozen_bar = valPtr(ld.slots[sb + 1])
+        ld.slots[sb + 1] = 0
+        lowerLTop!(ld, sb)                              # lTop = saved_bar_at
+    end
+    if !isempty(ld.gvar_nb_vars)
+        f = ld.fliframes[fliFrameOfFid(ld, fid)]
+        found = 0
+        for k in collect(keys(ld.gvar_nb_vars))
+            if _gc_is_global_ref(ld.gvar_nb_vars[k])
+                ld.gvar_nb_vars[k] = gc_get_value(ld.slots[_gc_fli_slot(f, found)])
+                found += 1
+            end
+        end
+        found == f.size || error("GC: term_refs_to_gvars: $(found) values for a frame of $(f.size)")
+    end
+    PL_close_foreign_frame(ld, fid)
+    return nothing
+end
+
+# PORT: pl-gc.c argument_stack_to_term_refs
+# DIVERGES: the argument stack holds RECORDS (`argstack_entry`: an `argp_t` of form ARGP_SLOT/ARGP_GLOBAL
+# plus the UWRITE flag), not tagged pointers; a slot entry is upstream's LARGP case and needs no tagging
+# (its form says it). `LD->query->registers.argp` is `ld.queries[ld.query].registers_argp`.
+"Turn the global entries of the argument stack into term references of a new foreign frame (pl-gc.c); 0 when `vm.save_argp` is off."
+function argument_stack_to_term_refs(ld::PL_local_data{T}, vm::vm_state)::Int where {T}
+    vm.save_argp || return 0
+    ensureLocalSpace(ld, SIZEOF_FLIFRAME + ld.aTop + 4) || error("GC: no local space for argument_stack_to_term_refs")
+    fid = open_foreign_frame(ld)
+    pushArgumentStack(ld, argstack_entry{T}(ld.queries[ld.query].registers_argp, false))
+    vm.uwrite_count = 0
+    for i in 1:ld.aTop
+        e = ld.astack[i]
+        if e.argp.form == ARGP_GLOBAL
+            if e.uwrite
+                gc_new_term_ref!(ld, consPtr(e.argp.pos, TAG_ATTVAR | STG_GLOBAL))      # consAttVar(adr)
+                vm.uwrite_count += 1
+            else
+                gc_new_term_ref!(ld, makeRefG(e.argp.pos))
+            end
+        end
+    end
+    return fid
+end
+
+# PORT: pl-gc.c term_refs_to_argument_stack
+"Write the (relocated) term references back into the argument stack, pop the pushed `registers_argp`, close the frame (pl-gc.c)."
+function term_refs_to_argument_stack(ld::PL_local_data{T}, vm::vm_state, fid::Int)::Nothing where {T}
+    fid == 0 && return nothing
+    f = ld.fliframes[fliFrameOfFid(ld, fid)]
+    found = 0
+    uwc = 0
+    for i in 1:ld.aTop
+        e = ld.astack[i]
+        if e.argp.form == ARGP_GLOBAL
+            w = gc_get_value(ld.slots[_gc_fli_slot(f, found)])
+            found += 1
+            uw = tag(w) == TAG_ATTVAR
+            uw && (uwc += 1)
+            ld.astack[i] = argstack_entry{T}(argp_t{T}(ARGP_GLOBAL, valPtr(w), e.argp.term), uw)
+        end
+    end
+    found == f.size || error("GC: term_refs_to_argument_stack: $(found) references for a frame of $(f.size)")
+    uwc == vm.uwrite_count || error("GC: term_refs_to_argument_stack: $(uwc) UWRITE entries, saved $(vm.uwrite_count)")
+    ld.queries[ld.query].registers_argp = ld.astack[ld.aTop].argp       # registers.argp = *--aTop
+    ld.aTop -= 1
+    PL_close_foreign_frame(ld, fid)
+    return nothing
+end
+
+# PORT: pl-gc.c count_need_protection_attvars
+"The number of attributed variables on the `attvars` chain (pl-gc.c; call_residue_vars)."
+function count_need_protection_attvars(ld::PL_local_data{T})::Int where {T}
+    attvars = 0
+    p = ld.attvar_attvars
+    while p != 0
+        avp = p + 1
+        nxt = isRef(ld.gstack[p]) ? unRef(ld.gstack[p]) : 0
+        isAttVar(ld.gstack[avp]) && (attvars += 1)
+        p = nxt
+    end
+    return attvars
+end
+
+# PORT: pl-gc.c link_attvars
+"Protect the attributed variables of the `attvars` chain as term references of a new foreign frame (pl-gc.c); 0 when not under call_residue_vars."
+function link_attvars(ld::PL_local_data{T})::Int where {T}
+    (ld.attvar_call_residue_vars_count != 0 && ld.attvar_attvars != 0) || return 0
+    ensureLocalSpace(ld, SIZEOF_FLIFRAME + count_need_protection_attvars(ld) + 2) ||
+        error("GC: no local space for link_attvars")
+    fid = open_foreign_frame(ld)
+    p = ld.attvar_attvars
+    while p != 0
+        avp = p + 1
+        nxt = isRef(ld.gstack[p]) ? unRef(ld.gstack[p]) : 0
+        isAttVar(ld.gstack[avp]) && gc_new_term_ref!(ld, makeRefG(avp))
+        p = nxt
+    end
+    return fid
+end
+
+# PORT: pl-gc.c restore_attvars
+"Close the frame `link_attvars` opened (pl-gc.c)."
+function restore_attvars(ld::PL_local_data{T}, fid::Int)::Nothing where {T}
+    fid != 0 && PL_close_foreign_frame(ld, fid)
+    return nothing
+end
+
+# ORIGINAL: clear every gc bit the mark phase set — MARK and FIRST on the global cells and the slots, the
+# FR_MARKED / FR_MARKED_PRED flags of the frames. Upstream's sweep clears them as it compacts (G1-5);
+# until it exists, and for the tests, this restores the stacks to their unmarked state.
+"Clear the MARK/FIRST bits of every live global cell and slot and the frame mark flags (ORIGINAL)."
+function gc_clear_marks!(ld::PL_local_data{T})::Nothing where {T}
+    for i in 1:ld.gTop
+        ld.gstack[i] = ld.gstack[i] & VALUE_MASK
+    end
+    for i in 1:ld.lTop
+        ld.slots[i] = ld.slots[i] & VALUE_MASK
+    end
+    for i in 1:ld.nframes
+        f = ld.frames[i]
+        f.flags = f.flags & ~UInt32(FR_MARKED | FR_MARKED_PRED)
+    end
+    return nothing
+end
