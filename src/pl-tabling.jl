@@ -8122,7 +8122,8 @@ end
 
 # PORT: pl-tabling.c mdep_unify_answers
 # (pl-tabling.c:10218-10252 at the pin)
-# DIVERGES: takes the trie `atrie` of the queued nodes (upstream: the node pointers); a node is unified as its id (an integer).
+# DIVERGES: takes the trie `atrie` of the queued nodes (upstream: the node pointers); a node is unified as its handle
+# `answer_ref(atrie.serial, a)` (an integer, upstream's `PL_unify_pointer(head, node)`), which `$tbl_node_answer/2` decodes.
 "Unify `t` with the list of the live answers queued on `mdep`; their number or -1 (pl-tabling.c `mdep_unify_answers`)."
 function mdep_unify_answers(
     ld::PL_local_data{T}, atrie::trie{T}, t::term_t, mdep::IdgMdep{T}
@@ -8143,7 +8144,7 @@ function mdep_unify_answers(
                 count += 1
             end
         elseif atrie.nodes[a].value != 0
-            if !PL_unify_list(ld, tail, head, tail) || !PL_unify_integer(ld, head, a)
+            if !PL_unify_list(ld, tail, head, tail) || !PL_unify_integer(ld, head, answer_ref(atrie.serial, a))
                 return -1
             end
             count += 1
@@ -8944,6 +8945,28 @@ function pl_idg_mono_invalidate1_va(
     return idg_changed(ld, atrie, IDG_CHANGED_NODE) ? FTRUE : FFALSE
 end
 
+# PORT: pl-tabling.c tbl_node_answer as pl_tbl_node_answer2_va
+# (PRED_IMPL("$tbl_node_answer", 2, tbl_node_answer, 0), pl-tabling.c:8957-8969 at the pin)
+# DIVERGES: the NodeRef "pointer" is the integer `answer_ref(serial, nid)` (upstream: the node's address), as for
+# `$tbl_force_truth_value/3`; a handle that names no trie or no node of it fails (upstream dereferences the address).
+"`'\$tbl_node_answer'(+NodeRef, -Answer)`: the answer of a trie node, `Primary/Moded` for a moded answer (pl-tabling.c)."
+function pl_tbl_node_answer2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1 = PL__t0
+    A2 = PL__t0 + 1
+    gd = _query_gd(ld)
+    ptr = PL_get_pointer_ex(ld, A1)                             # PL_get_pointer_ex(A1, &ptr): type_error(address, A1)
+    ptr === nothing && return FFALSE
+    ti = answer_ref_trie(ptr)
+    (ptr > 0 && 1 <= ti <= length(gd.tries)) || return FFALSE
+    atrie = gd.tries[ti]
+    nid = answer_ref_node(ptr)
+    (1 <= nid <= length(atrie.nodes)) || return FFALSE
+
+    return tbl_unify_answer(ld, atrie, nid, A2) ? FTRUE : FFALSE
+end
+
 # PORT: pl-tabling.c mono_idg_changed as pl_mono_idg_changed2_va
 # (PRED_IMPL("$mono_idg_changed", 2, mono_idg_changed, 0), pl-tabling.c:11052-11060 at the pin)
 "`'\$mono_idg_changed'(+ATrie, +Answer)`: a new answer for `ATrie`, a trie node or a clause reference (pl-tabling.c)."
@@ -9207,6 +9230,52 @@ function sort_table_values!(values::Vector{word})::Nothing
     return nothing
 end
 
+# PORT: pl-tabling.c save_tabling_status
+# (pl-tabling.c:2539-2554 at the pin; used by `break/0` (pl-pro.c `pl_break1`) and the answer event hook (pl-event.c))
+# DIVERGES: `state` is a `tbl_status{T}` the caller allocates (upstream: a stack struct); `GET_LD` is the argument `ld`.
+"Save the tabling status of `ld` into `state` and start a fresh one: no component, no flags (pl-tabling.c)."
+function save_tabling_status(ld::PL_local_data{T}, state::tbl_status{T})::Nothing where {T}
+    tb = ld.tabling
+    state.scc = tb.component
+    state.hsc = tb.has_scheduling_component
+    state.iac = tb.in_answer_completion
+    state.iap = tb.in_assert_propagation
+    state.prev = tb.saved_status
+
+    tb.saved_status = state
+    tb.component = nothing
+    tb.has_scheduling_component = false
+    tb.in_answer_completion = false
+    tb.in_assert_propagation = false
+
+    return nothing
+end
+
+# PORT: pl-tabling.c restore_tabling_status
+# (pl-tabling.c:2557-2566 at the pin)
+"Restore the tabling status of `ld` from `state`, saved by `save_tabling_status` (pl-tabling.c)."
+function restore_tabling_status(ld::PL_local_data{T}, state::tbl_status{T})::Nothing where {T}
+    tb = ld.tabling
+    tb.component = state.scc
+    tb.has_scheduling_component = state.hsc
+    tb.in_answer_completion = state.iac
+    tb.in_assert_propagation = state.iap
+    tb.saved_status = state.prev
+
+    return nothing
+end
+
+# PORT: pl-tabling.c take_table_value
+# (pl-tabling.c:2804-2822 at the pin; the `trie_empty_take` callback of `empty_variant_table`)
+# DIVERGES: `values` is a growing vector (upstream: the `bulk_reset` buffer sized for all values, grown by `realloc`); the branch
+# of a failed `realloc` (`reset_table_bulk` and `trie_release_value` at once) cannot occur.
+"Take the value `value` of a variant table node into `values` (see `trie_empty_take`) (pl-tabling.c)."
+function take_table_value!(values::Vector{word}, value::word)::Nothing
+    push!(values, value)                                # br->values[br->count++] = value
+
+    return nothing
+end
+
 # PORT: pl-tabling.c empty_variant_table
 # DIVERGES: one path for the private table: the values are taken by `trie_empty_take`, reset in creation order and released after
 # (upstream's malloc failure fallback is the second branch only when there are no values or the delay pass is done); the IDG
@@ -9223,7 +9292,7 @@ function empty_variant_table(ld::PL_local_data{T}, vtrie::trie{T}, delays_done::
         ld.tabling.idg_registry = nothing
         idg_nodes = Ref(0)
         values = word[]
-        trie_empty_take(gd, vtrie, w -> push!(values, w))
+        trie_empty_take(gd, vtrie, w -> take_table_value!(values, w))
         sort_table_values!(values)                      # creation order
         for v in values
             reset_table_bulk(ld, v, registry, idg_nodes)
@@ -10075,6 +10144,7 @@ const PL_predicates_from_tabling = (
     PL_extension("\$mono_reeval_done", 3, pl_mono_reeval_done3_va, PL_FA_VARARGS),
     PL_extension("\$idg_mono_empty_queue", 2, pl_idg_mono_empty_queue2_va, PL_FA_VARARGS),
     PL_extension("\$idg_mono_invalidate", 1, pl_idg_mono_invalidate1_va, PL_FA_VARARGS),
+    PL_extension("\$tbl_node_answer", 2, pl_tbl_node_answer2_va, PL_FA_VARARGS),
     PL_extension("\$tbl_destroy_table", 1, pl_tbl_destroy_table1_va, PL_FA_VARARGS),
     PL_extension("\$tbl_abolish_local_tables", 0, pl_tbl_abolish_local_tables0_va, PL_FA_VARARGS)
 )

@@ -30,7 +30,6 @@ pred:$set_prolog_stack/4	Q10	seed: missing_c_preds.tsv
 pred:$sig_unblock/0	TH1	seed: missing_c_preds.tsv
 pred:$snapshot/1	TX1	seed: missing_c_preds.tsv
 pred:$suspend_findall_bag/0	Q10	seed: missing_c_preds.tsv
-pred:$tbl_node_answer/2	TAB1	seed: missing_c_preds.tsv
 pred:$transaction/2	TX1	seed: missing_c_preds.tsv
 pred:$transaction/3	TX1	seed: missing_c_preds.tsv
 pred:$undo/1	TX1	seed: missing_c_preds.tsv
@@ -138,6 +137,11 @@ refusal:src/pl-write.jl::writeAttVar::write_term/2 attributes(portray): '\$attva
 # refusal sites, assignments proposed in evidence/R2/refusal_owners.md (new deferred step names ENC1, RD2, WR2 and the QUESTION rows): confirmed by the audit (D-0415 item 5: ENC1, RD2, WR2 are the names of deferred steps; indexed(L) is PR1b)
 # TAB1 TB5 (wip/tb5): `$tbl_destroy_table/1` and `$tbl_abolish_local_tables/0` are ported (their seed rows left). The shared-table branches of abolish_table, destroy_answer_trie, clear_variant_table
 # (owner TH1) and the IDG branches of orphan_dynamic_table, collect_dynamic_children, reset_table_bulk, empty_variant_table (owner TB6) raise through `tbl_refuse`: the one `tbl_refuse` row (TB1) owns them.
+# TAB1 W2 (wip/tb-w2): `$tbl_node_answer/2` is ported (pl-tabling.c:8957-8969; its seed row left), with take_table_value, save_tabling_status and restore_tabling_status.
+# Left out of pl-tabling.c by name: (a) the O_DEBUG-only functions stay out of the kernel (it has no debug build): put_delay_info, print_dl_dependency, print_delay, print_answer,
+# print_answer_table, print_worklist, idg_flag_name. (b) The O_PLMT group is a named refusal owned by TH1 (shared tables, table locking, the deadlock detector): table_needs_work,
+# claim_answer_table, take_trie, drop_trie, new_trie_array, free_trie_array, register_waiting, unregister_waiting, thread_waits_for_trie, stat_deadlock, is_deadlock, wait_for_table_to_complete.
+# (c) cleanupTabling (pl-tabling.c:12717) has nothing observable in the kernel: it clears fast_ret_functor and, under O_PLMT, frees the shared variant table, the mutex, the condition variable and the node pool: no row.
 # The 2-argument `freeCodesDefinition!` keeps its refusal row below: pl-ext.jl and precompile_workload.jl call it where no database exists (boot), the callers with a database use the 3-argument method.
 refusal:src/os/pl-file.jl::openStream::open/4's unicode_atoms(Mode) option	ENC1	open/4 unicode_atoms(Mode) option (pl-file.c openStream); the NFC normalizer rides with ENC1
 refusal:src/os/pl-file.jl::openStream::string("open/4 with the stream encoding ", enc)	ENC1	open/4 encodings other than UTF-8 (pl-file.c openStream); UTF-8 only by the R1 decision of 2026-10-07
