@@ -1036,5 +1036,29 @@ end
         ]
         @test !isempty(told) && all(!isempty, told)
         @test lines == ["tr_seen" * join(" " .* told)]
+        # D: a saved name that shares its last directories with the load name: the common tail is cut at its first `/` going
+        # backwards, so `/old#/place/sub` and `<dir>/place/sub` leave the prefixes `/old#/` and `<dir>/` (swipl 10.1.20: the first
+        # entry goes to `<dir>/place/sub/a.pl`, the second to `<dir>/place/other/b.pl`, the third to `<dir>/c.pl`, the fourth has
+        # no prefix); without the cut only the paths under `place/sub` are rewritten
+        sub = joinpath(d, "place", "sub")
+        mkpath(sub)
+        shared = joinpath(sub, "shared.qlf")
+        write(shared, _ql_qlf("/old#/place/sub/shared.qlf", Tuple{Char, String, UInt64}[
+            ('F', "/old#/place/sub/a.pl", 1), ('F', "/old#/place/other/b.pl", 2),
+            ('L', "/old#/c.pl", 3), ('D', "/keep/d.pl", 4)]))
+        st2, ans2 = _ql_goal(gd, ld, "\$qlf_sources", _QL[_qls(shared), mk_var(_QL, LK.fresh_var_keys!(1))])
+        a2 = joinpath(sub, "a.pl")
+        b2 = joinpath(d, "place", "other", "b.pl")
+        c2 = joinpath(d, "c.pl")
+        want2 = [_ql_src("source", a2, 1), _ql_src("source", b2, 2), _ql_src("include", c2, 3), _ql_src("dependency", "/keep/d.pl", 4)]
+        @test st2 === :true
+        @test st2 === :true && _ql_items(ans2[3]) == want2
+        @test length(want2) == 4 && all(!isempty, want2) && length(unique(want2)) == 4
+        told2 = [
+            _ql_enc(mk_expr(_QL, _QL[_qls("tr_seen"), mk_expr(_QL, _QL[_qls("-"), _qls(f), _qls(t)])])) for
+            (f, t) in (("/old#/c.pl", c2), ("/old#/place/other/b.pl", b2), ("/old#/place/sub/a.pl", a2))
+        ]
+        @test !isempty(told2) && all(!isempty, told2)
+        @test _ql_query_lines(gd, ld, ["tr_seen"]) == ["tr_seen" * join(" " .* vcat(told, told2))]
     end
 end
