@@ -3493,6 +3493,34 @@ _manifest_cont(::Type{T}) where {T} = (
     (LK.PL_cons_list_v, Tuple{LK.PL_local_data{T}, Int, Int, Int}, false)
 )
 
+# G1-3b (src/pl-gcwalk.jl, pl-gc.c's mark phase: the collector's walk, early reset, the choicepoint/environment/query drivers).
+# Not held allocation-free: the drivers build error messages and the callback `vmi_state_of` is dynamic.
+_manifest_g1gc3b(::Type{T}) where {T} = (
+    (LK.gc_walk_state, Tuple{Int, Int, Int, Int}, false),
+    (LK.mark_frame_var_gc, Tuple{LK.PL_local_data{T}, LK.gc_mark_counts, LK.gc_walk_state, LK.code}, false),
+    (LK.clear_frame_var_gc, Tuple{LK.PL_local_data{T}, LK.gc_walk_state, LK.code}, false),
+    (LK.mark_argp_gc, Tuple{LK.PL_local_data{T}, LK.gc_mark_counts, LK.gc_walk_state}, false),
+    (
+        LK.walk_and_mark_gc,
+        Tuple{LK.PL_local_data{T}, LK.gc_mark_counts, LK.gc_walk_state, Vector{LK.code}, Int, LK.code},
+        false
+    ),
+    (LK.mergeTrailedAssignments, Tuple{LK.PL_local_data{T}, LK.gc_mark_counts, Int, Int, Int}, false),
+    (LK.early_reset_vars, Tuple{LK.PL_local_data{T}, LK.gc_mark_counts, LK.mark, Int}, false),
+    (LK.gc_slots_in_frame, Tuple{LK.PL_local_data{T}, Int, Int}, false),
+    (LK._gc_is_trie_gen, Tuple{LK.localFrame{T}}, false),
+    (LK.mark_alt_clauses, Tuple{LK.PL_local_data{T}, LK.gc_mark_counts, Int, LK.ClauseRef{T}}, false),
+    (LK.early_reset_choicepoint, Tuple{LK.PL_local_data{T}, LK.gc_mark_counts, LK.mark_state, Int}, false),
+    (LK.mark_environments, Tuple{LK.PL_local_data{T}, LK.gc_mark_counts, LK.mark_state, Int, Int}, false),
+    (LK.mark_choicepoints, Tuple{LK.PL_local_data{T}, LK.gc_mark_counts, LK.mark_state, Int}, false),
+    (LK.mark_query_stacks, Tuple{LK.PL_local_data{T}, LK.gc_mark_counts, LK.mark_state, Int, Int, Int}, false),
+    (LK.mark_stacks, Tuple{LK.PL_local_data{T}, LK.gc_mark_counts, LK.vm_state}, false),
+    (LK.mark_phase, Tuple{LK.PL_local_data{T}, LK.gc_mark_counts, LK.vm_state}, false),
+    (LK.unmark_environments, Tuple{LK.PL_local_data{T}, Int, UInt32}, false),
+    (LK.unmark_choicepoints, Tuple{LK.PL_local_data{T}, Int, UInt32}, false),
+    (LK.unmark_stacks, Tuple{LK.PL_local_data{T}, Int, Int, UInt32}, false)
+)
+
 const _DISPATCH_MANIFEST_TUPLE = (
     _manifest_per_type(_M1)...,
     _manifest_per_type(_M2)...,
@@ -4261,6 +4289,8 @@ const _DISPATCH_MANIFEST_TUPLE = (
     (LK.clear_frame_var, Tuple{LK.walk_state, LK.code}, true),
     (LK.clear_choice_mark, Tuple{LK.walk_state, LK.code}, true),
     (LK.mark_choice_mark, Tuple{LK.walk_state, LK.code}, true),
+    # G1-3b: the mark phase's walk and drivers (src/pl-gcwalk.jl)
+    _manifest_g1gc3b(_M2)...,
     # CONT1: the continuations' run side (src/pl-cont.jl, src/pl-gc.jl, src/pl-fli.jl)
     _manifest_cont(_M2)...
 )
