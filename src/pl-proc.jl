@@ -1986,6 +1986,33 @@ function get_procedure_find(
     return visibleProcedure(gd, name, arity, m)         # GP_FIND: found -> out; else notfound
 end
 
+# PORT: pl-proc.c get_procedure as get_procedure_resolve
+# (the `GP_RESOLVE` case without `GP_NAMEARITY`, as `tbl_variant_table` asks it: `get_procedure(variant, &proc, 0,
+# GP_RESOLVE|GP_EXISTENCE_ERROR)`; pl-proc.c:741-805 at the pin)
+# DIVERGES: as `get_procedure_find`: `get_module`'s `GP_RESOLVE` rule is its `GP_FIND` rule (a qualifier names its module if it is
+# current, else `user`; none: the context module of the environment frame); the procedure is returned, or `nothing` with an error
+# raised in `ld` (the type error of a non-callable); no `h`. `GP_EXISTENCE_ERROR` never fires: `resolveProcedure` creates an
+# undefined procedure when none is visible, as upstream's `GP_RESOLVE` case does.
+"The procedure a dynamic call to the head term `descr` (`M:Head`) runs, created undefined when none is visible, or `nothing` (pl-proc.c)."
+function get_procedure_resolve(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, descr::term_t
+)::Union{Nothing, Procedure{T}} where {T}
+    head = PL_new_term_ref(ld)
+    ok, loc, mname = stripModuleName_cells(ld, -(descr + 1))  # stripModuleName(valTermRef(descr), &mname)
+    ok || return nothing
+    _slot_link_loc!(ld, head + 1, loc)                  # *valTermRef(head) = linkValNoG(p)
+    m = MODULE_user(gd)                                 # get_module(mname, GP_RESOLVE)
+    if mname != 0
+        cm = isCurrentModule(gd.modules, _atom_value(ld, mname))
+        cm !== nothing && (m = cm)
+    elseif ld.environment_frame != 0                    # environment_frame ? contextModule(…) : user
+        m = gd.modules[contextModule(gd, ld, ld.environment_frame)]
+    end
+    name, arity = get_head_functor(ld, head, GP_RESOLVE)
+    arity < 0 && return nothing
+    return resolveProcedure(gd, name, arity, m)         # case GP_RESOLVE
+end
+
 # PORT: pl-proc.c get_functor as get_functor_procedure
 # (the body of `get_functor` after the module is stripped; `how` as upstream's: `GF_PROCEDURE`, `GF_NAMEARITY`)
 # DIVERGES: returns `(name, arity)`, arity -1 with the error raised where upstream returns false and writes `fdef`; no `h`;
