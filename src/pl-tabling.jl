@@ -6067,11 +6067,10 @@ end
 
 # PORT: pl-tabling.c table_has_no_answers
 # (pl-tabling.c:2086 at the pin)
-# DIVERGES: the re-evaluation branch (`data.IDG->reevaluating`) is TB6's; `data.IDG` is `Nothing` until TB6.
 "Whether the answer trie has no answers (pl-tabling.c)."
 function table_has_no_answers(atrie::trie{T})::Bool where {T}
     atrie.value_count == 0 && return true
-    if atrie.IDG !== nothing
+    if (n = atrie.IDG) !== nothing && n.reevaluating
         return map_trie_node(atrie, 1, live_answer_node) === nothing
     end
     return false

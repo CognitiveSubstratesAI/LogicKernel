@@ -396,4 +396,13 @@ MUTANTS = [
          equivalent="src/pl-tabling.jl propagate_to_answer: the dependent answer of idg23's entry has no delay info (`di === nothing`), so `found` stays false whatever `result` is and propagate_result's `delete_answer` drops the entry either way; a row with a conditional dependent answer (a delay set on the answer) tells true from false and is a lane to-do",
          old="                simplify_answer(ld, wl, answer, true)\n            end\n        end\n        wl.ground && return UDL_COMPLETE",
          new="                simplify_answer(ld, wl, answer, false)\n            end\n        end\n        wl.ground && return UDL_COMPLETE"),
+    # ── TB7M6: table_has_no_answers (pl-tabling.c:2086-2093) ──
+    dict(id='TB7M6-H1 table_has_no_answers looks at the live answers for every table with an IDG node (KILL idg24: false for a node that is not reevaluating)',
+         file=TAB, targets=TARGETS5,
+         old="    if (n = atrie.IDG) !== nothing && n.reevaluating\n        return map_trie_node(atrie, 1, live_answer_node) === nothing\n",
+         new="    if (n = atrie.IDG) !== nothing\n        return map_trie_node(atrie, 1, live_answer_node) === nothing\n"),
+    dict(id='TB7M6-H2 live_answer_node counts an answer marked TN_IDG_DELETED as live (KILL idg24: true once the only answer is deleted)',
+         file=TAB, targets=TARGETS5,
+         old="    (n.value != 0 && (n.flags & TN_IDG_DELETED) == 0) && return nid\n",
+         new="    (n.value != 0) && return nid\n"),
 ]

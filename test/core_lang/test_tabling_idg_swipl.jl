@@ -745,3 +745,30 @@ end
     bad = _ti_udl(ld, mkwl(false), 1)
     @test good[2] != bad[2] && good[2] == 0 && bad[2] == 1
 end
+
+@testset "idg24: table_has_no_answers looks for a live answer only while the table reevaluates (pl-tabling.c:2065-2093)" begin
+    gd, ld, def = _ti_db()
+    t = _ti_table!(ld, def, true, 1)
+    has_none() = LK.table_has_no_answers(t)
+    @test has_none()                                                                       # value_count == 0
+    n = LK.idg_new(ld, t)::_TIN
+    t.IDG = n
+    t.value_count = 1
+    @test !has_none()                                                                      # a node, not reevaluating: the count decides
+    n.reevaluating = true
+    @test has_none()                                                                       # reevaluating, no node has a value
+    t.nodes[1].value = LK.word(7)
+    @test !has_none()                                                                      # a live answer
+    t.nodes[1].flags |= LK.TN_IDG_DELETED
+    @test has_none()                                                                       # the answer of the previous evaluation does not count
+    t.nodes[1].flags &= ~LK.TN_IDG_DELETED
+    n.reevaluating = false
+    t.nodes[1].value = LK.word(0)
+    @test !has_none()                                                                      # a node, not reevaluating, no live node: still the count
+
+    # a must-fail corruption: two states of the one table answer differently (one extractor)
+    r1 = has_none()
+    n.reevaluating = true
+    r2 = has_none()
+    @test r1 != r2 && !r1 && r2
+end
