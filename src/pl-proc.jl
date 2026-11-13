@@ -567,13 +567,28 @@ end
 # `pl-prims.jl`, Y1); a clause that has a blob (DBREF_CLAUSE) is left alone, where upstream sets DBREF_ERASED_CLAUSE and lets
 # the blob's release call `unallocClause` (the kernel's blobs are freed by Julia's GC, which releases nothing). What stays is the
 # source-file references `assert_term!` took (`source_no`, `owner_no`): they are given back here, so that the acquire/release
-# pairs of the reload (`copy_clause_source`, `keep_clause`) stay balanced. Wiring this into clause reclamation is LB6b.
+# pairs of the reload (`copy_clause_source`, `keep_clause`) stay balanced. Since LB6b the clause reclamation (`cleanDefinition!`) calls the `ld` form below.
 "Release the source-file references of a clause that is not used (pl-proc.c `freeClause`)."
 function freeClause!(gd::PL_global_data{T}, c::Clause{T})::Nothing where {T}
     (c.flags & DBREF_CLAUSE) != 0 && return nothing
     if c.source_no != 0                             # set by assert_term()
         c.owner_no != c.source_no && releaseSourceFileNo(gd, c.owner_no)
         releaseSourceFileNo(gd, c.source_no)
+    end
+    return nothing
+end
+
+# PORT: pl-proc.c freeClause as freeClause!
+# DIVERGES: as the form above, with the database and the local data: the references are given back through the destroying `releaseSourceFileNo`, so the last
+# clause of an unloaded file lets the file go (LB6b: the clause reclamation of `cleanDefinition!` calls it for each clause it unlinks).
+"Release the source-file references of a clause that is reclaimed; an empty file left with none is destroyed (pl-proc.c `freeClause`, `unallocClause`)."
+function freeClause!(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, c::Clause{T}
+)::Nothing where {T}
+    (c.flags & DBREF_CLAUSE) != 0 && return nothing
+    if c.source_no != 0                             # set by assert_term()
+        c.owner_no != c.source_no && releaseSourceFileNo(gd, ld, c.owner_no)
+        releaseSourceFileNo(gd, ld, c.source_no)
     end
     return nothing
 end
@@ -793,7 +808,7 @@ end
 # given (EV1), `rcp` (upstream's `bool *`) a `Ref`; the method without them is the tests' (no listeners), and the
 # unlinked references are left to the garbage collector (upstream lingers them and frees what no
 # one uses, `free_lingering`) — an unlinked reference keeps its `next`, so an enumeration standing on
-# it continues. No `LOCKDEF` (no threads) and no `rcp` result; the caller sets `cgc_active`, which
+# it continues; the clause's source-file references are given back at once (`freeClause!`, LB6b, with `gd` and `ld`). No `LOCKDEF` (no threads) and no `rcp` result; the caller sets `cgc_active`, which
 # upstream asserts.
 """
 Unlink from `def`'s clause list every erased clause no generation in use can see, then clean its
@@ -813,6 +828,9 @@ function cleanDefinition!(
             if (cl.flags & CL_ERASED) != 0 && ddi_is_garbage(ddi, start, cl)
                 if gd !== nothing && ld !== nothing && !announceErasedClause(gd, ld, cl)
                     rcp[] = false                       # *rcp = false
+                end
+                if gd !== nothing && ld !== nothing
+                    freeClause!(gd, ld, cl)             # lingerClauseRef() .. freeClauseRef(): the clause is freed (LB6b; no lingering here)
                 end
                 prev = find_prev(def, prev, cref)
                 if prev === nothing

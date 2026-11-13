@@ -201,6 +201,17 @@ function releaseSourceFileNo(gd::PL_global_data, index::Integer)::Bool
     return releaseSourceFile(sf)
 end
 
+# PORT: pl-srcfile.c releaseSourceFileNo
+# DIVERGES: the database and the local data are arguments: this is the form with the destroying `releaseSourceFile` (the clause reclamation's, `freeClause!`).
+"Drop a reference to the source file with index `index`, if there is one, destroying an empty one (pl-srcfile.c)."
+function releaseSourceFileNo(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, index::Integer
+)::Bool where {T}
+    sf = indexToSourceFile(gd, index)
+    sf === nothing && return true
+    return releaseSourceFile(gd, ld, sf)
+end
+
 # PORT: pl-srcfile.c hasProcedureSourceFile
 "Is `proc` one of the procedures `sf` defines (pl-srcfile.c)?"
 function hasProcedureSourceFile(sf::SourceFile{T}, proc::Procedure{T})::Bool where {T}
