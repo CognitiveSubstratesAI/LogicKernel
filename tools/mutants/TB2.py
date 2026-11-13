@@ -169,7 +169,7 @@ MUTANTS = [
          file=TAB, targets=[TW],
          old="        state.acp_index != 0 && break               # else { next_answer: ... }\n",
          new="        state.acp_index != 1 && break               # else { next_answer: ... }\n"),
-    dict(id="TB2-K3 wkl_next_suspension never visits suspension 0, `> 0` for `>= 0` (KILL twl01: the only suspension of a left-recursive worklist is member 0, no answer is propagated)",
+    dict(id="TB2-K3 wkl_next_suspension never visits suspension 0, `> 0` for `>= 0` (KILL twk01: tw_k/1 has TWO suspensions in one cluster and `wkl_next_suspension` is called only after the first one was offered, so member 0 never gets an answer and one of the chains 0-1-2, 0-10-20 is missing; twl01 has one suspension and cannot see it)",
          file=TAB, targets=[TW],
          old="    state.here -= 1\n\n    return state.here >= 0\n",
          new="    state.here -= 1\n\n    return state.here > 0\n"),

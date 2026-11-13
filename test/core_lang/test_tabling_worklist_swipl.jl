@@ -153,6 +153,15 @@ tw_r1(X, Y) :- tw_r2(X, Z), tw_edge(Z, Y).
 tw_r1(X, Y) :- tw_edge(X, Y).
 tw_r2(X, Y) :- tw_r1(X, Y).
 tw_status(G, S) :- '$tbl_existing_variant_table'(0, G, T, _, _), '$tbl_table_status'(T, S).
+% twk: ONE cluster with two suspensions (tw_k/1 calls itself twice in its two clauses): `wkl_next_suspension` visits member 0 too
+:- table tw_k/1.
+tw_k(X) :- tw_k(Y), tw_ka(Y, X).
+tw_k(X) :- tw_k(Y), tw_kb(Y, X).
+tw_k(0).
+tw_ka(0, 1).
+tw_ka(1, 2).
+tw_kb(0, 10).
+tw_kb(10, 20).
 """
 
 const _TW_CASES = [
@@ -180,7 +189,8 @@ const _TW_CASES = [
     (
         "twm08",
         raw"tw_status(user:tw_r1(_, _), S1), tw_status(user:tw_r2(_, _), S2), R = r(S1, S2)"
-    )
+    ),
+    ("twk01", raw"findall(X, tw_k(X), L0), msort(L0, L), R = L")
 ]
 
 const _TW_PINNED = [
@@ -200,7 +210,8 @@ const _TW_PINNED = [
     "t_twm05 c[116,95,116,119,109,48,53]/1(c[91,124,93]/2(c[45]/2(a[97],a[97]),c[91,124,93]/2(c[45]/2(a[97],a[98]),c[91,124,93]/2(c[45]/2(a[97],a[99]),c[91,124,93]/2(c[45]/2(a[97],a[100]),c[91,124,93]/2(c[45]/2(a[98],a[97]),c[91,124,93]/2(c[45]/2(a[98],a[98]),c[91,124,93]/2(c[45]/2(a[98],a[99]),c[91,124,93]/2(c[45]/2(a[98],a[100]),c[91,124,93]/2(c[45]/2(a[99],a[97]),c[91,124,93]/2(c[45]/2(a[99],a[98]),c[91,124,93]/2(c[45]/2(a[99],a[99]),c[91,124,93]/2(c[45]/2(a[99],a[100]),nil)))))))))))))",
     "t_twm06 c[116,95,116,119,109,48,54]/1(c[91,124,93]/2(c[45]/2(a[97],a[97]),c[91,124,93]/2(c[45]/2(a[97],a[98]),c[91,124,93]/2(c[45]/2(a[97],a[99]),c[91,124,93]/2(c[45]/2(a[97],a[100]),c[91,124,93]/2(c[45]/2(a[98],a[97]),c[91,124,93]/2(c[45]/2(a[98],a[98]),c[91,124,93]/2(c[45]/2(a[98],a[99]),c[91,124,93]/2(c[45]/2(a[98],a[100]),c[91,124,93]/2(c[45]/2(a[99],a[97]),c[91,124,93]/2(c[45]/2(a[99],a[98]),c[91,124,93]/2(c[45]/2(a[99],a[99]),c[91,124,93]/2(c[45]/2(a[99],a[100]),nil)))))))))))))",
     "t_twm07 c[116,95,116,119,109,48,55]/1(nil)",
-    "t_twm08 c[116,95,116,119,109,48,56]/1(c[114]/2(a[99,111,109,112,108,101,116,101],a[99,111,109,112,108,101,116,101]))"
+    "t_twm08 c[116,95,116,119,109,48,56]/1(c[114]/2(a[99,111,109,112,108,101,116,101],a[99,111,109,112,108,101,116,101]))",
+    "t_twk01 c[116,95,116,119,107,48,49]/1(c[91,124,93]/2(i0,c[91,124,93]/2(i1,c[91,124,93]/2(i2,c[91,124,93]/2(i10,c[91,124,93]/2(i20,nil))))))"
 ]
 
 @testset "tabled left and mutual recursion as swipl's (twl, twm)" begin
@@ -222,7 +233,7 @@ end
 @testset "the worklist rows are not vacuous" begin
     @test _TW_PINNED[1] == "ok"
     @test length(_TW_PINNED) == length(_TW_CASES) + 1
-    for pre in ("twl", "twm")
+    for pre in ("twl", "twm", "twk")
         ids = [id for (id, _) in _TW_CASES if startswith(id, pre)]
         @test !isempty(ids)
         @test length([l for l in _TW_PINNED if any(id -> startswith(l, "t_$id "), ids)]) ==
@@ -235,6 +246,8 @@ end
     @test ans("twm01") != ans("twm02")          # the two tables of one SCC hold different answers
     @test ans("twl01") == ans("twm05")          # left recursion through a second predicate gives the same closure
     @test ans("twm07") != ans("twm05")          # the empty answer set of a fresh variant, the full closure
+    # twk01: BOTH chains of the two suspensions of one cluster (0-1-2 through tw_ka, 0-10-20 through tw_kb), one extractor
+    @test all(occursin(v, ans("twk01")) for v in ("i1,", "i2,", "i10,", "i20,"))
     @test occursin("i12", ans("twl05"))         # 3 x 4 pairs: the cycle a-b-c-a and the exit c-d
 end
 
