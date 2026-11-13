@@ -262,3 +262,121 @@ function compact_global(ld::PL_local_data{T}, st::gc_mark_counts, sw::gc_sweep_c
     gc_truncate_vtable!(ld)
     return nothing
 end
+
+# ── unsweeping the marks ────────────────────────────────────────────────────────────────────────
+
+# PORT: pl-gc.c unsweep_mark
+# DIVERGES: the mark is named by (`isfli`, `i`) as in `sweep_mark` (pl-gcsweep.jl); the three fields hold the
+# pointer words the chain unwinding left in them (`valPtr`): the global top and the saved bar the new position
+# of the last live cell at or below the old height (0: none), the trail top the new entry index + 1 (the
+# chain head of a trail height is the entry AFTER the last one, `alien_into_relocation_chain`), so the new
+# count is `valPtr - 1`; a field that is no pointer word of a chain is an error.
+"Turn the swept fields of the mark of choicepoint (`isfli == false`) or foreign frame `i` back into heights (pl-gc.c)."
+function unsweep_mark(ld::PL_local_data{T}, isfli::Bool, i::Int)::Nothing where {T}
+    m = isfli ? ld.fliframes[i].mark : ld.choices[i].mark
+    tt = Int(valPtr(reinterpret(UInt64, m.trailtop))) - 1
+    tt >= 0 || error("GC: unsweep_mark: the trail top of mark $(i) was not relocated (field $(m.trailtop))")
+    nm = mark(
+        tt,
+        Int(valPtr(reinterpret(UInt64, m.globaltop))),
+        Int(valPtr(reinterpret(UInt64, m.saved_bar))),
+    )
+    if isfli
+        ld.fliframes[i].mark = nm
+    else
+        ld.choices[i].mark = nm
+    end
+    return nothing
+end
+
+# PORT: pl-gc.c unsweep_foreign
+# DIVERGES: returns the number of marks unswept (upstream's `marks_unswept` global).
+"Unsweep the marks of the foreign frames (pl-gc.c); the number of marks unswept."
+function unsweep_foreign(ld::PL_local_data{T})::Int where {T}
+    n = 0
+    fr = ld.fli_context
+    while fr != 0
+        f = ld.fliframes[fr]
+        if isRealMark(f.mark)
+            unsweep_mark(ld, true, fr)
+            n += 1
+        end
+        fr = f.parent
+    end
+    return n
+end
+
+# PORT: pl-gc.c unsweep_choicepoints
+# DIVERGES: returns the number of marks unswept.
+"Unsweep the marks of the choicepoints `ch` (an index) and their parents (pl-gc.c); the number of marks unswept."
+function unsweep_choicepoints(ld::PL_local_data{T}, ch::Int)::Int where {T}
+    n = 0
+    while ch != 0
+        unsweep_mark(ld, false, ch)
+        n += 1
+        ch = ld.choices[ch].parent
+    end
+    return n
+end
+
+# PORT: pl-gc.c unsweep_environments
+# DIVERGES: `fr` is a frame index and the result a QUERY index (`queryOfFrame`).
+"The query frame the frame chain of `fr` ends in (pl-gc.c)."
+function unsweep_environments(ld::PL_local_data{T}, fr::Int)::Int where {T}
+    return gc_top_query(ld, fr)
+end
+
+# PORT: pl-gc.c unsweep_stacks
+# DIVERGES: `vm.frame` and `vm.choice` are indexes; the walk also ends at a query without a parent, where
+# `mark_stacks`, `sweep_stacks` and `unmark_stacks` end (upstream ends it at `saved_environment == NULL`,
+# which a top query has); returns the number of marks unswept.
+"Unsweep the marks of the choicepoints of every query from the safe point `vm` outward (pl-gc.c); the count."
+function unsweep_stacks(ld::PL_local_data{T}, vm::vm_state)::Int where {T}
+    n = 0
+    fr = vm.frame
+    ch = vm.choice
+    while fr != 0
+        qf = unsweep_environments(ld, fr)
+        n += unsweep_choicepoints(ld, ch)
+        q = ld.queries[qf]
+        q.parent == 0 && break
+        fr = q.saved_environment
+        ch = q.saved_bfr
+    end
+    return n
+end
+
+# ── the collect phase ───────────────────────────────────────────────────────────────────────────
+
+# PORT: pl-gc.c collect_phase
+# DIVERGES: the three counters live in `sw` (`marks_swept`, `relocation_chains`, `relocation_cells`,
+# `relocated_cells`) and in `st` (`needs_relocation`); `saved_bar_at` is the SLOT POSITION of the saved frozen
+# bar `gvars_to_term_refs` returned (0 = NULL), swept by `sweep_frozen_bar`; the trail has been compacted
+# before this (`gc_trail_phase`), as upstream's `garbageCollect` does, so the trail chains are gone when the
+# sweep starts. The check `relocated_cells == needs_relocation` of upstream is NOT an error here: the mark
+# phase counts a reference to a value-table box (ruling D1) in `needs_relocation` and the sweep never chains
+# it, so the difference `needs_relocation - relocated_cells` (>= 0) is RETURNED for the caller to compare with
+# its own count of vword references; the other two checks are errors, as upstream's `sysError`.
+"""
+    collect_phase(ld, st, sw, vm; vmi_state_of = nothing, saved_bar_at = 0) -> Int
+
+Sweep the foreign frames, the trail and the local stack, compact the global stack, unsweep the marks and
+check the counters (pl-gc.c). Returns `st.needs_relocation - sw.relocated_cells`.
+"""
+function collect_phase(
+    ld::PL_local_data{T}, st::gc_mark_counts, sw::gc_sweep_counts, vm::vm_state;
+    vmi_state_of = nothing, saved_bar_at::Int = 0
+)::Int where {T}
+    sweep_foreign(ld, st, sw)
+    sweep_trail(ld, st, sw)
+    sweep_stacks(ld, st, sw, vm; vmi_state_of = vmi_state_of)
+    saved_bar_at != 0 && sweep_frozen_bar(ld, st, sw, saved_bar_at)
+    compact_global(ld, st, sw)
+    unswept = unsweep_foreign(ld) + unsweep_stacks(ld, vm)
+    unswept == sw.marks_swept ||
+        error("GC: marks_swept = $(sw.marks_swept) but marks_unswept = $(unswept)")
+    sw.relocation_chains == 0 || error("GC: relocation chains = $(sw.relocation_chains)")
+    sw.relocated_cells == sw.relocation_cells ||
+        error("GC: relocation cells = $(sw.relocation_cells); relocated_cells = $(sw.relocated_cells)")
+    return st.needs_relocation - sw.relocated_cells
+end
