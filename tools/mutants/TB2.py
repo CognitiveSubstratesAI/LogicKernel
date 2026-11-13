@@ -263,6 +263,10 @@ MUTANTS = [
          old="        status = :active\n    elseif scc.status == SCC_MERGED\n",
          new="        status = :merged\n    elseif scc.status == SCC_MERGED\n"),
     # ── the engine hooks (pl-vmi.c:4823-5839, pl-wam.c:873-944, pl-cont.c:586-626) ──
+    # TB2-V1 (TB2V2): its first battery ended in TIMEOUT (900 s, load average 8-17), which is NOT a kill and not hang evidence (the mutant only
+    # makes ONE input raise type_error(continuation, foo) instead of failing: no loop in the mutated code; and src/pl-wam.jl costs a module
+    # re-evaluation per mutant, 3-13 min on an idle box). Open: whether 900 s was the compile or a real stop in the throw out of I_RESET; the
+    # verifier's routes are in evidence/TAB1/tb2v2 notes (tb2v_handoff.md TB2V2). Neither `expect="hang"` nor a DEFERRED KILL is set.
     dict(id="TB2-V1 I_RESET takes the dtbl_reset6 branch for every OTHER predicate, `!==` for `===` (KILL twv02: `reset(call_continuation(foo), _, _)` is an ORDINARY reset/3, the mutant pushes `foo` as a tabling continuation list and raises type_error(continuation, foo) where swipl fails; the tabled path alone is unchanged, it calls call_continuation/1 normally, so twl/twm cannot see it)",
          file=WAM, targets=[TW, TCR],
          old="    if ld.frames[FR].predicate === gd.procedures_dtbl_reset6.definition    # FR->predicate == PROCEDURE_dtbl_reset6->definition\n",
