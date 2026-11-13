@@ -84,7 +84,6 @@ pred:$tbl_wkl_work/6	TAB1	seed: missing_c_preds.tsv
 pred:$transaction/2	TX1	seed: missing_c_preds.tsv
 pred:$transaction/3	TX1	seed: missing_c_preds.tsv
 pred:$undo/1	TX1	seed: missing_c_preds.tsv
-pred:$unload_file/1	SRC2	seed: missing_c_preds.tsv
 pred:$urgent_exception/3	P3	seed: missing_c_preds.tsv
 pred:$visible/2	DBG1	seed: missing_c_preds.tsv
 pred:\=@=/2	Q10	seed: missing_c_preds.tsv
@@ -187,7 +186,6 @@ refusal:src/pl-event.jl::PL_call_event_hook_va::the thread events (`unify_thread
 refusal:src/pl-proc.jl::pl_set_predicate_attribute3_va::spy points (GP_RESOLVE)	DBG1	spy points, GP_RESOLVE (pl-proc.c pl_set_predicate_attribute, SPY_ME)
 refusal:src/pl-proc.jl::setAttrDefinition::setAttrDefinition: attribute $attr	SSU1b	P_CLAUSABLE and P_DET in setAttrDefinition (pl-proc.c); SSU1b is the det/1 setter
 refusal:src/pl-read.jl::_atom_from_text::an atom containing the character 0 (a Symbol cannot hold it)	ATOM1	atoms holding the character 0 (pl-read.c atom from text); board row ATOM1, D-0410 item 7
-refusal:src/pl-srcfile.jl::startConsult::consulting a file again (reconsult)	LB6	startConsult on a loaded file, reconsult (pl-srcfile.c); LB6b item h re-points it (lb67_sizing.md)
 refusal:src/pl-wam.jl::PL_next_solution_guarded::backtracking into a $(db_c.type) choice point	CONT1	backtracking into a non-clause choice point (pl-wam.c, the I_RESET/I_YIELD/foreign-redo frames)
 refusal:src/pl-write.jl::writeAttVar::write_term/2 attributes(portray): '\$attvar':portray_attvar/	AV10	attributes(portray) writeAttVar (pl-write.c, '$attvar':portray_attvar/1)
 # refusal sites, assignments proposed in evidence/R2/refusal_owners.md (new deferred step names ENC1, RD2, WR2 and the QUESTION rows): confirmed by the audit (D-0415 item 5: ENC1, RD2, WR2 are the names of deferred steps; indexed(L) is PR1b)
