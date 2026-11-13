@@ -471,3 +471,524 @@ function mark_active_environment(
     walk_and_mark(state, codes, pc, I_EXIT)
     return nothing
 end
+
+# ── the stack invariant checker (G1-GC piece G1-9) ───────────────────────────────────────────────
+# PORT: pl-gc.c checkStacks as check_stacks!
+# DIVERGES: not a transliteration. Upstream's `checkStacks` (compiled under `O_DEBUG`/`O_MAINTENANCE` only, the
+# `HAVE_CHECK_STACKS` block of pl-gc.c:3912-4310) walks the frames from the VM state, `checkData`s every argument,
+# variable and foreign-frame term reference it reaches and sums a key; the kernel has no pointers to follow and its
+# words are its own (`pl-data.h` tags over POSITIONS, `ORIGINAL` value-table words), so this checks the INVARIANTS the
+# collector will rely on, over the kernel's representation, and reports every violation as text instead of asserting
+# the first: the cells of the global stack (tag, storage, range, compound heads and their arities, reference chains,
+# the value table's boxes, MARK/FIRST bits), the trail's entries, the attributed-variable chain, the frame, choice,
+# foreign-frame and query records. The local stack's WORDS are not scanned: a frame's variable cells hold stale words
+# until their first write (`clearUninitialisedVarsFrame`), which no invariant over the words can tell from a corrupt
+# one; the collector's own mark phase (G1-3) reads the live ones. The `key` upstream returns is the number of cells
+# checked here. The record pools are checked in their live ranges (`frames[1:nframes]`, …).
+"""
+    StackInvariantError(violations)
+
+A stack invariant failed (`check_stacks!`): the report, one text per violation, each starting with the check's
+name in brackets (`[gstack-tag]`, `[gstack-ref-cycle]`, …).
+"""
+struct StackInvariantError <: Exception
+    violations::Vector{String}
+end
+function Base.showerror(io::IO, e::StackInvariantError)
+    print(io, "StackInvariantError: ", length(e.violations), " violation(s):")
+    for v in e.violations
+        print(io, "\n  ", v)
+    end
+    return nothing
+end
+
+# ORIGINAL: how many violations a report keeps; the rest are counted.
+"The most violations one `stack_violations` report lists."
+const STACK_CHECK_MAX_REPORT = 64
+
+# ORIGINAL: the report of one check run.
+mutable struct stack_report
+    msgs::Vector{String}                        # the violations, `[check] where: what`
+    dropped::Int                                # violations past `STACK_CHECK_MAX_REPORT`
+    cells::Int                                  # cells and records examined (upstream's `key`, as a count)
+end
+stack_report() = stack_report(String[], 0, 0)
+
+function _viol!(r::stack_report, check::String, msg::String)::Nothing
+    if length(r.msgs) < STACK_CHECK_MAX_REPORT
+        push!(r.msgs, string("[", check, "] ", msg))
+    else
+        r.dropped += 1
+    end
+    return nothing
+end
+
+_hexw(w::word)::String = string("0x", string(w; base=16, pad=16))
+
+# ORIGINAL: the arity of functor word `w`, -1 when the functor table does not hold it (a corrupt word).
+function _functor_arity_checked(ld::PL_local_data, w::word)::Int
+    a = _arityFunc_(w)
+    a != F_ARITY_MASK && return a
+    return try
+        arityFunctor(ld.functors, w)
+    catch
+        -1
+    end
+end
+
+# ORIGINAL: one word of a global cell (not a functor head): its tag, storage, range and mark bits.
+function _check_global_word!(
+    r::stack_report, ld::PL_local_data, p::Int, w0::word, allow_marks::Bool
+)::Nothing
+    w = w0
+    if (w & BOTH_MASK) != 0
+        allow_marks || _viol!(
+            r, "gstack-mark",
+            string("global[", p, "] = ", _hexw(w0), ": MARK/FIRST bit set outside a collection")
+        )
+        w &= ~BOTH_MASK
+    end
+    gtop = ld.gTop
+    te = tagex(w)
+    if w == word(0)                                         # an unbound variable (`setVar`)
+        return nothing
+    elseif te == (TAG_ATOM | STG_STATIC) || te == (TAG_INTEGER | STG_INLINE)
+        return nothing                                      # an atom, a tagged small integer
+    elseif te == (TAG_REFERENCE | STG_GLOBAL)
+        q = valPtr(w)
+        if q < 1 || q > gtop
+            _viol!(
+                r, "gstack-ref-range",
+                string("global[", p, "] = ", _hexw(w0), ": reference to ", q, " outside 1..", gtop)
+            )
+        end
+    elseif te == (TAG_ATTVAR | STG_GLOBAL)
+        q = valPtr(w)
+        if q < 1 || q > gtop
+            _viol!(
+                r, "gstack-ref-range",
+                string("global[", p, "] = ", _hexw(w0), ": attributed variable pointer ", q,
+                    " outside 1..", gtop)
+            )
+        end
+    elseif te == (TAG_COMPOUND | STG_GLOBAL)
+        q = valPtr(w)
+        if q < 1 || q > gtop
+            _viol!(
+                r, "gstack-compound",
+                string("global[", p, "] = ", _hexw(w0), ": compound at ", q, " outside 1..", gtop)
+            )
+        else
+            f = ld.gstack[q]
+            if !isFunctor(f & ~BOTH_MASK)
+                _viol!(
+                    r, "gstack-compound",
+                    string("global[", p, "] = ", _hexw(w0), ": compound at ", q,
+                        " whose cell ", _hexw(f), " is not a functor word")
+                )
+            end
+        end
+    elseif te == (TAG_COMPOUND | STG_RESERVED)             # a value-table word
+        i = valPtr(w)
+        if i < 1 || i > length(ld.vtable)
+            _viol!(
+                r, "gstack-vword",
+                string("global[", p, "] = ", _hexw(w0), ": value-table entry ", i,
+                    " outside 1..", length(ld.vtable))
+            )
+        end
+    elseif te == (TAG_ATOM | STG_GLOBAL)
+        _viol!(
+            r, "gstack-functor",
+            string("global[", p, "] = ", _hexw(w0), ": a functor word where an argument cell is expected")
+        )
+    else
+        _viol!(
+            r, "gstack-tag",
+            string("global[", p, "] = ", _hexw(w0), ": tag/storage ", string(te; base=2),
+                " is no tag a global cell holds")
+        )
+    end
+    return nothing
+end
+
+# ORIGINAL: the global stack's cells, compound by compound.
+function _check_global_cells!(
+    r::stack_report, ld::PL_local_data, allow_marks::Bool
+)::Nothing
+    gtop = ld.gTop
+    if gtop < 0 || gtop > length(ld.gstack)
+        _viol!(r, "gstack-top", string("gTop = ", gtop, " outside 0..", length(ld.gstack)))
+        return nothing
+    end
+    p = 1
+    while p <= gtop
+        w0 = ld.gstack[p]
+        w = w0 & ~BOTH_MASK
+        r.cells += 1
+        if isFunctor(w)                                     # a compound's head: its arguments follow
+            (w0 & BOTH_MASK) != 0 && !allow_marks && _viol!(
+                r, "gstack-mark",
+                string("global[", p, "] = ", _hexw(w0), ": MARK/FIRST bit set on a functor cell outside a collection")
+            )
+            n = _functor_arity_checked(ld, w)
+            if n < 0
+                _viol!(
+                    r, "gstack-functor-arity",
+                    string("global[", p, "] = ", _hexw(w0), ": functor not in the functor table")
+                )
+                p += 1
+            elseif p + n > gtop
+                _viol!(
+                    r, "gstack-functor-arity",
+                    string("global[", p, "] = ", _hexw(w0), ": arity ", n, " runs past gTop = ", gtop)
+                )
+                p += 1
+            else
+                for i in 1:n
+                    _check_global_word!(r, ld, p + i, ld.gstack[p + i], allow_marks)
+                    r.cells += 1
+                end
+                p += n + 1
+            end
+        else
+            _check_global_word!(r, ld, p, w0, allow_marks)
+            p += 1
+        end
+    end
+    return nothing
+end
+
+# ORIGINAL: the reference chains are acyclic. Each chain is followed once (`state`: 0 new, 1 on the
+# chain being followed, 2 known to end); a one-cell chain (a cell referencing itself) is the unbound
+# variable of upstream and passes.
+function _check_ref_chains!(r::stack_report, ld::PL_local_data)::Nothing
+    gtop = ld.gTop
+    (gtop < 1 || gtop > length(ld.gstack)) && return nothing
+    state = zeros(UInt8, gtop)
+    path = Int[]
+    for start in 1:gtop
+        state[start] == 0x00 || continue
+        empty!(path)
+        p = start
+        while true
+            w = ld.gstack[p] & ~BOTH_MASK
+            if !(tagex(w) == (TAG_REFERENCE | STG_GLOBAL))  # the chain ends at a non-reference
+                break
+            end
+            q = valPtr(w)
+            if q < 1 || q > gtop                            # (reported by the cell check)
+                break
+            end
+            if q == p                                       # self-reference: an unbound variable
+                break
+            end
+            if state[p] == 0x02
+                break
+            end
+            if state[p] == 0x01
+                _viol!(
+                    r, "gstack-ref-cycle",
+                    string("global[", p, "]: reference chain from ", start, " returns to a cell on it")
+                )
+                break
+            end
+            state[p] = 0x01
+            push!(path, p)
+            p = q
+        end
+        for c in path
+            state[c] = 0x02
+        end
+        state[p] == 0x00 && (state[p] = 0x02)
+    end
+    return nothing
+end
+
+# ORIGINAL: the value table's boxes: one per entry, ascending, each the entry's own word.
+function _check_vbox!(r::stack_report, ld::PL_local_data)::Nothing
+    nv = length(ld.vtable)
+    if length(ld.vbox) != nv
+        _viol!(r, "vbox", string("length(vbox) = ", length(ld.vbox), " but length(vtable) = ", nv))
+        return nothing
+    end
+    gtop = ld.gTop
+    prev = 0
+    for i in 1:nv
+        b = ld.vbox[i]
+        r.cells += 1
+        if b < 1 || b > gtop || b > length(ld.gstack)
+            _viol!(r, "vbox", string("vbox[", i, "] = ", b, " outside 1..", gtop))
+            continue
+        end
+        if b <= prev
+            _viol!(r, "vbox", string("vbox[", i, "] = ", b, " not above vbox[", i - 1, "] = ", prev))
+        end
+        prev = b
+        want = consPtr(i, TAG_COMPOUND | STG_RESERVED)
+        got = ld.gstack[b] & ~BOTH_MASK
+        if got != want
+            _viol!(
+                r, "vbox",
+                string("global[", b, "] = ", _hexw(ld.gstack[b]), " is not the box word ", _hexw(want),
+                    " of value-table entry ", i)
+            )
+        end
+    end
+    return nothing
+end
+
+# ORIGINAL: the trail: address entries name cells of the global stack, a value entry follows an
+# address entry and names the saved old value above it (`TrailAssignment!`).
+function _check_trail!(r::stack_report, ld::PL_local_data)::Nothing
+    gtop = ld.gTop
+    tr = ld.trail
+    for i in 1:length(tr)
+        e = tr[i]
+        r.cells += 1
+        if isTrailVal(e)
+            p = trailValP(e)
+            if i == 1 || isTrailVal(tr[i - 1])
+                _viol!(r, "trail", string("trail[", i, "] = ", _hexw(e), ": a value entry not above an address entry"))
+            end
+            if p < 1 || p > gtop
+                _viol!(r, "trail", string("trail[", i, "] = ", _hexw(e), ": saved value at ", p, " outside 1..", gtop))
+            elseif i > 1 && !isTrailVal(tr[i - 1]) && p <= _trail_pos(tr[i - 1])
+                _viol!(
+                    r, "trail",
+                    string("trail[", i, "] = ", _hexw(e), ": saved value at ", p,
+                        " not above its cell ", _trail_pos(tr[i - 1]))
+                )
+            end
+        else
+            if _trail_stack(e) != TRAIL_GLOBAL
+                _viol!(r, "trail", string("trail[", i, "] = ", _hexw(e), ": stack code ", _trail_stack(e), " names no stack here"))
+                continue
+            end
+            p = _trail_pos(e)
+            if p < 1 || p > gtop
+                _viol!(r, "trail", string("trail[", i, "] = ", _hexw(e), ": cell ", p, " outside 1..", gtop))
+            end
+        end
+    end
+    return nothing
+end
+
+# ORIGINAL: the chain of attributed variables: each link cell is unbound (the end) or a reference to an older link.
+function _check_attvar_chain!(r::stack_report, ld::PL_local_data)::Nothing
+    gtop = ld.gTop
+    p = ld.attvar_attvars
+    steps = 0
+    while p != 0
+        r.cells += 1
+        if p < 1 || p > gtop
+            _viol!(r, "attvar-chain", string("link ", p, " outside 1..", gtop))
+            return nothing
+        end
+        steps += 1
+        if steps > gtop + 1
+            _viol!(r, "attvar-chain", "the chain does not end")
+            return nothing
+        end
+        w = ld.gstack[p] & ~BOTH_MASK
+        if isVar(w)
+            return nothing
+        elseif tagex(w) == (TAG_REFERENCE | STG_GLOBAL) && valPtr(w) < p
+            p = valPtr(w)
+        else
+            _viol!(
+                r, "attvar-chain",
+                string("link cell global[", p, "] = ", _hexw(ld.gstack[p]),
+                    " is neither unbound nor a reference to an older link")
+            )
+            return nothing
+        end
+    end
+    return nothing
+end
+
+# ORIGINAL: the record pools of the local stack and the registers into them.
+function _check_local_records!(
+    r::stack_report, ld::PL_local_data{T}
+)::Nothing where {T}
+    ltop = ld.lTop
+    if ltop < 0 || ltop > length(ld.slots)
+        _viol!(r, "lstack-top", string("lTop = ", ltop, " outside 0..", length(ld.slots)))
+    end
+    if ld.aTop < 0 || ld.aTop > length(ld.astack)
+        _viol!(r, "astack-top", string("aTop = ", ld.aTop, " outside 0..", length(ld.astack)))
+    end
+    gtop = ld.gTop
+    ntr = length(ld.trail)
+    if ld.frozen_bar < 0 || ld.frozen_bar > gtop
+        _viol!(r, "frozen-bar", string("frozen_bar = ", ld.frozen_bar, " outside 0..", gtop))
+    end
+    # the pools: live records in base order; a frame still being filled may lie at or above lTop
+    nf = ld.nframes
+    if nf < 0 || nf > length(ld.frames)
+        _viol!(r, "frame", string("nframes = ", nf, " outside 0..", length(ld.frames)))
+        nf = 0
+    end
+    for i in 1:nf
+        fr = ld.frames[i]
+        r.cells += 1
+        fr.base < 1 && _viol!(r, "frame", string("frames[", i, "].base = ", fr.base, " is below the stack"))
+        i > 1 && fr.base <= ld.frames[i - 1].base && _viol!(
+            r, "frame", string("frames[", i, "].base = ", fr.base, " not above frames[", i - 1, "]")
+        )
+        i < nf && fr.base >= ltop && _viol!(
+            r, "frame", string("frames[", i, "].base = ", fr.base, " at or above lTop = ", ltop)
+        )
+        if isFrame(fr) && (fr.parent < 0 || fr.parent >= i)  # a killed frame's links are stale
+            _viol!(r, "frame", string("frames[", i, "].parent = ", fr.parent, ": not an older frame"))
+        end
+    end
+    nc = ld.nchoices
+    if nc < 0 || nc > length(ld.choices)
+        _viol!(r, "choice", string("nchoices = ", nc, " outside 0..", length(ld.choices)))
+        nc = 0
+    end
+    for i in 1:nc
+        c = ld.choices[i]
+        r.cells += 1
+        i > 1 && c.base <= ld.choices[i - 1].base && _viol!(
+            r, "choice", string("choices[", i, "].base = ", c.base, " not above choices[", i - 1, "]")
+        )
+        c.base >= ltop && _viol!(
+            r, "choice", string("choices[", i, "].base = ", c.base, " at or above lTop = ", ltop)
+        )
+    end
+    # the chain from BFR: older records, older marks, marks within the stacks
+    ch = ld.BFR
+    if ch < 0 || ch > nc
+        _viol!(r, "choice", string("BFR = ", ch, " outside 0..", nc))
+    else
+        prev = nothing
+        steps = 0
+        while ch != 0
+            c = ld.choices[ch]
+            steps += 1
+            if steps > nc + 1
+                _viol!(r, "choice", "the choice-point chain does not end")
+                break
+            end
+            if c.unlinked
+                _viol!(r, "choice", string("choices[", ch, "] is on the chain but marked unlinked"))
+            end
+            if c.frame < 0 || c.frame > nf
+                _viol!(r, "choice", string("choices[", ch, "].frame = ", c.frame, " outside 0..", nf))
+            end
+            if c.mark.trailtop != NOT_A_MARK
+                if c.mark.globaltop < 0 || c.mark.globaltop > gtop
+                    _viol!(
+                        r, "choice-mark",
+                        string("choices[", ch, "].mark.globaltop = ", c.mark.globaltop, " above gTop = ", gtop)
+                    )
+                end
+                if c.mark.trailtop < 0 || c.mark.trailtop > ntr
+                    _viol!(
+                        r, "choice-mark",
+                        string("choices[", ch, "].mark.trailtop = ", c.mark.trailtop, " above the trail's ", ntr)
+                    )
+                end
+                if prev !== nothing && prev.mark.trailtop != NOT_A_MARK &&
+                    (c.mark.globaltop > prev.mark.globaltop || c.mark.trailtop > prev.mark.trailtop)
+                    _viol!(
+                        r, "choice-mark",
+                        string("choices[", ch, "]'s mark is above the newer choice point's")
+                    )
+                end
+            end
+            if c.parent < 0 || c.parent >= ch
+                _viol!(r, "choice", string("choices[", ch, "].parent = ", c.parent, ": not an older choice point"))
+                break
+            end
+            prev = c
+            ch = c.parent
+        end
+    end
+    nfl = ld.nfliframes
+    if nfl < 0 || nfl > length(ld.fliframes)
+        _viol!(r, "fliframe", string("nfliframes = ", nfl, " outside 0..", length(ld.fliframes)))
+        nfl = 0
+    end
+    for i in 1:nfl
+        f = ld.fliframes[i]
+        r.cells += 1
+        i > 1 && f.base <= ld.fliframes[i - 1].base && _viol!(
+            r, "fliframe", string("fliframes[", i, "].base = ", f.base, " not above fliframes[", i - 1, "]")
+        )
+        (f.parent < 0 || f.parent >= i) && _viol!(
+            r, "fliframe", string("fliframes[", i, "].parent = ", f.parent, ": not an older foreign frame")
+        )
+        if f.mark.trailtop != NOT_A_MARK &&
+            (f.mark.globaltop > gtop || f.mark.trailtop > ntr)
+            _viol!(
+                r, "fliframe",
+                string("fliframes[", i, "].mark (", f.mark.trailtop, ", ", f.mark.globaltop,
+                    ") above the trail ", ntr, " / gTop ", gtop)
+            )
+        end
+    end
+    nq = ld.nqueries
+    if nq < 0 || nq > length(ld.queries)
+        _viol!(r, "query", string("nqueries = ", nq, " outside 0..", length(ld.queries)))
+        nq = 0
+    end
+    for i in 2:nq
+        r.cells += 1
+        ld.queries[i].base <= ld.queries[i - 1].base && _viol!(
+            r, "query", string("queries[", i, "].base not above queries[", i - 1, "]")
+        )
+    end
+    return nothing
+end
+
+# ORIGINAL: every check, into a report.
+function _check_stacks(ld::PL_local_data, allow_marks::Bool)::stack_report
+    r = stack_report()
+    _check_global_cells!(r, ld, allow_marks)
+    _check_ref_chains!(r, ld)
+    _check_vbox!(r, ld)
+    _check_trail!(r, ld)
+    _check_attvar_chain!(r, ld)
+    _check_local_records!(r, ld)
+    return r
+end
+
+"""
+    stack_violations(ld; allow_marks=false) -> Vector{String}
+
+The invariants of the global stack, the trail and the local records that do not hold, one text each (empty: the
+stacks are sound). `allow_marks` accepts the collector's MARK/FIRST bits (during a collection only).
+"""
+function stack_violations(ld::PL_local_data; allow_marks::Bool=false)::Vector{String}
+    r = _check_stacks(ld, allow_marks)
+    r.dropped > 0 && push!(r.msgs, string("... and ", r.dropped, " more"))
+    return r.msgs
+end
+
+# PORT: pl-gc.c checkStacks as check_stacks!
+"""
+    check_stacks!(ld; allow_marks=false) -> Int
+
+Check the stacks (`stack_violations`); throw a `StackInvariantError` carrying the whole report if any invariant
+fails, else return how many cells and records were examined (upstream's `checkStacks` returns a key; a count here,
+so a test can tell a check that looked at something from one that looked at nothing).
+"""
+function check_stacks!(ld::PL_local_data; allow_marks::Bool=false)::Int
+    r = _check_stacks(ld, allow_marks)
+    if !isempty(r.msgs)
+        r.dropped > 0 && push!(r.msgs, string("... and ", r.dropped, " more"))
+        throw(StackInvariantError(r.msgs))
+    end
+    return r.cells
+end
+
+# PORT: pl-gc.c PL_check_stacks
+# DIVERGES: none of value — `HAVE_CHECK_STACKS` is defined only in the `O_DEBUG || O_MAINTENANCE` block
+# (pl-gc.c:4215), which a release build of swipl (the pin) leaves out, so upstream returns false without checking.
+"`PL_check_stacks()`: false, as the pinned release build answers (pl-gc.c); `check_stacks!` is the kernel's checker."
+function PL_check_stacks(ld::PL_local_data)::Bool
+    return false
+end
