@@ -134,7 +134,7 @@ function pl_collect_findall_bag2_va(
 
         while !isempty(bag.answers)                 # (rp=topOfSegStack(&bag->answers))
             r = bag.answers[end]
-            copyRecordToGlobal(ld, answer, r)
+            copyRecordToGlobal(ld, answer, r, ALLOW_GC)   # G1-GC safe point: copyRecordToGlobal
             PL_cons_list(ld, list, answer, list)
             pop!(bag.answers)                       # popTopOfSegStack(&bag->answers)
         end
