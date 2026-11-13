@@ -101,7 +101,7 @@ end
 # DIVERGES: a term reference is never an unbound cell of the local stack, so `canBind`'s
 # `onStackArea(local, p)` branch (a fresh global cell for the local variable) has no case: a variable is
 # the reference to its global cell. A side value (D-0024) gets a value-table word first. An atom is not
-# registered or unregistered (no atom GC). `ensureGlobalSpace(3, ALLOW_GC)` is `ensureGlobalSpace(3)`.
+# registered or unregistered (no atom GC). `ensureGlobalSpace(3, ALLOW_GC)` is `ensureGlobalSpace(3)` plus the G1-GC hook (a safe point, docs/g1gc_safe_points.md).
 "Assign `value` to global variable `var`: `flags` `SETVAL_BACKTRACKABLE` trails the assignment, `SETVAL_LINK` shares the value (pl-gvar.c)."
 function gvar_setval(
     ld::PL_local_data{T}, var::term_t, value::term_t, flags::UInt32
