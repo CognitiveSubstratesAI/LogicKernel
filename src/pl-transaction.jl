@@ -303,10 +303,12 @@ update_gen(u::tr_update)::gen_t =
 cmp_updates(u1::tr_update, u2::tr_update)::Bool = update_gen(u1) < update_gen(u2)
 
 # PORT: pl-transaction.c is_trie_clause
-# DIVERGES: false for every clause: the clauses of `trie_gen_compiled/2,3` are TAB1's (the kernel has no such predicate
-# yet); TAB1 TB9 gives it upstream's test.
-"True when `cl` is a clause that stands for a trie (pl-transaction.c)."
-is_trie_clause(gd::PL_global_data{T}, cl::Clause{T})::Bool where {T} = false
+# DIVERGES: the database is an argument (`GD->procedures`).
+"True when `cl` is a clause that stands for a trie: a clause of `trie_gen_compiled/2,3` (pl-transaction.c)."
+function is_trie_clause(gd::PL_global_data{T}, cl::Clause{T})::Bool where {T}
+    return cl.predicate === gd.procedures_trie_gen_compiled3.definition ||
+           cl.predicate === gd.procedures_trie_gen_compiled2.definition
+end
 
 # PORT: pl-transaction.c transaction_updates
 # DIVERGES: returns the updates, sorted by generation, where upstream fills a `Buffer`; `sort!` is stable where `qsort` is not,
