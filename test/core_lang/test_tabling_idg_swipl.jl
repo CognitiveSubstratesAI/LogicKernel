@@ -400,3 +400,88 @@ _ti_status(ld, tr, create::Bool)::String = sym_text(LK.complete_or_invalid_statu
     bad = _ti_status(ld, tr, true)
     @test !isempty(good) && !isempty(bad) && good != bad
 end
+
+"A database with this file's program loaded, and the definition of the incremental `ti_p/1`."
+function _ti_db()
+    f = joinpath(mktempdir(), "tabling_idg_wb.pl")
+    write(f, _TI_PROGRAM)
+    gd = LK.PL_global_data{_TI}()
+    ld = LK.PL_local_data{_TI}(gd)
+    st, _ = LK.load_file!(gd, ld, f)
+    @assert st === :ok
+    proc = LK.isCurrentProcedure(sym_key(_tis("ti_p")), 1, LK.MODULE_user(gd))
+    @assert proc !== nothing
+    return gd, ld, proc.definition
+end
+
+"The variant `user:ti_p(1)` (`ground`) or `user:ti_p(_)`."
+function _ti_variant(ground::Bool)
+    arg = ground ? lk_gnd(_TI, 1) : mk_var(_TI, LK.fresh_var_keys!(1))
+    return mk_expr(_TI, _TI[_tis(":"), _tis("user"), mk_expr(_TI, _TI[_tis("ti_p"), arg])])
+end
+
+"The complete answer table of `ti_p(1)` (`ground`) or `ti_p(_)`, made as swipl's call of `ti_p/1` makes it, without an IDG node."
+function _ti_table!(ld, def, ground::Bool)
+    fid = LK.PL_open_foreign_frame(ld)
+    t = LK.PL_new_term_refs(ld, 2)
+    LK.putSlotValue!(ld, t + 1, _ti_variant(ground), LK.PutVarMap())
+    atrie = LK.get_answer_table(ld, def, t, t + 1, Int(LK.AT_CREATE))
+    @assert atrie !== nothing
+    atrie.flags |= LK.TRIE_COMPLETE
+    LK.PL_close_foreign_frame(ld, fid)
+    return atrie
+end
+
+"""
+`tbl_variant_table(closure 0, user:ti_p(_) or ti_p(1), -Trie, 0, -Status, -Ret, [-IsMono])` of the kernel as `'\$tbl_variant_table'/6` calls it;
+`(succeeded, status text, text of IsMono: `unbound` or its atom)`. One extractor for every row below.
+"""
+function _ti_tvt(ld, def; ground::Bool=false, mono::Bool=false)
+    fid = LK.PL_open_foreign_frame(ld)
+    t = LK.PL_new_term_refs(ld, 6)
+    LK.putSlotValue!(ld, t + 1, lk_gnd(_TI, 0), LK.PutVarMap())                       # closure 0: no closure, the variant names the predicate
+    LK.putSlotValue!(ld, t + 2, _ti_variant(ground), LK.PutVarMap())
+    for i in 3:6
+        LK.putSlotValue!(ld, t + i, mk_var(_TI, LK.fresh_var_keys!(1)), LK.PutVarMap())
+    end
+    ok = LK.tbl_variant_table(ld, t, t + 1, t + 2, 0, t + 3, t + 4, mono ? t + 5 : 0, Int(LK.AT_CREATE))
+    st = "failed"
+    mo = "unbound"
+    if ok
+        s = lk_answers(ld, (t + 4:t + 4)...)[1]
+        st = kind(s) === SYM ? sym_text(s) : "not an atom"
+        m = lk_answers(ld, (t + 6:t + 6)...)[1]
+        mo = kind(m) === SYM ? sym_text(m) : "unbound"
+    end
+    LK.PL_close_foreign_frame(ld, fid)
+    return ok, st, mo
+end
+
+@testset "idg17: tbl_variant_table adds the edge from the current node to the table (idg_add_edge, pl-tabling.c:5977-6020)" begin
+    gd, ld, def = _ti_db()
+    atrie = _ti_table!(ld, def, false)
+    ctab = _ti_table!(ld, def, true)
+    @test atrie.IDG === nothing && ctab.IDG === nothing
+    n = LK.idg_new(ld, atrie)::_TIN
+    atrie.IDG = n                                                                        # the table has its node already
+    c = LK.idg_new(ld, ctab)::_TIN
+    ctab.IDG = c
+
+    # no current node: idg_add_edge answers -1, which is not a failure: the call goes on, no edge
+    ok, st, _ = _ti_tvt(ld, def)
+    @test ok && st == "complete"
+    @test isempty(_ti_live(c.dependent)) && isempty(_ti_live(n.affected))
+
+    # with the current node: the edge current -> table (`c.dependent` holds `n`, `n.affected` holds `c`)
+    @test LK.set_idg_current(ld, ctab)
+    ok, st, _ = _ti_tvt(ld, def)
+    @test ok && st == "complete"
+    @test _ti_live(c.dependent) == [n] && _ti_live(n.affected) == [c]
+    ok, st, _ = _ti_tvt(ld, def)                                                         # again: the same edge, idempotent
+    @test ok && _ti_live(c.dependent) == [n] && LK.idg_set_size(c.dependent) == 1
+
+    # a must-fail corruption: an invalidated node answers `invalid`, so the status extractor distinguishes
+    n.falsecount = 1
+    ok, bad, _ = _ti_tvt(ld, def)
+    @test ok && !isempty(bad) && bad == "invalid" && bad != st
+end

@@ -300,4 +300,13 @@ MUTANTS = [
          file=TAB, targets=TARGETS5,
          old='ld.tabling.in_assert_propagation && !create && return mk_sym(T, :complete)\n',
          new='ld.tabling.in_assert_propagation && return mk_sym(T, :complete)\n'),
+    # ── TB7M5: tbl_variant_table, idg_add_edge (pl-tabling.c:5977-6020) ──
+    dict(id='TB7M5-V1 tbl_variant_table does not add the edge to the current node (KILL idg17: `c.dependent == [n]`)',
+         file=TAB, targets=TARGETS5,
+         old="    idg_add_edge(ld, atrie, nothing) == 0 && return false   # `!idg_add_edge(atrie, NULL)`: -1 (no current node) goes on\n",
+         new=""),
+    dict(id='TB7M5-V2 tbl_variant_table fails when the edge was created (KILL idg17: `ok` after the edge from the current node; idg08 at the stack)',
+         file=TAB, targets=TARGETS5,
+         old="    idg_add_edge(ld, atrie, nothing) == 0 && return false   # `!idg_add_edge(atrie, NULL)`: -1 (no current node) goes on\n",
+         new="    idg_add_edge(ld, atrie, nothing) != 0 && return false\n"),
 ]
