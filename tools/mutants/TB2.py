@@ -5,8 +5,8 @@
 # predicates), src/pl-wam.jl (the `dtbl_reset6` branches of `I_RESET` and `I_EXITRESET`, `I_CALLCLEANUP`, `callCleanupHandler`) and src/pl-cont.jl
 # (`push_continuation_list`). Run ONCE, in CI (.github/workflows/mutation.yml; locally: tools/mutate.sh run). Format: tools/mutate_drive.py's (as TB0.py, PIN1.py):
 # `id`, `file`, `old` (must occur EXACTLY ONCE), `new`, optional `equivalent` and `targets`. NOT RUN: written edit-only on wip/tb2 (2026-11-10, nothing compiled);
-# every KILL below is read off the rows of test/core_lang/test_tabling_worklist_swipl.jl (TW: 16 rows twl01-08 = left recursion tw_path/2, twm01-08 = mutual
-# recursion tw_ev/tw_od and tw_r1/tw_r2, then the white-box `ld.tabling.component === nothing` at the end of its first testset), so the first hand-run
+# every KILL below is read off the rows of test/core_lang/test_tabling_worklist_swipl.jl (TW: 22 rows twl01-08 = left recursion tw_path/2, twm01-08 = mutual
+# recursion tw_ev/tw_od and tw_r1/tw_r2, then twk01, twv01/02, twq08/11 of TB2K2 and four white-box testsets "TB2K2 white-box: ..."; and the white-box `ld.tabling.component === nothing` at the end of its first testset), so the first hand-run
 # replaces this header with the true verdicts. A KILL names the row whose pinned answer must differ; "or a hang": the battery's time limit decides a mutant
 # that loops (tools/mutate_drive.py `expect`), and the kernel answer of every row is itself UNVERIFIED until the stack gate.
 # THE ROWS READ: twl01 every pair, twl02 the nodes from a, twl03/04 yes/no, twl05 the count 12, twl06/07 the table status `complete` after completion, twl08 a

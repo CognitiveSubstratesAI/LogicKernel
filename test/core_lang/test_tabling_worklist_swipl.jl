@@ -4,6 +4,9 @@
 # predicate). Groups: twl = left recursion, twm = mutual recursion. Each group reads the answers (order-free: msort or a test),
 # a variant called twice (the complete table answers it) and the table status after the call (`complete`: the SCC was completed
 # by `$tbl_table_complete_all/3` or `$tbl_leader_complete/4`).
+#   * TB2K2 rows (kill rows of the ten TB2 survivors): twk = ONE cluster with two suspensions (tw_k/1), twv = a two-frame continuation (tw_n/1) and an
+#     ordinary reset/3 of call_continuation/1, twq = the `$tbl_leader/5` catcher `fail` through a message_hook and the parent of a nested component; four
+#     white-box testsets at the end (wl_set_component, wkl_swap_clusters, `$tbl_wkl_make_follower`, table_complete_all) read what no answer shows.
 #   * Unlike test_tabling_variant_swipl.jl the program uses `:- table` itself in both systems: these rows run the tabling
 #     engine end to end (`$tbl_wkl_work/6`, `$tbl_pop_worklist/2`, the completion, the `$tbl_reset/6` hooks of I_RESET and
 #     I_EXITRESET, the `$tbl_leader/5` cleanup).
