@@ -711,11 +711,120 @@ function delete_pending_clauses!(
     return nothing
 end
 
+# PORT: pl-srcfile.c end_reconsult_proc
+# (swipl-devel 18168e62, src/pl-srcfile.c:1559-1591)
+# DIVERGES: the database and the local data are arguments (`fix_attributes`, `check_ssu`); no `freeHeap` of `r` and its `args` (Julia's garbage
+# collector); the debug message is not kept.
+"Finish the reload of one predicate `proc`: the clauses it did not meet again are deleted, the attributes and the generations are fixed; the number of predicate references dropped, 0 or 1 (pl-srcfile.c)."
+function end_reconsult_proc!(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, sf::SourceFile{T}, proc::Procedure{T},
+    r::p_reload{T}
+)::Int where {T}
+    dropped_access = 0
+
+    if (r.flags & (P_NEW | P_NO_CLAUSES)) == 0
+        def = proc.definition
+
+        delete_pending_clauses!(sf, def, r)
+        fix_attributes(gd, sf, def, r)
+        reconsultFinalizePredicate!(gd, sf.reload::sf_reload{T}, def, r)
+        if (r.flags & P_CHECK_SSU) != 0
+            check_ssu(gd, ld, r)
+        end
+    else
+        dropped_access += 1
+        if (r.flags & P_NO_CLAUSES) != 0
+            def = proc.definition
+            fix_attributes(gd, sf, def, r)
+        end
+    end
+    return dropped_access
+end
+
+# PORT: pl-srcfile.c endReconsult
+# (swipl-devel 18168e62, src/pl-srcfile.c:1593-1646)
+# DIVERGES: the database and the local data are arguments; no `destroyHTablePP`/`freeHeap` (Julia's garbage collector). The ONE copy of the reload
+# generation is `gd.reload_generation` (DIVERGES, owner TH1, see `startReconsultFile`): cleared at the outermost end (audit D-0416 item 3).
+"""
+    endReconsult(gd, ld, sf) -> Bool
+
+Finish a reconsult of `sf` (pl-srcfile.c): at ONE generation the clauses the reload did not keep are erased and the ones it added become visible, the
+exports of a reloaded module are fixed, the reload context is dropped. `true` without a reload context; `false` when an event listener raised.
+"""
+function endReconsult(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, sf::SourceFile{T}
+)::Bool where {T}
+    reload = sf.reload
+    if reload !== nothing
+        accessed_preds = length(reload.procedures)
+
+        delayEvents(ld)
+        delete_old_predicates!(gd, sf)
+
+        for (proc, r) in reload.procedures
+            accessed_preds -= end_reconsult_proc!(gd, ld, sf, proc, r)
+        end
+
+        popNPredicateAccess!(ld, accessed_preds)
+        @assert reload.pred_access_count == popNPredicateAccess!(ld, 0)
+
+        for (m, r) in reload.modules
+            fix_module(m, r)
+        end
+
+        sf.number_of_clauses = reload.number_of_clauses
+        sf.reload = nothing
+
+        ld.reload_nesting -= 1
+        if ld.reload_nesting == 0
+            gd.reload_generation = GEN_INVALID
+        end
+
+        pl_garbage_collect_clauses!(gd, ld)
+        if sendDelayedEvents(gd, ld, true) < 0
+            return false
+        end
+    end
+
+    return true
+end
+
+# PORT: pl-srcfile.c flush_procedure
+# (swipl-devel 18168e62, src/pl-srcfile.c:1662-1686)
+# DIVERGES: the database and the local data are arguments (`reloadContext`, `fix_attributes`); `proc` is a `Procedure` where upstream's comment says a
+# predicate indicator (its caller, `$flush_predicate`, resolves it). As upstream's code, not its comment: `P_NEW` is NOT set for a predicate seen.
+"Flush the definition of `proc` in the reload of `sf`: a predicate not seen has its clauses removed and is noted as new; one seen gets the generation sync (pl-srcfile.c)."
+function flush_procedure!(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, sf::SourceFile{T}, proc::Procedure{T}
+)::Bool where {T}
+    reload = sf.reload
+    if reload !== nothing
+        r = get(reload.procedures, proc, nothing)
+        if r !== nothing
+            if (r.flags & (P_NEW | P_NO_CLAUSES)) == 0
+                def = proc.definition
+
+                delete_pending_clauses!(sf, def, r)
+                fix_attributes(gd, sf, def, r)
+                reconsultFinalizePredicate!(gd, reload, def, r)
+            end
+        else
+            delete_old_predicate!(gd, sf, proc)
+            reloadContext(gd, ld, sf, proc)
+        end
+    end
+
+    return true
+end
+
 # PORT: pl-srcfile.c startConsult
 # DIVERGES: a RE-consult — the file was consulted before — is refused (`NotPortedError`): `startReconsultFile` exists since LB6a, but
-# `endReconsult` (delete_old_predicates, reconsultFinalizePredicate) comes with LB6b, which re-points this function (loader_boot H9).
+# `endReconsult` (delete_old_predicates, reconsultFinalizePredicate) comes with LB6b, which re-points this function (loader_boot H9). The database and the local
+# data are arguments (`startReconsultFile`; since LB6b they are used only by the re-pointed branch, which is the last commit of the step).
 "Start consulting the source file `sf` (pl-srcfile.c)."
-function startConsult(sf::SourceFile{T})::Bool where {T}
+function startConsult(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, sf::SourceFile{T}
+)::Bool where {T}
     acquireSourceFile(sf)
     sf.ltime = time()                               # WallTime()
     if (sf.count += 1) > 1                          # This is a re-consult
@@ -727,11 +836,13 @@ function startConsult(sf::SourceFile{T})::Bool where {T}
 end
 
 # PORT: pl-srcfile.c endConsult
-# DIVERGES: `endReconsult` has nothing to do without a reload context.
-"End consulting the source file `sf` (pl-srcfile.c)."
-function endConsult(sf::SourceFile)::Bool
+# DIVERGES: the database and the local data are arguments (`endReconsult`).
+"End consulting the source file `sf`: end a reconsult, drop the reference `startConsult` took (pl-srcfile.c)."
+function endConsult(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, sf::SourceFile{T}
+)::Bool where {T}
     sf.current_procedure = nothing
-    rc = true                                       # endReconsult(sf): no reload
+    rc = endReconsult(gd, ld, sf)
     releaseSourceFile(sf)
     return rc
 end
@@ -1014,15 +1125,14 @@ function pl_start_consult2_va(
     sf = lookupSourceFile(gd, name, true)::SourceFile{T}
     sf.mtime = mtime
     sf.isfile = isfile
-    startConsult(sf)
+    startConsult(gd, ld, sf)
     releaseSourceFile(sf)
     return FTRUE
 end
 
 # PORT: pl-srcfile.c fixup_reconsult as pl_fixup_reconsult1_va
 # (PRED_IMPL("$fixup_reconsult", 1, fixup_reconsult, 0)) — pl-srcfile.c:1772-1790
-# DIVERGES: `endReconsult` has nothing to do without a reload context: true. `current_procedure` is cleared
-# AFTER the release, as upstream writes it.
+# `current_procedure` is cleared AFTER the release, as upstream writes it.
 "`'\$fixup_reconsult'(+Id)` (pl-srcfile.c): finish the reload of `Id` (a no-op without reload)."
 function pl_fixup_reconsult1_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
@@ -1033,7 +1143,7 @@ function pl_fixup_reconsult1_va(
     if name !== nothing
         sf = lookupSourceFile(gd, name, false)
         if sf !== nothing
-            rc = true                                   # endReconsult(sf)
+            rc = endReconsult(gd, ld, sf)
             releaseSourceFile(sf)
             sf.current_procedure = nothing
         end
@@ -1054,7 +1164,7 @@ function pl_end_consult1_va(
     if name !== nothing
         sf = lookupSourceFile(gd, name, false)
         if sf !== nothing
-            rc = endConsult(sf)
+            rc = endConsult(gd, ld, sf)
             releaseSourceFile(sf)
         end
     end
