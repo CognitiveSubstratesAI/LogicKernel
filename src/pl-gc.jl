@@ -789,6 +789,7 @@ function _check_vbox!(r::stack_report, ld::PL_local_data)::Nothing
     for i in 1:nv
         b = ld.vbox[i]
         r.cells += 1
+        b == 0 && continue                      # a tombstone: the box is dead, the collection left its entry (gc_tombstone_boxes!)
         if b < 1 || b > gtop || b > length(ld.gstack)
             _viol!(r, "vbox", string("vbox[", i, "] = ", b, " outside 1..", gtop))
             continue
