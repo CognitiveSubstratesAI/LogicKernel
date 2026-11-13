@@ -7612,6 +7612,85 @@ function tt_has_modified_dependencies(ld::PL_local_data{T}, atrie::trie{T})::Boo
     return found
 end
 
+# PORT: pl-tabling.c mono_dep_status
+"The tally `tt_mono_status` keeps over the dependencies of a lazy monotonic table (pl-tabling.c `mono_dep_status`)."
+mutable struct mono_dep_status
+    invalid_dep_tables::Int                             # dependent tables that are invalid
+    global_clauses::Int                                 # queued clauses older than the transaction
+    local_clauses::Int                                  # queued clauses made by the transaction
+end
+mono_dep_status() = mono_dep_status(0, 0, 0)
+
+# PORT: pl-tabling.c lg_clauses
+# DIVERGES: a queue entry is an `Int` (see the monotonic block note): `< 0` is a clause reference (`-` the clause's number in
+# `gd.clause_refs`), `> 0` the node of an answer, which a dynamic dependency never queues (upstream: `assert(0)`; skipped).
+"Count the live queued clauses of `mdep` older than the transaction and made inside it (pl-tabling.c)."
+function lg_clauses(ld::PL_local_data{T}, mdep::idg_mdep{T, idg_node{T}}, s::mono_dep_status)::Nothing where {T}
+    gd = _query_gd(ld)
+    tr = ld.transaction
+
+    for a in mdep.queue
+        a < 0 || continue                               # isAtom(*base): else assert(0)
+        cl = get(gd.clause_refs, -a, nothing)
+        cl === nothing && continue
+
+        if (cl.flags & CL_ERASED) == 0
+            created = cl.generation_created
+            if created < GEN_TRANSACTION_BASE
+                s.global_clauses += 1
+            elseif created >= tr.gen_base && created < tr.gen_max
+                s.local_clauses += 1
+            end
+        end
+    end
+
+    return nothing
+end
+
+# PORT: pl-tabling.c mono_status
+# DIVERGES: the enum `mono_status` is `Int` constants.
+"The result of `tt_mono_status`: a dependent table is invalid (pl-tabling.c `M_INVALID_DEPS`)."
+const M_INVALID_DEPS = 0
+"The result of `tt_mono_status`: all queued clauses are older than the transaction (pl-tabling.c `M_OLD_CLAUSES`)."
+const M_OLD_CLAUSES = 1
+"The result of `tt_mono_status`: queued clauses of both kinds (pl-tabling.c `M_MIXED_CLAUSES`)."
+const M_MIXED_CLAUSES = 2
+"The result of `tt_mono_status`: all queued clauses are from the transaction, or none is queued (pl-tabling.c `M_NEW_CLAUSES`)."
+const M_NEW_CLAUSES = 3
+
+# PORT: pl-tabling.c tt_mono_status
+# DIVERGES: the `DEBUG` prints are not kept.
+"How to deal with the lazy monotonic table `atrie` that is about to be reevaluated: an `M_*` value (pl-tabling.c)."
+function tt_mono_status(ld::PL_local_data{T}, atrie::trie{T})::Int where {T}
+    an = atrie.IDG
+    status = mono_dep_status()
+
+    if an !== nothing
+        gd = _query_gd(ld)
+        en = idg_set_enum_init(an.dependent)
+        while (dep = idg_set_next(en)) !== nothing
+            strie = gd.tries[dep.atrie]
+
+            if _wl_is(strie, WL_DYNAMIC)
+                mdep = idg_mdeps(dep, an)
+                mdep !== nothing && lg_clauses(ld, mdep, status)
+            elseif dep.falsecount > 0 || dep.force_reeval
+                status.invalid_dep_tables += 1
+            end
+
+            status.invalid_dep_tables != 0 && break
+        end
+    end
+
+    if status.invalid_dep_tables != 0
+        return M_INVALID_DEPS
+    elseif status.global_clauses != 0 && status.local_clauses != 0
+        return M_MIXED_CLAUSES
+    end
+
+    return status.global_clauses != 0 ? M_OLD_CLAUSES : M_NEW_CLAUSES
+end
+
 # PORT: pl-tabling.c tbl_reeval_wait as pl_tbl_reeval_wait2_va
 # (pl-tabling.c:11100-11111 at the pin; table_status_reeval_wait :11062 is ported above, TB6b)
 "`'\$tbl_reeval_wait'(+Trie, -Status)`: the status of `Trie` (`dynamic`, `monotonic`, `complete`, `invalid`) (pl-tabling.c)."
