@@ -1062,15 +1062,142 @@ end
     @test !_ld_refuses("\\+ protocolling(_)")
 end
 
-# open/4's lock(Lock) option: pl-file.c:4290-4310 (the `l`/`L` + `r`/`w` letters of `how`), pl-stream.c Sopen_file's fcntl(F_SETLK[W]). The kernel
-# has no fcntl locks (Sopen_file answers EINVAL for `l`/`L`), the option is a named refusal after its domain check (rows d342, d343).
+# open/4's lock(Lock) and wait(Bool) options: pl-file.c:4290-4310 (the `l`/`L` + `r`/`w` letters of `how`), pl-stream.c Sopen_file's
+# fcntl(F_SETLK[W]) on the opened descriptor. PORTED (rows l01-l12 below, the external-holder testset after them; the domain rows are d342, d343).
 # Slock/Sunlock/StryLock/Sshare (pl-stream.c:345-395, thread mutex and the `locks` count) have no twin: one thread, DIVERGES comments say so.
-@testset "named refusals: open/4's lock(Lock) option (pl-file.c:4290-4310)" begin
-    @test _ld_refuses("open('/dev/null', read, _, [lock(read)])")
-    @test _ld_refuses("open('/dev/null', read, _, [lock(shared)])")
-    @test _ld_refuses("open('/dev/null', write, _, [lock(write)])")
-    @test _ld_refuses("open('/dev/null', write, _, [lock(exclusive)])")
-    @test !_ld_refuses("open('/dev/null', read, S, [lock(none)]), close(S)")
+# POSIX record locks never conflict inside one process, so a refusal to lock needs ANOTHER process holding the file (testset after the rows).
+# A read lock on a descriptor opened for writing (and the reverse) is EBADF: existence_error(source_sink, File), the pin's answer (l05, l10, l12).
+const _LD_LOCK_CASES = Tuple{String, String}[
+    ("l01", raw"datafile(F), open(F, read, S, [lock(read)]), get_code(S, C), close(S), R = C"),
+    ("l02", raw"datafile(F), open(F, read, S, [lock(shared)]), get_code(S, C), close(S), R = C"),
+    ("l03", raw"outfile(F), open(F, write, S, [lock(write)]), put_code(S, 0'z), close(S), outtext(T), R = T"),
+    ("l04", raw"outfile(F), open(F, write, S, [lock(exclusive)]), put_code(S, 0'y), close(S), outtext(T), R = T"),
+    ("l05", raw"datafile(F), catch(open(F, read, S, [lock(write)]), error(E, _), true), ( var(E) -> close(S), R = opened ; E =.. [N, A|_], R = N-A )"),
+    ("l06", raw"datafile(F), open(F, read, S, [lock(read), wait(false)]), get_code(S, C), close(S), R = C"),
+    ("l07", raw"datafile(F), open(F, read, S1, [lock(read)]), open(F, read, S2, [lock(shared)]), get_code(S1, A), get_code(S2, B), close(S1), close(S2), R = A-B"),
+    ("l08", raw"outfile(F), open(F, write, S0), put_code(S0, 0'a), close(S0), open(F, append, S, [lock(write)]), put_code(S, 0'q), close(S), outtext(T), R = T"),
+    ("l09", raw"outfile(F), open(F, write, S0), put_code(S0, 0'a), close(S0), open(F, update, S, [lock(write), wait(false)]), put_code(S, 0'u), close(S), outtext(T), R = T"),
+    ("l10", raw"outfile(F), open(F, write, S0), close(S0), catch(open(F, update, S, [lock(read)]), error(E, _), true), ( var(E) -> close(S), R = opened ; E =.. [N, A|_], R = N-A )"),
+    ("l11", raw"datafile(F), open(F, read, S, [lock(read), wait(true)]), close(S), R = ok"),
+    ("l12", raw"datafile(F), catch(open(F, read, S, [lock(exclusive), wait(false)]), error(E, _), true), ( var(E) -> close(S), R = opened ; E =.. [N, A|_], R = N-A )")
+]
+# swipl 10.1.20-1-g18168e629's lines for the cases above (two byte-identical runs, 2026-11-13)
+const _LD_LOCK_PINNED = [
+    "ok",
+    "t_l01 c[116,95,108,48,49]/1(i97)",
+    "t_l02 c[116,95,108,48,50]/1(i97)",
+    "t_l03 c[116,95,108,48,51]/1(a[122])",
+    "t_l04 c[116,95,108,48,52]/1(a[121])",
+    "t_l05 c[116,95,108,48,53]/1(c[45]/2(a[101,120,105,115,116,101,110,99,101,95,101,114,114,111,114],a[115,111,117,114,99,101,95,115,105,110,107]))",
+    "t_l06 c[116,95,108,48,54]/1(i97)",
+    "t_l07 c[116,95,108,48,55]/1(c[45]/2(i97,i97))",
+    "t_l08 c[116,95,108,48,56]/1(a[97,113])",
+    "t_l09 c[116,95,108,48,57]/1(a[117])",
+    "t_l10 c[116,95,108,49,48]/1(c[45]/2(a[101,120,105,115,116,101,110,99,101,95,101,114,114,111,114],a[115,111,117,114,99,101,95,115,105,110,107]))",
+    "t_l11 c[116,95,108,49,49]/1(a[111,107])",
+    "t_l12 c[116,95,108,49,50]/1(c[45]/2(a[101,120,105,115,116,101,110,99,101,95,101,114,114,111,114],a[115,111,117,114,99,101,95,115,105,110,107]))"
+]
+
+@testset "open/4 lock(Lock) and wait(Bool): rows l01-l12 as swipl's (the pin, then the live compare)" begin
+    f, names = _ld_file(mktempdir(), _LD_LOCK_CASES)
+    kl = _ld_kernel(f, names)
+    @test length(kl) == length(_LD_LOCK_PINNED) == length(_LD_LOCK_CASES) + 1
+    for (k, p) in zip(kl, _LD_LOCK_PINNED)
+        k == p || println(stderr, "  ours  ", k, "\n  swipl ", p)
+        @test k == p
+    end
+    # not vacuous: the pins hold answers and errors, so the comparison can pass and can fail
+    @test count(l -> occursin("c[101,120,105,115,116,101,110,99,101,95,101,114,114,111,114]", l), _LD_LOCK_PINNED) == 3
+    @test count(l -> occursin("/1(i97)", l), _LD_LOCK_PINNED) == 3
+    swipl = get(ENV, "LOGICKERNEL_NO_SWIPL", "") == "1" ? nothing : Sys.which("swipl")
+    if swipl === nothing
+        @info "LANE D LOCK LIVE CHECK NOT RUN: `swipl` is not on PATH here."
+    else
+        @test _ld_swipl_lines(f, names) == _LD_LOCK_PINNED
+    end
+end
+
+# A lock held by another process (python3's fcntl.lockf: F_SETLK on the whole file): the kernel's `fcntl(F_SETLK)` answers EAGAIN and the open
+# raises permission_error(lock, source_sink, File) as the pin does (swipl 10.1.20-1-g18168e629, probed 2026-11-13 against a lockf holder:
+# holder "w": lock(read), lock(shared) and lock(write) with wait(false) all raise permission_error(lock, ...) when the open mode matches the lock
+# (read for read/shared, update for write); holder "r": lock(read), lock(shared) open, an update open with lock(write) raises it).
+_ld_perm(a::String, b::String) = "c[45]/2($(_ld_a(a)),$(_ld_a(b)))"
+_ld_a(x::String) = "a" * _ld_codes(x)
+const _LD_LOCK_HOLDER = "import fcntl,sys,select\nf=open(sys.argv[1],'r+')\nfcntl.lockf(f, fcntl.LOCK_EX if sys.argv[2]=='w' else fcntl.LOCK_SH)\nprint('ready',flush=True)\nselect.select([sys.stdin],[],[],float(sys.argv[3]))\n"
+_ld_lockgoal(mode::String, opts::String) = string(
+    "datafile(F), catch(open(F, ", mode, ", S, [", opts, "]), error(E, _), true), ",
+    "( var(E) -> close(S), R = opened ; E =.. [N, A|_], R = N-A )"
+)
+# The holder keeps the lock until its stdin closes or `secs` pass (a hung kernel call, e.g. a mutant that ignores wait(false), then ends when the
+# holder lets go and the row FAILS on its answer instead of hanging); x07, x08 have a holder that lets go after 0.5 s: the open WAITS (the default
+# wait(true), F_SETLKW) and succeeds, the pin's answer (swipl: opened, probed with the same holder).
+const _LD_LOCK_EXT = [        # (holder, case id, open mode, options, expected R encoded, seconds the holder holds at most)
+    ("w", "x01", "read", "lock(read), wait(false)", _ld_perm("permission_error", "lock"), 3.0),
+    ("w", "x02", "read", "lock(shared), wait(false)", _ld_perm("permission_error", "lock"), 3.0),
+    ("r", "x03", "read", "lock(read), wait(false)", _ld_a("opened"), 3.0),
+    ("r", "x04", "read", "lock(shared), wait(false)", _ld_a("opened"), 3.0),
+    ("r", "x05", "update", "lock(write), wait(false)", _ld_perm("permission_error", "lock"), 3.0),
+    ("w", "x06", "update", "lock(write), wait(false)", _ld_perm("permission_error", "lock"), 3.0),
+    ("w", "x07", "read", "lock(read)", _ld_a("opened"), 0.5),
+    ("w", "x08", "update", "lock(write), wait(true)", _ld_a("opened"), 0.5),
+]
+@testset "open/4 lock(Lock) with wait(false): a lock held by another process raises permission_error(lock, ...)" begin
+    py = Sys.which("python3")
+    @test length(_LD_LOCK_EXT) == 8
+    @test count(r -> occursin("permission_error", r[5]), _LD_LOCK_EXT) == 4     # not vacuous: refusals and acceptances both pinned
+    @test count(r -> occursin("opened", r[5]), _LD_LOCK_EXT) == 4
+    if py === nothing
+        @info "LANE D LOCK HOLDER ROWS NOT RUN: python3 is not on PATH here."
+    else
+        script = joinpath(mktempdir(), "holder.py")
+        write(script, _LD_LOCK_HOLDER)
+        for (holder, id, mode, opts, want, secs) in _LD_LOCK_EXT
+            dir = mktempdir()
+            f, names = _ld_file(dir, [(id, _ld_lockgoal(mode, opts))])
+            proc = open(`$py -I $script $(joinpath(dir, "data.txt")) $holder $secs`, "r+")
+            try
+                @test readline(proc) == "ready"
+                kl = _ld_kernel(f, names)
+                @test kl[1] == "ok"
+                got = kl[2]
+                wantline = "t_$id c[" * join(codeunits("t_$id"), ",") * "]/1(" * want * ")"
+                got == wantline || println(stderr, "  ours  ", got, "\n  want  ", wantline)
+                @test got == wantline
+            finally
+                close(proc.in)
+                wait(proc)
+            end
+        end
+    end
+end
+
+# Sopen_file's `how` letters (pl-stream.c): l/L then r/w; anything else (or no letter) is EINVAL, a lock on the wrong access mode is EBADF
+# (fcntl on a descriptor not open for that lock), a lock on a free file is taken and the stream works. errno values: Linux (EINVAL 22, EBADF 9).
+@testset "Sopen_file's lock letters (pl-stream.c Sopen_file: l, L, r, w)" begin
+    dir = mktempdir()
+    path = joinpath(dir, "lk.txt")
+    write(path, "abc\n")
+    EINVAL, EBADF = 22, 9
+    @test LK.Sopen_file(path, "rlx")[2] == EINVAL            # not r or w after the lock letter
+    @test LK.Sopen_file(path, "rl")[2] == EINVAL             # no letter at all
+    @test LK.Sopen_file(path, "rL")[2] == EINVAL
+    @test LK.Sopen_file(path, "rlw")[2] == EBADF             # a write lock on a descriptor open for reading
+    @test LK.Sopen_file(path, "rLw")[2] == EBADF
+    @test LK.Sopen_file(path, "wlr")[2] == EBADF             # a read lock on a descriptor open for writing
+    for how in ("rlr", "rLr", "ulw", "uLw", "alw")
+        s, e = LK.Sopen_file(path, how)
+        @test s !== nothing
+        @test e == 0
+        s === nothing || LK.Sclose(s)
+    end
+    # the letters combine with the others: binary, and the mode of a new file
+    s, e = LK.Sopen_file(path, "rblr")
+    @test s !== nothing && e == 0
+    s === nothing || LK.Sclose(s)
+    s, e = LK.Sopen_file(joinpath(dir, "new.txt"), "wlwm600")
+    @test s !== nothing && e == 0
+    s === nothing || LK.Sclose(s)
+    @test (filemode(joinpath(dir, "new.txt")) & 0o777) == (0o600 & ~LK._current_umask())
 end
 
 @testset "the pins are swipl's (live, when swipl is on PATH)" begin
