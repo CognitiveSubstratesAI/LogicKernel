@@ -3725,14 +3725,15 @@ function delayed_destroy_table(atrie::trie{T})::Bool where {T}
 end
 
 # PORT: pl-tabling.c orphan_dynamic_table
-# DIVERGES: the IDG node (`atrie->data.IDG`, `idg_set_is_empty(&n->affected)`) is TB6's: `IDG` is `nothing` until then, so no table
-# is an orphan dynamic table and this answers false.
+# (pl-tabling.c:4533-4543 at the pin; the IDG node is TB6's, `atrie.IDG`)
 "Whether the private dynamic pseudo table `atrie` has no dependent tables and may be deleted (pl-tabling.c)."
 function orphan_dynamic_table(atrie::trie)::Bool
+    n = atrie.IDG
     return _wl_is(atrie, WL_DYNAMIC) &&
            atrie.variant != 0 &&
            (atrie.flags & TRIE_ISSHARED) == 0 &&
-           atrie.IDG !== nothing                    # && idg_set_is_empty(&n->affected): TB6
+           n !== nothing &&
+           idg_set_is_empty(n.affected)
 end
 
 # PORT: pl-tabling.c delete_dynamic_table
@@ -7746,7 +7747,7 @@ function reeval_complete_node(ld::PL_local_data{T}, atrie::trie{T}, nid::Int)::N
 
     if (n.flags & TN_IDG_DELETED) != 0
         n.flags &= ~TN_IDG_DELETED                  # not used by trie admin
-        trie_delete(atrie, nid, false)              # pruned by reeval_complete()
+        trie_delete(gd, atrie, nid, false)          # pruned by reeval_complete()
         if (n.flags & TN_IDG_UNCONDITIONAL) == 0
             simplify_answer(ld, atrie.worklist::tbl_worklist{T}, nid, false)
         end
@@ -7800,7 +7801,7 @@ function reset_evaluate_node(ld::PL_local_data{T}, atrie::trie{T}, nid::Int)::No
     end
 
     if (atrie.nodes[nid].flags & TN_IDG_ADDED) != 0
-        trie_delete(atrie, nid, false)              # we are enumerating this node
+        trie_delete(gd, atrie, nid, false)          # we are enumerating this node
     else                                            # and cannot delete it (now)
         atrie.nodes[nid].flags |= TN_IDG_DELETED
     end
@@ -8223,7 +8224,7 @@ function free_mdep_chain(ld::PL_local_data{T}, src::idg_node{T}, mdep0::IdgMdep{
         deps = idg_mono_index_deps(src)
         if mdep.index_node != 0 && deps !== nothing && get(deps, mdep.index_node, nothing) === mdep
             delete!(deps, mdep.index_node)
-            trie_delete(gd.tries[idg_mono_index(src)], mdep.index_node, true)
+            trie_delete(gd, gd.tries[idg_mono_index(src)], mdep.index_node, true)
         end
         free_mdep(ld, mdep)
         mdep = nxt
@@ -9084,147 +9085,30 @@ function pl_idg_mono_index_deps4_va(
 end
 
 # ---- TB5: abolish and reclaim (pl-tabling.c :2700-2950, :3232, :4472-4690, :6723, :12650) ----
-# Interfaces assumed from the parallel steps (wip/tb1: `trie_serial!`, `value_trie`, `valueTriePtr`, `reset_answer_table`,
-# `table_is_incomplete`, `tbl_refuse`, `RAT_CLEANUP`, `RAT_BULK`; wip/tb2: `reset_global_worklist`,
-# `reset_newly_created_worklists`; wip/tb4: `destroy_delay_info_worklist(gd, wl)`; src/pl-trie.jl: `map_trie_node(tr, nid, map)`
-# with `map(tr, nid)`, `trie_empty_take`, `trie_delete`, `trie_destroy`, `get_trie`). The shared tables (`TRIE_ISSHARED`) are refused
-# by name, owner TH1, the IDG nodes, owner TB6.
+# Merged onto batch 3 and TB6 (TB-merge step 3): the destruction functions that batch 3 had as minimal ports stay where they are
+# (`destroy_answer_trie`, `delayed_destroy_table`, `delete_dynamic_table`, `delete_orphan_dynamic_tables`, `sweep_orphan_dynamic_tables`,
+# `get_trie_from_node`, `DYN_ORPHAN_SWEEP_MIN`, `_wl_is`, above); the TB5 copies of the same names are dropped, and `release_trie_value`
+# is `release_value` of src/pl-trie.jl. What is left here is `collect_dynamic_children`, `abolish_table` and what calls it.
+# The shared tables (`TRIE_ISSHARED`) are refused by name, owner TH1.
 
-# PORT: pl-tabling.c DYN_ORPHAN_SWEEP_MIN
-"The number of dynamic nodes that lost a dependent from which a completed root component sweeps the orphans (pl-tabling.c)."
-const DYN_ORPHAN_SWEEP_MIN = 1024
-
-# ORIGINAL (TAB1 TB5): whether the worklist slot of `atrie` holds the sentinel `s` (`WL_GROUND`, `WL_DYNAMIC`: an `Int` in the slot).
-@inline function _wl_is(atrie::trie, s::Int)::Bool
-    w = atrie.worklist
-    return w isa Int && w == s
-end
-
-# PORT: pl-trie.c get_trie_from_node
-# DIVERGES: the node id `atrie.variant` is a node of the thread's variant table (the private one: a shared table is refused by
-# name, owner TH1), so the trie is `gd.tries[ld.tabling.variant_table]`; upstream finds the trie of a node by walking up to the
-# root chunk. `nothing` when the thread has no variant table (it was cleared).
-"The variant table the node `atrie.variant` belongs to, or `nothing` (pl-trie.c `get_trie_from_node`)."
-function get_trie_from_node(ld::PL_local_data{T}, atrie::trie{T})::Union{Nothing, trie{T}} where {T}
-    (atrie.flags & TRIE_ISSHARED) != 0 &&
-        tbl_refuse(T, :get_trie_from_node, "get_trie_from_node: the node of a shared variant table", "TH1")
-    vi = ld.tabling.variant_table
-    vi == 0 && return nothing
-
-    return _query_gd(ld).tries[vi]
-end
-
-# PORT: pl-trie.c release_trie_value
-# DIVERGES: the kernel has no atom reference counts: an answer trie that has a symbol (it was handed to Prolog) is never freed by
-# atom-GC, so nothing is done for it; one without a symbol is destroyed now, as upstream's. TR1's `release_value` calls this for
-# a `isTriePtrValue` value (merge edit: TB1's tr1_edits item 4 said "nothing to do": upstream's text is this one).
-"Release the reference of a variant table node to the answer trie `atrie`: destroy it unless it has a symbol (pl-trie.c)."
-function release_trie_value(atrie::trie{T})::Nothing where {T}
-    atrie.symbol == 0 && trie_destroy(atrie)
-
-    return nothing
-end
-
-# PORT: pl-tabling.c destroy_answer_trie
-# DIVERGES: the shared branch (`COMPLETE_WORKLIST(reset_answer_table)`) is refused by name, owner TH1.
-"Delete the node of the answer trie `atrie` from its variant table; whether there was one (pl-tabling.c)."
-function destroy_answer_trie(ld::PL_local_data{T}, atrie::trie{T})::Bool where {T}
-    if atrie.variant != 0
-        vtrie = get_trie_from_node(ld, atrie)
-        if vtrie !== nothing && is_variant_trie(vtrie)
-            (atrie.flags & TRIE_ISSHARED) != 0 &&
-                tbl_refuse(T, :destroy_answer_trie, "destroy_answer_trie: a shared table", "TH1")
-            trie_delete(vtrie, atrie.variant, true)
-
-            return true
+# PORT: pl-tabling.c collect_dynamic_children
+# DIVERGES: the buffer is the returned vector; the dependent IDG node names its answer trie by number (`dep.atrie`, a slot of `gd.tries`).
+"The private dynamic pseudo tables the IDG node of `atrie` depends on (pl-tabling.c)."
+function collect_dynamic_children(ld::PL_local_data{T}, atrie::trie{T})::Vector{trie{T}} where {T}
+    b = trie{T}[]
+    n = atrie.IDG
+    if n !== nothing
+        gd = _query_gd(ld)
+        en = idg_set_enum_init(n.dependent)
+        while (dep = idg_set_next(en)) !== nothing
+            ctrie = gd.tries[dep.atrie]
+            if _wl_is(ctrie, WL_DYNAMIC) && (ctrie.flags & TRIE_ISSHARED) == 0
+                push!(b, ctrie)
+            end
         end
     end
 
-    return false
-end
-
-# PORT: pl-tabling.c delayed_destroy_table
-"If `atrie` is incomplete, schedule its destruction for when it completes; whether it was scheduled (pl-tabling.c)."
-function delayed_destroy_table(atrie::trie{T})::Bool where {T}
-    if table_is_incomplete(atrie)
-        atrie.flags |= TRIE_ABOLISH_ON_COMPLETE
-
-        return true
-    end
-
-    return false
-end
-
-# PORT: pl-tabling.c orphan_dynamic_table
-# DIVERGES: the IDG node (`atrie->data.IDG`, `idg_set_is_empty(&n->affected)`) is TB6's: a table with one is refused by name; a
-# dynamic pseudo table (`WL_DYNAMIC`) is only made by TB6, so before it every call answers false.
-"Whether the private dynamic pseudo table `atrie` has no dependent tables and may be deleted (pl-tabling.c)."
-function orphan_dynamic_table(atrie::trie{T})::Bool where {T}
-    if _wl_is(atrie, WL_DYNAMIC) && atrie.variant != 0 && (atrie.flags & TRIE_ISSHARED) == 0
-        atrie.IDG === nothing && return false
-        tbl_refuse(T, :orphan_dynamic_table, "orphan_dynamic_table: idg_set_is_empty of the IDG node", "TB6")
-    end
-
-    return false
-end
-
-# PORT: pl-tabling.c delete_dynamic_table
-"Delete the dynamic pseudo table `atrie` from its variant table (pl-tabling.c)."
-function delete_dynamic_table(ld::PL_local_data{T}, atrie::trie{T})::Nothing where {T}
-    vtrie = get_trie_from_node(ld, atrie)
-    if vtrie !== nothing && is_variant_trie(vtrie)
-        trie_delete(vtrie, atrie.variant, true)
-    end
-
-    return nothing
-end
-
-# PORT: pl-tabling.c collect_dynamic_children
-# DIVERGES: the buffer is the returned vector; the IDG node's `dependent` set is TB6's (a table with an IDG node is refused by name).
-"The private dynamic pseudo tables the IDG node of `atrie` depends on (pl-tabling.c)."
-function collect_dynamic_children(atrie::trie{T})::Vector{trie{T}} where {T}
-    atrie.IDG === nothing ||
-        tbl_refuse(T, :collect_dynamic_children, "collect_dynamic_children: the dependent set of the IDG node", "TB6")
-
-    return trie{T}[]
-end
-
-# PORT: pl-tabling.c delete_orphan_dynamic_tables
-"Delete those of the tables `b` that are orphans (pl-tabling.c)."
-function delete_orphan_dynamic_tables(ld::PL_local_data{T}, b::Vector{trie{T}})::Nothing where {T}
-    for atrie in b
-        orphan_dynamic_table(atrie) && delete_dynamic_table(ld, atrie)
-    end
-
-    return nothing
-end
-
-# PORT: pl-tabling.c collect_orphan_dynamic_table as sweep_orphan_dynamic_tables
-# DIVERGES: upstream's callback `collect_orphan_dynamic_table(node, ctx)` is the closure over `b` here; `vtrie->value_count` is the
-# trie's `value_count`.
-"Delete all orphan dynamic pseudo tables once enough dynamic nodes lost a dependent (pl-tabling.c `sweep_orphan_dynamic_tables`)."
-function sweep_orphan_dynamic_tables(ld::PL_local_data{T})::Nothing where {T}
-    gd = _query_gd(ld)
-    vi = ld.tabling.variant_table
-    vi == 0 && return nothing
-    vtrie = gd.tries[vi]
-    if ld.tabling.dyn_orphan_events >= DYN_ORPHAN_SWEEP_MIN &&
-       ld.tabling.dyn_orphan_events >= vtrie.value_count
-        b = trie{T}[]
-        map_trie_node(vtrie, 1, function (tr, nid)
-            v = tr.nodes[nid].value
-            if v != 0
-                atrie = value_trie(gd, v)
-                orphan_dynamic_table(atrie) && push!(b, atrie)
-            end
-
-            return nothing
-        end)
-        delete_orphan_dynamic_tables(ld, b)
-        ld.tabling.dyn_orphan_events = 0
-    end
-
-    return nothing
+    return b
 end
 
 # PORT: pl-tabling.c abolish_table
@@ -9243,8 +9127,8 @@ function abolish_table(ld::PL_local_data{T}, atrie::trie{T})::Bool where {T}
             (atrie.flags & TRIE_ISSHARED) != 0 &&
                 tbl_refuse(T, :abolish_table, "abolish_table: a shared table (take_trie, drop_trie)", "TH1")
             if !delayed_destroy_table(atrie)
-                b = collect_dynamic_children(atrie)
-                trie_delete(vtrie, atrie.variant, true)
+                b = collect_dynamic_children(ld, atrie)
+                trie_delete(_query_gd(ld), vtrie, atrie.variant, true)
                 delete_orphan_dynamic_tables(ld, b)
             end
         end
@@ -9292,7 +9176,7 @@ function reset_table_bulk(gd::PL_global_data{T}, value::word)::Nothing where {T}
     atrie = value_trie(gd, value)
     atrie.IDG === nothing ||
         tbl_refuse(T, :reset_table_bulk, "reset_table_bulk: the IDG registry of the node (idg_registry_delete)", "TB6")
-    reset_answer_table(atrie, Int(RAT_CLEANUP | RAT_BULK))
+    reset_answer_table(gd, atrie, Int(RAT_CLEANUP | RAT_BULK))
     atrie.variant = 0
 
     return nothing
@@ -9320,19 +9204,19 @@ function empty_variant_table(ld::PL_local_data{T}, vtrie::trie{T}, delays_done::
         ld.tabling.concurrent_idg_nodes != 0 &&
             tbl_refuse(T, :idg_unlink_concurrent_table, "empty_variant_table: private IDG nodes with shared children", "TB6")
         values = word[]
-        trie_empty_take(vtrie, w -> push!(values, w))
+        trie_empty_take(gd, vtrie, w -> push!(values, w))
         sort_table_values!(values)                      # creation order
         for v in values
             reset_table_bulk(gd, v)
         end
         for v in values
-            isTriePtrValue(v) && release_trie_value(valueTriePtr(vtrie.registry, v))
+            isTriePtrValue(v) && release_value(gd, vtrie, v)
         end
         ld.tabling.concurrent_idg_nodes = 0
         ld.tabling.dyn_orphan_events = 0
     else
         delays_done || map_trie_node(vtrie, 1, destroy_delay_info_table(gd))   # (*)
-        trie_empty(vtrie)
+        trie_empty(gd, vtrie)
     end
 
     return nothing

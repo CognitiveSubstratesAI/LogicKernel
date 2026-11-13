@@ -461,8 +461,8 @@ end
     for a in atries
         @test LK.delayed_destroy_table(a) == false
         @test (a.flags & LK.TRIE_ABOLISH_ON_COMPLETE) == 0
-        @test LK.orphan_dynamic_table(a) == false   # `WL_DYNAMIC` is TB6's
-        @test LK.collect_dynamic_children(a) == typeof(a)[]
+        @test LK.orphan_dynamic_table(a) == false   # a complete table is not `WL_DYNAMIC`
+        @test LK.collect_dynamic_children(ld, a) == typeof(a)[]   # no IDG node: no dependents
     end
     # the sweep does nothing below DYN_ORPHAN_SWEEP_MIN lost dependents
     ld.tabling.dyn_orphan_events = 5

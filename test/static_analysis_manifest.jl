@@ -3107,18 +3107,11 @@ function _manifest_index(T)
         (LK.innermost_supervisor, Tuple{GD, D}, false),
         (LK.get_procedure_resolve_head, Tuple{GD, LD, Int, Int}, false),
         (LK.write_closure, Tuple{GD, LK.closure{T}}, false),
-        # TAB1 TB5: the abolish and reclaim of the tables (src/pl-tabling.jl); `_wl_is` is the sentinel test of a worklist slot; the
+        # TAB1 TB5: the abolish and reclaim of the tables (src/pl-tabling.jl); the functions TB5 shares with batch 3's minimal ports
+        # (`_wl_is`, `get_trie_from_node`, `destroy_answer_trie`, `delayed_destroy_table`, `orphan_dynamic_table`, `delete_dynamic_table`,
+        # `delete_orphan_dynamic_tables`, `sweep_orphan_dynamic_tables`) have their entries in the TB4 block above; the
         # database-carrying callers of freeCodesDefinition! (setDynamicDefinition!, resetProcedure!: src/pl-proc.jl) and their one body
-        (LK._wl_is, Tuple{LK.trie{T}, Int}, false),
-        (LK.get_trie_from_node, Tuple{LD, LK.trie{T}}, false),
-        (LK.release_trie_value, Tuple{LK.trie{T}}, false),
-        (LK.destroy_answer_trie, Tuple{LD, LK.trie{T}}, false),
-        (LK.delayed_destroy_table, Tuple{LK.trie{T}}, false),
-        (LK.orphan_dynamic_table, Tuple{LK.trie{T}}, false),
-        (LK.delete_dynamic_table, Tuple{LD, LK.trie{T}}, false),
-        (LK.collect_dynamic_children, Tuple{LK.trie{T}}, false),
-        (LK.delete_orphan_dynamic_tables, Tuple{LD, Vector{LK.trie{T}}}, false),
-        (LK.sweep_orphan_dynamic_tables, Tuple{LD}, false),
+        (LK.collect_dynamic_children, Tuple{LD, LK.trie{T}}, false),
         (LK.abolish_table, Tuple{LD, LK.trie{T}}, false),
         (LK.destroy_delay_info_table, Tuple{GD}, false),
         (LK.reset_table_bulk, Tuple{GD, UInt64}, false),
