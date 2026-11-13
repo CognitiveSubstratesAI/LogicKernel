@@ -287,12 +287,12 @@ end
     # twv01: the answers 1,3,7,15,31 pass through the two-frame continuation (tw_nb then tw_na), one extractor
     @test all(occursin(v, ans("twv01")) for v in ("i1,", "i3,", "i7,", "i15,", "i31,"))
     # twv02: an ORDINARY reset/3 of call_continuation/1: a non-list fails (`no`), the empty list succeeds (`yes`)
-    @test ans("twv02") == "c[114]/2(a[110,111],a[121,101,115])" &&
+    @test ans("twv02") == "(c[114]/2(a[110,111],a[121,101,115]))" &&
         ans("twv02") != ans("twv01")
     # twq08: the message hook saw NOTHING for the `fail` catcher (left of `-`) and the cut catcher `!` once (the positive control)
-    @test ans("twq08") == "c[45]/2(nil,c[91,124,93]/2(a[33],nil))"
+    @test ans("twq08") == "(c[45]/2(nil,c[91,124,93]/2(a[33],nil)))"
     # twq11: the inner component (tw_o2 called from tw_o1) has a parent: exactly one answer, `nested` (not `top`)
-    @test ans("twq11") == "c[91,124,93]/2(a[110,101,115,116,101,100],nil)"
+    @test ans("twq11") == "(c[91,124,93]/2(a[110,101,115,116,101,100],nil))"
     @test occursin("i12", ans("twl05"))         # 3 x 4 pairs: the cycle a-b-c-a and the exit c-d
 end
 
