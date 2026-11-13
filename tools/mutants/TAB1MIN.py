@@ -174,10 +174,11 @@ MUTANTS = [
          old="code_info(:S_WRAP, 0x00, 0,",
          new="code_info(:S_WRAP, 0x00, 1,"),
     # E6: its `old`/`new` quote opcode NUMBERS (code(163), code(170)): left to tools/renumber_vmi.py (it rewrites mutant texts that quote an opcode number from the
-    # `_CODE_TABLE` order); do not hand-fix. 0 bad in oldscan is expected only after that script ran over the merged table.
+    # `_CODE_TABLE` order); do not hand-fix. Ran once over the merged table (S_TABLED = code(164), the gap mutant code(171));
+    # every later merge in the engine-core slot (AR1, TB5-TB7) re-runs it.
     dict(id="TAB1MIN-E6 S_TABLED leaves a gap after S_CALLWRAPPER (KILL test_tabling_min_swipl.jl:455 `S_TABLED == S_CALLWRAPPER + 1`; the table lookup may fail at load first)", file=VM, targets=TM,
-         old="const S_TABLED = code(163)",
-         new="const S_TABLED = code(170)"),
+         old="const S_TABLED = code(164)",
+         new="const S_TABLED = code(171)"),
     # E7-E12 (written for the run loop's named refusals of S_WRAP/S_CALLWRAPPER/S_TABLED): batch 3 replaced those refusal bodies by the real S_WRAP, S_CALLWRAPPER
     # and S_TABLED blocks (src/pl-wam.jl), so the `old` texts have no occurrence any more. This is NOT an opcode-number matter (renumber_vmi.py does not touch them):
     # retire or re-fit each against the real blocks: left to the dispatcher with the batch-3 mutant lists (TB3 owns the S_TABLED block).
