@@ -360,3 +360,49 @@ end
     @test wl2.head === x && wl2.tail === z
     @test x.next === s2 && s2.next === a2 && a2.next === z && z.prev === a2 && a2.prev === s2
 end
+
+@testset "TB2K2 white-box: '\$tbl_wkl_make_follower' sets riac and schedules (TB2-P5, TB2-P6)" begin
+    gd = LK.PL_global_data{_TW}()
+    ld = LK.PL_local_data{_TW}(gd)
+    ctx = LK.foreign_context{_TW}(LK.FRG_FIRST_CALL, UInt(0), nothing)
+    function follower!(wl)
+        fid = LK.PL_open_foreign_frame(ld)
+        a = LK.PL_new_term_refs(ld, 1)
+        LK.PL_put_int64(ld, a, LK.tbl_pointer!(ld, wl))
+        rc = LK.pl_tbl_wkl_make_follower1_va(ld, a, 1, ctx)
+        LK.PL_close_foreign_frame(ld, fid)
+        return rc
+    end
+    # one answer cluster, one suspension cluster
+    c = LK.tbl_component{_TW}()
+    wl, (acp, scp) = _tw_wl_of([LK.CLUSTER_ANSWERS, LK.CLUSTER_SUSPENSIONS])
+    push!(acp.answers, 11)
+    wl.component = c
+    @test wl.riac === nothing && !wl.in_global_wl       # a leader: no riac yet, not scheduled
+    @test follower!(wl) == LK.FTRUE
+    @test wl.head === acp && wl.tail === scp && acp.next === scp
+    @test wl.riac === acp                               # :5342-5345 (kills TB2-P6)
+    @test LK.wl_has_work(wl)
+    @test wl.in_global_wl && c.worklist !== nothing && length(c.worklist.members) == 1 &&
+        c.worklist.members[1] === wl                    # :5349 (kills TB2-P5)
+    # a1 s1 a2 s2: the answer clusters merge into the first, the suspension clusters into the first
+    c2 = LK.tbl_component{_TW}()
+    wl2, (a1, s1, a2, s2) = _tw_wl_of([
+        LK.CLUSTER_ANSWERS, LK.CLUSTER_SUSPENSIONS, LK.CLUSTER_ANSWERS,
+        LK.CLUSTER_SUSPENSIONS
+    ])
+    append!(a1.answers, [11, 12])
+    append!(a2.answers, [21])
+    wl2.component = c2
+    @test follower!(wl2) == LK.FTRUE
+    @test wl2.head === a1 && wl2.tail === s1 && a1.next === s1 && s1.next === nothing
+    @test a1.answers == [11, 12, 21]
+    @test wl2.riac === a1 && LK.wl_has_work(wl2)
+    @test wl2.in_global_wl && length(c2.worklist.members) == 1 && c2.worklist.members[1] === wl2
+    # answers only: no suspension cluster, so no work and no scheduling; riac is still the answer cluster
+    c3 = LK.tbl_component{_TW}()
+    wl3, (a3,) = _tw_wl_of([LK.CLUSTER_ANSWERS])
+    wl3.component = c3
+    @test follower!(wl3) == LK.FTRUE
+    @test wl3.riac === a3 && !wl3.in_global_wl && c3.worklist === nothing
+end
