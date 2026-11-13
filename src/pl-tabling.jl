@@ -2391,7 +2391,7 @@ function table_complete_all(
                 if rc && ntables == 1 && leader_stays &&
                     (leader.flags & (TRIE_DISCARDABLE | TRIE_DISCARDED)) != 0 &&
                     leader.IDG === nothing
-                    droppable_table(c, leader)
+                    droppable_table(ld, c, leader)
                 end
             else
                 drop_intermediate_tables(ld, c)
@@ -3607,7 +3607,7 @@ table_is_incomplete(atrie::trie)::Bool =
 # NOTE: a minimal port of the functions batch 3 calls (`table_complete_all`, `destroy_depending_worklists`), taken from pl-tabling.c at
 # the pin; TB5 supersedes them with the rest of the abolish steps (`abolish_table`, `collect_dynamic_children`, the shared
 # tables), as `'\$idg_set_current'/2` is TB6's. `droppable_table` and `drop_intermediate_tables` (the flag
-# `table_drop_intermediate`) are refused by name, owner TB8, below.
+# `table_drop_intermediate`) are TB8's (the end of this file).
 
 # PORT: pl-tabling.c DYN_ORPHAN_SWEEP_MIN
 "The number of dynamic nodes that lost a dependent from which a completed root component sweeps the orphans (pl-tabling.c)."
@@ -3795,27 +3795,6 @@ function sweep_orphan_dynamic_tables(ld::PL_local_data{T})::Nothing where {T}
     end
 
     return nothing
-end
-
-# PORT: pl-tabling.c droppable_table
-# DIVERGES: refused by name, owner TB8 (the flag `table_drop_intermediate`, off by default).
-function droppable_table(c::tbl_component{T}, leader::trie{T})::Union{} where {T}
-    tbl_refuse(
-        T, :droppable_table, "droppable_table: the flag table_drop_intermediate", "TB8"
-    )
-end
-
-# PORT: pl-tabling.c drop_intermediate_tables
-# DIVERGES: refused by name, owner TB8 (the flag `table_drop_intermediate`, off by default).
-function drop_intermediate_tables(
-    ld::PL_local_data{T}, c::tbl_component{T}
-)::Union{} where {T}
-    tbl_refuse(
-        T,
-        :drop_intermediate_tables,
-        "drop_intermediate_tables: the flag table_drop_intermediate",
-        "TB8"
-    )
 end
 
 # PORT: pl-tabling.c unify_skeleton
@@ -9364,10 +9343,10 @@ end
 
 # TAB1 TB8 (the restraint flags, the tripwires and the drop of intermediate tables; pl-tabling.c at 18168e629eab, in its order
 # at :6340-6440 and :11693-11975). `tripwire_answers_for_subgoal` (:11827) and `pred_max_table_answer_size` are TB3's. The
-# callers that TB1/TB2/TB3 refuse by name until this step stack: get_answer_table (`tbl_pred_tripwire`, TB1), tbl_add_answer_found
-# (`tbl_wl_tripwire`, `add_radial_restraint`, `generalise_answer_substitution`, `add_answer_count_restraint`, TB3),
-# `unify_table_status` (`tripwire_scc_subgoals`, TB1/TB2), `_unify_fresh_create` (`tripwire_incomplete_subgoals`, TB2),
-# table_complete_all (`droppable_table`, `drop_intermediate_tables`, TB2): evidence/TB8/handoff.md lists each replacement.
+# callers that TB1/TB2/TB3 refused by name before this step call the code below (on wip/tb8m): get_answer_table
+# (`tbl_pred_tripwire`, TB1), tbl_add_answer_found (`tbl_wl_tripwire`, `add_radial_restraint`, `generalise_answer_substitution`,
+# `add_answer_count_restraint`, TB3), `unify_table_status` (`tripwire_scc_subgoals`, TB1/TB2), `_unify_fresh_create`
+# (`tripwire_incomplete_subgoals`, TB2), table_complete_all (`droppable_table`, `drop_intermediate_tables`, TB2).
 
 # ORIGINAL (TAB1 TB8): whether the atom `a` is the atom `name`, by the atom's identity (`sym_key`), as upstream's `==` of atom handles.
 "Whether the atom `a` is `name` (upstream: the comparison of two atom handles)."
