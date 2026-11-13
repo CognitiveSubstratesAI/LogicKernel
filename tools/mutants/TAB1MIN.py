@@ -179,27 +179,15 @@ MUTANTS = [
     dict(id="TAB1MIN-E6 S_TABLED leaves a gap after S_CALLWRAPPER (KILL test_tabling_min_swipl.jl:455 `S_TABLED == S_CALLWRAPPER + 1`; the table lookup may fail at load first)", file=VM, targets=TM,
          old="const S_TABLED = code(164)",
          new="const S_TABLED = code(171)"),
-    # E7-E12 (written for the run loop's named refusals of S_WRAP/S_CALLWRAPPER/S_TABLED): batch 3 replaced those refusal bodies by the real S_WRAP, S_CALLWRAPPER
-    # and S_TABLED blocks (src/pl-wam.jl), so the `old` texts have no occurrence any more. This is NOT an opcode-number matter (renumber_vmi.py does not touch them):
-    # retire or re-fit each against the real blocks: left to the dispatcher with the batch-3 mutant lists (TB3 owns the S_TABLED block).
-    dict(id="TAB1MIN-E7 S_WRAP's refusal names TAB1 (KILL test_tabling_min_swipl.jl:492 `e.step == \"WRAP1\"`)", file=WM, targets=TM,
-         old='"the VM instruction S_WRAP (calling a wrapped predicate from a closure)",\n            "WRAP1"',
-         new='"the VM instruction S_WRAP (calling a wrapped predicate from a closure)",\n            "TAB1"'),
-    dict(id="TAB1MIN-E8 S_CALLWRAPPER's refusal names TAB1 (KILL test_tabling_min_swipl.jl:482 `e.step == \"WRAP1\"`)", file=WM, targets=TM,
-         old='"the VM instruction S_CALLWRAPPER (calling a wrapped predicate)",\n            "WRAP1"',
-         new='"the VM instruction S_CALLWRAPPER (calling a wrapped predicate)",\n            "TAB1"'),
-    dict(id="TAB1MIN-E9 S_TABLED's refusal names WRAP1 (KILL test_tabling_min_swipl.jl:485 `e.step == \"TAB1\"`)", file=WM, targets=TM,
-         old='"the VM instruction S_TABLED (calling a tabled predicate)", "TAB1"',
-         new='"the VM instruction S_TABLED (calling a tabled predicate)", "WRAP1"'),
-    dict(id="TAB1MIN-E10 S_WRAP continues with the next instruction instead of refusing (KILL test_tabling_min_swipl.jl:492 `e isa NotPortedError`: the entered wrapper block answers)", file=WM, targets=TM,
-         old="@label S_WRAP\n    throw(",
-         new="@label S_WRAP\n    @goto next_instruction\n    throw("),
-    dict(id="TAB1MIN-E11 S_CALLWRAPPER continues with the next instruction instead of refusing (KILL test_tabling_min_swipl.jl:482 `e isa NotPortedError`)", file=WM, targets=TM,
-         old="@label S_CALLWRAPPER\n    throw(",
-         new="@label S_CALLWRAPPER\n    @goto next_instruction\n    throw("),
-    dict(id="TAB1MIN-E12 S_TABLED continues with the next instruction instead of refusing (KILL test_tabling_min_swipl.jl:485 `e isa NotPortedError`)", file=WM, targets=TM,
-         old="@label S_TABLED\n    throw(",
-         new="@label S_TABLED\n    @goto next_instruction\n    throw("),
+    # E7-E12 REMOVED (TAB1 TB7M4, D-0238: a retired mutant, never a loosened kill row). They were written for the run loop's named refusals of
+    # S_WRAP, S_CALLWRAPPER and S_TABLED (`throw(NotPortedError ...)` right after `@label S_WRAP` etc.). Batch 3 (WRAP1: S_WRAP, S_CALLWRAPPER; TB3: S_TABLED)
+    # replaced those refusal bodies by the real blocks (src/pl-wam.jl), so no `old` text can occur, and test_tabling_min_swipl.jl flipped the rows that pinned the
+    # refusals (tmc rows of the T3 testset: the three opcodes now RUN, comments there). The intent of each, on the new code, is carried by:
+    #   * E7 / E8 / E9 (the refusal's owner name, `e.step`): no counterpart, no refusal is left to name an owner; the flipped rows are the kill rows of
+    #     E10-E12's replacements below.
+    #   * E10 (S_WRAP does nothing / skipped): WRAP1-M4 (never creates the wrapped supervisor), WRAP1-M5, WRAP1-M20, WRAP1-M21, WRAP1-M22 (tools/mutants/WRAP1.py).
+    #   * E11 (S_CALLWRAPPER does nothing / skipped): WRAP1-M7 (the frame's predicate), WRAP1-M8 (equivalent, stated), WRAP1-M8b (the operand words) (WRAP1.py).
+    #   * E12 (S_TABLED does nothing / skipped): TB3-V1 (the complete-table jump), TB3-V2 (ARGP), TB3-V3 (setFramePredicate), TB3-V5, TB3-V7 (tools/mutants/TB3.py).
     dict(id="TAB1MIN-E13 VMI_RUN does not list S_WRAP (KILL test_tabling_min_swipl.jl:479 `nm in VMI_RUN`; :492 the refusal is the unknown-instruction one, without the owner)", file=WM, targets=TM,
          old=":S_WRAP, :S_CALLWRAPPER, :S_TABLED",
          new=":S_CALLWRAPPER, :S_TABLED"),
