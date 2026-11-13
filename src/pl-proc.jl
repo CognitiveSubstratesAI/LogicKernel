@@ -1124,6 +1124,57 @@ function removeClausesPredicate!(
     return deleted
 end
 
+# PORT: pl-proc.c reconsultFinalizePredicate
+# (swipl-devel 18168e62, src/pl-proc.c:1911-1965)
+# DIVERGES: no `L_GENERATION` lock, no `acquire_def`/`release_def`, no memory and dirty-clause statistics (`code_size`, `GD->clauses.erased*`), no
+# `registerRetracted` (a debug table) and no `clearBreakPointsClause` (owner DBG1); `setLastModifiedPredicate!` has no `TWF_*` flags (no
+# thread wakeup); the debug messages and `checkDefinition` are not kept. The database is an argument.
+"""
+    reconsultFinalizePredicate!(gd, rl, def, r)
+
+Finish the reload of `def`: at ONE new generation the clauses the reload did not keep (erased at the reload generation) are erased, and the ones
+it added (created at the reload generation) become visible; `P_RELOADING` is cleared (pl-proc.c). Nothing happens unless `r` has `P_MODIFIED`.
+"""
+function reconsultFinalizePredicate!(
+    gd::PL_global_data{T}, rl::sf_reload{T}, def::Definition{T}, r::p_reload{T}
+)::Nothing where {T}
+    if (r.flags & P_MODIFIED) != 0
+        deleted = 0
+        added = 0
+
+        update = global_generation(gd) + 1
+        cref = def.impl_clauses.first_clause
+        while cref !== nothing
+            cl = cref.clause::Clause{T}
+
+            if cl.generation_erased == rl.reload_gen && (cl.flags & CL_ERASED) == 0
+                cl.flags |= CL_ERASED
+                cl.generation_erased = update
+                deleted += 1
+                def.impl_clauses.number_of_clauses -= 0x00000001
+                def.impl_clauses.erased_clauses += 1
+                if (cl.flags & UNIT_CLAUSE) == 0
+                    def.impl_clauses.number_of_rules -= 0x00000001
+                end
+                deleteActiveClauseFromIndexes!(def, cl)
+            elseif cl.generation_created == rl.reload_gen
+                cl.generation_created = update
+                added += 1
+            end
+            cref = cref.next
+        end
+        gd._generation = update                         # GD->_generation = update
+
+        if added > 0 || deleted > 0
+            setLastModifiedPredicate!(gd, def, update)  # …, update, TWF_ASSERT and/or TWF_RETRACT
+        end
+
+        deleted > 0 && registerDirtyDefinition!(gd, def)
+        def.flags &= ~P_MODIFIED                        # clear(def, P_MODIFIED)
+    end
+    return nothing
+end
+
 # PORT: pl-proc.c abolishProcedure
 # DIVERGES: no locks, statistics or code-size accounting, no `lingerDefinition` (Julia's garbage collector); the fresh
 # definition of an imported link has `shared` 1, as upstream's `newDefinition` (b94d7de5; it was 0, a definition another
