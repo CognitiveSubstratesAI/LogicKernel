@@ -1640,27 +1640,6 @@ function wkl_add_suspension(
     return true
 end
 
-# PORT: pl-tabling.c tripwire_incomplete_subgoals
-# (pl-tabling.c:11943-11954 at the pin.)
-# DIVERGES: the tripwire itself (`tbl_pred_tripwire`, the restraint action) is a named refusal, owner TB8; the limit is -1 (none)
-# until TB8 sets the restraint.
-"False after a tripwire raised for the limit `max_incomplete_subgoals` of `def`; true to go on (pl-tabling.c)."
-function tripwire_incomplete_subgoals(
-    ld::PL_local_data{T}, def::Union{Nothing, Definition{T}}
-)::Bool where {T}
-    limit = ld.tabling.restraint.max_incomplete_subgoals
-    if limit != -1 && def !== nothing && ld.tabling.incomplete_tables == limit
-        tbl_refuse(
-            T,
-            :tbl_pred_tripwire,
-            "tripwire_incomplete_subgoals: max_incomplete_subgoals reached (tbl_pred_tripwire)",
-            "TB8"
-        )
-    end
-
-    return true
-end
-
 # PORT: pl-tabling.c tripwire_scc_subgoals
 # (pl-tabling.c:11956-11965 at the pin.)
 # DIVERGES: the tripwire itself (`tbl_wl_tripwire`) is a named refusal, owner TB8; the limit is -1 (none) until TB8.
@@ -1685,7 +1664,7 @@ end
 # The `create` branch of unify_fresh (pl-tabling.c:4219-4259 at the pin; TB1 ports the function and its `create` false branch)
 # DIVERGES: the two pointers are handles (`tbl_pointer!`), so upstream's fast path that builds `fresh(SCC, WL)` from two tagged
 # integers on the global stack and its `PL_unify_term` fallback are one unification; `tripwire_incomplete_subgoals`
-# (pl-tabling.c:11943) is above. TB1's `unify_fresh` calls it for `create`.
+# (pl-tabling.c:11943, TB8's port with the restraint) is below. TB1's `unify_fresh` calls it for `create`.
 "The `create` branch of `unify_fresh`: a component and a worklist for the new table `atrie`, `t` unified with `fresh(SCC, WL)` (pl-tabling.c)."
 function _unify_fresh_create(
     ld::PL_local_data{T}, t::term_t, atrie::trie{T}, def::Union{Nothing, Definition{T}}
@@ -9594,7 +9573,8 @@ function tbl_pred_tripwire(ld::PL_local_data{T}, def::Definition{T}, action::T, 
 end
 
 # PORT: pl-tabling.c tripwire_incomplete_subgoals
-# DIVERGES: a `Definition` that is `nothing` is NULL.
+# (pl-tabling.c:11943-11954 at the pin.)
+# DIVERGES: a `Definition` that is `nothing` is NULL; the tripwire is `tbl_pred_tripwire` (TB8 replaced TB2's named refusal).
 "True unless the `max_incomplete_subgoals` limit is reached and its tripwire fails: the check before a table is created (pl-tabling.c)."
 function tripwire_incomplete_subgoals(ld::PL_local_data{T}, def::Union{Nothing, Definition{T}})::Bool where {T}
     r = ld.tabling.restraint
