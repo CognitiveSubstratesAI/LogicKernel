@@ -365,4 +365,17 @@ MUTANTS = [
          file=TAB, targets=TARGETS5,
          old="    if !idg_init_variant(ld, atrie, def, 0) || idg_add_edge(ld, atrie, nothing) == 0\n",
          new="    if !idg_init_variant(ld, atrie, def, 0)\n"),
+    # ── TB7M6: tbl_complete_answer_clause (pl-tabling.c:12522-12565) ──
+    dict(id='TB7M6-M1 tbl_complete_answer_clause ignores an inner monotonic table (KILL idg22: `zero` with has_scheduling_component and the monotonic current node)',
+         file=TAB, targets=TARGETS5,
+         old="(tp.flags & TP_MONOTONIC) != 0 && (ld.tabling.in_assert_propagation || inner_is_monotonic(ld))\n",
+         new="(tp.flags & TP_MONOTONIC) != 0 && (ld.tabling.in_assert_propagation)\n"),
+    dict(id='TB7M6-M2 tbl_complete_answer_clause ignores assert propagation (KILL idg22: `zero` under in_assert_propagation)',
+         file=TAB, targets=TARGETS5,
+         old="(tp.flags & TP_MONOTONIC) != 0 && (ld.tabling.in_assert_propagation || inner_is_monotonic(ld))\n",
+         new="(tp.flags & TP_MONOTONIC) != 0 && (inner_is_monotonic(ld))\n"),
+    dict(id='TB7M6-M3 tbl_complete_answer_clause leaves every predicate to start_tabling under propagation (KILL idg22: `proceeds` for the not monotonic predicate)',
+         file=TAB, targets=TARGETS5,
+         old="(tp.flags & TP_MONOTONIC) != 0 && (ld.tabling.in_assert_propagation || inner_is_monotonic(ld))\n",
+         new="(ld.tabling.in_assert_propagation || inner_is_monotonic(ld))\n"),
 ]

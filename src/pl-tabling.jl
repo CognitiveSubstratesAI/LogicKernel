@@ -5066,8 +5066,7 @@ end
 # PORT: pl-tabling.c tbl_complete_answer_clause
 # (pl-tabling.c:12484-12565 at the pin.)
 # DIVERGES: the supervisor frame `fr` is an argument; the result is an atom word (0: none); the variables of the flat lookup are a
-# vector; `hasStackSpace` is true (the stacks grow on demand); `inner_is_monotonic` is TB7's (refused by name for a monotonic
-# predicate outside assert propagation); the `O_PLMT` `shared` is false.
+# vector; `hasStackSpace` is true (the stacks grow on demand); the `O_PLMT` `shared` is false.
 "The fast path of `S_TABLED` for the variant tabled `def` called in frame `fr`: a clause reference, `fail`, `error` or 0 (pl-tabling.c)."
 function tbl_complete_answer_clause(
     ld::PL_local_data{T}, def::Definition{T}, fr::Int
@@ -5077,14 +5076,8 @@ function tbl_complete_answer_clause(
     arity = def.arity
     shared = false
 
-    if (tp.flags & TP_MONOTONIC) != 0
-        ld.tabling.in_assert_propagation && return word(0)  # must shift/1 the dependency
-        tbl_refuse(
-            T,
-            :inner_is_monotonic,
-            "tbl_complete_answer_clause: a monotonic predicate (inner_is_monotonic)",
-            "TB7"
-        )
+    if (tp.flags & TP_MONOTONIC) != 0 && (ld.tabling.in_assert_propagation || inner_is_monotonic(ld))
+        return word(0)                              # must shift/1 the dependency
     end
 
     variants = variant_table(ld, shared)

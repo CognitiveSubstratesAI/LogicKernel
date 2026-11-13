@@ -650,3 +650,53 @@ end
     # a must-fail corruption: the plain and the incremental table differ in the one extractor
     @test _ti_call_complete(ld, p, def, clref) != _ti_call_complete(ld, b, def, clref)
 end
+
+"""
+`tbl_complete_answer_clause(ld, def, 0)` of the kernel, for a state where only the monotonic branch can answer: `zero` (the call must shift/1
+the dependency: word 0), `other` (another word) or `proceeds` (the branch was passed: the frame 0 does not exist here, so the lookup throws).
+ONE extractor for every row of idg22.
+"""
+function _ti_tcac(ld, def)::String
+    try
+        r = LK.tbl_complete_answer_clause(ld, def, 0)
+        return r == LK.word(0) ? "zero" : "other"
+    catch
+        return "proceeds"
+    end
+end
+
+@testset "idg22: tbl_complete_answer_clause leaves a monotonic call to start_tabling under propagation or an inner monotonic table (inner_is_monotonic, pl-tabling.c:12522-12565)" begin
+    gd, ld, def = _ti_db()
+    tp = def.tabling::LK.table_props
+    saved = tp.flags
+    ctab = _ti_table!(ld, def, true)
+    ctab.predicate = def
+    c = LK.idg_new(ld, ctab)::_TIN
+    ctab.IDG = c
+
+    # not a monotonic predicate: the branch is not taken whatever the state
+    ld.tabling.in_assert_propagation = true
+    @test _ti_tcac(ld, def) == "proceeds"
+    ld.tabling.in_assert_propagation = false
+
+    tp.flags = saved | LK.TP_MONOTONIC
+    @test _ti_tcac(ld, def) == "proceeds"                                                # monotonic, no propagation, no inner monotonic table
+    ld.tabling.in_assert_propagation = true
+    @test _ti_tcac(ld, def) == "zero"                                                    # the assert propagation runs
+    ld.tabling.in_assert_propagation = false
+
+    # the inner tabled predicate (the current IDG node's table) is monotonic
+    ld.tabling.has_scheduling_component = true
+    @test LK.set_idg_current(ld, ctab)
+    @test LK.inner_is_monotonic(ld)
+    @test _ti_tcac(ld, def) == "zero"
+    ld.tabling.has_scheduling_component = false
+
+    # a must-fail corruption: the same call, one flag less, answers differently (non-empty, one extractor)
+    bad = _ti_tcac(ld, def)
+    ld.tabling.has_scheduling_component = true
+    good = _ti_tcac(ld, def)
+    ld.tabling.has_scheduling_component = false
+    @test !isempty(good) && !isempty(bad) && good == "zero" && bad == "proceeds" && good != bad
+    tp.flags = saved
+end
