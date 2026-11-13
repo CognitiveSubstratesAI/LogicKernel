@@ -21,10 +21,9 @@ include(joinpath(@__DIR__, "..", "core_lang", "rules_common.jl"))
 _gt_atom(ld, n) = LK._atom_word!(ld, _rs(n))
 
 "The model of one tagged entry: literal shifts (position at bit 7, STG_GLOBAL = 8, TAG_TRAILVAL = 1); 0 stays 0."
-_gt_tag_model(e::UInt64)::UInt64 = if e == 0
-    UInt64(0)
-else
-    ((e & 1) == 1 ? (((e >> 3) << 7) | 0x09) : (((e >> 3) << 7) | 0x08))
+function _gt_tag_model(e::UInt64)::UInt64
+    e == 0 && return UInt64(0)
+    return ((e & 1) == 1 ? (((e >> 3) << 7) | 0x09) : (((e >> 3) << 7) | 0x08))
 end
 
 "The model of an untagged entry from a tagged word: position at bit 7, bit 0 the value tag."
