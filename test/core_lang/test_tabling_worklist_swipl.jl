@@ -413,8 +413,8 @@ end
 @testset "TB2K2 white-box: table_complete_all resets has_scheduling_component of the top component (TB2-Q3)" begin
     # pl-tabling.c:6440-6533: `if (!c->parent) LD->tabling.has_scheduling_component = false`. A Prolog row cannot read it: the cleanup of
     # '$tbl_leader'/5 frees the component at once (free_component resets the flag again, pl-tabling.jl:347-349), and completing a running
-    # leader's component from inside its own body crashes swipl itself (assertion in tbl_reset_add_answer). So the flag is read between
-    # the two, as the engine does: a top component that is active and has a leader trie, no worklists.
+    # leader's component from inside its own body is not a usable Prolog route. So the flag is read between the two, as the engine does:
+    # a top component that is active and has a leader trie, no worklists, built by hand.
     gd = LK.PL_global_data{_TW}()
     ld = LK.PL_local_data{_TW}(gd)
     tr = LK.trie_create(_TW)
