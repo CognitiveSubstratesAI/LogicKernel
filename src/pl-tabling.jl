@@ -9266,6 +9266,17 @@ function sort_table_values!(values::Vector{word})::Nothing
     return nothing
 end
 
+# PORT: pl-tabling.c take_table_value
+# (pl-tabling.c:2804-2822 at the pin; the `trie_empty_take` callback of `empty_variant_table`)
+# DIVERGES: `values` is a growing vector (upstream: the `bulk_reset` buffer sized for all values, grown by `realloc`); the branch
+# of a failed `realloc` (`reset_table_bulk` and `trie_release_value` at once) cannot occur.
+"Take the value `value` of a variant table node into `values` (see `trie_empty_take`) (pl-tabling.c)."
+function take_table_value!(values::Vector{word}, value::word)::Nothing
+    push!(values, value)                                # br->values[br->count++] = value
+
+    return nothing
+end
+
 # PORT: pl-tabling.c empty_variant_table
 # DIVERGES: one path for the private table: the values are taken by `trie_empty_take`, reset in creation order and released after
 # (upstream's malloc failure fallback is the second branch only when there are no values or the delay pass is done); the IDG
@@ -9282,7 +9293,7 @@ function empty_variant_table(ld::PL_local_data{T}, vtrie::trie{T}, delays_done::
         ld.tabling.idg_registry = nothing
         idg_nodes = Ref(0)
         values = word[]
-        trie_empty_take(gd, vtrie, w -> push!(values, w))
+        trie_empty_take(gd, vtrie, w -> take_table_value!(values, w))
         sort_table_values!(values)                      # creation order
         for v in values
             reset_table_bulk(ld, v, registry, idg_nodes)
