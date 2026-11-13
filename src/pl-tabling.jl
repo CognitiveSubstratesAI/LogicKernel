@@ -1640,27 +1640,6 @@ function wkl_add_suspension(
     return true
 end
 
-# PORT: pl-tabling.c tripwire_scc_subgoals
-# (pl-tabling.c:11956-11965 at the pin.)
-# DIVERGES: the tripwire itself (`tbl_wl_tripwire`) is a named refusal, owner TB8; the limit is -1 (none) until TB8.
-"False after a tripwire raised for the limit `max_scc_subgoals` of the component of `wl` (`size0`: its size before the merge); true to go on (pl-tabling.c)."
-function tripwire_scc_subgoals(
-    ld::PL_local_data{T}, wl::tbl_worklist{T}, size0::Int
-)::Bool where {T}
-    limit = ld.tabling.restraint.max_scc_subgoals
-    if limit != -1 && size0 <= limit &&
-        wls_size((wl.component::tbl_component{T}).created_worklists) > limit
-        tbl_refuse(
-            T,
-            :tbl_wl_tripwire,
-            "tripwire_scc_subgoals: max_scc_subgoals reached (tbl_wl_tripwire)",
-            "TB8"
-        )
-    end
-
-    return true
-end
-
 # The `create` branch of unify_fresh (pl-tabling.c:4219-4259 at the pin; TB1 ports the function and its `create` false branch)
 # DIVERGES: the two pointers are handles (`tbl_pointer!`), so upstream's fast path that builds `fresh(SCC, WL)` from two tagged
 # integers on the global stack and its `PL_unify_term` fallback are one unification; `tripwire_incomplete_subgoals`
@@ -9588,6 +9567,8 @@ function tripwire_incomplete_subgoals(ld::PL_local_data{T}, def::Union{Nothing, 
 end
 
 # PORT: pl-tabling.c tripwire_scc_subgoals
+# (pl-tabling.c:11956-11965 at the pin.)
+# DIVERGES: the tripwire is `tbl_wl_tripwire` (TB8 replaced TB2's named refusal).
 "True unless a merge made the component of `wl` larger than `max_scc_subgoals` and its tripwire fails; `size0` is the size before (pl-tabling.c)."
 function tripwire_scc_subgoals(ld::PL_local_data{T}, wl::tbl_worklist{T}, size0::Int)::Bool where {T}
     r = ld.tabling.restraint
