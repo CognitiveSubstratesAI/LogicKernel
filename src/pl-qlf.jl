@@ -547,8 +547,8 @@ function pl_qlf_assert_clause2_va(
     return FTRUE
 end
 
-# The 5 predicates that read a QLF body or write a state file (`$qlf_sources`, `$qlf_module`, `$qlf_load`, `$open_wic`, `$qlf_open`) are refused by name: calling one raises `NotPortedError` with
-# its indicator (LD2; the QLF reader and writer are not ported — the boot compiles from source).
+# The 3 predicates that load a QLF body or write a state file (`$qlf_load`, `$open_wic`, `$qlf_open`) are refused by name: calling one raises `NotPortedError` with
+# its indicator (LD2, Q2a; the QLF loader and writer are left to Q2a — the boot compiles from source).
 "Raise `NotPortedError` for the predicate `name/arity` of pl-qlf.c's table (refused by name, LD2)."
 function _qlf_refused(::Type{T}, name::String, arity::Int)::Union{} where {T}
     throw(
@@ -594,9 +594,89 @@ mutable struct qlf_state
     previous::Union{Nothing, qlf_state}
 end
 
+# PORT: pl-qlf.c XR_REF, XR_NIL, XR_CONS, XR_ATOM, XR_FUNCTOR, XR_PRED, XR_INT, XR_FLOAT, XR_STRING, XR_FILE, XR_MODULE, XR_BLOB,
+# XR_BLOB_TYPE, XR_STRING_UTF8, XR_NULL
+# (pl-qlf.c:199-213)
+"The codes of the XR (cross reference) entries a QLF file holds: a reference, `[]`, the list functor's name, an atom, a functor, ... (pl-qlf.c)."
+const XR_REF = 0
+const XR_NIL = 1
+const XR_CONS = 2
+const XR_ATOM = 3
+const XR_FUNCTOR = 4
+const XR_PRED = 5
+const XR_INT = 6
+const XR_FLOAT = 7
+const XR_STRING = 8
+const XR_FILE = 9
+const XR_MODULE = 10
+const XR_BLOB = 11
+const XR_BLOB_TYPE = 12
+const XR_STRING_UTF8 = 13
+const XR_NULL = 14
+
+# ORIGINAL: upstream's XR value is a `word` (an atom, a functor, a pointer to a module, a procedure, a source file or a blob type, a
+# tagged integer, a float or a string on the global stack). The kernel's XR value is one of these records, each `T` the term
+# type's atom; the table holds them as they are read, nothing is created in the database (see `loadXRc`).
+"What one XR entry of a QLF file stands for: an atom, a functor, a module, a procedure, a blob type, a number, a string, a source file or NULL."
+abstract type xr_entry{T} end
+"An XR atom (also `[]` and the list functor's name)."
+struct xr_atom{T} <: xr_entry{T}
+    atom::T
+end
+"An XR functor: its name and arity."
+struct xr_functor{T} <: xr_entry{T}
+    name::T
+    arity::Int
+end
+"An XR module: its name."
+struct xr_module{T} <: xr_entry{T}
+    name::T
+end
+"An XR procedure: its functor and module."
+struct xr_pred{T} <: xr_entry{T}
+    functor::xr_functor{T}
+    module_::xr_module{T}
+end
+"An XR blob type: the type's name."
+struct xr_blobtype{T} <: xr_entry{T}
+    name::Symbol
+end
+"An XR integer."
+struct xr_int{T} <: xr_entry{T}
+    value::Int64
+end
+"An XR float."
+struct xr_float{T} <: xr_entry{T}
+    value::Float64
+end
+"An XR string (the text of the Prolog string)."
+struct xr_string{T} <: xr_entry{T}
+    value::String
+end
+"An XR source file: the (translated) name, the time and the two flags."
+struct xr_file{T} <: xr_entry{T}
+    name::T
+    time::Float64
+    system::Bool
+    isfile::Bool
+end
+"The XR NULL (`XR_NULL`, and the `-` of `XR_FILE`)."
+struct xr_null{T} <: xr_entry{T} end
+
+# PORT: pl-qlf.c XrTable
+# DIVERGES: upstream's table is a dynamic array of doubling blocks (`INIT_DYN_ARRAY`) indexed by `MSB(id)`; here one `Vector`
+# indexed by the id (`nothing` for an id not stored yet, `Vector{Any}` since the table does not know the term type); `id` is
+# the last id handed out (upstream `t->id`); `previous` is the table below on the stack.
+"The XR table of one QLF module being read: the entries by id (pl-qlf.c `XrTable`)."
+mutable struct XrTable
+    id::Int
+    entries::Vector{Any}
+    previous::Union{Nothing, XrTable}
+end
+
 # PORT: pl-qlf.c wic_state
 # DIVERGES: only the fields the info predicates read: the file name (`wicFile`), the stream (`wicFd`), the version
-# the file was saved with (`saved_version`) and the path translation (`load_state`); the write side's fields are
+# the file was saved with (`saved_version`), the path translation (`load_state`) and the XR table (`XR`); the write side's fields are
 # `ld.qlf_write_state`'s (always `nothing`, LD2).
 "The state `qlfInfo` and `qlfIsCompatible` carry while a QLF file is read (pl-qlf.c `wic_state`)."
 mutable struct wic_state
@@ -604,8 +684,9 @@ mutable struct wic_state
     wicFd::Union{Nothing, IOSTREAM}
     saved_version::Int
     load_state::Union{Nothing, qlf_state}
+    XR::Union{Nothing, XrTable}
 end
-wic_state(file::String) = wic_state(file, nothing, 0, nothing)
+wic_state(file::String) = wic_state(file, nothing, 0, nothing, nothing)
 
 # PORT: pl-qlf.c Qgetc
 # (pl-qlf.c:62-68; the non-O_DEBUG branch: `Snpgetc`, no position recording)
@@ -964,6 +1045,452 @@ function qlfSourceInfo(
     return rc
 end
 
+# ── the XR reader and the module record (pl-qlf.c:349-425, 436-488, 640-905, 1926-1960, 2156-2225, 3399-3497) ──
+
+# PORT: pl-qlf.c pushXrIdTable
+"Push a new, empty XR table on the state (pl-qlf.c)."
+function pushXrIdTable(state::wic_state)::Nothing
+    state.XR = XrTable(0, Any[], state.XR)
+    return nothing
+end
+
+# PORT: pl-qlf.c popXrIdTable
+# DIVERGES: nothing to release (upstream unregisters the atoms the entries hold and frees the blocks).
+"Pop the XR table from the state (pl-qlf.c)."
+function popXrIdTable(state::wic_state)::Nothing
+    t = state.XR::XrTable
+    state.XR = t.previous
+    return nothing
+end
+
+# PORT: pl-qlf.c lookupXrId
+# DIVERGES: an id that was never stored (upstream reads an unallocated block or a cell never written) is a format error.
+"The XR entry stored under `id` in the current table (pl-qlf.c)."
+function lookupXrId(::Type{T}, state::wic_state, id::Int)::xr_entry{T} where {T}
+    t = state.XR::XrTable
+    if id < 1 || id > length(t.entries) || t.entries[id] === nothing
+        qlfLoadError(state)
+    end
+    return t.entries[id]::xr_entry{T}
+end
+
+# PORT: pl-qlf.c storeXrId
+"Store the XR entry `value` under `id` in the current table (pl-qlf.c)."
+function storeXrId(state::wic_state, id::Int, value::xr_entry)::Nothing
+    t = state.XR::XrTable
+    id > length(t.entries) && append!(t.entries, fill(nothing, id - length(t.entries)))
+    t.entries[id] = value
+    return nothing
+end
+
+# PORT: pl-qlf.c qlfLoadError_ctx
+# DIVERGES: `fatalError` is a Julia `error`; the message has no source file and line of the C (the position is the stream's).
+"Raise the format error of a QLF file at the current position (pl-qlf.c `qlfLoadError`: `fatalError`)."
+function qlfLoadError(state::wic_state)::Union{}
+    pos = state.wicFd === nothing ? 0 : Stell64(state.wicFd)
+    error("$(state.wicFile): QLF format error at index = $pos")
+end
+
+# PORT: pl-qlf.c qlfGetUInt32
+# DIVERGES: a shift of 32 or more bits gives 0 in Julia (C: undefined); an EOF (-1) is a last byte of 0x7f, as C's `unsigned int`.
+"An unsigned integer, 7 bits per byte (little end first, the last byte has bit 0x80 set) from `s` (pl-qlf.c)."
+function qlfGetUInt32(s::IOSTREAM)::UInt32
+    c = Qgetc(s) % UInt32
+
+    if (c & 0x80) != 0
+        return c & 0x7f
+    else
+        v = c & 0x7f
+        shift = 7
+
+        while true
+            c = Qgetc(s) % UInt32
+
+            if (c & 0x80) != 0
+                l = c & 0x7f
+                v |= l << shift
+                return v
+            else
+                v |= c << shift
+                shift += 7
+            end
+        end
+    end
+end
+
+# PORT: pl-qlf.c qlfGetDouble
+# (the little endian `double_byte_order`)
+# DIVERGES: `fatalError` is a Julia `error`; the debug output is dropped.
+"A double of eight bytes, the least significant first (pl-qlf.c)."
+function qlfGetDouble(s::IOSTREAM)::Float64
+    bits = UInt64(0)
+
+    for i in 0:7
+        c = Qgetc(s)
+        c == EOF && error("Unexpected end-of-file in QLT file")
+        bits |= UInt64(c & 0xff) << (8 * i)
+    end
+
+    return reinterpret(Float64, bits)
+end
+
+# PORT: pl-qlf.c qlfGetString
+# (the `length != NULL` form, pl-qlf.c:446-488)
+# DIVERGES: returns the bytes read (upstream: `LD->qlf.getstr_buffer` and the length), `nothing` when the length is above
+# `globalStackLimit()` (the stacks' limit, in bytes: `ld.stacks_limit` is in words); the bytes are read before a buffer of
+# that size is made; `fatalError` (an EOF inside the string) is a Julia `error`.
+"Read a length (`qlfGetInt64`) and that many bytes from `s`, a saved term's string; `nothing` if the length is above the global stack limit (pl-qlf.c)."
+function qlfGetString(ld::PL_local_data{T}, s::IOSTREAM)::Union{Nothing, Vector{UInt8}} where {T}
+    len = qlfGetInt64(s)                                    # (size_t)qlfGetInt64(fd)
+    (len < 0 || len > Int(ld.stacks_limit) * 8) && return nothing   # length > globalStackLimit()
+
+    buf = UInt8[]
+    for _ in 1:len
+        c = Qgetc(s)
+        c == EOF && error("Unexpected EOF on QLF file at offset $(Stell64(s))")     # fatalError
+        push!(buf, c % UInt8)                               # (char)c
+    end
+
+    return buf
+end
+
+# PORT: pl-qlf.c qlfGetStringW
+# DIVERGES: returns a `String` of the code points (upstream: a buffer of `wchar_t`); `fatalError` is a Julia `error`; a
+# length that is negative as an integer reads until the EOF (as a huge `size_t`); a code point that is no character
+# (a surrogate, or above 0x10ffff) is an error here (upstream keeps it in the `wchar_t` buffer).
+"Read a length and that many UTF-8 encoded code points from `s`, as `PL_qlf_putStringW` wrote them (pl-qlf.c)."
+function qlfGetStringW(s::IOSTREAM)::String
+    len = qlfGetInt64(s)
+    oenc = s.encoding
+    s.encoding = ENC_UTF8
+    out = Char[]
+
+    try
+        i = 0
+        while len < 0 || i < len
+            c = Sgetcode(s)
+            c < 0 && error("Unexpected EOF in UCS atom")
+            isvalid(Char, c % UInt32) || error("Illegal code point $c in UCS atom")
+            push!(out, Char(c % UInt32))
+            i += 1
+        end
+    finally
+        s.encoding = oenc
+    end
+
+    return String(out)
+end
+
+# PORT: pl-qlf.c getAtom
+# DIVERGES: the text is the bytes read as ISO Latin-1 (what `lookupAtom` makes of them), a blob type is its name (`:text` or
+# `:reserved_symbol`: the two blob types read from bytes here) where upstream passes the type; an atom holding NUL
+# stays refused (`AtomNotRepresentableError`); `fatalError` is a Julia `error`.
+"Read the length and bytes of an atom of the blob type `type` from `s` (pl-qlf.c)."
+function getAtom(::Type{T}, s::IOSTREAM, type::Symbol)::T where {T}
+    len = qlfGetInt64(s)                                    # (size_t)qlfGetInt64(fd)
+    buf = UInt8[]
+
+    for _ in 1:len
+        c = Qgetc(s)
+        c == EOF && error("Unexpected EOF on intermediate code file at offset $(Stell64(s))")
+        push!(buf, c % UInt8)
+    end
+    any(==(0x00), buf) && throw(AtomNotRepresentableError(UInt32[UInt32(b) for b in buf]))
+    text = String(Char[Char(b) for b in buf])               # ISO Latin-1
+
+    return type === :reserved_symbol ? mk_reserved_symbol(T, Symbol(text)) : mk_sym(T, Symbol(text))
+end
+
+# PORT: pl-qlf.c getBlobType
+# DIVERGES: the types a QLF file of the kernel's atoms holds are `text`, `ucs_text` and `reserved_symbol`; any other type
+# is a named refusal (upstream: `PL_find_blob_type`, a type of a registered blob, not found is a NULL its caller uses).
+"Read the name of an XR blob type from `s`: its entry (pl-qlf.c)."
+function getBlobType(::Type{T}, s::IOSTREAM)::xr_blobtype{T} where {T}
+    bytes = qlfGetString(s)
+    bytes === nothing && error("Invalid blob type in QLF")                 # fatalError
+    name = bytes
+    if !(name in ("text", "ucs_text", "reserved_symbol"))
+        throw(
+            NotPortedError{T}(
+                mk_sym(T, Symbol(name)), "the QLF blob type $name", "QLF3: refused by name"
+            )
+        )
+    end
+
+    return xr_blobtype{T}(Symbol(name))
+end
+
+# PORT: pl-qlf.c getBlob
+# DIVERGES: the load function of the type (`type->load`) is `loadUCSAtom` for `ucs_text` only: a wide text atom is a text atom
+# of its characters here; the other types are read by `getAtom`.
+"Read a blob (an atom of a type other than plain text): its type first, then its data (pl-qlf.c)."
+function getBlob(ld::PL_local_data{T}, state::wic_state)::Union{Nothing, xr_entry{T}} where {T}
+    tx = loadXR(ld, state)
+    tx === nothing && return nothing
+    tx isa xr_blobtype || qlfLoadError(state)
+    fd = state.wicFd::IOSTREAM
+
+    if tx.name === :ucs_text
+        return xr_atom{T}(mk_sym(T, Symbol(qlfGetStringW(fd))))      # loadUCSAtom
+    end
+
+    return xr_atom{T}(getAtom(T, fd, tx.name))
+end
+
+# ORIGINAL: `word2atom(loadXR(state))`: the atom an XR entry is; upstream reads the word as an atom whatever it is, here an
+# entry that is no atom is a format error (and a `nothing`, a failure with a pending exception, is told to the caller).
+"The atom XR entry `x` stands for; a format error if it is no atom."
+function _xr_atom(state::wic_state, x::xr_entry{T})::T where {T}
+    x isa xr_atom || qlfLoadError(state)
+    return x.atom
+end
+
+# PORT: pl-qlf.c loadXR
+"Read one XR entry from the QLF file: its code, then the entry (pl-qlf.c)."
+loadXR(ld::PL_local_data{T}, state::wic_state) where {T} =
+    loadXRc(ld, state, Qgetc(state.wicFd::IOSTREAM))
+
+# PORT: pl-qlf.c loadXRc
+# DIVERGES: nothing is created in the database for the entries that make a module, a procedure or a source file (upstream:
+# `lookupModule`, `lookupProcedure`, `lookupSourceFile` and its count): the entry holds the names; the numbers and strings are
+# values (no global stack word); a failure (a string above the stack limit: the overflow is raised) is `nothing`, where upstream
+# returns the word 0 (which `XR_NULL` also is: `xr_null`); an id never stored, an arity below 0, an entry that is not what its
+# position needs and an unknown code are format errors (upstream reads what is there).
+"Load the XR entry `c` (its code, already read) from the QLF file; `nothing` after a raised exception (pl-qlf.c)."
+function loadXRc(ld::PL_local_data{T}, state::wic_state, c::Int)::Union{Nothing, xr_entry{T}} where {T}
+    fd = state.wicFd::IOSTREAM
+    t = state.XR::XrTable
+    id = 0
+    xr::xr_entry{T} = xr_null{T}()
+
+    if c == XR_REF
+        return lookupXrId(T, state, Int(qlfGetUInt32(fd)))
+    elseif c == XR_NIL
+        return xr_atom{T}(mk_nil(T))
+    elseif c == XR_CONS
+        return xr_atom{T}(mk_sym(T, Symbol("[|]")))             # ATOM_dot
+    elseif c == XR_ATOM
+        id = (t.id += 1)
+        xr = xr_atom{T}(getAtom(T, fd, :text))
+    elseif c == XR_BLOB
+        id = (t.id += 1)
+        b = getBlob(ld, state)
+        b === nothing && return nothing
+        xr = b
+    elseif c == XR_BLOB_TYPE
+        id = (t.id += 1)
+        xr = getBlobType(T, fd)
+    elseif c == XR_FUNCTOR
+        id = (t.id += 1)
+        nx = loadXR(ld, state)
+        nx === nothing && return nothing
+        name = _xr_atom(state, nx)
+        arity = qlfGetInt64(fd)
+        arity < 0 && qlfLoadError(state)
+        xr = xr_functor{T}(name, Int(arity))
+    elseif c == XR_PRED
+        id = (t.id += 1)
+        fx = loadXR(ld, state)
+        fx === nothing && return nothing
+        mx = loadXR(ld, state)
+        mx === nothing && return nothing
+        (fx isa xr_functor && mx isa xr_module) || qlfLoadError(state)
+        xr = xr_pred{T}(fx, mx)
+    elseif c == XR_MODULE
+        id = (t.id += 1)
+        nx = loadXR(ld, state)
+        nx === nothing && return nothing
+        xr = xr_module{T}(_xr_atom(state, nx))
+    elseif c == XR_INT
+        return xr_int{T}(qlfGetInt64(fd))
+    elseif c == XR_FLOAT
+        return xr_float{T}(qlfGetDouble(fd))
+    elseif c == XR_STRING
+        bytes = qlfGetString(ld, fd)
+        if bytes === nothing
+            raiseStackOverflow(ld, GLOBAL_OVERFLOW)
+            return nothing
+        end
+        return xr_string{T}(String(bytes))
+    elseif c == XR_STRING_UTF8
+        return xr_string{T}(qlfGetStringW(fd))
+    elseif c == XR_FILE
+        id = (t.id += 1)
+        f = Qgetc(fd)
+
+        if f == Int('u') || f == Int('s') || f == Int('U') || f == Int('S')
+            nx = loadXR(ld, state)
+            nx === nothing && return nothing
+            name = _xr_atom(state, nx)
+            time = qlfGetDouble(fd)
+            fixed = qlfFixSourcePath(ld, state, sym_text(name))
+            xr = xr_file{T}(
+                mk_sym(T, Symbol(fixed)), time, f == Int('s') || f == Int('S'),
+                f == Int('s') || f == Int('u')
+            )
+        elseif f == Int('-')
+            xr = xr_null{T}()
+        else
+            error("Illegal XR file index $(Stell64(fd) - 1): $(Char(f % UInt8))")     # fatalError
+        end
+    elseif c == XR_NULL
+        return xr_null{T}()
+    else
+        error("Illegal XR entry at index $(Stell64(fd) - 1): $c")                    # fatalError
+    end
+
+    storeXrId(state, id, xr)
+    return xr
+end
+
+# PORT: pl-qlf.c qlfLoadSource
+# DIVERGES: returns `(name, mtime, system, isfile)` (upstream fills a `struct sourceFile`), the name as a `String`.
+"Read a source file entry (name, hash, time, type) and return what it holds (pl-qlf.c)."
+function qlfLoadSource(
+    ld::PL_local_data{T}, state::wic_state
+)::Tuple{String, Float64, Bool, Bool} where {T}
+    fd = state.wicFd::IOSTREAM
+    fname = loadFileName(ld, state)
+    qlfLoadFileHash(state)
+    time = qlfGetDouble(fd)
+    ftype = Qgetc(fd)
+
+    return (fname, time, ftype == Int('s') || ftype == Int('S'), ftype == Int('s') || ftype == Int('u'))
+end
+
+# PORT: pl-qlf.c loadInclude
+# DIVERGES: only the `skip` branch (what `qlfLoadIncludes(state, true)` does: the fields are read and dropped); the other (the
+# `'$included'` directive and the assert) belongs to `'$qlf_load'` (Q2a), a named refusal; no foreign frame (nothing is built).
+"Read an include entry of a QLF file (file, hash, owner, parent, line, time) and drop it (pl-qlf.c)."
+function loadInclude(ld::PL_local_data{T}, state::wic_state, skip::Bool)::Bool where {T}
+    fd = state.wicFd::IOSTREAM
+    skip || throw(
+        NotPortedError{T}(
+            mk_sym(T, Symbol("\$qlf_load")), "loadInclude of a loaded QLF file", "Q2a: refused by name"
+        )
+    )
+
+    if state.saved_version >= 70
+        loadFileName(ld, state)
+        qlfLoadFileHash(state)
+        loadFileName(ld, state)
+        loadFileName(ld, state)
+        qlfGetInt32(fd)
+        qlfGetDouble(fd)
+    else
+        for _ in 1:2                                        # owner, pn
+            x = loadXR(ld, state)
+            x === nothing && return false
+            _xr_atom(state, x)
+        end
+        qlfGetInt32(fd)                                     # line
+        x = loadXR(ld, state)                               # fn
+        x === nothing && return false
+        _xr_atom(state, x)
+        qlfGetDouble(fd)
+    end
+
+    return true
+end
+
+# PORT: pl-qlf.c qlfLoadIncludes
+# DIVERGES: a failure of `loadInclude` (a pending exception) ends the loop.
+"Read the include entries `{'L' <include>}` up to the `Q` that starts the part (pl-qlf.c)."
+function qlfLoadIncludes(ld::PL_local_data{T}, state::wic_state, skip::Bool)::Nothing where {T}
+    fd = state.wicFd::IOSTREAM
+
+    while true
+        c = Qgetc(fd)
+
+        if c == Int('Q')
+            break
+        elseif c == Int('I') || c == Int('L')               # load version 68 files
+            loadInclude(ld, state, skip) || break
+        else
+            qlfLoadError(state)
+        end
+    end
+
+    return nothing
+end
+
+# PORT: pl-qlf.c mkeys
+"The keys of the dict `'\$qlf_module'/2` answers: `module`, `class`, `exports`, `file` (pl-qlf.c `mkeys`), as atom words."
+_qlf_mkeys(ld::PL_local_data{T}) where {T} =
+    word[_atom_word!(ld, mk_sym(T, k)) for k in (:module, :class, :exports, :file)]
+
+# PORT: pl-qlf.c qlfModuleInfo
+# DIVERGES: the dict's tag is `dyndict`, written as `select_dict` does (its symbol `#` is recorded first); the export list's
+# elements are `Name/Arity` built here (upstream `unify_functor(head, f, GP_NAMEARITY)` of a functor word); a failed
+# `loadXR` (a pending exception) is false; a super module XR is read and dropped as upstream.
+"Unify `minfo` with a dict of the module (`module`, `class`, `exports`, `file`) the QLF file defines; false if it defines none (pl-qlf.c)."
+function qlfModuleInfo(ld::PL_local_data{T}, state::wic_state, minfo::term_t)::Bool where {T}
+    fd = state.wicFd::IOSTREAM
+    qlfLoadIncludes(ld, state, true)                        # Skip {'L' <include>}
+
+    c0 = Qgetc(fd)
+    if c0 == Int('M')
+        mx = loadXR(ld, state)
+        mx === nothing && return false
+        mname = _xr_atom(state, mx)
+        c = Qgetc(fd)
+        av = PL_new_term_refs(ld, 4)                        # dict keys
+        exports = av + 2                                    # export list
+        head = PL_new_term_ref(ld)                          # tmp for building exports
+        extail = PL_copy_term_ref(ld, exports)              # tail of exports
+        dlen = 3                                            # #used dict keys
+
+        PL_unify_atom(ld, av, mname)                        # XR atoms are owned by the XR table
+
+        # deal with the source
+        if c == Int('-')
+            # no source
+        elseif c == Int('F')
+            fname, _, _, _ = qlfLoadSource(ld, state)
+            PL_unify_atom(ld, av + 3, mk_sym(T, Symbol(fname))) || return false
+            dlen += 1
+            qlfGetInt32(fd)                                 # line
+        else
+            qlfLoadError(state)
+        end
+
+        # deal with the properties
+        while true
+            p = Qgetc(fd)
+            if p == Int('C')                                # module class
+                cx = loadXR(ld, state)
+                cx === nothing && return false
+                PL_unify_atom(ld, av + 1, _xr_atom(state, cx)) || return false
+            elseif p == Int('S')                            # super
+                loadXR(ld, state)
+            elseif p == Int('E')
+                fx = loadXR(ld, state)
+                fx === nothing && return false
+                fx isa xr_functor || qlfLoadError(state)
+                ( PL_unify_list(ld, extail, head, extail) &&
+                  PL_unify_functor(ld, head, mk_sym(T, :/), 2) ) || return false
+                a = PL_new_term_ref(ld)
+                ( _PL_get_arg(ld, 1, head, a) && PL_unify_atom(ld, a, fx.name) &&
+                  _PL_get_arg(ld, 2, head, a) && PL_unify_integer(ld, a, fx.arity) ) || return false
+            elseif p == Int('X')
+                break
+            else
+                qlfLoadError(state)
+            end
+        end
+        PL_unify_nil(ld, extail) || return false
+
+        _atom_word!(ld, mk_sym(T, Symbol("#")))             # records the symbol of `dyndict` (text `#`) for readers
+        rc = PL_put_dict(ld, head, ATOM_dyndict, dlen, _qlf_mkeys(ld), av) && PL_unify(ld, minfo, head)
+        PL_reset_term_refs(ld, av)
+        return rc
+    elseif c0 == Int('F')
+        return false
+    else
+        qlfLoadError(state)
+    end
+end
+
 # PORT: pl-qlf.c Q_VERSION
 # (pl-qlf.c:3532)
 "`qlfInfo` flag: unify the version information (`'\$qlf_versions'/6`) instead of checking compatibility."
@@ -974,6 +1501,10 @@ const Q_VERSION = 0x01
 "`qlfInfo` flag: unify the list of the source files recorded in the file (`'\$qlf_sources'/2`)."
 const Q_FILES = 0x02
 
+# ORIGINAL: not upstream's (a flag for whether `minfo` was passed): upstream tests the term reference for 0.
+"`qlfInfo` flag: unify the module information (`'\$qlf_module'/2`)."
+const Q_MODULE = 0x04
+
 # PORT: pl-qlf.c qlfInfo
 # (the `files0` block of pl-qlf.c:3532-3631, 3587-3623)
 # DIVERGES: split out of `qlfInfo`; `Sseek` is `Sseek64`; the `qlfstart` array is a `Vector{Int}`; `(size_t)` of a negative
@@ -981,10 +1512,9 @@ const Q_FILES = 0x02
 # `Int64` (a C `int` overflows). `OsError()` is `strerror` of the stream's `io_errno`.
 "The sources of the QLF file: read the index at its end and add each `source/2`, `include/2`, `dependency/2` to `files0`, a list (pl-qlf.c)."
 function qlfFilesInfo(
-    ld::PL_local_data{T}, state::wic_state, file::String, files0::term_t
+    ld::PL_local_data{T}, state::wic_state, files0::term_t
 )::Bool where {T}
     s = state.wicFd::IOSTREAM
-    pushPathTranslation(ld, state, file, 0) || return false
 
     files = PL_copy_term_ref(ld, files0)
 
@@ -1017,14 +1547,13 @@ end
 
 # PORT: pl-qlf.c qlfInfo
 # (pl-qlf.c:3532-3631)
-# DIVERGES: only the arguments `'\$qlf_versions'/6`, `'\$qlf_is_compatible'/1` and `'\$qlf_sources'/2` pass (`cversion`,
-# `minload`, `fversion`, `csig`, `fsig`, `files0`, then the flags `Q_VERSION`, `Q_FILES`; 0 for a term reference not used). The
-# `minfo` branch (`'\$qlf_module'/2`: `pushXrIdTable`, `qlfModuleInfo`, the XR reader) is NOT PORTED, that predicate stays
-# refused by name (QLF1B). The `files0` block is `qlfFilesInfo`.
-"Open the QLF file `file`; with `Q_VERSION` unify the version information, else check compatibility; with `Q_FILES` list its sources; close it (pl-qlf.c)."
+# DIVERGES: the arguments are `cversion`, `minload`, `fversion`, `csig`, `fsig`, `minfo`, `files0`, then the flags `Q_VERSION`,
+# `Q_FILES`, `Q_MODULE` (a term reference is 0 when not used; upstream tests it for 0, here the flags say which are passed). The
+# `minfo` branch is `pushXrIdTable`, `qlfModuleInfo`, `popXrIdTable`; the `files0` block is `qlfFilesInfo`.
+"Open the QLF file `file`; with `Q_VERSION` unify the version information, else check compatibility; with `Q_MODULE` unify the module information, with `Q_FILES` list its sources; close it (pl-qlf.c)."
 function qlfInfo(
     ld::PL_local_data{T}, file::String, cversion::term_t, minload::term_t, fversion::term_t,
-    csig::term_t, fsig::term_t, files0::term_t, flags::Int
+    csig::term_t, fsig::term_t, minfo::term_t, files0::term_t, flags::Int
 )::Bool where {T}
     state = wic_state(file)
     s = open_qlf_file(ld, file)
@@ -1049,10 +1578,21 @@ function qlfInfo(
 
     rval = false
     if ok
-        rval = (flags & Q_FILES) != 0 ? qlfFilesInfo(ld, state, file, files0) : true
+        rval = true
+        if (flags & (Q_MODULE | Q_FILES)) != 0                      # if ( minfo || files0 )
+            rval = pushPathTranslation(ld, state, file, 0)
+        end
+        if rval && (flags & Q_MODULE) != 0
+            pushXrIdTable(state)
+            rval = qlfModuleInfo(ld, state, minfo)
+            popXrIdTable(state)
+        end
+        if rval && (flags & Q_FILES) != 0
+            rval = qlfFilesInfo(ld, state, files0)
+        end
     end
 
-    (flags & Q_FILES) != 0 && popPathTranslation(ld, state)         # if ( minfo || files0 )
+    (flags & (Q_MODULE | Q_FILES)) != 0 && popPathTranslation(ld, state)   # if ( minfo || files0 )
     Sclose(s)
     return rval
 end
@@ -1066,7 +1606,7 @@ function pl_qlf_versions6_va(
     name = PL_get_file_name(ld, PL__t0, Int(PL_FILE_ABSOLUTE))
     name === nothing && return FFALSE                       # !PL_get_file_name(A1, &name, PL_FILE_ABSOLUTE)
     return qlfInfo(
-        ld, name, PL__t0 + 1, PL__t0 + 2, PL__t0 + 3, PL__t0 + 4, PL__t0 + 5, 0, Int(Q_VERSION)
+        ld, name, PL__t0 + 1, PL__t0 + 2, PL__t0 + 3, PL__t0 + 4, PL__t0 + 5, 0, 0, Int(Q_VERSION)
     ) ? FTRUE : FFALSE
 end
 
@@ -1078,7 +1618,7 @@ function pl_qlf_is_compatible1_va(
 )::foreign_t where {T}
     name = PL_get_file_name(ld, PL__t0, Int(PL_FILE_ABSOLUTE))
     name === nothing && return FFALSE
-    return qlfInfo(ld, name, 0, 0, 0, 0, 0, 0, 0) ? FTRUE : FFALSE
+    return qlfInfo(ld, name, 0, 0, 0, 0, 0, 0, 0, 0) ? FTRUE : FFALSE
 end
 
 # PORT: pl-qlf.c qlf_sources as pl_qlf_sources2_va
@@ -1089,7 +1629,7 @@ function pl_qlf_sources2_va(
 )::foreign_t where {T}
     name = PL_get_file_name(ld, PL__t0, Int(PL_FILE_ABSOLUTE))
     name === nothing && return FFALSE                       # !PL_get_file_name(A1, &name, PL_FILE_ABSOLUTE)
-    return qlfInfo(ld, name, 0, 0, 0, 0, 0, PL__t0 + 1, Int(Q_FILES)) ? FTRUE : FFALSE
+    return qlfInfo(ld, name, 0, 0, 0, 0, 0, 0, PL__t0 + 1, Int(Q_FILES)) ? FTRUE : FFALSE
 end
 
 # PORT: pl-qlf.c FNV1A_64_OFFSET, FNV1A_64_PRIME
@@ -1139,11 +1679,14 @@ function pl_file_hash2_va(
 end
 
 # PORT: pl-qlf.c qlf_module as pl_qlf_module2_va
-# (PRED_IMPL("$qlf_module", 2, qlf_module, 0)) — refused by name
+# (PRED_IMPL("$qlf_module", 2, qlf_module, 0)) — pl-qlf.c:3710-3722
+"`'\$qlf_module'(+File, -Info)` (pl-qlf.c): `Info` is a dict `#{module:, file:, class:, exports:}` read from the module record of the QLF file."
 function pl_qlf_module2_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
 )::foreign_t where {T}
-    _qlf_refused(T, "\$qlf_module", 2)
+    name = PL_get_file_name(ld, PL__t0, Int(PL_FILE_ABSOLUTE))
+    name === nothing && return FFALSE                       # !PL_get_file_name(A1, &name, PL_FILE_ABSOLUTE)
+    return qlfInfo(ld, name, 0, 0, 0, 0, 0, PL__t0 + 1, 0, Int(Q_MODULE)) ? FTRUE : FFALSE
 end
 
 # PORT: pl-qlf.c qlf_load as pl_qlf_load2_va

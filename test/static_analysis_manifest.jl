@@ -2920,7 +2920,7 @@ _index_entry_points(T) = (
     (LK.qlfVersion, Tuple{LK.PL_local_data{T}, LK.wic_state, String}, false),
     (LK.qlfIsCompatible, Tuple{LK.PL_local_data{T}, LK.wic_state, String}, false),
     (LK.open_qlf_file, Tuple{LK.PL_local_data{T}, String}, false),
-    (LK.qlfInfo, Tuple{LK.PL_local_data{T}, String, Int, Int, Int, Int, Int, Int, Int}, false),
+    (LK.qlfInfo, Tuple{LK.PL_local_data{T}, String, Int, Int, Int, Int, Int, Int, Int, Int}, false),
     # QLF2: `$qlf_sources`: the index at the end of the file, the path translation, the source entries
     (LK.PL_put_uint64, Tuple{LK.PL_local_data{T}, Int, UInt64}, false),
     (LK.PL_put_dict, Tuple{LK.PL_local_data{T}, Int, UInt64, Int, Vector{UInt64}, Int}, false),
@@ -2932,7 +2932,28 @@ _index_entry_points(T) = (
     (LK.loadFileName, Tuple{LK.PL_local_data{T}, LK.wic_state}, false),
     (LK.qlfLoadFileHash, Tuple{LK.wic_state}, false),
     (LK.qlfSourceInfo, Tuple{LK.PL_local_data{T}, LK.wic_state, Int, Int}, false),
-    (LK.qlfFilesInfo, Tuple{LK.PL_local_data{T}, LK.wic_state, String, Int}, false),
+    (LK.qlfFilesInfo, Tuple{LK.PL_local_data{T}, LK.wic_state, Int}, false),
+    # QLF3: `$qlf_module`: the XR table and reader, the module record
+    (LK.pushXrIdTable, Tuple{LK.wic_state}, false),
+    (LK.popXrIdTable, Tuple{LK.wic_state}, false),
+    (LK.lookupXrId, Tuple{Type{T}, LK.wic_state, Int}, false),
+    (LK.storeXrId, Tuple{LK.wic_state, Int, LK.xr_atom{T}}, false),
+    (LK.qlfLoadError, Tuple{LK.wic_state}, false),
+    (LK.qlfGetUInt32, Tuple{LK.IOSTREAM}, false),
+    (LK.qlfGetDouble, Tuple{LK.IOSTREAM}, false),
+    (LK.qlfGetStringW, Tuple{LK.IOSTREAM}, false),
+    (LK.qlfGetString, Tuple{LK.PL_local_data{T}, LK.IOSTREAM}, false),
+    (LK.getAtom, Tuple{Type{T}, LK.IOSTREAM, Symbol}, false),
+    (LK.getBlobType, Tuple{Type{T}, LK.IOSTREAM}, false),
+    (LK.getBlob, Tuple{LK.PL_local_data{T}, LK.wic_state}, false),
+    (LK._xr_atom, Tuple{LK.wic_state, LK.xr_atom{T}}, false),
+    (LK.loadXR, Tuple{LK.PL_local_data{T}, LK.wic_state}, false),
+    (LK.loadXRc, Tuple{LK.PL_local_data{T}, LK.wic_state, Int}, false),
+    (LK.qlfLoadSource, Tuple{LK.PL_local_data{T}, LK.wic_state}, false),
+    (LK.loadInclude, Tuple{LK.PL_local_data{T}, LK.wic_state, Bool}, false),
+    (LK.qlfLoadIncludes, Tuple{LK.PL_local_data{T}, LK.wic_state, Bool}, false),
+    (LK._qlf_mkeys, Tuple{LK.PL_local_data{T}}, false),
+    (LK.qlfModuleInfo, Tuple{LK.PL_local_data{T}, LK.wic_state, Int}, false),
     [
         (f, Tuple{LK.PL_local_data{T}, Int, Int, LK.control_t{T}}, false) for
         f in (

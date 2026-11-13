@@ -9,7 +9,7 @@
 #     two runs byte-identical (2026-10-31); with `swipl` on PATH the live answers are compared with the pins too.
 #   * White-box rows from the C code (kernel only: swipl's consult differs there): `'$:-'`, the nesting bound, an unmatched `:- endif`,
 #     `elif` (not a conditional), a missing file, a syntax error, a failing directive collected, `compileFileList` up to `-c`, the boot
-#     entry's state, the 22-entry registration table (eighteen no-state or running, four refused by name).
+#     entry's state, the 22-entry registration table (nineteen no-state or running, three refused by name).
 using Test, LogicKernel
 const LK = LogicKernel
 
@@ -718,7 +718,7 @@ function _ql_hash(gd, ld, path::String)
     return r
 end
 
-@testset "the write-side predicates take the no-state branch, `$file_hash` and the header/sources readers run; the 4 others are refused by name" begin
+@testset "the write-side predicates take the no-state branch, `$file_hash` and the header/sources readers run; the 3 others are refused by name" begin
     # UNVERIFIED on the kernel: gate decides
     tbl = LK.PL_predicates_from_wic
     @test length(tbl) == 22
@@ -734,11 +734,11 @@ end
         # QLF1B: real predicates (the content hash and the header need no state)
         ("\$file_hash", 2), ("\$qlf_versions", 6), ("\$qlf_is_compatible", 1),
         # QLF2: the source index of a QLF file (the `files0` block of qlfInfo)
-        ("\$qlf_sources", 2)
+        ("\$qlf_sources", 2),
+        # QLF3: the module record of a QLF file (the XR reader; its own file test_qlf_module_swipl.jl)
+        ("\$qlf_module", 2)
     ]
-    refused = [
-        ("\$qlf_module", 2), ("\$qlf_load", 2), ("\$qlf_open", 1), ("\$open_wic", 2)
-    ]
+    refused = [("\$qlf_load", 2), ("\$qlf_open", 1), ("\$open_wic", 2)]
     @test Set(names) == Set(vcat(shells, refused))
     # registered after read_clause/3's table and before the file table's, in both dispatch tables
     i = findfirst(==(LK.PL_predicates_from_wic), LK._PRED_TABLES)
@@ -753,7 +753,7 @@ end
     # the six QLF1 rows have their own answers (below), not "true"
     qlf1 = Set(["\$qlf_current_source", "\$qlf_dependency", "\$qlf_close", "\$close_wic",
                 "\$map_id", "\$unmap_id", "\$file_hash",
-                "\$qlf_versions", "\$qlf_is_compatible", "\$qlf_sources"])
+                "\$qlf_versions", "\$qlf_is_compatible", "\$qlf_sources", "\$qlf_module"])
     for (n, ar) in shells
         (n == "\$qlf_include" || n in qlf1) && continue
         args = _QL[mk_var(_QL, LK.fresh_var_keys!(1)) for _ in 1:ar]
