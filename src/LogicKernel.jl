@@ -49,6 +49,7 @@ include("pl-gc.jl")            # swipl-devel src/pl-gc.c — generations in use,
 include("pl-gcmark.jl")        # swipl-devel src/pl-gc.c — the mark phase (G1-3a: mark_variable, the term-reference roots)
 include("pl-gcwalk.jl")        # swipl-devel src/pl-gc.c — the mark phase's walk and drivers (G1-3b; after pl-gcmark.jl of G1-3a)
 include("pl-gctrail.jl")       # swipl-devel src/pl-gc.c — the trail half: tag_trail, compact_trail, early reset support (G1-4; after pl-gcwalk.jl)
+include("pl-gccompact.jl")     # swipl-devel src/pl-gc.c — the compaction: compact_global, collect_phase, unsweep_*, the join of the trail half and the sweep (G1-6)
 include("pl-cont.jl")          # swipl-devel src/pl-cont.c — shift/1: collecting the continuation of a reset/3
 include("pl-alloc.jl")         # swipl-devel src/pl-alloc.c — raising a stack overflow; the argument stack
 include("pl-wam.jl")           # swipl-devel src/pl-wam.c — the local stack's operations; the query API and the run loop
