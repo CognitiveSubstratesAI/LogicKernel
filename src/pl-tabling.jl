@@ -7819,6 +7819,91 @@ function transaction_commit_tables(ld::PL_local_data{T})::Bool where {T}
     return true
 end
 
+# PORT: pl-tabling.c tt_rollback_answer
+# DIVERGES: `answer` is a node id of `atrie`; the `DEBUG` print is not kept.
+"Roll back a monotonic answer: a lazy table's queues are pruned of it first, then its node is deleted (pl-tabling.c)."
+function tt_rollback_answer(ld::PL_local_data{T}, atrie::trie{T}, answer::Int)::Nothing where {T}
+    idg = atrie.IDG
+
+    if idg !== nothing && idg.lazy
+        n = atrie.nodes[answer]
+        v = n.value
+
+        n.value = 0
+        prune_deleted_mdeps(ld, idg)
+        n.value = v
+    end
+
+    trie_delete(_query_gd(ld), atrie, answer, true)
+
+    return nothing
+end
+
+# PORT: pl-tabling.c tt_rollback_tables
+# DIVERGES: `affected` is the trail's `Dict`; a symbol that names no live trie (its table was destroyed) is skipped where
+# upstream dereferences the null trie.
+"Roll back the tables the transaction affected: invalidate each one that has an IDG node; false if that failed (pl-tabling.c)."
+function tt_rollback_tables(ld::PL_local_data{T}, affected::Dict{word, Int})::Bool where {T}
+    rc = true
+    gd = _query_gd(ld)
+
+    for (symbol, flags) in affected
+        atrie = symbol_trie(gd, symbol)
+        atrie === nothing && continue
+        n = atrie.IDG
+
+        if n !== nothing
+            fl = Int(IDG_CHANGED_NODE)
+
+            n.monotonic && (fl |= Int(IDG_CHANGED_MONO))
+            idg_changed(ld, atrie, fl) || (rc = false)          # can this happen?
+            if n.monotonic && !n.force_reeval
+                n.force_reeval = true
+            end
+        end
+    end
+
+    return rc
+end
+
+# PORT: pl-tabling.c tt_rollback_actions
+# DIVERGES: `b` is the trail's action `Vector`; the entries are walked from the top (`reverse`); an entry `tt_abolish_table`
+# cleared (`atrie` 0) is skipped.
+"Roll back the answers of the trail's actions, newest first; true (pl-tabling.c)."
+function tt_rollback_actions(ld::PL_local_data{T}, b::Vector{tbl_trail_answer})::Bool where {T}
+    gd = _query_gd(ld)
+
+    for i in length(b):-1:1
+        ta = b[i]
+
+        if ta.type == TT_ANSWER
+            ta.atrie != 0 && tt_rollback_answer(ld, gd.tries[ta.atrie], ta.answer)
+        else
+            @assert false "tt_rollback_actions: unknown trail action"
+        end
+    end
+
+    return true
+end
+
+# PORT: pl-tabling.c transaction_rollback_tables
+"A transaction rolls back: invalidate the affected tables, then delete the answers it added; false if either failed (pl-tabling.c)."
+function transaction_rollback_tables(ld::PL_local_data{T})::Bool where {T}
+    tt = ld.transaction.table_trail
+    rc = true
+
+    if tt !== nothing
+        ld.transaction.table_trail = nothing
+
+        rc = tt_rollback_tables(ld, tt.tables)
+        rc = tt_rollback_actions(ld, tt.actions) && rc
+
+        tbl_trail_free(tt)
+    end
+
+    return rc
+end
+
 # PORT: pl-tabling.c tbl_reeval_wait as pl_tbl_reeval_wait2_va
 # (pl-tabling.c:11100-11111 at the pin; table_status_reeval_wait :11062 is ported above, TB6b)
 "`'\$tbl_reeval_wait'(+Trie, -Status)`: the status of `Trie` (`dynamic`, `monotonic`, `complete`, `invalid`) (pl-tabling.c)."
