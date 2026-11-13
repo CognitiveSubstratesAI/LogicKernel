@@ -3119,6 +3119,9 @@ function _manifest_index(T)
         (LK.idg_unlink_concurrent_table, Tuple{LD}, false),
         (LK.empty_variant_table, Tuple{LD, LK.trie{T}, Bool}, false),
         (LK.clear_variant_table, Tuple{LD}, false),
+        # TAB1 W2: pl-tabling.c save_tabling_status / restore_tabling_status (pl_break1, table_answer_event)
+        (LK.save_tabling_status, Tuple{LD, LK.tbl_status{T}}, false),
+        (LK.restore_tabling_status, Tuple{LD, LK.tbl_status{T}}, false),
         (LK.clearThreadTablingData, Tuple{LD, Bool}, false),
         (LK.untable_from_clause, Tuple{GD, LD, C}, false),
         (LK.untable_definition_clauses, Tuple{GD, LD, D}, false),
@@ -3835,7 +3838,7 @@ _manifest_tb7(T) = begin
                 LK.pl_idg_mono_index2_va, LK.pl_idg_mono_index_deps4_va, LK.pl_tbl_propagate_start1_va,
                 LK.pl_tbl_propagate_end1_va, LK.pl_tbl_collect_mono_dep0_va, LK.pl_mono_idg_changed2_va,
                 LK.pl_mono_reeval_prepare2_va, LK.pl_mono_reeval_done3_va, LK.pl_idg_mono_empty_queue2_va,
-                LK.pl_idg_mono_invalidate1_va
+                LK.pl_idg_mono_invalidate1_va, LK.pl_tbl_node_answer2_va       # TAB1 W2: '$tbl_node_answer'/2
             )
         ]...
     )
@@ -4708,6 +4711,8 @@ const _DISPATCH_MANIFEST_TUPLE = (
     (LK.clear_table_props!, Tuple{LK.table_props}, false),
     # TAB1 TB5: the sort of the taken table values (src/pl-tabling.jl); it names no term type
     (LK.sort_table_values!, Tuple{Vector{UInt64}}, false),
+    # TAB1 W2: pl-tabling.c take_table_value, the `trie_empty_take` callback of `empty_variant_table`; it names no term type
+    (LK.take_table_value!, Tuple{Vector{UInt64}, UInt64}, false),
     # TAB1 TB0: pl-allocpool.c (src/pl-allocpool.jl) and the sentinel tests of pl-tabling.c (src/pl-tabling.jl); they name no term type
     (LK.new_alloc_pool, Tuple{String, Int}, false),
     (LK.free_alloc_pool, Tuple{LK.alloc_pool}, false),
