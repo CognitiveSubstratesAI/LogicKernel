@@ -1003,7 +1003,7 @@ end
 # (`Sopen_file`), a failure's error from its errno (`ERR_FILE_OPERATION`); `pipe(Command)` is `Sopen_pipe` (lane D: a
 # `/bin/sh -c` child; `PL_clear_exception` and `REP_FN` of the command text are unwritten). Unwritten, each raising
 # `NotPortedError` BEFORE a file is opened: IRIs (`iri_hook`), the `lock(Lock)` option is `Sopen_file`'s `l`/`L` flag (`fcntl`),
-# the `locale` option (`PL_locale`) and the encoding ENC_ANSI (named refusal; UTF-16 and wchar_t are ported, ENC1).
+# the `locale` option (`PL_locale`). The encodings ENC_ANSI (`text`: libc's `mbrtowc`/`wcrtomb`, ENC1), UTF-16 and wchar_t are ported.
 # `locale`'s default is the `encoding` flag's (`LD->encoding`): UTF-8.
 "Open the file `file` as `mode` and `options` say (pl-file.c); the stream, or `nothing` after raising the error."
 function openStream(
@@ -1105,14 +1105,6 @@ function openStream(
     ebom = stream_encoding_options(ld, type, encoding, bom)
     ebom === nothing && return nothing
     enc, bom = ebom
-    if enc == ENC_ANSI                  # DIVERGES: the locale's multibyte conversion is not ported (named refusal)
-        throw(
-            NotPortedError{T}(
-                type, string("open/4 with the stream encoding ", enc),
-                "ENC_ANSI is the locale's mbrtowc/wcrtomb (platform conversion)"
-            )
-        )
-    end
     fnewline = -1
     if newline !== nothing && !_sym_is(type, :binary)
         nm = atom_to_newline_mode(ld, newline, how[1] == 'r' ? SIO_INPUT : SIO_OUTPUT)
@@ -1971,8 +1963,8 @@ function unify_diff_list(
 end
 
 # PORT: pl-file.c read_pending_input
-# DIVERGES: the pending bytes are copied to a `Vector{UInt8}`; the list is built by `unify_diff_list`; `ENC_ANSI` is a named
-# refusal (no multibyte state in the kernel's streams); no lock to release.
+# DIVERGES: the pending bytes are copied to a `Vector{UInt8}`; the list is built by `unify_diff_list`; `ENC_ANSI` is libc's
+# `mbsnrtowcs`/`mbrtowc` under the process's LC_CTYPE (`_mbsnrtowcs_count`, `_mbrtowc`); no lock to release.
 "The pending input of a stream as the difference list `list`-`tail` of codes or chars (pl-file.c)."
 function read_pending_input(
     ld::PL_local_data{T}, input::term_t, list::term_t, tail::term_t, chars::Bool
@@ -2011,11 +2003,27 @@ function read_pending_input(
         end
         p !== nothing && (p.byteno = pos0.byteno + n)
     elseif enc == ENC_ANSI
-        throw(
-            NotPortedError{Nothing}(
-                nothing, "read_pending_codes/3 on an ENC_ANSI stream", "no multibyte state in the kernel's streams"
-            )
-        )
+        us = 1
+        es = n + 1
+        st = stream_mbstate!(s)
+        s0 = copy(st)                                         # `s0 = *s->mbstate`
+        count = _mbsnrtowcs_count(buf, n, s0)
+        if count == -1
+            Sseterr(s, SIO_WARN, "Illegal multibyte Sequence")
+            failed = true
+        else
+            for _ in 1:count
+                rc, c = _mbrtowc(buf, us, es - us, st)
+                us += rc                                      # (upstream's `us += mbrtowc(...)`: a NUL character is rc 0, so `us` stays)
+                c == Int('\r') && skip_cr(s) && continue
+                p !== nothing && S__fupdatefilepos_getc(s, c)
+
+                push!(codes, c)
+            end
+            p !== nothing && (p.byteno = pos0.byteno + (us - 1))
+
+            re_buffer(s, buf, us, es - us)
+        end
     elseif enc == ENC_UTF8
         us = 1
         es = n + 1

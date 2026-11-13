@@ -43,6 +43,68 @@ const SIO_CMAGIC = 42
 "The push-back area before a stream's buffer: `ROUND(PL_MB_LEN_MAX, sizeof(wchar_t))` (pl-stream.c)."
 const UNDO_SIZE = 16
 
+# PORT: pl-utf8.h PL_MB_LEN_MAX
+"The size of the buffer a multibyte conversion writes (pl-utf8.h)."
+const PL_MB_LEN_MAX = 16
+
+# ORIGINAL: the room for an `mbstate_t` (8 bytes on glibc, both x86_64 and aarch64): two words, zeroed, as `memset(.., 0, sizeof)`.
+"The words of a zeroed `mbstate_t`."
+const MBSTATE_WORDS = 2
+
+# ORIGINAL: pl-stream.c's `if ( !s->mbstate ) { malloc; memset 0 }` of put_code and Sgetcode (and pl-file.c's read_pending_input)
+# DIVERGES: the state is a `Vector{UInt64}`, collected by the GC (upstream frees it in Sclose_ and at shutdown, `free(s->mbstate)`).
+"The `mbstate_t` of `s`: made zeroed the first time (pl-stream.c)."
+function stream_mbstate!(s::IOSTREAM)::Vector{UInt64}
+    st = s.mbstate
+    if st === nothing
+        st = zeros(UInt64, MBSTATE_WORDS)
+        s.mbstate = st
+    end
+    return st
+end
+
+# ORIGINAL: libc's `wcrtomb(3)` under the process's `LC_CTYPE` (the kernel never calls `setlocale`: the embedder or CT1 does).
+# DIVERGES: the bytes are the answer (`nothing` for `(size_t)-1`, an unrepresentable character); `wchar_t` is a `Cint` (Linux).
+"The bytes that the wide character `c` is in the process's multibyte encoding, `nothing` when it has none; `st` is the state."
+function _wcrtomb(c::Int, st::Vector{UInt64})::Union{Nothing, Vector{UInt8}}
+    buf = Vector{UInt8}(undef, PL_MB_LEN_MAX)
+    n = GC.@preserve buf st ccall(
+        :wcrtomb, Csize_t, (Ptr{UInt8}, Cint, Ptr{UInt64}), pointer(buf), c % Cint, pointer(st)
+    )
+    n == typemax(Csize_t) && return nothing
+    resize!(buf, Int(n))
+    return buf
+end
+
+# ORIGINAL: libc's `mbrtowc(3)` with one byte at a time (Sgetcode) or a run (read_pending_input).
+"`(rc, wc)` of `mbrtowc` on `n` bytes of `buf` from `from`: `rc` is the bytes used, `-1` (illegal) or `-2` (incomplete); `wc` the character."
+function _mbrtowc(buf::Vector{UInt8}, from::Int, n::Int, st::Vector{UInt64})::Tuple{Int, Int}
+    wc = Ref{Cint}(0)
+    rc = GC.@preserve buf st ccall(
+        :mbrtowc, Csize_t, (Ptr{Cint}, Ptr{UInt8}, Csize_t, Ptr{UInt64}),
+        wc, pointer(buf, from), n, pointer(st)
+    )
+    rc == typemax(Csize_t) && return (-1, 0)                    # (size_t)-1
+    rc == typemax(Csize_t) - 1 && return (-2, 0)                # (size_t)-2
+    return (Int(rc), Int(wc[]))
+end
+
+# ORIGINAL: libc's `mbsnrtowcs(NULL, &src, n, 0, ps)` (pl-file.c's HAVE_MBSNRTOWCS arm): the characters of the first `n` bytes of `buf`,
+# an incomplete sequence at the end not counted; `-1` is (size_t)-1. `st` is advanced as libc does (the caller passes a copy).
+"The number of wide characters in the first `n` bytes of `buf` under the process's `LC_CTYPE`, `-1` for an illegal sequence."
+function _mbsnrtowcs_count(buf::Vector{UInt8}, n::Int, st::Vector{UInt64})::Int
+    src = Ref{Ptr{UInt8}}(C_NULL)
+    rc = GC.@preserve buf st begin
+        src[] = pointer(buf)
+        ccall(
+            :mbsnrtowcs, Csize_t, (Ptr{Cint}, Ptr{Ptr{UInt8}}, Csize_t, Csize_t, Ptr{UInt64}),
+            C_NULL, src, n, 0, pointer(st)
+        )
+    end
+    rc == typemax(Csize_t) && return -1
+    return Int(rc)
+end
+
 # PORT: SWI-Stream.h SIO_FBUF
 "Full buffering (SWI-Stream.h)."
 const SIO_FBUF = UInt32(1) << 0
@@ -308,10 +370,11 @@ mutable struct IOSTREAM
     context::Int                        # the stream's entry in the database's stream table (0: none)
     erased::Bool                        # closed while a reference is held
     wrapped::Union{Nothing, wrappedIO}  # what wrapIO() replaced the read of (pl-file.c: `handle` is the wrappedIO)
+    mbstate::Union{Nothing, Vector{UInt64}}  # ENC_ANSI decoding: the `mbstate_t` (nothing: NULL; see `stream_mbstate!`)
     IOSTREAM() = new(
         UInt8[], 0, 0, 0, 0, EOF, 0, 0, UInt32(0), IOPOS(), nothing, nothing,
         Smemfunctions,
-        ENC_UNKNOWN, 0, SIO_NL_POSIX, 0, nothing, S_UATOMS_ACCEPT, 0, false, nothing
+        ENC_UNKNOWN, 0, SIO_NL_POSIX, 0, nothing, S_UATOMS_ACCEPT, 0, false, nothing, nothing
     )
 end
 
@@ -863,8 +926,8 @@ function put_utf16(c::Int, s::IOSTREAM, be::Bool)::Int
 end
 
 # PORT: pl-stream.c put_code
-# DIVERGES: ENC_ANSI is a named refusal (the locale's `wcrtomb`, no multibyte state in the kernel's streams);
-# `ENC_WCHAR` is the 4-byte native `wchar_t` (SIZEOF_WCHAR_T is 4 on Linux, upstream's `#else` arm).
+# DIVERGES: ENC_ANSI is libc's `wcrtomb` under the process's LC_CTYPE (the kernel never calls `setlocale`), with the stream's `mbstate`
+# (`stream_mbstate!`); `ENC_WCHAR` is the 4-byte native `wchar_t` (SIZEOF_WCHAR_T is 4 on Linux, upstream's `#else` arm).
 "Write character `c` to `s` in its encoding: `c`, or -1 on error (pl-stream.c)."
 function put_code(c::Int, s::IOSTREAM)::Int
     IS_UTF16_SURROGATE(c) && return reperror(c, s)
@@ -880,6 +943,15 @@ function put_code(c::Int, s::IOSTREAM)::Int
             reperror(c, s) < 0 && return -1
         else
             put_byte(c, s) < 0 && return -1
+        end
+    elseif enc == ENC_ANSI
+        mb = _wcrtomb(c, stream_mbstate!(s))
+        if mb === nothing
+            reperror(c, s) < 0 && return -1
+        else
+            for x in mb
+                put_byte(Int(x), s) < 0 && return -1
+            end
         end
     elseif enc == ENC_UTF8
         if c < 128
@@ -899,14 +971,8 @@ function put_code(c::Int, s::IOSTREAM)::Int
         for b in reinterpret(UInt8, [UInt32(c)])        # the native bytes of a `pl_wchar_t`
             put_byte(Int(b), s) < 0 && return -1
         end
-    elseif enc == ENC_UNKNOWN
+    else                                    # ENC_UNKNOWN (upstream's `default: assert(0)`)
         return -1
-    else
-        throw(
-            NotPortedError{Nothing}(
-                nothing, "put_code: encoding $enc", "ENC_ANSI is the locale's wcrtomb (platform conversion)"
-            )
-        )
     end
     s.lastc = c
     if c == Int('\n') && (s.flags & SIO_LBUF) != 0
@@ -928,6 +994,7 @@ function Sputcode(c::Int, s::IOSTREAM)::Int
 end
 
 # PORT: pl-stream.c Scanrepresent
+# DIVERGES: ENC_ANSI is libc's `wcrtomb` on a fresh state under the process's LC_CTYPE (`_wcrtomb`).
 "0 if `s`'s encoding can represent `c`, else -1 (pl-stream.c)."
 function Scanrepresent(c::Int, s::IOSTREAM)::Int
     enc = s.encoding
@@ -935,16 +1002,14 @@ function Scanrepresent(c::Int, s::IOSTREAM)::Int
         return c <= 0xff ? 0 : -1
     elseif enc == ENC_ASCII
         return c < 0x7f ? 0 : -1
+    elseif enc == ENC_ANSI
+        return _wcrtomb(c, zeros(UInt64, MBSTATE_WORDS)) === nothing ? -1 : 0   # a fresh `mbstate_t`, as upstream's local `state`
     elseif enc == ENC_UTF16BE || enc == ENC_UTF16LE
         return IS_UTF16_SURROGATE(c) ? -1 : 0      # SIZEOF_WCHAR_T > 2
     elseif enc == ENC_WCHAR || enc == ENC_UTF8
         return 0
     end
-    throw(
-        NotPortedError{Nothing}(
-            nothing, "Scanrepresent: encoding $enc", "ENC_ANSI is the locale's wcrtomb (platform conversion)"
-        )
-    )
+    return -1                                   # upstream's `default: assert(0); return -1`
 end
 
 # PORT: pl-stream.c get_ucs2
@@ -982,8 +1047,8 @@ function get_utf16(s::IOSTREAM, be::Bool)::Int
 end
 
 # PORT: pl-stream.c Sgetcode
-# DIVERGES: ENC_ANSI is a named refusal (the locale's `mbrtowc`); `ENC_WCHAR` is the 4-byte native
-# `wchar_t` (upstream's `#else` arm); no `tee`.
+# DIVERGES: ENC_ANSI is libc's `mbrtowc` under the process's LC_CTYPE, byte by byte on the stream's `mbstate` (`_mbrtowc`);
+# `ENC_WCHAR` is the 4-byte native `wchar_t` (upstream's `#else` arm); no `tee`.
 "The next character of `s` in its encoding, or -1 at end of file (pl-stream.c)."
 function Sgetcode(s::IOSTREAM)::Int
     while true                                  # retry:
@@ -1046,12 +1111,34 @@ function Sgetcode(s::IOSTREAM)::Int
                 wb[n] = UInt8(c1)
             end
             c == 0 && (c = Int(reinterpret(Int32, wb)[1]))  # `chr`: the native `pl_wchar_t`
+        elseif enc == ENC_ANSI
+            st = stream_mbstate!(s)
+            n = 0                                               # as upstream: `n` is never incremented, so the EOF-in-sequence arm below
+                                                                # cannot be taken (probed on the pin: a lone 0xc3 at EOF reads as -1, no warning)
+            c = 0
+            b1 = UInt8[0]
+            while true
+                c = get_byte(s)
+                if c == EOF
+                    if n != 0
+                        Sseterr(s, SIO_WARN, "EOF in multibyte Sequence")
+                        c = UTF8_MALFORMED_REPLACEMENT          # mberr:
+                    end
+                    break                                       # n == 0: goto out, c is EOF
+                end
+                b1[1] = UInt8(c)
+                rc, wc = _mbrtowc(b1, 1, 1, st)
+                if rc == 1 || rc == 0
+                    c = wc
+                    break
+                elseif rc == -1
+                    Sseterr(s, SIO_WARN, "Illegal multibyte Sequence")
+                    c = UTF8_MALFORMED_REPLACEMENT              # mberr:
+                    break
+                end                                             # else -2: incomplete
+            end
         else
-            throw(
-                NotPortedError{Nothing}(
-                    nothing, "Sgetcode: encoding $enc", "ENC_ANSI is the locale's mbrtowc (platform conversion)"
-                )
-            )
+            c = -1                                              # ENC_UNKNOWN: upstream's `default: assert(0)`
         end
         # out:
         if c == Int('\r') && (s.flags & SIO_TEXT) != 0
