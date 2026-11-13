@@ -9184,7 +9184,6 @@ end
 
 # PORT: pl-tabling.c mono_reeval_prepare as pl_mono_reeval_prepare2_va
 # (PRED_IMPL("$mono_reeval_prepare", 2, mono_reeval_prepare, 0), pl-tabling.c:10556-10589 at the pin)
-# DIVERGES: the `LD->transaction.generation` branch (`tt_mono_status`, `tt_add_table`, `tt_notrail`) is omitted (owner TX1/TB9).
 "`'\$mono_reeval_prepare'(+ATrie, -Size)`: prepare `ATrie` for lazy monotonic updates (pl-tabling.c)."
 function pl_mono_reeval_prepare2_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
@@ -9195,6 +9194,18 @@ function pl_mono_reeval_prepare2_va(
         idg = atrie.IDG
 
         if idg !== nothing && idg.falsecount != 0 && idg.monotonic && idg.lazy
+            if ld.transaction.generation != 0
+                status = tt_mono_status(ld, atrie)
+
+                if status == M_INVALID_DEPS || status == M_MIXED_CLAUSES
+                    tt_add_table(ld, atrie, TT_TBL_INVALIDATE)
+                elseif status == M_OLD_CLAUSES
+                    idg.tt_notrail = true
+                elseif status == M_NEW_CLAUSES
+                    idg.tt_notrail = false
+                end
+            end
+
             idg.lazy_queued = false                     # trap that new answers are queued
             idg.mono_reevaluating = true
             idg.tt_new_dep = false                      # see idg_add_child()
