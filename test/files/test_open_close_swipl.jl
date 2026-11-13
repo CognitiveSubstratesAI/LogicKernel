@@ -885,14 +885,47 @@ end
         )
         @test chomp(sw) == "instantiation_error"
     end
-    # the one flag LB2b still refuses by name: PL_FILE_SEARCH (0x04) calls system:absolute_file_name/3 (pl-files.c:446);
-    # OWNER LB4 (src/os/pl-files.jl get_file_name). PL_FILE_EXIST/READ/WRITE/EXECUTE/OSPATH/ABSOLUTE/NOERRORS are ported.
-    fid = LK.PL_open_foreign_frame(ld)
-    @test_throws LK.NotPortedError LK.PL_get_file_name(
-        ld, LK.PL_new_term_ref(ld), Int(LK.PL_FILE_SEARCH)
-    )
-    ld.exception_term != 0 && LK.PL_clear_exception(ld)
-    LK.PL_close_foreign_frame(ld, fid)
+    # PL_FILE_SEARCH (0x04), R2 LB4: get_file_name calls system:absolute_file_name/3 with the options access(exist|read|write|execute)
+    # the flags name (pl-files.c:446-480 at the pin) and returns the name it answers; PL_FILE_NOERRORS makes the call catch its
+    # exception. A name outside a query needs `ld.GD`, which PL_open_query sets: the test sets it, the built-ins have it.
+    # The expected values are the pinned swipl's (absolute_file_name/3, probed: exist, read, execute, [] and the unbound term).
+    ld.GD = gd
+    function search_of(x::_TL, flags::Int)
+        fid = LK.PL_open_foreign_frame(ld)
+        t = LK.PL_new_term_refs(ld, 1)
+        LK.putSlotValue!(ld, t + 1, x, LK.PutVarMap())
+        r = LK.PL_get_file_name(ld, t, flags | Int(LK.PL_FILE_SEARCH))
+        ball = ld.exception_term != 0 ? enc(lk_answer(ld, LK.PL_exception(ld, 0))) : nothing
+        ld.exception_term != 0 && LK.PL_clear_exception(ld)
+        LK.PL_close_foreign_frame(ld, fid)
+        return r, ball
+    end
+    EXIST, READ, EXEC, NOERR = Int(LK.PL_FILE_EXIST), Int(LK.PL_FILE_READ),
+    Int(LK.PL_FILE_EXECUTE), Int(LK.PL_FILE_NOERRORS)
+    @test search_of(_tls("/etc/passwd"), EXIST) == ("/etc/passwd", nothing)
+    @test search_of(_tls("/etc/passwd"), READ) == ("/etc/passwd", nothing)
+    @test search_of(_tls("/etc/passwd"), EXIST | READ) == ("/etc/passwd", nothing)
+    @test search_of(_tls("/bin/sh"), EXEC) == ("/bin/sh", nothing)
+    @test search_of(lk_gnd(_TL, "/etc/passwd"), EXIST) == ("/etc/passwd", nothing)   # a string name
+    @test search_of(_tls("/etc/../etc/passwd"), 0) == ("/etc/passwd", nothing)       # no access(_) option: the absolute name
+    r, ball = search_of(_tls("/nonexistent_lk_x"), EXIST)
+    @test r === nothing && ball !== nothing
+    @test occursin(_codes("existence_error"), ball) && occursin(_codes("source_sink"), ball)
+    @test occursin(_codes("/nonexistent_lk_x"), ball)
+    @test search_of(_tls("/nonexistent_lk_x"), EXIST | NOERR) == (nothing, nothing)   # PL_Q_CATCH_EXCEPTION
+    r, ball = search_of(mk_var(_TL, LK.fresh_var_keys!(1)), 0)
+    @test r === nothing && ball !== nothing && occursin(_codes("instantiation_error"), ball)
+    if _swipl() !== nothing
+        swp(g) = chomp(
+            read(
+                pipeline(`$(_swipl()) -q -g "$g" -t halt`; stderr=devnull), String
+            )
+        )
+        @test swp("catch(absolute_file_name('/nonexistent_lk_x',_,[access(exist)]),error(F,_),true), print(F), nl") ==
+            "existence_error(source_sink,'/nonexistent_lk_x')"
+        @test swp("absolute_file_name('/etc/../etc/passwd',N,[]), print(N), nl") ==
+            "'/etc/passwd'"
+    end
 end
 
 @testset "Sopen_file's how string: the letters it knows, EINVAL for the rest" begin
