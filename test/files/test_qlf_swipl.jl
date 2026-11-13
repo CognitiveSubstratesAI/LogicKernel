@@ -1001,7 +1001,15 @@ _ql_list(items::Vector{_QL}) =
         # a file name longer than PATH_MAX in the index is upstream's fatalError (a Julia `error` naming its message)
         toolong = mk("toolong.qlf", vcat(_ql_hdr(joinpath(d, "toolong.qlf")), UInt8['F'], _ql_zz(5000), fill(UInt8('a'), 10),
                                          _ql_be4(hl("toolong.qlf")), _ql_be4(1)))
-        @test_throws ErrorException _ql_call(gd, ld, "\$qlf_sources", _QL[_qls(toolong), mk_var(_QL, LK.fresh_var_keys!(1))])
+        # (the message is read too: a length that passed the bound would run into the end of the file and raise a different error)
+        toolong_err = try
+            _ql_call(gd, ld, "\$qlf_sources", _QL[_qls(toolong), mk_var(_QL, LK.fresh_var_keys!(1))])
+            nothing
+        catch e
+            e
+        end
+        @test toolong_err isa ErrorException
+        @test toolong_err isa ErrorException && occursin("Invalid QLF: illegal string", toolong_err.msg)
     end
 end
 
