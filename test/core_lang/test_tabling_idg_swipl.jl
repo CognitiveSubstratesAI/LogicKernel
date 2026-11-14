@@ -1161,3 +1161,52 @@ end
     LK.reset_evaluate_node(ld, ta, 1)
     @test ta.nodes[1].value == 0 && (ta.nodes[1].flags & LK.TN_IDG_DELETED) == 0
 end
+
+@testset "idg37: a re-derived unconditional answer makes a CONDITIONAL dependent answer unconditional, it does not remove it (pl-tabling.c:1364-1370, propagate_to_answer :1900)" begin
+    gd, ld, def = _ti_db()
+    t1 = _ti_table!(ld, def, true, 1)                                                      # the table of the worklist, as idg23
+    t2 = _ti_table!(ld, def, true, 2)                                                      # holds a conditional answer that delays on node 1 of t1
+    n = LK.idg_new(ld, t1)::_TIN
+    t1.IDG = n
+    n.reevaluating = true
+    wl = LK.tbl_worklist{_TI}()
+    wl.table = t1.serial
+    push!(wl.delays, LK.delay(t2.serial, 1))
+    # the conditional answer: one conjunction of one delay, on answer 1 of t1 (propagate_to_answer: `answer_ref(d.variant, d.answer) == panswer`)
+    t2.nodes[1].value = LK.word(11)
+    t2.nodes[1].flags |= LK.TN_PRIMARY
+    t2.value_count = 1
+    LK.set_node_delayinfo(gd, t2, 1, LK.delay_info(t2.serial, UInt32(0), [LK.delay_set(0, 1, UInt32(1))], [LK.delay(t1.serial, 1)]))
+    wl2 = LK.tbl_worklist{_TI}()
+    wl2.table = t2.serial
+    wl2.undefined = 1
+    t2.worklist = wl2
+    @test LK.answer_is_conditional(gd, t2, 1) && (t1.nodes[1].flags & LK.TN_IDG_UNCONDITIONAL) == 0 && wl.component === nothing
+    @test _ti_udl(ld, wl, 1) == (LK.UDL_TRUE, 0)                                           # simplified: the entry of the dependent answer is gone
+    # simplify_answer(wl, answer, true): the delay is removed from the conjunction, none is left: make_answer_unconditional (:1820)
+    @test !LK.answer_is_conditional(gd, t2, 1) && wl2.undefined == 0
+    # the answer STAYS (the mutant, truth false, removes the conjunction and the answer: remove_conditional_answer, trie_delete)
+    @test t2.value_count == 1 && (t2.nodes[1].flags & LK.TN_PRIMARY) != 0 && t2.nodes[1].value == LK.word(11)
+end
+
+@testset "idg38: free_worklist_set clears the table's worklist before freeing, whichever worklist it points at (pl-tabling.c:935-939, free_worklist :3912-3915)" begin
+    gd, ld, def = _ti_db()
+    t = _ti_table!(ld, def, true, 1)
+    n = LK.idg_new(ld, t)::_TIN
+    t.IDG = n
+    t.flags &= ~LK.TRIE_COMPLETE
+    n.reevaluating = true
+    wl = LK.tbl_worklist{_TI}()                                                            # the worklist in the set, for table t
+    wl.table = t.serial
+    other = LK.tbl_worklist{_TI}()                                                         # the table points at a different one
+    other.table = t.serial
+    t.worklist = other
+    wls = LK.worklist_set{LK.tbl_worklist{_TI}}()
+    push!(wls.members, wl)
+    @test t.worklist === other && t.worklist !== wl && wl.magic != 0
+    LK.free_worklist_set(ld, wls, LK.WLFS_DISCARD_INCOMPLETE)
+    # `atrie->data.worklist = NULL` (:935) runs before free_worklist: the table points at none. Without it (TB7M6-F2) free_worklist finds a worklist
+    # that is not wl (:3913-3915, "Oops") and leaves the pointer at `other`.
+    @test wl.magic == 0 && t.worklist === nothing
+    @test !n.reevaluating && n.aborted && (t.flags & LK.TRIE_COMPLETE) != 0                # reset_reevaluation ran after the free
+end
