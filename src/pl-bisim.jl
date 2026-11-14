@@ -227,7 +227,7 @@ struct bs_colour
     node::Int
 end
 
-# PORT: pl-bisim.c cmp_colour
+# PORT: pl-bisim.c cmp_colour as bs_colour_lt
 # DIVERGES: the sort key is (functor, node): the stable form of upstream's functor-only qsort (file header, 3).
 "Order colourings by functor word (pl-bisim.c `cmp_colour`)."
 @inline bs_colour_lt(a::bs_colour, b::bs_colour)::Bool =
@@ -704,7 +704,9 @@ Base.@kwdef mutable struct bs_automaton
 end
 
 # ORIGINAL: the Prolog integer `n` as a cell's word, whatever the term type tags (upstream `consInt`).
-@inline _bs_int_word(ld::PL_local_data{T}, n::Int)::word where {T} = _gnd_word!(ld, mk_gnd(T, Int64(n)))
+@inline function _bs_int_word(ld::PL_local_data{T}, n::Int)::word where {T}
+    return _gnd_word!(ld, mk_gnd(T, Int64(n)))
+end
 
 # ORIGINAL: `makeRefG(a) if canBind(*a) else *a` for the leaf at location `a` (a cell of the term, not a slot).
 @inline function _bs_leaf_word(ld::PL_local_data, a::Int)::word
@@ -1259,10 +1261,11 @@ function _bs_alloc(ld::PL_local_data, need::Int)::Int
 end
 
 # ORIGINAL: `FUNCTOR_isovar1`, `FUNCTOR_automaton1`, ATOM_map functors, looked up per call.
-@inline _bs_functor(ld::PL_local_data{T}, name::Symbol, arity::Int)::word where {T} =
-    lookupFunctorDef(ld.functors, _atom_word!(ld, mk_sym(T, name)), arity)
+@inline function _bs_functor(ld::PL_local_data{T}, name::Symbol, arity::Int)::word where {T}
+    return lookupFunctorDef(ld.functors, _atom_word!(ld, mk_sym(T, name)), arity)
+end
 
-# PORT: pl-bisim.c term_minimal
+# PORT: pl-bisim.c term_minimal as pl_term_minimal2_va
 function pl_term_minimal2_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
 )::foreign_t where {T}
@@ -1294,7 +1297,7 @@ function term_canonical_form(ld::PL_local_data{T}, t::term_t, form::term_t)::Tup
     return (PL_unify(ld, form, result), attvars)
 end
 
-# PORT: pl-bisim.c term_canonical_form_pred
+# PORT: pl-bisim.c term_canonical_form_pred as pl_term_canonical_form2_va
 function pl_term_canonical_form2_va(ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T})::foreign_t where {T}
     ok, _ = term_canonical_form(ld, PL__t0, PL__t0 + 1)
     return ok ? FTRUE : FFALSE
@@ -1325,13 +1328,13 @@ end
 # PORT: pl-bisim.c factorized_options
 const factorized_options = (PL_option_t(:minimal, OPT_BOOL), PL_option_t(:dollar_var, OPT_BOOL))
 
-# PORT: pl-bisim.c term_factorized
+# PORT: pl-bisim.c term_factorized as pl_term_factorized3_va
 function pl_term_factorized3_va(ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T})::foreign_t where {T}
     ok = do_term_factorized(ld, PL__t0, PL__t0 + 1, PL__t0 + 2, _bs_functor(ld, Symbol("\$VAR"), 1), true)
     return ok ? FTRUE : FFALSE
 end
 
-# PORT: pl-bisim.c term_factorized4
+# PORT: pl-bisim.c term_factorized4 as pl_term_factorized4_va
 # DIVERGES: the options' values are returned by `PL_scan_options` (`nothing`: the default, true).
 function pl_term_factorized4_va(ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T})::foreign_t where {T}
     vals = PL_scan_options(ld, PL__t0 + 3, 0, "factorize_option", factorized_options)
@@ -1380,7 +1383,7 @@ function automaton_to_term(ld::PL_local_data{T}, A::term_t, Tt::term_t)::Bool wh
     return PL_unify(ld, Tt, result)
 end
 
-# PORT: pl-bisim.c term_automaton
+# PORT: pl-bisim.c term_automaton as pl_term_automaton2_va
 function pl_term_automaton2_va(ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T})::foreign_t where {T}
     A1, A2 = PL__t0, PL__t0 + 1
     k, _, _ = _deref_loc(ld, -(A2 + 1))                     # p = valTermRef(A2); deRef(p)
@@ -1447,10 +1450,11 @@ function do_automaton_minimal(ld::PL_local_data{T}, A::term_t, Min::term_t, Map:
     return PL_unify(ld, Min, rmin) && (Map === nothing || PL_unify(ld, Map, rmap))
 end
 
-# PORT: pl-bisim.c automaton_minimal / automaton_minimal3
+# PORT: pl-bisim.c automaton_minimal as pl_automaton_minimal2_va
 function pl_automaton_minimal2_va(ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T})::foreign_t where {T}
     return do_automaton_minimal(ld, PL__t0, PL__t0 + 1, nothing) ? FTRUE : FFALSE
 end
+# PORT: pl-bisim.c automaton_minimal3 as pl_automaton_minimal3_va
 function pl_automaton_minimal3_va(ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T})::foreign_t where {T}
     return do_automaton_minimal(ld, PL__t0, PL__t0 + 1, PL__t0 + 2) ? FTRUE : FFALSE
 end

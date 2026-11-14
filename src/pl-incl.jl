@@ -22,6 +22,8 @@
 # UPSTREAM: swipl-devel src/pl-wrap.h @ 18168e629eab
 # UPSTREAM: swipl-devel src/os/pl-table.h @ 18168e629eab
 # UPSTREAM: swipl-devel src/pl-coverage.h @ 18168e629eab
+# UPSTREAM: swipl-devel src/pl-coverage.c @ 18168e629eab
+# UPSTREAM: swipl-devel src/pl-prof.c @ 18168e629eab
 # UPSTREAM: swipl-devel src/pl-trie.c @ 18168e629eab
 # UPSTREAM: swipl-devel src/pl-trie.h @ 18168e629eab
 # UPSTREAM: swipl-devel src/pl-indirect.h @ 18168e629eab
@@ -2592,14 +2594,14 @@ gvar_enum() = gvar_enum(UInt64[], 1)
 
 # ── pl-table.h's structs (moved here from src/os/pl-table.jl: `ld_coverage` holds a `Table`) ─────────────────────────────
 
-# PORT: pl-table.h struct symbol
+# PORT: pl-table.h symbol
 "One entry of a key-value map: `name` and `value` (pl-table.h `struct symbol`)."
 struct symbol
     name::UInt64
     value::UInt64
 end
 
-# PORT: pl-table.h struct kvs
+# PORT: pl-table.h kvs as KVS
 # DIVERGES: `entries` is a vector (index `i` of upstream is `entries[i + 1]`), `resizing` a `Bool`, the `next`
 # and `prev` pointers `nothing` for NULL.
 "A map of key-value pairs of one size (pl-table.h `struct kvs`): the tables of a resize form a chain."
@@ -2612,7 +2614,7 @@ mutable struct KVS
     entries::Vector{symbol}         # array of hash symbols
 end
 
-# PORT: pl-table.h struct table
+# PORT: pl-table.h table as Table
 # DIVERGES: `copy_symbol` and `free_symbol` are Julia callables (or `nothing`). `copy_symbol(n, v)` RETURNS the
 # value to store (upstream's `void (*)(table_key_t n, table_value_t *v)` rewrites `*v`); `free_symbol(n, v)` is
 # `void (*)(table_key_t n, table_value_t v)`. Both are called through an inference barrier: a hook is a run-time
@@ -2626,7 +2628,7 @@ mutable struct Table
     kvs::KVS                                        # map of key-value pairs
 end
 
-# PORT: pl-table.h struct table_enum
+# PORT: pl-table.h table_enum as TableEnum
 "An enumerator of a table (pl-table.h `struct table_enum`): its map and the index of the next entry."
 mutable struct TableEnum
     table::Table                    # Table we are working on
@@ -2642,13 +2644,13 @@ end
 # index of the `cov_obj` in `coverage.objs`, which owns the objects. A table's enumeration order is its bucket order as
 # upstream's, over keys of another kind (upstream's are addresses: the order is not a kernel-independent fact either way).
 
-# PORT: pl-coverage.c cov_obj_type
+# PORT: pl-coverage.c cov_obj_type as COV_ANY
 "`cov_obj_type` COV_ANY: any site (a `\$cov_data` pattern that does not say)."
 const COV_ANY = 0
-# PORT: pl-coverage.c cov_obj_type
+# PORT: pl-coverage.c cov_obj_type as COV_CLAUSE
 "`cov_obj_type` COV_CLAUSE: a clause's enter and exit."
 const COV_CLAUSE = 1
-# PORT: pl-coverage.c cov_obj_type
+# PORT: pl-coverage.c cov_obj_type as COV_PC
 "`cov_obj_type` COV_PC: a call site (a pc in a clause)."
 const COV_PC = 2
 # PORT: pl-coverage.h COV_TRACK_THREADS
@@ -2695,7 +2697,7 @@ mutable struct cov_data_state{T}
 end
 cov_data_state{T}() where {T} = cov_data_state{T}(COV_ANY, nothing, 0, cov_obj{T}[])
 
-# PORT: pl-global.h coverage
+# PORT: pl-global.h coverage as ld_coverage
 "The coverage fields of a thread's local data (pl-global.h `LD->coverage`), and the pool of `'\$cov_data'/3`'s states."
 mutable struct ld_coverage{T}
     data::Union{Nothing, coverage{T}}               # Data for the coverage collection
@@ -2750,7 +2752,8 @@ end
 call_node{T}(handle::Union{Nothing, Definition{T}}, type::Int) where {T} =
     call_node{T}(PROFNODE_MAGIC, 0, handle, type, 0, 0, 0, 0, 0, 0, 0, 0, false, 0, 0)
 
-# PORT: pl-global.h profile (the `clock` struct inside it)
+# PORT: pl-global.h profile as ld_profile_clock
+# (the `clock` struct inside `profile`)
 "The `PROF_*_EXACT` clock of a thread's profile (pl-global.h `LD->profile.clock`)."
 mutable struct ld_profile_clock
     last::Int                                   # prof_clock() at last switch
@@ -2767,7 +2770,7 @@ mutable struct ld_profile_clock
 end
 ld_profile_clock() = ld_profile_clock(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
 
-# PORT: pl-global.h profile
+# PORT: pl-global.h profile as ld_profile
 "The profiler fields of a thread's local data (pl-global.h `LD->profile`; the field order is upstream's)."
 mutable struct ld_profile{T}
     accounting::Bool                            # we are accounting

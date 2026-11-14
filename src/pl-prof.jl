@@ -31,6 +31,7 @@
 #   5. MEMORY: no `allocHeap`, no `releaseModule` (`prof_release_def`: no module GC), the `prof_ref` chains are vectors
 #      (new references are pushed at the end and unified from the end, upstream's order of `r->next = callers; callers = r`).
 
+"Raise the named refusal of a collection entry point (step PROF1)."
 # ORIGINAL: the refusal every collection entry point raises (step PROF1).
 function _prof_refuse(ld::PL_local_data{T}, culprit::Symbol, what::String)::Union{} where {T}
     throw(NotPortedError{T}(mk_sym(T, culprit), what, "PROF1"))
@@ -61,8 +62,8 @@ function get_prof_status(ld::PL_local_data{T}, t::term_t)::Union{Nothing, Int} w
     a = PL_get_atom_ex(ld, t)
     a === nothing && return nothing
     k = sym_key(a)
-    k == sym_key(mk_sym(T, :false)) && return PROF_INACTIVE
-    (k == sym_key(mk_sym(T, :true)) || k == sym_key(mk_sym(T, :cputime))) && return PROF_CPU
+    k == sym_key(mk_sym(T, Symbol("false"))) && return PROF_INACTIVE
+    (k == sym_key(mk_sym(T, Symbol("true"))) || k == sym_key(mk_sym(T, :cputime))) && return PROF_CPU
     k == sym_key(mk_sym(T, :walltime)) && return PROF_WALL
     k == sym_key(mk_sym(T, :exact_walltime)) && return PROF_WALL_EXACT
     k == sym_key(mk_sym(T, :exact_cputime)) && return PROF_CPU_EXACT
@@ -77,7 +78,7 @@ function prof_status_atom(::Type{T}, s::Int)::T where {T}
     s == PROF_WALL && return mk_sym(T, :walltime)
     s == PROF_WALL_EXACT && return mk_sym(T, :exact_walltime)
     s == PROF_CPU_EXACT && return mk_sym(T, :exact_cputime)
-    return mk_sym(T, :false)
+    return mk_sym(T, Symbol("false"))
 end
 
 # PORT: pl-prof.c get_node
@@ -187,10 +188,14 @@ function pl_prof_node8_va(
     ) ? FTRUE : FFALSE
 end
 
-# PORT: pl-prof.h DEF_SPONTANEOUS / DEF_RECURSIVE (pl-prof.c: `(Definition)0` and `(Definition)1`)
-# DIVERGES: the two special handles are the kinds of a reference, its `handle` being `nothing` then.
+# The kinds of a `prof_ref`: a real procedure (`PROF_REF_DEF`), and the two special handles upstream spells
+# `(Definition)0` and `(Definition)1` in pl-prof.c.
 const PROF_REF_DEF = 0
+# PORT: pl-prof.h DEF_SPONTANEOUS as PROF_REF_SPONTANEOUS
+# DIVERGES: the special handle is a kind of a reference, its `handle` being `nothing` then.
 const PROF_REF_SPONTANEOUS = 1
+# PORT: pl-prof.h DEF_RECURSIVE as PROF_REF_RECURSIVE
+# DIVERGES: the special handle is a kind of a reference, its `handle` being `nothing` then.
 const PROF_REF_RECURSIVE = 2
 
 # PORT: pl-prof.c prof_ref
@@ -434,7 +439,7 @@ function pl_prof_statistics8_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
 )::foreign_t where {T}
     p = ld.profile
-    ports = p.ports_control == PROFC_FALSE ? :false : p.ports_control == PROFC_TRUE ? :true : :classic
+    ports = p.ports_control == PROFC_FALSE ? Symbol("false") : p.ports_control == PROFC_TRUE ? Symbol("true") : :classic
     return (
         PL_unify_int64(ld, PL__t0, p.samples) &&
         PL_unify_int64(ld, PL__t0 + 1, p.ticks) &&
@@ -624,7 +629,7 @@ function pl_profile4_va(
     ports_opt === nothing && return FFALSE
     pk = sym_key(ports_opt)
     ld.profile.ports_control =
-        pk == sym_key(mk_sym(T, :false)) ? PROFC_FALSE : pk == sym_key(mk_sym(T, :true)) ? PROFC_TRUE : PROFC_CLASSIC
+        pk == sym_key(mk_sym(T, Symbol("false"))) ? PROFC_FALSE : pk == sym_key(mk_sym(T, Symbol("true"))) ? PROFC_TRUE : PROFC_CLASSIC
 
     ld.profile.sample_period = DEFAULT_SAMPLE_PERIOD
     rate = PL_get_float_ex(ld, A4)

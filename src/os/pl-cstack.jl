@@ -16,12 +16,14 @@
 # c_backtrace_clear/0 and c_backtrace_print/1 are registered only under `O_DEBUG && BTRACE_DONE` (BTRACE_PREDS) and
 # `BeginPredDefs(cbtrace)` is empty at the pin otherwise: a release build, which is what the oracle is, has neither predicate, so none
 # is registered here and no `PL_predicates_from_cbtrace` exists.
-# DIVERGES: the message's `__FILE__:__LINE__` prefix is the pin's file and the line of the `Sdprintf` (os/pl-cstack.c:943 and :949);
+# DIVERGES (file-wide): the message's `__FILE__:__LINE__` prefix is the pin's file and the line of the `Sdprintf` (os/pl-cstack.c:943 and :949);
 # a C build prints its build-time path of the file, which the kernel has not.
 
+"The fallback's message for `print_backtrace` (pl-cstack.c:943)."
 # ORIGINAL: the text the fallback's `Sdprintf` formats (`"%s:%d C-stack dumps are not supported on this platform\n"`), the file and line
 # being the pin's.
 const _CSTACK_UNSUPPORTED_BACKTRACE = "os/pl-cstack.c:943 C-stack dumps are not supported on this platform\n"
+"The fallback's message for `print_backtrace_named` (pl-cstack.c:949)."
 const _CSTACK_UNSUPPORTED_BACKTRACE_NAMED = "os/pl-cstack.c:949 C-stack dumps are not supported on this platform\n"
 
 # PORT: pl-cstack.c save_backtrace
