@@ -520,8 +520,10 @@ end
 # (`PL_canonicalise_text` of UTF-8 has no error path), the other four are `PL_canonicalise_text`'s and `utf16_to_text`'s.
 "Raise the error for `PL_canonicalise_text`'s result `rc`; false (pl-text.c)."
 function text_error(ld::PL_local_data{T}, rc::Int)::Bool where {T}
-    rc == ERR_TEXT_ILLEGAL_UTF8 && return PL_syntax_error(ld, "illegal_utf8_sequence", nothing)
-    rc == ERR_TEXT_ILLEGAL_UTF16 && return PL_syntax_error(ld, "illegal_utf16_sequence", nothing)
+    rc == ERR_TEXT_ILLEGAL_UTF8 &&
+        return PL_syntax_error(ld, "illegal_utf8_sequence", nothing)
+    rc == ERR_TEXT_ILLEGAL_UTF16 &&
+        return PL_syntax_error(ld, "illegal_utf16_sequence", nothing)
     rc == ERR_TEXT_ILLEGAL_MULTIBYTE_SEQUENCE &&
         return PL_syntax_error(ld, "illegal_multibyte_sequence", nothing)
     rc == ERR_TEXT_INCOMPLETE_MULTIBYTE_SEQUENCE &&
@@ -569,7 +571,13 @@ Recode the canonical `text` to the target `flags` name (`REP_UTF8`: UTF-8, `REP_
 encoding, else ISO Latin-1), its `length` then in bytes (pl-text.c `PL_mb_text`).
 """
 function _mb_text(text::PL_chars_t, flags::UInt32)::Int
-    target = (flags & REP_UTF8) != 0 ? ENC_UTF8 : (flags & REP_MB) != 0 ? ENC_ANSI : ENC_ISO_LATIN_1
+    target = if (flags & REP_UTF8) != 0
+        ENC_UTF8
+    elseif (flags & REP_MB) != 0
+        ENC_ANSI
+    else
+        ENC_ISO_LATIN_1
+    end
     text.encoding === target && return -1
     b = UInt8[]
     if text.encoding === ENC_ISO_LATIN_1
@@ -624,7 +632,9 @@ function PL_mb_text(ld::PL_local_data{T}, text::PL_chars_t, flags::UInt32)::Bool
     rc == -1 && return true
     (flags & CVT_EXCEPTION) == 0 && return false
     rc == -2 && return text_representation_error(ld, ENC_ISO_LATIN_1)       # PL_demote_text's reperr
-    msg = "Cannot represent char U" * string(rc, base = 16, pad = 4) * " using current locale encoding"
+    msg =
+        "Cannot represent char U" * string(rc; base=16, pad=4) *
+        " using current locale encoding"
     return PL_error(ld, "", 0, msg, ERR_REPRESENTATION, mk_sym(T, :encoding))
 end
 
@@ -645,7 +655,8 @@ function _text_string(text::PL_chars_t)::String
         end
     elseif text.encoding === ENC_ANSI
         cps = _ansi_code_points(text.text, text.length)
-        cps === nothing && error("the string of an ENC_ANSI text with an illegal multibyte sequence")
+        cps === nothing &&
+            error("the string of an ENC_ANSI text with an illegal multibyte sequence")
         for c in cps
             utf8_put_char(b, c)
         end
@@ -677,7 +688,8 @@ function _text_code_points(text::PL_chars_t)::Vector{Int}
         end
     elseif text.encoding === ENC_ANSI
         r = _ansi_code_points(text.text, text.length)
-        r === nothing && error("the code points of an ENC_ANSI text with an illegal multibyte sequence")
+        r === nothing &&
+            error("the code points of an ENC_ANSI text with an illegal multibyte sequence")
         return r
     else
         error("the code points of a text in $(text.encoding)")  # assert(0)

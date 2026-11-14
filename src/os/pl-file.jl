@@ -1471,12 +1471,14 @@ end
 # DIVERGES: `newTableEnumPP(streamContext)` is the live entries of `PL_global_data.stream_table`, in the order the
 # streams got their context (upstream: hash-table order); `ison(ctx, flags)` is a read of `stream_context_flags`.
 "The stream that reads or writes the file named `name` and carries the context flag `flags`, or `nothing` (pl-file.c)."
-function findStreamFromFile(gd::PL_global_data{T}, name::T, flags::Int)::Union{Nothing, IOSTREAM} where {T}
+function findStreamFromFile(
+    gd::PL_global_data{T}, name::T, flags::Int
+)::Union{Nothing, IOSTREAM} where {T}
     for s in gd.stream_table
         s === nothing && continue
         fn = fileNameStream(gd, s)
         if fn !== nothing && sym_key(fn) == sym_key(name) &&
-           (get(gd.stream_context_flags, s.context, 0) & flags) != 0
+            (get(gd.stream_context_flags, s.context, 0) & flags) != 0
             return s
         end
     end
@@ -1792,7 +1794,8 @@ function pl_seek4_va(
     if Sseek64(s, Int64(off), whence) < 0
         if s.io_errno == EINVAL
             PL_error(
-                ld, "seek", 4, "offset out of range", ERR_DOMAIN, mk_sym(T, :position), offset
+                ld, "seek", 4, "offset out of range", ERR_DOMAIN, mk_sym(T, :position),
+                offset
             )
         else
             PL_error(
@@ -1995,7 +1998,11 @@ function read_pending_input(
         return streamStatus(ld, s) && PL_unify(ld, list, tail) && PL_unify_nil(ld, list)
     end
     p = s.position
-    pos0 = p === nothing ? IOPOS() : IOPOS(p.byteno, p.charno, p.lineno, p.linepos, p.esc_state)
+    pos0 = if p === nothing
+        IOPOS()
+    else
+        IOPOS(p.byteno, p.charno, p.lineno, p.linepos, p.esc_state)
+    end
 
     codes = Int[]
     failed = false
@@ -2131,7 +2138,9 @@ function read_pending_input(
         count = n ÷ 4
 
         for i in 1:count
-            c = Int(buf[4i - 3]) | (Int(buf[4i - 2]) << 8) | (Int(buf[4i - 1]) << 16) | (Int(buf[4i]) << 24)
+            c =
+                Int(buf[4i - 3]) | (Int(buf[4i - 2]) << 8) | (Int(buf[4i - 1]) << 16) |
+                (Int(buf[4i]) << 24)
 
             c == Int('\r') && skip_cr(s) && continue
             p !== nothing && S__fupdatefilepos_getc(s, c)
@@ -2227,7 +2236,9 @@ function pl_peek_string3_va(
             s.flags &= ~SIO_FEOF
 
             text = peek_pending_text(s)
-            rc = PL_canonicalise_text_ex(ld, text) && PL_unify_text(ld, A3, 0, text, PL_STRING)
+            rc =
+                PL_canonicalise_text_ex(ld, text) &&
+                PL_unify_text(ld, A3, 0, text, PL_STRING)
             return rc ? FTRUE : FFALSE
         end
         s.bufp -= 1
@@ -2299,7 +2310,8 @@ end
 function pl_noprotocol0_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
 )::foreign_t where {T}
-    ld.IO_streams[SNO_PROTOCOL + 1] === nothing || error("noprotocol: a protocol stream without `tee`")
+    ld.IO_streams[SNO_PROTOCOL + 1] === nothing ||
+        error("noprotocol: a protocol stream without `tee`")
     return FTRUE
 end
 
@@ -2310,7 +2322,8 @@ end
 function pl_protocolling1_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
 )::foreign_t where {T}
-    ld.IO_streams[SNO_PROTOCOL + 1] === nothing || error("protocolling: a protocol stream without `tee`")
+    ld.IO_streams[SNO_PROTOCOL + 1] === nothing ||
+        error("protocolling: a protocol stream without `tee`")
     return FFALSE
 end
 
@@ -4217,7 +4230,9 @@ const PL_predicates_from_file = (
     PL_extension("close", 2, pl_close2_va, PL_FA_ISO | PL_FA_VARARGS),
     PL_extension("open_null_stream", 1, pl_open_null_stream1_va, PL_FA_VARARGS),
     PL_extension("stream_pair", 3, pl_stream_pair3_va, PL_FA_VARARGS),
-    PL_extension("set_stream_position", 2, pl_set_stream_position2_va, PL_FA_ISO | PL_FA_VARARGS),
+    PL_extension(
+        "set_stream_position", 2, pl_set_stream_position2_va, PL_FA_ISO | PL_FA_VARARGS
+    ),
     PL_extension("seek", 4, pl_seek4_va, PL_FA_VARARGS),
     PL_extension("set_end_of_stream", 1, pl_set_end_of_stream1_va, PL_FA_VARARGS),
     PL_extension("fill_buffer", 1, pl_fill_buffer1_va, PL_FA_VARARGS),
@@ -4735,7 +4750,13 @@ function pl_with_tty_raw1_va(
 
     Sflush(stream)
     if save
-        throw(NotPortedError{T}(mk_sym(T, :user_input), "with_tty_raw/1 on a terminal", "PushTty (pl-os.c tty modes)"))
+        throw(
+            NotPortedError{T}(
+                mk_sym(T, :user_input),
+                "with_tty_raw/1 on a terminal",
+                "PushTty (pl-os.c tty modes)"
+            )
+        )
     end
 
     rval = callProlog(_query_gd(ld), ld, 0, PL__t0, PL_Q_PASS_EXCEPTION)
@@ -4786,5 +4807,5 @@ const PL_predicates_from_redirect = (
     ),
     PL_extension(
         "with_tty_raw", 1, pl_with_tty_raw1_va, PL_FA_VARARGS | PL_FA_TRANSPARENT
-    ),
+    )
 )

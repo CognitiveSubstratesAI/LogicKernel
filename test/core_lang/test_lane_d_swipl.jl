@@ -117,36 +117,66 @@ rua(Mode, Cs, T) :- wenc(utf8, Cs), outfile(F), open(F, read, S, [encoding(utf8)
 # (id, goal), run IN ORDER
 const _LD_CASES = [
     ("d001", raw"ro(S), get(S, A), get(S, B), close(S), R = A-B"),
-    ("d002", raw"ro(S), get_code(S, _), get_code(S, _), get_code(S, _), get(S, C), close(S), R = C"),
+    (
+        "d002",
+        raw"ro(S), get_code(S, _), get_code(S, _), get_code(S, _), get(S, C), close(S), R = C"
+    ),
     ("d003", raw"ro(S), skip(S, 126), get(S, C), close(S), R = C"),
     ("d004", raw"ro(S), cerr(get(S, foo), R0), close(S), R = R0"),
     ("d005", raw"ro(S), cerr(get(S, 1.5), R0), close(S), R = R0"),
     ("d006", raw"cerr(get(nostream, _), R)"),
-    ("d007", raw"current_input(O), ro(S), set_input(S), get(C), set_input(O), close(S), R = C"),
+    (
+        "d007",
+        raw"current_input(O), ro(S), set_input(S), get(C), set_input(O), close(S), R = C"
+    ),
     ("d008", raw"ro(S), cerr(get(S, 98), R0), close(S), R = R0"),
     ("d009", raw"wo(S), cerr(get(S, _), R0), close(S), R = R0"),
     ("d010", raw"rb(S), cerr(get(S, _), R0), close(S), R = R0"),
     ("d011", raw"ro(S), get0(S, A), get0(S, B), close(S), R = A-B"),
-    ("d012", raw"current_input(O), ro(S), set_input(S), get0(C), set_input(O), close(S), R = C"),
-    ("d013", raw"current_input(O), ro(S), set_input(S), get_char(C), set_input(O), close(S), R = C"),
-    ("d014", raw"current_input(O), ro(S), set_input(S), skip(0'z), get_char(C), set_input(O), close(S), R = C"),
-    ("d015", raw"current_input(O), ro(S), set_input(S), skip(0'y), get_code(C), set_input(O), close(S), R = C"),
-    ("d016", raw"current_input(O), ro(S), set_input(S), cerr(skip(foo), R0), set_input(O), close(S), R = R0"),
+    (
+        "d012",
+        raw"current_input(O), ro(S), set_input(S), get0(C), set_input(O), close(S), R = C"
+    ),
+    (
+        "d013",
+        raw"current_input(O), ro(S), set_input(S), get_char(C), set_input(O), close(S), R = C"
+    ),
+    (
+        "d014",
+        raw"current_input(O), ro(S), set_input(S), skip(0'z), get_char(C), set_input(O), close(S), R = C"
+    ),
+    (
+        "d015",
+        raw"current_input(O), ro(S), set_input(S), skip(0'y), get_code(C), set_input(O), close(S), R = C"
+    ),
+    (
+        "d016",
+        raw"current_input(O), ro(S), set_input(S), cerr(skip(foo), R0), set_input(O), close(S), R = R0"
+    ),
     ("d017", raw"wo(S), put(S, 0'a), put(S, 98), close(S), outtext(T), R = T"),
     ("d018", raw"wo(S), put(S, b), put(S, 0'c), close(S), outtext(T), R = T"),
     ("d019", raw"wo(S), cerr(put(S, foo), R0), close(S), R = R0"),
     ("d020", raw"wo(S), cerr(put(S, _), R0), close(S), R = R0"),
     ("d021", raw"wo(S), cerr(put(S, -5), R0), close(S), R = R0"),
-    ("d022", raw"current_output(O), wo(S), set_output(S), put(0'q), put(0'r), set_output(O), close(S), outtext(T), R = T"),
+    (
+        "d022",
+        raw"current_output(O), wo(S), set_output(S), put(0'q), put(0'r), set_output(O), close(S), outtext(T), R = T"
+    ),
     ("d023", raw"ro(S), cerr(put(S, 0'a), R0), close(S), R = R0"),
     ("d024", raw"cerr(put(nostream, 0'a), R)"),
-    ("d025", raw"wb(S), put_byte(S, 65), put_byte(S, 255), put_byte(S, 0), close(S), outbytes(L), R = L"),
+    (
+        "d025",
+        raw"wb(S), put_byte(S, 65), put_byte(S, 255), put_byte(S, 0), close(S), outbytes(L), R = L"
+    ),
     ("d026", raw"wb(S), cerr(put_byte(S, 256), R0), close(S), R = R0"),
     ("d027", raw"wb(S), cerr(put_byte(S, -1), R0), close(S), R = R0"),
     ("d028", raw"wb(S), cerr(put_byte(S, a), R0), close(S), R = R0"),
     ("d029", raw"wb(S), cerr(put_byte(S, _), R0), close(S), R = R0"),
     ("d030", raw"wo(S), cerr(put_byte(S, 65), R0), close(S), R = R0"),
-    ("d031", raw"current_output(O), wb(S), set_output(S), put_byte(66), put_byte(67), set_output(O), close(S), outbytes(L), R = L"),
+    (
+        "d031",
+        raw"current_output(O), wb(S), set_output(S), put_byte(66), put_byte(67), set_output(O), close(S), outbytes(L), R = L"
+    ),
     ("d032", raw"cerr(put_byte(nostream, 65), R)"),
     ("d033", raw"rb(S), get_byte(S, A), get_byte(S, B), close(S), R = A-B"),
     ("d034", raw"rb(S), drain(S), get_byte(S, A), get_byte(S, B), close(S), R = A-B"),
@@ -154,26 +184,50 @@ const _LD_CASES = [
     ("d036", raw"rb(S), cerr(get_byte(S, foo), R0), close(S), R = R0"),
     ("d037", raw"rb(S), cerr(get_byte(S, 98), R0), close(S), R = R0"),
     ("d038", raw"rb(S), cerr(get_byte(S, 97), R0), close(S), R = R0"),
-    ("d039", raw"current_input(O), rb(S), set_input(S), get_byte(B), set_input(O), close(S), R = B"),
+    (
+        "d039",
+        raw"current_input(O), rb(S), set_input(S), get_byte(B), set_input(O), close(S), R = B"
+    ),
     ("d040", raw"cerr(get_byte(nostream, _), R)"),
-    ("d041", raw"rb(S), peek_byte(S, A), get_byte(S, B), byte_count(S, N), close(S), R = A-B-N"),
+    (
+        "d041",
+        raw"rb(S), peek_byte(S, A), get_byte(S, B), byte_count(S, N), close(S), R = A-B-N"
+    ),
     ("d042", raw"rb(S), peek_byte(S, A), peek_byte(S, B), close(S), R = A-B"),
     ("d043", raw"rb(S), drain(S), peek_byte(S, A), close(S), R = A"),
     ("d044", raw"ro(S), cerr(peek_byte(S, _), R0), close(S), R = R0"),
-    ("d045", raw"current_input(O), rb(S), set_input(S), peek_byte(A), get_byte(B), set_input(O), close(S), R = A-B"),
+    (
+        "d045",
+        raw"current_input(O), rb(S), set_input(S), peek_byte(A), get_byte(B), set_input(O), close(S), R = A-B"
+    ),
     ("d046", raw"ro(S), peek_code(S, A), get_code(S, B), close(S), R = A-B"),
     ("d047", raw"ro(S), peek_char(S, A), get_char(S, B), close(S), R = A-B"),
-    ("d048", raw"current_input(O), ro(S), set_input(S), peek_code(A), peek_char(C), get_code(B), set_input(O), close(S), R = A-C-B"),
-    ("d049", raw"current_input(O), ro(S), set_input(S), peek_char(A), get_char(B), set_input(O), close(S), R = A-B"),
+    (
+        "d048",
+        raw"current_input(O), ro(S), set_input(S), peek_code(A), peek_char(C), get_code(B), set_input(O), close(S), R = A-C-B"
+    ),
+    (
+        "d049",
+        raw"current_input(O), ro(S), set_input(S), peek_char(A), get_char(B), set_input(O), close(S), R = A-B"
+    ),
     ("d050", raw"rb(S), cerr(peek_code(S, _), R0), close(S), R = R0"),
     ("d051", raw"ro(S), cerr(peek_char(S, 1), R0), close(S), R = R0"),
     ("d052", raw"ro(S), cerr(peek_code(S, 0'b), R0), close(S), R = R0"),
-    ("d053", raw"ro(S), get_code(S, _), get_code(S, _), byte_count(S, B), character_count(S, C), close(S), R = B-C"),
+    (
+        "d053",
+        raw"ro(S), get_code(S, _), get_code(S, _), byte_count(S, B), character_count(S, C), close(S), R = B-C"
+    ),
     ("d054", raw"cerr(byte_count(nostream, _), R)"),
     ("d055", raw"cerr(character_count(nostream, _), R)"),
     ("d056", raw"ro(S), cerr(byte_count(S, foo), R0), close(S), R = R0"),
-    ("d057", raw"current_input(O), ro(S), set_input(S), current_input(X), set_input(O), close(S), ( X == S -> R = same ; R = other )"),
-    ("d058", raw"current_output(O), wo(S), set_output(S), current_output(X), set_output(O), close(S), ( X == S -> R = same ; R = other )"),
+    (
+        "d057",
+        raw"current_input(O), ro(S), set_input(S), current_input(X), set_input(O), close(S), ( X == S -> R = same ; R = other )"
+    ),
+    (
+        "d058",
+        raw"current_output(O), wo(S), set_output(S), current_output(X), set_output(O), close(S), ( X == S -> R = same ; R = other )"
+    ),
     ("d059", raw"cerr(set_input(nostream), R)"),
     ("d060", raw"cerr(set_output(nostream), R)"),
     ("d061", raw"wo(S), cerr(set_input(S), R0), close(S), R = R0"),
@@ -182,69 +236,159 @@ const _LD_CASES = [
     ("d064", raw"cerr(set_output(_), R)"),
     ("d065", raw"rb(S), cerr(set_input(S), R0), close(S), R = R0"),
     ("d066", raw"flush_output, R = ok"),
-    ("d067", raw"current_output(O), wo(S), set_output(S), put(0'x), flush_output, set_output(O), close(S), outtext(T), R = T"),
-    ("d068", raw"outfile(F), open(F, write, W, [encoding(utf8)]), put(W, 8364), close(W), open(F, read, S, [encoding(utf8)]), get_code(S, C), byte_count(S, B), character_count(S, N), close(S), R = C-B-N"),
-    ("d069", raw"outfile(F), open(F, write, W, [encoding(utf8)]), put(W, 8364), close(W), open(F, read, S, [type(binary)]), peek_byte(S, B), get_byte(S, B2), byte_count(S, N), close(S), R = B-B2-N"),
+    (
+        "d067",
+        raw"current_output(O), wo(S), set_output(S), put(0'x), flush_output, set_output(O), close(S), outtext(T), R = T"
+    ),
+    (
+        "d068",
+        raw"outfile(F), open(F, write, W, [encoding(utf8)]), put(W, 8364), close(W), open(F, read, S, [encoding(utf8)]), get_code(S, C), byte_count(S, B), character_count(S, N), close(S), R = C-B-N"
+    ),
+    (
+        "d069",
+        raw"outfile(F), open(F, write, W, [encoding(utf8)]), put(W, 8364), close(W), open(F, read, S, [type(binary)]), peek_byte(S, B), get_byte(S, B2), byte_count(S, N), close(S), R = B-B2-N"
+    ),
     ("d070", raw"datafile(F), see(F), get_code(C), seen, R = C"),
-    ("d071", raw"datafile(F), see(F), seeing(S), ( blob(S, stream) -> X = stream ; X = S ), seen, R = X"),
-    ("d072", raw"current_input(O), datafile(F), see(F), seen, current_input(N), ( O == N -> R = same ; R = diff )"),
+    (
+        "d071",
+        raw"datafile(F), see(F), seeing(S), ( blob(S, stream) -> X = stream ; X = S ), seen, R = X"
+    ),
+    (
+        "d072",
+        raw"current_input(O), datafile(F), see(F), seen, current_input(N), ( O == N -> R = same ; R = diff )"
+    ),
     ("d073", raw"seeing(X), R = X"),
     ("d074", raw"see(user), seeing(X), R = X"),
     ("d075", raw"datafile(F), see(F), get_code(A), see(F), get_code(B), seen, R = A-B"),
-    ("d076", raw"datafile(F), see(F), get_code(_), seeing(S), see(user), see(S), get_code(C), seen, R = C"),
+    (
+        "d076",
+        raw"datafile(F), see(F), get_code(_), seeing(S), see(user), see(S), get_code(C), seen, R = C"
+    ),
     ("d077", raw"cerr(see(lane_d_no_such_file), R)"),
     ("d078", raw"cerr(see(_), R)"),
     ("d079", raw"cerr(see(f(x)), R)"),
     ("d080", raw"cerr(see(1), R)"),
     ("d081", raw"seen, R = ok"),
     ("d082", raw"outfile(F), tell(F), put_char(a), write(bcd), told, outtext(T), R = T"),
-    ("d083", raw"outfile(F), tell(F), telling(S), ( blob(S, stream) -> X = stream ; X = S ), told, R = X"),
+    (
+        "d083",
+        raw"outfile(F), tell(F), telling(S), ( blob(S, stream) -> X = stream ; X = S ), told, R = X"
+    ),
     ("d084", raw"telling(X), R = X"),
     ("d085", raw"tell(user), telling(X), R = X"),
-    ("d086", raw"outfile(F), tell(F), write(a), told, append(F), write(b), told, outtext(T), R = T"),
-    ("d087", raw"outfile(F), tell(F), write(a), tell(F), write(b), told, outtext(T), R = T"),
-    ("d088", raw"current_output(O), outfile(F), tell(F), told, current_output(N), ( O == N -> R = same ; R = diff )"),
+    (
+        "d086",
+        raw"outfile(F), tell(F), write(a), told, append(F), write(b), told, outtext(T), R = T"
+    ),
+    (
+        "d087",
+        raw"outfile(F), tell(F), write(a), tell(F), write(b), told, outtext(T), R = T"
+    ),
+    (
+        "d088",
+        raw"current_output(O), outfile(F), tell(F), told, current_output(N), ( O == N -> R = same ; R = diff )"
+    ),
     ("d089", raw"cerr(tell(_), R)"),
     ("d090", raw"cerr(tell(f(x)), R)"),
     ("d091", raw"cerr(append(_), R)"),
     ("d092", raw"wo(S), tell(S), write(z), told, outtext(T), R = T"),
     ("d093", raw"cerr(tell('/lane_d_no_such_dir/x'), R)"),
-    ("d094", raw"outfile(F), open(F, write, _, [alias(lane_d_al)]), tell(lane_d_al), write(q), told, outtext(T), R = T"),
+    (
+        "d094",
+        raw"outfile(F), open(F, write, _, [alias(lane_d_al)]), tell(lane_d_al), write(q), told, outtext(T), R = T"
+    ),
     ("d095", raw"ra(_, lane_d_a2), see(lane_d_a2), get_code(C), seen, R = C"),
-    ("d096", raw"outfile(F), tell(F), write(a), told, tell(F), write(b), told, outtext(T), R = T"),
-    ("d097", raw"datafile(F), ro(S), get_code(S, _), see(F), get_code(C), seen, catch(close(S), _, true), R = C"),
-    ("d098", raw"open_null_stream(S), write(S, hello), character_count(S, N), close(S), R = N"),
-    ("d099", raw"open_null_stream(S), write(S, ab), nl(S), write(S, cde), line_count(S, L), line_position(S, P), close(S), R = L-P"),
-    ("d100", raw"open_null_stream(S), ( blob(S, stream) -> R0 = yes ; R0 = no ), close(S), R = R0"),
+    (
+        "d096",
+        raw"outfile(F), tell(F), write(a), told, tell(F), write(b), told, outtext(T), R = T"
+    ),
+    (
+        "d097",
+        raw"datafile(F), ro(S), get_code(S, _), see(F), get_code(C), seen, catch(close(S), _, true), R = C"
+    ),
+    (
+        "d098",
+        raw"open_null_stream(S), write(S, hello), character_count(S, N), close(S), R = N"
+    ),
+    (
+        "d099",
+        raw"open_null_stream(S), write(S, ab), nl(S), write(S, cde), line_count(S, L), line_position(S, P), close(S), R = L-P"
+    ),
+    (
+        "d100",
+        raw"open_null_stream(S), ( blob(S, stream) -> R0 = yes ; R0 = no ), close(S), R = R0"
+    ),
     ("d101", raw"open_null_stream(S), cerr(get_char(S, _), R0), close(S), R = R0"),
     ("d102", raw"open_null_stream(S), '$stream_property'(S, encoding(E)), close(S), R = E"),
-    ("d103", raw"open_null_stream(S), write(S, 'é€'), character_count(S, N), byte_count(S, B), close(S), R = N-B"),
+    (
+        "d103",
+        raw"open_null_stream(S), write(S, 'é€'), character_count(S, N), byte_count(S, B), close(S), R = N-B"
+    ),
     ("d104", raw"open_null_stream(S), '$stream_property'(S, mode(M)), close(S), R = M"),
     ("d105", raw"open_null_stream(S), sp(S, buffer(_), R0), close(S), R = R0"),
     ("d106", raw"cerr(open_null_stream(foo), R)"),
     ("d107", raw"open_null_stream(S), close(S), cerr(write(S, x), R0), R = R0"),
     ("d108", raw"open_null_stream(S), put_byte(S, 65) -> R = ok ; R = failed"),
-    ("d109", raw"ro(I), wo(O), stream_pair(P, I, O), ( blob(P, stream) -> R0 = yes ; R0 = no ), close(P), R = R0"),
-    ("d110", raw"ro(I), wo(O), stream_pair(P, I, O), stream_pair(P, I2, O2), ( I == I2, O == O2 -> R0 = same ; R0 = diff ), close(P), R = R0"),
+    (
+        "d109",
+        raw"ro(I), wo(O), stream_pair(P, I, O), ( blob(P, stream) -> R0 = yes ; R0 = no ), close(P), R = R0"
+    ),
+    (
+        "d110",
+        raw"ro(I), wo(O), stream_pair(P, I, O), stream_pair(P, I2, O2), ( I == I2, O == O2 -> R0 = same ; R0 = diff ), close(P), R = R0"
+    ),
     ("d111", raw"ro(I), wo(O), stream_pair(P, I, O), get_code(P, C), close(P), R = C"),
-    ("d112", raw"ro(I), wo(O), stream_pair(P, I, O), put_char(P, a), close(P), outtext(T), R = T"),
+    (
+        "d112",
+        raw"ro(I), wo(O), stream_pair(P, I, O), put_char(P, a), close(P), outtext(T), R = T"
+    ),
     ("d113", raw"cerr(stream_pair(foo, _, _), R)"),
     ("d114", raw"ro(I), cerr(stream_pair(_, I, I), R0), close(I), R = R0"),
-    ("d115", raw"ro(I), stream_pair(I, A, B), ( A == I -> R0 = in ; R0 = other ), ( var(B) -> R1 = unbound ; R1 = bound ), close(I), R = R0-R1"),
-    ("d116", raw"wo(O), stream_pair(O, A, B), ( B == O -> R0 = out ; R0 = other ), ( var(A) -> R1 = unbound ; R1 = bound ), close(O), R = R0-R1"),
-    ("d117", raw"ro(I), wo(O), stream_pair(P, I, O), cerr(line_count(P, _), R0), close(P), R = R0"),
-    ("d118", raw"set_prolog_flag(error_ambiguous_stream_pair, true), ro(I), wo(O), stream_pair(P, I, O), cerr(line_count(P, _), R0), set_prolog_flag(error_ambiguous_stream_pair, false), close(P), R = R0"),
-    ("d119", raw"ro(I), wo(O), stream_pair(P, I, O), close(P), cerr(stream_pair(P, _, _), R0), R = R0"),
-    ("d120", raw"ro(I), wo(O), stream_pair(P, I, O), close(P), cerr(get_code(P, _), R0), R = R0"),
+    (
+        "d115",
+        raw"ro(I), stream_pair(I, A, B), ( A == I -> R0 = in ; R0 = other ), ( var(B) -> R1 = unbound ; R1 = bound ), close(I), R = R0-R1"
+    ),
+    (
+        "d116",
+        raw"wo(O), stream_pair(O, A, B), ( B == O -> R0 = out ; R0 = other ), ( var(A) -> R1 = unbound ; R1 = bound ), close(O), R = R0-R1"
+    ),
+    (
+        "d117",
+        raw"ro(I), wo(O), stream_pair(P, I, O), cerr(line_count(P, _), R0), close(P), R = R0"
+    ),
+    (
+        "d118",
+        raw"set_prolog_flag(error_ambiguous_stream_pair, true), ro(I), wo(O), stream_pair(P, I, O), cerr(line_count(P, _), R0), set_prolog_flag(error_ambiguous_stream_pair, false), close(P), R = R0"
+    ),
+    (
+        "d119",
+        raw"ro(I), wo(O), stream_pair(P, I, O), close(P), cerr(stream_pair(P, _, _), R0), R = R0"
+    ),
+    (
+        "d120",
+        raw"ro(I), wo(O), stream_pair(P, I, O), close(P), cerr(get_code(P, _), R0), R = R0"
+    ),
     ("d121", raw"stream_pair(P, user_input, user_output), stream_pair(P, A, B), R = A-B"),
     ("d122", raw"cerr(stream_pair(_, _, _), R)"),
     ("d123", raw"ro(I), cerr(stream_pair(_, I, foo), R0), close(I), R = R0"),
     ("d124", raw"ro(I), wo(O), stream_pair(P, I, O), close(P), cerr(close(P), R0), R = R0"),
-    ("d125", raw"ro(I), wo(O), stream_pair(P, I, O), close(I), cerr(get_code(P, _), R0), close(O), R = R0"),
-    ("d126", raw"ro(I), wo(O), stream_pair(P, I, O), close(I), put_char(P, z), close(P), outtext(T), R = T"),
-    ("d127", raw"ro(I), wo(O), stream_pair(P, I, O), get_code(I, _), get_code(I, _), get_code(I, _), get_code(I, _), line_count(P, N), close(P), R = N"),
+    (
+        "d125",
+        raw"ro(I), wo(O), stream_pair(P, I, O), close(I), cerr(get_code(P, _), R0), close(O), R = R0"
+    ),
+    (
+        "d126",
+        raw"ro(I), wo(O), stream_pair(P, I, O), close(I), put_char(P, z), close(P), outtext(T), R = T"
+    ),
+    (
+        "d127",
+        raw"ro(I), wo(O), stream_pair(P, I, O), get_code(I, _), get_code(I, _), get_code(I, _), get_code(I, _), line_count(P, N), close(P), R = N"
+    ),
     ("d128", raw"ro(S), seek(S, 4, bof, N), get_code(S, C), close(S), R = N-C"),
-    ("d129", raw"ro(S), get_code(S, _), seek(S, 2, current, N), get_code(S, C), close(S), R = N-C"),
+    (
+        "d129",
+        raw"ro(S), get_code(S, _), seek(S, 2, current, N), get_code(S, C), close(S), R = N-C"
+    ),
     ("d130", raw"ro(S), seek(S, -2, eof, N), get_code(S, C), close(S), R = N-C"),
     ("d131", raw"ro(S), seek(S, 0, eof, N), get_code(S, C), close(S), R = N-C"),
     ("d132", raw"cerr(seek(foo, 0, bof, _), R)"),
@@ -254,55 +398,145 @@ const _LD_CASES = [
     ("d136", raw"ro(S), seek(S, 3, bof, N), close(S), R = N"),
     ("d137", raw"open_null_stream(S), seek(S, 5, bof, N), close(S), R = N"),
     ("d138", raw"open_null_stream(S), cerr(seek(S, 1, current, _), R0), close(S), R = R0"),
-    ("d139", raw"wo(S), write(S, hello), seek(S, 1, bof, N), write(S, 'E'), close(S), outtext(T), R = N-T"),
-    ("d140", raw"ro(S), seek(S, 1, bof, _), line_count(S, L), line_position(S, P), close(S), R = L-P"),
-    ("d141", raw"ro(S), get_code(S, _), seek(S, 5, bof, _), '$stream_property'(S, position(P)), close(S), R = P"),
+    (
+        "d139",
+        raw"wo(S), write(S, hello), seek(S, 1, bof, N), write(S, 'E'), close(S), outtext(T), R = N-T"
+    ),
+    (
+        "d140",
+        raw"ro(S), seek(S, 1, bof, _), line_count(S, L), line_position(S, P), close(S), R = L-P"
+    ),
+    (
+        "d141",
+        raw"ro(S), get_code(S, _), seek(S, 5, bof, _), '$stream_property'(S, position(P)), close(S), R = P"
+    ),
     ("d142", raw"ro(S), rall(S, _), seek(S, 0, bof, _), get_code(S, C), close(S), R = C"),
     ("d143", raw"ro(S), seek(S, 100, bof, N), get_code(S, C), close(S), R = N-C"),
     ("d144", raw"rb(S), seek(S, 1, bof, N), get_byte(S, B), close(S), R = N-B"),
-    ("d145", raw"ro(S), set_stream(S, encoding(unicode_be)), seek(S, 2, bof, N), close(S), R = N"),
+    (
+        "d145",
+        raw"ro(S), set_stream(S, encoding(unicode_be)), seek(S, 2, bof, N), close(S), R = N"
+    ),
     ("d146", raw"ro(S), seek(S, 1, bof, N), seek(S, 1, current, M), close(S), R = N-M"),
     ("d147", raw"cerr(seek(_, 0, bof, _), R)"),
     ("d148", raw"cerr(seek(user_input, 0, _, _), R)"),
     ("d149", raw"cerr(seek(user_input, _, bof, _), R)"),
     ("d150", raw"ro(S), cerr(seek(S, 1, bof, 99), R0), close(S), R = R0"),
-    ("d151", raw"ro(S), get_code(S, _), get_code(S, _), '$stream_property'(S, position(P)), get_code(S, _), set_stream_position(S, P), get_code(S, C), close(S), R = C"),
+    (
+        "d151",
+        raw"ro(S), get_code(S, _), get_code(S, _), '$stream_property'(S, position(P)), get_code(S, _), set_stream_position(S, P), get_code(S, C), close(S), R = C"
+    ),
     ("d152", raw"ro(S), cerr(set_stream_position(S, foo), R0), close(S), R = R0"),
-    ("d153", raw"ro(S), cerr(set_stream_position(S, '$stream_position'(a, 1, 0, 0)), R0), close(S), R = R0"),
+    (
+        "d153",
+        raw"ro(S), cerr(set_stream_position(S, '$stream_position'(a, 1, 0, 0)), R0), close(S), R = R0"
+    ),
     ("d154", raw"cerr(set_stream_position(_, '$stream_position'(0, 1, 0, 0)), R)"),
-    ("d155", raw"ro(S), set_stream_position(S, '$stream_position'(4, 2, 0, 4)), line_count(S, L), get_code(S, C), close(S), R = L-C"),
-    ("d156", raw"open_null_stream(S), cerr(set_stream_position(S, '$stream_position'(0, 1, 0, 0)), R0), close(S), R = R0"),
-    ("d157", raw"ro(S), set_stream_position(S, '$stream_position'(100, 3, 4, 100)), '$stream_property'(S, position(P)), close(S), R = P"),
-    ("d158", raw"wo(S), write(S, abc), '$stream_property'(S, position(P)), write(S, def), set_stream_position(S, P), write(S, 'X'), close(S), outtext(T), R = T"),
-    ("d159", raw"ro(S), cerr(set_stream_position(S, '$stream_position'(1, 1, 1)), R0), close(S), R = R0"),
-    ("d160", raw"ro(S), close(S), cerr(set_stream_position(S, '$stream_position'(0, 1, 0, 0)), R0), R = R0"),
-    ("d161", raw"wo(S), write(S, abcdef), seek(S, 3, bof, _), set_end_of_stream(S), close(S), outtext(T), R = T"),
+    (
+        "d155",
+        raw"ro(S), set_stream_position(S, '$stream_position'(4, 2, 0, 4)), line_count(S, L), get_code(S, C), close(S), R = L-C"
+    ),
+    (
+        "d156",
+        raw"open_null_stream(S), cerr(set_stream_position(S, '$stream_position'(0, 1, 0, 0)), R0), close(S), R = R0"
+    ),
+    (
+        "d157",
+        raw"ro(S), set_stream_position(S, '$stream_position'(100, 3, 4, 100)), '$stream_property'(S, position(P)), close(S), R = P"
+    ),
+    (
+        "d158",
+        raw"wo(S), write(S, abc), '$stream_property'(S, position(P)), write(S, def), set_stream_position(S, P), write(S, 'X'), close(S), outtext(T), R = T"
+    ),
+    (
+        "d159",
+        raw"ro(S), cerr(set_stream_position(S, '$stream_position'(1, 1, 1)), R0), close(S), R = R0"
+    ),
+    (
+        "d160",
+        raw"ro(S), close(S), cerr(set_stream_position(S, '$stream_position'(0, 1, 0, 0)), R0), R = R0"
+    ),
+    (
+        "d161",
+        raw"wo(S), write(S, abcdef), seek(S, 3, bof, _), set_end_of_stream(S), close(S), outtext(T), R = T"
+    ),
     ("d162", raw"wo(S), write(S, abc), set_end_of_stream(S), close(S), outtext(T), R = T"),
     ("d163", raw"ro(S), cerr(set_end_of_stream(S), R0), close(S), R = R0"),
     ("d164", raw"open_null_stream(S), cerr(set_end_of_stream(S), R0), close(S), R = R0"),
     ("d165", raw"cerr(set_end_of_stream(foo), R)"),
     ("d166", raw"cerr(set_end_of_stream(_), R)"),
     ("d167", raw"cerr(set_end_of_stream(1), R)"),
-    ("d168", raw"wo(S), write(S, abcdef), flush_output(S), seek(S, 2, bof, _), set_end_of_stream(S), write(S, 'Z'), close(S), outtext(T), R = T"),
-    ("d169", raw"ro(S), get_code(S, _), seek(S, 5, bof, N), get_code(S, C), close(S), R = N-C"),
-    ("d170", raw"ro(S), get_code(S, _), get_code(S, _), seek(S, -1, current, N), get_code(S, C), close(S), R = N-C"),
-    ("d171", raw"ro(S), set_stream(S, encoding(unicode_be)), seek(S, 2, bof, _), '$stream_property'(S, position(P)), close(S), R = P"),
-    ("d172", raw"ro(S), seek(S, 1, bof, _), get_code(S, _), '$stream_property'(S, position(P)), close(S), R = P"),
-    ("d173", raw"open_string(\"abc\", S), seek(S, 1, bof, N), get_code(S, C), close(S), R = N-C"),
-    ("d174", raw"open_string(\"abc\", S), seek(S, -1, eof, N), get_code(S, C), close(S), R = N-C"),
-    ("d175", raw"with_output_to(string(X), (current_output(O), write(abc), seek(O, 1, bof, N), write(z))), R = X-N"),
-    ("d176", raw"ro(S), get_code(S, _), seek(S, 100, bof, N), get_code(S, C), close(S), R = N-C"),
-    ("d177", raw"ro(S), set_stream(S, record_position(false)), cerr(set_stream_position(S, '$stream_position'(0, 1, 0, 0)), R0), close(S), R = R0"),
-    ("d178", raw"ro(S), set_stream(S, record_position(false)), get_code(S, _), get_code(S, _), seek(S, -1, current, N), get_code(S, C), close(S), R = N-C"),
-    ("d179", raw"ro(S), set_stream(S, record_position(false)), get_code(S, _), seek(S, 100, bof, N), get_code(S, C), close(S), R = N-C"),
-    ("d180", raw"ro(S), set_stream(S, record_position(false)), get_code(S, _), get_code(S, _), seek(S, 0, current, N), close(S), R = N"),
-    ("d181", raw"wo(S), write(S, abcdef), set_stream(S, record_position(false)), seek(S, 2, bof, N), write(S, z), close(S), outtext(T), R = N-T"),
-    ("d182", raw"wo(S), write(S, abcdef), set_stream(S, record_position(false)), seek(S, 0, current, N), close(S), R = N"),
-    ("d183", raw"ro(S), set_stream_position(S, '$stream_position'(1, 3, 7, 4)), get_code(S, C), '$stream_property'(S, position(P)), close(S), R = C-P"),
+    (
+        "d168",
+        raw"wo(S), write(S, abcdef), flush_output(S), seek(S, 2, bof, _), set_end_of_stream(S), write(S, 'Z'), close(S), outtext(T), R = T"
+    ),
+    (
+        "d169",
+        raw"ro(S), get_code(S, _), seek(S, 5, bof, N), get_code(S, C), close(S), R = N-C"
+    ),
+    (
+        "d170",
+        raw"ro(S), get_code(S, _), get_code(S, _), seek(S, -1, current, N), get_code(S, C), close(S), R = N-C"
+    ),
+    (
+        "d171",
+        raw"ro(S), set_stream(S, encoding(unicode_be)), seek(S, 2, bof, _), '$stream_property'(S, position(P)), close(S), R = P"
+    ),
+    (
+        "d172",
+        raw"ro(S), seek(S, 1, bof, _), get_code(S, _), '$stream_property'(S, position(P)), close(S), R = P"
+    ),
+    (
+        "d173",
+        raw"open_string(\"abc\", S), seek(S, 1, bof, N), get_code(S, C), close(S), R = N-C"
+    ),
+    (
+        "d174",
+        raw"open_string(\"abc\", S), seek(S, -1, eof, N), get_code(S, C), close(S), R = N-C"
+    ),
+    (
+        "d175",
+        raw"with_output_to(string(X), (current_output(O), write(abc), seek(O, 1, bof, N), write(z))), R = X-N"
+    ),
+    (
+        "d176",
+        raw"ro(S), get_code(S, _), seek(S, 100, bof, N), get_code(S, C), close(S), R = N-C"
+    ),
+    (
+        "d177",
+        raw"ro(S), set_stream(S, record_position(false)), cerr(set_stream_position(S, '$stream_position'(0, 1, 0, 0)), R0), close(S), R = R0"
+    ),
+    (
+        "d178",
+        raw"ro(S), set_stream(S, record_position(false)), get_code(S, _), get_code(S, _), seek(S, -1, current, N), get_code(S, C), close(S), R = N-C"
+    ),
+    (
+        "d179",
+        raw"ro(S), set_stream(S, record_position(false)), get_code(S, _), seek(S, 100, bof, N), get_code(S, C), close(S), R = N-C"
+    ),
+    (
+        "d180",
+        raw"ro(S), set_stream(S, record_position(false)), get_code(S, _), get_code(S, _), seek(S, 0, current, N), close(S), R = N"
+    ),
+    (
+        "d181",
+        raw"wo(S), write(S, abcdef), set_stream(S, record_position(false)), seek(S, 2, bof, N), write(S, z), close(S), outtext(T), R = N-T"
+    ),
+    (
+        "d182",
+        raw"wo(S), write(S, abcdef), set_stream(S, record_position(false)), seek(S, 0, current, N), close(S), R = N"
+    ),
+    (
+        "d183",
+        raw"ro(S), set_stream_position(S, '$stream_position'(1, 3, 7, 4)), get_code(S, C), '$stream_property'(S, position(P)), close(S), R = C-P"
+    ),
     ("d184", raw"cerr(set_stream_position(1, '$stream_position'(0, 1, 0, 0)), R)"),
     ("d185", raw"ro(S), '$size_stream'(S, N), close(S), R = N"),
     ("d186", raw"wo(S), write(S, abcd), '$size_stream'(S, N), close(S), R = N"),
-    ("d187", raw"wo(S), write(S, abcd), flush_output(S), '$size_stream'(S, N), close(S), R = N"),
+    (
+        "d187",
+        raw"wo(S), write(S, abcd), flush_output(S), '$size_stream'(S, N), close(S), R = N"
+    ),
     ("d188", raw"open_null_stream(S), '$size_stream'(S, N), close(S), R = N"),
     ("d189", raw"open_string(\"abc\", S), '$size_stream'(S, N), close(S), R = N"),
     ("d190", raw"ro(S), cerr('$size_stream'(S, 5), R0), close(S), R = R0"),
@@ -314,10 +548,16 @@ const _LD_CASES = [
     ("d196", raw"ro(S), fill_buffer(S), get_code(S, C), close(S), R = C"),
     ("d197", raw"ro(S), fill_buffer(S), fill_buffer(S), get_code(S, C), close(S), R = C"),
     ("d198", raw"ro(S), rall(S, L), fill_buffer(S), get_code(S, C), close(S), R = C-L"),
-    ("d199", raw"ro(S), fill_buffer(S), '$stream_property'(S, position(P)), close(S), R = P"),
+    (
+        "d199",
+        raw"ro(S), fill_buffer(S), '$stream_property'(S, position(P)), close(S), R = P"
+    ),
     ("d200", raw"ro(S), fill_buffer(S), seek(S, 0, current, N), close(S), R = N"),
     ("d201", raw"ro(S), get_code(S, _), fill_buffer(S), get_code(S, C), close(S), R = C"),
-    ("d202", raw"ro(S), set_stream(S, buffer(false)), cerr(fill_buffer(S), R0), close(S), R = R0"),
+    (
+        "d202",
+        raw"ro(S), set_stream(S, buffer(false)), cerr(fill_buffer(S), R0), close(S), R = R0"
+    ),
     ("d203", raw"wo(S), cerr(fill_buffer(S), R0), close(S), R = R0"),
     ("d204", raw"open_null_stream(S), cerr(fill_buffer(S), R0), close(S), R = R0"),
     ("d205", raw"cerr(fill_buffer(foo), R)"),
@@ -325,67 +565,190 @@ const _LD_CASES = [
     ("d207", raw"ro(S), close(S), cerr(fill_buffer(S), R)"),
     ("d208", raw"open_string(\"abc\", S), fill_buffer(S), get_code(S, C), close(S), R = C"),
     ("d209", raw"ra(S, fbal), fill_buffer(fbal), get_code(fbal, C), close(S), R = C"),
-    ("d210", raw"open_string(\"abc\", S), get_code(S, _), '$size_stream'(S, N), get_code(S, C), close(S), R = N-C"),
-    ("d211", raw"ro(S), get_code(S, _), '$size_stream'(S, N), get_code(S, C), close(S), R = N-C"),
+    (
+        "d210",
+        raw"open_string(\"abc\", S), get_code(S, _), '$size_stream'(S, N), get_code(S, C), close(S), R = N-C"
+    ),
+    (
+        "d211",
+        raw"ro(S), get_code(S, _), '$size_stream'(S, N), get_code(S, C), close(S), R = N-C"
+    ),
     ("d212", raw"ro(S), read_pending_codes(S, L, []), close(S), R = L"),
     ("d213", raw"ro(S), fill_buffer(S), read_pending_codes(S, L, []), close(S), R = L"),
-    ("d214", raw"ro(S), fill_buffer(S), read_pending_codes(S, L, T), close(S), T = [0'z], R = L"),
+    (
+        "d214",
+        raw"ro(S), fill_buffer(S), read_pending_codes(S, L, T), close(S), T = [0'z], R = L"
+    ),
     ("d215", raw"ro(S), fill_buffer(S), read_pending_chars(S, L, []), close(S), R = L"),
     ("d216", raw"ro(S), fill_buffer(S), read_pending_chars(S, L, [z]), close(S), R = L"),
-    ("d217", raw"ro(S), fill_buffer(S), read_pending_codes(S, _, []), get_code(S, C), close(S), R = C"),
-    ("d218", raw"ro(S), fill_buffer(S), read_pending_codes(S, _, []), '$stream_property'(S, position(P)), close(S), R = P"),
-    ("d219", raw"ro(S), get_code(S, _), get_code(S, _), read_pending_codes(S, L, []), close(S), R = L"),
-    ("d220", raw"ro(S), get_code(S, _), fill_buffer(S), read_pending_codes(S, L, []), '$stream_property'(S, position(P)), close(S), R = L-P"),
+    (
+        "d217",
+        raw"ro(S), fill_buffer(S), read_pending_codes(S, _, []), get_code(S, C), close(S), R = C"
+    ),
+    (
+        "d218",
+        raw"ro(S), fill_buffer(S), read_pending_codes(S, _, []), '$stream_property'(S, position(P)), close(S), R = P"
+    ),
+    (
+        "d219",
+        raw"ro(S), get_code(S, _), get_code(S, _), read_pending_codes(S, L, []), close(S), R = L"
+    ),
+    (
+        "d220",
+        raw"ro(S), get_code(S, _), fill_buffer(S), read_pending_codes(S, L, []), '$stream_property'(S, position(P)), close(S), R = L-P"
+    ),
     ("d221", raw"ro(S), rall(S, _), read_pending_codes(S, L, []), close(S), R = L"),
     ("d222", raw"ro(S), rall(S, _), read_pending_codes(S, L, T), close(S), R = L-T"),
     ("d223", raw"rb(S), fill_buffer(S), read_pending_codes(S, L, []), close(S), R = L"),
-    ("d224", raw"ro(S), set_stream(S, encoding(octet)), fill_buffer(S), read_pending_codes(S, L, []), '$stream_property'(S, position(P)), close(S), R = L-P"),
-    ("d225", raw"ro(S), set_stream(S, encoding(unicode_be)), fill_buffer(S), read_pending_codes(S, L, []), '$stream_property'(S, position(P)), close(S), R = L-P"),
-    ("d226", raw"ro(S), set_stream(S, encoding(unicode_le)), fill_buffer(S), read_pending_codes(S, L, []), close(S), R = L"),
-    ("d227", raw"atom_codes(A, [0'a, 233, 0x20ac, 0x1F600, 0'b]), outfile(F), open(F, write, W, [encoding(utf8)]), write(W, A), close(W), open(F, read, S, [encoding(utf8)]), fill_buffer(S), read_pending_codes(S, L, []), '$stream_property'(S, position(P)), close(S), R = L-P"),
-    ("d228", raw"atom_codes(A, [0'a, 233, 0x20ac, 0x1F600, 0'b]), outfile(F), open(F, write, W, [encoding(utf8)]), write(W, A), close(W), open(F, read, S, [encoding(utf8)]), fill_buffer(S), read_pending_chars(S, L, []), close(S), atom_chars(X, L), R = X"),
-    ("d229", raw"atom_codes(A, [0'a, 0x1F600, 0'b]), outfile(F), open(F, write, W, [encoding(utf16be)]), write(W, A), close(W), open(F, read, S, [encoding(utf16be)]), fill_buffer(S), read_pending_codes(S, L, []), '$stream_property'(S, position(P)), close(S), R = L-P"),
-    ("d230", raw"atom_codes(A, [0'a, 0x1F600, 0'b]), outfile(F), open(F, write, W, [encoding(utf16le)]), write(W, A), close(W), open(F, read, S, [encoding(utf16le)]), fill_buffer(S), read_pending_codes(S, L, []), close(S), R = L"),
-    ("d231", raw"wb(S), put_byte(S, 0'a), put_byte(S, 13), put_byte(S, 10), put_byte(S, 0'b), close(S), outfile(F), open(F, read, I, [newline(dos)]), fill_buffer(I), read_pending_codes(I, L, []), '$stream_property'(I, position(P)), close(I), R = L-P"),
-    ("d232", raw"wb(S), put_byte(S, 0'a), put_byte(S, 13), put_byte(S, 10), put_byte(S, 0'b), close(S), outfile(F), open(F, read, I), fill_buffer(I), read_pending_codes(I, L, []), close(I), R = L"),
-    ("d233", raw"wo(S), forall(between(1, 5000, _), put_char(S, a)), close(S), outfile(F), open(F, read, I), fill_buffer(I), read_pending_codes(I, L, []), length(L, N1), fill_buffer(I), read_pending_codes(I, L2, []), length(L2, N2), close(I), R = N1-N2"),
-    ("d234", raw"ro(S), fill_buffer(S), ( read_pending_codes(S, [0'x|_], _) -> A = yes ; A = no ), get_code(S, C), close(S), R = A-C"),
-    ("d235", raw"ro(S), fill_buffer(S), ( read_pending_codes(S, L, [0'q]) -> A = yes ; A = no ), close(S), R = A-L"),
-    ("d236", raw"open_string(\"abc\", S), fill_buffer(S), read_pending_codes(S, L, []), close(S), R = L"),
-    ("d237", raw"ra(S, rpal), fill_buffer(rpal), read_pending_codes(rpal, L, []), close(S), R = L"),
+    (
+        "d224",
+        raw"ro(S), set_stream(S, encoding(octet)), fill_buffer(S), read_pending_codes(S, L, []), '$stream_property'(S, position(P)), close(S), R = L-P"
+    ),
+    (
+        "d225",
+        raw"ro(S), set_stream(S, encoding(unicode_be)), fill_buffer(S), read_pending_codes(S, L, []), '$stream_property'(S, position(P)), close(S), R = L-P"
+    ),
+    (
+        "d226",
+        raw"ro(S), set_stream(S, encoding(unicode_le)), fill_buffer(S), read_pending_codes(S, L, []), close(S), R = L"
+    ),
+    (
+        "d227",
+        raw"atom_codes(A, [0'a, 233, 0x20ac, 0x1F600, 0'b]), outfile(F), open(F, write, W, [encoding(utf8)]), write(W, A), close(W), open(F, read, S, [encoding(utf8)]), fill_buffer(S), read_pending_codes(S, L, []), '$stream_property'(S, position(P)), close(S), R = L-P"
+    ),
+    (
+        "d228",
+        raw"atom_codes(A, [0'a, 233, 0x20ac, 0x1F600, 0'b]), outfile(F), open(F, write, W, [encoding(utf8)]), write(W, A), close(W), open(F, read, S, [encoding(utf8)]), fill_buffer(S), read_pending_chars(S, L, []), close(S), atom_chars(X, L), R = X"
+    ),
+    (
+        "d229",
+        raw"atom_codes(A, [0'a, 0x1F600, 0'b]), outfile(F), open(F, write, W, [encoding(utf16be)]), write(W, A), close(W), open(F, read, S, [encoding(utf16be)]), fill_buffer(S), read_pending_codes(S, L, []), '$stream_property'(S, position(P)), close(S), R = L-P"
+    ),
+    (
+        "d230",
+        raw"atom_codes(A, [0'a, 0x1F600, 0'b]), outfile(F), open(F, write, W, [encoding(utf16le)]), write(W, A), close(W), open(F, read, S, [encoding(utf16le)]), fill_buffer(S), read_pending_codes(S, L, []), close(S), R = L"
+    ),
+    (
+        "d231",
+        raw"wb(S), put_byte(S, 0'a), put_byte(S, 13), put_byte(S, 10), put_byte(S, 0'b), close(S), outfile(F), open(F, read, I, [newline(dos)]), fill_buffer(I), read_pending_codes(I, L, []), '$stream_property'(I, position(P)), close(I), R = L-P"
+    ),
+    (
+        "d232",
+        raw"wb(S), put_byte(S, 0'a), put_byte(S, 13), put_byte(S, 10), put_byte(S, 0'b), close(S), outfile(F), open(F, read, I), fill_buffer(I), read_pending_codes(I, L, []), close(I), R = L"
+    ),
+    (
+        "d233",
+        raw"wo(S), forall(between(1, 5000, _), put_char(S, a)), close(S), outfile(F), open(F, read, I), fill_buffer(I), read_pending_codes(I, L, []), length(L, N1), fill_buffer(I), read_pending_codes(I, L2, []), length(L2, N2), close(I), R = N1-N2"
+    ),
+    (
+        "d234",
+        raw"ro(S), fill_buffer(S), ( read_pending_codes(S, [0'x|_], _) -> A = yes ; A = no ), get_code(S, C), close(S), R = A-C"
+    ),
+    (
+        "d235",
+        raw"ro(S), fill_buffer(S), ( read_pending_codes(S, L, [0'q]) -> A = yes ; A = no ), close(S), R = A-L"
+    ),
+    (
+        "d236",
+        raw"open_string(\"abc\", S), fill_buffer(S), read_pending_codes(S, L, []), close(S), R = L"
+    ),
+    (
+        "d237",
+        raw"ra(S, rpal), fill_buffer(rpal), read_pending_codes(rpal, L, []), close(S), R = L"
+    ),
     ("d238", raw"cerr(read_pending_codes(foo, _, []), R)"),
     ("d239", raw"cerr(read_pending_codes(_, _, []), R)"),
     ("d240", raw"wo(S), cerr(read_pending_codes(S, _, []), R0), close(S), R = R0"),
     ("d241", raw"ro(S), close(S), cerr(read_pending_codes(S, _, []), R)"),
-    ("d242", raw"ro(S), fill_buffer(S), cerr(read_pending_codes(S, [a|b], []), R0), close(S), R = R0"),
-    ("d243", raw"ro(S), fill_buffer(S), read_pending_codes(S, L, T), close(S), length(L, N), var(T), R = N"),
-    ("d244", raw"ro(S), fill_buffer(S), read_pending_codes(S, L, T), close(S), L = [_,_|R0], R = R0-T"),
-    ("d245", raw"atom_codes(A, [0'a, 233, 0x20ac, 0x1F600, 0'b]), outfile(F), open(F, write, W, [encoding(utf8)]), write(W, A), close(W), open(F, read, S, [encoding(utf8)]), fill_buffer(S), read_pending_codes(S, _, []), get_code(S, C), close(S), R = C"),
-    ("d246", raw"outfile(F), open(F, write, W, [encoding(utf8)]), put_char(W, a), forall(between(1, 2500, _), put_code(W, 233)), close(W), open(F, read, S, [encoding(utf8)]), fill_buffer(S), read_pending_codes(S, L1, []), length(L1, N1), fill_buffer(S), read_pending_codes(S, L2, []), length(L2, N2), '$stream_property'(S, position(P)), close(S), R = N1-N2-P"),
-    ("d247", raw"wb(S), put_byte(S, 0'a), put_byte(S, 13), put_byte(S, 10), put_byte(S, 0'b), close(S), outfile(F), open(F, read, I, [newline(detect)]), '$stream_property'(I, newline(M0)), fill_buffer(I), read_pending_codes(I, L, []), '$stream_property'(I, newline(M1)), close(I), R = M0-M1-L"),
-    ("d248", raw"wb(S), put_byte(S, 97), put_byte(S, 255), put_byte(S, 98), close(S), outfile(F), open(F, read, I, [encoding(utf8)]), fill_buffer(I), cerr(read_pending_codes(I, _, []), R0), close(I), R = R0"),
-    ("d249", raw"wb(S), put_byte(S, 0xD8), put_byte(S, 0), put_byte(S, 0), put_byte(S, 0x41), close(S), outfile(F), open(F, read, I, [type(binary)]), set_stream(I, encoding(utf16be)), fill_buffer(I), cerr(read_pending_codes(I, _, []), R0), close(I), R = R0"),
-    ("d250", raw"ro(S), fill_buffer(S), get_code(S, _), '$stream_property'(S, position(P0)), cerr(read_pending_codes(S, [0'x|_], []), R0), '$stream_property'(S, position(P1)), close(S), R = R0-P0-P1"),
-    ("d251", raw"ro(S), set_stream(S, encoding(wchar_t)), fill_buffer(S), read_pending_codes(S, L, []), '$stream_property'(S, position(P)), close(S), R = L-P"),
-    ("d252", raw"ro(S), fill_buffer(S), read_pending_codes(S, _, []), fill_buffer(S), read_pending_codes(S, L, []), close(S), R = L"),
-    ("d253", raw"wb(S), put_byte(S, 0'a), put_byte(S, 13), put_byte(S, 10), put_byte(S, 0'b), close(S), outfile(F), open(F, read, I, [newline(dos), encoding(iso_latin_1)]), fill_buffer(I), read_pending_codes(I, L, []), '$stream_property'(I, position(P)), close(I), R = L-P"),
+    (
+        "d242",
+        raw"ro(S), fill_buffer(S), cerr(read_pending_codes(S, [a|b], []), R0), close(S), R = R0"
+    ),
+    (
+        "d243",
+        raw"ro(S), fill_buffer(S), read_pending_codes(S, L, T), close(S), length(L, N), var(T), R = N"
+    ),
+    (
+        "d244",
+        raw"ro(S), fill_buffer(S), read_pending_codes(S, L, T), close(S), L = [_,_|R0], R = R0-T"
+    ),
+    (
+        "d245",
+        raw"atom_codes(A, [0'a, 233, 0x20ac, 0x1F600, 0'b]), outfile(F), open(F, write, W, [encoding(utf8)]), write(W, A), close(W), open(F, read, S, [encoding(utf8)]), fill_buffer(S), read_pending_codes(S, _, []), get_code(S, C), close(S), R = C"
+    ),
+    (
+        "d246",
+        raw"outfile(F), open(F, write, W, [encoding(utf8)]), put_char(W, a), forall(between(1, 2500, _), put_code(W, 233)), close(W), open(F, read, S, [encoding(utf8)]), fill_buffer(S), read_pending_codes(S, L1, []), length(L1, N1), fill_buffer(S), read_pending_codes(S, L2, []), length(L2, N2), '$stream_property'(S, position(P)), close(S), R = N1-N2-P"
+    ),
+    (
+        "d247",
+        raw"wb(S), put_byte(S, 0'a), put_byte(S, 13), put_byte(S, 10), put_byte(S, 0'b), close(S), outfile(F), open(F, read, I, [newline(detect)]), '$stream_property'(I, newline(M0)), fill_buffer(I), read_pending_codes(I, L, []), '$stream_property'(I, newline(M1)), close(I), R = M0-M1-L"
+    ),
+    (
+        "d248",
+        raw"wb(S), put_byte(S, 97), put_byte(S, 255), put_byte(S, 98), close(S), outfile(F), open(F, read, I, [encoding(utf8)]), fill_buffer(I), cerr(read_pending_codes(I, _, []), R0), close(I), R = R0"
+    ),
+    (
+        "d249",
+        raw"wb(S), put_byte(S, 0xD8), put_byte(S, 0), put_byte(S, 0), put_byte(S, 0x41), close(S), outfile(F), open(F, read, I, [type(binary)]), set_stream(I, encoding(utf16be)), fill_buffer(I), cerr(read_pending_codes(I, _, []), R0), close(I), R = R0"
+    ),
+    (
+        "d250",
+        raw"ro(S), fill_buffer(S), get_code(S, _), '$stream_property'(S, position(P0)), cerr(read_pending_codes(S, [0'x|_], []), R0), '$stream_property'(S, position(P1)), close(S), R = R0-P0-P1"
+    ),
+    (
+        "d251",
+        raw"ro(S), set_stream(S, encoding(wchar_t)), fill_buffer(S), read_pending_codes(S, L, []), '$stream_property'(S, position(P)), close(S), R = L-P"
+    ),
+    (
+        "d252",
+        raw"ro(S), fill_buffer(S), read_pending_codes(S, _, []), fill_buffer(S), read_pending_codes(S, L, []), close(S), R = L"
+    ),
+    (
+        "d253",
+        raw"wb(S), put_byte(S, 0'a), put_byte(S, 13), put_byte(S, 10), put_byte(S, 0'b), close(S), outfile(F), open(F, read, I, [newline(dos), encoding(iso_latin_1)]), fill_buffer(I), read_pending_codes(I, L, []), '$stream_property'(I, position(P)), close(I), R = L-P"
+    ),
     ("d254", raw"ro(S), peek_string(S, 3, X), get_code(S, C), close(S), R = X-C"),
     ("d255", raw"ro(S), peek_string(S, 0, X), close(S), R = X"),
     ("d256", raw"ro(S), peek_string(S, 100, X), close(S), R = X"),
     ("d257", raw"ro(S), peek_string(S, 18, X), close(S), R = X"),
     ("d258", raw"ro(S), peek_string(S, 19, X), close(S), R = X"),
     ("d259", raw"ro(S), fill_buffer(S), peek_string(S, 5, X), close(S), R = X"),
-    ("d260", raw"ro(S), peek_string(S, 5, X), '$stream_property'(S, position(P)), close(S), R = X-P"),
-    ("d261", raw"ro(S), get_code(S, _), get_code(S, _), peek_string(S, 3, X), get_code(S, C), close(S), R = X-C"),
+    (
+        "d260",
+        raw"ro(S), peek_string(S, 5, X), '$stream_property'(S, position(P)), close(S), R = X-P"
+    ),
+    (
+        "d261",
+        raw"ro(S), get_code(S, _), get_code(S, _), peek_string(S, 3, X), get_code(S, C), close(S), R = X-C"
+    ),
     ("d262", raw"ro(S), rall(S, _), peek_string(S, 5, X), close(S), R = X"),
     ("d263", raw"ro(S), peek_string(S, 3, X), peek_string(S, 3, Y), close(S), R = X-Y"),
     ("d264", raw"rb(S), peek_string(S, 4, X), string_codes(X, Cs), close(S), R = Cs"),
-    ("d265", raw"atom_codes(A, [0'a, 233, 0x20ac, 0x1F600, 0'b]), outfile(F), open(F, write, W, [encoding(utf8)]), write(W, A), close(W), open(F, read, S, [encoding(utf8)]), peek_string(S, 3, X), string_codes(X, Cs), get_code(S, C), close(S), R = Cs-C"),
-    ("d266", raw"atom_codes(A, [0'a, 233, 0x20ac, 0x1F600, 0'b]), outfile(F), open(F, write, W, [encoding(utf8)]), write(W, A), close(W), open(F, read, S, [encoding(utf8)]), peek_string(S, 10, X), string_codes(X, Cs), close(S), R = Cs"),
-    ("d269", raw"wb(S), put_byte(S, 233), put_byte(S, 0'a), close(S), outfile(F), open(F, read, I, [encoding(iso_latin_1)]), peek_string(I, 1, X), string_codes(X, Cs), close(I), R = Cs"),
-    ("d270", raw"wo(S), forall(between(1, 5000, _), put_char(S, a)), close(S), outfile(F), open(F, read, I), peek_string(I, 5000, X), string_length(X, N), close(I), R = N"),
-    ("d271", raw"wo(S), forall(between(1, 5000, _), put_char(S, a)), close(S), outfile(F), open(F, read, I), peek_string(I, 6000, X), string_length(X, N), close(I), R = N"),
-    ("d272", raw"wo(S), forall(between(1, 5000, _), put_char(S, a)), close(S), outfile(F), open(F, read, I), peek_string(I, 4500, X), get_char(I, C), string_length(X, N), close(I), R = N-C"),
+    (
+        "d265",
+        raw"atom_codes(A, [0'a, 233, 0x20ac, 0x1F600, 0'b]), outfile(F), open(F, write, W, [encoding(utf8)]), write(W, A), close(W), open(F, read, S, [encoding(utf8)]), peek_string(S, 3, X), string_codes(X, Cs), get_code(S, C), close(S), R = Cs-C"
+    ),
+    (
+        "d266",
+        raw"atom_codes(A, [0'a, 233, 0x20ac, 0x1F600, 0'b]), outfile(F), open(F, write, W, [encoding(utf8)]), write(W, A), close(W), open(F, read, S, [encoding(utf8)]), peek_string(S, 10, X), string_codes(X, Cs), close(S), R = Cs"
+    ),
+    (
+        "d269",
+        raw"wb(S), put_byte(S, 233), put_byte(S, 0'a), close(S), outfile(F), open(F, read, I, [encoding(iso_latin_1)]), peek_string(I, 1, X), string_codes(X, Cs), close(I), R = Cs"
+    ),
+    (
+        "d270",
+        raw"wo(S), forall(between(1, 5000, _), put_char(S, a)), close(S), outfile(F), open(F, read, I), peek_string(I, 5000, X), string_length(X, N), close(I), R = N"
+    ),
+    (
+        "d271",
+        raw"wo(S), forall(between(1, 5000, _), put_char(S, a)), close(S), outfile(F), open(F, read, I), peek_string(I, 6000, X), string_length(X, N), close(I), R = N"
+    ),
+    (
+        "d272",
+        raw"wo(S), forall(between(1, 5000, _), put_char(S, a)), close(S), outfile(F), open(F, read, I), peek_string(I, 4500, X), get_char(I, C), string_length(X, N), close(I), R = N-C"
+    ),
     ("d273", raw"ro(S), cerr(peek_string(S, -1, _), R0), close(S), R = R0"),
     ("d274", raw"ro(S), cerr(peek_string(S, a, _), R0), close(S), R = R0"),
     ("d275", raw"ro(S), cerr(peek_string(S, _, _), R0), close(S), R = R0"),
@@ -395,34 +758,100 @@ const _LD_CASES = [
     ("d279", raw"ro(S), close(S), cerr(peek_string(S, 3, _), R)"),
     ("d280", raw"ro(S), cerr(peek_string(S, 3, \"abd\"), R0), close(S), R = R0"),
     ("d281", raw"ro(S), cerr(peek_string(S, 3, \"abc\"), R0), close(S), R = R0"),
-    ("d282", raw"open_string(\"hello\", S), peek_string(S, 3, X), get_code(S, C), close(S), R = X-C"),
+    (
+        "d282",
+        raw"open_string(\"hello\", S), peek_string(S, 3, X), get_code(S, C), close(S), R = X-C"
+    ),
     ("d283", raw"open_string(\"hello\", S), peek_string(S, 30, X), close(S), R = X"),
     ("d284", raw"ra(S, pkal), peek_string(pkal, 2, X), close(S), R = X"),
     ("d285", raw"ro(S), peek_string(S, 3, X), string(X), close(S), R = yes"),
-    ("d286", raw"ro(S), wo(O), copy_stream_data(S, O), close(S), close(O), outtext(T), R = T"),
-    ("d287", raw"ro(S), wo(O), copy_stream_data(S, O, 5), close(S), close(O), outtext(T), R = T"),
-    ("d288", raw"ro(S), wo(O), copy_stream_data(S, O, 0), close(S), close(O), outtext(T), R = T"),
-    ("d289", raw"ro(S), wo(O), copy_stream_data(S, O, 100), close(S), close(O), outtext(T), R = T"),
-    ("d290", raw"ro(S), wo(O), copy_stream_data(S, O, -3), close(S), close(O), outtext(T), R = T"),
-    ("d291", raw"ro(S), wo(O), get_code(S, _), copy_stream_data(S, O, 3), get_code(S, C), close(S), close(O), outtext(T), R = T-C"),
-    ("d292", raw"ro(S), wo(O), get_code(S, _), copy_stream_data(S, O), close(S), close(O), outtext(T), R = T"),
-    ("d293", raw"ro(S), open_null_stream(O), copy_stream_data(S, O), character_count(O, N), close(S), close(O), R = N"),
-    ("d294", raw"ro(S), wo(O), cerr(copy_stream_data(S, O, a), R0), close(S), close(O), R = R0"),
-    ("d295", raw"ro(S), wo(O), cerr(copy_stream_data(S, O, _), R0), close(S), close(O), R = R0"),
-    ("d296", raw"ro(S), wo(O), cerr(copy_stream_data(S, O, 2.5), R0), close(S), close(O), R = R0"),
+    (
+        "d286",
+        raw"ro(S), wo(O), copy_stream_data(S, O), close(S), close(O), outtext(T), R = T"
+    ),
+    (
+        "d287",
+        raw"ro(S), wo(O), copy_stream_data(S, O, 5), close(S), close(O), outtext(T), R = T"
+    ),
+    (
+        "d288",
+        raw"ro(S), wo(O), copy_stream_data(S, O, 0), close(S), close(O), outtext(T), R = T"
+    ),
+    (
+        "d289",
+        raw"ro(S), wo(O), copy_stream_data(S, O, 100), close(S), close(O), outtext(T), R = T"
+    ),
+    (
+        "d290",
+        raw"ro(S), wo(O), copy_stream_data(S, O, -3), close(S), close(O), outtext(T), R = T"
+    ),
+    (
+        "d291",
+        raw"ro(S), wo(O), get_code(S, _), copy_stream_data(S, O, 3), get_code(S, C), close(S), close(O), outtext(T), R = T-C"
+    ),
+    (
+        "d292",
+        raw"ro(S), wo(O), get_code(S, _), copy_stream_data(S, O), close(S), close(O), outtext(T), R = T"
+    ),
+    (
+        "d293",
+        raw"ro(S), open_null_stream(O), copy_stream_data(S, O), character_count(O, N), close(S), close(O), R = N"
+    ),
+    (
+        "d294",
+        raw"ro(S), wo(O), cerr(copy_stream_data(S, O, a), R0), close(S), close(O), R = R0"
+    ),
+    (
+        "d295",
+        raw"ro(S), wo(O), cerr(copy_stream_data(S, O, _), R0), close(S), close(O), R = R0"
+    ),
+    (
+        "d296",
+        raw"ro(S), wo(O), cerr(copy_stream_data(S, O, 2.5), R0), close(S), close(O), R = R0"
+    ),
     ("d297", raw"ro(S), cerr(copy_stream_data(S, S), R0), close(S), R = R0"),
-    ("d298", raw"ro(S), wo(O), cerr(copy_stream_data(O, S), R0), close(S), close(O), R = R0"),
+    (
+        "d298",
+        raw"ro(S), wo(O), cerr(copy_stream_data(O, S), R0), close(S), close(O), R = R0"
+    ),
     ("d299", raw"wo(O), cerr(copy_stream_data(foo, O), R0), close(O), R = R0"),
     ("d300", raw"ro(S), cerr(copy_stream_data(S, foo), R0), close(S), R = R0"),
-    ("d301", raw"ro(S), wo(O), close(O), cerr(copy_stream_data(S, O), R0), close(S), R = R0"),
-    ("d302", raw"ro(S), close(S), wo(O), cerr(copy_stream_data(S, O), R0), close(O), R = R0"),
-    ("d303", raw"atom_codes(A, [0'a, 233, 0x20ac, 0x1F600, 0'b]), outfile(F), open(F, write, W, [encoding(utf8)]), write(W, A), close(W), open(F, read, S, [encoding(utf8)]), with_output_to(string(X), (current_output(O), copy_stream_data(S, O))), string_codes(X, Cs), close(S), R = Cs"),
-    ("d304", raw"wo(S), forall(between(1, 5000, _), put_char(S, a)), close(S), outfile(F), open(F, read, I), with_output_to(string(X), (current_output(O), copy_stream_data(I, O))), string_length(X, N), close(I), R = N"),
-    ("d305", raw"ro(S), with_output_to(string(X), (current_output(O), copy_stream_data(S, O, 4))), close(S), R = X"),
-    ("d306", raw"ro(S), rall(S, _), wo(O), copy_stream_data(S, O), close(S), close(O), outtext(T), R = T"),
-    ("d307", raw"ro(S), wo(O), copy_stream_data(S, O, 5), copy_stream_data(S, O, 5), close(S), close(O), outtext(T), R = T"),
-    ("d308", raw"ro(S), open_string(\"zz\", O0), cerr(copy_stream_data(S, O0), R0), close(S), R = R0"),
-    ("d309", raw"open_string(\"hello\", S), wo(O), copy_stream_data(S, O, 3), close(S), close(O), outtext(T), R = T"),
+    (
+        "d301",
+        raw"ro(S), wo(O), close(O), cerr(copy_stream_data(S, O), R0), close(S), R = R0"
+    ),
+    (
+        "d302",
+        raw"ro(S), close(S), wo(O), cerr(copy_stream_data(S, O), R0), close(O), R = R0"
+    ),
+    (
+        "d303",
+        raw"atom_codes(A, [0'a, 233, 0x20ac, 0x1F600, 0'b]), outfile(F), open(F, write, W, [encoding(utf8)]), write(W, A), close(W), open(F, read, S, [encoding(utf8)]), with_output_to(string(X), (current_output(O), copy_stream_data(S, O))), string_codes(X, Cs), close(S), R = Cs"
+    ),
+    (
+        "d304",
+        raw"wo(S), forall(between(1, 5000, _), put_char(S, a)), close(S), outfile(F), open(F, read, I), with_output_to(string(X), (current_output(O), copy_stream_data(I, O))), string_length(X, N), close(I), R = N"
+    ),
+    (
+        "d305",
+        raw"ro(S), with_output_to(string(X), (current_output(O), copy_stream_data(S, O, 4))), close(S), R = X"
+    ),
+    (
+        "d306",
+        raw"ro(S), rall(S, _), wo(O), copy_stream_data(S, O), close(S), close(O), outtext(T), R = T"
+    ),
+    (
+        "d307",
+        raw"ro(S), wo(O), copy_stream_data(S, O, 5), copy_stream_data(S, O, 5), close(S), close(O), outtext(T), R = T"
+    ),
+    (
+        "d308",
+        raw"ro(S), open_string(\"zz\", O0), cerr(copy_stream_data(S, O0), R0), close(S), R = R0"
+    ),
+    (
+        "d309",
+        raw"open_string(\"hello\", S), wo(O), copy_stream_data(S, O, 3), close(S), close(O), outtext(T), R = T"
+    ),
     ("d310", raw"noprotocol, R = yes"),
     ("d311", raw"noprotocol, noprotocol, R = twice"),
     ("d312", raw"( protocolling(F) -> R = F ; R = none )"),
@@ -430,36 +859,108 @@ const _LD_CASES = [
     ("d315", raw"( with_tty_raw(fail) -> R = yes ; R = no )"),
     ("d316", raw"with_tty_raw(member(R, [a, b]))"),
     ("d317", raw"with_tty_raw(atom_length(_, _))"),
-    ("d319", raw"open(pipe('printf abc'), read, S), get_char(S, C1), get_char(S, C2), close(S), R = C1-C2"),
-    ("d320", raw"open(pipe('printf abc'), read, S), get_char(S, _), cerr(seek(S, 0, bof, X), R0), close(S), R = R0-X"),
-    ("d321", raw"open(pipe('printf abc'), read, S, [reposition(false)]), get_char(S, _), cerr(seek(S, 0, current, _), R0), close(S), R = R0"),
-    ("d322", raw"open(pipe('printf abc'), read, S), cerr(seek(S, 0, bof, _), R0), close(S), R = R0"),
-    ("d323", raw"open(pipe('printf abc'), read, S), cerr('$size_stream'(S, _), R0), close(S), R = R0"),
-    ("d324", raw"open(pipe('cat > /dev/null'), write, S), format(S, \"abc\", []), close(S), R = ok"),
-    ("d325", raw"open(pipe('printf A'), read, S, [type(binary)]), get_byte(S, B), close(S), R = B"),
+    (
+        "d319",
+        raw"open(pipe('printf abc'), read, S), get_char(S, C1), get_char(S, C2), close(S), R = C1-C2"
+    ),
+    (
+        "d320",
+        raw"open(pipe('printf abc'), read, S), get_char(S, _), cerr(seek(S, 0, bof, X), R0), close(S), R = R0-X"
+    ),
+    (
+        "d321",
+        raw"open(pipe('printf abc'), read, S, [reposition(false)]), get_char(S, _), cerr(seek(S, 0, current, _), R0), close(S), R = R0"
+    ),
+    (
+        "d322",
+        raw"open(pipe('printf abc'), read, S), cerr(seek(S, 0, bof, _), R0), close(S), R = R0"
+    ),
+    (
+        "d323",
+        raw"open(pipe('printf abc'), read, S), cerr('$size_stream'(S, _), R0), close(S), R = R0"
+    ),
+    (
+        "d324",
+        raw"open(pipe('cat > /dev/null'), write, S), format(S, \"abc\", []), close(S), R = ok"
+    ),
+    (
+        "d325",
+        raw"open(pipe('printf A'), read, S, [type(binary)]), get_byte(S, B), close(S), R = B"
+    ),
     ("d326", raw"cerr(open(pipe(f(x)), read, _), R0), R = R0"),
     ("d327", raw"cerr(open(pipe('true'), append, _), R0), R = R0"),
     ("d328", raw"open(pipe('exit 3'), read, S), get_char(S, C), close(S), R = C"),
-    ("d329", raw"open(pipe('printf abc'), read, S), ( stream_property(S, file_name(F)) -> R0 = F ; R0 = nofile ), close(S), R = R0"),
-    ("d330", raw"open(pipe('printf abc'), read, S), stream_property(S, reposition(B)), close(S), R = B"),
-    ("d331", raw"open(pipe('printf abc'), read, S), '$stream_property'(S, position(P)), close(S), R = P"),
-    ("d332", raw"open(pipe('printf \"a\\nb\"'), read, S), get_char(S, _), get_char(S, _), get_char(S, _), '$stream_property'(S, position(P)), close(S), R = P"),
-    ("d333", raw"open(pipe('printf abc'), read, S), fill_buffer(S), read_pending_codes(S, L, []), close(S), R = L"),
-    ("d334", raw"open(pipe('printf abc'), read, S), peek_string(S, 2, X), get_char(S, C), close(S), R = X-C"),
-    ("d335", raw"open(pipe('printf abc'), read, S), wo(O), copy_stream_data(S, O), close(S), close(O), outtext(T), R = T"),
-    ("d336", raw"open(pipe('printf abc'), read, S), cerr(seek(S, 100, bof, _), R0), close(S), R = R0"),
-    ("d337", raw"open(pipe('printf abc'), read, S), cerr(seek(S, 0, eof, _), R0), close(S), R = R0"),
-    ("d338", raw"open(pipe('printf abc'), read, S), seek(S, 1, current, X), get_char(S, C), close(S), R = X-C"),
-    ("d339", raw"open(pipe('printf abc'), read, S), get_char(S, _), get_char(S, _), cerr(seek(S, 1, bof, X), R0), get_char(S, C), close(S), R = R0-X-C"),
-    ("d340", raw"open(pipe('printf abc'), read, S, [reposition(false)]), cerr(seek(S, 0, bof, _), R0), close(S), R = R0"),
-    ("d341", raw"open(pipe('printf abc'), read, S), cerr(set_stream_position(S, '$stream_position'(5, 1, 5, 5)), R0), close(S), R = R0"),
+    (
+        "d329",
+        raw"open(pipe('printf abc'), read, S), ( stream_property(S, file_name(F)) -> R0 = F ; R0 = nofile ), close(S), R = R0"
+    ),
+    (
+        "d330",
+        raw"open(pipe('printf abc'), read, S), stream_property(S, reposition(B)), close(S), R = B"
+    ),
+    (
+        "d331",
+        raw"open(pipe('printf abc'), read, S), '$stream_property'(S, position(P)), close(S), R = P"
+    ),
+    (
+        "d332",
+        raw"open(pipe('printf \"a\\nb\"'), read, S), get_char(S, _), get_char(S, _), get_char(S, _), '$stream_property'(S, position(P)), close(S), R = P"
+    ),
+    (
+        "d333",
+        raw"open(pipe('printf abc'), read, S), fill_buffer(S), read_pending_codes(S, L, []), close(S), R = L"
+    ),
+    (
+        "d334",
+        raw"open(pipe('printf abc'), read, S), peek_string(S, 2, X), get_char(S, C), close(S), R = X-C"
+    ),
+    (
+        "d335",
+        raw"open(pipe('printf abc'), read, S), wo(O), copy_stream_data(S, O), close(S), close(O), outtext(T), R = T"
+    ),
+    (
+        "d336",
+        raw"open(pipe('printf abc'), read, S), cerr(seek(S, 100, bof, _), R0), close(S), R = R0"
+    ),
+    (
+        "d337",
+        raw"open(pipe('printf abc'), read, S), cerr(seek(S, 0, eof, _), R0), close(S), R = R0"
+    ),
+    (
+        "d338",
+        raw"open(pipe('printf abc'), read, S), seek(S, 1, current, X), get_char(S, C), close(S), R = X-C"
+    ),
+    (
+        "d339",
+        raw"open(pipe('printf abc'), read, S), get_char(S, _), get_char(S, _), cerr(seek(S, 1, bof, X), R0), get_char(S, C), close(S), R = R0-X-C"
+    ),
+    (
+        "d340",
+        raw"open(pipe('printf abc'), read, S, [reposition(false)]), cerr(seek(S, 0, bof, _), R0), close(S), R = R0"
+    ),
+    (
+        "d341",
+        raw"open(pipe('printf abc'), read, S), cerr(set_stream_position(S, '$stream_position'(5, 1, 5, 5)), R0), close(S), R = R0"
+    ),
     ("d342", raw"outfile(F), cerr(open(F, write, _, [lock(foo)]), R0), R = R0"),
     ("d343", raw"cerr(open(pipe('true'), read, _, [lock(foo)]), R0), R = R0"),
-    ("d344", raw"open_string(\"abc\", S), stream_property(S, reposition(B)), close(S), R = B"),
+    (
+        "d344",
+        raw"open_string(\"abc\", S), stream_property(S, reposition(B)), close(S), R = B"
+    ),
     ("d345", raw"open_null_stream(S), stream_property(S, reposition(B)), close(S), R = B"),
-    ("d346", raw"with_output_to(string(_), (current_output(O), stream_property(O, reposition(B)))), R = B"),
-    ("d347", raw"open('/dev/null', read, S), stream_property(S, reposition(B)), close(S), R = B"),
-    ("d348", raw"open(pipe('true'), read, S), stream_property(S, reposition(B)), close(S), R = B"),
+    (
+        "d346",
+        raw"with_output_to(string(_), (current_output(O), stream_property(O, reposition(B)))), R = B"
+    ),
+    (
+        "d347",
+        raw"open('/dev/null', read, S), stream_property(S, reposition(B)), close(S), R = B"
+    ),
+    (
+        "d348",
+        raw"open(pipe('true'), read, S), stream_property(S, reposition(B)), close(S), R = B"
+    ),
     ("d349", raw"wo(S), stream_property(S, reposition(B)), close(S), R = B"),
     ("d351", raw"wenc(utf16be, [0'a, 0x1F600, 0'b]), outbytes(L), R = L"),
     ("d352", raw"wenc(utf16le, [0'a, 0x1F600, 0'b]), outbytes(L), R = L"),
@@ -469,30 +970,96 @@ const _LD_CASES = [
     ("d356", raw"wenc(utf16be, [0'a, 0x1F600, 0xFFFF, 0'b]), renc(utf16be, L), R = L"),
     ("d357", raw"wenc(utf16le, [0x1F600, 0x10FFFF, 0x20AC]), renc(utf16le, L), R = L"),
     ("d358", raw"wenc(wchar_t, [0'a, 0x1F600, 0x10FFFF]), renc(wchar_t, L), R = L"),
-    ("d359", raw"outfile(F), open(F, write, W, [encoding(utf16be), bom(true)]), put_code(W, 0'a), close(W), outbytes(L), R = L"),
-    ("d360", raw"outfile(F), open(F, write, W, [encoding(utf16le), bom(true)]), put_code(W, 0'a), close(W), outbytes(L), R = L"),
-    ("d361", raw"wbytes([0xFF, 0xFE, 0x61, 0, 0x3D, 0xD8, 0x00, 0xDE]), rout(S), rall(S, L), sp(S, encoding(_), E), has(S, bom(true), H), close(S), R = L-E-H"),
-    ("d362", raw"wbytes([0xFE, 0xFF, 0, 0x61, 0xD8, 0x3D, 0xDE, 0x00]), rout(S), rall(S, L), sp(S, encoding(_), E), close(S), R = L-E"),
-    ("d363", raw"wbytes([0xEF, 0xBB, 0xBF, 0x61, 0xC3, 0xA9]), rout(S), rall(S, L), sp(S, encoding(_), E), close(S), R = L-E"),
+    (
+        "d359",
+        raw"outfile(F), open(F, write, W, [encoding(utf16be), bom(true)]), put_code(W, 0'a), close(W), outbytes(L), R = L"
+    ),
+    (
+        "d360",
+        raw"outfile(F), open(F, write, W, [encoding(utf16le), bom(true)]), put_code(W, 0'a), close(W), outbytes(L), R = L"
+    ),
+    (
+        "d361",
+        raw"wbytes([0xFF, 0xFE, 0x61, 0, 0x3D, 0xD8, 0x00, 0xDE]), rout(S), rall(S, L), sp(S, encoding(_), E), has(S, bom(true), H), close(S), R = L-E-H"
+    ),
+    (
+        "d362",
+        raw"wbytes([0xFE, 0xFF, 0, 0x61, 0xD8, 0x3D, 0xDE, 0x00]), rout(S), rall(S, L), sp(S, encoding(_), E), close(S), R = L-E"
+    ),
+    (
+        "d363",
+        raw"wbytes([0xEF, 0xBB, 0xBF, 0x61, 0xC3, 0xA9]), rout(S), rall(S, L), sp(S, encoding(_), E), close(S), R = L-E"
+    ),
     ("d364", raw"wbytes([0xFF, 0xFE, 0x61, 0]), renc(iso_latin_1, L), R = L"),
-    ("d365", raw"wbytes([0xDC, 0, 0, 0x61]), outfile(F), open(F, read, S, [encoding(utf16be)]), get_code(S, A), get_code(S, B), close(S), R = A-B"),
-    ("d366", raw"wbytes([0xD8, 0, 0, 0x61]), outfile(F), open(F, read, S, [encoding(utf16be)]), get_code(S, A), get_code(S, B), close(S), R = A-B"),
-    ("d367", raw"wbytes([0xD8, 0]), outfile(F), open(F, read, S, [encoding(utf16be)]), get_code(S, A), get_code(S, B), close(S), R = A-B"),
-    ("d368", raw"wbytes([0, 0x61, 0]), outfile(F), open(F, read, S, [encoding(utf16be)]), get_code(S, A), get_code(S, B), get_code(S, C), close(S), R = [A, B, C]"),
-    ("d369", raw"wbytes([0x61, 0, 0]), outfile(F), open(F, read, S, [encoding(wchar_t)]), get_code(S, A), get_code(S, B), close(S), R = A-B"),
-    ("d370", raw"outfile(F), open(F, write, W, [encoding(utf16be)]), atom_codes(A, [233, 0x1F600]), writeq(W, A), close(W), outbytes(L), R = L"),
-    ("d371", raw"outfile(F), open(F, write, W, [encoding(utf16le)]), atom_codes(X, [0'x, 0x1F600]), format(W, 'foo(bar, ~q).~n', [X]), close(W), open(F, read, S, [encoding(utf16le)]), read(S, T), close(S), R = T"),
-    ("d372", raw"wo(W), put_code(W, 0'a), set_stream(W, encoding(utf16be)), put_code(W, 0'b), put_code(W, 0x20AC), close(W), outbytes(L), R = L"),
-    ("d373", raw"wenc(utf16be, [0x1F600, 0'a]), outfile(F), open(F, read, S, [encoding(utf16be)]), peek_code(S, A), get_code(S, B), peek_code(S, C), close(S), R = [A, B, C]"),
-    ("d374", raw"wenc(utf16be, [0x1F600, 0'a]), outfile(F), open(F, read, S, [encoding(utf16be)]), get_code(S, _), byte_count(S, B), character_count(S, C), get_code(S, _), byte_count(S, B2), close(S), R = [B, C, B2]"),
-    ("d375", raw"outfile(F), open(F, write, W, [encoding(utf16be)]), sp(W, encoding(_), E1), close(W), open(F, write, W2, [encoding(unicode_le)]), sp(W2, encoding(_), E2), close(W2), open(F, write, W3, [encoding(wchar_t)]), sp(W3, encoding(_), E3), close(W3), R = [E1, E2, E3]"),
-    ("d376", raw"outfile(F), open(F, write, W, [encoding(utf16le)]), atom_codes(C, [0x1F600]), put_char(W, C), nl(W), close(W), outbytes(L), R = L"),
-    ("d377", raw"outfile(F), open(F, write, W, [encoding(utf16le), newline(dos)]), put_code(W, 0'a), nl(W), close(W), outbytes(L), R = L"),
-    ("d378", raw"wenc(utf16be, [0'a, 0'b, 0'c]), outfile(F), open(F, read, S, [encoding(utf16be)]), seek(S, 4, bof, N), get_code(S, C), close(S), R = N-C"),
-    ("d379", raw"outfile(F), open(F, write, W, [encoding(utf16be)]), cerr(put_code(W, 0xD800), R0), catch(close(W), _, true), R = R0"),
+    (
+        "d365",
+        raw"wbytes([0xDC, 0, 0, 0x61]), outfile(F), open(F, read, S, [encoding(utf16be)]), get_code(S, A), get_code(S, B), close(S), R = A-B"
+    ),
+    (
+        "d366",
+        raw"wbytes([0xD8, 0, 0, 0x61]), outfile(F), open(F, read, S, [encoding(utf16be)]), get_code(S, A), get_code(S, B), close(S), R = A-B"
+    ),
+    (
+        "d367",
+        raw"wbytes([0xD8, 0]), outfile(F), open(F, read, S, [encoding(utf16be)]), get_code(S, A), get_code(S, B), close(S), R = A-B"
+    ),
+    (
+        "d368",
+        raw"wbytes([0, 0x61, 0]), outfile(F), open(F, read, S, [encoding(utf16be)]), get_code(S, A), get_code(S, B), get_code(S, C), close(S), R = [A, B, C]"
+    ),
+    (
+        "d369",
+        raw"wbytes([0x61, 0, 0]), outfile(F), open(F, read, S, [encoding(wchar_t)]), get_code(S, A), get_code(S, B), close(S), R = A-B"
+    ),
+    (
+        "d370",
+        raw"outfile(F), open(F, write, W, [encoding(utf16be)]), atom_codes(A, [233, 0x1F600]), writeq(W, A), close(W), outbytes(L), R = L"
+    ),
+    (
+        "d371",
+        raw"outfile(F), open(F, write, W, [encoding(utf16le)]), atom_codes(X, [0'x, 0x1F600]), format(W, 'foo(bar, ~q).~n', [X]), close(W), open(F, read, S, [encoding(utf16le)]), read(S, T), close(S), R = T"
+    ),
+    (
+        "d372",
+        raw"wo(W), put_code(W, 0'a), set_stream(W, encoding(utf16be)), put_code(W, 0'b), put_code(W, 0x20AC), close(W), outbytes(L), R = L"
+    ),
+    (
+        "d373",
+        raw"wenc(utf16be, [0x1F600, 0'a]), outfile(F), open(F, read, S, [encoding(utf16be)]), peek_code(S, A), get_code(S, B), peek_code(S, C), close(S), R = [A, B, C]"
+    ),
+    (
+        "d374",
+        raw"wenc(utf16be, [0x1F600, 0'a]), outfile(F), open(F, read, S, [encoding(utf16be)]), get_code(S, _), byte_count(S, B), character_count(S, C), get_code(S, _), byte_count(S, B2), close(S), R = [B, C, B2]"
+    ),
+    (
+        "d375",
+        raw"outfile(F), open(F, write, W, [encoding(utf16be)]), sp(W, encoding(_), E1), close(W), open(F, write, W2, [encoding(unicode_le)]), sp(W2, encoding(_), E2), close(W2), open(F, write, W3, [encoding(wchar_t)]), sp(W3, encoding(_), E3), close(W3), R = [E1, E2, E3]"
+    ),
+    (
+        "d376",
+        raw"outfile(F), open(F, write, W, [encoding(utf16le)]), atom_codes(C, [0x1F600]), put_char(W, C), nl(W), close(W), outbytes(L), R = L"
+    ),
+    (
+        "d377",
+        raw"outfile(F), open(F, write, W, [encoding(utf16le), newline(dos)]), put_code(W, 0'a), nl(W), close(W), outbytes(L), R = L"
+    ),
+    (
+        "d378",
+        raw"wenc(utf16be, [0'a, 0'b, 0'c]), outfile(F), open(F, read, S, [encoding(utf16be)]), seek(S, 4, bof, N), get_code(S, C), close(S), R = N-C"
+    ),
+    (
+        "d379",
+        raw"outfile(F), open(F, write, W, [encoding(utf16be)]), cerr(put_code(W, 0xD800), R0), catch(close(W), _, true), R = R0"
+    ),
     ("d380", raw"outfile(F), cerr(open(F, read, _, [type(binary), encoding(utf16be)]), R)"),
-    ("d381", raw"wenc(utf16be, [0'a, 10, 0'b]), outfile(F), open(F, read, S, [encoding(utf16be)]), read_pending_codes(S, L, []), '$stream_property'(S, position(P)), close(S), R = L-P"),
-    ("d382", raw"wenc(utf16le, [0x1F600, 0'z]), outfile(F), open(F, read, S, [encoding(utf16le)]), get_char(S, A), peek_char(S, B), close(S), atom_codes(A, Ac), R = Ac-B"),
+    (
+        "d381",
+        raw"wenc(utf16be, [0'a, 10, 0'b]), outfile(F), open(F, read, S, [encoding(utf16be)]), read_pending_codes(S, L, []), '$stream_property'(S, position(P)), close(S), R = L-P"
+    ),
+    (
+        "d382",
+        raw"wenc(utf16le, [0x1F600, 0'z]), outfile(F), open(F, read, S, [encoding(utf16le)]), get_char(S, A), peek_char(S, B), close(S), atom_codes(A, Ac), R = Ac-B"
+    ),
     ("d383", raw"rua(accept, [102,40,102,101,0x301,41,46], T), R = T"),
     ("d384", raw"rua(accept, [102,40,102,0xE9,41,46], T), R = T"),
     ("d385", raw"cerr(rua(error, [102,40,102,101,0x301,41,46], T), R0), R = R0"),
@@ -506,28 +1073,94 @@ const _LD_CASES = [
     ("d393", raw"cerr(rua(reject, [102,40,0x4E2D,41,46], _), R0), R = R0"),
     ("d394", raw"cerr(rua(reject, [102,40,102,101,41,46], T), R0), R = R0-T"),
     ("d395", raw"cerr(rua(reject, [102,40,0x3A9,0x301,41,46], T), R0), R = R0-T"),
-    ("d396", raw"wenc(utf8, [97,46]), outfile(F), cerr(open(F, read, _, [unicode_atoms(bogus)]), R0), R = R0"),
-    ("d397", raw"wenc(utf8, [97,46]), outfile(F), open(F, read, S, [encoding(utf8)]), cerr(read_term(S, _, [unicode_atoms(bogus)]), R0), close(S), R = R0"),
-    ("d398", raw"wenc(utf8, [97,46]), outfile(F), open(F, read, S, [encoding(utf8)]), cerr(read_clause(S, _, [unicode_atoms(bogus)]), R0), close(S), R = R0"),
-    ("d399", raw"wenc(utf8, [97,46]), outfile(F), open(F, read, S, [encoding(utf8)]), cerr(set_stream(S, unicode_atoms(bogus)), R0), close(S), R = R0"),
-    ("d400", raw"wenc(utf8, [97,46]), outfile(F), open(F, read, S, [encoding(utf8)]), cerr(read_term(S, _, [unicode_atoms(1)]), R0), close(S), R = R0"),
-    ("d401", raw"wenc(utf8, [97,46]), outfile(F), open(F, read, S, [encoding(utf8)]), cerr(read_term(S, _, [unicode_atoms(_)]), R0), close(S), R = R0"),
-    ("d402", raw"wenc(utf8, [102,40,102,101,0x301,41,46]), outfile(F), open(F, read, S, [encoding(utf8)]), cerr(read_term(S, _, [unicode_atoms(error)]), R0), close(S), R = R0"),
-    ("d403", raw"wenc(utf8, [102,40,102,0xE9,41,46]), outfile(F), open(F, read, S, [encoding(utf8)]), read_term(S, T, [unicode_atoms(error)]), close(S), R = T"),
-    ("d404", raw"wenc(utf8, [102,40,102,101,0x301,41,46]), outfile(F), open(F, read, S, [encoding(utf8)]), cerr(read_clause(S, _, [unicode_atoms(error), syntax_errors(error)]), R0), close(S), R = R0"),
-    ("d405", raw"wenc(utf8, [102,40,102,0xE9,41,46]), outfile(F), open(F, read, S, [encoding(utf8)]), cerr(read_clause(S, _, [unicode_atoms(reject), syntax_errors(error)]), R0), close(S), R = R0"),
-    ("d406", raw"wenc(utf8, [102,40,102,101,0x301,41,46]), outfile(F), open(F, read, S, [encoding(utf8)]), set_stream(S, unicode_atoms(error)), cerr(read(S, _), R0), close(S), R = R0"),
-    ("d407", raw"wenc(utf8, [102,40,102,0xE9,41,46]), outfile(F), open(F, read, S, [encoding(utf8)]), set_stream(S, unicode_atoms(reject)), cerr(read(S, _), R0), close(S), R = R0"),
-    ("d408", raw"wenc(utf8, [102,40,102,0xE9,41,46]), outfile(F), open(F, read, S, [encoding(utf8)]), set_stream(S, unicode_atoms(accept)), read(S, T), close(S), R = T"),
-    ("d409", raw"wenc(utf8, [102,40,102,0xE9,41,46]), outfile(F), open(F, read, S, [encoding(utf8), unicode_atoms(reject)]), cerr(read_term(S, _, [unicode_atoms(accept)]), R0), close(S), R = R0"),
-    ("d410", raw"wenc(utf8, [102,40,102,0xE9,41,46]), outfile(F), open(F, read, S, [encoding(utf8), unicode_atoms(accept)]), cerr(read_term(S, _, [unicode_atoms(reject)]), R0), close(S), R = R0"),
-    ("d411", raw"'$style_check'(O, 32), cerr(rua(accept, [102,40,102,0xE9,41,46], T), R0), '$style_check'(_, O), R = R0-T"),
-    ("d412", raw"'$style_check'(O, 32), cerr(rua(accept, [102,40,102,101,0x301,41,46], T), R0), '$style_check'(_, O), R = R0-T"),
-    ("d413", raw"'$style_check'(O, 32), cerr(rua(accept, [102,40,0x3A9,0x301,41,46], T), R0), '$style_check'(_, O), R = R0-T"),
-    ("d414", raw"'$style_check'(O, 32), cerr(rua(reject, [102,40,102,0xE9,41,46], _), R0), '$style_check'(_, O), R = R0"),
-    ("d415", raw"'$style_check'(O, 32), cerr(rua(error, [102,40,102,101,0x301,41,46], _), R0), '$style_check'(_, O), R = R0"),
-    ("d416", raw"wenc(utf8, [102,40,0xD7,41,46]), outfile(F), open(F, read, S, [encoding(utf8)]), cerr(read_term(S, T, [unicode_atoms(reject)]), R0), close(S), R = R0-T"),
-    ("d417", raw"wenc(utf8, [102,40,0xD7,41,46]), outfile(F), open(F, read, S, [encoding(utf8)]), cerr(read_term(S, T, [unicode_atoms(error)]), R0), close(S), R = R0-T")
+    (
+        "d396",
+        raw"wenc(utf8, [97,46]), outfile(F), cerr(open(F, read, _, [unicode_atoms(bogus)]), R0), R = R0"
+    ),
+    (
+        "d397",
+        raw"wenc(utf8, [97,46]), outfile(F), open(F, read, S, [encoding(utf8)]), cerr(read_term(S, _, [unicode_atoms(bogus)]), R0), close(S), R = R0"
+    ),
+    (
+        "d398",
+        raw"wenc(utf8, [97,46]), outfile(F), open(F, read, S, [encoding(utf8)]), cerr(read_clause(S, _, [unicode_atoms(bogus)]), R0), close(S), R = R0"
+    ),
+    (
+        "d399",
+        raw"wenc(utf8, [97,46]), outfile(F), open(F, read, S, [encoding(utf8)]), cerr(set_stream(S, unicode_atoms(bogus)), R0), close(S), R = R0"
+    ),
+    (
+        "d400",
+        raw"wenc(utf8, [97,46]), outfile(F), open(F, read, S, [encoding(utf8)]), cerr(read_term(S, _, [unicode_atoms(1)]), R0), close(S), R = R0"
+    ),
+    (
+        "d401",
+        raw"wenc(utf8, [97,46]), outfile(F), open(F, read, S, [encoding(utf8)]), cerr(read_term(S, _, [unicode_atoms(_)]), R0), close(S), R = R0"
+    ),
+    (
+        "d402",
+        raw"wenc(utf8, [102,40,102,101,0x301,41,46]), outfile(F), open(F, read, S, [encoding(utf8)]), cerr(read_term(S, _, [unicode_atoms(error)]), R0), close(S), R = R0"
+    ),
+    (
+        "d403",
+        raw"wenc(utf8, [102,40,102,0xE9,41,46]), outfile(F), open(F, read, S, [encoding(utf8)]), read_term(S, T, [unicode_atoms(error)]), close(S), R = T"
+    ),
+    (
+        "d404",
+        raw"wenc(utf8, [102,40,102,101,0x301,41,46]), outfile(F), open(F, read, S, [encoding(utf8)]), cerr(read_clause(S, _, [unicode_atoms(error), syntax_errors(error)]), R0), close(S), R = R0"
+    ),
+    (
+        "d405",
+        raw"wenc(utf8, [102,40,102,0xE9,41,46]), outfile(F), open(F, read, S, [encoding(utf8)]), cerr(read_clause(S, _, [unicode_atoms(reject), syntax_errors(error)]), R0), close(S), R = R0"
+    ),
+    (
+        "d406",
+        raw"wenc(utf8, [102,40,102,101,0x301,41,46]), outfile(F), open(F, read, S, [encoding(utf8)]), set_stream(S, unicode_atoms(error)), cerr(read(S, _), R0), close(S), R = R0"
+    ),
+    (
+        "d407",
+        raw"wenc(utf8, [102,40,102,0xE9,41,46]), outfile(F), open(F, read, S, [encoding(utf8)]), set_stream(S, unicode_atoms(reject)), cerr(read(S, _), R0), close(S), R = R0"
+    ),
+    (
+        "d408",
+        raw"wenc(utf8, [102,40,102,0xE9,41,46]), outfile(F), open(F, read, S, [encoding(utf8)]), set_stream(S, unicode_atoms(accept)), read(S, T), close(S), R = T"
+    ),
+    (
+        "d409",
+        raw"wenc(utf8, [102,40,102,0xE9,41,46]), outfile(F), open(F, read, S, [encoding(utf8), unicode_atoms(reject)]), cerr(read_term(S, _, [unicode_atoms(accept)]), R0), close(S), R = R0"
+    ),
+    (
+        "d410",
+        raw"wenc(utf8, [102,40,102,0xE9,41,46]), outfile(F), open(F, read, S, [encoding(utf8), unicode_atoms(accept)]), cerr(read_term(S, _, [unicode_atoms(reject)]), R0), close(S), R = R0"
+    ),
+    (
+        "d411",
+        raw"'$style_check'(O, 32), cerr(rua(accept, [102,40,102,0xE9,41,46], T), R0), '$style_check'(_, O), R = R0-T"
+    ),
+    (
+        "d412",
+        raw"'$style_check'(O, 32), cerr(rua(accept, [102,40,102,101,0x301,41,46], T), R0), '$style_check'(_, O), R = R0-T"
+    ),
+    (
+        "d413",
+        raw"'$style_check'(O, 32), cerr(rua(accept, [102,40,0x3A9,0x301,41,46], T), R0), '$style_check'(_, O), R = R0-T"
+    ),
+    (
+        "d414",
+        raw"'$style_check'(O, 32), cerr(rua(reject, [102,40,102,0xE9,41,46], _), R0), '$style_check'(_, O), R = R0"
+    ),
+    (
+        "d415",
+        raw"'$style_check'(O, 32), cerr(rua(error, [102,40,102,101,0x301,41,46], _), R0), '$style_check'(_, O), R = R0"
+    ),
+    (
+        "d416",
+        raw"wenc(utf8, [102,40,0xD7,41,46]), outfile(F), open(F, read, S, [encoding(utf8)]), cerr(read_term(S, T, [unicode_atoms(reject)]), R0), close(S), R = R0-T"
+    ),
+    (
+        "d417",
+        raw"wenc(utf8, [102,40,0xD7,41,46]), outfile(F), open(F, read, S, [encoding(utf8)]), cerr(read_term(S, T, [unicode_atoms(error)]), R0), close(S), R = R0-T"
+    )
 ]
 
 # swipl 10.1.20-1-g18168e629's answers to the program and cases above (the driver's lines; evidence/S2/lane_d_rows.out)
@@ -951,15 +1584,18 @@ const _LD_DATA = "abc\nxyz\nlast line\n"
 
 "The data file's text, and the program and cases as one file in `dir` (the data and output paths substituted); the case predicates' names."
 function _ld_file(
-        dir::String, cases::Vector{Tuple{String, String}}=_LD_CASES
-    )::Tuple{String, Vector{String}}
+    dir::String, cases::Vector{Tuple{String, String}}=_LD_CASES
+)::Tuple{String, Vector{String}}
     data = joinpath(dir, "data.txt")
     write(data, _LD_DATA)
-    prog = replace(replace(_LD_PROGRAM, "@DATA@" => data), "@OUT@" => joinpath(dir, "out.txt"))
+    prog = replace(
+        replace(_LD_PROGRAM, "@DATA@" => data), "@OUT@" => joinpath(dir, "out.txt")
+    )
     names = ["t_$(id)" for (id, _) in cases]
     text =
         prog * join([
-            "t_$(id)(R) :- catch(($g), error(SsuE, _), ( nb(SsuE, SsuF), R = raised(SsuF) )).\n" for
+            "t_$(id)(R) :- catch(($g), error(SsuE, _), ( nb(SsuE, SsuF), R = raised(SsuF) )).\n"
+            for
             (id, g) in cases
         ])
     f = joinpath(dir, "lane_d.pl")
@@ -1037,7 +1673,9 @@ function _ld_refuses(goal::String)::Bool
     fid = LK.PL_open_foreign_frame(ld)
     a = LK.PL_new_term_refs(ld, 1)
     LK.putSlotValue!(ld, a + 1, mk_var(_LD, LK.fresh_var_keys!(1)), LK.PutVarMap())
-    qid = LK.PL_open_query(gd, ld, nothing, LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS, proc, a)
+    qid = LK.PL_open_query(
+        gd, ld, nothing, LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS, proc, a
+    )
     refused = try
         LK.PL_next_solution(gd, ld, qid)
         false
@@ -1068,18 +1706,51 @@ end
 # POSIX record locks never conflict inside one process, so a refusal to lock needs ANOTHER process holding the file (testset after the rows).
 # A read lock on a descriptor opened for writing (and the reverse) is EBADF: existence_error(source_sink, File), the pin's answer (l05, l10, l12).
 const _LD_LOCK_CASES = Tuple{String, String}[
-    ("l01", raw"datafile(F), open(F, read, S, [lock(read)]), get_code(S, C), close(S), R = C"),
-    ("l02", raw"datafile(F), open(F, read, S, [lock(shared)]), get_code(S, C), close(S), R = C"),
-    ("l03", raw"outfile(F), open(F, write, S, [lock(write)]), put_code(S, 0'z), close(S), outtext(T), R = T"),
-    ("l04", raw"outfile(F), open(F, write, S, [lock(exclusive)]), put_code(S, 0'y), close(S), outtext(T), R = T"),
-    ("l05", raw"datafile(F), catch(open(F, read, S, [lock(write)]), error(E, _), true), ( var(E) -> close(S), R = opened ; E =.. [N, A|_], R = N-A )"),
-    ("l06", raw"datafile(F), open(F, read, S, [lock(read), wait(false)]), get_code(S, C), close(S), R = C"),
-    ("l07", raw"datafile(F), open(F, read, S1, [lock(read)]), open(F, read, S2, [lock(shared)]), get_code(S1, A), get_code(S2, B), close(S1), close(S2), R = A-B"),
-    ("l08", raw"outfile(F), open(F, write, S0), put_code(S0, 0'a), close(S0), open(F, append, S, [lock(write)]), put_code(S, 0'q), close(S), outtext(T), R = T"),
-    ("l09", raw"outfile(F), open(F, write, S0), put_code(S0, 0'a), close(S0), open(F, update, S, [lock(write), wait(false)]), put_code(S, 0'u), close(S), outtext(T), R = T"),
-    ("l10", raw"outfile(F), open(F, write, S0), close(S0), catch(open(F, update, S, [lock(read)]), error(E, _), true), ( var(E) -> close(S), R = opened ; E =.. [N, A|_], R = N-A )"),
+    (
+        "l01",
+        raw"datafile(F), open(F, read, S, [lock(read)]), get_code(S, C), close(S), R = C"
+    ),
+    (
+        "l02",
+        raw"datafile(F), open(F, read, S, [lock(shared)]), get_code(S, C), close(S), R = C"
+    ),
+    (
+        "l03",
+        raw"outfile(F), open(F, write, S, [lock(write)]), put_code(S, 0'z), close(S), outtext(T), R = T"
+    ),
+    (
+        "l04",
+        raw"outfile(F), open(F, write, S, [lock(exclusive)]), put_code(S, 0'y), close(S), outtext(T), R = T"
+    ),
+    (
+        "l05",
+        raw"datafile(F), catch(open(F, read, S, [lock(write)]), error(E, _), true), ( var(E) -> close(S), R = opened ; E =.. [N, A|_], R = N-A )"
+    ),
+    (
+        "l06",
+        raw"datafile(F), open(F, read, S, [lock(read), wait(false)]), get_code(S, C), close(S), R = C"
+    ),
+    (
+        "l07",
+        raw"datafile(F), open(F, read, S1, [lock(read)]), open(F, read, S2, [lock(shared)]), get_code(S1, A), get_code(S2, B), close(S1), close(S2), R = A-B"
+    ),
+    (
+        "l08",
+        raw"outfile(F), open(F, write, S0), put_code(S0, 0'a), close(S0), open(F, append, S, [lock(write)]), put_code(S, 0'q), close(S), outtext(T), R = T"
+    ),
+    (
+        "l09",
+        raw"outfile(F), open(F, write, S0), put_code(S0, 0'a), close(S0), open(F, update, S, [lock(write), wait(false)]), put_code(S, 0'u), close(S), outtext(T), R = T"
+    ),
+    (
+        "l10",
+        raw"outfile(F), open(F, write, S0), close(S0), catch(open(F, update, S, [lock(read)]), error(E, _), true), ( var(E) -> close(S), R = opened ; E =.. [N, A|_], R = N-A )"
+    ),
     ("l11", raw"datafile(F), open(F, read, S, [lock(read), wait(true)]), close(S), R = ok"),
-    ("l12", raw"datafile(F), catch(open(F, read, S, [lock(exclusive), wait(false)]), error(E, _), true), ( var(E) -> close(S), R = opened ; E =.. [N, A|_], R = N-A )")
+    (
+        "l12",
+        raw"datafile(F), catch(open(F, read, S, [lock(exclusive), wait(false)]), error(E, _), true), ( var(E) -> close(S), R = opened ; E =.. [N, A|_], R = N-A )"
+    )
 ]
 # swipl 10.1.20-1-g18168e629's lines for the cases above (two byte-identical runs, 2026-11-13)
 const _LD_LOCK_PINNED = [
@@ -1107,7 +1778,10 @@ const _LD_LOCK_PINNED = [
         @test k == p
     end
     # not vacuous: the pins hold answers and errors, so the comparison can pass and can fail
-    @test count(l -> occursin("c[101,120,105,115,116,101,110,99,101,95,101,114,114,111,114]", l), _LD_LOCK_PINNED) == 3
+    @test count(
+        l -> occursin("c[101,120,105,115,116,101,110,99,101,95,101,114,114,111,114]", l),
+        _LD_LOCK_PINNED
+    ) == 3
     @test count(l -> occursin("/1(i97)", l), _LD_LOCK_PINNED) == 3
     swipl = get(ENV, "LOGICKERNEL_NO_SWIPL", "") == "1" ? nothing : Sys.which("swipl")
     if swipl === nothing
@@ -1132,14 +1806,42 @@ _ld_lockgoal(mode::String, opts::String) = string(
 # holder lets go and the row FAILS on its answer instead of hanging); x07, x08 have a holder that lets go after 0.5 s: the open WAITS (the default
 # wait(true), F_SETLKW) and succeeds, the pin's answer (swipl: opened, probed with the same holder).
 const _LD_LOCK_EXT = [        # (holder, case id, open mode, options, expected R encoded, seconds the holder holds at most)
-    ("w", "x01", "read", "lock(read), wait(false)", _ld_perm("permission_error", "lock"), 3.0),
-    ("w", "x02", "read", "lock(shared), wait(false)", _ld_perm("permission_error", "lock"), 3.0),
+    (
+        "w",
+        "x01",
+        "read",
+        "lock(read), wait(false)",
+        _ld_perm("permission_error", "lock"),
+        3.0
+    ),
+    (
+        "w",
+        "x02",
+        "read",
+        "lock(shared), wait(false)",
+        _ld_perm("permission_error", "lock"),
+        3.0
+    ),
     ("r", "x03", "read", "lock(read), wait(false)", _ld_a("opened"), 3.0),
     ("r", "x04", "read", "lock(shared), wait(false)", _ld_a("opened"), 3.0),
-    ("r", "x05", "update", "lock(write), wait(false)", _ld_perm("permission_error", "lock"), 3.0),
-    ("w", "x06", "update", "lock(write), wait(false)", _ld_perm("permission_error", "lock"), 3.0),
+    (
+        "r",
+        "x05",
+        "update",
+        "lock(write), wait(false)",
+        _ld_perm("permission_error", "lock"),
+        3.0
+    ),
+    (
+        "w",
+        "x06",
+        "update",
+        "lock(write), wait(false)",
+        _ld_perm("permission_error", "lock"),
+        3.0
+    ),
     ("w", "x07", "read", "lock(read)", _ld_a("opened"), 0.5),
-    ("w", "x08", "update", "lock(write), wait(true)", _ld_a("opened"), 0.5),
+    ("w", "x08", "update", "lock(write), wait(true)", _ld_a("opened"), 0.5)
 ]
 @testset "open/4 lock(Lock) with wait(false): a lock held by another process raises permission_error(lock, ...)" begin
     py = Sys.which("python3")
@@ -1225,14 +1927,32 @@ const _LD_NFC_CASES = Tuple{String, String}[
     ("n02", "rua(nfc, [102,40,102,0xE9,41,46], T), R = T"),
     ("n03", "rua(nfc, [102,40,0x1E0B,0x323,41,46], T), R = T"),
     ("n04", "rua(nfc, [102,40,102,101,41,46], T), R = T"),
-    ("n05", "wenc(utf8, $(_LD_NFC_DE)), outfile(F), open(F, read, S, [encoding(utf8), unicode_atoms(nfc)]), read(S, T), close(S), R = T"),
-    ("n06", "wenc(utf8, $(_LD_NFC_DE)), $(_LD_NFC_OPEN), read_term(S, T, [unicode_atoms(nfc)]), close(S), R = T"),
-    ("n07", "wenc(utf8, $(_LD_NFC_DE)), $(_LD_NFC_OPEN), read_clause(S, T, [unicode_atoms(nfc)]), close(S), R = T"),
-    ("n08", "wenc(utf8, $(_LD_NFC_DE)), $(_LD_NFC_OPEN), set_stream(S, unicode_atoms(nfc)), read(S, T), close(S), R = T"),
-    ("n09", "wenc(utf8, [102,40,39,102,101,0x301,39,41,46]), $(_LD_NFC_OPEN), read_term(S, T, [unicode_atoms(nfc)]), close(S), R = T"),
-    ("n10", "wenc(utf8, $(_LD_NFC_DE)), $(_LD_NFC_OPEN), read_term(S, T, [unicode_atoms(nfc)]), read(S, E), close(S), R = T-E"),
+    (
+        "n05",
+        "wenc(utf8, $(_LD_NFC_DE)), outfile(F), open(F, read, S, [encoding(utf8), unicode_atoms(nfc)]), read(S, T), close(S), R = T"
+    ),
+    (
+        "n06",
+        "wenc(utf8, $(_LD_NFC_DE)), $(_LD_NFC_OPEN), read_term(S, T, [unicode_atoms(nfc)]), close(S), R = T"
+    ),
+    (
+        "n07",
+        "wenc(utf8, $(_LD_NFC_DE)), $(_LD_NFC_OPEN), read_clause(S, T, [unicode_atoms(nfc)]), close(S), R = T"
+    ),
+    (
+        "n08",
+        "wenc(utf8, $(_LD_NFC_DE)), $(_LD_NFC_OPEN), set_stream(S, unicode_atoms(nfc)), read(S, T), close(S), R = T"
+    ),
+    (
+        "n09",
+        "wenc(utf8, [102,40,39,102,101,0x301,39,41,46]), $(_LD_NFC_OPEN), read_term(S, T, [unicode_atoms(nfc)]), close(S), R = T"
+    ),
+    (
+        "n10",
+        "wenc(utf8, $(_LD_NFC_DE)), $(_LD_NFC_OPEN), read_term(S, T, [unicode_atoms(nfc)]), read(S, E), close(S), R = T-E"
+    ),
     # error mode on a combining mark that NFC keeps (KA + VOWEL SIGN U): the kernel's exact test says in NFC; the pin (no hook) says non_nfc_atom
-    ("n11", "rua(error, [102,40,102,0x915,0x941,41,46], T), R = T"),
+    ("n11", "rua(error, [102,40,102,0x915,0x941,41,46], T), R = T")
 ]
 const _LD_NFC_EXPECT = Dict(
     "n01" => "c[102]/1(a[102,233])",
@@ -1254,7 +1974,8 @@ const _LD_NFC_EXPECT = Dict(
     @test kl[1] == "ok"
     @test length(kl) == length(_LD_NFC_CASES) + 1
     for ((id, _), k) in zip(_LD_NFC_CASES, kl[2:end])
-        want = "t_$id c[" * join(codeunits("t_$id"), ",") * "]/1(" * _LD_NFC_EXPECT[id] * ")"
+        want =
+            "t_$id c[" * join(codeunits("t_$id"), ",") * "]/1(" * _LD_NFC_EXPECT[id] * ")"
         k == want || println(stderr, "  ours  ", k, "\n  want  ", want)
         @test k == want
     end

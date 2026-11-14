@@ -58,7 +58,8 @@ const MBSTATE_WORDS = 2
 function _wcrtomb(c::Int, st::Vector{UInt64})::Union{Nothing, Vector{UInt8}}
     buf = Vector{UInt8}(undef, PL_MB_LEN_MAX)
     n = GC.@preserve buf st ccall(
-        :wcrtomb, Csize_t, (Ptr{UInt8}, Cint, Ptr{UInt64}), pointer(buf), c % Cint, pointer(st)
+        :wcrtomb, Csize_t, (Ptr{UInt8}, Cint, Ptr{UInt64}), pointer(buf), c % Cint,
+        pointer(st)
     )
     n == typemax(Csize_t) && return nothing
     resize!(buf, Int(n))
@@ -67,7 +68,9 @@ end
 
 # ORIGINAL: libc's `mbrtowc(3)` with one byte at a time (Sgetcode) or a run (read_pending_input).
 "`(rc, wc)` of `mbrtowc` on `n` bytes of `buf` from `from`: `rc` is the bytes used, `-1` (illegal) or `-2` (incomplete); `wc` the character."
-function _mbrtowc(buf::Vector{UInt8}, from::Int, n::Int, st::Vector{UInt64})::Tuple{Int, Int}
+function _mbrtowc(
+    buf::Vector{UInt8}, from::Int, n::Int, st::Vector{UInt64}
+)::Tuple{Int, Int}
     wc = Ref{Cint}(0)
     rc = GC.@preserve buf st ccall(
         :mbrtowc, Csize_t, (Ptr{Cint}, Ptr{UInt8}, Csize_t, Ptr{UInt64}),
@@ -86,7 +89,8 @@ function _mbsnrtowcs_count(buf::Vector{UInt8}, n::Int, st::Vector{UInt64})::Int
     rc = GC.@preserve buf st begin
         src[] = pointer(buf)
         ccall(
-            :mbsnrtowcs, Csize_t, (Ptr{Cint}, Ptr{Ptr{UInt8}}, Csize_t, Csize_t, Ptr{UInt64}),
+            :mbsnrtowcs, Csize_t,
+            (Ptr{Cint}, Ptr{Ptr{UInt8}}, Csize_t, Csize_t, Ptr{UInt64}),
             C_NULL, src, n, 0, pointer(st)
         )
     end
@@ -363,7 +367,8 @@ mutable struct IOSTREAM
     IOSTREAM() = new(
         UInt8[], 0, 0, 0, 0, EOF, 0, 0, UInt32(0), IOPOS(), nothing, nothing,
         Smemfunctions,
-        ENC_UNKNOWN, 0, SIO_NL_POSIX, 0, nothing, S_UATOMS_ACCEPT, 0, false, nothing, nothing
+        ENC_UNKNOWN, 0, SIO_NL_POSIX, 0, nothing, S_UATOMS_ACCEPT, 0, false, nothing,
+        nothing
     )
 end
 
@@ -916,7 +921,7 @@ function put_utf16(c::Int, s::IOSTREAM, be::Bool)::Int
         c1, c2 = utf16_encode(c)
         (
             put_usc2(c1, s, s.encoding == ENC_UTF16BE) < 0 ||
-                put_usc2(c2, s, s.encoding == ENC_UTF16BE) < 0
+            put_usc2(c2, s, s.encoding == ENC_UTF16BE) < 0
         ) && return -1
     elseif IS_UTF16_SURROGATE(c)
         reperror(c, s) < 0 && return -1
@@ -1115,7 +1120,7 @@ function Sgetcode(s::IOSTREAM)::Int
         elseif enc == ENC_ANSI
             st = stream_mbstate!(s)
             n = 0                                               # as upstream: `n` is never incremented, so the EOF-in-sequence arm below
-                                                                # cannot be taken (probed on the pin: a lone 0xc3 at EOF reads as -1, no warning)
+            # cannot be taken (probed on the pin: a lone 0xc3 at EOF reads as -1, no warning)
             c = 0
             b1 = UInt8[0]
             while true
@@ -2020,7 +2025,9 @@ function _fcntl_lock(io::IOStream, lock::Int, wait::Bool)::Int
     buf[1] = lock == 1 ? 0x00 : 0x01                    # l_type: F_RDLCK, F_WRLCK (little endian short)
     cmd = wait ? Cint(7) : Cint(6)                      # F_SETLKW, F_SETLK
     while true
-        rc = GC.@preserve buf ccall(:fcntl, Cint, (Cint, Cint, Ptr{UInt8}), fdn, cmd, pointer(buf))
+        rc = GC.@preserve buf ccall(
+            :fcntl, Cint, (Cint, Cint, Ptr{UInt8}), fdn, cmd, pointer(buf)
+        )
         rc == 0 && return 0
         e = Int(Base.Libc.errno())
         e == 4 || return e                              # EINTR: try again

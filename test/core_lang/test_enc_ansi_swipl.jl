@@ -75,9 +75,13 @@ function _ea_swipl_lines(path::String, names::Vector{String}, loc::String)::Vect
         f = joinpath(d, "drv.pl")
         write(
             f,
-            _EA_DRIVER * ":- initialization((fz_run('$path', [" * join(names, ",") * "]), halt)).\n"
+            _EA_DRIVER * ":- initialization((fz_run('$path', [" * join(names, ",") *
+            "]), halt)).\n"
         )
-        read(pipeline(addenv(`swipl -q $f`, "LC_ALL" => loc); stdin=devnull, stderr=devnull), String)
+        read(
+            pipeline(addenv(`swipl -q $f`, "LC_ALL" => loc); stdin=devnull, stderr=devnull),
+            String
+        )
     end
     return String.(split(chomp(out), '\n'; keepempty=false))
 end
@@ -105,12 +109,15 @@ sbe(Cs, Bs) :- string_codes(S, Cs), string_bytes(S, Bs, text).
 """
 
 "The program and cases as one file in `dir` (the output path substituted); the case predicates' names."
-function _ea_file(dir::String, cases::Vector{Tuple{String, String}})::Tuple{String, Vector{String}}
+function _ea_file(
+    dir::String, cases::Vector{Tuple{String, String}}
+)::Tuple{String, Vector{String}}
     prog = replace(_EA_PROGRAM, "@OUT@" => joinpath(dir, "out.txt"))
     names = ["t_$(id)" for (id, _) in cases]
     text =
         prog * join([
-            "t_$(id)(R) :- catch(($g), error(EaE, _), ( nb(EaE, EaF), R = raised(EaF) )).\n" for
+            "t_$(id)(R) :- catch(($g), error(EaE, _), ( nb(EaE, EaF), R = raised(EaF) )).\n"
+            for
             (id, g) in cases
         ])
     f = joinpath(dir, "enc_ansi.pl")
@@ -178,11 +185,17 @@ end
 const _EA_U_CASES = Tuple{String, String}[
     ("u01", raw"wtext([0'a, 0xe9, 0x20ac, 0x1F600]), outbytes(L), R = L"),
     ("u02", raw"wtext([0'a, 0xe9, 0x20ac, 0x1F600]), rtext(L), R = L"),
-    ("u03", raw"wtext([0'a]), outfile(F), open(F, read, S, [encoding(text)]), '$stream_property'(S, encoding(E)), close(S), R = E"),
+    (
+        "u03",
+        raw"wtext([0'a]), outfile(F), open(F, read, S, [encoding(text)]), '$stream_property'(S, encoding(E)), close(S), R = E"
+    ),
     ("u04", raw"wbytes([97, 0xc3]), rtext(L), R = L"),
     ("u05", raw"wbytes([97, 0, 98]), rtext(L), R = L"),
     ("u06", raw"wbytes([0xc3, 0x28, 98]), rtext(L), R = L"),
-    ("u07", raw"wbytes([0xe2, 0x82, 0xac, 13, 10, 0xf0, 0x9f, 0x98, 0x80]), rtext(L), R = L"),
+    (
+        "u07",
+        raw"wbytes([0xe2, 0x82, 0xac, 13, 10, 0xf0, 0x9f, 0x98, 0x80]), rtext(L), R = L"
+    ),
     ("u08", raw"wbytes([97, 0xff, 98]), rtext(L), R = L"),
     ("u09", raw"wbytes([]), rtext(L), R = L"),
     ("u10", raw"rpend([97, 0xc3, 0xa9, 98], R)"),
@@ -198,7 +211,10 @@ const _EA_U_CASES = Tuple{String, String}[
     ("u20", raw"wqt([0'a, 0xe9, 0x20ac, 0x1F600]), outbytes(L), R = L"),
     ("u21", raw"wqt([0'a, 0xe9, 0x20ac, 0x1F600]), rtext(L), R = L"),
     ("u22", raw"wtext([]), outbytes(L), R = L"),
-    ("u23", raw"outfile(F), open(F, write, W, [encoding(text)]), put_code(W, 0), close(W), outbytes(L), R = L"),
+    (
+        "u23",
+        raw"outfile(F), open(F, write, W, [encoding(text)]), put_code(W, 0), close(W), outbytes(L), R = L"
+    ),
     ("u24", raw"sbd([97, 0xc3, 0xa9], R)"),
     ("u25", raw"sbd([0xe2, 0x82, 0xac], R)"),
     ("u26", raw"sbd([0xc3], R)"),
@@ -260,7 +276,10 @@ const _EA_U_PINNED = [
 
 # (id, goal), run IN ORDER, under the C locale
 const _EA_C_CASES = Tuple{String, String}[
-    ("c01", raw"outfile(F), open(F, write, W, [encoding(text)]), cerr(put_code(W, 0xe9), R0), cerr(close(W), R1), R = R0-R1"),
+    (
+        "c01",
+        raw"outfile(F), open(F, write, W, [encoding(text)]), cerr(put_code(W, 0xe9), R0), cerr(close(W), R1), R = R0-R1"
+    ),
     ("c02", raw"wtext([0'a, 0'b]), outbytes(L), R = L"),
     ("c03", raw"wbytes([97, 233, 98, 0xc3, 0xa9]), rtext(L), R = L"),
     ("c04", raw"rpend([97, 98, 99], R)"),
@@ -269,7 +288,10 @@ const _EA_C_CASES = Tuple{String, String}[
     ("c07", raw"cerr(wqs([0x20ac]), R0), outbytes(L), R = R0-L"),
     ("c08", raw"cerr(wqs([0'a, 0x20, 0xe9]), R0), outbytes(L), R = R0-L"),
     ("c09", raw"cerr(wqt([0'a, 0xe9]), R0), outbytes(L), R = R0-L"),
-    ("c10", raw"outfile(F), open(F, write, W, [encoding(text)]), cerr(put_code(W, 0x20ac), R0), cerr(put_code(W, 0'a), R1), cerr(close(W), R2), outbytes(L), R = r(R0, R1, R2, L)"),
+    (
+        "c10",
+        raw"outfile(F), open(F, write, W, [encoding(text)]), cerr(put_code(W, 0x20ac), R0), cerr(put_code(W, 0'a), R1), cerr(close(W), R2), outbytes(L), R = r(R0, R1, R2, L)"
+    ),
     ("c11", raw"cerr(rpend([97, 0xe9], _), R)"),
     ("c12", raw"wbytes([97, 0, 98]), rtext(L), R = L"),
     ("c13", raw"sbd([97, 98, 99], R)"),
@@ -342,7 +364,8 @@ end
     if swipl === nothing
         @info "ENC_ANSI LIVE CHECK NOT RUN: `swipl` is not on PATH here. It runs in tools/run_tests.sh and CI."
     else
-        for (loc, cases, pinned) in (("C.UTF-8", _EA_U_CASES, _EA_U_PINNED), ("C", _EA_C_CASES, _EA_C_PINNED))
+        for (loc, cases, pinned) in
+            (("C.UTF-8", _EA_U_CASES, _EA_U_PINNED), ("C", _EA_C_CASES, _EA_C_PINNED))
             f, names = _ea_file(mktempdir(), cases)
             @test _ea_swipl_lines(f, names, loc) == pinned
         end
@@ -366,7 +389,8 @@ end
         @test LK._wcrtomb(Int(0x1F600), z()) == UInt8[0xf0, 0x9f, 0x98, 0x80]
         @test LK._wcrtomb(0, z()) == UInt8[0x00]
         @test LK._wcrtomb(Int(0xD800), z()) === nothing      # a surrogate has no UTF-8 form
-        @test LK.Scanrepresent(Int(0x20ac), s) == 0 && LK.Scanrepresent(Int(0x1F600), s) == 0
+        @test LK.Scanrepresent(Int(0x20ac), s) == 0 &&
+            LK.Scanrepresent(Int(0x1F600), s) == 0
         @test LK.Scanrepresent(Int(0xD800), s) == -1
         stx = z()                                       # one byte at a time, the state carries the partial sequence
         @test LK._mbrtowc(UInt8[0xe2, 0x82, 0xac], 1, 1, stx) == (-2, 0)
@@ -408,7 +432,8 @@ _ea_ld() = LK.PL_local_data{_EA}(LK.PL_global_data{_EA}())
 "The UTF-32 bytes of `cps` (an `ENC_WCHAR` text's `text`)."
 _ea_w(cps) = Vector{UInt8}(reinterpret(UInt8, UInt32.(cps)))
 "The text of `bytes` in `enc`, its `length` the number of units (`n`, default: the bytes)."
-_ea_t(bytes, enc, n=length(bytes), canonical=false) = LK.PL_chars_t(Vector{UInt8}(bytes), n, enc, canonical)
+_ea_t(bytes, enc, n=length(bytes), canonical=false) =
+    LK.PL_chars_t(Vector{UInt8}(bytes), n, enc, canonical)
 "The pending exception's ball as the driver writes it, `nothing` when none."
 function _ea_ball(ld)::Union{Nothing, String}
     ex = LK.PL_exception(ld, 0)
@@ -422,9 +447,11 @@ _ea_err_head(name::String, arg::String) =
     "c" * _ea_codes("error") * "/2(c" * _ea_codes(name) * "/1(a" * _ea_codes(arg) * "),"
 
 @testset "REP_MB and the error codes (SWI-Prolog.h, pl-text.h at the pin)" begin
-    @test LK.REP_MB == 0x00200000 && LK.REP_MB != LK.REP_UTF8 && LK.REP_MB & LK.REP_UTF8 == 0
+    @test LK.REP_MB == 0x00200000 && LK.REP_MB != LK.REP_UTF8 &&
+        LK.REP_MB & LK.REP_UTF8 == 0
     @test LK.ERR_TEXT_ILLEGAL_UTF8 == -1 && LK.ERR_TEXT_ILLEGAL_UTF16 == -2
-    @test LK.ERR_TEXT_ILLEGAL_MULTIBYTE_SEQUENCE == -3 && LK.ERR_TEXT_INCOMPLETE_MULTIBYTE_SEQUENCE == -4
+    @test LK.ERR_TEXT_ILLEGAL_MULTIBYTE_SEQUENCE == -3 &&
+        LK.ERR_TEXT_INCOMPLETE_MULTIBYTE_SEQUENCE == -4
     @test LK.ERR_TEXT_INVALID_CODE_POINT == -5
 end
 
@@ -435,7 +462,7 @@ end
         (LK.ERR_TEXT_ILLEGAL_UTF8, "illegal_utf8_sequence"),
         (LK.ERR_TEXT_ILLEGAL_UTF16, "illegal_utf16_sequence"),
         (LK.ERR_TEXT_ILLEGAL_MULTIBYTE_SEQUENCE, "illegal_multibyte_sequence"),
-        (LK.ERR_TEXT_INCOMPLETE_MULTIBYTE_SEQUENCE, "incomplete_multibyte_sequence"),
+        (LK.ERR_TEXT_INCOMPLETE_MULTIBYTE_SEQUENCE, "incomplete_multibyte_sequence")
     )
         ld = _ea_ld()
         @test LK.text_error(ld, rc) === false
@@ -444,7 +471,8 @@ end
     ld = _ea_ld()
     @test LK.text_error(ld, LK.ERR_TEXT_INVALID_CODE_POINT) === false
     ball = _ea_ball(ld)
-    @test ball !== nothing && startswith(ball::String, _ea_err_head("representation_error", "code_point"))
+    @test ball !== nothing &&
+        startswith(ball::String, _ea_err_head("representation_error", "code_point"))
     @test_throws ErrorException LK.text_error(_ea_ld(), -9)
 end
 
@@ -453,19 +481,24 @@ end
         # PL_canonicalise_text ENC_ANSI: no code above 0xff -> ISO Latin-1 (length = characters), else ENC_WCHAR
         t = _ea_t(UInt8[97, 0xc3, 0xa9, 98], LK.ENC_ANSI)
         @test LK.PL_canonicalise_text(t) == 1
-        @test t.encoding === LK.ENC_ISO_LATIN_1 && t.text == UInt8[97, 0xe9, 98] && t.length == 3 && t.canonical
+        @test t.encoding === LK.ENC_ISO_LATIN_1 && t.text == UInt8[97, 0xe9, 98] &&
+            t.length == 3 && t.canonical
         t = _ea_t(UInt8[97, 0xe2, 0x82, 0xac], LK.ENC_ANSI)
         @test LK.PL_canonicalise_text(t) == 1
-        @test t.encoding === LK.ENC_WCHAR && t.text == _ea_w([97, 0x20ac]) && t.length == 2 && t.canonical
+        @test t.encoding === LK.ENC_WCHAR && t.text == _ea_w([97, 0x20ac]) &&
+            t.length == 2 && t.canonical
         # the boundary: U+00FF is still ISO Latin-1, U+0100 is the first wide code
         t = _ea_t(UInt8[0xc3, 0xbf], LK.ENC_ANSI)
         @test LK.PL_canonicalise_text(t) == 1
-        @test t.encoding === LK.ENC_ISO_LATIN_1 && t.text == UInt8[0xff] && t.length == 1 && t.canonical
+        @test t.encoding === LK.ENC_ISO_LATIN_1 && t.text == UInt8[0xff] && t.length == 1 &&
+            t.canonical
         t = _ea_t(UInt8[0xc4, 0x80], LK.ENC_ANSI)
         @test LK.PL_canonicalise_text(t) == 1
-        @test t.encoding === LK.ENC_WCHAR && t.text == _ea_w([0x100]) && t.length == 1 && t.canonical
+        @test t.encoding === LK.ENC_WCHAR && t.text == _ea_w([0x100]) && t.length == 1 &&
+            t.canonical
         t = _ea_t(UInt8[], LK.ENC_ANSI)
-        @test LK.PL_canonicalise_text(t) == 1 && t.encoding === LK.ENC_ISO_LATIN_1 && t.length == 0 && t.canonical
+        @test LK.PL_canonicalise_text(t) == 1 && t.encoding === LK.ENC_ISO_LATIN_1 &&
+            t.length == 0 && t.canonical
         # an illegal sequence, an incomplete one and a NUL are ERR_TEXT_ILLEGAL_MULTIBYTE_SEQUENCE (rc == -1 or rc == 0; -2 is the DIVERGES)
         for bad in (UInt8[0xc3, 0x28], UInt8[0xc3], UInt8[97, 0, 98], UInt8[0xff])
             t = _ea_t(bad, LK.ENC_ANSI)
@@ -474,41 +507,56 @@ end
         end
         # ENC_ASCII and ENC_UNKNOWN: assert(0)
         @test_throws ErrorException LK.PL_canonicalise_text(_ea_t(UInt8[97], LK.ENC_ASCII))
-        @test_throws ErrorException LK.PL_canonicalise_text(_ea_t(UInt8[97], LK.ENC_UNKNOWN))
+        @test_throws ErrorException LK.PL_canonicalise_text(
+            _ea_t(UInt8[97], LK.ENC_UNKNOWN)
+        )
         # _ansi_code_points, _text_code_points, _text_string
-        @test LK._ansi_code_points(UInt8[97, 0xc3, 0xa9, 0xe2, 0x82, 0xac], 6) == [97, 0xe9, 0x20ac]
+        @test LK._ansi_code_points(UInt8[97, 0xc3, 0xa9, 0xe2, 0x82, 0xac], 6) ==
+            [97, 0xe9, 0x20ac]
         @test LK._ansi_code_points(UInt8[97, 0xc3, 0xa9, 0xe2, 0x82, 0xac], 3) == [97, 0xe9]      # n bytes, not the vector
         @test LK._ansi_code_points(UInt8[97, 0xe2, 0x82], 3) === nothing
         @test LK._ansi_code_points(UInt8[], 0) == Int[]
         @test LK._text_code_points(_ea_t(UInt8[97, 0xc3, 0xa9], LK.ENC_ANSI)) == [97, 0xe9]
         @test LK._text_string(_ea_t(UInt8[97, 0xc3, 0xa9], LK.ENC_ANSI)) == "aé"
-        @test_throws ErrorException LK._text_code_points(_ea_t(UInt8[0xc3, 0x28], LK.ENC_ANSI))
+        @test_throws ErrorException LK._text_code_points(
+            _ea_t(UInt8[0xc3, 0x28], LK.ENC_ANSI)
+        )
         @test_throws ErrorException LK._text_string(_ea_t(UInt8[0xc3, 0x28], LK.ENC_ANSI))
         # PL_unify_text of an ANSI text
         ld = _ea_ld()
         fid = LK.PL_open_foreign_frame(ld)
         t1 = LK.PL_new_term_ref(ld)
-        @test LK.PL_unify_text(ld, t1, 0, _ea_t(UInt8[97, 0xc3, 0xa9], LK.ENC_ANSI), LK.PL_STRING)
+        @test LK.PL_unify_text(
+            ld, t1, 0, _ea_t(UInt8[97, 0xc3, 0xa9], LK.ENC_ANSI), LK.PL_STRING
+        )
         @test _ea_enc(lk_answer(ld, t1)) == "s" * _ea_codes("aé")
         t2 = LK.PL_new_term_ref(ld)
-        @test LK.PL_unify_text(ld, t2, 0, _ea_t(UInt8[97, 0xc3, 0xa9], LK.ENC_ANSI), LK.PL_ATOM)
+        @test LK.PL_unify_text(
+            ld, t2, 0, _ea_t(UInt8[97, 0xc3, 0xa9], LK.ENC_ANSI), LK.PL_ATOM
+        )
         @test _ea_enc(lk_answer(ld, t2)) == "a" * _ea_codes("aé")
         t3 = LK.PL_new_term_ref(ld)
-        @test LK.PL_unify_text(ld, t3, 0, _ea_t(UInt8[97, 0xc3, 0xa9], LK.ENC_ANSI), LK.PL_CODE_LIST)
+        @test LK.PL_unify_text(
+            ld, t3, 0, _ea_t(UInt8[97, 0xc3, 0xa9], LK.ENC_ANSI), LK.PL_CODE_LIST
+        )
         cell = lk_answer(ld, t3)
         @test nchildren(cell) == 3 && lk_value(child(cell, 2)) == 97          # '[|]'(97, '[|]'(233, []))
         @test lk_value(child(child(cell, 3), 2)) == 0xe9 && is_nil(child(child(cell, 3), 3))
         @test _ea_ball(ld) === nothing
         # an illegal sequence: a list is representation_error(encoding) "cannot represent text in current locale", an atom or a string text_error
         t4 = LK.PL_new_term_ref(ld)
-        @test LK.PL_unify_text(ld, t4, 0, _ea_t(UInt8[0xc3, 0x28], LK.ENC_ANSI), LK.PL_CODE_LIST) === false
+        @test LK.PL_unify_text(
+            ld, t4, 0, _ea_t(UInt8[0xc3, 0x28], LK.ENC_ANSI), LK.PL_CODE_LIST
+        ) === false
         ball = _ea_ball(ld)
-        @test ball !== nothing && startswith(ball::String, _ea_err_head("representation_error", "encoding"))
+        @test ball !== nothing &&
+            startswith(ball::String, _ea_err_head("representation_error", "encoding"))
         @test occursin(_ea_codes("cannot represent text in current locale"), ball::String)
         LK.PL_clear_exception(ld)
         for ty in (LK.PL_STRING, LK.PL_ATOM)
             t5 = LK.PL_new_term_ref(ld)
-            @test LK.PL_unify_text(ld, t5, 0, _ea_t(UInt8[0xc3, 0x28], LK.ENC_ANSI), ty) === false
+            @test LK.PL_unify_text(ld, t5, 0, _ea_t(UInt8[0xc3, 0x28], LK.ENC_ANSI), ty) ===
+                false
             @test _ea_ball(ld) == _ea_err("syntax_error", "illegal_multibyte_sequence")
             LK.PL_clear_exception(ld)
         end
@@ -519,7 +567,8 @@ end
         t = _ea_t(UInt8[0xe9], LK.ENC_ANSI)
         @test LK.PL_canonicalise_text(t) == LK.ERR_TEXT_ILLEGAL_MULTIBYTE_SEQUENCE
         t = _ea_t(UInt8[97, 98], LK.ENC_ANSI)
-        @test LK.PL_canonicalise_text(t) == 1 && t.encoding === LK.ENC_ISO_LATIN_1 && t.text == UInt8[97, 98]
+        @test LK.PL_canonicalise_text(t) == 1 && t.encoding === LK.ENC_ISO_LATIN_1 &&
+            t.text == UInt8[97, 98]
     end
     ran_c || @info "ENC_ANSI text rows under C NOT RUN"
 end
@@ -530,24 +579,30 @@ end
         # ISO Latin-1 source: -> ANSI (wcrtomb per character, then the closing sequence minus the NUL), -> UTF-8
         t = _ea_t(UInt8[97, 0xe9], LK.ENC_ISO_LATIN_1, 2, true)
         @test LK._mb_text(t, LK.REP_MB) == -1
-        @test t.encoding === LK.ENC_ANSI && t.text == UInt8[97, 0xc3, 0xa9] && t.length == 3 && !t.canonical
+        @test t.encoding === LK.ENC_ANSI && t.text == UInt8[97, 0xc3, 0xa9] &&
+            t.length == 3 && !t.canonical
         t = _ea_t(UInt8[97, 0xe9], LK.ENC_ISO_LATIN_1, 2, true)
         @test LK._mb_text(t, LK.REP_UTF8) == -1
-        @test t.encoding === LK.ENC_UTF8 && t.text == UInt8[97, 0xc3, 0xa9] && t.length == 3 && !t.canonical
+        @test t.encoding === LK.ENC_UTF8 && t.text == UInt8[97, 0xc3, 0xa9] &&
+            t.length == 3 && !t.canonical
         # wide source: -> ANSI, -> UTF-8, -> ISO Latin-1 (PL_demote_text) when every code is <= 0xff
         t = _ea_t(_ea_w([0x20ac, 0x41]), LK.ENC_WCHAR, 2, true)
         @test LK._mb_text(t, LK.REP_MB) == -1
-        @test t.encoding === LK.ENC_ANSI && t.text == UInt8[0xe2, 0x82, 0xac, 0x41] && t.length == 4
+        @test t.encoding === LK.ENC_ANSI && t.text == UInt8[0xe2, 0x82, 0xac, 0x41] &&
+            t.length == 4
         t = _ea_t(_ea_w([0x1F600]), LK.ENC_WCHAR, 1, true)
         @test LK._mb_text(t, LK.REP_UTF8) == -1
-        @test t.encoding === LK.ENC_UTF8 && t.text == UInt8[240, 159, 152, 128] && t.length == 4
+        @test t.encoding === LK.ENC_UTF8 && t.text == UInt8[240, 159, 152, 128] &&
+            t.length == 4
         t = _ea_t(_ea_w([0x41, 0xe9]), LK.ENC_WCHAR, 2, true)
         @test LK._mb_text(t, UInt32(0)) == -1
-        @test t.encoding === LK.ENC_ISO_LATIN_1 && t.text == UInt8[0x41, 0xe9] && t.length == 2 && t.canonical
+        @test t.encoding === LK.ENC_ISO_LATIN_1 && t.text == UInt8[0x41, 0xe9] &&
+            t.length == 2 && t.canonical
         # the demote boundary: 0xff demotes, 0x100 does not
         t = _ea_t(_ea_w([0xff]), LK.ENC_WCHAR, 1, true)
         @test LK._mb_text(t, UInt32(0)) == -1
-        @test t.encoding === LK.ENC_ISO_LATIN_1 && t.text == UInt8[0xff] && t.length == 1 && t.canonical
+        @test t.encoding === LK.ENC_ISO_LATIN_1 && t.text == UInt8[0xff] && t.length == 1 &&
+            t.canonical
         t = _ea_t(_ea_w([0x100]), LK.ENC_WCHAR, 1, true)
         @test LK._mb_text(t, UInt32(0)) == -2
         @test t.encoding === LK.ENC_WCHAR && t.text == _ea_w([0x100])
@@ -556,7 +611,8 @@ end
         @test t.encoding === LK.ENC_WCHAR && t.text == _ea_w([0x41, 0x20ac])
         # the target equals the text's encoding: left as it is
         t = _ea_t(UInt8[0xc3, 0xa9], LK.ENC_UTF8, 1)
-        @test LK._mb_text(t, LK.REP_UTF8) == -1 && t.length == 1 && t.text == UInt8[0xc3, 0xa9]
+        @test LK._mb_text(t, LK.REP_UTF8) == -1 && t.length == 1 &&
+            t.text == UInt8[0xc3, 0xa9]
         t = _ea_t(UInt8[97], LK.ENC_ISO_LATIN_1, 1, true)
         @test LK._mb_text(t, UInt32(0)) == -1 && t.canonical && t.length == 1
         # any other source encoding is the assertion
@@ -567,7 +623,8 @@ end
         @test LK.PL_mb_text(t, LK.REP_MB) === true && t.text == UInt8[0xc3, 0xa9]
         ld = _ea_ld()
         t = _ea_t(UInt8[0xe9], LK.ENC_ISO_LATIN_1, 1, true)
-        @test LK.PL_mb_text(ld, t, LK.REP_MB | LK.CVT_EXCEPTION) === true && _ea_ball(ld) === nothing
+        @test LK.PL_mb_text(ld, t, LK.REP_MB | LK.CVT_EXCEPTION) === true &&
+            _ea_ball(ld) === nothing
     end
     ran || @info "PL_mb_text rows under C.UTF-8 NOT RUN: no such locale on this host"
     ran_c = _ea_with_locale("C") do
@@ -578,23 +635,31 @@ end
         t = _ea_t(_ea_w([0x41, 0x1F600]), LK.ENC_WCHAR, 2, true)
         @test LK._mb_text(t, LK.REP_MB) == 0x1F600
         t = _ea_t(UInt8[97, 98], LK.ENC_ISO_LATIN_1, 2, true)
-        @test LK._mb_text(t, LK.REP_MB) == -1 && t.text == UInt8[97, 98] && t.encoding === LK.ENC_ANSI
+        @test LK._mb_text(t, LK.REP_MB) == -1 && t.text == UInt8[97, 98] &&
+            t.encoding === LK.ENC_ANSI
         # without CVT_EXCEPTION: false, no exception; with it: pl-text.c's "Cannot represent char U%04x using %s encoding"
         ld = _ea_ld()
         t = _ea_t(UInt8[0xe9], LK.ENC_ISO_LATIN_1, 1, true)
         @test LK.PL_mb_text(ld, t, LK.REP_MB) === false && _ea_ball(ld) === nothing
         @test LK.PL_mb_text(ld, t, LK.REP_MB | LK.CVT_EXCEPTION) === false
         ball = _ea_ball(ld)
-        @test ball !== nothing && startswith(ball::String, _ea_err_head("representation_error", "encoding"))
-        @test occursin(_ea_codes("Cannot represent char U00e9 using current locale encoding"), ball::String)
+        @test ball !== nothing &&
+            startswith(ball::String, _ea_err_head("representation_error", "encoding"))
+        @test occursin(
+            _ea_codes("Cannot represent char U00e9 using current locale encoding"),
+            ball::String
+        )
         # the demote failure: text_representation_error(ISO Latin-1)
         ld = _ea_ld()
         t = _ea_t(_ea_w([0x20ac]), LK.ENC_WCHAR, 1, true)
         @test LK.PL_mb_text(ld, t, UInt32(0)) === false && _ea_ball(ld) === nothing
         @test LK.PL_mb_text(ld, t, LK.CVT_EXCEPTION) === false
         ball = _ea_ball(ld)
-        @test ball !== nothing && startswith(ball::String, _ea_err_head("representation_error", "encoding"))
-        @test occursin(chop(_ea_codes("cannot represent text using encoding ")), ball::String)
+        @test ball !== nothing &&
+            startswith(ball::String, _ea_err_head("representation_error", "encoding"))
+        @test occursin(
+            chop(_ea_codes("cannot represent text using encoding ")), ball::String
+        )
     end
     ran_c || @info "PL_mb_text rows under C NOT RUN"
 end
@@ -605,9 +670,11 @@ end
         ld = _ea_ld()
         t = _ea_t(UInt8[97, 0xc3, 0xa9], LK.ENC_ANSI)
         @test LK.PL_text_recode(ld, t, LK.ENC_UTF8)
-        @test t.encoding === LK.ENC_UTF8 && t.text == UInt8[97, 0xc3, 0xa9] && t.length == 3 && !t.canonical
+        @test t.encoding === LK.ENC_UTF8 && t.text == UInt8[97, 0xc3, 0xa9] &&
+            t.length == 3 && !t.canonical
         t = _ea_t(UInt8[0xe2, 0x82, 0xac], LK.ENC_ANSI)
-        @test LK.PL_text_recode(ld, t, LK.ENC_UTF8) && t.text == UInt8[0xe2, 0x82, 0xac] && t.length == 3
+        @test LK.PL_text_recode(ld, t, LK.ENC_UTF8) && t.text == UInt8[0xe2, 0x82, 0xac] &&
+            t.length == 3
         # an illegal or incomplete sequence, a NUL: false, the encoding error (no exception)
         for bad in (UInt8[0xe2, 0x82], UInt8[0xc3, 0x28], UInt8[97, 0, 98])
             t = _ea_t(bad, LK.ENC_ANSI)
@@ -617,23 +684,29 @@ end
         @test _ea_ball(ld) === nothing
         # an ASCII source: only the encoding changes
         t = _ea_t(UInt8[97, 98], LK.ENC_ASCII)
-        @test LK.PL_text_recode(ld, t, LK.ENC_UTF8) && t.encoding === LK.ENC_UTF8 && t.text == UInt8[97, 98]
+        @test LK.PL_text_recode(ld, t, LK.ENC_UTF8) && t.encoding === LK.ENC_UTF8 &&
+            t.text == UInt8[97, 98]
         # the target ENC_ANSI is PL_mb_text(REP_MB) on a canonical text
         t = _ea_t(UInt8[0xe9, 97], LK.ENC_ISO_LATIN_1, 2, true)
         @test LK.PL_text_recode(ld, t, LK.ENC_ANSI)
         @test t.encoding === LK.ENC_ANSI && t.text == UInt8[0xc3, 0xa9, 97] && t.length == 3
         t = _ea_t(_ea_w([0x20ac]), LK.ENC_WCHAR, 1, true)
-        @test LK.PL_text_recode(ld, t, LK.ENC_ANSI) && t.text == UInt8[0xe2, 0x82, 0xac] && t.length == 3
+        @test LK.PL_text_recode(ld, t, LK.ENC_ANSI) && t.text == UInt8[0xe2, 0x82, 0xac] &&
+            t.length == 3
         t = _ea_t(UInt8[97], LK.ENC_ISO_LATIN_1, 1, false)
         @test_throws AssertionError LK.PL_text_recode(ld, t, LK.ENC_ANSI)      # assert(text->canonical)
         @test LK.PL_text_recode(ld, _ea_t(UInt8[97], LK.ENC_ANSI), LK.ENC_ANSI)  # the same encoding: nothing to do
-        @test_throws ErrorException LK.PL_text_recode(ld, _ea_t(UInt8[97], LK.ENC_ISO_LATIN_1, 1, true), LK.ENC_UNKNOWN)
+        @test_throws ErrorException LK.PL_text_recode(
+            ld, _ea_t(UInt8[97], LK.ENC_ISO_LATIN_1, 1, true), LK.ENC_UNKNOWN
+        )
     end
-    ran || @info "PL_text_recode ANSI rows under C.UTF-8 NOT RUN: no such locale on this host"
+    ran ||
+        @info "PL_text_recode ANSI rows under C.UTF-8 NOT RUN: no such locale on this host"
     ran_c = _ea_with_locale("C") do
         ld = _ea_ld()
         t = _ea_t(UInt8[0xe9], LK.ENC_ISO_LATIN_1, 1, true)
-        @test LK.PL_text_recode(ld, t, LK.ENC_ANSI) === false && t.encoding === LK.ENC_ISO_LATIN_1
+        @test LK.PL_text_recode(ld, t, LK.ENC_ANSI) === false &&
+            t.encoding === LK.ENC_ISO_LATIN_1
         t = _ea_t(UInt8[0xe9], LK.ENC_ANSI)
         @test LK.PL_text_recode(ld, t, LK.ENC_UTF8) === false
         t = _ea_t(UInt8[97, 98], LK.ENC_ANSI)
@@ -641,4 +714,3 @@ end
     end
     ran_c || @info "PL_text_recode ANSI rows under C NOT RUN"
 end
-

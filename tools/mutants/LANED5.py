@@ -128,7 +128,7 @@ MUTANTS = [
          old='    PL_extension("seek", 4, pl_seek4_va, PL_FA_VARARGS),\n',
          new=""),
     dict(id="LD5-39 the registration of set_stream_position/2 is gone (KILL: d151-d160, d183)", file=F, targets=TL,
-         old='    PL_extension("set_stream_position", 2, pl_set_stream_position2_va, PL_FA_ISO | PL_FA_VARARGS),\n',
+         old='    PL_extension(\n        "set_stream_position", 2, pl_set_stream_position2_va, PL_FA_ISO | PL_FA_VARARGS\n    ),\n',
          new=""),
     dict(id="LD5-40 the registration of set_end_of_stream/1 is gone (KILL: d161-d168)", file=F, targets=TL,
          old='    PL_extension("set_end_of_stream", 1, pl_set_end_of_stream1_va, PL_FA_VARARGS),\n',

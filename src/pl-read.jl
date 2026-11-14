@@ -1268,7 +1268,11 @@ function checkASCII(
             ld = rd.ld
             msg = PL_new_term_refs(ld, 1)
             name = mk_sym(T, Symbol(String(Char.(b[start:(start + len - 1)]))))
-            setSlotValue!(ld, msg + 1, mk_expr(T, T[mk_sym(T, :non_ascii), name, mk_sym(T, Symbol(type))]))
+            setSlotValue!(
+                ld,
+                msg + 1,
+                mk_expr(T, T[mk_sym(T, :non_ascii), name, mk_sym(T, Symbol(type))])
+            )
             return printMessage(ld, :warning, msg)
         end
     end
