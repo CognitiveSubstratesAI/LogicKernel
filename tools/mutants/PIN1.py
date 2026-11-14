@@ -39,7 +39,7 @@ TAT = "test/core_lang/test_atom_table.jl"
 TF = [TP, TS, TD]
 TAB = "src/pl-tabling.jl"
 TG = "test/core_lang/test_tabling_sdg_swipl.jl"
-TARGETS = TF + [TL7, TFB, TAT]               # the baseline's targets (mutate_ci.py plan reads TARGETS): every file a mutant lists
+TARGETS = TF + [TL7, TFB, TAT, TG]               # the baseline's targets (mutate_ci.py plan reads TARGETS): every file a mutant lists
 P = "src/os/pl-prologflag.jl"
 INI = "src/pl-init.jl"
 INC = "src/pl-incl.jl"
@@ -97,9 +97,8 @@ MUTANTS = [
          file=P, targets=TF,
          old='    setPrologFlag(gd, "max_scc_subgoals_action", FT_ATOM, "error")\n',
          new="    nothing\n"),
-    dict(id="PIN1-I5 max_scc_subgoals starts as 0, not -1 (no row: DEFERRED KILL, the unlimited reader answers before the value)",
-         file=P, targets=TF,
-         equivalent="DEFERRED KILL: owner TAB1 (the restraint check of tabling reads the size flags; docs/r2_owners.tsv has no flag: row for max_scc_subgoals, TAB1 named by PIN1 step C); unify_prolog_flag_value answers false for the unlimited sizes at src/os/pl-prologflag.jl:486 (_tbl_restraint_unlimited, defined :412, lists max_scc_subgoals) before it reads f.i, (lines re-read at wip/tb0 6d4bc882: unchanged by TB0) and no test reads the table's `i` of max_scc_subgoals: test_prolog_flag_swipl.jl:302-305 asks only `current_prolog_flag(gd, k) !== nothing` and TP:637 only counts keys",
+    dict(id="PIN1-I5 max_scc_subgoals starts as 0, not -1 (KILL TP the DEFKILL3 row after the loop of the flags that exist and answer nothing: `current_prolog_flag(gd, k).i == -1` for the five size flags (pl-tabling.c:12712; kernel src/os/pl-prologflag.jl:1945))",
+         file=P, targets=[TP],
          old='    setPrologFlag(gd, "max_scc_subgoals", FT_INTEGER, -1)\n',
          new='    setPrologFlag(gd, "max_scc_subgoals", FT_INTEGER, 0)\n'),
     # ── tbl_get_restraint_flag (pl-tabling.c: the sizes answer nothing at (size_t)-1; U1-U4 re-fitted by the TB8 merge, which replaced the
@@ -129,14 +128,12 @@ MUTANTS = [
          file=P, targets=[TS, TP],
          old='           name == "max_scc_subgoals" ||\n           name == "max_scc_subgoals_action"\nend\n',
          new='           name == "max_scc_subgoals_action"\nend\n'),
-    dict(id="PIN1-T3 max_incomplete_subgoals_action is no restraint flag (no row: DEFERRED KILL, _SF_REFUSED names no *_action flag)",
-         file=P, targets=[TS, TP],
-         equivalent="DEFERRED KILL: owner TAB1 (the tripwire action of tabling reads max_incomplete_subgoals_action; no flag: row in docs/r2_owners.tsv, TAB1 named by PIN1 step C); test_set_flag_swipl.jl:576-585 (_SF_REFUSED, run at TS:593-601, the @test_throws at TS:599) holds no `*_action` flag, none of the three of the old pin either, and neither TS nor TP sets max_incomplete_subgoals_action: the refusal at src/os/pl-prologflag.jl:1534-1535 (tbl_is_restraint_flag, defined :1461) is never reached for it",
+    dict(id="PIN1-T3 max_incomplete_subgoals_action is no restraint flag (KILL TG tsa26-tsa29, the pinned answers of tm_act(max_incomplete_subgoals_action, abstract|bounded_rationality|fail|complete_soundly): with the flag a plain atom flag the domain_error(restraint_action) is not raised (pl-tabling.c:11702; kernel src/os/pl-prologflag.jl:1455, src/pl-tabling.jl:9842-9858))",
+         file=P, targets=TF + [TG],
          old='           name == "max_incomplete_subgoals_action" ||\n           name == "max_scc_subgoals" ||\n',
          new='           name == "max_scc_subgoals" ||\n'),
-    dict(id="PIN1-T4 max_scc_subgoals_action is no restraint flag (no row: DEFERRED KILL, _SF_REFUSED names no *_action flag)",
-         file=P, targets=[TS, TP],
-         equivalent="DEFERRED KILL: owner TAB1 (as PIN1-T3); no row sets max_scc_subgoals_action: test_set_flag_swipl.jl:576-585 (_SF_REFUSED, @test_throws at TS:599) names none, so the refusal at src/os/pl-prologflag.jl:1534-1535 is never reached for it",
+    dict(id="PIN1-T4 max_scc_subgoals_action is no restraint flag (KILL TG tsa33-tsa36, as T3 for max_scc_subgoals_action (pl-tabling.c:11702; kernel src/os/pl-prologflag.jl:1457))",
+         file=P, targets=TF + [TG],
          old='           name == "max_scc_subgoals" ||\n           name == "max_scc_subgoals_action"\nend\n',
          new='           name == "max_scc_subgoals"\nend\n'),
     # ── ATOM_RESERVE_BATCH (pl-incl.h:1431: 64) ──
