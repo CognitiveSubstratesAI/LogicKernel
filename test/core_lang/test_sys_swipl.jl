@@ -258,3 +258,19 @@ end
     @test r.erased == 0 && r.statistic == 0 && r.unregistered == 0 && r.stale == 0 &&
         r.dirty == 0
 end
+
+# TARGET-ONLY: pin when the oracle moves to cf6960c2. The expectation is written by hand from the TARGET's pl-prims.c
+# `swi_statistics` (the local swipl is the pin, which has no key `minor_collections`: it answers domain_error(statistics_key,
+# minor_collections)): the key answers `LD->gc.stats.totals.minor_collections`, a count of the collections that were
+# generational, so it is an integer; no collector runs in this kernel, so it is 0, as `collections` is.
+@testset "SYNC-B: swi_statistics knows minor_collections (swipl-devel cf6960c2, TARGET-ONLY)" begin
+    gd = LK.PL_global_data{_TL}()
+    ld = LK.PL_local_data{_TL}(gd)
+    v = LK.number()
+    @test LK.swi_statistics(ld, :minor_collections, v) == 1
+    @test v.type == LK.V_INTEGER && v.i == 0
+    c = LK.number()                                              # its sibling, which the target reads the same way
+    @test LK.swi_statistics(ld, :collections, c) == 1
+    @test c.type == LK.V_INTEGER && c.i == 0
+    @test LK.swi_statistics(ld, :minor_collection, LK.number()) == -1     # a neighbour key is still unknown
+end
