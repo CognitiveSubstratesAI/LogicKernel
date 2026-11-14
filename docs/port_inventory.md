@@ -200,7 +200,7 @@ how many of the upstream file's functions are ported.
 | swipl-devel `src/pl-sys.c` | code | `18168e629eab` | `src/pl-sys.jl` | 6 | 3 |
 | swipl-devel `src/pl-tabling.c` | code | `18168e629eab` | `src/os/pl-prologflag.jl` | 1 | 1 |
 | swipl-devel `src/pl-tabling.c` | code | `18168e629eab` | `src/pl-incl.jl` | 11 | 4 |
-| swipl-devel `src/pl-tabling.c` | code | `18168e629eab` | `src/pl-tabling.jl` | 491 | 236 |
+| swipl-devel `src/pl-tabling.c` | code | `18168e629eab` | `src/pl-tabling.jl` | 491 | 237 |
 | swipl-devel `src/pl-tabling.c` | code | `18168e629eab` | `src/pl-trie.jl` | 0 | 0 |
 | swipl-devel `src/pl-tabling.h` | code | `18168e629eab` | `src/pl-incl.jl` | 39 | 13 |
 | swipl-devel `src/pl-termhash.c` | code | `18168e629eab` | `src/pl-termhash.jl` | 37 | 9 |
@@ -361,7 +361,7 @@ checkout is pulled.
 | swipl-devel `src/pl-string.c` | `18168e629eab` | 15 | 18 | 9 | src/pl-string.jl |
 | swipl-devel `src/pl-supervisor.c` | `18168e629eab` | 16 | 28 | 8 | src/pl-supervisor.jl |
 | swipl-devel `src/pl-sys.c` | `18168e629eab` | 6 | 7 | 3 | src/pl-sys.jl |
-| swipl-devel `src/pl-tabling.c` | `18168e629eab` | 337 | 452 | 195 | src/os/pl-prologflag.jl, src/pl-incl.jl, src/pl-tabling.jl, src/pl-trie.jl |
+| swipl-devel `src/pl-tabling.c` | `18168e629eab` | 337 | 452 | 196 | src/os/pl-prologflag.jl, src/pl-incl.jl, src/pl-tabling.jl, src/pl-trie.jl |
 | swipl-devel `src/pl-tabling.h` | `18168e629eab` | 0 | 0 | 0 | src/pl-incl.jl |
 | swipl-devel `src/pl-termhash.c` | `18168e629eab` | 12 | 16 | 3 | src/pl-termhash.jl |
 | swipl-devel `src/pl-termhash.h` | `18168e629eab` | 0 | 0 | 0 | src/pl-termhash.jl |
@@ -398,7 +398,7 @@ checkout is pulled.
 | swipl-devel `tests/db/test_db.pl` | `18168e629eab` | 2 | 10 | 0 | test/db/test_db.jl |
 | swipl-devel `tests/db/test_jit.pl` | `18168e629eab` | 16 | 21 | 0 | test/db/test_jit.jl |
 | swipl-devel `tests/rational/test_ieee754.pl` | `18168e629eab` | 0 | 15 | 0 | test/rational/test_ieee754.jl |
-| **total** | | **2641** | **5437** | **1553** | |
+| **total** | | **2641** | **5437** | **1554** | |
 <!-- END GENERATED coverage -->
 
 ### Not ported: unreachable upstream
