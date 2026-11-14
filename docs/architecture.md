@@ -8481,3 +8481,15 @@ written, every claim below is UNVERIFIED until the gate). TX1 is `transaction/1,
   test/static_analysis_manifest.jl, the mutants `tools/mutants/TX1.py`.
 - **To verify at the gate (unverified by construction):** the default constructors of `tr_update{T}`, `tr_stack{T}` and `tr_enum{T}` against the manifest; the allocation flags of the free functions (`LGEN`, `update_gen`, `cmp_updates`,
   `UNDO_SCHEDULED`); that boot's `transaction/1` finds `'$syspreds'` loaded in the test kernel; `nb_setval`, `limit/2` and `prolog_listen/2` as the rows use them; the Pkg.test-way run of the new test file.
+
+## TAB1 INT3 — ENGINE FINDING: an exception out of the cleanup goal of `answer_completion/2` (KNOWN DIFFERENCE, OPEN; owner row pending: engine-core slot after AR1; audit D-0659 item 3)
+
+- **The finding.** `'$tabling':answer_completion/2` (vendor/swipl-devel/boot/tabling.pl:2252-2260) is called from C (`call_answer_completion`, src/pl-tabling.jl) and ends in
+  `call_cleanup(answer_completion_guarded(...), abolish_table_subgoals(eval_subgoal_in_residual(_,_)))`. When that cleanup goal raises, the engine breaks (`AssertionError: newChoice:
+  BFR is not older`, src/pl-wam.jl, from C_OR; `tabling(unexpected_result(...))`); swipl 10.1.20 passes the exception to the caller. Found by the TB4FIX-B reduction
+  (evidence/TAB1/b4fix_handoff.md), where the raising goal was an existence_error for the then undefined `'$tbl_destroy_table'/1`; with that builtin present the path no longer runs by itself.
+- **The reproducer needs no undefined builtin:** test/core_lang/test_tabling_engine_finding_cleanup_throw_swipl.jl wraps `'$tabling':abolish_table_subgoals/1` with a goal that throws and runs the
+  6-predicate positive loop of the reduction. swipl: `raised(ef_cleanup_thrown)` for `re` and for `rf` (two identical runs, evidence/TAB1/int3_verify.md). The control group (no wrap) answers `no`, `yes`.
+- **Convention.** The row asserts SWIPL's answer and FAILS today (`@test`, no skip): the kernel's current behaviour is a Julia exception, not an answer line, so there is no current answer to pin. The row
+  is a copy on wip/tab-int only: its commit is dropped before a gate push, and it becomes a gated row when the engine-core slot's owner row exists.
+- **Not on origin/main:** main vendors the same Prolog text but has no C side that calls it (`call_answer_completion`, `$tbl_wkl_work` are tabling-branch code), so the finding cannot arise there.
