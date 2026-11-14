@@ -577,10 +577,28 @@ end
 # PORT: pl-copyterm.c term_to_fastheap
 # DIVERGES: the copy is the term's `record` (src/pl-rec.jl `compileTermToHeap`: the variables become fresh at each
 # `put_fastheap`), where upstream copies the duplicate's cells and registers its atoms; `nothing` for upstream's NULL
-# (the record's building raised). Representation only: see `fastheap_term`.
+# (the record's building raised). Representation only: see `fastheap_term`. Synced to cf6960c2: the body is the
+# target's, `return term_to_fastheap_ex(t, false)`; the copy itself moved into `term_to_fastheap_ex` below. Cost: one
+# call of a small function Julia inlines; the allocation count is unchanged.
 "Copy the term `t` off the stacks (pl-copyterm.c): a `fastheap_term` that `put_fastheap` copies back, or `nothing`."
 function term_to_fastheap(
     ld::PL_local_data{T}, t::term_t
+)::Union{Nothing, fastheap_term{T}} where {T}
+    return term_to_fastheap_ex(ld, t, false)
+end
+
+# PORT: pl-copyterm.c term_to_fastheap_ex
+# synced to swipl-devel cf6960c2 (pl-copyterm.c:972-1039)
+# DIVERGES: as `term_to_fastheap` (the copy is the term's `record`). `local_` (`local` is a Julia keyword) is the target's
+# `local`: the copy is only used by this thread and its atoms stay local (`registerAtomLocally`) instead of being
+# registered (`PL_register_atom`). A record holds its atoms as values, not as registrations (Julia's garbage collector
+# owns them; a thread-local atom area is unwritten), so both values of `local_` build the same copy and the argument
+# is carried for the call shape only. The target's other changes in this file's fast-heap part concern the relocation of the copied
+# cells, which this representation does not carry: `RELOC_BM` gains `TAGEX_INDIRECT_MPQ` and `reloc_mask` grows from
+# 32 to 64 entries (`TAGEX_COUNT`, built with `RM8`): tag forms of the cell layout, which carry over to nothing here.
+"`term_to_fastheap` with the thread-local-atoms flag `local_` (pl-copyterm.c `term_to_fastheap_ex`)."
+function term_to_fastheap_ex(
+    ld::PL_local_data{T}, t::term_t, local_::Bool
 )::Union{Nothing, fastheap_term{T}} where {T}
     r = compileTermToHeap(ld, t)
     return fastheap_term{T}(r.gsize, r.nvars, r.code, r.values)

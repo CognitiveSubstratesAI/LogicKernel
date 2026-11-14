@@ -2558,6 +2558,7 @@ function _manifest_index(T)
         (LK.table_answer_event, Tuple{GD, LD, D, T, Int}, false),
         (LK.retractall_event, Tuple{GD, LD, D, Int, Symbol}, false),
         (LK.term_to_fastheap, Tuple{LD, Int}, false),
+        (LK.term_to_fastheap_ex, Tuple{LD, Int, Bool}, false),
         (LK.free_fastheap, Tuple{LK.fastheap_term{T}}, false),
         (LK.put_fastheap, Tuple{LD, LK.fastheap_term{T}, Int}, false),
         (LK.PL_put_frame, Tuple{LD, Int, Int}, false),
