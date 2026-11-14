@@ -332,8 +332,13 @@ _manifest_per_type(T) = (
     (LK.open_foreign_frame, Tuple{LK.PL_local_data{T}}, true),
     (LK.PL_close_foreign_frame, Tuple{LK.PL_local_data{T}, Int}, true),
     (LK.PL_open_foreign_frame, Tuple{LK.PL_local_data{T}}, false),
-    (LK.PL_rewind_foreign_frame, Tuple{LK.PL_local_data{T}, Int}, true),
-    (LK.PL_discard_foreign_frame, Tuple{LK.PL_local_data{T}, Int}, true),
+    # DIVERGES (TX1e, measured: ci/tx1m4 run 43574381649, shard 8): `Undo!` runs `push_undo`, which adds to the undo schedule, a growable
+    # buffer: pl-undo.c's `push_undo` mallocs it and `addBuffer` grows it (`growBuffer`), so the C allocates there too, and no form of an
+    # unbounded growing buffer is allocation-free in Julia. AllocCheck: `allocates: PL_rewind_foreign_frame...: Allocation of Memory{UInt64}
+    # in ./boot.jl:588 <- ./array.jl:1345 (push!) <- src/pl-undo.jl:149 (push_undo) <- src/pl-inline.jl:1168 (Undo!) <- src/pl-wam.jl:586`; the
+    # same for `PL_discard_foreign_frame` at src/pl-wam.jl:736. Both were `true` while `Undo!` was; `Undo!` is `false` since TX1e.
+    (LK.PL_rewind_foreign_frame, Tuple{LK.PL_local_data{T}, Int}, false),
+    (LK.PL_discard_foreign_frame, Tuple{LK.PL_local_data{T}, Int}, false),
     (LK.PL_new_term_refs, Tuple{LK.PL_local_data{T}, Int}, false),
     (LK.new_term_ref, Tuple{LK.PL_local_data{T}}, false),
     (LK.PL_new_term_ref, Tuple{LK.PL_local_data{T}}, false),
@@ -3324,7 +3329,9 @@ _manifest_tx1(T) = begin
         (LK.transaction_retract_clause, Tuple{GD, LD, C}, false),
         (LK.transaction_assert_clause, Tuple{LD, C, Int}, false),
         (LK.transaction_assert_clause, Tuple{LD, C, LK.ClauseRef{T}}, false),
-        (LK.transaction_visible_clause, Tuple{TR, C, UInt64}, false),
+        # the table is looked up by the clause's address (`Base.hash` of a clause, src/pl-incl.jl): `visibleClause` reaches it, and is `true`
+        (LK.transaction_visible_clause, Tuple{TR, C, UInt64}, true),
+        (Base.hash, Tuple{C, UInt}, true),
         (LK.LGEN, Tuple{TR, UInt64}, true),
         (LK.LGEN_FLAGS_VAL, Tuple{TR, UInt64, UInt32}, true),
         (LK.transaction_last_modified_predicate, Tuple{LD, D, UInt64}, false),

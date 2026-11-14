@@ -734,6 +734,11 @@ mutable struct clause{T, D}
     owner_no::UInt32                # Index of owning source-file
 end
 
+# DIVERGES: a clause is hashed by its address, as upstream's `newHTablePW` tables (`tr->clauses`, pl-transaction.c:120)
+# key by the pointer; the default `hash` of a mutable struct calls `objectid`, a runtime call that AllocCheck reports as allocating
+# (ci/tx1m4: `Allocating runtime call to "jl_object_id" in ./runtime_internals.jl:901`, reached from `visibleClause`). Equality stays `===`.
+Base.hash(cl::clause, h::UInt)::UInt = hash(UInt(pointer_from_objref(cl)), h)
+
 "The start of `cl`'s code (upstream's `PC = cl->codes`), with its literal table."
 Code(cl::clause{T}, pc::Int) where {T} = Code{T}(cl.codes, cl.literals, pc)
 
