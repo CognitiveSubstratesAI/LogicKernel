@@ -414,6 +414,65 @@ _pc_codes(vs) = sort!([
                 [("CODE-GRAPH-DRIFT", "architecture.md"), ("DEF-MISMATCH", "pl-fake.jl")]
         end
 
+        @testset "SYNC-PC: a name new at the sync's target is read at the target, nowhere else" begin
+            # its own upstream: the pin commit, then a TARGET commit that adds `newFoo` to pl-fake.c
+            sbase = joinpath(base, "syncpc")
+            mkpath(sbase)
+            sup, spin = _pc_fake_upstream(sbase)
+            sdirs = Dict("swipl-devel" => sup)
+            open(joinpath(sup, "src", "pl-fake.c"), "a") do io
+                write(io, "int\nnewFoo(int a)\n{ return a; }\n")
+            end
+            _pc_git(sup, "commit", "-qam", "target")
+            target = String(strip(read(`git -C $sup rev-parse HEAD`, String)))
+            root = joinpath(base, "syncpc_root")
+            # the marker block appended to the clean pl-fake.jl: `body` is what sits under the PORT line
+            function plant(name, under)
+                _pc_good_files(root, spin)
+                p = joinpath(root, "src/pl-fake.jl")
+                write(p, read(p, String) * "\n# PORT: pl-fake.c $name\n$(under)function $name(a)\n    return a\nend\n")
+                _pc_inventory(root, "")
+                write_inventory(root; upstream_dirs=sdirs)
+                return port_check(root; upstream_dirs=sdirs, sync_target=target)
+            end
+            synced(sha) = "# synced to swipl-devel $sha (pl-fake.c:1-3): new at the target, not at the pin.\n"
+            # (1) accepted: the line under PORT names the target, and `newFoo` occurs there
+            #     — dies if the synced branch is removed (the name is not at the pin) or inverted
+            r = plant("newFoo", synced(target[1:8]))
+            r.violations == String[] || foreach(v -> println(stderr, "  sync: ", v), r.violations)
+            @test isempty(r.violations)
+            # (2) the full 40-digit sha is accepted as well
+            @test isempty(plant("newFoo", synced(target)).violations)
+            # (3) refused: the name is missing at the target too
+            #     — dies if the branch stops reading the file at the target (e.g. skips the name check)
+            r = plant("neverThere", synced(target[1:8]))
+            @test _pc_codes(r.violations) == [("UPSTREAM-NAME-MISSING", "pl-fake.jl")]
+            @test occursin("@ $target", only(r.violations))
+            # (4) refused: no synced line — the name is checked at the pin, where `newFoo` is not
+            #     — dies if the branch fires WITHOUT the marker line (the old strict check lost)
+            r = plant("newFoo", "")
+            @test _pc_codes(r.violations) == [("UPSTREAM-NAME-MISSING", "pl-fake.jl")]
+            @test occursin("@ $spin", only(r.violations))
+            # (5) refused: the synced line is not DIRECTLY under the PORT line (a blank line between)
+            r = plant("newFoo", "\n" * synced(target[1:8]))
+            @test _pc_codes(r.violations) == [("UPSTREAM-NAME-MISSING", "pl-fake.jl")]
+            # (6) refused: the line names a commit that is not THE sync target (here: the pin itself,
+            #     where `newFoo` does not occur, and a made-up one) — dies if the target comparison is dropped
+            for other in (spin[1:8], "f"^40)
+                r = plant("newFoo", synced(other))
+                @test _pc_codes(r.violations) == [("UPSTREAM-NAME-MISSING", "pl-fake.jl")]
+                @test occursin("not the sync target", only(r.violations))
+            end
+            # (7) refused: the configured target is not a commit of the checkout
+            _pc_good_files(root, spin)
+            p = joinpath(root, "src/pl-fake.jl")
+            write(p, read(p, String) * "\n# PORT: pl-fake.c newFoo\n" * synced("f"^40) * "function newFoo(a)\n    return a\nend\n")
+            _pc_inventory(root, "")
+            write_inventory(root; upstream_dirs=sdirs)
+            r = port_check(root; upstream_dirs=sdirs, sync_target="f"^40)
+            @test _pc_codes(r.violations) == [("UPSTREAM-NAME-MISSING", "pl-fake.jl")]
+        end
+
         @testset "M1: the generated code map is held to its generators" begin
             root = joinpath(base, "m1")
             _pc_good_files(root, sha)
