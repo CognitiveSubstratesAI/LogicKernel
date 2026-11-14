@@ -43,7 +43,8 @@ _gvar_on_global(w::word)::Bool = storage(w) == STG_GLOBAL || _is_vword(w)
 
 # PORT: pl-gvar.c new_gvar as new_gvar!
 # DIVERGES: the table is made with the local data; the atom is not registered (no atom GC). `name` and
-# `value` are words.
+# `value` are words. Synced to cf6960c2: the target registers the name with `registerAtomLocally`
+# (global variables are thread-local); the kernel registers no atom, so no answer changes.
 "Add global variable `name` with `value` (pl-gvar.c `new_gvar`); `value`."
 function new_gvar!(ld::PL_local_data, name::word, value::word)::word
     ld.gvar_nb_vars[name] = value                   # addNewHTable(LD->gvar.nb_vars, name, old)
@@ -102,6 +103,8 @@ end
 # `onStackArea(local, p)` branch (a fresh global cell for the local variable) has no case: a variable is
 # the reference to its global cell. A side value (D-0024) gets a value-table word first. An atom is not
 # registered or unregistered (no atom GC). `ensureGlobalSpace(3, ALLOW_GC)` is `ensureGlobalSpace(3)`.
+# Synced to cf6960c2: the target registers an atom value of `b_setval` with `registerAtomLocally` instead of
+# `PL_register_atom`; no atom is registered here, so no answer changes.
 "Assign `value` to global variable `var`: `flags` `SETVAL_BACKTRACKABLE` trails the assignment, `SETVAL_LINK` shares the value (pl-gvar.c)."
 function gvar_setval(
     ld::PL_local_data{T}, var::term_t, value::term_t, flags::UInt32
