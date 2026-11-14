@@ -205,3 +205,18 @@ end
     resize!(ld.gstack, n)
     return nothing
 end
+
+# Synced to cf6960c2 (pl-alloc.c, pl-alloc.h, pl-alloc-inline.h; notes only, nothing ported: every changed row below is
+# one this kernel has no function for, and none changes an answer):
+#   * `alloc_lazy_zeroed(size)` / `free_lazy_zeroed(mem, size)` (new; pl-alloc.c:1549-1587): zeroed memory for a large table that
+#     stays mostly untouched, an `mmap` of anonymous pages from `MMAP_THRESHOLD` up (physical memory only once a page is
+#     touched), else `PL_malloc_uncollectable` plus `memset`; the target's user is the atom array's block allocation. A Julia
+#     vector is zero-filled by the runtime and returned by its collector, so the kernel has no call site: unwritten by design.
+#   * `VM_globalIndirectFromCode` (pl-alloc-inline.h:58): `consIndirect(p, tag(m))` became `consIndirect(p, indKind(m))`, the
+#     target's new split of an indirect's kind from its tag. A representation change; this kernel's indirect data (grounded
+#     values, side words) has no such word layout, and it has no code-array operand reader for it.
+#   * `thread_idle/2` (pl-alloc.c:1917, :1923): after `trimStacks` (`short`) and after the collection (`long`) the target calls
+#     the new `idleLocalSweep()` (pl-atom.c:2505: a sweep of the thread's local atoms, `collectLocalAtoms`, when it created
+#     some and is not already sweeping). The predicate is unwritten here (owner row Q10, `pred:thread_idle/2`; the
+#     name appears only in the `pl-ext.jl` signature table) and the kernel has no local atoms, so there is nothing to add yet:
+#     the step that writes `thread_idle/2` adds the two calls where the C has them.
