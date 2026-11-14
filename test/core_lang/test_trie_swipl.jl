@@ -1690,3 +1690,54 @@ end
 @testset "trie_discard_clause: the kept reference holds a live clause (white-box)" begin
     _tr_discard_clause_rows(_TT)
 end
+
+# DEFKILL5 rows for TR4-N21 and TR4-N23 (compile_trie_node, src/pl-trie.jl): white-box tries compiled by `compile_trie` and the code of the kept clause read
+# (`cl.codes`). Upstream pl-trie.c compile_trie_node (pin 18168e62): a node with children that has TN_PRIMARY/TN_SECONDARY is not descended (its value is
+# what the trie answers); a node without a value ends the code with I_FAIL and `fixup_last_fail` adds the I_EXIT. No swipl answer to pin: the rows
+# compare two codes of the kernel (N23) and read the tail of one (N21).
+function _tr_compile_codes(gd, ld, ::Type{T}, tr) where {T}
+    dbref = LK.compile_trie(gd, ld, gd.procedures_trie_gen_compiled2.definition, tr)
+    @test dbref != 0 && tr.clause == dbref && tr.clause_cref !== nothing
+    return tr.clause_cref.clause.codes
+end
+
+function _tr_compile_leaf_rows(::Type{T}) where {T}
+    gd, ld, _ = _tr_engine(T, T[lk_sym(T, :k)])
+    # TR4-N23: node a holds the value and is flagged TN_PRIMARY; the trie with a child below it compiles to the code of the trie without one
+    tr0 = LK.trie_create(T)
+    a0 = LK.insert_child(tr0, 1, _tk(1))
+    tr0.nodes[a0].value = UInt64(5)
+    tr0.nodes[a0].flags |= LK.TN_PRIMARY
+    tr0.value_count = 1
+    codes0 = copy(_tr_compile_codes(gd, ld, T, tr0))
+    tr1 = LK.trie_create(T)
+    a1 = LK.insert_child(tr1, 1, _tk(1))
+    tr1.nodes[a1].value = UInt64(5)
+    tr1.nodes[a1].flags |= LK.TN_PRIMARY
+    b1 = LK.insert_child(tr1, a1, _tk(2))
+    tr1.nodes[b1].value = UInt64(5)
+    tr1.nodes[b1].flags |= LK.TN_PRIMARY
+    tr1.value_count = 2
+    @test tr1.nodes[a1].children != 0 && (tr1.nodes[a1].flags & LK.TN_PRIMARY) != 0     # the premise: children below a flagged node
+    codes1 = _tr_compile_codes(gd, ld, T, tr1)
+    @test !isempty(codes0) && LK.I_EXIT in codes0
+    @test codes1 == codes0                      # the node is not descended (a mutant that drops the flag test compiles the key below it too)
+
+    # TR4-N21: the path root -> a -> b ends in a leaf without a value (a keeps a value that the descent ignores, `value_count` 1 is set by hand):
+    # the code is `... I_FAIL` and fixup_last_fail! adds the I_EXIT
+    tr2 = LK.trie_create(T)
+    a2 = LK.insert_child(tr2, 1, _tk(1))
+    tr2.nodes[a2].value = UInt64(5)
+    b2 = LK.insert_child(tr2, a2, _tk(2))
+    @test tr2.nodes[b2].value == 0 && tr2.nodes[b2].children == 0 && (tr2.nodes[a2].flags & LK.TN_PRIMARY) == 0
+    tr2.value_count = 1
+    codes2 = _tr_compile_codes(gd, ld, T, tr2)
+    @test length(codes2) >= 2
+    @test codes2[end - 1] == LK.I_FAIL
+    @test codes2[end] == LK.I_EXIT
+    return nothing
+end
+
+@testset "compile_trie_node: a flagged node with children is a leaf, a value-less leaf ends the code (white-box; TR4-N21, TR4-N23)" begin
+    _tr_compile_leaf_rows(_TT)
+end

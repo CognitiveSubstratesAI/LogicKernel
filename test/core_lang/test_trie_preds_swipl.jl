@@ -461,3 +461,39 @@ kd9(R) :- fn(trie_term(-1, _), -1, R).
     @test row("kd8") == _er("kd8", _ea("existence_error"))
     @test row("kd9") == _er("kd9", _ea("existence_error"))
 end
+
+# DEFKILL5 rows (white-box over a program, no oracle line beyond the numbers cited): TR1-V6 and TR1-V11.
+#   * TR1-V6: pl-trie.c:2500 `trie_new/1` does `set(trie, TRIE_CONCURRENT)` (kernel src/pl-trie.jl:2150); the flag is read on the newest trie of `gd.tries`
+#     after a query ran `trie_new/1` (the query sets ld.GD, which `pl_trie_new1_va` needs).
+#   * TR1-V11: pl-trie.c:2865-2890 `trie_delete/3` calls `trie_delete(trie, node, true)`: the pruned node is destroyed. swipl 18168e62, two identical runs of
+#     `trie_new(T), trie_insert(T, f(a), v), trie_delete(T, f(a), V), trie_property(T, node_count(N))`: node_count is 1 before the insert and after the
+#     delete, 3 after the insert, V = v, value_count 0 (the list [N0,N1,N2,V,VC] printed [1,3,1,v,0]). The kernel's `prune && tr.references == 0` of
+#     src/pl-trie.jl:1815 gives the same node_count; a mutant that deletes without pruning keeps 3.
+const _DK5_PL = raw"""
+dk5_new(R) :- trie_new(_), R = ok.
+dk5_ins(R) :- trie_new(T), trie_insert(T, f(a), v), R = ok.
+dk5_del(R) :- trie_new(T), trie_insert(T, f(a), v), trie_delete(T, f(a), V), R = V.
+"""
+
+@testset "TR1 DEFKILL5 rows: trie_new/1 sets TRIE_CONCURRENT, trie_delete/3 prunes (TR1-V6, TR1-V11)" begin
+    f = tempname() * ".pl"
+    write(f, _DK5_PL)
+    gd, ld, st = _tp_load(_TP, f)
+    rm(f)
+    @test st == "ok"
+    row(n) = _tp_row(gd, ld, n)
+    n0 = length(gd.tries)
+    # TR1-V6
+    @test row("dk5_new") == _er("dk5_new", _ea("ok"))
+    @test length(gd.tries) == n0 + 1
+    @test (gd.tries[end].flags & LK.TRIE_CONCURRENT) != 0
+    # TR1-V11: the node count after an insert (3: the root, f/1, a), after the insert and the delete (1: only the root), and a fresh trie's (1)
+    @test row("dk5_ins") == _er("dk5_ins", _ea("ok"))
+    ins = gd.tries[end]
+    @test length(gd.tries) == n0 + 2 && ins.value_count == 1 && ins.node_count == 3
+    @test row("dk5_del") == _er("dk5_del", _ea("v"))
+    del = gd.tries[end]
+    @test length(gd.tries) == n0 + 3 && del !== ins
+    @test del.value_count == 0
+    @test del.node_count == 1 == LK.trie_create(_TP).node_count
+end
