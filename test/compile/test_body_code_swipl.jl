@@ -3563,3 +3563,48 @@ const _BC_MOD3B = [
         end
     end
 end
+
+# ── arithCompilable (pl-comp.c:3879-3931, called at pl-comp.c:3511) ──────────────────────────────
+# TARGET-ONLY: pin when the oracle moves to cf6960c2. Written from the target's C, not compared with
+# the pin's swipl (the pin raises a type_error when it compiles `[C] =:= 0'a` under `optimise`).
+# At cf6960c2 compileSubClause tests `truePrologFlag(PLFLAG_OPTIMISE) && arithCompilable(arg)` before
+# `compileArith` (pl-comp.c:3511): `arithCompilable` is false for a goal holding a "char" list `[X|Y]`
+# whose head or tail is unbound at compile time (pl-comp.c:3905-3912), and that goal then compiles as
+# the plain call it is without the flag. A goal that is arithCompilable still goes to `compileArith`,
+# unwritten here: the kernel keeps refusing it (NotPortedError) and this pins that current answer.
+@testset "arithCompilable: a char list with an unbound element or tail is no inline arithmetic" begin
+    ld = LK.PL_local_data{_B}(_BGD)
+    LK.setPrologFlagMask!(ld, LK.PLFLAG_OPTIMISE)
+    for (shape, h, b) in (
+        ("[C] =:= 0'a", _bf("ac1", _bv(1)), _bf("=:=", _blist(_bv(1)), _bg(97))),
+        ("0'a =:= [C]", _bf("ac2", _bv(1)), _bf("=:=", _bg(97), _blist(_bv(1)))),
+        ("X is [C]", _bf("ac3", _bv(1)), _bf("is", _bv(2), _blist(_bv(1)))),
+        ("[0'a|C] =:= 1", _bf("ac4", _bv(1)),
+            _bf("=:=", _bcons(_bg(97), _bv(1)), _bg(1))),
+        ("1 + [C] =:= 2", _bf("ac5", _bv(1)),
+            _bf("=:=", _bf("+", _bg(1), _blist(_bv(1))), _bg(2))),
+        ("1 + (2 * [C]) < 9", _bf("ac6", _bv(1)),
+            _bf("<", _bf("+", _bg(1), _bf("*", _bg(2), _blist(_bv(1)))), _bg(9))),
+    )
+        got = try
+            _bc_kernel(_bclause(h, b; ld=ld))
+        catch e
+            e isa LK.NotPortedError || rethrow()
+            nothing
+        end
+        @test got !== nothing                                   # compiled, not refused
+        want = _bc_kernel(_bclause(h, b))                       # the same clause without `optimise`
+        @test got == want
+        @test any(startswith("i_call"), got) || any(startswith("i_depart"), got)
+    end
+    # a list of constants, and a goal with no list, are arithCompilable: still refused (compileArith)
+    for (shape, h, b) in (
+        ("[0'a] =:= 1", _bf("ad1", _bv(1)), _bf("=:=", _blist(_bg(97)), _bg(1))),
+        ("C =:= [0'a]", _bf("ad2", _bv(1)), _bf("=:=", _bv(1), _blist(_bg(97)))),
+        ("C < 3", _bf("ad3", _bv(1)), _bf("<", _bv(1), _bg(3))),
+        ("C + 1 =:= 3 * 4", _bf("ad4", _bv(1)),
+            _bf("=:=", _bf("+", _bv(1), _bg(1)), _bf("*", _bg(3), _bg(4)))),
+    )
+        @test_throws LK.NotPortedError _bclause(h, b; ld=ld)
+    end
+end
