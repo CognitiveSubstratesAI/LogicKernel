@@ -255,7 +255,10 @@ end
     le64(w) = UInt8[((UInt64(w) >> (8 * j)) % UInt8) for j in 0:7]
     vword(n) = vcat(UInt8['V'], le64(n))
     sha(bytes) = bytes2hex(SHA.sha1(bytes))
-    mur(bytes) = Int(MurmurHashAligned2(bytes, length(bytes), MURMUR_SEED) & LogicKernel.PLMAXTAGGEDINT32)
+    mur(bytes) = Int(
+        MurmurHashAligned2(bytes, length(bytes), MURMUR_SEED) &
+        LogicKernel.PLMAXTAGGEDINT32
+    )
     x, y = _kv(1), _kv(2)
     @test pl_variant_sha1(x) == sha(vword(0))
     @test pl_variant_hash(x) == mur(vword(0))
