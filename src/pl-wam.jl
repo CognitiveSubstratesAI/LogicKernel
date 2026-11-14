@@ -1960,6 +1960,11 @@ end
 # `onchange` to rerun: positions are indices), so the check is the LIMIT, as `ensureGlobalSpace`'s —
 # not applied while an exception is processed (upstream's spare stacks). Its failure is
 # `THROW_EXCEPTION` (`@goto b_throw`).
+# G1-GC safe point: none yet (docs/g1gc_safe_points.md, table A, the VM rows): this macro never collects.
+# B_* / I_* / T_ATTVARA bodies are SAFE once the macro saves ARGP, FR and PC around the hook
+# (`considerGC`); T_FUNCTOR, H_RFUNCTOR, H_RLIST and the H_LIST_FF read arm hold derived positions
+# across it and NEED-REFACTOR: re-derive them after the call, as upstream's `onchange` does. The
+# refactor touches the T_* bodies T27 outlines and the A_* arms AR1 edits: left to G1-6 after both land.
 "Make room for `n` cells above `gTop` within the limit, else raise the global overflow and throw (pl-vmi.c)."
 macro ENSURE_GLOBAL_SPACE(n)
     return esc(
