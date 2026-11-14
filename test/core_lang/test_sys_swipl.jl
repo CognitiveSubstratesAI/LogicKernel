@@ -259,7 +259,7 @@ end
         r.dirty == 0
 end
 
-# TARGET-ONLY: pin when the oracle moves to cf6960c2. The expectation is written by hand from the TARGET's pl-prims.c
+# TARGET-ONLY: pin when the oracle moves to cf6960c2 (swipl-devel cf6960c2 pl-prims.c:6258-6259). The expectation is written by hand from the TARGET's pl-prims.c
 # `swi_statistics` (the local swipl is the pin, which has no key `minor_collections`: it answers domain_error(statistics_key,
 # minor_collections)): the key answers `LD->gc.stats.totals.minor_collections`, a count of the collections that were
 # generational, so it is an integer; no collector runs in this kernel, so it is 0, as `collections` is.
