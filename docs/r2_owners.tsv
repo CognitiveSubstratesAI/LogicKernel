@@ -209,15 +209,8 @@ refusal:src/pl-comp.jl::assert_term!::assert_term: PL_CREATE_INCREMENTAL/THREAD_
 refusal:src/pl-modul.jl::set_module::set_module(program_space(N)): the module's code accounting	P3	set_module(program_space(N)) code accounting (pl-modul.c); resource-limit family, unreached by the boot
 refusal:src/pl-proc.jl::get_procedure::get_procedure: other than GP_DEFINE	PR1	generic get_procedure modes beyond GP_DEFINE (pl-proc.c); callers use the split get_procedure_* functions, PR1 residual
 refusal:src/pl-proc.jl::pl_get_predicate_attribute3_va::indexed(L): the Prolog dict of an index property	PR1b	indexed(L) of pl_get_predicate_attribute (pl-proc.c, unify_index_property): predicate_property(P, X) enumeration reaches it via syspred.pl:874; PR1b (R2b list, D-0415 item 5), needs the dict builder; size it before the first boot decides whether it is needed
-refusal:src/pl-read.jl::raw_read2::raw_read2: reading past the end of a stream (its error names	RD2	raw_read2 past the end of a stream, eof_action(error) (pl-read.c); the stream term is available since LB5 (PL_unify_stream_or_alias)
-refusal:src/pl-read.jl::raw_read2::raw_read2: the comments(C) read option	RD2	raw_read2 comments(C) read option (pl-read.c); the comments collector of library(prolog_source)
-refusal:src/pl-read.jl::raw_read2::raw_read2: the comments(C) read option #2	RD2	raw_read2 comments(C) read option, second site (pl-read.c); the comments collector
-refusal:src/pl-read.jl::start_pframe::read: a blob <type>(…)	RD2	reading a blob <type>(...) (pl-read.c PF_BLOB); the blob lookup
-refusal:src/pl-read.jl::start_pframe::read: a quasi-quotation {|Syntax||Quotation|}	RD2	quasi-quotation {|Syntax||Text|} (pl-read.c); refused by the R1 decision, lifted only if the user lifts it
-refusal:src/pl-read.jl::read_clause::read_clause's $what option	RD2	read_clause comments / var_prefix options (pl-read.c read_clause)
-refusal:src/pl-read.jl::read_clause::read_clause's process_comment(true) or unicode_atoms option	RD2	read_clause process_comment(true) option (pl-read.c); unicode_atoms half rides with ENC1
+refusal:src/pl-read.jl::read_clause::read_clause's unicode_atoms option	ENC1	read_clause unicode_atoms option (pl-read.c); the NFC normalizer
 refusal:src/pl-read.jl::read_clause::unicode_atoms(nfc)	ENC1	read_clause unicode_atoms(nfc) (pl-read.c); the NFC normalizer
-refusal:src/pl-read.jl::read_term_from_stream::read_term's $what option	RD2	read_term comments / var_prefix / quasi_quotations options (pl-read.c pl_read_term)
 refusal:src/pl-read.jl::read_term_from_stream::read_term's unicode_atoms option	ENC1	read_term unicode_atoms option (pl-read.c pl_read_term); the NFC normalizer
 refusal:src/pl-string.jl::PL_text_recode::PL_text_recode to $encoding	ENC1	PL_text_recode to ENC_ANSI, the locale encoding (pl-string.c); with CT1's locale
 refusal:src/pl-string.jl::pl_string_bytes3_va::string_bytes/3 with the encoding text	ENC1	string_bytes/3 with the text (ENC_ANSI) encoding (pl-string.c); with CT1's locale

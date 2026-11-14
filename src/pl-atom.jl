@@ -2506,6 +2506,117 @@ end
 lookupAtom(atoms::atoms_t, s::AbstractVector{UInt8}, length::Int=Base.length(s))::UInt64 =
     first(lookupBlob(atoms, s, length, text_atom))
 
+# PORT: pl-atom.c unavailable_blob
+# DIVERGES: the type is its flags and name (`PL_blob_t` keeps no hooks): `write_unavailable` is the
+# branch of `writeAtom` (src/pl-write.jl) and `compare_unavailable` has no reader, as the standard
+# order of two blobs of ONE type goes by their handles (`mk_blob`). Not TEXT (`atom/1` fails on a
+# dead blob), not UNIQUE (two blobs of equal text stay two atoms).
+"The blob type of a blob with no object behind it: what `read_term/2,3` makes of `<type>(...)` with `blob(dead)` (pl-atom.c)."
+const unavailable_blob = PL_blob_t(UInt32(0), "unavailable")
+
+# PORT: pl-atom.c deadBlobType
+# DIVERGES: the atom is a word of `atoms`; returns the type name as text (upstream: its atom) or
+# `nothing` where upstream returns 0.
+"The type name recorded in the text of the dead blob `w`, i.e. `stream` for `<stream>(0x55c1e0)`; `nothing` if `w` is no dead blob (pl-atom.c)."
+function deadBlobType(atoms::atoms_t, w::word)::Union{Nothing, String}
+    a = atomValue(atoms, w)
+    len = a.length
+    (a.type === unavailable_blob && len >= 2 && a.name[1] == UInt8('<')) || return nothing
+    e = findnext(==(UInt8('>')), view(a.name, 1:len), 2)       # memchr(text+1, '>', len-1)
+    e === nothing && return nothing
+    return String(a.name[2:(e - 1)])
+end
+
+# PORT: pl-atom.c blob_address
+# DIVERGES: the address is the blob's atom word (the kernel's blobs hold no C pointer); returns the
+# address or `nothing`.
+"The address in the first argument of `<type>(0x63c0850, ...)`, `nothing` if there is none (pl-atom.c)."
+function blob_address(text::AbstractVector{UInt8}, len::Int)::Union{Nothing, UInt64}
+    s = findfirst(==(UInt8('(')), view(text, 1:len))
+    (
+        s === nothing || len - (s - 1) < 4 || text[s + 1] != UInt8('0') ||
+        text[s + 2] != UInt8('x')
+    ) &&
+        return nothing
+    addr = UInt64(0)
+    d = s + 3
+    while d <= len
+        c = Int(text[d])
+        if c >= Int('0') && c <= Int('9')
+            addr = (addr << 4) | UInt64(c - Int('0'))
+        elseif c >= Int('a') && c <= Int('f')
+            addr = (addr << 4) | UInt64(c - Int('a') + 10)
+        else
+            break
+        end
+        d += 1
+    end
+    (
+        d == s + 3 || d == len + 1 || (text[d] != UInt8(',') && text[d] != UInt8(')')) ||
+        addr == 0
+    ) &&
+        return nothing
+    return addr
+end
+
+# PORT: pl-atom.c scanLiveBlobs
+# DIVERGES: the kernel's blob types have no `write` hook: a blob's written form is `written(word)`
+# (`blob_written_text`, src/pl-write.jl; `nothing` for a text atom and for the types that never
+# write as `<type>(...)`), compared with `text` byte by byte; the "data pointer" of `by_addr` is the
+# atom word; no reference counts (the atom is returned, not locked); no atom GC to skip.
+"Scan the atom table for the one blob that writes as `text`: `(atom word or 0, ambiguous)` (pl-atom.c)."
+function scanLiveBlobs(
+    atoms::atoms_t, written::F, type_name::Union{Nothing, String}, addr::UInt64,
+    by_addr::Bool,
+    text::AbstractVector{UInt8}, len::Int
+)::Tuple{UInt64, Bool} where {F <: Function}
+    found = UInt64(0)
+    for index in 1:(atoms.highest - 1)
+        a = fetchAtomArray(atoms, index)
+        bt = a.type
+        (
+            ATOM_IS_VALID(a.references) && bt !== ATOM_TYPE_INVALID &&
+            bt !== unavailable_blob &&
+            bt !== reserved_symbol && bt.flags & PL_BLOB_TEXT == 0 &&
+            (by_addr ? a.atom == addr : bt.name == type_name)
+        ) || continue
+        out = written(a.atom)
+        out === nothing && continue
+        codeunits(out) == view(text, 1:len) || continue
+        found != 0 && return (UInt64(0), true)         # ambiguous: refuse to guess
+        found = a.atom
+    end
+    return (found, false)
+end
+
+# PORT: pl-atom.c lookupLiveBlob
+"The blob of type `type_name` that writes as `text`, or 0 if there is none or more than one (pl-atom.c)."
+function lookupLiveBlob(
+    atoms::atoms_t, written::F, type_name::String, text::AbstractVector{UInt8}, len::Int
+)::UInt64 where {F <: Function}
+    addr = blob_address(text, len)
+    if addr !== nothing
+        found, ambiguous = scanLiveBlobs(atoms, written, nothing, addr, true, text, len)
+        (found != 0 || ambiguous) && return found
+    end
+    return first(scanLiveBlobs(atoms, written, type_name, UInt64(0), false, text, len))
+end
+
+# PORT: pl-atom.c newDeadBlob
+# DIVERGES: the atom is a word of `atoms` (upstream: a registered atom, 0 on failure; the kernel's
+# creation cannot fail), `written` is `lookupLiveBlob`'s writer of live blobs.
+"The blob for `read_term/2,3` reading `<type>(...)`: with `resolve` first a live blob that writes as `text` (pl-atom.c)."
+function newDeadBlob(
+    atoms::atoms_t, written::F, type_name::String, text::AbstractVector{UInt8}, len::Int,
+    resolve::Bool
+)::UInt64 where {F <: Function}
+    if resolve
+        live = lookupLiveBlob(atoms, written, type_name, text, len)
+        live != 0 && return live
+    end
+    return first(lookupBlob(atoms, text, len, unavailable_blob))
+end
+
 # PORT: pl-atom.c rehashAtoms
 # DIVERGES: no previous table is kept (`newtab->prev`: concurrent readers); always succeeds.
 # NOT PORTED: the `GD->halt.cleaning` early return (no halt).

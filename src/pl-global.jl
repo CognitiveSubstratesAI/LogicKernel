@@ -180,6 +180,7 @@ mutable struct PL_global_data{T}
     const ld_table::LDTable                                     # the local data a wrapped stream names by number (IOSTREAM.wrapped; src/os/pl-stream.jl, R2 TOP1b E; owner TH1)
     tabling_answer_delay_infos::Dict{Int, delay_info}           # (pl-tabling.c static `answer_delay_infos`: trie node id -> delay_info; TAB1 TB0)
     tabling_start_node_ids::Int                                 # (pl-tabling.c static `start_node_ids`: the last start-node id handed out, 0: none; TAB1 TB1)
+    char_conversion_table::Vector{Int}                          # (pl-read.c static `char_table[257]`: the entry of code c is at c + 2, EOF at 1; RD2b)
 end
 # DIVERGES: `atoms` is upstream's `GD->atoms` as a struct of its own (src/pl-atom.jl), one table per
 # database, built first as upstream's `initAtoms` runs first; `functors` likewise `GD->functors` with
@@ -230,6 +231,9 @@ end
 # through `ld.GD`. TH1 moves the field into the local data when a thread has a local data of its own.
 # Since R2's LB7: `options` and `cmdline`, `GD->options` and `GD->cmdline` (pl-global.h, the records above), and `defaults_home`,
 # `GD->defaults.home` (`systemDefaults.home`, pl-init.c); the other members of `GD->defaults` are build constants (pl-init.c `initDefaults`).
+# Since RD2b: `char_conversion_table`, DIVERGES (representation): upstream's `char_table[257]` is a static of pl-read.c shared by the process,
+# here a field of the database (the entry of code `c` at index `c + 2`, EOF at 1), filled by `initCharConversion` (src/pl-read.jl) when the
+# database is made; `char_conversion/2` writes it, a read holds it while the Prolog flag `char_conversion` is set.
 
 # PORT: pl-incl.h cleanup_status as CLN_NORMAL
 # DIVERGES: the enum's values as `Int` constants (`halt_cleaning` is an `Int`), pl-incl.h:1054-1060.
@@ -528,6 +532,9 @@ ld_tabling{T}() where {T} = ld_tabling{T}(
 # Since R2 TOP1b A: `break_level` (`LD->break_level`, pl-setup.c:199: -1 outside a toplevel; `currentBreakLevel`, src/pl-pro.jl), appended last.
 # Since TR2: `trie_gens`, the pool of trie_gen/2,3's states (`trie_gen_state`, pl-incl.jl; upstream keeps them on the C stack, then `allocForeignState`), appended last;
 # `trie_gen_force_epoch` (ORIGINAL, a test switch; a module-level `Ref` would be shared state, which the lint refuses), appended after it.
+# Since RD2: `read_contexts`, appended last: the reads whose quasi-quotations the library may open (`'$qq_open'/2`; src/pl-read.jl). Upstream's
+# `'$quasi_quotation'(Ptr, Start, Len)` holds a pointer to the read data; Julia keeps no object in a word, so the pointer is `objectid(rd)` and
+# this vector is where `$qq_open` finds the data again, only while `parse_quasi_quotations` runs the library.
 # Since R2 F1c: `debugstatus_skiplevel`, `debugstatus_tracing`, `debugstatus_debugging`, `debugstatus_showContext` (`LD->_debugstatus`, pl-incl.h
 # `pl_debugstatus_t`; the flags `debug`, `debugger_show_context`: src/os/pl-prologflag.jl, `debugmode`, `tracemode`: src/pl-trace.jl).
 # (the input context stack is LB3's `input_context_stack`, which `'\$push_input_context'/1` shares; src/os/pl-file.jl).
@@ -695,6 +702,7 @@ mutable struct PL_local_data{T} <: AbstractLocalData
     table_flags_drop_intermediate::Int                          # table_flags.drop_intermediate: flag table_drop_intermediate
     trie_gens::foreign_state_pool{trie_gen_state{T}}            # (trie_gen/2,3's REDO_PTR states, TR2)
     trie_gen_force_epoch::Bool                                  # ORIGINAL test switch: check_epoch! starts a new epoch at every call (TR2)
+    read_contexts::Vector{Any}                                  # ORIGINAL: the `read_data` a quasi-quotation's `'\$quasi_quotation'(Ptr, …)` may name, while its read runs (RD2)
 end
 function PL_local_data{T}(gd::PL_global_data{T}) where {T}
     ld = _bare_local_data(gd)
@@ -812,7 +820,8 @@ function _bare_local_data(gd::PL_global_data{T}) where {T}
         TABLE_COMPILE_THRESHOLD,                # table_flags.compile_threshold (pl-prologflag.c:2587)
         0,                                      # table_flags.drop_intermediate (pl-prologflag.c:2589)
         foreign_state_pool{trie_gen_state{T}}(), # trie_gen/2,3's states: none (TR2)
-        false                                   # trie_gen_force_epoch: off (TR2)
+        false,                                  # trie_gen_force_epoch: off (TR2)
+        Any[]                                   # read_contexts: none (RD2)
     )
     allocStacks!(ld)                            # the initial local stack, its spare reserved
     emptyStacks!(ld)

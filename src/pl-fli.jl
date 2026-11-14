@@ -1096,8 +1096,8 @@ end
 
 # ORIGINAL: pl-atom.c blob/2 as pl_blob2_va
 # (PRED_IMPL("blob", 2, blob, 0))
-# DIVERGES: placed after the FLI it calls (pl-atom.jl is loaded before `PL_local_data`); NOT PORTED: a
-# dead blob's type (`deadBlobType`: no released blobs).
+# DIVERGES: placed after the FLI it calls (pl-atom.jl is loaded before `PL_local_data`); a dead blob
+# reports `deadBlobType` as upstream (since RD2); no released blobs.
 "`blob(@Term, ?Type)` (pl-atom.c): `Term` is an atom of blob type `Type`."
 function pl_blob2_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
@@ -1105,6 +1105,12 @@ function pl_blob2_va(
     A1, A2 = PL__t0, PL__t0 + 1
     name = PL_is_blob(ld, A1)
     name === nothing && return FFALSE
+    if name == unavailable_blob.name                        # dead blob: report the type it
+        _, w, _ = _deref_loc(ld, -(A1 + 1))                 # stands for, not `unavailable'
+        dead = deadBlobType(ld.atoms, blob_handle(_atom_value(ld, w)))
+        dead === nothing ||
+            return PL_unify_atom(ld, A2, _atom_from_text(T, dead)) ? FTRUE : FFALSE
+    end
     return PL_unify_atom(ld, A2, mk_sym(T, Symbol(name))) ? FTRUE : FFALSE
 end
 

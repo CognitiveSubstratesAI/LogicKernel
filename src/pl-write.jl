@@ -1,5 +1,6 @@
 # UPSTREAM: swipl-devel src/pl-write.c @ 18168e629eab
 # UPSTREAM: swipl-devel src/pl-incl.h @ 18168e629eab
+# UPSTREAM: swipl-devel src/pl-atom.c @ 18168e629eab
 # CLASS: code
 # COPYRIGHT: Copyright (c)  1985-2026, University of Amsterdam
 # COPYRIGHT: VU University Amsterdam
@@ -856,6 +857,30 @@ function writeUCSAtom(name::String, options::write_options)::Bool
     end
 end
 
+# PORT: pl-atom.c write_unavailable
+# DIVERGES: the blob is a term of the interface and its text the atom table's, found by its handle;
+# returns 0 or 1 where upstream returns a bool.
+"Write a dead blob (`<type>(...)`, read with `blob(dead)`): its source text, as it was read (pl-atom.c)."
+function write_unavailable(a::T, options::write_options{T})::Int where {T}
+    at = atomValue(options.gd.atoms, blob_handle(a))
+    text = String(at.name[1:(at.length)])                # the text is UTF-8: emit code points
+    for ch in text                                       # utf8_get_char, Sputcode
+        Sputcode(Int(ch), options.out) < 0 && return 0
+    end
+    return 1
+end
+
+# ORIGINAL: the form `writeAtom` gives the blob of atom word `w`, as text: what upstream's blob
+# `write` hook prints, for `lookupLiveBlob` (src/pl-atom.jl) to compare with the text read; the scan
+# there has already skipped the text atoms, reserved symbols and dead blobs.
+"The text the blob atom `w` is written as: `<closure>(m:p/1)` or `<type>(0x<handle>)`."
+function blob_written_text(gd::PL_global_data{T}, w::word)::String where {T}
+    at = atomValue(gd.atoms, w)
+    wc = closure_of_word(gd, w)
+    wc === nothing || return write_closure(gd, wc)
+    return "<" * at.type.name * ">(0x" * string(w; base=16) * ")"
+end
+
 # PORT: pl-write.c writeAtom
 # DIVERGES: an atom is a symbol: a reserved symbol is written by its blob type's `write`
 # (`writeReservedSymbol`), a wide text atom by its `write_ex` (`writeUCSAtom`), a single-byte one
@@ -877,6 +902,9 @@ function writeAtom(a::T, options::write_options{T})::Int where {T}
         rc == 0 || return 0                         # error
     end
 
+    if is_blob(a) && atomValue(options.gd.atoms, blob_handle(a)).type === unavailable_blob
+        return write_unavailable(a, options)        # atom->type->write: write_unavailable
+    end
     if is_blob(a)                                   # atom->type->write (a blob type's)
         # WRAP1: the blob type's `write` hook of a closure is `write_closure` (src/pl-wrap.jl): `<closure>(m:p/1)`, written
         # through `PutToken` (a token break, as the other blobs'), where upstream's `Sfprintf` writes raw.

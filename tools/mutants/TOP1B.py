@@ -131,13 +131,10 @@ MUTANTS = [
          file=PP, targets=TARGETS,
          old="debugmode(ld, debugSave[], nothing, UInt32(0))",
          new="debugmode(ld, false, nothing, UInt32(0))"),
-    dict(id="TOP1B-E1 pl_break1 does not set the current input to user_input on the way in (EQUIVALENT)",
+    dict(id="TOP1B-E1 pl_break1 does not set the current input to user_input on the way in (KILL test_top1b_swipl.jl: the message_hook row on break(begin, _), swipl-pinned `hook_in(user_input)`)",
          file=PP, targets=TARGETS,
          old="ld.IO_streams[SNO_CURRENT_INPUT + 1] = Suser_input(ld)          # Scurin  = Sinput",
-         new="nothing",
-         equivalent="src/pl-pro.jl:312 — query_loop's first resetProlog (:412) sets Scurin to Suser_input(ld) before the goal runs, and between the line and "
-                    "that call only printMessage(begin) (pl-pro.jl:501-504) runs, which reads no current input; inside the break the rows read Scurin only "
-                    "after resetProlog (tb04 `inside`), so the line has no observable effect"),
+         new="nothing"),
     # ── pl-pro.c pl_break (break/0) ──
     dict(id="TOP1B-N09 break/0 (pl_break_va) answers the opposite of pl_break (KILL test_top1b_swipl.jl:197 tb02: the conjunction `break, lvl(3)` fails)",
          file=PP, targets=TARGETS,
@@ -245,8 +242,8 @@ MUTANTS = [
          new="nothing"),
     dict(id="TOP1B-P10 a freed registry entry reads end of file (0) instead of an error (-1) (KILL test_top1b_wrap_swipl.jl:410-411: -1 and SIO_FERR)",
          file=PFI, targets=TARGETS_EF,
-         old="::Vector{UInt8}, ::Int, ::Int\n)::Int = -1",
-         new="::Vector{UInt8}, ::Int, ::Int\n)::Int = 0"),
+         old="::Vector{UInt8}, ::Int,\n    ::Int\n)::Int = -1",
+         new="::Vector{UInt8}, ::Int,\n    ::Int\n)::Int = 0"),
     # ── pl-file.c closeWrappedIO ──
     dict(id="TOP1B-P11 closeWrappedIO does not give the cleared flag back (KILL test_top1b_wrap_swipl.jl:322, :333)",
          file=PFI, targets=TARGETS_EF,

@@ -52,7 +52,7 @@ how many of the upstream file's functions are ported.
 | swipl-bench `programs/qsort.pl` | design | `d74163e6d756` | `bench/programs/qsort.jl` | 4 | 0 |
 | swipl-devel `src/ATOMS` | code | `18168e629eab` | `src/pl-atom.jl` | 0 | 0 |
 | swipl-devel `src/ATOMS` | code | `18168e629eab` | `src/pl-funct.jl` | 0 | 0 |
-| swipl-devel `src/SWI-Prolog.h` | code | `18168e629eab` | `src/SWI-Prolog.jl` | 127 | 4 |
+| swipl-devel `src/SWI-Prolog.h` | code | `18168e629eab` | `src/SWI-Prolog.jl` | 129 | 4 |
 | swipl-devel `src/SWI-Prolog.h` | code | `18168e629eab` | `src/pl-dict.jl` | 1 | 0 |
 | swipl-devel `src/SWI-Prolog.h` | code | `18168e629eab` | `src/pl-incl.jl` | 7 | 0 |
 | swipl-devel `src/Unicode/prolog_syntax_map.pl` | code | `18168e629eab` | `src/pl-umap.jl` | 0 | 0 |
@@ -99,7 +99,8 @@ how many of the upstream file's functions are ported.
 | swipl-devel `src/pl-arith.c` | code | `18168e629eab` | `src/pl-arith.jl` | 129 | 36 |
 | swipl-devel `src/pl-arith.c` | code | `18168e629eab` | `src/pl-incl.jl` | 1 | 1 |
 | swipl-devel `src/pl-arith.h` | code | `18168e629eab` | `src/pl-arith.jl` | 10 | 2 |
-| swipl-devel `src/pl-atom.c` | code | `18168e629eab` | `src/pl-atom.jl` | 11 | 6 |
+| swipl-devel `src/pl-atom.c` | code | `18168e629eab` | `src/pl-atom.jl` | 17 | 11 |
+| swipl-devel `src/pl-atom.c` | code | `18168e629eab` | `src/pl-write.jl` | 1 | 1 |
 | swipl-devel `src/pl-attvar.c` | code | `18168e629eab` | `src/pl-attvar.jl` | 42 | 35 |
 | swipl-devel `src/pl-attvar.h` | code | `18168e629eab` | `src/pl-attvar.jl` | 2 | 2 |
 | swipl-devel `src/pl-bag.c` | code | `18168e629eab` | `src/pl-bag.jl` | 9 | 6 |
@@ -184,7 +185,7 @@ how many of the upstream file's functions are ported.
 | swipl-devel `src/pl-proc.h` | code | `18168e629eab` | `src/pl-proc.jl` | 1 | 0 |
 | swipl-devel `src/pl-qlf.c` | code | `18168e629eab` | `src/pl-qlf.jl` | 35 | 12 |
 | swipl-devel `src/pl-read.c` | code | `18168e629eab` | `src/os/pl-prologflag.jl` | 2 | 2 |
-| swipl-devel `src/pl-read.c` | code | `18168e629eab` | `src/pl-read.jl` | 212 | 90 |
+| swipl-devel `src/pl-read.c` | code | `18168e629eab` | `src/pl-read.jl` | 241 | 105 |
 | swipl-devel `src/pl-rec.c` | code | `18168e629eab` | `src/pl-incl.jl` | 1 | 1 |
 | swipl-devel `src/pl-rec.c` | code | `18168e629eab` | `src/pl-rec.jl` | 38 | 27 |
 | swipl-devel `src/pl-rec.h` | code | `18168e629eab` | `src/pl-incl.jl` | 1 | 1 |
@@ -288,7 +289,7 @@ checkout is pulled.
 | swipl-devel `src/pl-allocpool.h` | `18168e629eab` | 0 | 0 | 0 | src/pl-incl.jl |
 | swipl-devel `src/pl-arith.c` | `18168e629eab` | 102 | 166 | 34 | src/pl-arith.jl, src/pl-incl.jl |
 | swipl-devel `src/pl-arith.h` | `18168e629eab` | 1 | 9 | 1 | src/pl-arith.jl |
-| swipl-devel `src/pl-atom.c` | `18168e629eab` | 10 | 82 | 6 | src/pl-atom.jl |
+| swipl-devel `src/pl-atom.c` | `18168e629eab` | 16 | 82 | 11 | src/pl-atom.jl, src/pl-write.jl |
 | swipl-devel `src/pl-attvar.c` | `18168e629eab` | 32 | 42 | 29 | src/pl-attvar.jl |
 | swipl-devel `src/pl-attvar.h` | `18168e629eab` | 2 | 2 | 2 | src/pl-attvar.jl |
 | swipl-devel `src/pl-bag.c` | `18168e629eab` | 3 | 15 | 3 | src/pl-bag.jl, src/pl-incl.jl |
@@ -339,7 +340,7 @@ checkout is pulled.
 | swipl-devel `src/pl-proc.c` | `18168e629eab` | 78 | 128 | 60 | src/pl-incl.jl, src/pl-proc.jl |
 | swipl-devel `src/pl-proc.h` | `18168e629eab` | 1 | 2 | 0 | src/pl-proc.jl |
 | swipl-devel `src/pl-qlf.c` | `18168e629eab` | 11 | 156 | 9 | src/pl-qlf.jl |
-| swipl-devel `src/pl-read.c` | `18168e629eab` | 159 | 209 | 78 | src/os/pl-prologflag.jl, src/pl-read.jl |
+| swipl-devel `src/pl-read.c` | `18168e629eab` | 186 | 209 | 92 | src/os/pl-prologflag.jl, src/pl-read.jl |
 | swipl-devel `src/pl-rec.c` | `18168e629eab` | 35 | 76 | 24 | src/pl-incl.jl, src/pl-rec.jl |
 | swipl-devel `src/pl-rec.h` | `18168e629eab` | 0 | 0 | 0 | src/pl-incl.jl |
 | swipl-devel `src/pl-ressymbol.c` | `18168e629eab` | 3 | 7 | 2 | src/pl-ressymbol.jl |
@@ -380,7 +381,7 @@ checkout is pulled.
 | swipl-devel `tests/db/test_db.pl` | `18168e629eab` | 2 | 10 | 0 | test/db/test_db.jl |
 | swipl-devel `tests/db/test_jit.pl` | `18168e629eab` | 16 | 21 | 0 | test/db/test_jit.jl |
 | swipl-devel `tests/rational/test_ieee754.pl` | `18168e629eab` | 0 | 15 | 0 | test/rational/test_ieee754.jl |
-| **total** | | **2272** | **5354** | **1353** | |
+| **total** | | **2305** | **5354** | **1372** | |
 <!-- END GENERATED coverage -->
 
 ### Not ported: unreachable upstream

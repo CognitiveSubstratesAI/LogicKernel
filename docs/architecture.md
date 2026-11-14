@@ -826,7 +826,7 @@ fixed it or a public issue exists.
 | `src/pl-arith.jl` | evaluation (`valueExpression`, `evalExpression`), the functions ported (`+`, `-`, `*`, unary `-`/`+`), `check_float`, `compareNumbers`, and the built-ins `is/2`, `</2`, `>/2`, `=</2`, `>=/2`, `=\=/2`, `=:=/2` (V6c1); since V8 `>>` and `<<` (`ar_shift`), `A_ADD_FC`'s `ar_add_si`, and the integer size checks (`int_bits_ok`, `check_int_bits`); since R1a `[Atom]` (`arithChar` through `charCode`); since R1c `ar_rdiv_mpz` (a rational read) and `PL_nan`; since arith-a and arith-b the functions of arith_funcs_design.md §2 (`ar_pow`, the libm functions, `pi`/`e`/`cputime`/`random`) | `src/pl-arith.c`, `src/pl-arith.h`, `src/pl-incl.h`, `src/pl-inline.h`, `src/os/pl-os.c` |
 | `src/pl-modul.jl` | the module table (`module_table`, a vector with a name index) and any module of it, created on its first name — `system`, `user`, `$`-modules, classes, flags, the super modules (`_lookupModule!`, `lookupModule`, `isCurrentModule`, `setSuperModule` and its helpers; since V5c, MOD1) — stripping `Module:` (`stripModuleName`, `stripModule`), and what a call of an undefined predicate reads: the `unknown` flag, inherited through the supers (`getUnknownModule`, `inheritUnknown`); since R1c the syntax flags a module is created with (SWI-7's); since MOD1 `set_module/1`, `'$module_property'/2`, `'$current_source_module'/1`, `'$current_typein_module'/1` and their setters, `add_import_module/3`, `delete_import_module/2`, `ReadingSource`, `MODULE_parse` | `src/pl-modul.c`, `src/pl-incl.h` |
 | `src/pl-op.jl` | the operator tables (since R1b): each module's table, `system`'s holding SWI's defaults (`initOperators!`), defining an operator (`defOperator!`, `op/3`) and looking one up through the supers (`currentOperator`, `priorityOperator`); what `current_op/3` enumerates (`scanVisibleOperators!`); since NF3 `current_op/3` and `'$local_op'/3` themselves, upstream's non-deterministic foreign predicates (`current_op_ndet`, `get_op_module`, their states a pool of the local data) | `src/pl-op.c` |
-| `src/pl-write.jl` | the writer: since R1c the NaN helpers the reader needs (`NaN_value`, `make_nan`: `1.5NaN`); since R1d the quoting rules the parser asks of a quoted name (`unquoted_atom`); since R1e's core the WRITER — the quoting rules with write options (`atomType`, `unquoted_text`, `bracketPairAtom`, …), the token layer (`needSpace`, `PutOpenToken`, `PutToken`, `putQuoted`), atoms, strings, integers, rationals and `'$VAR'`, `writeTerm2`'s state machine over an explicit stack (operators, block operators, lists and the dotted notation, `{}`, bracket pairs), `writeTopTerm` (a cyclic term refused; since group F, D-0123, written `@(Template, Substitutions)`) and `PL_write_term`; since group F `callPortray` calls user:portray/1 and write_term's `portray_goal`; since R1e's floats `format_float` (Ryu's digits in pl-write.c's layout), `format_special_float`, `writeNaN`, `writeINF`; since R1e's write/1 family nl/0,1, write_term/2,3 (`pl_write_term3`, `bind_varnames`), write/writeq/writeln/print /1,2 (`do_write2`), since R1e's canonical write_canonical/1,2 | `src/pl-write.c`, `src/pl-incl.h` |
+| `src/pl-write.jl` | the writer: since R1c the NaN helpers the reader needs (`NaN_value`, `make_nan`: `1.5NaN`); since R1d the quoting rules the parser asks of a quoted name (`unquoted_atom`); since R1e's core the WRITER — the quoting rules with write options (`atomType`, `unquoted_text`, `bracketPairAtom`, …), the token layer (`needSpace`, `PutOpenToken`, `PutToken`, `putQuoted`), atoms, strings, integers, rationals and `'$VAR'`, `writeTerm2`'s state machine over an explicit stack (operators, block operators, lists and the dotted notation, `{}`, bracket pairs), `writeTopTerm` (a cyclic term refused; since group F, D-0123, written `@(Template, Substitutions)`) and `PL_write_term`; since group F `callPortray` calls user:portray/1 and write_term's `portray_goal`; since R1e's floats `format_float` (Ryu's digits in pl-write.c's layout), `format_special_float`, `writeNaN`, `writeINF`; since R1e's write/1 family nl/0,1, write_term/2,3 (`pl_write_term3`, `bind_varnames`), write/writeq/writeln/print /1,2 (`do_write2`), since R1e's canonical write_canonical/1,2 | `src/pl-write.c`, `src/pl-incl.h`, `src/pl-atom.c` |
 | `src/pl-read.jl` | the reader (R1); since R1c its SCANNER: the Unicode classifiers over the map (`PlBlankW`, `PlIdContW`, …), the read buffer, `raw_read` (one term's text from a stream: comments dropped, positions kept, quoted items as written, the full stop), syntax errors with their location (`string(Text, CharNo)`, `file(…)`), numbers (`str_number`: every base syntax, digit groups, `1r3`, floats with `Inf`/`NaN`, other scripts' digits), escapes and quoted text (`escape_char`, `get_string`), the variable table (`lookupVariable`), the tokeniser (`get_token`); since R1d the PARSER — the term stack and `readValHandle` (the variables' order is swipl's), the operator queues and their resolution (`isOp`, `modify_op`, `can_reduce`, `must_reduce`, `reduce_op`, `build_op_term` with block operators), `complex_term`'s state machine, the list, bracket and compound readers, `read_term` — and `atom_to_term/3`, `term_to_atom/2`, `term_string/2` (both directions since R1e: the write through `PL_write_term`); since R1f `read_clause` (the consult's read: singletons reported, a syntax error reported and the next clause read), `check_singletons` and its kin, `reportReadError`, `LD->read_source`; since R1e's canonical `read_term_from_stream` with `read_term_options` (read_term_from_atom/3), `bind_variables`, `check_singletons`' list | `src/pl-read.c` |
 | `src/pl-umap.jl` | the Unicode map (since R1c): the syntax category and display width of every code point (`uflags_map`), its POSIX class (`uctype_map`, `ctype_to_flags`), the decimal digit runs, the paired brackets and quotes — data GENERATED from pl-umap.c by `tools/gen_umap.jl`, byte for byte — and their lookups (`uflagsRaw`, `uctypeRaw`, `pl_pair_lookup`) | `src/pl-umap.c`, `src/Unicode/prolog_syntax_map.pl` |
 | `src/os/pl-utf8.jl` | UTF-8 over a byte buffer (since R1c): decoding (`utf8_get_char`, `_PL__utf8_code_point`), encoding (`utf8_put_char`), skipping | `src/os/pl-utf8.c`, `src/os/pl-utf8.h` |
@@ -1066,6 +1066,7 @@ graph LR
     pl_atom --> SWI_Prolog
     pl_atom --> pl_inline
     pl_atom --> pl_ressymbol
+    pl_atom --> pl_read
     pl_termwalk --> term_interface
     pl_termwalk --> default_term
     pl_termwalk --> pl_incl
@@ -1607,6 +1608,7 @@ graph LR
     pl_setup --> pl_wrap
     pl_setup --> pl_trie
     pl_setup --> pl_op
+    pl_setup --> pl_read
     pl_setup --> pl_ext
     pl_proc --> term_interface
     pl_proc --> default_term
@@ -1946,10 +1948,13 @@ graph LR
     pl_read --> os_pl_prologflag
     pl_read --> os_pl_text
     pl_read --> os_pl_file
+    pl_read --> pl_proc
+    pl_read --> pl_pro
     pl_read --> pl_dict
     pl_read --> pl_trie
     pl_read --> pl_op
     pl_read --> pl_write
+    pl_read --> pl_string
     pl_qlf --> term_interface
     pl_qlf --> default_term
     pl_qlf --> os_pl_stream
@@ -2115,10 +2120,10 @@ or **platform** (a Windows or macOS definition: out of the count). **NO OWNER** 
 | category | done | refused | missing | platform | NO OWNER |
 |---|---:|---:|---:|---:|---:|
 | predicates (C-defined, reached by the boot) | 298 | 0 | 124 | 3 | 1 |
-| refusal sites | 0 | 73 | 0 | 0 | 3 |
+| refusal sites | 0 | 67 | 0 | 0 | 4 |
 | Prolog flags | 65 | 15 | 20 | 0 | 35 |
 | VM instructions | 197 | 0 | 36 | 0 | 0 |
-| **total** | 560 | 88 | 180 | 3 | 39 |
+| **total** | 560 | 82 | 180 | 3 | 40 |
 
 #### The boot and library files
 
@@ -2164,12 +2169,11 @@ Predicate rows each file's calls reach (a predicate several files call counts in
 | TAB1 | 56 | 51 | 5 | `$idg_add_edge/1`, `$idg_add_mono_dyn_dep/3`, `$idg_add_monotonic_dep/3`, `$idg_changed/1`, `$idg_false_edge/3`, `$idg_falsecount/2`, `$idg_forced/1`, `$idg_mono_affects/3`, … +48 |
 | AR1 | 28 | 27 | 1 | `succ/2`, `A_ADD`, `A_DOUBLE`, `A_ENTER`, `A_EQ`, `A_FIRSTVAR_IS`, `A_FUNC`, `A_FUNC0`, … +20 |
 | TH1 | 20 | 18 | 2 | `$engine_create/3`, `$gc_clear/1`, `$gc_stop/0`, `$gc_wait/1`, `$sig_unblock/0`, `engine_next/2`, `is_engine/1`, `message_queue_create/1`, … +12 |
-| ENC1 | 16 | 0 | 16 | `refusal set_stream/2's unicode_atoms(nfc)`, `refusal open/4's unicode_atoms(Mode) option`, `refusal string("open/4 with the stream encoding …`, `refusal Scanrepresent: encoding $enc`, `refusal Sgetcode: encoding $enc`, `refusal put_code: encoding $enc`, `refusal PL_canonicalise_text of $enc`, `refusal PL_mb_text of $(text.encoding)`, … +8 |
+| ENC1 | 17 | 0 | 17 | `refusal set_stream/2's unicode_atoms(nfc)`, `refusal open/4's unicode_atoms(Mode) option`, `refusal string("open/4 with the stream encoding …`, `refusal Scanrepresent: encoding $enc`, `refusal Sgetcode: encoding $enc`, `refusal put_code: encoding $enc`, `refusal PL_canonicalise_text of $enc`, `refusal PL_mb_text of $(text.encoding)`, … +9 |
 | LB3 | 14 | 0 | 14 | `refusal QLF predicate $close_wic/0`, `refusal QLF predicate $file_hash/2`, `refusal QLF predicate $map_id/2`, `refusal QLF predicate $open_wic/2`, `refusal QLF predicate $qlf_close/0`, `refusal QLF predicate $qlf_current_source/1`, `refusal QLF predicate $qlf_dependency/1`, `refusal QLF predicate $qlf_is_compatible/1`, … +6 |
 | DBG1 | 11 | 10 | 1 | `$call_no_catch/1`, `$can_yield/0`, `$leash/2`, `$visible/2`, `notrace/0`, `prolog_choice_attribute/3`, `prolog_frame_attribute/3`, `trace/0`, … +3 |
 | Q10 | 11 | 11 | 0 | `$on_signal/4`, `$put_token/2`, `$set_prolog_stack/4`, `$suspend_findall_bag/0`, `\=@=/2`, `current_blob/2`, `garbage_collect_atoms/0`, `shell/2`, … +3 |
 | P3 | 10 | 9 | 1 | `$depth_limit/3`, `$depth_limit_except/3`, `$depth_limit_false/3`, `$depth_limit_true/5`, `$inference_limit/2`, `$inference_limit_except/3`, `$inference_limit_false/1`, `$inference_limit_true/3`, … +2 |
-| RD2 | 8 | 0 | 8 | `refusal raw_read2: reading past the end of a str…`, `refusal raw_read2: the comments(C) read option`, `refusal raw_read2: the comments(C) read option`, `refusal read_clause's $what option`, `refusal read_clause's process_comment(true) or u…`, `refusal read_term's $what option`, `refusal read: a blob <type>(…)`, `refusal read: a quasi-quotation {\|Syntax\|\|Quotat…` |
 | LB5-LB7 | 6 | 2 | 4 | `$activate_static_extension/1`, `$clause_term_position/3`, `refusal iri_hook $what ('\$iri':iri_hook/4 of in…`, `refusal what`, `refusal format_predicate/2 (GD->format.predicate…`, `refusal expandVars: ~user (getpwnam)` |
 | REFUSED | 6 | 6 | 0 | `B_SMALLINTW`, `B_THROW`, `H_SMALLINTW`, `L_SMALLINTW`, `T_SMALLINTW`, `T_TRY_SMALLINTW` |
 | ZIP1 | 6 | 6 | 0 | `$rc_handle/1`, `zip_clone/2`, `zip_close_/2`, `zip_file_info_/3`, `zipper_goto/2`, `zipper_open_current/3` |
@@ -2194,7 +2198,7 @@ Predicate rows each file's calls reach (a predicate several files call counts in
 | TB6 | 1 | 1 | 0 | `S_INCR_DYNAMIC` |
 | WR2 | 1 | 0 | 1 | `refusal writing a grounded value SWI has no type…` |
 | WRAP1 | 1 | 0 | 1 | `refusal freeCodesDefinition! of a wrapped predic…` |
-| NO OWNER | 39 | 21 | 18 | `apple_current_locale_identifier/1`, `flag ci_set_flag (pl-index.c)`, `flag set_arith_flag (pl-arith.c)`, `flag tbl_set_restraint_flag (tabling restraints)`, `flag agc_margin`, `flag app_name`, `flag apple`, `flag apple_universal_binary`, … +31 |
+| NO OWNER | 40 | 21 | 19 | `apple_current_locale_identifier/1`, `flag ci_set_flag (pl-index.c)`, `flag set_arith_flag (pl-arith.c)`, `flag tbl_set_restraint_flag (tabling restraints)`, `flag agc_margin`, `flag app_name`, `flag apple`, `flag apple_universal_binary`, … +32 |
 
 #### Missing and refused per category
 
@@ -2204,7 +2208,7 @@ xychart-beta
     x-axis ["predicates", "refusal sites", "flags", "VM instructions"]
     y-axis "rows" 0 --> 150
     bar [124, 0, 20, 36]
-    line [0, 73, 15, 0]
+    line [0, 67, 15, 0]
 ```
 
 <!-- END GENERATED R2 status -->
@@ -2984,7 +2988,7 @@ src/pl-comp.jl, src/pl-read.jl, boot/init.jl, pl-global.jl, pl-incl.jl).
   constructs). So `branch_singleton`, `negation_singleton` and `unbalanced_var` are gated at the
   ANALYSIS (below), and reach a user when V9 compiles those bodies; nothing else is needed then.
 * **NOT PORTED:** read_clause's other options (`comments`, `process_comment(true)`, `var_prefix`,
-  `unicode_atoms`, `blob`: refused, as read_term's) and `style_check/1` (R2: boot's flags).
+  `unicode_atoms`: refused, as read_term's; `blob` is read since RD2) and `style_check/1` (R2: boot's flags).
   `term_position`, `subterm_positions` and `read_clause/3` as a predicate came with LB1 (below).
 * **Gates:** test/compile/test_compiler_warnings_swipl.jl (new): 33 pinned clauses + 1,500
   random clauses nesting `,`, `;`, `->`, `*->`, `\+` (the analysis) + 1,500 random conjunctions
@@ -3018,8 +3022,8 @@ src/pl-write.jl, src/pl-read.jl, src/os/pl-prologflag.jl, pl-ext.jl, pl-global.j
   7a on the cells as upstream (the mark's global top; the functor-cell marks), the two fields deleted
   2026-10-23 (audit D-0115); no attributed
   variables, no signals, no stack growth. `read_term_from_stream` REFUSES (`NotPortedError`) the
-  options it cannot honour: `comments`, `var_prefix`,
-  `quasi_quotations` (`term_position`, `subterm_positions` were refused until LB1), `unicode_atoms` (the NFC hook), `blob` (no blobs);
+  options it cannot honour: `unicode_atoms` (the NFC hook; `comments` and `var_prefix` since RD2a, `quasi_quotations` and `blob` since RD2;
+  `term_position`, `subterm_positions` were refused until LB1);
   `cycles(true)` was accepted and did nothing (no `@(T, B)` was read into a cycle: decision 4a)
   until group F (D-0123), which ports `instantiate_template`: the template unified with the term,
   then each `Var = Value` of the list (`type_error(list|equal, …)`, "invalid template", as upstream).
@@ -3410,16 +3414,15 @@ explicit error, term positions refused until needed.
   wide character — the same for every ASCII name); `bind_variable_names` builds the list and
   unifies it once; an atom's or a string's text is UTF-8 in `PL_chars_t`, where upstream's is
   Latin-1 or `wchar_t`.
-* **Refused, explicitly (`NotPortedError`):** a blob (`<type>(…)`, read only with the blob option), a
-  quasi-quotation (`{|Syntax||Text|}`) — at `start_pframe`, where swipl raises a syntax error
-  inside one (pinned); a dict (`Tag{…}`, `-{a}`, `X{…}`) is read since RDDICT (`read_dict_start`; section RDDICT); term-to-text
+* **Refused, explicitly (`NotPortedError`):** (a blob `<type>(…)` and a quasi-quotation `{|Syntax||Text|}` are read since
+  RD2, section RD1b below); a dict (`Tag{…}`, `-{a}`, `X{…}`) is read since RDDICT (`read_dict_start`; section RDDICT); term-to-text
   (`term_to_atom(+T, -A)`, `term_string(+T, -S)`: `PL_write_term`, R1e) and a float's text
   (`PL_get_text`'s `format_float`, R1e) — both ported since, R1e's core and R1e (floats).
 * **NOT PORTED:** read_term/2,3 and read_clause/3 (a stream argument: the stream table, R2),
   read_term_from_atom/3 (its options need `PL_scan_options`, which write_term/2,3 needs too: R1e),
   so `bind_variables`, `check_singletons`, `instantiate_template` (their options) and
-  `parse_quasi_quotations` (none is ever collected); term positions; atom locks (`Unlock`,
-  `rd->locked`: no atom GC); `$code_class/2`, `$is_named_var/1`, `$qq_open/2`; `PL_get_text`'s
+  `parse_quasi_quotations` (written since RD2); term positions; atom locks (`Unlock`,
+  `rd->locked`: no atom GC); `$code_class/2`, `$is_named_var/1` (`$qq_open/2` since RD2); `PL_get_text`'s
   `CVT_VARIABLE`, `CVT_VARNOFAIL` (`CVT_WRITE*`: ported since WR2). `$` is no operator: swipl's `op(1, fx, $)` comes
   from boot/topvars.pl (R1b noted it, as boot/init.pl's), which the kernel does not load until R2
   — never a misread: without it a `$` that takes an operand is two operands in a row (pinned).
@@ -3480,8 +3483,8 @@ constructs an explicit error.
   the term interface's atoms are Julia Symbols; the `swi_backslash_newline` warning is not printed
   (no message system); `nan15()` is a constant.
 * **NOT PORTED (explicit errors where reachable):** ENC_ANSI, UTF-16 and wchar encodings (UTF-8
-  only); `read_term`'s `comments(C)` option; reading past the end of a stream that raises it and a
-  non-file, non-string stream's error location (both name a stream: the stream table, R2); blobs,
+  only); a non-file, non-string stream's error location (it names a stream: the stream table, R2;
+  `comments(C)` and reading past the end of a stream that raises it are RD2a's); blobs (read since RD2),
   the NFC and non-ASCII atom policies, `dot_in_atom`, `char_conversion/2` (SWI-7's defaults: off);
   the case tables of pl-umap.c; the parser (R1d). CORRECTED in R1d: R1c listed quasi-quotations
   here as off by default — swipl's `quasi_quotations` flag is ON, and R1d detects them (`||`, `{|`).
@@ -5804,7 +5807,8 @@ What BLOB adds (pl-atom.c blob types, seen through the term interface; `is_blob`
 - **Written form**: `<stream>(0x<hex>)`, `<clause>(0x..)`, `<mutex>(0x..)` for write/print/writeq/write_canonical (also `show` of
   the reference type). swipl prints the C address, which a `Term` cannot reproduce: the test pins the SHAPE, not the digits
   (upstream's default `writeBlob` would print `<#hex>` of the payload; the stream/clause/mutex types print the shape above).
-- **Not covered**: dead blobs (`deadBlobType`), blob types with their own `compare`/`write`/`release` hooks.
+- **Dead blobs** (`deadBlobType`, `unavailable_blob`) since RD2: what `read_term/2,3` makes of `<type>(...)` with `blob(dead)`/`blob(resolve)`.
+- **Not covered**: blob types with their own `compare`/`write`/`release` hooks.
 
 Known-difference checklist item (D-0200, D-0149): two blobs of ONE type compare by CREATION INDEX (the handle) in the kernel
 (`compareAtomsBlob`, src/pl-prims.jl; `compare/3` in default_term.jl), where swipl orders streams and clause references by ADDRESS
@@ -6887,32 +6891,49 @@ stream, over the reader R1 built (`read_term_from_stream`); the pin tree is swip
   `PL_FA_ISO` flag mutants; read, not run). test/core_text/test_io.jl carries the upstream `no_protocol_in` unit
   (`read_term/3` on the `protocol` alias: `existence_error(stream, protocol)`).
 * **DEFERRED, each with its reason (none dropped):**
-  * `char_conversion/2` and `current_char_conversion/2` (pl-read.c:552-620, `FRG` at pl-ext.c:120-121): upstream keeps a static
-    257-entry table that `init_read_data` hands to the reader when the flag `char_conversion` is true (pl-read.c:851-854, 1430-1433).
-    The kernel has no home for it short of a `PL_global_data` field (a Tier-1 file), and the reader does no conversion (`read_data`
-    has no table). Left to a step that owns the field together with the conversion in `getchr__`; a half port is not made.
-  * `$qq_open/2` (pl-read.c:2425-2468, `O_QUASIQUOTATIONS`): its argument is built by the parser's quasi-quotation reader, which
-    the kernel's reader refuses (R1's decision), so no term of that shape exists. Deferred with the quasi-quotation step.
-  * `$code_class/2` (pl-read.c:7402, in the table at 7451): not in the sizing's RD1 list; library/prolog_colour.pl is its one
-    caller. Deferred to the library step.
+  * (`char_conversion/2` and `current_char_conversion/2` are written since RD2b: the table is `PL_global_data.char_conversion_table`, applied by `getchr__`
+    while the flag `char_conversion` is set, `init_read_data` taking it; test/core_text/test_char_conversion_swipl.jl.)
+  * (`$qq_open/2` (pl-read.c:2425-2468, `O_QUASIQUOTATIONS`) is written since RD2: `pl_qq_open2_va`, over the quasi-quotation reader below.)
+  * (`$code_class/2` (pl-read.c:7398-7440) is written since RD2b: `pl_code_class2_va`, registered in `PL_predicates_from_read`.)
   * The `unify_location` refusal (src/pl-read.jl:1087, the reader's refusal exception, "a stream's location, `stream(S, L, LP, C)`"): a syntax
     error on a stream with no file name that is no string stream. The stream table exists since S1, so the branch can be written;
     it is the reader's internals, so it waits for a step of its own (question to the audit, flag 4 of evidence/RD1/handoff.md).
     Rows over `open_string/2` streams that end in a syntax error hit it and are the KNOWN ones.
-  * The read_term options the reader refuses: `comments`, `var_prefix`, `quasi_quotations` and `unicode_atoms`
-    (the refusal exception in `read_term_from_stream`, existing since R1; rows rt300-rt302 and rt304 pin the refusal). Each waits for the
-    reader feature behind it (comment collection, the variable-prefix flag, quasi-quotations, Unicode atoms).
+  * The read_term option the reader refuses: `unicode_atoms` (the refusal exception in `read_term_from_stream`, existing since R1;
+    row rt304 pins the refusal). It waits for the reader feature behind it (Unicode atoms). `comments` and `var_prefix` are read since RD2a,
+    `quasi_quotations` since RD2.
 * **RD1b, the `blob(Mode)` read option (pl-read.c:669-677, 3605-3670, 3905-3921, 5940-6010, 6771-6790, 6801, 6988; the
   option the toplevel passes, toplevel.pl:1327 and history.pl:80):** ported as upstream has it in `read_term/2,3` and `read_clause/3`:
   `atom_to_blob_mode_ex` takes `error`, `dead` and `resolve` (`rd.blobs`, one new field of `read_data`) and raises
   `domain_error(blob, Atom)` for another atom; the tokeniser claims `<type>(` (`blob_syntax_available`, `blob_name_char`,
   `scan_blob_name`) only in `dead` and `resolve` mode, where an operator is not expected and `<` is no prefix operator of the module.
-  **DIVERGES (owner: the blob step):** a claimed `<type>(` is refused when read (`start_pframe`, the refusal exception), where upstream
-  builds a dead blob (`read_blob_start`, `read_blob_end`, `newDeadBlob`, `lookupLiveBlob`): the kernel has no blob object without a
-  foreign object behind it, and no `rd->blob_start`/atom lock is kept. Text with no `<type>(` reads as upstream's in every mode (the
-  toplevel's `blob(resolve)` reads), rows rt303 and rt305-rt319 pin this; rt320 and rt321 are the KNOWN rows of the refusal.
+  RD2 (below) lifts the refusal this paragraph described: a claimed `<type>(` builds a dead blob as upstream does. Text with no `<type>(`
+  reads as upstream's in every mode (the toplevel's `blob(resolve)` reads), rows rt303 and rt305-rt319 pin this.
+* **RD2, the blob read and the quasi-quotation read (pl-read.c PF_BLOB, PF_QQ; pl-atom.c deadBlobType, blob_address, scanLiveBlobs,
+  lookupLiveBlob, newDeadBlob, write_unavailable):** `read_blob_start`/`read_blob_arg`/`read_blob_resume`/`read_blob_end` read `<type>(...)`
+  into a blob of the type `unavailable_blob` (text kept, `atom/1` fails); with `blob(resolve)` `lookupLiveBlob` first looks for the one live
+  blob that WRITES as the text (`blob_written_text`, src/pl-write.jl: the kernel's blob types have no `write` hook) and takes it, else the
+  dead blob. `read_qq_start`/`read_qq_resume` read `{|Syntax||Quotation|}`; `parse_quasi_quotations` calls `'$parse_quasi_quotations'/2` (in `system`) on the
+  collected quasi-quotations after the term. **DIVERGES (representation):** `'$quasi_quotation'(Ptr, Start, Len)` names the read by `objectid(rd)`, not a C pointer, and
+  `PL_local_data.read_contexts` (a new last field) is where `$qq_open/2` finds the data again while the library runs; a blob's "address" is
+  its atom word. Tests: test/core_text/test_read_qq_swipl.jl, test_read_blob_swipl.jl (swipl-pinned); mutants: tools/mutants/RD2.py.
 * **Tier 3:** no Tier-1 file changed and no enum, so no `_enum_hash` entry and no allocation pins (RD1b adds the field `blobs` to
   `read_data`); the manifest gets eleven entries (test/static_analysis_manifest.jl). No battery.
+* **RD2a, the comments collector, `eof_action(error)`, `var_prefix` and the comment hook (pl-read.c at 18168e62: `add_comment` 1626-1661,
+  `raw_read2` 1664-1864, `callCommentHook` 6827-6862, `read_clause` 6871-6954, `read_term_from_stream` 7017-7120; edit-only, the gate
+  decides):** `comments(C)` of `read_term/2,3` and `read_clause/3` collects each block comment and each run of `%` lines as one
+  `Pos-String` (`-`-String without a position); reading past the end of a stream whose `eof_action` is `error` raises
+  `permission_error(input, past_end_of_stream, Stream)`; `var_prefix(P)` is honoured (after the module, as upstream);
+  `read_clause/3` calls `prolog:comment_hook(Comments, TermPos, Term, VarNames)` when it has clauses (`process_comment`, default true then).
+  **DIVERGES:** the comment text is a byte vector where upstream uses a `tmp_buffer`; the hook procedure is looked up at each `read_clause`
+  call (upstream caches it) and given `P_MULTIFILE` there, which boot/init.pl does (`:- multifile prolog:comment_hook/4`; no boot file here);
+  `callCommentHook` discards its foreign frame also when the term references could not be made; a syntax error retried by `read_clause`
+  with a hook defined: swipl 10.1.20 FAILS the read (observed on `% c\nf(a b).\n% d\ng(_).`, cause not traced), the kernel resets
+  `tpos` at each retry and goes on. **Still refused, owners unchanged:** a blob `<type>(...)` (PF_BLOB), quasi-quotations, read_term's
+  `quasi_quotations` option (RD2), `unicode_atoms` of `read_clause`/`read_term` (ENC1). New helpers `add_comment`, `callCommentHook`
+  (manifest entries added). Rows: test/core_text/test_read_comments_swipl.jl (new, pinned from swipl 10.1.20); rt300 and rt301 of
+  test_read_stream_swipl.jl moved from the known rows to the cases. The generated R2 status block (the RD2 row, line ~2103) is
+  regenerated with `tools/r2_status.jl` at the gate, never by hand.
 
 ## HALT1 — `halt/1`, `abort/0`, `PL_halt`, `PL_cleanup` (R2, pl-fli.c, pl-init.c, pl-setup.c, pl-pro.c, pl-wam.c at swipl-devel cbf4e189; edit-only: nothing was compiled when this was written, the gate decides)
 
