@@ -52,6 +52,11 @@ t22(R) :- lead_cmp, set_prolog_flag(float_rounding, to_nearest), Z is 1/3.0, R =
 % the inner roundtoward's mode a variable bound at run time (A_ROUNDTOWARDS_V), the outer's mode back after it: the sum is under to_zero
 rtv(M, Y) :- Y is roundtoward(roundtoward(1/3.0, M) + 1/3.0, to_zero).
 t23(R) :- rtv(to_positive, Y), Z is 1/3.0, R = Y-Z.
+% a variable bound to a COMPOUND, read by A_VAR inside roundtoward with the flag not to_nearest: the pin's a_var_n calls evalExpression, which never
+% touches the hardware mode, so the walk of X runs in the roundtoward's mode (to_zero), not the flag's (to_positive): 0.3333333333333333
+t24(R) :- set_prolog_flag(float_rounding, to_positive), X = 1/3.0, Z is roundtoward(X, to_zero), set_prolog_flag(float_rounding, to_nearest), R = Z.
+rtx(X, M, Y) :- Y is roundtoward(X, M).
+t25(R) :- set_prolog_flag(float_rounding, to_positive), rtx(1/3.0, to_zero, A), rtx(1/3.0, to_negative, B), set_prolog_flag(float_rounding, to_nearest), R = A-B.
 % KNOWN DIFFERENCES (not in the .out): the pin's AR_CLEANUP puts back the mode the LAST roundtoward found, which is the OUTER
 % roundtoward's mode when the error comes inside or after the inner one, so the mode of the outer stays set (a leak of the pin);
 % the kernel keeps the entry mode in `ar_femode` and puts it back at every end, so no mode leaks.

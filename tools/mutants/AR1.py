@@ -791,4 +791,7 @@ MUTANTS = [
     dict(id='AR1-E149 ar_throw: AR_CLEANUP does not put the mode back (KILL t15, t16: the 1/3.0 after the caught error reads the leaked to_positive)', file='src/pl-wam.jl', targets=TRO,
          old='    fegetround() != ar_femode && fesetround(ar_femode)  # AR_CLEANUP()\n',
          new='    # AR_CLEANUP() dropped\n'),
+    dict(id='AR1-E150 _vmi_a_var!: the variable is evaluated with evalExpression_cells, which sets the flag mode (the pin reads a_var_n -> evalExpression: no mode set) (KILL t24, t25: the compound 1/3.0 inside roundtoward(X, to_zero) rounds up under the flag to_positive)', file='src/pl-wam.jl', targets=TRO,
+         old='        av_rc = _evalExpression_walk(ld, av_t, av_n)\n',
+         new='        av_rc = evalExpression_cells(ld, av_t, av_n)\n'),
 ]
