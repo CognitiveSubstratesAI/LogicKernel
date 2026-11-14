@@ -1077,6 +1077,10 @@ end
 # PORT: pl-indirect.c extern_indirect
 # DIVERGES: returns the value (upstream builds the indirect on the global stack and returns its word); the caller makes the cell
 # from the value (`_vword!`).
+# Synced to cf6960c2: upstream builds the result cell with `consIndirect(r, indKind(val))` where it had `tag(val)` (the kind of a cell
+# is now six bits: tag, storage and a variant bit, so a rational keeps its own kind); the kernel hands back the value and its kind is
+# the value's (`number_kind`), so no code changes. `extern_indirect_no_shift` (same change) has no kernel counterpart: no table is
+# copied out in place here.
 "The value the handle `w` of an interned indirect names in `tab` (pl-indirect.c `extern_indirect`)."
 function extern_indirect(tab::indirect_table{T}, w::word)::T where {T}
     return tab.values[Int(valTagged(w))]
