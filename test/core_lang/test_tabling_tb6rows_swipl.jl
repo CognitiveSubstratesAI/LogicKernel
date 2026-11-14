@@ -570,20 +570,23 @@ const _T6_GROUPS = [
 
 # Rows whose kernel side cannot answer yet: `GROUP/case => owner`. Each is `@test_broken` below, the same comparison as its neighbours.
 const _T6_BROKEN = Dict{String, String}(
-    "SINGLE/s02" => "owner TR4: compile_trie (pl-trie.c:4462-5190) and `compiled_size` (pl-trie.c:4301-4310); `'\$trie_property'(T, compiled_size(_))` fails before TR4 (pl-trie.jl:3085)",
-    "SINGLE/s03" => "owner TR4: the same (a non-incremental single answer is compiled)",
-    "SINGLE/s04" => "owner TR4: the same (two answers after the assertz)",
-    "ABOLISH/a02" => "owner TB5: `'\$tbl_abolish_local_tables'/0`, `'\$tbl_destroy_table'/1` (pl-tabling.c) are not in the kernel; abolish_all_tables (boot/tabling.pl:1120) calls them",
-    "ABOLISH/a03" => "owner TB5: follows a02 (the tables the row re-creates were abolished by it)",
-    "ABOLISH/a04" => "owner TB5: abolish_module_tables/1 (boot/tabling.pl:1133) calls the same two",
-    "ABOLISH/a05" => "owner TB5: abolish_table_subgoals/1 (boot/tabling.pl:1146-1164) calls `'\$tbl_destroy_table'/1`",
-    "ABOLISH/a06" => "owner TB5: abolish_nonincremental_tables/0 (boot/tabling.pl:1187) calls `'\$tbl_destroy_table'/1`",
-    "ABOLISH/a07" => "owner TB5: abolish_module_tables/1",
-    "ABOLISH/a08" => "owner TB5: abolish_table_subgoals/1",
-    "EXPAND/x02" => "owner TB5: abolish_table_subgoals/1 (boot/tabling.pl:1146-1164) calls `'\$tbl_destroy_table'/1`, which cannot be found in the kernel",
-    "EXPAND/x03" => "owner TB5: follows x02 (the dead slot x02 leaves in xd's edge set is what x03 revives; kills TB6-S6 then)",
-    "EXPAND/x04" => "owner TB5: follows x02 (the node counts after the abolish)",
-    "EXPAND/x05" => "owner TB5: follows x02 (t3 is `none` only after the abolish)"
+    # UPDATED (TB6-HAND): the owner builtin of every entry below is NOW ON this branch (wip/tb6p2), so each row is EXPECTED TO PASS. The entries stay
+    # `@test_broken` until the kernel run shows the unexpected passes (an unexpected pass is an error by design: the run decides); the dispatcher then
+    # flips the rows to `@test` and deletes the entries. The old owner text follows in each entry after `was:`.
+    "SINGLE/s02" => "owner builtin PRESENT: the `compiled_size` handler of `'\$trie_property'/2` (src/pl-trie.jl:3114, pl-trie.c:4301-4310) reads `tr.clause_cref`, set by `compile_trie` (pl-trie.jl:3574, pl-trie.c:4462-5190), so the row is expected to pass; was: owner TR4, `compiled_size` failed before TR4",
+    "SINGLE/s03" => "owner builtin PRESENT: the same (a non-incremental single answer is compiled); expected to pass",
+    "SINGLE/s04" => "owner builtin PRESENT: the same (two answers after the assertz); expected to pass",
+    "ABOLISH/a02" => "owner builtins PRESENT: `'\$tbl_abolish_local_tables'/0` (src/pl-tabling.jl:9994) and `'\$tbl_destroy_table'/1` (:9773), both registered (:10866-10868); abolish_all_tables (vendor/swipl-devel/boot/tabling.pl:1120) calls them; expected to pass; was: `cannot be found` in the kernel",
+    "ABOLISH/a03" => "owner builtins PRESENT: follows a02 (the tables the row re-creates were abolished by it); expected to pass",
+    "ABOLISH/a04" => "owner builtins PRESENT: abolish_module_tables/1 (boot/tabling.pl:1133) calls the same two; expected to pass",
+    "ABOLISH/a05" => "owner builtin PRESENT: `'\$tbl_destroy_table'/1` (pl-tabling.jl:9773); abolish_table_subgoals/1 (boot/tabling.pl:1158-1168, vendored) calls it; expected to pass",
+    "ABOLISH/a06" => "owner builtin PRESENT: `'\$tbl_destroy_table'/1`; abolish_nonincremental_tables/0 (boot/tabling.pl:1187) calls it; expected to pass",
+    "ABOLISH/a07" => "owner builtins PRESENT: abolish_module_tables/1; expected to pass",
+    "ABOLISH/a08" => "owner builtin PRESENT: abolish_table_subgoals/1 (vendored boot/tabling.pl:1158); expected to pass",
+    "EXPAND/x02" => "owner builtin PRESENT: abolish_table_subgoals/1 (vendored boot/tabling.pl:1158-1168) calls `'\$tbl_destroy_table'/1` (pl-tabling.jl:9773); expected to pass; was: `cannot be found` in the kernel",
+    "EXPAND/x03" => "owner builtin PRESENT: follows x02 (the dead slot x02 leaves in xd's edge set is what x03 revives; kills TB6-S6 then); expected to pass",
+    "EXPAND/x04" => "owner builtin PRESENT: follows x02 (the node counts after the abolish); expected to pass",
+    "EXPAND/x05" => "owner builtin PRESENT: follows x02 (t3 is `none` only after the abolish); expected to pass"
 )
 
 @testset "TB6 rows as swipl's: $(g.label)" for g in _T6_GROUPS
