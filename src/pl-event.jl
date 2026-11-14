@@ -33,8 +33,14 @@ struct event_type
 end
 
 # PORT: pl-event.c PL_events
-# DIVERGES: the twelve rows of the O_ENGINES build in upstream's order (`erase` and `break` repeat per event id: a name
-# resolves to its FIRST row); the sentinel `{0}` is not kept.
+# DIVERGES: the sentinel `{0}` is not kept; `erase` and `break` repeat per event id (a name resolves to its FIRST row), in upstream's
+# order. The kernel is the build MULTI_THREADED=OFF, ENGINES=OFF (src/os/pl-prologflag.jl:45-47; audit D-0716 item 7, TH1a), so the
+# table has the NINE rows of pl-event.c:81-89. The three rows of `#ifdef O_ENGINES` (pl-event.c:90-93: `thread_start`, `thread_exit`,
+# `this_thread_exit`) are not compiled: `get_event_listp` finds no row for such a NAME and ends in `PL_domain_error("event", type)`
+# (pl-event.c:235), as for any unknown event; the threaded oracle accepts them (test/core_lang/test_event_threads_off_swipl.jl).
+# The `PLEV_THREAD_*` ids stay (pl-event.h:52-54 is not conditional); the `onthreadstart`/`onthreadexit` fields of the lists and of the
+# local data are inside `#ifdef O_ENGINES` upstream (pl-global.h:307-310, :705-707) and are kept here as fields that are never set (a
+# struct change is not worth the dead fields).
 "The events `prolog_listen/2,3` accepts (pl-event.c `PL_events`): the index in the table is the event's id plus one."
 const PL_events = (
     event_type(PLEV_ABORT, :abort, 0, false, :onabort),
@@ -45,10 +51,7 @@ const PL_events = (
     event_type(PLEV_NOBREAK, :break, 3, false, :onbreak),
     event_type(PLEV_RETRACTNOBREAK, :break, 3, false, :onbreak),
     event_type(PLEV_FRAMEFINISHED, :frame_finished, 1, false, :onframefinish),
-    event_type(PLEV_UNTABLE, :untable, 1, false, :onuntable),
-    event_type(PLEV_THREAD_START, :thread_start, 1, false, :onthreadstart),
-    event_type(PLEV_THREAD_EXIT, :thread_exit, 1, false, :onthreadexit),
-    event_type(PLEV_THIS_THREAD_EXIT, :this_thread_exit, 0, true, :event_hook_onthreadexit)
+    event_type(PLEV_UNTABLE, :untable, 1, false, :onuntable)
 )
 
 # PORT: pl-event.h event_list_location as event_location
@@ -73,8 +76,6 @@ function event_list_at(
     loc_ === :onerase && return h.onerase
     loc_ === :onbreak && return h.onbreak
     loc_ === :onframefinish && return h.onframefinish
-    loc_ === :onthreadstart && return h.onthreadstart
-    loc_ === :onthreadexit && return h.onthreadexit
     return h.onuntable
 end
 
@@ -101,10 +102,6 @@ function event_list_set!(
             h.onbreak = list
         elseif loc_ === :onframefinish
             h.onframefinish = list
-        elseif loc_ === :onthreadstart
-            h.onthreadstart = list
-        elseif loc_ === :onthreadexit
-            h.onthreadexit = list
         else
             h.onuntable = list
         end
@@ -590,8 +587,10 @@ function PL_call_event_hook(
 end
 
 # PORT: pl-event.c PL_call_event_hook_va
-# DIVERGES: `args` are the event's values; the thread events raise a `NotPortedError` naming TH1 (`unify_thread_id`: no
-# thread table); an unknown event is `false` (upstream warns).
+# DIVERGES: `args` are the event's values; an unknown event is `false` (upstream warns). The cases `PLEV_THREAD_START`,
+# `PLEV_THREAD_EXIT` and `PLEV_THIS_THREAD_EXIT` (pl-event.c:682-691) are inside `#ifdef O_ENGINES`: the kernel is the ENGINES=OFF
+# build, so they are not compiled and the table has no row for them (`PL_events[ev + 1]` of such an id is a `BoundsError` where upstream
+# reads past its table; only pl-thread.c raises them, under O_PLMT).
 "Raise the event `ev`: put its arguments and call its listeners; false iff there is an exception in a hook (pl-event.c)."
 function PL_call_event_hook_va(
     gd::PL_global_data{T}, ld::PL_local_data{T}, ev::Int, args...
@@ -639,14 +638,6 @@ function PL_call_event_hook_va(
         )
     elseif ev == PLEV_FRAMEFINISHED
         rc = PL_put_frame(ld, av + 1, event_arg(Int, args, 1))
-    elseif ev == PLEV_THREAD_START || ev == PLEV_THREAD_EXIT
-        throw(
-            NotPortedError{T}(
-                mk_sym(T, :prolog_listen), "the thread events (`unify_thread_id`)", "TH1"
-            )
-        )
-    elseif ev == PLEV_THIS_THREAD_EXIT
-        # nothing to put
     elseif ev == PLEV_UNTABLE
         proc = event_arg(Procedure{T}, args, 1)
         rc = unify_definition(

@@ -12,11 +12,11 @@ pred:$depth_limit/3	P3	seed: missing_c_preds.tsv
 pred:$depth_limit_except/3	P3	seed: missing_c_preds.tsv
 pred:$depth_limit_false/3	P3	seed: missing_c_preds.tsv
 pred:$depth_limit_true/5	P3	seed: missing_c_preds.tsv
-pred:$engine_create/3	TH1	seed: missing_c_preds.tsv
+pred:$engine_create/3	TH1	absent as upstream non-PLMT, DIVERGES vs threads=true oracle
 pred:$foreign_predicate_source/2	PR1	seed: missing_c_preds.tsv
-pred:$gc_clear/1	TH1	seed: missing_c_preds.tsv
-pred:$gc_stop/0	TH1	seed: missing_c_preds.tsv
-pred:$gc_wait/1	TH1	seed: missing_c_preds.tsv
+pred:$gc_clear/1	TH1	absent as upstream non-PLMT, DIVERGES vs threads=true oracle
+pred:$gc_stop/0	TH1	absent as upstream non-PLMT, DIVERGES vs threads=true oracle
+pred:$gc_wait/1	TH1	absent as upstream non-PLMT, DIVERGES vs threads=true oracle
 pred:$idg_add_mono_dyn_dep/3	TAB1	seed: missing_c_preds.tsv
 pred:$idg_add_monotonic_dep/3	TAB1	seed: missing_c_preds.tsv
 pred:$idg_changed/1	TAB1	seed: missing_c_preds.tsv
@@ -44,7 +44,7 @@ pred:$put_token/2	Q10	seed: missing_c_preds.tsv
 pred:$rc_handle/1	ZIP1	seed: missing_c_preds.tsv
 pred:$seek_list/4	P2	seed: missing_c_preds.tsv
 pred:$set_prolog_stack/4	Q10	seed: missing_c_preds.tsv
-pred:$sig_unblock/0	TH1	seed: missing_c_preds.tsv
+pred:$sig_unblock/0	TH1	absent as upstream non-PLMT, DIVERGES vs threads=true oracle
 pred:$snapshot/1	TX1	seed: missing_c_preds.tsv
 pred:$suspend_findall_bag/0	Q10	seed: missing_c_preds.tsv
 pred:$tbl_abolish_local_tables/0	TAB1	seed: missing_c_preds.tsv
@@ -66,33 +66,33 @@ pred:$visible/2	DBG1	seed: missing_c_preds.tsv
 pred:char_type/2	CT1	seed: missing_c_preds.tsv
 pred:code_type/2	CT1	seed: missing_c_preds.tsv
 pred:current_blob/2	Q10	seed: missing_c_preds.tsv
-pred:engine_next/2	TH1	seed: missing_c_preds.tsv
+pred:engine_next/2	TH1	absent as upstream non-PLMT, DIVERGES vs threads=true oracle
 pred:format_time/3	TAI1	seed: missing_c_preds.tsv
 pred:garbage_collect_atoms/0	Q10	seed: missing_c_preds.tsv
 pred:get/1	S2a	seed: missing_c_preds.tsv
 pred:get/2	S2a	seed: missing_c_preds.tsv
 pred:get_flag/2	FL1	seed: missing_c_preds.tsv
-pred:is_engine/1	TH1	seed: missing_c_preds.tsv
-pred:message_queue_create/1	TH1	seed: missing_c_preds.tsv
-pred:message_queue_destroy/1	TH1	seed: missing_c_preds.tsv
+pred:is_engine/1	TH1	absent as upstream non-PLMT, DIVERGES vs threads=true oracle
+pred:message_queue_create/1	TH1	absent as upstream non-PLMT, DIVERGES vs threads=true oracle
+pred:message_queue_destroy/1	TH1	absent as upstream non-PLMT, DIVERGES vs threads=true oracle
 pred:notrace/0	DBG1	seed: missing_c_preds.tsv
 pred:prolog_choice_attribute/3	DBG1	seed: missing_c_preds.tsv
 pred:prolog_frame_attribute/3	DBG1	seed: missing_c_preds.tsv
 pred:put/1	S2a	seed: missing_c_preds.tsv
 pred:put/2	S2a	seed: missing_c_preds.tsv
 pred:set_flag/2	FL1	seed: missing_c_preds.tsv
-pred:set_thread/2	TH1	seed: missing_c_preds.tsv
+pred:set_thread/2	TH1	absent as upstream non-PLMT, DIVERGES vs threads=true oracle
 pred:shell/2	Q10	seed: missing_c_preds.tsv
 pred:sub_atom_icasechk/3	P2	seed: missing_c_preds.tsv
 pred:succ/2	AR1	seed: missing_c_preds.tsv
-pred:thread_create/3	TH1	seed: missing_c_preds.tsv
-pred:thread_exit/1	TH1	seed: missing_c_preds.tsv
-pred:thread_get_message/2	TH1	seed: missing_c_preds.tsv
+pred:thread_create/3	TH1	absent as upstream non-PLMT, DIVERGES vs threads=true oracle
+pred:thread_exit/1	TH1	absent as upstream non-PLMT, DIVERGES vs threads=true oracle
+pred:thread_get_message/2	TH1	absent as upstream non-PLMT, DIVERGES vs threads=true oracle
 pred:thread_idle/2	Q10	seed: missing_c_preds.tsv
-pred:thread_join/2	TH1	seed: missing_c_preds.tsv
-pred:thread_property/2	TH1	seed: missing_c_preds.tsv
-pred:thread_send_message/2	TH1	seed: missing_c_preds.tsv
-pred:thread_statistics/3	TH1	seed: missing_c_preds.tsv
+pred:thread_join/2	TH1	absent as upstream non-PLMT, DIVERGES vs threads=true oracle
+pred:thread_property/2	TH1	absent as upstream non-PLMT, DIVERGES vs threads=true oracle
+pred:thread_send_message/2	TH1	absent as upstream non-PLMT, DIVERGES vs threads=true oracle
+pred:thread_statistics/3	TH1	absent as upstream non-PLMT, DIVERGES vs threads=true oracle
 pred:trace/0	DBG1	seed: missing_c_preds.tsv
 pred:tracing/0	DBG1	seed: missing_c_preds.tsv
 pred:trim_heap/0	Q10	seed: missing_c_preds.tsv
@@ -154,7 +154,6 @@ refusal:src/os/pl-file.jl::openStream::open(pipe(Command), …)	S2b	open(pipe(Cm
 refusal:src/os/pl-file.jl::pl_close::closing a stream pair	S2b	close of a stream pair (pl-file.c do_close via stream_pair); with the pair itself
 refusal:src/os/pl-file.jl::set_stream::set_stream/2's locale(Locale)	CT1	set_stream/2 locale(Locale) (pl-file.c set_stream, PL_locale); with open/4's locale option
 refusal:src/pl-comp.jl::compileSubClause!::compileArith (optimise)	AR1	compileArith under the optimise flag (pl-comp.c O_COMPILE_ARITH); needs the A_* instructions (Q-AR3)
-refusal:src/pl-event.jl::PL_call_event_hook_va::the thread events (`unify_thread_id`)	TH1	thread events unify_thread_id (pl-event.c); threads flag is false
 refusal:src/pl-proc.jl::pl_set_predicate_attribute3_va::spy points (GP_RESOLVE)	DBG1	spy points, GP_RESOLVE (pl-proc.c pl_set_predicate_attribute, SPY_ME)
 refusal:src/pl-proc.jl::setAttrDefinition::setAttrDefinition: attribute $attr	SSU1b	P_CLAUSABLE and P_DET in setAttrDefinition (pl-proc.c); SSU1b is the det/1 setter
 refusal:src/pl-read.jl::_atom_from_text::an atom containing the character 0 (a Symbol cannot hold it)	ATOM1	atoms holding the character 0 (pl-read.c atom from text); board row ATOM1, D-0410 item 7
@@ -195,3 +194,5 @@ refusal:src/pl-string.jl::pl_string_bytes3_va::string_bytes/3 with the encoding 
 refusal:src/pl-supervisor.jl::freeCodesDefinition!::freeCodesDefinition! of a wrapped predicate needs the databa	WRAP1	freeCodesDefinition of a wrapped predicate (pl-supervisor.c), needs the database; wrap closures are WRAP1
 refusal:src/pl-wam.jl::PL_next_solution_guarded::the VM instruction $(codeTable(thiscode).name)	TAB1	dispatch fallthrough for a VM instruction without a body (pl-vmi.c); each missing instruction has its own vmi: row, the last instruction (S_TABLED) removes this site
 refusal:src/pl-write.jl::writePrimitive::writing a grounded value SWI has no type for	WR2	writePrimitive of a grounded value SWI has no type for; a representation guard of the kernel, permanent until the blob writer takes it
+# THREAD-LOCAL OWNER (no row key: the predicate is done, D-0716 item 7): the ENGINES=OFF branch of setThreadLocalDefinition (pl-proc.c:3829-3838) is recorded as a DIVERGES at src/pl-proc.jl setThreadLocalDefinition!; owner TH1, its own small step, rows against the second oracle.
+# COUNTING OWNER (no row key: the predicate is done, D-0716 Q4): `$inc_message_count`/1 and the counting into statistics(errors|warnings) (pl-error.c:1457-1474), owner ERR/PRIMS: the kernel does not count (needs a field in ld_statistics); a swipl row when it is added.

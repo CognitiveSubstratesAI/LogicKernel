@@ -1680,9 +1680,14 @@ function pl_get_clause_attribute3_va(
 end
 
 # PORT: pl-proc.c setThreadLocalDefinition
-# DIVERGES: the `O_ENGINES` branch (the one the oracle's build takes) without its storage: the kernel has one thread, so there is no
-# per-thread clause vector (`new_ldef_vector()`) and no `SUPERVISOR(thread_local)` (`S_THREAD_LOCAL` is not ported): the clauses live in
-# the predicate's own list and the reset supervisor (`freeCodesDefinition!`) is made dynamic by `P_DYNAMIC`. `ld` is an argument
+# DIVERGES: the kernel is the build ENGINES=OFF (TH1a, D-0716), whose branch is the `#else` of pl-proc.c:3829-3838
+# (`setDynamicDefinition(def, val)`, then set or clear `P_VOLATILE|P_THREAD_LOCAL`, always true). This function takes the `O_ENGINES`
+# branch (pl-proc.c:3799-3828, the one the threaded oracle takes) instead; the two differ visibly: a static predicate WITH clauses
+# declared thread-local is refused here and accepted by the `#else` branch (no `P_TRANSACT` there), and thread-local to static is
+# refused here and accepted there. Kept on the dispatcher's ruling (D-0716 item 7, TH1a): its own small step later, owner TH1 (it needs
+# the second oracle, MULTI_THREADED=OFF ENGINES=OFF, for its rows). The branch taken is also without its storage: the kernel has one
+# thread, so there is no per-thread clause vector (`new_ldef_vector()`) and no `SUPERVISOR(thread_local)` (`S_THREAD_LOCAL` is not
+# ported): the clauses live in the predicate's own list and the reset supervisor (`freeCodesDefinition!`) is made dynamic by `P_DYNAMIC`. `ld` is an argument
 # (upstream's `PL_error(NULL, ...)` reads `LD`); no `LOCKDEF`. Whether an ERASED clause still in the list refuses (as upstream's
 # `first_clause`) depends on `cleanDefinition!` having run, as upstream's depends on its clause GC.
 "Make `def` thread-local (`val`: static to local; refused if it has clauses) or static (always refused, `predicate is thread-local`) (pl-proc.c)."

@@ -30,8 +30,9 @@ end
 
 # PORT: pl-global.h hook as event_hooks
 # DIVERGES: GD's `event.hook` struct as a mutable struct of its own (a list is created at its first listener, as
-# `get_event_list` does); the thread events' lists exist in every build (O_ENGINES). The LD's `onthreadexit` is a field
-# of the local data (`event_hook_onthreadexit`).
+# `get_event_list` does); the thread events' fields `onthreadstart`/`onthreadexit` (pl-global.h:307-310) and the LD's
+# (`event_hook_onthreadexit`, pl-global.h:705-707) are inside `#ifdef O_ENGINES` upstream: the kernel is ENGINES=OFF (TH1a, D-0716),
+# so they stay as fields that are never set (see the table in src/pl-event.jl).
 "The event lists of the database (pl-global.h `GD->event.hook`): `nothing` until a first listener (NULL)."
 mutable struct event_hooks{T}
     onabort::Union{Nothing, event_list{T, definition{T}}}           # the `abort` event's listeners
