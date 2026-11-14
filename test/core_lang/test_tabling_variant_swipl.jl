@@ -395,6 +395,149 @@ end
     @test ans(_TV_PINNED, "tvi01") != ans(_TV_PINNED, "tvi04")          # a qualified goal is answered qualified, a plain one plain
 end
 
+# DEFKILL3 rows (white-box, no swipl: each premise is asserted, so a wrong premise is a plain failure). They kill the TB1 mutants that
+# were DEFERRED KILL: R2, V5, G9, T3, F5, F6, L1, L4, N2, N3. Expectations are the C control flow of pl-tabling.c at the pin
+# (18168e62) and pl-trie.h:201-211, with the kernel's line on the other side in each comment.
+@testset "TB1 white-box rows: the tag, the pool, the nodes, the status, the release, the start nodes (DEFKILL3)" begin
+    gd, ld, st = _tv_load(_TV_COMMON * _TV_KERNEL)
+    @test st == "ok"
+
+    # TB1-R2: pl-trie.h:201-211 `TRIE_PTR_TAG` is 0x7 (kernel src/pl-tabling.jl: `const TRIE_PTR_TAG = UInt64(0x7)`); the value
+    # round trip alone holds for any tag, so the literal and the low bits of a registered value are read.
+    @test LK.TRIE_PTR_TAG == 0x7
+    atries = _tv_tables!(gd, ld)
+    variants = LK.variant_table(ld, false)
+    @test all(a -> (variants.nodes[a.variant].value & 0x7) == 0x7, atries)
+
+    # TB1-V5: pl-tabling.c:2605 `variant_table()` makes LD->tabling.node_pool "private_table_space" when it is NULL (kernel
+    # src/pl-tabling.jl:3157-3159); the lookups above made it.
+    @test ld.tabling.node_pool isa LK.alloc_pool
+    @test ld.tabling.node_pool.name == "private_table_space"
+    @test ld.tabling.node_pool.limit == gd.options.tableSpace
+
+    # TB1-G9: a lookup without AT_CREATE of a variant that has no table creates no node (pl-tabling.c:3125 get_answer_table:
+    # `trie_lookup_abstract(..., (flags&AT_CREATE), ...)`, kernel src/pl-tabling.jl:3442-3444); `tv_p(2)` was never looked up.
+    def = _tv_def(gd, "tv_p")
+    n0, v0 = variants.node_count, variants.value_count
+    fid = LK.PL_open_foreign_frame(ld)
+    t = LK.PL_new_term_refs(ld, 2)
+    v = mk_expr(_TV, _TV[_tvs(":"), _tvs("user"), mk_expr(_TV, _TV[_tvs("tv_p"), lk_gnd(_TV, 2)])])
+    LK.putSlotValue!(ld, t + 1, v, LK.PutVarMap())
+    @test LK.get_answer_table(ld, def, t, t + 1, 0) === nothing
+    @test (variants.node_count, variants.value_count) == (n0, v0)
+    LK.PL_close_foreign_frame(ld, fid)
+
+    # TB1-T3: unify_trie_ret (pl-tabling.c:2984) puts the I-th variable in the I-th argument of `ret(V1, V2)`; the kernel's loop is
+    # `ld.gstack[p + i] = makeRefG(vp)` (src/pl-tabling.jl:3311-3313). Every other row has one variable; here a call with two.
+    fid = LK.PL_open_foreign_frame(ld)
+    t = LK.PL_new_term_refs(ld, 4)
+    k0 = LK.fresh_var_keys!(2)
+    v = mk_expr(
+        _TV,
+        _TV[_tvs(":"), _tvs("user"), mk_expr(_TV, _TV[_tvs("tv_p"), mk_var(_TV, k0), mk_var(_TV, k0 + UInt64(1))])]
+    )
+    LK.putSlotValue!(ld, t + 1, v, LK.PutVarMap())
+    a2 = LK.get_answer_table(ld, def, t, t + 1, Int(LK.AT_CREATE))
+    @test a2 !== nothing
+    @test LK._PL_get_arg(ld, 1, t + 1, t + 2)
+    @test LK._PL_get_arg(ld, 2, t + 1, t + 3)
+    @test LK.PL_is_variable(ld, t + 2) && LK.PL_is_variable(ld, t + 3)
+    @test LK.PL_compare(ld, t + 2, t + 3) != 0               # two distinct variables, not V1 twice
+    LK.PL_close_foreign_frame(ld, fid)
+end
+
+@testset "TB1 white-box rows: a ground call marks the worklist ground (DEFKILL3: G3)" begin
+    gd, ld, st = _tv_load(_TV_COMMON * _TV_KERNEL)
+    @test st == "ok"
+    atries = _tv_tables!(gd, ld)
+    def = _tv_def(gd, "tv_p")
+    a = atries[1]                                     # tv_p(1), the ground table
+    # pl-tabling.c:3199 get_answer_table: `atrie->data.worklist->ground = true` (kernel
+    # src/pl-tabling.jl:3491-3496). Premise: a worklist object that is not ground yet (new_worklist sets `ground` only for WL_GROUND).
+    a.worklist = nothing
+    wl = LK.new_worklist(ld, a)
+    @test a.worklist === wl && !wl.ground
+    fid = LK.PL_open_foreign_frame(ld)
+    t = LK.PL_new_term_refs(ld, 2)
+    v = mk_expr(_TV, _TV[_tvs(":"), _tvs("user"), mk_expr(_TV, _TV[_tvs("tv_p"), lk_gnd(_TV, 1)])])
+    LK.putSlotValue!(ld, t + 1, v, LK.PutVarMap())
+    @test LK.get_answer_table(ld, def, t, t + 1, 0) === a
+    @test wl.ground                                   # TB1-G3
+    LK.PL_close_foreign_frame(ld, fid)
+end
+
+@testset "TB1 white-box rows: the status of a table (DEFKILL3: F5, F6)" begin
+    gd, ld, st = _tv_load(_TV_COMMON * _TV_KERNEL)
+    @test st == "ok"
+    atries = _tv_tables!(gd, ld)
+    def = _tv_def(gd, "tv_p")
+    atrie = atries[2]
+    status(a) = begin
+        fid = LK.PL_open_foreign_frame(ld)
+        t = LK.PL_new_term_ref(ld)
+        @test LK.unify_table_status(ld, t, a, def, false)
+        r = sym_text(LK.PL_get_atom(ld, t))
+        LK.PL_close_foreign_frame(ld, fid)
+        return r
+    end
+    # TB1-F6: pl-tabling.c:4351 table_status: a COMPLETE trie answers complete (complete_or_invalid_status, no IDG: complete), an
+    # incomplete one without worklist fresh, one with WL_DYNAMIC dynamic (kernel src/pl-tabling.jl:3584-3597).
+    @test (atrie.flags & LK.TRIE_COMPLETE) != 0 && atrie.IDG === nothing
+    @test sym_text(LK.table_status(ld, atrie)) == "complete"
+    atrie.flags &= ~LK.TRIE_COMPLETE
+    @test atrie.worklist === nothing
+    @test sym_text(LK.table_status(ld, atrie)) == "fresh"
+    atrie.worklist = LK.WL_DYNAMIC
+    @test sym_text(LK.table_status(ld, atrie)) == "dynamic"
+    # TB1-F5: pl-tabling.c:4318 unify_table_status: a dynamic table is `dynamic` (kernel src/pl-tabling.jl:3573-3575)
+    @test status(atrie) == "dynamic"
+    atrie.worklist = nothing
+    @test status(atrie) == "fresh"
+    atrie.flags |= LK.TRIE_COMPLETE
+    @test status(atrie) == "complete"
+end
+
+@testset "TB1 white-box rows: the release of a variant table node (DEFKILL3: L1, L4)" begin
+    gd, ld, st = _tv_load(_TV_COMMON * _TV_KERNEL)
+    @test st == "ok"
+    atries = _tv_tables!(gd, ld)
+    variants = LK.variant_table(ld, false)
+    # pl-tabling.c:2679 release_variant_table_node -> :2642 reset_answer_table (no worklist, not complete) and `atrie->data.variant = NULL`
+    # (kernel src/pl-tabling.jl:3190-3250); the ground table has WL_GROUND, the other none.
+    @test atries[1].worklist == LK.WL_GROUND && atries[2].worklist === nothing
+    for atrie in atries
+        nid = atrie.variant
+        @test nid != 0 && (atrie.flags & LK.TRIE_COMPLETE) != 0
+        LK.release_variant_table_node(gd, variants, nid)
+        @test (atrie.flags & LK.TRIE_COMPLETE) == 0          # TB1-L1 (reset_answer_table)
+        @test atrie.worklist === nothing
+        @test atrie.variant == 0                             # TB1-L4
+    end
+end
+
+@testset "TB1 white-box rows: the start node cache (DEFKILL3: N2, N3)" begin
+    gd, ld, st = _tv_load(_TV_COMMON * _TV_KERNEL)
+    @test st == "ok"
+    atries = _tv_tables!(gd, ld)
+    variants = LK.variant_table(ld, false)
+    nid = atries[1].variant
+    # pl-tabling.c:12423 set_start_node: the array grows, the entries between are NULL, and the node is pinned (TN_PINNED)
+    # (kernel src/pl-tabling.jl:3079-3094). Premise: the cache starts empty; get_start_node of an id past the end is 0.
+    @test ld.tabling.start_nodes === nothing && LK.get_start_node(nothing, 3) == 0
+    @test variants.nodes[nid].flags & LK.TN_PINNED == 0
+    LK.set_start_node(ld, variants, 5, nid)
+    a = ld.tabling.start_nodes
+    @test LK.get_start_node(a, 5) == nid
+    @test variants.nodes[nid].flags & LK.TN_PINNED != 0         # TB1-N2
+    @test LK.get_start_node(a, 3) == 0 && LK.get_start_node(a, 6) == 0
+    # TB1-N3: `resize!` of a Vector{Int} does not clear what a shrink left behind; the grown entries must be 0 by the `fill!`
+    a[1:5] .= (11, 12, 13, 14, 15)
+    resize!(a, 1)
+    LK.set_start_node(ld, variants, 4, nid)
+    @test ld.tabling.start_nodes === a
+    @test a[2] == 0 && a[3] == 0 && a[4] == nid
+end
+
 @testset "the pins are swipl's (live, when swipl is on PATH)" begin
     swipl = get(ENV, "LOGICKERNEL_NO_SWIPL", "") == "1" ? nothing : Sys.which("swipl")
     if swipl === nothing
