@@ -16,6 +16,10 @@
 #     "exception"), not a verdict about the port.
 #   * the digest walk of `variant_sha1/2` (`pl_variant_sha1`, src/pl-termhash.jl): owned by the step that ported it; its battery names
 #     test_termhash.jl, test_hash.jl and test_variant_swipl.jl. The registration wrapper mutated here is called by this file only.
+#   * RETIRED: BP3-L8 (the event `this_thread_exit` is not accepted, KILL bp3l26). Its `old` was the table row of `this_thread_exit`;
+#     since TH1a (audit D-0716 Q3) the kernel is ENGINES=OFF and the row is not compiled (pl-event.c:90-94 is inside `#ifdef O_ENGINES`),
+#     so there is nothing to mutate and `old` no longer occurs. Row bp3l26 now pins the kernel's domain_error(event, this_thread_exit)
+#     (`_B3_KNOWN`); the table's rows are mutated by tools/mutants/TH1A.py (M1 adds a thread row back, M2 and M3 change the rows).
 # TARGETS (audit D-0238): the only test file that calls these five predicates (the Prolog sources of the other tests call memberchk/2,
 # which does not go through `'$memberchk'/3` before the boot files load, LB4).
 TARGETS = ["test/core_lang/test_bootpred3_swipl.jl"]
@@ -139,10 +143,6 @@ MUTANTS = [
          file=V, targets=TARGETS_EV,
          old="event_type(PLEV_ABORT, :abort, 0, false, :onabort)",
          new="event_type(PLEV_ABORT, :abort_, 0, false, :onabort)"),
-    dict(id="BP3-L8 the event `this_thread_exit` is not accepted (KILL bp3l26)",
-         file=V, targets=TARGETS_EV,
-         old="event_type(PLEV_THIS_THREAD_EXIT, :this_thread_exit, 0, true, :event_hook_onthreadexit)",
-         new="event_type(PLEV_THIS_THREAD_EXIT, :this_thread_exit_, 0, true, :event_hook_onthreadexit)"),
     dict(id="BP3-L9 the event `erase` (both its rows) is not accepted (KILL bp3l21, bp3l33, ev1r01)",
          file=V, targets=TARGETS_EV,
          old="event_type(PLEV_ERASED_CLAUSE, :erase, 1, false, :onerase),\n    event_type(PLEV_ERASED_RECORD, :erase, 1, false, :onerase),\n",

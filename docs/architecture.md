@@ -931,7 +931,7 @@ fixed it or a public issue exists.
 | `tools/evidence_ci.py` | the gather of a run spread over jobs: Evidence's Verdict table and per-type gathers, the static analysis's shards (their counts summing to the manifest's, each non-zero, every one-off gate run once), CI.yml's Pkg.test groups; every unit run exactly once by a job of its type — planted cases in test/test_gate_split.jl | — |
 | `tools/mutate_suite.sh` | the whole suite as ONE mutation target (`sh:tools/mutate_suite.sh`), on the reference type, as Evidence's slices run in parallel processes (2 file groups + 2 static-analysis shards, 3 at a time); exit 1 when a slice failed a test | — |
 | `docs/release-notes/v0.1.0-pre.1.md` | the release notes of v0.1.0-pre.1, byte for byte the annotated tag's message (SHA-256 b50689ee…0f4bd) | — |
-| `src/pl-event.jl` | EV1 (R2): the event lists of pl-event.c over the 12-row `PL_events` table (`event_type`, `event_location`; a list is a vector, the `fastheap_term` of a closure is its record): registration (`prolog_listen/2,3`: `as(first|last)`, `name(Name)`, an event name or a predicate indicator, module-qualified callable closures), `prolog_unlisten/2`, `destroy_event_list!`, and the calling side (`callEventHook`, `PL_call_event_hook(_va)`, `call_event_list`, `predicate_update_event`, `retractall_event`, `table_answer_event`, `delayEvent(s)`, `sendDelayedEvents`); table `PL_predicates_from_event` (src/pl-ext.jl). Wired raise sites: assert, retract, retractall `start`/`end`, the erase of a record, the clause GC's erase, the destroy of a pristine abolish; the rest is deferred (section EV1) | `src/pl-event.c`, `src/pl-event.h` |
+| `src/pl-event.jl` | EV1 (R2): the event lists of pl-event.c over the 9-row `PL_events` table (`event_type`, `event_location`; a list is a vector, the `fastheap_term` of a closure is its record): registration (`prolog_listen/2,3`: `as(first|last)`, `name(Name)`, an event name or a predicate indicator, module-qualified callable closures), `prolog_unlisten/2`, `destroy_event_list!`, and the calling side (`callEventHook`, `PL_call_event_hook(_va)`, `call_event_list`, `predicate_update_event`, `retractall_event`, `table_answer_event`, `delayEvent(s)`, `sendDelayedEvents`); table `PL_predicates_from_event` (src/pl-ext.jl). Wired raise sites: assert, retract, retractall `start`/`end`, the erase of a record, the clause GC's erase, the destroy of a pristine abolish; the rest is deferred (section EV1) | `src/pl-event.c`, `src/pl-event.h` |
 | `src/pl-allocpool.jl` | TAB1 TB0 (R2): pl-allocpool.c whole, the counted allocation pool behind the flag `table_space`: `new_alloc_pool`, `free_alloc_pool`, `alloc_from_pool` (charges `bytes`, `resource_error(Name)` past the limit), `free_to_pool`; the struct `alloc_pool` is in src/pl-incl.jl; counts only, Julia's collector frees (section TAB1 TB0) | `src/pl-allocpool.c` |
 | `src/pl-tabling.jl` | TAB1-min (R2): the load-time slice of pl-tabling.c that boot/tabling.pl's `:- table` expansion asks for: `'$tbl_trienode'/1`, `'$tbl_is_trienode'/1` (the reserved symbol `trienode`), the tabling properties of a predicate (`table_props`, `definition.tabling`: `tbl_get_predicate_attribute`, `tbl_set_predicate_attribute`, `tbl_set_incremental_predicate`, `tbl_reset_tabling_attributes!`) behind the `tabled`, `tabled_variant`, `incremental`, `monotonic`, `tshared`, `opaque`, `lazy`, `abstract`, `subgoal_abstract`, `answer_abstract` and `max_answers` keys of `'$set_predicate_attribute'/3` and `'$get_predicate_attribute'/3`; table `PL_predicates_from_tabling` (src/pl-ext.jl). The tries, worklists and `start_tabling/3` are TAB1 (section TAB1-min) Since TAB1 TB0 the constants and sentinels of pl-tabling.c (`WL_*`, `WLFS_*`, `DV_DELETED`, `DL_UNDEFINED`, `CAND_*`, `TBL_FREE_*`), the freed-object lists (`tbl_alloc`, `tbl_free`, `free_tbl_free_objects`), `initTabling!` (the restraints) and `setMonotonicMode` (section TAB1 TB0). Since TAB1 TB1 the start-node cache, the pointers to tries, `variant_table`, the answer table (`get_answer_table`, `reset_answer_table`), the status family and the 13 `$tbl_*` predicates over them (section TAB1 TB1) | `src/pl-tabling.c`, `src/pl-trie.c`, `src/pl-trie.h`, `src/pl-vmi.c` |
 | `src/pl-wrap.jl` | TAB1-min (R2): pl-wrap.c's closure blob (`closure_blob`, a record in `gd.closure_refs`), `'$c_wrap_predicate'/5` installing a wrapper supervisor (`S_CALLWRAPPER` or `S_TABLED` over the predicate's own supervisor), `find_wrapper`, `assert_wrapper`, `unify_wrapped`, `wrapper_vmi`, `skipWrapperPrefix`, `isCallWrapper`, `resetWrappedSupervisor` (called by `freeCodesDefinition!`, src/pl-supervisor.jl); table `PL_predicates_from_wrap`. `wrapped_predicate/2`, `unwrap_predicate/2`, `$wrapped_implementation/3` and `$closure_predicate/2` are left to WRAP1 (section TAB1-min) | `src/pl-wrap.c`, `src/pl-wrap.h` |
@@ -2155,10 +2155,10 @@ or **platform** (a Windows or macOS definition: out of the count). **NO OWNER** 
 | category | done | refused | missing | platform | NO OWNER |
 |---|---:|---:|---:|---:|---:|
 | predicates (C-defined, reached by the boot) | 323 | 0 | 99 | 3 | 1 |
-| refusal sites | 0 | 73 | 0 | 0 | 7 |
+| refusal sites | 0 | 72 | 0 | 0 | 7 |
 | Prolog flags | 65 | 15 | 20 | 0 | 35 |
 | VM instructions | 197 | 0 | 36 | 0 | 0 |
-| **total** | 585 | 88 | 155 | 3 | 43 |
+| **total** | 585 | 87 | 155 | 3 | 43 |
 
 #### The boot and library files
 
@@ -2203,7 +2203,7 @@ Predicate rows each file's calls reach (a predicate several files call counts in
 |---|---:|---:|---:|---|
 | TAB1 | 29 | 27 | 2 | `$idg_add_mono_dyn_dep/3`, `$idg_add_monotonic_dep/3`, `$idg_changed/1`, `$idg_false_edge/3`, `$idg_falsecount/2`, `$idg_forced/1`, `$idg_mono_affects/3`, `$idg_mono_affects_eager/3`, … +21 |
 | AR1 | 28 | 27 | 1 | `succ/2`, `A_ADD`, `A_DOUBLE`, `A_ENTER`, `A_EQ`, `A_FIRSTVAR_IS`, `A_FUNC`, `A_FUNC0`, … +20 |
-| TH1 | 20 | 18 | 2 | `$engine_create/3`, `$gc_clear/1`, `$gc_stop/0`, `$gc_wait/1`, `$sig_unblock/0`, `engine_next/2`, `is_engine/1`, `message_queue_create/1`, … +12 |
+| TH1 | 19 | 18 | 1 | `$engine_create/3`, `$gc_clear/1`, `$gc_stop/0`, `$gc_wait/1`, `$sig_unblock/0`, `engine_next/2`, `is_engine/1`, `message_queue_create/1`, … +11 |
 | ENC1 | 16 | 0 | 16 | `refusal set_stream/2's unicode_atoms(nfc)`, `refusal open/4's unicode_atoms(Mode) option`, `refusal string("open/4 with the stream encoding …`, `refusal Scanrepresent: encoding $enc`, `refusal Sgetcode: encoding $enc`, `refusal put_code: encoding $enc`, `refusal PL_canonicalise_text of $enc`, `refusal PL_mb_text of $(text.encoding)`, … +8 |
 | LB3 | 14 | 0 | 14 | `refusal QLF predicate $close_wic/0`, `refusal QLF predicate $file_hash/2`, `refusal QLF predicate $map_id/2`, `refusal QLF predicate $open_wic/2`, `refusal QLF predicate $qlf_close/0`, `refusal QLF predicate $qlf_current_source/1`, `refusal QLF predicate $qlf_dependency/1`, `refusal QLF predicate $qlf_is_compatible/1`, … +6 |
 | DBG1 | 11 | 10 | 1 | `$call_no_catch/1`, `$can_yield/0`, `$leash/2`, `$visible/2`, `notrace/0`, `prolog_choice_attribute/3`, `prolog_frame_attribute/3`, `trace/0`, … +3 |
@@ -2243,7 +2243,7 @@ xychart-beta
     x-axis ["predicates", "refusal sites", "flags", "VM instructions"]
     y-axis "rows" 0 --> 100
     bar [99, 0, 20, 36]
-    line [0, 73, 15, 0]
+    line [0, 72, 15, 0]
 ```
 
 <!-- END GENERATED R2 status -->
@@ -7060,7 +7060,7 @@ evidence/BOOTPRED3/gen_rows.py). Mutants: tools/mutants/BOOTPREDSUB.py. Left to 
 ## EV1 — the event lists of pl-event.c: `prolog_listen/2,3`, `prolog_unlisten/2` and the raise sites that have a function (R2, swipl-devel cbf4e189)
 
 What EV1 adds (pin `cbf4e1896275`, oracle swipl 10.1.19; written edit-only over six writers, the rows run on the kernel at the gate):
-- **src/pl-event.jl** is the real port of pl-event.c: the 12-row `PL_events` table (the O_ENGINES build; `erase` and `break` resolve to their FIRST row),
+- **src/pl-event.jl** is the real port of pl-event.c: the 9-row `PL_events` table (ENGINES=OFF since TH1a, D-0716; EV1 first kept the 12 rows of the O_ENGINES build; `erase` and `break` resolve to their FIRST row),
   `event_location` (a list's place), `link_event`, `get_callback`, `add_event_hook` (the `name(N)` replacement swaps the closure and keeps the
   position), `get_event_list!`, `register_event_hook`, `get_event_listp` (an event NAME, or a predicate indicator resolved by
   `get_procedure_resolve_namearity`, src/pl-proc.jl), `prolog_listen`, `prolog_unlisten` (deletes EVERY matching listener; a variable closure

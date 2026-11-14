@@ -7,7 +7,7 @@
 #     with `swipl` on PATH the live answers are compared with the pins too.
 #   * KNOWN DIFFERENCES, each a row whose pin is swipl's answer and whose kernel answer is pinned too (`_B3_KNOWN`, with swipl's in
 #     a comment): the message counters are not kernel state (src/pl-error.jl: rows bp3i11, bp3i12; the debugger state is since
-#     DBG1-SMALL: rows bp3n01, bp3n07, bp3n18 are swipl's answers; the listeners of prolog_listen/2,3 are kept since EV1: row bp3l33 is swipl's answer), and variant_sha1's DIGEST VALUES are not swipl's (pl-termhash.jl DIVERGES 1-2: row bp3v15; the other v-rows compare lengths,
+#     DBG1-SMALL: rows bp3n01, bp3n07, bp3n18 are swipl's answers; the listeners of prolog_listen/2,3 are kept since EV1: row bp3l33 is swipl's answer; the three thread events have no event in the ENGINES=OFF kernel since TH1a, D-0716: rows bp3l24, bp3l25, bp3l26), and variant_sha1's DIGEST VALUES are not swipl's (pl-termhash.jl DIVERGES 1-2: row bp3v15; the other v-rows compare lengths,
 #     alphabet and variant equality, never a digest). A known row stops being one when its kernel line equals swipl's.
 using Test, LogicKernel
 const LK = LogicKernel
@@ -371,6 +371,18 @@ const _B3_KNOWN = Dict{String, String}(
     "t_bp3i11" => "t_bp3i11 c[116,95,98,112,51,105,49,49]/1(i0)",
     # no warning counter is kept (src/pl-error.jl DIVERGES): swipl counts 1
     "t_bp3i12" => "t_bp3i12 c[116,95,98,112,51,105,49,50]/1(i0)",
+    # no event `thread_start` in the kernel's build ENGINES=OFF (pl-event.c:208-238 ends in domain_error(event, thread_start) for a name without a row; src/pl-event.jl
+    # DIVERGES; audit D-0716 Q2/Q3): the threaded oracle answers yes (the pin above), the second oracle is MULTI_THREADED=OFF ENGINES=OFF
+    # (test/core_lang/test_event_threads_off_swipl.jl, checklist item)
+    "t_bp3l24" => "t_bp3l24 c[116,95,98,112,51,108,50,52]/1(c[114,97,105,115,101,100]/1(c[100,111,109,97,105,110,95,101,114,114,111,114]/2(a[101,118,101,110,116],a[116,104,114,101,97,100,95,115,116,97,114,116])))",
+    # no event `thread_exit` in the kernel's build ENGINES=OFF (pl-event.c:208-238 ends in domain_error(event, thread_exit) for a name without a row; src/pl-event.jl
+    # DIVERGES; audit D-0716 Q2/Q3): the threaded oracle answers yes (the pin above), the second oracle is MULTI_THREADED=OFF ENGINES=OFF
+    # (test/core_lang/test_event_threads_off_swipl.jl, checklist item)
+    "t_bp3l25" => "t_bp3l25 c[116,95,98,112,51,108,50,53]/1(c[114,97,105,115,101,100]/1(c[100,111,109,97,105,110,95,101,114,114,111,114]/2(a[101,118,101,110,116],a[116,104,114,101,97,100,95,101,120,105,116])))",
+    # no event `this_thread_exit` in the kernel's build ENGINES=OFF (pl-event.c:208-238 ends in domain_error(event, this_thread_exit) for a name without a row; src/pl-event.jl
+    # DIVERGES; audit D-0716 Q2/Q3): the threaded oracle answers yes (the pin above), the second oracle is MULTI_THREADED=OFF ENGINES=OFF
+    # (test/core_lang/test_event_threads_off_swipl.jl, checklist item)
+    "t_bp3l26" => "t_bp3l26 c[116,95,98,112,51,108,50,54]/1(c[114,97,105,115,101,100]/1(c[100,111,109,97,105,110,95,101,114,114,111,114]/2(a[101,118,101,110,116],a[116,104,105,115,95,116,104,114,101,97,100,95,101,120,105,116])))",
     # the digest values are not swipl's (src/pl-termhash.jl DIVERGES 1-2): swipl's is cee71ebc1d023af131e3461b322e4251b2e5a510
     "t_bp3v15" => "t_bp3v15 c[116,95,98,112,51,118,49,53]/1(a[53,100,97,52,50,51,51,48,52,100,101,50,50,97,101,53,97,49,52,102,56,54,49,57,55,55,53,99,98,49,53,49,99,97,54,55,102,100,55,53])"
 )

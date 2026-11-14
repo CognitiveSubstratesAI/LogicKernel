@@ -1127,6 +1127,7 @@ end
 # DIVERGES: `GD->statistics.errors|warnings` and `LD->statistics.errors|warnings` are not kept (`ld_statistics` has no
 # such field and statistics/2 answers 0 for `errors` and `warnings`, src/pl-prims.jl `swi_statistics`): the argument is
 # checked and every level answers true, as upstream's, but nothing is counted. A new field is a struct change.
+# Owner of the counting: ERR/PRIMS (docs/r2_owners.tsv, the last `#` line; D-0716 Q4), a swipl row when it is added.
 """
     '\$inc_message_count'(+Level)
 
