@@ -9063,13 +9063,14 @@ end
 
 # PORT: pl-tabling.c idg_add_mono_dyn_dep as pl_idg_add_mono_dyn_dep3_va
 # (PRED_IMPL("$idg_add_mono_dyn_dep", 3, idg_add_mono_dyn_dep, 0), pl-tabling.c:10353-10370 at the pin)
-# DIVERGES: `get_procedure(.., GP_FIND)` is as far as src/pl-proc.jl ports it (it refuses other than GP_DEFINE: owner V9).
+# DIVERGES: `get_procedure(A1, &proc, 0, GP_FIND)` is `get_procedure_find` (src/pl-proc.jl: the GP_FIND case as clause/2 asks it;
+# `get_procedure` itself refuses other than GP_DEFINE, owner V9).
 "`'\$idg_add_mono_dyn_dep'(:Head, +Dependency, +TargetTrie)`: a monotonic dependency on a dynamic predicate (pl-tabling.c)."
 function pl_idg_add_mono_dyn_dep3_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
 )::foreign_t where {T}
     gd = _query_gd(ld)
-    proc = get_procedure(gd, ld, PL__t0, GP_FIND)
+    proc = get_procedure_find(gd, ld, PL__t0)
     proc === nothing && return FFALSE
     ctrie = get_trie(gd, ld, PL__t0 + 2)
     ctrie === nothing && return FFALSE
