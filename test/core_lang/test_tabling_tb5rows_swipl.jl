@@ -14,11 +14,29 @@
 #     resolved at once; pass 1 repeats pass 0's scans and recomputes `undefined`, which answer completion re-derives from the worklists' current
 #     `undefined` (is_ac_candidate_wl :2316). These rows PIN the model (a regression guard of the simplification chain); they do NOT claim to
 #     kill TB4-S4, which this step records as a candidate for EQUIVALENT (the reason: tools/mutants/TB4.py, the TB4-S4 text).
+#   * Group L2 (TB5-L2: delayed_destroy_table sets TRIE_ABOLISH_ON_COMPLETE; pl-tabling.c:4495 delayed_destroy_table, :6477 the completion that
+#     deletes the table): a tabled goal calls `abolish_all_tables` inside its own evaluation (boot/tabling.pl abolish_all_tables:
+#     '$tbl_abolish_local_tables' fails while an evaluation runs, so each table goes through '$tbl_destroy_table', pl-tabling.c abolish_table,
+#     and the incomplete table is only FLAGGED). swipl: the flagged table is deleted when the evaluation completes (`current_table/2` finds
+#     none, the second call evaluates again: counter 2); the mutant keeps it (a table, counter 1). l204/l205 are the control: the same goal
+#     without the abolish keeps its table and is not evaluated twice.
+#   * Groups A7 and O5 (TB5-A7 abolish_table deletes the orphan dynamic children, TB5-O5 the sweep collects the orphans, pl-tabling.c:4533-4610,
+#     :4870-4921): `_T5_GROUPS_ENG1`, pinned from swipl and checked against it live, NOT run on the kernel yet: delete_dynamic_table
+#     (src/pl-tabling.jl) reaches `reset_answer_table`'s IDG refusal for every real orphan (an orphan has its IDG node), evidence/TAB1/
+#     defkill_inventory.md ENGINE FINDING, candidate fix ENG1 (`reset_answer_table_idg(ld, atrie, 0)` before the trie_delete). With ENG1 the
+#     run is one line: `_T5_GROUPS_RUN = vcat(_T5_GROUPS, _T5_GROUPS_ENG1)`. A7: swipl deletes the dependent-less dynamic table `ad` together
+#     with the incremental table `ap` that held it (a704: no table left), keeps it while `ap` stays (a703: the abolish of `ad` alone). O5: 1100
+#     dynamic variants lose their only dependent in two reevaluations (events 2200 >= 1024 and >= the 1104 variants), the sweep of the next
+#     completed root component (`dm(d)`) deletes them: 6 tables left (swipl), the mutant keeps 1106.
 #   * Testset "clear_variant_table releases the IDG registry" (TB5-E10, TB5-E11): LK-only white-box; the thread's registry holds one reference
 #     per node plus the thread's; after clear_variant_table none is left (empty_variant_table: idg_registry_release_n(registry, idg_nodes + 1)).
 #   * Cases `t_<id>(R)` run in order in ONE database per group, each wrapped in `catch(Goal, error(SsuE, _), R = raised(SsuE))`; a case that
 #     fails is the bare `t_<id>` line. Every answer line is swipl's, PINNED (swipl 10.1.20, two byte-identical runs); with `swipl` on PATH the
 #     live answers are compared with the pins too.
+#   * Testset "clearThreadTablingData resets the global worklist of the component" (TB5-H4): LK-only white-box (no Prolog route: '$tbl_abolish_local_tables'
+#     runs only without an evaluation, and then `ld.tabling.component` is empty).
+#   * TB5-E9 has NO row: empty_variant_table's else branch runs only for a variant table with `value_count == 0` (its only caller passes
+#     `delays_done = false` whenever the table has no reader), a table without a value has no table to visit (tools/mutants/TB5.py, the entry).
 #   * UNVERIFIED on the kernel (edit-only step, nothing compiled): every kernel answer; the gate decides.
 using Test, LogicKernel
 const LK = LogicKernel
@@ -194,6 +212,33 @@ sb :- sp, fail.
 se :- tnot(sp).
 """
 
+const _T5_PROG_L2 = raw"""
+:- nb_setval(cntl2, 0).
+:- table l2p/1, l2q/1.
+l2p(X) :- nb_getval(cntl2, N0), N is N0+1, nb_setval(cntl2, N), abolish_all_tables, X = 1.
+l2q(X) :- nb_getval(cntl2, N0), N is N0+1, nb_setval(cntl2, N), X = 1.
+l2_has(G, R) :- ( current_table(G, _) -> R = present ; R = absent ).
+"""
+const _T5_PROG_A7 = raw"""
+:- table ap/1 as incremental.
+:- dynamic ad/1 as incremental.
+ad(1).
+ad(2).
+ap(X) :- ad(X).
+a7_names(R) :- '$tbl_variant_table'(VT), findall(N, (trie_gen(VT, user:K, _), functor(K, N, _)), Ns), msort(Ns, R).
+"""
+const _T5_PROG_O5 = raw"""
+:- table orr/0 as incremental.
+:- table dm/1.
+:- dynamic off/0 as incremental.
+:- dynamic of/1 as incremental.
+orr :- ( off -> true ; forall(between(1, 1100, I), (of(I) ; true)) ).
+of(0).
+dm(_).
+o5_count(C) :- '$tbl_variant_table'(VT), aggregate_all(count, trie_gen(VT, _, _), C).
+o5_cyc(K, C) :- ( orr -> true ; true ), dm(K), o5_count(C).
+"""
+
 const _T5_GROUPS = [
     (
         key="A3N",
@@ -265,12 +310,76 @@ const _T5_GROUPS = [
             "t_s404 c[116,95,115,52,48,52]/1(c[91,124,93]/2(c[61]/2(a[115,112],a[102,97,108,115,101]),c[91,124,93]/2(c[61]/2(a[115,97],a[116,114,117,101]),c[91,124,93]/2(c[61]/2(a[115,98],a[102,97,108,115,101]),c[91,124,93]/2(c[61]/2(a[115,101],a[116,114,117,101]),nil)))))",
             "t_s405 c[116,95,115,52,48,53]/1(a[116,114,117,101])"
         ]
+    ),
+    (
+        key="L2",
+        label="L2: abolish_all_tables inside the evaluation flags the incomplete table, it is deleted on completion (TB5-L2)",
+        program=_T5_PROG_L2,
+        cases=[
+            ("l201", raw"findall(X, l2p(X), L), R = L"),
+            ("l202", raw"l2_has(l2p(_), R)"),
+            ("l203", raw"findall(X, l2p(X), L), nb_getval(cntl2, C), R = L-C"),
+            ("l204", raw"findall(X, l2q(X), L), l2_has(l2q(_), H), R = L-H"),
+            ("l205", raw"findall(X, l2q(X), L), nb_getval(cntl2, C), R = L-C")
+        ],
+        pins=[
+            "ok",
+            "t_l201 c[116,95,108,50,48,49]/1(c[91,124,93]/2(i1,nil))",
+            "t_l202 c[116,95,108,50,48,50]/1(a[97,98,115,101,110,116])",
+            "t_l203 c[116,95,108,50,48,51]/1(c[45]/2(c[91,124,93]/2(i1,nil),i2))",
+            "t_l204 c[116,95,108,50,48,52]/1(c[45]/2(c[91,124,93]/2(i1,nil),a[112,114,101,115,101,110,116]))",
+            "t_l205 c[116,95,108,50,48,53]/1(c[45]/2(c[91,124,93]/2(i1,nil),i3))"
+        ]
     )
 ]
 
-# kills TB4-A3 (A3N: the answer completion counter is 0, the mutant calls it); A3P and A3Q pin the controls; S4A/S4B are the S4 regression pins
-@testset "TB5-ROWS simplification and answer completion as swipl's: $(g.label)" for g in
-                                                                                    _T5_GROUPS
+# pinned from swipl, checked live, NOT run on the kernel until ENG1 (see the header): the kernel refuses to delete an orphan dynamic table
+const _T5_GROUPS_ENG1 = [
+    (
+        key="A7",
+        label="A7: abolishing an incremental table deletes the dynamic table it alone depended on (TB5-A7)",
+        program=_T5_PROG_A7,
+        cases=[
+            ("a701", raw"findall(X, ap(X), L), R = L"),
+            ("a702", raw"a7_names(R)"),
+            ("a703", raw"abolish_table_subgoals(ad(_)), a7_names(R)"),
+            ("a704", raw"abolish_table_subgoals(ap(_)), a7_names(R)")
+        ],
+        pins=[
+            "ok",
+            "t_a701 c[116,95,97,55,48,49]/1(c[91,124,93]/2(i1,c[91,124,93]/2(i2,nil)))",
+            "t_a702 c[116,95,97,55,48,50]/1(c[91,124,93]/2(a[97,100],c[91,124,93]/2(a[97,112],nil)))",
+            "t_a703 c[116,95,97,55,48,51]/1(c[91,124,93]/2(a[97,100],c[91,124,93]/2(a[97,112],nil)))",
+            "t_a704 c[116,95,97,55,48,52]/1(nil)"
+        ]
+    ),
+    (
+        key="O5",
+        label="O5: 1100 dynamic tables that lost their dependent are swept at the completion of a root component (TB5-O5)",
+        program=_T5_PROG_O5,
+        cases=[
+            ("o501", raw"o5_cyc(a, C), R = C"),
+            ("o502", raw"assertz(off), o5_cyc(b, C), R = C"),
+            ("o503", raw"retractall(off), o5_cyc(c, C), R = C"),
+            ("o504", raw"assertz(off), o5_cyc(d, C), R = C")
+        ],
+        pins=[
+            "ok",
+            "t_o501 c[116,95,111,53,48,49]/1(i1103)",
+            "t_o502 c[116,95,111,53,48,50]/1(i1104)",
+            "t_o503 c[116,95,111,53,48,51]/1(i1105)",
+            "t_o504 c[116,95,111,53,48,52]/1(i6)"
+        ]
+    )
+]
+"The groups the kernel run and the live check cover: ENG1's join the kernel run when `delete_dynamic_table` can delete an orphan."
+const _T5_GROUPS_RUN = _T5_GROUPS
+const _T5_GROUPS_LIVE = vcat(_T5_GROUPS, _T5_GROUPS_ENG1)
+
+# kills TB4-A3 (A3N: the answer completion counter is 0, the mutant calls it); A3P and A3Q pin the controls; S4A/S4B are the S4 regression pins;
+# L2 kills TB5-L2 (l202: no table is left, l203: evaluated twice)
+@testset "TB5-ROWS simplification, answer completion and abolish as swipl's: $(g.label)" for g in
+                                                                                             _T5_GROUPS_RUN
     gd, ld, st = _T5_load(g.program, g.cases)
     @test st == "ok"
     kl = String[st]
@@ -293,7 +402,7 @@ function _T5_atoms(line::AbstractString)::Vector{String}
     ]
 end
 
-_T5_group(key) = only(filter(g -> g.key == key, _T5_GROUPS))
+_T5_group(key) = only(filter(g -> g.key == key, _T5_GROUPS_LIVE))
 "The answer part of the pinned line of case `id` in group `key`."
 function _T5_ans(key, id)
     g = _T5_group(key)
@@ -301,7 +410,7 @@ function _T5_ans(key, id)
 end
 
 @testset "the TB5-ROWS pins are not vacuous" begin
-    for g in _T5_GROUPS
+    for g in _T5_GROUPS_LIVE
         @test g.pins[1] == "ok"
         @test all(!isempty, g.pins)
         for (id, goal) in g.cases
@@ -321,19 +430,30 @@ end
         _T5_ans("S4B", "s404")[(findfirst('(', _T5_ans("S4B", "s404"))):end]
     @test _T5_atoms(_T5_ans("S4A", "s403")) == ["true"]
     @test !occursin("a[", split(_T5_group("S4A").pins[2], " ")[end])          # `sp` fails: the bare line
+    # L2: the abolished incomplete table is gone and evaluated twice; the control keeps its table and is evaluated once
+    @test _T5_atoms(_T5_ans("L2", "l202")) == ["absent"]
+    @test _T5_atoms(_T5_ans("L2", "l204")) == ["present"]
+    @test endswith(_T5_ans("L2", "l203"), ",i2))") && endswith(_T5_ans("L2", "l205"), ",i3))")
+    @test _T5_ans("L2", "l202") != _T5_ans("L2", "l204")
+    # A7: the orphan goes with its dependent, stays while the dependent stays; O5: the sweep leaves 6 of the 1105 tables
+    @test _T5_atoms(_T5_ans("A7", "a702")) == _T5_atoms(_T5_ans("A7", "a703")) == ["ad", "ap"]
+    @test endswith(_T5_ans("A7", "a704"), "(nil)")
+    @test _T5_ans("O5", "o504") != _T5_ans("O5", "o503") && endswith(_T5_ans("O5", "o504"), "(i6)")
+    @test all(endswith(_T5_ans("O5", id), r"\(i1[0-9]{3}\)") for id in ("o501", "o502", "o503"))
+    @test isempty(intersect(Set(g.key for g in _T5_GROUPS_RUN), Set(g.key for g in _T5_GROUPS_ENG1)))
 end
 
 @testset "the TB5-ROWS pins are swipl's (live, when swipl is on PATH)" begin
     swipl = get(ENV, "LOGICKERNEL_NO_SWIPL", "") == "1" ? nothing : Sys.which("swipl")
     if swipl === nothing
         @info "TB5-ROWS LIVE CHECK NOT RUN: `swipl` is not on PATH here. It runs in tools/run_tests.sh and CI."
-        for g in _T5_GROUPS
+        for g in _T5_GROUPS_LIVE
             @test g.pins[1] == "ok"
             @test [first(split(l, " ")) for l in g.pins[2:end]] ==
                 ["t_$id" for (id, _) in g.cases]
         end
     else
-        for g in _T5_GROUPS
+        for g in _T5_GROUPS_LIVE
             f = joinpath(mktempdir(), "tb5rows_swipl.pl")
             write(f, _T5_text(g.program, g.cases))
             @test _T5_swipl_lines(f, ["t_$id" for (id, _) in g.cases]) == g.pins
@@ -400,4 +520,21 @@ end
     @test LK.clear_variant_table(ld) === nothing
     @test ld.tabling.idg_registry === nothing                  # detached before the resets
     @test reg.references == 0                                  # TB5-E10 leaves length(nodes) + 1, TB5-E11 leaves length(nodes)
+end
+
+# TB5-H4 (tools/mutants/TB5.py): LK-only white-box; no swipl pin and no Prolog route ('$tbl_abolish_local_tables' runs only when no evaluation is
+# active, and `LD->tabling.component` is then empty), so the state is built by hand: a component of the thread with a scheduled worklist set (empty:
+# `reset_global_worklist` frees the SET, pl-tabling.c:873-881). With the correct code the component keeps no worklist set after the clear; TB5-H4
+# (the call dropped) leaves `c.worklist === wls`. UNVERIFIED on the kernel (nothing was compiled).
+@testset "clearThreadTablingData resets the global worklist of the thread's component (TB5-H4)" begin
+    gd, ld, st = _T5_load(_T5_WB, [("w01", raw"R = ok")])
+    @test st == "ok"
+    c = LK.tbl_component{_T5_T}()
+    wls = LK.worklist_set{LK.tbl_worklist{_T5_T}}()
+    c.worklist = wls
+    ld.tabling.component = c
+    @test c.worklist === wls                                   # the premise: the component holds its worklist set
+    @test LK.clearThreadTablingData(ld, false) === nothing
+    @test c.worklist === nothing                               # TB5-H4 leaves the set
+    ld.tabling.component = nothing
 end
