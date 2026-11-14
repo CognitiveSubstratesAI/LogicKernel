@@ -3890,6 +3890,11 @@ const _DISPATCH_MANIFEST_TUPLE = (
     (LK.MurmurHashAligned2, Tuple{NTuple{4, UInt64}, Int, UInt32}, true),
     (LK.MurmurHashAligned2, Tuple{NTuple{1, UInt64}, Int, UInt32}, true),
     (LK.MurmurHashAligned2, Tuple{Vector{UInt8}, Int, UInt32}, true),
+    # MurmurHashWide (pl-hash.c, new at cf6960c2): the `UInt32` method builds the byte buffer
+    (LK.MurmurHashWide, Tuple{Vector{UInt32}, Int, UInt32}, false),
+    (LK.MurmurHashWide, Tuple{Vector{UInt16}, Int, UInt32}, true),
+    (LK._MurmurHashWide_blocks, Tuple{Vector{UInt32}, Int, UInt32}, true),
+    (LK._MurmurHashWide_blocks, Tuple{Vector{UInt16}, Int, UInt32}, true),
     # SHA-1 and the incremental MurmurHash (src/pl-termhash.jl)
     (LK.sha1_ctx, Tuple{}, false), (LK.rotl32, Tuple{UInt32, Int}, true),
     (LK.rotr32, Tuple{UInt32, Int}, true), (LK.bswap_32, Tuple{UInt32}, true),

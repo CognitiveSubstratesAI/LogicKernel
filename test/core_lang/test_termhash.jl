@@ -19,6 +19,8 @@ using LogicKernel:
     hash_end,
     HASH_BLOCK_SIZE,
     MurmurHashAligned2,
+    MurmurHashWide,
+    _MurmurHashWide_blocks,
     MURMUR_SEED
 
 # TERM TYPES PER CHUNK: ALL — the term layer: src/pl-termhash.jl
@@ -108,6 +110,131 @@ end
         @test MurmurHashAligned2(buf[(off + 1):end], len, UInt32(seed)) == want
     end
     @test MURMUR_SEED == 0x1a3be34a                              # pl-hash.h
+end
+
+# ── MurmurHashWide (pl-hash.c, NEW at swipl-devel cf6960c2) ────────────────────────────────────────
+# TARGET-ONLY: pin when the oracle moves to cf6960c2 (the pin 18168e62 has no MurmurHashWide).
+# The expected values are the TARGET's own C: src/pl-hash.c at cf6960c2 compiled stand-alone (-DNO_SWIPL, little-endian,
+# 4-byte wchar_t) on the seven texts and three seeds below. Its other two arms — the big-endian one and the 2-byte
+# `wchar_t` one over UTF-16 units — gave the SAME hashes for the same code points, which is the function's point.
+const _MW_CASES = (
+    (UInt32[], ((440132426, 1747181055), (0, 0), (3735928559, 1552874934))),
+    (UInt32[0x61], ((440132426, 859932490), (0, 960914556), (3735928559, 4293966780))),
+    (
+        UInt32[0x61, 0x62, 0x63],
+        ((440132426, 2765092511), (0, 1706470512), (3735928559, 631187916))
+    ),
+    (UInt32[0x1f600], ((440132426, 2759298159), (0, 1379774625), (3735928559, 1715006877))),
+    (
+        UInt32[0x20ac, 0x10000, 0x10ffff, 0x41],
+        ((440132426, 710218905), (0, 1182717783), (3735928559, 2134004924))
+    ),
+    (
+        UInt32[
+            0x41,
+            0x142,
+            0x243,
+            0x344,
+            0x445,
+            0x546,
+            0x647,
+            0x748,
+            0x849,
+            0x94a,
+            0xa4b,
+            0xb4c,
+            0xc4d,
+            0xd4e,
+            0xe4f,
+            0xf50,
+            0x1051
+        ],
+        ((440132426, 998673622), (0, 3163429894), (3735928559, 4238135819))
+    ),
+    (
+        UInt32[
+            0x10000,
+            0x11111,
+            0x12222,
+            0x13333,
+            0x14444,
+            0x15555,
+            0x16666,
+            0x17777,
+            0x18888
+        ],
+        ((440132426, 1914875778), (0, 2682305984), (3735928559, 499226922))
+    )
+)
+"The UTF-16 units of the code points `cps` (a code point above 0xffff is a surrogate pair)."
+function _mw_utf16(cps::Vector{UInt32})::Vector{UInt16}
+    out = UInt16[]
+    for c in cps
+        if c >= 0x10000
+            c -= 0x10000
+            push!(out, UInt16(0xd800 + (c >> 10)), UInt16(0xdc00 + (c & 0x3ff)))
+        else
+            push!(out, UInt16(c))
+        end
+    end
+    return out
+end
+
+@testset "MurmurHashWide == the target's pl-hash.c (7 texts x 3 seeds)" begin
+    for (cps, wants) in _MW_CASES, (seed, want) in wants
+        @test MurmurHashWide(cps, 4 * length(cps), UInt32(seed)) == UInt32(want)
+        # the UTF-16 units give the hash of the code points (the 2-byte `wchar_t` arm)
+        u16 = _mw_utf16(cps)
+        @test MurmurHashWide(u16, 2 * length(u16), UInt32(seed)) == UInt32(want)
+        # the portable arm over 4-byte code points is the aligned arm's hash (upstream's comment)
+        @test _MurmurHashWide_blocks(cps, 4 * length(cps), UInt32(seed)) == UInt32(want)
+    end
+end
+
+@testset "MurmurHashWide: a `len` that is no multiple of 4 is hashed as bytes (the aligned arm)" begin
+    cps = _MW_CASES[6][1]
+    for (len, want) in (
+        (1, 1398196891),
+        (2, 2279955291),
+        (3, 1587262217),
+        (5, 2279061976),
+        (6, 1304952242),
+        (7, 2215990012)
+    )
+        @test MurmurHashWide(cps, len, MURMUR_SEED) == UInt32(want)
+    end
+    # `len` bytes only: the units past it are not read (859932490 is the target's value for [0x61])
+    abc32 = UInt32[0x61, 0x62, 0x63]
+    abc16 = UInt16[0x61, 0x62, 0x63]
+    @test MurmurHashWide(abc32, 4, MURMUR_SEED) == 859932490
+    @test MurmurHashWide(abc16, 2, MURMUR_SEED) == 859932490
+end
+
+@testset "MurmurHashWide: a lone surrogate unit is a code point of its own, a pair is one" begin
+    # the expected values are the target's, from its 2-byte `wchar_t` arm and from its 4-byte arm
+    pair = UInt16[0xd83d, 0xde00]                       # U+1F600
+    @test MurmurHashWide(pair, 4, MURMUR_SEED) == 2759298159
+    @test MurmurHashWide(UInt32[0x1f600], 4, MURMUR_SEED) == 2759298159
+    lone_hi = UInt16[0xd83d, 0x41]                      # high surrogate, then a plain unit: two code points
+    @test MurmurHashWide(lone_hi, 4, MURMUR_SEED) == 417663900
+    @test MurmurHashWide(UInt32[0xd83d, 0x41], 8, MURMUR_SEED) == 417663900
+    lone_lo = UInt16[0xde00, 0xd83d]                    # low surrogate first: no pair either
+    @test MurmurHashWide(lone_lo, 4, MURMUR_SEED) == 804242943
+    @test MurmurHashWide(UInt32[0xde00, 0xd83d], 8, MURMUR_SEED) == 804242943
+    cut = UInt16[0x41, 0xd83d]                          # high surrogate last: nothing to pair with
+    @test MurmurHashWide(cut, 4, MURMUR_SEED) == 859116668
+    @test MurmurHashWide(UInt32[0x41, 0xd83d], 8, MURMUR_SEED) == 859116668
+    # the edges of the two ranges: a pair is a unit in d800..dbff then one in dc00..dfff
+    @test MurmurHashWide(UInt16[0xd800, 0xdc00], 4, MURMUR_SEED) == 3421940055     # U+10000
+    @test MurmurHashWide(UInt32[0x10000], 4, MURMUR_SEED) == 3421940055
+    @test MurmurHashWide(UInt16[0xdbff, 0xdfff], 4, MURMUR_SEED) == 3347687709     # U+10FFFF
+    @test MurmurHashWide(UInt32[0x10ffff], 4, MURMUR_SEED) == 3347687709
+    @test MurmurHashWide(UInt16[0xd83d, 0xe000], 4, MURMUR_SEED) == 3415968347     # e000 is no low surrogate
+    @test MurmurHashWide(UInt32[0xd83d, 0xe000], 8, MURMUR_SEED) == 3415968347
+    @test MurmurHashWide(UInt16[0xdc00, 0xdc00], 4, MURMUR_SEED) == 270663950      # dc00 is no high surrogate
+    @test MurmurHashWide(UInt32[0xdc00, 0xdc00], 8, MURMUR_SEED) == 270663950
+    @test MurmurHashWide(UInt16[0xd7ff, 0xdc00], 4, MURMUR_SEED) == 1653718646     # d7ff is no high surrogate
+    @test MurmurHashWide(UInt32[0xd7ff, 0xdc00], 8, MURMUR_SEED) == 1653718646
 end
 
 @testset "incremental MurmurHash (hash_state)" begin
