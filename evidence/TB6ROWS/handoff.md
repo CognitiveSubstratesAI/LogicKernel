@@ -73,3 +73,12 @@ Remaining DEFERRED-by-TB6-ROWS ids of TB6.py: only those six (S6 C4 Q5 P14 V5 V6
    `@test_broken` for those lines; the not-vacuous testset: every pin non-empty, the CHAIN c02 pin has both `affected` and `dependent` atoms, EXPAND x03 edges != x04 edges, DYNERR != DYNOK; the live-swipl testset like tb4rows);
    (2) the white-box V6 testset; (3) parse check `julia --startup-file=no -e 'Meta.parseall(read(ARGS[1],String))' <file>` (parse only); (4) tools/mutants/TB6R.py; (5) commit on wip/tb6rows
    (`git -C /home/shivaji1012/code/lk-tb6rows add ...` and `commit` in two calls, category ADDED:, `# allow-absence-claim: <reason>` if the hook asks) with the attribution line; no push.
+
+## STATE after agent 2 (2026-11-14): STEPS 1-5 DONE, committed on wip/tb6rows, NOT pushed, nothing compiled or run
+- test/core_lang/test_tabling_tb6rows_swipl.jl (parse-only checked: PARSE OK): groups CHAIN REEVAL SINGLE FALSECOUNT ABOLISH EXPAND DYNERR DYNOK INCRPROP TRIEKEYS
+  (pins PRINTED by emit.py from swipl 10.1.20, two identical runs: evidence/TB6ROWS/pins.txt, generators evidence/TB6ROWS/gen/), the V6 white-box testset (hand-written yes/yes,
+  no/yes, no/yes, C citations pl-comp.c:9241 :4915-4917), an S6 white-box testset (dead count carried by grow_block, pl-idgset.c:250), the not-vacuous testset, the live-swipl testset.
+- `@test_broken` (per case, `_T6_BROKEN`): SINGLE s02-s04 owner TR4; ABOLISH a02-a08 and EXPAND x02-x05 owner TB5 ($tbl_destroy_table/1, $tbl_abolish_local_tables/0 cannot be
+  found in the kernel: git grep on wip/tb6 returns only docs/r2_*.tsv rows and a comment); TRIEKEYS k01-k03 owner TB6 ($trie_property idg_* / invalidated / reevaluated keys).
+- tools/mutants/TB6R.py: 9 mutants (TB6R-S6 C4 Q5 P14 V5 V6, TB6R-F4 T2 C2 = TB3's, `equivalent` dropped), TARGETS first = the new file.
+- NOT VERIFIED: nothing ran on the kernel; TB3's `old` texts occur once in origin/gate/tab1c-r4's src only (zero times in wip/tb6's); TB6R is judged at the stack.
