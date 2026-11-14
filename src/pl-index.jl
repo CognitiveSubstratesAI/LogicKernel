@@ -115,11 +115,17 @@ is_clean_predicate(def::definition)::Bool =
     (def.flags & (P_DYNAMIC | P_DIRTYREG | P_RELOADING)) == 0
 
 # PORT: pl-index.c hashIndex
+# Synced to cf6960c2: the key's tag bits are shifted out first (`key >>= CELL_VAL_SHIFT`, "consecutive values step by 1";
+# `CELL_VAL_SHIFT` is `LMASK_BITS`, pl-data.h, as it is here), so two keys that differ only in the low `LMASK_BITS` bits
+# hash to the same bucket and consecutive atom or small-integer values step by one before the multiply. One shift of a
+# register on the call path: nothing allocated. A key lands in another bucket than at the pin (the table sizes `perfect_size`
+# finds may differ too); which clauses a call returns, and their order, do not depend on the bucket.
 "Map a key to a bucket of `buckets` (a power of two) by Fibonacci hashing (pl-index.c)."
 function hashIndex(key::word, buckets::UInt32)::UInt32
     key_bits = 64
     fib64 = 0x9E3779B97F4A7C15
     shift = key_bits - MSB(buckets)
+    key >>= LMASK_BITS                                      # CELL_VAL_SHIFT: consecutive values step by 1
     key ⊻= (key >> shift)
     return ((fib64 * key) >> shift) % UInt32
 end
@@ -505,6 +511,8 @@ function createIndex!(
 end
 
 # PORT: pl-index.c first_clause_guarded
+# Synced to cf6960c2: the bucket's key is read ONCE into `bkey` (a volatile read upstream: a concurrent assert may reset it
+# to 0 between the test and the compare); the same one read here, a local of a word. One thread: no change of result.
 """
 Find the first clause of `clist` that may match the call `argv` (with `argc` arguments) and leave
 in `ctx.chp` where the search resumes (pl-index.c).
@@ -572,7 +580,8 @@ function first_clause_guarded!(
             end
             hi = hashIndex(chp.key, best_index.buckets)
             bkt = (best_index.entries::Vector{ClauseBucket{T}})[hi + 1]
-            if bkt.key != 0 && chp.key != bkt.key
+            bkey = bkt.key                  # read once (upstream: through a volatile read; an assert may reset it to 0)
+            if bkey != 0 && chp.key != bkey
                 return nothing
             end
             chp.cref = bkt.head
@@ -1758,7 +1767,9 @@ function perfect_size(a::hash_assessment)::Int
 end
 
 # PORT: pl-index.c assess_remove_duplicates
-# DIVERGES: a stable sort of the keys; upstream's qsort leaves equal keys in unspecified order.
+# DIVERGES: a stable sort of the keys; upstream's qsort leaves equal keys in unspecified order. Synced to cf6960c2: a
+# predicate with many variable clauses is also an index when `var_count*size <= clause_count` (the space the variable
+# clauses take, added to every bucket, is at most the clauses': a catch-all clause at the end of a small table).
 """
 Merge duplicate keys of `a`. Given a `clause_count`, also finish the assessment — speedup,
 standard deviation, whether to use a list index — and return false when it is not an index.
@@ -1829,7 +1840,11 @@ function assess_remove_duplicates!(a::hash_assessment, clause_count::Int)::Bool
             a.var_count == 0             # See (*)
             a.list = true
         end
-        if Float32(a.var_count) / Float32(a.size) > MAX_VAR_FRAC
+        # Each clause with a variable is added to every bucket: avoid this if there are too many of
+        # them, unless the space it takes is at most that of the clauses (e.g. a catch-all clause at
+        # the end of a small table). The speedup above includes their cost (cf6960c2).
+        if Float32(a.var_count) / Float32(a.size) > MAX_VAR_FRAC &&
+            a.var_count * a.size > clause_count
             a.speedup = 0.0f0
             return false                # not indexable
         end
@@ -1907,6 +1922,8 @@ function skipToTerm(
 end
 
 # PORT: pl-index.c indexableCompound
+# Synced to cf6960c2: a compound that is the LAST argument of a head is compiled with the `H_R*` instructions, which carry no
+# `H_POP`: its void arguments end at the clause's first body or exit instruction, which now ends the argument list as `H_POP` does.
 """
 True if the compound at `pc` can be indexed: one of its arguments is not a variable. As we
 consider a compound indexable, we never go into nested compounds (pl-index.c).
@@ -1924,8 +1941,10 @@ function indexableCompound(pc::Code{T})::Bool where {T}
                 c2 = decode(pc)
                 if c2 == H_FIRSTVAR || c2 == H_VAR || c2 == H_VOID || c2 == H_VOID_N
                     pc = stepPC(pc)                         # Try next argument
-                elseif c2 == H_POP
-                    return false                            # End of argument list
+                elseif c2 == H_POP || c2 == I_EXITCATCH || c2 == I_EXITRESET ||
+                    c2 == I_EXITFACT || c2 == I_EXIT || c2 == I_ENTER ||
+                    c2 == I_SSU_COMMIT || c2 == I_SSU_CHOICE
+                    return false                            # End of argument list; the others: idem for an H_R* last argument (cf6960c2)
                 else
                     return true                             # Indexable
                 end
@@ -2425,26 +2444,49 @@ function candidate_indexes!(
 end
 
 # PORT: pl-index.c get_existing_index
-# DIVERGES: returns (index, next slot to search) where upstream advances `*from` through a pointer.
-"The live index of `org`, from slot `from`, over the arguments `hints` name (pl-index.c)."
-function get_existing_index(org, from::Int, hints::hash_hints)
+# DIVERGES: the array may be `nothing` (a predicate without indexes); upstream's is NULL-terminated.
+# Synced to cf6960c2: takes the array itself and searches it from the START every time; the pin's took a pointer to
+# its position and left it just after the index found (`*from = cip+1`), so each hint searched on from the last find;
+# `set_candidate_indexes!` now sorts the new array instead (`sort_indexes!`). Cost: none added; the `(index, next slot)`
+# tuple is gone, and one run per predicate (not per call) walks at most the existing array.
+"The live index of `org` over the arguments `hints` name, or `nothing` (pl-index.c)."
+function get_existing_index(org, hints::hash_hints)
     if org !== nothing
-        i = from
-        while i <= length(org)
-            ci = org[i]
+        for ci in org
             if !ISDEADCI(ci)
                 if ci.args == hints.args
-                    return (ci, i + 1)
+                    return ci
                 end
             end
-            i += 1
         end
     end
-    return (nothing, from)
+    return nothing
+end
+
+# PORT: pl-index.c sort_indexes
+# synced to swipl-devel cf6960c2 (pl-index.c:3476-3495): new at the target, not at the pin.
+# DIVERGES: a `Vector` and a `count` where upstream takes a pointer and a count; the first `count` slots are all indexes, as upstream's.
+# Upstream says: `candidate_indexes()` returns the good ones first, then the deep ones for poor arguments and then
+# the combinations, while `existing_hash()` uses the first index that applies, so the array must be sorted (see
+# `isSortedIndexes`). Insertion sort, stable, in place: at most `max` (10) slots, no allocation.
+"Sort the first `count` indexes of `cip` by decreasing speedup, equal ones keeping their order (pl-index.c)."
+function sort_indexes!(cip::Vector{Union{Nothing, ClauseIndex{T}}}, count::Int)::Nothing where {T}
+    for i in 2:count
+        ci = cip[i]::ClauseIndex{T}
+        j = i
+        while j > 1 && (cip[j - 1]::ClauseIndex{T}).speedup < ci.speedup
+            cip[j] = cip[j - 1]
+            j -= 1
+        end
+        cip[j] = ci
+    end
+    return nothing
 end
 
 # PORT: pl-index.c set_candidate_indexes
-# DIVERGES: no locking (`lock` is kept for the signature; there are no threads).
+# DIVERGES: no locking (`lock` is kept for the signature; there are no threads). Synced to cf6960c2: `get_existing_index` takes the array (no
+# carried position), the new array is sorted by `sort_indexes!`, and its order is asserted (`DEBUG(0, assert(isSortedIndexes(cip)))`
+# upstream, an `@assert` here: at most `max` slots, run once per predicate, off the call path).
 """
 Set the candidate indexes of a static predicate: every meaningful index, NOT yet realised (each is
 filled the first time a call can use it), and stop searching for others (pl-index.c).
@@ -2459,15 +2501,16 @@ function set_candidate_indexes!(
     if max > 0
         cip = Vector{Union{Nothing, ClauseIndex{T}}}(undef, max)
         org = clist.clause_indexes
-        from = 1
         for i in 1:max
-            ei, from = get_existing_index(org, from, hints[i])
+            ei = get_existing_index(org, hints[i])
             if ei !== nothing
                 cip[i] = ei
             else
                 cip[i] = newClauseIndexTable(hints[i], false, ctx)
             end
         end
+        sort_indexes!(cip, max)
+        @assert isSortedIndexes(cip)                        # DEBUG(0, assert(isSortedIndexes(cip))) upstream
         setIndexes!(def, clist, cip)
         clist.fixed_indexes = true
     else
