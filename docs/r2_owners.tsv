@@ -109,7 +109,6 @@ pred:set_flag/2	FL1	seed: missing_c_preds.tsv
 pred:set_thread/2	TH1	seed: missing_c_preds.tsv
 pred:shell/2	Q10	seed: missing_c_preds.tsv
 pred:sub_atom_icasechk/3	P2	seed: missing_c_preds.tsv
-pred:succ/2	AR1	seed: missing_c_preds.tsv
 pred:thread_create/3	TH1	seed: missing_c_preds.tsv
 pred:thread_exit/1	TH1	seed: missing_c_preds.tsv
 pred:thread_get_message/2	TH1	seed: missing_c_preds.tsv
@@ -139,7 +138,7 @@ vmi:A_FUNC2	AR1	seed: VM-instruction family
 vmi:A_GE	AR1	seed: VM-instruction family
 vmi:A_GT	AR1	seed: VM-instruction family
 vmi:A_INTEGER	AR1	seed: VM-instruction family
-vmi:A_INTEGERW	AR1	seed: VM-instruction family
+vmi:A_INTEGERW	REFUSED	never declared (refused by name, no step ports it): emitted by pl-comp.c:3977 (compileArith) for an integer wider than `scode`; only where a code word is narrower than a word (`CODES_PER_WORD > 1`; pl-incl.h:679 SIZEOF_WORD/SIZEOF_CODE, `code` = uintptr_t :888, so 1 on the build the kernel targets, where :3970-3971 emits A_INTEGER only); its body pl-vmi.c:3818-3832 is `#if CODES_PER_WORD > 1 ... #else assert(0)`; src/pl-vmi.jl:44
 vmi:A_IS	AR1	seed: VM-instruction family
 vmi:A_LE	AR1	seed: VM-instruction family
 vmi:A_LT	AR1	seed: VM-instruction family
@@ -182,7 +181,8 @@ refusal:src/os/pl-file.jl::openStream::open/4's lock(Lock) option (advisory file
 refusal:src/os/pl-file.jl::openStream::open(pipe(Command), …)	S2b	open(pipe(Cmd)) (pl-file.c openStream, pl-stream.c Sopen_pipe); stream-layer remainder
 refusal:src/os/pl-file.jl::pl_close::closing a stream pair	S2b	close of a stream pair (pl-file.c do_close via stream_pair); with the pair itself
 refusal:src/os/pl-file.jl::set_stream::set_stream/2's locale(Locale)	CT1	set_stream/2 locale(Locale) (pl-file.c set_stream, PL_locale); with open/4's locale option
-refusal:src/pl-comp.jl::compileSubClause!::compileArith (optimise)	AR1	compileArith under the optimise flag (pl-comp.c O_COMPILE_ARITH); needs the A_* instructions (Q-AR3)
+refusal:src/pl-arith.jl::set_arith_flag::LD->arith.rat / LD->gmp.max_integer_size: a limit on the num	AR1	a size for max_rational_size / max_integer_size (pl-arith.c set_arith_flag 5183-5194, set_restraint 5110-5124): the numbers are unbounded; `infinite` (the boot state) is the no-op
+refusal:src/pl-arith.jl::set_arith_flag::LD->arith.rat.max_rational_size_action: float	AR1	max_rational_size_action = float (pl-arith.c set_restraint_action 5128-5140): no rational-to-float fallback in the number layer; `error` (the boot state) is the no-op
 refusal:src/pl-event.jl::PL_call_event_hook_va::the thread events (`unify_thread_id`)	TH1	thread events unify_thread_id (pl-event.c); threads flag is false
 refusal:src/pl-proc.jl::pl_set_predicate_attribute3_va::spy points (GP_RESOLVE)	DBG1	spy points, GP_RESOLVE (pl-proc.c pl_set_predicate_attribute, SPY_ME)
 refusal:src/pl-proc.jl::setAttrDefinition::setAttrDefinition: attribute $attr	SSU1b	P_CLAUSABLE and P_DET in setAttrDefinition (pl-proc.c); SSU1b is the det/1 setter

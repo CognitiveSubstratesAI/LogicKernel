@@ -2267,6 +2267,249 @@ end
     return _TS_UNIFY_BACKTRACK                      # CLAUSE_FAILED
 end
 
+# ── the A_* instruction bodies, outlined from the run loop (AR1, on T27's pattern) ────────────────
+# ORIGINAL (AR1): the same measure as T27 (audit D-0563) applies to the arithmetic instructions: the code of the A_* labels
+# that call out (`a_var_n`, `common_an`, `A_ROUNDTOWARDS_V`, `A_ADD`, `A_MUL`, `a_cmp`, `A_IS`, `A_FIRSTVAR_IS`) are `@noinline`
+# functions, each called from its own label of `PL_next_solution_guarded`; the labels, their `# PORT:` markers and the operand
+# reads (`*PC++`) stay in the run loop, the bodies are moved as they were (their statements, their variable names, the run loop's
+# register names as arguments where a macro reads them). Each returns the exit it took as a status, the `_TS_*` values of the T_*
+# bodies and four of its own, which the loop's `a_status` label dispatches on: `_TS_AR_THROW` (`AR_THROW_EXCEPTION`),
+# `_TS_FASTCOND_FAILED` (`FASTCOND_FAILED`), `_TS_BODY_FAILED` (`BODY_FAILED`), `_TS_CHECK_WAKEUP` (`CHECK_WAKEUP`).
+# DIVERGES (representation): as the T_* bodies: `@LOAD_REGISTERS` inside a body loads the registers into the body's arguments, not
+# the loop's locals; they are the values saved (positions are indices: an evaluation that grows a stack moves none).
+const _TS_AR_THROW = 3
+const _TS_FASTCOND_FAILED = 4
+const _TS_BODY_FAILED = 5
+const _TS_CHECK_WAKEUP = 6
+
+# ORIGINAL (AR1): pl-vmi.c a_var_n (:3892-3943 at 18168e62), outlined. `av_off` is the operand's offset, read by the label.
+"The body of `A_VAR`, `A_VAR0`, `A_VAR1`, `A_VAR2` (a_var_n): push the value of the variable at `av_off`; a `_TS_*` status."
+@noinline Base.@constprop :none function _vmi_a_var!(
+    ld::PL_local_data{T},
+    @nospecialize(QID::Int),
+    @nospecialize(FR::Int),
+    ARGP::argp_t{T},
+    @nospecialize(PCc::Vector{code}),
+    PCl::Vector{T},
+    @nospecialize(PC::Int),
+    @nospecialize(av_off::Int)
+)::Int where {T}
+    av_vi = varFrameP(ld.frames[FR].base, av_off) + 1
+    av_k, av_w, _ = _deref_loc(ld, -av_vi)              # deRef2(p, p2)
+    if av_k == DU_VALUE
+        if isTaggedIntW(av_w)                           # isTaggedInt(*p2): speedup common case a bit
+            av_n = _number_alloc!(ld)
+            av_n.i = valInt(av_w)
+            av_n.type = V_INTEGER
+            return _TS_NEXT                             # (next_instruction)
+        end
+        av_v = _indirect_value(ld, av_w)
+        av_nk = number_kind(av_v)
+        if av_nk === NUM_INTEGER || av_nk === NUM_RATIONAL   # TAG_INTEGER
+            get_rational(av_v, _number_alloc!(ld))
+            return _TS_NEXT                             # (next_instruction)
+        elseif av_nk === NUM_FLOAT                      # TAG_FLOAT
+            av_n = _number_alloc!(ld)
+            av_n.f = float_value(av_v)
+            av_n.type = V_FLOAT
+            return _TS_NEXT                             # (next_instruction)
+        end
+    end
+    av_lsafe = ld.lTop                                  # intptr_t lsafe
+    @SAVE_REGISTERS(QID)
+    setLTop!(ld, argFrameP(ld.lTop, 1))                 # for is/2
+    av_rc = false
+    av_n = _number_alloc!(ld)                           # the result, pushed (pushArithStack(&result))
+    av_fid = PL_open_foreign_frame(ld)
+    if av_fid != 0
+        av_t = new_term_ref(ld)                         # consTermRef(p)
+        _slot_copy!(ld, av_t + 1, av_vi)
+        # the pin's a_var_n calls evalExpression, which never touches the hardware mode (A_ENTER set the
+        # flag's mode, a roundtoward set its own): the walk WITHOUT the mode scope, not
+        # `evalExpression_cells` (it would put the flag's mode back inside a roundtoward).
+        av_rc = _evalExpression_walk(ld, av_t, av_n)
+        PL_close_foreign_frame(ld, av_fid)
+    end
+    setLTop!(ld, av_lsafe)
+    @LOAD_REGISTERS(QID)
+    av_rc || return _TS_AR_THROW                        # AR_THROW_EXCEPTION
+    return _TS_NEXT                                     # (next_instruction)
+end
+
+# ORIGINAL (AR1): pl-vmi.c common_an (:3993-4003 at 18168e62), outlined; `afn_fn`/`afn_an` as the labels of A_FUNC* set them.
+"The body of `A_FUNC0`, `A_FUNC1`, `A_FUNC2`, `A_FUNC` (common_an): run function `afn_fn` on `afn_an` numbers of the stack; a `_TS_*` status."
+@noinline Base.@constprop :none function _vmi_a_func!(
+    ld::PL_local_data{T},
+    @nospecialize(QID::Int),
+    @nospecialize(FR::Int),
+    ARGP::argp_t{T},
+    @nospecialize(PCc::Vector{code}),
+    PCl::Vector{T},
+    @nospecialize(PC::Int),
+    @nospecialize(afn_fn::Int),
+    @nospecialize(afn_an::Int)
+)::Int where {T}
+    @SAVE_REGISTERS(QID)
+    afn_rc = ar_func_n(ld, afn_fn, afn_an)
+    @LOAD_REGISTERS(QID)
+    afn_rc || return _TS_AR_THROW                       # AR_THROW_EXCEPTION
+    return _TS_NEXT                                     # (next_instruction)
+end
+
+# ORIGINAL (AR1): pl-vmi.c A_ROUNDTOWARDS_V (:4018-4035 at 18168e62), outlined; `arv_slot` is the operand, read by the label.
+"The body of `A_ROUNDTOWARDS_V`: push the rounding mode found, set the mode the variable at `arv_slot` holds; a `_TS_*` status."
+@noinline Base.@constprop :none function _vmi_a_roundtowards_v!(
+    ld::PL_local_data{T},
+    @nospecialize(QID::Int),
+    @nospecialize(FR::Int),
+    ARGP::argp_t{T},
+    @nospecialize(PCc::Vector{code}),
+    PCl::Vector{T},
+    @nospecialize(PC::Int),
+    @nospecialize(arv_slot::Int)
+)::Int where {T}
+    arv_loc = _deref_loc(ld, -(varFrameP(ld.frames[FR].base, arv_slot) + 1))   # deRef(p)
+    arv_atom = arv_loc[1] == DU_WORD && isAtomW(arv_loc[2])
+    arv_m = arv_atom ? atom_to_rounding(_atom_value(ld, arv_loc[2])) : 0   # atom_to_rounding(word2atom(*p), &rm)
+    if arv_m != 0
+        art_n = _number_alloc!(ld)
+        art_n.i = Int64(fegetround())                   # n->value.i = ctx.femode = fegetround()
+        art_n.type = V_INTEGER
+        set_rounding(arv_m)
+        return _TS_NEXT                                 # (next_instruction)
+    end
+    @SAVE_REGISTERS(QID)                                # the error's context is this frame's predicate
+    if arv_atom
+        PL_error(ld, ERR_DOMAIN, mk_sym(T, :round), pushWordAsTermRef(ld, arv_loc))
+    else
+        PL_error(ld, ERR_TYPE, mk_sym(T, :atom), pushWordAsTermRef(ld, arv_loc))
+    end
+    popTermRef(ld)
+    @LOAD_REGISTERS(QID)
+    return _TS_AR_THROW                                 # resetArithStack(); THROW_EXCEPTION
+end
+
+# ORIGINAL (AR1): pl-vmi.c A_ADD (:4042-4058 at 18168e62), outlined.
+"The body of `A_ADD`: add the top two numbers of the arithmetic stack; a `_TS_*` status."
+@noinline Base.@constprop :none function _vmi_a_add!(
+    ld::PL_local_data{T},
+    @nospecialize(QID::Int),
+    @nospecialize(FR::Int),
+    ARGP::argp_t{T},
+    @nospecialize(PCc::Vector{code}),
+    PCl::Vector{T},
+    @nospecialize(PC::Int)
+)::Int where {T}
+    aa_top = ld.arith_top                               # argvArithStack(2) + 1
+    @SAVE_REGISTERS(QID)
+    aa_r = _number_alloc!(ld)                           # number r
+    aa_rc = pl_ar_add(ld, ld.arith_numbers[aa_top], ld.arith_numbers[aa_top - 1], aa_r)
+    @LOAD_REGISTERS(QID)
+    if aa_rc
+        moveNumber(ld.arith_numbers[aa_top - 1], aa_r)  # popArgvArithStack(2); pushArithStack(&r)
+        ld.arith_top = aa_top - 1
+        return _TS_NEXT                                 # (next_instruction)
+    end
+    return _TS_AR_THROW                                 # AR_THROW_EXCEPTION
+end
+
+# ORIGINAL (AR1): pl-vmi.c A_MUL (:4065-4081 at 18168e62), outlined.
+"The body of `A_MUL`: multiply the top two numbers of the arithmetic stack; a `_TS_*` status."
+@noinline Base.@constprop :none function _vmi_a_mul!(
+    ld::PL_local_data{T},
+    @nospecialize(QID::Int),
+    @nospecialize(FR::Int),
+    ARGP::argp_t{T},
+    @nospecialize(PCc::Vector{code}),
+    PCl::Vector{T},
+    @nospecialize(PC::Int)
+)::Int where {T}
+    am_top = ld.arith_top                               # argvArithStack(2) + 1
+    @SAVE_REGISTERS(QID)
+    am_r = _number_alloc!(ld)                           # number r
+    am_rc = ar_mul(ld, ld.arith_numbers[am_top], ld.arith_numbers[am_top - 1], am_r)
+    @LOAD_REGISTERS(QID)
+    if am_rc
+        moveNumber(ld.arith_numbers[am_top - 1], am_r)  # popArgvArithStack(2); pushArithStack(&r)
+        ld.arith_top = am_top - 1
+        return _TS_NEXT                                 # (next_instruction)
+    end
+    return _TS_AR_THROW                                 # AR_THROW_EXCEPTION
+end
+
+# ORIGINAL (AR1): pl-vmi.c CMP_FAST / CMP / a_cmp_out (:4187-4219 at 18168e62), outlined; `ac_what` is the comparison the label set,
+# `ar_femode` the mode `A_ENTER` kept. `_TS_FASTCOND_FAILED` is `FASTCOND_FAILED`, which the loop's `a_status` label runs.
+"The body of `A_LT` .. `A_NE` (a_cmp): compare the top two numbers, pop both, put the rounding mode back; a `_TS_*` status."
+@noinline Base.@constprop :none function _vmi_a_cmp!(
+    ld::PL_local_data{T}, @nospecialize(ac_what::Int), @nospecialize(ar_femode::Int)
+)::Int where {T}
+    ac_top = ld.arith_top                               # argvArithStack(2) + 1
+    ac_n1 = ld.arith_numbers[ac_top - 1]                # Number n1 = argvArithStack(2)
+    ac_n2 = ld.arith_numbers[ac_top]                    # Number n2 = n1 + 1
+    if ac_n1.type === V_INTEGER && ac_n2.type === V_INTEGER
+        ac_i1 = ac_n1.i
+        ac_i2 = ac_n2.i
+        ac_rc =
+            ac_what == LT ? ac_i1 < ac_i2 :
+            ac_what == LE ? ac_i1 <= ac_i2 :
+            ac_what == GT ? ac_i1 > ac_i2 :
+            ac_what == GE ? ac_i1 >= ac_i2 :
+            ac_what == EQ ? ac_i1 == ac_i2 : ac_i1 != ac_i2
+    elseif ac_n1.type === V_FLOAT && ac_n2.type === V_FLOAT
+        ac_f1 = ac_n1.f
+        ac_f2 = ac_n2.f
+        ac_rc =
+            ac_what == LT ? ac_f1 < ac_f2 :
+            ac_what == LE ? ac_f1 <= ac_f2 :
+            ac_what == GT ? ac_f1 > ac_f2 :
+            ac_what == GE ? ac_f1 >= ac_f2 :
+            ac_what == EQ ? ac_f1 == ac_f2 : ac_f1 != ac_f2
+    else
+        ac_rc = ar_compare(ld, ac_n1, ac_n2, ac_what)
+    end
+    _number_free!(ld, 2)                                # popArgvArithStack(2)
+    fegetround() != ar_femode && fesetround(ar_femode)  # AR_END()
+    ac_rc && return _TS_NEXT                            # (next_instruction)
+    return _TS_FASTCOND_FAILED                          # FASTCOND_FAILED
+end
+
+# ORIGINAL (AR1): pl-vmi.c A_IS (:4261-4339 at 18168e62), outlined; `ais_pos` is `argFrameP(lTop, 0)`, which the label also
+# makes `ARGP`.
+# DIVERGES: the wakeup check follows EVERY successful unify here; the pin runs CHECK_WAKEUP only on the bindable-left path
+# (pl-vmi.c:4302-4303, `a_is_ok`), the bound-left compare goes to next_instruction or BODY_FAILED with none. It differs only when a
+# wakeup was already pending before A_IS and the left side was already bound: the kernel runs it at this instruction, the pin
+# at its next wakeup check.
+"The body of `A_IS`: unify the argument at `ais_pos` with the number on top of the arithmetic stack; a `_TS_*` status."
+@noinline Base.@constprop :none function _vmi_a_is!(
+    ld::PL_local_data{T}, @nospecialize(ais_pos::Int), @nospecialize(ar_femode::Int)
+)::Int where {T}
+    ais_n = ld.arith_numbers[ld.arith_top]              # Number n = argvArithStack(1)
+    ais_c = put_number(T, ais_n)                        # put_number(&c, n)
+    _number_free!(ld, 1)                                # popArgvArithStack(1)
+    fegetround() != ar_femode && fesetround(ar_femode)  # AR_END()
+    if _unify_const_loc(ld, -(ais_pos + 1), ais_c)      # deRef2(ARGP, k); canBind(*k): bindConst(k, c)
+        (ld.alerted & ALERT_WAKEUP) != 0 && return _TS_CHECK_WAKEUP   # CHECK_WAKEUP
+        return _TS_NEXT                                 # (next_instruction)
+    end
+    return _TS_BODY_FAILED                              # BODY_FAILED
+end
+
+# ORIGINAL (AR1): pl-vmi.c A_FIRSTVAR_IS (:4352-4370 at 18168e62), outlined; `afv_slot` is the operand, read by the label.
+"The body of `A_FIRSTVAR_IS`: the slot `afv_slot` gets the number on top of the arithmetic stack; a `_TS_*` status."
+@noinline Base.@constprop :none function _vmi_a_firstvar_is!(
+    ld::PL_local_data{T},
+    @nospecialize(FR::Int),
+    @nospecialize(afv_slot::Int),
+    @nospecialize(ar_femode::Int)
+)::Int where {T}
+    afv_n = ld.arith_numbers[ld.arith_top]              # Number n = argvArithStack(1)
+    afv_w = put_number(T, afv_n)                        # put_number(&w, n)
+    _number_free!(ld, 1)                                # popArgvArithStack(1)
+    fegetround() != ar_femode && fesetround(ar_femode)  # AR_END()
+    setSlotValue!(ld, varFrameP(ld.frames[FR].base, afv_slot) + 1, afv_w)   # *varFrameP(FR, *PC++) = w
+    return _TS_NEXT                                     # (next_instruction)
+end
+
 # The run loop's dispatch (ORIGINAL), as a SORTED BRANCH TREE over the opcodes — decision 1's
 # fallback. MEASURED 2026-10-05: LLVM makes no single jump table of an if/elseif chain over them; it
 # makes four partial ones, broken wherever neighbouring arms share a target, so `S_LIST` was reached
@@ -2315,7 +2558,9 @@ const VMI_RUN = (
     :I_FCALLDET2, :I_FCALLDET3, :I_FCALLDET4, :I_FCALLDET5, :I_FCALLDET6, :I_FCALLDET7,
     :I_FCALLDET8, :I_FCALLDET9, :I_FCALLDET10, :I_FEXITDET, :I_VAR, :I_NONVAR, :I_INTEGER,
     :I_RATIONAL, :I_FLOAT, :I_NUMBER, :I_ATOMIC, :I_ATOM, :I_STRING, :I_COMPOUND,
-    :I_CALLABLE, :A_ADD_FC, :B_UNIFY_FIRSTVAR, :B_UNIFY_VAR, :B_UNIFY_EXIT, :B_UNIFY_FF,
+    :I_CALLABLE, :A_ADD_FC, :A_ENTER, :A_INTEGER, :A_MPZ, :A_MPQ, :A_DOUBLE, :A_VAR, :A_VAR0,
+    :A_VAR1, :A_VAR2, :A_FUNC0, :A_FUNC1, :A_FUNC2, :A_FUNC, :A_ROUNDTOWARDS_A, :A_ROUNDTOWARDS_V,
+    :A_ADD, :A_MUL, :A_LT, :A_LE, :A_GT, :A_GE, :A_EQ, :A_NE, :A_IS, :A_FIRSTVAR_IS, :B_UNIFY_FIRSTVAR, :B_UNIFY_VAR, :B_UNIFY_EXIT, :B_UNIFY_FF,
     :B_UNIFY_VF, :B_UNIFY_FV, :B_UNIFY_VV, :B_UNIFY_FC, :B_UNIFY_VC, :B_EQ_VV, :B_EQ_VC,
     :B_NEQ_VV, :B_NEQ_VC, :C_VAR, :I_FAIL, :I_TRUE, :C_JMP, :C_OR, :C_VAR_N,
     :C_IFTHENELSE, :C_IFTHEN, :C_CUT, :C_FASTCOND, :C_FASTCUT, :C_END, :C_NOT, :C_FAIL,
@@ -2865,6 +3110,15 @@ function PL_next_solution_guarded(
     tz_table::Bool = false                          # t_attvarz's istable (TR4)
     tk_c::word = word(0)                            # t_const's constant word (TR4)
     ts_st::Int = _TS_NEXT                           # the status an outlined T_* body returned (T27)
+    ar_base::Int = 0                                # A_ENTER's top of the arithmetic stack (AR_THROW_EXCEPTION's base)
+    ar_femode::Int = FE_TONEAREST                   # A_ENTER's rounding mode (AR_END, AR_THROW_EXCEPTION put it back)
+    av_off::Int = 0                                 # a_var_n's offset
+    afn_fn::Int = 0                                 # common_an's function index
+    afn_an::Int = 0                                 # common_an's argument count
+    ac_what::Int = 0                                # a_cmp's comparison (LT .. EQ)
+    arv_slot::Int = 0                               # A_ROUNDTOWARDS_V's operand (the variable's slot)
+    ais_pos::Int = 0                                # A_IS's argFrameP(lTop, 0)
+    afv_slot::Int = 0                               # A_FIRSTVAR_IS's operand (the variable's slot)
 
     if qid == 0                                    # PL_open_query() failed
         return 0
@@ -5612,6 +5866,260 @@ function PL_next_solution_guarded(
     @LOAD_REGISTERS(QID)
     af_rc || @goto b_throw                              # THROW_EXCEPTION
     setSlotValue!(ld, varFrameP(ld.frames[FR].base, Int(PCc[PC - 3])) + 1, af_w)  # rp: may have shifted
+    @goto next_instruction
+
+    # ── arithmetic on the arithmetic stack (pl-vmi.c A_*), V8/AR1 ────────────────────────────────
+    # The arithmetic stack is the local data's pool of numbers (`_number_alloc!`, pl-arith.jl); the
+    # last number pushed is `ld.arith_numbers[ld.arith_top]`. DIVERGES (file-wide for these arms):
+    # `AR_BEGIN`/`AR_END`/`AR_CLEANUP` hold no GMP context (Julia's GC frees a `BigInt`); what is left
+    # of them is the rounding mode (the header of pl-arith.jl): `A_ENTER` keeps the mode found in
+    # `ar_femode` and the top of the stack in `ar_base`, every end of an evaluation (`a_cmp`, `A_IS`,
+    # `A_FIRSTVAR_IS`, `ar_throw`) puts the mode back, `ar_throw` also cuts the stack to `ar_base`
+    # (upstream's `resetArithStack()` cuts it to the stack's base, below a caller's numbers too).
+    # NOT PORTED: `A_INTEGERW` (`CODES_PER_WORD` is 1 here: upstream asserts it is not executed).
+    # ORIGINAL (AR1): the bodies that call out are `@noinline` functions (`_vmi_a_var!` .. `_vmi_a_firstvar_is!`, above the dispatch
+    # tree), as T27's T_* bodies: the label reads its operand and calls its body, the `a_status` label takes the exit it returned.
+
+    # PORT: pl-vmi.c AR_THROW_EXCEPTION as ar_throw
+    # DIVERGES: a shared label (upstream's macro): stack and rounding mode as above, then `b_throw`.
+    # DIVERGES (behavioural, corner case; assumed until Shivaji rules; dispatcher decision of 2026-11-13): the pin's AR_CLEANUP (pl-gmp.h
+    # :281-286 and :312-315 at 18168e62) puts back `__PL_ar_ctx.femode` when it is not FE_NOTSET, and `A_ROUNDTOWARDS_A/V` (pl-vmi.c
+    # :4009, :4026) store `fegetround()` into that field, the mode BEFORE the roundtoward that ran last; AR_END (:276-280, a no-op
+    # for the mode) restores nothing. So after an error thrown inside a NESTED roundtoward the pin leaves the OUTER roundtoward's
+    # mode set (probed: `_ is roundtoward(roundtoward(1/0, to_zero), to_positive)` caught, then `Y is 1/3.0` with the flag at
+    # to_nearest prints 0.33333333333333337; a single roundtoward, or an error before the inner one ran, leaks nothing). The kernel
+    # keeps the ENTRY mode in `ar_femode` (A_ENTER) and puts it back at every end, and A_ENTER sets the flag's mode per evaluation
+    # (the model of pl-arith.jl's header), so that leak is not reproduced: its answer is 0.3333333333333333. Pinned both ways by
+    # the rows k0/k1 of test/core_lang/test_arith_roundopt_swipl.jl; no change of the model.
+    @label ar_throw
+    ld.arith_top = ar_base                              # resetArithStack()
+    fegetround() != ar_femode && fesetround(ar_femode)  # AR_CLEANUP()
+    @goto b_throw                                       # THROW_EXCEPTION
+
+    # PORT: pl-vmi.c A_ENTER
+    # DIVERGES: the mode the `float_rounding` flag names is set here, where `evalExpression` sets it
+    # (pl-arith.jl `evalExpression_cells`); `AR_END` puts the mode found back.
+    # DIVERGES (a Julia exception, corner case): an exception that is not a Prolog error (a `BoundsError`, an `InterruptException`, a
+    # `NotPortedError` raised inside `ar_func_n`) between this label and the end of the A_* sequence leaves a non-nearest hardware mode
+    # set until the next `A_ENTER` or `evalExpression_cells` scope (that one has a `finally`); only `ar_throw` and the ends of
+    # `a_cmp`, `A_IS`, `A_FIRSTVAR_IS` put the mode back. The pin has no such exception: its error paths are `ar_throw`'s.
+    @label A_ENTER
+    ar_base = ld.arith_top
+    ar_femode = fegetround()                            # __PL_ar_ctx.femode, kept
+    ar_mode = Int(ld.arith_f_flags & FLT_ROUND_MASK)
+    ar_mode != Int(FLT_ROUND_NEAREST) && set_rounding(ar_mode)
+    @goto next_instruction
+
+    # PORT: pl-vmi.c A_INTEGER
+    @label A_INTEGER
+    ai_n = _number_alloc!(ld)                           # allocArithStack()
+    ai_n.i = reinterpret(Int64, PCc[PC])                # (scode) *PC++
+    ai_n.type = V_INTEGER
+    PC += 1
+    @goto next_instruction
+
+    # PORT: pl-vmi.c A_MPZ
+    # DIVERGES: the operand is a literal (src/pl-vmi.jl), the integer as a value term: `get_rational`.
+    @label A_MPZ
+    get_rational(PCl[PCc[PC]], _number_alloc!(ld))      # get_mpz_from_code()
+    PC += 1
+    @goto next_instruction
+
+    # PORT: pl-vmi.c A_MPQ
+    # DIVERGES: as `A_MPZ`: the rational as a value term.
+    @label A_MPQ
+    get_rational(PCl[PCc[PC]], _number_alloc!(ld))      # get_mpq_from_code()
+    PC += 1
+    @goto next_instruction
+
+    # PORT: pl-vmi.c A_DOUBLE
+    # DIVERGES: the operand is a literal, the float as a value term: `get_number` (`cpDoubleData`).
+    @label A_DOUBLE
+    get_number(PCl[PCc[PC]], _number_alloc!(ld))
+    PC += 1
+    @goto next_instruction
+
+    # PORT: pl-vmi.c A_VAR
+    @label A_VAR
+    av_off = Int(PCc[PC])
+    PC += 1
+    @goto a_var_n
+
+    # PORT: pl-vmi.c A_VAR0
+    @label A_VAR0
+    av_off = Int(VAROFFSET(0))
+    @goto a_var_n
+
+    # PORT: pl-vmi.c A_VAR1
+    @label A_VAR1
+    av_off = Int(VAROFFSET(1))
+    @goto a_var_n
+
+    # PORT: pl-vmi.c A_VAR2
+    @label A_VAR2
+    av_off = Int(VAROFFSET(2))
+    @goto a_var_n
+
+    # PORT: pl-vmi.c a_var_n
+    # DIVERGES: on the WORDS (`_deref_loc`): a tagged integer, a value-table integer or rational and a float are
+    # pushed without a term (`get_rational`); anything else is evaluated (`evalExpression_cells` on a
+    # fresh term reference, as `A_ADD_FC`'s slow path) into the number pushed. `lTop` is raised past
+    # the argument `is/2` has written (`B_VAR`), as upstream's `argFrameP(lTop, 1)`, so the term
+    # reference does not overwrite it.
+    @label a_var_n
+    ts_st = _vmi_a_var!(ld, QID, FR, ARGP, PCc, PCl, PC, av_off)   # outlined (AR1)
+    ts_st == _TS_NEXT || @goto a_status
+    @goto next_instruction
+
+    # PORT: pl-vmi.c A_FUNC0
+    @label A_FUNC0
+    afn_fn = Int(PCc[PC])
+    PC += 1
+    afn_an = 0
+    @goto common_an
+
+    # PORT: pl-vmi.c A_FUNC1
+    @label A_FUNC1
+    afn_fn = Int(PCc[PC])
+    PC += 1
+    afn_an = 1
+    @goto common_an
+
+    # PORT: pl-vmi.c A_FUNC2
+    @label A_FUNC2
+    afn_fn = Int(PCc[PC])
+    PC += 1
+    afn_an = 2
+    @goto common_an
+
+    # PORT: pl-vmi.c A_FUNC
+    @label A_FUNC
+    afn_fn = Int(PCc[PC])                               # the function's index (`indexArithFunction`)
+    afn_an = Int(PCc[PC + 1])                           # #args
+    PC += 2
+    @goto common_an
+
+    # PORT: pl-vmi.c common_an
+    # DIVERGES: `ar_func_n` (pl-arith.jl) works on the pooled stack and moves the result to the place
+    # of the first argument.
+    @label common_an
+    ts_st = _vmi_a_func!(ld, QID, FR, ARGP, PCc, PCl, PC, afn_fn, afn_an)   # outlined (AR1)
+    ts_st == _TS_NEXT || @goto a_status
+    @goto next_instruction
+
+    # PORT: pl-vmi.c A_ROUNDTOWARDS_A
+    # DIVERGES: the mode found is the number pushed (`fegetround()`, a raw `FE_*` value `ar_roundtoward`
+    # puts back); the operand is the `FLT_ROUND_*` value `set_rounding` takes.
+    @label A_ROUNDTOWARDS_A
+    art_n = _number_alloc!(ld)
+    art_n.i = Int64(fegetround())                       # n->value.i = ctx.femode = fegetround()
+    art_n.type = V_INTEGER
+    set_rounding(Int(PCc[PC]))                          # set_rounding(mode)
+    PC += 1
+    @goto next_instruction
+
+    # PORT: pl-vmi.c A_ROUNDTOWARDS_V
+    # DIVERGES: the variable is read on the words. Where upstream throws with no exception pending
+    # (an assertion fails in the pin, 18168e62: `roundtoward(E, M)` compiled with `optimise`, `M` bound to
+    # a non-mode), the error is raised as `set_roundtoward` raises it: `domain_error(round, M)` for an
+    # atom, else `type_error(atom, M)` (an unbound `M`: instantiation).
+    @label A_ROUNDTOWARDS_V
+    arv_slot = Int(PCc[PC])
+    PC += 1
+    ts_st = _vmi_a_roundtowards_v!(ld, QID, FR, ARGP, PCc, PCl, PC, arv_slot)   # outlined (AR1)
+    ts_st == _TS_NEXT || @goto a_status
+    @goto next_instruction
+
+    # PORT: pl-vmi.c A_ADD
+    # DIVERGES: the operands are the top two of the pool: `argv+1` the last pushed, `argv` below it; the
+    # result is computed in a record above them, then moved to the place of `argv`.
+    @label A_ADD
+    ts_st = _vmi_a_add!(ld, QID, FR, ARGP, PCc, PCl, PC)   # outlined (AR1)
+    ts_st == _TS_NEXT || @goto a_status
+    @goto next_instruction
+
+    # PORT: pl-vmi.c A_MUL
+    # DIVERGES: as `A_ADD`.
+    @label A_MUL
+    ts_st = _vmi_a_mul!(ld, QID, FR, ARGP, PCc, PCl, PC)   # outlined (AR1)
+    ts_st == _TS_NEXT || @goto a_status
+    @goto next_instruction
+
+    # PORT: pl-vmi.c A_LT
+    @label A_LT
+    ac_what = LT
+    @goto a_cmp
+
+    # PORT: pl-vmi.c A_LE
+    @label A_LE
+    ac_what = LE
+    @goto a_cmp
+
+    # PORT: pl-vmi.c A_GT
+    @label A_GT
+    ac_what = GT
+    @goto a_cmp
+
+    # PORT: pl-vmi.c A_GE
+    @label A_GE
+    ac_what = GE
+    @goto a_cmp
+
+    # PORT: pl-vmi.c A_EQ
+    @label A_EQ
+    ac_what = EQ
+    @goto a_cmp
+
+    # PORT: pl-vmi.c A_NE
+    @label A_NE
+    ac_what = NE
+    @goto a_cmp
+
+    # PORT: pl-vmi.c CMP_FAST as a_cmp
+    # PORT: pl-vmi.c CMP
+    # PORT: pl-vmi.c a_cmp_out
+    # DIVERGES: the macros `CMP`/`CMP_FAST` are one shared label with the comparison in `ac_what`
+    # (the `LT .. NE` of pl-arith.jl): equal types `V_INTEGER`/`V_FLOAT` compare directly (a NaN: `<`, `==`
+    # false, `!=` true, as C's), anything else through `ar_compare`; the two numbers are the top two of
+    # the pool, `n1` below `n2` (`n1` was pushed first, the left operand). `a_cmp_out`: pop both,
+    # `AR_END` puts the rounding mode back, success goes on, failure is `FASTCOND_FAILED`.
+    @label a_cmp
+    ts_st = _vmi_a_cmp!(ld, ac_what, ar_femode)         # outlined (AR1)
+    ts_st == _TS_NEXT || @goto a_status
+    @goto next_instruction
+
+    # PORT: pl-vmi.c A_IS
+    # DIVERGES: the left operand's cell is the slot `B_VAR` wrote (`argFrameP(lTop, 0)`), read on the
+    # WORDS: the number is made a term (`put_number`, no global stack to ensure) and unified with it by
+    # `_unify_const_loc`, which binds an unbound or attributed variable and compares anything else by SWI's
+    # identity (a compound fails); upstream's own branches for a bound left operand (`get_rational`
+    # and `cmpNumbers` for a rational, the bit comparison of a float, else false) are that comparison.
+    # `put_number` cannot fail or raise here (no `rc`, no `THROW_EXCEPTION`).
+    @label A_IS
+    ais_pos = argFrameP(ld.lTop, 0)
+    ARGP = argp_t{T}(ARGP_SLOT, ais_pos, ph)            # ARGP = argFrameP(lTop, 0)
+    ts_st = _vmi_a_is!(ld, ais_pos, ar_femode)          # outlined (AR1)
+    ts_st == _TS_NEXT || @goto a_status
+    @goto next_instruction
+
+    # PORT: pl-vmi.c A_FIRSTVAR_IS
+    # DIVERGES: `put_number` returns the term (as `A_IS`: no `rc`, no `THROW_EXCEPTION`); the first
+    # variable's slot is set (`*varFrameP(FR, *PC++) = w`).
+    @label A_FIRSTVAR_IS
+    afv_slot = Int(PCc[PC])
+    PC += 1
+    ts_st = _vmi_a_firstvar_is!(ld, FR, afv_slot, ar_femode)   # outlined (AR1)
+    ts_st == _TS_NEXT || @goto a_status
+    @goto next_instruction
+
+    # ORIGINAL (AR1): the exit an outlined A_* body took (`_TS_*`, see `_vmi_a_var!`), to the label upstream's macro names.
+    @label a_status
+    ts_st == _TS_AR_THROW && @goto ar_throw             # AR_THROW_EXCEPTION
+    ts_st == _TS_BODY_FAILED && @goto shallow_backtrack  # BODY_FAILED
+    ts_st == _TS_CHECK_WAKEUP && @goto check_wakeup     # CHECK_WAKEUP
+    if ts_st == _TS_FASTCOND_FAILED
+        @FASTCOND_FAILED
+    end
     @goto next_instruction
 
     # ── supervisors (pl-vmi.c) ────────────────────────────────────────────────────────────────────

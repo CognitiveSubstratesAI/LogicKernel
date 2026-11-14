@@ -2362,6 +2362,340 @@ function compileSimpleAddition(
     return false
 end
 
+# ── arithmetic compiled inline, under the `optimise` flag (pl-comp.c, `#if O_COMPILE_ARITH`) ────
+# ORIGINAL: the error `type_error(expected, culprit)` the arithmetic compiler raises, with the message `msg`
+# (upstream: `PL_error(NULL, 0, msg, ERR_TYPE, ATOM_<expected>, pushWordAsTermRef(arg))`); the culprit is a
+# new term reference (`_target_culprit`). Returns false.
+"`type_error(expected, culprit)` raised with message `msg` for a term of the clause; false."
+function _arith_type_error!(
+    ld::PL_local_data{T}, ci::compileInfo{T}, msg::String, expected::Symbol, culprit::T
+)::Bool where {T}
+    PL_error(
+        ld, "", 0, msg, ERR_TYPE, mk_sym(T, expected), _target_culprit(ld, ci, culprit)
+    )
+    return false
+end
+
+# PORT: pl-comp.c arithVarOffset
+# DIVERGES: returns `(rc, offset)` where upstream returns `rc` and writes `*offp`: rc is 1 (true: the
+# variable's frame offset), 0 (false: not a variable) or -1 (an error raised). The term is not
+# dereferenced (a clause's terms are resolved); `resetVars()` has nothing to reset (no marks in the term).
+"""
+The frame offset of `arg` when it is a clause variable that may be read in arithmetic (a head variable, or
+one already seen), as `(1, offset)`; `(0, 0)` for a term that is no variable; `(-1, 0)` after raising
+`type_error(evaluable, Var)` for a void or a first-occurrence variable (pl-comp.c).
+"""
+function arithVarOffset(
+    ld::PL_local_data{T}, ci::compileInfo{T}, arg::T
+)::Tuple{Int, Int} where {T}
+    if kind(arg) === VAR
+        index = isIndexedVarTerm(ci, arg)
+        if index >= 0
+            first = isFirstVarSet!(ci.used_var, index)
+            if index < ci.arity || !first              # shared in the head or not first
+                return (1, index)
+            end
+        end
+        # an unseen variable, or a void one
+        _arith_type_error!(
+            ld, ci, "Unbound variable in arithmetic expression", :evaluable, arg
+        )
+        return (-1, 0)
+    end
+    return (0, 0)
+end
+
+# PORT: pl-arith.c arithChar as _arith_char
+# DIVERGES: on a term (the compiler's), not a word; the culprit is a new term reference.
+"The character code `[X]`'s `X` stands for (pl-arith.c `arithChar`); -1 after raising `type_error(character, X)`."
+function _arith_char(ld::PL_local_data{T}, ci::compileInfo{T}, x::T)::Int where {T}
+    if kind(x) === GND && _gnd_code(x, A_BODY) == B_SMALLINT   # isTaggedInt(*p)
+        chr = int64_value(x)
+        0 <= chr <= 0x10ffff && return Int(chr)                # VALID_CODE_POINT(chr)
+    elseif kind(x) === SYM                                     # isAtom(*p)
+        chr = charCode(x)
+        chr >= 0 && return chr
+    end
+    PL_error(ld, ERR_TYPE, mk_sym(T, :character), _target_culprit(ld, ci, x))
+    return -1                                                  # EOF
+end
+
+# PORT: pl-arith.c getCharExpression as _arith_char_constant
+# DIVERGES: on a term: a one-character string through `getCharExpression` (pl-arith.jl), `[X]` here
+# (`getCharExpression_cells` is the run-time twin on cells).
+"The character code of the string or `[X]` that `arg` is (pl-arith.c); -1 after raising."
+function _arith_char_constant(
+    ld::PL_local_data{T}, ci::compileInfo{T}, arg::T
+)::Int where {T}
+    if is_pair(arg)                                            # TAG_COMPOUND
+        chr = _arith_char(ld, ci, child(arg, 2))               # arithChar(argTermP(w, 0))
+        chr == -1 && return -1
+        if !is_nil(child(arg, 3))                              # isNil(*a)
+            _arith_type_error!(ld, ci, "\"x\" must hold one character", :character, arg)
+            return -1
+        end
+        return chr
+    end
+    n = number()
+    getCharExpression(ld, arg, n) || return -1                 # TAG_STRING
+    return Int(n.i)
+end
+
+# PORT: pl-comp.c compileArith
+# DIVERGES: a clause's terms are resolved: no `deRef`, the arguments are `child`ren after the head. An
+# error raised by `PL_error` is `BOOLEX_FALSE`, as upstream's `fail`/`rc`.
+"""
+Compile the arithmetic comparison or `is/2` goal `arg` inline (pl-comp.c): `A_ENTER`, the operands as
+`compileArithArgument!` compiles them, then the comparison's instruction; `is/2` compiles its left side
+as an argument and ends in `A_IS`, or in `A_FIRSTVAR_IS` when that side is a first-occurrence variable
+(the `B_FIRSTVAR` instruction is taken back). Called under the `optimise` flag, for a goal that is not
+local (pl-comp.c `compileSubClause`).
+"""
+function compileArith!(
+    ld::PL_local_data{T}, names::SubClauseNames, ci::compileInfo{T}, arg::T
+)::boolex_t where {T}
+    name = sym_key(child(arg, 1))
+    a_func = code(0)
+    if name == names.atom_ar_equals
+        a_func = A_EQ                                          # =:=
+    elseif name == names.atom_ar_not_equal
+        a_func = A_NE                                          # =\=
+    elseif name == names.atom_smaller
+        a_func = A_LT                                          # <
+    elseif name == names.atom_larger
+        a_func = A_GT                                          # >
+    elseif name == names.atom_smaller_equal
+        a_func = A_LE                                          # =<
+    elseif name == names.atom_larger_equal
+        a_func = A_GE                                          # >=
+    elseif name == names.atom_is                               # is
+        tc_a1 = PC(ci)
+        rc = compileArgument!(ci, child(arg, 2), A_BODY)
+        rc || return BOOLEX_FALSE
+        if PC(ci) == tc_a1 + 2 && ci.codes[tc_a1 + 1] == B_FIRSTVAR
+            isvar = ci.codes[tc_a1 + 2]
+            resize!(ci.codes, tc_a1)                           # seekBuffer(&ci->codes, tc_a1, code)
+        else
+            isvar = code(0)
+        end
+        Output_0!(ci, A_ENTER)
+        compileArithArgument!(ld, names, ci, child(arg, 3)) || return BOOLEX_FALSE
+        if isvar != 0
+            Output_1!(ci, A_FIRSTVAR_IS, isvar)
+        else
+            Output_0!(ci, A_IS)
+        end
+        return BOOLEX_TRUE
+    else
+        error("compileArith!: not an arithmetic goal")         # assert(0): see registerArithFunctors()
+    end
+
+    Output_0!(ci, A_ENTER)
+    if !compileArithArgument!(ld, names, ci, child(arg, 2)) ||
+        !compileArithArgument!(ld, names, ci, child(arg, 3))
+        return BOOLEX_FALSE
+    end
+    Output_0!(ci, a_func)
+    return BOOLEX_TRUE
+end
+
+# PORT: pl-comp.c aa_frame
+"A pending function application of `compileArithArgument!` (pl-comp.c `aa_frame`)."
+mutable struct aa_frame{T}
+    parent::T           # the compound being compiled
+    next_idx::Int       # next operand (0-based, decremented: right to left)
+    remaining::Int      # operands still to compile, incl. the current one
+    is_plus::Bool       # FUNCTOR_plus2: ends in A_ADD
+    is_star::Bool       # FUNCTOR_star2: ends in A_MUL
+    func_index::Int     # indexArithFunction(fdef)
+    ar::Int             # total arity (for the A_FUNCn switch)
+    ignore_error::Bool  # true for roundtoward2's lone operand
+end
+
+# PORT: pl-comp.c compileArithArgument
+# DIVERGES: the operands are terms of the clause, resolved: no `deRef`; an integer that is not inline
+# is `A_MPZ` with a literal operand (the value as a term, as `B_MPZ`'s), a float `A_DOUBLE` with a literal,
+# a rational `A_MPQ`; `A_INTEGERW` is not emitted (`CODES_PER_WORD` is 1 here: `A_INTEGER` takes the whole
+# integer). A function name is looked up by its key and arity (`indexArithFunction`). The stack in pieces
+# is a `Vector`. `ignore_error` is kept as upstream has it, but no failed operand reaches it: every failure leaves through `exit`, as upstream's
+# (probed at the pin: `roundtoward(nofunc(1), M)` is refused with the error, no clause is added).
+"""
+Compile the arithmetic expression `arg0` to instructions that push its value on the arithmetic stack
+(pl-comp.c): a number its `A_INTEGER`/`A_MPZ`/`A_MPQ`/`A_DOUBLE`, a variable `A_VAR0..2`/`A_VAR`, a
+function its operands (right to left) then `A_ADD`, `A_MUL` or `A_FUNC0/1/2/A_FUNC`; `roundtoward(E, Mode)`
+emits `A_ROUNDTOWARDS_A`/`A_ROUNDTOWARDS_V` first. False after raising an error.
+"""
+function compileArithArgument!(
+    ld::PL_local_data{T}, names::SubClauseNames, ci::compileInfo{T}, arg0::T
+)::Bool where {T}
+    stack = aa_frame{T}[]
+    arg = arg0
+    rc = false
+    index = 0
+    off = 2
+    ar = 0
+    frame = aa_frame{T}(arg0, 0, 0, false, false, 0, 0, false)
+
+    @label next_arg
+    k = kind(arg)
+    if k === GND
+        nk = number_kind(arg)
+        if nk === NUM_INTEGER || nk === NUM_RATIONAL           # isRational(*arg)
+            if _gnd_code(arg, A_BODY) == B_SMALLINT            # isInlineInt(*arg)
+                Output_1!(ci, A_INTEGER, reinterpret(code, int64_value(arg)))
+            else
+                Output_1!(                                     # output_indirect(ci, op, ...)
+                    ci, nk === NUM_RATIONAL ? A_MPQ : A_MPZ, addLiteral!(ci, arg)
+                )
+            end
+            rc = true
+            @goto resume
+        elseif nk === NUM_FLOAT                                # isFloat(*arg)
+            Output_1!(ci, A_DOUBLE, addLiteral!(ci, arg))
+            rc = true
+            @goto resume
+        elseif nk === NUM_STRING                               # isString(*arg)
+            @goto case_char_constant
+        end
+        _arith_type_error!(ld, ci, "", :evaluable, arg)        # a value with no arithmetic meaning
+        rc = false
+        @goto exit
+    elseif k === VAR
+        vrc, index = arithVarOffset(ld, ci, arg)
+        if vrc == 1
+            if index < 3
+                Output_0!(ci, A_VAR0 + code(index))
+            else
+                Output_1!(ci, A_VAR, VAROFFSET(index))
+            end
+            rc = true
+            @goto resume
+        end
+        rc = false                                             # vrc < 0: the error is raised
+        @goto exit
+    end
+
+    # callable (function)
+    if k === SYM && !is_reserved_symbol(arg) && !is_blob(arg)  # isTextAtom(*arg)
+        fname = sym_key(arg)
+        ar = 0
+        off = 2
+    elseif k === EXPR
+        off, ar = _comp_shape(arg)
+        if off != 2                                            # `$expr/n`: no function by that name
+            _arith_type_error!(ld, ci, "No such arithmetic function", :evaluable, arg)
+            rc = false
+            @goto exit
+        end
+        if is_pair(arg)                                        # fdef == FUNCTOR_dot2: "char"
+            @goto case_char_constant
+        end
+        fname = sym_key(child(arg, 1))
+    else
+        _arith_type_error!(ld, ci, "", :evaluable, arg)
+        rc = false
+        @goto exit
+    end
+
+    index = indexArithFunction(T, fname, ar)
+    if index < 0
+        _arith_type_error!(ld, ci, "No such arithmetic function", :evaluable, arg)
+        rc = false
+        @goto exit
+    end
+
+    if fname == names.atom_roundtoward && ar == 2              # FUNCTOR_roundtoward2
+        m = child(arg, 3)                                      # deRef2(a+1, m)
+        mode = kind(m) === SYM ? atom_to_rounding(m) : 0
+        if mode != 0
+            Output_1!(ci, A_ROUNDTOWARDS_A, code(mode))
+        else
+            vrc, vindex = arithVarOffset(ld, ci, m)
+            if vrc == 1
+                Output_1!(ci, A_ROUNDTOWARDS_V, VAROFFSET(vindex))
+            elseif vrc < 0
+                rc = false
+                @goto exit
+            elseif kind(m) === SYM                             # isAtom(*m)
+                PL_error(ld, ERR_DOMAIN, mk_sym(T, :round), _target_culprit(ld, ci, m))
+                rc = false
+                @goto exit
+            else
+                PL_error(ld, ERR_TYPE, mk_sym(T, :atom), _target_culprit(ld, ci, m))
+                rc = false
+                @goto exit
+            end
+        end
+        # recurse on args[0] only
+        push!(stack, aa_frame{T}(arg, 0, 1, false, false, index, ar, true))
+        arg = child(arg, 2)
+        @goto next_arg
+    end
+
+    if ar > 0
+        push!(                                                 # right-to-left over all args
+            stack,
+            aa_frame{T}(
+                arg, ar - 1, ar, fname == names.atom_plus && ar == 2,
+                fname == names.atom_star && ar == 2, index, ar, false
+            )
+        )
+        arg = child(arg, 2 + ar - 1)
+        @goto next_arg
+    end
+
+    # ar == 0: no operands; emit the nullary function directly.
+    Output_1!(ci, A_FUNC0, code(index))
+    rc = true
+    @goto resume
+
+    @label case_char_constant
+    chr = _arith_char_constant(ld, ci, arg)
+    if chr == -1
+        rc = false
+        @goto exit
+    end
+    Output_1!(ci, A_INTEGER, reinterpret(code, Int64(chr)))
+    rc = true
+    @goto resume
+
+    @label resume
+    isempty(stack) && return rc                                # stack empty: return rc
+    frame = pop!(stack)
+    if !rc && !frame.ignore_error
+        @goto exit
+    end
+    frame.remaining -= 1
+    if frame.remaining > 0
+        frame.next_idx -= 1
+        push!(stack, frame)
+        arg = child(frame.parent, 2 + frame.next_idx)
+        @goto next_arg
+    end
+
+    # All operands compiled; emit the operator.
+    if frame.is_plus
+        Output_0!(ci, A_ADD)
+    elseif frame.is_star
+        Output_0!(ci, A_MUL)
+    else
+        if frame.ar == 0
+            Output_1!(ci, A_FUNC0, code(frame.func_index))
+        elseif frame.ar == 1
+            Output_1!(ci, A_FUNC1, code(frame.func_index))
+        elseif frame.ar == 2
+            Output_1!(ci, A_FUNC2, code(frame.func_index))
+        else
+            Output_2!(ci, A_FUNC, code(frame.func_index), code(frame.ar))
+        end
+    end
+    rc = true
+    @goto resume
+
+    @label exit
+    return rc
+end
+
 # PORT: pl-comp.c compileSubClause
 # DIVERGES: plain goals and `!` (`I_CUT`, or a local cut's instruction once V9 sets `ci.cut`; user,
 # 2026-10-05: the cut's COMPILE side with the body compiler, its execution since V6a). The meta-call (a
@@ -2413,9 +2747,8 @@ function compileSubClause!(
             if name == names.atom_is && compileSimpleAddition(ld, names, arg, ci)
                 return BOOLEX_TRUE
             end
-            # O_COMPILE_ARITH: under `optimise` upstream compiles it inline (`compileArith`): refused
-            truePrologFlag(ld, PLFLAG_OPTIMISE) &&
-                throw(NotPortedError{T}(arg, "compileArith (optimise)", "the user's Q-AR3"))
+            # O_COMPILE_ARITH: under `optimise` the goal is compiled inline (`compileArith`)
+            truePrologFlag(ld, PLFLAG_OPTIMISE) && return compileArith!(ld, names, ci, arg)
         end
         # O_COMPILE_IS (c:3484-3519), `!ci->islocal`: upstream's chain, in its order; a `false` falls
         # through to the call below; a goal clause calls them all
@@ -4741,11 +5074,11 @@ function mark_bvar_access(clause::Clause{T})::Union{Nothing, BitVector} where {T
     while pc <= length(codes)
         c = codes[pc]
         info = codeTable(c)
-        if c == B_VAR0
+        if c == B_VAR0 || c == A_VAR0
             max = add_bvar_access!(bits, 0, max)
-        elseif c == B_VAR1
+        elseif c == B_VAR1 || c == A_VAR1
             max = add_bvar_access!(bits, 1, max)
-        elseif c == B_VAR2
+        elseif c == B_VAR2 || c == A_VAR2
             max = add_bvar_access!(bits, 2, max)
         elseif c == B_UNIFY_FF || c == B_UNIFY_FV || c == B_UNIFY_VF
             max = add_bvar_access!(bits, VARNUM(codes[pc + 1]), max)
@@ -4870,9 +5203,11 @@ end
 # under construction is a frame closed at its `B_POP`, with the `B_RFUNCTOR`/`B_RLIST` chain of its
 # last argument (as `decompile_head!`); returns nothing — there is no stack to overflow, so no
 # `*_OVERFLOW` and no retry loop (`decompileBody`'s). `end_` is an instruction, `code(typemax)` for
-# upstream's `(code)-1`; `until` is an index, 0 for NULL. NOT PORTED: `D_BREAK` (no debugger), the
-# arithmetic instructions but `A_ADD_FC`. Since MOD3a `I_CALLM`/`I_DEPARTM` decompile to `M:Goal`
-# (pl-comp.c:6842-6851), since MOD3b `I_CALLATM`/`I_DEPARTATM`/`I_CALLATMV`/`I_DEPARTATMV` to
+# upstream's `(code)-1`; `until` is an index, 0 for NULL. NOT PORTED: `D_BREAK` (no debugger); the
+# arithmetic instructions are the cases of upstream's merged `case` labels (`A_INTEGER` with
+# `B_SMALLINT`: the operand is the raw integer, no tagged word; `A_DOUBLE`/`A_MPZ`/`A_MPQ` with
+# `B_FLOAT`/`B_MPZ`: the operand is a literal; `A_INTEGERW` is never emitted).
+# Since MOD3a `I_CALLM`/`I_DEPARTM` decompile to `M:Goal` (pl-comp.c:6842-6851), since MOD3b `I_CALLATM`/`I_DEPARTATM`/`I_CALLATMV`/`I_DEPARTATMV` to
 # `Goal@M` or `PM:Goal@M` (pl-comp.c:6801-6840), and `I_CONTEXT` here "should never happen" (c:6792-6794;
 # `decompile!` takes it).
 """
@@ -4895,7 +5230,7 @@ function decompileBodyNoShift!(
             di.pc -= 1
             break
         end
-        if op == I_NOP || op == I_CHP
+        if op == A_ENTER || op == I_NOP || op == I_CHP
             continue
         elseif op == B_ATOM || op == H_ATOM
             _dpush!(di, _word_of!(ld, lits[atom_literal(codes[di.pc])]))
@@ -4903,9 +5238,12 @@ function decompileBodyNoShift!(
         elseif op == B_SMALLINT || op == H_SMALLINT
             _dpush!(di, _word_of!(ld, mk_gnd(T, valInt(codes[di.pc]))))  # the tagged word's integer (L1d step 4)
             di.pc += 1
+        elseif op == A_INTEGER                                  # `consInt(*PC++)`: the operand is the raw integer
+            _dpush!(di, _word_of!(ld, mk_gnd(T, reinterpret(Int64, codes[di.pc]))))
+            di.pc += 1
         elseif op == B_FLOAT || op == B_MPZ || op == B_MPQ ||
             op == B_STRING || op == H_FLOAT || op == H_MPZ ||
-            op == H_MPQ ||
+            op == H_MPQ || op == A_DOUBLE || op == A_MPZ || op == A_MPQ ||
             op == H_STRING
             _dpush!(di, _word_of!(ld, lits[codes[di.pc]]))
             di.pc += 1
@@ -4913,15 +5251,33 @@ function decompileBodyNoShift!(
             _dpush!(di, ld.atom_nil_w)
         elseif op == B_ARGVAR || op == B_ARGFIRSTVAR || op == B_FIRSTVAR ||
             op == B_UNIFY_VAR || op == B_UNIFY_FIRSTVAR || op == B_VAR ||
-            op == H_FIRSTVAR || op == H_VAR
+            op == H_FIRSTVAR || op == H_VAR || op == A_VAR || op == A_ROUNDTOWARDS_V
             _dvar!(di, nested, codes[di.pc])
             di.pc += 1
-        elseif op == B_VAR0
+        elseif op == B_VAR0 || op == A_VAR0
             _dvar!(di, nested, VAROFFSET(0))
-        elseif op == B_VAR1
+        elseif op == B_VAR1 || op == A_VAR1
             _dvar!(di, nested, VAROFFSET(1))
-        elseif op == B_VAR2
+        elseif op == B_VAR2 || op == A_VAR2
             _dvar!(di, nested, VAROFFSET(2))
+        elseif op == A_ROUNDTOWARDS_A                           # `float_rounding_name(*PC++)`
+            _dpush!(di, _atom_word!(ld, float_rounding_name(T, Int(codes[di.pc]))))
+            di.pc += 1
+        elseif op == A_ADD || op == A_MUL                       # BUILD_TERM_REV(FUNCTOR_plus2/star2)
+            build_term!(di, mk_sym(T, op == A_ADD ? Symbol("+") : Symbol("*")), 2, 1)
+        elseif op == A_FUNC0 || op == A_FUNC1 || op == A_FUNC2 || op == A_FUNC
+            fname, farity = functorArithFunction(Int(codes[di.pc]))
+            di.pc += op == A_FUNC ? 2 : 1                       # A_FUNC: the arity operand follows
+            build_term!(di, mk_sym(T, fname), farity, 1)        # BUILD_TERM_REV(functorArithFunction(*PC++))
+        elseif A_LT <= op <= A_FIRSTVAR_IS                      # f_common, and A_FIRSTVAR_IS's variable first
+            if op == A_FIRSTVAR_IS
+                w = pop!(di.argp)                               # ARGP[0] = ARGP[-1]; ARGP[-1] = makeVarRef(index)
+                push!(di.argp, makeVarRef(codes[di.pc]))
+                push!(di.argp, w)
+                di.pc += 1
+            end
+            build_term!(di, mk_sym(T, _arith_goal_name(op)), 2)
+            pushed += 1
         elseif op == B_UNIFY_FF || op == B_UNIFY_FV || op == B_UNIFY_VV
             push!(di.argp, makeVarRef(codes[di.pc]))
             push!(di.argp, makeVarRef(codes[di.pc + 1]))
@@ -5194,6 +5550,19 @@ function _type_test_name(op::code)::Symbol
         op == instruction && return Symbol(name)
     end
     error("_type_test_name: $(codeTable(op).name) is not a type test")
+end
+
+# PORT: pl-comp.c decompileBodyNoShift (the `f_common` functors of the arithmetic comparisons)
+"The name of the goal the arithmetic instruction `op` (`A_LT` .. `A_FIRSTVAR_IS`) decompiles to (pl-comp.c)."
+function _arith_goal_name(op::code)::Symbol
+    op == A_LT && return Symbol("<")                           # FUNCTOR_smaller2
+    op == A_LE && return Symbol("=<")                          # FUNCTOR_smaller_equal2
+    op == A_GT && return Symbol(">")                           # FUNCTOR_larger2
+    op == A_GE && return Symbol(">=")                          # FUNCTOR_larger_equal2
+    op == A_EQ && return Symbol("=:=")                         # FUNCTOR_ar_equals2
+    op == A_NE && return Symbol("=\\=")                        # FUNCTOR_ar_not_equal2
+    (op == A_IS || op == A_FIRSTVAR_IS) && return :is          # FUNCTOR_is2
+    error("_arith_goal_name: $(codeTable(op).name) is not an arithmetic goal")
 end
 
 # PORT: pl-comp.c decompileBody

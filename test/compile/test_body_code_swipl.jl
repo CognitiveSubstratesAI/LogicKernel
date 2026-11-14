@@ -74,7 +74,8 @@ function _bc_op(op, k::UInt8, w::UInt64, lits, procs, jump)::String
             "i:" * string(Int(w))
         elseif op == LK.H_SMALLINT || op == LK.B_SMALLINT || op == LK.L_SMALLINT
             _hlit(lk_gnd(_B, LK.valInt(w)))                             # the tagged word itself (L1d step 4)
-        elseif op == LK.A_ADD_FC || op == LK.B_ARG_CF
+        elseif op == LK.A_ADD_FC || op == LK.B_ARG_CF || op == LK.A_INTEGER ||
+               op == LK.A_FUNC || op == LK.A_ROUNDTOWARDS_A
             _hlit(lk_gnd(_B, reinterpret(Int64, w)))                    # the integer itself (L1d step 4)
         else
             _hlit(lits[w])
@@ -89,6 +90,9 @@ function _bc_op(op, k::UInt8, w::UInt64, lits, procs, jump)::String
     elseif k == LK.CA1_LPROC
         d = procs[w].definition
         return "P:" * _hcps(_BNAMES[d.functor_name]) * "/$(d.arity)"
+    elseif k == LK.CA1_AFUNC                                             # (AR1 d3) the index
+        n, a = LK.functorArithFunction(Int(w))
+        return _hF(String(n), a)
     elseif k == LK.CA1_MODULE && w == 0                                  # (MOD3b) the clause's module: swipl's NULL
         return "M:0"
     elseif k == LK.CA1_MODULE                                            # (MOD3a) the module's name
@@ -953,12 +957,12 @@ const _BC_ARITH_CELLS = [
         @test got !== nothing                                       # V8: A_ADD_FC compiles
         @test (got !== nothing && any(startswith("a_add_fc"), got)) == refused
     end
-    # under `optimise` upstream compiles arithmetic inline (compileArith, memo Q-AR3): refused
+    # under `optimise` upstream compiles arithmetic inline (compileArith, AR1 d3): the code of the
+    # comparison is A_ENTER, the operands, A_LT (the rows of `_BC_ARITH_O` pin the whole family)
     ld = LK.PL_local_data{_B}(_BGD)
     LK.setPrologFlagMask!(ld, LK.PLFLAG_OPTIMISE)
-    @test_throws LK.NotPortedError _bclause(
-        _bf("po_ar", _bv(1)), _bf("<", _bv(1), _bg(3)); ld=ld
-    )
+    @test _bc_kernel(_bclause(_bf("po_ar", _bv(1)), _bf("<", _bv(1), _bg(3)); ld=ld)) ==
+          ["i_enter", "a_enter", "a_var0", "a_integer(i:3)", "a_lt", "i_exit"]
     if _BC_SWIPL_BIN !== nothing
         theirs = _bc_swipl([
             "bc_case_show(($(_bc_text(h, b))))" for (_, h, b, _) in _BC_ARITH_CELLS
@@ -971,6 +975,259 @@ const _BC_ARITH_CELLS = [
                 "\n    swipl ", theirs[k])
             @test ours[k] == theirs[k]
         end
+    end
+end
+
+# ── arithmetic compiled inline under `optimise` (AR1 d3, compileArith): the pin's code ────────────
+# Each row: (name, head, body, the code of the pin's swipl 10.1.20 (18168e62) under
+# `set_prolog_flag(optimise, true)`: a single-shot `clause_vm/2` query per clause, the clause
+# `assertz`'d). The operands of a function are compiled RIGHT TO LEFT, a comparison's left to right.
+"The codes of a row as a vector: the words of `s` (whitespace separated)."
+_bcodes(s::AbstractString)::Vector{String} = String.(split(s))
+"The `q(X)` tail of a clause whose goal before it set slot `k` (first-variable `is`, then LCO)."
+_ba_tail(k::Int, ar::Int=1) =
+    "l_nolco(L1) l_var(0,$k) i_lcall($(_bP("q", ar))) L1: " *
+    (k <= 2 ? "b_var$k" : "b_var($k)") * " i_depart($(_bP("q", ar))) i_exit"
+const _BA_BIG20 = big(10)^20
+const _BA_BIG64 = parse(BigInt, "12345678901234567890")
+const _BC_ARITH_O = [
+    ("A<B", _bf("ia1", _bv(1), _bv(2)), _bf("<", _bv(1), _bv(2)),
+        "i_enter a_enter a_var0 a_var1 a_lt i_exit"),
+    ("A=:=3", _bf("ia2", _bv(1)), _bf("=:=", _bv(1), _bg(3)),
+        "i_enter a_enter a_var0 a_integer(i:3) a_eq i_exit"),
+    ("A=\\=1.5", _bf("ia3", _bv(1)), _bf("=\\=", _bv(1), _bg(1.5)),
+        "i_enter a_enter a_var0 a_double($(_hf(1.5))) a_ne i_exit"),
+    ("A>10^20", _bf("ia4", _bv(1)), _bf(">", _bv(1), _bg(_BA_BIG20)),
+        "i_enter a_enter a_var0 a_mpz(i:100000000000000000000) a_gt i_exit"),
+    ("A=<B+1", _bf("ia5", _bv(1), _bv(2)), _bf("=<", _bv(1), _bf("+", _bv(2), _bg(1))),
+        "i_enter a_enter a_var0 a_integer(i:1) a_var1 a_add a_le i_exit"),
+    ("A>=B*2", _bf("ia6", _bv(1), _bv(2)), _bf(">=", _bv(1), _bf("*", _bv(2), _bg(2))),
+        "i_enter a_enter a_var0 a_integer(i:2) a_var1 a_mul a_ge i_exit"),
+    ("X is A-B", _bf("ia7", _bv(1), _bv(2), _bv(3)),
+        _bf("is", _bv(3), _bf("-", _bv(1), _bv(2))),
+        "i_enter b_var2 a_enter a_var1 a_var0 a_func2($(_hF("-", 2))) a_is i_exit"),
+    ("X is 5-3", _bf("ia8", _bv(1)), _bf("is", _bv(1), _bf("-", _bg(5), _bg(3))),
+        "i_enter b_var0 a_enter a_integer(i:3) a_integer(i:5) " *
+        "a_func2($(_hF("-", 2))) a_is i_exit"),
+    ("is, then a call", _bf("ia9", _bv(1)),
+        _bconj(_bf("is", _bv(2), _bf("*", _bv(1), _bg(2))), _bf("q", _bv(2))),
+        "i_enter a_enter a_integer(i:2) a_var0 a_mul a_firstvar_is(1) " * _ba_tail(1)),
+    ("A+B", _bf("ia10", _bv(1), _bv(2)),
+        _bconj(_bf("is", _bv(3), _bf("+", _bv(1), _bv(2))), _bf("q", _bv(3))),
+        "i_enter a_enter a_var1 a_var0 a_add a_firstvar_is(2) " * _ba_tail(2)),
+    ("sqrt(A)+max(B,3)", _bf("ia11", _bv(1), _bv(2)),
+        _bconj(
+            _bf("is", _bv(3),
+                _bf("+", _bf("sqrt", _bv(1)), _bf("max", _bv(2), _bg(3)))),
+            _bf("q", _bv(3))),
+        "i_enter a_enter a_integer(i:3) a_var1 a_func2($(_hF("max", 2))) a_var0 " *
+        "a_func1($(_hF("sqrt", 1))) a_add a_firstvar_is(2) " * _ba_tail(2)),
+    ("powm(A,B,3): A_FUNC", _bf("ia12", _bv(1), _bv(2)),
+        _bconj(_bf("is", _bv(3), _bf("powm", _bv(1), _bv(2), _bg(3))), _bf("q", _bv(3))),
+        "i_enter a_enter a_integer(i:3) a_var1 a_var0 a_func($(_hF("powm", 3)),i:3) " *
+        "a_firstvar_is(2) " * _ba_tail(2)),
+    ("pi+A: A_FUNC0", _bf("ia13", _bv(1)),
+        _bconj(_bf("is", _bv(2), _bf("+", _bs("pi"), _bv(1))), _bf("q", _bv(2))),
+        "i_enter a_enter a_var0 a_func0($(_hF("pi", 0))) a_add a_firstvar_is(1) " *
+        _ba_tail(1)),
+    ("roundtoward, a mode atom", _bf("ia14", _bv(1)),
+        _bconj(
+            _bf("is", _bv(2),
+                _bf("roundtoward", _bf("/", _bv(1), _bg(2)), _bs("to_positive"))),
+            _bf("q", _bv(2))),
+        "i_enter a_enter a_roundtowards_a(i:2) a_integer(i:2) a_var0 " *
+        "a_func2($(_hF("/", 2))) " *
+        "a_func2($(_hF("roundtoward", 2))) a_firstvar_is(1) " * _ba_tail(1)),
+    ("roundtoward, a mode variable", _bf("ia15", _bv(1), _bv(2)),
+        _bconj(
+            _bf("is", _bv(3), _bf("roundtoward", _bf("+", _bv(1), _bg(1.0)), _bv(2))),
+            _bf("q", _bv(3))),
+        "i_enter a_enter a_roundtowards_v(1) a_double($(_hf(1.0))) a_var0 a_add " *
+        "a_func2($(_hF("roundtoward", 2))) a_firstvar_is(2) " * _ba_tail(2)),
+    ("\"a\"+A: a string, its code", _bf("ia16", _bv(1)),
+        _bconj(_bf("is", _bv(2), _bf("+", _bg("a"), _bv(1))), _bf("q", _bv(2))),
+        "i_enter a_enter a_var0 a_integer(i:97) a_add a_firstvar_is(1) " * _ba_tail(1)),
+    ("[0'a]+A: a list, its code", _bf("ia17", _bv(1)),
+        _bconj(_bf("is", _bv(2), _bf("+", _blist(_bg(97)), _bv(1))), _bf("q", _bv(2))),
+        "i_enter a_enter a_var0 a_integer(i:97) a_add a_firstvar_is(1) " * _ba_tail(1)),
+    ("a variable past slot 2: A_VAR", _bf("ia18", _bv(1), _bv(2), _bv(3), _bv(4)),
+        _bconj(_bf("is", _bv(5), _bf("+", _bv(4), _bg(1.5))), _bf("q", _bv(5))),
+        "i_enter a_enter a_double($(_hf(1.5))) a_var(3) a_add a_firstvar_is(4) " *
+        _ba_tail(4)),
+    ("A is 1+2: a plain A_IS", _bf("ia19", _bv(1)),
+        _bf("is", _bv(1), _bf("+", _bg(1), _bg(2))),
+        "i_enter b_var0 a_enter a_integer(i:2) a_integer(i:1) a_add a_is i_exit"),
+    ("X is A", _bf("ia20", _bv(1)), _bconj(_bf("is", _bv(2), _bv(1)), _bf("q", _bv(2))),
+        "i_enter a_enter a_var0 a_firstvar_is(1) " * _ba_tail(1)),
+    ("X is -A", _bf("ia21", _bv(1)),
+        _bconj(_bf("is", _bv(2), _bf("-", _bv(1))), _bf("q", _bv(2))),
+        "i_enter a_enter a_var0 a_func1($(_hF("-", 1))) a_firstvar_is(1) " * _ba_tail(1)),
+    ("X is A+1: compileSimpleAddition first", _bf("ia22", _bv(1)),
+        _bconj(_bf("is", _bv(2), _bf("+", _bv(1), _bg(1))), _bf("q", _bv(2))),
+        "i_enter a_add_fc(1,0,i:1) " * _ba_tail(1)),
+    ("a bigint operand", _bf("ia23", _bv(1)),
+        _bconj(_bf("is", _bv(2), _bf("*", _bg(_BA_BIG64), _bv(1))), _bf("q", _bv(2))),
+        "i_enter a_enter a_var0 a_mpz(i:12345678901234567890) a_mul a_firstvar_is(1) " *
+        _ba_tail(1)),
+    ("two is/2 in a row", _bf("ia24", _bv(1)),
+        _bconj(
+            _bf("is", _bv(2), _bf("+", _bv(1), _bg(0.1))),
+            _bf("is", _bv(3), _bf("*", _bv(2), _bv(2))),
+            _bf("q", _bv(3))),
+        "i_enter a_enter a_double($(_hf(0.1))) a_var0 a_add a_firstvar_is(1) " *
+        "a_enter a_var1 a_var1 a_mul a_firstvar_is(2) " * _ba_tail(2)),
+    ("min(A,B)+abs(A)+B", _bf("ia25", _bv(1), _bv(2)),
+        _bconj(
+            _bf("is", _bv(3),
+                _bf("+", _bf("+", _bf("min", _bv(1), _bv(2)), _bf("abs", _bv(1))), _bv(2))),
+            _bf("q", _bv(3))),
+        "i_enter a_enter a_var1 a_var0 a_func1($(_hF("abs", 1))) a_var1 a_var0 " *
+        "a_func2($(_hF("min", 2))) a_add a_add a_firstvar_is(2) " * _ba_tail(2)),
+    ("e+inf: two A_FUNC0, a call of two", _bf("ia26", _bv(1)),
+        _bconj(_bf("is", _bv(2), _bf("+", _bs("e"), _bs("inf"))), _bf("q", _bv(2), _bv(1))),
+        "i_enter a_enter a_func0($(_hF("inf", 0))) a_func0($(_hF("e", 0))) a_add " *
+        "a_firstvar_is(1) b_var1 b_var0 i_depart($(_bP("q", 2))) i_exit"),
+    ("A+B+C: A_VAR2", _bf("ib1", _bv(1), _bv(2), _bv(3)),
+        _bconj(
+            _bf("is", _bv(4), _bf("+", _bf("+", _bv(1), _bv(2)), _bv(3))),
+            _bf("q", _bv(4))),
+        "i_enter a_enter a_var2 a_var1 a_var0 a_add a_add a_firstvar_is(3) " * _ba_tail(3)),
+    ("A*B*C", _bf("ib8", _bv(1), _bv(2), _bv(3)),
+        _bconj(
+            _bf("is", _bv(4), _bf("*", _bf("*", _bv(1), _bv(2)), _bv(3))),
+            _bf("q", _bv(4))),
+        "i_enter a_enter a_var2 a_var1 a_var0 a_mul a_mul a_firstvar_is(3) " * _ba_tail(3)),
+    ("+A: a unary plus is A_FUNC1", _bf("ib2", _bv(1)),
+        _bconj(_bf("is", _bv(2), _bf("+", _bv(1))), _bf("q", _bv(2))),
+        "i_enter a_enter a_var0 a_func1($(_hF("+", 1))) a_firstvar_is(1) " * _ba_tail(1)),
+    ("[0]+A", _bf("ib3", _bv(1)),
+        _bconj(_bf("is", _bv(2), _bf("+", _blist(_bg(0)), _bv(1))), _bf("q", _bv(2))),
+        "i_enter a_enter a_var0 a_integer(i:0) a_add a_firstvar_is(1) " * _ba_tail(1)),
+    ("[0x10ffff]+A", _bf("ib4", _bv(1)),
+        _bconj(_bf("is", _bv(2), _bf("+", _blist(_bg(1114111)), _bv(1))), _bf("q", _bv(2))),
+        "i_enter a_enter a_var0 a_integer(i:1114111) a_add a_firstvar_is(1) " *
+        _ba_tail(1)),
+    ("a rational: A_MPQ", _bf("ib6", _bv(1)),
+        _bconj(_bf("is", _bv(2), _bf("*", _bg(1 // big(3)), _bv(1))), _bf("q", _bv(2))),
+        "i_enter a_enter a_var0 a_mpq(q:1/3) a_mul a_firstvar_is(1) " * _ba_tail(1)),
+    ("2^56-1 is inline", _bf("ic1", _bv(1)),
+        _bconj(_bf("is", _bv(2), _bf("*", _bg(2^56 - 1), _bv(1))), _bf("q", _bv(2))),
+        "i_enter a_enter a_var0 a_integer(i:72057594037927935) a_mul a_firstvar_is(1) " *
+        _ba_tail(1)),
+    ("2^56 is a_mpz", _bf("ic2", _bv(1)),
+        _bconj(_bf("is", _bv(2), _bf("*", _bg(big(2)^56), _bv(1))), _bf("q", _bv(2))),
+        "i_enter a_enter a_var0 a_mpz(i:72057594037927936) a_mul a_firstvar_is(1) " *
+        _ba_tail(1)),
+    ("-2^56 is inline", _bf("ic3", _bv(1)),
+        _bconj(_bf("is", _bv(2), _bf("*", _bg(-(2^56)), _bv(1))), _bf("q", _bv(2))),
+        "i_enter a_enter a_var0 a_integer(i:-72057594037927936) a_mul a_firstvar_is(1) " *
+        _ba_tail(1)),
+    ("-2^56-1 is a_mpz", _bf("ic4", _bv(1)),
+        _bconj(
+            _bf("is", _bv(2), _bf("*", _bg(-(big(2)^56) - 1), _bv(1))),
+            _bf("q", _bv(2))),
+        "i_enter a_enter a_var0 a_mpz(i:-72057594037927937) a_mul a_firstvar_is(1) " *
+        _ba_tail(1))
+]
+
+@testset "arithmetic under optimise compiles inline as the pin does (AR1 d3, compileArith)" begin
+    ld = LK.PL_local_data{_B}(_BGD)
+    LK.setPrologFlagMask!(ld, LK.PLFLAG_OPTIMISE)
+    ours = [_bc_kernel(_bclause(h, b; ld=ld)) for (_, h, b, _) in _BC_ARITH_O]
+    for (k, (name, _, _, expected)) in enumerate(_BC_ARITH_O)
+        ours[k] == _bcodes(expected) || println(stderr, "  ", name,
+            "\n    ours  ", ours[k], "\n    pin   ", _bcodes(expected))
+        @test ours[k] == _bcodes(expected)
+    end
+    # without the flag the same clauses call the comparison: no a_enter (is/2 may still be A_ADD_FC)
+    ld0 = LK.PL_local_data{_B}(_BGD)
+    @test !any(
+        c -> any(startswith("a_enter"), c),
+        _bc_kernel(_bclause(h, b; ld=ld0)) for (_, h, b, _) in _BC_ARITH_O
+    )
+    if _BC_SWIPL_BIN !== nothing
+        theirs = _bc_swipl(
+            ["bc_case_show(($(_bc_text(h, b))))" for (_, h, b, _) in _BC_ARITH_O];
+            prelude="set_prolog_flag(optimise, true)"
+        )
+        @test length(theirs) == length(_BC_ARITH_O)
+        for k in eachindex(_BC_ARITH_O)
+            k <= length(theirs) || break
+            ours[k] == theirs[k] || println(stderr, "  -O ", _BC_ARITH_O[k][1],
+                "\n    ours  ", ours[k], "\n    swipl ", theirs[k])
+            @test ours[k] == theirs[k]
+        end
+    end
+end
+
+# errors raised while compiling under `optimise` (pl-comp.c compileArith, compileArithArgument):
+# the formal of the ball, as the pin's swipl 10.1.20 raises it for `assertz` (probed, optimise on;
+# a variable culprit of a type_error becomes instantiation_error in PL_error, as pl-error.c)
+@testset "arithmetic under optimise raises as the pin does (AR1 d3)" begin
+    "`(clause or nothing, the ball's formal or nothing)` of compiling `head :- body`."
+    function arith_error(head, body)
+        ld = LK.PL_local_data{_B}(_BGD)
+        LK.setPrologFlagMask!(ld, LK.PLFLAG_OPTIMISE)
+        _bnames!(head)
+        _bnames!(body)
+        user = LK.MODULE_user(_BGD)
+        name, ar = _bfunctor(head)
+        cl = LK.compileClause(
+            _BGD, ld, head, body, LK.lookupProcedure(name, ar, user), user
+        )
+        ld.exception_term != 0 || return (cl, nothing)
+        return (cl, child(lk_answer(ld, ld.exception_term), 2))
+    end
+    cases = [
+        ("a void variable", _bs("pe1"), _bf("<", _bv(1), _bg(3)),
+            _bs("instantiation_error")),
+        ("an unknown function", _bf("pe2", _bv(1)),
+            _bf("is", _bv(1), _bf("nofunc", _bv(1))),
+            _bf("type_error", _bs("evaluable"), _bf("nofunc", _bv(9)))),
+        ("a bad rounding mode", _bf("pe3", _bv(1)),
+            _bf("is", _bv(2), _bf("roundtoward", _bv(1), _bs("nomode"))),
+            _bf("domain_error", _bs("round"), _bs("nomode"))),
+        ("a rounding mode that is no atom", _bf("pe4", _bv(1)),
+            _bf("is", _bv(2), _bf("roundtoward", _bv(1), _bg(3))),
+            _bf("type_error", _bs("atom"), _bg(3))),
+        ("a first-occurrence variable", _bf("pe5", _bv(1)),
+            _bconj(_bf("is", _bv(2), _bf("+", _bv(1), _bv(3))), _bf("q", _bv(2), _bv(3))),
+            _bs("instantiation_error")),
+        ("an unknown atom", _bf("pe6", _bv(1)), _bf("is", _bv(1), _bs("foo")),
+            _bf("type_error", _bs("evaluable"), _bs("foo"))),
+        ("a two-character string", _bf("pe7", _bv(1)),
+            _bf("is", _bv(1), _bf("+", _bg("ab"), _bg(1))),
+            _bf("type_error", _bs("character"), _bg("ab"))),
+        ("a two-element list", _bf("pe8", _bv(1)),
+            _bf("is", _bv(1), _bf("+", _blist(_bs("a"), _bs("b")), _bg(1))),
+            _bf("type_error", _bs("character"), _blist(_bs("a"), _bs("b")))),
+        ("a void right side", _bf("pe9", _bv(1)), _bf("<", _bv(1), _bv(2)),
+            _bs("instantiation_error")),
+        ("a code point past 0x10ffff", _bf("pe10", _bv(1)),
+            _bf("is", _bv(1), _bf("+", _blist(_bg(1114112)), _bg(1))),
+            _bf("type_error", _bs("character"), _bg(1114112))),
+        # the operand of roundtoward/2 fails: the clause is refused, as the pin's assertz throws and adds nothing (probed, 10.1.20:
+        # `assertz((a(X) :- X is roundtoward(nofunc(1), to_positive)))` -> type_error(evaluable, nofunc(1)), 0 clauses): `ignore_error`
+        # is never read with a failed operand, every failure of compileArithArgument leaves through `exit` (pl-comp.c:4004-4119)
+        ("roundtoward of an unknown function", _bf("pe11", _bv(1)),
+            _bf("is", _bv(1),
+                _bf("roundtoward", _bf("nofunc", _bg(1)), _bs("to_positive"))),
+            _bf("type_error", _bs("evaluable"), _bf("nofunc", _bg(1)))),
+        ("*/1 is no function", _bf("pe12", _bv(1)), _bf("is", _bv(1), _bf("*", _bv(1))),
+            _bf("type_error", _bs("evaluable"), _bf("*", _bv(9)))),
+        # `[]` is no text atom: the else branch, no message (probed: type_error(evaluable, []), context(system:assertz/1, _))
+        ("[] is no function", _bf("pe13", _bv(1)),
+            _bf("is", _bv(1), _bf("+", mk_nil(_B), _bg(1))),
+            _bf("type_error", _bs("evaluable"), mk_nil(_B))),
+        # a rounding mode variable not seen before (arithVarOffset on the second operand of roundtoward/2)
+        ("a first-occurrence mode variable", _bf("pe14", _bv(1)),
+            _bf("is", _bv(2), _bf("roundtoward", _bv(1), _bv(3))),
+            _bs("instantiation_error"))
+    ]
+    for (name, h, b, formal) in cases
+        cl, formal_got = arith_error(h, b)
+        @test formal_got !== nothing && LK.is_variant_ptr(formal_got, formal)
+        @test cl === nothing
     end
 end
 
@@ -1565,6 +1822,47 @@ function _bdecompile(cl::LK.Clause{_B}, head::_B)::Tuple{_B, _B}
     return (dh, db)
 end
 
+# The decompiled arithmetic clauses of `_BC_ARITH_O` (keyed by the head's name): the pin's swipl
+# 10.1.20, `clause/3` after `assertz` under optimise, in `ix_text`'s form.
+const _BC_ARITH_DECOMPILED = Dict{String, String}(
+    "ia1" => "':-'(ia1(A,B),'<'(A,B))",
+    "ia2" => "':-'(ia2(A),'=:='(A,3))",
+    "ia3" => "':-'(ia3(A),'=\\='(A,1.5))",
+    "ia4" => "':-'(ia4(A),'>'(A,100000000000000000000))",
+    "ia5" => "':-'(ia5(A,B),'=<'(A,'+'(B,1)))",
+    "ia6" => "':-'(ia6(A,B),'>='(A,'*'(B,2)))",
+    "ia7" => "':-'(ia7(A,B,C),is(C,'-'(A,B)))",
+    "ia8" => "':-'(ia8(A),is(A,'-'(5,3)))",
+    "ia9" => "':-'(ia9(A),','(is(B,'*'(A,2)),q(B)))",
+    "ia10" => "':-'(ia10(A,B),','(is(C,'+'(A,B)),q(C)))",
+    "ia11" => "':-'(ia11(A,B),','(is(C,'+'(sqrt(A),max(B,3))),q(C)))",
+    "ia12" => "':-'(ia12(A,B),','(is(C,powm(A,B,3)),q(C)))",
+    "ia13" => "':-'(ia13(A),','(is(B,'+'(pi,A)),q(B)))",
+    "ia14" => "':-'(ia14(A),','(is(B,roundtoward('/'(A,2),to_positive)),q(B)))",
+    "ia15" => "':-'(ia15(A,B),','(is(C,roundtoward('+'(A,1.0),B)),q(C)))",
+    "ia16" => "':-'(ia16(A),','(is(B,'+'(97,A)),q(B)))",
+    "ia17" => "':-'(ia17(A),','(is(B,'+'(97,A)),q(B)))",
+    "ia18" => "':-'(ia18(_,_,_,A),','(is(B,'+'(A,1.5)),q(B)))",
+    "ia19" => "':-'(ia19(A),is(A,'+'(1,2)))",
+    "ia20" => "':-'(ia20(A),','(is(B,A),q(B)))",
+    "ia21" => "':-'(ia21(A),','(is(B,'-'(A)),q(B)))",
+    "ia22" => "':-'(ia22(A),','(is(B,'+'(A,1)),q(B)))",
+    "ia23" => "':-'(ia23(A),','(is(B,'*'(12345678901234567890,A)),q(B)))",
+    "ia24" => "':-'(ia24(A),','(is(B,'+'(A,0.1)),','(is(C,'*'(B,B)),q(C))))",
+    "ia25" => "':-'(ia25(A,B),','(is(C,'+'('+'(min(A,B),abs(A)),B)),q(C)))",
+    "ia26" => "':-'(ia26(A),','(is(B,'+'(e,inf)),q(B,A)))",
+    "ib1" => "':-'(ib1(A,B,C),','(is(D,'+'('+'(A,B),C)),q(D)))",
+    "ib8" => "':-'(ib8(A,B,C),','(is(D,'*'('*'(A,B),C)),q(D)))",
+    "ib2" => "':-'(ib2(A),','(is(B,'+'(A)),q(B)))",
+    "ib3" => "':-'(ib3(A),','(is(B,'+'(0,A)),q(B)))",
+    "ib4" => "':-'(ib4(A),','(is(B,'+'(1114111,A)),q(B)))",
+    "ib6" => "':-'(ib6(A),','(is(B,'*'(1r3,A)),q(B)))",
+    "ic1" => "':-'(ic1(A),','(is(B,'*'(72057594037927935,A)),q(B)))",
+    "ic2" => "':-'(ic2(A),','(is(B,'*'(72057594037927936,A)),q(B)))",
+    "ic3" => "':-'(ic3(A),','(is(B,'*'(-72057594037927936,A)),q(B)))",
+    "ic4" => "':-'(ic4(A),','(is(B,'*'(-72057594037927937,A)),q(B)))"
+)
+
 # What `decompile!` rebuilds from each cell's code, variables renamed in order (`_bnorm`): pinned,
 # so the jobs without swipl check the decompiler too. Each is a variant of swipl's clause/2 (below).
 const _BC_OR_DECOMPILED = Dict{String, String}(
@@ -1744,6 +2042,67 @@ const _BC_DEC_DECOMPILED = Dict{String, String}(
         @test !dc(d1, _bs("d1"), _bf(";", _bs("b"), _bv(9002)))
         @test !dc(d1, _bs("d1"), _bs("true"))
         @test !dc(fact, _bf("df", _bv(9003)), _bs("a"))
+    end
+    # The decompile of the arithmetic instructions (AR1 A7; pl-comp.c:6452-6725, `mark_bvar_access`
+    # 5736-5745): clause/2 of a clause compiled under `optimise` is the source again, the operands
+    # in the order they were written (a function's operands were compiled right to left), a string
+    # or `[C]` operand as its code. The texts: the pin's swipl 10.1.20 (18168e62), `clause/3` of the
+    # `assertz`'d clause with `set_prolog_flag(optimise, true)`, written as `ix_text` writes them.
+    @testset "the decompiler rebuilds the arithmetic instructions (AR1 A7)" begin
+        lda = LK.PL_local_data{_B}(_BGD)
+        LK.setPrologFlagMask!(lda, LK.PLFLAG_OPTIMISE)
+        decs = [
+            _bdecompile(_bclause(h, b; ld=lda), h) for (_, h, b, _) in _BC_ARITH_O
+        ]
+        for (k, (_, h, _, _)) in enumerate(_BC_ARITH_O)
+            name = lk_atom_text(_bfunctor(h)[1])
+            got = _bnorm(_bc_text(decs[k]...))
+            want = get(_BC_ARITH_DECOMPILED, name, "")
+            got == want || println(stderr, "  ", name, "\n    ours  ", got, "\n    pin   ", want)
+            @test !isempty(want)
+            @test got == want
+        end
+        @test length(_BC_ARITH_DECOMPILED) == length(_BC_ARITH_O)
+        if _BC_SWIPL_BIN !== nothing
+            shows = [
+                "bc_decomp(($(_bc_text(h, b))), ($(_bc_text(dh, db))))" for
+                ((_, h, b, _), (dh, db)) in zip(_BC_ARITH_O, decs)
+            ]
+            theirs = _bc_swipl(shows; prelude="set_prolog_flag(optimise, true)")
+            @test length(theirs) == length(shows)
+            for k in eachindex(shows)
+                k <= length(theirs) || break
+                theirs[k] == ["same"] ||
+                    println(stderr, "  -O ", _BC_ARITH_O[k][1], "\n    swipl ", theirs[k])
+                @test theirs[k] == ["same"]
+            end
+        end
+        # mark_bvar_access reads A_VAR0..2 as it reads B_VAR0..2 (pl-comp.c:5736-5745): a unification
+        # moved into the head (`X = f(a)`, then an arithmetic goal on X) comes back as a goal; the pin's
+        # code is h_functor(f/1) h_atom(a) h_pop i_enter a_enter a_var0 a_integer(3) a_lt i_exit
+        # (the same for slots 1, 2 and 3: A_VAR1, A_VAR2, and A_VAR(3), whose operand is a CA1_VAR)
+        for (n, want) in (
+            ("dmv", "':-'(dmv(A),','('='(A,f(a)),'<'(A,3)))"),
+            ("dmv1", "':-'(dmv1(_,A),','('='(A,f(a)),'<'(A,3)))"),
+            ("dmv2", "':-'(dmv2(_,_,A),','('='(A,f(a)),'<'(A,3)))"),
+            ("dmv3", "':-'(dmv3(_,_,_,A),','('='(A,f(a)),'<'(A,3)))")
+        )
+            k = n == "dmv" ? 1 : parse(Int, n[4:end]) + 1           # the moved argument's slot
+            mh = _bf(n, [_bv(i) for i in 1:k]...)
+            mv = _bclause(
+                mh,
+                _bconj(_bf("=", _bv(k), _bf("f", _bs("a"))), _bf("<", _bv(k), _bg(3)));
+                ld=lda
+            )
+            @test mv.flags & LK.CL_HEAD_TERMS != 0
+            @test _bnorm(_bc_text(_bdecompile(mv, mh)...)) == want
+        end
+        mv0 = _bclause(
+            _bf("dmv", _bv(1)),
+            _bconj(_bf("=", _bv(1), _bf("f", _bs("a"))), _bf("<", _bv(1), _bg(3)));
+            ld=lda
+        )
+        @test any(startswith("a_var0"), _bc_kernel(mv0))
     end
     @testset "clause/2 with a body (pl_clause!)" begin
         gd = LK.PL_global_data{_B}()
