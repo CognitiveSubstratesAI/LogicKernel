@@ -10,6 +10,9 @@
 # clause garbage collection keeps every clause those enumerations can still see. The rest of
 # pl-thread.c is threads, which the kernel does not have; since Y1 `ThreadCPUTime`, the CPU time of the
 # calling thread, which statistics/2 reads.
+# SYNC-Z1 ledger (target cf6960c2, from 18168e62): the diff of pl-thread.c/.h is atom-GC and thread machinery, none of it
+# observable by a single-threaded program; no row of a ported function changed. See `pl_thread_self` (create_thread_handle),
+# the TH1 rows and `gcByGCThread` (new).
 
 # PORT: pl-thread.c cgcActivatePredicate
 "Record that `def` is accessed in generation `gen`, if it is dirty (pl-thread.c)."
@@ -117,7 +120,22 @@ end
 # would unify `th->alias`, which is `main` for the main thread (swipl 10.1.19: `thread_self(X)` gives
 # `X = main`), so the single-thread form unifies `main`. NOT PORTED: the thread handle blob
 # (`create_thread_handle`) of a thread without an alias, and `PL_unify_integer(id, info->pl_tid)`.
+# Synced to cf6960c2: `create_thread_handle` types its local `new` `bool` (was `int`): a type change only, and the
+# handle is unwritten here (the kernel has one thread, the alias `main`). The other hunks of the target's pl-thread.c belong
+# to threads (`freePrologThread`, `PL_set_engine`, the message-queue code, thread-local atoms and `PL_TRYLOCK`), which this
+# kernel runs without (D-0716): `thread_self/1` answers as before, no message queue, error or flag changes.
 "`thread_self(-Thread)`: the identifier of the calling thread; here always `main` (pl-thread.c)."
 function pl_thread_self(ld::PL_local_data{T}, self::term_t)::foreign_t where {T}
     return PL_unify_atom(ld, self, mk_sym(T, :main)) ? FTRUE : FFALSE
+end
+
+# PORT: pl-thread.c gcByGCThread
+# synced to swipl-devel cf6960c2 (src/pl-thread.c:8297-8300)
+# DIVERGES: the kernel is the build without threads (`O_PLMT` off, D-0716): the target's non-threaded body,
+# `return false`. The threaded one (7399-7411) reads the `gc_thread` flag, `GD->bootsession` and `gc_running()`; it
+# says whether the gc thread does global atom and clause GC, so that a signal raised in another thread asks only for its
+# local sweep (`agc_handler`, `cgc_handler`: unwritten).
+"True if the atom and clause garbage collection is done by the gc thread: never here (pl-thread.c)."
+function gcByGCThread()::Bool
+    return false
 end
