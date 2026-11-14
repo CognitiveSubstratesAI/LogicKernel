@@ -6,7 +6,7 @@
 # `drop_intermediate_tables`, `sdg_collect`, `sdg_count_edges`, `sdg_unify_table`, `pl_tbl_sdg3_va`, `_tbl_get_thread_id_ex`,
 # `pl_tbl_incomplete3_va`; src/os/pl-prologflag.jl (the restraint flags in `set_prolog_flag_unlocked` and `unify_prolog_flag_value`).
 # Run ONCE, in CI (.github/workflows/mutation.yml; locally: tools/mutate.sh run). Format: tools/mutate_drive.py's (as TB0.py, PIN1.py): `id`,
-# Every `old` was counted EXACTLY once in its file at wip/tb8 fcca2417 by a python3 -I script (47 mutants then; counted again at the final text of wip/tb8m: 58 = 53 KILL + 1 DEFERRED + 4 EQUIVALENT, the T-series and N1-N11 added since); TB8-S3's `old` was re-anchored (the `return PL_get_size_ex(ld, t)` line occurs twice).
+# Every `old` was counted EXACTLY once in its file at wip/tb8 fcca2417 by a python3 -I script (47 mutants then; counted again at the final text of wip/tb8m: 58 = 53 KILL + 1 DEFERRED + 4 EQUIVALENT, the T-series and N1-N11 added since; TB8-ROWS2 added R1-R11 and turned T9 into a KILL: 69 = 65 KILL + 4 EQUIVALENT + 0 DEFERRED, the `old` of R1-R11 counted exactly once in src/pl-tabling.jl at wip/tb8rows); TB8-S3's `old` was re-anchored (the `return PL_get_size_ex(ld, t)` line occurs twice).
 # `file`, `old` (must occur EXACTLY once), `new`, optional `equivalent` and `targets`. NOT RUN (written edit-only on wip/tb8, 2026-11-10,
 # nothing compiled): every KILL below is read off the rows of wip/tb8 5d743c5a; the first hand-run replaces this header with the true verdicts.
 # KILL ROWS: TG = test/core_lang/test_tabling_sdg_swipl.jl, its 132 rows `_TG_ROWS` (pinned from swipl 10.1.20), each row an @test of the
@@ -17,8 +17,9 @@
 # STATUS OF THE T-SERIES AND N1-N11 (the mutants that run inside an evaluation of a tabled goal): the tripwires, the radial and answer-count
 #   restraints, `generalise_answer_substitution`, `droppable_table`, `drop_intermediate_tables` and the non-empty graph of `'$tbl_sdg'/3`
 #   are killed by the five upstream files (TU, TD, TA, TZ and test_tabling_sdg_swipl.jl) and the wb file WB (rows wb01-wb12 and its white-box
-#   testset), named per mutant below. T9 stays DEFERRED: only `recompute == factor * own` exactly tells `>` from `>=` apart and no row builds
-#   the equality. T8 is EQUIVALENT: `droppable_table` is only called for a component with a parent (src/pl-tabling.jl:2390-2394).
+#   testset), named per mutant below. T9 is killed by the white-box testset of TR8 (TB8-ROWS2): only `recompute == factor * own` exactly tells `>` from `>=` apart and no Prolog row builds
+#   the equality, so the testset builds it by hand. T8 is EQUIVALENT: `droppable_table` is only called for a component with a parent (src/pl-tabling.jl:2390-2394).
+# R-SERIES (TB8-ROWS2): the per-predicate options as consumed, killed by the rows of TR8 (ANSABS a01-a07, MAXANS m01-m05, SUBABS u01-u06, pinned from swipl 10.1.20).
 # EQUIVALENT: four (T8, E1, E2, E3), each with the file:line of its reason below.
 # TARGETS (audit D-0238): TG for every mutant; TS for the code of `set_prolog_flag/2` (`set_prolog_flag_unlocked`, the setters). NOT listed:
 #   test_tabling_state_swipl.jl (it reads the restraint STRUCT after initTabling!, never the flag setters or getters), test_prolog_flag_swipl.jl
@@ -26,6 +27,7 @@
 TG = "test/core_lang/test_tabling_sdg_swipl.jl"
 TS = "test/core_lang/test_set_flag_swipl.jl"
 TU = "test/core_lang/test_tabling_tbl_sdg_upstream_swipl.jl"          # upstream test_tbl_sdg.pl: rows sdg01-04, inc01-05, trw01-07 (+ 3 left to TH1)
+TR8 = "test/core_lang/test_tabling_tb8rows_swipl.jl"                    # ours (TB8-ROWS2): rows a01-a07, m01-m05, u01-u06 (answer_abstract, max_answers, subgoal_abstract as consumed) + the T9 white-box testset
 TD = "test/core_lang/test_tabling_drop_intermediate_upstream_swipl.jl" # upstream test_drop_intermediate.pl: rows di01-04
 TA = "test/core_lang/test_tabling_abstract_completion_upstream_swipl.jl" # upstream test_abstract_completion.pl: rows ac01-ac11
 TZ = "test/core_lang/test_tabling_answer_discard_upstream_swipl.jl"    # upstream test_answer_discard.pl: rows ad01-ad23
@@ -34,8 +36,9 @@ WB = "test/core_lang/test_tabling_restraint_wb_swipl.jl"               # ours: r
 # or drops a table, so it is in no targets list.)
 TAB_MIN, TAB_WL, TAB_ANS, TAB_WFS, TAB_IDG = (f"test/core_lang/test_tabling_{n}_swipl.jl" for n in ("min", "worklist", "answers", "wfs", "idg"))
 TABLING = [TAB_MIN, TAB_WL, TAB_ANS, TAB_WFS, TAB_IDG]   # the evaluations that run get_answer_table / tbl_add_answer / table_complete_all
-TARGETS = [TG, TS, TU, TD, TA, TZ, WB] + TABLING          # every file a mutant lists
+TARGETS = [TG, TS, TU, TD, TA, TZ, WB, TR8] + TABLING          # every file a mutant lists
 TAB = "src/pl-tabling.jl"
+RT = [TR8, TA, TU, TZ, TD, WB] + TABLING                   # the R-series (TB8-ROWS2): every file that runs a tabled goal
 PF = "src/os/pl-prologflag.jl"
 MUTANTS = [
     # ── the getters (pl-tabling.c unify_restraint, tbl_get_restraint_flag) ──
@@ -191,7 +194,7 @@ MUTANTS = [
          old="size0 <= limit &&",
          new="size0 < limit &&"),
     dict(id="TB8-T5 add_answer_count_restraint calls radial_restraint (KILL WB wb05: the pinned residual program of the general answer is `cnt(X) :- answer_count_restraint`, the mutant's is `radial_restraint`; no upstream row sets max_answers_for_subgoal)",
-         file=TAB, targets=[TG, WB] + TABLING,
+         file=TAB, targets=[TG, TR8, WB] + TABLING,
          old="mk_sym(T, :answer_count_restraint), 0,",
          new="mk_sym(T, :radial_restraint), 0,"),
     dict(id="TB8-T6 generalise_answer_substitution accepts any atom for `ret` (KILL WB white-box testset: `foo` as the answer must be refused, the mutant answers true; the branch is unreachable from Prolog, the answer of a call is `ret/N`)",
@@ -207,8 +210,8 @@ MUTANTS = [
          equivalent="src/pl-tabling.jl:2390-2394: droppable_table is called only for a component with a parent, so the root never has a drop_symbol (src/pl-tabling.jl:9654 is skipped for k = 1) and the loop's only other effect on it, `drop_recompute`, is read by a parent for its children (src/pl-tabling.jl:9647): the root has none",
          old="    for k in count:-1:2                             # children first, not the root\n",
          new="    for k in count:-1:1                             # children first, not the root\n"),
-    dict(id="TB8-T9 drop_intermediate_tables keeps a table only past the factor, `>=` for `>` (DEFERRED KILL: only `recompute == factor * own` exactly tells it apart; di02 and di04 pin counts that hold on either side of the factor, no upstream row builds the equality and the kernel's inference counter is not swipl's; to be killed by a row that sets the state by hand)",
-         file=TAB, targets=[TG, TD],
+    dict(id="TB8-T9 drop_intermediate_tables keeps a table only past the factor, `>=` for `>` (KILL TR8 testset `TB8 T9 white-box`: the EQUALITY scenario, factor 2, c2.inferences 10 and c.inferences 20, makes recompute 20 == 2 * own 10, which `>` drops (c.drop_recompute 20) and `>=` keeps (0); the KEEP and DROP scenarios bracket it; di02 and di04 pin counts that hold on either side of the factor and the kernel's inference counter is not swipl's, so no Prolog row builds the equality)",
+         file=TAB, targets=[TG, TD, TR8],
          old="                recompute > factor * own\n",
          new="                recompute >= factor * own\n"),
     dict(id="TB8-T10 sdg_collect takes a component that is no longer active (KILL WB wb12: pa calls the fact table pb, pb's component is COMPLETED when the snapshot is taken: the pin lists the one active component, the mutant two; a merged component is moved out of `children` by merge_children, only a completed one can be met)",
@@ -225,31 +228,31 @@ MUTANTS = [
          new='    return if (unify_int64_ex(ld, A2, sccs, true) && unify_int64_ex(ld, A3, tables, true))\n'),
     # ── sites replaced by TB8 on wip/tb8m (get_answer_table, tbl_add_answer_found, table_complete_all): one or two mutants each ──
     dict(id="TB8-N1 get_answer_table gives up after a passed tripwire, no `goto retry` (KILL WB wb03: max_table_subgoal_size 2, the hook passes the tripwire, the pin is [a,b]-[max_table_subgoal_size], the mutant's call finds no table; commit 6ccc6b5d)",
-         file=TAB, targets=[WB] + TABLING,
+         file=TAB, targets=[TR8, WB] + TABLING,
          old="                    empty!(vars)                            # `emptyBuffer(&vars, (size_t)-1)`\n                    continue                                # `goto retry`\n",
          new="                    return nothing\n"),
     dict(id="TB8-N2 get_answer_table treats `abstract` as `error` also for a subgoal_abstract call, the AT_ABSTRACT test inverted (KILL TA, the rows over subgoal_abstract(0) tables (ac01-ac11 but the subsumptive one): every such table trips resource_error(tripwire(max_table_subgoal_size, _)) instead of abstracting; commit 6ccc6b5d)",
-         file=TAB, targets=[TA, WB] + TABLING,
+         file=TAB, targets=[TR8, TA, WB] + TABLING,
          old='sym_key(action) == sym_key(mk_sym(T, :abstract)) &&\n                (flags & AT_ABSTRACT) == 0',
          new='sym_key(action) == sym_key(mk_sym(T, :abstract)) &&\n                (flags & AT_ABSTRACT) != 0'),
     dict(id="TB8-N3 an abstracted answer under bounded_rationality adds no radial restraint (KILL WB wb08: the pin is `g(X) :- radial_restraint` conditional, the mutant's general answer is unconditional; commit c18360a2)",
-         file=TAB, targets=[WB] + TABLING,
+         file=TAB, targets=[TR8, WB] + TABLING,
          old="                add_radial_restraint(ld) || return 0\n",
          new="                nothing\n"),
     dict(id="TB8-N4 the answer size tripwire is called with the wire max_answers_for_subgoal (KILL WB wb10: raised(max_table_answer_size, trie) is pinned; commit c18360a2)",
-         file=TAB, targets=[WB] + TABLING,
+         file=TAB, targets=[TR8, WB] + TABLING,
          old="!tbl_wl_tripwire(ld, wl, action, mk_sym(T, :max_table_answer_size))",
          new="!tbl_wl_tripwire(ld, wl, action, mk_sym(T, :max_answers_for_subgoal))"),
     dict(id="TB8-N5 the answer count tripwire is called with the wire max_scc_subgoals (KILL WB wb06: raised(max_answers_for_subgoal, trie) is pinned; commit 50707c87)",
-         file=TAB, targets=[WB] + TABLING,
+         file=TAB, targets=[TR8, WB] + TABLING,
          old="tbl_wl_tripwire(ld, wl, action, mk_sym(T, :max_answers_for_subgoal))",
          new="tbl_wl_tripwire(ld, wl, action, mk_sym(T, :max_scc_subgoals))"),
     dict(id="TB8-N6 a passed answer count tripwire drops the answer instead of `goto add_anyway` (KILL WB wb07: the hook passes the tripwire, the pin is [1,2,3,4,5]-[max_answers_for_subgoal], the mutant keeps [1,2]; commit 50707c87)",
-         file=TAB, targets=[WB] + TABLING,
+         file=TAB, targets=[TR8, WB] + TABLING,
          old="                @goto add_anyway\n",
          new="                trie_delete(_query_gd(ld), atrie, nid, true)\n                return 0\n"),
     dict(id="TB8-N7 the count restraint under bounded_rationality adds no condition to the general answer, the add_answer_count_restraint call dropped (KILL WB wb05: the pinned general answer carries `answer_count_restraint`; commit 50707c87)",
-         file=TAB, targets=[WB] + TABLING,
+         file=TAB, targets=[TR8, WB] + TABLING,
          old='||\n                    !add_answer_count_restraint(ld)\n',
          new='\n'),
     dict(id="TB8-N8 a re-evaluation that adds an answer does not set idg.new_answer (KILL WB wb11: dd(1) replaced by dd(2) keeps the answer count of ii(_) at 1, so only the flag tells the dependent jj(_) that the answers changed: the pin is [1]-[2], the mutant [1]-[1]; no upstream row swaps an answer; commit 50707c87)",
@@ -268,6 +271,51 @@ MUTANTS = [
          file=TAB, targets=[TD],
          old="            if !keep\n",
          new="            if false\n"),
+    # ── R-series (TB8-ROWS2): answer_abstract / max_answers / subgoal_abstract as CONSUMED (kill rows of TR8; TARGETS per D-0238: every file that runs a tabled goal through get_answer_table / tbl_add_answer_found) ──
+    dict(id="TB8-R1 pred_max_table_subgoal_size ignores the predicate's subgoal_abstract, `limit = -1` (KILL TR8 SUBABS u01: s1 and s2 (limits 1, 2) trip under the default action `error`, the mutant has no limit and trips nothing; u03 s9: flag 1 + abstract would trip it)",
+         file=TAB, targets=RT,
+         old="    limit = def.tabling !== nothing ? def.tabling.subgoal_abstract : -1\n",
+         new="    limit = -1\n"),
+    dict(id="TB8-R2 pred_max_table_subgoal_size loses its fallback to the flag max_table_subgoal_size (KILL TR8 SUBABS u03 and u05: sv, which has no per-predicate limit, trips under flag 1; the mutant lets it through)",
+         file=TAB, targets=RT,
+         old="    if limit == -1\n        limit = ld.tabling.restraint.max_table_subgoal_size\n",
+         new="    if limit == -1\n        limit = -1\n"),
+    dict(id="TB8-R3 pred_max_table_answer_size reads `subgoal_abstract` for `answer_abstract` (KILL TR8 ANSABS a01: a0 and a1 carry answer_abstract(0) and (1) and no subgoal_abstract, the mutant sees no limit and trips nothing: the pin is tripped(max_table_answer_size) twice)",
+         file=TAB, targets=RT,
+         old="    limit = def.tabling !== nothing ? def.tabling.answer_abstract : -1\n",
+         new="    limit = def.tabling !== nothing ? def.tabling.subgoal_abstract : -1\n"),
+    dict(id="TB8-R4 pred_max_table_answer_size loses its fallback to the flag max_table_answer_size (KILL TR8 ANSABS a02: fa has no per-predicate limit and is abstracted to fa(f(f(A))) under the flag 1 + bounded_rationality; a04 drops fa's f(f(f(a))) under flag 3 + fail)",
+         file=TAB, targets=RT,
+         old="    if limit == -1\n        limit = ld.tabling.restraint.max_table_answer_size\n",
+         new="    if limit == -1\n        limit = -1\n"),
+    dict(id="TB8-R5 tripwire_answers_for_subgoal: the per-predicate limit is `==` for `>=` (KILL TR8 MAXANS m01: m0 has max_answers(0), whose count is already past 0 at the first answer, so only `>=` makes the general answer; the pin is [A-(user:m0(A))], the mutant keeps all five)",
+         file=TAB, targets=RT,
+         old="        wl_table(ld, wl).value_count >= limit && return mk_sym(T, :bounded_rationality)\n",
+         new="        wl_table(ld, wl).value_count == limit && return mk_sym(T, :bounded_rationality)\n"),
+    dict(id="TB8-R6 tripwire_answers_for_subgoal ignores the per-predicate limit, `if false` (KILL TR8 MAXANS m01: m0, m2, m3 answer all five, the pins are the general answers after 0, 2, 3)",
+         file=TAB, targets=RT,
+         old="    if ps !== nothing && ps.max_answers != -1\n",
+         new="    if false\n"),
+    dict(id="TB8-R7 the per-predicate branch answers the flag's action in place of bounded_rationality (KILL TR8 MAXANS m01: the default action is `error`, the mutant trips m0 where the pin is the general answer; m02 m3 under flag 3 + error)",
+         file=TAB, targets=RT,
+         old="        wl_table(ld, wl).value_count >= limit && return mk_sym(T, :bounded_rationality)\n        return nothing\n",
+         new="        wl_table(ld, wl).value_count >= limit && return ld.tabling.restraint.max_answers_for_subgoal_action\n        return nothing\n"),
+    dict(id="TB8-R8 the per-predicate branch falls through below its limit, no `return nothing` (KILL TR8 MAXANS m02 and m05: m9 (limit 9) under the flag 3 + error reaches the flag branch and trips at 3 answers; the pin is all five answers, the per-predicate limit wins over the flag)",
+         file=TAB, targets=RT,
+         old="        wl_table(ld, wl).value_count >= limit && return mk_sym(T, :bounded_rationality)\n        return nothing\n    end\n",
+         new="        wl_table(ld, wl).value_count >= limit && return mk_sym(T, :bounded_rationality)\n    end\n"),
+    dict(id="TB8-R9 max_answers(0) is no per-predicate limit, `ps.max_answers > 0` for `!= -1` (KILL TR8 MAXANS m01: m0 gives the general answer at the first answer, the mutant all five)",
+         file=TAB, targets=RT,
+         old="    if ps !== nothing && ps.max_answers != -1\n",
+         new="    if ps !== nothing && ps.max_answers > 0\n"),
+    dict(id="TB8-R10 answer_abstract(0) is read as no limit, `sz <= 0` for `sz == -1` in tbl_add_answer_found (KILL TR8 ANSABS a01: a0 trips max_table_answer_size at the pin, the mutant has no limit; a06 the flag 0 + fail run drops a0's f(f(f(a))))",
+         file=TAB, targets=RT,
+         old="        sz = pred_max_table_answer_size(ld, wl.predicate::Definition{T})\n        sa = size_abstract(2, sz == -1 ? typemax(Int) : sz)\n",
+         new="        sz = pred_max_table_answer_size(ld, wl.predicate::Definition{T})\n        sa = size_abstract(2, sz <= 0 ? typemax(Int) : sz)\n"),
+    dict(id="TB8-R11 subgoal_abstract(0) is read as no limit, `size <= 0` for `size == -1` in get_answer_table (KILL TR8 SUBABS u01: s0 trips max_table_subgoal_size at the pin; u02 the abstracted table s0(A,B))",
+         file=TAB, targets=RT,
+         old="    sa = size_abstract(2, size == -1 ? typemax(Int) : size)\n",
+         new="    sa = size_abstract(2, size <= 0 ? typemax(Int) : size)\n"),
     # ── EQUIVALENT (line numbers of wip/tb8 fcca2417 unless named) ──
     dict(id="TB8-E1 tbl_get_restraint_flag answers true for a key that is no restraint flag (EQUIVALENT)",
          file=TAB, targets=[TG],
