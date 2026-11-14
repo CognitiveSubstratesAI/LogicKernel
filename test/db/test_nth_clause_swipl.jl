@@ -272,7 +272,7 @@ const _CASES = [
         "g31",
         "nth_clause(d1(_), 1, Ref), ( '\$get_clause_attribute'(Ref, predicate_indicator, user:d1/2) -> R = yes ; R = no )"
     ),
-    # ---- thread_local (pl-proc.c:3755 setThreadLocalDefinition): `'$set_predicate_attribute'(Head, thread_local, Val)`; each row has its own predicate
+    # ---- thread_local (pl-proc.c:3755 setThreadLocalDefinition): `'$set_predicate_attribute'(Head, thread_local, Val)`; each row has its own predicate; t02 t03 t06 t09 t17: swipl refuses (O_ENGINES body), the kernel's `#else` body answers true (`_NTH_OFF`)
     (
         "t01",
         "'\$set_predicate_attribute'(tl1(_), thread_local, true), assertz(tl1(1)), assertz(tl1(2)), findall(X, tl1(X), R)"
@@ -296,7 +296,7 @@ const _CASES = [
         "t08",
         "'\$set_predicate_attribute'(tl8(_), thread_local, 1), assertz(tl8(1)), findall(X, tl8(X), R)"
     ),
-    # swipl: REFUSES (permission_error(modify, static_procedure, tl9/1)): the retracted clause still sits in the list until the clause GC runs
+    # swipl: REFUSES (permission_error(modify, static_procedure, tl9/1)): the retracted clause still sits in the list until the clause GC runs (the kernel's `#else` body does not look: true)
     (
         "t09",
         "assertz(tl9(1)), retract(tl9(1)), ex('\$set_predicate_attribute'(tl9(_), thread_local, true), R)"
@@ -365,6 +365,17 @@ const _CASES = [
     # LAST: nothing follows
     ("z01", "R = last")
 ]
+
+# KNOWN DIFFERENCES (TH1-A, audit D-0740 item 2, D-0716 Q2 (a)): the kernel is the build MULTI_THREADED=OFF ENGINES=OFF, whose setThreadLocalDefinition is
+# the `#else` of pl-proc.c:3829-3838 (`setDynamicDefinition(def, val);` set or clear `P_VOLATILE|P_THREAD_LOCAL`; return true: no refusal, no early return);
+# the pinned swipl is a THREADED build and takes the `O_ENGINES` body (pl-proc.c:3799-3828), which refuses. Rows t02 t03 t09 (`thread_local` on a predicate
+# with clauses: dynamic, static, an erased clause in the list), t06 and t17 (`thread_local` false on a thread-local predicate) answer `true` on the kernel and
+# `err(permission_error(modify, static_procedure, PI), _)` on swipl 10.1.20. The kernel's exact line is pinned here, swipl's stays the live comparison's own side;
+# test/db/test_thread_local_off_swipl.jl carries the declaration rows and the checklist item (the second oracle, D-0716 Q2 (b), makes these rows exact).
+const _NTH_OFF = Dict(
+    id => "t_$id c" * _codes("t_$id") * "/1(a" * _codes("true") * ")" for
+    id in ("t02", "t03", "t06", "t09", "t17")
+)
 
 # ---- the kernel's lines: for each case, `<name> <answers>`
 function kernel_lines(path::String, names::Vector{String})::Vector{String}
@@ -508,8 +519,12 @@ _swipl() = get(ENV, "LOGICKERNEL_NO_SWIPL", "") == "1" ? nothing : Sys.which("sw
         sw = swipl_lines(f, names)
         @test length(sw) == length(names) + 1 && sw[1] == "ok"
         @test length(kl) == length(sw)
-        for (k, s) in zip(kl, sw)
-            @test k == s
+        for (i, (k, s)) in enumerate(zip(kl, sw))
+            id = i == 1 ? "" : _CASES[i - 1][1]
+            @test k == get(_NTH_OFF, id, s)             # the five thread_local rows: the kernel's pinned line, see `_NTH_OFF`
+        end
+        for (id, pin) in _NTH_OFF                       # the pins are not vacuous: swipl answers otherwise on each
+            @test only(filter(l -> startswith(l, "t_$id "), sw)) != pin
         end
         # not a vacuous agreement: swipl's own lines hold each kind of answer (a guard that fails on an empty side)
         # measured on swipl 10.1.19 (2026-10-29): domain c09; existence c06 c07 c20 c22 c27 c28; instantiation c11 c12 c15;

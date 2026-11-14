@@ -343,29 +343,9 @@ end
 
 # PORT: pl-proc.c setThreadLocalDefinition'''),
     # ---- thread_local (pl-proc.c:3755 setThreadLocalDefinition; rows t01-t17; the redefine path t16)
-    dict(id="LB2-78 thread_local on a predicate WITH clauses is allowed", file=PR, targets=N + ["test/files/test_load_swipl.jl"],
-         old='''        def.impl_clauses.first_clause !== nothing &&
-            return PL_error(ld, ERR_MODIFY_STATIC_PROC, def, "")''',
-         new='''        nothing'''),
-    dict(id="LB2-79 thread_local does not make the predicate dynamic", file=PR, targets=N + ["test/files/test_load_swipl.jl"],
-         old='''def.flags |= P_DYNAMIC | P_TRANSACT | P_VOLATILE | P_THREAD_LOCAL''',
-         new='''def.flags |= P_TRANSACT | P_VOLATILE | P_THREAD_LOCAL'''),
-    dict(id="LB2-80 thread_local false on a thread-local predicate succeeds", file=PR, targets=N + ["test/files/test_load_swipl.jl"],
-         old='''    return PL_error(ld, ERR_MODIFY_STATIC_PROC, def, "predicate is thread-local")   # local --> static''',
-         new='''    return true   # local --> static'''),
-    dict(id="LB2-81 thread_local: no early return when the attribute already has the value", file=PR, targets=N + ["test/files/test_load_swipl.jl"],
-         old='''    if (val && (def.flags & P_THREAD_LOCAL) != 0) ||
-        (!val && (def.flags & P_THREAD_LOCAL) == 0)
-        return true
-    end
-    if val ''',
-         new='''    if val '''),
-    dict(id="LB2-82 thread_local false: the context message is missing", file=PR, targets=N + ["test/files/test_load_swipl.jl"],
-         old='''def, "predicate is thread-local")''',
-         new='''def, "")'''),
-    dict(id="LB2-83 thread_local false on a predicate that is not thread-local is refused", file=PR, targets=N + ["test/files/test_load_swipl.jl"],
-         old='''(!val && (def.flags & P_THREAD_LOCAL) == 0)''',
-         new='''false'''),
+    # LB2-78 .. LB2-83 RETIRED (TH1-A, audit D-0740 item 2): they mutated the refusal, the early return and the flag bits of the O_ENGINES body of
+    # setThreadLocalDefinition!; the kernel runs the `#else` body (pl-proc.c:3829-3838) now, which has none of that text. Their successors, on the `#else`
+    # body, are in tools/mutants/TH1AA.py.
     dict(id="LB2-84 setAttrDefinition sets the thread_local bit as any other", file=PR, targets=N + ["test/files/test_load_swipl.jl"],
          old='''    attr == P_THREAD_LOCAL && return setThreadLocalDefinition!(ld, def, val)
 ''',

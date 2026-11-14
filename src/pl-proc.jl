@@ -1680,37 +1680,33 @@ function pl_get_clause_attribute3_va(
 end
 
 # PORT: pl-proc.c setThreadLocalDefinition
-# DIVERGES: the kernel is the build ENGINES=OFF (TH1a, D-0716), whose branch is the `#else` of pl-proc.c:3829-3838
-# (`setDynamicDefinition(def, val)`, then set or clear `P_VOLATILE|P_THREAD_LOCAL`, always true). This function takes the `O_ENGINES`
-# branch (pl-proc.c:3799-3828, the one the threaded oracle takes) instead; the two differ visibly: a static predicate WITH clauses
-# declared thread-local is refused here and accepted by the `#else` branch (no `P_TRANSACT` there), and thread-local to static is
-# refused here and accepted there. Kept on the dispatcher's ruling (D-0716 item 7, TH1a): its own small step later, owner TH1 (it needs
-# the second oracle, MULTI_THREADED=OFF ENGINES=OFF, for its rows). The branch taken is also without its storage: the kernel has one
-# thread, so there is no per-thread clause vector (`new_ldef_vector()`) and no `SUPERVISOR(thread_local)` (`S_THREAD_LOCAL` is not
-# ported): the clauses live in the predicate's own list and the reset supervisor (`freeCodesDefinition!`) is made dynamic by `P_DYNAMIC`. `ld` is an argument
-# (upstream's `PL_error(NULL, ...)` reads `LD`); no `LOCKDEF`. Whether an ERASED clause still in the list refuses (as upstream's
-# `first_clause`) depends on `cleanDefinition!` having run, as upstream's depends on its clause GC.
-"Make `def` thread-local (`val`: static to local; refused if it has clauses) or static (always refused, `predicate is thread-local`) (pl-proc.c)."
+# DIVERGES: `ld` stays an argument (the caller `setAttrDefinition` passes it; the `#else` branch has no `PL_error`, so it is unused), and
+# `setDynamicDefinition!` takes no lock and does not read `protect_static_code` (see there). Nothing else: the kernel is the build
+# MULTI_THREADED=OFF ENGINES=OFF (TH1a, D-0716), whose `setThreadLocalDefinition` is the `#else` branch of pl-proc.c:3829-3838, ported
+# here as written: `setDynamicDefinition(def, val)`, then `P_VOLATILE|P_THREAD_LOCAL` set (val) or cleared, the result always true. There is
+# no refusal, no early return, no per-thread clause vector and no `S_THREAD_LOCAL` supervisor: the predicate's own clause list is the
+# (only) thread's. The pinned oracle is a THREADED build and takes the `O_ENGINES` branch (pl-proc.c:3799-3828), so these answers differ
+# from swipl's (KNOWN DIFFERENCES pinned with both sides in test/db/test_thread_local_off_swipl.jl and test_nth_clause_swipl.jl `_NTH_OFF`):
+# thread-local declared on a predicate WITH clauses (static, or dynamic and not yet thread-local, or with an erased clause still in the list) is
+# accepted here, refused there (`permission_error(modify, static_procedure, PI)`); `thread_local` false on a thread-local predicate
+# makes it static here, is refused there (`predicate is thread-local`); `thread_local` false on a dynamic predicate that is not thread-local makes it
+# static here, is a no-op there. `$local_definitions/2` (pl-proc.c:4426-4428, O_ENGINES only) stays unwritten.
+"Make `def` dynamic (`val`) or static through `setDynamicDefinition!`, then set or clear `P_VOLATILE|P_THREAD_LOCAL`; always true (pl-proc.c, the ENGINES=OFF branch)."
 function setThreadLocalDefinition!(
     ld::PL_local_data{T}, def::Definition{T}, val::Bool
 )::Bool where {T}
-    if (val && (def.flags & P_THREAD_LOCAL) != 0) ||
-        (!val && (def.flags & P_THREAD_LOCAL) == 0)
-        return true
+    setDynamicDefinition!(def, val)
+    if val
+        def.flags |= P_VOLATILE | P_THREAD_LOCAL
+    else
+        def.flags &= ~(P_VOLATILE | P_THREAD_LOCAL)
     end
-    if val                                                  # static --> local
-        def.impl_clauses.first_clause !== nothing &&
-            return PL_error(ld, ERR_MODIFY_STATIC_PROC, def, "")
-        def.flags |= P_DYNAMIC | P_TRANSACT | P_VOLATILE | P_THREAD_LOCAL
-        freeCodesDefinition!(def, true)                     # def->codes = SUPERVISOR(thread_local)
-        return true
-    end
-    return PL_error(ld, ERR_MODIFY_STATIC_PROC, def, "predicate is thread-local")   # local --> static
+    return true
 end
 
 # PORT: pl-proc.c setClausableDefinition
 # DIVERGES: `ld` and the database `gd` are arguments (upstream reads `LD`); the refusal is `PL_error(ld, ERR_MODIFY_STATIC_PROC, def, "")`
-# as `setThreadLocalDefinition!` raises it (upstream's `ERR_MODIFY_STATIC_PREDICATE` carries no message).
+# (upstream's `ERR_MODIFY_STATIC_PREDICATE` carries no message).
 "Set (`val`) or clear `P_CLAUSABLE` on `def`; setting it on a predicate with clauses is refused under `protect_static_code` (pl-proc.c)."
 function setClausableDefinition!(
     gd::PL_global_data{T}, ld::PL_local_data{T}, def::Definition{T}, val::Bool

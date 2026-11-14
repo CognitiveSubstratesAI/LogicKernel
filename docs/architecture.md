@@ -6297,10 +6297,12 @@ What LB2 adds so far (pl-srcfile.c, pl-file.c, pl-incl.h, pl-proc.c; written edi
   reference is not refused (`PL_get_clref` rc -1), a non-reference is `type_error(db_reference, _)`. DIVERGES: `size` is `8 * sizeofClause(length(codes))` bytes, upstream's formula over the
   kernel's code words (rows pin `integer(S), S > 0`; a white-box testset pins the formula); `module` is the predicate's module — the kernel has no `CL_BODY_CONTEXT`/`I_CONTEXT`, so a rule asserted
   from `user` into another module (`assertz((m2:i(1) :- m3:foo))`) answers `m2` where swipl 10.1.19 answers `user` (measured; a fact answers its predicate's module in both).
-- **`thread_local`** (pl-proc.c:3755; `setThreadLocalDefinition!(ld, def, val)`, reached through `setAttrDefinition`, rows t01-t17 on `'$set_predicate_attribute'(Head, thread_local, Val)`):
-  static to local is refused while the predicate HAS clauses (`permission_error(modify, static_procedure, PI)`; an ERASED clause still in the list counts, as swipl's: row t09), else the flags
-  `P_DYNAMIC|P_TRANSACT|P_VOLATILE|P_THREAD_LOCAL` are set and the supervisor reset; local to static always raises with the context message `predicate is thread-local`; the value already
-  there is a no-op. DIVERGES: one thread, so the predicate's own clause list is the thread's (no per-thread `new_ldef_vector()`, no `S_THREAD_LOCAL` supervisor). `redefineProcedure` for a
+- **`thread_local`** (pl-proc.c:3829-3838; `setThreadLocalDefinition!(ld, def, val)`, reached through `setAttrDefinition`, rows t01-t18 on `'$set_predicate_attribute'(Head, thread_local, Val)`):
+  the kernel is the build MULTI_THREADED=OFF ENGINES=OFF (TH1a, D-0716), so this is the `#else` body of upstream's function, ported as written (TH1-A, audit D-0740 item 2): `setDynamicDefinition!(def, val)`,
+  then `P_VOLATILE|P_THREAD_LOCAL` set (val) or cleared, the answer always true; no refusal, no early return, no per-thread `new_ldef_vector()`, no `S_THREAD_LOCAL` supervisor (the predicate's own clause
+  list is the one thread's). The pinned swipl is THREADED and runs the `O_ENGINES` body (pl-proc.c:3799-3828), which refuses a predicate with clauses and thread-local to static: those rows are KNOWN
+  DIFFERENCES with both answers pinned (test/db/test_thread_local_off_swipl.jl rows tl13-tl20, test_nth_clause_swipl.jl `_NTH_OFF`: t02 t03 t06 t09 t17) until the second oracle (D-0716 Q2 (b)).
+  `'$local_definitions'/2` (pl-proc.c:4426-4428) is registered only under O_ENGINES: an unknown procedure here. `redefineProcedure` for a
   thread-local predicate another file defines: upstream's pl-proc.c:4014 branch is dead (the local definition has `P_THREAD_LOCAL` cleared, :8102), the observable is the `Redefined static
   procedure` warning, then abolishProcedure's `permission_error(modify, thread_local_procedure, PI)` (row t16, measured); `_hasLocalClausesDefinition` stands for the local definition's clauses.
   The `:- thread_local p/1.` DIRECTIVE is still refused by the loader (boot/init.pl's thread_local/1 is Prolog; test_load_swipl.jl:531 pins the refusal).
