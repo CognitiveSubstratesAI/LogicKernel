@@ -106,6 +106,9 @@ const GP_EXISTENCE_ERROR = Int(0x800)
 # PORT: pl-incl.h GP_DEFINE
 "`get_procedure`: define a procedure (pl-incl.h)."
 const GP_DEFINE = Int(4)
+# PORT: pl-incl.h GP_RESOLVE
+"`get_procedure`: find the definition a dynamic call runs, created undefined when none is visible (pl-incl.h)."
+const GP_RESOLVE = Int(5)
 # PORT: pl-incl.h GP_HOW_MASK
 "`get_procedure`: the bits saying how to find the procedure (pl-incl.h)."
 const GP_HOW_MASK = Int(0x0ff)
@@ -2658,12 +2661,15 @@ struct sindex_key
 end
 
 # PORT: pl-tabling.c suspension
-# DIVERGES: `record_t` is the kernel's `record{T}`; `keys` is a vector (upstream: a malloc'ed array, NULL for none).
+# DIVERGES: `record_t` is the kernel's `record{T}`; `keys` is a vector (upstream: a malloc'ed array, NULL for none,
+# ended by a key with path 0). The TNOT flag (upstream: bit 0 of the `term` pointer, pl-tabling.c `TNOT`) is `is_tnot`
+# (TAB1 TB2).
 "A suspended consumer (pl-tabling.c `struct suspension`): its dependency/5 term, its call-subsumption filter and its index keys."
 struct suspension{T}
     term::record{T}                                     # dependency/5 term with TNOT flag
     instance::Union{Nothing, record{T}}                 # Filter for call subsumption
     keys::Vector{sindex_key}                            # Index to find filter candidates
+    is_tnot::Bool                                       # the TNOT flag of `term`
 end
 
 # PORT: pl-tabling.c sindex_path
@@ -2694,6 +2700,16 @@ mutable struct sindex_table
     cursors::Vector{sindex_cursor}                      # npaths+1, after paths
     npaths::Int
     paths::Vector{sindex_path}                          # in the order chosen
+end
+
+# PORT: pl-tabling.c sindex_assessment
+# DIVERGES (TAB1 TB2): `counts` (a `Table`, key -> members) is a `Dict`.
+"How a path would split the members no chosen path keys yet (pl-tabling.c `struct sindex_assessment`)."
+mutable struct sindex_assessment
+    path::UInt32
+    keyed::Int                                          # members left with a key at the path
+    squares::UInt64                                     # sum of their buckets' squared sizes
+    counts::Dict{UInt32, Int}                           # key -> members left with that key
 end
 
 # PORT: pl-tabling.c answer
@@ -2775,11 +2791,14 @@ mutable struct worklist{T, C}
     predicate::Union{Nothing, definition{T}}            # Predicate we are associated with
     delays::Vector{delay}                               # Delayed answers
     pos_undefined::Vector{Int}                          # Positive undefined (trie node ids)
+    # DIVERGES (TAB1 TB2): `ptr` is the handle Prolog sees (`PL_unify_pointer(t, wl)`: upstream the address), 0: none yet;
+    # see `tbl_pointer!` in src/pl-tabling.jl.
+    ptr::Int                                            # the handle of this worklist in `LD->tabling.pointers`
 end
 worklist{T, C}() where {T, C} = worklist{T, C}(
     nothing, nothing, nothing, nothing, WORKLIST_MAGIC, false, false, false, false,
     false, false,
-    false, false, false, 0, nothing, 0, nothing, delay[], Int[]
+    false, false, false, 0, nothing, 0, nothing, delay[], Int[], 0
 )
 
 # PORT: pl-tabling.h worklist_set
@@ -2817,13 +2836,15 @@ mutable struct tbl_component{T}
     drop_size::Int                                      # drop.size: Memory of the table
     drop_gen_calls::UInt64                              # drop.gen_calls: gen_call at completion
     drop_recompute::Int64                               # drop.recompute: Cost to recompute if dropped
+    # DIVERGES (TAB1 TB2): `ptr` is the handle Prolog sees (`PL_unify_pointer(t, c)`: upstream the address), 0: none yet.
+    ptr::Int                                            # the handle of this component in `LD->tabling.pointers`
 end
 # ORIGINAL: upstream's `tbl_alloc` hands out zeroed memory (`PL_malloc` + the caller's init); a new component is `COMPONENT_MAGIC`
 # with every other field NULL or 0.
 tbl_component{T}() where {T} = tbl_component{T}(
     COMPONENT_MAGIC, SCC_ACTIVE, SCC_NEG_NONE, 0, nothing, nothing, nothing, nothing,
     nothing, nothing, 0, 0,
-    nothing, 0, UInt64(0), 0
+    nothing, 0, UInt64(0), 0, 0
 )
 # ORIGINAL: the worklist type of a term type `T`, the alias that closes the cycle `worklist` -> `tbl_component` -> `worklist_set`.
 "A worklist of a term type `T` (pl-tabling.h `struct worklist`, its `component` a `tbl_component{T}`)."
@@ -2866,7 +2887,7 @@ mutable struct trie{T}
     serial::Int                                         # the trie's number in `gd.tries` (0: not registered)
     records::Vector{Union{Nothing, record{T}}}          # the recorded values of the nodes (a value word `index << 2`), `nothing`: a free slot
     free_records::Vector{Int}                           # slots of `records` to reuse
-    registry::Vector{trie{T}}                           # the database's trie table `gd.tries`, shared by reference (TB1: `release_node` has no `gd`, a TriePtr value names a trie by number)
+    registry::Vector{trie{T}}                           # the database's trie table `gd.tries`, shared by reference (TB1: a TriePtr value names a trie by number)
 end
 
 # ── trie_gen/2,3: the enumeration state (pl-trie.c :3260-3360), since TR2 ─────────────────────────────────────────────────────────
@@ -2965,6 +2986,33 @@ trie_gen_state{T}() where {T} = trie_gen_state{T}(
     nothing, UInt32(0), 1, 0, 0, false, trie_choice[], 0, trie_branch[], 0, qframe[],
     qcursor(), qcursor()
 )
+
+# PORT: pl-tabling.c wkl_step_state
+# (pl-tabling.c:144-159 at the pin)
+# DIVERGES (TAB1 TB2): `answer` is the node id of the current answer in the answer trie of `list` (upstream: a pointer to the
+# `answer` in the cluster; 0 is upstream's NULL node, the negative dummy); `suspensions.base`, `.top`, `.here` are member numbers
+# of `scp` from 0, `base` always 0 so it is not kept (`top`, `here`); `keys` has SINDEX_MAX+1 entries, entry 1 unused, so the
+# key of argument `i` is at `i + 1` (upstream's `skeys--` before `suspension_matches_index`); `keys_inited` a `Bool`. A record of
+# `ld.tabling.wkl_states` (upstream: `allocForeignState`).
+"The state of `'\$tbl_wkl_work'/6` between its answers (pl-tabling.c `wkl_step_state`)."
+mutable struct wkl_step_state{T}
+    list::Union{Nothing, tbl_worklist{T}}               # worklist we enumerate
+    acp::Union{Nothing, cluster{T}}                     # Current answer cluster
+    scp::Union{Nothing, cluster{T}}                     # Current suspension cluster
+    answer::Int                                         # Current answer (a node id; 0: NULL)
+    acp_index::Int                                      # Index in answer cluster
+    top::Int                                            # suspensions.top: last member of scp
+    here::Int                                           # suspensions.here: current member of scp
+    keys_inited::Bool                                   # #Initialized keys
+    keys::Vector{sindex_key}                            # suspension matching
+    sindex::Union{Nothing, sindex_table}                # Index of scp or NULL
+    candidates::Int                                     # CAND_*
+end
+# ORIGINAL: a fresh state record (upstream's `allocForeignState` memory, every field set by the first call).
+wkl_step_state{T}() where {T} =
+    wkl_step_state{T}(
+        nothing, nothing, nothing, 0, 0, -1, -1, false, sindex_key[], nothing, 0
+    )
 
 # PORT: pl-tabling.h tbl_status
 # DIVERGES: the three ints are `Bool`s; the chain `prev` of saved states is `Union{Nothing, tbl_status{T}}`.

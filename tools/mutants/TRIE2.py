@@ -104,7 +104,7 @@ MUTANTS = [
     m("TR2-A3 trie_gen_raw: the Value is not unified (KILL K t3: `trie_gen(T, f(2), K)` answers every key; D t18)",
       "if (Value == 0 || unify_value(ld, trs, Value, n.value)) &&", "if (true || unify_value(ld, trs, Value, n.value)) &&"),
     m("TR2-A4 trie_gen_raw: the node handle is not unified (KILL D t17: `$trie_gen_node` leaves N unbound, trie_term/2 raises)",
-      "(Data == 0 || PL_unify_int64(ld, Data, trie_node_handle(trs, nid)))", "(true || PL_unify_int64(ld, Data, trie_node_handle(trs, nid)))"),
+      "(Data == 0 || trie_gen_unify_data(ld, trs, nid, st.key, Data, data_kind))", "(true || trie_gen_unify_data(ld, trs, nid, st.key, Data, data_kind))"),
     m("TR2-A5 trie_gen_raw: a failed Value does not undo the Key (KILL K t18, t3: Key stays bound to f(b), the next leaf fails to unify)",
       "            else\n                PL_rewind_foreign_frame(ld, fid)\n            end\n", "            else\n            end\n"),
     m("TR2-A6 trie_gen_raw: the next leaf is looked for with the Key unbound and pruning (KILL D t0, t2: the Key is bound to the answer, the pruning cuts the rest)",

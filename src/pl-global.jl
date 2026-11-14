@@ -424,11 +424,21 @@ mutable struct ld_tabling{T}
     idg_current::Int                                            # Current node in IDG (a term_t; 0: none)
     free_objects::tbl_free_objects{T}                           # Freed objects (TBL_FREE_*)
     restraint::tbl_restraint{T}                                 # the restraints
+    # DIVERGES (TAB1 TB2): upstream hands Prolog the ADDRESS of a worklist or component (`PL_unify_pointer`) and reads it
+    # back (`PL_get_pointer`, then a magic check); here the handle is an index into `pointers` (`nothing`: a freed slot,
+    # reused through `free_pointers`, as freed memory is). src/pl-tabling.jl `tbl_pointer!`, `tbl_pointer_release!`.
+    pointers::Vector{Union{Nothing, tbl_worklist{T}, tbl_component{T}}}  # handle -> worklist or component
+    free_pointers::Vector{Int}                                  # handles to reuse
+    # DIVERGES (TAB1 TB2): the states of `'$tbl_wkl_work'/6` (upstream: `allocForeignState`, its address the REDO_PTR context)
+    # are records of this pool, the index the context (as between/3's `between_states`).
+    wkl_states::foreign_state_pool{wkl_step_state{T}}           # ('$tbl_wkl_work'/6's REDO_PTR states)
 end
 ld_tabling{T}() where {T} = ld_tabling{T}(
     nothing, nothing, 0, 0, 0, nothing, nothing, 0, 0, false, false, false, UInt32(0),
     0, 0,
-    tbl_free_objects{T}(), tbl_restraint{T}()
+    tbl_free_objects{T}(), tbl_restraint{T}(),
+    Union{Nothing, tbl_worklist{T}, tbl_component{T}}[], Int[],
+    foreign_state_pool{wkl_step_state{T}}()
 )
 
 # PORT: pl-global.h PL_local_data
