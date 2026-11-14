@@ -463,6 +463,7 @@ function _manifest_index(T)
         (LK.build_term!, Tuple{LK.decompileInfo{T}, T, Int}, false),
         (LK.decompileBodyNoShift!, Tuple{LK.decompileInfo{T}, UInt64, Int}, false),
         (LK._type_test_name, Tuple{UInt64}, false),
+        (LK._arith_goal_name, Tuple{UInt64}, false),
         (LK.decompileBody!, Tuple{LD, LK.decompileInfo{T}, Int, UInt64, Int}, false),
         (LK.decompile!, Tuple{LD, C, Int, Int}, false),
         (LK.decompile!, Tuple{LD, C, Int, Int, Int}, false),   # D1: bindings
@@ -503,6 +504,13 @@ function _manifest_index(T)
         (LK.isAtom, Tuple{T}, true), (LK.isTaggedInt, Tuple{T}, true),
         # V6c2 — arithmetic in a body (src/pl-comp.jl, pl-funct.jl)
         (LK.compileSimpleAddition, Tuple{LD, LK.SubClauseNames, T, CInfo}, false),
+        # AR1 d3 — arithmetic compiled inline under `optimise` (src/pl-comp.jl)
+        (LK.compileArith!, Tuple{LD, LK.SubClauseNames, CInfo, T}, false),
+        (LK.compileArithArgument!, Tuple{LD, LK.SubClauseNames, CInfo, T}, false),
+        (LK.arithVarOffset, Tuple{LD, CInfo, T}, false),
+        (LK._arith_type_error!, Tuple{LD, CInfo, String, Symbol, T}, false),
+        (LK._arith_char, Tuple{LD, CInfo, T}, false),
+        (LK._arith_char_constant, Tuple{LD, CInfo, T}, false),
         (LK.canBind, Tuple{T}, true), (LK.isTextAtom, Tuple{T}, true),
         (LK.isCallableAtom, Tuple{T}, true),
         (LK.isRational, Tuple{T}, true), (LK.isFloat, Tuple{T}, true),
@@ -730,7 +738,9 @@ function _manifest_index(T)
         (LK.inheritUnknown, Tuple{GD, MOD}, true),
         (LK.stripModuleName_cells, Tuple{LD, Int}, false),        # L1e e2c: on the cells
         (LK.stripModule_cells, Tuple{GD, LD, Int}, false),
-        (LK._random_u64, Tuple{LD}, false), (LK._mpz_urandomm, Tuple{LD, BigInt}, false),   # arith-b
+        (LK._mpz_urandomm, Tuple{LD, BigInt}, false),               # arith-b, arith-c (GMP's)
+        (LK.seed_from_dev, Tuple{LD, String}, false), (LK.seed_random, Tuple{LD}, false),
+        (LK.init_random, Tuple{LD}, false),
         (LK._is_colon2_word, Tuple{LD, UInt8, UInt64}, false),
         (LK._slot_link_loc!, Tuple{LD, Int, Tuple{UInt8, UInt64, Int}}, false),
         (LK.PL_strip_module_ex, Tuple{GD, LD, Int, Int, Int}, false),
@@ -1240,6 +1250,14 @@ function _manifest_index(T)
         (LK.initArith!, Tuple{GD}, false),
         (LK.is_arith_flag, Tuple{T}, false),
         (LK.get_arith_flag, Tuple{LD, Int64, T}, false),
+        # arith-c (AR1): set_arith_flag and its helpers, the rounding-mode tables
+        (LK.set_arith_flag, Tuple{LD, Int64, T}, false),
+        (LK._set_float_flag, Tuple{LD, T, UInt32, Symbol}, false),
+        (LK.set_restraint, Tuple{LD, Int64, Int}, false),
+        (LK.set_restraint_action, Tuple{LD, Int64, T}, false),
+        (LK.atom_to_rounding, Tuple{T}, false),
+        (LK.float_rounding_name, Tuple{Type{T}, Int}, false),
+        (LK.set_rounding, Tuple{Int}, true),
         (LK.PL_unify_bool, Tuple{LD, Int64, Bool}, false),
         (LK.PL_unify_float, Tuple{LD, Int64, Float64}, false),
         (LK.PL_record, Tuple{LD, Int64}, false),
@@ -1909,6 +1927,9 @@ function _manifest_index(T)
         (LK.double_in_int64_range, Tuple{Float64}, true),
         (LK.toIntegerNumber, Tuple{LD, LK.number, Int}, false),
         (LK.ar_sign_i, Tuple{LK.number}, true),
+        (LK._succ_body, Tuple{LD, Int, Int, LK.number, LK.number, LK.number}, false),
+        (LK.var_or_integer, Tuple{LD, Int, LK.number, Int, Int}, false),
+        (LK.get_mpz, Tuple{LD, Int, LK.number}, false),
         (LK.shift_to_far, Tuple{LD, LK.number, LK.number, Int}, false),
         (LK.MSB64, Tuple{Int64}, true),
         (LK.ar_shift, Tuple{LD, LK.number, LK.number, LK.number, Int}, false),
@@ -1983,7 +2004,10 @@ function _manifest_index(T)
         ]...,
         [
             (f, Tuple{LD, LK.number, LK.number, LK.number}, false) for
-            f in (LK.ar_nexttoward, LK.ar_rdiv, LK.ar_cmpr, LK.ar_lcm, LK.ar_getbit)
+            f in (
+                LK.ar_nexttoward, LK.ar_rdiv, LK.ar_cmpr, LK.ar_lcm, LK.ar_getbit,
+                LK.ar_roundtoward
+            )
         ]...,
         (LK.ar_powm, Tuple{LD, LK.number, LK.number, LK.number, LK.number}, false),
         (LK.ar_random_float, Tuple{LD, LK.number}, false),
@@ -1997,6 +2021,31 @@ function _manifest_index(T)
             Tuple{LD, Int, LK.number, LK.number, LK.number, LK.number},
             false
         ),
+        (LK.indexArithFunction, Tuple{Type{T}, UInt64, Int}, false),
+        (LK.functorArithFunction, Tuple{Int}, false),
+        (LK.FunctionFromIndex, Tuple{Int}, false),
+        (LK.ar_func_n, Tuple{LD, Int, Int}, false),
+        # the A_* bodies outlined from the run loop (AR1, on T27's pattern): each called by its label of PL_next_solution_guarded
+        (
+            LK._vmi_a_var!,
+            Tuple{LD, Int, Int, ARGP, Vector{LK.code}, Vector{T}, Int, Int},
+            false
+        ),
+        (
+            LK._vmi_a_func!,
+            Tuple{LD, Int, Int, ARGP, Vector{LK.code}, Vector{T}, Int, Int, Int},
+            false
+        ),
+        (
+            LK._vmi_a_roundtowards_v!,
+            Tuple{LD, Int, Int, ARGP, Vector{LK.code}, Vector{T}, Int, Int},
+            false
+        ),
+        (LK._vmi_a_add!, Tuple{LD, Int, Int, ARGP, Vector{LK.code}, Vector{T}, Int}, false),
+        (LK._vmi_a_mul!, Tuple{LD, Int, Int, ARGP, Vector{LK.code}, Vector{T}, Int}, false),
+        (LK._vmi_a_cmp!, Tuple{LD, Int, Int}, false),
+        (LK._vmi_a_is!, Tuple{LD, Int, Int}, false),
+        (LK._vmi_a_firstvar_is!, Tuple{LD, Int, Int, Int}, false),
         (LK.getCharExpression, Tuple{LD, T, LK.number}, false),
         (LK._len_not_one, Tuple{LD, T}, false),
         (LK._len_not_one_cells, Tuple{LD, Tuple{UInt8, LK.word, Int}}, false),
@@ -2004,6 +2053,8 @@ function _manifest_index(T)
         (LK.arithChar_cells, Tuple{LD, Int}, false),
         (LK.getCharExpression_cells, Tuple{LD, Int, LK.number}, false),
         (LK.evalExpression_cells, Tuple{LD, Int, LK.number}, false),
+        (LK._evalExpression_walk, Tuple{LD, Int, LK.number}, false),
+        (LK.set_roundtoward, Tuple{LD, Int, LK.number}, false),
         (LK._ar_type_error_cells, Tuple{LD, Symbol, Tuple{UInt8, LK.word, Int}}, false),
         (LK.valueExpression, Tuple{LD, Int, LK.number}, false),
         (LK.ar_compare, Tuple{LD, LK.number, LK.number, Int}, false),
@@ -2011,7 +2062,12 @@ function _manifest_index(T)
         [
             (f, Tuple{LD, Int, Int, LK.foreign_context{T}}, false) for f in (
                 LK.pl_is2_va, LK.pl_lt2_va, LK.pl_gt2_va, LK.pl_leq2_va, LK.pl_geq2_va,
-                LK.pl_neq2_va, LK.pl_eq2_va, LK.pl_between3_va
+                LK.pl_neq2_va, LK.pl_eq2_va, LK.pl_between3_va, LK.pl_succ2_va,
+                LK.pl_plus3_va,
+                LK.pl_bounded_number3_va, LK.pl_divmod4_va,
+                LK.pl_nth_integer_root_and_remainder4_va, LK.pl_rational3_va,
+                LK.pl_float_parts4_va, LK.pl_float_class2_va, LK.pl_set_random1_va,
+                LK.pl_random_property1_va, LK.pl_current_arithmetic_function1_va
             )
         ]...,
         # NF1 — the non-deterministic foreign calls: the return values, the context, the state pool
@@ -3771,6 +3827,29 @@ const _DISPATCH_MANIFEST_TUPLE = (
     (LK._libm_atan2, Tuple{Float64, Float64}, true),
     (LK._libm_pow, Tuple{Float64, Float64}, true),
     (LK.ar_pi, Tuple{LK.number}, true), (LK.ar_e, Tuple{LK.number}, true),
+    # arith-c (AR1): the hardware rounding mode, the libm calls and the cr_* macros over them
+    (LK.fegetround, Tuple{}, true), (LK.fesetround, Tuple{Int}, true),
+    (LK.nexttoward, Tuple{Float64, Float64}, true),
+    (LK._ldexp_mode, Tuple{Float64, Int}, true),
+    [
+        (f, Tuple{Float64}, true) for f in (
+            LK._c_sin, LK._c_cos, LK._c_tan, LK._c_asin, LK._c_acos, LK._c_atan, LK._c_exp,
+            LK._c_log, LK._c_sinh, LK._c_cosh, LK._c_tanh, LK._c_erf, LK._c_log10,
+            LK._c_lgamma
+        )
+    ]...,
+    (LK._c_atan2, Tuple{Float64, Float64}, true),
+    (LK._c_pow, Tuple{Float64, Float64}, true),
+    [
+        (LK.CR_FUNC, Tuple{typeof(f), Float64}, true) for f in (
+            LK._c_log, LK._c_log10, LK._c_tan, LK._c_asin, LK._c_acos, LK._c_atan,
+            LK._c_sinh, LK._c_lgamma
+        )
+    ]...,
+    [
+        (LK.CR_FUNC_1, Tuple{typeof(f), Float64}, true) for
+        f in (LK._c_sin, LK._c_cos, LK._c_tanh)
+    ]...,
     (LK.ar_cputime, Tuple{LK.number}, false), (LK.CpuTime, Tuple{Int}, false),
     # Y1 — the OS layer (src/os/pl-os.jl, src/os/pl-files.jl, src/pl-thread.jl), the text helper, the counters
     (LK._clock_gettime, Tuple{Cint}, false), (LK.WallTime, Tuple{}, false),
@@ -3805,6 +3884,16 @@ const _DISPATCH_MANIFEST_TUPLE = (
     (LK.cmp_q_z, Tuple{Rational{BigInt}, BigInt}, false),
     (LK.cmpReals, Tuple{LK.number, LK.number}, false),
     (LK.intNumber, Tuple{LK.number}, true), (LK.ar_even, Tuple{LK.number}, false),
+    (LK._mpz_rootrem, Tuple{BigInt, Int}, false),
+    (LK._mt_reduce, Tuple{BigInt}, false), (LK._mt_mangle_seed, Tuple{BigInt}, false),
+    (LK._mt_recalc_buffer!, Tuple{Vector{UInt32}}, false),
+    (LK._mt_randseed!, Tuple{Vector{UInt32}, BigInt}, false),
+    (LK._mt_getnext!, Tuple{Vector{UInt32}}, false),
+    (LK._mt_randget!, Tuple{Vector{UInt32}, Int}, false),
+    (LK._ulong_seed, Tuple{Int64}, false), (LK._is_big_int64, Tuple{LK.number}, false),
+    (LK._number_bigint, Tuple{LK.number}, false),
+    (LK._mt_set_state!, Tuple{Vector{UInt32}, BigInt}, false),
+    (LK._mt_get_state, Tuple{Vector{UInt32}}, false),
     (LK.ar_smallint, Tuple{LK.number}, false), (LK.pow64, Tuple{Int64, Int64}, true),
     (LK.mpz_to_int64, Tuple{BigInt}, false), (LK.mpz_to_uint64, Tuple{BigInt}, false),
     (LK.mpz_root, Tuple{BigInt, UInt64}, false),
