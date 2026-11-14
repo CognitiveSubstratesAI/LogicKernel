@@ -115,7 +115,7 @@ end
 end
 
 # ── MurmurHashWide (pl-hash.c, NEW at swipl-devel cf6960c2) ────────────────────────────────────────
-# TARGET-ONLY: pin when the oracle moves to cf6960c2 (the pin 18168e62 has no MurmurHashWide).
+# TARGET-ONLY: pin when the oracle moves to cf6960c2 (the pin 18168e62 has no MurmurHashWide); (swipl-devel cf6960c2 pl-hash.c:219-266).
 # The expected values are the TARGET's own C: src/pl-hash.c at cf6960c2 compiled stand-alone (-DNO_SWIPL, little-endian,
 # 4-byte wchar_t) on the seven texts and three seeds below. Its other two arms — the big-endian one and the 2-byte
 # `wchar_t` one over UTF-16 units — gave the SAME hashes for the same code points, which is the function's point.
