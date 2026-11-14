@@ -2475,6 +2475,10 @@ end
 
 # ORIGINAL (AR1): pl-vmi.c A_IS (:4261-4339 at 18168e62), outlined; `ais_pos` is `argFrameP(lTop, 0)`, which the label also
 # makes `ARGP`.
+# DIVERGES: the wakeup check follows EVERY successful unify here; the pin runs CHECK_WAKEUP only on the bindable-left path
+# (pl-vmi.c:4302-4303, `a_is_ok`), the bound-left compare goes to next_instruction or BODY_FAILED with none. It differs only when a
+# wakeup was already pending before A_IS and the left side was already bound: the kernel runs it at this instruction, the pin
+# at its next wakeup check.
 "The body of `A_IS`: unify the argument at `ais_pos` with the number on top of the arithmetic stack; a `_TS_*` status."
 @noinline Base.@constprop :none function _vmi_a_is!(
     ld::PL_local_data{T}, @nospecialize(ais_pos::Int), @nospecialize(ar_femode::Int)
@@ -5895,6 +5899,10 @@ function PL_next_solution_guarded(
     # PORT: pl-vmi.c A_ENTER
     # DIVERGES: the mode the `float_rounding` flag names is set here, where `evalExpression` sets it
     # (pl-arith.jl `evalExpression_cells`); `AR_END` puts the mode found back.
+    # DIVERGES (a Julia exception, corner case): an exception that is not a Prolog error (a `BoundsError`, an `InterruptException`, a
+    # `NotPortedError` raised inside `ar_func_n`) between this label and the end of the A_* sequence leaves a non-nearest hardware mode
+    # set until the next `A_ENTER` or `evalExpression_cells` scope (that one has a `finally`); only `ar_throw` and the ends of
+    # `a_cmp`, `A_IS`, `A_FIRSTVAR_IS` put the mode back. The pin has no such exception: its error paths are `ar_throw`'s.
     @label A_ENTER
     ar_base = ld.arith_top
     ar_femode = fegetround()                            # __PL_ar_ctx.femode, kept
