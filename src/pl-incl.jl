@@ -23,6 +23,7 @@
 # UPSTREAM: swipl-devel src/pl-trie.c @ 18168e629eab
 # UPSTREAM: swipl-devel src/pl-trie.h @ 18168e629eab
 # UPSTREAM: swipl-devel src/pl-indirect.h @ 18168e629eab
+# UPSTREAM: swipl-devel src/pl-flag.c @ 18168e629eab
 # CLASS: code
 # COPYRIGHT: Copyright (c)  1985-2026, University of Amsterdam,
 # COPYRIGHT: VU University Amsterdam
@@ -2253,6 +2254,27 @@ end
 const RecordList{T} = recordList{T}
 "`RecordRef` (pl-incl.h): a pointer to a `recordRef`."
 const RecordRef{T} = recordRef{T, recordList{T}}
+
+# PORT: pl-flag.c flag_type as FLG_ATOM
+"The type of a flag's value (pl-flag.c `flag_type`): `FLG_ATOM`, `FLG_INTEGER`, `FLG_FLOAT`."
+const FLG_ATOM = Int(0)
+const FLG_INTEGER = Int(1)
+const FLG_FLOAT = Int(2)
+
+# PORT: pl-flag.c flag
+# DIVERGES: the three members of upstream's `value` union are three fields (a Julia union of different
+# types would box); `a` is the atom as the term type's symbol (`PL_register_atom` has nothing to do: no
+# atom GC), only meaningful when `type == FLG_ATOM`, as `i` for `FLG_INTEGER` and `f` for `FLG_FLOAT`.
+"A flag of `flag/3`, `get_flag/2` and `set_flag/2` (pl-flag.c `struct flag`): its key word, type and value."
+mutable struct flag{T}
+    const key::word                                             # key to the flag
+    type::Int                                                   # type (atom, int, float)
+    a::Union{Nothing, T}                                        # value.a: atom
+    i::Int64                                                    # value.i: integer
+    f::Float64                                                  # value.f: float
+end
+"`Flag` (pl-flag.c): a pointer to a `flag`."
+const Flag{T} = flag{T}
 
 # PORT: pl-rec.c recorded_state
 # DIVERGES: a record of the local data's pool (`ld.recorded_states`, `foreign_state_pool`, design D3 of NF1),

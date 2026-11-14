@@ -180,6 +180,8 @@ mutable struct PL_global_data{T}
     const ld_table::LDTable                                     # the local data a wrapped stream names by number (IOSTREAM.wrapped; src/os/pl-stream.jl, R2 TOP1b E; owner TH1)
     tabling_answer_delay_infos::Dict{Int, delay_info}           # (pl-tabling.c static `answer_delay_infos`: trie node id -> delay_info; TAB1 TB0)
     tabling_start_node_ids::Int                                 # (pl-tabling.c static `start_node_ids`: the last start-node id handed out, 0: none; TAB1 TB1)
+    const flags_table::Dict{word, Flag{T}}                      # flags.table: the key's word -> its flag (pl-flag.c, FL1b; upstream's position: after `format`)
+    const flags_order::Vector{Flag{T}}                          # (the flags in the order they were made, the enumeration of current_flag/1; FL1b)
 end
 # DIVERGES: `atoms` is upstream's `GD->atoms` as a struct of its own (src/pl-atom.jl), one table per
 # database, built first as upstream's `initAtoms` runs first; `functors` likewise `GD->functors` with
@@ -528,7 +530,7 @@ ld_tabling{T}() where {T} = ld_tabling{T}(
 # Since R2 TOP1b A: `break_level` (`LD->break_level`, pl-setup.c:199: -1 outside a toplevel; `currentBreakLevel`, src/pl-pro.jl), appended last.
 # Since TR2: `trie_gens`, the pool of trie_gen/2,3's states (`trie_gen_state`, pl-incl.jl; upstream keeps them on the C stack, then `allocForeignState`), appended last;
 # `trie_gen_force_epoch` (ORIGINAL, a test switch; a module-level `Ref` would be shared state, which the lint refuses), appended after it.
-# Since R2 F1c: `debugstatus_skiplevel`, `debugstatus_tracing`, `debugstatus_debugging`, `debugstatus_showContext` (`LD->_debugstatus`, pl-incl.h
+# Since R2 F1c: `debugstatus_skiplevel`, `debugstatus_tracing`, `debugstatus_debugging`, `debugstatus_showContext` (and, since DBG1, `debugstatus_leashing`, `debugstatus_visible`; `LD->_debugstatus`, pl-incl.h
 # `pl_debugstatus_t`; the flags `debug`, `debugger_show_context`: src/os/pl-prologflag.jl, `debugmode`, `tracemode`: src/pl-trace.jl).
 # (the input context stack is LB3's `input_context_stack`, which `'\$push_input_context'/1` shares; src/os/pl-file.jl).
 # Since R2 AUTOLOAD1 A2: `autoload_nesting` and `autoload_loop`, upstream's `LD->autoload.nesting` (a chain of `struct
@@ -653,6 +655,8 @@ mutable struct PL_local_data{T} <: AbstractLocalData
     var_names_numbervars_frame::Int                             # var_names.numbervars_frame
     prolog_flag_unknown_option::Int                             # prolog_flag.unknown_option
     prolog_flag_write_attributes::Int                           # prolog_flag.write_attributes
+    prolog_flag_incomparable_error::Bool                        # prolog_flag.incomparable_error (FL1: `setIncomparable`)
+    fli_string_buffers_tripwire::Int                            # fli.string_buffers.tripwire (FL1: the `string_stack_tripwire` flag)
     bags::Vector{findall_bag{T}}                                # bags: findall/3's (pl-bag.c)
     between_states::foreign_state_pool{between_state}           # (between/3's REDO_PTR states, NF1)
     retract_contexts::foreign_state_pool{retract_context{T}}    # (retract/1's REDO_PTR states, NF2)
@@ -680,6 +684,8 @@ mutable struct PL_local_data{T} <: AbstractLocalData
     debugstatus_tracing::Bool                                   # _debugstatus.tracing
     debugstatus_debugging::Bool                                 # _debugstatus.debugging
     debugstatus_showContext::Bool                               # _debugstatus.showContext
+    debugstatus_leashing::Int                                   # _debugstatus.leashing (ports leashed; DBG1)
+    debugstatus_visible::Int                                    # _debugstatus.visible (ports visible; DBG1)
 
     event_buffered::Union{Nothing, Vector{delayed_event{T}}}    # event.buffered: the delayed events (R2 EV1; nothing: NULL)
     event_delay_nesting::Int                                    # event.delay_nesting: how deeply is delay nested?
@@ -772,6 +778,8 @@ function _bare_local_data(gd::PL_global_data{T}) where {T}
         0,                                      # no numbervars frame
         0x2,                                    # unknown_option: ignore (OPT_UNKNOWN_IGNORE)
         0x040,                                  # write_attributes: ignore (PL_WRT_ATTVAR_IGNORE)
+        false,                                  # incomparable_error: the flag `incomparable` is `arbitrary`
+        0,                                      # string_buffers.tripwire: 0 (a zeroed `LD->fli.string_buffers`)
         findall_bag{T}[],                       # bags: none (pl-bag.c: `LD->bags` is NULL)
         foreign_state_pool{between_state}(),    # between/3's states: none
         foreign_state_pool{retract_context{T}}(),   # retract/1's states: none
@@ -799,6 +807,8 @@ function _bare_local_data(gd::PL_global_data{T}) where {T}
         false,                                  # debugstatus.tracing
         false,                                  # debugstatus.debugging
         false,                                  # debugstatus.showContext: zero (static LD)
+        335,                                    # debugstatus.leashing: initTracer (pl-trace.c:2081): CALL|FAIL|REDO|EXIT|CUT_CALL|EXCEPTION
+        335,                                    # debugstatus.visible: the same (0x14f)
         nothing,                                # event.buffered: NULL
         0,                                      # event.delay_nesting
         nothing,                                # event.hook.onthreadexit: no listener yet (R2 EV1)

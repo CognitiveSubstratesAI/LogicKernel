@@ -271,3 +271,14 @@ t21(R) :-
     catch(call(G, y), error(type_error(T3, _), _), true),
     erase(Ref),
     R = T1-T2-T3.
+
+% k22 (not a `tN` row: the driver's list and the .out leave it out; test/core_lang/test_wrap_swipl.jl reads it in its kill rows, guarded):
+% the frame S_CALLWRAPPER runs the wrapper clause in belongs to the WRAPPER's predicate, '$wrap$p22'/1 (user module: unqualified; the
+% answer of swipl 10.1.20, single-shot: ['$wrap$p22'/1]). The wrapper's last goal is the closure, so the frame is the clause's own.
+p22(1).
+k22(R) :-
+    wrap_predicate(p22(_), w22, W,
+                   ( prolog_current_frame(F), prolog_frame_attribute(F, predicate_indicator, PI), lg(PI), W )),
+    p22(_),
+    logs(L),
+    R = L.

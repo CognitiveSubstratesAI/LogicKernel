@@ -29,8 +29,8 @@
 #   * WRAP1-M7 (S_CALLWRAPPER does not set DEF to the wrapper clause's predicate): the frame's predicate is the one thing it changes. swipl 10.1.20
 #     answers a wrapper body that reads its own frame (`prolog_current_frame(F), prolog_frame_attribute(F, predicate_indicator, PI)`) with
 #     PI = '$wrap$p'/1, but the kernel has no prolog_frame_attribute/3 (docs/r2_owners.tsv:121, owner DBG1: missing_c_preds), so no row can
-#     be run. Owner WRAP1-test (the row t22 of test_wrap_swipl.pl, written when DBG1 lands; the oracle answer is recorded in the comment of
-#     test_wrap_swipl.jl's kill-row testset).
+#     be run. KILLED since DBG1 (D-0550 relay): the row k22 of test_wrap_swipl.pl, read by test_wrap_swipl.jl's kill-row testset (guarded:
+#     a throw is a failed test); the declaration `equivalent=` is gone, the mutant is expected to be caught.
 # BASELINE: test/core_lang/test_tabling_min_swipl.jl is NOT a target: its T3 rows (S_CALLWRAPPER, S_WRAP as NotPortedError) were flipped
 # to the behaviour in this step (cbff7151), which nothing has run yet; it joins the baseline when the gate has read it green.
 # TARGETS (audit D-0238): every test file that runs the mutated code. The wrapper-only mutants list W alone (an unwrapped predicate never
@@ -111,9 +111,8 @@ MUTANTS = [
          old="            tc_cref = supervisor_crefs(gd, DEF, PCc)[Int(PCc[PC + 1])]\n",
          new="            tc_cref = (PCc === DEF.codes ? DEF.codes_crefs : (" + BOUND + "; DEF.codes_crefs))[Int(PCc[PC + 1])]\n"),
     # ── S_CALLWRAPPER (pl-vmi.c:3624-3632) ──
-    dict(id="WRAP1-M7 S_CALLWRAPPER leaves the frame's predicate as the wrapped one (DEFERRED KILL: the row needs prolog_frame_attribute/3, owner DBG1)",
+    dict(id="WRAP1-M7 S_CALLWRAPPER leaves the frame's predicate as the wrapped one (KILL W: the kill rows' k22, the wrapper frame's predicate_indicator '$wrap$p22'/1; DBG1)",
          file=WAM, targets=[W],
-         equivalent="DEFERRED KILL: owner WRAP1-test (the row t22 reads the wrapper frame's predicate_indicator with prolog_frame_attribute/3, which the kernel lacks: docs/r2_owners.tsv:121, owner DBG1; swipl 10.1.20's answer is '$wrap$p'/1); no other row reads the frame's predicate of a wrapper clause (the wrapper predicate is module_transparent in the same module as the wrapped one)",
          old="    DEF = (tc_cref.clause::Clause{T}).predicate     # FR->predicate = DEF = cref->value.clause->predicate\n",
          new="    # (WRAP1-M7: DEF stays the wrapped predicate)\n"),
     dict(id="WRAP1-M8 S_CALLWRAPPER steps over two operand words, not three (EQUIVALENT: TRUST_CLAUSE sets PC = 1, src/pl-wam.jl:4982)",
