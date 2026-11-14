@@ -253,7 +253,13 @@ end
 # (`compare_dict_entry`, the comparison `sort_r` is given, is the order `sortperm` has on the key words.)
 # DIVERGES: the pairs are sorted by their key WORDS (`SCALAR_TO_CMP` on the dereferenced key cells) with Julia's
 # `sortperm` on the keys read out, the cells written back in the new order (upstream: `sort_r` over the cells in
-# place); `dict` is the position of the functor cell; the result is `(status, dupl)` as `dict_ordered`'s.
+# place); `dict` is the position of the functor cell; the result is `(status, dupl)` as `dict_ordered`'s. Synced to cf6960c2: the target adds
+# `resortDict(p)` (pl-dict.c), which `resortDictsInTerm` (qlf loading) and `recorded_external` (pl-rec.c) call on a dict
+# whose keys' atom handles may have changed: if `dict_ordered` says `PL_DICT_FALSE` it runs `dict_order` and, for a dict
+# below the generational GC's bar (`LD->gen_bar`), `gen_remember`s its argument cells. Left out by design: a key word
+# of this kernel does not change between a record's writing and its reading (no external records, no qlf: see
+# pl-rec.jl, pl-qlf.jl), so no caller exists, and the generational GC (`gen_bar`, `gen_remember`) is unwritten; whoever
+# writes either adds `resortDict` here, as `dict_ordered` then `dict_order` then the remember loop.
 "Sort the pairs of the dict at `dict` by key and check them: `(status, duplicate key word)` (pl-dict.c)."
 function dict_order(
     ld::PL_local_data{T}, dict::Int
