@@ -1106,6 +1106,7 @@ graph LR
     pl_global --> pl_index
     pl_global --> pl_funct
     pl_global --> pl_inline
+    pl_global --> pl_comp
     pl_global --> pl_arith
     pl_global --> os_pl_text
     pl_global --> os_pl_os
@@ -1439,9 +1440,11 @@ graph LR
     pl_arith --> default_term
     pl_arith --> pl_incl
     pl_arith --> SWI_Prolog
+    pl_arith --> pl_atom
     pl_arith --> pl_global
     pl_arith --> pl_inline
     pl_arith --> pl_prims
+    pl_arith --> pl_comp
     pl_arith --> pl_cont
     pl_arith --> pl_alloc
     pl_arith --> pl_fli
@@ -2114,11 +2117,11 @@ or **platform** (a Windows or macOS definition: out of the count). **NO OWNER** 
 
 | category | done | refused | missing | platform | NO OWNER |
 |---|---:|---:|---:|---:|---:|
-| predicates (C-defined, reached by the boot) | 298 | 0 | 124 | 3 | 1 |
-| refusal sites | 0 | 73 | 0 | 0 | 3 |
-| Prolog flags | 65 | 15 | 20 | 0 | 35 |
-| VM instructions | 197 | 0 | 36 | 0 | 0 |
-| **total** | 560 | 88 | 180 | 3 | 39 |
+| predicates (C-defined, reached by the boot) | 299 | 0 | 123 | 3 | 1 |
+| refusal sites | 0 | 74 | 0 | 0 | 3 |
+| Prolog flags | 65 | 14 | 20 | 0 | 34 |
+| VM instructions | 222 | 0 | 11 | 0 | 0 |
+| **total** | 586 | 88 | 154 | 3 | 38 |
 
 #### The boot and library files
 
@@ -2152,7 +2155,7 @@ Predicate rows each file's calls reach (a predicate several files call counts in
 | `boot/topvars.pl` | loaded | 36 | 1 | 0 |
 | `boot/threads.pl` | skipped (conditional) | 0 | 0 | 0 |
 | `library/debug.pl` | loaded | 23 | 2 | 0 |
-| `library/lists.pl` | loaded | 16 | 2 | 0 |
+| `library/lists.pl` | loaded | 17 | 1 | 0 |
 | `library/prolog_stack.pl` | loaded | 36 | 3 | 0 |
 | `library/option.pl` | loaded | 20 | 0 | 0 |
 | `library/dcg/high_order.pl` | loaded | 8 | 0 | 0 |
@@ -2162,7 +2165,6 @@ Predicate rows each file's calls reach (a predicate several files call counts in
 | owner | rows | missing | refused | which (first 8) |
 |---|---:|---:|---:|---|
 | TAB1 | 56 | 51 | 5 | `$idg_add_edge/1`, `$idg_add_mono_dyn_dep/3`, `$idg_add_monotonic_dep/3`, `$idg_changed/1`, `$idg_false_edge/3`, `$idg_falsecount/2`, `$idg_forced/1`, `$idg_mono_affects/3`, … +48 |
-| AR1 | 28 | 27 | 1 | `succ/2`, `A_ADD`, `A_DOUBLE`, `A_ENTER`, `A_EQ`, `A_FIRSTVAR_IS`, `A_FUNC`, `A_FUNC0`, … +20 |
 | TH1 | 20 | 18 | 2 | `$engine_create/3`, `$gc_clear/1`, `$gc_stop/0`, `$gc_wait/1`, `$sig_unblock/0`, `engine_next/2`, `is_engine/1`, `message_queue_create/1`, … +12 |
 | ENC1 | 16 | 0 | 16 | `refusal set_stream/2's unicode_atoms(nfc)`, `refusal open/4's unicode_atoms(Mode) option`, `refusal string("open/4 with the stream encoding …`, `refusal Scanrepresent: encoding $enc`, `refusal Sgetcode: encoding $enc`, `refusal put_code: encoding $enc`, `refusal PL_canonicalise_text of $enc`, `refusal PL_mb_text of $(text.encoding)`, … +8 |
 | LB3 | 14 | 0 | 14 | `refusal QLF predicate $close_wic/0`, `refusal QLF predicate $file_hash/2`, `refusal QLF predicate $map_id/2`, `refusal QLF predicate $open_wic/2`, `refusal QLF predicate $qlf_close/0`, `refusal QLF predicate $qlf_current_source/1`, `refusal QLF predicate $qlf_dependency/1`, `refusal QLF predicate $qlf_is_compatible/1`, … +6 |
@@ -2170,13 +2172,14 @@ Predicate rows each file's calls reach (a predicate several files call counts in
 | Q10 | 11 | 11 | 0 | `$on_signal/4`, `$put_token/2`, `$set_prolog_stack/4`, `$suspend_findall_bag/0`, `\=@=/2`, `current_blob/2`, `garbage_collect_atoms/0`, `shell/2`, … +3 |
 | P3 | 10 | 9 | 1 | `$depth_limit/3`, `$depth_limit_except/3`, `$depth_limit_false/3`, `$depth_limit_true/5`, `$inference_limit/2`, `$inference_limit_except/3`, `$inference_limit_false/1`, `$inference_limit_true/3`, … +2 |
 | RD2 | 8 | 0 | 8 | `refusal raw_read2: reading past the end of a str…`, `refusal raw_read2: the comments(C) read option`, `refusal raw_read2: the comments(C) read option`, `refusal read_clause's $what option`, `refusal read_clause's process_comment(true) or u…`, `refusal read_term's $what option`, `refusal read: a blob <type>(…)`, `refusal read: a quasi-quotation {\|Syntax\|\|Quotat…` |
+| REFUSED | 7 | 7 | 0 | `A_INTEGERW`, `B_SMALLINTW`, `B_THROW`, `H_SMALLINTW`, `L_SMALLINTW`, `T_SMALLINTW`, `T_TRY_SMALLINTW` |
 | LB5-LB7 | 6 | 2 | 4 | `$activate_static_extension/1`, `$clause_term_position/3`, `refusal iri_hook $what ('\$iri':iri_hook/4 of in…`, `refusal what`, `refusal format_predicate/2 (GD->format.predicate…`, `refusal expandVars: ~user (getpwnam)` |
-| REFUSED | 6 | 6 | 0 | `B_SMALLINTW`, `B_THROW`, `H_SMALLINTW`, `L_SMALLINTW`, `T_SMALLINTW`, `T_TRY_SMALLINTW` |
 | ZIP1 | 6 | 6 | 0 | `$rc_handle/1`, `zip_clone/2`, `zip_close_/2`, `zip_file_info_/3`, `zipper_goto/2`, `zipper_open_current/3` |
 | CT1 | 4 | 2 | 2 | `char_type/2`, `code_type/2`, `refusal open/4's locale(Locale) option`, `refusal set_stream/2's locale(Locale)` |
 | S2a | 4 | 4 | 0 | `get/1`, `get/2`, `put/1`, `put/2` |
 | S2b | 4 | 0 | 4 | `refusal a stream pair`, `refusal open(pipe(Command), …)`, `refusal open/4's lock(Lock) option (advisory fil…`, `refusal closing a stream pair` |
 | TX1 | 4 | 4 | 0 | `$snapshot/1`, `$transaction/2`, `$transaction/3`, `$undo/1` |
+| AR1 | 2 | 0 | 2 | `refusal LD->arith.rat / LD->gmp.max_integer_size…`, `refusal LD->arith.rat.max_rational_size_action: …` |
 | FL1 | 2 | 2 | 0 | `get_flag/2`, `set_flag/2` |
 | P2 | 2 | 2 | 0 | `$seek_list/4`, `sub_atom_icasechk/3` |
 | PR1 | 2 | 1 | 1 | `$foreign_predicate_source/2`, `refusal get_procedure: other than GP_DEFINE` |
@@ -2194,7 +2197,7 @@ Predicate rows each file's calls reach (a predicate several files call counts in
 | TB6 | 1 | 1 | 0 | `S_INCR_DYNAMIC` |
 | WR2 | 1 | 0 | 1 | `refusal writing a grounded value SWI has no type…` |
 | WRAP1 | 1 | 0 | 1 | `refusal freeCodesDefinition! of a wrapped predic…` |
-| NO OWNER | 39 | 21 | 18 | `apple_current_locale_identifier/1`, `flag ci_set_flag (pl-index.c)`, `flag set_arith_flag (pl-arith.c)`, `flag tbl_set_restraint_flag (tabling restraints)`, `flag agc_margin`, `flag app_name`, `flag apple`, `flag apple_universal_binary`, … +31 |
+| NO OWNER | 38 | 21 | 17 | `apple_current_locale_identifier/1`, `flag ci_set_flag (pl-index.c)`, `flag tbl_set_restraint_flag (tabling restraints)`, `flag agc_margin`, `flag app_name`, `flag apple`, `flag apple_universal_binary`, `flag argv`, … +30 |
 
 #### Missing and refused per category
 
@@ -2203,8 +2206,8 @@ xychart-beta
     title "R2: missing (bars) and refused (line) rows"
     x-axis ["predicates", "refusal sites", "flags", "VM instructions"]
     y-axis "rows" 0 --> 150
-    bar [124, 0, 20, 36]
-    line [0, 73, 15, 0]
+    bar [123, 0, 20, 11]
+    line [0, 74, 14, 0]
 ```
 
 <!-- END GENERATED R2 status -->

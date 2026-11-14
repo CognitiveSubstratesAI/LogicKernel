@@ -126,32 +126,7 @@ pred:zip_close_/2	ZIP1	seed: missing_c_preds.tsv
 pred:zip_file_info_/3	ZIP1	seed: missing_c_preds.tsv
 pred:zipper_goto/2	ZIP1	seed: missing_c_preds.tsv
 pred:zipper_open_current/3	ZIP1	seed: missing_c_preds.tsv
-vmi:A_ADD	AR1	seed: VM-instruction family
-vmi:A_DOUBLE	AR1	seed: VM-instruction family
-vmi:A_ENTER	AR1	seed: VM-instruction family
-vmi:A_EQ	AR1	seed: VM-instruction family
-vmi:A_FIRSTVAR_IS	AR1	seed: VM-instruction family
-vmi:A_FUNC	AR1	seed: VM-instruction family
-vmi:A_FUNC0	AR1	seed: VM-instruction family
-vmi:A_FUNC1	AR1	seed: VM-instruction family
-vmi:A_FUNC2	AR1	seed: VM-instruction family
-vmi:A_GE	AR1	seed: VM-instruction family
-vmi:A_GT	AR1	seed: VM-instruction family
-vmi:A_INTEGER	AR1	seed: VM-instruction family
 vmi:A_INTEGERW	REFUSED	never declared (refused by name, no step ports it): emitted by pl-comp.c:3977 (compileArith) for an integer wider than `scode`; only where a code word is narrower than a word (`CODES_PER_WORD > 1`; pl-incl.h:679 SIZEOF_WORD/SIZEOF_CODE, `code` = uintptr_t :888, so 1 on the build the kernel targets, where :3970-3971 emits A_INTEGER only); its body pl-vmi.c:3818-3832 is `#if CODES_PER_WORD > 1 ... #else assert(0)`; src/pl-vmi.jl:44
-vmi:A_IS	AR1	seed: VM-instruction family
-vmi:A_LE	AR1	seed: VM-instruction family
-vmi:A_LT	AR1	seed: VM-instruction family
-vmi:A_MPQ	AR1	seed: VM-instruction family
-vmi:A_MPZ	AR1	seed: VM-instruction family
-vmi:A_MUL	AR1	seed: VM-instruction family
-vmi:A_NE	AR1	seed: VM-instruction family
-vmi:A_ROUNDTOWARDS_A	AR1	seed: VM-instruction family
-vmi:A_ROUNDTOWARDS_V	AR1	seed: VM-instruction family
-vmi:A_VAR	AR1	seed: VM-instruction family
-vmi:A_VAR0	AR1	seed: VM-instruction family
-vmi:A_VAR1	AR1	seed: VM-instruction family
-vmi:A_VAR2	AR1	seed: VM-instruction family
 vmi:B_SMALLINTW	REFUSED	never declared (refused by name, no step ports it): emitted by pl-comp.c:3032 for a body integer; only where a code word is narrower than a word (`CODES_PER_WORD > 1`; pl-incl.h:679 SIZEOF_WORD/SIZEOF_CODE, `code` = uintptr_t :888, so 1 on the build the kernel targets); src/pl-vmi.jl:42-44
 vmi:B_THROW	REFUSED	never declared (refused by name, no step ports it): defined at the pin (O_CATCHTHROW=1, pl-incl.h:240) but emitted by no compiler site; only the decompiler names it (pl-comp.c:6728); throw/1 compiles to a plain call (oracle vm_list)
 vmi:D_BREAK	DBG1	seed: VM-instruction family
