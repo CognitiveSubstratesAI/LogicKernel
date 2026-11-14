@@ -7947,7 +7947,7 @@ function prepare_reeval(ld::PL_local_data{T}, atrie::trie{T})::Bool where {T}
     idg = atrie.IDG::idg_node{T}
     wl = atrie.worklist
 
-    trie_ensure_nodes(atrie) || return false        # see answer_nodes_discardable()
+    trie_ensure_nodes(_query_gd(ld), ld, atrie) || return false  # see answer_nodes_discardable()
     atrie.flags &= ~TRIE_DISCARDABLE                # completion decides again
 
     if tt_has_modified_dependencies(ld, atrie)
@@ -8089,9 +8089,9 @@ function reeval_complete(ld::PL_local_data{T}, atrie::trie{T})::Nothing where {T
         if same_answers
             idg_propagate_change(ld, n, 0)
         else
-            trie_discard_clause(atrie)
+            trie_discard_clause(_query_gd(ld), atrie)
             if atrie.references == 0                # remove the deleted answers
-                prune_trie(atrie, 1, nothing)
+                prune_trie(_query_gd(ld), atrie, 1, nothing)
             end
         end
 
@@ -8354,7 +8354,7 @@ function mono_index_insert(
         mdep.same_key = get(deps, nid, nothing)
         deps[nid] = mdep                                # updateHTablePP
     else
-        set_trie_value_word(itrie, nid, MONO_INDEX_VALUE)
+        set_trie_value_word(gd, itrie, nid, MONO_INDEX_VALUE)
         deps[nid] = mdep                                # addHTablePP
     end
     mdep.index_node = nid
@@ -9124,7 +9124,7 @@ function pl_tbl_monotonic_add_answer2_va(
             if rc > 0
                 atrie.nodes[nid].value != 0 && return FFALSE
                 tt_add_answer(ld, atrie, nid)
-                set_trie_value_word(atrie, nid, ATOM_trienode)
+                set_trie_value_word(_query_gd(ld), atrie, nid, ATOM_trienode)
 
                 mono_idg_changed(ld, atrie, nid) || return FFALSE
                 atrie_answer_event(ld, atrie, nid) || return FFALSE
@@ -9253,7 +9253,7 @@ function pl_mono_reeval_done3_va(
                 queue = n !== nothing && atrie.nodes[n].value != 0
                 if gc[] != 0
                     prune_deleted_mdeps(ld, idg)
-                    prune_trie(atrie, 1, nothing)
+                    prune_trie(gd, atrie, 1, nothing)
                 end
                 queue && (rc = mono_idg_changed(ld, atrie, n))
             end
