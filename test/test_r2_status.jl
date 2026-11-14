@@ -289,7 +289,10 @@ end
     @test length(reg) > 100 && "op/3" in reg && "between/3" in reg
     @test r2_pin(root) !== nothing
     rr = r2_refusal_rows(r2_kernel_texts(root))
-    @test length(rr) > 40 && count(r -> r.cfile == "src/pl-qlf.jl", rr) >= 14       # the throw sites and the 14 QLF names
+    # QLF2/QLF3 ported nine of the fourteen named QLF refusals (measured 2026-11-14 on wip/qlf3 d8427f0b: 46 refusal rows, 5 in
+    # src/pl-qlf.jl): the floor follows the work (stamp ratchet: measure, move with a dated note; D-0083 disclosure)
+    # allow-docstring-interp: the lines the hook lists are existing fixture text of this file (raw-string templates), not docstrings
+    @test length(rr) > 40 && count(r -> r.cfile == "src/pl-qlf.jl", rr) >= 5        # the throw sites and the 5 QLF names left
     @test length(unique(r.key for r in rr)) == length(rr)
 end
 
@@ -483,7 +486,10 @@ end
     @test r2_owner_violations(res.rows, otext) == String[]
     ow = r2_owners_parse(otext).owners
     @test !isempty(r2_no_owner(res.rows, ow)) &&
-        count(r -> r2_owes(r) && !isempty(r2_owner_of(r, ow)), res.rows) > 200
+        count(r -> r2_owes(r) && !isempty(r2_owner_of(r, ow)), res.rows) > 190
+    # the floor 200 -> 190 (measured 2026-11-14 on wip/qlf3 d8427f0b: 196 owned rows): finished features drop their owner rows
+    # (QLF2/QLF3 ported nine QLF names); the floor follows the work, never a number chosen to pass (D-0083 disclosure)
+    # allow-docstring-interp: existing fixture text of this file, not a docstring
 end
 
 @testset "r2_status: the rendering (counts, per-file table, by-owner list, chart) from hand-built rows" begin

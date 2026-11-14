@@ -140,6 +140,7 @@ mutable struct PL_global_data{T}
     const stream_filenames::IdDict{IOSTREAM, T}                 # (pl-file.c's stream context)
     const stream_aliases::Dict{UInt64, IOSTREAM}                # streamAliases: user alias (sym_key) → stream
     const stream_alias_names::Dict{Int, Vector{T}}              # stream_context.alias_head: a stream's aliases, by IOSTREAM.context
+    const stream_context_flags::Dict{Int, Int}                  # stream_context.flags (IO_SEE, IO_TELL): a stream's flags, by IOSTREAM.context
     const stream_table::Vector{Union{Nothing, IOSTREAM}}        # streamContext: the streams Prolog knows; IOSTREAM.context indexes it, a closed stream's entry is `nothing`
     const atoms::atoms_t                                        # atoms: the atom table (L1b A)
     const atom_symbols::atom_symbols{T}                         # (each atom's symbol, L1b C6b)
@@ -209,7 +210,8 @@ end
 # upstream keeps in the stream's context (pl-file.c `streamContext`, the stream table) — the
 # loader registers the stream it opens. Since R2's S1 the stream table has landed: `stream_table`
 # (`streamContext`: the streams Prolog knows, `IOSTREAM.context` their index), `stream_aliases`
-# (`streamAliases`: the user aliases) and `stream_alias_names` (each stream's `alias_head`).
+# (`streamAliases`: the user aliases) and `stream_alias_names` (each stream's `alias_head`); lane D adds `stream_context_flags`
+# (each stream's `stream_context.flags`: `IO_SEE`, `IO_TELL`, set by see/1 and tell/1).
 # Since R2's D1: `clause_refs` and `clause_serials`, the clauses a clause blob names (pl-dbref.c: upstream's blob
 # holds the `Clause` pointer, here its number in `clause_refs`, `clause_serials` its inverse); the clause blob type is
 # registered where pl-setup.c:146 calls `initDBRef`. Since R2's LB2: `bootsession`, `GD->bootsession` (pl-global.h), false
