@@ -2333,7 +2333,7 @@ end
 end
 
 # ── the A_* instruction bodies, outlined from the run loop (AR1, on T27's pattern) ────────────────
-# ORIGINAL (AR1): the same measure as T27 (audit D-0563) applies to the arithmetic instructions: the bodies of the A_* labels
+# ORIGINAL (AR1): the same measure as T27 (audit D-0563) applies to the arithmetic instructions: the code of the A_* labels
 # that call out (`a_var_n`, `common_an`, `A_ROUNDTOWARDS_V`, `A_ADD`, `A_MUL`, `a_cmp`, `A_IS`, `A_FIRSTVAR_IS`) are `@noinline`
 # functions, each called from its own label of `PL_next_solution_guarded`; the labels, their `# PORT:` markers and the operand
 # reads (`*PC++`) stay in the run loop, the bodies are moved as they were (their statements, their variable names, the run loop's
