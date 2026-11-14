@@ -2849,8 +2849,7 @@ const FUNCTOR_drecover_and_rethrow2 = builtin_functor("drecover_and_rethrow", 2)
 # port_inventory). Blocks for subsystems not ported are marked `NOT PORTED` where they stand: the
 # signals, debugger, profiler, depth and inference limits of `LD->alerted`; `FR_NOTIFY` (the
 # debugger's half of `FR_WATCHED`: `frameFinished` runs the cleanup handler of an `FR_CLEANUP`
-# frame since V9g); `FR_DET` (the `det` property: nothing sets it — the `$/0` guard's
-# `FR_DETGUARD` is ported, V9f); yield.
+# frame since V9g); yield.
 """
     PL_next_solution_guarded(gd, ld, qid, except) -> Int
 
@@ -5038,8 +5037,8 @@ function PL_next_solution_guarded(
     @goto next_instruction
 
     # PORT: pl-vmi.c exit_det_error
-    # DIVERGES: `FR_DET`/`FR_DETGUARD` (`determinism_error`): since V9f (`$/0` sets the guard; the
-    # `det` property's `FR_DET` is still set by nothing). NOT PORTED: `exit_profile` (the profiler),
+    # DIVERGES: `FR_DET`/`FR_DETGUARD` (`determinism_error`): since V9f (`$/0` sets the guard) and SSU1b
+    # (`S_DET` sets the `det` property's `FR_DET`). NOT PORTED: `exit_profile` (the profiler),
     # so the frame pop goes on to the next instruction.
     @label exit_det_error
     @SAVE_REGISTERS(QID)
@@ -5912,6 +5911,15 @@ function PL_next_solution_guarded(
     # or a cut clears the flag.
     @label S_SSU_DET
     ld.frames[FR].flags |= FR_SSU_DET               # setLocal(FR, FR_SSU_DET)
+    @goto next_instruction
+
+    # PORT: pl-vmi.c S_DET
+    # The prefix `chainPredicateSupervisor` puts before a `det/1` predicate's supervisor (since SSU1b,
+    # `P_DET`): the frame's exit and failure are checked by `determinism_error`. The tests that read
+    # `FR_DET` (with `FR_DETGUARD`) were ported with V9f: `frameFailed`, the exit paths, `I_DEPART`'s
+    # last-call test.
+    @label S_DET
+    ld.frames[FR].flags |= FR_DET                   # setLocal(FR, FR_DET)
     @goto next_instruction
 
     # PORT: pl-vmi.c S_MQUAL
