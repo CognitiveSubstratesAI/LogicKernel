@@ -101,10 +101,11 @@ end
 # f1b under audit D-0049: the local stack shrunk again after an overflow, the spares re-reserved as it
 # shrinks); without it the three spares are reserved again (`trim_stack!`, `_global!`, `_trail!`). `lTop` is
 # raised to the query's saved argument pointer while the spares are reserved, as upstream's.
-# NOT PORTED: `trim_stack_requested`: its readers are the stack garbage collector's (pl-gc.c
-# `garbageCollect`), not ported until G1; SECURE_GC's clearing and the debug checks.
+# `LD->trim_stack_requested` is cleared first (pl-setup.c:1715); `outOfStack!` sets it and `garbageCollect` reads it (G1-A);
+# SECURE_GC's clearing and the debug checks are left out.
 "Reclaim the local stack's spare after an exception (pl-setup.c)."
 function trimStacks!(ld::PL_local_data{T}, resize::Bool)::Nothing where {T}
+    ld.trim_stack_requested = false             # LD->trim_stack_requested = false
     resize && growStacks_trim!(ld)              # growStacks(GROW_TRIM, GROW_TRIM, GROW_TRIM)
     lsave = ld.lTop
     if ld.query != 0                            # saved registers above lTop
@@ -132,7 +133,7 @@ end
 # upstream's order), then since AV1 `attvar.head` and `attvar.tail`, each with a PERMANENT global cell
 # (audit D-0122 Q1 (a), a representation-only divergence: upstream assigns the two local-stack cells
 # themselves, pl-attvar.c:127 "on local stack!", and its own TBD, pl-wam.c:1565, names the global
-# stack); the others belong to subsystems not ported (`trim.dummy`, `attvar.gc_attvars` (G1), undo
+# stack); the others belong to subsystems still to come (`trim.dummy`, `attvar.gc_attvars` (replaced by `save_grefs`, pl-gcmark.jl), undo
 # hooks, tabling; nor `destroyGlobalVars`). So later term references
 # lie at other absolute positions than in
 # swipl: compare DIFFERENCES between positions with swipl, never absolute ones.

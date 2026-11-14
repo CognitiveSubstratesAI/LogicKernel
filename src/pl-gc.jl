@@ -1,5 +1,7 @@
 # UPSTREAM: swipl-devel src/pl-gc.c @ 18168e629eab
 # UPSTREAM: swipl-devel src/pl-gc.h @ 18168e629eab
+# UPSTREAM: swipl-devel src/pl-fli.c @ 18168e629eab
+# UPSTREAM: swipl-devel src/pl-fli.h @ 18168e629eab
 # CLASS: code
 # COPYRIGHT: Copyright (c)  1985-2024, University of Amsterdam
 # COPYRIGHT: VU University Amsterdam
@@ -41,7 +43,7 @@ function markPredicatesInEnvironments!(
 end
 
 # PORT: pl-gc.c makeMoreStackSpace
-# DIVERGES (since L1f f1b): no collector (`garbageCollect`, `ALLOW_GC`) and no global or trail stack to grow —
+# DIVERGES (since L1f f1b; the collector hook is G1-GC's `considerGC` above, wired at `ensureGlobalSpace`'s audited sites only): no collector (`garbageCollect`) and no global or trail stack to grow —
 # they grow on demand, so their callers (`allocGlobalNoShift`) were refused for the LIMIT, which growing
 # cannot pass: the overflow is raised and false returned, as upstream's when `growStacks` fails. Upstream's
 # first case — while an exception is processed, the stack's spare enabled — cannot arise: nothing is refused
@@ -50,6 +52,25 @@ end
 "Make room after `overflow`, or raise it and return false (pl-gc.c `makeMoreStackSpace`)."
 function makeMoreStackSpace(ld::PL_local_data, overflow::boolex_t, flags::Int)::Bool
     return raiseStackOverflow(ld, overflow)
+end
+
+# ── the stack collector's safe-point hook (G1-GC, piece G1-2; docs/g1gc_safe_points.md) ─────────────
+# (`considerGarbageCollect`, the scheduler, is G1-1's: below, with the statistics)
+
+# (`garbageCollect`, the driver, is G1-6c's: src/pl-gcdriver.jl)
+
+# ORIGINAL: the hook of a SAFE ALLOW_GC site (pl-gc.c:4707-4719 `f_ensureStackSpace`'s "consider, collect" half); `ensureGlobalSpace` calls it only
+# when `flags & ALLOW_GC` and the area is full or `ld.gc_force` is set (the model of `FAKE_GC`, pl-vmi.c:238-251, never defined at the pin). Under
+# `gc_force` it records `site` in `ld.gc_safe_hits` and collects; otherwise only `considerGarbageCollect` decides. True iff a collection ran.
+"The safe-point hook: run the collector for `reason` at the audited `site` when `flags` allow it and one is due (or forced); true iff one ran."
+function considerGC(ld::PL_local_data, flags::Int, reason::Integer, site::Symbol)::Bool
+    (flags & ALLOW_GC) == 0 && return false                 # G1-GC safe point: only a site that passed ALLOW_GC
+    if ld.gc_force                                          # G1-GC safe point: FAKE_GC's model
+        push!(ld.gc_safe_hits, site)
+    elseif !considerGarbageCollect(ld, nothing)             # considerGarbageCollect(NULL)
+        return false
+    end
+    return garbageCollect(ld, Int(reason); vmi_state_of=get_vmi_state) == BOOLEX_TRUE   # garbageCollect(reason): the GC_* constants are unsigned hex literals, `Int` here
 end
 
 # PORT: pl-gc.c growStacks as growStacks!
@@ -277,11 +298,12 @@ end
 # PORT: pl-gc.c pl_garbage_collect
 # (FRG("$garbage_collect", 1, pl_garbage_collect, 0), pl-ext.c:168; pl-gc.c:4570-4584 at the pin. The
 # Prolog `garbage_collect/0` is boot/syspred.pl:1423-1424: `garbage_collect :- '$garbage_collect'(0).`)
-# DIVERGES: the body of `garbageCollect(GC_USER)` (pl-gc.c:4581) is not the kernel's — no stack garbage
-# collection, so the call has nothing to do and succeeds. The debug level argument `d` is read only
-# under `#if O_DEBUG` (pl-gc.c:4573-4579), which a release build of swipl does not define, so `d` is not examined.
-"`'\$garbage_collect'(+DebugLevel)`: run the stack garbage collector (pl-gc.c); here there is none, so it succeeds."
+# DIVERGES: the debug level argument `d` is read only under `#if O_DEBUG` (pl-gc.c:4573-4579), which a release build of swipl does
+# not define, so `d` is not examined. `garbageCollect(GC_USER)` (pl-gc.c:4581) passes `get_vmi_state` (G1-2b, pl-gcdriver.jl) as the `vmi_state_of`
+# callback, so a query inside the VM is collected (since G1-2b; before it the collection DECLINED); the answer is true either way.
+"`'\$garbage_collect'(+DebugLevel)`: run the stack garbage collector (pl-gc.c `garbageCollect(GC_USER)`); true either way."
 function pl_garbage_collect(ld::PL_local_data{T}, d::term_t)::foreign_t where {T}
+    garbageCollect(ld, Int(GC_USER); vmi_state_of=get_vmi_state)
     return FTRUE
 end
 
@@ -469,5 +491,1073 @@ function mark_active_environment(
         (ld.frames[fr].predicate::Definition{T}).arity, active, falses(length(active))
     )
     walk_and_mark(state, codes, pc, I_EXIT)
+    return nothing
+end
+
+# ── the stack invariant checker (G1-GC piece G1-9) ───────────────────────────────────────────────
+"""
+    StackInvariantError(violations)
+
+A stack invariant failed (`check_stacks!`): the report, one text per violation, each starting with the check's
+name in brackets (`[gstack-tag]`, `[gstack-ref-cycle]`, …).
+"""
+struct StackInvariantError <: Exception
+    violations::Vector{String}
+end
+function Base.showerror(io::IO, e::StackInvariantError)
+    print(io, "StackInvariantError: ", length(e.violations), " violation(s):")
+    for v in e.violations
+        print(io, "\n  ", v)
+    end
+    return nothing
+end
+
+# ORIGINAL: how many violations a report keeps; the rest are counted.
+"The most violations one `stack_violations` report lists."
+const STACK_CHECK_MAX_REPORT = 64
+
+# ORIGINAL: the report of one check run.
+mutable struct stack_report
+    msgs::Vector{String}                        # the violations, `[check] where: what`
+    dropped::Int                                # violations past `STACK_CHECK_MAX_REPORT`
+    cells::Int                                  # cells and records examined (upstream's `key`, as a count)
+end
+stack_report() = stack_report(String[], 0, 0)
+
+function _viol!(r::stack_report, check::String, msg::String)::Nothing
+    if length(r.msgs) < STACK_CHECK_MAX_REPORT
+        push!(r.msgs, string("[", check, "] ", msg))
+    else
+        r.dropped += 1
+    end
+    return nothing
+end
+
+_hexw(w::word)::String = string("0x", string(w; base=16, pad=16))
+
+# ORIGINAL: the arity of functor word `w`, -1 when the functor table does not hold it (a corrupt word).
+function _functor_arity_checked(ld::PL_local_data, w::word)::Int
+    a = _arityFunc_(w)
+    a != F_ARITY_MASK && return a
+    return try
+        arityFunctor(ld.functors, w)
+    catch
+        -1
+    end
+end
+
+# ORIGINAL: one word of a global cell (not a functor head): its tag, storage, range and mark bits.
+function _check_global_word!(
+    r::stack_report, ld::PL_local_data, p::Int, w0::word, allow_marks::Bool
+)::Nothing
+    w = w0
+    if (w & BOTH_MASK) != 0
+        allow_marks || _viol!(
+            r, "gstack-mark",
+            string(
+                "global[",
+                p,
+                "] = ",
+                _hexw(w0),
+                ": MARK/FIRST bit set outside a collection"
+            )
+        )
+        w &= ~BOTH_MASK
+    end
+    gtop = ld.gTop
+    te = tagex(w)
+    if w == word(0)                                         # an unbound variable (`setVar`)
+        return nothing
+    elseif te == (TAG_ATOM | STG_STATIC) || te == (TAG_INTEGER | STG_INLINE)
+        return nothing                                      # an atom, a tagged small integer
+    elseif te == (TAG_REFERENCE | STG_GLOBAL)
+        q = valPtr(w)
+        if q < 1 || q > gtop
+            _viol!(
+                r, "gstack-ref-range",
+                string(
+                    "global[",
+                    p,
+                    "] = ",
+                    _hexw(w0),
+                    ": reference to ",
+                    q,
+                    " outside 1..",
+                    gtop
+                )
+            )
+        end
+    elseif te == (TAG_ATTVAR | STG_GLOBAL)
+        q = valPtr(w)
+        if q < 1 || q > gtop
+            _viol!(
+                r, "gstack-ref-range",
+                string("global[", p, "] = ", _hexw(w0), ": attributed variable pointer ", q,
+                    " outside 1..", gtop)
+            )
+        end
+    elseif te == (TAG_COMPOUND | STG_GLOBAL)
+        q = valPtr(w)
+        if q < 1 || q > gtop
+            _viol!(
+                r, "gstack-compound",
+                string(
+                    "global[",
+                    p,
+                    "] = ",
+                    _hexw(w0),
+                    ": compound at ",
+                    q,
+                    " outside 1..",
+                    gtop
+                )
+            )
+        else
+            f = ld.gstack[q]
+            if !isFunctor(f & ~BOTH_MASK)
+                _viol!(
+                    r, "gstack-compound",
+                    string("global[", p, "] = ", _hexw(w0), ": compound at ", q,
+                        " whose cell ", _hexw(f), " is not a functor word")
+                )
+            end
+        end
+    elseif te == (TAG_COMPOUND | STG_RESERVED)             # a value-table word
+        i = valPtr(w)
+        if i < 1 || i > length(ld.vtable)
+            _viol!(
+                r, "gstack-vword",
+                string("global[", p, "] = ", _hexw(w0), ": value-table entry ", i,
+                    " outside 1..", length(ld.vtable))
+            )
+        end
+    elseif te == (TAG_ATOM | STG_GLOBAL)
+        _viol!(
+            r, "gstack-functor",
+            string(
+                "global[",
+                p,
+                "] = ",
+                _hexw(w0),
+                ": a functor word where an argument cell is expected"
+            )
+        )
+    else
+        _viol!(
+            r, "gstack-tag",
+            string("global[", p, "] = ", _hexw(w0), ": tag/storage ", string(te; base=2),
+                " is no tag a global cell holds")
+        )
+    end
+    return nothing
+end
+
+# ORIGINAL: the global stack's cells, compound by compound.
+function _check_global_cells!(
+    r::stack_report, ld::PL_local_data, allow_marks::Bool
+)::Nothing
+    gtop = ld.gTop
+    if gtop < 0 || gtop > length(ld.gstack)
+        _viol!(r, "gstack-top", string("gTop = ", gtop, " outside 0..", length(ld.gstack)))
+        return nothing
+    end
+    p = 1
+    while p <= gtop
+        w0 = ld.gstack[p]
+        w = w0 & ~BOTH_MASK
+        r.cells += 1
+        if isFunctor(w)                                     # a compound's head: its arguments follow
+            (w0 & BOTH_MASK) != 0 && !allow_marks &&
+                _viol!(
+                    r, "gstack-mark",
+                    string(
+                        "global[",
+                        p,
+                        "] = ",
+                        _hexw(w0),
+                        ": MARK/FIRST bit set on a functor cell outside a collection"
+                    )
+                )
+            n = _functor_arity_checked(ld, w)
+            if n < 0
+                _viol!(
+                    r, "gstack-functor-arity",
+                    string(
+                        "global[",
+                        p,
+                        "] = ",
+                        _hexw(w0),
+                        ": functor not in the functor table"
+                    )
+                )
+                p += 1
+            elseif p + n > gtop
+                _viol!(
+                    r, "gstack-functor-arity",
+                    string(
+                        "global[",
+                        p,
+                        "] = ",
+                        _hexw(w0),
+                        ": arity ",
+                        n,
+                        " runs past gTop = ",
+                        gtop
+                    )
+                )
+                p += 1
+            else
+                for i in 1:n
+                    _check_global_word!(r, ld, p + i, ld.gstack[p + i], allow_marks)
+                    r.cells += 1
+                end
+                p += n + 1
+            end
+        else
+            _check_global_word!(r, ld, p, w0, allow_marks)
+            p += 1
+        end
+    end
+    return nothing
+end
+
+# ORIGINAL: the reference chains are acyclic. Each chain is followed once (`state`: 0 new, 1 on the
+# chain being followed, 2 known to end); a one-cell chain (a cell referencing itself) is the unbound
+# variable of upstream and passes.
+function _check_ref_chains!(r::stack_report, ld::PL_local_data)::Nothing
+    gtop = ld.gTop
+    (gtop < 1 || gtop > length(ld.gstack)) && return nothing
+    state = zeros(UInt8, gtop)
+    path = Int[]
+    for start in 1:gtop
+        state[start] == 0x00 || continue
+        empty!(path)
+        p = start
+        while true
+            w = ld.gstack[p] & ~BOTH_MASK
+            if !(tagex(w) == (TAG_REFERENCE | STG_GLOBAL))  # the chain ends at a non-reference
+                break
+            end
+            q = valPtr(w)
+            if q < 1 || q > gtop                            # (reported by the cell check)
+                break
+            end
+            if q == p                                       # self-reference: an unbound variable
+                break
+            end
+            if state[p] == 0x02
+                break
+            end
+            if state[p] == 0x01
+                _viol!(
+                    r, "gstack-ref-cycle",
+                    string(
+                        "global[",
+                        p,
+                        "]: reference chain from ",
+                        start,
+                        " returns to a cell on it"
+                    )
+                )
+                break
+            end
+            state[p] = 0x01
+            push!(path, p)
+            p = q
+        end
+        for c in path
+            state[c] = 0x02
+        end
+        state[p] == 0x00 && (state[p] = 0x02)
+    end
+    return nothing
+end
+
+# ORIGINAL: the value table's boxes: one per entry, ascending, each the entry's own word.
+function _check_vbox!(r::stack_report, ld::PL_local_data)::Nothing
+    nv = length(ld.vtable)
+    if length(ld.vbox) != nv
+        _viol!(
+            r,
+            "vbox",
+            string("length(vbox) = ", length(ld.vbox), " but length(vtable) = ", nv)
+        )
+        return nothing
+    end
+    gtop = ld.gTop
+    prev = 0
+    for i in 1:nv
+        b = ld.vbox[i]
+        r.cells += 1
+        b == 0 && continue                      # a tombstone: the box is dead, the collection left its entry (gc_tombstone_boxes!)
+        if b < 1 || b > gtop || b > length(ld.gstack)
+            _viol!(r, "vbox", string("vbox[", i, "] = ", b, " outside 1..", gtop))
+            continue
+        end
+        if b <= prev
+            _viol!(
+                r,
+                "vbox",
+                string("vbox[", i, "] = ", b, " not above vbox[", i - 1, "] = ", prev)
+            )
+        end
+        prev = b
+        want = consPtr(i, TAG_COMPOUND | STG_RESERVED)
+        got = ld.gstack[b] & ~BOTH_MASK
+        if got != want
+            _viol!(
+                r, "vbox",
+                string("global[", b, "] = ", _hexw(ld.gstack[b]), " is not the box word ",
+                    _hexw(want),
+                    " of value-table entry ", i)
+            )
+        end
+    end
+    return nothing
+end
+
+# ORIGINAL: the trail: address entries name cells of the global stack, a value entry follows an
+# address entry and names the saved old value above it (`TrailAssignment!`).
+function _check_trail!(r::stack_report, ld::PL_local_data)::Nothing
+    gtop = ld.gTop
+    tr = ld.trail
+    for i in 1:length(tr)
+        e = tr[i]
+        r.cells += 1
+        if isTrailVal(e)
+            p = trailValP(e)
+            if i == 1 || isTrailVal(tr[i - 1])
+                _viol!(
+                    r,
+                    "trail",
+                    string(
+                        "trail[",
+                        i,
+                        "] = ",
+                        _hexw(e),
+                        ": a value entry not above an address entry"
+                    )
+                )
+            end
+            if p < 1 || p > gtop
+                _viol!(
+                    r,
+                    "trail",
+                    string(
+                        "trail[",
+                        i,
+                        "] = ",
+                        _hexw(e),
+                        ": saved value at ",
+                        p,
+                        " outside 1..",
+                        gtop
+                    )
+                )
+            elseif i > 1 && !isTrailVal(tr[i - 1]) && p <= _trail_pos(tr[i - 1])
+                _viol!(
+                    r, "trail",
+                    string("trail[", i, "] = ", _hexw(e), ": saved value at ", p,
+                        " not above its cell ", _trail_pos(tr[i - 1]))
+                )
+            end
+        else
+            if _trail_stack(e) != TRAIL_GLOBAL
+                _viol!(
+                    r,
+                    "trail",
+                    string(
+                        "trail[",
+                        i,
+                        "] = ",
+                        _hexw(e),
+                        ": stack code ",
+                        _trail_stack(e),
+                        " names no stack here"
+                    )
+                )
+                continue
+            end
+            p = _trail_pos(e)
+            if p < 1 || p > gtop
+                _viol!(
+                    r,
+                    "trail",
+                    string(
+                        "trail[", i, "] = ", _hexw(e), ": cell ", p, " outside 1..", gtop
+                    )
+                )
+            end
+        end
+    end
+    return nothing
+end
+
+# ORIGINAL: the chain of attributed variables: each link cell is unbound (the end) or a reference to an older link.
+function _check_attvar_chain!(r::stack_report, ld::PL_local_data)::Nothing
+    gtop = ld.gTop
+    p = ld.attvar_attvars
+    steps = 0
+    while p != 0
+        r.cells += 1
+        if p < 1 || p > gtop
+            _viol!(r, "attvar-chain", string("link ", p, " outside 1..", gtop))
+            return nothing
+        end
+        steps += 1
+        if steps > gtop + 1
+            _viol!(r, "attvar-chain", "the chain does not end")
+            return nothing
+        end
+        w = ld.gstack[p] & ~BOTH_MASK
+        if isVar(w)
+            return nothing
+        elseif tagex(w) == (TAG_REFERENCE | STG_GLOBAL) && valPtr(w) < p
+            p = valPtr(w)
+        else
+            _viol!(
+                r, "attvar-chain",
+                string("link cell global[", p, "] = ", _hexw(ld.gstack[p]),
+                    " is neither unbound nor a reference to an older link")
+            )
+            return nothing
+        end
+    end
+    return nothing
+end
+
+# ORIGINAL: the record pools of the local stack and the registers into them.
+function _check_local_records!(
+    r::stack_report, ld::PL_local_data{T}
+)::Nothing where {T}
+    ltop = ld.lTop
+    if ltop < 0 || ltop > length(ld.slots)
+        _viol!(r, "lstack-top", string("lTop = ", ltop, " outside 0..", length(ld.slots)))
+    end
+    if ld.aTop < 0 || ld.aTop > length(ld.astack)
+        _viol!(
+            r, "astack-top", string("aTop = ", ld.aTop, " outside 0..", length(ld.astack))
+        )
+    end
+    gtop = ld.gTop
+    ntr = length(ld.trail)
+    if ld.frozen_bar < 0 || ld.frozen_bar > gtop
+        _viol!(
+            r, "frozen-bar", string("frozen_bar = ", ld.frozen_bar, " outside 0..", gtop)
+        )
+    end
+    # the pools: live records in base order; a frame still being filled may lie at or above lTop
+    nf = ld.nframes
+    if nf < 0 || nf > length(ld.frames)
+        _viol!(r, "frame", string("nframes = ", nf, " outside 0..", length(ld.frames)))
+        nf = 0
+    end
+    for i in 1:nf
+        fr = ld.frames[i]
+        r.cells += 1
+        fr.base < 1 && _viol!(
+            r,
+            "frame",
+            string("frames[", i, "].base = ", fr.base, " is below the stack")
+        )
+        i > 1 && fr.base <= ld.frames[i - 1].base &&
+            _viol!(
+                r, "frame",
+                string(
+                    "frames[", i, "].base = ", fr.base, " not above frames[", i - 1, "]"
+                )
+            )
+        i < nf && fr.base >= ltop &&
+            _viol!(
+                r, "frame",
+                string("frames[", i, "].base = ", fr.base, " at or above lTop = ", ltop)
+            )
+        if isFrame(fr) && (fr.parent < 0 || fr.parent >= i)  # a killed frame's links are stale
+            _viol!(
+                r,
+                "frame",
+                string("frames[", i, "].parent = ", fr.parent, ": not an older frame")
+            )
+        end
+    end
+    nc = ld.nchoices
+    if nc < 0 || nc > length(ld.choices)
+        _viol!(r, "choice", string("nchoices = ", nc, " outside 0..", length(ld.choices)))
+        nc = 0
+    end
+    for i in 1:nc
+        c = ld.choices[i]
+        r.cells += 1
+        i > 1 && c.base <= ld.choices[i - 1].base &&
+            _viol!(
+                r, "choice",
+                string(
+                    "choices[", i, "].base = ", c.base, " not above choices[", i - 1, "]"
+                )
+            )
+        c.base >= ltop && _viol!(
+            r, "choice",
+            string("choices[", i, "].base = ", c.base, " at or above lTop = ", ltop)
+        )
+    end
+    # the chain from BFR: older records, older marks, marks within the stacks
+    ch = ld.BFR
+    if ch < 0 || ch > nc
+        _viol!(r, "choice", string("BFR = ", ch, " outside 0..", nc))
+    else
+        prev = nothing
+        steps = 0
+        while ch != 0
+            c = ld.choices[ch]
+            steps += 1
+            if steps > nc + 1
+                _viol!(r, "choice", "the choice-point chain does not end")
+                break
+            end
+            if c.unlinked
+                _viol!(
+                    r,
+                    "choice",
+                    string("choices[", ch, "] is on the chain but marked unlinked")
+                )
+            end
+            if c.frame < 0 || c.frame > nf
+                _viol!(
+                    r,
+                    "choice",
+                    string("choices[", ch, "].frame = ", c.frame, " outside 0..", nf)
+                )
+            end
+            if c.mark.trailtop != NOT_A_MARK
+                if c.mark.globaltop < 0 || c.mark.globaltop > gtop
+                    _viol!(
+                        r, "choice-mark",
+                        string(
+                            "choices[",
+                            ch,
+                            "].mark.globaltop = ",
+                            c.mark.globaltop,
+                            " above gTop = ",
+                            gtop
+                        )
+                    )
+                end
+                if c.mark.trailtop < 0 || c.mark.trailtop > ntr
+                    _viol!(
+                        r, "choice-mark",
+                        string(
+                            "choices[",
+                            ch,
+                            "].mark.trailtop = ",
+                            c.mark.trailtop,
+                            " above the trail's ",
+                            ntr
+                        )
+                    )
+                end
+                if prev !== nothing && prev.mark.trailtop != NOT_A_MARK &&
+                    (
+                        c.mark.globaltop > prev.mark.globaltop ||
+                        c.mark.trailtop > prev.mark.trailtop
+                    )
+                    _viol!(
+                        r, "choice-mark",
+                        string(
+                            "choices[", ch, "]'s mark is above the newer choice point's"
+                        )
+                    )
+                end
+            end
+            if c.parent < 0 || c.parent >= ch
+                _viol!(
+                    r,
+                    "choice",
+                    string(
+                        "choices[",
+                        ch,
+                        "].parent = ",
+                        c.parent,
+                        ": not an older choice point"
+                    )
+                )
+                break
+            end
+            prev = c
+            ch = c.parent
+        end
+    end
+    nfl = ld.nfliframes
+    if nfl < 0 || nfl > length(ld.fliframes)
+        _viol!(
+            r,
+            "fliframe",
+            string("nfliframes = ", nfl, " outside 0..", length(ld.fliframes))
+        )
+        nfl = 0
+    end
+    for i in 1:nfl
+        f = ld.fliframes[i]
+        r.cells += 1
+        i > 1 && f.base <= ld.fliframes[i - 1].base &&
+            _viol!(
+                r, "fliframe",
+                string(
+                    "fliframes[",
+                    i,
+                    "].base = ",
+                    f.base,
+                    " not above fliframes[",
+                    i - 1,
+                    "]"
+                )
+            )
+        (f.parent < 0 || f.parent >= i) && _viol!(
+            r, "fliframe",
+            string(
+                "fliframes[", i, "].parent = ", f.parent, ": not an older foreign frame"
+            )
+        )
+        if f.mark.trailtop != NOT_A_MARK &&
+            (f.mark.globaltop > gtop || f.mark.trailtop > ntr)
+            _viol!(
+                r, "fliframe",
+                string("fliframes[", i, "].mark (", f.mark.trailtop, ", ", f.mark.globaltop,
+                    ") above the trail ", ntr, " / gTop ", gtop)
+            )
+        end
+    end
+    nq = ld.nqueries
+    if nq < 0 || nq > length(ld.queries)
+        _viol!(r, "query", string("nqueries = ", nq, " outside 0..", length(ld.queries)))
+        nq = 0
+    end
+    for i in 2:nq
+        r.cells += 1
+        ld.queries[i].base <= ld.queries[i - 1].base && _viol!(
+            r, "query", string("queries[", i, "].base not above queries[", i - 1, "]")
+        )
+    end
+    return nothing
+end
+
+# ORIGINAL: every check, into a report.
+function _check_stacks(ld::PL_local_data, allow_marks::Bool)::stack_report
+    r = stack_report()
+    _check_global_cells!(r, ld, allow_marks)
+    _check_ref_chains!(r, ld)
+    _check_vbox!(r, ld)
+    _check_trail!(r, ld)
+    _check_attvar_chain!(r, ld)
+    _check_local_records!(r, ld)
+    return r
+end
+
+"""
+    stack_violations(ld; allow_marks=false) -> Vector{String}
+
+The invariants of the global stack, the trail and the local records that do not hold, one text each (empty: the
+stacks are sound). `allow_marks` accepts the collector's MARK/FIRST bits (during a collection only).
+"""
+function stack_violations(ld::PL_local_data; allow_marks::Bool=false)::Vector{String}
+    r = _check_stacks(ld, allow_marks)
+    r.dropped > 0 && push!(r.msgs, string("... and ", r.dropped, " more"))
+    return r.msgs
+end
+
+# PORT: pl-gc.c checkStacks as check_stacks!
+# DIVERGES: not a transliteration. Upstream's `checkStacks` (compiled under `O_DEBUG`/`O_MAINTENANCE` only, the
+# `HAVE_CHECK_STACKS` block of pl-gc.c:3912-4310) walks the frames from the VM state, `checkData`s every argument,
+# variable and foreign-frame term reference it reaches and sums a key; the kernel has no pointers to follow and its
+# words are its own (`pl-data.h` tags over POSITIONS, `ORIGINAL` value-table words), so this checks the INVARIANTS the
+# collector will rely on, over the kernel's representation, and reports every violation as text instead of asserting
+# the first: the cells of the global stack (tag, storage, range, compound heads and their arities, reference chains,
+# the value table's boxes, MARK/FIRST bits), the trail's entries, the attributed-variable chain, the frame, choice,
+# foreign-frame and query records. The local stack's WORDS are not scanned: a frame's variable cells hold stale words
+# until their first write (`clearUninitialisedVarsFrame`), which no invariant over the words can tell from a corrupt
+# one; the collector's own mark phase (G1-3) reads the live ones. The `key` upstream returns is the number of cells
+# checked here. The record pools are checked in their live ranges (`frames[1:nframes]`, …).
+"""
+    check_stacks!(ld; allow_marks=false) -> Int
+
+Check the stacks (`stack_violations`); throw a `StackInvariantError` carrying the whole report if any invariant
+fails, else return how many cells and records were examined (upstream's `checkStacks` returns a key; a count here,
+so a test can tell a check that looked at something from one that looked at nothing).
+"""
+function check_stacks!(ld::PL_local_data; allow_marks::Bool=false)::Int
+    r = _check_stacks(ld, allow_marks)
+    if !isempty(r.msgs)
+        r.dropped > 0 && push!(r.msgs, string("... and ", r.dropped, " more"))
+        throw(StackInvariantError(r.msgs))
+    end
+    return r.cells
+end
+
+# PORT: pl-gc.c PL_check_stacks
+# DIVERGES: none of value — `HAVE_CHECK_STACKS` is defined only in the `O_DEBUG || O_MAINTENANCE` block
+# (pl-gc.c:4215), which a release build of swipl (the pin) leaves out, so upstream returns false without checking.
+"`PL_check_stacks()`: false, as the pinned release build answers (pl-gc.c); `check_stacks!` is the kernel's checker."
+function PL_check_stacks(ld::PL_local_data)::Bool
+    return false
+end
+
+# ── the stack collector's statistics and scheduler (G1-GC, piece G1-1; pl-gc.c:524-703, :3834-3909, :4592-4606) ──
+# DIVERGES (D8, audit D-0634): the pinned build answers `current_prolog_flag(gc_thread, true)` (its collector thread, O_PLMT); the flag is read-only
+# `false` here (src/os/pl-prologflag.jl) and `enterGC`/`leaveGC` (pl-gc.c, O_PLMT only: they hold `LD->gc.active` against a thread suspended by the
+# collector thread) have no body here: one thread, nothing to hold. Everything below stays ZERO until G1-6's driver calls `gc_stat_start!` and
+# `gc_stat_end!` around a collection.
+
+# PORT: pl-fli.c PL_raise as raiseGcSignal!
+# DIVERGES: the kernel has no signal machinery; the pending virtual signals are the bits of `ld.gc.sig_pending` (bit `sig - SIG_PROLOG_OFFSET`),
+# and only the two collector signals (`SIG_GC`, `SIG_TUNE_GC`) are ever raised. The run loop's `ALERT_SIGNAL` check of a pending `SIG_GC` is G1-2's
+# (engine core). Upstream's `PL_raise` also wakes the engine (`updateAlerted`); there is none to wake. True, as upstream's.
+"Raise the virtual signal `sig` (`SIG_GC` or `SIG_TUNE_GC`): its bit of `ld.gc.sig_pending` (pl-fli.c `PL_raise`)."
+function raiseGcSignal!(ld::PL_local_data, sig::Int)::Bool
+    ld.gc.sig_pending |= UInt64(1) << (sig - SIG_PROLOG_OFFSET)
+    return true
+end
+
+# PORT: pl-fli.h PL_pending as pendingGcSignal
+# DIVERGES: see `raiseGcSignal!`.
+"Is the virtual signal `sig` pending (pl-fli.h `PL_pending`)?"
+pendingGcSignal(ld::PL_local_data, sig::Int)::Bool =
+    (ld.gc.sig_pending & (UInt64(1) << (sig - SIG_PROLOG_OFFSET))) != 0
+
+# PORT: pl-fli.c PL_clearsig as clearGcSignal!
+# DIVERGES: see `raiseGcSignal!`. True, as upstream's for a valid signal.
+"Clear the virtual signal `sig` (pl-fli.c `PL_clearsig`)."
+function clearGcSignal!(ld::PL_local_data, sig::Int)::Bool
+    ld.gc.sig_pending &= ~(UInt64(1) << (sig - SIG_PROLOG_OFFSET))
+    return true
+end
+
+# PORT: pl-gc.c STAT_NEXT_INDEX
+"The ring index after `i` in a window of `GC_STAT_WINDOW_SIZE` entries (0-based, pl-gc.c `STAT_NEXT_INDEX`)."
+STAT_NEXT_INDEX(i::Int)::Int = i + 1 == GC_STAT_WINDOW_SIZE ? 0 : i + 1
+
+# PORT: pl-gc.c STAT_PREV_INDEX
+"The ring index before `i` in a window of `GC_STAT_WINDOW_SIZE` entries (0-based, pl-gc.c `STAT_PREV_INDEX`)."
+STAT_PREV_INDEX(i::Int)::Int = i > 0 ? i - 1 : GC_STAT_WINDOW_SIZE - 1
+
+# PORT: pl-gc.c gc_percentage
+# DIVERGES (the decomposition's "*100" is wrong): a FRACTION, as upstream: `gc_time/(gc_time+prolog_time)`, 0.0 when no time was spent.
+"The fraction of the CPU time of the window `stat` spent collecting (pl-gc.c `gc_percentage`)."
+gc_percentage(stat::gc_stat)::Float64 =
+    stat.gc_time == 0.0 ? 0.0 : stat.gc_time / (stat.gc_time + stat.prolog_time)
+
+# PORT: pl-gc.c gc_stat_aggregate as gc_stat_aggregate!
+# DIVERGES: the arrays are 1-based vectors, `aggr_index` stays 0-based (`aggr[aggr_index + 1]`); `reason` is summed, not averaged, as upstream's.
+"Aggregate the last `GC_STAT_WINDOW_SIZE` collections into the next `aggr` entry: sums divided by the window size (pl-gc.c `gc_stat_aggregate`)."
+function gc_stat_aggregate!(stats::gc_stats)::Nothing
+    this = stats.aggr[stats.aggr_index + 1]
+    gb = 0
+    ga = 0
+    tb = 0
+    ta = 0
+    lo = 0
+    gt = 0.0
+    pt = 0.0
+    rs = UInt64(0)
+    for i in 1:GC_STAT_WINDOW_SIZE                          # memset(this, 0); then the sums
+        l = stats.last[i]
+        gb += l.global_before
+        ga += l.global_after
+        tb += l.trail_before
+        ta += l.trail_after
+        lo += l.local_used
+        gt += l.gc_time
+        pt += l.prolog_time
+        rs += l.reason
+    end
+    this.global_before = gb ÷ GC_STAT_WINDOW_SIZE
+    this.global_after = ga ÷ GC_STAT_WINDOW_SIZE
+    this.trail_before = tb ÷ GC_STAT_WINDOW_SIZE
+    this.trail_after = ta ÷ GC_STAT_WINDOW_SIZE
+    this.local_used = lo ÷ GC_STAT_WINDOW_SIZE
+    this.gc_time = gt / GC_STAT_WINDOW_SIZE
+    this.prolog_time = pt / GC_STAT_WINDOW_SIZE
+    this.reason = rs                                        # not divided
+    stats.aggr_index = STAT_NEXT_INDEX(stats.aggr_index)
+    return nothing
+end
+
+# PORT: pl-gc.c gc_stat_start as gc_stat_start!
+# DIVERGES: the stacks' sizes are `_used_stack` (bytes, src/pl-prims.jl); `stats` is `ld.gc.stats` or any `gc_stats` (the white-box tests' own).
+"Start the statistics of a collection: the sizes before, the CPU time spent since the last one; `reason` 0 takes the pending request (pl-gc.c `gc_stat_start`)."
+function gc_stat_start!(ld::PL_local_data, stats::gc_stats, reason::UInt64)::Nothing
+    this = stats.last[stats.last_index + 1]
+    cpu = ThreadCPUTime(CPU_USER)
+
+    if stats.last_index == 0 && this.global_before != 0
+        gc_stat_aggregate!(stats)
+    end
+
+    if reason == 0
+        reason = stats.request
+    end
+    stats.request = 0
+
+    this.reason = reason
+    this.global_before = _used_stack(ld, :global)
+    this.trail_before = _used_stack(ld, :trail)
+    this.local_used = _used_stack(ld, :local)
+    this.prolog_time = cpu - stats.thread_cpu
+    stats.thread_cpu = cpu
+    return nothing
+end
+
+# PORT: pl-gc.c gc_stat_end as gc_stat_end!
+# DIVERGES: `LD->stacks.global.gced_size` and `.trail.gced_size` are `ld.gc.global_policy.gced_size` and `ld.gc.trail_policy.gced_size`; `PL_raise(SIG_TUNE_GC)`
+# is `raiseGcSignal!` (a pending bit: the handler, `gc_tune_handler` pl-setup.c:838, is left to the signal owner).
+"End the statistics of a collection: the sizes after, the time it took, the totals; asks for `prolog:tune_gc/3` above 20% (pl-gc.c `gc_stat_end`)."
+function gc_stat_end!(ld::PL_local_data, stats::gc_stats)::gc_stat
+    this = stats.last[stats.last_index + 1]
+    cpu = ThreadCPUTime(CPU_USER)
+
+    this.global_after = _used_stack(ld, :global)
+    this.trail_after = _used_stack(ld, :trail)
+    this.gc_time = cpu - stats.thread_cpu
+    stats.thread_cpu = cpu
+    stats.last_index = STAT_NEXT_INDEX(stats.last_index)
+
+    ld.gc.global_policy.gced_size = this.global_after
+    ld.gc.trail_policy.gced_size = this.trail_after
+
+    stats.totals.global_gained += this.global_before - this.global_after
+    stats.totals.trail_gained += this.trail_before - this.trail_after
+    stats.totals.time += this.gc_time
+    stats.totals.collections += 1
+
+    if gc_percentage(this) > 0.2
+        raiseGcSignal!(ld, SIG_TUNE_GC)
+    end
+
+    return this
+end
+
+# PORT: pl-gc.c last_gc_stats
+"The statistics of the most recent collection (pl-gc.c `last_gc_stats`)."
+last_gc_stats(stats::gc_stats)::gc_stat = stats.last[STAT_PREV_INDEX(stats.last_index) + 1]
+
+# PORT: pl-gc.c gc_avg
+"The mean of `gc_percentage` over the `aggr` window (pl-gc.c `gc_avg`)."
+function gc_avg(stats::gc_stats)::Float64
+    d = 0.0
+    for i in 1:GC_STAT_WINDOW_SIZE
+        d += gc_percentage(stats.aggr[i])
+    end
+    d /= GC_STAT_WINDOW_SIZE
+    return d
+end
+
+# PORT: pl-gc.c unify_gc_reason
+# DIVERGES: `PL_unify_term(t, PL_FUNCTOR, FUNCTOR_gc6, PL_INT ...)` (not ported) is `PL_unify_functor` and one `PL_unify_arg` per integer, through a scratch
+# reference. The shift of `ur` is upstream's 36 although `GC_USER` is bit 40: copied as is (pl-gc.c:696).
+"Unify `t` with `gc(GlobalOverflow, GlobalRequest, TrailOverflow, TrailRequest, Exception, User)`, the bytes of the reason of `stat` (pl-gc.c `unify_gc_reason`)."
+function unify_gc_reason(ld::PL_local_data{T}, t::term_t, stat::gc_stat)::Bool where {T}
+    r = stat.reason
+    go = Int((r >> 0) & 0xff)
+    gr = Int((r >> 8) & 0xff)
+    to = Int((r >> 16) & 0xff)
+    tr = Int((r >> 24) & 0xff)
+    ex = Int((r >> 32) & 0xff)
+    ur = Int((r >> 36) & 0xff)
+
+    PL_unify_functor(ld, t, mk_sym(T, :gc), 6) || return false
+    tmp = PL_new_term_ref(ld)
+    PL_put_int64(ld, tmp, go) && PL_unify_arg(ld, 1, t, tmp) || return false
+    PL_put_int64(ld, tmp, gr) && PL_unify_arg(ld, 2, t, tmp) || return false
+    PL_put_int64(ld, tmp, to) && PL_unify_arg(ld, 3, t, tmp) || return false
+    PL_put_int64(ld, tmp, tr) && PL_unify_arg(ld, 4, t, tmp) || return false
+    PL_put_int64(ld, tmp, ex) && PL_unify_arg(ld, 5, t, tmp) || return false
+    PL_put_int64(ld, tmp, ur) && PL_unify_arg(ld, 6, t, tmp) || return false
+    return true
+end
+
+# PORT: pl-gc.c unify_gc_stats
+# DIVERGES: `PL_unify_term` (not ported): `gc_stats/8` is `PL_unify_functor` and one `PL_unify_arg` per argument through a scratch reference; the ring `index` is
+# 0-based as upstream's and `stats` a vector indexed `index + 1`.
+"Unify `t` with the list of the `gc_stats(Reason, GlobalBefore, GlobalAfter, TrailBefore, TrailAfter, Local, GcTime, GcPercentage)` of the entries of the ring `stats` that hold a collection, newest first (pl-gc.c `unify_gc_stats`)."
+function unify_gc_stats(
+    ld::PL_local_data{T}, t::term_t, stats::Vector{gc_stat}, index::Int
+)::Bool where {T}
+    tail = PL_copy_term_ref(ld, t)
+    head = PL_new_term_ref(ld)
+    rt = PL_new_term_ref(ld)
+    tmp = PL_new_term_ref(ld)
+
+    for i in 1:GC_STAT_WINDOW_SIZE
+        index = STAT_PREV_INDEX(index)
+        this = stats[index + 1]
+
+        if this.global_before != 0
+            PL_unify_list(ld, tail, head, tail) || return false
+            PL_put_variable(ld, rt) || return false
+            unify_gc_reason(ld, rt, this) || return false
+            PL_unify_functor(ld, head, mk_sym(T, :gc_stats), 8) || return false
+            PL_unify_arg(ld, 1, head, rt) || return false
+            PL_put_int64(ld, tmp, this.global_before) && PL_unify_arg(ld, 2, head, tmp) ||
+                return false
+            PL_put_int64(ld, tmp, this.global_after) && PL_unify_arg(ld, 3, head, tmp) ||
+                return false
+            PL_put_int64(ld, tmp, this.trail_before) && PL_unify_arg(ld, 4, head, tmp) ||
+                return false
+            PL_put_int64(ld, tmp, this.trail_after) && PL_unify_arg(ld, 5, head, tmp) ||
+                return false
+            PL_put_int64(ld, tmp, this.local_used) && PL_unify_arg(ld, 6, head, tmp) ||
+                return false
+            PL_put_float(ld, tmp, this.gc_time) && PL_unify_arg(ld, 7, head, tmp) ||
+                return false
+            PL_put_float(ld, tmp, gc_percentage(this)) && PL_unify_arg(ld, 8, head, tmp) ||
+                return false
+        end
+    end
+
+    return PL_unify_nil(ld, tail)
+end
+
+# PORT: pl-gc.c gc_statistics as pl_dgc_statistics5_va
+# (PRED_IMPL("$gc_statistics", 5, gc_statistics, 0), pl-gc.c:4592; `'$gc_statistics'(-Last, -Aggr, -LastPercentage, -AggrPercentage, -Average)`)
+"`'\$gc_statistics'(-Recent, -Aggregated, -LastFraction, -AggregatedFraction, -Average)` (pl-gc.c): the stack collector's statistics."
+function pl_dgc_statistics5_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2, A3, A4, A5 = PL__t0, PL__t0 + 1, PL__t0 + 2, PL__t0 + 3, PL__t0 + 4
+    stats = ld.gc.stats
+    last = last_gc_stats(stats)
+    aggr = stats.aggr[STAT_PREV_INDEX(stats.aggr_index) + 1]
+
+    return if (
+        unify_gc_stats(ld, A1, stats.last, stats.last_index) &&
+        unify_gc_stats(ld, A2, stats.aggr, stats.aggr_index) &&
+        PL_unify_float(ld, A3, gc_percentage(last)) &&
+        PL_unify_float(ld, A4, gc_percentage(aggr)) &&
+        PL_unify_float(ld, A5, gc_avg(stats))
+    )
+        FTRUE
+    else
+        FFALSE
+    end
+end
+
+# PORT: pl-gc.c BeginPredDefs as PL_predicates_from_gc
+# DIVERGES: `$gc_statistics/5` only; `$check_stacks/1` (O_DEBUG or O_MAINTENANCE: not in a release build) and `gc_counts/1` (GC_COUNTING) are not
+# in the pinned build; `PRED_DEF` ors in `PL_FA_VARARGS`.
+"pl-gc.c's registration table (`BeginPredDefs(gc)`): the entries of a release build."
+const PL_predicates_from_gc = (
+    PL_extension("\$gc_statistics", 5, pl_dgc_statistics5_va, PL_FA_VARARGS),
+)
+
+# PORT: pl-gc.c considerGarbageCollect
+# DIVERGES: `Stack s` is `:global`, `:trail`, `:local` or `:combined` (`nothing` = NULL: the global and the trail, as `&GD->combined_stack`); the stacks are not
+# structs: sizes are `_used_stack` (bytes), the combined stack's size is `8 * ld.stacks_limit` (what `_room_stack` uses), and `gc`, `small`, `factor`,
+# `gced_size` are `ld.gc.global_policy` etc. `PL_raise(SIG_GC)` is `raiseGcSignal!` (a pending bit). The `DEBUG(MSG_GC_SCHEDULE, ...)` output is left out.
+# The (*) of upstream: while no inference ran since the last collection (`LD->gc.inferences`) nothing is requested, and the stack's `gced_size` follows its use.
+"Is a stack collection due (pl-gc.c `considerGarbageCollect`)? If so the request is recorded and `SIG_GC` raised; true when `SIG_GC` is pending."
+function considerGarbageCollect(ld::PL_local_data, s::Union{Nothing, Symbol}=nothing)::Bool
+    if truePrologFlag(ld, PLFLAG_GC)
+        if pendingGcSignal(ld, SIG_GC)
+            return true
+        end
+
+        if s === nothing || s === :combined
+            return considerGarbageCollect(ld, :global) || considerGarbageCollect(ld, :trail)
+        else
+            pol = if s === :global
+                ld.gc.global_policy
+            elseif s === :trail
+                ld.gc.trail_policy
+            else
+                ld.gc.local_policy
+            end
+            if pol.gc
+                used = _used_stack(ld, s)                       # amount in actual use
+                limit = 8 * ld.stacks_limit - _used_stack(ld, :local)
+                space = limit > used ? limit - used : 0
+                low = _used_stack(ld, :local) + pol.small
+
+                if s === :global
+                    low += _used_stack(ld, :trail)
+                else
+                    low += _used_stack(ld, :global) ÷ 8
+                end
+
+                if ld.gc.inferences == ld.statistics.inferences && !ld.exception_processing
+                    pol.gced_size = used                        # (*)
+                    return false
+                end
+
+                if used > pol.factor * pol.gced_size + low
+                    # request on the stack (MSG_GC_SCHEDULE)
+                elseif space < limit ÷ 8 && used > pol.gced_size + limit ÷ 32
+                    # request on low space (MSG_GC_SCHEDULE)
+                else
+                    return false
+                end
+
+                ld.gc.stats.request = UInt64(
+                    s === :global ? GC_GLOBAL_REQUEST : GC_TRAIL_REQUEST
+                )
+
+                return raiseGcSignal!(ld, SIG_GC)
+            end
+        end
+    end
+
+    return false
+end
+
+# PORT: pl-gc.c call_tune_gc_hook
+# DIVERGES: `PROCEDURE_tune_gc3` is looked up as `prolog:tune_gc/3` on each call (upstream: `PL_predicate("tune_gc", 3, "prolog")` at pl-ext.c:385, the
+# same procedure); the database is the running query's (`_query_gd`). The caller, `gc_tune_handler` (pl-setup.c:838-840, on `SIG_TUNE_GC`), is left
+# to the signal owner; nothing in the kernel raises `SIG_TUNE_GC` before G1-6's driver calls `gc_stat_end!`.
+"Call `prolog:tune_gc(+GcTime, +LastFraction, +AggregatedFraction)` if the program defines it (pl-gc.c `call_tune_gc_hook`)."
+function call_tune_gc_hook(ld::PL_local_data{T})::Nothing where {T}
+    gd = _query_gd(ld)
+    proc = lookupProcedure(mk_sym(T, :tune_gc), 3, lookupModule(gd, mk_sym(T, :prolog)))
+
+    if isDefinedProcedure(gd, proc)
+        fid = PL_open_foreign_frame(ld)
+        if fid != 0
+            av = PL_new_term_refs(ld, 3)
+            stats = ld.gc.stats
+            last = last_gc_stats(stats)
+            aggr = stats.aggr[STAT_PREV_INDEX(stats.aggr_index) + 1]
+
+            if PL_unify_float(ld, av, last.gc_time) &&
+                PL_unify_float(ld, av + 1, gc_percentage(last)) &&
+                PL_unify_float(ld, av + 2, gc_percentage(aggr))
+                PL_call_predicate(
+                    gd, ld, nothing, PL_Q_NODEBUG | PL_Q_PASS_EXCEPTION, proc, av
+                )
+            end
+
+            PL_close_foreign_frame(ld, fid)
+        end
+    end
+    return nothing
+end
+
+# PORT: pl-gc.c blockGC
+# DIVERGES: `gc_status` is `ld.gc.status` (pl-gc.c `#define gc_status LD->gc.status`).
+"Block the collector unless `flags` has `ALLOW_GC`, the shifter unless it has `ALLOW_SHIFT` (pl-gc.c `blockGC`)."
+function blockGC(ld::PL_local_data, flags::Int)::Nothing
+    if (flags & ALLOW_GC) == 0
+        ld.gc.status.blocked += 1
+    end
+    if (flags & ALLOW_SHIFT) == 0
+        ld.shift_status.blocked += 1
+    end
+    return nothing
+end
+
+# PORT: pl-gc.c unblockGC
+"Undo `blockGC` for the same `flags` (pl-gc.c `unblockGC`)."
+function unblockGC(ld::PL_local_data, flags::Int)::Nothing
+    if (flags & ALLOW_GC) == 0
+        ld.gc.status.blocked -= 1
+    end
+    if (flags & ALLOW_SHIFT) == 0
+        ld.shift_status.blocked -= 1
+    end
     return nothing
 end

@@ -799,7 +799,8 @@ fixed it or a public issue exists.
 | `src/pl-srcfile.jl` | source files (R1f): the record of each consulted file (`lookupSourceFile`, numbered as upstream), the procedures it defines (`addProcedureSourceFile`), a clause added on its behalf (`assertProcedureSource`), `startConsult`/`endConsult`, `setAttrProcedureSource` — a FIRST load (a reconsult refused) | `src/pl-srcfile.c` |
 | `src/pl-global.jl` | the database state — upstream's GD and LD, as values the caller passes; GD holds the control functors the clause compiler reads and, since V5c, the module table (`system`, `user`), LD the bindings, the trail, the `occurs_check` flag and the local stack (its cells, record pools and registers), since V9c the running query's database (`GD`, which a built-in reads), and since V5d the local stack's spare, `exception.processing`, `outofstack` and the unusable mark; since R1c `source_location`; since R1f the source files (`files.table`, `files.array`), the streams' file names, `LD->read_source`, the style checks, `modules.source`, the messages `printMessage` collects; since R1e's write/1 family the standard streams (`IO.streams`), `stream_type_check`, the numbervars frame, and the flags `unknown_option`, `write_attributes`, `character_escapes_unicode`; since L1d 8a the `=@=` walk's side vector, node buffer and agenda (`vt_node`, `vt_pairs`: pl-variant.c's `node`, `argPairs`); since Y1 the LD statistics (`ld_statistics`: inferences, the cputime/walltime bases) | `src/pl-global.h`, `src/pl-incl.h`, `src/pl-init.h`, `src/pl-variant.c`, `src/os/pl-file.c` |
 | `src/pl-inline.jl` | clause visibility, the database generation, key cleaning; the binding primitives `deRef`, `linkValI`, `Trail!`, `Mark`, `DiscardMark`, `NoMark`, `Undo!` (kept at or above the frozen ball's cells: `freezeGlobal!`, L1e e5a); `hasLocalSpace` | `src/pl-inline.h`, `src/pl-incl.h`, `src/pl-data.h`, `src/pl-gvar.c` |
-| `src/pl-thread.jl`, `src/pl-gc.jl` | the predicate references an enumeration registers, so clause GC keeps what it can still see; growing the local stack (`growLocalSpace`, `growStacks`, `ensureLocalSpace` — the only allocating path; since V5d with the spare on top, and the limit stretched by 1 MiB while an exception is processed) | `src/pl-thread.c`, `src/pl-gc.c`, `src/pl-gc.h` |
+| `src/pl-thread.jl`, `src/pl-gc.jl` | the predicate references an enumeration registers, so clause GC keeps what it can still see; growing the local stack (`growLocalSpace`, `growStacks`, `ensureLocalSpace` — the only allocating path; since V5d with the spare on top, and the limit stretched by 1 MiB while an exception is processed) | `src/pl-thread.c`, `src/pl-gc.c`, `src/pl-gc.h`, `src/pl-fli.c`, `src/pl-fli.h` |
+| `src/pl-gcmark.jl`, `src/pl-gcwalk.jl`, `src/pl-gctrail.jl`, `src/pl-gcsweep.jl`, `src/pl-gccompact.jl`, `src/pl-gcdriver.jl` | G1-GC, SWI-Prolog's stack garbage collector, one file per half: the MARK phase (pl-gcmark.jl: the cell-bit helpers, `mark_variable`, the term-reference roots; pl-gcwalk.jl: the walk over a clause's byte code, early reset, `mark_choicepoints`, `mark_environments`, `mark_phase`); the TRAIL half (pl-gctrail.jl: `compact_trail`, `tag_trail`/`untag_trail`, `clean_attvar_chain`); the SWEEP with its relocation chains (pl-gcsweep.jl); the COMPACTION (pl-gccompact.jl: `compact_global`, `collect_phase`, the `unsweep_*` family); the DRIVER (pl-gcdriver.jl: `garbageCollect`, `gcEnsureSpace`, the VM state at the safe point, `tight`, `shiftTightStacks`, `clear_unused_stack`). Cells are addressed by Int positions and heights, not machine addresses (each file's header lists its DIVERGES) | `src/pl-gc.c`, `src/pl-data.h`, `src/pl-incl.h`, `src/pl-fli.c` |
 | `src/pl-alloc.jl` | raising a local-stack overflow — since V5d as upstream's `error(resource_error(stack), Ctx)` (`raiseStackOverflow`, `outOfStack!`; Ctx the atom `stack_overflow` for both stacks since D-0040, swipl's dict tag), the spare enabled (`enableSpareStack!`), a second overflow before recovery marking the local data unusable; growing the argument stack; the global stack's limit (`ensureGlobalSpace` — L1f f2) | `src/pl-alloc.c`, `src/pl-gc.h` |
 | `src/pl-wam.jl` | the local stack's operations (V3): `newChoice`, `copyFrameArguments`, the foreign frames; the record discipline — pushing a record (upstream's casts of a position), dropping the records above a lowered `lTop`; THE RUN LOOP (V4a): `PL_next_solution_guarded`, one function holding pl-vmi.c's head, exit and supervisor instructions and its backtracking and throw paths as labels, inside one `try` (`PL_next_solution`); the query API (`PL_open_query`, `PL_next_solution`, `PL_cut_query`, `PL_close_query`, `PL_exception`, `PL_current_query`); RULES (V4b): the calls and last calls (`I_ENTER`, `I_CALL`, `normal_call`, `I_DEPART`, the `L_*` block, `I_LCALL`, `I_TCALL`) and the body arguments (`B_*`, through the head's builder); since V5b the undefined procedure (`S_UNDEF`); since V6a the cut (`I_CUT`); since V6b1 the type tests (`I_VAR` … `I_CALLABLE`, `TYPE_TEST`); since V8 `A_ADD_FC`; since V9a the inline unification family (`B_UNIFY_*`, `unify_var_cont`, `debug_equals2`, `B_EQ_*`, `B_NEQ_*`, `C_VAR`, `I_TRUE`, `I_FAIL`); since V5d `b_throw`'s emergency space and `resumeAfterException` giving the spare back, and `PL_open_query` refusing an unusable local data; since V5c `getProcDefinedDefinition` where upstream calls it (`PL_open_query`, `I_LCALL`, `S_VIRGIN`); since V9d (`;`) `C_OR`, `C_JMP`, `C_VAR_N` and backtracking into a `CHP_JUMP` choice point (`shallow_backtrack`, `deep_backtrack`); since V9d (`->`) `C_IFTHENELSE`, `C_IFTHEN`, `C_CUT` (`c_cut`, `in_continuation`), `C_FASTCOND`/`C_FASTCUT` (`FASTCOND_FAILED`), `C_END`, (`\+`) `C_NOT`, `C_FAIL`, and (the local cut) `C_LCUT`, `C_LCUTIFTHEN`; since L1c compounds BUILT IN PLACE on the global stack (`B_RFUNCTOR`/`H_RFUNCTOR`/`H_LIST_FF` as pl-vmi.c's, `ARGP_GLOBAL`), read mode and the argument moves on words, `S_LIST` on words (sub-commit 2), the transitional term boundary (`_compound_term` the counted cold export with its identity memo, `_compound_word!` the counted cold import), and the ORIGINAL Julia-facing `query_answers(db, goal; limit=nothing)` with `PrologException` (stable from v0.1.0-pre.1: signature, return shape, the exception; exported) | `src/pl-wam.c`, `src/pl-vmi.c`, `src/pl-incl.h`, `src/pl-gc.c` |
 | `src/pl-fli.jl` | term references: positions on the local stack inside the innermost foreign frame (`PL_new_term_refs`, `PL_new_term_ref` — the unchecked LD forms, as pl-fli.c:450-508 — `PL_reset_term_refs`, `PL_copy_term_ref`, `PL_put_term`); since ENG3 the foreign-environment check (pl-fli.c:535-550 at cbf4e189) is in the API stubs `PL_new_term_ref_api`, `PL_new_term_refs_api`, which src/pl-wam.jl `query_answers` calls; `PL_raise_exception`, with upstream's class rule since V5b (`classify_exception`, `classify_exception_p`; `error(resource_error(_), _)` is the resource class since upstream's `85d0cc2`); since V5a2 the subset built-ins use (`PL_unify`, `PL_unify_atomic`/`_atom`/`_integer`, `PL_is_variable`, `PL_put_intptr`, `PL_compare`, `PL_clear_exception`, `PL_clear_foreign_exception`); since V6b1 the type tests on a term reference (`PL_is_integer` … `PL_is_callable`, `isCallable`); since V5d the ball copied with its cycles kept as untrailed bindings (`copy_exception!`), and `has_emergency_space`; since V5c `PL_strip_module_ex`; since R1a `charCode`; since R1b `PL_get_atom`, `PL_get_integer`, `PL_get_list`, `PL_get_nil`, `PL_is_list`, `PL_strip_module`; since R1e's write/1 family `atom_to_bool`, `PL_get_stdbool`, `PL_get_bool`, `PL_get_name_arity`, `_PL_get_arg`, `PL_is_functor`; since T1 `codeToAtom`; since Y1 `PL_get_float`, `PL_get_float_ex` | `src/pl-fli.c`, `src/pl-fli.h` |
@@ -978,6 +979,12 @@ graph LR
     pl_termhash["pl-termhash.jl"]
     pl_thread["pl-thread.jl"]
     pl_gc["pl-gc.jl"]
+    pl_gcmark["pl-gcmark.jl"]
+    pl_gcwalk["pl-gcwalk.jl"]
+    pl_gctrail["pl-gctrail.jl"]
+    pl_gcsweep["pl-gcsweep.jl"]
+    pl_gccompact["pl-gccompact.jl"]
+    pl_gcdriver["pl-gcdriver.jl"]
     pl_cont["pl-cont.jl"]
     pl_alloc["pl-alloc.jl"]
     pl_wam["pl-wam.jl"]
@@ -1273,18 +1280,93 @@ graph LR
     pl_thread --> pl_fli
     pl_thread --> os_pl_os
     pl_thread --> pl_proc
+    pl_gc --> term_interface
     pl_gc --> default_term
     pl_gc --> pl_incl
     pl_gc --> SWI_Prolog
     pl_gc --> pl_vmi
     pl_gc --> pl_global
+    pl_gc --> pl_modul
     pl_gc --> pl_inline
+    pl_gc --> pl_prims
+    pl_gc --> pl_comp
+    pl_gc --> pl_copyterm
     pl_gc --> pl_thread
+    pl_gc --> pl_gcdriver
     pl_gc --> pl_alloc
     pl_gc --> pl_wam
+    pl_gc --> pl_fli
     pl_gc --> pl_arith
+    pl_gc --> os_pl_prologflag
+    pl_gc --> os_pl_os
     pl_gc --> pl_setup
     pl_gc --> pl_proc
+    pl_gcmark --> default_term
+    pl_gcmark --> pl_incl
+    pl_gcmark --> pl_global
+    pl_gcmark --> pl_inline
+    pl_gcmark --> pl_comp
+    pl_gcmark --> pl_gc
+    pl_gcmark --> pl_gcwalk
+    pl_gcmark --> pl_wam
+    pl_gcmark --> pl_arith
+    pl_gcmark --> os_pl_text
+    pl_gcwalk --> term_interface
+    pl_gcwalk --> default_term
+    pl_gcwalk --> pl_incl
+    pl_gcwalk --> pl_vmi
+    pl_gcwalk --> pl_global
+    pl_gcwalk --> pl_inline
+    pl_gcwalk --> pl_comp
+    pl_gcwalk --> pl_gcmark
+    pl_gcwalk --> pl_wam
+    pl_gcwalk --> pl_arith
+    pl_gcwalk --> os_pl_text
+    pl_gctrail --> default_term
+    pl_gctrail --> pl_incl
+    pl_gctrail --> pl_global
+    pl_gctrail --> pl_inline
+    pl_gctrail --> pl_comp
+    pl_gctrail --> pl_gcmark
+    pl_gctrail --> pl_arith
+    pl_gctrail --> os_pl_text
+    pl_gctrail --> pl_read
+    pl_gcsweep --> term_interface
+    pl_gcsweep --> default_term
+    pl_gcsweep --> pl_incl
+    pl_gcsweep --> pl_global
+    pl_gcsweep --> pl_inline
+    pl_gcsweep --> pl_comp
+    pl_gcsweep --> pl_gcmark
+    pl_gcsweep --> pl_gcwalk
+    pl_gcsweep --> pl_wam
+    pl_gcsweep --> pl_arith
+    pl_gcsweep --> os_pl_text
+    pl_gccompact --> default_term
+    pl_gccompact --> pl_incl
+    pl_gccompact --> pl_global
+    pl_gccompact --> pl_inline
+    pl_gccompact --> pl_gcmark
+    pl_gccompact --> pl_gctrail
+    pl_gccompact --> pl_gcsweep
+    pl_gccompact --> pl_wam
+    pl_gccompact --> pl_arith
+    pl_gccompact --> os_pl_text
+    pl_gccompact --> pl_read
+    pl_gcdriver --> default_term
+    pl_gcdriver --> pl_incl
+    pl_gcdriver --> pl_vmi
+    pl_gcdriver --> pl_global
+    pl_gcdriver --> pl_gc
+    pl_gcdriver --> pl_gcmark
+    pl_gcdriver --> pl_gcwalk
+    pl_gcdriver --> pl_gctrail
+    pl_gcdriver --> pl_gcsweep
+    pl_gcdriver --> pl_gccompact
+    pl_gcdriver --> pl_alloc
+    pl_gcdriver --> pl_wam
+    pl_gcdriver --> os_pl_prologflag
+    pl_gcdriver --> pl_setup
     pl_cont --> term_interface
     pl_cont --> default_term
     pl_cont --> pl_incl
@@ -1313,6 +1395,7 @@ graph LR
     pl_alloc --> pl_global
     pl_alloc --> pl_inline
     pl_alloc --> pl_comp
+    pl_alloc --> pl_gc
     pl_alloc --> pl_arith
     pl_alloc --> os_pl_text
     pl_wam --> term_interface
