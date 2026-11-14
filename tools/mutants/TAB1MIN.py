@@ -39,6 +39,8 @@
 # list test_pr1_swipl.jl and test_event_swipl.jl (the update listeners `resetProcedure!` destroys); the 2-argument
 # `freeCodesDefinition!` is also called by test_procedures.jl and test_assert_swipl.jl.
 TM = ["test/core_lang/test_tabling_min_swipl.jl"]
+WRAP = ["test/core_lang/test_wrap_swipl.jl"]
+TV = ["test/core_lang/test_tabling_variant_swipl.jl"]
 PR1 = ["test/core_lang/test_pr1_swipl.jl"]
 EV = ["test/core_lang/test_event_swipl.jl"]
 GET = TM + PR1                                 # the getter and the flag constants
@@ -136,8 +138,8 @@ MUTANTS = [
          old="c == S_CALLWRAPPER || c == S_TABLED",
          new="c == S_CALLWRAPPER"),
     dict(id="TAB1MIN-D4 resetWrappedSupervisor resets only the outermost closure (KILL tmc03)", file=WR, targets=SUP,
-         old="while isCallWrapper(codes[cw])",
-         new="if isCallWrapper(codes[cw])"),
+         old="    c = nothing\n    while isCallWrapper(codes[cw])",
+         new="    c = nothing\n    if isCallWrapper(codes[cw])"),
     dict(id="TAB1MIN-D5 resetWrappedSupervisor leaves the wrapped supervisor in place (KILL white-box c06 supervisor, tmc07)", file=WR, targets=SUP,
          old="c.supervisor = def0.code_data.virgin",
          new="nothing"),
@@ -191,6 +193,16 @@ MUTANTS = [
     dict(id="TAB1MIN-E11 S_CALLWRAPPER continues with the next instruction instead of refusing (KILL test_tabling_min_swipl.jl:482 `e isa NotPortedError`)", file=WM, targets=TM,
          old="@label S_CALLWRAPPER\n    throw(",
          new="@label S_CALLWRAPPER\n    @goto next_instruction\n    throw("),
+    # ── REPLACEMENTS (audit D-0706 item 2) for E10 and E11 on the PORTED S_WRAP / S_CALLWRAPPER bodies (865f643b, WRAP1). The old four stay in
+    # the list until these are CAUGHT. E7 and E8 (the step name of a refusal) have no replacement: neither ported body carries a refusal or a step
+    # name (src/pl-wam.jl `@label S_WRAP` and `@label S_CALLWRAPPER` run to `@goto next_instruction` / `@goto TRUST_CLAUSE`; pl-vmi.c:3560-3578 and
+    # :3624-3632 at the pin have none either), so there is no Prolog-visible damage of that kind left to mutate: the audit rules on them.
+    dict(id="TAB1MIN-E10r S_WRAP continues with the next instruction of the shared wrapper block (I_EXIT): a call through a closure succeeds at once and the wrapped predicate never runs (replaces E10; KILL test_wrap_swipl.jl `t0`, the wrapper's `W` leaves the argument of p0/1 unbound: `findall(Y, p0(Y), Ys)` is not [1,2]; `t1`, `t8`, `t17`, `t18`, the white-box `wb_r2`/`wb_r6`)", file=WM, targets=WRAP + TM + TV,
+         old="@label S_WRAP\n    sw_c = gd.closure_refs",
+         new="@label S_WRAP\n    @goto next_instruction\n    sw_c = gd.closure_refs"),
+    dict(id="TAB1MIN-E11r S_CALLWRAPPER fails the frame instead of running the wrapper clause: every call of a wrapped predicate fails (replaces E11; KILL test_tabling_min_swipl.jl the T3 white-box call of `tm_w02` (`rc == PL_S_TRUE || PL_S_LAST` and no error: the call answers false); test_wrap_swipl.jl `t0` (Ys == []), `t1`, `t2`)", file=WM, targets=WRAP + TM + TV,
+         old="# FR->predicate = DEF = cref->value.clause->predicate\n    setFramePredicate(ld.frames[FR], DEF)\n    @goto TRUST_CLAUSE",
+         new="# FR->predicate = DEF = cref->value.clause->predicate\n    setFramePredicate(ld.frames[FR], DEF)\n    @goto deep_backtrack"),
     dict(id="TAB1MIN-E12 S_TABLED continues with the next instruction instead of refusing (KILL test_tabling_min_swipl.jl:485 `e isa NotPortedError`)", file=WM, targets=TM,
          old="@label S_TABLED\n    throw(",
          new="@label S_TABLED\n    @goto next_instruction\n    throw("),

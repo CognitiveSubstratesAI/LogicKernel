@@ -100,8 +100,10 @@ resolved version differ. A bump is a one-line commit of `tools/WARM_JULIA_VERSIO
 comment); `juliaup default` is the machine's setting and is never read or changed by the tools.
 
 **The mutation battery runs once per step, at its close, in CI** (`.github/workflows/mutation.yml`,
-started by hand with the step's list, `tools/mutants/<step>.py`): a baseline job, ONE JOB PER MUTANT
-(`fail-fast: false`), and a verdict table in the last job's summary. `tools/mutate_ci.py` applies
+started by hand with the step's list, `tools/mutants/<step>.py`): a baseline job per term type, ONE JOB
+PER (MUTANT, TERM TYPE) PAIR (`fail-fast: false`; the input `impls`, default `reference alt alt_interned`:
+a mutant is caught only if caught on every type; a matrix is at most 256 jobs, so a list of more than 85
+mutants is run in parts with `ids`), and a verdict table in the last job's summary. `tools/mutate_ci.py` applies
 the local driver's rules — a target exits 1 = caught, every target exits 0 = SURVIVED, past the
 limit = TIMEOUT, another code = INVALID, a declared `equivalent` must survive — and SURVIVED,
 TIMEOUT, INVALID, BADMATCH, a refuted equivalence, a missing verdict and a baseline that is not
