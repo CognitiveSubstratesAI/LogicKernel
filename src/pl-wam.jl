@@ -2450,20 +2450,36 @@ end
         ac_i1 = ac_n1.i
         ac_i2 = ac_n2.i
         ac_rc =
-            ac_what == LT ? ac_i1 < ac_i2 :
-            ac_what == LE ? ac_i1 <= ac_i2 :
-            ac_what == GT ? ac_i1 > ac_i2 :
-            ac_what == GE ? ac_i1 >= ac_i2 :
-            ac_what == EQ ? ac_i1 == ac_i2 : ac_i1 != ac_i2
+            if ac_what == LT
+                ac_i1 < ac_i2
+            elseif ac_what == LE
+                ac_i1 <= ac_i2
+            elseif ac_what == GT
+                ac_i1 > ac_i2
+            elseif ac_what == GE
+                ac_i1 >= ac_i2
+            elseif ac_what == EQ
+                ac_i1 == ac_i2
+            else
+                ac_i1 != ac_i2
+            end
     elseif ac_n1.type === V_FLOAT && ac_n2.type === V_FLOAT
         ac_f1 = ac_n1.f
         ac_f2 = ac_n2.f
         ac_rc =
-            ac_what == LT ? ac_f1 < ac_f2 :
-            ac_what == LE ? ac_f1 <= ac_f2 :
-            ac_what == GT ? ac_f1 > ac_f2 :
-            ac_what == GE ? ac_f1 >= ac_f2 :
-            ac_what == EQ ? ac_f1 == ac_f2 : ac_f1 != ac_f2
+            if ac_what == LT
+                ac_f1 < ac_f2
+            elseif ac_what == LE
+                ac_f1 <= ac_f2
+            elseif ac_what == GT
+                ac_f1 > ac_f2
+            elseif ac_what == GE
+                ac_f1 >= ac_f2
+            elseif ac_what == EQ
+                ac_f1 == ac_f2
+            else
+                ac_f1 != ac_f2
+            end
     else
         ac_rc = ar_compare(ld, ac_n1, ac_n2, ac_what)
     end
@@ -2558,9 +2574,12 @@ const VMI_RUN = (
     :I_FCALLDET2, :I_FCALLDET3, :I_FCALLDET4, :I_FCALLDET5, :I_FCALLDET6, :I_FCALLDET7,
     :I_FCALLDET8, :I_FCALLDET9, :I_FCALLDET10, :I_FEXITDET, :I_VAR, :I_NONVAR, :I_INTEGER,
     :I_RATIONAL, :I_FLOAT, :I_NUMBER, :I_ATOMIC, :I_ATOM, :I_STRING, :I_COMPOUND,
-    :I_CALLABLE, :A_ADD_FC, :A_ENTER, :A_INTEGER, :A_MPZ, :A_MPQ, :A_DOUBLE, :A_VAR, :A_VAR0,
-    :A_VAR1, :A_VAR2, :A_FUNC0, :A_FUNC1, :A_FUNC2, :A_FUNC, :A_ROUNDTOWARDS_A, :A_ROUNDTOWARDS_V,
-    :A_ADD, :A_MUL, :A_LT, :A_LE, :A_GT, :A_GE, :A_EQ, :A_NE, :A_IS, :A_FIRSTVAR_IS, :B_UNIFY_FIRSTVAR, :B_UNIFY_VAR, :B_UNIFY_EXIT, :B_UNIFY_FF,
+    :I_CALLABLE, :A_ADD_FC, :A_ENTER, :A_INTEGER, :A_MPZ, :A_MPQ, :A_DOUBLE, :A_VAR,
+    :A_VAR0,
+    :A_VAR1, :A_VAR2, :A_FUNC0, :A_FUNC1, :A_FUNC2, :A_FUNC, :A_ROUNDTOWARDS_A,
+    :A_ROUNDTOWARDS_V,
+    :A_ADD, :A_MUL, :A_LT, :A_LE, :A_GT, :A_GE, :A_EQ, :A_NE, :A_IS, :A_FIRSTVAR_IS,
+    :B_UNIFY_FIRSTVAR, :B_UNIFY_VAR, :B_UNIFY_EXIT, :B_UNIFY_FF,
     :B_UNIFY_VF, :B_UNIFY_FV, :B_UNIFY_VV, :B_UNIFY_FC, :B_UNIFY_VC, :B_EQ_VV, :B_EQ_VC,
     :B_NEQ_VV, :B_NEQ_VC, :C_VAR, :I_FAIL, :I_TRUE, :C_JMP, :C_OR, :C_VAR_N,
     :C_IFTHENELSE, :C_IFTHEN, :C_CUT, :C_FASTCOND, :C_FASTCUT, :C_END, :C_NOT, :C_FAIL,

@@ -142,7 +142,8 @@ function swipl_lines(path::String, names::Vector{String})::Vector{String}
         f = joinpath(d, "drv.pl")
         write(
             f,
-            DRIVER * ":- initialization((fz_run('$path', [" * join(names, ",") * "]), halt)).\n"
+            DRIVER * ":- initialization((fz_run('$path', [" * join(names, ",") *
+            "]), halt)).\n"
         )
         read(pipeline(`swipl -q $f`; stdin=devnull, stderr=devnull), String)
     end
@@ -182,8 +183,18 @@ end
 
 # the helper of nth_integer_root_and_remainder/4 (pl-gmp.c mpz_rootrem), white box: root^k <= n < (root+1)^k, rem = n - root^k
 @testset "AR1: _mpz_rootrem is the truncated root and its remainder" begin
-    for n in (big(0), big(1), big(2), big(15), big(16), big(17), big(10)^40 + 12345, big(2)^200 - 1),
+    for n in (
+            big(0),
+            big(1),
+            big(2),
+            big(15),
+            big(16),
+            big(17),
+            big(10)^40 + 12345,
+            big(2)^200 - 1
+        ),
         k in (1, 2, 3, 5, 7, 64, 300)
+
         for s in (1, -1)
             (s < 0 && (n == 0 || iseven(k))) && continue     # an even root of a negative: undefined
             m = s * n

@@ -133,7 +133,8 @@ function swipl_lines(path::String, names::Vector{String})::Vector{String}
         f = joinpath(d, "drv.pl")
         write(
             f,
-            DRIVER * ":- initialization((fz_run('$path', [" * join(names, ",") * "]), halt)).\n"
+            DRIVER * ":- initialization((fz_run('$path', [" * join(names, ",") *
+            "]), halt)).\n"
         )
         read(pipeline(`swipl -q $f`; stdin=devnull, stderr=devnull), String)
     end

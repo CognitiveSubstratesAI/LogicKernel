@@ -134,7 +134,8 @@ function swipl_lines(path::String, names::Vector{String})::Vector{String}
         f = joinpath(d, "drv.pl")
         write(
             f,
-            DRIVER * ":- initialization((fz_run('$path', [" * join(names, ",") * "]), halt)).\n"
+            DRIVER * ":- initialization((fz_run('$path', [" * join(names, ",") *
+            "]), halt)).\n"
         )
         read(pipeline(`swipl -q $f`; stdin=devnull, stderr=devnull), String)
     end
@@ -149,7 +150,9 @@ end
     @test length(names) == 9
     @test length(expected) == length(names) + 1 && expected[1] == "ok"
     @test all(i -> startswith(expected[i + 1], names[i] * " "), eachindex(names))
-    @test count(l -> occursin("c" * _codes("-") * "/2(a" * _codes("ai") * ",i3)", l), expected) >= 4
+    @test count(
+        l -> occursin("c" * _codes("-") * "/2(a" * _codes("ai") * ",i3)", l), expected
+    ) >= 4
     @test any(l -> occursin("a" * _codes("z") * ",i0)", l), expected)       # the foreign call ran after the hook
     @test any(l -> occursin("a" * _codes("boom"), l), expected)             # the hook's exception
     @test any(l -> occursin("f5.0", l), expected)                           # the float result

@@ -1482,7 +1482,8 @@ function _mt_recalc_buffer!(mt::Vector{UInt32})::Nothing
     end
     for kk in (MT_N - MT_M):(MT_N - 2)
         y = (mt[kk + 1] & 0x80000000) | (mt[kk + 2] & 0x7fffffff)
-        mt[kk + 1] = mt[kk + (MT_M - MT_N) + 1] ⊻ (y >> 1) ⊻
+        mt[kk + 1] =
+            mt[kk + (MT_M - MT_N) + 1] ⊻ (y >> 1) ⊻
             ((y & 1) != 0 ? MT_MATRIX_A : UInt32(0))
     end
     y = (mt[MT_N] & 0x80000000) | (mt[1] & 0x7fffffff)
@@ -1685,9 +1686,13 @@ function pl_set_random1_va(
             n = _number_alloc!(ld)
             if !PL_get_number(ld, arg, n)
                 _number_free!(ld, 1)
-                return PL_error(
+                return if PL_error(
                     ld, "", 0, "integer or 'random'", ERR_TYPE, mk_sym(T, :seed), arg
-                ) ? FTRUE : FFALSE
+                )
+                    FTRUE
+                else
+                    FFALSE
+                end
             end
             rc = if n.type === V_INTEGER && PLMINTAGGEDINT <= n.i <= PLMAXTAGGEDINT
                 _mt_randseed!(ld.random_state, _ulong_seed(n.i))    # gmp_randseed_ui
@@ -2831,7 +2836,9 @@ function ar_func_n(ld::PL_local_data, findex::Int, argc::Int)::Bool
         elseif argc == 2
             rval = _ar_call2(ld, k, a0, ld.arith_numbers[top - 1], r)
         elseif argc == 3
-            rval = _ar_call3(ld, k, a0, ld.arith_numbers[top - 1], ld.arith_numbers[top - 2], r)
+            rval = _ar_call3(
+                ld, k, a0, ld.arith_numbers[top - 1], ld.arith_numbers[top - 2], r
+            )
         else
             error("Too many arguments to arithmetic function")    # sysError
         end
@@ -3072,8 +3079,9 @@ function _evalExpression_walk(
                     @goto error
                 end
             end
-            if arity == 2 && sym_first_byte(_atom_value(ld, nameFunctor(ld.functors, f))) == 0x72 &&
-               sym_text(_atom_value(ld, nameFunctor(ld.functors, f))) == "roundtoward"
+            if arity == 2 &&
+                sym_first_byte(_atom_value(ld, nameFunctor(ld.functors, f))) == 0x72 &&
+                sym_text(_atom_value(ld, nameFunctor(ld.functors, f))) == "roundtoward"
                 crnd = _number_alloc!(ld)                   # number crnd, pushed on arg_stack
                 set_roundtoward(ld, c + 2, crnd) || @goto error
                 p = c + 1                                   # p = &term->arguments[0]
@@ -3567,11 +3575,17 @@ function pl_bounded_number3_va(
 
         rc =
             (
-                PL_get_number(ld, A1, lo) ? cmpNumbers(ld, lo, n) == CMPEX_LESS :
-                PL_unify_number(ld, A1, lo)
+                if PL_get_number(ld, A1, lo)
+                    cmpNumbers(ld, lo, n) == CMPEX_LESS
+                else
+                    PL_unify_number(ld, A1, lo)
+                end
             ) && (
-                PL_get_number(ld, A2, hi) ? cmpNumbers(ld, n, hi) == CMPEX_LESS :
-                PL_unify_number(ld, A2, hi)
+                if PL_get_number(ld, A2, hi)
+                    cmpNumbers(ld, n, hi) == CMPEX_LESS
+                else
+                    PL_unify_number(ld, A2, hi)
+                end
             )
     else
         rc = PL_error(ld, ERR_TYPE, mk_sym(T, :number), A1)
@@ -3631,7 +3645,7 @@ function _mpz_rootrem(n::BigInt, k::Int)::Tuple{BigInt, BigInt}
     root = if a < 2 || k == 1
         a
     else
-        bits = ndigits(a; base = 2)
+        bits = ndigits(a; base=2)
         if k >= bits                                        # a < 2^bits <= 2^k
             BigInt(1)
         else
@@ -3724,7 +3738,8 @@ function pl_float_parts4_va(
     d = PL_get_float_ex(ld, A1)
     if d !== nothing
         m, e = frexp(d)
-        rc = PL_unify_float(ld, A2, m) && PL_unify_integer(ld, A3, 2) &&
+        rc =
+            PL_unify_float(ld, A2, m) && PL_unify_integer(ld, A3, 2) &&
             PL_unify_integer(ld, A4, Int(e))
         return rc ? FTRUE : FFALSE
     end
@@ -3878,7 +3893,9 @@ end
 # DIVERGES: returns the value or `nothing` after raising (upstream: `size_t *valp` and an int); the
 # value is a `UInt64`, `typemax(UInt64)` for `infinite` (upstream's `(size_t)-1`).
 "The limit `t` holds, `infinite` or a size not below `min` (pl-arith.c); `nothing` after raising."
-function set_restraint(ld::PL_local_data{T}, t::term_t, min::Int)::Union{Nothing, UInt64} where {T}
+function set_restraint(
+    ld::PL_local_data{T}, t::term_t, min::Int
+)::Union{Nothing, UInt64} where {T}
     inf = PL_get_atom(ld, t)
     if inf !== nothing && sym_key(inf) == sym_key(mk_sym(T, :infinite))
         return typemax(UInt64)
@@ -3891,12 +3908,14 @@ end
 # PORT: pl-arith.c set_restraint_action
 # DIVERGES: returns the atom or `nothing` after raising (upstream: `atom_t *valp` and an int).
 "The action atom `t` holds for `key` (pl-arith.c): `error`, and `float` for `max_rational_size_action`; `nothing` after raising."
-function set_restraint_action(ld::PL_local_data{T}, t::term_t, key::T)::Union{Nothing, T} where {T}
+function set_restraint_action(
+    ld::PL_local_data{T}, t::term_t, key::T
+)::Union{Nothing, T} where {T}
     act = PL_get_atom_ex(ld, t)
     act === nothing && return nothing
     sym_key(act) == sym_key(mk_sym(T, :error)) && return act
     if sym_key(key) == sym_key(mk_sym(T, :max_rational_size_action)) &&
-       sym_key(act) == sym_key(mk_sym(T, :float))
+        sym_key(act) == sym_key(mk_sym(T, :float))
         return act
     end
     PL_domain_error(ld, "max_rational_size_action", t)
@@ -3905,7 +3924,9 @@ end
 
 # The float flag `bit` of `arith_f_flags`: cleared by `error`, set by the atom `on` (set_arith_flag's `clear`/`set`);
 # false for any other atom (upstream's `goto dom`).
-function _set_float_flag(ld::PL_local_data{T}, a::T, bit::UInt32, on::Symbol)::Bool where {T}
+function _set_float_flag(
+    ld::PL_local_data{T}, a::T, bit::UInt32, on::Symbol
+)::Bool where {T}
     key = sym_key(a)
     if key == sym_key(mk_sym(T, :error))
         ld.arith_f_flags &= ~bit
@@ -3937,24 +3958,36 @@ function set_arith_flag(ld::PL_local_data{T}, val::term_t, key::T)::Bool where {
         v = set_restraint(ld, val, name == "max_integer_size" ? 1000 : 0)
         v === nothing && return false
         v == typemax(UInt64) && return true                 # unlimited: the state it has
-        throw(NotPortedError{T}(key, "LD->arith.rat / LD->gmp.max_integer_size: a limit on the numbers", "AR1"))
+        throw(
+            NotPortedError{T}(
+                key,
+                "LD->arith.rat / LD->gmp.max_integer_size: a limit on the numbers",
+                "AR1"
+            )
+        )
     end
     if name == "max_rational_size_action"
         act = set_restraint_action(ld, val, key)
         act === nothing && return false
         sym_key(act) == sym_key(mk_sym(T, :error)) && return true      # the state it has
-        throw(NotPortedError{T}(key, "LD->arith.rat.max_rational_size_action: float", "AR1"))
+        throw(
+            NotPortedError{T}(key, "LD->arith.rat.max_rational_size_action: float", "AR1")
+        )
     end
     a = PL_get_atom_ex(ld, val)
     a === nothing && return false
     if name == "float_overflow"
-        _set_float_flag(ld, a, FLT_OVERFLOW, :infinity) || return PL_domain_error(ld, "flag_value", val)
+        _set_float_flag(ld, a, FLT_OVERFLOW, :infinity) ||
+            return PL_domain_error(ld, "flag_value", val)
     elseif name == "float_zero_div"
-        _set_float_flag(ld, a, FLT_ZERO_DIV, :infinity) || return PL_domain_error(ld, "flag_value", val)
+        _set_float_flag(ld, a, FLT_ZERO_DIV, :infinity) ||
+            return PL_domain_error(ld, "flag_value", val)
     elseif name == "float_undefined"
-        _set_float_flag(ld, a, FLT_UNDEFINED, :nan) || return PL_domain_error(ld, "flag_value", val)
+        _set_float_flag(ld, a, FLT_UNDEFINED, :nan) ||
+            return PL_domain_error(ld, "flag_value", val)
     elseif name == "float_underflow"
-        _set_float_flag(ld, a, FLT_UNDERFLOW, :ignore) || return PL_domain_error(ld, "flag_value", val)
+        _set_float_flag(ld, a, FLT_UNDERFLOW, :ignore) ||
+            return PL_domain_error(ld, "flag_value", val)
     elseif name == "float_rounding"
         i = atom_to_rounding(a)
         i == 0 && return PL_domain_error(ld, "flag_value", val)
