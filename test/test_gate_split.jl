@@ -759,7 +759,7 @@ echo "pkgtest-way: PASS stub"
             try
                 # the stand-in daemon: a process in the lane's slice, beside the test process's scope
                 run(
-                    `systemd-run --user --unit=$sib --collect --quiet --slice=$slice sleep 600`
+                    `systemd-run --user --unit=$sib --collect --quiet --slice=$slice sleep 3600`
                 )
                 @test unit_active(sib)
                 # the scope: its own ceiling (3G by default), no swap, NESTED in the slice it was given
