@@ -144,7 +144,7 @@ how many of the upstream file's functions are ported.
 | swipl-devel `src/pl-gvar.c` | code | `18168e629eab` | `src/pl-gvar.jl` | 21 | 11 |
 | swipl-devel `src/pl-gvar.c` | code | `18168e629eab` | `src/pl-incl.jl` | 1 | 1 |
 | swipl-devel `src/pl-gvar.c` | code | `18168e629eab` | `src/pl-inline.jl` | 1 | 1 |
-| swipl-devel `src/pl-hash.c` | code | `18168e629eab` | `src/pl-hash.jl` | 1 | 1 |
+| swipl-devel `src/pl-hash.c` | code | `18168e629eab` | `src/pl-hash.jl` | 3 | 3 |
 | swipl-devel `src/pl-hash.h` | code | `18168e629eab` | `src/pl-hash.jl` | 1 | 0 |
 | swipl-devel `src/pl-incl.h` | code | `18168e629eab` | `src/os/pl-file.jl` | 2 | 1 |
 | swipl-devel `src/pl-incl.h` | code | `18168e629eab` | `src/os/pl-prologflag.jl` | 6 | 5 |
@@ -167,7 +167,7 @@ how many of the upstream file's functions are ported.
 | swipl-devel `src/pl-init.h` | code | `18168e629eab` | `src/pl-global.jl` | 1 | 0 |
 | swipl-devel `src/pl-inline.h` | code | `18168e629eab` | `src/pl-arith.jl` | 1 | 0 |
 | swipl-devel `src/pl-inline.h` | code | `18168e629eab` | `src/pl-gmp.jl` | 1 | 0 |
-| swipl-devel `src/pl-inline.h` | code | `18168e629eab` | `src/pl-inline.jl` | 18 | 15 |
+| swipl-devel `src/pl-inline.h` | code | `18168e629eab` | `src/pl-inline.jl` | 20 | 17 |
 | swipl-devel `src/pl-list.c` | code | `18168e629eab` | `src/pl-list.jl` | 18 | 10 |
 | swipl-devel `src/pl-modul.c` | code | `18168e629eab` | `src/pl-modul.jl` | 64 | 44 |
 | swipl-devel `src/pl-mutex.c` | code | `18168e629eab` | `src/pl-mutex.jl` | 1 | 1 |
