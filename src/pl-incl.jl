@@ -311,6 +311,9 @@ const SINGLETON_CHECK = 0x0002
 # PORT: pl-incl.h MULTITON_CHECK
 "Style check: `_X` variables used more than once (pl-incl.h)."
 const MULTITON_CHECK = 0x0004
+# PORT: pl-incl.h CHARSET_CHECK
+"Style check: warn on unquoted non-ASCII characters (pl-incl.h; `checkASCII` in the reader)."
+const CHARSET_CHECK = 0x0020
 # PORT: pl-incl.h DISCONTIGUOUS_STYLE
 "Style check: warn on a discontiguous predicate (pl-incl.h)."
 const DISCONTIGUOUS_STYLE = 0x0008
