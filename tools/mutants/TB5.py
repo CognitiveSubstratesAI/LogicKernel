@@ -53,6 +53,7 @@
 AB = "test/core_lang/test_tabling_abolish_swipl.jl"
 TV = "test/core_lang/test_tabling_variant_swipl.jl"
 TT = "test/core_lang/test_tabling_state_swipl.jl"
+T5R = "test/core_lang/test_tabling_tb5rows_swipl.jl"   # TB5-ROWS: the white-box testset of TB5-E10, TB5-E11
 TM = "test/core_lang/test_tabling_min_swipl.jl"
 BI = "test/db/test_boot_image_swipl.jl"
 DYN = [
@@ -73,7 +74,7 @@ TW = "test/core_lang/test_trie_swipl.jl"                     # TR1: trie_delete 
 TP = "test/core_lang/test_trie_preds_swipl.jl"                # TR1: the trie_* predicates that delete nodes
 TRIE = TABL + [TW, TP]
 TABLS = [AB, TV, TT]                      # the same, where it reads or writes `ld.tabling` or the freed objects
-TARGETS = [AB, TV, TT, TM, BI, TW, TP] + DYN      # every file a mutant lists (mutate_ci.py plan reads TARGETS)
+TARGETS = [AB, TV, TT, T5R, TM, BI, TW, TP] + DYN      # every file a mutant lists (mutate_ci.py plan reads TARGETS)
 TAB = "src/pl-tabling.jl"
 PROC = "src/pl-proc.jl"
 COMP = "src/pl-comp.jl"
@@ -237,12 +238,12 @@ MUTANTS = [
          file=TAB, targets=TABLS,
          old="        if ld.tabling.concurrent_idg_nodes != 0\n            map_trie_node(vtrie, 1, idg_unlink_concurrent_table(ld))\n        end\n",
          new=""),
-    dict(id="TB5-E10 empty_variant_table does not release the registry (KILL the same row: the nodes' and the thread's references are dropped, `registry` is the detached one)",
-         file=TAB, targets=TABLS,
+    dict(id="TB5-E10 empty_variant_table does not release the registry (KILL the testset 'clear_variant_table releases the IDG registry: no reference is left (TB5-E10, TB5-E11)' of test_tabling_tb5rows_swipl.jl: `reg.references == 0` after clear_variant_table, the mutant leaves length(nodes) + 1)",
+         file=TAB, targets=TABLS + [T5R],
          old="        if registry !== nothing                         # the nodes' and the thread's\n            idg_registry_release_n(registry, idg_nodes[] + 1)\n        end\n",
          new=""),
-    dict(id="TB5-E11 reset_table_bulk counts no node of the detached registry (the references are then released short: the row's `reg.refs` check is not written; the battery decides)",
-         file=TAB, targets=TABLS,
+    dict(id="TB5-E11 reset_table_bulk counts no node of the detached registry (KILL the testset 'clear_variant_table releases the IDG registry: no reference is left (TB5-E10, TB5-E11)' of test_tabling_tb5rows_swipl.jl: the references are then released short, `reg.references == 0` fails, the mutant leaves length(nodes))",
+         file=TAB, targets=TABLS + [T5R],
          old="            idg_nodes[] += 1\n",
          new="            nothing\n"),
     dict(id="TB5-E9 the delay info pass of an unvisited variant table is skipped (DEFERRED KILL, owner TB4: destroy_delay_info_worklist needs a worklist with undefined answers; the row: clear_variant_table of a table with `undefined != 0` destroys the delay info)",
