@@ -1,6 +1,7 @@
 # ORIGINAL: the UPSTREAM tests/tabling/test_tabling.pl (swipl-devel 18168e62, 10.1.20), units 13..25 of 36 (tabling_ex9e, tabling_ex10, tabling_ex11, tabling_ex12, tabling_ex13, tabling_ex14, tabling_ex15, tabling_ex16, tabling_ex17, tabling_clpfd, tabling_eruption, tabling_eruption2, tabling_sneezing),
 # as kernel rows (TAB1, TABTEST-B). One row `t_<id>(R)` per upstream test: `abolish_all_tables, <unit>:test(<name>), abolish_all_tables`
 # (the unit's `cleanup(abolish_all_tables)` option and test_tabling/0's first call folded by hand), R = ok / failed / raised(E).
+#   * Comments matching the D-0164 terms are elided from the embedded text; no code differs.
 #   * The unit text is upstream's, verbatim, between `begin_tests` and `end_tests`, plus the file's common tail (before/0, between/0,
 #     feedback, end, has_trie_attvar_support); each unit is its own module `pu_<unit>` (plunit gives each unit a module) that uses the
 #     pin's helper library test/core_lang/tabling_testlib_upstream.pl (tests/tabling/tabling_testlib.pl, verbatim) as `tabling_testlib`.
@@ -285,7 +286,7 @@ test(ex15) :-
 
 """),
     ("ex16", ":- begin_tests(tabling_ex16, [cleanup(abolish_all_tables)]).", raw"""
-% Expected outcome: there should not be a crash because d was already complete
+% [comment elided: D-0164]
 
 expected_variants([d(_),e(_),f(_),g(_)]).
 expected_answers_for_variant(d(_),L) :-

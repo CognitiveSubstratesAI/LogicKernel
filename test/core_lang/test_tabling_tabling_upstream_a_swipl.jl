@@ -1,6 +1,7 @@
 # ORIGINAL: the UPSTREAM tests/tabling/test_tabling.pl (swipl-devel 18168e62, 10.1.20), units 1..12 of 36 (tabling_ex1, tabling_ex2, tabling_ex3, tabling_ex4, tabling_ex5, tabling_ex6, tabling_ex7, tabling_ex8, tabling_ex9a, tabling_ex9b, tabling_ex9c, tabling_ex9d),
 # as kernel rows (TAB1, TABTEST-A). One row `t_<id>(R)` per upstream test: `abolish_all_tables, <unit>:test(<name>), abolish_all_tables`
 # (the unit's `cleanup(abolish_all_tables)` option and test_tabling/0's first call folded by hand), R = ok / failed / raised(E).
+#   * Comments matching the D-0164 terms are elided from the embedded text; no code differs.
 #   * The unit text is upstream's, verbatim, between `begin_tests` and `end_tests`, plus the file's common tail (before/0, between/0,
 #     feedback, end, has_trie_attvar_support); each unit is its own module `pu_<unit>` (plunit gives each unit a module) that uses the
 #     pin's helper library test/core_lang/tabling_testlib_upstream.pl (tests/tabling/tabling_testlib.pl, verbatim) as `tabling_testlib`.
