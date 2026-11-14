@@ -672,7 +672,13 @@ const _T6_BROKEN = Dict{String, String}(
     "ABOLISH/a05" => "owner builtin PRESENT: `'\$tbl_destroy_table'/1` (pl-tabling.jl:9773); abolish_table_subgoals/1 (boot/tabling.pl:1158-1168, vendored) calls it; expected to pass",
     "ABOLISH/a06" => "owner builtin PRESENT: `'\$tbl_destroy_table'/1`; abolish_nonincremental_tables/0 (boot/tabling.pl:1187) calls it; expected to pass",
     "ABOLISH/a07" => "owner builtins PRESENT: abolish_module_tables/1; expected to pass",
-    "ABOLISH/a08" => "owner builtin PRESENT: abolish_table_subgoals/1 (vendored boot/tabling.pl:1158); expected to pass"
+    "ABOLISH/a08" => "owner builtin PRESENT: abolish_table_subgoals/1 (vendored boot/tabling.pl:1158); expected to pass",
+    # TABM-PREP (audit D-0736 (2)): the lane-2 runs of 2026-11-14 (397efdd3) show a04-a08 still differing (TABM-DIAG2: a04/a05 raise a refusal,
+    # a06-a08 leave IDG nodes after the abolish; undiagnosed, owner TAB1). DYNERR v01/v02: the kernel charges no trie memory to `table_space`
+    # (upstream pl-trie.c:238, :772, :1087, :1105, :1113 charge; :257, :269, :729, :1200, :1268, :1389 release), so the limit 1508 is never
+    # reached: owner TRIE-CHARGE (wip/trie-charge). The pins stay swipl's.
+    "DYNERR/v01" => "owner TRIE-CHARGE: trie memory is not charged to table_space yet (pl-trie.c:238 etc.); the dynamic-call edge then fits",
+    "DYNERR/v02" => "owner TRIE-CHARGE: same cause as v01 (the table completes instead of staying `none`)"
 )
 
 @testset "TB6 rows as swipl's: $(g.label)" for g in _T6_GROUPS
