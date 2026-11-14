@@ -1,4 +1,4 @@
-# ORIGINAL: the UPSTREAM tests/tabling/test_tabling.pl (swipl-devel 18168e62, 10.1.20), units 1..6 of 36 (tabling_ex1, tabling_ex2, tabling_ex3, tabling_ex4, tabling_ex5, tabling_ex6),
+# ORIGINAL: the UPSTREAM tests/tabling/test_tabling.pl (swipl-devel 18168e62, 10.1.20), units 1..12 of 36 (tabling_ex1, tabling_ex2, tabling_ex3, tabling_ex4, tabling_ex5, tabling_ex6, tabling_ex7, tabling_ex8, tabling_ex9a, tabling_ex9b, tabling_ex9c, tabling_ex9d),
 # as kernel rows (TAB1, TABTEST-A). One row `t_<id>(R)` per upstream test: `abolish_all_tables, <unit>:test(<name>), abolish_all_tables`
 # (the unit's `cleanup(abolish_all_tables)` option and test_tabling/0's first call folded by hand), R = ok / failed / raised(E).
 #   * The unit text is upstream's, verbatim, between `begin_tests` and `end_tests`, plus the file's common tail (before/0, between/0,
@@ -306,6 +306,232 @@ test(ex6) :-
 	test_answers_expected_tables.
 
 """),
+    ("ex7", ":- begin_tests(tabling_ex7, [cleanup(abolish_all_tables)]).", raw"""
+% A more complicated graph example:
+%
+%       i1
+%       |
+%    +--+---+
+%    |      |
+%    v      v
+%    i2     i3
+%    |
+% +--+---+
+% |      |
+% v      v
+% i4 --> i5
+%
+% i1(X) :- i2(Y), X is Y + 1.
+% i1(X) :- i3(Y), X is Y + 1.
+%
+% i2(X) :- i4(Y), X is Y + 1.
+% i2(X) :- i5(Y), X is Y + 4. % !! + 4
+%
+% i4(X) :- i5(Y), X is Y + 1. % !! TABLE table7d
+%
+% i3(X) :- between(0,1,X). % !! TABLE table7c
+%
+% i5(Y) :- between(2,3,X).
+
+expected_variants([i1(_),i2(_),i3(_),i4(_),i5(_)]).
+expected_answers_for_variant(i1(_),[i1(5),i1(6),i1(7),i1(8),i1(1),i1(2)]).
+expected_answers_for_variant(i2(_),[i2(4),i2(5),i2(6),i2(7)]).
+expected_answers_for_variant(i3(_),[i3(0),i3(1)]).
+expected_answers_for_variant(i4(_),[i4(3),i4(4)]).
+expected_answers_for_variant(i5(_),[i5(2),i5(3)]).
+
+i1_expected_answers([5,6,7,8,1,2]).
+i2_expected_answers([4,5,6,7]).
+i3_expected_answers([0,1]).
+i4_expected_answers([3,4]).
+i5_expected_answers([2,3]).
+
+:- table i1/1, i2/1, i3/1, i4/1, i5/1.
+
+i1(X) :-
+	feedback('i1_aux 1: before'), i2(Y),
+	feedback('i1_aux 1: after'),  X is Y + 1.
+i1(X) :-
+	feedback('i1_aux 2: before'), i3(Y),
+	feedback('i1_aux 2: after'),  X is Y + 1.
+i2(X) :-
+	feedback('i2_aux 1: before'), i4(Y),
+	feedback('i2_aux 1: after'),  X is Y + 1.
+i2(X) :-
+	feedback('i2_aux 2: before'), i5(Y),
+	feedback('i2_aux 2: after'),  X is Y + 4.
+i4(X) :-
+	feedback('i4_aux 1: before'), i5(Y),
+	feedback('i4_aux 1: after'),  X is Y + 1.
+i3(X) :- between(0,1,X).
+i5(X) :- between(2,3,X).
+
+test(ex7) :-
+	compare_real_expected_answers(i1,1,i1_expected_answers),
+	compare_real_expected_answers(i2,1,i2_expected_answers),
+	compare_real_expected_answers(i3,1,i3_expected_answers),
+	compare_real_expected_answers(i4,1,i4_expected_answers),
+	compare_real_expected_answers(i5,1,i5_expected_answers),
+	test_expected_variants_present,
+	test_answers_expected_tables.
+
+"""),
+    ("ex8", ":- begin_tests(tabling_ex8, [cleanup(abolish_all_tables)]).", raw"""
+% Example specifically designed  to  test  whether   we  can  get  a new
+% continuation in the last iteration of  run_contins. This is indeed the
+% case. Thus in run_contins we  also  need   to  look  at  the number of
+% continuations to determine whether we can   stop.  However we had some
+% questions: we might need to look  whether   the  new continuation is a
+% variant of a continuation that is   already present (to avoid infinite
+% loops).
+%
+% j(a,b).
+% j(X,Y) :- j(_,_), j(Y,X).
+
+expected_variants([j(_,_)]).
+expected_answers_for_variant(j(_,_),[j(a,b),j(b,a)]).
+j_expected_answers([a-b,b-a]).
+
+:- table j/2.
+
+j(a,b) :-
+	feedback('j 1: give answer'). % TODO: check why we don*t have to save this answer here explicitly.
+j(X,Y) :-
+	feedback('j 2: before'),
+	j(_,_),
+	feedback('j 2: between'),
+	j(Y,X),
+	feedback('j 2: after').
+
+test(ex8) :-
+	compare_real_expected_answers(j,2,j_expected_answers),
+	test_expected_variants_present,
+	test_answers_expected_tables.
+
+"""),
+    ("ex9a", ":- begin_tests(tabling_ex9a, [cleanup(abolish_all_tables)]).", raw"""
+% The reachability predicate can be written in several variants.
+% Example 1: a
+% p(X,Y) :- p(X,Z), p(Z,Y).
+% p(X,Y) :- e(X,Y).
+%
+% Example 9a:
+% p(X,Y) :- p(X,Z), e(Z,Y).
+% p(X,Y) :- e(X,Y).
+%
+% Example 9b:
+% p(X,Y) :- e(X,Z), p(Z,Y).
+% p(X,Y) :- e(X,Y).
+%
+% Example 9c:
+% p(X,Y) :- e(X,Y).
+% p(X,Y) :- p(X,Z), p(Z,Y).
+%
+% Example 9d:
+% p(X,Y) :- e(X,Y).
+% p(X,Y) :- p(X,Z), e(Z,Y).
+%
+% Example 9e:
+% p(X,Y) :- e(X,Y).
+% p(X,Y) :- e(X,Z), p(Z,Y).
+
+expected_variants([a(_,_)]).
+expected_answers_for_variant(a(_,_),[a(1,2),a(2,3),a(1,3)]).
+
+% The answers we expect for reachability   variants,  returned as a list
+% with entries of the form X-Y. The order does not matter.
+
+reachability_expected_answers([1-2,2-3,1-3]).
+
+:- table a/2.
+
+a(X,Y) :-
+	feedback('before'),
+	a(X,Z),
+	feedback('between: prove ~w~n',[e(Z,Y)]),
+	e(Z,Y).
+a(X,Y) :-
+	e(X,Y).
+
+% Test facts for examples 1 and 2.
+e(1,2).
+e(2,3).
+
+test(ex9a) :-
+	compare_real_expected_answers(a,2,reachability_expected_answers),
+	test_expected_variants_present,
+	test_answers_expected_tables.
+"""),
+    ("ex9b", ":- begin_tests(tabling_ex9b, [cleanup(abolish_all_tables)]).", raw"""
+expected_variants([a(3,_),a(2,_),a(_,_)]).
+% Note: a(3,_) is an empty table, but it is there...
+expected_answers_for_variant(a(_,_),[a(1,2),a(2,3),a(1,3)]).
+expected_answers_for_variant(a(3,_),[]).
+expected_answers_for_variant(a(2,_),[a(2,3)]).
+reachability_expected_answers([1-2,2-3,1-3]).
+
+:- table a/2.
+
+a(X,Y) :-
+	feedback('before'),
+	e(X,Z),
+	feedback('between: prove ~w~n',[a(Z,Y)]),
+	a(Z,Y).
+a(X,Y) :-
+	e(X,Y).
+
+e(1,2).
+e(2,3).
+
+test(ex9b) :-
+	compare_real_expected_answers(a,2,reachability_expected_answers),
+	test_expected_variants_present,
+	test_answers_expected_tables.
+
+"""),
+    ("ex9c", ":- begin_tests(tabling_ex9c, [cleanup(abolish_all_tables)]).", raw"""
+expected_variants([a(2,_),a(3,_),a(_,_)]).
+% Note: a(3,_) is an empty table, but it is there...
+expected_answers_for_variant(a(_,_),[a(1,2),a(2,3),a(1,3)]).
+expected_answers_for_variant(a(2,_),[a(2,3)]).
+expected_answers_for_variant(a(3,_),[]).
+
+reachability_expected_answers([1-2,2-3,1-3]).
+
+:- table a/2.
+
+a(X,Y) :- e(X,Y).
+a(X,Y) :- feedback('before'), a(X,Z), feedback('between'),  a(Z,Y).
+
+e(1,2).
+e(2,3).
+
+test(ex9c) :-
+	compare_real_expected_answers(a,2,reachability_expected_answers),
+	test_expected_variants_present,
+	test_answers_expected_tables.
+
+"""),
+    ("ex9d", ":- begin_tests(tabling_ex9d, [cleanup(abolish_all_tables)]).", raw"""
+expected_variants([a(_,_)]).
+expected_answers_for_variant(a(_,_),[a(1,2),a(2,3),a(1,3)]).
+
+reachability_expected_answers([1-2,2-3,1-3]).
+
+:- table a/2.
+
+a(X,Y) :- e(X,Y).
+a(X,Y) :- feedback('before'), a(X,Z), feedback('between'),  e(Z,Y).
+
+e(1,2).
+e(2,3).
+
+test(ex9d) :-
+	compare_real_expected_answers(a,2,reachability_expected_answers),
+	test_expected_variants_present,
+	test_answers_expected_tables.
+
+"""),
 ]
 
 "The file's common tail (lines `before :- ...` to the end), verbatim."
@@ -334,6 +560,12 @@ const _TT_CASES = [
     ("tt04", "ex4", "pu_ex4:test(ex4)"),
     ("tt05", "ex5", "pu_ex5:test(ex5)"),
     ("tt06", "ex6", "pu_ex6:test(ex6)"),
+    ("tt07", "ex7", "pu_ex7:test(ex7)"),
+    ("tt08", "ex8", "pu_ex8:test(ex8)"),
+    ("tt09", "ex9a", "pu_ex9a:test(ex9a)"),
+    ("tt10", "ex9b", "pu_ex9b:test(ex9b)"),
+    ("tt11", "ex9c", "pu_ex9c:test(ex9c)"),
+    ("tt12", "ex9d", "pu_ex9d:test(ex9d)"),
 ]
 
 const _TT_PINNED = [
@@ -344,10 +576,22 @@ const _TT_PINNED = [
     "t_tt04 c[116,95,116,116,48,52]/1(a[111,107])",
     "t_tt05 c[116,95,116,116,48,53]/1(a[111,107])",
     "t_tt06 c[116,95,116,116,48,54]/1(a[111,107])",
+    "t_tt07 c[116,95,116,116,48,55]/1(a[111,107])",
+    "t_tt08 c[116,95,116,116,48,56]/1(a[111,107])",
+    "t_tt09 c[116,95,116,116,48,57]/1(a[111,107])",
+    "t_tt10 c[116,95,116,116,49,48]/1(a[111,107])",
+    "t_tt11 c[116,95,116,116,49,49]/1(a[111,107])",
+    "t_tt12 c[116,95,116,116,49,50]/1(a[111,107])",
 ]
 
 "The answer plunit expects of every row: the test passes, `R = ok` (run in swipl by gen_tabling.py pin, plunit part of pins file)."
 const _TT_UPSTREAM = [
+    "a[111,107]",
+    "a[111,107]",
+    "a[111,107]",
+    "a[111,107]",
+    "a[111,107]",
+    "a[111,107]",
     "a[111,107]",
     "a[111,107]",
     "a[111,107]",
@@ -428,7 +672,7 @@ end
 "A line the same length that must differ from `s` (the must-fail corruption)."
 _tt_corrupt(s::String) = s[1:(end - 2)] * (s[end - 1] == '0' ? "1" : "0") * s[end]
 
-@testset "upstream test_tabling.pl units 1..6: the kernel answers every row as swipl does" begin
+@testset "upstream test_tabling.pl units 1..12: the kernel answers every row as swipl does" begin
     gd, ld, st = _tt_load(_tt_materialize())
     @test st == "ok"
     kl = String[st]
