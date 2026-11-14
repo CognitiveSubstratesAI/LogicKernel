@@ -27,8 +27,8 @@
 #     there): each error row uses a fresh `PL_global_data`, no assertion reads the leaked state.
 # TARGETS (audit D-0238): the code is reached by `'$qlf_module'/2` (this file) and, for qlfInfo, qlfLoadFileHash, qlfGetInt64,
 # qlfGetString, loadFileName and the path translation, by `'$qlf_sources'/2` and the other rows of the table of
-# test_qlf_swipl.jl; so both files are the list.
-TARGETS = ["test/files/test_qlf_module_swipl.jl", "test/files/test_qlf_swipl.jl"]
+# test_qlf_swipl.jl and test_qlf_stale_swipl.jl (the index of a real qcompile'd file, the hash and version rows); so the three files are the list.
+TARGETS = ["test/files/test_qlf_module_swipl.jl", "test/files/test_qlf_swipl.jl", "test/files/test_qlf_stale_swipl.jl"]
 T = TARGETS
 Q = "src/pl-qlf.jl"
 F = "src/pl-fli.jl"

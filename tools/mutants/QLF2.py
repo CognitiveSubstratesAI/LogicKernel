@@ -16,9 +16,10 @@
 #     4 bytes, so no row reaches that error; the PATH_ISDIR branch (`flags` is 0 from every caller) and the `qlfGetString`
 #     `length != NULL` form (left to the XR reader, QLF3) have no caller yet;
 #   * the `fatalError` of an end of file inside a name and of a name above PATH_MAX after a move: no row builds them.
-# TARGETS (audit D-0238): the code is reached by `'$qlf_sources'/2` alone (`qlfInfo`'s Q_VERSION and compatibility branches are
-# the other callers and share the same file), so the one file is the whole list.
-TARGETS = ["test/files/test_qlf_swipl.jl"]
+# TARGETS (audit D-0238): the code is reached by `'$qlf_sources'/2` (`qlfInfo`'s Q_VERSION and compatibility branches are
+# the other callers and share the same file); test_qlf_stale_swipl.jl calls it too (`'$qlf_out_of_date'/3`, qlf_needs_rebuild/1,
+# a real qcompile'd file's index, the version bytes of the header), so both files are the list.
+TARGETS = ["test/files/test_qlf_swipl.jl", "test/files/test_qlf_stale_swipl.jl"]
 T = TARGETS
 Q = "src/pl-qlf.jl"
 F = "src/pl-fli.jl"
@@ -112,10 +113,10 @@ MUTANTS = [
          file=Q, targets=T,
          old="if old.has_moved && !isempty(old.translated)",
          new="if false"),
-    dict(id="QLF2-22 qlfInfo does not pop the translation after a Q_FILES or Q_MODULE run (KILL MOV: tr_seen stays empty)",
+    dict(id="QLF2-22 qlfInfo does not pop the translation after a Q_FILES run (KILL MOV: tr_seen stays empty)",
          file=Q, targets=T,
-         old="(flags & (Q_MODULE | Q_FILES)) != 0 && popPathTranslation(ld, state)",
-         new="false && popPathTranslation(ld, state)"),
+         old="(flags & (Q_MODULE | Q_FILES)) != 0 && popPathTranslation(ld, state)",      # since QLF3 the guard also names Q_MODULE
+         new="(flags & Q_MODULE) != 0 && popPathTranslation(ld, state)"),
     dict(id="QLF2-23 the scan of the common directory tail never runs: the whole directories are replaced (KILL MOV: the shared-tail rows, /old#/place/other/b.pl)",
          file=Q, targets=T,
          old="while le > 0 && se > 0 && l[le] == s[se]",
