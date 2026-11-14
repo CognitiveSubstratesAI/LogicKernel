@@ -12,8 +12,8 @@
 # concatenating (`PL_concat_text`), and `CVT_VARNOFAIL`, for atom_length/2, the `x_chars` family and
 # atom_concat/3 (src/pl-prims.jl). NOT PORTED: the rest of pl-text.c (`PL_unify_text_units`,
 # `PL_text_unit_offset`, `PL_demote_text`, `PL_text_recode`, `PL_save_text`, `PL_from_stack_text`,
-# `PL_free_text`: Julia's GC owns the bytes; the encodings other than ISO Latin-1, UTF-8 and
-# `ENC_WCHAR`).
+# `PL_free_text`: Julia's GC owns the bytes). Encodings: ISO Latin-1, UTF-8, `ENC_WCHAR` and `ENC_ANSI` (the locale's multibyte
+# encoding, libc's `mbrtowc`/`wcrtomb`, since ENC1); `ENC_ASCII` and `ENC_UNKNOWN` are upstream's `assert(0)`, an `error()`.
 
 # PORT: pl-text.h PL_chars_t
 # DIVERGES: the text is a byte vector in its encoding — ISO Latin-1, or UTF-8 (ENC_UTF8) where
@@ -54,7 +54,7 @@ end
 
 # ORIGINAL: the `case_write` branch of pl-text.c `PL_get_text` (the `CVT_WRITE`, `CVT_WRITEQ` and
 # `CVT_WRITE_CANONICAL` conversions) as a function of its own, a `try` cannot hold `@goto`'s label.
-# DIVERGES: the stream layer writes UTF-8 only (ENC1 refusals in src/os/pl-stream.jl), so the text is
+# DIVERGES: the memory stream written to is UTF-8 (src/os/pl-file.jl), so the text is
 # written as UTF-8 and returned as a non-canonical `PL_chars_t` (as an atom's text is), where upstream
 # tries ISO Latin-1 and then `ENC_WCHAR` (`ENC_UTF8` only under `REP_UTF8`): the code points are the
 # same; the numbervars frame is ended on an `NV_ERROR`, where upstream's `goto error` leaves it open.
@@ -237,14 +237,40 @@ function Sopen_text(txt::PL_chars_t, mode::String)::Union{Nothing, IOSTREAM}
     return stream
 end
 
+# PORT: pl-text.h ERR_TEXT_ILLEGAL_UTF8
+"`text_error`'s code for an illegal UTF-8 sequence (pl-text.h); `PL_canonicalise_text` gives none at the pin."
+const ERR_TEXT_ILLEGAL_UTF8 = -1
+# PORT: pl-text.h ERR_TEXT_ILLEGAL_MULTIBYTE_SEQUENCE
+"`PL_canonicalise_text`'s error: an illegal multibyte sequence in an `ENC_ANSI` text (pl-text.h)."
+const ERR_TEXT_ILLEGAL_MULTIBYTE_SEQUENCE = -3
 # PORT: pl-text.h ERR_TEXT_INVALID_CODE_POINT
 "`PL_canonicalise_text`'s error: a code point that is not Unicode (pl-text.h)."
 const ERR_TEXT_INVALID_CODE_POINT = -5
 
+# ORIGINAL: the `mbrtowc` loop that `PL_canonicalise_text`, `PL_text_recode`, `PL_unify_text` and `_text_string` run over an `ENC_ANSI` text
+# DIVERGES: upstream's loop does `n -= rc` with `rc` a `size_t`: an incomplete sequence at the end (rc == (size_t)-2) wraps `n` (undefined; the
+# pinned build reads out of bounds there). The answer here is `nothing`, what `string_bytes/3` reports as `illegal_multibyte_sequence`.
+"The code points of the `n` bytes of the multibyte text `bytes` under the process's LC_CTYPE, `nothing` for an illegal or incomplete sequence or a NUL."
+function _ansi_code_points(bytes::Vector{UInt8}, n::Int)::Union{Nothing, Vector{Int}}
+    st = zeros(UInt64, MBSTATE_WORDS)                   # `memset(&mbs, 0, sizeof(mbs))`
+    cps = Int[]
+    i = 1
+    left = n
+    while left > 0
+        rc, wc = _mbrtowc(bytes, i, left, st)
+        (rc == -1 || rc == -2 || rc == 0) && return nothing
+        push!(cps, wc)
+        i += rc
+        left -= rc
+    end
+    return cps
+end
+
 # PORT: pl-text.c PL_canonicalise_text
 # DIVERGES: an `ENC_WCHAR` text is its code points as native 4-byte `pl_wchar_t`s in `text.text`,
 # as upstream's buffer is; the demotion of an all-Latin-1 wide text (`PL_demote_text`) is inline.
-# NOT PORTED: `ENC_UTF16LE`/`BE` and `ENC_ANSI` (no caller produces them) — refused by name.
+# `ENC_ANSI` is `_ansi_code_points` (libc's `mbrtowc` under the process's LC_CTYPE; an ANSI text's `length` counts bytes); `ENC_ASCII` and
+# `ENC_UNKNOWN` are upstream's `assert(0)`, an `error()`.
 """
     PL_canonicalise_text(text) -> true or ERR_TEXT_*
 
@@ -297,12 +323,29 @@ function PL_canonicalise_text(text::PL_chars_t)::Int
                 end
                 text.canonical = true
             end
+        elseif enc === ENC_UTF16LE || enc === ENC_UTF16BE
+            # `text.length` is in bytes; `utf16_to_text` (src/pl-string.jl) decodes; its `length` counts units, the
+            # canonical text's is the code points (a pair is one)
+            r = utf16_to_text(text)
+            r isa Int && return r
+            text.text = r.text
+            text.encoding = r.encoding
+            text.length = r.encoding === ENC_WCHAR ? length(r.text) ÷ 4 : length(r.text)
+            text.canonical = true
+        elseif enc === ENC_ANSI
+            cps = _ansi_code_points(text.text, text.length)
+            cps === nothing && return ERR_TEXT_ILLEGAL_MULTIBYTE_SEQUENCE
+            if any(>(0xff), cps)
+                text.text = Vector{UInt8}(reinterpret(UInt8, UInt32.(cps)))
+                text.encoding = ENC_WCHAR
+            else
+                text.text = UInt8.(cps)
+                text.encoding = ENC_ISO_LATIN_1
+            end
+            text.length = length(cps)
+            text.canonical = true
         else
-            throw(
-                NotPortedError{Nothing}(
-                    nothing, "PL_canonicalise_text of $enc", "no caller"
-                )
-            )
+            error("PL_canonicalise_text of $enc")       # assert(0)
         end
     end
     return 1                                            # true
@@ -310,7 +353,7 @@ end
 
 # PORT: pl-text.c textToAtom
 # DIVERGES: the atom table is an argument (`GD->atoms`); a canonicalisation error returns 0 without
-# raising (`text_error` is NOT PORTED: no caller yet — stage C's boundary is the first).
+# raising (the callers here hold no `ld`; `text_error` is the `ld` form, below).
 """
     textToAtom(atoms, text) -> atom_t
 
@@ -473,18 +516,21 @@ function PL_concat_text(text::Vector{PL_chars_t})::PL_chars_t
 end
 
 # PORT: pl-text.c text_error
-# DIVERGES: `PL_canonicalise_text` gives only `ERR_TEXT_INVALID_CODE_POINT` (src/os/pl-text.jl): the other
-# codes (illegal UTF-8, UTF-16, multibyte sequences) are refused by name.
+# DIVERGES: an unknown code is upstream's `assert(0)`, an `error()`. `ERR_TEXT_ILLEGAL_UTF8` is given by no caller at the pin
+# (`PL_canonicalise_text` of UTF-8 has no error path), the other four are `PL_canonicalise_text`'s and `utf16_to_text`'s.
 "Raise the error for `PL_canonicalise_text`'s result `rc`; false (pl-text.c)."
 function text_error(ld::PL_local_data{T}, rc::Int)::Bool where {T}
+    rc == ERR_TEXT_ILLEGAL_UTF8 &&
+        return PL_syntax_error(ld, "illegal_utf8_sequence", nothing)
+    rc == ERR_TEXT_ILLEGAL_UTF16 &&
+        return PL_syntax_error(ld, "illegal_utf16_sequence", nothing)
+    rc == ERR_TEXT_ILLEGAL_MULTIBYTE_SEQUENCE &&
+        return PL_syntax_error(ld, "illegal_multibyte_sequence", nothing)
+    rc == ERR_TEXT_INCOMPLETE_MULTIBYTE_SEQUENCE &&
+        return PL_syntax_error(ld, "incomplete_multibyte_sequence", nothing)
     rc == ERR_TEXT_INVALID_CODE_POINT &&
         return PL_error(ld, ERR_REPRESENTATION, mk_sym(T, :code_point))   # PL_representation_error("code_point")
-    throw(
-        NotPortedError{Nothing}(
-            nothing, "text_error of $rc",
-            "no caller (PL_canonicalise_text gives no such error)"
-        )
-    )
+    error("text_error: unknown code $rc")               # assert(0)
 end
 
 # PORT: pl-text.c PL_canonicalise_text_ex
@@ -495,40 +541,101 @@ function PL_canonicalise_text_ex(ld::PL_local_data{T}, text::PL_chars_t)::Bool w
     return text_error(ld, rc)
 end
 
-# PORT: pl-text.c PL_mb_text
-# DIVERGES: only `REP_UTF8` (the one caller is `x_chars`); an `ENC_UTF8` text is the kernel's own
-# (`PL_get_text`) and is left as it is, its `length` in characters. NOT PORTED: `REP_MB` and ISO Latin-1
-# targets (`wctobuffer`, `PL_demote_text`: no caller), refused by name.
-"Recode the canonical `text` as UTF-8, its `length` then its bytes (pl-text.c `PL_mb_text`, `REP_UTF8`)."
-function PL_mb_text(text::PL_chars_t, flags::UInt32)::Bool
-    (flags & REP_UTF8) != 0 || throw(
-        NotPortedError{Nothing}(
-            nothing, "PL_mb_text to a target other than REP_UTF8", "no caller"
-        )
-    )
-    if text.encoding !== ENC_UTF8
-        b = UInt8[]
-        if text.encoding === ENC_ISO_LATIN_1
+# ORIGINAL: pl-text.c `wctobuffer` over the characters of `cps`, then `wctobuffer(0, &mbs, b)`, on a zeroed `mbstate_t`
+# (the two loops of `PL_mb_text`'s `ENC_MB` target).
+# DIVERGES: the bytes go into the vector `b` (no `Buffer`); the NUL that ends upstream's buffer is dropped here (`sizeOfBuffer(b)-1`).
+"Append the multibyte bytes of the code points `cps` to `b`; -1, or the code point that has no representation."
+function _wctobuffer_all!(b::Vector{UInt8}, cps)::Int
+    st = zeros(UInt64, MBSTATE_WORDS)                   # memset(&mbs, 0, sizeof(mbs))
+    for c in cps
+        r = _wcrtomb(Int(c), st)
+        r === nothing && return Int(c)                  # wctobuffer: false, `norep = c`
+        append!(b, r)
+    end
+    r = _wcrtomb(0, st)                                 # wctobuffer(0, &mbs, b): the shift sequence and the NUL
+    if r !== nothing
+        append!(b, r)
+        pop!(b)                                         # the NUL: `text->length = sizeOfBuffer(b)-1`
+    end
+    return -1
+end
+
+# ORIGINAL: the recoding of pl-text.c `PL_mb_text` (the body of both `PL_mb_text` methods below), as one helper that returns
+# the verdict: an `Int` (-1 done, -2 `PL_demote_text` failed, otherwise the character with no representation, upstream's `norep`).
+# DIVERGES: an `ENC_UTF8` text is the kernel's own (`PL_get_text`) and is left as it is when the target is UTF-8, its `length` in
+# characters; any other source encoding is upstream's `assert(0)`, an `error()`.
+"""
+    _mb_text(text, flags) -> Int
+
+Recode the canonical `text` to the target `flags` name (`REP_UTF8`: UTF-8, `REP_MB`: the locale's multibyte
+encoding, else ISO Latin-1), its `length` then in bytes (pl-text.c `PL_mb_text`).
+"""
+function _mb_text(text::PL_chars_t, flags::UInt32)::Int
+    target = if (flags & REP_UTF8) != 0
+        ENC_UTF8
+    elseif (flags & REP_MB) != 0
+        ENC_ANSI
+    else
+        ENC_ISO_LATIN_1
+    end
+    text.encoding === target && return -1
+    b = UInt8[]
+    if text.encoding === ENC_ISO_LATIN_1
+        if target === ENC_UTF8
             for c in text.text
-                utf8_put_char(b, Int(c))                    # utf8tobuffer(*s, b)
-            end
-        elseif text.encoding === ENC_WCHAR
-            for i in 0:(text.length - 1)
-                utf8_put_char(b, _wchar_at(text, i))        # get_wchar(), utf8tobuffer(c, b)
+                utf8_put_char(b, Int(c))                # utf8tobuffer(*s, b)
             end
         else
-            throw(
-                NotPortedError{Nothing}(
-                    nothing, "PL_mb_text of $(text.encoding)", "no caller"
-                )
-            )
+            norep = _wctobuffer_all!(b, text.text)
+            norep == -1 || return norep
         end
-        text.length = length(b)                             # sizeOfBuffer(b)-1: the bytes
-        text.text = b
-        text.encoding = ENC_UTF8
-        text.canonical = false
+    elseif text.encoding === ENC_WCHAR
+        if target === ENC_ISO_LATIN_1
+            for i in 0:(text.length - 1)                # PL_demote_text(text, flags)
+                _wchar_at(text, i) > 0xff && return -2
+            end
+            text.text = UInt8[UInt8(_wchar_at(text, i)) for i in 0:(text.length - 1)]
+            text.encoding = ENC_ISO_LATIN_1
+            text.canonical = true
+            return -1
+        elseif target === ENC_UTF8
+            for i in 0:(text.length - 1)
+                utf8_put_char(b, _wchar_at(text, i))    # get_wchar(), utf8tobuffer(c, b)
+            end
+        else
+            norep = _wctobuffer_all!(b, (_wchar_at(text, i) for i in 0:(text.length - 1)))
+            norep == -1 || return norep
+        end
+    else
+        error("PL_mb_text of $(text.encoding)")         # assert(0)
     end
-    return true
+    text.length = length(b)
+    text.text = b
+    text.encoding = target
+    text.canonical = (target === ENC_ISO_LATIN_1)
+    return -1
+end
+
+# PORT: pl-text.c PL_mb_text
+# DIVERGES: the verdict is the helper `_mb_text`'s; the form without `ld` (callers `x_chars`, `PL_text_recode`) gives only the
+# verdict as a `Bool`, the `ld` form below raises what upstream's `rep_error` and `PL_demote_text` raise under `CVT_EXCEPTION`.
+"Recode the canonical `text` to the target of `flags` (pl-text.c `PL_mb_text`); false when a character has no representation."
+PL_mb_text(text::PL_chars_t, flags::UInt32)::Bool = _mb_text(text, flags) == -1
+
+"""
+Recode the canonical `text` to the target of `flags`; with `CVT_EXCEPTION` the failure is raised (pl-text.c `PL_mb_text`):
+`representation_error(encoding)` for a wide text that is not ISO Latin-1 and for a character the locale has no
+multibyte sequence for.
+"""
+function PL_mb_text(ld::PL_local_data{T}, text::PL_chars_t, flags::UInt32)::Bool where {T}
+    rc = _mb_text(text, flags)
+    rc == -1 && return true
+    (flags & CVT_EXCEPTION) == 0 && return false
+    rc == -2 && return text_representation_error(ld, ENC_ISO_LATIN_1)       # PL_demote_text's reperr
+    msg =
+        "Cannot represent char U" * string(rc; base=16, pad=4) *
+        " using current locale encoding"
+    return PL_error(ld, "", 0, msg, ERR_REPRESENTATION, mk_sym(T, :encoding))
 end
 
 # ORIGINAL (T1): the characters of `text` as a Julia `String` — the bytes the term interface holds an atom or
@@ -546,12 +653,15 @@ function _text_string(text::PL_chars_t)::String
         for i in 0:(text.length - 1)
             utf8_put_char(b, _wchar_at(text, i))
         end
+    elseif text.encoding === ENC_ANSI
+        cps = _ansi_code_points(text.text, text.length)
+        cps === nothing &&
+            error("the string of an ENC_ANSI text with an illegal multibyte sequence")
+        for c in cps
+            utf8_put_char(b, c)
+        end
     else
-        throw(
-            NotPortedError{Nothing}(
-                nothing, "the string of a text in $(text.encoding)", "no caller"
-            )
-        )
+        error("the string of a text in $(text.encoding)")       # assert(0)
     end
     return String(b)
 end
@@ -576,12 +686,13 @@ function _text_code_points(text::PL_chars_t)::Vector{Int}
             i, chr = utf8_get_char(b, i)
             push!(cps, chr)
         end
+    elseif text.encoding === ENC_ANSI
+        r = _ansi_code_points(text.text, text.length)
+        r === nothing &&
+            error("the code points of an ENC_ANSI text with an illegal multibyte sequence")
+        return r
     else
-        throw(
-            NotPortedError{Nothing}(
-                nothing, "the code points of a text in $(text.encoding)", "no caller"
-            )
-        )
+        error("the code points of a text in $(text.encoding)")  # assert(0)
     end
     return cps
 end
@@ -591,7 +702,8 @@ end
 # (`textToString`); a list is made cell by cell with `PL_unify_list` on a fresh reference and unified with
 # `term` at the end (upstream lays the cells out with `INIT_SEQ_STRING`/`EXTEND_SEQ_*` and unifies `l` with
 # `term` in `CLOSE_SEQ_STRING`: the same list, the same unification); `PL_STRING` and `PL_ATOM` canonicalise
-# `text` in place, as upstream. NOT PORTED: `ENC_ANSI` texts (no producer).
+# `text` in place, as upstream. An `ENC_ANSI` text is read with `mbrtowc` (`_ansi_code_points`); an illegal sequence in a list
+# is `representation_error(encoding)` ("cannot represent text in current locale"), in an atom or a string `text_error`.
 """
 Unify `term` with `text` made a `type`: `PL_ATOM`, `PL_STRING`, `PL_CODE_LIST` or `PL_CHAR_LIST` (pl-text.c). For
 a list, `tail` (a term reference, 0: none) is left holding the list's unbound end instead of `[]`.
@@ -600,7 +712,11 @@ function PL_unify_text(
     ld::PL_local_data{T}, term::term_t, tail::term_t, text::PL_chars_t, type::Int
 )::Bool where {T}
     if type == PL_ATOM
-        PL_canonicalise_text(text) == 1 || return false             # textToAtom(): 0
+        arc = PL_canonicalise_text(text)
+        if arc != 1
+            text_error(ld, arc)                                     # textToAtom(): text_error, 0
+            return false
+        end
         return PL_unify_atom(ld, term, _atom_from_text(T, _text_string(text)))
     elseif type == PL_STRING
         rc = PL_canonicalise_text(text)
@@ -615,7 +731,16 @@ function PL_unify_text(
                 return PL_unify_nil(ld, term)
             end
         else
-            cps = _text_code_points(text)
+            if text.encoding === ENC_ANSI
+                acps = _ansi_code_points(text.text, text.length)
+                acps === nothing && return PL_error(
+                    ld, "", 0, "cannot represent text in current locale",
+                    ERR_REPRESENTATION, mk_sym(T, :encoding)
+                )
+                cps = acps
+            else
+                cps = _text_code_points(text)
+            end
             l = PL_new_term_ref(ld)
             l == 0 && return false
             head = PL_new_term_ref(ld)
