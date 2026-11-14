@@ -844,7 +844,7 @@ fixed it or a public issue exists.
 | `src/os/pl-glob.jl` | wildcards and file-name expansion (LB2b): `compilePattern`, `matchPattern`, wildcard_match/2,3, `expand`, expand_file_name/2, directory_files/2 (`PL_predicates_from_glob`) | `src/os/pl-glob.c` |
 | `src/pl-sys.jl` | the system built-ins (Y1): getenv/2, setenv/2, unsetenv/1, get_time/1, sleep/1 (`PL_predicates_from_system`); shell/2 is left out (deferred); setlocale/3 (CT1a, `PL_predicates_from_ctype`) | `src/pl-sys.c`, `src/os/pl-ctype.c` |
 | `src/pl-dwim.jl` | since DWIM1 (R2), pl-dwim.c's two foreign predicates: `dwim_match/3` (`pl_dwim_match`, pl-ext.c:155) and `'$dwim_predicate'/2` (`pl_dwim_predicate`, NDET, pl-ext.c:156) over `dwimMatch` and its rules (`oneTypo`, `twoTransposed`, `oneInserted`, `differentSeparated`, `subWord`, `subwordsTransposed`) on NUL-terminated byte vectors (the C strings); the text of an argument is `PL_get_chars(CVT_ALL)` as ISO Latin-1 (`_dwim_chars`: a character above 0xFF fails silently), the name of an atom `stringAtom` (`_dwim_stringAtom`: a wide atom is read as UTF-32LE bytes up to the first NUL, as swipl's rows show); `dwim_match/2` is Prolog (boot/syspred.pl) | `src/pl-dwim.c` |
-| `src/pl-setup.jl` | `emptyStacks`: a new local data's stacks, with one foreign frame at the base; since V5d `allocStacks`/`init_stack` (the local stack's spare reserved above `max`) and `trim_stack`/`trimStacks` (the spare given back after an exception) | `src/pl-setup.c` |
+| `src/pl-setup.jl` | `emptyStacks`: a new local data's stacks, with one foreign frame at the base; since V5d `allocStacks`/`init_stack` (the local stack's spare reserved above `max`) and `trim_stack`/`trimStacks` (the spare given back after an exception); since TRIMST `trim_stacks/0` (`pl_trim_stacks0_va`, a call of `trimStacks!(ld, true)`; `PL_predicates_from_setup`, registered between ctype and proc as pl-ext.c:526-529) | `src/pl-setup.c` |
 | `test/core_lang/test_rules_swipl.jl` | V4b's gate: nreverse and an execution differential over random rule clauses identical to swipl (answers and determinism), the body family covered; a call failing before its frame is filled; positions after deterministic exits (MQ6) pinned and live, with the record pools held to the live records; flatness of the last-call optimisation (and its absence growing the stack); open/next/close cycles at their baseline; warm, calls and exits allocate nothing | — |
 | `test/foreign/test_builtins_swipl.jl` | V5a2's gate: the built-ins' registration; the first users as queries against a live swipl (600 random goals × 3 `occurs_check` modes), from clause bodies, and the position built-ins pinned to libswipl | — |
 | `test/core_lang/test_arith_swipl.jl` | V6c1's gate: SWI's test_arith.pl units for what is ported; the error order and terms; a bound `is/2`; the rounding to double; a live differential of 600 `is/2` goals and 300 comparisons; the interims (Q-AR1, Q-AR7) and, since V5d, Q-AR8's real cyclic culprit; the kernel-only terms | — |
@@ -2084,6 +2084,7 @@ graph LR
     pl_ext --> os_pl_files
     pl_ext --> os_pl_glob
     pl_ext --> os_pl_file
+    pl_ext --> pl_setup
     pl_ext --> pl_proc
     pl_ext --> pl_srcfile
     pl_ext --> pl_supervisor
