@@ -159,8 +159,10 @@ MUTANTS = [
          targets=TS,
          old="        proc.definition = ndef\n        resetProcedure!(proc, true)\n        unshareDefinition(def)\n",
          new="        proc.definition = ndef\n        resetProcedure!(proc, true)\n"),
-    dict(id="MOD5b-M4 the fresh definition counts one sharer where upstream's memset leaves 0 (KILL H3: p5.definition.shared == 0)",
+    # REFIT (PIN1 36a90cbb): upstream's newDefinition now sets def->shared = 1 (the memset left 0 before), so the port builds the
+    # fresh definition with 1 and the test row reads == 1; the mutation flips the same site the other way.
+    dict(id="MOD5b-M4 the fresh definition counts no sharer where upstream's newDefinition sets 1 (KILL H3: p5.definition.shared == 1)",
          file="src/pl-proc.jl", targets=TS,
-         old="cd, 0, m.index, 0 ",
-         new="cd, 0, m.index, 1 "),
+         old="ClauseRef{T}[], cd, 0, m.index, 1           # newDefinition: shared 1",
+         new="ClauseRef{T}[], cd, 0, m.index, 0           # newDefinition: shared 1"),
 ]

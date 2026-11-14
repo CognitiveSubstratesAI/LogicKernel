@@ -72,12 +72,16 @@ MUTANTS = [
     dict(id="MG7 the cleanup goal runs with the exception pending (no saveWakeup)", file=W, targets=T_CLEAN,
          old='''            wstate = saveWakeup(ld, false)
             if wstate !== nothing
-                gd = _query_gd(ld)''',
+                if arg_cleanup != 0
+                    gd = _query_gd(ld)''',
          new='''            wstate = nothing
-            gd = _query_gd(ld)
-            call_term(gd, ld, contextModule(gd, ld, fr), clean)
+            if arg_cleanup != 0
+                gd = _query_gd(ld)
+                call_term(gd, ld, contextModule(gd, ld, fr), argFrameP(f.base, arg_cleanup - 1))
+            end
             if wstate !== nothing
-                gd = _query_gd(ld)'''),
+                if arg_cleanup != 0
+                    gd = _query_gd(ld)'''),
     dict(id="MG8 an exception of the cleanup goal never replaces a pending one (no WAKEUP_KEEP_URGENT_EXCEPTION)", file=W, targets=T_CLEAN,
          old='''                        wstate.flags | WAKEUP_KEEP_URGENT_EXCEPTION''',
          new='''                        wstate.flags'''),

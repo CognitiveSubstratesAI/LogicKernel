@@ -111,8 +111,10 @@ MUTANTS = [
          old="        m = if ld.environment_frame != 0\n            contextModule(gd, ld, ld.environment_frame)\n        else\n            MODULE_user(gd).index\n        end\n    end\n    _slot_link_loc!",
          new="        m = MODULE_user(gd).index\n    end\n    _slot_link_loc!"),
     dict(id="MOD2-F1 get_procedure_find: an unqualified head is looked up in user (KILL c34)", file=P, targets=TS + TL,
-         old="    elseif ld.environment_frame != 0                    # environment_frame ? contextModule(…) : user\n",
-         new="    elseif false\n"),
+         old="    elseif ld.environment_frame != 0                    # environment_frame ? contextModule(…) : user\n"
+             "        m = gd.modules[contextModule(gd, ld, ld.environment_frame)]\n    end\n    name, arity = get_head_functor(ld, head, GP_FIND)\n",
+         new="    elseif false\n"
+             "        m = gd.modules[contextModule(gd, ld, ld.environment_frame)]\n    end\n    name, arity = get_head_functor(ld, head, GP_FIND)\n"),
     dict(id="MOD2-U1 '$suspend'/3 qualifies with user (KILL c33)", file=A, targets=TS + TA,
          old="            ld, gd.modules[contextModule(gd, ld, ld.environment_frame)].atom\n        )",
          new="            ld, mk_sym(T, :user)\n        )"),
