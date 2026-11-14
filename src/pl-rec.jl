@@ -467,17 +467,18 @@ end
 
 # PORT: pl-rec.c copyRecordToGlobal
 # DIVERGES: the block is `allocGlobalCells!`'s (it grows the stack on demand: `ensureGlobalSpace` is
-# the limit's check, see src/pl-alloc.jl); no `flags` (`ALLOW_GC`: no collector).
+# the limit's check, see src/pl-alloc.jl); `flags` goes to `ensureGlobalSpace` (G1-GC: the safe
+# points of docs/g1gc_safe_points.md pass ALLOW_GC, the collector itself is left to G1-6).
 """
-    copyRecordToGlobal(ld, copy, r) -> Bool
+    copyRecordToGlobal(ld, copy, r, flags=0) -> Bool
 
 Make term reference `copy` hold the term of record `r`, its variables fresh (pl-rec.c); false, the
 overflow raised, when its cells do not fit.
 """
 function copyRecordToGlobal(
-    ld::PL_local_data{T}, copy::term_t, r::record{T}
+    ld::PL_local_data{T}, copy::term_t, r::record{T}, flags::Int=0
 )::Bool where {T}
-    ensureGlobalSpace(ld, r.gsize) || return false
+    ensureGlobalSpace(ld, r.gsize, flags, :copyRecordToGlobal)   # G1-GC safe point: copyRecordToGlobal (flags from the caller, as upstream)
     gbase = r.gsize > 0 ? allocGlobalCells!(ld, r.gsize) : ld.gTop + 1   # gTop += r->gsize
     b = copy_info(1, zeros(Int, r.nvars), gbase, gbase)     # init_copy_vars
     copy_record(ld, copy + 1, r, b)
@@ -794,7 +795,7 @@ function pl_recordedva_va(
             if unifyKey(ld, key, rec.list.key)
                 copy = PL_new_term_ref(ld)
                 rc =
-                    copyRecordToGlobal(ld, copy, rec.record::record{T}) &&
+                    copyRecordToGlobal(ld, copy, rec.record::record{T}, ALLOW_GC) &&   # G1-GC safe point: copyRecordToGlobal
                     PL_unify(ld, term, copy)
             else
                 rc = false
@@ -841,7 +842,7 @@ function pl_recordedva_va(
                 rec = state.r::RecordRef{T}                     # next: record = state->r
 
                 copy == 0 && (copy = PL_new_term_ref(ld))
-                if !copyRecordToGlobal(ld, copy, rec.record::record{T})
+                if !copyRecordToGlobal(ld, copy, rec.record::record{T}, ALLOW_GC)   # G1-GC safe point: copyRecordToGlobal
                     err = true                                  # goto error
                     break
                 end
@@ -1015,7 +1016,7 @@ function pl_instance2_va(
     if type != DB_REF_CLAUSE                                    # RECORD: the instance branch of a record
         rref = ptr::RecordRef{T}
         t = PL_new_term_ref(ld)
-        if copyRecordToGlobal(ld, t, rref.record::record{T})    # copyRecordToGlobal(t, rref->record, ALLOW_GC)
+        if copyRecordToGlobal(ld, t, rref.record::record{T}, ALLOW_GC)    # copyRecordToGlobal(t, rref->record, ALLOW_GC)   # G1-GC safe point: copyRecordToGlobal
             return PL_unify(ld, term, t) ? FTRUE : FFALSE
         end
         return FFALSE
