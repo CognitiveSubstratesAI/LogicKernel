@@ -17,6 +17,11 @@
 #
 #   python3 -I tools/ci_compile_summary.py [--title TITLE] [--expect NAME,NAME,...] LOGDIR
 #
+# FIRST FAILING LINES (audit D-0677 item 2): after the table, per failed step, up to three lines of its log (the first
+# `Test Failed at`/`Error During Test at` with its `Expression:` and error line, the load `ERROR:` with its frame, the grep
+# hits, the files the formatter named, port_check's violations; else the last three non-blank lines) by ONE extractor,
+# first_failing(); `--first-lines STEP LOGFILE` prints them alone (tools/pre_ci.sh uses it).
+#
 # THE STATIC JOB (CIREF2, audit D-0651): the `static-summary` job of the workflow downloads the nine shards' LOGDIRs
 # (steps `sa_1` .. `sa_9`, one .log and one .rc each) into one directory and runs this with `--title` and `--expect`.
 # `--expect` lists the steps that MUST have a result: one with no .rc is a FAILED row (a shard that did not run or
@@ -171,7 +176,62 @@ def parse(step, text):
     return rows[:MAX_ROWS_PER_STEP]
 
 
+ANCHOR_TEST = re.compile(r"\s*(?:Test Failed|Error During Test) at \S+?:\d+\s*$")
+ANCHOR_CHECK = re.compile(r"check_(?:bool_atoms|where_return): \S+?:\d+: ")
+ANCHOR_DIFF = re.compile(r"diff --git a/\S+ b/\S+")
+ANCHOR_ERROR = re.compile(r"(?:ERROR: )+.*")
+ERROR_LINE = re.compile(r"\s*(?:ERROR: )?\w*(?:Error|Exception)\b")
+MAX_FIRST_LINES = 3
+
+
+def first_failing(step, text):
+    """THE ONE EXTRACTOR (audit D-0677 item 2): the FIRST failing lines of one failed step's log, at most
+    MAX_FIRST_LINES, the same for every kind of step. A Julia test failure: its `Test Failed at` / `Error During Test at`
+    line, its `Expression:` line and the first line of its error (`MethodError: ...`, `LoadError: ...`); an `ERROR:` line
+    of a failed load with its first frame in this tree; the hits of the two grep checks; the files the formatter named
+    (`diff --git`); for the step `port_check` its two-space violation lines. A log with none of these gives its last
+    non-blank lines: a failed step never gets an empty answer."""
+    lines = [ANSI.sub("", x).rstrip() for x in text.splitlines()]
+    if step == "port_check":
+        viol = [x.strip() for x in lines if x.startswith("  ") and x.strip()]
+        if viol:
+            return viol[:MAX_FIRST_LINES]
+    for i, ln in enumerate(lines):
+        if ANCHOR_TEST.match(ln):
+            out = [ln.strip()]
+            expr = err = None
+            for x in lines[i + 1 : i + 9]:
+                if ANCHOR_TEST.match(x):
+                    break
+                if expr is None and x.strip().startswith("Expression:"):
+                    expr = x.strip()
+                elif err is None and ERROR_LINE.match(x):
+                    err = x.strip()
+            return out + [x for x in (expr, err) if x]
+        if ANCHOR_CHECK.match(ln):
+            return [x for x in lines[i:] if ANCHOR_CHECK.match(x)][:MAX_FIRST_LINES]
+        if ANCHOR_DIFF.match(ln):
+            return [x for x in lines[i:] if ANCHOR_DIFF.match(x)][:MAX_FIRST_LINES]
+        if ANCHOR_ERROR.match(ln) and "Test Failed" not in ln:
+            out = [ln.strip()]
+            for x in lines[i + 1 : i + 40]:
+                f = re.search(r"@ (?:\S+ )?(\S+?\.jl):(\d+)", x) or re.search(r"\bat (\S+?\.jl):(\d+)", x)
+                if f and under_tree(f.group(1)):
+                    out.append(x.strip())
+                    break
+            return out
+    tail = [x.strip() for x in lines if x.strip()]
+    return tail[-MAX_FIRST_LINES:] if tail else ["(the step printed nothing)"]
+
+
 def main(argv):
+    if len(argv) >= 2 and argv[1] == "--first-lines":
+        # --first-lines STEP LOGFILE: the extractor alone, one line per line (tools/pre_ci.sh prints the first)
+        if len(argv) != 4 or not os.path.isfile(argv[3]):
+            print("usage: ci_compile_summary.py --first-lines STEP LOGFILE", file=sys.stderr)
+            return 2
+        print("\n".join(first_failing(argv[2], open(argv[3], errors="replace").read())))
+        return 0
     title, expect, args, i = "CI compile check", [], [], 1
     while i < len(argv):
         if argv[i] in ("--title", "--expect") and i + 1 < len(argv):
@@ -228,6 +288,14 @@ def main(argv):
     for s, rows in table:
         for f, l, m in rows:
             out.append("| %s | %s | %s | %s |" % (cell(s), cell(f), cell(l), cell(m)))
+    # the first failing lines of every failed step with a log: what the cause is, without fetching the log
+    out += ["", "### First failing lines", ""]
+    for s, _ in table:
+        if s in missing:
+            continue
+        p = os.path.join(d, s + ".log")
+        text = open(p, errors="replace").read() if os.path.isfile(p) else ""
+        out += ["**%s**" % cell(s), "", "~~~"] + [x.replace("~~~", "---")[:300] for x in first_failing(s, text)] + ["~~~", ""]
     print("\n".join(out))
     return 1
 

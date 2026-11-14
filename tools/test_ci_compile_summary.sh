@@ -126,6 +126,83 @@ python3 -I "$SUM" --expect sa_1 "$W/saempty" > /dev/null 2>&1; rc=$?
 printf 'Ambiguity #1\n' > "$W/saok/sa_1.log"
 sum_ "static: a passed shard's log is not read for findings" 0 "$W/saok" "No failure"
 
+# FIRST FAILING LINES (audit D-0677 item 2): per failed step up to three lines of its log, by ONE extractor. Each row
+# has both sides: the failing step yields its lines, a passing step (whose log holds the same text) yields none.
+mkdir -p "$W/fl"
+echo 1 > "$W/fl/test_a.rc"
+printf 'Precompiling done\nTest Failed at /home/runner/work/lk/lk/test/x.jl:12\n  Expression: a == b\n   Evaluated: 1 == 2\nMethodError: no method matching f(::Int64)\nTest Failed at /home/runner/work/lk/lk/test/x.jl:99\n  Expression: later\n' > "$W/fl/test_a.log"
+echo 0 > "$W/fl/test_ok.rc"
+printf 'Test Failed at /home/runner/work/lk/lk/test/z.jl:5\n  Expression: should_not_show\n' > "$W/fl/test_ok.log"
+echo 1 > "$W/fl/test_e.rc"
+printf 'some output\nError During Test at /home/runner/work/lk/lk/test/y.jl:30\n  Got exception outside of a @test\n  LoadError: UndefVarError: `g` not defined\n  in expression starting at y.jl:30\n' > "$W/fl/test_e.log"
+echo 1 > "$W/fl/fmt.rc"
+printf 'ci_compile_fmt: 2 changed .jl file(s)\ndiff --git a/src/pl-p.jl b/src/pl-p.jl\n--- a/src/pl-p.jl\ndiff --git a/src/pl-q.jl b/src/pl-q.jl\n--- a/src/pl-q.jl\n' > "$W/fl/fmt.log"
+echo 1 > "$W/fl/port_check.rc"
+printf 'port_check: 9 file(s)\n  src/pl-r.jl:7: marker names no function\n  docs/inv.md: table differs\n  third line\n  fourth line\n' > "$W/fl/port_check.log"
+echo 1 > "$W/fl/bool_atoms.rc"
+printf 'check_bool_atoms: test/t.jl:9: hit one\ncheck_bool_atoms: test/t.jl:11: hit two\ncheck_bool_atoms: 2 hit(s)\n' > "$W/fl/bool_atoms.log"
+echo 1 > "$W/fl/odd.rc"
+printf 'line one\n\nline two\nline three\nline four\n\n' > "$W/fl/odd.log"
+# fl_check TOOL — the number of the rows below that do NOT hold for the summary tool TOOL (0 for the real tool)
+fl_check() {
+    local out sec n=0
+    out="$(python3 -I "$1" "$W/fl" 2>&1)"
+    sec="$(printf '%s\n' "$out" | sed -n '/^### First failing lines/,$p')"
+    has() { printf '%s\n' "$sec" | grep -qxF -- "$1"; }
+    # (a) the three lines of a Julia test failure, the first one only (not the later failure)
+    has 'Test Failed at /home/runner/work/lk/lk/test/x.jl:12' && has 'Expression: a == b' && has 'MethodError: no method matching f(::Int64)' || n=$((n + 1))
+    ! has 'Test Failed at /home/runner/work/lk/lk/test/x.jl:99' || n=$((n + 1))
+    # (a) a passing step yields none, though its log holds a Test Failed text
+    ! printf '%s' "$sec" | grep -qF 'should_not_show' && ! printf '%s' "$sec" | grep -qF '**test_ok**' || n=$((n + 1))
+    # an Error During Test: its line and its error line, not "Got exception"
+    has 'Error During Test at /home/runner/work/lk/lk/test/y.jl:30' && has 'LoadError: UndefVarError: `g` not defined' || n=$((n + 1))
+    ! printf '%s' "$sec" | grep -qF 'Got exception' || n=$((n + 1))
+    # (b) fmt: the files named; port_check: the violation lines, three at most
+    has 'diff --git a/src/pl-p.jl b/src/pl-p.jl' && has 'diff --git a/src/pl-q.jl b/src/pl-q.jl' || n=$((n + 1))
+    has 'src/pl-r.jl:7: marker names no function' && has 'docs/inv.md: table differs' && has 'third line' && ! has 'fourth line' || n=$((n + 1))
+    has 'check_bool_atoms: test/t.jl:9: hit one' && has 'check_bool_atoms: test/t.jl:11: hit two' && ! printf '%s' "$sec" | grep -qF '2 hit(s)' || n=$((n + 1))
+    # (c) nothing recognisable: the last three non-blank lines, never empty
+    has 'line two' && has 'line three' && has 'line four' && ! has 'line one' || n=$((n + 1))
+    echo "$n"
+}
+n="$(fl_check "$SUM")"
+[ "$n" = 0 ] && ok "first failing lines: Test Failed / Error During Test / fmt / port_check / grep hits / the last three lines, a passing step none ($n of 8 rows broken)" || bad "first failing lines: $n row group(s) do not hold"
+# a failed step with an empty or missing log is never an empty answer
+mkdir -p "$W/fl2"; echo 2 > "$W/fl2/e.rc"; : > "$W/fl2/e.log"
+sum_ "first failing lines: an empty log of a failed step says so" 1 "$W/fl2" "(the step printed nothing)"
+# the extractor alone (what tools/pre_ci.sh prints)
+out="$(python3 -I "$SUM" --first-lines test_a "$W/fl/test_a.log")"
+[ "$(printf '%s\n' "$out" | sed -n 1p)" = 'Test Failed at /home/runner/work/lk/lk/test/x.jl:12' ] && [ "$(printf '%s\n' "$out" | wc -l)" = 3 ] && ok "--first-lines prints the three lines, the failing one first" || bad "--first-lines" "$out"
+python3 -I "$SUM" --first-lines test_a "$W/nowhere.log" > /dev/null 2>&1; rc=$?
+[ "$rc" = 2 ] && ok "--first-lines without the log is refused (exit 2)" || bad "--first-lines usage rc $rc"
+# MUTATION PROOF at verdict level: a hand-broken copy of the tool must be caught by the rows above
+fl_mutant() {
+    local label="$1" old="$2" new="$3" cnt
+    cp "$SUM" "$W/broken.py"
+    python3 - "$W/broken.py" "$old" "$new" <<'PYEOF'
+import sys
+p, old, new = sys.argv[1:4]
+s = open(p).read()
+assert s.count(old) == 1, "mutant text matches %d times: %r" % (s.count(old), old)
+open(p, "w").write(s.replace(old, new))
+PYEOF
+    [ $? = 0 ] || { bad "mutant $label: could not be built"; return; }
+    cnt="$(fl_check "$W/broken.py")"
+    [ "$cnt" != 0 ] && ok "mutant caught: $label ($cnt row group(s) fail)" || bad "mutant SURVIVED: $label"
+}
+fl_mutant "no Expression line" 'out + [x for x in (expr, err) if x]' 'out + [x for x in (err,) if x]'
+fl_mutant "no error line" 'out + [x for x in (expr, err) if x]' 'out + [x for x in (expr,) if x]'
+fl_mutant "the LAST failure instead of the first" 'for i, ln in enumerate(lines):
+        if ANCHOR_TEST' 'for i, ln in reversed(list(enumerate(lines))):
+        if ANCHOR_TEST'
+fl_mutant "four port_check lines" 'return viol[:MAX_FIRST_LINES]' 'return viol[:4]'
+fl_mutant "fmt files dropped" 'return [x for x in lines[i:] if ANCHOR_DIFF.match(x)][:MAX_FIRST_LINES]' 'return [x for x in lines[i:] if ANCHOR_DIFF.match(x)][:1]'
+fl_mutant "grep hits cut to one" 'return [x for x in lines[i:] if ANCHOR_CHECK.match(x)][:MAX_FIRST_LINES]' 'return [x for x in lines[i:] if ANCHOR_CHECK.match(x)][:1]'
+fl_mutant "fallback the FIRST lines" 'return tail[-MAX_FIRST_LINES:] if tail' 'return tail[:MAX_FIRST_LINES] if tail'
+fl_mutant "a passing step also listed" 'for s, _ in table:
+        if s in missing:' 'for s in sorted(f[:-3] for f in os.listdir(d) if f.endswith(".rc")):
+        if s in missing:'
+
 # the wrapper
 export CI_COMPILE_LOGS="$W/wrap"
 bash "$RUN" okstep echo hello > /dev/null; rc=$?
