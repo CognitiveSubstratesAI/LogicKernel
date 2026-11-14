@@ -3935,6 +3935,7 @@ const _DISPATCH_MANIFEST_TUPLE = (
     (LK.isFirstVarSet!, Tuple{BitVector, Int}, true),
     (LK.isFirstVar, Tuple{BitVector, Int}, true),
     (LK.MSB, Tuple{Int}, true), (LK.MSB, Tuple{UInt32}, true),
+    (LK.POPCOUNT64, Tuple{UInt64}, true), (LK.LSB64, Tuple{UInt64}, true),   # pl-inline.h, new at cf6960c2
     (LK.MA_NEEDS_TRANSPARENT, Tuple{UInt8}, true),                       # MOD4
     (LK.clean_index_key, Tuple{UInt64}, true), (LK.hashIndex, Tuple{UInt64, UInt32}, true),
     (LK._loc_rank, Tuple{UInt8, UInt64}, true),   # the order's tag rank of a location (L1d-1): no T

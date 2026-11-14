@@ -21,6 +21,8 @@ using LogicKernel:
     MurmurHashAligned2,
     MurmurHashWide,
     _MurmurHashWide_blocks,
+    POPCOUNT64,
+    LSB64,
     MURMUR_SEED
 
 # TERM TYPES PER CHUNK: ALL — the term layer: src/pl-termhash.jl
@@ -235,6 +237,71 @@ end
     @test MurmurHashWide(UInt32[0xdc00, 0xdc00], 8, MURMUR_SEED) == 270663950
     @test MurmurHashWide(UInt16[0xd7ff, 0xdc00], 4, MURMUR_SEED) == 1653718646     # d7ff is no high surrogate
     @test MurmurHashWide(UInt32[0xd7ff, 0xdc00], 8, MURMUR_SEED) == 1653718646
+end
+
+# ── POPCOUNT64 and LSB64 (pl-inline.h, NEW at swipl-devel cf6960c2) ─────────────────────────────────
+# TARGET-ONLY: pin when the oracle moves to cf6960c2. Hand-written from the target's C (the bit counts of the
+# literals are exact), plus the target's own portable shift ladder (pl-inline.h, the arm without `__builtin_ctzll`)
+# as the reference for LSB64 on pseudo-random words. They live in this file with the hashes that use them upstream
+# (atom hashing, the generational GC's bitmaps), not because the term hash does.
+"The portable arm of upstream's LSB64, written out (pl-inline.h:347-355)."
+function _lsb64_ladder(i::UInt64)::UInt32
+    j = UInt32(0)
+    if (i & 0xffffffff) == 0
+        i >>= 32
+        j += 32
+    end
+    if (i & 0xffff) == 0
+        i >>= 16
+        j += 16
+    end
+    if (i & 0xff) == 0
+        i >>= 8
+        j += 8
+    end
+    if (i & 0xf) == 0
+        i >>= 4
+        j += 4
+    end
+    if (i & 0x3) == 0
+        i >>= 2
+        j += 2
+    end
+    if (i & 0x1) == 0
+        j += 1
+    end
+    return j
+end
+
+@testset "POPCOUNT64: the number of set bits" begin
+    for (i, want) in (
+        (0x0000000000000000, 0), (0x0000000000000001, 1), (0x00000000000000ff, 8),
+        (0x8000000000000001, 2), (0x5555555555555555, 32), (0xffffffffffffffff, 64),
+        (0x0123456789abcdef, 32)
+    )
+        @test POPCOUNT64(i) === UInt32(want)
+    end
+    @test all(k -> POPCOUNT64(UInt64(1) << k) == 1, 0:63)
+    @test all(k -> POPCOUNT64(typemax(UInt64) >> k) == 64 - k, 0:63)
+end
+
+@testset "LSB64: the index of the lowest set bit" begin
+    for (i, want) in (
+        (0x0000000000000001, 0), (0x0000000000000008, 3), (0x00000000ffff0000, 16),
+        (0x0000000100000000, 32), (0x00000a0000000000, 41), (0x8000000000000000, 63),
+        (0xffffffffffffffff, 0), (0x0000000000000006, 1)
+    )
+        @test LSB64(i) === UInt32(want)
+    end
+    @test all(k -> LSB64(UInt64(1) << k) == k, 0:63)
+    # every bit above the lowest one is ignored
+    @test all(k -> LSB64((typemax(UInt64) >> k) << k) == k, 0:63)
+    rng = Random.MersenneTwister(20261114)
+    for _ in 1:2000
+        i = rand(rng, UInt64) >> rand(rng, 0:62) << rand(rng, 0:62)
+        i == 0 && continue
+        @test LSB64(i) == _lsb64_ladder(i)
+    end
 end
 
 @testset "incremental MurmurHash (hash_state)" begin

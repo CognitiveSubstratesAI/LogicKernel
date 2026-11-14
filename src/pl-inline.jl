@@ -19,6 +19,19 @@
 "Index of the most significant set bit: `MSB(1) == 0`, `MSB(2) == 1` (pl-inline.h)."
 MSB(i::Integer)::Int = 63 - leading_zeros(UInt64(i))
 
+# PORT: pl-inline.h POPCOUNT64
+# synced to swipl-devel cf6960c2 (pl-inline.h:318-332): new at the target, not at the pin.
+# DIVERGES: only the `__builtin_popcountll` arm; the MSVC arms (`__popcnt64`, two `__popcnt`) count the same bits.
+"The number of set bits of `i` (pl-inline.h)."
+POPCOUNT64(i::UInt64)::UInt32 = count_ones(i) % UInt32
+
+# PORT: pl-inline.h LSB64
+# synced to swipl-devel cf6960c2 (pl-inline.h:334-358): new at the target, not at the pin.
+# DIVERGES: only the `__builtin_ctzll` arm; the MSVC arm and the portable shift ladder give the same index for
+# every `i` but 0, which the C comment excludes ("i must not be 0"): `LSB64(0)` is 64 here (the ladder's is 63).
+"The index of the lowest set bit of `i`; `LSB64(1) == 0`, `LSB64(8) == 3`. `i` must not be 0 (pl-inline.h)."
+LSB64(i::UInt64)::UInt32 = trailing_zeros(i) % UInt32
+
 # PORT: pl-inline.h consPtr
 # DIVERGES: `p` is a 1-based POSITION in the stack the storage bits of `ts` name (`STG_GLOBAL` the
 # global stack, `STG_LOCAL` the local stack), where upstream's is an address (`ptr2word`).
