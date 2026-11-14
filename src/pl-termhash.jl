@@ -39,6 +39,16 @@
 #      where upstream overwrites their cells and restores them afterwards.
 #   4. BYTE ORDER. A word goes into the digest as its little-endian bytes — what upstream hashes
 #      on the machines it runs on — on every host.
+#   5. SYNCED TO cf6960c2 (the pin 18168e62 is the file-level upstream commit above; it moves at the end
+#      of the sync). Upstream now hashes data by VALUE and in fixed-width little-endian: `le32()` and
+#      `le64()` for the words, a number by value (`number_hash_data()`, `add_mpz_hash_data()`: an integer
+#      that fits 64 bits as int64_t, a larger one as sign and big-endian magnitude, a rational as its two
+#      parts, a float as its double), text by length and characters (`hash_text()`, `hash_wide_text()`,
+#      `hash_atom_text()`, wide text as little-endian code points). Those helpers are unwritten here,
+#      by items 1 and 4: a symbol contributes its `sym_hash`, a grounded value its
+#      `gnd_key` (value-based by construction, with no cell layout to hide), and every word goes in as
+#      little-endian bytes. The one change the kernel takes is the numbered variable (`HASH_VAR`, see
+#      `variant_sha1_walk`). `update_cycle` is unwritten too (item 3: no cycles).
 
 # ── term_hash/2 ─────────────────────────────────────────────────────────────────────────────────
 # PORT: pl-termhash.c th_data
@@ -54,6 +64,11 @@ mutable struct th_data{T}
 end
 
 # PORT: pl-termhash.c primitiveHashValue
+# DIVERGES: synced to cf6960c2: an atom's name hash goes in as `le32(hash_value)`, an inline integer is
+# tested by `isTaggedInt` (was `isInlineInt`) and hashed as `le64(value)`, and every other number
+# (the integers of more than 64 bits, the rationals, the floats) is hashed by value through
+# `number_hash_data()` instead of its cell bytes; see file-wide item 5: the `gnd_key` is by value
+# and `MurmurHashAligned2` takes its words little-endian, so no change here.
 """
 Fold the atomic term `term` into `hval`; `nothing` for a variable (pl-termhash.c). An atom adds the
 4 low bytes of its `sym_hash` (upstream: its `unsigned int` name hash), a grounded value the 8
@@ -72,6 +87,7 @@ function primitiveHashValue(term, hval::UInt32)::Union{Nothing, UInt32}
 end
 
 # PORT: pl-termhash.c start_term as th_start_term
+# DIVERGES: synced to cf6960c2: the name's hash goes in as `le32(hash_value)`; byte order only, item 4.
 """
 A node for compound `t` below node `parent`: its hash starts from `MURMUR_SEED` and its name's
 hash — `sym_hash` of a symbol head, 0 for any other head (pl-termhash.c `start_term`).
@@ -86,6 +102,8 @@ function th_start_term(t, parent::Int)
 end
 
 # PORT: pl-termhash.c next_arg as th_next_arg
+# DIVERGES: synced to cf6960c2: the child's hash goes into the parent as `le32(myhash)`; byte order
+# only, item 4. (No `in_cycle`, item 3.)
 """
 The next argument to hash, or `nothing` when the root is done; a finished node folds its hash into
 its parent's, and `workp` moves up to the parent (pl-termhash.c `next_arg`).
@@ -111,6 +129,8 @@ function th_next_arg!(
 end
 
 # PORT: pl-termhash.c termHashValue
+# DIVERGES: synced to cf6960c2: the reused hash of a shared subterm goes in as `le32(shash)`; there is
+# no such reuse here (item 3), so nothing changes.
 "The hash of `p`, or `nothing` when it is not ground (pl-termhash.c)."
 function termHashValue(p)::Union{Nothing, UInt32}
     if kind(p) !== EXPR
@@ -139,6 +159,8 @@ function termHashValue(p)::Union{Nothing, UInt32}
 end
 
 # PORT: pl-termhash.c term_hash as pl_term_hash
+# DIVERGES: synced to cf6960c2: upstream unifies the hash with `PL_unify_int64((int64_t)hash)` (was
+# `PL_unify_integer(hash)`: the same on a 64-bit `long`); this function returns the UInt32 itself.
 """
     pl_term_hash(t) -> Union{UInt32, Nothing}
 
@@ -521,7 +543,13 @@ function _HASH_word!(state::sha1_state, w::UInt64)::Nothing
 end
 
 # PORT: pl-termhash.c variant_sha1 as variant_sha1_walk
-# DIVERGES: what each kind of subterm writes (see the file header): a variable `V` and its numbered
+# DIVERGES: synced to cf6960c2: a variable is hashed by its NUMBER (`HASH_VAR`: `V` and `le64(valTagged(*p))`,
+# which is the number `i`), not by the marked cell, which depends on the cell layout; the digest of a
+# term with a variable CHANGES by this (the target's C). An atom is `hash_atom_text()`, a number is
+# hashed by value (`i` and the int64, or `I`/`F` and the sign-and-magnitude, rational or double bytes)
+# and a string is `S`, its length and its characters; the compound's arity is `le64(arity)` (an
+# 8-byte word, as before); the kernel keeps `A`/`G`/`g` and the `sym_hash`/`gnd_key` words, file-wide
+# items 1 and 5. The rest of this paragraph is as at the pin: what each kind of subterm writes (see the file header): a variable `V` and its numbered
 # word, as upstream; an atom `A`, its `sym_hash` and — as upstream — its blob type's name, `text`
 # or `reserved_symbol`; a grounded value `G` and its `gnd_key`, or `g` alone when it has none; a
 # compound `T`, its head's `sym_hash` and its arity, or `C` and its child count when its head is
@@ -539,7 +567,7 @@ function variant_sha1_walk!(agenda::ac_term_agenda{T}, state::sha1_state)::Nothi
                 state.var_count[] += 1
             end
             _HASH_char!(state, 'V')
-            _HASH_word!(state, (UInt64(i) << LMASK_BITS) | TAG_VAR | MARK_MASK)
+            _HASH_word!(state, UInt64(i))   # HASH_VAR: the variable's number, not its marked cell
         elseif k === SYM
             _HASH_char!(state, 'A')
             _HASH_word!(state, sym_hash(p))
