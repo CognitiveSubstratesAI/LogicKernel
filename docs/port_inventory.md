@@ -199,7 +199,7 @@ how many of the upstream file's functions are ported.
 | swipl-devel `src/pl-tabling.c` | code | `18168e629eab` | `src/pl-tabling.jl` | 319 | 147 |
 | swipl-devel `src/pl-tabling.c` | code | `18168e629eab` | `src/pl-trie.jl` | 0 | 0 |
 | swipl-devel `src/pl-tabling.h` | code | `18168e629eab` | `src/pl-incl.jl` | 30 | 7 |
-| swipl-devel `src/pl-termhash.c` | code | `18168e629eab` | `src/pl-termhash.jl` | 37 | 9 |
+| swipl-devel `src/pl-termhash.c` | code | `18168e629eab` | `src/pl-termhash.jl` | 37 | 14 |
 | swipl-devel `src/pl-termhash.h` | code | `18168e629eab` | `src/pl-termhash.jl` | 3 | 1 |
 | swipl-devel `src/pl-termwalk.c` | code | `18168e629eab` | `src/pl-termwalk.jl` | 21 | 8 |
 | swipl-devel `src/pl-thread.c` | code | `18168e629eab` | `src/pl-thread.jl` | 7 | 5 |
@@ -351,7 +351,7 @@ checkout is pulled.
 | swipl-devel `src/pl-sys.c` | `18168e629eab` | 6 | 7 | 3 | src/pl-sys.jl |
 | swipl-devel `src/pl-tabling.c` | `18168e629eab` | 218 | 452 | 122 | src/os/pl-prologflag.jl, src/pl-incl.jl, src/pl-tabling.jl, src/pl-trie.jl |
 | swipl-devel `src/pl-tabling.h` | `18168e629eab` | 0 | 0 | 0 | src/pl-incl.jl |
-| swipl-devel `src/pl-termhash.c` | `18168e629eab` | 12 | 16 | 3 | src/pl-termhash.jl |
+| swipl-devel `src/pl-termhash.c` | `18168e629eab` | 12 | 16 | 8 | src/pl-termhash.jl |
 | swipl-devel `src/pl-termhash.h` | `18168e629eab` | 0 | 0 | 0 | src/pl-termhash.jl |
 | swipl-devel `src/pl-termwalk.c` | `18168e629eab` | 16 | 28 | 5 | src/pl-termwalk.jl |
 | swipl-devel `src/pl-thread.c` | `18168e629eab` | 7 | 268 | 5 | src/pl-thread.jl |
@@ -381,7 +381,7 @@ checkout is pulled.
 | swipl-devel `tests/db/test_db.pl` | `18168e629eab` | 2 | 10 | 0 | test/db/test_db.jl |
 | swipl-devel `tests/db/test_jit.pl` | `18168e629eab` | 16 | 21 | 0 | test/db/test_jit.jl |
 | swipl-devel `tests/rational/test_ieee754.pl` | `18168e629eab` | 0 | 15 | 0 | test/rational/test_ieee754.jl |
-| **total** | | **2453** | **5354** | **1448** | |
+| **total** | | **2453** | **5354** | **1453** | |
 <!-- END GENERATED coverage -->
 
 ### Not ported: unreachable upstream

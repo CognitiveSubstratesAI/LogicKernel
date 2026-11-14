@@ -439,3 +439,29 @@ end
     @test pl_variant_sha1(_kc(:f, nil)) != pl_variant_sha1(_kc(:f, qnil))
     @test !is_variant_ptr(nil, qnil)
 end
+
+# TARGET-ONLY: pin when the oracle moves to cf6960c2 (swipl-devel cf6960c2 pl-termhash.c:177-186, 640, 652). The expectation is written by hand from the TARGET's pl-termhash.c
+# `variant_sha1` and `HASH_VAR` (the local swipl is the pin, which hashes the variable's marked cell, a cell-layout word): a
+# numbered variable is hashed as "V" and `le64(valTagged(*p))`, which is its number — 0 for the first variable met, 1 for the
+# second, a repeat keeps its number. The digests are recomputed here with Julia's SHA stdlib and MurmurHashAligned2 from the
+# bytes the walk writes (the digest is not swipl's value, file-wide DIVERGES 1; only the bytes of a variable are the target's).
+@testset "SYNC-E: a variable is hashed by its number (pl-termhash.c HASH_VAR, swipl-devel cf6960c2, TARGET-ONLY)" begin
+    le64(w) = UInt8[((UInt64(w) >> (8 * j)) % UInt8) for j in 0:7]
+    vword(n) = vcat(UInt8['V'], le64(n))
+    sha(bytes) = bytes2hex(SHA.sha1(bytes))
+    mur(bytes) = Int(
+        MurmurHashAligned2(bytes, length(bytes), MURMUR_SEED) &
+        LogicKernel.PLMAXTAGGEDINT32
+    )
+    x, y = _kv(1), _kv(2)
+    @test pl_variant_sha1(x) == sha(vword(0))
+    @test pl_variant_hash(x) == mur(vword(0))
+    @test pl_variant_sha1(_kv(7)) == pl_variant_sha1(x)           # the number is not the variable's own key
+    t = _kc(:f, x, y, x)
+    head = vcat(UInt8['T'], le64(LogicKernel.sym_hash(LogicKernel.child(t, 1))), le64(3))
+    want = vcat(head, vword(0), vword(1), vword(0))
+    @test pl_variant_sha1(t) == sha(want)
+    @test pl_variant_hash(t) == mur(want)
+    @test pl_variant_sha1(_kc(:f, y, x, y)) == pl_variant_sha1(t)   # a variant: the same numbers
+    @test pl_variant_sha1(_kc(:f, x, x, y)) != pl_variant_sha1(t)
+end
