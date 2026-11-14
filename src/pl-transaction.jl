@@ -469,7 +469,7 @@ end
 "The options of `\$transaction/2`: `bulk(Bool)` (pl-transaction.c)."
 const transaction_options = (PL_option_t(:bulk, OPT_BOOL),)
 
-# PORT: pl-transaction.c pl_transaction2
+# PORT: pl-transaction.c transaction as pl_transaction2_va
 # (PRED_IMPL("$transaction", 2, transaction, PL_FA_TRANSPARENT), pl-transaction.c:677-691)
 "`'\$transaction'(:Goal, +Options)`: run `Goal` in a transaction, `bulk(true)` raising the events at the commit (pl-transaction.c)."
 function pl_transaction2_va(
@@ -487,7 +487,7 @@ function pl_transaction2_va(
     return transaction(_query_gd(ld), ld, A1, 0, 0, flags) ? FTRUE : FFALSE
 end
 
-# PORT: pl-transaction.c pl_transaction3
+# PORT: pl-transaction.c transaction as pl_transaction3_va
 # (PRED_IMPL("$transaction", 3, transaction, PL_FA_TRANSPARENT), pl-transaction.c:692-697)
 "`'\$transaction'(:Goal, :Constraint, +Mutex)`: run `Goal` and then `Constraint` in a transaction (pl-transaction.c)."
 function pl_transaction3_va(
@@ -498,7 +498,7 @@ function pl_transaction3_va(
     return transaction(_query_gd(ld), ld, A1, A2, A3, TR_TRANSACTION) ? FTRUE : FFALSE
 end
 
-# PORT: pl-transaction.c pl_snapshot1
+# PORT: pl-transaction.c snapshot as pl_snapshot1_va
 # (PRED_IMPL("$snapshot", 1, snapshot, PL_FA_TRANSPARENT), pl-transaction.c:699-704)
 "`'\$snapshot'(:Goal)`: run `Goal` in a transaction that is always discarded (pl-transaction.c)."
 function pl_snapshot1_va(
@@ -521,7 +521,7 @@ function add_update(
            PL_unify(ld, head, tmp)
 end
 
-# PORT: pl-transaction.c pl_transaction_updates1
+# PORT: pl-transaction.c transaction_updates as pl_transaction_updates1_va
 # (PRED_IMPL("transaction_updates", 1, transaction_updates, 0), pl-transaction.c:770-796)
 "`transaction_updates(-Updates)`: the clause references the running transaction changed, as `asserta/1`, `assertz/1` and `erased/1` terms in order (pl-transaction.c)."
 function pl_transaction_updates1_va(

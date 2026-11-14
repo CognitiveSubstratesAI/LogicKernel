@@ -23,6 +23,8 @@
 # UPSTREAM: swipl-devel src/pl-trie.c @ 18168e629eab
 # UPSTREAM: swipl-devel src/pl-trie.h @ 18168e629eab
 # UPSTREAM: swipl-devel src/pl-indirect.h @ 18168e629eab
+# UPSTREAM: swipl-devel src/pl-transaction.h @ 18168e629eab
+# UPSTREAM: swipl-devel src/pl-thread.h @ 18168e629eab
 # CLASS: code
 # COPYRIGHT: Copyright (c)  1985-2026, University of Amsterdam,
 # COPYRIGHT: VU University Amsterdam
@@ -1291,7 +1293,7 @@ ld_transaction{T}() where {T} =
         nothing
     )
 
-# PORT: pl-transaction.c current_transaction
+# PORT: pl-transaction.c current_transaction as tr_enum
 # DIVERGES: the redo state of `current_transaction/1` is a record of the local data's pool (`ld.transaction_enums`,
 # `foreign_state_pool`), its index the `REDO_PTR` context, where upstream's context is the `tr_stack` pointer itself; the record
 # holds that stack level. A pool record is REUSED: the first redo sets `stack` again.
