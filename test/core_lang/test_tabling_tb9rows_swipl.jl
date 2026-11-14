@@ -279,7 +279,8 @@ _t9_check_unit(_T9_TRIE)
     # TB9-abolish-trie keeps [1,2], so the text of the mutant's answer is the pin with its tail changed.
     for u in (_T9_NM, _T9_NL)
         ids = [id for (id, _) in u.cases]
-        for (k, tail) in (("ab2_destroy_p", ",no,[1,2],[1])"), ("ab2_destroy_q", ",no,[1],[1,2])"))
+        for (k, tail) in
+            (("ab2_destroy_p", ",no,[1,2],[1])"), ("ab2_destroy_q", ",no,[1],[1,2])"))
             pin = u.pinned[findfirst(==(k), ids)::Int]
             @test occursin("-[1,2],no,[1],[1])", pin)             # in the transaction the tables answered [1,2]; after it [1]
             mutant = replace(pin, ",no,[1],[1])" => tail)           # the table that is not abolished keeps its answer
@@ -287,7 +288,7 @@ _t9_check_unit(_T9_TRIE)
             @test _t9_diff([mutant], [pin]) == [1]
         end
         @test u.pinned[findfirst(==("ab2_destroy_p"), ids)::Int] ==
-              u.pinned[findfirst(==("ab2_none"), ids)::Int]         # an abolished table changes no other table's rollback
+            u.pinned[findfirst(==("ab2_none"), ids)::Int]         # an abolished table changes no other table's rollback
     end
     # TRIE-UPDATES: the clause existed before the transaction, no update is listed for its erase, the user clause's erase is listed.
     ids = [id for (id, _) in _T9_TRIE_CASES]

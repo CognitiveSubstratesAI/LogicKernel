@@ -380,6 +380,7 @@ const _T5_GROUPS_LIVE = vcat(_T5_GROUPS, _T5_GROUPS_ENG1)
 # L2 kills TB5-L2 (l202: no table is left, l203: evaluated twice)
 @testset "TB5-ROWS simplification, answer completion and abolish as swipl's: $(g.label)" for g in
                                                                                              _T5_GROUPS_RUN
+
     gd, ld, st = _T5_load(g.program, g.cases)
     @test st == "ok"
     kl = String[st]
@@ -423,9 +424,11 @@ end
     @test startswith(split(_T5_ans("A3P", "a303"), "(")[3], "i1,")
     @test startswith(split(_T5_ans("A3Q", "a305"), "(")[3], "i0,")
     @test _T5_ans("A3N", "a301") != _T5_ans("A3P", "a303")         # the counter distinguishes the two programs
-    @test _T5_atoms(_T5_ans("A3N", "a301")) == ["lp"] && _T5_atoms(_T5_ans("A3P", "a303")) == ["lp"]
+    @test _T5_atoms(_T5_ans("A3N", "a301")) == ["lp"] &&
+        _T5_atoms(_T5_ans("A3P", "a303")) == ["lp"]
     # S4: the model sp false, sa true, sb false, se true, in both clause orders
-    @test _T5_atoms(_T5_ans("S4A", "s402")) == ["sp", "false", "sa", "true", "sb", "false", "se", "true"]
+    @test _T5_atoms(_T5_ans("S4A", "s402")) ==
+        ["sp", "false", "sa", "true", "sb", "false", "se", "true"]
     @test _T5_ans("S4A", "s402")[(findfirst('(', _T5_ans("S4A", "s402"))):end] ==
         _T5_ans("S4B", "s404")[(findfirst('(', _T5_ans("S4B", "s404"))):end]
     @test _T5_atoms(_T5_ans("S4A", "s403")) == ["true"]
@@ -433,14 +436,21 @@ end
     # L2: the abolished incomplete table is gone and evaluated twice; the control keeps its table and is evaluated once
     @test _T5_atoms(_T5_ans("L2", "l202")) == ["absent"]
     @test _T5_atoms(_T5_ans("L2", "l204")) == ["present"]
-    @test endswith(_T5_ans("L2", "l203"), ",i2))") && endswith(_T5_ans("L2", "l205"), ",i3))")
+    @test endswith(_T5_ans("L2", "l203"), ",i2))") &&
+        endswith(_T5_ans("L2", "l205"), ",i3))")
     @test _T5_ans("L2", "l202") != _T5_ans("L2", "l204")
     # A7: the orphan goes with its dependent, stays while the dependent stays; O5: the sweep leaves 6 of the 1105 tables
-    @test _T5_atoms(_T5_ans("A7", "a702")) == _T5_atoms(_T5_ans("A7", "a703")) == ["ad", "ap"]
+    @test _T5_atoms(_T5_ans("A7", "a702")) == _T5_atoms(_T5_ans("A7", "a703")) ==
+        ["ad", "ap"]
     @test endswith(_T5_ans("A7", "a704"), "(nil)")
-    @test _T5_ans("O5", "o504") != _T5_ans("O5", "o503") && endswith(_T5_ans("O5", "o504"), "(i6)")
-    @test all(endswith(_T5_ans("O5", id), r"\(i1[0-9]{3}\)") for id in ("o501", "o502", "o503"))
-    @test isempty(intersect(Set(g.key for g in _T5_GROUPS_RUN), Set(g.key for g in _T5_GROUPS_ENG1)))
+    @test _T5_ans("O5", "o504") != _T5_ans("O5", "o503") &&
+        endswith(_T5_ans("O5", "o504"), "(i6)")
+    @test all(
+        endswith(_T5_ans("O5", id), r"\(i1[0-9]{3}\)") for id in ("o501", "o502", "o503")
+    )
+    @test isempty(
+        intersect(Set(g.key for g in _T5_GROUPS_RUN), Set(g.key for g in _T5_GROUPS_ENG1))
+    )
 end
 
 @testset "the TB5-ROWS pins are swipl's (live, when swipl is on PATH)" begin

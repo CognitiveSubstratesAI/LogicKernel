@@ -204,12 +204,18 @@ cd(R) :- ( '$tbl_collect_mono_dep' -> R = yes ; R = no ).
 
 const _T7_CASES_COLLECT = [
     ("c01", raw"cd(R)"),
-    ("c02", raw"'$tbl_propagate_start'(Old), cd(A), '$tbl_propagate_end'(Old), cd(B), R = r(Old, A, B)"),
+    (
+        "c02",
+        raw"'$tbl_propagate_start'(Old), cd(A), '$tbl_propagate_end'(Old), cd(B), R = r(Old, A, B)"
+    ),
     ("c03", raw"findall(X, cm(X), L), R = L"),
     ("c04", raw"findall(X, cn(X), L), R = L"),
     ("c05", raw"findall(X, co(X), L), R = L"),
     ("c06", raw"findall(X, cmm(X), L), R = L"),
-    ("c07", raw"'$tbl_propagate_start'(O1), '$tbl_propagate_start'(O2), '$tbl_propagate_end'(O2), cd(A), '$tbl_propagate_end'(O1), cd(B), R = r(O1, O2, A, B)")
+    (
+        "c07",
+        raw"'$tbl_propagate_start'(O1), '$tbl_propagate_start'(O2), '$tbl_propagate_end'(O2), cd(A), '$tbl_propagate_end'(O1), cd(B), R = r(O1, O2, A, B)"
+    )
 ]
 
 const _T7_PINS_COLLECT = [
@@ -240,14 +246,38 @@ lq(X) :- lp(X).
 """
 
 const _T7_CASES_LAZY = [
-    ("l01", raw"forall(member(G, [lp(_), mp(_), lq(_)]), forall(G, true)), ts(lp(_), A), ts(mp(_), B), ts(lq(_), C), R = r(A, B, C)"),
-    ("l02", raw"assertz(ld(1)), ts(lp(_), A), ts(mp(_), B), ts(lq(_), C), qa(lp(_), Q1), qa(lq(_), Q2), R = r(s(A, B, C), q(Q1, Q2))"),
-    ("l03", raw"assertz(ld(2)), ts(lp(_), A), qa(lp(_), Q1), qa(lq(_), Q2), R = r(A, Q1, Q2)"),
-    ("l04", raw"findall(X, lq(X), L0), msort(L0, L), ts(lp(_), A), ts(lq(_), C), qa(lp(_), Q1), qa(lq(_), Q2), R = r(L, A, C, Q1, Q2)"),
-    ("l05", raw"tp(lp(_), T), '$idg_mono_invalidate'(T), ts(lp(_), A), ts(lq(_), C), fo(lp(_), F), R = r(A, C, F)"),
-    ("l06", raw"findall(X, lq(X), L0), msort(L0, L), ts(lp(_), A), ts(lq(_), C), fo(lp(_), F), R = r(L, A, C, F)"),
-    ("l07", raw"retract(ld(1)), ts(lp(_), A), ts(mp(_), B), ts(lq(_), C), fo(lp(_), F), R = r(A, B, C, F)"),
-    ("l08", raw"findall(X, lq(X), L0), msort(L0, L), findall(X, mp(X), M0), msort(M0, M), R = r(L, M)"),
+    (
+        "l01",
+        raw"forall(member(G, [lp(_), mp(_), lq(_)]), forall(G, true)), ts(lp(_), A), ts(mp(_), B), ts(lq(_), C), R = r(A, B, C)"
+    ),
+    (
+        "l02",
+        raw"assertz(ld(1)), ts(lp(_), A), ts(mp(_), B), ts(lq(_), C), qa(lp(_), Q1), qa(lq(_), Q2), R = r(s(A, B, C), q(Q1, Q2))"
+    ),
+    (
+        "l03",
+        raw"assertz(ld(2)), ts(lp(_), A), qa(lp(_), Q1), qa(lq(_), Q2), R = r(A, Q1, Q2)"
+    ),
+    (
+        "l04",
+        raw"findall(X, lq(X), L0), msort(L0, L), ts(lp(_), A), ts(lq(_), C), qa(lp(_), Q1), qa(lq(_), Q2), R = r(L, A, C, Q1, Q2)"
+    ),
+    (
+        "l05",
+        raw"tp(lp(_), T), '$idg_mono_invalidate'(T), ts(lp(_), A), ts(lq(_), C), fo(lp(_), F), R = r(A, C, F)"
+    ),
+    (
+        "l06",
+        raw"findall(X, lq(X), L0), msort(L0, L), ts(lp(_), A), ts(lq(_), C), fo(lp(_), F), R = r(L, A, C, F)"
+    ),
+    (
+        "l07",
+        raw"retract(ld(1)), ts(lp(_), A), ts(mp(_), B), ts(lq(_), C), fo(lp(_), F), R = r(A, B, C, F)"
+    ),
+    (
+        "l08",
+        raw"findall(X, lq(X), L0), msort(L0, L), findall(X, mp(X), M0), msort(M0, M), R = r(L, M)"
+    ),
     ("l09", raw"mi(lp(_), A), mi(mp(_), B), mi(lq(_), C), R = r(A, B, C)")
 ]
 
@@ -286,11 +316,26 @@ const _T7_CASES_QUEUE = [
     ("q03", raw"three, eq(0, A), qa(lp(_), Q), ts(lp(_), S), R = r(A, Q, S)"),
     ("q04", raw"three, eq(-1, A), qa(lp(_), Q), ts(lp(_), S), R = r(A, Q, S)"),
     ("q05", raw"three, eq(1, A1), eq(1, A2), qa(lp(_), Q), R = r(A1, A2, Q)"),
-    ("q06", raw"rs, assertz(ld(1)), assertz(ld(2)), retract(ld(1)), qa(lp(_), Q), ts(lp(_), S), fo(lp(_), F), R = r(Q, S, F)"),
-    ("q07", raw"rs, assertz(ld(1)), assertz(ld(2)), tp(lp(_), T), '$idg_mono_invalidate'(T), qa(lp(_), Q), ts(lp(_), S), findall(X, lp(X), L0), msort(L0, L), R = r(Q, S, L)"),
-    ("q08", raw"rs, assertz(ld(1)), assertz(ld(2)), retractall(ld(1)), qa(lp(_), Q), ts(lp(_), S), findall(X, lp(X), L0), msort(L0, L), R = r(Q, S, L)"),
-    ("q09", raw"rs, assertz(ld(1)), assertz(ld(2)), assertz(ld(3)), tp(lp(_), T), ts(lp(_), S0), ( '$mono_reeval_prepare'(T, Size) -> P = yes ; P = no ), ts(lp(_), S1), '$idg_mono_affects_lazy'(T, _, _, Ref, Ans), length(Ans, C), '$idg_mono_empty_queue'(Ref, C), qa(lp(_), Q), ( '$mono_reeval_done'(T, Size, Deps) -> D = yes(Deps) ; D = no ), ts(lp(_), S2), R = r(S0, P, Size, S1, C, Q, D, S2)"),
-    ("q10", raw"tp(lp(_), T), ( '$mono_reeval_prepare'(T, Size) -> R = r(yes, Size) ; R = r(no) )"),
+    (
+        "q06",
+        raw"rs, assertz(ld(1)), assertz(ld(2)), retract(ld(1)), qa(lp(_), Q), ts(lp(_), S), fo(lp(_), F), R = r(Q, S, F)"
+    ),
+    (
+        "q07",
+        raw"rs, assertz(ld(1)), assertz(ld(2)), tp(lp(_), T), '$idg_mono_invalidate'(T), qa(lp(_), Q), ts(lp(_), S), findall(X, lp(X), L0), msort(L0, L), R = r(Q, S, L)"
+    ),
+    (
+        "q08",
+        raw"rs, assertz(ld(1)), assertz(ld(2)), retractall(ld(1)), qa(lp(_), Q), ts(lp(_), S), findall(X, lp(X), L0), msort(L0, L), R = r(Q, S, L)"
+    ),
+    (
+        "q09",
+        raw"rs, assertz(ld(1)), assertz(ld(2)), assertz(ld(3)), tp(lp(_), T), ts(lp(_), S0), ( '$mono_reeval_prepare'(T, Size) -> P = yes ; P = no ), ts(lp(_), S1), '$idg_mono_affects_lazy'(T, _, _, Ref, Ans), length(Ans, C), '$idg_mono_empty_queue'(Ref, C), qa(lp(_), Q), ( '$mono_reeval_done'(T, Size, Deps) -> D = yes(Deps) ; D = no ), ts(lp(_), S2), R = r(S0, P, Size, S1, C, Q, D, S2)"
+    ),
+    (
+        "q10",
+        raw"tp(lp(_), T), ( '$mono_reeval_prepare'(T, Size) -> R = r(yes, Size) ; R = r(no) )"
+    ),
     ("q11", raw"findall(X, lp(X), L0), msort(L0, L), ts(lp(_), S), R = r(L, S)")
 ]
 
@@ -322,11 +367,26 @@ sn(X, Y) :- se(X, Y).
 """
 
 const _T7_CASES_SUBMONO = [
-    ("s01", raw"assertz(sd(1)), assertz(sd(2)), findall(X, sm(X), L0), msort(L0, L), findall(x, sm(2), M), tt(sm(_), N), R = r(L, M, N)"),
-    ("s02", raw"assertz(sd(3)), findall(X, sm(X), L0), msort(L0, L), findall(x, sm(2), M), findall(x, sm(3), M3), tt(sm(_), N), R = r(L, M, M3, N)"),
-    ("s03", raw"findall(X, sc(X), L0), msort(L0, L), assertz(sd(4)), findall(X, sc(X), L1), msort(L1, L2), findall(X, sm(X), L3), msort(L3, L4), R = r(L, L2, L4)"),
-    ("s04", raw"retract(sd(1)), findall(X, sm(X), L0), msort(L0, L), findall(X, sc(X), L1), msort(L1, L2), findall(x, sm(2), M), R = r(L, L2, M)"),
-    ("s05", raw"assertz(se(a, 1)), assertz(se(b, 2)), findall(Y, sn(a, Y), L0), findall(X-Y, sn(X, Y), L1), msort(L1, L), assertz(se(a, 3)), findall(Y, sn(a, Y), M0), msort(M0, M), findall(X-Y, sn(X, Y), N1), msort(N1, N), tt(sn(_, _), T), R = r(L0, L, M, N, T)")
+    (
+        "s01",
+        raw"assertz(sd(1)), assertz(sd(2)), findall(X, sm(X), L0), msort(L0, L), findall(x, sm(2), M), tt(sm(_), N), R = r(L, M, N)"
+    ),
+    (
+        "s02",
+        raw"assertz(sd(3)), findall(X, sm(X), L0), msort(L0, L), findall(x, sm(2), M), findall(x, sm(3), M3), tt(sm(_), N), R = r(L, M, M3, N)"
+    ),
+    (
+        "s03",
+        raw"findall(X, sc(X), L0), msort(L0, L), assertz(sd(4)), findall(X, sc(X), L1), msort(L1, L2), findall(X, sm(X), L3), msort(L3, L4), R = r(L, L2, L4)"
+    ),
+    (
+        "s04",
+        raw"retract(sd(1)), findall(X, sm(X), L0), msort(L0, L), findall(X, sc(X), L1), msort(L1, L2), findall(x, sm(2), M), R = r(L, L2, M)"
+    ),
+    (
+        "s05",
+        raw"assertz(se(a, 1)), assertz(se(b, 2)), findall(Y, sn(a, Y), L0), findall(X-Y, sn(X, Y), L1), msort(L1, L), assertz(se(a, 3)), findall(Y, sn(a, Y), M0), msort(M0, M), findall(X-Y, sn(X, Y), N1), msort(N1, N), tt(sn(_, _), T), R = r(L0, L, M, N, T)"
+    )
 ]
 
 const _T7_PINS_SUBMONO = [
@@ -484,7 +544,8 @@ end
     @test _T7_ints(_T7_ans("QUEUE", "q01")) == [1]
     @test _T7_ints(_T7_ans("QUEUE", "q02")) == []
     @test _T7_ints(_T7_ans("QUEUE", "q03")) == [3]
-    @test _T7_names(_T7_ans("QUEUE", "q04"))[2:4] == ["raised", "domain_error", "not_less_than_zero"]
+    @test _T7_names(_T7_ans("QUEUE", "q04"))[2:4] ==
+        ["raised", "domain_error", "not_less_than_zero"]
     @test _T7_ints(_T7_ans("QUEUE", "q04")) == [-1, 3]
     for (a, b) in (("q01", "q02"), ("q02", "q03"), ("q01", "q03"), ("q03", "q04"))
         @test _T7_ans("QUEUE", a) != _T7_ans("QUEUE", b)

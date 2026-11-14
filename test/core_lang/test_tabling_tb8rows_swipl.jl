@@ -465,9 +465,13 @@ _T8_body(key, id) = split(_T8_ans(key, id), "("; limit=2)[2]
         [0, 3, 2, 2, 0, 2, 0]
     @test [cnt(id, "fa") for id in ("a01", "a02", "a03", "a04", "a05", "a06", "a07")] ==
         [3, 3, 2, 3, 3, 2, 3]
-    @test [_T8_nvars(_T8_ans("ANSABS", id)) for id in ("a01", "a02", "a03", "a04", "a05", "a06", "a07")] ==
+    @test [
+        _T8_nvars(_T8_ans("ANSABS", id)) for
+        id in ("a01", "a02", "a03", "a04", "a05", "a06", "a07")
+    ] ==
         [0, 3, 0, 0, 0, 0, 0]                                    # the general answers a0(f(V)), a1(f(f(V))), fa(f(f(V)))
-    @test _T8_body("ANSABS", "a01") == _T8_body("ANSABS", "a05") == _T8_body("ANSABS", "a07")
+    @test _T8_body("ANSABS", "a01") == _T8_body("ANSABS", "a05") ==
+        _T8_body("ANSABS", "a07")
     @test _T8_body("ANSABS", "a03") == _T8_body("ANSABS", "a06")
     @test _T8_body("ANSABS", "a01") != _T8_body("ANSABS", "a02")
     @test _T8_body("ANSABS", "a02") != _T8_body("ANSABS", "a03")
@@ -479,7 +483,9 @@ _T8_body(key, id) = split(_T8_ans(key, id), "("; limit=2)[2]
     trips(id) = count(==("max_answers_for_subgoal"), _T8_atoms(_T8_ans("MAXANS", id)))
     @test [users(id) for id in ("m01", "m02", "m03", "m04", "m05")] == [3, 3, 5, 3, 3]
     @test [trips(id) for id in ("m01", "m02", "m03", "m04", "m05")] == [0, 2, 0, 2, 0]
-    @test [_T8_nvars(_T8_ans("MAXANS", id)) for id in ("m01", "m02", "m03", "m04", "m05")] ==
+    @test [
+        _T8_nvars(_T8_ans("MAXANS", id)) for id in ("m01", "m02", "m03", "m04", "m05")
+    ] ==
         [6, 6, 10, 6, 6]
     @test _T8_body("MAXANS", "m01") == _T8_body("MAXANS", "m05")  # a flag of 9 is never reached by 5 answers
     @test _T8_body("MAXANS", "m02") == _T8_body("MAXANS", "m04")
@@ -490,8 +496,10 @@ _T8_body(key, id) = split(_T8_ans(key, id), "("; limit=2)[2]
     # sv (no per-predicate limit) and spares s9 (limit 9), warning trips nothing, the flag 9 trips nothing
     trip(id) = count(==("max_table_subgoal_size"), _T8_atoms(_T8_ans("SUBABS", id)))
     tabs(id) = count(==("s0"), _T8_names(_T8_ans("SUBABS", id)))
-    @test [trip(id) for id in ("u01", "u02", "u03", "u04", "u05", "u06")] == [3, 0, 1, 0, 4, 0]
-    @test [tabs(id) for id in ("u01", "u02", "u03", "u04", "u05", "u06")] == [0, 1, 1, 0, 0, 1]
+    @test [trip(id) for id in ("u01", "u02", "u03", "u04", "u05", "u06")] ==
+        [3, 0, 1, 0, 4, 0]
+    @test [tabs(id) for id in ("u01", "u02", "u03", "u04", "u05", "u06")] ==
+        [0, 1, 1, 0, 0, 1]
     @test _T8_body("SUBABS", "u02") == _T8_body("SUBABS", "u06")
     @test _T8_body("SUBABS", "u01") != _T8_body("SUBABS", "u05")
     @test _T8_body("SUBABS", "u01") != _T8_body("SUBABS", "u02")
