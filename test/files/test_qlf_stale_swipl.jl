@@ -119,9 +119,34 @@ const _QS_CASES = _QSCase[
             "qfe:[78,111,116,32,97,32,83,87,73,45,80,114,111,108,111,103,32,46,113,108,102,32,102,105,108,101,10]"),  # qfe:'Not a SWI-Prolog .qlf file/n'
     _QSCase("no_qlf_file", :stale, [('F', :pl, :ok)], (:a42, -100), (:none, 0), (:none, 0), :missing,
             "err:existence_error/2"),  # err:existence_error/2
+    _QSCase("rb_unchanged", :rebuild, [('F', :pl, :ok)], (:a42, -100), (:none, 0), (:none, 0), :good,
+            "no"),  # no
+    _QSCase("rb_change_one_second", :rebuild, [('F', :pl, :ok)], (:a43, 1), (:none, 0), (:none, 0), :good,
+            "yes"),  # yes
+    _QSCase("rb_change_same_second", :rebuild, [('F', :pl, :ok)], (:a43, 0), (:none, 0), (:none, 0), :good,
+            "yes"),  # yes
+    _QSCase("rb_touch_within_second", :rebuild, [('F', :pl, :ok)], (:a42, 1), (:none, 0), (:none, 0), :good,
+            "no"),  # no
+    _QSCase("rb_dep_unchanged", :rebuild, [('F', :pl, :ok), ('D', :dep, :ok)], (:a42, -100), (:none, 0), (:d1, -100), :good,
+            "no"),  # no
+    _QSCase("rb_dep_changed", :rebuild, [('F', :pl, :ok), ('D', :dep, :ok)], (:a42, -100), (:none, 0), (:d2, 1), :good,
+            "yes"),  # yes
+    _QSCase("rb_hash_flipped", :rebuild, [('F', :pl, :flip)], (:a42, -100), (:none, 0), (:none, 0), :good,
+            "yes"),  # yes
+    _QSCase("rb_hash_zero_slack", :rebuild, [('F', :pl, :zero)], (:a42, 1), (:none, 0), (:none, 0), :good,
+            "no"),  # no
+    _QSCase("rb_hash_zero_past_slack", :rebuild, [('F', :pl, :zero)], (:a42, 2), (:none, 0), (:none, 0), :good,
+            "yes"),  # yes
+    _QSCase("rb_vm_signature_changed", :rebuild, [('F', :pl, :ok)], (:a42, -100), (:none, 0), (:none, 0), :sig,
+            "yes"),  # yes
+    _QSCase("rb_no_qlf_file", :rebuild, [('F', :pl, :ok)], (:a42, -100), (:none, 0), (:none, 0), :missing,
+            "yes"),  # yes
+    _QSCase("rb_cut_in_magic", :rebuild, [('F', :pl, :ok)], (:a42, -100), (:none, 0), (:none, 0), :cut,
+            "err:qlf_format_error/2"),  # err:qlf_format_error/2
 ]
 
-# the pin's Prolog, copied as is: boot/init.pl 2433-2495 and `'$member'/2` (4419-4424)
+# the pin's Prolog, copied as is: boot/init.pl 2433-2495 and `'$member'/2` (4419-4424); library/prolog_qlfmake.pl 152-203 (qlf_needs_rebuild/1,
+# source_changed/2, pl_qlf_file/2) behind one shim line: DIVERGES, library(lists)'s member/2 is not loaded in the boot session, `'$member'/2` is the same relation
 const _QS_BOOT = raw"""
 '$qlf_out_of_date'(PlFile, QlfFile, Why) :-
     (   access_file(PlFile, read)
@@ -192,6 +217,55 @@ const _QS_BOOT = raw"""
 '$member_'(_, El, El).
 '$member_'([H|T], El, _) :-
     '$member_'(T, El, H).
+
+member(X, L) :- '$member'(X, L).
+
+qlf_needs_rebuild(PlFile) :-
+    pl_qlf_file(PlFile, QlfFile),
+    (   \+ exists_file(QlfFile)
+    ->  true
+    ;   '$qlf_versions'(QlfFile, CurrentVersion, _MinLOadVersion, FileVersion,
+                        CurrentSignature, FileSignature),
+        (   FileVersion \== CurrentVersion
+        ;   FileSignature \== CurrentSignature
+        )
+    ->  true
+    ;   time_file(QlfFile, QlfTime),
+        '$qlf_sources'(QlfFile, Sources),
+        member(S, Sources),
+        source_changed(S, QlfTime)
+    ).
+
+%!  source_changed(+Source, +QlfTime) is semidet.
+%
+%   True when the file of Source differs from the copy that was compiled
+%   into the .qlf file.  This asks the content and not the modification
+%   time, which cannot answer it: a tree that arrives by checkout, copy,
+%   unpack or install carries times of its own, and a file edited in the
+%   second its .qlf file was written has the same time as that file, at
+%   the one second many file systems record.  Hashing every source of
+%   the system library takes about 100ms; recompiling one takes longer
+%   than that.
+%
+%   Files whose hash was not recorded -- 0, from a .qlf file written by
+%   a version that did not record them -- are compared by time alone,
+%   with a second of slack, which is what this test was before there
+%   were hashes.
+
+source_changed(Source, _QlfTime) :-
+    arg(1, Source, File),
+    arg(2, Source, Hash),
+    Hash =\= 0,
+    !,
+    \+ '$file_hash'(File, Hash).
+source_changed(Source, QlfTime) :-
+    arg(1, Source, File),
+    time_file(File, STime),
+    STime > QlfTime+1.
+
+pl_qlf_file(PlFile, QlfFile) :-
+    file_name_extension(Base, pl, PlFile),
+    file_name_extension(Base, qlf, QlfFile).
 """
 const _QS_HELPER = raw"""
 qs_why(Pl, Qlf, R) :-
@@ -206,6 +280,8 @@ qs_why(Pl, Qlf, R) :-
         )
     ;   R = no
     ).
+qs_rebuild(Pl, R) :-
+    catch(( qlf_needs_rebuild(Pl) -> R = yes ; R = no ), error(F, _), ( functor(F, N, A), R = err(N, A) )).
 qs_hash(Pl, Qlf, R) :-
     '$qlf_sources'(Qlf, Sources),
     (   '$member'(source(Pl, H), Sources), H =\= 0, '$file_hash'(Pl, H)
@@ -214,11 +290,16 @@ qs_hash(Pl, Qlf, R) :-
     ).
 """
 const _QS_SHOW = raw"""
+:- use_module(library(prolog_qlfmake), []).
+qlf_needs_rebuild(P) :- prolog_qlfmake:qlf_needs_rebuild(P).
 qs_show(qfe(M)) :- !, atom_codes(M, Cs), write('qfe:'), write(Cs).
 qs_show(err(N, A)) :- !, write('err:'), write(N), write('/'), write(A).
 qs_show(R) :- write(R).
 qs_one(Kind, Pl, Qlf) :-
-    (   Kind == stale -> qs_why(Pl, Qlf, R) ; qs_hash(Pl, Qlf, R) ),
+    (   Kind == stale -> qs_why(Pl, Qlf, R)
+    ;   Kind == rebuild -> qs_rebuild(Pl, R)
+    ;   qs_hash(Pl, Qlf, R)
+    ),
     qs_show(R), nl.
 """
 
@@ -317,8 +398,15 @@ function _qs_run_all(d::String)
     for c in _QS_CASES
         pl, qlf = _qs_build(c, joinpath(d, c.name))
         got[c.name] = try
-            st, ans = _qs_goal(gd, ld, c.kind === :stale ? "qs_why" : "qs_hash", _QS[_qss(pl), _qss(qlf), _qsv()])
-            st === :true ? _qs_show(ans[4]) : "<" * string(st) * ">"
+            name, args = if c.kind === :stale
+                "qs_why", _QS[_qss(pl), _qss(qlf), _qsv()]
+            elseif c.kind === :rebuild
+                "qs_rebuild", _QS[_qss(pl), _qsv()]
+            else
+                "qs_hash", _QS[_qss(pl), _qss(qlf), _qsv()]
+            end
+            st, ans = _qs_goal(gd, ld, name, args)
+            st === :true ? _qs_show(ans[length(args) + 1]) : "<" * string(st) * ">"
         catch e
             "<julia: " * sprint(showerror, e) * ">"
         end
@@ -328,15 +416,15 @@ end
 const _QS_PIN = Dict{String, String}(c.name => c.pin for c in _QS_CASES)
 
 @testset "qlf_staleness: the table of cases is the upstream testset's, each with swipl's answer (tests/save/test_qlf.pl)" begin
-    @test length(_QS_CASES) == 26
+    @test length(_QS_CASES) == 38
     @test length(unique(c.name for c in _QS_CASES)) == length(_QS_CASES)
     @test all(c -> !isempty(c.pin), _QS_CASES)
     # not vacuous: the pins say yes, no, old, a format error, an error of another kind
     pins = Set(c.pin for c in _QS_CASES)
     @test "no" in pins && "old" in pins && "same" in pins && "differ" in pins
-    @test count(startswith("qfe:"), pins) == 2 && count(startswith("err:"), pins) == 1
+    @test count(startswith("qfe:"), pins) == 2 && count(startswith("err:"), pins) == 2 && "yes" in pins
     # the helper text holds the pin's three predicates and the member helper
-    @test all(occursin(s, _QS_BOOT) for s in ("'\$qlf_out_of_date'(PlFile", "'\$qlf_sources_changed'(PlFile, Sources, QlfTime) :-", "'\$qlf_source_changed'(File, Sources, QlfTime) :-", "'\$member_'(T, El, H)"))
+    @test all(occursin(s, _QS_BOOT) for s in ("'\$qlf_out_of_date'(PlFile", "'\$qlf_sources_changed'(PlFile, Sources, QlfTime) :-", "'\$qlf_source_changed'(File, Sources, QlfTime) :-", "'\$member_'(T, El, H)", "qlf_needs_rebuild(PlFile) :-", "STime > QlfTime+1"))
     mktempdir() do d
         c = first(c for c in _QS_CASES if c.name == "newer_unchanged")
         pl, qlf = _qs_build(c, d)
@@ -418,6 +506,22 @@ end
     # swipl's two messages, whole: the signature of the file (bit 0 of its last byte flipped) and the one of this VM; the text of a file that is no .qlf file
     @test _QS_PIN["vm_signature_changed"] == "qfe:" * _qs_codes("incompatible VM-signature (file: 0xedee110c; Prolog: 0xe5ee110c)")
     @test _QS_PIN["not_a_qlf_file"] == "qfe:" * _qs_codes("Not a SWI-Prolog .qlf file\n")
+end
+
+@testset "qlf_staleness: library(prolog_qlfmake)'s qlf_needs_rebuild/1 asks the content, with a second of slack only where no hash was recorded (a_change_within_a_second_of_the_qlf_needs_a_rebuild, and_so_does_a_change_made_in_the_same_second, and_a_touch_within_it_does_not, a_dependency_the_hook_declares_is_recorded, and_a_change_to_it_needs_a_rebuild)" begin
+    # UNVERIFIED on the kernel: gate decides. The pin's Prolog is compiled in the boot session (the shim line is the one DIVERGES), `file_name_extension/3`,
+    # `exists_file/1`, `time_file/2` and `'\$qlf_versions'/6` are the kernel's
+    _qs_rows(["rb_unchanged", "rb_change_one_second", "rb_change_same_second", "rb_touch_within_second", "rb_dep_unchanged", "rb_dep_changed"])
+    @test _QS_PIN["rb_unchanged"] == "no" && _QS_PIN["rb_touch_within_second"] == "no" && _QS_PIN["rb_dep_unchanged"] == "no"
+    @test _QS_PIN["rb_change_one_second"] == "yes" && _QS_PIN["rb_change_same_second"] == "yes" && _QS_PIN["rb_dep_changed"] == "yes"
+    # three corruptions: a recorded hash that is wrong (the file is unchanged: `yes`), no recorded hash and a source 2 s newer (`yes`, 1 s is the slack: `no`),
+    # a .qlf file of another VM (`yes`), no .qlf file (`yes`), a cut file (an error of the header reader, not an answer)
+    _qs_rows(["rb_hash_flipped", "rb_hash_zero_slack", "rb_hash_zero_past_slack", "rb_vm_signature_changed", "rb_no_qlf_file", "rb_cut_in_magic"])
+    @test _QS_PIN["rb_hash_flipped"] == "yes" && _QS_PIN["rb_hash_zero_slack"] == "no" && _QS_PIN["rb_hash_zero_past_slack"] == "yes"
+    for n in ("rb_hash_flipped", "rb_vm_signature_changed", "rb_no_qlf_file")
+        @test get(_QS_RUN[2], n, "<none>") == "yes" && get(_QS_RUN[2], n, "<none>") != get(_QS_RUN[2], "rb_unchanged", "<none>")
+    end
+    @test startswith(get(_QS_RUN[2], "rb_cut_in_magic", "<none>"), "err:") && get(_QS_RUN[2], "rb_hash_zero_past_slack", "<none>") != get(_QS_RUN[2], "rb_hash_zero_slack", "<none>")
 end
 
 @testset "qlf_staleness: the live swipl gives the same answers on the same files (when swipl is on PATH)" begin
