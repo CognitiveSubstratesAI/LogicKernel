@@ -579,7 +579,7 @@ const _SF_REFUSED = [
     ("theme", "dark"), ("agc_margin", "100"),
     ("stack_limit", "1000000000"),
     ("heartbeat", "0"),
-    ("float_overflow", "infinity"), ("max_answers_for_subgoal", "5"),
+    ("max_integer_size", "2000"), ("max_answers_for_subgoal", "5"),
     ("max_table_subgoal_size", "5"),
     ("max_incomplete_subgoals", "5"), ("max_scc_subgoals", "5")
 ]

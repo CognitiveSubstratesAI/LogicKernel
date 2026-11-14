@@ -18,8 +18,9 @@
 #     tag, and written with `mk_gnd`; the V_INTEGER/V_MPZ split is `Int64`, where upstream's is the
 #     tagged range (±2^56). That changes the storage only: the values, and every operation on them,
 #     are the same.
-#   * The rounding mode is always to nearest: nothing sets another (`roundtoward/2` is not ported),
-#     so only `FE_TONEAREST`'s branch of a `fegetround()` switch is kept.
+#   * The rounding mode is the hardware's, as upstream's (`fegetround`/`fesetround`, below): `roundtoward/2` and the
+#     `float_rounding` flag set it for the duration of an evaluation (`evalExpression_cells`'s scope, pl-arith.jl), so
+#     the `fegetround()` switches of `mpz_to_double` and `mpz_fdiv` keep all four branches.
 
 # ── reading a term (pl-gmp.h, pl-gmp.c) ──────────────────────────────────────────────────────────
 # PORT: pl-gmp.h get_rational
@@ -286,6 +287,42 @@ const MPZ_MAX_BYTES = typemax(UInt64) ÷ 8 - 1024
 "The largest big integer, in bytes, the kernel creates (pl-gmp.h): the stack limit or GMP's."
 maxBigIntSize(ld::PL_local_data)::UInt64 = min(UInt64(ld.stacks_limit) * 8, MPZ_MAX_BYTES)
 
+# ── the rounding mode (<fenv.h>) ─────────────────────────────────────────────────────────────────
+# ORIGINAL: C's `FE_TONEAREST`, `FE_UPWARD`, `FE_DOWNWARD`, `FE_TOWARDZERO`, `fegetround()` and `fesetround()`, which
+# the rounding code of pl-gmp.c and pl-arith.c calls. Julia's own constants of the running platform
+# (`Base.Rounding.JL_FE_*`, from `jl_get_fenv_consts`), `Int`s.
+# DIVERGES: the mode is read and written through `Base.Rounding.rounding_raw`/`setrounding_raw` (`jl_get_fenv_rounding`,
+# `jl_set_fenv_rounding`: the C library's `fegetround`/`fesetround` on the calling thread), the only entry Julia has to
+# the Float64 mode (`setrounding(Float64, ...)` is a MethodError: only BigFloat has one). A mode other than to nearest
+# is held ONLY for the duration of an arithmetic evaluation (`evalExpression_cells`, pl-arith.jl, restores it in a
+# `finally`), never across calls: swipl leaves the hardware mode set, and the rest of the Julia runtime would run in it.
+# Julia's compiler does not model the mode: a float operation with literal (constant) operands may be folded in to_nearest at
+# compile time, and operations are not ordered against `fesetround`; the walk's operands are run-time values, so each `+ - * /`
+# and `sqrt` reaches the hardware at its place (what the rows of test_arith_round_swipl.jl check).
+"The C `FE_TONEAREST` of this platform (<fenv.h>): round to nearest."
+const FE_TONEAREST = Int(Base.Rounding.JL_FE_TONEAREST)
+"The C `FE_UPWARD` of this platform (<fenv.h>): round toward positive infinity."
+const FE_UPWARD = Int(Base.Rounding.JL_FE_UPWARD)
+"The C `FE_DOWNWARD` of this platform (<fenv.h>): round toward negative infinity."
+const FE_DOWNWARD = Int(Base.Rounding.JL_FE_DOWNWARD)
+"The C `FE_TOWARDZERO` of this platform (<fenv.h>): round toward zero."
+const FE_TOWARDZERO = Int(Base.Rounding.JL_FE_TOWARDZERO)
+
+"The floating point rounding mode in effect, one of the `FE_*` (`fegetround()` of <fenv.h>)."
+fegetround()::Int = Int(Base.Rounding.rounding_raw(Float64))
+
+"Set the floating point rounding mode to the `FE_*` `mode` (`fesetround()` of <fenv.h>); 0 on success."
+fesetround(mode::Int)::Int = Int(Base.Rounding.setrounding_raw(Float64, mode))
+
+# ORIGINAL: `nexttoward(x, y)` of <math.h> for doubles: `y` when `x == y`, a NaN when either is one, else the neighbour of `x`
+# towards `y` (`nextfloat` and `prevfloat` are integer operations: the rounding mode does not touch them).
+"C's `nexttoward(x, y)` on doubles: the float next to `x` in the direction of `y`."
+function nexttoward(x::Float64, y::Float64)::Float64
+    (isnan(x) || isnan(y)) && return x + y
+    x == y && return y
+    return y > x ? nextfloat(x) : prevfloat(x)
+end
+
 # ── to double (pl-gmp.c) ─────────────────────────────────────────────────────────────────────────
 # GMP's `mpz_get_d` truncates; `mpz_tstbit` reads two's complement — Julia's `>>` on a BigInt is
 # arithmetic, so `isodd(a >> i)` is that bit. `mpz_sizeinbase(a, 2)` is `ndigits(a; base=2)`,
@@ -305,7 +342,7 @@ _mpz_tstbit(a::BigInt, i::Integer)::Bool = isodd(a >> i)
 _sa_minus_scan1(a::BigInt, sa::Int)::Int = iszero(a) ? 2 : sa - trailing_zeros(a)
 
 # PORT: pl-gmp.c mpz_to_double
-"`a` (not 0) as the nearest double (pl-gmp.c): `mpz_get_d`'s truncation corrected."
+"`a` (not 0) as a double rounded as the rounding mode says (pl-gmp.c): `mpz_get_d`'s truncation corrected."
 function mpz_to_double(a::BigInt)::Float64
     d = _mpz_get_d(a)                                       # truncated, note: a != 0
     sa = ndigits(a; base=2)
@@ -314,22 +351,57 @@ function mpz_to_double(a::BigInt)::Float64
     na = trailing_zeros(a)
     bit54 = _mpz_tstbit(a, sa - 54)
     trailing = na >= sa - 54                                # trailing_zeros
-    if d > 0                                                # FE_TONEAREST
-        if !bit54
-        elseif !trailing || _mpz_tstbit(a, sa - 53)
-            d = nextfloat(d)                                # nexttoward(d, INFINITY)
+    mode = fegetround()                                     # all uses of nexttoward can overflow
+    if mode == FE_TONEAREST
+        if d > 0
+            if !bit54
+            elseif !trailing || _mpz_tstbit(a, sa - 53)
+                d = nextfloat(d)                            # nexttoward(d, INFINITY)
+            end
+        else
+            if bit54 && !trailing                           # d is negative
+            elseif !trailing || !_mpz_tstbit(a, sa - 53)
+                d = prevfloat(d)                            # nexttoward(d, -INFINITY)
+            end
         end
-    else
-        if bit54 && !trailing                               # d is negative
-        elseif !trailing || !_mpz_tstbit(a, sa - 53)
-            d = prevfloat(d)                                # nexttoward(d, -INFINITY)
+    elseif mode == FE_UPWARD
+        if d > 0 && (!trailing || bit54)
+            d = nextfloat(d)
         end
-    end
+    elseif mode == FE_DOWNWARD
+        if d < 0 && (!trailing || bit54)
+            d = prevfloat(d)
+        end
+    end                                                     # FE_TOWARDZERO: truncated by mpz_get_d
     return d
 end
 
+# ORIGINAL: C's `ldexp(d, e)` (glibc `scalbn`) in a rounding mode, for a finite non-zero `d`. Julia's `ldexp` answers the
+# signed infinity for an overflow and the signed zero for an underflow in EVERY mode; glibc answers `huge*copysign(huge, d)`
+# and `tiny*copysign(tiny, d)`, which the mode decides: an overflow is `floatmax` when the mode rounds toward zero (to_zero,
+# or to_positive for a negative `d`, to_negative for a positive one), an underflow is the smallest subnormal when the mode
+# rounds away from zero (to_positive for a positive `d`, to_negative for a negative one). A result in range, or a subnormal
+# one (rounded by Julia's own multiplication, which the hardware mode reaches), is `ldexp`'s.
+"`ldexp(d, e)` as C's does in the rounding mode in effect (glibc `scalbn`): the overflow and underflow answers follow the mode."
+function _ldexp_mode(d::Float64, e::Int)::Float64
+    r = ldexp(d, e)
+    if isinf(r)                                             # overflow
+        mode = fegetround()
+        if mode == FE_TOWARDZERO || (mode == FE_UPWARD && d < 0) ||
+            (mode == FE_DOWNWARD && d > 0)
+            return copysign(floatmax(Float64), d)
+        end
+    elseif iszero(r)                                        # underflow (d is not 0)
+        mode = fegetround()
+        if (mode == FE_UPWARD && d > 0) || (mode == FE_DOWNWARD && d < 0)
+            return copysign(nextfloat(0.0), d)
+        end
+    end
+    return r
+end
+
 # PORT: pl-gmp.c mpz_fdiv
-"`a / b` as the nearest double (pl-gmp.c), from the gmp-devel list's algorithm."
+"`a / b` as a double rounded as the rounding mode says (pl-gmp.c), from the gmp-devel list's algorithm."
 function mpz_fdiv(a::BigInt, b::BigInt)::Float64
     sa = ndigits(a; base=2)
     sb = ndigits(b; base=2)
@@ -355,18 +427,29 @@ function mpz_fdiv(a::BigInt, b::BigInt)::Float64
     aa = aa << 54
     sb += 54
     aa, bb = divrem(aa, bb)                                 # mpz_tdiv_qr
-    if !isodd(aa)                                           # FE_TONEAREST
-    elseif !iszero(bb)
-        aa = aa > 0 ? aa + 1 : aa - 1
-    else                                                    # mid case: round to even
-        if !_mpz_tstbit(aa, 1)
-            aa = aa > 0 ? aa - 1 : aa + 1
-        else
+    mode = fegetround()
+    if mode == FE_TONEAREST
+        if !isodd(aa)
+        elseif !iszero(bb)
             aa = aa > 0 ? aa + 1 : aa - 1
+        else                                                # mid case: round to even
+            if !_mpz_tstbit(aa, 1)
+                aa = aa > 0 ? aa - 1 : aa + 1
+            else
+                aa = aa > 0 ? aa + 1 : aa - 1
+            end
         end
-    end
+    elseif mode == FE_UPWARD                                # negative aa defers to truncate (mpz_get_d)
+        if aa > 0 && (!iszero(bb) || isodd(aa))
+            aa += 2
+        end
+    elseif mode == FE_DOWNWARD                              # positive aa defers to truncate (mpz_get_d)
+        if aa < 0 && (!iszero(bb) || isodd(aa))
+            aa -= 2
+        end
+    end                                                     # FE_TOWARDZERO: truncation performed by mpz_get_d
     d = _mpz_get_d(aa)                                      # exact
-    return ldexp(d, sa - sb)
+    return _ldexp_mode(d, sa - sb)
 end
 
 # PORT: pl-gmp.c mpq_to_double

@@ -32,14 +32,16 @@
 # inline `arg/3` (`B_ARG_CF`, `B_ARG_VF`, in pl-vmi.c's order), then TAB1-min's wrapper supervisors and
 # LB4 b2's continuation and engine instructions, numbered together in pl-vmi.c's order (audit D-0407
 # item 3): `I_YIELD` (pl-vmi.c:2410), `I_CUTCHP` (:2935), `S_WRAP` (:3560), `S_CALLWRAPPER` (:3624),
-# `S_TABLED` (:3644), `I_RESET` (:5754), `I_EXITRESET` (:5801), `I_CALLCONT` (:5839), `I_SHIFT` (:5874),
+# `S_TABLED` (:3644), AR1 (d)'s arithmetic instructions (`A_ENTER` (:3797) … `A_FIRSTVAR_IS` (:4352), 25 of the 26
+# the pin has besides `A_ADD_FC`, which is earlier in the table; `A_INTEGERW` is the exception, see NOT EMITTED),
+# `I_RESET` (:5754), `I_EXITRESET` (:5801), `I_CALLCONT` (:5839), `I_SHIFT` (:5874),
 # `I_SHIFTCP` (:5908), the tail from `B_ARG_CF` (:1537) on ascending in the table; the whole table is not
 # in pl-vmi.c's order, earlier steps grouped their instructions by landing, and the row of
 # test_cont_boot_swipl.jl compares that tail. `I_CUTCHP` runs (b2); CONT1 runs the other six, except
 # the tabled branches of `I_RESET` / `I_EXITRESET` (TAB1) and the engine branch of `I_YIELD` (TH1),
 # which are refused by name.
 #
-# NOT EMITTED, so not declared: H_SMALLINTW/B_SMALLINTW/L_SMALLINTW (only where a code word is
+# NOT EMITTED, so not declared: H_SMALLINTW/B_SMALLINTW/L_SMALLINTW/A_INTEGERW (only where a code word is
 # narrower than a word, `CODES_PER_WORD > 1`: on 64-bit swipl every tagged integer is a SMALLINT,
 # probed in 10.1.16); `I_USERCALL0` (its work is `I_CALL1`'s
 # here). `I_CUT` is declared and compiled (a clause-level `!`, user
@@ -626,21 +628,96 @@ const S_CALLWRAPPER = code(162)
 # PORT: pl-vmi.c S_TABLED
 "Supervisor of the `table` wrapper of a variant tabled predicate: the answer trie of a complete table, else `S_CALLWRAPPER`; the operands are `S_CALLWRAPPER`'s (pl-vmi.c; TAB1-min declares it, the body is refused until TAB1)."
 const S_TABLED = code(163)
+# PORT: pl-vmi.c A_ENTER
+"Enter arithmetic mode (pl-vmi.c); body: arithmetic-c."
+const A_ENTER = code(164)
+# PORT: pl-vmi.c A_INTEGER
+"Push the operand (a signed code) as an integer on the arithmetic stack (pl-vmi.c)."
+const A_INTEGER = code(165)
+# PORT: pl-vmi.c A_MPZ
+"Push an integer that is not tagged on the arithmetic stack; operand: its literal (pl-vmi.c)."
+const A_MPZ = code(166)
+# PORT: pl-vmi.c A_MPQ
+"Push a rational that is not an integer on the arithmetic stack; operand: its literal (pl-vmi.c)."
+const A_MPQ = code(167)
+# PORT: pl-vmi.c A_DOUBLE
+"Push a float on the arithmetic stack; operand: its literal (pl-vmi.c)."
+const A_DOUBLE = code(168)
+# PORT: pl-vmi.c A_VAR
+"Push the value of the variable at the operand's slot on the arithmetic stack, evaluating it (pl-vmi.c)."
+const A_VAR = code(169)
+# PORT: pl-vmi.c A_VAR0
+"`A_VAR` of slot 0 (pl-vmi.c)."
+const A_VAR0 = code(170)
+# PORT: pl-vmi.c A_VAR1
+"`A_VAR` of slot 1 (pl-vmi.c)."
+const A_VAR1 = code(171)
+# PORT: pl-vmi.c A_VAR2
+"`A_VAR` of slot 2 (pl-vmi.c)."
+const A_VAR2 = code(172)
+# PORT: pl-vmi.c A_FUNC0
+"Run the operand's arithmetic function of no arguments (pl-vmi.c)."
+const A_FUNC0 = code(173)
+# PORT: pl-vmi.c A_FUNC1
+"Run the operand's arithmetic function on the top number (pl-vmi.c)."
+const A_FUNC1 = code(174)
+# PORT: pl-vmi.c A_FUNC2
+"Run the operand's arithmetic function on the top two numbers (pl-vmi.c)."
+const A_FUNC2 = code(175)
+# PORT: pl-vmi.c A_FUNC
+"Run the first operand's arithmetic function on the top (second operand) numbers (pl-vmi.c)."
+const A_FUNC = code(176)
+# PORT: pl-vmi.c A_ROUNDTOWARDS_A
+"Push the rounding mode found, set the operand's mode (`roundtoward/2` with an atom mode, pl-vmi.c)."
+const A_ROUNDTOWARDS_A = code(177)
+# PORT: pl-vmi.c A_ROUNDTOWARDS_V
+"Push the rounding mode found, set the mode the operand's variable holds (`roundtoward/2`, pl-vmi.c)."
+const A_ROUNDTOWARDS_V = code(178)
+# PORT: pl-vmi.c A_ADD
+"`A_FUNC2` of `+/2`: add the top two numbers (pl-vmi.c)."
+const A_ADD = code(179)
+# PORT: pl-vmi.c A_MUL
+"`A_FUNC2` of `*/2`: multiply the top two numbers (pl-vmi.c)."
+const A_MUL = code(180)
+# PORT: pl-vmi.c A_LT
+"`A < B` on the top two numbers (pl-vmi.c)."
+const A_LT = code(181)
+# PORT: pl-vmi.c A_LE
+"`A =< B` on the top two numbers (pl-vmi.c)."
+const A_LE = code(182)
+# PORT: pl-vmi.c A_GT
+"`A > B` on the top two numbers (pl-vmi.c)."
+const A_GT = code(183)
+# PORT: pl-vmi.c A_GE
+"`A >= B` on the top two numbers (pl-vmi.c)."
+const A_GE = code(184)
+# PORT: pl-vmi.c A_EQ
+"`A =:= B` on the top two numbers (pl-vmi.c)."
+const A_EQ = code(185)
+# PORT: pl-vmi.c A_NE
+"`A =\\= B` on the top two numbers (pl-vmi.c)."
+const A_NE = code(186)
+# PORT: pl-vmi.c A_IS
+"`A is B`: unify the argument pushed (body mode) with the number on top (pl-vmi.c)."
+const A_IS = code(187)
+# PORT: pl-vmi.c A_FIRSTVAR_IS
+"`A is B`, `A` a first occurrence: the slot gets the number on top (pl-vmi.c)."
+const A_FIRSTVAR_IS = code(188)
 # PORT: pl-vmi.c I_RESET
 "`'\$reset'`, first half: start the goal of `reset/3` (or `'\$tbl_reset'/6`) under a reset marker (pl-vmi.c). Compiled since LB4 b2; run: CONT1."
-const I_RESET = code(164)
+const I_RESET = code(189)
 # PORT: pl-vmi.c I_EXITRESET
 "`'\$reset'`, second half: the goal of `reset/3` exited, the continuation is 0 (pl-vmi.c). Compiled since LB4 b2; run: CONT1."
-const I_EXITRESET = code(165)
+const I_EXITRESET = code(190)
 # PORT: pl-vmi.c I_CALLCONT
 "`'\$call_continuation'(Cont)` on a variable already seen: call a continuation (pl-vmi.c). Compiled since LB4 b2; run: CONT1."
-const I_CALLCONT = code(166)
+const I_CALLCONT = code(191)
 # PORT: pl-vmi.c I_SHIFT
 "`'\$shift'(Ball)` on a variable already seen: shift to the nearest reset (pl-vmi.c). Compiled since LB4 b2; run: CONT1."
-const I_SHIFT = code(167)
+const I_SHIFT = code(192)
 # PORT: pl-vmi.c I_SHIFTCP
 "`'\$shift_for_copy'(Ball)` on a variable already seen: `I_SHIFT` for a copied continuation (pl-vmi.c). Compiled since LB4 b2; run: CONT1."
-const I_SHIFTCP = code(168)
+const I_SHIFTCP = code(193)
 # TR4 (compiled tries): `S_TRIE_GEN` (pl-vmi.c:5937) and the `T_*` family (pl-vmi.c:6134-6660) in pl-vmi.c's order. `T_SMALLINTW`/
 # `T_TRY_SMALLINTW` are not declared, as `H_SMALLINTW` (`CODES_PER_WORD == 1`: compile_trie never emits them, pl-trie.c:4645).
 # OPERANDS (DIVERGES): `T_FUNCTOR`'s is the functor word and `T_ATOM`'s the atom word, as upstream's (a trie clause is never
@@ -650,88 +727,88 @@ const I_SHIFTCP = code(168)
 # a `T_TRY_*`'s first operand is the else offset, as upstream's (`CA1_JUMP`, filled by `fixup_else`).
 # PORT: pl-vmi.c S_TRIE_GEN
 "Supervisor of `trie_gen_compiled/2,3`: compile the trie in the first argument on demand and run its clause in the same frame (pl-vmi.c; TR4)."
-const S_TRIE_GEN = code(169)
+const S_TRIE_GEN = code(194)
 # PORT: pl-vmi.c T_TRIE_GEN2
 "First instruction of a compiled trie of `trie_gen_compiled/2`: set up the trie state of the frame (pl-vmi.c; TR4)."
-const T_TRIE_GEN2 = code(170)
+const T_TRIE_GEN2 = code(195)
 # PORT: pl-vmi.c T_TRIE_GEN3
 "First instruction of a compiled trie of `trie_gen_compiled/3`: set up the trie state of the frame (pl-vmi.c; TR4)."
-const T_TRIE_GEN3 = code(171)
+const T_TRIE_GEN3 = code(196)
 # PORT: pl-vmi.c T_VALUE
 "Continue with the value of a compiled trie map: unwind the argument stack, the term is argument 2 (pl-vmi.c; TR4)."
-const T_VALUE = code(172)
+const T_VALUE = code(197)
 # PORT: pl-vmi.c T_DELAY
 "Push the condition of a conditional answer of a compiled trie on the delay list; operand the node handle (pl-vmi.c; TR4 declares it, the body is TB4's)."
-const T_DELAY = code(173)
+const T_DELAY = code(198)
 # PORT: pl-vmi.c T_TRY_FUNCTOR
 "`T_FUNCTOR` with an alternative: a CHP_JUMP choice point to the else operand (pl-vmi.c; TR4)."
-const T_TRY_FUNCTOR = code(174)
+const T_TRY_FUNCTOR = code(199)
 # PORT: pl-vmi.c T_FUNCTOR
 "Unify the current trie position with a compound of the functor operand and descend into it (pl-vmi.c; TR4)."
-const T_FUNCTOR = code(175)
+const T_FUNCTOR = code(200)
 # PORT: pl-vmi.c T_POP
 "Leave the current compound of a compiled trie (pl-vmi.c; TR4)."
-const T_POP = code(176)
+const T_POP = code(201)
 # PORT: pl-vmi.c T_POPN
 "Leave N compounds of a compiled trie (pl-vmi.c; TR4)."
-const T_POPN = code(177)
+const T_POPN = code(202)
 # PORT: pl-vmi.c T_TRY_VAR
 "`T_VAR` with an alternative (pl-vmi.c; TR4)."
-const T_TRY_VAR = code(178)
+const T_TRY_VAR = code(203)
 # PORT: pl-vmi.c T_VAR
 "Unify the current trie position with trie variable N (pl-vmi.c; TR4)."
-const T_VAR = code(179)
+const T_VAR = code(204)
 # PORT: pl-vmi.c T_TRY_ATTVARA
 "`T_ATTVARA` with an alternative (pl-vmi.c; TR4)."
-const T_TRY_ATTVARA = code(180)
+const T_TRY_ATTVARA = code(205)
 # PORT: pl-vmi.c T_ATTVARA
 "Start attributed trie variable N: create it on its first occurrence and descend into its attributes (pl-vmi.c; TR4)."
-const T_ATTVARA = code(181)
+const T_ATTVARA = code(206)
 # PORT: pl-vmi.c T_TRY_ATTVARZ
 "`T_ATTVARZ` with an alternative (pl-vmi.c; TR4)."
-const T_TRY_ATTVARZ = code(182)
+const T_TRY_ATTVARZ = code(207)
 # PORT: pl-vmi.c T_ATTVARZ
 "End attributed trie variable N: bind the position it stands for (pl-vmi.c `t_attvarz`, istable false; TR4)."
-const T_ATTVARZ = code(183)
+const T_ATTVARZ = code(208)
 # PORT: pl-vmi.c T_TRY_ATTVARZT
 "`T_ATTVARZT` with an alternative (pl-vmi.c; TR4)."
-const T_TRY_ATTVARZT = code(184)
+const T_TRY_ATTVARZT = code(209)
 # PORT: pl-vmi.c T_ATTVARZT
 "`T_ATTVARZ` for a table's trie: a trailed assignment instead of `assignAttVar` (pl-vmi.c `t_attvarz`, istable true; TR4)."
-const T_ATTVARZT = code(185)
+const T_ATTVARZT = code(210)
 # PORT: pl-vmi.c T_TRY_FLOAT
 "`T_FLOAT` with an alternative (pl-vmi.c; TR4)."
-const T_TRY_FLOAT = code(186)
+const T_TRY_FLOAT = code(211)
 # PORT: pl-vmi.c T_FLOAT
 "Unify the current trie position with the float of the literal operand (pl-vmi.c; TR4)."
-const T_FLOAT = code(187)
+const T_FLOAT = code(212)
 # PORT: pl-vmi.c T_TRY_MPZ
 "`T_MPZ` with an alternative (pl-vmi.c; TR4)."
-const T_TRY_MPZ = code(188)
+const T_TRY_MPZ = code(213)
 # PORT: pl-vmi.c T_MPZ
 "Unify the current trie position with the big integer (or other indirect) of the literal operand (pl-vmi.c; TR4)."
-const T_MPZ = code(189)
+const T_MPZ = code(214)
 # PORT: pl-vmi.c T_TRY_STRING
 "`T_STRING` with an alternative (pl-vmi.c; TR4)."
-const T_TRY_STRING = code(190)
+const T_TRY_STRING = code(215)
 # PORT: pl-vmi.c T_STRING
 "Unify the current trie position with the string of the literal operand (pl-vmi.c; TR4)."
-const T_STRING = code(191)
+const T_STRING = code(216)
 # PORT: pl-vmi.c T_TRY_ATOM
 "`T_ATOM` with an alternative (pl-vmi.c; TR4)."
-const T_TRY_ATOM = code(192)
+const T_TRY_ATOM = code(217)
 # PORT: pl-vmi.c T_ATOM
 "Unify the current trie position with the atom word operand (pl-vmi.c `t_const`; TR4)."
-const T_ATOM = code(193)
+const T_ATOM = code(218)
 # PORT: pl-vmi.c T_TRY_SMALLINT
 "`T_SMALLINT` with an alternative (pl-vmi.c; TR4)."
-const T_TRY_SMALLINT = code(194)
+const T_TRY_SMALLINT = code(219)
 # PORT: pl-vmi.c T_SMALLINT
 "Unify the current trie position with the tagged integer operand (pl-vmi.c `t_const`; TR4)."
-const T_SMALLINT = code(195)
+const T_SMALLINT = code(220)
 # PORT: pl-vmi.c T_CHECKWAKEUP
 "Run the wakeup goals of a compiled trie's answer before `I_EXIT` (pl-vmi.c; TR4)."
-const T_CHECKWAKEUP = code(196)
+const T_CHECKWAKEUP = code(221)
 
 # PORT: pl-incl.h code_info
 # DIVERGES: `arguments` counts the kernel's operand WORDS — a literal is one (see above), where
@@ -913,6 +990,31 @@ const _CODE_TABLE = (
     code_info(:S_WRAP, 0x00, 0, (0x00, 0x00, 0x00, 0x00)),
     code_info(:S_CALLWRAPPER, 0x00, 3, (CA1_CLAUSEREF, CA1_DATA, CA1_DATA, 0x00)),
     code_info(:S_TABLED, 0x00, 3, (CA1_CLAUSEREF, CA1_DATA, CA1_DATA, 0x00)),
+    code_info(:A_ENTER, 0x00, 0, (0x00, 0x00, 0x00, 0x00)),
+    code_info(:A_INTEGER, 0x00, 1, (CA1_INTEGER, 0x00, 0x00, 0x00)),
+    code_info(:A_MPZ, 0x00, 1, (CA1_MPZ, 0x00, 0x00, 0x00)),
+    code_info(:A_MPQ, 0x00, 1, (CA1_MPQ, 0x00, 0x00, 0x00)),
+    code_info(:A_DOUBLE, 0x00, 1, (CA1_FLOAT, 0x00, 0x00, 0x00)),
+    code_info(:A_VAR, 0x00, 1, (CA1_VAR, 0x00, 0x00, 0x00)),
+    code_info(:A_VAR0, 0x00, 0, (0x00, 0x00, 0x00, 0x00)),
+    code_info(:A_VAR1, 0x00, 0, (0x00, 0x00, 0x00, 0x00)),
+    code_info(:A_VAR2, 0x00, 0, (0x00, 0x00, 0x00, 0x00)),
+    code_info(:A_FUNC0, 0x00, 1, (CA1_AFUNC, 0x00, 0x00, 0x00)),
+    code_info(:A_FUNC1, 0x00, 1, (CA1_AFUNC, 0x00, 0x00, 0x00)),
+    code_info(:A_FUNC2, 0x00, 1, (CA1_AFUNC, 0x00, 0x00, 0x00)),
+    code_info(:A_FUNC, 0x00, 2, (CA1_AFUNC, CA1_INTEGER, 0x00, 0x00)),
+    code_info(:A_ROUNDTOWARDS_A, 0x00, 1, (CA1_INTEGER, 0x00, 0x00, 0x00)),
+    code_info(:A_ROUNDTOWARDS_V, 0x00, 1, (CA1_VAR, 0x00, 0x00, 0x00)),
+    code_info(:A_ADD, 0x00, 0, (0x00, 0x00, 0x00, 0x00)),
+    code_info(:A_MUL, 0x00, 0, (0x00, 0x00, 0x00, 0x00)),
+    code_info(:A_LT, VIF_BREAK, 0, (0x00, 0x00, 0x00, 0x00)),
+    code_info(:A_LE, VIF_BREAK, 0, (0x00, 0x00, 0x00, 0x00)),
+    code_info(:A_GT, VIF_BREAK, 0, (0x00, 0x00, 0x00, 0x00)),
+    code_info(:A_GE, VIF_BREAK, 0, (0x00, 0x00, 0x00, 0x00)),
+    code_info(:A_EQ, VIF_BREAK, 0, (0x00, 0x00, 0x00, 0x00)),
+    code_info(:A_NE, VIF_BREAK, 0, (0x00, 0x00, 0x00, 0x00)),
+    code_info(:A_IS, VIF_BREAK, 0, (0x00, 0x00, 0x00, 0x00)),
+    code_info(:A_FIRSTVAR_IS, VIF_BREAK, 1, (CA1_FVAR, 0x00, 0x00, 0x00)),
     code_info(:I_RESET, 0x00, 0, (0x00, 0x00, 0x00, 0x00)),
     code_info(:I_EXITRESET, 0x00, 0, (0x00, 0x00, 0x00, 0x00)),
     code_info(:I_CALLCONT, 0x00, 1, (CA1_VAR, 0x00, 0x00, 0x00)),

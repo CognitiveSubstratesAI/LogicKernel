@@ -28,8 +28,13 @@
 #     (`_number_alloc!`, `_number_free!`, a stack discipline), so the Int64 path allocates nothing
 #     but its result term.
 #   * `AR_CTX`/`AR_BEGIN`/`AR_END`/`AR_CLEANUP` (GMP memory tracking and the float rounding mode)
-#     have nothing to do: Julia's GC frees a `BigInt`, and only `roundtoward/2`, not ported, sets the
-#     rounding mode.
+#     have nothing to do for the memory: Julia's GC frees a `BigInt`. The rounding mode is the hardware's
+#     (`fegetround`/`fesetround`, src/pl-gmp.jl), held ONLY for the duration of one evaluation:
+#     `evalExpression_cells` sets the mode `float_rounding` names, `roundtoward/2` sets another inside it,
+#     and a `finally` puts the mode found at the entry back (upstream leaves the mode it set after an
+#     error in `roundtoward/2`'s first argument and after `set_prolog_flag(float_rounding, M)`: swipl's
+#     hardware mode is the process's, here it would be the Julia runtime's). Float operations outside an
+#     evaluation (reading and printing floats, the VM's own arithmetic) run to nearest.
 #   * The flags: `LD->arith.f.flags` at upstream's default (`float_overflow`, `float_zero_div` and
 #     `float_undefined` = error, `float_underflow` = ignore); `prefer_rationals` and `iso` are bits of
 #     the mask (`truePrologFlag`), false, as their defaults. Nothing sets a flag yet (no
@@ -85,16 +90,16 @@ end
 
 # ── float checks (pl-arith.c) ────────────────────────────────────────────────────────────────────
 # PORT: pl-arith.h FLT_ROUND_NEAREST
-"Round to nearest (pl-arith.h), the rounding the kernel has."
+"Round to nearest (pl-arith.h), the default."
 const FLT_ROUND_NEAREST = UInt32(0x0001)
 # PORT: pl-arith.h FLT_ROUND_TO_POS
-"Round toward positive infinity (pl-arith.h); the kernel does not round this way, the flag names it."
+"Round toward positive infinity (pl-arith.h)."
 const FLT_ROUND_TO_POS = UInt32(0x0002)
 # PORT: pl-arith.h FLT_ROUND_TO_NEG
-"Round toward negative infinity (pl-arith.h); the kernel does not round this way, the flag names it."
+"Round toward negative infinity (pl-arith.h)."
 const FLT_ROUND_TO_NEG = UInt32(0x0003)
 # PORT: pl-arith.h FLT_ROUND_TO_ZERO
-"Round toward zero (pl-arith.h); the kernel does not round this way, the flag names it."
+"Round toward zero (pl-arith.h)."
 const FLT_ROUND_TO_ZERO = UInt32(0x0004)
 # PORT: pl-arith.h FLT_ROUND_MASK
 "The rounding mode's bits in `arith.f.flags` (pl-arith.h)."
@@ -1157,7 +1162,8 @@ end
 
 # ── arith-b: powers, transcendental functions, constants and system (pl-arith.c) ──────────────────
 # The C library functions, from glibc's libm — the library `swipl` calls (`USE_CRMATH` is off by
-# default, so `cr_sin` & co. are plain libm calls in FE_TONEAREST mode, the only mode the kernel has).
+# default, so `cr_sin` & co. are the libm call in FE_TONEAREST mode, rounded outwards by `nexttoward` as
+# the rounding mode says: `CR_FUNC` and its kin below).
 # Julia's own `sin`, `exp`, `^`, ... are other implementations and differ from glibc's in the last
 # digit for about 1 argument in 100 (measured), and its `sqrt`, `asin`, ... throw where C returns a
 # NaN, so each is called through `ccall`.
@@ -1165,38 +1171,146 @@ end
 "The C math library the evaluable functions call (glibc's soname)."
 const LIBM = "libm.so.6"
 
-# `cr_sin` of pl-arith.c
-"`sin(x)` of the C library (pl-arith.c `cr_sin`, FE_TONEAREST)."
-_libm_sin(x::Float64)::Float64 = ccall((:sin, LIBM), Float64, (Float64,), x)
-# `cr_cos` of pl-arith.c
-"`cos(x)` of the C library (pl-arith.c `cr_cos`, FE_TONEAREST)."
-_libm_cos(x::Float64)::Float64 = ccall((:cos, LIBM), Float64, (Float64,), x)
-# `cr_tan` of pl-arith.c
-"`tan(x)` of the C library (pl-arith.c `cr_tan`, FE_TONEAREST)."
-_libm_tan(x::Float64)::Float64 = ccall((:tan, LIBM), Float64, (Float64,), x)
-# `cr_asin` of pl-arith.c
-"`asin(x)` of the C library (pl-arith.c `cr_asin`, FE_TONEAREST)."
-_libm_asin(x::Float64)::Float64 = ccall((:asin, LIBM), Float64, (Float64,), x)
-# `cr_acos` of pl-arith.c
-"`acos(x)` of the C library (pl-arith.c `cr_acos`, FE_TONEAREST)."
-_libm_acos(x::Float64)::Float64 = ccall((:acos, LIBM), Float64, (Float64,), x)
-# `cr_atan` of pl-arith.c
-"`atan(x)` of the C library (pl-arith.c `cr_atan`, FE_TONEAREST)."
-_libm_atan(x::Float64)::Float64 = ccall((:atan, LIBM), Float64, (Float64,), x)
-# `cr_atan2` of pl-arith.c
-"`atan2(y, x)` of the C library (pl-arith.c `cr_atan2`, FE_TONEAREST)."
-_libm_atan2(y::Float64, x::Float64)::Float64 =
+# The raw libm calls the `cr_*` functions wrap (`sin(in)` inside upstream's macro, in FE_TONEAREST mode).
+_c_sin(x::Float64)::Float64 = ccall((:sin, LIBM), Float64, (Float64,), x)
+_c_cos(x::Float64)::Float64 = ccall((:cos, LIBM), Float64, (Float64,), x)
+_c_tan(x::Float64)::Float64 = ccall((:tan, LIBM), Float64, (Float64,), x)
+_c_asin(x::Float64)::Float64 = ccall((:asin, LIBM), Float64, (Float64,), x)
+_c_acos(x::Float64)::Float64 = ccall((:acos, LIBM), Float64, (Float64,), x)
+_c_atan(x::Float64)::Float64 = ccall((:atan, LIBM), Float64, (Float64,), x)
+_c_atan2(y::Float64, x::Float64)::Float64 =
     ccall((:atan2, LIBM), Float64, (Float64, Float64), y, x)
-# `cr_exp` of pl-arith.c
-"`exp(x)` of the C library (pl-arith.c `cr_exp`, FE_TONEAREST)."
-_libm_exp(x::Float64)::Float64 = ccall((:exp, LIBM), Float64, (Float64,), x)
-# `cr_log` of pl-arith.c
-"`log(x)` of the C library (pl-arith.c `cr_log`, FE_TONEAREST)."
-_libm_log(x::Float64)::Float64 = ccall((:log, LIBM), Float64, (Float64,), x)
-# `cr_pow` of pl-arith.c
-"`pow(b, e)` of the C library (pl-arith.c `cr_pow`, FE_TONEAREST)."
-_libm_pow(b::Float64, e::Float64)::Float64 =
+_c_exp(x::Float64)::Float64 = ccall((:exp, LIBM), Float64, (Float64,), x)
+_c_log(x::Float64)::Float64 = ccall((:log, LIBM), Float64, (Float64,), x)
+_c_pow(b::Float64, e::Float64)::Float64 =
     ccall((:pow, LIBM), Float64, (Float64, Float64), b, e)
+_c_sinh(x::Float64)::Float64 = ccall((:sinh, LIBM), Float64, (Float64,), x)
+_c_cosh(x::Float64)::Float64 = ccall((:cosh, LIBM), Float64, (Float64,), x)
+_c_tanh(x::Float64)::Float64 = ccall((:tanh, LIBM), Float64, (Float64,), x)
+_c_erf(x::Float64)::Float64 = ccall((:erf, LIBM), Float64, (Float64,), x)
+_c_log10(x::Float64)::Float64 = ccall((:log10, LIBM), Float64, (Float64,), x)
+# `lgamma` keeps the sign in the global `signgam`, which nothing reads here
+_c_lgamma(x::Float64)::Float64 = ccall((:lgamma, LIBM), Float64, (Float64,), x)
+
+# PORT: pl-arith.c CR_FUNC
+# DIVERGES: the macro's body as a function of the libm call `f` (a function value, specialised), for `log`, `log10`,
+# `tan`, `asin`, `acos`, `atan`, `sinh` and `lgamma` — `cr_log` & co. are `_libm_log` & co.
+"The `cr_` function of `f` with no limit on its result (pl-arith.c `CR_FUNC`): `f` to nearest, then one neighbour outwards."
+function CR_FUNC(f::F, x::Float64)::Float64 where {F}
+    roundMode = fegetround()
+    roundMode != FE_TONEAREST && fesetround(FE_TONEAREST)
+    result = f(x)
+    if isfinite(result)
+        if roundMode == FE_UPWARD
+            result = nexttoward(result, Inf)
+        elseif roundMode == FE_DOWNWARD
+            result = nexttoward(result, -Inf)
+        elseif roundMode == FE_TOWARDZERO
+            result = nexttoward(result, 0.0)
+        end
+    end
+    roundMode != FE_TONEAREST && fesetround(roundMode)
+    return result
+end
+
+# PORT: pl-arith.c CR_FUNC_1
+# DIVERGES: as `CR_FUNC`, for `sin`, `cos` and `tanh`: the result is bounded by 1.0 in absolute value.
+"The `cr_` function of `f` with `abs(result) =< 1.0` (pl-arith.c `CR_FUNC_1`)."
+function CR_FUNC_1(f::F, x::Float64)::Float64 where {F}
+    roundMode = fegetround()
+    roundMode != FE_TONEAREST && fesetround(FE_TONEAREST)
+    result = f(x)
+    if isfinite(result)
+        if roundMode == FE_UPWARD
+            result = (result < 1.0) ? nexttoward(result, Inf) : 1.0
+        elseif roundMode == FE_DOWNWARD
+            result = (result > -1.0) ? nexttoward(result, -Inf) : -1.0
+        elseif roundMode == FE_TOWARDZERO
+            result = nexttoward(result, 0.0)
+        end
+    end
+    roundMode != FE_TONEAREST && fesetround(roundMode)
+    return result
+end
+
+# PORT: pl-arith.c CR_FUNC as _libm_log
+"`log(x)` of the C library (pl-arith.c `cr_log`)."
+_libm_log(x::Float64)::Float64 = CR_FUNC(_c_log, x)
+# PORT: pl-arith.c CR_FUNC as _libm_log10
+"`log10(x)` of the C library (pl-arith.c `cr_log10`)."
+_libm_log10(x::Float64)::Float64 = CR_FUNC(_c_log10, x)
+# PORT: pl-arith.c CR_FUNC_1 as _libm_sin
+"`sin(x)` of the C library (pl-arith.c `cr_sin`)."
+_libm_sin(x::Float64)::Float64 = CR_FUNC_1(_c_sin, x)
+# PORT: pl-arith.c CR_FUNC_1 as _libm_cos
+"`cos(x)` of the C library (pl-arith.c `cr_cos`)."
+_libm_cos(x::Float64)::Float64 = CR_FUNC_1(_c_cos, x)
+# PORT: pl-arith.c CR_FUNC as _libm_tan
+"`tan(x)` of the C library (pl-arith.c `cr_tan`)."
+_libm_tan(x::Float64)::Float64 = CR_FUNC(_c_tan, x)
+# PORT: pl-arith.c CR_FUNC as _libm_asin
+"`asin(x)` of the C library (pl-arith.c `cr_asin`)."
+_libm_asin(x::Float64)::Float64 = CR_FUNC(_c_asin, x)
+# PORT: pl-arith.c CR_FUNC as _libm_acos
+"`acos(x)` of the C library (pl-arith.c `cr_acos`)."
+_libm_acos(x::Float64)::Float64 = CR_FUNC(_c_acos, x)
+# PORT: pl-arith.c CR_FUNC as _libm_atan
+"`atan(x)` of the C library (pl-arith.c `cr_atan`)."
+_libm_atan(x::Float64)::Float64 = CR_FUNC(_c_atan, x)
+# PORT: pl-arith.c cr_atan2 as _libm_atan2
+"`atan2(y, x)` of the C library (pl-arith.c `cr_atan2`): one neighbour outwards, the result finite (|result| =< pi)."
+function _libm_atan2(y::Float64, x::Float64)::Float64
+    roundMode = fegetround()
+    roundMode != FE_TONEAREST && fesetround(FE_TONEAREST)
+    result = _c_atan2(y, x)                                 # abs(result) =< pi
+    if roundMode == FE_UPWARD
+        result = nexttoward(result, Inf)
+    elseif roundMode == FE_DOWNWARD
+        result = nexttoward(result, -Inf)
+    elseif roundMode == FE_TOWARDZERO
+        result = nexttoward(result, 0.0)
+    end
+    roundMode != FE_TONEAREST && fesetround(roundMode)
+    return result
+end
+# PORT: pl-arith.c cr_exp as _libm_exp
+"`exp(x)` of the C library (pl-arith.c `cr_exp`): the lower limit of the result is 0.0."
+function _libm_exp(x::Float64)::Float64
+    roundMode = fegetround()
+    roundMode != FE_TONEAREST && fesetround(FE_TONEAREST)
+    result = _c_exp(x)
+    if roundMode == FE_UPWARD
+        if x != -Inf
+            result = nexttoward(result, Inf)
+        end
+    elseif roundMode == FE_DOWNWARD || roundMode == FE_TOWARDZERO
+        if result != Inf
+            result = nexttoward(result, 0.0)
+        end
+    end
+    roundMode != FE_TONEAREST && fesetround(roundMode)
+    return result
+end
+# PORT: pl-arith.c cr_pow as _libm_pow
+"`pow(b, e)` of the C library (pl-arith.c `cr_pow`): the lower limit of the result is 0.0."
+function _libm_pow(b::Float64, e::Float64)::Float64
+    roundMode = fegetround()
+    roundMode != FE_TONEAREST && fesetround(FE_TONEAREST)
+    result = _c_pow(b, e)
+    if !isnan(result)
+        if roundMode == FE_UPWARD
+            result = (e == -Inf) ? 0.0 : nexttoward(result, Inf)
+        elseif roundMode == FE_DOWNWARD
+            result = (e == -Inf) ? 0.0 : nexttoward(result, -Inf)
+        elseif roundMode == FE_TOWARDZERO
+            if result != Inf
+                result = nexttoward(result, 0.0)
+            end
+        end
+    end
+    roundMode != FE_TONEAREST && fesetround(roundMode)
+    return result
+end
 # `sqrt` is not redefined by `O_ROUND_UP_DOWN`: C's own, correctly rounded by IEEE.
 "`sqrt(x)` of the C library: a NaN for a negative argument (Julia's `sqrt` throws)."
 _libm_sqrt(x::Float64)::Float64 = ccall((:sqrt, LIBM), Float64, (Float64,), x)
@@ -1292,19 +1406,17 @@ function ar_log(ld::PL_local_data, n1::number, r::number)::Bool
 end
 
 # PORT: pl-arith.c ar_pi
-# DIVERGES: round to nearest only, so `fegetround() == FE_UPWARD` never holds.
-"`pi/0` (pl-arith.c `ar_pi`): `M_PI`."
+"`pi/0` (pl-arith.c `ar_pi`): `M_PI`, the next float up when rounding upward."
 function ar_pi(r::number)::Bool
-    r.f = Float64(π)                                        # M_PI
+    r.f = (fegetround() == FE_UPWARD) ? nexttoward(Float64(π), Inf) : Float64(π)    # M_PI
     r.type = V_FLOAT
     return true
 end
 
 # PORT: pl-arith.c ar_e
-# DIVERGES: round to nearest only, as `ar_pi`.
-"`e/0` (pl-arith.c `ar_e`): `M_E`."
+"`e/0` (pl-arith.c `ar_e`): `M_E`, the next float up when rounding upward."
 function ar_e(r::number)::Bool
-    r.f = Float64(ℯ)                                        # M_E
+    r.f = (fegetround() == FE_UPWARD) ? nexttoward(Float64(ℯ), Inf) : Float64(ℯ)    # M_E
     r.type = V_FLOAT
     return true
 end
@@ -1318,68 +1430,342 @@ function ar_cputime(r::number)::Bool
     return true
 end
 
-# The random source: upstream seeds a GMP `gmp_randstate_t` (a Mersenne twister, `init_random`) in the
-# LOCAL DATA on first use (`LD->arith.random`); here SplitMix64 on `ld.random_state`, seeded on first use.
-# A seed (`set_random/1`, `random_property/1`) is a later step, so the stream is not comparable to
-# swipl's under any seed: the tests check the range and the errors.
-# DIVERGES: the generator (above).
+# The random source: upstream's `LD->arith.random` is a GMP `gmp_randstate_t`, the Mersenne twister
+# (`gmp_randinit_mt`, GMP's randmt.c: `randseed_mt`, `__gmp_mt_recalc_buffer`, `__gmp_mt_getnext`,
+# `randget_mt`) that `init_random` makes and `seed_random` seeds. Here the state is `ld.random_state`,
+# a `Vector{UInt32}` of the generator's struct (`mt[624]`, then `mti`; empty until `init_random`), and
+# the GMP generator is written out as named pieces, so that a seed gives swipl's stream and
+# `random_property(state(S))` shows swipl's state number (the struct's bytes as one integer, the same
+# 20032 bits).
+# DIVERGES: the struct is a `Vector{UInt32}`, not GMP's allocation; the state integer's padding word
+# above `mti` is zero.
 
-# `init_random` and `mt_rand_u32` of pl-arith.c, in one
-"The next 64 random bits (`init_random` on first use, then `mt_rand_u32` twice)."
-function _random_u64(ld::PL_local_data)::UInt64
-    if ld.random_state == 0                                 # init_random()
-        ld.random_state =
-            (UInt64(time_ns()) ⊻ (UInt64(Libc.getpid()) << 40) ⊻ 0x853c49e6748fea9b) | 1
+const MT_N = 624
+const MT_M = 397
+const MT_MATRIX_A = 0x9908b0df
+const MT_WARM_UP = 2000                                     # randmt.c WARM_UP
+const MT_LIMBS = 313                                        # the struct's size in 64-bit limbs
+
+# GMP source (not swipl-devel): randmt.c mangle_seed
+# One reduction step of GMP's `mangle_seed`: `r` modulo 2^19937 - 20023, as upstream's inner loop.
+function _mt_reduce(r::BigInt)::BigInt
+    while true
+        t = r >> 19937                                      # mpz_tdiv_q_2exp(t, r, 19937)
+        iszero(t) && return r
+        r = (r & ((BigInt(1) << 19937) - 1)) + t * 20023    # mpz_tdiv_r_2exp, mpz_addmul_ui
     end
-    z = ld.random_state += 0x9e3779b97f4a7c15
-    z = (z ⊻ (z >> 30)) * 0xbf58476d1ce4e5b9
-    z = (z ⊻ (z >> 27)) * 0x94d049bb133111eb
-    return z ⊻ (z >> 31)
 end
 
-# GMP's `mpz_urandomm` by rejection: `nbits` random bits until the number is below `n`.
-"A random integer in `[0, n)` for `n > 0` (GMP `mpz_urandomm`)."
-function _mpz_urandomm(ld::PL_local_data, n::BigInt)::BigInt
-    nbits = ndigits(n; base=2)
-    nwords = cld(nbits, 32)
+# GMP source (not swipl-devel): randmt.c mangle_seed
+"`b^1074888996` modulo 2^19937 - 20023, GMP's mangling of a seed (randmt.c `mangle_seed`)."
+function _mt_mangle_seed(b::BigInt)::BigInt
+    r = b
+    e = UInt64(0x40118124)
+    bit = UInt64(0x20000000)
     while true
-        x = BigInt(0)
-        for _ in 1:nwords
-            x = (x << 32) | BigInt(UInt32(_random_u64(ld) >> 32))
+        r = _mt_reduce(r * r)
+        while (e & bit) != 0
+            e ⊻= bit
+            r = _mt_reduce(r * b)
         end
-        x >>= nwords * 32 - nbits
-        x < n && return x
+        bit >>= 1
+        bit == 0 && return r
+    end
+end
+
+# GMP source (not swipl-devel): randmt.c __gmp_mt_recalc_buffer
+"Refill the twister's 624 words (`__gmp_mt_recalc_buffer`); `mt` is 1-based here."
+function _mt_recalc_buffer!(mt::Vector{UInt32})::Nothing
+    for kk in 0:(MT_N - MT_M - 1)
+        y = (mt[kk + 1] & 0x80000000) | (mt[kk + 2] & 0x7fffffff)
+        mt[kk + 1] = mt[kk + MT_M + 1] ⊻ (y >> 1) ⊻ ((y & 1) != 0 ? MT_MATRIX_A : UInt32(0))
+    end
+    for kk in (MT_N - MT_M):(MT_N - 2)
+        y = (mt[kk + 1] & 0x80000000) | (mt[kk + 2] & 0x7fffffff)
+        mt[kk + 1] =
+            mt[kk + (MT_M - MT_N) + 1] ⊻ (y >> 1) ⊻
+            ((y & 1) != 0 ? MT_MATRIX_A : UInt32(0))
+    end
+    y = (mt[MT_N] & 0x80000000) | (mt[1] & 0x7fffffff)
+    mt[MT_N] = mt[MT_M] ⊻ (y >> 1) ⊻ ((y & 1) != 0 ? MT_MATRIX_A : UInt32(0))
+    return nothing
+end
+
+# GMP source (not swipl-devel): randmt.c randseed_mt
+"`gmp_randseed` on the twister (randmt.c `randseed_mt`): `mt` is reseeded from the integer `seed`."
+function _mt_randseed!(mt::Vector{UInt32}, seed::BigInt)::Nothing
+    length(mt) == MT_N + 1 || resize!(mt, MT_N + 1)
+    modulus = (BigInt(1) << 19937) - 20027                  # mpz_setbit(mod, 19937); mpz_sub_ui
+    seed1 = mod(seed, modulus) + 2                          # mpz_mod, mpz_add_ui
+    seed1 = _mt_mangle_seed(seed1)
+    if ((seed1 >> 19936) & 1) != 0                          # the last bit goes to bit 31 of mt[0]
+        mt[1] = 0x80000000
+        seed1 -= BigInt(1) << 19936                         # mpz_clrbit
+    else
+        mt[1] = UInt32(0)
+    end
+    for i in 1:(MT_N - 1)                                   # mpz_export into mt[1..N-1], zero filled
+        mt[i + 1] = UInt32(seed1 & 0xffffffff)
+        seed1 >>= 32
+    end
+    for _ in 1:(MT_WARM_UP ÷ MT_N)
+        _mt_recalc_buffer!(mt)
+    end
+    mt[MT_N + 1] = UInt32(MT_WARM_UP % MT_N)                # p->mti
+    return nothing
+end
+
+# GMP source (not swipl-devel): randmt.c __gmp_mt_getnext
+"The next tempered 32 bits of the twister (`__gmp_mt_getnext`)."
+function _mt_getnext!(mt::Vector{UInt32})::UInt32
+    if mt[MT_N + 1] >= MT_N
+        _mt_recalc_buffer!(mt)
+        mt[MT_N + 1] = 0
+    end
+    y = mt[Int(mt[MT_N + 1]) + 1]
+    mt[MT_N + 1] += 1
+    y ⊻= y >> 11
+    y ⊻= (y << 7) & 0x9d2c5680
+    y ⊻= (y << 15) & 0xefc60000
+    y ⊻= y >> 18
+    return y
+end
+
+# GMP source (not swipl-devel): randmt.c randget_mt
+"`nbits` random bits as an integer (GMP `_gmp_rand` on the twister: whole limbs as two words, low word first; a partial limb keeps its low bits)."
+function _mt_randget!(mt::Vector{UInt32}, nbits::Int)::BigInt
+    nlimbs, rbits = divrem(nbits, 64)
+    limbs = Vector{UInt64}(undef, nlimbs)
+    for i in 1:nlimbs
+        lo = UInt64(_mt_getnext!(mt))
+        limbs[i] = lo | (UInt64(_mt_getnext!(mt)) << 32)
+    end
+    top = UInt64(0)
+    if rbits != 0
+        if rbits < 32
+            top = UInt64(_mt_getnext!(mt)) & ((UInt64(1) << rbits) - 1)
+        else
+            lo = UInt64(_mt_getnext!(mt))
+            hi = UInt64(_mt_getnext!(mt)) & ((UInt64(1) << (rbits - 32)) - 1)
+            top = lo | (hi << 32)
+        end
+    end
+    # the limbs were drawn low limb first, the partial limb last (GMP fills dest[0..] upwards)
+    x = BigInt(top)
+    for i in nlimbs:-1:1
+        x = (x << 64) | BigInt(limbs[i])
+    end
+    return x
+end
+
+# ORIGINAL: GMP `gmp_randseed_ui`'s seed integer
+# (the seed of `set_random(seed(N))` for a small integer is an `unsigned long`)
+"The `unsigned long` `i` as seed integer (`(unsigned long)n.value.i`)."
+_ulong_seed(i::Int64)::BigInt = BigInt(reinterpret(UInt64, i))
+
+# PORT: pl-arith.c seed_from_dev
+# DIVERGES: the read is `readbytes!` up to 128 bytes (it returns at 128 bytes or at the end of the file), where upstream's loop reads
+# until 16 bytes are in and takes whatever the last `read` returned (up to 128): on a device that hands out fewer than 128 bytes per
+# read the seed is longer here, and a device that blocks after 16 bytes blocks here (`/dev/urandom`, `/dev/random` of a current kernel
+# give 128 at once). An error from `open` (`SystemError`) is a false return, as `open() == -1`.
+"Seed the generator from a character device (`/dev/urandom`, `/dev/random`): true when 16 bytes or more were read."
+function seed_from_dev(ld::PL_local_data, dev::String)::Bool
+    io = try
+        open(dev, "r")                                      # open(dev, O_RDONLY)
+    catch e
+        (e isa SystemError || e isa Base.IOError) || rethrow()
+        return false
+    end
+    done = false
+    try
+        if Base.Filesystem.ischardev(stat(io))              # fstat, S_ISCHR
+            buf = Vector{UInt8}(undef, 128)                 # RAND_SEED_LEN
+            rd = readbytes!(io, buf, 128)
+            if rd >= 16                                     # MIN_RAND_SEED_LEN
+                seed = BigInt(0)                            # mpz_import(seed, rd, 1, 1, 0, 0, seedarray)
+                for i in 1:rd
+                    seed = (seed << 8) | buf[i]
+                end
+                _mt_randseed!(ld.random_state, seed)
+                done = true
+            end
+        end
+    finally
+        close(io)
+    end
+    return done
+end
+
+# PORT: pl-arith.c seed_random
+# DIVERGES: `seed_from_crypt_context` is the Windows arm (nothing here: false).
+"Seed the generator from the system (pl-arith.c `seed_random`): the devices, else the wall clock."
+function seed_random(ld::PL_local_data)::Nothing
+    if !seed_from_dev(ld, "/dev/urandom") && !seed_from_dev(ld, "/dev/random")
+        key = reinterpret(UInt64, WallTime())               # key ^= u.l[i]: one long per double
+        _mt_randseed!(ld.random_state, BigInt(key))         # gmp_randseed_ui
+    end
+    return nothing
+end
+
+# PORT: pl-arith.c init_random
+"Make the generator on first use (pl-arith.c `init_random`): `gmp_randinit_mt` (seed 5489), then `seed_random`."
+function init_random(ld::PL_local_data)::Nothing
+    if isempty(ld.random_state)
+        resize!(ld.random_state, MT_N + 1)
+        _mt_randseed!(ld.random_state, BigInt(5489))        # gmp_randinit_mt: gmp_randseed_ui(5489)
+        seed_random(ld)
+    end
+    return nothing
+end
+
+# GMP source (not swipl-devel): mpz/urandomm.c mpz_urandomm
+"A random integer in `[0, n)` for `n > 0` (GMP `mpz_urandomm`): `nbits` random bits until below `n`, 80 tries at most."
+function _mpz_urandomm(ld::PL_local_data, n::BigInt)::BigInt
+    pow2 = count_ones(n) == 1                               # POW2_P of the limbs
+    nbits = ndigits(n; base=2) - (pow2 ? 1 : 0)
+    nbits == 0 && return BigInt(0)                          # n == 1
+    count = 80                                              # MAX_URANDOMM_ITER
+    while true
+        rp = _mt_randget!(ld.random_state, nbits)
+        rp < n && return rp
+        count -= 1
+        count == 0 && return rp - n                         # too many iterations: result mod n
     end
 end
 
 # PORT: pl-arith.c ar_random
-# DIVERGES: the generator (see `_random_u64`); `V_INTEGER` takes upstream's `O_BF` branch (a mask of
-# `msb(n)+1` bits, redrawn while not below `n`), which answers a small integer, where the GMP branch
-# promotes to `V_MPZ` and answers the same value.
+# DIVERGES: the pin's `#if O_BF` arm (a libbf build: it draws with `mt_rand_u32`) is not this one: the kernel ports the arm of the
+# pin's own build (GMP, `mpz_urandomm`), whose stream test_arith_random_swipl.out pins.
+# DIVERGES: the argument is not promoted in place (`promoteToMPZNumber(n1)`): a `V_INTEGER` takes the
+# `V_MPZ` branch with its value as a `BigInt`; the result is `V_MPZ` as upstream's.
 "`random/1` (pl-arith.c `ar_random`): a random integer in `[0, n)`."
 function ar_random(ld::PL_local_data{T}, n1::number, r::number)::Bool where {T}
     toIntegerNumber(ld, n1, TOINT_CONVERT_FLOAT) ||
         return PL_error(ld, "random", 1, "", ERR_AR_TYPE, mk_sym(T, :integer), n1)
     ar_sign_i(n1) <= 0 && return mustBePositive(ld, "random", 1, n1)
-    if n1.type === V_INTEGER
-        msb = MSB64(n1.i)
-        mask = (UInt64(1) << (msb + 1)) - 1
-        rnd = UInt64(0)
-        while true
-            rnd = _random_u64(ld) >> 32                     # mt_rand_u32
-            if msb > 32
-                rnd |= (_random_u64(ld) >> 32) << 32
-            end
-            rnd &= mask
-            rnd >= UInt64(n1.i) || break
-        end
-        r.type = V_INTEGER
-        r.i = Int64(rnd)
-        return true
-    end
-    r.type = V_MPZ                                          # V_MPZ
-    r.mpz = _mpz_urandomm(ld, n1.mpz)
+    init_random(ld)
+    n = n1.type === V_INTEGER ? BigInt(n1.i) : n1.mpz       # promoteToMPZNumber(n1)
+    r.type = V_MPZ
+    r.mpz = _mpz_urandomm(ld, n)                            # mpz_urandomm
     return true
+end
+
+# ORIGINAL: upstream's `PL_get_number` answers `V_MPZ` for an integer beyond the tagged range
+# (`max_tagged_integer`, 2^56-1 at the pin); the kernel's term layer holds every `Int64` as `V_INTEGER`
+# (`get_rational`). `set_random/1` takes the two as upstream takes the `V_MPZ`.
+"Whether `n` is a `V_INTEGER` past the tagged range (an upstream `V_MPZ`)."
+_is_big_int64(n::number)::Bool =
+    n.type === V_INTEGER && !(PLMINTAGGEDINT <= n.i <= PLMAXTAGGEDINT)
+
+# ORIGINAL: the value of an integer `number` as a `BigInt`
+"The value of the integer `n` (`V_INTEGER` or `V_MPZ`) as a `BigInt`."
+_number_bigint(n::number)::BigInt = n.type === V_INTEGER ? BigInt(n.i) : n.mpz
+
+# PORT: pl-arith.c set_random as pl_set_random1_va
+# DIVERGES: a `V_INTEGER` past the tagged range takes the `V_MPZ` arms (see `_is_big_int64`); a state (`state(S)`) is copied into the struct as `mpz_set` into the seed limbs does,
+# but a number of more than 313 limbs is a `domain_error(random_state, S)` (GMP would reallocate the
+# seed under the generator's struct); the struct has no padding word to copy into.
+# (PRED_IMPL("set_random", 1, set_random, 0))
+"`set_random/1` (pl-arith.c): `seed(random)`, `seed(Int)` or `state(Int)` of the random generator."
+function pl_set_random1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1 = PL__t0
+    init_random(ld)
+    na = PL_get_name_arity(ld, A1)
+    if na !== nothing && na[2] == 1
+        name = na[1]
+        arg = PL_new_term_ref(ld)
+        _PL_get_arg(ld, 1, A1, arg)
+        if sym_key(name) == sym_key(mk_sym(T, :seed))
+            a = PL_get_atom(ld, arg)
+            if a !== nothing && sym_key(a) == sym_key(mk_sym(T, :random))
+                seed_random(ld)
+                return FTRUE
+            end
+            n = _number_alloc!(ld)
+            if !PL_get_number(ld, arg, n)
+                _number_free!(ld, 1)
+                return if PL_error(
+                    ld, "", 0, "integer or 'random'", ERR_TYPE, mk_sym(T, :seed), arg
+                )
+                    FTRUE
+                else
+                    FFALSE
+                end
+            end
+            rc = if n.type === V_INTEGER && PLMINTAGGEDINT <= n.i <= PLMAXTAGGEDINT
+                _mt_randseed!(ld.random_state, _ulong_seed(n.i))    # gmp_randseed_ui
+                true
+            elseif n.type === V_INTEGER || n.type === V_MPZ
+                _mt_randseed!(ld.random_state, _number_bigint(n))   # gmp_randseed
+                true
+            else
+                PL_error(ld, ERR_TYPE, mk_sym(T, :seed), arg)
+            end
+            _number_free!(ld, 1)
+            return rc ? FTRUE : FFALSE
+        elseif sym_key(name) == sym_key(mk_sym(T, :state))
+            n = _number_alloc!(ld)
+            if !PL_get_number(ld, arg, n) || !(n.type === V_MPZ || _is_big_int64(n))
+                _number_free!(ld, 1)
+                return PL_error(ld, ERR_TYPE, mk_sym(T, :state), arg) ? FTRUE : FFALSE
+            end
+            rc = _mt_set_state!(ld.random_state, _number_bigint(n))  # mpz_set(state[0]._mp_seed, n)
+            _number_free!(ld, 1)                                    # clearNumber(&n)
+            return rc || PL_domain_error(ld, "random_state", arg) ? FTRUE : FFALSE
+        else
+            return PL_error(ld, ERR_DOMAIN, mk_sym(T, :random_option), A1) ? FTRUE : FFALSE
+        end
+    else
+        return PL_error(ld, ERR_TYPE, mk_sym(T, :random_option), A1) ? FTRUE : FFALSE
+    end
+end
+
+# ORIGINAL: `mpz_set(LD->arith.random.state[0]._mp_seed, n)` of set_random/1's `state(S)`
+"Copy the limbs of `n` over the start of the generator's struct (as `mpz_set`); false when `n` has more than 313 limbs."
+function _mt_set_state!(mt::Vector{UInt32}, n::BigInt)::Bool
+    m = abs(n)
+    nlimbs = cld(ndigits(m; base=2), 64)
+    nlimbs > MT_LIMBS && return false
+    for i in 0:(min(2 * nlimbs, MT_N + 1) - 1)              # the struct's words; the padding word is not kept
+        mt[i + 1] = UInt32((m >> (32 * i)) & 0xffffffff)
+    end
+    return true
+end
+
+# ORIGINAL: the struct's bytes as one integer, `random_property(state(S))`'s `mpz_set(seed, _mp_seed)`
+"The generator's struct as one integer: `mt[0]` the lowest word, `mti` above `mt[623]`, a zero padding word."
+function _mt_get_state(mt::Vector{UInt32})::BigInt
+    x = BigInt(0)
+    for i in (MT_N + 1):-1:1
+        x = (x << 32) | BigInt(mt[i])
+    end
+    return x
+end
+
+# PORT: pl-arith.c random_property as pl_random_property1_va
+# (PRED_IMPL("random_property", 1, random_property, 0))
+"`random_property/1` (pl-arith.c): `state(S)`, the generator's state as an integer."
+function pl_random_property1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1 = PL__t0
+    init_random(ld)
+    na = PL_get_name_arity(ld, A1)
+    if na !== nothing && na[2] == 1
+        arg = PL_new_term_ref(ld)
+        _PL_get_arg(ld, 1, A1, arg)
+        if sym_key(na[1]) == sym_key(mk_sym(T, :state))
+            seed = _number_alloc!(ld)
+            seed.type = V_MPZ
+            seed.mpz = _mt_get_state(ld.random_state)
+            rc = PL_unify_number(ld, arg, seed)
+            _number_free!(ld, 1)                            # clearNumber(&seed)
+            return rc ? FTRUE : FFALSE
+        end
+    end
+    return FFALSE
 end
 
 # ── ** and ^ (pl-arith.c ar_pow) ─────────────────────────────────────────────────────────────────
@@ -1469,16 +1855,37 @@ const MAX_RATIONAL_SIZE_ACTION = true
 # once `maybe_real_mpq` made them floats): `|n1| ** n2` as floats, negated when `n1` is negative and
 # the numerator of `n2` odd. `n2` is the exponent as given (upstream negates a negative numerator for
 # the root searches and restores it here).
-# DIVERGES: `fegetround()` is always FE_TONEAREST, so `roundMode1` and `roundMode2` are that mode and
-# the `fesetround` calls have nothing to do.
+# "Difficult to keep rounding modes straight": `pow` switches between monotonic increasing and decreasing with the
+# signs of the base and the exponent, and the float of the exponent and `pow` round independently — `roundMode1`
+# is the mode of `pow`, `roundMode2` the mode of the conversion of the exponent.
 function _ar_pow_doreal_mpq(ld::PL_local_data, n1::number, n2::number, r::number)::Bool
+    roundMode = fegetround()
     neg_res = n1.f < 0.0 && isodd(numerator(n2.mpq))        # mpz_get_ui(numer) & 1
+    roundMode1 = roundMode
+    if neg_res                                              # pow monotonic increasing or decreasing
+        if roundMode == FE_UPWARD
+            roundMode1 = FE_DOWNWARD
+        elseif roundMode == FE_DOWNWARD
+            roundMode1 = FE_UPWARD
+        end
+    end
     n1.f = abs(n1.f)
-    promoteToFloatNumber(ld, n2) || return false
-    r.f = _libm_pow(n1.f, n2.f)
+    roundMode2 = roundMode1
+    if n1.f < 1.0                                           # pow monotonic increasing or decreasing
+        if roundMode1 == FE_UPWARD
+            roundMode2 = FE_DOWNWARD
+        elseif roundMode1 == FE_DOWNWARD
+            roundMode2 = FE_UPWARD
+        end
+    end
+    fesetround(roundMode2)
+    promoteToFloatNumber(ld, n2) || return false            # using roundMode as set
+    roundMode1 != roundMode2 && fesetround(roundMode1)
+    r.f = _libm_pow(n1.f, n2.f)                             # using roundMode1
     if neg_res
         r.f = -r.f
     end
+    roundMode1 != roundMode && fesetround(roundMode)
     r.type = V_FLOAT
     return check_float(ld, r)
 end
@@ -1550,7 +1957,7 @@ end
 # PORT: pl-arith.c ar_pow
 # DIVERGES: the `gotos` are the helpers `_ar_pow_*`; `n2` is not negated in place for a negative
 # rational exponent (the root searches use its absolute numerator, and `_ar_pow_doreal_mpq` the
-# exponent as given); the rounding modes are FE_TONEAREST only (see there); `prefer_rationals` is the
+# exponent as given); the directed rounding modes are the arms of `_ar_pow_doreal_mpq` and the `cr_*` functions; `prefer_rationals` is the
 # mask bit `PLFLAG_RATIONAL` (since R2 F1a; a constant, false, before). The size checks raise `int_too_big` as everywhere (the interim).
 "`**/2` and `^/2` (pl-arith.c `ar_pow`): `n1` to the power `n2`; an integer for integers, else a float or a rational."
 function ar_pow(ld::PL_local_data, n1::number, n2::number, r::number)::Bool
@@ -1702,15 +2109,32 @@ function ar_pow(ld::PL_local_data, n1::number, n2::number, r::number)::Bool
 end
 
 # ── arith-c: rationals, the order of reals, bits, the remaining float functions (pl-arith.c) ──────
-# The last entries of `ar_funcdefs[]` but `roundtoward/2` (NOT PORTED, see `ar_funcdefs`). The C
+# The last entries of `ar_funcdefs[]` (`roundtoward/2` among them, last). The C
 # library functions are called through `ccall`, as arith-b's.
-# `sinh` & co. of the C library (`cr_sinh` & co. of pl-arith.c, FE_TONEAREST)
-"`sinh(x)` of the C library (pl-arith.c `cr_sinh`, FE_TONEAREST)."
-_libm_sinh(x::Float64)::Float64 = ccall((:sinh, LIBM), Float64, (Float64,), x)
-"`cosh(x)` of the C library (pl-arith.c `cr_cosh`, FE_TONEAREST)."
-_libm_cosh(x::Float64)::Float64 = ccall((:cosh, LIBM), Float64, (Float64,), x)
-"`tanh(x)` of the C library (pl-arith.c `cr_tanh`, FE_TONEAREST)."
-_libm_tanh(x::Float64)::Float64 = ccall((:tanh, LIBM), Float64, (Float64,), x)
+# PORT: pl-arith.c CR_FUNC as _libm_sinh
+"`sinh(x)` of the C library (pl-arith.c `cr_sinh`)."
+_libm_sinh(x::Float64)::Float64 = CR_FUNC(_c_sinh, x)
+# PORT: pl-arith.c cr_cosh as _libm_cosh
+"`cosh(x)` of the C library (pl-arith.c `cr_cosh`): the lower limit of the result is 1.0."
+function _libm_cosh(x::Float64)::Float64
+    roundMode = fegetround()
+    roundMode != FE_TONEAREST && fesetround(FE_TONEAREST)
+    result = _c_cosh(x)
+    if !isnan(result)
+        if roundMode == FE_UPWARD
+            result = nexttoward(result, Inf)
+        elseif roundMode == FE_DOWNWARD || roundMode == FE_TOWARDZERO
+            if result != Inf
+                result = (result > 1.0) ? nexttoward(result, 0.0) : 1.0
+            end
+        end
+    end
+    roundMode != FE_TONEAREST && fesetround(roundMode)
+    return result
+end
+# PORT: pl-arith.c CR_FUNC_1 as _libm_tanh
+"`tanh(x)` of the C library (pl-arith.c `cr_tanh`)."
+_libm_tanh(x::Float64)::Float64 = CR_FUNC_1(_c_tanh, x)
 # `asinh`, `acosh` and `atanh` are not redefined by `O_ROUND_UP_DOWN`: C's own
 "`asinh(x)` of the C library (pl-arith.c `ar_asinh`, C's own: the same as Julia's but for the last digit)."
 _libm_asinh(x::Float64)::Float64 = ccall((:asinh, LIBM), Float64, (Float64,), x)
@@ -1718,18 +2142,32 @@ _libm_asinh(x::Float64)::Float64 = ccall((:asinh, LIBM), Float64, (Float64,), x)
 _libm_acosh(x::Float64)::Float64 = ccall((:acosh, LIBM), Float64, (Float64,), x)
 "`atanh(x)` of the C library: a NaN beyond ±1 (Julia's `atanh` throws)."
 _libm_atanh(x::Float64)::Float64 = ccall((:atanh, LIBM), Float64, (Float64,), x)
-"`erf(x)` of the C library (pl-arith.c `cr_erf`, FE_TONEAREST)."
-_libm_erf(x::Float64)::Float64 = ccall((:erf, LIBM), Float64, (Float64,), x)
+# PORT: pl-arith.c cr_erf as _libm_erf
+"`erf(x)` of the C library (pl-arith.c `cr_erf`): bounded by +/- 1.0."
+function _libm_erf(x::Float64)::Float64
+    roundMode = fegetround()
+    roundMode != FE_TONEAREST && fesetround(FE_TONEAREST)
+    result = _c_erf(x)                                      # abs(result) =< 1.0
+    if !isnan(result) && !isinf(x)
+        if roundMode == FE_UPWARD
+            result = (result < 1.0) ? nexttoward(result, Inf) : 1.0
+        elseif roundMode == FE_DOWNWARD
+            result = (result > -1.0) ? nexttoward(result, -Inf) : -1.0
+        elseif roundMode == FE_TOWARDZERO
+            result = nexttoward(result, 0.0)
+        end
+    end
+    roundMode != FE_TONEAREST && fesetround(roundMode)
+    return result
+end
 # PORT: pl-arith.c cr_erfc as _libm_erfc
 # The build without CORE-MATH, the pin's: `return 1.0 - cr_erf(in)` — not the C library's erfc, so a large
 # argument loses its low bits and erfc(6.0) is 0.0, as swipl's (the oracle's rows).
 "`erfc(x)` as upstream computes it without CORE-MATH (pl-arith.c `cr_erfc`): `1.0 - erf(x)`."
 _libm_erfc(x::Float64)::Float64 = 1.0 - _libm_erf(x)
-"`log10(x)` of the C library (pl-arith.c `cr_log10`, FE_TONEAREST)."
-_libm_log10(x::Float64)::Float64 = ccall((:log10, LIBM), Float64, (Float64,), x)
-# `lgamma` keeps the sign in the global `signgam`, which nothing reads here
-"`lgamma(x)` of the C library (pl-arith.c `cr_lgamma`, FE_TONEAREST)."
-_libm_lgamma(x::Float64)::Float64 = ccall((:lgamma, LIBM), Float64, (Float64,), x)
+# PORT: pl-arith.c CR_FUNC as _libm_lgamma
+"`lgamma(x)` of the C library (pl-arith.c `cr_lgamma`)."
+_libm_lgamma(x::Float64)::Float64 = CR_FUNC(_c_lgamma, x)
 
 # PORT: pl-arith.c ar_sinh
 "`sinh/1` (pl-arith.c `ar_sinh`, UNAIRY_FLOAT_FUNCTION)."
@@ -2170,13 +2608,18 @@ function ar_eval(n1::number, r::number)::Bool
 end
 
 # PORT: pl-arith.c ar_random_float
-# DIVERGES: the generator (see `_random_u64`): 64 random bits as the fraction `mpf_urandomb`
-# returns, truncated to a double by `mpf_get_d` (53 bits), redrawn while 0.0.
+# DIVERGES: `mpf_urandomb(rop, state, 64)` is the 64 random bits as the fraction `x * 2^-64`, and
+# `mpf_get_d` truncates it to 53 significant bits (computed here on the integer), as the O_GMP arm.
 "`random_float/0` (pl-arith.c `ar_random_float`): a random float in the open interval (0.0, 1.0)."
 function ar_random_float(ld::PL_local_data, r::number)::Bool
+    init_random(ld)
     while true
-        i = _random_u64(ld)                                 # mpf_urandomb(rop, state, 64)
-        r.f = Float64(i >> 11) * 0x1.0p-53                  # mpf_get_d: truncates
+        x = UInt64(_mt_randget!(ld.random_state, 64))       # mpf_urandomb(rop, state, 64)
+        bl = 64 - leading_zeros(x)
+        if bl > 53
+            x = (x >> (bl - 53)) << (bl - 53)               # mpf_get_d truncates
+        end
+        r.f = ldexp(Float64(x), -64)
         r.f == 0.0 || break
     end
     r.type = V_FLOAT
@@ -2212,11 +2655,9 @@ end
 # PORT: pl-arith.c ar_funcdefs
 # DIVERGES: the entries ported, `(name, arity)`; see the file header. arith-a's and arith-b's keep
 # upstream's relative order; arith-c's are APPENDED, so the scan of `isCurrentArithFunction` reaches
-# the earlier (hotter) ones as soon as before. `roundtoward/2` is the one upstream entry NOT PORTED:
-# it sets the hardware rounding mode (`fesetround`) around the evaluation of its first argument,
-# which `evalExpression` handles on its own (`set_roundtoward`), and the kernel has no other mode
-# than to nearest (see the file header) — a call is `type_error(evaluable, roundtoward/2)`, where
-# swipl evaluates it.
+# the earlier (hotter) ones as soon as before. `roundtoward/2` is the last entry, as upstream's: its
+# second argument (the mode) is read by `set_roundtoward` in the walk of `evalExpression_cells`, the
+# function `ar_roundtoward` puts the mode found there back (see the file header).
 # `integer` and `round` share `ar_integer`, `ceil` and `ceiling` share `ar_ceil`, `atan/2` and
 # `atan2/2` share `ar_atan2` and `^` and `**` share `ar_pow`, as upstream's.
 "pl-arith.c's `ar_funcdefs[]`: the arithmetic functions, the ported entries."
@@ -2236,7 +2677,7 @@ const ar_funcdefs = (
     (:cmpr, 2), (:maxr, 2), (:minr, 2), (:lcm, 2), (:random_float, 0), (:nexttoward, 2),
     (:sinh, 1), (:cosh, 1), (:tanh, 1), (:asinh, 1), (:acosh, 1), (:atanh, 1), (:lgamma, 1),
     (:erf, 1), (:erfc, 1), (:log10, 1), (:epsilon, 0), (:inf, 0), (:nan, 0), (:lsb, 1),
-    (:popcount, 1), (:getbit, 2), (:powm, 3), (:eval, 1)
+    (:popcount, 1), (:getbit, 2), (:powm, 3), (:eval, 1), (:roundtoward, 2)
 )
 
 # The names of `ar_funcdefs` that are not Julia syntax, as symbols compared in `_ar_call2`/`_ar_call1`.
@@ -2286,6 +2727,7 @@ function _ar_call2(ld::PL_local_data, k::Int, a0::number, a1::number, r::number)
     f === :minr && return ar_minr(a0, a1, r)
     f === :lcm && return ar_lcm(ld, a0, a1, r)
     f === :nexttoward && return ar_nexttoward(ld, a0, a1, r)
+    f === :roundtoward && return ar_roundtoward(ld, a0, a1, r)
     return ar_getbit(ld, a0, a1, r)                         # :getbit
 end
 function _ar_call1(ld::PL_local_data, k::Int, a0::number, r::number)::Bool
@@ -2347,6 +2789,68 @@ function _ar_call3(
     ld::PL_local_data, k::Int, a0::number, a1::number, a2::number, r::number
 )::Bool
     return ar_powm(ld, a0, a1, a2, r)
+end
+
+# ── virtual machine support (pl-arith.c, `#if O_COMPILE_ARITH`) ──────────────────────────────────
+# PORT: pl-arith.c indexArithFunction
+# DIVERGES: the function is `name/arity` (the name's key and the arity), as `isCurrentArithFunction`'s;
+# the index is the 0-based position in `ar_funcdefs` (what the code word of `A_FUNC0` .. `A_FUNC` holds),
+# -1 when there is no such function, as upstream's.
+"The index of the arithmetic function `name/arity` in `ar_funcdefs`, 0-based, -1 for none (pl-arith.c)."
+function indexArithFunction(::Type{T}, name::UInt64, arity::Int)::Int where {T}
+    return isCurrentArithFunction(T, name, arity) - 1
+end
+
+# PORT: pl-arith.c functorArithFunction
+# DIVERGES: the functor is `(name, arity)` (the kernel has no functor table), the entry at the 0-based
+# index `i` of `ar_funcdefs` (`fetchFunctorArray(i)->functor` upstream).
+"The functor `(name, arity)` of the arithmetic function at 0-based index `i` (pl-arith.c)."
+function functorArithFunction(i::Int)::Tuple{Symbol, Int}
+    return ar_funcdefs[i + 1]
+end
+
+# PORT: pl-arith.c FunctionFromIndex
+# DIVERGES: upstream returns the function pointer `GD->arith.functions[index]`; here the entry's 1-based
+# position in `ar_funcdefs`, which `_ar_call0` .. `_ar_call3` call by the entry's name.
+"The `ar_funcdefs` entry of the 0-based function index `index` (pl-arith.c)."
+function FunctionFromIndex(index::Int)::Int
+    return index + 1
+end
+
+# PORT: pl-arith.c ar_func_n
+# DIVERGES: the arithmetic stack is the local data's pool of numbers (`_number_alloc!`; the arguments
+# are the top `argc` of it, the LAST one pushed is the first argument: `a0 = arith_numbers[arith_top]`
+# as `_evalExpression_walk`'s). The result is computed in a pool record above the arguments, then moved
+# to the place of the first one (`popArgvArithStack`, `pushArithStack`). `sysError` is a Julia `error`.
+# `clearNumber` has nothing to clear: the values are immutable.
+"`A_FUNC0` .. `A_FUNC`: run function `findex` on the top `argc` numbers of the arithmetic stack, push the result (pl-arith.c)."
+function ar_func_n(ld::PL_local_data, findex::Int, argc::Int)::Bool
+    k = FunctionFromIndex(findex)
+    r = _number_alloc!(ld)                                  # number result
+    top = ld.arith_top - 1                                  # the last argument pushed
+    rval = false
+    if argc > 0
+        a0 = ld.arith_numbers[top]
+        if argc == 1
+            rval = _ar_call1(ld, k, a0, r)
+        elseif argc == 2
+            rval = _ar_call2(ld, k, a0, ld.arith_numbers[top - 1], r)
+        elseif argc == 3
+            rval = _ar_call3(
+                ld, k, a0, ld.arith_numbers[top - 1], ld.arith_numbers[top - 2], r
+            )
+        else
+            error("Too many arguments to arithmetic function")    # sysError
+        end
+    else
+        rval = _ar_call0(ld, k, r)
+    end
+    ld.arith_top -= argc + 1                                # popArgvArithStack(argc), and `result`
+    if rval
+        dst = _number_alloc!(ld)                            # pushArithStack(&result)
+        dst === r || moveNumber(dst, r)
+    end
+    return rval
 end
 
 # ── characters (pl-arith.c) ──────────────────────────────────────────────────────────────────────
@@ -2429,7 +2933,46 @@ function _ar_type_error_cells(
     return rc
 end
 
-# PORT: pl-arith.c evalExpression as evalExpression_cells
+# PORT: pl-arith.c set_roundtoward
+# DIVERGES: the mode cell is a LOCATION (`c`, the compound's argument cell), dereferenced by `_deref_loc`;
+# `ERR_PTR_DOMAIN`/`ERR_PTR_TYPE` are `ERR_DOMAIN`/`ERR_TYPE` on the word (`pushWordAsTermRef`). The atom
+# is compared by its key (`sym_key`), where upstream compares atom handles.
+"Set the rounding mode the atom in the argument cell `c` names; the mode in force before goes to `old` (pl-arith.c)."
+function set_roundtoward(ld::PL_local_data{T}, c::Int, old::number)::Bool where {T}
+    loc = _deref_loc(ld, c)                                 # deRef(p)
+    old.type = V_INTEGER
+    old.i = Int64(fegetround())
+    k, w, _ = loc
+    if k == DU_WORD && isAtomW(w)
+        key = sym_key(_atom_value(ld, w))
+        if key == sym_key(mk_sym(T, :to_nearest))
+            fesetround(FE_TONEAREST)
+        elseif key == sym_key(mk_sym(T, :to_positive))
+            fesetround(FE_UPWARD)
+        elseif key == sym_key(mk_sym(T, :to_negative))
+            fesetround(FE_DOWNWARD)
+        elseif key == sym_key(mk_sym(T, :to_zero))
+            fesetround(FE_TOWARDZERO)
+        else                                                # isAtom(*p): ERR_PTR_DOMAIN, ATOM_round
+            rc = PL_error(ld, ERR_DOMAIN, mk_sym(T, :round), pushWordAsTermRef(ld, loc))
+            popTermRef(ld)
+            return rc
+        end
+        return true
+    end
+    return _ar_type_error_cells(ld, :atom, loc)             # ERR_PTR_TYPE, ATOM_atom
+end
+
+# PORT: pl-arith.c ar_roundtoward
+"`roundtoward/2` (pl-arith.c): the value of its first argument; the mode found by `set_roundtoward` (`n2`) goes back."
+function ar_roundtoward(ld::PL_local_data, n1::number, n2::number, r::number)::Bool
+    cpNumber(r, n1)
+    @assert n2.type === V_INTEGER
+    fesetround(Int(n2.i))
+    return true
+end
+
+# The WORD walk of pl-arith.c `evalExpression` (`evalExpression_cells` below carries the PORT marker).
 # DIVERGES (L1d; the workspace's L1_plan/stageL1d_design.md §3e): upstream's WORD walk on LOCATIONS
 # (`_deref_loc`'s: a global position, or `-i` for slot `i`) — `term_stack` holds them with the
 # `walk_ref` bit (`(loc << 1) | wr`, `ld.arith_cells`); a compound is pushed and the walk goes to its
@@ -2437,13 +2980,15 @@ end
 # FUNCTOR word, applying it to the pooled numbers (`ld.arith_numbers`, upstream's `arg_stack`). A
 # leaf is read on its word: a tagged integer by `valInt`, a value-table word by its stored number (a
 # string through `getCharExpression`), an atom by its symbol — no export; an export is made only for
-# an error's culprit. Not ported: `roundtoward/2` and signals; the ported functions only
+# an error's culprit. Not ported: signals; the ported functions only
 # (`isCurrentArithFunction`, by the name's key). A kernel-only `$expr/n` compound (Q-AR5) is
 # evaluated as the term walk evaluates it — its arguments after the head (argument 1), the last
 # first, each on the cells, then `'$expr'/(n-1)` is not evaluable (f3b-4: no export). An error's
-# culprit is its word (`pushWordAsTermRef`, f3b-4).
+# culprit is its word (`pushWordAsTermRef`, f3b-4). `roundtoward(Expr, Mode)`: `set_roundtoward`
+# reads the mode (the second argument) when the compound is entered and pushes the mode found,
+# `ar_roundtoward` puts it back after `Expr` (upstream's `FUNCTOR_roundtoward2` arm, as written).
 "Evaluate the expression `expr` refers to into `result` on the CELLS (pl-arith.c `evalExpression`); false after raising."
-function evalExpression_cells(
+function _evalExpression_walk(
     ld::PL_local_data{T}, expr::term_t, result::number
 )::Bool where {T}
     stack = ld.arith_cells                                  # term_stack
@@ -2517,7 +3062,7 @@ function evalExpression_cells(
             a = PL_new_term_ref(ld)                         # its arguments after the head (argument
             for i in arity:-1:2                             # 1), the last first, then not evaluable
                 _slot_link_loc!(ld, a + 1, _deref_loc(ld, c + i))
-                evalExpression_cells(ld, a, _number_alloc!(ld)) || @goto error
+                _evalExpression_walk(ld, a, _number_alloc!(ld)) || @goto error
             end
             PL_error(ld, ERR_NOT_EVALUABLE, (mk_sym(T, Symbol("\$expr")), arity - 1))
             @goto error
@@ -2534,7 +3079,15 @@ function evalExpression_cells(
                     @goto error
                 end
             end
-            p = c + arity                                   # p = &term->arguments[arity-1]
+            if arity == 2 &&
+                sym_first_byte(_atom_value(ld, nameFunctor(ld.functors, f))) == 0x72 &&
+                sym_text(_atom_value(ld, nameFunctor(ld.functors, f))) == "roundtoward"
+                crnd = _number_alloc!(ld)                   # number crnd, pushed on arg_stack
+                set_roundtoward(ld, c + 2, crnd) || @goto error
+                p = c + 1                                   # p = &term->arguments[0]
+            else
+                p = c + arity                               # p = &term->arguments[arity-1]
+            end
             walk_ref = false
             n = n_tmp
             @goto read_p
@@ -2600,6 +3153,27 @@ function evalExpression_cells(
     resize!(stack, sbase)                                   # clearSegStack(&term_stack)
     ld.arith_top = mark                                     # popSegStack(&arg_stack, …)
     return false
+end
+
+# PORT: pl-arith.c evalExpression as evalExpression_cells
+# DIVERGES: the rounding mode is scoped to ONE evaluation (see the file header): the mode the
+# `float_rounding` flag names is set for the walk, and the mode found at the entry is put back in a
+# `finally`, also after an error (upstream leaves the hardware mode set by `roundtoward/2` after an
+# error in its first argument: measured at the pin, a later `Y is 1/3.0` answers 0.33333333333333337
+# for the rest of the process). The scope is here, not in `valueExpression`: pl-wam.jl calls this
+# function directly.
+"Evaluate the expression `expr` refers to into `result` on the CELLS (pl-arith.c `evalExpression`); false after raising."
+function evalExpression_cells(
+    ld::PL_local_data{T}, expr::term_t, result::number
+)::Bool where {T}
+    entry = fegetround()
+    mode = Int(ld.arith_f_flags & FLT_ROUND_MASK)
+    mode != Int(FLT_ROUND_NEAREST) && set_rounding(mode)
+    try
+        return _evalExpression_walk(ld, expr, result)
+    finally
+        fegetround() != entry && fesetround(entry)
+    end
 end
 
 # PORT: pl-arith.c valueExpression
@@ -2850,6 +3424,357 @@ function pl_between3_va(
     return rc ? FTRUE : FFALSE
 end
 
+# ── succ/2, plus/3, bounded_number/3 and the bignum built-ins (pl-arith.c) ───────────────────────
+# PORT: pl-arith.c succ as pl_succ2_va
+# DIVERGES: "tagged" is `PLMINTAGGEDINT..PLMAXTAGGEDINT` of the kernel; the numbers are the local
+# data's pooled ones (`_number_alloc!`). As upstream, an integer first argument beyond the tagged
+# range falls through to the second argument's branch, which finds the number just unified.
+# (PRED_IMPL("succ", 2, succ, 0))
+"`succ/2` (pl-arith.c): `A2` is `A1+1`, both non-negative integers; at least one is bound."
+function pl_succ2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2 = PL__t0, PL__t0 + 1
+    i1 = _number_alloc!(ld)
+    i2 = _number_alloc!(ld)
+    one = _number_alloc!(ld)
+    rc = _succ_body(ld, A1, A2, i1, i2, one)
+    _number_free!(ld, 3)                                    # clearInteger(&i1, &i2, &one)
+    return rc ? FTRUE : FFALSE
+end
+
+# PORT: pl-arith.c succ as _succ_body
+# DIVERGES: the body of upstream's `succ`, so the pooled numbers are released once, by the caller.
+"The body of `succ/2` on the numbers `i1`, `i2`, `one` of the caller (pl-arith.c)."
+function _succ_body(
+    ld::PL_local_data{T}, A1::term_t, A2::term_t, i1::number, i2::number, one::number
+)::Bool where {T}
+    one.type = V_INTEGER
+    one.i = 1
+    rc = false
+
+    if PL_get_number(ld, A1, i1) && intNumber(i1)           # isInteger(*p1)
+        if i1.type === V_INTEGER && 0 <= i1.i <= PLMAXTAGGEDINT    # isTaggedInt: v >= 0 && ++v >= 0
+            return PL_unify_int64(ld, A2, i1.i + 1)
+        end
+        if ar_sign_i(i1) < 0
+            return PL_error(ld, ERR_DOMAIN, mk_sym(T, :not_less_than_zero), A1)
+        end
+        rc = pl_ar_add(ld, i1, one, i2) && PL_unify_number(ld, A2, i2)
+    elseif !PL_is_variable(ld, A1)                          # !canBind(*p1)
+        return PL_error(ld, ERR_TYPE, mk_sym(T, :integer), A1)
+    end
+
+    if PL_get_number(ld, A2, i2) && intNumber(i2)           # isInteger(*p2)
+        if i2.type === V_INTEGER && PLMINTAGGEDINT <= i2.i <= PLMAXTAGGEDINT    # isTaggedInt(*p2)
+            i2.i > 0 && return PL_unify_int64(ld, A1, i2.i - 1)
+            i2.i == 0 && return false
+        end
+        sgn = ar_sign_i(i2)
+        if sgn == 1
+            rc = ar_minus(ld, i2, one, i1) && PL_unify_number(ld, A1, i1)
+        elseif sgn == 0
+            return false
+        else
+            return PL_error(ld, ERR_DOMAIN, mk_sym(T, :not_less_than_zero), A2)
+        end
+    elseif !PL_is_variable(ld, A2)                          # !canBind(*p2)
+        return PL_error(ld, ERR_TYPE, mk_sym(T, :integer), A2)
+    else
+        return PL_error(ld, ERR_INSTANTIATION)
+    end
+
+    return rc
+end
+
+# PORT: pl-arith.c var_or_integer
+# DIVERGES: returns the new mask, or -1 after the type error (upstream: a `bool` and `*mask`).
+"Read `t` into `n` if it is an integer, ored into `mask` as `which`; a variable is kept (pl-arith.c)."
+function var_or_integer(
+    ld::PL_local_data{T}, t::term_t, n::number, which::Int, mask::Int
+)::Int where {T}
+    if PL_get_number(ld, t, n) && intNumber(n)              # isInteger(*p): get_integer(*p, n)
+        return mask | which
+    end
+    PL_is_variable(ld, t) && return mask                    # canBind(*p)
+    PL_error(ld, ERR_TYPE, mk_sym(T, :integer), t)
+    return -1
+end
+
+# PORT: pl-arith.c plus as pl_plus3_va
+# DIVERGES: the numbers are the local data's pooled ones.
+# (PRED_IMPL("plus", 3, plus, 0))
+"`plus/3` (pl-arith.c): `A3` is `A1+A2`, any two of the three being integers."
+function pl_plus3_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2, A3 = PL__t0, PL__t0 + 1, PL__t0 + 2
+    m = _number_alloc!(ld)
+    n = _number_alloc!(ld)
+    o = _number_alloc!(ld)
+    mask = 0
+
+    mask = var_or_integer(ld, A1, m, 1, mask)
+    mask >= 0 && (mask = var_or_integer(ld, A2, n, 2, mask))
+    mask >= 0 && (mask = var_or_integer(ld, A3, o, 4, mask))
+    if mask < 0
+        _number_free!(ld, 3)
+        return FFALSE
+    end
+
+    if mask == 7 || mask == 3                              # +, +, + and +, +, -
+        pl_ar_add(ld, m, n, o)
+        rc = PL_unify_number(ld, A3, o)
+    elseif mask == 5                                        # +, -, +
+        ar_minus(ld, o, m, n)
+        rc = PL_unify_number(ld, A2, n)
+    elseif mask == 6                                        # -, +, +
+        ar_minus(ld, o, n, m)
+        rc = PL_unify_number(ld, A1, m)
+    else
+        _number_free!(ld, 3)
+        return PL_error(ld, ERR_INSTANTIATION) ? FTRUE : FFALSE
+    end
+
+    _number_free!(ld, 3)                                    # clearInteger(&m, &n, &o)
+    return rc ? FTRUE : FFALSE
+end
+
+# PORT: pl-arith.c bounded_number as pl_bounded_number3_va
+# DIVERGES: the numbers are the local data's pooled ones; `nexttoward(x, ±INFINITY)` is
+# `nextfloat`/`prevfloat`. The type error names `A1`, as upstream's (not the number's argument `A3`).
+# (PRED_IMPL("bounded_number", 3, bounded_number, 0))
+"`bounded_number/3` (pl-arith.c): `Low < Num < High`, a bound unbound taking its neighbour of `Num`."
+function pl_bounded_number3_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2, A3 = PL__t0, PL__t0 + 1, PL__t0 + 2
+    n = _number_alloc!(ld)
+    lo = _number_alloc!(ld)
+    hi = _number_alloc!(ld)
+
+    if PL_get_number(ld, A3, n)
+        if n.type === V_INTEGER || n.type === V_MPZ
+            cpNumber(lo, n)
+            cpNumber(hi, n)
+            ar_add_si(ld, lo, Int64(-1))
+            ar_add_si(ld, hi, Int64(1))
+        else
+            n.type === V_MPQ && promoteToFloatNumber(ld, n)
+            # V_FLOAT
+            if isfinite(n.f)
+                lo.type = V_FLOAT
+                lo.f = prevfloat(n.f)                       # nexttoward(f, -INFINITY)
+                hi.type = V_FLOAT
+                hi.f = nextfloat(n.f)                       # nexttoward(f, INFINITY)
+            else
+                _number_free!(ld, 3)
+                return FFALSE
+            end
+        end
+
+        rc =
+            (
+                if PL_get_number(ld, A1, lo)
+                    cmpNumbers(ld, lo, n) == CMPEX_LESS
+                else
+                    PL_unify_number(ld, A1, lo)
+                end
+            ) && (
+                if PL_get_number(ld, A2, hi)
+                    cmpNumbers(ld, n, hi) == CMPEX_LESS
+                else
+                    PL_unify_number(ld, A2, hi)
+                end
+            )
+    else
+        rc = PL_error(ld, ERR_TYPE, mk_sym(T, :number), A1)
+    end
+    _number_free!(ld, 3)                                    # clearNumber(&n, &lo, &hi)
+    return rc ? FTRUE : FFALSE
+end
+
+# PORT: pl-arith.c get_mpz
+"Read the integer `t` holds into `n` as a `V_MPZ`; `type_error(integer, T)` otherwise (pl-arith.c)."
+function get_mpz(ld::PL_local_data{T}, t::term_t, n::number)::Bool where {T}
+    if PL_get_number(ld, t, n) && intNumber(n)              # isInteger(*p): get_integer(*p, n)
+        promoteToMPZNumber(n)
+        return true
+    end
+    return PL_type_error(ld, "integer", t)
+end
+
+# PORT: pl-arith.c divmod as pl_divmod4_va
+# DIVERGES: the numbers are the local data's pooled ones; `mpz_fdiv_qr` is `fldmod` on `BigInt`.
+# (PRED_IMPL("divmod", 4, divmod, 0))
+"`divmod/4` (pl-arith.c): `Q` is `div(N, D)` and `R` is `mod(N, D)` of two integers."
+function pl_divmod4_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2, A3, A4 = PL__t0, PL__t0 + 1, PL__t0 + 2, PL__t0 + 3
+    N = _number_alloc!(ld)
+    D = _number_alloc!(ld)
+    rc = false
+
+    if get_mpz(ld, A1, N) && get_mpz(ld, A2, D)
+        if !iszero(D.mpz)                                   # mpz_sgn(D) != 0
+            Q = _number_alloc!(ld)
+            R = _number_alloc!(ld)
+            Q.type = V_MPZ
+            R.type = V_MPZ
+            Q.mpz, R.mpz = fldmod(N.mpz, D.mpz)             # mpz_fdiv_qr
+            rc = PL_unify_number(ld, A3, Q) && PL_unify_number(ld, A4, R)
+            _number_free!(ld, 2)                            # clearNumber(&R), clearNumber(&Q)
+        else
+            rc = PL_error(ld, "divmod", 2, "", ERR_DIV_BY_ZERO)
+        end
+    end
+
+    _number_free!(ld, 2)                                    # clearNumber(&N), clearNumber(&D)
+    return rc ? FTRUE : FFALSE
+end
+
+# Ported from pl-gmp.c `mpz_rootrem` (pl-gmp.c is not one of this file's UPSTREAM files), as `_mpz_rootrem`.
+# DIVERGES: GMP's `mpz_rootrem` has no Julia wrapper: the truncated `k`-th root by Newton's
+# iteration on `BigInt` (the root of a negative `n` is the negated root of `-n`, GMP's sign rule),
+# the remainder `n - root^k`. A `k` at least the bit length of `n` gives the root 1 (or 0) at once.
+"`(root, rem)` of `mpz_rootrem(n, k)`: `root = trunc(n^(1/k))`, `rem = n - root^k`, for `k >= 1`."
+function _mpz_rootrem(n::BigInt, k::Int)::Tuple{BigInt, BigInt}
+    neg = n < 0
+    a = neg ? -n : n
+    root = if a < 2 || k == 1
+        a
+    else
+        bits = ndigits(a; base=2)
+        if k >= bits                                        # a < 2^bits <= 2^k
+            BigInt(1)
+        else
+            x = BigInt(1) << cld(bits, k)                   # a power of two above the root
+            while true
+                y = div((k - 1) * x + div(a, x^(k - 1)), k)
+                y >= x && break
+                x = y
+            end
+            x
+        end
+    end
+    neg && (root = -root)
+    return root, n - root^k
+end
+
+# PORT: pl-arith.c nth_integer_root_and_remainder as pl_nth_integer_root_and_remainder4_va
+# DIVERGES: the numbers are the local data's pooled ones; the root is `_mpz_rootrem`.
+# (PRED_IMPL("nth_integer_root_and_remainder", 4, nth_integer_root_and_remainder, 0))
+"`nth_integer_root_and_remainder/4` (pl-arith.c): the truncated `I`-th root of `N` and the rest."
+function pl_nth_integer_root_and_remainder4_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2, A3, A4 = PL__t0, PL__t0 + 1, PL__t0 + 2, PL__t0 + 3
+    N = _number_alloc!(ld)
+    rc = false
+
+    I = PL_get_long_ex(ld, A1)
+    if I !== nothing && get_mpz(ld, A2, N)
+        if I >= 1
+            if N.mpz < 0 && I % 2 == 0
+                rc = PL_error(ld, ERR_AR_UNDEF)
+            else
+                root = _number_alloc!(ld)
+                rem = _number_alloc!(ld)
+                root.type = V_MPZ
+                rem.type = V_MPZ
+                root.mpz, rem.mpz = _mpz_rootrem(N.mpz, I)  # mpz_rootrem
+                rc = PL_unify_number(ld, A3, root) && PL_unify_number(ld, A4, rem)
+                _number_free!(ld, 2)                        # clearNumber(&root), clearNumber(&rem)
+            end
+        else
+            rc = PL_domain_error(ld, "not_less_than_one", A1)
+        end
+    end
+
+    _number_free!(ld, 1)                                    # clearNumber(&N)
+    return rc ? FTRUE : FFALSE
+end
+
+# PORT: pl-arith.c rational as pl_rational3_va
+# DIVERGES: on the numbers (`PL_get_number`) where upstream tests the word (`isRational`); the
+# numerator and denominator are `BigInt`s of the rational.
+# (PRED_IMPL("rational", 3, rational, 0))
+"`rational/3` (pl-arith.c): the numerator and denominator of a rational; an integer is `N/1`."
+function pl_rational3_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2, A3 = PL__t0, PL__t0 + 1, PL__t0 + 2
+    n = _number_alloc!(ld)
+    rc = false
+
+    if PL_get_number(ld, A1, n) && n.type !== V_FLOAT       # isRational(*p)
+        if n.type === V_MPQ                                 # isMPQNum(*p)
+            num = _number_alloc!(ld)
+            den = _number_alloc!(ld)
+            num.type = V_MPZ
+            den.type = V_MPZ
+            num.mpz = numerator(n.mpq)                      # mpz_set(num, mpq_numref(n))
+            den.mpz = denominator(n.mpq)                    # mpz_set(den, mpq_denref(n))
+            rc = PL_unify_number(ld, A2, num) && PL_unify_number(ld, A3, den)
+            _number_free!(ld, 2)                            # clearNumber(&num), clearNumber(&den)
+        else
+            rc = PL_unify(ld, A1, A2) && PL_unify_integer(ld, A3, 1)
+        end
+    end
+
+    _number_free!(ld, 1)
+    return rc ? FTRUE : FFALSE
+end
+
+# PORT: pl-arith.c float_parts as pl_float_parts4_va
+# DIVERGES: `frexp` is Julia's (`frexp(Inf)` is `(Inf, 0)`, as glibc's).
+# (PRED_IMPL("float_parts", 4, float_parts, 0))
+"`float_parts/4` (pl-arith.c): the mantissa, the base (always 2) and the exponent of a float."
+function pl_float_parts4_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2, A3, A4 = PL__t0, PL__t0 + 1, PL__t0 + 2, PL__t0 + 3
+    d = PL_get_float_ex(ld, A1)
+    if d !== nothing
+        m, e = frexp(d)
+        rc =
+            PL_unify_float(ld, A2, m) && PL_unify_integer(ld, A3, 2) &&
+            PL_unify_integer(ld, A4, Int(e))
+        return rc ? FTRUE : FFALSE
+    end
+    return FFALSE
+end
+
+# PORT: pl-arith.c float_class as pl_float_class2_va
+# DIVERGES: `fpclassify` is `isnan`, `isinf`, `iszero`, `issubnormal`.
+# (PRED_IMPL("float_class", 2, float_class, 0))
+"`float_class/2` (pl-arith.c): `nan`, `infinite`, `zero`, `subnormal` or `normal`, of a float."
+function pl_float_class2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2 = PL__t0, PL__t0 + 1
+    n = _number_alloc!(ld)
+    if PL_get_number(ld, A1, n) && n.type === V_FLOAT       # isFloat(*p)
+        f = n.f
+        _number_free!(ld, 1)
+        a = if isnan(f)
+            :nan
+        elseif isinf(f)
+            :infinite
+        elseif iszero(f)
+            :zero
+        elseif issubnormal(f)
+            :subnormal
+        else
+            :normal
+        end
+        return PL_unify_atom(ld, A2, mk_sym(T, a)) ? FTRUE : FFALSE
+    end
+    _number_free!(ld, 1)
+    return PL_type_error(ld, "float", A1) ? FTRUE : FFALSE
+end
+
 # ── the arithmetic flags (pl-arith.c; R2 F1a) ───────────────────────────────────────────────────
 # PORT: pl-arith.c initArith
 # DIVERGES: only its Prolog flags (the rest of `initArith` — the function table, the NaN, the signal
@@ -2895,7 +3820,7 @@ end
 # DIVERGES: returns the Boolean (upstream an int). `max_rational_size` and `max_integer_size` are
 # `(size_t)-1` — unlimited, the only value they have here — so they fall to the end and fail, as upstream's
 # do when unlimited; `max_rational_size_action` is `error`, its only value (`LD->arith.rat`, not ported);
-# `float_rounding` names the mode of `arith_f_flags` (the kernel only has `to_nearest`).
+# `float_rounding` names the mode of `arith_f_flags`.
 "Unify `val` with the value of the arithmetic flag `k` (pl-arith.c); false if the flag has no value."
 function get_arith_flag(ld::PL_local_data{T}, val::term_t, k::T)::Bool where {T}
     name = sym_text(k)
@@ -2928,6 +3853,188 @@ function get_arith_flag(ld::PL_local_data{T}, val::term_t, k::T)::Bool where {T}
         return false
     end
     return PL_unify_atom(ld, val, mk_sym(T, a))
+end
+
+# PORT: pl-arith.c float_rounding_names
+"The names of the rounding modes, indexed by the `FLT_ROUND_*` values (upstream's table, whose entry 0 is unused)."
+const float_rounding_names = (:to_nearest, :to_positive, :to_negative, :to_zero)
+# PORT: pl-arith.c rounding_mode
+"The `FE_*` mode of each `FLT_ROUND_*` value (upstream's table, whose entry 0 is unused)."
+const rounding_mode = (FE_TONEAREST, FE_UPWARD, FE_DOWNWARD, FE_TOWARDZERO)
+
+# PORT: pl-arith.c atom_to_rounding
+# DIVERGES: returns the mode, 0 for an atom that names none (upstream: a Boolean and `int *m`); the atom
+# is compared by its key.
+"The `FLT_ROUND_*` value the atom `a` names, 0 if it names none (pl-arith.c)."
+function atom_to_rounding(a::T)::Int where {T}
+    key = sym_key(a)
+    for i in 1:4
+        key == sym_key(mk_sym(T, float_rounding_names[i])) && return i
+    end
+    return 0
+end
+
+# PORT: pl-arith.c float_rounding_name
+# DIVERGES: the atom is made for the term type (`mk_sym`), upstream returns its table entry.
+"The atom naming the rounding mode `i`, an `FLT_ROUND_*` value (pl-arith.c)."
+function float_rounding_name(::Type{T}, i::Int)::T where {T}
+    @assert 1 <= i <= 4
+    return mk_sym(T, float_rounding_names[i])
+end
+
+# PORT: pl-arith.c set_rounding
+"Set the hardware rounding mode to the `FLT_ROUND_*` value `mode` (pl-arith.c)."
+function set_rounding(mode::Int)::Nothing
+    fesetround(rounding_mode[mode])
+    return nothing
+end
+
+# PORT: pl-arith.c set_restraint
+# DIVERGES: returns the value or `nothing` after raising (upstream: `size_t *valp` and an int); the
+# value is a `UInt64`, `typemax(UInt64)` for `infinite` (upstream's `(size_t)-1`).
+"The limit `t` holds, `infinite` or a size not below `min` (pl-arith.c); `nothing` after raising."
+function set_restraint(
+    ld::PL_local_data{T}, t::term_t, min::Int
+)::Union{Nothing, UInt64} where {T}
+    inf = PL_get_atom(ld, t)
+    if inf !== nothing && sym_key(inf) == sym_key(mk_sym(T, :infinite))
+        return typemax(UInt64)
+    end
+    v = PL_get_size_ex(ld, t)
+    v === nothing && return nothing
+    return UInt64(max(v, min))
+end
+
+# PORT: pl-arith.c set_restraint_action
+# DIVERGES: returns the atom or `nothing` after raising (upstream: `atom_t *valp` and an int).
+"The action atom `t` holds for `key` (pl-arith.c): `error`, and `float` for `max_rational_size_action`; `nothing` after raising."
+function set_restraint_action(
+    ld::PL_local_data{T}, t::term_t, key::T
+)::Union{Nothing, T} where {T}
+    act = PL_get_atom_ex(ld, t)
+    act === nothing && return nothing
+    sym_key(act) == sym_key(mk_sym(T, :error)) && return act
+    if sym_key(key) == sym_key(mk_sym(T, :max_rational_size_action)) &&
+        sym_key(act) == sym_key(mk_sym(T, :float))
+        return act
+    end
+    PL_domain_error(ld, "max_rational_size_action", t)
+    return nothing
+end
+
+# The float flag `bit` of `arith_f_flags`: cleared by `error`, set by the atom `on` (set_arith_flag's `clear`/`set`);
+# false for any other atom (upstream's `goto dom`).
+function _set_float_flag(
+    ld::PL_local_data{T}, a::T, bit::UInt32, on::Symbol
+)::Bool where {T}
+    key = sym_key(a)
+    if key == sym_key(mk_sym(T, :error))
+        ld.arith_f_flags &= ~bit
+    elseif key == sym_key(mk_sym(T, on))
+        ld.arith_f_flags |= bit
+    else
+        return false
+    end
+    return true
+end
+
+# PORT: pl-arith.c set_arith_flag
+# DIVERGES: (1) `float_rounding` sets the bits of `arith_f_flags` and NOT the hardware (upstream's
+# `set_rounding(i)`): `evalExpression_cells` applies the mode for one evaluation (see the file header).
+# So every float computation outside an arithmetic evaluation (`strtod` in `atom_number/2`, `read/1` of a float) runs in
+# `to_nearest` here and in the flag's mode in the pin (the pin's `set_arith_flag` calls `set_rounding`).
+# (2) The three limits (`max_rational_size`, `max_rational_size_action`, `max_integer_size`) are validated as
+# upstream does; the number layer is unbounded, so `infinite` and `error` (the state it has) are accepted and any
+# other value is a named refusal (`NotPortedError`) — upstream keeps it in `LD->arith.rat` and `LD->gmp`.
+# Pin 18168e62 src/pl-arith.c: the limit arms are set_arith_flag 5183-5194 (`max_rational_size` -> `LD->arith.rat.max_rational_size`,
+# `max_rational_size_action` -> `LD->arith.rat.max_rational_size_action`, `max_integer_size` -> `LD->gmp.max_integer_size`), set_restraint
+# 5110-5124 (`infinite` stores `(size_t)-1`, else PL_get_size_ex, values below `min` raised to `min`), set_restraint_action 5128-5140; the
+# boot state is `(size_t)-1`, `(size_t)-1` and `error` (pl-arith.c 5022-5024, flags 5026-5028): the states this kernel has, so those
+# are the no-ops. The refusal sites are listed in docs/r2_owners.tsv (owner AR1).
+"Set the arithmetic flag `key` to the value of `val` (pl-arith.c); false after raising or for a key that is no arithmetic flag."
+function set_arith_flag(ld::PL_local_data{T}, val::term_t, key::T)::Bool where {T}
+    name = sym_text(key)
+    if name == "max_rational_size" || name == "max_integer_size"
+        v = set_restraint(ld, val, name == "max_integer_size" ? 1000 : 0)
+        v === nothing && return false
+        v == typemax(UInt64) && return true                 # unlimited: the state it has
+        throw(
+            NotPortedError{T}(
+                key,
+                "LD->arith.rat / LD->gmp.max_integer_size: a limit on the numbers",
+                "AR1"
+            )
+        )
+    end
+    if name == "max_rational_size_action"
+        act = set_restraint_action(ld, val, key)
+        act === nothing && return false
+        sym_key(act) == sym_key(mk_sym(T, :error)) && return true      # the state it has
+        throw(
+            NotPortedError{T}(key, "LD->arith.rat.max_rational_size_action: float", "AR1")
+        )
+    end
+    a = PL_get_atom_ex(ld, val)
+    a === nothing && return false
+    if name == "float_overflow"
+        _set_float_flag(ld, a, FLT_OVERFLOW, :infinity) ||
+            return PL_domain_error(ld, "flag_value", val)
+    elseif name == "float_zero_div"
+        _set_float_flag(ld, a, FLT_ZERO_DIV, :infinity) ||
+            return PL_domain_error(ld, "flag_value", val)
+    elseif name == "float_undefined"
+        _set_float_flag(ld, a, FLT_UNDEFINED, :nan) ||
+            return PL_domain_error(ld, "flag_value", val)
+    elseif name == "float_underflow"
+        _set_float_flag(ld, a, FLT_UNDERFLOW, :ignore) ||
+            return PL_domain_error(ld, "flag_value", val)
+    elseif name == "float_rounding"
+        i = atom_to_rounding(a)
+        i == 0 && return PL_domain_error(ld, "flag_value", val)
+        ld.arith_f_flags = (ld.arith_f_flags & ~FLT_ROUND_MASK) | UInt32(i)
+    else
+        return false
+    end
+    return true
+end
+
+# PORT: pl-arith.c current_arithmetic_function as pl_current_arithmetic_function1_va
+# DIVERGES: the functor is `(name, arity)` and the table is `ar_funcdefs` (its entries are ported ones, in the
+# kernel's order, where upstream's `GD->arith.functions` is indexed by the functor's index: the ORDER of the
+# solutions differs, the SET is the same); `i` is the 0-based position in the table, `functorArithFunction(i)`
+# is the function of that name, and `GD->arith.functions[i]` being set is every position (no empty slot). The redo
+# context is `PL_retry` (`ForeignRedoInt`).
+# (PRED_IMPL("current_arithmetic_function", 1, current_arithmetic_function, PL_FA_NONDETERMINISTIC))
+"`current_arithmetic_function/1` (pl-arith.c): true if `Term` is evaluable; enumerates the evaluable functors for a variable."
+function pl_current_arithmetic_function1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    head = PL__t0
+    i = 0
+    ctl = PL_foreign_control(PL__ctx)
+    if ctl == FRG_FIRST_CALL
+        if PL_is_variable(ld, head)
+            i = 0
+        else
+            fd = PL_get_functor(ld, head)
+            fd === nothing &&
+                return PL_error(ld, ERR_TYPE, mk_sym(T, :callable), head) ? FTRUE : FFALSE
+            return isCurrentArithFunction(T, sym_key(fd[1]), fd[2]) != 0 ? FTRUE : FFALSE
+        end
+    elseif ctl == FRG_REDO
+        i = PL_foreign_context(PL__ctx)                 # (int)CTX_INT
+    else                                                # FRG_CUTTED
+        return FTRUE
+    end
+
+    while i < length(ar_funcdefs)
+        f, a = functorArithFunction(i)
+        if PL_unify_functor(ld, head, mk_sym(T, f), a)
+            return PL_retry(i + 1)                      # ForeignRedoInt(i+1)
+        end
+        i += 1
+    end
+    return FFALSE
 end
 
 # PORT: pl-arith.c PL_eval_expression_to_int64_ex
@@ -2970,5 +4077,22 @@ const PL_predicates_from_arith = (
     PL_extension(">=", 2, pl_geq2_va, PL_FA_ISO | PL_FA_VARARGS),
     PL_extension("=\\=", 2, pl_neq2_va, PL_FA_ISO | PL_FA_VARARGS),
     PL_extension("=:=", 2, pl_eq2_va, PL_FA_ISO | PL_FA_VARARGS),
-    PL_extension("between", 3, pl_between3_va, PL_FA_NONDETERMINISTIC | PL_FA_VARARGS)
+    PL_extension("succ", 2, pl_succ2_va, PL_FA_VARARGS),
+    PL_extension("plus", 3, pl_plus3_va, PL_FA_VARARGS),
+    PL_extension("between", 3, pl_between3_va, PL_FA_NONDETERMINISTIC | PL_FA_VARARGS),
+    PL_extension("bounded_number", 3, pl_bounded_number3_va, PL_FA_VARARGS),
+    PL_extension("float_class", 2, pl_float_class2_va, PL_FA_VARARGS),
+    PL_extension("float_parts", 4, pl_float_parts4_va, PL_FA_VARARGS),
+    PL_extension(
+        "current_arithmetic_function", 1, pl_current_arithmetic_function1_va,
+        PL_FA_NONDETERMINISTIC | PL_FA_VARARGS
+    ),
+    PL_extension("divmod", 4, pl_divmod4_va, PL_FA_VARARGS),
+    PL_extension(
+        "nth_integer_root_and_remainder", 4, pl_nth_integer_root_and_remainder4_va,
+        PL_FA_VARARGS
+    ),
+    PL_extension("rational", 3, pl_rational3_va, PL_FA_VARARGS),
+    PL_extension("set_random", 1, pl_set_random1_va, PL_FA_VARARGS),
+    PL_extension("random_property", 1, pl_random_property1_va, PL_FA_VARARGS)
 )

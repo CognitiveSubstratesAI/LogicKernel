@@ -232,7 +232,7 @@ end
 # PORT: pl-gc.c clearUninitialisedVarsFrame
 # DIVERGES: `PC` is the clause's code and an index into it; a cell is set to a FRESH variable, where
 # upstream's `setVar` makes the cell itself the variable (decision 2). The instructions walked are
-# the ones the kernel declares — not `I_FEXITNDET`, `I_FREDO`, `A_FIRSTVAR_IS` (`I_EXITRESET` since LB4 b2).
+# the ones the kernel declares — not `I_FEXITNDET`, `I_FREDO` (`I_EXITRESET` since LB4 b2, `A_FIRSTVAR_IS` since AR1 (d)).
 """
     clearUninitialisedVarsFrame(ld, fr, codes, pc)
 
@@ -255,7 +255,7 @@ function clearUninitialisedVarsFrame(
             c == I_FEXITDET || c == I_FCALLDETVA || c == S_TRUSTME || c == S_LIST
             return nothing                                      # terminate code list
         elseif c == H_FIRSTVAR || c == B_FIRSTVAR || c == B_ARGFIRSTVAR ||
-            c == B_UNIFY_FIRSTVAR || c == C_VAR                 # Firstvar assignments
+            c == B_UNIFY_FIRSTVAR || c == C_VAR || c == A_FIRSTVAR_IS   # Firstvar assignments
             _setVar!(ld, base, Int(codes[pc + 1]))
         elseif c == C_VAR_N
             var = Int(codes[pc + 1])
@@ -389,7 +389,7 @@ function walk_and_mark(state::walk_state, codes::Vector{code}, pc::Int, end_op::
         elseif op == B_UNIFY_VAR                    # Var = Term
             mark_frame_var(state, codes[pc + 1])
         elseif op == B_UNIFY_FIRSTVAR || op == B_FIRSTVAR || op == B_ARGFIRSTVAR ||
-            op == B_UNIFY_FC || op == C_VAR || op == H_FIRSTVAR
+            op == B_UNIFY_FC || op == C_VAR || op == H_FIRSTVAR || op == A_FIRSTVAR_IS
             clear_frame_var(state, codes[pc + 1])
         elseif op == C_VAR_N
             var = codes[pc + 1]
@@ -414,13 +414,13 @@ function walk_and_mark(state::walk_state, codes::Vector{code}, pc::Int, end_op::
             op == I_NUMBER || op == I_ATOMIC || op == I_ATOM || op == I_STRING ||
             op == I_COMPOUND || op == I_CALLABLE || op == I_CALLCONT || op == I_SHIFT ||
             op == I_SHIFTCP || op == H_VAR || op == B_UNIFY_VC || op == B_EQ_VC ||
-            op == B_NEQ_VC || op == B_ARGVAR || op == B_VAR
+            op == B_NEQ_VC || op == B_ARGVAR || op == B_VAR || op == A_VAR
             mark_frame_var(state, codes[pc + 1])
-        elseif op == B_VAR0
+        elseif op == B_VAR0 || op == A_VAR0
             mark_frame_var(state, VAROFFSET(0))
-        elseif op == B_VAR1
+        elseif op == B_VAR1 || op == A_VAR1
             mark_frame_var(state, VAROFFSET(1))
-        elseif op == B_VAR2
+        elseif op == B_VAR2 || op == A_VAR2
             mark_frame_var(state, VAROFFSET(2))
         elseif op == I_CALLCLEANUP
             arg_goal = state.arity == 2 ? 1 : 2
