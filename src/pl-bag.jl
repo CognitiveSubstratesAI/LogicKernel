@@ -12,7 +12,7 @@
 # (`'$destroy_findall_bag'`) — however the goal ends. The bag is IMPLICIT: the innermost one of the
 # thread (`LD->bags`), so a findall/3 inside the goal of another opens a bag above it.
 #
-# DIVERGES: no memory pool (`mem_pool`, `alloc_record`, `clear_mem_pool`: Julia's GC), no `cleanup_bags` (a thread's end), no
+# Left out (file-level, so no DIVERGES marker): the memory pool (`mem_pool`, `alloc_record`, `clear_mem_pool`: Julia's GC), `cleanup_bags` (a thread's end), the
 # atom GC (`markAtomsFindall`, the mutex).
 
 # PORT: pl-bag.c FINDALL_MAGIC

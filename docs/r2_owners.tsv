@@ -33,7 +33,6 @@ pred:$mono_reeval_done/3	TAB1	seed: missing_c_preds.tsv
 pred:$mono_reeval_prepare/2	TAB1	seed: missing_c_preds.tsv
 pred:$sig_unblock/0	TH1	seed: missing_c_preds.tsv
 pred:$snapshot/1	TX1	seed: missing_c_preds.tsv
-pred:$suspend_findall_bag/0	Q10	seed: missing_c_preds.tsv
 pred:$tbl_abolish_local_tables/0	TAB1	seed: missing_c_preds.tsv
 pred:$tbl_collect_mono_dep/0	TAB1	seed: missing_c_preds.tsv
 pred:$tbl_destroy_table/1	TAB1	seed: missing_c_preds.tsv
@@ -50,7 +49,6 @@ pred:$undo/1	TX1	seed: missing_c_preds.tsv
 pred:$unload_file/1	SRC2	seed: missing_c_preds.tsv
 pred:$visible/2	DBG1	seed: missing_c_preds.tsv
 pred:engine_next/2	TH1	seed: missing_c_preds.tsv
-pred:garbage_collect_atoms/0	Q10	seed: missing_c_preds.tsv
 pred:get/1	S2a	seed: missing_c_preds.tsv
 pred:get/2	S2a	seed: missing_c_preds.tsv
 pred:get_flag/2	FL1	seed: missing_c_preds.tsv
