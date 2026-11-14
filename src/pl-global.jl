@@ -180,6 +180,8 @@ mutable struct PL_global_data{T}
     const ld_table::LDTable                                     # the local data a wrapped stream names by number (IOSTREAM.wrapped; src/os/pl-stream.jl, R2 TOP1b E; owner TH1)
     tabling_answer_delay_infos::Dict{Int, delay_info}           # (pl-tabling.c static `answer_delay_infos`: trie node id -> delay_info; TAB1 TB0)
     tabling_start_node_ids::Int                                 # (pl-tabling.c static `start_node_ids`: the last start-node id handed out, 0: none; TAB1 TB1)
+    const undo_refs::Vector{record{T}}                          # (pl-undo.c: the record an undo blob names, by its number in the payload; TX1e)
+    procedures_drun_undo1::Procedure{T}                         # procedures.drun_undo1: '$syspreds':'$run_undo'/1, run_undo_hooks's (TX1e; set by setBuiltinPredicateProperties!)
 end
 # DIVERGES: `atoms` is upstream's `GD->atoms` as a struct of its own (src/pl-atom.jl), one table per
 # database, built first as upstream's `initAtoms` runs first; `functors` likewise `GD->functors` with
@@ -695,6 +697,11 @@ mutable struct PL_local_data{T} <: AbstractLocalData
     table_flags_drop_intermediate::Int                          # table_flags.drop_intermediate: flag table_drop_intermediate
     trie_gens::foreign_state_pool{trie_gen_state{T}}            # (trie_gen/2,3's REDO_PTR states, TR2)
     trie_gen_force_epoch::Bool                                  # ORIGINAL test switch: check_epoch! starts a new epoch at every call (TR2)
+    transaction::ld_transaction{T}                              # transaction: the transaction state of this thread (TX1a)
+    transaction_enums::foreign_state_pool{tr_enum{T}}           # (current_transaction/1's REDO_PTR states, TX1d)
+    undo_list::Int                                              # undo.undo_list: the position of the undo list's cell, the first global cell (TX1e)
+    undo_scheduled::Vector{UInt64}                              # undo.scheduled: the undo blobs waiting to run (empty: upstream's NULL buffer; TX1e)
+    undo_running::Int                                           # undo.running: undo goals are running (TX1e)
 end
 function PL_local_data{T}(gd::PL_global_data{T}) where {T}
     ld = _bare_local_data(gd)
@@ -742,7 +749,8 @@ function _bare_local_data(gd::PL_global_data{T}) where {T}
             0,
             _TOP_POSITION,
             false,
-            GEN_INVALID
+            GEN_INVALID,
+            nothing
         ),
         word[], T[], 0, 0, STACK_LIMIT_DEFAULT, 0, 0, 0, 0, 0, 0, localFrame{T}[], 0,
         choice{T}[], 0,
@@ -812,7 +820,12 @@ function _bare_local_data(gd::PL_global_data{T}) where {T}
         TABLE_COMPILE_THRESHOLD,                # table_flags.compile_threshold (pl-prologflag.c:2587)
         0,                                      # table_flags.drop_intermediate (pl-prologflag.c:2589)
         foreign_state_pool{trie_gen_state{T}}(), # trie_gen/2,3's states: none (TR2)
-        false                                   # trie_gen_force_epoch: off (TR2)
+        false,                                  # trie_gen_force_epoch: off (TR2)
+        ld_transaction{T}(),                    # transaction: none; gen_base GEN_INFINITE (pl-setup.c:204; TX1a)
+        foreign_state_pool{tr_enum{T}}(),       # current_transaction/1's states: none (TX1d)
+        0,                                      # undo.undo_list: set by emptyStacks! (TX1e)
+        UInt64[],                               # undo.scheduled: none (TX1e)
+        0                                       # undo.running: no undo goal runs (TX1e)
     )
     allocStacks!(ld)                            # the initial local stack, its spare reserved
     emptyStacks!(ld)
