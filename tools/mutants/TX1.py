@@ -10,7 +10,7 @@
 # KILL ROWS: TX = test/core_lang/test_transaction_swipl.jl. The row ids are the first element of `_TX_CASES` (TX:115-215): txc (commit and discard), txs (snapshot),
 #   txn (nested), txu (transaction_updates/1), txr (current_transaction/1), txd (undo/1), txe (update events), txx (the rows of the first battery, below). A row id names the whole row: its answer is
 #   compared with swipl 10.1.20's pinned one (`_TX_PINNED`), so any difference in the answer kills.
-# TWO CLASSES: KILL (names its row or rows); EQUIVALENT (`equivalent=` with the file:line reason). TWO mutants stay DEFERRED KILL (`equivalent="DEFERRED KILL: ..."`,
+# TWO CLASSES: KILL (names its row or rows); EQUIVALENT (`equivalent=` with the file:line reason, kernel and upstream both: L1, L2). TWO mutants stay DEFERRED KILL (`equivalent="DEFERRED KILL: ..."`,
 #   audit D-0374 item 2: no row can read what the mutant changes, it must SURVIVE the battery): N18 (owner ATOM1: atom GC) and N19 (owner TH1: thread destruction).
 # THE txx ROWS (a row id names the whole row; the goal is the second element of `_TX_CASES`):
 #   txx01 nested retract of the parent's last clause, then the nested level fails   (R2, D3)     txx02 the parent reads after a nested retract of its clause   (R4)
@@ -21,7 +21,8 @@
 #   txx11, txx11b, txx11c current_transaction/1 at depth 2 (findnsols/4: findall never ends upstream) and after a nested level   (T13, P6, P7)
 #   txx12, txx12b flags after a bulk nested level   (T14)     txx13, txx13b gen_nest restored   (T15)     txx14, txx14b the updates sorted   (U7)
 #   txx15, txx15b, txx15c no event in a bulk level   (H11)    txx17a-e a listener that raises at the commit of a bulk outermost transaction   (T17)
-#   txx16 the white-box testset at the end of the file: the schedule is empty right after the backtrack   (E4)
+#   txx16 the white-box testset: the schedule is empty right after the backtrack   (E4)
+#   txx18a-c the white-box testset at the end of the file: push_undo on a hand-written cell: a non-atom head (a), another functor (b), the control that a list cell with an atom head is scheduled (c)   (N1, N2)
 # TARGETS (audit D-0238): TX is the only file that runs a transaction or undo/1 (grepped 2026-11-10: `transaction(` and `undo(` in test/). The engine-hook mutants
 #   also list the database files that run the mutated function with no transaction (assert, retract, retractall, clause, event, update-view): TDB. The undo mutants
 #   list the two files that run `Undo!`/`updateAlerted`: test_trail_words.jl (TTR) and test_attvar_wakeup.jl (TAW). NOT listed: test_static_analysis.jl
@@ -92,12 +93,12 @@ MUTANTS = [
     # ── pl-transaction.jl: last-modified tables ──
     dict(id="TX1-L1 transaction_set_last_modified: the flags of an earlier entry are dropped, `flags` for `oflags | flags` (EQUIVALENT)",
          file=PT, targets=[TX],
-         equivalent="pl-proc.jl:3015 reads only the generation (`transaction_last_modified_predicate`); `set_modified` hands the flags to `setLastModifiedPredicate!` with a GLOBAL generation (`gen_commit`), whose form drops them (pl-proc.jl, the `gen < GEN_TRANSACTION_BASE` branch calls the three-argument one): the flags have no reader",
+         equivalent="the flags of a changed-predicates entry have ONE reader, `set_modified` (pl-transaction.jl:170-175, `VAL_GEN_FLAGS(v)` at :173; upstream pl-transaction.c:282-293, `VAL_GEN_FLAGS(v)` at :286). The generation reader `transaction_last_modified_predicate` (pl-transaction.jl:135-148, :143 `VAL_LGEN(lgen)`; the tabling readers pl-tabling.jl:7576 and :8609 use `haskey` only) shifts the flag bits off. `set_modified` is called with `gen_commit = global_generation(gd) + 1` (pl-transaction.jl:197, :219), a GLOBAL generation: `setLastModifiedPredicate!` pl-proc.jl:550-559 takes the `gen < GEN_TRANSACTION_BASE` branch (:553) into the three-argument form pl-proc.jl:541-548, which has no `flags` parameter. Upstream gives the flags to `wakeupThreads(def, flags)` (pl-proc.c:1348-1350, `#ifdef O_PLMT`, under `ison(def, P_DYNAMIC)`), which the kernel omits (DIVERGES at pl-proc.jl:537, one thread): no reader of the flags is left",
          old="    table[def] = LGEN_FLAGS_VAL(tr, gen, oflags | flags)\n",
          new="    table[def] = LGEN_FLAGS_VAL(tr, gen, flags)\n"),
     dict(id="TX1-L2 merge_pred_tables: the flags the parent had are dropped, `lgen` for `VAL_ADD_FLAGS(lgen, oflags)` (EQUIVALENT)",
          file=PT, targets=[TX],
-         equivalent="same reason as TX1-L1: the flags of a changed-predicates entry are read only by `set_modified`, which gives them to a function that drops them for a global generation (pl-proc.jl, `setLastModifiedPredicate!`)",
+         equivalent="`merge_pred_tables` (pl-transaction.jl:279-288, the changed line :285; upstream pl-transaction.c:430-441, :439 `updateHTablePW(into, def, VAL_ADD_FLAGS(lgen, oflags))`) only moves the flag bits `oflags` of the parent's entry into the merged entry; the generation bits `lgen` are the nested level's own in both versions, and `lgen` is never 0 (both callers of `transaction_set_last_modified`, pl-proc.jl:735 and :805, pass TWF_ASSERT or TWF_RETRACT, nonzero), so the `lgen != 0` test of pl-transaction.jl:142 gives the same answer. The flag bits have one reader, `set_modified` (pl-transaction.jl:173, upstream pl-transaction.c:286), which runs with the GLOBAL generation `gen_commit` (pl-transaction.jl:219): pl-proc.jl:553 `gen < GEN_TRANSACTION_BASE` selects the three-argument `setLastModifiedPredicate!` (pl-proc.jl:541-548), which drops the flags; upstream hands them to `wakeupThreads(def, flags)` (pl-proc.c:1348-1350), omitted here (pl-proc.jl:537, one thread). Same reasoning as TX1-L1",
          old="        into[def] = VAL_ADD_FLAGS(lgen, oflags)\n",
          new="        into[def] = lgen\n"),
     dict(id="TX1-L3 transaction_last_modified_predicate: the global last-modification is returned unchanged inside a transaction (KILL txx05b: inside a transaction the last-modified generation is the global one, eq for lt)",
@@ -296,14 +297,12 @@ MUTANTS = [
          old="            id0 = stack.id\n            stack = stack.parent\n",
          new="            id0 = ld.transaction.id\n            stack = stack.parent\n"),
     # ── pl-undo.jl: the data and $undo/1 ──
-    dict(id="TX1-N1 push_undo: a non-atom head is scheduled, the atom test dropped (EQUIVALENT)",
+    dict(id="TX1-N1 push_undo: a non-atom head is scheduled, the atom test dropped (KILL txx18a: the cell '[|]'(7, []) is not scheduled, the white-box row calls push_undo on it, UNDO_SCHEDULED true for false)",
          file=PU, targets=TUNDO,
-         equivalent="pl-undo.jl, `pl_undo1_va`: the list cell is written only there, with `[Atom|Old]` where the atom is a blob made by `save_undo`, so the head is always an atom",
          old="            isAtomW(a) || return nothing            # if ( !isAtom(w) ) return\n",
          new="            nothing\n"),
-    dict(id="TX1-N2 push_undo: any compound in the cell is a list, the functor test dropped (EQUIVALENT)",
+    dict(id="TX1-N2 push_undo: any compound in the cell is a list, the functor test dropped (KILL txx18b: the cell tx_w18f(tx_w18), an atom first argument under another functor, is not scheduled, UNDO_SCHEDULED true for false)",
          file=PU, targets=TUNDO,
-         equivalent="same writer as TX1-N1: the only compound ever stored in the first global cell is `'[|]'(Blob, Old)` from `pl_undo1_va`",
          old="        if ld.gstack[f] == ld.functor_dot2          # if ( f->definition == FUNCTOR_dot2 )\n",
          new="        if true          # if ( f->definition == FUNCTOR_dot2 )\n"),
     dict(id="TX1-N3 push_undo: the newest goal is scheduled first, `pushfirst!` for `push!` (KILL txd02: put_scheduled_undo reads the schedule from the end, so the goals run oldest first, [a, b] for [b, a])",
