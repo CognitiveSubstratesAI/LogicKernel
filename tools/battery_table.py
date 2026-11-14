@@ -41,6 +41,14 @@ def find(jobs, pred):
     return hits[-1] if hits else None
 
 
+def find_baseline(jobs):
+    """The Baseline job to judge: with one per term type (MUT3: `Baseline (unmutated) · <impl>`) the first that did
+    not succeed, else the last; one job as before."""
+    bs = [j for j in jobs if j["name"].startswith("Baseline")]
+    bad = [j for j in bs if j.get("status") != "completed" or j.get("conclusion") != "success"]
+    return bad[0] if bad else (bs[-1] if bs else None)
+
+
 def last_error(lines):
     errs = [ln[len("##[error]"):].strip() for ln in lines if ln.startswith("##[error]")]
     return errs[-1] if errs else ""
@@ -91,7 +99,7 @@ def desc(r):
 def ids(d, run):
     jobs = load_jobs(d)
     v = find(jobs, lambda n: n == "Verdict table")
-    b = find(jobs, lambda n: n.startswith("Baseline"))
+    b = find_baseline(jobs)
     print("%s\t%s" % (v["id"] if v else "", b["id"] if b else ""))
     return 0
 
@@ -103,7 +111,7 @@ def report(d, run):
     j0 = jobs[0]
     head = "battery_table: run %s  %s  %s" % (run, j0.get("workflow_name", "?"), j0.get("head_branch", "?"))
     v = find(jobs, lambda n: n == "Verdict table")
-    b = find(jobs, lambda n: n.startswith("Baseline"))
+    b = find_baseline(jobs)
     if b is None:
         return [head, "no Baseline job in this run: not a mutation battery (or the plan failed)"], 2
     if b.get("status") != "completed":
@@ -140,7 +148,8 @@ def report(d, run):
     for r in eq:
         out.append("EQUIVALENT %s  %s" % (r[0], clip(desc(r), 300)))
     for r in nov:
-        j = find(jobs, lambda n, i=r[0]: n == i)
+        mine = [x for x in jobs if x["name"] == r[0] or x["name"].startswith("mutant %s · " % r[0])]
+        j = next((x for x in mine if x.get("conclusion") != "success"), mine[-1] if mine else None)   # one job per term type (MUT3)
         err = ""
         if j is not None:
             err = last_error(lines_of(os.path.join(d, "%s.log" % j["id"])))

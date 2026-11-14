@@ -13,6 +13,16 @@
 # limit = TIMEOUT; anything else = INVALID; a mutant declared `equivalent` must survive. SURVIVED,
 # TIMEOUT, INVALID, NO VERDICT, BADMATCH and a caught "equivalent" BLOCK: the `verdicts` job is red.
 # The table, with each caught mutant's first failing test line, is in that job's summary.
+# THE TERM-TYPE MATRIX (MUT3; the closure rule: a mutant FAILS and the unmutated tree PASSES on ALL THREE term types):
+# every mutant runs on every term type of the input `impls` (default, and what a push to mutants/<step> uses: `reference
+# alt alt_interned`), one job per (mutant, term type) pair, named `mutant <id> · <impl>`; the Baseline runs once per type
+# (`Baseline (unmutated) · <impl>`). A mutant is CAUGHT only if caught on EVERY type; the table says `caught on: reference
+# alt alt_interned` or `SURVIVED on alt`. Targets that are not term-generic (no include of test/term_under_test.jl) and
+# `sh:` targets have one run, on the reference type, as in tools/warm.sh `file`: on another type the pair is `N/A (no
+# term-generic target)` when nothing term-generic is left, and not blocking (the table names it). COST: free standard
+# runners, one job per pair — a list of 30 mutants is 90 jobs (max-parallel 20; the same hour-class run as before per job).
+# LIMIT: GitHub allows 256 jobs in one matrix: a list of more than 85 mutants on three types (more than 128 on two) is
+# refused by Plan with that message (nothing is truncated silently): run it in parts with `ids`.
 # NO BENCHMARKS HERE: shared runners vary; timings stay on the quiet local machine.
 name: Mutation battery
 on:
@@ -38,6 +48,11 @@ on:
         description: "Seconds per target before TIMEOUT (a cold process: compilation included)"
         required: false
         default: "1500"
+        type: string
+      impls:
+        description: "Term types, space-separated: any of reference alt alt_interned (the closure rule wants all three)"
+        required: false
+        default: "reference alt alt_interned"
         type: string
 
 concurrency:
@@ -73,6 +88,7 @@ env:
   MUTANTS: ${{ inputs.mutants || format('tools/{0}.py', github.ref_name) }}
   IDS: ${{ inputs.ids }}
   LIMIT_S: ${{ inputs.limit_s || '1500' }}
+  IMPLS: ${{ inputs.impls || 'reference alt alt_interned' }}
 
 jobs:
   # The matrix: one entry per mutant, from the list itself (the same file the local driver reads).
@@ -81,20 +97,25 @@ jobs:
     runs-on: ubuntu-24.04   # pinned: CI.yml's note above `jobs:`
     outputs:
       matrix: ${{ steps.plan.outputs.matrix }}
+      impl_matrix: ${{ steps.plan.outputs.impl_matrix }}
       count: ${{ steps.plan.outputs.count }}
+      pairs: ${{ steps.plan.outputs.pairs }}
       targets: ${{ steps.plan.outputs.targets }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - id: plan
-        run: python3 tools/mutate_ci.py plan "$MUTANTS" $IDS >> "$GITHUB_OUTPUT"
+        run: python3 tools/mutate_ci.py plan --impls "$IMPLS" "$MUTANTS" $IDS >> "$GITHUB_OUTPUT"
 
-  # The targets on the UNMUTATED tree. A mutant's "caught" means nothing against a red baseline
-  # (a guard is proved against a green one), so `verdicts` refuses the battery when this is red.
+  # The targets on the UNMUTATED tree, once per term type. A mutant's "caught" means nothing against a red baseline
+  # (a guard is proved against a green one), so `verdicts` refuses the battery when any of these is red.
   baseline:
-    name: Baseline (unmutated)
+    name: ${{ matrix.job }}
     needs: plan
     runs-on: ubuntu-24.04   # pinned: CI.yml's note above `jobs:`
     timeout-minutes: 90
+    strategy:
+      fail-fast: false                # every term type gets its verdict
+      matrix: ${{ fromJson(needs.plan.outputs.impl_matrix) }}
     env:
       TARGETS: ${{ inputs.targets || needs.plan.outputs.targets }}
     steps:
@@ -144,11 +165,13 @@ jobs:
         run: julia tools/build_home.jl
       - run: julia --project=. -e 'using Pkg; Pkg.instantiate()'
       - name: Run the targets
-        run: python3 tools/mutate_ci.py baseline "$LIMIT_S" $TARGETS
+        run: python3 tools/mutate_ci.py baseline --impl "$IMPL" "$LIMIT_S" $TARGETS
+        env:
+          IMPL: ${{ matrix.impl }}
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         if: ${{ !cancelled() }}
         with:
-          name: verdict-baseline
+          name: verdict-baseline-${{ matrix.impl }}
           path: mutation-out/
       # ... and again at the job's end, BEFORE the cache action's post step saves the depot: a mutated compiled LogicKernel
       # never enters the shared key
@@ -161,14 +184,14 @@ jobs:
           true
 
   mutant:
-    name: ${{ matrix.name }}
+    name: ${{ matrix.job }}
     needs: plan
     runs-on: ubuntu-24.04   # pinned: CI.yml's note above `jobs:`
     timeout-minutes: 120
     strategy:
       fail-fast: false                # every mutant gets its verdict
       max-parallel: 20
-      matrix: ${{ fromJson(needs.plan.outputs.matrix) }}
+      matrix: ${{ fromJson(needs.plan.outputs.matrix) }}     # one entry per (mutant, term type): at most 256
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - uses: ./.github/actions/oracle
@@ -219,14 +242,15 @@ jobs:
       # fresh processes, writes mutation-out/<name>.json and the log. Exits 0 whatever the verdict:
       # the verdict is DATA here, judged in one place (`verdicts`).
       - name: Apply the mutant and run the targets
-        run: python3 tools/mutate_ci.py one "$MUTANTS" "$MUTANT" "$LIMIT_S" $TARGETS
+        run: python3 tools/mutate_ci.py one --impl "$IMPL" "$MUTANTS" "$MUTANT" "$LIMIT_S" $TARGETS
         env:
           MUTANT: ${{ matrix.name }}
+          IMPL: ${{ matrix.impl }}
           TARGETS: ${{ inputs.targets || needs.plan.outputs.targets }}
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         if: ${{ !cancelled() }}
         with:
-          name: verdict-${{ matrix.name }}
+          name: verdict-${{ matrix.name }}-${{ matrix.impl }}
           path: mutation-out/
       # ... and again at the job's end, BEFORE the cache action's post step saves the depot: a mutated compiled LogicKernel
       # never enters the shared key
@@ -250,11 +274,12 @@ jobs:
           pattern: verdict-*
           path: mutation-out
           merge-multiple: true
-      # The table (mutant · verdict · seconds · what it breaks), written to the job summary and to
-      # verdicts.md. Exit 1 when the baseline is not green, a planned mutant has no verdict file
-      # (a job that died is not a verdict), or any mutant blocks.
+      # The table (mutant · verdict · seconds · impls · what it breaks), written to the job summary and to
+      # verdicts.md; a mutant is caught only if caught on every term type, and the pairs that are not caught follow in a
+      # second table. Exit 1 when a baseline is not green on any term type, a planned (mutant, type) pair has no verdict
+      # file (a job that died is not a verdict), or any mutant blocks.
       - name: Collect
-        run: python3 tools/mutate_ci.py collect "$MUTANTS" "$COUNT" $IDS | tee -a "$GITHUB_STEP_SUMMARY"; exit ${PIPESTATUS[0]}
+        run: python3 tools/mutate_ci.py collect --impls "$IMPLS" "$MUTANTS" "$COUNT" $IDS | tee -a "$GITHUB_STEP_SUMMARY"; exit ${PIPESTATUS[0]}
         env:
           COUNT: ${{ needs.plan.outputs.count }}
       # The same table as this job's annotations: the summary and the logs need a token to read

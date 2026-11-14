@@ -17,7 +17,6 @@ pred:$foreign_predicate_source/2	PR1	seed: missing_c_preds.tsv
 pred:$gc_clear/1	TH1	seed: missing_c_preds.tsv
 pred:$gc_stop/0	TH1	seed: missing_c_preds.tsv
 pred:$gc_wait/1	TH1	seed: missing_c_preds.tsv
-pred:$idg_add_edge/1	TAB1	seed: missing_c_preds.tsv
 pred:$idg_add_mono_dyn_dep/3	TAB1	seed: missing_c_preds.tsv
 pred:$idg_add_monotonic_dep/3	TAB1	seed: missing_c_preds.tsv
 pred:$idg_changed/1	TAB1	seed: missing_c_preds.tsv
@@ -32,7 +31,6 @@ pred:$idg_mono_index/2	TAB1	seed: missing_c_preds.tsv
 pred:$idg_mono_index_deps/4	TAB1	seed: missing_c_preds.tsv
 pred:$idg_mono_invalidate/1	TAB1	seed: missing_c_preds.tsv
 pred:$idg_reset_current/0	TAB1	seed: missing_c_preds.tsv
-pred:$idg_set_current/2	TAB1	seed: missing_c_preds.tsv
 pred:$inference_limit/2	P3	seed: missing_c_preds.tsv
 pred:$inference_limit_except/3	P3	seed: missing_c_preds.tsv
 pred:$inference_limit_false/1	P3	seed: missing_c_preds.tsv
@@ -50,44 +48,21 @@ pred:$sig_unblock/0	TH1	seed: missing_c_preds.tsv
 pred:$snapshot/1	TX1	seed: missing_c_preds.tsv
 pred:$suspend_findall_bag/0	Q10	seed: missing_c_preds.tsv
 pred:$tbl_abolish_local_tables/0	TAB1	seed: missing_c_preds.tsv
-pred:$tbl_add_global_delays/2	TAB1	seed: missing_c_preds.tsv
-pred:$tbl_answer/3	TAB1	seed: missing_c_preds.tsv
-pred:$tbl_answer_c/4	TAB1	seed: missing_c_preds.tsv
-pred:$tbl_answer_dl/3	TAB1	seed: missing_c_preds.tsv
-pred:$tbl_answer_update_dl/2	TAB1	seed: missing_c_preds.tsv
-pred:$tbl_answer_update_dl/3	TAB1	seed: missing_c_preds.tsv
 pred:$tbl_collect_mono_dep/0	TAB1	seed: missing_c_preds.tsv
-pred:$tbl_delay_list/1	TAB1	seed: missing_c_preds.tsv
 pred:$tbl_destroy_table/1	TAB1	seed: missing_c_preds.tsv
-pred:$tbl_force_truth_value/3	TAB1	seed: missing_c_preds.tsv
-pred:$tbl_is_answer_completed/1	TAB1	seed: missing_c_preds.tsv
-pred:$tbl_leader_complete/4	TAB1	seed: missing_c_preds.tsv
 pred:$tbl_monotonic_add_answer/2	TAB1	seed: missing_c_preds.tsv
 pred:$tbl_node_answer/2	TAB1	seed: missing_c_preds.tsv
-pred:$tbl_pop_worklist/2	TAB1	seed: missing_c_preds.tsv
 pred:$tbl_propagate_end/1	TAB1	seed: missing_c_preds.tsv
 pred:$tbl_propagate_start/1	TAB1	seed: missing_c_preds.tsv
 pred:$tbl_reeval_abandon/1	TAB1	seed: missing_c_preds.tsv
 pred:$tbl_reeval_prepare/2	TAB1	seed: missing_c_preds.tsv
 pred:$tbl_reeval_prepare_top/2	TAB1	seed: missing_c_preds.tsv
-pred:$tbl_set_answer_completed/1	TAB1	seed: missing_c_preds.tsv
-pred:$tbl_set_delay_list/1	TAB1	seed: missing_c_preds.tsv
-pred:$tbl_table_complete_all/3	TAB1	seed: missing_c_preds.tsv
-pred:$tbl_wkl_add_answer/4	TAB1	seed: missing_c_preds.tsv
-pred:$tbl_wkl_add_suspension/2	TAB1	seed: missing_c_preds.tsv
-pred:$tbl_wkl_add_suspension/3	TAB1	seed: missing_c_preds.tsv
-pred:$tbl_wkl_is_false/1	TAB1	seed: missing_c_preds.tsv
-pred:$tbl_wkl_make_follower/1	TAB1	seed: missing_c_preds.tsv
-pred:$tbl_wkl_negative/1	TAB1	seed: missing_c_preds.tsv
-pred:$tbl_wkl_table/2	TAB1	seed: missing_c_preds.tsv
-pred:$tbl_wkl_work/6	TAB1	seed: missing_c_preds.tsv
 pred:$transaction/2	TX1	seed: missing_c_preds.tsv
 pred:$transaction/3	TX1	seed: missing_c_preds.tsv
 pred:$undo/1	TX1	seed: missing_c_preds.tsv
 pred:$unload_file/1	SRC2	seed: missing_c_preds.tsv
 pred:$urgent_exception/3	P3	seed: missing_c_preds.tsv
 pred:$visible/2	DBG1	seed: missing_c_preds.tsv
-pred:\=@=/2	Q10	seed: missing_c_preds.tsv
 pred:char_type/2	CT1	seed: missing_c_preds.tsv
 pred:code_type/2	CT1	seed: missing_c_preds.tsv
 pred:current_blob/2	Q10	seed: missing_c_preds.tsv
@@ -163,15 +138,11 @@ vmi:S_INCR_DYNAMIC	TB6	pl-vmi.c:3522, the incremental dynamic predicate supervis
 vmi:S_THREAD_LOCAL	TH1	pl-vmi.c:3499, the thread-local definition supervisor: thread-local predicates are TH1's (src/pl-proc.jl:1684, src/pl-supervisor.jl:20-21)
 vmi:T_SMALLINTW	REFUSED	never declared (refused by name, no step ports it): only the `CODES_PER_WORD > 1` forms of T_SMALLINT/T_TRY_SMALLINT (pl-vmi.c:6622-6632); compile_trie emits them through add_smallint/add_vmi_else_i only where a code word is narrower than a word (pl-trie.c:4785, :4973-4975, :5018), 1 on the build the kernel targets; src/pl-vmi.jl:644-645
 vmi:T_TRY_SMALLINTW	REFUSED	never declared (refused by name, no step ports it): only the `CODES_PER_WORD > 1` forms of T_SMALLINT/T_TRY_SMALLINT (pl-vmi.c:6622-6632); compile_trie emits them through add_smallint/add_vmi_else_i only where a code word is narrower than a word (pl-trie.c:4785, :4973-4975, :5018), 1 on the build the kernel targets; src/pl-vmi.jl:644-645
-cfile:pl-tabling.c	TAB1	PIN1 step C (D-0447 item 1): every pl-tabling.c row without an exact key, and the UNPORTED tabling groups of V10.1.20 (evidence/PIN1/step_c/part2_notes.md T0-T5; no key kind names a group): T1 IDG edge sets and node layout (pl-idgset.c/h, 211bb969 9f5da524 c77a0bff 99827823; `$idg_thread_summary/3`, `$idg_thread_space/2`, `$idg_predicate_edges/3` are new); T2 trie and table memory (737686d3 fc7e0010 2125e711 486dc81d; T_DELAY flag); T3 reclaim and abolish (259429a2 30bdfd4f c9c81eeb c7037709); T4 answers and WFS (10205aec 14ba39be 9dcabe86 6aee153d); T5 diagnostics (780caea7 610742f9 0e201521; `$tbl_sdg/3`, `$tbl_incomplete/3`); S_TABLED stays the named refusal
+cfile:pl-tabling.c	TAB1	PIN1 step C (D-0447 item 1): every pl-tabling.c row without an exact key, and the tabling groups of V10.1.20 that keep a TAB1 row (evidence/PIN1/step_c/part2_notes.md T0-T5; no key kind names a group): T1 IDG edge sets and node layout (pl-idgset.c/h, 211bb969 9f5da524 c77a0bff 99827823; `$idg_thread_summary/3`, `$idg_thread_space/2`, `$idg_predicate_edges/3` are new); T2 trie and table memory (737686d3 fc7e0010 2125e711 486dc81d; T_DELAY flag); T3 reclaim and abolish (259429a2 30bdfd4f c9c81eeb c7037709); T4 answers and WFS (10205aec 14ba39be 9dcabe86 6aee153d); T5 diagnostics (780caea7 610742f9 0e201521; `$tbl_sdg/3`, `$tbl_incomplete/3`); S_TABLED has its body since TB3b, its single-answer path since the TB3 stack edit
 cfile:pl-thread.c	TH1	PIN1 step C (D-0447 item 3): every pl-thread.c row without an exact key; `$thread_local_predicate_size/3` is new at V10.1.20 (pl-thread.c, O_ENGINES; thread-local predicates are TH1's)
 kfile:pl-qlf.jl	LB3	seed: the QLF refusal sites
-refusal:src/pl-tabling.jl::tbl_refuse::what	TB2-TB9	the named refusal of a TB1 branch whose body is a later step's (`tbl_refuse(T, fname, what, owner)`: the argument `owner` names the step: TB2 worklists and the create path of `$tbl_variant_table/6`, TB4 delay info, TB6 IDG, TB7 monotonic, TB8 tripwires, TB9 tracked tables, TH1 shared tables)
+refusal:src/pl-tabling.jl::tbl_refuse::what	TB5-TB9	the named refusal of a branch whose body is a later step's (`tbl_refuse(T, fname, what, owner)`: the argument `owner` names the step: TB5 the worklist branch of `reset_answer_table` (its calls to `destroy_depending_worklists` and `free_worklist` need an engine: `ld`, or a GD-to-LD reference; wip/tb5 calls `reset_answer_table(atrie, flags)` with two arguments, the stack's is `(gd, atrie, flags)`: batch-4 carry list, evidence/TAB1/stack4_handoff5.md), TB6 IDG, TB7 monotonic, TB8 tripwires, TB9 tracked tables, TH1 shared tables)
 refusal:src/pl-wam.jl::PL_next_solution_guarded::the VM instruction I_YIELD in an engine (pl-vmi.c:2419)	TH1	the named refusal of the branch (its body is the owner's step)
-refusal:src/pl-wam.jl::PL_next_solution_guarded::the dtbl_reset6 branch of I_RESET (pl-vmi.c:5762)	TAB1	the named refusal of the branch (its body is the owner's step)
-refusal:src/pl-wam.jl::PL_next_solution_guarded::the dtbl_reset6 branch of I_EXITRESET (pl-vmi.c:5806)	TAB1	the named refusal of the branch (its body is the owner's step)
-refusal:src/pl-wam.jl::PL_next_solution_guarded::the VM instruction S_TABLED (calling a tabled predicate)	TAB1	the named refusal of the instruction (its body is the owner's step)
-refusal:src/pl-wam.jl::PL_next_solution_guarded::the VM instruction T_DELAY (a conditional answer)	TB4	the named refusal of the instruction (pl-vmi.c:6225-6246, TB4: the delay list `tbl_push_delay`); compile_trie_node refuses a conditional answer by name too, so no clause holds the instruction until TB4 compiles one
 refusal:src/os/pl-files.jl::get_file_name::PL_get_file_name flag PL_FILE_SEARCH (system:absolute_file_n	LB4	the first boot: absolute_file_name/3 of init.pl runs through PL_get_file_name(PL_FILE_SEARCH)
 refusal:src/os/pl-files.jl::_iri_hook_refused::iri_hook $what (`\$iri`:iri_hook/4 of init.pl)	LB5-LB7	off the load path: serves http:// style IRIs; the library ring
 refusal:src/os/pl-files.jl::_tmp_file_refused::what	LB5-LB7	tmp_file/2 and $tmp_file_stream/4: boot, off the load path (lb5_sizing.md Ring Q)
