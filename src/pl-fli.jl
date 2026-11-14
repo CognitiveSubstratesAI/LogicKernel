@@ -1363,7 +1363,7 @@ PL_record(ld::PL_local_data{T}, t::term_t) where {T} = compileTermToHeap(ld, t)
 # PORT: pl-fli.c PL_recorded
 "Make term reference `t` hold the term of record `r`, its variables fresh; false, the overflow raised, when it does not fit (pl-fli.c)."
 PL_recorded(ld::PL_local_data{T}, r::record{T}, t::term_t) where {T} =
-    copyRecordToGlobal(ld, t, r)
+    copyRecordToGlobal(ld, t, r, ALLOW_GC)   # G1-GC safe point: copyRecordToGlobal
 
 # PORT: pl-fli.c PL_erase
 # DIVERGES: nothing to free — a record is freed by Julia's GC (`freeRecord`, src/pl-rec.jl).

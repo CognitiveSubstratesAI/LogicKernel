@@ -635,6 +635,91 @@ _pc_codes(vs) = sort!([
         @test expected_path("swipl-bench", "programs/derive.pl") ==
             "bench/programs/derive.jl"
     end
+
+    # THE SPLIT-FILE RULE (D-0649): a C file too large for one Julia file is ported over LISTED kernel files. Three levels:
+    # the table itself, `port_path_ok` on names, and `port_check` on a fixture tree (verdict level, the mutation battery's
+    # target). Every row has both sides non-empty and goes through ONE extractor (`_pc_pm`, `_pc_codes`).
+    @testset "a split port: the LISTED parts of pl-gc.c may hold it, nothing else" begin
+        parts = SPLIT_PORTS["swipl-devel src/pl-gc.c"]
+        @test !isempty(parts) && allunique(parts)
+        # the table is pinned by name: a part dropped or added shows here (D-0649: LISTED, never matched)
+        @test collect(parts) == [
+            "src/pl-gccompact.jl", "src/pl-gcdriver.jl", "src/pl-gcmark.jl",
+            "src/pl-gcsweep.jl", "src/pl-gctrail.jl", "src/pl-gcwalk.jl"
+        ]
+        # no pattern in the table: every key is "<repo> <path>", every part a plain src/*.jl name
+        for (k, ps) in SPLIT_PORTS
+            @test length(split(k, " ")) == 2
+            for p in ps
+                @test !occursin(r"[*?\[\]{}]", p) && startswith(p, "src/") && endswith(p, ".jl")
+            end
+        end
+        @test port_path_ok("src/pl-gc.jl", "swipl-devel", "src/pl-gc.c")           # the mirrored path stays right
+        for part in parts
+            @test port_path_ok(part, "swipl-devel", "src/pl-gc.c")
+            @test part != expected_path("swipl-devel", "src/pl-gc.c")
+        end
+        @test !port_path_ok("src/pl-gcother.jl", "swipl-devel", "src/pl-gc.c")     # a misnamed port is still a mismatch
+        # a name that only a pattern such as `src/pl-gc*.jl` would match stays a mismatch (the glob is FORBIDDEN)
+        @test startswith("src/pl-gcextra.jl", "src/pl-gc") && endswith("src/pl-gcextra.jl", ".jl")
+        @test !port_path_ok("src/pl-gcextra.jl", "swipl-devel", "src/pl-gc.c")
+        @test !port_path_ok("src/pl-gc-extra.jl", "swipl-devel", "src/pl-gc.c")
+        @test !port_path_ok("src/pl-gcdriver.jl", "swipl-devel", "src/pl-attvar.c")  # a part of another file's port
+        @test !port_path_ok("src/pl-gcdriver.jl", "swipl-devel", "src/pl-gc.h")    # the listing is per upstream path
+        @test !port_path_ok("src/pl-gcdriver.jl", "scryer-prolog", "src/pl-gc.c")  # and per repo
+    end
+
+    @testset "a split port through port_check: listed passes, unlisted and glob-only names are PATH-MISMATCH" begin
+        _pc_pm(r) = [c[2] for c in _pc_codes(r.violations) if c[1] == "PATH-MISMATCH"]
+        mktempdir() do base
+            up = joinpath(base, "swipl-devel")
+            mkpath(joinpath(up, "src"))
+            for f in ("pl-gc.c", "pl-attvar.c")
+                write(
+                    joinpath(up, "src", f),
+                    "/* Copyright (c) 2020, Someone */\nint x(void) { return 0; }\n"
+                )
+            end
+            _pc_git(up, "init", "-q")
+            _pc_git(up, "add", "-A")
+            _pc_git(up, "commit", "-qm", "fixture")
+            sha = strip(read(`git -C $up rev-parse HEAD`, String))
+            dirs = Dict("swipl-devel" => up)
+            hdr(c) = "# UPSTREAM: swipl-devel src/$c @ $sha\n# CLASS: design\n"
+            listed = collect(SPLIT_PORTS["swipl-devel src/pl-gc.c"])
+            unlisted = ["src/pl-gcextra.jl", "src/pl-gcother.jl"]      # the first one matches `src/pl-gc*.jl`
+            root = joinpath(base, "kernel")
+            for rel in [["src/pl-gc.jl"]; listed; unlisted]
+                _pc_write(root, rel, hdr("pl-gc.c"))
+            end
+            _pc_write(root, "src/pl-gcother2.jl", hdr("pl-attvar.c"))  # a listed-looking name, another upstream
+            _pc_inventory(root, "")
+            r = port_check(root; upstream_dirs=dirs)
+            scanned = Set(f.rel for f in r.files)
+            # both sides non-empty: every file of the rows was SCANNED, and some name was refused
+            @test all(rel -> rel in scanned, [["src/pl-gc.jl"]; listed; unlisted])
+            @test !isempty(_pc_pm(r))
+            # (a) the mirrored path and the six listed parts pass; (b) the unlisted names, the glob-only name and a
+            # name under another upstream's port are exactly what is refused
+            @test _pc_pm(r) == sort!(basename.([unlisted; "src/pl-gcother2.jl"]))
+            # the same fixture without the unlisted files is clean of PATH-MISMATCH (the rows above are the files)
+            for rel in [unlisted; "src/pl-gcother2.jl"]
+                rm(joinpath(root, rel))
+            end
+            r2 = port_check(root; upstream_dirs=dirs)
+            @test length(r2.files) >= 7 && isempty(_pc_pm(r2))
+            # a listed part under the wrong upstream is refused (the listing is per upstream path)
+            _pc_write(root, "src/pl-gcdriver.jl", hdr("pl-attvar.c"))
+            @test _pc_pm(port_check(root; upstream_dirs=dirs)) == ["pl-gcdriver.jl"]
+            # (c) a listed part that is no kernel file: the table's six parts all exist in this tree, so nothing dangles
+            @test isempty(split_parts_dangling(root))
+            rm(joinpath(root, "src", "pl-gcmark.jl"))
+            @test split_parts_dangling(root) == ["swipl-devel src/pl-gc.c -> src/pl-gcmark.jl"]
+            @test split_parts_dangling(
+                root; table=Dict("swipl-devel src/pl-gc.c" => ("src/pl-gcdriver.jl",))
+            ) == String[]
+        end
+    end
 end
 
 # LogicKernel's own list: non-empty, and every name on it unreachable at the commit it records.
