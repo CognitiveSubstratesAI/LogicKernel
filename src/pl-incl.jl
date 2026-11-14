@@ -368,6 +368,9 @@ const END_INDEX_POS = 0xff
 # Keys are words laid out as SWI lays out atoms and functors, so `isFunctor` tells a functor key
 # from every other key exactly as upstream does (see `indexOfWord` in src/pl-index.jl).
 # PORT: pl-data.h LMASK_BITS
+# DIVERGES: Synced to cf6960c2 (pl-data.h:91-118, 167): the target's value is 8 (tag 3 bits, storage 2, the VARIANT bit
+# `0x20`, the two GC masks above it); 7 here while the pin is 18168e62. A deferred row of the oracle move (TAGGED-56): every
+# word built with it changes, and the tagged range falls to 56 bits (`PLMINTAGGEDINT`, below).
 "Total number of tag + storage bits in a word (pl-data.h)."
 const LMASK_BITS = 7
 # PORT: pl-data.h TAG_MASK
@@ -380,6 +383,10 @@ const TAG_VAR = UInt64(0x00000000)
 "Tag of an atom — and, with `STG_GLOBAL`, of a functor (pl-data.h)."
 const TAG_ATOM = UInt64(0x00000005)
 # PORT: pl-data.h MARK_MASK
+# DIVERGES: Synced to cf6960c2 (pl-data.h:212-213): at the target the mark and first bits are bits 6 and 7 (`0x1<<6`, `0x2<<6`),
+# above the new variant bit; here bits 5 and 6 (the pin's layout, with `LMASK_BITS` 7). Users here (pl-attvar.jl, pl-copyterm.jl,
+# variant_sha1) name the constants, so the bit move changes no code. `isMarkedOrIndHdr` (one test of mark, first and
+# indirect-header bits, used by the target's pl-gc.c) is unwritten: its only callers are in that collector scan.
 "The GC mark bit (pl-data.h); variant_sha1 sets it in the words it numbers variables with."
 const MARK_MASK = UInt64(0x1) << 5
 # PORT: pl-data.h STG_MASK
@@ -398,6 +405,11 @@ const F_ARITY_BITS = 5
 "Mask of the inline arity (pl-data.h)."
 const F_ARITY_MASK = UInt64((1 << F_ARITY_BITS) - 1)
 # PORT: pl-data.h tagex
+# DIVERGES: Synced to cf6960c2 (pl-data.h:202-264): the target's mask also holds the VARIANT bit (`TAGEX_MASK`, `tagex()`
+# in 0..63, `TAGEX_COUNT` 64), so a rational cell (`KIND_MPQ`, `TAGEX_INDIRECT_MPQ`) and a pointer integer (`TAGEX_PTRINT`) are
+# kinds of their own. Here a word never carries the bit: a rational is an MPZ-tagged indirect whose size word has the
+# rational bit (`MP_RAT_MASK`), and a pointer is a plain integer (pl-prims.jl `compare_primitives`). `EXBIT` takes a word
+# at the target (a shift past 31 bits); `EXBIT` below is 64 bits already.
 "The tag and storage bits of `w` (pl-data.h)."
 tagex(w::word)::word = w & (TAG_MASK | STG_MASK)
 # PORT: pl-data.h isFunctor
@@ -505,6 +517,7 @@ const STG_RESERVED = UInt64(0x3) << 3
 "Storage of an inline value: `STG_STATIC` (pl-data.h)."
 const STG_INLINE = STG_STATIC
 # PORT: pl-data.h FIRST_MASK
+# DIVERGES: Synced to cf6960c2 (pl-data.h:212-213): bit 7 at the target, bit 6 here; see `MARK_MASK`.
 "The GC first-mark bit (pl-data.h)."
 const FIRST_MASK = UInt64(0x2) << 5
 # PORT: pl-data.h tag
@@ -523,6 +536,8 @@ valUInt(w::word)::UInt64 = w >> LMASK_BITS
 "Bit `w` of the extended-tag bitmap (pl-data.h)."
 EXBIT(w::word)::UInt64 = UInt64(1) << w
 # PORT: pl-data.h INDIRECT_BM
+# DIVERGES: Synced to cf6960c2 (pl-data.h:239-251): the target's map also names the `KIND_MPQ` kinds (global and local); a rational
+# here is an integer-tagged indirect, so the four integer, float and string entries cover it.
 "The extended tags of an indirect: an integer, float or string on a stack (pl-data.h)."
 const INDIRECT_BM =
     EXBIT(STG_GLOBAL | TAG_INTEGER) | EXBIT(STG_LOCAL | TAG_INTEGER) |
@@ -550,6 +565,9 @@ isStringW(w::word)::Bool = tag(w) == TAG_STRING
 "Whether `w` is a compound term (pl-data.h)."
 isTermW(w::word)::Bool = tag(w) == TAG_COMPOUND
 # PORT: pl-data.h isTaggedInt as isTaggedIntW
+# DIVERGES: Synced to cf6960c2 (pl-data.h:441-460): the target ignores the VARIANT bit here, so a pointer integer (`isPtrInt`,
+# `consPtrInt`, made by `PL_put_pointer()`) is tagged too, and it is never identical to the plain integer of the same value
+# (`compare/3` orders it directly after). Words here carry no variant bit; see `tagex`.
 "Whether `w` is a tagged small integer (pl-data.h)."
 isTaggedIntW(w::word)::Bool = tagex(w) == (TAG_INTEGER | STG_INLINE)
 # PORT: pl-data.h isConst
@@ -577,6 +595,9 @@ const PADBITS = 3
 "Mask of an indirect header's pad count (pl-data.h)."
 const PADMASK = UInt64(sizeof(word) - 1)
 # PORT: pl-data.h mkIndHdr
+# DIVERGES: Synced to cf6960c2 (pl-data.h:422-438): the target builds the header, its size and its pad count with `consTagged`
+# and `valTagged` (the value above `LMASK_BITS`) and takes a KIND (`TAG_INTEGER`, `KIND_MPQ`, ...) that `indKind()` returns, so a
+# copied indirect keeps it; the same words for one `LMASK_BITS`, and here a kind is the tag.
 "The header word of an indirect of `size` data words with tag `tag` (pl-data.h)."
 mkIndHdr(size::Int, tag::word)::word =
     (UInt64(size) << (LMASK_BITS + PADBITS)) | tag | STG_LOCAL
@@ -2073,7 +2094,9 @@ isAtom(t)::Bool = kind(t) === SYM || number_kind(t) === NUM_OTHER
 
 # PORT: pl-data.h isTaggedInt
 # DIVERGES: no words: an `Int64` within the tagged range is what a tagged word holds; a larger one is
-# an indirect, a big integer.
+# an indirect, a big integer. Synced to cf6960c2 (pl-data.h:441-460): the target's test also holds for a pointer integer
+# (`TAGEX_PTRINT`, made by `PL_put_pointer()`; with `O_BIG_ADDRESS`, 64-bit Android only, a big pointer is a plain integer);
+# a pointer is a plain `Int64` here, so the same answer. The range itself: see `PLMINTAGGEDINT` (56 bits at the target).
 "Whether `t` is an integer held in a tagged word (pl-data.h `isTaggedInt`): the tagged range."
 isTaggedInt(t)::Bool =
     number_kind(t) === NUM_INTEGER && integer_is_int64(t) &&
@@ -2104,6 +2127,8 @@ isString(t)::Bool = number_kind(t) === NUM_STRING
 isTerm(t)::Bool = kind(t) === EXPR
 
 # PORT: pl-data.h isInteger
+# DIVERGES: Synced to cf6960c2 (pl-data.h:351-356): the target's body under `O_BIGNUM` is `isTaggedInt(w) || tagex(w) ==
+# TAGEX_INDIRECT_INT` (a rational has its own kind, not `isMPQNum()`): the same answer on a number here.
 "Whether `t` is an integer of any size (pl-data.h `isInteger`, `O_BIGNUM`: not a rational)."
 isInteger(t)::Bool = number_kind(t) === NUM_INTEGER
 
