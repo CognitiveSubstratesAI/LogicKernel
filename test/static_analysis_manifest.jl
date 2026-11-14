@@ -3890,6 +3890,11 @@ const _DISPATCH_MANIFEST_TUPLE = (
     (LK.MurmurHashAligned2, Tuple{NTuple{4, UInt64}, Int, UInt32}, true),
     (LK.MurmurHashAligned2, Tuple{NTuple{1, UInt64}, Int, UInt32}, true),
     (LK.MurmurHashAligned2, Tuple{Vector{UInt8}, Int, UInt32}, true),
+    # MurmurHashWide (pl-hash.c, new at cf6960c2): the `UInt32` method builds the byte buffer
+    (LK.MurmurHashWide, Tuple{Vector{UInt32}, Int, UInt32}, false),
+    (LK.MurmurHashWide, Tuple{Vector{UInt16}, Int, UInt32}, true),
+    (LK._MurmurHashWide_blocks, Tuple{Vector{UInt32}, Int, UInt32}, true),
+    (LK._MurmurHashWide_blocks, Tuple{Vector{UInt16}, Int, UInt32}, true),
     # SHA-1 and the incremental MurmurHash (src/pl-termhash.jl)
     (LK.sha1_ctx, Tuple{}, false), (LK.rotl32, Tuple{UInt32, Int}, true),
     (LK.rotr32, Tuple{UInt32, Int}, true), (LK.bswap_32, Tuple{UInt32}, true),
@@ -3930,6 +3935,7 @@ const _DISPATCH_MANIFEST_TUPLE = (
     (LK.isFirstVarSet!, Tuple{BitVector, Int}, true),
     (LK.isFirstVar, Tuple{BitVector, Int}, true),
     (LK.MSB, Tuple{Int}, true), (LK.MSB, Tuple{UInt32}, true),
+    (LK.POPCOUNT64, Tuple{UInt64}, true), (LK.LSB64, Tuple{UInt64}, true),   # pl-inline.h, new at cf6960c2
     (LK.MA_NEEDS_TRANSPARENT, Tuple{UInt8}, true),                       # MOD4
     (LK.clean_index_key, Tuple{UInt64}, true), (LK.hashIndex, Tuple{UInt64, UInt32}, true),
     (LK._loc_rank, Tuple{UInt8, UInt64}, true),   # the order's tag rank of a location (L1d-1): no T

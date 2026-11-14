@@ -19,6 +19,10 @@ using LogicKernel:
     hash_end,
     HASH_BLOCK_SIZE,
     MurmurHashAligned2,
+    MurmurHashWide,
+    _MurmurHashWide_blocks,
+    POPCOUNT64,
+    LSB64,
     MURMUR_SEED
 
 # TERM TYPES PER CHUNK: ALL — the term layer: src/pl-termhash.jl
@@ -108,6 +112,196 @@ end
         @test MurmurHashAligned2(buf[(off + 1):end], len, UInt32(seed)) == want
     end
     @test MURMUR_SEED == 0x1a3be34a                              # pl-hash.h
+end
+
+# ── MurmurHashWide (pl-hash.c, NEW at swipl-devel cf6960c2) ────────────────────────────────────────
+# TARGET-ONLY: pin when the oracle moves to cf6960c2 (the pin 18168e62 has no MurmurHashWide); (swipl-devel cf6960c2 pl-hash.c:219-266).
+# The expected values are the TARGET's own C: src/pl-hash.c at cf6960c2 compiled stand-alone (-DNO_SWIPL, little-endian,
+# 4-byte wchar_t) on the seven texts and three seeds below. Its other two arms — the big-endian one and the 2-byte
+# `wchar_t` one over UTF-16 units — gave the SAME hashes for the same code points, which is the function's point.
+const _MW_CASES = (
+    (UInt32[], ((440132426, 1747181055), (0, 0), (3735928559, 1552874934))),
+    (UInt32[0x61], ((440132426, 859932490), (0, 960914556), (3735928559, 4293966780))),
+    (
+        UInt32[0x61, 0x62, 0x63],
+        ((440132426, 2765092511), (0, 1706470512), (3735928559, 631187916))
+    ),
+    (UInt32[0x1f600], ((440132426, 2759298159), (0, 1379774625), (3735928559, 1715006877))),
+    (
+        UInt32[0x20ac, 0x10000, 0x10ffff, 0x41],
+        ((440132426, 710218905), (0, 1182717783), (3735928559, 2134004924))
+    ),
+    (
+        UInt32[
+            0x41,
+            0x142,
+            0x243,
+            0x344,
+            0x445,
+            0x546,
+            0x647,
+            0x748,
+            0x849,
+            0x94a,
+            0xa4b,
+            0xb4c,
+            0xc4d,
+            0xd4e,
+            0xe4f,
+            0xf50,
+            0x1051
+        ],
+        ((440132426, 998673622), (0, 3163429894), (3735928559, 4238135819))
+    ),
+    (
+        UInt32[
+            0x10000,
+            0x11111,
+            0x12222,
+            0x13333,
+            0x14444,
+            0x15555,
+            0x16666,
+            0x17777,
+            0x18888
+        ],
+        ((440132426, 1914875778), (0, 2682305984), (3735928559, 499226922))
+    )
+)
+"The UTF-16 units of the code points `cps` (a code point above 0xffff is a surrogate pair)."
+function _mw_utf16(cps::Vector{UInt32})::Vector{UInt16}
+    out = UInt16[]
+    for c in cps
+        if c >= 0x10000
+            c -= 0x10000
+            push!(out, UInt16(0xd800 + (c >> 10)), UInt16(0xdc00 + (c & 0x3ff)))
+        else
+            push!(out, UInt16(c))
+        end
+    end
+    return out
+end
+
+@testset "MurmurHashWide == the target's pl-hash.c (7 texts x 3 seeds)" begin
+    for (cps, wants) in _MW_CASES, (seed, want) in wants
+        @test MurmurHashWide(cps, 4 * length(cps), UInt32(seed)) == UInt32(want)
+        # the UTF-16 units give the hash of the code points (the 2-byte `wchar_t` arm)
+        u16 = _mw_utf16(cps)
+        @test MurmurHashWide(u16, 2 * length(u16), UInt32(seed)) == UInt32(want)
+        # the portable arm over 4-byte code points is the aligned arm's hash (upstream's comment)
+        @test _MurmurHashWide_blocks(cps, 4 * length(cps), UInt32(seed)) == UInt32(want)
+    end
+end
+
+@testset "MurmurHashWide: a `len` that is no multiple of 4 is hashed as bytes (the aligned arm)" begin
+    cps = _MW_CASES[6][1]
+    for (len, want) in (
+        (1, 1398196891),
+        (2, 2279955291),
+        (3, 1587262217),
+        (5, 2279061976),
+        (6, 1304952242),
+        (7, 2215990012)
+    )
+        @test MurmurHashWide(cps, len, MURMUR_SEED) == UInt32(want)
+    end
+    # `len` bytes only: the units past it are not read (859932490 is the target's value for [0x61])
+    abc32 = UInt32[0x61, 0x62, 0x63]
+    abc16 = UInt16[0x61, 0x62, 0x63]
+    @test MurmurHashWide(abc32, 4, MURMUR_SEED) == 859932490
+    @test MurmurHashWide(abc16, 2, MURMUR_SEED) == 859932490
+end
+
+@testset "MurmurHashWide: a lone surrogate unit is a code point of its own, a pair is one" begin
+    # the expected values are the target's, from its 2-byte `wchar_t` arm and from its 4-byte arm
+    pair = UInt16[0xd83d, 0xde00]                       # U+1F600
+    @test MurmurHashWide(pair, 4, MURMUR_SEED) == 2759298159
+    @test MurmurHashWide(UInt32[0x1f600], 4, MURMUR_SEED) == 2759298159
+    lone_hi = UInt16[0xd83d, 0x41]                      # high surrogate, then a plain unit: two code points
+    @test MurmurHashWide(lone_hi, 4, MURMUR_SEED) == 417663900
+    @test MurmurHashWide(UInt32[0xd83d, 0x41], 8, MURMUR_SEED) == 417663900
+    lone_lo = UInt16[0xde00, 0xd83d]                    # low surrogate first: no pair either
+    @test MurmurHashWide(lone_lo, 4, MURMUR_SEED) == 804242943
+    @test MurmurHashWide(UInt32[0xde00, 0xd83d], 8, MURMUR_SEED) == 804242943
+    cut = UInt16[0x41, 0xd83d]                          # high surrogate last: nothing to pair with
+    @test MurmurHashWide(cut, 4, MURMUR_SEED) == 859116668
+    @test MurmurHashWide(UInt32[0x41, 0xd83d], 8, MURMUR_SEED) == 859116668
+    # the edges of the two ranges: a pair is a unit in d800..dbff then one in dc00..dfff
+    @test MurmurHashWide(UInt16[0xd800, 0xdc00], 4, MURMUR_SEED) == 3421940055     # U+10000
+    @test MurmurHashWide(UInt32[0x10000], 4, MURMUR_SEED) == 3421940055
+    @test MurmurHashWide(UInt16[0xdbff, 0xdfff], 4, MURMUR_SEED) == 3347687709     # U+10FFFF
+    @test MurmurHashWide(UInt32[0x10ffff], 4, MURMUR_SEED) == 3347687709
+    @test MurmurHashWide(UInt16[0xd83d, 0xe000], 4, MURMUR_SEED) == 3415968347     # e000 is no low surrogate
+    @test MurmurHashWide(UInt32[0xd83d, 0xe000], 8, MURMUR_SEED) == 3415968347
+    @test MurmurHashWide(UInt16[0xdc00, 0xdc00], 4, MURMUR_SEED) == 270663950      # dc00 is no high surrogate
+    @test MurmurHashWide(UInt32[0xdc00, 0xdc00], 8, MURMUR_SEED) == 270663950
+    @test MurmurHashWide(UInt16[0xd7ff, 0xdc00], 4, MURMUR_SEED) == 1653718646     # d7ff is no high surrogate
+    @test MurmurHashWide(UInt32[0xd7ff, 0xdc00], 8, MURMUR_SEED) == 1653718646
+end
+
+# ── POPCOUNT64 and LSB64 (pl-inline.h, NEW at swipl-devel cf6960c2) ─────────────────────────────────
+# TARGET-ONLY: pin when the oracle moves to cf6960c2. Hand-written from the target's C (the bit counts of the
+# literals are exact), plus the target's own portable shift ladder (pl-inline.h, the arm without `__builtin_ctzll`)
+# as the reference for LSB64 on pseudo-random words. They live in this file with the hashes that use them upstream
+# (atom hashing, the generational GC's bitmaps), not because the term hash does.
+"The portable arm of upstream's LSB64, written out (pl-inline.h:347-355)."
+function _lsb64_ladder(i::UInt64)::UInt32
+    j = UInt32(0)
+    if (i & 0xffffffff) == 0
+        i >>= 32
+        j += 32
+    end
+    if (i & 0xffff) == 0
+        i >>= 16
+        j += 16
+    end
+    if (i & 0xff) == 0
+        i >>= 8
+        j += 8
+    end
+    if (i & 0xf) == 0
+        i >>= 4
+        j += 4
+    end
+    if (i & 0x3) == 0
+        i >>= 2
+        j += 2
+    end
+    if (i & 0x1) == 0
+        j += 1
+    end
+    return j
+end
+
+@testset "POPCOUNT64: the number of set bits" begin
+    for (i, want) in (
+        (0x0000000000000000, 0), (0x0000000000000001, 1), (0x00000000000000ff, 8),
+        (0x8000000000000001, 2), (0x5555555555555555, 32), (0xffffffffffffffff, 64),
+        (0x0123456789abcdef, 32)
+    )
+        @test POPCOUNT64(i) === UInt32(want)
+    end
+    @test all(k -> POPCOUNT64(UInt64(1) << k) == 1, 0:63)
+    @test all(k -> POPCOUNT64(typemax(UInt64) >> k) == 64 - k, 0:63)
+end
+
+@testset "LSB64: the index of the lowest set bit" begin
+    for (i, want) in (
+        (0x0000000000000001, 0), (0x0000000000000008, 3), (0x00000000ffff0000, 16),
+        (0x0000000100000000, 32), (0x00000a0000000000, 41), (0x8000000000000000, 63),
+        (0xffffffffffffffff, 0), (0x0000000000000006, 1)
+    )
+        @test LSB64(i) === UInt32(want)
+    end
+    @test all(k -> LSB64(UInt64(1) << k) == k, 0:63)
+    # every bit above the lowest one is ignored
+    @test all(k -> LSB64((typemax(UInt64) >> k) << k) == k, 0:63)
+    rng = Random.MersenneTwister(20261114)
+    for _ in 1:2000
+        i = rand(rng, UInt64) >> rand(rng, 0:62) << rand(rng, 0:62)
+        i == 0 && continue
+        @test LSB64(i) == _lsb64_ladder(i)
+    end
 end
 
 @testset "incremental MurmurHash (hash_state)" begin
