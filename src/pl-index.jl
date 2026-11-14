@@ -2466,17 +2466,19 @@ end
 # PORT: pl-index.c sort_indexes
 # synced to swipl-devel cf6960c2 (pl-index.c:3476-3495): new at the target, not at the pin.
 # DIVERGES: a `Vector` and a `count` where upstream takes a pointer and a count; the first `count` slots are all indexes, as upstream's.
+# No `where T`: T occurs only inside a Union with `Nothing`, so an all-`Nothing` array would leave it unbound (Aqua, D-0745); the
+# element type is read from the array, like `isSortedIndexes` and `get_existing_index`, which take the array untyped.
 # Upstream says: `candidate_indexes()` returns the good ones first, then the deep ones for poor arguments and then
 # the combinations, while `existing_hash()` uses the first index that applies, so the array must be sorted (see
 # `isSortedIndexes`). Insertion sort, stable, in place: at most `max` (10) slots, no allocation.
 "Sort the first `count` indexes of `cip` by decreasing speedup, equal ones keeping their order (pl-index.c)."
 function sort_indexes!(
-    cip::Vector{Union{Nothing, ClauseIndex{T}}}, count::Int
-)::Nothing where {T}
+    cip::AbstractVector{<:Union{Nothing, ClauseIndex}}, count::Int
+)::Nothing
     for i in 2:count
-        ci = cip[i]::ClauseIndex{T}
+        ci = cip[i]::ClauseIndex
         j = i
-        while j > 1 && (cip[j - 1]::ClauseIndex{T}).speedup < ci.speedup
+        while j > 1 && (cip[j - 1]::ClauseIndex).speedup < ci.speedup
             cip[j] = cip[j - 1]
             j -= 1
         end
