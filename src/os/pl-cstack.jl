@@ -58,7 +58,7 @@ function print_c_backtrace(why::String)::Nothing
 end
 
 # PORT: pl-cstack.c initBackTrace
-"Install the crash handlers: the fallback's body is empty."
+"Install the fatal-signal handlers: the fallback's body is empty."
 function initBackTrace()::Nothing
     return nothing
 end
