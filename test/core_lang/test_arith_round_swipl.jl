@@ -133,7 +133,8 @@ function swipl_lines(path::String, names::Vector{String})::Vector{String}
         f = joinpath(d, "drv.pl")
         write(
             f,
-            DRIVER * ":- initialization((fz_run('$path', [" * join(names, ",") * "]), halt)).\n"
+            DRIVER * ":- initialization((fz_run('$path', [" * join(names, ",") *
+            "]), halt)).\n"
         )
         read(pipeline(`swipl -q $f`; stdin=devnull, stderr=devnull), String)
     end
@@ -147,7 +148,9 @@ end
     @test length(names) >= 430
     @test length(expected) == length(names) + 1 && expected[1] == "ok"
     @test all(i -> startswith(expected[i + 1], names[i] * " "), eachindex(names))
-    @test count(l -> occursin(_codes("domain_error") * "/2(a" * _codes("round"), l), expected) >= 3
+    @test count(
+        l -> occursin(_codes("domain_error") * "/2(a" * _codes("round"), l), expected
+    ) >= 3
     @test count(l -> occursin(_codes("flag_value"), l), expected) >= 10
     @test count(l -> occursin("a" * _codes("posinf"), l), expected) >= 4
     @test count(l -> occursin(_codes("float_overflow"), l), expected) >= 12
@@ -183,7 +186,8 @@ end
         LK.fesetround(m)
         @test LK.fegetround() == m
     end
-    @test LK.nexttoward(1.0, 2.0) == nextfloat(1.0) && LK.nexttoward(1.0, 0.0) == prevfloat(1.0)
+    @test LK.nexttoward(1.0, 2.0) == nextfloat(1.0) &&
+        LK.nexttoward(1.0, 0.0) == prevfloat(1.0)
     @test LK.nexttoward(1.0, 1.0) == 1.0
     @test LK.atom_to_rounding(_tls("to_zero")) == Int(LK.FLT_ROUND_TO_ZERO)
     @test LK.atom_to_rounding(_tls("to_nearest")) == Int(LK.FLT_ROUND_NEAREST)

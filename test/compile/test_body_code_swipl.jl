@@ -75,7 +75,7 @@ function _bc_op(op, k::UInt8, w::UInt64, lits, procs, jump)::String
         elseif op == LK.H_SMALLINT || op == LK.B_SMALLINT || op == LK.L_SMALLINT
             _hlit(lk_gnd(_B, LK.valInt(w)))                             # the tagged word itself (L1d step 4)
         elseif op == LK.A_ADD_FC || op == LK.B_ARG_CF || op == LK.A_INTEGER ||
-               op == LK.A_FUNC || op == LK.A_ROUNDTOWARDS_A
+            op == LK.A_FUNC || op == LK.A_ROUNDTOWARDS_A
             _hlit(lk_gnd(_B, reinterpret(Int64, w)))                    # the integer itself (L1d step 4)
         else
             _hlit(lits[w])
@@ -962,7 +962,7 @@ const _BC_ARITH_CELLS = [
     ld = LK.PL_local_data{_B}(_BGD)
     LK.setPrologFlagMask!(ld, LK.PLFLAG_OPTIMISE)
     @test _bc_kernel(_bclause(_bf("po_ar", _bv(1)), _bf("<", _bv(1), _bg(3)); ld=ld)) ==
-          ["i_enter", "a_enter", "a_var0", "a_integer(i:3)", "a_lt", "i_exit"]
+        ["i_enter", "a_enter", "a_var0", "a_integer(i:3)", "a_lt", "i_exit"]
     if _BC_SWIPL_BIN !== nothing
         theirs = _bc_swipl([
             "bc_case_show(($(_bc_text(h, b))))" for (_, h, b, _) in _BC_ARITH_CELLS
@@ -2058,7 +2058,8 @@ const _BC_DEC_DECOMPILED = Dict{String, String}(
             name = lk_atom_text(_bfunctor(h)[1])
             got = _bnorm(_bc_text(decs[k]...))
             want = get(_BC_ARITH_DECOMPILED, name, "")
-            got == want || println(stderr, "  ", name, "\n    ours  ", got, "\n    pin   ", want)
+            got == want ||
+                println(stderr, "  ", name, "\n    ours  ", got, "\n    pin   ", want)
             @test !isempty(want)
             @test got == want
         end

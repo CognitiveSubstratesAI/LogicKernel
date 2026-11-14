@@ -142,7 +142,8 @@ function swipl_lines(path::String, names::Vector{String})::Vector{String}
         f = joinpath(d, "drv.pl")
         write(
             f,
-            DRIVER * ":- initialization((fz_run('$path', [" * join(names, ",") * "]), halt)).\n"
+            DRIVER * ":- initialization((fz_run('$path', [" * join(names, ",") *
+            "]), halt)).\n"
         )
         read(pipeline(`swipl -q $f`; stdin=devnull, stderr=devnull), String)
     end
@@ -159,7 +160,10 @@ end
     @test count(l -> occursin(_codes("type_error"), l), expected) >= 25
     @test count(l -> occursin(_codes("instantiation_error"), l), expected) >= 3
     @test count(l -> occursin(_codes("not_less_than_one"), l), expected) >= 3
-    @test any(l -> occursin(_codes("domain_error") * "/2(a" * _codes("random_option"), l), expected)
+    @test any(
+        l -> occursin(_codes("domain_error") * "/2(a" * _codes("random_option"), l),
+        expected
+    )
     @test any(l -> occursin("i315,i206,i978", l), expected)             # seed(1), random(1000): the twister's stream
     @test any(l -> occursin("i19975", l), expected)                      # the state's msb after a seed
     @test count(l -> occursin("a" * _codes("same"), l), expected) >= 4   # the state round-trips

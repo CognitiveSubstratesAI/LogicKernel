@@ -387,7 +387,8 @@ function _ldexp_mode(d::Float64, e::Int)::Float64
     r = ldexp(d, e)
     if isinf(r)                                             # overflow
         mode = fegetround()
-        if mode == FE_TOWARDZERO || (mode == FE_UPWARD && d < 0) || (mode == FE_DOWNWARD && d > 0)
+        if mode == FE_TOWARDZERO || (mode == FE_UPWARD && d < 0) ||
+            (mode == FE_DOWNWARD && d > 0)
             return copysign(floatmax(Float64), d)
         end
     elseif iszero(r)                                        # underflow (d is not 0)

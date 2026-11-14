@@ -2109,7 +2109,8 @@ function _manifest_index(T)
         [
             (f, Tuple{LD, Int, Int, LK.foreign_context{T}}, false) for f in (
                 LK.pl_is2_va, LK.pl_lt2_va, LK.pl_gt2_va, LK.pl_leq2_va, LK.pl_geq2_va,
-                LK.pl_neq2_va, LK.pl_eq2_va, LK.pl_between3_va, LK.pl_succ2_va, LK.pl_plus3_va,
+                LK.pl_neq2_va, LK.pl_eq2_va, LK.pl_between3_va, LK.pl_succ2_va,
+                LK.pl_plus3_va,
                 LK.pl_bounded_number3_va, LK.pl_divmod4_va,
                 LK.pl_nth_integer_root_and_remainder4_va, LK.pl_rational3_va,
                 LK.pl_float_parts4_va, LK.pl_float_class2_va, LK.pl_set_random1_va,
@@ -5695,10 +5696,12 @@ const _DISPATCH_MANIFEST_TUPLE = (
     [
         (f, Tuple{Float64}, true) for f in (
             LK._c_sin, LK._c_cos, LK._c_tan, LK._c_asin, LK._c_acos, LK._c_atan, LK._c_exp,
-            LK._c_log, LK._c_sinh, LK._c_cosh, LK._c_tanh, LK._c_erf, LK._c_log10, LK._c_lgamma
+            LK._c_log, LK._c_sinh, LK._c_cosh, LK._c_tanh, LK._c_erf, LK._c_log10,
+            LK._c_lgamma
         )
     ]...,
-    (LK._c_atan2, Tuple{Float64, Float64}, true), (LK._c_pow, Tuple{Float64, Float64}, true),
+    (LK._c_atan2, Tuple{Float64, Float64}, true),
+    (LK._c_pow, Tuple{Float64, Float64}, true),
     [
         (LK.CR_FUNC, Tuple{typeof(f), Float64}, true) for f in (
             LK._c_log, LK._c_log10, LK._c_tan, LK._c_asin, LK._c_acos, LK._c_atan,
@@ -5706,7 +5709,8 @@ const _DISPATCH_MANIFEST_TUPLE = (
         )
     ]...,
     [
-        (LK.CR_FUNC_1, Tuple{typeof(f), Float64}, true) for f in (LK._c_sin, LK._c_cos, LK._c_tanh)
+        (LK.CR_FUNC_1, Tuple{typeof(f), Float64}, true) for
+        f in (LK._c_sin, LK._c_cos, LK._c_tanh)
     ]...,
     (LK.ar_cputime, Tuple{LK.number}, false), (LK.CpuTime, Tuple{Int}, false),
     # Y1 — the OS layer (src/os/pl-os.jl, src/os/pl-files.jl, src/pl-thread.jl), the text helper, the counters
