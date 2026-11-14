@@ -1174,6 +1174,66 @@ function check_no_bidi_override(start::Int, e::Int, rd::read_data{T})::Bool wher
     return true
 end
 
+# PORT: pl-read.c atom_text_has_non_ascii
+"Whether the UTF-8 bytes `start` to `start+len-1` of `b` carry a byte at or above 0x80 (pl-read.c)."
+function atom_text_has_non_ascii(b::AbstractVector{UInt8}, start::Int, len::Int)::Bool
+    for i in 0:(len - 1)
+        b[start + i] >= 0x80 && return true
+    end
+    return false
+end
+
+# ORIGINAL: the normalisation hook (`GD->atoms.normalize_hook`, upstream: library(unicode)'s `unicode_nfkc`
+# installed through `$install_unicode_normalize_hook`): the kernel's normaliser is Julia's
+# `Unicode.normalize(s, :NFC)` (Base.Unicode, the stdlib; dispatcher's design call, ENC1), always present.
+# DIVERGES: the pin's hook is its own table; the two agree on the normal forms Julia's utf8proc implements.
+"The NFC form of the UTF-8 text `str` (the kernel's `normalize_hook`)."
+_normalize_hook(str::String)::String = Base.Unicode.normalize(str, :NFC)
+
+# PORT: pl-read.c atom_text_not_in_nfc
+# DIVERGES: the normalisation hook is always registered (`_normalize_hook`), so the exact test runs
+# whenever a combining character was seen.
+"Conservative test whether the UTF-8 text of `b` is definitely not in NFC (pl-read.c)."
+function atom_text_not_in_nfc(b::AbstractVector{UInt8}, start::Int, len::Int)::Bool
+    p = start
+    e = start + len
+    any_combining = false
+    while p < e
+        p, c = utf8_get_char(b, p)
+        if c >= 0x300 && PL_wcwidth(c) < 1
+            any_combining = true
+            break
+        end
+    end
+    any_combining || return false
+    str = String(b[start:(start + len - 1)])
+    return _normalize_hook(str) != str
+end
+
+# PORT: pl-read.c checkASCII
+# DIVERGES: the name is the Latin-1 reading of the bytes (`PL_NCHARS`), as upstream; false when
+# `print_message` raised, true otherwise (also when it was not defined: the message is then collected).
+"Warn `non_ascii(Name, Type)` if the bytes of `b` hold a non-ASCII byte (pl-read.c): false after an exception."
+function checkASCII(
+    rd::read_data{T}, start::Int, len::Int, type::String
+)::Bool where {T}
+    b = rd._rb.base
+    for i in 0:(len - 1)
+        if b[start + i] >= 128
+            ld = rd.ld
+            msg = PL_new_term_refs(ld, 1)
+            name = mk_sym(T, Symbol(String(Char.(b[start:(start + len - 1)]))))
+            setSlotValue!(
+                ld,
+                msg + 1,
+                mk_expr(T, T[mk_sym(T, :non_ascii), name, mk_sym(T, Symbol(type))])
+            )
+            return printMessage(ld, :warning, msg)
+        end
+    end
+    return true
+end
+
 # PORT: pl-read.c syntaxError
 "Record syntax error `what`; false, always (pl-read.c)."
 syntaxError(what::String, rd::read_data{T}) where {T} = errorWarning(what, nothing, rd)
@@ -2107,8 +2167,8 @@ end
 # PORT: pl-read.c get_token
 # DIVERGES: a string token's value is the term (`term_value`), where upstream holds a term
 # reference; a variable token's is the variable's index. NOT PORTED: blobs (`<type>(…)`, SWI-7
-# reads them only with the `blobs` read option), the `charset` style check, NFC and non-ASCII atom
-# policies other than accept (S_UATOMS_ACCEPT, SWI-7's default). The `quasi_quotations` flag is
+# reads them only with the `blobs` read option), the `allow_variable_name_as_functor` flag. Since ENC1: the
+# `charset` style check (`checkASCII`) and the `unicode_atoms` policies (accept, nfc, error, reject). The `quasi_quotations` flag is
 # `truePrologFlag(rd.ld, PLFLAG_QUASI_QUOTES)` (since R2 F1a; ON, SWI-7's default, until then without the
 # test): `{|` is TK_QQ_OPEN and `||` TK_QQ_BAR.
 """
@@ -2181,11 +2241,14 @@ function get_token(must_be_op::Bool, rd::read_data{T})::Union{Nothing, token{T}}
     if cls == LC                                    # lower:
         rd.here = SkipAtomIdCont(b, rd.here)
         check_no_bidi_override(start, rd.here, rd) || return nothing
-        @goto functor
+        @goto symbol
     elseif cls == UC                                # upper: variable:
         @label variable
         rd.here = SkipVarIdCont(b, rd.here)
         check_no_bidi_override(start, rd.here, rd) || return nothing
+        if (rd.styleCheck & CHARSET_CHECK) != 0
+            checkASCII(rd, start, rd.here - start, "variable") || return nothing
+        end
         # (no allow_variable_name_as_functor: off by default)
         if isAnonVarNameN(b, start, rd.here - start) && rd.variables == 0     # report them
             tok.type = _byte(b, rd.here) == Int('{') ? TK_VOID_DICT : TK_VOID
@@ -2236,7 +2299,7 @@ function get_token(must_be_op::Bool, rd::read_data{T})::Union{Nothing, token{T}}
                 end
             end
         end
-        @goto functor                               # goto symbol
+        @goto symbol
     elseif cls == PU
         # (O_QUASIQUOTATIONS)
         if c == Int('{') && _byte(b, rd.here) == Int('|') &&
@@ -2317,8 +2380,26 @@ function get_token(must_be_op::Bool, rd::read_data{T})::Union{Nothing, token{T}}
     end
     error("read/1: tokeniser internal error")       # sysError
 
-    @label functor                                  # symbol: functor: (lower)
-    tok.atom = _text_atom(T, b, start, rd.here - start)
+    @label symbol
+    if (rd.styleCheck & CHARSET_CHECK) != 0
+        checkASCII(rd, start, rd.here - start, "atom") || return nothing
+    end
+
+    @label functor                                  # functor: (lower)
+    if rd.unicode_atoms == S_UATOMS_NFC             # normalize_hook(start, &txt.length)
+        tok.atom = _atom_from_text(
+            T, _normalize_hook(String(b[start:(rd.here - 1)]))
+        )
+    else
+        if rd.unicode_atoms == S_UATOMS_ERROR
+            atom_text_not_in_nfc(b, start, rd.here - start) &&
+                (errorWarning("non_nfc_atom", nothing, rd); return nothing)
+        elseif rd.unicode_atoms == S_UATOMS_REJECT
+            atom_text_has_non_ascii(b, start, rd.here - start) &&
+                (errorWarning("non_ascii_atom", nothing, rd); return nothing)
+        end
+        tok.atom = _text_atom(T, b, start, rd.here - start)
+    end
     nx = _byte(b, rd.here)
     tok.type = if nx == Int('(')
         TK_FUNCTOR
@@ -4500,9 +4581,9 @@ const read_clause_options = (
 # honoured (since R1g), `term_position` and `subterm_positions` since LB1; the others the kernel
 # cannot honour are REFUSED (`NotPortedError`), as `read_term_from_stream`'s: `comments`,
 # `process_comment(true)` (the comment hook: R2 — `prolog:comment_hook/4` is not defined, so
-# `process_comment` is false), `var_prefix` (the module flag, R2), `unicode_atoms` (the NFC hook);
-# `blob(Mode)` is accepted as read_term's (`atom_to_blob_mode_ex`); a stream whose unquoted atoms must be NFC is refused
-# (`ensure_unicode_normalize_hook`: no normalizer). The foreign frame is closed before returning,
+# `process_comment` is false), `var_prefix` (the module flag, R2); `unicode_atoms` is honoured since ENC1
+# (the NFC normaliser is Julia's `Unicode.normalize`, `ensure_unicode_normalize_hook` is always true);
+# `blob(Mode)` is accepted as read_term's (`atom_to_blob_mode_ex`). The foreign frame is closed before returning,
 # where upstream leaves it to its caller's.
 """
 Read a clause from `s` into term reference `term`, as consulting a file does (pl-read.c): in the
@@ -4547,13 +4628,13 @@ function read_clause(
                     )
                 end
             end
-            if process_comment || opt_unicode_atoms !== nothing
+            if process_comment
                 PL_close_foreign_frame(ld, fid)
                 throw(
                     NotPortedError{T}(
                         mk_sym(T, :read_clause),
-                        "read_clause's process_comment(true) or unicode_atoms option",
-                        "R2 (the comment hook, the NFC hook)"
+                        "read_clause's process_comment(true) option",
+                        "R2 (the comment hook)"
                     )
                 )
             end
@@ -4561,15 +4642,14 @@ function read_clause(
                 PL_close_foreign_frame(ld, fid)
                 return false
             end
-        end
-
-        if rd.unicode_atoms == S_UATOMS_NFC
-            PL_close_foreign_frame(ld, fid)
-            throw(
-                NotPortedError{T}(
-                    mk_sym(T, :read_clause), "unicode_atoms(nfc)", "no normalizer"
-                )
-            )
+            if opt_unicode_atoms !== nothing                # atom_to_unicode_atoms_ex(.., true)
+                mode = atom_to_unicode_atoms_ex(ld, opt_unicode_atoms::T)
+                if mode === nothing
+                    PL_close_foreign_frame(ld, fid)
+                    return false
+                end
+                rd.unicode_atoms = mode
+            end
         end
 
         set_module_read_data(rd, ld.modules_source)
@@ -4746,7 +4826,7 @@ end
 # PORT: pl-read.c read_term_from_stream
 # DIVERGES: the options the kernel cannot honour are REFUSED (`NotPortedError`) where upstream
 # honours them: `comments` (the comments collector, R2), `var_prefix` (the module flag, R2),
-# `unicode_atoms` (the NFC hook), `quasi_quotations` (none are read); `blob(dead|resolve)` is
+# `quasi_quotations` (none are read; `unicode_atoms` is honoured since ENC1); `blob(dead|resolve)` is
 # accepted but `<type>(…)` is then refused when read (`atom_to_blob_mode_ex`; owner: the blob step);
 # `term_position` and `subterm_positions` are honoured since LB1. The module is the kernel's
 # table's; a syntax error is reported through `printMessage` (`reportReadError`); the retry on a
@@ -4793,12 +4873,11 @@ function read_term_from_stream(
         )
     end
     opt_blobs !== nothing && !atom_to_blob_mode_ex(ld, rd, opt_blobs::T) && return false
-    opt_unicode_atoms === nothing || throw(
-        NotPortedError{T}(
-            opt_unicode_atoms::T, "read_term's unicode_atoms option",
-            "R2 (the NFC hook)"
-        )
-    )
+    if opt_unicode_atoms !== nothing                # atom_to_unicode_atoms_ex(.., true)
+        mode = atom_to_unicode_atoms_ex(ld, opt_unicode_atoms::T)
+        mode === nothing && return false
+        rd.unicode_atoms = mode
+    end
 
     if mname !== nothing
         m = isCurrentModule(gd.modules, mname::T)

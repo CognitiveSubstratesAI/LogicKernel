@@ -832,7 +832,7 @@ fixed it or a public issue exists.
 | `src/os/pl-utf8.jl` | UTF-8 over a byte buffer (since R1c): decoding (`utf8_get_char`, `_PL__utf8_code_point`), encoding (`utf8_put_char`), skipping | `src/os/pl-utf8.c`, `src/os/pl-utf8.h` |
 | `src/os/pl-ctype.jl` | the ASCII character types (since R1c): `_PL_char_types` and the `is*` macros (`toLower`, `makeLower` since DWIM1); `isBlankW` through the Unicode classes | `src/os/pl-ctype.c`, `src/os/pl-ctype.h` |
 | `src/os/pl-string.jl` | `digitValue` (since R1c), a digit's value in a base | `src/os/pl-string.c` |
-| `src/os/pl-stream.jl` | the IOSTREAM subset (since R1c; user, 2026-10-07): a stream with upstream's buffer discipline (the undo area, `S__fillbuf`, `S__flushbuf`), characters in its encoding (`Sgetcode`, `Speekcode`, `Sputcode`, `Sungetc`), the position record (`IOPOS`, `Supdatepos` with ANSI escapes and wide characters), the error flags, memory streams (`Sopenmem`), string streams (`Sopen_string`) and a Julia IO (`Sopen_julia_io`: a file or a buffer, since R1e's write/1 family a terminal or a pipe; a failing IO is a write error); since TOP1b E the record of a wrapped stream (`wrappedIO`, `pl-file.c`) | `src/os/pl-stream.c`, `src/os/SWI-Stream.h`, `src/os/pl-file.c` |
+| `src/os/pl-stream.jl` | the IOSTREAM subset (since R1c; user, 2026-10-07): a stream with upstream's buffer discipline (the undo area, `S__fillbuf`, `S__flushbuf`), characters in its encoding (`Sgetcode`, `Speekcode`, `Sputcode`, `Sungetc`), the position record (`IOPOS`, `Supdatepos` with ANSI escapes and wide characters), the error flags, memory streams (`Sopenmem`), string streams (`Sopen_string`) and a Julia IO (`Sopen_julia_io`: a file or a buffer, since R1e's write/1 family a terminal or a pipe; a failing IO is a write error); since TOP1b E the record of a wrapped stream (`wrappedIO`, `pl-file.c`); the encoding `text` (ENC_ANSI, ENC1) through libc's multibyte conversion (`stream_mbstate!`, `PL_MB_LEN_MAX` of `pl-utf8.h`) | `src/os/pl-stream.c`, `src/os/SWI-Stream.h`, `src/os/pl-file.c`, `src/os/pl-utf8.h` |
 | `src/os/pl-text.jl` | the text a term holds (since R1d): `PL_get_text` — an atom, a string, an integer or a rational, a code or character list, since R1e's floats a float (`format_float`) — with its errors, and a stream reading it (`Sopen_text`); `PL_chars_t`; since T1 unify with a text, compare, concatenate (`PL_unify_text`, `PL_unify_text_range`, `PL_cmp_text`, `PL_concat_text`, `PL_mb_text`), `CVT_VARNOFAIL`; DIVERGES, pl-text.c: a text from an atom or a string is UTF-8 and canonicalised by its consumer | `src/os/pl-text.c`, `src/os/pl-text.h` |
 | `src/os/pl-file.jl` | the file an open stream reads (R1f): `fileNameStream`, `setFileNameStream` — pl-file.c's stream context, the part the loader needs; since R1e's write/1 family THE STANDARD STREAMS — `initIO` over stdin/stdout/stderr (decision 2a), the host's `set_standard_stream!`, an output stream by alias (`getOutputStream`, `get_stream_handle`, `check_stream_mode`, `checkStreamType`) with upstream's errors, `streamStatus` and `reportStreamError`; since MOD2 a standard stream over the OS file descriptor when Julia's stdX is none the stream layer holds (`_std_io`, pl-stream.c `S__iob0`) | `src/os/pl-file.c`, `src/os/pl-file.h`, `src/pl-global.h`, `src/os/pl-stream.c`, `src/pl-incl.h`, `src/pl-privitf.c`, `src/os/pl-prologflag.c` |
 | `src/os/pl-fmt.jl` | formatted output (since R2 O1A): `format/1,2,3`, `format_predicate/2`, `current_format_predicate/2` — `do_format` and the column machinery (`format_state`, the pending fill points), `formatInteger` and `formatFloat` (section O1A below) | `src/os/pl-fmt.c`, `src/os/pl-fmt.h` |
@@ -1045,9 +1045,11 @@ graph LR
     os_pl_stream --> default_term
     os_pl_stream --> os_pl_utf8
     os_pl_stream --> pl_incl
-    os_pl_stream --> pl_comp
+    os_pl_stream --> pl_arith
+    os_pl_stream --> os_pl_text
     os_pl_stream --> os_pl_file
     os_pl_stream --> pl_read
+    os_pl_stream --> pl_string
     pl_incl --> term_interface
     pl_incl --> default_term
     pl_incl --> pl_atom
@@ -1059,6 +1061,7 @@ graph LR
     pl_incl --> pl_wrap
     pl_incl --> pl_trie
     pl_incl --> pl_op
+    pl_incl --> pl_read
     pl_atom --> term_interface
     pl_atom --> default_term
     pl_atom --> pl_hash
@@ -1518,6 +1521,7 @@ graph LR
     os_pl_text --> os_pl_codelist
     os_pl_text --> pl_write
     os_pl_text --> pl_read
+    os_pl_text --> pl_string
     os_pl_os --> term_interface
     os_pl_os --> default_term
     os_pl_os --> os_pl_ctype
@@ -1559,6 +1563,8 @@ graph LR
     os_pl_glob --> pl_string
     os_pl_file --> term_interface
     os_pl_file --> default_term
+    os_pl_file --> os_pl_utf8
+    os_pl_file --> os_pl_ctype
     os_pl_file --> os_pl_stream
     os_pl_file --> pl_incl
     os_pl_file --> SWI_Prolog
@@ -1981,7 +1987,6 @@ graph LR
     pl_string --> pl_atom
     pl_string --> pl_global
     pl_string --> pl_prims
-    pl_string --> pl_comp
     pl_string --> pl_wam
     pl_string --> pl_fli
     pl_string --> pl_error
@@ -2114,11 +2119,11 @@ or **platform** (a Windows or macOS definition: out of the count). **NO OWNER** 
 
 | category | done | refused | missing | platform | NO OWNER |
 |---|---:|---:|---:|---:|---:|
-| predicates (C-defined, reached by the boot) | 298 | 0 | 124 | 3 | 1 |
-| refusal sites | 0 | 73 | 0 | 0 | 3 |
+| predicates (C-defined, reached by the boot) | 302 | 0 | 120 | 3 | 1 |
+| refusal sites | 0 | 55 | 0 | 0 | 5 |
 | Prolog flags | 65 | 15 | 20 | 0 | 35 |
 | VM instructions | 197 | 0 | 36 | 0 | 0 |
-| **total** | 560 | 88 | 180 | 3 | 39 |
+| **total** | 564 | 70 | 176 | 3 | 41 |
 
 #### The boot and library files
 
@@ -2133,8 +2138,8 @@ Predicate rows each file's calls reach (a predicate several files call counts in
 | `boot/dcg.pl` | loaded | 20 | 0 | 0 |
 | `boot/license.pl` | loaded | 5 | 0 | 0 |
 | `boot/syspred.pl` | loaded | 85 | 28 | 0 |
-| `boot/messages.pl` | loaded | 78 | 7 | 1 |
-| `boot/toplevel.pl` | loaded | 86 | 13 | 2 |
+| `boot/messages.pl` | loaded | 79 | 6 | 1 |
+| `boot/toplevel.pl` | loaded | 88 | 11 | 2 |
 | `boot/attvar.pl` | loaded | 29 | 0 | 0 |
 | `boot/bags.pl` | loaded | 21 | 1 | 0 |
 | `boot/apply.pl` | loaded | 4 | 0 | 0 |
@@ -2146,9 +2151,9 @@ Predicate rows each file's calls reach (a predicate several files call counts in
 | `boot/rc.pl` | loaded | 16 | 6 | 0 |
 | `boot/predopts.pl` | loaded | 11 | 0 | 0 |
 | `boot/packs.pl` | loaded | 23 | 0 | 0 |
-| `boot/dicts.pl` | loaded | 18 | 4 | 0 |
+| `boot/dicts.pl` | loaded | 22 | 0 | 0 |
 | `boot/engines.pl` | loaded | 6 | 4 | 0 |
-| `boot/tabling.pl` | loaded | 86 | 53 | 0 |
+| `boot/tabling.pl` | loaded | 87 | 52 | 0 |
 | `boot/topvars.pl` | loaded | 36 | 1 | 0 |
 | `boot/threads.pl` | skipped (conditional) | 0 | 0 | 0 |
 | `library/debug.pl` | loaded | 23 | 2 | 0 |
@@ -2164,18 +2169,15 @@ Predicate rows each file's calls reach (a predicate several files call counts in
 | TAB1 | 56 | 51 | 5 | `$idg_add_edge/1`, `$idg_add_mono_dyn_dep/3`, `$idg_add_monotonic_dep/3`, `$idg_changed/1`, `$idg_false_edge/3`, `$idg_falsecount/2`, `$idg_forced/1`, `$idg_mono_affects/3`, … +48 |
 | AR1 | 28 | 27 | 1 | `succ/2`, `A_ADD`, `A_DOUBLE`, `A_ENTER`, `A_EQ`, `A_FIRSTVAR_IS`, `A_FUNC`, `A_FUNC0`, … +20 |
 | TH1 | 20 | 18 | 2 | `$engine_create/3`, `$gc_clear/1`, `$gc_stop/0`, `$gc_wait/1`, `$sig_unblock/0`, `engine_next/2`, `is_engine/1`, `message_queue_create/1`, … +12 |
-| ENC1 | 16 | 0 | 16 | `refusal set_stream/2's unicode_atoms(nfc)`, `refusal open/4's unicode_atoms(Mode) option`, `refusal string("open/4 with the stream encoding …`, `refusal Scanrepresent: encoding $enc`, `refusal Sgetcode: encoding $enc`, `refusal put_code: encoding $enc`, `refusal PL_canonicalise_text of $enc`, `refusal PL_mb_text of $(text.encoding)`, … +8 |
 | LB3 | 14 | 0 | 14 | `refusal QLF predicate $close_wic/0`, `refusal QLF predicate $file_hash/2`, `refusal QLF predicate $map_id/2`, `refusal QLF predicate $open_wic/2`, `refusal QLF predicate $qlf_close/0`, `refusal QLF predicate $qlf_current_source/1`, `refusal QLF predicate $qlf_dependency/1`, `refusal QLF predicate $qlf_is_compatible/1`, … +6 |
 | DBG1 | 11 | 10 | 1 | `$call_no_catch/1`, `$can_yield/0`, `$leash/2`, `$visible/2`, `notrace/0`, `prolog_choice_attribute/3`, `prolog_frame_attribute/3`, `trace/0`, … +3 |
 | Q10 | 11 | 11 | 0 | `$on_signal/4`, `$put_token/2`, `$set_prolog_stack/4`, `$suspend_findall_bag/0`, `\=@=/2`, `current_blob/2`, `garbage_collect_atoms/0`, `shell/2`, … +3 |
 | P3 | 10 | 9 | 1 | `$depth_limit/3`, `$depth_limit_except/3`, `$depth_limit_false/3`, `$depth_limit_true/5`, `$inference_limit/2`, `$inference_limit_except/3`, `$inference_limit_false/1`, `$inference_limit_true/3`, … +2 |
-| RD2 | 8 | 0 | 8 | `refusal raw_read2: reading past the end of a str…`, `refusal raw_read2: the comments(C) read option`, `refusal raw_read2: the comments(C) read option`, `refusal read_clause's $what option`, `refusal read_clause's process_comment(true) or u…`, `refusal read_term's $what option`, `refusal read: a blob <type>(…)`, `refusal read: a quasi-quotation {\|Syntax\|\|Quotat…` |
+| RD2 | 8 | 0 | 8 | `refusal raw_read2: reading past the end of a str…`, `refusal raw_read2: the comments(C) read option`, `refusal raw_read2: the comments(C) read option`, `refusal read_clause's $what option`, `refusal read_clause's process_comment(true) opti…`, `refusal read_term's $what option`, `refusal read: a blob <type>(…)`, `refusal read: a quasi-quotation {\|Syntax\|\|Quotat…` |
 | LB5-LB7 | 6 | 2 | 4 | `$activate_static_extension/1`, `$clause_term_position/3`, `refusal iri_hook $what ('\$iri':iri_hook/4 of in…`, `refusal what`, `refusal format_predicate/2 (GD->format.predicate…`, `refusal expandVars: ~user (getpwnam)` |
 | REFUSED | 6 | 6 | 0 | `B_SMALLINTW`, `B_THROW`, `H_SMALLINTW`, `L_SMALLINTW`, `T_SMALLINTW`, `T_TRY_SMALLINTW` |
 | ZIP1 | 6 | 6 | 0 | `$rc_handle/1`, `zip_clone/2`, `zip_close_/2`, `zip_file_info_/3`, `zipper_goto/2`, `zipper_open_current/3` |
 | CT1 | 4 | 2 | 2 | `char_type/2`, `code_type/2`, `refusal open/4's locale(Locale) option`, `refusal set_stream/2's locale(Locale)` |
-| S2a | 4 | 4 | 0 | `get/1`, `get/2`, `put/1`, `put/2` |
-| S2b | 4 | 0 | 4 | `refusal a stream pair`, `refusal open(pipe(Command), …)`, `refusal open/4's lock(Lock) option (advisory fil…`, `refusal closing a stream pair` |
 | TX1 | 4 | 4 | 0 | `$snapshot/1`, `$transaction/2`, `$transaction/3`, `$undo/1` |
 | FL1 | 2 | 2 | 0 | `get_flag/2`, `set_flag/2` |
 | P2 | 2 | 2 | 0 | `$seek_list/4`, `sub_atom_icasechk/3` |
@@ -2194,7 +2196,7 @@ Predicate rows each file's calls reach (a predicate several files call counts in
 | TB6 | 1 | 1 | 0 | `S_INCR_DYNAMIC` |
 | WR2 | 1 | 0 | 1 | `refusal writing a grounded value SWI has no type…` |
 | WRAP1 | 1 | 0 | 1 | `refusal freeCodesDefinition! of a wrapped predic…` |
-| NO OWNER | 39 | 21 | 18 | `apple_current_locale_identifier/1`, `flag ci_set_flag (pl-index.c)`, `flag set_arith_flag (pl-arith.c)`, `flag tbl_set_restraint_flag (tabling restraints)`, `flag agc_margin`, `flag app_name`, `flag apple`, `flag apple_universal_binary`, … +31 |
+| NO OWNER | 41 | 21 | 20 | `apple_current_locale_identifier/1`, `flag ci_set_flag (pl-index.c)`, `flag set_arith_flag (pl-arith.c)`, `flag tbl_set_restraint_flag (tabling restraints)`, `flag agc_margin`, `flag app_name`, `flag apple`, `flag apple_universal_binary`, … +33 |
 
 #### Missing and refused per category
 
@@ -2203,8 +2205,8 @@ xychart-beta
     title "R2: missing (bars) and refused (line) rows"
     x-axis ["predicates", "refusal sites", "flags", "VM instructions"]
     y-axis "rows" 0 --> 150
-    bar [124, 0, 20, 36]
-    line [0, 73, 15, 0]
+    bar [120, 0, 20, 36]
+    line [0, 55, 15, 0]
 ```
 
 <!-- END GENERATED R2 status -->

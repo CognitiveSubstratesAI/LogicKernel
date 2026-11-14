@@ -421,7 +421,7 @@ end
     # member's analysis are counted with the allowlist NOT applied: S_read has exactly the one allowed report, its
     # neighbours none, so a second dispatch in the family (a second call of Sread_user included) fails here.
     _sa_part("jet_allowlist") &&
-        @testset "JET allowlist: one site, S_read -> Sread_user; S_write, S_close, S_read_wrapped, S_close_wrapped, Swrite_stderr at 0" begin
+        @testset "JET allowlist: one site, S_read -> Sread_user; S_write, S_close, S_read_wrapped, S_close_wrapped, Swrite_stderr, Swrite_null, Sread_null, S_seek64 at 0" begin
             @test length(JET_DISPATCH_ALLOWED) == 1
             for a in JET_DISPATCH_ALLOWED
                 @test a.caller === LK.S_read && a.callee === LK.Sread_user
@@ -436,7 +436,10 @@ end
                 LK.S_close,
                 LK.S_read_wrapped,
                 LK.S_close_wrapped,
-                LK.Swrite_stderr
+                LK.Swrite_stderr,
+                LK.Swrite_null,           # 2026-11-14: the null-stream write/read and the seek dispatch joined the family at 0 reports,
+                LK.Sread_null,            # each a `s.functions == ...` branch to a concrete callee (no call through a field), not an allowed dispatch
+                LK.S_seek64
             ]
             )
             for (f, tt, expected) in JET_DISPATCH_FAMILY
