@@ -672,7 +672,7 @@ const _T6_BROKEN = Dict{String, String}(
     "ABOLISH/a05" => "owner builtin PRESENT: `'\$tbl_destroy_table'/1` (pl-tabling.jl:9773); abolish_table_subgoals/1 (boot/tabling.pl:1158-1168, vendored) calls it; expected to pass",
     "ABOLISH/a06" => "owner builtin PRESENT: `'\$tbl_destroy_table'/1`; abolish_nonincremental_tables/0 (boot/tabling.pl:1187) calls it; expected to pass",
     "ABOLISH/a07" => "owner builtins PRESENT: abolish_module_tables/1; expected to pass",
-    "ABOLISH/a08" => "owner builtin PRESENT: abolish_table_subgoals/1 (vendored boot/tabling.pl:1158); expected to pass",
+    "ABOLISH/a08" => "owner builtin PRESENT: abolish_table_subgoals/1 (vendored boot/tabling.pl:1158); expected to pass"
 )
 
 @testset "TB6 rows as swipl's: $(g.label)" for g in _T6_GROUPS
