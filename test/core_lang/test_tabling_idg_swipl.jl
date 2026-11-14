@@ -47,9 +47,17 @@ t_idg09(R) :- ti_tab(T), '$idg_set_falsecount'(T, 2), '$tbl_variant_table'(0, us
     '$idg_falsecount'(T2, F), R = r(S, F).
 t_idg10(R) :- '$tbl_variant_table'(0, user:ti_p(_), T, S, _, _), '$idg_set_falsecount'(T, 0),
     '$tbl_variant_table'(0, user:ti_p(_), T2, S2, _, _), ( T == T2 -> Same = same ; Same = other ), R = r(S, S2, Same).
+:- table ti_v5/1 as incremental.
+ti_v5(X) :- statistics(table_space_used, U), L is U+1, set_prolog_flag(table_space, L), ti_d(X).
+t_idg11(R) :- ti_p(_), ti_tab(T),
+    catch(('$idg_set_falsecount'(T, 4294967296), R0 = ok), error(E, _), R0 = raised(E)),
+    '$idg_falsecount'(T, F0), '$idg_set_falsecount'(T, 4294967295), '$idg_falsecount'(T, F1),
+    '$idg_set_falsecount'(T, 0), R = r(R0, F0, F1).
+t_idg12(R) :- current_prolog_flag(table_space, Old), catch(ti_v5(_), error(E, _), true),
+    set_prolog_flag(table_space, Old), ( var(E) -> R = none ; R = raised(E) ).
 """
 
-const _TI_CASES = ["t_idg01", "t_idg05", "t_idg02", "t_idg03", "t_idg04", "t_idg06", "t_idg07", "t_idg08", "t_idg09", "t_idg10"]
+const _TI_CASES = ["t_idg01", "t_idg05", "t_idg02", "t_idg03", "t_idg04", "t_idg06", "t_idg07", "t_idg08", "t_idg09", "t_idg10", "t_idg11", "t_idg12"]
 
 # swipl 10.1.20 (`ti_q(t_idg<NN>, A)`, in the order of `_TI_CASES`), two identical runs (md5 equal), 2026-11-10
 const _TI_PINNED = [
@@ -63,6 +71,8 @@ const _TI_PINNED = [
     "r(complete,0,incremental,ret1,unbound)",   # idg08 (TB7M5): `\$tbl_variant_table` of the complete incremental table: status, falsecount, type
     "r(invalid,2)",                         # idg09 (TB7M5): falsecount 2: complete_or_invalid_status answers `invalid`
     "r(invalid,complete,same)",             # idg10 (TB7M5): falsecount back to 0: the same table is `complete` again
+    "r(raised(representation_error(falsecount)),0,4294967295)",   # idg11 (DEFKILL2, TB6-P14): pl-tabling.c:9864 `fc > UINT_MAX`; UINT_MAX itself is stored
+    "raised(resource_error(private_table_space))",                # idg12 (DEFKILL2, TB6-V5): the dyncall edge of a full pool: pl-vmi.c:3547-3548 THROW_EXCEPTION
 ]
 
 "The `~q` text of each case's answer, in order, from swipl at the pin."
@@ -891,4 +901,100 @@ end
     bad = d()
     @test good && !bad
     tp.flags = saved
+end
+
+# ── DEFKILL2 rows (the DEFERRED KILL entries of tools/mutants/TB6.py): each premise is asserted in the row ───────────────────────
+@testset "idg28: a grown block keeps the dead count of the old one (pl-idgset.c:244-250 grow_block, :300-302, :347-352, :387)" begin
+    gd, ld = _ti_wb()
+    nodes = [_ti_node(ld)[2] for _ in 1:6]
+    set = LK.idg_set{_TIN}()
+    add(p) = LK.idg_set_add(ld, set, p, nothing, nothing)
+    del(p) = LK.idg_set_delete(set, p, nothing, nothing)
+    for i in 1:4
+        @test add(nodes[i]) == 1
+    end
+    @test set.block.capacity == 4 && set.block.count == 4 && set.block.dead == 0       # full: the next new entry grows the block
+    @test del(nodes[3]) && set.block.dead == 1 && LK.idg_set_size(set) == 3            # one dead entry, not revived
+    @test add(nodes[5]) == 1 && set.block.capacity == 8                                 # grow_block(b): `nb->dead = b->dead` (:250)
+    @test set.block.count == 5 && set.block.dead == 1                                   # C: count 5, dead 1
+    @test LK.idg_set_size(set) == 4 && !LK.idg_set_contains(set, nodes[3])              # size = count - dead (:387)
+    @test _ti_live(set) == nodes[[1, 2, 4, 5]]
+    for p in nodes[[1, 2, 4]]
+        @test del(p)
+        @test set.block !== nothing                                                     # `++b->dead == b->count` (:350) not yet
+    end
+    @test del(nodes[5]) && set.block === nothing && LK.idg_set_is_empty(set)            # 5 dead of 5: the block goes
+    @test add(nodes[3]) == 1 && LK.idg_set_size(set) == 1                               # a fresh single pointer again
+end
+
+@testset "idg29: an IDG node charges sizeof(idg_node) = 80 bytes to the table pool (pl-tabling.c idg_new alloc_from_pool, pl-tabling.h:225-254)" begin
+    gd, ld = _ti_wb()
+    pool = ld.tabling.node_pool
+    @test pool isa LK.alloc_pool
+    # sizeof(idg_node) at the pin, 64-bit, with O_TRIE_STATS (pl-trie.h:43): magic 4 + concurrent 1 (padded to 8), five pointers
+    # (atrie, lingering, mono, registry, plus affected+dependent as two uintptr_t = 6 words) at 8 each = 48, three unsigned 12,
+    # stats 2 unsigned 8, the bit-field word 4: 8 + 8 + 16 + 8 + 8 + 8 + 12 + 8 + 4 = 80 (the pointer words: atrie 8, affected 8,
+    # dependent 8, lingering 8, mono 8, registry 8)
+    @test LK.SIZEOF_IDG_NODE == 80
+    tr1 = LK.trie_create(_TI)
+    s0 = pool.size
+    n1 = LK.idg_new(ld, tr1)::_TIN
+    first_delta = pool.size - s0
+    @test first_delta == LK.SIZEOF_IDG_NODE + LK.reg_block_size(0) * 8      # the node, and the registry's first block (reg_block)
+    tr2 = LK.trie_create(_TI)
+    s1 = pool.size
+    n2 = LK.idg_new(ld, tr2)::_TIN
+    @test pool.size - s1 == 80 && pool.size - s1 == LK.SIZEOF_IDG_NODE      # the second node: the node only
+    LK.idg_free_node(n2, pool)
+    @test pool.size == s1                                                   # idg_free_node discharges the same 80
+end
+
+@testset "idg30: with a free direction `\$idg_edge` goes on from the parents to the dependents (pl-tabling.c:8615-8624 advance_idg_edge_state)" begin
+    gd, ld = _ti_wb()
+    pt, p = _ti_node(ld)            # parent
+    st, s = _ti_node(ld)            # self: has a parent AND a child
+    ct, c = _ti_node(ld)            # child
+    @test LK.idg_add_child(ld, p, s, 0, 0) && LK.idg_add_child(ld, s, c, 0, 0)
+    @test _ti_live(s.affected) == [p] && _ti_live(s.dependent) == [c]
+    # the state `idg_edge_gen` builds for an unbound direction with a non-empty `affected` set (:8692-8695: fixed_dir stays false)
+    state = LK.idg_edge_state{_TI}()
+    state.atrie = st
+    state.dir = lk_sym(_TI, :affected)
+    state.set = s.affected
+    state.en = LK.idg_set_enum_init(s.affected)
+    @test !state.fixed_dir
+    @test LK.advance_idg_edge_state(ld, state)                                      # the parent
+    @test sym_text(state.dir) == "affected" && state.deptrie_symbol == LK.trie_symbol(gd, pt)
+    @test LK.advance_idg_edge_state(ld, state)                                      # `state->dir = ATOM_dependent` (:8615-8624), the child
+    @test sym_text(state.dir) == "dependent" && state.set === s.dependent && state.deptrie_symbol == LK.trie_symbol(gd, ct)
+    @test !LK.advance_idg_edge_state(ld, state)                                     # done
+    # with a fixed direction it stops after the parents (:8615 `!state->fixed_dir`)
+    fixed = LK.idg_edge_state{_TI}()
+    fixed.atrie = st
+    fixed.dir = lk_sym(_TI, :affected)
+    fixed.fixed_dir = true
+    fixed.set = s.affected
+    fixed.en = LK.idg_set_enum_init(s.affected)
+    @test LK.advance_idg_edge_state(ld, fixed) && !LK.advance_idg_edge_state(ld, fixed)
+end
+
+@testset "idg31: assert_term! makes a NEW predicate incremental under PL_CREATE_INCREMENTAL only (pl-comp.c:4916-4919)" begin
+    gd, ld = _ti_wb()
+    fact(name, v) = (
+        t = LK.PL_new_term_ref(ld);
+        LK.putSlotValue!(ld, t + 1, mk_expr(_TI, _TI[lk_sym(_TI, Symbol(name)), lk_gnd(_TI, v)]), LK.PutVarMap());
+        t
+    )
+    defn(name) = LK.isCurrentProcedure(sym_key(lk_sym(_TI, Symbol(name))), 1, LK.MODULE_user(gd)).definition
+    incr(name) = (LK.get_predicate_table_props!(defn(name)).flags & LK.TP_INCREMENTAL) != 0
+    # flags 0: a new predicate, not incremental
+    @test LK.assert_term!(gd, ld, fact("ti_v6a", 1), 0, LK.CL_END, nothing, nothing, 0) !== nothing
+    @test !incr("ti_v6a")
+    # PL_CREATE_INCREMENTAL on a new predicate: incremental
+    @test LK.assert_term!(gd, ld, fact("ti_v6b", 1), 0, LK.CL_END, nothing, nothing, LK.PL_CREATE_INCREMENTAL) !== nothing
+    @test incr("ti_v6b")
+    # a predicate that is already defined keeps its attributes (`!isDefinedProcedure(proc)`)
+    @test LK.assert_term!(gd, ld, fact("ti_v6c", 1), 0, LK.CL_END, nothing, nothing, 0) !== nothing
+    @test LK.assert_term!(gd, ld, fact("ti_v6c", 2), 0, LK.CL_END, nothing, nothing, LK.PL_CREATE_INCREMENTAL) !== nothing
+    @test !incr("ti_v6c")
 end
