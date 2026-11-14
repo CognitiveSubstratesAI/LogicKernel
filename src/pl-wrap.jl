@@ -28,6 +28,13 @@
 # Since WRAP1 the file also holds `unwrap_predicate/2`, `$wrapped_predicate/2`, `$wrapped_implementation/3` and
 # `$closure_predicate/2` (pl-wrap.c:406-556), and the two helpers `supervisor_crefs` and `innermost_supervisor` the
 # kernel's side-table representation of supervisor operands needs.
+# Synced to cf6960c2 (pl-wrap.c:61-69, the file's top comment): the target's wrapper supervisor holds a PRIVATE clause
+# reference to the wrapper clause of `'$wrap$P'` (a new `ClauseRef` of the same clause, key 0), not the reference that sits in
+# `'$wrap$P'`'s clause list, so redefining or retracting `'$wrap$P'` neither resets P's supervisor nor frees what the supervisor
+# runs; `unregisterWrappedSupervisor` frees it. In this kernel the side table `codes_crefs` keeps the clause's reference alive
+# (the garbage collector frees it), and a retracted wrapper clause still runs from it, as upstream's private reference does:
+# no answer, error or order changes, so the kernel keeps the list's reference and has no private one (see
+# `pl_c_wrap_predicate5_va`).
 
 # PORT: pl-wrap.c _PL_closure_blob as closure_blob
 # DIVERGES: no `release`, `write`, `acquire`, `save` or `load` slots (`PL_blob_t` has none): see the file header.
@@ -127,7 +134,10 @@ end
 
 # PORT: pl-wrap.c unregisterWrappedSupervisor
 # DIVERGES: a no-op. Upstream drops the references the supervisor holds on the closure atom and the wrapper name
-# (`PL_unregister_atom`); atoms live for ever here (see the file header).
+# (`PL_unregister_atom`); atoms live for ever here (see the file header). Synced to cf6960c2: the target also frees the
+# supervisor's private clause reference to the wrapper clause there (`freeClauseRef(code2ptr(ClauseRef, codes[1]))`, and a new
+# static `free_wrapper_cref` for `linger()` to free the OLD reference after `'$c_wrap_predicate'/5` replaced a wrapper). The
+# kernel has neither: the references are Julia objects, collected when `codes_crefs` drops them (no lingering for other threads).
 "Release the atoms a wrapper supervisor `codes` references (pl-wrap.c; a no-op here, see above)."
 unregisterWrappedSupervisor(codes::Vector{code})::Nothing = nothing
 
@@ -283,6 +293,11 @@ end
 # DIVERGES: the wrapper supervisor is the code vector and side table of the file header, installed by assigning
 # `def.codes`/`def.codes_crefs` where upstream calls `allocCodes`, `chainPredicateSupervisor` and `setSupervisor`; the
 # closure's supervisor is the definition's current one (`def.codes`, `def.codes_crefs`), taken before the install.
+# Synced to cf6960c2 (pl-wrap.c:370-405): the target stores a PRIVATE reference to the new wrapper clause in the supervisor
+# (`ptr2code(newClauseRef(cref->value.clause, 0))`, in both arms) and, when it replaces an existing wrapper, lingers the old
+# private reference (`linger(&def->lingering, free_wrapper_cref, old)`) after `retractClauseDefinition`. Here the side table keeps
+# the clause's own reference (`crefs[...] = cref`): the same clause runs, the old reference is left to the garbage collector,
+# so the answers and errors of `'$c_wrap_predicate'/5` and of what runs after it are the same; not copied (a representation).
 "`'\$c_wrap_predicate'(:Head, +Name, -Closure, -Wrapped, +Body)`: install a wrapper named `Name` for the predicate `Head` (pl-wrap.c)."
 function pl_c_wrap_predicate5_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
