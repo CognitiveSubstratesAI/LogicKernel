@@ -794,4 +794,13 @@ MUTANTS = [
     dict(id='AR1-E150 _vmi_a_var!: the variable is evaluated with evalExpression_cells, which sets the flag mode (the pin reads a_var_n -> evalExpression: no mode set) (KILL t24, t25: the compound 1/3.0 inside roundtoward(X, to_zero) rounds up under the flag to_positive)', file='src/pl-wam.jl', targets=TRO,
          old='        av_rc = _evalExpression_walk(ld, av_t, av_n)\n',
          new='        av_rc = evalExpression_cells(ld, av_t, av_n)\n'),
+    dict(id='AR1-B25 mpz_fdiv: the scaling is Julia ldexp, which overflows to infinity and underflows to zero in every mode (KILL t435-t440: float of a huge or tiny rational under to_zero, to_positive, to_negative)', file='src/pl-gmp.jl', targets=TB,
+         old='    return _ldexp_mode(d, sa - sb)\n',
+         new='    return ldexp(d, sa - sb)\n'),
+    dict(id='AR1-B26 _ldexp_mode: an overflow answers floatmax in every mode (KILL t442, t443: float of 2**1100 rdiv 3 under to_nearest and to_positive is float_overflow)', file='src/pl-gmp.jl', targets=TB,
+         old='        if mode == FE_TOWARDZERO || (mode == FE_UPWARD && d < 0) || (mode == FE_DOWNWARD && d > 0)\n',
+         new='        if true || (mode == FE_UPWARD && d < 0) || (mode == FE_DOWNWARD && d > 0)\n'),
+    dict(id='AR1-B27 _ldexp_mode: to_negative does not round an underflow of a negative value away from zero (KILL t440)', file='src/pl-gmp.jl', targets=TB,
+         old='        if (mode == FE_UPWARD && d > 0) || (mode == FE_DOWNWARD && d < 0)\n',
+         new='        if (mode == FE_UPWARD && d > 0)\n'),
 ]

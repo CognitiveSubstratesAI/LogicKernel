@@ -373,6 +373,29 @@ function mpz_to_double(a::BigInt)::Float64
     return d
 end
 
+# ORIGINAL: C's `ldexp(d, e)` (glibc `scalbn`) in a rounding mode, for a finite non-zero `d`. Julia's `ldexp` answers the
+# signed infinity for an overflow and the signed zero for an underflow in EVERY mode; glibc answers `huge*copysign(huge, d)`
+# and `tiny*copysign(tiny, d)`, which the mode decides: an overflow is `floatmax` when the mode rounds toward zero (to_zero,
+# or to_positive for a negative `d`, to_negative for a positive one), an underflow is the smallest subnormal when the mode
+# rounds away from zero (to_positive for a positive `d`, to_negative for a negative one). A result in range, or a subnormal
+# one (rounded by Julia's own multiplication, which the hardware mode reaches), is `ldexp`'s.
+"`ldexp(d, e)` as C's does in the rounding mode in effect (glibc `scalbn`): the overflow and underflow answers follow the mode."
+function _ldexp_mode(d::Float64, e::Int)::Float64
+    r = ldexp(d, e)
+    if isinf(r)                                             # overflow
+        mode = fegetround()
+        if mode == FE_TOWARDZERO || (mode == FE_UPWARD && d < 0) || (mode == FE_DOWNWARD && d > 0)
+            return copysign(floatmax(Float64), d)
+        end
+    elseif iszero(r)                                        # underflow (d is not 0)
+        mode = fegetround()
+        if (mode == FE_UPWARD && d > 0) || (mode == FE_DOWNWARD && d < 0)
+            return copysign(nextfloat(0.0), d)
+        end
+    end
+    return r
+end
+
 # PORT: pl-gmp.c mpz_fdiv
 "`a / b` as a double rounded as the rounding mode says (pl-gmp.c), from the gmp-devel list's algorithm."
 function mpz_fdiv(a::BigInt, b::BigInt)::Float64
@@ -422,7 +445,7 @@ function mpz_fdiv(a::BigInt, b::BigInt)::Float64
         end
     end                                                     # FE_TOWARDZERO: truncation performed by mpz_get_d
     d = _mpz_get_d(aa)                                      # exact
-    return ldexp(d, sa - sb)
+    return _ldexp_mode(d, sa - sb)
 end
 
 # PORT: pl-gmp.c mpq_to_double
