@@ -2704,7 +2704,8 @@ mutable struct ld_coverage{T}
     active::Int                                     # This thread is recording
     states::foreign_state_pool{cov_data_state{T}}   # ('$cov_data'/3's REDO_PTR states)
 end
-ld_coverage{T}() where {T} = ld_coverage{T}(nothing, 0, foreign_state_pool{cov_data_state{T}}())
+ld_coverage{T}() where {T} =
+    ld_coverage{T}(nothing, 0, foreign_state_pool{cov_data_state{T}}())
 
 # ── pl-prof.h and pl-prof.c's structs (lane F, PROF1) ──────────────────────────────────────────────────
 # DIVERGES (representation, for the whole block): a `call_node *` is an `Int` index into `ld.profile.node_table` (0: NULL), the
@@ -2792,7 +2793,8 @@ mutable struct ld_profile{T}
     node_table::Vector{Union{Nothing, call_node{T}}}   # the nodes a pointer indexes (ORIGINAL: `malloc`'d memory upstream)
 end
 ld_profile{T}() where {T} = ld_profile{T}(
-    false, false, PROF_INACTIVE, PROF_INACTIVE, PROFC_FALSE, 0, 0, 0, 0, 0, 0, 0, 0, 0.0, 0.0,
+    false, false, PROF_INACTIVE, PROF_INACTIVE, PROFC_FALSE, 0, 0, 0, 0, 0, 0, 0, 0,
+    0.0, 0.0,
     ld_profile_clock(), Union{Nothing, call_node{T}}[]
 )
 

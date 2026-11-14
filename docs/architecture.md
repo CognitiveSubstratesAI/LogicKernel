@@ -976,6 +976,9 @@ graph LR
     pl_copyterm["pl-copyterm.jl"]
     pl_rec["pl-rec.jl"]
     pl_termhash["pl-termhash.jl"]
+    pl_bisim["pl-bisim.jl"]
+    pl_coverage["pl-coverage.jl"]
+    pl_prof["pl-prof.jl"]
     pl_thread["pl-thread.jl"]
     pl_gc["pl-gc.jl"]
     pl_cont["pl-cont.jl"]
@@ -995,7 +998,10 @@ graph LR
     os_pl_os["os/pl-os.jl"]
     os_pl_files["os/pl-files.jl"]
     os_pl_glob["os/pl-glob.jl"]
+    os_pl_cstack["os/pl-cstack.jl"]
+    os_pl_table["os/pl-table.jl"]
     os_pl_file["os/pl-file.jl"]
+    pl_zip["pl-zip.jl"]
     pl_setup["pl-setup.jl"]
     pl_proc["pl-proc.jl"]
     pl_srcfile["pl-srcfile.jl"]
@@ -1255,6 +1261,7 @@ graph LR
     pl_rec --> pl_inline
     pl_rec --> pl_prims
     pl_rec --> pl_comp
+    pl_rec --> pl_coverage
     pl_rec --> pl_alloc
     pl_rec --> pl_wam
     pl_rec --> pl_fli
@@ -1276,6 +1283,51 @@ graph LR
     pl_termhash --> pl_global
     pl_termhash --> pl_comp
     pl_termhash --> pl_fli
+    pl_bisim --> term_interface
+    pl_bisim --> default_term
+    pl_bisim --> pl_incl
+    pl_bisim --> SWI_Prolog
+    pl_bisim --> pl_termwalk
+    pl_bisim --> pl_funct
+    pl_bisim --> pl_global
+    pl_bisim --> pl_inline
+    pl_bisim --> pl_prims
+    pl_bisim --> pl_alloc
+    pl_bisim --> pl_fli
+    pl_bisim --> pl_error
+    pl_bisim --> pl_arith
+    pl_bisim --> os_pl_option
+    pl_bisim --> os_pl_text
+    pl_bisim --> pl_tabling
+    pl_bisim --> pl_trie
+    pl_bisim --> pl_read
+    pl_coverage --> term_interface
+    pl_coverage --> default_term
+    pl_coverage --> pl_incl
+    pl_coverage --> SWI_Prolog
+    pl_coverage --> pl_global
+    pl_coverage --> pl_prims
+    pl_coverage --> pl_comp
+    pl_coverage --> pl_rec
+    pl_coverage --> pl_wam
+    pl_coverage --> pl_fli
+    pl_coverage --> pl_error
+    pl_coverage --> pl_dbref
+    pl_coverage --> os_pl_prologflag
+    pl_coverage --> os_pl_table
+    pl_coverage --> pl_string
+    pl_prof --> term_interface
+    pl_prof --> default_term
+    pl_prof --> pl_incl
+    pl_prof --> SWI_Prolog
+    pl_prof --> pl_global
+    pl_prof --> pl_prims
+    pl_prof --> pl_comp
+    pl_prof --> pl_fli
+    pl_prof --> pl_error
+    pl_prof --> pl_proc
+    pl_prof --> pl_pro
+    pl_prof --> pl_tabling
     pl_thread --> term_interface
     pl_thread --> default_term
     pl_thread --> pl_incl
@@ -1574,6 +1626,18 @@ graph LR
     os_pl_glob --> pl_trie
     os_pl_glob --> pl_read
     os_pl_glob --> pl_string
+    os_pl_cstack --> term_interface
+    os_pl_cstack --> default_term
+    os_pl_cstack --> pl_global
+    os_pl_cstack --> pl_comp
+    os_pl_cstack --> pl_qlf
+    os_pl_table --> default_term
+    os_pl_table --> pl_incl
+    os_pl_table --> pl_funct
+    os_pl_table --> pl_global
+    os_pl_table --> os_pl_cstack
+    os_pl_table --> pl_tabling
+    os_pl_table --> pl_qlf
     os_pl_file --> term_interface
     os_pl_file --> default_term
     os_pl_file --> os_pl_stream
@@ -1600,6 +1664,17 @@ graph LR
     os_pl_file --> pl_write
     os_pl_file --> pl_read
     os_pl_file --> pl_string
+    pl_zip --> term_interface
+    pl_zip --> default_term
+    pl_zip --> os_pl_stream
+    pl_zip --> pl_incl
+    pl_zip --> SWI_Prolog
+    pl_zip --> pl_global
+    pl_zip --> pl_comp
+    pl_zip --> pl_fli
+    pl_zip --> pl_error
+    pl_zip --> os_pl_option
+    pl_zip --> os_pl_file
     pl_setup --> term_interface
     pl_setup --> default_term
     pl_setup --> os_pl_stream
@@ -2073,6 +2148,9 @@ graph LR
     pl_ext --> pl_copyterm
     pl_ext --> pl_rec
     pl_ext --> pl_termhash
+    pl_ext --> pl_bisim
+    pl_ext --> pl_coverage
+    pl_ext --> pl_prof
     pl_ext --> pl_thread
     pl_ext --> pl_gc
     pl_ext --> pl_fli
@@ -2084,6 +2162,7 @@ graph LR
     pl_ext --> os_pl_files
     pl_ext --> os_pl_glob
     pl_ext --> os_pl_file
+    pl_ext --> pl_zip
     pl_ext --> pl_proc
     pl_ext --> pl_srcfile
     pl_ext --> pl_supervisor
@@ -2154,11 +2233,11 @@ or **platform** (a Windows or macOS definition: out of the count). **NO OWNER** 
 
 | category | done | refused | missing | platform | NO OWNER |
 |---|---:|---:|---:|---:|---:|
-| predicates (C-defined, reached by the boot) | 323 | 0 | 99 | 3 | 1 |
-| refusal sites | 0 | 73 | 0 | 0 | 7 |
+| predicates (C-defined, reached by the boot) | 331 | 0 | 91 | 3 | 1 |
+| refusal sites | 0 | 91 | 0 | 0 | 12 |
 | Prolog flags | 65 | 15 | 20 | 0 | 35 |
 | VM instructions | 197 | 0 | 36 | 0 | 0 |
-| **total** | 585 | 88 | 155 | 3 | 43 |
+| **total** | 593 | 106 | 147 | 3 | 48 |
 
 #### The boot and library files
 
@@ -2183,7 +2262,7 @@ Predicate rows each file's calls reach (a predicate several files call counts in
 | `boot/autoload.pl` | loaded | 76 | 1 | 0 |
 | `boot/iri.pl` | loaded | 3 | 0 | 0 |
 | `boot/qlf.pl` | loaded | 10 | 0 | 0 |
-| `boot/rc.pl` | loaded | 16 | 6 | 0 |
+| `boot/rc.pl` | loaded | 22 | 0 | 0 |
 | `boot/predopts.pl` | loaded | 11 | 0 | 0 |
 | `boot/packs.pl` | loaded | 23 | 0 | 0 |
 | `boot/dicts.pl` | loaded | 18 | 4 | 0 |
@@ -2191,8 +2270,8 @@ Predicate rows each file's calls reach (a predicate several files call counts in
 | `boot/tabling.pl` | loaded | 111 | 28 | 0 |
 | `boot/topvars.pl` | loaded | 37 | 0 | 0 |
 | `boot/threads.pl` | skipped (conditional) | 0 | 0 | 0 |
-| `library/debug.pl` | loaded | 23 | 2 | 0 |
-| `library/lists.pl` | loaded | 16 | 2 | 0 |
+| `library/debug.pl` | loaded | 24 | 1 | 0 |
+| `library/lists.pl` | loaded | 17 | 1 | 0 |
 | `library/prolog_stack.pl` | loaded | 36 | 3 | 0 |
 | `library/option.pl` | loaded | 20 | 0 | 0 |
 | `library/dcg/high_order.pl` | loaded | 8 | 0 | 0 |
@@ -2206,19 +2285,18 @@ Predicate rows each file's calls reach (a predicate several files call counts in
 | TH1 | 20 | 18 | 2 | `$engine_create/3`, `$gc_clear/1`, `$gc_stop/0`, `$gc_wait/1`, `$sig_unblock/0`, `engine_next/2`, `is_engine/1`, `message_queue_create/1`, … +12 |
 | ENC1 | 16 | 0 | 16 | `refusal set_stream/2's unicode_atoms(nfc)`, `refusal open/4's unicode_atoms(Mode) option`, `refusal string("open/4 with the stream encoding …`, `refusal Scanrepresent: encoding $enc`, `refusal Sgetcode: encoding $enc`, `refusal put_code: encoding $enc`, `refusal PL_canonicalise_text of $enc`, `refusal PL_mb_text of $(text.encoding)`, … +8 |
 | LB3 | 14 | 0 | 14 | `refusal QLF predicate $close_wic/0`, `refusal QLF predicate $file_hash/2`, `refusal QLF predicate $map_id/2`, `refusal QLF predicate $open_wic/2`, `refusal QLF predicate $qlf_close/0`, `refusal QLF predicate $qlf_current_source/1`, `refusal QLF predicate $qlf_dependency/1`, `refusal QLF predicate $qlf_is_compatible/1`, … +6 |
+| ZIP1 | 13 | 0 | 13 | `refusal SopenZIP: a stream on a zip entry (pl-zi…`, `refusal unzClone of a zipper's reader (pl-zip.c:…`, `refusal zipClose and unzClose of a zipper (pl-zi…`, `refusal unzGetCurrentFileInfo64 of a zipper (pl-…`, `refusal zlock: the lock of a zipper (pl-zip.c:12…`, `refusal unzOpen2_64: a zip reader needs minizip …`, `refusal zipOpen2_64: a zip writer needs minizip …`, `refusal zunlock: the lock of a zipper (pl-zip.c:…`, … +5 |
 | DBG1 | 11 | 10 | 1 | `$call_no_catch/1`, `$can_yield/0`, `$leash/2`, `$visible/2`, `notrace/0`, `prolog_choice_attribute/3`, `prolog_frame_attribute/3`, `trace/0`, … +3 |
 | P3 | 10 | 9 | 1 | `$depth_limit/3`, `$depth_limit_except/3`, `$depth_limit_false/3`, `$depth_limit_true/5`, `$inference_limit/2`, `$inference_limit_except/3`, `$inference_limit_false/1`, `$inference_limit_true/3`, … +2 |
 | Q10 | 10 | 10 | 0 | `$on_signal/4`, `$put_token/2`, `$set_prolog_stack/4`, `$suspend_findall_bag/0`, `current_blob/2`, `garbage_collect_atoms/0`, `shell/2`, `thread_idle/2`, … +2 |
 | RD2 | 8 | 0 | 8 | `refusal raw_read2: reading past the end of a str…`, `refusal raw_read2: the comments(C) read option`, `refusal raw_read2: the comments(C) read option`, `refusal read_clause's $what option`, `refusal read_clause's process_comment(true) or u…`, `refusal read_term's $what option`, `refusal read: a blob <type>(…)`, `refusal read: a quasi-quotation {\|Syntax\|\|Quotat…` |
 | LB5-LB7 | 6 | 2 | 4 | `$activate_static_extension/1`, `$clause_term_position/3`, `refusal iri_hook $what ('\$iri':iri_hook/4 of in…`, `refusal what`, `refusal format_predicate/2 (GD->format.predicate…`, `refusal expandVars: ~user (getpwnam)` |
 | REFUSED | 6 | 6 | 0 | `B_SMALLINTW`, `B_THROW`, `H_SMALLINTW`, `L_SMALLINTW`, `T_SMALLINTW`, `T_TRY_SMALLINTW` |
-| ZIP1 | 6 | 6 | 0 | `$rc_handle/1`, `zip_clone/2`, `zip_close_/2`, `zip_file_info_/3`, `zipper_goto/2`, `zipper_open_current/3` |
 | CT1 | 4 | 2 | 2 | `char_type/2`, `code_type/2`, `refusal open/4's locale(Locale) option`, `refusal set_stream/2's locale(Locale)` |
 | S2a | 4 | 4 | 0 | `get/1`, `get/2`, `put/1`, `put/2` |
 | S2b | 4 | 0 | 4 | `refusal a stream pair`, `refusal open(pipe(Command), …)`, `refusal open/4's lock(Lock) option (advisory fil…`, `refusal closing a stream pair` |
 | TX1 | 4 | 4 | 0 | `$snapshot/1`, `$transaction/2`, `$transaction/3`, `$undo/1` |
 | FL1 | 2 | 2 | 0 | `get_flag/2`, `set_flag/2` |
-| P2 | 2 | 2 | 0 | `$seek_list/4`, `sub_atom_icasechk/3` |
 | PR1 | 2 | 1 | 1 | `$foreign_predicate_source/2`, `refusal get_procedure: other than GP_DEFINE` |
 | SSU1b | 2 | 1 | 1 | `S_DET`, `refusal setAttrDefinition: attribute $attr` |
 | ATOM1 | 1 | 0 | 1 | `refusal an atom containing the character 0 (a Sy…` |
@@ -2233,7 +2311,7 @@ Predicate rows each file's calls reach (a predicate several files call counts in
 | TB6 | 1 | 1 | 0 | `S_INCR_DYNAMIC` |
 | WR2 | 1 | 0 | 1 | `refusal writing a grounded value SWI has no type…` |
 | WRAP1 | 1 | 0 | 1 | `refusal freeCodesDefinition! of a wrapped predic…` |
-| NO OWNER | 43 | 21 | 22 | `apple_current_locale_identifier/1`, `flag ci_set_flag (pl-index.c)`, `flag set_arith_flag (pl-arith.c)`, `flag tbl_set_restraint_flag (tabling restraints)`, `flag agc_margin`, `flag app_name`, `flag apple`, `flag apple_universal_binary`, … +35 |
+| NO OWNER | 48 | 21 | 27 | `apple_current_locale_identifier/1`, `flag ci_set_flag (pl-index.c)`, `flag set_arith_flag (pl-arith.c)`, `flag tbl_set_restraint_flag (tabling restraints)`, `flag agc_margin`, `flag app_name`, `flag apple`, `flag apple_universal_binary`, … +40 |
 
 #### Missing and refused per category
 
@@ -2242,8 +2320,8 @@ xychart-beta
     title "R2: missing (bars) and refused (line) rows"
     x-axis ["predicates", "refusal sites", "flags", "VM instructions"]
     y-axis "rows" 0 --> 100
-    bar [99, 0, 20, 36]
-    line [0, 73, 15, 0]
+    bar [91, 0, 20, 36]
+    line [0, 91, 15, 0]
 ```
 
 <!-- END GENERATED R2 status -->

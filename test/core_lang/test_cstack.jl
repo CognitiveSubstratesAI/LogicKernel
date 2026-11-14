@@ -23,12 +23,18 @@ end
     @test LK.print_backtrace(ld, 1) === nothing
     @test length(ld.messages) == n0 + 1
     @test ld.messages[end][1] == :error
-    @test occursin("C-stack dumps are not supported on this platform", String(lk_name(ld.messages[end][2])))
+    @test occursin(
+        "C-stack dumps are not supported on this platform",
+        String(lk_name(ld.messages[end][2]))
+    )
     @test occursin("pl-cstack.c:943", String(lk_name(ld.messages[end][2])))
     @test LK.print_backtrace_named(ld, "why") === nothing
     @test length(ld.messages) == n0 + 2
     @test occursin("pl-cstack.c:949", String(lk_name(ld.messages[end][2])))
-    @test occursin("C-stack dumps are not supported on this platform", String(lk_name(ld.messages[end][2])))
+    @test occursin(
+        "C-stack dumps are not supported on this platform",
+        String(lk_name(ld.messages[end][2]))
+    )
 end
 
 @testset "pl-cstack.c: sigCrashHandler and CStackSize are named refusals" begin

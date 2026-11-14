@@ -109,9 +109,18 @@ const _P2B_CASES = [
     ("q12", raw"sub_atom_icasechk(123456, S, '34'), R = S"),
     ("q13", raw"sub_atom_icasechk([97,66,99], S, bc), R = S"),
     ("q14", raw"p2_wide(W), sub_atom_icasechk(W, S, 'bé'), R = S"),
-    ("q15", raw"atom_codes(H, [913,66,201]), atom_codes(N, [945,98,233]), sub_atom_icasechk(H, S, N), R = S"),
-    ("q16", raw"atom_codes(H, [192,201]), atom_codes(N, [224,233]), sub_atom_icasechk(H, S, N), R = S"),
-    ("q17", raw"atom_codes(H, [224]), atom_codes(N, [0]), sub_atom_icasechk(H, S, N), R = S"),
+    (
+        "q15",
+        raw"atom_codes(H, [913,66,201]), atom_codes(N, [945,98,233]), sub_atom_icasechk(H, S, N), R = S"
+    ),
+    (
+        "q16",
+        raw"atom_codes(H, [192,201]), atom_codes(N, [224,233]), sub_atom_icasechk(H, S, N), R = S"
+    ),
+    (
+        "q17",
+        raw"atom_codes(H, [224]), atom_codes(N, [0]), sub_atom_icasechk(H, S, N), R = S"
+    ),
     ("q18", raw"sub_atom_icasechk(_, S, a), R = S"),
     ("q19", raw"sub_atom_icasechk(abc, S, f(x)), R = S"),
     ("q20", raw"sub_atom_icasechk(abc, a, b), R = yes"),
@@ -128,8 +137,14 @@ const _P2B_CASES = [
     ("q31", raw"sub_atom_icasechk(abc, S, abcd), R = S"),
     ("q32", raw"sub_atom_icasechk(f(x), S, a), R = S"),
     ("q33", raw"sub_atom_icasechk(abc, 0, [97,98]), R = yes"),
-    ("q34", raw"atom_codes(H, [945,215]), atom_codes(N, [247]), sub_atom_icasechk(H, S, N), R = S"),
-    ("q35", raw"atom_codes(H, [215]), atom_codes(N, [247]), sub_atom_icasechk(H, S, N), R = S"),
+    (
+        "q34",
+        raw"atom_codes(H, [945,215]), atom_codes(N, [247]), sub_atom_icasechk(H, S, N), R = S"
+    ),
+    (
+        "q35",
+        raw"atom_codes(H, [215]), atom_codes(N, [247]), sub_atom_icasechk(H, S, N), R = S"
+    ),
     ("q36", raw"p2_wide(W), sub_atom_icasechk(W, 1, 'bé'), R = yes"),
     ("q37", raw"sub_atom_icasechk([215], S, [247]), R = S"),
     ("q40", raw"'$seek_list'(2, [a,b,c], N, T), R = N-T"),

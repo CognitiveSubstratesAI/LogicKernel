@@ -158,14 +158,34 @@ _bs_count(lines, word) = sum(l -> length(findall(_codes(word), l)), lines; init=
     @test length(expected) == length(names) + 1 && expected[1] == "ok"
     @test all(i -> startswith(expected[i + 1], names[i] * " "), eachindex(names))
     body = expected[2:end]
-    for w in ("automaton", "map", "type_error", "existence_error", "domain_error", "instantiation_error", "same", "diff", "failed")
+    for w in (
+        "automaton",
+        "map",
+        "type_error",
+        "existence_error",
+        "domain_error",
+        "instantiation_error",
+        "same",
+        "diff",
+        "failed"
+    )
         @test _bs_count(body, w) >= 1
     end
     @test _bs_count(body, "automaton") >= 20 && _bs_count(body, "=") >= 10
 
     kl = kernel_lines(_TL, _BS_PL, names)
     @test length(kl) == length(expected)
-    for w in ("automaton", "map", "type_error", "existence_error", "domain_error", "instantiation_error", "same", "diff", "failed")
+    for w in (
+        "automaton",
+        "map",
+        "type_error",
+        "existence_error",
+        "domain_error",
+        "instantiation_error",
+        "same",
+        "diff",
+        "failed"
+    )
         @test _bs_count(kl[2:min(end, length(expected))], w) == _bs_count(body, w)
     end
     for i in eachindex(kl)

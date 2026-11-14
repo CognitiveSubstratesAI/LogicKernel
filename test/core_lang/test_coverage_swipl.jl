@@ -46,7 +46,10 @@ const _CV_OUT = joinpath(@__DIR__, "test_coverage_swipl.out")
 
 # the rows' names, in the order of the program: the `prefix` ones (t: pass 1, w: pass 2; `tcs` is no pass-1 row)
 _cv_names(prefix::String) =
-    unique([String(m[1]) for m in eachmatch(Regex("^(" * prefix * "\\d+)\\(R\\) :-", "m"), read(_CV_PL, String))])
+    unique([
+        String(m[1]) for
+        m in eachmatch(Regex("^(" * prefix * "\\d+)\\(R\\) :-", "m"), read(_CV_PL, String))
+    ])
 
 # the kernel's lines: `ok` (the program loaded), then each row's name and solutions; `setup` runs after the load, before the rows.
 # Returns the lines and the run's local data (the last row's query stays open after a named refusal: the data is thrown away).
@@ -109,7 +112,9 @@ function kernel_run(
     end
     return out, ld
 end
-kernel_lines(::Type{T}, path::String, names::Vector{String}, setup::Function=(gd, ld) -> nothing) where {T} =
+kernel_lines(
+    ::Type{T}, path::String, names::Vector{String}, setup::Function=(gd, ld) -> nothing
+) where {T} =
     first(kernel_run(T, path, names, setup))
 
 # the driver swipl runs to print its lines (the .out is its output)
@@ -143,12 +148,15 @@ fz_cov_run(File, Ns1, Ns2) :-
     '$cov_start'(_), '$cov_start'(_),
     forall(member(N, Ns2), fz_pred(N)).
 """
-function swipl_lines(path::String, names1::Vector{String}, names2::Vector{String})::Vector{String}
+function swipl_lines(
+    path::String, names1::Vector{String}, names2::Vector{String}
+)::Vector{String}
     out = mktempdir() do d
         f = joinpath(d, "drv.pl")
         write(
             f,
-            DRIVER * ":- initialization((fz_cov_run('$path', [" * join(names1, ",") * "], [" *
+            DRIVER * ":- initialization((fz_cov_run('$path', [" * join(names1, ",") *
+            "], [" *
             join(names2, ",") * "]), halt)).\n"
         )
         read(pipeline(`swipl -q $f`; stderr=devnull), String)
@@ -170,7 +178,15 @@ _cv_count(lines, word) = sum(l -> length(findall(_codes(word), l)), lines; init=
     @test length(expected) == length(names) + 1 && expected[1] == "ok"
     @test all(i -> startswith(expected[i + 1], names[i] * " "), eachindex(names))
     body = expected[2:end]
-    for w in ("type_error", "instantiation_error", "domain_error", "permission_error", "existence_error", "failed", "same")
+    for w in (
+        "type_error",
+        "instantiation_error",
+        "domain_error",
+        "permission_error",
+        "existence_error",
+        "failed",
+        "same"
+    )
         @test _cv_count(body, w) >= 1
     end
     @test _cv_count(body, "-") >= 5 && _cv_count(body, "true") >= 2
@@ -181,7 +197,15 @@ _cv_count(lines, word) = sum(l -> length(findall(_codes(word), l)), lines; init=
     @test kl2[1] == "ok"
     kl = vcat(kl1, kl2[2:end])
     @test length(kl) == length(expected)
-    for w in ("type_error", "instantiation_error", "domain_error", "permission_error", "existence_error", "failed", "same")
+    for w in (
+        "type_error",
+        "instantiation_error",
+        "domain_error",
+        "permission_error",
+        "existence_error",
+        "failed",
+        "same"
+    )
         @test _cv_count(kl[2:min(end, length(expected))], w) == _cv_count(body, w)
     end
     for i in eachindex(kl)

@@ -99,7 +99,9 @@ end
 # DIVERGES: `p` is a location and the agenda is the cell agenda; returns Bool (no MEMORY_OVERFLOW). The caller must
 # call `restore_graph` either way.
 "Number every physically distinct compound cell reachable from location `p` in `b` (pl-bisim.c)."
-function build_graph(ld::PL_local_data{T}, p::Int, b::Vector{bs_node}, opaque::word)::Bool where {T}
+function build_graph(
+    ld::PL_local_data{T}, p::Int, b::Vector{bs_node}, opaque::word
+)::Bool where {T}
     k, w, _ = _deref_loc(ld, p)
     (k == DU_WORD && _is_gcompound(w)) || return true       # no compound cells at all
 
@@ -141,7 +143,8 @@ mutable struct leaf_order
 end
 
 # ORIGINAL: upstream's `SCALAR_TO_CMP(a, b)` (pl-incl.h) on two locations.
-@inline _bs_scalar_cmp(a::Int, b::Int)::Int = a < b ? CMP_LESS : (a > b ? CMP_GREATER : CMP_EQUAL)
+@inline _bs_scalar_cmp(a::Int, b::Int)::Int =
+    a < b ? CMP_LESS : (a > b ? CMP_GREATER : CMP_EQUAL)
 
 # PORT: pl-bisim.c cmp_leaf
 # DIVERGES: `a`, `b` are locations of the leaf cells; the standard order is `compareStandard_cells`, which cannot
@@ -159,7 +162,9 @@ end
 
 # PORT: pl-bisim.c leaf_number
 "The number `number_leaves` gave the leaf at location `w`; valid once `g.leafp` is in place (pl-bisim.c)."
-function leaf_number(ld::PL_local_data{T}, g::bs_graph, ctx::leaf_order, w::Int)::Int where {T}
+function leaf_number(
+    ld::PL_local_data{T}, g::bs_graph, ctx::leaf_order, w::Int
+)::Int where {T}
     lo, hi = 0, g.leaves
     while lo < hi                                           # binary search
         mid = (lo + hi) ÷ 2
@@ -645,7 +650,8 @@ end
 # raised (no MEMORY_OVERFLOW).
 "Leave `g` holding the coarsest bisimulation of the graph of the term at location `p` (pl-bisim.c)."
 function term_quotient(
-    ld::PL_local_data{T}, p::Int, g::bs_graph, b::Vector{bs_node}, opaque::word, minimal::Bool
+    ld::PL_local_data{T}, p::Int, g::bs_graph, b::Vector{bs_node}, opaque::word,
+    minimal::Bool
 )::Bool where {T}
     rc = build_graph(ld, p, b, opaque)
     leaf = Int[]
@@ -737,7 +743,8 @@ function fill_edges_automaton(
             aut.arg = j + 1
 
             if !(ka == DU_VALUE && (isTaggedIntW(wa) || isInteger(_indirect_value(ld, wa))))   # !isInteger(*a)
-                aut.error = (ka == DU_CELL || ka == DU_ATTVAR) ? AUT_INSTANTIATION : AUT_NOT_INTEGER
+                aut.error =
+                    (ka == DU_CELL || ka == DU_ATTVAR) ? AUT_INSTANTIATION : AUT_NOT_INTEGER
                 return false
             end
             kv = isTaggedIntW(wa) ? valInt(wa) : _untagged_int(ld, wa)
@@ -817,7 +824,8 @@ end
 # `aut.error` for an automaton that does not parse.
 "`term_quotient` for an automaton at functor position `f` (pl-bisim.c)."
 function automaton_quotient(
-    ld::PL_local_data{T}, f::Int, g::bs_graph, b::Vector{bs_node}, aut::bs_automaton, minimal::Bool
+    ld::PL_local_data{T}, f::Int, g::bs_graph, b::Vector{bs_node}, aut::bs_automaton,
+    minimal::Bool
 )::Bool where {T}
     rc, leaf, nleaf = build_automaton(ld, f, g, b, aut)
     if rc == BS_GRAPH_OVERFLOW
@@ -990,7 +998,9 @@ function build_canonical(ld::PL_local_data{T}, g::bs_graph, base::Int)::word whe
         for j in 0:(arity - 1)
             ch = g.child[g.arg[rep + 1] + j + 1]
             if ch >= 0
-                ld.gstack[ccell[i + 1] + 1 + j] = _bs_int_word(ld, g.canon[g.class[ch + 1] + 1])
+                ld.gstack[ccell[i + 1] + 1 + j] = _bs_int_word(
+                    ld, g.canon[g.class[ch + 1] + 1]
+                )
             else
                 leaf = -ch - 1
                 if leaf < g.vars
@@ -1079,12 +1089,16 @@ Write the quotient out as an automaton at `base`: argument I is the colour of st
 the numbers of the states its arguments go to, a leaf a state holding the leaf (pl-bisim.c). State 1 is the root;
 a state it could not reach is left out.
 """
-function build_automaton_result(ld::PL_local_data{T}, g::bs_graph, base::Int)::word where {T}
+function build_automaton_result(
+    ld::PL_local_data{T}, g::bs_graph, base::Int
+)::word where {T}
     states = g.reached + g.reached_leaves
     a = base
     p = base + 1 + states
 
-    ld.gstack[a] = lookupFunctorDef(ld.functors, _atom_word!(ld, mk_sym(T, :automaton)), states)
+    ld.gstack[a] = lookupFunctorDef(
+        ld.functors, _atom_word!(ld, mk_sym(T, :automaton)), states
+    )
 
     for c in 0:(g.classes - 1)
         g.canon[c + 1] == 0 && continue                     # the root cannot reach it
@@ -1119,7 +1133,9 @@ function build_map(
     ld::PL_local_data{T}, g::bs_graph, aut::bs_automaton, base::Int
 )::word where {T}
     m = base
-    ld.gstack[m] = lookupFunctorDef(ld.functors, _atom_word!(ld, mk_sym(T, :map)), aut.states)
+    ld.gstack[m] = lookupFunctorDef(
+        ld.functors, _atom_word!(ld, mk_sym(T, :map)), aut.states
+    )
     for i in 0:(aut.states - 1)
         st = aut.state[i + 1]
         if st >= 0
@@ -1283,7 +1299,9 @@ end
 
 # PORT: pl-bisim.c term_canonical_form
 # DIVERGES: returns `(ok, attvars)` where upstream writes `*attvars`.
-function term_canonical_form(ld::PL_local_data{T}, t::term_t, form::term_t)::Tuple{Bool, Bool} where {T}
+function term_canonical_form(
+    ld::PL_local_data{T}, t::term_t, form::term_t
+)::Tuple{Bool, Bool} where {T}
     result = PL_new_term_ref(ld)
     b = bs_node[]
     g = bs_graph()
@@ -1298,14 +1316,17 @@ function term_canonical_form(ld::PL_local_data{T}, t::term_t, form::term_t)::Tup
 end
 
 # PORT: pl-bisim.c term_canonical_form_pred as pl_term_canonical_form2_va
-function pl_term_canonical_form2_va(ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T})::foreign_t where {T}
+function pl_term_canonical_form2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
     ok, _ = term_canonical_form(ld, PL__t0, PL__t0 + 1)
     return ok ? FTRUE : FFALSE
 end
 
 # PORT: pl-bisim.c do_term_factorized
 function do_term_factorized(
-    ld::PL_local_data{T}, t::term_t, skeleton::term_t, substitution::term_t, opaque::word, minimal::Bool
+    ld::PL_local_data{T}, t::term_t, skeleton::term_t, substitution::term_t, opaque::word,
+    minimal::Bool
 )::Bool where {T}
     skel = PL_new_term_ref(ld)
     subst = PL_new_term_ref(ld)
@@ -1326,23 +1347,35 @@ function do_term_factorized(
 end
 
 # PORT: pl-bisim.c factorized_options
-const factorized_options = (PL_option_t(:minimal, OPT_BOOL), PL_option_t(:dollar_var, OPT_BOOL))
+const factorized_options = (
+    PL_option_t(:minimal, OPT_BOOL), PL_option_t(:dollar_var, OPT_BOOL)
+)
 
 # PORT: pl-bisim.c term_factorized as pl_term_factorized3_va
-function pl_term_factorized3_va(ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T})::foreign_t where {T}
-    ok = do_term_factorized(ld, PL__t0, PL__t0 + 1, PL__t0 + 2, _bs_functor(ld, Symbol("\$VAR"), 1), true)
+function pl_term_factorized3_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    ok = do_term_factorized(
+        ld, PL__t0, PL__t0 + 1, PL__t0 + 2, _bs_functor(ld, Symbol("\$VAR"), 1), true
+    )
     return ok ? FTRUE : FFALSE
 end
 
 # PORT: pl-bisim.c term_factorized4 as pl_term_factorized4_va
 # DIVERGES: the options' values are returned by `PL_scan_options` (`nothing`: the default, true).
-function pl_term_factorized4_va(ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T})::foreign_t where {T}
+function pl_term_factorized4_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
     vals = PL_scan_options(ld, PL__t0 + 3, 0, "factorize_option", factorized_options)
     vals === nothing && return FFALSE
     minimal = vals[1] === nothing ? true : (vals[1]::Bool)
     dollar_var = vals[2] === nothing ? true : (vals[2]::Bool)
     opaque = dollar_var ? _bs_functor(ld, Symbol("\$VAR"), 1) : word(0)
-    return do_term_factorized(ld, PL__t0, PL__t0 + 1, PL__t0 + 2, opaque, minimal) ? FTRUE : FFALSE
+    return if do_term_factorized(ld, PL__t0, PL__t0 + 1, PL__t0 + 2, opaque, minimal)
+        FTRUE
+    else
+        FFALSE
+    end
 end
 
 # PORT: pl-bisim.c term_to_automaton
@@ -1384,15 +1417,23 @@ function automaton_to_term(ld::PL_local_data{T}, A::term_t, Tt::term_t)::Bool wh
 end
 
 # PORT: pl-bisim.c term_automaton as pl_term_automaton2_va
-function pl_term_automaton2_va(ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T})::foreign_t where {T}
+function pl_term_automaton2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
     A1, A2 = PL__t0, PL__t0 + 1
     k, _, _ = _deref_loc(ld, -(A2 + 1))                     # p = valTermRef(A2); deRef(p)
-    ok = (k == DU_CELL || k == DU_ATTVAR) ? term_to_automaton(ld, A1, A2) : automaton_to_term(ld, A2, A1)
+    ok = if (k == DU_CELL || k == DU_ATTVAR)
+        term_to_automaton(ld, A1, A2)
+    else
+        automaton_to_term(ld, A2, A1)
+    end
     return ok ? FTRUE : FFALSE
 end
 
 # PORT: pl-bisim.c minimal_automaton_size
-function minimal_automaton_size(ld::PL_local_data, g::bs_graph, aut::bs_automaton, sink::Bool, map::Bool)::Int
+function minimal_automaton_size(
+    ld::PL_local_data, g::bs_graph, aut::bs_automaton, sink::Bool, map::Bool
+)::Int
     need = sink ? 2 : automaton_size(ld, g)
     map && (need += 1 + aut.states)
     return need
@@ -1401,7 +1442,8 @@ end
 # PORT: pl-bisim.c build_minimal_automaton
 # DIVERGES: `base` is a global position; returns `(min, map)` (`map` 0 when not asked for).
 function build_minimal_automaton(
-    ld::PL_local_data{T}, g::bs_graph, aut::bs_automaton, sink::Bool, base::Int, wantmap::Bool
+    ld::PL_local_data{T}, g::bs_graph, aut::bs_automaton, sink::Bool, base::Int,
+    wantmap::Bool
 )::Tuple{word, word} where {T}
     p = base
     min = word(0)
@@ -1419,7 +1461,9 @@ function build_minimal_automaton(
         if sink
             ld.gstack[p] = _bs_functor(ld, :map, aut.states)
             for i in 0:(aut.states - 1)
-                ld.gstack[p + 1 + i] = _bs_int_word(ld, aut.state[i + 1] == aut.state[1] ? 1 : 0)
+                ld.gstack[p + 1 + i] = _bs_int_word(
+                    ld, aut.state[i + 1] == aut.state[1] ? 1 : 0
+                )
             end
             map = _bs_compound(p)
         else
@@ -1430,7 +1474,9 @@ function build_minimal_automaton(
 end
 
 # PORT: pl-bisim.c do_automaton_minimal
-function do_automaton_minimal(ld::PL_local_data{T}, A::term_t, Min::term_t, Map::Union{Nothing, term_t})::Bool where {T}
+function do_automaton_minimal(
+    ld::PL_local_data{T}, A::term_t, Min::term_t, Map::Union{Nothing, term_t}
+)::Bool where {T}
     rmin = PL_new_term_ref(ld)
     rmap = Map === nothing ? 0 : PL_new_term_ref(ld)
     f = get_automaton(ld, A)
@@ -1451,11 +1497,15 @@ function do_automaton_minimal(ld::PL_local_data{T}, A::term_t, Min::term_t, Map:
 end
 
 # PORT: pl-bisim.c automaton_minimal as pl_automaton_minimal2_va
-function pl_automaton_minimal2_va(ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T})::foreign_t where {T}
+function pl_automaton_minimal2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
     return do_automaton_minimal(ld, PL__t0, PL__t0 + 1, nothing) ? FTRUE : FFALSE
 end
 # PORT: pl-bisim.c automaton_minimal3 as pl_automaton_minimal3_va
-function pl_automaton_minimal3_va(ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T})::foreign_t where {T}
+function pl_automaton_minimal3_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
     return do_automaton_minimal(ld, PL__t0, PL__t0 + 1, PL__t0 + 2) ? FTRUE : FFALSE
 end
 
