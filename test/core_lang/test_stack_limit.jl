@@ -333,8 +333,12 @@ end
     @test ld.global_spare == 0 && ld.trail_spare == 256 && ld.exception_processing
     LK.PL_clear_exception(ld)
     @test ld.global_spare == 512 && ld.trail_spare == 256 && !ld.exception_processing
-    # upstream's trim_stack: a reserve the room cannot hold is kept WHOLE (`room > 0 && room < reduce`) —
-    # room 100 takes 100, no room (past the limit) takes the whole spare back (D-0049: as upstream)
+    # upstream's trim_stack: a reserve the room cannot hold is cut to the room — room 100 takes 100 — and
+    # no room (past the limit) takes NOTHING back.
+    # TARGET-ONLY: pin when the oracle moves to cf6960c2. The pin 18168e62 (D-0049) took the whole spare back with no room
+    # (`if ( room > 0 && room < reduce )`, so `reduce` stayed the whole spare and `max` fell below `top`); the target
+    # (swipl-devel cf6960c2 pl-setup.c:1758-1761, `if ( room < reduce ) { reduce = room > 0 ? room : 0; }`) takes none.
+    # The expectation is hand-written from the target's C: no oracle query reaches the spare's size.
     ld.global_spare = 0
     ld.stacks_limit = LK._stacks_in_use(ld, 0) + 100
     LK.trim_stack_global!(ld)
@@ -342,7 +346,19 @@ end
     ld.global_spare = 0
     ld.stacks_limit = LK._stacks_in_use(ld, 0) - 100
     LK.trim_stack_global!(ld)
-    @test ld.global_spare == 512
+    @test ld.global_spare == 0
+    ld.global_spare = 0
+    ld.stacks_limit = LK._stacks_in_use(ld, 0)                  # room 0: none either
+    LK.trim_stack_global!(ld)
+    @test ld.global_spare == 0
+    ld.trail_spare = 0                                          # the trail's, as the global stack's
+    ld.stacks_limit = LK._stacks_in_use(ld, 0) + 40
+    LK.trim_stack_trail!(ld)
+    @test ld.trail_spare == 40
+    ld.trail_spare = 0
+    ld.stacks_limit = LK._stacks_in_use(ld, 0) - 40
+    LK.trim_stack_trail!(ld)
+    @test ld.trail_spare == 0
 end
 
 # ── L1f f1b: copy_exception!'s three fallbacks (pl-fli.c) — WHITE-BOX: a ball copy fails only before
