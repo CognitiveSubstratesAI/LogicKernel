@@ -417,7 +417,9 @@ function addToBuffer(c::Int, rd::read_data)::Nothing
 end
 
 # PORT: pl-read.c setCurrentSourceLocation
-# DIVERGES: `LD->read_source` gets a copy (a struct assignment upstream).
+# DIVERGES: `LD->read_source` gets a copy (a struct assignment upstream). Synced to cf6960c2: the file name comes
+# from `fileNameStreamLocked(s)` (the caller holds the stream lock) where the pin's `fileNameStream(s)` took it;
+# no stream lock exists in this single-threaded kernel, so `fileNameStream` is the same call.
 "Record where the term starts: the stream's position less the character just read (pl-read.c)."
 function setCurrentSourceLocation(rd::read_data{T})::Nothing where {T}
     s = rd._rb.stream
@@ -1546,7 +1548,11 @@ function skip_decimal_separator(
 end
 
 # PORT: pl-read.c scan_decimal
-# DIVERGES: returns `(status, next, grouped)`, where upstream moves `*sp` and writes `*grouped`.
+# DIVERGES: returns `(status, next, grouped)`, where upstream moves `*sp` and writes `*grouped`. Synced to cf6960c2
+# (NOT taken, a speed-only change): past 64 bits the target calls `scan_decimal_mpz`, which copies the digits (group
+# separators removed) to a buffer and converts once with `mpz_set_str` (the digit-by-digit multiply-add is quadratic);
+# the value, the status and `grouped` are the same as here. The kernel's loop is the pin's; `parse(BigInt, ...)` of the
+# collected digits is the port when the read time of a long integer matters.
 """
 Scan the decimal digits from `zero` at `s` into `n`, an integer (a big one past 64 bits),
 negative if `negative`: `(status, next, grouped)`, `grouped` if a digit separator was skipped.
@@ -1600,7 +1606,9 @@ function scan_decimal(
 end
 
 # PORT: pl-read.c scan_number
-# DIVERGES: returns `(status, next)`, where upstream moves `*s`.
+# DIVERGES: returns `(status, next)`, where upstream moves `*s`. Synced to cf6960c2 (NOT taken, a speed-only change):
+# past 64 bits the target calls `scan_number_mpz` (digits to a buffer, one `mpz_set_str` in base `b`), as for
+# `scan_decimal`; the same value and status.
 "Scan the digits of base `base` at `q` into `n`, negative if `negative`: `(status, next)` (pl-read.c)."
 function scan_number(
     bf::AbstractVector{UInt8}, q::Int, negative::Bool, b::Int, n::number
@@ -2110,7 +2118,10 @@ end
 # reads them only with the `blobs` read option), the `charset` style check, NFC and non-ASCII atom
 # policies other than accept (S_UATOMS_ACCEPT, SWI-7's default). The `quasi_quotations` flag is
 # `truePrologFlag(rd.ld, PLFLAG_QUASI_QUOTES)` (since R2 F1a; ON, SWI-7's default, until then without the
-# test): `{|` is TK_QQ_OPEN and `||` TK_QQ_BAR.
+# test): `{|` is TK_QQ_OPEN and `||` TK_QQ_BAR. Synced to cf6960c2: the three places that make an atom token (the
+# `<open><close>` pair like `{}`, an unquoted name, a quoted atom) call `textToLocalAtom` where the pin called
+# `textToAtom` (a new atom is local to the reading thread and not promoted); atoms are Julia symbols here, with no
+# threads and no atom table, so the two are the same call (`_atom_from_text`).
 """
 The next token of the raw text (pl-read.c), or `nothing` after a syntax error (recorded inp `rd`).
 `must_be_op`: an operator is expected here, so `-` before a digit is not a sign.
@@ -2429,6 +2440,11 @@ end
 # unbound and makes the variable's term reference reference it (`makeRefG(argp)`), so a variable IS its
 # first cell, as upstream's — the variables' order (by position) is swipl's; a later placement copies
 # that reference. An unbound entry places a fresh variable; a plain value its word.
+# Synced to cf6960c2: both stores into `argp` (the copied reference, the plain value) are `gen_assign(argp, w)`, which
+# first calls `gen_remember(argp)` for a cell below `LD->gen_bar` (a cell the generational GC promoted between its
+# allocation and this store). That GC is unwritten here (see `setarg` in pl-prims.jl), so `gstack[argp] = w` stays;
+# whoever writes it adds the call before both stores. `readValHandleConst` (`*argp = w`, "no pointer: no gen_assign")
+# has no kernel function.
 "Place term-stack entry `term` into global cell `argp`, and clear the entry (pl-read.c)."
 function readValHandle!(term::Int, argp::Int, rd::read_data{T})::Nothing where {T}
     ts = rd.term_stack
@@ -3595,7 +3611,9 @@ end
 
 # PORT: pl-read.c read_list_resume_elem
 # DIVERGES: the tail is a global cell's position (`list_tail`), or the list's term-stack entry
-# before the first element (`list_term`), where upstream keeps a term reference to it.
+# before the first element (`list_term`), where upstream keeps a term reference to it. Synced to cf6960c2: the link
+# of the new cell into the tail is `gen_assign(unRef(*valTermRef(tail)), consCompound(argp))` (`gen_remember` of an
+# old-generation cell first); without the generational GC it is the plain store `ld.gstack[f.list_tail] = cw`.
 "Take the element just read; then `]` ends the list, `|` requests its tail, `,` another element (pl-read.c)."
 function read_list_resume_elem(
     f::pframe{T}, req::ct_request, rd::read_data{T}
@@ -3848,7 +3866,10 @@ end
 # DIVERGES: `get_token` returns the one shared token here as upstream does, so `key` and `sep` are the same
 # object: its fields are read before `sep` is fetched (`kstart`, `kend`, as upstream); the key is a term-stack
 # entry (`key_term`) holding the key's word, so `key_value_position`'s key cell takes that word; no atom
-# locks. Run by the gate: test_read_dict_swipl.jl.
+# locks. Run by the gate: test_read_dict_swipl.jl. Synced to cf6960c2: the key's atom and the `:` separator's are read
+# through `name_token(key, NULL, rd)` where the pin read `token->value.atom` (the union, which a punctuation token does
+# not hold as an atom); `_key_atom` already gives the character's atom for a punctuation token and `name_token` of the
+# tokens `is_key_token` accepts returns the same atom (no `[`, `{`, fullstop), so the kernel keeps `_key_atom`.
 """
 Read `Key:` and request the value (pl-read.c). With positions, `key_value_position(From, _, SepFrom,
 SepTo, Key, KStart-KEnd, ValuePos)` is the next element of `P_ARG`.
