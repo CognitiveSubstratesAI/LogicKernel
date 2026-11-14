@@ -568,6 +568,8 @@ end
 # the blob's release call `unallocClause` (the kernel's blobs are freed by Julia's GC, which releases nothing). What stays is the
 # source-file references `assert_term!` took (`source_no`, `owner_no`): they are given back here, so that the acquire/release
 # pairs of the reload (`copy_clause_source`, `keep_clause`) stay balanced. Wiring this into clause reclamation is LB6b.
+# Synced to cf6960c2: the target sets DBREF_ERASED_CLAUSE with a compare-and-swap loop on `c->flags` (a clause blob's release,
+# `release_clause_blob()`, may run on another thread and changes the same word); the kernel runs one thread, so there is nothing to carry over.
 "Release the source-file references of a clause that is not used (pl-proc.c `freeClause`)."
 function freeClause!(gd::PL_global_data{T}, c::Clause{T})::Nothing where {T}
     (c.flags & DBREF_CLAUSE) != 0 && return nothing
@@ -700,7 +702,14 @@ assertProcedure!(
 ) where {T} = assertDefinition!(gd, ld, proc.definition, clause, where_)
 
 # PORT: pl-proc.c retract_clause
-# DIVERGES: no transactions, statistics, breakpoints or incremental-tabling notification.
+# DIVERGES: no transactions, statistics, breakpoints or incremental-tabling notification. Synced to cf6960c2: the target ends with
+# `registerErasedClauses(def, 1)` where it called `registerDirtyDefinition(def)`: for a thread-local definition not yet registered
+# dirty (`P_LOCALISED`, not `P_DIRTYREG`) it only counts the erased clause for the thread's own clause GC (`localClauseGC()`, run at
+# a safe point once the count reaches a threshold of 1024 and more) and registers nothing globally; any other definition is registered
+# as before. The kernel has no per-thread clause GC (it is single-threaded and has no safe-point signal): the definition is registered
+# dirty as before, so a retracted clause is reclaimed by `garbage_collect_clauses/0` only. No answer changes: an erased clause is
+# invisible by generation either way; only `statistics(erased_clauses, _)` after more than 1024 retracts from a thread-local
+# predicate without an explicit collection differs, the same automatic-collection timing as the global clause GC (see `registerDirtyDefinition!`).
 """
     retract_clause!(gd, clause, generation) -> Bool
 
@@ -794,7 +803,8 @@ end
 # unlinked references are left to the garbage collector (upstream lingers them and frees what no
 # one uses, `free_lingering`) — an unlinked reference keeps its `next`, so an enumeration standing on
 # it continues. No `LOCKDEF` (no threads) and no `rcp` result; the caller sets `cgc_active`, which
-# upstream asserts.
+# upstream asserts. Synced to cf6960c2: the target's debug-only assertion accepts `LD->clauses.local.active` besides `cgc_active`
+# (`localClauseGC()` calls this function for the thread's own definitions); a debug check, and the kernel has no local clause GC.
 """
 Unlink from `def`'s clause list every erased clause no generation in use can see, then clean its
 indexes; the number removed (pl-proc.c).
@@ -998,7 +1008,13 @@ end
 
 # PORT: pl-proc.c registerDirtyDefinition
 # DIVERGES: no clause-GC thread to signal (`considerClauseGC`) — clause GC runs when
-# `pl_garbage_collect_clauses!` is called; no dirty-clause statistics.
+# `pl_garbage_collect_clauses!` is called; no dirty-clause statistics. Synced to cf6960c2: the target adds `registerErasedClauses`
+# (pl-proc.c:2715-2724), called by `retract_clause` and `removeClausesPredicate` in its place: for a thread-local definition it counts
+# the erased clauses in `LD->clauses.local.erased` and raises SIG_CLAUSE_GC when the count reaches `LD->clauses.local.threshold`
+# (`LOCAL_CGC_MIN` 1024 clauses at first); other definitions come here. The thread's own collector (`localClauseGC`,
+# `localClauseGCDue`, `postponeLocalClauseGC`, `markLocalPredicateAccess`, `local_add_access_gen`, `is_pointer_like_def`, and the
+# `lingerClauseRef` branch that parks unlinked references on `LD->clauses.local.lingering`) exists so that no other thread's stacks
+# are marked; with one thread there is no one else to mark, so these are left to a later thread-local port and every definition stays registered here.
 "Register `def` as having erased clauses (pl-proc.c)."
 function registerDirtyDefinition!(
     gd::PL_global_data{T}, def::Definition{T}
@@ -1039,6 +1055,10 @@ end
 # PORT: pl-proc.c pl_garbage_collect_clauses
 # DIVERGES: false when a listener of the `erase` event raised (`cleanDefinition`'s `rcp`); no messages, statistics, transactions or lingering references; the predicates a
 # running enumeration accesses are those it registered with `pushPredicateAccessObj!`.
+# Synced to cf6960c2: the target first calls `localClauseGC()` when this thread has erased clauses of thread-local predicates counted
+# (`LD->clauses.local.erased`), then the global collection below as before. Every definition is registered dirty here (see
+# `registerDirtyDefinition!`), so the one collection below reclaims the clauses a thread-local predicate erased too: the same
+# result for the program. `freeClauseRef` loses `static` in the target (used by `localClauseGC`): linkage only.
 """
     pl_garbage_collect_clauses!(gd, ld) -> Bool
 
@@ -1092,7 +1112,8 @@ end
 
 # PORT: pl-proc.c removeClausesPredicate
 # DIVERGES: no threads, statistics (`erased_size`, `erased`, `dirty`, `code_size`), debug registration (`registerRetracted`)
-# or final-cleanup branch (`CLN_DATA`); the database `gd` is an argument.
+# or final-cleanup branch (`CLN_DATA`); the database `gd` is an argument. Synced to cf6960c2: the target ends with
+# `registerErasedClauses(def, deleted)` for `registerDirtyDefinition(def)` (see `registerDirtyDefinition!`); no change here.
 "Mark every clause of `def` that comes from source file `sfindex` (0: any) erased; the number marked (pl-proc.c)."
 function removeClausesPredicate!(
     gd::PL_global_data{T}, def::Definition{T}, sfindex::Integer, fromfile::Bool
