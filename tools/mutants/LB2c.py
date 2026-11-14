@@ -175,8 +175,8 @@ MUTANTS = [
          new='''    if PL_get_list(ld, tail, head, tail)
         PL_cons_functor(ld, desc, colon2, modm, head)'''),
     dict(id="LB2-40 compile_predicates makes the predicate dynamic instead of static", file="src/pl-comp.jl", targets=NS,
-         old='''setDynamicDefinition!(proc.definition, false)''',
-         new='''setDynamicDefinition!(proc.definition, true)'''),
+         old='''setDynamicDefinition!(gd, proc.definition, false)''',
+         new='''setDynamicDefinition!(gd, proc.definition, true)'''),
     dict(id="LB2-41 compile_predicates looks the predicate up through the imports (GP_FIND)", file="src/pl-comp.jl", targets=NS,
          old='''GP_NAMEARITY | GP_FINDHERE | GP_EXISTENCE_ERROR''',
          new='''GP_NAMEARITY | GP_FIND | GP_EXISTENCE_ERROR'''),
