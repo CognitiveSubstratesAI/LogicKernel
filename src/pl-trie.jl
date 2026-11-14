@@ -884,7 +884,9 @@ end
 # DIVERGES: only the pool side of upstream's function (the global chunk list and the atom keys are atom-GC's, no atom-GC here): each
 # chunk's `bytes` go back to the pool (pl-trie.c:1268); the chunks are the list linked through `next`.
 "Return the bytes of the chunks of the list `all`, linked through `next`, to the pool of `tr` (pl-trie.c `free_chunk_list`)."
-function free_chunk_list(tr::trie{T}, all::Union{Nothing, trie_node_chunk})::Nothing where {T}
+function free_chunk_list(
+    tr::trie{T}, all::Union{Nothing, trie_node_chunk}
+)::Nothing where {T}
     c = all
     while c !== nothing
         free_to_pool(tr.alloc_pool, Int(c.bytes))               # pl-trie.c:1268
@@ -1006,7 +1008,8 @@ destroy_node(gd::PL_global_data{T}, tr::trie{T}, nid::Int) where {T} =
 # DIVERGES: the trie is an argument and not optional (a node does not know its trie: `get_trie_from_node` is left out).
 "Prune the branch of the trie that does not end in a node, from node `nid` up (pl-trie.c)."
 function prune_node(
-    gd::PL_global_data{T}, tr::trie{T}, nid::Int, ld::Union{Nothing, PL_local_data{T}}=nothing
+    gd::PL_global_data{T}, tr::trie{T}, nid::Int,
+    ld::Union{Nothing, PL_local_data{T}}=nothing
 )::Nothing where {T}
     nid == 0 && return nothing                                  # prune_error's node when the pool refused it (upstream reads it)
     empty = true
@@ -1108,7 +1111,8 @@ end
 # PORT: pl-trie.c follow_node
 "The child of node `nid` with key `value`; if there is none and `add`, a new one; else 0 (pl-trie.c)."
 function follow_node(
-    tr::trie{T}, nid::Int, value::word, add::Bool, ld::Union{Nothing, PL_local_data{T}}=nothing
+    tr::trie{T}, nid::Int, value::word, add::Bool,
+    ld::Union{Nothing, PL_local_data{T}}=nothing
 )::Int where {T}
     child = get_child(tr, nid, value)
     child != 0 && return child
@@ -1119,7 +1123,8 @@ end
 # PORT: pl-trie.c prune_error
 "Prune the part of the trie an error leaves: first add a node under `nid`, then prune from it (pl-trie.c)."
 function prune_error(
-    gd::PL_global_data{T}, tr::trie{T}, nid::Int, ld::Union{Nothing, PL_local_data{T}}=nothing
+    gd::PL_global_data{T}, tr::trie{T}, nid::Int,
+    ld::Union{Nothing, PL_local_data{T}}=nothing
 )::Nothing where {T}
     prune_node(gd, tr, follow_node(tr, nid, TRIE_ERROR_VAL, true, ld), ld)
     return nothing
