@@ -1929,7 +1929,8 @@ end
 # DIVERGES: also `Sread_pipe`, `Swrite_pipe`, `Sclose_pipe`, `Scontrol_pipe` and `Spipefunctions` (pl-stream.c:3967-4072 at
 # the pin 18168e62); the child is Julia's (`open(Cmd(["/bin/sh", "-c", command]), …)`) in place of `popen`, its pipe end a `Sjulia_io` of
 # `Siofunctions` (`Sjulia_io.proc` is `pclose`'s child); a `r` child reads `/dev/null` for its stdin, a `w` child shares the process's
-# stdout; no seek function (a pipe: `S_has_seek` is false, so `Sseek64` sets ESPIPE), `SIO_GETFILENO` has no twin. The type string:
+# stdout (file descriptor 1, as `popen`'s child inherits it: `Base.RawFD(1)`, a concrete type, where the global `Base.stdout` is
+# typed `IO` and made `open`'s call a runtime dispatch under JET; `redirect_stdout` re-points descriptor 1, so the child follows it); no seek function (a pipe: `S_has_seek` is false, so `Sseek64` sets ESPIPE), `SIO_GETFILENO` has no twin. The type string:
 # upstream's `popen` takes `type[0]` (`r` or `w`: another first character is EINVAL here as `popen` gives), and its `assert(0)` on a
 # character other than `r`, `w`, `b` is EINVAL here. Returns `(stream, errno)` as `Sopen_file` does.
 "Open a `/bin/sh -c command` child as a stream: `type` is `r` or `w`, then `b` for binary; the stream and 0, or `nothing` and the errno (pl-stream.c)."
@@ -1952,7 +1953,7 @@ function Sopen_pipe(command::String, type::String)::Tuple{Union{Nothing, IOSTREA
 
     proc = try
         cmd = Cmd(["/bin/sh", "-c", command])
-        mode == 'r' ? open(cmd, "r", devnull) : open(cmd, "w", stdout)
+        mode == 'r' ? open(cmd, "r", devnull) : open(cmd, "w", Base.RawFD(1))
     catch e
         e isa ArgumentError && return (nothing, EINVAL)
         e isa Base.IOError || rethrow()
