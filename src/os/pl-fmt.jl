@@ -833,10 +833,14 @@ function formatInteger(
     gi = 1
     if locale === nothing
         locale = prolog_locale
-    elseif locale.grouping !== nothing && !isempty(locale.grouping) &&
-        locale.grouping[1] != 0 &&
-        locale.thousands_sep !== nothing && !isempty(locale.thousands_sep)
-        grouping = locale.grouping
+    else
+        # the fields are bound first: Julia does not narrow a field read, a re-read is the Union again
+        lgrouping = locale.grouping
+        lths = locale.thousands_sep
+        if lgrouping !== nothing && !isempty(lgrouping) && lgrouping[1] != 0 &&
+            lths !== nothing && !isempty(lths)
+            grouping = lgrouping
+        end
     end
     if i.type === V_INTEGER
         n = i.i
@@ -949,8 +953,10 @@ end
 
 # PORT: pl-fmt.c utf8_dp
 "The decimal point of `l` as UTF-8 bytes (`.` when it has none), or `nothing` if it is too long (pl-fmt.c)."
-utf8_dp(l::PL_locale)::Union{Nothing, Vector{UInt8}} =
-    l.decimal_point !== nothing ? ths_to_utf8(l.decimal_point, 20) : UInt8[UInt8('.')]
+function utf8_dp(l::PL_locale)::Union{Nothing, Vector{UInt8}}
+    dp = l.decimal_point
+    return dp !== nothing ? ths_to_utf8(dp, 20) : UInt8[UInt8('.')]
+end
 
 # PORT: pl-fmt.c find_decimal_point
 # DIVERGES: returns the 1-based start and the length in bytes of the separator in `s`, or `nothing`.
@@ -1082,9 +1088,11 @@ function _fmt_print_mpz_e!(
     digits = string(t1)                                     # "%Zd"
     t1 == 0 && (digits = "0"^arg * digits)
     dpb = UInt8('.')
-    if locale !== nothing && locale.decimal_point !== nothing &&
-        !isempty(locale.decimal_point)
-        dpb = codeunit(locale.decimal_point, 1)
+    if locale !== nothing
+        ldp = locale.decimal_point
+        if ldp !== nothing && !isempty(ldp)
+            dpb = codeunit(ldp, 1)
+        end
     end
     neg && push!(out, UInt8('-'))
     d = codeunits(digits)

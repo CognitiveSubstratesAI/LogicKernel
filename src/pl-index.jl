@@ -2631,8 +2631,9 @@ end
 "The number of buckets of a realised index that hold several keys (pl-index.c)."
 function collisionCount(ci::clause_index)::Int
     cc = 0
-    if ci.entries !== nothing
-        for bkt in ci.entries
+    entries = ci.entries                # bound first: a field read is not narrowed by the test
+    if entries !== nothing
+        for bkt in entries
             if bkt.head !== nothing && bkt.key == 0
                 cc += 1
             end
