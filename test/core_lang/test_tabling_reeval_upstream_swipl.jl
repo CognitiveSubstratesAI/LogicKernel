@@ -1,4 +1,4 @@
-# ORIGINAL: the UPSTREAM tests/tabling/test_reeval.pl (swipl-devel 18168e62, 10.1.20), units 1..2 of 6 (tabling_reeval, tabling_reeval_merged),
+# ORIGINAL: the UPSTREAM tests/tabling/test_reeval.pl (swipl-devel 18168e62, 10.1.20), units 1..4 of 6 (tabling_reeval, tabling_reeval_merged, dynamic_tabled, dynamic_tabled2),
 # as kernel rows (TAB1, TABTEST-R). One row `t_<id>(R)` per upstream test: `abolish_all_tables, <unit>:test(<name>), abolish_all_tables`
 # (the unit's `cleanup(abolish_all_tables)` option folded by hand; `sto(rational_trees)` is the default unification mode), R = ok / failed / raised(E).
 #   * The unit text is upstream's, verbatim, between `begin_tests` and `end_tests`, plus the file's shared code outside the units
@@ -8,7 +8,7 @@
 #     run of the same units) AND equals the answer plunit expects (`_TT_UPSTREAM`: each test passes, so `ok`).
 #   * DIVERGES from the file: plunit is not used (`pu_<unit>:test(Name)` is called directly), the unit modules are `pu_<unit>` not `plunit_<unit>`.
 #   * A row whose program the kernel refuses stays a row pinned on swipl (the pin is not weakened); none is known for these units.
-#   * Rows with plunit options folded by hand (ROW_FOLD in gen_reeval.py, from the unit text): tabling_reeval, tabling_reeval_merged: `test(Name, Options)` is called with Options unbound and the option (`Var = Value`, `Var == Value`, `cleanup(G)` as setup_call_cleanup) read after the call.
+#   * Rows with plunit options folded by hand (ROW_FOLD in gen_reeval.py, from the unit text): tabling_reeval, tabling_reeval_merged, dynamic_tabled, dynamic_tabled2: `test(Name, Options)` is called with Options unbound and the option (`Var = Value`, `Var == Value`, `cleanup(G)` as setup_call_cleanup) read after the call.
 #   * UNVERIFIED on the kernel (nothing was compiled when these rows were written): every kernel answer; the gate decides.
 
 using Test, LogicKernel
@@ -147,6 +147,61 @@ test(only) :-
     eval(p(1,_)).                       % caused assertion on falsecount >= 0
 
 """),
+    ("dynamic_tabled", ":- begin_tests(dynamic_tabled, [ sto(rational_trees), cleanup(abolish_all_tables) ]).", raw"""
+% A incrementally tabled predicate can also be dynamic.
+
+:- table (p/1,q/1) as incremental.
+:- dynamic (p/1,q/1) as incremental.
+
+p(X) :- tnot(q(X)), tnot(p(X)).
+
+test(wfs,
+     [ cleanup(retractall(q(_))),
+       P == [(p(1):-tnot(p(1)))]
+     ]) :-
+    assert(q(1)),
+    eval(p(1)),
+    retract(q(1)),
+    call_residual_program(p(1), P).
+
+"""),
+    ("dynamic_tabled2", ":- begin_tests(dynamic_tabled2, [ sto(rational_trees), cleanup(abolish_all_tables) ]).", raw"""
+% A incrementally tabled predicate can also be dynamic.
+
+:- table (p/1,qs/1) as incremental.
+:- dynamic q/1 as incremental.
+
+p(X) :- tnot(qs(X)), tnot(p(X)).
+p(X) :- qs(X).
+
+qs(X) :- q(X).
+
+test(wfs,
+     [ cleanup(retractall(q(_))),
+       P == [(p(1):-tnot(p(1)))]
+     ]) :-
+    assert(q(1)),
+    expect(x, p(1), [x]),
+    retract(q(1)),
+    call_residual_program(p(1), P).
+% Validate that a conditional answer that became unconditional
+% worls and proper reinitialization of the worklist when it is used
+% again.
+test(wfs2,
+     [ cleanup(retractall(q(_))),
+       P == [(p(1):-tnot(p(1)))]
+     ]) :-
+    assert(q(1)),
+    expect(x, p(1), [x]),
+    retract(q(1)),
+    call_residual_program(p(1), P1),
+    assertion(P1 == [(p(1):-tnot(p(1)))]),
+    assert(q(1)),
+    expect(x, p(1), [x]),
+    retract(q(1)),
+    call_residual_program(p(1), P).
+
+"""),
 ]
 
 "The file's common tail (lines `before :- ...` to the end), verbatim."
@@ -183,6 +238,9 @@ const _TT_CASES = [
     ("tt01a", "tabling_reeval", "(pu_tabling_reeval:test(mutal_dependent, O), O = (A = B), A == B)"),
     ("tt01b", "tabling_reeval", "setup_call_cleanup(true, pu_tabling_reeval:test(multiple_dependents, O), pu_tabling_reeval:retractall(d2(_)))"),
     ("tt02", "tabling_reeval_merged", "pu_tabling_reeval_merged:test(only)"),
+    ("tt03", "dynamic_tabled", "setup_call_cleanup(true, (pu_dynamic_tabled:test(wfs, O), O = [_, C], C = (P == E), P == E), pu_dynamic_tabled:retractall(q(_)))"),
+    ("tt04a", "dynamic_tabled2", "setup_call_cleanup(true, (pu_dynamic_tabled2:test(wfs, O), O = [_, C], C = (P == E), P == E), pu_dynamic_tabled2:retractall(q(_)))"),
+    ("tt04b", "dynamic_tabled2", "setup_call_cleanup(true, (pu_dynamic_tabled2:test(wfs2, O), O = [_, C], C = (P == E), P == E), pu_dynamic_tabled2:retractall(q(_)))"),
 ]
 
 const _TT_PINNED = [
@@ -190,10 +248,16 @@ const _TT_PINNED = [
     "t_tt01a c[116,95,116,116,48,49,97]/1(a[111,107])",
     "t_tt01b c[116,95,116,116,48,49,98]/1(a[111,107])",
     "t_tt02 c[116,95,116,116,48,50]/1(a[111,107])",
+    "t_tt03 c[116,95,116,116,48,51]/1(a[111,107])",
+    "t_tt04a c[116,95,116,116,48,52,97]/1(a[111,107])",
+    "t_tt04b c[116,95,116,116,48,52,98]/1(a[111,107])",
 ]
 
 "The answer plunit expects of every row: the test passes, `R = ok` (run in swipl by gen_reeval.py pin, plunit part of pins file)."
 const _TT_UPSTREAM = [
+    "a[111,107]",
+    "a[111,107]",
+    "a[111,107]",
     "a[111,107]",
     "a[111,107]",
     "a[111,107]",
@@ -270,7 +334,7 @@ end
 "A line the same length that must differ from `s` (the must-fail corruption)."
 _tt_corrupt(s::String) = s[1:(end - 2)] * (s[end - 1] == '0' ? "1" : "0") * s[end]
 
-@testset "upstream test_reeval.pl units 1..2: the kernel answers every row as swipl does" begin
+@testset "upstream test_reeval.pl units 1..4: the kernel answers every row as swipl does" begin
     gd, ld, st = _tt_load(_tt_materialize())
     @test st == "ok"
     kl = String[st]
