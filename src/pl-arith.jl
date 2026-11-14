@@ -1629,6 +1629,8 @@ function _mpz_urandomm(ld::PL_local_data, n::BigInt)::BigInt
 end
 
 # PORT: pl-arith.c ar_random
+# DIVERGES: the pin's `#if O_BF` arm (a libbf build: it draws with `mt_rand_u32`) is not this one: the kernel ports the arm of the
+# pin's own build (GMP, `mpz_urandomm`), whose stream test_arith_random_swipl.out pins.
 # DIVERGES: the argument is not promoted in place (`promoteToMPZNumber(n1)`): a `V_INTEGER` takes the
 # `V_MPZ` branch with its value as a `BigInt`; the result is `V_MPZ` as upstream's.
 "`random/1` (pl-arith.c `ar_random`): a random integer in `[0, n)`."
@@ -3914,6 +3916,8 @@ end
 # PORT: pl-arith.c set_arith_flag
 # DIVERGES: (1) `float_rounding` sets the bits of `arith_f_flags` and NOT the hardware (upstream's
 # `set_rounding(i)`): `evalExpression_cells` applies the mode for one evaluation (see the file header).
+# So every float computation outside an arithmetic evaluation (`strtod` in `atom_number/2`, `read/1` of a float) runs in
+# `to_nearest` here and in the flag's mode in the pin (the pin's `set_arith_flag` calls `set_rounding`).
 # (2) The three limits (`max_rational_size`, `max_rational_size_action`, `max_integer_size`) are validated as
 # upstream does; the number layer is unbounded, so `infinite` and `error` (the state it has) are accepted and any
 # other value is a named refusal (`NotPortedError`) — upstream keeps it in `LD->arith.rat` and `LD->gmp`.
