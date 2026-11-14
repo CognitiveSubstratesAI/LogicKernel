@@ -8086,3 +8086,39 @@ The table of every hunk: evidence/PIN1/step_c/decomposition.tsv and part2_notes.
   os/pl-file.c and os/pl-stream.c (`Sshare` and `shareStandardStream`, 87fc7589: TH1; the other hunks cd67bb35, dfc1c55d, 4f259069 are ported). Each file's hunks were compared as in commit 6: the changed lines minus d755bdc4 minus the named commits leave only the groups listed here.
   No `# UPSTREAM:` line cites cbf4e189 any more, so the `sync-from:` line of tools/SWIPL_VERSION, tools/fetch_sync_from.sh, its steps in CI.yml, evidence.yml and mutation.yml and its section of tools/test_ci_tools.sh are removed, and with them the
   empty test/sync_expected_mismatch.jl (test/test_gate_split.jl holds that file to exist exactly while `sync-from:` does). tools/port_check.jl still reads an optional `sync-from:` line (a later sync writes it again and restores the fetch step and the list from this commit's parent; test/test_port_check.jl feeds it a fixture pin).
+
+## TX1 — transactions and undo: pl-transaction.c, pl-undo.c (R2, swipl-devel 18168e62; edit-only; audit D-0479)
+
+What TX1 adds (pin `18168e629eab`, oracle swipl 10.1.20; written edit-only by several agents on branch wip/tx1: NOTHING was compiled or run when this block was
+written, every claim below is UNVERIFIED until the gate). TX1 is `transaction/1,2,3`, `snapshot/1`, `current_transaction/1`, `transaction_updates/1` and `undo/1`.
+- **UPSTREAM files and the Julia files:** `src/pl-transaction.c` and `pl-transaction.h` (src/pl-transaction.jl, the whole file; the flags and marks `TR_*`, `GEN_*` and the structs
+  `tr_stack`, `ld_transaction`, `tr_update`, `tr_enum` in src/pl-incl.jl, where `index_context` can name them), `src/pl-undo.c` (src/pl-undo.jl, the whole file). The engine hooks:
+  src/pl-inline.jl (`visibleClause` takes the transaction state; `Undo!` pushes the undo record when the first global cell is reset), src/pl-index.jl (`index_context.transaction`, read at the
+  entry of every search), src/pl-proc.jl (`_assertDefinition!` gives a clause its generation from the transaction's space, `retract_clause!` and `retractClauseDefinition!` take the transaction branch of pl-proc.c:1652-1664
+  and `transaction_set_last_modified`), src/pl-wam.jl (`updateAlerted` sets `ALERT_UNDO`; `depart_or_retry_continue` and `deep_backtrack` call `run_undo_hooks`), src/pl-ext.jl (the two registration tables).
+- **Registered predicates:** `'$transaction'/2`, `'$transaction'/3`, `'$snapshot'/1`, `current_transaction/1`, `transaction_updates/1` (`PL_predicates_from_transaction`), `'$undo'/1` (`PL_predicates_from_undo`).
+  The library side (`transaction/1,2,3`, `snapshot/1`, `undo/1`, `'$run_undo'/1`) is boot/syspred.pl as loaded at the pin. The four seed rows of docs/r2_owners.tsv for the predicates of the `TX1` owner are removed
+  (a `pred:` key for a ported predicate is `R2-OWNER-STALE`); the generated R2 block (`| TX1 | 4 | 4 | 0 |`) is regenerated at the gate by `tools/port_check.jl --write-inventory`, never by hand.
+- **STRUCT CHANGES (the warm daemon restarts at the gate):** `PL_local_data` gains `transaction`, `transaction_enums`, `undo_list`, `undo_scheduled`, `undo_running` (src/pl-global.jl:687-691);
+  `index_context` gains `transaction` (src/pl-index.jl:83); `PL_global_data` gains `undo_refs` (src/pl-global.jl:179). `LK.Undo!` is no longer allocation-free in the manifest (it pushes to a Vector).
+- **DIVERGES (representation only; each with its place, the full list is `grep -n "^# DIVERGES" src/pl-transaction.jl src/pl-undo.jl`):**
+  1. The tables of a transaction (`tr_stack.clauses`, `.predicates`) are Julia `Dict`s made on demand, not upstream's `Table` of `tr_gen_t`; there are no reference counts, so `acquire_clause`,
+     `release_clause` and `tr_erased_no` are unwritten and `transaction_visible_clause` always looks the clause up in the table (the same answer): src/pl-transaction.jl header.
+  2. The table trail (`table_trail`, `transaction_commit_tables`, `transaction_rollback_tables`, `merge_tabling_trail`) is left to TAB1 TB9: the tables' share of a transaction. `is_trie_clause` answers false for every clause until then.
+  3. The undo hooks: `Undo!` (src/pl-inline.jl:1144-1160) tests `_trail_pos(a) == ld.undo_list` and calls `push_undo` BEFORE the cell is restored (pl-wam.c:1612-1613); the undo cell is global position 1 (`init_undo_list`,
+     allocated first by `emptyStacks!`, src/pl-setup.jl:156); the schedule `ld.undo_scheduled` is a Vector of atom words that is emptied, not freed; `updateAlerted` (src/pl-wam.jl:206-214) sets `ALERT_UNDO` while it is not empty;
+     `run_undo_hooks` runs at the two run-loop sites of pl-vmi.c (:1989 the next predicate call, :6850 after a backtrack: src/pl-wam.jl:3613 and :5471) and looks `'$syspreds':'$run_undo'/1` up on each call.
+  4. The undo blob has no `write`, `save`, `load` or `release` slots (`PL_blob_t` has none), so it is written `<undo>(0x...)` like every blob and a saved state cannot hold one; its payload is the number of the goal's record
+     in `gd.undo_refs`, not a pointer.
+  5. `current_transaction/1`'s redo state is a record of the pool `ld.transaction_enums` (`tr_enum`), freed at the last answer, at a failure and at a cut (upstream frees nothing: its context is the stack pointer).
+  6. The debug predicate `pred_generations/1` (`O_DEBUG`) has no registration: the oracle is a release build, and asking it for `pred_generations/1` is an `existence_error` for the procedure.
+  7. The mutex argument of `'$transaction'/3` is not examined (no mutex table; one thread); `PL_representation_error` of the generation space is raised in `ld`.
+  8. The first-clause searches of src/pl-proc.jl, src/pl-supervisor.jl and src/pl-wrap.jl have no local data: inside a transaction they see the global generations only (the form of `visibleClause` without `tr`).
+- **A RAISING undo goal is a named refusal, owner P3.** `'$run_undo'/1` calls `'$urgent_exception'/3` when the goal raises; that predicate is the P3 row of docs/r2_owners.tsv (its note names this use). The rows of
+  `undo(1)`, `undo(_)` and `undo(throw(boom))` are left out of the evidence file; the success path (order and timing of the goals) is run by the rows.
+- **Behaviour pinned by the oracle (swipl 10.1.20, two identical runs):** on an OUTERMOST transaction `bulk(true)` raises the update events during the goal and again at the commit (txe03 to txe05); `bulk(false)` and `[]` only in the goal.
+  Where the pin shows a defect of swipl itself, the kernel follows the pin and the defect is recorded: see the private register.
+- **Tests:** `test/core_lang/test_transaction_swipl.jl` (101 swipl-differential rows, ids `txc`, `txn`, `txu`, `txr`, `txd`, `txe`, a non-vacuity testset and a live check), the manifest entries `_manifest_tx1` and `_MANIFEST_TX1_FREE` in
+  test/static_analysis_manifest.jl, the mutants `tools/mutants/TX1.py`.
+- **To verify at the gate (unverified by construction):** the default constructors of `tr_update{T}`, `tr_stack{T}` and `tr_enum{T}` against the manifest; the allocation flags of the free functions (`LGEN`, `update_gen`, `cmp_updates`,
+  `UNDO_SCHEDULED`); that boot's `transaction/1` finds `'$syspreds'` loaded in the test kernel; `nb_setval`, `limit/2` and `prolog_listen/2` as the rows use them; the Pkg.test-way run of the new test file.

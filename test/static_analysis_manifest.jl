@@ -93,7 +93,7 @@ _manifest_per_type(T) = (
     # bindings (src/pl-inline.jl) and unification (src/pl-prims.jl)
     (LK.PL_local_data{T}, Tuple{LK.PL_global_data{T}}, false),
     (LK.Mark, Tuple{LK.PL_local_data{T}}, true),
-    (LK.Undo!, Tuple{LK.PL_local_data{T}, LK.mark}, true),
+    (LK.Undo!, Tuple{LK.PL_local_data{T}, LK.mark}, false),   # TX1e: push_undo pushes to a Vector (the undo schedule)
     (LK.freezeGlobal!, Tuple{LK.PL_local_data{T}}, false),   # e5
     (LK._release_frozen!, Tuple{LK.PL_local_data{T}, LK.mark, Bool}, false),
     (LK._global_pos, Tuple{LK.PL_local_data{T}, LK.word}, true),          # ENG2a: a read
@@ -559,6 +559,9 @@ function _manifest_index(T)
         (LK.visibleClauseCNT, Tuple{C, UInt64, UInt64}, true),
         (LK.visibleClause, Tuple{LD, C, UInt64}, true),
         (LK.visibleClauseCNT, Tuple{LD, C, UInt64}, true),
+        # TX1c: the forms with the transaction state
+        (LK.visibleClause, Tuple{C, UInt64, UInt64, Union{Nothing, LK.ld_transaction{T}}}, true),
+        (LK.visibleClauseCNT, Tuple{C, UInt64, UInt64, Union{Nothing, LK.ld_transaction{T}}}, true),
         (LK.ISDEADCI, Tuple{CI}, true), (LK.ISDEADCI, Tuple{Nothing}, true),
         (LK.next_clause_unindexed!, Tuple{CTX}, true),
         (LK.next_clause_primary_index!, Tuple{CTX}, true),
@@ -593,7 +596,7 @@ function _manifest_index(T)
         (LK._argv_is_var, Tuple{AC, Int}, false),
         (LK._descend_first_clause!, Tuple{AF, Int, CL, CTX}, false),
         (LK._descend_first_clause!, Tuple{AC, Int, CL, CTX}, false),
-        (LK._index_context!, Tuple{LK.index_context{T}, UInt64, D, CH, UInt64}, true),
+        (LK._index_context!, Tuple{LK.index_context{T}, UInt64, D, CH, UInt64, LK.ld_transaction{T}}, true),
         (LK.realize_clause_index!, Tuple{CI}, false),
         (LK.newClauseIndexTable, Tuple{HH, Bool, CTX}, false),
         (LK.newClauseListRef, Tuple{Type{T}, UInt64}, false),
@@ -676,6 +679,10 @@ function _manifest_index(T)
         (LK.current_generation, Tuple{GD, D}, true),
         (LK.next_generation!, Tuple{GD, D}, true), (LK.max_generation, Tuple{D}, true),
         (LK.setGenerationFrame, Tuple{GD, D}, true),
+        # TX1c: the forms with the transaction state (pl-inline.h)
+        (LK.current_generation, Tuple{GD, LD, D}, true),
+        (LK.next_generation!, Tuple{GD, LD, D}, true), (LK.max_generation, Tuple{LD, D}, true),
+        (LK.setGenerationFrame, Tuple{GD, LD, D}, true),
         # src/pl-thread.jl, src/pl-gc.jl
         (LK.cgcActivatePredicate!, Tuple{GD, D, UInt64}, false),
         (LK.pushPredicateAccessObj!, Tuple{LD, GD, D}, false),
@@ -726,6 +733,7 @@ function _manifest_index(T)
         (LK.unify_export_list, Tuple{LD, Int, MOD}, false),
         (LK.module_code_size, Tuple{MOD}, false), (LK.sizeof_module, Tuple{MOD}, false),
         (LK.setLastModifiedPredicate!, Tuple{GD, D, UInt64}, false),
+        (LK.setLastModifiedPredicate!, Tuple{GD, LD, D, UInt64, UInt32}, false),        # TX1c
         (LK.lookupModule, Tuple{GD, T}, false),
         (LK.inheritUnknown, Tuple{GD, MOD}, true),
         (LK.stripModuleName_cells, Tuple{LD, Int}, false),        # L1e e2c: on the cells
@@ -1413,6 +1421,8 @@ function _manifest_index(T)
         (LK.add_ssu_clause, Tuple{LD, D, C}, false),
         (LK.PL_error, Tuple{LD, LK.PL_error_code, D}, false),        # ERR_PERMISSION_SSU_DEF
         (LK.retract_clause!, Tuple{GD, C, UInt64}, false),
+        (LK.retract_clause!, Tuple{GD, LD, C, UInt64}, false),                          # TX1c
+        (LK.retract_clause!, Tuple{GD, Nothing, C, UInt64}, false),
         (LK.retractClauseDefinition!, Tuple{GD, D, C, Bool}, false),
         (LK.find_prev, Tuple{D, CR, CR}, true), (LK.find_prev, Tuple{D, Nothing, CR}, true),
         (LK.cleanDefinition!, Tuple{D, DDI, UInt64}, false),
@@ -2273,6 +2283,7 @@ function _manifest_index(T)
         (LK.unify_meta_argument, Tuple{LD, Int, D, Int}, false),
         (LK.unify_meta_pattern, Tuple{LD, PR, Int}, false),
         (LK.num_visible_clauses, Tuple{GD, D, Bool}, false),
+        (LK.num_visible_clauses, Tuple{GD, LD, D, Bool}, false),                        # TX1c
         (LK.sizeof_predicate, Tuple{D}, false),
         (LK.sizeof_erased_clauses, Tuple{D}, false),
         (
@@ -3280,6 +3291,76 @@ _manifest_tr4(T) = begin
     )
 end
 
+# TX1 — pl-transaction.c and pl-undo.c (src/pl-transaction.jl, src/pl-undo.jl): the transaction state, the tables of changed
+# clauses and predicates, commit and discard, the updates, the predicates; the undo list, the undo blob and the scheduled goals.
+# The methods that take the local data, the global data, a clause or a definition are checked for every payload type; the ones
+# on plain integers and tables once, below. Anything that builds a Dict, a Vector or a term is held `false`.
+_manifest_tx1(T) = begin
+    GD, LD, C, D = LK.PL_global_data{T}, LK.PL_local_data{T}, LK.Clause{T}, LK.Definition{T}
+    TR, UP = LK.ld_transaction{T}, LK.tr_update{T}
+    TEN = LK.foreign_state_pool{LK.tr_enum{T}}
+    CT, PT = Dict{C, UInt64}, Dict{D, UInt64}
+    (
+        (LK.ld_transaction{T}, Tuple{}, false),
+        (LK.tr_enum{T}, Tuple{}, false),
+        (LK.tr_update{T}, Tuple{C, Symbol}, false),
+        (LK.foreign_state_pool{LK.tr_enum{T}}, Tuple{}, false),
+        (LK.alloc_foreign_state!, Tuple{TEN}, false),
+        (LK.free_foreign_state!, Tuple{TEN, Int}, false),
+        (LK.tr_clause_table, Tuple{TR}, false),
+        (LK.transaction_retract_clause, Tuple{GD, LD, C}, false),
+        (LK.transaction_assert_clause, Tuple{LD, C, Int}, false),
+        (LK.transaction_assert_clause, Tuple{LD, C, LK.ClauseRef{T}}, false),
+        (LK.transaction_visible_clause, Tuple{TR, C, UInt64}, false),
+        (LK.LGEN, Tuple{TR, UInt64}, true),
+        (LK.LGEN_FLAGS_VAL, Tuple{TR, UInt64, UInt32}, true),
+        (LK.transaction_last_modified_predicate, Tuple{LD, D, UInt64}, false),
+        (LK.transaction_set_last_modified, Tuple{LD, D, UInt64, UInt32}, false),
+        (LK.set_modified, Tuple{GD, LD, UInt64}, false),
+        (LK.retract_clause_gen, Tuple{C, UInt64}, false),
+        (LK.transaction_commit, Tuple{GD, LD}, false),
+        (LK.transaction_discard, Tuple{GD, LD}, false),
+        (LK.merge_clause_tables, Tuple{CT, CT}, false),
+        (LK.merge_pred_tables, Tuple{PT, PT}, false),
+        (LK.update_gen, Tuple{UP}, true),
+        (LK.cmp_updates, Tuple{UP, UP}, true),
+        (LK.is_trie_clause, Tuple{GD, C}, true),
+        (LK.transaction_updates, Tuple{GD, LD}, false),
+        (LK.announce_updates, Tuple{GD, LD, Vector{UP}}, false),
+        (LK.transaction, Tuple{GD, LD, Int, Int, Int, UInt32}, false),
+        (LK.add_update, Tuple{GD, LD, C, Symbol, Int, Int, Int}, false),
+        [
+            (f, Tuple{LD, Int, Int, LK.control_t{T}}, false) for f in (
+                LK.pl_transaction2_va, LK.pl_transaction3_va, LK.pl_snapshot1_va,
+                LK.pl_transaction_updates1_va, LK.pl_current_transaction1_va, LK.pl_undo1_va
+            )
+        ]...,
+        # pl-undo.c: the undo list, the blob, the schedule and its run
+        (LK.init_undo_list, Tuple{LD}, false),
+        (LK.free_undo_data, Tuple{LD}, false),
+        (LK.undo_blob_record, Tuple{GD, UInt64}, false),
+        (LK.release_undo_blob, Tuple{GD, UInt64}, false),
+        (LK.save_undo, Tuple{GD, LD, Int}, false),
+        (LK.put_undo, Tuple{GD, LD, Int, UInt64}, false),
+        (LK.push_undo, Tuple{LD, Int}, false),
+        (LK.UNDO_SCHEDULED, Tuple{LD}, true),
+        (LK.put_scheduled_undo, Tuple{GD, LD, Int}, false),
+        (LK.run_undo_hooks, Tuple{GD, LD}, false)
+    )
+end
+
+# TX1: the entries of src/pl-transaction.jl and src/pl-undo.jl that name no term type (listed once, not once per type)
+const _MANIFEST_TX1_FREE = (
+    (LK.IS_ASSERT_GEN, Tuple{UInt64}, true),
+    (LK.VAL_LGEN, Tuple{UInt64}, true),
+    (LK.VAL_GEN_FLAGS, Tuple{UInt64}, true),
+    (LK.VAL_ADD_FLAGS, Tuple{UInt64, UInt32}, true),
+    (LK._undo_bytes, Tuple{Int}, false),
+    (LK.initUndo!, Tuple{LK.atoms_t}, false),
+    (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_transaction)}, false),
+    (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_undo)}, false)
+)
+
 # LB2b — locating files: os/pl-files.c, os/pl-glob.c and the file-name helpers of os/pl-os.c
 # (src/os/pl-files.jl, src/os/pl-glob.jl, src/os/pl-os.jl). The methods that take the local data (`ld`) are
 # checked for every payload type; the ones on plain strings, integers and byte vectors once, below.
@@ -3534,6 +3615,10 @@ const _DISPATCH_MANIFEST_TUPLE = (
     _manifest_tr4(_M3)...,
     _MANIFEST_LB2B_FREE...,
     _MANIFEST_TR2_FREE...,
+    _manifest_tx1(_M1)...,
+    _manifest_tx1(_M2)...,
+    _manifest_tx1(_M3)...,
+    _MANIFEST_TX1_FREE...,
     _manifest_lb7(_M1)...,
     _manifest_lb7(_M2)...,
     _manifest_lb7(_M3)...,

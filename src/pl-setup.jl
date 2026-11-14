@@ -132,8 +132,9 @@ end
 # upstream's order), then since AV1 `attvar.head` and `attvar.tail`, each with a PERMANENT global cell
 # (audit D-0122 Q1 (a), a representation-only divergence: upstream assigns the two local-stack cells
 # themselves, pl-attvar.c:127 "on local stack!", and its own TBD, pl-wam.c:1565, names the global
-# stack); the others belong to subsystems not ported (`trim.dummy`, `attvar.gc_attvars` (G1), undo
-# hooks, tabling; nor `destroyGlobalVars`). So later term references
+# stack); the others belong to subsystems not ported (`trim.dummy`, `attvar.gc_attvars` (G1), tabling's
+# `delay_list`; nor `destroyGlobalVars`). Since TX1e the undo list's cell is the FIRST global cell (`init_undo_list`, pl-setup.c:1557
+# "must be first": `Undo!` finds it by position 1), allocated before the permanent cells above; it is not a term reference. So later term references
 # lie at other absolute positions than in
 # swipl: compare DIFFERENCES between positions with swipl, never absolute ones.
 "Empty the local stack and the trail, then open the base foreign frame (pl-setup.c)."
@@ -152,6 +153,7 @@ function emptyStacks!(ld::PL_local_data{T})::Nothing where {T}
     empty!(ld.trail)                            # emptyStack((Stack)&LD->stacks.trail);
     ld.gTop = 0                                 # emptyStack((Stack)&LD->stacks.global);
     _truncate_vtable!(ld)                       # (the value table with it: L1b stage C2)
+    ld.undo_list = init_undo_list(ld)           # LD->undo.undo_list = init_undo_list(): FIRST global cell, see __do_undo() (TX1e)
     ld.mark_bar = ld.gTop                       # LD->mark_bar = gTop;
 
     PL_open_foreign_frame(ld)
@@ -264,6 +266,7 @@ function setupProlog(::Type{T})::PL_global_data{T} where {T}
     functors = initFunctors!(functors_t())     # initFunctors (after the atoms, as upstream's)
     initDBRef!(atoms)                          # initDBRef (setup:146): the clause blob type (D1)
     initTries!(atoms)                          # initTries (setup:149): the trie blob type (TAB1 TR1)
+    initUndo!(atoms)                           # initUndo (setup:151): the undo blob type (TX1e)
     initWrap!(atoms)                           # initWrap (setup:152): the closure blob type (TAB1-min)
     dexpr = first(lookupBlob(atoms, Vector{UInt8}(codeunits("\$expr")), 5, reserved_symbol))
     dot2 = lookupFunctorDef(functors, _atom_word!(atoms, syms, mk_sym(T, Symbol("[|]"))), 2)
@@ -337,7 +340,8 @@ function setupProlog(::Type{T})::PL_global_data{T} where {T}
         nothing,                                # defaults_home: set with the `home` flag by initPrologFlags!
         LDTable(),                              # ld_table: no wrapped stream yet (R2 TOP1b E)
         Dict{Int, delay_info}(),                # tabling_answer_delay_infos: initTabling's newHTablePP(64) (pl-tabling.c:12696; TAB1 TB0)
-        0                                       # tabling_start_node_ids: no start node id handed out (pl-tabling.c:12348; TAB1 TB1)
+        0,                                      # tabling_start_node_ids: no start node id handed out (pl-tabling.c:12348; TAB1 TB1)
+        record{T}[]                             # undo_refs: no undo goal has a blob yet (TX1e)
     )
     initPrologFlags!(gd)                        # setup:136 (src/os/pl-prologflag.jl): before the built-ins (:158), whose boot clauses read the mask
     initTries!(gd)                              # initTries (setup:149), its tail: trie_gen_compiled/2,3 (TR4, src/pl-trie.jl)
