@@ -1048,3 +1048,116 @@ end
     @test !LK.table_is_incomplete(atrie)
     @test LK.idg_changed(ld, atrie, 0) && n.falsecount == 1 && LK.PL_exception(ld, 0) == 0
 end
+
+# ── DEFKILL4 rows: answer nodes that carry TN_IDG_* flags, built by hand (TB6-E10, E18, E19, E20) ─────────────────────────────
+# The answer is node 1 of a bare trie (`map_trie_node(atrie, 1, ...)` visits it, as idg24 uses it). Its value is `word(11)`: neither a record
+# (`isRecord`: low two bits 0) nor a trie pointer (`isTriePtrValue`: low three bits 7), so `trie_delete`'s release_value has nothing to free.
+# A conditional answer carries `DL_UNDEFINED_INFO` (`answer_is_conditional`: pl-tabling.c:982). Every premise is asserted in the row.
+"A complete trie with its IDG node and ONE answer (node 1, value `word(11)`, counted in `value_count`), no delay info, no IDG flags."
+function _ti_answer_node(ld)
+    tr, n = _ti_node(ld)
+    tr.nodes[1].value = LK.word(11)
+    tr.value_count = 1
+    return tr, n
+end
+
+@testset "idg34: reeval_prep_node marks the answer deleted and settles its unconditional flag (pl-tabling.c:11141-11164)" begin
+    gd, ld = _ti_wb()
+    # an unconditional answer that was ADDED: DELETED set, ADDED cleared, UNCONDITIONAL set (:11146-11147, :11158-11160)
+    tr, n = _ti_answer_node(ld)
+    tr.nodes[1].flags |= LK.TN_IDG_ADDED
+    @test tr.nodes[1].value != 0 && !LK.answer_is_conditional(gd, tr, 1) && (tr.nodes[1].flags & LK.TN_IDG_DELETED) == 0
+    LK.reeval_prep_node(ld, tr, 1)
+    f = tr.nodes[1].flags
+    @test (f & LK.TN_IDG_DELETED) != 0 && (f & LK.TN_IDG_ADDED) == 0 && (f & LK.TN_IDG_UNCONDITIONAL) != 0
+    @test tr.nodes[1].value == LK.word(11)                                              # the answer itself stays
+
+    # a conditional answer: DELETED set, its delay info dropped, UNCONDITIONAL cleared, the worklist's `undefined` count down by one (:11149-11156)
+    tc, nc = _ti_answer_node(ld)
+    wl = LK.tbl_worklist{_TI}()
+    wl.table = tc.serial
+    wl.undefined = 2
+    tc.worklist = wl
+    LK.set_node_delayinfo(gd, tc, 1, LK.DL_UNDEFINED_INFO)
+    tc.nodes[1].flags |= LK.TN_IDG_UNCONDITIONAL | LK.TN_IDG_ADDED
+    @test LK.answer_is_conditional(gd, tc, 1)
+    LK.reeval_prep_node(ld, tc, 1)
+    f = tc.nodes[1].flags
+    @test (f & LK.TN_IDG_DELETED) != 0 && (f & LK.TN_IDG_ADDED) == 0 && (f & LK.TN_IDG_UNCONDITIONAL) == 0
+    @test !LK.answer_is_conditional(gd, tc, 1) && wl.undefined == 1
+    wl.undefined = 0                                                                    # `wl->undefined > 0` guards the decrement
+    tc.nodes[1].flags |= LK.TN_IDG_UNCONDITIONAL
+    LK.set_node_delayinfo(gd, tc, 1, LK.DL_UNDEFINED_INFO)
+    LK.reeval_prep_node(ld, tc, 1)
+    @test wl.undefined == 0
+
+    # a node without a value (n->value == 0, :11144): nothing is touched
+    tz, nz = _ti_node(ld)
+    @test tz.nodes[1].value == 0
+    LK.reeval_prep_node(ld, tz, 1)
+    @test (tz.nodes[1].flags & LK.TN_IDG_MASK) == 0
+end
+
+@testset "idg35: reeval_complete_node and reeval_complete know a new answer (pl-tabling.c:11301-11337, :11340-11370)" begin
+    gd, ld = _ti_wb()
+    # Got UNconditional (:11328-11331): the answer was conditional in the previous evaluation (no UNCONDITIONAL mark) and is not now
+    tr, n = _ti_answer_node(ld)
+    @test !LK.answer_is_conditional(gd, tr, 1) && (tr.nodes[1].flags & LK.TN_IDG_UNCONDITIONAL) == 0 && !n.new_answer
+    LK.reeval_complete_node(ld, tr, 1)
+    @test n.new_answer                                                                  # the mutant (TB6-E19) leaves it false
+    @test (tr.nodes[1].flags & LK.TN_IDG_MASK) == 0 && tr.nodes[1].value == LK.word(11) # clear(n, TN_IDG_MASK), the answer stays
+
+    # Not modified (:11332-11334): the answer was unconditional and still is: new_answer stays false
+    tu, nu = _ti_answer_node(ld)
+    tu.nodes[1].flags |= LK.TN_IDG_UNCONDITIONAL
+    LK.reeval_complete_node(ld, tu, 1)
+    @test !nu.new_answer && (tu.nodes[1].flags & LK.TN_IDG_MASK) == 0
+
+    # Got conditional (:11324-11327): unconditional before, conditional now
+    tg, ng = _ti_answer_node(ld)
+    tg.nodes[1].flags |= LK.TN_IDG_UNCONDITIONAL
+    LK.set_node_delayinfo(gd, tg, 1, LK.DL_UNDEFINED_INFO)
+    @test LK.answer_is_conditional(gd, tg, 1)
+    LK.reeval_complete_node(ld, tg, 1)
+    @test ng.new_answer
+
+    # reeval_complete (:11340-11370): the answer count is the same (1 == 1) but an answer is new: nothing goes up to the parent (TB6-E10)
+    tn, nn = _ti_answer_node(ld)
+    pt, p = _ti_node(ld)
+    @test LK.idg_add_child(ld, p, nn, 0, 0)
+    p.falsecount = 1
+    nn.reevaluating = true
+    nn.answer_count = tn.value_count
+    @test nn.answer_count == 1 && !nn.new_answer && (tn.nodes[1].flags & LK.TN_IDG_UNCONDITIONAL) == 0
+    LK.reeval_complete(ld, tn)
+    @test nn.new_answer && nn.stats_reevaluated == 1
+    @test p.falsecount == 1                                                             # not `same_answers`: no idg_propagate_change
+
+    # the control side: the same table with an answer that did not change propagates `not changed` (the parent is valid again)
+    tk, nk = _ti_answer_node(ld)
+    tk.nodes[1].flags |= LK.TN_IDG_UNCONDITIONAL
+    qt, q = _ti_node(ld)
+    @test LK.idg_add_child(ld, q, nk, 0, 0)
+    q.falsecount = 1
+    nk.reevaluating = true
+    nk.answer_count = tk.value_count
+    LK.reeval_complete(ld, tk)
+    @test !nk.new_answer && q.falsecount == 0
+end
+
+@testset "idg36: reset_evaluate_node deletes only an added answer (pl-tabling.c:11395-11411)" begin
+    gd, ld = _ti_wb()
+    # an answer that is not ADDED: it may be enumerated, so it is only marked deleted (:11407-11409); its delay info goes (:11397-11400)
+    tr, n = _ti_answer_node(ld)
+    LK.set_node_delayinfo(gd, tr, 1, LK.DL_UNDEFINED_INFO)
+    @test LK.answer_is_conditional(gd, tr, 1) && (tr.nodes[1].flags & LK.TN_IDG_ADDED) == 0
+    LK.reset_evaluate_node(ld, tr, 1)
+    @test (tr.nodes[1].flags & LK.TN_IDG_DELETED) != 0 && tr.nodes[1].value == LK.word(11)   # the mutant (TB6-E20) deletes it
+    @test !LK.answer_is_conditional(gd, tr, 1)
+
+    # an ADDED answer: trie_delete (:11405): the value goes, DELETED is not set
+    ta, na = _ti_answer_node(ld)
+    ta.nodes[1].flags |= LK.TN_IDG_ADDED
+    LK.reset_evaluate_node(ld, ta, 1)
+    @test ta.nodes[1].value == 0 && (ta.nodes[1].flags & LK.TN_IDG_DELETED) == 0
+end
