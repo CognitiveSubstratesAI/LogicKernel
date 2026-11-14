@@ -3967,8 +3967,8 @@ function PL_next_solution_guarded(
     # fr->clause->value.clause->variables)` at :411), and `PL_close_foreign_frame(fid)` (pl-vmi.c:5891) then sets `lTop`
     # back to the foreign frame opened at pl-vmi.c:5889 (pl-wam.c:349, `lTop = (LocalFrame) fr`; the open is
     # pl-wam.c:327, `lTop = (LocalFrame)(fr+1)`), which sits above the trimmed frames: the net `lTop` is the one before `shift`, with the dead
-    # frames' words left on the stack. Here the trim (`setLTop!` in `shift`, src/pl-cont.jl) DROPS the
-    # records of the dead frames and of the foreign frame, and `lowerLTop!` (inside
+    # frames' words left on the stack. Here the trim (in `shift`, src/pl-cont.jl) DROPS the records of
+    # the dead frames above the newest choice point and of the foreign frame, and `lowerLTop!` (inside
     # `PL_close_foreign_frame`) asserts that it only lowers `lTop`; so `lTop` is raised to the foreign
     # frame's position first (a raise, nothing dropped, the dead records stay dead). The net `lTop`
     # is upstream's. The ball is the DEREFERENCED location of the variable (`pushWordAsTermRef`, as

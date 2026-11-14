@@ -52,7 +52,7 @@ DTGT = ["test/core_lang/test_cont_run_swipl.jl", "test/core_lang/test_cont_boot_
         "test/compile/test_analyse_variables_swipl.jl"]
 # the baseline's targets (mutate_ci.py plan reads TARGETS; the pre-push check 5 refuses a list without it): the two files whose
 # rows kill the continuation mutants, test_metacall_control.jl (the FR_INRESET branch) and the files of the engine fix's DTGT
-TARGETS = list(dict.fromkeys(RUNMC + DTGT))
+TARGETS = list(dict.fromkeys(RUNMC + DTGT + ["test/core_lang/test_tabling_tb5rows_swipl.jl"]))
 MUTANTS = [
     # ── pl-vmi.c I_CALL1 FR_INRESET branch, I_RESET, I_EXITRESET ──
     dict(id="CONT1-R1 I_RESET does not set FR_INRESET on the reset/3 frame (KILL test_cont_run_swipl.jl r_meta_pred: the continuation's clause belongs to system:'$meta_call'/3, not call/1's temporary clause; r_meta_len and r_meta_shift answer the same under it, CI battery 42137325123)",
@@ -115,6 +115,10 @@ MUTANTS = [
          file=C, targets=RUN,
          old="ld.environment_frame = rf.parent",
          new="ld.environment_frame = resetfr"),
+    dict(id="CONT1-S6 shift drops the records down to upstream's temporary lTop, the newest choice point's included (TAB-A3-FIX revert; KILL test_tabling_tb5rows_swipl.jl groups A3N, A3P: '$tbl_wkl_work'/6's choice point lies between completion_step/1's variables and '$tbl_reset'/6, BFR names a dropped record and newChoice's BFR < ch check fails)",
+         file=C, targets=RUN + ["test/core_lang/test_tabling_tb5rows_swipl.jl"],
+         old="dropRecords!(ld, max(top, ld.choices[ld.BFR].base + SIZEOF_CHOICE))",
+         new="dropRecords!(ld, top)"),
     # ── pl-cont.c put_environment, put_continuation ──
     dict(id="CONT1-E1 put_environment stores the PC without subtracting 1 (KILL test_cont_run_swipl.jl:162 r_iter, :164 r_effect, :165 r_twice: the clause resumes one word late)",
          file=C, targets=RUN,

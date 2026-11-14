@@ -286,9 +286,16 @@ end
 # PORT: pl-cont.c shift
 # DIVERGES: the result is the `Code` the parent of `reset/3` resumes at, `nothing` for upstream's
 # NULL (an error is pending). The frames are indices, so the `valTermRef` reloads after each call that
-# could shift a stack are left out. The trim of `lTop` is `setLTop!`: the records of the frames above
-# the new `lTop` (the continuation's frames, the shifting frame, the foreign frame of the caller's
-# `shift_common`) are dropped with it, where upstream leaves their words as garbage on the stack
+# could shift a stack are left out. The trim sets `lTop` to upstream's value (pl-cont.c:403-413), which
+# lasts only until the caller's `PL_close_foreign_frame` (pl-vmi.c:5891) puts it back above the foreign
+# frame: upstream's stack words below the old `lTop` stay untouched. Here the records of the frames
+# above the trim point (the continuation's frames, the shifting frame, the foreign frame of the caller's
+# `shift_common`) are dropped, where upstream leaves their words as garbage on the stack; but never a
+# record at or below the newest choice point: when a choice point lies between the reset frame's parent's
+# variables and the reset frame (a nondeterministic goal called before `'$tbl_reset'/6`), upstream's
+# temporary `lTop` falls below that choice point, whose struct the close leaves live, so the records
+# are dropped only above `max(top, BFR + 1)` and `BFR` stays valid (TAB1, the A3N rows of
+# test/core_lang/test_tabling_tb5rows_swipl.jl; `newChoice`'s `BFR < ch` check, pl-wam.c:2920)
 # (`BFR` is never 0 here: the query's `CHP_TOP`, so `LD->choicepoints` is `choices[BFR]`). The
 # `DEBUG(MSG_CONTINUE, …)` and `CHK_SECURE` lines are debug output only. The reset frame's record is
 # read after the trim, as upstream reads it: a dropped record stays readable until a push reuses it.
@@ -335,26 +342,26 @@ function shift(
         end
 
         fr = envf.parent                                        # Find parent to keep and trim lTop
+        top = ld.lTop
         while true
             f = ld.frames[fr]
             if f.base <= ld.choices[ld.BFR].base                # fr <= (LocalFrame)LD->choicepoints
-                setLTop!(ld, ld.choices[ld.BFR].base + SIZEOF_CHOICE)   # found newer choicepoint
+                top = ld.choices[ld.BFR].base + SIZEOF_CHOICE   # found newer choicepoint
                 break
             elseif fr == resetfr
                 fr = f.parent
                 pf = ld.frames[fr]
-                setLTop!(
-                    ld,
-                    argFrameP(
-                        pf.base,
-                        Int(((pf.clause::ClauseRef{T}).clause::Clause{T}).variables)
-                    )
+                top = argFrameP(
+                    pf.base, Int(((pf.clause::ClauseRef{T}).clause::Clause{T}).variables)
                 )
                 break
             end
             @assert fr > resetfr                                # frame indices ascend with their bases
             fr = f.parent
         end
+        # the dead records: those above `top` and above the newest choice point (see the DIVERGES)
+        dropRecords!(ld, max(top, ld.choices[ld.BFR].base + SIZEOF_CHOICE))
+        ld.lTop = top                                           # lTop = ...; shift_common raises it again
         # return as from reset/3
         rf = ld.frames[resetfr]
         ld.environment_frame = rf.parent
