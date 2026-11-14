@@ -153,8 +153,8 @@ function emptyStacks!(ld::PL_local_data{T})::Nothing where {T}
     empty!(ld.trail)                            # emptyStack((Stack)&LD->stacks.trail);
     ld.gTop = 0                                 # emptyStack((Stack)&LD->stacks.global);
     _truncate_vtable!(ld)                       # (the value table with it: L1b stage C2)
-    ld.undo_list = init_undo_list(ld)           # LD->undo.undo_list = init_undo_list(): FIRST global cell, see __do_undo() (TX1e)
     ld.mark_bar = ld.gTop                       # LD->mark_bar = gTop;
+    ld.undo_list = init_undo_list(ld)           # LD->undo.undo_list = init_undo_list(): FIRST global cell, see __do_undo() (TX1e)
 
     PL_open_foreign_frame(ld)
     ld.exception_term = 0
