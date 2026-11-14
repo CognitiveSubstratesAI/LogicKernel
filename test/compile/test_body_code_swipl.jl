@@ -1832,8 +1832,11 @@ const _BC_DEC_DECOMPILED = Dict{String, String}(
         # D-0083; not traced cell by cell). AV1 moved them again from ("_28", "_30"): emptyStacks makes
         # the wakeup list's head and tail (pl-setup.c), 2 more permanent cells before every later one, so
         # each name grows by 4 (`varName` prints twice the offset; internal identity, D-0083). The order
-        # against swipl above is unchanged.
-        @test cy[1][2:3] == ("_32", "_34")
+        # against swipl above is unchanged. TX1e moved them again from ("_32", "_34"): the undo list's cell is the
+        # FIRST global cell (pl-setup.c:1557, pl-undo.c:42-52; the kernel keeps its term references on the global stack,
+        # so the cell sits below every later one), so each name grows by 2 (internal identity, D-0083; measured by
+        # derivation from emptyStacks! in TX1-PINS: the cell at position 1, the exception cells from 2).
+        @test cy[1][2:3] == ("_34", "_36")
         if _BC_SWIPL_BIN !== nothing
             theirs = _bc_swipl([
                 "(assertz((cy :- q(Y, Z), r(Z, Y))), clause(cy, (q(A, B), _)), " *
