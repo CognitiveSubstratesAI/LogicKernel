@@ -2425,7 +2425,7 @@ function arithVarOffset(
     return (0, 0)
 end
 
-# PORT: pl-arith.c arithChar as _arith_char
+# Ported from pl-arith.c `arithChar`, as `_arith_char`.
 # DIVERGES: on a term (the compiler's), not a word; the culprit is a new term reference.
 "The character code `[X]`'s `X` stands for (pl-arith.c `arithChar`); -1 after raising `type_error(character, X)`."
 function _arith_char(ld::PL_local_data{T}, ci::compileInfo{T}, x::T)::Int where {T}
@@ -2440,7 +2440,7 @@ function _arith_char(ld::PL_local_data{T}, ci::compileInfo{T}, x::T)::Int where 
     return -1                                                  # EOF
 end
 
-# PORT: pl-arith.c getCharExpression as _arith_char_constant
+# Ported from pl-arith.c `getCharExpression`, as `_arith_char_constant`.
 # DIVERGES: on a term: a one-character string through `getCharExpression` (pl-arith.jl), `[X]` here
 # (`getCharExpression_cells` is the run-time twin on cells).
 "The character code of the string or `[X]` that `arg` is (pl-arith.c); -1 after raising."
@@ -5606,7 +5606,8 @@ function _type_test_name(op::code)::Symbol
     error("_type_test_name: $(codeTable(op).name) is not a type test")
 end
 
-# PORT: pl-comp.c decompileBodyNoShift (the `f_common` functors of the arithmetic comparisons)
+# PORT: pl-comp.c decompileBodyNoShift as _arith_goal_name
+# (the `f_common` functors of the arithmetic comparisons)
 "The name of the goal the arithmetic instruction `op` (`A_LT` .. `A_FIRSTVAR_IS`) decompiles to (pl-comp.c)."
 function _arith_goal_name(op::code)::Symbol
     op == A_LT && return Symbol("<")                           # FUNCTOR_smaller2
