@@ -174,11 +174,11 @@ MUTANTS = [
          old="code_info(:S_WRAP, 0x00, 0,",
          new="code_info(:S_WRAP, 0x00, 1,"),
     # E6: its `old`/`new` quote opcode NUMBERS (code(163), code(170)): left to tools/renumber_vmi.py (it rewrites mutant texts that quote an opcode number from the
-    # `_CODE_TABLE` order); do not hand-fix. Ran once over the merged table (S_TABLED = code(164), the gap mutant code(171));
+    # `_CODE_TABLE` order); do not hand-fix. Ran once over the merged table (S_TABLED = code(165), the gap mutant code(172));
     # every later merge in the engine-core slot (AR1, TB5-TB7) re-runs it.
     dict(id="TAB1MIN-E6 S_TABLED leaves a gap after S_CALLWRAPPER (KILL test_tabling_min_swipl.jl:455 `S_TABLED == S_CALLWRAPPER + 1`; the table lookup may fail at load first)", file=VM, targets=TM,
-         old="const S_TABLED = code(164)",
-         new="const S_TABLED = code(171)"),
+         old="const S_TABLED = code(165)",
+         new="const S_TABLED = code(172)"),
     # E7-E12 REMOVED (TAB1 TB7M4, D-0238: a retired mutant, never a loosened kill row). They were written for the run loop's named refusals of
     # S_WRAP, S_CALLWRAPPER and S_TABLED (`throw(NotPortedError ...)` right after `@label S_WRAP` etc.). Batch 3 (WRAP1: S_WRAP, S_CALLWRAPPER; TB3: S_TABLED)
     # replaced those refusal bodies by the real blocks (src/pl-wam.jl), so no `old` text can occur, and test_tabling_min_swipl.jl flipped the rows that pinned the

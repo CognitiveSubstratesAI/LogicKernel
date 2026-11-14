@@ -5749,7 +5749,7 @@ end
 # PORT: pl-vmi.c T_DELAY as t_delay!
 # (pl-vmi.c:6225-6249 at the pin: VMI(T_DELAY, 0, 1, (CA1_TRIE_NODE)); the note (*) is :6211-6223.)
 # DIVERGES: the body after `ENSURE_STACK_SPACE(16, 12)` and `UnwindTrieArgP()` is this function, called by the run loop's
-# `T_DELAY` arm (TR4 declares `T_DELAY`, code 173, and owns `UnwindTrieArgP` and the frame's trie state cells,
+# `T_DELAY` arm (TR4 declares `T_DELAY`, code 175, and owns `UnwindTrieArgP` and the frame's trie state cells,
 # `_trie_state_cell`); the operand `h` is TR4's `trie_node_handle` = `answer_ref(serial, nid)` (0: upstream's NULL node);
 # `get_trie_from_node(answer)` is the trie of the handle's serial; `argTermP(*TrieTermP, 0)` is a term reference to argument 1
 # of the compound in the TrieTermP cell.

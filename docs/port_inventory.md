@@ -697,7 +697,7 @@ marker exists in `src/pl-vmi.jl` (declaration only — no instruction executes y
 | `S_MQUAL` | 3706 | CA1_VAR |  | declared |
 | `S_LMQUAL` | 3721 | CA1_VAR |  | declared |
 | `S_SSU_DET` | 3737 | — |  | declared |
-| `S_DET` | 3743 | — |  |  |
+| `S_DET` | 3743 | — |  | declared |
 
 </details>
 
