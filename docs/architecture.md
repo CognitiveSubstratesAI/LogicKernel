@@ -1809,7 +1809,6 @@ graph LR
     pl_undo --> SWI_Prolog
     pl_undo --> pl_atom
     pl_undo --> pl_global
-    pl_undo --> pl_modul
     pl_undo --> pl_inline
     pl_undo --> pl_comp
     pl_undo --> pl_alloc
@@ -1817,7 +1816,6 @@ graph LR
     pl_undo --> pl_fli
     pl_undo --> pl_attvar
     pl_undo --> pl_error
-    pl_undo --> pl_proc
     pl_mutex --> SWI_Prolog
     pl_mutex --> pl_global
     pl_mutex --> pl_comp
