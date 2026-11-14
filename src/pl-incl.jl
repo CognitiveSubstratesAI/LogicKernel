@@ -3009,6 +3009,12 @@ const SIZEOF_IDG_SET_BLOCK = 24
 const SIZEOF_IDG_NODE = 80
 "`sizeof(idg_mono)` at the pin (pl-tabling.h): 24."
 const SIZEOF_IDG_MONO = 24
+"`sizeof(struct table)` at the pin (os/pl-table.h): 32 (two `int`s and three pointers)."
+const SIZEOF_TABLE = 32
+"`sizeof(struct kvs)` at the pin (os/pl-table.h): 40."
+const SIZEOF_KVS = 40
+"`sizeof(struct symbol)` at the pin (os/pl-table.h): 16 (a key and a value)."
+const SIZEOF_SYMBOL = 16
 
 # PORT: pl-idgset.h idg_set_block
 # DIVERGES: see the block note; `entries` has `capacity` slots (#undef past `count`), `entry_dead[i]` is entry i's

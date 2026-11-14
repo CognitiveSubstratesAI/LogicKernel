@@ -7590,8 +7590,9 @@ and src/pl-incl.jl cite 18168e62. Design: lk-channel evidence/TRIE2/handoff.md; 
   4. **A `TrieRefusal` leaves the foreign frame open** (src/pl-trie.jl, `trie_gen_raw`): the state is released, the frame opened by `PL_open_foreign_frame` is not closed when the exception propagates; the gate checks that the kernel's
      exception path does not need it closed.
   6. **`$trie_property/2`**: the property atoms are compared by `sym_key` (also the builtin ones); `size` is `stat_trie(tr).bytes` without the `Sdprintf` cross-checks of upstream; `discarded` reads `TRIE_DISCARDED`;
-     `compiled_size` fails (no clause before TR4); `wait` and `deadlock` (`trie->stats.wait`, `.deadlock`, O_PLMT) are the constant 0 (single-threaded, owner TH1); `invalidated`, `reevaluated` and the `idg_*` names fail
-     because `trie.IDG` is `Nothing` until TB6.
+     `compiled_size` is `8 * sizeofClause(length(codes))` bytes of the kept clause (the kernel's number; it fails without a clause, as upstream) and `idg_size` is `SIZEOF_IDG_NODE` + the two edge-set sizes
+     + `SIZEOF_IDG_MONO` + `sizeofTablePP` with a modelled capacity (TBP; an integer > 0, not swipl's number); `wait` and `deadlock` (`trie->stats.wait`, `.deadlock`, O_PLMT) are the constant 0 (single-threaded, owner TH1);
+     `invalidated`, `reevaluated`, `idg_affected_count` and `idg_dependent_count` read the IDG node of the trie (TBP, pl-trie.c:4326-4340) and fail for a trie without one, as upstream.
   7. **No `acquire_trie`/`release_trie`** (O_PLMT, owner TH1), no `DEBUG` prints.
 - **Not defined at the pin (O_NESTED_TRIES):** `trie_insert_insert/3`, `trie_lookup_gen/3` and `trie_lookup_delete/3` sit in pl-trie.c :5213-5216 inside `#if O_NESTED_TRIES`, and that macro is defined nowhere at the pin, so swipl
   10.1.20 has no such predicates (`predicate_property(system:H, defined)` fails for all three). Nothing is registered for them and docs/r2_owners.tsv carries no row; if a later pin defines the macro, they are a new step.

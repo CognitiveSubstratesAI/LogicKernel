@@ -3728,6 +3728,7 @@ _manifest_tb6(T) = begin
         (LK.idg_set_contains, Tuple{SET, IN}, false),
         (LK.idg_set_size, Tuple{SET}, false),
         (LK.idg_set_sizeof, Tuple{SET}, false),
+        (LK.sizeofTablePP, Tuple{IdDict{IN, LK.idg_mdep{T, IN}}}, false),
         (LK.idg_set_lingering_sizeof, Tuple{Union{Nothing, BLK}}, false),
         (LK.idg_set_clear, Tuple{SET, typeof(LK.idg_free_affected), CTX, LING, PL}, false),
         (LK.idg_set_clear, Tuple{SET, typeof(LK.idg_free_dependent), CTX, LING, PL}, false),
