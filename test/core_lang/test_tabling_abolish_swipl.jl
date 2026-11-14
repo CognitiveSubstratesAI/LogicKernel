@@ -111,10 +111,13 @@ ab_n(N) :- findall(K, (ab_vt(VT), trie_gen(VT, K, _)), L), length(L, N).
 ab_list(L) :- findall(K-S, (ab_vt(VT), trie_gen(VT, K, T), '$tbl_table_status'(T, S)), L0), msort(L0, L).
 ab_tab(V, T) :- '$tbl_existing_variant_table'(0, V, T, _, _).
 """
-# the kernel marks the predicates tabled (`is_tabled`); the tables are made by `_ab_tables!`
+# the kernel marks the predicates tabled (`is_tabled`); the tables are made by `_ab_tables!`; the two `'$table_mode'/3` clauses are what
+# swipl's `:- table` writes (boot/tabling.pl:1319-1324: `'$table_mode'(Head, Head, Reserved)`), which current_table/2 reads (:1245-1253)
 const _AB_KERNEL = raw"""
 :- '$set_predicate_attribute'(ab_p(_), tabled, true).
 :- '$set_predicate_attribute'(ab_q(_), tabled, true).
+'$table_mode'(ab_p(X), ab_p(X), R) :- '$tbl_trienode'(R).
+'$table_mode'(ab_q(X), ab_q(X), R) :- '$tbl_trienode'(R).
 ab_mk.
 ab_inside(R) :- ( '$tbl_abolish_local_tables' -> R = yes ; R = no ).
 """
