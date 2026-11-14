@@ -1119,7 +1119,8 @@ end
 # PORT: pl-write.c writeAttVar
 # The pin cbf4e189 plus upstream fix ace539d7 (BP2, a named backport): an attributed variable met while its own
 # attributes are written is written as its name; the foreign frame is closed if writing the attributes fails.
-# DIVERGES: `attributes(portray)` (`'$attvar':portray_attvar/1`, pl-write.c:1022-1047) needs
+# DIVERGES: `attributes(portray)` (the branch at pl-write.c:1060-1084: enterPortray, saveWakeup, then
+# `PL_call_predicate` of `'$attvar':portray_attvar/1` with the output stream as the current output) needs
 # format/2 (AV10, row wr05): refused (`NotPortedError`) instead of called.
 "Write the attributed variable term reference `av` holds: its name, then `{...}` per the `attributes` option (pl-write.c)."
 function writeAttVar(av::term_t, options::write_options{T})::Bool where {T}
@@ -1155,7 +1156,7 @@ function writeAttVar(av::term_t, options::write_options{T})::Bool where {T}
         throw(
             NotPortedError{T}(
                 mk_gnd(T, Int64(av)),                       # the term reference (a culprit is a term)
-                "write_term/2 attributes(portray): '\$attvar':portray_attvar/1",
+                "write_term/2 attributes(portray): '\$attvar':portray_attvar/1 (pl-write.c:1060-1084)",
                 "AV10"
             )
         )

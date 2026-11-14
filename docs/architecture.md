@@ -790,7 +790,7 @@ fixed it or a public issue exists.
 | `bench/programs/{derive,nreverse,qsort,poly_10}.jl` | the STANDALONE CONSUMER: four of SWI's benchmark programs written on `DefaultTerm` with exported names only, beside the verbatim `.pl` files | swipl-bench `programs/*.pl` |
 | `test/test_standalone_consumer.jl` | runs them: only exported names (checked by parsing), independent oracles, and identical `write_canonical` output to swipl running the upstream programs | — |
 | `src/pl-index.jl` | just-in-time clause indexing, function by function: lookup, index creation, assessment, candidate indexes, the primary index, deep (list) indexes, the `indexed` property | `src/pl-index.c` |
-| `src/pl-incl.jl` | the structs the clause store and its indexes are built from (`clause`, `clause_ref`, `clause_index`, `clause_list`, `definition`, …), the predicate table's (`procedure`, `module` as `module_t`) and the word layout of keys; THE LOCAL STACK's layout (V3): positions and upstream's struct widths, `VAROFFSET`, the frame, choice-point and foreign-frame records, the frame flags and their macros; V4a's query frame (`queryFrame`, upstream's 47 words), the argument-pointer value `argp_t`, the argument-stack entry and the builder frame, a definition's supervisor and the database's shared supervisor blocks (`PL_code_data`); V5b's exception classes (`except_class`); V6b1's type tests on a term (pl-data.h: `canBind`, `isTextAtom`, `isInteger`, …), and V6b2's `isAtom` and `isTaggedInt`; R1b's operator types and kinds (`OP_FX` … `OP_YFX`, `OP_PREFIX`, `OP_INFIX`, `OP_POSTFIX`, `OP_MAXPRIORITY`) and a module's operator table; R1c's module syntax flags (`M_CHARESCAPE`, `DBLQ_*`, `BQ_*`, `RAT_*`, `M_RDSTRING_TERM`) and `strnumstat`; R1d's text conversion results (`CVT_status`, `CVT_result`); R1f's source-file record (`sourceFile`), a clause's `line_no`/`source_no`/`owner_no`, a procedure's `source_no`, the style-check and predicate-attribute flags; since V9g-b a recorded term (`record`: the term itself, its cyclic references beside it) and the bag of a findall/3 in progress (`findall_bag`, pl-bag.c's — the local data holds the bags, so the struct is declared here); since L1b stage C1 the WORDS of the stacks (pl-data.h): every tag and storage bit, `tag`, `storage`, `valInt`/`valUInt`, `isIndirect`, the type tests on a word (other methods of the term-level tests' functions), `consInt`/`consUInt`, the indirect headers (`mkIndHdr`, `wsizeofInd`, `padHdr`, `mkBlobHdr`) and pl-gmp.h's size words (`mpz_size_stack`, `mpq_size_stack`, `mpz_stack_size`); since NF1 a frame's redo context (`fctx`), the redo tags (pl-builtin.h) and the state pool, with between/3's state (`between_state`, pl-arith.c's); since NF2 retract/1's context (`retract_context`, pl-proc.c's); since NF3 the state of current_op/3 and `$local_op/3` (`op_enum`, pl-op.c's); since R2 F1a the Prolog-flag table's types and the mask's bits (`prolog_flag`, `oneof_t`, `FT_*`, `FF_*`, `PLFLAG_*`, `prolog_flag_enum`, `prolog_flag_table`); since TAB1 TB0 the allocation pool (`alloc_pool`) and the table state of pl-tabling.h/.c (`cluster`, `worklist`, `worklist_set`, `component_set`, `tbl_component`, `tbl_status`, `suspension`, the `sindex_*` structs, `delay`, `delay_set`, `delay_info`, `delay_usage`, the `CLUSTER_*`, `SCC_*`, `*_MAGIC` and `TF_MONOTONIC_LAZY` constants as `Int`s) | `src/pl-incl.h`, `src/pl-data.h`, `src/pl-global.h`, `src/pl-builtin.h`, `src/SWI-Prolog.h`, `src/pl-bag.c`, `src/pl-gmp.h`, `src/pl-arith.c`, `src/pl-proc.c`, `src/pl-op.c`, `src/os/pl-prologflag.h`, `src/os/pl-prologflag.c`, `src/pl-rec.h`, `src/pl-rec.c`, `src/pl-event.h`, `src/pl-event.c`, `src/pl-copyterm.h`, `src/pl-gvar.c`, `src/pl-tabling.h`, `src/pl-tabling.c`, `src/pl-allocpool.h`, `src/pl-wrap.h`, `src/pl-trie.c`, `src/pl-trie.h`, `src/pl-indirect.h` |
+| `src/pl-incl.jl` | the structs the clause store and its indexes are built from (`clause`, `clause_ref`, `clause_index`, `clause_list`, `definition`, …), the predicate table's (`procedure`, `module` as `module_t`) and the word layout of keys; THE LOCAL STACK's layout (V3): positions and upstream's struct widths, `VAROFFSET`, the frame, choice-point and foreign-frame records, the frame flags and their macros; V4a's query frame (`queryFrame`, upstream's 47 words), the argument-pointer value `argp_t`, the argument-stack entry and the builder frame, a definition's supervisor and the database's shared supervisor blocks (`PL_code_data`); V5b's exception classes (`except_class`); V6b1's type tests on a term (pl-data.h: `canBind`, `isTextAtom`, `isInteger`, …), and V6b2's `isAtom` and `isTaggedInt`; R1b's operator types and kinds (`OP_FX` … `OP_YFX`, `OP_PREFIX`, `OP_INFIX`, `OP_POSTFIX`, `OP_MAXPRIORITY`) and a module's operator table; R1c's module syntax flags (`M_CHARESCAPE`, `DBLQ_*`, `BQ_*`, `RAT_*`, `M_RDSTRING_TERM`) and `strnumstat`; R1d's text conversion results (`CVT_status`, `CVT_result`); R1f's source-file record (`sourceFile`), a clause's `line_no`/`source_no`/`owner_no`, a procedure's `source_no`, the style-check and predicate-attribute flags; since V9g-b a recorded term (`record`: the term itself, its cyclic references beside it) and the bag of a findall/3 in progress (`findall_bag`, pl-bag.c's — the local data holds the bags, so the struct is declared here); since L1b stage C1 the WORDS of the stacks (pl-data.h): every tag and storage bit, `tag`, `storage`, `valInt`/`valUInt`, `isIndirect`, the type tests on a word (other methods of the term-level tests' functions), `consInt`/`consUInt`, the indirect headers (`mkIndHdr`, `wsizeofInd`, `padHdr`, `mkBlobHdr`) and pl-gmp.h's size words (`mpz_size_stack`, `mpq_size_stack`, `mpz_stack_size`); since NF1 a frame's redo context (`fctx`), the redo tags (pl-builtin.h) and the state pool, with between/3's state (`between_state`, pl-arith.c's); since NF2 retract/1's context (`retract_context`, pl-proc.c's); since NF3 the state of current_op/3 and `$local_op/3` (`op_enum`, pl-op.c's); since R2 F1a the Prolog-flag table's types and the mask's bits (`prolog_flag`, `oneof_t`, `FT_*`, `FF_*`, `PLFLAG_*`, `prolog_flag_enum`, `prolog_flag_table`); since TAB1 TB0 the allocation pool (`alloc_pool`) and the table state of pl-tabling.h/.c (`cluster`, `worklist`, `worklist_set`, `component_set`, `tbl_component`, `tbl_status`, `suspension`, the `sindex_*` structs, `delay`, `delay_set`, `delay_info`, `delay_usage`, the `CLUSTER_*`, `SCC_*`, `*_MAGIC` and `TF_MONOTONIC_LAZY` constants as `Int`s) | `src/pl-incl.h`, `src/pl-data.h`, `src/pl-global.h`, `src/pl-builtin.h`, `src/SWI-Prolog.h`, `src/pl-bag.c`, `src/pl-gmp.h`, `src/pl-arith.c`, `src/pl-proc.c`, `src/pl-op.c`, `src/os/pl-prologflag.h`, `src/os/pl-prologflag.c`, `src/pl-rec.h`, `src/pl-rec.c`, `src/pl-event.h`, `src/pl-event.c`, `src/pl-copyterm.h`, `src/pl-gvar.c`, `src/pl-tabling.h`, `src/pl-tabling.c`, `src/pl-allocpool.h`, `src/pl-wrap.h`, `src/pl-trie.c`, `src/pl-trie.h`, `src/pl-indirect.h`, `src/pl-flag.c` |
 | `src/pl-comp.jl` | the head side of the clause compiler — the variable analysis of head AND body (control constructs, the branches of `;`, the goal of `\+`; V1), `compileArgument`, the `H_VOID_N` merging, the clause's literal table (V1 L2) — the head decompiler (`decompileHead`, `decompile_head`), and the code readers the index uses (`skipArgs`, `argKey`); the body compiler (V2: `compileBody`, `compileSubClause`, the LCO block), since V6b1 the type tests compiled as upstream decides (`compileTypeTest`, `compileBodyVar1`/`NonVar1`, `always`) under the compiling thread's flags (`ld`); since V6c2 `is/2` and the comparisons (the ARITH_F branch, `compileSimpleAddition`, which emits `A_ADD_FC` since V8); since V6b2 the other goals compiled inline (`compileBodyUnify`, `compileBodyEQ`/`NEQ`, `compileBodyArg3`, `compileBodyCallContinuation`, `compileBodyShift`, `is_portable_constant`): since V9a the unification family emits (`skippedVar`, and `always` under `optimise`), the rest refused until V9; since V9b the unifications moved into the head (`optimise_unify`: `annotate_unification`, `argMoveUnify`, `isUnifiedArg`, `CL_HEAD_TERMS`); since V9c its errors raised with `PL_error`, and assert/1, assertz/1, asserta/1 (`assert_term!`, `get_head_and_body_clause`, `is_neck`, `PL_predicates_from_comp`); since V5c `unify_definition` (a definition's reference, module-qualified); since R1f the consult path of `assert_term!` (a clause's file, line and owner; `overruleImportedProcedure`, `redefineProcedure`) and `record_clause`, `'$record_clause'/3`; since V9d (`;`) `compileBody!`'s frames for a disjunction with the variable tables it balances (`setVars`, `balanceVars`, `c_var`, `orVars`, `copyVarTable`), and the BODY DECOMPILER (`decompile!`, `decompileBody!`, `decompileBodyNoShift!`, `build_term!`) with clause/2 over rule bodies (`pl_clause!` with a body); since V9d (`->`) the conditionals' frames, `allocChoiceVar!` and `try_fast_condition!`, (`\+`) the negation's frame, and the decompiler's moved unifications (`mark_bvar_access`, `moved_unifications!`); since D1 clause/3, `'$clause'/4` and `'$rule'/3` (`clause_ndet`'s `ref`/`bindings`, its by-reference branch, `decompile_bindings!`, `unify_definition`'s bound-head branch) and assert/2, assertz/2, asserta/2 with the Ref of `'$record_clause'/4` | `src/pl-comp.c`, `src/pl-comp.h`, `src/pl-incl.h` |
 | `src/pl-atom.jl` | since L1b stage A, the ATOM TABLE (pl-atom.c), one per database (`atoms_t`, `GD->atoms`): `struct atom`, the blocks (`allocateAtomBlock`, `fetchAtomArray`), `reserveAtom`, `same_name`, `lookupBlob`, `lookupAtom`, `rehashAtoms`, `registerBuiltinAtoms`, `lockAtoms`, `do_init_atoms!`, blob registration per database (`PL_register_blob_type`, `blob_registration`); the built-in atoms GENERATED from src/ATOMS at the pin by tools/gen_atoms.jl (1048, the empty atom first); with `ucs_atom`/`lookupUCSAtom` (pl-fli.jl), `PL_canonicalise_text`/`textToAtom` (os/pl-text.jl) and `initReservedSymbols!` (pl-ressymbol.jl). Nothing reads it yet but its tests: stage C's words do. AGC NOT PORTED (with pl-gc.c) | `src/pl-atom.c`, `src/ATOMS`, `src/pl-incl.h` |
 | `src/pl-funct.jl` | the control functors (`registerControlFunctors`, upstream's `CONTROL_F` set) and the names compileSubClause treats specially (`SubClauseNames`: `true`, `call`, the goals compiled inline, each O_COMPILE_IS functor by name since V6b2), registered once per database into the global data, which the clause compiler reads them from; since L1b stage B, the FUNCTOR TABLE (pl-funct.c), one per database (`functors_t`, `GD->functors`): `functorDef`, the blocks (`allocateFunctorBlock`, `fetchFunctorArray`), `registerFunctor`, `lookupFunctorDef`, `isCurrentFunctor`, `rehashFunctors` (with os/pl-table.h's `pointerHashValue`), `registerBuiltinFunctors` over the 333 built-ins GENERATED from src/ATOMS at the pin by tools/gen_atoms.jl (index 1 first), `initFunctors!`, which sets `CONTROL_F`/`ARITH_F` on the table's definitions; pl-data.h's `indexFunctor`, `valueFunctor`, `arityFunctor` (arity 31 and up from the table), `isAtomFunctor`, `nameFunctor` (pl-incl.jl). Nothing reads the table yet but its tests: the compiler keeps `ControlFunctors`/`_arith_functors` until stage C's words | `src/pl-funct.c`, `src/ATOMS`, `src/pl-incl.h`, `src/os/pl-table.h` |
@@ -821,7 +821,7 @@ fixed it or a public issue exists.
 | `src/pl-bag.jl` | the bags of findall/3 (since V9g-b): `'$new_findall_bag'/0`, `'$add_findall_bag'/1,2`, `'$collect_findall_bag'/2`, `'$destroy_findall_bag'/0` — the innermost bag of the thread is implicit, the answers are records, and the last answer is put back first; `'$suspend_findall_bag'/0` (findnsols/4,5: a nondeterministic foreign predicate) is not ported | `src/pl-bag.c` |
 | `src/pl-gvar.jl` | global variables (since R2 G1): `b_setval/2`, `b_getval/2`, `nb_setval/2`, `nb_linkval/2`, `nb_getval/2`, `nb_current/2`, `nb_delete/1`, `auto_define_gvar` over `user:exception/3` (section G1 below) | `src/pl-gvar.c` |
 | `src/pl-list.jl` | lists (since V9g-b): `is_list/1`, `'$length'/2`, and `sort/2`, `msort/2`, `keysort/2` over `nat_sort` — Richard O'Keefe's bottom-up natural merge sort, ported line for line over records that are indices into three vectors; `sort/4` and `'$memberchk'/3` are not ported | `src/pl-list.c` |
-| `src/pl-trace.jl` | `prolog_current_frame/1` and `prolog_current_choice/1` (`PL_unify_frame`, `PL_unify_choice`) — the positions V3's oracle compares; since R2 F1c `debugmode`, `tracemode` (the debug flag) | `src/pl-trace.c`, `src/pl-trace.h` |
+| `src/pl-trace.jl` | `prolog_current_frame/1` and `prolog_current_choice/1` (`PL_unify_frame`, `PL_unify_choice`) — the positions V3's oracle compares; since R2 F1c `debugmode`, `tracemode` (the debug flag) | `src/pl-trace.c`, `src/pl-trace.h`, `src/pl-incl.h`, `src/pl-comp.c` |
 | `src/pl-gmp.jl` | the number core of arithmetic (V6c1): a term read as a `number` and written back (`get_rational`, `put_number`, `PL_unify_number`), the promotions, `cmpNumbers`, the doubles of a big integer or a rational (`mpz_to_double`, `mpz_fdiv`); since V8 the largest big integer (`maxBigIntSize`, `MPZ_MAX_BYTES`); since R1c `clearNumber`, and a stored NaN is the canonical `1.5NaN` (upstream's `put_double`) | `src/pl-gmp.c`, `src/pl-gmp.h`, `src/pl-inline.h` |
 | `src/pl-arith.jl` | evaluation (`valueExpression`, `evalExpression`), the functions ported (`+`, `-`, `*`, unary `-`/`+`), `check_float`, `compareNumbers`, and the built-ins `is/2`, `</2`, `>/2`, `=</2`, `>=/2`, `=\=/2`, `=:=/2` (V6c1); since V8 `>>` and `<<` (`ar_shift`), `A_ADD_FC`'s `ar_add_si`, and the integer size checks (`int_bits_ok`, `check_int_bits`); since R1a `[Atom]` (`arithChar` through `charCode`); since R1c `ar_rdiv_mpz` (a rational read) and `PL_nan`; since arith-a and arith-b the functions of arith_funcs_design.md §2 (`ar_pow`, the libm functions, `pi`/`e`/`cputime`/`random`) | `src/pl-arith.c`, `src/pl-arith.h`, `src/pl-incl.h`, `src/pl-inline.h`, `src/os/pl-os.c` |
 | `src/pl-modul.jl` | the module table (`module_table`, a vector with a name index) and any module of it, created on its first name — `system`, `user`, `$`-modules, classes, flags, the super modules (`_lookupModule!`, `lookupModule`, `isCurrentModule`, `setSuperModule` and its helpers; since V5c, MOD1) — stripping `Module:` (`stripModuleName`, `stripModule`), and what a call of an undefined predicate reads: the `unknown` flag, inherited through the supers (`getUnknownModule`, `inheritUnknown`); since R1c the syntax flags a module is created with (SWI-7's); since MOD1 `set_module/1`, `'$module_property'/2`, `'$current_source_module'/1`, `'$current_typein_module'/1` and their setters, `add_import_module/3`, `delete_import_module/2`, `ReadingSource`, `MODULE_parse` | `src/pl-modul.c`, `src/pl-incl.h` |
@@ -837,7 +837,7 @@ fixed it or a public issue exists.
 | `src/os/pl-file.jl` | the file an open stream reads (R1f): `fileNameStream`, `setFileNameStream` — pl-file.c's stream context, the part the loader needs; since R1e's write/1 family THE STANDARD STREAMS — `initIO` over stdin/stdout/stderr (decision 2a), the host's `set_standard_stream!`, an output stream by alias (`getOutputStream`, `get_stream_handle`, `check_stream_mode`, `checkStreamType`) with upstream's errors, `streamStatus` and `reportStreamError`; since MOD2 a standard stream over the OS file descriptor when Julia's stdX is none the stream layer holds (`_std_io`, pl-stream.c `S__iob0`) | `src/os/pl-file.c`, `src/os/pl-file.h`, `src/pl-global.h`, `src/os/pl-stream.c`, `src/pl-incl.h`, `src/pl-privitf.c`, `src/os/pl-prologflag.c` |
 | `src/os/pl-fmt.jl` | formatted output (since R2 O1A): `format/1,2,3`, `format_predicate/2`, `current_format_predicate/2` — `do_format` and the column machinery (`format_state`, the pending fill points), `formatInteger` and `formatFloat` (section O1A below) | `src/os/pl-fmt.c`, `src/os/pl-fmt.h` |
 | `src/os/pl-option.jl` | option lists (since R1e's write/1 family): `PL_scan_options` over `PL_option_t` tables — `Name(V)`, `Name = V`, a bare Boolean `Name`; unknown options ignored, warned about or an error, as the `unknown_option` flag says; `get_optval` | `src/os/pl-option.c`, `src/os/pl-option.h` |
-| `src/os/pl-prologflag.jl` | Prolog flags: `setBackQuotes`, `setDoubleQuotes`; since R2 F1a the flag table (`setPrologFlag`, `initPrologFlags!` with the flags of `initArith`, `initClauseIndexing` and tabling), the mask of the fast Boolean flags (`truePrologFlag`), `current_prolog_flag/2` and `'$current_prolog_flag'/5`, `PL_current_prolog_flag`, `PL_get_prolog_flag` | `src/os/pl-prologflag.c`, `src/os/pl-prologflag.h`, `src/pl-fli.c`, `src/pl-incl.h`, `src/pl-read.c`, `src/pl-tabling.c` |
+| `src/os/pl-prologflag.jl` | Prolog flags: `setBackQuotes`, `setDoubleQuotes`; since R2 F1a the flag table (`setPrologFlag`, `initPrologFlags!` with the flags of `initArith`, `initClauseIndexing` and tabling), the mask of the fast Boolean flags (`truePrologFlag`), `current_prolog_flag/2` and `'$current_prolog_flag'/5`, `PL_current_prolog_flag`, `PL_get_prolog_flag` | `src/os/pl-prologflag.c`, `src/os/pl-prologflag.h`, `src/pl-fli.c`, `src/pl-incl.h`, `src/pl-read.c`, `src/pl-tabling.c`, `src/pl-setup.c` |
 | `src/os/pl-codelist.jl` | the text of a code list or a character list (since R1d): `codes_or_chars_to_buffer`, with its partial, wide and non-code results | `src/os/pl-codelist.c` |
 | `src/os/pl-os.jl` | the operating-system layer (Y1): `CpuTime` (moved from src/pl-arith.jl), `WallTime`, `getenv3`, `Setenv`, `Unsetenv`, `Pause`, `CPU_USER`/`CPU_SYSTEM`, the Linux `CLOCK_*` ids; the C library by `ccall` (`clock_gettime`, `setenv`, `unsetenv`) | `src/os/pl-os.c`, `src/os/pl-os.h` |
 | `src/os/pl-files.jl` | file names and deleting a file (Y1): `get_file_name`, `PL_get_file_name`, `RemoveFile` (`remove(3)` by `ccall`), delete_file/1 (`PL_predicates_from_files`) | `src/os/pl-files.c`, `src/os/pl-files.h`, `src/os/pl-file.c` |
@@ -935,6 +935,9 @@ fixed it or a public issue exists.
 | `src/pl-allocpool.jl` | TAB1 TB0 (R2): pl-allocpool.c whole, the counted allocation pool behind the flag `table_space`: `new_alloc_pool`, `free_alloc_pool`, `alloc_from_pool` (charges `bytes`, `resource_error(Name)` past the limit), `free_to_pool`; the struct `alloc_pool` is in src/pl-incl.jl; counts only, Julia's collector frees (section TAB1 TB0) | `src/pl-allocpool.c` |
 | `src/pl-tabling.jl` | TAB1-min (R2): the load-time slice of pl-tabling.c that boot/tabling.pl's `:- table` expansion asks for: `'$tbl_trienode'/1`, `'$tbl_is_trienode'/1` (the reserved symbol `trienode`), the tabling properties of a predicate (`table_props`, `definition.tabling`: `tbl_get_predicate_attribute`, `tbl_set_predicate_attribute`, `tbl_set_incremental_predicate`, `tbl_reset_tabling_attributes!`) behind the `tabled`, `tabled_variant`, `incremental`, `monotonic`, `tshared`, `opaque`, `lazy`, `abstract`, `subgoal_abstract`, `answer_abstract` and `max_answers` keys of `'$set_predicate_attribute'/3` and `'$get_predicate_attribute'/3`; table `PL_predicates_from_tabling` (src/pl-ext.jl). The tries, worklists and `start_tabling/3` are TAB1 (section TAB1-min) Since TAB1 TB0 the constants and sentinels of pl-tabling.c (`WL_*`, `WLFS_*`, `DV_DELETED`, `DL_UNDEFINED`, `CAND_*`, `TBL_FREE_*`), the freed-object lists (`tbl_alloc`, `tbl_free`, `free_tbl_free_objects`), `initTabling!` (the restraints) and `setMonotonicMode` (section TAB1 TB0). Since TAB1 TB1 the start-node cache, the pointers to tries, `variant_table`, the answer table (`get_answer_table`, `reset_answer_table`), the status family and the 13 `$tbl_*` predicates over them (section TAB1 TB1) | `src/pl-tabling.c`, `src/pl-trie.c`, `src/pl-trie.h` |
 | `src/pl-wrap.jl` | TAB1-min (R2): pl-wrap.c's closure blob (`closure_blob`, a record in `gd.closure_refs`), `'$c_wrap_predicate'/5` installing a wrapper supervisor (`S_CALLWRAPPER` or `S_TABLED` over the predicate's own supervisor), `find_wrapper`, `assert_wrapper`, `unify_wrapped`, `wrapper_vmi`, `skipWrapperPrefix`, `isCallWrapper`, `resetWrappedSupervisor` (called by `freeCodesDefinition!`, src/pl-supervisor.jl); table `PL_predicates_from_wrap`. `wrapped_predicate/2`, `unwrap_predicate/2`, `$wrapped_implementation/3` and `$closure_predicate/2` are left to WRAP1 (section TAB1-min) | `src/pl-wrap.c`, `src/pl-wrap.h` |
+| `src/pl-flag.jl` | the flag/3 family (pl-flag.c): `lookupFlagKey` (upstream's `lookupFlag`), `get_flag/2`, `set_flag/2`, `current_flag/1` over the table `gd.flags_table` kept in creation order in `gd.flags_order` | `src/pl-flag.c` |
+| `src/pl-load.jl` | pl-load.c's `$activate_static_extension/1`, refused by name (LB5-LB7) | `src/pl-load.c` |
+| `src/os/pl-apple.jl` | pl-apple.c's `apple_current_locale_identifier/1`, refused by name (APPLE1) | `src/os/pl-apple.c` |
 | `src/pl-trie.jl` | TAB1 TR1 (part A): pl-trie.c's trie as arenas of records (`trie{T}`, `trie_node`, `trie_children_block`, `trie_node_chunk` in src/pl-incl.jl): `trie_create`, `trie_destroy`, `trie_empty`, `trie_empty_take`, `trie_clean`, the children and blocks (`get_child`, `next_child!`, `add_child`, `delete_child`, `compact_children`), node allocation in both modes (individual nodes under TRIE_CONCURRENT, chunks otherwise), `clear_node`, `prune_node`, `prune_trie`, `insert_child`, `follow_node`, the indirect table (pl-indirect.c: `intern_indirect`, `trie_intern_indirect`), the lookups `trie_lookup_abstract`, `trie_lookup_flat`, `trie_insert_flat`, `is_ground_trie_node`, `map_trie_node`, `stat_trie`, `trie_table_size`, and the trie blob (`trie_blob`, `initTries!`, `trie_symbol`, `symbol_trie`, `get_trie`, `trie_error`). The PRED_IMPLs and the value helpers are part B; the DIVERGES are in section TAB1 TR1 | `src/pl-trie.c`, `src/pl-trie.h`, `src/pl-indirect.c`, `src/pl-tabling.c` |
 | `src/gd_template.jl` | LB4 b1 (R2): the template database (ORIGINAL): `copy_global_data`, generated field by field from `PL_global_data` (the stream tables an empty copy of the same shape, every other field one deep copy that keeps the identities inside the database), the per-process, per-term-type registry (`gd_template`, `PL_global_data_from_template`, `reset_gd_templates!`, `gd_template_built`); no constructor calls it until b2 | — |
 | `src/boot_image.jl` | LB4 b1-3 (R2): the readers of a booted database for the boot check, read from the definition tables and `files_array` (no syspred.pl): `boot_image_predicates` (T1: module, name, arity, defined, dynamic, foreign, number_of_clauses, locked, iso, transparent, meta, public, exported) and `boot_image_source_files` (T3: the `$time_source_file/3` order and the `$source_file_property/3` columns) | — |
@@ -975,6 +978,7 @@ graph LR
     pl_variant["pl-variant.jl"]
     pl_copyterm["pl-copyterm.jl"]
     pl_rec["pl-rec.jl"]
+    pl_flag["pl-flag.jl"]
     pl_termhash["pl-termhash.jl"]
     pl_thread["pl-thread.jl"]
     pl_gc["pl-gc.jl"]
@@ -1019,6 +1023,8 @@ graph LR
     pl_qlf["pl-qlf.jl"]
     pl_string["pl-string.jl"]
     os_pl_fmt["os/pl-fmt.jl"]
+    pl_load["pl-load.jl"]
+    os_pl_apple["os/pl-apple.jl"]
     pl_dwim["pl-dwim.jl"]
     pl_ext["pl-ext.jl"]
     gd_template["gd_template.jl"]
@@ -1255,6 +1261,17 @@ graph LR
     pl_rec --> pl_proc
     pl_rec --> pl_event
     pl_rec --> pl_read
+    pl_flag --> term_interface
+    pl_flag --> default_term
+    pl_flag --> pl_incl
+    pl_flag --> SWI_Prolog
+    pl_flag --> pl_global
+    pl_flag --> pl_comp
+    pl_flag --> pl_rec
+    pl_flag --> pl_wam
+    pl_flag --> pl_fli
+    pl_flag --> pl_error
+    pl_flag --> pl_gmp
     pl_termhash --> term_interface
     pl_termhash --> default_term
     pl_termhash --> pl_hash
@@ -1492,6 +1509,7 @@ graph LR
     os_pl_prologflag --> os_pl_option
     os_pl_prologflag --> os_pl_text
     os_pl_prologflag --> os_pl_file
+    os_pl_prologflag --> pl_setup
     os_pl_prologflag --> pl_proc
     os_pl_prologflag --> pl_trace
     os_pl_prologflag --> pl_pro
@@ -1653,6 +1671,7 @@ graph LR
     pl_srcfile --> os_pl_text
     pl_srcfile --> pl_proc
     pl_srcfile --> pl_supervisor
+    pl_srcfile --> pl_event
     pl_srcfile --> pl_qlf
     pl_supervisor --> default_term
     pl_supervisor --> pl_incl
@@ -1673,15 +1692,19 @@ graph LR
     pl_trace --> pl_incl
     pl_trace --> SWI_Prolog
     pl_trace --> pl_atom
+    pl_trace --> pl_vmi
     pl_trace --> pl_funct
     pl_trace --> pl_global
     pl_trace --> pl_inline
     pl_trace --> pl_prims
     pl_trace --> pl_comp
+    pl_trace --> pl_gc
     pl_trace --> pl_wam
     pl_trace --> pl_fli
     pl_trace --> pl_error
+    pl_trace --> pl_dbref
     pl_trace --> os_pl_prologflag
+    pl_trace --> pl_proc
     pl_pro --> term_interface
     pl_pro --> default_term
     pl_pro --> os_pl_stream
@@ -2011,6 +2034,18 @@ graph LR
     os_pl_fmt --> pl_trie
     os_pl_fmt --> pl_write
     os_pl_fmt --> pl_read
+    pl_load --> term_interface
+    pl_load --> default_term
+    pl_load --> pl_incl
+    pl_load --> SWI_Prolog
+    pl_load --> pl_global
+    pl_load --> pl_comp
+    os_pl_apple --> term_interface
+    os_pl_apple --> default_term
+    os_pl_apple --> pl_incl
+    os_pl_apple --> SWI_Prolog
+    os_pl_apple --> pl_global
+    os_pl_apple --> pl_comp
     pl_dwim --> term_interface
     pl_dwim --> default_term
     pl_dwim --> os_pl_ctype
@@ -2032,6 +2067,7 @@ graph LR
     pl_ext --> pl_variant
     pl_ext --> pl_copyterm
     pl_ext --> pl_rec
+    pl_ext --> pl_flag
     pl_ext --> pl_termhash
     pl_ext --> pl_thread
     pl_ext --> pl_gc
@@ -2066,6 +2102,8 @@ graph LR
     pl_ext --> pl_qlf
     pl_ext --> pl_string
     pl_ext --> os_pl_fmt
+    pl_ext --> pl_load
+    pl_ext --> os_pl_apple
     pl_ext --> pl_dwim
     gd_template --> default_term
     gd_template --> pl_incl
@@ -2114,11 +2152,11 @@ or **platform** (a Windows or macOS definition: out of the count). **NO OWNER** 
 
 | category | done | refused | missing | platform | NO OWNER |
 |---|---:|---:|---:|---:|---:|
-| predicates (C-defined, reached by the boot) | 298 | 0 | 124 | 3 | 1 |
-| refusal sites | 0 | 73 | 0 | 0 | 3 |
-| Prolog flags | 65 | 15 | 20 | 0 | 35 |
+| predicates (C-defined, reached by the boot) | 314 | 0 | 108 | 3 | 0 |
+| refusal sites | 0 | 76 | 0 | 0 | 2 |
+| Prolog flags | 75 | 8 | 3 | 9 | 0 |
 | VM instructions | 197 | 0 | 36 | 0 | 0 |
-| **total** | 560 | 88 | 180 | 3 | 39 |
+| **total** | 586 | 84 | 147 | 12 | 2 |
 
 #### The boot and library files
 
@@ -2132,15 +2170,15 @@ Predicate rows each file's calls reach (a predicate several files call counts in
 | `boot/expand.pl` | loaded | 55 | 0 | 0 |
 | `boot/dcg.pl` | loaded | 20 | 0 | 0 |
 | `boot/license.pl` | loaded | 5 | 0 | 0 |
-| `boot/syspred.pl` | loaded | 85 | 28 | 0 |
-| `boot/messages.pl` | loaded | 78 | 7 | 1 |
-| `boot/toplevel.pl` | loaded | 86 | 13 | 2 |
+| `boot/syspred.pl` | loaded | 92 | 21 | 0 |
+| `boot/messages.pl` | loaded | 79 | 6 | 1 |
+| `boot/toplevel.pl` | loaded | 92 | 7 | 2 |
 | `boot/attvar.pl` | loaded | 29 | 0 | 0 |
 | `boot/bags.pl` | loaded | 21 | 1 | 0 |
 | `boot/apply.pl` | loaded | 4 | 0 | 0 |
 | `boot/history.pl` | loaded | 19 | 2 | 0 |
 | `boot/dwim.pl` | loaded | 31 | 0 | 0 |
-| `boot/autoload.pl` | loaded | 76 | 1 | 0 |
+| `boot/autoload.pl` | loaded | 77 | 0 | 0 |
 | `boot/iri.pl` | loaded | 3 | 0 | 0 |
 | `boot/qlf.pl` | loaded | 10 | 0 | 0 |
 | `boot/rc.pl` | loaded | 16 | 6 | 0 |
@@ -2151,9 +2189,9 @@ Predicate rows each file's calls reach (a predicate several files call counts in
 | `boot/tabling.pl` | loaded | 86 | 53 | 0 |
 | `boot/topvars.pl` | loaded | 36 | 1 | 0 |
 | `boot/threads.pl` | skipped (conditional) | 0 | 0 | 0 |
-| `library/debug.pl` | loaded | 23 | 2 | 0 |
+| `library/debug.pl` | loaded | 24 | 1 | 0 |
 | `library/lists.pl` | loaded | 16 | 2 | 0 |
-| `library/prolog_stack.pl` | loaded | 36 | 3 | 0 |
+| `library/prolog_stack.pl` | loaded | 39 | 0 | 0 |
 | `library/option.pl` | loaded | 20 | 0 | 0 |
 | `library/dcg/high_order.pl` | loaded | 8 | 0 | 0 |
 
@@ -2161,40 +2199,42 @@ Predicate rows each file's calls reach (a predicate several files call counts in
 
 | owner | rows | missing | refused | which (first 8) |
 |---|---:|---:|---:|---|
-| TAB1 | 56 | 51 | 5 | `$idg_add_edge/1`, `$idg_add_mono_dyn_dep/3`, `$idg_add_monotonic_dep/3`, `$idg_changed/1`, `$idg_false_edge/3`, `$idg_falsecount/2`, `$idg_forced/1`, `$idg_mono_affects/3`, … +48 |
-| AR1 | 28 | 27 | 1 | `succ/2`, `A_ADD`, `A_DOUBLE`, `A_ENTER`, `A_EQ`, `A_FIRSTVAR_IS`, `A_FUNC`, `A_FUNC0`, … +20 |
-| TH1 | 20 | 18 | 2 | `$engine_create/3`, `$gc_clear/1`, `$gc_stop/0`, `$gc_wait/1`, `$sig_unblock/0`, `engine_next/2`, `is_engine/1`, `message_queue_create/1`, … +12 |
-| ENC1 | 16 | 0 | 16 | `refusal set_stream/2's unicode_atoms(nfc)`, `refusal open/4's unicode_atoms(Mode) option`, `refusal string("open/4 with the stream encoding …`, `refusal Scanrepresent: encoding $enc`, `refusal Sgetcode: encoding $enc`, `refusal put_code: encoding $enc`, `refusal PL_canonicalise_text of $enc`, `refusal PL_mb_text of $(text.encoding)`, … +8 |
+| TAB1 | 57 | 51 | 6 | `$idg_add_edge/1`, `$idg_add_mono_dyn_dep/3`, `$idg_add_monotonic_dep/3`, `$idg_changed/1`, `$idg_false_edge/3`, `$idg_falsecount/2`, `$idg_forced/1`, `$idg_mono_affects/3`, … +49 |
+| AR1 | 29 | 27 | 2 | `succ/2`, `A_ADD`, `A_DOUBLE`, `A_ENTER`, `A_EQ`, `A_FIRSTVAR_IS`, `A_FUNC`, `A_FUNC0`, … +21 |
+| TH1 | 21 | 18 | 3 | `$engine_create/3`, `$gc_clear/1`, `$gc_stop/0`, `$gc_wait/1`, `$sig_unblock/0`, `engine_next/2`, `is_engine/1`, `message_queue_create/1`, … +13 |
+| ENC1 | 18 | 0 | 18 | `flag encoding`, `flag unicode_atoms`, `refusal set_stream/2's unicode_atoms(nfc)`, `refusal open/4's unicode_atoms(Mode) option`, `refusal string("open/4 with the stream encoding …`, `refusal Scanrepresent: encoding $enc`, `refusal Sgetcode: encoding $enc`, `refusal put_code: encoding $enc`, … +10 |
 | LB3 | 14 | 0 | 14 | `refusal QLF predicate $close_wic/0`, `refusal QLF predicate $file_hash/2`, `refusal QLF predicate $map_id/2`, `refusal QLF predicate $open_wic/2`, `refusal QLF predicate $qlf_close/0`, `refusal QLF predicate $qlf_current_source/1`, `refusal QLF predicate $qlf_dependency/1`, `refusal QLF predicate $qlf_is_compatible/1`, … +6 |
-| DBG1 | 11 | 10 | 1 | `$call_no_catch/1`, `$can_yield/0`, `$leash/2`, `$visible/2`, `notrace/0`, `prolog_choice_attribute/3`, `prolog_frame_attribute/3`, `trace/0`, … +3 |
 | Q10 | 11 | 11 | 0 | `$on_signal/4`, `$put_token/2`, `$set_prolog_stack/4`, `$suspend_findall_bag/0`, `\=@=/2`, `current_blob/2`, `garbage_collect_atoms/0`, `shell/2`, … +3 |
 | P3 | 10 | 9 | 1 | `$depth_limit/3`, `$depth_limit_except/3`, `$depth_limit_false/3`, `$depth_limit_true/5`, `$inference_limit/2`, `$inference_limit_except/3`, `$inference_limit_false/1`, `$inference_limit_true/3`, … +2 |
-| RD2 | 8 | 0 | 8 | `refusal raw_read2: reading past the end of a str…`, `refusal raw_read2: the comments(C) read option`, `refusal raw_read2: the comments(C) read option`, `refusal read_clause's $what option`, `refusal read_clause's process_comment(true) or u…`, `refusal read_term's $what option`, `refusal read: a blob <type>(…)`, `refusal read: a quasi-quotation {\|Syntax\|\|Quotat…` |
-| LB5-LB7 | 6 | 2 | 4 | `$activate_static_extension/1`, `$clause_term_position/3`, `refusal iri_hook $what ('\$iri':iri_hook/4 of in…`, `refusal what`, `refusal format_predicate/2 (GD->format.predicate…`, `refusal expandVars: ~user (getpwnam)` |
+| RD2 | 9 | 0 | 9 | `flag var_tag`, `refusal raw_read2: reading past the end of a str…`, `refusal raw_read2: the comments(C) read option`, `refusal raw_read2: the comments(C) read option`, `refusal read_clause's $what option`, `refusal read_clause's process_comment(true) or u…`, `refusal read_term's $what option`, `refusal read: a blob <type>(…)`, … +1 |
 | REFUSED | 6 | 6 | 0 | `B_SMALLINTW`, `B_THROW`, `H_SMALLINTW`, `L_SMALLINTW`, `T_SMALLINTW`, `T_TRY_SMALLINTW` |
 | ZIP1 | 6 | 6 | 0 | `$rc_handle/1`, `zip_clone/2`, `zip_close_/2`, `zip_file_info_/3`, `zipper_goto/2`, `zipper_open_current/3` |
+| LB5-LB7 | 5 | 0 | 5 | `refusal iri_hook $what ('\$iri':iri_hook/4 of in…`, `refusal what`, `refusal format_predicate/2 (GD->format.predicate…`, `refusal expandVars: ~user (getpwnam)`, `refusal activate_static_extension/1: no static e…` |
 | CT1 | 4 | 2 | 2 | `char_type/2`, `code_type/2`, `refusal open/4's locale(Locale) option`, `refusal set_stream/2's locale(Locale)` |
+| LB7 | 4 | 3 | 1 | `flag argv`, `flag color_term`, `flag os_argv`, `refusal --traditional (setTraditional, resetList…` |
 | S2a | 4 | 4 | 0 | `get/1`, `get/2`, `put/1`, `put/2` |
 | S2b | 4 | 0 | 4 | `refusal a stream pair`, `refusal open(pipe(Command), …)`, `refusal open/4's lock(Lock) option (advisory fil…`, `refusal closing a stream pair` |
 | TX1 | 4 | 4 | 0 | `$snapshot/1`, `$transaction/2`, `$transaction/3`, `$undo/1` |
-| FL1 | 2 | 2 | 0 | `get_flag/2`, `set_flag/2` |
+| TOP1b | 3 | 0 | 3 | `flag tty_control`, `refusal PopTty of a saved terminal state: tcseta…`, `refusal PushTty of a terminal: tcgetattr, cfmake…` |
 | P2 | 2 | 2 | 0 | `$seek_list/4`, `sub_atom_icasechk/3` |
-| PR1 | 2 | 1 | 1 | `$foreign_predicate_source/2`, `refusal get_procedure: other than GP_DEFINE` |
-| SSU1b | 2 | 1 | 1 | `S_DET`, `refusal setAttrDefinition: attribute $attr` |
+| PR1 | 2 | 0 | 2 | `refusal get_procedure: other than GP_DEFINE (pl-…`, `refusal foreign_predicate_source of a foreign pr…` |
+| APPLE1 | 1 | 0 | 1 | `refusal apple_current_locale_identifier/1: macOS…` |
 | ATOM1 | 1 | 0 | 1 | `refusal an atom containing the character 0 (a Sy…` |
 | AV10 | 1 | 0 | 1 | `refusal write_term/2 attributes(portray): '\$att…` |
 | CONT1 | 1 | 0 | 1 | `refusal backtracking into a $(db_c.type) choice …` |
+| DBG1 | 1 | 1 | 0 | `D_BREAK` |
+| FL1 | 1 | 0 | 1 | `flag ci_set_flag (pl-index.c)` |
 | LB4 | 1 | 0 | 1 | `refusal PL_get_file_name flag PL_FILE_SEARCH (sy…` |
 | LB6 | 1 | 0 | 1 | `refusal consulting a file again (reconsult)` |
 | PR1b | 1 | 0 | 1 | `refusal indexed(L): the Prolog dict of an index …` |
-| SRC2 | 1 | 1 | 0 | `$unload_file/1` |
+| SSU1b | 1 | 1 | 0 | `S_DET` |
 | TAI1 | 1 | 1 | 0 | `format_time/3` |
 | TB2-TB9 | 1 | 0 | 1 | `refusal what` |
 | TB4 | 1 | 0 | 1 | `refusal the VM instruction T_DELAY (a conditiona…` |
 | TB6 | 1 | 1 | 0 | `S_INCR_DYNAMIC` |
 | WR2 | 1 | 0 | 1 | `refusal writing a grounded value SWI has no type…` |
 | WRAP1 | 1 | 0 | 1 | `refusal freeCodesDefinition! of a wrapped predic…` |
-| NO OWNER | 39 | 21 | 18 | `apple_current_locale_identifier/1`, `flag ci_set_flag (pl-index.c)`, `flag set_arith_flag (pl-arith.c)`, `flag tbl_set_restraint_flag (tabling restraints)`, `flag agc_margin`, `flag app_name`, `flag apple`, `flag apple_universal_binary`, … +31 |
+| NO OWNER | 2 | 0 | 2 | `refusal spy points (SPY_ME, GP_RESOLVE: pl-proc.…`, `refusal trace/0 with a visible port: the tracer …` |
 
 #### Missing and refused per category
 
@@ -2203,8 +2243,8 @@ xychart-beta
     title "R2: missing (bars) and refused (line) rows"
     x-axis ["predicates", "refusal sites", "flags", "VM instructions"]
     y-axis "rows" 0 --> 150
-    bar [124, 0, 20, 36]
-    line [0, 73, 15, 0]
+    bar [108, 0, 3, 36]
+    line [0, 76, 8, 0]
 ```
 
 <!-- END GENERATED R2 status -->
@@ -8010,8 +8050,8 @@ flags the options feed, the usage text, and the two option predicates. Nothing h
 - **DIVERGES (owner TOP1b, only what the reduced `query_loop` leaves out):** `PL_initialise!` ends with `query_loop(goal, false)`, which
   is upstream's own path (`prologToplevel`, pl-pro.c:663-676, its `loop == false` branch). What the kernel's reduced `query_loop`
   does not do of upstream's is TOP1b's; LB7 adds no loop code.
-- **DIVERGES (refused by name, `NotPortedError`):** `--traditional` (`setTraditional`; the kernel is SWI-7 only), `-c` (`$compile`), `--config`
-  (`$config`). `--tty` / `--no-tty` go through the `tty_control` flag as upstream and so raise where its value changes, naming
+- **DIVERGES (refused by name, `NotPortedError`):** `--traditional` (`setTraditional`; the kernel is SWI-7 only). `-c` (`$compile`) and
+  `--dump-runtime-variables` (`$config`) run the Prolog toplevel goals and then `PL_halt` (pl-init.c:1672-1680; ENC1/LB7 relay 9). `--tty` / `--no-tty` go through the `tty_control` flag as upstream and so raise where its value changes, naming
   `PushTty and PopTty (the terminal)` (src/os/pl-prologflag.jl `_flag_not_ported`); the owner is the step that ports PushTty.
 - **DIVERGES (representation):** the stack limit goes to the local data in words (`ld.stacks_limit`), upstream's `LD->stacks.limit` is
   bytes; `memarea_limit` answers `nothing` for `MEMAREA_INVALID_SIZE`, and a negative number or one above 64 bits is invalid (upstream

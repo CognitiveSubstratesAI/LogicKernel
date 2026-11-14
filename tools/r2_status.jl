@@ -966,8 +966,43 @@ function r2_flag_refusals(texts::AbstractDict{String, String})
 end
 
 """
+The flags of the pin's C that the Linux build of the kernel has no definition for (audit D-0550 item 4, FL1): each is set by
+`setPrologFlag` under a platform or build condition of pin:src/os/pl-prologflag.c (the line) and read by the boot or the
+libraries only where that condition holds. The row's status is `platform` (out of the count); `open_shared_object` is the
+build WITHOUT `O_DYNAMIC_EXTENSIONS` (D-0151 item 6, kept undefined).
+"""
+const R2_PLATFORM_FLAGS = Dict{String, String}(
+    "apple" => "pl-prologflag.c:2748 (__APPLE__)",
+    "apple_universal_binary" => "pl-prologflag.c:2453 (__APPLE__, universal binary)",
+    "bundle" => "pl-prologflag.c:2753 (__APPLE__ bundle)",
+    "emscripten" => "pl-prologflag.c:2739 (__EMSCRIPTEN__)",
+    "windows" => "pl-prologflag.c:2537 (__WINDOWS__)",
+    "prolog_debug" => "pl-prologflag.c:2736 (O_DEBUG)",
+    "xpce" => "pl-prologflag.c:2619 (GD->options.xpce >= 0: the xpce package)",
+    "shared_home" => "pl-prologflag.c:2554 (PLSHAREDHOME)",
+    "open_shared_object" => "pl-prologflag.c:2598 (O_DYNAMIC_EXTENSIONS; build without, D-0151 item 6)"
+)
+
+"""
+The flags the boot or a library creates itself, by `create_prolog_flag` or by the first `set_prolog_flag` (a user flag, the
+flag `user_flags` is `silent`): no kernel gap. The pin's line of the creating call (the `r2_flag_scan` reads only the
+`create_prolog_flag` of the files the boot consults; these are made in libraries it does not consult, or by `set_prolog_flag`).
+"""
+const R2_PROLOG_CREATED_FLAGS = Dict{String, String}(
+    "hyperlink_term" => "library/ansi_term.pl:146",
+    "save_history" => "library/prolog_history.pl:59",
+    "saved_program_class" => "library/qsave.pl:166",
+    "xref" => "library/prolog_xref.pl:142",
+    "toplevel_thread" => "boot/toplevel.pl:282 (set_prolog_flag)",
+    "app_name" => "boot/toplevel.pl:434 (set_prolog_flag)",
+    "associated_file" => "boot/toplevel.pl:472 (set_prolog_flag)",
+    "readline" => "boot/toplevel.pl:894 (set_prolog_flag)"
+)
+
+"""
 The flag rows (category `flag`, key `flag:NAME`): every flag the boot reaches plus every flag a setter refuses. refused (the
-setter refuses it; the row's detail names the effect) | done (the kernel or the boot defines it) | missing.
+setter refuses it; the row's detail names the effect) | done (the kernel or the boot defines it, or Prolog creates it:
+`R2_PROLOG_CREATED_FLAGS`) | platform (`R2_PLATFORM_FLAGS`) | missing.
 """
 function r2_flag_rows(
     refs, created::Set{String}, defined::Set{String}, refusals
@@ -999,6 +1034,18 @@ function r2_flag_rows(
             e, file, ln = refused[k]
             push!(
                 rows, R2Row("flag", "flag:" * k, k, "refused", file, "", rs, "line $ln; $e")
+            )
+        elseif !(k in defined || k in created) && haskey(R2_PLATFORM_FLAGS, k)
+            push!(
+                rows,
+                R2Row("flag", "flag:" * k, k, "platform", "", "", rs, R2_PLATFORM_FLAGS[k])
+            )
+        elseif !(k in defined || k in created) && haskey(R2_PROLOG_CREATED_FLAGS, k)
+            push!(
+                rows,
+                R2Row(
+                    "flag", "flag:" * k, k, "done", "", "", rs, R2_PROLOG_CREATED_FLAGS[k]
+                )
             )
         else
             push!(

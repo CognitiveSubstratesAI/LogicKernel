@@ -297,3 +297,74 @@ end
     )
     @test !isempty(flags) && all(==(LK.FR_DETGUARD | LK.FR_DETGUARD_SET), flags)
 end
+
+# SSU1b: `det/1`'s setter. `'$set_predicate_attribute'(Head, det, Bool)` is pl-proc.c's `setDetDefinition`: it sets or clears
+# `P_DET` and resets the supervisor, so the next call runs `S_DET` (pl-vmi.c:3749, `setLocal(FR, FR_DET)`) before the clauses.
+# The expected lines are swipl's (probed on the pin, 10.1.20): a det predicate that leaves a choice point, or fails, raises
+# `determinism_error(Pred, det, nondet|fail, property)` (four of them in the goals below); a last call hands the flag on (dp5 reports `p/1`, the callee); the
+# attribute reads back `1` after the set and `0` after the clear.
+function _rdt_decl_clauses()
+    X = _rv(1)
+    p(n) = (_rf("p", _rg(n)), nothing)
+    return Tuple{_R, Union{Nothing, _R}}[
+        p(1), p(2),
+        (_rf("dp1", X), _rf("p", X)),                           # leaves a choice point
+        (_rf("dp2", X), _rf("=", X, _rg(1))),                   # deterministic
+        (_rf("dp3", X), _rs("fail")),                           # fails
+        (_rf("dp4", X), _rconj(_rf("p", X), _rs("!"))),         # the cut makes it deterministic
+        (_rf("dp5", X), _rf("dp1", X))                          # a last call into dp1
+    ]
+end
+
+function _rdt_decl_goals()
+    X, E, V = _rv(51), _rv(52), _rv(53)
+    head(n) = _rf(":", _rs("user"), _rf("dp$n", _rv(60 + n)))
+    set(n, b) = _rf("\$set_predicate_attribute", head(n), _rs("det"), _rs(b))
+    get(n) = _rf("\$get_predicate_attribute", head(n), _rs("det"), V)
+    run(n) = _rf("catch", _rf("dp$n", X), E, _rs("true"))
+    return _R[
+        run(1),                                                 # not declared: both answers
+        get(1),                                                 # fails: P_DET is clear
+        set(1, "true"), get(1), run(1),                         # nondet
+        set(1, "true"), run(1),                                 # setting it again changes nothing
+        set(1, "false"), get(1), run(1),                        # the clear resets the supervisor
+        run(2), set(2, "true"), run(2),                         # det predicate under the declaration
+        set(3, "true"), run(3),                                 # fail
+        set(4, "true"), run(4),                                 # the cut: no error
+        set(5, "true"), set(1, "true"), run(5)                  # the last call hands the flag on
+    ]
+end
+
+@testset "det/1's setter: P_DET set and clear, S_DET raises determinism_error(.., property) as swipl" begin
+    clauses = _rdt_decl_clauses()
+    goals = _rdt_decl_goals()
+    ours, db, msgs = _rdt_ours(clauses, goals, :error)
+    @test count(==("end"), ours) == length(goals)
+    for needle in (",det,nondet,property)", ",det,fail,property)")
+        @test count(l -> occursin(needle, l), ours) >= 1
+    end
+    @test count(l -> occursin("determinism_error", l), ours) == 4
+    @test isempty(msgs)
+    if _R_SWIPL
+        _rdt_compare(ours, _rswipl(clauses, goals))
+    elseif _R_SWIPL_REQUIRED
+        @test false
+    end
+end
+
+# White box. The flag is the definition's: the setter sets and clears `P_DET`, and a change resets the supervisor (`S_VIRGIN`),
+# the unchanged request leaves it alone (pl-proc.c:3745-3747).
+@testset "setDetDefinition!: the flag, the reset, the unchanged request" begin
+    db = _rdb(_rdt_decl_clauses())
+    def = _rproc(db, _rf("dp2", _rv(81))).definition
+    @test (def.flags & LK.P_DET) == 0
+    @test LK.setDetDefinition!(def, true)
+    @test (def.flags & LK.P_DET) != 0
+    @test LK.setDetDefinition!(def, true)                       # unchanged
+    @test (def.flags & LK.P_DET) != 0
+    @test LK.setDetDefinition!(def, false)
+    @test (def.flags & LK.P_DET) == 0
+    # through the attribute dispatcher
+    @test LK.setAttrDefinition(db.ld, def, LK.P_DET, true)
+    @test (def.flags & LK.P_DET) != 0
+end
