@@ -1,4 +1,4 @@
-# ORIGINAL: the UPSTREAM tests/tabling/test_reeval.pl (swipl-devel 18168e62, 10.1.20), units 1..4 of 6 (tabling_reeval, tabling_reeval_merged, dynamic_tabled, dynamic_tabled2),
+# ORIGINAL: the UPSTREAM tests/tabling/test_reeval.pl (swipl-devel 18168e62, 10.1.20), units 1..6 of 6 (tabling_reeval, tabling_reeval_merged, dynamic_tabled, dynamic_tabled2, dynamic_tabled3, dynamic_tabled4),
 # as kernel rows (TAB1, TABTEST-R). One row `t_<id>(R)` per upstream test: `abolish_all_tables, <unit>:test(<name>), abolish_all_tables`
 # (the unit's `cleanup(abolish_all_tables)` option folded by hand; `sto(rational_trees)` is the default unification mode), R = ok / failed / raised(E).
 #   * The unit text is upstream's, verbatim, between `begin_tests` and `end_tests`, plus the file's shared code outside the units
@@ -8,7 +8,7 @@
 #     run of the same units) AND equals the answer plunit expects (`_TT_UPSTREAM`: each test passes, so `ok`).
 #   * DIVERGES from the file: plunit is not used (`pu_<unit>:test(Name)` is called directly), the unit modules are `pu_<unit>` not `plunit_<unit>`.
 #   * A row whose program the kernel refuses stays a row pinned on swipl (the pin is not weakened); none is known for these units.
-#   * Rows with plunit options folded by hand (ROW_FOLD in gen_reeval.py, from the unit text): tabling_reeval, tabling_reeval_merged, dynamic_tabled, dynamic_tabled2: `test(Name, Options)` is called with Options unbound and the option (`Var = Value`, `Var == Value`, `cleanup(G)` as setup_call_cleanup) read after the call.
+#   * Rows with plunit options folded by hand (ROW_FOLD in gen_reeval.py, from the unit text): tabling_reeval, tabling_reeval_merged, dynamic_tabled, dynamic_tabled2, dynamic_tabled3, dynamic_tabled4: `test(Name, Options)` is called with Options unbound and the option (`Var = Value`, `Var == Value`, `cleanup(G)` as setup_call_cleanup) read after the call.
 #   * UNVERIFIED on the kernel (nothing was compiled when these rows were written): every kernel answer; the gate decides.
 
 using Test, LogicKernel
@@ -202,6 +202,49 @@ test(wfs2,
     call_residual_program(p(1), P).
 
 """),
+    ("dynamic_tabled3", ":- begin_tests(dynamic_tabled3, [ sto(rational_trees), cleanup(abolish_all_tables) ]).", raw"""
+% Test that tnot creates a dependency
+
+:- table (p/1,qs/1,rs/1)  as incremental.
+:- dynamic q/1 as incremental.
+
+p(X) :- tnot(qs(X)), tnot(p(X)).
+p(X) :- tnot(rs(X)), tnot(p(X)).
+
+qs(X) :- q(X).
+rs(X) :- q(X).
+
+test(wfs, [ cleanup(retractall(q(_)))
+          ]) :-
+    assert(q(1)),
+    expect(x, p(1), []),
+    retract(q(1)),
+    call_residual_program(p(1), P),
+    assertion(P == [(p(1):-tnot(p(1)))]),
+    assert(q(1)),
+    expect(x, p(1), []).
+
+"""),
+    ("dynamic_tabled4", ":- begin_tests(dynamic_tabled4, [ sto(rational_trees), cleanup(abolish_all_tables) ]).", raw"""
+
+:- table (p/1,q/1,r/1) as incremental.
+:- dynamic r1/1 as incremental.
+
+p(X) :- tnot(q(X)), r(X), tnot(p(X)).
+p(X) :- r(X).
+
+q(X) :- tnot(r(X)).
+r(X) :- r1(X).
+
+test(wfs,
+     [ cleanup(retractall(r1(_)))
+     ]) :-
+    assert(r1(1)),
+    expect(x, p(1), [x]),
+    retract(r1(1)),
+    expect(y, p(1), []).
+
+"""),
 ]
 
 "The file's common tail (lines `before :- ...` to the end), verbatim."
@@ -241,6 +284,8 @@ const _TT_CASES = [
     ("tt03", "dynamic_tabled", "setup_call_cleanup(true, (pu_dynamic_tabled:test(wfs, O), O = [_, C], C = (P == E), P == E), pu_dynamic_tabled:retractall(q(_)))"),
     ("tt04a", "dynamic_tabled2", "setup_call_cleanup(true, (pu_dynamic_tabled2:test(wfs, O), O = [_, C], C = (P == E), P == E), pu_dynamic_tabled2:retractall(q(_)))"),
     ("tt04b", "dynamic_tabled2", "setup_call_cleanup(true, (pu_dynamic_tabled2:test(wfs2, O), O = [_, C], C = (P == E), P == E), pu_dynamic_tabled2:retractall(q(_)))"),
+    ("tt05", "dynamic_tabled3", "setup_call_cleanup(true, pu_dynamic_tabled3:test(wfs, O), pu_dynamic_tabled3:retractall(q(_)))"),
+    ("tt06", "dynamic_tabled4", "setup_call_cleanup(true, pu_dynamic_tabled4:test(wfs, O), pu_dynamic_tabled4:retractall(r1(_)))"),
 ]
 
 const _TT_PINNED = [
@@ -251,10 +296,14 @@ const _TT_PINNED = [
     "t_tt03 c[116,95,116,116,48,51]/1(a[111,107])",
     "t_tt04a c[116,95,116,116,48,52,97]/1(a[111,107])",
     "t_tt04b c[116,95,116,116,48,52,98]/1(a[111,107])",
+    "t_tt05 c[116,95,116,116,48,53]/1(a[111,107])",
+    "t_tt06 c[116,95,116,116,48,54]/1(a[111,107])",
 ]
 
 "The answer plunit expects of every row: the test passes, `R = ok` (run in swipl by gen_reeval.py pin, plunit part of pins file)."
 const _TT_UPSTREAM = [
+    "a[111,107]",
+    "a[111,107]",
     "a[111,107]",
     "a[111,107]",
     "a[111,107]",
@@ -334,7 +383,7 @@ end
 "A line the same length that must differ from `s` (the must-fail corruption)."
 _tt_corrupt(s::String) = s[1:(end - 2)] * (s[end - 1] == '0' ? "1" : "0") * s[end]
 
-@testset "upstream test_reeval.pl units 1..4: the kernel answers every row as swipl does" begin
+@testset "upstream test_reeval.pl units 1..6: the kernel answers every row as swipl does" begin
     gd, ld, st = _tt_load(_tt_materialize())
     @test st == "ok"
     kl = String[st]
