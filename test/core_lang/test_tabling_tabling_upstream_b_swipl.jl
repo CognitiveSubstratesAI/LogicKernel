@@ -9,7 +9,7 @@
 #     run of the same units) AND equals the answer plunit expects (`_TT_UPSTREAM`: each test passes, so `ok`).
 #   * DIVERGES from the file: plunit is not used (`pu_<unit>:test(Name)` is called directly), the unit modules are `pu_<unit>` not `plunit_<unit>`.
 #   * A row whose program the kernel refuses stays a row pinned on swipl (the pin is not weakened); expected refusals (by reading, unverified): clpfd (needs library(clpfd) and attributed variables in tries); sneezing (compares a float with =:=).
-#   * Rows with plunit options folded by hand (ROW_FOLD in gen_tabling.py, from the unit text): tabling_clpfd, tabling_eruption, tabling_eruption2, tabling_sneezing: `P =:= V` / `nondet` as once(Goal) then the comparison; tabling_clpfd's two conditional tests as one if-then-else row.
+#   * Rows with plunit options folded by hand (ROW_FOLD in gen_tabling.py, from the unit text): tabling_clpfd, tabling_eruption, tabling_eruption2, tabling_sneezing: `Var op Val` options as once(Goal) then the check, `set(T == L)` as findall + sort + compare, `nondet` dropped; tabling_clpfd's two conditional tests as one if-then-else row.
 #   * UNVERIFIED on the kernel (nothing was compiled when these rows were written): every kernel answer; the gate decides.
 
 using Test, LogicKernel
