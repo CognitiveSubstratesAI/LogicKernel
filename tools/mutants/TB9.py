@@ -11,6 +11,7 @@
 #   `lg_clauses and tt_mono_status`, `the trail`, `tt_abolish_table`, `transaction_commit_tables`, `tt_rollback_answer`, `tt_rollback_tables`, `tt_rollback_actions`,
 #   `transaction_rollback_tables`, `merge_tabling_trail`, `reset_answer_table_tracked`, `is_trie_clause`); a row of one testset is the name inside its `obs` lines
 #   (`outside=`, `notdynamic=`, `erased=`, `atmax=`, `belowbase=`, `force=`, `once=`, `gen0=`, `table=`, `answer=`, `intables=`, `notrail=`, `commit=`, `lazy=`, `nonlazy=`, `n2=`, ...).
+#   TB9R = test/core_lang/test_tabling_tb9rows_swipl.jl (rows ab2_destroy_p, ab2_destroy_q, tc3, tc2, tc_ctl, tc_both: swipl pins of the kills whose only other row is a WB one).
 #   NEW (see TWO CLASSES): testsets "<unit>: the nested, constraint-failure and abolish cases run as swipl's pins" (rows: nm_merge, nm_merge_fresh, nr_snapshot, nr_failed,
 #   nr_constraint, restore_trail, restore_trail_after, cf_constraint, cf_bulk_announce, ab_destroy) and the white-box testset (the line `cleared=`).
 #   UP = test/core_lang/test_tabling_transaction_swipl.jl: the 29 upstream cases, one testset "<unit>: the upstream cases run as swipl's pins" per unit; a case id (commit, rollback,
@@ -33,8 +34,9 @@ TM = "test/core_lang/test_tabling_monotonic_swipl.jl"
 TMIN = "test/core_lang/test_tabling_min_swipl.jl"
 AB = "test/core_lang/test_tabling_abolish_swipl.jl"
 NEW = "test/core_lang/test_tabling_transaction_nested_swipl.jl"   # nested, constraint-failure and abolish rows (pinned on swipl, NOT upstream cases)
-TARGETS = [WB, UP, TX, TI, TM, TMIN, AB, NEW]
-TWB = [WB, UP, TX, NEW]                 # the functions only a transaction runs
+TB9R = "test/core_lang/test_tabling_tb9rows_swipl.jl"   # monotonic-abolish and trie-clause rows (pinned on swipl, the white-box-only kills)
+TARGETS = [WB, UP, TX, TI, TM, TMIN, AB, NEW, TB9R]
+TWB = [WB, UP, TX, NEW, TB9R]                 # the functions only a transaction runs
 TAB = "src/pl-tabling.jl"
 TRN = "src/pl-transaction.jl"
 MUTANTS = [
@@ -131,7 +133,7 @@ MUTANTS = [
          old='                if (atrie.flags & TRIE_ISTRACKED) == 0\n                    atrie.flags |= TRIE_ISTRACKED\n                end\n',
          new='                if (atrie.flags & TRIE_ISTRACKED) == 0\n                    nothing\n                end\n'),
     # ── tt_abolish_table ──
-    dict(id='TB9-abolish-trie (KILL WB tt_abolish_table `abolish-a=`: the actions of every table are cleared, -0,-0,-0 for -0,b22,-0)',
+    dict(id='TB9-abolish-trie (KILL WB tt_abolish_table `abolish-a=`: the actions of every table are cleared, -0,-0,-0 for -0,b22,-0; AND TB9R ab2_destroy_p, ab2_destroy_q (swipl pins))',
          file=TAB, targets=TWB,
          old='                if ta.atrie == atrie.serial\n',
          new='                if true\n'),
@@ -236,15 +238,15 @@ MUTANTS = [
          old='        tt_abolish_table(ld, atrie)\n        atrie.flags &= ~TRIE_ISTRACKED\n',
          new='        atrie.flags &= ~TRIE_ISTRACKED\n'),
     # ── is_trie_clause ──
-    dict(id='TB9-trieclause-3 (KILL WB is_trie_clause `compiled3=`: a clause of trie_gen_compiled/3 is no trie clause, false for true)',
+    dict(id='TB9-trieclause-3 (KILL WB is_trie_clause `compiled3=`: a clause of trie_gen_compiled/3 is no trie clause, false for true; AND TB9R tc3, tc_both)',
          file=TRN, targets=TWB,
          old='    return cl.predicate === gd.procedures_trie_gen_compiled3.definition ||\n',
          new='    return false ||\n'),
-    dict(id='TB9-trieclause-2 (KILL WB is_trie_clause `compiled2=`: a clause of trie_gen_compiled/2 is no trie clause, false for true)',
+    dict(id='TB9-trieclause-2 (KILL WB is_trie_clause `compiled2=`: a clause of trie_gen_compiled/2 is no trie clause, false for true; AND TB9R tc2, tc_both)',
          file=TRN, targets=TWB,
          old='           cl.predicate === gd.procedures_trie_gen_compiled2.definition\n',
          new='           false\n'),
-    dict(id='TB9-trieclause-any (KILL WB is_trie_clause `d=` and `e=`: every clause is a trie clause, true for false)',
+    dict(id='TB9-trieclause-any (KILL WB is_trie_clause `d=` and `e=`: every clause is a trie clause, true for false; AND TB9R tc_ctl, tc_both)',
          file=TRN, targets=TWB,
          old='    return cl.predicate === gd.procedures_trie_gen_compiled3.definition ||\n',
          new='    return true ||\n'),
