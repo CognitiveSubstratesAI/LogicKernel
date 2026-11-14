@@ -1670,9 +1670,9 @@ function pl_set_random1_va(
         name = na[1]
         arg = PL_new_term_ref(ld)
         _PL_get_arg(ld, 1, A1, arg)
-        if name == mk_sym(T, :seed)
+        if sym_key(name) == sym_key(mk_sym(T, :seed))
             a = PL_get_atom(ld, arg)
-            if a !== nothing && a == mk_sym(T, :random)
+            if a !== nothing && sym_key(a) == sym_key(mk_sym(T, :random))
                 seed_random(ld)
                 return FTRUE
             end
@@ -1694,7 +1694,7 @@ function pl_set_random1_va(
             end
             _number_free!(ld, 1)
             return rc ? FTRUE : FFALSE
-        elseif name == mk_sym(T, :state)
+        elseif sym_key(name) == sym_key(mk_sym(T, :state))
             n = _number_alloc!(ld)
             if !PL_get_number(ld, arg, n) || !(n.type === V_MPZ || _is_big_int64(n))
                 _number_free!(ld, 1)
@@ -1745,7 +1745,7 @@ function pl_random_property1_va(
     if na !== nothing && na[2] == 1
         arg = PL_new_term_ref(ld)
         _PL_get_arg(ld, 1, A1, arg)
-        if na[1] == mk_sym(T, :state)
+        if sym_key(na[1]) == sym_key(mk_sym(T, :state))
             seed = _number_alloc!(ld)
             seed.type = V_MPZ
             seed.mpz = _mt_get_state(ld.random_state)
