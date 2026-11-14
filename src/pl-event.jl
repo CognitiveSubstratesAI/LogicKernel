@@ -702,8 +702,8 @@ function predicate_update_event(
 end
 
 # PORT: pl-event.c table_answer_event
-# DIVERGES: NOT STARTED: `save_tabling_status`/`restore_tabling_status` around the call (the tabling status is TAB1's);
-# nothing calls this function yet.
+# DIVERGES: the tabling status is a `tbl_status{T}` allocated here (upstream: a stack struct); the tabling code that fires
+# this event (`tbl_answer_event` sites) is left to EV1's wiring.
 "Tell the listeners of the tabled predicate `def` about the `answer` added or removed by `action` (pl-event.c)."
 function table_answer_event(
     gd::PL_global_data{T}, ld::PL_local_data{T}, def::definition{T}, action::T,
@@ -715,7 +715,10 @@ function table_answer_event(
     rc = av != 0 && PL_put_atom(ld, av + 1, action) && PL_put_term(ld, av + 2, answer)
 
     if rc
+        tblstat = tbl_status{T}()
+        save_tabling_status(ld, tblstat)
         rc = call_event_list(gd, ld, def.events, 2, av)
+        restore_tabling_status(ld, tblstat)
     end
 
     restoreWakeup(ld, wstate)

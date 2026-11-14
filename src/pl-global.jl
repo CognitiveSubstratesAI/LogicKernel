@@ -180,6 +180,8 @@ mutable struct PL_global_data{T}
     const ld_table::LDTable                                     # the local data a wrapped stream names by number (IOSTREAM.wrapped; src/os/pl-stream.jl, R2 TOP1b E; owner TH1)
     tabling_answer_delay_infos::Dict{Int, delay_info}           # (pl-tabling.c static `answer_delay_infos`: trie node id -> delay_info; TAB1 TB0)
     tabling_start_node_ids::Int                                 # (pl-tabling.c static `start_node_ids`: the last start-node id handed out, 0: none; TAB1 TB1)
+    const undo_refs::Vector{record{T}}                          # (pl-undo.c: the record an undo blob names, by its number in the payload; TX1e)
+    procedures_drun_undo1::Procedure{T}                         # procedures.drun_undo1: '$syspreds':'$run_undo'/1, run_undo_hooks's (TX1e; set by setBuiltinPredicateProperties!)
 end
 # DIVERGES: `atoms` is upstream's `GD->atoms` as a struct of its own (src/pl-atom.jl), one table per
 # database, built first as upstream's `initAtoms` runs first; `functors` likewise `GD->functors` with
@@ -402,7 +404,7 @@ tbl_free_objects{T}() where {T} = tbl_free_objects{T}(
 
 # PORT: pl-global.h tabling as ld_tabling
 # DIVERGES: only the private, single-thread fields; NOT PORTED, each to its owner (docs/architecture.md TB0):
-# `idg_registry` (TB6); `start_nodes` (`node_array`, TB1) is a nullable `Vector{Int}` of node ids by `start_id` (no blocks: DIVERGES, no concurrent readers). `variant_table`
+# `idg_registry` (TB6: `nothing` is NULL); `start_nodes` (`node_array`, TB1) is a nullable `Vector{Int}` of node ids by `start_id` (no blocks: DIVERGES, no concurrent readers). `variant_table`
 # is the index of the variant trie in the database's trie table (0: none). `flags` holds the `TF_*` bits,
 # `delay_list` and `idg_current` are term references (0: none). `node_pool` is the pool `table_space` sets (`nothing`: NULL).
 "The tabling state of one thread (pl-global.h `LD->tabling`)."
@@ -414,6 +416,7 @@ mutable struct ld_tabling{T}
     variant_table::Int                                          # Variant --> table (a trie index; 0: none)
     node_pool::Union{Nothing, alloc_pool}                       # Node allocation pool for tries
     start_nodes::Union{Nothing, Vector{Int}}                    # Predicate start nodes in it (a node_array: node ids by start_id, 0: none; TB1)
+    idg_registry::Union{Nothing, idg_registry{idg_node{T}}}     # IDG nodes of private tables (TB6; nothing: NULL)
     dyn_orphan_events::Int                                      # Dynamic nodes that lost a dependent
     concurrent_idg_nodes::Int                                   # Private IDG nodes with shared children
     has_scheduling_component::Bool                              # A leader was created
@@ -424,11 +427,32 @@ mutable struct ld_tabling{T}
     idg_current::Int                                            # Current node in IDG (a term_t; 0: none)
     free_objects::tbl_free_objects{T}                           # Freed objects (TBL_FREE_*)
     restraint::tbl_restraint{T}                                 # the restraints
+    # DIVERGES (TAB1 TB2): upstream hands Prolog the ADDRESS of a worklist or component (`PL_unify_pointer`) and reads it
+    # back (`PL_get_pointer`, then a magic check); here the handle is an index into `pointers` (`nothing`: a freed slot,
+    # reused through `free_pointers`, as freed memory is). src/pl-tabling.jl `tbl_pointer!`, `tbl_pointer_release!`.
+    pointers::Vector{Union{Nothing, tbl_worklist{T}, tbl_component{T}}}  # handle -> worklist or component
+    free_pointers::Vector{Int}                                  # handles to reuse
+    # DIVERGES (TAB1 TB2): the states of `'$tbl_wkl_work'/6` (upstream: `allocForeignState`, its address the REDO_PTR context)
+    # are records of this pool, the index the context (as between/3's `between_states`).
+    wkl_states::foreign_state_pool{wkl_step_state{T}}           # ('$tbl_wkl_work'/6's REDO_PTR states)
+    # DIVERGES (TAB1 TB6): the states of `'$idg_edge'/3` and `'$idg_false_edge'/3` (upstream: `allocForeignState`, its
+    # address the REDO_PTR context) are records of this pool, the index the context (as TB2's `wkl_states`).
+    idg_edge_states::foreign_state_pool{idg_edge_state{T}}      # (idg_edge_gen's REDO_PTR states)
+    # DIVERGES (TAB1 TB7): the monotonic dependency `idg_mdep *` that '$idg_edge'/3 hands to Prolog (PL_unify_pointer) and
+    # '$idg_mono_empty_queue'/2 takes back (PL_get_pointer_ex) is an integer reference here, never a Julia address: a stale
+    # reference finds nothing.  `mdep_ref_serial` is the last reference given out.
+    mdep_by_ref::Dict{Int, idg_mdep{T, idg_node{T}}}            # reference -> dependency
+    mdep_ref_of::IdDict{idg_mdep{T, idg_node{T}}, Int}          # dependency -> reference
+    mdep_ref_serial::Int
 end
 ld_tabling{T}() where {T} = ld_tabling{T}(
-    nothing, nothing, 0, 0, 0, nothing, nothing, 0, 0, false, false, false, UInt32(0),
+    nothing, nothing, 0, 0, 0, nothing, nothing, nothing, 0, 0, false, false, false,
+    UInt32(0),
     0, 0,
-    tbl_free_objects{T}(), tbl_restraint{T}()
+    tbl_free_objects{T}(), tbl_restraint{T}(),
+    Union{Nothing, tbl_worklist{T}, tbl_component{T}}[], Int[],
+    foreign_state_pool{wkl_step_state{T}}(), foreign_state_pool{idg_edge_state{T}}(),
+    Dict{Int, idg_mdep{T, idg_node{T}}}(), IdDict{idg_mdep{T, idg_node{T}}, Int}(), 0
 )
 
 # PORT: pl-global.h PL_local_data
@@ -695,6 +719,11 @@ mutable struct PL_local_data{T} <: AbstractLocalData
     table_flags_drop_intermediate::Int                          # table_flags.drop_intermediate: flag table_drop_intermediate
     trie_gens::foreign_state_pool{trie_gen_state{T}}            # (trie_gen/2,3's REDO_PTR states, TR2)
     trie_gen_force_epoch::Bool                                  # ORIGINAL test switch: check_epoch! starts a new epoch at every call (TR2)
+    transaction::ld_transaction{T}                              # transaction: the transaction state of this thread (TX1a)
+    transaction_enums::foreign_state_pool{tr_enum{T}}           # (current_transaction/1's REDO_PTR states, TX1d)
+    undo_list::Int                                              # undo.undo_list: the position of the undo list's cell, the first global cell (TX1e)
+    undo_scheduled::Vector{UInt64}                              # undo.scheduled: the undo blobs waiting to run (empty: upstream's NULL buffer; TX1e)
+    undo_running::Int                                           # undo.running: undo goals are running (TX1e)
 end
 function PL_local_data{T}(gd::PL_global_data{T}) where {T}
     ld = _bare_local_data(gd)
@@ -734,7 +763,7 @@ function _bare_local_data(gd::PL_global_data{T}) where {T}
             Definition{T}(
                 UInt64(0), 0, ClauseList{T}(), UInt64(0), e, code[], ClauseRef{T}[],
                 PL_code_data(
-                    code[], code[], code[], code[], code[], code[], code[], code[]
+                    code[], code[], code[], code[], code[], code[], code[], code[], code[]
                 ), 0, 0,
                 0
             ),
@@ -742,7 +771,8 @@ function _bare_local_data(gd::PL_global_data{T}) where {T}
             0,
             _TOP_POSITION,
             false,
-            GEN_INVALID
+            GEN_INVALID,
+            nothing
         ),
         word[], T[], 0, 0, STACK_LIMIT_DEFAULT, 0, 0, 0, 0, 0, 0, localFrame{T}[], 0,
         choice{T}[], 0,
@@ -812,7 +842,12 @@ function _bare_local_data(gd::PL_global_data{T}) where {T}
         TABLE_COMPILE_THRESHOLD,                # table_flags.compile_threshold (pl-prologflag.c:2587)
         0,                                      # table_flags.drop_intermediate (pl-prologflag.c:2589)
         foreign_state_pool{trie_gen_state{T}}(), # trie_gen/2,3's states: none (TR2)
-        false                                   # trie_gen_force_epoch: off (TR2)
+        false,                                  # trie_gen_force_epoch: off (TR2)
+        ld_transaction{T}(),                    # transaction: none; gen_base GEN_INFINITE (pl-setup.c:204; TX1a)
+        foreign_state_pool{tr_enum{T}}(),       # current_transaction/1's states: none (TX1d)
+        0,                                      # undo.undo_list: set by emptyStacks! (TX1e)
+        UInt64[],                               # undo.scheduled: none (TX1e)
+        0                                       # undo.running: no undo goal runs (TX1e)
     )
     allocStacks!(ld)                            # the initial local stack, its spare reserved
     emptyStacks!(ld)

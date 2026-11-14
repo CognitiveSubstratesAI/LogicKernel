@@ -203,13 +203,15 @@ end
 # DIVERGES: the wakeup bit only — `alerted` carries no other (`ALERT_WAKEUP`, src/pl-incl.jl); no
 # compare-and-swap (one engine per thread, no signal sets `alerted` here). `slow_unify` is not a field
 # here (`_slow_unify` reads the flag, src/pl-wam.jl), so it is not refreshed.
+# Since TX1e `ALERT_UNDO` while undo goals are scheduled (pl-wam.c:245).
 # NOT PORTED: the other masks (signals, profiling, exit requests, depth and inference limits, the
-# debugger, string buffers, `UNDO_SCHEDULED`, coverage).
-"Recompute `ld.alerted` from the engine's state: `ALERT_WAKEUP` while the wakeup list is not empty (pl-wam.c)."
+# debugger, string buffers, coverage).
+"Recompute `ld.alerted` from the engine's state: `ALERT_WAKEUP` while the wakeup list is not empty, `ALERT_UNDO` while undo goals wait (pl-wam.c)."
 function updateAlerted(ld::PL_local_data)::Nothing
     mask = Int32(0)
     # ld->stacks.local.base && !isVar(*valTermRef(ld->attvar.head)): the head made by the stacks' set-up
     (ld.attvar_head != 0 && ld.gstack[_attvar_head_cell(ld)] != 0) && (mask |= ALERT_WAKEUP)
+    UNDO_SCHEDULED(ld) && (mask |= ALERT_UNDO)      # if ( UNDO_SCHEDULED(ld) ) mask |= ALERT_UNDO
     ld.alerted = mask
     return nothing
 end
@@ -1180,9 +1182,11 @@ function load_file!(
 end
 
 # PORT: pl-wam.c callCleanupHandler
-# DIVERGES: the frame is an index (it cannot move); the arguments are positions. NOT PORTED:
-# `startCritical`/`endCritical` around the handler (no signals); the arity-5 case
-# (`tbl_leader_finished()`, the C cleanup of `'$tbl_leader'/5`: tabling).
+# (pl-wam.c:873-944 at the pin; the arity-5 case `'$tbl_leader'/5`, whose cleanup is the C function
+# `tbl_leader_finished()` (pl-tabling.c:6639), since TB2c)
+# DIVERGES: the frame is an index (it cannot move); the arguments are positions. Upstream wraps the
+# handler in `startCritical`/`endCritical` (signals); the kernel has no signal handling there, so it calls
+# the handler directly. Upstream's `assert` on `FUNCTOR_dtbl_leader5` is a name check here.
 """
     callCleanupHandler(ld, fr, reason)
 
@@ -1209,6 +1213,14 @@ function callCleanupHandler(
         elseif arity == 4                           # setup_call_catcher_cleanup(Stp, Goal, Catcher, Cln)
             arg_cleanup = 4
             arg_catcher = 3
+        elseif arity == 5                           # '$tbl_leader'(SCC, Goal, Wrapper, Old, Trie)
+            arg_cleanup = 0
+            # assert(fr->predicate->functor->functor == FUNCTOR_dtbl_leader5)
+            sym_key((f.predicate::Definition{T}).name) ==
+            sym_key(mk_sym(T, Symbol("\$tbl_leader"))) ||
+                error(
+                    "callCleanupHandler: an arity-5 cleanup frame that is not '\$tbl_leader'/5"
+                )
         else
             error("callCleanupHandler: a cleanup frame of arity $arity")    # assert(0)
         end
@@ -1216,14 +1228,28 @@ function callCleanupHandler(
         f.flags |= FR_CAUGHT
 
         # Unify the catcher
-        if arg_catcher == 0 ||
-            unify_finished(ld, argFrameP(f.base, arg_catcher - 1), reason)
+        catcher = 0                                 # term_t catcher = 0
+        unified = true
+        if arg_catcher != 0
+            unified = unify_finished(ld, argFrameP(f.base, arg_catcher - 1), reason)  # else goto out
+        elseif arg_cleanup == 0
+            catcher = PL_new_term_ref(ld)           # catcher = PL_new_term_ref()
+            unified = catcher != 0 && unify_finished(ld, catcher, reason)  # else goto out
+        end
+        if unified
             # Call the cleanup handler
-            clean = argFrameP(f.base, arg_cleanup - 1)
             wstate = saveWakeup(ld, false)
             if wstate !== nothing
-                gd = _query_gd(ld)
-                rval = call_term(gd, ld, contextModule(gd, ld, fr), clean)  # call_term(contextModule(fr), clean)
+                if arg_cleanup != 0
+                    gd = _query_gd(ld)
+                    clean = argFrameP(f.base, arg_cleanup - 1)
+                    rval = call_term(gd, ld, contextModule(gd, ld, fr), clean)  # call_term(contextModule(fr), clean)
+                else
+                    rval = tbl_leader_finished(     # tbl_leader_finished(Old, catcher, SCC, Wrapper)
+                        ld, argFrameP(f.base, 3), catcher, argFrameP(f.base, 0),
+                        argFrameP(f.base, 2)
+                    )
+                end
                 if !rval && ld.exception_term != 0
                     wstate = wakeup_state(
                         wstate.fid, wstate.outofstack,
@@ -2336,7 +2362,8 @@ const VMI_RUN = (
     :T_TRY_ATTVARZT, :T_ATTVARZT,
     :T_TRY_FLOAT, :T_FLOAT, :T_TRY_MPZ, :T_MPZ, :T_TRY_STRING, :T_STRING, :T_TRY_ATOM,
     :T_ATOM,
-    :T_TRY_SMALLINT, :T_SMALLINT, :T_CHECKWAKEUP
+    :T_TRY_SMALLINT, :T_SMALLINT, :T_CHECKWAKEUP,
+    :S_INCR_DYNAMIC                                 # TAB1 TB6
 )
 
 "Jump to the label named after instruction `x`, one of those `table` names (a balanced tree of compares)."
@@ -3796,7 +3823,7 @@ function PL_next_solution_guarded(
     # The clauses of reset/3, '$tbl_reset'/6, shift/1, shift_for_copy/1, call_continuation/1 and
     # '$engine_yield'/2 compile to these instructions as upstream's (LB4 b2, audit D-0363 item 2), so
     # listing, decompile and clause shape are swipl's; CONT1 runs them (C2, C4, C5, C6). The tabled
-    # branches of I_RESET / I_EXITRESET are deferred to TAB1 and the engine branch of I_YIELD to TH1 (below).
+    # branches of I_RESET / I_EXITRESET run since TB2c; the engine branch of I_YIELD is deferred to TH1 (below).
     # PORT: pl-vmi.c I_YIELD
     # (pl-vmi.c:2410-2418 at the pin; CONT1 C6) The branch of a query opened without `PL_Q_ALLOW_YIELD`
     # (every query here): `permission_error(execute, vmi, 'I_YIELD')`, context message "not an engine".
@@ -3816,10 +3843,11 @@ function PL_next_solution_guarded(
     )
 
     # PORT: pl-vmi.c I_RESET
-    # (pl-vmi.c:5754-5798 at the pin; CONT1 C2)
+    # (pl-vmi.c:5760-5804 at the pin; CONT1 C2, the `dtbl_reset6` branch pl-vmi.c:5768-5798, TB2c)
     # DIVERGES: the goal goes to `argFrameP(lTop, 0)` as a value (`_slot_link!`, `linkValI`), as
-    # `I_CATCH`'s. The `dtbl_reset6` branch (`'$tbl_reset'/6`, resuming a tabled goal through
-    # `push_continuation_list`) is refused by name, owner TAB1: it needs the worklists of tabling.
+    # `I_CATCH`'s. In the `dtbl_reset6` branch (`'$tbl_reset'/6` resuming a tabled goal) the list is the
+    # DEREFERENCED location of `call_continuation/1`'s argument (`pushWordAsTermRef`, as `I_CALLCONT`'s); the
+    # frame of the meta-call is the record pushed at `lTop` (upstream's cast `NFR = lTop`), its argument set first.
     @label I_RESET
     ir_p = argFrameP(ld.frames[FR].base, 0)
     if _slot_is_var(ld, ir_p + 1)                   # if ( isVar(*p) )
@@ -3831,31 +3859,58 @@ function PL_next_solution_guarded(
         @goto b_throw                               # THROW_EXCEPTION
     end
     ld.frames[FR].flags |= FR_INRESET               # setLocal(FR, FR_INRESET)
-    if ld.frames[FR].predicate === gd.procedures_dtbl_reset6.definition
-        throw(
-            NotPortedError{T}(
-                DEF.name, "the dtbl_reset6 branch of I_RESET (pl-vmi.c:5762)", "TAB1"
-            )
-        )
+    if ld.frames[FR].predicate === gd.procedures_dtbl_reset6.definition    # FR->predicate == PROCEDURE_dtbl_reset6->definition
+        ir_g = _deref_loc(ld, -(ir_p + 1))          # deRef2(p, g)
+        _is_colon2_word(ld, ir_g[1], ir_g[2]) &&
+            (ir_g = _deref_loc(ld, valPtr(ir_g[2]) + 2))   # deRef2(argTermP(*g, 1), g)
+        if ir_g[1] == DU_WORD && _is_gcompound(ir_g[2]) &&
+            ld.gstack[valPtr(ir_g[2])] == _cont_functor(ld, :call_continuation, 1)  # hasFunctor(*g, FUNCTOR_call_continuation1)
+            ir_list = pushWordAsTermRef(ld, _deref_loc(ld, valPtr(ir_g[2]) + 1))   # pushWordAsTermRef(argTermP(*g, 0))
+            @SAVE_REGISTERS(QID)
+            ir_pc = push_continuation_list(gd, ld, ir_list, FR, Code{T}(PCc, PCl, PC))
+            @LOAD_REGISTERS(QID)
+            popTermRef(ld)
+            if ir_pc === nothing
+                ld.exception_term != 0 && @goto b_throw     # THROW_EXCEPTION
+                ir_g = _deref_loc(ld, -(argFrameP(ld.frames[FR].base, 0) + 1))  # contains call(Goal)
+                _is_colon2_word(ld, ir_g[1], ir_g[2]) &&
+                    (ir_g = _deref_loc(ld, valPtr(ir_g[2]) + 2))
+                _slot_from_cell!(ld, argFrameP(ld.lTop, 0) + 1, valPtr(ir_g[2]) + 1)  # *argFrameP(NFR, 0) = linkValI(argTermP(*g, 0))
+                NFR = pushFrame!(ld, ld.lTop)       # NFR = lTop
+                DEF = gd.procedures_call_continuation1.definition   # DEF = PROCEDURE_call_continuation1->definition
+                mc_mi = MODULE_system(gd).index
+                @goto mcall_cont                    # VMH_GOTO(mcall_cont, MODULE_system)
+            end
+            PCc = ir_pc.codes                       # PC = pc
+            PCl = ir_pc.literals
+            PC = ir_pc.pc
+            FR = ld.environment_frame               # FR = environment_frame
+            DEF = ld.frames[FR].predicate::Definition{T}    # DEF = FR->predicate
+            ARGP = argp_t{T}(ARGP_SLOT, argFrameP(ld.lTop, 0), ph)  # ARGP = argFrameP(lTop, 0)
+            @goto next_instruction                  # NEXT_INSTRUCTION
+        end
     end
     _slot_link!(ld, argFrameP(ld.lTop, 0) + 1, ir_p + 1)    # *argFrameP(lTop, 0) = linkValI(p): B_VAR0
     @goto I_CALL1                                   # VMI_GOTO(I_CALL1)
 
     # PORT: pl-vmi.c I_EXITRESET
-    # (pl-vmi.c:5801-5833 at the pin; CONT1 C2)
-    # DIVERGES: the `dtbl_reset6` branch (`tbl_reset_add_answer`, pl-tabling.c:4478) is refused by name,
-    # owner TAB1. `ENSURE_GLOBAL_SPACE(0)` has nothing to make room for: `bindConst` of a small integer
-    # only trails.
+    # (pl-vmi.c:5807-5839 at the pin; CONT1 C2, the `dtbl_reset6` branch pl-vmi.c:5812-5826, TB2c: `tbl_reset_add_answer`, pl-tabling.c:4934)
+    # DIVERGES: `ENSURE_GLOBAL_SPACE(0)` has nothing to make room for: `bindConst` of a small integer
+    # only trails. `tbl_reset_add_answer` takes the frame's index (src/pl-tabling.jl).
     @label I_EXITRESET
     ier_k, ier_w, ier_p = _deref_loc(ld, -(argFrameP(ld.frames[FR].base, 2) + 1))   # p = argFrameP(FR, 2); deRef(p)
     if ier_k == DU_CELL || ier_k == DU_ATTVAR       # canBind(*p)
         if ld.frames[FR].predicate === gd.procedures_dtbl_reset6.definition
-            throw(
-                NotPortedError{T}(
-                    DEF.name, "the dtbl_reset6 branch of I_EXITRESET (pl-vmi.c:5806)",
-                    "TAB1"
-                )
-            )
+            @SAVE_REGISTERS(QID)
+            ier_rc = tbl_reset_add_answer(ld, FR)   # opens a foreign frame if needed
+            @LOAD_REGISTERS(QID)
+            if ier_rc                               # answer completes the table
+                @SAVE_REGISTERS(QID)
+                discardChoicesAfter(ld, FR, FINISH_CUT)
+                @LOAD_REGISTERS(QID)
+            end
+            ld.exception_term != 0 && @goto b_throw # THROW_EXCEPTION
+            @goto shallow_backtrack                 # BODY_FAILED
         end
         bindConst(ld, ier_p, consInt(Int64(0)))     # bindConst(p, consInt(0))
         @goto next_instruction                      # NEXT_INSTRUCTION
@@ -3960,8 +4015,8 @@ function PL_next_solution_guarded(
     # the one `compile_trie` kept (`_trie_clause_cref`) and a clause reference argument runs from a reference of its own, as the
     # meta-call's clause does (`I_CALLN`); `lTop` is raised past the arguments (`setLTop!`) before `compile_trie` opens its foreign frame, where upstream sets
     # `lTop = (LocalFrame)ARGP` and `LD->query->next_environment` (GC's); no `TRIE_STAT_INC` (no trie statistics). A 0 from
-    # `compile_trie` (`assertDefinition!` refused the clause and raised its error) throws. `tbl_single_answer` (pl-tabling.c:6270)
-    # holds only for a table's answer trie (`atrie->data.IDG`), TB3's: refused by name for a table's trie.
+    # `compile_trie` (`assertDefinition!` refused the clause and raised its error) throws. `tbl_single_answer` (pl-tabling.c:6270,
+    # TB3) is 0 until an IDG node exists (TB6); the single answer is unified by `trie_gen_single` below.
     @label S_TRIE_GEN
     stg_base = ld.frames[FR].base
     stg_k, stg_w, _ = _deref_loc(ld, -(argFrameP(stg_base, 0) + 1))   # deRef(tp); dbref = word2atom(*tp)
@@ -3975,10 +4030,12 @@ function PL_next_solution_guarded(
         stg_w = stg_tr.clause
         if stg_w == 0                               # if ( !(dbref=t->clause) )
             stg_tr.value_count == 0 && @goto deep_backtrack # FRAME_FAILED
-            if DEF.arity == 2 && (stg_tr.flags & TRIE_ISTABLE) != 0     # tbl_single_answer(t): TB3
-                throw(
-                    TrieRefusal("S_TRIE_GEN (tbl_single_answer of an answer trie)", "TB3")
-                )
+            if DEF.arity == 2                       # if ( DEF->functor->arity == 2 && (answer=tbl_single_answer(t)) )
+                tgs_answer = tbl_single_answer(stg_tr)
+                if tgs_answer != 0
+                    tgs_tr = stg_tr                 # VMH_GOTO(trie_gen_single, answer)
+                    @goto trie_gen_single
+                end
             end
             setLTop!(ld, argFrameP(stg_base, DEF.arity))   # lTop = (LocalFrame)ARGP
             @SAVE_REGISTERS(QID)
@@ -3987,7 +4044,7 @@ function PL_next_solution_guarded(
             (stg_w == 0 || stg_w == _atom_word!(ld, mk_sym(T, :error))) && @goto b_throw   # THROW_EXCEPTION
         end
         stg_w == stg_fail && @goto deep_backtrack   # if ( dbref == ATOM_fail ) FRAME_FAILED
-        trie_maybe_discard_nodes(stg_tr)
+        trie_maybe_discard_nodes(gd, stg_tr)
         tc_cref = _trie_clause_cref(stg_tr)         # cref = clause_clref(dbref)
     else
         tc_cref = ClauseRef{T}(nothing, word(0), stg_cl, nothing)  # a clause reference argument: a reference of its own
@@ -4010,6 +4067,22 @@ function PL_next_solution_guarded(
     end
     @LOAD_REGISTERS(QID)
     @goto b_throw                                   # THROW_EXCEPTION
+
+    # PORT: pl-vmi.c trie_gen_single
+    # (pl-vmi.c:5996-6013 at the pin.) `trie_gen_compiled/2` for a table with a single answer that is not compiled
+    # (`tbl_single_answer`): unify the answer with the key argument and exit.
+    # DIVERGES: the helper's argument `answer` is a node id `tgs_answer` of the trie `tgs_tr` (both set by the jumping site);
+    # the key is the term reference of argument 2 of the frame (`consTermRef(argFrameP(FR, 1))`).
+    @label trie_gen_single
+    setLTop!(ld, argFrameP(ld.frames[FR].base, 2))  # lTop = (LocalFrame)argFrameP(FR, 2)
+    @SAVE_REGISTERS(QID)
+    tgs_rc, _ = unify_trie_term(ld, tgs_tr, tgs_answer, argFrameP(ld.frames[FR].base, 1))   # unify_trie_term(answer, NULL, key)
+    @LOAD_REGISTERS(QID)
+    if !tgs_rc
+        ld.exception_term != 0 && @goto b_throw     # if ( exception_term ) THROW_EXCEPTION
+        @goto deep_backtrack                        # FRAME_FAILED
+    end
+    @goto exit_checking_wakeup
 
     # PORT: pl-vmi.c T_TRIE_GEN2
     # (pl-vmi.c:6134-6164 at the pin.) The first instruction of a compiled trie of `trie_gen_compiled/2`: the state words, the
@@ -4042,15 +4115,15 @@ function PL_next_solution_guarded(
     @goto next_instruction
 
     # PORT: pl-vmi.c T_DELAY
-    # (pl-vmi.c:6225-6246 at the pin.) Push the condition of a conditional answer onto the delay list.
-    # DIVERGES: a named refusal: the delay list (`tbl_push_delay`) is TB4's; `compile_trie_node` refuses a conditional answer by
-    # name too, so no clause holds this instruction yet. Removal condition: a conditional answer is compiled (owner TB4).
+    # (pl-vmi.c:6225-6249 at the pin.) Push the condition of a conditional answer onto the delay list.
+    # DIVERGES: the body after `UnwindTrieArgP()` is `t_delay!` (src/pl-tabling.jl), split from the run loop as the other VM bodies
+    # are; the operand is `trie_node_handle(tr, nid)` (0: upstream's NULL node); the FLI allocates as it goes, so there is no
+    # ENSURE_STACK_SPACE here.
     @label T_DELAY
-    throw(
-        NotPortedError{T}(
-            DEF.name, "the VM instruction T_DELAY (a conditional answer)", "TB4"
-        )
-    )
+    _trie_unwind_argp!(ld, FR)                      # UnwindTrieArgP()
+    t_delay!(ld, FR, Int(PCc[PC]))                  # answer = code2ptr(trie_node*, *PC++), then the body
+    PC += 1
+    @goto next_instruction
 
     # PORT: pl-vmi.c T_TRY_FUNCTOR
     @label T_TRY_FUNCTOR
@@ -4372,8 +4445,11 @@ function PL_next_solution_guarded(
 
     # PORT: pl-vmi.c depart_or_retry_continue
     # DIVERGES: NOT PORTED: the profiler's node, and the `LD->alerted` test
-    # with its helper `depart_alerted` (signals, undo hooks, depth and inference limits, the
-    # debugger).
+    # with its helper `depart_alerted` (signals, depth and inference limits, the debugger). Since TX1e
+    # its undo branch (pl-vmi.c:1989-1996 at the pin) is here: after the autoloader's early exit
+    # (`DEF->codes[0] == S_VIRGIN` with no definition yet: the supervisor runs first) the scheduled
+    # undo goals run in `run_undo_hooks`; an exception it leaves is thrown. Upstream sets `lTop` to
+    # the end of the frame's arguments first ("play safe"), so do we.
     @label depart_or_retry_continue
     # ORIGINAL (L1f f2, audit D-0029 D1 (a), D-0032): a catch-all once per call and per retried clause,
     # here where every call meets (normal_call, I_DEPART's and L_NOLCO's frame reuse, the query's first
@@ -4391,6 +4467,19 @@ function PL_next_solution_guarded(
     end
     setGenerationFrame(gd, ld, FR)
     ld.statistics.inferences += 1                   # LD->statistics.inferences++ (Y1)
+    if ld.alerted != 0 && (ld.alerted & ALERT_UNDO) != 0 && UNDO_SCHEDULED(ld) &&  # depart_alerted: UNDO_SCHEDULED(LD)
+        !(
+            DEF.codes === gd.code_data.virgin && !_impl_any_defined(DEF) &&
+            (DEF.flags & PROC_DEFINED) == 0
+        )
+        setLTop!(ld, argFrameP(ld.frames[FR].base, DEF.arity))   # lTop = argFrameP(FR, DEF->functor->arity)
+        @SAVE_REGISTERS(QID)
+        dr_rc = run_undo_hooks(gd, ld)              # rc = run_undo_hooks()
+        @LOAD_REGISTERS(QID)
+        if !dr_rc
+            @goto b_throw                           # THROW_EXCEPTION
+        end
+    end
     PCc = DEF.codes
     PCl = gd.no_literals
     PC = 1
@@ -4848,22 +4937,24 @@ function PL_next_solution_guarded(
 
     # ── the cleanup family (pl-vmi.c), V9g ─────────────────────────────────────────────────────
     # PORT: pl-vmi.c I_CALLCLEANUP
+    # (pl-vmi.c:4823-4845 at the pin; the `arity < 5` exemption for `'$tbl_leader'/5`, whose cleanup is
+    # the C function `tbl_leader_finished()` (see callCleanupHandler), since TB2c)
     # DIVERGES: the goal goes to `argFrameP(lTop, 0)` as a value (`linkValI`), as `I_CATCH`'s.
-    # NOT PORTED: the `arity < 5` exemption from the callable check (`'$tbl_leader'/5` has a C
-    # cleanup: tabling); every cleanup frame here has arity 2..4.
     @label I_CALLCLEANUP
     icc_f = ld.frames[FR]
     icc_arity = (icc_f.predicate::Definition{T}).arity
     icc_arg_goal = icc_arity == 2 ? 1 : 2
 
-    # last arg is cleanup
-    @SAVE_REGISTERS(QID)
-    icc_fid = PL_open_foreign_frame(ld)
-    icc_ok = mustBeCallable(ld, argFrameP(icc_f.base, icc_arity - 1))
-    PL_close_foreign_frame(ld, icc_fid)
-    @LOAD_REGISTERS(QID)
-    if !icc_ok
-        @goto b_throw                               # THROW_EXCEPTION
+    # last arg is cleanup ('$tbl_leader'/5: C cleanup)
+    if icc_arity < 5                                # if ( arity < 5 && !mustBeCallable(...) )
+        @SAVE_REGISTERS(QID)
+        icc_fid = PL_open_foreign_frame(ld)
+        icc_ok = mustBeCallable(ld, argFrameP(icc_f.base, icc_arity - 1))
+        PL_close_foreign_frame(ld, icc_fid)
+        @LOAD_REGISTERS(QID)
+        if !icc_ok
+            @goto b_throw                           # THROW_EXCEPTION
+        end
     end
 
     newChoice(ld, CHP_CATCH, FR)
@@ -5741,6 +5832,22 @@ function PL_next_solution_guarded(
     # enterDefinition(DEF): (void)0 upstream (pl-incl.h:1347)
     @goto S_STATIC                                  # SEPARATE_VMI1; VMI_GOTO(S_STATIC)
 
+    # PORT: pl-vmi.c S_INCR_DYNAMIC
+    # (pl-vmi.c:3522-3553 at 18168e629eab; TAB1 TB6.) The supervisor of an incremental dynamic predicate: while a table with an
+    # IDG node is current, add the edge from it to this call's dynamic table (`'\$idg_add_dyncall'/1` in C), then `S_STATIC`.
+    # DIVERGES: the code between `SAVE_REGISTERS` and `LOAD_REGISTERS` is `incr_dynamic_call` (src/pl-tabling.jl), as
+    # `S_TABLED` calls `tbl_complete_answer_clause`; `idg_current` is the read of `LD->tabling.idg_current` and `symbol_trie`.
+    @label S_INCR_DYNAMIC
+    # enterDefinition(DEF): (void)0 upstream (pl-incl.h:1347)
+    if (sid_ctrie = idg_current(ld)) !== nothing && sid_ctrie.IDG !== nothing
+        setLTop!(ld, argFrameP(ld.frames[FR].base, DEF.arity))   # lTop = (LocalFrame)argFrameP(FR, DEF->functor->arity)
+        @SAVE_REGISTERS(QID)
+        incr_dynamic_call(ld, DEF, FR, sid_ctrie)
+        @LOAD_REGISTERS(QID)
+        ld.exception_term != 0 && @goto b_throw     # THROW_EXCEPTION
+    end
+    @goto S_STATIC                                  # VMI_GOTO(S_STATIC)
+
     # PORT: pl-vmi.c S_MULTIFILE
     @label S_MULTIFILE
     @goto S_STATIC                                  # SEPARATE_VMI2; VMI_GOTO(S_STATIC)
@@ -5879,14 +5986,34 @@ function PL_next_solution_guarded(
     # (pl-vmi.c:3644-3665 at the pin; TAB1-min T3.) The supervisor of the `table` wrapper of a variant tabled predicate: when its
     # table is complete (`tbl_complete_answer_clause`) run the answer trie as `trie_gen_compiled/2` in this frame, else continue as
     # `S_CALLWRAPPER`, calling `start_tabling/3`.
-    # DIVERGES: the body is a named refusal: tables, tries and `trie_gen_compiled/2` are TAB1's. Removal condition: a tabled goal
-    # is called (owner TAB1).
+    # (TB3b: pl-vmi.c:3646-3668 at 18168e62.)
+    # DIVERGES: `tbl_complete_answer_clause` gets the frame (upstream reads the saved registers); the clause reference is an atom
+    # word; the single-answer path jumps to the VMH `trie_gen_single` (after `trie_gen_type_error`) with the answer node
+    # `trie_single_value_node(symbol_trie(gd, st_clref))` and its trie (the node id is a node of that trie); the path is reached only
+    # through `tbl_single_answer`, which needs an IDG node (TB6).
     @label S_TABLED
-    throw(
-        NotPortedError{T}(
-            DEF.name, "the VM instruction S_TABLED (calling a tabled predicate)", "TAB1"
-        )
-    )
+    ld.debugstatus_debugging && @goto S_CALLWRAPPER # if ( unlikely(debugstatus.debugging) ) VMI_GOTO(S_CALLWRAPPER)
+    setLTop!(ld, argFrameP(ld.frames[FR].base, DEF.arity))   # lTop = (LocalFrame)argFrameP(FR, DEF->functor->arity)
+    @SAVE_REGISTERS(QID)
+    st_clref = tbl_complete_answer_clause(ld, DEF, FR)
+    @LOAD_REGISTERS(QID)
+
+    st_clref == 0 && @goto S_CALLWRAPPER            # if ( !clref ) VMI_GOTO(S_CALLWRAPPER)
+    ld.frames[FR].flags &= ~FR_SSU_DET              # clearLocal(FR, FR_SSU_DET): no => rule runs
+    st_clref == _atom_word!(ld, mk_sym(T, :fail)) && @goto deep_backtrack   # FRAME_FAILED
+    st_clref == _atom_word!(ld, mk_sym(T, :error)) && @goto b_throw         # THROW_EXCEPTION
+
+    ARGP = argp_t{T}(ARGP_SLOT, argFrameP(ld.frames[FR].base, 0), ph)      # ARGP = argFrameP(FR, 0)
+    DEF = gd.procedures_trie_gen_compiled2.definition::Definition{T}       # FR->predicate = DEF = GD->procedures...
+    setFramePredicate(ld.frames[FR], DEF)
+    st_cl = clause_clref(gd, _atom_value(ld, st_clref))                    # ClauseRef cref = clause_clref(clref)
+    if st_cl === nothing                            # single answer: VMH_GOTO(trie_gen_single, trie_single_value_node(symbol_trie(clref)))
+        tgs_tr = symbol_trie(gd, st_clref)::trie{T}
+        tgs_answer = trie_single_value_node(tgs_tr)
+        @goto trie_gen_single
+    end
+    tc_cref = ClauseRef{T}(nothing, word(0), st_cl, nothing)
+    @goto TRUST_CLAUSE                              # TRUST_CLAUSE(cref)
 
     # ── deterministic foreign calls (pl-vmi.c; V5a2, decision 5) ─────────────────────────────────
     # PORT: pl-vmi.c I_FCALLDETVA
@@ -6226,7 +6353,7 @@ function PL_next_solution_guarded(
     # and the records above it are dropped before `lTop` is set (user, 2026-10-05); `chp` is the local
     # data's scratch `clause_choice`. `CHP_TOP` leaves `lTop` where it is, as upstream:
     # `restore_after_query` drops the dead records. NOT PORTED: the debugger (`trace_action`),
-    # the `LD->alerted` block (the inference count, of its `CHP_JUMP`, since Y1). Since V9f: `frameFailed` for a frame that must not fail, and the `CHP_DEBUG`
+    # the `LD->alerted` block (the inference count, of its `CHP_JUMP`, since Y1; its undo branch since TX1e). Since V9f: `frameFailed` for a frame that must not fail, and the `CHP_DEBUG`
     # choice point of such a frame (`S_STATIC` with no clause) — the popped record and the dead ones
     # above it are dropped at once, as at `CHP_CATCH`. `CHP_JUMP` (since V9d): the code registers are reloaded from the
     # frame's clause, because `value.pc` is an index into it where upstream's is an address.
@@ -6257,6 +6384,20 @@ function PL_next_solution_guarded(
     QF = QueryFromQid(ld, QID)
     _reset_argument_stack!(ld, ld.queries[QF])
     DEF = ld.frames[FR].predicate::Definition{T}
+
+    # From pl-vmi.c b_failed, the `LD->alerted` block (pl-vmi.c:6840-6856 at the pin), its undo branch only (since TX1e): the
+    # scheduled undo goals run above the choice point (`lTop = BFR+1`, `mark_bar` at `gTop`), then it is `db_c` that is resumed.
+    # DIVERGES: upstream also handles the `ALERT_BUFFER` branch (string buffers) and the profiler here; the kernel leaves both out.
+    if ld.alerted != 0 && UNDO_SCHEDULED(ld)
+        ld.lTop > db_c.base + SIZEOF_CHOICE && lowerLTop!(ld, db_c.base + SIZEOF_CHOICE)   # lTop = (LocalFrame)(BFR+1)
+        ld.mark_bar != NO_MARK_BAR && (ld.mark_bar = ld.gTop)   # if ( LD->mark_bar != NO_MARK_BAR ) LD->mark_bar = gTop
+        @SAVE_REGISTERS(QID)
+        bf_rc = run_undo_hooks(gd, ld)              # rc = run_undo_hooks()
+        @LOAD_REGISTERS(QID)
+        if !bf_rc
+            @goto b_throw                           # THROW_EXCEPTION
+        end
+    end
 
     if db_c.type == CHP_JUMP
         # if ( BFR->value.jump.trie_offset ) *TrieOffset = ... (pl-vmi.c:6865, TR4): a T_TRY_* choice point of a trie clause

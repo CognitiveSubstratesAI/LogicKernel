@@ -17,77 +17,21 @@ pred:$foreign_predicate_source/2	PR1	seed: missing_c_preds.tsv
 pred:$gc_clear/1	TH1	seed: missing_c_preds.tsv
 pred:$gc_stop/0	TH1	seed: missing_c_preds.tsv
 pred:$gc_wait/1	TH1	seed: missing_c_preds.tsv
-pred:$idg_add_edge/1	TAB1	seed: missing_c_preds.tsv
-pred:$idg_add_mono_dyn_dep/3	TAB1	seed: missing_c_preds.tsv
-pred:$idg_add_monotonic_dep/3	TAB1	seed: missing_c_preds.tsv
-pred:$idg_changed/1	TAB1	seed: missing_c_preds.tsv
-pred:$idg_false_edge/3	TAB1	seed: missing_c_preds.tsv
-pred:$idg_falsecount/2	TAB1	seed: missing_c_preds.tsv
-pred:$idg_forced/1	TAB1	seed: missing_c_preds.tsv
-pred:$idg_mono_affects/3	TAB1	seed: missing_c_preds.tsv
-pred:$idg_mono_affects_eager/3	TAB1	seed: missing_c_preds.tsv
-pred:$idg_mono_affects_lazy/5	TAB1	seed: missing_c_preds.tsv
-pred:$idg_mono_empty_queue/2	TAB1	seed: missing_c_preds.tsv
-pred:$idg_mono_index/2	TAB1	seed: missing_c_preds.tsv
-pred:$idg_mono_index_deps/4	TAB1	seed: missing_c_preds.tsv
-pred:$idg_mono_invalidate/1	TAB1	seed: missing_c_preds.tsv
-pred:$idg_reset_current/0	TAB1	seed: missing_c_preds.tsv
-pred:$idg_set_current/2	TAB1	seed: missing_c_preds.tsv
 pred:$inference_limit/2	P3	seed: missing_c_preds.tsv
 pred:$inference_limit_except/3	P3	seed: missing_c_preds.tsv
 pred:$inference_limit_false/1	P3	seed: missing_c_preds.tsv
 pred:$inference_limit_true/3	P3	seed: missing_c_preds.tsv
 pred:$leash/2	DBG1	seed: missing_c_preds.tsv
-pred:$mono_idg_changed/2	TAB1	seed: missing_c_preds.tsv
-pred:$mono_reeval_done/3	TAB1	seed: missing_c_preds.tsv
-pred:$mono_reeval_prepare/2	TAB1	seed: missing_c_preds.tsv
 pred:$on_signal/4	Q10	seed: missing_c_preds.tsv
 pred:$put_token/2	Q10	seed: missing_c_preds.tsv
 pred:$rc_handle/1	ZIP1	seed: missing_c_preds.tsv
 pred:$seek_list/4	P2	seed: missing_c_preds.tsv
 pred:$set_prolog_stack/4	Q10	seed: missing_c_preds.tsv
 pred:$sig_unblock/0	TH1	seed: missing_c_preds.tsv
-pred:$snapshot/1	TX1	seed: missing_c_preds.tsv
 pred:$suspend_findall_bag/0	Q10	seed: missing_c_preds.tsv
-pred:$tbl_abolish_local_tables/0	TAB1	seed: missing_c_preds.tsv
-pred:$tbl_add_global_delays/2	TAB1	seed: missing_c_preds.tsv
-pred:$tbl_answer/3	TAB1	seed: missing_c_preds.tsv
-pred:$tbl_answer_c/4	TAB1	seed: missing_c_preds.tsv
-pred:$tbl_answer_dl/3	TAB1	seed: missing_c_preds.tsv
-pred:$tbl_answer_update_dl/2	TAB1	seed: missing_c_preds.tsv
-pred:$tbl_answer_update_dl/3	TAB1	seed: missing_c_preds.tsv
-pred:$tbl_collect_mono_dep/0	TAB1	seed: missing_c_preds.tsv
-pred:$tbl_delay_list/1	TAB1	seed: missing_c_preds.tsv
-pred:$tbl_destroy_table/1	TAB1	seed: missing_c_preds.tsv
-pred:$tbl_force_truth_value/3	TAB1	seed: missing_c_preds.tsv
-pred:$tbl_is_answer_completed/1	TAB1	seed: missing_c_preds.tsv
-pred:$tbl_leader_complete/4	TAB1	seed: missing_c_preds.tsv
-pred:$tbl_monotonic_add_answer/2	TAB1	seed: missing_c_preds.tsv
-pred:$tbl_node_answer/2	TAB1	seed: missing_c_preds.tsv
-pred:$tbl_pop_worklist/2	TAB1	seed: missing_c_preds.tsv
-pred:$tbl_propagate_end/1	TAB1	seed: missing_c_preds.tsv
-pred:$tbl_propagate_start/1	TAB1	seed: missing_c_preds.tsv
-pred:$tbl_reeval_abandon/1	TAB1	seed: missing_c_preds.tsv
-pred:$tbl_reeval_prepare/2	TAB1	seed: missing_c_preds.tsv
-pred:$tbl_reeval_prepare_top/2	TAB1	seed: missing_c_preds.tsv
-pred:$tbl_set_answer_completed/1	TAB1	seed: missing_c_preds.tsv
-pred:$tbl_set_delay_list/1	TAB1	seed: missing_c_preds.tsv
-pred:$tbl_table_complete_all/3	TAB1	seed: missing_c_preds.tsv
-pred:$tbl_wkl_add_answer/4	TAB1	seed: missing_c_preds.tsv
-pred:$tbl_wkl_add_suspension/2	TAB1	seed: missing_c_preds.tsv
-pred:$tbl_wkl_add_suspension/3	TAB1	seed: missing_c_preds.tsv
-pred:$tbl_wkl_is_false/1	TAB1	seed: missing_c_preds.tsv
-pred:$tbl_wkl_make_follower/1	TAB1	seed: missing_c_preds.tsv
-pred:$tbl_wkl_negative/1	TAB1	seed: missing_c_preds.tsv
-pred:$tbl_wkl_table/2	TAB1	seed: missing_c_preds.tsv
-pred:$tbl_wkl_work/6	TAB1	seed: missing_c_preds.tsv
-pred:$transaction/2	TX1	seed: missing_c_preds.tsv
-pred:$transaction/3	TX1	seed: missing_c_preds.tsv
-pred:$undo/1	TX1	seed: missing_c_preds.tsv
 pred:$unload_file/1	SRC2	seed: missing_c_preds.tsv
-pred:$urgent_exception/3	P3	seed: missing_c_preds.tsv
+pred:$urgent_exception/3	P3	seed: missing_c_preds.tsv; '$run_undo'/1 (boot/syspred.pl) calls it when an undo goal RAISES: a raising undo goal is a named refusal, owner P3, and those undo rows wait for it (TX1)
 pred:$visible/2	DBG1	seed: missing_c_preds.tsv
-pred:\=@=/2	Q10	seed: missing_c_preds.tsv
 pred:char_type/2	CT1	seed: missing_c_preds.tsv
 pred:code_type/2	CT1	seed: missing_c_preds.tsv
 pred:current_blob/2	Q10	seed: missing_c_preds.tsv
@@ -159,19 +103,14 @@ vmi:D_BREAK	DBG1	seed: VM-instruction family
 vmi:H_SMALLINTW	REFUSED	never declared (refused by name, no step ports it): emitted by pl-comp.c:3032 for a head integer; only where a code word is narrower than a word (`CODES_PER_WORD > 1`; pl-incl.h:679 SIZEOF_WORD/SIZEOF_CODE, `code` = uintptr_t :888, so 1 on the build the kernel targets); src/pl-vmi.jl:42-44
 vmi:L_SMALLINTW	REFUSED	never declared (refused by name, no step ports it): emitted by pl-comp.c:3779-3786 (the rewrite of B_SMALLINTW into a local, itself inside `#if CODES_PER_WORD > 1`); only where a code word is narrower than a word (`CODES_PER_WORD > 1`; pl-incl.h:679 SIZEOF_WORD/SIZEOF_CODE, `code` = uintptr_t :888, so 1 on the build the kernel targets); src/pl-vmi.jl:42-44
 vmi:S_DET	SSU1b	pl-vmi.c:3749 (`setLocal(FR, FR_DET)`), emitted by pl-supervisor.c:391-392 chainPredicateSupervisor only when P_DET is set; P_DET is set by the det/1 setter (pl-proc.c:3745-3753), SSU1b's, so the opcode is declared with that setter (src/pl-supervisor.jl:251, src/pl-wrap.jl:106 name the gap)
-vmi:S_INCR_DYNAMIC	TB6	pl-vmi.c:3522, the incremental dynamic predicate supervisor: its body is the IDG's (TAB1 TB6; src/pl-supervisor.jl:20)
 vmi:S_THREAD_LOCAL	TH1	pl-vmi.c:3499, the thread-local definition supervisor: thread-local predicates are TH1's (src/pl-proc.jl:1684, src/pl-supervisor.jl:20-21)
 vmi:T_SMALLINTW	REFUSED	never declared (refused by name, no step ports it): only the `CODES_PER_WORD > 1` forms of T_SMALLINT/T_TRY_SMALLINT (pl-vmi.c:6622-6632); compile_trie emits them through add_smallint/add_vmi_else_i only where a code word is narrower than a word (pl-trie.c:4785, :4973-4975, :5018), 1 on the build the kernel targets; src/pl-vmi.jl:644-645
 vmi:T_TRY_SMALLINTW	REFUSED	never declared (refused by name, no step ports it): only the `CODES_PER_WORD > 1` forms of T_SMALLINT/T_TRY_SMALLINT (pl-vmi.c:6622-6632); compile_trie emits them through add_smallint/add_vmi_else_i only where a code word is narrower than a word (pl-trie.c:4785, :4973-4975, :5018), 1 on the build the kernel targets; src/pl-vmi.jl:644-645
-cfile:pl-tabling.c	TAB1	PIN1 step C (D-0447 item 1): every pl-tabling.c row without an exact key, and the UNPORTED tabling groups of V10.1.20 (evidence/PIN1/step_c/part2_notes.md T0-T5; no key kind names a group): T1 IDG edge sets and node layout (pl-idgset.c/h, 211bb969 9f5da524 c77a0bff 99827823; `$idg_thread_summary/3`, `$idg_thread_space/2`, `$idg_predicate_edges/3` are new); T2 trie and table memory (737686d3 fc7e0010 2125e711 486dc81d; T_DELAY flag); T3 reclaim and abolish (259429a2 30bdfd4f c9c81eeb c7037709); T4 answers and WFS (10205aec 14ba39be 9dcabe86 6aee153d); T5 diagnostics (780caea7 610742f9 0e201521; `$tbl_sdg/3`, `$tbl_incomplete/3`); S_TABLED stays the named refusal
+# TAB1 TB8 ports `$tbl_sdg/3`, `$tbl_incomplete/3` (T5 of the row above), the restraint flags, the tripwires and `drop_intermediate_tables`. It replaced these refusal sites on wip/tb8m (docs/architecture.md section TAB1 TB8): get_answer_table (TB1: tbl_pred_tripwire), unify_table_status (TB1: tripwire_scc_subgoals), table_complete_all (TB2: droppable_table, drop_intermediate_tables), tbl_add_answer_found (TB3, two branches: add_radial_restraint, tbl_wl_tripwire, generalise_answer_substitution, add_answer_count_restraint); the `refusal:` row below is one generic key (`tbl_refuse::what`), so no key leaves the table.
 cfile:pl-thread.c	TH1	PIN1 step C (D-0447 item 3): every pl-thread.c row without an exact key; `$thread_local_predicate_size/3` is new at V10.1.20 (pl-thread.c, O_ENGINES; thread-local predicates are TH1's)
 kfile:pl-qlf.jl	LB3	seed: the QLF refusal sites
-refusal:src/pl-tabling.jl::tbl_refuse::what	TB2-TB9	the named refusal of a TB1 branch whose body is a later step's (`tbl_refuse(T, fname, what, owner)`: the argument `owner` names the step: TB2 worklists and the create path of `$tbl_variant_table/6`, TB4 delay info, TB6 IDG, TB7 monotonic, TB8 tripwires, TB9 tracked tables, TH1 shared tables)
+refusal:src/pl-tabling.jl::tbl_refuse::what	TB5-TB9	the named refusal of a branch whose body is a later step's (`tbl_refuse(T, fname, what, owner)`: the argument `owner` names the step: TB5 the worklist branch of `reset_answer_table` (its calls to `destroy_depending_worklists` and `free_worklist` need an engine: `ld`, or a GD-to-LD reference; wip/tb5 calls `reset_answer_table(atrie, flags)` with two arguments, the stack's is `(gd, atrie, flags)`: batch-4 carry list, evidence/TAB1/stack4_handoff5.md), TB6 IDG, TB7 monotonic, TB8 tripwires, TB9 tracked tables (wip/tb9 ports the transaction tables and the eight sites call `tt_*`: the three refusal sites of TB9 are gone; the one refusal that still names TB9 is the tracked branch of `reset_answer_table`, whose callers `destroy_answer_trie`, `abolish_table` and `reset_table_bulk` run `reset_answer_table_tracked` first), TH1 shared tables, which stay named)
 refusal:src/pl-wam.jl::PL_next_solution_guarded::the VM instruction I_YIELD in an engine (pl-vmi.c:2419)	TH1	the named refusal of the branch (its body is the owner's step)
-refusal:src/pl-wam.jl::PL_next_solution_guarded::the dtbl_reset6 branch of I_RESET (pl-vmi.c:5762)	TAB1	the named refusal of the branch (its body is the owner's step)
-refusal:src/pl-wam.jl::PL_next_solution_guarded::the dtbl_reset6 branch of I_EXITRESET (pl-vmi.c:5806)	TAB1	the named refusal of the branch (its body is the owner's step)
-refusal:src/pl-wam.jl::PL_next_solution_guarded::the VM instruction S_TABLED (calling a tabled predicate)	TAB1	the named refusal of the instruction (its body is the owner's step)
-refusal:src/pl-wam.jl::PL_next_solution_guarded::the VM instruction T_DELAY (a conditional answer)	TB4	the named refusal of the instruction (pl-vmi.c:6225-6246, TB4: the delay list `tbl_push_delay`); compile_trie_node refuses a conditional answer by name too, so no clause holds the instruction until TB4 compiles one
 refusal:src/os/pl-files.jl::get_file_name::PL_get_file_name flag PL_FILE_SEARCH (system:absolute_file_n	LB4	the first boot: absolute_file_name/3 of init.pl runs through PL_get_file_name(PL_FILE_SEARCH)
 refusal:src/os/pl-files.jl::_iri_hook_refused::iri_hook $what (`\$iri`:iri_hook/4 of init.pl)	LB5-LB7	off the load path: serves http:// style IRIs; the library ring
 refusal:src/os/pl-files.jl::_tmp_file_refused::what	LB5-LB7	tmp_file/2 and $tmp_file_stream/4: boot, off the load path (lb5_sizing.md Ring Q)
@@ -187,10 +126,18 @@ refusal:src/pl-event.jl::PL_call_event_hook_va::the thread events (`unify_thread
 refusal:src/pl-proc.jl::pl_set_predicate_attribute3_va::spy points (GP_RESOLVE)	DBG1	spy points, GP_RESOLVE (pl-proc.c pl_set_predicate_attribute, SPY_ME)
 refusal:src/pl-proc.jl::setAttrDefinition::setAttrDefinition: attribute $attr	SSU1b	P_CLAUSABLE and P_DET in setAttrDefinition (pl-proc.c); SSU1b is the det/1 setter
 refusal:src/pl-read.jl::_atom_from_text::an atom containing the character 0 (a Symbol cannot hold it)	ATOM1	atoms holding the character 0 (pl-read.c atom from text); board row ATOM1, D-0410 item 7
-refusal:src/pl-srcfile.jl::startConsult::consulting a file again (reconsult)	LB6	startConsult on a loaded file, reconsult (pl-srcfile.c); LB6b item h re-points it (lb67_sizing.md)
+refusal:src/pl-srcfile.jl::startConsult::consulting a file again (reconsult)	LB6	startConsult on a loaded file, reconsult (pl-srcfile.c); LB6b item h re-points it (lb67_sizing.md); the same step calls `untable_definition_clauses` (src/pl-tabling.jl, TAB1 TB5) where upstream's `unloadFile` (pl-srcfile.c:1476) and `endReconsult` (:1544) call `untable_from_clause`: neither function exists in the kernel before LB6b, so the `untable` event of a reloaded `'$tabled'/2` clause is raised from nowhere until then
 refusal:src/pl-wam.jl::PL_next_solution_guarded::backtracking into a $(db_c.type) choice point	CONT1	backtracking into a non-clause choice point (pl-wam.c, the I_RESET/I_YIELD/foreign-redo frames)
 refusal:src/pl-write.jl::writeAttVar::write_term/2 attributes(portray): '\$attvar':portray_attvar/	AV10	attributes(portray) writeAttVar (pl-write.c, '$attvar':portray_attvar/1)
 # refusal sites, assignments proposed in evidence/R2/refusal_owners.md (new deferred step names ENC1, RD2, WR2 and the QUESTION rows): confirmed by the audit (D-0415 item 5: ENC1, RD2, WR2 are the names of deferred steps; indexed(L) is PR1b)
+# TAB1 TB5 (wip/tb5): `$tbl_destroy_table/1` and `$tbl_abolish_local_tables/0` are ported (their seed rows left). The shared-table branches of abolish_table, destroy_answer_trie, clear_variant_table
+# (owner TH1) and the IDG branches of orphan_dynamic_table, collect_dynamic_children, reset_table_bulk, empty_variant_table (owner TB6) raise through `tbl_refuse`: the one `tbl_refuse` row (TB1) owns them.
+# TAB1 W2 (wip/tb-w2): `$tbl_node_answer/2` is ported (pl-tabling.c:8957-8969; its seed row left), with take_table_value, save_tabling_status and restore_tabling_status.
+# Left out of pl-tabling.c by name: (a) the O_DEBUG-only functions stay out of the kernel (it has no debug build): put_delay_info, print_dl_dependency, print_delay, print_answer,
+# print_answer_table, print_worklist, idg_flag_name. (b) The O_PLMT group is a named refusal owned by TH1 (shared tables, table locking, the deadlock detector): table_needs_work,
+# claim_answer_table, take_trie, drop_trie, new_trie_array, free_trie_array, register_waiting, unregister_waiting, thread_waits_for_trie, stat_deadlock, is_deadlock, wait_for_table_to_complete.
+# (c) cleanupTabling (pl-tabling.c:12717) has nothing observable in the kernel: it clears fast_ret_functor and, under O_PLMT, frees the shared variant table, the mutex, the condition variable and the node pool: no row.
+# The 2-argument `freeCodesDefinition!` keeps its refusal row below: pl-ext.jl and precompile_workload.jl call it where no database exists (boot), the callers with a database use the 3-argument method.
 refusal:src/os/pl-file.jl::openStream::open/4's unicode_atoms(Mode) option	ENC1	open/4 unicode_atoms(Mode) option (pl-file.c openStream); the NFC normalizer rides with ENC1
 refusal:src/os/pl-file.jl::openStream::string("open/4 with the stream encoding ", enc)	ENC1	open/4 encodings other than UTF-8 (pl-file.c openStream); UTF-8 only by the R1 decision of 2026-10-07
 refusal:src/os/pl-file.jl::_atom_to_unicode_atoms::set_stream/2's unicode_atoms(nfc)	ENC1	set_stream/2 unicode_atoms(nfc) (pl-file.c set_stream); the NFC normalizer rides with ENC1
@@ -205,7 +152,7 @@ refusal:src/os/pl-text.jl::PL_mb_text::PL_mb_text to a target other than REP_UTF
 refusal:src/os/pl-text.jl::PL_mb_text::PL_mb_text of $(text.encoding)	ENC1	PL_mb_text of a text in another encoding (pl-text.c); branch without a kernel caller
 refusal:src/os/pl-text.jl::_text_string::the string of a text in $(text.encoding)	ENC1	string of a text in another encoding (pl-text.c); branch without a kernel caller
 refusal:src/os/pl-text.jl::_text_code_points::the code points of a text in $(text.encoding)	ENC1	code points of a text in another encoding (pl-text.c); branch without a kernel caller
-refusal:src/pl-comp.jl::assert_term!::assert_term: PL_CREATE_INCREMENTAL/THREAD_LOCAL	TAB1	assert_term PL_CREATE_INCREMENTAL (tabling); the PL_CREATE_THREAD_LOCAL half is TH1 (pl-comp.c assert_term)
+refusal:src/pl-comp.jl::assert_term!::assert_term: PL_CREATE_THREAD_LOCAL	TH1	assert_term PL_CREATE_THREAD_LOCAL (pl-comp.c assert_term, thread-local predicates are TH1's); PL_CREATE_INCREMENTAL is ported by TAB1 TB6 (tbl_set_incremental_predicate)
 refusal:src/pl-modul.jl::set_module::set_module(program_space(N)): the module's code accounting	P3	set_module(program_space(N)) code accounting (pl-modul.c); resource-limit family, unreached by the boot
 refusal:src/pl-proc.jl::get_procedure::get_procedure: other than GP_DEFINE	PR1	generic get_procedure modes beyond GP_DEFINE (pl-proc.c); callers use the split get_procedure_* functions, PR1 residual
 refusal:src/pl-proc.jl::pl_get_predicate_attribute3_va::indexed(L): the Prolog dict of an index property	PR1b	indexed(L) of pl_get_predicate_attribute (pl-proc.c, unify_index_property): predicate_property(P, X) enumeration reaches it via syspred.pl:874; PR1b (R2b list, D-0415 item 5), needs the dict builder; size it before the first boot decides whether it is needed
