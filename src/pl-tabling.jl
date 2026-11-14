@@ -9176,7 +9176,7 @@ function invalid_dependencies(
 
     if cnt == 0
         if idg.lazy_queued
-            return (PL_unify_atom(ld, deps, mk_sym(T, :false)), 0)
+            return (PL_unify_atom(ld, deps, mk_sym(T, Symbol("false"))), 0)   # ATOM_false (`:false` is the Bool)
         else
             return (PL_unify_nil(ld, deps), 0)
         end
