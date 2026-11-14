@@ -56,6 +56,12 @@ end
 # `mark_bar`, which `Trail` does not record — so it is the store `_cell_link!` makes (`linkValI`: an
 # unbound or attributed cell its reference, any other term its word). No `ensureTrailSpace` (the
 # trail is a vector).
+# Synced to cf6960c2: the target's other arm is `gen_assign(&argp[i], *a)` (with the comment
+# "ensureTrailSpace() may have GCed") in place of the plain `argp[i] = *a`: a store that tells the
+# generational collector about an old-to-young pointer. The kernel has no generational collector
+# (`gen_assign`, `gen_remember` and `gen_bar` are unwritten), and `_cell_link!` stores the cell
+# itself, so there is no answer change; whoever writes the generational GC makes this store through
+# it.
 # Its tracer callers (pl-trace.c:1165, :1282, :1334, :2583) are not ported; SSU's error is the first.
 """
     put_frame_goal(ld, goal, fr) -> Bool
