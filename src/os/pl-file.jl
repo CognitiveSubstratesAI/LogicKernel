@@ -39,6 +39,14 @@
 fileNameStream(gd::PL_global_data{T}, s::IOSTREAM) where {T} =
     get(gd.stream_filenames, s, nothing)::Union{Nothing, T}
 
+# PORT: pl-file.c fileNameStreamLocked
+# synced to swipl-devel cf6960c2 (pl-file.c:539-550): new at the target, not at the pin.
+# DIVERGES: as `fileNameStream`: the same table lookup. Upstream's version is for a caller that holds the stream's lock (the
+# reader): the stream's context cannot be freed meanwhile, so it skips `L_FILE`, and a stream without context has no name.
+# This kernel has no locks, so the two functions are one lookup; the reader (pl-read.c) is another slice's.
+"The name of the file `s` reads, or `nothing`, for a caller that holds the stream's lock (pl-file.c)."
+fileNameStreamLocked(gd::PL_global_data{T}, s::IOSTREAM) where {T} = fileNameStream(gd, s)
+
 # PORT: pl-file.c setFileNameStream
 # DIVERGES: as `fileNameStream`; `nothing` is upstream's NULL_ATOM — it, or `''`, forgets the
 # stream's name (`setFileNameStream_unlocked`); no lock.
@@ -313,7 +321,10 @@ end
 # standard stream restored when its stream was closed (`restoreStandardStream` — the closers keep
 # the standard streams open, see `closeStream`). A standard name whose stream is NULL is
 # `existence_error(stream, Name)`: upstream's `goto noent` since its fix cd76c1a
-# (docs/upstream_reports.md #13), and what the kernel did before it.
+# (docs/upstream_reports.md #13), and what the kernel did before it. Synced to cf6960c2: the target reads the
+# blob through its new `get_stream_ref(a, &ref)` (type test and `data_stream_ref` in one: see `stream_ref`) and
+# `ref` is a `stream_ref` value, no longer a pointer to the blob data; every answer is the same, and `_stream_ref_of` is that
+# function here.
 "The stream the blob or atom `a` names, as `flags` (`SH_*`) ask, or `nothing` with the error raised (pl-file.c)."
 function get_stream_handle(
     ld::PL_local_data{T}, a::T, flags::Int
@@ -573,7 +584,14 @@ end
 # PORT: pl-file.c stream_ref
 # DIVERGES: `read` and `write` are the NUMBERS of the streams in the database's stream table
 # (`getStreamContext`; 0 for NULL), where upstream holds the `IOSTREAM *`s: a Julia stream is no
-# pointer. A pair (both set) is NOT PORTED.
+# pointer. A pair (both set) is unwritten. Synced to cf6960c2: the target gives a pair its own blob data, a
+# `stream_pair` record (magic `SIO_PMAGIC` at the offset of an `IOSTREAM`'s magic, the two streams, a link in the list
+# `stream_pairs` under `L_FILE`): the handle of one pair is then unique, found by `stream_pair/3` from the two streams, and a
+# stream's blob data is the `IOSTREAM` itself (before: a `stream_ref` copy). `data_stream_ref`
+# (record or stream to a `stream_ref`: a stream is the read stream when it is an input stream, else the write stream, as
+# before), `is_stream_pair_data`, `get_stream_ref` (the `type == &stream_blob` test and `data_stream_ref`) and `blob_stream_ref` are
+# the reading side; here a stream blob's payload is the `stream_ref` of table numbers and `_stream_ref_of` reads
+# it, so there is no pair record, no list and no lock (a pair stays unwritten, as `stream_pair/3`).
 "The data of a stream blob (pl-file.c `stream_ref`): the streams it reads and writes, by table number (0: none)."
 struct stream_ref
     read::Int
@@ -582,7 +600,19 @@ end
 
 # PORT: pl-file.c stream_blob
 # DIVERGES: no `release`, `compare` or `write` hooks (no atom GC; the blob's order and written form are
-# the term interface's, D-0200: `<stream>(0x…)`).
+# the term interface's, D-0200: `<stream>(0x…)`). Synced to cf6960c2: the target's type is
+# `PL_BLOB_UNIQUE|PL_BLOB_NOCOPY|PL_BLOB_LOCAL` with a `compare` hook (`compare_stream_ref`: by the read stream's
+# pointer, then the write stream's) where the pin has `PL_BLOB_UNIQUE` and none. Here two blobs of one type compare by creation
+# order (`compareAtomsBlob`, D-0200: the payload is a table number and a Term cannot reach the type), so the hook is not
+# carried and the order of two handles is unchanged by design. `NOCOPY` (the blob data is the `IOSTREAM`) and
+# `LOCAL` (a handle is a local atom of its thread until another thread may reach it) are atom-table layout and threads: not
+# written here. The release side moved too: `gc_close_stream` no longer frees an erased stream (that is now
+# `release_stream`, which drops the blob's reference, closes the stream when it was the last reference and the flag
+# `agc_close_streams` is true, and frees a closed stream by `Sunreference_free`), `release_stream_ref` refuses in a thread's
+# sweep of its local atoms if it would close an open stream (`would_gc_close`), removes a pair's record
+# (`unlink_stream_pair`, `PL_TRYLOCK(L_FILE)`) and frees it, and `write_stream_ref`, `acquire_stream_ref` and `save_stream_ref`
+# read `blob_stream_ref`. There is no atom GC and no threads here, so none of it is reached: no release hook, a closed
+# stream's blob stays a blob.
 "The blob type of a stream (pl-file.c `stream_blob`): unique by payload, non-text, named `stream`."
 const stream_blob = PL_blob_t(PL_BLOB_UNIQUE, "stream")
 
@@ -732,6 +762,10 @@ end
 getStream(s::IOSTREAM)::Union{Nothing, IOSTREAM} = s.magic == SIO_MAGIC ? s : nothing
 
 # PORT: pl-file.c unify_stream_ref
+# DIVERGES: the payload is the `stream_ref` of table numbers (see `stream_ref`). Synced to cf6960c2: the target hands the
+# `IOSTREAM` itself to `PL_unify_blob(t, s, sizeof(*s), &stream_blob)` (`NOCOPY`: the blob data is the stream; the
+# `stream_ref` copy, `memset` and `SIO_INPUT` test are gone, `data_stream_ref` makes them on reading); the handle
+# is unique by the stream, the same answer.
 "Unify term reference `t` with the blob of the stream `s` (pl-file.c)."
 function unify_stream_ref(ld::PL_local_data{T}, t::term_t, s::IOSTREAM)::Bool where {T}
     ctx = getStreamContext(_query_gd(ld), s)
@@ -1189,7 +1223,8 @@ function closeStream(ld::PL_local_data, s::IOSTREAM)::Bool
 end
 
 # PORT: pl-file.c do_close
-# DIVERGES: `s` is `nothing` for upstream's NULL (a stream that is closed or no stream).
+# DIVERGES: `s` is `nothing` for upstream's NULL (a stream that is closed or no stream). Synced to cf6960c2: the
+# target types `do_close` (and `pl_close`) `bool` with a `bool force`, were `int`: types only.
 "Close `s`; with `force`, ignoring errors, and succeeding on no stream (pl-file.c)."
 function do_close(
     ld::PL_local_data, s::Union{Nothing, IOSTREAM}, force::Bool
@@ -1214,7 +1249,8 @@ function do_close(
 end
 
 # PORT: pl-file.c pl_close
-# DIVERGES: a pair is NOT PORTED.
+# DIVERGES: a pair is unwritten. Synced to cf6960c2: the target reads the blob with `get_stream_ref` (see
+# `get_stream_handle`), a `stream_ref` value, and the local `rc` is `bool`: the same answers.
 "Close the stream (blob or alias) term reference `stream` holds (pl-file.c)."
 function pl_close(ld::PL_local_data{T}, stream::term_t, force::Bool)::Bool where {T}
     a = PL_get_atom(ld, stream)
@@ -2603,7 +2639,8 @@ function _atom_to_unicode_atoms(
 end
 
 # PORT: pl-file.c set_stream
-# DIVERGES: not ported, each by the upstream line, with the answer the stream layer can give:
+# DIVERGES: synced to cf6960c2: the target reads the handle with `get_stream_ref` and uses `ref.read`/`ref.write` of a
+# `stream_ref` value (was `ref->read` of the blob data): the same answers. Unwritten, each by the upstream line, with the answer the stream layer can give:
 #  - `alias(Std)` of a standard stream name (file:2215-2227): `setStandardStream`, then `LD->prompt.next = true` for
 #    `user_input` (`ld.prompt_next`, R2 LB5b). Its readers since R2 TOP1: `PL_write_prompt` (:1884, above; it clears the flag),
 #    `PL_prompt_next` (pl-fli.c:5349, src/pl-fli.jl), `resetProlog` (pl-pro.c:67, src/pl-pro.jl) and, since R2 TOP1b A-D,
@@ -2860,7 +2897,8 @@ end
 # PORT: pl-file.c set_stream as pl_set_stream2_va
 # (PRED_IMPL("set_stream", 2, set_stream, 0)) — pl-file.c:2520-2594
 # DIVERGES: a stream pair is NOT PORTED (`get_stream_handle` refuses it by name); `PL_get_stream_handle` is
-# `term_stream_handle(SH_ERRORS|SH_ALIAS)` (no `SH_NOPAIR`); no lock to release.
+# `term_stream_handle(SH_ERRORS|SH_ALIAS)` (no `SH_NOPAIR`); no lock to release. Synced to cf6960c2: the
+# stream-handle test now goes through `get_stream_ref` (see `pl_close`): the same answers.
 "`set_stream(+Stream, +Attribute)`: set the attribute of the stream (pl-file.c)."
 function pl_set_stream2_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
