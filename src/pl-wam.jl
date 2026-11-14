@@ -444,6 +444,38 @@ function existingChoice(ld::PL_local_data{T}, off::Int)::Int where {T}
     return ch2
 end
 
+# PORT: pl-wam.c existingFrame
+# DIVERGES: takes the frame's local-stack POSITION `off` (upstream's `(LocalFrame)((Word)lBase+i)`, as `PL_unify_frame` gives it,
+# src/pl-trace.jl) and returns the index of the frame record at that position, 0 for upstream's false. A position no record holds
+# is no frame (upstream reads whatever lies there and tests its magic). The records are ordered by `base` (the pool invariant of
+# `dropDeadRecords!`), so the search runs from the newest record down. The chain of parents ends at a top frame, whose query
+# record (`queryOfFrame`: the record `QF_TOP_FRAME` below it) must carry `QID_MAGIC`, as upstream's `qf->magic == QID_MAGIC`.
+"The frame at local-stack position `off` if it is a live frame of a live query, else 0 (pl-wam.c)."
+function existingFrame(ld::PL_local_data{T}, off::Int)::Int where {T}
+    0 <= off < ld.lTop || return 0                  # onStack(local, fr)
+    start = ld.nframes
+    while start != 0 && ld.frames[start].base > off
+        start -= 1
+    end
+    start != 0 && ld.frames[start].base == off || return 0
+    fr = start
+    while true
+        isFrame(ld.frames[fr]) || return 0          # !isFrame(fr)
+        p = ld.frames[fr].parent
+        if p == 0                                   # a top frame: its query decides
+            b = ld.frames[fr].base - QF_TOP_FRAME   # queryOfFrame(fr)
+            for i in ld.nqueries:-1:1
+                if ld.queries[i].base == b
+                    return ld.queries[i].magic == QID_MAGIC ? start : 0
+                end
+            end
+            return 0
+        end
+        p < fr || return 0                          # a parent is an older record (else a stale index)
+        fr = p                                      # fr = fr->parent
+    end
+end
+
 # ── the overwrite points: never below the newest choice point ───────────────────────────────────
 # ORIGINAL (L1e e1's assertion; audit D-0029, narrowed in D-0031): a slot has ONE side entry and
 # nothing restores a slot word, so no VM writer may OVERWRITE a slot still live below a choice point
@@ -2920,6 +2952,11 @@ function PL_next_solution_guarded(
     thiscode = PCc[PC]
     PC += 1
     @vmi_dispatch(thiscode, VMI_RUN)
+    # UNWRITTEN: `D_BREAK` (pl-vmi.c:280-355 at the pin, DBG1 group c): the break-point instruction a
+    # debugger writes over a clause's code (`setBreak`, pl-comp.c:8997) and `callBreakHook` answers.
+    # The kernel's table has no `D_BREAK` and nothing writes one (`$break_at/3`, `setBreak` and
+    # `replacedBreak` are unwritten), so the dispatch cannot meet it; an instruction that is no
+    # opcode of the table ends in the refusal below, which names the instruction.
     throw(
         NotPortedError{T}(
             DEF.name, "the VM instruction $(codeTable(thiscode).name)", "V4b and later"
@@ -6357,8 +6394,15 @@ function PL_next_solution_guarded(
         dropRecords!(ld, db_c.base)                 # the popped choice point and all above it
         @goto deep_backtrack                        # goto next_choice
     end
+    # The pin's switch ends after `CHP_DEBUG` (pl-vmi.c:7036) and the next lines are
+    # `assert(0); SOLUTION_RETURN(false)` (pl-vmi.c:7037-7038): a type outside `choice_type`
+    # (pl-incl.h:1836-1840) is unreachable there; here it is refused (CONT1 row).
     throw(
-        NotPortedError{T}(DEF.name, "backtracking into a $(db_c.type) choice point", "V9")
+        NotPortedError{T}(
+            DEF.name,
+            "backtracking into a $(db_c.type) choice point (pl-vmi.c:7037-7038, assert(0))",
+            "V9"
+        )
     )
 
     # ── exceptions (pl-vmi.c) ─────────────────────────────────────────────────────────────────────

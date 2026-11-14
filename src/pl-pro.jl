@@ -20,7 +20,9 @@
 # `restore_after_exception`, `halt_from_exception` and `query_loop`. Since R2 TOP1b: `currentBreakLevel` (`LD->break_level`, -1
 # outside a toplevel); `prologToplevel`, `pl_break1`, `pl_break` (`break/0`) and, from pl-fli.c, `PL_toplevel`.
 #
-# LEFT OUT: the rest of pl-pro.c — `'$notrace'/1`, `'$call_no_catch'/1`, `'$can_yield'/0`, the other entries of the table (pl-pro.c:1060-1069),
+# Since DBG1: `'$call_no_catch'/1` and `'$can_yield'/0`.
+#
+# LEFT OUT: the rest of pl-pro.c — `'$notrace'/1`, the other entries of the table (pl-pro.c:1060-1069),
 # `'$trap_gdb'/0`, the metacut `!/0` (`pl_metacut`), `checkStacks` and the C-stack queries.
 
 # PORT: pl-pro.c callProlog
@@ -614,8 +616,41 @@ end
 PL_toplevel(gd::PL_global_data{T}, ld::PL_local_data{T}) where {T} =
     prologToplevel(gd, ld, mk_sym(T, Symbol("\$toplevel")))::Bool
 
+# PORT: pl-pro.c call_no_catch as pl_call_no_catch1_va
+# (PRED_IMPL("$call_no_catch", 1, call_no_catch, PL_FA_TRANSPARENT))
+# DIVERGES: `callProlog` is called with the database; `ex` is a `Ref{Int}` (upstream's `term_t ex`). The goal is run in the
+# context module as upstream (`module` NULL), and an exception that the query leaves is handed back as `ex[]`, cleared, and
+# `restore_after_exception` (tracing and debugging off; `unwind(abort)` printed) sees it. The truth value is ignored.
+"`\$call_no_catch(:Goal)`: run `Goal` for the toplevel, its exceptions uncaught, printed and ignored; always true (pl-pro.c)."
+function pl_call_no_catch1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1 = PL__t0
+    gd = _query_gd(ld)
+    ex = Ref(0)
+    rc = callProlog(gd, ld, 0, A1, PL_Q_NORMAL, ex)
+    if !rc && ex[] != 0
+        restore_after_exception(gd, ld, ex[])
+        PL_clear_exception(ld)
+    end
+
+    return FTRUE
+end
+
+# PORT: pl-pro.c can_yield as pl_can_yield0_va
+# (PRED_IMPL("$can_yield", 0, can_yield, 0))
+# DIVERGES: `LD->query` is an index into the engine's query frames, 0 for NULL (upstream would read a NULL frame; no
+# predicate runs outside a query, so the guard is not reached).
+"`\$can_yield`: true if the current query can use foreign yielding, i.e. was opened with `PL_Q_ALLOW_YIELD` (pl-pro.c)."
+function pl_can_yield0_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    ld.query != 0 || return FFALSE
+    return (ld.queries[ld.query].flags & PL_Q_ALLOW_YIELD) != 0 ? FTRUE : FFALSE    # !!ison(LD->query, PL_Q_ALLOW_YIELD)
+end
+
 # PORT: pl-pro.c BeginPredDefs as PL_predicates_from_pro
-# DIVERGES: the registered entries only (upstream's table has eight, pl-pro.c:1060-1069). `break/0` is registered here, where
+# DIVERGES: the registered entries only (upstream's table has nine, pl-pro.c:1055-1065). `break/0` is registered here, where
 # upstream's pl-ext.c has it (`FRG("break", 0, pl_break, 0)`, pl-ext.c:108), next to the function it calls.
 "pl-pro.c's registration table (`BeginPredDefs(pro)`): the registered entries."
 const PL_predicates_from_pro = (
@@ -626,5 +661,9 @@ const PL_predicates_from_pro = (
     ),
     PL_extension("\$notrace", 2, pl_notrace2_va, PL_FA_VARARGS | PL_FA_NOTRACE),
     PL_extension("\$restore_trace", 2, pl_restore_trace2_va, PL_FA_VARARGS | PL_FA_NOTRACE),
+    PL_extension(
+        "\$call_no_catch", 1, pl_call_no_catch1_va, PL_FA_VARARGS | PL_FA_TRANSPARENT
+    ),
+    PL_extension("\$can_yield", 0, pl_can_yield0_va, PL_FA_VARARGS),
     PL_extension("break", 0, pl_break_va, PL_FA_VARARGS)
 )
