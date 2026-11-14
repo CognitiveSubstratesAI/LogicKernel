@@ -75,7 +75,7 @@ MUTANTS = [
       "clearGcSignal!(ld, SIG_GC)                      # PL_clearsig(SIG_GC)",
       "nothing                                         # PL_clearsig(SIG_GC)"),
     m("G1GC6C-P2 garbageCollect: the global variables' term references are never closed (KILL DL: `(lTop, fli_context, nframes)` as before; NB)",
-      "        term_refs_to_gvars(ld, gvars, saved_bar_at)\n",
+      "        term_refs_to_gvars(ld, gvar_saves, saved_bar_at)\n",
       "        nothing\n"),
     m("G1GC6C-P3 garbageCollect: the statistics record is never ended (KILL DL: `rec.global_after < rec.global_before`)",
       "    gc_stat_end!(ld, ld.gc.stats)\n",
