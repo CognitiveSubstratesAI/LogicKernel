@@ -176,14 +176,38 @@ cq(X) :- cp(X).
 
 const _T6_CASES_CHAIN = [
     ("c01", raw"findall(X, cq(X), L), R = L"),
-    ("c02", raw"tp(cp(_), T), findall(Dir-S, ('$idg_edge'(T, Dir, D), '$tbl_table_status'(D, S)), R)"),
-    ("c03", raw"dirs(cq(_), affected, A1), dirs(cq(_), dependent, D1), dirs(cp(_), affected, A2), dirs(cp(_), dependent, D2), dirs(cd(_), affected, A3), dirs(cd(_), dependent, D3), R = r(A1, D1, A2, D2, A3, D3)"),
-    ("c04", raw"'$idg_thread_summary'(main, N, E), '$idg_thread_space'(main, B), R = r(N, E, B)"),
-    ("c05", raw"assertz(cd(2)), fcn(cd(_), F3), fcn(cp(_), F2), fcn(cq(_), F1), ts(cd(_), S3), ts(cp(_), S2), ts(cq(_), S1), R = r(f(F3, F2, F1), s(S3, S2, S1))"),
-    ("c06", raw"tp(cq(_), T), findall(S, '$idg_false_edge'(T, _, S), L1), tp(cp(_), T2), findall(S, '$idg_false_edge'(T2, _, S), L2), R = r(L1, L2)"),
-    ("c07", raw"findall(X, cq(X), L0), msort(L0, L), fcn(cp(_), F2), fcn(cq(_), F1), ts(cp(_), S2), ts(cq(_), S1), R = r(L, f(F2, F1), s(S2, S1))"),
-    ("c08", raw"retract(cd(1)), findall(X, cq(X), L0), msort(L0, L), fcn(cq(_), F1), ts(cq(_), S1), R = r(L, F1, S1)"),
-    ("c09", raw"'$idg_thread_summary'(main, N, E), '$idg_thread_space'(main, B), R = r(N, E, B)")
+    (
+        "c02",
+        raw"tp(cp(_), T), findall(Dir-S, ('$idg_edge'(T, Dir, D), '$tbl_table_status'(D, S)), R)"
+    ),
+    (
+        "c03",
+        raw"dirs(cq(_), affected, A1), dirs(cq(_), dependent, D1), dirs(cp(_), affected, A2), dirs(cp(_), dependent, D2), dirs(cd(_), affected, A3), dirs(cd(_), dependent, D3), R = r(A1, D1, A2, D2, A3, D3)"
+    ),
+    (
+        "c04",
+        raw"'$idg_thread_summary'(main, N, E), '$idg_thread_space'(main, B), R = r(N, E, B)"
+    ),
+    (
+        "c05",
+        raw"assertz(cd(2)), fcn(cd(_), F3), fcn(cp(_), F2), fcn(cq(_), F1), ts(cd(_), S3), ts(cp(_), S2), ts(cq(_), S1), R = r(f(F3, F2, F1), s(S3, S2, S1))"
+    ),
+    (
+        "c06",
+        raw"tp(cq(_), T), findall(S, '$idg_false_edge'(T, _, S), L1), tp(cp(_), T2), findall(S, '$idg_false_edge'(T2, _, S), L2), R = r(L1, L2)"
+    ),
+    (
+        "c07",
+        raw"findall(X, cq(X), L0), msort(L0, L), fcn(cp(_), F2), fcn(cq(_), F1), ts(cp(_), S2), ts(cq(_), S1), R = r(L, f(F2, F1), s(S2, S1))"
+    ),
+    (
+        "c08",
+        raw"retract(cd(1)), findall(X, cq(X), L0), msort(L0, L), fcn(cq(_), F1), ts(cq(_), S1), R = r(L, F1, S1)"
+    ),
+    (
+        "c09",
+        raw"'$idg_thread_summary'(main, N, E), '$idg_thread_space'(main, B), R = r(N, E, B)"
+    )
 ]
 
 const _T6_PINS_CHAIN = [
@@ -216,9 +240,18 @@ tv(G, N) :- tp(G, T), '$trie_property'(T, value_count(N)).
 
 const _T6_CASES_REEVAL = [
     ("f01", raw"findall(X, rt(X), L0), msort(L0, L), tv(rt(_), N), R = r(L, N)"),
-    ("f02", raw"assertz(rd(3)), fcn(rt(_), F), ts(rt(_), S), findall(X, rt(X), L0), msort(L0, L), tv(rt(_), N), fcn(rt(_), F1), ts(rt(_), S1), R = r(F, S, L, N, F1, S1)"),
-    ("f03", raw"retract(rd(2)), findall(X, rt(X), L0), msort(L0, L), tv(rt(_), N), R = r(L, N)"),
-    ("f04", raw"tp(rt(_), T), '$idg_thread_summary'(main, Nn, E), '$tbl_reeval_wait'(T, W), R = r(Nn, E, W)"),
+    (
+        "f02",
+        raw"assertz(rd(3)), fcn(rt(_), F), ts(rt(_), S), findall(X, rt(X), L0), msort(L0, L), tv(rt(_), N), fcn(rt(_), F1), ts(rt(_), S1), R = r(F, S, L, N, F1, S1)"
+    ),
+    (
+        "f03",
+        raw"retract(rd(2)), findall(X, rt(X), L0), msort(L0, L), tv(rt(_), N), R = r(L, N)"
+    ),
+    (
+        "f04",
+        raw"tp(rt(_), T), '$idg_thread_summary'(main, Nn, E), '$tbl_reeval_wait'(T, W), R = r(Nn, E, W)"
+    ),
     ("f05", raw"findall(X, rt(X), L0), msort(L0, L), tv(rt(_), N), R = r(L, N)")
 ]
 
@@ -252,10 +285,22 @@ hascl(G, R) :- tp(G, T), tm_yn('$trie_property'(T, compiled_size(_)), R).
 """
 
 const _T6_CASES_SINGLE = [
-    ("s01", raw"findall(X, s1(X), L1), findall(X, s1(X), L2), hascl(s1(_), C), R = r(L1, L2, C)"),
-    ("s02", raw"findall(X, s2(X), L0), msort(L0, L1), findall(X, s2(X), L2), msort(L2, L3), hascl(s2(_), C), R = r(L1, L3, C)"),
-    ("s03", raw"findall(X, s3(X), L1), findall(X, s3(X), L2), hascl(s3(_), C), R = r(L1, L2, C)"),
-    ("s04", raw"assertz(sd1(9)), findall(X, s1(X), L0), msort(L0, L1), findall(X, s1(X), L2), msort(L2, L3), hascl(s1(_), C), R = r(L1, L3, C)")
+    (
+        "s01",
+        raw"findall(X, s1(X), L1), findall(X, s1(X), L2), hascl(s1(_), C), R = r(L1, L2, C)"
+    ),
+    (
+        "s02",
+        raw"findall(X, s2(X), L0), msort(L0, L1), findall(X, s2(X), L2), msort(L2, L3), hascl(s2(_), C), R = r(L1, L3, C)"
+    ),
+    (
+        "s03",
+        raw"findall(X, s3(X), L1), findall(X, s3(X), L2), hascl(s3(_), C), R = r(L1, L2, C)"
+    ),
+    (
+        "s04",
+        raw"assertz(sd1(9)), findall(X, s1(X), L0), msort(L0, L1), findall(X, s1(X), L2), msort(L2, L3), hascl(s1(_), C), R = r(L1, L3, C)"
+    )
 ]
 
 const _T6_PINS_SINGLE = [
@@ -280,8 +325,14 @@ fp(X) :- fd(X).
 """
 
 const _T6_CASES_FALSECOUNT = [
-    ("p01", raw"findall(X, fp(X), L), tp(fp(_), T), '$idg_set_falsecount'(T, 4294967296), R = L"),
-    ("p02", raw"tp(fp(_), T), '$idg_set_falsecount'(T, 4294967295), '$idg_falsecount'(T, F), ts(fp(_), S), '$idg_set_falsecount'(T, 0), '$idg_falsecount'(T, F0), ts(fp(_), S0), R = r(F, S, F0, S0)"),
+    (
+        "p01",
+        raw"findall(X, fp(X), L), tp(fp(_), T), '$idg_set_falsecount'(T, 4294967296), R = L"
+    ),
+    (
+        "p02",
+        raw"tp(fp(_), T), '$idg_set_falsecount'(T, 4294967295), '$idg_falsecount'(T, F), ts(fp(_), S), '$idg_set_falsecount'(T, 0), '$idg_falsecount'(T, F0), ts(fp(_), S0), R = r(F, S, F0, S0)"
+    ),
     ("p03", raw"tp(fp(_), T), '$idg_set_falsecount'(T, -1), R = ok"),
     ("p04", raw"tp(fp(_), T), '$idg_set_falsecount'(T, _), R = ok"),
     ("p05", raw"tp(fp(_), T), '$idg_set_falsecount'(T, a), R = ok"),
@@ -322,12 +373,21 @@ alls(r(Sd, Sp, Sq, Sn)) :- ts(ad(_), Sd), ts(ap(_), Sp), ts(aq(_), Sq), ts(an(_)
 """
 
 const _T6_CASES_ABOLISH = [
-    ("a01", raw"findall(X, aq(X), L), findall(X, an(X), L1), summ(S), alls(A), R = r(L, L1, S, A)"),
+    (
+        "a01",
+        raw"findall(X, aq(X), L), findall(X, an(X), L1), summ(S), alls(A), R = r(L, L1, S, A)"
+    ),
     ("a02", raw"abolish_all_tables, summ(S), alls(A), R = r(S, A)"),
     ("a03", raw"findall(X, aq(X), L), summ(S), alls(A), R = r(L, S, A)"),
     ("a04", raw"abolish_module_tables(user), summ(S), alls(A), R = r(S, A)"),
-    ("a05", raw"findall(X, aq(X), L), findall(X, an(X), L1), abolish_table_subgoals(ap(_)), summ(S), alls(A), R = r(L, L1, S, A)"),
-    ("a06", raw"findall(X, aq(X), L), abolish_nonincremental_tables, summ(S), alls(A), R = r(L, S, A)"),
+    (
+        "a05",
+        raw"findall(X, aq(X), L), findall(X, an(X), L1), abolish_table_subgoals(ap(_)), summ(S), alls(A), R = r(L, L1, S, A)"
+    ),
+    (
+        "a06",
+        raw"findall(X, aq(X), L), abolish_nonincremental_tables, summ(S), alls(A), R = r(L, S, A)"
+    ),
     ("a07", raw"abolish_module_tables(nosuchmodule), summ(S), alls(A), R = r(S, A)"),
     ("a08", raw"abolish_table_subgoals(aq(_)), summ(S), alls(A), R = r(S, A)")
 ]
@@ -370,11 +430,17 @@ nedge(N) :- tp(xd(_), T), findall(D, '$idg_edge'(T, affected, D), L), length(L, 
 """
 
 const _T6_CASES_EXPAND = [
-    ("x01", raw"findall(X, t1(X), _), findall(X, t2(X), _), findall(X, t3(X), _), findall(X, t4(X), _), summ(S), nedge(N), R = r(S, N)"),
+    (
+        "x01",
+        raw"findall(X, t1(X), _), findall(X, t2(X), _), findall(X, t3(X), _), findall(X, t4(X), _), summ(S), nedge(N), R = r(S, N)"
+    ),
     ("x02", raw"abolish_table_subgoals(t3(_)), summ(S), nedge(N), R = r(S, N)"),
     ("x03", raw"findall(X, t5(X), _), summ(S), nedge(N), R = r(S, N)"),
     ("x04", raw"findall(X, t6(X), _), summ(S), nedge(N), R = r(S, N)"),
-    ("x05", raw"assertz(xd(2)), tp(t1(_), T1), tp(t5(_), T5), '$idg_falsecount'(T1, F1), '$idg_falsecount'(T5, F5), ts(t3(_), S3), R = r(F1, F5, S3)")
+    (
+        "x05",
+        raw"assertz(xd(2)), tp(t1(_), T1), tp(t5(_), T5), '$idg_falsecount'(T1, F1), '$idg_falsecount'(T5, F5), ts(t3(_), S3), R = r(F1, F5, S3)"
+    )
 ]
 
 const _T6_PINS_EXPAND = [
@@ -401,8 +467,14 @@ vp(X) :- vd(X).
 
 const _T6_CASES_DYNERR = [
     ("v01", raw"set_prolog_flag(table_space, 1508), findall(X, vp(X), L), R = L"),
-    ("v02", raw"'$idg_thread_summary'(main, N, E), ts(vp(_), S1), ts(vd(_), S2), R = r(N, E, S1, S2)"),
-    ("v03", raw"set_prolog_flag(table_space, 1000000000), findall(X, vp(X), L), '$idg_thread_summary'(main, N, E), ts(vp(_), S1), ts(vd(_), S2), R = r(L, N, E, S1, S2)")
+    (
+        "v02",
+        raw"'$idg_thread_summary'(main, N, E), ts(vp(_), S1), ts(vd(_), S2), R = r(N, E, S1, S2)"
+    ),
+    (
+        "v03",
+        raw"set_prolog_flag(table_space, 1000000000), findall(X, vp(X), L), '$idg_thread_summary'(main, N, E), ts(vp(_), S1), ts(vd(_), S2), R = r(L, N, E, S1, S2)"
+    )
 ]
 
 const _T6_PINS_DYNERR = [
@@ -427,8 +499,14 @@ vp(X) :- vd(X).
 
 const _T6_CASES_DYNOK = [
     ("v01", raw"set_prolog_flag(table_space, 1516), findall(X, vp(X), L), R = L"),
-    ("v02", raw"'$idg_thread_summary'(main, N, E), ts(vp(_), S1), ts(vd(_), S2), R = r(N, E, S1, S2)"),
-    ("v03", raw"set_prolog_flag(table_space, 1000000000), findall(X, vp(X), L), '$idg_thread_summary'(main, N, E), ts(vp(_), S1), ts(vd(_), S2), R = r(L, N, E, S1, S2)")
+    (
+        "v02",
+        raw"'$idg_thread_summary'(main, N, E), ts(vp(_), S1), ts(vd(_), S2), R = r(N, E, S1, S2)"
+    ),
+    (
+        "v03",
+        raw"set_prolog_flag(table_space, 1000000000), findall(X, vp(X), L), '$idg_thread_summary'(main, N, E), ts(vp(_), S1), ts(vd(_), S2), R = r(L, N, E, S1, S2)"
+    )
 ]
 
 const _T6_PINS_DYNOK = [
@@ -455,8 +533,14 @@ dyn_prop(G, R) :- tm_yn(predicate_property(G, dynamic), R).
 """
 
 const _T6_CASES_INCRPROP = [
-    ("i01", raw"assertz(wb_plain(1)), inc_prop(wb_plain(_), I), dyn_prop(wb_plain(_), D), R = r(I, D)"),
-    ("i02", raw"inc_prop(id(_), I), dyn_prop(id(_), D), inc_prop(plain(_), I2), dyn_prop(plain(_), D2), inc_prop(ip(_), I3), R = r(I, D, I2, D2, I3)")
+    (
+        "i01",
+        raw"assertz(wb_plain(1)), inc_prop(wb_plain(_), I), dyn_prop(wb_plain(_), D), R = r(I, D)"
+    ),
+    (
+        "i02",
+        raw"inc_prop(id(_), I), dyn_prop(id(_), D), inc_prop(plain(_), I2), dyn_prop(plain(_), D2), inc_prop(ip(_), I3), R = r(I, D, I2, D2, I3)"
+    )
 ]
 
 const _T6_PINS_INCRPROP = [
@@ -483,9 +567,18 @@ keys(G, r(A, D, S, I, R)) :- tk(G, idg_affected_count(A), _), tk(G, idg_dependen
 """
 
 const _T6_CASES_TRIEKEYS = [
-    ("k01", raw"findall(X, cq(X), _), keys(cp(_), K1), keys(cq(_), K2), keys(cd(_), K3), R = r(K1, K2, K3)"),
-    ("k02", raw"assertz(cd(2)), keys(cp(_), K1), keys(cq(_), K2), keys(cd(_), K3), R = r(K1, K2, K3)"),
-    ("k03", raw"findall(X, cq(X), _), keys(cp(_), K1), keys(cq(_), K2), keys(cd(_), K3), R = r(K1, K2, K3)")
+    (
+        "k01",
+        raw"findall(X, cq(X), _), keys(cp(_), K1), keys(cq(_), K2), keys(cd(_), K3), R = r(K1, K2, K3)"
+    ),
+    (
+        "k02",
+        raw"assertz(cd(2)), keys(cp(_), K1), keys(cq(_), K2), keys(cd(_), K3), R = r(K1, K2, K3)"
+    ),
+    (
+        "k03",
+        raw"findall(X, cq(X), _), keys(cp(_), K1), keys(cq(_), K2), keys(cd(_), K3), R = r(K1, K2, K3)"
+    )
 ]
 
 const _T6_PINS_TRIEKEYS = [
@@ -747,12 +840,14 @@ end
         @test any(==(id), first.(_T6_group(key).cases))
     end
     # CHAIN: cp has a parent (affected) AND a child (dependent) in one enumeration with a free direction (Q5's mutant stops after the first set)
-    @test _T6_atoms(_T6_ans("CHAIN", "c02")) == ["affected", "complete", "dependent", "dynamic"]
+    @test _T6_atoms(_T6_ans("CHAIN", "c02")) ==
+        ["affected", "complete", "dependent", "dynamic"]
     @test _T6_atoms(_T6_ans("CHAIN", "c03")) ==
         ["complete", "complete", "dynamic", "complete"]
     # the node space: 3 nodes, 2 edges, 752 bytes = 512 + 3 * 80 (C4's 72 gives 728), the same after the re-evaluation
     @test _T6_ints(_T6_ans("CHAIN", "c04")) == [3, 2, 752]
-    @test _T6_ans("CHAIN", "c04") == replace(_T6_ans("CHAIN", "c09"), "c[116,95,99,48,57]" => "c[116,95,99,48,52]")
+    @test _T6_ans("CHAIN", "c04") ==
+        replace(_T6_ans("CHAIN", "c09"), "c[116,95,99,48,57]" => "c[116,95,99,48,52]")
     @test 512 + 3 * 80 == 752
     @test _T6_ints(_T6_ans("CHAIN", "c05")) == [1, 1, 1]
     @test _T6_atoms(_T6_ans("CHAIN", "c05")) == ["dynamic", "invalid", "invalid"]
