@@ -67,6 +67,12 @@ const RX_ORIGINAL = r"^#\s*ORIGINAL:\s*(.*?)\s*$"
 const RX_PORT = r"^#\s*PORT:\s*(\S+)\s+(\S+)(?:\s+as\s+(\S+))?\s*$"
 const RX_PORT_ANY = r"^#\s*PORT:"
 const RX_DIVERGES = r"^#\s*DIVERGES:\s*(.*?)\s*$"
+# The line directly under a PORT marker whose name exists only at a SYNC's target commit, not at the pin:
+# `# synced to swipl-devel <sha> (<file>:<lines>…)` — the name check then reads the file at <sha>.
+const RX_SYNCED = r"^#\s*synced to swipl-devel\s+([0-9a-f]{7,40})\s+\("
+# The commit a running SYNC ports to (SYNC-PC): the ONLY commit a `# synced to swipl-devel <sha>` line may name.
+# Moves with the sync: at the sync's last commit the pin IS this commit and the synced lines go.
+const SYNC_TARGET = "cf6960c295883b0b611e5e6dc73dacf74ec4ef7e"
 # The generated R2 status (docs/architecture.md): its scanners and renderer live in tools/r2_status.jl.
 Base.include(@__MODULE__, joinpath(@__DIR__, "r2_status.jl"))   # Base.include: warm.sh loads this file into a fresh Module(), which has no `include`
 
@@ -88,6 +94,7 @@ struct PortMarker
     jl_name::String
     diverges::Bool
     diverges_reason::String
+    synced::String                   # the commit a `# synced to swipl-devel <sha>` line directly below names, else ""
 end
 
 struct SourceFile
@@ -317,19 +324,29 @@ function read_source(root::String, rel::String, violations::Vector{String})::Sou
     for (i, c) in comment_lines(text)
         if (m = match(RX_PORT, c)) !== nothing
             jl = m[3] === nothing ? m[2] : m[3]
-            push!(markers, PortMarker(i, m[1], m[2], jl, false, ""))
+            push!(markers, PortMarker(i, m[1], m[2], jl, false, "", ""))
         elseif occursin(RX_PORT_ANY, c)
             push!(
                 violations,
                 "MARKER-MALFORMED $rel:$i: `$c` (want `# PORT: <upstream-file> <name> [as <julia-name>]`)"
             )
+        elseif (m = match(RX_SYNCED, c)) !== nothing
+            # only the line DIRECTLY under the PORT line counts: a later one belongs to no marker
+            if !isempty(markers) && markers[end].line == i - 1
+                p = markers[end]
+                markers[end] = PortMarker(
+                    p.line, p.upstream_base, p.name, p.jl_name, p.diverges,
+                    p.diverges_reason,
+                    m[1]
+                )
+            end
         elseif (m = match(RX_DIVERGES, c)) !== nothing
             if isempty(markers)
                 push!(violations, "DIVERGES-ORPHAN $rel:$i: no PORT marker above it")
             else
                 p = markers[end]
                 markers[end] = PortMarker(
-                    p.line, p.upstream_base, p.name, p.jl_name, true, m[1]
+                    p.line, p.upstream_base, p.name, p.jl_name, true, m[1], p.synced
                 )
             end
         end
@@ -838,7 +855,8 @@ end
 function port_check(pkgroot::AbstractString;
     upstream_dirs::Dict{String, String}=default_upstream_dirs(),
     inventory::AbstractString="docs/port_inventory.md",
-    architecture::AbstractString="docs/architecture.md")
+    architecture::AbstractString="docs/architecture.md",
+    sync_target::AbstractString=SYNC_TARGET)
     root = abspath(pkgroot)
     v = String[]
     pin = read_pin(root)                                 # the pinned upstream commit, if any
@@ -990,6 +1008,27 @@ function port_check(pkgroot::AbstractString;
             end
             for m in f.markers
                 m.upstream_base == basename(u.path) || continue
+                if !isempty(m.synced)
+                    # a name new at the SYNC's target: read the file there — but only at THE target
+                    # (a marker cannot name another commit), and only if the name occurs in it
+                    if !(length(m.synced) >= 7 && startswith(sync_target, m.synced))
+                        push!(
+                            v,
+                            "UPSTREAM-NAME-MISSING $(f.rel):$(m.line): `$(m.name)` synced to $(m.synced), which is not the sync target $(first(sync_target, 12))"
+                        )
+                    elseif !_git_ok(dir, "cat-file", "-e", sync_target * ":" * u.path)
+                        push!(
+                            v,
+                            "UPSTREAM-NAME-MISSING $(f.rel):$(m.line): $(u.path) does not exist @ $(sync_target)"
+                        )
+                    elseif !_word_in(m.name, _git_show(dir, sync_target * ":" * u.path))
+                        push!(
+                            v,
+                            "UPSTREAM-NAME-MISSING $(f.rel):$(m.line): `$(m.name)` does not occur in $(u.path) @ $(sync_target)"
+                        )
+                    end
+                    continue
+                end
                 _word_in(m.name, text) ||
                     push!(
                         v,
