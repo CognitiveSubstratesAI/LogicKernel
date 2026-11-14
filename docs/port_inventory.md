@@ -107,7 +107,7 @@ how many of the upstream file's functions are ported.
 | swipl-devel `src/pl-alloc.c` | code | `18168e629eab` | `src/pl-alloc.jl` | 13 | 7 |
 | swipl-devel `src/pl-allocpool.c` | code | `18168e629eab` | `src/pl-allocpool.jl` | 4 | 4 |
 | swipl-devel `src/pl-allocpool.h` | code | `18168e629eab` | `src/pl-incl.jl` | 1 | 1 |
-| swipl-devel `src/pl-arith.c` | code | `18168e629eab` | `src/pl-arith.jl` | 129 | 36 |
+| swipl-devel `src/pl-arith.c` | code | `18168e629eab` | `src/pl-arith.jl` | 178 | 61 |
 | swipl-devel `src/pl-arith.c` | code | `18168e629eab` | `src/pl-incl.jl` | 1 | 1 |
 | swipl-devel `src/pl-arith.h` | code | `18168e629eab` | `src/pl-arith.jl` | 10 | 2 |
 | swipl-devel `src/pl-atom.c` | code | `18168e629eab` | `src/pl-atom.jl` | 11 | 6 |
@@ -120,7 +120,7 @@ how many of the upstream file's functions are ported.
 | swipl-devel `src/pl-bisim.h` | code | `18168e629eab` | `src/pl-bisim.jl` | 0 | 0 |
 | swipl-devel `src/pl-builtin.h` | code | `18168e629eab` | `src/pl-incl.jl` | 10 | 1 |
 | swipl-devel `src/pl-codetable.c` | code | `18168e629eab` | `src/pl-vmi.jl` | 1 | 1 |
-| swipl-devel `src/pl-comp.c` | code | `18168e629eab` | `src/pl-comp.jl` | 160 | 82 |
+| swipl-devel `src/pl-comp.c` | code | `18168e629eab` | `src/pl-comp.jl` | 165 | 85 |
 | swipl-devel `src/pl-comp.h` | code | `18168e629eab` | `src/pl-comp.jl` | 1 | 0 |
 | swipl-devel `src/pl-cont.c` | code | `18168e629eab` | `src/pl-cont.jl` | 11 | 9 |
 | swipl-devel `src/pl-copyterm.c` | code | `18168e629eab` | `src/pl-copyterm.jl` | 25 | 16 |
@@ -341,7 +341,7 @@ checkout is pulled.
 | swipl-devel `src/pl-alloc.c` | `18168e629eab` | 11 | 73 | 7 | src/pl-alloc.jl |
 | swipl-devel `src/pl-allocpool.c` | `18168e629eab` | 4 | 4 | 4 | src/pl-allocpool.jl |
 | swipl-devel `src/pl-allocpool.h` | `18168e629eab` | 0 | 0 | 0 | src/pl-incl.jl |
-| swipl-devel `src/pl-arith.c` | `18168e629eab` | 102 | 166 | 34 | src/pl-arith.jl, src/pl-incl.jl |
+| swipl-devel `src/pl-arith.c` | `18168e629eab` | 137 | 166 | 58 | src/pl-arith.jl, src/pl-incl.jl |
 | swipl-devel `src/pl-arith.h` | `18168e629eab` | 1 | 9 | 1 | src/pl-arith.jl |
 | swipl-devel `src/pl-atom.c` | `18168e629eab` | 12 | 82 | 8 | src/pl-atom.jl, src/pl-fli.jl |
 | swipl-devel `src/pl-attvar.c` | `18168e629eab` | 32 | 42 | 29 | src/pl-attvar.jl |
@@ -351,7 +351,7 @@ checkout is pulled.
 | swipl-devel `src/pl-bisim.h` | `18168e629eab` | 0 | 0 | 0 | src/pl-bisim.jl |
 | swipl-devel `src/pl-builtin.h` | `18168e629eab` | 0 | 3 | 0 | src/pl-incl.jl |
 | swipl-devel `src/pl-codetable.c` | `18168e629eab` | 0 | 0 | 0 | src/pl-vmi.jl |
-| swipl-devel `src/pl-comp.c` | `18168e629eab` | 95 | 167 | 65 | src/pl-comp.jl |
+| swipl-devel `src/pl-comp.c` | `18168e629eab` | 98 | 167 | 68 | src/pl-comp.jl |
 | swipl-devel `src/pl-comp.h` | `18168e629eab` | 1 | 6 | 0 | src/pl-comp.jl |
 | swipl-devel `src/pl-cont.c` | `18168e629eab` | 9 | 11 | 9 | src/pl-cont.jl |
 | swipl-devel `src/pl-copyterm.c` | `18168e629eab` | 18 | 29 | 15 | src/pl-copyterm.jl |
@@ -670,33 +670,33 @@ marker exists in `src/pl-vmi.jl` (declaration only — no instruction executes y
 
 | instruction | pl-vmi.c | operands | needed by | kernel |
 |---|---|---|---|---|
-| `A_ENTER` | 3791 | — |  |  |
-| `A_INTEGER` | 3803 | CA1_INTEGER |  |  |
+| `A_ENTER` | 3791 | — |  | declared |
+| `A_INTEGER` | 3803 | CA1_INTEGER |  | declared |
 | `A_INTEGERW` | 3812 | CA1_WORD |  |  |
-| `A_MPZ` | 3832 | CA1_MPZ |  |  |
-| `A_MPQ` | 3848 | CA1_MPQ |  |  |
-| `A_DOUBLE` | 3865 | CA1_FLOAT |  |  |
-| `A_VAR` | 3881 | CA1_VAR |  |  |
-| `A_VAR0` | 3939 | — |  |  |
-| `A_VAR1` | 3944 | — |  |  |
-| `A_VAR2` | 3949 | — |  |  |
-| `A_FUNC0` | 3966 | CA1_AFUNC |  |  |
-| `A_FUNC1` | 3971 | CA1_AFUNC |  |  |
-| `A_FUNC2` | 3976 | CA1_AFUNC |  |  |
-| `A_FUNC` | 3981 | CA1_AFUNC, CA1_INTEGER |  |  |
-| `A_ROUNDTOWARDS_A` | 3999 | CA1_INTEGER |  |  |
-| `A_ROUNDTOWARDS_V` | 4012 | CA1_VAR |  |  |
-| `A_ADD` | 4036 | — |  |  |
-| `A_MUL` | 4059 | — |  |  |
+| `A_MPZ` | 3832 | CA1_MPZ |  | declared |
+| `A_MPQ` | 3848 | CA1_MPQ |  | declared |
+| `A_DOUBLE` | 3865 | CA1_FLOAT |  | declared |
+| `A_VAR` | 3881 | CA1_VAR |  | declared |
+| `A_VAR0` | 3939 | — |  | declared |
+| `A_VAR1` | 3944 | — |  | declared |
+| `A_VAR2` | 3949 | — |  | declared |
+| `A_FUNC0` | 3966 | CA1_AFUNC |  | declared |
+| `A_FUNC1` | 3971 | CA1_AFUNC |  | declared |
+| `A_FUNC2` | 3976 | CA1_AFUNC |  | declared |
+| `A_FUNC` | 3981 | CA1_AFUNC, CA1_INTEGER |  | declared |
+| `A_ROUNDTOWARDS_A` | 3999 | CA1_INTEGER |  | declared |
+| `A_ROUNDTOWARDS_V` | 4012 | CA1_VAR |  | declared |
+| `A_ADD` | 4036 | — |  | declared |
+| `A_MUL` | 4059 | — |  | declared |
 | `A_ADD_FC` | 4084 | CA1_FVAR, CA1_VAR, CA1_INTEGER | P | declared |
-| `A_LT` | 4201 | — |  |  |
-| `A_LE` | 4215 | — |  |  |
-| `A_GT` | 4220 | — |  |  |
-| `A_GE` | 4225 | — |  |  |
-| `A_EQ` | 4230 | — |  |  |
-| `A_NE` | 4235 | — |  |  |
-| `A_IS` | 4255 | — |  |  |
-| `A_FIRSTVAR_IS` | 4346 | CA1_FVAR |  |  |
+| `A_LT` | 4201 | — |  | declared |
+| `A_LE` | 4215 | — |  | declared |
+| `A_GT` | 4220 | — |  | declared |
+| `A_GE` | 4225 | — |  | declared |
+| `A_EQ` | 4230 | — |  | declared |
+| `A_NE` | 4235 | — |  | declared |
+| `A_IS` | 4255 | — |  | declared |
+| `A_FIRSTVAR_IS` | 4346 | CA1_FVAR |  | declared |
 
 </details>
 
