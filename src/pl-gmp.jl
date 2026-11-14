@@ -20,9 +20,32 @@
 #     are the same.
 #   * The rounding mode is always to nearest: nothing sets another (`roundtoward/2` is not ported),
 #     so only `FE_TONEAREST`'s branch of a `fegetround()` switch is kept.
+#   * Synced to cf6960c2 (pl-gmp.c, pl-gmp.h; the diff read in full, no change of an answer of this kernel):
+#     - the stack layout of a big number changed: the size words of MPZ and MPQ hold the signed LIMB
+#       COUNT (`mpz_size_stack(sz)` is `(word)(sword)sz`, no shift, no `MP_RAT_MASK` bit; `mpq_size_stack`
+#       and `mpq_stack_size` are gone), and a rational is told from an integer by its cell kind
+#       (`KIND_MPQ`, `TAGEX_INDIRECT_MPQ`) where it was told by that bit. `globalMPQ`, `get_rational_no_int`,
+#       `loadMPQFromCharp` and `bignum_index` (`indKind(m) == KIND_MPQ`) changed with it. Here a number is a
+#       `BigInt` or `Rational{BigInt}` in a value word and its kind is `number_kind`, so there is no
+#       limb-count word and no mask to read: these functions have no code to change (`get_rational` below
+#       is the reading of `get_rational_no_int`).
+#     - `mp_realloc` (the C allocator of GMP's temporaries on the C stack): the top-of-buffer fit test
+#       is `alloc0+fastunits <= GMP_STACK_ALLOC` (was `fastunits-1`) and the copy leaves out the
+#       header word (`(base[0]-1)*sizeof(size_t)`); Julia's `BigInt` allocates its own limbs: unwritten.
+#     - NEW `checkMPZOnCharp`, `checkMPQOnCharp` and their statics `check_mpz_charp`, `mpz_charp_wsize`:
+#       they validate the bytes of a big number of an EXTERNAL record (`recorded_external`,
+#       pl-rec.c:1889) before `loadMPZFromCharp`/`loadMPQFromCharp` trust them (a canonical number: not a
+#       tagged integer, a rational with non-zero numerator, denominator above 1, gcd 1; the cell
+#       count it needs). This kernel has no external records (`fast_read/2`, `fast_term_serialized/2` are
+#       not registered, pl-rec.jl) and its numbers are never read from bytes: unwritten, with
+#       `addMPZToBuffer`, `loadMPZFromCharp` and the rest of that family. A function that writes them
+#       gets its PORT line then.
+#     File pin not bumped (it moves at the end of SYNC).
 
 # ── reading a term (pl-gmp.h, pl-gmp.c) ──────────────────────────────────────────────────────────
 # PORT: pl-gmp.h get_rational
+# Synced to cf6960c2: upstream's `get_rational_no_int` tells MPQ from MPZ by `tagex(w) == TAGEX_INDIRECT_MPQ`
+# (was the `MP_RAT_MASK` bit of the size word): here `number_kind` is that test already.
 "Read the integer or rational `w` (dereferenced) into `n` (pl-gmp.h `get_rational`)."
 function get_rational(w, n::number)::Nothing
     if number_kind(w) === NUM_INTEGER
