@@ -7,7 +7,9 @@
 # clause/2 (NF2-C*). EQUIVALENT, with the reason: storing the predicate access reference's generation in the frame
 # (`setGenerationFrameVal`, NF2-R6 and NF2-C5): the frame's generation is set to the global generation at the call
 # (`setGenerationFrame`, pl-wam.jl depart_or_retry_continue / PL_open_query), and nothing between the call and
-# `pushPredicateAccessObj!` creates a generation, so both values are the same. NOT listed: unprotectCRef/protectCRef (no-ops
+# `pushPredicateAccessObj!` creates a generation, so both values are the same (retract/1, NF2-R6; ASSERT-GEN removed the assert that stood
+# as the argument, audit D-0713 (3): clause/2's NF2-C5 is now killed by tools/mutants/AGEN.py's rows, where `trapUndefined` loads a
+# library between the call and the access object). NOT listed: unprotectCRef/protectCRef (no-ops
 # upstream without O_DEBUG); the `arity > 0` guard of clause's strip (stripping an atom head's qualifier first gives the same
 # answer: unify_head strips both sides anyway).
 # The `old` strings were written BEFORE `tools/warm.sh fmt`: re-check them after it (mutate_drive.py refuses a string that does
@@ -42,11 +44,11 @@ MUTANTS = [
          old='''        PL_rewind_foreign_frame(ld, fid)''',
          new='''        nothing'''),
     dict(id="NF2-R6 the search generation is not stored in the frame", file=P, targets=TR,
-         old='''        ld.frames[fr].generation = dref.generation      # setGenerationFrameVal(environment_frame, …)''',
-         new='''        nothing                                         # setGenerationFrameVal(environment_frame, …)''',
+         old='''        ld.frames[fr].generation = dref.generation      # setGenerationFrameVal(environment_frame, dref->generation)''',
+         new='''        nothing                                         # setGenerationFrameVal(environment_frame, dref->generation)''',
          equivalent="the frame's generation is the global generation at the call (setGenerationFrame), which "
-                    "pushPredicateAccessObj! reads again before any generation is created (src/pl-proc.jl pl_retract1_va); "
-                    "the assert at src/pl-proc.jl:1315 is the argument (D-0147)"),
+                    "pushPredicateAccessObj! reads again before any generation is created (src/pl-proc.jl pl_retract1_va: only "
+                    "get_head_and_body_clause, get_head_functor, isCurrentProcedure and flag tests run between; ASSERT-GEN, AGEN-R2)"),
     dict(id="NF2-R7 a pending exception does not stop the scan", file=P, targets=TR,
          old='''        PL_exception(ld, 0) != 0 && break''',
          new='''        nothing'''),
@@ -77,12 +79,11 @@ MUTANTS = [
     dict(id="NF2-C4 the first call's buffer is not copied into the pool", file=C, targets=TC,
          old='''                        k = alloc_foreign_state!(pool)      # allocForeignState(sizeof(*chp))''',
          new='''                        k = k                               # allocForeignState(sizeof(*chp))'''),
-    dict(id="NF2-C5 the search generation is not stored in the frame", file=C, targets=TC,
-         old='''        ld.frames[fr].generation = dref.generation          # setGenerationFrameVal(environment_frame, …)''',
-         new='''        nothing                                             # setGenerationFrameVal(environment_frame, …)''',
-         equivalent="as NF2-R6: the frame's generation is the global generation at the call, which "
-                    "pushPredicateAccessObj! reads again before any generation is created (src/pl-comp.jl clause_ndet); "
-                    "the assert at src/pl-comp.jl:3280 is the argument (D-0147)"),
+    # KILLED since ASSERT-GEN (audit D-0713 (3)): clause/2 on a predicate declared autoload/2 loads library(lists) in trapUndefined, between the
+    # call and the access object: test_generation_swipl.jl p1a12-p1a19 (the same mutant as AGEN-C2)
+    dict(id="NF2-C5 the search generation is not stored in the frame", file=C, targets=TC + ["test/core_lang/test_generation_swipl.jl"],
+         old='''        ld.frames[fr].generation = dref.generation          # setGenerationFrameVal(environment_frame, dref->generation)''',
+         new='''        nothing                                             # setGenerationFrameVal(environment_frame, dref->generation)'''),
     dict(id="NF2-C6 a failed attempt is not rewound", file=C, targets=TC,
          old='''            PL_rewind_foreign_frame(ld, fid)''',
          new='''            nothing'''),
@@ -98,8 +99,9 @@ MUTANTS = [
     dict(id="NF2-C10 an atom does not match a zero-arity compound (second arm)", file=C, targets=TC,
          old='''        elseif k2 == DU_WORD && isAtomW(w2) && k1 == DU_WORD && _is_gcompound(w1)''',
          new='''        elseif false'''),
-    # ---- D-0147 / D-0100: the asserted invariant behind NF2-R6 / NF2-C5 (a generation created between the call and the predicate
-    # access makes the assert fire; the test file's calls then raise instead of answering)
+    # ---- D-0147 / D-0100: a generation created between the call and the predicate access. The assert that these two used to break is gone
+    # (ASSERT-GEN, audit D-0713 (3)): the frame takes the access object's generation, as upstream does, and a bump with no clause change
+    # leaves every clause's visibility as it was (generation_created <= gen < generation_erased): both are EQUIVALENT now.
     dict(id="NF2-G1 retract: a generation is created before the predicate access", file=P, targets=TR,
          old='''        # enterDefinition(def): (void)0 upstream
         dref = pushPredicateAccessObj!(ld, gd, def)
@@ -107,7 +109,9 @@ MUTANTS = [
          new='''        # enterDefinition(def): (void)0 upstream
         next_generation!(gd, def)
         dref = pushPredicateAccessObj!(ld, gd, def)
-'''),
+''',
+         equivalent="src/pl-inline.jl next_generation!: a counter bump creates no clause; the frame stores the access object's (bumped) "
+                    "generation, so every clause keeps its visibility (src/pl-proc.jl pl_retract1_va); the assert that broke it is gone"),
     dict(id="NF2-G2 clause: a generation is created before the predicate access", file=C, targets=TC,
          old='''        dref = pushPredicateAccessObj!(ld, gd, def)
 
@@ -115,5 +119,7 @@ MUTANTS = [
          new='''        next_generation!(gd, def)
         dref = pushPredicateAccessObj!(ld, gd, def)
 
-        chp_null = true'''),
+        chp_null = true''',
+         equivalent="src/pl-inline.jl next_generation!: a counter bump creates no clause; the frame stores the access object's (bumped) "
+                    "generation, so every clause keeps its visibility (src/pl-comp.jl clause_ndet); the assert that broke it is gone"),
 ]
