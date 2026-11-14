@@ -1453,10 +1453,10 @@ end
 
 # PORT: pl-file.c IO_TELL
 "The stream-context flag of a stream opened by tell/1 (pl-file.c)."
-const IO_TELL = 0x001
+const IO_TELL = 1
 # PORT: pl-file.c IO_SEE
 "The stream-context flag of a stream opened by see/1 (pl-file.c)."
-const IO_SEE = 0x002
+const IO_SEE = 2
 
 # ORIGINAL: upstream's `set(getStreamContext(s), flag)`; the flags are `PL_global_data.stream_context_flags`, by the
 # stream's context number (upstream: `stream_context.flags`).
