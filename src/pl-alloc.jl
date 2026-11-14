@@ -81,7 +81,7 @@ push_overflow_context(::Type{T}, stack::Symbol) where {T} = mk_sym(T, :stack_ove
 #     until f3b-1 it was a value in `exception_bin`'s side entry (`SLOT_VALUE`). The frozen region is
 #     released when the outermost query ends (`_release_frozen!`, audit D-0029 (b)), as for every ball.
 # NOT PORTED: the backtraces and the low-spare message (the kernel prints nothing, decision 1);
-# `trim_stack_requested` (its readers are the stack garbage collector's, G1); the "no room for
+# the "no room for
 # exception term" abort (`gTop+5 < gMax`: the global stack grows on demand and the spares are enabled
 # first, so the five cells are always laid); the longjmp
 # of `STACK_OVERFLOW_THROW` — every caller that throws a local-stack overflow sets `LD->outofstack`
@@ -101,6 +101,7 @@ function outOfStack!(
         error("[Thread 1]: failed to recover from local-overflow: Sorry, cannot continue")
     end
     enableSpareStacks!(ld)
+    ld.trim_stack_requested = true                  # LD->trim_stack_requested = true (pl-alloc.c:695)
     ld.exception_processing = true
     ld.outofstack = true
     ctx = push_overflow_context(T, stack)           # word ctx = push_overflow_context(s, 6)
@@ -145,16 +146,28 @@ end
     (length(ld.trail) + ld.trail_spare)
 
 # PORT: pl-gc.h ensureGlobalSpace
-# DIVERGES (since L1f f2, audit D-0029 D1 (a), D3 (a), D-0036): no garbage collection to try (`ALLOW_GC`) and
+# DIVERGES (since L1f f2, audit D-0029 D1 (a), D3 (a), D-0036; the garbage collection of `ALLOW_GC` is G1-GC's hook below, the collector itself G1-6's): no garbage collection to try and
 # nothing to shift — the stack grows on demand (`_growGlobalStack!`) — so the check is the LIMIT: the three
 # stacks with `n` more cells within `stacks_limit` (`_stacks_in_use`), else the overflow is raised
 # (`resource_error(stack)`). While an exception is processed no request is refused: upstream's
 # `grow_stacks` in its error condition raises the limit to the need plus 1 MiB (pl-gc.c:5381,
 # `EMERGENCY_LIMIT`) for every request, so none fails for the limit (since L1f f1b: the audit's D-0042 traced).
 # The handler itself runs after `resumeAfterException` (processing cleared): under the limit again.
-"Make room for `n` cells above `gTop` within the limit, or raise the global overflow (pl-gc.h `ensureGlobalSpace`)."
-function ensureGlobalSpace(ld::PL_local_data, n::Int)::Bool
-    (_stacks_in_use(ld, n) <= ld.stacks_limit || ld.exception_processing) && return true
+# G1-GC safe point: `flags` (default 0 = no collection: every site not ruled SAFE in docs/g1gc_safe_points.md) and `site` (the name of the
+# audit table's row, recorded under `ld.gc_force`). With `ALLOW_GC` the order is upstream's `f_ensureStackSpace` (pl-gc.c:4707-4719): when the
+# area is full (here: `gTop + n` past the vector, or the limit passed) or the collector is forced, the hook `considerGC` runs, and the limit is
+# checked AFTER it (a collection that gained room lets the call through). The placeholder collector gains nothing (G1-6 fills it).
+"Make room for `n` cells above `gTop` within the limit, or raise the global overflow (pl-gc.h `ensureGlobalSpace`); `flags` `ALLOW_GC` lets the stack collector run first at a site the audit rules SAFE."
+function ensureGlobalSpace(
+    ld::PL_local_data, n::Int, flags::Int=0, site::Symbol=:ensureGlobalSpace
+)::Bool
+    fits = _stacks_in_use(ld, n) <= ld.stacks_limit || ld.exception_processing
+    if (flags & ALLOW_GC) != 0 && (ld.gc_force || ld.gTop + n > length(ld.gstack) || !fits)
+        if considerGC(ld, flags, GC_GLOBAL_OVERFLOW, site)   # G1-GC safe point: garbageCollect(GC_GLOBAL_OVERFLOW)
+            fits = _stacks_in_use(ld, n) <= ld.stacks_limit || ld.exception_processing   # hasGlobalSpace(n) again (pl-gc.c:4714-4719)
+        end
+    end
+    fits && return true
     return raiseStackOverflow(ld, GLOBAL_OVERFLOW)
 end
 

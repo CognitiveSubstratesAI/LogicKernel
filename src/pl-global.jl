@@ -362,6 +362,33 @@ mutable struct ld_statistics
 end
 ld_statistics() = ld_statistics(0, 0, 0, 0, WallTime(), 0.0, 0.0, 0.0, 0.0)
 
+# PORT: pl-global.h gc as ld_gc
+# DIVERGES: `LD->gc` is `{inferences, status, [marked_attvars], active, stats}`; here also the three stacks' policies (the kernel's stacks are
+# not structs: `global_policy`, `trail_policy`, `local_policy`, `init_stack`/`gcPolicy` values, pl-setup.c:1584, :1690) and `sig_pending`, the
+# bitmask standing in for `LD->signal.pending` (no signal machinery here: `raiseGcSignal!`, `pendingGcSignal`, src/pl-gc.jl). `marked_attvars`
+# (O_CALL_RESIDUE) is left to G1-3's mark phase.
+"The stack collector's state of one thread (pl-global.h `LD->gc`, G1-GC G1-1)."
+mutable struct ld_gc
+    inferences::Int64                                           # inferences at the last collection
+    status::pl_gc_status_t                                      # blocked, active
+    active::Int                                                 # gc/0 is running (`LD->gc.active`)
+    stats::gc_stats                                             # the collections' statistics
+    global_policy::gc_stack_policy                              # ORIGINAL: `LD->stacks.global`'s policy
+    trail_policy::gc_stack_policy                               # ORIGINAL: `LD->stacks.trail`'s policy
+    local_policy::gc_stack_policy                               # ORIGINAL: `LD->stacks.local`'s policy
+    sig_pending::UInt64                                         # ORIGINAL: the pending virtual signals, bit `sig - SIG_PROLOG_OFFSET`
+end
+ld_gc() = ld_gc(
+    0,
+    pl_gc_status_t(),
+    0,
+    gc_stats(),
+    gc_stack_policy(true),
+    gc_stack_policy(true),
+    gc_stack_policy(false),
+    UInt64(0)
+)
+
 # PORT: pl-global.h tabling as tbl_restraint
 # DIVERGES: the anonymous `LD->tabling.restraint` struct is its own type; a `size_t` is an `Int` (`(size_t)-1`, no limit, is -1).
 # The defaults are upstream's `initTabling` (pl-tabling.c:12696-12706): `error` for the five actions, no limit for the five
@@ -505,7 +532,7 @@ ld_tabling{T}() where {T} = ld_tabling{T}(
 # (`emptyStacks!` makes them, with PERMANENT cells as the exception's: audit D-0122 Q1 (a)), and
 # `attvars`, the chain of attributed variables (`register_attvar`, `reclaim_attvars`) as a global
 # position, 0 for NULL. Since AV9 `call_residue_vars_count` (call_residue_vars/2's nesting:
-# `trail_new_attvar`, src/pl-attvar.jl). NOT PORTED: `gc_attvars` (the collector's, G1).
+# `trail_new_attvar`, src/pl-attvar.jl). `gc_attvars` (the collector's term reference) has no field: `save_grefs` (pl-gcmark.jl) holds the newest link in a foreign frame of its own (a DIVERGES there).
 # Since R2 F1a: `prolog_flag_mask` (`LD->prolog_flag.mask`, a copy of the database's) and `prolog_flag_enums`,
 # the pool of current_prolog_flag/2's states.
 # Since R2 CONT1: the five `procedures_*` fields `reset3`, `dtbl_reset6`, `call_continuation1`, `dmeta_call1` (set by
@@ -528,6 +555,10 @@ ld_tabling{T}() where {T} = ld_tabling{T}(
 # Since R2 TOP1b A: `break_level` (`LD->break_level`, pl-setup.c:199: -1 outside a toplevel; `currentBreakLevel`, src/pl-pro.jl), appended last.
 # Since TR2: `trie_gens`, the pool of trie_gen/2,3's states (`trie_gen_state`, pl-incl.jl; upstream keeps them on the C stack, then `allocForeignState`), appended last;
 # `trie_gen_force_epoch` (ORIGINAL, a test switch; a module-level `Ref` would be shared state, which the lint refuses), appended after it.
+# Since G1-GC G1-2: `gc_force` (ORIGINAL, pl-vmi.c:238 FAKE_GC's model: every `ALLOW_GC` safe point runs `considerGC`) and `gc_safe_hits` (ORIGINAL: the
+# site names at which it fired while forced; docs/g1gc_safe_points.md), appended last.
+# Since G1-GC G1-1: `gc` (`LD->gc`: `ld_gc`, the statistics, the stacks' policies, the pending-signal bits) and `shift_status` (`LD->shift_status`,
+# `pl_shift_status_t`, pl-incl.jl), appended after G1-2's two.
 # Since R2 F1c: `debugstatus_skiplevel`, `debugstatus_tracing`, `debugstatus_debugging`, `debugstatus_showContext` (`LD->_debugstatus`, pl-incl.h
 # `pl_debugstatus_t`; the flags `debug`, `debugger_show_context`: src/os/pl-prologflag.jl, `debugmode`, `tracemode`: src/pl-trace.jl).
 # (the input context stack is LB3's `input_context_stack`, which `'\$push_input_context'/1` shares; src/os/pl-file.jl).
@@ -637,6 +668,7 @@ mutable struct PL_local_data{T} <: AbstractLocalData
     exception_processing::Bool                                  # exception.processing
     outofstack::Bool                                            # outofstack (the local stack)
     unusable::Bool                                              # (after a second overflow)
+    trim_stack_requested::Bool                                  # trim_stack_requested (G1-A): perform a trim-stack
     fast_condition::Int                                         # fast_condition (0: NULL; an index)
     chp_scratch::ClauseChoice{T}                                # (a C-stack clause_choice)
     placeholder::T                                              # (argp_t's unread term)
@@ -695,6 +727,10 @@ mutable struct PL_local_data{T} <: AbstractLocalData
     table_flags_drop_intermediate::Int                          # table_flags.drop_intermediate: flag table_drop_intermediate
     trie_gens::foreign_state_pool{trie_gen_state{T}}            # (trie_gen/2,3's REDO_PTR states, TR2)
     trie_gen_force_epoch::Bool                                  # ORIGINAL test switch: check_epoch! starts a new epoch at every call (TR2)
+    gc_force::Bool                                              # ORIGINAL (FAKE_GC's model, pl-vmi.c:238): every ALLOW_GC safe point runs the hook (G1-2)
+    gc_safe_hits::Vector{Symbol}                                # ORIGINAL: the sites at which the hook fired while `gc_force` (G1-2)
+    gc::ld_gc                                                   # gc: the stack collector's state (G1-1)
+    shift_status::pl_shift_status_t                             # shift_status: the shifter's counters (G1-1)
 end
 function PL_local_data{T}(gd::PL_global_data{T}) where {T}
     ld = _bare_local_data(gd)
@@ -757,7 +793,7 @@ function _bare_local_data(gd::PL_global_data{T}) where {T}
         0,                                      # attvar.call_residue_vars_count (AV9)
         Int32(0),                               # alerted: nothing
         0, 0, 0,                                # tmp: set by emptyStacks!
-        false, false, false, 0,
+        false, false, false, false, 0,          # exception.processing, outofstack, unusable, trim_stack_requested, fast_condition
         ClauseChoice{T}(nothing, word(0)), e,
         gd,                                     # GD: the engine's database (PL_open_query sets it again)
         source_location{T}(nothing, IOPOS()),
@@ -812,7 +848,11 @@ function _bare_local_data(gd::PL_global_data{T}) where {T}
         TABLE_COMPILE_THRESHOLD,                # table_flags.compile_threshold (pl-prologflag.c:2587)
         0,                                      # table_flags.drop_intermediate (pl-prologflag.c:2589)
         foreign_state_pool{trie_gen_state{T}}(), # trie_gen/2,3's states: none (TR2)
-        false                                   # trie_gen_force_epoch: off (TR2)
+        false,                                  # trie_gen_force_epoch: off (TR2)
+        false,                                  # gc_force: off (G1-2)
+        Symbol[],                               # gc_safe_hits: none (G1-2)
+        ld_gc(),                                # gc: nothing collected, policies at init_stack's (G1-1)
+        pl_shift_status_t()                     # shift_status: nothing shifted (G1-1)
     )
     allocStacks!(ld)                            # the initial local stack, its spare reserved
     emptyStacks!(ld)
