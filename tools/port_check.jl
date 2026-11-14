@@ -335,7 +335,8 @@ function read_source(root::String, rel::String, violations::Vector{String})::Sou
             if !isempty(markers) && markers[end].line == i - 1
                 p = markers[end]
                 markers[end] = PortMarker(
-                    p.line, p.upstream_base, p.name, p.jl_name, p.diverges, p.diverges_reason,
+                    p.line, p.upstream_base, p.name, p.jl_name, p.diverges,
+                    p.diverges_reason,
                     m[1]
                 )
             end
