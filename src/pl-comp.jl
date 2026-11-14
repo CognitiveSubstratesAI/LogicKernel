@@ -1597,6 +1597,13 @@ end
 # symbol's literal and its arity, and a compound whose head is not a symbol as `*_FUNCTOR $expr/n`
 # (Q2, src/pl-ressymbol.jl) — literal 0 — with every child as an argument. Each head/body choice is
 # keyed as upstream keys it (some on `A_BODY`, some on `A_HEAD`).
+# Synced to cf6960c2: an atom is registered through the new `registerClauseAtom(a, ci)` (pl-comp.c:428-434:
+# `registerAtomLocally` when `ci->local_atoms`, else `PL_register_atom`): no atom is registered here and
+# `P_LOCALISED` predicates are unwritten, so there is nothing to carry. An integer that is a pointer
+# (`isPtrInt`, pl-comp.c:3047) compiles to the new `B_PTRINT`/`H_PTRINT`: this kernel keeps a pointer as
+# a plain integer (SYNC-B's note on `compare_primitives`), so the branch cannot be reached and no
+# `B_PTRINT`/`H_PTRINT` instruction exists. Also at the target, the LAST head argument is compiled
+# `A_HEAD|A_RIGHT` (pl-comp.c:2114-2118): unwritten, step HEAD-RIGHT (see `compileClause`).
 """
 Emit the code for argument `arg` (pl-comp.c): in a head (`A_HEAD`) the instructions that unify it,
 in a body (`A_BODY`) those that build it as the next argument of a call; left to right, a
@@ -1810,6 +1817,8 @@ end
 # same index, as `L_ATOM`/`L_SMALLINT` carry the `B_*` instruction's operand (since V1: upstream
 # copies the operand word too; `B_ATOM`'s is the packed `atom_operand`, L1b C6b); no `B_SMALLINTW`
 # (64-bit words) and no `PL_register_atom`.
+# Synced to cf6960c2: `PL_register_atom` of the `L_ATOM` operand became `registerClauseAtom` (pl-comp.c:3815);
+# no atom is registered here and `P_LOCALISED` predicates are unwritten: nothing to carry.
 """
 Last-call optimisation (pl-comp.c) of the goal whose argument code starts at code position `pc0`
 and ends with `I_DEPART`: unless an argument cannot move into place — an instruction without
@@ -2083,6 +2092,8 @@ isUnifiedArg(ci::compileInfo, vd::VarDef)::Bool =
 # DIVERGES: a constant operand is its literal-table index (`addLiteral!`), as every literal operand
 # (src/pl-vmi.jl), and an atom constant is not registered (`PL_register_atom`: no atom garbage
 # collection). The goal's ordinal is counted (`cb_unify`) for `isUnifiedArg`.
+# Synced to cf6960c2: `PL_register_atom` became `registerClauseAtom(a, ci)` (pl-comp.c:4425, 4518, 4528);
+# no atom is registered here and `P_LOCALISED` predicates are unwritten: nothing to carry.
 """
 `=/2` in a body (pl-comp.c): `I_TRUE` for a void side or `X = X`, after `skippedVar!`;
 `B_UNIFY_FF`/`FV`/`VF`/`VV` for two variables; for a variable and a term `B_UNIFY_FC`/`VC` with a
@@ -2148,6 +2159,7 @@ end
 # PORT: pl-comp.c compileBodyEQ
 # DIVERGES: a constant operand is a literal-table index, and an atom constant is not registered, as
 # `compileBodyUnify`'s.
+# Synced to cf6960c2: `PL_register_atom` became `registerClauseAtom` (pl-comp.c:4604, 4614), see `compileBodyUnify`.
 """
 `==/2` in a body (pl-comp.c): `B_EQ_VV` on two variables, `B_EQ_VC` on a variable and a portable
 constant (either order), each after a `C_VAR` for a first occurrence, which is then MARKED
@@ -2207,6 +2219,7 @@ end
 
 # PORT: pl-comp.c compileBodyNEQ
 # DIVERGES: as `compileBodyEQ`'s.
+# Synced to cf6960c2: `registerClauseAtom` as `compileBodyEQ`'s (pl-comp.c:4604, 4614); nothing to carry.
 """
 `\\==/2` in a body (pl-comp.c): `B_NEQ_VV`, `B_NEQ_VC`, as `compileBodyEQ`; under `optimise`,
 `I_TRUE` for a void side, `I_FAIL`/`I_TRUE` for a first occurrence; `BOOLEX_FALSE`, a call,
@@ -2362,6 +2375,39 @@ function compileSimpleAddition(
     return false
 end
 
+# PORT: pl-comp.c arithCompilable
+# synced to swipl-devel cf6960c2 (pl-comp.c:3879-3931): new at the target; the scan before `compileArith` for a "char" list `[X]` whose element or tail is unbound.
+# DIVERGES: the explicit stack is a Julia vector (upstream's `segstack`: 64 words in the C frame, then
+# chunks on the heap): it allocates, on the compile-time path only. A clause term is resolved (no bindings at
+# compile time, as in `compileSimpleAddition`), so there is no `deRef`, and the only unbound kind is a
+# variable (`canBind(*h)`: `kind === VAR`). A list cell's own arguments are not descended, as upstream's.
+# The caller's `compileArith` call is unwritten here (see `compileSubClause!`): a goal this function
+# accepts under `optimise` is refused there, a goal it rejects is compiled as a call.
+"""
+`arithCompilable(arg)` (pl-comp.c): false when the arithmetic goal `arg` contains a list cell `[X|Y]`
+whose head or tail is a variable, as in `[C] =:= 0'a` (such a list is evaluated at run time); true
+otherwise. Iterative: an arithmetic expression may be deep.
+"""
+function arithCompilable(arg::T)::Bool where {T}
+    stack = T[]
+    while true
+        if kind(arg) === EXPR
+            if is_pair(arg)                                    # fdef == FUNCTOR_dot2
+                if kind(child(arg, 2)) === VAR || kind(child(arg, 3)) === VAR
+                    return false
+                end
+            else
+                off, ar = _comp_shape(arg)
+                for i in 0:(ar - 1)
+                    push!(stack, _comp_arg(arg, off, i))
+                end
+            end
+        end
+        isempty(stack) && return true
+        arg = pop!(stack)
+    end
+end
+
 # PORT: pl-comp.c compileSubClause
 # DIVERGES: plain goals and `!` (`I_CUT`, or a local cut's instruction once V9 sets `ci.cut`; user,
 # 2026-10-05: the cut's COMPILE side with the body compiler, its execution since V6a). The meta-call (a
@@ -2381,7 +2427,11 @@ end
 # wrapped as `Goal@Module` (`B_FUNCTOR @/2` first, the module pushed after the goal, `B_POP`); `call/N`
 # is compiled inline only with no at context either; under an at context every goal is
 # `I_CALLATM`/`I_DEPARTATM` (a module) or `I_CALLATMV`/`I_DEPARTATMV` (a variable), their first operand
-# the goal's module or 0 for the clause's (no LCO).
+# the goal's module or 0 for the clause's (no LCO). Synced to cf6960c2: `compileArith` is still unwritten
+# (lane A's compileArith, A_ENTER and the arithmetic VMIs): its call is now guarded as upstream's
+# `truePrologFlag(PLFLAG_OPTIMISE) && arithCompilable(arg)` (pl-comp.c:3511), so a goal with a "char" list
+# whose element or tail is unbound (`[C] =:= 0'a`) is compiled as a call, as upstream does; the other
+# arithmetic goals under `optimise` stay refused. Whoever writes `compileArith` keeps the `&& arithCompilable(arg)`.
 """
 Compile body goal `arg` as a call with `call` — `I_CALL`, or `I_DEPART` for the clause's last goal,
 then last-call-optimised (`lco!`) — after its arguments (pl-comp.c). Returns `BOOLEX_TRUE`, or
@@ -2413,8 +2463,9 @@ function compileSubClause!(
             if name == names.atom_is && compileSimpleAddition(ld, names, arg, ci)
                 return BOOLEX_TRUE
             end
-            # O_COMPILE_ARITH: under `optimise` upstream compiles it inline (`compileArith`): refused
-            truePrologFlag(ld, PLFLAG_OPTIMISE) &&
+            # O_COMPILE_ARITH (c:3511): under `optimise` upstream compiles it inline (`compileArith`) when
+            # `arithCompilable`: refused; otherwise it is compiled as a call
+            truePrologFlag(ld, PLFLAG_OPTIMISE) && arithCompilable(arg) &&
                 throw(NotPortedError{T}(arg, "compileArith (optimise)", "the user's Q-AR3"))
         end
         # O_COMPILE_IS (c:3484-3519), `!ci->islocal`: upstream's chain, in its order; a `false` falls
@@ -2757,6 +2808,9 @@ end
 # DIVERGES: positions are indices into `ci.codes`. Of upstream's list the kernel has the type tests
 # and `==`/`\==` (the arithmetic `A_` instructions: only under `optimise`, since V6c2);
 # `I_RATIONAL` is not in upstream's list, so a `rational/1` condition is not fast.
+# Synced to cf6960c2: the arithmetic cases of the target's list gain `A_CMP_VV` and `A_CMP_VI` beside
+# `A_EQ`/`A_NE` (pl-comp.c:2921-2922). Both instructions are unwritten (see `decompileBodyNoShift`): nothing
+# to add to the kernel's list.
 """
 Make the condition whose code starts at `tc_or` a fast one — `C_IFTHENELSE` becomes `C_FASTCOND` —
 when it is only tests that cannot bind or call (pl-comp.c); true when it did.
@@ -3137,6 +3191,14 @@ end
 # thread's local data `ld` (since V6b), where upstream's `DECL_LD` functions reach LD: its flags
 # (`optimise`, `portable_vmi`) decide how a body goal compiles.
 # `getProcDefinition(proc)` is `proc.definition`: no thread-local predicates.
+# Synced to cf6960c2: `ci->local_atoms = ison(def, P_LOCALISED)` (pl-comp.c:2034; `false` for a goal clause,
+# 2050): `P_LOCALISED` predicates are unwritten, the flag would be always false here. Also at the target the
+# head's LAST argument is compiled `A_HEAD|A_RIGHT` (pl-comp.c:2114-2118: a compound there ends in
+# `H_RFUNCTOR`/`H_RLIST` with no `H_POP`), and `decompile_head` tracks it as `rlast`. NOT written here, on
+# purpose: it changes the code of every clause whose last head argument is a compound, and so every row
+# compared with the pin's swipl; step HEAD-RIGHT, to be taken with the move of the oracle to cf6960c2
+# (the kernel's `compileArgument!` handles `A_RIGHT` already; `_compile_clause_head!` would pass
+# `A_HEAD | A_RIGHT` for the last argument).
 """
     compileClause(gd, ld, head, body, proc, m) -> Clause, or nothing
     compileClause(gd, ld, head, body, proc, m, warnings) -> Clause, or nothing
@@ -4559,6 +4621,9 @@ unifyVarGC(ld::PL_local_data{T}, var::Int, variables::term_t, i::code) where {T}
 # argument whose term is being written. A literal is the clause table's term, unified as an atomic
 # (`PL_unify_atomic`: its word made on binding); a compound's functor is the operand's word
 # (`functor_operand_word`), `$expr/n` included.
+# Synced to cf6960c2: `H_PTRINT` (a pointer integer unified as a plain integer, pl-comp.c:6213) is
+# unwritten, as `compileArgument`'s pointer integers; the new `rlast` flag (pl-comp.c:6080, 6273, 6309: an
+# `H_RFUNCTOR` chain of the last head argument has no `H_POP`) belongs to step HEAD-RIGHT (see `compileClause`).
 """
     decompile_head!(ld, clause, head, variables) -> Bool
     decompile_head!(ld, clause, head, variables, bvar_access, bvar_args) -> Bool
@@ -4875,6 +4940,13 @@ end
 # (pl-comp.c:6842-6851), since MOD3b `I_CALLATM`/`I_DEPARTATM`/`I_CALLATMV`/`I_DEPARTATMV` to
 # `Goal@M` or `PM:Goal@M` (pl-comp.c:6801-6840), and `I_CONTEXT` here "should never happen" (c:6792-6794;
 # `decompile!` takes it).
+# Synced to cf6960c2: unwritten here: `H_PTRINT`/`B_PTRINT` (pl-comp.c:6621-6622, a pointer integer; see
+# `compileArgument`) and `A_CMP_VV`/`A_CMP_VI` (pl-comp.c:6875-6884: `cmpFunctor(cmp)` maps the operand LT,
+# GT, LE, GE, NE, EQ to the comparison functor, the two variables or the variable and the small integer
+# become its arguments), the instructions of the compile of `Var <cmp> Var|SmallInt`, which belongs with the
+# unwritten `compileArith`. The clause-reference unify of the operand reader `unify_vmi` is now
+# `PL_unify_clref(av+an, clause)` (pl-comp.c:8157) instead of `PL_unify_term(... PL_POINTER ...)`: no kernel
+# function by that name, a clause reference is a blob here.
 """
 Decompile body code from `di.pc` up to the instruction `end_` or the position `until` (pl-comp.c):
 each goal is built on the decompilation stack from its arguments' instructions, and the goals are
@@ -5526,6 +5598,8 @@ stepPC(PC::Code{T}) where {T} =
 
 # PORT: pl-comp.c skipArgs
 # DIVERGES: returns `(position, in_hvoid)` where upstream updates `*in_hvoid` through a pointer.
+# Synced to cf6960c2: the target skips `H_PTRINT` as a one-word operand (pl-comp.c:5513, `B_PTRINT` 5526):
+# unwritten: this kernel's pointers are plain integers.
 """
     skipArgs(PC, skip, in_hvoid) -> (Code, in_hvoid)
 
@@ -5625,6 +5699,8 @@ end
 # `FUNCTOR_dot2`; a float, string, big integer or rational literal its value's key
 # (`_value_index_key`, the role `murmur_key`/`bignum_index` play) — so a grounded value without a key is
 # not indexable. `$expr/n` (literal 0, Q2, src/pl-ressymbol.jl) is a wildcard.
+# Synced to cf6960c2: `H_PTRINT` keys on `consPtrInt` of its operand (pl-comp.c:5616): unwritten, no
+# such instruction here (a pointer is a plain integer).
 """
     argKey(PC, skip) -> word
 
@@ -5672,6 +5748,7 @@ end
 # a literal as `argKey` does (`indexOfWord` of the literal, since V1 L2). `$expr/n` (literal 0, Q2) has no
 # functor: not found. `H_MPQ` is not found, as `H_MPZ` is (upstream defect, fixed in 97370c0e: the
 # switch lacked `H_MPQ`, which fell to `assert(0)`; docs/upstream_reports.md #4).
+# Synced to cf6960c2: `H_PTRINT` keys on `consPtrInt` of its operand (pl-comp.c:5714): unwritten, as `argKey`'s.
 """
     arg1Key(PC) -> (found, key)
 

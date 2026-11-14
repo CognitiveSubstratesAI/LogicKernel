@@ -425,6 +425,7 @@ function _manifest_index(T)
         (LK._compile_clause_head!, Tuple{GD, CInfo, T, Nothing, UInt32}, false),   # SSU1: the necks
         (LK._compile_clause_head!, Tuple{GD, CInfo, T, T, UInt32}, false),
         (LK.compileArgument!, Tuple{CInfo, T, Int}, false),
+        (LK.arithCompilable, Tuple{T}, false),
         (LK.link_local_var!, Tuple{CInfo, T, Int}, false),
         (LK._local_cell!, Tuple{CInfo, Int, T}, false),
         (LK.reverse_code!, Tuple{Vector{UInt64}, Int, Int}, true),
