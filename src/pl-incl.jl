@@ -24,6 +24,7 @@
 # UPSTREAM: swipl-devel src/pl-trie.h @ 18168e629eab
 # UPSTREAM: swipl-devel src/pl-indirect.h @ 18168e629eab
 # UPSTREAM: swipl-devel src/pl-transaction.h @ 18168e629eab
+# UPSTREAM: swipl-devel src/pl-transaction.c @ 18168e629eab
 # UPSTREAM: swipl-devel src/pl-thread.h @ 18168e629eab
 # CLASS: code
 # COPYRIGHT: Copyright (c)  1985-2026, University of Amsterdam,

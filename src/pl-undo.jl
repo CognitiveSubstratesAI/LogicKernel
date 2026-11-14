@@ -1,4 +1,5 @@
 # UPSTREAM: swipl-devel src/pl-undo.c @ 18168e629eab
+# UPSTREAM: swipl-devel src/pl-undo.h @ 18168e629eab
 # CLASS: code
 # COPYRIGHT: Copyright (c)  2022-2025, SWI-Prolog Solutions b.v.
 #
