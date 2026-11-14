@@ -47,6 +47,12 @@ t_idg09(R) :- ti_tab(T), '$idg_set_falsecount'(T, 2), '$tbl_variant_table'(0, us
     '$idg_falsecount'(T2, F), R = r(S, F).
 t_idg10(R) :- '$tbl_variant_table'(0, user:ti_p(_), T, S, _, _), '$idg_set_falsecount'(T, 0),
     '$tbl_variant_table'(0, user:ti_p(_), T2, S2, _, _), ( T == T2 -> Same = same ; Same = other ), R = r(S, S2, Same).
+:- table ti_pa/1 as incremental.
+:- dynamic([ti_da/1], [incremental(true)]).
+ti_da(1).
+ti_pa(X) :- ti_da(X).
+t_idg13(R) :- '$set_predicate_attribute'(user:ti_da(_), abstract, 0), ti_pa(Y),
+    '$get_predicate_attribute'(user:ti_da(_), abstract, V), R = r(Y, V).
 :- table ti_v5/1 as incremental.
 ti_v5(X) :- statistics(table_space_used, U), L is U+1, set_prolog_flag(table_space, L), ti_d(X).
 t_idg11(R) :- ti_p(_), ti_tab(T),
@@ -57,7 +63,7 @@ t_idg12(R) :- current_prolog_flag(table_space, Old), catch(ti_v5(_), error(E, _)
     set_prolog_flag(table_space, Old), ( var(E) -> R = none ; R = raised(E) ).
 """
 
-const _TI_CASES = ["t_idg01", "t_idg05", "t_idg02", "t_idg03", "t_idg04", "t_idg06", "t_idg07", "t_idg08", "t_idg09", "t_idg10", "t_idg11", "t_idg12"]
+const _TI_CASES = ["t_idg01", "t_idg05", "t_idg02", "t_idg03", "t_idg04", "t_idg06", "t_idg07", "t_idg08", "t_idg09", "t_idg10", "t_idg11", "t_idg12", "t_idg13"]
 
 # swipl 10.1.20 (`ti_q(t_idg<NN>, A)`, in the order of `_TI_CASES`), two identical runs (md5 equal), 2026-11-10
 const _TI_PINNED = [
@@ -73,6 +79,7 @@ const _TI_PINNED = [
     "r(invalid,complete,same)",             # idg10 (TB7M5): falsecount back to 0: the same table is `complete` again
     "r(raised(representation_error(falsecount)),0,4294967295)",   # idg11 (DEFKILL2, TB6-P14): pl-tabling.c:9864 `fc > UINT_MAX`; UINT_MAX itself is stored
     "raised(resource_error(private_table_space))",                # idg12 (DEFKILL2, TB6-V5): the dyncall edge of a full pool: pl-vmi.c:3547-3548 THROW_EXCEPTION
+    "r(1,0)",                              # idg13 (DEFKILL2, TB6-N19): an incremental dynamic predicate with abstract(0) under a tabled one; swipl writes no warning
 ]
 
 "The `~q` text of each case's answer, in order, from swipl at the pin."
@@ -120,6 +127,8 @@ end
     for (case, pin) in zip(_TI_CASES, _TI_PINNED)
         @test _ti_ask(gd, ld, case) == pin
     end
+    # DEFKILL2 (TB6-N19): swipl writes no "Only abstract(0)" warning for abstract(0) (pl-vmi.c:3534-3535); the collected messages hold none
+    @test !any(m -> kind(m[2]) === SYM && occursin("Only abstract(0)", sym_text(m[2])), ld.messages)
     @test ld.tabling.idg_edge_states.live == 0          # every '$idg_edge'/'$idg_false_edge' state was given back
 
     if Sys.which("swipl") !== nothing
@@ -997,4 +1006,28 @@ end
     @test LK.assert_term!(gd, ld, fact("ti_v6c", 1), 0, LK.CL_END, nothing, nothing, 0) !== nothing
     @test LK.assert_term!(gd, ld, fact("ti_v6c", 2), 0, LK.CL_END, nothing, nothing, LK.PL_CREATE_INCREMENTAL) !== nothing
     @test !incr("ti_v6c")
+end
+
+@testset "idg32: a retired block goes on the lingering list of the owning node, newest first (pl-idgset.c:155-166 retire_block)" begin
+    gd, ld = _ti_wb()
+    nodes = [_ti_node(ld)[2] for _ in 1:10]
+    owner = nodes[10]
+    set = LK.idg_set{_TIN}()
+    add(p) = LK.idg_set_add(ld, set, p, owner, nothing)
+    @test owner.lingering === nothing
+    for i in 1:4
+        @test add(nodes[i]) == 1
+    end
+    b4 = set.block
+    @test b4.capacity == 4 && owner.lingering === nothing                         # nothing retired yet
+    for i in 5:8
+        @test add(nodes[i]) == 1
+    end
+    b8 = set.block
+    @test b8.capacity == 8 && owner.lingering === b4 && b4.older === nothing      # the first grow: `*lingering = b4`, older NULL
+    @test add(nodes[9]) == 1
+    @test set.block.capacity == 16 && owner.lingering === b8 && b8.older === b4    # the second: `b->older = *lingering` (:161)
+    @test b4.older === nothing
+    LK.idg_set_free_lingering(owner, nothing)
+    @test owner.lingering === nothing                                              # idg_set_free_lingering (:169-178)
 end
