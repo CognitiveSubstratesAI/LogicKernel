@@ -537,3 +537,55 @@ end
     LK.PL_close_foreign_frame(ld, fid)
     @test _tx_ask(gd, ld, "tx_pushed") == "tx_pushed c[91,124,93]/2(a[97],nil)"   # [a]
 end
+
+# txx18 (WHITE-BOX, kernel only; pl-undo.c:160-189 push_undo, TX1-N1 and TX1-N2): the cell of the undo list is scheduled only when it
+# holds `'[|]'(Atom, Old)`. The control flow read at the pin: `if ( isTerm(*p) )` (:163) then `if ( f->definition == FUNCTOR_dot2 )` (:167)
+# else `return` (:172-173); inside it `if ( !isAtom(w) ) return` (:169-170); only then `addBuffer` (:184). The cell is written by `'$undo'/1`
+# alone in a run, so no query reaches these returns: the cell is written here by hand, and `push_undo` is called on it, as `Undo!` does.
+# The three cells are built in one place and each is tried on its own; the third (a list cell with an atom head) is the control that
+# the schedule can be reached at all, so that the two empty schedules before it are not a vacuous pass.
+@testset "push_undo schedules a list cell with an atom head and nothing else (txx18a-c)" begin
+    gd, ld, st = _tx_load(_TX_PROGRAM)
+    @test st == "ok"
+    p = ld.undo_list
+    @test p == 1                                                      # premise: the first global cell, the one `Undo!` tests for
+    @test ld.gstack[p] == ld.atom_nil_w                               # premise: it holds [] and nothing is scheduled
+    @test !LK.UNDO_SCHEDULED(ld)
+    aw = LK._atom_word!(ld, _txs("tx_w18"))
+    @test LK.isAtomW(aw)                                              # premise: the head of the third cell is an atom ...
+    iw = LK.consInt(Int64(7))
+    @test !LK.isAtomW(iw)                                             # ... and the head of the first is not
+    fw = LK.lookupFunctorDef(ld.functors, LK._atom_word!(ld, _txs("tx_w18f")), 1)
+    @test fw != ld.functor_dot2                                       # premise: the second cell's functor is not '[|]'/2
+
+    # txx18a (N1): '[|]'(7, []): the head is not an atom: pl-undo.c:169-170 returns before the schedule
+    q = LK.allocGlobalCells!(ld, 3)
+    ld.gstack[q] = ld.functor_dot2
+    ld.gstack[q + 1] = iw
+    ld.gstack[q + 2] = ld.atom_nil_w
+    ld.gstack[p] = LK.consPtr(q, LK.TAG_COMPOUND | LK.STG_GLOBAL)
+    @test LK.isTermW(ld.gstack[p]) && LK.valPtr(ld.gstack[p]) == q    # premise: the cell is a compound over q
+    LK.push_undo(ld, p)
+    @test !LK.UNDO_SCHEDULED(ld)
+
+    # txx18b (N2): tx_w18f(tx_w18): an atom in the first argument but not the list functor: pl-undo.c:167, :172-173 return
+    q = LK.allocGlobalCells!(ld, 2)
+    ld.gstack[q] = fw
+    ld.gstack[q + 1] = aw
+    ld.gstack[p] = LK.consPtr(q, LK.TAG_COMPOUND | LK.STG_GLOBAL)
+    @test LK.isTermW(ld.gstack[p]) && LK.valPtr(ld.gstack[p]) == q
+    LK.push_undo(ld, p)
+    @test !LK.UNDO_SCHEDULED(ld)
+
+    # txx18c (control): '[|]'(tx_w18, []): the atom is scheduled, once
+    q = LK.allocGlobalCells!(ld, 3)
+    ld.gstack[q] = ld.functor_dot2
+    ld.gstack[q + 1] = aw
+    ld.gstack[q + 2] = ld.atom_nil_w
+    ld.gstack[p] = LK.consPtr(q, LK.TAG_COMPOUND | LK.STG_GLOBAL)
+    LK.push_undo(ld, p)
+    @test LK.UNDO_SCHEDULED(ld)
+    @test ld.undo_scheduled == [aw]
+    LK.free_undo_data(ld)
+    @test !LK.UNDO_SCHEDULED(ld)
+end
