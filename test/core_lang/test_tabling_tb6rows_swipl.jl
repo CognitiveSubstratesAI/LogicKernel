@@ -667,17 +667,12 @@ const _T6_BROKEN = Dict{String, String}(
     # `@test_broken` until the kernel run shows the unexpected passes (an unexpected pass is an error by design: the run decides); the dispatcher then
     # flips the rows to `@test` and deletes the entries. The old owner text follows in each entry after `was:`.
     # TABM-DIAG2: the lane-2 run of 2026-11-14 (tb6rows, after b222a5a9) passed SINGLE s02-s04, ABOLISH a02-a03 and EXPAND x02-x05 unexpectedly: their entries are
-    # deleted (the rows are `@test` now). ABOLISH a04-a08 still differ from swipl's pins in that run and stay below.
-    "ABOLISH/a04" => "owner builtins PRESENT: abolish_module_tables/1 (boot/tabling.pl:1133) calls the same two; expected to pass",
-    "ABOLISH/a05" => "owner builtin PRESENT: `'\$tbl_destroy_table'/1` (pl-tabling.jl:9773); abolish_table_subgoals/1 (boot/tabling.pl:1158-1168, vendored) calls it; expected to pass",
-    "ABOLISH/a06" => "owner builtin PRESENT: `'\$tbl_destroy_table'/1`; abolish_nonincremental_tables/0 (boot/tabling.pl:1187) calls it; expected to pass",
-    "ABOLISH/a07" => "owner builtins PRESENT: abolish_module_tables/1; expected to pass",
-    "ABOLISH/a08" => "owner builtin PRESENT: abolish_table_subgoals/1 (vendored boot/tabling.pl:1158); expected to pass",
-    # TABM-PREP (audit D-0736 (2)): the lane-2 runs of 2026-11-14 (397efdd3) show a04-a08 still differing (TABM-DIAG2: a04/a05 raise a refusal,
-    # a06-a08 leave IDG nodes after the abolish). TAB-A04 DIAGNOSIS: the cases run in one load, each on the state the previous left; a04 and a05 each
-    # delete a table whose dependent dynamic pseudo table `ad` becomes an orphan, and `delete_dynamic_table` (src/pl-tabling.jl) reached
-    # `reset_answer_table`'s IDG refusal (the orphan has its IDG node); the refused case leaves `ad` and its node, which a06-a08 count. The fix is
-    # ENG1 (`reset_answer_table_idg` before the `trie_delete`, as `destroy_answer_trie` and `abolish_table` do): expected to pass a04-a08, the run decides.
+    # deleted (the rows are `@test` now).
+    # ABOLISH a04-a08: TAB-A04 DIAGNOSIS: the cases run in one load, each on the state the previous left; a04 and a05 each delete a table whose
+    # dependent dynamic pseudo table `ad` becomes an orphan, and `delete_dynamic_table` (src/pl-tabling.jl) reached `reset_answer_table`'s IDG
+    # refusal (the orphan has its IDG node); the refused case left `ad` and its node, which a06-a08 counted. The fix is ENG1
+    # (`reset_answer_table_idg` before the `trie_delete`, as upstream pl-tabling.c:2654-2662, :2679-2689, :4545-4551). The lane-2 run of
+    # wip/tab-a04 (2026-11-14, reference) passed a04-a08 UNEXPECTEDLY (5 errors = 5 unexpected passes): their entries are deleted, the rows are `@test`.
     # DYNERR v01/v02: the kernel charges no trie memory to `table_space`
     # (upstream pl-trie.c:238, :772, :1087, :1105, :1113 charge; :257, :269, :729, :1200, :1268, :1389 release), so the limit 1508 is never
     # reached: owner TRIE-CHARGE (wip/trie-charge). The pins stay swipl's.
