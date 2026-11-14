@@ -23,8 +23,8 @@ TX = TB + ["test/foreign/test_builtins_swipl.jl"]
 MUTANTS = [
     # ── pl-gc.c pl_garbage_collect ──
     dict(id="BOOTPRED-G1 '$garbage_collect'/1 fails (KILL bp20-bp26)", file=GC, targets=TB,
-         old="function pl_garbage_collect(ld::PL_local_data{T}, d::term_t)::foreign_t where {T}\n    return FTRUE\n",
-         new="function pl_garbage_collect(ld::PL_local_data{T}, d::term_t)::foreign_t where {T}\n    return FFALSE\n"),
+         old="function pl_garbage_collect(ld::PL_local_data{T}, d::term_t)::foreign_t where {T}\n    garbageCollect(ld, Int(GC_USER))\n    return FTRUE\n",
+         new="function pl_garbage_collect(ld::PL_local_data{T}, d::term_t)::foreign_t where {T}\n    garbageCollect(ld, Int(GC_USER))\n    return FFALSE\n"),
     dict(id="BOOTPRED-G2 '$garbage_collect' registered under another name: '$garbage_collect'(0) is unknown (KILL bp20-bp26)",
          file=EXT, targets=TB,
          old='    PL_extension("\\$garbage_collect", 1, pl_garbage_collect, 0x00),',
