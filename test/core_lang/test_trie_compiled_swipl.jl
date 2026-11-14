@@ -11,7 +11,7 @@
 #        not recover (an upstream defect, private register, no row can run it); the kernel raises type_error(trie_or_clause, X) as the C text
 #        of S_TRIE_GEN names (instantiation_error for an unbound X: PL_type_error's own rule).
 #   KD-2 trie_gen_compiled/2 on a clause reference of a trie with a non-true value: swipl at the pin fails an internal check, no row.
-#   KD-3 attributed variables in a key (TR3), conditional answers (T_DELAY: TB4), a table's answer trie (TB3/TB6): named refusals, not here.
+#   KD-3 attributed variables in a key (TR3), a table's answer trie (TB3/TB6): named refusals, not here; a conditional answer compiles to T_DELAY (TAB1 stack, batch 3), run by the tabling rows.
 #   KD-4 trie_gen_compiled/2 on a MAP trie with an ATOM or small-integer key and a non-variable value: T_VALUE reads the cell above
 #        gTop (after T_TRIE_GEN2's `+(Key)`), undefined at the pin (swipl answers `[]` or the key by what an earlier term left
 #        there); the kernel reads it as the term's functor word (`_trie_deref_current`): no answer. No row can pin it.
@@ -335,5 +335,41 @@ _SUPERVISOR_OK &&
             @test kl[4] == "k3 c[107,51]/1(a[105,110,115,116])"
             @test kl[5] ==
                 "k4 c[107,52]/1(c[116,101]/2(a[116,114,105,101,95,111,114,95,99,108,97,117,115,101],i1))"
+        end
+    end
+
+# DEFKILL5 rows for TR4-S5 (S_TRIE_GEN: the single-answer shortcut is for arity 2 only; pl-vmi.c:5969 at the pin 18168e62 `DEF->functor->arity == 2 &&
+# (answer=tbl_single_answer(t))`, then `trie_gen_single`, pl-vmi.c:5999-6014). There is no swipl line to pin: `tbl_single_answer` needs `atrie->data.IDG`
+# (pl-tabling.c:6269-6279), which no Prolog call of the pin sets on a plain trie; the row is white-box. The observable of the shortcut is that the table's
+# answer trie is NOT compiled: `tr.clause` stays 0 (the compile path sets it, `compile_trie`). Control: the same trie without an IDG node is compiled.
+# The kernel's `tbl_single_answer` (src/pl-tabling.jl:4656) answers a node since TB6 gave `atrie.IDG` its node (`idg_new`, as TI's `_ti_node` attaches it).
+_SUPERVISOR_OK &&
+    @testset "TR4-S5: trie_gen_compiled/2 of a one-answer table trie takes the single-answer shortcut, no compile (white-box)" begin
+        prog = """
+        s5_make(R) :- trie_new(T), trie_insert(T, k), nb_setval(dk5_s5, T), R = ok.
+        s5_run(R) :- nb_getval(dk5_s5, T), trie_gen_compiled(T, K), R = K.
+        """
+        mktempdir() do d
+            f = joinpath(d, "s5.pl")
+            write(f, prog)
+            gd, ld, st = _tp_load(_TP, f)
+            @test st == "ok"
+            # the control: no IDG node, so tbl_single_answer answers 0 and the trie is compiled
+            n0 = length(gd.tries)
+            @test _tp_row(gd, ld, "s5_make") == _row("s5_make", _ea("ok"))
+            ctl = gd.tries[end]
+            @test length(gd.tries) == n0 + 1 && ctl.value_count == 1 && ctl.clause == 0 && ctl.IDG === nothing
+            @test _tp_row(gd, ld, "s5_run") == _row("s5_run", _ea("k"))
+            @test ctl.clause != 0                                  # compiled
+            # the shortcut: an IDG node, one answer, no worklist, not shared, not a map
+            @test _tp_row(gd, ld, "s5_make") == _row("s5_make", _ea("ok"))
+            tr = gd.tries[end]
+            @test tr !== ctl && tr.value_count == 1 && tr.clause == 0
+            @test tr.worklist === nothing && (tr.flags & (LK.TRIE_ISSHARED | LK.TRIE_ISMAP)) == 0
+            tr.IDG = LK.idg_new(ld, tr)
+            @test tr.IDG !== nothing
+            @test LK.tbl_single_answer(tr) != 0                    # the premise of the shortcut
+            @test _tp_row(gd, ld, "s5_run") == _row("s5_run", _ea("k"))   # the same answer
+            @test tr.clause == 0                                   # not compiled: the shortcut ran (arity 2)
         end
     end

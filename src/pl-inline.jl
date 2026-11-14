@@ -67,14 +67,18 @@ function clean_index_key(key::word)::word
 end
 
 # PORT: pl-inline.h visibleClause
-# (swipl-devel cbf4e189, src/pl-inline.h:655-680)
-# DIVERGES: upstream reads `LD->reload.generation`; this core takes the value as `rgen`, and the form with `ld` below passes
-# `ld.GD.reload_generation`, the one copy (R2 LB6a, QUESTION 1 option B: a search holds the value in its `index_context`). The transaction case is
-# not ported (no transactions). `rgen` is GEN_INVALID (0) outside a reload, and then the two tests are skipped: the kernel's generations start at 0, where upstream's start at 1, so a clause of generation 0 must not match.
+# (swipl-devel cbf4e189, src/pl-inline.h:655-680; TX1c: the pin 18168e629eab, src/pl-inline.h:655-680 with the transaction test)
+# DIVERGES: upstream reads `LD->reload.generation` and `LD->transaction`; this core takes the value as `rgen` and the transaction state as
+# `tr`, and the form with `ld` below passes `ld.GD.reload_generation`, the one copy, and `ld.transaction` (R2 LB6a, QUESTION 1 option B: a
+# search holds both in its `index_context`). The form without `tr` (and so without a transaction) is for the callers that have no local data
+# (the first-clause search of pl-proc.jl, pl-supervisor.jl, pl-wrap.jl): inside a transaction they see the global generations only.
+# `rgen` is GEN_INVALID (0) outside a reload, and then the two tests are skipped: the kernel's generations start at 0, where upstream's start at 1, so a clause of generation 0 must not match.
 # DIVERGES (representation; owner LB6b, the step that wires clause reclamation and `endReconsult`): the `rgen != GEN_INVALID` guard is this port's, upstream has none; LB6b revisits it
 # when generations start at 1 or when reclamation makes a clause of generation 0 reachable.
-"True when clause `cl` is visible in generation `gen`, with `rgen` the generation being reloaded (pl-inline.h)."
-function visibleClause(cl::clause, gen::gen_t, rgen::gen_t)::Bool
+"True when clause `cl` is visible in generation `gen`, with `rgen` the generation being reloaded and `tr` the transaction state (pl-inline.h)."
+function visibleClause(
+    cl::Clause{T}, gen::gen_t, rgen::gen_t, tr::Union{Nothing, ld_transaction{T}}
+)::Bool where {T}
     c = cl.generation_created
     e = cl.generation_erased
     if rgen != GEN_INVALID
@@ -88,35 +92,68 @@ function visibleClause(cl::clause, gen::gen_t, rgen::gen_t)::Bool
     if c <= gen && e > gen
         return true
     end
+    if tr !== nothing && tr.gen_base != 0 && gen >= tr.gen_base &&
+       (cl.predicate.flags & P_TRANSACT) != 0
+        return transaction_visible_clause(tr, cl, gen)
+    end
     return false
 end
 
-"`visibleClause` for the local data `ld`: `rgen` is `ld.GD.reload_generation` (pl-inline.h `LD->reload.generation`; the one copy is the database's, audit D-0416 item 3)."
-visibleClause(ld, cl::clause, gen::gen_t)::Bool =
-    visibleClause(cl, gen, (ld.GD::PL_global_data).reload_generation)
+"`visibleClause` outside a transaction: no local data to read it from (pl-inline.h)."
+function visibleClause(cl::Clause{T}, gen::gen_t, rgen::gen_t)::Bool where {T}
+    return visibleClause(cl, gen, rgen, nothing)
+end
+
+"`visibleClause` for the local data `ld`: `rgen` is `ld.GD.reload_generation` (pl-inline.h `LD->reload.generation`; the one copy is the database's, audit D-0416 item 3), `tr` is `ld.transaction`."
+function visibleClause(ld, cl::Clause{T}, gen::gen_t)::Bool where {T}
+    return visibleClause(
+        cl, gen, (ld.GD::PL_global_data).reload_generation, ld.transaction::ld_transaction{T}
+    )
+end
 
 # PORT: pl-inline.h visibleClauseCNT
 # DIVERGES: the erased-skipped statistic is not kept.
 "`visibleClause`, counting the misses upstream (pl-inline.h)."
-visibleClauseCNT(cl::clause, gen::gen_t, rgen::gen_t)::Bool = visibleClause(cl, gen, rgen)
+function visibleClauseCNT(
+    cl::Clause{T}, gen::gen_t, rgen::gen_t, tr::Union{Nothing, ld_transaction{T}}
+)::Bool where {T}
+    return visibleClause(cl, gen, rgen, tr)
+end
+
+"`visibleClauseCNT` outside a transaction (pl-inline.h)."
+function visibleClauseCNT(cl::Clause{T}, gen::gen_t, rgen::gen_t)::Bool where {T}
+    return visibleClause(cl, gen, rgen, nothing)
+end
 
 "`visibleClauseCNT` for the local data `ld` (pl-inline.h)."
-visibleClauseCNT(ld, cl::clause, gen::gen_t)::Bool =
-    visibleClause(cl, gen, (ld.GD::PL_global_data).reload_generation)
+function visibleClauseCNT(ld, cl::Clause{T}, gen::gen_t)::Bool where {T}
+    return visibleClause(ld, cl, gen)
+end
 
 # PORT: pl-inline.h global_generation
 "The generation of the database (pl-inline.h)."
 global_generation(gd::PL_global_data)::gen_t = gd._generation
 
 # PORT: pl-inline.h current_generation
-# DIVERGES: no transactions — always the global generation.
+# DIVERGES: two forms. With `ld` upstream's (pl-inline.h:690-697): the transaction's generation for a predicate with P_TRANSACT while a
+# transaction runs (`def` is never NULL here); without `ld` (no thread state to read: pl-thread.jl, the tests' builders) the global generation.
 "The generation a call of `def` runs in (pl-inline.h)."
 current_generation(gd::PL_global_data{T}, def::Definition{T}) where {T} =
     global_generation(gd)
+function current_generation(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, def::Definition{T}
+)::gen_t where {T}
+    tr = ld.transaction
+    if tr.generation != 0 && (def.flags & P_TRANSACT) != 0
+        return tr.generation
+    end
+    return global_generation(gd)
+end
 
 # PORT: pl-inline.h next_generation
-# DIVERGES: no transactions — always the next global generation — and no `L_GENERATION` lock (no
-# threads). Upstream's database starts at generation 1 (`setupProlog` calls it), the kernel's at 0
+# DIVERGES: two forms; no `L_GENERATION` lock (no threads). Without `ld` the next global generation. With `ld` upstream's
+# (pl-inline.h:706-722): inside a transaction, for a predicate with P_TRANSACT, the transaction's next generation, 0 when its space
+# (`gen_max`) is used up. Upstream's database starts at generation 1 (`setupProlog` calls it), the kernel's at 0
 # (`gen_t(0)`, src/pl-global.jl): not observable from Prolog. (The assert and retract paths increment
 # the generation inline, as upstream's do.)
 "Advance the database generation; the new generation (pl-inline.h)."
@@ -124,17 +161,39 @@ function next_generation!(gd::PL_global_data{T}, def::Definition{T})::gen_t wher
     gd._generation += 1
     return gd._generation
 end
+function next_generation!(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, def::Definition{T}
+)::gen_t where {T}
+    tr = ld.transaction
+    if tr.generation != 0 && (def.flags & P_TRANSACT) != 0
+        if tr.generation < tr.gen_max
+            tr.generation += 1
+            return tr.generation
+        end
+        return gen_t(0)
+    end
+    return next_generation!(gd, def)
+end
 
 # PORT: pl-inline.h max_generation
-# DIVERGES: no transactions — always `GEN_MAX`.
+# DIVERGES: two forms. Without `ld` always `GEN_MAX`; with `ld` upstream's (pl-inline.h:732-738): the transaction's `gen_max` for a
+# predicate with P_TRANSACT while a transaction runs.
 "The erased generation of a live clause of `def` (pl-inline.h)."
 max_generation(def::definition)::gen_t = GEN_MAX
+function max_generation(ld::PL_local_data{T}, def::Definition{T})::gen_t where {T}
+    tr = ld.transaction
+    if tr.generation != 0 && (def.flags & P_TRANSACT) != 0
+        return tr.gen_max
+    end
+    return GEN_MAX
+end
 
 # PORT: pl-inline.h setGenerationFrame
 # DIVERGES: two forms. On a frame (`fr`, an index), upstream's: the frame's `generation` becomes the
 # current global generation. Without one — `retract/1`, which has no frame until V9 makes it a
 # foreign predicate — the generation is returned for the caller to run in. No transactions, so never
-# the transaction's generation (`P_TRANSACT`, inl:749-752).
+# the transaction's generation (`P_TRANSACT`, inl:749-752). TX1c: the form with `ld` and `def` (retract/1) and the form on a frame
+# read the transaction's generation as upstream's (pl-inline.h:746-760); the form with `gd` and `def` alone is the global one.
 "The generation a frame of `def` is (re)set to: the current global generation (pl-inline.h)."
 function setGenerationFrame(gd::PL_global_data{T}, def::Definition{T})::gen_t where {T}
     gen = global_generation(gd)
@@ -144,9 +203,24 @@ function setGenerationFrame(gd::PL_global_data{T}, def::Definition{T})::gen_t wh
     return gen
 end
 function setGenerationFrame(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, def::Definition{T}
+)::gen_t where {T}
+    tr = ld.transaction
+    if tr.generation != 0 && (def.flags & P_TRANSACT) != 0
+        return tr.generation
+    end
+    return setGenerationFrame(gd, def)
+end
+function setGenerationFrame(
     gd::PL_global_data{T}, ld::PL_local_data{T}, fr::Int
 )::Nothing where {T}
     f = ld.frames[fr]
+    tr = ld.transaction
+    pred = f.predicate
+    if tr.generation != 0 && pred !== nothing && (pred.flags & P_TRANSACT) != 0
+        f.generation = tr.generation                # setGenerationFrameVal(fr, LD->transaction.generation)
+        return nothing
+    end
     gen = global_generation(gd)
     while gen != global_generation(gd)              # do … while()
         gen = global_generation(gd)
@@ -1073,8 +1147,9 @@ isRealMark(m::mark)::Bool = m.trailtop != NOT_A_MARK
 # PORT: pl-incl.h Undo
 # DIVERGES: since L1b stage D the body of upstream's `Undo` WITH O_DESTRUCTIVE_ASSIGNMENT, pl-wam.c's
 # `__do_undo`: newest first, an address entry resets its cell, a value entry steps down to its address entry and restores the old value saved on the global stack
-# (`*tt->address = trailVal(p)`; `TrailAssignment!` pushes them since group F). NOT
-# PORTED: `push_undo` (no undo hooks). Since AV1 the attributed variables' chain is cut back to the
+# (`*tt->address = trailVal(p)`; `TrailAssignment!` pushes them since group F). Since TX1e a value entry for the FIRST global cell
+# (`gBase` upstream, `ld.undo_list` here) calls `push_undo` BEFORE the cell is restored (pl-wam.c:1612-1613 at the pin): the undo
+# goals on the list being undone are scheduled (src/pl-undo.jl). Since AV1 the attributed variables' chain is cut back to the
 # new top first (`reclaim_attvars`, src/pl-wam.jl). Since e5 `frozen_bar` is kept:
 # `gTop = max(frozen_bar, m.globaltop)`. Marks nest: undoing to a mark above the trail's or the global stack's top is a misuse,
 # asserted; so is undoing to a `NoMark`, which upstream never does.
@@ -1089,6 +1164,7 @@ function Undo!(ld::PL_local_data, m::mark)::Nothing
             _untrail!(ld, e)                    # setVar(*p)
         else
             a = pop!(ld.trail)                  # tt--
+            _trail_pos(a) == ld.undo_list && push_undo(ld, ld.undo_list)  # if ( tt->address == gBase ) push_undo(tt->address)
             ld.gstack[_trail_pos(a)] = ld.gstack[trailValP(e)]     # *tt->address = trailVal(p)
         end
     end

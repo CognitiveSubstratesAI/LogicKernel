@@ -568,7 +568,7 @@ end
     end
 end
 
-# the flags refused BY NAME (design D4; `table_monotonic`, `table_space`, `table_compile_threshold` and `table_drop_intermediate` are set since TAB1 TB0: test_tabling_state_swipl.jl; `debug` and `debugger_show_context` are accepted since R2 F1c: test_debug_flag_swipl.jl): the flag is DEFINED at upstream's default and setting it raises `NotPortedError` naming the
+# the flags refused BY NAME (design D4; `table_monotonic`, `table_space`, `table_compile_threshold` and `table_drop_intermediate` are set since TAB1 TB0: test_tabling_state_swipl.jl; `max_answers_for_subgoal`, `max_table_subgoal_size`, `max_incomplete_subgoals` and `max_scc_subgoals` are set since TAB1 TB8: test_tabling_sdg_swipl.jl; `debug` and `debugger_show_context` are accepted since R2 F1c: test_debug_flag_swipl.jl): the flag is DEFINED at upstream's default and setting it raises `NotPortedError` naming the
 # side effect that lives in a file not yet ported; a value the flag accepts is given, so the refusal is the answer, not a type error
 # Values swipl 10.1.19 accepts for the flag (probed); the kernel checks oneof and read-only BEFORE it refuses, so a
 # value outside the flag's domain would end in a different error. `file_name_case_handling` is READ-ONLY (swipl and the
@@ -579,9 +579,7 @@ const _SF_REFUSED = [
     ("theme", "dark"), ("agc_margin", "100"),
     ("stack_limit", "1000000000"),
     ("heartbeat", "0"),
-    ("float_overflow", "infinity"), ("max_answers_for_subgoal", "5"),
-    ("max_table_subgoal_size", "5"),
-    ("max_incomplete_subgoals", "5"), ("max_scc_subgoals", "5")
+    ("float_overflow", "infinity")
 ]
 
 @testset "the flags refused by name raise NotPortedError (design D4)" begin
@@ -598,7 +596,7 @@ const _SF_REFUSED = [
         # UNVERIFIED on the kernel: gate decides (the refusal's class for `threads`, `tty_control`: the value that changes the flag)
         @test_throws LK.NotPortedError _sf_query(gd, ld, "r_$(f)")
     end
-    @test length(_SF_REFUSED) >= 15
+    @test length(_SF_REFUSED) >= 11
 end
 
 # KNOWN DIFFERENCE BY DESIGN (D1, the no-threads build; checklist: R2's threads): `threads` is read-only in the kernel (upstream's `#else` of

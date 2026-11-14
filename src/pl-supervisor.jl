@@ -17,16 +17,16 @@
 # is passed in where upstream reads `global_generation()`.
 #
 # Since V5a2, the deterministic foreign supervisors (`createForeignSupervisor`). Left out: the
-# non-deterministic ones (`I_FOPENNDET` …, V9), the tabling supervisor `S_INCR_DYNAMIC` and
-# `S_THREAD_LOCAL` — none of their subsystems exists (`S_TRIE_GEN`, compiled tries, is in since TR4). Since TAB1-min (T3/T4/T5) the wrapper supervisors
+# non-deterministic ones (`I_FOPENNDET` …, V9) and `S_THREAD_LOCAL` — neither subsystem exists (`S_TRIE_GEN`, compiled tries, is in since TR4,
+# `S_INCR_DYNAMIC` since TB6 (`dynamicSupervisor`)). Since TAB1-min (T3/T4/T5) the wrapper supervisors
 # (`S_CALLWRAPPER`, `S_TABLED`; src/pl-wrap.jl) are installed by `'$c_wrap_predicate'/5` and kept by `freeCodesDefinition!`;
 # `S_WRAP` and the shared `wrapper` block (`PL_code_data.wrapper`) belong to the closure's copy of the wrapped predicate;
 # since WRAP1 the run loop runs `S_WRAP` and `S_CALLWRAPPER`, and refuses `S_TABLED` by name (TAB1).
 
 # PORT: pl-supervisor.c initSupervisors
 # DIVERGES: returns the database's shared blocks (one `PL_code_data` per database). Each is
-# upstream's `[I, I_EXIT]` without the length word; `incr_dynamic` and `thread_local` are
-# left out (see above); `wrapper` is TAB1-min's (T3), `trie_gen` TR4's (the supervisor of trie_gen_compiled/2,3).
+# upstream's `[I, I_EXIT]` without the length word; `thread_local` is left out (see above);
+# `wrapper` is TAB1-min's (T3), `trie_gen` TR4's (the supervisor of trie_gen_compiled/2,3), `incr_dynamic` TB6's.
 "The shared supervisor code blocks, each `[I, I_EXIT]` (pl-supervisor.c `initSupervisors`)."
 function initSupervisors()::PL_code_data
     return PL_code_data(
@@ -34,6 +34,7 @@ function initSupervisors()::PL_code_data
         code[S_VIRGIN, I_EXIT],             # MAKE_SV1(virgin, S_VIRGIN)
         code[S_UNDEF, I_EXIT],              # MAKE_SV1(undef, S_UNDEF)
         code[S_DYNAMIC, I_EXIT],            # MAKE_SV1(dynamic, S_DYNAMIC)
+        code[S_INCR_DYNAMIC, I_EXIT],       # MAKE_SV1(incr_dynamic, S_INCR_DYNAMIC) (TAB1 TB6)
         code[S_MULTIFILE, I_EXIT],          # MAKE_SV1(multifile, S_MULTIFILE)
         code[S_STATIC, I_EXIT],             # MAKE_SV1(staticp, S_STATIC)
         code[S_WRAP, I_EXIT],               # MAKE_SV1(wrapper, S_WRAP)
@@ -44,7 +45,7 @@ end
 # Whether `codes` is one of the database's shared blocks (upstream: its length word is 0).
 function _shared_supervisor(cd::PL_code_data, codes::Vector{code})::Bool
     return codes === cd.exit || codes === cd.virgin || codes === cd.undef ||
-           codes === cd.dynamic || codes === cd.multifile || codes === cd.staticp ||
+           codes === cd.dynamic || codes === cd.incr_dynamic || codes === cd.multifile || codes === cd.staticp ||
            codes === cd.wrapper || codes === cd.trie_gen
 end
 
@@ -221,11 +222,15 @@ function listSupervisor(gd::PL_global_data{T}, def::Definition{T})::_SV{T} where
 end
 
 # PORT: pl-supervisor.c dynamicSupervisor
-# DIVERGES: no incremental tabling, so never `SUPERVISOR(incr_dynamic)`.
-"`S_DYNAMIC` for a dynamic predicate (pl-supervisor.c)."
+# (pl-supervisor.c:330-339 at 18168e629eab; `SUPERVISOR(incr_dynamic)` since TAB1 TB6)
+"`S_INCR_DYNAMIC` for an incremental dynamic predicate, `S_DYNAMIC` for another dynamic one (pl-supervisor.c)."
 function dynamicSupervisor(def::Definition{T})::_SV{T} where {T}
     if (def.flags & P_DYNAMIC) != 0
-        return (def.code_data.dynamic, ClauseRef{T}[])
+        if def.tabling !== nothing && (def.tabling.flags & TP_INCREMENTAL) != 0
+            return (def.code_data.incr_dynamic, ClauseRef{T}[])
+        else
+            return (def.code_data.dynamic, ClauseRef{T}[])
+        end
     end
     return nothing
 end

@@ -22,9 +22,9 @@
 #   verdict, never caught: no mutant of this list may run unbounded.
 # DEFERRED KILL (audit D-0374 item 2): a row declared `equivalent="DEFERRED KILL: ..."` has no killing assertion yet — no test file reads what
 #   the mutant changes (a finding for a test step, not invented here). It must SURVIVE the battery; when a test step adds the row, the declaration goes.
-#   * TR1-V6 (trie_new/1 without TRIE_CONCURRENT): owner TR2, or a TR1 row that sets ld.GD (TW cannot call pl_trie_new1_va: `_query_gd(ld)`
-#     needs ld.GD from a running query, src/pl-comp.jl:4161).
-#   * TR1-V11 (trie_delete/3 does not prune) and TR1-V12 (trie_lookup/3 answers an inner node): owner TR2 ($trie_property / trie_gen read the
+#   * TR1-V6 and TR1-V11 are KILL since DEFKILL5: the testset `TR1 DEFKILL5 rows: ...` at the end of TP runs a program (a query sets ld.GD) and reads
+#     the newest trie of gd.tries (TRIE_CONCURRENT; node_count 1 after insert + delete, 3 after the insert alone: swipl 18168e62).
+#   * TR1-V12 (trie_lookup/3 answers an inner node): owner TR2 ($trie_property / trie_gen read the
 #     arena after a delete) or a TW row that sets ld.GD (the foreign is pl_trie_delete3_va, src/pl-trie.jl:1999); V12 alone is unreachable while deletes prune.
 #   (C6, S2, P3, V3, V4 were DEFERRED in the draft: the rows added after it kill them, TW:348, 542, 632, 1273/1276; B6 by the row t76, TP:261.)
 # EQUIVALENT mutants (declared with their reason, file:line in the `equivalent` text): TR1-A4 (the chunk-size clamp at the maximum), TR1-S4
@@ -145,7 +145,7 @@ MUTANTS = [
     m("TR1-P3 prune_trie: TN_SECONDARY and TN_PINNED do not stop it (KILL TW:632: root-a-{b SECONDARY, c PINNED}: the leaves b and c are kept, node_count 4)",
       "        while n != root &&\n              (tr.nodes[n].flags & (TN_PRIMARY | TN_SECONDARY | TN_PINNED)) == 0\n", "        while n != root && (tr.nodes[n].flags & TN_PRIMARY) == 0\n"),
     m("TR1-P4 prune_error: prunes nothing (KILL TW:594 and TW:1023, the error key stays)",
-      "    prune_node(tr, follow_node(tr, nid, TRIE_ERROR_VAL, true))\n", "    follow_node(tr, nid, TRIE_ERROR_VAL, true)\n"),
+      "    prune_node(gd, tr, follow_node(tr, nid, TRIE_ERROR_VAL, true))\n", "    follow_node(tr, nid, TRIE_ERROR_VAL, true)\n"),
     m("TR1-P5 clear_node CN_DEALLOC does not lower node_count (KILL TW:561, node_count == 1 after prune_node)",
       "            tr.node_count -= 1\n", "            nothing\n"),
     m("TR1-D1 empty_trie keeps the discard flags (KILL TW life rows, `tr.flags == LK.TRIE_ISSET`)",
@@ -258,14 +258,13 @@ MUTANTS = [
     m("TR1-V2c a value into a set trie never trips the guard (KILL TP:213 t14 insert/3 into a set)",
       "    elseif (Value != 0 && (tr.flags & TRIE_ISMAP) == 0) ||\n", "    elseif false ||\n"),
     m("TR1-V3 trie_insert update: the old record is not released (KILL TW:1276 and TW:1279: tr.free_records == [1] after the update, [1, 2] after the third)",
-      "                n.flags |= TN_PRIMARY\n                release_value(tr, old)\n", "                n.flags |= TN_PRIMARY\n"),
+      "                n.flags |= TN_PRIMARY\n                release_value(gd, tr, old)\n", "                n.flags |= TN_PRIMARY\n"),
     m("TR1-V4 trie_insert: value_count is not counted (KILL TW:1273, 1276, 1279: tr.value_count == 1)",
       "    tr.value_count += 1\n    trie_discard_clause(gd, tr)\n    return (true, nid)\n", "    trie_discard_clause(gd, tr)\n    return (true, nid)\n"),
     m("TR1-V5 trie_insert: a new value does not get TN_PRIMARY (KILL TP:250-252 t38-t40: deleting a key below a value node prunes the value node)",
       "    n.value = val\n    n.flags |= TN_PRIMARY\n    tr.value_count += 1\n", "    n.value = val\n    tr.value_count += 1\n"),
-    m("TR1-V6 trie_new/1 without TRIE_CONCURRENT (DEFERRED KILL: TW cannot call pl_trie_new1_va)",
-      "    tr.flags |= TRIE_CONCURRENT\n    return unify_trie(gd, ld, PL__t0, tr) ? FTRUE : FFALSE\n", "    return unify_trie(gd, ld, PL__t0, tr) ? FTRUE : FFALSE\n",
-      eq="DEFERRED KILL: owner TR2 or a TR1 row that sets ld.GD: the only observable of TRIE_CONCURRENT is allocation (alloc_trie_node :621, retire_block :385), read through gd.tries[end].flags or stat_trie; no TP row sees it, and TW cannot call pl_trie_new1_va (src/pl-trie.jl:1901) because `_query_gd(ld)` needs ld.GD set by a running query (src/pl-comp.jl:4161)"),
+    m("TR1-V6 trie_new/1 without TRIE_CONCURRENT (KILL TP, the testset `TR1 DEFKILL5 rows`: gd.tries[end].flags has TRIE_CONCURRENT after a program's trie_new/1; pl-trie.c:2500)",
+      "    tr.flags |= TRIE_CONCURRENT\n    return unify_trie(gd, ld, PL__t0, tr) ? FTRUE : FFALSE\n", "    return unify_trie(gd, ld, PL__t0, tr) ? FTRUE : FFALSE\n"),
     m("TR1-V7 trie_insert: a rc other than 1 does not stop (KILL TP:322-325 t70, a BoundsError on node 0)",
       "    rc == 1 || return (trie_error(ld, rc, Key), 0)\n", "    true || return (trie_error(ld, rc, Key), 0)\n"),
     m("TR1-V8 trie_insert: an equal value is a permission error (KILL TP:220 t16, TP:233-235 t25)",
@@ -274,9 +273,8 @@ MUTANTS = [
       "            if !equal_value(tr, n.value, val)\n                old = n.value\n", "            if equal_value(tr, n.value, val)\n                old = n.value\n"),
     m("TR1-V10 trie_insert: an existing key is inserted again (KILL TP:220 t16, TP:222 t17: the second insert fails)",
       "            return (false, nid)\n", "            return (true, nid)\n"),
-    m("TR1-V11 trie_delete/3 does not prune (DEFERRED KILL: no row reads the arena after a delete)",
-      "            trie_delete(gd, tr, nid, true)\n", "            trie_delete(gd, tr, nid, false)\n",
-      eq="DEFERRED KILL: owner TR2 ($trie_property / trie_gen) or a TW row that sets ld.GD: t69/t74 (TP:319-320) only count answers, an unpruned node has value 0 and `v != 0` (src/pl-trie.jl:2033) hides it, reinserting works the same; the call is in pl_trie_delete3_va (:1999, :2011)"),
+    m("TR1-V11 trie_delete/3 does not prune (KILL TP, the testset `TR1 DEFKILL5 rows`: node_count after trie_insert + trie_delete is 1 (pinned, pruned), 3 without the prune)",
+      "            trie_delete(gd, tr, nid, true)\n", "            trie_delete(gd, tr, nid, false)\n"),
     # TR1-V12 was declared a deferred kill (src/pl-trie.jl:2033 `v != 0` matters only for a node with value 0); the battery of 61d5e365 (run 43007822749)
     # REFUTED the claim: a program row of test_trie_preds_swipl.jl:174 (the .out answers) is an Error During Test under the mutant. Listed as a kill.
     m("TR1-V12 trie_lookup/3: an inner node answers (KILL TP:174, the program rows; found by the battery of 61d5e365)",

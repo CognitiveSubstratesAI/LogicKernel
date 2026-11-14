@@ -43,7 +43,13 @@ const LINT_ALLOWLIST = (
         "whose entry for a term type is written ONCE, at that type's first request, under a lock, and is never " *
         "replaced or mutated afterwards (databases are COPIES of an entry, so no caller reaches another through " *
         "it); upstream boots once per process. test/db/test_gd_template.jl fails if an entry changes after its " *
-        "build. Dormant until LB4 b2 enables the boot. Audit D-0291 item 4."
+        "build. Dormant until LB4 b2 enables the boot. Audit D-0291 item 4.",
+    "LogicKernel.DL_UNDEFINED_INFO" =>
+        "the identity sentinel of an undefined answer's delay info (src/pl-tabling.jl, TB4): upstream's " *
+        "`(delay_info*)0x1` (pl-tabling.c DL_UNDEFINED), a pointer value that is only COMPARED, never dereferenced or " *
+        "written; no function writes a field of it (checked: no assignment to DL_UNDEFINED_INFO or its fields), so it " *
+        "carries no state between callers. Proposed by the dispatcher 2026-11-12 (gate 2 of batch 3), pending the " *
+        "audit's ruling (A-0437)."
 )
 
 """

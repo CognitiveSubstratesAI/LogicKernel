@@ -9,7 +9,7 @@
 # list with the continuation of `reset/3`, and returns from `reset/3` (`shift`); `push_continuation`
 # makes the frame of one such environment again, for `call_continuation/1`. The VMI bodies `I_SHIFT`,
 # `I_SHIFTCP` and `I_CALLCONT` are in src/pl-wam.jl. The tabling branches (`'$tbl_reset'/6` and its
-# worklists) are refused by name, owner TAB1; `push_continuation_list` (tabling only) is left to TAB1.
+# worklists) were refused by name, owner TAB1, until TB2c: `push_continuation_list` (tabling only) is at the end of this file.
 
 # PORT: pl-cont.c FRESET_NO_FRAME
 "`findReset`: no `reset/3` frame matches the ball (pl-cont.c)."
@@ -455,4 +455,52 @@ function push_continuation(
     setGenerationFrame(gd, ld, nfr)
     ld.environment_frame = nfr
     return Code{T}(cl.codes, cl.literals, pcoffset + 1)         # cl->codes + pcoffset
+end
+
+# PORT: pl-cont.c push_continuation_list
+# (pl-cont.c:586-626 at the pin; TB2c, called by the `'$tbl_reset'/6` branch of `I_RESET`)
+# DIVERGES: as `push_continuation`'s (`list` a term reference, `pfr` a frame index, the result a `Code` or `nothing`); the
+# elements are kept as their dereferenced locations (`_deref_loc`), which `pushWordAsTermRef` takes (upstream: their offsets
+# from `gBase` in a `tmp_buffer`; the global stack does not move here); the frame of the last pushed environment is
+# `ld.environment_frame` (upstream re-reads it through `consTermRef`).
+"""
+    push_continuation_list(gd, ld, list, pfr, pcret) -> Union{Nothing, Code}
+
+Push all environments of the continuation list `list` (as `shift/1` makes it) above frame `pfr`, the last (outermost)
+first, so that each returns into the next, and give the code to start at: `pcret` for `[]`; `nothing` with an exception
+for no list, and `nothing` without one when an element is `call(Goal)` (a nested `reset/3`), pushing nothing (pl-cont.c).
+"""
+function push_continuation_list(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, list::term_t, pfr::Int, pcret::Code{T}
+)::Union{Nothing, Code{T}} where {T}
+    pref = pfr                                                  # term_t pref = consTermRef(pfr)
+    b = Tuple{UInt8, word, Int}[]                               # initBuffer(&b): the elements
+
+    k, w, _ = _deref_loc(ld, -(list + 1))                       # p = valTermRef(list); deRef(p)
+    while _is_list_word(ld, k, w)                               # for(; isList(*p); )
+        h = _deref_loc(ld, valPtr(w) + 1)                       # Word h = HeadList(p); deRef(h)
+        if h[1] == DU_WORD && _is_gcompound(h[2]) &&
+            ld.gstack[valPtr(h[2])] == _cont_functor(ld, :call, 1)
+            return nothing                                      # nested reset; no exception
+        end
+        push!(b, h)                                             # addBuffer(&b, (size_t)(h-gBase), size_t)
+        k, w, _ = _deref_loc(ld, valPtr(w) + 2)                 # p = TailList(p); deRef(p)
+    end
+    if !(k == DU_WORD && w == ld.atom_nil_w)                    # if ( !isNil(*p) )
+        PL_type_error(ld, "continuation", list)
+        return nothing
+    end
+
+    n = length(b)
+    while n > 0                                                 # for(n = entriesBuffer(&b, size_t); n-- > 0; )
+        cont = pushWordAsTermRef(ld, b[n])
+        n -= 1
+        pc = push_continuation(gd, ld, cont, pref, pcret)       # pcret = push_continuation(cont, ..., pcret)
+        popTermRef(ld)
+        pc === nothing && return nothing                        # if ( !pcret ) break
+        pcret = pc
+        pref = ld.environment_frame                             # pref = consTermRef(environment_frame)
+    end
+
+    return pcret
 end

@@ -106,6 +106,9 @@ const GP_EXISTENCE_ERROR = Int(0x800)
 # PORT: pl-incl.h GP_DEFINE
 "`get_procedure`: define a procedure (pl-incl.h)."
 const GP_DEFINE = Int(4)
+# PORT: pl-incl.h GP_RESOLVE
+"`get_procedure`: find the definition a dynamic call runs, created undefined when none is visible (pl-incl.h)."
+const GP_RESOLVE = Int(5)
 # PORT: pl-incl.h GP_HOW_MASK
 "`get_procedure`: the bits saying how to find the procedure (pl-incl.h)."
 const GP_HOW_MASK = Int(0x0ff)
@@ -810,6 +813,7 @@ struct PL_code_data
     virgin::Vector{code}        # S_VIRGIN
     undef::Vector{code}         # S_UNDEF
     dynamic::Vector{code}       # S_DYNAMIC
+    incr_dynamic::Vector{code}  # S_INCR_DYNAMIC (TAB1 TB6)
     multifile::Vector{code}     # S_MULTIFILE
     staticp::Vector{code}       # S_STATIC
     wrapper::Vector{code}       # S_WRAP: the supervisor of a closure's copy of a wrapped predicate (TAB1-min)
@@ -1200,6 +1204,124 @@ const ClauseIndex{T} = clause_index{ClauseRef{T}}
 # PORT: pl-incl.h Definition
 "A predicate of terms `T` (pl-incl.h `Definition`)."
 const Definition{T} = definition{T}
+
+# ── transactions: the data (TX1a; the code is src/pl-transaction.jl) ────────────────────────────
+# PORT: pl-transaction.h TR_TRANSACTION
+"The `flags` of a transaction: a transaction (commits when its goal succeeds; pl-transaction.h)."
+const TR_TRANSACTION = UInt32(0x0001)
+# PORT: pl-transaction.h TR_SNAPSHOT
+"The `flags` of a transaction: a snapshot (always discarded; pl-transaction.h)."
+const TR_SNAPSHOT = UInt32(0x0002)
+# PORT: pl-transaction.h TR_BULK
+"The `flags` of a transaction: the update events are raised at commit, in generation order (pl-transaction.h)."
+const TR_BULK = UInt32(0x0004)
+# PORT: pl-transaction.h GEN_TR_ASSERT_ERASE
+"The generation of a clause asserted and erased in a transaction that commits (pl-transaction.h)."
+const GEN_TR_ASSERT_ERASE = gen_t(2)
+# PORT: pl-transaction.h GEN_TR_DISCARD_ASSERT
+"The generation of a clause asserted in a transaction that is discarded (pl-transaction.h)."
+const GEN_TR_DISCARD_ASSERT = gen_t(3)
+# PORT: pl-transaction.h GEN_TR_DISCARD_ASSERT_ERASE
+"The generation of a clause asserted and erased in a transaction that is discarded (pl-transaction.h)."
+const GEN_TR_DISCARD_ASSERT_ERASE = gen_t(4)
+# PORT: pl-incl.h GEN_TRANSACTION_SIZE
+"The size of the generation range one transaction reserves, 2^32 (pl-incl.h)."
+const GEN_TRANSACTION_SIZE = gen_t(0x0000000100000000)
+# PORT: pl-thread.h TWF_ASSERT
+"`setLastModifiedPredicate`'s flag: a clause was added (pl-thread.h)."
+const TWF_ASSERT = UInt32(0x0001)
+# PORT: pl-thread.h TWF_RETRACT
+"`setLastModifiedPredicate`'s flag: a clause was retracted (pl-thread.h)."
+const TWF_RETRACT = UInt32(0x0002)
+
+# PORT: pl-transaction.c tr_gen_t
+# DIVERGES: `UInt64`, upstream's `uintptr_t`: the value of an entry of the changed-clauses table (`GEN_ASSERTA`, `GEN_ASSERTZ`,
+# `GEN_NESTED_RETRACT`, or the local offset of the erased generation) and of the changed-predicates table (the local offset of
+# the last modification, shifted left by two, with the `TWF_*` flags in the low bits).
+"The value of an entry of a transaction's tables (pl-transaction.c `tr_gen_t`)."
+const tr_gen_t = UInt64
+# PORT: pl-transaction.c GEN_ASSERTA
+"The table value of a clause asserted at the start of its predicate in this transaction (pl-transaction.c)."
+const GEN_ASSERTA = typemax(tr_gen_t) - tr_gen_t(2)
+# PORT: pl-transaction.c GEN_ASSERTZ
+"The table value of a clause asserted at the end of its predicate in this transaction (pl-transaction.c)."
+const GEN_ASSERTZ = typemax(tr_gen_t) - tr_gen_t(3)
+# PORT: pl-transaction.c GEN_NESTED_RETRACT
+"The table value of a clause an enclosing transaction asserted and this one retracted (pl-transaction.c)."
+const GEN_NESTED_RETRACT = typemax(tr_gen_t) - tr_gen_t(4)
+
+# PORT: pl-tabling.h TT_TBL_INVALIDATE
+"The flag of an entry of `tbl_trail.tables`: the table is invalidated when the transaction rolls back (pl-tabling.h)."
+const TT_TBL_INVALIDATE = 1
+# PORT: pl-tabling.h tbl_trail_type
+# DIVERGES: the enum `tbl_trail_type` is `Int` constants; only `TT_ANSWER` is a live action (the header's `TT_TABLE` has no user).
+"The type of an entry of `tbl_trail.actions`: a monotonic answer added in the transaction (pl-tabling.h `TT_ANSWER`)."
+const TT_ANSWER = 1
+# PORT: pl-tabling.h tbl_trail_answer
+# DIVERGES: `atrie` is the answer trie's index in `gd.tries` (a `trie *` is an `Int`, see `idg_node`; 0: NULL, set by
+# `tt_abolish_table`), `answer` a node id of that trie (0: NULL).
+"One monotonic answer added in a transaction (pl-tabling.h `struct tbl_trail_answer`)."
+mutable struct tbl_trail_answer
+    type::Int                                               # TT_ANSWER
+    atrie::Int                                              # the answer trie (index in gd.tries; 0: none)
+    answer::Int                                             # the answer node (a node id; 0: none)
+end
+# PORT: pl-tabling.h tbl_trail
+# DIVERGES: `actions` is a `Vector` of the (single) action type where upstream's `buffer` holds size-suffixed records, walked
+# from the top (the kernel walks `reverse`); `tables` maps the table's symbol atom word to its `TT_*` flags (`Dict`: insertion
+# order where upstream's is the hash's, which no result depends on).
+"What a transaction did to the tables: the affected tables and the answers it added (pl-tabling.h `struct tbl_trail`)."
+mutable struct tbl_trail
+    tables::Dict{word, Int}                                 # Affected tables (symbol atom -> TT_* flags)
+    actions::Vector{tbl_trail_answer}                       # Actions to undo
+end
+tbl_trail() = tbl_trail(Dict{word, Int}(), tbl_trail_answer[])
+
+# PORT: pl-transaction.c tr_stack
+# DIVERGES: `table_trail` is the parent's changes to tables (TAB1 TB9). `clauses` and `predicates` are `Dict`s,
+# upstream's `TablePW` (a pointer-to-word hash table: `Dict` keeps the insertion order where upstream's order is the
+# pointer hash's, which no result depends on: the one that does, `transaction_updates`, sorts by generation).
+"One level of the transaction stack: what the enclosing transaction had when a nested one started (pl-transaction.c)."
+mutable struct tr_stack{T}
+    parent::Union{Nothing, tr_stack{T}}                     # parent transaction
+    gen_nest::gen_t                                         # Saved nesting generation
+    generation::gen_t                                       # Parent generation
+    clauses::Union{Nothing, Dict{Clause{T}, tr_gen_t}}      # Parent changed clauses
+    predicates::Union{Nothing, Dict{Definition{T}, tr_gen_t}}   # Parent changed predicates
+    table_trail::Union{Nothing, tbl_trail}                  # Parent changes to tables
+    id::Int                                                 # Parent goal (a term_t; 0: none)
+    flags::UInt32                                           # TR_* flags
+end
+
+# PORT: pl-global.h transaction as ld_transaction
+# DIVERGES: `table_trail` is `Nothing` (NULL) until the first table change of the transaction (TAB1 TB9). `id` is a `term_t` (0: none). `gen_base` is `GEN_INFINITE` outside a
+# transaction (`initPrologLocalData`: pl-setup.c:204).
+"The transaction state of one thread (pl-global.h `LD->transaction`)."
+mutable struct ld_transaction{T}
+    generation::gen_t                                       # Current generation (0: no transaction)
+    gen_start::gen_t                                        # Start generation
+    gen_base::gen_t                                         # Start of my generation space
+    gen_max::gen_t                                          # Highest generation (the end of my space)
+    gen_nest::gen_t                                         # Nesting generation
+    flags::UInt32                                           # TR_* flags
+    id::Int                                                 # Identifier of the transaction goal (a term_t; 0: none)
+    clauses::Union{Nothing, Dict{Clause{T}, tr_gen_t}}      # Clauses that were changed
+    predicates::Union{Nothing, Dict{Definition{T}, tr_gen_t}}   # Predicates that were changed
+    table_trail::Union{Nothing, tbl_trail}                  # Changes to tables (tabling)
+    stack::Union{Nothing, tr_stack{T}}                      # Stack of nested transactions
+end
+ld_transaction{T}() where {T} =
+    ld_transaction{T}(gen_t(0), gen_t(0), GEN_INFINITE, gen_t(0), gen_t(0), UInt32(0), 0, nothing, nothing, nothing, nothing)
+
+# PORT: pl-transaction.c current_transaction
+# DIVERGES: the redo state of `current_transaction/1` is a record of the local data's pool (`ld.transaction_enums`,
+# `foreign_state_pool`), its index the `REDO_PTR` context, where upstream's context is the `tr_stack` pointer itself; the record
+# holds that stack level. A pool record is REUSED: the first redo sets `stack` again.
+"The state of `current_transaction/1` between answers: the stack level whose goal is answered next (pl-transaction.c)."
+mutable struct tr_enum{T}
+    stack::Union{Nothing, tr_stack{T}}
+end
+tr_enum{T}() where {T} = tr_enum{T}(nothing)
 
 # PORT: pl-wrap.h closure
 # DIVERGES (since TAB1-min; audit D-0388 item 5, Q1 (a), owner WRAP1): upstream's `struct closure` holds a COPY of the
@@ -1769,10 +1891,14 @@ const WAKEUP_STATE_SKIP_EXCEPTION = UInt32(0x4)
 const WAKEUP_KEEP_URGENT_EXCEPTION = UInt32(0x8)
 
 # PORT: pl-incl.h ALERT_WAKEUP
-# NOT PORTED: the other `ALERT_*` bits (signals, GC, profiling, the debugger, buffered output,
-# `ALERT_UNDO`, …) — nothing here sets them; `LD->alerted` carries the wakeup bit only.
+# NOT PORTED: the other `ALERT_*` bits (signals, GC, profiling, the debugger, buffered output, …) — nothing here
+# sets them; `LD->alerted` carries the wakeup bit and, since TX1e, the undo bit.
 "Alert bit: the wakeup list is not empty (pl-incl.h `ALERT_WAKEUP`)."
 const ALERT_WAKEUP = Int32(0x040)
+
+# PORT: pl-incl.h ALERT_UNDO
+"Alert bit: undo goals are scheduled (pl-incl.h `ALERT_UNDO`)."
+const ALERT_UNDO = Int32(0x200)
 
 # PORT: pl-incl.h wakeup_state
 # DIVERGES: an immutable value `saveWakeup` returns, where upstream fills the caller's struct;
@@ -2591,8 +2717,9 @@ gvar_enum() = gvar_enum(UInt64[], 1)
 # and integer ids, upstream's names and order kept); the special pointers `WL_GROUND`, `WL_DYNAMIC`, `DV_DELETED` and
 # `DL_UNDEFINED` of pl-tabling.c are not pointers here (pl-tabling.jl); a `buffer` is a typed `Vector`; a bit-field is
 # a `Bool`; a `size_t` is an `Int` (`(size_t)-1`, no limit, is -1) as `table_props`. NOT PORTED here, each to its owner:
-# the IDG structs `idg_node`, `idg_mdep`, `idg_mono` (they hold pl-idgset.h's `idg_set`: TB6), the `tbl_trail` structs
-# of the transactions (TB9) and `trie_array`/`node_array` with `TRIE_ARRAY_PREALLOCATED` (TB1, with `start_nodes`).
+# the IDG structs `idg_node`, `idg_mdep`, `idg_mono` (they hold pl-idgset.h's `idg_set`: TB6, below) and
+# `trie_array`/`node_array` with `TRIE_ARRAY_PREALLOCATED` (TB1, with `start_nodes`). The `tbl_trail` structs of the
+# transactions are above, before `tr_stack` (TB9).
 
 # PORT: pl-global.h TABLE_COMPILE_THRESHOLD
 "The default of the flag `table_compile_threshold` (pl-global.h `TABLE_COMPILE_THRESHOLD`)."
@@ -2658,12 +2785,15 @@ struct sindex_key
 end
 
 # PORT: pl-tabling.c suspension
-# DIVERGES: `record_t` is the kernel's `record{T}`; `keys` is a vector (upstream: a malloc'ed array, NULL for none).
+# DIVERGES: `record_t` is the kernel's `record{T}`; `keys` is a vector (upstream: a malloc'ed array, NULL for none,
+# ended by a key with path 0). The TNOT flag (upstream: bit 0 of the `term` pointer, pl-tabling.c `TNOT`) is `is_tnot`
+# (TAB1 TB2).
 "A suspended consumer (pl-tabling.c `struct suspension`): its dependency/5 term, its call-subsumption filter and its index keys."
 struct suspension{T}
     term::record{T}                                     # dependency/5 term with TNOT flag
     instance::Union{Nothing, record{T}}                 # Filter for call subsumption
     keys::Vector{sindex_key}                            # Index to find filter candidates
+    is_tnot::Bool                                       # the TNOT flag of `term`
 end
 
 # PORT: pl-tabling.c sindex_path
@@ -2694,6 +2824,16 @@ mutable struct sindex_table
     cursors::Vector{sindex_cursor}                      # npaths+1, after paths
     npaths::Int
     paths::Vector{sindex_path}                          # in the order chosen
+end
+
+# PORT: pl-tabling.c sindex_assessment
+# DIVERGES (TAB1 TB2): `counts` (a `Table`, key -> members) is a `Dict`.
+"How a path would split the members no chosen path keys yet (pl-tabling.c `struct sindex_assessment`)."
+mutable struct sindex_assessment
+    path::UInt32
+    keyed::Int                                          # members left with a key at the path
+    squares::UInt64                                     # sum of their buckets' squared sizes
+    counts::Dict{UInt32, Int}                           # key -> members left with that key
 end
 
 # PORT: pl-tabling.c answer
@@ -2775,11 +2915,14 @@ mutable struct worklist{T, C}
     predicate::Union{Nothing, definition{T}}            # Predicate we are associated with
     delays::Vector{delay}                               # Delayed answers
     pos_undefined::Vector{Int}                          # Positive undefined (trie node ids)
+    # DIVERGES (TAB1 TB2): `ptr` is the handle Prolog sees (`PL_unify_pointer(t, wl)`: upstream the address), 0: none yet;
+    # see `tbl_pointer!` in src/pl-tabling.jl.
+    ptr::Int                                            # the handle of this worklist in `LD->tabling.pointers`
 end
 worklist{T, C}() where {T, C} = worklist{T, C}(
     nothing, nothing, nothing, nothing, WORKLIST_MAGIC, false, false, false, false,
     false, false,
-    false, false, false, 0, nothing, 0, nothing, delay[], Int[]
+    false, false, false, 0, nothing, 0, nothing, delay[], Int[], 0
 )
 
 # PORT: pl-tabling.h worklist_set
@@ -2817,24 +2960,175 @@ mutable struct tbl_component{T}
     drop_size::Int                                      # drop.size: Memory of the table
     drop_gen_calls::UInt64                              # drop.gen_calls: gen_call at completion
     drop_recompute::Int64                               # drop.recompute: Cost to recompute if dropped
+    # DIVERGES (TAB1 TB2): `ptr` is the handle Prolog sees (`PL_unify_pointer(t, c)`: upstream the address), 0: none yet.
+    ptr::Int                                            # the handle of this component in `LD->tabling.pointers`
 end
 # ORIGINAL: upstream's `tbl_alloc` hands out zeroed memory (`PL_malloc` + the caller's init); a new component is `COMPONENT_MAGIC`
 # with every other field NULL or 0.
 tbl_component{T}() where {T} = tbl_component{T}(
     COMPONENT_MAGIC, SCC_ACTIVE, SCC_NEG_NONE, 0, nothing, nothing, nothing, nothing,
     nothing, nothing, 0, 0,
-    nothing, 0, UInt64(0), 0
+    nothing, 0, UInt64(0), 0, 0
 )
 # ORIGINAL: the worklist type of a term type `T`, the alias that closes the cycle `worklist` -> `tbl_component` -> `worklist_set`.
 "A worklist of a term type `T` (pl-tabling.h `struct worklist`, its `component` a `tbl_component{T}`)."
 const tbl_worklist{T} = worklist{T, tbl_component{T}}
+
+# ── pl-idgset.h and the IDG structs of pl-tabling.h (TAB1 TB6) ─────────────────────────────────────
+# DIVERGES (representation, for the whole block; docs/architecture.md TB6): a pointer to an IDG node is the Julia object
+# (identity `===`); an `idg_set` (upstream: one word, 0, `pointer|IDG_SET_SINGLE` or an `idg_set_block *`) is a record of two
+# fields, `single` and `block`, both `nothing` for the empty set; the `IDG_SET_DEAD` bit of an entry is the parallel
+# `entry_dead` vector; the open addressing index after the entries is the vector `index`; an `idg_set_block **lingering`
+# is the node that owns the list (`nothing`: NULL); `sizeof` of upstream's structs are the constants below, the bytes
+# the table pool is charged with. The types are generic in the pointer type `P` (an `idg_node{T}`) to close the cycle
+# `idg_node` -> `idg_set` -> `idg_node`, as `worklist{T, C}` does for the worklists. The registry's mutex and the
+# `O_PLMT` readers are the threads' (TH1): the single-thread build of pl-idgset.c is ported.
+
+# PORT: pl-idgset.h IDG_SET_LINEAR_MAX
+"A set block with more entries than this has an open addressing index (pl-idgset.h)."
+const IDG_SET_LINEAR_MAX = 8
+# PORT: pl-idgset.h IDG_REG_BASE_BITS
+"The first registry block holds `1 << IDG_REG_BASE_BITS` slots (pl-idgset.h)."
+const IDG_REG_BASE_BITS = 6
+# PORT: pl-idgset.h IDG_REG_BLOCKS
+"The number of registry blocks (pl-idgset.h)."
+const IDG_REG_BLOCKS = 32
+# PORT: pl-tabling.h IDG_NODE_MAGIC
+"`idg_node.magic` (pl-tabling.h)."
+const IDG_NODE_MAGIC = Int32(0x347e54d2)
+# PORT: pl-tabling.h IDG_MDEP_MAGIC
+"`idg_mdep.magic` (pl-tabling.h)."
+const IDG_MDEP_MAGIC = Int32(0x745af3b0)
+
+# ORIGINAL (pl-idgset.h, pl-tabling.h, sizeof at the pin on a 64-bit build): the bytes upstream charges to the table pool.
+# `idg_set_block` 24 (four `unsigned` and `older`; the entries and the index follow), `idg_node` 80 (with `stats`:
+# pl-trie.h:43 defines O_TRIE_STATS), `idg_mono` 24 (three pointers).
+"`sizeof(idg_set_block)` at the pin (pl-idgset.h): 24, the entries not included."
+const SIZEOF_IDG_SET_BLOCK = 24
+"`sizeof(idg_node)` at the pin (pl-tabling.h): 80."
+const SIZEOF_IDG_NODE = 80
+"`sizeof(idg_mono)` at the pin (pl-tabling.h): 24."
+const SIZEOF_IDG_MONO = 24
+"`sizeof(struct table)` at the pin (os/pl-table.h): 32 (two `int`s and three pointers)."
+const SIZEOF_TABLE = 32
+"`sizeof(struct kvs)` at the pin (os/pl-table.h): 40."
+const SIZEOF_KVS = 40
+"`sizeof(struct symbol)` at the pin (os/pl-table.h): 16 (a key and a value)."
+const SIZEOF_SYMBOL = 16
+
+# PORT: pl-idgset.h idg_set_block
+# DIVERGES: see the block note; `entries` has `capacity` slots (#undef past `count`), `entry_dead[i]` is entry i's
+# `IDG_SET_DEAD`, `index` has `1 << index_bits` slots (empty: no index); the counts are `Int` (upstream `unsigned`).
+"A block of the pointers of an IDG edge set (pl-idgset.h `struct idg_set_block`)."
+mutable struct idg_set_block{P}
+    count::Int                                          # entries in use (live and dead)
+    capacity::Int                                       # allocated entries
+    dead::Int                                           # entries with IDG_SET_DEAD
+    index_bits::Int                                     # 0: no index
+    older::Union{Nothing, idg_set_block{P}}             # next on the lingering list
+    entries::Vector{P}                                  # the entries
+    entry_dead::Vector{Bool}                            # IDG_SET_DEAD of each entry
+    index::Vector{UInt32}                               # followed by the index
+end
+
+# PORT: pl-idgset.h idg_set
+# DIVERGES: a record, not a tagged word: see the block note. Empty: both `nothing`; one pointer: `single`; else `block`.
+"The edges of an IDG node in one direction (pl-idgset.h `idg_set`)."
+mutable struct idg_set{P}
+    single::Union{Nothing, P}                           # pointer|IDG_SET_SINGLE
+    block::Union{Nothing, idg_set_block{P}}             # idg_set_block*
+end
+idg_set{P}() where {P} = idg_set{P}(nothing, nothing)
+
+# PORT: pl-idgset.h idg_set_enum
+"An enumeration of an IDG edge set (pl-idgset.h `struct idg_set_enum`)."
+mutable struct idg_set_enum{P}
+    set::idg_set{P}                                     # the set we enumerate
+    pos::Int                                            # next position
+end
+
+# PORT: pl-idgset.h idg_registry
+# DIVERGES: see the block note; a slot holds the node, `nothing` (a zeroed slot) or, free, the `Int` that upstream stores as
+# `(next free+1)<<1|1` (`IS_FREE_SLOT`: the slot is an `Int`); `blocks` has `IDG_REG_BLOCKS` entries, `nothing`: not
+# allocated; no `mutex` (O_PLMT: TH1).
+"The IDG nodes of a thread (pl-idgset.h `struct idg_registry`)."
+mutable struct idg_registry{P}
+    references::Int                                     # the thread and the nodes
+    count::Int                                          # slots in use (high water)
+    free::Int                                           # first free slot+1 (0: none)
+    pool::Union{Nothing, alloc_pool}                    # table pool the slots come from
+    blocks::Vector{Union{Nothing, Vector{Union{Nothing, Int, P}}}}  # node or (next free+1)<<1|1
+end
+
+# PORT: pl-tabling.h idg_mdep
+# DIVERGES: the union `next` is `Union{N, idg_mdep{T, N}}` (upstream tells them apart by `magic`); `queue` (a `Buffer` of
+# unprocessed answers) holds answer node ids; `index_node` is a node id of the child's `mono_index` trie (0: NULL); the
+# monotonic dependencies are TB7's (B6): TB6 declares the struct the IDG node holds.
+"A monotonic dependency of an IDG edge, a link of a chain that ends in the child node (pl-tabling.h `struct idg_mdep`)."
+mutable struct idg_mdep{T, N}
+    magic::Int32                                        # IDG_MDEP_MAGIC
+    lazy::Bool                                          # Dependency is lazy
+    hash::UInt32                                        # Murmur hash of dependency
+    dependency::Union{Nothing, fastheap_term{T}}        # dependency structure
+    next::Union{N, idg_mdep{T, N}}                      # Final child node or other dependency
+    queue::Vector{Int}                                  # Unprocessed answers
+    index_node::Int                                     # Leaf in the child's mono_index
+    same_key::Union{Nothing, idg_mdep{T, N}}            # Next dependency on index_node
+end
+
+# PORT: pl-tabling.h idg_mono
+# DIVERGES: a `TablePP` keyed on a node is an `IdDict` (identity, as the pointer key), `nothing`: NULL; `index` is a trie
+# index (0: NULL) and `index_deps` is keyed on its leaf node ids.
+"The monotonic dependencies of an IDG node (pl-tabling.h `struct idg_mono`)."
+mutable struct idg_mono{T, N}
+    deps::Union{Nothing, IdDict{N, idg_mdep{T, N}}}     # parent -> idg_mdep chain
+    index::Int                                          # Monotonic dependencies by skeleton
+    index_deps::Union{Nothing, Dict{Int, idg_mdep{T, N}}}  # index leaf -> its dependencies
+end
+
+# PORT: pl-tabling.h idg_node
+# DIVERGES: `atrie` is the answer trie's index in `gd.tries` (a `trie *` is an `Int`, the TB0 block note); `affected` and
+# `dependent` hold the parent and child nodes (see the block note); `lingering` is the list of replaced blocks of both
+# sets; `registry_index` is 0-based as upstream's slot; the bit-fields are `Bool`s; `stats` is two fields (O_TRIE_STATS).
+"A node of the incremental dependency graph (pl-tabling.h `struct idg_node`)."
+mutable struct idg_node{T}
+    magic::Int32                                        # IDG_NODE_MAGIC
+    concurrent::Bool                                    # Other threads modify the sets
+    atrie::Int                                          # answer trie
+    affected::idg_set{idg_node{T}}                      # parent IDG nodes
+    dependent::idg_set{idg_node{T}}                     # child IDG nodes
+    lingering::Union{Nothing, idg_set_block{idg_node{T}}}  # replaced blocks of both sets
+    mono::Union{Nothing, idg_mono{T, idg_node{T}}}      # monotonic dependencies or NULL
+    registry::Union{Nothing, idg_registry{idg_node{T}}} # registry we are in
+    registry_index::Int                                 # our slot in it
+    answer_count::Int                                   # #answers in previous complete state
+    falsecount::Int                                     # Invalidate count
+    stats_invalidated::Int                              # stats.invalidated: # times it was invalidated
+    stats_reevaluated::Int                              # stats.reevaluated: # times it was re-evaluated
+    new_answer::Bool                                    # Update generated a new answer
+    reevaluating::Bool                                  # currently re-evaluating
+    aborted::Bool                                       # re-evaluation was aborted
+    monotonic::Bool                                     # Associated predicate is monotonic
+    lazy::Bool                                          # Lazy monotonic node
+    lazy_queued::Bool                                   # There are answers queued
+    force_reeval::Bool                                  # Forced reevaluation for monotonic
+    mono_reevaluating::Bool                             # Monotonic reevaluation in progress
+    tt_notrail::Bool                                    # Do not trail new monotonic answers
+    tt_new_dep::Bool                                    # New dependency on transition mod
+    mono_dep_seen::Bool                                 # Has had a monotonic dependency
+end
+# ORIGINAL: the zeroed node of `idg_new` (`memset(n, 0, sizeof(*n))`, then `magic` and `atrie`).
+idg_node{T}(atrie::Int) where {T} = idg_node{T}(
+    IDG_NODE_MAGIC, false, atrie, idg_set{idg_node{T}}(), idg_set{idg_node{T}}(), nothing, nothing, nothing,
+    0, 0, 0, 0, 0, false, false, false, false, false, false, false, false, false, false, false
+)
 
 # MOVED after `tbl_worklist` (TAB1 TR1 rebased on TB0): `trie{T}.worklist` is a `tbl_worklist{T}`, a field type must be defined before it.
 # PORT: pl-trie.h trie
 # DIVERGES (audit D-0453 Q3, Q5): `nodes` is the arena of the trie's nodes, id 1 the root (upstream embeds `root`); `blocks`
 # the arena of children blocks (an id >= 1); `free_ids` and `free_blocks` the slots of freed nodes and blocks; no `alloc_pool` (only a table's trie has one: TB1 adds the field and the charges at the allocation sites
 # of src/pl-trie.jl; `trie_new/1` passes NULL, pl-trie.c:2496; TB0's `alloc_pool` and src/pl-allocpool.jl exist), no `tid` (owner TH1); `mem.lingering` is `lingering` (block ids, TRIE_CONCURRENT tries), `mem.chunks` is `chunks`; `serial` is the trie's number in
-# `gd.tries` (the blob's payload). `data.worklist` and `data.predicate` are TB0's types (the struct sits after `tbl_worklist` for that), `data.IDG` is a `Nothing` slot TB6 widens (a field typed `Any` fails the gate of nonconcrete fields); `data.variant` is a node id.
+# `gd.tries` (the blob's payload). `data.worklist` and `data.predicate` are TB0's types (the struct sits after `tbl_worklist` for that), `data.IDG` is TB6's `idg_node{T}` (`nothing`: NULL); `data.variant` is a node id.
 # `magic`, `references`, `node_count`, `value_count`, `flags` are `Int`/`UInt32`. `records`/`free_records` (part B): a node value that is
 # neither an atom nor a tagged integer is a `record` (upstream: a pointer, `isRecord(w)` = low two bits 0); here the word is `index << 2`, the index into `records`.
 # `clause_cref` (TR4, after `clause`) is the reference `assertDefinition!` gave the compiled clause: upstream's `clause_clref(dbref)` returns
@@ -2860,13 +3154,12 @@ mutable struct trie{T}
     gen_call::Int                                       # stats.gen_call
     worklist::Union{Nothing, Int, tbl_worklist{T}}      # data.worklist (TB0's worklist; nothing: NULL; an Int: the sentinel WL_GROUND / WL_DYNAMIC, TB1)
     variant::Int                                        # data.variant: a node id of the variant trie (TB0)
-    # `IDG` stays `Nothing` until TB6: TB0 leaves `idg_node`/`idg_mdep`/`idg_mono` to TB6 (the notes above `alloc_pool`), a field typed `Any` fails the nonconcrete-fields gate
-    IDG::Nothing                                        # data.IDG
+    IDG::Union{Nothing, idg_node{T}}                    # data.IDG (TB6; nothing: NULL)
     predicate::Union{Nothing, definition{T}}            # data.predicate
     serial::Int                                         # the trie's number in `gd.tries` (0: not registered)
     records::Vector{Union{Nothing, record{T}}}          # the recorded values of the nodes (a value word `index << 2`), `nothing`: a free slot
     free_records::Vector{Int}                           # slots of `records` to reuse
-    registry::Vector{trie{T}}                           # the database's trie table `gd.tries`, shared by reference (TB1: `release_node` has no `gd`, a TriePtr value names a trie by number)
+    registry::Vector{trie{T}}                           # the database's trie table `gd.tries`, shared by reference (TB1: a TriePtr value names a trie by number)
 end
 
 # ── trie_gen/2,3: the enumeration state (pl-trie.c :3260-3360), since TR2 ─────────────────────────────────────────────────────────
@@ -2964,6 +3257,86 @@ end
 trie_gen_state{T}() where {T} = trie_gen_state{T}(
     nothing, UInt32(0), 1, 0, 0, false, trie_choice[], 0, trie_branch[], 0, qframe[],
     qcursor(), qcursor()
+)
+
+# PORT: pl-tabling.c wkl_step_state
+# (pl-tabling.c:144-159 at the pin)
+# DIVERGES (TAB1 TB2): `answer` is the node id of the current answer in the answer trie of `list` (upstream: a pointer to the
+# `answer` in the cluster; 0 is upstream's NULL node, the negative dummy); `suspensions.base`, `.top`, `.here` are member numbers
+# of `scp` from 0, `base` always 0 so it is not kept (`top`, `here`); `keys` has SINDEX_MAX+1 entries, entry 1 unused, so the
+# key of argument `i` is at `i + 1` (upstream's `skeys--` before `suspension_matches_index`); `keys_inited` a `Bool`. A record of
+# `ld.tabling.wkl_states` (upstream: `allocForeignState`).
+"The state of `'\$tbl_wkl_work'/6` between its answers (pl-tabling.c `wkl_step_state`)."
+mutable struct wkl_step_state{T}
+    list::Union{Nothing, tbl_worklist{T}}               # worklist we enumerate
+    acp::Union{Nothing, cluster{T}}                     # Current answer cluster
+    scp::Union{Nothing, cluster{T}}                     # Current suspension cluster
+    answer::Int                                         # Current answer (a node id; 0: NULL)
+    acp_index::Int                                      # Index in answer cluster
+    top::Int                                            # suspensions.top: last member of scp
+    here::Int                                           # suspensions.here: current member of scp
+    keys_inited::Bool                                   # #Initialized keys
+    keys::Vector{sindex_key}                            # suspension matching
+    sindex::Union{Nothing, sindex_table}                # Index of scp or NULL
+    candidates::Int                                     # CAND_*
+end
+# ORIGINAL: a fresh state record (upstream's `allocForeignState` memory, every field set by the first call).
+wkl_step_state{T}() where {T} =
+    wkl_step_state{T}(
+        nothing, nothing, nothing, 0, 0, -1, -1, false, sindex_key[], nothing, 0
+    )
+
+# PORT: pl-tabling.c idg_propagate_state
+# DIVERGES (TAB1 TB6): the `segstack` with its local `buf[100]` is a `Vector` used as a stack (`pushSegStack` is `push!`,
+# `popSegStack` is `pop!`); `incomplete` is `nothing` for NULL. It sits after `trie{T}`, the type of `incomplete`.
+"The state of a falsecount propagation over the IDG (pl-tabling.c `idg_propagate_state`)."
+mutable struct idg_propagate_state{T}
+    modified::Int                                       # (unused upstream too)
+    incomplete::Union{Nothing, trie{T}}                 # hit an incomplete trie
+    child::idg_node{T}                                  # node whose affected we walk
+    en::idg_set_enum{idg_node{T}}
+    stack::Vector{idg_node{T}}                          # segstack stack (+ buf)
+end
+
+# PORT: pl-tabling.c idg_edge_state
+# DIVERGES (TAB1 TB6): a record of `ld.tabling.idg_edge_states` (upstream: on the C stack, copied to `allocForeignState`
+# memory by `save_idg_edge_state`), its index the REDO_PTR context; `atrie`, `set`, `dir` (an atom, upstream `atom_t` 0) and
+# `dependencies` are `nothing` for NULL; `deptrie_symbol` is the trie blob word (`trie_symbol`); the ints are `Bool`s.
+"The state of an enumeration of IDG edges, `'\$idg_edge'/3` and `'\$idg_false_edge'/3` (pl-tabling.c `idg_edge_state`)."
+mutable struct idg_edge_state{T}
+    atrie::Union{Nothing, trie{T}}
+    set::Union{Nothing, idg_set{idg_node{T}}}
+    en::Union{Nothing, idg_set_enum{idg_node{T}}}
+    dir::Union{Nothing, T}
+    fixed_dir::Bool
+    allocated::Bool
+    monotonic::Bool
+    lazy::Bool
+    force_reeval::Bool
+    dyn_or_complete::Bool
+    deptrie_symbol::word
+    dependencies::Union{Nothing, idg_mdep{T, idg_node{T}}}
+end
+# ORIGINAL: the zeroed state (`memset(state, 0, sizeof(*state))`), also the record `foreign_state_pool` makes.
+idg_edge_state{T}() where {T} = idg_edge_state{T}(
+    nothing, nothing, nothing, nothing, false, false, false, false, false, false, word(0), nothing
+)
+
+# PORT: pl-tabling.c pair_map
+# DIVERGES (TAB1 TB6): the `pair_count` entries are parallel vectors in the order the pairs are first met, found through
+# `index`, keyed on the `objectid`s of the two definitions (identity, as upstream's `uintptr_t` pair; `b` `nothing` is
+# 0); upstream's open addressing table (`pair_hash`, `pair_map_find`, the 70% growth) lists them in slot order, an
+# order of addresses. `pair_map_init` is the constructor, `pair_map_free` is the collector's.
+"A map from a pair of definitions to two counters, aggregating the IDG per predicate (pl-tabling.c `pair_map`)."
+mutable struct pair_map{T}
+    a::Vector{definition{T}}                            # pair_count.a
+    b::Vector{Union{Nothing, definition{T}}}            # pair_count.b
+    count::Vector{Int}                                  # pair_count.count
+    invalid::Vector{Int}                                # pair_count.invalid
+    index::Dict{Tuple{UInt, UInt}, Int}                 # (a, b) -> entry
+end
+pair_map{T}() where {T} = pair_map{T}(
+    definition{T}[], Union{Nothing, definition{T}}[], Int[], Int[], Dict{Tuple{UInt, UInt}, Int}()
 )
 
 # PORT: pl-tabling.h tbl_status

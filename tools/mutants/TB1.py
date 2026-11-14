@@ -16,6 +16,8 @@
 #   TT = test_tabling_state_swipl.jl (TT:337 pins `(DV_DELETED, DL_UNDEFINED) == (-1, 1)`), TM = test_tabling_min_swipl.jl (the tabling attributes, the
 #   `$tbl_trienode` rows: it does not call a TB1 function, listed for `is_tabled` whose flag its attribute rows set), TB = test/db/test_boot_image_swipl.jl
 #   (TB:161, the count of the foreign predicates the kernel lacks: a changed registration changes the count).
+# DEFKILL3 (2026-11-14, nothing run): R2, V5, G3, G9, T3, F5, F6, L1, L4, N2, N3 are KILL by the white-box testsets "TB1 white-box rows: ..." at the end of TV
+# (their premises asserted in the rows); P10 stays DEFERRED KILL (blocker in its entry); P7 is KILL since DEFKILL5 (tvw01-tvw04, pinned from swipl 18168e62). The notes below that name an owner are the history.
 # DEFERRED KILL (audit D-0374 item 2, as PIN1.py): a row declared `equivalent="DEFERRED KILL: owner ..."` has no killing assertion yet: no test file reads
 # what the mutant changes. It must SURVIVE the battery; when the owner step adds the row, the declaration goes. The deferred ones and the row each owner adds:
 #   * the node cache of start nodes (`start_node_id`, `get_start_node`, `set_start_node`): its user is `tbl_complete_answer_clause` (pl-tabling.c) = TB3; no row
@@ -25,7 +27,7 @@
 #     reaches them. Row for TB5: `reset_answer_table(atrie, 0)` on a complete answer trie with answers and read `TRIE_COMPLETE`, `worklist`, the answer count;
 #     `release_variant_table_node` on a variant table's node and read `atrie.variant == 0` (TB1-L1, L4).
 #   * `table_status`: no caller before TB3 (git grep at 6acfd472: only the definition), TB1-F6.
-#   * the refusal sites of a later step (TH1 the shared tables, TB2 the worklists and `$tbl_variant_table/6`'s create path, TB4 the delay information, TB6 the
+#   * the refusal sites of a later step (TH1 the shared tables, TB2 the worklist branch of reset_answer_table (owner TB5 since batch 3), TB4 the delay information, TB6 the
 #     IDG, TB8 the tripwires): no TB1 row reaches a refusal (the rows are the branches TB1 ports).
 #   * ROWS TB1's own test could add (the dispatcher decides whether TB1 or the owner does): a literal row `@test LK.TRIE_PTR_TAG == 0x7` (TB1-R2: the tag is
 #     consumed by `isTriePtrValue` and `triePtrValue` alike, so a changed value is invisible to a round trip), `@test variants.registry === gd.tries` and
@@ -56,13 +58,10 @@ MUTANTS = [
          file=TAB, targets=[TV],
          old="isTriePtrValue(w::word)::Bool = (w & UInt64(0x7)) == TRIE_PTR_TAG\n",
          new="isTriePtrValue(w::word)::Bool = (w & UInt64(0x3)) == TRIE_PTR_TAG\n"),
-    dict(id="TB1-R2 TRIE_PTR_TAG is 0x5 (no row reads the tag's value: `isTriePtrValue` and `triePtrValue` both read the constant, the round trip TV:354 is unchanged)",
+    dict(id="TB1-R2 TRIE_PTR_TAG is 0x5 (KILL TV the DEFKILL3 testset, `@test LK.TRIE_PTR_TAG == 0x7` and the low three bits of every registered value (pl-trie.h:201-211))",
          file=TAB, targets=[TV],
          old="const TRIE_PTR_TAG = UInt64(0x7)\n",
-         new="const TRIE_PTR_TAG = UInt64(0x5)\n",
-         equivalent="DEFERRED KILL: owner TB1's test (a literal row `@test LK.TRIE_PTR_TAG == 0x7`, pl-trie.h:201-211): the tag is read only through `TRIE_PTR_TAG` "
-                    "in `isTriePtrValue` (src/pl-tabling.jl:464) and `triePtrValue` (:469-472), so the value round trip TV:353-355 holds for any tag; the only other "
-                    "reader of a node value, `value_trie` (:492-497), meets a symbol atom whose low three bits are not read by a TB1 row"),
+         new="const TRIE_PTR_TAG = UInt64(0x5)\n"),
     dict(id="TB1-R3 triePtrValue shifts the serial by two, `<< 2` (KILL TV:354 `valueTriePtr(gd.tries, w) === atrie`: serial 2 reads back as trie 1, the variant table)",
          file=TAB, targets=[TV],
          old="    return (UInt64(tr.serial) << 3) | TRIE_PTR_TAG\n",
@@ -100,13 +99,10 @@ MUTANTS = [
          file=TAB, targets=[TV],
          old="        trie_symbol(gd, t)\n",
          new="        nothing\n"),
-    dict(id="TB1-V5 the private pool is made only when there is one, `!== nothing` (no row reads `ld.tabling.node_pool` after a lookup: statistics(table_space_used) is 0 with a pool or none)",
+    dict(id="TB1-V5 the private pool is made only when there is one, `!== nothing` (KILL TV the DEFKILL3 testset, `ld.tabling.node_pool isa alloc_pool` named `private_table_space` after a lookup (pl-tabling.c:2605; kernel pl-tabling.jl:3157-3159))",
          file=TAB, targets=[TV],
          old="    if ld.tabling.node_pool === nothing\n        ld.tabling.node_pool = new_alloc_pool(\"private_table_space\"",
-         new="    if ld.tabling.node_pool !== nothing\n        ld.tabling.node_pool = new_alloc_pool(\"private_table_space\"",
-         equivalent="DEFERRED KILL: owner TB3 (the first charge of the pool by an answer trie's nodes: `alloc_from_pool`, src/pl-allocpool.jl, has no caller before it): "
-                    "TT:142-147 charges a pool it makes itself and the table_space_used rows of test_sys_swipl.jl read 0 for a pool of size 0 and for none "
-                    "(src/pl-prims.jl: `pool === nothing ? 0 : pool.size`); row to add: after a lookup `ld.tabling.node_pool.name == \"private_table_space\"`"),
+         new="    if ld.tabling.node_pool !== nothing\n        ld.tabling.node_pool = new_alloc_pool(\"private_table_space\""),
     # ── get_answer_table (pl-tabling.c get_answer_table) ──
     dict(id="TB1-G1 get_answer_table treats a call with variables as ground, `!isempty(vars)` (KILL tvv01: the ground variant answers `ret(...)` with an empty `vars`, AssertionError of unify_trie_ret; tvv02, TV:359)",
          file=TAB, targets=[TV],
@@ -116,13 +112,10 @@ MUTANTS = [
          file=TAB, targets=[TV],
          old="                atrie.worklist = WL_GROUND\n",
          new="                atrie.worklist = WL_DYNAMIC\n"),
-    dict(id="TB1-G3 a ground table with a worklist object is not marked ground (no worklist object before TB2)",
+    dict(id="TB1-G3 a ground table with a worklist object is not marked ground (KILL TV the DEFKILL3 ground testset: a worklist object that is not ground is marked by a ground lookup, `wl.ground` (pl-tabling.c get_answer_table; kernel pl-tabling.jl:3491-3496))",
          file=TAB, targets=[TV],
          old="                wl.ground = true\n",
-         new="                nothing\n",
-         equivalent="DEFERRED KILL: owner TB2 (the worklists: `tbl_worklist` is made by `tbl_add_worklist`, refused by name at src/pl-tabling.jl:767 until TB2): "
-                    "the branch `wl isa tbl_worklist` (:723) is reached by no TB1 row because no table has a worklist object; row for TB2: a ground call that "
-                    "makes a worklist, then `wl.ground`"),
+         new="                nothing\n"),
     dict(id="TB1-G4 the skeleton of a ground call is the atom `fresh`, not `ret` (KILL tvv01 and tvs03: the pinned skeleton is `ret`)",
          file=TAB, targets=[TV],
          old="            PL_unify_atom(ld, ret, mk_sym(T, :ret)) || return nothing\n",
@@ -143,14 +136,10 @@ MUTANTS = [
          file=TAB, targets=[TV],
          old="        variants.value_count += 1                   # TRIE_COUNT_INC(variants, value_count)\n",
          new="        nothing                                     # TRIE_COUNT_INC(variants, value_count)\n"),
-    dict(id="TB1-G9 the lookup creates the variant node for every call, `AT_CREATE` not asked (a valueless node is left by tvv03-tvv06: no row counts the nodes)",
+    dict(id="TB1-G9 the lookup creates the variant node for every call, `AT_CREATE` not asked (KILL TV the DEFKILL3 testset, a lookup of tv_p(2) without AT_CREATE leaves `node_count`/`value_count` of the variant table unchanged (pl-tabling.c:3125; kernel pl-tabling.jl:3442-3444))",
          file=TAB, targets=[TV],
-         old="    rc, nid = trie_lookup_abstract(\n        ld, variants, 0, -(t + 1), (flags & AT_CREATE) != 0, sa, vars\n    )",
-         new="    rc, nid = trie_lookup_abstract(\n        ld, variants, 0, -(t + 1), true, sa, vars\n    )",
-         equivalent="DEFERRED KILL: owner TB5 (abolish empties the variant table and a node count is then read; TB1's own test could add the row, "
-                    "`trie_property`-style node count of the variant table after tvv03): the node without a value answers `nothing` at src/pl-tabling.jl:738-739 "
-                    "(`elseif (flags & AT_CREATE) != 0 ... else return nothing`), so tvv03-tvv06 still answer `no`, and the walk of tvl06/tvl07 (trie_gen over the "
-                    "variant table) lists nodes with a value (to be confirmed by the first run: if tvl07 sees a valueless node, the declaration goes)"),
+         old="        rc, nid = trie_lookup_abstract(\n            ld, variants, 0, -(t + 1), (flags & AT_CREATE) != 0, sa, vars\n        )",
+         new="        rc, nid = trie_lookup_abstract(\n            ld, variants, 0, -(t + 1), true, sa, vars\n        )"),
     # ── unify_trie_ret / ret_functor (pl-tabling.c) ──
     dict(id="TB1-T1 the skeleton's functor is `rec/N`, not `ret/N` (KILL tvv02 and tvs04: the pinned skeleton is `ret(V0)`)",
          file=TAB, targets=[TV],
@@ -160,12 +149,10 @@ MUTANTS = [
          file=TAB, targets=[TV],
          old="    return PL_unify(ld, ret, w)\n",
          new="    return true\n"),
-    dict(id="TB1-T3 unify_trie_ret puts the FIRST variable in every argument (no row has a call with two variables: every variable table of TV has one)",
+    dict(id="TB1-T3 unify_trie_ret puts the FIRST variable in every argument (KILL TV the DEFKILL3 testset, a call tv_p(X, Y): the two arguments of `ret(V1, V2)` are distinct variables (pl-tabling.c:2984; kernel pl-tabling.jl:3311-3313))",
          file=TAB, targets=[TV],
          old="        ld.gstack[p + i] = makeRefG(vp)\n",
-         new="        ld.gstack[p + i] = makeRefG(vars[1])\n",
-         equivalent="DEFERRED KILL: owner TB1's test (a tabled predicate of two arguments, `tv_r(X, Y)`: skeleton `ret(V0, V1)`, and `tv_r(X, X)`: `ret(V0)`): the loop at "
-                    "src/pl-tabling.jl:632-634 runs once in every row of TV (`tv_p(_)` has one variable; the ground `tv_p(1)` has none and takes the `ret` atom, :744-746)"),
+         new="        ld.gstack[p + i] = makeRefG(vars[1])\n"),
     # ── the status family (pl-tabling.c unify_fresh, complete_or_invalid_status, unify_table_status, table_status) ──
     dict(id="TB1-F1 unify_fresh (non-create) unifies `complete` (KILL tvs08: the status of the variant table is `fresh`; tvs08 is the row that reaches unify_fresh)",
          file=TAB, targets=[TV],
@@ -185,20 +172,14 @@ MUTANTS = [
          file=TAB, targets=[TV],
          old="    if (atrie.flags & TRIE_COMPLETE) != 0\n        return unify_complete_or_invalid(ld, t, atrie, def, create)\n",
          new="    if (atrie.flags & TRIE_COMPLETE) == 0\n        return unify_complete_or_invalid(ld, t, atrie, def, create)\n"),
-    dict(id="TB1-F5 unify_table_status answers a dynamic table `fresh` (no table is dynamic: nothing sets WL_DYNAMIC)",
+    dict(id="TB1-F5 unify_table_status answers a dynamic table `fresh` (KILL TV the DEFKILL3 status testset, a table with WL_DYNAMIC answers `dynamic` through unify_table_status (pl-tabling.c:4318; kernel pl-tabling.jl:3573-3575))",
          file=TAB, targets=[TV],
          old="            return PL_unify_atom(ld, t, mk_sym(T, :dynamic))\n        end\n\n        @assert wl",
-         new="            return PL_unify_atom(ld, t, mk_sym(T, :fresh))\n        end\n\n        @assert wl",
-         equivalent="DEFERRED KILL: owner TB6 (incremental and dynamic tabling, the step that ports the writer of `WL_DYNAMIC`; git grep -F WL_DYNAMIC at wip/tb1 6acfd472: "
-                    "the constant (src/pl-tabling.jl:33), its three readers (:806, :824, :1115) and no writer): no table has `worklist == WL_DYNAMIC`, so the branch at :806 is "
-                    "reached by no row; the owner adds a row of a dynamic table's status (and `$is_answer_trie` answering `dynamic`, :1115)"),
-    dict(id="TB1-F6 table_status asks `TRIE_COMPLETE` unset (no caller before TB3)",
+         new="            return PL_unify_atom(ld, t, mk_sym(T, :fresh))\n        end\n\n        @assert wl"),
+    dict(id="TB1-F6 table_status asks `TRIE_COMPLETE` unset (KILL TV the DEFKILL3 status testset, `table_status` of a complete, a fresh and a dynamic table (pl-tabling.c:4351; kernel pl-tabling.jl:3584-3597))",
          file=TAB, targets=[TV],
          old="    if (atrie.flags & TRIE_COMPLETE) != 0\n        return complete_or_invalid_status(ld, atrie, false)\n",
-         new="    if (atrie.flags & TRIE_COMPLETE) == 0\n        return complete_or_invalid_status(ld, atrie, false)\n",
-         equivalent="DEFERRED KILL: owner TB3 (the first caller of `table_status`, pl-tabling.c `tbl_..` completion; git grep -F `table_status(` at wip/tb1 6acfd472: the "
-                    "definition src/pl-tabling.jl:817 and `unify_table_status`/`$tbl_table_status` names only): row for TB3: `table_status(ld, atrie)` of a complete, a "
-                    "fresh and an incomplete table"),
+         new="    if (atrie.flags & TRIE_COMPLETE) == 0\n        return complete_or_invalid_status(ld, atrie, false)\n"),
     # ── unify_skeleton (pl-tabling.c unify_skeleton) and `$tbl_table_status/4` ──
     dict(id="TB1-U1 unify_skeleton fails for a table with a variant node, `variant == 0` (KILL tvs03 and tvs04: `$tbl_table_status/4` fails, the pin has r(complete, user:tv_p(..), ret..))",
          file=TAB, targets=[TV],
@@ -233,17 +214,19 @@ MUTANTS = [
          file=TAB, targets=[TV],
          old="    atrie === nothing && return FFALSE\n\n    return unify_table_status(ld, A2, atrie, nothing, false) ? FTRUE : FFALSE\n",
          new="    return unify_table_status(ld, A2, atrie, nothing, false) ? FTRUE : FFALSE\n"),
-    dict(id="TB1-P5 `$tbl_table_status/2` asks for `create` (KILL tvs08: the fresh variant table reaches unify_fresh(create), refused by name, owner TB2; the pin is `fresh`)",
+    dict(id="TB1-P5 `$tbl_table_status/2` asks for `create` (KILL tvs08 expected: the fresh variant table reaches unify_fresh(create), since TAB1 stack batch 3 item 9 a real call (`_unify_fresh_create`, TB2) that makes the worklist, where the pin answers `fresh` and creates nothing; CONFIRM at the gate, the refusal this row once relied on is gone)",
          file=TAB, targets=[TV],
          old="    return unify_table_status(ld, A2, atrie, nothing, false) ? FTRUE : FFALSE\n",
          new="    return unify_table_status(ld, A2, atrie, nothing, true) ? FTRUE : FFALSE\n"),
-    dict(id="TB1-P7 `$tbl_variant_table/6` does not unify its Trie argument (no row calls /6, /abstract or /moded: the create path is refused by name, TB2)",
+    dict(id="TB1-P7 `$tbl_variant_table/6` does not unify its Trie argument (KILL TV, testset `TB1-P7: ...` rows tvw01-tvw04: pinned `same` for the Trie found by `$tbl_existing_variant_table`, and `no` for a non-table `a`)",
          file=TAB, targets=[TV],
          old="    return unify_trie(gd, ld, Trie, atrie) &&\n           unify_table_status(ld, status, atrie, def, true)\n",
          new="    return unify_table_status(ld, status, atrie, def, true)\n",
          equivalent="DEFERRED KILL: owner TB2 (start_tabling, boot/tabling.pl, the only caller of `$tbl_variant_table/6`, `$tbl_abstract_table/6` and `$tbl_moded_variant_table/6`): "
                     "no TV row calls the three (src/pl-tabling.jl:895-927; TV's tables are made white-box by `get_answer_table`, TV:343); a call that finds an EXISTING complete "
-                    "table does not reach the refused create path: TB1's test could add it (rows with Closure = a `get_closure_predicate` of tv_p) or TB2 does"),
+                    "table does not reach the refused create path: TB1's test could add it (rows with Closure = a `get_closure_predicate` of tv_p) or TB2 does; "
+                    "DEFKILL3 left it open: the row needs a pinned swipl line (two identical runs of the pin 18168e62, `tvv`-style case in evidence/TB1/tv_gen.py) "
+                    "and a Closure term; engine blocker: none (pl_tbl_variant_table6_va, src/pl-tabling.jl:3885, runs for an existing table)"),
     dict(id="TB1-P8 `$tbl_table_pi/2` puts the arity plus one in the indicator (KILL tvp01 and tvp02: the pin is `user:tv_p/1`; tvp04)",
          file=TAB, targets=[TV],
          old="    PL_put_integer(ld, r + 1, arity)\n",
@@ -254,7 +237,7 @@ MUTANTS = [
          new="    av = PL_new_term_refs(ld, 3)\n",
          equivalent="DEFERRED KILL: no owner step (the pin of swipl 10.1.20 gives no answer for `'$tbl_table_pi'(VT, _)` with VT the variant table, handoff3 left the row out: "
                     "pl-tabling.c reads a NULL `atrie->data.variant`); the only answer trie with `variant == 0` is a table whose variant node was released (TB5: "
-                    "`release_variant_table_node` sets it, src/pl-tabling.jl:569-570): row for TB5 after an abolish that keeps the trie"),
+                    "`release_variant_table_node` sets it, src/pl-tabling.jl:569-570): row for TB5 after an abolish that keeps the trie; DEFKILL3: still open, the blocker is no engine piece but no oracle: upstream pl-tabling.c:6194 hands `atrie->data.variant` NULL to unify_trie_term (undefined there), the kernel's FFALSE (src/pl-tabling.jl:4027, :4036) is a deliberate divergence, so a row can only be a direct call of pl_tbl_table_pi2_va (src/pl-tabling.jl:4029) with a trie handle term `get_trie` (src/pl-trie.jl:1611) accepts, after release_variant_table_node (the TB1 L4 row makes that state)"),
     dict(id="TB1-P11 `$is_answer_trie/2` answers `dynamic` for a normal table (KILL tvt02: the pin is `normal`)",
          file=TAB, targets=[TV],
          old="            return PL_unify_atom(ld, A2, mk_sym(T, :normal)) ? FTRUE : FFALSE\n",
@@ -289,34 +272,27 @@ MUTANTS = [
          old="    return tbl_implementation(ld, PL__t0, PL__t0 + 1, true) ? FTRUE : FFALSE\n",
          new="    return tbl_implementation(ld, PL__t0, PL__t0 + 1, false) ? FTRUE : FFALSE\n"),
     # ── the node cache of start nodes (pl-tabling.c start_node_id, get_start_node, set_start_node): its user is TB3 ──
-    dict(id="TB1-N2 set_start_node does not pin the node (no row reads the cache)",
+    dict(id="TB1-N2 set_start_node does not pin the node (KILL TV the DEFKILL3 start-node testset, `TN_PINNED` is set on the node by set_start_node (pl-tabling.c:12423; kernel pl-tabling.jl:3079-3094))",
          file=TAB, targets=[TV],
          old="    tr.nodes[nid].flags |= TN_PINNED\n",
-         new="    nothing\n",
-         equivalent="DEFERRED KILL: owner TB3 (as TB1-N3: the pin keeps an abolish from pruning a cached start node, TB5 reads it too): row `tr.nodes[nid].flags & TN_PINNED != 0` "
-                    "after `set_start_node` (src/pl-tabling.jl:436-453); no TB1 row calls `set_start_node`"),
-    dict(id="TB1-N3 set_start_node leaves the new entries as `resize!` made them, no `fill!` (no row reads the cache: the entries of a Vector{Int} grown by resize! are undefined)",
+         new="    nothing\n"),
+    dict(id="TB1-N3 set_start_node leaves the new entries as `resize!` made them, no `fill!` (KILL TV the DEFKILL3 start-node testset: the entries grown after a shrink read 0 (resize! keeps the old contents, the `fill!` clears them; kernel pl-tabling.jl:3086-3090))",
          file=TAB, targets=[TV],
          old="        fill!(view(a, (old + 1):Int(id)), 0)\n",
-         new="        nothing\n",
-         equivalent="DEFERRED KILL: owner TB3 (as TB1-N2): row for TB3: set_start_node(id = 5) in an empty cache, then `get_start_node(a, 3) == 0`, the entries between are 0 "
-                    "(src/pl-tabling.jl:444-447)"),
+         new="        nothing\n"),
     # ── reset_answer_table and the release functions (pl-tabling.c): called by the abolish (TB5) and the trie's release_node ──
-    dict(id="TB1-L1 reset_answer_table leaves the table complete (no row calls it)",
+    dict(id="TB1-L1 reset_answer_table leaves the table complete (KILL TV the DEFKILL3 release testset, after release_variant_table_node `TRIE_COMPLETE` is unset and the worklist (also WL_GROUND) is nothing (pl-tabling.c:2642,2679; kernel pl-tabling.jl:3190-3250))",
          file=TAB, targets=[TV],
-         old="    atrie.flags &= ~TRIE_COMPLETE\n",
-         new="    nothing\n",
-         equivalent="DEFERRED KILL: owner TB5 (abolish_all_tables: reset_answer_table is reached through `release_variant_table_node` from the trie's release_node, TR1's stack, "
-                    "and TB5's abolish; src/pl-tabling.jl:537, :568): row for TB5: a complete table, then reset, then `TRIE_COMPLETE` is unset, `worklist === nothing`, no answers"),
+         old="    atrie.flags &= ~TRIE_COMPLETE\n\n    atrie.IDG === nothing || tbl_refuse(\n        T,\n        :reset_answer_table",
+         new="    nothing\n\n    atrie.IDG === nothing || tbl_refuse(\n        T,\n        :reset_answer_table"),
     dict(id="TB1-L3 reset_answer_table's flags argument is read nowhere (EQUIVALENT: RAT_CLEANUP and 0 give the same reset)",
          file=TAB, targets=[TV],
-         old="reset_answer_table(atrie, variant_table.magic == TRIE_CMAGIC ? RAT_CLEANUP : 0)",
-         new="reset_answer_table(atrie, variant_table.magic == TRIE_CMAGIC ? 0 : RAT_CLEANUP)",
+         old="reset_answer_table(gd, atrie, variant_table.magic == TRIE_CMAGIC ? RAT_CLEANUP : 0)",
+         new="reset_answer_table(gd, atrie, variant_table.magic == TRIE_CMAGIC ? 0 : RAT_CLEANUP)",
          equivalent="src/pl-tabling.jl:537-554: the body of reset_answer_table never reads its `flags` parameter (the RAT_CLEANUP, RAT_BULK paths of pl-tabling.c are the "
                     "worklist, IDG and tracked-table branches, refused by name here, :543-549), so the argument :568 passes does not change the result"),
-    dict(id="TB1-L4 release_variant_table_node leaves the answer trie's variant link (no row calls it)",
+    dict(id="TB1-L4 release_variant_table_node leaves the answer trie's variant link (KILL TV the DEFKILL3 release testset, `atrie.variant == 0` after release_variant_table_node (kernel pl-tabling.jl:3229-3250))",
          file=TAB, targets=[TV],
          old="        @assert atrie.variant == nid\n        atrie.variant = 0\n",
-         new="        @assert atrie.variant == nid\n",
-         equivalent="DEFERRED KILL: owner TB5 (as TB1-L1): row for TB5: release the variant node of a table, then `atrie.variant == 0` (src/pl-tabling.jl:559-574)"),
+         new="        @assert atrie.variant == nid\n"),
 ]

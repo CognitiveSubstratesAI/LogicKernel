@@ -31,8 +31,8 @@
 # discipline and the sizes the oracle observes (`stat_trie`) need. No write locking: `lock_children` and `unlock_children`
 # are left out (single-threaded, owner TH1); the TRIE_CONCURRENT flag is kept because it decides how nodes are allocated
 # (individually, no chunks: `trie_new/1` sets it) and whether a replaced block lingers (`trie.lingering`).
-# Refused by name: the discarded nodes of a compiled trie (`trie_discard_nodes`,
-# `trie_restore_nodes`, `trie_ensure_nodes`: owner TR4), O_PLMT regions (owner TH1). The compiled clause is TR4's
+# Refused by name: O_PLMT regions (owner TH1). TAB1 batch 3 ported `trie_discard_nodes` (tabling calls it on every completed table) and with it
+# `trie_restore_nodes` (`get_trie_nodes` restores a discarded trie by running its clause). The compiled clause is TR4's
 # (`compile_trie`, `trie_discard_clause`, the database an argument of every function that can discard it).
 
 # PORT: pl-trie.c RESERVED_TRIE_VAL
@@ -140,7 +140,7 @@ end
 # PORT: pl-trie.c release_node
 # DIVERGES: the node is a node id.
 "Release the tabling data of node `nid` of `tr` (pl-trie.c `release_node`)."
-function release_node(tr::trie{T}, nid::Int)::Nothing where {T}
+function release_node(gd::PL_global_data{T}, tr::trie{T}, nid::Int)::Nothing where {T}
     n = tr.nodes[nid]
     release = if (tr.flags & TRIE_ISTABLE) != 0
         (n.flags & TN_DELAYINFO) != 0
@@ -148,7 +148,7 @@ function release_node(tr::trie{T}, nid::Int)::Nothing where {T}
         (tr.flags & TRIE_ISVARIANT) != 0
     end
     if release
-        tbl_release_node(tr, nid)
+        tbl_release_node(gd, tr, nid)
     end
     return nothing
 end
@@ -160,12 +160,12 @@ end
 # reference counts here: nothing to do), erases a record (`erase_value!`) and releases the answer trie of a variant table node
 # (`isTriePtrValue`, TB1: `release_trie_value`, the trie is found by number in `tr.registry`; no atom-GC, so a trie with a symbol stays).
 "Release the value `value` of a node of `tr` (pl-trie.c `release_value`): a record is erased, a trie pointer destroys a symbol-less answer trie, an atom or integer needs nothing."
-function release_value(tr::trie{T}, value::word)::Nothing where {T}
+function release_value(gd::PL_global_data{T}, tr::trie{T}, value::word)::Nothing where {T}
     if isRecord(value)
         erase_value!(tr, value)
     elseif isTriePtrValue(value)
         t = valueTriePtr(tr.registry, value)
-        t.symbol == 0 && table_trie_destroy(t)      # no database at hand: see `table_trie_empty` (src/pl-tabling.jl)
+        t.symbol == 0 && trie_destroy(gd, t)
     end
     return nothing
 end
@@ -193,36 +193,109 @@ function trie_discard_clause(gd::PL_global_data{T}, tr::trie{T})::Nothing where 
     return nothing
 end
 
+# PORT: pl-trie.c trie_clause_refers_to_nodes
+# (pl-trie.c:352-368 at the pin.)
+"Whether the clause of `tr` refers to its nodes: a `T_DELAY` with a node operand (pl-trie.c)."
+function trie_clause_refers_to_nodes(tr::trie{T})::Bool where {T}
+    cref = tr.clause_cref                                       # ClauseRef cref = clause_clref(trie->clause)
+    if cref !== nothing
+        cl = cref.clause::Clause{T}
+        PC = Code(cl, 1)
+        ep = length(cl.codes)
+        while PC.pc <= ep
+            decode(PC) == T_DELAY && cl.codes[PC.pc + 1] != code(0) && return true   # PC[1]
+            PC = stepPC(PC)
+        end
+    end
+    return false
+end
+
 # PORT: pl-trie.c trie_discard_nodes
-"Discard the nodes of a compiled trie (pl-trie.c): refused by name, owner TR4."
-trie_discard_nodes(tr::trie{T}) where {T} = throw(TrieRefusal("trie_discard_nodes", "TR4"))
+# DIVERGES: the database is an argument (`trie_clear_nodes`).
+"Discard the nodes of a compiled trie, whose clause holds all its keys (pl-trie.c)."
+function trie_discard_nodes(gd::PL_global_data{T}, tr::trie{T})::Nothing where {T}
+    tr.flags &= ~TRIE_DISCARDABLE
+    trie_clause_refers_to_nodes(tr) && return nothing
+    trie_clear_nodes(gd, tr)
+    tr.flags |= TRIE_DISCARDED
+    return nothing
+end
 
 # PORT: pl-trie.h trie_maybe_discard_nodes
+# DIVERGES: the database is an argument (`trie_discard_nodes`).
 "Discard the nodes of a compiled trie if this is allowed (pl-trie.h:340); see `trie_discard_nodes`."
-function trie_maybe_discard_nodes(tr::trie{T})::Nothing where {T}
+function trie_maybe_discard_nodes(gd::PL_global_data{T}, tr::trie{T})::Nothing where {T}
     if (tr.flags & TRIE_DISCARDABLE) != 0 && tr.clause != 0 && tr.references == 0
-        trie_discard_nodes(tr)
+        trie_discard_nodes(gd, tr)
     end
     return nothing
 end
 
 # PORT: pl-trie.c trie_restore_nodes
-"Restore the nodes of a discarded trie from its clause (pl-trie.c): refused by name, owner TR4."
-trie_restore_nodes(tr::trie{T}) where {T} = throw(TrieRefusal("trie_restore_nodes", "TR4"))
+# DIVERGES: the database and local data are arguments; the nodes come back by running `trie_gen_compiled/2` on the trie's clause
+# (`gd.procedures_trie_gen_compiled2`) in a query that passes its exception, as upstream; the clause atom is `_atom_value(ld, tr.clause)`.
+"Restore the nodes of a discarded trie by enumerating its clause; false (nodes cleared, `TRIE_DISCARDED` set again) after an error (pl-trie.c)."
+function trie_restore_nodes(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, tr::trie{T}
+)::Bool where {T}
+    dbref = tr.clause
+    values = tr.value_count
+    rc = false
+    @assert dbref != 0 && (tr.flags & TRIE_ISMAP) == 0
+    tr.flags &= ~TRIE_DISCARDED
+    tr.value_count = 0
+
+    fid = PL_open_foreign_frame(ld)
+    av = PL_new_term_refs(ld, 2)
+    if PL_put_atom(ld, av, _atom_value(ld, dbref))
+        qid = PL_open_query(
+            gd, ld, nothing, PL_Q_PASS_EXCEPTION, gd.procedures_trie_gen_compiled2, av
+        )
+        while PL_next_solution(gd, ld, qid) != 0
+            lrc, nid = trie_lookup(ld, tr, 0, -(av + 1 + 1), true, nothing)
+            if lrc != 1
+                trie_error(ld, lrc, av + 1)
+                @goto out
+            end
+            n = tr.nodes[nid]
+            if n.value == 0                     # not set_trie_value_word(): keep the clause
+                n.value = ATOM_trienode
+                n.flags |= TN_PRIMARY
+                tr.value_count += 1
+            end
+        end
+        rc = PL_exception(ld, qid) == 0
+        @label out
+        PL_cut_query(ld, qid)
+    end
+    PL_close_foreign_frame(ld, fid)
+
+    if !rc
+        trie_clear_nodes(gd, tr)
+        tr.value_count = values
+        tr.flags |= TRIE_DISCARDED
+    end
+
+    return rc
+end
 
 # PORT: pl-trie.c trie_ensure_nodes
-# DIVERGES: a discarded trie cannot exist before TR4 (`TRIE_DISCARDED` is never set); the restore is refused by name.
-"Make sure the nodes of `tr` are present (pl-trie.c); a discarded trie is refused by name (owner TR4)."
-function trie_ensure_nodes(tr::trie{T})::Bool where {T}
-    (tr.flags & TRIE_DISCARDED) != 0 && trie_restore_nodes(tr)
+# DIVERGES: the database and local data are arguments (`trie_restore_nodes`).
+"Make sure the nodes of `tr` are present (pl-trie.c), restoring them from its clause if they were discarded."
+function trie_ensure_nodes(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, tr::trie{T}
+)::Bool where {T}
+    (tr.flags & TRIE_DISCARDED) != 0 && return trie_restore_nodes(gd, ld, tr)
     return true
 end
 
 # PORT: pl-trie.c clear_nodes
 # DIVERGES: after `clear_node` (CN_ALL) the arenas are reset: the root stays as node 1, the other nodes and the blocks go.
 "Clear all nodes of `tr`; `vt` (or `nothing`) takes over the values (pl-trie.c `clear_nodes`)."
-function clear_nodes(tr::trie{T}, vt::Union{Nothing, Function})::Nothing where {T}
-    clear_node(tr, 1, CN_ALL, vt)
+function clear_nodes(
+    gd::PL_global_data{T}, tr::trie{T}, vt::Union{Nothing, Function}
+)::Nothing where {T}
+    clear_node(gd, tr, 1, CN_ALL, vt)
     free_lingering_blocks(tr)
     free_node_chunks(tr)
     tr.indirects = nothing                                      # destroy_indirect_table
@@ -240,7 +313,8 @@ end
 
 # PORT: pl-trie.c trie_clear_nodes
 "Clear all nodes of `tr` (pl-trie.c)."
-trie_clear_nodes(tr::trie{T}) where {T} = clear_nodes(tr, nothing)
+trie_clear_nodes(gd::PL_global_data{T}, tr::trie{T}) where {T} =
+    clear_nodes(gd, tr, nothing)
 
 # PORT: pl-trie.c empty_trie
 "Empty `tr` unless it is in use; whether it was emptied (pl-trie.c `empty_trie`)."
@@ -249,7 +323,7 @@ function empty_trie(
 )::Bool where {T}
     trie_discard_clause(gd, tr)
     if tr.references == 0
-        clear_nodes(tr, vt)
+        clear_nodes(gd, tr, vt)
         tr.value_count = 0
         tr.flags &= ~(TRIE_DISCARDABLE | TRIE_DISCARDED)
         return true
@@ -788,7 +862,7 @@ end
 # `goto next`. The keys are not released (no atom reference counts).
 "Clear node `nid` and its descendants; with CN_ALL the whole trie is cleared (pl-trie.c)."
 function clear_node(
-    tr::trie{T}, nid::Int, flags::Int, vt::Union{Nothing, Function}
+    gd::PL_global_data{T}, tr::trie{T}, nid::Int, flags::Int, vt::Union{Nothing, Function}
 )::Nothing where {T}
     while true
         n = tr.nodes[nid]
@@ -799,9 +873,9 @@ function clear_node(
                 n.value = 0
             end
         else
-            release_node(tr, nid)
+            release_node(gd, tr, nid)
         end
-        n.value != 0 && release_value(tr, n.value)
+        n.value != 0 && release_value(gd, tr, n.value)
         if (flags & CN_DEALLOC) != 0
             tr.node_count -= 1
             if (flags & CN_ALL) == 0 || (n.flags & TN_CHUNKED) == 0
@@ -820,7 +894,7 @@ function clear_node(
             b = block_at(tr, bid)
             for i in 1:b.count
                 child = b.entries[i].child
-                child != 0 && clear_node(tr, child, flags | CN_DEALLOC, vt)
+                child != 0 && clear_node(gd, tr, child, flags | CN_DEALLOC, vt)
             end
             free_block(tr, bid)
             return nothing
@@ -830,19 +904,20 @@ end
 
 # PORT: pl-trie.c destroy_node
 "Free node `nid` and its descendants (pl-trie.c)."
-destroy_node(tr::trie{T}, nid::Int) where {T} = clear_node(tr, nid, CN_DEALLOC, nothing)
+destroy_node(gd::PL_global_data{T}, tr::trie{T}, nid::Int) where {T} =
+    clear_node(gd, tr, nid, CN_DEALLOC, nothing)
 
 # PORT: pl-trie.c prune_node
 # DIVERGES: the trie is an argument and not optional (a node does not know its trie: `get_trie_from_node` is left out).
 "Prune the branch of the trie that does not end in a node, from node `nid` up (pl-trie.c)."
-function prune_node(tr::trie{T}, nid::Int)::Nothing where {T}
+function prune_node(gd::PL_global_data{T}, tr::trie{T}, nid::Int)::Nothing where {T}
     empty = true
     while empty
         n = tr.nodes[nid]
         (n.parent != 0 && (n.flags & (TN_PRIMARY | TN_SECONDARY | TN_PINNED)) == 0) || break
         p = n.parent
         empty = delete_child(tr, p, nid, true)
-        destroy_node(tr, nid)
+        destroy_node(gd, tr, nid)
         nid = p
     end
     return nothing
@@ -853,7 +928,7 @@ end
 # of the node id (upstream: a function and a context pointer); `@goto` stands for upstream's labels `prune` and `next_choice`.
 "Prune all branches below `root` that do not end in a value; `free(id)` is called for each removed leaf (pl-trie.c)."
 function prune_trie(
-    tr::trie{T}, root::Int, free::Union{Nothing, Function}=nothing
+    gd::PL_global_data{T}, tr::trie{T}, root::Int, free::Union{Nothing, Function}=nothing
 )::Nothing where {T}
     stack = Tuple{Int, Int, Bool}[]
     n = root
@@ -887,7 +962,7 @@ function prune_trie(
             pc = tr.nodes[p].children
             choice = (pc != 0 && !is_single_child(pc))          # we are enumerating p
             delete_child(tr, p, n, false)
-            destroy_node(tr, n)
+            destroy_node(gd, tr, n)
             choice && break
             n = p
         end
@@ -915,15 +990,13 @@ function prune_trie(
 end
 
 # PORT: pl-trie.c insert_child
-# DIVERGES: nodes are ids; no write lock.
+# DIVERGES: nodes are ids; no write lock. The failure path (`destroy_node(trie, child)` after a failed `add_child`) is left out:
+# `add_child` has no resource error and always returns true, so the path cannot be taken (and `destroy_node` takes the database).
 "Insert a new child with key `key` under node `nid`; its id (pl-trie.c)."
 function insert_child(tr::trie{T}, nid::Int, key::word)::Int where {T}
     child = new_trie_node(tr, key)
     tr.nodes[child].parent = nid
-    if !add_child(tr, nid, child)
-        destroy_node(tr, child)
-        return 0
-    end
+    add_child(tr, nid, child)
     return child
 end
 
@@ -938,8 +1011,8 @@ end
 
 # PORT: pl-trie.c prune_error
 "Prune the part of the trie an error leaves: first add a node under `nid`, then prune from it (pl-trie.c)."
-function prune_error(tr::trie{T}, nid::Int)::Nothing where {T}
-    prune_node(tr, follow_node(tr, nid, TRIE_ERROR_VAL, true))
+function prune_error(gd::PL_global_data{T}, tr::trie{T}, nid::Int)::Nothing where {T}
+    prune_node(gd, tr, follow_node(tr, nid, TRIE_ERROR_VAL, true))
     return nothing
 end
 
@@ -1165,7 +1238,7 @@ function trie_lookup_abstract(
                 compounds += 1
                 if compounds == 1000 && add && !is_acyclic_cells(ld, l)
                     rc = TRIE_LOOKUP_CYCLIC
-                    prune_error(tr, node)
+                    prune_error(_query_gd(ld), tr, node)
                     node = 0
                 else
                     node = follow_node(tr, node, fd, add)
@@ -1695,7 +1768,7 @@ function set_trie_value_word(
             old = n.value
             n.value = val
             n.flags |= TN_PRIMARY
-            release_value(tr, old)
+            release_value(gd, tr, old)
             trie_discard_clause(gd, tr)
             return true
         else
@@ -1726,7 +1799,8 @@ end
 
 # PORT: pl-trie.c trie_release_value
 "Release the value `value` of a node of `tr` (pl-trie.c): see `release_value`."
-trie_release_value(tr::trie{T}, value::word) where {T} = release_value(tr, value)
+trie_release_value(gd::PL_global_data{T}, tr::trie{T}, value::word) where {T} =
+    release_value(gd, tr, value)
 
 # PORT: pl-trie.c trie_delete
 # DIVERGES: the database is an argument (for `trie_discard_clause`); node id; `prune_node` takes the trie.
@@ -1739,13 +1813,13 @@ function trie_delete(
         (n.flags & TN_PRIMARY) != 0 && (tr.value_count -= 1)
         n.flags &= ~(TN_PRIMARY | TN_SECONDARY)
         if prune && tr.references == 0
-            prune_node(tr, nid)
+            prune_node(gd, tr, nid)
         else
-            release_node(tr, nid)
+            release_node(gd, tr, nid)
             v = n.value
             if v != 0
                 n.value = 0
-                release_value(tr, v)
+                release_value(gd, tr, v)
             end
         end
         trie_discard_clause(gd, tr)
@@ -1754,14 +1828,14 @@ function trie_delete(
 end
 
 # PORT: pl-trie.c get_trie_nodes
-# DIVERGES: the database and local data are arguments; `trie_restore_nodes` (a discarded trie) is refused by name, owner TR4.
+# DIVERGES: the database and local data are arguments.
 "The trie in `t` with its nodes present, or `nothing` after the error (pl-trie.c)."
 function get_trie_nodes(
     gd::PL_global_data{T}, ld::PL_local_data{T}, t::term_t
 )::Union{Nothing, trie{T}} where {T}
     tr = get_trie(gd, ld, t)
     tr === nothing && return nothing
-    trie_ensure_nodes(tr) || return nothing
+    trie_ensure_nodes(gd, ld, tr) || return nothing
     return tr
 end
 
@@ -2032,7 +2106,7 @@ function trie_insert(
                 old = n.value
                 n.value = val
                 n.flags |= TN_PRIMARY
-                release_value(tr, old)
+                release_value(gd, tr, old)
                 trie_discard_clause(gd, tr)
             elseif isRecord(val)
                 erase_value!(tr, val)
@@ -2212,7 +2286,8 @@ end
 
 # PORT: pl-trie.c trie_term as pl_trie_term2_va
 # (PRED_IMPL("trie_term", 2, trie_term, 0))
-# DIVERGES: the handle is the integer of `trie_node_handle`, read with `PL_get_int64_ex` (upstream: `PL_get_pointer_ex`); a
+# DIVERGES: the handle is the integer of `trie_node_handle` (upstream: the node pointer, read by the same `PL_get_pointer_ex`:
+# a non-integer is `type_error(address, X)`); a
 # handle naming no live trie or no node is an `existence_error(trie_node, Handle)` (upstream dereferences the pointer).
 "`trie_term(+Handle, -Term)`: retrieve the term of a handle `trie_insert/4` returned (pl-trie.c)."
 function pl_trie_term2_va(
@@ -2220,7 +2295,7 @@ function pl_trie_term2_va(
 )::foreign_t where {T}
     gd = _query_gd(ld)
     A1, A2 = PL__t0, PL__t0 + 1
-    h = PL_get_int64_ex(ld, A1)
+    h = PL_get_pointer_ex(ld, A1)
     h === nothing && return FFALSE
     serial = h >> 32
     nid = h & 0xffffffff
@@ -2808,9 +2883,23 @@ function unify_trie_path!(
     return BOOLEX_TRUE
 end
 
+# ORIGINAL: pl-trie.c `unify_data` (a function pointer and a context in upstream) as a data kind: 1 unifies `Data` with the node's
+# handle (`unify_node_id`, `PL_unify_pointer`), `TRIE_GEN_DELAY_INFO` (2, TB3) with the answer's condition (`unify_delay_info`, the
+# skeleton is `key`, upstream's `ctx.skel`), `TRIE_GEN_UPDATE_DL` (4, TB4) pushes the answer's delay on the global delay list
+# (`answer_update_delay_list`, `Data` is the wrapper); the two constants are src/pl-tabling.jl's.
+"The data step of `trie_gen_raw` for the answer `nid` of `tr` (see the kinds above)."
+function trie_gen_unify_data(
+    ld::PL_local_data{T}, tr::trie{T}, nid::Int, key::term_t, Data::term_t, data_kind::Int
+)::Bool where {T}
+    data_kind == TRIE_GEN_DELAY_INFO && return unify_delay_info(ld, Data, tr, nid, key)
+    data_kind == TRIE_GEN_UPDATE_DL && return answer_update_delay_list(ld, Data, tr, nid)
+    data_kind == TRIE_GEN_DELAY_INFO_DL && return unify_delay_info_dl(ld, Data, tr, nid)
+    return PL_unify_int64(ld, Data, trie_node_handle(tr, nid))
+end
+
 # PORT: pl-trie.c trie_gen_raw
-# DIVERGES: the trie, the root (a node id) and the data kind are arguments (`Data` is a term reference or 0; `data_kind` 1 unifies it with
-# the node's handle `trie_node_handle`, upstream's `unify_node_id` through `unify_data`: `PL_unify_pointer`); the state is a record
+# DIVERGES: the trie, the root (a node id) and the data kind are arguments (`Data` is a term reference or 0; `data_kind` selects what it
+# is unified with, see `trie_gen_unify_data`: 1 the node's handle `trie_node_handle`, upstream's `unify_node_id` through `unify_data`: `PL_unify_pointer`); the state is a record
 # of `ld.trie_gens` from the first call on (upstream: a C-stack copy until the first retry); `Mark`/`Undo` are a foreign frame
 # (`PL_rewind_foreign_frame`), closed before a retry (as nb_current/2); a GLOBAL_OVERFLOW from `unify_trie_path!` is raised by
 # `raiseStackOverflow` (no `makeMoreStackSpace` retry, the stacks grow on demand); an exception (a `TrieRefusal` of `unify_key`)
@@ -2893,7 +2982,7 @@ function trie_gen_raw(
             end
 
             if (Value == 0 || unify_value(ld, trs, Value, n.value)) &&
-                (Data == 0 || PL_unify_int64(ld, Data, trie_node_handle(trs, nid)))
+                (Data == 0 || trie_gen_unify_data(ld, trs, nid, st.key, Data, data_kind))
                 if next_choice!(ld, st, true) != 0      # Key is bound to the answer
                     PL_close_foreign_frame(ld, fid)
                     return PL_retry_address(k)
@@ -2965,12 +3054,28 @@ function pl_trie_gen_node3_va(
     return trie_gen(_query_gd(ld), ld, PL__t0, 0, PL__t0 + 1, 0, PL__t0 + 2, 1, PL__ctx)
 end
 
+# PORT: pl-table.h sizeofTablePP (os/pl-table.c sizeofTable)
+# DIVERGES: upstream's is `sizeof(struct table) + sizeof(struct kvs) + ht->kvs->len * sizeof(struct symbol)` (32, 40 and 16 bytes at the pin);
+# the kernel's table is an `IdDict` that keeps no `kvs->len`, so the capacity is modelled: `newHTablePP(4)` (pl-tabling.c:8267, :10117), doubled
+# while the table holds more than half of it. The number is the kernel's, as `size` of the same predicate (no row compares it with swipl's).
+"`sizeofTablePP(ht)`: the bytes a pointer table takes, with the capacity modelled (pl-table.h)."
+function sizeofTablePP(ht::IdDict)::Int
+    len = 4
+    while 2 * length(ht) > len
+        len <<= 1
+    end
+    return SIZEOF_TABLE + SIZEOF_KVS + len * SIZEOF_SYMBOL
+end
+
 # PORT: pl-trie.c trie_property as pl_trie_property2_va
 # (PRED_IMPL("$trie_property", 2, trie_property, 0))
 # DIVERGES: the names are compared by `sym_key` (as set_module/3); `size` is `stat_trie(tr).bytes` without the cross-check
-# `Sdprintf("OOPS...")`s of upstream (diagnostics only, for a private pool trie); `discarded` reads `TRIE_DISCARDED`; `compiled_size` fails (no
-# clause before TR4); `wait` and `deadlock` (`trie->stats.wait`, `.deadlock`, O_PLMT) are the constant 0: single-threaded, owner TH1;
-# `invalidated`, `reevaluated` and the `idg_*` names fail: `trie.IDG` is `Nothing` until TB6.
+# `Sdprintf("OOPS...")`s of upstream (diagnostics only, for a private pool trie); `discarded` reads `TRIE_DISCARDED`; `compiled_size` is
+# `8 * sizeofClause(length(codes))` bytes (upstream `sizeofClause(code_size)`: `sizeofClause` of the kernel counts positions, src/pl-incl.jl; the
+# number is the kernel's, as `trie_table_size`); `idg_size` is `SIZEOF_IDG_NODE` (80 at the pin) + the sizes of the two edge sets + `SIZEOF_IDG_MONO`
+# + `sizeofTablePP` of the monotonic dependencies (the table's capacity is modelled): the kernel's number, an integer > 0, not swipl's;
+# `wait` and `deadlock` (`trie->stats.wait`, `.deadlock`, O_PLMT) are the constant 0: single-threaded, owner TH1. `invalidated`, `reevaluated`
+# (O_TRIE_STATS, defined at the pin) and the `idg_*` names fail for a trie without an IDG node, as upstream: `(idg=trie->data.IDG)` is false.
 "`\$trie_property(+Trie, ?Property)`: one statistic of `Trie`, the property named by `Property`'s functor with one argument (pl-trie.c)."
 function pl_trie_property2_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
@@ -2994,7 +3099,10 @@ function pl_trie_property2_va(
     elseif name == sym_key(mk_sym(T, :size))
         return PL_unify_int64(ld, arg, stat_trie(tr).bytes) ? FTRUE : FFALSE
     elseif name == sym_key(mk_sym(T, :compiled_size))
-        return FFALSE                                   # no clause before TR4
+        if (cref = tr.clause_cref) !== nothing          # (dbref = trie->clause) && (cref = clause_clref(dbref))
+            return PL_unify_int64(ld, arg, 8 * sizeofClause(length(cref.clause.codes))) ? FTRUE : FFALSE
+        end
+        return FFALSE
     elseif name == sym_key(mk_sym(T, :hashed))
         return PL_unify_int64(ld, arg, stat_trie(tr).hashes) ? FTRUE : FFALSE
     elseif name == sym_key(mk_sym(T, :lookup_count))
@@ -3003,8 +3111,29 @@ function pl_trie_property2_va(
         return PL_unify_int64(ld, arg, tr.gen_call) ? FTRUE : FFALSE
     elseif name == sym_key(mk_sym(T, :wait)) || name == sym_key(mk_sym(T, :deadlock))
         return PL_unify_int64(ld, arg, 0) ? FTRUE : FFALSE
+    elseif name == sym_key(mk_sym(T, :invalidated)) && (idg = tr.IDG) !== nothing
+        return PL_unify_int64(ld, arg, idg.stats_invalidated) ? FTRUE : FFALSE
+    elseif name == sym_key(mk_sym(T, :reevaluated)) && (idg = tr.IDG) !== nothing
+        return PL_unify_int64(ld, arg, idg.stats_reevaluated) ? FTRUE : FFALSE
+    elseif (idg = tr.IDG) !== nothing
+        if name == sym_key(mk_sym(T, :idg_affected_count))
+            return PL_unify_int64(ld, arg, idg_set_size(idg.affected)) ? FTRUE : FFALSE
+        elseif name == sym_key(mk_sym(T, :idg_dependent_count))
+            return PL_unify_int64(ld, arg, idg_set_size(idg.dependent)) ? FTRUE : FFALSE
+        elseif name == sym_key(mk_sym(T, :idg_size))
+            size = SIZEOF_IDG_NODE                      # size_t size = sizeof(*idg)
+            size += idg_set_sizeof(idg.affected)
+            size += idg_set_sizeof(idg.dependent)
+            if (mono = idg.mono) !== nothing
+                size += SIZEOF_IDG_MONO                 # sizeof(*idg->mono)
+                if mono.deps !== nothing
+                    size += sizeofTablePP(mono.deps)    # sizeofTablePP(idg->mono->deps)
+                end
+            end
+            return PL_unify_int64(ld, arg, size) ? FTRUE : FFALSE
+        end
     end
-    return FFALSE                                       # invalidated, reevaluated, idg_*: no IDG before TB6
+    return FFALSE
 end
 
 # NOT DEFINED AT THE PIN (swipl 10.1.20, pl-trie.c @ 18168e62, TR2 finding): `trie_insert_insert/3`, `trie_lookup_gen/3` and
@@ -3235,8 +3364,8 @@ end
 # PORT: pl-trie.c compile_trie_node
 # DIVERGES: the node is its id `n` in `st.tr` (the root is 1) and `goto next` is the `while` loop; an indirect key's value is
 # `extern_indirect` of the trie's table, the operand its literal index (upstream inlines the header and data, :4925-4955); a
-# conditional answer (`answer_is_conditional`, pl-tabling.c, the delay information of TB4) is a named refusal, owner TB4
-# (upstream emits `T_DELAY` with the node; the kernel's operand would be `trie_node_handle(tr, n)`).
+# conditional answer (`answer_is_conditional`, pl-tabling.c, TB4) gets `T_DELAY` with the node's handle `trie_node_handle(tr, n)`
+# for upstream's `ptr2code(n)`.
 "Compile the node `n` of the trie and everything below it (pl-trie.c `compile_trie_node`)."
 function compile_trie_node(
     ld::PL_local_data{T}, n::Int, st::trie_compile_state{T}
@@ -3348,10 +3477,11 @@ function compile_trie_node(
         end
 
         if node.value != 0                                      # what if we have none?
-            (node.flags & TN_DELAYINFO) != 0 &&                 # answer_is_conditional(n)
-                throw(
-                    TrieRefusal("compile_trie_node (a conditional answer: T_DELAY)", "TB4")
-                )
+            if (node.flags & TN_DELAYINFO) != 0 &&
+                answer_is_conditional(_query_gd(ld), tr, n)   # answer_is_conditional(n)
+                trie_serial!(_query_gd(ld), tr)                 # the handle names the trie by its number in gd.tries (a table's is set)
+                add_vmi_d!(st, T_DELAY, code(trie_node_handle(tr, n)))      # add_vmi_d(state, T_DELAY, ptr2code(n))
+            end
             if (tr.flags & TRIE_ISMAP) != 0
                 add_vmi!(st, T_VALUE)
                 v = node.value

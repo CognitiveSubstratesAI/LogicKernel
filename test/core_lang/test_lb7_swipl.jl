@@ -760,3 +760,30 @@ end
     @test sl !== nothing && sl.i == gd.options.stackLimit == 1 << 20
     @test sl.i != 1 << 30
 end
+
+# PIN1-V5 (DEFKILL5): `validate_api` after the options are applied is `!optimise` (pl-prologflag.c:2695-2698; src/pl-init.jl:659). swipl 10.1.20-1-g18168e62,
+# `swipl -f none -F none [-O] -g 'current_prolog_flag(validate_api,V), current_prolog_flag(optimise,O), writeln(V-O)' -t halt`, two identical runs:
+# no option: true-false; with -O: false-true. The rows below run the kernel's own path (the parse, apply_options_to_flags!, one consulted clause).
+@testset "the validate_api flag after the options, as swipl (PIN1-V5)" begin
+    mktempdir() do dir
+        function va_line(::Type{T}, args::Vector{String}) where {T}
+            words = _lb7_words("run", args)
+            gd, ld, left = _lb7_parse(T, words)
+            left === nothing && return "parse failed"
+            LK.apply_options_to_flags!(gd, ld)
+            f = joinpath(dir, "prog_va.pl")
+            write(f, "t_va(R) :- current_prolog_flag(validate_api, V), current_prolog_flag(optimise, O), R = V-O.\n")
+            st, ball = LK.load_file!(gd, ld, f)
+            st === :ok || return "load failed"
+            return _lb7_query(T, gd, ld, "t_va")
+        end
+        dflt = va_line(_LB7, String[])
+        opt = va_line(_LB7, String["-O"])
+        # both sides non-empty, one extractor: each line is the answer of t_va/1 and carries a V-O pair
+        @test startswith(dflt, "t_va c")
+        @test startswith(opt, "t_va c")
+        @test occursin(_lb7_kv("true", _lb7_atom("false")), dflt)   # validate_api true, optimise false
+        @test occursin(_lb7_kv("false", _lb7_atom("true")), opt)    # validate_api false, optimise true
+        @test dflt != opt
+    end
+end
