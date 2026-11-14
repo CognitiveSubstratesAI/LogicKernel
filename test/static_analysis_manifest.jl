@@ -3830,6 +3830,7 @@ const _DISPATCH_MANIFEST_TUPLE = (
     # arith-c (AR1): the hardware rounding mode, the libm calls and the cr_* macros over them
     (LK.fegetround, Tuple{}, true), (LK.fesetround, Tuple{Int}, true),
     (LK.nexttoward, Tuple{Float64, Float64}, true),
+    (LK._ldexp_mode, Tuple{Float64, Int}, true),
     [
         (f, Tuple{Float64}, true) for f in (
             LK._c_sin, LK._c_cos, LK._c_tan, LK._c_asin, LK._c_acos, LK._c_atan, LK._c_exp,
