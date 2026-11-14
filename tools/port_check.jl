@@ -949,10 +949,11 @@ function port_check(pkgroot::AbstractString;
             )
         end
         want = expected_path(ups[1].repo, ups[1].path)
-        parts_file || port_path_ok(f.rel, ups[1].repo, ups[1].path) || push!(
-            v,
-            "PATH-MISMATCH $(f.rel): a port of $(ups[1].repo) $(ups[1].path) must live at $want"
-        )
+        parts_file || port_path_ok(f.rel, ups[1].repo, ups[1].path) ||
+            push!(
+                v,
+                "PATH-MISMATCH $(f.rel): a port of $(ups[1].repo) $(ups[1].path) must live at $want"
+            )
         defs = definitions(read(joinpath(root, f.rel), String), f.rel)
         bases = Set(basename(u.path) for u in ups)
         if parts_file

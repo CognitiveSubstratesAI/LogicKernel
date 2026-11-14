@@ -116,50 +116,98 @@ const _QB_CASES = [
     ("fb06", raw"once(findnsols(2, X, q_a(X), L)), findall(Y, q_a(Y), L2), R = L-L2"),
     ("fb07", raw"findnsols(2, X, q_a(X), L), findall(Z, member(Z, [x,y]), L2), R = L-L2"),
     ("fb08", raw"findnsols(2, X-L2, (member(X, [a,b]), findnsols(2, Y, q_a(Y), L2)), R)"),
-    ("fb09", raw"findnsols(2, X-L2, (member(X, [a,b,c]), once(findnsols(1, Y, q_a(Y), L2))), R)"),
+    (
+        "fb09",
+        raw"findnsols(2, X-L2, (member(X, [a,b,c]), once(findnsols(1, Y, q_a(Y), L2))), R)"
+    ),
     ("fb10", raw"once((findnsols(2, X, q_a(X), L), L = [3|_])), R = L"),
     ("fb11", raw"q_nest(R)"),
-    ("fb12", raw"findnsols(2, X, (q_a(X), ( X =:= 3 -> throw(error(q10b_err, _)) ; true )), R)"),
+    (
+        "fb12",
+        raw"findnsols(2, X, (q_a(X), ( X =:= 3 -> throw(error(q10b_err, _)) ; true )), R)"
+    ),
     ("fb13", raw"findall(X, q_a(X), R)"),
     ("fb14", raw"forall(findnsols(2, X, q_a(X), _), true), findall(Y, q_a(Y), R)"),
     ("fb15", raw"findnsols(count(2), X, q_a(X), L), R = L"),
     ("ga01", raw"garbage_collect_atoms, R = ok"),
     ("ga02", raw"garbage_collect_atoms, garbage_collect_atoms, R = ok"),
-    ("ga03", raw"atom_codes(A, [0'q, 0'1, 0'0, 0'b, 0'g, 0'a]), garbage_collect_atoms, atom_length(A, N), R = N"),
+    (
+        "ga03",
+        raw"atom_codes(A, [0'q, 0'1, 0'0, 0'b, 0'g, 0'a]), garbage_collect_atoms, atom_length(A, N), R = N"
+    ),
     ("ga04", raw"call_cleanup(garbage_collect_atoms, Det = true), R = Det"),
     ("ga05", raw"findall(x, garbage_collect_atoms, R)"),
     ("ga06", raw"garbage_collect_atoms(x)"),
-    ("ga07", raw"statistics(agc, N0), garbage_collect_atoms, statistics(agc, N1), ( N1 > N0 -> R = counted ; R = not_counted )"),
+    (
+        "ga07",
+        raw"statistics(agc, N0), garbage_collect_atoms, statistics(agc, N1), ( N1 > N0 -> R = counted ; R = not_counted )"
+    ),
     ("pa01", raw"prolog_alert_signal(X, X), R = X"),
-    ("pa02", raw"prolog_alert_signal(Old, usr1), prolog_alert_signal(Now, Now), prolog_alert_signal(_, usr2), R = Old-Now"),
-    ("pa03", raw"prolog_alert_signal(Old, 0), prolog_alert_signal(Now, Now), prolog_alert_signal(_, usr2), R = Old-Now"),
+    (
+        "pa02",
+        raw"prolog_alert_signal(Old, usr1), prolog_alert_signal(Now, Now), prolog_alert_signal(_, usr2), R = Old-Now"
+    ),
+    (
+        "pa03",
+        raw"prolog_alert_signal(Old, 0), prolog_alert_signal(Now, Now), prolog_alert_signal(_, usr2), R = Old-Now"
+    ),
     ("pa04", raw"prolog_alert_signal(_, foo)"),
     ("pa05", raw"prolog_alert_signal(_, 1.5)"),
     ("pa06", raw"prolog_alert_signal(_, _)"),
     ("pa07", raw"prolog_alert_signal(_, 12), prolog_alert_signal(X, X), R = X"),
     ("pa08", raw"( prolog_alert_signal(usr1, usr2) -> R = yes ; R = no )"),
     ("pa09", raw"prolog_alert_signal(usr2, usr2), prolog_alert_signal(X, X), R = X"),
-    ("pa10", raw"prolog_alert_signal(_, 'SIGUSR1'), prolog_alert_signal(X, X), prolog_alert_signal(_, usr2), R = X"),
-    ("pa11", raw"prolog_alert_signal(_, usr1), prolog_alert_signal(usr1, 0), prolog_alert_signal(X, X), prolog_alert_signal(_, usr2), R = X"),
+    (
+        "pa10",
+        raw"prolog_alert_signal(_, 'SIGUSR1'), prolog_alert_signal(X, X), prolog_alert_signal(_, usr2), R = X"
+    ),
+    (
+        "pa11",
+        raw"prolog_alert_signal(_, usr1), prolog_alert_signal(usr1, 0), prolog_alert_signal(X, X), prolog_alert_signal(_, usr2), R = X"
+    ),
     ("pa12", raw"prolog_alert_signal(_, 9999)"),
     ("pa13", raw"prolog_alert_signal(_, -1)"),
     ("pa14", raw"atom_string(usr1, S), prolog_alert_signal(_, S)"),
     ("pa15", raw"prolog_alert_signal(_, f(x))"),
-    ("pa16", raw"prolog_alert_signal(_, hup), prolog_alert_signal(X, X), prolog_alert_signal(_, usr2), R = X"),
+    (
+        "pa16",
+        raw"prolog_alert_signal(_, hup), prolog_alert_signal(X, X), prolog_alert_signal(_, usr2), R = X"
+    ),
     ("pa17", raw"prolog_alert_signal(_, 32)"),
-    ("pa18", raw"prolog_alert_signal(_, int), prolog_alert_signal(Old, hup), prolog_alert_signal(Now, Now), prolog_alert_signal(_, usr2), R = Old-Now"),
-    ("pa19", raw"prolog_alert_signal(_, 2), prolog_alert_signal(_, 0), prolog_alert_signal(X, 0), prolog_alert_signal(_, usr2), R = X"),
+    (
+        "pa18",
+        raw"prolog_alert_signal(_, int), prolog_alert_signal(Old, hup), prolog_alert_signal(Now, Now), prolog_alert_signal(_, usr2), R = Old-Now"
+    ),
+    (
+        "pa19",
+        raw"prolog_alert_signal(_, 2), prolog_alert_signal(_, 0), prolog_alert_signal(X, 0), prolog_alert_signal(_, usr2), R = X"
+    ),
     ("pa20", raw"prolog_alert_signal(X, X), prolog_alert_signal(Y, Y), R = X-Y"),
-    ("tq01", raw"trie_new(T), trie_insert(T, f(a), 1), trie_insert(T, f(b), 2), trie_property(T, node_count(N)), '$trie_property'(T, node_count(M)), ( N == M -> R = same(N) ; R = differ(N, M) )"),
-    ("tq02", raw"trie_new(T), trie_insert(T, f(a), 1), trie_insert(T, f(b), 2), trie_property(T, node_count(N0)), trie_delete(T, f(a), _), trie_property(T, node_count(N1)), D is N0 - N1, R = r(N0, N1, D)"),
-    ("tq03", raw"trie_new(T), trie_insert(T, f(a), 1), trie_property(T, value_count(V)), trie_property(T, node_count(N)), R = V-N"),
+    (
+        "tq01",
+        raw"trie_new(T), trie_insert(T, f(a), 1), trie_insert(T, f(b), 2), trie_property(T, node_count(N)), '$trie_property'(T, node_count(M)), ( N == M -> R = same(N) ; R = differ(N, M) )"
+    ),
+    (
+        "tq02",
+        raw"trie_new(T), trie_insert(T, f(a), 1), trie_insert(T, f(b), 2), trie_property(T, node_count(N0)), trie_delete(T, f(a), _), trie_property(T, node_count(N1)), D is N0 - N1, R = r(N0, N1, D)"
+    ),
+    (
+        "tq03",
+        raw"trie_new(T), trie_insert(T, f(a), 1), trie_property(T, value_count(V)), trie_property(T, node_count(N)), R = V-N"
+    ),
     ("tq04", raw"trie_new(T), findall(F, ( trie_property(T, P), functor(P, F, _) ), R)"),
     ("tq05", raw"trie_new(T), ( current_trie(T2), T2 == T -> R = yes ; R = no )"),
-    ("tq06", raw"trie_new(T), trie_destroy(T), ( current_trie(T2), T2 == T -> R = yes ; R = no )"),
+    (
+        "tq06",
+        raw"trie_new(T), trie_destroy(T), ( current_trie(T2), T2 == T -> R = yes ; R = no )"
+    ),
     ("tq07", raw"trie_new(T), ( current_blob(B, trie), B == T -> R = yes ; R = no )"),
     ("tq08", raw"trie_new(T), ( trie_property(T, node_count(N)) -> R = N ; R = none )"),
     ("tq09", raw"( trie_property(foo, node_count(_)) -> R = yes ; R = no )"),
-    ("tq10", raw"trie_new(T1), trie_new(T2), trie_insert(T2, g(x, y), 1), trie_property(T1, node_count(N1)), trie_property(T2, node_count(N2)), R = N1-N2")
+    (
+        "tq10",
+        raw"trie_new(T1), trie_new(T2), trie_insert(T2, g(x, y), 1), trie_property(T1, node_count(N1)), trie_property(T2, node_count(N2)), R = N1-N2"
+    )
 ]
 
 # the driver's whole output, one line per case after `ok`, from swipl 10.1.20 at the pin
@@ -301,7 +349,8 @@ end
         @test any(l -> startswith(l, "t_$id "), _QB_PINNED)
     end
     answers(id) = count(
-        "c" * _qb_codes("t_$id") * "/1(", only(filter(l -> startswith(l, "t_$id "), _QB_PINNED))
+        "c" * _qb_codes("t_$id") * "/1(",
+        only(filter(l -> startswith(l, "t_$id "), _QB_PINNED))
     )
     @test answers("fb01") == 3     # [1,2] [3,4] [5]: two redos of `$suspend_findall_bag`
     @test answers("fb02") == 4     # [1,2] [3,4] [5,6] [7]: a third chunk (the counters carried over two suspensions)
@@ -320,23 +369,34 @@ end
         l -> startswith(l, "t_fb12 ") && occursin("a" * _qb_codes("q10b_err"), l),
         _QB_PINNED
     )
-    @test any(l -> startswith(l, "t_pa01 ") && occursin("a" * _qb_codes("usr2"), l), _QB_PINNED)
     @test any(
-        l -> startswith(l, "t_pa02 ") && occursin("a" * _qb_codes("usr1"), l) &&
-             occursin("a" * _qb_codes("usr2"), l),
+        l -> startswith(l, "t_pa01 ") && occursin("a" * _qb_codes("usr2"), l), _QB_PINNED
+    )
+    @test any(
+        l ->
+            startswith(l, "t_pa02 ") && occursin("a" * _qb_codes("usr1"), l) &&
+            occursin("a" * _qb_codes("usr2"), l),
         _QB_PINNED
     )
     @test any(l -> startswith(l, "t_pa03 ") && occursin("i0", l), _QB_PINNED)     # the integer 0, not an atom
     @test any(l -> startswith(l, "t_pa11 ") && occursin("i0", l), _QB_PINNED)
     @test any(
-        l -> startswith(l, "t_pa06 ") && occursin("a" * _qb_codes("instantiation_error"), l),
+        l ->
+            startswith(l, "t_pa06 ") && occursin("a" * _qb_codes("instantiation_error"), l),
         _QB_PINNED
     )
-    @test count(l -> startswith(l, "t_pa") && occursin("a" * _qb_codes("domain_error"), l), _QB_PINNED) ==
-          4   # pa04, pa12, pa13, pa17
+    @test count(
+        l -> startswith(l, "t_pa") && occursin("a" * _qb_codes("domain_error"), l),
+        _QB_PINNED
+    ) ==
+        4   # pa04, pa12, pa13, pa17
     @test any(l -> startswith(l, "t_tq04 ") && count("c[91,124,93]/2(", l) == 8, _QB_PINNED)   # eight properties
-    @test any(l -> startswith(l, "t_tq05 ") && occursin("a" * _qb_codes("yes"), l), _QB_PINNED)
-    @test any(l -> startswith(l, "t_tq06 ") && occursin("a" * _qb_codes("no"), l), _QB_PINNED)
+    @test any(
+        l -> startswith(l, "t_tq05 ") && occursin("a" * _qb_codes("yes"), l), _QB_PINNED
+    )
+    @test any(
+        l -> startswith(l, "t_tq06 ") && occursin("a" * _qb_codes("no"), l), _QB_PINNED
+    )
     @test any(l -> startswith(l, "t_tq01 ") && occursin("i4", l), _QB_PINNED)
     # the one known difference: swipl's answer is the pin, the kernel's differs from it
     ga07 = only(filter(l -> startswith(l, "t_ga07 "), _QB_PINNED))

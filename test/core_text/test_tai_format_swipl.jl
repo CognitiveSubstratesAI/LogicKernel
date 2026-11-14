@@ -164,8 +164,11 @@ function taf_check(pl::String, outp::String, tz::Union{Nothing, String})::Nothin
     @test all(i -> startswith(expected[i + 1], names[i] * " "), eachindex(names))
     @test all(l -> !endswith(l, " "), expected)
     @test !any(l -> endswith(l, " exception"), expected)                      # errors are caught by the rows, none escapes
-    kl = tz === nothing ? kernel_lines(_TL, pl, names) :
-         withenv(() -> kernel_lines(_TL, pl, names), "TZ" => tz)
+    kl = if tz === nothing
+        kernel_lines(_TL, pl, names)
+    else
+        withenv(() -> kernel_lines(_TL, pl, names), "TZ" => tz)
+    end
     @test length(kl) == length(expected)
     for i in eachindex(kl)
         @test (i, kl[i]) == (i, expected[i])
@@ -196,10 +199,16 @@ end
     # the evidence the rows exist for: the zone names of both halves of the year, the C-locale %c, the wrapped year, the sinks
     @test occursin(_codes("CEST"), expected[findfirst(startswith("t0 "), expected)])
     @test occursin(_codes("CET"), expected[findfirst(startswith("t0 "), expected)])
-    @test occursin(_codes("Thu Jan  1 01:00:00 1970"), expected[findfirst(startswith("t2 "), expected)])
+    @test occursin(
+        _codes("Thu Jan  1 01:00:00 1970"), expected[findfirst(startswith("t2 "), expected)]
+    )
     @test occursin(_codes("-2147483648"), expected[findfirst(startswith("t6 "), expected)])   # %G of year 2147483647 wraps
     @test occursin(_codes("ab"), expected[findfirst(startswith("t8 "), expected)])           # output before an error stays
-    @test occursin(_codes("permission_error"), expected[findfirst(startswith("t9 "), expected)])
-    @test occursin(_codes("existence_error"), expected[findfirst(startswith("t10 "), expected)])
+    @test occursin(
+        _codes("permission_error"), expected[findfirst(startswith("t9 "), expected)]
+    )
+    @test occursin(
+        _codes("existence_error"), expected[findfirst(startswith("t10 "), expected)]
+    )
     taf_check(_TAFZ_PL, _TAFZ_OUT, _TAFZ_TZ)
 end
