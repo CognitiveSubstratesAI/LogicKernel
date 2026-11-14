@@ -11,12 +11,15 @@
 #   `lg_clauses and tt_mono_status`, `the trail`, `tt_abolish_table`, `transaction_commit_tables`, `tt_rollback_answer`, `tt_rollback_tables`, `tt_rollback_actions`,
 #   `transaction_rollback_tables`, `merge_tabling_trail`, `reset_answer_table_tracked`, `is_trie_clause`); a row of one testset is the name inside its `obs` lines
 #   (`outside=`, `notdynamic=`, `erased=`, `atmax=`, `belowbase=`, `force=`, `once=`, `gen0=`, `table=`, `answer=`, `intables=`, `notrail=`, `commit=`, `lazy=`, `nonlazy=`, `n2=`, ...).
+#   NEW (see TWO CLASSES): testsets "<unit>: the nested, constraint-failure and abolish cases run as swipl's pins" (rows: nm_merge, nm_merge_fresh, nr_snapshot, nr_failed,
+#   nr_constraint, restore_trail, restore_trail_after, cf_constraint, cf_bulk_announce, ab_destroy) and the white-box testset (the line `cleared=`).
 #   UP = test/core_lang/test_tabling_transaction_swipl.jl: the 29 upstream cases, one testset "<unit>: the upstream cases run as swipl's pins" per unit; a case id (commit, rollback,
 #   sn1..sn4, retract, outside_assert, mixed_assert, new_dependencies, already_forced_1/2) is a row of its unit. Its answer is compared with the pinned swipl 10.1.20's, so any
 #   difference in the answer kills.
-# TWO CLASSES: KILL (names its row or rows); EQUIVALENT (`equivalent=` with the file:line reason). Mutants whose effect NO row reads stay as `equivalent="DEFERRED KILL: ..."`
-#   (TX1.py's convention): they must SURVIVE the battery, and each names the row the gate has still to write. The nested-transaction mutants are the main ones: none of the 29
-#   upstream cases nests a transaction, and test_transaction_swipl.jl runs no table.
+# TWO CLASSES: KILL (names its row or rows); EQUIVALENT (`equivalent=` with the file:line reason). The five mutants that were `DEFERRED KILL` (no row of the first two files read
+#   them: none of the 29 upstream cases nests a transaction, makes one fail through a constraint or abolishes a table inside one) are KILLS now, of the rows of NEW =
+#   test/core_lang/test_tabling_transaction_nested_swipl.jl: 16 cases x 3 units (`nested_incr`, `nested_mono`, `nested_mono_lazy`), pinned on swipl 18168e62 and NOT upstream cases
+#   (no upstream test nests a transaction over a table), plus the white-box testset `abolish_table forgets the trail's answers`. A row of NEW is a case id of a unit.
 # TARGETS (audit D-0238): the WB file and UP (the two files of the step); TX (test_transaction_swipl.jl: runs `transaction`, `transaction_updates`/`is_trie_clause`, and the
 #   commit and rollback of every outermost transaction); TI and TM (the IDG and monotonic rows: `idg_add_child`, `force_reeval`, `complete_worklist`, `mono_reeval_*` run there
 #   outside a transaction, where the tt_* functions must stay inert); TMIN (tabled calls that reach `complete_worklist`); AB (`abolish_table`, `reset_table_bulk`). NOT listed:
@@ -29,8 +32,9 @@ TI = "test/core_lang/test_tabling_idg_swipl.jl"
 TM = "test/core_lang/test_tabling_monotonic_swipl.jl"
 TMIN = "test/core_lang/test_tabling_min_swipl.jl"
 AB = "test/core_lang/test_tabling_abolish_swipl.jl"
-TARGETS = [WB, UP, TX, TI, TM, TMIN, AB]
-TWB = [WB, UP, TX]                      # the functions only a transaction runs
+NEW = "test/core_lang/test_tabling_transaction_nested_swipl.jl"   # nested, constraint-failure and abolish rows (pinned on swipl, NOT upstream cases)
+TARGETS = [WB, UP, TX, TI, TM, TMIN, AB, NEW]
+TWB = [WB, UP, TX, NEW]                 # the functions only a transaction runs
 TAB = "src/pl-tabling.jl"
 TRN = "src/pl-transaction.jl"
 MUTANTS = [
@@ -253,24 +257,20 @@ MUTANTS = [
          file=TRN, targets=TWB,
          old='            rc = transaction_discard(gd, ld) && rc\n            rc = transaction_rollback_tables(ld) && rc\n        end\n        tr.id = 0\n',
          new='            rc = transaction_discard(gd, ld) && rc\n        end\n        tr.id = 0\n'),
-    dict(id='TB9-hook-rollback-fail (DEFERRED KILL: a transaction whose constraint or bulk announce fails does not roll the tables back)',
+    dict(id='TB9-hook-rollback-fail (KILL NEW cf_constraint and cf_bulk_announce, all three units: a transaction whose constraint or bulk announce fails does not roll the tables back; the incremental table answers `valid` for `invalid`, the monotonic ones [1,2] for [1])',
          file=TRN, targets=TWB,
-         equivalent='DEFERRED KILL: the branch `rc` false after the goal succeeded needs a `transaction/2` constraint or a bulk announce that fails over a table change; no UP case has one (the 29 cases use `transaction/1` and `snapshot/1`): a row `transaction(Goal, fail)` over a table is the gate to-do',
          old='                transaction_discard(gd, ld)\n                transaction_rollback_tables(ld)\n',
          new='                transaction_discard(gd, ld)\n'),
-    dict(id='TB9-hook-nested-merge (DEFERRED KILL: a nested transaction that commits drops its table trail, so the parent\'s rollback leaves the answers: no UP case nests a transaction)',
+    dict(id='TB9-hook-nested-merge (KILL NEW nm_merge and nm_merge_fresh on nested_mono and nested_mono_lazy: a committed nested transaction drops its table trail, so the outer rollback leaves the inner answer, [1,2,3]/[1,2] for [1])',
          file=TRN, targets=TWB,
-         equivalent='DEFERRED KILL: none of the 29 upstream cases nests a transaction and test_transaction_swipl.jl runs no table; the gate to-do is `transaction((transaction(assertz(d(2)), tt_ex(p, B)), fail))` over a monotonic table, expected [1] after, as pinned by swipl',
          old='                    merge_tabling_trail(parent.table_trail, tr.table_trail)\n',
          new='                    nothing\n'),
-    dict(id='TB9-hook-nested-rollback (DEFERRED KILL: a nested transaction that is discarded does not roll its tables back: no UP case nests a transaction)',
+    dict(id='TB9-hook-nested-rollback (KILL NEW nr_snapshot, nr_failed, nr_constraint: a discarded nested transaction does not roll its tables back; nested_incr `valid` for `invalid` inside the outer, nested_mono answers the inner change)',
          file=TRN, targets=TWB,
-         equivalent='DEFERRED KILL: as TB9-hook-nested-merge, no row nests a transaction over a table; the gate to-do row is `transaction(snapshot(assertz(d(2)), tt_ex(p, B)))` over an incremental table, expected `invalid` after',
          old='            rc = transaction_rollback_tables(ld) && rc\n            tr.generation = parent.generation\n',
          new='            tr.generation = parent.generation\n'),
-    dict(id='TB9-hook-restore (DEFERRED KILL: the nested transaction does not restore the parent\'s trail at its end: no UP case nests a transaction)',
+    dict(id='TB9-hook-restore (KILL NEW restore_trail and restore_trail_after on nested_incr: the nested transaction does not restore the parent\'s trail, the outer rollback does nothing, `valid` for `invalid`)',
          file=TRN, targets=TWB,
-         equivalent='DEFERRED KILL: as TB9-hook-nested-merge, no row nests a transaction over a table',
          old='        tr.table_trail = parent.table_trail\n',
          new='        nothing\n'),
     # ── the sites in src/pl-tabling.jl ──
@@ -318,9 +318,8 @@ MUTANTS = [
          file=TAB, targets=TARGETS,
          old='        idg.tt_new_dep && tt_add_table(ld, atrie, TT_TBL_INVALIDATE)\n',
          new='        false && tt_add_table(ld, atrie, TT_TBL_INVALIDATE)\n'),
-    dict(id='TB9-site-reset-abolish (DEFERRED KILL: `abolish_table` does not clear TRIE_ISTRACKED; the table is destroyed next, no row reads the flag)',
+    dict(id='TB9-site-reset-abolish (KILL NEW white-box testset `abolish_table forgets the trail\'s answers`, line `cleared=`: abolish_table leaves the trail action and TRIE_ISTRACKED; `\'$tbl_destroy_table\'/1` is its Prolog route, ab_destroy)',
          file=TAB, targets=TARGETS,
-         equivalent='DEFERRED KILL: the three callers of reset_answer_table_tracked (destroy_answer_trie, abolish_table, reset_table_bulk) run it before the table is destroyed, and the trail is `nothing` outside a transaction (every UP case cleans up outside); a row `abolish_all_tables` inside a transaction after a monotonic answer, then the rollback, is the gate to-do',
          old='                reset_answer_table_worklist(ld, atrie, rat_flags)\n                reset_answer_table_idg(ld, atrie, rat_flags)\n                reset_answer_table_tracked(ld, atrie)\n',
          new='                reset_answer_table_worklist(ld, atrie, rat_flags)\n                reset_answer_table_idg(ld, atrie, rat_flags)\n'),
 ]

@@ -21,7 +21,7 @@
 #   * `ab_abolish*` abolish with `abolish_all_tables` (the bulk reset, `reset_table_bulk`); `ab_destroy*` abolish one table with
 #     `'$tbl_destroy_table'/1` (`tn_destroy/1`, the route of `abolish_table_subgoals`, the `abolish_table` of pl-tabling.c).
 #   * A QUIRK pinned as it is: `ab_abolish_reeval` on the monotonic NON-lazy unit answers [1,2] after the rollback (the other two
-#     units answer [1]); swipl's table keeps the answer that was re-evaluated inside the aborted transaction. The pin is swipl's.
+#     units answer [1]); swipl's table keeps the answer that was re-evaluated inside the transaction that was rolled back. The pin is swipl's.
 #   * UNVERIFIED on the kernel (nothing was compiled when these rows were written): every kernel answer; the gate decides.
 using Test, LogicKernel
 const LK = LogicKernel
