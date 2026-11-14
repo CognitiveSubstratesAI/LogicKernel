@@ -94,8 +94,6 @@ pred:current_blob/2	Q10	seed: missing_c_preds.tsv
 pred:engine_next/2	TH1	seed: missing_c_preds.tsv
 pred:format_time/3	TAI1	seed: missing_c_preds.tsv
 pred:garbage_collect_atoms/0	Q10	seed: missing_c_preds.tsv
-pred:get/1	S2a	seed: missing_c_preds.tsv
-pred:get/2	S2a	seed: missing_c_preds.tsv
 pred:get_flag/2	FL1	seed: missing_c_preds.tsv
 pred:is_engine/1	TH1	seed: missing_c_preds.tsv
 pred:message_queue_create/1	TH1	seed: missing_c_preds.tsv
@@ -103,8 +101,6 @@ pred:message_queue_destroy/1	TH1	seed: missing_c_preds.tsv
 pred:notrace/0	DBG1	seed: missing_c_preds.tsv
 pred:prolog_choice_attribute/3	DBG1	seed: missing_c_preds.tsv
 pred:prolog_frame_attribute/3	DBG1	seed: missing_c_preds.tsv
-pred:put/1	S2a	seed: missing_c_preds.tsv
-pred:put/2	S2a	seed: missing_c_preds.tsv
 pred:set_flag/2	FL1	seed: missing_c_preds.tsv
 pred:set_thread/2	TH1	seed: missing_c_preds.tsv
 pred:shell/2	Q10	seed: missing_c_preds.tsv
@@ -176,11 +172,7 @@ refusal:src/os/pl-files.jl::get_file_name::PL_get_file_name flag PL_FILE_SEARCH 
 refusal:src/os/pl-files.jl::_iri_hook_refused::iri_hook $what (`\$iri`:iri_hook/4 of init.pl)	LB5-LB7	off the load path: serves http:// style IRIs; the library ring
 refusal:src/os/pl-files.jl::_tmp_file_refused::what	LB5-LB7	tmp_file/2 and $tmp_file_stream/4: boot, off the load path (lb5_sizing.md Ring Q)
 # refusal sites, assignments settled by an existing step list (D-0408 item 5, D-0414 item 3f): evidence/R2/refusal_owners.md has the upstream function of each
-refusal:src/os/pl-file.jl::get_stream_handle::a stream pair	S2b	stream_pair/3 handle (pl-file.c get_stream_handle); S2b is the pl-file.c remainder
 refusal:src/os/pl-file.jl::openStream::open/4's locale(Locale) option	CT1	open/4 locale(Locale) option (pl-file.c openStream, PL_locale); the locale objects of pl-locale.c
-refusal:src/os/pl-file.jl::openStream::open/4's lock(Lock) option (advisory file locks)	S2b	open/4 lock(Lock) option (pl-file.c openStream, Sseterr/flock); stream-layer remainder
-refusal:src/os/pl-file.jl::openStream::open(pipe(Command), …)	S2b	open(pipe(Cmd)) (pl-file.c openStream, pl-stream.c Sopen_pipe); stream-layer remainder
-refusal:src/os/pl-file.jl::pl_close::closing a stream pair	S2b	close of a stream pair (pl-file.c do_close via stream_pair); with the pair itself
 refusal:src/os/pl-file.jl::set_stream::set_stream/2's locale(Locale)	CT1	set_stream/2 locale(Locale) (pl-file.c set_stream, PL_locale); with open/4's locale option
 refusal:src/pl-comp.jl::compileSubClause!::compileArith (optimise)	AR1	compileArith under the optimise flag (pl-comp.c O_COMPILE_ARITH); needs the A_* instructions (Q-AR3)
 refusal:src/pl-event.jl::PL_call_event_hook_va::the thread events (`unify_thread_id`)	TH1	thread events unify_thread_id (pl-event.c); threads flag is false
@@ -191,20 +183,8 @@ refusal:src/pl-srcfile.jl::startConsult::consulting a file again (reconsult)	LB6
 refusal:src/pl-wam.jl::PL_next_solution_guarded::backtracking into a $(db_c.type) choice point	CONT1	backtracking into a non-clause choice point (pl-wam.c, the I_RESET/I_YIELD/foreign-redo frames)
 refusal:src/pl-write.jl::writeAttVar::write_term/2 attributes(portray): '\$attvar':portray_attvar/	AV10	attributes(portray) writeAttVar (pl-write.c, '$attvar':portray_attvar/1)
 # refusal sites, assignments proposed in evidence/R2/refusal_owners.md (new deferred step names ENC1, RD2, WR2 and the QUESTION rows): confirmed by the audit (D-0415 item 5: ENC1, RD2, WR2 are the names of deferred steps; indexed(L) is PR1b)
-refusal:src/os/pl-file.jl::openStream::open/4's unicode_atoms(Mode) option	ENC1	open/4 unicode_atoms(Mode) option (pl-file.c openStream); the NFC normalizer rides with ENC1
-refusal:src/os/pl-file.jl::openStream::string("open/4 with the stream encoding ", enc)	ENC1	open/4 encodings other than UTF-8 (pl-file.c openStream); UTF-8 only by the R1 decision of 2026-10-07
-refusal:src/os/pl-file.jl::_atom_to_unicode_atoms::set_stream/2's unicode_atoms(nfc)	ENC1	set_stream/2 unicode_atoms(nfc) (pl-file.c set_stream); the NFC normalizer rides with ENC1
 refusal:src/os/pl-fmt.jl::pl_format_predicate2_va::format_predicate/2 (GD->format.predicates)	LB5-LB7	format_predicate/2 (pl-fmt.c); library-only (tty.pl directives), the D9 table stays empty
 refusal:src/os/pl-os.jl::expandVars::expandVars: ~user (getpwnam)	LB5-LB7	~user expansion (pl-os.c expandVars, getpwnam); off the load path, file_name_variables only
-refusal:src/os/pl-stream.jl::put_code::put_code: encoding $enc	ENC1	put_code in an encoding other than UTF-8 (pl-stream.c Sputcode); R1 decision
-refusal:src/os/pl-stream.jl::Scanrepresent::Scanrepresent: encoding $enc	ENC1	Scanrepresent in an encoding other than UTF-8 (pl-stream.c); R1 decision
-refusal:src/os/pl-stream.jl::Sgetcode::Sgetcode: encoding $enc	ENC1	Sgetcode in an encoding other than UTF-8 (pl-stream.c); R1 decision
-refusal:src/os/pl-text.jl::PL_canonicalise_text::PL_canonicalise_text of $enc	ENC1	PL_canonicalise_text of a text in another encoding (pl-text.c); branch without a kernel caller
-refusal:src/os/pl-text.jl::text_error::text_error of $rc	ENC1	text_error of a code other than the code-point error (pl-text.c); branch without a kernel caller
-refusal:src/os/pl-text.jl::PL_mb_text::PL_mb_text to a target other than REP_UTF8	ENC1	PL_mb_text to a target other than REP_UTF8 (pl-text.c wctobuffer, PL_demote_text); no kernel caller
-refusal:src/os/pl-text.jl::PL_mb_text::PL_mb_text of $(text.encoding)	ENC1	PL_mb_text of a text in another encoding (pl-text.c); branch without a kernel caller
-refusal:src/os/pl-text.jl::_text_string::the string of a text in $(text.encoding)	ENC1	string of a text in another encoding (pl-text.c); branch without a kernel caller
-refusal:src/os/pl-text.jl::_text_code_points::the code points of a text in $(text.encoding)	ENC1	code points of a text in another encoding (pl-text.c); branch without a kernel caller
 refusal:src/pl-comp.jl::assert_term!::assert_term: PL_CREATE_INCREMENTAL/THREAD_LOCAL	TAB1	assert_term PL_CREATE_INCREMENTAL (tabling); the PL_CREATE_THREAD_LOCAL half is TH1 (pl-comp.c assert_term)
 refusal:src/pl-modul.jl::set_module::set_module(program_space(N)): the module's code accounting	P3	set_module(program_space(N)) code accounting (pl-modul.c); resource-limit family, unreached by the boot
 refusal:src/pl-proc.jl::get_procedure::get_procedure: other than GP_DEFINE	PR1	generic get_procedure modes beyond GP_DEFINE (pl-proc.c); callers use the split get_procedure_* functions, PR1 residual
@@ -215,12 +195,8 @@ refusal:src/pl-read.jl::raw_read2::raw_read2: the comments(C) read option #2	RD2
 refusal:src/pl-read.jl::start_pframe::read: a blob <type>(…)	RD2	reading a blob <type>(...) (pl-read.c PF_BLOB); the blob lookup
 refusal:src/pl-read.jl::start_pframe::read: a quasi-quotation {|Syntax||Quotation|}	RD2	quasi-quotation {|Syntax||Text|} (pl-read.c); refused by the R1 decision, lifted only if the user lifts it
 refusal:src/pl-read.jl::read_clause::read_clause's $what option	RD2	read_clause comments / var_prefix options (pl-read.c read_clause)
-refusal:src/pl-read.jl::read_clause::read_clause's process_comment(true) or unicode_atoms option	RD2	read_clause process_comment(true) option (pl-read.c); unicode_atoms half rides with ENC1
-refusal:src/pl-read.jl::read_clause::unicode_atoms(nfc)	ENC1	read_clause unicode_atoms(nfc) (pl-read.c); the NFC normalizer
+refusal:src/pl-read.jl::read_clause::read_clause's process_comment(true) option	RD2	read_clause process_comment(true) option (pl-read.c); the unicode_atoms half is ported (ENC1)
 refusal:src/pl-read.jl::read_term_from_stream::read_term's $what option	RD2	read_term comments / var_prefix / quasi_quotations options (pl-read.c pl_read_term)
-refusal:src/pl-read.jl::read_term_from_stream::read_term's unicode_atoms option	ENC1	read_term unicode_atoms option (pl-read.c pl_read_term); the NFC normalizer
-refusal:src/pl-string.jl::PL_text_recode::PL_text_recode to $encoding	ENC1	PL_text_recode to ENC_ANSI, the locale encoding (pl-string.c); with CT1's locale
-refusal:src/pl-string.jl::pl_string_bytes3_va::string_bytes/3 with the encoding text	ENC1	string_bytes/3 with the text (ENC_ANSI) encoding (pl-string.c); with CT1's locale
 refusal:src/pl-supervisor.jl::freeCodesDefinition!::freeCodesDefinition! of a wrapped predicate needs the databa	WRAP1	freeCodesDefinition of a wrapped predicate (pl-supervisor.c), needs the database; wrap closures are WRAP1
 refusal:src/pl-wam.jl::PL_next_solution_guarded::the VM instruction $(codeTable(thiscode).name)	TAB1	dispatch fallthrough for a VM instruction without a body (pl-vmi.c); each missing instruction has its own vmi: row, the last instruction (S_TABLED) removes this site
 refusal:src/pl-write.jl::writePrimitive::writing a grounded value SWI has no type for	WR2	writePrimitive of a grounded value SWI has no type for; a representation guard of the kernel, permanent until the blob writer takes it
