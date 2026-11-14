@@ -4,8 +4,9 @@
 # mono_index_build). Run ONCE, in CI (.github/workflows/mutation.yml). NOT RUN, written edit-only on wip/trie-charge (nothing compiled): no verdict is
 # known, no mutant is declared equivalent. Format: tools/mutate_drive.py's: `id`, `file`, `old` (EXACTLY once), `new`, `targets`. Each `old` was counted
 # once by a python3 script. The expected kills: DYNERR v01/v02 of test_tabling_tb6rows_swipl.jl (table_space 1508 refuses the answer) kill the
-# charge sites A, G, K-M, U, V and the error paths X, S; the release sites (C-F, N-Q) are read by a table_space_used / trie_property(size) row after an abolish
-# or a prune, which this step did not write (a SURVIVOR of those is the work item, not proof of dead code: D-0238). Every id names the C line it ports.
+# charge sites A, G, K-M, U, V and the error paths X, S; the release sites (C-F, N-Q) are read by the rows TRIE-CHARGE added to test/core_lang/test_tabling_tb6rows_swipl.jl (groups SPACE and
+# PRUNE: table_space_used after an abolish and after a re-evaluation that deleted answers, pinned from swipl 10.1.20; a white-box testset for C-E: the atom GC
+# that destroys a table's trie in swipl has no kernel twin). Each id names its row; written WITHOUT a kernel run (a SURVIVOR is the work item, not proof of dead code: D-0238). Every id names the C line it ports.
 # TARGETS (audit D-0238): every test file that mentions a touched function or `table_space` (git grep over test/, the manifest excluded).
 TARGETS = ['test/core_lang/test_lb7_swipl.jl', 'test/core_lang/test_prolog_flag_swipl.jl', 'test/core_lang/test_set_flag_swipl.jl', 'test/core_lang/test_tabling_a1_guard.jl', 'test/core_lang/test_tabling_abolish_bulk_upstream_swipl.jl', 'test/core_lang/test_tabling_abolish_swipl.jl', 'test/core_lang/test_tabling_answers_swipl.jl', 'test/core_lang/test_tabling_events_swipl.jl', 'test/core_lang/test_tabling_idg_sets_upstream_swipl.jl', 'test/core_lang/test_tabling_idg_swipl.jl', 'test/core_lang/test_tabling_incr_dyn_nodes_upstream_swipl.jl', 'test/core_lang/test_tabling_monotonic_swipl.jl', 'test/core_lang/test_tabling_s5_guard.jl', 'test/core_lang/test_tabling_state_swipl.jl', 'test/core_lang/test_tabling_tabling_upstream_c_swipl.jl', 'test/core_lang/test_tabling_tb4rows2_swipl.jl', 'test/core_lang/test_tabling_tb4rows_swipl.jl', 'test/core_lang/test_tabling_tb6rows_swipl.jl', 'test/core_lang/test_tabling_transaction_nested_swipl.jl', 'test/core_lang/test_tabling_transaction_swipl.jl', 'test/core_lang/test_tabling_transaction_wb_swipl.jl', 'test/core_lang/test_tabling_trie_index_upstream_swipl.jl', 'test/core_lang/test_tabling_trie_upstream_swipl.jl', 'test/core_lang/test_tabling_variant_swipl.jl', 'test/core_lang/test_tabling_w2_swipl.jl', 'test/core_lang/test_tabling_wfs_swipl.jl', 'test/core_lang/test_tabling_worklist_swipl.jl', 'test/core_lang/test_trie_preds_swipl.jl', 'test/core_lang/test_trie_property_idg_swipl.jl', 'test/core_lang/test_trie_swipl.jl', 'test/db/test_boot_image_swipl.jl']
 MUTANTS = [
@@ -17,19 +18,19 @@ MUTANTS = [
          file='src/pl-trie.jl', targets=TARGETS,
          old='    tr.alloc_pool = pool                                        # pl-trie.c:242\n',
          new='    nothing\n'),
-    dict(id='TRIECH-TC-C trie_destroy of a table does not release the struct (:267)',
+    dict(id='TRIECH-TC-C trie_destroy of a table does not release the struct (:267) [row: white-box row TRIE-STRUCT (test_tabling_tb6rows_swipl.jl)]',
          file='src/pl-trie.jl', targets=TARGETS,
          old='        idg_free_or_defer(free_trie_struct, tr, tr.alloc_pool)  # pl-trie.c:267\n',
          new='        nothing\n'),
-    dict(id='TRIECH-TC-D trie_destroy of another trie does not release the struct (:269)',
+    dict(id='TRIECH-TC-D trie_destroy of another trie does not release the struct (:269) [row: white-box row TRIE-STRUCT (test_tabling_tb6rows_swipl.jl)]',
          file='src/pl-trie.jl', targets=TARGETS,
          old='        free_to_pool(tr.alloc_pool, SIZEOF_TRIE)                # pl-trie.c:269\n',
          new='        nothing\n'),
-    dict(id='TRIECH-TC-E free_trie_struct releases nothing (:257)',
+    dict(id='TRIECH-TC-E free_trie_struct releases nothing (:257) [row: white-box row TRIE-STRUCT (test_tabling_tb6rows_swipl.jl)]',
          file='src/pl-trie.jl', targets=TARGETS,
          old='    free_to_pool(pool, SIZEOF_TRIE)                             # pl-trie.c:257\n',
          new='    nothing\n'),
-    dict(id='TRIECH-TC-F free_block releases nothing (:729)',
+    dict(id='TRIECH-TC-F free_block releases nothing (:729) [row: SPACE s01-s06 (test_tabling_tb6rows_swipl.jl)]',
          file='src/pl-trie.jl', targets=TARGETS,
          old='    free_to_pool(tr.alloc_pool, sizeof_block(block_at(tr, bid)))  # pl-trie.c:729\n',
          new='    nothing\n'),
@@ -61,19 +62,19 @@ MUTANTS = [
          file='src/pl-trie.jl', targets=TARGETS,
          old='    trie_alloc_from_pool(tr, bytes, ld) || return nothing                   # pl-trie.c:1113\n',
          new='    nothing\n'),
-    dict(id='TRIECH-TC-N free_trie_node does not release an individual node (:1200)',
+    dict(id='TRIECH-TC-N free_trie_node does not release an individual node (:1200) [row: SPACE s02 s04 s07, PRUNE p05]',
          file='src/pl-trie.jl', targets=TARGETS,
          old='        free_to_pool(tr.alloc_pool, SIZEOF_TRIE_NODE)           # pl-trie.c:1200\n',
          new='        nothing\n'),
-    dict(id='TRIECH-TC-O free_chunk_list releases nothing (:1268)',
+    dict(id='TRIECH-TC-O free_chunk_list releases nothing (:1268) [row: SPACE s04 s06 s07, PRUNE p01 p03]',
          file='src/pl-trie.jl', targets=TARGETS,
          old='        free_to_pool(tr.alloc_pool, Int(c.bytes))               # pl-trie.c:1268\n',
          new='        nothing\n'),
-    dict(id='TRIECH-TC-P free_node_chunks does not release the chunks',
+    dict(id='TRIECH-TC-P free_node_chunks does not release the chunks [row: SPACE s04 s06 s07, PRUNE p01]',
          file='src/pl-trie.jl', targets=TARGETS,
          old='    free_chunk_list(tr, all)\n',
          new='    nothing\n'),
-    dict(id='TRIECH-TC-Q sweep_node_chunks does not release the dropped chunks',
+    dict(id='TRIECH-TC-Q sweep_node_chunks does not release the dropped chunks [row: PRUNE p03 (test_tabling_tb6rows_swipl.jl)]',
          file='src/pl-trie.jl', targets=TARGETS,
          old='    empty === nothing || free_chunk_list(tr, empty)             # free_chunk_list(empty)\n',
          new='    nothing\n'),
