@@ -23,6 +23,9 @@
 # UPSTREAM: swipl-devel src/pl-trie.c @ 18168e629eab
 # UPSTREAM: swipl-devel src/pl-trie.h @ 18168e629eab
 # UPSTREAM: swipl-devel src/pl-indirect.h @ 18168e629eab
+# UPSTREAM: swipl-devel src/pl-transaction.h @ 18168e629eab
+# UPSTREAM: swipl-devel src/pl-transaction.c @ 18168e629eab
+# UPSTREAM: swipl-devel src/pl-thread.h @ 18168e629eab
 # CLASS: code
 # COPYRIGHT: Copyright (c)  1985-2026, University of Amsterdam,
 # COPYRIGHT: VU University Amsterdam
@@ -734,6 +737,11 @@ mutable struct clause{T, D}
     owner_no::UInt32                # Index of owning source-file
 end
 
+# DIVERGES: a clause is hashed by its address, as upstream's `newHTablePW` tables (`tr->clauses`, pl-transaction.c:120)
+# key by the pointer; the default `hash` of a mutable struct calls `objectid`, a runtime call that AllocCheck reports as allocating
+# (ci/tx1m4: `Allocating runtime call to "jl_object_id" in ./runtime_internals.jl:901`, reached from `visibleClause`). Equality stays `===`.
+Base.hash(cl::clause, h::UInt)::UInt = hash(UInt(pointer_from_objref(cl)), h)
+
 "The start of `cl`'s code (upstream's `PC = cl->codes`), with its literal table."
 Code(cl::clause{T}, pc::Int) where {T} = Code{T}(cl.codes, cl.literals, pc)
 
@@ -1325,7 +1333,7 @@ ld_transaction{T}() where {T} =
         nothing
     )
 
-# PORT: pl-transaction.c current_transaction
+# PORT: pl-transaction.c current_transaction as tr_enum
 # DIVERGES: the redo state of `current_transaction/1` is a record of the local data's pool (`ld.transaction_enums`,
 # `foreign_state_pool`), its index the `REDO_PTR` context, where upstream's context is the `tr_stack` pointer itself; the record
 # holds that stack level. A pool record is REUSED: the first redo sets `stack` again.

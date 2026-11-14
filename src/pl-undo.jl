@@ -1,6 +1,8 @@
 # UPSTREAM: swipl-devel src/pl-undo.c @ 18168e629eab
+# UPSTREAM: swipl-devel src/pl-undo.h @ 18168e629eab
 # CLASS: code
-# COPYRIGHT: Copyright (c)  2022-2025, SWI-Prolog Solutions b.v.
+# COPYRIGHT: Copyright (c)  2022-2925, SWI-Prolog Solutions b.v.
+# (the year range is copied exactly as pl-undo.c at the pin has it, typo included: tools/port_check.jl compares the line)
 #
 # PORTED FROM pl-undo.c (TX1e): `undo/1`, goals run when a trailed assignment of the first global cell is undone (on
 # backtracking). `'$undo'(Goal)` records `Goal` (a record in `gd.undo_refs`, named by an atom of the blob type `undo`) and
