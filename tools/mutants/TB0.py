@@ -235,6 +235,6 @@ MUTANTS = [
          new="const DL_UNDEFINED = 0\n"),
     dict(id="TB0-K4 WLFS_FREE_ALL is WLFS_KEEP_COMPLETE (KILL TT:299 `(WLFS_FREE_NONE, WLFS_KEEP_COMPLETE, WLFS_FREE_ALL, WLFS_DISCARD_INCOMPLETE) == (0, 1, 2, 4)`, row R9: the consumer is TB2/TB3, a literal row is TB0's, as PIN1-R1; DV_DELETED (TT:301), CAND_* (TT:300), SCC_NEG_* (TT:296), TBL_FREE_* (TT:297-298), CLUSTER_* (TT:295) are the same rows)",
          file=TAB, targets=[TT],
-         old="const WLFS_FREE_ALL = 0x0002\n",
-         new="const WLFS_FREE_ALL = 0x0001\n"),
+         old="const WLFS_FREE_ALL = Int(0x0002)\n",
+         new="const WLFS_FREE_ALL = Int(0x0001)\n"),
 ]

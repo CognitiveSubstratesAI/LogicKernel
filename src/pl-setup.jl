@@ -133,7 +133,8 @@ end
 # (audit D-0122 Q1 (a), a representation-only divergence: upstream assigns the two local-stack cells
 # themselves, pl-attvar.c:127 "on local stack!", and its own TBD, pl-wam.c:1565, names the global
 # stack); the others belong to subsystems not ported (`trim.dummy`, `attvar.gc_attvars` (G1), undo
-# hooks, tabling; nor `destroyGlobalVars`). So later term references
+# hooks, tabling's `idg_current`; nor `destroyGlobalVars`); since TAB1 TB4 `tabling.delay_list` (`init_delay_list`, after the
+# attvar pair as upstream). So later term references
 # lie at other absolute positions than in
 # swipl: compare DIFFERENCES between positions with swipl, never absolute ones.
 "Empty the local stack and the trail, then open the base foreign frame (pl-setup.c)."
@@ -177,6 +178,7 @@ function emptyStacks!(ld::PL_local_data{T})::Nothing where {T}
     ld.attvar_head = PL_new_term_ref(ld)                       # LD->attvar.head
     ld.attvar_tail = PL_new_term_ref(ld)                       # LD->attvar.tail
     @assert unRef(ld.slots[ld.attvar_tail + 1]) == unRef(ld.slots[ld.attvar_head + 1]) + 1
+    ld.tabling.delay_list = init_delay_list(ld)                # LD->tabling.delay_list = init_delay_list(); (pl-setup.c:1558, TAB1 TB4)
     ld.tmp_h = PL_new_term_refs(ld, TMP_PTR_SIZE)              # for(i…) LD->tmp.h[i] = PL_new_term_ref()
     ld.tmp_top = 0                                             # LD->tmp.top = 0
     ld.tmp_cells = unRef(ld.slots[ld.tmp_h + 1])               # (PERMANENT, as the exception's: popTermRef)
