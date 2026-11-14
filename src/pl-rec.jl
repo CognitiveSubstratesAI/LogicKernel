@@ -39,6 +39,13 @@
 # `PL_TYPE_EXT_*` opcodes), `term_complexity`,
 # atom references and their marking (`markAtomsRecord`: no atom GC), dicts (`PL_TYPE_DICT`), and
 # `freeRecord` (a record is freed by Julia's GC).
+# Synced to cf6960c2: the target's changes to the external records are unwritten here, with the rest of
+# them: `check_external` and its readers (it replaced `is_external`: `fast_read/2` and
+# `fast_term_serialized/2` now refuse a malformed record with `syntax_error`), `recorded_external`
+# (`PL_recorded_external` calls it without the check), `read_record_body` (the record read in chunks, a
+# bogus size no longer allocates), `readSizeInt`'s size limit, the dict offsets buffer, `PL_TYPE_PTRINT`
+# and the changed signatures of `scanAtomsRecord`/`markAtomsRecord`; no predicate of them is registered
+# here, so no answer of this kernel changes.
 #
 # ATTRIBUTED VARIABLES (AV6, as upstream's `O_ATTVAR` cases): `PL_TYPE_ATTVAR` records an attributed
 # variable as a numbered variable followed by its attribute list, so findall/3 and bagof/3 give back
@@ -144,7 +151,11 @@ end
 # PORT: pl-rec.c compile_term_to_heap
 # DIVERGES: on locations (`ld.walk_agenda`, dereferenced here); the cases of the kernel's words (see
 # the file header); always true (upstream fails only for an external record's blob: not ported). An
-# attributed variable's `goto again` on its attribute list is the inner loop.
+# attributed variable's `goto again` on its attribute list is the inner loop. Synced to cf6960c2: the
+# target records an inline integer that `isPtrInt` marks (a pointer integer, a new tag form) with the
+# new opcode `PL_TYPE_PTRINT` instead of `PL_TYPE_TAGGED_INTEGER` unless the record is external. This
+# kernel keeps a pointer as a plain integer (`PL_get_pointer_ex`), so the test cannot hold here and the
+# opcode is left out by design.
 "Compile the term of agenda `a` into `info` (pl-rec.c `compile_term_to_heap`)."
 function compile_term_to_heap(
     ld::PL_local_data{T}, a::cell_agenda, info::compile_info{T}
@@ -310,6 +321,10 @@ function fetchSizeInt(code::Vector{UInt8}, b::copy_info)::Int
 end
 
 # PORT: pl-rec.c fetchInt64
+# DIVERGES: the code is a `Vector{UInt8}` read by index. Synced to cf6960c2: the target moved the byte
+# decoding into a new `static inline int64_from_bytes(data, bytes)`, for `check_external` too, and
+# `fetchInt64` calls it (also masking the length byte with `0xff`): the same decoding, a C refactor
+# whose second caller (external records) is unwritten here.
 "The signed integer at the copy's position, advanced past it (pl-rec.c)."
 function fetchInt64(code::Vector{UInt8}, b::copy_info)::Int64
     val = UInt64(0)
@@ -374,7 +389,12 @@ end
 # cell of the block, an indirect stored as `_slot_link_loc!` stores one; the agenda is
 # `ld.walk_agenda`; the cells were laid out unbound by `allocGlobalCells!` (setVar). `goto
 # right_recursion` (`PL_REC_ALLOCVAR`, `PL_TYPE_ATTVAR`) is `continue` with the new `p`. No external
-# opcode; nothing allocates fallibly (no `MEMORY_OVERFLOW`).
+# opcode; nothing allocates fallibly (no `MEMORY_OVERFLOW`). Synced to cf6960c2: three changes of the
+# target are for features this kernel leaves out, so nothing carries over: the arm `PL_TYPE_PTRINT`
+# (`consPtrInt`, see `compile_term_to_heap`); the dict offsets, `b->dicts` is now a buffer of the
+# offsets of the dicts of an external record (was a count, resorted over the whole term), filled in
+# the new shared label `ext_compound` of `PL_TYPE_EXT_COMPOUND` and `PL_TYPE_EXT_COMPOUND_V2`; and
+# `name` hoisted to the case's scope with the `(int)` casts of the arity dropped.
 "Lay record `r`'s code out from `b.gstore`, its root in slot `slot` (pl-rec.c `copy_record`)."
 function copy_record(
     ld::PL_local_data{T}, slot::Int, r::record{T}, b::copy_info
@@ -913,6 +933,9 @@ end
 
 # PORT: pl-rec.c erase as pl_erase1_va
 # (PRED_IMPL("erase", 1, erase, 0))
+# Synced to cf6960c2: for a clause reference the target's `PL_get_dbref` now hands back the `Clause`
+# itself (was a `ClauseRef`, then `cref->value.clause`): a blob layout change; the clause blobs of
+# src/pl-dbref.jl already name the clause, so the answer is the same.
 # DIVERGES: the database is the running query's (`_query_gd`). The RECORD branch (since D2): the flags
 # `R_ERASED` and `RL_DIRTY` of a list a `recorded/3` still runs over, else `remove_record`; the event hook
 # (`callEventHook(PLEV_ERASED_RECORD, r)`, pl-rec.c:2468) is src/pl-event.jl's (EV1; true with no listener), and `L_RECORD` is not taken (one thread). A static predicate's clause is `permission_error(clause,
@@ -999,6 +1022,8 @@ end
 
 # PORT: pl-rec.c instance as pl_instance2_va
 # (PRED_IMPL("instance", 2, instance, 0))
+# Synced to cf6960c2: as `erase/1`, the clause reference is the `Clause` itself (was a `ClauseRef`,
+# `cref->value.clause`): a blob layout change, the same answer.
 # DIVERGES: ONE predicate with its two branches, as upstream. The CLAUSE branch is upstream's, on the two
 # sides `decompile!` gives (`_rule_term` builds the clause term upstream's `decompile` returns: `Neck(h, b)`,
 # or for a fact the bare head, which this branch wraps as `(h :- true)`). The RECORD branch (since D2) copies
