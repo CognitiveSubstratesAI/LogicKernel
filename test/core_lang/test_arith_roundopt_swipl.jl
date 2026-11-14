@@ -166,10 +166,12 @@ end
     names = _ro_names()
     expected = String.(readlines(_RO_OUT))
     # not a vacuous agreement: a line per row, the rows' own evidence is in it (a mode that rounds up, one that rounds down, the throw)
-    @test length(names) == 24
+    @test length(names) == 26
     @test length(expected) == length(names) + 1 && expected[1] == "ok"
     @test all(i -> startswith(expected[i + 1], names[i] * " "), eachindex(names))
     @test count(l -> occursin("f0.33333333333333337", l), expected) >= 6      # to_positive rounds 1/3.0 up
+    # t24/t25 (the flag to_positive, the compound read by A_VAR inside roundtoward): the roundtoward's mode, never the flag's, so no row rounds up
+    @test !occursin("f0.33333333333333337", expected[25]) && !occursin("f0.33333333333333337", expected[26])
     @test count(l -> occursin("f-0.33333333333333337", l), expected) >= 2     # to_negative rounds -1/3.0 down
     @test count(l -> occursin(_codes("zero_divisor"), l), expected) == 5      # the five throw rows t15..t19
 
@@ -202,6 +204,13 @@ end
     for name in ("rt", "rtv")
         cd = _ro_codes(gd, name, 2)
         @test cd !== nothing && (LK.A_ROUNDTOWARDS_V in cd)
+    end
+    # t24/t25: a variable bound to a compound is evaluated by A_VAR inside the roundtoward (the walk without the flag's mode)
+    let cd = _ro_codes(gd, "t24", 1)
+        @test cd !== nothing && (LK.A_ROUNDTOWARDS_A in cd) && (LK.A_VAR in cd)
+    end
+    let cd = _ro_codes(gd, "rtx", 3)
+        @test cd !== nothing && (LK.A_ROUNDTOWARDS_V in cd) && (LK.A_VAR in cd)
     end
     # the rows that follow a leaked mode: the compiled is/2 (A_IS: a head variable; A_FIRSTVAR_IS: a first occurrence) and a comparison
     let cd = _ro_codes(gd, "lead_is", 1)

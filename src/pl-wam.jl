@@ -2389,7 +2389,10 @@ const _TS_CHECK_WAKEUP = 6
     if av_fid != 0
         av_t = new_term_ref(ld)                         # consTermRef(p)
         _slot_copy!(ld, av_t + 1, av_vi)
-        av_rc = evalExpression_cells(ld, av_t, av_n)
+        # the pin's a_var_n calls evalExpression, which never touches the hardware mode (A_ENTER set the
+        # flag's mode, a roundtoward set its own): the walk WITHOUT the mode scope, not
+        # `evalExpression_cells` (it would put the flag's mode back inside a roundtoward).
+        av_rc = _evalExpression_walk(ld, av_t, av_n)
         PL_close_foreign_frame(ld, av_fid)
     end
     setLTop!(ld, av_lsafe)
