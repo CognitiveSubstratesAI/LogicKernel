@@ -489,9 +489,9 @@ currentBreakLevel(ld::PL_local_data)::Int = ld.break_level
 # (swipl-devel cbf4e189, src/pl-pro.c:227-276)
 # DIVERGES: the database and the local data are arguments; `goal` is the atom as a term. `Sinput` and `Soutput` (the
 # process's streams) are `Suser_input(ld)` and `Suser_output(ld)`, as `initIO` and `push_input_context` take them (the
-# streams are per local data). `debugstatus.suspendTrace` (DBG1: the kernel keeps no trace suspension, as `resetTracer`) and
-# `save_tabling_status`/`restore_tabling_status` (TAB1: the local data has no tabling status, as src/pl-event.jl) are left
-# out. The two `break(begin|end, Level)` messages are built from term references as `printMessage`'s other callers.
+# streams are per local data). `debugstatus.suspendTrace` (DBG1: the kernel keeps no trace suspension, as `resetTracer`) is left
+# out; `save_tabling_status`/`restore_tabling_status` (pl-tabling.c, src/pl-tabling.jl) are called as upstream. The two `break(begin|end, Level)`
+# messages are built from term references as `printMessage`'s other callers.
 """
     pl_break1(gd, ld, goal) -> Bool
 
@@ -511,6 +511,8 @@ function pl_break1(gd::PL_global_data{T}, ld::PL_local_data{T}, goal::T)::Bool w
 
     tracemode(ld, false, traceSave)
     debugmode(ld, false, debugSave, UInt32(0))
+    tblstat = tbl_status{T}()
+    save_tabling_status(ld, tblstat)
 
     ld.IO_streams[SNO_CURRENT_INPUT + 1] = Suser_input(ld)          # Scurin  = Sinput
     ld.IO_streams[SNO_CURRENT_OUTPUT + 1] = Suser_output(ld)        # Scurout = Soutput
@@ -538,6 +540,7 @@ function pl_break1(gd::PL_global_data{T}, ld::PL_local_data{T}, goal::T)::Bool w
     end
     ld.break_level = old_level
 
+    restore_tabling_status(ld, tblstat)
     ld.debugstatus_skiplevel = skipSave
     tracemode(ld, traceSave[], nothing)
     debugmode(ld, debugSave[], nothing, UInt32(0))
