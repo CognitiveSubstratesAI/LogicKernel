@@ -43,6 +43,7 @@ include("pl-comp.jl")          # swipl-devel src/pl-comp.c — compiling clause 
 include("pl-variant.jl")       # swipl-devel src/pl-variant.c — =@=, variant checking
 include("pl-copyterm.jl")      # swipl-devel src/pl-copyterm.c — copy_term/2, copy_term_nat/2, duplicate_term/2
 include("pl-rec.jl")           # swipl-devel src/pl-rec.c — recorded terms: compileTermToHeap, copyRecordToGlobal
+include("pl-flag.jl")          # swipl-devel src/pl-flag.c — get_flag/2, set_flag/2, current_flag/1
 include("pl-termhash.jl")      # swipl-devel src/pl-termhash.c — term_hash, variant_sha1/hash
 include("pl-thread.jl")        # swipl-devel src/pl-thread.c — predicate references
 include("pl-gc.jl")            # swipl-devel src/pl-gc.c — generations in use, for clause GC; growing the local stack

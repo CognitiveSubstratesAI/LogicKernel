@@ -180,6 +180,8 @@ mutable struct PL_global_data{T}
     const ld_table::LDTable                                     # the local data a wrapped stream names by number (IOSTREAM.wrapped; src/os/pl-stream.jl, R2 TOP1b E; owner TH1)
     tabling_answer_delay_infos::Dict{Int, delay_info}           # (pl-tabling.c static `answer_delay_infos`: trie node id -> delay_info; TAB1 TB0)
     tabling_start_node_ids::Int                                 # (pl-tabling.c static `start_node_ids`: the last start-node id handed out, 0: none; TAB1 TB1)
+    const flags_table::Dict{word, Flag{T}}                      # flags.table: the key's word -> its flag (pl-flag.c, FL1b; upstream's position: after `format`)
+    const flags_order::Vector{Flag{T}}                          # (the flags in the order they were made, the enumeration of current_flag/1; FL1b)
 end
 # DIVERGES: `atoms` is upstream's `GD->atoms` as a struct of its own (src/pl-atom.jl), one table per
 # database, built first as upstream's `initAtoms` runs first; `functors` likewise `GD->functors` with
@@ -663,6 +665,8 @@ mutable struct PL_local_data{T} <: AbstractLocalData
     var_names_numbervars_frame::Int                             # var_names.numbervars_frame
     prolog_flag_unknown_option::Int                             # prolog_flag.unknown_option
     prolog_flag_write_attributes::Int                           # prolog_flag.write_attributes
+    prolog_flag_incomparable_error::Bool                        # prolog_flag.incomparable_error (FL1: `setIncomparable`)
+    fli_string_buffers_tripwire::Int                            # fli.string_buffers.tripwire (FL1: the `string_stack_tripwire` flag)
     bags::Vector{findall_bag{T}}                                # bags: findall/3's (pl-bag.c)
     between_states::foreign_state_pool{between_state}           # (between/3's REDO_PTR states, NF1)
     retract_contexts::foreign_state_pool{retract_context{T}}    # (retract/1's REDO_PTR states, NF2)
@@ -782,6 +786,8 @@ function _bare_local_data(gd::PL_global_data{T}) where {T}
         0,                                      # no numbervars frame
         0x2,                                    # unknown_option: ignore (OPT_UNKNOWN_IGNORE)
         0x040,                                  # write_attributes: ignore (PL_WRT_ATTVAR_IGNORE)
+        false,                                  # incomparable_error: the flag `incomparable` is `arbitrary`
+        0,                                      # string_buffers.tripwire: 0 (a zeroed `LD->fli.string_buffers`)
         findall_bag{T}[],                       # bags: none (pl-bag.c: `LD->bags` is NULL)
         foreign_state_pool{between_state}(),    # between/3's states: none
         foreign_state_pool{retract_context{T}}(),   # retract/1's states: none

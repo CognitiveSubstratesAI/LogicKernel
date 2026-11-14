@@ -1298,6 +1298,12 @@ function _manifest_index(T)
         (LK.getOccursCheckMask, Tuple{LD, T}, false),
         (LK.setOccursCheck, Tuple{LD, T}, false),
         (LK.setStreamTypeCheck, Tuple{LD, T}, false),
+        # FL1 — the flag setters (pl-prologflag.c setIncomparable, setFileNameCaseHandling(Name), setTheme; pl-setup.c set_stack_limit)
+        (LK.setIncomparable, Tuple{LD, T}, false),
+        (LK.setFileNameCaseHandlingName, Tuple{LD, String}, false),
+        (LK.setFileNameCaseHandling, Tuple{LD, T}, false),
+        (LK.setTheme, Tuple{GD, LD, LK.prolog_flag{T}, T}, false),
+        (LK.set_stack_limit, Tuple{LD, Int}, false),
         (LK.create_oneof, Tuple{LD, Int64}, false),
         (LK.set_oneof, Tuple{LD, LK.prolog_flag{T}, LK.oneof_t{T}, UInt32}, false),
         (LK.check_oneof_flag, Tuple{LD, LK.oneof_t{T}, T, Bool}, false),
@@ -1592,6 +1598,13 @@ function _manifest_index(T)
                 LK.pl_current_key1_va
             )
         ]...,
+        # FL1b — flags (src/pl-flag.jl): get_flag/2, set_flag/2, current_flag/1
+        (LK.lookupFlagKey, Tuple{GD, UInt64}, false),
+        [
+            (f, Tuple{LD, Int, Int, LK.foreign_context{T}}, false) for
+            f in (LK.pl_get_flag2_va, LK.pl_set_flag2_va)
+        ]...,
+        (LK.pl_current_flag, Tuple{LD, Int, LK.foreign_context{T}}, false),
         # AV9 — call_residue_vars/2's C half (src/pl-attvar.jl, src/pl-wam.jl)
         (LK.trail_new_attvar, Tuple{LD, Int}, false),
         (LK.get_value, Tuple{LD, Int}, false),

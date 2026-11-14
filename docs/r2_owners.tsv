@@ -71,7 +71,6 @@ pred:format_time/3	TAI1	seed: missing_c_preds.tsv
 pred:garbage_collect_atoms/0	Q10	seed: missing_c_preds.tsv
 pred:get/1	S2a	seed: missing_c_preds.tsv
 pred:get/2	S2a	seed: missing_c_preds.tsv
-pred:get_flag/2	FL1	seed: missing_c_preds.tsv
 pred:is_engine/1	TH1	seed: missing_c_preds.tsv
 pred:message_queue_create/1	TH1	seed: missing_c_preds.tsv
 pred:message_queue_destroy/1	TH1	seed: missing_c_preds.tsv
@@ -80,7 +79,6 @@ pred:prolog_choice_attribute/3	DBG1	seed: missing_c_preds.tsv
 pred:prolog_frame_attribute/3	DBG1	seed: missing_c_preds.tsv
 pred:put/1	S2a	seed: missing_c_preds.tsv
 pred:put/2	S2a	seed: missing_c_preds.tsv
-pred:set_flag/2	FL1	seed: missing_c_preds.tsv
 pred:set_thread/2	TH1	seed: missing_c_preds.tsv
 pred:shell/2	Q10	seed: missing_c_preds.tsv
 pred:sub_atom_icasechk/3	P2	seed: missing_c_preds.tsv
@@ -195,3 +193,20 @@ refusal:src/pl-string.jl::pl_string_bytes3_va::string_bytes/3 with the encoding 
 refusal:src/pl-supervisor.jl::freeCodesDefinition!::freeCodesDefinition! of a wrapped predicate needs the databa	WRAP1	freeCodesDefinition of a wrapped predicate (pl-supervisor.c), needs the database; wrap closures are WRAP1
 refusal:src/pl-wam.jl::PL_next_solution_guarded::the VM instruction $(codeTable(thiscode).name)	TAB1	dispatch fallthrough for a VM instruction without a body (pl-vmi.c); each missing instruction has its own vmi: row, the last instruction (S_TABLED) removes this site
 refusal:src/pl-write.jl::writePrimitive::writing a grounded value SWI has no type for	WR2	writePrimitive of a grounded value SWI has no type for; a representation guard of the kernel, permanent until the blob writer takes it
+# D-0512 item 1 (R2OWN): owners for the NO OWNER rows (flags by the file that defines them or whose function sets them; flags without a step: FL1; refusal sites by the file of the refusing function); reasons carry the pin 18168e62 file:line
+pred:apple_current_locale_identifier/1	APPLE1	pl-apple.c:57-58 (macOS-only file, no step owns it; new step name proposed, platform: refused by name or out of the count); called under the apple flag by boot/toplevel.pl
+refusal:src/pl-init.jl::_parse_long_option!::--traditional (setTraditional, resetListAtoms): the kernel i	LB7	pl-init.c:1096 setTraditional, :1195 the --traditional option; the refusing function is in src/pl-init.jl, LB7's file (LB7 DIVERGES: the kernel is SWI-7 only)
+refusal:src/pl-init.jl::PL_initialise_tail!::--config (\$config)	LB7	pl-init.c:1230 (--config=file stored), :1672-1673 prologToplevel($config); src/pl-init.jl is LB7's file
+refusal:src/pl-init.jl::PL_initialise_tail!::-c (\$compile)	LB7	pl-init.c:1625 compileFileList for -c; refusing function is in src/pl-init.jl (LB7); the compile body is pl-qlf.c:4784 = LB3's QLF
+flag:(tbl_set_restraint_flag (tabling restraints))	TAB1	pl-prologflag.c:1628-1629 calls tbl_set_restraint_flag, defined in pl-tabling.c (tbl_is_restraint_flag :11693)
+flag:(set_arith_flag (pl-arith.c))	AR1	pl-prologflag.c:1630-1631 calls set_arith_flag, defined in pl-arith.c:5180
+flag:(ci_set_flag (pl-index.c))	FL1	pl-prologflag.c:1632-1633 calls ci_set_flag, defined in pl-index.c:4060 (no step owns pl-index.c's flag part: FL1)
+flag:argv	LB7	pl-prologflag.c:2823 setArgvPrologFlag(argv, GD->cmdline.appl_argv): the value is pl-init.c's command line (LB7)
+flag:color_term	LB7	pl-init.c:1599 PL_set_prolog_flag(color_term, false) in PL_initialise (LB7 ports it); also created by library/ansi_term.pl:141
+flag:debug_on_interrupt	DBG1	pl-prologflag.c:1344 calls enable_debug_on_interrupt, defined in pl-trace.c:2092 (the SIGINT handler half; DBG1 owns pl-trace.c)
+flag:encoding	ENC1	pl-prologflag.c:2778 defines it, :779 setEncoding sets LD->encoding; the encodings beyond UTF-8 are ENC1's
+flag:heartbeat	TH1	pl-prologflag.c:2787 defines it, :1488 sets LD->yield.frequency (the yield of I_YIELD, which TH1 owns)
+flag:os_argv	LB7	pl-prologflag.c:2822 setArgvPrologFlag(os_argv, GD->cmdline.os_argv): the value is pl-init.c's command line (LB7)
+flag:tty_control	TOP1b	pl-prologflag.c:2782 defines it; the setter's body is PushTty/PopTty, pl-os.c:2141 (ports with the terminal code TOP1b owns: Sread_terminal, ResetTty)
+flag:unicode_atoms	ENC1	pl-prologflag.c:2684 defines it, :787-898 setUnicodeAtoms; ENC1 owns the unicode_atoms refusals (NFC normalizer)
+flag:var_tag	RD2	pl-prologflag.c:2706 defines it, :534 setVarTagFlag; the reader side is pl-read.c:4440 (RD2 owns the reader remainder)
