@@ -3655,7 +3655,8 @@ function clause_ndet(
                     tmp = head
                 else
                     tmp = PL_new_term_ref(ld)
-                    unify_definition(gd, ld, MODULE_user(gd), head, def, tmp, 0) ||
+                    # (swipl-devel 18168e62 pl-comp.c:7386: the head is seen from the caller's context module)
+                    unify_definition(gd, ld, gd.modules[contextModule(gd, ld, fr)], head, def, tmp, 0) ||
                         return FFALSE
                 end
                 h2 = PL_new_term_ref(ld)
