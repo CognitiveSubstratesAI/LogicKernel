@@ -3569,9 +3569,9 @@ IO (with the rest of R1e); 3a — print/1 as swipl's with portray/1 undefined, p
   ball (V5d); with `cycles(false)` the domain error, as upstream; user:portray/1 defined (above;
   called since group F, D-0123); an atom holding the character 0 (term_to_atom/2 of a string with one: the
   term interface's atoms cannot hold it; term_string/2 can); a grounded value SWI has no type for.
-* **DIVERGES (WR2, src/os/pl-text.jl:62 `_get_text_write`, PL_get_text's `case_write`):** the stream layer
-  writes UTF-8 only (ENC1 refusals in src/os/pl-stream.jl), so the `CVT_WRITE*` text is written as UTF-8
-  and returned as a non-canonical `PL_chars_t` (as an atom's text is); upstream tries ISO Latin-1, then
+* **DIVERGES (WR2, src/os/pl-text.jl:62 `_get_text_write`, PL_get_text's `case_write`):** the memory stream
+  the text is written to is UTF-8 (src/os/pl-file.jl `setupOutputRedirect`; the stream layer itself takes every
+  encoding since ENC1), so the `CVT_WRITE*` text is written as UTF-8 and returned as a non-canonical `PL_chars_t` (as an atom's text is); upstream tries ISO Latin-1, then
   `ENC_WCHAR` (`ENC_UTF8` only under `REP_UTF8`): the code points are the same, a representation-only
   difference. The numbervars frame is also ended on an `NV_ERROR`, where upstream's `goto error` skips it.
   No src/ caller passes `CVT_WRITE*` at the pin and swipl cannot answer `PL_get_text`: the rows of
@@ -3583,12 +3583,12 @@ IO (with the rest of R1e); 3a — print/1 as swipl's with portray/1 undefined, p
   `BEGIN_NUMBERVARS(true)` and `numberVars` with `'$VAR'/1`, `AV_SKIP`, `singletons = PL_is_acyclic(l)`,
   `numbered_check = false`. The equivalents are `write/1` (src/pl-write.c:3145), `writeq/1` (:3155) and
   `write_canonical/1` (:3177-3194: the same numbering, the same flags plus `PL_WRT_PATTERN_SYNTAX_SOLO`).
-* **DIVERGES (WR2, owner ENC1): no non-ASCII `CVT_WRITE_CANONICAL` row.** The only oracle for the flag is
+* **DIVERGES (WR2): no non-ASCII `CVT_WRITE_CANONICAL` oracle row.** The only oracle for the flag is
   `write_canonical/1`, which differs from the C flags by `PL_WRT_PATTERN_SYNTAX_SOLO` (src/pl-write.c:3192)
   and writes over the stream's own encoding, while `case_write` negotiates ISO Latin-1 then `ENC_WCHAR`
-  (src/os/pl-text.c:363-370); the kernel's stream layer is UTF-8 only until ENC1, so test_wr2_swipl.jl
-  holds ASCII canonical rows only (non-ASCII text is covered for `CVT_WRITE`/`CVT_WRITEQ`). ENC1 owns the
-  row when the stream layer takes encodings.
+  (src/os/pl-text.c:363-370); test_wr2_swipl.jl holds ASCII canonical rows only plus the literal row WR2-T9 for a
+  non-ASCII atom (non-ASCII text is covered for `CVT_WRITE`/`CVT_WRITEQ`). The stream layer takes every encoding
+  since ENC1; the remaining difference is the memory stream's UTF-8 (above), a representation-only DIVERGES.
 * **NOT PORTED (the rest of R1e):** `format_float` and the float differential (since R1e (floats):
   ported); write/1,
   writeq/1, print/1, write_canonical/1, writeln/1, write_term/2,3 with `PL_scan_options` and their
