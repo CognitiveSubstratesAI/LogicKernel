@@ -3840,8 +3840,7 @@ end
 # (PRED_IMPL("nth_clause", 3, nth_clause, PL_FA_TRANSPARENT|PL_FA_NONDETERMINISTIC); the table's PRED_DEF flags META|NDET, pl-comp.c:9276, win)
 # DIVERGES: the state `Cref` (`clause`, `index`) is a record of `ld.clause_contexts` (clause/2's pool, a `clause_choice`): its
 # `cref` is `Cref.clause`, its `key` word holds `Cref.index`, and its pool index is the `REDO_PTR` context (design D3).
-# `contextModule(LD->environment)` (unify_definition's context) is `user` (until MOD2, as clause/2's). `acquire_def`/`release_def`
-# are no-ops here (no clause GC thread). The return values of the two final unifications are IGNORED, as upstream's (so
+# `acquire_def`/`release_def` are no-ops here (no clause GC thread). The return values of the two final unifications are IGNORED, as upstream's (so
 # `nth_clause(p(_), a, R)` still enumerates and binds `R`).
 "`nth_clause(?Pred, ?Index, ?Ref)` (pl-comp.c): `Ref` is the `Index`th visible clause of `Pred`, in either direction, one per answer."
 function pl_nth_clause3_va(
@@ -3875,9 +3874,10 @@ function pl_nth_clause3_va(
             cref = def.impl_clauses.first_clause
             while cref !== nothing
                 if cref.clause === clause
+                    m = gd.modules[contextModule(gd, ld, fr)]     # Module m = contextModule(LD->environment)
                     ok =
                         PL_unify_integer(ld, n, i) &&
-                        unify_definition(gd, ld, MODULE_user(gd), p, def, 0, 0)
+                        unify_definition(gd, ld, m, p, def, 0, 0)
                     popPredicateAccess!(ld, def)
                     return ok ? FTRUE : FFALSE
                 end
