@@ -462,3 +462,13 @@ t431(R) :- (set_prolog_flag(float_rounding, to_positive), X is 0.1+0.2, rst, R =
 t432(R) :- fl_set(max_rational_size, infinite, R).
 t433(R) :- fl_set(max_integer_size, infinite, R).
 t434(R) :- fl_set(max_rational_size_action, error, R).
+t435(R) :- fm(to_zero, float((2**1100) rdiv 3), R).
+t436(R) :- fm(to_zero, float(-(2**1100) rdiv 3), R).
+t437(R) :- fm(to_positive, float(-(2**1100) rdiv 3), R).
+t438(R) :- fm(to_negative, float((2**1100) rdiv 3), R).
+t439(R) :- fm(to_positive, float(1 rdiv (3*2**1100)), R).
+t440(R) :- fm(to_negative, float(-1 rdiv (3*2**1100)), R).
+t441(R) :- fm(to_nearest, float(1 rdiv (3*2**1100)), R).
+t442(R) :- fm(to_nearest, float((2**1100) rdiv 3), R).
+t443(R) :- fm(to_positive, float((2**1100) rdiv 3), R).
+t444(R) :- fm(to_zero, float(1 rdiv (3*2**1100)), R).
