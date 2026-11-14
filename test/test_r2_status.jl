@@ -493,10 +493,11 @@ end
     # `$tbl_answer_dl/3`, `$tbl_propagate_start/1`, `$tbl_wkl_negative/1`), 4 of owner TX1 (`$transaction/2,3`, `$undo/1`,
     # `$snapshot/1`), the 4 pl-wam.jl refusals (S_TABLED, T_DELAY, the two dtbl_reset6 branches), `vmi:S_INCR_DYNAMIC` (TB6),
     # `pred:\=@=/2` (Q10, pl-variant.c) and the PL_CREATE_INCREMENTAL half of the assert_term refusal (TB6). The owner line
-    # `cfile:pl-tabling.c` is gone (TABINT-PC).
+    # `cfile:pl-tabling.c` is gone (TABINT-PC). 165 -> 168 (the ratchet sits AT the measured count, audit D-0736 (1)):
+    # re-measured with this expression on wip/tabm-diag 397efdd3 (main b29b887d merged): 168 owned rows.
     # allow-docstring-interp: the hook matches existing R2_REFUSAL_EXCEPTION lines elsewhere in this file, not this comment
     @test !isempty(r2_no_owner(res.rows, ow)) &&
-        count(r -> r2_owes(r) && !isempty(r2_owner_of(r, ow)), res.rows) >= 165
+        count(r -> r2_owes(r) && !isempty(r2_owner_of(r, ow)), res.rows) >= 168
 end
 
 @testset "r2_status: the rendering (counts, per-file table, by-owner list, chart) from hand-built rows" begin
