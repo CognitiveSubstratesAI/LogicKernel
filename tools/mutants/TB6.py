@@ -178,7 +178,7 @@ MUTANTS = [
          file=TAB, targets=[TI],
          old="const IDG_CHANGED_NODE = 1\n",
          new="const IDG_CHANGED_NODE = 4\n"),
-    dict(id="TB6-P4 idg_changed on an incomplete table raises no error (DEFERRED KILL TB2: a change of a dynamic predicate whose dependent table is incomplete, the permission_error(update, variant, _) of change_incomplete_error; no TB6 row builds an incomplete table)",
+    dict(id="TB6-P4 idg_changed on an incomplete table raises no error (KILL idg33: white-box, a table with a worklist and an IDG node, not complete: idg_changed answers false with permission_error(update, variant, _) raised, pl-tabling.c change_incomplete_error)",
          file=TAB, targets=[TI, TW],
          old="            return change_incomplete_error(ld, atrie)\n        end\n        n.falsecount += 1",
          new="            return true\n        end\n        n.falsecount += 1"),

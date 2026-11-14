@@ -1031,3 +1031,20 @@ end
     LK.idg_set_free_lingering(owner, nothing)
     @test owner.lingering === nothing                                              # idg_set_free_lingering (:169-178)
 end
+
+@testset "idg33: a change of a table that is still being evaluated raises permission_error(update, variant, V) (pl-tabling.c idg_changed, change_incomplete_error)" begin
+    gd, ld, def = _ti_db()
+    atrie = _ti_table!(ld, def, false)
+    atrie.flags &= ~LK.TRIE_COMPLETE                          # a table under evaluation: a worklist and not complete
+    LK.new_worklist(ld, atrie)
+    n = LK.idg_new(ld, atrie)::_TIN
+    atrie.IDG = n
+    @test LK.table_is_incomplete(atrie) && n.falsecount == 0 && LK.PL_exception(ld, 0) == 0
+    @test !LK.idg_changed(ld, atrie, 0)                       # change_incomplete_error: false, the error raised
+    @test LK.PL_exception(ld, 0) != 0 && n.falsecount == 0    # the mutant answers true with nothing raised
+    LK.PL_clear_exception(ld)
+    # the control side: the same table, complete, is invalidated
+    atrie.flags |= LK.TRIE_COMPLETE
+    @test !LK.table_is_incomplete(atrie)
+    @test LK.idg_changed(ld, atrie, 0) && n.falsecount == 1 && LK.PL_exception(ld, 0) == 0
+end
