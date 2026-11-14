@@ -2470,7 +2470,9 @@ end
 # the combinations, while `existing_hash()` uses the first index that applies, so the array must be sorted (see
 # `isSortedIndexes`). Insertion sort, stable, in place: at most `max` (10) slots, no allocation.
 "Sort the first `count` indexes of `cip` by decreasing speedup, equal ones keeping their order (pl-index.c)."
-function sort_indexes!(cip::Vector{Union{Nothing, ClauseIndex{T}}}, count::Int)::Nothing where {T}
+function sort_indexes!(
+    cip::Vector{Union{Nothing, ClauseIndex{T}}}, count::Int
+)::Nothing where {T}
     for i in 2:count
         ci = cip[i]::ClauseIndex{T}
         j = i

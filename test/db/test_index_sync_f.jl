@@ -14,14 +14,15 @@ const _SF = lk_term_type(Union{Int64, Float64, String})
     @test LK.LMASK_BITS == 7                  # the expected buckets below are for this layout
     ak(i) = (UInt64(i) << LK.LMASK_BITS) | UInt64(0x23)       # any tag bits: they are shifted out
     # consecutive values land in distinct buckets, in the target's order (16 buckets)
-    @test [LK.hashIndex(ak(i), UInt32(16)) for i in 1:8] == UInt32[9, 3, 13, 7, 1, 11, 5, 15]
+    @test [LK.hashIndex(ak(i), UInt32(16)) for i in 1:8] ==
+        UInt32[9, 3, 13, 7, 1, 11, 5, 15]
     @test LK.hashIndex(ak(100), UInt32(16)) == 12
     @test LK.hashIndex(ak(1000), UInt32(16)) == 0
     @test [LK.hashIndex(ak(i), UInt32(64)) for i in 1:3] == UInt32[39, 15, 54]
     @test [LK.hashIndex(ak(i), UInt32(4)) for i in 1:3] == UInt32[2, 0, 3]
     # the low LMASK_BITS bits do not matter: the same value under every tag hashes alike
     base = UInt64(37) << LK.LMASK_BITS
-    for low in UInt64(0):UInt64(2^LK.LMASK_BITS - 1), b in (4, 16, 64, 1024)
+    for low in UInt64(0):UInt64(2 ^ LK.LMASK_BITS - 1), b in (4, 16, 64, 1024)
         @test LK.hashIndex(base | low, UInt32(b)) == LK.hashIndex(base, UInt32(b))
     end
 end
@@ -31,9 +32,12 @@ end
     ia = ntuple(i -> i == 1 ? UInt8(1) : UInt8(0), LK.MAX_MULTI_INDEX)
     function assess(var_count::Int, counts::Vector{Int}, clause_count::Int)
         ks = LK.key_asm[
-            LK.key_asm(UInt64(0x100 * i), UInt32(c), UInt32(0)) for (i, c) in enumerate(counts)
+            LK.key_asm(UInt64(0x100 * i), UInt32(c), UInt32(0)) for
+            (i, c) in enumerate(counts)
         ]
-        a = LK.hash_assessment(ia, length(ks), length(ks), var_count, 0, 0.0f0, 0.0f0, false, ks)
+        a = LK.hash_assessment(
+            ia, length(ks), length(ks), var_count, 0, 0.0f0, 0.0f0, false, ks
+        )
         return LK.assess_remove_duplicates!(a, clause_count), a
     end
     # p(a), p(b), p(_): 1 variable clause, 2 keys, 3 clauses. 0.5 > MAX_VAR_FRAC, but 1*2 <= 3: an index
@@ -52,7 +56,8 @@ end
 
 # TARGET-ONLY: pin when the oracle moves to cf6960c2. pl-index.c:2826-2840 `indexableCompound`.
 @testset "SYNC-F: indexableCompound ends an H_R* last argument's list at the clause exit (cf6960c2, TARGET-ONLY)" begin
-    fnc(c) = LK.Code{_SF}(LK.code[LK.H_RFUNCTOR, LK.code(0), LK.H_VOID, LK.H_VOID, c], _SF[], 1)
+    fnc(c) =
+        LK.Code{_SF}(LK.code[LK.H_RFUNCTOR, LK.code(0), LK.H_VOID, LK.H_VOID, c], _SF[], 1)
     # the argument list ends at H_POP and at every instruction that follows an H_R* last argument
     for op in (
         LK.H_POP, LK.I_EXITCATCH, LK.I_EXITRESET, LK.I_EXITFACT, LK.I_EXIT, LK.I_ENTER,
@@ -74,13 +79,21 @@ end
         LK.gen_t(0), p.def, nothing, 0, LK._TOP_POSITION, false, LK.GEN_INVALID
     )
     mk(k, speedup) = LK.newClauseIndexTable(
-        LK.hash_hints(Float32(speedup), false, UInt8(2), (UInt8(k), 0x00, 0x00, 0x00)), false,
+        LK.hash_hints(Float32(speedup), false, UInt8(2), (UInt8(k), 0x00, 0x00, 0x00)),
+        false,
         ctx
     )
-    hints(args...) = LK.hash_hints(0.0f0, false, UInt8(2), (UInt8.(args)..., ntuple(_ -> 0x00, 4 - length(args))...))
+    hints(args...) = LK.hash_hints(
+        0.0f0,
+        false,
+        UInt8(2),
+        (UInt8.(args)..., ntuple(_ -> 0x00, 4 - length(args))...)
+    )
     CI = LK.ClauseIndex{_SF}
     CIP = Vector{Union{Nothing, CI}}
-    ci1, ci2, ci3 = mk(1, 1.0), mk(2, 1.0), LK.newClauseIndexTable(
+    ci1, ci2, ci3 = mk(1, 1.0),
+    mk(2, 1.0),
+    LK.newClauseIndexTable(
         LK.hash_hints(1.0f0, false, UInt8(2), (0x01, 0x02, 0x00, 0x00)), false, ctx
     )
     org = CIP([ci1, nothing, ci2, ci3])                             # a dead slot between

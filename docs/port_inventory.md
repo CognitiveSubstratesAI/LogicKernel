@@ -160,7 +160,7 @@ how many of the upstream file's functions are ported.
 | swipl-devel `src/pl-incl.h` | code | `18168e629eab` | `src/pl-vmi.jl` | 22 | 1 |
 | swipl-devel `src/pl-incl.h` | code | `18168e629eab` | `src/pl-wam.jl` | 2 | 2 |
 | swipl-devel `src/pl-incl.h` | code | `18168e629eab` | `src/pl-write.jl` | 3 | 1 |
-| swipl-devel `src/pl-index.c` | code | `18168e629eab` | `src/pl-index.jl` | 111 | 34 |
+| swipl-devel `src/pl-index.c` | code | `18168e629eab` | `src/pl-index.jl` | 112 | 35 |
 | swipl-devel `src/pl-indirect.c` | code | `18168e629eab` | `src/pl-trie.jl` | 4 | 3 |
 | swipl-devel `src/pl-indirect.h` | code | `18168e629eab` | `src/pl-incl.jl` | 1 | 0 |
 | swipl-devel `src/pl-init.c` | code | `18168e629eab` | `src/pl-init.jl` | 18 | 8 |
