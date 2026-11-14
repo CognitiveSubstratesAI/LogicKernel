@@ -866,12 +866,67 @@ function pl_set_prolog_stack4_va(
     return PL_error(ld, ERR_DOMAIN, mk_sym(T, :stack_parameter), prop) ? FTRUE : FFALSE
 end
 
+# ORIGINAL: pl-setup.c `GD->signals.sig_alert`, as _sig_alert
+# DIVERGES: the database has no field for it: the alert signal is the one whose handler record holds `SIGH_ALERT` (what
+# `initSignals!` and `prolog_alert_signal/2` install), 0 when none does (`unprepareSignal!` clears the record). A signal given
+# `'$foreign_function'(Token)` with the alert handler's token by `$on_signal/4` would be read as the alert signal too.
+"The alert signal of the database: the signal whose record carries `SIGH_ALERT`, or 0 (pl-setup.c `GD->signals.sig_alert`)."
+function _sig_alert(handlers::Vector{sig_handler{T}})::Int where {T}
+    for sig in MINSIGNAL:MAXSIGNAL
+        sh = handlers[SIGNAL_INDEX(sig)]
+        if (sh.flags & PLSIG_PREPARED) != 0 && sh.handler == SIGH_ALERT
+            return sig
+        end
+    end
+
+    return 0
+end
+
+# PORT: pl-setup.c prolog_alert_signal as pl_prolog_alert_signal2_va
+# (PRED_IMPL("prolog_alert_signal", 2, prolog_alert_signal, 0), pl-setup.c:1274-1310 at the pin, under `SIG_ALERT`)
+# DIVERGES: the old signal is read with `_sig_alert` (above); `PL_signal(sig|PL_SIGNOFRAME, alert_handler)` is `_signal_install!`
+# on the alert token (no OS handler: `prepareSignal!`). `PL_compare` answers only -1/0/1 here: upstream's `CMP_ERROR` arm has
+# no twin; the arm for a build without `SIG_ALERT` (the predicate is then undefined) is left out.
+"`prolog_alert_signal(-Old, +New)`: unify `Old` with the signal that wakes a thread (name, or number when unnamed) and set it to `New` (pl-setup.c)."
+function pl_prolog_alert_signal2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2 = PL__t0, PL__t0 + 1
+    handlers = _query_gd(ld).signals_handlers
+    sig_alert = _sig_alert(handlers)
+    sname = signal_name(sig_alert)
+
+    if sname == "unknown"
+        PL_unify_integer(ld, A1, sig_alert) || return FFALSE
+    else
+        PL_unify_atom(ld, A1, mk_sym(T, Symbol(sname))) || return FFALSE
+    end
+
+    PL_compare(ld, A1, A2) == 0 && return FTRUE
+
+    new = PL_get_integer(ld, A2)
+    if !(new !== nothing && new == 0)                   # PL_get_integer(A2, &new) && new == 0
+        new = PL_get_signum_ex(ld, A2)                  # || PL_get_signum_ex(A2, &new)
+        new === nothing && return FFALSE
+    end
+
+    if sig_alert != 0
+        unprepareSignal!(handlers, sig_alert)           # GD->signals.sig_alert = 0
+    end
+
+    if new != 0
+        _signal_install!(handlers, new, SIGH_ALERT, PLSIG_NOFRAME)
+    end
+
+    return FTRUE
+end
+
 # PORT: pl-setup.c BeginPredDefs as PL_predicates_from_setup
-# DIVERGES: upstream's table also lists `prolog_alert_signal/2` under `SIG_ALERT` (the alert signal of a thread: the kernel has no
-# OS signal to deliver, and its owner table has no row): left out.
-"pl-setup.c's registration table (`BeginPredDefs(setup)`): `\$set_prolog_stack/4`, `trim_stacks/0`, `\$on_signal/4`."
+# DIVERGES: none: upstream's four entries, `prolog_alert_signal/2` last (under `SIG_ALERT`, as the table's tail).
+"pl-setup.c's registration table (`BeginPredDefs(setup)`): `\$set_prolog_stack/4`, `trim_stacks/0`, `\$on_signal/4`, `prolog_alert_signal/2`."
 const PL_predicates_from_setup = (
     PL_extension("\$set_prolog_stack", 4, pl_set_prolog_stack4_va, PL_FA_VARARGS),
     PL_extension("trim_stacks", 0, pl_trim_stacks0_va, PL_FA_VARARGS),
-    PL_extension("\$on_signal", 4, pl_on_signal4_va, PL_FA_VARARGS)
+    PL_extension("\$on_signal", 4, pl_on_signal4_va, PL_FA_VARARGS),
+    PL_extension("prolog_alert_signal", 2, pl_prolog_alert_signal2_va, PL_FA_VARARGS)
 )

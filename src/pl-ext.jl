@@ -38,6 +38,7 @@
 # repeat/0 as pl-ext.c:125-126), `$c_current_predicate`/2 (pl-ext.c:132, after them) and garbage_collect_clauses/0 (after `$garbage_collect/1` as pl-ext.c:171).
 # Since DWIM1 dwim_match/3 and `$dwim_predicate`/2 (pl-dwim.c) between prolog_current_frame/1 and context_module/1, pl-ext.c:155-156.
 # Since RD1 read/1 and `$raw_read/1,2` (pl-read.c) after print/1 and read/2 after `$garbage_collect/1`, at upstream's places (pl-ext.c:116-118, 175).
+# Since Q10 garbage_collect_atoms/0 (pl-atom.c) between `$garbage_collect/1` and garbage_collect_clauses/0, pl-ext.c:170.
 "pl-ext.c's own registration table of FRG built-ins (`foreigns[]`): the ported entries."
 const foreigns = (
     PL_extension("write_canonical", 1, pl_write_canonical, PL_FA_ISO),
@@ -63,6 +64,7 @@ const foreigns = (
     PL_extension("\$dwim_predicate", 2, pl_dwim_predicate, PL_FA_NONDETERMINISTIC),   # DWIM1 (pl-ext.c:156)
     PL_extension("context_module", 1, pl_context_module, PL_FA_TRANSPARENT),   # META (MOD2)
     PL_extension("\$garbage_collect", 1, pl_garbage_collect, 0x00),            # BOOTPRED (pl-ext.c:168)
+    PL_extension("garbage_collect_atoms", 0, pl_garbage_collect_atoms0, 0x00),     # Q10 (pl-ext.c:170)
     PL_extension("garbage_collect_clauses", 0, pl_garbage_collect_clauses0, 0x00),  # PR1 (pl-ext.c:171)
     PL_extension("read", 2, pl_read2, PL_FA_ISO),                   # RD1 (pl-ext.c:175)
     PL_extension("write", 2, pl_write2, PL_FA_ISO),

@@ -12,9 +12,8 @@
 # (`'$destroy_findall_bag'`) — however the goal ends. The bag is IMPLICIT: the innermost one of the
 # thread (`LD->bags`), so a findall/3 inside the goal of another opens a bag above it.
 #
-# NOT PORTED: `'$suspend_findall_bag'/0` — a NONDETERMINISTIC foreign predicate (the kernel has
-# none yet), findnsols/4,5's; the memory pool (`mem_pool`, `alloc_record`: Julia's GC);
-# `cleanup_bags` (a thread's end); atom GC (`markAtomsFindall`, the mutex).
+# DIVERGES: no memory pool (`mem_pool`, `alloc_record`, `clear_mem_pool`: Julia's GC), no `cleanup_bags` (a thread's end), no
+# atom GC (`markAtomsFindall`, the mutex).
 
 # PORT: pl-bag.c FINDALL_MAGIC
 "The `magic` of a live bag (pl-bag.c)."
@@ -166,13 +165,62 @@ function pl_destroy_findall_bag0_va(
     return FTRUE
 end
 
+# PORT: pl-bag.c suspend_findall_bag as pl_suspend_findall_bag0_va
+# (PRED_IMPL("$suspend_findall_bag", 0, suspend_findall_bag, PL_FA_NONDETERMINISTIC), pl-bag.c:332-361 at the pin)
+# DIVERGES: the foreign state upstream keeps is the bag's ADDRESS (`ForeignRedoPtr(bag)`, `CTX_PTR`); here it is the bag's
+# position in `ld.bags` (the vector of bags: a bag below the top stays where it is while the bags above it come and go, and
+# the redo or the cut of the call finds it there). `clear_mem_pool(&bag->records)` and the mutex are left out (the
+# records are Julia objects, `bag.answers` holds them: `'$collect_findall_bag'/2` has emptied it).
+"""
+`'\$suspend_findall_bag'`: findnsols/4,5's — after a complete chunk is delivered, put the current bag in suspended mode;
+on redo re-enable it and fail, to backtrack into the goal; on a cut re-enable it and succeed (pl-bag.c).
+"""
+function pl_suspend_findall_bag0_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    ctl = PL_foreign_control(PL__ctx)
+
+    if ctl == FRG_FIRST_CALL
+        bag = current_bag(ld)
+        @assert bag !== nothing "'\$suspend_findall_bag'/0: no bag"
+        at = findlast(b -> b === bag, ld.bags)          # the bag's address
+        bag.suspended_solutions += bag.solutions
+        bag.solutions = 0
+        bag.gsize = 0
+        bag.suspended = true
+
+        return PL_retry_address(at)                     # ForeignRedoPtr(bag)
+    elseif ctl == FRG_REDO
+        at = PL_foreign_context_address(PL__ctx)        # bag = CTX_PTR
+        bag = ld.bags[at]
+        bag.suspended = false
+
+        return FFALSE
+    elseif ctl == FRG_CUTTED
+        at = PL_foreign_context_address(PL__ctx)        # bag = CTX_PTR
+        bag = ld.bags[at]
+        bag.suspended = false
+
+        return FTRUE
+    end
+
+    @assert false                                       # assert(0)
+    return FFALSE
+end
+
 # PORT: pl-bag.c BeginPredDefs as PL_predicates_from_bag
-# DIVERGES: the ported entries (upstream's table also has `'$suspend_findall_bag'/0`).
-"pl-bag.c's registration table (`BeginPredDefs(bag)`): the ported entries."
+# DIVERGES: none: upstream's six entries, in its order.
+"pl-bag.c's registration table (`BeginPredDefs(bag)`)."
 const PL_predicates_from_bag = (
     PL_extension("\$new_findall_bag", 0, pl_new_findall_bag0_va, PL_FA_VARARGS),
     PL_extension("\$add_findall_bag", 1, pl_add_findall_bag1_va, PL_FA_VARARGS),
     PL_extension("\$add_findall_bag", 2, pl_add_findall_bag2_va, PL_FA_VARARGS),
     PL_extension("\$collect_findall_bag", 2, pl_collect_findall_bag2_va, PL_FA_VARARGS),
-    PL_extension("\$destroy_findall_bag", 0, pl_destroy_findall_bag0_va, PL_FA_VARARGS)
+    PL_extension("\$destroy_findall_bag", 0, pl_destroy_findall_bag0_va, PL_FA_VARARGS),
+    PL_extension(
+        "\$suspend_findall_bag",
+        0,
+        pl_suspend_findall_bag0_va,
+        PL_FA_NONDETERMINISTIC | PL_FA_VARARGS
+    )
 )

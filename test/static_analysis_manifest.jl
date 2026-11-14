@@ -2808,6 +2808,11 @@ function _manifest_index(T)
         # Q10 — current_blob/2 (src/pl-fli.jl)
         (LK.current_blob, Tuple{LD, Int64, Int64, Int64, Int64}, false),
         (LK.pl_current_blob2_va, Tuple{LD, Int64, Int64, LK.foreign_context{T}}, false),
+        # Q10B — garbage_collect_atoms/0 (src/pl-fli.jl), '$suspend_findall_bag'/0 (src/pl-bag.jl), prolog_alert_signal/2 (src/pl-setup.jl)
+        (LK.pl_garbage_collect_atoms0, Tuple{LD}, false),
+        (LK.pl_suspend_findall_bag0_va, Tuple{LD, Int64, Int64, LK.foreign_context{T}}, false),
+        (LK._sig_alert, Tuple{Vector{LK.sig_handler{T}}}, false),
+        (LK.pl_prolog_alert_signal2_va, Tuple{LD, Int64, Int64, LK.foreign_context{T}}, false),
         # TAB1-min — '$tbl_trienode'/1, '$tbl_is_trienode'/1 (src/pl-tabling.jl) and '$c_wrap_predicate'/5 (src/pl-wrap.jl)
         [
             (f, Tuple{LD, Int, Int, LK.control_t{T}}, false) for f in

@@ -1202,6 +1202,18 @@ function pl_current_blob2_va(
     )
 end
 
+# PORT: pl-atom.c pl_garbage_collect_atoms as pl_garbage_collect_atoms0
+# (FRG("garbage_collect_atoms", 0, pl_garbage_collect_atoms, 0), pl-ext.c:170; pl-atom.c:1419-1469 at the pin)
+# DIVERGES: the body of the collection (`unmarkAtoms`, `markAtomsOnStacks`, `markAtomsInTries`, `collectAtoms`, the `agc`
+# statistics `GD->atoms.gc`, `gc_time` and `collected`, the verbose `agc(start)`/`agc(done(...))` messages, `freeZombieTrieChunks`)
+# is left out: no atom is ever freed (src/pl-atom.jl: with the GC step), so a collection reclaims nothing and the call
+# succeeds; the `GD->halt.cleaning` and `gc_active` early returns (both `true`) have no twin (no halt, one thread). A program
+# that reads `statistics(agc, N)` after the call sees 0 where swipl counts the collection.
+"`garbage_collect_atoms`: run the atom garbage collector (pl-atom.c); here no atom is freed, so it succeeds."
+function pl_garbage_collect_atoms0(ld::PL_local_data{T})::foreign_t where {T}
+    return FTRUE
+end
+
 # ORIGINAL: pl-atom.c BeginPredDefs(atom) as PL_predicates_from_atom
 # DIVERGES: the entries ported (`current_blob/2`, `blob/2`), in upstream's order.
 "pl-atom.c's registration table (`BeginPredDefs(atom)`): the ported entries."
