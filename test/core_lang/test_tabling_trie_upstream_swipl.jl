@@ -80,7 +80,10 @@ fz_run(File, Ns) :-
 
 "The units' text, verbatim between begin_tests and end_tests: `(short name, begin_tests directive, text)`."
 const _TT_UNITS = [
-    ("trie", ":- begin_tests(trie).", raw"""
+    (
+    "trie",
+    ":- begin_tests(trie).",
+    raw"""
 
 test(insert_atom, N == noot) :-
 	trie_new(T),
@@ -299,7 +302,8 @@ fresh_atoms(A, B) :-
 	gensym(trie_value_a_, A),
 	gensym(trie_value_b_, B).
 
-"""),
+"""
+),
 ]
 
 "The file's common tail (lines `before :- ...` to the end), verbatim."
@@ -368,34 +372,90 @@ const _TT_CASES = [
     ("tt01n02", "trie", "(plunit_trie:test(insert_value_term, O), O = (A == B), A == B)"),
     ("tt01n03", "trie", "(plunit_trie:test(insert_two, O), O = (A == B), A == B)"),
     ("tt01n04", "trie", "(plunit_trie:test(insert_compound, O), O = (A == B), A == B)"),
-    ("tt01n05", "trie", "(findall(X, plunit_trie:test(insert_nested, set(X == _)), L0), sort(L0, L), L == [v(a(x(a)),b(y),c(z))])"),
+    (
+        "tt01n05",
+        "trie",
+        "(findall(X, plunit_trie:test(insert_nested, set(X == _)), L0), sort(L0, L), L == [v(a(x(a)),b(y),c(z))])"
+    ),
     ("tt01n06", "trie", "(plunit_trie:test(insert_nested2, O), O = (A == B), A == B)"),
     ("tt01n07", "trie", "(plunit_trie:test(insert_nested_get, O), O = (A == B), A == B)"),
-    ("tt01n08", "trie", "((nth_clause(plunit_trie:test(_, _), 8, Rf), clause(plunit_trie:test(_, O), Bd, Rf), plunit_trie:Bd), O = (A == B), A == B)"),
+    (
+        "tt01n08",
+        "trie",
+        "((nth_clause(plunit_trie:test(_, _), 8, Rf), clause(plunit_trie:test(_, O), Bd, Rf), plunit_trie:Bd), O = (A == B), A == B)"
+    ),
     ("tt01n09", "trie", "(plunit_trie:test(insert_variant, O), O = (A == B), A == B)"),
-    ("tt01n10", "trie", "((nth_clause(plunit_trie:test(_, _), 10, Rf), clause(plunit_trie:test(_, O), Bd, Rf), plunit_trie:Bd), O = (A =@= B), A =@= B)"),
+    (
+        "tt01n10",
+        "trie",
+        "((nth_clause(plunit_trie:test(_, _), 10, Rf), clause(plunit_trie:test(_, O), Bd, Rf), plunit_trie:Bd), O = (A =@= B), A =@= B)"
+    ),
     ("tt01n11", "trie", "(plunit_trie:test(rescale_cars, O), O = (A =@= B), A =@= B)"),
     ("tt01n12", "trie", "(plunit_trie:test(insert_gsize, O), O = (A =@= B), A =@= B)"),
     ("tt01n13", "trie", "plunit_trie:test(insert_cycle, _)"),
-    ("tt01n14", "trie", "(plunit_trie:(\\+has_trie_attvar_support) -> (catch(plunit_trie:test(insert_attvar, _), error(type_error(free_of_attvar,f(_)), _), Caught = yes), Caught == yes) ; true)"),
+    (
+        "tt01n14",
+        "trie",
+        "(plunit_trie:(\\+has_trie_attvar_support) -> (catch(plunit_trie:test(insert_attvar, _), error(type_error(free_of_attvar,f(_)), _), Caught = yes), Caught == yes) ; true)"
+    ),
     ("tt01n15", "trie", "(plunit_trie:test(delete, O), O = (A == B), A == B)"),
     ("tt01n16", "trie", "(plunit_trie:test(delete_all, O), O = (A == B), A == B)"),
     ("tt01n17", "trie", "(plunit_trie:test(delete_all_var, O), O = (A == B), A == B)"),
     ("tt01n18", "trie", "plunit_trie:test(gen_indirect, _)"),
-    ("tt01n19", "trie", "(findall(X, plunit_trie:test(var1, set(X == _)), L0), sort(L0, L), L == [1,2,3])"),
-    ("tt01n20", "trie", "(findall(X, plunit_trie:test(var2, set(X == _)), L0), sort(L0, L), L == [1,2])"),
-    ("tt01n21", "trie", "(findall(X, plunit_trie:test(var3, set(X == _)), L0), sort(L0, L), L == [1])"),
+    (
+        "tt01n19",
+        "trie",
+        "(findall(X, plunit_trie:test(var1, set(X == _)), L0), sort(L0, L), L == [1,2,3])"
+    ),
+    (
+        "tt01n20",
+        "trie",
+        "(findall(X, plunit_trie:test(var2, set(X == _)), L0), sort(L0, L), L == [1,2])"
+    ),
+    (
+        "tt01n21",
+        "trie",
+        "(findall(X, plunit_trie:test(var3, set(X == _)), L0), sort(L0, L), L == [1])"
+    ),
     ("tt01n22", "trie", "(plunit_trie:test(issue_1277, O), O = (A == B), A == B)"),
-    ("tt01n23", "trie", "(plunit_trie:test(gen_compiled2_free, O), O = (A =@= B), A =@= B)"),
-    ("tt01n24", "trie", "(plunit_trie:test(gen_compiled2_instantiated, O), O = (A =@= B), A =@= B)"),
-    ("tt01n25", "trie", "(plunit_trie:test(gen_compiled3_free, O), O = (A =@= B), A =@= B)"),
-    ("tt01n26", "trie", "(catch(plunit_trie:test(gen_compiled3_cycle, _), error(type_error(acyclic_term,_), _), Caught = yes), Caught == yes)"),
-    ("tt01n27", "trie", "(plunit_trie:test(update_compound_value, O), O = (A == B), A == B)"),
-    ("tt01n28", "trie", "(plunit_trie:test(update_compound_value_destroy, O), O = (A == B), A == B)"),
-    ("tt01n29", "trie", "(plunit_trie:test(update_variant_value, O), O = (A == B), A == B)"),
+    (
+        "tt01n23",
+        "trie",
+        "(plunit_trie:test(gen_compiled2_free, O), O = (A =@= B), A =@= B)"
+    ),
+    (
+        "tt01n24",
+        "trie",
+        "(plunit_trie:test(gen_compiled2_instantiated, O), O = (A =@= B), A =@= B)"
+    ),
+    (
+        "tt01n25",
+        "trie",
+        "(plunit_trie:test(gen_compiled3_free, O), O = (A =@= B), A =@= B)"
+    ),
+    (
+        "tt01n26",
+        "trie",
+        "(catch(plunit_trie:test(gen_compiled3_cycle, _), error(type_error(acyclic_term,_), _), Caught = yes), Caught == yes)"
+    ),
+    (
+        "tt01n27",
+        "trie",
+        "(plunit_trie:test(update_compound_value, O), O = (A == B), A == B)"
+    ),
+    (
+        "tt01n28",
+        "trie",
+        "(plunit_trie:test(update_compound_value_destroy, O), O = (A == B), A == B)"
+    ),
+    (
+        "tt01n29",
+        "trie",
+        "(plunit_trie:test(update_variant_value, O), O = (A == B), A == B)"
+    ),
     ("tt01n30", "trie", "\\+ plunit_trie:test(insert_variant_value, _)"),
     ("tt01n31", "trie", "(plunit_trie:test(update_value_cycle, O), O = (A == B), A == B)"),
-    ("tt01n32", "trie", "(plunit_trie:test(insert_other_value, O), O = (A == B), A == B)"),
+    ("tt01n32", "trie", "(plunit_trie:test(insert_other_value, O), O = (A == B), A == B)")
 ]
 
 const _TT_PINNED = [
@@ -431,7 +491,7 @@ const _TT_PINNED = [
     "t_tt01n29 c[116,95,116,116,48,49,110,50,57]/1(a[111,107])",
     "t_tt01n30 c[116,95,116,116,48,49,110,51,48]/1(a[111,107])",
     "t_tt01n31 c[116,95,116,116,48,49,110,51,49]/1(a[111,107])",
-    "t_tt01n32 c[116,95,116,116,48,49,110,51,50]/1(a[111,107])",
+    "t_tt01n32 c[116,95,116,116,48,49,110,51,50]/1(a[111,107])"
 ]
 
 "The answer plunit expects of every row: the test passes, `R = ok` (run in swipl by gen_reeval.py pin, plunit part of pins file)."
@@ -467,7 +527,7 @@ const _TT_UPSTREAM = [
     "a[111,107]",
     "a[111,107]",
     "a[111,107]",
-    "a[111,107]",
+    "a[111,107]"
 ]
 
 "The files of the program in a fresh directory: one module file per unit, the main file with the rows; returns the main file."
@@ -480,7 +540,9 @@ function _tt_materialize()::String
             ":- module(plunit_$short, []).\n:- set_module(base(test_trie)).\n" * text
         )
     end
-    main = ":- use_module('$d/test_trie').\n" * join([":- use_module('$d/plunit_$short').\n" for (short, _, _) in _TT_UNITS])
+    main =
+        ":- use_module('$d/test_trie').\n" *
+        join([":- use_module('$d/plunit_$short').\n" for (short, _, _) in _TT_UNITS])
     main *= join([
         "t_$(id)(R) :- ( catch((abolish_all_tables, $g, abolish_all_tables, R = ok), error(SsuE, _), R = raised(SsuE)) -> true ; R = failed ).\n"
         for (id, _, g) in _TT_CASES
@@ -492,8 +554,15 @@ end
 function _tt_swipl_lines(path::String, names::Vector{String})::Vector{String}
     out = mktempdir() do d
         f = joinpath(d, "drv.pl")
-        write(f, _TT_DRIVER * ":- initialization((fz_run('$path', [" * join(names, ",") * "]), halt)).\n")
-        read(pipeline(addenv(`swipl -q $f`, "LC_ALL" => "C"); stdin=devnull, stderr=devnull), String)
+        write(
+            f,
+            _TT_DRIVER * ":- initialization((fz_run('$path', [" * join(names, ",") *
+            "]), halt)).\n"
+        )
+        read(
+            pipeline(addenv(`swipl -q $f`, "LC_ALL" => "C"); stdin=devnull, stderr=devnull),
+            String
+        )
     end
     return String.(split(chomp(out), '\n'; keepempty=false))
 end
@@ -514,7 +583,9 @@ function _tt_ask(gd, ld, pred::String)::String
     fid = LK.PL_open_foreign_frame(ld)
     a = LK.PL_new_term_refs(ld, 1)
     LK.putSlotValue!(ld, a + 1, mk_var(_TT, LK.fresh_var_keys!(1)), LK.PutVarMap())
-    qid = LK.PL_open_query(gd, ld, nothing, LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS, proc, a)
+    qid = LK.PL_open_query(
+        gd, ld, nothing, LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS, proc, a
+    )
     n = 0
     while (n += 1) <= 50
         rc = LK.PL_next_solution(gd, ld, qid)

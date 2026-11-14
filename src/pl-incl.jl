@@ -23,6 +23,10 @@
 # UPSTREAM: swipl-devel src/pl-trie.c @ 18168e629eab
 # UPSTREAM: swipl-devel src/pl-trie.h @ 18168e629eab
 # UPSTREAM: swipl-devel src/pl-indirect.h @ 18168e629eab
+# UPSTREAM: swipl-devel src/pl-transaction.h @ 18168e629eab
+# UPSTREAM: swipl-devel src/pl-transaction.c @ 18168e629eab
+# UPSTREAM: swipl-devel src/pl-thread.h @ 18168e629eab
+# UPSTREAM: swipl-devel src/pl-idgset.h @ 18168e629eab
 # CLASS: code
 # COPYRIGHT: Copyright (c)  1985-2026, University of Amsterdam,
 # COPYRIGHT: VU University Amsterdam
@@ -734,6 +738,11 @@ mutable struct clause{T, D}
     owner_no::UInt32                # Index of owning source-file
 end
 
+# DIVERGES: a clause is hashed by its address, as upstream's `newHTablePW` tables (`tr->clauses`, pl-transaction.c:120)
+# key by the pointer; the default `hash` of a mutable struct calls `objectid`, a runtime call that AllocCheck reports as allocating
+# (ci/tx1m4: `Allocating runtime call to "jl_object_id" in ./runtime_internals.jl:901`, reached from `visibleClause`). Equality stays `===`.
+Base.hash(cl::clause, h::UInt)::UInt = hash(UInt(pointer_from_objref(cl)), h)
+
 "The start of `cl`'s code (upstream's `PC = cl->codes`), with its literal table."
 Code(cl::clause{T}, pc::Int) where {T} = Code{T}(cl.codes, cl.literals, pc)
 
@@ -1253,8 +1262,8 @@ const GEN_NESTED_RETRACT = typemax(tr_gen_t) - tr_gen_t(4)
 # PORT: pl-tabling.h TT_TBL_INVALIDATE
 "The flag of an entry of `tbl_trail.tables`: the table is invalidated when the transaction rolls back (pl-tabling.h)."
 const TT_TBL_INVALIDATE = 1
-# PORT: pl-tabling.h tbl_trail_type
-# DIVERGES: the enum `tbl_trail_type` is `Int` constants; only `TT_ANSWER` is a live action (the header's `TT_TABLE` has no user).
+# PORT: pl-tabling.h TT_ANSWER
+# DIVERGES: the enum `tbl_trail_type` (whose one constant at the pin is `TT_ANSWER`) is `Int` constants.
 "The type of an entry of `tbl_trail.actions`: a monotonic answer added in the transaction (pl-tabling.h `TT_ANSWER`)."
 const TT_ANSWER = 1
 # PORT: pl-tabling.h tbl_trail_answer
@@ -1311,9 +1320,21 @@ mutable struct ld_transaction{T}
     stack::Union{Nothing, tr_stack{T}}                      # Stack of nested transactions
 end
 ld_transaction{T}() where {T} =
-    ld_transaction{T}(gen_t(0), gen_t(0), GEN_INFINITE, gen_t(0), gen_t(0), UInt32(0), 0, nothing, nothing, nothing, nothing)
+    ld_transaction{T}(
+        gen_t(0),
+        gen_t(0),
+        GEN_INFINITE,
+        gen_t(0),
+        gen_t(0),
+        UInt32(0),
+        0,
+        nothing,
+        nothing,
+        nothing,
+        nothing
+    )
 
-# PORT: pl-transaction.c current_transaction
+# PORT: pl-transaction.c current_transaction as tr_enum
 # DIVERGES: the redo state of `current_transaction/1` is a record of the local data's pool (`ld.transaction_enums`,
 # `foreign_state_pool`), its index the `REDO_PTR` context, where upstream's context is the `tr_stack` pointer itself; the record
 # holds that stack level. A pool record is REUSED: the first redo sets `stack` again.
@@ -3119,8 +3140,10 @@ mutable struct idg_node{T}
 end
 # ORIGINAL: the zeroed node of `idg_new` (`memset(n, 0, sizeof(*n))`, then `magic` and `atrie`).
 idg_node{T}(atrie::Int) where {T} = idg_node{T}(
-    IDG_NODE_MAGIC, false, atrie, idg_set{idg_node{T}}(), idg_set{idg_node{T}}(), nothing, nothing, nothing,
-    0, 0, 0, 0, 0, false, false, false, false, false, false, false, false, false, false, false
+    IDG_NODE_MAGIC, false, atrie, idg_set{idg_node{T}}(), idg_set{idg_node{T}}(),
+    nothing, nothing, nothing,
+    0, 0, 0, 0, 0, false, false, false, false, false, false, false, false, false, false,
+    false
 )
 
 # MOVED after `tbl_worklist` (TAB1 TR1 rebased on TB0): `trie{T}.worklist` is a `tbl_worklist{T}`, a field type must be defined before it.
@@ -3319,7 +3342,8 @@ mutable struct idg_edge_state{T}
 end
 # ORIGINAL: the zeroed state (`memset(state, 0, sizeof(*state))`), also the record `foreign_state_pool` makes.
 idg_edge_state{T}() where {T} = idg_edge_state{T}(
-    nothing, nothing, nothing, nothing, false, false, false, false, false, false, word(0), nothing
+    nothing, nothing, nothing, nothing, false, false, false, false, false, false,
+    word(0), nothing
 )
 
 # PORT: pl-tabling.c pair_map
@@ -3336,7 +3360,8 @@ mutable struct pair_map{T}
     index::Dict{Tuple{UInt, UInt}, Int}                 # (a, b) -> entry
 end
 pair_map{T}() where {T} = pair_map{T}(
-    definition{T}[], Union{Nothing, definition{T}}[], Int[], Int[], Dict{Tuple{UInt, UInt}, Int}()
+    definition{T}[], Union{Nothing, definition{T}}[], Int[], Int[],
+    Dict{Tuple{UInt, UInt}, Int}()
 )
 
 # PORT: pl-tabling.h tbl_status

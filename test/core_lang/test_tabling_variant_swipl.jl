@@ -421,7 +421,9 @@ end
     n0, v0 = variants.node_count, variants.value_count
     fid = LK.PL_open_foreign_frame(ld)
     t = LK.PL_new_term_refs(ld, 2)
-    v = mk_expr(_TV, _TV[_tvs(":"), _tvs("user"), mk_expr(_TV, _TV[_tvs("tv_p"), lk_gnd(_TV, 2)])])
+    v = mk_expr(
+        _TV, _TV[_tvs(":"), _tvs("user"), mk_expr(_TV, _TV[_tvs("tv_p"), lk_gnd(_TV, 2)])]
+    )
     LK.putSlotValue!(ld, t + 1, v, LK.PutVarMap())
     @test LK.get_answer_table(ld, def, t, t + 1, 0) === nothing
     @test (variants.node_count, variants.value_count) == (n0, v0)
@@ -434,7 +436,11 @@ end
     k0 = LK.fresh_var_keys!(2)
     v = mk_expr(
         _TV,
-        _TV[_tvs(":"), _tvs("user"), mk_expr(_TV, _TV[_tvs("tv_p"), mk_var(_TV, k0), mk_var(_TV, k0 + UInt64(1))])]
+        _TV[
+            _tvs(":"),
+            _tvs("user"),
+            mk_expr(_TV, _TV[_tvs("tv_p"), mk_var(_TV, k0), mk_var(_TV, k0 + UInt64(1))])
+        ]
     )
     LK.putSlotValue!(ld, t + 1, v, LK.PutVarMap())
     a2 = LK.get_answer_table(ld, def, t, t + 1, Int(LK.AT_CREATE))
@@ -459,7 +465,9 @@ end
     @test a.worklist === wl && !wl.ground
     fid = LK.PL_open_foreign_frame(ld)
     t = LK.PL_new_term_refs(ld, 2)
-    v = mk_expr(_TV, _TV[_tvs(":"), _tvs("user"), mk_expr(_TV, _TV[_tvs("tv_p"), lk_gnd(_TV, 1)])])
+    v = mk_expr(
+        _TV, _TV[_tvs(":"), _tvs("user"), mk_expr(_TV, _TV[_tvs("tv_p"), lk_gnd(_TV, 1)])]
+    )
     LK.putSlotValue!(ld, t + 1, v, LK.PutVarMap())
     @test LK.get_answer_table(ld, def, t, t + 1, 0) === a
     @test wl.ground                                   # TB1-G3
@@ -596,7 +604,8 @@ const _TV_P7_PINNED = [
         @test k == p
     end
     # both sides non-empty, one extractor: the Trie argument answers differ in the pins (found: same / yes; a non-table: no)
-    @test occursin("a[115,97,109,101]", _TV_P7_PINNED[2]) && occursin("a[115,97,109,101]", _TV_P7_PINNED[3])
+    @test occursin("a[115,97,109,101]", _TV_P7_PINNED[2]) &&
+        occursin("a[115,97,109,101]", _TV_P7_PINNED[3])
     @test _TV_P7_PINNED[4] != _TV_P7_PINNED[5]
     swipl = get(ENV, "LOGICKERNEL_NO_SWIPL", "") == "1" ? nothing : Sys.which("swipl")
     if swipl !== nothing

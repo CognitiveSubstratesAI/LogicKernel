@@ -1,4 +1,5 @@
 # UPSTREAM: swipl-devel src/pl-idgset.c @ 18168e629eab
+# UPSTREAM: swipl-devel src/pl-idgset.h @ 18168e629eab
 # CLASS: code
 # COPYRIGHT: Copyright (c)  2026, SWI-Prolog Solutions b.v.
 # allow-new-artifact: a 1:1 port of swipl-devel src/pl-idgset.c (766 lines, read at the pin; new at 10.1.20, T1 of evidence/TAB1/decomposition.md; the IDG edges of pl-tabling.c need it, TAB1 TB6)
@@ -48,20 +49,25 @@ function new_block(
     index = bits != 0 ? zeros(UInt32, 1 << bits) : UInt32[]
 
     return idg_set_block{P}(
-        0, capacity, 0, bits, nothing, Vector{P}(undef, capacity), fill(false, capacity), index
+        0, capacity, 0, bits, nothing, Vector{P}(undef, capacity), fill(false, capacity),
+        index
     )
 end
 
 # PORT: pl-idgset.c free_block_now
 "Discharge the bytes of the block `b` from `pool` (pl-idgset.c `free_block_now`)."
-function free_block_now(b::idg_set_block{P}, pool::Union{Nothing, alloc_pool})::Nothing where {P}
+function free_block_now(
+    b::idg_set_block{P}, pool::Union{Nothing, alloc_pool}
+)::Nothing where {P}
     free_to_pool(pool, sizeof_block(b.capacity, b.index_bits))
     return nothing
 end
 
 # PORT: pl-idgset.c free_block
 "Free the block `b` (pl-idgset.c `free_block`)."
-function free_block(b::idg_set_block{P}, pool::Union{Nothing, alloc_pool})::Nothing where {P}
+function free_block(
+    b::idg_set_block{P}, pool::Union{Nothing, alloc_pool}
+)::Nothing where {P}
     idg_free_or_defer(free_block_now, b, pool)
     return nothing
 end
@@ -86,7 +92,9 @@ end
 # PORT: pl-idgset.c idg_set_free_lingering
 # DIVERGES: `lingering` is the node that owns the list.
 "Free the blocks on the lingering list of `lingering` (pl-idgset.c `idg_set_free_lingering`)."
-function idg_set_free_lingering(lingering::P, pool::Union{Nothing, alloc_pool})::Nothing where {P}
+function idg_set_free_lingering(
+    lingering::P, pool::Union{Nothing, alloc_pool}
+)::Nothing where {P}
     b = lingering.lingering
 
     lingering.lingering = nothing
@@ -301,7 +309,7 @@ end
 
 # PORT: pl-idgset.c idg_set_lingering_sizeof
 "The bytes of the blocks on the lingering list that starts with `b` (pl-idgset.c `idg_set_lingering_sizeof`)."
-function idg_set_lingering_sizeof(b::Union{Nothing, idg_set_block{P}})::Int where {P}
+function idg_set_lingering_sizeof(b::idg_set_block{P})::Int where {P}
     size = 0
 
     while b !== nothing
@@ -312,11 +320,16 @@ function idg_set_lingering_sizeof(b::Union{Nothing, idg_set_block{P}})::Int wher
     return size
 end
 
+# The NULL list of the C loop `for(; b; b = b->older)`: no block, no bytes. A method of its own, so that `P` is bound by every
+# signature (the Aqua unbound-type-parameters check, ci/tabint2).
+idg_set_lingering_sizeof(::Nothing)::Int = 0
+
 # PORT: pl-idgset.c idg_set_clear
 # DIVERGES: `func` is a Julia function `func(p, ctx)` or `nothing` (NULL); see `idg_set_add` for `lingering`.
 "Empty `set`, calling `func(p, ctx)` for each pointer it held; the set is detached first (pl-idgset.c `idg_set_clear`)."
 function idg_set_clear(
-    set::idg_set{P}, func::F, ctx::C, lingering::Union{Nothing, P}, pool::Union{Nothing, alloc_pool}
+    set::idg_set{P}, func::F, ctx::C, lingering::Union{Nothing, P},
+    pool::Union{Nothing, alloc_pool}
 )::Nothing where {P, F, C}
     sp = set.single
     b = set.block

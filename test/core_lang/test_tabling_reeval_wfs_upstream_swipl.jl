@@ -73,7 +73,10 @@ fz_run(File, Ns) :-
 
 "The units' text, verbatim between begin_tests and end_tests: `(short name, begin_tests directive, text)`."
 const _TT_UNITS = [
-    ("reeval_wfs", ":- begin_tests(reeval_wfs).", raw"""
+    (
+        "reeval_wfs",
+        ":- begin_tests(reeval_wfs).",
+        raw"""
 
 :- dynamic d/1 as incremental.
 :- dynamic blk/1 as incremental.
@@ -134,8 +137,12 @@ test(truth_values, Truths == [ q(1)-true,      q(2)-undefined, q(3)-true,
                              ]) :-
     incremental_vs_fresh([blk(1), blk(3)], Truths, _).
 
-"""),
-    ("reeval_wfs_stale", ":- begin_tests(reeval_wfs_stale).", raw"""
+"""
+    ),
+    (
+        "reeval_wfs_stale",
+        ":- begin_tests(reeval_wfs_stale).",
+        raw"""
 
 :- dynamic base/1 as incremental.
 :- table (a/0, b/0) as incremental.
@@ -169,7 +176,8 @@ test(residual, Program == []) :-
     call_delays(a, Delays),
     delays_residual_program(Delays, Program).
 
-"""),
+"""
+    )
 ]
 
 "The file's common tail (lines `before :- ...` to the end), verbatim."
@@ -178,12 +186,32 @@ const _TT_TAIL = raw"""
 
 "The rows: `(id, unit, goal)`; the goal is the plunit test with its options folded by hand."
 const _TT_CASES = [
-    ("tt01a", "reeval_wfs", "(pu_reeval_wfs:test(one_table_becomes_false, O), O = (A == B), A == B)"),
-    ("tt01b", "reeval_wfs", "(pu_reeval_wfs:test(two_tables_become_false, O), O = (A == B), A == B)"),
-    ("tt01c", "reeval_wfs", "(pu_reeval_wfs:test(all_tables_become_false, O), O = (A == B), A == B)"),
+    (
+        "tt01a",
+        "reeval_wfs",
+        "(pu_reeval_wfs:test(one_table_becomes_false, O), O = (A == B), A == B)"
+    ),
+    (
+        "tt01b",
+        "reeval_wfs",
+        "(pu_reeval_wfs:test(two_tables_become_false, O), O = (A == B), A == B)"
+    ),
+    (
+        "tt01c",
+        "reeval_wfs",
+        "(pu_reeval_wfs:test(all_tables_become_false, O), O = (A == B), A == B)"
+    ),
     ("tt01d", "reeval_wfs", "(pu_reeval_wfs:test(truth_values, O), O = (A == B), A == B)"),
-    ("tt02a", "reeval_wfs_stale", "(pu_reeval_wfs_stale:test(retract, O), O = [(A0 == B0), (A1 == B1)], A0 == B0, A1 == B1)"),
-    ("tt02b", "reeval_wfs_stale", "(pu_reeval_wfs_stale:test(residual, O), O = (A == B), A == B)"),
+    (
+        "tt02a",
+        "reeval_wfs_stale",
+        "(pu_reeval_wfs_stale:test(retract, O), O = [(A0 == B0), (A1 == B1)], A0 == B0, A1 == B1)"
+    ),
+    (
+        "tt02b",
+        "reeval_wfs_stale",
+        "(pu_reeval_wfs_stale:test(residual, O), O = (A == B), A == B)"
+    )
 ]
 
 const _TT_PINNED = [
@@ -193,7 +221,7 @@ const _TT_PINNED = [
     "t_tt01c c[116,95,116,116,48,49,99]/1(a[111,107])",
     "t_tt01d c[116,95,116,116,48,49,100]/1(a[111,107])",
     "t_tt02a c[116,95,116,116,48,50,97]/1(a[111,107])",
-    "t_tt02b c[116,95,116,116,48,50,98]/1(a[111,107])",
+    "t_tt02b c[116,95,116,116,48,50,98]/1(a[111,107])"
 ]
 
 "The answer plunit expects of every row: the test passes, `R = ok` (run in swipl by gen_reeval.py pin, plunit part of pins file)."
@@ -203,7 +231,7 @@ const _TT_UPSTREAM = [
     "a[111,107]",
     "a[111,107]",
     "a[111,107]",
-    "a[111,107]",
+    "a[111,107]"
 ]
 
 "The files of the program in a fresh directory: one module file per unit, the main file with the rows; returns the main file."
@@ -212,7 +240,8 @@ function _tt_materialize()::String
     for (short, _, text) in _TT_UNITS
         write(
             joinpath(d, "pu_$short.pl"),
-            ":- module(pu_$short, []).\n:- use_module(library(debug)).\n:- use_module(library(wfs)).\n" * text * "\n" * _TT_TAIL
+            ":- module(pu_$short, []).\n:- use_module(library(debug)).\n:- use_module(library(wfs)).\n" *
+            text * "\n" * _TT_TAIL
         )
     end
     main = join([":- use_module('$d/pu_$short').\n" for (short, _, _) in _TT_UNITS])
@@ -227,8 +256,15 @@ end
 function _tt_swipl_lines(path::String, names::Vector{String})::Vector{String}
     out = mktempdir() do d
         f = joinpath(d, "drv.pl")
-        write(f, _TT_DRIVER * ":- initialization((fz_run('$path', [" * join(names, ",") * "]), halt)).\n")
-        read(pipeline(addenv(`swipl -q $f`, "LC_ALL" => "C"); stdin=devnull, stderr=devnull), String)
+        write(
+            f,
+            _TT_DRIVER * ":- initialization((fz_run('$path', [" * join(names, ",") *
+            "]), halt)).\n"
+        )
+        read(
+            pipeline(addenv(`swipl -q $f`, "LC_ALL" => "C"); stdin=devnull, stderr=devnull),
+            String
+        )
     end
     return String.(split(chomp(out), '\n'; keepempty=false))
 end
@@ -249,7 +285,9 @@ function _tt_ask(gd, ld, pred::String)::String
     fid = LK.PL_open_foreign_frame(ld)
     a = LK.PL_new_term_refs(ld, 1)
     LK.putSlotValue!(ld, a + 1, mk_var(_TT, LK.fresh_var_keys!(1)), LK.PutVarMap())
-    qid = LK.PL_open_query(gd, ld, nothing, LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS, proc, a)
+    qid = LK.PL_open_query(
+        gd, ld, nothing, LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS, proc, a
+    )
     n = 0
     while (n += 1) <= 50
         rc = LK.PL_next_solution(gd, ld, qid)

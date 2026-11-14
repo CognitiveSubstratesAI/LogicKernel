@@ -212,8 +212,12 @@ end
     for g in _EF_GROUPS
         @test !isempty(g.pins) && g.pins[1] == "ok"
         @test length(g.pins) == length(_EF_CASES) + 1
-        @test [first(split(l, " ")) for l in g.pins[2:end]] == ["t_$id" for (id, _) in _EF_CASES]
-        @test all(l -> length(split(l, " "; limit=2)) == 2 && !isempty(split(l, " "; limit=2)[2]), g.pins[2:end])
+        @test [first(split(l, " ")) for l in g.pins[2:end]] ==
+            ["t_$id" for (id, _) in _EF_CASES]
+        @test all(
+            l -> length(split(l, " "; limit=2)) == 2 && !isempty(split(l, " "; limit=2)[2]),
+            g.pins[2:end]
+        )
     end
     @test _EF_GROUPS[1].pins != _EF_GROUPS[2].pins            # the control and the finding differ
 end

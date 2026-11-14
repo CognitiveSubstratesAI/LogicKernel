@@ -78,7 +78,10 @@ fz_run(File, Ns) :-
 
 "The units' text, verbatim between begin_tests and end_tests: `(short name, begin_tests directive, text)`."
 const _TT_UNITS = [
-    ("wfs_delays", ":- begin_tests(wfs_delays).", raw"""
+    (
+        "wfs_delays",
+        ":- begin_tests(wfs_delays).",
+        raw"""
 :- use_module(library(dialect/xsb)).
 
 :- table p/0, q/0, a/1.
@@ -112,8 +115,12 @@ test(as, D =@= [(puas(1,_) :- tnot(tabled_call(plunit_wfs_delays:puas(1,B)))),
 		(tabled_call(plunit_wfs_delays:puas(1,B)):-puas(1,B))]) :-
     call_residual_program(puas(1,_), D).
 
-"""),
-    ("wfs_dwin", ":- begin_tests(wfs_dwin).", raw"""
+"""
+    ),
+    (
+        "wfs_dwin",
+        ":- begin_tests(wfs_dwin).",
+        raw"""
 
 test(dwin) :-
     call_delays(dwin(0), C),
@@ -130,7 +137,8 @@ win_cnt(X,1) :- move(X,Y), tnot(dwin(Y)).
 move(0,1).
 move(0,0).
 
-"""),
+"""
+    )
 ]
 
 "The file's common tail (lines `before :- ...` to the end), verbatim."
@@ -145,14 +153,34 @@ mq :- tnot(mp).
 
 "The rows: `(id, unit, goal)`; the goal is the plunit test with its options folded by hand."
 const _TT_CASES = [
-    ("tt01a", "wfs_delays", "(nth_clause(plunit_wfs_delays:test(delays, _), 1, Rf), clause(plunit_wfs_delays:test(delays, O), Bd, Rf), plunit_wfs_delays:Bd, O = (A == V), A == V)"),
-    ("tt01b", "wfs_delays", "(nth_clause(plunit_wfs_delays:test(delays, _), 2, Rf), clause(plunit_wfs_delays:test(delays, O), Bd, Rf), plunit_wfs_delays:Bd, O = (A == V), A == V)"),
-    ("tt01c", "wfs_delays", "(nth_clause(plunit_wfs_delays:test(delays, _), 3, Rf), clause(plunit_wfs_delays:test(delays, O), Bd, Rf), plunit_wfs_delays:Bd, O = (A == V), A == V)"),
-    ("tt01d", "wfs_delays", "(nth_clause(plunit_wfs_delays:test(delays, _), 4, Rf), clause(plunit_wfs_delays:test(delays, O), Bd, Rf), plunit_wfs_delays:Bd, O = (A == V), A == V)"),
-    ("tt01e", "wfs_delays", "(nth_clause(plunit_wfs_delays:test(delays, _), 5, Rf), clause(plunit_wfs_delays:test(delays, O), Bd, Rf), plunit_wfs_delays:Bd, O = (A == V), A == V)"),
+    (
+        "tt01a",
+        "wfs_delays",
+        "(nth_clause(plunit_wfs_delays:test(delays, _), 1, Rf), clause(plunit_wfs_delays:test(delays, O), Bd, Rf), plunit_wfs_delays:Bd, O = (A == V), A == V)"
+    ),
+    (
+        "tt01b",
+        "wfs_delays",
+        "(nth_clause(plunit_wfs_delays:test(delays, _), 2, Rf), clause(plunit_wfs_delays:test(delays, O), Bd, Rf), plunit_wfs_delays:Bd, O = (A == V), A == V)"
+    ),
+    (
+        "tt01c",
+        "wfs_delays",
+        "(nth_clause(plunit_wfs_delays:test(delays, _), 3, Rf), clause(plunit_wfs_delays:test(delays, O), Bd, Rf), plunit_wfs_delays:Bd, O = (A == V), A == V)"
+    ),
+    (
+        "tt01d",
+        "wfs_delays",
+        "(nth_clause(plunit_wfs_delays:test(delays, _), 4, Rf), clause(plunit_wfs_delays:test(delays, O), Bd, Rf), plunit_wfs_delays:Bd, O = (A == V), A == V)"
+    ),
+    (
+        "tt01e",
+        "wfs_delays",
+        "(nth_clause(plunit_wfs_delays:test(delays, _), 5, Rf), clause(plunit_wfs_delays:test(delays, O), Bd, Rf), plunit_wfs_delays:Bd, O = (A == V), A == V)"
+    ),
     ("tt01f", "wfs_delays", "(plunit_wfs_delays:test(residual, O), O = (A == V), A == V)"),
     ("tt01g", "wfs_delays", "(plunit_wfs_delays:test(as, O), O = (A =@= V), A =@= V)"),
-    ("tt02a", "wfs_dwin", "plunit_wfs_dwin:test(dwin)"),
+    ("tt02a", "wfs_dwin", "plunit_wfs_dwin:test(dwin)")
 ]
 
 const _TT_PINNED = [
@@ -164,7 +192,7 @@ const _TT_PINNED = [
     "t_tt01e c[116,95,116,116,48,49,101]/1(a[111,107])",
     "t_tt01f c[116,95,116,116,48,49,102]/1(a[111,107])",
     "t_tt01g c[116,95,116,116,48,49,103]/1(a[111,107])",
-    "t_tt02a c[116,95,116,116,48,50,97]/1(a[111,107])",
+    "t_tt02a c[116,95,116,116,48,50,97]/1(a[111,107])"
 ]
 
 "The answer plunit expects of every row: the test passes, `R = ok` (run in swipl by gen_reeval.py pin, plunit part of pins file)."
@@ -176,20 +204,26 @@ const _TT_UPSTREAM = [
     "a[111,107]",
     "a[111,107]",
     "a[111,107]",
-    "a[111,107]",
+    "a[111,107]"
 ]
 
 "The files of the program in a fresh directory: one module file per unit, the main file with the rows; returns the main file."
 function _tt_materialize()::String
     d = realpath(mktempdir())
-    write(joinpath(d, "test_wfs.pl"), ":- module(test_wfs, []).\n:- use_module(library(wfs)).\n" * _TT_TAIL)
+    write(
+        joinpath(d, "test_wfs.pl"),
+        ":- module(test_wfs, []).\n:- use_module(library(wfs)).\n" * _TT_TAIL
+    )
     for (short, _, text) in _TT_UNITS
         write(
             joinpath(d, "plunit_$short.pl"),
-            ":- module(plunit_$short, []).\n:- set_module(base(test_wfs)).\n:- use_module(library(wfs)).\n" * text
+            ":- module(plunit_$short, []).\n:- set_module(base(test_wfs)).\n:- use_module(library(wfs)).\n" *
+            text
         )
     end
-    main = ":- use_module('$d/test_wfs').\n" * join([":- use_module('$d/plunit_$short').\n" for (short, _, _) in _TT_UNITS])
+    main =
+        ":- use_module('$d/test_wfs').\n" *
+        join([":- use_module('$d/plunit_$short').\n" for (short, _, _) in _TT_UNITS])
     main *= join([
         "t_$(id)(R) :- ( catch((abolish_all_tables, $g, abolish_all_tables, R = ok), error(SsuE, _), R = raised(SsuE)) -> true ; R = failed ).\n"
         for (id, _, g) in _TT_CASES
@@ -201,8 +235,15 @@ end
 function _tt_swipl_lines(path::String, names::Vector{String})::Vector{String}
     out = mktempdir() do d
         f = joinpath(d, "drv.pl")
-        write(f, _TT_DRIVER * ":- initialization((fz_run('$path', [" * join(names, ",") * "]), halt)).\n")
-        read(pipeline(addenv(`swipl -q $f`, "LC_ALL" => "C"); stdin=devnull, stderr=devnull), String)
+        write(
+            f,
+            _TT_DRIVER * ":- initialization((fz_run('$path', [" * join(names, ",") *
+            "]), halt)).\n"
+        )
+        read(
+            pipeline(addenv(`swipl -q $f`, "LC_ALL" => "C"); stdin=devnull, stderr=devnull),
+            String
+        )
     end
     return String.(split(chomp(out), '\n'; keepempty=false))
 end
@@ -223,7 +264,9 @@ function _tt_ask(gd, ld, pred::String)::String
     fid = LK.PL_open_foreign_frame(ld)
     a = LK.PL_new_term_refs(ld, 1)
     LK.putSlotValue!(ld, a + 1, mk_var(_TT, LK.fresh_var_keys!(1)), LK.PutVarMap())
-    qid = LK.PL_open_query(gd, ld, nothing, LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS, proc, a)
+    qid = LK.PL_open_query(
+        gd, ld, nothing, LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS, proc, a
+    )
     n = 0
     while (n += 1) <= 50
         rc = LK.PL_next_solution(gd, ld, qid)

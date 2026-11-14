@@ -89,7 +89,10 @@ const _TT_TESTLIB = joinpath(@__DIR__, "tabling_testlib_upstream.pl")
 
 "The units' text, verbatim between begin_tests and end_tests: `(short name, begin_tests directive, text)`."
 const _TT_UNITS = [
-    ("supervisor", "begin_tests(tabled_supervisor)", raw"""
+    (
+    "supervisor",
+    "begin_tests(tabled_supervisor)",
+    raw"""
 :- use_module(library(lists)).
 :- use_module(library(prolog_wrap)).
 :- discontiguous test/1, test/2.
@@ -433,7 +436,8 @@ test(retable,
     assertion(all(Y, M:rt(a, Y), [3])),
     assertion(all(Y, M:rt(a, Y), [3])).
 
-"""),
+"""
+),
 ]
 
 "The file's common tail (lines `before :- ...` to the end), verbatim."
@@ -467,14 +471,30 @@ const _TT_CASES = [
     ("s23", "supervisor", "pu_supervisor:test(gc)"),
     ("s24", "supervisor", "pu_supervisor:test(no_reeval)"),
     ("s25", "supervisor", "pu_supervisor:test(wfs)"),
-    ("s26", "supervisor", "setup_call_cleanup(pu_supervisor:wrap_predicate(pu_supervisor:wrapped(_), outer, W, (flag(outer, N, N+1), W)), pu_supervisor:test(outer_wrapper, _), pu_supervisor:unwrap_predicate(pu_supervisor:wrapped/1, outer))"),
-    ("s27", "supervisor", "setup_call_cleanup(true, pu_supervisor:test(incremental, _), (pu_supervisor:retractall(d(_)), abolish_all_tables))"),
-    ("s28", "supervisor", "setup_call_cleanup(true, pu_supervisor:test(monotonic, _), (pu_supervisor:retractall(md(_)), abolish_all_tables))"),
+    (
+        "s26",
+        "supervisor",
+        "setup_call_cleanup(pu_supervisor:wrap_predicate(pu_supervisor:wrapped(_), outer, W, (flag(outer, N, N+1), W)), pu_supervisor:test(outer_wrapper, _), pu_supervisor:unwrap_predicate(pu_supervisor:wrapped/1, outer))"
+    ),
+    (
+        "s27",
+        "supervisor",
+        "setup_call_cleanup(true, pu_supervisor:test(incremental, _), (pu_supervisor:retractall(d(_)), abolish_all_tables))"
+    ),
+    (
+        "s28",
+        "supervisor",
+        "setup_call_cleanup(true, pu_supervisor:test(monotonic, _), (pu_supervisor:retractall(md(_)), abolish_all_tables))"
+    ),
     ("s29", "supervisor", "pu_supervisor:test(shared_thread, _)"),
     ("s30", "supervisor", "pu_supervisor:test(moded)"),
     ("s31", "supervisor", "pu_supervisor:test(ssu_complete_fails, [Chk]), call(Chk)"),
     ("s32", "supervisor", "pu_supervisor:test(subsumptive)"),
-    ("s33", "supervisor", "setup_call_cleanup(true, pu_supervisor:test(retable, _), abolish_all_tables)"),
+    (
+        "s33",
+        "supervisor",
+        "setup_call_cleanup(true, pu_supervisor:test(retable, _), abolish_all_tables)"
+    )
 ]
 
 
@@ -517,7 +537,7 @@ const _TT_PINNED = [
     "t_s30 c[116,95,115,51,48]/1(a[111,107])",
     "t_s31 c[116,95,115,51,49]/1(a[111,107])",
     "t_s32 c[116,95,115,51,50]/1(a[111,107])",
-    "t_s33 c[116,95,115,51,51]/1(a[111,107])",
+    "t_s33 c[116,95,115,51,51]/1(a[111,107])"
 ]
 
 "The answer plunit expects of every row: the test passes, `R = ok` (run in swipl by gen_tabling.py pin, plunit part of pins file)."
@@ -554,7 +574,7 @@ const _TT_UPSTREAM = [
     "a[111,107]",
     "a[111,107]",
     "a[111,107]",
-    "a[111,107]",
+    "a[111,107]"
 ]
 
 "The files of the program in a fresh directory: testlib, one module file per unit, the main file with the rows; returns the main file."
@@ -564,7 +584,8 @@ function _tt_materialize()::String
     for (short, _, text) in _TT_UNITS
         write(
             joinpath(d, "pu_$short.pl"),
-            ":- module(pu_$short, []).\n:- use_module('$d/tabling_testlib').\n" * text * "\n" * _TT_TAIL
+            ":- module(pu_$short, []).\n:- use_module('$d/tabling_testlib').\n" * text *
+            "\n" * _TT_TAIL
         )
     end
     main = join([":- use_module('$d/pu_$short').\n" for (short, _, _) in _TT_UNITS])
@@ -579,8 +600,15 @@ end
 function _tt_swipl_lines(path::String, names::Vector{String})::Vector{String}
     out = mktempdir() do d
         f = joinpath(d, "drv.pl")
-        write(f, _TT_DRIVER * ":- initialization((fz_run('$path', [" * join(names, ",") * "]), halt)).\n")
-        read(pipeline(addenv(`swipl -q $f`, "LC_ALL" => "C"); stdin=devnull, stderr=devnull), String)
+        write(
+            f,
+            _TT_DRIVER * ":- initialization((fz_run('$path', [" * join(names, ",") *
+            "]), halt)).\n"
+        )
+        read(
+            pipeline(addenv(`swipl -q $f`, "LC_ALL" => "C"); stdin=devnull, stderr=devnull),
+            String
+        )
     end
     return String.(split(chomp(out), '\n'; keepempty=false))
 end
@@ -601,7 +629,9 @@ function _tt_ask(gd, ld, pred::String)::String
     fid = LK.PL_open_foreign_frame(ld)
     a = LK.PL_new_term_refs(ld, 1)
     LK.putSlotValue!(ld, a + 1, mk_var(_TT, LK.fresh_var_keys!(1)), LK.PutVarMap())
-    qid = LK.PL_open_query(gd, ld, nothing, LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS, proc, a)
+    qid = LK.PL_open_query(
+        gd, ld, nothing, LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS, proc, a
+    )
     n = 0
     while (n += 1) <= 50
         rc = LK.PL_next_solution(gd, ld, qid)

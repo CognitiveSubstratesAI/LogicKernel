@@ -83,7 +83,10 @@ fz_run(File, Ns) :-
 
 "The units' text, verbatim between begin_tests and end_tests: `(short name, begin_tests directive, text)`."
 const _TT_UNITS = [
-    ("mono1", "begin_tests(monotonic_tabling)", raw"""
+    (
+        "mono1",
+        "begin_tests(monotonic_tabling)",
+        raw"""
 :- use_module(library(lists)).
 :- use_module(library(apply)).
 :- use_module(library(debug)).
@@ -262,8 +265,12 @@ test(nested_reeval_mono, true) :-
     assert(nd2(3)),
     setof(X, np(X), Xs2),
     assertion(Xs2 == [1,3]).
-"""),
-    ("mono2", "begin_tests(monotonic_tabling_2)", raw"""
+"""
+    ),
+    (
+        "mono2",
+        "begin_tests(monotonic_tabling_2)",
+        raw"""
 :- use_module(library(lists)).
 :- use_module(library(apply)).
 :- use_module(library(debug)).
@@ -312,8 +319,12 @@ test(twice_invalid, [Xs == [1,2,3], cleanup(clean)]) :-
     assert(d2(2)),
     assert(d3(3)),
     setof(X, p(X), Xs).
-"""),
-    ("mono3", "begin_tests(monotonic_tabling_3)", raw"""
+"""
+    ),
+    (
+        "mono3",
+        "begin_tests(monotonic_tabling_3)",
+        raw"""
 :- use_module(library(lists)).
 :- use_module(library(apply)).
 :- use_module(library(debug)).
@@ -350,7 +361,8 @@ test(incr_propagate) :-
     expect(X, p(X), [1,2]),
     incr_invalidate_calls(d(2)),
     expect(X, p(X), [1]).
-"""),
+"""
+    )
 ]
 
 "The file's common tail (lines `before :- ...` to the end), verbatim."
@@ -405,16 +417,52 @@ expect_queued_answers(To, Expected0) :-
 
 "The rows: `(id, unit, goal)`; the goal is the plunit test with its options folded by hand."
 const _TT_CASES = [
-    ("m01", "mono1", "setup_call_cleanup(true, (pu_mono1:test(pa1, [_, C]), call(C)), pu_mono1:cleanup)"),
-    ("m02", "mono1", "setup_call_cleanup(true, (pu_mono1:test(pa2, [_, C]), call(C)), pu_mono1:cleanup)"),
-    ("m03", "mono1", "setup_call_cleanup(true, pu_mono1:test(pb, [_, true]), pu_mono1:cleanup)"),
-    ("m04", "mono1", "setup_call_cleanup(true, (pu_mono1:test(closure, [_, C]), call(C)), pu_mono1:cleanup)"),
-    ("m05", "mono1", "setup_call_cleanup(true, (pu_mono1:test(closure2, [_, C]), call(C)), pu_mono1:cleanup)"),
-    ("m06", "mono1", "setup_call_cleanup(true, pu_mono1:test(incr_mono, [_, true]), pu_mono1:cleanup)"),
-    ("m07", "mono1", "setup_call_cleanup(true, (pu_mono1:test(incr_mono, [_, (Lm == [1])]), Lm == [1]), pu_mono1:cleanup)"),
-    ("m08", "mono1", "setup_call_cleanup(true, pu_mono1:test(nested_reeval_mono, [_, true]), pu_mono1:cleanup)"),
-    ("m09", "mono2", "setup_call_cleanup(true, (pu_mono2:test(twice_invalid, [C, _]), call(C)), pu_mono2:clean)"),
-    ("m10", "mono3", "pu_mono3:test(incr_propagate)"),
+    (
+        "m01",
+        "mono1",
+        "setup_call_cleanup(true, (pu_mono1:test(pa1, [_, C]), call(C)), pu_mono1:cleanup)"
+    ),
+    (
+        "m02",
+        "mono1",
+        "setup_call_cleanup(true, (pu_mono1:test(pa2, [_, C]), call(C)), pu_mono1:cleanup)"
+    ),
+    (
+        "m03",
+        "mono1",
+        "setup_call_cleanup(true, pu_mono1:test(pb, [_, true]), pu_mono1:cleanup)"
+    ),
+    (
+        "m04",
+        "mono1",
+        "setup_call_cleanup(true, (pu_mono1:test(closure, [_, C]), call(C)), pu_mono1:cleanup)"
+    ),
+    (
+        "m05",
+        "mono1",
+        "setup_call_cleanup(true, (pu_mono1:test(closure2, [_, C]), call(C)), pu_mono1:cleanup)"
+    ),
+    (
+        "m06",
+        "mono1",
+        "setup_call_cleanup(true, pu_mono1:test(incr_mono, [_, true]), pu_mono1:cleanup)"
+    ),
+    (
+        "m07",
+        "mono1",
+        "setup_call_cleanup(true, (pu_mono1:test(incr_mono, [_, (Lm == [1])]), Lm == [1]), pu_mono1:cleanup)"
+    ),
+    (
+        "m08",
+        "mono1",
+        "setup_call_cleanup(true, pu_mono1:test(nested_reeval_mono, [_, true]), pu_mono1:cleanup)"
+    ),
+    (
+        "m09",
+        "mono2",
+        "setup_call_cleanup(true, (pu_mono2:test(twice_invalid, [C, _]), call(C)), pu_mono2:clean)"
+    ),
+    ("m10", "mono3", "pu_mono3:test(incr_propagate)")
 ]
 
 const _TT_PINNED = [
@@ -428,7 +476,7 @@ const _TT_PINNED = [
     "t_m07 c[116,95,109,48,55]/1(a[111,107])",
     "t_m08 c[116,95,109,48,56]/1(a[111,107])",
     "t_m09 c[116,95,109,48,57]/1(a[111,107])",
-    "t_m10 c[116,95,109,49,48]/1(a[111,107])",
+    "t_m10 c[116,95,109,49,48]/1(a[111,107])"
 ]
 
 "The answer plunit expects of every row: the test passes, `R = ok` (run in swipl by gen_tabling.py pin, plunit part of pins file)."
@@ -442,7 +490,7 @@ const _TT_UPSTREAM = [
     "a[111,107]",
     "a[111,107]",
     "a[111,107]",
-    "a[111,107]",
+    "a[111,107]"
 ]
 
 "The files of the program in a fresh directory: one module file per unit, the main file with the rows; returns the main file."
@@ -454,7 +502,9 @@ function _tt_materialize()::String
             ":- module(pu_$short, []).\n" * text * "\n" * _TT_TAIL
         )
     end
-    main = join([":- catch(use_module('$d/pu_$short'), _, true).\n" for (short, _, _) in _TT_UNITS])
+    main = join([
+        ":- catch(use_module('$d/pu_$short'), _, true).\n" for (short, _, _) in _TT_UNITS
+    ])
     main *= join([
         "t_$(id)(R) :- ( catch((abolish_all_tables, $g, abolish_all_tables, R = ok), error(SsuE, _), R = raised(SsuE)) -> true ; R = failed ).\n"
         for (id, _, g) in _TT_CASES
@@ -466,8 +516,15 @@ end
 function _tt_swipl_lines(path::String, names::Vector{String})::Vector{String}
     out = mktempdir() do d
         f = joinpath(d, "drv.pl")
-        write(f, _TT_DRIVER * ":- initialization((fz_run('$path', [" * join(names, ",") * "]), halt)).\n")
-        read(pipeline(addenv(`swipl -q $f`, "LC_ALL" => "C"); stdin=devnull, stderr=devnull), String)
+        write(
+            f,
+            _TT_DRIVER * ":- initialization((fz_run('$path', [" * join(names, ",") *
+            "]), halt)).\n"
+        )
+        read(
+            pipeline(addenv(`swipl -q $f`, "LC_ALL" => "C"); stdin=devnull, stderr=devnull),
+            String
+        )
     end
     return String.(split(chomp(out), '\n'; keepempty=false))
 end
@@ -488,7 +545,9 @@ function _tt_ask(gd, ld, pred::String)::String
     fid = LK.PL_open_foreign_frame(ld)
     a = LK.PL_new_term_refs(ld, 1)
     LK.putSlotValue!(ld, a + 1, mk_var(_TT, LK.fresh_var_keys!(1)), LK.PutVarMap())
-    qid = LK.PL_open_query(gd, ld, nothing, LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS, proc, a)
+    qid = LK.PL_open_query(
+        gd, ld, nothing, LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS, proc, a
+    )
     n = 0
     while (n += 1) <= 50
         rc = LK.PL_next_solution(gd, ld, qid)

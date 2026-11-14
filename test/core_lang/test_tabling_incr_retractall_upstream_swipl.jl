@@ -80,7 +80,10 @@ fz_run(File, Ns) :-
 
 "The units' text, verbatim between begin_tests and end_tests: `(short name, begin_tests directive, text)`."
 const _TT_UNITS = [
-    ("incr_update_refused", "begin_tests(incr_update_refused)", raw"""
+    (
+    "incr_update_refused",
+    "begin_tests(incr_update_refused)",
+    raw"""
 :- dynamic f/1 as incremental.
 :- table t/1 as incremental.
 
@@ -130,7 +133,8 @@ test(retractall_outside_evaluation, Fs == []) :-
     abolish_all_tables,
     retractall(f(_)),
     findall(X, f(X), Fs).
-"""),
+"""
+),
 ]
 
 "The file's common tail (lines `before :- ...` to the end), verbatim."
@@ -139,11 +143,31 @@ const _TT_TAIL = raw"""
 
 "The rows: `(id, unit, goal)`; the goal is the plunit test with its options folded by hand."
 const _TT_CASES = [
-    ("ir01", "incr_update_refused", "setup_call_cleanup(true, (plunit_incr_update_refused:test(retractall_var, C), call(C)), true)"),
-    ("ir02", "incr_update_refused", "setup_call_cleanup(true, (plunit_incr_update_refused:test(retractall_nonvar, C), call(C)), true)"),
-    ("ir03", "incr_update_refused", "setup_call_cleanup(true, (plunit_incr_update_refused:test(retract, C), call(C)), true)"),
-    ("ir04", "incr_update_refused", "setup_call_cleanup(true, (plunit_incr_update_refused:test(assert, C), call(C)), true)"),
-    ("ir05", "incr_update_refused", "setup_call_cleanup(true, (plunit_incr_update_refused:test(retractall_outside_evaluation, C), call(C)), true)"),
+    (
+        "ir01",
+        "incr_update_refused",
+        "setup_call_cleanup(true, (plunit_incr_update_refused:test(retractall_var, C), call(C)), true)"
+    ),
+    (
+        "ir02",
+        "incr_update_refused",
+        "setup_call_cleanup(true, (plunit_incr_update_refused:test(retractall_nonvar, C), call(C)), true)"
+    ),
+    (
+        "ir03",
+        "incr_update_refused",
+        "setup_call_cleanup(true, (plunit_incr_update_refused:test(retract, C), call(C)), true)"
+    ),
+    (
+        "ir04",
+        "incr_update_refused",
+        "setup_call_cleanup(true, (plunit_incr_update_refused:test(assert, C), call(C)), true)"
+    ),
+    (
+        "ir05",
+        "incr_update_refused",
+        "setup_call_cleanup(true, (plunit_incr_update_refused:test(retractall_outside_evaluation, C), call(C)), true)"
+    )
 ]
 
 const _TT_PINNED = [
@@ -152,7 +176,7 @@ const _TT_PINNED = [
     "t_ir02 c[116,95,105,114,48,50]/1(a[111,107])",
     "t_ir03 c[116,95,105,114,48,51]/1(a[111,107])",
     "t_ir04 c[116,95,105,114,48,52]/1(a[111,107])",
-    "t_ir05 c[116,95,105,114,48,53]/1(a[111,107])",
+    "t_ir05 c[116,95,105,114,48,53]/1(a[111,107])"
 ]
 
 "The answer plunit expects of every row: the test passes, `R = ok` (run in swipl by gen_tabling.py pin, plunit part of pins file)."
@@ -161,20 +185,28 @@ const _TT_UPSTREAM = [
     "a[111,107]",
     "a[111,107]",
     "a[111,107]",
-    "a[111,107]",
+    "a[111,107]"
 ]
 
 "The files of the program in a fresh directory: the parent module file, one module file per unit, the main file with the rows; returns the main file."
 function _tt_materialize()::String
     d = realpath(mktempdir())
-    write(joinpath(d, "test_incr_retractall.pl"), ":- module(test_incr_retractall, []).\n" * _TT_TAIL)
+    write(
+        joinpath(d, "test_incr_retractall.pl"),
+        ":- module(test_incr_retractall, []).\n" * _TT_TAIL
+    )
     for (short, _, text) in _TT_UNITS
         write(
             joinpath(d, "plunit_$short.pl"),
-            ":- module(plunit_$short, []).\n:- set_module(base(test_incr_retractall)).\n" * text
+            ":- module(plunit_$short, []).\n:- set_module(base(test_incr_retractall)).\n" *
+            text
         )
     end
-    main = ":- use_module('$d/test_incr_retractall').\n" * join([":- catch(use_module('$d/plunit_$short'), _, true).\n" for (short, _, _) in _TT_UNITS])
+    main =
+        ":- use_module('$d/test_incr_retractall').\n" * join([
+            ":- catch(use_module('$d/plunit_$short'), _, true).\n" for
+            (short, _, _) in _TT_UNITS
+        ])
     main *= join([
         "t_$(id)(R) :- ( catch((abolish_all_tables, $g, abolish_all_tables, R = ok), error(SsuE, _), R = raised(SsuE)) -> true ; R = failed ).\n"
         for (id, _, g) in _TT_CASES
@@ -186,8 +218,15 @@ end
 function _tt_swipl_lines(path::String, names::Vector{String})::Vector{String}
     out = mktempdir() do d
         f = joinpath(d, "drv.pl")
-        write(f, _TT_DRIVER * ":- initialization((fz_run('$path', [" * join(names, ",") * "]), halt)).\n")
-        read(pipeline(addenv(`swipl -q $f`, "LC_ALL" => "C"); stdin=devnull, stderr=devnull), String)
+        write(
+            f,
+            _TT_DRIVER * ":- initialization((fz_run('$path', [" * join(names, ",") *
+            "]), halt)).\n"
+        )
+        read(
+            pipeline(addenv(`swipl -q $f`, "LC_ALL" => "C"); stdin=devnull, stderr=devnull),
+            String
+        )
     end
     return String.(split(chomp(out), '\n'; keepempty=false))
 end
@@ -208,7 +247,9 @@ function _tt_ask(gd, ld, pred::String)::String
     fid = LK.PL_open_foreign_frame(ld)
     a = LK.PL_new_term_refs(ld, 1)
     LK.putSlotValue!(ld, a + 1, mk_var(_TT, LK.fresh_var_keys!(1)), LK.PutVarMap())
-    qid = LK.PL_open_query(gd, ld, nothing, LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS, proc, a)
+    qid = LK.PL_open_query(
+        gd, ld, nothing, LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS, proc, a
+    )
     n = 0
     while (n += 1) <= 50
         rc = LK.PL_next_solution(gd, ld, qid)

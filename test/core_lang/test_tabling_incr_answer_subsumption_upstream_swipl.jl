@@ -76,7 +76,10 @@ fz_run(File, Ns) :-
 
 "The units' text, verbatim between begin_tests and end_tests: `(short name, begin_tests directive, text)`."
 const _TT_UNITS = [
-    ("incr_answer_subsumption_1", ":- begin_tests(incr_answer_subsumption_1).", raw"""
+    (
+        "incr_answer_subsumption_1",
+        ":- begin_tests(incr_answer_subsumption_1).",
+        raw"""
 
 :- dynamic d/1 as incremental.
 :- table p(max) as incremental.
@@ -124,8 +127,12 @@ test(reeval, [cleanup(cleanup([d/1]))]) :-
     expect_valid(p(_)),
     expect_valid(p2(_)).
 
-"""),
-    ("mono_answer_subsumption_1", ":- begin_tests(mono_answer_subsumption_1).", raw"""
+"""
+    ),
+    (
+        "mono_answer_subsumption_1",
+        ":- begin_tests(mono_answer_subsumption_1).",
+        raw"""
 
 :- dynamic d/1 as monotonic.
 :- table p(max) as monotonic.
@@ -176,8 +183,12 @@ test(reeval, [cleanup(cleanup([d/1]))]) :-
     expect(X, p2(X), [2]),
     expect_valid(p(_)).
 
-"""),
-    ("mono_answer_subsumption_lazy_1", ":- begin_tests(mono_answer_subsumption_lazy_1).", raw"""
+"""
+    ),
+    (
+        "mono_answer_subsumption_lazy_1",
+        ":- begin_tests(mono_answer_subsumption_lazy_1).",
+        raw"""
 
 :- dynamic d/1 as monotonic.
 :- table p(max) as (monotonic,lazy).
@@ -216,7 +227,8 @@ test(update, [cleanup(cleanup([d/1]))]) :-
     expect(X, p2(X), [2]),
     expect_valid(p2(_)).
 
-"""),
+"""
+    )
 ]
 
 "The file's common tail (lines `before :- ...` to the end), verbatim."
@@ -277,15 +289,51 @@ expect_queued_answers(To, Expected0) :-
 
 "The rows: `(id, unit, goal)`; the goal is the plunit test with its options folded by hand."
 const _TT_CASES = [
-    ("tt01a", "incr_answer_subsumption_1", "setup_call_cleanup(true, pu_incr_answer_subsumption_1:test(update, _), pu_incr_answer_subsumption_1:cleanup([d/1]))"),
-    ("tt01b", "incr_answer_subsumption_1", "setup_call_cleanup(true, pu_incr_answer_subsumption_1:test(keep, _), pu_incr_answer_subsumption_1:cleanup([d/1]))"),
-    ("tt01c", "incr_answer_subsumption_1", "setup_call_cleanup(true, pu_incr_answer_subsumption_1:test(reeval, _), pu_incr_answer_subsumption_1:cleanup([d/1]))"),
-    ("tt02a", "mono_answer_subsumption_1", "setup_call_cleanup(true, pu_mono_answer_subsumption_1:test(update, _), pu_mono_answer_subsumption_1:cleanup([d/1]))"),
-    ("tt02b", "mono_answer_subsumption_1", "setup_call_cleanup(true, pu_mono_answer_subsumption_1:test(keep, _), pu_mono_answer_subsumption_1:cleanup([d/1]))"),
-    ("tt02c", "mono_answer_subsumption_1", "setup_call_cleanup(true, pu_mono_answer_subsumption_1:test(reeval, _), pu_mono_answer_subsumption_1:cleanup([d/1]))"),
-    ("tt02d", "mono_answer_subsumption_1", "setup_call_cleanup(true, (nth_clause(pu_mono_answer_subsumption_1:test(_, _), 4, CRef), clause(pu_mono_answer_subsumption_1:test(_, _), CBody, CRef), call(pu_mono_answer_subsumption_1:CBody)), pu_mono_answer_subsumption_1:cleanup([d/1]))"),
-    ("tt03a", "mono_answer_subsumption_lazy_1", "setup_call_cleanup(true, pu_mono_answer_subsumption_lazy_1:test(update, _), pu_mono_answer_subsumption_lazy_1:cleanup([d/1]))"),
-    ("tt03b", "mono_answer_subsumption_lazy_1", "setup_call_cleanup(true, (nth_clause(pu_mono_answer_subsumption_lazy_1:test(_, _), 2, CRef), clause(pu_mono_answer_subsumption_lazy_1:test(_, _), CBody, CRef), call(pu_mono_answer_subsumption_lazy_1:CBody)), pu_mono_answer_subsumption_lazy_1:cleanup([d/1]))"),
+    (
+        "tt01a",
+        "incr_answer_subsumption_1",
+        "setup_call_cleanup(true, pu_incr_answer_subsumption_1:test(update, _), pu_incr_answer_subsumption_1:cleanup([d/1]))"
+    ),
+    (
+        "tt01b",
+        "incr_answer_subsumption_1",
+        "setup_call_cleanup(true, pu_incr_answer_subsumption_1:test(keep, _), pu_incr_answer_subsumption_1:cleanup([d/1]))"
+    ),
+    (
+        "tt01c",
+        "incr_answer_subsumption_1",
+        "setup_call_cleanup(true, pu_incr_answer_subsumption_1:test(reeval, _), pu_incr_answer_subsumption_1:cleanup([d/1]))"
+    ),
+    (
+        "tt02a",
+        "mono_answer_subsumption_1",
+        "setup_call_cleanup(true, pu_mono_answer_subsumption_1:test(update, _), pu_mono_answer_subsumption_1:cleanup([d/1]))"
+    ),
+    (
+        "tt02b",
+        "mono_answer_subsumption_1",
+        "setup_call_cleanup(true, pu_mono_answer_subsumption_1:test(keep, _), pu_mono_answer_subsumption_1:cleanup([d/1]))"
+    ),
+    (
+        "tt02c",
+        "mono_answer_subsumption_1",
+        "setup_call_cleanup(true, pu_mono_answer_subsumption_1:test(reeval, _), pu_mono_answer_subsumption_1:cleanup([d/1]))"
+    ),
+    (
+        "tt02d",
+        "mono_answer_subsumption_1",
+        "setup_call_cleanup(true, (nth_clause(pu_mono_answer_subsumption_1:test(_, _), 4, CRef), clause(pu_mono_answer_subsumption_1:test(_, _), CBody, CRef), call(pu_mono_answer_subsumption_1:CBody)), pu_mono_answer_subsumption_1:cleanup([d/1]))"
+    ),
+    (
+        "tt03a",
+        "mono_answer_subsumption_lazy_1",
+        "setup_call_cleanup(true, pu_mono_answer_subsumption_lazy_1:test(update, _), pu_mono_answer_subsumption_lazy_1:cleanup([d/1]))"
+    ),
+    (
+        "tt03b",
+        "mono_answer_subsumption_lazy_1",
+        "setup_call_cleanup(true, (nth_clause(pu_mono_answer_subsumption_lazy_1:test(_, _), 2, CRef), clause(pu_mono_answer_subsumption_lazy_1:test(_, _), CBody, CRef), call(pu_mono_answer_subsumption_lazy_1:CBody)), pu_mono_answer_subsumption_lazy_1:cleanup([d/1]))"
+    )
 ]
 
 const _TT_PINNED = [
@@ -298,7 +346,7 @@ const _TT_PINNED = [
     "t_tt02c c[116,95,116,116,48,50,99]/1(a[111,107])",
     "t_tt02d c[116,95,116,116,48,50,100]/1(a[111,107])",
     "t_tt03a c[116,95,116,116,48,51,97]/1(a[111,107])",
-    "t_tt03b c[116,95,116,116,48,51,98]/1(a[111,107])",
+    "t_tt03b c[116,95,116,116,48,51,98]/1(a[111,107])"
 ]
 
 "The answer plunit expects of every row: the test passes, `R = ok` (run in swipl by gen_reeval.py pin, plunit part of pins file)."
@@ -311,7 +359,7 @@ const _TT_UPSTREAM = [
     "a[111,107]",
     "a[111,107]",
     "a[111,107]",
-    "a[111,107]",
+    "a[111,107]"
 ]
 
 "The files of the program in a fresh directory: one module file per unit, the main file with the rows; returns the main file."
@@ -320,7 +368,8 @@ function _tt_materialize()::String
     for (short, _, text) in _TT_UNITS
         write(
             joinpath(d, "pu_$short.pl"),
-            ":- module(pu_$short, []).\n:- use_module(library(increval)).\n:- use_module(library(tables)).\n:- use_module(library(apply)).\n:- use_module(library(debug)).\n:- use_module(library(prolog_code)).\n" * text * "\n" * _TT_TAIL
+            ":- module(pu_$short, []).\n:- use_module(library(increval)).\n:- use_module(library(tables)).\n:- use_module(library(apply)).\n:- use_module(library(debug)).\n:- use_module(library(prolog_code)).\n" *
+            text * "\n" * _TT_TAIL
         )
     end
     main = join([":- use_module('$d/pu_$short').\n" for (short, _, _) in _TT_UNITS])
@@ -335,8 +384,15 @@ end
 function _tt_swipl_lines(path::String, names::Vector{String})::Vector{String}
     out = mktempdir() do d
         f = joinpath(d, "drv.pl")
-        write(f, _TT_DRIVER * ":- initialization((fz_run('$path', [" * join(names, ",") * "]), halt)).\n")
-        read(pipeline(addenv(`swipl -q $f`, "LC_ALL" => "C"); stdin=devnull, stderr=devnull), String)
+        write(
+            f,
+            _TT_DRIVER * ":- initialization((fz_run('$path', [" * join(names, ",") *
+            "]), halt)).\n"
+        )
+        read(
+            pipeline(addenv(`swipl -q $f`, "LC_ALL" => "C"); stdin=devnull, stderr=devnull),
+            String
+        )
     end
     return String.(split(chomp(out), '\n'; keepempty=false))
 end
@@ -357,7 +413,9 @@ function _tt_ask(gd, ld, pred::String)::String
     fid = LK.PL_open_foreign_frame(ld)
     a = LK.PL_new_term_refs(ld, 1)
     LK.putSlotValue!(ld, a + 1, mk_var(_TT, LK.fresh_var_keys!(1)), LK.PutVarMap())
-    qid = LK.PL_open_query(gd, ld, nothing, LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS, proc, a)
+    qid = LK.PL_open_query(
+        gd, ld, nothing, LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS, proc, a
+    )
     n = 0
     while (n += 1) <= 50
         rc = LK.PL_next_solution(gd, ld, qid)

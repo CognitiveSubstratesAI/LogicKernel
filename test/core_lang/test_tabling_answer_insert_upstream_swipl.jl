@@ -75,7 +75,10 @@ fz_run(File, Ns) :-
 
 "The units' text, verbatim between begin_tests and end_tests: `(short name, begin_tests directive, text)`."
 const _TT_UNITS = [
-    ("answer_insert", ":- begin_tests(answer_insert).", raw"""
+    (
+    "answer_insert",
+    ":- begin_tests(answer_insert).",
+    raw"""
 
 test(ground, L == [1,a,b,c]) :-
     abolish_all_tables,
@@ -136,7 +139,8 @@ test(wide, Len == 1) :-                 % 38 variables: generic path
     assertion(A1 == A40),
     assertion(A2 == x).
 
-"""),
+"""
+),
 ]
 
 "The file's common tail (lines `before :- ...` to the end), verbatim."
@@ -188,17 +192,33 @@ wide(A1,A2,A3,A4,A5,A6,A7,A8,A9,A10,A11,A12,A13,A14,A15,A16,A17,A18,A19,A20,
 
 "The rows: `(id, unit, goal)`; the goal is the plunit test with its options folded by hand."
 const _TT_CASES = [
-    ("tt01a", "answer_insert", "(test_answer_insert:test(ground, O), O = (A == B), A == B)"),
+    (
+        "tt01a",
+        "answer_insert",
+        "(test_answer_insert:test(ground, O), O = (A == B), A == B)"
+    ),
     ("tt01b", "answer_insert", "test_answer_insert:test(ground_lookup)"),
-    ("tt01c", "answer_insert", "(test_answer_insert:test(shared, O), O = (A == B), A == B)"),
+    (
+        "tt01c",
+        "answer_insert",
+        "(test_answer_insert:test(shared, O), O = (A == B), A == B)"
+    ),
     ("tt01d", "answer_insert", "test_answer_insert:test(shared_lookup)"),
-    ("tt01e", "answer_insert", "(test_answer_insert:test(unbound, O), O = (A =@= B), A =@= B)"),
-    ("tt01f", "answer_insert", "(test_answer_insert:test(indirect, O), O = (A == B), A == B)"),
+    (
+        "tt01e",
+        "answer_insert",
+        "(test_answer_insert:test(unbound, O), O = (A =@= B), A =@= B)"
+    ),
+    (
+        "tt01f",
+        "answer_insert",
+        "(test_answer_insert:test(indirect, O), O = (A == B), A == B)"
+    ),
     ("tt01g", "answer_insert", "test_answer_insert:test(indirect_lookup)"),
     ("tt01h", "answer_insert", "(test_answer_insert:test(mixed, O), O = (A == B), A == B)"),
     ("tt01i", "answer_insert", "test_answer_insert:test(mixed_lookup)"),
     ("tt01j", "answer_insert", "(test_answer_insert:test(zero, O), O = (A == B), A == B)"),
-    ("tt01k", "answer_insert", "(test_answer_insert:test(wide, O), O = (A == B), A == B)"),
+    ("tt01k", "answer_insert", "(test_answer_insert:test(wide, O), O = (A == B), A == B)")
 ]
 
 const _TT_PINNED = [
@@ -213,7 +233,7 @@ const _TT_PINNED = [
     "t_tt01h c[116,95,116,116,48,49,104]/1(a[111,107])",
     "t_tt01i c[116,95,116,116,48,49,105]/1(a[111,107])",
     "t_tt01j c[116,95,116,116,48,49,106]/1(a[111,107])",
-    "t_tt01k c[116,95,116,116,48,49,107]/1(a[111,107])",
+    "t_tt01k c[116,95,116,116,48,49,107]/1(a[111,107])"
 ]
 
 "The answer plunit expects of every row: the test passes, `R = ok` (run in swipl by gen_reeval.py pin, plunit part of pins file)."
@@ -228,7 +248,7 @@ const _TT_UPSTREAM = [
     "a[111,107]",
     "a[111,107]",
     "a[111,107]",
-    "a[111,107]",
+    "a[111,107]"
 ]
 
 "The files of the program in a fresh directory: one module file per unit, the main file with the rows; returns the main file."
@@ -237,7 +257,8 @@ function _tt_materialize()::String
     for (short, _, text) in _TT_UNITS
         write(
             joinpath(d, "pu_$short.pl"),
-            ":- module(test_answer_insert, []).\n:- use_module(library(debug)).\n:- use_module(library(apply)).\n:- use_module(library(lists)).\n" * text * "\n" * _TT_TAIL
+            ":- module(test_answer_insert, []).\n:- use_module(library(debug)).\n:- use_module(library(apply)).\n:- use_module(library(lists)).\n" *
+            text * "\n" * _TT_TAIL
         )
     end
     main = join([":- use_module('$d/pu_$short').\n" for (short, _, _) in _TT_UNITS])
@@ -252,8 +273,15 @@ end
 function _tt_swipl_lines(path::String, names::Vector{String})::Vector{String}
     out = mktempdir() do d
         f = joinpath(d, "drv.pl")
-        write(f, _TT_DRIVER * ":- initialization((fz_run('$path', [" * join(names, ",") * "]), halt)).\n")
-        read(pipeline(addenv(`swipl -q $f`, "LC_ALL" => "C"); stdin=devnull, stderr=devnull), String)
+        write(
+            f,
+            _TT_DRIVER * ":- initialization((fz_run('$path', [" * join(names, ",") *
+            "]), halt)).\n"
+        )
+        read(
+            pipeline(addenv(`swipl -q $f`, "LC_ALL" => "C"); stdin=devnull, stderr=devnull),
+            String
+        )
     end
     return String.(split(chomp(out), '\n'; keepempty=false))
 end
@@ -274,7 +302,9 @@ function _tt_ask(gd, ld, pred::String)::String
     fid = LK.PL_open_foreign_frame(ld)
     a = LK.PL_new_term_refs(ld, 1)
     LK.putSlotValue!(ld, a + 1, mk_var(_TT, LK.fresh_var_keys!(1)), LK.PutVarMap())
-    qid = LK.PL_open_query(gd, ld, nothing, LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS, proc, a)
+    qid = LK.PL_open_query(
+        gd, ld, nothing, LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS, proc, a
+    )
     n = 0
     while (n += 1) <= 50
         rc = LK.PL_next_solution(gd, ld, qid)

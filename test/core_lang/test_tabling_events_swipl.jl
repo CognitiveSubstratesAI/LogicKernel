@@ -81,7 +81,8 @@ t_ev01(R) :- current_prolog_flag(max_table_subgoal_size_action, Old), set_prolog
 """
 
 const _TI_CASES = [
-    "t_ev02", "t_ev03", "t_ev04", "t_ev05", "t_ev06", "t_ev07", "t_ev08", "t_ev09", "t_ev10", "t_ev13"
+    "t_ev02", "t_ev03", "t_ev04", "t_ev05", "t_ev06", "t_ev07", "t_ev08", "t_ev09",
+    "t_ev10", "t_ev13"
 ]
 
 # swipl 10.1.20 (`ev_q(t_ev..., A)`, in the order of `_TI_CASES`), two identical runs (md5 equal), 2026-11-14
@@ -110,7 +111,10 @@ function _ti_swipl_lines(program::String, cases::Vector{String})::Vector{String}
             program * ":- initialization((forall(member(G, [" * join(cases, ",") *
             "]), (ev_q(G, A), write(A), nl)), halt)).\n"
         )
-        read(pipeline(addenv(`swipl -q $f`, "LC_ALL" => "C"); stdin=devnull, stderr=devnull), String)
+        read(
+            pipeline(addenv(`swipl -q $f`, "LC_ALL" => "C"); stdin=devnull, stderr=devnull),
+            String
+        )
     end
     return String.(split(chomp(out), '\n'; keepempty=false))
 end
@@ -123,10 +127,12 @@ function _ti_ask(gd, ld, case::String)::String
     a = LK.PL_new_term_refs(ld, 2)
     LK.putSlotValue!(ld, a + 1, _tis(case), LK.PutVarMap())
     LK.putSlotValue!(ld, a + 2, mk_var(_TI, LK.fresh_var_keys!(1)), LK.PutVarMap())
-    qid = LK.PL_open_query(gd, ld, nothing, LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS, proc, a)
+    qid = LK.PL_open_query(
+        gd, ld, nothing, LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS, proc, a
+    )
     rc = LK.PL_next_solution(gd, ld, qid)
     ans = if rc == LK.PL_S_TRUE || rc == LK.PL_S_LAST
-        t = lk_answers(ld, (a + 1:a + 1)...)[1]
+        t = lk_answers(ld, ((a + 1):(a + 1))...)[1]
         kind(t) === SYM ? sym_text(t) : "not an atom"
     else
         rc == LK.PL_S_EXCEPTION ? "exception" : "failed"
@@ -175,7 +181,8 @@ end
     catch err
         err isa LK.NotPortedError ? "refused" : rethrow()
     end
-    @test ans == _TI_UP_PIN || ans == "refused" || (startswith(ans, "exc(") && occursin("get_procedure", ans))
+    @test ans == _TI_UP_PIN || ans == "refused" ||
+        (startswith(ans, "exc(") && occursin("get_procedure", ans))
     @test !isempty(_TI_UP_PIN) && _TI_UP_PIN == "[c]"                           # both sides non-empty, the pin is the test's `[c]`
     @test ans != "[d]" && ans != "failed"                                       # must-fail row: a wrong or failing answer is neither
     if Sys.which("swipl") !== nothing
@@ -190,7 +197,10 @@ end
     gd, ld, st = _ti_load(_TI_PROGRAM)
     @test st === :ok
     @test _ti_ask(gd, ld, "t_wb0") == "yes"                                     # complete table of ev_b(_) holding the answer c, no listener
-    cands = [tr for tr in gd.tries if tr.predicate !== nothing && tr.variant != 0 && tr.value_count >= 1]
+    cands = [
+        tr for
+        tr in gd.tries if tr.predicate !== nothing && tr.variant != 0 && tr.value_count >= 1
+    ]
     @test length(cands) == 1
     tr = cands[1]
     nid = findfirst(i -> i > 1 && tr.nodes[i].value != 0, eachindex(tr.nodes))
@@ -225,7 +235,7 @@ end
     for case in ("t_ev02", "t_ev07", "t_ev08", "t_ev10")                         # a listener, a failing one, a raising one, inside an evaluation
         @test _ti_ask(gd, ld, case) != "ev_q undefined"
         @test tb.saved_status === nothing && tb.component === nothing &&
-              !tb.has_scheduling_component && !tb.in_answer_completion
+            !tb.has_scheduling_component && !tb.in_answer_completion
     end
     # must-fail row: the same observation when a status is saved and not restored is NOT this state
     s = LK.tbl_status{_TI}()

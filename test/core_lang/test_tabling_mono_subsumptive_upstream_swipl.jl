@@ -83,7 +83,10 @@ fz_run(File, Ns) :-
 
 "The units' text, verbatim between begin_tests and end_tests: `(short name, begin_tests directive, text)`."
 const _TT_UNITS = [
-    ("ms1", "begin_tests(mono_subsumptive)", raw"""
+    (
+        "ms1",
+        "begin_tests(mono_subsumptive)",
+        raw"""
 :- use_module(library(lists)).
 :- use_module(library(apply)).
 :- use_module(library(debug)).
@@ -129,8 +132,12 @@ test(retract_reassert, [cleanup(init)]) :-
     assertion(\+ q(a)),
     assertz(d(a)),
     assertion(q(a)).
-"""),
-    ("ms2", "begin_tests(mono_abstract)", raw"""
+"""
+    ),
+    (
+        "ms2",
+        "begin_tests(mono_abstract)",
+        raw"""
 :- use_module(library(lists)).
 :- use_module(library(apply)).
 :- use_module(library(debug)).
@@ -273,7 +280,8 @@ on_answer(new_answer, _:b(X)) :-
     nb_getval(mono_events, Events),
     append(Events, [X], Events1),
     nb_setval(mono_events, Events1).
-"""),
+"""
+    )
 ]
 
 "The file's common tail (lines `before :- ...` to the end), verbatim."
@@ -282,21 +290,77 @@ const _TT_TAIL = raw"""
 
 "The rows: `(id, unit, goal)`; the goal is the plunit test with its options folded by hand."
 const _TT_CASES = [
-    ("ms01", "ms1", "setup_call_cleanup(true, pu_ms1:test(subsumed_empty_then_added, _), pu_ms1:init)"),
+    (
+        "ms01",
+        "ms1",
+        "setup_call_cleanup(true, pu_ms1:test(subsumed_empty_then_added, _), pu_ms1:init)"
+    ),
     ("ms02", "ms1", "setup_call_cleanup(true, pu_ms1:test(subsumed_warm, _), pu_ms1:init)"),
-    ("ms03", "ms1", "setup_call_cleanup(true, pu_ms1:test(existing_variant, _), pu_ms1:init)"),
-    ("ms04", "ms1", "setup_call_cleanup(true, pu_ms1:test(retract_reassert, _), pu_ms1:init)"),
-    ("ms05", "ms2", "setup_call_cleanup(pu_ms2:abstract_subgoals, setup_call_cleanup(true, pu_ms2:test(empty_then_added, _), pu_ms2:init), pu_ms2:restore_subgoal_action)"),
-    ("ms06", "ms2", "setup_call_cleanup(pu_ms2:abstract_subgoals, setup_call_cleanup(true, (pu_ms2:test(many_consumers, [C, _]), call(C)), pu_ms2:init), pu_ms2:restore_subgoal_action)"),
-    ("ms07", "ms2", "setup_call_cleanup(pu_ms2:abstract_subgoals, setup_call_cleanup(true, (pu_ms2:test(index_shapes, [C, _]), call(C)), pu_ms2:init), pu_ms2:restore_subgoal_action)"),
-    ("ms08", "ms2", "setup_call_cleanup(pu_ms2:abstract_subgoals, setup_call_cleanup(true, (pu_ms2:test(one_shared_table, [C, _]), call(C)), pu_ms2:init), pu_ms2:restore_subgoal_action)"),
-    ("ms09", "ms2", "setup_call_cleanup(pu_ms2:abstract_subgoals, setup_call_cleanup(true, pu_ms2:test(warm, _), pu_ms2:init), pu_ms2:restore_subgoal_action)"),
-    ("ms10", "ms2", "setup_call_cleanup(pu_ms2:abstract_subgoals, setup_call_cleanup(true, pu_ms2:test(not_abstracted, _), pu_ms2:init), pu_ms2:restore_subgoal_action)"),
-    ("ms11", "ms2", "setup_call_cleanup(pu_ms2:abstract_subgoals, setup_call_cleanup(true, (pu_ms2:test(recursive, [C, _]), call(C)), pu_ms2:init), pu_ms2:restore_subgoal_action)"),
-    ("ms12", "ms2", "setup_call_cleanup(pu_ms2:abstract_subgoals, setup_call_cleanup(true, (pu_ms2:test(new_answer, [C, _]), call(C)), pu_ms2:(init, prolog_unlisten(b/1, on_answer))), pu_ms2:restore_subgoal_action)"),
-    ("ms13", "ms2", "setup_call_cleanup(pu_ms2:abstract_subgoals, setup_call_cleanup(true, pu_ms2:test(retract_reassert, _), pu_ms2:init), pu_ms2:restore_subgoal_action)"),
-    ("ms14", "ms2", "setup_call_cleanup(pu_ms2:abstract_subgoals, setup_call_cleanup(true, pu_ms2:test(rollback, _), pu_ms2:init), pu_ms2:restore_subgoal_action)"),
-    ("ms15", "ms2", "setup_call_cleanup(pu_ms2:abstract_subgoals, setup_call_cleanup(true, pu_ms2:test(lazy, _), pu_ms2:init), pu_ms2:restore_subgoal_action)"),
+    (
+        "ms03",
+        "ms1",
+        "setup_call_cleanup(true, pu_ms1:test(existing_variant, _), pu_ms1:init)"
+    ),
+    (
+        "ms04",
+        "ms1",
+        "setup_call_cleanup(true, pu_ms1:test(retract_reassert, _), pu_ms1:init)"
+    ),
+    (
+        "ms05",
+        "ms2",
+        "setup_call_cleanup(pu_ms2:abstract_subgoals, setup_call_cleanup(true, pu_ms2:test(empty_then_added, _), pu_ms2:init), pu_ms2:restore_subgoal_action)"
+    ),
+    (
+        "ms06",
+        "ms2",
+        "setup_call_cleanup(pu_ms2:abstract_subgoals, setup_call_cleanup(true, (pu_ms2:test(many_consumers, [C, _]), call(C)), pu_ms2:init), pu_ms2:restore_subgoal_action)"
+    ),
+    (
+        "ms07",
+        "ms2",
+        "setup_call_cleanup(pu_ms2:abstract_subgoals, setup_call_cleanup(true, (pu_ms2:test(index_shapes, [C, _]), call(C)), pu_ms2:init), pu_ms2:restore_subgoal_action)"
+    ),
+    (
+        "ms08",
+        "ms2",
+        "setup_call_cleanup(pu_ms2:abstract_subgoals, setup_call_cleanup(true, (pu_ms2:test(one_shared_table, [C, _]), call(C)), pu_ms2:init), pu_ms2:restore_subgoal_action)"
+    ),
+    (
+        "ms09",
+        "ms2",
+        "setup_call_cleanup(pu_ms2:abstract_subgoals, setup_call_cleanup(true, pu_ms2:test(warm, _), pu_ms2:init), pu_ms2:restore_subgoal_action)"
+    ),
+    (
+        "ms10",
+        "ms2",
+        "setup_call_cleanup(pu_ms2:abstract_subgoals, setup_call_cleanup(true, pu_ms2:test(not_abstracted, _), pu_ms2:init), pu_ms2:restore_subgoal_action)"
+    ),
+    (
+        "ms11",
+        "ms2",
+        "setup_call_cleanup(pu_ms2:abstract_subgoals, setup_call_cleanup(true, (pu_ms2:test(recursive, [C, _]), call(C)), pu_ms2:init), pu_ms2:restore_subgoal_action)"
+    ),
+    (
+        "ms12",
+        "ms2",
+        "setup_call_cleanup(pu_ms2:abstract_subgoals, setup_call_cleanup(true, (pu_ms2:test(new_answer, [C, _]), call(C)), pu_ms2:(init, prolog_unlisten(b/1, on_answer))), pu_ms2:restore_subgoal_action)"
+    ),
+    (
+        "ms13",
+        "ms2",
+        "setup_call_cleanup(pu_ms2:abstract_subgoals, setup_call_cleanup(true, pu_ms2:test(retract_reassert, _), pu_ms2:init), pu_ms2:restore_subgoal_action)"
+    ),
+    (
+        "ms14",
+        "ms2",
+        "setup_call_cleanup(pu_ms2:abstract_subgoals, setup_call_cleanup(true, pu_ms2:test(rollback, _), pu_ms2:init), pu_ms2:restore_subgoal_action)"
+    ),
+    (
+        "ms15",
+        "ms2",
+        "setup_call_cleanup(pu_ms2:abstract_subgoals, setup_call_cleanup(true, pu_ms2:test(lazy, _), pu_ms2:init), pu_ms2:restore_subgoal_action)"
+    )
 ]
 
 const _TT_PINNED = [
@@ -315,7 +379,7 @@ const _TT_PINNED = [
     "t_ms12 c[116,95,109,115,49,50]/1(a[111,107])",
     "t_ms13 c[116,95,109,115,49,51]/1(a[111,107])",
     "t_ms14 c[116,95,109,115,49,52]/1(a[111,107])",
-    "t_ms15 c[116,95,109,115,49,53]/1(a[111,107])",
+    "t_ms15 c[116,95,109,115,49,53]/1(a[111,107])"
 ]
 
 "The answer plunit expects of every row: the test passes, `R = ok` (run in swipl by gen_tabling.py pin, plunit part of pins file)."
@@ -334,7 +398,7 @@ const _TT_UPSTREAM = [
     "a[111,107]",
     "a[111,107]",
     "a[111,107]",
-    "a[111,107]",
+    "a[111,107]"
 ]
 
 "The files of the program in a fresh directory: one module file per unit, the main file with the rows; returns the main file."
@@ -346,7 +410,9 @@ function _tt_materialize()::String
             ":- module(pu_$short, []).\n" * text * "\n" * _TT_TAIL
         )
     end
-    main = join([":- catch(use_module('$d/pu_$short'), _, true).\n" for (short, _, _) in _TT_UNITS])
+    main = join([
+        ":- catch(use_module('$d/pu_$short'), _, true).\n" for (short, _, _) in _TT_UNITS
+    ])
     main *= join([
         "t_$(id)(R) :- ( catch((abolish_all_tables, $g, abolish_all_tables, R = ok), error(SsuE, _), R = raised(SsuE)) -> true ; R = failed ).\n"
         for (id, _, g) in _TT_CASES
@@ -358,8 +424,15 @@ end
 function _tt_swipl_lines(path::String, names::Vector{String})::Vector{String}
     out = mktempdir() do d
         f = joinpath(d, "drv.pl")
-        write(f, _TT_DRIVER * ":- initialization((fz_run('$path', [" * join(names, ",") * "]), halt)).\n")
-        read(pipeline(addenv(`swipl -q $f`, "LC_ALL" => "C"); stdin=devnull, stderr=devnull), String)
+        write(
+            f,
+            _TT_DRIVER * ":- initialization((fz_run('$path', [" * join(names, ",") *
+            "]), halt)).\n"
+        )
+        read(
+            pipeline(addenv(`swipl -q $f`, "LC_ALL" => "C"); stdin=devnull, stderr=devnull),
+            String
+        )
     end
     return String.(split(chomp(out), '\n'; keepempty=false))
 end
@@ -380,7 +453,9 @@ function _tt_ask(gd, ld, pred::String)::String
     fid = LK.PL_open_foreign_frame(ld)
     a = LK.PL_new_term_refs(ld, 1)
     LK.putSlotValue!(ld, a + 1, mk_var(_TT, LK.fresh_var_keys!(1)), LK.PutVarMap())
-    qid = LK.PL_open_query(gd, ld, nothing, LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS, proc, a)
+    qid = LK.PL_open_query(
+        gd, ld, nothing, LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS, proc, a
+    )
     n = 0
     while (n += 1) <= 50
         rc = LK.PL_next_solution(gd, ld, qid)

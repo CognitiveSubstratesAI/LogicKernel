@@ -84,7 +84,10 @@ fz_run(File, Ns) :-
 
 "The units' text, verbatim between begin_tests and end_tests: `(short name, begin_tests directive, text)`."
 const _TT_UNITS = [
-    ("trie_children", ":- begin_tests(trie_children).", raw"""
+    (
+        "trie_children",
+        ":- begin_tests(trie_children).",
+        raw"""
 
 test(sizes) :-
     forall(member(N, [1,2,3,8,9,16,17,100,1000]),
@@ -199,8 +202,12 @@ test(property) :-
     assertion(Nodes == 1001),
     assertion(Bytes > 0).
 
-"""),
-    ("trie_node_chunks", ":- begin_tests(trie_node_chunks, [cleanup(abolish_all_tables)]).", raw"""
+"""
+    ),
+    (
+        "trie_node_chunks",
+        ":- begin_tests(trie_node_chunks, [cleanup(abolish_all_tables)]).",
+        raw"""
 
 test(incremental) :-                    % re-evaluate a large answer trie
     abolish_all_tables,
@@ -245,8 +252,12 @@ test(variants) :-                       % variant table nodes are pruned
            )),
     forall(between(1, 2000, I), ( v(I, Y), assertion(Y =:= I*2) )).
 
-"""),
-    ("trie_children_threads", ":- begin_tests(trie_children_threads, [ condition(current_prolog_flag(threads, true)) ]).", raw"""
+"""
+    ),
+    (
+        "trie_children_threads",
+        ":- begin_tests(trie_children_threads, [ condition(current_prolog_flag(threads, true)) ]).",
+        raw"""
 
 test(agc_concurrent) :-
     thread_create(agc_loop(stop), AGC, []),
@@ -319,7 +330,8 @@ test(shared_variants) :-                % concurrent shared variant table
 :- table sv/2 as shared.
 sv(K, K).
 
-"""),
+"""
+    )
 ]
 
 "The file's common tail (lines `before :- ...` to the end), verbatim."
@@ -537,8 +549,16 @@ const _TT_CASES = [
     ("tt01n01", "trie_children", "plunit_trie_children:test(sizes)"),
     ("tt01n02", "trie_children", "plunit_trie_children:test(delete_half)"),
     ("tt01n03", "trie_children", "plunit_trie_children:test(delete_reinsert)"),
-    ("tt01n04", "trie_children", "(plunit_trie_children:test(delete_all, O), O = (A == B), A == B)"),
-    ("tt01n05", "trie_children", "(plunit_trie_children:test(delete_all_nested, O), O = (A == B), A == B)"),
+    (
+        "tt01n04",
+        "trie_children",
+        "(plunit_trie_children:test(delete_all, O), O = (A == B), A == B)"
+    ),
+    (
+        "tt01n05",
+        "trie_children",
+        "(plunit_trie_children:test(delete_all_nested, O), O = (A == B), A == B)"
+    ),
     ("tt01n06", "trie_children", "plunit_trie_children:test(nested)"),
     ("tt01n07", "trie_children", "plunit_trie_children:test(kinds)"),
     ("tt01n08", "trie_children", "plunit_trie_children:test(vars)"),
@@ -548,11 +568,31 @@ const _TT_CASES = [
     ("tt02n01", "trie_node_chunks", "plunit_trie_node_chunks:test(incremental)"),
     ("tt02n02", "trie_node_chunks", "plunit_trie_node_chunks:test(registered)"),
     ("tt02n03", "trie_node_chunks", "plunit_trie_node_chunks:test(variants)"),
-    ("tt03n01", "trie_children_threads", "plunit_trie_children_threads:test(agc_concurrent)"),
-    ("tt03n02", "trie_children_threads", "plunit_trie_children_threads:test(concurrent_insert)"),
-    ("tt03n03", "trie_children_threads", "plunit_trie_children_threads:test(concurrent_nested)"),
-    ("tt03n04", "trie_children_threads", "plunit_trie_children_threads:test(insert_while_enumerating)"),
-    ("tt03n05", "trie_children_threads", "plunit_trie_children_threads:test(shared_variants)"),
+    (
+        "tt03n01",
+        "trie_children_threads",
+        "plunit_trie_children_threads:test(agc_concurrent)"
+    ),
+    (
+        "tt03n02",
+        "trie_children_threads",
+        "plunit_trie_children_threads:test(concurrent_insert)"
+    ),
+    (
+        "tt03n03",
+        "trie_children_threads",
+        "plunit_trie_children_threads:test(concurrent_nested)"
+    ),
+    (
+        "tt03n04",
+        "trie_children_threads",
+        "plunit_trie_children_threads:test(insert_while_enumerating)"
+    ),
+    (
+        "tt03n05",
+        "trie_children_threads",
+        "plunit_trie_children_threads:test(shared_variants)"
+    )
 ]
 
 "The thread-bound rows (upstream `condition(threads)`): pinned on swipl; the kernel's line is compared to the pin, and a line that differs is @test_broken, never a silent pass."
@@ -579,7 +619,7 @@ const _TT_PINNED = [
     "t_tt03n02 c[116,95,116,116,48,51,110,48,50]/1(a[111,107])",
     "t_tt03n03 c[116,95,116,116,48,51,110,48,51]/1(a[111,107])",
     "t_tt03n04 c[116,95,116,116,48,51,110,48,52]/1(a[111,107])",
-    "t_tt03n05 c[116,95,116,116,48,51,110,48,53]/1(a[111,107])",
+    "t_tt03n05 c[116,95,116,116,48,51,110,48,53]/1(a[111,107])"
 ]
 
 "The answer plunit expects of every row: the test passes, `R = ok` (run in swipl by gen_reeval.py pin, plunit part of pins file)."
@@ -602,7 +642,7 @@ const _TT_UPSTREAM = [
     "a[111,107]",
     "a[111,107]",
     "a[111,107]",
-    "a[111,107]",
+    "a[111,107]"
 ]
 
 "The files of the program in a fresh directory: one module file per unit, the main file with the rows; returns the main file."
@@ -612,10 +652,13 @@ function _tt_materialize()::String
     for (short, _, text) in _TT_UNITS
         write(
             joinpath(d, "plunit_$short.pl"),
-            ":- module(plunit_$short, []).\n:- set_module(base(test_trie_children)).\n" * text
+            ":- module(plunit_$short, []).\n:- set_module(base(test_trie_children)).\n" *
+            text
         )
     end
-    main = ":- use_module('$d/test_trie_children').\n" * join([":- use_module('$d/plunit_$short').\n" for (short, _, _) in _TT_UNITS])
+    main =
+        ":- use_module('$d/test_trie_children').\n" *
+        join([":- use_module('$d/plunit_$short').\n" for (short, _, _) in _TT_UNITS])
     main *= join([
         "t_$(id)(R) :- ( catch((abolish_all_tables, $g, abolish_all_tables, R = ok), error(SsuE, _), R = raised(SsuE)) -> true ; R = failed ).\n"
         for (id, _, g) in _TT_CASES
@@ -627,8 +670,15 @@ end
 function _tt_swipl_lines(path::String, names::Vector{String})::Vector{String}
     out = mktempdir() do d
         f = joinpath(d, "drv.pl")
-        write(f, _TT_DRIVER * ":- initialization((fz_run('$path', [" * join(names, ",") * "]), halt)).\n")
-        read(pipeline(addenv(`swipl -q $f`, "LC_ALL" => "C"); stdin=devnull, stderr=devnull), String)
+        write(
+            f,
+            _TT_DRIVER * ":- initialization((fz_run('$path', [" * join(names, ",") *
+            "]), halt)).\n"
+        )
+        read(
+            pipeline(addenv(`swipl -q $f`, "LC_ALL" => "C"); stdin=devnull, stderr=devnull),
+            String
+        )
     end
     return String.(split(chomp(out), '\n'; keepempty=false))
 end
@@ -649,7 +699,9 @@ function _tt_ask(gd, ld, pred::String)::String
     fid = LK.PL_open_foreign_frame(ld)
     a = LK.PL_new_term_refs(ld, 1)
     LK.putSlotValue!(ld, a + 1, mk_var(_TT, LK.fresh_var_keys!(1)), LK.PutVarMap())
-    qid = LK.PL_open_query(gd, ld, nothing, LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS, proc, a)
+    qid = LK.PL_open_query(
+        gd, ld, nothing, LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS, proc, a
+    )
     n = 0
     while (n += 1) <= 50
         rc = LK.PL_next_solution(gd, ld, qid)

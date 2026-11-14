@@ -77,7 +77,10 @@ const _TT_TESTLIB = joinpath(@__DIR__, "tabling_testlib_upstream.pl")
 
 "The units' text, verbatim between begin_tests and end_tests: `(short name, begin_tests directive, text)`."
 const _TT_UNITS = [
-    ("ex1", ":- begin_tests(tabling_ex1, [cleanup(abolish_all_tables)]).", raw"""
+    (
+        "ex1",
+        ":- begin_tests(tabling_ex1, [cleanup(abolish_all_tables)]).",
+        raw"""
 
 expected_variants([a(2,_),a(3,_),a(_,_)]).
 % Note: a(3,_) is an empty table, but it is there...
@@ -103,8 +106,12 @@ e(2,3).
 test(ex1) :-
 	a_compare_answers.
 
-"""),
-    ("ex2", ":- begin_tests(tabling_ex2, [cleanup(abolish_all_tables)]).", raw"""
+"""
+    ),
+    (
+        "ex2",
+        ":- begin_tests(tabling_ex2, [cleanup(abolish_all_tables)]).",
+        raw"""
 % Meerdere recursieve calls met zelfde callpattern:
 % b(X,Y) :- b(X,Z), b(Q,Y).
 % For two given facts e(1,2) and e(2,3), there are four (!) solutions to b(X,Y):
@@ -140,8 +147,12 @@ test(ex2) :-
 	test_expected_variants_present,
 	test_answers_expected_tables.
 
-"""),
-    ("ex3", ":- begin_tests(tabling_ex3, [cleanup(abolish_all_tables)]).", raw"""
+"""
+    ),
+    (
+        "ex3",
+        ":- begin_tests(tabling_ex3, [cleanup(abolish_all_tables)]).",
+        raw"""
 % Answers: all integers between -10 and 10 (included).
 %
 % Consider the execution of the query {\tt ?- p$_g$(Y).} which
@@ -179,8 +190,12 @@ test(ex3) :-
 	test_expected_variants_present,
 	test_answers_expected_tables.
 
-"""),
-    ("ex4", ":- begin_tests(tabling_ex4, [cleanup(abolish_all_tables)]).", raw"""
+"""
+    ),
+    (
+        "ex4",
+        ":- begin_tests(tabling_ex4, [cleanup(abolish_all_tables)]).",
+        raw"""
 % Two mutually recursive predicates:
 % d(X) :- e(Y), Y < 5, X is Y + 1.
 % d(0).
@@ -233,8 +248,12 @@ test(ex4) :-
   test_expected_variants_present,
   test_answers_expected_tables.
 
-"""),
-    ("ex5", ":- begin_tests(tabling_ex5, [cleanup(abolish_all_tables)]).", raw"""
+"""
+    ),
+    (
+        "ex5",
+        ":- begin_tests(tabling_ex5, [cleanup(abolish_all_tables)]).",
+        raw"""
 % Variation on example 1 but with a  cycle. This is an important example
 % for tabling.
 
@@ -267,8 +286,12 @@ test(ex5) :-
 	test_expected_variants_present,
 	test_answers_expected_tables.
 
-"""),
-    ("ex6", ":- begin_tests(tabling_ex6, [cleanup(abolish_all_tables)]).", raw"""
+"""
+    ),
+    (
+        "ex6",
+        ":- begin_tests(tabling_ex6, [cleanup(abolish_all_tables)]).",
+        raw"""
 % Nested tabling: a tabled predicate calls another tabled predicate, but not mutually recursive.
 % g(X) <- h(Y), X is Y + 1.
 %
@@ -306,8 +329,12 @@ test(ex6) :-
 	test_expected_variants_present,
 	test_answers_expected_tables.
 
-"""),
-    ("ex7", ":- begin_tests(tabling_ex7, [cleanup(abolish_all_tables)]).", raw"""
+"""
+    ),
+    (
+        "ex7",
+        ":- begin_tests(tabling_ex7, [cleanup(abolish_all_tables)]).",
+        raw"""
 % A more complicated graph example:
 %
 %       i1
@@ -376,8 +403,12 @@ test(ex7) :-
 	test_expected_variants_present,
 	test_answers_expected_tables.
 
-"""),
-    ("ex8", ":- begin_tests(tabling_ex8, [cleanup(abolish_all_tables)]).", raw"""
+"""
+    ),
+    (
+        "ex8",
+        ":- begin_tests(tabling_ex8, [cleanup(abolish_all_tables)]).",
+        raw"""
 % Example specifically designed  to  test  whether   we  can  get  a new
 % continuation in the last iteration of  run_contins. This is indeed the
 % case. Thus in run_contins we  also  need   to  look  at  the number of
@@ -409,8 +440,12 @@ test(ex8) :-
 	test_expected_variants_present,
 	test_answers_expected_tables.
 
-"""),
-    ("ex9a", ":- begin_tests(tabling_ex9a, [cleanup(abolish_all_tables)]).", raw"""
+"""
+    ),
+    (
+        "ex9a",
+        ":- begin_tests(tabling_ex9a, [cleanup(abolish_all_tables)]).",
+        raw"""
 % The reachability predicate can be written in several variants.
 % Example 1: a
 % p(X,Y) :- p(X,Z), p(Z,Y).
@@ -462,8 +497,12 @@ test(ex9a) :-
 	compare_real_expected_answers(a,2,reachability_expected_answers),
 	test_expected_variants_present,
 	test_answers_expected_tables.
-"""),
-    ("ex9b", ":- begin_tests(tabling_ex9b, [cleanup(abolish_all_tables)]).", raw"""
+"""
+    ),
+    (
+        "ex9b",
+        ":- begin_tests(tabling_ex9b, [cleanup(abolish_all_tables)]).",
+        raw"""
 expected_variants([a(3,_),a(2,_),a(_,_)]).
 % Note: a(3,_) is an empty table, but it is there...
 expected_answers_for_variant(a(_,_),[a(1,2),a(2,3),a(1,3)]).
@@ -489,8 +528,12 @@ test(ex9b) :-
 	test_expected_variants_present,
 	test_answers_expected_tables.
 
-"""),
-    ("ex9c", ":- begin_tests(tabling_ex9c, [cleanup(abolish_all_tables)]).", raw"""
+"""
+    ),
+    (
+        "ex9c",
+        ":- begin_tests(tabling_ex9c, [cleanup(abolish_all_tables)]).",
+        raw"""
 expected_variants([a(2,_),a(3,_),a(_,_)]).
 % Note: a(3,_) is an empty table, but it is there...
 expected_answers_for_variant(a(_,_),[a(1,2),a(2,3),a(1,3)]).
@@ -512,8 +555,12 @@ test(ex9c) :-
 	test_expected_variants_present,
 	test_answers_expected_tables.
 
-"""),
-    ("ex9d", ":- begin_tests(tabling_ex9d, [cleanup(abolish_all_tables)]).", raw"""
+"""
+    ),
+    (
+        "ex9d",
+        ":- begin_tests(tabling_ex9d, [cleanup(abolish_all_tables)]).",
+        raw"""
 expected_variants([a(_,_)]).
 expected_answers_for_variant(a(_,_),[a(1,2),a(2,3),a(1,3)]).
 
@@ -532,7 +579,8 @@ test(ex9d) :-
 	test_expected_variants_present,
 	test_answers_expected_tables.
 
-"""),
+"""
+    )
 ]
 
 "The file's common tail (lines `before :- ...` to the end), verbatim."
@@ -566,7 +614,7 @@ const _TT_CASES = [
     ("tt09", "ex9a", "pu_ex9a:test(ex9a)"),
     ("tt10", "ex9b", "pu_ex9b:test(ex9b)"),
     ("tt11", "ex9c", "pu_ex9c:test(ex9c)"),
-    ("tt12", "ex9d", "pu_ex9d:test(ex9d)"),
+    ("tt12", "ex9d", "pu_ex9d:test(ex9d)")
 ]
 
 const _TT_PINNED = [
@@ -582,7 +630,7 @@ const _TT_PINNED = [
     "t_tt09 c[116,95,116,116,48,57]/1(a[111,107])",
     "t_tt10 c[116,95,116,116,49,48]/1(a[111,107])",
     "t_tt11 c[116,95,116,116,49,49]/1(a[111,107])",
-    "t_tt12 c[116,95,116,116,49,50]/1(a[111,107])",
+    "t_tt12 c[116,95,116,116,49,50]/1(a[111,107])"
 ]
 
 "The answer plunit expects of every row: the test passes, `R = ok` (run in swipl by gen_tabling.py pin, plunit part of pins file)."
@@ -598,7 +646,7 @@ const _TT_UPSTREAM = [
     "a[111,107]",
     "a[111,107]",
     "a[111,107]",
-    "a[111,107]",
+    "a[111,107]"
 ]
 
 "The files of the program in a fresh directory: testlib, one module file per unit, the main file with the rows; returns the main file."
@@ -608,7 +656,8 @@ function _tt_materialize()::String
     for (short, _, text) in _TT_UNITS
         write(
             joinpath(d, "pu_$short.pl"),
-            ":- module(pu_$short, []).\n:- use_module('$d/tabling_testlib').\n" * text * "\n" * _TT_TAIL
+            ":- module(pu_$short, []).\n:- use_module('$d/tabling_testlib').\n" * text *
+            "\n" * _TT_TAIL
         )
     end
     main = join([":- use_module('$d/pu_$short').\n" for (short, _, _) in _TT_UNITS])
@@ -623,8 +672,15 @@ end
 function _tt_swipl_lines(path::String, names::Vector{String})::Vector{String}
     out = mktempdir() do d
         f = joinpath(d, "drv.pl")
-        write(f, _TT_DRIVER * ":- initialization((fz_run('$path', [" * join(names, ",") * "]), halt)).\n")
-        read(pipeline(addenv(`swipl -q $f`, "LC_ALL" => "C"); stdin=devnull, stderr=devnull), String)
+        write(
+            f,
+            _TT_DRIVER * ":- initialization((fz_run('$path', [" * join(names, ",") *
+            "]), halt)).\n"
+        )
+        read(
+            pipeline(addenv(`swipl -q $f`, "LC_ALL" => "C"); stdin=devnull, stderr=devnull),
+            String
+        )
     end
     return String.(split(chomp(out), '\n'; keepempty=false))
 end
@@ -645,7 +701,9 @@ function _tt_ask(gd, ld, pred::String)::String
     fid = LK.PL_open_foreign_frame(ld)
     a = LK.PL_new_term_refs(ld, 1)
     LK.putSlotValue!(ld, a + 1, mk_var(_TT, LK.fresh_var_keys!(1)), LK.PutVarMap())
-    qid = LK.PL_open_query(gd, ld, nothing, LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS, proc, a)
+    qid = LK.PL_open_query(
+        gd, ld, nothing, LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS, proc, a
+    )
     n = 0
     while (n += 1) <= 50
         rc = LK.PL_next_solution(gd, ld, qid)

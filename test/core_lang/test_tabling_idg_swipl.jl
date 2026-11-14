@@ -63,7 +63,21 @@ t_idg12(R) :- current_prolog_flag(table_space, Old), catch(ti_v5(_), error(E, _)
     set_prolog_flag(table_space, Old), ( var(E) -> R = none ; R = raised(E) ).
 """
 
-const _TI_CASES = ["t_idg01", "t_idg05", "t_idg02", "t_idg03", "t_idg04", "t_idg06", "t_idg07", "t_idg08", "t_idg09", "t_idg10", "t_idg11", "t_idg12", "t_idg13"]
+const _TI_CASES = [
+    "t_idg01",
+    "t_idg05",
+    "t_idg02",
+    "t_idg03",
+    "t_idg04",
+    "t_idg06",
+    "t_idg07",
+    "t_idg08",
+    "t_idg09",
+    "t_idg10",
+    "t_idg11",
+    "t_idg12",
+    "t_idg13"
+]
 
 # swipl 10.1.20 (`ti_q(t_idg<NN>, A)`, in the order of `_TI_CASES`), two identical runs (md5 equal), 2026-11-10
 const _TI_PINNED = [
@@ -79,7 +93,7 @@ const _TI_PINNED = [
     "r(invalid,complete,same)",             # idg10 (TB7M5): falsecount back to 0: the same table is `complete` again
     "r(raised(representation_error(falsecount)),0,4294967295)",   # idg11 (DEFKILL2, TB6-P14): pl-tabling.c:9864 `fc > UINT_MAX`; UINT_MAX itself is stored
     "raised(resource_error(private_table_space))",                # idg12 (DEFKILL2, TB6-V5): the dyncall edge of a full pool: pl-vmi.c:3547-3548 THROW_EXCEPTION
-    "r(1,0)",                              # idg13 (DEFKILL2, TB6-N19): an incremental dynamic predicate with abstract(0) under a tabled one; swipl writes no warning
+    "r(1,0)"                              # idg13 (DEFKILL2, TB6-N19): an incremental dynamic predicate with abstract(0) under a tabled one; swipl writes no warning
 ]
 
 "The `~q` text of each case's answer, in order, from swipl at the pin."
@@ -91,7 +105,10 @@ function _ti_swipl_lines()::Vector{String}
             _TI_PROGRAM * ":- initialization((forall(member(G, [" * join(_TI_CASES, ",") *
             "]), (ti_q(G, A), write(A), nl)), halt)).\n"
         )
-        read(pipeline(addenv(`swipl -q $f`, "LC_ALL" => "C"); stdin=devnull, stderr=devnull), String)
+        read(
+            pipeline(addenv(`swipl -q $f`, "LC_ALL" => "C"); stdin=devnull, stderr=devnull),
+            String
+        )
     end
     return String.(split(chomp(out), '\n'; keepempty=false))
 end
@@ -104,10 +121,12 @@ function _ti_ask(gd, ld, case::String)::String
     a = LK.PL_new_term_refs(ld, 2)
     LK.putSlotValue!(ld, a + 1, _tis(case), LK.PutVarMap())
     LK.putSlotValue!(ld, a + 2, mk_var(_TI, LK.fresh_var_keys!(1)), LK.PutVarMap())
-    qid = LK.PL_open_query(gd, ld, nothing, LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS, proc, a)
+    qid = LK.PL_open_query(
+        gd, ld, nothing, LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS, proc, a
+    )
     rc = LK.PL_next_solution(gd, ld, qid)
     ans = if rc == LK.PL_S_TRUE || rc == LK.PL_S_LAST
-        t = lk_answers(ld, (a + 1:a + 1)...)[1]
+        t = lk_answers(ld, ((a + 1):(a + 1))...)[1]
         kind(t) === SYM ? sym_text(t) : "not an atom"
     else
         rc == LK.PL_S_EXCEPTION ? "exception" : "failed"
@@ -128,7 +147,9 @@ end
         @test _ti_ask(gd, ld, case) == pin
     end
     # DEFKILL2 (TB6-N19): swipl writes no "Only abstract(0)" warning for abstract(0) (pl-vmi.c:3534-3535); the collected messages hold none
-    @test !any(m -> kind(m[2]) === SYM && occursin("Only abstract(0)", sym_text(m[2])), ld.messages)
+    @test !any(
+        m -> kind(m[2]) === SYM && occursin("Only abstract(0)", sym_text(m[2])), ld.messages
+    )
     @test ld.tabling.idg_edge_states.live == 0          # every '$idg_edge'/'$idg_false_edge' state was given back
 
     if Sys.which("swipl") !== nothing
@@ -142,7 +163,7 @@ end
 # An edge `idg_add_child(ld, parent, child, 0, 0)` puts `child` in `parent.dependent` and `parent` in `child.affected`.
 const _TIN = LK.idg_node{_TI}
 
-_ti_wb() = (gd = LK.PL_global_data{_TI}(); (gd, LK.PL_local_data{_TI}(gd)))
+_ti_wb() = (gd=LK.PL_global_data{_TI}(); (gd, LK.PL_local_data{_TI}(gd)))
 
 "A fresh complete answer trie with its IDG node (`idg_new`, the node attached as `idg_init_variant` does)."
 function _ti_node(ld)
@@ -170,12 +191,14 @@ end
     add(p) = LK.idg_set_add(ld, set, p, nothing, nothing)
     del(p) = LK.idg_set_delete(set, p, nothing, nothing)
 
-    @test LK.idg_set_is_empty(set) && LK.idg_set_size(set) == 0 && LK.idg_set_sizeof(set) == 0
+    @test LK.idg_set_is_empty(set) && LK.idg_set_size(set) == 0 &&
+        LK.idg_set_sizeof(set) == 0
     @test add(nodes[1]) == 1 && set.single === nodes[1] && set.block === nothing      # one pointer, no block
     @test add(nodes[1]) == 0 && LK.idg_set_size(set) == 1                             # already in: not added
     @test add(nodes[2]) == 1 && set.single === nothing && set.block !== nothing       # new_block(4)
     @test set.block.capacity == 4 && set.block.index_bits == 0                        # pl-idgset.c:284
-    @test LK.idg_set_size(set) == 2 && LK.idg_set_contains(set, nodes[1]) && !LK.idg_set_contains(set, nodes[3])
+    @test LK.idg_set_size(set) == 2 && LK.idg_set_contains(set, nodes[1]) &&
+        !LK.idg_set_contains(set, nodes[3])
     @test LK.idg_set_sizeof(set) == 24 + 4 * 8                                        # sizeof_block(4, 0)
     @test del(nodes[1]) && !del(nodes[1]) && !del(nodes[3])
     @test LK.idg_set_size(set) == 1 && !LK.idg_set_contains(set, nodes[1])
@@ -201,7 +224,8 @@ end
     for p in nodes
         del(p)
     end
-    @test set.block === nothing && LK.idg_set_is_empty(set) && !LK.idg_set_contains(set, nodes[1])   # all dead: the block goes
+    @test set.block === nothing && LK.idg_set_is_empty(set) &&
+        !LK.idg_set_contains(set, nodes[1])   # all dead: the block goes
 
     # idg_set_clear: the function sees every live entry once, then the set is empty
     for i in 1:3
@@ -216,7 +240,8 @@ end
 @testset "idg11: the registry of a thread's IDG nodes (pl-idgset.c reg_block, idg_registry_add/delete/get)" begin
     gd, ld = _ti_wb()
     @test LK.reg_block(0) == (0, 0) && LK.reg_block(63) == (0, 63)                   # 1 << IDG_REG_BASE_BITS = 64 slots
-    @test LK.reg_block(64) == (1, 0) && LK.reg_block(191) == (1, 127) && LK.reg_block(192) == (2, 0)
+    @test LK.reg_block(64) == (1, 0) && LK.reg_block(191) == (1, 127) &&
+        LK.reg_block(192) == (2, 0)
     @test LK.reg_block_size(0) == 64 && LK.reg_block_size(1) == 128
 
     t1, n1 = _ti_node(ld)
@@ -224,7 +249,8 @@ end
     reg = ld.tabling.idg_registry
     @test reg isa LK.idg_registry{_TIN} && n1.registry === reg && n2.registry === reg
     @test n1.registry_index == 0 && n2.registry_index == 1
-    @test LK.idg_registry_get(reg, 0) === n1 && LK.idg_registry_get(reg, 1) === n2 && LK.idg_registry_get(reg, 2) === nothing
+    @test LK.idg_registry_get(reg, 0) === n1 && LK.idg_registry_get(reg, 1) === n2 &&
+        LK.idg_registry_get(reg, 2) === nothing
     @test LK.idg_registry_count(reg) == 2 && reg.references == 3                      # the thread and the two nodes
     @test LK.idg_registry_sizeof(reg) == 64 * 8
 
@@ -250,7 +276,8 @@ end
     @test LK.idg_add_child(ld, p, c, 0, 0)
     @test _ti_live(p.dependent) == [c] && _ti_live(c.affected) == [p]
     @test isempty(_ti_live(p.affected)) && isempty(_ti_live(c.dependent))
-    @test LK.idg_add_child(ld, p, c, 0, 0) && LK.idg_set_size(p.dependent) == 1 && LK.idg_set_size(c.affected) == 1   # idempotent
+    @test LK.idg_add_child(ld, p, c, 0, 0) && LK.idg_set_size(p.dependent) == 1 &&
+        LK.idg_set_size(c.affected) == 1   # idempotent
 
     @test LK.idg_add_edge(ld, ct, pt) == 1                                            # trie-level: the same edge
     plain = LK.trie_create(_TI)
@@ -278,7 +305,8 @@ end
     @test d.falsecount == 1 && p1.falsecount == 1 && p2.falsecount == 1
     @test d.stats_invalidated == 1 && p1.stats_invalidated == 1 && p2.stats_invalidated == 1
     @test LK.idg_changed(ld, dt, LK.IDG_CHANGED_NODE)                                  # already changed: nothing moves
-    @test d.falsecount == 1 && p1.falsecount == 1 && p2.falsecount == 1 && d.stats_invalidated == 1
+    @test d.falsecount == 1 && p1.falsecount == 1 && p2.falsecount == 1 &&
+        d.stats_invalidated == 1
 
     # the lowering walk (flags 0): `idg_changed`'s rollback; d itself is not lowered here
     d.falsecount = 0
@@ -287,9 +315,11 @@ end
 
     # a diamond: p1 and p2 depend on d, p2 on p1, p3 on p1 and p2; a node counts every invalid edge into it, is pushed once
     p3t, p3 = _ti_node(ld)
-    @test LK.idg_add_child(ld, p2, d, 0, 0) && LK.idg_add_child(ld, p3, p1, 0, 0) && LK.idg_add_child(ld, p3, p2, 0, 0)
+    @test LK.idg_add_child(ld, p2, d, 0, 0) && LK.idg_add_child(ld, p3, p1, 0, 0) &&
+        LK.idg_add_child(ld, p3, p2, 0, 0)
     @test LK.idg_changed(ld, dt, LK.IDG_CHANGED_NODE)
-    @test d.falsecount == 1 && p1.falsecount == 1 && p2.falsecount == 2 && p3.falsecount == 2   # p2 via d and p1, p3 via p1 and p2
+    @test d.falsecount == 1 && p1.falsecount == 1 && p2.falsecount == 2 &&
+        p3.falsecount == 2   # p2 via d and p1, p3 via p1 and p2
     @test p3.stats_invalidated == 1                                                    # invalidated once (falsecount 0 -> 1), counted 2
     d.falsecount = 0
     LK.idg_propagate_change(ld, d, 0)
@@ -307,7 +337,8 @@ end
     @test !LK.idg_need_invalidated(ld, l)
     @test LK.idg_changed(ld, lt, LK.IDG_CHANGED_NODE) && l.falsecount == 0
     ot, o = _ti_node(ld)
-    @test LK.idg_need_invalidated(ld, o) && LK.idg_changed(ld, ot, LK.IDG_CHANGED_NODE) && o.falsecount == 1
+    @test LK.idg_need_invalidated(ld, o) && LK.idg_changed(ld, ot, LK.IDG_CHANGED_NODE) &&
+        o.falsecount == 1
     @test LK.idg_changed(ld, LK.trie_create(_TI), LK.IDG_CHANGED_NODE)                  # no IDG node: true, nothing to do
 end
 
@@ -321,7 +352,8 @@ end
     d.new_answer = true
     dt.flags |= LK.TRIE_DISCARDABLE
     @test LK.prepare_reeval(ld, dt)
-    @test d.reevaluating && d.falsecount == 0 && !d.new_answer && d.answer_count == dt.value_count
+    @test d.reevaluating && d.falsecount == 0 && !d.new_answer &&
+        d.answer_count == dt.value_count
     @test (dt.flags & LK.TRIE_DISCARDABLE) == 0
     @test isempty(_ti_live(d.dependent)) && isempty(_ti_live(c.affected))               # idg_clean_dependent
     @test !LK.tt_has_modified_dependencies(ld, dt)                                      # no transaction (TB9)
@@ -371,13 +403,15 @@ end
     refs = reg.references
     LK.idg_destroy(ld, c)
     @test isempty(_ti_live(p.dependent)) && isempty(_ti_live(c.affected))
-    @test LK.idg_registry_get(reg, c.registry_index) === nothing && reg.references == refs - 1
+    @test LK.idg_registry_get(reg, c.registry_index) === nothing &&
+        reg.references == refs - 1
     @test LK.idg_registry_get(reg, p.registry_index) === p
 end
 
 # ── TB7M5 white-box rows: the refusal sites lifted from the merged tree (pl-tabling.c at the pin, cited per row) ────────────
 "The text of the status atom `complete_or_invalid_status` gives for `tr`: ONE extractor for both sides of every comparison."
-_ti_status(ld, tr, create::Bool)::String = sym_text(LK.complete_or_invalid_status(ld, tr, create))
+_ti_status(ld, tr, create::Bool)::String =
+    sym_text(LK.complete_or_invalid_status(ld, tr, create))
 
 @testset "idg16: complete_or_invalid_status reads the IDG node (pl-tabling.c:4263-4285)" begin
     gd, ld = _ti_wb()
@@ -463,13 +497,15 @@ function _ti_tvt(ld, def; ground::Bool=false, v::Int=1, mono::Bool=false)
     for i in 3:6
         LK.putSlotValue!(ld, t + i, mk_var(_TI, LK.fresh_var_keys!(1)), LK.PutVarMap())
     end
-    ok = LK.tbl_variant_table(ld, t, t + 1, t + 2, 0, t + 3, t + 4, mono ? t + 5 : 0, Int(LK.AT_CREATE))
+    ok = LK.tbl_variant_table(
+        ld, t, t + 1, t + 2, 0, t + 3, t + 4, mono ? t + 5 : 0, Int(LK.AT_CREATE)
+    )
     st = "failed"
     mo = "unbound"
     if ok
-        s = lk_answers(ld, (t + 4:t + 4)...)[1]
+        s = lk_answers(ld, ((t + 4):(t + 4))...)[1]
         st = kind(s) === SYM ? sym_text(s) : "not an atom"
-        m = lk_answers(ld, (t + 6:t + 6)...)[1]
+        m = lk_answers(ld, ((t + 6):(t + 6))...)[1]
         mo = kind(m) === SYM ? sym_text(m) : "unbound"
     end
     LK.PL_close_foreign_frame(ld, fid)
@@ -585,8 +621,13 @@ end
 end
 
 "A symbol or a compound of symbols (`monotonic(eager)`) as text: ONE extractor for the types of `'\$is_answer_trie'`."
-_ti_txt(t)::String = kind(t) === SYM ? sym_text(t) :
-    sym_text(child(t, 1)) * "(" * join([_ti_txt(child(t, i)) for i in 2:nchildren(t)], ",") * ")"
+_ti_txt(t)::String =
+    if kind(t) === SYM
+        sym_text(t)
+    else
+        sym_text(child(t, 1)) * "(" *
+        join([_ti_txt(child(t, i)) for i in 2:nchildren(t)], ",") * ")"
+    end
 
 "The `Type` of `'\$is_answer_trie'(Trie, Type)` for `atrie` (`failed` when it fails)."
 function _ti_answer_trie_type(gd, ld, atrie)::String
@@ -597,7 +638,7 @@ function _ti_answer_trie_type(gd, ld, atrie)::String
     LK.putSlotValue!(ld, a + 2, mk_var(_TI, LK.fresh_var_keys!(1)), LK.PutVarMap())
     @assert LK.unify_trie(gd, ld, a, atrie)
     rc = LK.pl_is_answer_trie2_va(ld, a, 2, ctx)
-    out = rc == LK.FTRUE ? _ti_txt(lk_answers(ld, (a + 2:a + 2)...)[1]) : "failed"
+    out = rc == LK.FTRUE ? _ti_txt(lk_answers(ld, ((a + 2):(a + 2))...)[1]) : "failed"
     LK.PL_close_foreign_frame(ld, fid)
     return out
 end
@@ -638,7 +679,11 @@ ONE extractor for every row of idg21.
 function _ti_call_complete(ld, atrie, def, clref)
     g0 = atrie.gen_call
     r = LK.call_complete_table(ld, atrie, def, clref)
-    return (r == clref ? "clref" : "other", atrie.gen_call - g0, atrie.IDG === nothing ? "plain" : "node")
+    return (
+        r == clref ? "clref" : "other",
+        atrie.gen_call - g0,
+        atrie.IDG === nothing ? "plain" : "node"
+    )
 end
 
 @testset "idg21: call_complete_table registers the call of a complete table (idg_init_variant, idg_add_edge, pl-tabling.c:12328-12360)" begin
@@ -716,7 +761,8 @@ end
     ld.tabling.has_scheduling_component = true
     good = _ti_tcac(ld, def)
     ld.tabling.has_scheduling_component = false
-    @test !isempty(good) && !isempty(bad) && good == "zero" && bad == "proceeds" && good != bad
+    @test !isempty(good) && !isempty(bad) && good == "zero" && bad == "proceeds" &&
+        good != bad
     tp.flags = saved
 end
 
@@ -741,7 +787,7 @@ end
     t2 = _ti_table!(ld, def, true, 2)                                                      # a table with an answer that waits on `t1`
     n = LK.idg_new(ld, t1)::_TIN
     t1.IDG = n
-    mkwl(ground::Bool) = (wl = LK.tbl_worklist{_TI}(); wl.table = t1.serial; wl.ground = ground;
+    mkwl(ground::Bool) = (wl=LK.tbl_worklist{_TI}(); wl.table=t1.serial; wl.ground=ground;
         push!(wl.delays, LK.delay(t2.serial, 1)); wl)               # node 1: the root, only its flags are read
 
     # not reevaluating: the nil/nil branch only answers
@@ -807,12 +853,18 @@ end
 function _ti_fws(ld, atrie, n, freewl::Int)
     wl, wls = _ti_wl_set(atrie)
     LK.free_worklist_set(ld, wls, freewl)
-    return (wl.magic == 0, atrie.worklist === nothing, n.reevaluating, n.aborted, (atrie.flags & LK.TRIE_COMPLETE) != 0)
+    return (
+        wl.magic == 0,
+        atrie.worklist === nothing,
+        n.reevaluating,
+        n.aborted,
+        (atrie.flags & LK.TRIE_COMPLETE) != 0
+    )
 end
 
 @testset "idg25: free_worklist_set resets a reevaluating table instead of destroying it (pl-tabling.c:924-955)" begin
     gd, ld, def = _ti_db()
-    mk(v) = (t = _ti_table!(ld, def, true, v); n = LK.idg_new(ld, t)::_TIN; t.IDG = n; (t, n))
+    mk(v) = (t=_ti_table!(ld, def, true, v); n=LK.idg_new(ld, t)::_TIN; t.IDG=n; (t, n))
 
     # an incomplete table whose node reevaluates: the worklist is freed and the reevaluation reset (the table is complete again, the next call restarts)
     t1, n1 = mk(1)
@@ -888,8 +940,9 @@ end
     t.predicate = def
     d() = LK.answer_nodes_discardable(ld, t)
     @test d()                                                                              # a plain variant table
-    cond() = (t.nodes[1].value = LK.word(7); LK.set_node_delayinfo(gd, t, 1, LK.DL_UNDEFINED_INFO))
-    uncond() = (t.nodes[1].value = LK.word(0); LK.set_node_delayinfo(gd, t, 1, nothing))
+    cond() =
+        (t.nodes[1].value=LK.word(7); LK.set_node_delayinfo(gd, t, 1, LK.DL_UNDEFINED_INFO))
+    uncond() = (t.nodes[1].value=LK.word(0); LK.set_node_delayinfo(gd, t, 1, nothing))
     cond()
     @test d()                                                                              # no IDG node: the caller verified there are no conditional answers
     uncond()
@@ -973,9 +1026,11 @@ end
     state.en = LK.idg_set_enum_init(s.affected)
     @test !state.fixed_dir
     @test LK.advance_idg_edge_state(ld, state)                                      # the parent
-    @test sym_text(state.dir) == "affected" && state.deptrie_symbol == LK.trie_symbol(gd, pt)
+    @test sym_text(state.dir) == "affected" &&
+        state.deptrie_symbol == LK.trie_symbol(gd, pt)
     @test LK.advance_idg_edge_state(ld, state)                                      # `state->dir = ATOM_dependent` (:8615-8624), the child
-    @test sym_text(state.dir) == "dependent" && state.set === s.dependent && state.deptrie_symbol == LK.trie_symbol(gd, ct)
+    @test sym_text(state.dir) == "dependent" && state.set === s.dependent &&
+        state.deptrie_symbol == LK.trie_symbol(gd, ct)
     @test !LK.advance_idg_edge_state(ld, state)                                     # done
     # with a fixed direction it stops after the parents (:8615 `!state->fixed_dir`)
     fixed = LK.idg_edge_state{_TI}()
@@ -990,21 +1045,33 @@ end
 @testset "idg31: assert_term! makes a NEW predicate incremental under PL_CREATE_INCREMENTAL only (pl-comp.c:4916-4919)" begin
     gd, ld = _ti_wb()
     fact(name, v) = (
-        t = LK.PL_new_term_ref(ld);
-        LK.putSlotValue!(ld, t + 1, mk_expr(_TI, _TI[lk_sym(_TI, Symbol(name)), lk_gnd(_TI, v)]), LK.PutVarMap());
+        t=LK.PL_new_term_ref(ld);
+        LK.putSlotValue!(
+            ld,
+            t + 1,
+            mk_expr(_TI, _TI[lk_sym(_TI, Symbol(name)), lk_gnd(_TI, v)]),
+            LK.PutVarMap()
+        );
         t
     )
-    defn(name) = LK.isCurrentProcedure(sym_key(lk_sym(_TI, Symbol(name))), 1, LK.MODULE_user(gd)).definition
+    defn(name) =
+        LK.isCurrentProcedure(sym_key(lk_sym(_TI, Symbol(name))), 1, LK.MODULE_user(gd)).definition
     incr(name) = (LK.get_predicate_table_props!(defn(name)).flags & LK.TP_INCREMENTAL) != 0
     # flags 0: a new predicate, not incremental
-    @test LK.assert_term!(gd, ld, fact("ti_v6a", 1), 0, LK.CL_END, nothing, nothing, 0) !== nothing
+    @test LK.assert_term!(gd, ld, fact("ti_v6a", 1), 0, LK.CL_END, nothing, nothing, 0) !==
+        nothing
     @test !incr("ti_v6a")
     # PL_CREATE_INCREMENTAL on a new predicate: incremental
-    @test LK.assert_term!(gd, ld, fact("ti_v6b", 1), 0, LK.CL_END, nothing, nothing, LK.PL_CREATE_INCREMENTAL) !== nothing
+    @test LK.assert_term!(
+        gd, ld, fact("ti_v6b", 1), 0, LK.CL_END, nothing, nothing, LK.PL_CREATE_INCREMENTAL
+    ) !== nothing
     @test incr("ti_v6b")
     # a predicate that is already defined keeps its attributes (`!isDefinedProcedure(proc)`)
-    @test LK.assert_term!(gd, ld, fact("ti_v6c", 1), 0, LK.CL_END, nothing, nothing, 0) !== nothing
-    @test LK.assert_term!(gd, ld, fact("ti_v6c", 2), 0, LK.CL_END, nothing, nothing, LK.PL_CREATE_INCREMENTAL) !== nothing
+    @test LK.assert_term!(gd, ld, fact("ti_v6c", 1), 0, LK.CL_END, nothing, nothing, 0) !==
+        nothing
+    @test LK.assert_term!(
+        gd, ld, fact("ti_v6c", 2), 0, LK.CL_END, nothing, nothing, LK.PL_CREATE_INCREMENTAL
+    ) !== nothing
     @test !incr("ti_v6c")
 end
 
@@ -1066,10 +1133,12 @@ end
     # an unconditional answer that was ADDED: DELETED set, ADDED cleared, UNCONDITIONAL set (:11146-11147, :11158-11160)
     tr, n = _ti_answer_node(ld)
     tr.nodes[1].flags |= LK.TN_IDG_ADDED
-    @test tr.nodes[1].value != 0 && !LK.answer_is_conditional(gd, tr, 1) && (tr.nodes[1].flags & LK.TN_IDG_DELETED) == 0
+    @test tr.nodes[1].value != 0 && !LK.answer_is_conditional(gd, tr, 1) &&
+        (tr.nodes[1].flags & LK.TN_IDG_DELETED) == 0
     LK.reeval_prep_node(ld, tr, 1)
     f = tr.nodes[1].flags
-    @test (f & LK.TN_IDG_DELETED) != 0 && (f & LK.TN_IDG_ADDED) == 0 && (f & LK.TN_IDG_UNCONDITIONAL) != 0
+    @test (f & LK.TN_IDG_DELETED) != 0 && (f & LK.TN_IDG_ADDED) == 0 &&
+        (f & LK.TN_IDG_UNCONDITIONAL) != 0
     @test tr.nodes[1].value == LK.word(11)                                              # the answer itself stays
 
     # a conditional answer: DELETED set, its delay info dropped, UNCONDITIONAL cleared, the worklist's `undefined` count down by one (:11149-11156)
@@ -1083,7 +1152,8 @@ end
     @test LK.answer_is_conditional(gd, tc, 1)
     LK.reeval_prep_node(ld, tc, 1)
     f = tc.nodes[1].flags
-    @test (f & LK.TN_IDG_DELETED) != 0 && (f & LK.TN_IDG_ADDED) == 0 && (f & LK.TN_IDG_UNCONDITIONAL) == 0
+    @test (f & LK.TN_IDG_DELETED) != 0 && (f & LK.TN_IDG_ADDED) == 0 &&
+        (f & LK.TN_IDG_UNCONDITIONAL) == 0
     @test !LK.answer_is_conditional(gd, tc, 1) && wl.undefined == 1
     wl.undefined = 0                                                                    # `wl->undefined > 0` guards the decrement
     tc.nodes[1].flags |= LK.TN_IDG_UNCONDITIONAL
@@ -1102,7 +1172,8 @@ end
     gd, ld = _ti_wb()
     # Got UNconditional (:11328-11331): the answer was conditional in the previous evaluation (no UNCONDITIONAL mark) and is not now
     tr, n = _ti_answer_node(ld)
-    @test !LK.answer_is_conditional(gd, tr, 1) && (tr.nodes[1].flags & LK.TN_IDG_UNCONDITIONAL) == 0 && !n.new_answer
+    @test !LK.answer_is_conditional(gd, tr, 1) &&
+        (tr.nodes[1].flags & LK.TN_IDG_UNCONDITIONAL) == 0 && !n.new_answer
     LK.reeval_complete_node(ld, tr, 1)
     @test n.new_answer                                                                  # the mutant (TB6-E19) leaves it false
     @test (tr.nodes[1].flags & LK.TN_IDG_MASK) == 0 && tr.nodes[1].value == LK.word(11) # clear(n, TN_IDG_MASK), the answer stays
@@ -1128,7 +1199,8 @@ end
     p.falsecount = 1
     nn.reevaluating = true
     nn.answer_count = tn.value_count
-    @test nn.answer_count == 1 && !nn.new_answer && (tn.nodes[1].flags & LK.TN_IDG_UNCONDITIONAL) == 0
+    @test nn.answer_count == 1 && !nn.new_answer &&
+        (tn.nodes[1].flags & LK.TN_IDG_UNCONDITIONAL) == 0
     LK.reeval_complete(ld, tn)
     @test nn.new_answer && nn.stats_reevaluated == 1
     @test p.falsecount == 1                                                             # not `same_answers`: no idg_propagate_change
@@ -1176,17 +1248,26 @@ end
     t2.nodes[1].value = LK.word(11)
     t2.nodes[1].flags |= LK.TN_PRIMARY
     t2.value_count = 1
-    LK.set_node_delayinfo(gd, t2, 1, LK.delay_info(t2.serial, UInt32(0), [LK.delay_set(0, 1, UInt32(1))], [LK.delay(t1.serial, 1)]))
+    LK.set_node_delayinfo(
+        gd,
+        t2,
+        1,
+        LK.delay_info(
+            t2.serial, UInt32(0), [LK.delay_set(0, 1, UInt32(1))], [LK.delay(t1.serial, 1)]
+        )
+    )
     wl2 = LK.tbl_worklist{_TI}()
     wl2.table = t2.serial
     wl2.undefined = 1
     t2.worklist = wl2
-    @test LK.answer_is_conditional(gd, t2, 1) && (t1.nodes[1].flags & LK.TN_IDG_UNCONDITIONAL) == 0 && wl.component === nothing
+    @test LK.answer_is_conditional(gd, t2, 1) &&
+        (t1.nodes[1].flags & LK.TN_IDG_UNCONDITIONAL) == 0 && wl.component === nothing
     @test _ti_udl(ld, wl, 1) == (LK.UDL_TRUE, 0)                                           # simplified: the entry of the dependent answer is gone
     # simplify_answer(wl, answer, true): the delay is removed from the conjunction, none is left: make_answer_unconditional (:1820)
     @test !LK.answer_is_conditional(gd, t2, 1) && wl2.undefined == 0
     # the answer STAYS (the mutant, truth false, removes the conjunction and the answer: remove_conditional_answer, trie_delete)
-    @test t2.value_count == 1 && (t2.nodes[1].flags & LK.TN_PRIMARY) != 0 && t2.nodes[1].value == LK.word(11)
+    @test t2.value_count == 1 && (t2.nodes[1].flags & LK.TN_PRIMARY) != 0 &&
+        t2.nodes[1].value == LK.word(11)
 end
 
 @testset "idg38: free_worklist_set clears the table's worklist before freeing, whichever worklist it points at (pl-tabling.c:935-939, free_worklist :3912-3915)" begin

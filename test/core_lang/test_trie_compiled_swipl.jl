@@ -358,14 +358,16 @@ _SUPERVISOR_OK &&
             n0 = length(gd.tries)
             @test _tp_row(gd, ld, "s5_make") == _row("s5_make", _ea("ok"))
             ctl = gd.tries[end]
-            @test length(gd.tries) == n0 + 1 && ctl.value_count == 1 && ctl.clause == 0 && ctl.IDG === nothing
+            @test length(gd.tries) == n0 + 1 && ctl.value_count == 1 && ctl.clause == 0 &&
+                ctl.IDG === nothing
             @test _tp_row(gd, ld, "s5_run") == _row("s5_run", _ea("k"))
             @test ctl.clause != 0                                  # compiled
             # the shortcut: an IDG node, one answer, no worklist, not shared, not a map
             @test _tp_row(gd, ld, "s5_make") == _row("s5_make", _ea("ok"))
             tr = gd.tries[end]
             @test tr !== ctl && tr.value_count == 1 && tr.clause == 0
-            @test tr.worklist === nothing && (tr.flags & (LK.TRIE_ISSHARED | LK.TRIE_ISMAP)) == 0
+            @test tr.worklist === nothing &&
+                (tr.flags & (LK.TRIE_ISSHARED | LK.TRIE_ISMAP)) == 0
             tr.IDG = LK.idg_new(ld, tr)
             @test tr.IDG !== nothing
             @test LK.tbl_single_answer(tr) != 0                    # the premise of the shortcut

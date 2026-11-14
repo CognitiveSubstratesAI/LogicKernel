@@ -80,7 +80,10 @@ fz_run(File, Ns) :-
 
 "The units' text, verbatim between begin_tests and end_tests: `(short name, begin_tests directive, text)`."
 const _TT_UNITS = [
-    ("trie_index", ":- begin_tests(trie_index).", raw"""
+    (
+    "trie_index",
+    ":- begin_tests(trie_index).",
+    raw"""
 
 test(generated_unification) :-
     set_random(seed(904219)),
@@ -267,7 +270,8 @@ test(generated_shapes) :-
     forall(between(1, 10, _),
            setup_call_cleanup(trie_new(T), generated_shapes(T), trie_destroy(T))).
 
-"""),
+"""
+),
 ]
 
 "The file's common tail (lines `before :- ...` to the end), verbatim."
@@ -395,22 +399,54 @@ term(Depth, Vars, T) :-
 "The rows: `(id, unit, goal)`; the goal is the plunit test with its options folded by hand."
 const _TT_CASES = [
     ("tt01n01", "trie_index", "plunit_trie_index:test(generated_unification)"),
-    ("tt01n02", "trie_index", "(plunit_trie_index:test(cyclic_query, O), O = (A == B), A == B)"),
-    ("tt01n03", "trie_index", "(plunit_trie_index:test(deleted_pending_answer, true(O)), O = (A == B), A == B)"),
-    ("tt01n04", "trie_index", "(plunit_trie_index:test(garbage_collection_between_answers, true(O)), O = (A == B), A == B)"),
-    ("tt01n05", "trie_index", "(plunit_trie_index:test(variable_mask_overflow, true(O)), O = (A == B), A == B)"),
-    ("tt01n06", "trie_index", "(plunit_trie_index:test(attributed_query, true(O)), O = (A == B), A == B)"),
+    (
+        "tt01n02",
+        "trie_index",
+        "(plunit_trie_index:test(cyclic_query, O), O = (A == B), A == B)"
+    ),
+    (
+        "tt01n03",
+        "trie_index",
+        "(plunit_trie_index:test(deleted_pending_answer, true(O)), O = (A == B), A == B)"
+    ),
+    (
+        "tt01n04",
+        "trie_index",
+        "(plunit_trie_index:test(garbage_collection_between_answers, true(O)), O = (A == B), A == B)"
+    ),
+    (
+        "tt01n05",
+        "trie_index",
+        "(plunit_trie_index:test(variable_mask_overflow, true(O)), O = (A == B), A == B)"
+    ),
+    (
+        "tt01n06",
+        "trie_index",
+        "(plunit_trie_index:test(attributed_query, true(O)), O = (A == B), A == B)"
+    ),
     ("tt01n07", "trie_index", "plunit_trie_index:test(compound_pop)"),
     ("tt01n08", "trie_index", "plunit_trie_index:test(repeated_variables)"),
     ("tt01n09", "trie_index", "plunit_trie_index:test(stored_attvar_beside_constants)"),
     ("tt01n10", "trie_index", "plunit_trie_index:test(absent_indirect_value)"),
     ("tt01n11", "trie_index", "plunit_trie_index:test(stack_shift_between_answers)"),
     ("tt01n12", "trie_index", "plunit_trie_index:test(insert_between_answers)"),
-    ("tt01n13", "trie_index", "(plunit_trie_index:test(delete_between_answers, true(O)), O = (A == B), A == B)"),
-    ("tt01n14", "trie_index", "(plunit_trie_index:test(single_match_is_deterministic, O), O = (A == B), A == B)"),
+    (
+        "tt01n13",
+        "trie_index",
+        "(plunit_trie_index:test(delete_between_answers, true(O)), O = (A == B), A == B)"
+    ),
+    (
+        "tt01n14",
+        "trie_index",
+        "(plunit_trie_index:test(single_match_is_deterministic, O), O = (A == B), A == B)"
+    ),
     ("tt01n15", "trie_index", "plunit_trie_index:test(cut_after_pruned_answer)"),
-    ("tt01n16", "trie_index", "(plunit_trie_index:test(bound_value, O), O = (A == B), A == B)"),
-    ("tt01n17", "trie_index", "plunit_trie_index:test(generated_shapes)"),
+    (
+        "tt01n16",
+        "trie_index",
+        "(plunit_trie_index:test(bound_value, O), O = (A == B), A == B)"
+    ),
+    ("tt01n17", "trie_index", "plunit_trie_index:test(generated_shapes)")
 ]
 
 const _TT_PINNED = [
@@ -431,7 +467,7 @@ const _TT_PINNED = [
     "t_tt01n14 c[116,95,116,116,48,49,110,49,52]/1(a[111,107])",
     "t_tt01n15 c[116,95,116,116,48,49,110,49,53]/1(a[111,107])",
     "t_tt01n16 c[116,95,116,116,48,49,110,49,54]/1(a[111,107])",
-    "t_tt01n17 c[116,95,116,116,48,49,110,49,55]/1(a[111,107])",
+    "t_tt01n17 c[116,95,116,116,48,49,110,49,55]/1(a[111,107])"
 ]
 
 "The answer plunit expects of every row: the test passes, `R = ok` (run in swipl by gen_reeval.py pin, plunit part of pins file)."
@@ -452,7 +488,7 @@ const _TT_UPSTREAM = [
     "a[111,107]",
     "a[111,107]",
     "a[111,107]",
-    "a[111,107]",
+    "a[111,107]"
 ]
 
 "The files of the program in a fresh directory: one module file per unit, the main file with the rows; returns the main file."
@@ -465,7 +501,9 @@ function _tt_materialize()::String
             ":- module(plunit_$short, []).\n:- set_module(base(test_trie_index)).\n" * text
         )
     end
-    main = ":- use_module('$d/test_trie_index').\n" * join([":- use_module('$d/plunit_$short').\n" for (short, _, _) in _TT_UNITS])
+    main =
+        ":- use_module('$d/test_trie_index').\n" *
+        join([":- use_module('$d/plunit_$short').\n" for (short, _, _) in _TT_UNITS])
     main *= join([
         "t_$(id)(R) :- ( catch((abolish_all_tables, $g, abolish_all_tables, R = ok), error(SsuE, _), R = raised(SsuE)) -> true ; R = failed ).\n"
         for (id, _, g) in _TT_CASES
@@ -477,8 +515,15 @@ end
 function _tt_swipl_lines(path::String, names::Vector{String})::Vector{String}
     out = mktempdir() do d
         f = joinpath(d, "drv.pl")
-        write(f, _TT_DRIVER * ":- initialization((fz_run('$path', [" * join(names, ",") * "]), halt)).\n")
-        read(pipeline(addenv(`swipl -q $f`, "LC_ALL" => "C"); stdin=devnull, stderr=devnull), String)
+        write(
+            f,
+            _TT_DRIVER * ":- initialization((fz_run('$path', [" * join(names, ",") *
+            "]), halt)).\n"
+        )
+        read(
+            pipeline(addenv(`swipl -q $f`, "LC_ALL" => "C"); stdin=devnull, stderr=devnull),
+            String
+        )
     end
     return String.(split(chomp(out), '\n'; keepempty=false))
 end
@@ -499,7 +544,9 @@ function _tt_ask(gd, ld, pred::String)::String
     fid = LK.PL_open_foreign_frame(ld)
     a = LK.PL_new_term_refs(ld, 1)
     LK.putSlotValue!(ld, a + 1, mk_var(_TT, LK.fresh_var_keys!(1)), LK.PutVarMap())
-    qid = LK.PL_open_query(gd, ld, nothing, LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS, proc, a)
+    qid = LK.PL_open_query(
+        gd, ld, nothing, LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS, proc, a
+    )
     n = 0
     while (n += 1) <= 50
         rc = LK.PL_next_solution(gd, ld, qid)

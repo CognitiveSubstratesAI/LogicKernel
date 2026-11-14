@@ -772,7 +772,10 @@ end
             left === nothing && return "parse failed"
             LK.apply_options_to_flags!(gd, ld)
             f = joinpath(dir, "prog_va.pl")
-            write(f, "t_va(R) :- current_prolog_flag(validate_api, V), current_prolog_flag(optimise, O), R = V-O.\n")
+            write(
+                f,
+                "t_va(R) :- current_prolog_flag(validate_api, V), current_prolog_flag(optimise, O), R = V-O.\n"
+            )
             st, ball = LK.load_file!(gd, ld, f)
             st === :ok || return "load failed"
             return _lb7_query(T, gd, ld, "t_va")

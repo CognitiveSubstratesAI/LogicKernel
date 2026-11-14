@@ -1729,7 +1729,8 @@ function _tr_compile_leaf_rows(::Type{T}) where {T}
     a2 = LK.insert_child(tr2, 1, _tk(1))
     tr2.nodes[a2].value = UInt64(5)
     b2 = LK.insert_child(tr2, a2, _tk(2))
-    @test tr2.nodes[b2].value == 0 && tr2.nodes[b2].children == 0 && (tr2.nodes[a2].flags & LK.TN_PRIMARY) == 0
+    @test tr2.nodes[b2].value == 0 && tr2.nodes[b2].children == 0 &&
+        (tr2.nodes[a2].flags & LK.TN_PRIMARY) == 0
     tr2.value_count = 1
     codes2 = _tr_compile_codes(gd, ld, T, tr2)
     @test length(codes2) >= 2

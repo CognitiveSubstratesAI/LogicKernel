@@ -47,7 +47,7 @@ function _TG_read_groups(path::String)
         (a isa Expr && a.head === :(=) && a.args[1] isa Symbol) || continue
         n = String(a.args[1])
         if startswith(n, "_TR_PROG_") || startswith(n, "_TR_CASES_") ||
-                startswith(n, "_TR_PINS_") || n == "_TR_GROUPS"
+            startswith(n, "_TR_PINS_") || n == "_TR_GROUPS"
             Core.eval(m, e)
         end
     end
@@ -66,7 +66,14 @@ function _TG_judge(builtin::Bool, groups)::NamedTuple
     sort(gkeys) == sort([e[1] for e in _TG_EXPECTED]) ||
         push!(problems, "the groups are $(gkeys), not the three of the five mutants")
     named = sort(
-        reduce(vcat, [String[String(m.match) for m in eachmatch(r"\b[SA][0-9]\b", g.label)] for g in groups]; init=String[])
+        reduce(
+            vcat,
+            [
+                String[String(m.match) for m in eachmatch(r"\b[SA][0-9]\b", g.label)] for
+                g in groups
+            ];
+            init=String[]
+        )
     )
     named == sort(reduce(vcat, [e[3] for e in _TG_EXPECTED])) ||
         push!(problems, "the labels name $(named), not S1, S3, S4, A2, A3 once each")
@@ -75,9 +82,12 @@ function _TG_judge(builtin::Bool, groups)::NamedTuple
         length(gs) == 1 || continue                   # reported by the key check above
         g = only(gs)
         [c[1] for c in g.cases] == e[2] ||
-            push!(problems, "$(e[1]): the cases are $([c[1] for c in g.cases]), not $(e[2])")
+            push!(
+                problems, "$(e[1]): the cases are $([c[1] for c in g.cases]), not $(e[2])"
+            )
         isempty(g.pins) && push!(problems, "$(e[1]): no pins")
-        isempty(g.pins) || g.pins[1] == "ok" || push!(problems, "$(e[1]): the first pin is not `ok`")
+        isempty(g.pins) || g.pins[1] == "ok" ||
+            push!(problems, "$(e[1]): the first pin is not `ok`")
         for id in e[2]
             ls = filter(l -> startswith(l, "t_$id "), g.pins)
             (length(ls) == 1 && length(ls[1]) > length("t_$id ")) ||
@@ -114,7 +124,8 @@ end
     @test !_TG_judge(true, good[1:2]).ok                                          # group list truncated
     @test !_TG_judge(true, vcat(good, good[1:1])).ok                              # a group twice
     @test !_TG_judge(
-        true, [i == 1 ? merge(g, (label="rows of S1, S3",)) : g for (i, g) in enumerate(good)]
+        true,
+        [i == 1 ? merge(g, (label="rows of S1, S3",)) : g for (i, g) in enumerate(good)]
     ).ok                                                                          # a label drops S4
     @test !_TG_judge(
         true, [i == 3 ? merge(g, (pins=String[],)) : g for (i, g) in enumerate(good)]
@@ -124,11 +135,17 @@ end
     ).ok                                                                          # a case without its pin
     @test !_TG_judge(
         true,
-        [i == 2 ? merge(g, (pins=["ok", "t_r1301 ", "t_r1302 "],)) : g for (i, g) in enumerate(good)]
+        [
+            i == 2 ? merge(g, (pins=["ok", "t_r1301 ", "t_r1302 "],)) : g for
+            (i, g) in enumerate(good)
+        ]
     ).ok                                                                          # pin lines with an empty answer
     @test !_TG_judge(
         true,
-        [i == 3 ? merge(g, (pins=vcat(["fail"], g.pins[2:end]),)) : g for (i, g) in enumerate(good)]
+        [
+            i == 3 ? merge(g, (pins=vcat(["fail"], g.pins[2:end]),)) : g for
+            (i, g) in enumerate(good)
+        ]
     ).ok                                                                          # the load line is not `ok`
     @test !_TG_judge(
         true,
@@ -138,7 +155,12 @@ end
         true, [i == 3 ? merge(g, (key="G13C",)) : g for (i, g) in enumerate(good)]
     ).ok                                                                          # a group renamed
     # the message names what is wrong
-    @test occursin("no pins", _TG_judge(true, [i == 3 ? merge(g, (pins=String[],)) : g for (i, g) in enumerate(good)]).msg)
+    @test occursin(
+        "no pins",
+        _TG_judge(
+            true, [i == 3 ? merge(g, (pins=String[],)) : g for (i, g) in enumerate(good)]
+        ).msg
+    )
 end
 
 @testset "the guard's verdict: builtin undefined, the dependency named, never a skip" begin

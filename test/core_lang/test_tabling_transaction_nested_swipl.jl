@@ -54,7 +54,8 @@ tn_destroy(G) :- '$tbl_variant_table'(0, user:G, T, _, _, _), '$tbl_destroy_tabl
 """
 
 "The program of a unit: the helpers, the unit's clauses, the cases."
-_tn_text(u) = _TN_COMMON * u.program * join(["t_$(id)(R) :- $body.\n" for (id, body) in _TN_CASES])
+_tn_text(u) =
+    _TN_COMMON * u.program * join(["t_$(id)(R) :- $body.\n" for (id, body) in _TN_CASES])
 
 "The `~q` text of each case's answer, in order, from swipl at the pin."
 function _tn_swipl_lines(u)::Vector{String}
@@ -62,10 +63,14 @@ function _tn_swipl_lines(u)::Vector{String}
         f = joinpath(d, "tn.pl")
         write(
             f,
-            _tn_text(u) * ":- initialization((forall(member(G, [" * join(["t_$id" for (id, _) in _TN_CASES], ",") *
+            _tn_text(u) * ":- initialization((forall(member(G, [" *
+            join(["t_$id" for (id, _) in _TN_CASES], ",") *
             "]), (tt_q(G, A), write(A), nl)), halt)).\n"
         )
-        read(pipeline(addenv(`swipl -q $f`, "LC_ALL" => "C"); stdin=devnull, stderr=devnull), String)
+        read(
+            pipeline(addenv(`swipl -q $f`, "LC_ALL" => "C"); stdin=devnull, stderr=devnull),
+            String
+        )
     end
     return String.(split(chomp(out), '\n'; keepempty=false))
 end
@@ -78,10 +83,12 @@ function _tn_ask(gd, ld, case::String)::String
     a = LK.PL_new_term_refs(ld, 2)
     LK.putSlotValue!(ld, a + 1, _tns(case), LK.PutVarMap())
     LK.putSlotValue!(ld, a + 2, mk_var(_TN, LK.fresh_var_keys!(1)), LK.PutVarMap())
-    qid = LK.PL_open_query(gd, ld, nothing, LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS, proc, a)
+    qid = LK.PL_open_query(
+        gd, ld, nothing, LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS, proc, a
+    )
     rc = LK.PL_next_solution(gd, ld, qid)
     ans = if rc == LK.PL_S_TRUE || rc == LK.PL_S_LAST
-        t = lk_answers(ld, (a + 1:a + 1)...)[1]
+        t = lk_answers(ld, ((a + 1):(a + 1))...)[1]
         kind(t) === SYM ? sym_text(t) : "not an atom"
     else
         rc == LK.PL_S_EXCEPTION ? "exception" : "failed"
@@ -98,7 +105,9 @@ function _tn_do(gd, ld, case::String)::Bool
     fid = LK.PL_open_foreign_frame(ld)
     a = LK.PL_new_term_refs(ld, 1)
     LK.putSlotValue!(ld, a + 1, _tns(case), LK.PutVarMap())
-    qid = LK.PL_open_query(gd, ld, nothing, LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS, proc, a)
+    qid = LK.PL_open_query(
+        gd, ld, nothing, LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS, proc, a
+    )
     rc = LK.PL_next_solution(gd, ld, qid)
     ok = rc == LK.PL_S_TRUE || rc == LK.PL_S_LAST
     LK.PL_close_query(ld, qid)
@@ -118,7 +127,10 @@ end
 
 "The indices where two answer lists differ (a missing answer counts as a difference)."
 _tn_diff(lines::Vector{String}, pins::Vector{String}) =
-    [i for i in 1:max(length(lines), length(pins)) if i > length(lines) || i > length(pins) || lines[i] != pins[i]]
+    [
+        i for i in 1:max(length(lines), length(pins)) if
+        i > length(lines) || i > length(pins) || lines[i] != pins[i]
+    ]
 
 "The must-fail corruptions of a comparison: a corrupted pin, an extra pin, a dropped pin and a corrupted kill row are each flagged."
 function _tn_flagged(lines::Vector{String}, pins::Vector{String}, kill::Vector{Int})::Bool
@@ -138,28 +150,76 @@ end
 
 # ── the sixteen cases, shared by the three units; each pin below is swipl's `~q` text of that case ──────────────────────────
 const _TN_CASES = [
-    ("nm_commit", raw"assertz(d(1)), tt_ex(p, A), transaction((assertz(d(3)), tt_ex(p, B), transaction((assertz(d(2)), tt_ex(p, C))), tt_ex(p, D))), tt_inv(p(_), V), tt_ex(p, E), R = r(A, B, C, D, V, E)"),   # control: both levels commit, the outer answers its own and the inner changes
-    ("nm_merge", raw"assertz(d(1)), tt_ex(p, A), tt_yn(transaction((assertz(d(3)), tt_ex(p, _), transaction((assertz(d(2)), tt_ex(p, C), tt_note(C))), fail)), Y), nb_getval(tt_in, C1), tt_inv(p(_), V), tt_ex(p, E), R = r(A, C1, Y, V, E)"),   # TB9-hook-nested-merge: the outer owns a trail, the inner commits and hands its trail up
-    ("nm_merge_fresh", raw"assertz(d(1)), tt_ex(p, A), tt_yn(transaction((transaction((assertz(d(2)), tt_ex(p, B), tt_note(B))), fail)), Y), nb_getval(tt_in, B1), tt_inv(p(_), V), tt_ex(p, E), R = r(A, B1, Y, V, E)"),   # TB9-hook-nested-merge: the outer owns no trail, the inner commits and hands its trail up
-    ("nr_snapshot", raw"assertz(d(1)), tt_ex(p, A), transaction((snapshot((assertz(d(2)), tt_ex(p, B))), tt_inv(p(_), V0), tt_ex(p, C))), tt_inv(p(_), V1), tt_ex(p, D), R = r(A, B, V0, C, V1, D)"),   # TB9-hook-nested-rollback: a discarded snapshot rolls its tables back inside the outer transaction
-    ("nr_failed", raw"assertz(d(1)), tt_ex(p, A), transaction((assertz(d(3)), tt_ex(p, B), tt_yn(transaction((assertz(d(2)), tt_ex(p, C), tt_note(C), fail)), Y), nb_getval(tt_in, C1), tt_inv(p(_), V0), tt_ex(p, D))), tt_inv(p(_), V1), tt_ex(p, E), R = r(A, B, C1, Y, V0, D, V1, E)"),   # TB9-hook-nested-rollback: a failed inner transaction inside an outer one
-    ("nr_constraint", raw"assertz(d(1)), tt_ex(p, A), transaction((assertz(d(3)), tt_ex(p, B), tt_yn(transaction((assertz(d(2)), tt_ex(p, C), tt_note(C)), fail, tn_m), Y), nb_getval(tt_in, C1), tt_inv(p(_), V0), tt_ex(p, D))), tt_inv(p(_), V1), tt_ex(p, E), R = r(A, B, C1, Y, V0, D, V1, E)"),   # TB9-hook-nested-rollback: an inner transaction whose constraint fails
-    ("restore_trail", raw"assertz(d(1)), tt_ex(p, A), tt_yn(transaction((assertz(d(2)), tt_ex(p, B), tt_note(B), transaction(true), fail)), Y), nb_getval(tt_in, B1), tt_inv(p(_), V), tt_ex(p, E), R = r(A, B1, Y, V, E)"),   # TB9-hook-restore: a committed empty inner transaction, then the outer fails
-    ("restore_trail_after", raw"assertz(d(1)), tt_ex(p, A), tt_yn(transaction((assertz(d(2)), tt_ex(p, B), tt_note(B), transaction(true), assertz(d(3)), tt_ex(p, _), fail)), Y), nb_getval(tt_in, B1), tt_inv(p(_), V), tt_ex(p, E), R = r(A, B1, Y, V, E)"),   # TB9-hook-restore: as restore_trail with a change after the inner transaction
-    ("cf_constraint", raw"assertz(d(1)), tt_ex(p, A), tt_yn(transaction((assertz(d(2)), tt_ex(p, B), tt_note(B)), fail, tn_m), Y), nb_getval(tt_in, B1), tt_inv(p(_), V), tt_ex(p, E), R = r(A, B1, Y, V, E)"),   # TB9-hook-rollback-fail: the outermost constraint fails
-    ("cf_bulk_announce", raw"assertz(d(1)), tt_ex(p, A), tn_gclean(2), catch(transaction(user:(assertz(d(2)), tt_ex(p, B), tt_note(B)), [bulk(true)]), Ex, true), tn_goff, nb_getval(tt_in, B1), nb_getval(tn_gn, N), tt_inv(p(_), V), tt_ex(p, E), R = r(A, B1, Ex, N, V, E)"),   # TB9-hook-rollback-fail: the outermost bulk announce fails (a listener raises from its 2nd event)
-    ("cf_bulk_ok", raw"assertz(d(1)), tt_ex(p, A), tn_gclean(9), transaction(user:(assertz(d(2)), tt_ex(p, B), tt_note(B)), [bulk(true)]), tn_goff, tt_inv(p(_), V), tt_ex(p, E), R = r(A, B, V, E)"),   # control: the bulk announce passes (the lazy table stays invalid: pinned)
-    ("ab_abolish", raw"assertz(d(1)), tt_ex(p, A), tt_yn(transaction((assertz(d(2)), tt_ex(p, B), tt_note(B), abolish_all_tables, fail)), Y), nb_getval(tt_in, B1), tt_ex(p, E), R = r(A, B1, Y, E)"),   # abolish_all_tables (reset_table_bulk) inside a transaction that fails
-    ("ab_abolish_reeval", raw"assertz(d(1)), tt_ex(p, A), tt_yn(transaction((assertz(d(2)), tt_ex(p, _), abolish_all_tables, tt_ex(p, C), tt_note(C), fail)), Y), nb_getval(tt_in, C1), tt_ex(p, E), R = r(A, C1, Y, E)"),   # abolish_all_tables then a re-evaluation inside a transaction that fails; QUIRK: the NM unit answers [1,2]
-    ("ab_abolish_commit", raw"assertz(d(1)), tt_ex(p, A), transaction((assertz(d(2)), tt_ex(p, B), abolish_all_tables)), tt_ex(p, E), R = r(A, B, E)"),   # abolish_all_tables inside a transaction that commits
-    ("ab_destroy", raw"assertz(d(1)), tt_ex(p, A), tt_yn(transaction((assertz(d(2)), tt_ex(p, B), tt_note(B), tn_destroy(p(_)), fail)), Y), nb_getval(tt_in, B1), tt_ex(p, E), R = r(A, B1, Y, E)"),   # TB9-site-reset-abolish (Prolog route): abolish one table inside a transaction that fails
-    ("ab_destroy_commit", raw"assertz(d(1)), tt_ex(p, A), transaction((assertz(d(2)), tt_ex(p, B), tn_destroy(p(_)))), tt_ex(p, E), R = r(A, B, E)"),   # abolish one table inside a transaction that commits
+    (
+        "nm_commit",
+        raw"assertz(d(1)), tt_ex(p, A), transaction((assertz(d(3)), tt_ex(p, B), transaction((assertz(d(2)), tt_ex(p, C))), tt_ex(p, D))), tt_inv(p(_), V), tt_ex(p, E), R = r(A, B, C, D, V, E)"
+    ),   # control: both levels commit, the outer answers its own and the inner changes
+    (
+        "nm_merge",
+        raw"assertz(d(1)), tt_ex(p, A), tt_yn(transaction((assertz(d(3)), tt_ex(p, _), transaction((assertz(d(2)), tt_ex(p, C), tt_note(C))), fail)), Y), nb_getval(tt_in, C1), tt_inv(p(_), V), tt_ex(p, E), R = r(A, C1, Y, V, E)"
+    ),   # TB9-hook-nested-merge: the outer owns a trail, the inner commits and hands its trail up
+    (
+        "nm_merge_fresh",
+        raw"assertz(d(1)), tt_ex(p, A), tt_yn(transaction((transaction((assertz(d(2)), tt_ex(p, B), tt_note(B))), fail)), Y), nb_getval(tt_in, B1), tt_inv(p(_), V), tt_ex(p, E), R = r(A, B1, Y, V, E)"
+    ),   # TB9-hook-nested-merge: the outer owns no trail, the inner commits and hands its trail up
+    (
+        "nr_snapshot",
+        raw"assertz(d(1)), tt_ex(p, A), transaction((snapshot((assertz(d(2)), tt_ex(p, B))), tt_inv(p(_), V0), tt_ex(p, C))), tt_inv(p(_), V1), tt_ex(p, D), R = r(A, B, V0, C, V1, D)"
+    ),   # TB9-hook-nested-rollback: a discarded snapshot rolls its tables back inside the outer transaction
+    (
+        "nr_failed",
+        raw"assertz(d(1)), tt_ex(p, A), transaction((assertz(d(3)), tt_ex(p, B), tt_yn(transaction((assertz(d(2)), tt_ex(p, C), tt_note(C), fail)), Y), nb_getval(tt_in, C1), tt_inv(p(_), V0), tt_ex(p, D))), tt_inv(p(_), V1), tt_ex(p, E), R = r(A, B, C1, Y, V0, D, V1, E)"
+    ),   # TB9-hook-nested-rollback: a failed inner transaction inside an outer one
+    (
+        "nr_constraint",
+        raw"assertz(d(1)), tt_ex(p, A), transaction((assertz(d(3)), tt_ex(p, B), tt_yn(transaction((assertz(d(2)), tt_ex(p, C), tt_note(C)), fail, tn_m), Y), nb_getval(tt_in, C1), tt_inv(p(_), V0), tt_ex(p, D))), tt_inv(p(_), V1), tt_ex(p, E), R = r(A, B, C1, Y, V0, D, V1, E)"
+    ),   # TB9-hook-nested-rollback: an inner transaction whose constraint fails
+    (
+        "restore_trail",
+        raw"assertz(d(1)), tt_ex(p, A), tt_yn(transaction((assertz(d(2)), tt_ex(p, B), tt_note(B), transaction(true), fail)), Y), nb_getval(tt_in, B1), tt_inv(p(_), V), tt_ex(p, E), R = r(A, B1, Y, V, E)"
+    ),   # TB9-hook-restore: a committed empty inner transaction, then the outer fails
+    (
+        "restore_trail_after",
+        raw"assertz(d(1)), tt_ex(p, A), tt_yn(transaction((assertz(d(2)), tt_ex(p, B), tt_note(B), transaction(true), assertz(d(3)), tt_ex(p, _), fail)), Y), nb_getval(tt_in, B1), tt_inv(p(_), V), tt_ex(p, E), R = r(A, B1, Y, V, E)"
+    ),   # TB9-hook-restore: as restore_trail with a change after the inner transaction
+    (
+        "cf_constraint",
+        raw"assertz(d(1)), tt_ex(p, A), tt_yn(transaction((assertz(d(2)), tt_ex(p, B), tt_note(B)), fail, tn_m), Y), nb_getval(tt_in, B1), tt_inv(p(_), V), tt_ex(p, E), R = r(A, B1, Y, V, E)"
+    ),   # TB9-hook-rollback-fail: the outermost constraint fails
+    (
+        "cf_bulk_announce",
+        raw"assertz(d(1)), tt_ex(p, A), tn_gclean(2), catch(transaction(user:(assertz(d(2)), tt_ex(p, B), tt_note(B)), [bulk(true)]), Ex, true), tn_goff, nb_getval(tt_in, B1), nb_getval(tn_gn, N), tt_inv(p(_), V), tt_ex(p, E), R = r(A, B1, Ex, N, V, E)"
+    ),   # TB9-hook-rollback-fail: the outermost bulk announce fails (a listener raises from its 2nd event)
+    (
+        "cf_bulk_ok",
+        raw"assertz(d(1)), tt_ex(p, A), tn_gclean(9), transaction(user:(assertz(d(2)), tt_ex(p, B), tt_note(B)), [bulk(true)]), tn_goff, tt_inv(p(_), V), tt_ex(p, E), R = r(A, B, V, E)"
+    ),   # control: the bulk announce passes (the lazy table stays invalid: pinned)
+    (
+        "ab_abolish",
+        raw"assertz(d(1)), tt_ex(p, A), tt_yn(transaction((assertz(d(2)), tt_ex(p, B), tt_note(B), abolish_all_tables, fail)), Y), nb_getval(tt_in, B1), tt_ex(p, E), R = r(A, B1, Y, E)"
+    ),   # abolish_all_tables (reset_table_bulk) inside a transaction that fails
+    (
+        "ab_abolish_reeval",
+        raw"assertz(d(1)), tt_ex(p, A), tt_yn(transaction((assertz(d(2)), tt_ex(p, _), abolish_all_tables, tt_ex(p, C), tt_note(C), fail)), Y), nb_getval(tt_in, C1), tt_ex(p, E), R = r(A, C1, Y, E)"
+    ),   # abolish_all_tables then a re-evaluation inside a transaction that fails; QUIRK: the NM unit answers [1,2]
+    (
+        "ab_abolish_commit",
+        raw"assertz(d(1)), tt_ex(p, A), transaction((assertz(d(2)), tt_ex(p, B), abolish_all_tables)), tt_ex(p, E), R = r(A, B, E)"
+    ),   # abolish_all_tables inside a transaction that commits
+    (
+        "ab_destroy",
+        raw"assertz(d(1)), tt_ex(p, A), tt_yn(transaction((assertz(d(2)), tt_ex(p, B), tt_note(B), tn_destroy(p(_)), fail)), Y), nb_getval(tt_in, B1), tt_ex(p, E), R = r(A, B1, Y, E)"
+    ),   # TB9-site-reset-abolish (Prolog route): abolish one table inside a transaction that fails
+    (
+        "ab_destroy_commit",
+        raw"assertz(d(1)), tt_ex(p, A), transaction((assertz(d(2)), tt_ex(p, B), tn_destroy(p(_)))), tt_ex(p, E), R = r(A, B, E)"
+    )   # abolish one table inside a transaction that commits
 ]
 
 # the incremental table unit
 const _TN_INCR = (
-    unit = "nested_incr",
-    program = raw"""
+    unit="nested_incr",
+    program=raw"""
 :- dynamic d/1 as incremental.
 :- table p/1 as (incremental).
 :- prolog_listen(d/1, tn_ev).
@@ -167,7 +227,7 @@ p(X) :- d(X).
 tt_clean :- nb_setval(tn_gon, off), abolish_all_tables, retractall(d(_)).
 """,
     # swipl 10.1.20, `tt_q(t_<case>, A)` in the order of `_TN_CASES`, two identical runs
-    pinned = [
+    pinned=[
         "r([1],[1,3],[1,2,3],[1,2,3],valid,[1,2,3])",   # nm_commit
         "r([1],[1,2,3],no,invalid,[1])",   # nm_merge
         "r([1],[1,2],no,invalid,[1])",   # nm_merge_fresh
@@ -183,14 +243,14 @@ tt_clean :- nb_setval(tn_gon, off), abolish_all_tables, retractall(d(_)).
         "r([1],[1,2],no,[1])",   # ab_abolish_reeval
         "r([1],[1,2],[1,2])",   # ab_abolish_commit
         "r([1],[1,2],no,[1])",   # ab_destroy
-        "r([1],[1,2],[1,2])",   # ab_destroy_commit
-    ],
+        "r([1],[1,2],[1,2])"   # ab_destroy_commit
+    ]
 )
 
 # the monotonic table unit
 const _TN_MONO = (
-    unit = "nested_mono",
-    program = raw"""
+    unit="nested_mono",
+    program=raw"""
 :- dynamic d/1 as monotonic.
 :- table p/1 as (monotonic).
 :- prolog_listen(d/1, tn_ev).
@@ -198,7 +258,7 @@ p(X) :- d(X).
 tt_clean :- nb_setval(tn_gon, off), abolish_all_tables, retractall(d(_)).
 """,
     # swipl 10.1.20, `tt_q(t_<case>, A)` in the order of `_TN_CASES`, two identical runs
-    pinned = [
+    pinned=[
         "r([1],[1,3],[1,2,3],[1,2,3],valid,[1,2,3])",   # nm_commit
         "r([1],[1,2,3],no,valid,[1])",   # nm_merge
         "r([1],[1,2],no,valid,[1])",   # nm_merge_fresh
@@ -214,14 +274,14 @@ tt_clean :- nb_setval(tn_gon, off), abolish_all_tables, retractall(d(_)).
         "r([1],[1,2],no,[1,2])",   # ab_abolish_reeval
         "r([1],[1,2],[1,2])",   # ab_abolish_commit
         "r([1],[1,2],no,[1])",   # ab_destroy
-        "r([1],[1,2],[1,2])",   # ab_destroy_commit
-    ],
+        "r([1],[1,2],[1,2])"   # ab_destroy_commit
+    ]
 )
 
 # the monotonic lazy table unit
 const _TN_LAZY = (
-    unit = "nested_mono_lazy",
-    program = raw"""
+    unit="nested_mono_lazy",
+    program=raw"""
 :- dynamic d/1 as monotonic.
 :- table p/1 as (monotonic,lazy).
 :- prolog_listen(d/1, tn_ev).
@@ -229,7 +289,7 @@ p(X) :- d(X).
 tt_clean :- nb_setval(tn_gon, off), abolish_all_tables, retractall(d(_)).
 """,
     # swipl 10.1.20, `tt_q(t_<case>, A)` in the order of `_TN_CASES`, two identical runs
-    pinned = [
+    pinned=[
         "r([1],[1,3],[1,2,3],[1,2,3],valid,[1,2,3])",   # nm_commit
         "r([1],[1,2,3],no,valid,[1])",   # nm_merge
         "r([1],[1,2],no,valid,[1])",   # nm_merge_fresh
@@ -245,16 +305,19 @@ tt_clean :- nb_setval(tn_gon, off), abolish_all_tables, retractall(d(_)).
         "r([1],[1,2],no,[1])",   # ab_abolish_reeval
         "r([1],[1,2],[1,2])",   # ab_abolish_commit
         "r([1],[1,2],no,[1])",   # ab_destroy
-        "r([1],[1,2],[1,2])",   # ab_destroy_commit
-    ],
+        "r([1],[1,2],[1,2])"   # ab_destroy_commit
+    ]
 )
 
 "The case ids whose rows kill a TB9 mutant (see the header): the rows a wrong answer must flag."
 const _TN_KILL = [
-    "nm_merge", "nm_merge_fresh", "nr_snapshot", "nr_failed", "nr_constraint", "restore_trail", "restore_trail_after",
-    "cf_constraint", "cf_bulk_announce", "ab_destroy",
+    "nm_merge", "nm_merge_fresh", "nr_snapshot", "nr_failed", "nr_constraint",
+    "restore_trail", "restore_trail_after",
+    "cf_constraint", "cf_bulk_announce", "ab_destroy"
 ]
-const _TN_KILL_IDX = [findfirst(==(k), [id for (id, _) in _TN_CASES])::Int for k in _TN_KILL]
+const _TN_KILL_IDX = [
+    findfirst(==(k), [id for (id, _) in _TN_CASES])::Int for k in _TN_KILL
+]
 
 "The kernel's answers of the unit, by unit name (filled by `_tn_check_unit`, read by the cross-unit testset)."
 const _TN_LINES = Dict{String, Vector{String}}()
@@ -268,7 +331,8 @@ function _tn_check_unit(u)
         _TN_LINES[u.unit] = lines
         @testset "$(u.unit): the nested, constraint-failure and abolish cases run as swipl's pins" begin
             @test st === :ok
-            @test !isempty(lines) && !isempty(u.pinned) && length(lines) == length(u.pinned) == length(ids)
+            @test !isempty(lines) && !isempty(u.pinned) &&
+                length(lines) == length(u.pinned) == length(ids)
             for (id, k, p) in zip(ids, lines, u.pinned)
                 k == p || println(stderr, "  ours  ", id, " ", k, "\n  swipl ", p)
                 @test k == p
@@ -306,11 +370,14 @@ _tn_check_unit(_TN_LAZY)
 # An incremental table that a rolled-back change touched is INVALID afterwards; a monotonic one is not (its answer is taken back).
 # A kernel that never rolls a table back answers the same on all three units, so these rows read the kernel's own lines.
 @testset "nested transactions over tables: the three units differ where swipl's do" begin
-    ni, nm, nl = _TN_LINES["nested_incr"], _TN_LINES["nested_mono"], _TN_LINES["nested_mono_lazy"]
+    ni, nm, nl = _TN_LINES["nested_incr"],
+    _TN_LINES["nested_mono"],
+    _TN_LINES["nested_mono_lazy"]
     @test !isempty(ni) && length(ni) == length(nm) == length(nl)
     ids = [id for (id, _) in _TN_CASES]
-    for k in ("nm_merge", "nm_merge_fresh", "nr_snapshot", "nr_failed", "nr_constraint", "restore_trail", "restore_trail_after",
-              "cf_constraint", "cf_bulk_announce")
+    for k in ("nm_merge", "nm_merge_fresh", "nr_snapshot", "nr_failed", "nr_constraint",
+        "restore_trail", "restore_trail_after",
+        "cf_constraint", "cf_bulk_announce")
         i = findfirst(==(k), ids)::Int
         @test occursin("invalid", ni[i])                         # the incremental table is invalid after the rollback
         @test !occursin("invalid", nm[i]) && !occursin("invalid", nl[i])
@@ -333,7 +400,8 @@ function _tn_abolish_obs()::Vector{String}
     f = joinpath(mktempdir(), "tabling_transaction_nested_wb.pl")
     write(
         f,
-        _TN_COMMON * _TN_MONO * "tn_run(G) :- call(G).\ntn_setup :- assertz(d(1)), assertz(d(2)), forall(p(_), true).\n" *
+        _TN_COMMON * _TN_MONO *
+        "tn_run(G) :- call(G).\ntn_setup :- assertz(d(1)), assertz(d(2)), forall(p(_), true).\n" *
         "tn_destroy_p :- tn_destroy(p(_)).\n"
     )
     gd = LK.PL_global_data{_TN}()
@@ -342,11 +410,17 @@ function _tn_abolish_obs()::Vector{String}
     tracked(t) = (t.flags & LK.TRIE_ISTRACKED) != 0
     obs = String["load=$(st === :ok)"]
     push!(obs, "setup=$(_tn_do(gd, ld, "tn_setup"))")
-    cand = [t for t in gd.tries if t.IDG !== nothing && t.variant != 0 && !LK._wl_is(t, LK.WL_DYNAMIC)]
+    cand = [
+        t for
+        t in gd.tries if t.IDG !== nothing && t.variant != 0 && !LK._wl_is(t, LK.WL_DYNAMIC)
+    ]
     push!(obs, "tables=$(length(cand))")
     if length(cand) == 1
         at = cand[1]
-        live = [i for i in 2:length(at.nodes) if at.nodes[i].value != 0 && (at.nodes[i].flags & LK.TN_PRIMARY) != 0]
+        live = [
+            i for i in 2:length(at.nodes) if
+            at.nodes[i].value != 0 && (at.nodes[i].flags & LK.TN_PRIMARY) != 0
+        ]
         push!(obs, "live=$(length(live))")
         if !isempty(live)
             tr = ld.transaction
@@ -354,7 +428,9 @@ function _tn_abolish_obs()::Vector{String}
                 tr.generation = LK.gen_t(5)
                 LK.tt_add_answer(ld, at, live[1])
                 tt = tr.table_trail
-                push!(obs, "added=$(tt === nothing ? -1 : length(tt.actions))|$(tracked(at))")
+                push!(
+                    obs, "added=$(tt === nothing ? -1 : length(tt.actions))|$(tracked(at))"
+                )
                 push!(obs, "destroy=$(_tn_do(gd, ld, "tn_destroy_p"))")
                 if tt !== nothing && !isempty(tt.actions)
                     act = tt.actions[1]
@@ -371,7 +447,15 @@ end
 
 @testset "abolish_table forgets the trail's answers: the action and TRIE_ISTRACKED are cleared (kills TB9-site-reset-abolish)" begin
     obs = _tn_abolish_obs()
-    pin = ["load=true", "setup=true", "tables=1", "live=2", "added=1|true", "destroy=true", "cleared=0|0|false"]
+    pin = [
+        "load=true",
+        "setup=true",
+        "tables=1",
+        "live=2",
+        "added=1|true",
+        "destroy=true",
+        "cleared=0|0|false"
+    ]
     @test !isempty(obs) && !isempty(pin) && length(obs) == length(pin)
     for (i, (o, p)) in enumerate(zip(obs, pin))
         o == p || println(stderr, "  ours  ", i, " ", o, "\n  pin   ", i, " ", p)

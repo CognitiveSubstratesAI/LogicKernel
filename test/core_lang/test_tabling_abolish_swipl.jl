@@ -228,7 +228,7 @@ const _AB_CASES = [
         "abl06",
         raw"'$tbl_abolish_local_tables', '$tbl_local_variant_table'(V), tm_yn(is_trie(V), R)"
     ),
-    ("abw01", raw"ab_inside(R0), R = R0"),
+    ("abw01", raw"ab_inside(R0), R = R0")
 ]
 const _AB_CASES_U = [
     (
@@ -242,7 +242,7 @@ const _AB_CASES_U = [
     ("abu06", raw"untable(ab_u1/1), findall(X, ab_u1(X), L), R = L"),
     ("abu07", raw"untable((ab_u1/1, ab_nope/2)), R = ok"),
     ("abu08", raw"untable(user:ab_u1/1), '$tbl_implementation'(user:ab_u1(_), G), R = G"),
-    ("abu09", raw"untable(ab_u2/1), ab_list(L), R = L"),
+    ("abu09", raw"untable(ab_u2/1), ab_list(L), R = L")
 ]
 
 const _AB_PINNED = [
@@ -293,7 +293,7 @@ const _AB_PINNED = [
     "t_abl04 c[116,95,97,98,108,48,52]/1(i0)",
     "t_abl05 c[116,95,97,98,108,48,53]/1(a[121,101,115])",
     "t_abl06",
-    "t_abw01 c[116,95,97,98,119,48,49]/1(a[110,111])",
+    "t_abw01 c[116,95,97,98,119,48,49]/1(a[110,111])"
 ]
 const _AB_PINNED_U = [
     "ok",
@@ -305,13 +305,14 @@ const _AB_PINNED_U = [
     "t_abu06 c[116,95,97,98,117,48,54]/1(c[91,124,93]/2(i1,c[91,124,93]/2(i2,nil)))",
     "t_abu07 c[116,95,97,98,117,48,55]/1(a[111,107])",
     "t_abu08 c[116,95,97,98,117,48,56]/1(c[58]/2(a[117,115,101,114],c[97,98,95,117,49]/1(V0)))",
-    "t_abu09 c[116,95,97,98,117,48,57]/1(nil)",
+    "t_abu09 c[116,95,97,98,117,48,57]/1(nil)"
 ]
 
 "The program text with the cases of `cases` appended; `mk`: each case starts with `ab_mk`."
 _ab_text(program::String, cases, mk::Bool) =
     program * join([
-        "t_$(id)(R) :- $(mk ? "ab_mk, " : "")catch(($g), error(SsuE, _), R = raised(SsuE)).\n" for
+        "t_$(id)(R) :- $(mk ? "ab_mk, " : "")catch(($g), error(SsuE, _), R = raised(SsuE)).\n"
+        for
         (id, g) in cases
     ])
 
@@ -575,7 +576,8 @@ end
 @testset "clear_variant_table resets every table and destroys the variant table (TB5 R-A, R-C, R-D)" begin
     gd, ld, atries, variants = _ab_fresh()
     # premises: three live tables without symbol, complete, with a node; the variant table is live and has no reader
-    @test variants.value_count == 3 && variants.references == 0 && variants.magic == LK.TRIE_MAGIC
+    @test variants.value_count == 3 && variants.references == 0 &&
+        variants.magic == LK.TRIE_MAGIC
     @test all(a -> a.symbol == 0 && a.magic == LK.TRIE_MAGIC, atries)
     @test all(a -> (a.flags & LK.TRIE_COMPLETE) != 0 && a.variant != 0, atries)
     ld.tabling.start_nodes = Int[1]
@@ -641,7 +643,12 @@ end
     LK.tbl_free(ld, Val(LK.TBL_FREE_COMPONENT), LK.tbl_component{_AB}())
     LK.tbl_free(ld, Val(LK.TBL_FREE_WORKLIST), LK.tbl_worklist{_AB}())
     LK.tbl_free(ld, Val(LK.TBL_FREE_WORKLIST_SET), LK.worklist_set{LK.tbl_worklist{_AB}}())
-    @test (length(fo.component), length(fo.worklist_set), length(fo.worklist), length(fo.cluster)) == (1, 1, 1, 1)
+    @test (
+        length(fo.component),
+        length(fo.worklist_set),
+        length(fo.worklist),
+        length(fo.cluster)
+    ) == (1, 1, 1, 1)
     @test !fo.closed
     @test LK.clearThreadTablingData(ld, false) === nothing
     @test all(isempty, (fo.component, fo.worklist_set, fo.worklist, fo.cluster))   # TB5-H2
@@ -671,7 +678,8 @@ end
     for pre in ("aba", "abp", "abs", "abg", "abm", "abd", "abl", "abw")
         ids = [id for (id, _) in _AB_CASES if startswith(id, pre)]
         @test !isempty(ids)
-        @test length([l for l in _AB_PINNED if any(id -> _ab_row(l, id), ids)]) == length(ids)
+        @test length([l for l in _AB_PINNED if any(id -> _ab_row(l, id), ids)]) ==
+            length(ids)
     end
     ids = [id for (id, _) in _AB_CASES_U]
     @test length([l for l in _AB_PINNED_U if any(id -> _ab_row(l, id), ids)]) == length(ids)

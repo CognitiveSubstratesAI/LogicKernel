@@ -79,7 +79,10 @@ const _TT_TESTLIB = joinpath(@__DIR__, "tabling_testlib_upstream.pl")
 
 "The units' text, verbatim between begin_tests and end_tests: `(short name, begin_tests directive, text)`."
 const _TT_UNITS = [
-    ("ex9e", ":- begin_tests(tabling_ex9e, [cleanup(abolish_all_tables)]).", raw"""
+    (
+        "ex9e",
+        ":- begin_tests(tabling_ex9e, [cleanup(abolish_all_tables)]).",
+        raw"""
 expected_variants([a(3,_),a(2,_),a(_,_)]).
 % Note: a(3,_) is an empty table, but it is there
 expected_answers_for_variant(a(_,_),[a(1,2),a(2,3),a(1,3)]).
@@ -101,8 +104,12 @@ test(ex9d) :-
 	test_expected_variants_present,
 	test_answers_expected_tables.
 
-"""),
-    ("ex10", ":- begin_tests(tabling_ex10, [cleanup(abolish_all_tables)]).", raw"""
+"""
+    ),
+    (
+        "ex10",
+        ":- begin_tests(tabling_ex10, [cleanup(abolish_all_tables)]).",
+        raw"""
 %d(X) <- e(Y), Y < 5, X is Y + 1.  % Will never run, because e doesn't have any facts
 %d(X) <- d(Y), Y < 20, X is Y + 5. % Should run
 %d(0).
@@ -132,8 +139,12 @@ test(ex10) :-
 	test_expected_variants_present,
 	test_answers_expected_tables.
 
-"""),
-    ("ex11", ":- begin_tests(tabling_ex11, [cleanup(abolish_all_tables)]).", raw"""
+"""
+    ),
+    (
+        "ex11",
+        ":- begin_tests(tabling_ex11, [cleanup(abolish_all_tables)]).",
+        raw"""
 % Expected answers:
 % d(0), d(2), d(4)
 % e(1), e(3), e(5)
@@ -158,8 +169,12 @@ test(ex11) :-
 	test_expected_variants_present,
 	test_answers_expected_tables.
 
-"""),
-    ("ex12", ":- begin_tests(tabling_ex12, [cleanup(abolish_all_tables)]).", raw"""
+"""
+    ),
+    (
+        "ex12",
+        ":- begin_tests(tabling_ex12, [cleanup(abolish_all_tables)]).",
+        raw"""
 expected_variants([f(4),f(3),f(2),f(0),f(1),e(_),d(_),f(_)]).
 % Note: f(4) and f(0) are empty tables, but they are there...
 expected_answers_for_variant(d(_),L) :-
@@ -196,8 +211,12 @@ test(ex12) :-
 	test_expected_variants_present,
 	test_answers_expected_tables.
 
-"""),
-    ("ex13", ":- begin_tests(tabling_ex13, [cleanup(abolish_all_tables)]).", raw"""
+"""
+    ),
+    (
+        "ex13",
+        ":- begin_tests(tabling_ex13, [cleanup(abolish_all_tables)]).",
+        raw"""
 expected_variants([p(2,_),p(1,_),p(_,_)]).
 expected_answers_for_variant(p(_,_),L) :-
   findall(p(X,Y),(between(1,2,X),between(1,2,Y)),L).
@@ -224,8 +243,12 @@ test(ex12) :-
 	test_expected_variants_present,
 	test_answers_expected_tables.
 
-"""),
-    ("ex14", ":- begin_tests(tabling_ex14, [cleanup(abolish_all_tables)]).", raw"""
+"""
+    ),
+    (
+        "ex14",
+        ":- begin_tests(tabling_ex14, [cleanup(abolish_all_tables)]).",
+        raw"""
 % Simpler example than example12.pl, but the number of predicates involved in mutual recursion will also increase at runtime.
 
 expected_variants([p(3,_),p(2,_),q(2,_),q(3,_),p(_,_),q(_,_)]).
@@ -258,8 +281,12 @@ test(ex14) :-
 	test_expected_variants_present,
 	test_answers_expected_tables.
 
-"""),
-    ("ex15", ":- begin_tests(tabling_ex15, [cleanup(abolish_all_tables)]).", raw"""
+"""
+    ),
+    (
+        "ex15",
+        ":- begin_tests(tabling_ex15, [cleanup(abolish_all_tables)]).",
+        raw"""
 % Example designed to test whether the true   in fresh status works fine
 % in case only a continuation is saved. See issue 55.
 
@@ -285,8 +312,12 @@ test(ex15) :-
 	test_expected_variants_present,
 	test_answers_expected_tables.
 
-"""),
-    ("ex16", ":- begin_tests(tabling_ex16, [cleanup(abolish_all_tables)]).", raw"""
+"""
+    ),
+    (
+        "ex16",
+        ":- begin_tests(tabling_ex16, [cleanup(abolish_all_tables)]).",
+        raw"""
 % [comment elided: D-0164]
 
 expected_variants([d(_),e(_),f(_),g(_)]).
@@ -345,8 +376,12 @@ g(0).
 test(ex16) :-
 	once((d(_X), f(_Y))).
 
-"""),
-    ("ex17", ":- begin_tests(tabling_ex17, [cleanup(abolish_all_tables)]).", raw"""
+"""
+    ),
+    (
+        "ex17",
+        ":- begin_tests(tabling_ex17, [cleanup(abolish_all_tables)]).",
+        raw"""
 % Smaller version of example 10.
 
 % Expected answers
@@ -368,8 +403,12 @@ test(ex17) :-
 	test_expected_variants_present,
 	test_answers_expected_tables.
 
-"""),
-    ("clpfd", ":- begin_tests(tabling_clpfd, [ cleanup(abolish_all_tables) ]).", raw"""
+"""
+    ),
+    (
+        "clpfd",
+        ":- begin_tests(tabling_clpfd, [ cleanup(abolish_all_tables) ]).",
+        raw"""
 
 :- table fib/2.
 :- use_module(library(clpfd)).
@@ -395,8 +434,12 @@ test(fib_error,
      ]) :-
 	fib(_N, 13).
 
-"""),
-    ("eruption", ":- begin_tests(tabling_eruption, [cleanup(abolish_all_tables)]).", raw"""
+"""
+    ),
+    (
+        "eruption",
+        ":- begin_tests(tabling_eruption, [cleanup(abolish_all_tables)]).",
+        raw"""
 
 :- table
   eruption(lattice(prob_sum_e/3)),
@@ -424,8 +467,12 @@ prob_sum_e(A,B,C):-
 test(tabling_eruption, [P =:= 0.6288, nondet]) :-
 	eruption(P).
 
-"""),
-    ("eruption2", ":- begin_tests(tabling_eruption2, [cleanup(abolish_all_tables)]).", raw"""
+"""
+    ),
+    (
+        "eruption2",
+        ":- begin_tests(tabling_eruption2, [cleanup(abolish_all_tables)]).",
+        raw"""
 
 :- table
   sudden_energy_release/0,
@@ -452,8 +499,12 @@ prob_sum_e(A,B,C):-
 test(tabling_eruption, [P =:= 0.6288, nondet]) :-
 	eruption(P).
 
-"""),
-    ("sneezing", ":- begin_tests(tabling_sneezing, [cleanup(abolish_all_tables)]).", raw"""
+"""
+    ),
+    (
+        "sneezing",
+        ":- begin_tests(tabling_sneezing, [cleanup(abolish_all_tables)]).",
+        raw"""
 
 :- table
     sneezing(_,lattice(prob_sum)),
@@ -478,7 +529,8 @@ prob_sum(A,B,C):-
 test(tabling_sneezing, P =:= 0.1352000000000001) :-
 	sneezing(bob, P).
 
-"""),
+"""
+    )
 ]
 
 "The file's common tail (lines `before :- ...` to the end), verbatim."
@@ -510,10 +562,18 @@ const _TT_CASES = [
     ("tt19", "ex15", "pu_ex15:test(ex15)"),
     ("tt20", "ex16", "pu_ex16:test(ex16)"),
     ("tt21", "ex17", "pu_ex17:test(ex17)"),
-    ("tt22", "clpfd", "( pu_clpfd:has_trie_attvar_support -> once((pu_clpfd:fib(Ncl, 13), Ncl == 6)) ; catch((pu_clpfd:fib(_, 13), fail), error(type_error(free_of_attvar, _), _), true) )"),
+    (
+        "tt22",
+        "clpfd",
+        "( pu_clpfd:has_trie_attvar_support -> once((pu_clpfd:fib(Ncl, 13), Ncl == 6)) ; catch((pu_clpfd:fib(_, 13), fail), error(type_error(free_of_attvar, _), _), true) )"
+    ),
     ("tt23", "eruption", "once(pu_eruption:eruption(Per)), Per =:= 0.6288"),
     ("tt24", "eruption2", "once(pu_eruption2:eruption(Per)), Per =:= 0.6288"),
-    ("tt25", "sneezing", "once(pu_sneezing:sneezing(bob, Psn)), Psn =:= 0.1352000000000001"),
+    (
+        "tt25",
+        "sneezing",
+        "once(pu_sneezing:sneezing(bob, Psn)), Psn =:= 0.1352000000000001"
+    )
 ]
 
 const _TT_PINNED = [
@@ -530,7 +590,7 @@ const _TT_PINNED = [
     "t_tt22 c[116,95,116,116,50,50]/1(a[111,107])",
     "t_tt23 c[116,95,116,116,50,51]/1(a[111,107])",
     "t_tt24 c[116,95,116,116,50,52]/1(a[111,107])",
-    "t_tt25 c[116,95,116,116,50,53]/1(a[111,107])",
+    "t_tt25 c[116,95,116,116,50,53]/1(a[111,107])"
 ]
 
 "The answer plunit expects of every row: the test passes, `R = ok` (run in swipl by gen_tabling.py pin, plunit part of pins file)."
@@ -547,7 +607,7 @@ const _TT_UPSTREAM = [
     "a[111,107]",
     "a[111,107]",
     "a[111,107]",
-    "a[111,107]",
+    "a[111,107]"
 ]
 
 "The files of the program in a fresh directory: testlib, one module file per unit, the main file with the rows; returns the main file."
@@ -557,7 +617,8 @@ function _tt_materialize()::String
     for (short, _, text) in _TT_UNITS
         write(
             joinpath(d, "pu_$short.pl"),
-            ":- module(pu_$short, []).\n:- use_module('$d/tabling_testlib').\n" * text * "\n" * _TT_TAIL
+            ":- module(pu_$short, []).\n:- use_module('$d/tabling_testlib').\n" * text *
+            "\n" * _TT_TAIL
         )
     end
     main = join([":- use_module('$d/pu_$short').\n" for (short, _, _) in _TT_UNITS])
@@ -572,8 +633,15 @@ end
 function _tt_swipl_lines(path::String, names::Vector{String})::Vector{String}
     out = mktempdir() do d
         f = joinpath(d, "drv.pl")
-        write(f, _TT_DRIVER * ":- initialization((fz_run('$path', [" * join(names, ",") * "]), halt)).\n")
-        read(pipeline(addenv(`swipl -q $f`, "LC_ALL" => "C"); stdin=devnull, stderr=devnull), String)
+        write(
+            f,
+            _TT_DRIVER * ":- initialization((fz_run('$path', [" * join(names, ",") *
+            "]), halt)).\n"
+        )
+        read(
+            pipeline(addenv(`swipl -q $f`, "LC_ALL" => "C"); stdin=devnull, stderr=devnull),
+            String
+        )
     end
     return String.(split(chomp(out), '\n'; keepempty=false))
 end
@@ -594,7 +662,9 @@ function _tt_ask(gd, ld, pred::String)::String
     fid = LK.PL_open_foreign_frame(ld)
     a = LK.PL_new_term_refs(ld, 1)
     LK.putSlotValue!(ld, a + 1, mk_var(_TT, LK.fresh_var_keys!(1)), LK.PutVarMap())
-    qid = LK.PL_open_query(gd, ld, nothing, LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS, proc, a)
+    qid = LK.PL_open_query(
+        gd, ld, nothing, LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS, proc, a
+    )
     n = 0
     while (n += 1) <= 50
         rc = LK.PL_next_solution(gd, ld, qid)

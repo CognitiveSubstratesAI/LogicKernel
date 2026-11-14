@@ -83,7 +83,10 @@ fz_run(File, Ns) :-
 
 "The units' text, verbatim between begin_tests and end_tests: `(short name, begin_tests directive, text)`."
 const _TT_UNITS = [
-    ("lz1", "begin_tests(tabling_monotonic_lazy_1)", raw"""
+    (
+        "lz1",
+        "begin_tests(tabling_monotonic_lazy_1)",
+        raw"""
 :- use_module(library(lists)).
 :- use_module(library(apply)).
 :- use_module(library(debug)).
@@ -123,8 +126,12 @@ test(retract, [cleanup(cleanup([d/1]))]) :-
     expect(X, p(X), [1,2]),
     retract(d(1)),
     expect(X, p(X), [2]).
-"""),
-    ("lz2", "begin_tests(tabling_monotonic_lazy_2)", raw"""
+"""
+    ),
+    (
+        "lz2",
+        "begin_tests(tabling_monotonic_lazy_2)",
+        raw"""
 :- use_module(library(lists)).
 :- use_module(library(apply)).
 :- use_module(library(debug)).
@@ -159,8 +166,12 @@ test(mon_and_lazy, [cleanup(cleanup([d/1]))]) :-
     expect(X, p1(X), [1]),
     expect(X, p2(X), [1]),
     expect_valid(p1(_)).
-"""),
-    ("lz3", "begin_tests(tabling_monotonic_lazy_3)", raw"""
+"""
+    ),
+    (
+        "lz3",
+        "begin_tests(tabling_monotonic_lazy_3)",
+        raw"""
 :- use_module(library(lists)).
 :- use_module(library(apply)).
 :- use_module(library(debug)).
@@ -195,8 +206,12 @@ test(intermediate) :-
     expect_valid(p2(_)),
     assertz(d(2)),
     expect(X, p2(X), [1,2]).
-"""),
-    ("lz4", "begin_tests(tabling_monotonic_lazy_4)", raw"""
+"""
+    ),
+    (
+        "lz4",
+        "begin_tests(tabling_monotonic_lazy_4)",
+        raw"""
 :- use_module(library(lists)).
 :- use_module(library(apply)).
 :- use_module(library(debug)).
@@ -231,8 +246,12 @@ test(lazy_on_eager) :-
     expect_invalid(p2(_)),
     expect(X, p2(X), [1,2]),
     true.
-"""),
-    ("lz5", "begin_tests(tabling_monotonic_lazy_5)", raw"""
+"""
+    ),
+    (
+        "lz5",
+        "begin_tests(tabling_monotonic_lazy_5)",
+        raw"""
 :- use_module(library(lists)).
 :- use_module(library(apply)).
 :- use_module(library(debug)).
@@ -278,8 +297,12 @@ test(lazy_on_eager_retract) :-
     expect_invalid(p2(_)),
     expect(X, p2(X), [2]),
     expect(X, p1(X), [2]).
-"""),
-    ("lz6", "begin_tests(tabling_monotonic_lazy_6)", raw"""
+"""
+    ),
+    (
+        "lz6",
+        "begin_tests(tabling_monotonic_lazy_6)",
+        raw"""
 :- use_module(library(lists)).
 :- use_module(library(apply)).
 :- use_module(library(debug)).
@@ -323,8 +346,12 @@ test(lazy_reeval) :-
     assert(d2(2)),
     expect(X, p(X), [-1]),
     assertion(\+ reeval).
-"""),
-    ("lz7", "begin_tests(tabling_monotonic_lazy_7)", raw"""
+"""
+    ),
+    (
+        "lz7",
+        "begin_tests(tabling_monotonic_lazy_7)",
+        raw"""
 :- use_module(library(lists)).
 :- use_module(library(apply)).
 :- use_module(library(debug)).
@@ -368,8 +395,12 @@ test(lazy_reeval) :-
     assert(d2(2)),
     expect(X, p(X), [-1]),
     assertion(\+ reeval).
-"""),
-    ("lz8", "begin_tests(tabling_monotonic_lazy_8)", raw"""
+"""
+    ),
+    (
+        "lz8",
+        "begin_tests(tabling_monotonic_lazy_8)",
+        raw"""
 :- use_module(library(lists)).
 :- use_module(library(apply)).
 :- use_module(library(debug)).
@@ -411,8 +442,12 @@ test(indirect_lazy_retract) :-
     expect_forced(aml(_)),
     expect_forced(bml(_)),
     expect(X, bml(X), [2,3,4]).
-"""),
-    ("lz9", "begin_tests(tabling_monotonic_lazy_9)", raw"""
+"""
+    ),
+    (
+        "lz9",
+        "begin_tests(tabling_monotonic_lazy_9)",
+        raw"""
 :- use_module(library(lists)).
 :- use_module(library(apply)).
 :- use_module(library(debug)).
@@ -444,8 +479,12 @@ test(capture_new_dependencies) :-
     expect(X, p(X), []),                % evaluation must create dependency on d(b).
     assert(d(b)),
     expect(X, p(X), [c]).
-"""),
-    ("lz10", "begin_tests(tabling_monotonic_lazy_10)", raw"""
+"""
+    ),
+    (
+        "lz10",
+        "begin_tests(tabling_monotonic_lazy_10)",
+        raw"""
 :- use_module(library(lists)).
 :- use_module(library(apply)).
 :- use_module(library(debug)).
@@ -485,8 +524,12 @@ test(false_deps) :-
     assert(d2(2)),
     assert(d3(3)),
     expect(X, p(X), [1,2,3]).
-"""),
-    ("lz11", "begin_tests(tabling_monotonic_lazy_11)", raw"""
+"""
+    ),
+    (
+        "lz11",
+        "begin_tests(tabling_monotonic_lazy_11)",
+        raw"""
 :- use_module(library(lists)).
 :- use_module(library(apply)).
 :- use_module(library(debug)).
@@ -518,8 +561,12 @@ test(rollback) :-
              fail
            )),
     expect(X, p(X), []).
-"""),
-    ("lz12", "begin_tests(tabling_monotonic_lazy_12)", raw"""
+"""
+    ),
+    (
+        "lz12",
+        "begin_tests(tabling_monotonic_lazy_12)",
+        raw"""
 :- use_module(library(lists)).
 :- use_module(library(apply)).
 :- use_module(library(debug)).
@@ -551,8 +598,12 @@ test(indirect) :-
     expect(X, q(X), []),
     assert(d(1)),
     expect(X, p(X), [1]).
-"""),
-    ("lz13", "begin_tests(tabling_monotonic_lazy_13)", raw"""
+"""
+    ),
+    (
+        "lz13",
+        "begin_tests(tabling_monotonic_lazy_13)",
+        raw"""
 :- use_module(library(lists)).
 :- use_module(library(apply)).
 :- use_module(library(debug)).
@@ -589,8 +640,12 @@ test(incr_propagate_lazy) :-
     expect(X, p(X), [1,2]),
     incr_invalidate_calls(d(2)),
     expect(X, p(X), [1]).
-"""),
-    ("lz14", "begin_tests(tabling_monotonic_lazy_14)", raw"""
+"""
+    ),
+    (
+        "lz14",
+        "begin_tests(tabling_monotonic_lazy_14)",
+        raw"""
 :- use_module(library(lists)).
 :- use_module(library(apply)).
 :- use_module(library(debug)).
@@ -626,8 +681,12 @@ test(mono_completion, fail) :-
     init(p(a,c)),
     assert(d(b, a)),
     p(a,c).
-"""),
-    ("lz16", "begin_tests(tabling_monotonic_lazy_16)", raw"""
+"""
+    ),
+    (
+        "lz16",
+        "begin_tests(tabling_monotonic_lazy_16)",
+        raw"""
 :- use_module(library(lists)).
 :- use_module(library(apply)).
 :- use_module(library(debug)).
@@ -682,7 +741,8 @@ test(reeval) :-
     init(p(_)),
     asserta(d(11)),
     expect(X, p(X), [1]).
-"""),
+"""
+    )
 ]
 
 "The file's common tail (lines `before :- ...` to the end), verbatim."
@@ -737,9 +797,21 @@ expect_queued_answers(To, Expected0) :-
 
 "The rows: `(id, unit, goal)`; the goal is the plunit test with its options folded by hand."
 const _TT_CASES = [
-    ("z01", "lz1", "setup_call_cleanup(true, pu_lz1:test(simple, _), pu_lz1:cleanup([d/1]))"),
-    ("z02", "lz1", "setup_call_cleanup(true, pu_lz1:test(retract, _), pu_lz1:cleanup([d/1]))"),
-    ("z03", "lz2", "setup_call_cleanup(true, pu_lz2:test(mon_and_lazy, _), pu_lz2:cleanup([d/1]))"),
+    (
+        "z01",
+        "lz1",
+        "setup_call_cleanup(true, pu_lz1:test(simple, _), pu_lz1:cleanup([d/1]))"
+    ),
+    (
+        "z02",
+        "lz1",
+        "setup_call_cleanup(true, pu_lz1:test(retract, _), pu_lz1:cleanup([d/1]))"
+    ),
+    (
+        "z03",
+        "lz2",
+        "setup_call_cleanup(true, pu_lz2:test(mon_and_lazy, _), pu_lz2:cleanup([d/1]))"
+    ),
     ("z04", "lz3", "pu_lz3:test(intermediate)"),
     ("z05", "lz4", "pu_lz4:test(lazy_on_eager)"),
     ("z06", "lz5", "pu_lz5:test(lazy_on_eager)"),
@@ -752,8 +824,8 @@ const _TT_CASES = [
     ("z13", "lz11", "pu_lz11:test(rollback)"),
     ("z14", "lz12", "pu_lz12:test(indirect)"),
     ("z15", "lz13", "pu_lz13:test(incr_propagate_lazy)"),
-    ("z16", "lz14", "\+ pu_lz14:test(mono_completion)"),
-    ("z18", "lz16", "pu_lz16:test(reeval)"),
+    ("z16", "lz14", "\\+ pu_lz14:test(mono_completion)"),
+    ("z18", "lz16", "pu_lz16:test(reeval)")
 ]
 
 const _TT_PINNED = [
@@ -774,7 +846,7 @@ const _TT_PINNED = [
     "t_z14 c[116,95,122,49,52]/1(a[111,107])",
     "t_z15 c[116,95,122,49,53]/1(a[111,107])",
     "t_z16 c[116,95,122,49,54]/1(a[111,107])",
-    "t_z18 c[116,95,122,49,56]/1(a[111,107])",
+    "t_z18 c[116,95,122,49,56]/1(a[111,107])"
 ]
 
 "The answer plunit expects of every row: the test passes, `R = ok` (run in swipl by gen_tabling.py pin, plunit part of pins file)."
@@ -795,7 +867,7 @@ const _TT_UPSTREAM = [
     "a[111,107]",
     "a[111,107]",
     "a[111,107]",
-    "a[111,107]",
+    "a[111,107]"
 ]
 
 "The files of the program in a fresh directory: one module file per unit, the main file with the rows; returns the main file."
@@ -807,7 +879,9 @@ function _tt_materialize()::String
             ":- module(pu_$short, []).\n" * text * "\n" * _TT_TAIL
         )
     end
-    main = join([":- catch(use_module('$d/pu_$short'), _, true).\n" for (short, _, _) in _TT_UNITS])
+    main = join([
+        ":- catch(use_module('$d/pu_$short'), _, true).\n" for (short, _, _) in _TT_UNITS
+    ])
     main *= join([
         "t_$(id)(R) :- ( catch((abolish_all_tables, $g, abolish_all_tables, R = ok), error(SsuE, _), R = raised(SsuE)) -> true ; R = failed ).\n"
         for (id, _, g) in _TT_CASES
@@ -819,8 +893,15 @@ end
 function _tt_swipl_lines(path::String, names::Vector{String})::Vector{String}
     out = mktempdir() do d
         f = joinpath(d, "drv.pl")
-        write(f, _TT_DRIVER * ":- initialization((fz_run('$path', [" * join(names, ",") * "]), halt)).\n")
-        read(pipeline(addenv(`swipl -q $f`, "LC_ALL" => "C"); stdin=devnull, stderr=devnull), String)
+        write(
+            f,
+            _TT_DRIVER * ":- initialization((fz_run('$path', [" * join(names, ",") *
+            "]), halt)).\n"
+        )
+        read(
+            pipeline(addenv(`swipl -q $f`, "LC_ALL" => "C"); stdin=devnull, stderr=devnull),
+            String
+        )
     end
     return String.(split(chomp(out), '\n'; keepempty=false))
 end
@@ -841,7 +922,9 @@ function _tt_ask(gd, ld, pred::String)::String
     fid = LK.PL_open_foreign_frame(ld)
     a = LK.PL_new_term_refs(ld, 1)
     LK.putSlotValue!(ld, a + 1, mk_var(_TT, LK.fresh_var_keys!(1)), LK.PutVarMap())
-    qid = LK.PL_open_query(gd, ld, nothing, LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS, proc, a)
+    qid = LK.PL_open_query(
+        gd, ld, nothing, LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS, proc, a
+    )
     n = 0
     while (n += 1) <= 50
         rc = LK.PL_next_solution(gd, ld, qid)

@@ -75,7 +75,10 @@ fz_run(File, Ns) :-
 
 "The units' text, verbatim between begin_tests and end_tests: `(short name, begin_tests directive, text)`."
 const _TT_UNITS = [
-    ("delay_after_simplify", ":- begin_tests(delay_after_simplify).", raw"""
+    (
+    "delay_after_simplify",
+    ":- begin_tests(delay_after_simplify).",
+    raw"""
 
 :- dynamic d/1 as incremental.
 :- dynamic blk/1 as incremental.
@@ -138,7 +141,8 @@ test(simplified, [ Reported == [1-true], Stored == [1-true] ]) :-
     stored(Stored),
     reported(Reported).
 
-"""),
+"""
+),
 ]
 
 "The file's common tail (lines `before :- ...` to the end), verbatim."
@@ -147,20 +151,28 @@ const _TT_TAIL = raw"""
 
 "The rows: `(id, unit, goal)`; the goal is the plunit test with its options folded by hand."
 const _TT_CASES = [
-    ("tt01a", "delay_after_simplify", "(pu_delay_after_simplify:test(conditional, O), O = [A == B, C == D], A == B, C == D)"),
-    ("tt01b", "delay_after_simplify", "(pu_delay_after_simplify:test(simplified, O), O = [A == B, C == D], A == B, C == D)"),
+    (
+        "tt01a",
+        "delay_after_simplify",
+        "(pu_delay_after_simplify:test(conditional, O), O = [A == B, C == D], A == B, C == D)"
+    ),
+    (
+        "tt01b",
+        "delay_after_simplify",
+        "(pu_delay_after_simplify:test(simplified, O), O = [A == B, C == D], A == B, C == D)"
+    )
 ]
 
 const _TT_PINNED = [
     "ok",
     "t_tt01a c[116,95,116,116,48,49,97]/1(a[111,107])",
-    "t_tt01b c[116,95,116,116,48,49,98]/1(a[111,107])",
+    "t_tt01b c[116,95,116,116,48,49,98]/1(a[111,107])"
 ]
 
 "The answer plunit expects of every row: the test passes, `R = ok` (run in swipl by gen_reeval.py pin, plunit part of pins file)."
 const _TT_UPSTREAM = [
     "a[111,107]",
-    "a[111,107]",
+    "a[111,107]"
 ]
 
 "The files of the program in a fresh directory: one module file per unit, the main file with the rows; returns the main file."
@@ -169,7 +181,8 @@ function _tt_materialize()::String
     for (short, _, text) in _TT_UNITS
         write(
             joinpath(d, "pu_$short.pl"),
-            ":- module(pu_delay_after_simplify, []).\n:- use_module(library(wfs)).\n" * text * "\n" * _TT_TAIL
+            ":- module(pu_delay_after_simplify, []).\n:- use_module(library(wfs)).\n" *
+            text * "\n" * _TT_TAIL
         )
     end
     main = join([":- use_module('$d/pu_$short').\n" for (short, _, _) in _TT_UNITS])
@@ -184,8 +197,15 @@ end
 function _tt_swipl_lines(path::String, names::Vector{String})::Vector{String}
     out = mktempdir() do d
         f = joinpath(d, "drv.pl")
-        write(f, _TT_DRIVER * ":- initialization((fz_run('$path', [" * join(names, ",") * "]), halt)).\n")
-        read(pipeline(addenv(`swipl -q $f`, "LC_ALL" => "C"); stdin=devnull, stderr=devnull), String)
+        write(
+            f,
+            _TT_DRIVER * ":- initialization((fz_run('$path', [" * join(names, ",") *
+            "]), halt)).\n"
+        )
+        read(
+            pipeline(addenv(`swipl -q $f`, "LC_ALL" => "C"); stdin=devnull, stderr=devnull),
+            String
+        )
     end
     return String.(split(chomp(out), '\n'; keepempty=false))
 end
@@ -206,7 +226,9 @@ function _tt_ask(gd, ld, pred::String)::String
     fid = LK.PL_open_foreign_frame(ld)
     a = LK.PL_new_term_refs(ld, 1)
     LK.putSlotValue!(ld, a + 1, mk_var(_TT, LK.fresh_var_keys!(1)), LK.PutVarMap())
-    qid = LK.PL_open_query(gd, ld, nothing, LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS, proc, a)
+    qid = LK.PL_open_query(
+        gd, ld, nothing, LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS, proc, a
+    )
     n = 0
     while (n += 1) <= 50
         rc = LK.PL_next_solution(gd, ld, qid)

@@ -3100,7 +3100,11 @@ function pl_trie_property2_va(
         return PL_unify_int64(ld, arg, stat_trie(tr).bytes) ? FTRUE : FFALSE
     elseif name == sym_key(mk_sym(T, :compiled_size))
         if (cref = tr.clause_cref) !== nothing          # (dbref = trie->clause) && (cref = clause_clref(dbref))
-            return PL_unify_int64(ld, arg, 8 * sizeofClause(length(cref.clause.codes))) ? FTRUE : FFALSE
+            return if PL_unify_int64(ld, arg, 8 * sizeofClause(length(cref.clause.codes)))
+                FTRUE
+            else
+                FFALSE
+            end
         end
         return FFALSE
     elseif name == sym_key(mk_sym(T, :hashed))
@@ -3126,8 +3130,9 @@ function pl_trie_property2_va(
             size += idg_set_sizeof(idg.dependent)
             if (mono = idg.mono) !== nothing
                 size += SIZEOF_IDG_MONO                 # sizeof(*idg->mono)
-                if mono.deps !== nothing
-                    size += sizeofTablePP(mono.deps)    # sizeofTablePP(idg->mono->deps)
+                mdeps = mono.deps
+                if mdeps !== nothing
+                    size += sizeofTablePP(mdeps)        # sizeofTablePP(idg->mono->deps)
                 end
             end
             return PL_unify_int64(ld, arg, size) ? FTRUE : FFALSE

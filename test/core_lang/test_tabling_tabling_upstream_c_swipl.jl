@@ -78,7 +78,10 @@ const _TT_TESTLIB = joinpath(@__DIR__, "tabling_testlib_upstream.pl")
 
 "The units' text, verbatim between begin_tests and end_tests: `(short name, begin_tests directive, text)`."
 const _TT_UNITS = [
-    ("yappath", ":- begin_tests(tabling_yappath, [cleanup(abolish_all_tables)]).", raw"""
+    (
+        "yappath",
+        ":- begin_tests(tabling_yappath, [cleanup(abolish_all_tables)]).",
+        raw"""
 
 :- table
     path(index, index, first).
@@ -96,8 +99,12 @@ min(A,B,C) :-
 test(yappath, set(t(X,Y,L) == [t(a,a,2),t(a,b,1),t(b,a,1),t(b,b,2)])) :-
     path(X,Y,L).
 
-"""),
-    ("minpath", ":- begin_tests(tabling_minpath, [cleanup(abolish_all_tables)]).", raw"""
+"""
+    ),
+    (
+        "minpath",
+        ":- begin_tests(tabling_minpath, [cleanup(abolish_all_tables)]).",
+        raw"""
 :- table connection(_,_,min).
 
 connection(X, Y,1) :-
@@ -116,8 +123,12 @@ connection('Amsterdam', 'Leiden').
 test(tabling_minpath, N =:= 1) :-
 	connection('Amsterdam','Leiden',N).
 
-"""),
-    ("maxpath", ":- begin_tests(tabling_maxpath, [cleanup(abolish_all_tables)]).", raw"""
+"""
+    ),
+    (
+        "maxpath",
+        ":- begin_tests(tabling_maxpath, [cleanup(abolish_all_tables)]).",
+        raw"""
 :- table connection(_,_,max).
 
 connection(X, Y, 1) :-
@@ -136,8 +147,12 @@ connection('Amsterdam', 'Leiden').
 test(tabling_maxpath, N =:= 2) :-
 	connection('Amsterdam','Leiden',N).
 
-"""),
-    ("train", ":- begin_tests(tabling_train, [cleanup(abolish_all_tables)]).", raw"""
+"""
+    ),
+    (
+        "train",
+        ":- begin_tests(tabling_train, [cleanup(abolish_all_tables)]).",
+        raw"""
 :- table train(_,_,lattice(shortest/3)).
 
 train(X, Y, [X,Y]) :-
@@ -164,8 +179,12 @@ shortest(P1, P2, P):-
 test(tabling_train, P == ['Amsterdam','Leiden']) :-
 	train('Amsterdam','Leiden', P).
 
-"""),
-    ("moded_path", ":- begin_tests(moded_tabling_path, [cleanup(abolish_all_tables)]).", raw"""
+"""
+    ),
+    (
+        "moded_path",
+        ":- begin_tests(moded_tabling_path, [cleanup(abolish_all_tables)]).",
+        raw"""
 :- table
     path(_,_,lattice(or/3)),
     edge(_,_,lattice(or/3)).
@@ -209,8 +228,12 @@ test(path, nondet) :-
 ok_path(or(e(a, e), and(e(a, b), e(b, e)))).
 ok_path(or(and(e(a, b), e(b, e)), e(a, e))).
 
-"""),
-    ("mode_components1", ":- begin_tests(mode_components1, [cleanup(abolish_all_tables)]).", raw"""
+"""
+    ),
+    (
+        "mode_components1",
+        ":- begin_tests(mode_components1, [cleanup(abolish_all_tables)]).",
+        raw"""
 
 :- table
     p2(lattice(orp/3)),
@@ -228,8 +251,12 @@ s2(2).
 test(component, [A == (1-2), nondet]) :-
 	p2(A).
 
-"""),
-    ("mode_components2", ":- begin_tests(mode_components2, [cleanup(abolish_all_tables)]).", raw"""
+"""
+    ),
+    (
+        "mode_components2",
+        ":- begin_tests(mode_components2, [cleanup(abolish_all_tables)]).",
+        raw"""
 
 :- table
     advisedby(_,_,lattice(or/3)),
@@ -266,8 +293,12 @@ test(component, [X == 2, nondet]) :-
     abolish_all_tables,
     advisedby(harry,ben,X).
 
-"""),
-    ("pathss", ":- begin_tests(pathss, [cleanup(abolish_all_tables)]).", raw"""
+"""
+    ),
+    (
+        "pathss",
+        ":- begin_tests(pathss, [cleanup(abolish_all_tables)]).",
+        raw"""
 :- use_module(library(lists)).
 :- use_module(library(apply)).
 
@@ -312,8 +343,12 @@ test(kurt, P3 = [ [bernd, ingo, kurt],
     maplist(msort, P, P2),
     sort(P2, P3).
 
-"""),
-    ("bas", ":- begin_tests(bas, [cleanup(abolish_all_tables)]).", raw"""
+"""
+    ),
+    (
+        "bas",
+        ":- begin_tests(bas, [cleanup(abolish_all_tables)]).",
+        raw"""
 
 :- table bas/2.
 bas --> "b".
@@ -329,8 +364,12 @@ test(bas) :-
                is_list(A)
              ), 10).
 
-"""),
-    ("push_ret", ":- begin_tests(push_ret, [cleanup(abolish_all_tables)]).", raw"""
+"""
+    ),
+    (
+        "push_ret",
+        ":- begin_tests(push_ret, [cleanup(abolish_all_tables)]).",
+        raw"""
 
 :- table posInt_CollatzSteps/2.
 posInt_CollatzSteps(I,N) :-
@@ -354,8 +393,12 @@ test(push_ret, MaxSteps1 == MaxSteps2) :-
     i0_i_maxSteps0_maxSteps(1,2 000,0,MaxSteps1),
     i0_i_maxSteps0_maxSteps(1,2 000,0,MaxSteps2).
 
-"""),
-    ("no_closure", ":- begin_tests(no_closure, [cleanup(abolish_all_tables)]).", raw"""
+"""
+    ),
+    (
+        "no_closure",
+        ":- begin_tests(no_closure, [cleanup(abolish_all_tables)]).",
+        raw"""
 
 :- table nc/1.
 nc(1).
@@ -374,7 +417,8 @@ test(variant_table, Status == complete) :-
     nc_all(_),
     '$tbl_variant_table'(0, test_tabling:nc(_), _Trie, Status, _Skel, _Mono).
 
-"""),
+"""
+    )
 ]
 
 "The file's common tail (lines `before :- ...` to the end), verbatim."
@@ -397,18 +441,38 @@ has_trie_attvar_support :-
 
 "The rows: `(id, unit, goal)`; the goal is the plunit test with its options folded by hand."
 const _TT_CASES = [
-    ("tt26", "yappath", "findall(t(X, Y, L), pu_yappath:path(X, Y, L), Bag), sort(Bag, S), S == [t(a,a,2), t(a,b,1), t(b,a,1), t(b,b,2)]"),
+    (
+        "tt26",
+        "yappath",
+        "findall(t(X, Y, L), pu_yappath:path(X, Y, L), Bag), sort(Bag, S), S == [t(a,a,2), t(a,b,1), t(b,a,1), t(b,b,2)]"
+    ),
     ("tt27", "minpath", "once(pu_minpath:connection('Amsterdam', 'Leiden', N)), N =:= 1"),
     ("tt28", "maxpath", "once(pu_maxpath:connection('Amsterdam', 'Leiden', N)), N =:= 2"),
-    ("tt29", "train", "once(pu_train:train('Amsterdam', 'Leiden', P)), P == ['Amsterdam', 'Leiden']"),
-    ("tt30", "moded_path", "once(pu_moded_path:path(a, e, T)), ground(T), pu_moded_path:ok_path(T)"),
+    (
+        "tt29",
+        "train",
+        "once(pu_train:train('Amsterdam', 'Leiden', P)), P == ['Amsterdam', 'Leiden']"
+    ),
+    (
+        "tt30",
+        "moded_path",
+        "once(pu_moded_path:path(a, e, T)), ground(T), pu_moded_path:ok_path(T)"
+    ),
     ("tt31", "mode_components1", "once(pu_mode_components1:p2(A)), A == (1-2)"),
-    ("tt32", "mode_components2", "abolish_all_tables, once(pu_mode_components2:advisedby(harry, ben, X)), X == 2"),
-    ("tt33", "pathss", "once((pu_pathss:buys(kurt, P), maplist(msort, P, P2), sort(P2, P3))), P3 = [[bernd,ingo,kurt], [bernd,ingo,kurt,martijn], [bernd,kurt], [bernd,kurt,martijn], [kurt]]"),
+    (
+        "tt32",
+        "mode_components2",
+        "abolish_all_tables, once(pu_mode_components2:advisedby(harry, ben, X)), X == 2"
+    ),
+    (
+        "tt33",
+        "pathss",
+        "once((pu_pathss:buys(kurt, P), maplist(msort, P, P2), sort(P2, P3))), P3 = [[bernd,ingo,kurt], [bernd,ingo,kurt,martijn], [bernd,kurt], [bernd,kurt,martijn], [kurt]]"
+    ),
     ("tt34", "bas", "pu_bas:test(bas)"),
     ("tt35", "push_ret", "pu_push_ret:test(push_ret, Opt), call(Opt)"),
     ("tt36a", "no_closure", "pu_no_closure:test(start_tabling, Opt), call(Opt)"),
-    ("tt36b", "no_closure", "pu_no_closure:test(variant_table, Opt), call(Opt)"),
+    ("tt36b", "no_closure", "pu_no_closure:test(variant_table, Opt), call(Opt)")
 ]
 
 const _TT_PINNED = [
@@ -424,7 +488,7 @@ const _TT_PINNED = [
     "t_tt34 c[116,95,116,116,51,52]/1(a[111,107])",
     "t_tt35 c[116,95,116,116,51,53]/1(a[111,107])",
     "t_tt36a c[116,95,116,116,51,54,97]/1(a[111,107])",
-    "t_tt36b c[116,95,116,116,51,54,98]/1(a[111,107])",
+    "t_tt36b c[116,95,116,116,51,54,98]/1(a[111,107])"
 ]
 
 "The answer plunit expects of every row: the test passes, `R = ok` (run in swipl by gen_tabling.py pin, plunit part of pins file)."
@@ -440,7 +504,7 @@ const _TT_UPSTREAM = [
     "a[111,107]",
     "a[111,107]",
     "a[111,107]",
-    "a[111,107]",
+    "a[111,107]"
 ]
 
 "The files of the program in a fresh directory: testlib, one module file per unit, the main file with the rows; returns the main file."
@@ -450,7 +514,8 @@ function _tt_materialize()::String
     for (short, _, text) in _TT_UNITS
         write(
             joinpath(d, "pu_$short.pl"),
-            ":- module(pu_$short, []).\n:- use_module('$d/tabling_testlib').\n" * text * "\n" * _TT_TAIL
+            ":- module(pu_$short, []).\n:- use_module('$d/tabling_testlib').\n" * text *
+            "\n" * _TT_TAIL
         )
     end
     main = join([":- use_module('$d/pu_$short').\n" for (short, _, _) in _TT_UNITS])
@@ -465,8 +530,15 @@ end
 function _tt_swipl_lines(path::String, names::Vector{String})::Vector{String}
     out = mktempdir() do d
         f = joinpath(d, "drv.pl")
-        write(f, _TT_DRIVER * ":- initialization((fz_run('$path', [" * join(names, ",") * "]), halt)).\n")
-        read(pipeline(addenv(`swipl -q $f`, "LC_ALL" => "C"); stdin=devnull, stderr=devnull), String)
+        write(
+            f,
+            _TT_DRIVER * ":- initialization((fz_run('$path', [" * join(names, ",") *
+            "]), halt)).\n"
+        )
+        read(
+            pipeline(addenv(`swipl -q $f`, "LC_ALL" => "C"); stdin=devnull, stderr=devnull),
+            String
+        )
     end
     return String.(split(chomp(out), '\n'; keepempty=false))
 end
@@ -487,7 +559,9 @@ function _tt_ask(gd, ld, pred::String)::String
     fid = LK.PL_open_foreign_frame(ld)
     a = LK.PL_new_term_refs(ld, 1)
     LK.putSlotValue!(ld, a + 1, mk_var(_TT, LK.fresh_var_keys!(1)), LK.PutVarMap())
-    qid = LK.PL_open_query(gd, ld, nothing, LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS, proc, a)
+    qid = LK.PL_open_query(
+        gd, ld, nothing, LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS, proc, a
+    )
     n = 0
     while (n += 1) <= 50
         rc = LK.PL_next_solution(gd, ld, qid)

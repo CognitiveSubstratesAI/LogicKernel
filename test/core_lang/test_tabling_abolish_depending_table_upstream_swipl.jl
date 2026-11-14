@@ -78,7 +78,10 @@ fz_run(File, Ns) :-
 
 "The units' text, verbatim between begin_tests and end_tests: `(short name, begin_tests directive, text)`."
 const _TT_UNITS = [
-    ("abolish_depending_table", "begin_tests(abolish_depending_table)", raw"""
+    (
+    "abolish_depending_table",
+    "begin_tests(abolish_depending_table)",
+    raw"""
 :- table q/1, u/1, p/1.
 :- dynamic d/1.
 
@@ -112,7 +115,8 @@ test(abolish_destroys_depending_table) :-
 
 :- table r/1.
 r(X) :- q(X).
-"""),
+"""
+),
 ]
 
 "The file's common tail (lines `before :- ...` to the end), verbatim."
@@ -121,33 +125,49 @@ const _TT_TAIL = raw"""
 
 "The rows: `(id, unit, goal)`; the goal is the plunit test with its options folded by hand."
 const _TT_CASES = [
-    ("dt01", "abolish_depending_table", "setup_call_cleanup(true, (plunit_abolish_depending_table:test(abolish_from_inside_depending_evaluation, C), call(C)), true)"),
-    ("dt02", "abolish_depending_table", "plunit_abolish_depending_table:test(abolish_destroys_depending_table)"),
+    (
+        "dt01",
+        "abolish_depending_table",
+        "setup_call_cleanup(true, (plunit_abolish_depending_table:test(abolish_from_inside_depending_evaluation, C), call(C)), true)"
+    ),
+    (
+        "dt02",
+        "abolish_depending_table",
+        "plunit_abolish_depending_table:test(abolish_destroys_depending_table)"
+    )
 ]
 
 const _TT_PINNED = [
     "ok",
     "t_dt01 c[116,95,100,116,48,49]/1(a[111,107])",
-    "t_dt02 c[116,95,100,116,48,50]/1(a[111,107])",
+    "t_dt02 c[116,95,100,116,48,50]/1(a[111,107])"
 ]
 
 "The answer plunit expects of every row: the test passes, `R = ok` (run in swipl by gen_tabling.py pin, plunit part of pins file)."
 const _TT_UPSTREAM = [
     "a[111,107]",
-    "a[111,107]",
+    "a[111,107]"
 ]
 
 "The files of the program in a fresh directory: the parent module file, one module file per unit, the main file with the rows; returns the main file."
 function _tt_materialize()::String
     d = realpath(mktempdir())
-    write(joinpath(d, "test_abolish_depending_table.pl"), ":- module(test_abolish_depending_table, []).\n" * _TT_TAIL)
+    write(
+        joinpath(d, "test_abolish_depending_table.pl"),
+        ":- module(test_abolish_depending_table, []).\n" * _TT_TAIL
+    )
     for (short, _, text) in _TT_UNITS
         write(
             joinpath(d, "plunit_$short.pl"),
-            ":- module(plunit_$short, []).\n:- set_module(base(test_abolish_depending_table)).\n" * text
+            ":- module(plunit_$short, []).\n:- set_module(base(test_abolish_depending_table)).\n" *
+            text
         )
     end
-    main = ":- use_module('$d/test_abolish_depending_table').\n" * join([":- catch(use_module('$d/plunit_$short'), _, true).\n" for (short, _, _) in _TT_UNITS])
+    main =
+        ":- use_module('$d/test_abolish_depending_table').\n" * join([
+            ":- catch(use_module('$d/plunit_$short'), _, true).\n" for
+            (short, _, _) in _TT_UNITS
+        ])
     main *= join([
         "t_$(id)(R) :- ( catch((abolish_all_tables, $g, abolish_all_tables, R = ok), error(SsuE, _), R = raised(SsuE)) -> true ; R = failed ).\n"
         for (id, _, g) in _TT_CASES
@@ -159,8 +179,15 @@ end
 function _tt_swipl_lines(path::String, names::Vector{String})::Vector{String}
     out = mktempdir() do d
         f = joinpath(d, "drv.pl")
-        write(f, _TT_DRIVER * ":- initialization((fz_run('$path', [" * join(names, ",") * "]), halt)).\n")
-        read(pipeline(addenv(`swipl -q $f`, "LC_ALL" => "C"); stdin=devnull, stderr=devnull), String)
+        write(
+            f,
+            _TT_DRIVER * ":- initialization((fz_run('$path', [" * join(names, ",") *
+            "]), halt)).\n"
+        )
+        read(
+            pipeline(addenv(`swipl -q $f`, "LC_ALL" => "C"); stdin=devnull, stderr=devnull),
+            String
+        )
     end
     return String.(split(chomp(out), '\n'; keepempty=false))
 end
@@ -181,7 +208,9 @@ function _tt_ask(gd, ld, pred::String)::String
     fid = LK.PL_open_foreign_frame(ld)
     a = LK.PL_new_term_refs(ld, 1)
     LK.putSlotValue!(ld, a + 1, mk_var(_TT, LK.fresh_var_keys!(1)), LK.PutVarMap())
-    qid = LK.PL_open_query(gd, ld, nothing, LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS, proc, a)
+    qid = LK.PL_open_query(
+        gd, ld, nothing, LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS, proc, a
+    )
     n = 0
     while (n += 1) <= 50
         rc = LK.PL_next_solution(gd, ld, qid)

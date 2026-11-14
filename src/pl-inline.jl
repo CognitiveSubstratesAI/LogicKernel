@@ -93,7 +93,7 @@ function visibleClause(
         return true
     end
     if tr !== nothing && tr.gen_base != 0 && gen >= tr.gen_base &&
-       (cl.predicate.flags & P_TRANSACT) != 0
+        (cl.predicate.flags & P_TRANSACT) != 0
         return transaction_visible_clause(tr, cl, gen)
     end
     return false
@@ -107,7 +107,8 @@ end
 "`visibleClause` for the local data `ld`: `rgen` is `ld.GD.reload_generation` (pl-inline.h `LD->reload.generation`; the one copy is the database's, audit D-0416 item 3), `tr` is `ld.transaction`."
 function visibleClause(ld, cl::Clause{T}, gen::gen_t)::Bool where {T}
     return visibleClause(
-        cl, gen, (ld.GD::PL_global_data).reload_generation, ld.transaction::ld_transaction{T}
+        cl, gen, (ld.GD::PL_global_data).reload_generation,
+        ld.transaction::ld_transaction{T}
     )
 end
 

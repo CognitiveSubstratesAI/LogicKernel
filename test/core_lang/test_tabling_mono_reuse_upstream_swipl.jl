@@ -84,7 +84,10 @@ fz_run(File, Ns) :-
 
 "The units' text, verbatim between begin_tests and end_tests: `(short name, begin_tests directive, text)`."
 const _TT_UNITS = [
-    ("mr1", "begin_tests(mono_reuse_subsumptive)", raw"""
+    (
+        "mr1",
+        "begin_tests(mono_reuse_subsumptive)",
+        raw"""
 :- use_module(library(lists)).
 :- use_module(library(debug)).
 :- discontiguous test/1, test/2.
@@ -171,8 +174,12 @@ test(incremental, [cleanup(init)]) :-
     assertion(all(Y, iq(Y), [2])),
     retract(inc(1)),
     assertion(all(Y, iq(Y), [1,2])).
-"""),
-    ("mr2", "begin_tests(mono_reuse_abstract)", raw"""
+"""
+    ),
+    (
+        "mr2",
+        "begin_tests(mono_reuse_abstract)",
+        raw"""
 :- use_module(library(lists)).
 :- use_module(library(debug)).
 :- discontiguous test/1, test/2.
@@ -220,7 +227,8 @@ test(incremental_reevaluation, L2-L3 == [a,b]-[c]) :-
     all(Y, ia(args(1,Y)), L2),
     all(Y, ia(args(2,Y)), L3),
     init.
-"""),
+"""
+    )
 ]
 
 "The file's common tail (lines `before :- ...` to the end), verbatim."
@@ -229,12 +237,32 @@ const _TT_TAIL = raw"""
 
 "The rows: `(id, unit, goal)`; the goal is the plunit test with its options folded by hand."
 const _TT_CASES = [
-    ("mr01", "mr1", "setup_call_cleanup(true, pu_mr1:test(binding_patterns, _), pu_mr1:init)"),
-    ("mr02", "mr1", "setup_call_cleanup(true, pu_mr1:test(subsumed_recursive, _), pu_mr1:init)"),
-    ("mr03", "mr1", "setup_call_cleanup(true, pu_mr1:test(dep_during_propagation, _), pu_mr1:init)"),
+    (
+        "mr01",
+        "mr1",
+        "setup_call_cleanup(true, pu_mr1:test(binding_patterns, _), pu_mr1:init)"
+    ),
+    (
+        "mr02",
+        "mr1",
+        "setup_call_cleanup(true, pu_mr1:test(subsumed_recursive, _), pu_mr1:init)"
+    ),
+    (
+        "mr03",
+        "mr1",
+        "setup_call_cleanup(true, pu_mr1:test(dep_during_propagation, _), pu_mr1:init)"
+    ),
     ("mr04", "mr1", "setup_call_cleanup(true, pu_mr1:test(incremental, _), pu_mr1:init)"),
-    ("mr05", "mr2", "setup_call_cleanup(pu_mr2:abstract_subgoals, setup_call_cleanup(true, pu_mr2:test(indirect_keys, _), pu_mr2:init), pu_mr2:restore_subgoal_action)"),
-    ("mr06", "mr2", "setup_call_cleanup(pu_mr2:abstract_subgoals, setup_call_cleanup(true, (pu_mr2:test(incremental_reevaluation, C), call(C)), true), pu_mr2:restore_subgoal_action)"),
+    (
+        "mr05",
+        "mr2",
+        "setup_call_cleanup(pu_mr2:abstract_subgoals, setup_call_cleanup(true, pu_mr2:test(indirect_keys, _), pu_mr2:init), pu_mr2:restore_subgoal_action)"
+    ),
+    (
+        "mr06",
+        "mr2",
+        "setup_call_cleanup(pu_mr2:abstract_subgoals, setup_call_cleanup(true, (pu_mr2:test(incremental_reevaluation, C), call(C)), true), pu_mr2:restore_subgoal_action)"
+    )
 ]
 
 const _TT_PINNED = [
@@ -244,7 +272,7 @@ const _TT_PINNED = [
     "t_mr03 c[116,95,109,114,48,51]/1(a[111,107])",
     "t_mr04 c[116,95,109,114,48,52]/1(a[111,107])",
     "t_mr05 c[116,95,109,114,48,53]/1(a[111,107])",
-    "t_mr06 c[116,95,109,114,48,54]/1(a[111,107])",
+    "t_mr06 c[116,95,109,114,48,54]/1(a[111,107])"
 ]
 
 "The answer plunit expects of every row: the test passes, `R = ok` (run in swipl by gen_tabling.py pin, plunit part of pins file)."
@@ -254,7 +282,7 @@ const _TT_UPSTREAM = [
     "a[111,107]",
     "a[111,107]",
     "a[111,107]",
-    "a[111,107]",
+    "a[111,107]"
 ]
 
 "The files of the program in a fresh directory: one module file per unit, the main file with the rows; returns the main file."
@@ -266,7 +294,9 @@ function _tt_materialize()::String
             ":- module(pu_$short, []).\n" * text * "\n" * _TT_TAIL
         )
     end
-    main = join([":- catch(use_module('$d/pu_$short'), _, true).\n" for (short, _, _) in _TT_UNITS])
+    main = join([
+        ":- catch(use_module('$d/pu_$short'), _, true).\n" for (short, _, _) in _TT_UNITS
+    ])
     main *= join([
         "t_$(id)(R) :- ( catch((abolish_all_tables, $g, abolish_all_tables, R = ok), error(SsuE, _), R = raised(SsuE)) -> true ; R = failed ).\n"
         for (id, _, g) in _TT_CASES
@@ -278,8 +308,15 @@ end
 function _tt_swipl_lines(path::String, names::Vector{String})::Vector{String}
     out = mktempdir() do d
         f = joinpath(d, "drv.pl")
-        write(f, _TT_DRIVER * ":- initialization((fz_run('$path', [" * join(names, ",") * "]), halt)).\n")
-        read(pipeline(addenv(`swipl -q $f`, "LC_ALL" => "C"); stdin=devnull, stderr=devnull), String)
+        write(
+            f,
+            _TT_DRIVER * ":- initialization((fz_run('$path', [" * join(names, ",") *
+            "]), halt)).\n"
+        )
+        read(
+            pipeline(addenv(`swipl -q $f`, "LC_ALL" => "C"); stdin=devnull, stderr=devnull),
+            String
+        )
     end
     return String.(split(chomp(out), '\n'; keepempty=false))
 end
@@ -300,7 +337,9 @@ function _tt_ask(gd, ld, pred::String)::String
     fid = LK.PL_open_foreign_frame(ld)
     a = LK.PL_new_term_refs(ld, 1)
     LK.putSlotValue!(ld, a + 1, mk_var(_TT, LK.fresh_var_keys!(1)), LK.PutVarMap())
-    qid = LK.PL_open_query(gd, ld, nothing, LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS, proc, a)
+    qid = LK.PL_open_query(
+        gd, ld, nothing, LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS, proc, a
+    )
     n = 0
     while (n += 1) <= 50
         rc = LK.PL_next_solution(gd, ld, qid)

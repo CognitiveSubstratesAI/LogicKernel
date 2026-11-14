@@ -332,8 +332,13 @@ _manifest_per_type(T) = (
     (LK.open_foreign_frame, Tuple{LK.PL_local_data{T}}, true),
     (LK.PL_close_foreign_frame, Tuple{LK.PL_local_data{T}, Int}, true),
     (LK.PL_open_foreign_frame, Tuple{LK.PL_local_data{T}}, false),
-    (LK.PL_rewind_foreign_frame, Tuple{LK.PL_local_data{T}, Int}, true),
-    (LK.PL_discard_foreign_frame, Tuple{LK.PL_local_data{T}, Int}, true),
+    # DIVERGES (TX1e, measured: ci/tx1m4 run 43574381649, shard 8): `Undo!` runs `push_undo`, which adds to the undo schedule, a growable
+    # buffer: pl-undo.c's `push_undo` mallocs it and `addBuffer` grows it (`growBuffer`), so the C allocates there too, and no form of an
+    # unbounded growing buffer is allocation-free in Julia. AllocCheck: `allocates: PL_rewind_foreign_frame...: Allocation of Memory{UInt64}
+    # in ./boot.jl:588 <- ./array.jl:1345 (push!) <- src/pl-undo.jl:149 (push_undo) <- src/pl-inline.jl:1168 (Undo!) <- src/pl-wam.jl:586`; the
+    # same for `PL_discard_foreign_frame` at src/pl-wam.jl:736. Both were `true` while `Undo!` was; `Undo!` is `false` since TX1e.
+    (LK.PL_rewind_foreign_frame, Tuple{LK.PL_local_data{T}, Int}, false),
+    (LK.PL_discard_foreign_frame, Tuple{LK.PL_local_data{T}, Int}, false),
     (LK.PL_new_term_refs, Tuple{LK.PL_local_data{T}, Int}, false),
     (LK.new_term_ref, Tuple{LK.PL_local_data{T}}, false),
     (LK.PL_new_term_ref, Tuple{LK.PL_local_data{T}}, false),
@@ -559,9 +564,12 @@ function _manifest_index(T)
         (LK.visibleClauseCNT, Tuple{C, UInt64, UInt64}, true),
         (LK.visibleClause, Tuple{LD, C, UInt64}, true),
         (LK.visibleClauseCNT, Tuple{LD, C, UInt64}, true),
-        # TX1c: the forms with the transaction state
-        (LK.visibleClause, Tuple{C, UInt64, UInt64, Union{Nothing, LK.ld_transaction{T}}}, true),
-        (LK.visibleClauseCNT, Tuple{C, UInt64, UInt64, Union{Nothing, LK.ld_transaction{T}}}, true),
+        # TX1c: the forms with the transaction state. The parameter is `Union{Nothing, ld_transaction{T}}`, which is no dispatch
+        # tuple (GPUCompiler asserts `Base.isdispatchtuple(sig)`): the two types it names are listed one by one.
+        (LK.visibleClause, Tuple{C, UInt64, UInt64, Nothing}, true),
+        (LK.visibleClause, Tuple{C, UInt64, UInt64, LK.ld_transaction{T}}, true),
+        (LK.visibleClauseCNT, Tuple{C, UInt64, UInt64, Nothing}, true),
+        (LK.visibleClauseCNT, Tuple{C, UInt64, UInt64, LK.ld_transaction{T}}, true),
         (LK.ISDEADCI, Tuple{CI}, true), (LK.ISDEADCI, Tuple{Nothing}, true),
         (LK.next_clause_unindexed!, Tuple{CTX}, true),
         (LK.next_clause_primary_index!, Tuple{CTX}, true),
@@ -596,7 +604,11 @@ function _manifest_index(T)
         (LK._argv_is_var, Tuple{AC, Int}, false),
         (LK._descend_first_clause!, Tuple{AF, Int, CL, CTX}, false),
         (LK._descend_first_clause!, Tuple{AC, Int, CL, CTX}, false),
-        (LK._index_context!, Tuple{LK.index_context{T}, UInt64, D, CH, UInt64, LK.ld_transaction{T}}, true),
+        (
+            LK._index_context!,
+            Tuple{LK.index_context{T}, UInt64, D, CH, UInt64, LK.ld_transaction{T}},
+            true
+        ),
         (LK.realize_clause_index!, Tuple{CI}, false),
         (LK.newClauseIndexTable, Tuple{HH, Bool, CTX}, false),
         (LK.newClauseListRef, Tuple{Type{T}, UInt64}, false),
@@ -681,7 +693,8 @@ function _manifest_index(T)
         (LK.setGenerationFrame, Tuple{GD, D}, true),
         # TX1c: the forms with the transaction state (pl-inline.h)
         (LK.current_generation, Tuple{GD, LD, D}, true),
-        (LK.next_generation!, Tuple{GD, LD, D}, true), (LK.max_generation, Tuple{LD, D}, true),
+        (LK.next_generation!, Tuple{GD, LD, D}, true),
+        (LK.max_generation, Tuple{LD, D}, true),
         (LK.setGenerationFrame, Tuple{GD, LD, D}, true),
         # src/pl-thread.jl, src/pl-gc.jl
         (LK.cgcActivatePredicate!, Tuple{GD, D, UInt64}, false),
@@ -3116,7 +3129,11 @@ function _manifest_index(T)
         (LK.tripwire_incomplete_subgoals, Tuple{LD, Nothing}, false),
         (LK.tripwire_scc_subgoals, Tuple{LD, LK.tbl_worklist{T}, Int}, false),
         (LK.droppable_table, Tuple{LD, LK.tbl_component{T}, LK.trie{T}}, false),
-        (LK.children_of_component, Tuple{LK.tbl_component{T}, Vector{LK.tbl_component{T}}}, false),
+        (
+            LK.children_of_component,
+            Tuple{LK.tbl_component{T}, Vector{LK.tbl_component{T}}},
+            false
+        ),
         (LK.drop_intermediate_tables, Tuple{LD, LK.tbl_component{T}}, false),
         (LK._tbl_put_pointer, Tuple{LD, Int, LK.tbl_worklist{T}}, false),
         (LK._tbl_put_pointer, Tuple{LD, Int, LK.tbl_component{T}}, false),
@@ -3125,7 +3142,8 @@ function _manifest_index(T)
         (
             LK.sdg_collect,
             Tuple{
-                Vector{LK.tbl_component{T}}, Vector{LK.tbl_component{T}}, IdDict{LK.tbl_component{T}, Bool},
+                Vector{LK.tbl_component{T}}, Vector{LK.tbl_component{T}},
+                IdDict{LK.tbl_component{T}, Bool},
                 Vector{LK.tbl_worklist{T}}, IdDict{LK.tbl_worklist{T}, Int}
             },
             false
@@ -3133,7 +3151,8 @@ function _manifest_index(T)
         (
             LK.sdg_count_edges,
             Tuple{
-                LD, LK.tbl_worklist{T}, IdDict{LK.tbl_worklist{T}, Int}, Dict{Tuple{Int, Int, Bool}, Int},
+                LD, LK.tbl_worklist{T}, IdDict{LK.tbl_worklist{T}, Int},
+                Dict{Tuple{Int, Int, Bool}, Int},
                 Vector{Tuple{Int, Int, Bool}}
             },
             false
@@ -3166,7 +3185,16 @@ function _manifest_index(T)
         (LK.collect_dynamic_children, Tuple{LD, LK.trie{T}}, false),
         (LK.abolish_table, Tuple{LD, LK.trie{T}}, false),
         (LK.destroy_delay_info_table, Tuple{GD}, false),
-        (LK.reset_table_bulk, Tuple{LD, UInt64, Union{Nothing, LK.idg_registry{LK.idg_node{T}}}, Base.RefValue{Int}}, false),
+        (
+            LK.reset_table_bulk,
+            Tuple{
+                LD,
+                UInt64,
+                Union{Nothing, LK.idg_registry{LK.idg_node{T}}},
+                Base.RefValue{Int}
+            },
+            false
+        ),
         (LK.idg_unlink_concurrent_table, Tuple{LD}, false),
         (LK.empty_variant_table, Tuple{LD, LK.trie{T}, Bool}, false),
         (LK.clear_variant_table, Tuple{LD}, false),
@@ -3708,7 +3736,9 @@ end
 _manifest_tb6(T) = begin
     TR, D, LD = LK.trie{T}, LK.Definition{T}, LK.PL_local_data{T}
     IN, ES = LK.idg_node{T}, LK.idg_edge_state{T}
-    SET, BLK, ENUM, REG = LK.idg_set{IN}, LK.idg_set_block{IN}, LK.idg_set_enum{IN}, LK.idg_registry{IN}
+    SET, BLK, ENUM, REG = LK.idg_set{IN},
+    LK.idg_set_block{IN}, LK.idg_set_enum{IN},
+    LK.idg_registry{IN}
     PL, LING = Union{Nothing, LK.alloc_pool}, Union{Nothing, IN}
     CTX = Tuple{LD, IN}
     (
@@ -3729,10 +3759,14 @@ _manifest_tb6(T) = begin
         (LK.idg_set_size, Tuple{SET}, false),
         (LK.idg_set_sizeof, Tuple{SET}, false),
         (LK.sizeofTablePP, Tuple{IdDict{IN, LK.idg_mdep{T, IN}}}, false),
-        (LK.idg_set_lingering_sizeof, Tuple{Union{Nothing, BLK}}, false),
+        (LK.idg_set_lingering_sizeof, Tuple{BLK}, false),
         (LK.idg_set_clear, Tuple{SET, typeof(LK.idg_free_affected), CTX, LING, PL}, false),
         (LK.idg_set_clear, Tuple{SET, typeof(LK.idg_free_dependent), CTX, LING, PL}, false),
-        (LK.idg_set_clear, Tuple{SET, typeof(LK.idg_free_mdeps_affected), CTX, LING, PL}, false),
+        (
+            LK.idg_set_clear,
+            Tuple{SET, typeof(LK.idg_free_mdeps_affected), CTX, LING, PL},
+            false
+        ),
         (LK.idg_set_clear, Tuple{SET, Nothing, CTX, LING, PL}, false),
         (LK.idg_set_clear, Tuple{SET, Nothing, Nothing, LING, PL}, false),
         (LK.idg_set_enum_init, Tuple{SET}, false),
@@ -3767,7 +3801,8 @@ _manifest_tb6(T) = begin
         (LK.idg_destroy, Tuple{LD, IN}, false),
         (LK.idg_free_mdeps_affected, Tuple{IN, CTX}, false),
         (LK.idg_destroy_private, Tuple{LD, IN}, false),
-        (LK.idg_free_mdeps, Tuple{LD, IN, IN}, false),
+        # `idg_free_mdeps` is listed in `_manifest_tb7` (its monotonic home); a second entry here made the manifest list it twice,
+        # once per term type (2026-11-14, ci/tabint2 shard 3: 5583 entries, 5580 distinct)
         (LK.idg_free_affected, Tuple{IN, CTX}, false),
         (LK.idg_free_dependent, Tuple{IN, CTX}, false),
         (LK.idg_add_child, Tuple{LD, IN, IN, Int, Int}, false),
@@ -3808,12 +3843,18 @@ _manifest_tb6(T) = begin
         # the foreign predicates (PL_predicates_from_tabling: the `$idg_*` and `$tbl_reeval_*` predicates)
         [
             (f, Tuple{LD, Int, Int, LK.control_t{T}}, false) for f in (
-                LK.pl_idg_add_edge1_va, LK.pl_idg_set_current2_va, LK.pl_idg_add_dyncall1_va,
-                LK.pl_idg_set_current1_va, LK.pl_idg_reset_current0_va, LK.pl_idg_edge3_va,
-                LK.pl_idg_false_edge3_va, LK.pl_idg_changed1_va, LK.pl_idg_falsecount2_va,
-                LK.pl_idg_set_falsecount2_va, LK.pl_idg_forced1_va, LK.pl_idg_thread_summary3_va,
-                LK.pl_idg_thread_space2_va, LK.pl_idg_predicate_edges3_va, LK.pl_tbl_reeval_wait2_va,
-                LK.pl_tbl_reeval_prepare_top2_va, LK.pl_tbl_reeval_prepare2_va, LK.pl_tbl_reeval_abandon1_va
+                LK.pl_idg_add_edge1_va, LK.pl_idg_set_current2_va,
+                LK.pl_idg_add_dyncall1_va,
+                LK.pl_idg_set_current1_va, LK.pl_idg_reset_current0_va,
+                LK.pl_idg_edge3_va,
+                LK.pl_idg_false_edge3_va, LK.pl_idg_changed1_va,
+                LK.pl_idg_falsecount2_va,
+                LK.pl_idg_set_falsecount2_va, LK.pl_idg_forced1_va,
+                LK.pl_idg_thread_summary3_va,
+                LK.pl_idg_thread_space2_va, LK.pl_idg_predicate_edges3_va,
+                LK.pl_tbl_reeval_wait2_va,
+                LK.pl_tbl_reeval_prepare_top2_va, LK.pl_tbl_reeval_prepare2_va,
+                LK.pl_tbl_reeval_abandon1_va
             )
         ]...
     )
@@ -3826,7 +3867,7 @@ const _MANIFEST_TB6_FREE = (
     (LK.idg_reader_enter, Tuple{}, false),
     (LK.idg_reader_exit, Tuple{}, false),
     (LK.reg_block, Tuple{Int}, false),
-    (LK.reg_block_size, Tuple{Int}, false),
+    (LK.reg_block_size, Tuple{Int}, false)
 )
 
 # TAB1 TB7 — monotonic tabling: the MONOTONIC TABLING block of src/pl-tabling.jl (pl-tabling.c:9883-11100) and its sixteen
@@ -3858,12 +3899,17 @@ _manifest_tb7(T) = begin
         (LK.mdep_queue_answer, Tuple{MD, Int}, false),
         (LK.mdep_unify_answers, Tuple{LD, TR, Int, MD}, false),
         (LK.mdep_empty_queue, Tuple{MD, Int}, false),
-        (LK.mdep_empty_queues, Tuple{UMD}, false),
+        (LK.mdep_empty_queues, Tuple{MD}, false),
+        (LK.mdep_empty_queues, Tuple{IN}, false),
         (LK.free_mdep_chain, Tuple{LD, IN, MD}, false),
         (LK.idg_free_mdeps, Tuple{LD, IN, IN}, false),
         # the edges
         (LK.idg_add_child_dep, Tuple{LD, IN, IN, Int}, false),
-        (LK.idg_edge_dep_step, Tuple{LD, LK.idg_edge_state{T}, Int, Int, Int, Int, Int}, false),
+        (
+            LK.idg_edge_dep_step,
+            Tuple{LD, LK.idg_edge_state{T}, Int, Int, Int, Int, Int},
+            false
+        ),
         (LK.idg_dependency_error_mono, Tuple{LD, TR, TR}, false),
         (LK.idg_add_monotonic_edge, Tuple{LD, TR, TR, Int}, false),
         # change propagation and reevaluation
@@ -3885,11 +3931,16 @@ _manifest_tb7(T) = begin
         # the foreign predicates (PL_predicates_from_tabling: the sixteen monotonic entries)
         [
             (f, Tuple{LD, Int, Int, LK.control_t{T}}, false) for f in (
-                LK.pl_tbl_monotonic_add_answer2_va, LK.pl_idg_add_monotonic_dep3_va, LK.pl_idg_add_mono_dyn_dep3_va,
-                LK.pl_idg_mono_affects3_va, LK.pl_idg_mono_affects_eager3_va, LK.pl_idg_mono_affects_lazy5_va,
-                LK.pl_idg_mono_index2_va, LK.pl_idg_mono_index_deps4_va, LK.pl_tbl_propagate_start1_va,
-                LK.pl_tbl_propagate_end1_va, LK.pl_tbl_collect_mono_dep0_va, LK.pl_mono_idg_changed2_va,
-                LK.pl_mono_reeval_prepare2_va, LK.pl_mono_reeval_done3_va, LK.pl_idg_mono_empty_queue2_va,
+                LK.pl_tbl_monotonic_add_answer2_va, LK.pl_idg_add_monotonic_dep3_va,
+                LK.pl_idg_add_mono_dyn_dep3_va,
+                LK.pl_idg_mono_affects3_va, LK.pl_idg_mono_affects_eager3_va,
+                LK.pl_idg_mono_affects_lazy5_va,
+                LK.pl_idg_mono_index2_va, LK.pl_idg_mono_index_deps4_va,
+                LK.pl_tbl_propagate_start1_va,
+                LK.pl_tbl_propagate_end1_va, LK.pl_tbl_collect_mono_dep0_va,
+                LK.pl_mono_idg_changed2_va,
+                LK.pl_mono_reeval_prepare2_va, LK.pl_mono_reeval_done3_va,
+                LK.pl_idg_mono_empty_queue2_va,
                 LK.pl_idg_mono_invalidate1_va, LK.pl_tbl_node_answer2_va       # TAB1 W2: '$tbl_node_answer'/2
             )
         ]...
@@ -3916,7 +3967,7 @@ _manifest_tb9(T) = begin
         (LK.tt_rollback_tables, Tuple{LD, Dict{LK.word, Int}}, false),
         (LK.tt_rollback_actions, Tuple{LD, Vector{LK.tbl_trail_answer}}, false),
         (LK.transaction_rollback_tables, Tuple{LD}, false),
-        (LK.reset_answer_table_tracked, Tuple{LD, TR}, false),
+        (LK.reset_answer_table_tracked, Tuple{LD, TR}, false)
     )
 end
 
@@ -3927,7 +3978,7 @@ const _MANIFEST_TB9_FREE = (
     (LK.tbl_trail_answer, Tuple{Int, Int, Int}, false),
     (LK.tbl_trail_free, Tuple{LK.tbl_trail}, false),
     (LK.tt_free_table_symbol, Tuple{LK.word, Int}, false),
-    (LK.merge_tabling_trail, Tuple{LK.tbl_trail, LK.tbl_trail}, false),
+    (LK.merge_tabling_trail, Tuple{LK.tbl_trail, LK.tbl_trail}, false)
 )
 
 # TX1 — pl-transaction.c and pl-undo.c (src/pl-transaction.jl, src/pl-undo.jl): the transaction state, the tables of changed
@@ -3950,7 +4001,9 @@ _manifest_tx1(T) = begin
         (LK.transaction_retract_clause, Tuple{GD, LD, C}, false),
         (LK.transaction_assert_clause, Tuple{LD, C, Int}, false),
         (LK.transaction_assert_clause, Tuple{LD, C, LK.ClauseRef{T}}, false),
-        (LK.transaction_visible_clause, Tuple{TR, C, UInt64}, false),
+        # the table is looked up by the clause's address (`Base.hash` of a clause, src/pl-incl.jl): `visibleClause` reaches it, and is `true`
+        (LK.transaction_visible_clause, Tuple{TR, C, UInt64}, true),
+        (Base.hash, Tuple{C, UInt}, true),
         (LK.LGEN, Tuple{TR, UInt64}, true),
         (LK.LGEN_FLAGS_VAL, Tuple{TR, UInt64, UInt32}, true),
         (LK.transaction_last_modified_predicate, Tuple{LD, D, UInt64}, false),
@@ -3971,7 +4024,8 @@ _manifest_tx1(T) = begin
         [
             (f, Tuple{LD, Int, Int, LK.control_t{T}}, false) for f in (
                 LK.pl_transaction2_va, LK.pl_transaction3_va, LK.pl_snapshot1_va,
-                LK.pl_transaction_updates1_va, LK.pl_current_transaction1_va, LK.pl_undo1_va
+                LK.pl_transaction_updates1_va, LK.pl_current_transaction1_va,
+                LK.pl_undo1_va
             )
         ]...,
         # pl-undo.c: the undo list, the blob, the schedule and its run
@@ -4237,6 +4291,9 @@ const _DISPATCH_MANIFEST_TUPLE = (
     (LK.condc, Tuple{}, false),
     (LK.qlfEndPart, Tuple{Nothing}, false),
     (LK.addDirectiveWic, Tuple{Nothing, Int}, false),
+    # TABINT-STATIC1: the NULL methods of the TB6/TB7 chain walks (the Aqua unbound-parameter split; type-free, so listed once)
+    (LK.idg_set_lingering_sizeof, Tuple{Nothing}, false),
+    (LK.mdep_empty_queues, Tuple{Nothing}, false),
     # S2a: the stream-layer entries that name no term type (listed once, not once per type)
     (LK.Sgetcode_intr, Tuple{LK.IOSTREAM}, false),
     (LK.Ssetbuffer, Tuple{LK.IOSTREAM, Union{Nothing, Vector{UInt8}}, Int}, false),
@@ -5208,6 +5265,13 @@ const SPAN_CALLEE_EXEMPT = [
         LK.discardChoicesAfter,
         :cold,
         "V9g: a cut that discards a CLEANUP frame runs its handler"
+    ),
+    (
+        LK.run_undo_hooks,
+        :cold,
+        "TX1e: the scheduled undo goals run (pl-undo.c:224-247 run_undo_hooks, called from I_DEPART/I_CALL and b_failed only when ALERT_UNDO is set and a goal is scheduled): " *
+        "a foreign frame and a whole query (`PL_open_query`, `PL_next_solution`), whose frame and query vectors grow; since TX1e the procedure is " *
+        "`GD->procedures.drun_undo1` (built at start-up), so the function builds no atom of its own"
     ),
     (LK.error_foreign_return_code, :error, "a built-in returned a bad value"),
     (LK.outOfStack!, :error, "a stack overflow raises"),

@@ -155,10 +155,10 @@ function emptyStacks!(ld::PL_local_data{T})::Nothing where {T}
     empty!(ld.trail)                            # emptyStack((Stack)&LD->stacks.trail);
     ld.gTop = 0                                 # emptyStack((Stack)&LD->stacks.global);
     _truncate_vtable!(ld)                       # (the value table with it: L1b stage C2)
-    ld.undo_list = init_undo_list(ld)           # LD->undo.undo_list = init_undo_list(): FIRST global cell, see __do_undo() (TX1e)
     ld.mark_bar = ld.gTop                       # LD->mark_bar = gTop;
 
-    PL_open_foreign_frame(ld)
+    PL_open_foreign_frame(ld)                   # (its Mark sets mark_bar = gTop, still 0: the undo cell comes after, as in pl-setup.c:1540-1557)
+    ld.undo_list = init_undo_list(ld)           # LD->undo.undo_list = init_undo_list(): FIRST global cell, see __do_undo() (TX1e)
     ld.exception_term = 0
     ld.exception_bin = PL_new_term_ref(ld)
     ld.exception_printed = PL_new_term_ref(ld)
@@ -347,7 +347,8 @@ function setupProlog(::Type{T})::PL_global_data{T} where {T}
         LDTable(),                              # ld_table: no wrapped stream yet (R2 TOP1b E)
         Dict{Int, delay_info}(),                # tabling_answer_delay_infos: initTabling's newHTablePP(64) (pl-tabling.c:12696; TAB1 TB0)
         0,                                      # tabling_start_node_ids: no start node id handed out (pl-tabling.c:12348; TAB1 TB1)
-        record{T}[]                             # undo_refs: no undo goal has a blob yet (TX1e)
+        record{T}[],                            # undo_refs: no undo goal has a blob yet (TX1e)
+        dc_proc                                 # procedures_drun_undo1: set by setBuiltinPredicateProperties! (TX1e)
     )
     initPrologFlags!(gd)                        # setup:136 (src/os/pl-prologflag.jl): before the built-ins (:158), whose boot clauses read the mask
     initTries!(gd)                              # initTries (setup:149), its tail: trie_gen_compiled/2,3 (TR4, src/pl-trie.jl)

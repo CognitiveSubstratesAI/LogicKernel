@@ -68,7 +68,7 @@ const _TP_PINNED = [
     # tp04: a plain trie has no IDG node (the four branches fail); `compiled_size` fails until the trie is compiled
     "r([none,none,none,none,none,none],[none,none,none,none,none,int])",
     # tp05: a monotonic table with a monotonic child: the child's `mono` holds one dependency table, so `idg_size` is 80 + 24 + sizeofTablePP (136) = 240
-    "r(q([0,0,0,1,80,none]),p([0,0,1,0,240,none]))",
+    "r(q([0,0,0,1,80,none]),p([0,0,1,0,240,none]))"
 ]
 
 "The `~q` text of each case's answer, in order, from swipl at the pin."
@@ -80,7 +80,10 @@ function _tp_swipl_lines()::Vector{String}
             _TP_PROGRAM * ":- initialization((forall(member(G, [" * join(_TP_CASES, ",") *
             "]), (tp_q1(G, A), write(A), nl)), halt)).\n"
         )
-        read(pipeline(addenv(`swipl -q $f`, "LC_ALL" => "C"); stdin=devnull, stderr=devnull), String)
+        read(
+            pipeline(addenv(`swipl -q $f`, "LC_ALL" => "C"); stdin=devnull, stderr=devnull),
+            String
+        )
     end
     return String.(split(chomp(out), '\n'; keepempty=false))
 end
@@ -93,10 +96,12 @@ function _tp_ask(gd, ld, case::String)::String
     a = LK.PL_new_term_refs(ld, 2)
     LK.putSlotValue!(ld, a + 1, _tps(case), LK.PutVarMap())
     LK.putSlotValue!(ld, a + 2, mk_var(_TP, LK.fresh_var_keys!(1)), LK.PutVarMap())
-    qid = LK.PL_open_query(gd, ld, nothing, LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS, proc, a)
+    qid = LK.PL_open_query(
+        gd, ld, nothing, LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS, proc, a
+    )
     rc = LK.PL_next_solution(gd, ld, qid)
     ans = if rc == LK.PL_S_TRUE || rc == LK.PL_S_LAST
-        t = lk_answers(ld, (a + 1:a + 1)...)[1]
+        t = lk_answers(ld, ((a + 1):(a + 1))...)[1]
         kind(t) === SYM ? sym_text(t) : "not an atom"
     else
         rc == LK.PL_S_EXCEPTION ? "exception" : "failed"
@@ -131,13 +136,16 @@ end
         @test _TP_KERNEL[i] != replace(pin, "136" => "135"; count=1)
     end
     # the invalidated counter is 0 before the assert, 1 after it; the reevaluated one is 1 only after the re-evaluation
-    @test occursin("t([0,0,", _TP_KERNEL[1]) && occursin("t([1,0,", _TP_KERNEL[2]) && occursin("t([1,1,", _TP_KERNEL[3])
+    @test occursin("t([0,0,", _TP_KERNEL[1]) && occursin("t([1,0,", _TP_KERNEL[2]) &&
+        occursin("t([1,1,", _TP_KERNEL[3])
     @test occursin("d([1,0,2,0,136,none])", _TP_KERNEL[3])      # the dynamic node was invalidated, never re-evaluated: 0
 end
 
 @testset "tp04: a trie without an IDG node fails the four branches; compiled_size fails until the trie is compiled (pl-trie.c:4304-4351)" begin
     @test _TP_KERNEL[4] == _TP_PINNED[4]
-    @test _TP_KERNEL[4] != replace(_TP_PINNED[4], "[none,none,none,none,none,int]" => "[none,none,none,none,none,none]")
+    @test _TP_KERNEL[4] != replace(
+        _TP_PINNED[4], "[none,none,none,none,none,int]" => "[none,none,none,none,none,none]"
+    )
 end
 
 @testset "tp05: the mono dependency table is part of idg_size (pl-trie.c:4341-4351: sizeof(*idg->mono) + sizeofTablePP(idg->mono->deps))" begin
@@ -149,12 +157,14 @@ end
 @testset "sizeofTablePP: the modelled capacity (os/pl-table.c sizeofTable; DIVERGES documented)" begin
     N = LK.idg_node{_TP}
     ht = IdDict{N, LK.idg_mdep{_TP, N}}()
-    @test LK.sizeofTablePP(ht) == LK.SIZEOF_TABLE + LK.SIZEOF_KVS + 4 * LK.SIZEOF_SYMBOL == 136     # newHTablePP(4)
+    @test LK.sizeofTablePP(ht) == LK.SIZEOF_TABLE + LK.SIZEOF_KVS + 4 * LK.SIZEOF_SYMBOL ==
+        136     # newHTablePP(4)
     @test LK.SIZEOF_TABLE == 32 && LK.SIZEOF_KVS == 40 && LK.SIZEOF_SYMBOL == 16
     @test LK.SIZEOF_IDG_NODE == 80 && LK.SIZEOF_IDG_MONO == 24
     @test LK.sizeofTablePP(ht) != 135
     @test LK.sizeofTablePP(IdDict{Int, Int}(1 => 1, 2 => 2)) == 136                 # 2 * 2 > 4 is false: still four slots
-    @test LK.sizeofTablePP(IdDict{Int, Int}(1 => 1, 2 => 2, 3 => 3)) == 32 + 40 + 8 * 16 == 200   # doubled once
+    @test LK.sizeofTablePP(IdDict{Int, Int}(1 => 1, 2 => 2, 3 => 3)) == 32 + 40 + 8 * 16 ==
+        200   # doubled once
 end
 
 if Sys.which("swipl") !== nothing

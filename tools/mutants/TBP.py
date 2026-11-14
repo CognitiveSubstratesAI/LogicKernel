@@ -86,7 +86,7 @@ MUTANTS = [
          new='size += 0 '),
     dict(id='TBP-S5 idg_size omits the table of the mono dependencies (KILL TP tp05 p: 104 against 240)',
          file=TR, targets=[TP, TG, TZ],
-         old='size += sizeofTablePP(mono.deps) ',
+         old='size += sizeofTablePP(mdeps) ',
          new='size += 0 '),
     dict(id='TBP-S6 idg_size fails again (KILL TP tp01: `none` where the pin is 80)',
          file=TR, targets=[TP, TG, TZ],

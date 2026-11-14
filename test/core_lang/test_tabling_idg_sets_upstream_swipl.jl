@@ -93,7 +93,10 @@ fz_run(File, Ns) :-
 
 "The units' text, verbatim between begin_tests and end_tests: `(short name, begin_tests directive, text)`."
 const _TT_UNITS = [
-    ("sets", "begin_tests(idg_sets)", raw"""
+    (
+        "sets",
+        "begin_tests(idg_sets)",
+        raw"""
 test(affected_many, Count == 100) :-
     fill(100),
     edges(d(_), affected, Count).
@@ -127,8 +130,12 @@ test(delete_and_add, Count == 100) :-
 test(single_edge, Count == 1) :-
     fill(1),
     edges(d(_), affected, Count).
-"""),
-    ("reader", "begin_tests(idg_reader)", raw"""
+"""
+    ),
+    (
+        "reader",
+        "begin_tests(idg_reader)",
+        raw"""
 test(summary, [condition(threads), Outside == Inside]) :-
     thread_self(Me),
     thread_create(( fill(100),
@@ -206,8 +213,12 @@ test(predicate_edges_prolog, Edges == PrologEdges) :-
 test(shared, condition(threads)) :-
     '$idg_thread_summary'(shared, Nodes, Edges),
     integer(Nodes), integer(Edges).
-"""),
-    ("space", "begin_tests(idg_space)", raw"""
+"""
+    ),
+    (
+        "space",
+        "begin_tests(idg_space)",
+        raw"""
 test(in_table_space, [true(Extra >= IDGSize), true(IDGSize > 0)]) :-
     table_space(pi, 1000, SpaceI, IDGSize, _),
     table_space(pn, 1000, SpaceN, _, _),
@@ -219,7 +230,8 @@ test(idg_thread_space, [ true(IDGSpace >= IDGSize),
     table_space(pi, 1000, SpaceI, IDGSize, IDGSpace),
     table_space(pn, 1000, SpaceN, _, NoIDG),
     Extra is SpaceI-SpaceN.
-"""),
+"""
+    )
 ]
 
 "The file's common tail (lines `before :- ...` to the end), verbatim."
@@ -366,24 +378,88 @@ table_space_(Pred, N) :-
 
 "The rows: `(id, unit, goal)`; the goal is the plunit test with its options folded by hand."
 const _TT_CASES = [
-    ("id01", "idg_sets", "setup_call_cleanup(true, (plunit_idg_sets:test(affected_many, C), call(C)), true)"),
-    ("id02", "idg_sets", "setup_call_cleanup(true, (plunit_idg_sets:test(dependent_many, C), call(C)), true)"),
+    (
+        "id01",
+        "idg_sets",
+        "setup_call_cleanup(true, (plunit_idg_sets:test(affected_many, C), call(C)), true)"
+    ),
+    (
+        "id02",
+        "idg_sets",
+        "setup_call_cleanup(true, (plunit_idg_sets:test(dependent_many, C), call(C)), true)"
+    ),
     ("id03", "idg_sets", "plunit_idg_sets:test(edge_lookup, true)"),
-    ("id04", "idg_sets", "setup_call_cleanup(true, (plunit_idg_sets:test(invalidate_all, C), call(C)), true)"),
-    ("id05", "idg_sets", "setup_call_cleanup(true, (plunit_idg_sets:test(reevaluate, [C]), call(C)), true)"),
-    ("id06", "idg_sets", "setup_call_cleanup(true, (plunit_idg_sets:test(delete_edges, C), call(C)), true)"),
-    ("id07", "idg_sets", "setup_call_cleanup(true, (plunit_idg_sets:test(delete_and_add, C), call(C)), true)"),
-    ("id08", "idg_sets", "setup_call_cleanup(true, (plunit_idg_sets:test(single_edge, C), call(C)), true)"),
-    ("id09", "idg_reader", "setup_call_cleanup(true, (plunit_idg_reader:test(summary, [condition(threads), C]), call(C)), true)"),
-    ("id10", "idg_reader", "setup_call_cleanup(true, (plunit_idg_reader:test(concurrent, [condition(threads), true(C)]), call(C)), true)"),
-    ("id11", "idg_reader", "setup_call_cleanup(true, (plunit_idg_reader:test(exited, [condition(threads), C]), call(C)), true)"),
-    ("id12", "idg_reader", "setup_call_cleanup(true, (plunit_idg_reader:test(predicate_edges, [C]), call(C)), true)"),
-    ("id13", "idg_reader", "setup_call_cleanup(true, (plunit_idg_reader:test(predicate_edges_invalid, C), call(C)), true)"),
-    ("id14", "idg_reader", "setup_call_cleanup(true, (plunit_idg_reader:test(predicate_edges_outside, [condition(threads), C]), call(C)), true)"),
-    ("id15", "idg_reader", "setup_call_cleanup(true, (plunit_idg_reader:test(predicate_edges_prolog, C), call(C)), true)"),
+    (
+        "id04",
+        "idg_sets",
+        "setup_call_cleanup(true, (plunit_idg_sets:test(invalidate_all, C), call(C)), true)"
+    ),
+    (
+        "id05",
+        "idg_sets",
+        "setup_call_cleanup(true, (plunit_idg_sets:test(reevaluate, [C]), call(C)), true)"
+    ),
+    (
+        "id06",
+        "idg_sets",
+        "setup_call_cleanup(true, (plunit_idg_sets:test(delete_edges, C), call(C)), true)"
+    ),
+    (
+        "id07",
+        "idg_sets",
+        "setup_call_cleanup(true, (plunit_idg_sets:test(delete_and_add, C), call(C)), true)"
+    ),
+    (
+        "id08",
+        "idg_sets",
+        "setup_call_cleanup(true, (plunit_idg_sets:test(single_edge, C), call(C)), true)"
+    ),
+    (
+        "id09",
+        "idg_reader",
+        "setup_call_cleanup(true, (plunit_idg_reader:test(summary, [condition(threads), C]), call(C)), true)"
+    ),
+    (
+        "id10",
+        "idg_reader",
+        "setup_call_cleanup(true, (plunit_idg_reader:test(concurrent, [condition(threads), true(C)]), call(C)), true)"
+    ),
+    (
+        "id11",
+        "idg_reader",
+        "setup_call_cleanup(true, (plunit_idg_reader:test(exited, [condition(threads), C]), call(C)), true)"
+    ),
+    (
+        "id12",
+        "idg_reader",
+        "setup_call_cleanup(true, (plunit_idg_reader:test(predicate_edges, [C]), call(C)), true)"
+    ),
+    (
+        "id13",
+        "idg_reader",
+        "setup_call_cleanup(true, (plunit_idg_reader:test(predicate_edges_invalid, C), call(C)), true)"
+    ),
+    (
+        "id14",
+        "idg_reader",
+        "setup_call_cleanup(true, (plunit_idg_reader:test(predicate_edges_outside, [condition(threads), C]), call(C)), true)"
+    ),
+    (
+        "id15",
+        "idg_reader",
+        "setup_call_cleanup(true, (plunit_idg_reader:test(predicate_edges_prolog, C), call(C)), true)"
+    ),
     ("id16", "idg_reader", "plunit_idg_reader:test(shared, condition(threads))"),
-    ("id17", "idg_space", "setup_call_cleanup(true, (plunit_idg_space:test(in_table_space, [true(C1), true(C2)]), call(C1), call(C2)), true)"),
-    ("id18", "idg_space", "setup_call_cleanup(true, (plunit_idg_space:test(idg_thread_space, [true(C1), true(C2), C3]), call(C1), call(C2), call(C3)), true)"),
+    (
+        "id17",
+        "idg_space",
+        "setup_call_cleanup(true, (plunit_idg_space:test(in_table_space, [true(C1), true(C2)]), call(C1), call(C2)), true)"
+    ),
+    (
+        "id18",
+        "idg_space",
+        "setup_call_cleanup(true, (plunit_idg_space:test(idg_thread_space, [true(C1), true(C2), C3]), call(C1), call(C2), call(C3)), true)"
+    )
 ]
 
 
@@ -411,7 +487,7 @@ const _TT_PINNED = [
     "t_id15 c[116,95,105,100,49,53]/1(a[111,107])",
     "t_id16 c[116,95,105,100,49,54]/1(a[111,107])",
     "t_id17 c[116,95,105,100,49,55]/1(a[111,107])",
-    "t_id18 c[116,95,105,100,49,56]/1(a[111,107])",
+    "t_id18 c[116,95,105,100,49,56]/1(a[111,107])"
 ]
 
 "The answer plunit expects of every row: the test passes, `R = ok` (run in swipl by gen_tabling.py pin, plunit part of pins file)."
@@ -433,7 +509,7 @@ const _TT_UPSTREAM = [
     "a[111,107]",
     "a[111,107]",
     "a[111,107]",
-    "a[111,107]",
+    "a[111,107]"
 ]
 
 "The files of the program in a fresh directory: the parent module files, one module file per unit, the main file with the rows; returns the main file."
@@ -448,8 +524,14 @@ function _tt_materialize()::String
             ":- module(plunit_$short, []).\n:- set_module(base($base)).\n" * text
         )
     end
-    main = join([":- catch(use_module('$d/$p'), _, true).\n" for p in ("test_idg_sets", "test_idg_space")])
-    main *= join([":- catch(use_module('$d/plunit_$short'), _, true).\n" for (short, _, _) in _TT_UNITS])
+    main = join([
+        ":- catch(use_module('$d/$p'), _, true).\n" for
+        p in ("test_idg_sets", "test_idg_space")
+    ])
+    main *= join([
+        ":- catch(use_module('$d/plunit_$short'), _, true).\n" for
+        (short, _, _) in _TT_UNITS
+    ])
     main *= join([
         "t_$(id)(R) :- ( catch((abolish_all_tables, $g, abolish_all_tables, R = ok), error(SsuE, _), R = raised(SsuE)) -> true ; R = failed ).\n"
         for (id, _, g) in _TT_CASES
@@ -461,8 +543,15 @@ end
 function _tt_swipl_lines(path::String, names::Vector{String})::Vector{String}
     out = mktempdir() do d
         f = joinpath(d, "drv.pl")
-        write(f, _TT_DRIVER * ":- initialization((fz_run('$path', [" * join(names, ",") * "]), halt)).\n")
-        read(pipeline(addenv(`swipl -q $f`, "LC_ALL" => "C"); stdin=devnull, stderr=devnull), String)
+        write(
+            f,
+            _TT_DRIVER * ":- initialization((fz_run('$path', [" * join(names, ",") *
+            "]), halt)).\n"
+        )
+        read(
+            pipeline(addenv(`swipl -q $f`, "LC_ALL" => "C"); stdin=devnull, stderr=devnull),
+            String
+        )
     end
     return String.(split(chomp(out), '\n'; keepempty=false))
 end
@@ -483,7 +572,9 @@ function _tt_ask(gd, ld, pred::String)::String
     fid = LK.PL_open_foreign_frame(ld)
     a = LK.PL_new_term_refs(ld, 1)
     LK.putSlotValue!(ld, a + 1, mk_var(_TT, LK.fresh_var_keys!(1)), LK.PutVarMap())
-    qid = LK.PL_open_query(gd, ld, nothing, LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS, proc, a)
+    qid = LK.PL_open_query(
+        gd, ld, nothing, LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS, proc, a
+    )
     n = 0
     while (n += 1) <= 50
         rc = LK.PL_next_solution(gd, ld, qid)

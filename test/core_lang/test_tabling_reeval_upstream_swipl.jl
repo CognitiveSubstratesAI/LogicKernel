@@ -74,7 +74,10 @@ fz_run(File, Ns) :-
 
 "The units' text, verbatim between begin_tests and end_tests: `(short name, begin_tests directive, text)`."
 const _TT_UNITS = [
-    ("tabling_reeval", ":- begin_tests(tabling_reeval, [ sto(rational_trees), cleanup(abolish_all_tables) ]).", raw"""
+    (
+        "tabling_reeval",
+        ":- begin_tests(tabling_reeval, [ sto(rational_trees), cleanup(abolish_all_tables) ]).",
+        raw"""
 
 /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 Two mutual dependent goals depending on   the same dynamic predicate. We
@@ -122,8 +125,12 @@ test(multiple_dependents,
     assert(d2(3)),
     answers(X, q2(X), [1,2,3]).
 
-"""),
-    ("tabling_reeval_merged", ":- begin_tests(tabling_reeval_merged, [ sto(rational_trees), cleanup(abolish_all_tables) ]).", raw"""
+"""
+    ),
+    (
+        "tabling_reeval_merged",
+        ":- begin_tests(tabling_reeval_merged, [ sto(rational_trees), cleanup(abolish_all_tables) ]).",
+        raw"""
 
 :- dynamic d/2 as incremental.
 :- table p/2 as incremental.
@@ -146,8 +153,12 @@ test(only) :-
     assert(d(1,3)),
     eval(p(1,_)).                       % caused assertion on falsecount >= 0
 
-"""),
-    ("dynamic_tabled", ":- begin_tests(dynamic_tabled, [ sto(rational_trees), cleanup(abolish_all_tables) ]).", raw"""
+"""
+    ),
+    (
+        "dynamic_tabled",
+        ":- begin_tests(dynamic_tabled, [ sto(rational_trees), cleanup(abolish_all_tables) ]).",
+        raw"""
 % A incrementally tabled predicate can also be dynamic.
 
 :- table (p/1,q/1) as incremental.
@@ -164,8 +175,12 @@ test(wfs,
     retract(q(1)),
     call_residual_program(p(1), P).
 
-"""),
-    ("dynamic_tabled2", ":- begin_tests(dynamic_tabled2, [ sto(rational_trees), cleanup(abolish_all_tables) ]).", raw"""
+"""
+    ),
+    (
+        "dynamic_tabled2",
+        ":- begin_tests(dynamic_tabled2, [ sto(rational_trees), cleanup(abolish_all_tables) ]).",
+        raw"""
 % A incrementally tabled predicate can also be dynamic.
 
 :- table (p/1,qs/1) as incremental.
@@ -201,8 +216,12 @@ test(wfs2,
     retract(q(1)),
     call_residual_program(p(1), P).
 
-"""),
-    ("dynamic_tabled3", ":- begin_tests(dynamic_tabled3, [ sto(rational_trees), cleanup(abolish_all_tables) ]).", raw"""
+"""
+    ),
+    (
+        "dynamic_tabled3",
+        ":- begin_tests(dynamic_tabled3, [ sto(rational_trees), cleanup(abolish_all_tables) ]).",
+        raw"""
 % Test that tnot creates a dependency
 
 :- table (p/1,qs/1,rs/1)  as incremental.
@@ -224,8 +243,12 @@ test(wfs, [ cleanup(retractall(q(_)))
     assert(q(1)),
     expect(x, p(1), []).
 
-"""),
-    ("dynamic_tabled4", ":- begin_tests(dynamic_tabled4, [ sto(rational_trees), cleanup(abolish_all_tables) ]).", raw"""
+"""
+    ),
+    (
+        "dynamic_tabled4",
+        ":- begin_tests(dynamic_tabled4, [ sto(rational_trees), cleanup(abolish_all_tables) ]).",
+        raw"""
 
 :- table (p/1,q/1,r/1) as incremental.
 :- dynamic r1/1 as incremental.
@@ -244,7 +267,8 @@ test(wfs,
     retract(r1(1)),
     expect(y, p(1), []).
 
-"""),
+"""
+    )
 ]
 
 "The file's common tail (lines `before :- ...` to the end), verbatim."
@@ -278,14 +302,42 @@ expect(Templ, Goal, Answer) :-
 
 "The rows: `(id, unit, goal)`; the goal is the plunit test with its options folded by hand."
 const _TT_CASES = [
-    ("tt01a", "tabling_reeval", "(pu_tabling_reeval:test(mutal_dependent, O), O = (A = B), A == B)"),
-    ("tt01b", "tabling_reeval", "setup_call_cleanup(true, pu_tabling_reeval:test(multiple_dependents, O), pu_tabling_reeval:retractall(d2(_)))"),
+    (
+        "tt01a",
+        "tabling_reeval",
+        "(pu_tabling_reeval:test(mutal_dependent, O), O = (A = B), A == B)"
+    ),
+    (
+        "tt01b",
+        "tabling_reeval",
+        "setup_call_cleanup(true, pu_tabling_reeval:test(multiple_dependents, O), pu_tabling_reeval:retractall(d2(_)))"
+    ),
     ("tt02", "tabling_reeval_merged", "pu_tabling_reeval_merged:test(only)"),
-    ("tt03", "dynamic_tabled", "setup_call_cleanup(true, (pu_dynamic_tabled:test(wfs, O), O = [_, C], C = (P == E), P == E), pu_dynamic_tabled:retractall(q(_)))"),
-    ("tt04a", "dynamic_tabled2", "setup_call_cleanup(true, (pu_dynamic_tabled2:test(wfs, O), O = [_, C], C = (P == E), P == E), pu_dynamic_tabled2:retractall(q(_)))"),
-    ("tt04b", "dynamic_tabled2", "setup_call_cleanup(true, (pu_dynamic_tabled2:test(wfs2, O), O = [_, C], C = (P == E), P == E), pu_dynamic_tabled2:retractall(q(_)))"),
-    ("tt05", "dynamic_tabled3", "setup_call_cleanup(true, pu_dynamic_tabled3:test(wfs, O), pu_dynamic_tabled3:retractall(q(_)))"),
-    ("tt06", "dynamic_tabled4", "setup_call_cleanup(true, pu_dynamic_tabled4:test(wfs, O), pu_dynamic_tabled4:retractall(r1(_)))"),
+    (
+        "tt03",
+        "dynamic_tabled",
+        "setup_call_cleanup(true, (pu_dynamic_tabled:test(wfs, O), O = [_, C], C = (P == E), P == E), pu_dynamic_tabled:retractall(q(_)))"
+    ),
+    (
+        "tt04a",
+        "dynamic_tabled2",
+        "setup_call_cleanup(true, (pu_dynamic_tabled2:test(wfs, O), O = [_, C], C = (P == E), P == E), pu_dynamic_tabled2:retractall(q(_)))"
+    ),
+    (
+        "tt04b",
+        "dynamic_tabled2",
+        "setup_call_cleanup(true, (pu_dynamic_tabled2:test(wfs2, O), O = [_, C], C = (P == E), P == E), pu_dynamic_tabled2:retractall(q(_)))"
+    ),
+    (
+        "tt05",
+        "dynamic_tabled3",
+        "setup_call_cleanup(true, pu_dynamic_tabled3:test(wfs, O), pu_dynamic_tabled3:retractall(q(_)))"
+    ),
+    (
+        "tt06",
+        "dynamic_tabled4",
+        "setup_call_cleanup(true, pu_dynamic_tabled4:test(wfs, O), pu_dynamic_tabled4:retractall(r1(_)))"
+    )
 ]
 
 const _TT_PINNED = [
@@ -297,7 +349,7 @@ const _TT_PINNED = [
     "t_tt04a c[116,95,116,116,48,52,97]/1(a[111,107])",
     "t_tt04b c[116,95,116,116,48,52,98]/1(a[111,107])",
     "t_tt05 c[116,95,116,116,48,53]/1(a[111,107])",
-    "t_tt06 c[116,95,116,116,48,54]/1(a[111,107])",
+    "t_tt06 c[116,95,116,116,48,54]/1(a[111,107])"
 ]
 
 "The answer plunit expects of every row: the test passes, `R = ok` (run in swipl by gen_reeval.py pin, plunit part of pins file)."
@@ -309,7 +361,7 @@ const _TT_UPSTREAM = [
     "a[111,107]",
     "a[111,107]",
     "a[111,107]",
-    "a[111,107]",
+    "a[111,107]"
 ]
 
 "The files of the program in a fresh directory: one module file per unit, the main file with the rows; returns the main file."
@@ -318,7 +370,8 @@ function _tt_materialize()::String
     for (short, _, text) in _TT_UNITS
         write(
             joinpath(d, "pu_$short.pl"),
-            ":- module(pu_$short, []).\n:- use_module(library(debug)).\n:- use_module(library(wfs)).\n" * text * "\n" * _TT_TAIL
+            ":- module(pu_$short, []).\n:- use_module(library(debug)).\n:- use_module(library(wfs)).\n" *
+            text * "\n" * _TT_TAIL
         )
     end
     main = join([":- use_module('$d/pu_$short').\n" for (short, _, _) in _TT_UNITS])
@@ -333,8 +386,15 @@ end
 function _tt_swipl_lines(path::String, names::Vector{String})::Vector{String}
     out = mktempdir() do d
         f = joinpath(d, "drv.pl")
-        write(f, _TT_DRIVER * ":- initialization((fz_run('$path', [" * join(names, ",") * "]), halt)).\n")
-        read(pipeline(addenv(`swipl -q $f`, "LC_ALL" => "C"); stdin=devnull, stderr=devnull), String)
+        write(
+            f,
+            _TT_DRIVER * ":- initialization((fz_run('$path', [" * join(names, ",") *
+            "]), halt)).\n"
+        )
+        read(
+            pipeline(addenv(`swipl -q $f`, "LC_ALL" => "C"); stdin=devnull, stderr=devnull),
+            String
+        )
     end
     return String.(split(chomp(out), '\n'; keepempty=false))
 end
@@ -355,7 +415,9 @@ function _tt_ask(gd, ld, pred::String)::String
     fid = LK.PL_open_foreign_frame(ld)
     a = LK.PL_new_term_refs(ld, 1)
     LK.putSlotValue!(ld, a + 1, mk_var(_TT, LK.fresh_var_keys!(1)), LK.PutVarMap())
-    qid = LK.PL_open_query(gd, ld, nothing, LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS, proc, a)
+    qid = LK.PL_open_query(
+        gd, ld, nothing, LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS, proc, a
+    )
     n = 0
     while (n += 1) <= 50
         rc = LK.PL_next_solution(gd, ld, qid)
