@@ -29,6 +29,35 @@
 # COPYRIGHT: CWI, Amsterdam
 # COPYRIGHT: SWI-Prolog Solutions b.v.
 # PIN1 ledger (V10.1.20): re-cite only, no code change (cbf4e189..18168e62 compared, D-0447 Q1) — pl-data.h: access-only (d755bdc4), ported; pl-gmp.h: access-only (d755bdc4); pl-arith.c: access-only (d755bdc4) and the ported backports 1582e8b3, a8e64f93; pl-proc.c: ported (b94d7de5 commit 3, 38281d6b commit 2, ea1b569b backport); pl-op.c: the ported backport 1772f406; pl-prologflag.c: flags validate_api and the tabling restraint flags ported, 1412ce49 ported; pl-rec.c: access-only (d755bdc4); pl-gvar.c: access-only (d755bdc4); pl-tabling.h: no TP_*/table_props line changed, the struct hunks are the TAB1 row (cfile:pl-tabling.c). Also re-cited: pl-global.h: the unported fields are the tabling fields (TAB1 row cfile:pl-tabling.c), LD->profile (PROF1) and LD->atoms.reserved (ATOM1), owners in docs/architecture.md (deferred owners); SWI-Prolog.h: PLVERSION ported; PL_get_arg_values, PL_get_list_slice are owner FLI1 (docs/architecture.md, deferred owners).
+# Synced to cf6960c2 (pl-incl.h, and the pl-data.h and pl-gmp.h declarations this file carries; read in full, the diffs 18168e62..cf6960c2):
+#   * The word layout (pl-data.h): `LMASK_BITS` 7 -> 8 (a VARIANT bit, 0x20, between storage and the GC masks; `MARK_MASK`/`FIRST_MASK`
+#     move to bits 6/7; `TAGEX_COUNT` 64; new `KIND_MPQ`, `TAGEX_INDIRECT_MPQ`, `TAGEX_PTRINT`, `isPtrInt`, `consPtrInt`,
+#     `isMarkedOrIndHdr`, `hasTag`, `consTagged`/`valTagged`), and `mkIndHdr`, `wsizeofInd`, `padHdr`, `mkPadHdr`, `indexAtom`,
+#     `MK_FUNCTOR`, `functorHashValue`, `indexFunctor` are written with `consTagged`/`valTagged` (the same values for one `LMASK_BITS`).
+#     The constants here keep the layout of the pin, while the pin is 18168e62 (a pointer integer is a plain integer here:
+#     `PL_get_pointer_ex`, see pl-prims.jl `compare_primitives`; nothing reads the kind and variant bits).
+#     ONE answer follows from `LMASK_BITS = 8`, kept while the pin is 18168e62 and recorded as a deferred row for the oracle move: a
+#     tagged integer is 56 bits at the target (`PLMINTAGGEDINT` -2^55, `PLMAXTAGGEDINT` 2^55-1, were 2^56), so `numbervars/3`
+#     past 2^55-1 raises `representation_error(tagged_integer)` (`numberVars`, pl-prims.c:3419) and the flags `min_tagged_integer`,
+#     `max_tagged_integer` (pl-prologflag.c:2657-2658; pl-prologflag.jl registers them from the two constants) read the new
+#     bounds, as do the tagged-or-indirect choices of pl-comp.jl and pl-gmp.jl. Moving the constant earlier would fail
+#     `test_portable_smallint_swipl.jl`, which compares it to the pin's live flag, and the flag tests of the same kind.
+#   * pl-gmp.h: the size word of an MPZ/MPQ on a stack is the plain signed limb count (`mpz_size_stack(sz)` is `(word)(sword)sz`,
+#     `mpz_stack_size(w)` is `(int)(sword)w`); `MP_RAT_MASK` (pl-data.h) and `mpq_size_stack`, `mpq_stack_size` are gone, a rational
+#     is told by its cell kind (`KIND_MPQ`). Removed at the target, kept while the pin is 18168e62: no kernel function in src/ reads
+#     them (a number is a `BigInt` or `Rational{BigInt}` in a value word); `test/core_lang/test_words.jl` pins the pin's shifted
+#     value, so the shifted `mpz_size_stack`/`mpz_stack_size` stay as they are, a layout only.
+#   * `SIZEOF_CREF_CLAUSE` is rounded to a word at the target (`ROUND(.., sizeof(word))`, a `clause_ref` may be followed by a local
+#     frame, `push_continuation()`): 24 bytes are a whole number of words, the value here (3) is the same.
+#   * Not written, no row (the generational collector, the thread-local blobs and the signals they use are unwritten in this kernel):
+#     `gen_remember` and its call in `GTrail` (`p < LD->gen_bar`, the generational GC; the call sites of pl-prims.c, pl-read.c
+#     and pl-dict.c carry the same note); `gc_stats.totals.minor_collections` (`statistics/2` answers it as 0, pl-prims.jl
+#     `swi_statistics`); the `gc_trace_*` types and queue (the flag `trace_gc` stays a plain Boolean); `VSIG_TRACE_GC`,
+#     `SIG_TRACE_GC` and `NUM_VSIGS` 8 (no virtual signal table); the local-atom reference bits (see src/pl-atom.jl) and the
+#     `local_atom_chunk` and `local_chunk_array` structs. `PLFLAG_GC_GENERATIONAL` (38, the flag `gc_generational`, default
+#     `true`) is the enum entry of pl-prologflag.c:2582, whose owner registers the flag with its row (an answer of
+#     `current_prolog_flag/2`): the constant goes with that row.
+#   File pin not bumped (it moves at the end of SYNC).
 # THE SHARED DECLARATIONS the clause store and its indexes are built from: SWI-Prolog's structs
 # `arg_info`, `clause`, `clause_ref`, `clause_bucket`, `clause_index`, `clause_list`, `definition`
 # and `clause_choice`, with their field names, and the constants and word layout they use.
@@ -160,7 +189,8 @@ const COMMIT_CLAUSE = UInt32(0x0010)
 sizeofClause(n::Int)::Int = 8 + n
 # PORT: pl-incl.h SIZEOF_CREF_CLAUSE
 # DIVERGES: in positions: `offsetof(clause_ref, value.clause) + sizeof(Clause)`, 24 bytes on a 64-bit
-# build (pl-incl.h:1567-1579).
+# build (pl-incl.h:1567-1579). Synced to cf6960c2: the target rounds the value to a word (`ROUND(.., sizeof(word))`, a
+# `clause_ref` may be followed by a local frame): 24 bytes are whole words already, so the value is the same.
 "The size of a clause reference holding one clause, in positions (pl-incl.h)."
 const SIZEOF_CREF_CLAUSE = 3
 # PORT: pl-incl.h CL_BODY_CONTEXT

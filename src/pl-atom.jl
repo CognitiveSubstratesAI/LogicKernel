@@ -2187,6 +2187,13 @@ mutable struct atom
     name::Vector{UInt8}                 # name associated with atom
 end
 
+# Synced to cf6960c2 (pl-incl.h): the reference word has six state bits, not four: `ATOM_STATE_MASK` is `0x3F << 26`, with the new
+# `ATOM_LOCAL_REFERENCE` (bit 27, a thread-local blob), `ATOM_DISOWNED_REFERENCE` (bit 26, a local `PL_BLOB_OWNED` blob whose C object
+# is gone), `ATOM_IS_LOCAL`, `ATOM_TYPE_IS_INVALID`, `PL_BLOB_OWNED` (0x200), `atom_mark_func`, `LOCAL_AGC_MIN`, `LOCAL_AGC_SCAN_RATIO`,
+# `LOCAL_CHUNK_BITS`/`LOCAL_CHUNK_SIZE` and the `local_atom_chunk` and `local_chunk_array` structs. They serve the local atoms of
+# pl-atom.c ("Thread-local blobs"), which a single-threaded kernel has no use for: no atom here is local, so the four bits and the mask
+# below stay as at the pin (the extra two bits are 0 in every reference, `ATOM_IS_FREE` and the count mask answer the same).
+# Written when a thread-local blob is: `ATOM_TYPE_IS_INVALID(t)` is true also for a NULL type (a never used, zeroed slot).
 # PORT: pl-incl.h ATOM_RESERVED_REFERENCE
 const ATOM_RESERVED_REFERENCE = UInt32(0x1) << 31
 # PORT: pl-incl.h ATOM_VALID_REFERENCE
@@ -2205,7 +2212,8 @@ ATOM_IS_RESERVED(ref::UInt32)::Bool = (ref & ATOM_RESERVED_REFERENCE) != 0
 ATOM_IS_VALID(ref::UInt32)::Bool = (ref & ATOM_VALID_REFERENCE) != 0
 
 # PORT: pl-incl.h ATOM_TYPE_INVALID
-# DIVERGES: a blob type no real one equals (upstream: the pointer 0x7).
+# DIVERGES: a blob type no real one equals (upstream: the pointer 0x7). Synced to cf6960c2: the target also tests for a NULL type
+# (`ATOM_TYPE_IS_INVALID`, a zeroed slot); a slot of this table is always built with this value, so the second test has no case.
 "The type of an atom slot that holds no atom (pl-incl.h)."
 const ATOM_TYPE_INVALID = PL_blob_t(UInt32(0), "<invalid>")
 
