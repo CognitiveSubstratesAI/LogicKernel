@@ -47,9 +47,23 @@ t_idg09(R) :- ti_tab(T), '$idg_set_falsecount'(T, 2), '$tbl_variant_table'(0, us
     '$idg_falsecount'(T2, F), R = r(S, F).
 t_idg10(R) :- '$tbl_variant_table'(0, user:ti_p(_), T, S, _, _), '$idg_set_falsecount'(T, 0),
     '$tbl_variant_table'(0, user:ti_p(_), T2, S2, _, _), ( T == T2 -> Same = same ; Same = other ), R = r(S, S2, Same).
+:- table ti_pa/1 as incremental.
+:- dynamic([ti_da/1], [incremental(true)]).
+ti_da(1).
+ti_pa(X) :- ti_da(X).
+t_idg13(R) :- '$set_predicate_attribute'(user:ti_da(_), abstract, 0), ti_pa(Y),
+    '$get_predicate_attribute'(user:ti_da(_), abstract, V), R = r(Y, V).
+:- table ti_v5/1 as incremental.
+ti_v5(X) :- statistics(table_space_used, U), L is U+1, set_prolog_flag(table_space, L), ti_d(X).
+t_idg11(R) :- ti_p(_), ti_tab(T),
+    catch(('$idg_set_falsecount'(T, 4294967296), R0 = ok), error(E, _), R0 = raised(E)),
+    '$idg_falsecount'(T, F0), '$idg_set_falsecount'(T, 4294967295), '$idg_falsecount'(T, F1),
+    '$idg_set_falsecount'(T, 0), R = r(R0, F0, F1).
+t_idg12(R) :- current_prolog_flag(table_space, Old), catch(ti_v5(_), error(E, _), true),
+    set_prolog_flag(table_space, Old), ( var(E) -> R = none ; R = raised(E) ).
 """
 
-const _TI_CASES = ["t_idg01", "t_idg05", "t_idg02", "t_idg03", "t_idg04", "t_idg06", "t_idg07", "t_idg08", "t_idg09", "t_idg10"]
+const _TI_CASES = ["t_idg01", "t_idg05", "t_idg02", "t_idg03", "t_idg04", "t_idg06", "t_idg07", "t_idg08", "t_idg09", "t_idg10", "t_idg11", "t_idg12", "t_idg13"]
 
 # swipl 10.1.20 (`ti_q(t_idg<NN>, A)`, in the order of `_TI_CASES`), two identical runs (md5 equal), 2026-11-10
 const _TI_PINNED = [
@@ -63,6 +77,9 @@ const _TI_PINNED = [
     "r(complete,0,incremental,ret1,unbound)",   # idg08 (TB7M5): `\$tbl_variant_table` of the complete incremental table: status, falsecount, type
     "r(invalid,2)",                         # idg09 (TB7M5): falsecount 2: complete_or_invalid_status answers `invalid`
     "r(invalid,complete,same)",             # idg10 (TB7M5): falsecount back to 0: the same table is `complete` again
+    "r(raised(representation_error(falsecount)),0,4294967295)",   # idg11 (DEFKILL2, TB6-P14): pl-tabling.c:9864 `fc > UINT_MAX`; UINT_MAX itself is stored
+    "raised(resource_error(private_table_space))",                # idg12 (DEFKILL2, TB6-V5): the dyncall edge of a full pool: pl-vmi.c:3547-3548 THROW_EXCEPTION
+    "r(1,0)",                              # idg13 (DEFKILL2, TB6-N19): an incremental dynamic predicate with abstract(0) under a tabled one; swipl writes no warning
 ]
 
 "The `~q` text of each case's answer, in order, from swipl at the pin."
@@ -110,6 +127,8 @@ end
     for (case, pin) in zip(_TI_CASES, _TI_PINNED)
         @test _ti_ask(gd, ld, case) == pin
     end
+    # DEFKILL2 (TB6-N19): swipl writes no "Only abstract(0)" warning for abstract(0) (pl-vmi.c:3534-3535); the collected messages hold none
+    @test !any(m -> kind(m[2]) === SYM && occursin("Only abstract(0)", sym_text(m[2])), ld.messages)
     @test ld.tabling.idg_edge_states.live == 0          # every '$idg_edge'/'$idg_false_edge' state was given back
 
     if Sys.which("swipl") !== nothing
@@ -891,4 +910,303 @@ end
     bad = d()
     @test good && !bad
     tp.flags = saved
+end
+
+# ── DEFKILL2 rows (the DEFERRED KILL entries of tools/mutants/TB6.py): each premise is asserted in the row ───────────────────────
+@testset "idg28: a grown block keeps the dead count of the old one (pl-idgset.c:244-250 grow_block, :300-302, :347-352, :387)" begin
+    gd, ld = _ti_wb()
+    nodes = [_ti_node(ld)[2] for _ in 1:6]
+    set = LK.idg_set{_TIN}()
+    add(p) = LK.idg_set_add(ld, set, p, nothing, nothing)
+    del(p) = LK.idg_set_delete(set, p, nothing, nothing)
+    for i in 1:4
+        @test add(nodes[i]) == 1
+    end
+    @test set.block.capacity == 4 && set.block.count == 4 && set.block.dead == 0       # full: the next new entry grows the block
+    @test del(nodes[3]) && set.block.dead == 1 && LK.idg_set_size(set) == 3            # one dead entry, not revived
+    @test add(nodes[5]) == 1 && set.block.capacity == 8                                 # grow_block(b): `nb->dead = b->dead` (:250)
+    @test set.block.count == 5 && set.block.dead == 1                                   # C: count 5, dead 1
+    @test LK.idg_set_size(set) == 4 && !LK.idg_set_contains(set, nodes[3])              # size = count - dead (:387)
+    @test _ti_live(set) == nodes[[1, 2, 4, 5]]
+    for p in nodes[[1, 2, 4]]
+        @test del(p)
+        @test set.block !== nothing                                                     # `++b->dead == b->count` (:350) not yet
+    end
+    @test del(nodes[5]) && set.block === nothing && LK.idg_set_is_empty(set)            # 5 dead of 5: the block goes
+    @test add(nodes[3]) == 1 && LK.idg_set_size(set) == 1                               # a fresh single pointer again
+end
+
+@testset "idg29: an IDG node charges sizeof(idg_node) = 80 bytes to the table pool (pl-tabling.c idg_new alloc_from_pool, pl-tabling.h:225-254)" begin
+    gd, ld = _ti_wb()
+    pool = ld.tabling.node_pool
+    @test pool isa LK.alloc_pool
+    # sizeof(idg_node) at the pin, 64-bit, with O_TRIE_STATS (pl-trie.h:43): magic 4 + concurrent 1 (padded to 8), five pointers
+    # (atrie, lingering, mono, registry, plus affected+dependent as two uintptr_t = 6 words) at 8 each = 48, three unsigned 12,
+    # stats 2 unsigned 8, the bit-field word 4: 8 + 8 + 16 + 8 + 8 + 8 + 12 + 8 + 4 = 80 (the pointer words: atrie 8, affected 8,
+    # dependent 8, lingering 8, mono 8, registry 8)
+    @test LK.SIZEOF_IDG_NODE == 80
+    tr1 = LK.trie_create(_TI)
+    s0 = pool.size
+    n1 = LK.idg_new(ld, tr1)::_TIN
+    first_delta = pool.size - s0
+    @test first_delta == LK.SIZEOF_IDG_NODE + LK.reg_block_size(0) * 8      # the node, and the registry's first block (reg_block)
+    tr2 = LK.trie_create(_TI)
+    s1 = pool.size
+    n2 = LK.idg_new(ld, tr2)::_TIN
+    @test pool.size - s1 == 80 && pool.size - s1 == LK.SIZEOF_IDG_NODE      # the second node: the node only
+    LK.idg_free_node(n2, pool)
+    @test pool.size == s1                                                   # idg_free_node discharges the same 80
+end
+
+@testset "idg30: with a free direction `\$idg_edge` goes on from the parents to the dependents (pl-tabling.c:8615-8624 advance_idg_edge_state)" begin
+    gd, ld = _ti_wb()
+    pt, p = _ti_node(ld)            # parent
+    st, s = _ti_node(ld)            # self: has a parent AND a child
+    ct, c = _ti_node(ld)            # child
+    @test LK.idg_add_child(ld, p, s, 0, 0) && LK.idg_add_child(ld, s, c, 0, 0)
+    @test _ti_live(s.affected) == [p] && _ti_live(s.dependent) == [c]
+    # the state `idg_edge_gen` builds for an unbound direction with a non-empty `affected` set (:8692-8695: fixed_dir stays false)
+    state = LK.idg_edge_state{_TI}()
+    state.atrie = st
+    state.dir = lk_sym(_TI, :affected)
+    state.set = s.affected
+    state.en = LK.idg_set_enum_init(s.affected)
+    @test !state.fixed_dir
+    @test LK.advance_idg_edge_state(ld, state)                                      # the parent
+    @test sym_text(state.dir) == "affected" && state.deptrie_symbol == LK.trie_symbol(gd, pt)
+    @test LK.advance_idg_edge_state(ld, state)                                      # `state->dir = ATOM_dependent` (:8615-8624), the child
+    @test sym_text(state.dir) == "dependent" && state.set === s.dependent && state.deptrie_symbol == LK.trie_symbol(gd, ct)
+    @test !LK.advance_idg_edge_state(ld, state)                                     # done
+    # with a fixed direction it stops after the parents (:8615 `!state->fixed_dir`)
+    fixed = LK.idg_edge_state{_TI}()
+    fixed.atrie = st
+    fixed.dir = lk_sym(_TI, :affected)
+    fixed.fixed_dir = true
+    fixed.set = s.affected
+    fixed.en = LK.idg_set_enum_init(s.affected)
+    @test LK.advance_idg_edge_state(ld, fixed) && !LK.advance_idg_edge_state(ld, fixed)
+end
+
+@testset "idg31: assert_term! makes a NEW predicate incremental under PL_CREATE_INCREMENTAL only (pl-comp.c:4916-4919)" begin
+    gd, ld = _ti_wb()
+    fact(name, v) = (
+        t = LK.PL_new_term_ref(ld);
+        LK.putSlotValue!(ld, t + 1, mk_expr(_TI, _TI[lk_sym(_TI, Symbol(name)), lk_gnd(_TI, v)]), LK.PutVarMap());
+        t
+    )
+    defn(name) = LK.isCurrentProcedure(sym_key(lk_sym(_TI, Symbol(name))), 1, LK.MODULE_user(gd)).definition
+    incr(name) = (LK.get_predicate_table_props!(defn(name)).flags & LK.TP_INCREMENTAL) != 0
+    # flags 0: a new predicate, not incremental
+    @test LK.assert_term!(gd, ld, fact("ti_v6a", 1), 0, LK.CL_END, nothing, nothing, 0) !== nothing
+    @test !incr("ti_v6a")
+    # PL_CREATE_INCREMENTAL on a new predicate: incremental
+    @test LK.assert_term!(gd, ld, fact("ti_v6b", 1), 0, LK.CL_END, nothing, nothing, LK.PL_CREATE_INCREMENTAL) !== nothing
+    @test incr("ti_v6b")
+    # a predicate that is already defined keeps its attributes (`!isDefinedProcedure(proc)`)
+    @test LK.assert_term!(gd, ld, fact("ti_v6c", 1), 0, LK.CL_END, nothing, nothing, 0) !== nothing
+    @test LK.assert_term!(gd, ld, fact("ti_v6c", 2), 0, LK.CL_END, nothing, nothing, LK.PL_CREATE_INCREMENTAL) !== nothing
+    @test !incr("ti_v6c")
+end
+
+@testset "idg32: a retired block goes on the lingering list of the owning node, newest first (pl-idgset.c:155-166 retire_block)" begin
+    gd, ld = _ti_wb()
+    nodes = [_ti_node(ld)[2] for _ in 1:10]
+    owner = nodes[10]
+    set = LK.idg_set{_TIN}()
+    add(p) = LK.idg_set_add(ld, set, p, owner, nothing)
+    @test owner.lingering === nothing
+    for i in 1:4
+        @test add(nodes[i]) == 1
+    end
+    b4 = set.block
+    @test b4.capacity == 4 && owner.lingering === nothing                         # nothing retired yet
+    for i in 5:8
+        @test add(nodes[i]) == 1
+    end
+    b8 = set.block
+    @test b8.capacity == 8 && owner.lingering === b4 && b4.older === nothing      # the first grow: `*lingering = b4`, older NULL
+    @test add(nodes[9]) == 1
+    @test set.block.capacity == 16 && owner.lingering === b8 && b8.older === b4    # the second: `b->older = *lingering` (:161)
+    @test b4.older === nothing
+    LK.idg_set_free_lingering(owner, nothing)
+    @test owner.lingering === nothing                                              # idg_set_free_lingering (:169-178)
+end
+
+@testset "idg33: a change of a table that is still being evaluated raises permission_error(update, variant, V) (pl-tabling.c idg_changed, change_incomplete_error)" begin
+    gd, ld, def = _ti_db()
+    atrie = _ti_table!(ld, def, false)
+    atrie.flags &= ~LK.TRIE_COMPLETE                          # a table under evaluation: a worklist and not complete
+    LK.new_worklist(ld, atrie)
+    n = LK.idg_new(ld, atrie)::_TIN
+    atrie.IDG = n
+    @test LK.table_is_incomplete(atrie) && n.falsecount == 0 && LK.PL_exception(ld, 0) == 0
+    @test !LK.idg_changed(ld, atrie, 0)                       # change_incomplete_error: false, the error raised
+    @test LK.PL_exception(ld, 0) != 0 && n.falsecount == 0    # the mutant answers true with nothing raised
+    LK.PL_clear_exception(ld)
+    # the control side: the same table, complete, is invalidated
+    atrie.flags |= LK.TRIE_COMPLETE
+    @test !LK.table_is_incomplete(atrie)
+    @test LK.idg_changed(ld, atrie, 0) && n.falsecount == 1 && LK.PL_exception(ld, 0) == 0
+end
+
+# ── DEFKILL4 rows: answer nodes that carry TN_IDG_* flags, built by hand (TB6-E10, E18, E19, E20) ─────────────────────────────
+# The answer is node 1 of a bare trie (`map_trie_node(atrie, 1, ...)` visits it, as idg24 uses it). Its value is `word(11)`: neither a record
+# (`isRecord`: low two bits 0) nor a trie pointer (`isTriePtrValue`: low three bits 7), so `trie_delete`'s release_value has nothing to free.
+# A conditional answer carries `DL_UNDEFINED_INFO` (`answer_is_conditional`: pl-tabling.c:982). Every premise is asserted in the row.
+"A complete trie with its IDG node and ONE answer (node 1, value `word(11)`, counted in `value_count`), no delay info, no IDG flags."
+function _ti_answer_node(ld)
+    tr, n = _ti_node(ld)
+    tr.nodes[1].value = LK.word(11)
+    tr.value_count = 1
+    return tr, n
+end
+
+@testset "idg34: reeval_prep_node marks the answer deleted and settles its unconditional flag (pl-tabling.c:11141-11164)" begin
+    gd, ld = _ti_wb()
+    # an unconditional answer that was ADDED: DELETED set, ADDED cleared, UNCONDITIONAL set (:11146-11147, :11158-11160)
+    tr, n = _ti_answer_node(ld)
+    tr.nodes[1].flags |= LK.TN_IDG_ADDED
+    @test tr.nodes[1].value != 0 && !LK.answer_is_conditional(gd, tr, 1) && (tr.nodes[1].flags & LK.TN_IDG_DELETED) == 0
+    LK.reeval_prep_node(ld, tr, 1)
+    f = tr.nodes[1].flags
+    @test (f & LK.TN_IDG_DELETED) != 0 && (f & LK.TN_IDG_ADDED) == 0 && (f & LK.TN_IDG_UNCONDITIONAL) != 0
+    @test tr.nodes[1].value == LK.word(11)                                              # the answer itself stays
+
+    # a conditional answer: DELETED set, its delay info dropped, UNCONDITIONAL cleared, the worklist's `undefined` count down by one (:11149-11156)
+    tc, nc = _ti_answer_node(ld)
+    wl = LK.tbl_worklist{_TI}()
+    wl.table = tc.serial
+    wl.undefined = 2
+    tc.worklist = wl
+    LK.set_node_delayinfo(gd, tc, 1, LK.DL_UNDEFINED_INFO)
+    tc.nodes[1].flags |= LK.TN_IDG_UNCONDITIONAL | LK.TN_IDG_ADDED
+    @test LK.answer_is_conditional(gd, tc, 1)
+    LK.reeval_prep_node(ld, tc, 1)
+    f = tc.nodes[1].flags
+    @test (f & LK.TN_IDG_DELETED) != 0 && (f & LK.TN_IDG_ADDED) == 0 && (f & LK.TN_IDG_UNCONDITIONAL) == 0
+    @test !LK.answer_is_conditional(gd, tc, 1) && wl.undefined == 1
+    wl.undefined = 0                                                                    # `wl->undefined > 0` guards the decrement
+    tc.nodes[1].flags |= LK.TN_IDG_UNCONDITIONAL
+    LK.set_node_delayinfo(gd, tc, 1, LK.DL_UNDEFINED_INFO)
+    LK.reeval_prep_node(ld, tc, 1)
+    @test wl.undefined == 0
+
+    # a node without a value (n->value == 0, :11144): nothing is touched
+    tz, nz = _ti_node(ld)
+    @test tz.nodes[1].value == 0
+    LK.reeval_prep_node(ld, tz, 1)
+    @test (tz.nodes[1].flags & LK.TN_IDG_MASK) == 0
+end
+
+@testset "idg35: reeval_complete_node and reeval_complete know a new answer (pl-tabling.c:11301-11337, :11340-11370)" begin
+    gd, ld = _ti_wb()
+    # Got UNconditional (:11328-11331): the answer was conditional in the previous evaluation (no UNCONDITIONAL mark) and is not now
+    tr, n = _ti_answer_node(ld)
+    @test !LK.answer_is_conditional(gd, tr, 1) && (tr.nodes[1].flags & LK.TN_IDG_UNCONDITIONAL) == 0 && !n.new_answer
+    LK.reeval_complete_node(ld, tr, 1)
+    @test n.new_answer                                                                  # the mutant (TB6-E19) leaves it false
+    @test (tr.nodes[1].flags & LK.TN_IDG_MASK) == 0 && tr.nodes[1].value == LK.word(11) # clear(n, TN_IDG_MASK), the answer stays
+
+    # Not modified (:11332-11334): the answer was unconditional and still is: new_answer stays false
+    tu, nu = _ti_answer_node(ld)
+    tu.nodes[1].flags |= LK.TN_IDG_UNCONDITIONAL
+    LK.reeval_complete_node(ld, tu, 1)
+    @test !nu.new_answer && (tu.nodes[1].flags & LK.TN_IDG_MASK) == 0
+
+    # Got conditional (:11324-11327): unconditional before, conditional now
+    tg, ng = _ti_answer_node(ld)
+    tg.nodes[1].flags |= LK.TN_IDG_UNCONDITIONAL
+    LK.set_node_delayinfo(gd, tg, 1, LK.DL_UNDEFINED_INFO)
+    @test LK.answer_is_conditional(gd, tg, 1)
+    LK.reeval_complete_node(ld, tg, 1)
+    @test ng.new_answer
+
+    # reeval_complete (:11340-11370): the answer count is the same (1 == 1) but an answer is new: nothing goes up to the parent (TB6-E10)
+    tn, nn = _ti_answer_node(ld)
+    pt, p = _ti_node(ld)
+    @test LK.idg_add_child(ld, p, nn, 0, 0)
+    p.falsecount = 1
+    nn.reevaluating = true
+    nn.answer_count = tn.value_count
+    @test nn.answer_count == 1 && !nn.new_answer && (tn.nodes[1].flags & LK.TN_IDG_UNCONDITIONAL) == 0
+    LK.reeval_complete(ld, tn)
+    @test nn.new_answer && nn.stats_reevaluated == 1
+    @test p.falsecount == 1                                                             # not `same_answers`: no idg_propagate_change
+
+    # the control side: the same table with an answer that did not change propagates `not changed` (the parent is valid again)
+    tk, nk = _ti_answer_node(ld)
+    tk.nodes[1].flags |= LK.TN_IDG_UNCONDITIONAL
+    qt, q = _ti_node(ld)
+    @test LK.idg_add_child(ld, q, nk, 0, 0)
+    q.falsecount = 1
+    nk.reevaluating = true
+    nk.answer_count = tk.value_count
+    LK.reeval_complete(ld, tk)
+    @test !nk.new_answer && q.falsecount == 0
+end
+
+@testset "idg36: reset_evaluate_node deletes only an added answer (pl-tabling.c:11395-11411)" begin
+    gd, ld = _ti_wb()
+    # an answer that is not ADDED: it may be enumerated, so it is only marked deleted (:11407-11409); its delay info goes (:11397-11400)
+    tr, n = _ti_answer_node(ld)
+    LK.set_node_delayinfo(gd, tr, 1, LK.DL_UNDEFINED_INFO)
+    @test LK.answer_is_conditional(gd, tr, 1) && (tr.nodes[1].flags & LK.TN_IDG_ADDED) == 0
+    LK.reset_evaluate_node(ld, tr, 1)
+    @test (tr.nodes[1].flags & LK.TN_IDG_DELETED) != 0 && tr.nodes[1].value == LK.word(11)   # the mutant (TB6-E20) deletes it
+    @test !LK.answer_is_conditional(gd, tr, 1)
+
+    # an ADDED answer: trie_delete (:11405): the value goes, DELETED is not set
+    ta, na = _ti_answer_node(ld)
+    ta.nodes[1].flags |= LK.TN_IDG_ADDED
+    LK.reset_evaluate_node(ld, ta, 1)
+    @test ta.nodes[1].value == 0 && (ta.nodes[1].flags & LK.TN_IDG_DELETED) == 0
+end
+
+@testset "idg37: a re-derived unconditional answer makes a CONDITIONAL dependent answer unconditional, it does not remove it (pl-tabling.c:1364-1370, propagate_to_answer :1900)" begin
+    gd, ld, def = _ti_db()
+    t1 = _ti_table!(ld, def, true, 1)                                                      # the table of the worklist, as idg23
+    t2 = _ti_table!(ld, def, true, 2)                                                      # holds a conditional answer that delays on node 1 of t1
+    n = LK.idg_new(ld, t1)::_TIN
+    t1.IDG = n
+    n.reevaluating = true
+    wl = LK.tbl_worklist{_TI}()
+    wl.table = t1.serial
+    push!(wl.delays, LK.delay(t2.serial, 1))
+    # the conditional answer: one conjunction of one delay, on answer 1 of t1 (propagate_to_answer: `answer_ref(d.variant, d.answer) == panswer`)
+    t2.nodes[1].value = LK.word(11)
+    t2.nodes[1].flags |= LK.TN_PRIMARY
+    t2.value_count = 1
+    LK.set_node_delayinfo(gd, t2, 1, LK.delay_info(t2.serial, UInt32(0), [LK.delay_set(0, 1, UInt32(1))], [LK.delay(t1.serial, 1)]))
+    wl2 = LK.tbl_worklist{_TI}()
+    wl2.table = t2.serial
+    wl2.undefined = 1
+    t2.worklist = wl2
+    @test LK.answer_is_conditional(gd, t2, 1) && (t1.nodes[1].flags & LK.TN_IDG_UNCONDITIONAL) == 0 && wl.component === nothing
+    @test _ti_udl(ld, wl, 1) == (LK.UDL_TRUE, 0)                                           # simplified: the entry of the dependent answer is gone
+    # simplify_answer(wl, answer, true): the delay is removed from the conjunction, none is left: make_answer_unconditional (:1820)
+    @test !LK.answer_is_conditional(gd, t2, 1) && wl2.undefined == 0
+    # the answer STAYS (the mutant, truth false, removes the conjunction and the answer: remove_conditional_answer, trie_delete)
+    @test t2.value_count == 1 && (t2.nodes[1].flags & LK.TN_PRIMARY) != 0 && t2.nodes[1].value == LK.word(11)
+end
+
+@testset "idg38: free_worklist_set clears the table's worklist before freeing, whichever worklist it points at (pl-tabling.c:935-939, free_worklist :3912-3915)" begin
+    gd, ld, def = _ti_db()
+    t = _ti_table!(ld, def, true, 1)
+    n = LK.idg_new(ld, t)::_TIN
+    t.IDG = n
+    t.flags &= ~LK.TRIE_COMPLETE
+    n.reevaluating = true
+    wl = LK.tbl_worklist{_TI}()                                                            # the worklist in the set, for table t
+    wl.table = t.serial
+    other = LK.tbl_worklist{_TI}()                                                         # the table points at a different one
+    other.table = t.serial
+    t.worklist = other
+    wls = LK.worklist_set{LK.tbl_worklist{_TI}}()
+    push!(wls.members, wl)
+    @test t.worklist === other && t.worklist !== wl && wl.magic != 0
+    LK.free_worklist_set(ld, wls, LK.WLFS_DISCARD_INCOMPLETE)
+    # `atrie->data.worklist = NULL` (:935) runs before free_worklist: the table points at none. Without it (TB7M6-F2) free_worklist finds a worklist
+    # that is not wl (:3913-3915, "Oops") and leaves the pointer at `other`.
+    @test wl.magic == 0 && t.worklist === nothing
+    @test !n.reevaluating && n.aborted && (t.flags & LK.TRIE_COMPLETE) != 0                # reset_reevaluation ran after the free
 end
