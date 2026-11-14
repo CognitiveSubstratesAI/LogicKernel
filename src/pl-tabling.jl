@@ -9031,13 +9031,26 @@ end
 
 # PORT: pl-tabling.c atrie_answer_event
 # (pl-tabling.c:11443-11463 at the pin)
-# DIVERGES: the events (`unify_skeleton`, `table_answer_event`) are EV1's: a predicate with `events` is refused by name.
+# DIVERGES: the database is `_query_gd(ld)` (upstream: the global `GD`), the atom `ATOM_new_answer` is `mk_sym(T, :new_answer)`,
+# and `unify_trie_term(ld, atrie, nid, skel)` takes the trie (upstream finds it from the node); the node is a node id `nid`.
+# As upstream a failed `unify_skeleton` or `unify_trie_term` sends no event and answers true (failure is silently ignored),
+# and a listener that fails (no exception) is not an error: only a pending exception makes the answer false.
 "Send the new-answer event of `nid` of `atrie`; false if the hooks raised (pl-tabling.c `atrie_answer_event`)."
 function atrie_answer_event(ld::PL_local_data{T}, atrie::trie{T}, nid::Int)::Bool where {T}
     def = atrie.predicate
 
     if def !== nothing && def.events !== nothing
-        tbl_refuse(T, :atrie_answer_event, "atrie_answer_event: the events of a tabled predicate (table_answer_event)", "EV1")
+        wrapper = PL_new_term_ref(ld)
+        skel = PL_new_term_ref(ld)
+
+        if wrapper != 0 &&
+           skel != 0 &&
+           unify_skeleton(ld, atrie, wrapper, skel) &&
+           unify_trie_term(ld, atrie, nid, skel)[1]
+            table_answer_event(_query_gd(ld), ld, def, mk_sym(T, :new_answer), wrapper) &&
+                return true
+            return PL_exception(ld, 0) == 0
+        end
     end
 
     return true
@@ -9083,7 +9096,7 @@ end
 
 # PORT: pl-tabling.c tbl_monotonic_add_answer as pl_tbl_monotonic_add_answer2_va
 # (PRED_IMPL("$tbl_monotonic_add_answer", 2, tbl_monotonic_add_answer, 0), pl-tabling.c:10438-10492 at the pin)
-# DIVERGES: the answer of an answer subsumption table (`TRIE_ISMAP`) is queued as its node id; `atrie_answer_event` is the stub above (owner EV1).
+# DIVERGES: the answer of an answer subsumption table (`TRIE_ISMAP`) is queued as its node id; `atrie_answer_event` (above) sends the new-answer event of a predicate that has listeners.
 "`'\$tbl_monotonic_add_answer'(+Trie, +Answer)`: add an answer from monotonic propagation (pl-tabling.c)."
 function pl_tbl_monotonic_add_answer2_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}

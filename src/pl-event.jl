@@ -702,8 +702,8 @@ function predicate_update_event(
 end
 
 # PORT: pl-event.c table_answer_event
-# DIVERGES: the tabling status is a `tbl_status{T}` allocated here (upstream: a stack struct); the tabling code that fires
-# this event (`tbl_answer_event` sites) is left to EV1's wiring.
+# DIVERGES: the tabling status is a `tbl_status{T}` allocated here (upstream: a stack struct). The one caller is `atrie_answer_event`
+# (src/pl-tabling.jl, the new-answer event of `'$tbl_monotonic_add_answer'/2`).
 "Tell the listeners of the tabled predicate `def` about the `answer` added or removed by `action` (pl-event.c)."
 function table_answer_event(
     gd::PL_global_data{T}, ld::PL_local_data{T}, def::definition{T}, action::T,

@@ -7088,6 +7088,14 @@ What EV1 adds (pin `cbf4e1896275`, oracle swipl 10.1.19; written edit-only over 
 Tests: test/core_lang/test_event_swipl.jl (80 rows ev1p, ev1o, ev1u, ev1v, ev1e, ev1r, ev1g; pins from swipl 10.1.19, two byte-identical runs; generator evidence/EV1/gen_rows.py; ev1g01 is white-box:
 `garbage_collect_clauses/0` is not registered yet, the row calls `pl_garbage_collect_clauses!`). Mutants: tools/mutants/EV1c.py (51; three declared EQUIVALENT with file:line) and the event ones of tools/mutants/BOOTPREDSUB.py.
 
+**EV1 answer hook (TAB1, wip/ev1e; written edit-only, UNVERIFIED until a lane runs it):** `atrie_answer_event(ld, atrie, nid)` (src/pl-tabling.jl, pl-tabling.c:11443-11463) replaced the named refusal
+(owner EV1). Its one caller is `'$tbl_monotonic_add_answer'/2` (a new answer of a normal, not answer-subsumption, table); the answer-subsumption branch and an answer that already has a value send no event, as upstream.
+The listeners are called as `Closure(new_answer, M:Variant)` with the answer unified into the variant; a listener that fails is ignored, one that raises makes the predicate raise; the tabling status is saved and cleared
+around the call (`table_answer_event`, W2's `save_tabling_status`), so a listener may call a tabled predicate even while a tabling evaluation is active. The upstream test is tests/tabling/test_mono_subsumptive.pl,
+unit mono_abstract, test `new_answer` (the only test of the event in the pin; its row ev01 needs the monotonic dependency on a dynamic predicate, which is red until `$idg_add_mono_dyn_dep/3`'s `get_procedure(.., GP_FIND)`
+is replaced by `get_procedure_find`, the one-line fix named in evidence/TAB1/ev1_handoff.md). Rows ev02-ev13 reach the hook through `'$tbl_monotonic_add_answer'/2` directly. Tests:
+test/core_lang/test_tabling_events_swipl.jl (pins swipl 10.1.20, evidence/TAB1/ev1_verify.md); mutants tools/mutants/EV1T.py.
+
 ## BOOTPRED-dict — the remaining pl-dict.c predicates the boot and library files reference (R2b, audit D-0290, D-0291 item 5)
 
 What BOOTPRED-dict adds to src/pl-dict.jl (written edit-only; nothing compiled or run when this was written; swipl-devel pin `cbf4e1896275`, oracle swipl 10.1.19):
@@ -8336,8 +8344,8 @@ the dependency chains `idg_mdep`, the `mono_index` of a source node, the answer 
      (owner TX1/TB9; `prepare_reeval`'s `tt_add_table` stays the TB9 refusal). `Buffer`s are `Vector{Int}`, `TablePP`/`TablePW` are `Dict`/`IdDict`, `segstack` is a `Vector`.
   6. `mono_reeval_done_node` counts the deleted leaves through a `Ref` and allocates a closure per call (not an allocation-free function; its manifest row says `false`).
 - **Named refusals, each with its owner:** `$idg_add_mono_dyn_dep/3` calls `get_procedure(gd, ld, A1, GP_FIND)`, which src/pl-proc.jl refuses for anything but `GP_DEFINE` (owner V9): the predicate
-  throws `NotPortedError` until V9, so a monotonic table over a monotonic DYNAMIC predicate cannot run on the kernel before then; `atrie_answer_event` refuses a tabled predicate with `events`
-  (`table_answer_event`, owner EV1).
+  throws `NotPortedError` until V9, so a monotonic table over a monotonic DYNAMIC predicate cannot run on the kernel before then. `atrie_answer_event` (the new-answer event of a predicate with `events`,
+  EV1 answer hook, pl-tabling.c:11443-11463) is ported: it builds the wrapper (`unify_skeleton`) and the answer (`unify_trie_term`) and calls `table_answer_event`; see "EV1 answer hook" below.
 - **Stack-merge sites (other branches; evidence/TB7/handoff3.md):** wip/tb3 `prune_deleted_mdeps(ld, idg)` and `inner_is_monotonic(ld)`, wip/tb1 `tbl_variant_table`'s monotonic branch.
 - **To verify at the gate (unverified by construction):** the cross-branch names the block uses (TB1 `tbl_refuse`, `variant_table`, `unify_trie_term`; TB3 `wkl_mode_add_answer`, `WL_DYNAMIC`;
   TB6 `table_is_incomplete`); the FLI forms (`PL_discard_foreign_frame`, `PL_new_term_refs`, `PL_put_variable`, `_err_functor(ld, :monotonic, 1)`); `variant_hash(t, HASH_MURMUR)` and `cell_export{T}()`;
