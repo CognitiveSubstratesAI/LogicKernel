@@ -210,8 +210,8 @@ const _DL_CASES = [
     ),   # resource beats error
     ("ue05", raw"'$urgent_exception'(error(resource_error(r), _), time_limit_exceeded, R)"),   # timeout beats resource
     ("ue06", raw"'$urgent_exception'(time_limit_exceeded, unwind(foo), R)"),   # unwind beats timeout
-    ("ue07", raw"'$urgent_exception'(unwind(abort), unwind(foo), R)"),   # abort beats unwind
-    ("ue08", raw"'$urgent_exception'(unwind(abort), unwind(thread_exit(x)), R)"),   # thread_exit beats abort
+    ("ue07", raw"'$urgent_exception'(unwind(abort), unwind(foo), R)"),   # the top-level-unwind request beats unwind
+    ("ue08", raw"'$urgent_exception'(unwind(abort), unwind(thread_exit(x)), R)"),   # thread_exit beats the top-level-unwind request
     ("ue09", raw"'$urgent_exception'(unwind(thread_exit(x)), unwind(halt(1)), R)"),   # halt beats thread_exit
     ("ue10", raw"'$urgent_exception'(unwind(halt(1)), unwind(thread_exit(x)), R)"),   # halt stays
     ("ue11", raw"'$urgent_exception'(_, foo, R)"),   # an unbound ball

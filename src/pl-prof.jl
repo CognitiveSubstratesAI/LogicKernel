@@ -322,7 +322,7 @@ function add_sibling_ref!(
 end
 
 # PORT: pl-prof.c sumProfile
-# DIVERGES: file-wide 2 (`PL_handle_signals`, which can only fail on an aborted run, has no twin).
+# DIVERGES: file-wide 2 (`PL_handle_signals`, which can only fail on a run cut short, has no twin).
 "Sum the procedure `handle` over the subtree of the node `n`: the number of nodes of it (pl-prof.c)."
 function sumProfile(
     ld::PL_local_data{T}, n::call_node{T}, handle::Definition{T}, sum::node_sum{T},
