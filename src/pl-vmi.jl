@@ -36,8 +36,8 @@
 # `I_SHIFTCP` (:5908), the tail from `B_ARG_CF` (:1537) on ascending in the table; the whole table is not
 # in pl-vmi.c's order, earlier steps grouped their instructions by landing, and the row of
 # test_cont_boot_swipl.jl compares that tail. `I_CUTCHP` runs (b2); CONT1 runs the other six, except
-# the tabled branches of `I_RESET` / `I_EXITRESET` (TAB1) and the engine branch of `I_YIELD` (TH1),
-# which are refused by name.
+# the engine branch of `I_YIELD` (TH1), which is refused by name; the tabled branches of `I_RESET` /
+# `I_EXITRESET` run since TB2c (pl-vmi.c:5768, :5812 at the pin).
 #
 # NOT EMITTED, so not declared: H_SMALLINTW/B_SMALLINTW/L_SMALLINTW (only where a code word is
 # narrower than a word, `CODES_PER_WORD > 1`: on 64-bit swipl every tagged integer is a SMALLINT,

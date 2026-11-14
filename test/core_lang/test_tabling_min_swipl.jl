@@ -611,7 +611,7 @@ _tm_call_error(gd, ld, name::String) = _tm_call_result(gd, ld, name)[2]
         @test !LK._shared_supervisor(cd, LK.code[LK.S_WRAP, LK.I_EXIT])
         c01 = LK.closure_of_word(gd, d01.codes[wi + 2])::LK.closure
         @test c01.def.codes === cd.wrapper
-        # the run loop dispatches all three (S_WRAP and S_CALLWRAPPER run since WRAP1; S_TABLED stays a named TAB1 refusal, not an unknown instruction)
+        # the run loop dispatches all three (S_WRAP and S_CALLWRAPPER run since WRAP1; S_TABLED since TAB1 TB3b)
         for nm in (:S_WRAP, :S_CALLWRAPPER, :S_TABLED)
             @test nm in LK.VMI_RUN
         end
@@ -623,8 +623,13 @@ _tm_call_error(gd, ld, name::String) = _tm_call_result(gd, ld, name)[2]
         rc, e = _tm_call_result(gd, ld, "tm_w02")
         @test e === nothing && (rc == LK.PL_S_TRUE || rc == LK.PL_S_LAST)
         @test ld.query == 0 && ld.nqueries == 0
-        e = _tm_call_error(gd, ld, "tm_c05")                      # the `table` wrapper of a variant tabled predicate: S_TABLED
-        @test e isa LK.NotPortedError && occursin("S_TABLED", e.what) && e.step == "TAB1"
+        # TAB1 TB3 (D-0083, the refusal-flip rule): this row pinned the NAMED REFUSAL of S_TABLED (`NotPortedError`, step TAB1); the
+        # instruction has its body since TB3b, so the row flips to the behaviour, swipl's. tm_c05 is wrapped by the `table` wrapper
+        # (closure body `true`) and marked tabled/tabled_variant: S_TABLED opens the variant table, runs the wrapper once, and the
+        # call succeeds with ONE answer, `tm_c05(_)`, its argument unbound (swipl 10.1.20, ~/.local/swipl-pin1-18168e62:
+        # `findall(X, tm_c05(X), L)` gives `L = [_]`).
+        rc, e = _tm_call_result(gd, ld, "tm_c05")                 # the `table` wrapper of a variant tabled predicate: S_TABLED
+        @test e === nothing && (rc == LK.PL_S_TRUE || rc == LK.PL_S_LAST)
         @test ld.query == 0 && ld.nqueries == 0
         # S_WRAP is a closure copy's supervisor, entered through a closure's blob (`call(Closure)`): it is no longer entered by
         # hand on a plain definition (the copy's `impl_foreign_function` indexes `gd.closure_refs`); the rows are
