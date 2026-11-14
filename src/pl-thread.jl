@@ -38,9 +38,9 @@ Push a reference to `def` at its current generation; the enumeration runs in tha
 function pushPredicateAccessObj!(
     ld::PL_local_data{T}, gd::PL_global_data{T}, def::Definition{T}
 )::definition_ref{T} where {T}
-    gen = current_generation(gd, def)
-    while gen != current_generation(gd, def)        # do … while(): no other thread can move it
-        gen = current_generation(gd, def)
+    gen = current_generation(gd, ld, def)
+    while gen != current_generation(gd, ld, def)        # do … while(): no other thread can move it
+        gen = current_generation(gd, ld, def)
     end
     dref = definition_ref{T}(def, gen)
     push!(ld.predicate_references, dref)

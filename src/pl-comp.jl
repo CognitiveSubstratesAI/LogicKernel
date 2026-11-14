@@ -3655,7 +3655,10 @@ function clause_ndet(
                     tmp = head
                 else
                     tmp = PL_new_term_ref(ld)
-                    unify_definition(gd, ld, MODULE_user(gd), head, def, tmp, 0) ||
+                    # (swipl-devel 18168e62 pl-comp.c:7386: the head is seen from the caller's context module)
+                    unify_definition(
+                        gd, ld, gd.modules[contextModule(gd, ld, fr)], head, def, tmp, 0
+                    ) ||
                         return FFALSE
                 end
                 h2 = PL_new_term_ref(ld)
@@ -3839,8 +3842,7 @@ end
 # (PRED_IMPL("nth_clause", 3, nth_clause, PL_FA_TRANSPARENT|PL_FA_NONDETERMINISTIC); the table's PRED_DEF flags META|NDET, pl-comp.c:9276, win)
 # DIVERGES: the state `Cref` (`clause`, `index`) is a record of `ld.clause_contexts` (clause/2's pool, a `clause_choice`): its
 # `cref` is `Cref.clause`, its `key` word holds `Cref.index`, and its pool index is the `REDO_PTR` context (design D3).
-# `contextModule(LD->environment)` (unify_definition's context) is `user` (until MOD2, as clause/2's). `acquire_def`/`release_def`
-# are no-ops here (no clause GC thread). The return values of the two final unifications are IGNORED, as upstream's (so
+# `acquire_def`/`release_def` are no-ops here (no clause GC thread). The return values of the two final unifications are IGNORED, as upstream's (so
 # `nth_clause(p(_), a, R)` still enumerates and binds `R`).
 "`nth_clause(?Pred, ?Index, ?Ref)` (pl-comp.c): `Ref` is the `Index`th visible clause of `Pred`, in either direction, one per answer."
 function pl_nth_clause3_va(
@@ -3874,9 +3876,10 @@ function pl_nth_clause3_va(
             cref = def.impl_clauses.first_clause
             while cref !== nothing
                 if cref.clause === clause
+                    m = gd.modules[contextModule(gd, ld, fr)]     # Module m = contextModule(LD->environment)
                     ok =
                         PL_unify_integer(ld, n, i) &&
-                        unify_definition(gd, ld, MODULE_user(gd), p, def, 0, 0)
+                        unify_definition(gd, ld, m, p, def, 0, 0)
                     popPredicateAccess!(ld, def)
                     return ok ? FTRUE : FFALSE
                 end
@@ -4022,8 +4025,8 @@ end
 # procedure is looked up). A clause the static procedure's error rejects is left to Julia's garbage
 # collector (upstream: `freeClause`). The consult path (`loc`, since R1f) is upstream's for a FIRST
 # load (pl-srcfile.jl): the clause's file and line, its owner, `overruleImportedProcedure`,
-# `redefineProcedure`, the source file's current procedure. NOT PORTED: `PL_CREATE_INCREMENTAL`
-# and `PL_CREATE_THREAD_LOCAL` (assert/2's `flags`: no tabling, no threads); the module's assert
+# `redefineProcedure`, the source file's current procedure. `PL_CREATE_INCREMENTAL` (TB6) makes a
+# new procedure incremental, `PL_CREATE_THREAD_LOCAL` is refused by name (owner TH1); the module's assert
 # hook (`O_PROLOG_HOOK`: `module_t` has no `hook`); the `CHECK_INTERRUPT` retry (no signal
 # handling); system mode (no boot compilation); transactions (`assertDefinition!`'s, not ported
 # there). THE COMPILER'S WARNINGS (since R1g): asked for when loading (`owner`), and printed after
@@ -4069,13 +4072,14 @@ function assert_term!(
         end
         proc === nothing && return nothing
     end
-    flags == 0 || throw(
-        NotPortedError{T}(
-            name,
-            "assert_term: PL_CREATE_INCREMENTAL/THREAD_LOCAL",
-            "no tabling, threads"
-        )
-    )
+    if flags != 0 && !isDefinedProcedure(gd, proc)                 # (pl-comp.c:4915-4920 at 18168e629eab; TAB1 TB6)
+        if (flags & PL_CREATE_INCREMENTAL) != 0
+            tbl_set_incremental_predicate(gd, proc.definition, true)
+        end
+        if (flags & PL_CREATE_THREAD_LOCAL) != 0                # setAttrDefinition(..., P_THREAD_LOCAL, true)
+            throw(NotPortedError{T}(name, "assert_term: PL_CREATE_THREAD_LOCAL", "TH1"))
+        end
+    end
     if !is_acyclic_cells(ld, -(head + 1)) || !is_acyclic_cells(ld, -(body + 1))   # CYCLIC_HEAD, CYCLIC_BODY
         PL_error(ld, ERR_REPRESENTATION, mk_sym(T, :cyclic_term))
         return nothing
@@ -4146,7 +4150,7 @@ function assert_term!(
             PL_error(ld, ERR_MODIFY_STATIC_PROC, proc)
             return nothing                                      # derror: freeClause(clause)
         end
-        setDynamicDefinition!(def, true) || return nothing
+        setDynamicDefinition!(gd, def, true) || return nothing
     end
     cref = assertProcedure!(gd, ld, proc, clause, where_)
     cref === nothing && return nothing                          # (SSU1: add_ssu_clause refused it)
@@ -4362,7 +4366,7 @@ function pl_compile_predicates1_va(
             gd, ld, desc, MODULE_user(gd), GP_NAMEARITY | GP_FINDHERE | GP_EXISTENCE_ERROR
         )
         proc === nothing && return FFALSE
-        setDynamicDefinition!(proc.definition, false) || return FFALSE
+        setDynamicDefinition!(gd, proc.definition, false) || return FFALSE
     end
     return PL_get_nil_ex(ld, tail) ? FTRUE : FFALSE
 end

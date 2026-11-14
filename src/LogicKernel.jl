@@ -53,6 +53,7 @@ include("pl-fli.jl")           # swipl-devel src/pl-fli.c — term references; r
 include("pl-attvar.jl")        # swipl-devel src/pl-attvar.c — saveWakeup/restoreWakeup: the pending exception set aside
 include("pl-error.jl")         # swipl-devel src/pl-error.c — error terms (the occurs-check error)
 include("pl-allocpool.jl")     # swipl-devel src/pl-allocpool.c — the allocation pool the table_space flag and the trie nodes charge (TAB1 TB0)
+include("pl-idgset.jl")        # swipl-devel src/pl-idgset.c — the IDG edge sets and the registry of IDG nodes (TAB1 TB6)
 include("pl-dbref.jl")         # swipl-devel src/pl-dbref.c — database references: clause blobs (D1)
 include("pl-gmp.jl")           # swipl-devel src/pl-gmp.c — numbers: read, written, promoted, compared
 include("pl-arith.jl")         # swipl-devel src/pl-arith.c — evaluation, is/2, the comparisons
@@ -72,6 +73,8 @@ include("pl-trace.jl")         # swipl-devel src/pl-trace.c — prolog_current_f
 include("pl-pro.jl")           # swipl-devel src/pl-pro.c — callProlog, sig_atomic/1, abort/0
 include("pl-init.jl")          # swipl-devel src/pl-init.c — PL_cleanup, the clean-up halt/1 ends with (HALT1)
 include("pl-event.jl")         # swipl-devel src/pl-event.c — event lists, prolog_listen/2,3, prolog_unlisten/2, callEventHook
+include("pl-transaction.jl")  # swipl-devel src/pl-transaction.c — transactions: commit, discard, $transaction/2,3, $snapshot/1 (TX1)
+include("pl-undo.jl")         # swipl-devel src/pl-undo.c — undo/1: goals run when a trailed assignment is undone (TX1e)
 include("pl-mutex.jl")         # swipl-devel src/pl-mutex.c — with_mutex/2 (the single-thread form)
 include("pl-bag.jl")           # swipl-devel src/pl-bag.c — the bags of findall/3
 include("pl-gvar.jl")          # swipl-devel src/pl-gvar.c — global variables: b_setval, nb_setval, nb_current …

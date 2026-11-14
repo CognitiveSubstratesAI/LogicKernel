@@ -142,7 +142,7 @@ MUTANTS = [
     m("TR2-P5 $trie_property reads a one-argument property as a two-argument one (KILL D t19, t21)",
       "(na === nothing || na[2] != 1) && return FFALSE", "(na === nothing || na[2] != 2) && return FFALSE"),
     m("TR2-P6 $trie_property compiled_size answers 0 (KILL D t21: swipl without a compiled trie fails)",
-      "mk_sym(T, :compiled_size))\n        return FFALSE", "mk_sym(T, :compiled_size))\n        return PL_unify_int64(ld, arg, 0) ? FTRUE : FFALSE"),
+      "            end\n        end\n        return FFALSE\n    elseif name == sym_key(mk_sym(T, :hashed))", "            end\n        end\n        return PL_unify_int64(ld, arg, 0) ? FTRUE : FFALSE\n    elseif name == sym_key(mk_sym(T, :hashed))"),
     m("TR2-P7 $trie_property discarded is true (KILL D t19: P5 is `discarded(false)`)",
       "PL_unify_bool(ld, arg, (tr.flags & TRIE_DISCARDED) != 0)", "PL_unify_bool(ld, arg, true)"),
     m("TR2-P8 trie_gen/3 gives no Value argument (KILL D t1, K t3, t18: the third argument is never unified)",

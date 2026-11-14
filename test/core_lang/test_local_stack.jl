@@ -226,21 +226,23 @@ end
     # then `tabling.delay_list` and the reference of its `[]` argument (TAB1 TB4, pl-setup.c:1558; D-0083: two more, so `tmp_h`
     # was perm + 6, the frame's size 6 + TMP_PTR_SIZE, lTop perm + 6 + TMP_PTR_SIZE)
     @test ld.tabling.delay_list == perm + 6
-    @test ld.tmp_h == perm + 8 && ld.tmp_top == 0
-    @test ld.fliframes[1].size == 8 + LK.TMP_PTR_SIZE &&
-        ld.lTop == perm + 8 + LK.TMP_PTR_SIZE && ld.exception_term == 0
+    # then `tabling.idg_current` (TAB1 TB6, pl-setup.c:1559; D-0083: one more, so `tmp_h` was perm + 8, the frame's size 8 + TMP_PTR_SIZE)
+    @test ld.tabling.idg_current == perm + 8
+    @test ld.tmp_h == perm + 9 && ld.tmp_top == 0
+    @test ld.fliframes[1].size == 9 + LK.TMP_PTR_SIZE &&
+        ld.lTop == perm + 9 + LK.TMP_PTR_SIZE && ld.exception_term == 0
     @test ld.nframes == 0 && ld.nchoices == 0 && ld.BFR == 0 && ld.environment_frame == 0
     @test length(ld.frames) == cld(ld.lMax + ld.local_spare, LK.SIZEOF_LOCALFRAME)
     @test length(ld.choices) == cld(ld.lMax + ld.local_spare, LK.SIZEOF_CHOICE)
     @test length(ld.fliframes) == cld(ld.lMax + ld.local_spare, LK.SIZEOF_FLIFRAME)
     r = LK.PL_new_term_ref(ld)
-    @test r == perm + 8 + LK.TMP_PTR_SIZE           # (was perm + 4 before f3b-4; + 4 + TMP before AV1; + 6 + TMP before TB4)
+    @test r == perm + 9 + LK.TMP_PTR_SIZE           # (was perm + 4 before f3b-4; + 4 + TMP before AV1; + 6 + TMP before TB4; + 8 + TMP before TB6)
     LK._bind_const!(ld, LK.unRef(ld.slots[r + 1]), LK._atom_word!(ld, _ls("a")))   # its cell bound
     LK.pushFrame!(ld, ld.lTop)
     ld.lTop += 20
     LK.newChoice(ld, LK.CHP_JUMP, 1)
     LK.emptyStacks!(ld)
-    @test ld.lTop == perm + 8 + LK.TMP_PTR_SIZE && ld.nfliframes == 1 && ld.nframes == 0 &&
+    @test ld.lTop == perm + 9 + LK.TMP_PTR_SIZE && ld.nfliframes == 1 && ld.nframes == 0 &&
         ld.nchoices == 0
     @test ld.BFR == 0 && isempty(ld.trail) && lk_no_bindings(ld)
 end

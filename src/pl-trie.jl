@@ -2,6 +2,7 @@
 # UPSTREAM: swipl-devel src/pl-trie.h @ 18168e629eab
 # UPSTREAM: swipl-devel src/pl-indirect.c @ 18168e629eab
 # UPSTREAM: swipl-devel src/pl-tabling.c @ 18168e629eab
+# UPSTREAM: swipl-devel src/os/pl-table.h @ 18168e629eab
 # CLASS: code
 # COPYRIGHT: Copyright (c)  2016-2025, VU University Amsterdam
 # COPYRIGHT: CWI, Amsterdam
@@ -3054,12 +3055,40 @@ function pl_trie_gen_node3_va(
     return trie_gen(_query_gd(ld), ld, PL__t0, 0, PL__t0 + 1, 0, PL__t0 + 2, 1, PL__ctx)
 end
 
+# PORT: pl-table.h sizeofTablePP
+# (os/pl-table.c sizeofTable)
+# DIVERGES: upstream's is `sizeof(struct table) + sizeof(struct kvs) + ht->kvs->len * sizeof(struct symbol)` (32, 40 and 16 bytes at the pin);
+# the kernel's table is an `IdDict` that keeps no `kvs->len`, so the capacity is modelled: `newHTablePP(4)` (pl-tabling.c:8267, :10117), doubled
+# while the table holds more than half of it; upstream's `len` follows its resize and reprobe history (os/pl-table.c:259-272 `htable_resize`, :334 and
+# :380 the reprobe limit), the kernel's follows the rule above. The ONE row that compares it with swipl's pins a table of one entry, 136 bytes
+# (test/core_lang/test_trie_property_idg_swipl.jl tp05): beyond one entry no row compares the number.
+"`sizeofTablePP(ht)`: the bytes a pointer table takes, with the capacity modelled (pl-table.h)."
+function sizeofTablePP(ht::IdDict)::Int
+    len = 4
+    while 2 * length(ht) > len
+        len <<= 1
+    end
+    return SIZEOF_TABLE + SIZEOF_KVS + len * SIZEOF_SYMBOL
+end
+
 # PORT: pl-trie.c trie_property as pl_trie_property2_va
 # (PRED_IMPL("$trie_property", 2, trie_property, 0))
 # DIVERGES: the names are compared by `sym_key` (as set_module/3); `size` is `stat_trie(tr).bytes` without the cross-check
-# `Sdprintf("OOPS...")`s of upstream (diagnostics only, for a private pool trie); `discarded` reads `TRIE_DISCARDED`; `compiled_size` fails (no
-# clause before TR4); `wait` and `deadlock` (`trie->stats.wait`, `.deadlock`, O_PLMT) are the constant 0: single-threaded, owner TH1;
-# `invalidated`, `reevaluated` and the `idg_*` names fail: `trie.IDG` is `Nothing` until TB6.
+# `Sdprintf("OOPS...")`s of upstream (diagnostics only, for a private pool trie); `discarded` reads `TRIE_DISCARDED`; `compiled_size` is
+# `8 * sizeofClause(length(codes))` bytes (upstream `sizeofClause(code_size)`: `sizeofClause` of the kernel counts positions, src/pl-incl.jl; the
+# number is the kernel's, as `trie_table_size`);
+# `idg_size` is upstream's sum (pl-trie.c:4336-4346): `sizeof(*idg)` + `idg_set_sizeof` of the two edge sets + (`sizeof(*idg->mono)` + `sizeofTablePP`
+# of `idg->mono->deps` when there are any). The number EQUALS SWIPL'S (the pins of test/core_lang/test_tabling_tb6rows_swipl.jl TRIEKEYS k01-k03: 80, and of
+# test/core_lang/test_trie_property_idg_swipl.jl tp01-tp03: 80 and 136) when the trie has no `idg->mono->deps` table: `SIZEOF_IDG_NODE` is 80 as the
+# C struct (src/pl-incl.jl:3030; pl-tabling.h:225-254); `idg_set_sizeof` is 0 for a set of no or of ONE pointer (the `single` slot, no block:
+# src/pl-idgset.jl:302-308, pl-idgset.c:393-403), so one dependent gives exactly 80; a set with a block gives `sizeof_block(capacity, index_bits)`, the
+# ported formula (src/pl-idgset.jl:19-22, pl-idgset.c:54-59) with the ported growth (`new_block(4)` at the second pointer, doubling, index above
+# `IDG_SET_LINEAR_MAX` 8: pl-idgset.jl:171, :204, pl-idgset.c:245, :284), 56 bytes for a block of four (80 + 56 = 136, pinned); `SIZEOF_IDG_MONO` (24) is
+# charged for an `idg->mono` without deps as upstream. THE ONLY MODELLED PART is the capacity inside `sizeofTablePP` of the monotonic dependency
+# table `mono.deps` (see there): swipl's capacity follows its reprobe history, the kernel's a doubling rule; the match is pinned for ONE entry
+# (240 = 80 + 24 + 136, tp05) and is not claimed for more. Larger edge sets are not pinned by any row (no test grows a set past a block of four);
+# `wait` and `deadlock` (`trie->stats.wait`, `.deadlock`, O_PLMT) are the constant 0: single-threaded, owner TH1. `invalidated`, `reevaluated`
+# (O_TRIE_STATS, defined at the pin) and the `idg_*` names fail for a trie without an IDG node, as upstream: `(idg=trie->data.IDG)` is false.
 "`\$trie_property(+Trie, ?Property)`: one statistic of `Trie`, the property named by `Property`'s functor with one argument (pl-trie.c)."
 function pl_trie_property2_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
@@ -3083,7 +3112,14 @@ function pl_trie_property2_va(
     elseif name == sym_key(mk_sym(T, :size))
         return PL_unify_int64(ld, arg, stat_trie(tr).bytes) ? FTRUE : FFALSE
     elseif name == sym_key(mk_sym(T, :compiled_size))
-        return FFALSE                                   # no clause before TR4
+        if (cref = tr.clause_cref) !== nothing          # (dbref = trie->clause) && (cref = clause_clref(dbref))
+            return if PL_unify_int64(ld, arg, 8 * sizeofClause(length(cref.clause.codes)))
+                FTRUE
+            else
+                FFALSE
+            end
+        end
+        return FFALSE
     elseif name == sym_key(mk_sym(T, :hashed))
         return PL_unify_int64(ld, arg, stat_trie(tr).hashes) ? FTRUE : FFALSE
     elseif name == sym_key(mk_sym(T, :lookup_count))
@@ -3092,8 +3128,30 @@ function pl_trie_property2_va(
         return PL_unify_int64(ld, arg, tr.gen_call) ? FTRUE : FFALSE
     elseif name == sym_key(mk_sym(T, :wait)) || name == sym_key(mk_sym(T, :deadlock))
         return PL_unify_int64(ld, arg, 0) ? FTRUE : FFALSE
+    elseif name == sym_key(mk_sym(T, :invalidated)) && (idg = tr.IDG) !== nothing
+        return PL_unify_int64(ld, arg, idg.stats_invalidated) ? FTRUE : FFALSE
+    elseif name == sym_key(mk_sym(T, :reevaluated)) && (idg = tr.IDG) !== nothing
+        return PL_unify_int64(ld, arg, idg.stats_reevaluated) ? FTRUE : FFALSE
+    elseif (idg = tr.IDG) !== nothing
+        if name == sym_key(mk_sym(T, :idg_affected_count))
+            return PL_unify_int64(ld, arg, idg_set_size(idg.affected)) ? FTRUE : FFALSE
+        elseif name == sym_key(mk_sym(T, :idg_dependent_count))
+            return PL_unify_int64(ld, arg, idg_set_size(idg.dependent)) ? FTRUE : FFALSE
+        elseif name == sym_key(mk_sym(T, :idg_size))
+            size = SIZEOF_IDG_NODE                      # size_t size = sizeof(*idg)
+            size += idg_set_sizeof(idg.affected)
+            size += idg_set_sizeof(idg.dependent)
+            if (mono = idg.mono) !== nothing
+                size += SIZEOF_IDG_MONO                 # sizeof(*idg->mono)
+                mdeps = mono.deps
+                if mdeps !== nothing
+                    size += sizeofTablePP(mdeps)        # sizeofTablePP(idg->mono->deps)
+                end
+            end
+            return PL_unify_int64(ld, arg, size) ? FTRUE : FFALSE
+        end
     end
-    return FFALSE                                       # invalidated, reevaluated, idg_*: no IDG before TB6
+    return FFALSE
 end
 
 # NOT DEFINED AT THE PIN (swipl 10.1.20, pl-trie.c @ 18168e62, TR2 finding): `trie_insert_insert/3`, `trie_lookup_gen/3` and
