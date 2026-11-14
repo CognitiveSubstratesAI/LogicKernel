@@ -202,7 +202,12 @@ _tag_rank(k::Kind)::Int =
 # ladder — numbers < strings < atoms, an atom by its blob type's rank (`compareAtoms`) — with ONE
 # addition SWI has no counterpart for: a grounded value of no SWI type (NUM_OTHER) sorts as a
 # non-text blob, after strings and before `[]` and every text atom (`OTHER_BLOB_RANK`,
-# src/pl-ressymbol.jl).
+# src/pl-ressymbol.jl). Synced to cf6960c2: for two inline integers of one value that are different
+# words, the target orders by `isPtrInt` (a pointer integer is a new tag form, `TAGEX_PTRINT`; two
+# of one value are EQUAL only if neither is a pointer, else `CMP_NOTEQ` in `CMP_MODE_EQUAL`, else by
+# `isPtrInt`). This kernel keeps a pointer as a plain integer (`PL_get_pointer_ex`), so integers of
+# one value are one term and `atomic_compare` already answers `CMP_EQUAL`: the added branch cannot
+# be reached here and is left out by design.
 """
     compare_primitives(t1, t2, mode::Int) -> Int
 
@@ -645,6 +650,9 @@ end
 # variable arms are gone. "The same cell" (`t1 == t2`) is `===`; atomic data: a symbol by `sym_key`
 # (upstream: the same word), a grounded value by the term type's `gnd_equal` (upstream: the same
 # word, or `equalIndirect` on the bits — the reference type's `gnd_equal` is that identity).
+# Synced to cf6960c2: the C body moved into a new `static inline unify_simple` (for `do_unify`, so that
+# unifying two simple terms needs no stack frame) and `unify_simple_ptrs` is its exported wrapper;
+# the code is unchanged, a C frame-layout refactor: nothing to carry over.
 """
 Unify two constant terms (pl-prims.c): `BOOLEX_TRUE` when they are the same constant, else
 `BOOLEX_FALSE`; `DO_COMPOUND` when both are compounds.
@@ -754,7 +762,8 @@ end
 # `assignAttVar` (AV3), bound with a wakeup. Its space test, upstream's `hasGlobalSpace(0)` →
 # `overflowCode(0)`, is `ensureGlobalSpace(ld, 0)`, which RAISES the overflow (the stack grows on demand,
 # so only the limit can refuse), and the unification fails: `do_unify_cells` has no overflow codes to
-# break on (a `GLOBAL_OVERFLOW` here would read as `DO_COMPOUND`).
+# break on (a `GLOBAL_OVERFLOW` here would read as `DO_COMPOUND`). Synced to cf6960c2: this is the body
+# of the target's new inline `unify_simple` (see `unify_simple_ptrs`); no change of logic.
 "Unify two dereferenced locations when neither is a compound; `DO_COMPOUND` when both are (pl-prims.c)."
 function unify_simple_cells(
     ld::PL_local_data{T}, k1::UInt8, w1::word, p1::Int, k2::UInt8, w2::word, p2::Int
@@ -885,7 +894,12 @@ end
 # DIVERGES: on locations (above); the agenda holds pairs of global positions (`cell_agendaLR`); a
 # cycle link overwrites the compound's functor cell with a reference to the other's, as upstream's,
 # the word saved beside it (`_link_cells!`, Q2). Both compounds are linked on EVERY pair, as
-# upstream links every pair (a link is one word write).
+# upstream links every pair (a link is one word write). Synced to cf6960c2: the target tests the simple
+# case first (`likely(rc != DO_COMPOUND)`, the arm `rc >= 0` is gone: `DO_COMPOUND` is the only other
+# non-boolean code) and moves the compound arm, which needs a term agenda and so a large C stack frame,
+# into a NOINLINE `do_unify_compound`; `unify_simple` replaces `unify_simple_ptrs` in the agenda loop.
+# The same logic: a Julia function has no C frame of that size, so the arm stays inline here (the early return
+# `rc != DO_COMPOUND` below is that test).
 """
     do_unify_cells(ld, l1, l2) -> boolex_t
 
@@ -1701,7 +1715,9 @@ end
 # is built on the cells (f3b-4). An attributed variable is `canBind` (since AV2: its occurs test, row
 # av22). The trail walk skips an attvar assignment's wakeup entries (since AV3, pl-prims.c:720-725):
 # the tail's assignment, then the head's or the old tail cell's, each two entries when a value entry
-# (`registerWakeup` trails both: `NO_MARK_BAR` is above every cell).
+# (`registerWakeup` trails both: `NO_MARK_BAR` is above every cell). Synced to cf6960c2: the target
+# types the function and its local `rc` `boolex_t` (were `int`): a type change only; this port
+# returns `boolex_t` already.
 """
     unify_with_occurs_check_cells(ld, l1, l2, mode) -> boolex_t
 
@@ -1773,6 +1789,9 @@ end
 # trail walk's value (`unify_with_occurs_check_cells`) is its word read before the Undo, where upstream
 # copies `*p2` into a fresh global cell above the restored top: here `PL_error`'s term references take
 # fresh global cells, which would overwrite it. NOT PORTED: `blockGC`/`unblockGC` (no stack GC until G1).
+# Synced to cf6960c2: the target types it `bool`, returns `false` itself for `OCCURS_CHECK_TRUE`, and
+# DISCARDS `PL_error`'s result (the error is always raised, so it is `false`): `rc` is gone and the
+# function ends in `return false`.
 "Fail (`OCCURS_CHECK_TRUE`) or raise the occurs-check error, as `Var = Term`, on the cells (pl-prims.c)."
 function failed_unify_with_occurs_check_cells(
     ld::PL_local_data{T}, t1::Tuple{UInt8, word, Int}, t2::Tuple{UInt8, word, Int},
@@ -1784,7 +1803,8 @@ function failed_unify_with_occurs_check_cells(
     if t2[1] == DU_CELL                             # isVar(*t2): try to make Var = Term
         t1, t2 = t2, t1
     end
-    return PL_error(ld, ERR_OCCURS_CHECK, t1, t2) ? BOOLEX_TRUE : BOOLEX_FALSE
+    PL_error(ld, ERR_OCCURS_CHECK, t1, t2)          # (always false: the exception is raised)
+    return BOOLEX_FALSE
 end
 
 # ═════════════════════════════════════════════════════════════════════════════════════════════════
@@ -4163,7 +4183,8 @@ end
 # 0 without one: tables and their pools are TAB1's, and no table exists here); `erased_clauses` and `erased_clause_space`
 # are the sums over the dirty definitions (`_statistics_erased`: upstream's `GD->clauses.erased` and `erased_size`, the
 # space counted as `sizeof_predicate` counts a clause, not upstream's bytes); the garbage collector, atom and clause collector and stack shift
-# counters 0. `predicates`, `clauses`, `modules` and `codes` are counted from the tables
+# counters 0; synced to cf6960c2: so is its new key `minor_collections` ("of which generational" of
+# `collections`; no collector runs here). `predicates`, `clauses`, `modules` and `codes` are counted from the tables
 # (`_statistics_database`), `stack` is the three stacks' sizes, `cputime` and `self_cputime` are
 # `LD->statistics.user_cputime` as `statistics/2` last set it.
 """
@@ -4231,7 +4252,8 @@ function swi_statistics(ld::PL_local_data{T}, key::Symbol, v::number)::Int where
         key === :thread_cputime
         v.type = V_FLOAT
         v.f = 0.0
-    elseif key === :collections || key === :collected || key === :agc ||
+    elseif key === :collections || key === :minor_collections || key === :collected ||
+        key === :agc ||
         key === :agc_gained || key === :cgc || key === :cgc_gained ||
         key === :global_shifts ||
         key === :local_shifts || key === :trail_shifts || key === :engines ||
@@ -4369,7 +4391,10 @@ end
 # or `ensureGlobalSpace`); `TrailAssignment!` saves the old value in one global cell (`ensureGlobalSpace(1)`).
 # The global stack is frozen AFTER the value is assigned, not before: assigning a side value allocates its
 # entry, which the frozen region must hold too. `storage(*v) == STG_GLOBAL` is: a compound, an attributed
-# variable, a value-table word or a side word.
+# variable, a value-table word or a side word. Synced to cf6960c2: a non-backtrackable `setarg` of a
+# cell below the generational GC's bar (`a < LD->gen_bar`) also records it, `gen_remember(a)`, before
+# the assignment. The generational collector (`gen_bar`, `gen_remember`, pl-gc.c) is unwritten in this
+# kernel, so the call is left out; the step that writes it adds it before `unify_vp` below.
 "Set argument `argn` (from 1) of the compound in term reference `term` to `value`, as `flags` say (pl-prims.c)."
 function setarg(
     ld::PL_local_data{T}, argn::Int, term::term_t, value::term_t, flags::UInt32
