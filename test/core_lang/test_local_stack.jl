@@ -610,6 +610,11 @@ end
     ld2.lTop = ld2.lMax - 3
     LK.trim_stack!(ld2)
     @test ld2.local_spare == LK.LOCAL_SPARE - 5 && ld2.lMax == ld2.lTop
+    # TARGET-ONLY: pin when the oracle moves to cf6960c2. With no room left the target takes NO spare back (swipl-devel cf6960c2
+    # pl-setup.c:1758-1761, `reduce = room > 0 ? room : 0`); the pin took it whole and left `max` below `top`. Hand-written
+    # from the target's C: no oracle query reaches the spare's size.
+    LK.trim_stack!(ld2)
+    @test ld2.local_spare == LK.LOCAL_SPARE - 5 && ld2.lMax == ld2.lTop
     # upstream's quirk: `here` above `top` reads as space (the distance converts to unsigned)
     @test LK.f_hasSpace(10, 5, 1, 1) && !LK.f_hasSpace(5, 6, 2, 1) &&
         LK.f_hasSpace(5, 6, 1, 1)

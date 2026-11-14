@@ -9,6 +9,18 @@
 # of a thread, which leaves one foreign frame at the base of the local stack; since V5d the local
 # stack's spare — room reserved above its `max` for handling a stack overflow — given back after
 # an exception (`trim_stack`, `trimStacks`).
+#
+# Synced to swipl-devel cf6960c2 (the file's pin above is not moved): the target's other changes to pl-setup.c concern
+# signal handling and the collectors' handlers, none of which exists in this kernel (no signals: src/pl-wam.jl keeps no
+# `handleSignals`; no atom, clause or generational collector runs), so there is no Julia function to change and nothing
+# here gets a PORT line. For the step that writes them (SYNC-Q handoff, evidence/SYNC/sync_q_handoff.md): `localSweepWanted`
+# (new, the local atom sweep is due); `agc_handler` (a blocked collector returns first, the global atom GC runs unless a gc
+# thread does it, else the local sweep, `considerLocalSweep`); `criticalAtomGC` and `criticalClauseGC` (new, run from
+# `handleSignals` while `LD->critical`: the local sweep and the local clause GC need no Prolog and run at once, the global
+# ones wait); `gc_trace_handler` (new, `SIG_TRACE_GC` is synchronous: `print_gc_trace`, an exception it raises propagates);
+# `cgc_handler` (the gc thread runs only the local clause GC, else `pl_garbage_collect_clauses` does both); `initSignals`
+# (registers `gc_trace_handler`); `handleSignals` (no signal is handled while an exception is pending: returns 0, was -1,
+# and the `LD->critical` branch calls the two critical handlers first).
 
 # setup:1631 the local stack's spare: `512*SIZEOF_WORD + LOCAL_MARGIN` bytes, here in positions.
 "The spare of a new local stack, in positions (pl-setup.c `allocStacks`)."
@@ -48,14 +60,16 @@ function allocStacks!(ld::PL_local_data{T})::Bool where {T}
 end
 
 # PORT: pl-setup.c trim_stack as trim_stack!
-# DIVERGES: the local stack's, in positions.
+# DIVERGES: the local stack's, in positions. Synced to cf6960c2 (pl-setup.c:1758-1761): a stack with no room
+# (`room <= 0`) takes NO spare back (`reduce = room > 0 ? room : 0`); the pin gave the whole spare back whatever the
+# room was, which left `max` below `top`.
 "Reserve the local stack's spare again above its `max`, as far as its free room allows (pl-setup.c)."
 function trim_stack!(ld::PL_local_data{T})::Nothing where {T}
     if ld.local_spare < ld.local_def_spare
         reduce = ld.local_def_spare - ld.local_spare
         room = ld.lMax - ld.lTop                # roomStackP(s)
-        if room > 0 && room < reduce
-            reduce = room
+        if room < reduce
+            reduce = room > 0 ? room : 0
         end
         ld.lMax -= reduce                       # s->max = addPointer(s->max, -reduce)
         ld.local_spare += reduce
@@ -66,15 +80,17 @@ end
 # PORT: pl-setup.c trim_stack as trim_stack_global!
 # DIVERGES (since L1f f1b): the global stack's spare is a reserve in the one limit (`_stacks_in_use`), so its
 # free room is what the limit leaves (`stacks_limit - _stacks_in_use`). As upstream, a reserve the room
-# cannot hold is kept whole (`room > 0 && room < reduce`): after an overflow trimStacks(resize) shrinks the
-# local stack first (`growStacks_trim!`, GROW_TRIM), which gives the room back.
+# cannot hold is cut to the room (`room < reduce`) and, since the sync to cf6960c2 (pl-setup.c:1758-1761), a
+# stack with NO room (past the limit) takes none back (`reduce = room > 0 ? room : 0`; the pin kept the whole
+# spare, D-0049): after an overflow trimStacks(resize) shrinks the local stack first (`growStacks_trim!`,
+# GROW_TRIM), which gives the room back.
 "Reserve the global stack's spare again, as far as the room under the limit allows (pl-setup.c)."
 function trim_stack_global!(ld::PL_local_data)::Nothing
     if ld.global_spare < ld.global_def_spare
         reduce = ld.global_def_spare - ld.global_spare
         room = ld.stacks_limit - _stacks_in_use(ld, 0)      # roomStackP(s)
-        if room > 0 && room < reduce
-            reduce = room
+        if room < reduce
+            reduce = room > 0 ? room : 0
         end
         ld.global_spare += reduce                           # s->max -= reduce; s->spare += reduce
     end
@@ -82,14 +98,14 @@ function trim_stack_global!(ld::PL_local_data)::Nothing
 end
 
 # PORT: pl-setup.c trim_stack as trim_stack_trail!
-# DIVERGES (since L1f f1b): as `trim_stack_global!`, the trail's.
+# DIVERGES (since L1f f1b): as `trim_stack_global!`, the trail's (also the cf6960c2 rule: no room, no spare back).
 "Reserve the trail's spare again, as far as the room under the limit allows (pl-setup.c)."
 function trim_stack_trail!(ld::PL_local_data)::Nothing
     if ld.trail_spare < ld.trail_def_spare
         reduce = ld.trail_def_spare - ld.trail_spare
         room = ld.stacks_limit - _stacks_in_use(ld, 0)      # roomStackP(s)
-        if room > 0 && room < reduce
-            reduce = room
+        if room < reduce
+            reduce = room > 0 ? room : 0
         end
         ld.trail_spare += reduce
     end
@@ -124,7 +140,9 @@ function trimStacks!(ld::PL_local_data{T}, resize::Bool)::Nothing where {T}
 end
 
 # PORT: pl-setup.c emptyStacks as emptyStacks!
-# DIVERGES: the argument stack is emptied.
+# DIVERGES: the argument stack is emptied. Synced to cf6960c2 (pl-setup.c:1625): the target also sets
+# `LD->gen_bar = gTop` next to `mark_bar`; the generational collector (`gen_bar`) is not written in this kernel, so
+# the line is left out, and the step that writes it adds it here.
 # `BFR` and `LD->query` are cleared with the stack they point into; there is no `mark_bar`, and no
 # `lTop && gTop` guard (the stacks always exist). Of the
 # engine's permanent term references upstream allocates in the base foreign frame, the exception's
@@ -189,7 +207,9 @@ end
 # DIVERGES (HALT1, for the audit): the signal numbers are Linux's (x86_64): upstream reads them from the host's
 # `<signal.h>`; the kernel is Linux-only here. The `#ifdef`s of signals Linux lacks are left out (`emt`, `info`);
 # the flags (`PLSIG_THROW`, `PLSIG_IGNORE`) and the Prolog interrupts from 32 up (`prolog:gc`, …) are left to the
-# signal step. A comment, not a docstring, as for every module-level constant the global-state lint reads.
+# signal step. Synced to cf6960c2 (pl-setup.c:368): the target's table of Prolog interrupts gains `prolog:trace_gc`
+# (`SIG_TRACE_GC`); no Prolog interrupt is named here (above), so the entry is left to the signal step.
+# A comment, not a docstring, as for every module-level constant the global-state lint reads.
 const SIGNAMES = (
     ("hup", 1), ("int", 2), ("quit", 3), ("ill", 4), ("abrt", 6), ("fpe", 8), ("kill", 9),
     ("segv", 11), ("pipe", 13), ("alrm", 14), ("term", 15), ("usr1", 10), ("usr2", 12),
