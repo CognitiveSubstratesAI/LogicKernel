@@ -31,6 +31,16 @@ const BUFSIZE = 1024
 "The numeric argument of a directive when none is given: `INT_MIN` (pl-fmt.c)."
 const FMT_DEFAULT = Int(typemin(Int32))
 
+# PORT: pl-fmt.c MAX_PRECISION
+# synced to swipl-devel cf6960c2 (src/os/pl-fmt.c:87)
+"The most digits `~Nd`, `~ND`, `~Ne`, `~Nf` and `~Ng` take (pl-fmt.c); a larger argument raises `format('precision too large')`."
+const MAX_PRECISION = 1000000
+
+# PORT: pl-fmt.c MAX_COLUMN
+# synced to swipl-devel cf6960c2 (src/os/pl-fmt.c:88)
+"The largest count or column of `~Nc`, `~Nn`, `~Ns`, `~N|` and `~N+` (pl-fmt.c); a larger one raises a `format(Message)` error."
+const MAX_COLUMN = 1000000
+
 # PORT: pl-fmt.c rubber
 "A fill point in the pending output: where, how big, and the pad character (pl-fmt.c `struct rubber`)."
 mutable struct rubber
@@ -405,10 +415,23 @@ end
 @inline _fmt_need_arg(ld::PL_local_data, argc::Int)::Bool =
     argc > 0 || (PL_format_error(ld, "not enough arguments"); false)
 
+# PORT: pl-fmt.c FMT_ARG_MAX as _fmt_arg_max
+# synced to swipl-devel cf6960c2 (src/os/pl-fmt.c:104-105)
+# (a macro in upstream: raises `format(Msg)` and leaves do_format when a numeric argument is given and above `max`)
+"Whether the numeric argument `arg` is no more than `max` (or none is given); else the error `format(msg)` is raised and the result is `false` (pl-fmt.c)."
+@inline _fmt_arg_max(ld::PL_local_data, arg::Int, max::Int, msg::String)::Bool =
+    !(arg != FMT_DEFAULT && arg > max) || (PL_format_error(ld, msg); false)
+
 # PORT: pl-fmt.c do_format
 # DIVERGES: the format text is a vector of code points (`_text_code_points`); the user-defined directive lookup
 # of `format_predicates` is left out (empty table, D9); `~@` needs `callProlog`'s `ex` argument (O1B,
 # src/pl-pro.jl: `ex::Ref{Int}` for upstream's `term_t *ex`); `~:d` and `~:f` take the C locale (no stream locale); no `AR_BEGIN`/`AR_END`.
+# Synced to cf6960c2: the target's `FMT_ERROR`/`FMT_ARG` no longer `return` but set `rc` and `goto out`, where `discardBuffer(&state.buffer)`
+# frees the pending `~t` output; here the buffer is a Julia vector and each error is still a `return` (nothing to free). The
+# digit-by-digit overflow test is now `arg > (INT_MAX - dw)/10` (the same cases as the test below: `arg*10 + dw > INT_MAX`; the
+# signed wrap of the old text is gone). New limits `MAX_PRECISION`, `MAX_COLUMN` and `FMT_ARG_MAX`: `~Nc`, `~Nn` (repeat count), `~Ns`,
+# `~N|`, `~N+` (column) above 1000000 and `~Nd`, `~ND` above 1000000 (precision) raise `format(Message)`, before the
+# argument is looked at; `~NI` takes a group size of 0 to 126 only (`invalid digit group size`).
 """
     do_format(ld, fd, fmt, argc, argv, m) -> Bool
 
@@ -456,6 +479,8 @@ function do_format(
                         # DIVERGES (flag k, D-0283 item 4): upstream (pl-fmt.c:553-556) computes `int arg2 = arg*10 + dw` and tests
                         # `(arg2 - dw)/10 != arg`; the signed wrap is undefined and the compiled swipl 10.1.19 never raises (it
                         # prints `1` for `~3000000000d`). The port raises as the source's test says; pinned by row k03.
+                        # Synced to cf6960c2: the target's test is `arg > (INT_MAX - dw)/10` before `arg = arg*10 + dw` (no wrap):
+                        # the same condition as `arg2 > typemax(Int32)` here, and swipl then raises `argument overflow` as this port does.
                         arg2 > typemax(Int32) &&
                             return PL_format_error(ld, "argument overflow")
                         arg = arg2
@@ -500,6 +525,7 @@ function do_format(
                 outtext(state, txt) || return false
                 here += 1
             elseif c == Int('c')                # ~c: character code
+                _fmt_arg_max(ld, arg, MAX_COLUMN, "repeat count too large") || return false
                 _fmt_need_arg(ld, argc) || return false
                 chr = PL_get_integer(ld, argv)
                 if chr !== nothing && VALID_CODE_POINT(chr)
@@ -534,6 +560,13 @@ function do_format(
                 here += 1
             elseif c == Int('d') || c == Int('D') || c == Int('r') || c == Int('R') ||
                 c == Int('I')
+                if c == Int('d') || c == Int('D')
+                    _fmt_arg_max(ld, arg, MAX_PRECISION, "precision too large") ||
+                        return false
+                elseif c == Int('I') && arg != FMT_DEFAULT &&
+                    (arg < 0 || arg >= typemax(Int8))
+                    return PL_format_error(ld, "invalid digit group size")  # CHAR_MAX: none
+                end
                 _fmt_need_arg(ld, argc) || return false
                 i = number()
                 get_int_expression(ld, argv, i) ||
@@ -572,6 +605,7 @@ function do_format(
                 rc || return false
                 here += 1
             elseif c == Int('s')                # string
+                _fmt_arg_max(ld, arg, MAX_COLUMN, "column too large") || return false
                 _fmt_need_arg(ld, argc) || return false
                 txt = PL_get_text(ld, argv, CVT_ATOM | CVT_LIST | CVT_STRING)
                 txt === nothing && return PL_format_arg_error(ld, "s", argv)
@@ -662,6 +696,7 @@ function do_format(
                 outchr(state, Int('~')) || return false
                 here += 1
             elseif c == Int('n')                # \n
+                _fmt_arg_max(ld, arg, MAX_COLUMN, "repeat count too large") || return false
                 arg == FMT_DEFAULT && (arg = 1)
                 while arg > 0
                     arg -= 1
@@ -687,7 +722,9 @@ function do_format(
                     arg = COLUMN(state)
                 end
                 arg == FMT_DEFAULT && (arg = 8)
+                arg > MAX_COLUMN && return PL_format_error(ld, "column too large")
                 stop = (c == Int('+') ? state.tab_stop + arg : arg)
+                stop > MAX_COLUMN && return PL_format_error(ld, "column too large")
                 if stop < COLUMN(state) && mod_colon
                     nl_and_reindent =
                         if state.pending_rubber != 0
@@ -1339,7 +1376,11 @@ end
 # PORT: pl-fmt.c formatFloat
 # DIVERGES: appends to `out` (the caller's empty vector) with no terminating NUL; the result is `false` with
 # an exception raised where upstream returns NULL. O_GMP only (the LibBF branch is left to a later step); the
-# `__WINDOWS__` exponent fix-up is left out too.
+# `__WINDOWS__` exponent fix-up is left out too. Synced to cf6960c2: an `arg` above `MAX_PRECISION` raises
+# `format('precision too large')` (after the `arg < 0` domain error); the target's bit counts `fbits` are `mp_bitcnt_t` and its
+# sizes are tested (`ibits > (mp_bitcnt_t)-1 - arg*4`, and for LibBF `ibits > BF_PREC_MAX - prec`) before the `4*arg` sums: with
+# `arg` at most 1000000 those sums fit an `Int` here, so the tests cannot fire and are left out; the LibBF changes (`digits`
+# beside `arg`, `bf_free` of `s` on a failed `growBuffer`) are in the LibBF branch, which is left out.
 """
     formatFloat(ld, locale, how, arg, f, out) -> Bool
 
@@ -1358,6 +1399,8 @@ function formatFloat(
         a = PL_new_term_ref(ld)
         PL_put_integer(ld, a, arg)
         return PL_error(ld, ERR_DOMAIN, mk_sym(T, :not_less_than_zero), a)
+    elseif arg > MAX_PRECISION
+        return PL_format_error(ld, "precision too large")
     end
 
     use_h && !promoteToFloatNumber(ld, f) && return false
