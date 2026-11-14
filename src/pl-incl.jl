@@ -3021,7 +3021,7 @@ const SIG_PROLOG_OFFSET = 32
 
 # PORT: pl-incl.h SIG_GC
 # DIVERGES: the kernel has no signal machinery (`alerted` carries `ALERT_WAKEUP` only); the number only names a bit of `ld_gc.sig_pending`
-# (`raiseGcSignal!`, `pendingGcSignal`, src/pl-gc.jl). `VSIG_GC` is 1 (the enum order ATOM_GC, GC, THREAD_SIGNAL, CLAUSE_GC, PLABORT, PLHALT, TUNE_GC).
+# (`raiseGcSignal!`, `pendingGcSignal`, src/pl-gc.jl). `VSIG_GC` is 1 (the enum order is ATOM_GC, GC, THREAD_SIGNAL, CLAUSE_GC, then the unwind and halt signals, TUNE_GC).
 "The virtual signal asking the run loop to collect (`SIG_PROLOG_OFFSET + VSIG_GC`, pl-incl.h)."
 const SIG_GC = SIG_PROLOG_OFFSET + 1
 
