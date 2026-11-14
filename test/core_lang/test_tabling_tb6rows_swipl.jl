@@ -729,12 +729,12 @@ function _T6_lay!(ld, name, args...)
     return p
 end
 "`assert_term!` of the fact `name(a)` at the end, with `flags` (the call `PL_assert` makes)."
-function _T6_assert!(gd, ld, name::String, flags::Int)
+function _T6_assert!(gd, ld, name::String, flags::Integer)   # PL_CREATE_INCREMENTAL is a UInt16
     fid = LK.PL_open_foreign_frame(ld)
     t = LK.PL_new_term_ref(ld)
     p = _T6_lay!(ld, name, LK._atom_word!(ld, _T6_sym("a")))
     ld.slots[t + 1] = _T6_gw(p)
-    c = LK.assert_term!(gd, ld, t, 0, LK.CL_END, nothing, nothing, flags)
+    c = LK.assert_term!(gd, ld, t, 0, LK.CL_END, nothing, nothing, Int(flags))
     LK.PL_close_foreign_frame(ld, fid)
     return c
 end
