@@ -140,7 +140,16 @@ bash "$RUN" nocmd /no/such/command > /dev/null 2>&1
 [ "$(cat "$W/wrap/nocmd.rc")" = 127 ] && ok "wrapper: a command that cannot start is rc 127 of its step" || bad "wrapper: unstartable command"
 bash "$RUN" onlyname > /dev/null 2>&1; rc=$?
 [ "$rc" = 64 ] && ok "wrapper: no command is a usage error (64)" || bad "wrapper: usage (rc $rc)"
-sum_ "the summary reads what the wrapper wrote: failstep FAILED, after skipped" 1 "$W/wrap" "| failstep | FAILED (exit 7) |" "| after | skipped (a step it needs failed) |"
+# a *.sh operand runs as `bash FILE`: a script WITHOUT the execute bit passes (rc 0) and a failing one keeps its status
+printf '#!/usr/bin/env bash\necho shran "$1"\n' > "$W/noexec_ok.sh"; chmod 644 "$W/noexec_ok.sh"
+printf '#!/usr/bin/env bash\necho shfail\nexit 5\n' > "$W/noexec_fail.sh"; chmod 644 "$W/noexec_fail.sh"
+bash "$RUN" shok "$W/noexec_ok.sh" argx > /dev/null; rc=$?
+{ [ "$rc" = 0 ] && [ "$(cat "$W/wrap/shok.rc")" = 0 ] && grep -q "shran argx" "$W/wrap/shok.log"; } && ok "wrapper: a *.sh without the execute bit runs through bash (rc 0, its argument passed)" || bad "wrapper: a non-executable .sh (rc $rc, step rc $(cat "$W/wrap/shok.rc" 2> /dev/null))"
+bash "$RUN" shfail "$W/noexec_fail.sh" > /dev/null; rc=$?
+{ [ "$rc" = 0 ] && [ "$(cat "$W/wrap/shfail.rc")" = 5 ] && grep -q shfail "$W/wrap/shfail.log"; } && ok "wrapper: a failing non-executable *.sh records its own rc 5" || bad "wrapper: a failing non-executable .sh (step rc $(cat "$W/wrap/shfail.rc" 2> /dev/null))"
+bash "$RUN" shmissing "$W/no_such_script.sh" > /dev/null 2>&1
+[ "$(cat "$W/wrap/shmissing.rc")" = 127 ] && ok "wrapper: a *.sh that is not there is rc 127 of its step" || bad "wrapper: a missing .sh (step rc $(cat "$W/wrap/shmissing.rc" 2> /dev/null))"
+sum_ "the summary reads what the wrapper wrote: failstep FAILED, after skipped" 1 "$W/wrap" "| failstep | FAILED (exit 7) |" "| after | skipped (a step it needs failed) |" "| shfail | FAILED (exit 5) |"
 
 echo "test_ci_compile_summary: $pass passed, $fail failed"
 [ "$fail" = 0 ]

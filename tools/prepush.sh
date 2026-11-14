@@ -13,7 +13,8 @@
 #   5  stale pins  the playbook's grep over test/ (KNOWN DIFFERENCE, interim, until R2, ...): the hits that
 #                  name a name/arity the diff adds to src/ are listed — READ them (information, not a stop)
 #   6  D-0164 terms the D-0164 grep over the added lines of `git diff origin/main..HEAD` and over the commit
-#                  messages of origin/main..HEAD
+#                  messages of origin/main..HEAD, minus the exact-token allowlist of upstream identifiers
+#                  (tools/githooks/dterm.sh, shared with the pre-push hook's ci/ arm)
 #   7  secret scan the pinned gitleaks (tools/secret_scan.sh, audit D-0340) over the patches of origin/main..HEAD
 #                  (the diff against the merge base); a finding STOPS the push and is reported (redacted), and is
 #                  NEVER allowlisted or ignored by the agent. The binary is checked at step 0, before any long step.
@@ -38,8 +39,9 @@ cd "$ROOT" || exit 64
 # the pre-push bundle is a gate path: the pinned Julia first on PATH for every step, the override REFUSED (D-0465, D-0466)
 _julia_pin_apply "$(cd "$(dirname "$0")/.." && pwd)" prepush gate || { echo "prepush: nothing was run."; exit 3; }
 BASE="origin/main"
-# the terms of D-0164, assembled from pieces so this file does not match its own grep
-TERMS164='seg''ment|SIG''SEGV|cra''sh|abo''rt|invalid term''_t|dies ''of'
+# TERMS164, D0164_ALLOW and d0164_filter (the D-0164 terms and the exact-token allowlist) live in tools/githooks/dterm.sh,
+# sourced at step 6: the pre-push hook's ci/ arm runs the very same definition (audit D-0650)
+DTERM="$(cd "$(dirname "$0")" && pwd)/githooks/dterm.sh"
 
 fail() {   # fail STEP DETAIL...
     local s="$1"
@@ -115,8 +117,11 @@ head -n 30 "$L/pins_named.txt" | cut -c1-200 | sed 's/^/    /'
 
 # --- 6: the D-0164 terms -------------------------------------------------------------------------
 step 6 "D-0164 term grep (diff $BASE..HEAD and the commit messages)"
-git diff "$BASE..HEAD" | grep -E '^\+[^+]' | grep -iE "$TERMS164" > "$L/d0164_diff.txt"
-git log "$BASE..HEAD" --format='%H %B' | grep -iE "$TERMS164" > "$L/d0164_msg.txt"
+[ -f "$DTERM" ] || fail "D-0164 term grep" "$DTERM (the D-0164 terms and allowlist) is missing: the term grep cannot run"
+# shellcheck source=/dev/null
+. "$DTERM"
+git diff "$BASE..HEAD" | grep -E '^\+[^+]' | d0164_filter | grep -iE "$TERMS164" > "$L/d0164_diff.txt"
+git log "$BASE..HEAD" --format='%H %B' | d0164_filter | grep -iE "$TERMS164" > "$L/d0164_msg.txt"
 if [ -s "$L/d0164_diff.txt" ] || [ -s "$L/d0164_msg.txt" ]; then
     fail "D-0164 term grep" "D-0164: no upstream failure details in public text; reword:" \
         "$(cut -c1-200 "$L/d0164_diff.txt" | head -n 8)" "$(cut -c1-200 "$L/d0164_msg.txt" | head -n 4)"

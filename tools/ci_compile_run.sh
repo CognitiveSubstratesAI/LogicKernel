@@ -8,7 +8,8 @@
 # push in ONE run, so a step never stops the next; the job's last step (tools/ci_compile_summary.py) turns the .rc
 # files into the table and the verdict. `--needs NAME2`: if step NAME2 did not pass, this step is not run and
 # NAME.rc says `skipped` (a test file is meaningless when `using LogicKernel` itself failed). A command that cannot
-# be started is a failure of its step (rc 127), not of the wrapper.
+# be started is a failure of its step (rc 127), not of the wrapper. A command whose first word ends in `.sh` is run
+# as `bash FILE ARG...` (the file's execute bit is not needed).
 set -u
 LOGS="${CI_COMPILE_LOGS:-${RUNNER_TEMP:-/tmp}/ci-compile}"
 mkdir -p "$LOGS"
@@ -27,7 +28,13 @@ if [ -n "$needs" ] && [ "$(cat "$LOGS/$needs.rc" 2> /dev/null)" != "0" ]; then
     : > "$LOGS/$name.log"
     exit 0
 fi
-"$@" > "$LOGS/$name.log" 2>&1
+# A shell script operand (*.sh) runs as `bash FILE`, never executed directly: a script committed without its execute
+# bit (mode 100644) would end in rc 126 on the runner, and a step's verdict must not hang on a file mode (audit D-0666).
+# Everything else (`julia ...`, `echo ...`, a program) is run as given. A *.sh that does not exist is bash's rc 127.
+case "$1" in
+    *.sh) bash "$@" > "$LOGS/$name.log" 2>&1 ;;
+    *) "$@" > "$LOGS/$name.log" 2>&1 ;;
+esac
 rc=$?
 cat "$LOGS/$name.log"
 echo "$rc" > "$LOGS/$name.rc"
