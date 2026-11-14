@@ -27,6 +27,9 @@
 # SWI-7; `_PL_atoms` (the foreign interface's table of special atoms); `blob_write_reserved_symbol`
 # (it comes with the writer) and `compareReservedSymbol`'s place in the type (`PL_blob_t` carries
 # no hooks).
+# Synced to cf6960c2: `new_reserved_symbol` (the static helper of `textToReservedSymbol`, neither
+# ported) declares its `lookupBlob`
+# out-parameter `bool new` instead of `int new`: a C type only, no change of answer here.
 
 # PORT: pl-ressymbol.c isReservedSymbol
 """
