@@ -82,20 +82,26 @@ which is the reference type's own convenience — `AltTerm`'s throws.
 """
 lk_eq(a, b)::Bool = compareStandard(a, b, true) == 0
 
+# A global cell that is not a variable's binding: a value table's box (`_is_box`) and, since TX1e, the undo list's cell
+# (`ld.undo_list`, the first global cell: `[]` on a fresh engine, as swipl's `init_undo_list`, pl-undo.c:42-52). Disclosed
+# change of this helper: swipl keeps that cell non-zero too, so the count of a fresh engine would be 1 without it.
+_lk_not_a_binding(ld, p)::Bool =
+    LogicKernel._is_box(ld, p) || (ld.undo_list != 0 && p == ld.undo_list)
+
 # The variables bound in an engine: every global cell up to `gTop` that is not 0 (since L1b stage C2 a
 # cell is a word, 0 when unbound) — a variable's binding, and the cells of every compound laid out — but
 # a value table's box, which is not a variable (`_is_box`). Until f3-3 also the keyed variables' entries
 # in the binding store, and a cell was told by its key (`gkey`); every position up to `gTop` that is not a
 # box is a cell (`allocGlobalCells!`), so the count is the same.
 lk_bound_count(ld)::Int =
-    count(p -> ld.gstack[p] != 0 && !LogicKernel._is_box(ld, p), 1:(ld.gTop))
+    count(p -> ld.gstack[p] != 0 && !_lk_not_a_binding(ld, p), 1:(ld.gTop))
 lk_no_bindings(ld)::Bool = lk_bound_count(ld) == 0
 # The same, OUTSIDE the frozen region (L1e e5a; audit D-0036): a ball raised outside any query keeps its
 # cells below `frozen_bar` until the outermost query's close (upstream: until GC — pl-gvar.c resets the bar
 # only at the thread's end). Those cells are the ball, not a leak; a binding above the bar is.
 lk_bound_count_unfrozen(ld)::Int =
     count(
-        p -> ld.gstack[p] != 0 && !LogicKernel._is_box(ld, p), (ld.frozen_bar + 1):(ld.gTop)
+        p -> ld.gstack[p] != 0 && !_lk_not_a_binding(ld, p), (ld.frozen_bar + 1):(ld.gTop)
     )
 lk_no_bindings_unfrozen(ld)::Bool = lk_bound_count_unfrozen(ld) == 0
 

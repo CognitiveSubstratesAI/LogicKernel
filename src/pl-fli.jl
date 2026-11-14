@@ -1352,7 +1352,7 @@ live_states(ld::PL_local_data)::Int =
     ld.op_enums.live +
     ld.prolog_flag_enums.live + ld.module_enums.live + ld.gvar_enums.live +
     ld.recorded_states.live + ld.cur_pred_enums.live + ld.cur_enums.live +
-    ld.trie_gens.live
+    ld.trie_gens.live + ld.transaction_enums.live
 
 # ── the recorded database's C interface (pl-fli.c; F1a) ─────────────────────────────────────────
 # PORT: pl-fli.c PL_record
