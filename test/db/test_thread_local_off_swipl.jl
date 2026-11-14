@@ -175,21 +175,21 @@ const _TLO_SWIPL = [
 
 # what the `#else` body answers (pl-proc.c:3829-3838) where it differs from the oracle; every other row's kernel answer is the oracle's line
 const _TLO_KERNEL_DIFF = Dict(
-    # tl13: `thread_local` on a dynamic predicate with a clause: `setDynamicDefinition` is a no-op, the flags are set, true (the oracle refuses: a clause, no P_THREAD_LOCAL yet)
+    # tl13: DIVERGES vs threads=true oracle (TH1a ruling D-0716 Q1(a)): `thread_local` on a dynamic predicate with a clause: `setDynamicDefinition` is a no-op, the flags are set, true (the oracle refuses: a clause, no P_THREAD_LOCAL yet)
     "tl13" => _eline("tl13", _el(_ei(1))),
-    # tl14: a static predicate with a clause becomes dynamic (protect_static_code is false) and thread-local, the clause stays
+    # tl14: DIVERGES vs threads=true oracle (TH1a ruling D-0716 Q1(a)): a static predicate with a clause becomes dynamic (protect_static_code is false) and thread-local, the clause stays
     "tl14" => _eline("tl14", _el(_ei(1), _ei(2))),
-    # tl15: the erased clause still in the list does not matter: only the flags are set
+    # tl15: DIVERGES vs threads=true oracle (TH1a ruling D-0716 Q1(a)): the erased clause still in the list does not matter: only the flags are set
     "tl15" => _eline("tl15", _el(_ei(2))),
-    # tl16: thread_local false on a thread-local predicate: setDynamicDefinition(def, false), both flags cleared, true (the oracle: permission_error, still thread-local)
+    # tl16: DIVERGES vs threads=true oracle (TH1a ruling D-0716 Q1(a)): thread_local false on a thread-local predicate: setDynamicDefinition(def, false), both flags cleared, true (the oracle: permission_error, still thread-local)
     "tl16" => _eline("tl16", _ea("no")),
-    # tl17: thread_local false on a dynamic predicate that is not thread-local makes it static (the oracle returns at its first test: still dynamic)
+    # tl17: DIVERGES vs threads=true oracle (TH1a ruling D-0716 Q1(a)): thread_local false on a dynamic predicate that is not thread-local makes it static (the oracle returns at its first test: still dynamic)
     "tl17" => _eline("tl17", _ea("no")),
-    # tl18: the predicate is static and has a clause: assertz is refused as for any static predicate
+    # tl18: DIVERGES vs threads=true oracle (TH1a ruling D-0716 Q1(a)): the predicate is static and has a clause: assertz is refused as for any static predicate
     "tl18" => _eline("tl18", _eraised(_eperm_static("tl18", 1))),
-    # tl19: thread_local false leaves the clause in a static predicate
+    # tl19: DIVERGES vs threads=true oracle (TH1a ruling D-0716 Q1(a)): thread_local false leaves the clause in a static predicate
     "tl19" => _eline("tl19", _el(_ei(1))),
-    # tl20: `$local_definitions/2` is registered only under O_ENGINES (pl-proc.c:4426-4428): an unknown procedure (the oracle's call fails)
+    # tl20: DIVERGES vs threads=true oracle (TH1a ruling D-0716 Q1(a)): `$local_definitions/2` is registered only under O_ENGINES (pl-proc.c:4426-4428): an unknown procedure (the oracle's call fails)
     "tl20" => _eline(
         "tl20", _eraised(_ec("existence_error", _ea("procedure"), _epi("\$local_definitions", 2)))
     )

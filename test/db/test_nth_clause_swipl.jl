@@ -277,7 +277,9 @@ const _CASES = [
         "t01",
         "'\$set_predicate_attribute'(tl1(_), thread_local, true), assertz(tl1(1)), assertz(tl1(2)), findall(X, tl1(X), R)"
     ),
+    # DIVERGES vs threads=true oracle (TH1a ruling D-0716 Q1(a)): this kernel is threads=false, setThreadLocalDefinition's ENGINES=OFF `#else` (pl-proc.c:3829-3838) answers true; swipl (threads=true) refuses; pinned in `_NTH_OFF`
     ("t02", "ex('\$set_predicate_attribute'(tdd(_), thread_local, true), R)"),
+    # DIVERGES vs threads=true oracle (TH1a ruling D-0716 Q1(a)): this kernel is threads=false, setThreadLocalDefinition's ENGINES=OFF `#else` (pl-proc.c:3829-3838) answers true; swipl (threads=true) refuses; pinned in `_NTH_OFF`
     ("t03", "ex('\$set_predicate_attribute'(tss(_), thread_local, true), R)"),
     (
         "t04",
@@ -287,6 +289,7 @@ const _CASES = [
         "t05",
         "'\$set_predicate_attribute'(tl5(_), thread_local, true), '\$set_predicate_attribute'(tl5(_), thread_local, true), assertz(tl5(1)), findall(X, tl5(X), R)"
     ),
+    # DIVERGES vs threads=true oracle (TH1a ruling D-0716 Q1(a)): this kernel is threads=false, setThreadLocalDefinition's ENGINES=OFF `#else` (pl-proc.c:3829-3838) answers true; swipl (threads=true) refuses; pinned in `_NTH_OFF`
     (
         "t06",
         "'\$set_predicate_attribute'(tl6(_), thread_local, true), ex('\$set_predicate_attribute'(tl6(_), thread_local, false), R)"
@@ -296,6 +299,7 @@ const _CASES = [
         "t08",
         "'\$set_predicate_attribute'(tl8(_), thread_local, 1), assertz(tl8(1)), findall(X, tl8(X), R)"
     ),
+    # DIVERGES vs threads=true oracle (TH1a ruling D-0716 Q1(a)): this kernel is threads=false, setThreadLocalDefinition's ENGINES=OFF `#else` (pl-proc.c:3829-3838) answers true; swipl (threads=true) refuses; pinned in `_NTH_OFF`
     # swipl: REFUSES (permission_error(modify, static_procedure, tl9/1)): the retracted clause still sits in the list until the clause GC runs (the kernel's `#else` body does not look: true)
     (
         "t09",
@@ -328,6 +332,7 @@ const _CASES = [
     # a file clause for a thread-local predicate that already has clauses: swipl warns `Redefined static procedure`, abolishProcedure raises
     # permission_error(modify, thread_local_procedure, tlf/1) at load (stderr); the load goes on and the clause is NOT added: [1]
     ("t16", "findall(X, tlf(X), R)"),
+    # DIVERGES vs threads=true oracle (TH1a ruling D-0716 Q1(a)): this kernel is threads=false, setThreadLocalDefinition's ENGINES=OFF `#else` (pl-proc.c:3829-3838) answers true; swipl (threads=true) refuses; pinned in `_NTH_OFF`
     (
         "t17",
         "'\$set_predicate_attribute'(tl17(_), thread_local, true), assertz(tl17(1)), ex('\$set_predicate_attribute'(tl17(_), thread_local, false), R)"
