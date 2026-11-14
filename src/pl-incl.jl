@@ -1484,6 +1484,14 @@ const TRIE_VAR_OFFSET = TRIE_ARGS + 4
 # constants: `sizeof(trie_node)` 40, `sizeof(trie)` 152 (with O_PLMT and O_TRIE_STATS on), `sizeof(trie_children_block)`
 # 32 (six `unsigned` and `older`; the entries follow), `offsetof(trie_node_chunk, nodes)` 72 (checked with a C file that
 # copies the structs of pl-trie.h at the pin). The Julia records are not that big; `stat_trie` (TR2) computes upstream's bytes.
+# TRIECH: the same numbers are the bytes charged to the trie's allocation pool (pl-trie.c:238 `sizeof(*trie)`, :1087/:1105
+# `sizeof(trie_node)`, :772 `block_size()`, :1113 a chunk's `bytes`). On 64-bit Linux (LP64: word, atom_t, pointer 8; `unsigned`, int 4):
+#   trie_node           = value 8 + key 8 + parent 8 + children 8 + flags 4 (+4 padding)                               = 40
+#   trie_child          = key 8 + child 8                                                                            = 16
+#   trie_children_block = count, capacity, dead, index_bits, var_mask, attvar_mask (6 x 4) + older 8                   = 32
+#   trie                = symbol 8 + magic, references, node_count, value_count, flags, tid (6 x 4) + root 40 + indirects 8
+#                         + alloc_pool 8 + clause 8 + mem 8 + stats (4 x 4) + data (4 pointers, 32)                     = 152
+#   block_size(c, b)    = 32 + 16*c, and + 4*(1<<b) when b > 0
 "`sizeof(trie_node)` at the pin (pl-trie.h): 40."
 const SIZEOF_TRIE_NODE = 40
 "`sizeof(trie)` at the pin (pl-trie.h): 152."
@@ -3149,8 +3157,7 @@ idg_node{T}(atrie::Int) where {T} = idg_node{T}(
 # MOVED after `tbl_worklist` (TAB1 TR1 rebased on TB0): `trie{T}.worklist` is a `tbl_worklist{T}`, a field type must be defined before it.
 # PORT: pl-trie.h trie
 # DIVERGES (audit D-0453 Q3, Q5): `nodes` is the arena of the trie's nodes, id 1 the root (upstream embeds `root`); `blocks`
-# the arena of children blocks (an id >= 1); `free_ids` and `free_blocks` the slots of freed nodes and blocks; no `alloc_pool` (only a table's trie has one: TB1 adds the field and the charges at the allocation sites
-# of src/pl-trie.jl; `trie_new/1` passes NULL, pl-trie.c:2496; TB0's `alloc_pool` and src/pl-allocpool.jl exist), no `tid` (owner TH1); `mem.lingering` is `lingering` (block ids, TRIE_CONCURRENT tries), `mem.chunks` is `chunks`; `serial` is the trie's number in
+# the arena of children blocks (an id >= 1); `free_ids` and `free_blocks` the slots of freed nodes and blocks; `alloc_pool` is the last field (TRIECH: a table's tries have one and the allocation sites of src/pl-trie.jl charge it with the sizes of `SIZEOF_TRIE` etc.; `trie_new/1` passes NULL, pl-trie.c:2496), no `tid` (owner TH1); `mem.lingering` is `lingering` (block ids, TRIE_CONCURRENT tries), `mem.chunks` is `chunks`; `serial` is the trie's number in
 # `gd.tries` (the blob's payload). `data.worklist` and `data.predicate` are TB0's types (the struct sits after `tbl_worklist` for that), `data.IDG` is TB6's `idg_node{T}` (`nothing`: NULL); `data.variant` is a node id.
 # `magic`, `references`, `node_count`, `value_count`, `flags` are `Int`/`UInt32`. `records`/`free_records` (part B): a node value that is
 # neither an atom nor a tagged integer is a `record` (upstream: a pointer, `isRecord(w)` = low two bits 0); here the word is `index << 2`, the index into `records`.
@@ -3183,6 +3190,7 @@ mutable struct trie{T}
     records::Vector{Union{Nothing, record{T}}}          # the recorded values of the nodes (a value word `index << 2`), `nothing`: a free slot
     free_records::Vector{Int}                           # slots of `records` to reuse
     registry::Vector{trie{T}}                           # the database's trie table `gd.tries`, shared by reference (TB1: a TriePtr value names a trie by number)
+    alloc_pool::Union{Nothing, alloc_pool}              # node allocation pool (TRIECH: pl-trie.h `alloc_pool`; nothing: NULL, `trie_new/1`'s tries)
 end
 
 # ── trie_gen/2,3: the enumeration state (pl-trie.c :3260-3360), since TR2 ─────────────────────────────────────────────────────────
