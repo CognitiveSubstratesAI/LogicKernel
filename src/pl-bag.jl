@@ -117,7 +117,11 @@ end
 # (PRED_IMPL("$collect_findall_bag", 2, collect_findall_bag, 0))
 # DIVERGES: with no current bag upstream dereferences NULL; here it is asserted. The answers are taken
 # from the top — the LAST answer is put back first, so its fresh variables are the oldest, as
-# upstream's.
+# upstream's. Synced to cf6960c2: the target passes the atom-marking function on, `markAtomsRecord(r, markAtom)`,
+# for the answer it retrieves while an atom GC runs, and `markAtomsFindall(ld, mark)` (pl-bag.h) takes the
+# function so that a thread-local atom GC marks the bags with `markLocalAtom` (a new `markLocalAtomsAnswers`
+# scan callback beside `markAtomsAnswers`). Atom GC is unwritten here (see the header: `markAtomsFindall`), so
+# nothing in this function or in the answers changes: representation only, no row.
 "`'\$collect_findall_bag'(-List, +Tail)`: `List` is the current bag's answers, in order, before `Tail` (pl-bag.c)."
 function pl_collect_findall_bag2_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
