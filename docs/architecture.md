@@ -8010,8 +8010,8 @@ flags the options feed, the usage text, and the two option predicates. Nothing h
 - **DIVERGES (owner TOP1b, only what the reduced `query_loop` leaves out):** `PL_initialise!` ends with `query_loop(goal, false)`, which
   is upstream's own path (`prologToplevel`, pl-pro.c:663-676, its `loop == false` branch). What the kernel's reduced `query_loop`
   does not do of upstream's is TOP1b's; LB7 adds no loop code.
-- **DIVERGES (refused by name, `NotPortedError`):** `--traditional` (`setTraditional`; the kernel is SWI-7 only), `-c` (`$compile`), `--config`
-  (`$config`). `--tty` / `--no-tty` go through the `tty_control` flag as upstream and so raise where its value changes, naming
+- **DIVERGES (refused by name, `NotPortedError`):** `--traditional` (`setTraditional`; the kernel is SWI-7 only). `-c` (`$compile`) and
+  `--dump-runtime-variables` (`$config`) run the Prolog toplevel goals and then `PL_halt` (pl-init.c:1672-1680; ENC1/LB7 relay 9). `--tty` / `--no-tty` go through the `tty_control` flag as upstream and so raise where its value changes, naming
   `PushTty and PopTty (the terminal)` (src/os/pl-prologflag.jl `_flag_not_ported`); the owner is the step that ports PushTty.
 - **DIVERGES (representation):** the stack limit goes to the local data in words (`ld.stacks_limit`), upstream's `LD->stacks.limit` is
   bytes; `memarea_limit` answers `nothing` for `MEMAREA_INVALID_SIZE`, and a negative number or one above 64 bits is invalid (upstream

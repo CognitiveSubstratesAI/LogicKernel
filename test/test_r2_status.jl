@@ -349,6 +349,25 @@ end
         st["flag:ghost"] == "missing"
     @test st["flag:debug"] == "refused" && st["flag:autoload"] == "refused" &&
         st["flag:(ci_set_flag (pl-index.c))"] == "refused"
+    # FL1 (D-0550 item 4): a flag of the pin's C that the Linux build has no definition for is `platform`, a flag Prolog creates is `done`
+    # (the tables `R2_PLATFORM_FLAGS`, `R2_PROLOG_CREATED_FLAGS`); a kernel definition or a refusal comes first, an unlisted flag stays missing
+    plat = Dict(
+        r.key => r.status for r in r2_flag_rows(
+            Dict(
+                "apple" => ["x"],
+                "open_shared_object" => ["x"],
+                "xref" => ["x"],
+                "readline" => ["x"],
+                "windows" => ["x"],
+                "unlisted_zz" => ["x"]
+            ),
+            Set{String}(), Set(["windows"]), []
+        )
+    )
+    @test plat["flag:apple"] == "platform" && plat["flag:open_shared_object"] == "platform"
+    @test plat["flag:xref"] == "done" && plat["flag:readline"] == "done"
+    @test plat["flag:windows"] == "done" && plat["flag:unlisted_zz"] == "missing"
+    @test length(R2_PLATFORM_FLAGS) == 9 && length(R2_PROLOG_CREATED_FLAGS) == 8
     # MUTATION: dropping the refusal sites turns `debug` back into done (the refusal is what makes it refused)
     @test Dict(
         r.key => r.status for

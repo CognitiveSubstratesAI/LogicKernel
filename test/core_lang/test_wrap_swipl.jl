@@ -354,10 +354,17 @@ _COPIES_OK && @testset "WRAP1 kill rows: each row's answer, by name" begin
     @test row("t21") == _er(
         "t21", _ed(_ea("callable"), _ea("callable"), _ea("callable"))
     )
-    # NO ROW YET (DEFERRED, owner WRAP1-test, blocked on DBG1): the frame S_CALLWRAPPER runs the wrapper clause in must report the WRAPPER's
-    # predicate. swipl 10.1.20 answers `wrap_predicate(p(_), w, W, (prolog_current_frame(F), prolog_frame_attribute(F, predicate_indicator, PI),
-    # lg(PI), W)), p(_)` with PI = '$wrap$p'/1 (user module: unqualified), but the kernel has no prolog_frame_attribute/3
-    # (docs/r2_owners.tsv:121, owner DBG1): the row is written when DBG1 lands.
+    # WRAP1-M7 (DBG1 landed prolog_frame_attribute/3): the frame S_CALLWRAPPER runs the wrapper clause in reports the WRAPPER's predicate.
+    # swipl 10.1.20 answers k22 (a row of the .pl that is no `tN`, so the driver's list and the .out leave it out) with
+    # ['$wrap$p22'/1] (user module: unqualified). The row runs on a load of its own, and a throw (a kernel that lacks the
+    # attribute, a refusal) is a failed test, not an error that stops the file.
+    @test try
+        gd22, ld22, st22 = _wt_load(_WT, _WRAP_PL)
+        st22 == "ok" && _wt_row(gd22, ld22, "k22") ==
+            _er("k22", _el([_ec("/", _ea("\$wrap\$p22"), _ei(1))]))
+    catch
+        false
+    end
     # the printed form of a closure
     @test occursin(_codes("call(<closure>(p15/1)(7))"), row("t15"))
     @test occursin(_codes("call(<closure>(m15:p15m/1)(8))"), row("t15"))

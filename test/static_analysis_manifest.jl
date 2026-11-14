@@ -1298,6 +1298,12 @@ function _manifest_index(T)
         (LK.getOccursCheckMask, Tuple{LD, T}, false),
         (LK.setOccursCheck, Tuple{LD, T}, false),
         (LK.setStreamTypeCheck, Tuple{LD, T}, false),
+        # FL1 — the flag setters (pl-prologflag.c setIncomparable, setFileNameCaseHandling(Name), setTheme; pl-setup.c set_stack_limit)
+        (LK.setIncomparable, Tuple{LD, T}, false),
+        (LK.setFileNameCaseHandlingName, Tuple{LD, String}, false),
+        (LK.setFileNameCaseHandling, Tuple{LD, T}, false),
+        (LK.setTheme, Tuple{GD, LD, LK.prolog_flag{T}, T}, false),
+        (LK.set_stack_limit, Tuple{LD, Int}, false),
         (LK.create_oneof, Tuple{LD, Int64}, false),
         (LK.set_oneof, Tuple{LD, LK.prolog_flag{T}, LK.oneof_t{T}, UInt32}, false),
         (LK.check_oneof_flag, Tuple{LD, LK.oneof_t{T}, T, Bool}, false),
@@ -1592,6 +1598,13 @@ function _manifest_index(T)
                 LK.pl_current_key1_va
             )
         ]...,
+        # FL1b — flags (src/pl-flag.jl): get_flag/2, set_flag/2, current_flag/1
+        (LK.lookupFlagKey, Tuple{GD, UInt64}, false),
+        [
+            (f, Tuple{LD, Int, Int, LK.foreign_context{T}}, false) for
+            f in (LK.pl_get_flag2_va, LK.pl_set_flag2_va)
+        ]...,
+        (LK.pl_current_flag, Tuple{LD, Int, LK.foreign_context{T}}, false),
         # AV9 — call_residue_vars/2's C half (src/pl-attvar.jl, src/pl-wam.jl)
         (LK.trail_new_attvar, Tuple{LD, Int}, false),
         (LK.get_value, Tuple{LD, Int}, false),
@@ -2233,6 +2246,10 @@ function _manifest_index(T)
         (LK.pl_start_consult2_va, Tuple{LD, Int64, Int64, LK.foreign_context{T}}, false),
         (LK.pl_fixup_reconsult1_va, Tuple{LD, Int64, Int64, LK.foreign_context{T}}, false),
         (LK.pl_end_consult1_va, Tuple{LD, Int64, Int64, LK.foreign_context{T}}, false),
+        (LK.pl_unload_file1_va, Tuple{LD, Int64, Int64, LK.foreign_context{T}}, false),
+        (LK.unloadFile, Tuple{GD, LD, LK.SourceFile{T}}, false),
+        (LK.delModuleSourceFile, Tuple{LK.SourceFile{T}, MOD}, false),
+        (LK.delAllModulesSourceFile__unlocked, Tuple{LK.SourceFile{T}}, false),
         (LK.fileNameStream, Tuple{GD, LK.IOSTREAM}, false),
         (LK.setFileNameStream, Tuple{GD, LK.IOSTREAM, T}, false),
         (LK.setFileNameStream, Tuple{GD, LK.IOSTREAM, Nothing}, false),
@@ -2280,6 +2297,11 @@ function _manifest_index(T)
             Tuple{LD, Int, Int, LK.foreign_context{T}},
             false
         ),
+        (
+            LK.pl_foreign_predicate_source2_va,
+            Tuple{LD, Int, Int, LK.foreign_context{T}},
+            false
+        ),
         (LK._tbl_is_predicate_attribute, Tuple{Type{T}, UInt64}, false),
         (LK.cur_pred_enum, Tuple{}, false),
         (LK.cur_enum{T}, Tuple{}, false),
@@ -2296,6 +2318,7 @@ function _manifest_index(T)
         (LK.SYSTEM_MODE, Tuple{LD}, false),   # LB2
         (LK.setAccessLevel!, Tuple{LD, Int64}, false),   # LB2
         (LK.setClausableDefinition!, Tuple{GD, LD, D, Bool}, false),   # TAB1 (library(error) `$clausable`)
+        (LK.setDetDefinition!, Tuple{D, Bool}, false),   # SSU1b (det/1)
         (LK.setAttrDefinition, Tuple{LD, D, UInt64, Bool}, false),
         (LK.isTransparentMetamask, Tuple{D, Vector{LK.arg_info}}, false),  # MOD4
         (LK.setMetapredicateMask, Tuple{D, Vector{LK.arg_info}}, false),   # MOD4
@@ -2498,6 +2521,34 @@ function _manifest_index(T)
         (LK.debugmode, Tuple{LD, Bool, Base.RefValue{Bool}, UInt32}, false),
         (LK.tracemode, Tuple{LD, Bool, Nothing}, false),
         (LK.tracemode, Tuple{LD, Bool, Base.RefValue{Bool}}, false),
+        # DBG1 — trace/0, notrace/0, tracing/0, '$leash'/2, '$visible'/2 (pl-trace.c) and their setInteger twin
+        (LK.pl_trace, Tuple{LD}, false),
+        (LK.pl_notrace, Tuple{LD}, false),
+        (LK.pl_tracing, Tuple{LD}, false),
+        (LK._trace_set_integer, Tuple{LD, Int, Int, Int}, false),
+        (LK.pl_leash, Tuple{LD, Int, Int}, false),
+        (LK.pl_visible, Tuple{LD, Int, Int}, false),
+        # DBG1b — prolog_frame_attribute/3 and prolog_choice_attribute/3 (pl-trace.c) with the frame and choice walks they read
+        (LK.existingFrame, Tuple{LD, Int}, false),
+        (LK.PL_get_frame, Tuple{LD, Int}, false),
+        (LK.PL_get_choice, Tuple{LD, Int}, false),
+        (LK.findQuery, Tuple{LD, Int}, false),
+        (LK.hasAlternativesFrame, Tuple{LD, Int}, false),
+        (LK.alternativeFrame, Tuple{LD, Int}, false),
+        (LK.prevPC, Tuple{LK.Clause{T}, Int}, false),
+        (LK.is_meta_call, Tuple{LD, Int}, false),
+        (LK.isDebugFrame, Tuple{LD, Int}, false),
+        (LK.clear_frame_vars, Tuple{LD, Int}, false),
+        (LK.prolog_frame_attribute, Tuple{LD, Int, Int, Int}, false),
+        (LK._fa_key, Tuple{Type{T}, T, Symbol}, false),
+        (LK.pl_prolog_frame_attribute3_va, Tuple{LD, Int, Int, LK.control_t{T}}, false),
+        (LK.in_clause_jump, Tuple{LD, Int}, false),
+        (LK.choice_type_atom, Tuple{LD, Int}, false),
+        (LK.pl_prolog_choice_attribute3_va, Tuple{LD, Int, Int, LK.control_t{T}}, false),
+        (LK.get_procedure_find, Tuple{GD, LD, Int, Int}, false),
+        # DBG1 — '$call_no_catch'/1, '$can_yield'/0 (pl-pro.c)
+        (LK.pl_call_no_catch1_va, Tuple{LD, Int, Int, LK.control_t{T}}, false),
+        (LK.pl_can_yield0_va, Tuple{LD, Int, Int, LK.control_t{T}}, false),
         (LK.setPrologRunMode!, Tuple{LD, UInt64}, false),
         (LK.clearPrologRunMode!, Tuple{LD, UInt64}, false),
         # BOOTPRED3 — '$memberchk'/3 (src/pl-list.jl), '$inc_message_count'/1 (src/pl-error.jl), '$notrace'/2 and
@@ -3360,7 +3411,35 @@ const _MANIFEST_LB2B_FREE = (
 _manifest_lb7(T) = begin
     GD = LK.PL_global_data{T}
     LD = LK.PL_local_data{T}
+    PCd = LK.Code{T}
     (
+        # pl-comp.c's `'$clause_term_position'/3` and its helpers (src/pl-comp.jl, LB5-LB7)
+        (
+            LK.pl_clause_term_position3_va,
+            Tuple{LD, Int, Int, LK.foreign_context{T}},
+            false
+        ),
+        (LK.find_code1, Tuple{PCd, UInt64, UInt64}, false),
+        (LK.find_if_then_end, Tuple{PCd, PCd}, false),
+        (LK.add_node, Tuple{LD, Int, Int}, false),
+        (LK.add_1_if_not_at_end, Tuple{LD, PCd, PCd, Int}, false),
+        (LK.not_breakable, Tuple{LD, T, LK.Clause{T}, Int}, false),
+        (LK._pc_add, Tuple{PCd, Int}, false),
+        (LK._pc_word, Tuple{PCd, Int}, false),
+        # pl-load.c's `$activate_static_extension/1` (src/pl-load.jl) and pl-apple.c's apple_current_locale_identifier/1 (src/os/pl-apple.jl): refusals by name
+        (
+            LK.pl_activate_static_extension1_va,
+            Tuple{LD, Int, Int, LK.control_t{T}},
+            false
+        ),
+        (
+            LK.pl_apple_current_locale_identifier1_va,
+            Tuple{LD, Int, Int, LK.control_t{T}},
+            false
+        ),
+        # pl-os.c's PushTty and PopTty (src/os/pl-os.jl, TOP1b): the terminal is refused by name
+        (LK.PushTty, Tuple{LD, LK.IOSTREAM, LK.ttybuf, Int}, false),
+        (LK.PopTty, Tuple{LD, LK.IOSTREAM, LK.ttybuf, Bool}, false),
         (LK.memarea_limit, Tuple{LD, String}, false),
         (
             LK.parseCommandLineOptions,
@@ -4136,6 +4215,10 @@ const _DISPATCH_MANIFEST_TUPLE = (
     # TAB1-min: the registration tables of src/pl-tabling.jl and src/pl-wrap.jl, and the term-type-independent helpers
     (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_tabling)}, false),
     (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_wrap)}, false),
+    (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_flag)}, false),   # FL1b (src/pl-flag.jl)
+    # LB5-LB7: the registration tables of src/pl-load.jl and src/os/pl-apple.jl
+    (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_load)}, false),
+    (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_apple)}, false),
     (LK.table_props, Tuple{}, false),
     (LK.clear_table_props!, Tuple{LK.table_props}, false),
     # TAB1 TB0: pl-allocpool.c (src/pl-allocpool.jl) and the sentinel tests of pl-tabling.c (src/pl-tabling.jl); they name no term type
@@ -4196,6 +4279,7 @@ const _DISPATCH_MANIFEST_TUPLE = (
     # TOP1b: the terminal mode a stream records (pl-os.c Sttymode, Sset_ttymode); no term type
     (LK.Sttymode, Tuple{LK.IOSTREAM}, true),
     (LK.Sset_ttymode, Tuple{LK.IOSTREAM, Int}, false),
+    (LK.ttybuf, Tuple{}, false),                          # the constructor of pl-os.h's ttybuf (PushTty/PopTty)
     # TOP1b E: the wrapped stream's record and its functions (pl-file.c wrappedIO, Sread_user, closeWrappedIO); no term type
     (LK.wrappedIO, Tuple{LK.LDTable, Int, Bool, UInt32}, false),
     (LK.unregisterLocalData!, Tuple{LK.LDTable, Int}, false),

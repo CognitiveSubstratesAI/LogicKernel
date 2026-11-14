@@ -4,16 +4,13 @@
 # A missing or refused row without an owner prints NO OWNER in the status (information). An owner line whose key names no missing or refused row is R2-OWNER-STALE:
 # a finished feature's row leaves the table, its porter removes the line. SEED (R2GEN): predicate owners from evidence/R2/missing_c_preds.tsv column 5 (the step after `NEW `;
 # `Q10 stubs … rest NEW D3` → D3; `DEFER to LB5-LB7` → LB5-LB7; NONE → no owner); VM instructions by family; the QLF refusal sites → LB3; table_* flags → TAB1.
-pred:$activate_static_extension/1	LB5-LB7	seed: missing_c_preds.tsv
 pred:$call_no_catch/1	DBG1	seed: missing_c_preds.tsv
 pred:$can_yield/0	DBG1	seed: missing_c_preds.tsv
-pred:$clause_term_position/3	LB5-LB7	seed: missing_c_preds.tsv
 pred:$depth_limit/3	P3	seed: missing_c_preds.tsv
 pred:$depth_limit_except/3	P3	seed: missing_c_preds.tsv
 pred:$depth_limit_false/3	P3	seed: missing_c_preds.tsv
 pred:$depth_limit_true/5	P3	seed: missing_c_preds.tsv
 pred:$engine_create/3	TH1	seed: missing_c_preds.tsv
-pred:$foreign_predicate_source/2	PR1	seed: missing_c_preds.tsv
 pred:$gc_clear/1	TH1	seed: missing_c_preds.tsv
 pred:$gc_stop/0	TH1	seed: missing_c_preds.tsv
 pred:$gc_wait/1	TH1	seed: missing_c_preds.tsv
@@ -84,7 +81,6 @@ pred:$tbl_wkl_work/6	TAB1	seed: missing_c_preds.tsv
 pred:$transaction/2	TX1	seed: missing_c_preds.tsv
 pred:$transaction/3	TX1	seed: missing_c_preds.tsv
 pred:$undo/1	TX1	seed: missing_c_preds.tsv
-pred:$unload_file/1	SRC2	seed: missing_c_preds.tsv
 pred:$urgent_exception/3	P3	seed: missing_c_preds.tsv
 pred:$visible/2	DBG1	seed: missing_c_preds.tsv
 pred:\=@=/2	Q10	seed: missing_c_preds.tsv
@@ -176,6 +172,7 @@ refusal:src/os/pl-files.jl::get_file_name::PL_get_file_name flag PL_FILE_SEARCH 
 refusal:src/os/pl-files.jl::_iri_hook_refused::iri_hook $what (`\$iri`:iri_hook/4 of init.pl)	LB5-LB7	off the load path: serves http:// style IRIs; the library ring
 refusal:src/os/pl-files.jl::_tmp_file_refused::what	LB5-LB7	tmp_file/2 and $tmp_file_stream/4: boot, off the load path (lb5_sizing.md Ring Q)
 # refusal sites, assignments settled by an existing step list (D-0408 item 5, D-0414 item 3f): evidence/R2/refusal_owners.md has the upstream function of each
+refusal:src/os/pl-apple.jl::pl_apple_current_locale_identifier1_va::apple_current_locale_identifier/1: macOS only, CoreFoundatio	APPLE1	platform: macOS only (pl-apple.c, CoreFoundation); refused by name, out of the Linux count; called under the apple flag by boot/toplevel.pl
 refusal:src/os/pl-file.jl::get_stream_handle::a stream pair	S2b	stream_pair/3 handle (pl-file.c get_stream_handle); S2b is the pl-file.c remainder
 refusal:src/os/pl-file.jl::openStream::open/4's locale(Locale) option	CT1	open/4 locale(Locale) option (pl-file.c openStream, PL_locale); the locale objects of pl-locale.c
 refusal:src/os/pl-file.jl::openStream::open/4's lock(Lock) option (advisory file locks)	S2b	open/4 lock(Lock) option (pl-file.c openStream, Sseterr/flock); stream-layer remainder
@@ -184,18 +181,20 @@ refusal:src/os/pl-file.jl::pl_close::closing a stream pair	S2b	close of a stream
 refusal:src/os/pl-file.jl::set_stream::set_stream/2's locale(Locale)	CT1	set_stream/2 locale(Locale) (pl-file.c set_stream, PL_locale); with open/4's locale option
 refusal:src/pl-comp.jl::compileSubClause!::compileArith (optimise)	AR1	compileArith under the optimise flag (pl-comp.c O_COMPILE_ARITH); needs the A_* instructions (Q-AR3)
 refusal:src/pl-event.jl::PL_call_event_hook_va::the thread events (`unify_thread_id`)	TH1	thread events unify_thread_id (pl-event.c); threads flag is false
+refusal:src/pl-load.jl::pl_activate_static_extension1_va::activate_static_extension/1: no static extensions in the ker	LB5-LB7	O_STATIC_EXTENSIONS only (pl-load.c:450-540): the pin's own swipl has no such predicate; refused by name, the kernel links no static extension
 refusal:src/pl-proc.jl::pl_set_predicate_attribute3_va::spy points (GP_RESOLVE)	DBG1	spy points, GP_RESOLVE (pl-proc.c pl_set_predicate_attribute, SPY_ME)
-refusal:src/pl-proc.jl::setAttrDefinition::setAttrDefinition: attribute $attr	SSU1b	P_CLAUSABLE and P_DET in setAttrDefinition (pl-proc.c); SSU1b is the det/1 setter
 refusal:src/pl-read.jl::_atom_from_text::an atom containing the character 0 (a Symbol cannot hold it)	ATOM1	atoms holding the character 0 (pl-read.c atom from text); board row ATOM1, D-0410 item 7
 refusal:src/pl-srcfile.jl::startConsult::consulting a file again (reconsult)	LB6	startConsult on a loaded file, reconsult (pl-srcfile.c); LB6b item h re-points it (lb67_sizing.md)
-refusal:src/pl-wam.jl::PL_next_solution_guarded::backtracking into a $(db_c.type) choice point	CONT1	backtracking into a non-clause choice point (pl-wam.c, the I_RESET/I_YIELD/foreign-redo frames)
-refusal:src/pl-write.jl::writeAttVar::write_term/2 attributes(portray): '\$attvar':portray_attvar/	AV10	attributes(portray) writeAttVar (pl-write.c, '$attvar':portray_attvar/1)
+refusal:src/pl-wam.jl::PL_next_solution_guarded::backtracking into a $(db_c.type) choice point (pl-vmi.c:7037	CONT1	backtracking into a choice point of a type outside the pin's choice_type switch: pl-vmi.c:7037-7038 (`assert(0)`) after the CHP_DEBUG case (:7017-7035); choice_type is pl-incl.h:1836-1840 (all five types handled); the refusal is the unreachable arm
+refusal:src/pl-write.jl::writeAttVar::write_term/2 attributes(portray): '\$attvar':portray_attvar/	AV10	attributes(portray) writeAttVar (pl-write.c:1060-1084, `PL_call_predicate` of '$attvar':portray_attvar/1 under enterPortray/saveWakeup); the call needs format/2 and the boot attvar.pl portray_attvar, named refusal until then
 # refusal sites, assignments proposed in evidence/R2/refusal_owners.md (new deferred step names ENC1, RD2, WR2 and the QUESTION rows): confirmed by the audit (D-0415 item 5: ENC1, RD2, WR2 are the names of deferred steps; indexed(L) is PR1b)
 refusal:src/os/pl-file.jl::openStream::open/4's unicode_atoms(Mode) option	ENC1	open/4 unicode_atoms(Mode) option (pl-file.c openStream); the NFC normalizer rides with ENC1
 refusal:src/os/pl-file.jl::openStream::string("open/4 with the stream encoding ", enc)	ENC1	open/4 encodings other than UTF-8 (pl-file.c openStream); UTF-8 only by the R1 decision of 2026-10-07
 refusal:src/os/pl-file.jl::_atom_to_unicode_atoms::set_stream/2's unicode_atoms(nfc)	ENC1	set_stream/2 unicode_atoms(nfc) (pl-file.c set_stream); the NFC normalizer rides with ENC1
 refusal:src/os/pl-fmt.jl::pl_format_predicate2_va::format_predicate/2 (GD->format.predicates)	LB5-LB7	format_predicate/2 (pl-fmt.c); library-only (tty.pl directives), the D9 table stays empty
 refusal:src/os/pl-os.jl::expandVars::expandVars: ~user (getpwnam)	LB5-LB7	~user expansion (pl-os.c expandVars, getpwnam); off the load path, file_name_variables only
+refusal:src/os/pl-os.jl::PushTty::PushTty of a terminal: tcgetattr, cfmakeraw, tcsetattr (pl-o	TOP1b	PushTty of a terminal (pl-os.c:2294-2346): termios on a file number the kernel stream has none of; flag:tty_control is the same owner
+refusal:src/os/pl-os.jl::PopTty::PopTty of a saved terminal state: tcsetattr (pl-os.c:2354-23	TOP1b	PopTty of a saved terminal state (pl-os.c:2354-2379); the state is never saved (PushTty refuses first); flag:tty_control is the same owner
 refusal:src/os/pl-stream.jl::put_code::put_code: encoding $enc	ENC1	put_code in an encoding other than UTF-8 (pl-stream.c Sputcode); R1 decision
 refusal:src/os/pl-stream.jl::Scanrepresent::Scanrepresent: encoding $enc	ENC1	Scanrepresent in an encoding other than UTF-8 (pl-stream.c); R1 decision
 refusal:src/os/pl-stream.jl::Sgetcode::Sgetcode: encoding $enc	ENC1	Sgetcode in an encoding other than UTF-8 (pl-stream.c); R1 decision
@@ -207,7 +206,8 @@ refusal:src/os/pl-text.jl::_text_string::the string of a text in $(text.encoding
 refusal:src/os/pl-text.jl::_text_code_points::the code points of a text in $(text.encoding)	ENC1	code points of a text in another encoding (pl-text.c); branch without a kernel caller
 refusal:src/pl-comp.jl::assert_term!::assert_term: PL_CREATE_INCREMENTAL/THREAD_LOCAL	TAB1	assert_term PL_CREATE_INCREMENTAL (tabling); the PL_CREATE_THREAD_LOCAL half is TH1 (pl-comp.c assert_term)
 refusal:src/pl-modul.jl::set_module::set_module(program_space(N)): the module's code accounting	P3	set_module(program_space(N)) code accounting (pl-modul.c); resource-limit family, unreached by the boot
-refusal:src/pl-proc.jl::get_procedure::get_procedure: other than GP_DEFINE	PR1	generic get_procedure modes beyond GP_DEFINE (pl-proc.c); callers use the split get_procedure_* functions, PR1 residual
+refusal:src/pl-proc.jl::pl_foreign_predicate_source2_va::foreign_predicate_source of a foreign predicate: the addr2li	PR1	$foreign_predicate_source/2 resolves the head and fails for a non-foreign predicate as upstream does; the foreign case needs the C library's symbol table (addr2line(1)): a named refusal
+refusal:src/pl-proc.jl::get_procedure::get_procedure: other than GP_DEFINE (pl-proc.c:770-808)	PR1	the switch of get_procedure at pl-proc.c:770-800 (GP_CREATE :771, GP_FINDHERE :774, GP_FIND :780, GP_RESOLVE :792; default assert(0) :798) and its notfound branch :804-807 (GP_EXISTENCE_ERROR); callers use the split get_procedure_* functions, PR1 residual, the pin line is the whole decision
 refusal:src/pl-proc.jl::pl_get_predicate_attribute3_va::indexed(L): the Prolog dict of an index property	PR1b	indexed(L) of pl_get_predicate_attribute (pl-proc.c, unify_index_property): predicate_property(P, X) enumeration reaches it via syspred.pl:874; PR1b (R2b list, D-0415 item 5), needs the dict builder; size it before the first boot decides whether it is needed
 refusal:src/pl-read.jl::raw_read2::raw_read2: reading past the end of a stream (its error names	RD2	raw_read2 past the end of a stream, eof_action(error) (pl-read.c); the stream term is available since LB5 (PL_unify_stream_or_alias)
 refusal:src/pl-read.jl::raw_read2::raw_read2: the comments(C) read option	RD2	raw_read2 comments(C) read option (pl-read.c); the comments collector of library(prolog_source)
@@ -224,3 +224,43 @@ refusal:src/pl-string.jl::pl_string_bytes3_va::string_bytes/3 with the encoding 
 refusal:src/pl-supervisor.jl::freeCodesDefinition!::freeCodesDefinition! of a wrapped predicate needs the databa	WRAP1	freeCodesDefinition of a wrapped predicate (pl-supervisor.c), needs the database; wrap closures are WRAP1
 refusal:src/pl-wam.jl::PL_next_solution_guarded::the VM instruction $(codeTable(thiscode).name)	TAB1	dispatch fallthrough for a VM instruction without a body (pl-vmi.c); each missing instruction has its own vmi: row, the last instruction (S_TABLED) removes this site
 refusal:src/pl-write.jl::writePrimitive::writing a grounded value SWI has no type for	WR2	writePrimitive of a grounded value SWI has no type for; a representation guard of the kernel, permanent until the blob writer takes it
+# D-0512 item 1 (R2OWN): owners for the NO OWNER rows (flags by the file that defines them or whose function sets them; flags without a step: FL1; refusal sites by the file of the refusing function); reasons carry the pin 18168e62 file:line
+pred:apple_current_locale_identifier/1	APPLE1	pl-apple.c:57-58 (macOS-only file, no step owns it; new step name proposed, platform: refused by name or out of the count); called under the apple flag by boot/toplevel.pl
+refusal:src/pl-init.jl::_parse_long_option!::--traditional (setTraditional, resetListAtoms): the kernel i	LB7	pl-init.c:1096 setTraditional, :1195 the --traditional option; the refusing function is in src/pl-init.jl, LB7's file (LB7 DIVERGES: the kernel is SWI-7 only)
+refusal:src/pl-init.jl::PL_initialise_tail!::--config (\$config)	LB7	pl-init.c:1230 (--config=file stored), :1672-1673 prologToplevel($config); src/pl-init.jl is LB7's file
+refusal:src/pl-init.jl::PL_initialise_tail!::-c (\$compile)	LB7	pl-init.c:1625 compileFileList for -c; refusing function is in src/pl-init.jl (LB7); the compile body is pl-qlf.c:4784 = LB3's QLF
+flag:(tbl_set_restraint_flag (tabling restraints))	TAB1	pl-prologflag.c:1628-1629 calls tbl_set_restraint_flag, defined in pl-tabling.c (tbl_is_restraint_flag :11693)
+flag:(set_arith_flag (pl-arith.c))	AR1	pl-prologflag.c:1630-1631 calls set_arith_flag, defined in pl-arith.c:5180
+flag:(ci_set_flag (pl-index.c))	FL1	pl-prologflag.c:1632-1633 calls ci_set_flag, defined in pl-index.c:4060 (no step owns pl-index.c's flag part: FL1)
+flag:agc_margin	FL1	pl-prologflag.c:2583 defines it, :1439-1442 setter writes GD->atoms.margin (pl-atom.c AGC; no step)
+flag:app_name	FL1	no C definition: boot/toplevel.pl:434 set_prolog_flag(app_name, ...) creates it; no step
+flag:apple	FL1	pl-prologflag.c:2748 (macOS-only, FF_READONLY); no step
+flag:apple_universal_binary	FL1	pl-prologflag.c:2453 (macOS-only, FF_READONLY); no step
+flag:argv	LB7	pl-prologflag.c:2823 setArgvPrologFlag(argv, GD->cmdline.appl_argv): the value is pl-init.c's command line (LB7)
+flag:associated_file	FL1	no C definition: boot/toplevel.pl:472 set_prolog_flag(associated_file, ...) creates it; no step
+flag:bundle	FL1	pl-prologflag.c:2753,:2769 (macOS bundle, FF_READONLY); no step
+flag:color_term	LB7	pl-init.c:1599 PL_set_prolog_flag(color_term, false) in PL_initialise (LB7 ports it); also created by library/ansi_term.pl:141
+flag:debug_on_interrupt	DBG1	pl-prologflag.c:1344 calls enable_debug_on_interrupt, defined in pl-trace.c:2092 (the SIGINT handler half; DBG1 owns pl-trace.c)
+flag:emscripten	FL1	pl-prologflag.c:2739 (WASM only, FF_READONLY); no step
+flag:encoding	ENC1	pl-prologflag.c:2778 defines it, :779 setEncoding sets LD->encoding; the encodings beyond UTF-8 are ENC1's
+flag:file_name_case_handling	FL1	pl-prologflag.c:2546 defines it, :641/:662 setFileNameCaseHandling(Name); no step
+flag:heartbeat	TH1	pl-prologflag.c:2787 defines it, :1488 sets LD->yield.frequency (the yield of I_YIELD, which TH1 owns)
+flag:hyperlink_term	FL1	no C definition: library/ansi_term.pl:146 create_prolog_flag(hyperlink_term, ...); no step
+flag:incomparable	FL1	pl-prologflag.c:2693 defines it, :752 setIncomparable; no step
+flag:open_shared_object	FL1	pl-prologflag.c:2598 (FF_READONLY); the predicates are pl-load.c:325/:331, no step
+flag:os_argv	LB7	pl-prologflag.c:2822 setArgvPrologFlag(os_argv, GD->cmdline.os_argv): the value is pl-init.c's command line (LB7)
+flag:prolog_debug	FL1	pl-prologflag.c:2736 (debug build, FF_READONLY); no step (pl-debug.c prolog_debug/1 is a separate predicate)
+flag:readline	FL1	no C definition: boot/toplevel.pl:894-895 set_prolog_flag(readline, ...); no step
+flag:save_history	FL1	no C definition: library/prolog_history.pl:59 create_prolog_flag(save_history, ...); no step
+flag:saved_program_class	FL1	no C definition: library/qsave.pl:166 create_prolog_flag(saved_program_class, ...); no step
+flag:shared_home	FL1	pl-prologflag.c:2554 (FF_READONLY, PLSHAREDHOME); no step
+flag:stack_limit	FL1	pl-prologflag.c:2596 defines it, :1478 calls set_stack_limit (pl-setup.c:1861); no step owns pl-setup.c (P3 resource limits is the alternative)
+flag:string_stack_tripwire	FL1	pl-prologflag.c:1480-1483 sets LD->fli.string_buffers.tripwire (pl-buffer.c:133); no step
+flag:theme	FL1	pl-prologflag.c:2731 defines it, :957 setTheme; no step
+flag:toplevel_thread	FL1	no C definition: boot/toplevel.pl:282,:1222,:1225 set_prolog_flag(toplevel_thread, ...); no step
+flag:tty_control	TOP1b	pl-prologflag.c:2782 defines it; the setter's body is PushTty/PopTty, pl-os.c:2141 (ports with the terminal code TOP1b owns: Sread_terminal, ResetTty)
+flag:unicode_atoms	ENC1	pl-prologflag.c:2684 defines it, :787-898 setUnicodeAtoms; ENC1 owns the unicode_atoms refusals (NFC normalizer)
+flag:var_tag	RD2	pl-prologflag.c:2706 defines it, :534 setVarTagFlag; the reader side is pl-read.c:4440 (RD2 owns the reader remainder)
+flag:windows	FL1	pl-prologflag.c:2537 (Windows only, FF_READONLY); no step
+flag:xpce	FL1	pl-prologflag.c:2618-2619 (only when GD->options.xpce >= 0); no step (LB7 DIVERGES: not defined)
+flag:xref	FL1	no C definition: library/prolog_clause.pl:567 create_prolog_flag(xref, ...), boot/init.pl:2957,:3067 set it; no step

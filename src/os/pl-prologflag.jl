@@ -754,12 +754,13 @@ end
 # ── setting a flag: the value setters (pl-prologflag.c), R2 F1b ──────────────────────────────────
 # ORIGINAL (design D4): a flag whose upstream side effect the kernel has not is DEFINED at upstream's default
 # (`initPrologFlags!`) and SETTING it raises `NotPortedError` naming the side effect: loud and grep-able, and
-# no answer swipl gives is changed. The flags (`debug` and `debugger_show_context` are accepted since R2 F1c): `tty_control`, `debug_on_interrupt`,
-# `stack_limit` (set_stack_limit), `table_space`, `table_compile_threshold`, `table_drop_intermediate`,
-# `table_monotonic`, `agc_margin`, `string_stack_tripwire`, `heartbeat`, `encoding`, `unicode_atoms`,
-# `theme`, `incomparable` (`LD->prolog_flag.incomparable_error`), `var_tag`
-# (the VARTAG_* bits of `m->flags`, which the kernel's `module_t` has not), the ci_* and tabling restraint flags (pseudo-flags of pl-index.c and pl-tabling.c, whose state is
-# constants here), the arithmetic flags (`set_arith_flag`, pl-arith.c) and `file_name_case_handling`.
+# no answer swipl gives is changed. The flags (`debug` and `debugger_show_context` are accepted since R2 F1c): `tty_control`,
+# `table_space`, `table_compile_threshold`, `table_drop_intermediate`, `table_monotonic`, `heartbeat`,
+# `encoding`, `unicode_atoms`, `var_tag` (the VARTAG_* bits of `m->flags`, which the kernel's `module_t`
+# has not), the ci_* and tabling restraint flags (pseudo-flags of pl-index.c and pl-tabling.c, whose
+# state is constants here) and the arithmetic flags (`set_arith_flag`, pl-arith.c). Since R2 FL1 these
+# have their setters: `agc_margin`, `stack_limit`, `string_stack_tripwire`, `theme`, `incomparable`,
+# `file_name_case_handling`; since R2 DBG1 `debug_on_interrupt` calls `enable_debug_on_interrupt` (src/pl-trace.jl).
 # `on_error`/`on_warning` are checked and stored (the `halt`/`status` actions belong to the toplevel).
 "Refuse setting the flag `key`: its upstream side effect `effect` is not ported (design D4; R2 F1b)."
 function _flag_not_ported(key::T, effect::String) where {T}
@@ -954,6 +955,102 @@ function setOccursCheck(ld::PL_local_data{T}, a::T)::Bool where {T}
         return true
     end
     return PL_error(ld, ERR_DOMAIN, mk_sym(T, :occurs_check), _flag_atom_ref(ld, a))
+end
+
+# PORT: pl-prologflag.c setIncomparable
+# DIVERGES: the field is stored and read by no kernel code yet: `compareStandard`'s partial mode (`CMP_MODE_PARTIAL`) is unwritten
+# (src/pl-prims.jl), so the flag changes no answer of the kernel's compare.
+"Set the `incomparable` flag from the atom `a` (`arbitrary`, `error`) (pl-prologflag.c)."
+function setIncomparable(ld::PL_local_data{T}, a::T)::Bool where {T}
+    k = sym_key(a)
+    if k == sym_key(mk_sym(T, :arbitrary)) || k == sym_key(mk_sym(T, :error))
+        ld.prolog_flag_incomparable_error = (k == sym_key(mk_sym(T, :error)))
+        return true
+    end
+    return PL_error(ld, ERR_DOMAIN, mk_sym(T, :incomparable), _flag_atom_ref(ld, a))
+end
+
+# PORT: pl-prologflag.c setFileNameCaseHandlingName
+# DIVERGES: the local data is an argument (upstream's `LD`); `name` is a Julia string.
+"Set the file-name case bits of the mask from `case_sensitive`, `case_preserving` or `case_insensitive`; false for another name (pl-prologflag.c)."
+function setFileNameCaseHandlingName(ld::PL_local_data, name::AbstractString)::Bool
+    if name == "case_sensitive"
+        setPrologFlagMask!(ld, PLFLAG_FILE_CASE)
+        setPrologFlagMask!(ld, PLFLAG_FILE_CASE_PRESERVING)
+    elseif name == "case_preserving"
+        setPrologFlagMask!(ld, PLFLAG_FILE_CASE_PRESERVING)
+        clearPrologFlagMask!(ld, PLFLAG_FILE_CASE)
+    elseif name == "case_insensitive"
+        clearPrologFlagMask!(ld, PLFLAG_FILE_CASE)
+        clearPrologFlagMask!(ld, PLFLAG_FILE_CASE_PRESERVING)
+    else
+        return false
+    end
+    return true
+end
+
+# PORT: pl-prologflag.c setFileNameCaseHandling
+"Set the `file_name_case_handling` flag from the atom `a`; else `domain_error(file_name_case_handling, A)` (pl-prologflag.c)."
+function setFileNameCaseHandling(ld::PL_local_data{T}, a::T)::Bool where {T}
+    if !setFileNameCaseHandlingName(ld, sym_text(a))
+        return PL_error(
+            ld, ERR_DOMAIN, mk_sym(T, :file_name_case_handling), _flag_atom_ref(ld, a)
+        )
+    end
+    return true
+end
+
+# PORT: pl-prologflag.c setTheme
+# DIVERGES: the database and the local data are arguments; no `lock_shared_value` (one thread). `PL_predicate("theme_changed", 1,
+# "$toplevel")` is `lookupProcedure` in `lookupModule`'s module, looked up on each call (as `propagateAutoload`). The foreign frame
+# is the kernel's `PL_open_foreign_frame`; before boot/toplevel.pl is loaded `$toplevel:theme_changed/1` has no clauses, so a call
+# outside the boot session raises the existence error upstream raises too (`PL_Q_PASS_EXCEPTION`).
+"Set the flag `f` (`theme`) to the atom `a`: if it changes, call `\$toplevel:theme_changed(A)` (not in the boot session) and store it unless that raised (pl-prologflag.c)."
+function setTheme(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, f::prolog_flag{T}, a::T
+)::Bool where {T}
+    sym_key(a) == sym_key(f.a) && return true
+
+    if !gd.bootsession
+        pred = lookupProcedure(
+            mk_sym(T, :theme_changed), 1,
+            lookupModule(gd, mk_sym(T, Symbol("\$toplevel")))
+        )
+        fid = PL_open_foreign_frame(ld)
+        fid == 0 && return false
+        av = PL_new_term_ref(ld)
+        rc =
+            PL_put_atom(ld, av, a) &&
+            PL_call_predicate(gd, ld, nothing, PL_Q_PASS_EXCEPTION, pred, av)
+        PL_close_foreign_frame(ld, fid)
+        rc || return false
+    end
+
+    return set_flag_atom(f, a)
+end
+
+# PORT: pl-setup.c set_stack_limit
+# DIVERGES: the limit is kept in words (`ld.stacks_limit`: a byte count is cut to whole words, so `stack_limit` reads the limit
+# rounded down to a multiple of 8); `sizeStack` is the kernel's `_size_stack`; there is no stack garbage collector (`garbageCollect(GC_USER)`
+# is `pl_garbage_collect`'s empty body, src/pl-gc.jl), so only `trimStacks!` runs before the second test. The pl-setup.c file's
+# other predicates (`$set_prolog_stack`) are not this function's.
+"Set the stack limit to `limit` bytes; `permission_error(limit, stacks, Limit)` when the stacks in use are larger (pl-setup.c)."
+function set_stack_limit(ld::PL_local_data{T}, limit::Int)::Bool where {T}
+    total() =
+        _size_stack(ld, :local) + _size_stack(ld, :global) + _size_stack(ld, :trail)
+    if limit < 8 * ld.stacks_limit && limit < total()
+        trimStacks!(ld, true)
+
+        if limit < total()
+            ex = PL_new_term_ref(ld)
+            return PL_put_int64(ld, ex, limit) && PL_error(
+                ld, "", 0, "", ERR_PERMISSION, mk_sym(T, :limit), mk_sym(T, :stacks), ex
+            )
+        end
+    end
+
+    ld.stacks_limit = limit ÷ 8
+    return true
 end
 
 # PORT: pl-prologflag.c setStreamTypeCheck
@@ -1283,9 +1380,11 @@ end
 
 # PORT: pl-prologflag.c set_flag_value
 # DIVERGES: the database and the local data are arguments, the module is its record, and the key an atom. The side
-# effects the kernel has none for are refused by name (design D4): `tty_control` (changed), `debug_on_interrupt`, `var_tag`, `incomparable`, `encoding`,
-# `unicode_atoms`, `file_name_case_handling`, `table_monotonic`, `theme`, `agc_margin`, `table_space`,
-# `table_compile_threshold`, `table_drop_intermediate`, `stack_limit`, `string_stack_tripwire` and `heartbeat`.
+# effects the kernel has none for are refused by name (design D4): `tty_control` (changed), `var_tag`, `encoding`,
+# `unicode_atoms` and `heartbeat`. Since R2 FL1 `incomparable`, `file_name_case_handling`, `theme`, `agc_margin`, `stack_limit` and
+# `string_stack_tripwire` have their setters (`setIncomparable`, `setFileNameCaseHandling`, `setTheme`, `set_stack_limit`; the two
+# integers store their value). Since R2 DBG1 `debug_on_interrupt` is `rval = enable_debug_on_interrupt(ld, val)` as pl-prologflag.c:1344 (false when
+# the flag `signals` is off; DIVERGES: an interrupt does not reach the debugger, the signal half of that function is the signal step's).
 # Since R2 F1c `debug` and `debugger_show_context` are accepted: `debug` calls `debugmode` and `tracemode` (src/pl-trace.jl) and
 # `rval` is their answer, as upstream's (pl-prologflag.c:1317-1326); the value goes to the table as upstream does, the mask bit only if `rval`.
 # `threads` has no branch: it is read-only in the kernel's no-threads build (design D1; upstream's `O_PLMT` branch is not
@@ -1328,7 +1427,7 @@ function set_flag_value(
             val != (sym_key(f.a) == sym_key(mk_sym(T, Symbol("true")))) &&
                 _flag_not_ported(k, "PushTty and PopTty (the terminal)")
         elseif name == "debug_on_interrupt"
-            _flag_not_ported(k, "enable_debug_on_interrupt (signals)")
+            rval = enable_debug_on_interrupt(ld, val)         # pl-prologflag.c:1344 (src/pl-trace.jl; the SIGINT half is the signal step's)
         elseif name == "protect_static_code"
             if val != (sym_key(f.a) == sym_key(mk_sym(T, Symbol("true")))) && val == false
                 ex = PL_new_term_ref(ld)
@@ -1383,7 +1482,7 @@ function set_flag_value(
         elseif name == "occurs_check"
             setOccursCheck(ld, a) || return false
         elseif name == "incomparable"
-            _flag_not_ported(k, "setIncomparable (LD->prolog_flag.incomparable_error)")
+            setIncomparable(ld, a) || return false
         elseif name == "access_level"
             setAccessLevelFromAtom(ld, a) || return false
         elseif name == "encoding"
@@ -1393,13 +1492,13 @@ function set_flag_value(
         elseif name == "stream_type_check"
             setStreamTypeCheck(ld, a) || return false
         elseif name == "file_name_case_handling"
-            _flag_not_ported(k, "setFileNameCaseHandling")
+            setFileNameCaseHandling(ld, a) || return false
         elseif name == "autoload"
             setAutoload(ld, a) || return false
         elseif name == "table_monotonic"
             setMonotonicMode(ld, a) || return false
         elseif name == "theme"
-            _flag_not_ported(k, "setTheme (the theme of the messages)")
+            return setTheme(gd, ld, f, a)       # stores the value itself
         end
 
         f.a = a
@@ -1408,7 +1507,12 @@ function set_flag_value(
         i === nothing && return false
 
         if name == "agc_margin"
-            _flag_not_ported(k, "GD->atoms.margin (atom garbage collection)")
+            # DIVERGES: the margin is stored; the atom garbage collector that reads it is unwritten.
+            if i < 0                                # `i > SIZE_MAX` cannot happen for an `Int64`
+                PL_error(ld, ERR_REPRESENTATION, mk_sym(T, :size_t))
+                return false
+            end
+            gd.atoms.margin = Int(i)
         elseif name == "table_space"
             # DIVERGES: `i > SIZE_MAX` cannot happen for an `Int64`; `shared_table_space` is TH1's (the kernel has no such flag).
             if i < 0
@@ -1433,9 +1537,18 @@ function set_flag_value(
             end
             ld.table_flags_drop_intermediate = Int(i)
         elseif name == "stack_limit"
-            _flag_not_ported(k, "set_stack_limit")
+            if i < 0
+                PL_error(ld, ERR_REPRESENTATION, mk_sym(T, :size_t))
+                return false
+            end
+            set_stack_limit(ld, Int(i)) || return false
         elseif name == "string_stack_tripwire"
-            _flag_not_ported(k, "LD->fli.string_buffers.tripwire")
+            # DIVERGES: stored; pl-buffer.c's report at the tripwire (a debug build's `Sdprintf`) is unwritten.
+            if i < 0 || i > typemax(UInt32)
+                PL_error(ld, ERR_REPRESENTATION, mk_sym(T, :uint))
+                return false
+            end
+            ld.fli_string_buffers_tripwire = Int(i)
         elseif name == "heartbeat"
             _flag_not_ported(k, "LD->yield.frequency")
         end

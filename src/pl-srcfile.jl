@@ -932,9 +932,111 @@ function pl_end_consult1_va(
     return rc ? FTRUE : FFALSE
 end
 
+# PORT: pl-srcfile.c delModuleSourceFile
+# DIVERGES: `modules` is a vector (src/pl-incl.jl); no lock.
+"Remove the module `m` from the modules of `sf`: true if it was there (pl-srcfile.c)."
+function delModuleSourceFile(sf::SourceFile{T}, m::module_t{T})::Bool where {T}
+    i = findfirst(x -> x === m, sf.modules)
+    i === nothing && return false
+    deleteat!(sf.modules, i)
+    return true
+end
+
+# PORT: pl-srcfile.c delAllModulesSourceFile__unlocked
+# DIVERGES: `modules` is a vector; `m.file` is the source file's index, 0 for NULL; `clearHTableWP(m->public)` empties the
+# public table and the order it is listed in; no lock.
+"Empty the module list of `sf`; a module loaded from `sf` forgets its file, line and public table (pl-srcfile.c)."
+function delAllModulesSourceFile__unlocked(sf::SourceFile{T})::Nothing where {T}
+    mods = copy(sf.modules)
+    empty!(sf.modules)                              # sf->modules = NULL
+    for m in mods
+        if m.file == sf.index
+            m.file = 0                              # m->file = NULL
+            m.line_no = 0
+            empty!(m.public_)                       # clearHTableWP(m->public)
+            empty!(m.public_order)
+        end
+    end
+    return nothing
+end
+
+# PORT: pl-srcfile.c unloadFile
+# DIVERGES: the database and `ld` are arguments; no lock; no `DEBUG(MSG_UNLOAD)` output; `procedures` is a vector with the newest
+# LAST, so it is walked in reverse (upstream's list is newest first); `freeList(&sf->procedures)` is `empty!`.
+"Remove the clauses `sf` loaded and every trace of its predicates' file and meta declarations (pl-srcfile.c)."
+function unloadFile(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, sf::SourceFile{T}
+)::Bool where {T}
+    deleted = 0
+
+    delayEvents(ld)
+    for proc in Iterators.reverse(sf.procedures)    # remove the clauses
+        def = proc.definition
+
+        if (def.flags & (P_FOREIGN | P_THREAD_LOCAL)) == 0
+            multifile = (def.flags & P_MULTIFILE) != 0
+            deleted += removeClausesPredicate!(gd, def, multifile ? sf.index : 0, true)
+        end
+
+        if (def.flags & P_MULTIFILE) == 0
+            def.flags &= ~FILE_ASSIGNED
+            clear_meta_declaration(def)
+        end
+    end
+    sf.number_of_clauses -= UInt32(deleted)
+
+    empty!(sf.procedures)                           # freeList(&sf->procedures)
+    delAllModulesSourceFile__unlocked(sf)
+    sf.isfile = false
+
+    return sendDelayedEvents(gd, ld, true) >= 0
+end
+
+# PORT: pl-srcfile.c unload_file as pl_unload_file1_va
+# (PRED_IMPL("$unload_file", 1, unload_file, 0)) — pl-srcfile.c:839-884
+# DIVERGES: none in the logic. As upstream, `unloadFile` has emptied the module list by the time the loop below reads it, so the
+# loop (the module's super set to `user`) has nothing to visit.
+"`'\$unload_file'(+Name)` (pl-srcfile.c): remove all traces of the loaded file `Name`; true if `Name` is no source file."
+function pl_unload_file1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    gd = _query_gd(ld)
+    A1 = PL__t0
+    name = PL_get_atom_ex(ld, A1)
+    name === nothing && return FFALSE
+
+    sf = lookupSourceFile(gd, name, false)
+    if sf !== nothing
+        if sf.system
+            rc = PL_error(
+                ld, "", 0, "", ERR_PERMISSION, mk_sym(T, :unload), mk_sym(T, :file), A1
+            )
+        else
+            if unloadFile(gd, ld, sf)
+                for m in copy(sf.modules)
+                    m.file = 0
+                    m.line_no = 0
+                    delModuleSourceFile(sf, m)
+                    empty!(m.public_)               # clearHTableWP(m->public)
+                    empty!(m.public_order)
+                    setSuperModule(gd.modules, ld, m, MODULE_user(gd))
+                end
+                rc = true
+            else
+                rc = false
+            end
+        end
+
+        releaseSourceFile(sf)
+        return rc ? FTRUE : FFALSE
+    end
+
+    return FTRUE
+end
+
 # PORT: pl-srcfile.c BeginPredDefs as PL_predicates_from_srcfile
 # DIVERGES: the entries of the predicates the kernel has ported, in upstream's order (pl-srcfile.c:1987-1999);
-# NOT HERE (LB6): `$clause_from_source`/4, `$unload_file`/1, `$set_source_files`/1, `$flush_predicate`/1,
+# NOT HERE (LB6): `$clause_from_source`/4, `$set_source_files`/1, `$flush_predicate`/1,
 # `$flushed_predicate`/1. `PRED_DEF` ors in `PL_FA_VARARGS`.
 "pl-srcfile.c's registration table (`BeginPredDefs(srcfile)`): the ported entries."
 const PL_predicates_from_srcfile = (
@@ -950,5 +1052,6 @@ const PL_predicates_from_srcfile = (
     PL_extension("\$set_source_file", 3, pl_set_source_file3_va, PL_FA_VARARGS),
     PL_extension("\$start_consult", 2, pl_start_consult2_va, PL_FA_VARARGS),
     PL_extension("\$end_consult", 1, pl_end_consult1_va, PL_FA_VARARGS),
-    PL_extension("\$fixup_reconsult", 1, pl_fixup_reconsult1_va, PL_FA_VARARGS)
+    PL_extension("\$fixup_reconsult", 1, pl_fixup_reconsult1_va, PL_FA_VARARGS),
+    PL_extension("\$unload_file", 1, pl_unload_file1_va, PL_FA_VARARGS)
 )
