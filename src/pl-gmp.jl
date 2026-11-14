@@ -289,11 +289,12 @@ maxBigIntSize(ld::PL_local_data)::UInt64 = min(UInt64(ld.stacks_limit) * 8, MPZ_
 
 # ── the rounding mode (<fenv.h>) ─────────────────────────────────────────────────────────────────
 # ORIGINAL: C's `FE_TONEAREST`, `FE_UPWARD`, `FE_DOWNWARD`, `FE_TOWARDZERO`, `fegetround()` and `fesetround()`, which
-# the rounding code of pl-gmp.c and pl-arith.c calls. Julia's own constants of the running platform
-# (`Base.Rounding.JL_FE_*`, from `jl_get_fenv_consts`), `Int`s.
-# DIVERGES: the mode is read and written through `Base.Rounding.rounding_raw`/`setrounding_raw` (`jl_get_fenv_rounding`,
-# `jl_set_fenv_rounding`: the C library's `fegetround`/`fesetround` on the calling thread), the only entry Julia has to
-# the Float64 mode (`setrounding(Float64, ...)` is a MethodError: only BigFloat has one). A mode other than to nearest
+# the rounding code of pl-gmp.c and pl-arith.c calls. The constants are Julia's own of the running platform
+# (`Base.Rounding.JL_FE_*`, from `jl_get_fenv_consts`: the libm values), `Int`s; the two functions are DIRECT ccalls to
+# libm's `fegetround` and `fesetround` (`Cint` in and out), the C's calls: `Base.Rounding.rounding_raw`/`setrounding_raw`
+# reach the same libm through `jl_get_fenv_rounding`/`jl_set_fenv_rounding`, which AllocCheck reports as allocating.
+# DIVERGES: the kernel's mode is an `Int` (the `Cint` is widened, and narrowed with `%`, a truncation that never throws);
+# Julia has no other entry to the Float64 mode (`setrounding(Float64, ...)` is a MethodError: only BigFloat has one). A mode other than to nearest
 # is held ONLY for the duration of an arithmetic evaluation (`evalExpression_cells`, pl-arith.jl, restores it in a
 # `finally`), never across calls: swipl leaves the hardware mode set, and the rest of the Julia runtime would run in it.
 # Julia's compiler does not model the mode: a float operation with literal (constant) operands may be folded in to_nearest at
@@ -309,10 +310,10 @@ const FE_DOWNWARD = Int(Base.Rounding.JL_FE_DOWNWARD)
 const FE_TOWARDZERO = Int(Base.Rounding.JL_FE_TOWARDZERO)
 
 "The floating point rounding mode in effect, one of the `FE_*` (`fegetround()` of <fenv.h>)."
-fegetround()::Int = Int(Base.Rounding.rounding_raw(Float64))
+fegetround()::Int = Int(ccall(:fegetround, Cint, ()))
 
 "Set the floating point rounding mode to the `FE_*` `mode` (`fesetround()` of <fenv.h>); 0 on success."
-fesetround(mode::Int)::Int = Int(Base.Rounding.setrounding_raw(Float64, mode))
+fesetround(mode::Int)::Int = Int(ccall(:fesetround, Cint, (Cint,), mode % Cint))
 
 # ORIGINAL: `nexttoward(x, y)` of <math.h> for doubles: `y` when `x == y`, a NaN when either is one, else the neighbour of `x`
 # towards `y` (`nextfloat` and `prevfloat` are integer operations: the rounding mode does not touch them).
