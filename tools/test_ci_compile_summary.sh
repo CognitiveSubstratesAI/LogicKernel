@@ -42,6 +42,8 @@ echo 1 > "$W/red/port_check.rc"
 printf 'port_check: 120 file(s), upstream checked for: NONE\n  src/pl-z.jl:7: PORT marker names no function\n  docs/port_inventory.md: table differs\n' > "$W/red/port_check.log"
 echo 1 > "$W/red/bool_atoms.rc"
 printf 'check_bool_atoms: test/core_lang/test_q.jl:9: @test lk_sym(T, :true) isa T\ncheck_bool_atoms: 1 hit(s)\n' > "$W/red/bool_atoms.log"
+echo 1 > "$W/red/where_return.rc"
+printf 'check_where_return: src/pl-inline.jl:103: visibleClause(cl::Clause{T})::Bool where {T} =\ncheck_where_return: 1 finding(s): in a one-line method\n' > "$W/red/where_return.log"
 echo 1 > "$W/red/test_mark_bar.rc"
 printf 'Test Failed at /home/runner/work/lk/lk/test/core_lang/test_mark_bar.jl:55\n  Expression: x == 2\n   Evaluated: 1 == 2\nError During Test at /home/runner/work/lk/lk/test/core_lang/test_mark_bar.jl:70\n  Got exception outside of a @test\n  BoundsError: attempt to access 0-element Vector\n' > "$W/red/test_mark_bar.log"
 echo skipped > "$W/red/test_local_stack.rc"
@@ -50,6 +52,7 @@ sum_ "red: the load error row names the src frame and the message" 1 "$W/red" "|
 sum_ "red: the formatter's file" 1 "$W/red" "| fmt | src/pl-y.jl | - | not Blue-formatted"
 sum_ "red: port_check's two shapes" 1 "$W/red" "| port_check | src/pl-z.jl | 7 | PORT marker names no function" "| port_check | docs/port_inventory.md | - | table differs"
 sum_ "red: the Bool-as-atom hit" 1 "$W/red" "| bool_atoms | test/core_lang/test_q.jl | 9 | Bool is no atom"
+sum_ "red: the where-bound return type hit" 1 "$W/red" "| where_return | src/pl-inline.jl | 103 | where binds to the return type: visibleClause(cl::Clause{T})::Bool where {T} = |"
 sum_ "red: Test Failed and Error During Test rows" 1 "$W/red" "| test_mark_bar | test/core_lang/test_mark_bar.jl | 55 | Test Failed Expression: x == 2" "| test_mark_bar | test/core_lang/test_mark_bar.jl | 70 | Error During Test: BoundsError"
 sum_ "red: a skipped step is not a failure row" 1 "$W/red" "| test_local_stack | skipped (a step it needs failed) |"
 if python3 -I "$SUM" "$W/red" | grep -E '^\| test_local_stack \|[^|]*\|[^|]*\|' > /dev/null; then bad "a skipped step got a failure row"; else ok "a skipped step has no failure row"; fi
@@ -62,6 +65,66 @@ sum_ "a failed step without a log still gets a row" 1 "$W/nolog" "| y | - | - |"
 mkdir -p "$W/none"
 sum_ "a directory with no .rc is refused" 2 "$W/none"
 sum_ "no directory is refused" 2 "$W/nowhere"
+
+# THE STATIC SHARDS (CIREF2): Aqua's banners with Methods or Symbols, JET's reports, found BY NAME with file:line.
+# The shapes are those Aqua.jl and JET.jl print (read from their sources, not yet from a CI log).
+mkdir -p "$W/sa"
+for k in 1 2 3; do echo 0 > "$W/sa/sa_$k.rc"; : > "$W/sa/sa_$k.log"; done
+echo 1 > "$W/sa/sa_4.rc"
+cat > "$W/sa/sa_4.log" <<'EOF2'
+Unbound type parameters detected:
+1-element Vector{Any}:
+ visibleClause(c::LogicKernel.Clause{T}) where T @ LogicKernel /home/runner/work/lk/lk/src/pl-inline.jl:812
+Test Failed at /root/.julia/packages/Aqua/YoFBJ/src/unbound_args.jl:38
+  Expression: isempty(unbounds)
+Undefined exports detected:
+2-element Vector{Symbol}:
+ :pl_nothing_here
+ :pl_nor_here
+Test Failed at /root/.julia/packages/Aqua/YoFBJ/src/exports.jl:66
+  Expression: isempty(exports)
+Test Failed at /home/runner/work/lk/lk/test/static_analysis_body.jl:158
+  Expression: Aqua.test_all(LogicKernel; undocumented_names = true)
+1 ambiguities found. To get a list, set `broken = false`.
+Ambiguity #1
+-(x::Int64, y) @ LogicKernel /home/runner/work/lk/lk/src/pl-arith.jl:90
+-(x, y::Int64) @ LogicKernel /home/runner/work/lk/lk/src/pl-arith.jl:95
+
+Possible fix, define
+  -(::Int64, ::Int64)
+
+JET-test failed at /home/runner/work/lk/lk/test/static_analysis_body.jl:163
+  Expression: JET.test_package(LogicKernel; target_modules = (LogicKernel,))
+  ═════ 2 possible errors found ═════
+  ┌ f(x::Nothing) @ LogicKernel /home/runner/work/lk/lk/src/pl-time.jl:77
+  │┌ -(x::Nothing, y::Int64) @ Base ./int.jl:86
+  ││ no matching method found `-(::Nothing, ::Int64)`: (-)(x::Nothing, y::Int64)
+  │└────────────────────
+  └────────────────────
+  ┌ _out_string(s::IOSTREAM, x::Nothing) @ LogicKernel /home/runner/work/lk/lk/src/os/pl-file.jl:310
+  │ no matching method found `write(::IOSTREAM, ::Nothing)`
+  └────────────────────
+EOF2
+sum_ "static: Aqua unbound-parameter finding by name, file, line" 1 "$W/sa" "| sa_4 | src/pl-inline.jl | 812 | Aqua Unbound type parameters: visibleClause(c::LogicKernel.Clause{T}) where T |"
+sum_ "static: Aqua undefined exports (no location: file -)" 1 "$W/sa" "| sa_4 | - | - | Aqua Undefined exports: :pl_nothing_here |" ":pl_nor_here"
+sum_ "static: Aqua method ambiguity, both methods" 1 "$W/sa" "| sa_4 | src/pl-arith.jl | 90 | Aqua Method ambiguity: -(x::Int64, y) |" "| sa_4 | src/pl-arith.jl | 95 |"
+sum_ "static: JET reports by name with the message line" 1 "$W/sa" "| sa_4 | src/pl-time.jl | 77 | JET: f(x::Nothing): no matching method found" "| sa_4 | src/os/pl-file.jl | 310 | JET: _out_string(s::IOSTREAM, x::Nothing): no matching method found \`write(::IOSTREAM, ::Nothing)\`"
+sum_ "static: the tool counts (Aqua 5 rows, JET 2)" 1 "$W/sa" "| Aqua | 5 |" "| JET | 2 |"
+sum_ "static: the testset's own Test Failed row in test/ is kept" 1 "$W/sa" "| sa_4 | test/static_analysis_body.jl | 158 | Test Failed Expression: Aqua.test_all"
+if python3 -I "$SUM" "$W/sa" | grep -F 'Aqua/YoFBJ' > /dev/null; then bad "static: a row inside Aqua's own file leaked"; else ok "static: no row from inside Aqua's own files"; fi
+# --expect: nine shards expected, three present: the others are FAILED rows, never a pass by default
+out="$(python3 -I "$SUM" --title "Static analysis" --expect sa_1,sa_2,sa_3,sa_4,sa_5 "$W/sa" 2>&1)"
+printf '%s' "$out" | grep -qF "## Static analysis" && printf '%s' "$out" | grep -qF "| sa_5 | FAILED (no result recorded) |" && printf '%s' "$out" | grep -qF "| sa_5 | - | - | no result" && ok "--expect: a shard with no result is a FAILED row, the title is used" || bad "--expect: missing shard" "$out"
+mkdir -p "$W/saok"; for k in 1 2 3; do echo 0 > "$W/saok/sa_$k.rc"; done
+sum_ "--expect: every expected step passed: exit 0" 0 "$W/saok" "No failure"
+python3 -I "$SUM" --expect sa_1,sa_2,sa_3,sa_9 "$W/saok" > /dev/null 2>&1; rc=$?
+[ "$rc" = 1 ] && ok "--expect: one missing of four expected: exit 1" || bad "--expect: missing step exit $rc"
+mkdir -p "$W/saempty"
+python3 -I "$SUM" --expect sa_1 "$W/saempty" > /dev/null 2>&1; rc=$?
+[ "$rc" = 1 ] && ok "--expect: an empty directory with an expectation is exit 1 (all missing), not 2" || bad "--expect: empty directory exit $rc"
+# a green shard whose log still holds Aqua text is not parsed (only failed steps are)
+printf 'Ambiguity #1\n' > "$W/saok/sa_1.log"
+sum_ "static: a passed shard's log is not read for findings" 0 "$W/saok" "No failure"
 
 # the wrapper
 export CI_COMPILE_LOGS="$W/wrap"

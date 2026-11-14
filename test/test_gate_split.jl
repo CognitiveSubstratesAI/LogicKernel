@@ -1273,6 +1273,44 @@ echo "pkgtest-way: PASS stub"
             @test status([
                 compile("completed", "success"), run_("CI", "completed", "failure")
             ])[1] == 1
+            # CIREF2 (audit D-0651): the workflow also holds the `static` shards and `static-summary`. The API's run
+            # carries the WORKFLOW's name and one conclusion for all its jobs, so a RED `static` job is a red run named
+            # `CI compile check`: the ignore by that name covers every job in it. The fixture's `jobs` (the jobs answer,
+            # as for the Plan rule) names the red `static` job; the judgement does not read it. Both directions: the
+            # same red run beside a green Evidence run is GREEN, alone it is no verdict (3), and beside a red Evidence
+            # run it is RED (the Evidence failure, not the compile check's, counts).
+            redstatic =
+                "{\"head_sha\":\"$sha\",\"id\":77000000001,\"event\":\"push\"," *
+                "\"name\":\"CI compile check\",\"status\":\"completed\"," *
+                "\"conclusion\":\"failure\",\"head_branch\":\"ci/owner\",\"created_at\":\"\"," *
+                "\"workflow_id\":\"CI compile check\",\"html_url\":\"https://x/2\"}"
+            jobs =
+                "\"jobs\":{\"77000000001\":{\"jobs\":[" *
+                "{\"name\":\"compile\",\"status\":\"completed\",\"conclusion\":\"success\"}," *
+                "{\"name\":\"static analysis 4/9\",\"status\":\"completed\",\"conclusion\":\"failure\"}," *
+                "{\"name\":\"static summary\",\"status\":\"completed\",\"conclusion\":\"failure\"}]}}"
+            function with_jobs(runs)
+                f = joinpath(d, "j.json")
+                write(f, "{\"workflow_runs\":[" * join(runs, ",") * "]," * jobs * "}")
+                outp = IOBuffer()
+                p = run(
+                    pipeline(
+                        ignorestatus(addenv(`$tool $sha`, "LOGICKERNEL_CI_FIXTURE" => f));
+                        stdout=outp, stderr=devnull
+                    )
+                )
+                (p.exitcode, String(take!(outp)))
+            end
+            code, text = with_jobs([redstatic, evidence("completed", "success")])
+            @test code == 0
+            @test occursin("CI compile check", text) && occursin("ignored", text)
+            @test with_jobs([redstatic])[1] == 3
+            @test with_jobs([redstatic, evidence("completed", "failure")])[1] == 1
+            # the control that can fail: the same red run under ANOTHER workflow name is RED
+            @test with_jobs([
+                replace(redstatic, "CI compile check" => "CI"),
+                evidence("completed", "success")
+            ])[1] == 1
         end
     end
 
@@ -3102,13 +3140,13 @@ MUTANTS = [
             builds += count("julia tools/build_home.jl", text)
         end
         @test isempty(found)
-        # eleven Julia jobs, counted by python3 -I over the same files with the same rule (CI.yml: test, analysis_swipl,
+        # twelve Julia jobs, counted by python3 -I over the same files with the same rule (CI.yml: test, analysis_swipl,
         # analysis_sa (GATESPEED: the old `analysis` job split in two; `analysis` itself is now a gather without Julia),
         # format, tooling; evidence.yml: evidence, static_analysis; mutation.yml: baseline, mutant; fuzz.yml:
-        # fuzz; ci-compile.yml: compile, CIREF1); a new Julia job moves this number and has to be added here on purpose
-        @test examined == 11
+        # fuzz; ci-compile.yml: compile (CIREF1), static (CIREF2)); a new Julia job moves this number and has to be added here on purpose
+        @test examined == 12
         # one build step in every job but the exempt ones: the job count and the step count tell each other
-        @test builds == examined - length(_GS_HOME_EXEMPT) == 10
+        @test builds == examined - length(_GS_HOME_EXEMPT) == 11
         # every exemption names a Julia job that exists (a stale one would hide a job added under its name)
         @test all(in(seen), keys(_GS_HOME_EXEMPT))
         @test all(!isempty, values(_GS_HOME_EXEMPT))
