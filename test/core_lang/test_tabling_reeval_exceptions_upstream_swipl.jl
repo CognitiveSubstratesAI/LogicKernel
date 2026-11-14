@@ -1,0 +1,288 @@
+# ORIGINAL: the UPSTREAM tests/tabling/test_reeval_exceptions.pl (swipl-devel 18168e62, 10.1.20), the whole file (reeval_exceptions),
+# as ONE kernel row (TAB1, TABTEST-R2): `t_tt01(R)` = `abolish_all_tables, test_reeval_exceptions, abolish_all_tables`, R = ok / failed / raised(E).
+#   * The file has no plunit unit: ONE predicate test_reeval_exceptions/0 (with its tables, dynamics and helpers) in module test_reeval_exceptions.
+#     The text between `use_module(library(debug))` and the end of the file is upstream's, verbatim (the module header lines are as upstream's).
+#   * The pinned line is swipl's (swipl 10.1.20, two identical runs, evidence/TAB1/tabgap_tools/pins_re.txt, which also holds the run of
+#     test_reeval_exceptions/0 itself: it succeeds, exit 0, prints nothing) AND equals the answer upstream expects (`_TT_UPSTREAM`: it succeeds, `ok`).
+#   * No DIVERGES from the file; the row adds abolish_all_tables before and after. The predicate's own `all/3,4` checks print to user_error on a mismatch.
+#   * A row whose program the kernel refuses stays a row pinned on swipl (the pin is not weakened); none is known for these units.
+#   * UNVERIFIED on the kernel (nothing was compiled when these rows were written): every kernel answer; the gate decides.
+
+using Test, LogicKernel
+const LK = LogicKernel
+
+# TERM TYPES PER CHUNK: REFERENCE — these built-ins ride the term layer through the FLI (unify, get, strip module)
+include(joinpath(@__DIR__, "..", "term_under_test.jl"))
+const _TT = lk_term_type(Union{Int64, Float64, String, BigInt, Rational{BigInt}})
+_tts(x) = lk_sym(_TT, Symbol(x))
+
+_tt_codes(s::String) = "[" * join(Int.(collect(s)), ",") * "]"
+"A term as the driver's `enc/1` writes it: `V<i>` by first occurrence, atoms and functors by their codes."
+function _tt_enc(t::_TT, seen::Vector{UInt64}=UInt64[])::String
+    k = kind(t)
+    if k === VAR
+        i = findfirst(==(var_key(t)), seen)
+        if i === nothing
+            push!(seen, var_key(t))
+            i = length(seen)
+        end
+        return "V$(i - 1)"
+    elseif k === SYM
+        return is_nil(t) ? "nil" : "a" * _tt_codes(sym_text(t))
+    elseif k === GND
+        v = lk_value(t)
+        v isa AbstractString && return "s" * _tt_codes(String(v))
+        v isa Integer && return "i$v"
+        v isa Rational && return "q$(numerator(v))r$(denominator(v))"
+        v isa AbstractFloat && return "f$(v)"
+        return "?$(typeof(v))"
+    end
+    h = child(t, 1)
+    return (is_nil(h) ? "c[]" : "c" * _tt_codes(sym_text(h))) * "/$(nchildren(t) - 1)(" *
+           join([_tt_enc(child(t, i), seen) for i in 2:nchildren(t)], ",") * ")"
+end
+
+const _TT_DRIVER = raw"""
+enc(T) :- enc(T, [], _).
+enc(V, S0, S) :- var(V), !, ( vidx(S0, V, 0, I) -> S = S0 ; length(S0, I), append(S0, [V], S) ), format("V~w", [I]).
+enc(T, S, S) :- T == [], !, write(nil).
+enc(T, S, S) :- atom(T), !, atom_codes(T, Cs), format("a~w", [Cs]).
+enc(T, S, S) :- string(T), !, string_codes(T, Cs), format("s~w", [Cs]).
+enc(T, S, S) :- integer(T), !, format("i~w", [T]).
+enc(T, S, S) :- rational(T, N, D), !, format("q~wr~w", [N, D]).
+enc(T, S, S) :- float(T), !, format("f~w", [T]).
+enc(T, S0, S) :- compound_name_arity(T, N, A),
+    ( N == [] -> write('c[]') ; atom_codes(N, Cs), format("c~w", [Cs]) ),
+    format("/~w(", [A]), encargs(1, A, T, S0, S), write(')').
+encargs(I, A, _, S, S) :- I > A, !.
+encargs(I, A, T, S0, S) :- arg(I, T, X), enc(X, S0, S1), ( I < A -> write(',') ; true ),
+    I1 is I+1, encargs(I1, A, T, S1, S).
+vidx([X|_], V, I, I) :- X == V, !.
+vidx([_|Xs], V, I0, I) :- I1 is I0+1, vidx(Xs, V, I1, I).
+fz_pred(N) :-
+    format("~w", [N]), functor(G, N, 1),
+    catch(findnsols(50, G, G, Gs), _, Gs = [exception]),
+    forall(member(S, Gs), ( S == exception -> write(' exception') ; write(' '), enc(S) )), nl.
+fz_run(File, Ns) :-
+    catch(( consult(File), S = ok ), E, S = exc(E)),
+    ( S == ok -> writeln(ok) ; S = exc(B), write('exc '), enc(B), nl ),
+    forall(member(N, Ns), fz_pred(N)).
+"""
+
+"The units' text, verbatim between begin_tests and end_tests: `(short name, begin_tests directive, text)`."
+const _TT_UNITS = [
+    ("reeval_exceptions", "", raw"""
+/** <module> Test exceptions during re-evaluation
+
+This test deals with exceptions  during   reevaluation.  If an exception
+happens during evaluation of a normal tabled   goal the SCC is abandoned
+and all tables in the SCC are   abolished. If the SCC contains _invalid_
+incremental tables these are reset to the same invalid state as they had
+before the re-evaluation started. This  implies that their re-evaluation
+can be restarted, either by this thread or, when using shared tables, by
+another thread.
+*/
+
+:- table (p/1, q/1) as incremental.
+:- dynamic([d/1], [incremental(true)]).
+:- dynamic do_ex/1, reevalled/1.
+
+:- meta_predicate
+    all(?, 0, +),
+    all(?, 0, +, +),
+    evaluated(0, -).
+
+p(X) :- reeval(p/1), q(X).
+q(X) :- reeval(q/1), d(X), ex, X < 10.
+
+ex :- do_ex(Ex), !, throw(Ex).
+ex.
+
+test_reeval_exceptions :-
+    retractall(d(_)),
+    abolish_all_tables,
+				all(X, p(X), []),
+    assert(d(1)),		all(X, p(X), [1], [p/1, q/1]),
+    assert(d(11)),		all(X, p(X), [1], [q/1]),
+
+    assert(do_ex(sorry)),     % full reevaluation after exception
+    assert(d(2)),
+    catch(p(_), E, true),	assertion(E == sorry),
+    retractall(do_ex(_)),	all(X, p(X), [1,2], [p/1, q/1]),
+
+    assert(do_ex(sorry)),     % partial reevaluation after exception
+    assert(d(12)),
+    catch(p(_), E, true),	assertion(E == sorry),
+    retractall(do_ex(_)),	all(X, p(X), [1,2], [q/1]),
+
+    true.
+
+%!  all(?Template, :Goal, +Expected) is semidet.
+%!  all(?Template, :Goal, +Expected, +ExpectEval) is semidet.
+%
+%   Find all instantiations of Template wrt. Goal and verify this is the
+%   same set as Expected.  The  all/4   variant  verifies  that only the
+%   specified predicates are re-evaluated.
+
+all(X, G, Expected) :-
+    findall(X, G, Got),
+    expected(result, Expected, Got).
+
+all(X, G, Expected, Evaluated) :-
+    evaluated(findall(X, G, Got), EvaluatedGot),
+    expected(result, Expected, Got),
+    expected(reeval, Evaluated, EvaluatedGot).
+
+expected(Id, Expected, Got) :-
+    sort(Expected, Expected1),
+    sort(Got, Got1),
+    (   Got1 =@= Expected1
+    ->  true
+    ;   format(user_error, '~w: expected ~p, got ~p~n', [Id, Expected1, Got1]),
+        fail
+    ).
+
+evaluated(G, L) :-
+    retractall(reevalled(_)),
+    G,
+    findall(X, reevalled(X), L0),
+    sort(L0, L).
+
+reeval(T) :-
+    (   reevalled(T)
+    ->  true
+    ;   asserta(reevalled(T))
+    ).
+"""),
+]
+
+"The file's common tail (lines `before :- ...` to the end), verbatim."
+const _TT_TAIL = raw"""
+"""
+
+"The rows: `(id, unit, goal)`; the goal is the plunit test with its options folded by hand."
+const _TT_CASES = [
+    ("tt01", "reeval_exceptions", "test_reeval_exceptions"),
+]
+
+const _TT_PINNED = [
+    "ok",
+    "t_tt01 c[116,95,116,116,48,49]/1(a[111,107])",
+]
+
+"The answer plunit expects of every row: the test passes, `R = ok` (run in swipl by gen_reeval.py pin, plunit part of pins file)."
+const _TT_UPSTREAM = [
+    "a[111,107]",
+]
+
+"The files of the program in a fresh directory: one module file per unit, the main file with the rows; returns the main file."
+function _tt_materialize()::String
+    d = realpath(mktempdir())
+    for (short, _, text) in _TT_UNITS
+        write(
+            joinpath(d, "pu_$short.pl"),
+            ":- module(test_reeval_exceptions, [test_reeval_exceptions/0]).\n:- use_module(library(debug)).\n" * text
+        )
+    end
+    main = join([":- use_module('$d/pu_$short').\n" for (short, _, _) in _TT_UNITS])
+    main *= join([
+        "t_$(id)(R) :- ( catch((abolish_all_tables, $g, abolish_all_tables, R = ok), error(SsuE, _), R = raised(SsuE)) -> true ; R = failed ).\n"
+        for (id, _, g) in _TT_CASES
+    ])
+    write(joinpath(d, "main.pl"), main)
+    return joinpath(d, "main.pl")
+end
+
+function _tt_swipl_lines(path::String, names::Vector{String})::Vector{String}
+    out = mktempdir() do d
+        f = joinpath(d, "drv.pl")
+        write(f, _TT_DRIVER * ":- initialization((fz_run('$path', [" * join(names, ",") * "]), halt)).\n")
+        read(pipeline(addenv(`swipl -q $f`, "LC_ALL" => "C"); stdin=devnull, stderr=devnull), String)
+    end
+    return String.(split(chomp(out), '\n'; keepempty=false))
+end
+
+"A kernel with the program consulted: `(gd, ld, first line of the driver's output)`."
+function _tt_load(main::String)
+    gd = LK.PL_global_data{_TT}()
+    ld = LK.PL_local_data{_TT}(gd)
+    st, ball = LK.load_file!(gd, ld, main)
+    return gd, ld, (st === :ok ? "ok" : "exc " * _tt_enc(ball::_TT))
+end
+
+"The driver's line for `pred/1` (every answer, at most 50)."
+function _tt_ask(gd, ld, pred::String)::String
+    proc = LK.isCurrentProcedure(sym_key(_tts(pred)), 1, LK.MODULE_user(gd))
+    (proc === nothing || !LK.isDefinedProcedure(gd, proc)) && return "$pred undefined"
+    sols = String[]
+    fid = LK.PL_open_foreign_frame(ld)
+    a = LK.PL_new_term_refs(ld, 1)
+    LK.putSlotValue!(ld, a + 1, mk_var(_TT, LK.fresh_var_keys!(1)), LK.PutVarMap())
+    qid = LK.PL_open_query(gd, ld, nothing, LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS, proc, a)
+    n = 0
+    while (n += 1) <= 50
+        rc = LK.PL_next_solution(gd, ld, qid)
+        if rc == LK.PL_S_TRUE || rc == LK.PL_S_LAST
+            push!(sols, _tt_enc(mk_expr(_TT, _TT[_tts(pred), lk_answers(ld, (a:a)...)...])))
+            rc == LK.PL_S_LAST && break
+        elseif rc == LK.PL_S_EXCEPTION
+            push!(sols, "exception")
+            break
+        else
+            break
+        end
+    end
+    LK.PL_close_query(ld, qid)
+    LK.PL_close_foreign_frame(ld, fid)
+    return pred * join(" " .* sols)
+end
+
+"The part of a driver line after `t_<id> c[...]/1(`: the answer, as `_TT_UPSTREAM` holds it."
+function _tt_answer(line::String)::String
+    k = findfirst("/1(", line)::UnitRange{Int}
+    return line[(last(k) + 1):(end - 1)]
+end
+
+"A line the same length that must differ from `s` (the must-fail corruption)."
+_tt_corrupt(s::String) = s[1:(end - 2)] * (s[end - 1] == '0' ? "1" : "0") * s[end]
+
+@testset "upstream test_reeval_exceptions.pl units 1..1: the kernel answers every row as swipl does" begin
+    gd, ld, st = _tt_load(_tt_materialize())
+    @test st == "ok"
+    kl = String[st]
+    for (id, _, _) in _TT_CASES
+        push!(kl, _tt_ask(gd, ld, "t_$id"))
+    end
+    @test length(kl) == length(_TT_PINNED)
+    for (k, pn) in zip(kl, _TT_PINNED)
+        k == pn || println(stderr, "  ours  ", k, "\n  swipl ", pn)
+        @test k == pn
+    end
+    # must-fail: a corrupted pin is not the kernel's line (the comparison can fail)
+    @test length(kl) > 1
+    @test kl[2] != _tt_corrupt(_TT_PINNED[2])
+end
+
+@testset "the pins are the upstream (plunit) expectations (no swipl needed)" begin
+    @test length(_TT_PINNED) == length(_TT_CASES) + 1
+    @test length(_TT_UPSTREAM) == length(_TT_CASES)
+    @test !isempty(_TT_UPSTREAM) && all(!isempty, _TT_UPSTREAM)
+    @test _TT_PINNED[1] == "ok"
+    for (pn, up) in zip(_TT_PINNED[2:end], _TT_UPSTREAM)
+        @test _tt_answer(pn) == up
+    end
+    # must-fail: the corruption of a pin is not the upstream expectation
+    @test _tt_answer(_tt_corrupt(_TT_PINNED[2])) != _TT_UPSTREAM[1]
+end
+
+@testset "the pins are swipl's (live, when swipl is on PATH)" begin
+    swipl = get(ENV, "LOGICKERNEL_NO_SWIPL", "") == "1" ? nothing : Sys.which("swipl")
+    if swipl === nothing
+        @info "LIVE CHECK NOT RUN: `swipl` is not on PATH here. It runs in tools/run_tests.sh and CI."
+    else
+        got = _tt_swipl_lines(_tt_materialize(), ["t_$id" for (id, _, _) in _TT_CASES])
+        @test !isempty(got) && got == _TT_PINNED
+        # must-fail: a corrupted pin is not swipl's line
+        @test got[2] != _tt_corrupt(_TT_PINNED[2])
+    end
+end
