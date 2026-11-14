@@ -1,8 +1,8 @@
 # ORIGINAL: the mutant list of the TB6-ROWS kill rows: a repository list of ours (upstream has no such file).
 # tools/mutants/TB6R.py - the mutants whose DEFERRED KILL (tools/mutants/TB6.py: TB6-S6, TB6-C4, TB6-Q5, TB6-P14, TB6-V5, TB6-V6; tools/mutants/TB3.py: TB3-F4, TB3-T2,
-# TB3-C2, declared EQUIVALENT until TB6) the rows of test/core_lang/test_tabling_tb6rows_swipl.jl (TR6) carry. Each `old`/`new` is the text of its source list, UNCHANGED
+# TB3-C2, once declared EQUIVALENT until TB6; tools/mutants/TB3.py now lists all three as KILLs of these rows too, targets [TR6, TA, TM]) the rows of test/core_lang/test_tabling_tb6rows_swipl.jl (TR6) carry. Each `old`/`new` is the text of its source list, UNCHANGED
 # (TB6.py at wip/tb6 2e2617c2; TB3.py at origin/gate/tab1c-r4, the batch-3 tree: TB3's `old` text lives in that tree only, so those three are judged at the stack = batch 3 + TB6); the TB3
-# ones lose their `equivalent` flag: with an IDG they are killable. Ids carry the prefix `TB6R-` so that the source lists' ids stay unique. NOT RUN YET (written edit-only,
+# ones carry no `equivalent` flag, as in TB3.py now: with an IDG they are killable; the targets here are wider (ALL, D-0238). Ids carry the prefix `TB6R-` so that the source lists' ids stay unique. NOT RUN YET (written edit-only,
 # 2026-11-14, nothing compiled): every KILL is read off the rows of TR6 and the pinned swipl 10.1.20 answers (evidence/TB6ROWS/pins.txt), not observed.
 # TARGETS: TR6 FIRST (the driver stops at the first failing target), then every file that exercises the mutated source (D-0238): the stack's tabling files through
 # start_tabling (TI = the IDG rows, TV TW TA TF = TB1-TB4, TT = the table pools), and for the run-loop mutant the files of TB6.py's own list.
@@ -56,7 +56,7 @@ MUTANTS = [
          file='src/pl-tabling.jl', targets=ALL,
          old='                if (nd.flags & TN_IDG_DELETED) != 0\n                    nd.flags &= ~TN_IDG_DELETED\n                    @goto update_dl\n',
          new='                if (nd.flags & TN_IDG_DELETED) != 0\n                    @goto update_dl\n'),
-    dict(id="TB6R-T2 (= TB3-T2; KILLS: SINGLE s01 once TR4 compiles tables (a one-answer incremental table takes the trie symbol, `compiled_size` no); partner s02 (@test_broken, owner TR4) shows `yes` for two answers. Until TR4 the kernel's `compiled_size` fails for every table: s01 alone cannot tell the mutant apart, s02-s04 are the rows that will)",
+    dict(id="TB6R-T2 (= TB3-T2; KILLS: SINGLE s01 (a one-answer incremental table takes the trie symbol on its second call, `compiled_size` fails: no; the mutant compiles it, `compile_trie` is ported (TR4) and `compiled_size` answers: yes) and s02 (two answers: yes; the mutant sends it down the trie-symbol path); s02-s04 are `@test_broken` in TR6 only until the kernel run shows the unexpected passes)",
          file='src/pl-tabling.jl', targets=ALL,
          old='    if atrie.value_count == 1 &&\n',
          new='    if atrie.value_count != 1 &&\n'),
