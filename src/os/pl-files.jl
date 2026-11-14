@@ -583,6 +583,13 @@ end
 # every name in the table `GD->os.tmp_files`, which `delete_file/1` (DeleteTemporaryFile) and the halt
 # (RemoveTemporaryFiles) read: PL_global_data has no field for it (a struct change, left to the audit,
 # proposal: `os_tmp_files::Set{...}`), and a module-level table would be shared by every database.
+# Synced to cf6960c2: the target adds `tmp_directory(+Base, -Dir)` (pl-files.c:845-862), which takes the text as
+# `PL_get_chars(A1, CVT_ALL|CVT_EXCEPTION)`, calls the new `TemporaryDirectory(base)` (pl-os.c: `mkdir` 0700,
+# retried on EEXIST, the name entered in `GD->os.tmp_files` with the kind TMP_DIRECTORY) and unifies the atom,
+# else raises the `ERR_FILE_OPERATION` error (`create`, `temporary_directory`, A1). Left unwritten here for
+# the same reason as `tmp_file/2`: the table `GD->os.tmp_files` is a field `PL_global_data` does not have
+# (a struct change; see the SYNC-W note in pl-os.jl). A refusal stub would only turn the target's
+# unknown-procedure answer (the kernel has no such predicate) into a `NotPortedError`: not written, no row.
 # `$tmp_file_stream`/4 needs `Sfdopen` on the descriptor `open(2)` returns, which the stream layer
 # (pl-stream.jl) does not have.
 function _tmp_file_refused(ld::PL_local_data{T}, what::String) where {T}
@@ -625,6 +632,12 @@ _mkdir(path::String, mode::Integer)::Int =
 
 # PORT: pl-files.c delete_directory as pl_delete_directory1_va
 # (PRED_IMPL("delete_directory", 1, delete_directory, 0))
+# DIVERGES: `ForgetTemporaryDirectory` is unwritten (see the file's header). Synced to cf6960c2: after a successful `rmdir` the target takes the argument as an atom
+# (`PL_get_atom(A1, &aname)`, pl-files.c:944-947) and calls the new `ForgetTemporaryDirectory(aname)` (pl-os.c), which removes
+# the name from the registry `GD->os.tmp_files` when it is a TMP_DIRECTORY entry there, so the halt does not
+# try to remove it again. This kernel keeps no registry (see `_tmp_file_refused`), so the call has nothing
+# to forget, as with `delete_file/1`'s `DeleteTemporaryFile`; the answers (success, the `ERR_FILE_OPERATION`
+# error) are those of the pin and the target.
 "`delete_directory(+Dir)`: remove an empty directory (pl-files.c)."
 function pl_delete_directory1_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
@@ -870,6 +883,8 @@ end
 
 # PORT: pl-files.c BeginPredDefs as PL_predicates_from_files
 # DIVERGES: all twenty-three entries of upstream's table; the two tmp_file entries raise `NotPortedError` (G8).
+# Synced to cf6960c2: the target's table also has `PRED_DEF("tmp_directory", 2, tmp_directory, 0)` after
+# `tmp_file`; it is unwritten here (see `_tmp_file_refused`: `GD->os.tmp_files`), so the table is unchanged.
 "pl-files.c's registration table (`BeginPredDefs(files)`): the ported entries."
 const PL_predicates_from_files = (
     PL_extension("\$cwd", 1, pl_cwd1_va, PL_FA_VARARGS),
