@@ -1160,6 +1160,7 @@ graph LR
     pl_global --> pl_funct
     pl_global --> pl_inline
     pl_global --> pl_gcwalk
+    pl_global --> pl_comp
     pl_global --> pl_arith
     pl_global --> os_pl_text
     pl_global --> os_pl_os
@@ -1642,9 +1643,11 @@ graph LR
     pl_arith --> default_term
     pl_arith --> pl_incl
     pl_arith --> SWI_Prolog
+    pl_arith --> pl_atom
     pl_arith --> pl_global
     pl_arith --> pl_inline
     pl_arith --> pl_prims
+    pl_arith --> pl_comp
     pl_arith --> pl_cont
     pl_arith --> pl_alloc
     pl_arith --> pl_fli
