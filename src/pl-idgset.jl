@@ -1,4 +1,5 @@
 # UPSTREAM: swipl-devel src/pl-idgset.c @ 18168e629eab
+# UPSTREAM: swipl-devel src/pl-idgset.h @ 18168e629eab
 # CLASS: code
 # COPYRIGHT: Copyright (c)  2026, SWI-Prolog Solutions b.v.
 # allow-new-artifact: a 1:1 port of swipl-devel src/pl-idgset.c (766 lines, read at the pin; new at 10.1.20, T1 of evidence/TAB1/decomposition.md; the IDG edges of pl-tabling.c need it, TAB1 TB6)

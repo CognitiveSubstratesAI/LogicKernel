@@ -7509,8 +7509,8 @@ function idg_reader_registry(
     return true, ld.tabling.idg_registry
 end
 
-# PORT: pl-tabling.c idg_summary
-# DIVERGES: a named tuple (nodes, edges, bytes) returned by `idg_thread_summary` (upstream fills the caller's struct).
+# pl-tabling.c `idg_summary` (the struct, pl-tabling.c:9256) has no Julia definition, so no PORT marker: `idg_thread_summary`
+# returns a named tuple (nodes, edges, bytes) (upstream fills the caller's struct).
 # PORT: pl-tabling.c idg_thread_summary
 # DIVERGES: `sizeof(*n)`, `sizeof(*n->mono)` are SIZEOF_IDG_NODE, SIZEOF_IDG_MONO (src/pl-incl.jl); `nothing`: an error.
 "The number of IDG nodes of `thread`, their edges to the nodes they affect and the table space (pl-tabling.c)."
@@ -7763,14 +7763,17 @@ function lg_clauses(
     return nothing
 end
 
-# PORT: pl-tabling.c mono_status
+# PORT: pl-tabling.c M_INVALID_DEPS
 # DIVERGES: the enum `mono_status` is `Int` constants.
 "The result of `tt_mono_status`: a dependent table is invalid (pl-tabling.c `M_INVALID_DEPS`)."
 const M_INVALID_DEPS = 0
+# PORT: pl-tabling.c M_OLD_CLAUSES
 "The result of `tt_mono_status`: all queued clauses are older than the transaction (pl-tabling.c `M_OLD_CLAUSES`)."
 const M_OLD_CLAUSES = 1
+# PORT: pl-tabling.c M_MIXED_CLAUSES
 "The result of `tt_mono_status`: queued clauses of both kinds (pl-tabling.c `M_MIXED_CLAUSES`)."
 const M_MIXED_CLAUSES = 2
+# PORT: pl-tabling.c M_NEW_CLAUSES
 "The result of `tt_mono_status`: all queued clauses are from the transaction, or none is queued (pl-tabling.c `M_NEW_CLAUSES`)."
 const M_NEW_CLAUSES = 3
 
@@ -8677,9 +8680,8 @@ function mdep_empty_queues(mdep::Union{Nothing, idg_node{T}, IdgMdep{T}})::Nothi
     return nothing
 end
 
-# PORT: pl-tabling.c dep_free_queue
-# (pl-tabling.c:10294-10307 at the pin)
-# DIVERGES: the queue is a `Vector{Int}` of ids: nothing to unregister, `free_mdep` empties it.
+# pl-tabling.c `dep_free_queue` (pl-tabling.c:10283) has no Julia definition, so no PORT marker: the queue is a `Vector{Int}` of
+# ids, nothing to unregister, and `free_mdep` empties it (`empty!(m.queue)`).
 
 # ── freeing, adding the dependencies of an edge (pl-tabling.c:7986-8110, :8190-8330) ────────────────────────
 
@@ -8731,8 +8733,9 @@ function mono_indexable(gd::PL_global_data{T}, n::idg_node{T})::Bool where {T}
     return atrie.worklist != WL_DYNAMIC && (atrie.flags & TRIE_ISSHARED) == 0
 end
 
-# PORT: pl-tabling.c idg_add_child
-# (the `dep` branch, pl-tabling.c:8250-8318 at the pin)
+# PORT: pl-tabling.c idg_add_child as idg_add_child_dep
+# (the `dep` branch, pl-tabling.c:8250-8318 at the pin; a rename the code needs: the branch is a function of its own, and
+# `idg_add_child` above is the whole function's name)
 "The monotonic dependency `dep` of the edge `child` -> `parent`: found or created; false after an error (pl-tabling.c `idg_add_child`)."
 function idg_add_child_dep(
     ld::PL_local_data{T}, parent::idg_node{T}, child::idg_node{T}, dep::term_t
@@ -8789,8 +8792,9 @@ end
 
 # ── the edge generator's dependency step (pl-tabling.c:8745-8785) ──────────────────────────────────────────
 
-# PORT: pl-tabling.c idg_edge_gen
-# (the `dep` block of the loop, pl-tabling.c:8745-8785 at the pin)
+# PORT: pl-tabling.c idg_edge_gen as idg_edge_dep_step
+# (the `dep` block of the loop, pl-tabling.c:8745-8785 at the pin; a rename the code needs: the block is a function of its
+# own, and `idg_edge_gen` above is the whole function's name)
 # DIVERGES: a separate function; returns 1 (proceed), 0 (go to next) or -1 (error). `t` is the term reference the caller made
 # for the dependency; the pointer handed to Prolog is `mdep_ref!` (an integer); the answers' trie is the one of the OTHER node of
 # the edge, `state.deptrie_symbol` (upstream's `mdep_unify_answers` finds the nodes by their pointers).
@@ -10390,9 +10394,9 @@ end
 # live objects: the components, tables and edges are insertion-ordered vectors with an `IdDict` as their index (upstream's
 # `pair_map` iterates by hash: its tests `msort`), the handle of a worklist or a component is TB2's `tbl_pointer!`.
 
-# PORT: pl-tabling.c sdg_atom
-# DIVERGES: the enum and the `sdg_atoms[]` array are the symbols `null`, `positive`, `negative`, `pending`, `executing`,
-# `delays`; `sdg_init` is not needed (`mk_sym` interns on first use, the functors are looked up where they are built).
+# pl-tabling.c `sdg_atom` (the enum, pl-tabling.c:9553) and `sdg_atoms[]` have no Julia definition, so no PORT marker: they are
+# the symbols `null`, `positive`, `negative`, `pending`, `executing`, `delays`; `sdg_init` is not needed (`mk_sym` interns on
+# first use, the functors are looked up where they are built).
 
 # ORIGINAL (TAB1 TB8): upstream's `PL_put_pointer(t, obj)` (pl-fli.c) for a worklist or a component, 0 for NULL: the handle of
 # TB2's `tbl_pointer!`.
