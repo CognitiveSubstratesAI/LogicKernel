@@ -559,3 +559,49 @@ end
         end
     end
 end
+
+# DEFKILL5 rows for TB1-P7 (`'$tbl_variant_table'/6` hands the table back in its Trie argument). Pins: swipl 10.1.20-1-g18168e62 (18168e62), the
+# program of _TV_COMMON * _TV_SWIPL (`:- table tv_p/1`, `tv_p(1)` and `tv_p(_)` called), the cases below through the driver, LC_ALL=C, two byte-identical
+# runs. The call is the one start_tabling makes with Closure 0 on a variant that has a COMPLETE table: no table is created (pl-tabling.c tbl_variant_table
+# finds it, src/pl-tabling.jl:3885 `pl_tbl_variant_table6_va`), the Trie argument is the table `$tbl_existing_variant_table` finds, and a non-variable that
+# is not that table does not unify (tvw03: the mutant that drops `unify_trie` answers yes).
+const _TV_P7_CASES = [
+    (
+        "tvw01",
+        raw"'$tbl_variant_table'(0, user:tv_p(1), T, S, Sk, M), tv_tab(user:tv_p(1), T2), tm_same(T, T2, E), R = r(S, Sk, M, E)"
+    ),
+    (
+        "tvw02",
+        raw"'$tbl_variant_table'(0, user:tv_p(_), T, S, Sk, M), tv_tab(user:tv_p(_), T2), tm_same(T, T2, E), R = r(S, Sk, M, E)"
+    ),
+    ("tvw03", raw"tm_yn('$tbl_variant_table'(0, user:tv_p(1), a, _, _, _), R)"),
+    ("tvw04", raw"'$tbl_variant_table'(0, user:tv_p(1), T, _, _, _), tm_yn(is_trie(T), R)")
+]
+const _TV_P7_PINNED = [
+    "ok",
+    "t_tvw01 c[116,95,116,118,119,48,49]/1(c[114]/4(a[99,111,109,112,108,101,116,101],a[114,101,116],V0,a[115,97,109,101]))",
+    "t_tvw02 c[116,95,116,118,119,48,50]/1(c[114]/4(a[99,111,109,112,108,101,116,101],c[114,101,116]/1(V0),V1,a[115,97,109,101]))",
+    "t_tvw03 c[116,95,116,118,119,48,51]/1(a[110,111])",
+    "t_tvw04 c[116,95,116,118,119,48,52]/1(a[121,101,115])"
+]
+
+@testset "TB1-P7: `\$tbl_variant_table/6` of an existing table, as swipl (tvw rows, DEFKILL5)" begin
+    gd, ld, st = _tv_load(_TV_COMMON * _TV_KERNEL * _tv_text("", _TV_P7_CASES))
+    @test st == "ok"
+    _tv_tables!(gd, ld)
+    kl = String[_tv_ask(gd, ld, "t_$id") for (id, _) in _TV_P7_CASES]
+    @test length(kl) + 1 == length(_TV_P7_PINNED)
+    for (k, p) in zip(kl, _TV_P7_PINNED[2:end])
+        k == p || println(stderr, "  ours  ", k, "\n  swipl ", p)
+        @test k == p
+    end
+    # both sides non-empty, one extractor: the Trie argument answers differ in the pins (found: same / yes; a non-table: no)
+    @test occursin("a[115,97,109,101]", _TV_P7_PINNED[2]) && occursin("a[115,97,109,101]", _TV_P7_PINNED[3])
+    @test _TV_P7_PINNED[4] != _TV_P7_PINNED[5]
+    swipl = get(ENV, "LOGICKERNEL_NO_SWIPL", "") == "1" ? nothing : Sys.which("swipl")
+    if swipl !== nothing
+        f = joinpath(mktempdir(), "tv_p7_swipl.pl")
+        write(f, _tv_text(_TV_COMMON * _TV_SWIPL, _TV_P7_CASES))
+        @test _tv_swipl_lines(f, ["t_$id" for (id, _) in _TV_P7_CASES]) == _TV_P7_PINNED
+    end
+end

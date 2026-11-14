@@ -17,7 +17,7 @@
 #   `$tbl_trienode` rows: it does not call a TB1 function, listed for `is_tabled` whose flag its attribute rows set), TB = test/db/test_boot_image_swipl.jl
 #   (TB:161, the count of the foreign predicates the kernel lacks: a changed registration changes the count).
 # DEFKILL3 (2026-11-14, nothing run): R2, V5, G3, G9, T3, F5, F6, L1, L4, N2, N3 are KILL by the white-box testsets "TB1 white-box rows: ..." at the end of TV
-# (their premises asserted in the rows); P7 and P10 stay DEFERRED KILL (blockers named in their entries). The notes below that name an owner are the history.
+# (their premises asserted in the rows); P10 stays DEFERRED KILL (blocker in its entry); P7 is KILL since DEFKILL5 (tvw01-tvw04, pinned from swipl 18168e62). The notes below that name an owner are the history.
 # DEFERRED KILL (audit D-0374 item 2, as PIN1.py): a row declared `equivalent="DEFERRED KILL: owner ..."` has no killing assertion yet: no test file reads
 # what the mutant changes. It must SURVIVE the battery; when the owner step adds the row, the declaration goes. The deferred ones and the row each owner adds:
 #   * the node cache of start nodes (`start_node_id`, `get_start_node`, `set_start_node`): its user is `tbl_complete_answer_clause` (pl-tabling.c) = TB3; no row
@@ -218,7 +218,7 @@ MUTANTS = [
          file=TAB, targets=[TV],
          old="    return unify_table_status(ld, A2, atrie, nothing, false) ? FTRUE : FFALSE\n",
          new="    return unify_table_status(ld, A2, atrie, nothing, true) ? FTRUE : FFALSE\n"),
-    dict(id="TB1-P7 `$tbl_variant_table/6` does not unify its Trie argument (no row calls /6, /abstract or /moded: the create path is a real call since batch 3 item 9, owner TB2)",
+    dict(id="TB1-P7 `$tbl_variant_table/6` does not unify its Trie argument (KILL TV, testset `TB1-P7: ...` rows tvw01-tvw04: pinned `same` for the Trie found by `$tbl_existing_variant_table`, and `no` for a non-table `a`)",
          file=TAB, targets=[TV],
          old="    return unify_trie(gd, ld, Trie, atrie) &&\n           unify_table_status(ld, status, atrie, def, true)\n",
          new="    return unify_table_status(ld, status, atrie, def, true)\n",
