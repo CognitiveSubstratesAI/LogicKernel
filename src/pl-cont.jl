@@ -380,6 +380,16 @@ end
 # keeps the word `consInt(position)` that `put_environment` copied, when that position is still a
 # choice point of the chain (upstream's `chp > ch` walk compares addresses; positions here), else it
 # names the newest choice point. The PC of the term is the 0-based offset: the index is offset + 1.
+# Synced to cf6960c2 (pl-cont.c:473-505): the target (1) reads the clause with `clause_dbref`, which returns the
+# `Clause` itself (the pin's `clause_clref` returned a `ClauseRef` and the body took `cref->value.clause`): `clause_clref`
+# here already answers the `Clause`, so this is a rename; (2) raises `permission_error(call, thread_local_clause,
+# Continuation)` when `foreignLocalClause(cl)` holds, the clause of a thread-local predicate that belongs to another
+# thread: the kernel has no threads (src/pl-thread.jl), so it cannot arise here and is left out; (3) pushes a
+# `clause_ref` (`next` NULL, key the blob, value the clause: `SIZEOF_CREF_CLAUSE` bytes) below the frame in place of
+# the bare blob word, and stores it in `fr->clause` (the stack shifter then updates it): the frame's `clause` here is
+# a `ClauseRef` of the clause already (no blob word is pushed, see above), and the local room asked for is counted in
+# this kernel's own units, so the size change is not carried over. No answer, error or order of reset/3, shift/1,
+# shift_for_copy/1 or call_continuation/1 changes: no test row.
 """
     push_continuation(gd, ld, continuation, pfr, pcret) -> Union{Nothing, Code}
 
