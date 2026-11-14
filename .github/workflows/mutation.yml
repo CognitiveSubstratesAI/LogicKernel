@@ -104,6 +104,18 @@ jobs:
         with:
           version: '1.13'
       - uses: julia-actions/cache@9353db09a0f2bbbdec6f41791918c75d37391b36  # v3.5.0
+        with:
+          cache-name: julia-cache;lk-shared;julia=1.13
+          include-matrix: 'false'
+      # AUDIT D-0535 item 1: the shared depot cache holds the registry, packages, artifacts and the compiled caches of the
+      # DEPENDENCIES only. The package under test's OWN compiled cache (compiled/<julia>/LogicKernel*) is dropped right
+      # after the restore (a stale precompiled copy could keep a mutant from taking effect) ...
+      - name: No restored compiled LogicKernel (the shared cache is dependencies only)
+        run: |
+          for d in "$HOME"/.julia/compiled/v*/LogicKernel*; do
+              [ -e "$d" ] && { echo "dropping the restored $d"; rm -rf "$d"; }
+          done
+          true
       - name: The pinned swipl-devel commit (a whole-suite target, test/test_vendored_*.jl, or test_cont_boot_swipl.jl)
         id: pin
         if: ${{ contains(format('{0} {1}', inputs.targets, needs.plan.outputs.targets), 'mutate_suite') || contains(format('{0} {1}', inputs.targets, needs.plan.outputs.targets), 'test_vendored') || contains(format('{0} {1}', inputs.targets, needs.plan.outputs.targets), 'test_cont_boot') }}
@@ -138,6 +150,15 @@ jobs:
         with:
           name: verdict-baseline
           path: mutation-out/
+      # ... and again at the job's end, BEFORE the cache action's post step saves the depot: a mutated compiled LogicKernel
+      # never enters the shared key
+      - name: No compiled LogicKernel in the shared cache
+        if: ${{ always() }}
+        run: |
+          for d in "$HOME"/.julia/compiled/v*/LogicKernel*; do
+              [ -e "$d" ] && { echo "dropping $d before the cache save"; rm -rf "$d"; }
+          done
+          true
 
   mutant:
     name: ${{ matrix.name }}
@@ -155,6 +176,18 @@ jobs:
         with:
           version: '1.13'
       - uses: julia-actions/cache@9353db09a0f2bbbdec6f41791918c75d37391b36  # v3.5.0
+        with:
+          cache-name: julia-cache;lk-shared;julia=1.13
+          include-matrix: 'false'
+      # AUDIT D-0535 item 1: the shared depot cache holds the registry, packages, artifacts and the compiled caches of the
+      # DEPENDENCIES only. The package under test's OWN compiled cache (compiled/<julia>/LogicKernel*) is dropped right
+      # after the restore (a stale precompiled copy could keep a mutant from taking effect) ...
+      - name: No restored compiled LogicKernel (the shared cache is dependencies only)
+        run: |
+          for d in "$HOME"/.julia/compiled/v*/LogicKernel*; do
+              [ -e "$d" ] && { echo "dropping the restored $d"; rm -rf "$d"; }
+          done
+          true
       - name: The pinned swipl-devel commit (a whole-suite target, test/test_vendored_*.jl, or test_cont_boot_swipl.jl)
         id: pin
         if: ${{ contains(format('{0} {1}', inputs.targets, needs.plan.outputs.targets), 'mutate_suite') || contains(format('{0} {1}', inputs.targets, needs.plan.outputs.targets), 'test_vendored') || contains(format('{0} {1}', inputs.targets, needs.plan.outputs.targets), 'test_cont_boot') }}
@@ -195,6 +228,15 @@ jobs:
         with:
           name: verdict-${{ matrix.name }}
           path: mutation-out/
+      # ... and again at the job's end, BEFORE the cache action's post step saves the depot: a mutated compiled LogicKernel
+      # never enters the shared key
+      - name: No compiled LogicKernel in the shared cache
+        if: ${{ always() }}
+        run: |
+          for d in "$HOME"/.julia/compiled/v*/LogicKernel*; do
+              [ -e "$d" ] && { echo "dropping $d before the cache save"; rm -rf "$d"; }
+          done
+          true
 
   verdicts:
     name: Verdict table

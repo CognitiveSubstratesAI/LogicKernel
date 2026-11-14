@@ -138,6 +138,37 @@ function expected_path(repo::AbstractString, path::AbstractString)::String
     return string(repo, "/", p)
 end
 
+# A C file too large for one Julia file is ported over several kernel files (G1-GC: pl-gc.c, ~5800 lines of C). The parts
+# are LISTED, not matched by a pattern, so a port with a wrong name is still a PATH-MISMATCH: key = "<repo> <upstream path>",
+# value = the kernel files besides `expected_path` that may carry a `# UPSTREAM:` header naming it first. The headers,
+# the PORT markers (verified at the pin) and the inventory rows work per kernel file, so nothing else changes.
+const SPLIT_PORTS = Dict{String, Tuple{Vararg{String}}}(
+    "swipl-devel src/pl-gc.c" => (
+        "src/pl-gccompact.jl", "src/pl-gcdriver.jl", "src/pl-gcmark.jl",
+        "src/pl-gcsweep.jl",
+        "src/pl-gctrail.jl", "src/pl-gcwalk.jl"
+    )
+)
+
+"Whether kernel file `rel` may hold a port of `repo`/`path`: its mirrored path, or a listed part of a split port."
+function port_path_ok(rel::AbstractString, repo::AbstractString, path::AbstractString)::Bool
+    rel == expected_path(repo, path) && return true
+    return rel in get(SPLIT_PORTS, string(repo, " ", path), ())
+end
+
+"""
+The listed parts of split ports that name no kernel file under `root`, as `"<repo> <upstream path> -> <part>"`
+(sorted). A listed part that names no kernel file would let a header claim a path that is not in the tree; NOT wired into
+`port_check` until the first part exists in the tree (the table is ahead of the kernel files it names).
+"""
+function split_parts_dangling(root::AbstractString; table=SPLIT_PORTS)::Vector{String}
+    dangling = String[]
+    for key in sort!(collect(keys(table))), part in table[key]
+        isfile(joinpath(root, part)) || push!(dangling, string(key, " -> ", part))
+    end
+    return dangling
+end
+
 "Upstream paths an ORIGINAL file at `rel` would shadow (swipl-devel)."
 function shadowed_paths(rel::AbstractString)::Vector{String}
     stem = replace(String(rel), r"\.jl$" => "")
@@ -918,11 +949,10 @@ function port_check(pkgroot::AbstractString;
             )
         end
         want = expected_path(ups[1].repo, ups[1].path)
-        parts_file || f.rel == want ||
-            push!(
-                v,
-                "PATH-MISMATCH $(f.rel): a port of $(ups[1].repo) $(ups[1].path) must live at $want"
-            )
+        parts_file || port_path_ok(f.rel, ups[1].repo, ups[1].path) || push!(
+            v,
+            "PATH-MISMATCH $(f.rel): a port of $(ups[1].repo) $(ups[1].path) must live at $want"
+        )
         defs = definitions(read(joinpath(root, f.rel), String), f.rel)
         bases = Set(basename(u.path) for u in ups)
         if parts_file

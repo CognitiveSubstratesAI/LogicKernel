@@ -859,6 +859,14 @@ _inert_check() {
         printf '  %s\n' $files
         return 0
     fi
+    # LOGICKERNEL_INERT_FAILFAST=1 (the branch-gate, D-0600 item 6 / D-0607 item 3): the shortest run first (a file with
+    # no recorded time counts LOGICKERNEL_INERT_DEFAULT_S) and the step STOPS at the first failing file — batch 3's
+    # first gate ran all seven runs (68 min) before the three 0-assertion testsets were reported
+    if [ "${LOGICKERNEL_INERT_FAILFAST:-}" = 1 ]; then
+        files=$(for f in $files; do
+            printf '%s %s\n' "$(LOGICKERNEL_BRANCH_GATE_DEFAULT_S="${LOGICKERNEL_INERT_DEFAULT_S:-20}" _file_time "$f")" "$f"
+        done | sort -n | awk '{print $2}')
+    fi
     for f in $files; do
         log="$DIR/check_inert_$(basename "$f" .jl).log"
         LOGICKERNEL_INERT_SLICE="$(_lane_slice)" "$ROOT/tools/pkgtest_way.sh" "$f" > "$log" 2>&1
@@ -869,6 +877,10 @@ _inert_check() {
             echo "preflight: Pkg.test-way run FAILED — $f ($log)"
             # the file's own failure lines first (pkgtest_way.sh), then the exception; a KILLED run names its cap
             grep -v '^pkgtest_way: .* peak ' "$log" | head -n 60
+            if [ "${LOGICKERNEL_INERT_FAILFAST:-}" = 1 ]; then
+                echo "preflight: Pkg.test-way run: stopped at the first failure (fail-fast), the remaining files are not run"
+                break
+            fi
         fi
         n=$(( n + 1 ))
     done
@@ -1306,6 +1318,33 @@ _branch_gate_plan() {
     printf '%s\n' $direct
 }
 
+# _guard_first — the tree-wide guards that cost seconds to minutes and judge the whole package (test_lint_globals:
+# module-level mutable state and its allowlist; test_type_discipline), run FIRST by the branch-gate and stopping at
+# the first failure. LOGICKERNEL_GUARD_FIRST_FILES replaces the list: a TEST SEAM (test/test_gate_split.jl). The
+# files loop of `_branch_gate` skips what ran here, so no file runs twice.
+WARM_GUARD_FIRST_FILES="test/test_lint_globals.jl test/test_type_discipline.jl"
+_guard_first() {
+    local f log f0 files="${LOGICKERNEL_GUARD_FIRST_FILES-$WARM_GUARD_FIRST_FILES}"
+    for f in $files; do
+        if [ ! -f "$ROOT/$f" ]; then
+            echo "branch-gate: guard-first file $f is listed in tools/warm.sh and does not exist"
+            return 1
+        fi
+        echo "branch-gate: guard-first: $f"
+        log="$DIR/branch_gate_$(basename "$f" .jl).log"
+        f0=$(date +%s)
+        if ! _file "$f" > "$log" 2>&1; then
+            _record_file_time "$f" "$(( $(date +%s) - f0 ))"
+            grep -E "\.jl \[|\.jl  *\||Test Failed|Error During" "$log"
+            echo "branch-gate: FAILED — $log"
+            return 1
+        fi
+        _record_file_time "$f" "$(( $(date +%s) - f0 ))"
+        grep -E "\.jl \[|\.jl  *\||Test Failed|Error During" "$log"
+    done
+    return 0
+}
+
 # _branch_gate — THE BRANCH-GATE (user, approved 2026-10-14): commits are made off `main`, and a
 # branch commit's evidence is the fast check (`check`: format, port_check, manifest, term scopes) plus the
 # tree-wide gates and every test file changed since HEAD, each on EVERY term type (`_file` with no
@@ -1317,7 +1356,11 @@ _branch_gate() {
     local t0 rc=0 f files log
     t0=$(date +%s)
     _ci_gate "$ROOT" 0 || { echo "branch-gate: FAIL — the previous push's CI (tools/ci_status.sh)"; return 1; }
-    LOGICKERNEL_INERT_BUDGET_S="${LOGICKERNEL_INERT_BUDGET_S:-600}" _checks_fresh || { echo "branch-gate: FAIL (format/port_check/manifest/term scopes/meta/inert) in $(( $(date +%s) - t0 ))s"; return 1; }
+    # GUARD-FIRST (audit D-0600 item 6, D-0607 item 3): the cheap whole-package tests, then everything long — a bad
+    # batch fails here in minutes, not after the 36-minute static pre-check or the Pkg.test-way runs (batch 3's
+    # gates: the inert guard fired after 68 min, test_lint_globals at the last-but-one file after 90 min)
+    _guard_first || { echo "branch-gate: FAIL (guard-first) in $(( $(date +%s) - t0 ))s"; return 1; }
+    LOGICKERNEL_INERT_FAILFAST=1 LOGICKERNEL_INERT_BUDGET_S="${LOGICKERNEL_INERT_BUDGET_S:-600}" _checks_fresh || { echo "branch-gate: FAIL (format/port_check/manifest/term scopes/meta/inert) in $(( $(date +%s) - t0 ))s"; return 1; }
     # STEP 0, GATE PARITY (2026-10-18; tooling 2): the fast static pre-check — Aqua, JET's report_package — IN
     # THE WARM DAEMON, as the preflight runs it, before any test file: a JET error or an ambiguity stops the
     # gate in seconds. MEASURED 2026-10-18: 142 s the first run of a daemon (JET compiles once), 8 s after; a
@@ -1333,6 +1376,7 @@ _branch_gate() {
     local f0
     for f in $files; do
         [ -f "$ROOT/$f" ] || continue
+        case " ${LOGICKERNEL_GUARD_FIRST_FILES-$WARM_GUARD_FIRST_FILES} " in *" $f "*) continue ;; esac   # `_guard_first` ran it, on this tree
         echo "branch-gate: $f"
         log="$DIR/branch_gate_$(basename "$f" .jl).log"
         f0=$(date +%s)

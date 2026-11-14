@@ -1,0 +1,96 @@
+diff --git a/tools/githooks/pre-push b/tools/githooks/pre-push
+index b588f32..7438ccb 100755
+--- a/tools/githooks/pre-push
++++ b/tools/githooks/pre-push
+@@ -1,5 +1,5 @@
+ #!/usr/bin/env bash
+-# tools/githooks/pre-push — six refusals.
++# tools/githooks/pre-push — seven refusals (and one allowance).
+ #
+ # 1. A MUTANT WORKTREE never pushes (user, 2026-10-11). tools/mutate.sh builds a second worktree of
+ #    this repository in which mutants are applied — deliberately broken code, on a detached HEAD —
+@@ -31,11 +31,14 @@
+ #    The remote is the one git names; a push by URL is read as the configured remote with that URL
+ #    (below, 2026-10-23).
+ #
+-# 4. A wip/ BRANCH NEVER PUSHES (user, 2026-10-16). The workspace's commit hook lets a commit on a
++# 4. A wip/ BRANCH PUSHES ONLY TO ci/<name> (user, 2026-10-16; 4b: audit D-0636, Shivaji D-0637, 2026-11-13). The workspace's commit hook lets a commit on a
+ #    `wip/*` branch through WITHOUT test evidence (a step's work in progress, kept as commits so a fix
+ #    rebases with git's three-way merge instead of text-matched patch scripts) — on the condition that
+ #    THIS hook refuses to push it. So any pushed ref whose local or remote side is `refs/heads/wip/*`
+ #    is refused: an unevidenced commit leaves the machine only after it is re-made on a gate branch.
++#    4b. The ONE mapping that stays open: a local `refs/heads/wip/*` to a remote `refs/heads/ci/<name>`.
++#    .github/workflows/ci-compile.yml compile-checks a ci/** branch on GitHub's runners (nothing else
++#    runs there: no oracle, no shards, no Evidence). Nothing lands from a ci/ ref (7.).
+ #
+ # 5. A mutants/<name> BRANCH TAKES ONLY A COMMIT THAT HAS tools/mutants/<name>.py (user, 2026-10-24).
+ #    .github/workflows/mutation.yml takes its mutant list from the branch name (`tools/{ref_name}.py`).
+@@ -56,9 +59,17 @@
+ #    listed file the push changes is refused unless LOGICKERNEL_COVZERO_ACK="src/x.jl ..." names it
+ #    (still 0% on purpose). No verdict (an unreadable ref/list) is a refusal. Tests: tools/test_check_coverage_zero.sh.
+ #
++# 7. A ci/<name> PUSH RUNS THE D-0164 TERM GREP (audit D-0636 item 1). A ci/ branch is on GitHub like any
++#    other, so the added lines of `git diff refs/remotes/<remote>/main..<sha>` and the commit messages of
++#    that range are grepped for tools/prepush.sh's step-6 terms; a hit, or an unreadable range, is a
++#    refusal. A delete (all-zero local sha) is allowed. No coverage-zero pre-check (6.) and no mutants-file
++#    rule (5.) apply to ci/; the `main` arm (2.) is unchanged: main still takes only a green run's commit.
++#
+ # LOGICKERNEL_CI_FIXTURE (tools/ci_status.sh) lets test/test_gate_split.jl plant each answer.
+ NOREPLY_EMAIL="11524260+sivaji1012@users.noreply.github.com"
+ EVIDENCE_WORKFLOW="Evidence (three term types)"     # 🔴 evidence.yml's `name:` — rename both or neither
++# the terms of D-0164 (tools/prepush.sh step 6), assembled from pieces so this file does not match its own grep
++TERMS164='seg''ment|SIG''SEGV|cra''sh|abo''rt|invalid term''_t|dies ''of'
+ top="$(git rev-parse --show-toplevel 2>/dev/null)" || exit 0
+ if [ -e "$top/.warm/MUTANT_WORKTREE" ]; then
+     echo "pre-push: REFUSED — $top is the mutant worktree of $(cat "$top/.warm/MUTANT_WORKTREE"): it holds mutated code and never pushes. Work in the main tree; remove this one with tools/mutate.sh remove." >&2
+@@ -114,6 +125,25 @@ _identity_check() {
+     return 1
+ }
+ 
++# _ci_terms_check SHA — 0 when no added line of main..SHA and no commit message of that range holds a D-0164 term (see 7.)
++_ci_terms_check() {
++    local sha="$1" d m dh mh
++    d="$(git -C "$top" diff "refs/remotes/$remote_name/main..$sha" 2>&1)" || {
++        echo "pre-push: REFUSED — cannot diff refs/remotes/$remote_name/main..${sha:0:7} for the D-0164 term grep: $d" >&2
++        return 1
++    }
++    m="$(git -C "$top" log "refs/remotes/$remote_name/main..$sha" --format='%H %B' 2>&1)" || {
++        echo "pre-push: REFUSED — cannot list refs/remotes/$remote_name/main..${sha:0:7} for the D-0164 term grep: $m" >&2
++        return 1
++    }
++    dh="$(printf '%s\n' "$d" | grep -E '^\+[^+]' | grep -iE "$TERMS164")"
++    mh="$(printf '%s\n' "$m" | grep -iE "$TERMS164")"
++    [ -z "$dh" ] && [ -z "$mh" ] && return 0
++    echo "pre-push: REFUSED — D-0164: ${sha:0:7} adds a term that names an upstream failure in public text (added line or commit message); reword:" >&2
++    printf '%s\n%s\n' "$dh" "$mh" | grep . | cut -c1-200 | sed 's/^/  /' >&2
++    return 1
++}
++
+ remote_name="${1:-origin}"
+ # A push by URL (`git push https://…`) hands the URL as $1, and `--remotes=<URL>` matches no ref: every
+ # commit would count as new (measured 2026-10-23, the v0.1.0-pre.2 tag push: 140 old commits listed).
+@@ -133,7 +163,10 @@ fi
+ rc=0
+ while read -r _local_ref local_sha remote_ref _remote_sha; do
+     case "$_local_ref $remote_ref" in
+-        refs/heads/wip/* | *" refs/heads/wip/"*)                # 4. a wip/ branch never pushes
++        refs/heads/wip/*" refs/heads/ci/"*)                     # 4b. a wip/ branch may push to ci/<name> only
++            case "$remote_ref" in refs/heads/ci/?*) ;; *) echo "pre-push: REFUSED — $_local_ref → $remote_ref: a wip/ branch pushes only to refs/heads/ci/<name>" >&2; rc=1; continue ;; esac
++            ;;
++        refs/heads/wip/* | *" refs/heads/wip/"*)                # 4. every other wip/ push stays refused
+             echo "pre-push: REFUSED — $_local_ref → $remote_ref: a wip/ branch holds commits made without test evidence (the commit hook's wip/ exemption); it never leaves this machine — re-make the step on a gate branch" >&2
+             rc=1
+             continue
+@@ -162,6 +195,12 @@ while read -r _local_ref local_sha remote_ref _remote_sha; do
+         *[!0]*) _identity_check "$local_sha" || { rc=1; continue; } ;;
+     esac
+     case "$remote_ref" in
++        refs/heads/ci/*)                                        # 7. the D-0164 term grep; a delete is allowed
++            case "$local_sha" in
++                *[!0]*) _ci_terms_check "$local_sha" || { rc=1; continue; } ;;
++            esac
++            continue                                            # no coverage-zero pre-check, no mutants-file rule, not main
++            ;;
+         refs/heads/gate/*)                                      # 6. the coverage-zero pre-check
+             case "$local_sha" in
+                 *[!0]*)

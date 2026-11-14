@@ -407,7 +407,10 @@ function pl_variant2_va(
 end
 
 # PORT: pl-variant.c not_variant as pl_not_variant2_va
-# (PRED_IMPL("\\=@=", 2, not_variant, 0), pl-variant.c:529-537 at the pin)
+# (PRED_IMPL("\\=@=", 2, not_variant, 0), pl-variant.c:528-537 at the pin 18168e62.)
+# NOTE: also reached by TAB1 (test_tabling_answers_swipl.jl through `'$tabling':'\\=@='/2`, boot/tabling.pl:755, answer subsumption
+# `Agg \=@= Next`). `is_variant_ptr_cells` raises nothing here (the cells variant check has no allocation failure), so upstream's
+# `!PL_exception(0)` guard, kept literally below, is `true`.
 "`\\=@=/2` (pl-variant.c): the arguments are not variants; fails, not true, when the check raised."
 function pl_not_variant2_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
@@ -420,7 +423,7 @@ function pl_not_variant2_va(
 end
 
 # PORT: pl-variant.c BeginPredDefs as PL_predicates_from_variant
-"pl-variant.c's registration table (`BeginPredDefs(variant)`): `=@=` and `\\=@=`."
+"pl-variant.c's registration table (`BeginPredDefs(variant)`): `=@=/2` and `\\=@=/2`."
 const PL_predicates_from_variant = (
     PL_extension("=@=", 2, pl_variant2_va, PL_FA_VARARGS),
     PL_extension("\\=@=", 2, pl_not_variant2_va, PL_FA_VARARGS)

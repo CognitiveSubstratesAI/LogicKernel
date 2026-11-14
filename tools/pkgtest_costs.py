@@ -13,6 +13,14 @@
 #                                                      (V = 1 by default; the job must have succeeded), read from
 #                                                      GitHub WITHOUT a token: 2 API calls (60 an hour in all)
 #   pkgtest_costs.py fetch --job ID [OUT] [--source TEXT]   the same for a job id already known: 1 call
+#   pkgtest_costs.py logs DIR [OUT] [--source TEXT]    LOG-BASED: the `[unit] file [type]  X s  (compiling Y s)` lines of the
+#                                                      job logs DIR/*.log (the Julia 1 groups' logs), summed per file over the
+#                                                      term types: for when the annotation is cut (it holds 4096 characters; the
+#                                                      table has 207 entries). The compile share goes to stderr
+#   pkgtest_costs.py fetch-logs RUN_ID [OUT] [--version V]   the same for run RUN_ID: the logs of its `Julia V · files K/N` jobs
+#                                                      through tools/ci_api.sh (`ci_jobs_page`, `ci_job_log`: the stored token
+#                                                      handed to curl on stdin; LOGICKERNEL_CI_FIXTURE_DIR is its seam), every
+#                                                      group present, successful and holding unit lines
 #   pkgtest_costs.py balance TABLE [GROUPS] [--tests DIR]   the groups' loads under test/ci_slices.jl's assignment
 #                                                      (longest-processing-time first, ties to the lower group),
 #                                                      over TABLE's files or, with --tests, DIR's test_*.jl files
@@ -75,6 +83,87 @@ def parse_notice(text):
             raise Invalid("%s: listed twice" % name)
         costs[name] = v
     return costs
+
+
+UNIT_LINE = re.compile(r"\[unit\] (\S+?)(?: \[(\w+)\])?\s+([0-9.]+) s\s+\(compiling ([0-9.]+) s\)")
+
+
+def parse_log(text):
+    """[(file, type or "", seconds, compiling seconds)] from the `[unit]` lines of a job log (test/runtests.jl prints
+    `  [unit] <file> [<type>]  X s  (compiling Y s)  N passed, M broken`; the runner's own timestamp prefix is ignored)."""
+    out = []
+    for line in text.splitlines():
+        m = UNIT_LINE.search(line)
+        if m:
+            out.append((m.group(1), m.group(2) or "", float(m.group(3)), float(m.group(4))))
+    return out
+
+
+def costs_from_logs(texts):
+    """({file: seconds summed over term types and logs}, total unit seconds, total compiling seconds), the notice's own
+    validation applied (parse_notice: `.jl` names, finite, no static analysis); a log without a unit line is Invalid."""
+    costs, total, comp = {}, 0.0, 0.0
+    for name, text in texts:
+        units = parse_log(text)
+        if not units:
+            raise Invalid("%s holds no [unit] line" % name)
+        for f, _, secs, c in units:
+            total += secs
+            comp += c
+            if f.split("/")[-1] != SA_LABEL:
+                costs[f] = costs.get(f, 0.0) + secs
+    if not costs:
+        raise Invalid("the logs hold no unit but the static analysis")
+    return parse_notice(";".join("%s=%.1f" % (f, costs[f]) for f in sorted(costs))), total, comp
+
+
+def share_line(total, comp):
+    return "pkgtest_costs: %.0f s of unit time, %.0f s compiling (%.0f %%)" % (total, comp, 100 * comp / total if total else 0)
+
+
+def ci_api(fn, *args):
+    """tools/ci_api.sh's `fn` (the token route of the shell tools: never a token here), its stdout; OSError if it fails."""
+    here = os.path.dirname(os.path.abspath(__file__))
+    r = subprocess.run(["bash", "-c", 'ROOT="$1"; . "$ROOT/tools/ci_api.sh"; shift; "$@"', "_", os.path.dirname(here), fn, *args],
+                       capture_output=True, text=True)
+    if r.returncode != 0:
+        raise OSError("%s %s: exit %d" % (fn, " ".join(args), r.returncode))
+    return r.stdout
+
+
+def fetch_logs(run_id, version):
+    """[(job name, log text)] of the run's `Julia V · files K/N` jobs: all N groups, each successful, each log readable."""
+    jobs, page = [], 1
+    while True:
+        try:
+            chunk = json.loads(ci_api("ci_jobs_page", run_id, str(page))).get("jobs", [])
+        except ValueError as e:
+            raise OSError("run %s: the jobs answer is not JSON: %s" % (run_id, e))
+        jobs += chunk
+        if len(chunk) < 100:
+            break
+        page += 1
+    pat = re.compile(r"^Julia %s · files (\d+)/(\d+)$" % re.escape(version))
+    hit = {}
+    for j in jobs:
+        m = pat.match(j["name"])
+        if m:
+            hit[int(m.group(1))] = (j, int(m.group(2)))
+    if not hit:
+        raise Invalid("run %s has no job named `Julia %s · files K/N`" % (run_id, version))
+    n = next(iter(hit.values()))[1]
+    if sorted(hit) != list(range(1, n + 1)) or any(of != n for _, of in hit.values()):
+        raise Invalid("run %s: the groups found are %s, want 1..%d" % (run_id, sorted(hit), n))
+    texts = []
+    for k in sorted(hit):
+        j = hit[k][0]
+        if j.get("conclusion") != "success":
+            raise Invalid("job %r of run %s: %s, not success: a failed group's costs are not a measurement" % (j["name"], run_id, j.get("conclusion")))
+        try:
+            texts.append((j["name"], ci_api("ci_job_log", str(j["id"]), run_id)))
+        except OSError:
+            raise OSError("the log of job %s (%s) is unreadable: it needs the stored token (tools/ci_api.sh)" % (j["id"], j["name"]))
+    return texts
 
 
 def table_text(costs, source):
@@ -175,7 +264,8 @@ def fetch_run(run_id, version):
 
 
 USAGE = ("usage: pkgtest_costs.py parse SRC [OUT] [--source TEXT] | fetch RUN_ID [OUT] [--version V] | "
-         "fetch --job ID [OUT] [--source TEXT] | balance TABLE [GROUPS] [--tests DIR]")
+         "fetch --job ID [OUT] [--source TEXT] | logs DIR [OUT] [--source TEXT] | fetch-logs RUN_ID [OUT] [--version V] | "
+         "balance TABLE [GROUPS] [--tests DIR]")
 
 
 def opts(args, names):
@@ -223,6 +313,24 @@ def main(a):
                 msg, src = fetch_run(pos[0], o.get("version", "1"))
                 out = pos[1] if len(pos) == 2 else None
             emit(table_text(parse_notice(msg), src), out)
+        elif cmd == "logs":
+            pos, o = opts(rest, ("source",))
+            if len(pos) not in (1, 2) or not os.path.isdir(pos[0]):
+                raise ValueError("logs")
+            names = sorted(n for n in os.listdir(pos[0]) if n.endswith(".log"))
+            if not names:
+                raise Invalid("%s holds no *.log file" % pos[0])
+            costs, total, comp = costs_from_logs([(n, open(os.path.join(pos[0], n), errors="replace").read()) for n in names])
+            print(share_line(total, comp), file=sys.stderr)
+            emit(table_text(costs, o.get("source", "unit lines of %d job log(s) in %s" % (len(names), pos[0]))), pos[1] if len(pos) == 2 else None)
+        elif cmd == "fetch-logs":
+            pos, o = opts(rest, ("version",))
+            if len(pos) not in (1, 2):
+                raise ValueError("fetch-logs")
+            ver = o.get("version", "1")
+            costs, total, comp = costs_from_logs(fetch_logs(pos[0], ver))
+            print(share_line(total, comp), file=sys.stderr)
+            emit(table_text(costs, "run %s, the unit lines of the logs of its Julia %s Pkg.test groups" % (pos[0], ver)), pos[1] if len(pos) == 2 else None)
         elif cmd == "balance":
             pos, o = opts(rest, ("tests",))
             if len(pos) not in (1, 2):
