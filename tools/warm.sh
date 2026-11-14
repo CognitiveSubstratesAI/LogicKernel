@@ -738,6 +738,18 @@ _pool() {
     echo "pool: $n workers warming for tree ${fp:0:12} — tools/run_tests.sh uses them while the tree is unchanged"
 }
 
+# _source_greps — the two tree-wide source greps that ran only in CI's `ci/**` compile check (evidence/GATE/ci_parity.md
+# Part 4 item C1; CI.yml's Format job runs them on every push now): the Bool-as-atom grep and the where-bound-return
+# grep. Plain bash, 0 only when both pass; both are named when both fail.
+_source_greps() {
+    local rc=0 t
+    for t in check_bool_atoms check_where_return; do
+        bash "$ROOT/tools/$t.sh" "$ROOT" || { echo "check: $t FAILED"; rc=1; }
+    done
+    [ "$rc" -ne 0 ] || echo "check: source greps clean (Bool-as-atom, where-bound return type)"
+    return "$rc"
+}
+
 # _checks_fresh — `_format_port_check`, and once more on a FRESH daemon when the first run found
 # DAEMON LEFTOVERS (user, 2026-10-14: a restart costs less than a failed 13-minute preflight).
 # ROOT CAUSE of the leftovers L1a-1 lost two preflights to, FOUND and FIXED the same day: Revise
@@ -746,7 +758,9 @@ _pool() {
 # still catches is a method Revise genuinely failed to delete (the documented suspect: a precompile
 # in another process rewriting the cache it diffs against, tools/warm_session.jl). Logged.
 _checks_fresh() {
-    local rc ts mt ic
+    local rc ts mt ic sg
+    _source_greps                          # seconds of grep, no julia (audit D-0680 / CIREF2 gap C1)
+    sg=$?
     _term_scopes_check                     # first, and the others run anyway: one run names every failure
     ts=$?
     _meta_check
@@ -766,6 +780,7 @@ _checks_fresh() {
     [ "$rc" -eq 0 ] || return "$rc"
     [ "$ts" -eq 0 ] || return "$ts"
     [ "$mt" -eq 0 ] || return "$mt"
+    [ "$sg" -eq 0 ] || return "$sg"
     return "$ic"
 }
 
@@ -994,6 +1009,18 @@ let sa = Module(:PreflightManifest)
     end
     foreach(x -> println("  NO SUCH METHOD (stale manifest entry): ", x), stale)
     isempty(stale) || error("preflight: the manifest names methods that do not exist")
+    # an entry listed twice is one method analysed twice (audit D-0692 item 5): uniqueness, the duplicates NAMED
+    # key = (function, argument tuple); the third element (allocation-free flag) is not part
+    keys = [(e[1], e[2]) for e in entries]
+    length(keys) == length(unique(keys)) || begin
+        seen = Set{Any}()
+        dups = String[]
+        for e in keys
+            e in seen ? push!(dups, string(e[1], e[2])) : push!(seen, e)
+        end
+        foreach(x -> println("  DUPLICATE manifest entry: ", x), dups)
+        error("preflight: the manifest lists an entry twice (test/static_analysis_manifest.jl)")
+    end
     r = Base.invokelatest(() -> sa.manifest_uncovered(LogicKernel, entries, exempt))
     # An uncovered method at the file and line of ANOTHER live method of the same function is the
     # old signature of a re-signed function that Revise failed to delete: no manifest entry fixes
@@ -1522,7 +1549,7 @@ case "$cmd" in
         _check_julia_ci "$ROOT" check                   # a WARN only (tools/lib_evidence.sh, audit D-0026)
         _checks_fresh
         _ck_rc=$?
-        echo "check: $([ "$_ck_rc" -eq 0 ] && echo PASS || echo FAIL) (format, port_check, manifest, term scopes, meta files, inert guard) in $(( $(date +%s) - _ck_t0 ))s"
+        echo "check: $([ "$_ck_rc" -eq 0 ] && echo PASS || echo FAIL) (format, port_check, manifest, term scopes, meta files, inert guard, source greps) in $(( $(date +%s) - _ck_t0 ))s"
         (exit "$_ck_rc")
         ;;
     fmt)

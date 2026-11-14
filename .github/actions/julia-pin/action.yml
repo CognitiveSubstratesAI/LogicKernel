@@ -1,0 +1,22 @@
+# THE JULIA PIN, READ FROM THE FILE EVERY LOCAL PATH RUNS (evidence/GATE/ci_parity.md Part 4 item C3): CI.yml's Format, Live
+# swipl differential, Static analysis and Tooling jobs run setup-julia at the first token of tools/WARM_JULIA_VERSION (x.y.z),
+# not at the floating '1.13', so a local green and a CI green are the same patch release. The Pkg.test matrix keeps its own
+# 'min' and '1'. Needs the checkout first.
+name: The Julia pin (tools/WARM_JULIA_VERSION)
+description: Output the x.y.z at the start of tools/WARM_JULIA_VERSION; a file that does not start with one fails the job
+outputs:
+  version:
+    description: The pinned Julia version
+    value: ${{ steps.v.outputs.version }}
+runs:
+  using: composite
+  steps:
+    - id: v
+      shell: bash
+      run: |
+        v="$(awk '{print $1; exit}' tools/WARM_JULIA_VERSION)"
+        if ! printf '%s\n' "$v" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+          echo "::error::tools/WARM_JULIA_VERSION does not start with an x.y.z version: '$v'"
+          exit 1
+        fi
+        echo "version=$v" >> "$GITHUB_OUTPUT"

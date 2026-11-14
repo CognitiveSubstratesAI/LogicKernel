@@ -76,13 +76,18 @@ jobs:
       - name: where-bound return type (src/ and test/)
         shell: bash
         run: tools/ci_compile_run.sh where_return tools/check_where_return.sh
+      # a .jl file that cannot parse has never run (audit D-0704 item 4: two TABTEST test files with an invalid string escape)
+      - name: Parse check (every .jl under test/, tools/ and src/)
+        shell: bash
+        run: tools/ci_compile_run.sh parse_check julia --project=. --startup-file=no tools/check_parse.jl
       # the pre-push hook's ci/ guard rows and the compile check's own tools: plain bash and python, seconds
-      - name: Tool cases (hook ci/ rows, Bool-as-atom, where-return, summary)
+      - name: Tool cases (hook ci/ rows, Bool-as-atom, where-return, parse, summary)
         shell: bash
         run: |
           tools/ci_compile_run.sh tools_prepush_ci tools/test_prepush_ci.sh
           tools/ci_compile_run.sh tools_bool_atoms tools/test_check_bool_atoms.sh
           tools/ci_compile_run.sh tools_where_return tools/test_check_where_return.sh
+          tools/ci_compile_run.sh tools_parse tools/test_check_parse.sh
           tools/ci_compile_run.sh tools_summary tools/test_ci_compile_summary.sh
           # every tools/test_*.sh is mode 100755 (CIREF2: a 100644 test script was exit 126 on the runner)
           tools/ci_compile_run.sh tools_modes tools/test_tool_modes.sh

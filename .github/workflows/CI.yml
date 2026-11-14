@@ -299,9 +299,11 @@ jobs:
       # The oracle: restored from the cache or built at the pin, put on PATH, and checked to BE
       # that build — one recipe for this job, evidence.yml and mutation.yml (.github/actions/oracle).
       - uses: ./.github/actions/oracle
+      - uses: ./.github/actions/julia-pin
+        id: julia_pin
       - uses: julia-actions/setup-julia@da908477b5db94c10ffce8cfea9f2b3b9d5db687  # v3.0.3
         with:
-          version: '1.13'
+          version: ${{ steps.julia_pin.outputs.version }}
       - uses: julia-actions/cache@9353db09a0f2bbbdec6f41791918c75d37391b36  # v3.5.0
         with:
           cache-name: julia-cache;lk-shared;julia=1.13
@@ -366,9 +368,11 @@ jobs:
       LOGICKERNEL_SA_SHARD: ${{ matrix.shard }}/9      # the same 9 as evidence.yml's SA_SHARDS
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: ./.github/actions/julia-pin
+        id: julia_pin
       - uses: julia-actions/setup-julia@da908477b5db94c10ffce8cfea9f2b3b9d5db687  # v3.0.3
         with:
-          version: '1.13'
+          version: ${{ steps.julia_pin.outputs.version }}
       - uses: julia-actions/cache@9353db09a0f2bbbdec6f41791918c75d37391b36  # v3.5.0
         with:
           cache-name: julia-cache;lk-shared;julia=1.13
@@ -437,9 +441,17 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: ./.github/actions/julia-pin
+        id: julia_pin
       - uses: julia-actions/setup-julia@da908477b5db94c10ffce8cfea9f2b3b9d5db687  # v3.0.3
         with:
-          version: '1.13'
+          version: ${{ steps.julia_pin.outputs.version }}
+      # The two source greps that ran only on ci/** pushes (CIREF2 gap C1, evidence/GATE/ci_parity.md): plain grep, no
+      # Julia; `tools/warm.sh check` runs the same two, so the branch-gate has them too.
+      - name: Source greps (Bool-as-atom, where-bound return type)
+        run: |
+          tools/check_bool_atoms.sh
+          tools/check_where_return.sh
       # No julia-actions/cache here — a cached Manifest can pin an older JuliaFormatter than the one
       # pinned below, and local/CI formatting then drift apart.
       - name: Check formatting
@@ -558,10 +570,12 @@ jobs:
           submodules: true
       - uses: ./.github/actions/oracle
         if: steps.changed.outputs.run == 'true'
+      - uses: ./.github/actions/julia-pin
+        id: julia_pin
       - uses: julia-actions/setup-julia@da908477b5db94c10ffce8cfea9f2b3b9d5db687  # v3.0.3
         if: steps.changed.outputs.run == 'true'
         with:
-          version: '1.13'
+          version: ${{ steps.julia_pin.outputs.version }}
       - uses: julia-actions/cache@9353db09a0f2bbbdec6f41791918c75d37391b36  # v3.5.0
         with:
           cache-name: julia-cache;lk-shared;julia=1.13
@@ -655,6 +669,16 @@ jobs:
       - name: tools/test_ci_tools.sh
         if: steps.changed.outputs.run == 'true' && matrix.shard == 'light'
         run: tools/test_ci_tools.sh
+      # the shell-only tool cases that ran only on ci/** pushes (CIREF2 gap C2) plus the ci/ route's own: seconds each, run all
+      - name: tools/test_*.sh, the shell-only tool cases (hook ci/ rows, source greps, summary, modes, D-0164 filter, pre_ci, ci_marker)
+        if: steps.changed.outputs.run == 'true' && matrix.shard == 'light'
+        run: |
+          rc=0
+          for t in test_prepush_ci test_check_bool_atoms test_check_where_return test_ci_compile_summary test_tool_modes test_dterm test_pre_ci test_ci_marker; do
+            echo "== tools/$t.sh"
+            tools/$t.sh || { echo "::error::tools/$t.sh failed"; rc=1; }
+          done
+          exit "$rc"
       - name: Install the pinned gitleaks (SHA-256 checked)
         if: steps.changed.outputs.run == 'true' && matrix.shard == 'light'
         run: tools/install_gitleaks.sh

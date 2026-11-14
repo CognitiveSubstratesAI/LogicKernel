@@ -412,14 +412,42 @@ end
             r"(?m)^    _meta_check\n    mt=\$\?\n    _inert_check \"[^\n]*\"\n    ic=\$\?\n    _format_port_check\n",
             body
         )
-        # every step's status is returned: the format status first, then scopes, meta, inert
+        # every step's status is returned: the format status first, then scopes, meta, the source greps, inert
         @test occursin(
-            r"(?m)^    \[ \"\$rc\" -eq 0 \] \|\| return \"\$rc\"\n    \[ \"\$ts\" -eq 0 \] \|\| return \"\$ts\"\n    \[ \"\$mt\" -eq 0 \] \|\| return \"\$mt\"\n    return \"\$ic\"$",
+            r"(?m)^    \[ \"\$rc\" -eq 0 \] \|\| return \"\$rc\"\n    \[ \"\$ts\" -eq 0 \] \|\| return \"\$ts\"\n    \[ \"\$mt\" -eq 0 \] \|\| return \"\$mt\"\n    \[ \"\$sg\" -eq 0 \] \|\| return \"\$sg\"\n    return \"\$ic\"$",
             body
         )
+        # the source greps (CIREF2 gap C1) run first in `_checks_fresh` and name both tools
+        @test occursin(
+            r"(?m)^    _source_greps +#[^\n]*\n    sg=\$\?\n    _term_scopes_check ", body
+        )
+        sgb = match(r"(?s)\n_source_greps\(\) \{\n(.*?)\n\}\n", script)[1]
+        @test occursin("check_bool_atoms", sgb) && occursin("check_where_return", sgb)
         @test occursin(r"(?m)^        _checks_fresh\n        _ck_rc=\$\?", script)                 # `check`
         @test occursin(r"_checks_fresh \|\| \{ echo \"branch-gate: FAIL", script)                 # branch-gate
         @test occursin(r"(?m)^    _checks_fresh\n    rc=\$\?\n", script)                          # preflight
+    end
+
+    # audit D-0692 item 5: the manifest preflight (`warm.sh check`'s `_check`, the same Julia block the preflight runs) fails
+    # on an entry listed twice and NAMES it, before the coverage check. Judged on the text of that block: it is a script
+    # heredoc that needs the daemon's loaded package, so its output is pinned by the line that prints it.
+    @testset "tools/warm.sh preflight: a duplicated manifest entry fails and is named" begin
+        script = read(joinpath(_GS_ROOT, "tools", "warm.sh"), String)
+        @test count("DUPLICATE manifest entry: ", script) == 1
+        # review N9: the key is the (function, argument tuple) pair, not the 3-tuple
+        @test occursin("keys = [(e[1], e[2]) for e in entries]", script)
+        @test occursin("length(keys) == length(unique(keys)) || begin", script)
+        @test !occursin("unique(entries)", script)
+        @test occursin(r"println\(\"  DUPLICATE manifest entry: \", x\)", script)
+        @test occursin(r"lists an entry twice \(test/static_analysis_man", script)
+        # the order: the stale-entry check, then the uniqueness check, then the coverage check (the line that says `covers`)
+        stale_at = findfirst("the manifest names methods that do not exist", script).start
+        dup_at = findfirst("DUPLICATE manifest entry: ", script).start
+        cover_at = findfirst("manifest_uncovered(LogicKernel", script).start
+        @test stale_at < dup_at < cover_at
+        @test occursin("preflight: manifest covers every method (", script)
+        # the duplicates are named from the entries themselves, one name per extra copy
+        @test occursin("e in seen ? push!(dups, string(e[1], e[2]))", script)
     end
 
     # audit D-0206 item 4b: a `file` run of the static-analysis file takes 32 min (SSU1) against the
