@@ -1,4 +1,4 @@
-# ORIGINAL: the UPSTREAM tests/tabling/test_monotonic.pl (swipl-devel 18168e62, 10.1.20), units monotonic_tabling of 3 (8 of 10 tests), as
+# ORIGINAL: the UPSTREAM tests/tabling/test_monotonic.pl (swipl-devel 18168e62, 10.1.20), units monotonic_tabling, monotonic_tabling_2, monotonic_tabling_3 of 3 (10 of 10 tests), as
 # kernel rows (TAB1, TABTEST-MON). One row `t_m<NN>(R)` per upstream test: `abolish_all_tables, <goal>, abolish_all_tables`, R = ok / failed /
 # raised(E).
 #   * Comments matching the D-0164 terms are elided from the embedded text; no code differs.
@@ -263,6 +263,94 @@ test(nested_reeval_mono, true) :-
     setof(X, np(X), Xs2),
     assertion(Xs2 == [1,3]).
 """),
+    ("mono2", "begin_tests(monotonic_tabling_2)", raw"""
+:- use_module(library(lists)).
+:- use_module(library(apply)).
+:- use_module(library(debug)).
+:- use_module(library(tables)).
+:- use_module(library(random)).
+:- use_module(library(increval)).
+:- discontiguous test/1, test/2.
+:- meta_predicate
+    init(0),
+    cleanup(:),
+    queued_answers(:,-,-),
+    expect(?, 0, +),
+    expect_valid(0),
+    expect_invalid(0),
+    expect_forced(0),
+    incr_is_forced(0),
+    expect_queued_answers(:, +).
+:- dynamic (d1/1, d2/1, d3/1) as (incremental,monotonic).
+:- table (p/1,i/1) as (incremental).
+:- table (m/1,n/1) as (monotonic,lazy).
+
+p(X) :-
+    (   i(X)
+    ;   m(X)
+    ).
+
+i(X) :- d3(X).
+m(X) :- n(X).
+m(X) :- d2(X).
+
+n(X) :- d1(X).
+
+clean :-
+    retractall(d1(_)),
+    retractall(d2(_)),
+    retractall(d3(_)),
+    abolish_all_tables.
+
+test(twice_invalid, [Xs == [1,2,3], cleanup(clean)]) :-
+    assert(d1(1)),
+    assert(d2(2)),
+    forall(p(_), true),
+    retract(d1(1)),
+    assert(d1(1)),
+    retract(d2(2)),
+    assert(d2(2)),
+    assert(d3(3)),
+    setof(X, p(X), Xs).
+"""),
+    ("mono3", "begin_tests(monotonic_tabling_3)", raw"""
+:- use_module(library(lists)).
+:- use_module(library(apply)).
+:- use_module(library(debug)).
+:- use_module(library(tables)).
+:- use_module(library(random)).
+:- use_module(library(increval)).
+:- discontiguous test/1, test/2.
+:- meta_predicate
+    init(0),
+    cleanup(:),
+    queued_answers(:,-,-),
+    expect(?, 0, +),
+    expect_valid(0),
+    expect_invalid(0),
+    expect_forced(0),
+    incr_is_forced(0),
+    expect_queued_answers(:, +).
+:- dynamic data/1.
+:- dynamic d/1 as monotonic.
+:- table p/1 as monotonic.
+
+p(X) :- d(X).
+d(X) :- data(X).
+
+test(incr_propagate) :-
+    cleanup([data/1]),
+    assert(data(1)),
+    expect(X, p(X), [1]),
+    assert(data(2)),
+    expect(X, p(X), [1]),
+    incr_propagate_calls(d(2)),
+    expect(X, p(X), [1,2]),
+    retractall(data(2)),
+    expect(X, p(X), [1,2]),
+    incr_invalidate_calls(d(2)),
+    expect(X, p(X), [1]).
+"""),
 ]
 
 "The file's common tail (lines `before :- ...` to the end), verbatim."
@@ -325,6 +413,8 @@ const _TT_CASES = [
     ("m06", "mono1", "setup_call_cleanup(true, pu_mono1:test(incr_mono, [_, true]), pu_mono1:cleanup)"),
     ("m07", "mono1", "setup_call_cleanup(true, (pu_mono1:test(incr_mono, [_, (Lm == [1])]), Lm == [1]), pu_mono1:cleanup)"),
     ("m08", "mono1", "setup_call_cleanup(true, pu_mono1:test(nested_reeval_mono, [_, true]), pu_mono1:cleanup)"),
+    ("m09", "mono2", "setup_call_cleanup(true, (pu_mono2:test(twice_invalid, [C, _]), call(C)), pu_mono2:clean)"),
+    ("m10", "mono3", "pu_mono3:test(incr_propagate)"),
 ]
 
 const _TT_PINNED = [
@@ -337,10 +427,14 @@ const _TT_PINNED = [
     "t_m06 c[116,95,109,48,54]/1(a[111,107])",
     "t_m07 c[116,95,109,48,55]/1(a[111,107])",
     "t_m08 c[116,95,109,48,56]/1(a[111,107])",
+    "t_m09 c[116,95,109,48,57]/1(a[111,107])",
+    "t_m10 c[116,95,109,49,48]/1(a[111,107])",
 ]
 
 "The answer plunit expects of every row: the test passes, `R = ok` (run in swipl by gen_tabling.py pin, plunit part of pins file)."
 const _TT_UPSTREAM = [
+    "a[111,107]",
+    "a[111,107]",
     "a[111,107]",
     "a[111,107]",
     "a[111,107]",
