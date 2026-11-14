@@ -180,48 +180,116 @@ wait_for_table(Id, Tries, Cs, Ts, Es) :-
 """
 
 const _TU_CASES = [
-    ("sdg01", "tbl_sdg:none", raw"""
-'$tbl_sdg'(Cs, Ts, Es), R = Cs-Ts-Es"""),
-    ("sdg02", "tbl_sdg:positive", raw"""
-sdg(p(_), Cs, Ts, Es), R = r(Cs, Ts, Es)"""),
-    ("sdg03", "tbl_sdg:negative", raw"""
-sdg(r, _, Ts, Es), include([edge(_,_,Sign,_)]>>(Sign == negative), Es, Neg), R = r(Ts, Neg)"""),
-    ("sdg04", "tbl_sdg:child", raw"""
-sdg(c1(_), Cs, Ts, _), R = r(Cs, Ts)"""),
-    ("inc01", "tbl_incomplete:positive", raw"""
-counted_in(cp(_), Counts), R = Counts"""),
-    ("inc02", "tbl_incomplete:negative", raw"""
-counted_in(cr, Counts), R = Counts"""),
-    ("inc03", "tbl_incomplete:child", raw"""
-counted_in(cc1(_), Counts), R = Counts"""),
-    ("inc04", "tbl_incomplete:completed", raw"""
-counted_in(cp(_), _), counts(T, S), R = T-S"""),
-    ("inc05", "tbl_incomplete:exception", raw"""
-abolish_all_tables, catch(ce(_), oops, true), counts(T, S), R = T-S"""),
-    ("trw01", "tbl_tripwires:incomplete", raw"""
-abolish_all_tables, with_restraint(max_incomplete_subgoals, 3, ch(0)), R = no_error"""),
-    ("trw02", "tbl_tripwires:incomplete_below", raw"""
-abolish_all_tables, with_restraint(max_incomplete_subgoals, 11, ch(0)), R = ok"""),
-    ("trw03", "tbl_tripwires:incomplete_clean", raw"""
-abolish_all_tables, catch(with_restraint(max_incomplete_subgoals, 3, ch(0)), _, true), counts(T, S), ch(0), R = T-S"""),
-    ("trw04", "tbl_tripwires:scc", raw"""
-abolish_all_tables, catch(with_restraint(max_scc_subgoals, 5, lp(0)), error(resource_error(tripwire(W, T)), _), true), ( var(W) -> R = no_error ; blob(T, trie) -> R = raised(W, trie) ; R = raised(W, other) )"""),
-    ("trw05", "tbl_tripwires:scc_below", raw"""
-abolish_all_tables, ( with_restraint(max_scc_subgoals, 11, lp(0)) -> R = succeeded ; R = failed )"""),
-    ("trw06", "tbl_tripwires:scc_clean", raw"""
-abolish_all_tables, catch(with_restraint(max_scc_subgoals, 5, lp(0)), _, true), counts(T, S), \+ lp(0), R = T-S"""),
-    ("trw07", "tbl_tripwires:flags", raw"""
-setup_call_cleanup(( set_prolog_flag(max_scc_subgoals_action, warning), set_prolog_flag(max_scc_subgoals, 7) ), ( current_prolog_flag(max_scc_subgoals_action, Action), current_prolog_flag(max_scc_subgoals, Limit) ), ( set_prolog_flag(max_scc_subgoals_action, error), set_prolog_flag(max_scc_subgoals, infinite) )), R = Action-Limit"""),
+    (
+        "sdg01",
+        "tbl_sdg:none",
+        raw"""
+'$tbl_sdg'(Cs, Ts, Es), R = Cs-Ts-Es"""
+    ),
+    (
+        "sdg02",
+        "tbl_sdg:positive",
+        raw"""
+sdg(p(_), Cs, Ts, Es), R = r(Cs, Ts, Es)"""
+    ),
+    (
+        "sdg03",
+        "tbl_sdg:negative",
+        raw"""
+sdg(r, _, Ts, Es), include([edge(_,_,Sign,_)]>>(Sign == negative), Es, Neg), R = r(Ts, Neg)"""
+    ),
+    (
+        "sdg04",
+        "tbl_sdg:child",
+        raw"""
+sdg(c1(_), Cs, Ts, _), R = r(Cs, Ts)"""
+    ),
+    (
+        "inc01",
+        "tbl_incomplete:positive",
+        raw"""
+counted_in(cp(_), Counts), R = Counts"""
+    ),
+    (
+        "inc02",
+        "tbl_incomplete:negative",
+        raw"""
+counted_in(cr, Counts), R = Counts"""
+    ),
+    (
+        "inc03",
+        "tbl_incomplete:child",
+        raw"""
+counted_in(cc1(_), Counts), R = Counts"""
+    ),
+    (
+        "inc04",
+        "tbl_incomplete:completed",
+        raw"""
+counted_in(cp(_), _), counts(T, S), R = T-S"""
+    ),
+    (
+        "inc05",
+        "tbl_incomplete:exception",
+        raw"""
+abolish_all_tables, catch(ce(_), oops, true), counts(T, S), R = T-S"""
+    ),
+    (
+        "trw01",
+        "tbl_tripwires:incomplete",
+        raw"""
+abolish_all_tables, with_restraint(max_incomplete_subgoals, 3, ch(0)), R = no_error"""
+    ),
+    (
+        "trw02",
+        "tbl_tripwires:incomplete_below",
+        raw"""
+abolish_all_tables, with_restraint(max_incomplete_subgoals, 11, ch(0)), R = ok"""
+    ),
+    (
+        "trw03",
+        "tbl_tripwires:incomplete_clean",
+        raw"""
+abolish_all_tables, catch(with_restraint(max_incomplete_subgoals, 3, ch(0)), _, true), counts(T, S), ch(0), R = T-S"""
+    ),
+    (
+        "trw04",
+        "tbl_tripwires:scc",
+        raw"""
+abolish_all_tables, catch(with_restraint(max_scc_subgoals, 5, lp(0)), error(resource_error(tripwire(W, T)), _), true), ( var(W) -> R = no_error ; blob(T, trie) -> R = raised(W, trie) ; R = raised(W, other) )"""
+    ),
+    (
+        "trw05",
+        "tbl_tripwires:scc_below",
+        raw"""
+abolish_all_tables, ( with_restraint(max_scc_subgoals, 11, lp(0)) -> R = succeeded ; R = failed )"""
+    ),
+    (
+        "trw06",
+        "tbl_tripwires:scc_clean",
+        raw"""
+abolish_all_tables, catch(with_restraint(max_scc_subgoals, 5, lp(0)), _, true), counts(T, S), \+ lp(0), R = T-S"""
+    ),
+    (
+        "trw07",
+        "tbl_tripwires:flags",
+        raw"""
+setup_call_cleanup(( set_prolog_flag(max_scc_subgoals_action, warning), set_prolog_flag(max_scc_subgoals, 7) ), ( current_prolog_flag(max_scc_subgoals_action, Action), current_prolog_flag(max_scc_subgoals, Limit) ), ( set_prolog_flag(max_scc_subgoals_action, error), set_prolog_flag(max_scc_subgoals, infinite) )), R = Action-Limit"""
+    )
 ]
 
 "Left to an owner (id, upstream unit, goal, owner): pinned and live-checked, not run on the kernel."
 const _TU_LEFT = [
     ("sdg05", "tbl_sdg:hidden", raw"""
 sdg(( thread_create(in_break(a(_)), Id), thread_join(Id) ), _, Ts, _), R = Ts""", "TH1"),
-    ("sdg06", "tbl_sdg:other_thread", raw"""
-abolish_all_tables, thread_create(w(_), Id), wait_for_table(Id, 50, Cs, [table(_, V0, _, _, _)], Es), thread_send_message(Id, go), thread_join(Id), strip(V0, V), length(Cs, NC), Es = [edge(A, B, Sg, Ct)], ( A == B -> Same = same ; Same = diff ), R = r(NC, V, Sg, Ct, Same)""", "TH1"),
-    ("inc06", "tbl_incomplete:other_thread", raw"""
-abolish_all_tables, thread_create(w(_), Id), wait_for_table(Id, 50, _, _, _), '$tbl_incomplete'(Id, T, S), thread_send_message(Id, go), thread_join(Id), R = T-S""", "TH1"),
+    ("sdg06", "tbl_sdg:other_thread",
+        raw"""
+abolish_all_tables, thread_create(w(_), Id), wait_for_table(Id, 50, Cs, [table(_, V0, _, _, _)], Es), thread_send_message(Id, go), thread_join(Id), strip(V0, V), length(Cs, NC), Es = [edge(A, B, Sg, Ct)], ( A == B -> Same = same ; Same = diff ), R = r(NC, V, Sg, Ct, Same)""",
+        "TH1"),
+    ("inc06", "tbl_incomplete:other_thread",
+        raw"""
+abolish_all_tables, thread_create(w(_), Id), wait_for_table(Id, 50, _, _, _), '$tbl_incomplete'(Id, T, S), thread_send_message(Id, go), thread_join(Id), R = T-S""",
+        "TH1")
 ]
 
 const _TU_PINNED = [
@@ -241,7 +309,7 @@ const _TU_PINNED = [
     "t_trw04 c[116,95,116,114,119,48,52]/1(c[114,97,105,115,101,100]/2(a[109,97,120,95,115,99,99,95,115,117,98,103,111,97,108,115],a[116,114,105,101]))",
     "t_trw05 c[116,95,116,114,119,48,53]/1(a[102,97,105,108,101,100])",
     "t_trw06 c[116,95,116,114,119,48,54]/1(c[45]/2(i0,i0))",
-    "t_trw07 c[116,95,116,114,119,48,55]/1(c[45]/2(a[119,97,114,110,105,110,103],i7))",
+    "t_trw07 c[116,95,116,114,119,48,55]/1(c[45]/2(a[119,97,114,110,105,110,103],i7))"
 ]
 
 "The answer the UPSTREAM test expects, run in swipl (`x_<id>(R) :- R = Expected`), as the driver encodes it."
@@ -261,25 +329,26 @@ const _TU_UPSTREAM = [
     "c[114,97,105,115,101,100]/2(a[109,97,120,95,115,99,99,95,115,117,98,103,111,97,108,115],a[116,114,105,101])",
     "a[102,97,105,108,101,100]",
     "c[45]/2(i0,i0)",
-    "c[45]/2(a[119,97,114,110,105,110,103],i7)",
+    "c[45]/2(a[119,97,114,110,105,110,103],i7)"
 ]
 
 const _TU_LEFT_PINNED = [
     "t_sdg05 c[116,95,115,100,103,48,53]/1(c[91,124,93]/2(c[116,97,98,108,101]/4(c[97]/1(c[36,86,65,82]/1(i0)),i0,i0,c[91,124,93]/2(a[112,101,110,100,105,110,103],nil)),c[91,124,93]/2(c[116,97,98,108,101]/4(c[98]/1(c[36,86,65,82]/1(i0)),i0,i0,c[91,124,93]/2(a[112,101,110,100,105,110,103],nil)),nil)))",
     "t_sdg06 c[116,95,115,100,103,48,54]/1(c[114]/5(i1,c[119]/1(c[36,86,65,82]/1(i0)),a[112,111,115,105,116,105,118,101],i1,a[115,97,109,101]))",
-    "t_inc06 c[116,95,105,110,99,48,54]/1(c[45]/2(i1,i1))",
+    "t_inc06 c[116,95,105,110,99,48,54]/1(c[45]/2(i1,i1))"
 ]
 
 const _TU_LEFT_UPSTREAM = [
     "c[91,124,93]/2(c[116,97,98,108,101]/4(c[97]/1(c[36,86,65,82]/1(i0)),i0,i0,c[91,124,93]/2(a[112,101,110,100,105,110,103],nil)),c[91,124,93]/2(c[116,97,98,108,101]/4(c[98]/1(c[36,86,65,82]/1(i0)),i0,i0,c[91,124,93]/2(a[112,101,110,100,105,110,103],nil)),nil))",
     "c[114]/5(i1,c[119]/1(c[36,86,65,82]/1(i0)),a[112,111,115,105,116,105,118,101],i1,a[115,97,109,101])",
-    "c[45]/2(i1,i1)",
+    "c[45]/2(i1,i1)"
 ]
 
 "The program text with the cases appended."
 _tu_text(program::String, cases) =
     program * join([
-        "t_$(id)(R) :- ( catch(($g), error(SsuE, _), R = raised(SsuE)) -> true ; R = failed ).\n" for (id, g) in cases
+        "t_$(id)(R) :- ( catch(($g), error(SsuE, _), R = raised(SsuE)) -> true ; R = failed ).\n"
+        for (id, g) in cases
     ])
 
 "A kernel with the program consulted: `(gd, ld, first line of the driver's output)`."
@@ -369,7 +438,9 @@ end
         @info "LIVE CHECK NOT RUN: `swipl` is not on PATH here. It runs in tools/run_tests.sh and CI."
     else
         f = joinpath(mktempdir(), "ts_upstream_swipl.pl")
-        all_cases = vcat([(id, g) for (id, _, g) in _TU_CASES], [(id, g) for (id, _, g, _) in _TU_LEFT])
+        all_cases = vcat(
+            [(id, g) for (id, _, g) in _TU_CASES], [(id, g) for (id, _, g, _) in _TU_LEFT]
+        )
         write(f, _tu_text(_TU_PROGRAM * _TU_LEFT_PROGRAM, all_cases))
         got = _tu_swipl_lines(f, ["t_$id" for (id, _) in all_cases])
         @test !isempty(got) && got == vcat(_TU_PINNED, _TU_LEFT_PINNED)

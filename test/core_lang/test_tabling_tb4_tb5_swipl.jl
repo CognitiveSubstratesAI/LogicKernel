@@ -331,8 +331,10 @@ end
     # A2, A3: the number of answer completions of the two programs (the counter `acc13`), one against none
     @test _TR_atoms(_TR_ans("G13A", "r1301")) == ["a13"]
     @test _TR_atoms(_TR_ans("G13A", "r1302")) == ["c13"]
-    @test occursin("i1,", _TR_ans("G13A", "r1301")) && occursin("i1,", _TR_ans("G13A", "r1302"))
-    @test occursin("i0,", _TR_ans("G13B", "r1303")) && occursin("i0,", _TR_ans("G13B", "r1304"))
+    @test occursin("i1,", _TR_ans("G13A", "r1301")) &&
+        occursin("i1,", _TR_ans("G13A", "r1302"))
+    @test occursin("i0,", _TR_ans("G13B", "r1303")) &&
+        occursin("i0,", _TR_ans("G13B", "r1304"))
     @test _TR_ans("G13A", "r1301") != _TR_ans("G13A", "r1302")
     @test _TR_ans("G13B", "r1303") != _TR_ans("G13B", "r1304")
     @test _TR_ans("G13A", "r1301") != _TR_ans("G13B", "r1303")   # the count differs: 1 against 0

@@ -1311,7 +1311,19 @@ mutable struct ld_transaction{T}
     stack::Union{Nothing, tr_stack{T}}                      # Stack of nested transactions
 end
 ld_transaction{T}() where {T} =
-    ld_transaction{T}(gen_t(0), gen_t(0), GEN_INFINITE, gen_t(0), gen_t(0), UInt32(0), 0, nothing, nothing, nothing, nothing)
+    ld_transaction{T}(
+        gen_t(0),
+        gen_t(0),
+        GEN_INFINITE,
+        gen_t(0),
+        gen_t(0),
+        UInt32(0),
+        0,
+        nothing,
+        nothing,
+        nothing,
+        nothing
+    )
 
 # PORT: pl-transaction.c current_transaction
 # DIVERGES: the redo state of `current_transaction/1` is a record of the local data's pool (`ld.transaction_enums`,
@@ -3113,8 +3125,10 @@ mutable struct idg_node{T}
 end
 # ORIGINAL: the zeroed node of `idg_new` (`memset(n, 0, sizeof(*n))`, then `magic` and `atrie`).
 idg_node{T}(atrie::Int) where {T} = idg_node{T}(
-    IDG_NODE_MAGIC, false, atrie, idg_set{idg_node{T}}(), idg_set{idg_node{T}}(), nothing, nothing, nothing,
-    0, 0, 0, 0, 0, false, false, false, false, false, false, false, false, false, false, false
+    IDG_NODE_MAGIC, false, atrie, idg_set{idg_node{T}}(), idg_set{idg_node{T}}(),
+    nothing, nothing, nothing,
+    0, 0, 0, 0, 0, false, false, false, false, false, false, false, false, false, false,
+    false
 )
 
 # MOVED after `tbl_worklist` (TAB1 TR1 rebased on TB0): `trie{T}.worklist` is a `tbl_worklist{T}`, a field type must be defined before it.
@@ -3313,7 +3327,8 @@ mutable struct idg_edge_state{T}
 end
 # ORIGINAL: the zeroed state (`memset(state, 0, sizeof(*state))`), also the record `foreign_state_pool` makes.
 idg_edge_state{T}() where {T} = idg_edge_state{T}(
-    nothing, nothing, nothing, nothing, false, false, false, false, false, false, word(0), nothing
+    nothing, nothing, nothing, nothing, false, false, false, false, false, false,
+    word(0), nothing
 )
 
 # PORT: pl-tabling.c pair_map
@@ -3330,7 +3345,8 @@ mutable struct pair_map{T}
     index::Dict{Tuple{UInt, UInt}, Int}                 # (a, b) -> entry
 end
 pair_map{T}() where {T} = pair_map{T}(
-    definition{T}[], Union{Nothing, definition{T}}[], Int[], Int[], Dict{Tuple{UInt, UInt}, Int}()
+    definition{T}[], Union{Nothing, definition{T}}[], Int[], Int[],
+    Dict{Tuple{UInt, UInt}, Int}()
 )
 
 # PORT: pl-tabling.h tbl_status

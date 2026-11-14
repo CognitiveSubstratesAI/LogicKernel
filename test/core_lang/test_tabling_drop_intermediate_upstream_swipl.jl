@@ -122,14 +122,30 @@ tables(Name, N) :-
 const _TD_LEFT_PROGRAM = ""
 
 const _TD_CASES = [
-    ("di01", "drop_intermediate:off", raw"""
-abolish_all_tables, numlist(1, 300, L), nrev(L, Rev), assertion(reverse(L, Rev)), tables(nrev, N), R = N"""),
-    ("di02", "drop_intermediate:chain", raw"""
-abolish_all_tables, numlist(1, 300, L), with_drop(10, nrev(L, R0)), assertion(reverse(L, R0)), tables(nrev, N), assertion(N > 1), assertion(current_table(user:nrev(L, _), _)), ( N < 150 -> R = ok ; R = bad(N) )"""),
-    ("di03", "drop_intermediate:recompute", raw"""
-abolish_all_tables, numlist(1, 300, L), with_drop(10, nrev(L, _)), forall(between(1, 300, I), ( numlist(I, 300, S), nrev(S, R0), assertion(reverse(S, R0)) )), R = ok"""),
-    ("di04", "drop_intermediate:reused", raw"""
-abolish_all_tables, with_drop(10, fib(200, F)), assertion(F =:= 280571172992510140037611932413038677189525), tables(fib, N), R = N"""),
+    (
+        "di01",
+        "drop_intermediate:off",
+        raw"""
+abolish_all_tables, numlist(1, 300, L), nrev(L, Rev), assertion(reverse(L, Rev)), tables(nrev, N), R = N"""
+    ),
+    (
+        "di02",
+        "drop_intermediate:chain",
+        raw"""
+abolish_all_tables, numlist(1, 300, L), with_drop(10, nrev(L, R0)), assertion(reverse(L, R0)), tables(nrev, N), assertion(N > 1), assertion(current_table(user:nrev(L, _), _)), ( N < 150 -> R = ok ; R = bad(N) )"""
+    ),
+    (
+        "di03",
+        "drop_intermediate:recompute",
+        raw"""
+abolish_all_tables, numlist(1, 300, L), with_drop(10, nrev(L, _)), forall(between(1, 300, I), ( numlist(I, 300, S), nrev(S, R0), assertion(reverse(S, R0)) )), R = ok"""
+    ),
+    (
+        "di04",
+        "drop_intermediate:reused",
+        raw"""
+abolish_all_tables, with_drop(10, fib(200, F)), assertion(F =:= 280571172992510140037611932413038677189525), tables(fib, N), R = N"""
+    )
 ]
 
 const _TD_LEFT = Tuple{String, String, String, String}[]
@@ -139,7 +155,7 @@ const _TD_PINNED = [
     "t_di01 c[116,95,100,105,48,49]/1(i301)",
     "t_di02 c[116,95,100,105,48,50]/1(a[111,107])",
     "t_di03 c[116,95,100,105,48,51]/1(a[111,107])",
-    "t_di04 c[116,95,100,105,48,52]/1(i201)",
+    "t_di04 c[116,95,100,105,48,52]/1(i201)"
 ]
 
 "The answer the UPSTREAM test expects, run in swipl (`x_<id>(R) :- R = Expected`), as the driver encodes it."
@@ -147,7 +163,7 @@ const _TD_UPSTREAM = [
     "i301",
     "a[111,107]",
     "a[111,107]",
-    "i201",
+    "i201"
 ]
 
 const _TD_LEFT_PINNED = String[]
@@ -157,7 +173,8 @@ const _TD_LEFT_UPSTREAM = String[]
 "The program text with the cases appended."
 _td_text(program::String, cases) =
     program * join([
-        "t_$(id)(R) :- ( catch(($g), error(SsuE, _), R = raised(SsuE)) -> true ; R = failed ).\n" for (id, g) in cases
+        "t_$(id)(R) :- ( catch(($g), error(SsuE, _), R = raised(SsuE)) -> true ; R = failed ).\n"
+        for (id, g) in cases
     ])
 
 "A kernel with the program consulted: `(gd, ld, first line of the driver's output)`."
@@ -247,7 +264,9 @@ end
         @info "LIVE CHECK NOT RUN: `swipl` is not on PATH here. It runs in tools/run_tests.sh and CI."
     else
         f = joinpath(mktempdir(), "ts_upstream_swipl.pl")
-        all_cases = vcat([(id, g) for (id, _, g) in _TD_CASES], [(id, g) for (id, _, g, _) in _TD_LEFT])
+        all_cases = vcat(
+            [(id, g) for (id, _, g) in _TD_CASES], [(id, g) for (id, _, g, _) in _TD_LEFT]
+        )
         write(f, _td_text(_TD_PROGRAM * _TD_LEFT_PROGRAM, all_cases))
         got = _td_swipl_lines(f, ["t_$id" for (id, _) in all_cases])
         @test !isempty(got) && got == vcat(_TD_PINNED, _TD_LEFT_PINNED)

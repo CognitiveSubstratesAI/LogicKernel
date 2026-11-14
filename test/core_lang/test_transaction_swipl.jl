@@ -146,136 +146,421 @@ tx_gclean(At) :- nb_setval(tx_gon, off), retractall(tx_g(_)), nb_setval(tx_gn, 0
 """
 
 const _TX_CASES = [
-    ("txc01", raw"transaction((assertz(tx_p(1)), assertz(tx_p(2)))), tx_all(tx_p, L), R = L"),
-    ("txc02", raw"tx_yn(transaction((assertz(tx_p(1)), fail)), Y), tx_all(tx_p, L), R = r(Y, L)"),
-    ("txc03", raw"catch(transaction((assertz(tx_p(1)), throw(oops))), E, true), tx_all(tx_p, L), R = r(E, L)"),
+    (
+        "txc01",
+        raw"transaction((assertz(tx_p(1)), assertz(tx_p(2)))), tx_all(tx_p, L), R = L"
+    ),
+    (
+        "txc02",
+        raw"tx_yn(transaction((assertz(tx_p(1)), fail)), Y), tx_all(tx_p, L), R = r(Y, L)"
+    ),
+    (
+        "txc03",
+        raw"catch(transaction((assertz(tx_p(1)), throw(oops))), E, true), tx_all(tx_p, L), R = r(E, L)"
+    ),
     ("txc04", raw"assertz(tx_p(1)), transaction(retract(tx_p(1))), tx_all(tx_p, L), R = L"),
-    ("txc05", raw"transaction((assertz(tx_p(1)), tx_all(tx_p, In))), tx_all(tx_p, Out), R = r(In, Out)"),
-    ("txc06", raw"assertz(tx_p(1)), tx_yn(transaction((retract(tx_p(1)), fail)), Y), tx_all(tx_p, L), R = r(Y, L)"),
-    ("txc07", raw"assertz(tx_p(1)), assertz(tx_p(2)), transaction(retractall(tx_p(_))), tx_all(tx_p, L), R = L"),
-    ("txc08", raw"transaction(assertz(tx_p(1)), tx_all(tx_p, [1]), tx_m), tx_all(tx_p, L), R = L"),
-    ("txc09", raw"tx_yn(transaction(assertz(tx_p(1)), fail, tx_m), Y), tx_all(tx_p, L), R = r(Y, L)"),
-    ("txc10", raw"assertz(tx_p(1)), tx_yn(transaction(assertz(tx_p(2)), (tx_all(tx_p, L0), L0 == [1]), tx_m), Y), tx_all(tx_p, L), R = r(Y, L)"),
-    ("txc11", raw"assertz(tx_p(1)), transaction((asserta(tx_p(0)), assertz(tx_p(2)))), tx_all(tx_p, L), R = L"),
+    (
+        "txc05",
+        raw"transaction((assertz(tx_p(1)), tx_all(tx_p, In))), tx_all(tx_p, Out), R = r(In, Out)"
+    ),
+    (
+        "txc06",
+        raw"assertz(tx_p(1)), tx_yn(transaction((retract(tx_p(1)), fail)), Y), tx_all(tx_p, L), R = r(Y, L)"
+    ),
+    (
+        "txc07",
+        raw"assertz(tx_p(1)), assertz(tx_p(2)), transaction(retractall(tx_p(_))), tx_all(tx_p, L), R = L"
+    ),
+    (
+        "txc08",
+        raw"transaction(assertz(tx_p(1)), tx_all(tx_p, [1]), tx_m), tx_all(tx_p, L), R = L"
+    ),
+    (
+        "txc09",
+        raw"tx_yn(transaction(assertz(tx_p(1)), fail, tx_m), Y), tx_all(tx_p, L), R = r(Y, L)"
+    ),
+    (
+        "txc10",
+        raw"assertz(tx_p(1)), tx_yn(transaction(assertz(tx_p(2)), (tx_all(tx_p, L0), L0 == [1]), tx_m), Y), tx_all(tx_p, L), R = r(Y, L)"
+    ),
+    (
+        "txc11",
+        raw"assertz(tx_p(1)), transaction((asserta(tx_p(0)), assertz(tx_p(2)))), tx_all(tx_p, L), R = L"
+    ),
     ("txc12", raw"transaction(assertz(tx_p(9)), []), tx_all(tx_p, L), R = L"),
     ("txc13", raw"transaction(user:assertz(tx_p(9)), []), tx_all(tx_p, L), R = L"),
-    ("txc14", raw"transaction(user:assertz(tx_p(9)), [bulk(true)]), tx_all(tx_p, L), R = L"),
+    (
+        "txc14",
+        raw"transaction(user:assertz(tx_p(9)), [bulk(true)]), tx_all(tx_p, L), R = L"
+    ),
     ("txc15", raw"catch(transaction(user:true, [bulk(maybe)]), error(E, _), true), R = E"),
     ("txc16", raw"catch(transaction(_), error(E, _), true), R = E"),
     ("txc17", raw"catch(transaction(1), error(E, _), true), R = E"),
     ("txc18", raw"transaction(true), R = ok"),
-    ("txc19", raw"transaction((assertz(tx_p(1)), assertz(tx_q(1)))), tx_all(tx_p, A), tx_all(tx_q, B), R = r(A, B)"),
-    ("txc20", raw"assertz(tx_p(1)), tx_yn(transaction((retract(tx_p(1)), assertz(tx_p(2)), fail)), Y), tx_all(tx_p, L), R = r(Y, L)"),
-    ("txc21", raw"transaction((assertz(tx_p(1)), retract(tx_p(1)))), tx_all(tx_p, L), R = L"),
-    ("txc22", raw"assertz(tx_p(1)), assertz(tx_p(2)), transaction((retract(tx_p(1)), tx_all(tx_p, In))), tx_all(tx_p, Out), R = r(In, Out)"),
-    ("txc23", raw"assertz(tx_p(1)), transaction((tx_yn(tx_p(1), A), retract(tx_p(1)), tx_yn(tx_p(1), B))), R = r(A, B)"),
-    ("txs01", raw"snapshot((assertz(tx_p(1)), tx_all(tx_p, In))), tx_all(tx_p, Out), R = r(In, Out)"),
-    ("txs02", raw"tx_yn(snapshot((assertz(tx_p(1)), fail)), Y), tx_all(tx_p, L), R = r(Y, L)"),
+    (
+        "txc19",
+        raw"transaction((assertz(tx_p(1)), assertz(tx_q(1)))), tx_all(tx_p, A), tx_all(tx_q, B), R = r(A, B)"
+    ),
+    (
+        "txc20",
+        raw"assertz(tx_p(1)), tx_yn(transaction((retract(tx_p(1)), assertz(tx_p(2)), fail)), Y), tx_all(tx_p, L), R = r(Y, L)"
+    ),
+    (
+        "txc21",
+        raw"transaction((assertz(tx_p(1)), retract(tx_p(1)))), tx_all(tx_p, L), R = L"
+    ),
+    (
+        "txc22",
+        raw"assertz(tx_p(1)), assertz(tx_p(2)), transaction((retract(tx_p(1)), tx_all(tx_p, In))), tx_all(tx_p, Out), R = r(In, Out)"
+    ),
+    (
+        "txc23",
+        raw"assertz(tx_p(1)), transaction((tx_yn(tx_p(1), A), retract(tx_p(1)), tx_yn(tx_p(1), B))), R = r(A, B)"
+    ),
+    (
+        "txs01",
+        raw"snapshot((assertz(tx_p(1)), tx_all(tx_p, In))), tx_all(tx_p, Out), R = r(In, Out)"
+    ),
+    (
+        "txs02",
+        raw"tx_yn(snapshot((assertz(tx_p(1)), fail)), Y), tx_all(tx_p, L), R = r(Y, L)"
+    ),
     ("txs03", raw"assertz(tx_p(1)), snapshot(retract(tx_p(1))), tx_all(tx_p, L), R = L"),
-    ("txs04", raw"transaction((assertz(tx_p(1)), snapshot(assertz(tx_p(2))))), tx_all(tx_p, L), R = L"),
-    ("txs05", raw"catch(snapshot((assertz(tx_p(1)), throw(oops))), E, true), tx_all(tx_p, L), R = r(E, L)"),
+    (
+        "txs04",
+        raw"transaction((assertz(tx_p(1)), snapshot(assertz(tx_p(2))))), tx_all(tx_p, L), R = L"
+    ),
+    (
+        "txs05",
+        raw"catch(snapshot((assertz(tx_p(1)), throw(oops))), E, true), tx_all(tx_p, L), R = r(E, L)"
+    ),
     ("txs06", raw"snapshot(true), R = ok"),
     ("txs07", raw"catch(snapshot(_), error(E, _), true), R = E"),
-    ("txs08", raw"snapshot((assertz(tx_p(1)), snapshot(assertz(tx_p(2))), tx_all(tx_p, In))), tx_all(tx_p, Out), R = r(In, Out)"),
-    ("txn01", raw"transaction((assertz(tx_p(1)), transaction(assertz(tx_p(2))))), tx_all(tx_p, L), R = L"),
-    ("txn02", raw"transaction((assertz(tx_p(1)), ( transaction((assertz(tx_p(2)), fail)) -> true ; true ), assertz(tx_p(3)))), tx_all(tx_p, L), R = L"),
-    ("txn03", raw"tx_yn(transaction((transaction(assertz(tx_p(1))), fail)), Y), tx_all(tx_p, L), R = r(Y, L)"),
-    ("txn04", raw"transaction((assertz(tx_p(1)), catch(transaction((assertz(tx_p(2)), throw(x))), x, true), assertz(tx_p(3)))), tx_all(tx_p, L), R = L"),
-    ("txn05", raw"transaction((assertz(tx_p(1)), transaction((assertz(tx_p(2)), transaction(assertz(tx_p(3))))))), tx_all(tx_p, L), R = L"),
-    ("txn06", raw"transaction((assertz(tx_p(1)), assertz(tx_p(2)), transaction(retract(tx_p(1))))), tx_all(tx_p, L), R = L"),
-    ("txn07", raw"assertz(tx_p(1)), tx_yn(transaction((transaction(retract(tx_p(1))), fail)), Y), tx_all(tx_p, L), R = r(Y, L)"),
-    ("txn08", raw"transaction((assertz(tx_p(1)), transaction((assertz(tx_p(2)), tx_all(tx_p, In))), tx_all(tx_p, Out))), R = r(In, Out)"),
-    ("txn09", raw"transaction((assertz(tx_p(1)), ( transaction((assertz(tx_p(2)), fail)) -> true ; true ), tx_all(tx_p, In))), tx_all(tx_p, Out), R = r(In, Out)"),
-    ("txn10", raw"assertz(tx_p(1)), transaction((transaction((retract(tx_p(1)), assertz(tx_p(2)))), tx_all(tx_p, In))), tx_all(tx_p, Out), R = r(In, Out)"),
-    ("txn11", raw"tx_yn(transaction((assertz(tx_p(1)), transaction(assertz(tx_p(2)), fail, tx_m))), Y), tx_all(tx_p, L), R = r(Y, L)"),
-    ("txn12", raw"transaction((assertz(tx_p(1)), transaction(assertz(tx_p(2)), tx_all(tx_p, [1,2]), tx_m))), tx_all(tx_p, L), R = L"),
-    ("txn13", raw"transaction((assertz(tx_p(1)), snapshot((assertz(tx_p(2)), transaction(assertz(tx_p(3))))))), tx_all(tx_p, L), R = L"),
-    ("txn14", raw"transaction((assertz(tx_p(1)), transaction((assertz(tx_p(2)), snapshot(assertz(tx_p(3))), tx_all(tx_p, In))))), tx_all(tx_p, Out), R = r(In, Out)"),
-    ("txn15", raw"transaction((assertz(tx_p(1)), transaction(user:assertz(tx_p(2)), [bulk(true)]))), tx_all(tx_p, L), R = L"),
-    ("txu01", raw"transaction((assertz(tx_p(1)), asserta(tx_p(0)), transaction_updates(U), tx_kinds(U, As))), R = As"),
-    ("txu02", raw"assertz(tx_p(1)), transaction((retract(tx_p(1)), transaction_updates(U), tx_kinds(U, As))), R = As"),
-    ("txu03", raw"transaction((assertz(tx_p(1)), retract(tx_p(1)), transaction_updates(U), tx_kinds(U, As))), R = As"),
+    (
+        "txs08",
+        raw"snapshot((assertz(tx_p(1)), snapshot(assertz(tx_p(2))), tx_all(tx_p, In))), tx_all(tx_p, Out), R = r(In, Out)"
+    ),
+    (
+        "txn01",
+        raw"transaction((assertz(tx_p(1)), transaction(assertz(tx_p(2))))), tx_all(tx_p, L), R = L"
+    ),
+    (
+        "txn02",
+        raw"transaction((assertz(tx_p(1)), ( transaction((assertz(tx_p(2)), fail)) -> true ; true ), assertz(tx_p(3)))), tx_all(tx_p, L), R = L"
+    ),
+    (
+        "txn03",
+        raw"tx_yn(transaction((transaction(assertz(tx_p(1))), fail)), Y), tx_all(tx_p, L), R = r(Y, L)"
+    ),
+    (
+        "txn04",
+        raw"transaction((assertz(tx_p(1)), catch(transaction((assertz(tx_p(2)), throw(x))), x, true), assertz(tx_p(3)))), tx_all(tx_p, L), R = L"
+    ),
+    (
+        "txn05",
+        raw"transaction((assertz(tx_p(1)), transaction((assertz(tx_p(2)), transaction(assertz(tx_p(3))))))), tx_all(tx_p, L), R = L"
+    ),
+    (
+        "txn06",
+        raw"transaction((assertz(tx_p(1)), assertz(tx_p(2)), transaction(retract(tx_p(1))))), tx_all(tx_p, L), R = L"
+    ),
+    (
+        "txn07",
+        raw"assertz(tx_p(1)), tx_yn(transaction((transaction(retract(tx_p(1))), fail)), Y), tx_all(tx_p, L), R = r(Y, L)"
+    ),
+    (
+        "txn08",
+        raw"transaction((assertz(tx_p(1)), transaction((assertz(tx_p(2)), tx_all(tx_p, In))), tx_all(tx_p, Out))), R = r(In, Out)"
+    ),
+    (
+        "txn09",
+        raw"transaction((assertz(tx_p(1)), ( transaction((assertz(tx_p(2)), fail)) -> true ; true ), tx_all(tx_p, In))), tx_all(tx_p, Out), R = r(In, Out)"
+    ),
+    (
+        "txn10",
+        raw"assertz(tx_p(1)), transaction((transaction((retract(tx_p(1)), assertz(tx_p(2)))), tx_all(tx_p, In))), tx_all(tx_p, Out), R = r(In, Out)"
+    ),
+    (
+        "txn11",
+        raw"tx_yn(transaction((assertz(tx_p(1)), transaction(assertz(tx_p(2)), fail, tx_m))), Y), tx_all(tx_p, L), R = r(Y, L)"
+    ),
+    (
+        "txn12",
+        raw"transaction((assertz(tx_p(1)), transaction(assertz(tx_p(2)), tx_all(tx_p, [1,2]), tx_m))), tx_all(tx_p, L), R = L"
+    ),
+    (
+        "txn13",
+        raw"transaction((assertz(tx_p(1)), snapshot((assertz(tx_p(2)), transaction(assertz(tx_p(3))))))), tx_all(tx_p, L), R = L"
+    ),
+    (
+        "txn14",
+        raw"transaction((assertz(tx_p(1)), transaction((assertz(tx_p(2)), snapshot(assertz(tx_p(3))), tx_all(tx_p, In))))), tx_all(tx_p, Out), R = r(In, Out)"
+    ),
+    (
+        "txn15",
+        raw"transaction((assertz(tx_p(1)), transaction(user:assertz(tx_p(2)), [bulk(true)]))), tx_all(tx_p, L), R = L"
+    ),
+    (
+        "txu01",
+        raw"transaction((assertz(tx_p(1)), asserta(tx_p(0)), transaction_updates(U), tx_kinds(U, As))), R = As"
+    ),
+    (
+        "txu02",
+        raw"assertz(tx_p(1)), transaction((retract(tx_p(1)), transaction_updates(U), tx_kinds(U, As))), R = As"
+    ),
+    (
+        "txu03",
+        raw"transaction((assertz(tx_p(1)), retract(tx_p(1)), transaction_updates(U), tx_kinds(U, As))), R = As"
+    ),
     ("txu04", raw"transaction_updates(U), R = U"),
-    ("txu05", raw"transaction((assertz(tx_p(7)), transaction_updates([assertz(Ref)]), clause(H, B, Ref))), R = r(H, B)"),
-    ("txu06", raw"assertz(tx_p(1)), transaction((retract(tx_p(1)), transaction_updates([erased(Ref)]), clause(H, B, Ref))), R = r(H, B)"),
-    ("txu07", raw"transaction((assertz(tx_p(1)), transaction((assertz(tx_p(2)), transaction_updates(U), tx_kinds(U, In))), transaction_updates(V), tx_kinds(V, Out))), R = r(In, Out)"),
-    ("txu08", raw"transaction((assertz(tx_p(1)), assertz(tx_q(2)), asserta(tx_p(0)), transaction_updates(U), length(U, N))), R = N"),
-    ("txu09", raw"snapshot((assertz(tx_p(1)), transaction_updates(U), tx_kinds(U, As))), R = As"),
-    ("txu10", raw"transaction((assertz(tx_p(1)), transaction_updates([assertz(_)]))), R = ok"),
-    ("txu11", raw"transaction((assertz(tx_p(1)), transaction_updates([erased(_)]))), R = ok"),
-    ("txu12", raw"transaction((assertz(tx_p(1)), transaction_updates(U), U = [X], X =.. [F, Ref], blob(Ref, T))), R = r(F, T)"),
+    (
+        "txu05",
+        raw"transaction((assertz(tx_p(7)), transaction_updates([assertz(Ref)]), clause(H, B, Ref))), R = r(H, B)"
+    ),
+    (
+        "txu06",
+        raw"assertz(tx_p(1)), transaction((retract(tx_p(1)), transaction_updates([erased(Ref)]), clause(H, B, Ref))), R = r(H, B)"
+    ),
+    (
+        "txu07",
+        raw"transaction((assertz(tx_p(1)), transaction((assertz(tx_p(2)), transaction_updates(U), tx_kinds(U, In))), transaction_updates(V), tx_kinds(V, Out))), R = r(In, Out)"
+    ),
+    (
+        "txu08",
+        raw"transaction((assertz(tx_p(1)), assertz(tx_q(2)), asserta(tx_p(0)), transaction_updates(U), length(U, N))), R = N"
+    ),
+    (
+        "txu09",
+        raw"snapshot((assertz(tx_p(1)), transaction_updates(U), tx_kinds(U, As))), R = As"
+    ),
+    (
+        "txu10",
+        raw"transaction((assertz(tx_p(1)), transaction_updates([assertz(_)]))), R = ok"
+    ),
+    (
+        "txu11",
+        raw"transaction((assertz(tx_p(1)), transaction_updates([erased(_)]))), R = ok"
+    ),
+    (
+        "txu12",
+        raw"transaction((assertz(tx_p(1)), transaction_updates(U), U = [X], X =.. [F, Ref], blob(Ref, T))), R = r(F, T)"
+    ),
     ("txr01", raw"findall(G, current_transaction(G), L), R = L"),
     ("txr02", raw"transaction(tx_cur(F)), R = F"),
     ("txr03", raw"transaction(transaction(tx_cur(F))), R = F"),
     ("txr04", raw"snapshot(tx_cur(F)), R = F"),
-    ("txr05", raw"transaction((findall(N, (current_transaction(G), functor(G, N, _)), L))), R = L"),
+    (
+        "txr05",
+        raw"transaction((findall(N, (current_transaction(G), functor(G, N, _)), L))), R = L"
+    ),
     ("txr06", raw"transaction(true), findall(G, current_transaction(G), L), R = L"),
-    ("txr07", raw"transaction((once(current_transaction(user:G)), functor(G, N, A))), R = N/A"),
-    ("txr08", raw"transaction((limit(1, current_transaction(G)), functor(G, N, A))), R = N/A"),
+    (
+        "txr07",
+        raw"transaction((once(current_transaction(user:G)), functor(G, N, A))), R = N/A"
+    ),
+    (
+        "txr08",
+        raw"transaction((limit(1, current_transaction(G)), functor(G, N, A))), R = N/A"
+    ),
     ("txr09", raw"transaction(user:(tx_cur(F), true)), R = F"),
     ("txr10", raw"transaction(snapshot(tx_cur(F))), R = F"),
     ("txr11", raw"transaction(transaction(transaction(tx_cur(F)))), R = F"),
     ("txr12", raw"transaction(( current_transaction(G), functor(G, N, A) )), R = N/A"),
     ("txd01", raw"( undo(tx_push(a)), fail ; true ), tx_pushed(L), R = L"),
-    ("txd02", raw"( undo(tx_push(a)), undo(tx_push(b)), fail ; true ), tx_pushed(L), R = L"),
+    (
+        "txd02",
+        raw"( undo(tx_push(a)), undo(tx_push(b)), fail ; true ), tx_pushed(L), R = L"
+    ),
     ("txd03", raw"undo(tx_push(a)), tx_pushed(L), R = L"),
-    ("txd04", raw"findall(X, ( member(X, [1,2,3]), undo(tx_push(X)) ), Xs), tx_pushed(L), R = r(Xs, L)"),
+    (
+        "txd04",
+        raw"findall(X, ( member(X, [1,2,3]), undo(tx_push(X)) ), Xs), tx_pushed(L), R = r(Xs, L)"
+    ),
     ("txd05", raw"( undo(fail), fail ; true ), R = ok"),
     ("txd06", raw"( Y = 7, undo(tx_push(Y)), fail ; true ), tx_pushed(L), R = L"),
     ("txd07", raw"( once(undo(tx_push(a))), fail ; true ), tx_pushed(L), R = L"),
-    ("txd08", raw"( undo(catch(undo(true), error(E, _), tx_push(E))), fail ; true ), tx_pushed(L), R = L"),
-    ("txd11", raw"( member(X, [1,2]), undo(tx_push(X)), X >= 2 -> true ; true ), tx_pushed(L), R = L"),
+    (
+        "txd08",
+        raw"( undo(catch(undo(true), error(E, _), tx_push(E))), fail ; true ), tx_pushed(L), R = L"
+    ),
+    (
+        "txd11",
+        raw"( member(X, [1,2]), undo(tx_push(X)), X >= 2 -> true ; true ), tx_pushed(L), R = L"
+    ),
     ("txd12", raw"( undo(tx_push(a)), undo(tx_push(b)) ), tx_pushed(L), R = L"),
-    ("txd13", raw"( undo(tx_push(a)), ( undo(tx_push(b)), fail ; true ), tx_pushed(L0) ), tx_pushed(L), R = r(L0, L)"),
-    ("txd14", raw"tx_yn(( undo(tx_push(a)), !, fail ; true ), Y), tx_pushed(L), R = r(Y, L)"),
+    (
+        "txd13",
+        raw"( undo(tx_push(a)), ( undo(tx_push(b)), fail ; true ), tx_pushed(L0) ), tx_pushed(L), R = r(L0, L)"
+    ),
+    (
+        "txd14",
+        raw"tx_yn(( undo(tx_push(a)), !, fail ; true ), Y), tx_pushed(L), R = r(Y, L)"
+    ),
     ("txd15", raw"( undo(tx_push(a)), \+ fail, fail ; true ), tx_pushed(L), R = L"),
     ("txd16", raw"( undo(tx_push(f(_))), fail ; true ), tx_pushed(L), R = L"),
     ("txd17", raw"( undo((tx_push(a), tx_push(b))), fail ; true ), tx_pushed(L), R = L"),
-    ("txd18", raw"( undo(tx_push(1.5)), undo(tx_push(abc)), fail ; true ), tx_pushed(L), R = L"),
+    (
+        "txd18",
+        raw"( undo(tx_push(1.5)), undo(tx_push(abc)), fail ; true ), tx_pushed(L), R = L"
+    ),
     ("txd19", raw"( undo(user:tx_push(a)), fail ; true ), tx_pushed(L), R = L"),
     ("txd21", raw"catch(( undo(tx_push(a)), throw(x) ), x, true), tx_pushed(L), R = L"),
-    ("txd22", raw"( transaction(( undo(tx_push(a)), assertz(tx_p(1)) )), fail ; true ), tx_pushed(L), tx_all(tx_p, P), R = r(L, P)"),
-    ("txe01", raw"assertz(tx_e(1)), nb_setval(tx_log, []), assertz(tx_e(2)), tx_log(L), R = L"),
+    (
+        "txd22",
+        raw"( transaction(( undo(tx_push(a)), assertz(tx_p(1)) )), fail ; true ), tx_pushed(L), tx_all(tx_p, P), R = r(L, P)"
+    ),
+    (
+        "txe01",
+        raw"assertz(tx_e(1)), nb_setval(tx_log, []), assertz(tx_e(2)), tx_log(L), R = L"
+    ),
     ("txe02", raw"transaction(assertz(tx_e(1))), tx_log(L), R = L"),
-    ("txe03", raw"transaction(user:(assertz(tx_e(1)), assertz(tx_e(2)), tx_log(In)), [bulk(true)]), tx_log(Out), R = r(In, Out)"),
-    ("txe04", raw"transaction(user:(assertz(tx_e(1)), assertz(tx_e(2)), tx_log(In)), [bulk(false)]), tx_log(Out), R = r(In, Out)"),
-    ("txe05", raw"transaction(user:(assertz(tx_e(1)), assertz(tx_e(2)), tx_log(In)), []), tx_log(Out), R = r(In, Out)"),
+    (
+        "txe03",
+        raw"transaction(user:(assertz(tx_e(1)), assertz(tx_e(2)), tx_log(In)), [bulk(true)]), tx_log(Out), R = r(In, Out)"
+    ),
+    (
+        "txe04",
+        raw"transaction(user:(assertz(tx_e(1)), assertz(tx_e(2)), tx_log(In)), [bulk(false)]), tx_log(Out), R = r(In, Out)"
+    ),
+    (
+        "txe05",
+        raw"transaction(user:(assertz(tx_e(1)), assertz(tx_e(2)), tx_log(In)), []), tx_log(Out), R = r(In, Out)"
+    ),
     ("txe06", raw"tx_yn(transaction((assertz(tx_e(1)), fail)), Y), tx_log(L), R = r(Y, L)"),
-    ("txe07", raw"assertz(tx_e(1)), nb_setval(tx_log, []), transaction(retract(tx_e(1))), tx_log(L), R = L"),
-    ("txe08", raw"transaction(user:(transaction(user:(assertz(tx_e(1)), assertz(tx_e(2))), [bulk(true)]), tx_log(In))), tx_log(Out), R = r(In, Out)"),
-    ("txe09", raw"transaction(user:(assertz(tx_e(1)), transaction(user:assertz(tx_e(2)), [bulk(true)]), tx_log(In))), tx_log(Out), R = r(In, Out)"),
-    ("txe10", raw"tx_yn(transaction(user:(assertz(tx_e(1)), fail), [bulk(true)]), Y), tx_log(L), R = r(Y, L)"),
+    (
+        "txe07",
+        raw"assertz(tx_e(1)), nb_setval(tx_log, []), transaction(retract(tx_e(1))), tx_log(L), R = L"
+    ),
+    (
+        "txe08",
+        raw"transaction(user:(transaction(user:(assertz(tx_e(1)), assertz(tx_e(2))), [bulk(true)]), tx_log(In))), tx_log(Out), R = r(In, Out)"
+    ),
+    (
+        "txe09",
+        raw"transaction(user:(assertz(tx_e(1)), transaction(user:assertz(tx_e(2)), [bulk(true)]), tx_log(In))), tx_log(Out), R = r(In, Out)"
+    ),
+    (
+        "txe10",
+        raw"tx_yn(transaction(user:(assertz(tx_e(1)), fail), [bulk(true)]), Y), tx_log(L), R = r(Y, L)"
+    ),
     ("txe11", raw"snapshot((assertz(tx_e(1)), tx_log(In))), tx_log(Out), R = r(In, Out)"),
-    ("txe12", raw"assertz(tx_e(1)), nb_setval(tx_log, []), transaction(user:retractall(tx_e(_)), [bulk(true)]), tx_log(L), R = L"),
-    ("txx01", raw"transaction((assertz(tx_p(1)), tx_yn(transaction((retract(tx_p(1)), fail)), Y), tx_all(tx_p, L))), R = r(Y, L)"),
-    ("txx02", raw"transaction((assertz(tx_p(1)), transaction(retract(tx_p(1))), tx_all(tx_p, In))), R = In"),
-    ("txx03", raw"assertz(tx_p(1)), retract(tx_p(1)), transaction(tx_all(tx_p, In)), R = In"),
-    ("txx04", raw"assertz(tx_p(1)), transaction((retract(tx_p(1)), transaction(tx_all(tx_p, In)))), R = In"),
-    ("txx05", raw"assertz(tx_p(0)), predicate_property(tx_p(_), last_modified_generation(G0)), transaction(assertz(tx_p(1))), predicate_property(tx_p(_), last_modified_generation(G1)), snapshot(assertz(tx_p(2))), predicate_property(tx_p(_), last_modified_generation(G2)), retract(tx_p(0)), predicate_property(tx_p(_), last_modified_generation(G3)), ( G0 < G1 -> A = lt ; A = ge ), ( G1 == G2 -> B = eq ; B = ne ), ( G2 < G3 -> C = lt ; C = ge ), R = r(A, B, C)"),
-    ("txx05b", raw"assertz(tx_p(0)), predicate_property(tx_p(_), last_modified_generation(G0)), transaction((assertz(tx_p(1)), predicate_property(tx_p(_), last_modified_generation(G1)))), ( G0 < G1 -> A = lt ; A = ge ), R = A"),
-    ("txx05c", raw"assertz(tx_p(0)), predicate_property(tx_p(_), last_modified_generation(G0)), tx_yn(transaction((assertz(tx_p(1)), fail)), _), predicate_property(tx_p(_), last_modified_generation(G1)), ( G0 == G1 -> A = eq ; A = ne ), R = A"),
-    ("txx06", raw"assertz(tx_p(1)), findall(X, (tx_p(X), (X == 1 -> transaction(assertz(tx_p(2))) ; true)), L), tx_all(tx_p, All), R = r(L, All)"),
-    ("txx07", raw"assertz(tx_p(1)), assertz(tx_p(2)), transaction(retract(tx_p(1))), predicate_property(tx_p(_), number_of_clauses(N)), R = N"),
-    ("txx08", raw"transaction(assertz(tx_p(1))), tx_yn(transaction((assertz(tx_p(2)), fail)), Y), tx_all(tx_p, L), R = r(Y, L)"),
-    ("txx09", raw"tx_yn(transaction((assertz(tx_p(1)), fail)), _), predicate_property(tx_p(_), number_of_clauses(N)), R = N"),
-    ("txx10", raw"tx_fclean, assertz(tx_f(0)), nb_setval(tx_full, []), tx_yn(transaction(user:(assertz(tx_f(1)), asserta(tx_f(2)), retract(tx_f(0)), fail)), Y), tx_flog(L), R = r(Y, L)"),
-    ("txx11", raw"transaction(transaction(once(findnsols(3, N/A, (current_transaction(G), functor(G, N, A)), L)))), R = L"),
+    (
+        "txe12",
+        raw"assertz(tx_e(1)), nb_setval(tx_log, []), transaction(user:retractall(tx_e(_)), [bulk(true)]), tx_log(L), R = L"
+    ),
+    (
+        "txx01",
+        raw"transaction((assertz(tx_p(1)), tx_yn(transaction((retract(tx_p(1)), fail)), Y), tx_all(tx_p, L))), R = r(Y, L)"
+    ),
+    (
+        "txx02",
+        raw"transaction((assertz(tx_p(1)), transaction(retract(tx_p(1))), tx_all(tx_p, In))), R = In"
+    ),
+    (
+        "txx03",
+        raw"assertz(tx_p(1)), retract(tx_p(1)), transaction(tx_all(tx_p, In)), R = In"
+    ),
+    (
+        "txx04",
+        raw"assertz(tx_p(1)), transaction((retract(tx_p(1)), transaction(tx_all(tx_p, In)))), R = In"
+    ),
+    (
+        "txx05",
+        raw"assertz(tx_p(0)), predicate_property(tx_p(_), last_modified_generation(G0)), transaction(assertz(tx_p(1))), predicate_property(tx_p(_), last_modified_generation(G1)), snapshot(assertz(tx_p(2))), predicate_property(tx_p(_), last_modified_generation(G2)), retract(tx_p(0)), predicate_property(tx_p(_), last_modified_generation(G3)), ( G0 < G1 -> A = lt ; A = ge ), ( G1 == G2 -> B = eq ; B = ne ), ( G2 < G3 -> C = lt ; C = ge ), R = r(A, B, C)"
+    ),
+    (
+        "txx05b",
+        raw"assertz(tx_p(0)), predicate_property(tx_p(_), last_modified_generation(G0)), transaction((assertz(tx_p(1)), predicate_property(tx_p(_), last_modified_generation(G1)))), ( G0 < G1 -> A = lt ; A = ge ), R = A"
+    ),
+    (
+        "txx05c",
+        raw"assertz(tx_p(0)), predicate_property(tx_p(_), last_modified_generation(G0)), tx_yn(transaction((assertz(tx_p(1)), fail)), _), predicate_property(tx_p(_), last_modified_generation(G1)), ( G0 == G1 -> A = eq ; A = ne ), R = A"
+    ),
+    (
+        "txx06",
+        raw"assertz(tx_p(1)), findall(X, (tx_p(X), (X == 1 -> transaction(assertz(tx_p(2))) ; true)), L), tx_all(tx_p, All), R = r(L, All)"
+    ),
+    (
+        "txx07",
+        raw"assertz(tx_p(1)), assertz(tx_p(2)), transaction(retract(tx_p(1))), predicate_property(tx_p(_), number_of_clauses(N)), R = N"
+    ),
+    (
+        "txx08",
+        raw"transaction(assertz(tx_p(1))), tx_yn(transaction((assertz(tx_p(2)), fail)), Y), tx_all(tx_p, L), R = r(Y, L)"
+    ),
+    (
+        "txx09",
+        raw"tx_yn(transaction((assertz(tx_p(1)), fail)), _), predicate_property(tx_p(_), number_of_clauses(N)), R = N"
+    ),
+    (
+        "txx10",
+        raw"tx_fclean, assertz(tx_f(0)), nb_setval(tx_full, []), tx_yn(transaction(user:(assertz(tx_f(1)), asserta(tx_f(2)), retract(tx_f(0)), fail)), Y), tx_flog(L), R = r(Y, L)"
+    ),
+    (
+        "txx11",
+        raw"transaction(transaction(once(findnsols(3, N/A, (current_transaction(G), functor(G, N, A)), L)))), R = L"
+    ),
     ("txx11b", raw"transaction((transaction(true), tx_cur(F))), R = F"),
-    ("txx11c", raw"transaction((transaction(true), once(findnsols(3, N/A, (current_transaction(G), functor(G, N, A)), L)))), R = L"),
-    ("txx12", raw"tx_fclean, transaction((transaction(user:assertz(tx_f(1)), [bulk(true)]), assertz(tx_f(2)))), tx_flog(L), R = L"),
-    ("txx12b", raw"tx_fclean, transaction(user:(transaction(user:assertz(tx_f(1)), [bulk(true)]), assertz(tx_f(2)), tx_flog(In)), [bulk(false)]), tx_flog(Out), R = r(In, Out)"),
-    ("txx13", raw"transaction((assertz(tx_p(1)), transaction(true), retract(tx_p(1)), predicate_property(tx_p(_), number_of_clauses(N)))), R = N"),
-    ("txx13b", raw"transaction((assertz(tx_p(1)), transaction(true), retract(tx_p(1)))), predicate_property(tx_p(_), number_of_clauses(N)), R = N"),
-    ("txx14", raw"transaction((assertz(tx_p(1)), assertz(tx_p(2)), transaction(retract(tx_p(1))), transaction_updates(U), tx_kinds(U, As))), R = As"),
-    ("txx14b", raw"transaction((assertz(tx_p(1)), assertz(tx_p(2)), asserta(tx_p(0)), transaction(retract(tx_p(2))), assertz(tx_q(5)), transaction_updates(U), tx_kinds(U, As))), R = As"),
-    ("txx15", raw"tx_fclean, transaction(user:(transaction(user:(assertz(tx_f(1)), fail), [bulk(true)]) -> true ; true)), tx_flog(L), R = L"),
-    ("txx15b", raw"tx_fclean, assertz(tx_f(1)), nb_setval(tx_full, []), transaction(user:(transaction(user:retract(tx_f(1)), [bulk(true)]), tx_flog(In)), [bulk(true)]), tx_flog(Out), R = r(In, Out)"),
-    ("txx15c", raw"tx_fclean, assertz(tx_f(1)), assertz(tx_f(2)), nb_setval(tx_full, []), transaction(user:(assertz(tx_f(3)), transaction(user:retract(tx_f(1)), [bulk(true)]), tx_flog(In)), []), tx_flog(Out), R = r(In, Out)"),
-    ("txx17a", raw"tx_gclean(1), catch(transaction(user:assertz(tx_g(1)), []), E, true), nb_getval(tx_gn, N), tx_all(tx_g, L), R = r(E, N, L)"),
-    ("txx17b", raw"tx_gclean(2), catch(transaction(user:assertz(tx_g(1)), [bulk(true)]), E, true), nb_getval(tx_gn, N), tx_all(tx_g, L), R = r(E, N, L)"),
-    ("txx17c", raw"tx_gclean(2), tx_yn(catch(transaction(user:assertz(tx_g(1)), [bulk(true)]), _, fail), Y), nb_getval(tx_gn, N), tx_all(tx_g, L), R = r(Y, N, L)"),
-    ("txx17d", raw"tx_gclean(9), transaction(user:assertz(tx_g(1)), [bulk(true)]), nb_getval(tx_gn, N), tx_all(tx_g, L), R = r(N, L)"),
-    ("txx17e", raw"tx_gclean(3), catch(transaction(user:(assertz(tx_g(1)), assertz(tx_g(2))), [bulk(true)]), E, true), nb_getval(tx_gn, N), tx_all(tx_g, L), R = r(E, N, L)"),
+    (
+        "txx11c",
+        raw"transaction((transaction(true), once(findnsols(3, N/A, (current_transaction(G), functor(G, N, A)), L)))), R = L"
+    ),
+    (
+        "txx12",
+        raw"tx_fclean, transaction((transaction(user:assertz(tx_f(1)), [bulk(true)]), assertz(tx_f(2)))), tx_flog(L), R = L"
+    ),
+    (
+        "txx12b",
+        raw"tx_fclean, transaction(user:(transaction(user:assertz(tx_f(1)), [bulk(true)]), assertz(tx_f(2)), tx_flog(In)), [bulk(false)]), tx_flog(Out), R = r(In, Out)"
+    ),
+    (
+        "txx13",
+        raw"transaction((assertz(tx_p(1)), transaction(true), retract(tx_p(1)), predicate_property(tx_p(_), number_of_clauses(N)))), R = N"
+    ),
+    (
+        "txx13b",
+        raw"transaction((assertz(tx_p(1)), transaction(true), retract(tx_p(1)))), predicate_property(tx_p(_), number_of_clauses(N)), R = N"
+    ),
+    (
+        "txx14",
+        raw"transaction((assertz(tx_p(1)), assertz(tx_p(2)), transaction(retract(tx_p(1))), transaction_updates(U), tx_kinds(U, As))), R = As"
+    ),
+    (
+        "txx14b",
+        raw"transaction((assertz(tx_p(1)), assertz(tx_p(2)), asserta(tx_p(0)), transaction(retract(tx_p(2))), assertz(tx_q(5)), transaction_updates(U), tx_kinds(U, As))), R = As"
+    ),
+    (
+        "txx15",
+        raw"tx_fclean, transaction(user:(transaction(user:(assertz(tx_f(1)), fail), [bulk(true)]) -> true ; true)), tx_flog(L), R = L"
+    ),
+    (
+        "txx15b",
+        raw"tx_fclean, assertz(tx_f(1)), nb_setval(tx_full, []), transaction(user:(transaction(user:retract(tx_f(1)), [bulk(true)]), tx_flog(In)), [bulk(true)]), tx_flog(Out), R = r(In, Out)"
+    ),
+    (
+        "txx15c",
+        raw"tx_fclean, assertz(tx_f(1)), assertz(tx_f(2)), nb_setval(tx_full, []), transaction(user:(assertz(tx_f(3)), transaction(user:retract(tx_f(1)), [bulk(true)]), tx_flog(In)), []), tx_flog(Out), R = r(In, Out)"
+    ),
+    (
+        "txx17a",
+        raw"tx_gclean(1), catch(transaction(user:assertz(tx_g(1)), []), E, true), nb_getval(tx_gn, N), tx_all(tx_g, L), R = r(E, N, L)"
+    ),
+    (
+        "txx17b",
+        raw"tx_gclean(2), catch(transaction(user:assertz(tx_g(1)), [bulk(true)]), E, true), nb_getval(tx_gn, N), tx_all(tx_g, L), R = r(E, N, L)"
+    ),
+    (
+        "txx17c",
+        raw"tx_gclean(2), tx_yn(catch(transaction(user:assertz(tx_g(1)), [bulk(true)]), _, fail), Y), nb_getval(tx_gn, N), tx_all(tx_g, L), R = r(Y, N, L)"
+    ),
+    (
+        "txx17d",
+        raw"tx_gclean(9), transaction(user:assertz(tx_g(1)), [bulk(true)]), nb_getval(tx_gn, N), tx_all(tx_g, L), R = r(N, L)"
+    ),
+    (
+        "txx17e",
+        raw"tx_gclean(3), catch(transaction(user:(assertz(tx_g(1)), assertz(tx_g(2))), [bulk(true)]), E, true), nb_getval(tx_gn, N), tx_all(tx_g, L), R = r(E, N, L)"
+    )
 ]
 
 const _TX_PINNED = [
@@ -409,13 +694,14 @@ const _TX_PINNED = [
     "t_txx17b c[116,95,116,120,120,49,55,98]/1(c[114]/3(c[116,120,95,98,111,111,109]/1(i2),i2,nil))",
     "t_txx17c c[116,95,116,120,120,49,55,99]/1(c[114]/3(a[110,111],i2,nil))",
     "t_txx17d c[116,95,116,120,120,49,55,100]/1(c[114]/2(i2,c[91,124,93]/2(i1,nil)))",
-    "t_txx17e c[116,95,116,120,120,49,55,101]/1(c[114]/3(c[116,120,95,98,111,111,109]/1(i3),i3,nil))",
+    "t_txx17e c[116,95,116,120,120,49,55,101]/1(c[114]/3(c[116,120,95,98,111,111,109]/1(i3),i3,nil))"
 ]
 
 "The program text with the cases appended."
 _tx_text(program::String, cases) =
     program * join([
-        "t_$(id)(R) :- catch((tx_clean, $g), error(SsuE, _), R = raised(SsuE)).\n" for (id, g) in cases
+        "t_$(id)(R) :- catch((tx_clean, $g), error(SsuE, _), R = raised(SsuE)).\n" for
+        (id, g) in cases
     ])
 
 "A kernel with the program consulted: `(gd, ld, first line of the driver's output)`."
@@ -478,7 +764,9 @@ end
     for pre in ("txc", "txs", "txn", "txu", "txr", "txd", "txe", "txx")
         ids = [id for (id, _) in _TX_CASES if startswith(id, pre)]
         @test !isempty(ids)
-        @test length([l for l in _TX_PINNED if any(id -> l == "t_$id" || startswith(l, "t_$id "), ids)]) ==
+        @test length([
+            l for l in _TX_PINNED if any(id -> l == "t_$id" || startswith(l, "t_$id "), ids)
+        ]) ==
             length(ids)
     end
     ans(id) = begin
@@ -496,7 +784,7 @@ end
     @test ans("txd01") != ans("txd02")          # two undo goals run newest first
     @test ans("txe03") != ans("txe04")          # bulk(true): the events again at the commit
     @test ans("txe08") != ans("txe09")          # a nested bulk(true) in a fresh outer raises no event (upstream quirk)
-    val(id) = (l = ans(id); l == "FAILS" ? l : l[(findfirst('(', l) + 1):(end - 1)])       # the answer without the `t_<id>/1(` wrapper
+    val(id) = (l=ans(id); l == "FAILS" ? l : l[(findfirst('(', l) + 1):(end - 1)])       # the answer without the `t_<id>/1(` wrapper
     @test val("txx02") == "nil"                 # a nested retract of the parent's own clause: the parent no longer sees it
     @test val("txx01") != val("txx02")          # ... and when that nested level is discarded the clause is back
     @test val("txx05") == "c[114]/3(a[108,116],a[101,113],a[108,116])"      # r(lt, eq, lt): a commit and a retract move the last-modified generation, a snapshot does not
@@ -521,14 +809,18 @@ end
 # Every txd row asks `tx_pushed(L)`, a predicate call, afterwards, and the call hook (depart_or_retry_continue) runs the goals by
 # then; here the query ends at `R = x` with no call in between, so the schedule must already be empty (and the goal pushed).
 @testset "undo goals run at the backtrack, not at the next call (txx16)" begin
-    gd, ld, st = _tx_load(_TX_PROGRAM * "tx_w16(R) :- ( undo(tx_push(a)), fail ; R = x ).\n")
+    gd, ld, st = _tx_load(
+        _TX_PROGRAM * "tx_w16(R) :- ( undo(tx_push(a)), fail ; R = x ).\n"
+    )
     @test st == "ok"
     proc = LK.isCurrentProcedure(sym_key(_txs("tx_w16")), 1, LK.MODULE_user(gd))
     @test proc !== nothing
     fid = LK.PL_open_foreign_frame(ld)
     a = LK.PL_new_term_refs(ld, 1)
     LK.putSlotValue!(ld, a + 1, mk_var(_TX, LK.fresh_var_keys!(1)), LK.PutVarMap())
-    qid = LK.PL_open_query(gd, ld, nothing, LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS, proc, a)
+    qid = LK.PL_open_query(
+        gd, ld, nothing, LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS, proc, a
+    )
     rc = LK.PL_next_solution(gd, ld, qid)
     @test rc == LK.PL_S_TRUE || rc == LK.PL_S_LAST
     @test _tx_enc(only(lk_answers(ld, (a:a)...))) == "a[120]"        # R = x

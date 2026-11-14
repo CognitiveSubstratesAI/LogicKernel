@@ -199,56 +199,134 @@ sh(X) :- between(1, 10, X).
 """
 
 const _TZ_CASES = [
-    ("ad01", "answer_discard:lazy", raw"""
-abolish_all_tables, all(X, p(X), L), assertion(length(L, 100)), ( compiled(p(_)) -> Compiled = true ; Compiled = false ), R = Compiled"""),
-    ("ad02", "answer_discard:lazy_deep", raw"""
-abolish_all_tables, all(X, deep(X), [_]), nodes(deep(_), N), R = N"""),
-    ("ad03", "answer_discard:lazy_deep_flag", raw"""
-abolish_all_tables, with_compile_threshold(1000000, all(X, deep(X), [_])), ( compiled(deep(_)) -> Compiled = true ; Compiled = false ), R = Compiled"""),
-    ("ad04", "answer_discard:lazy_flag_zero", raw"""
-abolish_all_tables, with_compile_threshold(0, all(X, p(X), L)), assertion(length(L, 100)), nodes(p(_), N), R = N"""),
-    ("ad07", "answer_discard:discard", raw"""
-abolish_all_tables, call_twice(p(_), L), assertion(length(L, 100)), answer_trie(p(_), T), assertion(trie_property(T, value_count(100))), nodes(p(_), N), all(p(X), p(X), L2), assertion(L2 == L), R = N"""),
-    ("ad08", "answer_discard:restore", raw"""
-abolish_all_tables, call_twice(p(_), L0), answer_trie(p(_), T), all(p(X), trie_gen(T, ret(X)), L), assertion(trie_property(T, value_count(100))), nodes(p(_), N), assertion(N > 1), all(p(X), p(X), L2), assertion(L2 == L0), ( L == L0, L0 \== [] -> R = equal ; R = differ )"""),
-    ("ad09", "answer_discard:restore_lookup", raw"""
-abolish_all_tables, call_twice(p(_), _), answer_trie(p(_), T), assertion(trie_lookup(T, ret(42), _)), assertion(\+ trie_lookup(T, ret(142), _)), R = ok"""),
-    ("ad10", "answer_discard:kinds", raw"""
-abolish_all_tables, all(X, mix(X), L0), call_twice(mix(_), _), assertion(nodes(mix(_), 1)), all(X, mix(X), L1), assertion(L1 == L0), answer_trie(mix(_), T), all(X, trie_gen(T, ret(X)), L), ( L == L0, L0 \== [] -> R = equal ; R = differ )"""),
-    ("ad11", "answer_discard:nonground", raw"""
-abolish_all_tables, call_twice(ng(_), _), assertion(nodes(ng(_), 1)), findall(X, ng(X), L), assertion(length(L, 3)), memberchk(h(A,B), L), assertion(A == B), R = ok"""),
-    ("ad13", "answer_discard:tnot", raw"""
-abolish_all_tables, call_twice(tz, _), call_twice(tp, _), assertion(tnot(tz)), assertion(\+ tnot(tp)), R = ok"""),
-    ("ad14", "answer_discard:abolish", raw"""
-abolish_all_tables, call_twice(p(_), L0), abolish_all_tables, all(p(X), p(X), L), ( L == L0, L0 \== [] -> R = equal ; R = differ )"""),
-    ("ad15", "answer_discard:conditional", raw"""
-abolish_all_tables, call_twice(und(_), _), nodes(und(_), N), call_delays(und(1), Delays), assertion(Delays \== true), ( N > 1 -> R = ok ; R = bad(N) )"""),
-    ("ad16", "answer_discard:incremental", raw"""
-abolish_all_tables, call_twice(ip(_), _), nodes(ip(_), N), assertion(N > 1), add_d(2), all(X, ip(X), L), del_d(2), R = L"""),
-    ("ad17", "answer_discard:incremental_single", raw"""
-abolish_all_tables, call_twice(ip(_), _), ( compiled(ip(_)) -> C1 = true ; C1 = false ), ip(X), deterministic(Det), add_d(2), call_twice(ip(_), L), ( compiled(ip(_)) -> C2 = true ; C2 = false ), del_d(2), call_twice(ip(_), [ip(1)]), R = r(C1, X, Det, L, C2)"""),
-    ("ad19", "answer_discard:moded", raw"""
-abolish_all_tables, call_twice(mo(_,_), _), nodes(mo(_,_), N), assertion(N > 1), all(X-Y, mo(X,Y), L), R = L"""),
-    ("ad20", "answer_discard:subsumptive", raw"""
-abolish_all_tables, call_twice(su(_), _), nodes(su(_), N), assertion(N > 1), all(su(3), su(3), L), R = L"""),
+    (
+        "ad01",
+        "answer_discard:lazy",
+        raw"""
+abolish_all_tables, all(X, p(X), L), assertion(length(L, 100)), ( compiled(p(_)) -> Compiled = true ; Compiled = false ), R = Compiled"""
+    ),
+    (
+        "ad02",
+        "answer_discard:lazy_deep",
+        raw"""
+abolish_all_tables, all(X, deep(X), [_]), nodes(deep(_), N), R = N"""
+    ),
+    (
+        "ad03",
+        "answer_discard:lazy_deep_flag",
+        raw"""
+abolish_all_tables, with_compile_threshold(1000000, all(X, deep(X), [_])), ( compiled(deep(_)) -> Compiled = true ; Compiled = false ), R = Compiled"""
+    ),
+    (
+        "ad04",
+        "answer_discard:lazy_flag_zero",
+        raw"""
+abolish_all_tables, with_compile_threshold(0, all(X, p(X), L)), assertion(length(L, 100)), nodes(p(_), N), R = N"""
+    ),
+    (
+        "ad07",
+        "answer_discard:discard",
+        raw"""
+abolish_all_tables, call_twice(p(_), L), assertion(length(L, 100)), answer_trie(p(_), T), assertion(trie_property(T, value_count(100))), nodes(p(_), N), all(p(X), p(X), L2), assertion(L2 == L), R = N"""
+    ),
+    (
+        "ad08",
+        "answer_discard:restore",
+        raw"""
+abolish_all_tables, call_twice(p(_), L0), answer_trie(p(_), T), all(p(X), trie_gen(T, ret(X)), L), assertion(trie_property(T, value_count(100))), nodes(p(_), N), assertion(N > 1), all(p(X), p(X), L2), assertion(L2 == L0), ( L == L0, L0 \== [] -> R = equal ; R = differ )"""
+    ),
+    (
+        "ad09",
+        "answer_discard:restore_lookup",
+        raw"""
+abolish_all_tables, call_twice(p(_), _), answer_trie(p(_), T), assertion(trie_lookup(T, ret(42), _)), assertion(\+ trie_lookup(T, ret(142), _)), R = ok"""
+    ),
+    (
+        "ad10",
+        "answer_discard:kinds",
+        raw"""
+abolish_all_tables, all(X, mix(X), L0), call_twice(mix(_), _), assertion(nodes(mix(_), 1)), all(X, mix(X), L1), assertion(L1 == L0), answer_trie(mix(_), T), all(X, trie_gen(T, ret(X)), L), ( L == L0, L0 \== [] -> R = equal ; R = differ )"""
+    ),
+    (
+        "ad11",
+        "answer_discard:nonground",
+        raw"""
+abolish_all_tables, call_twice(ng(_), _), assertion(nodes(ng(_), 1)), findall(X, ng(X), L), assertion(length(L, 3)), memberchk(h(A,B), L), assertion(A == B), R = ok"""
+    ),
+    (
+        "ad13",
+        "answer_discard:tnot",
+        raw"""
+abolish_all_tables, call_twice(tz, _), call_twice(tp, _), assertion(tnot(tz)), assertion(\+ tnot(tp)), R = ok"""
+    ),
+    (
+        "ad14",
+        "answer_discard:abolish",
+        raw"""
+abolish_all_tables, call_twice(p(_), L0), abolish_all_tables, all(p(X), p(X), L), ( L == L0, L0 \== [] -> R = equal ; R = differ )"""
+    ),
+    (
+        "ad15",
+        "answer_discard:conditional",
+        raw"""
+abolish_all_tables, call_twice(und(_), _), nodes(und(_), N), call_delays(und(1), Delays), assertion(Delays \== true), ( N > 1 -> R = ok ; R = bad(N) )"""
+    ),
+    (
+        "ad16",
+        "answer_discard:incremental",
+        raw"""
+abolish_all_tables, call_twice(ip(_), _), nodes(ip(_), N), assertion(N > 1), add_d(2), all(X, ip(X), L), del_d(2), R = L"""
+    ),
+    (
+        "ad17",
+        "answer_discard:incremental_single",
+        raw"""
+abolish_all_tables, call_twice(ip(_), _), ( compiled(ip(_)) -> C1 = true ; C1 = false ), ip(X), deterministic(Det), add_d(2), call_twice(ip(_), L), ( compiled(ip(_)) -> C2 = true ; C2 = false ), del_d(2), call_twice(ip(_), [ip(1)]), R = r(C1, X, Det, L, C2)"""
+    ),
+    (
+        "ad19",
+        "answer_discard:moded",
+        raw"""
+abolish_all_tables, call_twice(mo(_,_), _), nodes(mo(_,_), N), assertion(N > 1), all(X-Y, mo(X,Y), L), R = L"""
+    ),
+    (
+        "ad20",
+        "answer_discard:subsumptive",
+        raw"""
+abolish_all_tables, call_twice(su(_), _), nodes(su(_), N), assertion(N > 1), all(su(3), su(3), L), R = L"""
+    )
 ]
 
 "Left to an owner (id, upstream unit, goal, owner): pinned and live-checked, not run on the kernel."
 const _TZ_LEFT = [
-    ("ad05", "answer_discard:flag_inherit", raw"""
-threads, with_compile_threshold(1000000, thread_join_true(( all(X, deep(X), [_]), \+ compiled(deep(_)) ))), R = ok""", "TH1"),
-    ("ad06", "answer_discard:flag_thread_local", raw"""
-threads, current_prolog_flag(table_compile_threshold, Old), thread_join_true(set_prolog_flag(table_compile_threshold, 7)), current_prolog_flag(table_compile_threshold, V), ( V == Old -> R = same ; R = changed )""", "TH1"),
-    ("ad12", "answer_discard:atom_gc", raw"""
-abolish_all_tables, findall(X, (between(1, 1000, I), atom_concat(discard_test_, I, X)), L0), \+ \+ call_twice(gen(_), _), assertion(nodes(gen(_), 1)), garbage_collect_atoms, findall(X, gen(X), L), ( L == L0, L0 \== [] -> R = equal ; R = differ )""", "GC"),
-    ("ad18", "answer_discard:shared", raw"""
-threads, abolish_all_tables, call_twice(sh(_), _), call_twice(sh(_), _), nodes(sh(_), N), ( N > 1 -> R = ok ; R = bad(N) )""", "TH1"),
-    ("ad21", "answer_discard:atom_keep_discarded", raw"""
-setup_call_cleanup(stop_gc_thread(Old), ( abolish_and_gc, \+ \+ call_twice(ga(_), _), assertion(nodes(ga(_), 1)), atom_count(borrow_a_, N), assertion(N == 1000), assertion(ga_ok), abolish_and_gc, atom_count(borrow_a_, N1), assertion(N1 == 0) ), set_prolog_gc_thread(Old)), R = ok""", "GC"),
-    ("ad22", "answer_discard:atom_keep_deep", raw"""
-setup_call_cleanup(stop_gc_thread(Old), ( abolish_and_gc, \+ \+ gal(_), assertion(nodes(gal(_), 1)), atom_count(borrow_l_, N), assertion(N == 100), \+ \+ ( gal(L), length(L, 100) ), abolish_and_gc, atom_count(borrow_l_, N1), assertion(N1 < 10) ), set_prolog_gc_thread(Old)), R = ok""", "GC"),
-    ("ad23", "answer_discard:atom_keep_reeval", raw"""
-setup_call_cleanup(stop_gc_thread(Old), ( abolish_and_gc, set_di(200), \+ \+ call_twice(gi(_), _), add_di(201), \+ \+ call_twice(gi(_), _), abolish_and_gc, set_di(0), atom_count(borrow_i_, N0), assertion(N0 == 0), set_di(200), \+ \+ call_twice(gi(_), _), add_di(201), garbage_collect_clauses, atom_count(borrow_i_, N), assertion(N == 200), \+ \+ ( findall(X, gi(X), L), length(L, 201) ), set_di(0), abolish_and_gc, atom_count(borrow_i_, N1), assertion(N1 == 0) ), set_prolog_gc_thread(Old)), R = ok""", "GC"),
+    ("ad05", "answer_discard:flag_inherit",
+        raw"""
+threads, with_compile_threshold(1000000, thread_join_true(( all(X, deep(X), [_]), \+ compiled(deep(_)) ))), R = ok""",
+        "TH1"),
+    ("ad06", "answer_discard:flag_thread_local",
+        raw"""
+threads, current_prolog_flag(table_compile_threshold, Old), thread_join_true(set_prolog_flag(table_compile_threshold, 7)), current_prolog_flag(table_compile_threshold, V), ( V == Old -> R = same ; R = changed )""",
+        "TH1"),
+    ("ad12", "answer_discard:atom_gc",
+        raw"""
+abolish_all_tables, findall(X, (between(1, 1000, I), atom_concat(discard_test_, I, X)), L0), \+ \+ call_twice(gen(_), _), assertion(nodes(gen(_), 1)), garbage_collect_atoms, findall(X, gen(X), L), ( L == L0, L0 \== [] -> R = equal ; R = differ )""",
+        "GC"),
+    ("ad18", "answer_discard:shared",
+        raw"""
+threads, abolish_all_tables, call_twice(sh(_), _), call_twice(sh(_), _), nodes(sh(_), N), ( N > 1 -> R = ok ; R = bad(N) )""",
+        "TH1"),
+    ("ad21", "answer_discard:atom_keep_discarded",
+        raw"""
+setup_call_cleanup(stop_gc_thread(Old), ( abolish_and_gc, \+ \+ call_twice(ga(_), _), assertion(nodes(ga(_), 1)), atom_count(borrow_a_, N), assertion(N == 1000), assertion(ga_ok), abolish_and_gc, atom_count(borrow_a_, N1), assertion(N1 == 0) ), set_prolog_gc_thread(Old)), R = ok""",
+        "GC"),
+    ("ad22", "answer_discard:atom_keep_deep",
+        raw"""
+setup_call_cleanup(stop_gc_thread(Old), ( abolish_and_gc, \+ \+ gal(_), assertion(nodes(gal(_), 1)), atom_count(borrow_l_, N), assertion(N == 100), \+ \+ ( gal(L), length(L, 100) ), abolish_and_gc, atom_count(borrow_l_, N1), assertion(N1 < 10) ), set_prolog_gc_thread(Old)), R = ok""",
+        "GC"),
+    ("ad23", "answer_discard:atom_keep_reeval",
+        raw"""
+setup_call_cleanup(stop_gc_thread(Old), ( abolish_and_gc, set_di(200), \+ \+ call_twice(gi(_), _), add_di(201), \+ \+ call_twice(gi(_), _), abolish_and_gc, set_di(0), atom_count(borrow_i_, N0), assertion(N0 == 0), set_di(200), \+ \+ call_twice(gi(_), _), add_di(201), garbage_collect_clauses, atom_count(borrow_i_, N), assertion(N == 200), \+ \+ ( findall(X, gi(X), L), length(L, 201) ), set_di(0), abolish_and_gc, atom_count(borrow_i_, N1), assertion(N1 == 0) ), set_prolog_gc_thread(Old)), R = ok""",
+        "GC")
 ]
 
 const _TZ_PINNED = [
@@ -268,7 +346,7 @@ const _TZ_PINNED = [
     "t_ad16 c[116,95,97,100,49,54]/1(c[91,124,93]/2(i1,c[91,124,93]/2(i2,nil)))",
     "t_ad17 c[116,95,97,100,49,55]/1(c[114]/5(a[102,97,108,115,101],i1,a[116,114,117,101],c[91,124,93]/2(c[105,112]/1(i1),c[91,124,93]/2(c[105,112]/1(i2),nil)),a[116,114,117,101]))",
     "t_ad19 c[116,95,97,100,49,57]/1(c[91,124,93]/2(c[45]/2(a[97],i3),nil))",
-    "t_ad20 c[116,95,97,100,50,48]/1(c[91,124,93]/2(c[115,117]/1(i3),nil))",
+    "t_ad20 c[116,95,97,100,50,48]/1(c[91,124,93]/2(c[115,117]/1(i3),nil))"
 ]
 
 "The answer the UPSTREAM test expects, run in swipl (`x_<id>(R) :- R = Expected`), as the driver encodes it."
@@ -288,7 +366,7 @@ const _TZ_UPSTREAM = [
     "c[91,124,93]/2(i1,c[91,124,93]/2(i2,nil))",
     "c[114]/5(a[102,97,108,115,101],i1,a[116,114,117,101],c[91,124,93]/2(c[105,112]/1(i1),c[91,124,93]/2(c[105,112]/1(i2),nil)),a[116,114,117,101])",
     "c[91,124,93]/2(c[45]/2(a[97],i3),nil)",
-    "c[91,124,93]/2(c[115,117]/1(i3),nil)",
+    "c[91,124,93]/2(c[115,117]/1(i3),nil)"
 ]
 
 const _TZ_LEFT_PINNED = [
@@ -298,7 +376,7 @@ const _TZ_LEFT_PINNED = [
     "t_ad18 c[116,95,97,100,49,56]/1(a[111,107])",
     "t_ad21 c[116,95,97,100,50,49]/1(a[111,107])",
     "t_ad22 c[116,95,97,100,50,50]/1(a[111,107])",
-    "t_ad23 c[116,95,97,100,50,51]/1(a[111,107])",
+    "t_ad23 c[116,95,97,100,50,51]/1(a[111,107])"
 ]
 
 const _TZ_LEFT_UPSTREAM = [
@@ -308,13 +386,14 @@ const _TZ_LEFT_UPSTREAM = [
     "a[111,107]",
     "a[111,107]",
     "a[111,107]",
-    "a[111,107]",
+    "a[111,107]"
 ]
 
 "The program text with the cases appended."
 _tz_text(program::String, cases) =
     program * join([
-        "t_$(id)(R) :- ( catch(($g), error(SsuE, _), R = raised(SsuE)) -> true ; R = failed ).\n" for (id, g) in cases
+        "t_$(id)(R) :- ( catch(($g), error(SsuE, _), R = raised(SsuE)) -> true ; R = failed ).\n"
+        for (id, g) in cases
     ])
 
 "A kernel with the program consulted: `(gd, ld, first line of the driver's output)`."
@@ -404,7 +483,9 @@ end
         @info "LIVE CHECK NOT RUN: `swipl` is not on PATH here. It runs in tools/run_tests.sh and CI."
     else
         f = joinpath(mktempdir(), "ts_upstream_swipl.pl")
-        all_cases = vcat([(id, g) for (id, _, g) in _TZ_CASES], [(id, g) for (id, _, g, _) in _TZ_LEFT])
+        all_cases = vcat(
+            [(id, g) for (id, _, g) in _TZ_CASES], [(id, g) for (id, _, g, _) in _TZ_LEFT]
+        )
         write(f, _tz_text(_TZ_PROGRAM * _TZ_LEFT_PROGRAM, all_cases))
         got = _tz_swipl_lines(f, ["t_$id" for (id, _) in all_cases])
         @test !isempty(got) && got == vcat(_TZ_PINNED, _TZ_LEFT_PINNED)

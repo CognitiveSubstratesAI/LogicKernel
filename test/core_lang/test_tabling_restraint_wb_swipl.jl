@@ -146,30 +146,78 @@ wire_of(error(resource_error(tripwire(W, T)), _), raised(W, K)) :- ( blob(T, tri
 """
 
 const _TW_CASES = [
-    ("wb01", "max_incomplete_subgoals with a passing hook trips once, at the limit (== limit)", raw"""
-retractall(tw(_,_)), abolish_all_tables, hooked(with_limit(max_incomplete_subgoals, 2, error, ch(0))), tripped(Ws), R = Ws"""),
-    ("wb02", "max_scc_subgoals 1: a merge of an SCC that started AT the limit trips (size0 <= limit)", raw"""
-abolish_all_tables, catch(with_limit(max_scc_subgoals, 1, error, lp(0)), E, true), ( nonvar(E) -> wire_of(E, R) ; R = no_error )"""),
-    ("wb03", "max_table_subgoal_size 2, hook passes: the lookup is retried unabstracted (get_answer_table goto retry)", raw"""
-retractall(tw(_,_)), abolish_all_tables, hooked(with_limit(max_table_subgoal_size, 2, error, findall(X, sh(f(f(f(X)))), L))), tripped(Ws), R = L-Ws"""),
-    ("wb04", "max_table_subgoal_size 2, action error: the predicate tripwire raises", raw"""
-abolish_all_tables, with_limit(max_table_subgoal_size, 2, error, findall(X, sh(f(f(f(X)))), _)), R = no_error"""),
-    ("wb05", "max_answers_for_subgoal 2, bounded_rationality: the general answer carries answer_count_restraint", raw"""
-abolish_all_tables, with_limit(max_answers_for_subgoal, 2, bounded_rationality, findall(X-P, call_residual_program(cnt(X), P), L)), R = L"""),
-    ("wb06", "max_answers_for_subgoal 2, action error: the worklist tripwire raises", raw"""
-abolish_all_tables, catch(with_limit(max_answers_for_subgoal, 2, error, findall(X, cnt(X), _)), E, true), ( nonvar(E) -> wire_of(E, R) ; R = no_error )"""),
-    ("wb07", "max_answers_for_subgoal 2, hook passes: the answer is added anyway (goto add_anyway)", raw"""
-retractall(tw(_,_)), abolish_all_tables, hooked(with_limit(max_answers_for_subgoal, 2, error, findall(X, cnt(X), L))), tripped(Ws), R = L-Ws"""),
-    ("wb08", "max_table_answer_size 0, bounded_rationality: the too deep answer is generalised and carries radial_restraint", raw"""
-abolish_all_tables, with_limit(max_table_answer_size, 0, bounded_rationality, findall(X-P, call_residual_program(big(X), P), L)), R = L"""),
-    ("wb09", "max_table_answer_size 0, action fail: the too deep answer is dropped", raw"""
-abolish_all_tables, with_limit(max_table_answer_size, 0, fail, findall(X, big(X), L)), R = L"""),
-    ("wb10", "max_table_answer_size 0, action error: the worklist tripwire raises", raw"""
-abolish_all_tables, catch(with_limit(max_table_answer_size, 0, error, findall(X, big(X), _)), E, true), ( nonvar(E) -> wire_of(E, R) ; R = no_error )"""),
-    ("wb11", "an incremental table whose only answer is replaced: the re-evaluation sets new_answer, the dependent table follows", raw"""
-abolish_all_tables, findall(X, jj(X), L0), retract(dd(1)), assertz(dd(2)), findall(X, jj(X), L1), retract(dd(2)), assertz(dd(1)), R = L0-L1"""),
-    ("wb12", "the dependency graph inside an evaluation that has a COMPLETED child component: only the active component is listed (sdg_collect)", raw"""
-sdg(pa, Cs, Ts, Es), R = r(Cs, Ts, Es)"""),
+    (
+        "wb01",
+        "max_incomplete_subgoals with a passing hook trips once, at the limit (== limit)",
+        raw"""
+retractall(tw(_,_)), abolish_all_tables, hooked(with_limit(max_incomplete_subgoals, 2, error, ch(0))), tripped(Ws), R = Ws"""
+    ),
+    (
+        "wb02",
+        "max_scc_subgoals 1: a merge of an SCC that started AT the limit trips (size0 <= limit)",
+        raw"""
+abolish_all_tables, catch(with_limit(max_scc_subgoals, 1, error, lp(0)), E, true), ( nonvar(E) -> wire_of(E, R) ; R = no_error )"""
+    ),
+    (
+        "wb03",
+        "max_table_subgoal_size 2, hook passes: the lookup is retried unabstracted (get_answer_table goto retry)",
+        raw"""
+retractall(tw(_,_)), abolish_all_tables, hooked(with_limit(max_table_subgoal_size, 2, error, findall(X, sh(f(f(f(X)))), L))), tripped(Ws), R = L-Ws"""
+    ),
+    (
+        "wb04",
+        "max_table_subgoal_size 2, action error: the predicate tripwire raises",
+        raw"""
+abolish_all_tables, with_limit(max_table_subgoal_size, 2, error, findall(X, sh(f(f(f(X)))), _)), R = no_error"""
+    ),
+    (
+        "wb05",
+        "max_answers_for_subgoal 2, bounded_rationality: the general answer carries answer_count_restraint",
+        raw"""
+abolish_all_tables, with_limit(max_answers_for_subgoal, 2, bounded_rationality, findall(X-P, call_residual_program(cnt(X), P), L)), R = L"""
+    ),
+    (
+        "wb06",
+        "max_answers_for_subgoal 2, action error: the worklist tripwire raises",
+        raw"""
+abolish_all_tables, catch(with_limit(max_answers_for_subgoal, 2, error, findall(X, cnt(X), _)), E, true), ( nonvar(E) -> wire_of(E, R) ; R = no_error )"""
+    ),
+    (
+        "wb07",
+        "max_answers_for_subgoal 2, hook passes: the answer is added anyway (goto add_anyway)",
+        raw"""
+retractall(tw(_,_)), abolish_all_tables, hooked(with_limit(max_answers_for_subgoal, 2, error, findall(X, cnt(X), L))), tripped(Ws), R = L-Ws"""
+    ),
+    (
+        "wb08",
+        "max_table_answer_size 0, bounded_rationality: the too deep answer is generalised and carries radial_restraint",
+        raw"""
+abolish_all_tables, with_limit(max_table_answer_size, 0, bounded_rationality, findall(X-P, call_residual_program(big(X), P), L)), R = L"""
+    ),
+    (
+        "wb09",
+        "max_table_answer_size 0, action fail: the too deep answer is dropped",
+        raw"""
+abolish_all_tables, with_limit(max_table_answer_size, 0, fail, findall(X, big(X), L)), R = L"""
+    ),
+    (
+        "wb10",
+        "max_table_answer_size 0, action error: the worklist tripwire raises",
+        raw"""
+abolish_all_tables, catch(with_limit(max_table_answer_size, 0, error, findall(X, big(X), _)), E, true), ( nonvar(E) -> wire_of(E, R) ; R = no_error )"""
+    ),
+    (
+        "wb11",
+        "an incremental table whose only answer is replaced: the re-evaluation sets new_answer, the dependent table follows",
+        raw"""
+abolish_all_tables, findall(X, jj(X), L0), retract(dd(1)), assertz(dd(2)), findall(X, jj(X), L1), retract(dd(2)), assertz(dd(1)), R = L0-L1"""
+    ),
+    (
+        "wb12",
+        "the dependency graph inside an evaluation that has a COMPLETED child component: only the active component is listed (sdg_collect)",
+        raw"""
+sdg(pa, Cs, Ts, Es), R = r(Cs, Ts, Es)"""
+    )
 ]
 
 const _TW_PINNED = [
@@ -185,13 +233,14 @@ const _TW_PINNED = [
     "t_wb09 c[116,95,119,98,48,57]/1(c[91,124,93]/2(c[102]/3(a[97],a[98],a[99]),c[91,124,93]/2(a[97],nil)))",
     "t_wb10 c[116,95,119,98,49,48]/1(c[114,97,105,115,101,100]/2(a[109,97,120,95,116,97,98,108,101,95,97,110,115,119,101,114,95,115,105,122,101],a[116,114,105,101]))",
     "t_wb11 c[116,95,119,98,49,49]/1(c[45]/2(c[91,124,93]/2(i1,nil),c[91,124,93]/2(i2,nil)))",
-    "t_wb12 c[116,95,119,98,49,50]/1(c[114]/3(c[91,124,93]/2(c[45]/2(i0,a[112,97]),nil),c[91,124,93]/2(c[116,97,98,108,101]/4(a[112,97],i0,i0,c[91,124,93]/2(a[112,101,110,100,105,110,103],nil)),nil),nil))",
+    "t_wb12 c[116,95,119,98,49,50]/1(c[114]/3(c[91,124,93]/2(c[45]/2(i0,a[112,97]),nil),c[91,124,93]/2(c[116,97,98,108,101]/4(a[112,97],i0,i0,c[91,124,93]/2(a[112,101,110,100,105,110,103],nil)),nil),nil))"
 ]
 
 "The program text with the cases appended."
 _tw_text(program::String, cases) =
     program * join([
-        "t_$(id)(R) :- ( catch(($g), error(SsuE, _), R = raised(SsuE)) -> true ; R = failed ).\n" for (id, g) in cases
+        "t_$(id)(R) :- ( catch(($g), error(SsuE, _), R = raised(SsuE)) -> true ; R = failed ).\n"
+        for (id, g) in cases
     ])
 
 "A kernel with the program consulted: `(gd, ld, first line of the driver's output)`."

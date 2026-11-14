@@ -26,7 +26,10 @@ const _TWM = LK.idg_mdep{_TW, _TWN}
 
 "The indices where two line lists differ (a missing line counts as a difference)."
 _tw_diff(lines::Vector{String}, pins::Vector{String}) =
-    [i for i in 1:max(length(lines), length(pins)) if i > length(lines) || i > length(pins) || lines[i] != pins[i]]
+    [
+        i for i in 1:max(length(lines), length(pins)) if
+        i > length(lines) || i > length(pins) || lines[i] != pins[i]
+    ]
 
 "One testset: `obs` (what the kernel did, through one extractor) equals `pin` (what pl-tabling.c does); the comparison can fail."
 function _tw_rows(name::String, obs::Vector{String}, pin::Vector{String})
@@ -39,14 +42,16 @@ function _tw_rows(name::String, obs::Vector{String}, pin::Vector{String})
         corrupt = copy(pin)
         corrupt[1] = corrupt[1] * "x"
         @test _tw_diff(obs, corrupt) == sort(union(_tw_diff(obs, pin), [1]))                    # a corrupted pin is flagged
-        @test _tw_diff(obs, vcat(pin, "extra")) == sort(union(_tw_diff(obs, pin), [length(pin) + 1]))   # an extra pin is flagged
-        @test _tw_diff(obs, pin[1:(end - 1)]) == sort(union(_tw_diff(obs, pin), [length(pin)]))        # a dropped pin is flagged
+        @test _tw_diff(obs, vcat(pin, "extra")) ==
+            sort(union(_tw_diff(obs, pin), [length(pin) + 1]))   # an extra pin is flagged
+        @test _tw_diff(obs, pin[1:(end - 1)]) ==
+            sort(union(_tw_diff(obs, pin), [length(pin)]))        # a dropped pin is flagged
     end
     return nothing
 end
 
 "A kernel (`gd`, `ld`) with no program."
-_tw_wb() = (gd = LK.PL_global_data{_TW}(); (gd, LK.PL_local_data{_TW}(gd)))
+_tw_wb() = (gd=LK.PL_global_data{_TW}(); (gd, LK.PL_local_data{_TW}(gd)))
 
 "A kernel with `d/1` (three clauses) and `e/1` (one) loaded: `(gd, ld, load status, def of d/1, def of e/1, the clauses of d/1)`."
 function _tw_world()
@@ -102,16 +107,26 @@ function _tw_answer!(tr, k::Integer)::Int
 end
 
 "The node ids of the live answers of `tr` (a value, `TN_PRIMARY`)."
-_tw_live(tr) = [i for i in 2:length(tr.nodes) if tr.nodes[i].value != 0 && (tr.nodes[i].flags & LK.TN_PRIMARY) != 0]
+_tw_live(tr) = [
+    i for i in 2:length(tr.nodes) if
+    tr.nodes[i].value != 0 && (tr.nodes[i].flags & LK.TN_PRIMARY) != 0
+]
 
 "Node ids as text: the name of each id given by `named` (`\"a1\" => id`), `?` for another."
-_tw_ids(ids, named::Pair...) = join([get(Dict{Int, String}(v => k for (k, v) in named), i, "?") for i in ids], ",")
+_tw_ids(ids, named::Pair...) =
+    join([get(Dict{Int, String}(v => k for (k, v) in named), i, "?") for i in ids], ",")
 
 "The actions of `tt` as text: `<label><answer>` each (`-0` for one `tt_abolish_table` cleared), a trie labelled by its serial."
 function _tw_acts(tt, named::Pair...)
     lab = Dict{Int, String}(t.serial => n for (n, t) in named)
 
-    return join([(x.atrie == 0 ? "-" : get(lab, x.atrie, "?")) * string(x.answer) for x in tt.actions], ",")
+    return join(
+        [
+            (x.atrie == 0 ? "-" : get(lab, x.atrie, "?")) * string(x.answer) for
+            x in tt.actions
+        ],
+        ","
+    )
 end
 
 "An action of the trail: a monotonic answer `node` of the trie numbered `serial`."
@@ -139,7 +154,8 @@ end
     rt, rn = _tw_node(ld)                                       # a table whose dynamic child names no predicate
     nt, nn = _tw_node(ld; wl=LK.WL_DYNAMIC)
     plain = LK.trie_create(_TW)                                 # a table with no IDG node
-    @test LK.idg_add_child(ld, pn, dn, 0, 0) && LK.idg_add_child(ld, en, eyn, 0, 0) && LK.idg_add_child(ld, qn, gn, 0, 0)
+    @test LK.idg_add_child(ld, pn, dn, 0, 0) && LK.idg_add_child(ld, en, eyn, 0, 0) &&
+        LK.idg_add_child(ld, qn, gn, 0, 0)
     @test LK.idg_add_child(ld, rn, nn, 0, 0)
 
     h(t) = string(LK.tt_has_modified_dependencies(ld, t))
@@ -153,7 +169,9 @@ end
     push!(obs, "notdynamic=" * h(qt))                           # the child names d/1 but is no dynamic call
     push!(obs, "nopredicate=" * h(rt))                          # a dynamic call without a predicate names none
     push!(obs, "plain=" * h(plain))                             # no IDG node: false
-    ld.transaction.predicates = Dict{LK.Definition{_TW}, LK.tr_gen_t}(def => LK.tr_gen_t(1), edef => LK.tr_gen_t(1))
+    ld.transaction.predicates = Dict{LK.Definition{_TW}, LK.tr_gen_t}(
+        def => LK.tr_gen_t(1), edef => LK.tr_gen_t(1)
+    )
     push!(obs, "both-p=" * h(pt) * ",e=" * h(et))
     ld.transaction.predicates = Dict{LK.Definition{_TW}, LK.tr_gen_t}()
     push!(obs, "empty=" * h(pt))
@@ -163,8 +181,9 @@ end
         "tt_has_modified_dependencies",
         obs,
         [
-            "outside=false", "p=true", "e=false", "notdynamic=false", "nopredicate=false", "plain=false",
-            "both-p=true,e=true", "empty=false", "none=false",
+            "outside=false", "p=true", "e=false", "notdynamic=false", "nopredicate=false",
+            "plain=false",
+            "both-p=true,e=true", "empty=false", "none=false"
         ]
     )
 end
@@ -176,7 +195,8 @@ end
 @testset "lg_clauses and tt_mono_status: old, new and mixed clauses, invalid dependencies (pl-tabling.c:7440)" begin
     gd, ld, st, def, edef, cls = _tw_world()
     @test st === :ok && length(cls) == 3
-    @test LK.M_INVALID_DEPS == 0 && LK.M_OLD_CLAUSES == 1 && LK.M_MIXED_CLAUSES == 2 && LK.M_NEW_CLAUSES == 3
+    @test LK.M_INVALID_DEPS == 0 && LK.M_OLD_CLAUSES == 1 && LK.M_MIXED_CLAUSES == 2 &&
+        LK.M_NEW_CLAUSES == 3
     pt, pn = _tw_node(ld; lazy=true, mono=true)                 # the lazy monotonic table
     dt, dn = _tw_node(ld; wl=LK.WL_DYNAMIC, pred=def)           # its dynamic call
     @test LK.idg_add_child(ld, pn, dn, 0, 0)
@@ -227,8 +247,9 @@ end
         "lg_clauses and tt_mono_status",
         obs,
         [
-            "empty=0,0/3", "old=1,0/1", "new=0,1/3", "mixed=1,1/2", "erased=0,0/3", "atmax=0,0/3", "belowbase=0,0/3",
-            "answer=0,0/3", "falsecount=1,0/0", "force=1,0/0", "valid=1,0/1",
+            "empty=0,0/3", "old=1,0/1", "new=0,1/3", "mixed=1,1/2", "erased=0,0/3",
+            "atmax=0,0/3", "belowbase=0,0/3",
+            "answer=0,0/3", "falsecount=1,0/0", "force=1,0/0", "valid=1,0/1"
         ]
     )
 end
@@ -253,7 +274,10 @@ end
     push!(obs, "gen0=$(tr.table_trail === nothing)|$(tracked(bt))")                  # no transaction: no trail, not tracked
     tr.generation = LK.gen_t(5)
     tt = LK.tt_trail(ld)
-    push!(obs, "once=$(LK.tt_trail(ld) === tt && tr.table_trail === tt && isempty(tt.tables) && isempty(tt.actions))")
+    push!(
+        obs,
+        "once=$(LK.tt_trail(ld) === tt && tr.table_trail === tt && isempty(tt.tables) && isempty(tt.actions))"
+    )
     LK.tt_add_table(ld, at, LK.TT_TBL_INVALIDATE)
     push!(
         obs,
@@ -277,8 +301,10 @@ end
         "the trail",
         obs,
         [
-            "trail0=true", "gen0=true|false", "once=true", "table=1,1,false", "answer=b7|1|true", "intables=1|false",
-            "notrail=1|false", "noidg=b7,p10|true", "again=b7,p10,b11|true", "alloc=b7,p10,b11,c12", "freed=0,0",
+            "trail0=true", "gen0=true|false", "once=true", "table=1,1,false",
+            "answer=b7|1|true", "intables=1|false",
+            "notrail=1|false", "noidg=b7,p10|true", "again=b7,p10,b11|true",
+            "alloc=b7,p10,b11,c12", "freed=0,0"
         ]
     )
 end
@@ -309,7 +335,13 @@ end
     _tw_rows(
         "tt_abolish_table",
         obs,
-        ["notrail=true", "before=a21,b22,a23", "abolish-a=-0,b22,-0", "unregistered=-0,b22,-0", "abolish-b=-0,-0,-0|3"]
+        [
+            "notrail=true",
+            "before=a21,b22,a23",
+            "abolish-a=-0,b22,-0",
+            "unregistered=-0,b22,-0",
+            "abolish-b=-0,-0,-0|3"
+        ]
     )
 end
 
@@ -327,7 +359,10 @@ end
     tt = tr.table_trail
     push!(obs, "before=$(length(tt.tables)),$(length(tt.actions))")
     rc = LK.transaction_commit_tables(ld)
-    push!(obs, "commit=$rc|$(tr.table_trail === nothing)|$(length(tt.tables)),$(length(tt.actions))")
+    push!(
+        obs,
+        "commit=$rc|$(tr.table_trail === nothing)|$(length(tt.tables)),$(length(tt.actions))"
+    )
     push!(obs, "untouched=$(an.falsecount),$(an.force_reeval)")      # a commit invalidates nothing
     _tw_rows(
         "transaction_commit_tables",
@@ -375,7 +410,10 @@ end
     p1 = _tw_answer!(plain, 1)
     p2 = _tw_answer!(plain, 2)
     LK.tt_rollback_answer(ld, plain, p1)
-    push!(obs, "noidg=live[$(_tw_ids(_tw_live(plain), "p1" => p1, "p2" => p2))],vc=$(plain.value_count)")
+    push!(
+        obs,
+        "noidg=live[$(_tw_ids(_tw_live(plain), "p1" => p1, "p2" => p2))],vc=$(plain.value_count)"
+    )
     _tw_rows(
         "tt_rollback_answer",
         obs,
@@ -383,7 +421,7 @@ end
             "lazy=live[a1,a2],q[a1,a2],vc=2>live[a2],q[a2],vc=1,pfc=0",
             "nonlazy=live[a1,a2],q[a1,a2],vc=2>live[a2],q[a1,a2],vc=1,pfc=0",
             "forced=live[a1,a2],q[a1,a2],vc=2>live[a2],q[a1,a2],vc=1,pfc=1",
-            "noidg=live[p2],vc=1",
+            "noidg=live[p2],vc=1"
         ]
     )
 end
@@ -399,7 +437,11 @@ end
     sym4 = LK.trie_symbol(gd, t4)
     t4.magic = Int32(0)
     @test LK.symbol_trie(gd, sym4) === nothing && LK.symbol_trie(gd, sym1) === t1
-    affected = Dict{UInt64, Int}(sym1 => LK.TT_TBL_INVALIDATE, sym2 => LK.TT_TBL_INVALIDATE, sym4 => LK.TT_TBL_INVALIDATE)
+    affected = Dict{UInt64, Int}(
+        sym1 => LK.TT_TBL_INVALIDATE,
+        sym2 => LK.TT_TBL_INVALIDATE,
+        sym4 => LK.TT_TBL_INVALIDATE
+    )
 
     st(n) = "fc$(n.falsecount),force=$(n.force_reeval)"
     obs = String[]
@@ -416,8 +458,10 @@ end
         "tt_rollback_tables",
         obs,
         [
-            "before=fc0,force=false,fc0,force=false,fc0,force=false", "rc=true", "n1=fc1,force=false", "n2=fc1,force=true",
-            "n3=fc0,force=false", "n4=fc0,force=false", "again=true|fc1,force=false|fc1,force=true", "empty=true|fc0,force=false",
+            "before=fc0,force=false,fc0,force=false,fc0,force=false", "rc=true",
+            "n1=fc1,force=false", "n2=fc1,force=true",
+            "n3=fc0,force=false", "n4=fc0,force=false",
+            "again=true|fc1,force=false|fc1,force=true", "empty=true|fc0,force=false"
         ]
     )
 end
@@ -432,10 +476,16 @@ end
     acts = [_tw_act(at.serial, a1), _tw_act(0, 0), _tw_act(bt.serial, b1)]       # the middle one was cleared by tt_abolish_table
 
     obs = String[]
-    push!(obs, "before=a[$(_tw_ids(_tw_live(at), "a1" => a1, "a2" => a2))],b[$(length(_tw_live(bt)))]")
+    push!(
+        obs,
+        "before=a[$(_tw_ids(_tw_live(at), "a1" => a1, "a2" => a2))],b[$(length(_tw_live(bt)))]"
+    )
     rc = LK.tt_rollback_actions(ld, acts)
     push!(obs, "rc=$rc")
-    push!(obs, "after=a[$(_tw_ids(_tw_live(at), "a1" => a1, "a2" => a2))],b[$(length(_tw_live(bt)))]")
+    push!(
+        obs,
+        "after=a[$(_tw_ids(_tw_live(at), "a1" => a1, "a2" => a2))],b[$(length(_tw_live(bt)))]"
+    )
     push!(obs, "kept=$(at.value_count),$(bt.value_count)")
     push!(obs, "empty=$(LK.tt_rollback_actions(ld, LK.tbl_trail_answer[]))")
     _tw_rows(
@@ -455,19 +505,32 @@ end
     tr.generation = LK.gen_t(5)
 
     obs = String[]
-    push!(obs, "notrail=$(LK.transaction_rollback_tables(ld))|$(tr.table_trail === nothing)|$(n1.falsecount)")
+    push!(
+        obs,
+        "notrail=$(LK.transaction_rollback_tables(ld))|$(tr.table_trail === nothing)|$(n1.falsecount)"
+    )
     LK.tt_add_table(ld, t1, LK.TT_TBL_INVALIDATE)
     LK.tt_alloc(ld, at, a1)
     tt = tr.table_trail
-    push!(obs, "before=$(length(tt.tables)),$(length(tt.actions))|live[$(_tw_ids(_tw_live(at), "a1" => a1, "a2" => a2))]|fc$(n1.falsecount)")
+    push!(
+        obs,
+        "before=$(length(tt.tables)),$(length(tt.actions))|live[$(_tw_ids(_tw_live(at), "a1" => a1, "a2" => a2))]|fc$(n1.falsecount)"
+    )
     rc = LK.transaction_rollback_tables(ld)
-    push!(obs, "rollback=$rc|$(tr.table_trail === nothing)|$(length(tt.tables)),$(length(tt.actions))")
-    push!(obs, "after=live[$(_tw_ids(_tw_live(at), "a1" => a1, "a2" => a2))]|fc$(n1.falsecount)")
+    push!(
+        obs,
+        "rollback=$rc|$(tr.table_trail === nothing)|$(length(tt.tables)),$(length(tt.actions))"
+    )
+    push!(
+        obs,
+        "after=live[$(_tw_ids(_tw_live(at), "a1" => a1, "a2" => a2))]|fc$(n1.falsecount)"
+    )
     _tw_rows(
         "transaction_rollback_tables",
         obs,
         [
-            "notrail=true|true|0", "before=1,1|live[a1,a2]|fc0", "rollback=true|true|0,0", "after=live[a2]|fc1",
+            "notrail=true|true|0", "before=1,1|live[a1,a2]|fc0", "rollback=true|true|0,0",
+            "after=live[a2]|fc1"
         ]
     )
 end
@@ -499,8 +562,9 @@ end
         "merge_tabling_trail",
         obs,
         [
-            "before=11,12|13,14", "into=11,12,13,14", "from=0,0", "tables=[100]", "empty-from=11,12,13,14",
-            "empty-into=15|0",
+            "before=11,12|13,14", "into=11,12,13,14", "from=0,0", "tables=[100]",
+            "empty-from=11,12,13,14",
+            "empty-into=15|0"
         ]
     )
 end
@@ -521,9 +585,13 @@ end
     obs = String[]
     push!(obs, "before=$(_tw_acts(tt, "a" => at, "b" => bt))|$(tracked(at)),$(tracked(bt))")
     LK.reset_answer_table_tracked(ld, bt)                           # not tracked: nothing
-    push!(obs, "untracked=$(_tw_acts(tt, "a" => at, "b" => bt))|$(tracked(at)),$(tracked(bt))")
+    push!(
+        obs, "untracked=$(_tw_acts(tt, "a" => at, "b" => bt))|$(tracked(at)),$(tracked(bt))"
+    )
     LK.reset_answer_table_tracked(ld, at)
-    push!(obs, "tracked=$(_tw_acts(tt, "a" => at, "b" => bt))|$(tracked(at)),$(tracked(bt))")
+    push!(
+        obs, "tracked=$(_tw_acts(tt, "a" => at, "b" => bt))|$(tracked(at)),$(tracked(bt))"
+    )
     LK.reset_answer_table_tracked(ld, at)                           # the flag is gone: nothing more happens
     push!(obs, "again=$(_tw_acts(tt, "a" => at, "b" => bt))|$(tracked(at))")
     tr.table_trail = nothing                                        # a tracked table with no trail: the flag goes, no error
@@ -534,8 +602,9 @@ end
         "reset_answer_table_tracked",
         obs,
         [
-            "before=a41,b42|true,false", "untracked=a41,b42|true,false", "tracked=-0,b42|false,false",
-            "again=-0,b42|false", "notrail=false|true",
+            "before=a41,b42|true,false", "untracked=a41,b42|true,false",
+            "tracked=-0,b42|false,false",
+            "again=-0,b42|false", "notrail=false|true"
         ]
     )
 end
@@ -557,7 +626,8 @@ end
     push!(obs, "e=$(LK.is_trie_clause(gd, cl))")
     cl.predicate = saved
     push!(obs, "restored=$(LK.is_trie_clause(gd, cl))")
-    @test gd.procedures_trie_gen_compiled3.definition !== gd.procedures_trie_gen_compiled2.definition
+    @test gd.procedures_trie_gen_compiled3.definition !==
+        gd.procedures_trie_gen_compiled2.definition
     _tw_rows(
         "is_trie_clause",
         obs,

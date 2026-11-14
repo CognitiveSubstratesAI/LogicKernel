@@ -1516,7 +1516,8 @@ function set_prolog_flag_unlocked(
         rc == 1 && return f
         rc == -1 && return nothing
 
-        tbl_is_restraint_flag(k) && return tbl_set_restraint_flag(ld, value, k) ? PSEUDO_FLAG : nothing   # pl-prologflag.c:1628
+        tbl_is_restraint_flag(k) &&
+            return tbl_set_restraint_flag(ld, value, k) ? PSEUDO_FLAG : nothing   # pl-prologflag.c:1628
         is_arith_flag(k) && _flag_not_ported(k, "set_arith_flag (pl-arith.c)")
         ci_is_flag(k) && _flag_not_ported(k, "ci_set_flag (pl-index.c)")
 

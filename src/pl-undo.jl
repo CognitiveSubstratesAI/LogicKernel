@@ -77,7 +77,9 @@ end
 # DIVERGES: the record's number in `gd.undo_refs` is the payload (see `undo_blob_record`); the atom's WORD is returned and its
 # term is recorded (`_blob_term!`) so that a term over it reads back.
 "The undo blob atom of a record of the goal `goal` references (pl-undo.c)."
-function save_undo(gd::PL_global_data{T}, ld::PL_local_data{T}, goal::term_t)::word where {T}
+function save_undo(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, goal::term_t
+)::word where {T}
     r = PL_record(ld, goal)                         # record_t r = PL_record(goal)
     push!(gd.undo_refs, r)
     bytes = _undo_bytes(length(gd.undo_refs))
@@ -88,7 +90,9 @@ end
 
 # PORT: pl-undo.c put_undo
 "Make `t` the goal the undo blob atom `u` records (pl-undo.c)."
-function put_undo(gd::PL_global_data{T}, ld::PL_local_data{T}, t::term_t, u::word)::Bool where {T}
+function put_undo(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, t::term_t, u::word
+)::Bool where {T}
     return PL_recorded(ld, undo_blob_record(gd, u), t)  # PL_recorded(*ref, t)
 end
 
@@ -119,9 +123,13 @@ function pl_undo1_va(
             return FFALSE
         end
     else
-        return PL_error(
+        return if PL_error(
             ld, "", 0, "", ERR_PERMISSION, mk_sym(T, :undo), mk_sym(T, :goal), A1
-        ) ? FTRUE : FFALSE                          # PL_permission_error("undo", "goal", A1)
+        )
+            FTRUE                          # PL_permission_error("undo", "goal", A1)
+        else
+            FFALSE                          # PL_permission_error("undo", "goal", A1)
+        end                          # PL_permission_error("undo", "goal", A1)
     end
 end
 

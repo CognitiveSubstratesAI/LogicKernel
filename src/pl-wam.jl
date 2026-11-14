@@ -4468,7 +4468,10 @@ function PL_next_solution_guarded(
     setGenerationFrame(gd, ld, FR)
     ld.statistics.inferences += 1                   # LD->statistics.inferences++ (Y1)
     if ld.alerted != 0 && (ld.alerted & ALERT_UNDO) != 0 && UNDO_SCHEDULED(ld) &&  # depart_alerted: UNDO_SCHEDULED(LD)
-       !(DEF.codes === gd.code_data.virgin && !_impl_any_defined(DEF) && (DEF.flags & PROC_DEFINED) == 0)
+        !(
+            DEF.codes === gd.code_data.virgin && !_impl_any_defined(DEF) &&
+            (DEF.flags & PROC_DEFINED) == 0
+        )
         setLTop!(ld, argFrameP(ld.frames[FR].base, DEF.arity))   # lTop = argFrameP(FR, DEF->functor->arity)
         @SAVE_REGISTERS(QID)
         dr_rc = run_undo_hooks(gd, ld)              # rc = run_undo_hooks()

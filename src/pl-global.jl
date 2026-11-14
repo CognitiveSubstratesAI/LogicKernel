@@ -445,7 +445,8 @@ mutable struct ld_tabling{T}
     mdep_ref_serial::Int
 end
 ld_tabling{T}() where {T} = ld_tabling{T}(
-    nothing, nothing, 0, 0, 0, nothing, nothing, nothing, 0, 0, false, false, false, UInt32(0),
+    nothing, nothing, 0, 0, 0, nothing, nothing, nothing, 0, 0, false, false, false,
+    UInt32(0),
     0, 0,
     tbl_free_objects{T}(), tbl_restraint{T}(),
     Union{Nothing, tbl_worklist{T}, tbl_component{T}}[], Int[],
