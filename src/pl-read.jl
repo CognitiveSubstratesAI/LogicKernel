@@ -152,6 +152,68 @@ function f_paren_close(chr::Int)::Int
     return -1
 end
 
+# PORT: pl-read.c f_paren_open
+"The bracket that opens the closing bracket `chr`, else -1 (pl-read.c)."
+function f_paren_open(chr::Int)::Int
+    if PlCatW(chr) == U_CAT_BRACKET
+        open, is_open = pl_pair_lookup(chr)
+        open != 0 && !is_open && return open
+    end
+    return -1
+end
+
+# PORT: pl-read.c f_quote_close
+"The quote that closes the opening quote `chr`: the three ASCII quotes close themselves; else -1 (pl-read.c)."
+function f_quote_close(chr::Int)::Int
+    (chr == Int('\'') || chr == Int('"') || chr == Int('`')) && return chr
+    if PlCatW(chr) == U_CAT_QUOTE
+        close, is_open = pl_pair_lookup(chr)
+        close != 0 && is_open && return close
+    end
+    return -1
+end
+
+# PORT: pl-read.c f_quote_open
+"The quote that opens the closing quote `chr`: the three ASCII quotes open themselves; else -1 (pl-read.c)."
+function f_quote_open(chr::Int)::Int
+    (chr == Int('\'') || chr == Int('"') || chr == Int('`')) && return chr
+    if PlCatW(chr) == U_CAT_QUOTE
+        open, is_open = pl_pair_lookup(chr)
+        open != 0 && !is_open && return open
+    end
+    return -1
+end
+
+# PORT: pl-read.c unicode_separator
+"Is `c` a separator: `PlBlankW` (pl-read.c; serves the `prolog_layout` class of char_type/2)."
+unicode_separator(c::Int)::Bool = PlBlankW(c)
+
+# PORT: pl-read.c f_is_quote
+"Is `c` one of the three ASCII quotes or a Unicode quotation mark (pl-read.c)?"
+f_is_quote(c::Int)::Bool =
+    c == Int('\'') || c == Int('"') || c == Int('`') || PlCatW(c) == U_CAT_QUOTE
+
+# PORT: pl-read.c PL_is_id_start
+# DIVERGES: a Julia function of the engine-free classifier, not an exported C symbol (the foreign API is the C one).
+"Does the code point `chr` start an identifier (pl-read.c's exported classifier)?"
+PL_is_id_start(chr::Int)::Bool = pl_cat_is_id_start(PlCatW(chr))
+
+# PORT: pl-read.c PL_is_id_continue
+"Does the code point `chr` continue an identifier (pl-read.c's exported classifier)?"
+PL_is_id_continue(chr::Int)::Bool = pl_cat_is_id_continue(PlCatW(chr))
+
+# PORT: pl-read.c PL_is_uppercase
+"Is `chr` in the category that starts a variable (pl-read.c's exported classifier)?"
+PL_is_uppercase(chr::Int)::Bool = PlCatW(chr) == U_CAT_ID_START_VARIABLE
+
+# PORT: pl-read.c PL_is_decimal
+"Is `chr` a decimal digit of any script (pl-read.c's exported classifier)?"
+PL_is_decimal(chr::Int)::Bool = PlCatW(chr) == U_CAT_DECIMAL
+
+# PORT: pl-read.c PL_is_layout
+"Is `chr` layout (pl-read.c's exported classifier)?"
+PL_is_layout(chr::Int)::Bool = PlCatW(chr) == U_CAT_LAYOUT
+
 # PORT: pl-read.c is_bidi_override
 "Is `c` a bidi override or isolate, which the reader always refuses (pl-read.c)?"
 is_bidi_override(c::Int)::Bool =
@@ -311,9 +373,8 @@ const RD_MAGIC = 0xefebe128
 # PORT: pl-read.c read_data
 # DIVERGES: positions in the buffer are indices into `_rb.base`; `module_` is the module's index;
 # `gd` and `ld` are the database and the engine's local data, which upstream reaches through `GD`
-# and `LD`. NOT PORTED: quasi-quotations (`quasi_quotations`, `qq`, `qq_tail`: a quasi-quotation
-# is refused, R1's decision); blobs (`blobs`, `blob_start`: read only with the blob option); atom
-# GC (`locked`); the character conversion table (`char_conversion/2`).
+# and `LD`. NOT PORTED: atom GC (`locked`). Since RD2 the quasi-quotation fields (`quasi_quotations`,
+# `qq`, `qq_tail`) and `blob_start` are written, a term reference 0 being NULL. Since RD2b the character conversion table is the database's (`gd.char_conversion_table`).
 "Everything a read of one term needs (pl-read.c `read_data`)."
 mutable struct read_data{T}
     here::Int                       # current character
@@ -338,11 +399,16 @@ mutable struct read_data{T}
     singles::term_t                 # Report singleton variables
     subtpos::term_t                 # Report Subterm positions
     comments::term_t                # Report comments
+    quasi_quotations::term_t        # User option quasi_quotations(QQ) (0: none; RD2)
+    qq::term_t                      # Quasi quoted list (0: none yet; RD2)
+    qq_tail::term_t                 # Tail of the quoted stuff (0: none yet; RD2)
     cycles::Bool                    # Re-establish cycles
     dotlists::Bool                  # read .(a,b) as a list
     unicode_atoms::Sunicode_atoms_t # per-stream/per-call atom-content policy
     strictness::Int                 # Strictness level
     blobs::Symbol                   # How to read <type>(...): :error, :dead or :resolve (blob_mode)
+    blob_start::Int                 # Start of the current TK_BLOB: an index into the read buffer (RD2)
+    char_conversion_table::Union{Nothing, Vector{Int}}  # active conversion table (the database's, while the flag char_conversion is set)
     _rb::read_buffer                # keep read characters here
     vt::var_table                   # Data about variables
     term_stack::term_stack{T}       # Stack for creating output term
@@ -443,13 +509,16 @@ function setCurrentSourceLocation(rd::read_data{T})::Nothing where {T}
 end
 
 # PORT: pl-read.c getchr__
-# DIVERGES: no character conversion table.
-"The next character of the stream, its byte position recorded (pl-read.c `getchr`)."
+# DIVERGES: the table is a vector indexed from EOF at 1 (`char_conversion_table[c]` is `table[c + 2]`).
+"The next character of the stream, its byte position recorded, converted by the active table (pl-read.c `getchr`)."
 function getchr__(rd::read_data)::Int
     s = rd._rb.stream
     p = s.position
     p !== nothing && (rd.start_of_term.position.byteno = p.byteno)
-    return Sgetcode(s)
+    c = Sgetcode(s)
+    t = rd.char_conversion_table
+    (t === nothing || c < 0 || c >= 256) && return c
+    return t[c + 2]
 end
 
 # PORT: pl-read.c getchrq
@@ -700,18 +769,51 @@ end
     return nothing
 end
 
+# PORT: pl-read.c add_comment
+# (18168e62 src/pl-read.c:1626-1661)
+# DIVERGES: the text is a byte vector (UTF-8), made a string term as `PL_unify_chars(PL_STRING|REP_UTF8)`
+# does; the comment's position and the `-` head are laid out by `_unify_position!` (`PL_unify_term` is not ported).
+"Append the comment `b` (UTF-8 text) that began at `pos` (`nothing`: unknown) as `Pos-String` to the list `rd.comments` (pl-read.c)."
+function add_comment(
+    b::Vector{UInt8}, pos::Union{Nothing, IOPOS}, rd::read_data{T}
+)::Bool where {T}
+    ld = rd.ld
+    head = PL_new_term_ref(ld)
+    str = PL_new_term_ref(ld)
+    (head == 0 || str == 0) && return false
+    PL_unify_atomic(ld, str, mk_gnd(T, String(copy(b)))) || return false
+
+    @assert rd.comments != 0
+    PL_unify_list(ld, rd.comments, head, rd.comments) || return false
+    if pos !== nothing
+        sp = PL_new_term_ref(ld)
+        _unify_position!(                           # PL_FUNCTOR, FUNCTOR_dstream_position4,
+            ld, sp, Symbol("\$stream_position"),    #   PL_INT64 charno, PL_INT lineno, PL_INT linepos, PL_INT 0
+            (Int64(pos.charno), Int64(pos.lineno), Int64(pos.linepos), Int64(0)), ()
+        ) || return false
+        _unify_position!(ld, head, :-, (), (sp, str)) || return false   # PL_FUNCTOR, FUNCTOR_minus2, …, PL_TERM, str
+    else
+        m = PL_new_term_ref(ld)
+        PL_put_atom(ld, m, mk_sym(T, :-))           # PL_ATOM, ATOM_minus
+        _unify_position!(ld, head, :-, (), (m, str)) || return false
+    end
+
+    PL_reset_term_refs(ld, head)
+    return true
+end
+
 # PORT: pl-read.c raw_read2
-# DIVERGES: no `comments(C)` read option (`_PL_rd->comments`: refused, NOT PORTED until a step
-# needs it); reading past the end of a stream that raises it (`Sfpasteof`) is refused: its error
-# names the stream, and there is no stream table. The `quasi_quotations` flag is ON (SWI-7's
-# default, as swipl 10.1.16's), so `||` reads a quasi-quotation's raw text, which the parser then
-# refuses (R1's decision).
+# (18168e62 src/pl-read.c:1664; EOF 1679-1708, `/*` 1709-1805, `%` 1806-1864)
+# DIVERGES: the comments of a `comments(C)` read are collected in a byte vector, where upstream
+# uses a `tmp_buffer` and `addUTF8Buffer`; the discards of it are the garbage collector's. The
+# `quasi_quotations` flag is ON (SWI-7's default, as swipl 10.1.16's), so `||` reads a
+# quasi-quotation's raw text, which the parser reads (since RD2).
 """
 Read the text of one term from the stream into the buffer (pl-read.c): layout and comments
 dropped (inside the term replaced by blanks, so positions stay right), quoted items kept as written,
 up to the full stop. At end of file before a term the text is `end_of_file. `. False on an error.
 """
-function raw_read2(rd::read_data)::Bool
+function raw_read2(rd::read_data{T})::Bool where {T}
     something_read = false
     clearBuffer(rd)                                 # clear input buffer
     rd.strictness = truePrologFlag(rd.ld, PLFLAG_ISO) ? 1 : 0   # _PL_rd->strictness = truePrologFlag(PLFLAG_ISO)
@@ -721,14 +823,17 @@ function raw_read2(rd::read_data)::Bool
         # handle_c:
         if c == EOF
             Sferror(s) != 0 && return false
-            Sfpasteof(s) == 1 &&
-                throw(
-                    NotPortedError{Nothing}(
-                        nothing,
-                        "raw_read2: reading past the end of a stream (its error names the stream)",
-                        "the stream table (R2)"
-                    )
+            if Sfpasteof(s) != 0
+                ld = rd.ld
+                ld.exception_processing = true      # LD->exception.processing = true
+                stream = PL_new_term_ref(ld)
+                PL_unify_stream_or_alias(ld, stream, s)
+                PL_error(
+                    ld, "", 0, "", ERR_PERMISSION, mk_sym(T, :input),
+                    mk_sym(T, :past_end_of_stream), stream
                 )
+                return false
+            end
             if something_read
                 if isStringStream(s)
                     ensure_space(Int(' '), rd, something_read)
@@ -760,14 +865,12 @@ function raw_read2(rd::read_data)::Bool
             c = getchr__(rd)
             if c == Int('*')
                 start = rd._rb.here - 1             # size_t start = rb.here - rb.base
-                rd.comments != 0 &&
-                    throw(
-                        NotPortedError{Nothing}(
-                            nothing,
-                            "raw_read2: the comments(C) read option",
-                            "read_term options beyond R1d's"
-                        )
-                    )
+                cbuf = UInt8[]                      # the comment's text (UTF-8), if comments are asked for
+                collecting = rd.comments != 0          # cbuf != NULL
+                if collecting
+                    utf8_put_char(cbuf, Int('/'))
+                    utf8_put_char(cbuf, Int('*'))
+                end
                 last = getchr__(rd)
                 if last == EOF
                     start = setErrorLocation(pos, start, rd)
@@ -776,6 +879,7 @@ function raw_read2(rd::read_data)::Bool
                         "end_of_file_in_block_comment", nothing, start, rd
                     )
                 end
+                collecting && utf8_put_char(cbuf, last)
                 if something_read
                     addToBuffer(Int(' '), rd)       # positions
                     addToBuffer(Int(' '), rd)
@@ -784,6 +888,7 @@ function raw_read2(rd::read_data)::Bool
                 level = 1
                 while true
                     c = getchr__(rd)
+                    collecting && c != EOF && utf8_put_char(cbuf, c)   # (EOF: the buffer is discarded)
                     is_bidi_override(c) && return bidi_override_error(c, rd)
                     if c == EOF
                         start = setErrorLocation(pos, start, rd)
@@ -797,6 +902,7 @@ function raw_read2(rd::read_data)::Bool
                         if last == Int('*')
                             level -= 1
                             if level == 0 || rd.strictness != 0
+                                collecting && (add_comment(cbuf, pos, rd) || return false)
                                 break
                             end
                         end
@@ -820,19 +926,47 @@ function raw_read2(rd::read_data)::Bool
             end
         elseif c == Int('%')
             something_read && addToBuffer(Int(' '), rd)
-            rd.comments != 0 &&
-                throw(
-                    NotPortedError{Nothing}(
-                        nothing,
-                        "raw_read2: the comments(C) read option",
-                        "read_term options beyond R1d's"
-                    )
-                )
-            c = getchr__(rd)
-            while c != EOF && !is_eol_char(c)
-                is_bidi_override(c) && return bidi_override_error(c, rd)
-                something_read && addToBuffer(Int(' '), rd)     # record positions
+            if rd.comments != 0
+                p = s.position
+                pos = if p !== nothing
+                    IOPOS(p.byteno, p.charno - 1, p.lineno, p.linepos - 1, 0)
+                else
+                    nothing
+                end
+                cbuf = UInt8[]
+                utf8_put_char(cbuf, Int('%'))
+                while true
+                    c = getchr__(rd)
+                    while c != EOF && !is_eol_char(c)
+                        is_bidi_override(c) && return bidi_override_error(c, rd)
+                        utf8_put_char(cbuf, c)
+                        something_read && addToBuffer(Int(' '), rd)     # record positions
+                        c = getchr__(rd)
+                    end
+                    if is_eol_char(c)
+                        c2 = Speekcode(s)
+                        if c2 == Int('%')           # a run of %-lines is one comment
+                            if something_read
+                                addToBuffer(c, rd)
+                                addToBuffer(Int(' '), rd)
+                            end
+                            utf8_put_char(cbuf, c)
+                            c = Sgetcode(s)
+                            @assert c == c2
+                            utf8_put_char(cbuf, c)
+                            continue
+                        end
+                    end
+                    break
+                end
+                add_comment(cbuf, pos, rd) || return false
+            else
                 c = getchr__(rd)
+                while c != EOF && !is_eol_char(c)
+                    is_bidi_override(c) && return bidi_override_error(c, rd)
+                    something_read && addToBuffer(Int(' '), rd)     # record positions
+                    c = getchr__(rd)
+                end
             end
             continue                                # goto handle_c: is the newline
         elseif c == Int('\'')
@@ -1151,6 +1285,26 @@ end
 "Record a syntax error in the read data; false, always (pl-read.c)."
 errorWarning(id_str::String, id_term::Union{Nothing, T}, rd::read_data{T}) where {T} =
     errorWarningA1(id_str, nothing, id_term, rd)
+
+# ORIGINAL: `errorWarning(NULL, ex, rd)` with the identifier `ex` a TERM REFERENCE (`is_quasi_quotation_syntax`), which
+# `makeErrorTerm` (a term of the term interface) cannot hold: the same `error(syntax_error(Id), Location)`, laid on the cells.
+"Record the syntax error whose identifier term reference `id` holds (pl-read.c `errorWarning`); false, always."
+function errorWarningRef(id::term_t, rd::read_data{T})::Bool where {T}
+    Sferror(rd._rb.stream) != 0 && return false     # Stream error; reported elsewhere
+    ld = rd.ld
+    ld.exception_processing = true                  # allow using spare stack
+    loc = PL_new_term_ref(ld)
+    setSlotValue!(ld, loc + 1, unify_location(ptr_to_location(rd.token_start, rd), rd))
+    syn = PL_new_term_ref(ld)
+    err = PL_new_term_ref(ld)
+    (
+        _unify_position!(ld, syn, :syntax_error, (), (id,)) &&
+        _unify_position!(ld, err, :error, (), (syn, loc))
+    ) || return false
+    rd.has_exception = true
+    PL_put_term(ld, rd.exception, err)
+    return false
+end
 
 # PORT: pl-read.c numberError
 "Record the syntax error of a number's status (pl-read.c)."
@@ -2083,8 +2237,8 @@ blob_name_char(c::Int)::Bool =
 
 # PORT: pl-read.c scan_blob_name
 # DIVERGES: returns `(position of the "(", the type name atom)` or `nothing`, where upstream returns
-# the pointer and fills `name`; no atom lock (`PL_new_atom_mbchars`, `rd->locked`), and `rd->blob_start`
-# is not recorded (read_blob_end, which builds the dead blob, is deferred to the blob step).
+# the pointer and fills `name`; no atom lock (`PL_new_atom_mbchars`, `rd->locked`); `get_token` records
+# `rd->blob_start`.
 """
 `in` is just after the `<`: when the text is `<name>(` return the position of `(` and the atom
 `name`, else `nothing` (pl-read.c).
@@ -2106,8 +2260,7 @@ end
 
 # PORT: pl-read.c get_token
 # DIVERGES: a string token's value is the term (`term_value`), where upstream holds a term
-# reference; a variable token's is the variable's index. NOT PORTED: blobs (`<type>(…)`, SWI-7
-# reads them only with the `blobs` read option), the `charset` style check, NFC and non-ASCII atom
+# reference; a variable token's is the variable's index. Left to ENC1: the `charset` style check, NFC and non-ASCII atom
 # policies other than accept (S_UATOMS_ACCEPT, SWI-7's default). The `quasi_quotations` flag is
 # `truePrologFlag(rd.ld, PLFLAG_QUASI_QUOTES)` (since R2 F1a; ON, SWI-7's default, until then without the
 # test): `{|` is TK_QQ_OPEN and `||` TK_QQ_BAR.
@@ -2218,6 +2371,7 @@ function get_token(must_be_op::Bool, rd::read_data{T})::Union{Nothing, token{T}}
             if blob !== nothing
                 rd.here = blob[1]                   # points at the `(`
                 tok.atom = blob[2]
+                rd.blob_start = start               # the text of the blob starts at the `<`
                 tok.type = TK_BLOB
                 @goto out
             end
@@ -2335,8 +2489,8 @@ end
 
 # PORT: pl-read.c init_read_data
 # DIVERGES: returns the read data, where upstream initialises a caller's struct; the module is
-# `MODULE_parse` (the source module while loading, else the typein module; `read_clause` sets the source module: `set_module_read_data`); no
-# character conversion table.
+# `MODULE_parse` (the source module while loading, else the typein module; `read_clause` sets the source module: `set_module_read_data`); the
+# conversion table is the database's (`gd.char_conversion_table`, upstream's static), taken while the flag `char_conversion` is set.
 "Fresh read data for reading from stream `inp` (pl-read.c)."
 function init_read_data(
     gd::PL_global_data{T}, ld::PL_local_data{T}, inp::IOSTREAM
@@ -2348,8 +2502,11 @@ function init_read_data(
         m.index, m.flags, m.var_prefix, ld.debugstatus_styleCheck,    # module, syntax flags, var_prefix, style
         :error, false, PL_new_term_ref(ld),         # on_error, has_exception, exception
         0, 0, 0, 0, 0,                              # variables, varnames, singles, subtpos, comments
+        0, 0, 0,                                    # quasi_quotations, qq, qq_tail: none (RD2)
         false, false, inp.unicode_atoms, 0,          # cycles, dotlists, unicode_atoms, strictness
         :error,                                     # blobs (RD_BLOB_ERROR)
+        0,                                          # blob_start (RD2)
+        truePrologFlag(ld, PLFLAG_CHARCONVERSION) ? gd.char_conversion_table : nothing,
         read_buffer(0, UInt8[], 0, 0, inp), var_table(), term_stack{T}(), op_queues{T}(),
         gd, ld
     )
@@ -2927,7 +3084,7 @@ end
 # `list_pv`). A LIST is extended cell by cell as upstream (L1e e6), its tail kept as
 # `list_term` (the term-stack entry, until the first element) and then `list_tail` (the global cell of
 # the tail) — upstream's `tail` references the entry first, which no global cell may do here. Blobs
-# and quasi-quotations are refused (R1's decision): their members are absent.
+# and quasi-quotations (RD2) have members as fields too: `qq_*`, `blob_*`.
 "A suspended level of `complex_term` (pl-read.c): its arguments, queue state and construct."
 mutable struct pframe{T}
     stop::Union{Nothing, String}    # complex_term() arguments
@@ -2952,6 +3109,13 @@ mutable struct pframe{T}
     bracket_stop::String                    # UTF-8 of close; see ct_request
     dict_pv::term_t                         # u.dict.pv: positions: P_HEAD, P_ARG and P_VALUE
     dict_pairs::Int                         # u.dict.pairs: the key-value pairs read
+    qq_av::term_t                           # u.qq.av: the arguments of '\$quasi_quotation' (RD2)
+    qq_pv::term_t                           # u.qq.pv: positions: P_TYPE, P_ARG and P_VALUE (RD2)
+    qq_result::Int                          # u.qq.result: the term-stack entry the library's answer replaces (RD2)
+    blob_start::Int                         # u.blob.start: where the blob's <type> starts (RD2)
+    blob_name::Union{Nothing, T}            # u.blob.name: the type's atom (RD2)
+    blob_pos_start::Int                     # u.blob.pos_start: start of the blob in the text (RD2)
+    blob_argv0::Int                         # u.blob.argv0: term-stack top when the arguments began (RD2)
 end
 
 # PORT: pl-read.c CTR_SUB
@@ -3261,8 +3425,7 @@ end
 # PORT: pl-read.c complex_term
 # DIVERGES: the segstack is a vector of frames; returns upstream's codes as an Int — 1 (true) or
 # 0 (false): no stack-overflow codes (no global stack);
-# no atom locks to release (`discard_pframe`). A blob or a quasi-quotation raises
-# `NotPortedError` (`start_pframe`): refused, R1's decision.
+# no atom locks to release (`discard_pframe`). A quasi-quotation is read since RD2 (`read_qq_start`).
 """
 Read a term up to a character of `stop` (`nothing`: up to the full stop) with priority at most
 `maxpri`, resolving its operators, and leave it on the term stack (pl-read.c); `positions` (0:
@@ -3422,7 +3585,8 @@ function complex_term(
         stack,
         pframe{T}(
             stop, positions, pin, copy_cterm_state(cstate), copy_op_entry(in_op), maxpri,
-            red_op, kind, after, red_side, 0, nothing, 0, 0, 0, 0, nothing, 0, 0, "", 0, 0
+            red_op, kind, after, red_side, 0, nothing, 0, 0, 0, 0, nothing, 0, 0, "", 0, 0,
+            0, 0, 0, 0, nothing, 0, 0                # qq_*, blob_* (RD2)
         )
     )
     rc = start_pframe(stack[end], token, req, rd)
@@ -4051,12 +4215,259 @@ function simple_term(
     error("read/1: Illegal token type ($(Int(t)))")    # sysError()
 end
 
+# ── quasi-quotations (pl-read.c), since RD2 ─────────────────────────────────────────────────────
+
+# PORT: pl-read.c get_quasi_quotation
+# DIVERGES: the read data's address in `'$quasi_quotation'(Ptr, Start, Len)` is `objectid(rd)` (an integer; `parse_quasi_quotations`
+# keeps the read in `ld.read_contexts` while the library may open it, and `'$qq_open'/2` finds it there); the text of the
+# `quasi_quotations(QQ)` option is the UTF-8 slice as a code list (`PL_unify_text`). The length of an empty body (the
+# closing `|}` sharing its bar with the `||` that opens it) is 0, where upstream's is below 0.
+"""
+Read the text of a quasi-quotation from `rd.here` up to its `|}` (pl-read.c) and unify `t` with it: the code list
+(option `quasi_quotations`) or `'\$quasi_quotation'(ReadData, Start, Length)`; `rd.here` is after the `}`.
+"""
+function get_quasi_quotation(t::term_t, rd::read_data{T})::Bool where {T}
+    ld = rd.ld
+    b = rd._rb.base
+    start = rd.here
+    ein = rd.end_
+    in = start
+    while in <= ein
+        if _byte(b, in) == Int('}') && _byte(b, in - 1) == Int('|')
+            rd.here = in + 1                        # after }
+            in -= 1                                 # Before |
+            len = max(in - start, 0)
+            if rd.quasi_quotations != 0             # option; must return strings
+                bytes = b[start:(start + len - 1)]
+                text = PL_chars_t(bytes, count(x -> !ISUTF8_CB(Int(x)), bytes), ENC_UTF8, false)
+                return PL_unify_text(ld, t, 0, text, PL_CODE_LIST)
+            else
+                return _unify_position!(
+                    ld, t, Symbol("\$quasi_quotation"),
+                    (Int64(objectid(rd) % Int64), Int64(start - rd.base), Int64(len)), ()
+                )
+            end
+        end
+        in += 1
+    end
+
+    return errorWarning("end_of_file_in_quasi_quotation", nothing, rd)
+end
+
+# PORT: pl-read.c is_quasi_quotation_syntax
+# DIVERGES: the read's module is an index; the type's module is stripped by `PL_strip_module` of the database.
+"Is the term reference `type` a quasi-quotation syntax (pl-read.c)? Else the syntax error `unknown_quasi_quotation_syntax(Type, Module)` or `invalid_quasi_quotation_syntax(Type)`."
+function is_quasi_quotation_syntax(type::term_t, rd::read_data{T})::Bool where {T}
+    ld = rd.ld
+    gd = rd.gd
+    plain = PL_new_term_ref(ld)
+    ok, mi = PL_strip_module(gd, ld, type, rd.module_, plain)
+    ok || return false
+    m = gd.modules[mi]
+
+    na = PL_get_name_arity(ld, plain)
+    if na !== nothing
+        if rd.quasi_quotations != 0
+            return true
+        else
+            proc = resolveProcedure(gd, na[1], 4, m)
+            (proc.definition.flags & P_QUASI_QUOTATION_SYNTAX) != 0 && return true
+
+            ex = PL_new_term_ref(ld)
+            mt = PL_new_term_ref(ld)
+            PL_put_atom(ld, mt, m.atom)
+            return _unify_position!(
+                ld, ex, Symbol("unknown_quasi_quotation_syntax"), (), (type, mt)
+            ) && errorWarningRef(ex, rd)
+        end
+    else
+        ex = PL_new_term_ref(ld)
+        return _unify_position!(
+            ld, ex, Symbol("invalid_quasi_quotation_syntax"), (), (type,)
+        ) && errorWarningRef(ex, rd)
+    end
+end
+
+# PORT: pl-read.c read_qq_start
+# DIVERGES: the placeholder for the library's answer is a global cell made here, its reference put into the term stack's
+# entry (`alloc_term` gives an unbound entry, which a term reference cannot share with `av+3`) and into `av+3`, where
+# upstream unifies the two in `read_qq_resume`; the term-stack entry `result` is kept in `f.qq_result`.
+"""
+Start reading a quasi-quotation at its `{|` (pl-read.c); with positions
+`quasi_quotation_position(From, _, Syntax, SyntaxPos, ContentPos)`. Request the syntax term, up to `||`.
+"""
+function read_qq_start(
+    f::pframe{T}, token::token{T}, req::ct_request, rd::read_data{T}
+)::Int where {T}
+    ld = rd.ld
+    result = alloc_term(rd)
+
+    # prepare (if we are the first in term)
+    if rd.varnames == 0
+        rd.varnames = PL_new_term_ref(ld)
+    end
+    if rd.qq == 0
+        if rd.quasi_quotations != 0
+            rd.qq = rd.quasi_quotations
+        else
+            rd.qq = PL_new_term_ref(ld)
+            rd.qq == 0 && return 0
+        end
+
+        rd.qq_tail = PL_copy_term_ref(ld, rd.qq)
+        rd.qq_tail == 0 && return 0
+    end
+
+    # allocate for quasi_quotation/4
+    av = PL_new_term_refs(ld, 4)
+    av == 0 && return 0
+
+    if f.pin != 0
+        pv = PL_new_term_refs(ld, 3)
+        (
+            pv != 0 &&
+            _unify_position!(                       # PL_FUNCTOR, FUNCTOR_quasi_quotation_position5,
+                ld, f.pin, :quasi_quotation_position,   #   PL_INT64, token->start, PL_VARIABLE,
+                (token.start, _POS_VARIABLE), (pv, pv + 1, pv + 2)  #   PL_TERM, pv+0, pv+1, pv+2
+            )
+        ) || return 0
+    else
+        pv = 0
+    end
+
+    c = allocGlobalCells!(ld, 1)                    # the result: the cell av+3 and the term stack's entry share
+    ld.gstack[c] = word(0)
+    _setHandle_w!(result, makeRefG(c), rd)
+    ld.slots[av + 3 + 1] = makeRefG(c)
+
+    f.qq_result = result
+    f.qq_av = av
+    f.qq_pv = pv
+    # push type
+    req.stop = "|"
+    req.maxpri = OP_MAXPRIORITY + 1
+    req.positions = pv != 0 ? pv + 1 : 0
+
+    return CTR_SUB
+end
+
+# PORT: pl-read.c read_qq_resume
+# DIVERGES: `argv[0]`, the syntax term the term stack holds, is placed in a cell (`_ts_link_word!`) for `av+0`; the result is
+# unified in `read_qq_start`; the integers of the position term are the kernel's (`_unify_position!`).
+"Continue a quasi-quotation after its syntax term (pl-read.c): read its text, and record the quotation for `parse_quasi_quotations`."
+function read_qq_resume(f::pframe{T}, rd::read_data{T})::Int where {T}
+    ld = rd.ld
+    av = f.qq_av
+    pv = f.qq_pv
+
+    token = get_token(false, rd)                    # get the '|'
+    token === nothing && return 0
+    if token.type != TK_QQ_BAR
+        return Int(syntaxError("double_bar_expected", rd))
+    end
+
+    argv = term_av(-1, rd)
+    ld.slots[av + 1] = _ts_link_word!(argv, rd)     # Arg 0: the type
+    truncate_term_stack(argv, rd)
+    is_quasi_quotation_syntax(av, rd) || return 0
+    # Arg 1: the content
+    get_quasi_quotation(av + 1, rd) || return 0
+
+    if pv != 0
+        qqend = rd.start_of_term.position.charno + ptr_to_pos(rd.here, rd)
+
+        PL_unify(ld, pv + 0, av + 0) || return 0
+        set_range_position(ld, f.pin, Int64(-1), Int64(qqend))
+        (
+            _unify_position!(                       # PL_FUNCTOR, FUNCTOR_minus2,
+                ld, pv + 2, Symbol("-"),            #   PL_INT64, token->end  (end of | token),
+                (Int64(token.end_), Int64(qqend - 2)), ()   #   PL_INT64, qqend-2 (end minus "|}")
+            )
+        ) || return 0
+    end
+
+    PL_put_term(ld, av + 2, rd.varnames)            # Arg 2: the var dictionary
+    # Arg 3: the result: av+3 holds it (read_qq_start)
+
+    PL_cons_functor_v(ld, av, _err_functor(ld, :quasi_quotation, 4), av) || return 0
+
+    t = PL_new_term_ref(ld)
+    (
+        t != 0 && PL_unify_list(ld, rd.qq_tail, t, rd.qq_tail) && PL_unify(ld, t, av)
+    ) || return 0
+
+    return 1
+end
+
+# PORT: pl-read.c read_blob_end
+# DIVERGES: no atom locks (`unlock`); the dead blob is an atom WORD of the database's table
+# (`newDeadBlob`), made a blob term of the interface (`_blob_term!`); `lookupLiveBlob` reads a live
+# blob's written text through `blob_written_text` (src/pl-write.jl).
+"Build the dead blob from the text read (pl-read.c); with positions its position is `Start-End`."
+function read_blob_end(f::pframe{T}, token::token{T}, rd::read_data{T})::Int where {T}
+    name = f.blob_name
+    name === nothing && error("read/1: a blob without its type name")
+    ld = rd.ld
+    rd.term_stack.top = f.blob_argv0                # discard the arguments
+
+    t = alloc_term(rd)
+    w = newDeadBlob(
+        ld.atoms, x -> blob_written_text(rd.gd, x), String(sym_text(name)),
+        view(rd._rb.base, f.blob_start:(rd.here - 1)), rd.here - f.blob_start,
+        rd.blobs === :resolve
+    )
+    _setHandle!(t, _blob_term!(ld.atoms, ld.atom_symbols, T, w), rd)   # PL_put_atom(t, blob)
+
+    if f.pin != 0                                   # PL_FUNCTOR_minus2, pos_start, token->end
+        return _unify_position!(ld, f.pin, :-, (Int64(f.blob_pos_start), Int64(token.end_)), ()) ? 1 : 0
+    end
+    return 1
+end
+
+# PORT: pl-read.c read_blob_arg
+"Request a blob's argument (pl-read.c): read to be discarded, no positions."
+function read_blob_arg(f::pframe{T}, req::ct_request, rd::read_data{T})::Int where {T}
+    req.stop = ",)"
+    req.maxpri = 999
+    req.positions = 0
+    return CTR_SUB
+end
+
+# PORT: pl-read.c read_blob_start
+# DIVERGES: no atom locks (`unlock`, `rd->locked`).
+"Start reading `<type>(…)` at its name: `<type>()` ends at once (pl-read.c)."
+function read_blob_start(
+    f::pframe{T}, token::token{T}, req::ct_request, rd::read_data{T}
+)::Int where {T}
+    f.blob_start = rd.blob_start
+    f.blob_name = _token_atom(token)
+    f.blob_pos_start = token.start
+    f.blob_argv0 = rd.term_stack.top
+
+    get_token(false, rd) === nothing && return 0    # gets '('
+    tk = get_token(false, rd)                       # first token
+    tk === nothing && return 0
+
+    if tk.type == TK_PUNCTUATION && tk.character == Int(')')
+        return read_blob_end(f, tk, rd)
+    end
+
+    rd._unget = true                                # unget_token()
+    return read_blob_arg(f, req, rd)
+end
+
+# PORT: pl-read.c read_blob_resume
+"After an argument of a blob: `)` ends it, `,` requests another (pl-read.c)."
+function read_blob_resume(f::pframe{T}, req::ct_request, rd::read_data{T})::Int where {T}
+    tk = get_token(false, rd)                       # `,' or `)'
+    tk === nothing && return 0
+    tk.character == Int(')') && return read_blob_end(f, tk, rd)
+    return read_blob_arg(f, req, rd)
+end
+
 # PORT: pl-read.c start_pframe
-# DIVERGES: a blob (`<type>(…)`, read only with blob(dead) or blob(resolve): the dead blob needs an
-# atom object the kernel has not got, `read_blob_start`/`read_blob_end`: the blob step) or a
-# quasi-quotation (`{|Syntax||Quotation|}`) raises `NotPortedError`: refused, R1's decision (user,
-# 2026-10-07: an explicit error, never a misread). Where swipl raises a SYNTAX error inside one of
-# them, the kernel's refusal comes first. A dict (`Tag{…}`) is read as upstream reads it (`read_dict_start`).
+# A blob (`<type>(…)`, read only with blob(dead) or blob(resolve)), a quasi-quotation
+# (`{|Syntax||Quotation|}`) and a dict (`Tag{…}`) are read as upstream reads them (since RD2).
 "Start reading the construct `f.kind` (pl-read.c): `CTR_SUB` for a subterm, 1 if complete, 0 on an error."
 function start_pframe(
     f::pframe{T}, token::token{T}, req::ct_request, rd::read_data{T}
@@ -4069,20 +4480,11 @@ function start_pframe(
     elseif k == PF_BRACKET
         return read_bracket_start(f, token, req, rd)
     elseif k == PF_BLOB
-        throw(
-            NotPortedError{Nothing}(
-                nothing, "read: a blob <type>(…)", "the blob step"
-            )
-        )
+        return read_blob_start(f, token, req, rd)
     elseif k == PF_DICT
         return read_dict_start(f, token, req, rd)
     elseif k == PF_QQ
-        throw(
-            NotPortedError{Nothing}(
-                nothing, "read: a quasi-quotation {|Syntax||Quotation|}",
-                "none: quasi-quotations are refused (R1's decision)"
-            )
-        )
+        return read_qq_start(f, token, req, rd)
     end
     @assert false "start_pframe: no construct"
     return 0
@@ -4102,8 +4504,12 @@ function resume_pframe(f::pframe{T}, req::ct_request, rd::read_data{T})::Int whe
         return read_bracket_resume(f, rd)
     elseif k == PF_DICT
         return read_dict_resume(f, req, rd)
+    elseif k == PF_BLOB
+        return read_blob_resume(f, req, rd)
+    elseif k == PF_QQ
+        return read_qq_resume(f, rd)
     end
-    @assert false "resume_pframe: a construct that was refused at its start"
+    @assert false "resume_pframe: no construct"
     return 0
 end
 
@@ -4192,9 +4598,50 @@ function instantiate_template(
     return true
 end
 
+# PORT: pl-read.c parse_quasi_quotations
+# DIVERGES: `rd` is kept in `ld.read_contexts` while the library runs (`'$qq_open'/2` finds it there, see `get_quasi_quotation`).
+"""
+Call `'\$parse_quasi_quotations'(QQ, Module)` (in `system`) on the quasi-quotations the read collected, unless the option
+`quasi_quotations` asked for them (pl-read.c); the list's end is closed. False with the exception in `rd` if the library raised one.
+"""
+function parse_quasi_quotations(rd::read_data{T})::Bool where {T}
+    ld = rd.ld
+    gd = rd.gd
+    if rd.qq_tail != 0
+        PL_unify_nil(ld, rd.qq_tail) || return false
+
+        if rd.quasi_quotations == 0
+            av = PL_new_term_refs(ld, 2)
+            if av != 0
+                PL_put_term(ld, av + 0, rd.qq)
+                PL_put_atom(ld, av + 1, gd.modules[rd.module_].atom)
+                PL_cons_functor_v(ld, av, _err_functor(ld, Symbol("\$parse_quasi_quotations"), 2), av)
+                ex = Ref(0)
+                push!(ld.read_contexts, rd)
+                rc = try
+                    callProlog(gd, ld, MODULE_system(gd).index, av + 0, PL_Q_CATCH_EXCEPTION, ex)
+                finally
+                    pop!(ld.read_contexts)
+                end
+                rc && return true
+                if ex[] != 0
+                    PL_put_term(ld, rd.exception, ex[])
+                    rd.has_exception = true
+                end
+            end
+            return false
+        else
+            return true
+        end
+    elseif rd.quasi_quotations != 0                 # user option, but no quotes
+        return PL_unify_nil(ld, rd.quasi_quotations)
+    else
+        return true
+    end
+end
+
 # PORT: pl-read.c read_term
-# DIVERGES: no quasi-quotations to parse (`parse_quasi_quotations`: one is refused before it is
-# collected); no overflow codes (`raiseStackOverflow`). `cycles(true)` builds the cyclic term from
+# DIVERGES: no overflow codes (`raiseStackOverflow`). `cycles(true)` builds the cyclic term from
 # `@(Template, Substitutions)` (`instantiate_template`) since group F (D-0123); until then the
 # option was accepted and did nothing (R1e decision 4a).
 """
@@ -4248,6 +4695,8 @@ function read_term(term::term_t, rd::read_data{T})::Bool where {T}
         rc = bind_variable_names(rd)
         rc || @goto out
     end
+    rc = parse_quasi_quotations(rd)
+    rc || @goto out
     if rd.variables != 0
         rc = bind_variables(rd)
         rc || @goto out
@@ -4347,10 +4796,29 @@ function atom_is_named_var(name::AbstractVector{UInt8})::Int       # see warn_si
 end
 
 # PORT: pl-read.c is_singleton
-# DIVERGES: no quasi-quotation scan (a quasi-quotation is refused before it is collected).
-"Is `var` a singleton (or multiton) of the kind `type` asks (pl-read.c)?"
+# DIVERGES: the quasi-quotation scan is made only for a variable that has a term reference (`var.variable != 0`).
+"Is `var` a singleton (or multiton) of the kind `type` asks (pl-read.c)? A quasi-quotation may have inserted it: the quotations are scanned."
 function is_singleton(var::variable, type::Int, rd::read_data)::Bool
     name = view(var.name, 1:(var.namelen))
+    if var.times == 1 &&
+        (
+            (type == IS_SINGLETON && warn_singleton(name)) || type == LIST_SINGLETONS ||
+            (type == IS_MULTITON && warn_multiton(name))
+        )
+        if rd.qq != 0 && var.variable != 0
+            ld = rd.ld
+            tail = PL_copy_term_ref(ld, rd.qq)
+            head = PL_new_term_ref(ld)
+            result = PL_new_term_ref(ld)
+
+            while PL_get_list(ld, tail, head, tail)
+                if _PL_get_arg(ld, 4, head, result) && PL_var_occurs_in(ld, var.variable, result)
+                    var.times += 1                  # avoid a second scan
+                    break
+                end
+            end
+        end
+    end
     if type == IS_SINGLETON
         return var.times == 1 && warn_singleton(name)
     elseif type == LIST_SINGLETONS
@@ -4495,12 +4963,54 @@ const read_clause_options = (
     PL_option_t(:var_prefix, OPT_TERM)
 )
 
+# PORT: pl-read.c callCommentHook
+# (18168e62 src/pl-read.c:6828-6862)
+# DIVERGES: the hook is the procedure itself (looked up by `read_clause`), the database and the local data are arguments; the foreign
+# frame is discarded also when the term references could not be made, where upstream leaves it open.
+"""
+Call `prolog:comment_hook(Comments, TermPos, Term, VarNames)` (pl-read.c); `varnames` (0: not asked for) is
+`[]` for the hook then. False when the hook raised an exception, which stays pending (`PL_Q_PASS_EXCEPTION`).
+"""
+function callCommentHook(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, comment_hook::Procedure{T},
+    comments::term_t, tpos::term_t, term::term_t, varnames::term_t
+)::Bool where {T}
+    rc = true
+    fid = PL_open_foreign_frame(ld)
+    av = fid == 0 ? 0 : PL_new_term_refs(ld, 4)
+    if fid != 0 && av != 0
+        PL_put_term(ld, av + 0, comments)
+        PL_put_term(ld, av + 1, tpos)
+        PL_put_term(ld, av + 2, term)
+        if varnames != 0
+            PL_put_term(ld, av + 3, varnames)
+        else
+            PL_put_nil(ld, av + 3)
+        end
+
+        qid = PL_open_query(gd, ld, nothing, PL_Q_NODEBUG | PL_Q_PASS_EXCEPTION, comment_hook, av)
+        if qid != 0
+            if PL_next_solution(gd, ld, qid) == 0 && PL_exception(ld, qid) != 0
+                rc = false
+            end
+            PL_close_query(ld, qid)
+        end
+
+        PL_discard_foreign_frame(ld, fid)
+    else
+        fid != 0 && PL_discard_foreign_frame(ld, fid)
+        rc = false
+    end
+
+    return rc
+end
+
 # PORT: pl-read.c read_clause
+# (18168e62 src/pl-read.c:6871-6954)
 # DIVERGES: of the read options (`PL_scan_options`), `variable_names` and `syntax_errors` are
-# honoured (since R1g), `term_position` and `subterm_positions` since LB1; the others the kernel
-# cannot honour are REFUSED (`NotPortedError`), as `read_term_from_stream`'s: `comments`,
-# `process_comment(true)` (the comment hook: R2 — `prolog:comment_hook/4` is not defined, so
-# `process_comment` is false), `var_prefix` (the module flag, R2), `unicode_atoms` (the NFC hook);
+# honoured (since R1g), `term_position` and `subterm_positions` since LB1, `comments`, `var_prefix` and
+# `process_comment` (the hook `prolog:comment_hook/4`, looked up at each call: upstream caches the procedure, and boot/init.pl declares it multifile, which `read_clause` does here) since RD2a; the
+# one the kernel cannot honour is REFUSED (`NotPortedError`), as `read_term_from_stream`'s: `unicode_atoms` (the NFC hook, ENC1);
 # `blob(Mode)` is accepted as read_term's (`atom_to_blob_mode_ex`); a stream whose unquoted atoms must be NFC is refused
 # (`ensure_unicode_normalize_hook`: no normalizer). The foreign frame is closed before returning,
 # where upstream leaves it to its caller's.
@@ -4511,6 +5021,12 @@ source module, its singletons reported, a syntax error reported and the next cla
 function read_clause(
     gd::PL_global_data{T}, ld::PL_local_data{T}, s::IOSTREAM, term::term_t, options::term_t
 )::Bool where {T}
+    comment_hook = lookupProcedure(                 # _PL_predicate("comment_hook", 4, "prolog", …)
+        mk_sym(T, :comment_hook), 4, lookupModule(gd, mk_sym(T, :prolog))
+    )
+    comment_hook.definition.flags |= P_MULTIFILE   # boot/init.pl: `:- multifile prolog:comment_hook/4` (no boot file here)
+    process_comment = _impl_any_defined(comment_hook.definition)
+
     fid = PL_open_foreign_frame(ld)
     fid == 0 && return false
 
@@ -4518,6 +5034,8 @@ function read_clause(
         rd = init_read_data(gd, ld, s)
         syntax_errors = :dec10                      # ATOM_dec10
         tpos = 0
+        opt_comments = 0
+        varprefix = 0
 
         if options != 0
             vals = PL_scan_options(ld, options, 0, "read_option", read_clause_options)
@@ -4528,38 +5046,25 @@ function read_clause(
             rd.varnames = something(vals[1], 0)::Int
             tpos = something(vals[2], 0)::Int
             rd.subtpos = something(vals[3], 0)::Int
-            process_comment = vals[4] === nothing ? false : vals[4]::Bool
+            vals[4] === nothing || (process_comment = vals[4]::Bool)
             opt_comments = something(vals[5], 0)::Int
             vals[6] === nothing || (syntax_errors = Symbol(sym_text(vals[6]::T)))
             opt_unicode_atoms = vals[7]
             opt_blobs = vals[8]
             varprefix = something(vals[9], 0)::Int
 
-            for (v, what) in ((opt_comments, "comments"), (varprefix, "var_prefix"))
-                if v != 0                           # (the culprit leaves the engine: exported once)
-                    c = export_cells(ld, cell_export{T}(), -(v + 1))
-                    PL_close_foreign_frame(ld, fid)
-                    throw(
-                        NotPortedError{T}(
-                            c, "read_clause's $what option",
-                            "R2 (the comments collector, the var_prefix module flag)"
-                        )
-                    )
-                end
-            end
-            if process_comment || opt_unicode_atoms !== nothing
-                PL_close_foreign_frame(ld, fid)
-                throw(
-                    NotPortedError{T}(
-                        mk_sym(T, :read_clause),
-                        "read_clause's process_comment(true) or unicode_atoms option",
-                        "R2 (the comment hook, the NFC hook)"
-                    )
-                )
-            end
             if opt_blobs !== nothing && !atom_to_blob_mode_ex(ld, rd, opt_blobs::T)
                 PL_close_foreign_frame(ld, fid)
                 return false
+            end
+            if opt_unicode_atoms !== nothing
+                PL_close_foreign_frame(ld, fid)
+                throw(
+                    NotPortedError{T}(
+                        mk_sym(T, :read_clause), "read_clause's unicode_atoms option",
+                        "ENC1 (the NFC hook)"
+                    )
+                )
             end
         end
 
@@ -4572,12 +5077,42 @@ function read_clause(
             )
         end
 
+        comments = 0
+        if opt_comments != 0
+            comments = PL_new_term_ref(ld)
+        elseif process_comment
+            tpos == 0 && (tpos = PL_new_term_ref(ld))
+            comments = PL_new_term_ref(ld)
+        end
+
         set_module_read_data(rd, ld.modules_source)
+        if varprefix != 0
+            c = get_var_prefix_ex(ld, varprefix)    # !get_var_prefix_ex(varprefix, &rd.var_prefix)
+            if c === nothing
+                PL_close_foreign_frame(ld, fid)
+                return false
+            end
+            rd.var_prefix = c
+        end
+        comments != 0 && (rd.comments = PL_copy_term_ref(ld, comments))
         rd.on_error = syntax_errors
         rd.singles = (rd.styleCheck & SINGLETON_CHECK) != 0 ? _SINGLES_REPORT : 0
         rval = read_term(term, rd)
         rval && tpos != 0 && (rval = unify_read_term_position(ld, tpos))
-        if !rval && rd.has_exception && reportReadError(rd)
+        if rval
+            if rd.comments != 0
+                rval = PL_unify_nil(ld, rd.comments)
+                if rval
+                    if opt_comments != 0
+                        rval = PL_unify(ld, opt_comments, comments)
+                    elseif !PL_get_nil(ld, comments)
+                        rval = callCommentHook(
+                            gd, ld, comment_hook, comments, tpos, term, rd.varnames
+                        )
+                    end
+                end
+            end
+        elseif rd.has_exception && reportReadError(rd)
             ld.exception_processing = false
             PL_rewind_foreign_frame(ld, fid)
             continue                                # goto retry (free_read_data: GC)
@@ -4695,6 +5230,113 @@ function pl_term_string2_va(
     return atom_to_term(ld, A2, A1, 0, PL_STRING) ? FTRUE : FFALSE
 end
 
+# ── the term readers of the foreign interface (pl-read.c:7292-7390) ─────────────────────────────
+
+# Copy of `ld.read_source` (a struct assignment upstream: `oldsrc = LD->read_source`).
+function _copy_read_source(ld::PL_local_data{T})::source_location{T} where {T}
+    o = ld.read_source
+    p = o.position
+    return source_location{T}(
+        o.file, IOPOS(p.byteno, p.charno, p.lineno, p.linepos, p.esc_state)
+    )
+end
+
+# PORT: pl-read.c PL_put_term_from_chars
+# DIVERGES: the text is a byte vector `s` and `len` its length in bytes (-1: up to its first 0 byte, upstream's `strlen`);
+# `ld` is an argument; the number fast path reads an EOS-terminated copy (upstream copies only when `s[len]` is not EOS);
+# the memory stream reads a copy of the bytes; `REP_MB` (ENC_ANSI) is refused by name, as streams refuse ENC_ANSI;
+# `free_read_data` is the GC.
+"""
+`PL_put_term_from_chars(ld, t, flags, len, s)` (pl-read.c): read the term in the `len` bytes of `s` (encoding by `flags`: ISO Latin-1,
+`REP_UTF8`) into `t`; a text that is a number is converted without the reader. A syntax error returns false, and `t` holds the error term
+(or, with `CVT_EXCEPTION`, the error is raised).
+"""
+function PL_put_term_from_chars(
+    ld::PL_local_data{T}, t::term_t, flags::UInt32, len::Int, s::AbstractVector{UInt8}
+)::Bool where {T}
+    gd = _query_gd(ld)
+    if len == -1
+        z = findfirst(==(0x00), s)
+        len = z === nothing ? length(s) : z - 1
+    end
+
+    if len >= 1 && (isDigit(Int(s[1])) || s[1] == UInt8('-')) && isDigit(Int(s[len]))
+        ns = UInt8[view(s, 1:len); 0x00]
+        n = number()
+        rc, e = str_number(ld, ns, 1, n, UInt32(0))
+        isnum = rc == NUM_OK && e == len + 1            # e == ns+len
+        if isnum
+            rc2 = _PL_put_number(ld, t, n)              # PL_put_number(t, &n)
+            clearNumber(n)
+            return rc2
+        end
+        clearNumber(n)
+    end
+
+    (flags & REP_MB) != 0 && throw(
+        NotPortedError{Nothing}(
+            nothing, "PL_put_term_from_chars: REP_MB", "ENC_ANSI streams are refused (os/pl-stream.jl)"
+        )
+    )
+    stream = Sopen_string(Vector{UInt8}(view(s, 1:len)), len, "r")
+    stream === nothing && return false
+    stream.encoding = (flags & REP_UTF8) != 0 ? ENC_UTF8 : ENC_ISO_LATIN_1
+    oldsrc = _copy_read_source(ld)
+
+    rd = init_read_data(gd, ld, stream)
+    PL_put_variable(ld, t)
+    rval = read_term(t, rd)
+    if !rval && rd.has_exception
+        if (flags & CVT_EXCEPTION) != 0
+            rval = PL_raise_exception(ld, rd.exception)
+        else
+            PL_put_term(ld, t, rd.exception)
+        end
+    end
+    Sclose(stream)                                  # free_read_data(): Julia's GC
+    ld.read_source = oldsrc
+
+    return rval
+end
+
+# PORT: pl-read.c PL_chars_to_term
+"`PL_chars_to_term(ld, s, t)` (pl-read.c): `PL_put_term_from_chars` on the ISO Latin-1 text `s` up to its first 0 byte."
+PL_chars_to_term(ld::PL_local_data{T}, s::AbstractVector{UInt8}, t::term_t) where {T} =
+    PL_put_term_from_chars(ld, t, REP_ISO_LATIN_1, -1, s)
+
+# PORT: pl-read.c PL_wchars_to_term
+# DIVERGES: `s` holds the code points (`wchar_t`) up to its first 0; the text is recoded as UTF-8 (`ENC_UTF8`), where upstream
+# opens an `ENC_WCHAR` stream, which the kernel's streams refuse; `PL_free_text` is the GC.
+"`PL_wchars_to_term(ld, s, t)` (pl-read.c): read the term in the wide text `s` into `t`; a syntax error puts the error term in `t`."
+function PL_wchars_to_term(
+    ld::PL_local_data{T}, s::AbstractVector{UInt32}, t::term_t
+)::Bool where {T}
+    gd = _query_gd(ld)
+    z = findfirst(==(0x00000000), s)
+    n = z === nothing ? length(s) : z - 1               # wcslen(s)
+    bytes = UInt8[]
+    for i in 1:n
+        utf8_put_char(bytes, Int(s[i]))
+    end
+    text = PL_chars_t(bytes, n, ENC_UTF8, false)
+
+    stream = Sopen_text(text, "r")
+    if stream === nothing
+        return false
+    end
+    oldsrc = _copy_read_source(ld)
+    rd = init_read_data(gd, ld, stream)
+    PL_put_variable(ld, t)
+    rc = read_term(t, rd)
+    if !rc && rd.has_exception
+        PL_put_term(ld, t, rd.exception)
+    end
+    Sclose(stream)                                  # free_read_data(): Julia's GC
+    ld.read_source = oldsrc
+
+    return rc
+end
+
 # PORT: pl-read.c read_term_options
 "read_term/2,3's and read_term_from_atom/3's options, in upstream's order (pl-read.c)."
 const read_term_options = (
@@ -4719,9 +5361,8 @@ const read_term_options = (
 
 # PORT: pl-read.c atom_to_blob_mode_ex
 # DIVERGES: stores the mode in `rd.blobs` (a Symbol), where upstream writes the enum through a pointer.
-# `dead` and `resolve` make the tokeniser claim `<type>(…)`, which is then REFUSED (`start_pframe`):
-# the kernel has no blob object to build (upstream `read_blob_end`: `newDeadBlob`, `lookupLiveBlob`).
-# Owner: the blob step.
+# `dead` and `resolve` make the tokeniser claim `<type>(…)`, which `read_blob_end` turns into a dead
+# blob (`newDeadBlob`; since RD2).
 """
 Validate the atom `a` as `blob(Mode)` and store the mode in `rd` (pl-read.c); `domain_error(blob, a)`
 and `false` for another atom.
@@ -4744,12 +5385,10 @@ function atom_to_blob_mode_ex(
 end
 
 # PORT: pl-read.c read_term_from_stream
-# DIVERGES: the options the kernel cannot honour are REFUSED (`NotPortedError`) where upstream
-# honours them: `comments` (the comments collector, R2), `var_prefix` (the module flag, R2),
-# `unicode_atoms` (the NFC hook), `quasi_quotations` (none are read); `blob(dead|resolve)` is
-# accepted but `<type>(…)` is then refused when read (`atom_to_blob_mode_ex`; owner: the blob step);
-# `term_position` and `subterm_positions` are honoured since LB1. The module is the kernel's
-# table's; a syntax error is reported through `printMessage` (`reportReadError`); the retry on a
+# DIVERGES: the one option the kernel cannot honour is REFUSED (`NotPortedError`) where upstream
+# honours it: `unicode_atoms` (the NFC hook, ENC1);
+# `term_position` and `subterm_positions` are honoured since LB1, `comments` and `var_prefix` since RD2a, `quasi_quotations` since RD2.
+# The module is the kernel's table's; a syntax error is reported through `printMessage` (`reportReadError`); the retry on a
 # `dec10` error re-reads from the same stream, as upstream. No `free_read_data` (Julia's GC).
 "Read a term from `s` into term reference `term` with the read options list `options` holds (pl-read.c)."
 function read_term_from_stream(
@@ -4775,23 +5414,12 @@ function read_term_from_stream(
     vals[10] === nothing || (rd.on_error = Symbol(sym_text(vals[10]::T)))
     bq = vals[11]
     tcomments = something(vals[12], 0)::Int
-    qq = something(vals[13], 0)::Int
+    rd.quasi_quotations = something(vals[13], 0)::Int
     vals[14] === nothing || (rd.cycles = vals[14]::Bool)
     vals[15] === nothing || (rd.dotlists = vals[15]::Bool)
     opt_unicode_atoms = vals[16]
     opt_blobs = vals[17]
 
-    for (v, what) in
-        ((tcomments, "comments"), (varprefix, "var_prefix"), (qq, "quasi_quotations"))
-        v != 0 && throw(                            # (the culprit leaves the engine: exported once)
-            NotPortedError{T}(
-                export_cells(ld, cell_export{T}(), -(v + 1)),
-                "read_term's $what option",
-                "R2 (the comments collector, the var_prefix module flag); " *
-                "no quasi-quotations"
-            )
-        )
-    end
     opt_blobs !== nothing && !atom_to_blob_mode_ex(ld, rd, opt_blobs::T) && return false
     opt_unicode_atoms === nothing || throw(
         NotPortedError{T}(
@@ -4813,6 +5441,11 @@ function read_term_from_stream(
             rd.flags &= ~M_CHARESCAPE
         end
     end
+    if varprefix != 0
+        c = get_var_prefix_ex(ld, varprefix)        # !get_var_prefix_ex(varprefix, &rd.var_prefix)
+        c === nothing && return false
+        rd.var_prefix = c
+    end
     if dq !== nothing
         f = setDoubleQuotes(ld, dq::T, rd.flags)
         f === nothing && return false
@@ -4830,6 +5463,7 @@ function read_term_from_stream(
         end
     end
 
+    tcomments != 0 && (rd.comments = PL_copy_term_ref(ld, tcomments))
     rd.subtpos != 0 && (s.position = s.posbuf)     # s->position = &s->posbuf
 
     rval = read_term(term, rd)
@@ -4837,6 +5471,9 @@ function read_term_from_stream(
 
     if rval
         tpos != 0 && (rval = unify_read_term_position(ld, tpos))
+        if rval && tcomments != 0
+            PL_unify_nil(ld, rd.comments) || (rval = false)
+        end
     else
         if rd.has_exception && reportReadError(rd)
             PL_rewind_foreign_frame(ld, fid)
@@ -4909,6 +5546,47 @@ function pl_read_term2_va(
     read_term_from_stream(gd, ld, s, A1, A2) && return FTRUE      # PL_release_stream(s)
     Sferror(s) != 0 && return streamStatus(ld, s) ? FTRUE : FFALSE
     return FFALSE                                   # PL_release_stream(s)
+end
+
+# PORT: pl-read.c code_class as pl_code_class2_va
+# (PRED_IMPL("$code_class", 2, code_class, 0)) — pl-read.c:7398-7440
+# `PL_get_char_ex(A1, &code, false)` is `PL_get_char` (nothing after the error). Upstream goes on after `PL_error` of the
+# VALID_CODE_POINT test (no `return`); `PL_get_char` has raised for an invalid code, so the test cannot be true here.
+"`\$code_class(+Code, +Category)` (pl-read.c): `Code` is a member of the reader's character class `Category` (layout, symbol, solo, punct, upper, id_start, id_continue, invalid)."
+function pl_code_class2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2 = PL__t0, PL__t0 + 1
+    code = PL_get_char(ld, A1)
+    code === nothing && return FFALSE
+    class = PL_get_atom_ex(ld, A2)
+    class === nothing && return FFALSE
+
+    VALID_CODE_POINT(code) || PL_error(ld, ERR_TYPE, mk_sym(T, :character), A1)
+
+    c = sym_text(class)
+    if c == "layout"
+        rc = PlBlankW(code)
+    elseif c == "symbol"
+        rc = PlSymbolW(code)
+    elseif c == "solo"
+        rc = PlSoloW(code)
+    elseif c == "punct"
+        rc = PlPunctW(code)
+    elseif c == "upper"
+        rc = PlUpperW(code)
+    elseif c == "id_start"
+        rc = PlIdStartW(code)
+    elseif c == "id_continue"
+        rc = PlIdContW(code)
+    elseif c == "invalid"
+        rc = PlInvalidW(code)
+    else
+        PL_error(ld, ERR_DOMAIN, mk_sym(T, :category), A2)
+        return FFALSE
+    end
+
+    return rc ? FTRUE : FFALSE
 end
 
 # PORT: pl-read.c is_named_var as pl_is_named_var1_va
@@ -4993,13 +5671,128 @@ end
 "`read(-Term)` (pl-read.c): `read/2` on the current input."
 pl_read(ld::PL_local_data{T}, term::term_t) where {T} = pl_read2(ld, 0, term)
 
+# ── char_conversion/2, current_char_conversion/2 (pl-read.c:552-620) ───────────────────────────
+
+# PORT: pl-read.c initCharConversion
+# DIVERGES: returns the table, which the database holds (`gd.char_conversion_table`), where upstream fills a static in place.
+"The identity conversion table: EOF (-1) and the codes 0 to 255 map to themselves (pl-read.c); the entry of code `c` is at `c + 2`."
+initCharConversion()::Vector{Int} = collect(-1:255)
+
+# PORT: pl-read.c pl_char_conversion
+# (FRG("char_conversion", 2, pl_char_conversion, ISO), pl-ext.c:120)
+# DIVERGES: a code `cin` outside 0..255 is not stored: upstream's write lands past the 257-entry table, where nothing reads it.
+"`char_conversion(+In, +Out)` (pl-read.c): the reader, while the flag `char_conversion` is set, reads the character `In` as `Out`."
+function pl_char_conversion(
+    ld::PL_local_data{T}, cin_t::term_t, cout_t::term_t
+)::foreign_t where {T}
+    cin = PL_get_char(ld, cin_t)
+    cin === nothing && return FFALSE
+    cout = PL_get_char(ld, cout_t)
+    cout === nothing && return FFALSE
+    (cin >= 0 && cin < 256) && (_query_gd(ld).char_conversion_table[cin + 2] = cout)
+    return FTRUE
+end
+
+# PORT: pl-read.c pl_current_char_conversion
+# (FRG("current_char_conversion", 2, pl_current_char_conversion, NDET|ISO), pl-ext.c:121)
+# DIVERGES: a bound `In` outside 0..255 fails, where upstream reads past its table. `ForeignRedoInt(ctx+1)` is `PL_retry(ctx + 1)`
+# after the frame is closed, as the kernel's other enumerations (`pl_arg3_va`).
+"`current_char_conversion(?In, ?Out)` (pl-read.c): the characters converted, enumerating `In` over the codes 0 to 255."
+function pl_current_char_conversion(
+    ld::PL_local_data{T}, cin_t::term_t, cout_t::term_t, h::control_t{T}
+)::foreign_t where {T}
+    table = _query_gd(ld).char_conversion_table
+    ctl = PL_foreign_control(h)
+    ctx = 0
+    if ctl == FRG_FIRST_CALL
+        if !PL_is_variable(ld, cin_t)
+            cin = PL_get_char(ld, cin_t)
+            cin === nothing && return FFALSE
+            (cin < 0 || cin >= 256) && return FFALSE
+            return PL_unify_atom(ld, cout_t, codeToAtom(T, table[cin + 2])) ? FTRUE : FFALSE
+        end
+    elseif ctl == FRG_REDO
+        ctx = PL_foreign_context(h)
+    else
+        return FTRUE                                # FRG_CUTTED
+    end
+
+    fid = PL_open_foreign_frame(ld)
+    fid == 0 && return FFALSE
+    while ctx < 256
+        if PL_unify_atom(ld, cin_t, codeToAtom(T, ctx)) &&
+            PL_unify_atom(ld, cout_t, codeToAtom(T, table[ctx + 2]))
+            PL_close_foreign_frame(ld, fid)
+            return PL_retry(ctx + 1)                # ForeignRedoInt(ctx+1)
+        end
+        PL_rewind_foreign_frame(ld, fid)
+        ctx += 1
+    end
+    PL_close_foreign_frame(ld, fid)
+    return FFALSE
+end
+
+# PORT: pl-read.c qq_open as pl_qq_open2_va
+# (PRED_IMPL("$qq_open", 2, qq_open, 0), under O_QUASIQUOTATIONS) — pl-read.c:2446-2485
+# DIVERGES: the read data's "pointer" is the integer `objectid(rd)` the quasi-quotation term holds; it names a read in
+# `ld.read_contexts` (see `get_quasi_quotation`), no such read is `existence_error(read_context, A1)` as upstream's failed magic
+# test; the stream reads a COPY of the buffer's slice (`Sopenmem`).
+"`\$qq_open(+QQRange, -Stream)`: open the quasi-quoted text `QQRange` = `'\$quasi_quotation'(ReadData, Start, Length)` names, as a UTF-8 stream (pl-read.c)."
+function pl_qq_open2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2 = PL__t0, PL__t0 + 1
+    gd = _query_gd(ld)
+
+    if PL_is_functor(ld, A1, mk_sym(T, Symbol("\$quasi_quotation")), 3)
+        arg = PL_new_term_ref(ld)
+        if _PL_get_arg(ld, 1, A1, arg)
+            ptr = PL_get_int64(ld, arg)             # PL_get_pointer_ex(arg, &ptr)
+            if ptr === nothing
+                PL_error(ld, ERR_TYPE, mk_sym(T, :address), arg)
+                return FFALSE
+            end
+            _PL_get_arg(ld, 2, A1, arg)
+            start = PL_get_size_ex(ld, arg)
+            start === nothing && return FFALSE
+            _PL_get_arg(ld, 3, A1, arg)
+            len = PL_get_size_ex(ld, arg)
+            len === nothing && return FFALSE
+
+            i = findfirst(r -> Int64(objectid(r) % Int64) == ptr, ld.read_contexts)
+            if i !== nothing
+                rd = ld.read_contexts[i]::read_data{T}
+                from = rd.base + start
+                bufp = Ref{Union{Nothing, Vector{UInt8}}}(rd._rb.base[from:(from + len - 1)])
+                s = Sopenmem(bufp, Ref(len), "r")
+                if s !== nothing
+                    s.encoding = ENC_UTF8
+                    pos = ptr_to_location(from, rd)
+                    pos.file !== nothing && setFileNameStream(gd, s, pos.file)
+                    if pos.position.lineno > 0
+                        s.posbuf = pos.position
+                        s.position = s.posbuf
+                    end
+
+                    return PL_unify_stream(ld, A2, s) ? FTRUE : FFALSE
+                end
+            else
+                PL_error(ld, ERR_EXISTENCE, mk_sym(T, :read_context), A1)
+            end
+        end
+    else
+        PL_error(ld, ERR_TYPE, mk_sym(T, :read_context), A1)
+    end
+
+    return FFALSE
+end
+
 # PORT: pl-read.c BeginPredDefs as PL_predicates_from_read
 # DIVERGES: the entries of the predicates the kernel has ported, in upstream's order
-# (read:7443-7456 at cbf4e189); read_clause/3 since LB1; read_term/3,2 and `$is_named_var/1` since RD1.
-# `read/1,2` and `$raw_read/1,2` are pl-ext.c's FRG entries (`foreigns`, src/pl-ext.jl; pl-ext.c:116-118, 175).
-# LEFT TO A LATER STEP, in the audit's hands (RD1 handoff): `$code_class/2` (no boot file calls it; grep at
-# cbf4e189: library/prolog_colour.pl does), `$qq_open/2` (the kernel's reader refuses quasi-quotations),
-# char_conversion/2 and current_char_conversion/2 (pl-read.c:552-620; the table is state).
+# (read:7443-7456 at cbf4e189); read_clause/3 since LB1; read_term/3,2 and `$is_named_var/1` since RD1; `$code_class/2` since RD2b.
+# `read/1,2` and `$raw_read/1,2` are pl-ext.c's FRG entries (`foreigns`, src/pl-ext.jl; pl-ext.c:116-118, 175);
+# since RD2b so are char_conversion/2 and current_char_conversion/2 (pl-ext.c:120-121).
+# `$qq_open/2` (O_QUASIQUOTATIONS) since RD2.
 "pl-read.c's registration table (`BeginPredDefs(read)`): the ported entries."
 const PL_predicates_from_read = (
     PL_extension("read_term", 3, pl_read_term3_va, PL_FA_ISO | PL_FA_VARARGS),
@@ -5009,5 +5802,7 @@ const PL_predicates_from_read = (
     PL_extension("atom_to_term", 3, pl_atom_to_term3_va, PL_FA_VARARGS),
     PL_extension("term_to_atom", 2, pl_term_to_atom2_va, PL_FA_VARARGS),
     PL_extension("term_string", 2, pl_term_string2_va, PL_FA_VARARGS),
-    PL_extension("\$is_named_var", 1, pl_is_named_var1_va, PL_FA_VARARGS)
+    PL_extension("\$code_class", 2, pl_code_class2_va, PL_FA_VARARGS),
+    PL_extension("\$is_named_var", 1, pl_is_named_var1_va, PL_FA_VARARGS),
+    PL_extension("\$qq_open", 2, pl_qq_open2_va, PL_FA_VARARGS)
 )

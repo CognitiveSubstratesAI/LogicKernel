@@ -20,8 +20,8 @@
 #     names compared together; an instantiated position that does not unify fails the read.
 #   * read_clause/3's ERRORS: a stream that is no atom, not a stream, an output stream, an options
 #     list that is no list — the whole ball, as swipl raises it.
-#   * The refused construct (a quasi-quotation: R1's decision) stays NotPortedError and is left out by
-#     name; a dict is read since RDDICT (its positions: test_read_dict_swipl.jl); nothing else may be refused.
+#   * A quasi-quotation and a blob `<type>(...)` are read since RD2 (their positions: test_read_qq_swipl.jl,
+#     test_read_blob_swipl.jl); a dict is read since RDDICT (its positions: test_read_dict_swipl.jl); nothing else may be refused.
 using Test, LogicKernel, Random
 const LK = LogicKernel
 
@@ -236,9 +236,8 @@ function _rp_compare(labels, ours::Vector{String}, theirs::Vector{String}; label
     return bad
 end
 
-# R1's decision: a quasi-quotation is refused, never misread — left out by name. No text here holds one;
-# a dict is read since RDDICT (`-{a}` is in test_read_term_swipl.jl), and `{a||b}` (a quasi-quotation) is swipl's syntax error
-# `end_of_file_in_quasi_quotation` without the quasi_quotations option, which the kernel raises
+# No row is refused: a quasi-quotation is read since RD2, a dict since RDDICT (`-{a}` is in test_read_term_swipl.jl);
+# `{a||b}` is swipl's syntax error `end_of_file_in_quasi_quotation` without the quasi_quotations option, which the kernel raises
 # too: compared (first run, 2026-10-25). Any NOTPORTED row therefore fails the test.
 const _RP_REFUSED = Set{String}()
 
@@ -486,17 +485,20 @@ end
     )
 end
 
-@testset "the refusals that stay: comments, var_prefix — read_clause/3 and read_term_from_atom/3" begin
+@testset "the refusal that stays: unicode_atoms (read_clause/3); quasi_quotations(Q) is honoured (read_term_from_atom/3, RD2)" begin
     db = _rp_db()
-    for (n, a) in (("comments", nothing), ("var_prefix", Symbol("true")))
-        LK.set_standard_stream!(db[2], LK.SNO_USER_INPUT, IOBuffer("a."))
-        rc, _ = _rp_call(
-            db, "read_clause", _RP[_rps("user_input"), _rp_var(), _rp_opts([(n, a)])]
-        )
-        @test rc === :notported
-        rc, _ = _rp_call(
-            db, "read_term_from_atom", _RP[_rps("a"), _rp_var(), _rp_opts([(n, a)])]
-        )
-        @test rc === :notported
-    end
+    # comments(C) and var_prefix are honoured since RD2a (test_read_comments_swipl.jl)
+    LK.set_standard_stream!(db[2], LK.SNO_USER_INPUT, IOBuffer("a."))
+    rc, _ = _rp_call(
+        db, "read_clause",
+        _RP[_rps("user_input"), _rp_var(), _rp_opts([("unicode_atoms", Symbol("nfc"))])]
+    )
+    @test rc === :notported
+    # swipl: read_term_from_atom(a, T, [quasi_quotations(Q)]) gives T = a, Q = []
+    rc, ans = _rp_call(
+        db, "read_term_from_atom",
+        _RP[_rps("a"), _rp_var(), _rp_opts([("quasi_quotations", nothing)])]
+    )
+    @test rc === :solved
+    rc === :solved && @test lk_eq(ans[2], _rps("a"))
 end

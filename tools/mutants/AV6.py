@@ -9,7 +9,7 @@
 # that does not occur exactly once). AV5's V1 `old` (term_variables_loop `canBind(w)`) is indented 8 spaces; AV6's body puts it in
 # an inner `while true` (12 spaces): on the rebase onto AV5 re-pin AV5-V1's `old` to the 12-space line.
 # NOT LISTED:
-#   * EQUIVALENT (below, E1): alloc_attvar's `gp[2] = ATOM_nil` store.
+#   * alloc_attvar's `gp[2] = ATOM_nil` store (E1): NOT equivalent (EQ2, D-0472 item 4), see its entry.
 #   * NO ROW, no mutant: `register_attvar` in alloc_attvar (src/pl-attvar.jl) and in copy_record's PL_TYPE_ATTVAR case
 #     (src/pl-rec.jl): the chain is read only by backtracking's reclaim_attvars; a copy that is undone with the chain unlinked is
 #     not observable from a goal. TODO-VERIFY (run agent): one `(copy_term(X,C), fail ; …)` row, or record it for the audit.
@@ -18,6 +18,7 @@
 #     always has COPY_ATTRS). No mutant.
 #   * `info.size += 3` / `b.gstore += 3` (pl-rec.jl): sizing mutants, no row separates them reliably. Left to the audit.
 TA = ["test/core_lang/test_attvar_wakeup.jl"]
+TA_RD = TA + ["test/core_lang/test_read_dict_swipl.jl"]   # EQ2: build_attvar (the var_tag=attvar read) is a caller of alloc_attvar
 TARGETS = TA                                         # the baseline's targets (mutate_ci.py plan reads TARGETS)
 C = "src/pl-copyterm.jl"
 R = "src/pl-rec.jl"
@@ -100,10 +101,14 @@ MUTANTS = [
     dict(id="AV6-A1 alloc_attvar's attvar word points at its own cell, not at the attribute cell (KILL ct05)", file=A, targets=TA,
          old="    ld.gstack[gp + 1] = consPtr(gp + 2, TAG_ATTVAR | STG_GLOBAL)    # gp[1] = consPtr(&gp[2], …)\n",
          new="    ld.gstack[gp + 1] = consPtr(gp + 1, TAG_ATTVAR | STG_GLOBAL)    # gp[1] = consPtr(&gp[2], …)\n"),
-    dict(id="AV6-E1 alloc_attvar does not set its attribute cell to []", file=A, targets=TA,
+    # EQ2 (D-0472 item 4): NOT equivalent. alloc_attvar has THREE callers: copy_term_cells (pl-copyterm.jl:401, overwrites the cell) and
+    # build_attvar (src/pl-read.jl:2561, :2567: the `X{a:1}` syntax under var_tag=attvar), which does not: allocGlobalCells! leaves the cell a
+    # fresh variable (word 0), find_attr answers (false, 0) for it ("bad attribute list", pl-attvar.jl:410) and build_attvar's
+    # `@assert ok` fires. Killed by rows rm10, rm12, rm23 of test/core_lang/test_read_dict_swipl.jl (swipl-compared, attvar mode), added to the
+    # targets (D-0238); test_attvar_wakeup.jl stays for the copy_term caller.
+    dict(id="AV6-E1 alloc_attvar does not set its attribute cell to [] (KILL rm10, rm12, rm23 of test_read_dict_swipl.jl)", file=A, targets=TA_RD,
          old="    ld.gstack[gp + 2] = ld.atom_nil_w                       # gp[2] = ATOM_nil\n",
-         new="",
-         equivalent="src/pl-attvar.jl:319 — read, not run: the only caller (src/pl-copyterm.jl:361, copy_term_cells) continues with `t = attr + 1` = gp + 2 and every branch of the `again` loop assigns ld.gstack[t] before the agenda moves on, so the cell is overwritten before anything reads it; nothing GCs between (allocGlobalNoShift never shifts or collects). Upstream sets it for the collector. PENDING AUDIT (hand run to confirm it SURVIVES)."),
+         new=""),
     # ── records (pl-rec.c) ──
     dict(id="AV6-R1 compile_term_to_heap does not enter the TAG_ATTVAR loop (KILL bg01, bg02a)", file=R, targets=TA,
          old="        while isAttVar(w)                                   # TAG_ATTVAR (a global cell: p > 0)\n",

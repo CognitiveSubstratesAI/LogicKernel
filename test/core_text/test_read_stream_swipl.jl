@@ -6,7 +6,7 @@
 #     A syntax error's location is read through `rt_serr/2`: the file name and the stream blob are dropped, the numbers kept.
 #   * Every answer line is swipl's, PINNED (swipl 10.1.19-1-gcbf4e189, LC_ALL=C, two byte-identical runs, evidence/RD1/gen_rows.py of the
 #     RD1 branch); with `swipl` on PATH the live answers are compared with the pins too.
-#   * KNOWN DIFFERENCE rows (`_RT_KNOWN`): the options the kernel refuses pin the kernel's exact current answer (a `NotPortedError`)
+#   * KNOWN DIFFERENCE rows (`_RT_KNOWN`): the option the kernel refuses pins the kernel's exact current answer (a `NotPortedError`)
 #     beside swipl's (the pin of the same row). The syntax errors over an `open_string/2` stream are cases again (LB7: `unify_location`).
 #   * Rows that read the process's standard input (rt21-rt26, rt170, rt171) are UNVERIFIED on the kernel: gate decides (stdin is /dev/null in
 #     tools/run_tests.sh and in the driver run).
@@ -532,44 +532,39 @@ const _RT_CASES = [
     (
         "rt187",
         raw"""rt_serr((rt_file('/* abc', S), '$raw_read'(S, _)), R)"""
+    ),
+    (
+        "rt300",
+        raw"""rt_str('f(X).', S), read_term(S,T,[comments(C)]), R = T-C"""
+    ),
+    (
+        "rt301",
+        raw"""rt_str('f(X).', S), read_term(S,T,[var_prefix(true)]), R = T"""
+    ),
+    # read_term's quasi_quotations(Q) option (pl-read.c read_term_from_stream, QQ_ARG) and the blob(dead|resolve) read of `<type>(…)`
+    # (read_blob_start/resume/end, newDeadBlob: the type recorded in the text is blob/2's answer): honoured since RD2
+    (
+        "rt302",
+        raw"""rt_str('f(X).', S), read_term(S,T,[quasi_quotations(Q)]), R = T-Q"""
+    ),
+    (
+        "rt320",
+        raw"""rt_str('<a-b>(x, "y").', S), read_term(S,T,[blob(dead)]), blob(T, Ty), R = Ty"""
+    ),
+    (
+        "rt321",
+        raw"""rt_str('<a-b>(x).', S), read_term(S,T,[blob(resolve)]), blob(T, Ty), R = Ty"""
     )
 ]
 
 # KNOWN DIFFERENCE rows: (id, goal, the kernel's exact answer). swipl's answer is in `_RT_PINNED` (the rows after the cases), compared live too.
-#   rt300-rt302, rt304: read_term/3 options the kernel REFUSES with a `NotPortedError` (src/pl-read.jl `read_term_from_stream`, R1's decision);
-#   swipl answers the term (and for comments/quasi_quotations the collected lists). rt320, rt321: a blob `<type>(...)`, below.
+#   rt304: a read_term/3 option the kernel REFUSES with a `NotPortedError` (src/pl-read.jl `read_term_from_stream`, left to ENC1);
+#   rt300 comments(C), rt301 var_prefix(true), rt302 quasi_quotations(Q), rt320/rt321 blob(dead|resolve) are honoured since RD2: cases above.
 const _RT_KNOWN = [
-    (
-        "rt300",
-        raw"""rt_str('f(X).', S), read_term(S,T,[comments(C)]), R = T-C""",
-        "t_rt300 jlerr NotPortedError read_term's comments option"
-    ),
-    (
-        "rt301",
-        raw"""rt_str('f(X).', S), read_term(S,T,[var_prefix(true)]), R = T""",
-        "t_rt301 jlerr NotPortedError read_term's var_prefix option"
-    ),
-    (
-        "rt302",
-        raw"""rt_str('f(X).', S), read_term(S,T,[quasi_quotations(Q)]), R = T-Q""",
-        "t_rt302 jlerr NotPortedError read_term's quasi_quotations option"
-    ),
     (
         "rt304",
         raw"""rt_str('f(X).', S), read_term(S,T,[unicode_atoms(accept)]), R = T""",
         "t_rt304 jlerr NotPortedError read_term's unicode_atoms option"
-    ),
-    # blob(dead|resolve) on `<type>(…)`: swipl reads a dead blob (its type is the answer); the kernel has no blob object: refused when read
-    # (DIVERGES in src/pl-read.jl `atom_to_blob_mode_ex`; owner: the blob step). UNVERIFIED on the kernel: gate decides.
-    (
-        "rt320",
-        raw"""rt_str('<a-b>(x, "y").', S), read_term(S,T,[blob(dead)]), blob(T, Ty), R = Ty""",
-        "t_rt320 jlerr NotPortedError read: a blob <type>(…)"
-    ),
-    (
-        "rt321",
-        raw"""rt_str('<a-b>(x).', S), read_term(S,T,[blob(resolve)]), blob(T, Ty), R = Ty""",
-        "t_rt321 jlerr NotPortedError read: a blob <type>(…)"
     )
 ]
 
@@ -781,9 +776,9 @@ const _RT_PINNED = [
     "t_rt300 c[116,95,114,116,51,48,48]/1(c[45]/2(c[102]/1(V0),nil))",
     "t_rt301 c[116,95,114,116,51,48,49]/1(c[102]/1(a[88]))",
     "t_rt302 c[116,95,114,116,51,48,50]/1(c[45]/2(c[102]/1(V0),nil))",
-    "t_rt304 c[116,95,114,116,51,48,52]/1(c[102]/1(V0))",
     "t_rt320 c[116,95,114,116,51,50,48]/1(a[97,45,98])",
-    "t_rt321 c[116,95,114,116,51,50,49]/1(a[97,45,98])"
+    "t_rt321 c[116,95,114,116,51,50,49]/1(a[97,45,98])",
+    "t_rt304 c[116,95,114,116,51,48,52]/1(c[102]/1(V0))"
 ]
 
 "The program and cases as one file (in `dir`); the case predicates' names."

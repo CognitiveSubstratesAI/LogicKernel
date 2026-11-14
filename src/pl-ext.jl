@@ -38,6 +38,7 @@
 # repeat/0 as pl-ext.c:125-126), `$c_current_predicate`/2 (pl-ext.c:132, after them) and garbage_collect_clauses/0 (after `$garbage_collect/1` as pl-ext.c:171).
 # Since DWIM1 dwim_match/3 and `$dwim_predicate`/2 (pl-dwim.c) between prolog_current_frame/1 and context_module/1, pl-ext.c:155-156.
 # Since RD1 read/1 and `$raw_read/1,2` (pl-read.c) after print/1 and read/2 after `$garbage_collect/1`, at upstream's places (pl-ext.c:116-118, 175).
+# Since RD2b char_conversion/2 and current_char_conversion/2 (pl-read.c) after `$raw_read/2`, pl-ext.c:120-121.
 "pl-ext.c's own registration table of FRG built-ins (`foreigns[]`): the ported entries."
 const foreigns = (
     PL_extension("write_canonical", 1, pl_write_canonical, PL_FA_ISO),
@@ -48,6 +49,11 @@ const foreigns = (
     PL_extension("read", 1, pl_read, PL_FA_ISO),                    # RD1 (pl-ext.c:116)
     PL_extension("\$raw_read", 1, pl_raw_read, 0x00),                # RD1 (pl-ext.c:117)
     PL_extension("\$raw_read", 2, pl_raw_read2, 0x00),               # RD1 (pl-ext.c:118)
+    PL_extension("char_conversion", 2, pl_char_conversion, PL_FA_ISO),           # RD2b (pl-ext.c:120)
+    PL_extension(                                                               # NDET|ISO (RD2b, pl-ext.c:121)
+        "current_char_conversion", 2, pl_current_char_conversion,
+        PL_FA_NONDETERMINISTIC | PL_FA_ISO
+    ),
     PL_extension("abolish", 1, pl_abolish1, PL_FA_TRANSPARENT | PL_FA_ISO),     # META|ISO (PR1, pl-ext.c:125)
     PL_extension("abolish", 2, pl_abolish, PL_FA_TRANSPARENT),                  # META (PR1, pl-ext.c:126)
     PL_extension(                                                               # NDET|META (PR1, pl-ext.c:132)

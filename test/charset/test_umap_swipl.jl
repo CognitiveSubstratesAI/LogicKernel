@@ -56,7 +56,8 @@ const _UM_CLASSES = (
     "upper" => c -> (LK.uctypeFlagsW(c) & LK.UC_UPPER) != 0,
     "punct" => c -> (LK.uctypeFlagsW(c) & LK.UC_PUNCT) != 0,
     "end_of_line" => c -> (LK.uctypeFlagsW(c) & LK.UC_EOL) != 0,
-    "prolog_layout" => c -> LK.PlBlankW(c),
+    "prolog_layout" => c -> LK.unicode_separator(c),
+    "quote" => c -> LK.f_is_quote(c),
     "period" => c -> (LK.uctypeFlagsW(c) & LK.UC_STERM) != 0
 )
 
@@ -91,19 +92,20 @@ function _um_kernel_lines()::Vector{String}
     end
     for c in 1:0x10FFFF                     # f_paren_close
         0xD800 <= c <= 0xDFFF && continue   # (swipl: not a character code)
-        if LK.PlCatW(c) == LK.U_CAT_BRACKET
-            m, is_open = LK.pl_pair_lookup(c)
-            (m != 0 && is_open) && push!(lines, "paren $c $m")
-        end
+        m = LK.f_paren_close(c)
+        m != -1 && push!(lines, "paren $c $m")
     end
     for c in 1:0x10FFFF                     # f_quote_close
         0xD800 <= c <= 0xDFFF && continue
-        if c == Int('\'') || c == Int('"') || c == Int('`')
-            push!(lines, "quote $c $c")
-        elseif LK.PlCatW(c) == LK.U_CAT_QUOTE
-            m, is_open = LK.pl_pair_lookup(c)
-            (m != 0 && is_open) && push!(lines, "quote $c $m")
-        end
+        m = LK.f_quote_close(c)
+        m != -1 && push!(lines, "quote $c $m")
+    end
+    for c in 1:0x10FFFF                     # f_paren_open, f_quote_open: char_type(O, paren(C)), the reverse mode
+        0xD800 <= c <= 0xDFFF && continue
+        m = LK.f_paren_open(c)
+        m != -1 && push!(lines, "paren_open $c $m")
+        m = LK.f_quote_open(c)
+        m != -1 && push!(lines, "quote_open $c $m")
     end
     return lines
 end
@@ -111,7 +113,7 @@ end
 const _UM_DRIVER = raw"""
 classes([prolog_var_start, prolog_atom_start, prolog_identifier_continue, decimal, prolog_symbol,
          prolog_solo, pattern_syntax, white, space, alpha, alnum, cntrl, print, graph,
-         lower, upper, punct, end_of_line, prolog_layout, period]).
+         lower, upper, punct, end_of_line, prolog_layout, quote, period]).
 ranges([], []).
 ranges([C|Cs], [C-E|Rs]) :- span(C, Cs, E, Rest), ranges(Rest, Rs).
 span(E0, [C|Cs], E, Rest) :- C =:= E0+1, !, span(C, Cs, E, Rest).
@@ -129,7 +131,9 @@ wout(_, _, none) :- !.
 wout(F, L, W) :- format("width(~d) ~d ~d~n", [W, F, L]).
 mates :- forall((between(1, 0x10FFFF, C), \+ surrogate(C), code_type(C, paren(M))), format("paren ~d ~d~n", [C, M])),
     forall((between(1, 0x10FFFF, C), \+ surrogate(C), char_code(Ch, C), char_type(Ch, quote(Q)), char_code(Q, M)),
-           format("quote ~d ~d~n", [C, M])).
+           format("quote ~d ~d~n", [C, M])),
+    forall((between(1, 0x10FFFF, M), \+ surrogate(M), code_type(C, paren(M))), format("paren_open ~d ~d~n", [M, C])),
+    forall((between(1, 0x10FFFF, M), \+ surrogate(M), code_type(C, quote(M))), format("quote_open ~d ~d~n", [M, C])).
 :- initialization((classes(Ts), maplist(class, Ts), widths, mates, halt)).
 """
 
@@ -137,6 +141,24 @@ const _UM_SWIPL = (
     get(ENV, "LOGICKERNEL_NO_SWIPL", "") == "1" ? nothing : Sys.which("swipl")
 )
 const _UM_SWIPL_REQUIRED = get(ENV, "LOGICKERNEL_REQUIRE_SWIPL", "") == "1"
+
+# The exported classifiers (pl-read.c PL_is_*) have no Prolog-visible entry: a white-box row against the
+# kernel's own classifiers (equal beyond ASCII, where PlUpperW and the others take the category) and
+# values read off pl-umap.c's categories (U+0661 ARABIC-INDIC DIGIT ONE, U+03B1 GREEK SMALL LETTER ALPHA).
+@testset "the exported PL_is_* classifiers follow the category" begin
+    for c in (1633, 945, 913, 8195, 12297, 8216, 171, 128512, 233)
+        @test LK.PL_is_decimal(c) == LK.PlDecimalW(c)
+        @test LK.PL_is_uppercase(c) == LK.PlUpperW(c)
+        @test LK.PL_is_layout(c) == LK.PlBlankW(c)
+        @test LK.PL_is_id_start(c) == LK.PlIdStartW(c)
+        @test LK.PL_is_id_continue(c) == LK.PlIdContW(c)
+    end
+    @test LK.PL_is_decimal(1633)
+    @test LK.PL_is_id_start(945) && LK.PL_is_id_continue(945)
+    @test LK.PL_is_uppercase(913) && !LK.PL_is_uppercase(945)
+    @test LK.PL_is_layout(8195)
+    @test !LK.PL_is_layout(945) && !LK.PL_is_decimal(945)
+end
 
 if _UM_SWIPL !== nothing
     @testset "every code point's classes, width and mates == swipl's code_type/2" begin

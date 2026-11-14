@@ -243,7 +243,11 @@ const _MX_CASES = [
     # d20: a qualified element is not stripped (swipl's answer); user holds pa/1 by now
     ("d20", raw"'$def_modules'([ma:pa/1], R)"),
     # d17: exactly ten targets are taken (the limit is the eleventh)
-    ("d17", raw"'$def_modules'([pu/1, a/1, b/1, c/1, d/1, e/1, f/1, g/1, h/1, i/1], R)")
+    ("d17", raw"'$def_modules'([pu/1, a/1, b/1, c/1, d/1, e/1, f/1, g/1, h/1, i/1], R)"),
+    # d21 (EQ2, audit D-0472 item 4; pinned from swipl 10.1.20-18168e62): '$def_modules'/2 is registered PL_FA_TRANSPARENT (pl-modul.c
+    # PRED_IMPL("$def_modules", 2, def_modules, PL_FA_TRANSPARENT)), so its definition carries P_TRANSPARENT: the attribute answers 1.
+    # KILLS MOD5a-R4 (registration without PL_FA_TRANSPARENT: the attribute answers 0)
+    ("d21", raw"'$get_predicate_attribute'('$def_modules'(_,_), transparent, V), R = V")
 ]
 
 # swipl 10.1.19-1-gcbf4e189's answers to the program and cases above (the driver's lines; lk-channel evidence/MOD5a/mx_rows.out)
@@ -325,7 +329,8 @@ const _MX_PINNED = [
     "t_d15 c[116,95,100,49,53]/1(c[91,124,93]/2(c[45]/2(a[117,115,101,114],c[91,124,93]/2(c[47]/2(a[112,97],i1),c[91,124,93]/2(c[47]/2(a[112,98],i2),nil))),nil))",
     "t_d16 c[116,95,100,49,54]/1(c[91,124,93]/2(c[45]/2(a[109,97],c[91,124,93]/2(c[47]/2(a[112,97],i1),nil)),c[91,124,93]/2(c[45]/2(a[117,115,101,114],c[91,124,93]/2(c[47]/2(a[112,97],i1),nil)),nil)))",
     "t_d20 c[116,95,100,50,48]/1(nil)",
-    "t_d17 c[116,95,100,49,55]/1(c[91,124,93]/2(c[45]/2(a[117,115,101,114],c[91,124,93]/2(c[47]/2(a[112,117],i1),nil)),nil))"
+    "t_d17 c[116,95,100,49,55]/1(c[91,124,93]/2(c[45]/2(a[117,115,101,114],c[91,124,93]/2(c[47]/2(a[112,117],i1),nil)),nil))",
+    "t_d21 c[116,95,100,50,49]/1(i1)"
 ]
 
 # F5: a weak import overruled by a clause of a loaded file — swipl drops the import and makes a local definition; the kernel does the
@@ -512,6 +517,93 @@ end
     @test shared("mgq", "gz", 0) == 3
 end
 
+# F2 (EQ2, audit D-0472 item 4; MOD5a-F2): `fixExport` skips a DESTROYED module. Upstream's destroyModule takes the module out of
+# GD->tables.modules (pl-modul.c:438, deleteHTableWP) and fixExport walks only that table (pl-modul.c:1655-1658), so a destroyed module's
+# procedures are never re-pointed. The kernel keeps the record in its module vector (a declared divergence at unallocModule) and models
+# the skip with `M_DESTROYED` at fixExport. The Prolog-level answer is the same either way (the undefined definition belongs to `user`,
+# whose trap resolves the call), which swipl 10.1.20 confirms: the line below is swipl's; the pointer is seen white-box.
+# mftm and mftl both import user's undefined fz/0 (so they share its definition); mftm is destroyed; then user imports mfo's fz/0, whose
+# fixExport re-points every sharer in the table: mftl's procedure (control: the live module) and, only under the mutant, mftm's.
+const _MX_F2_PROGRAM = raw"""
+:- set_module(mftm:class(temporary)).
+:- set_module(mftm:base(system)).
+:- set_module(mftl:class(temporary)).
+:- set_module(mftl:base(system)).
+:- assertz(mfo:fz).
+:- mftm:import(user:fz/0).
+:- mftl:import(user:fz/0).
+t_f2(R) :-
+    '$destroy_module'(mftm),
+    user:import(mfo:fz/0),
+    ( catch(mftl:fz, error(E, _), R0 = raised(E)) -> true ; R0 = failed ),
+    ( var(R0) -> R = ran ; R = R0 ).
+"""
+# swipl 10.1.20 (18168e62)'s line, live below
+const _MX_F2_SWIPL = ["t_f2 c[116,95,102,50]/1(a[114,97,110])"]
+
+@testset "F2: a destroyed module's procedures are not re-pointed by fixExport (MOD5a-F2)" begin
+    f = joinpath(mktempdir(), "mx_f2.pl")
+    write(f, _MX_F2_PROGRAM)
+    @test all(startswith.(_MX_F2_SWIPL, ["t_f2 "]))
+    # UNVERIFIED on the kernel: gate decides
+    res, gd, _ = _mx_kernel(f, ["t_f2"])
+    @test res == ["ok"; _MX_F2_SWIPL]
+    # white box: the destroyed module (out of the name index, M_DESTROYED, its record kept) still holds its fz/0 on the OLD, undefined definition;
+    # the live module's was re-pointed to mfo's (the control: the fixup ran, and it ran only because the old definition had sharers left)
+    fz = sym_key(_mxs("fz"))
+    function record(name)
+        i = findfirst(m -> sym_key(m.atom) == sym_key(_mxs(name)), gd.modules.modules)
+        return i === nothing ? nothing : gd.modules.modules[i]
+    end
+    mftm, mftl, mfo = record("mftm"), record("mftl"), record("mfo")
+    @test mftm !== nothing && mftl !== nothing && mfo !== nothing
+    @test (mftm.flags & LK.M_DESTROYED) != 0
+    @test get(gd.modules.names, mftm.name, 0) == 0
+    @test (mftl.flags & LK.M_DESTROYED) == 0
+    pm = LK.isCurrentProcedure(fz, 0, mftm)
+    pl = LK.isCurrentProcedure(fz, 0, mftl)
+    po = LK.isCurrentProcedure(fz, 0, mfo)
+    pu = LK.isCurrentProcedure(fz, 0, LK.MODULE_user(gd))
+    @test pm !== nothing && pl !== nothing && po !== nothing && pu !== nothing
+    @test pu.definition === po.definition               # user's import went through
+    @test pl.definition === po.definition               # the live sharer was re-pointed by fixExport
+    @test pm.definition !== po.definition               # the destroyed module's was not (the mutant re-points it)
+    @test !LK.isDefinedProcedure(gd, pm)
+end
+
+# D9 (EQ2, MOD5a-D9): a loop of default modules. Upstream's setSuperModule replaces a SINGLE super with no cycle check (pl-modul.c:645-652;
+# swipl 10.1.20 accepts `set_module(a:base(b)), set_module(b:base(a))`), and find_modules_with_defs then stops at depth 100 with
+# `sysError("OOPS loop in default modules???")` (pl-modul.c:1180), which ends the process: there is no swipl answer to compare, so the
+# row is KERNEL-ONLY. The kernel raises an ErrorException at the same depth (pl-modul.jl find_modules_with_defs); with `l + 1` the
+# recursion never ends and Julia throws a StackOverflowError instead.
+@testset "a loop of default modules is a kernel error at depth 100 (MOD5a-D9, kernel-only: upstream sysErrors)" begin
+    f = joinpath(mktempdir(), "mx_d9.pl")
+    write(f, ":- set_module(mxl1:base(mxl2)).\n:- set_module(mxl2:base(mxl1)).\n")
+    res, gd, ld = _mx_kernel(f, String[])
+    @test res == ["ok"]
+    m = LK.isCurrentModule(gd.modules, _mxs("mxl1"))
+    @test m !== nothing
+    @test LK.reachableModule(gd.modules, gd.modules[m.supers[1]], m)       # the loop is there: mxl2's super leads back to mxl1
+    fid = LK.PL_open_foreign_frame(ld)
+    targets = Tuple{UInt64, Int, LK.term_t}[]
+    push!(targets, (sym_key(_mxs("nowhere")), 0, LK.PL_new_term_ref(ld)))
+    tmp = LK.PL_new_term_refs(ld, 3)
+    mlist = LK.PL_new_term_ref(ld)
+    err = try
+        LK.find_modules_with_defs(gd, ld, m, targets, tmp, mlist, 100)
+        nothing
+    catch e
+        e
+    end
+    @test err isa ErrorException
+    @test err isa ErrorException && occursin("OOPS loop in default modules", err.msg)
+    # the same walk over a chain that ends (no loop): no error, so the guard cannot fire at depth for a finite tree
+    @test LK.find_modules_with_defs(
+        gd, ld, LK.MODULE_user(gd), targets, tmp, mlist, 100
+    ) === true
+    LK.PL_close_foreign_frame(ld, fid)
+end
+
 @testset "the pins are swipl's (live, when swipl is on PATH)" begin
     swipl = get(ENV, "LOGICKERNEL_NO_SWIPL", "") == "1" ? nothing : Sys.which("swipl")
     # the pinned table is the driver's whole output (the inert-testset guard: an assertion either way)
@@ -527,5 +619,8 @@ end
         f6 = joinpath(mktempdir(), "mx_f6.pl")
         write(f6, _MX_F6_PROGRAM)
         @test _mx_swipl_lines(f6, ["t_f6", "t_f7"]) == ["ok"; _MX_F6_SWIPL]
+        f2 = joinpath(mktempdir(), "mx_f2.pl")
+        write(f2, _MX_F2_PROGRAM)
+        @test _mx_swipl_lines(f2, ["t_f2"]) == ["ok"; _MX_F2_SWIPL]
     end
 end

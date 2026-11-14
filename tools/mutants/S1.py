@@ -12,13 +12,15 @@
 #   * `set_buffering`'s flush (S1-31): a stream just opened has nothing buffered;
 #   * the arm of pl_close that turns a false result into "already closed" when an exception is pending (S1-15): PL_error returns
 #     false without raising while an exception is pending, so the answer is the same;
-# Hand-run (62 mutants): 57 CAUGHT, 5 EQUIVALENT (S1-8, S1-15, S1-31, S1-47, S1-48); two survivors of run 2 (S1-52, S1-56) were killed by new rows
+# EQ2 (D-0472 item 4): S1-8 and S1-31 are NOT equivalent (set_stream/2 now reaches aliasStream and set_buffering): they carry targets T_S2A and are
+# killed by rows t_s138, t_s139 of test/core_lang/test_s2a_swipl.jl; the two bullets above them are stale. Hand-run (62 mutants): 57 CAUGHT, 5 EQUIVALENT (S1-8, S1-15, S1-31, S1-47, S1-48); two survivors of run 2 (S1-52, S1-56) were killed by new rows
 # (Sopen_file's how string; e33 really ELOOP: _clean had been deleting the loop link before the row ran).
 # NOT listed: the EMFILE/ENFILE branch of the file errors — no row reaches it. Refitted after the rebase onto BLOB (304ff92): the
 # blob is an atom (`stream_blob`), so the writer, the NUM_OTHER reader, the scan fallback and the payload-key mutants are gone
 # (S1-22, S1-64 are new: the blob-type check and the payload decode); the file-name mutants (S1-61, S1-62) sit on Y1's code.
 TARGETS = ["test/files/test_open_close_swipl.jl"]
 T = TARGETS
+T_S2A = TARGETS + ["test/core_lang/test_s2a_swipl.jl"]   # EQ2: S1-8 and S1-31 are reached by set_stream/2 (D-0238)
 F = "src/os/pl-file.jl"
 S = "src/os/pl-stream.jl"
 E = "src/pl-error.jl"
@@ -52,13 +54,11 @@ MUTANTS = [
     dict(id="S1-7 an alias is not entered in the alias table", file=F, targets=T,
          old='''    gd.stream_aliases[sym_key(name)] = s            # addNewHTableWP(streamAliases, name, s)''',
          new='''    nothing                                         # addNewHTableWP(streamAliases, name, s)'''),
-    dict(id="S1-8 aliasStream keeps the alias of its previous holder", file=F, targets=T,
+    # EQ2 (D-0472 item 4): NOT equivalent since set_stream/2's alias branch was ported (pl-file.jl:2625-2639 calls aliasStream for any non-standard
+    # name and does not refuse a taken alias); killed by the row t_s138 of test/core_lang/test_s2a_swipl.jl (two streams, one alias, close the first).
+    dict(id="S1-8 aliasStream keeps the alias of its previous holder", file=F, targets=T_S2A,
          old='''    sp === nothing || unaliasStream(gd, sp, name)   # ensure name is free (error?)''',
-         new='''    nothing                                         # ensure name is free (error?)''',
-         equivalent="openStream refuses an alias that is in a table (permission_error(open, source_sink, alias(A))) before it "
-                    "opens the file, so aliasStream never meets a holder (src/os/pl-file.jl:1023 openStream; pl-file.c:4358 at cbf4e189). "
-                    "EQUIVALENT ONLY WHILE set_stream/2 has no alias branch: re-open when set_stream/2's alias branch is ported "
-                    "(pl-file.c:2230, which does not refuse a taken alias); that step adds the row (D-0223 item 2)"),
+         new='''    nothing                                         # ensure name is free (error?)'''),
     # ---- the closers
     dict(id="S1-9 closeStream does not free the stream", file=F, targets=T,
          old='''    freeStream(ld, s)
@@ -162,14 +162,14 @@ MUTANTS = [
     dict(id="S1-30 type(binary) opens a text stream", file=F, targets=T,
          old='''    _sym_is(type, :binary) && push!(how, 'b')''',
          new='''    nothing'''),
-    dict(id="S1-31 set_buffering(false) flushes first", file=F, targets=T,
+    # EQ2 (D-0472 item 4): NOT equivalent: set_buffering has a second caller, set_stream(S, buffer(false)) (pl-file.jl:2644) on any stream; killed by
+    # the row t_s139 of test/core_lang/test_s2a_swipl.jl (3 bytes pending, buffer(false), size_file answers 3).
+    dict(id="S1-31 set_buffering(false) flushes first", file=F, targets=T_S2A,
          old='''        Sflush(s)
         s.flags &= ~abuf
         s.flags |= SIO_NBUF''',
          new='''        s.flags &= ~abuf
-        s.flags |= SIO_NBUF''',
-         equivalent="the stream is new: nothing is buffered to flush (src/os/pl-file.jl:833 set_buffering, called at :1061 right "
-                    "after Sopen_file)"),
+        s.flags |= SIO_NBUF'''),
     dict(id="S1-32 reposition(false) keeps the position", file=F, targets=T,
          old='''    reposition || (s.position = nothing)''',
          new='''    nothing'''),

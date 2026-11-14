@@ -695,6 +695,9 @@ for i in range(0, len(b), 4096):
     times)
         s=\$(date +%s%N); sleep "\${STUB_SLEEP:-1}"; e=\$(date +%s%N)
         echo "\$s \$e" >> "\$STUB_TIMES" ;;
+    leak)
+        setsid sleep 37 > /dev/null 2>&1 < /dev/null &
+        echo \$! > "\$STUB_RECORD" ;;
 esac
 echo "pkgtest-way: PASS stub"
 """
@@ -844,6 +847,22 @@ echo "pkgtest-way: PASS stub"
         @test par.codes == [0, 0] && length(par.iv) == 2
         @test par.iv[1][2] > par.iv[2][1]                        # the control overlaps
         @test !occursin("another Pkg.test-way run holds", par.logs)
+        # TM25 (EQ2, audit D-0472 item 4): the lock's descriptor (fd 9) is closed for the test process. A grandchild the test process
+        # leaks (here a background `sleep`, its own session, its stdout/stderr elsewhere so the log pipes close) would otherwise
+        # carry the open file description and hold the flock after the script has returned: the next run would wait on it.
+        # UNTESTED: nothing was run when this row was written (the stub mode `leak`, the lock path from LOGICKERNEL_PKGTEST_WAY_LOCK).
+        let lk = joinpath(dir, "lock_leak")
+            rm(joinpath(dir, "record"); force=true)
+            r = way("test/test_package.jl", wayenv("leak"; lock=lk))
+            @test r.code == 0
+            leaked = tryparse(Int, strip(read(joinpath(dir, "record"), String)))
+            @test leaked !== nothing                   # the leaker started (guard: the row can fail on that)
+            try
+                @test success(`flock -n $lk true`)     # the lock is free: no leaked holder has fd 9
+            finally
+                leaked === nothing || run(ignorestatus(`kill $leaked`))
+            end
+        end
         # warm.sh's step runs the files one after the other in its own process, hands the lane's slice on, prints the
         # peak, and finishes before the branch-gate's first file: nothing of it runs beside the daemon's own file run
         warm = read(joinpath(_GS_ROOT, "tools", "warm.sh"), String)

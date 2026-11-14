@@ -131,13 +131,10 @@ MUTANTS = [
          file=PP, targets=TARGETS,
          old="debugmode(ld, debugSave[], nothing, UInt32(0))",
          new="debugmode(ld, false, nothing, UInt32(0))"),
-    dict(id="TOP1B-E1 pl_break1 does not set the current input to user_input on the way in (EQUIVALENT)",
+    dict(id="TOP1B-E1 pl_break1 does not set the current input to user_input on the way in (KILL test_top1b_swipl.jl: the message_hook row on break(begin, _), swipl-pinned `hook_in(user_input)`)",
          file=PP, targets=TARGETS,
          old="ld.IO_streams[SNO_CURRENT_INPUT + 1] = Suser_input(ld)          # Scurin  = Sinput",
-         new="nothing",
-         equivalent="src/pl-pro.jl:312 — query_loop's first resetProlog (:412) sets Scurin to Suser_input(ld) before the goal runs, and between the line and "
-                    "that call only printMessage(begin) (pl-pro.jl:501-504) runs, which reads no current input; inside the break the rows read Scurin only "
-                    "after resetProlog (tb04 `inside`), so the line has no observable effect"),
+         new="nothing"),
     # ── pl-pro.c pl_break (break/0) ──
     dict(id="TOP1B-N09 break/0 (pl_break_va) answers the opposite of pl_break (KILL test_top1b_swipl.jl:197 tb02: the conjunction `break, lvl(3)` fails)",
          file=PP, targets=TARGETS,

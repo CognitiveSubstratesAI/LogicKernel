@@ -21,8 +21,8 @@
 #     excluded by name and counted; upstream fix 7f8024cc7 gives the text read, and the exclusion is gone.)
 #   * CYCLIC TERMS WRITTEN (group F, D-0123: `PL_factorize_term`; until then write_canonical of a
 #     cyclic term was refused, decision 4a): 27 goals — three shapes and more, every writer.
-#   * THE REFUSALS, explicit: comments, var_prefix, quasi_quotations (R2), unicode_atoms —
-#     each `NotPortedError`. term_position and subterm_positions are honoured since LB1 (compared
+#   * THE REFUSAL, explicit: unicode_atoms (comments and var_prefix: honoured since RD2a, quasi_quotations since RD2) —
+#     a `NotPortedError`. term_position and subterm_positions are honoured since LB1 (compared
 #     with swipl in test_read_positions_swipl.jl). blob(Mode) is ported since RD1b (pl-read.c
 #     atom_to_blob_mode_ex): its modes and its domain/type/instantiation errors are compared with
 #     swipl in "the hand goals" and pinned in "blob(Mode)" below.
@@ -584,14 +584,20 @@ else
 end
 
 @testset "the refusals: read options the kernel cannot honour" begin
-    for o in
-        ("comments(_)", "var_prefix(true)", "quasi_quotations(_)", "unicode_atoms(nfc)")
+    # (comments(_) and var_prefix(_) are honoured since RD2a: test_read_comments_swipl.jl)
+    for o in ("unicode_atoms(nfc)",)
         r, _ = _cr_run(
             "read_term_from_atom",
             _CR[_crs("f(X)"), _cr_var(), _cr_read("[" * o * "]")::_CR]
         )
         @test r[3] == "NOTPORTED"
     end
+    # quasi_quotations(Q) is honoured since RD2: swipl reads f(X) and gives Q = [] (read_term_from_atom/3)
+    r, _ = _cr_run(
+        "read_term_from_atom",
+        _CR[_crs("f(X)"), _cr_var(), _cr_read("[quasi_quotations(_)]")::_CR]
+    )
+    @test r[3] == "true"
     # (a cyclic term's canonical text was refused here until group F, D-0123 — `X = f(X),
     # write_canonical(X)` gave `r[3] == "NOTPORTED"`; it is written as swipl writes it since, and
     # compared with swipl in "writing a cyclic term, as swipl")

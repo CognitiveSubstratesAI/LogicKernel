@@ -941,6 +941,7 @@ function _manifest_index(T)
         (LK.rawSyntaxError1, Tuple{String, String, LK.read_data{T}}, false),
         (LK.raw_read, Tuple{LK.read_data{T}}, false),
         (LK.raw_read2, Tuple{LK.read_data{T}}, false),
+        (LK.add_comment, Tuple{Vector{UInt8}, Union{Nothing, LK.IOPOS}, LK.read_data{T}}, false),
         (LK.raw_read_identifier, Tuple{Int64, LK.read_data{T}}, false),
         (LK.raw_read_quoted, Tuple{Int64, Int64, LK.read_data{T}}, false),
         (LK.read_unicode_quote_token, Tuple{Int64, Int64, LK.read_data{T}}, false),
@@ -2316,6 +2317,7 @@ function _manifest_index(T)
         (LK.reportReadError, Tuple{LK.read_data{T}}, false),
         (LK.set_module_read_data, Tuple{LK.read_data{T}, Int}, false),
         (LK.read_clause, Tuple{GD, LD, LK.IOSTREAM, Int, Int}, false),
+        (LK.callCommentHook, Tuple{GD, LD, LK.Procedure{T}, Int64, Int64, Int64, Int64}, false),
         (LK.load_file!, Tuple{GD, LD, String}, false),
         (LK._redefine_indicator, Tuple{GD, LD, D}, false),
         (LK.get_head_and_body_clause, Tuple{GD, LD, Int, Int, Int, Int}, false),
@@ -2473,11 +2475,57 @@ function _manifest_index(T)
         (LK.pl_raw_read, Tuple{LD, Int64}, false),
         (LK.pl_read2, Tuple{LD, Int64, Int64}, false),
         (LK.pl_read, Tuple{LD, Int64}, false),
+        # RD2b: char_conversion/2, current_char_conversion/2 and the conversion table (pl-read.c:552-620)
+        (LK.pl_code_class2_va, Tuple{LD, Int64, Int64, LK.foreign_context{T}}, false),   # RD2b: $code_class/2
+        # RD2b group 4: the foreign-interface term readers (pl-read.c:7292-7390)
+        (LK._copy_read_source, Tuple{LD}, false),
+        (LK.PL_put_term_from_chars, Tuple{LD, Int64, UInt32, Int64, Vector{UInt8}}, false),
+        (LK.PL_chars_to_term, Tuple{LD, Vector{UInt8}, Int64}, false),
+        (LK.PL_wchars_to_term, Tuple{LD, Vector{UInt32}, Int64}, false),
+        (LK.initCharConversion, Tuple{}, false),
+        (LK.pl_char_conversion, Tuple{LD, Int64, Int64}, false),
+        (LK.pl_current_char_conversion, Tuple{LD, Int64, Int64, LK.foreign_context{T}}, false),
         # RD1b: pl-read.c's blob(Type) read option and the tokeniser's `<type>(` claim
         (LK.blob_syntax_available, Tuple{LK.read_data{T}}, false),
         (LK.blob_name_char, Tuple{Int}, false),
         (LK.scan_blob_name, Tuple{Type{T}, Vector{UInt8}, Int}, false),
         (LK.atom_to_blob_mode_ex, Tuple{LD, LK.read_data{T}, T}, false),
+        # RD2 piece B: the quasi-quotation read (pl-read.c get_quasi_quotation, is_quasi_quotation_syntax, read_qq_*,
+        # parse_quasi_quotations; `'$qq_open'/2`) and errorWarningRef
+        (LK.errorWarningRef, Tuple{Int64, LK.read_data{T}}, false),
+        (LK.get_quasi_quotation, Tuple{Int64, LK.read_data{T}}, false),
+        (LK.is_quasi_quotation_syntax, Tuple{Int64, LK.read_data{T}}, false),
+        (LK.read_qq_start, Tuple{LK.pframe{T}, LK.token{T}, LK.ct_request, LK.read_data{T}}, false),
+        (LK.read_qq_resume, Tuple{LK.pframe{T}, LK.read_data{T}}, false),
+        (LK.parse_quasi_quotations, Tuple{LK.read_data{T}}, false),
+        (LK.pl_qq_open2_va, Tuple{LD, Int64, Int64, LK.foreign_context{T}}, false),
+        # RD2 piece C: blobs (pl-read.c read_blob_*; pl-atom.c deadBlobType, blob_address, scanLiveBlobs, lookupLiveBlob,
+        # newDeadBlob, write_unavailable). `written` is the closure of `read_blob_end`, whose type has no name: the manifest
+        # analyses the same call through `Base.Fix1` of the writer it wraps.
+        (LK.read_blob_start, Tuple{LK.pframe{T}, LK.token{T}, LK.ct_request, LK.read_data{T}}, false),
+        (LK.read_blob_resume, Tuple{LK.pframe{T}, LK.ct_request, LK.read_data{T}}, false),
+        (LK.read_blob_end, Tuple{LK.pframe{T}, LK.token{T}, LK.read_data{T}}, false),
+        (LK.read_blob_arg, Tuple{LK.pframe{T}, LK.ct_request, LK.read_data{T}}, false),
+        (LK.deadBlobType, Tuple{LK.atoms_t, UInt64}, false),
+        (LK._blob_address, Tuple{VIEW, Int}, false),
+        (
+            LK.scanLiveBlobs,
+            Tuple{LK.atoms_t, Base.Fix1{typeof(LK.blob_written_text), GD}, Nothing, UInt64, Bool, VIEW, Int},
+            false
+        ),
+        (
+            LK.scanLiveBlobs,
+            Tuple{LK.atoms_t, Base.Fix1{typeof(LK.blob_written_text), GD}, String, UInt64, Bool, VIEW, Int},
+            false
+        ),
+        (LK.lookupLiveBlob, Tuple{LK.atoms_t, Base.Fix1{typeof(LK.blob_written_text), GD}, String, VIEW, Int}, false),
+        (
+            LK.newDeadBlob,
+            Tuple{LK.atoms_t, Base.Fix1{typeof(LK.blob_written_text), GD}, String, VIEW, Int, Bool},
+            false
+        ),
+        (LK.write_unavailable, Tuple{T, LK.write_options{T}}, false),
+        (LK.blob_written_text, Tuple{GD, UInt64}, false),
         # HALT1 — halt/1, abort/0 (pl-fli.c haltProlog/PL_halt/PL_abort_process, pl-init.c PL_cleanup,
         # pl-setup.c signal_index/PL_get_signum_ex, pl-pro.c abortProlog/raise_halt_exception, pl-wam.c handles_unwind)
         (LK.haltProlog, Tuple{GD, LD, Int}, false),
@@ -3899,6 +3947,16 @@ const _DISPATCH_MANIFEST_TUPLE = (
     (LK.f_is_prolog_solo, Tuple{Int64}, true),
     (LK.f_is_pattern_syntax, Tuple{Int64}, true),
     (LK.f_paren_close, Tuple{Int64}, true),
+    (LK.f_paren_open, Tuple{Int64}, true),
+    (LK.f_quote_close, Tuple{Int64}, true),
+    (LK.f_quote_open, Tuple{Int64}, true),
+    (LK.unicode_separator, Tuple{Int64}, true),
+    (LK.f_is_quote, Tuple{Int64}, true),
+    (LK.PL_is_id_start, Tuple{Int64}, true),
+    (LK.PL_is_id_continue, Tuple{Int64}, true),
+    (LK.PL_is_uppercase, Tuple{Int64}, true),
+    (LK.PL_is_decimal, Tuple{Int64}, true),
+    (LK.PL_is_layout, Tuple{Int64}, true),
     (LK.stop_matches_codepoint, Tuple{String, Int64}, true),
     (LK.isAnonVarName, Tuple{Vector{UInt8}}, true),
     (LK.wr_is_symbol, Tuple{Int64, Int64}, true),

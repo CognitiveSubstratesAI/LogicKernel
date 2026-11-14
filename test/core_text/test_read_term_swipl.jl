@@ -13,8 +13,7 @@
 #     there, src/pl-read.jl);
 #   * THE ENTRY POINTS: term_to_atom/2 and term_string/2 on every text a term can hold (atom,
 #     string, number, code and character lists, `[]`) and their errors; atom_to_term/3's bindings;
-#   * THE REFUSALS (R1's decision): a quasi-quotation — `NotPortedError` where swipl calls its syntax
-#     hook (a dict is read since RDDICT, compared with swipl). A float's text (format_float) since R1e's floats; the write
+#   * A quasi-quotation is read since RD2 (its rows: test_read_qq_swipl.jl), a dict since RDDICT, both compared with swipl. A float's text (format_float) since R1e's floats; the write
 #     direction is R1e's (test_write_swipl.jl).
 using Test, LogicKernel, Random
 const LK = LogicKernel
@@ -258,21 +257,18 @@ if _TR_SWIPL !== nothing
     @testset "term_to_atom/2 == swipl: the hand corpus, the variables' order, the errors" begin
         ours = [_tr_read(t) for t in _TR_CORPUS]
         theirs = _tr_swipl_read(_TR_CORPUS)
-        refused = Dict(                         # R1's decision: refused, never a misread
-            "{a||b}" => "a quasi-quotation's raw text in braces"
-        )
-        # swipl's answer where the kernel refuses: pinned below, not compared here
-        keep = [k for k in eachindex(_TR_CORPUS) if ours[k] != "NOTPORTED"]
-        _tr_compare(_TR_CORPUS[keep], ours[keep], theirs[keep])
+        # no text is refused: a quasi-quotation is read since RD2 (`{a||b}` is swipl's syntax error too)
+        @test !any(==("NOTPORTED"), ours)
+        _tr_compare(_TR_CORPUS, ours, theirs)
         # floors (measured 2026-10-07: 256 texts, 72 errors, 135 compounds)
         @test count(startswith("err "), ours) > 60 && count(startswith("c"), ours) > 120
     end
 
-    @testset "dict syntax is read (RDDICT); a quasi-quotation is still refused" begin
+    @testset "dict syntax is read (RDDICT); a quasi-quotation is read (RD2)" begin
         # swipl reads a dict (`a{}`) or raises a syntax error inside one (`-{a}`: colon_expected): since RDDICT
         # (src/pl-read.jl `read_dict_start`) the kernel answers the same, term and error ball compared with
-        # swipl's. The refusal list moved to the quasi-quotations alone: a complete one calls its Prolog
-        # syntax hook (`{|x||y|}`) — NotPortedError (src/pl-read.jl `start_pframe`), never a misread
+        # swipl's. A complete quasi-quotation (`{|x||y|}`) is read since RD2 (src/pl-read.jl `read_qq_start`): with no syntax
+        # `x` declared, swipl's syntax error `unknown_quasi_quotation_syntax(x, user)` and the kernel's are compared as whole balls
         # the driver's `enc/1` cannot write a dict (`compound_name_arity/3` raises on one), so: the two syntax
         # errors are compared as whole balls, the four dicts by "swipl reads a dict" against "the kernel's
         # term is the dict compound" (their contents are the rows of test_read_dict_swipl.jl, compared there)
@@ -298,8 +294,8 @@ if _TR_SWIPL !== nothing
         texts = ["{|a}", "{|x||y|}", "f({|x||y|})"]
         ours = [_tr_read(t) for t in texts]
         theirs = _tr_swipl_read(texts)
-        @test all(==("NOTPORTED"), ours)
-        @test all(s -> s != "NOTPORTED", theirs)
+        @test !any(==("NOTPORTED"), ours)
+        _tr_compare(texts, ours, theirs)
     end
 
     @testset "`\$` is an operator: boot/topvars.pl's op(1, fx, \$) in `user` is loaded" begin

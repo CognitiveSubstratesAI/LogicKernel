@@ -2984,7 +2984,7 @@ src/pl-comp.jl, src/pl-read.jl, boot/init.jl, pl-global.jl, pl-incl.jl).
   constructs). So `branch_singleton`, `negation_singleton` and `unbalanced_var` are gated at the
   ANALYSIS (below), and reach a user when V9 compiles those bodies; nothing else is needed then.
 * **NOT PORTED:** read_clause's other options (`comments`, `process_comment(true)`, `var_prefix`,
-  `unicode_atoms`, `blob`: refused, as read_term's) and `style_check/1` (R2: boot's flags).
+  `unicode_atoms`: refused, as read_term's; `blob` is read since RD2) and `style_check/1` (R2: boot's flags).
   `term_position`, `subterm_positions` and `read_clause/3` as a predicate came with LB1 (below).
 * **Gates:** test/compile/test_compiler_warnings_swipl.jl (new): 33 pinned clauses + 1,500
   random clauses nesting `,`, `;`, `->`, `*->`, `\+` (the analysis) + 1,500 random conjunctions
@@ -3018,8 +3018,8 @@ src/pl-write.jl, src/pl-read.jl, src/os/pl-prologflag.jl, pl-ext.jl, pl-global.j
   7a on the cells as upstream (the mark's global top; the functor-cell marks), the two fields deleted
   2026-10-23 (audit D-0115); no attributed
   variables, no signals, no stack growth. `read_term_from_stream` REFUSES (`NotPortedError`) the
-  options it cannot honour: `comments`, `var_prefix`,
-  `quasi_quotations` (`term_position`, `subterm_positions` were refused until LB1), `unicode_atoms` (the NFC hook), `blob` (no blobs);
+  options it cannot honour: `unicode_atoms` (the NFC hook; `comments` and `var_prefix` since RD2a, `quasi_quotations` and `blob` since RD2;
+  `term_position`, `subterm_positions` were refused until LB1);
   `cycles(true)` was accepted and did nothing (no `@(T, B)` was read into a cycle: decision 4a)
   until group F (D-0123), which ports `instantiate_template`: the template unified with the term,
   then each `Var = Value` of the list (`type_error(list|equal, …)`, "invalid template", as upstream).
@@ -3410,16 +3410,15 @@ explicit error, term positions refused until needed.
   wide character — the same for every ASCII name); `bind_variable_names` builds the list and
   unifies it once; an atom's or a string's text is UTF-8 in `PL_chars_t`, where upstream's is
   Latin-1 or `wchar_t`.
-* **Refused, explicitly (`NotPortedError`):** a blob (`<type>(…)`, read only with the blob option), a
-  quasi-quotation (`{|Syntax||Text|}`) — at `start_pframe`, where swipl raises a syntax error
-  inside one (pinned); a dict (`Tag{…}`, `-{a}`, `X{…}`) is read since RDDICT (`read_dict_start`; section RDDICT); term-to-text
+* **Refused, explicitly (`NotPortedError`):** (a blob `<type>(…)` and a quasi-quotation `{|Syntax||Text|}` are read since
+  RD2, section RD1b below); a dict (`Tag{…}`, `-{a}`, `X{…}`) is read since RDDICT (`read_dict_start`; section RDDICT); term-to-text
   (`term_to_atom(+T, -A)`, `term_string(+T, -S)`: `PL_write_term`, R1e) and a float's text
   (`PL_get_text`'s `format_float`, R1e) — both ported since, R1e's core and R1e (floats).
 * **NOT PORTED:** read_term/2,3 and read_clause/3 (a stream argument: the stream table, R2),
   read_term_from_atom/3 (its options need `PL_scan_options`, which write_term/2,3 needs too: R1e),
   so `bind_variables`, `check_singletons`, `instantiate_template` (their options) and
-  `parse_quasi_quotations` (none is ever collected); term positions; atom locks (`Unlock`,
-  `rd->locked`: no atom GC); `$code_class/2`, `$is_named_var/1`, `$qq_open/2`; `PL_get_text`'s
+  `parse_quasi_quotations` (written since RD2); term positions; atom locks (`Unlock`,
+  `rd->locked`: no atom GC); `$code_class/2`, `$is_named_var/1` (`$qq_open/2` since RD2); `PL_get_text`'s
   `CVT_VARIABLE`, `CVT_VARNOFAIL` (`CVT_WRITE*`: ported since WR2). `$` is no operator: swipl's `op(1, fx, $)` comes
   from boot/topvars.pl (R1b noted it, as boot/init.pl's), which the kernel does not load until R2
   — never a misread: without it a `$` that takes an operand is two operands in a row (pinned).
@@ -3480,8 +3479,8 @@ constructs an explicit error.
   the term interface's atoms are Julia Symbols; the `swi_backslash_newline` warning is not printed
   (no message system); `nan15()` is a constant.
 * **NOT PORTED (explicit errors where reachable):** ENC_ANSI, UTF-16 and wchar encodings (UTF-8
-  only); `read_term`'s `comments(C)` option; reading past the end of a stream that raises it and a
-  non-file, non-string stream's error location (both name a stream: the stream table, R2); blobs,
+  only); a non-file, non-string stream's error location (it names a stream: the stream table, R2;
+  `comments(C)` and reading past the end of a stream that raises it are RD2a's); blobs (read since RD2),
   the NFC and non-ASCII atom policies, `dot_in_atom`, `char_conversion/2` (SWI-7's defaults: off);
   the case tables of pl-umap.c; the parser (R1d). CORRECTED in R1d: R1c listed quasi-quotations
   here as off by default — swipl's `quasi_quotations` flag is ON, and R1d detects them (`||`, `{|`).
@@ -5804,7 +5803,8 @@ What BLOB adds (pl-atom.c blob types, seen through the term interface; `is_blob`
 - **Written form**: `<stream>(0x<hex>)`, `<clause>(0x..)`, `<mutex>(0x..)` for write/print/writeq/write_canonical (also `show` of
   the reference type). swipl prints the C address, which a `Term` cannot reproduce: the test pins the SHAPE, not the digits
   (upstream's default `writeBlob` would print `<#hex>` of the payload; the stream/clause/mutex types print the shape above).
-- **Not covered**: dead blobs (`deadBlobType`), blob types with their own `compare`/`write`/`release` hooks.
+- **Dead blobs** (`deadBlobType`, `unavailable_blob`) since RD2: what `read_term/2,3` makes of `<type>(...)` with `blob(dead)`/`blob(resolve)`.
+- **Not covered**: blob types with their own `compare`/`write`/`release` hooks.
 
 Known-difference checklist item (D-0200, D-0149): two blobs of ONE type compare by CREATION INDEX (the handle) in the kernel
 (`compareAtomsBlob`, src/pl-prims.jl; `compare/3` in default_term.jl), where swipl orders streams and clause references by ADDRESS
@@ -6887,32 +6887,49 @@ stream, over the reader R1 built (`read_term_from_stream`); the pin tree is swip
   `PL_FA_ISO` flag mutants; read, not run). test/core_text/test_io.jl carries the upstream `no_protocol_in` unit
   (`read_term/3` on the `protocol` alias: `existence_error(stream, protocol)`).
 * **DEFERRED, each with its reason (none dropped):**
-  * `char_conversion/2` and `current_char_conversion/2` (pl-read.c:552-620, `FRG` at pl-ext.c:120-121): upstream keeps a static
-    257-entry table that `init_read_data` hands to the reader when the flag `char_conversion` is true (pl-read.c:851-854, 1430-1433).
-    The kernel has no home for it short of a `PL_global_data` field (a Tier-1 file), and the reader does no conversion (`read_data`
-    has no table). Left to a step that owns the field together with the conversion in `getchr__`; a half port is not made.
-  * `$qq_open/2` (pl-read.c:2425-2468, `O_QUASIQUOTATIONS`): its argument is built by the parser's quasi-quotation reader, which
-    the kernel's reader refuses (R1's decision), so no term of that shape exists. Deferred with the quasi-quotation step.
-  * `$code_class/2` (pl-read.c:7402, in the table at 7451): not in the sizing's RD1 list; library/prolog_colour.pl is its one
-    caller. Deferred to the library step.
+  * (`char_conversion/2` and `current_char_conversion/2` are written since RD2b: the table is `PL_global_data.char_conversion_table`, applied by `getchr__`
+    while the flag `char_conversion` is set, `init_read_data` taking it; test/core_text/test_char_conversion_swipl.jl.)
+  * (`$qq_open/2` (pl-read.c:2425-2468, `O_QUASIQUOTATIONS`) is written since RD2: `pl_qq_open2_va`, over the quasi-quotation reader below.)
+  * (`$code_class/2` (pl-read.c:7398-7440) is written since RD2b: `pl_code_class2_va`, registered in `PL_predicates_from_read`.)
   * The `unify_location` refusal (src/pl-read.jl:1087, the reader's refusal exception, "a stream's location, `stream(S, L, LP, C)`"): a syntax
     error on a stream with no file name that is no string stream. The stream table exists since S1, so the branch can be written;
     it is the reader's internals, so it waits for a step of its own (question to the audit, flag 4 of evidence/RD1/handoff.md).
     Rows over `open_string/2` streams that end in a syntax error hit it and are the KNOWN ones.
-  * The read_term options the reader refuses: `comments`, `var_prefix`, `quasi_quotations` and `unicode_atoms`
-    (the refusal exception in `read_term_from_stream`, existing since R1; rows rt300-rt302 and rt304 pin the refusal). Each waits for the
-    reader feature behind it (comment collection, the variable-prefix flag, quasi-quotations, Unicode atoms).
+  * The read_term option the reader refuses: `unicode_atoms` (the refusal exception in `read_term_from_stream`, existing since R1;
+    row rt304 pins the refusal). It waits for the reader feature behind it (Unicode atoms). `comments` and `var_prefix` are read since RD2a,
+    `quasi_quotations` since RD2.
 * **RD1b, the `blob(Mode)` read option (pl-read.c:669-677, 3605-3670, 3905-3921, 5940-6010, 6771-6790, 6801, 6988; the
   option the toplevel passes, toplevel.pl:1327 and history.pl:80):** ported as upstream has it in `read_term/2,3` and `read_clause/3`:
   `atom_to_blob_mode_ex` takes `error`, `dead` and `resolve` (`rd.blobs`, one new field of `read_data`) and raises
   `domain_error(blob, Atom)` for another atom; the tokeniser claims `<type>(` (`blob_syntax_available`, `blob_name_char`,
   `scan_blob_name`) only in `dead` and `resolve` mode, where an operator is not expected and `<` is no prefix operator of the module.
-  **DIVERGES (owner: the blob step):** a claimed `<type>(` is refused when read (`start_pframe`, the refusal exception), where upstream
-  builds a dead blob (`read_blob_start`, `read_blob_end`, `newDeadBlob`, `lookupLiveBlob`): the kernel has no blob object without a
-  foreign object behind it, and no `rd->blob_start`/atom lock is kept. Text with no `<type>(` reads as upstream's in every mode (the
-  toplevel's `blob(resolve)` reads), rows rt303 and rt305-rt319 pin this; rt320 and rt321 are the KNOWN rows of the refusal.
+  RD2 (below) lifts the refusal this paragraph described: a claimed `<type>(` builds a dead blob as upstream does. Text with no `<type>(`
+  reads as upstream's in every mode (the toplevel's `blob(resolve)` reads), rows rt303 and rt305-rt319 pin this.
+* **RD2, the blob read and the quasi-quotation read (pl-read.c PF_BLOB, PF_QQ; pl-atom.c deadBlobType, blob_address, scanLiveBlobs,
+  lookupLiveBlob, newDeadBlob, write_unavailable):** `read_blob_start`/`read_blob_arg`/`read_blob_resume`/`read_blob_end` read `<type>(...)`
+  into a blob of the type `unavailable_blob` (text kept, `atom/1` fails); with `blob(resolve)` `lookupLiveBlob` first looks for the one live
+  blob that WRITES as the text (`blob_written_text`, src/pl-write.jl: the kernel's blob types have no `write` hook) and takes it, else the
+  dead blob. `read_qq_start`/`read_qq_resume` read `{|Syntax||Quotation|}`; `parse_quasi_quotations` calls `'$parse_quasi_quotations'/2` (in `system`) on the
+  collected quasi-quotations after the term. **DIVERGES (representation):** `'$quasi_quotation'(Ptr, Start, Len)` names the read by `objectid(rd)`, not a C pointer, and
+  `PL_local_data.read_contexts` (a new last field) is where `$qq_open/2` finds the data again while the library runs; a blob's "address" is
+  its atom word. Tests: test/core_text/test_read_qq_swipl.jl, test_read_blob_swipl.jl (swipl-pinned); mutants: tools/mutants/RD2.py.
 * **Tier 3:** no Tier-1 file changed and no enum, so no `_enum_hash` entry and no allocation pins (RD1b adds the field `blobs` to
   `read_data`); the manifest gets eleven entries (test/static_analysis_manifest.jl). No battery.
+* **RD2a, the comments collector, `eof_action(error)`, `var_prefix` and the comment hook (pl-read.c at 18168e62: `add_comment` 1626-1661,
+  `raw_read2` 1664-1864, `callCommentHook` 6827-6862, `read_clause` 6871-6954, `read_term_from_stream` 7017-7120; edit-only, the gate
+  decides):** `comments(C)` of `read_term/2,3` and `read_clause/3` collects each block comment and each run of `%` lines as one
+  `Pos-String` (`-`-String without a position); reading past the end of a stream whose `eof_action` is `error` raises
+  `permission_error(input, past_end_of_stream, Stream)`; `var_prefix(P)` is honoured (after the module, as upstream);
+  `read_clause/3` calls `prolog:comment_hook(Comments, TermPos, Term, VarNames)` when it has clauses (`process_comment`, default true then).
+  **DIVERGES:** the comment text is a byte vector where upstream uses a `tmp_buffer`; the hook procedure is looked up at each `read_clause`
+  call (upstream caches it) and given `P_MULTIFILE` there, which boot/init.pl does (`:- multifile prolog:comment_hook/4`; no boot file here);
+  `callCommentHook` discards its foreign frame also when the term references could not be made; a syntax error retried by `read_clause`
+  with a hook defined: swipl 10.1.20 FAILS the read (observed on `% c\nf(a b).\n% d\ng(_).`, cause not traced), the kernel resets
+  `tpos` at each retry and goes on. **Still refused, owners unchanged:** a blob `<type>(...)` (PF_BLOB), quasi-quotations, read_term's
+  `quasi_quotations` option (RD2), `unicode_atoms` of `read_clause`/`read_term` (ENC1). New helpers `add_comment`, `callCommentHook`
+  (manifest entries added). Rows: test/core_text/test_read_comments_swipl.jl (new, pinned from swipl 10.1.20); rt300 and rt301 of
+  test_read_stream_swipl.jl moved from the known rows to the cases. The generated R2 status block (the RD2 row, line ~2103) is
+  regenerated with `tools/r2_status.jl` at the gate, never by hand.
 
 ## HALT1 — `halt/1`, `abort/0`, `PL_halt`, `PL_cleanup` (R2, pl-fli.c, pl-init.c, pl-setup.c, pl-pro.c, pl-wam.c at swipl-devel cbf4e189; edit-only: nothing was compiled when this was written, the gate decides)
 
