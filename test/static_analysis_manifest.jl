@@ -93,7 +93,7 @@ _manifest_per_type(T) = (
     # bindings (src/pl-inline.jl) and unification (src/pl-prims.jl)
     (LK.PL_local_data{T}, Tuple{LK.PL_global_data{T}}, false),
     (LK.Mark, Tuple{LK.PL_local_data{T}}, true),
-    (LK.Undo!, Tuple{LK.PL_local_data{T}, LK.mark}, true),
+    (LK.Undo!, Tuple{LK.PL_local_data{T}, LK.mark}, false),   # TX1e: push_undo pushes to a Vector (the undo schedule)
     (LK.freezeGlobal!, Tuple{LK.PL_local_data{T}}, false),   # e5
     (LK._release_frozen!, Tuple{LK.PL_local_data{T}, LK.mark, Bool}, false),
     (LK._global_pos, Tuple{LK.PL_local_data{T}, LK.word}, true),          # ENG2a: a read
@@ -559,6 +559,9 @@ function _manifest_index(T)
         (LK.visibleClauseCNT, Tuple{C, UInt64, UInt64}, true),
         (LK.visibleClause, Tuple{LD, C, UInt64}, true),
         (LK.visibleClauseCNT, Tuple{LD, C, UInt64}, true),
+        # TX1c: the forms with the transaction state
+        (LK.visibleClause, Tuple{C, UInt64, UInt64, Union{Nothing, LK.ld_transaction{T}}}, true),
+        (LK.visibleClauseCNT, Tuple{C, UInt64, UInt64, Union{Nothing, LK.ld_transaction{T}}}, true),
         (LK.ISDEADCI, Tuple{CI}, true), (LK.ISDEADCI, Tuple{Nothing}, true),
         (LK.next_clause_unindexed!, Tuple{CTX}, true),
         (LK.next_clause_primary_index!, Tuple{CTX}, true),
@@ -593,7 +596,7 @@ function _manifest_index(T)
         (LK._argv_is_var, Tuple{AC, Int}, false),
         (LK._descend_first_clause!, Tuple{AF, Int, CL, CTX}, false),
         (LK._descend_first_clause!, Tuple{AC, Int, CL, CTX}, false),
-        (LK._index_context!, Tuple{LK.index_context{T}, UInt64, D, CH, UInt64}, true),
+        (LK._index_context!, Tuple{LK.index_context{T}, UInt64, D, CH, UInt64, LK.ld_transaction{T}}, true),
         (LK.realize_clause_index!, Tuple{CI}, false),
         (LK.newClauseIndexTable, Tuple{HH, Bool, CTX}, false),
         (LK.newClauseListRef, Tuple{Type{T}, UInt64}, false),
@@ -676,6 +679,10 @@ function _manifest_index(T)
         (LK.current_generation, Tuple{GD, D}, true),
         (LK.next_generation!, Tuple{GD, D}, true), (LK.max_generation, Tuple{D}, true),
         (LK.setGenerationFrame, Tuple{GD, D}, true),
+        # TX1c: the forms with the transaction state (pl-inline.h)
+        (LK.current_generation, Tuple{GD, LD, D}, true),
+        (LK.next_generation!, Tuple{GD, LD, D}, true), (LK.max_generation, Tuple{LD, D}, true),
+        (LK.setGenerationFrame, Tuple{GD, LD, D}, true),
         # src/pl-thread.jl, src/pl-gc.jl
         (LK.cgcActivatePredicate!, Tuple{GD, D, UInt64}, false),
         (LK.pushPredicateAccessObj!, Tuple{LD, GD, D}, false),
@@ -726,6 +733,7 @@ function _manifest_index(T)
         (LK.unify_export_list, Tuple{LD, Int, MOD}, false),
         (LK.module_code_size, Tuple{MOD}, false), (LK.sizeof_module, Tuple{MOD}, false),
         (LK.setLastModifiedPredicate!, Tuple{GD, D, UInt64}, false),
+        (LK.setLastModifiedPredicate!, Tuple{GD, LD, D, UInt64, UInt32}, false),        # TX1c
         (LK.lookupModule, Tuple{GD, T}, false),
         (LK.inheritUnknown, Tuple{GD, MOD}, true),
         (LK.stripModuleName_cells, Tuple{LD, Int}, false),        # L1e e2c: on the cells
@@ -1203,7 +1211,6 @@ function _manifest_index(T)
         (LK.initClauseIndexing!, Tuple{GD}, false),
         (LK.ci_is_flag, Tuple{T}, false),
         (LK.ci_get_flag, Tuple{LD, Int64, T}, false),
-        (LK._tbl_restraint_unlimited, Tuple{T}, false),
         (
             LK.unify_prolog_flag_value,
             Tuple{GD, LD, Int64, T, LK.prolog_flag{T}, Int64},
@@ -1413,6 +1420,8 @@ function _manifest_index(T)
         (LK.add_ssu_clause, Tuple{LD, D, C}, false),
         (LK.PL_error, Tuple{LD, LK.PL_error_code, D}, false),        # ERR_PERMISSION_SSU_DEF
         (LK.retract_clause!, Tuple{GD, C, UInt64}, false),
+        (LK.retract_clause!, Tuple{GD, LD, C, UInt64}, false),                          # TX1c
+        (LK.retract_clause!, Tuple{GD, Nothing, C, UInt64}, false),
         (LK.retractClauseDefinition!, Tuple{GD, D, C, Bool}, false),
         (LK.find_prev, Tuple{D, CR, CR}, true), (LK.find_prev, Tuple{D, Nothing, CR}, true),
         (LK.cleanDefinition!, Tuple{D, DDI, UInt64}, false),
@@ -1841,7 +1850,7 @@ function _manifest_index(T)
                 LK.pl_can_compare2_va,
                 LK.pl_std_lt2_va, LK.pl_std_leq2_va, LK.pl_std_gt2_va, LK.pl_std_geq2_va,   # (L1d-1)
                 LK.pl_unifiable3_va, LK.pl_throw1_va,
-                LK.pl_variant2_va, LK.pl_prolog_current_choice1_va,
+                LK.pl_variant2_va, LK.pl_not_variant2_va, LK.pl_prolog_current_choice1_va,
                 LK.pl_copy_term2_va, LK.pl_copy_term_nat2_va, LK.pl_duplicate_term2_va,
                 # V6b: the type checks and \\== (src/pl-prims.jl)
                 LK.pl_nonvar1_va, LK.pl_var1_va, LK.pl_integer1_va, LK.pl_float1_va,
@@ -2096,6 +2105,7 @@ function _manifest_index(T)
         (LK.alloc_foreign_state!, Tuple{LK.foreign_state_pool{CH}}, false),
         (LK.free_foreign_state!, Tuple{LK.foreign_state_pool{CH}, Int}, false),
         (LK.get_procedure_find, Tuple{GD, LD, Int}, false),
+        (LK.get_procedure_resolve, Tuple{GD, LD, Int}, false),
         (LK.getDefinitionProc, Tuple{GD, D}, false),
         (LK.unify_atom_compound, Tuple{LD, Int, Int}, false),
         (LK.unify_head, Tuple{GD, LD, Int, Int}, false),
@@ -2273,6 +2283,7 @@ function _manifest_index(T)
         (LK.unify_meta_argument, Tuple{LD, Int, D, Int}, false),
         (LK.unify_meta_pattern, Tuple{LD, PR, Int}, false),
         (LK.num_visible_clauses, Tuple{GD, D, Bool}, false),
+        (LK.num_visible_clauses, Tuple{GD, LD, D, Bool}, false),                        # TX1c
         (LK.sizeof_predicate, Tuple{D}, false),
         (LK.sizeof_erased_clauses, Tuple{D}, false),
         (
@@ -2296,6 +2307,7 @@ function _manifest_index(T)
         (LK.SYSTEM_MODE, Tuple{LD}, false),   # LB2
         (LK.setAccessLevel!, Tuple{LD, Int64}, false),   # LB2
         (LK.setClausableDefinition!, Tuple{GD, LD, D, Bool}, false),   # TAB1 (library(error) `$clausable`)
+        (LK.setDetDefinition!, Tuple{GD, D, Bool}, false),   # SSU1b (`det/1`)
         (LK.setAttrDefinition, Tuple{LD, D, UInt64, Bool}, false),
         (LK.isTransparentMetamask, Tuple{D, Vector{LK.arg_info}}, false),  # MOD4
         (LK.setMetapredicateMask, Tuple{D, Vector{LK.arg_info}}, false),   # MOD4
@@ -2709,13 +2721,11 @@ function _manifest_index(T)
         (LK.trie_serial!, Tuple{GD, LK.trie{T}}, false),
         (LK.value_trie, Tuple{GD, UInt64}, false),
         (LK.variant_table, Tuple{LD, Bool}, false),
-        (LK.table_trie_empty, Tuple{LK.trie{T}}, false),
-        (LK.table_trie_destroy, Tuple{LK.trie{T}}, false),
-        (LK.reset_answer_table, Tuple{LK.trie{T}, Int}, false),
-        (LK.release_variant_table_node, Tuple{LK.trie{T}, Int}, false),
+        (LK.reset_answer_table, Tuple{GD, LK.trie{T}, Int}, false),
+        (LK.release_variant_table_node, Tuple{GD, LK.trie{T}, Int}, false),
         (LK.is_variant_trie, Tuple{LK.trie{T}}, false),
-        (LK.release_answer_node, Tuple{LK.trie{T}, Int}, false),
-        (LK.tbl_release_node, Tuple{LK.trie{T}, Int}, false),
+        (LK.release_answer_node, Tuple{GD, LK.trie{T}, Int}, false),
+        (LK.tbl_release_node, Tuple{GD, LK.trie{T}, Int}, false),
         (LK.trie_ret_arity, Tuple{Vector{Int}}, false),
         (LK.ret_functor, Tuple{LD, Int}, false),
         (LK.unify_trie_ret, Tuple{LD, Int, Vector{Int}}, false),
@@ -2731,6 +2741,15 @@ function _manifest_index(T)
         (LK.unify_table_status, Tuple{LD, Int, LK.trie{T}, Nothing, Bool}, false),
         (LK.table_status, Tuple{LD, LK.trie{T}}, false),
         (LK.table_is_incomplete, Tuple{LK.trie{T}}, false),
+        # TAB1 batch 3: the destruction of a table and the orphan sweep (TB5's functions that TB2 and TB4 call; src/pl-tabling.jl; pl-tabling.c :4472-4690)
+        (LK._wl_is, Tuple{LK.trie{T}, Int}, false),
+        (LK.get_trie_from_node, Tuple{LD, LK.trie{T}}, false),
+        (LK.destroy_answer_trie, Tuple{LD, LK.trie{T}}, false),
+        (LK.delayed_destroy_table, Tuple{LK.trie{T}}, false),
+        (LK.orphan_dynamic_table, Tuple{LK.trie{T}}, false),
+        (LK.delete_dynamic_table, Tuple{LD, LK.trie{T}}, false),
+        (LK.delete_orphan_dynamic_tables, Tuple{LD, Vector{LK.trie{T}}}, false),
+        (LK.sweep_orphan_dynamic_tables, Tuple{LD}, false),
         (LK.unify_skeleton, Tuple{LD, LK.trie{T}, Int, Int}, false),
         (LK.tbl_variant_table, Tuple{LD, Int, Int, Int, Int, Int, Int, Int, Int}, false),
         (LK.is_tabled, Tuple{D}, false),
@@ -2752,6 +2771,380 @@ function _manifest_index(T)
                 LK.pl_is_answer_trie2_va
             )
         ]...,
+        # TAB1 TB2: the components, worklists, clusters, suspension index, '$tbl_wkl_work'/6, completion, inspection
+        # (src/pl-tabling.jl) and push_continuation_list (src/pl-cont.jl); the UNTESTED relay (nothing compiled or run)
+        (LK.push_continuation_list, Tuple{GD, LD, Int, Int, PCd}, false),
+        (LK.tbl_pointer!, Tuple{LD, LK.tbl_worklist{T}}, false),
+        (LK.tbl_pointer!, Tuple{LD, LK.tbl_component{T}}, false),
+        (LK.tbl_pointer_release!, Tuple{LD, LK.tbl_worklist{T}}, false),
+        (LK.tbl_pointer_release!, Tuple{LD, LK.tbl_component{T}}, false),
+        (LK.tbl_unify_pointer, Tuple{LD, Int, LK.tbl_worklist{T}}, false),
+        (LK.tbl_unify_pointer, Tuple{LD, Int, LK.tbl_component{T}}, false),
+        (LK.tbl_get_pointer, Tuple{LD, Int}, false),
+        (LK.wl_table, Tuple{LD, LK.tbl_worklist{T}}, false),
+        (LK._zero_component!, Tuple{LK.tbl_component{T}}, false),
+        (LK.new_component, Tuple{LD}, false),
+        (LK.set_component_status, Tuple{LD, LK.tbl_component{T}, Int}, false),
+        (
+            LK.uncount_created_worklists,
+            Tuple{LD, LK.worklist_set{LK.tbl_worklist{T}}},
+            false
+        ),
+        (
+            LK.push_component_set,
+            Tuple{Vector{LK.tbl_component{T}}, LK.component_set{LK.tbl_component{T}}},
+            false
+        ),
+        (LK.free_component, Tuple{LD, LK.tbl_component{T}, Int}, false),
+        (LK.add_child_component, Tuple{LK.tbl_component{T}, LK.tbl_component{T}}, false),
+        (LK.del_child_component, Tuple{LK.tbl_component{T}, LK.tbl_component{T}}, false),
+        (
+            LK.free_components_set,
+            Tuple{LD, LK.component_set{LK.tbl_component{T}}, Int},
+            false
+        ),
+        (LK.merge_component, Tuple{LD, LK.tbl_component{T}}, false),
+        (LK.wl_set_component, Tuple{LD, LK.tbl_worklist{T}, LK.tbl_component{T}}, false),
+        (
+            LK.wls_set_component,
+            Tuple{LD, LK.worklist_set{LK.tbl_worklist{T}}, Int, LK.tbl_component{T}},
+            false
+        ),
+        (
+            LK.merge_component_sets,
+            Tuple{
+                LD,
+                LK.component_set{LK.tbl_component{T}},
+                LK.component_set{LK.tbl_component{T}}
+            },
+            false
+        ),
+        (LK.merge_children, Tuple{LD, LK.tbl_component{T}, LK.tbl_component{T}}, false),
+        (
+            LK.merge_worklists,
+            Tuple{
+                LD, LK.worklist_set{LK.tbl_worklist{T}}, LK.worklist_set{LK.tbl_worklist{T}}
+            },
+            false
+        ),
+        (
+            LK.merge_one_component,
+            Tuple{LD, LK.tbl_component{T}, LK.tbl_component{T}},
+            false
+        ),
+        (LK.new_worklist_set, Tuple{LD, LK.tbl_worklist{T}}, false),
+        (LK.wls_size, Tuple{LK.worklist_set{LK.tbl_worklist{T}}}, false),
+        (LK.add_global_worklist, Tuple{LD, LK.tbl_worklist{T}}, false),
+        (LK.add_delay_worklist, Tuple{LD, LK.tbl_worklist{T}}, false),
+        (LK.negative_worklist, Tuple{LD, LK.tbl_component{T}}, false),
+        (LK.pop_worklist, Tuple{LD, LK.tbl_component{T}}, false),
+        (LK.reset_global_worklist, Tuple{LD, LK.tbl_component{T}}, false),
+        (LK.add_newly_created_worklist, Tuple{LD, LK.tbl_worklist{T}}, false),
+        (LK.reset_newly_created_worklists, Tuple{LD, LK.tbl_component{T}, Int}, false),
+        (
+            LK.worklist_set_to_array,
+            Tuple{LK.worklist_set{LK.tbl_worklist{T}}, Type{T}},
+            false
+        ),
+        (LK.free_worklist_set, Tuple{LD, LK.worklist_set{LK.tbl_worklist{T}}, Int}, false),
+        (LK.wl_has_work, Tuple{LK.tbl_worklist{T}}, false),
+        (LK.suspension_keys, Tuple{LD, Int}, false),
+        (LK.answer_key, Tuple{LD, Int, UInt32}, false),
+        (
+            LK.suspension_matches_index,
+            Tuple{LD, LK.suspension{T}, Vector{LK.sindex_key}, Int},
+            false
+        ),
+        (LK.suspension_matches, Tuple{LD, Int, LK.suspension{T}}, false),
+        (LK.suspension_key_at, Tuple{LK.suspension{T}, UInt32}, false),
+        (LK._sindex_word_key, Tuple{LD, UInt8, LK.word, Int}, false),
+        (LK.sindex_free, Tuple{LK.cluster{T}}, false),
+        (LK.sindex_add, Tuple{LK.sindex_table, LK.suspension{T}, Int}, false),
+        (LK.sindex_extend, Tuple{LK.cluster{T}, Int}, false),
+        (LK.init_cluster_index, Tuple{LK.cluster{T}}, false),
+        (LK.get_answer_from_cluster, Tuple{LK.cluster{T}, Int}, false),
+        (LK.IS_TNOT, Tuple{LK.suspension{T}}, false),
+        (LK.get_suspension_from_cluster, Tuple{LK.cluster{T}, Int}, false),
+        (LK.acp_size, Tuple{LK.cluster{T}}, false),
+        (LK.scp_size, Tuple{LK.cluster{T}}, false),
+        (LK._new_cluster, Tuple{LD, LK.tbl_worklist{T}, Int}, false),
+        (LK.new_answer_cluster, Tuple{LD, LK.tbl_worklist{T}, LK.answer}, false),
+        (LK.free_answer_cluster, Tuple{LD, LK.cluster{T}}, false),
+        (LK.add_to_answer_cluster, Tuple{LK.cluster{T}, LK.answer}, false),
+        (LK.merge_answer_clusters, Tuple{LK.cluster{T}, LK.cluster{T}}, false),
+        (LK.prune_answer_cluster, Tuple{GD, LK.trie{T}, LK.cluster{T}}, false),
+        (LK.new_suspension, Tuple{LD, Int, Bool, Int}, false),
+        (LK.new_suspension_cluster, Tuple{LD, LK.tbl_worklist{T}, Int, Bool, Int}, false),
+        (LK.free_suspension_cluster, Tuple{LD, LK.cluster{T}}, false),
+        (LK.add_to_suspension_cluster, Tuple{LD, LK.cluster{T}, Int, Bool, Int}, false),
+        (LK.merge_suspension_cluster, Tuple{LK.cluster{T}, LK.cluster{T}, Bool}, false),
+        (LK.free_cluster, Tuple{LD, LK.cluster{T}}, false),
+        (LK.sindex_choose, Tuple{LK.cluster{T}, Vector{UInt32}}, false),
+        (LK.scp_index, Tuple{LD, LK.cluster{T}, Int}, false),
+        (LK._zero_worklist!, Tuple{LK.tbl_worklist{T}}, false),
+        (LK.new_worklist, Tuple{LD, LK.trie{T}}, false),
+        (LK.free_worklist, Tuple{LD, LK.tbl_worklist{T}}, false),
+        (LK.clean_worklist, Tuple{LD, LK.tbl_worklist{T}}, false),
+        (LK.conditional_answer_node, Tuple{LD, LK.trie{T}, Int}, false),
+        (LK.answer_nodes_discardable, Tuple{LD, LK.trie{T}}, false),
+        (LK.complete_worklist, Tuple{LD, LK.tbl_worklist{T}, Bool}, false),
+        (LK.worklist_negative, Tuple{LD, LK.tbl_worklist{T}}, false),
+        (LK.worklist_work_done, Tuple{LK.tbl_worklist{T}}, false),
+        (LK.prune_answers_worklist, Tuple{LD, LK.tbl_worklist{T}}, false),
+        (LK.wkl_append_left, Tuple{LK.tbl_worklist{T}, LK.cluster{T}}, false),
+        (LK.wkl_append_right, Tuple{LK.tbl_worklist{T}, LK.cluster{T}}, false),
+        (LK.update_riac, Tuple{LK.tbl_worklist{T}, LK.cluster{T}}, false),
+        (
+            LK.wkl_swap_clusters,
+            Tuple{LK.tbl_worklist{T}, LK.cluster{T}, LK.cluster{T}},
+            false
+        ),
+        (LK.potentially_add_to_global_worklist, Tuple{LD, LK.tbl_worklist{T}}, false),
+        (LK.wkl_add_answer, Tuple{LD, LK.tbl_worklist{T}, Int}, false),
+        (LK.wkl_add_suspension, Tuple{LD, LK.tbl_worklist{T}, Int, Bool, Int}, false),
+        (LK._unify_fresh_create, Tuple{LD, Int, LK.trie{T}, D}, false),
+        (LK.get_scc, Tuple{LD, Int}, false),
+        (LK.get_worklist, Tuple{LD, Int}, false),
+        (LK.tnot_get_worklist, Tuple{LD, Int}, false),
+        (LK.tbl_add_worklist, Tuple{LD, LK.trie{T}, LK.tbl_component{T}}, false),
+        (LK.frame_worklist, Tuple{LD, Int}, false),
+        (LK.tbl_reset_add_answer, Tuple{LD, Int}, false),
+        (LK.sindex_candidates, Tuple{LD, LK.sindex_table, Int}, false),
+        (LK.wkl_next_suspension, Tuple{LK.wkl_step_state{T}}, false),
+        (LK.advance_wkl_state, Tuple{LD, LK.wkl_step_state{T}}, false),
+        (LK.free_wkl_state, Tuple{LD, Int}, false),
+        (LK.wls_reeval_complete, Tuple{LD, Vector{LK.tbl_worklist{T}}}, false),
+        (LK.unify_leader_clause, Tuple{LD, LK.tbl_component{T}, Int}, false),
+        (LK.table_complete_all, Tuple{LD, Int, Int, Int, Int}, false),
+        (LK.table_discard_all, Tuple{LD, LK.tbl_component{T}}, false),
+        (LK.tbl_leader_finished, Tuple{LD, Int, Int, Int, Int}, false),
+        (LK.tbl_create_subcomponent, Tuple{LD, LK.trie{T}}, false),
+        (LK.unify_component_status, Tuple{LD, Int, LK.tbl_component{T}}, false),
+        (LK.unify_wl_set, Tuple{LD, Int, LK.worklist_set{LK.tbl_worklist{T}}}, false),
+        (LK.unify_scc_set, Tuple{LD, Int, LK.component_set{LK.tbl_component{T}}}, false),
+        (LK.unify_pointer_or_nil, Tuple{LD, Int, LK.tbl_component{T}}, false),
+        (LK.unify_pointer_or_nil, Tuple{LD, Int, Nothing}, false),
+        (LK.unify_cluster, Tuple{LD, Int, LK.trie{T}, LK.cluster{T}, Bool}, false),
+        (LK.unify_clusters, Tuple{LD, Int, LK.tbl_worklist{T}}, false),
+        [
+            (f, Tuple{LD, Int, Int, LK.control_t{T}}, false) for f in (
+                LK.pl_tbl_pop_worklist2_va,
+                LK.pl_tbl_wkl_add_suspension2_va,
+                LK.pl_tbl_wkl_add_suspension3_va,
+                LK.pl_tbl_wkl_make_follower1_va,
+                LK.pl_tbl_wkl_done1_va,
+                LK.pl_tbl_wkl_answer_trie2_va,
+                LK.pl_tbl_wkl_work6_va,
+                LK.pl_tbl_table_complete_all3_va,
+                LK.pl_tbl_leader_complete4_va,
+                LK.pl_tbl_free_component1_va,
+                LK.pl_tbl_table_discard_all1_va,
+                LK.pl_tbl_scc1_va,
+                LK.pl_tbl_scc_data2_va,
+                LK.pl_tbl_worklist_data2_va,
+                LK.pl_tbl_wkl_table2_va
+            )
+        ]...,
+        # TAB1 TB3: the answers of a table, answer subsumption, the complete-table fast path (src/pl-tabling.jl; pl-tabling.c :4729-5554, :6269, :7061-7157, :12229-12636)
+        (LK.global_delay_list_is_nil, Tuple{LD}, false),
+        (LK.pred_max_table_answer_size, Tuple{LD, D}, false),
+        (LK.tripwire_answers_for_subgoal, Tuple{LD, LK.tbl_worklist{T}}, false),
+        (LK.tbl_add_answer, Tuple{LD, LK.tbl_worklist{T}, Int, Int}, false),
+        (LK.tbl_add_answer_found, Tuple{LD, LK.tbl_worklist{T}, Int, Int, Int, Int}, false),
+        (LK.pl_tbl_wkl_add_answer4_va, Tuple{LD, Int, Int, LK.control_t{T}}, false),
+        (
+            LK.add_subsuming_answer,
+            Tuple{LD, LK.tbl_worklist{T}, LK.trie{T}, Int, Int, Int, Int, Int},
+            false
+        ),
+        (
+            LK.add_subsuming_answer,
+            Tuple{LD, Nothing, LK.trie{T}, Int, Int, Int, Int, Int},
+            false
+        ),
+        (LK.update_subsuming_answer, Tuple{LD, LK.sa_context{T}, Int}, false),
+        (
+            LK.update_subsuming_answers,
+            Tuple{LD, LK.tbl_worklist{T}, LK.trie{T}, Int, Int, Int, Int},
+            false
+        ),
+        (
+            LK.update_subsuming_answers,
+            Tuple{LD, Nothing, LK.trie{T}, Int, Int, Int, Int},
+            false
+        ),
+        (
+            LK.wkl_mode_add_answer,
+            Tuple{LD, LK.tbl_worklist{T}, LK.trie{T}, Int, Int},
+            false
+        ),
+        (LK.wkl_mode_add_answer, Tuple{LD, Nothing, LK.trie{T}, Int, Int}, false),
+        (LK.tbl_unify_answer, Tuple{LD, LK.trie{T}, Int, Int}, false),
+        (LK.idg_set_current_wl, Tuple{LD, Int}, false),
+        (LK.unify_dependency, Tuple{LD, Int, Int, LK.tbl_worklist{T}, Int, Bool}, false),
+        (LK.tbl_put_moded_args, Tuple{LD, LK.trie{T}, Int, Int}, false),
+        (LK.tbl_single_answer, Tuple{LK.trie{T}}, false),
+        (LK.unify_delay_info, Tuple{LD, Int, LK.trie{T}, Int, Int}, false),
+        (
+            LK.put_delay_set,
+            Tuple{LD, Int, LK.trie{T}, LK.delay_info, LK.delay_set, Int},
+            false
+        ),
+        [
+            (f, Tuple{LD, Int, Int, LK.control_t{T}}, false) for
+            f in (
+                LK.pl_tbl_answer3_va,
+                LK.pl_tbl_answer_c4_va,
+                LK.pl_tbl_answer_dl3_va,
+                LK.pl_tbl_answer_dl4_va
+            )
+        ]...,
+        (LK.unify_delay_info_dl, Tuple{LD, Int, LK.trie{T}, Int}, false),
+        (LK.reset_answer_table_worklist, Tuple{LD, LK.trie{T}, Int}, false),
+        (LK.reset_answer_table_idg, Tuple{LD, LK.trie{T}, Int}, false),
+        (LK._frame_arg_slot, Tuple{LD, Int, Int}, false),
+        (LK.put_supervisor_goal, Tuple{LD, Int, D, Int, Bool}, false),
+        (LK.complete_answer_clause, Tuple{LD, LK.trie{T}}, false),
+        (LK.call_complete_table, Tuple{LD, LK.trie{T}, D, UInt64}, false),
+        (LK.flat_skeleton, Tuple{LD, Vector{Int}}, false),
+        (LK.tbl_complete_answer_clause, Tuple{LD, D, Int}, false),
+        (LK.complete_answer_clause_term, Tuple{LD, D, Int, LK.trie{T}}, false),
+        # TAB1 TB4: WFS and delays (src/pl-tabling.jl "TAB1 TB4" and "TB4b"); the functions that name no term type are in the type-free table below
+        (LK.node_delayinfo, Tuple{GD, LK.trie{T}, Int}, false),
+        (
+            LK.set_node_delayinfo,
+            Tuple{GD, LK.trie{T}, Int, Union{Nothing, LK.delay_info}},
+            false
+        ),
+        (LK.answer_is_conditional, Tuple{GD, LK.trie{T}, Int}, false),
+        (
+            LK.answer_delay_info,
+            Tuple{GD, LK.tbl_worklist{T}, LK.trie{T}, Int, Bool},
+            false
+        ),
+        (LK.destroy_delay_info, Tuple{GD, LK.trie{T}, Int, Bool}, false),
+        (LK.answer_set_general_undefined, Tuple{GD, LK.trie{T}, Int}, false),
+        (
+            LK.delete_depending_answers,
+            Tuple{GD, LK.tbl_worklist{T}, Vector{LK.tbl_worklist{T}}},
+            false
+        ),
+        (LK.destroy_depending_worklists, Tuple{LD, LK.tbl_worklist{T}}, false),
+        (LK.destroy_delay_info_answer, Tuple{GD, LK.trie{T}, Int}, false),
+        (LK.destroy_delay_info_worklist, Tuple{GD, LK.tbl_worklist{T}}, false),
+        (LK.add_to_wl_delays, Tuple{LK.trie{T}, Int, Int, LK.tbl_worklist{T}}, false),
+        (LK.add_to_wl_pos_undefined, Tuple{LK.tbl_worklist{T}, LK.trie{T}, Int}, false),
+        (LK._udl_undefined, Tuple{GD, LK.trie{T}, Int}, false),
+        (
+            LK.update_delay_list_any,
+            Tuple{LD, LK.tbl_worklist{T}, Int, Int, Int},
+            false
+        ),
+        (LK.update_delay_list, Tuple{LD, LK.tbl_worklist{T}, Int, Int, Int}, false),
+        (LK.init_delay_list, Tuple{LD}, false),
+        (LK.PL_get_delay_list, Tuple{LD, Int}, false),
+        (LK.push_delay_list, Tuple{LD, Int}, false),
+        (LK.delay_to_data, Tuple{LD, LK.trie{T}, Int, Int, Int}, false),
+        (LK.delay_to_data, Tuple{LD, Nothing, Int, Int, Int}, false),
+        (LK.tbl_push_delay, Tuple{LD, LK.word, LK.trie{T}, Int, Int}, false),
+        (LK.tbl_push_delay, Tuple{LD, LK.word, Nothing, Int, Int}, false),
+        (LK.t_delay!, Tuple{LD, Int, Int}, false),
+        (LK.init_spf_agenda, Tuple{Type{T}}, false),
+        (LK.exit_spf_agenda, Tuple{LK.spf_agenda{T}}, false),
+        (LK.push_propagate, Tuple{LK.spf_agenda{T}, LK.tbl_worklist{T}, Int, Bool}, false),
+        (LK.pop_propagate, Tuple{LK.spf_agenda{T}}, false),
+        (
+            LK.make_answer_unconditional,
+            Tuple{GD, LK.spf_agenda{T}, LK.trie{T}, Int},
+            false
+        ),
+        (
+            LK.remove_conditional_answer,
+            Tuple{GD, LK.spf_agenda{T}, LK.trie{T}, Int},
+            false
+        ),
+        (
+            LK.propagate_to_answer,
+            Tuple{GD, LK.spf_agenda{T}, LK.tbl_worklist{T}, Int, Bool, LK.trie{T}, Int},
+            false
+        ),
+        (LK.answer_delays_on, Tuple{GD, LK.trie{T}, Int, Int}, false),
+        (
+            LK.propagate_result,
+            Tuple{GD, LK.spf_agenda{T}, LK.tbl_worklist{T}, Int, Bool},
+            false
+        ),
+        (LK._run_agenda, Tuple{GD, LK.spf_agenda{T}}, false),
+        (LK.simplify_answer, Tuple{LD, LK.tbl_worklist{T}, Int, Bool}, false),
+        (LK.live_answer_node, Tuple{LK.trie{T}, Int}, false),
+        (LK.table_has_no_answers, Tuple{LK.trie{T}}, false),
+        (LK.simplify_component, Tuple{LD, LK.tbl_component{T}}, false),
+        (LK.call_answer_completion, Tuple{LD, LK.trie{T}}, false),
+        (LK.has_positive_dl, Tuple{GD, LK.trie{T}, Int}, false),
+        (LK.is_ac_candidate_wl, Tuple{GD, LK.tbl_worklist{T}}, false),
+        (LK.answer_completion, Tuple{LD, LK.tbl_component{T}}, false),
+        (LK.answer_update_delay_list, Tuple{LD, Int, LK.trie{T}, Int}, false),
+        # the foreign predicates: '$tbl_delay_list'/1, '$tbl_set_delay_list'/1, '$tbl_add_global_delays'/2, '$tbl_force_truth_value'/3,
+        # '$tbl_set_answer_completed'/1, '$tbl_is_answer_completed'/1, '$tbl_answer_update_dl'/2,3, '$tbl_wkl_negative'/1, '$tbl_wkl_is_false'/1
+        [
+            (f, Tuple{LD, Int, Int, LK.control_t{T}}, false) for f in (
+                LK.pl_tbl_delay_list1_va,
+                LK.pl_tbl_set_delay_list1_va,
+                LK.pl_tbl_add_global_delays2_va,
+                LK.pl_tbl_force_truth_value3_va,
+                LK.pl_tbl_set_answer_completed1_va,
+                LK.pl_tbl_is_answer_completed1_va,
+                LK.pl_tbl_answer_update_dl2_va,
+                LK.pl_tbl_answer_update_dl3_va,
+                LK.pl_tbl_wkl_negative1_va,
+                LK.pl_tbl_wkl_is_false1_va
+            )
+        ]...,
+        # TAB1 TB8: the restraint flags, the tripwires, droppable_table and drop_intermediate_tables, '$tbl_sdg'/3 and '$tbl_incomplete'/3 (src/pl-tabling.jl)
+        (LK._tbl_is, Tuple{T, Symbol}, false),
+        (LK._trie_atom, Tuple{GD, LK.trie{T}}, false),
+        (LK.unify_restraint, Tuple{LD, Int, Int}, false),
+        (LK.tbl_get_restraint_flag, Tuple{LD, Int, T}, false),
+        (LK.set_restraint_action, Tuple{LD, Int, T}, false),
+        (LK.set_restraint, Tuple{LD, Int}, false),
+        (LK.tbl_set_restraint_flag, Tuple{LD, Int, T}, false),
+        (LK.generalise_answer_substitution, Tuple{LD, Int, Int}, false),
+        (LK.add_answer_count_restraint, Tuple{LD}, false),
+        (LK.add_radial_restraint, Tuple{LD}, false),
+        (LK.tbl_wl_tripwire, Tuple{LD, LK.tbl_worklist{T}, T, T}, false),
+        (LK.tbl_pred_tripwire, Tuple{LD, D, T, T}, false),
+        (LK.tripwire_incomplete_subgoals, Tuple{LD, D}, false),
+        (LK.tripwire_incomplete_subgoals, Tuple{LD, Nothing}, false),
+        (LK.tripwire_scc_subgoals, Tuple{LD, LK.tbl_worklist{T}, Int}, false),
+        (LK.droppable_table, Tuple{LD, LK.tbl_component{T}, LK.trie{T}}, false),
+        (LK.children_of_component, Tuple{LK.tbl_component{T}, Vector{LK.tbl_component{T}}}, false),
+        (LK.drop_intermediate_tables, Tuple{LD, LK.tbl_component{T}}, false),
+        (LK._tbl_put_pointer, Tuple{LD, Int, LK.tbl_worklist{T}}, false),
+        (LK._tbl_put_pointer, Tuple{LD, Int, LK.tbl_component{T}}, false),
+        (LK._tbl_put_pointer, Tuple{LD, Int, Nothing}, false),
+        (LK.sdg_push_root, Tuple{Vector{LK.tbl_component{T}}, LK.tbl_component{T}}, false),
+        (
+            LK.sdg_collect,
+            Tuple{
+                Vector{LK.tbl_component{T}}, Vector{LK.tbl_component{T}}, IdDict{LK.tbl_component{T}, Bool},
+                Vector{LK.tbl_worklist{T}}, IdDict{LK.tbl_worklist{T}, Int}
+            },
+            false
+        ),
+        (
+            LK.sdg_count_edges,
+            Tuple{
+                LD, LK.tbl_worklist{T}, IdDict{LK.tbl_worklist{T}, Int}, Dict{Tuple{Int, Int, Bool}, Int},
+                Vector{Tuple{Int, Int, Bool}}
+            },
+            false
+        ),
+        (LK.sdg_unify_table, Tuple{LD, Int, LK.tbl_worklist{T}}, false),
+        (LK._tbl_get_thread_id_ex, Tuple{LD, Int}, false),
+        [
+            (f, Tuple{LD, Int, Int, LK.control_t{T}}, false) for f in
+            (LK.pl_tbl_sdg3_va, LK.pl_tbl_incomplete3_va)
+        ]...,
         # T4/T5: the closure blob and the wrapper supervisors (src/pl-wrap.jl, src/pl-supervisor.jl)
         (LK.closure_of_word, Tuple{GD, UInt64}, false),
         (LK.unify_closure, Tuple{GD, LD, Int, D, Vector{LK.code}, Vector{CR}}, false),
@@ -2767,6 +3160,33 @@ function _manifest_index(T)
         (LK.innermost_supervisor, Tuple{GD, D}, false),
         (LK.get_procedure_resolve_head, Tuple{GD, LD, Int, Int}, false),
         (LK.write_closure, Tuple{GD, LK.closure{T}}, false),
+        # TAB1 TB5: the abolish and reclaim of the tables (src/pl-tabling.jl); the functions TB5 shares with batch 3's minimal ports
+        # (`_wl_is`, `get_trie_from_node`, `destroy_answer_trie`, `delayed_destroy_table`, `orphan_dynamic_table`, `delete_dynamic_table`,
+        # `delete_orphan_dynamic_tables`, `sweep_orphan_dynamic_tables`) have their entries in the TB4 block above; the
+        # database-carrying callers of freeCodesDefinition! (setDynamicDefinition!, resetProcedure!: src/pl-proc.jl) and their one body
+        (LK.collect_dynamic_children, Tuple{LD, LK.trie{T}}, false),
+        (LK.abolish_table, Tuple{LD, LK.trie{T}}, false),
+        (LK.destroy_delay_info_table, Tuple{GD}, false),
+        (LK.reset_table_bulk, Tuple{LD, UInt64, Union{Nothing, LK.idg_registry{LK.idg_node{T}}}, Base.RefValue{Int}}, false),
+        (LK.idg_unlink_concurrent_table, Tuple{LD}, false),
+        (LK.empty_variant_table, Tuple{LD, LK.trie{T}, Bool}, false),
+        (LK.clear_variant_table, Tuple{LD}, false),
+        # TAB1 W2: pl-tabling.c save_tabling_status / restore_tabling_status (pl_break1, table_answer_event)
+        (LK.save_tabling_status, Tuple{LD, LK.tbl_status{T}}, false),
+        (LK.restore_tabling_status, Tuple{LD, LK.tbl_status{T}}, false),
+        (LK.clearThreadTablingData, Tuple{LD, Bool}, false),
+        (LK.untable_from_clause, Tuple{GD, LD, C}, false),
+        (LK.untable_definition_clauses, Tuple{GD, LD, D}, false),
+        [
+            (f, Tuple{LD, Int, Int, LK.control_t{T}}, false) for
+            f in (LK.pl_tbl_destroy_table1_va, LK.pl_tbl_abolish_local_tables0_va)
+        ]...,
+        (LK.setDynamicDefinition!, Tuple{GD, D, Bool}, false),
+        (LK._setDynamicDefinition!, Tuple{GD, D, Bool}, false),
+        (LK._setDynamicDefinition!, Tuple{Nothing, D, Bool}, false),
+        (LK.resetProcedure!, Tuple{GD, PR, Bool}, false),
+        (LK._resetProcedure!, Tuple{GD, PR, Bool}, false),
+        (LK._resetProcedure!, Tuple{Nothing, PR, Bool}, false),
         # AUTOLOAD1 A4 — the autoload flag (pl-prologflag.c setAutoload, propagateAutoload; pl-fli.c PL_set_prolog_flag)
         (LK.setAutoload, Tuple{LD, T}, false),
         (LK.propagateAutoload, Tuple{GD, LD, Int}, false),
@@ -2932,6 +3352,7 @@ _index_entry_points(T) = (
     (LK.PL_error_range, Tuple{LK.PL_local_data{T}, Int, Int, Int}, false),
     (LK.PL_get_char, Tuple{LK.PL_local_data{T}, Int}, false),
     (LK.PL_get_int64_ex, Tuple{LK.PL_local_data{T}, Int}, false),
+    (LK.PL_get_pointer_ex, Tuple{LK.PL_local_data{T}, Int}, false),   # TB4e: pl-error.c PL_get_pointer_ex
     (LK.PL_syntax_error, Tuple{LK.PL_local_data{T}, String, Nothing}, false),
     (LK.string_bytes_text_error, Tuple{LK.PL_local_data{T}, Int}, false),
     (LK.text_representation_error, Tuple{LK.PL_local_data{T}, LK.IOENC}, false),
@@ -3031,14 +3452,15 @@ _manifest_tr1(T) = begin
     (
         (LK.block_at, Tuple{TR, Int}, false),
         (LK.trie_create, Tuple{Type{T}}, false),
-        (LK.release_node, Tuple{TR, Int}, false),
+        (LK.release_node, Tuple{GD, TR, Int}, false),
         (LK.trie_discard_clause, Tuple{GD, TR}, false),
-        (LK.trie_discard_nodes, Tuple{TR}, false),
-        (LK.trie_restore_nodes, Tuple{TR}, false),
-        (LK.trie_ensure_nodes, Tuple{TR}, false),
-        (LK.clear_nodes, Tuple{TR, Nothing}, false),
-        (LK.clear_nodes, Tuple{TR, SNK}, false),
-        (LK.trie_clear_nodes, Tuple{TR}, false),
+        (LK.trie_clause_refers_to_nodes, Tuple{TR}, false),
+        (LK.trie_discard_nodes, Tuple{GD, TR}, false),
+        (LK.trie_restore_nodes, Tuple{GD, LD, TR}, false),
+        (LK.trie_ensure_nodes, Tuple{GD, LD, TR}, false),
+        (LK.clear_nodes, Tuple{GD, TR, Nothing}, false),
+        (LK.clear_nodes, Tuple{GD, TR, SNK}, false),
+        (LK.trie_clear_nodes, Tuple{GD, TR}, false),
         (LK.empty_trie, Tuple{GD, TR, Nothing}, false),
         (LK.empty_trie, Tuple{GD, TR, SNK}, false),
         (LK.trie_empty, Tuple{GD, TR}, false),
@@ -3063,15 +3485,15 @@ _manifest_tr1(T) = begin
         (LK.free_trie_node, Tuple{TR, Int}, false),
         (LK.free_node_chunks, Tuple{TR}, false),
         (LK.sweep_node_chunks, Tuple{TR}, false),
-        (LK.clear_node, Tuple{TR, Int, Int, Nothing}, false),
-        (LK.clear_node, Tuple{TR, Int, Int, SNK}, false),
-        (LK.destroy_node, Tuple{TR, Int}, false),
-        (LK.prune_node, Tuple{TR, Int}, false),
-        (LK.prune_trie, Tuple{TR, Int}, false),
-        (LK.prune_trie, Tuple{TR, Int, SNK}, false),
+        (LK.clear_node, Tuple{GD, TR, Int, Int, Nothing}, false),
+        (LK.clear_node, Tuple{GD, TR, Int, Int, SNK}, false),
+        (LK.destroy_node, Tuple{GD, TR, Int}, false),
+        (LK.prune_node, Tuple{GD, TR, Int}, false),
+        (LK.prune_trie, Tuple{GD, TR, Int}, false),
+        (LK.prune_trie, Tuple{GD, TR, Int, SNK}, false),
         (LK.insert_child, Tuple{TR, Int, UInt64}, false),
         (LK.follow_node, Tuple{TR, Int, UInt64, Bool}, false),
-        (LK.prune_error, Tuple{TR, Int}, false),
+        (LK.prune_error, Tuple{GD, TR, Int}, false),
         (LK.trie_of_word, Tuple{GD, UInt64}, false),
         (LK.trie_symbol, Tuple{GD, TR}, false),
         (LK.symbol_trie, Tuple{GD, UInt64}, false),
@@ -3114,7 +3536,7 @@ _manifest_tr1(T) = begin
         (LK.stat_trie, Tuple{TR}, false),
         (LK.trie_table_size, Tuple{TR}, false),
         # TR1 B1: the values of the nodes (`release_value` takes the trie since B1), the recorded value `variantRecords` compares
-        (LK.release_value, Tuple{TR, UInt64}, false),
+        (LK.release_value, Tuple{GD, TR, UInt64}, false),
         (LK.variantRecords, Tuple{LK.record{T}, LK.record{T}}, false),
         (LK.new_record_value!, Tuple{TR, LK.record{T}}, false),
         (LK.record_of_value, Tuple{TR, UInt64}, false),
@@ -3125,7 +3547,7 @@ _manifest_tr1(T) = begin
         (LK.put_trie_value, Tuple{LD, TR, Int, Int}, false),
         (LK.set_trie_value_word, Tuple{GD, TR, Int, UInt64}, false),
         (LK.set_trie_value, Tuple{GD, LD, TR, Int, Int}, false),
-        (LK.trie_release_value, Tuple{TR, UInt64}, false),
+        (LK.trie_release_value, Tuple{GD, TR, UInt64}, false),
         (LK.trie_delete, Tuple{GD, TR, Int, Bool}, false),
         (LK.get_trie_nodes, Tuple{GD, LD, Int}, false),
         (LK.trie_lookup, Tuple{LD, TR, Int, Int, Bool, Union{Nothing, Vector{Int}}}, false),
@@ -3184,6 +3606,7 @@ _manifest_tr1(T) = begin
         (LK.next_choice0!, Tuple{LD, ST, Bool}, false),
         (LK.next_choice!, Tuple{LD, ST, Bool}, false),
         (LK.unify_trie_path!, Tuple{LD, ST, Int}, false),
+        (LK.trie_gen_unify_data, Tuple{LD, TR, Int, Int, Int, Int}, false),
         (
             LK.trie_gen_raw,
             Tuple{LD, Union{Nothing, TR}, Int, Int, Int, Int, Int, LK.control_t{T}},
@@ -3218,7 +3641,7 @@ _manifest_tr4(T) = begin
     C, W, ARGP = LK.code, LK.word, LK.argp_t{T}
     (
         (LK.initTries!, Tuple{GD}, false),
-        (LK.trie_maybe_discard_nodes, Tuple{TR}, false),
+        (LK.trie_maybe_discard_nodes, Tuple{GD, TR}, false),
         (LK._trie_clause_cref, Tuple{TR}, false),
         (LK.init_trie_compile_state, Tuple{TR}, false),
         (LK.add_vmi!, Tuple{ST, C}, false),
@@ -3279,6 +3702,303 @@ _manifest_tr4(T) = begin
         (LK._vmi_t_const!, Tuple{LD, Int, W}, false)
     )
 end
+
+# TAB1 TB6 — the incremental dependency graph: pl-idgset.c (src/pl-idgset.jl) and the IDG blocks of pl-tabling.c
+# (src/pl-tabling.jl). The pointer type of the edge sets is the node, `idg_node{T}`, so the sets, blocks, registry and the
+# functions on them are checked for every payload type; the ones on integers and the no-op reader hooks once, below.
+_manifest_tb6(T) = begin
+    TR, D, LD = LK.trie{T}, LK.Definition{T}, LK.PL_local_data{T}
+    IN, ES = LK.idg_node{T}, LK.idg_edge_state{T}
+    SET, BLK, ENUM, REG = LK.idg_set{IN}, LK.idg_set_block{IN}, LK.idg_set_enum{IN}, LK.idg_registry{IN}
+    PL, LING = Union{Nothing, LK.alloc_pool}, Union{Nothing, IN}
+    CTX = Tuple{LD, IN}
+    (
+        # pl-idgset.c: blocks, sets, enumeration, the registry
+        (LK.hash_slot, Tuple{IN, Int}, false),
+        (LK.new_block, Tuple{LD, Type{IN}, Int, PL}, false),
+        (LK.free_block_now, Tuple{BLK, PL}, false),
+        (LK.free_block, Tuple{BLK, PL}, false),
+        (LK.retire_block, Tuple{BLK, LING, PL}, false),
+        (LK.idg_set_free_lingering, Tuple{IN, PL}, false),
+        (LK.index_insert, Tuple{BLK, IN, Int}, false),
+        (LK.find_pos, Tuple{BLK, IN}, false),
+        (LK.append, Tuple{BLK, IN}, false),
+        (LK.grow_block, Tuple{LD, BLK, PL}, false),
+        (LK.idg_set_add, Tuple{LD, SET, IN, LING, PL}, false),
+        (LK.idg_set_delete, Tuple{SET, IN, LING, PL}, false),
+        (LK.idg_set_contains, Tuple{SET, IN}, false),
+        (LK.idg_set_size, Tuple{SET}, false),
+        (LK.idg_set_sizeof, Tuple{SET}, false),
+        (LK.idg_set_lingering_sizeof, Tuple{Union{Nothing, BLK}}, false),
+        (LK.idg_set_clear, Tuple{SET, typeof(LK.idg_free_affected), CTX, LING, PL}, false),
+        (LK.idg_set_clear, Tuple{SET, typeof(LK.idg_free_dependent), CTX, LING, PL}, false),
+        (LK.idg_set_clear, Tuple{SET, typeof(LK.idg_free_mdeps_affected), CTX, LING, PL}, false),
+        (LK.idg_set_clear, Tuple{SET, Nothing, CTX, LING, PL}, false),
+        (LK.idg_set_clear, Tuple{SET, Nothing, Nothing, LING, PL}, false),
+        (LK.idg_set_enum_init, Tuple{SET}, false),
+        (LK.idg_set_is_empty, Tuple{SET}, false),
+        (LK.idg_set_next, Tuple{ENUM}, false),
+        (LK.idg_free_or_defer, Tuple{typeof(LK.free_block_now), BLK, PL}, false),
+        (LK.idg_free_or_defer, Tuple{typeof(LK.free_registry_now), REG, Nothing}, false),
+        (LK.idg_free_or_defer, Tuple{typeof(LK.idg_free_node), IN, PL}, false),
+        (LK.idg_registry_new, Tuple{Type{IN}}, false),
+        (LK.free_registry_now, Tuple{REG, Nothing}, false),
+        (LK.idg_registry_add, Tuple{LD, REG, IN, PL}, false),
+        (LK.idg_registry_delete, Tuple{REG, Int}, false),
+        (LK.idg_registry_release, Tuple{REG}, false),
+        (LK.idg_registry_release_n, Tuple{REG, Int}, false),
+        (LK.idg_registry_count, Tuple{REG}, false),
+        (LK.idg_registry_sizeof, Tuple{REG}, false),
+        (LK.idg_registry_get, Tuple{REG, Int}, false),
+        # pl-tabling.c: IDG construction, the current node, the dynamic-call edge
+        (LK.idg_pool, Tuple{LD, IN}, false),
+        (LK.idg_new, Tuple{LD, TR}, false),
+        (LK.idg_release_registry, Tuple{LD}, false),
+        (LK.idg_mono_deps, Tuple{IN}, false),
+        (LK.idg_mono_index, Tuple{IN}, false),
+        (LK.idg_mono_index_deps, Tuple{IN}, false),
+        (LK.idg_ensure_mono, Tuple{LD, IN}, false),
+        (LK.idg_lingering, Tuple{LD, IN}, false),
+        (LK.idg_mdeps, Tuple{IN, IN}, false),
+        (LK.idg_clean_affected, Tuple{LD, IN}, false),
+        (LK.idg_clean_dependent, Tuple{LD, IN}, false),
+        (LK.idg_reset, Tuple{LD, IN}, false),
+        (LK.idg_free_node, Tuple{IN, PL}, false),
+        (LK.idg_destroy, Tuple{LD, IN}, false),
+        (LK.idg_free_mdeps_affected, Tuple{IN, CTX}, false),
+        (LK.idg_destroy_private, Tuple{LD, IN}, false),
+        (LK.idg_free_mdeps, Tuple{LD, IN, IN}, false),
+        (LK.idg_free_affected, Tuple{IN, CTX}, false),
+        (LK.idg_free_dependent, Tuple{IN, CTX}, false),
+        (LK.idg_add_child, Tuple{LD, IN, IN, Int, Int}, false),
+        (LK.idg_init_variant, Tuple{LD, TR, Union{Nothing, D}, Int}, false),
+        (LK.set_idg_current, Tuple{LD, Union{Nothing, TR}}, false),
+        (LK.idg_current, Tuple{LD}, false),
+        (LK.idg_add_edge, Tuple{LD, TR, Union{Nothing, TR}}, false),
+        (LK.trie_for_dynamic_predicate, Tuple{LD, Union{Nothing, D}, TR, Int}, false),
+        (LK.idg_add_dyncall, Tuple{LD, Union{Nothing, D}, TR, Int}, false),
+        (LK.incr_dynamic_call, Tuple{LD, D, Int, TR}, false),
+        # pl-tabling.c: change propagation, edge enumeration, the summaries
+        (LK.idg_changed_loop, Tuple{LD, LK.idg_propagate_state{T}, Int}, false),
+        (LK.idg_propagate_change, Tuple{LD, IN, Int}, false),
+        (LK.change_incomplete_error, Tuple{LD, TR}, false),
+        (LK.idg_need_invalidated, Tuple{LD, IN}, false),
+        (LK.idg_changed, Tuple{LD, TR, Int}, false),
+        (LK.advance_idg_edge_state, Tuple{LD, ES}, false),
+        (LK.free_idg_edge_state, Tuple{LD, ES, Int}, false),
+        (LK.save_idg_edge_state, Tuple{LD, ES, Int}, false),
+        (
+            LK.idg_edge_gen,
+            Tuple{LD, Int, Int, Int, Int, Int, Int, Int, Int, LK.control_t{T}},
+            false
+        ),
+        (LK.table_status_reeval_wait, Tuple{LD, TR}, false),
+        (LK.idg_reader_registry, Tuple{LD, Int}, false),
+        (LK.idg_thread_summary, Tuple{LD, Int}, false),
+        (LK.pair_map_get, Tuple{LK.pair_map{T}, D, Union{Nothing, D}}, false),
+        (LK.unify_pred_pi, Tuple{LD, Int, D}, false),
+        # pl-tabling.c: reevaluation
+        (LK.tt_has_modified_dependencies, Tuple{LD, TR}, false),
+        (LK.reeval_prep_node, Tuple{LD, TR, Int}, false),
+        (LK.prepare_reeval, Tuple{LD, TR}, false),
+        (LK.reeval_complete_node, Tuple{LD, TR, Int}, false),
+        (LK.reeval_complete, Tuple{LD, TR}, false),
+        (LK.reset_evaluate_node, Tuple{LD, TR, Int}, false),
+        (LK.reset_reevaluation, Tuple{LD, TR}, false),
+        # the foreign predicates (PL_predicates_from_tabling: the `$idg_*` and `$tbl_reeval_*` predicates)
+        [
+            (f, Tuple{LD, Int, Int, LK.control_t{T}}, false) for f in (
+                LK.pl_idg_add_edge1_va, LK.pl_idg_set_current2_va, LK.pl_idg_add_dyncall1_va,
+                LK.pl_idg_set_current1_va, LK.pl_idg_reset_current0_va, LK.pl_idg_edge3_va,
+                LK.pl_idg_false_edge3_va, LK.pl_idg_changed1_va, LK.pl_idg_falsecount2_va,
+                LK.pl_idg_set_falsecount2_va, LK.pl_idg_forced1_va, LK.pl_idg_thread_summary3_va,
+                LK.pl_idg_thread_space2_va, LK.pl_idg_predicate_edges3_va, LK.pl_tbl_reeval_wait2_va,
+                LK.pl_tbl_reeval_prepare_top2_va, LK.pl_tbl_reeval_prepare2_va, LK.pl_tbl_reeval_abandon1_va
+            )
+        ]...
+    )
+end
+
+# TAB1 TB6: the functions of pl-idgset.c that name no term type (src/pl-idgset.jl); the reader hooks are no-ops without threads
+const _MANIFEST_TB6_FREE = (
+    (LK.sizeof_block, Tuple{Int, Int}, false),
+    (LK.initIDGReaders, Tuple{}, false),
+    (LK.idg_reader_enter, Tuple{}, false),
+    (LK.idg_reader_exit, Tuple{}, false),
+    (LK.reg_block, Tuple{Int}, false),
+    (LK.reg_block_size, Tuple{Int}, false),
+)
+
+# TAB1 TB7 — monotonic tabling: the MONOTONIC TABLING block of src/pl-tabling.jl (pl-tabling.c:9883-11100) and its sixteen
+# foreign predicates. The dependency chains are `idg_mdep{T, idg_node{T}}` (`LK.IdgMdep{T}`), so every function is checked for
+# every payload type. `idg_free_mdeps` gained its `ld` argument (its TB6 entry changed with it).
+_manifest_tb7(T) = begin
+    TR, LD, GD = LK.trie{T}, LK.PL_local_data{T}, LK.PL_global_data{T}
+    IN, MD = LK.idg_node{T}, LK.IdgMdep{T}
+    UMD = Union{Nothing, IN, MD}
+    (
+        # the dependency records: references, hashing, find, free
+        (LK.mono_trie_atom, Tuple{GD, TR}, false),
+        (LK.mdep_ref!, Tuple{LD, MD}, false),
+        (LK.mdep_of_ref, Tuple{LD, Int}, false),
+        (LK.mdep_hash, Tuple{LD, Int}, false),
+        (LK.new_mdep, Tuple{LD, Int, IN}, false),
+        (LK.find_dep, Tuple{LD, Union{IN, MD}, Int}, false),
+        (LK.free_mdep, Tuple{LD, MD}, false),
+        # the mono index of a source node
+        (LK.mono_index_key, Tuple{LD, IN, Int, Int}, false),
+        (LK.mono_index_find, Tuple{LD, IN, IN, Int}, false),
+        (LK.mono_index_insert, Tuple{LD, IN, IN, MD, Int}, false),
+        (LK.mono_index_build, Tuple{LD, IN}, false),
+        (LK.mono_index_release, Tuple{IN}, false),
+        (LK.mono_indexable, Tuple{GD, IN}, false),
+        # the answer queues
+        (LK.clref_serial, Tuple{GD, T}, false),
+        (LK.mono_answer_live, Tuple{GD, TR, Int}, false),
+        (LK.mdep_queue_answer, Tuple{MD, Int}, false),
+        (LK.mdep_unify_answers, Tuple{LD, TR, Int, MD}, false),
+        (LK.mdep_empty_queue, Tuple{MD, Int}, false),
+        (LK.mdep_empty_queues, Tuple{UMD}, false),
+        (LK.free_mdep_chain, Tuple{LD, IN, MD}, false),
+        (LK.idg_free_mdeps, Tuple{LD, IN, IN}, false),
+        # the edges
+        (LK.idg_add_child_dep, Tuple{LD, IN, IN, Int}, false),
+        (LK.idg_edge_dep_step, Tuple{LD, LK.idg_edge_state{T}, Int, Int, Int, Int, Int}, false),
+        (LK.idg_dependency_error_mono, Tuple{LD, TR, TR}, false),
+        (LK.idg_add_monotonic_edge, Tuple{LD, TR, TR, Int}, false),
+        # change propagation and reevaluation
+        (LK.mono_idg_changed, Tuple{LD, TR, Int}, false),
+        (LK.force_reeval, Tuple{LD, IN}, false),
+        (LK.mono_force_reeval, Tuple{LD, IN, IN}, false),
+        (LK.prune_deleted_mdeps, Tuple{LD, IN}, false),
+        (LK.mono_reeval_prep_node, Tuple{TR, Int}, false),
+        (LK.mono_reeval_done_node, Tuple{TR, Int, Base.RefValue{Int}}, false),
+        (LK.mdep_is_empty, Tuple{GD, TR, UMD}, false),
+        (LK.mono_scc_is_complete_loop, Tuple{LD, LK.mono_scc_state{T}}, false),
+        (LK.mono_scc_is_complete, Tuple{LD, IN}, false),
+        (LK.has_queued_answers, Tuple{LD, IN}, false),
+        (LK.invalid_dependencies, Tuple{LD, Int, IN}, false),
+        (LK.inner_is_monotonic, Tuple{LD}, false),
+        (LK.get_mono_answer, Tuple{LD, Int}, false),
+        (LK.mono_queue_answer, Tuple{LD, TR, Int}, false),
+        (LK.atrie_answer_event, Tuple{LD, TR, Int}, false),
+        # the foreign predicates (PL_predicates_from_tabling: the sixteen monotonic entries)
+        [
+            (f, Tuple{LD, Int, Int, LK.control_t{T}}, false) for f in (
+                LK.pl_tbl_monotonic_add_answer2_va, LK.pl_idg_add_monotonic_dep3_va, LK.pl_idg_add_mono_dyn_dep3_va,
+                LK.pl_idg_mono_affects3_va, LK.pl_idg_mono_affects_eager3_va, LK.pl_idg_mono_affects_lazy5_va,
+                LK.pl_idg_mono_index2_va, LK.pl_idg_mono_index_deps4_va, LK.pl_tbl_propagate_start1_va,
+                LK.pl_tbl_propagate_end1_va, LK.pl_tbl_collect_mono_dep0_va, LK.pl_mono_idg_changed2_va,
+                LK.pl_mono_reeval_prepare2_va, LK.pl_mono_reeval_done3_va, LK.pl_idg_mono_empty_queue2_va,
+                LK.pl_idg_mono_invalidate1_va, LK.pl_tbl_node_answer2_va       # TAB1 W2: '$tbl_node_answer'/2
+            )
+        ]...
+    )
+end
+
+# TB9 — the transaction tables of pl-tabling.c (src/pl-tabling.jl: `tt_*`, `lg_clauses`, `transaction_commit_tables`,
+# `transaction_rollback_tables`, `merge_tabling_trail`, `reset_answer_table_tracked`; the structs of src/pl-incl.jl). The methods that take the
+# local data are checked for every payload type; the ones on the trail and its records alone once, below (`_MANIFEST_TB9_FREE`). Every method
+# walks a Dict or a Vector of the trail or the tries, so none is held for AllocCheck (`false`); `tt_has_modified_dependencies` is in TB6's.
+_manifest_tb9(T) = begin
+    TR, LD = LK.trie{T}, LK.PL_local_data{T}
+    MD = LK.IdgMdep{T}
+    (
+        (LK.lg_clauses, Tuple{LD, MD, LK.mono_dep_status}, false),
+        (LK.tt_mono_status, Tuple{LD, TR}, false),
+        (LK.tt_trail, Tuple{LD}, false),
+        (LK.tt_add_table, Tuple{LD, TR, Int}, false),
+        (LK.tt_alloc, Tuple{LD, TR, Int}, false),
+        (LK.tt_add_answer, Tuple{LD, TR, Int}, false),
+        (LK.tt_abolish_table, Tuple{LD, TR}, false),
+        (LK.transaction_commit_tables, Tuple{LD}, false),
+        (LK.tt_rollback_answer, Tuple{LD, TR, Int}, false),
+        (LK.tt_rollback_tables, Tuple{LD, Dict{LK.word, Int}}, false),
+        (LK.tt_rollback_actions, Tuple{LD, Vector{LK.tbl_trail_answer}}, false),
+        (LK.transaction_rollback_tables, Tuple{LD}, false),
+        (LK.reset_answer_table_tracked, Tuple{LD, TR}, false),
+    )
+end
+
+# TB9: the entries of the trail that name no term type (listed once, not once per type)
+const _MANIFEST_TB9_FREE = (
+    (LK.mono_dep_status, Tuple{}, false),
+    (LK.tbl_trail, Tuple{}, false),
+    (LK.tbl_trail_answer, Tuple{Int, Int, Int}, false),
+    (LK.tbl_trail_free, Tuple{LK.tbl_trail}, false),
+    (LK.tt_free_table_symbol, Tuple{LK.word, Int}, false),
+    (LK.merge_tabling_trail, Tuple{LK.tbl_trail, LK.tbl_trail}, false),
+)
+
+# TX1 — pl-transaction.c and pl-undo.c (src/pl-transaction.jl, src/pl-undo.jl): the transaction state, the tables of changed
+# clauses and predicates, commit and discard, the updates, the predicates; the undo list, the undo blob and the scheduled goals.
+# The methods that take the local data, the global data, a clause or a definition are checked for every payload type; the ones
+# on plain integers and tables once, below. Anything that builds a Dict, a Vector or a term is held `false`.
+_manifest_tx1(T) = begin
+    GD, LD, C, D = LK.PL_global_data{T}, LK.PL_local_data{T}, LK.Clause{T}, LK.Definition{T}
+    TR, UP = LK.ld_transaction{T}, LK.tr_update{T}
+    TEN = LK.foreign_state_pool{LK.tr_enum{T}}
+    CT, PT = Dict{C, UInt64}, Dict{D, UInt64}
+    (
+        (LK.ld_transaction{T}, Tuple{}, false),
+        (LK.tr_enum{T}, Tuple{}, false),
+        (LK.tr_update{T}, Tuple{C, Symbol}, false),
+        (LK.foreign_state_pool{LK.tr_enum{T}}, Tuple{}, false),
+        (LK.alloc_foreign_state!, Tuple{TEN}, false),
+        (LK.free_foreign_state!, Tuple{TEN, Int}, false),
+        (LK.tr_clause_table, Tuple{TR}, false),
+        (LK.transaction_retract_clause, Tuple{GD, LD, C}, false),
+        (LK.transaction_assert_clause, Tuple{LD, C, Int}, false),
+        (LK.transaction_assert_clause, Tuple{LD, C, LK.ClauseRef{T}}, false),
+        (LK.transaction_visible_clause, Tuple{TR, C, UInt64}, false),
+        (LK.LGEN, Tuple{TR, UInt64}, true),
+        (LK.LGEN_FLAGS_VAL, Tuple{TR, UInt64, UInt32}, true),
+        (LK.transaction_last_modified_predicate, Tuple{LD, D, UInt64}, false),
+        (LK.transaction_set_last_modified, Tuple{LD, D, UInt64, UInt32}, false),
+        (LK.set_modified, Tuple{GD, LD, UInt64}, false),
+        (LK.retract_clause_gen, Tuple{C, UInt64}, false),
+        (LK.transaction_commit, Tuple{GD, LD}, false),
+        (LK.transaction_discard, Tuple{GD, LD}, false),
+        (LK.merge_clause_tables, Tuple{CT, CT}, false),
+        (LK.merge_pred_tables, Tuple{PT, PT}, false),
+        (LK.update_gen, Tuple{UP}, true),
+        (LK.cmp_updates, Tuple{UP, UP}, true),
+        (LK.is_trie_clause, Tuple{GD, C}, true),
+        (LK.transaction_updates, Tuple{GD, LD}, false),
+        (LK.announce_updates, Tuple{GD, LD, Vector{UP}}, false),
+        (LK.transaction, Tuple{GD, LD, Int, Int, Int, UInt32}, false),
+        (LK.add_update, Tuple{GD, LD, C, Symbol, Int, Int, Int}, false),
+        [
+            (f, Tuple{LD, Int, Int, LK.control_t{T}}, false) for f in (
+                LK.pl_transaction2_va, LK.pl_transaction3_va, LK.pl_snapshot1_va,
+                LK.pl_transaction_updates1_va, LK.pl_current_transaction1_va, LK.pl_undo1_va
+            )
+        ]...,
+        # pl-undo.c: the undo list, the blob, the schedule and its run
+        (LK.init_undo_list, Tuple{LD}, false),
+        (LK.free_undo_data, Tuple{LD}, false),
+        (LK.undo_blob_record, Tuple{GD, UInt64}, false),
+        (LK.release_undo_blob, Tuple{GD, UInt64}, false),
+        (LK.save_undo, Tuple{GD, LD, Int}, false),
+        (LK.put_undo, Tuple{GD, LD, Int, UInt64}, false),
+        (LK.push_undo, Tuple{LD, Int}, false),
+        (LK.UNDO_SCHEDULED, Tuple{LD}, true),
+        (LK.put_scheduled_undo, Tuple{GD, LD, Int}, false),
+        (LK.run_undo_hooks, Tuple{GD, LD}, false)
+    )
+end
+
+# TX1: the entries of src/pl-transaction.jl and src/pl-undo.jl that name no term type (listed once, not once per type)
+const _MANIFEST_TX1_FREE = (
+    (LK.IS_ASSERT_GEN, Tuple{UInt64}, true),
+    (LK.VAL_LGEN, Tuple{UInt64}, true),
+    (LK.VAL_GEN_FLAGS, Tuple{UInt64}, true),
+    (LK.VAL_ADD_FLAGS, Tuple{UInt64, UInt32}, true),
+    (LK._undo_bytes, Tuple{Int}, false),
+    (LK.initUndo!, Tuple{LK.atoms_t}, false),
+    (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_transaction)}, false),
+    (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_undo)}, false)
+)
 
 # LB2b — locating files: os/pl-files.c, os/pl-glob.c and the file-name helpers of os/pl-os.c
 # (src/os/pl-files.jl, src/os/pl-glob.jl, src/os/pl-os.jl). The methods that take the local data (`ld`) are
@@ -3532,8 +4252,23 @@ const _DISPATCH_MANIFEST_TUPLE = (
     _manifest_tr4(_M1)...,
     _manifest_tr4(_M2)...,
     _manifest_tr4(_M3)...,
+    _manifest_tb6(_M1)...,
+    _manifest_tb6(_M2)...,
+    _manifest_tb6(_M3)...,
+    _MANIFEST_TB6_FREE...,
+    _manifest_tb7(_M1)...,
+    _manifest_tb7(_M2)...,
+    _manifest_tb7(_M3)...,
+    _manifest_tb9(_M1)...,
+    _manifest_tb9(_M2)...,
+    _manifest_tb9(_M3)...,
+    _MANIFEST_TB9_FREE...,
     _MANIFEST_LB2B_FREE...,
     _MANIFEST_TR2_FREE...,
+    _manifest_tx1(_M1)...,
+    _manifest_tx1(_M2)...,
+    _manifest_tx1(_M3)...,
+    _MANIFEST_TX1_FREE...,
     _manifest_lb7(_M1)...,
     _manifest_lb7(_M2)...,
     _manifest_lb7(_M3)...,
@@ -4138,14 +4873,38 @@ const _DISPATCH_MANIFEST_TUPLE = (
     (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_wrap)}, false),
     (LK.table_props, Tuple{}, false),
     (LK.clear_table_props!, Tuple{LK.table_props}, false),
+    # TAB1 TB5: the sort of the taken table values (src/pl-tabling.jl); it names no term type
+    (LK.sort_table_values!, Tuple{Vector{UInt64}}, false),
+    # TAB1 W2: pl-tabling.c take_table_value, the `trie_empty_take` callback of `empty_variant_table`; it names no term type
+    (LK.take_table_value!, Tuple{Vector{UInt64}, UInt64}, false),
     # TAB1 TB0: pl-allocpool.c (src/pl-allocpool.jl) and the sentinel tests of pl-tabling.c (src/pl-tabling.jl); they name no term type
     (LK.new_alloc_pool, Tuple{String, Int}, false),
     (LK.free_alloc_pool, Tuple{LK.alloc_pool}, false),
     (LK.free_to_pool, Tuple{LK.alloc_pool, Int}, false),
     (LK.free_to_pool, Tuple{Nothing, Int}, false),
+    (LK.sindex_next, Tuple{LK.sindex_table, Int}, false),   # TAB1 TB2: names no term type
     (LK.WL_IS_SPECIAL, Tuple{Int}, true),
     (LK.WL_IS_WORKLIST, Tuple{Int}, true),
     (LK.DL_IS_DELAY_LIST, Tuple{Int}, true),
+    # TAB1 TB4: the delay infos and delay sets of pl-tabling.c (src/pl-tabling.jl); the answer is (serial, node id), `answer_ref` its key
+    (LK.DL_IS_DELAY_LIST, Tuple{Nothing}, true),            # a Union signature is no dispatch tuple (AllocCheck: Base.isdispatchtuple(sig)):
+    (LK.DL_IS_DELAY_LIST, Tuple{LK.delay_info}, true),      # one entry per member, as ISDEADCI above
+    (LK.answer_ref, Tuple{Int, Int}, true),
+    (LK.answer_ref_trie, Tuple{Int}, true),
+    (LK.answer_ref_node, Tuple{Int}, true),
+    (LK.REC_DELAY, Tuple{Int}, true),
+    (LK.UNREC_DELAY, Tuple{Int}, true),
+    (LK.IS_REC_DELAY, Tuple{Int}, true),
+    (LK.delete_answer, Tuple{Vector{LK.delay}, Int, Int}, false),
+    (LK.create_delay_set, Tuple{Union{Nothing, LK.delay_info}}, false),
+    (LK.add_to_delay_set, Tuple{LK.delay_info, LK.delay_set, Int, Int}, false),
+    (LK.equal_delay, Tuple{LK.delay, LK.delay}, false),
+    (LK.equal_delay_set, Tuple{Vector{LK.delay}, LK.delay_set, LK.delay_set}, false),
+    (LK.simplify_delay_set, Tuple{LK.delay_info, LK.delay_set}, false),
+    (LK.word_to_answer, Tuple{LK.word}, false),
+    (LK.delay_sets, Tuple{LK.delay_info}, false),
+    (LK.get_delay_set, Tuple{LK.delay_info, LK.delay_set}, false),
+    (LK.answer_delay_sets, Tuple{LK.delay_info}, false),
     (LK._closure_bytes, Tuple{Int}, false),
     (LK.initWrap!, Tuple{LK.atoms_t}, false),
     (LK.isCallWrapper, Tuple{LK.code}, false),

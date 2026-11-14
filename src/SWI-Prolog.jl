@@ -437,3 +437,9 @@ const PL_DISPATCH_WAIT = 1
 # PORT: SWI-Prolog.h PL_DISPATCH_INSTALLED
 "`PL_dispatch` mode: is a dispatch function installed (SWI-Prolog.h)?"
 const PL_DISPATCH_INSTALLED = 2
+# PORT: SWI-Prolog.h PL_CREATE_THREAD_LOCAL
+"`PL_assert()` flag: create the predicate thread-local (SWI-Prolog.h:498 at 18168e629eab)."
+const PL_CREATE_THREAD_LOCAL = 0x0010
+# PORT: SWI-Prolog.h PL_CREATE_INCREMENTAL
+"`PL_assert()` flag: create the predicate incremental, for incremental tabling (SWI-Prolog.h:499 at 18168e629eab)."
+const PL_CREATE_INCREMENTAL = 0x0020

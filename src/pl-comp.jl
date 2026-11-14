@@ -4022,8 +4022,8 @@ end
 # procedure is looked up). A clause the static procedure's error rejects is left to Julia's garbage
 # collector (upstream: `freeClause`). The consult path (`loc`, since R1f) is upstream's for a FIRST
 # load (pl-srcfile.jl): the clause's file and line, its owner, `overruleImportedProcedure`,
-# `redefineProcedure`, the source file's current procedure. NOT PORTED: `PL_CREATE_INCREMENTAL`
-# and `PL_CREATE_THREAD_LOCAL` (assert/2's `flags`: no tabling, no threads); the module's assert
+# `redefineProcedure`, the source file's current procedure. `PL_CREATE_INCREMENTAL` (TB6) makes a
+# new procedure incremental, `PL_CREATE_THREAD_LOCAL` is refused by name (owner TH1); the module's assert
 # hook (`O_PROLOG_HOOK`: `module_t` has no `hook`); the `CHECK_INTERRUPT` retry (no signal
 # handling); system mode (no boot compilation); transactions (`assertDefinition!`'s, not ported
 # there). THE COMPILER'S WARNINGS (since R1g): asked for when loading (`owner`), and printed after
@@ -4069,13 +4069,14 @@ function assert_term!(
         end
         proc === nothing && return nothing
     end
-    flags == 0 || throw(
-        NotPortedError{T}(
-            name,
-            "assert_term: PL_CREATE_INCREMENTAL/THREAD_LOCAL",
-            "no tabling, threads"
-        )
-    )
+    if flags != 0 && !isDefinedProcedure(gd, proc)                 # (pl-comp.c:4915-4920 at 18168e629eab; TAB1 TB6)
+        if (flags & PL_CREATE_INCREMENTAL) != 0
+            tbl_set_incremental_predicate(gd, proc.definition, true)
+        end
+        if (flags & PL_CREATE_THREAD_LOCAL) != 0                # setAttrDefinition(..., P_THREAD_LOCAL, true)
+            throw(NotPortedError{T}(name, "assert_term: PL_CREATE_THREAD_LOCAL", "TH1"))
+        end
+    end
     if !is_acyclic_cells(ld, -(head + 1)) || !is_acyclic_cells(ld, -(body + 1))   # CYCLIC_HEAD, CYCLIC_BODY
         PL_error(ld, ERR_REPRESENTATION, mk_sym(T, :cyclic_term))
         return nothing
@@ -4146,7 +4147,7 @@ function assert_term!(
             PL_error(ld, ERR_MODIFY_STATIC_PROC, proc)
             return nothing                                      # derror: freeClause(clause)
         end
-        setDynamicDefinition!(def, true) || return nothing
+        setDynamicDefinition!(gd, def, true) || return nothing
     end
     cref = assertProcedure!(gd, ld, proc, clause, where_)
     cref === nothing && return nothing                          # (SSU1: add_ssu_clause refused it)
@@ -4362,7 +4363,7 @@ function pl_compile_predicates1_va(
             gd, ld, desc, MODULE_user(gd), GP_NAMEARITY | GP_FINDHERE | GP_EXISTENCE_ERROR
         )
         proc === nothing && return FFALSE
-        setDynamicDefinition!(proc.definition, false) || return FFALSE
+        setDynamicDefinition!(gd, proc.definition, false) || return FFALSE
     end
     return PL_get_nil_ex(ld, tail) ? FTRUE : FFALSE
 end

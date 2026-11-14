@@ -25,7 +25,7 @@
 #     reaches them. Row for TB5: `reset_answer_table(atrie, 0)` on a complete answer trie with answers and read `TRIE_COMPLETE`, `worklist`, the answer count;
 #     `release_variant_table_node` on a variant table's node and read `atrie.variant == 0` (TB1-L1, L4).
 #   * `table_status`: no caller before TB3 (git grep at 6acfd472: only the definition), TB1-F6.
-#   * the refusal sites of a later step (TH1 the shared tables, TB2 the worklists and `$tbl_variant_table/6`'s create path, TB4 the delay information, TB6 the
+#   * the refusal sites of a later step (TH1 the shared tables, TB2 the worklist branch of reset_answer_table (owner TB5 since batch 3), TB4 the delay information, TB6 the
 #     IDG, TB8 the tripwires): no TB1 row reaches a refusal (the rows are the branches TB1 ports).
 #   * ROWS TB1's own test could add (the dispatcher decides whether TB1 or the owner does): a literal row `@test LK.TRIE_PTR_TAG == 0x7` (TB1-R2: the tag is
 #     consumed by `isTriePtrValue` and `triePtrValue` alike, so a changed value is invisible to a round trip), `@test variants.registry === gd.tries` and
@@ -145,8 +145,8 @@ MUTANTS = [
          new="        nothing                                     # TRIE_COUNT_INC(variants, value_count)\n"),
     dict(id="TB1-G9 the lookup creates the variant node for every call, `AT_CREATE` not asked (a valueless node is left by tvv03-tvv06: no row counts the nodes)",
          file=TAB, targets=[TV],
-         old="    rc, nid = trie_lookup_abstract(\n        ld, variants, 0, -(t + 1), (flags & AT_CREATE) != 0, sa, vars\n    )",
-         new="    rc, nid = trie_lookup_abstract(\n        ld, variants, 0, -(t + 1), true, sa, vars\n    )",
+         old="        rc, nid = trie_lookup_abstract(\n            ld, variants, 0, -(t + 1), (flags & AT_CREATE) != 0, sa, vars\n        )",
+         new="        rc, nid = trie_lookup_abstract(\n            ld, variants, 0, -(t + 1), true, sa, vars\n        )",
          equivalent="DEFERRED KILL: owner TB5 (abolish empties the variant table and a node count is then read; TB1's own test could add the row, "
                     "`trie_property`-style node count of the variant table after tvv03): the node without a value answers `nothing` at src/pl-tabling.jl:738-739 "
                     "(`elseif (flags & AT_CREATE) != 0 ... else return nothing`), so tvv03-tvv06 still answer `no`, and the walk of tvl06/tvl07 (trie_gen over the "
@@ -233,11 +233,11 @@ MUTANTS = [
          file=TAB, targets=[TV],
          old="    atrie === nothing && return FFALSE\n\n    return unify_table_status(ld, A2, atrie, nothing, false) ? FTRUE : FFALSE\n",
          new="    return unify_table_status(ld, A2, atrie, nothing, false) ? FTRUE : FFALSE\n"),
-    dict(id="TB1-P5 `$tbl_table_status/2` asks for `create` (KILL tvs08: the fresh variant table reaches unify_fresh(create), refused by name, owner TB2; the pin is `fresh`)",
+    dict(id="TB1-P5 `$tbl_table_status/2` asks for `create` (KILL tvs08 expected: the fresh variant table reaches unify_fresh(create), since TAB1 stack batch 3 item 9 a real call (`_unify_fresh_create`, TB2) that makes the worklist, where the pin answers `fresh` and creates nothing; CONFIRM at the gate, the refusal this row once relied on is gone)",
          file=TAB, targets=[TV],
          old="    return unify_table_status(ld, A2, atrie, nothing, false) ? FTRUE : FFALSE\n",
          new="    return unify_table_status(ld, A2, atrie, nothing, true) ? FTRUE : FFALSE\n"),
-    dict(id="TB1-P7 `$tbl_variant_table/6` does not unify its Trie argument (no row calls /6, /abstract or /moded: the create path is refused by name, TB2)",
+    dict(id="TB1-P7 `$tbl_variant_table/6` does not unify its Trie argument (no row calls /6, /abstract or /moded: the create path is a real call since batch 3 item 9, owner TB2)",
          file=TAB, targets=[TV],
          old="    return unify_trie(gd, ld, Trie, atrie) &&\n           unify_table_status(ld, status, atrie, def, true)\n",
          new="    return unify_table_status(ld, status, atrie, def, true)\n",
@@ -304,14 +304,14 @@ MUTANTS = [
     # ── reset_answer_table and the release functions (pl-tabling.c): called by the abolish (TB5) and the trie's release_node ──
     dict(id="TB1-L1 reset_answer_table leaves the table complete (no row calls it)",
          file=TAB, targets=[TV],
-         old="    atrie.flags &= ~TRIE_COMPLETE\n",
-         new="    nothing\n",
+         old="    atrie.flags &= ~TRIE_COMPLETE\n\n    atrie.IDG === nothing || tbl_refuse(\n        T,\n        :reset_answer_table",
+         new="    nothing\n\n    atrie.IDG === nothing || tbl_refuse(\n        T,\n        :reset_answer_table",
          equivalent="DEFERRED KILL: owner TB5 (abolish_all_tables: reset_answer_table is reached through `release_variant_table_node` from the trie's release_node, TR1's stack, "
                     "and TB5's abolish; src/pl-tabling.jl:537, :568): row for TB5: a complete table, then reset, then `TRIE_COMPLETE` is unset, `worklist === nothing`, no answers"),
     dict(id="TB1-L3 reset_answer_table's flags argument is read nowhere (EQUIVALENT: RAT_CLEANUP and 0 give the same reset)",
          file=TAB, targets=[TV],
-         old="reset_answer_table(atrie, variant_table.magic == TRIE_CMAGIC ? RAT_CLEANUP : 0)",
-         new="reset_answer_table(atrie, variant_table.magic == TRIE_CMAGIC ? 0 : RAT_CLEANUP)",
+         old="reset_answer_table(gd, atrie, variant_table.magic == TRIE_CMAGIC ? RAT_CLEANUP : 0)",
+         new="reset_answer_table(gd, atrie, variant_table.magic == TRIE_CMAGIC ? 0 : RAT_CLEANUP)",
          equivalent="src/pl-tabling.jl:537-554: the body of reset_answer_table never reads its `flags` parameter (the RAT_CLEANUP, RAT_BULK paths of pl-tabling.c are the "
                     "worklist, IDG and tracked-table branches, refused by name here, :543-549), so the argument :568 passes does not change the result"),
     dict(id="TB1-L4 release_variant_table_node leaves the answer trie's variant link (no row calls it)",

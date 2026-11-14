@@ -167,35 +167,33 @@ function _tr_life_rows(::Type{T}) where {T}
     tr4.clause = UInt64(1)
     @test LK.trie_discard_clause(gd, tr4) === nothing && tr4.clause == 0 &&
         tr4.clause_cref === nothing
-    # trie_ensure_nodes: true unless discarded, whose restore is refused by name
-    @test LK.trie_ensure_nodes(tr4)
-    tr4.flags = LK.TRIE_DISCARDED
-    @test_throws LK.TrieRefusal LK.trie_ensure_nodes(tr4)
+    # trie_ensure_nodes: true for a trie with its nodes (the restore of a discarded one runs its clause: test_tabling_answers_swipl.jl
+    # reads the answers of completed tables, whose nodes tabling discards)
+    @test LK.trie_ensure_nodes(gd, LK.PL_local_data{T}(gd), tr4)
     # a node of a variant trie reaches tbl_release_node (TB1: release_variant_table_node): no value, nothing to release; a value that
     # is no trie pointer (a symbol: the shared tables) is refused by name (owner TH1)
     tr5, ids = _tr_fan(T, 1)
     tr5.flags = LK.TRIE_ISVARIANT
-    @test LK.release_node(tr5, ids[1]) === nothing
+    @test LK.release_node(gd, tr5, ids[1]) === nothing
     tr5.nodes[ids[1]].value = UInt64(4)
     err = try
-        LK.release_node(tr5, ids[1])
+        LK.release_node(gd, tr5, ids[1])
         nothing
     catch e
         e
     end
     @test err isa LK.NotPortedError && err.step == "TH1"
     tr5.nodes[ids[1]].value = UInt64(0)
-    # an answer trie (TRIE_ISTABLE): a node with TN_DELAYINFO is refused by name (owner TB4)
+    # an answer trie (TRIE_ISTABLE): a node with TN_DELAYINFO releases its delay information (TB4: release_answer_node, pl-tabling.c:2511);
+    # a node without the flag releases nothing
     tr5.flags = LK.TRIE_ISTABLE
-    LK.release_node(tr5, ids[1])                       # TN_DELAYINFO not set: nothing to release
-    tr5.nodes[ids[1]].flags |= LK.TN_DELAYINFO
-    err = try
-        LK.release_node(tr5, ids[1])
-        nothing
-    catch e
-        e
-    end
-    @test err isa LK.NotPortedError && err.step == "TB4"
+    LK.release_node(gd, tr5, ids[1])                       # TN_DELAYINFO not set: nothing to release
+    di = LK.delay_info()
+    LK.set_node_delayinfo(gd, tr5, ids[1], di)
+    @test LK.node_delayinfo(gd, tr5, ids[1]) === di
+    @test LK.release_node(gd, tr5, ids[1]) === nothing
+    @test LK.node_delayinfo(gd, tr5, ids[1]) === nothing &&
+        (tr5.nodes[ids[1]].flags & LK.TN_DELAYINFO) == 0
     return nothing
 end
 
@@ -206,6 +204,7 @@ end
 # ---- CHILDREN ----
 
 function _tr_children_rows(::Type{T}) where {T}
+    gd = LK.PL_global_data{T}()                 # the database the release chain takes (TB3: release_node, clear_node, destroy_node, prune_node)
     tr = LK.trie_create(T)
     root = tr.nodes[1]
     @test LK.is_leaf_trie_node(tr, 1) && !LK.trie_has_children(root)
@@ -304,7 +303,7 @@ function _tr_children_rows(::Type{T}) where {T}
     @test LK.get_child(tr, 1, _tk(15)) == 0 && LK.get_child(tr, 1, _tk(16)) == ids[16]
     @test !(_tk(15) in _tr_keys(tr, 1)) && length(_tr_keys(tr, 1)) == 17
     @test !LK.is_leaf_trie_node(tr, 1)
-    LK.destroy_node(tr, ids[15])
+    LK.destroy_node(gd, tr, ids[15])
     @test tr.free_ids == [ids[15]]
     # ... which is revived by the same key: no new entry, `dead` back to 0, and the freed node id is reused
     n15 = LK.insert_child(tr, 1, _tk(15))
@@ -559,6 +558,7 @@ end
 end
 
 function _tr_sweep_rows(::Type{T}) where {T}
+    gd = LK.PL_global_data{T}()                 # the database the release chain takes (TB3: release_node, clear_node, destroy_node, prune_node)
     # a chain of 1500 nodes; chunks 23 + 49 + 100 + 203 + 407 + 407 + 407: the last holds 303 of the 1492 chunked nodes
     tr = LK.trie_create(T)
     nid = 1
@@ -572,7 +572,7 @@ function _tr_sweep_rows(::Type{T}) where {T}
     @test LK.is_ground_trie_node(tr, nid)
     # pruning from the leaf frees every node. The first sweep comes at nfree == 1024 (and nfree > node_count): then the 303 + 407 + 314 newest
     # chunked nodes are free, the middle chunk (407, no live node) goes, the head and the chunk with live nodes stay
-    LK.prune_node(tr, nid)
+    LK.prune_node(gd, tr, nid)
     @test tr.node_count == 1 && tr.nodes[1].children == 0
     cs2 = _tr_chunks(tr)
     @test length(cs2) == 6 && cs2[1] === cs[1] && cs2[2] === cs[3]          # the chunk cs[2] (live 0 at the sweep) is gone
@@ -595,7 +595,7 @@ function _tr_sweep_rows(::Type{T}) where {T}
           [407, 407, 407, 407, 407, 407, 407, 203, 100, 49, 23] &&
         Int(tr.chunks.used) == 175
     for k in 3000:-1:1977
-        LK.destroy_node(tr, ids[k])
+        LK.destroy_node(gd, tr, ids[k])
     end
     @test tr.node_count == 3001 - 1024 && Int(tr.chunks.nfree) == 1024 &&
         Int(tr.chunks.sweep_at) == 1024
@@ -610,13 +610,14 @@ end
 # ---- CLEAR AND PRUNE ----
 
 function _tr_prune_rows(::Type{T}) where {T}
+    gd = LK.PL_global_data{T}()                 # the database the release chain takes (TB3: release_node, clear_node, destroy_node, prune_node)
     # a chain root - a - b - c: pruning from c takes the whole branch
     tr = LK.trie_create(T)
     a = LK.insert_child(tr, 1, _tk(10))
     b = LK.insert_child(tr, a, _tk(20))
     c = LK.insert_child(tr, b, _tk(30))
     @test _tr_path(tr, c) == _tk.([10, 20, 30]) && tr.node_count == 4
-    LK.prune_node(tr, c)
+    LK.prune_node(gd, tr, c)
     @test tr.node_count == 1 && tr.nodes[1].children == 0 &&
         sort(tr.free_ids) == [a, b, c] && tr.free_ids == [c, b, a]
     # a flag on b stops it: only c goes
@@ -626,12 +627,12 @@ function _tr_prune_rows(::Type{T}) where {T}
         b = LK.insert_child(tr, a, _tk(20))
         c = LK.insert_child(tr, b, _tk(30))
         tr.nodes[b].flags |= fl
-        LK.prune_node(tr, c)
+        LK.prune_node(gd, tr, c)
         @test tr.node_count == 3 && tr.nodes[b].children == 0 &&
             LK.get_child(tr, a, _tk(20)) == b && LK.get_child(tr, b, _tk(30)) == 0
         @test tr.free_ids == [c]
         # the node itself carrying the flag is not pruned at all
-        LK.prune_node(tr, b)
+        LK.prune_node(gd, tr, b)
         @test tr.node_count == 3
     end
     # a branch point: pruning c leaves b findable; pruning b afterwards takes a as well
@@ -639,20 +640,20 @@ function _tr_prune_rows(::Type{T}) where {T}
     a = LK.insert_child(tr, 1, _tk(10))
     b = LK.insert_child(tr, a, _tk(20))
     c = LK.insert_child(tr, a, _tk(30))
-    LK.prune_node(tr, c)
+    LK.prune_node(gd, tr, c)
     @test tr.node_count == 3 && LK.get_child(tr, a, _tk(20)) == b &&
         LK.get_child(tr, a, _tk(30)) == 0 && _tr_keys(tr, a) == [_tk(20)]
-    LK.prune_node(tr, b)
+    LK.prune_node(gd, tr, b)
     @test tr.node_count == 1 && tr.nodes[1].children == 0
     # the root is never pruned
-    LK.prune_node(tr, 1)
+    LK.prune_node(gd, tr, 1)
     @test tr.node_count == 1
     # prune_error: adds the error key under the node and prunes it, so a node with no flags goes too
     tr = LK.trie_create(T)
     a = LK.insert_child(tr, 1, _tk(10))
     tr.nodes[a].flags |= LK.TN_PRIMARY
     b = LK.insert_child(tr, a, _tk(20))
-    LK.prune_error(tr, b)
+    LK.prune_error(gd, tr, b)
     # upstream's prune_node (pl-trie.c:1460-1471 on the pin) walks up from the error node while the node has no TN_PRIMARY/TN_SECONDARY/TN_PINNED flag: the error node
     # and `b` both go, `a` (TN_PRIMARY) stays: the root and `a` are left
     @test tr.node_count == 2 && LK.get_child(tr, b, LK.TRIE_ERROR_VAL) == 0 &&
@@ -672,13 +673,13 @@ function _tr_prune_rows(::Type{T}) where {T}
     c = LK.insert_child(tr, a, _tk(30))
     tr.nodes[c].flags |= LK.TN_PRIMARY
     leaves = Int[]
-    LK.prune_trie(tr, 1, id -> push!(leaves, id))
+    LK.prune_trie(gd, tr, 1, id -> push!(leaves, id))
     @test sort(leaves) == [b, c] && tr.node_count == 3
     @test LK.get_child(tr, a, _tk(30)) == c && LK.get_child(tr, a, _tk(20)) == 0 &&
         _tr_keys(tr, a) == [_tk(30)]
     # a trie with no value at all is emptied down to the root
     tr, _ = _tr_fan(T, 5)
-    LK.prune_trie(tr, 1)
+    LK.prune_trie(gd, tr, 1)
     @test tr.node_count == 1 && tr.nodes[1].children == 0
     # a deeper one: the root has a chain and a fan; the chain (no value) goes, the value branch stays
     tr = LK.trie_create(T)
@@ -688,7 +689,7 @@ function _tr_prune_rows(::Type{T}) where {T}
     y2 = LK.insert_child(tr, y1, _tk(4))
     y3 = LK.insert_child(tr, y1, _tk(5))
     tr.nodes[y3].flags |= LK.TN_PRIMARY
-    LK.prune_trie(tr, 1)
+    LK.prune_trie(gd, tr, 1)
     @test tr.node_count == 3 && _tr_keys(tr, 1) == [_tk(3)] && _tr_keys(tr, y1) == [_tk(5)]
     # a leaf with TN_SECONDARY or TN_PINNED is kept as one with TN_PRIMARY is (root - a - {b, c})
     tr = LK.trie_create(T)
@@ -698,7 +699,7 @@ function _tr_prune_rows(::Type{T}) where {T}
     tr.nodes[pb].flags |= LK.TN_SECONDARY
     tr.nodes[pc].flags |= LK.TN_PINNED
     leaves = Int[]
-    LK.prune_trie(tr, 1, id -> push!(leaves, id))
+    LK.prune_trie(gd, tr, 1, id -> push!(leaves, id))
     @test sort(leaves) == [pb, pc] && tr.node_count == 4 &&
         _tr_keys(tr, pa) == [_tk(20), _tk(30)]
 
@@ -760,12 +761,12 @@ function _tr_clear_rows(::Type{T}) where {T}
     n = LK.insert_child(tr, 1, _tk(1))
     @test n == 2 && tr.node_count == 2 && LK.get_child(tr, 1, _tk(1)) == 2
     # trie_clear_nodes (no taker): the nodes go, the flag-less trie's individual nodes too
-    LK.trie_clear_nodes(tr)
+    LK.trie_clear_nodes(gd, tr)
     @test tr.node_count == 1 && length(tr.nodes) == 1
     # a CONCURRENT trie clears its lingering blocks
     tr, _ = _tr_fan(T, 20; flags=LK.TRIE_CONCURRENT)
     @test !isempty(tr.lingering)
-    LK.trie_clear_nodes(tr)
+    LK.trie_clear_nodes(gd, tr)
     @test isempty(tr.lingering) && isempty(tr.blocks) && tr.node_count == 1
     return nothing
 end
