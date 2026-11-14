@@ -398,23 +398,29 @@ function transaction(
         discard = true                                      # (the `nested_discard:` label)
         if rc && (flags & TR_TRANSACTION) != 0
             discard = false
-            if tr.table_trail !== nothing
-                if parent.table_trail !== nothing
-                    merge_tabling_trail(parent.table_trail, tr.table_trail)
+            tr_ttrail = tr.table_trail                      # a field read twice is not narrowed: bind it first
+            if tr_ttrail !== nothing
+                parent_ttrail = parent.table_trail
+                if parent_ttrail !== nothing
+                    merge_tabling_trail(parent_ttrail, tr_ttrail)
                 else
-                    parent.table_trail = tr.table_trail
+                    parent.table_trail = tr_ttrail
                 end
             end
-            if tr.predicates !== nothing
-                if parent.predicates !== nothing
-                    merge_pred_tables(parent.predicates, tr.predicates)
+            tr_preds = tr.predicates                        # a field read twice is not narrowed: bind it first
+            if tr_preds !== nothing
+                parent_preds = parent.predicates
+                if parent_preds !== nothing
+                    merge_pred_tables(parent_preds, tr_preds)
                 else
-                    parent.predicates = tr.predicates
+                    parent.predicates = tr_preds
                 end
             end
 
-            if tr.clauses !== nothing
-                if parent.clauses !== nothing
+            tr_clauses = tr.clauses
+            if tr_clauses !== nothing
+                parent_clauses = parent.clauses
+                if parent_clauses !== nothing
                     if (flags & TR_BULK) != 0
                         updates = transaction_updates(gd, ld)
                         if !announce_updates(gd, ld, updates)
@@ -422,10 +428,10 @@ function transaction(
                         end
                     end
                     if !discard
-                        merge_clause_tables(parent.clauses, tr.clauses)
+                        merge_clause_tables(parent_clauses, tr_clauses)
                     end
                 else
-                    parent.clauses = tr.clauses
+                    parent.clauses = tr_clauses
                 end
             end
         end

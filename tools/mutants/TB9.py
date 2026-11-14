@@ -261,7 +261,7 @@ MUTANTS = [
     dict(id='TB9-hook-nested-merge (DEFERRED KILL: a nested transaction that commits drops its table trail, so the parent\'s rollback leaves the answers: no UP case nests a transaction)',
          file=TRN, targets=TWB,
          equivalent='DEFERRED KILL: none of the 29 upstream cases nests a transaction and test_transaction_swipl.jl runs no table; the gate to-do is `transaction((transaction(assertz(d(2)), tt_ex(p, B)), fail))` over a monotonic table, expected [1] after, as pinned by swipl',
-         old='                    merge_tabling_trail(parent.table_trail, tr.table_trail)\n',
+         old='                    merge_tabling_trail(parent_ttrail, tr_ttrail)\n',
          new='                    nothing\n'),
     dict(id='TB9-hook-nested-rollback (DEFERRED KILL: a nested transaction that is discarded does not roll its tables back: no UP case nests a transaction)',
          file=TRN, targets=TWB,

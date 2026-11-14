@@ -5263,7 +5263,7 @@ const SPAN_CALLEE_EXEMPT = [
     (
         LK.run_undo_hooks,
         :cold,
-        "TX1e: the scheduled undo goals run (pl-undo.c run_undo_hooks, called from I_DEPART/I_CALL and b_failed only when ALERT_UNDO is set and a goal is scheduled): " *
+        "TX1e: the scheduled undo goals run (pl-undo.c:224-247 run_undo_hooks, called from I_DEPART/I_CALL and b_failed only when ALERT_UNDO is set and a goal is scheduled): " *
         "a foreign frame and a whole query (`PL_open_query`, `PL_next_solution`), whose frame and query vectors grow; since TX1e the procedure is " *
         "`GD->procedures.drun_undo1` (built at start-up), so the function builds no atom of its own"
     ),
