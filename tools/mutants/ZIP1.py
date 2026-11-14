@@ -250,9 +250,9 @@ MUTANTS = [
          old="PL_extension(\"\\$rc_handle\", 1,",
          new="PL_extension(\"\\$rc_handle\", 2,"),
     dict(id="ZIP1-T-ext the zip table is no dispatch table (KILL every row)", file=X, targets=T,
-         old="PL_predicates_from_profile...,\n    PL_predicates_from_zip...\n)",
-         new="PL_predicates_from_profile...\n)"),
+         old="PL_predicates_from_tabling..., PL_predicates_from_zip..., PL_predicates_from_wrap...,",
+         new="PL_predicates_from_tabling..., PL_predicates_from_wrap...,"),
     dict(id="ZIP1-T-ext2 the zip table is no registration table (KILL every row)", file=X, targets=T,
-         old="PL_predicates_from_profile, PL_predicates_from_zip\n)",
-         new="PL_predicates_from_profile\n)"),
+         old="PL_predicates_from_tabling, PL_predicates_from_zip, PL_predicates_from_wrap,",
+         new="PL_predicates_from_tabling, PL_predicates_from_wrap,"),
 ]

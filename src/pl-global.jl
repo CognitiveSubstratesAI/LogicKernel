@@ -163,6 +163,7 @@ mutable struct PL_global_data{T}
 
     const event_hook::event_hooks{T}                            # event.hook: the event lists (R2 EV1)
     const closure_refs::Vector{closure{T}}                      # (pl-wrap.c: the closure a closure blob names, by its number in the payload; TAB1-min)
+    const tries::Vector{trie{T}}                                # (pl-trie.c: the trie a trie blob names, by its number in the payload; TAB1 TR1)
     paths_CWDdir::String                                        # paths.CWDdir: the cached working directory, '/'-terminated ("" = none; paths.CWDlen is its byte length; R2 LB2b)
     procedures_print_message2::Procedure{T}                     # procedures.print_message2: print_message/2, printMessage's (R2 LB4 b2)
     procedures_reset3::Procedure{T}                             # procedures.reset3: reset/3 (R2 CONT1)
@@ -170,12 +171,15 @@ mutable struct PL_global_data{T}
     procedures_call_continuation1::Procedure{T}                 # procedures.call_continuation1: call_continuation/1 (R2 CONT1)
     procedures_dmeta_call1::Procedure{T}                        # procedures.dmeta_call1: '$meta_call'/1 (R2 CONT1)
     procedures_findall_loop4::Procedure{T}                      # procedures.findall_loop4: '$bags':findall_loop/4, looked up by findReset (R2 CONT1)
+    procedures_trie_gen_compiled2::Procedure{T}                 # procedures.trie_gen_compiled2: system:trie_gen_compiled/2, set by initTries! (TR4)
+    procedures_trie_gen_compiled3::Procedure{T}                 # procedures.trie_gen_compiled3: system:trie_gen_compiled/3, set by initTries! (TR4)
     reload_generation::gen_t                                    # reload.generation: GEN_INVALID (0) unless a file is being reloaded (R2 LB6a; DIVERGES, owner TH1: LD->reload.generation, kept here)
     const options::pl_options_t                                 # options: the command-line options, `$cmd_option_val/2`'s table (R2 LB7)
     const cmdline::pl_cmdline_t                                 # cmdline: the arguments and the -O/--no-packs switches (R2 LB7)
     defaults_home::Union{Nothing, String}                       # defaults.home: the home directory, `$cmd_option_val(home, _)` (R2 LB7; nothing = NULL)
     const ld_table::LDTable                                     # the local data a wrapped stream names by number (IOSTREAM.wrapped; src/os/pl-stream.jl, R2 TOP1b E; owner TH1)
     tabling_answer_delay_infos::Dict{Int, delay_info}           # (pl-tabling.c static `answer_delay_infos`: trie node id -> delay_info; TAB1 TB0)
+    tabling_start_node_ids::Int                                 # (pl-tabling.c static `start_node_ids`: the last start-node id handed out, 0: none; TAB1 TB1)
 end
 # DIVERGES: `atoms` is upstream's `GD->atoms` as a struct of its own (src/pl-atom.jl), one table per
 # database, built first as upstream's `initAtoms` runs first; `functors` likewise `GD->functors` with
@@ -216,6 +220,8 @@ end
 # src/pl-setup.jl's `setupProlog`.
 # Since TAB1-min: `closure_refs` (the closures a `closure` blob names, as `clause_refs`; pl-wrap.c keeps the `struct closure`
 # in the blob's payload, src/pl-wrap.jl).
+# Since TAB1 TR1: `tries` (the tries a `trie` blob names, as `closure_refs`; pl-trie.c `trie_symbol` makes the blob with the
+# `struct trie` as its data, here the trie's number in `tries` is the 8-byte payload, src/pl-trie.jl).
 # Since R2's LB2b: `paths_CWDdir`, `GD->paths.CWDdir` (pl-global.h), the working directory `PL_cwd` caches and `ChDir` sets (src/os/pl-os.jl).
 # Since R2 LB6a: `reload_generation`, DIVERGES (representation, owner TH1): upstream's `LD->reload.generation` is per thread; the kernel has one thread,
 # so ONE copy lives here and nothing keeps a second in the local data (audit D-0416 item 3). `startReconsultFile` writes it and `endReconsult` (LB6b)
@@ -396,7 +402,7 @@ tbl_free_objects{T}() where {T} = tbl_free_objects{T}(
 
 # PORT: pl-global.h tabling as ld_tabling
 # DIVERGES: only the private, single-thread fields; NOT PORTED, each to its owner (docs/architecture.md TB0):
-# `start_nodes` (`node_array`) and `variant_table` as an index (TB1: the variant table), `idg_registry` (TB6). `variant_table`
+# `idg_registry` (TB6); `start_nodes` (`node_array`, TB1) is a nullable `Vector{Int}` of node ids by `start_id` (no blocks: DIVERGES, no concurrent readers). `variant_table`
 # is the index of the variant trie in the database's trie table (0: none). `flags` holds the `TF_*` bits,
 # `delay_list` and `idg_current` are term references (0: none). `node_pool` is the pool `table_space` sets (`nothing`: NULL).
 "The tabling state of one thread (pl-global.h `LD->tabling`)."
@@ -407,6 +413,7 @@ mutable struct ld_tabling{T}
     active_components::Int                                      # # components with SCC_ACTIVE
     variant_table::Int                                          # Variant --> table (a trie index; 0: none)
     node_pool::Union{Nothing, alloc_pool}                       # Node allocation pool for tries
+    start_nodes::Union{Nothing, Vector{Int}}                    # Predicate start nodes in it (a node_array: node ids by start_id, 0: none; TB1)
     dyn_orphan_events::Int                                      # Dynamic nodes that lost a dependent
     concurrent_idg_nodes::Int                                   # Private IDG nodes with shared children
     has_scheduling_component::Bool                              # A leader was created
@@ -417,10 +424,21 @@ mutable struct ld_tabling{T}
     idg_current::Int                                            # Current node in IDG (a term_t; 0: none)
     free_objects::tbl_free_objects{T}                           # Freed objects (TBL_FREE_*)
     restraint::tbl_restraint{T}                                 # the restraints
+    # DIVERGES (TAB1 TB2): upstream hands Prolog the ADDRESS of a worklist or component (`PL_unify_pointer`) and reads it
+    # back (`PL_get_pointer`, then a magic check); here the handle is an index into `pointers` (`nothing`: a freed slot,
+    # reused through `free_pointers`, as freed memory is). src/pl-tabling.jl `tbl_pointer!`, `tbl_pointer_release!`.
+    pointers::Vector{Union{Nothing, tbl_worklist{T}, tbl_component{T}}}  # handle -> worklist or component
+    free_pointers::Vector{Int}                                  # handles to reuse
+    # DIVERGES (TAB1 TB2): the states of `'$tbl_wkl_work'/6` (upstream: `allocForeignState`, its address the REDO_PTR context)
+    # are records of this pool, the index the context (as between/3's `between_states`).
+    wkl_states::foreign_state_pool{wkl_step_state{T}}           # ('$tbl_wkl_work'/6's REDO_PTR states)
 end
 ld_tabling{T}() where {T} = ld_tabling{T}(
-    nothing, nothing, 0, 0, 0, nothing, 0, 0, false, false, false, UInt32(0), 0, 0,
-    tbl_free_objects{T}(), tbl_restraint{T}()
+    nothing, nothing, 0, 0, 0, nothing, nothing, 0, 0, false, false, false, UInt32(0),
+    0, 0,
+    tbl_free_objects{T}(), tbl_restraint{T}(),
+    Union{Nothing, tbl_worklist{T}, tbl_component{T}}[], Int[],
+    foreign_state_pool{wkl_step_state{T}}()
 )
 
 # PORT: pl-global.h PL_local_data
@@ -520,6 +538,8 @@ ld_tabling{T}() where {T} = ld_tabling{T}(
 # Since TAB1 TB0: `tabling` (`LD->tabling`, `ld_tabling` above: the private tabling state, the restraints, the freed objects), and
 # `table_flags_compile_threshold`, `table_flags_drop_intermediate` (`LD->table_flags`, nesting flattened), appended last.
 # Since R2 TOP1b A: `break_level` (`LD->break_level`, pl-setup.c:199: -1 outside a toplevel; `currentBreakLevel`, src/pl-pro.jl), appended last.
+# Since TR2: `trie_gens`, the pool of trie_gen/2,3's states (`trie_gen_state`, pl-incl.jl; upstream keeps them on the C stack, then `allocForeignState`), appended last;
+# `trie_gen_force_epoch` (ORIGINAL, a test switch; a module-level `Ref` would be shared state, which the lint refuses), appended after it.
 # Since R2 F1c: `debugstatus_skiplevel`, `debugstatus_tracing`, `debugstatus_debugging`, `debugstatus_showContext` (`LD->_debugstatus`, pl-incl.h
 # `pl_debugstatus_t`; the flags `debug`, `debugger_show_context`: src/os/pl-prologflag.jl, `debugmode`, `tracemode`: src/pl-trace.jl).
 # (the input context stack is LB3's `input_context_stack`, which `'\$push_input_context'/1` shares; src/os/pl-file.jl).
@@ -686,6 +706,8 @@ mutable struct PL_local_data{T} <: AbstractLocalData
     tabling::ld_tabling{T}                                      # tabling: the tabling state of this thread (TAB1 TB0)
     table_flags_compile_threshold::Int                          # table_flags.compile_threshold: flag table_compile_threshold
     table_flags_drop_intermediate::Int                          # table_flags.drop_intermediate: flag table_drop_intermediate
+    trie_gens::foreign_state_pool{trie_gen_state{T}}            # (trie_gen/2,3's REDO_PTR states, TR2)
+    trie_gen_force_epoch::Bool                                  # ORIGINAL test switch: check_epoch! starts a new epoch at every call (TR2)
     coverage::ld_coverage{T}                                    # coverage: the data and the active count; '$cov_data'/3's states (lane F)
 end
 function PL_local_data{T}(gd::PL_global_data{T}) where {T}
@@ -725,7 +747,9 @@ function _bare_local_data(gd::PL_global_data{T}) where {T}
             gen_t(0),
             Definition{T}(
                 UInt64(0), 0, ClauseList{T}(), UInt64(0), e, code[], ClauseRef{T}[],
-                PL_code_data(code[], code[], code[], code[], code[], code[], code[]), 0, 0,
+                PL_code_data(
+                    code[], code[], code[], code[], code[], code[], code[], code[]
+                ), 0, 0,
                 0
             ),
             nothing,
@@ -802,6 +826,8 @@ function _bare_local_data(gd::PL_global_data{T}) where {T}
         ld_tabling{T}(),                        # tabling: no component, no pool; the restraints at initTabling's defaults (TAB1 TB0)
         TABLE_COMPILE_THRESHOLD,                # table_flags.compile_threshold (pl-prologflag.c:2587)
         0,                                      # table_flags.drop_intermediate (pl-prologflag.c:2589)
+        foreign_state_pool{trie_gen_state{T}}(), # trie_gen/2,3's states: none (TR2)
+        false,                                  # trie_gen_force_epoch: off (TR2)
         ld_coverage{T}()                        # coverage: no data, not active (pl-global.c: zero)
     )
     allocStacks!(ld)                            # the initial local stack, its spare reserved

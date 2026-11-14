@@ -18,12 +18,28 @@ const _SA_PARTS = (
     "call_path", "controls", "jet_allowlist"
 )
 const _SA_RAN = Dict{String, Int}()               # part or per-entry gate → what this shard ran
+# THE TIME PER PART (D-0562 item 4): the artifact says which part is slow, not only which shard. An interval
+# opens at each `_sa_mark(name)` and closes at the next one (or the end), so `_SA_SECS[name]` is the
+# wall-clock seconds from the part's start to the next running part, the per-entry gate or the end; one
+# `partsecs<TAB>name<TAB>seconds` line each in LOGICKERNEL_SA_COUNTS_OUT (a key of its own: the `part`
+# lines' readers, tools/evidence_ci.py and tools/mutate_sa_part.sh, are unchanged).
+const _SA_SECS = Dict{String, Float64}()
+const _SA_OPEN = Ref{Tuple{String, UInt64}}(("", UInt64(0)))
+"Close the open timing interval, add its seconds to its name, and open one named `name` (\"\" opens none)."
+function _sa_mark(name::String)::Nothing
+    t = time_ns()
+    seg, t0 = _SA_OPEN[]
+    isempty(seg) || (_SA_SECS[seg] = get(_SA_SECS, seg, 0.0) + (t - t0) / 1.0e9)
+    _SA_OPEN[] = (name, t)
+    return nothing
+end
 "Whether one-off gate `part` runs in this shard (and the record that it did)."
 function _sa_part(part::String)::Bool
     j = findfirst(==(part), _SA_PARTS)
     j === nothing && error("static analysis: no such part $(repr(part))")
     lk_in_slice(j, _SA_SHARD) || return false
     _SA_RAN[part] = get(_SA_RAN, part, 0) + 1
+    _sa_mark(part)
     return true
 end
 "The dispatch check's entries: the manifest less those analysed inside a caller (the manifest)."
@@ -148,6 +164,7 @@ end
         end
 
     @testset "JET: zero runtime dispatch on every manifest entry (this shard's)" begin
+        _sa_mark("dispatch")
         n = 0
         for (i, (f, tt, _)) in enumerate(_SA_DISPATCH)
             lk_in_slice(i, _SA_SHARD) || continue
@@ -210,6 +227,7 @@ end
         end
 
     @testset "AllocCheck: entries marked allocation-free allocate nothing (this shard's)" begin
+        _sa_mark("alloc")
         n = 0
         for (i, (f, tt, _)) in enumerate(_SA_NOALLOC)
             lk_in_slice(i, _SA_SHARD) || continue
@@ -528,6 +546,7 @@ end
     end
 end
 
+_sa_mark("")                                      # close the last interval
 # What this shard analysed — the per-entry gates' counts beside the full ones, and the parts it ran —
 # for tools/evidence_ci.py's sums (CI); nothing is written without the variable
 let out = get(ENV, "LOGICKERNEL_SA_COUNTS_OUT", "")
@@ -535,6 +554,10 @@ let out = get(ENV, "LOGICKERNEL_SA_COUNTS_OUT", "")
         println(io, "shard\t", _SA_SHARD[1], '\t', _SA_SHARD[2])
         println(io, "parts\t", join(_SA_PARTS, ','))
         foreach(p -> haskey(_SA_RAN, p) && println(io, "part\t", p), _SA_PARTS)
+        for p in (_SA_PARTS..., "dispatch", "alloc")
+            haskey(_SA_SECS, p) || continue
+            println(io, "partsecs\t", p, '\t', round(_SA_SECS[p]; digits=1))
+        end
         println(io, "dispatch\t", get(_SA_RAN, "dispatch", 0), '\t', length(_SA_DISPATCH))
         println(io, "alloc\t", get(_SA_RAN, "alloc", 0), '\t', length(_SA_NOALLOC))
     end

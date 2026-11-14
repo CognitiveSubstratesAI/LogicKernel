@@ -133,7 +133,8 @@ end
 # (audit D-0122 Q1 (a), a representation-only divergence: upstream assigns the two local-stack cells
 # themselves, pl-attvar.c:127 "on local stack!", and its own TBD, pl-wam.c:1565, names the global
 # stack); the others belong to subsystems not ported (`trim.dummy`, `attvar.gc_attvars` (G1), undo
-# hooks, tabling; nor `destroyGlobalVars`). So later term references
+# hooks, tabling's `idg_current`; nor `destroyGlobalVars`); since TAB1 TB4 `tabling.delay_list` (`init_delay_list`, after the
+# attvar pair as upstream). So later term references
 # lie at other absolute positions than in
 # swipl: compare DIFFERENCES between positions with swipl, never absolute ones.
 "Empty the local stack and the trail, then open the base foreign frame (pl-setup.c)."
@@ -177,6 +178,7 @@ function emptyStacks!(ld::PL_local_data{T})::Nothing where {T}
     ld.attvar_head = PL_new_term_ref(ld)                       # LD->attvar.head
     ld.attvar_tail = PL_new_term_ref(ld)                       # LD->attvar.tail
     @assert unRef(ld.slots[ld.attvar_tail + 1]) == unRef(ld.slots[ld.attvar_head + 1]) + 1
+    ld.tabling.delay_list = init_delay_list(ld)                # LD->tabling.delay_list = init_delay_list(); (pl-setup.c:1558, TAB1 TB4)
     ld.tmp_h = PL_new_term_refs(ld, TMP_PTR_SIZE)              # for(i…) LD->tmp.h[i] = PL_new_term_ref()
     ld.tmp_top = 0                                             # LD->tmp.top = 0
     ld.tmp_cells = unRef(ld.slots[ld.tmp_h + 1])               # (PERMANENT, as the exception's: popTermRef)
@@ -263,6 +265,7 @@ function setupProlog(::Type{T})::PL_global_data{T} where {T}
     registerBuiltinAtomSymbols!(atoms, syms)   # (the built-in atoms' symbols: upstream's a->name, pl-atom.c:1977)
     functors = initFunctors!(functors_t())     # initFunctors (after the atoms, as upstream's)
     initDBRef!(atoms)                          # initDBRef (setup:146): the clause blob type (D1)
+    initTries!(atoms)                          # initTries (setup:149): the trie blob type (TAB1 TR1)
     initWrap!(atoms)                           # initWrap (setup:152): the closure blob type (TAB1-min)
     dexpr = first(lookupBlob(atoms, Vector{UInt8}(codeunits("\$expr")), 5, reserved_symbol))
     dot2 = lookupFunctorDef(functors, _atom_word!(atoms, syms, mk_sym(T, Symbol("[|]"))), 2)
@@ -320,6 +323,7 @@ function setupProlog(::Type{T})::PL_global_data{T} where {T}
         Int[],                                  # halt_exited
         event_hooks{T}(),                       # event.hook: no listener yet (R2 EV1)
         closure{T}[],                           # closure_refs: no closure has a reference yet (TAB1-min)
+        trie{T}[],                              # tries: no trie has a handle yet (TAB1 TR1)
         "",                                     # paths.CWDdir: none until the first PL_cwd (R2 LB2b)
         dc_proc,                                # procedures_print_message2: set by initBuildIns!
         dc_proc,                                # procedures_reset3: set by initBuildIns!
@@ -327,14 +331,18 @@ function setupProlog(::Type{T})::PL_global_data{T} where {T}
         dc_proc,                                # procedures_call_continuation1: set by initBuildIns!
         dc_proc,                                # procedures_dmeta_call1: set by initBuildIns!
         dc_proc,                                # procedures_findall_loop4: set by findReset
+        dc_proc,                                # procedures_trie_gen_compiled2: set by initTries!(gd) (TR4)
+        dc_proc,                                # procedures_trie_gen_compiled3: set by initTries!(gd) (TR4)
         GEN_INVALID,                            # reload_generation: no file is being reloaded (R2 LB6a)
         initDefaultOptions!(pl_options_t()),    # options: pl-init.c initDefaultOptions, before the command line is read (R2 LB7)
         pl_cmdline_t(),                         # cmdline: no arguments, packs on, no -O (R2 LB7)
         nothing,                                # defaults_home: set with the `home` flag by initPrologFlags!
         LDTable(),                              # ld_table: no wrapped stream yet (R2 TOP1b E)
-        Dict{Int, delay_info}()                 # tabling_answer_delay_infos: initTabling's newHTablePP(64) (pl-tabling.c:12696; TAB1 TB0)
+        Dict{Int, delay_info}(),                # tabling_answer_delay_infos: initTabling's newHTablePP(64) (pl-tabling.c:12696; TAB1 TB0)
+        0                                       # tabling_start_node_ids: no start node id handed out (pl-tabling.c:12348; TAB1 TB1)
     )
     initPrologFlags!(gd)                        # setup:136 (src/os/pl-prologflag.jl): before the built-ins (:158), whose boot clauses read the mask
+    initTries!(gd)                              # initTries (setup:149), its tail: trie_gen_compiled/2,3 (TR4, src/pl-trie.jl)
     initBuildIns!(gd)                           # setup:158 (src/pl-ext.jl)
     initOperators!(gd)                          # setup:164 (src/pl-op.jl)
     return gd

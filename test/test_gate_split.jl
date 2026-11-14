@@ -864,6 +864,33 @@ echo "pkgtest-way: PASS stub"
             findfirst("_file \"\$f\" > \"\$log\"", bg).start
         cf = match(r"(?s)\n_checks_fresh\(\) \{\n(.*?)\n\}\n", warm)[1]
         @test !occursin(r"(?m)&\s*$", cf)
+        # GUARD-FIRST (audit D-0600 item 6, D-0607 item 3): the cheap whole-package tests run BEFORE the checks that
+        # carry the Pkg.test-way runs (`_checks_fresh`), the fast static pre-check and every other file; the gate stops at
+        # the first failure; the files loop does not run them a second time; the Pkg.test-way step is fail-fast
+        # there (and only there: `check` and the preflight keep naming every failure)
+        gf = match(r"(?s)\n_guard_first\(\) \{\n(.*?)\n\}\n", warm)[1]
+        @test occursin(
+            "WARM_GUARD_FIRST_FILES=\"test/test_lint_globals.jl test/test_type_discipline.jl\"\n",
+            warm
+        )
+        @test occursin("LOGICKERNEL_GUARD_FIRST_FILES-\$WARM_GUARD_FIRST_FILES", gf)
+        @test occursin("return 1", gf) && occursin("return 0", gf)
+        @test !occursin(r"(?m)&\s*$", gf)
+        gfp = findfirst("_guard_first ||", bg).start
+        @test gfp < findfirst("_checks_fresh ||", bg).start
+        @test gfp < findfirst("test/static_analysis_fast.jl", bg).start
+        @test gfp < findfirst("_branch_gate_plan", bg).start
+        @test occursin("LOGICKERNEL_INERT_FAILFAST=1 LOGICKERNEL_INERT_BUDGET_S=", bg)
+        @test occursin(
+            "case \" \${LOGICKERNEL_GUARD_FIRST_FILES-\$WARM_GUARD_FIRST_FILES} \" in *\" \$f \"*) continue ;; esac",
+            bg
+        )
+        @test occursin(r"(?m)^\s+break$", ie)                       # fail-fast stops the step
+        @test occursin(
+            "if [ \"\${LOGICKERNEL_INERT_FAILFAST:-}\" = 1 ]; then\n                echo \"preflight: Pkg.test-way run: stopped",
+            ie
+        )
+        @test count("LOGICKERNEL_INERT_FAILFAST=1 LOGICKERNEL_", warm) == 1   # set by the branch-gate alone
         if have_systemd
             # …and through the real step: the slice a second-daemon lane names carries the run's scope
             try
@@ -1176,6 +1203,114 @@ echo "pkgtest-way: PASS stub"
                     stdout=devnull
                 )
             ).exitcode == 3
+        end
+    end
+
+    # CIREF1 (audit D-0636): a run of the workflow `CI compile check` (a `ci/<owner>` push, .github/workflows/
+    # ci-compile.yml) is IGNORED by workflow NAME, in the same place as the Plan-failure rule: it is no verdict
+    # on the commit later pushed to gate/<name>, and it is never the required run.
+    @testset "tools/ci_status.sh: a CI compile check run is no verdict (CIREF1)" begin
+        sha = "0123456789abcdef0123456789abcdef01234567"
+        run_(name, status, conclusion) =
+            "{\"head_sha\":\"$sha\",\"name\":\"$name\",\"status\":\"$status\"," *
+            "\"conclusion\":$(conclusion === nothing ? "null" : "\"$conclusion\"")," *
+            "\"head_branch\":\"ci/owner\",\"created_at\":\"\",\"workflow_id\":\"$name\"," *
+            "\"html_url\":\"https://x/1\"}"
+        compile(st, c) = run_("CI compile check", st, c)
+        evidence(st, c) = run_("Evidence (three term types)", st, c)
+        tool = joinpath(_GS_ROOT, "tools", "ci_status.sh")
+        mktempdir() do d
+            status(runs; require="") = begin
+                f = joinpath(d, "f.json")
+                write(f, "{\"workflow_runs\":[" * join(runs, ",") * "]}")
+                outp = IOBuffer()
+                cmd = isempty(require) ? `$tool $sha` : `$tool --require $require $sha`
+                p = run(
+                    pipeline(
+                        ignorestatus(addenv(cmd, "LOGICKERNEL_CI_FIXTURE" => f));
+                        stdout=outp, stderr=devnull
+                    )
+                )
+                (p.exitcode, String(take!(outp)))
+            end
+            # a red compile check beside a green Evidence run: GREEN, and the compile run is printed, marked
+            code, text = status([
+                compile("completed", "failure"), evidence("completed", "success")
+            ])
+            @test code == 0
+            @test occursin("CI compile check", text) && occursin("ignored", text)
+            @test occursin("Evidence (three term types)", text)
+            # the same pair with the compile check green: still green (the ignore is by name, not by colour)
+            @test status([
+                compile("completed", "success"), evidence("completed", "success")
+            ])[1] == 0
+            # a green compile check ALONE is no verdict: 3 (a later gate/ push has not run CI yet)
+            code, text = status([compile("completed", "success")])
+            @test code == 3
+            @test occursin("ignored", text)
+            # a red compile check alone: no verdict either, not RED
+            @test status([compile("completed", "failure")])[1] == 3
+            # a red compile check and a red Evidence run: RED (Evidence's failure still counts)
+            @test status([
+                compile("completed", "failure"), evidence("completed", "failure")
+            ])[1] == 1
+            # a pending compile check beside a green Evidence run: GREEN (it does not hold the verdict back)
+            @test status([
+                compile("in_progress", nothing), evidence("completed", "success")
+            ])[1] == 0
+            # the required workflow: a compile check never satisfies `--require`, Evidence does
+            req = "Evidence"
+            @test status([compile("completed", "success")]; require=req)[1] == 3
+            @test status(
+                [compile("completed", "success"), run_("Evidence", "completed", "success")];
+                require=req
+            )[1] == 0
+            @test status(
+                [compile("completed", "success"), run_("CI", "completed", "success")];
+                require=req
+            )[1] == 3
+            # the ignore is for that ONE name: a failed run of another workflow beside it stays RED
+            @test status([
+                compile("completed", "success"), run_("CI", "completed", "failure")
+            ])[1] == 1
+            # CIREF2 (audit D-0651): the workflow also holds the `static` shards and `static-summary`. The API's run
+            # carries the WORKFLOW's name and one conclusion for all its jobs, so a RED `static` job is a red run named
+            # `CI compile check`: the ignore by that name covers every job in it. The fixture's `jobs` (the jobs answer,
+            # as for the Plan rule) names the red `static` job; the judgement does not read it. Both directions: the
+            # same red run beside a green Evidence run is GREEN, alone it is no verdict (3), and beside a red Evidence
+            # run it is RED (the Evidence failure, not the compile check's, counts).
+            redstatic =
+                "{\"head_sha\":\"$sha\",\"id\":77000000001,\"event\":\"push\"," *
+                "\"name\":\"CI compile check\",\"status\":\"completed\"," *
+                "\"conclusion\":\"failure\",\"head_branch\":\"ci/owner\",\"created_at\":\"\"," *
+                "\"workflow_id\":\"CI compile check\",\"html_url\":\"https://x/2\"}"
+            jobs =
+                "\"jobs\":{\"77000000001\":{\"jobs\":[" *
+                "{\"name\":\"compile\",\"status\":\"completed\",\"conclusion\":\"success\"}," *
+                "{\"name\":\"static analysis 4/9\",\"status\":\"completed\",\"conclusion\":\"failure\"}," *
+                "{\"name\":\"static summary\",\"status\":\"completed\",\"conclusion\":\"failure\"}]}}"
+            function with_jobs(runs)
+                f = joinpath(d, "j.json")
+                write(f, "{\"workflow_runs\":[" * join(runs, ",") * "]," * jobs * "}")
+                outp = IOBuffer()
+                p = run(
+                    pipeline(
+                        ignorestatus(addenv(`$tool $sha`, "LOGICKERNEL_CI_FIXTURE" => f));
+                        stdout=outp, stderr=devnull
+                    )
+                )
+                (p.exitcode, String(take!(outp)))
+            end
+            code, text = with_jobs([redstatic, evidence("completed", "success")])
+            @test code == 0
+            @test occursin("CI compile check", text) && occursin("ignored", text)
+            @test with_jobs([redstatic])[1] == 3
+            @test with_jobs([redstatic, evidence("completed", "failure")])[1] == 1
+            # the control that can fail: the same red run under ANOTHER workflow name is RED
+            @test with_jobs([
+                replace(redstatic, "CI compile check" => "CI"),
+                evidence("completed", "success")
+            ])[1] == 1
         end
     end
 
@@ -1890,6 +2025,7 @@ echo "pkgtest-way: PASS stub"
             end
         sa_counts(k) =
             "shard\t$k\t2\nparts\taqua,controls\npart\t$(k == 1 ? "aqua" : "controls")\n" *
+            "partsecs\t$(k == 1 ? "aqua" : "controls")\t12.5\npartsecs\tdispatch\t3.0\n" *
             "dispatch\t$(k == 1 ? 3 : 2)\t5\nalloc\t1\t2\n"
         "The tool's exit, output and unit_costs.tsv over planted files: `edit(files)` changes the good set."
         function vrun(
@@ -2867,6 +3003,46 @@ MUTANTS = [
             @test !isfile(joinpath(out, "par2", "verdicts.tsv"))
         end
     end
+    # THE MAIN-PUSH ANALYSIS IS SPLIT (audit D-0593 item 2, GATESPEED): the job that ran the whole suite and the static
+    # analysis in ONE process (67.8 min, run 43189476500) is nine static-analysis shards (the same SA_SHARDS as
+    # evidence.yml) plus the live swipl differential on each term type, and the OLD NAME stays on a gather (main's
+    # ruleset matches required checks by job name). Each leg must still be there for the gather to mean the old job.
+    @testset "CI.yml: the old analysis job name is a gather over the SA shards and the live differential" begin
+        ci = read(joinpath(_GS_ROOT, ".github", "workflows", "CI.yml"), String)
+        ev = read(joinpath(_GS_ROOT, ".github", "workflows", "evidence.yml"), String)
+        @test occursin(
+            "name: Static analysis + live swipl differential\n    needs: [analysis_sa, analysis_swipl]",
+            ci
+        )
+        @test occursin("name: Static analysis \${{ matrix.shard }}/9", ci)
+        @test occursin("shard: [1, 2, 3, 4, 5, 6, 7, 8, 9]", ci)
+        @test occursin(raw"LOGICKERNEL_SA_SHARD: ${{ matrix.shard }}/9", ci)
+        m = match(r"SA_SHARDS: '(\d+)'", ev)
+        @test m !== nothing && m.captures[1] == "9"       # the same shard count as Evidence
+        # audit D-0597: Evidence's static-analysis matrix lists the same nine, its time limit is 75 min, and Aqua and
+        # jet_allowlist (parts 1 and 9 of `_SA_PARTS`, part j runs in shard (j-1)%N+1) no longer share a shard
+        @test occursin("shard: [1, 2, 3, 4, 5, 6, 7, 8, 9]", ev)
+        @test occursin("name: static analysis \${{ matrix.shard }}/9", ev)
+        @test occursin(raw"LOGICKERNEL_SA_SHARD: ${{ matrix.shard }}/9", ev)
+        @test occursin("timeout-minutes: 75     # audit D-0597", ev)
+        body = read(joinpath(_GS_ROOT, "test", "static_analysis_body.jl"), String)
+        pm = match(r"const _SA_PARTS = \((.*?)\)\n"s, body)
+        @test pm !== nothing
+        parts = if pm === nothing
+            String[]
+        else
+            [String(x.captures[1]) for x in eachmatch(r"\"(\w+)\"", pm.captures[1])]
+        end
+        ja, aq = findfirst(==("jet_allowlist"), parts), findfirst(==("aqua"), parts)
+        @test ja !== nothing && aq !== nothing && length(parts) == 9
+        @test ja !== nothing && aq !== nothing && (ja - 1) % 9 != (aq - 1) % 9
+        # the differential: every file on each type, never the static analysis (the shards' unit)
+        @test occursin("name: Live swipl differential · \${{ matrix.term }}", ci)
+        @test occursin("term: [reference, alt, alt_interned]", ci)
+        @test occursin("LOGICKERNEL_FILE_GROUP: 1/1", ci)
+        @test occursin(raw"LOGICKERNEL_TERM_ONLY: ${{ matrix.term }}", ci)
+        @test occursin("LOGICKERNEL_REQUIRE_SWIPL: '1'", ci)
+    end
     # THE RUNNER IMAGE IS PINNED (CI.yml's note above `jobs:`): no job, no matrix entry on a moving
     # `-latest` image; the oracle's cache key names the image. The scan must see every `runs-on`.
     @testset "the CI runner images are pinned, never -latest" begin
@@ -2964,12 +3140,13 @@ MUTANTS = [
             builds += count("julia tools/build_home.jl", text)
         end
         @test isempty(found)
-        # nine Julia jobs, counted by python3 -I over the same files with the same rule (CI.yml: test, analysis,
+        # twelve Julia jobs, counted by python3 -I over the same files with the same rule (CI.yml: test, analysis_swipl,
+        # analysis_sa (GATESPEED: the old `analysis` job split in two; `analysis` itself is now a gather without Julia),
         # format, tooling; evidence.yml: evidence, static_analysis; mutation.yml: baseline, mutant; fuzz.yml:
-        # fuzz); a new Julia job moves this number and has to be added here on purpose
-        @test examined == 9
+        # fuzz; ci-compile.yml: compile (CIREF1), static (CIREF2)); a new Julia job moves this number and has to be added here on purpose
+        @test examined == 12
         # one build step in every job but the exempt ones: the job count and the step count tell each other
-        @test builds == examined - length(_GS_HOME_EXEMPT) == 8
+        @test builds == examined - length(_GS_HOME_EXEMPT) == 11
         # every exemption names a Julia job that exists (a stale one would hide a job added under its name)
         @test all(in(seen), keys(_GS_HOME_EXEMPT))
         @test all(!isempty, values(_GS_HOME_EXEMPT))

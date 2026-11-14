@@ -20,6 +20,7 @@ on:
   push:
     branches:
       - 'gate/**'
+      - 'perf/ci-**'          # GATESPEED scratch branches (audit D-0529/D-0530)
   workflow_dispatch:
   schedule:
     - cron: '17 2 * * *'              # nightly, 02:17 UTC
@@ -34,7 +35,7 @@ permissions:
 
 env:
   FILE_GROUPS: '2'
-  SA_SHARDS: '8'
+  SA_SHARDS: '9'
 
 jobs:
   evidence:
@@ -80,6 +81,18 @@ jobs:
         with:
           version: '1.13'
       - uses: julia-actions/cache@9353db09a0f2bbbdec6f41791918c75d37391b36  # v3.5.0
+        with:
+          cache-name: julia-cache;lk-shared;julia=1.13
+          include-matrix: 'false'
+      # AUDIT D-0535 item 1: the shared depot cache holds the registry, packages, artifacts and the compiled caches of the
+      # DEPENDENCIES only. The package under test's OWN compiled cache (compiled/<julia>/LogicKernel*) is dropped right
+      # after the restore (a stale precompiled copy could keep a mutant from taking effect) ...
+      - name: No restored compiled LogicKernel (the shared cache is dependencies only)
+        run: |
+          for d in "$HOME"/.julia/compiled/v*/LogicKernel*; do
+              [ -e "$d" ] && { echo "dropping the restored $d"; rm -rf "$d"; }
+          done
+          true
       # (no analysis tools: the static analysis is in no file group — the `static_analysis` jobs)
       # THE HOME TREE (LB4 b2): every database is a copy of the BOOTED one, which reads HOME/boot/init.pl; `home/` is
       # generated and git-ignored, so a fresh checkout has none (Evidence 42021496734: 664 failing tests, "build the home
@@ -123,24 +136,32 @@ jobs:
         with:
           name: evidence-${{ matrix.term }}-g${{ matrix.group }}
           path: evidence-out/
+      # ... and again at the job's end, BEFORE the cache action's post step saves the depot: it never enters the key
+      - name: No compiled LogicKernel in the shared cache
+        if: ${{ always() }}
+        run: |
+          for d in "$HOME"/.julia/compiled/v*/LogicKernel*; do
+              [ -e "$d" ] && { echo "dropping $d before the cache save"; rm -rf "$d"; }
+          done
+          true
 
   # THE STATIC ANALYSIS IN SHARDS (D-0059): every SA_SHARDS-th manifest entry from the k-th, and the
   # k-th of every SA_SHARDS of its one-off gates (Aqua in exactly one), with the tools REQUIRED
   # (e7f817d's rule per shard: a missing tool is an error, never a skip). No oracle and no upstream
   # checkout: the analysis needs neither. No coverage: it analyses code, it runs almost none.
   static_analysis:
-    name: static analysis ${{ matrix.shard }}/8
+    name: static analysis ${{ matrix.shard }}/9
     runs-on: ubuntu-24.04   # pinned: CI.yml's note above `jobs:`
-    timeout-minutes: 60
+    timeout-minutes: 75     # audit D-0597: every shard is <= 35 min now (T27, and 9 shards: Aqua and jet_allowlist, parts 1 and 9 of _SA_PARTS, no longer share shard 1)
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4, 5, 6, 7, 8]
+        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9]
     env:
       JULIA_NUM_THREADS: '4'
       LOGICKERNEL_REQUIRE_TOOLS: '1'
       LOGICKERNEL_TERM_ONLY: reference
-      LOGICKERNEL_SA_SHARD: ${{ matrix.shard }}/8      # /SA_SHARDS
+      LOGICKERNEL_SA_SHARD: ${{ matrix.shard }}/9      # /SA_SHARDS
       LOGICKERNEL_UNITS_OUT: ${{ github.workspace }}/evidence-out/units_sa_${{ matrix.shard }}.tsv
       LOGICKERNEL_SA_COUNTS_OUT: ${{ github.workspace }}/evidence-out/sa_${{ matrix.shard }}.tsv
     steps:
@@ -149,14 +170,31 @@ jobs:
         with:
           version: '1.13'
       - uses: julia-actions/cache@9353db09a0f2bbbdec6f41791918c75d37391b36  # v3.5.0
+        with:
+          cache-name: julia-cache;lk-shared;julia=1.13
+          include-matrix: 'false'
+      # AUDIT D-0535 item 1: the shared depot cache holds the registry, packages, artifacts and the compiled caches of the
+      # DEPENDENCIES only. The package under test's OWN compiled cache (compiled/<julia>/LogicKernel*) is dropped right
+      # after the restore (a stale precompiled copy could keep a mutant from taking effect) ...
+      - name: No restored compiled LogicKernel (the shared cache is dependencies only)
+        run: |
+          for d in "$HOME"/.julia/compiled/v*/LogicKernel*; do
+              [ -e "$d" ] && { echo "dropping the restored $d"; rm -rf "$d"; }
+          done
+          true
       # The analysis tools, as CI.yml's `analysis` job installs them (JET, LoweredCodeUtils and Aqua
       # from master, as a set)
+      # PINNED to commit SHAs (D-0562 item 4), no longer rev="master": the master commits current at run 43082794128
+      # (22ffe000, installs 2026-11-11 19:01-19:20Z) and unchanged through 22:31Z (run 43111726877): JET
+      # 6f20b0f0 (Project.toml 0.13.1, committed 2026-11-05T05:17Z), LoweredCodeUtils 6f5c109b (3.10.2, 2026-10-29T18:17Z),
+      # Aqua 84f9eb4f (1.0.0-DEV, 2026-11-03T15:48Z); read via the GitHub commits API (until=) and raw Project.toml.
+      # Move the three TOGETHER, deliberately, with the reason in the commit.
       - name: Install the analysis tools into the default environment
         run: |
           julia -e 'using Pkg; Pkg.add([
-            PackageSpec(url="https://github.com/JuliaDebug/LoweredCodeUtils.jl", rev="master"),
-            PackageSpec(url="https://github.com/aviatesk/JET.jl", rev="master"),
-            PackageSpec(url="https://github.com/JuliaTesting/Aqua.jl", rev="master"),
+            PackageSpec(url="https://github.com/JuliaDebug/LoweredCodeUtils.jl", rev="6f5c109b054a9f5c04aa042e6fe958fd4cd4f6b7"),
+            PackageSpec(url="https://github.com/aviatesk/JET.jl", rev="6f20b0f01761ef66a9d4846f7f0ed2346fd5ff1e"),
+            PackageSpec(url="https://github.com/JuliaTesting/Aqua.jl", rev="84f9eb4f4f947ec96c40e8b1274d5b7865a7ecfd"),
             PackageSpec(name="AllocCheck")])'
       # THE HOME TREE (LB4 b2): every database is a copy of the BOOTED one, which reads HOME/boot/init.pl; `home/` is
       # generated and git-ignored, so a fresh checkout has none (Evidence 42021496734: 664 failing tests, "build the home
@@ -184,6 +222,14 @@ jobs:
         with:
           name: evidence-sa-${{ matrix.shard }}
           path: evidence-out/
+      # ... and again at the job's end, BEFORE the cache action's post step saves the depot: it never enters the key
+      - name: No compiled LogicKernel in the shared cache
+        if: ${{ always() }}
+        run: |
+          for d in "$HOME"/.julia/compiled/v*/LogicKernel*; do
+              [ -e "$d" ] && { echo "dropping $d before the cache save"; rm -rf "$d"; }
+          done
+          true
 
   # ONE GATHER PER TERM TYPE, under the type's own name (main's ruleset requires `reference`, `alt`
   # and `alt_interned`): the type's file groups all green, and together every unit of the type

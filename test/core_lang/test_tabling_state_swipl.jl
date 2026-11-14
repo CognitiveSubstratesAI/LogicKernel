@@ -264,7 +264,12 @@ end
     @test t.component === nothing && t.saved_status === nothing && t.node_pool === nothing
     @test (t.incomplete_tables, t.active_components, t.variant_table) == (0, 0, 0)
     @test !t.has_scheduling_component && !t.in_answer_completion && !t.in_assert_propagation
-    @test t.flags == 0 && t.delay_list == 0 && t.idg_current == 0
+    # `delay_list`: the term reference `emptyStacks!` makes for it (`init_delay_list`, TB4; pl-setup.c:1558), the first after the
+    # attvar pair (perm + 6), holding the compound `-([])`; it was 0 before TB4 (D-0083). `idg_current` is made when TB6 ports its
+    # use (0: none).
+    @test t.flags == 0 && t.idg_current == 0
+    @test t.delay_list == LK.SIZEOF_FLIFRAME + 6 &&
+        LK._is_gcompound(ld.slots[t.delay_list + 1])
     @test ld.table_flags_compile_threshold == LK.TABLE_COMPILE_THRESHOLD == 32     # pl-prologflag.c:2587
     @test ld.table_flags_drop_intermediate == 0                                    # :2589
     r = t.restraint
@@ -334,7 +339,7 @@ end
         LK.WLFS_DISCARD_INCOMPLETE
     ) == (0x0000, 0x0001, 0x0002, 0x0004)   # pl-tabling.c:210-213
     @test (LK.CAND_UNDECIDED, LK.CAND_ALL, LK.CAND_KEYED) == (0, 1, 2)             # pl-tabling.c:161-163
-    @test (LK.DV_DELETED, LK.DL_UNDEFINED) == (1, 1)                               # pl-tabling.c:215-216 ((trie*)0x1, (delay_info*)0x1)
+    @test (LK.DV_DELETED, LK.DL_UNDEFINED) == (-1, 1)                              # pl-tabling.c:215-216 ((trie*)0x1, (delay_info*)0x1); DV_DELETED is -1: a table trie's serial is >= 1 (TB1)
     @test (LK.WL_GROUND, LK.WL_DYNAMIC) == (0x21, 0x41)                            # pl-tabling.c:207-208
     c = LK.tbl_component{_TS}()                                                    # new_component: memset 0, magic set (pl-tabling.c:285-292)
     @test (c.status, c.neg_status) == (LK.SCC_ACTIVE, LK.SCC_NEG_NONE) == (0, 0)

@@ -5656,6 +5656,7 @@ function argKey(PC::Code{T}, skip::Int)::word where {T}
         elseif c == H_FIRSTVAR || c == H_VAR || c == H_VOID || c == H_VOID_N ||
             c == H_POP || c == I_EXITFACT || c == I_ENTER || c == I_EXITCATCH ||
             c == I_EXITRESET ||                                     # (LB4 b2, pl-comp.c:5520)
+            c == T_TRIE_GEN2 || c == T_TRIE_GEN3 ||                 # (TR4: a compiled trie's clause, pl-comp.c:5522-5523)
             c == I_SSU_COMMIT || c == I_SSU_CHOICE                  # (SSU1, pl-comp.c:5526-5527)
             return word(0)
         elseif c == I_NOP || c == I_CHP

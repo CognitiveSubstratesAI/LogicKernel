@@ -332,7 +332,8 @@ end
 
 # THE OPCODE ORDER (audit D-0407 item 3), type independent. The table is src/pl-vmi.jl `_CODE_TABLE` (row = code + 1); upstream's
 # order is that of the `VMI(NAME, ...)` entries of pl-vmi.c at the pin: B_ARG_CF :1537, B_ARG_VF :1580, I_YIELD :2410, I_CUTCHP :2935,
-# S_WRAP :3560, S_CALLWRAPPER :3624, S_TABLED :3644, I_RESET :5754, I_EXITRESET :5801, I_CALLCONT :5839, I_SHIFT :5874, I_SHIFTCP :5908.
+# S_WRAP :3560, S_CALLWRAPPER :3624, S_TABLED :3644, I_RESET :5754, I_EXITRESET :5801, I_CALLCONT :5839, I_SHIFT :5874, I_SHIFTCP :5908,
+# then TR4's S_TRIE_GEN :5937 and T_TRIE_GEN2 :6134 .. T_CHECKWAKEUP :6657 (T_SMALLINTW/T_TRY_SMALLINTW are not declared, as H_SMALLINTW).
 # The whole table is not in pl-vmi.c's order (the steps before ARGINL grouped their instructions by landing: a renumber of their
 # numbers is a separate decision), so the row compares the TAIL, from B_ARG_CF to the last row. Both sides come through ONE extractor
 # (the names in order) and both are asserted non-empty. As test/test_vendored_swipl.jl: the checkout is always there in CI (the
@@ -380,8 +381,8 @@ if _CB_CI || isdir(joinpath(_CB_UP, ".git"))
             @test kern == tbl                            # the live table is the one the text declares
             first_row = Int(LK.B_ARG_CF) + 1
             tail = kern[first_row:end]
-            @test length(tail) == 12                     # B_ARG_CF .. I_SHIFTCP
-            @test first(tail) == :B_ARG_CF && last(tail) == :I_SHIFTCP
+            @test length(tail) == 40                     # B_ARG_CF .. I_SHIFTCP, then TR4's S_TRIE_GEN .. T_CHECKWAKEUP (28)
+            @test first(tail) == :B_ARG_CF && last(tail) == :T_CHECKWAKEUP
             @test all(n -> n in up, tail)                 # every tail name is a VMI() entry of the pin
             @test tail == filter(n -> n in Set(tail), up) # the same names, upstream's order
             codes = [getfield(LK, n) for n in tail]

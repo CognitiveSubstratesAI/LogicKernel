@@ -36,7 +36,7 @@
 # `fixup_ssu`, below the copying: the clause blobs of src/pl-dbref.jl); since D2 the recorded database
 # (`recorda/3`, `recordz/3`, `recorded/3`, `current_key/1`, `erase/1` and `instance/2` of a record, the keys
 # and their lists). NOT PORTED: the rest of pl-rec.c — external records (`PL_record_external`, the
-# `PL_TYPE_EXT_*` opcodes), `variantRecords`, `term_complexity`,
+# `PL_TYPE_EXT_*` opcodes), `term_complexity`,
 # atom references and their marking (`markAtomsRecord`: no atom GC), dicts (`PL_TYPE_DICT`), and
 # `freeRecord` (a record is freed by Julia's GC).
 #
@@ -353,6 +353,20 @@ end
         ld.gstack[p] = w
     end
     return nothing
+end
+
+# PORT: pl-rec.c variantRecords
+# DIVERGES: the record is `record{T}` (the code vector and the indirect values): two records are variants when `gsize`, `nvars`
+# and the code are equal and the indirects are equal pairwise in SWI's identity (`gnd_equal`; upstream compares the bytes after
+# the header, the indirects among them). Used by the tries (TAB1 TR1).
+"Whether the records `r1` and `r2` hold variant terms: a record's code numbers the variables by first occurrence (pl-rec.c)."
+function variantRecords(r1::record{T}, r2::record{T})::Bool where {T}
+    (r1.gsize == r2.gsize && r1.nvars == r2.nvars && r1.code == r2.code) || return false
+    length(r1.values) == length(r2.values) || return false
+    for i in eachindex(r1.values)
+        gnd_equal(r1.values[i], r2.values[i]) || return false
+    end
+    return true
 end
 
 # PORT: pl-rec.c copy_record

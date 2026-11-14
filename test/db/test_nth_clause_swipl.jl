@@ -337,6 +337,31 @@ const _CASES = [
         "t18",
         "'\$set_predicate_attribute'(tl18(_), thread_local, true), catch(( tl18(_) -> R = yes ; R = no ), error(E, _), R = E)"
     ),
+    # ---- clausable (pl-proc.c:3838 setClausableDefinition, reached through setAttrDefinition's `attr == P_CLAUSABLE` branch):
+    # `'$set_predicate_attribute'(Head, clausable, Val)` sets or clears P_CLAUSABLE, `'$get_predicate_attribute'(Head, clausable, V)` reads it
+    # back (1 or 0). The refusal of a SET on a predicate with clauses under `protect_static_code` is not driven here: swipl 10.1.20 refuses
+    # `set_prolog_flag(protect_static_code, _)` at run time (permission_error), so the refusal branch needs a process started with the flag.
+    ("k01", "'\$get_predicate_attribute'(s2(_), clausable, R)"),
+    (
+        "k02",
+        "'\$set_predicate_attribute'(s2(_), clausable, true), '\$get_predicate_attribute'(s2(_), clausable, R)"
+    ),
+    (
+        "k03",
+        "'\$set_predicate_attribute'(s2(_), clausable, false), '\$get_predicate_attribute'(s2(_), clausable, R)"
+    ),
+    (
+        "k04",
+        "'\$set_predicate_attribute'(kc4(_), clausable, true), '\$get_predicate_attribute'(kc4(_), clausable, R)"
+    ),
+    (
+        "k05",
+        "'\$set_predicate_attribute'(kc5(_), clausable, 1), '\$get_predicate_attribute'(kc5(_), clausable, A), '\$set_predicate_attribute'(kc5(_), clausable, false), '\$get_predicate_attribute'(kc5(_), clausable, B), R = A-B"
+    ),
+    (
+        "k06",
+        "'\$set_predicate_attribute'(kc6(_), dynamic, true), '\$set_predicate_attribute'(kc6(_), clausable, true), assertz(kc6(1)), '\$get_predicate_attribute'(kc6(_), clausable, A), clause(kc6(X), true), R = A-X"
+    ),
     # LAST: nothing follows
     ("z01", "R = last")
 ]
@@ -501,6 +526,13 @@ _swipl() = get(ENV, "LOGICKERNEL_NO_SWIPL", "") == "1" ? nothing : Sys.which("sw
         @test any(
             l -> startswith(l, "t_c18 ") && occursin("i1", l) && occursin("i2", l), sw
         )       # the clauses survive
+        # clausable (swipl 10.1.20 single-shot): unset 0, set 1, cleared 0, a new predicate 1, `1` then false 1-0, dynamic + clausable keeps its clause 1-1
+        @test any(l -> startswith(l, "t_k01 ") && occursin("i0", l), sw)
+        @test any(l -> startswith(l, "t_k02 ") && occursin("i1", l), sw)
+        @test any(l -> startswith(l, "t_k03 ") && occursin("i0", l), sw)
+        @test any(
+            l -> startswith(l, "t_k05 ") && occursin("i1", l) && occursin("i0", l), sw
+        )
         @test any(l -> startswith(l, "t_c23 ") && occursin(_codes("true"), l), sw)                  # an EMPTY dynamic predicate: assertz still works
         # nth_clause/3: the enumeration answers 1,2,3; the erased reference finds nothing; a non-integer index still enumerates (the
         # unify results are ignored upstream); the reference gives back the index and the (unqualified) head
