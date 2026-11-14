@@ -220,7 +220,7 @@ how many of the upstream file's functions are ported.
 | swipl-devel `src/pl-trie.h` | code | `18168e629eab` | `src/pl-tabling.jl` | 4 | 2 |
 | swipl-devel `src/pl-trie.h` | code | `18168e629eab` | `src/pl-trie.jl` | 6 | 3 |
 | swipl-devel `src/pl-umap.c` | code | `18168e629eab` | `src/pl-umap.jl` | 6 | 3 |
-| swipl-devel `src/pl-undo.c` | code | `18168e629eab` | `src/pl-undo.jl` | 12 | 10 |
+| swipl-devel `src/pl-undo.c` | code | `18168e629eab` | `src/pl-undo.jl` | 12 | 11 |
 | swipl-devel `src/pl-undo.h` | code | `18168e629eab` | `src/pl-undo.jl` | 1 | 0 |
 | swipl-devel `src/pl-variant.c` | code | `18168e629eab` | `src/pl-global.jl` | 2 | 2 |
 | swipl-devel `src/pl-variant.c` | code | `18168e629eab` | `src/pl-variant.jl` | 17 | 5 |
@@ -375,7 +375,7 @@ checkout is pulled.
 | swipl-devel `src/pl-trie.c` | `18168e629eab` | 130 | 171 | 79 | src/pl-incl.jl, src/pl-tabling.jl, src/pl-trie.jl |
 | swipl-devel `src/pl-trie.h` | `18168e629eab` | 5 | 5 | 3 | src/pl-incl.jl, src/pl-tabling.jl, src/pl-trie.jl |
 | swipl-devel `src/pl-umap.c` | `18168e629eab` | 4 | 8 | 3 | src/pl-umap.jl |
-| swipl-devel `src/pl-undo.c` | `18168e629eab` | 10 | 15 | 8 | src/pl-undo.jl |
+| swipl-devel `src/pl-undo.c` | `18168e629eab` | 10 | 15 | 9 | src/pl-undo.jl |
 | swipl-devel `src/pl-undo.h` | `18168e629eab` | 0 | 0 | 0 | src/pl-undo.jl |
 | swipl-devel `src/pl-variant.c` | `18168e629eab` | 9 | 17 | 4 | src/pl-global.jl, src/pl-variant.jl |
 | swipl-devel `src/pl-vmi.c` | `18168e629eab` | 198 | 243 | 102 | src/pl-tabling.jl, src/pl-vmi.jl, src/pl-wam.jl |
@@ -398,7 +398,7 @@ checkout is pulled.
 | swipl-devel `tests/db/test_db.pl` | `18168e629eab` | 2 | 10 | 0 | test/db/test_db.jl |
 | swipl-devel `tests/db/test_jit.pl` | `18168e629eab` | 16 | 21 | 0 | test/db/test_jit.jl |
 | swipl-devel `tests/rational/test_ieee754.pl` | `18168e629eab` | 0 | 15 | 0 | test/rational/test_ieee754.jl |
-| **total** | | **2641** | **5437** | **1554** | |
+| **total** | | **2641** | **5437** | **1555** | |
 <!-- END GENERATED coverage -->
 
 ### Not ported: unreachable upstream
