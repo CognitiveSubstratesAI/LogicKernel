@@ -430,7 +430,11 @@ _pc_codes(vs) = sort!([
             function plant(name, under)
                 _pc_good_files(root, spin)
                 p = joinpath(root, "src/pl-fake.jl")
-                write(p, read(p, String) * "\n# PORT: pl-fake.c $name\n$(under)function $name(a)\n    return a\nend\n")
+                write(
+                    p,
+                    read(p, String) *
+                    "\n# PORT: pl-fake.c $name\n$(under)function $name(a)\n    return a\nend\n"
+                )
                 _pc_inventory(root, "")
                 write_inventory(root; upstream_dirs=sdirs)
                 return port_check(root; upstream_dirs=sdirs, sync_target=target)
@@ -439,7 +443,8 @@ _pc_codes(vs) = sort!([
             # (1) accepted: the line under PORT names the target, and `newFoo` occurs there
             #     — dies if the synced branch is removed (the name is not at the pin) or inverted
             r = plant("newFoo", synced(target[1:8]))
-            r.violations == String[] || foreach(v -> println(stderr, "  sync: ", v), r.violations)
+            r.violations == String[] ||
+                foreach(v -> println(stderr, "  sync: ", v), r.violations)
             @test isempty(r.violations)
             # (2) the full 40-digit sha is accepted as well
             @test isempty(plant("newFoo", synced(target)).violations)
@@ -466,7 +471,11 @@ _pc_codes(vs) = sort!([
             # (7) refused: the configured target is not a commit of the checkout
             _pc_good_files(root, spin)
             p = joinpath(root, "src/pl-fake.jl")
-            write(p, read(p, String) * "\n# PORT: pl-fake.c newFoo\n" * synced("f"^40) * "function newFoo(a)\n    return a\nend\n")
+            write(
+                p,
+                read(p, String) * "\n# PORT: pl-fake.c newFoo\n" * synced("f"^40) *
+                "function newFoo(a)\n    return a\nend\n"
+            )
             _pc_inventory(root, "")
             write_inventory(root; upstream_dirs=sdirs)
             r = port_check(root; upstream_dirs=sdirs, sync_target="f"^40)
